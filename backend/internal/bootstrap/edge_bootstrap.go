@@ -82,9 +82,30 @@ func registerEdgeTunnelRoutes(
 	}
 
 	server := edge.NewTunnelServer(resolver, statusCallback)
+	server.SetConfig(&edge.Config{
+		EdgeMTLSMode:         cfg.EdgeMTLSMode,
+		EdgeMTLSAutoGenerate: cfg.EdgeMTLSAutoGenerate,
+		EdgeMTLSCAFile:       cfg.EdgeMTLSCAFile,
+		EdgeMTLSCertFile:     cfg.EdgeMTLSCertFile,
+		EdgeMTLSKeyFile:      cfg.EdgeMTLSKeyFile,
+		EdgeMTLSServerName:   cfg.EdgeMTLSServerName,
+		EdgeMTLSAssetsDir:    cfg.EdgeMTLSAssetsDir,
+		ManagerApiUrl:        cfg.ManagerApiUrl,
+	})
+	server.SetEnvironmentNameResolver(func(ctx context.Context, envID string) (string, error) {
+		env, err := appServices.Environment.GetEnvironmentByID(ctx, envID)
+		if err != nil {
+			return "", err
+		}
+		if env == nil {
+			return "", nil
+		}
+		return env.Name, nil
+	})
 	server.SetEventCallback(eventCallback)
 	go server.StartCleanupLoop(ctx)
 	apiGroup.POST("/tunnel/poll", server.HandlePoll)
+	apiGroup.POST("/tunnel/mtls/enroll", server.HandleMTLSEnroll)
 	apiGroup.GET("/tunnel/connect", server.HandleConnect)
 	slog.InfoContext(ctx, "Configured edge tunnel server",
 		"poll_enabled", true,

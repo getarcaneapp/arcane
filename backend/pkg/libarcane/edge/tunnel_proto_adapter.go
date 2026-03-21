@@ -42,6 +42,16 @@ func tunnelMessageToManagerProto(msg *TunnelMessage) (*tunnelpb.ManagerMessage, 
 			Data:        msg.Body,
 			MessageType: messageType,
 		}}}, nil
+	case MessageTypeStreamData:
+		messageType, err := intToInt32(msg.WSMessageType, "ws_message_type")
+		if err != nil {
+			return nil, err
+		}
+		return &tunnelpb.ManagerMessage{Payload: &tunnelpb.ManagerMessage_WsData{WsData: &tunnelpb.WebSocketData{
+			StreamId:    msg.ID,
+			Data:        msg.Body,
+			MessageType: messageType,
+		}}}, nil
 	case MessageTypeWebSocketClose:
 		return &tunnelpb.ManagerMessage{Payload: &tunnelpb.ManagerMessage_WsClose{WsClose: &tunnelpb.WebSocketClose{StreamId: msg.ID}}}, nil
 	case MessageTypeRegisterResponse:
@@ -49,8 +59,58 @@ func tunnelMessageToManagerProto(msg *TunnelMessage) (*tunnelpb.ManagerMessage, 
 			Accepted:      msg.Accepted,
 			EnvironmentId: msg.EnvironmentID,
 			Error:         msg.Error,
+			SessionId:     msg.SessionID,
+			SecurityMode:  msg.SecurityMode,
+			Capabilities:  append([]string(nil), msg.Capabilities...),
+			DrainPrevious: msg.DrainPrevious,
 		}}}, nil
-	case MessageTypeResponse, MessageTypeHeartbeat, MessageTypeStreamData, MessageTypeStreamEnd, MessageTypeRegister, MessageTypeEvent:
+	case MessageTypeCommandRequest:
+		return &tunnelpb.ManagerMessage{Payload: &tunnelpb.ManagerMessage_CommandRequest{CommandRequest: &tunnelpb.CommandRequest{
+			CommandId:       msg.ID,
+			CommandName:     msg.Command,
+			Method:          msg.Method,
+			Path:            msg.Path,
+			Query:           msg.Query,
+			Headers:         cloneHeaderMap(msg.Headers),
+			Body:            msg.Body,
+			TimeoutMillis:   msg.TimeoutMillis,
+			SessionId:       msg.SessionID,
+			AgentInstanceId: msg.AgentInstance,
+			Metadata:        cloneHeaderMap(msg.Metadata),
+		}}}, nil
+	case MessageTypeStreamOpen:
+		return &tunnelpb.ManagerMessage{Payload: &tunnelpb.ManagerMessage_StreamOpen{StreamOpen: &tunnelpb.StreamOpen{
+			StreamId:    msg.ID,
+			CommandName: msg.Command,
+			Path:        msg.Path,
+			Query:       msg.Query,
+			Headers:     cloneHeaderMap(msg.Headers),
+			SessionId:   msg.SessionID,
+		}}}, nil
+	case MessageTypeStreamClose:
+		return &tunnelpb.ManagerMessage{Payload: &tunnelpb.ManagerMessage_StreamClose{StreamClose: &tunnelpb.StreamClose{
+			StreamId: msg.ID,
+			Error:    msg.Error,
+		}}}, nil
+	case MessageTypeCancelRequest:
+		return &tunnelpb.ManagerMessage{Payload: &tunnelpb.ManagerMessage_CancelRequest{CancelRequest: &tunnelpb.CancelRequest{
+			CommandId: msg.ID,
+		}}}, nil
+	case MessageTypeFileChunk:
+		return &tunnelpb.ManagerMessage{Payload: &tunnelpb.ManagerMessage_FileChunk{FileChunk: &tunnelpb.FileChunk{
+			TransferId: msg.ID,
+			Data:       msg.Body,
+			Sequence:   msg.Sequence,
+			Eof:        msg.EOF,
+		}}}, nil
+	case MessageTypeResponse,
+		MessageTypeHeartbeat,
+		MessageTypeStreamEnd,
+		MessageTypeRegister,
+		MessageTypeEvent,
+		MessageTypeCommandAck,
+		MessageTypeCommandOutput,
+		MessageTypeCommandComplete:
 		return nil, fmt.Errorf("unsupported manager message type: %s", msg.Type)
 	default:
 		return nil, fmt.Errorf("unsupported manager message type: %s", msg.Type)
@@ -98,6 +158,54 @@ func managerProtoToTunnelMessage(msg *tunnelpb.ManagerMessage) (*TunnelMessage, 
 			Accepted:      payload.RegisterResponse.GetAccepted(),
 			EnvironmentID: payload.RegisterResponse.GetEnvironmentId(),
 			Error:         payload.RegisterResponse.GetError(),
+			SessionID:     payload.RegisterResponse.GetSessionId(),
+			SecurityMode:  payload.RegisterResponse.GetSecurityMode(),
+			Capabilities:  append([]string(nil), payload.RegisterResponse.GetCapabilities()...),
+			DrainPrevious: payload.RegisterResponse.GetDrainPrevious(),
+		}, nil
+	case *tunnelpb.ManagerMessage_CommandRequest:
+		return &TunnelMessage{
+			ID:            payload.CommandRequest.GetCommandId(),
+			Type:          MessageTypeCommandRequest,
+			Command:       payload.CommandRequest.GetCommandName(),
+			Method:        payload.CommandRequest.GetMethod(),
+			Path:          payload.CommandRequest.GetPath(),
+			Query:         payload.CommandRequest.GetQuery(),
+			Headers:       cloneHeaderMap(payload.CommandRequest.GetHeaders()),
+			Body:          payload.CommandRequest.GetBody(),
+			TimeoutMillis: payload.CommandRequest.GetTimeoutMillis(),
+			SessionID:     payload.CommandRequest.GetSessionId(),
+			AgentInstance: payload.CommandRequest.GetAgentInstanceId(),
+			Metadata:      cloneHeaderMap(payload.CommandRequest.GetMetadata()),
+		}, nil
+	case *tunnelpb.ManagerMessage_StreamOpen:
+		return &TunnelMessage{
+			ID:        payload.StreamOpen.GetStreamId(),
+			Type:      MessageTypeStreamOpen,
+			Command:   payload.StreamOpen.GetCommandName(),
+			Path:      payload.StreamOpen.GetPath(),
+			Query:     payload.StreamOpen.GetQuery(),
+			Headers:   cloneHeaderMap(payload.StreamOpen.GetHeaders()),
+			SessionID: payload.StreamOpen.GetSessionId(),
+		}, nil
+	case *tunnelpb.ManagerMessage_StreamClose:
+		return &TunnelMessage{
+			ID:    payload.StreamClose.GetStreamId(),
+			Type:  MessageTypeStreamClose,
+			Error: payload.StreamClose.GetError(),
+		}, nil
+	case *tunnelpb.ManagerMessage_CancelRequest:
+		return &TunnelMessage{
+			ID:   payload.CancelRequest.GetCommandId(),
+			Type: MessageTypeCancelRequest,
+		}, nil
+	case *tunnelpb.ManagerMessage_FileChunk:
+		return &TunnelMessage{
+			ID:       payload.FileChunk.GetTransferId(),
+			Type:     MessageTypeFileChunk,
+			Body:     payload.FileChunk.GetData(),
+			Sequence: payload.FileChunk.GetSequence(),
+			EOF:      payload.FileChunk.GetEof(),
 		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported manager payload type %T", payload)
@@ -136,11 +244,24 @@ func tunnelMessageToAgentProto(msg *TunnelMessage) (*tunnelpb.AgentMessage, erro
 	case MessageTypeWebSocketClose:
 		return &tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_WsClose{WsClose: &tunnelpb.WebSocketClose{StreamId: msg.ID}}}, nil
 	case MessageTypeStreamData:
-		return &tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_StreamData{StreamData: &tunnelpb.StreamData{RequestId: msg.ID, Data: msg.Body}}}, nil
+		messageType, err := intToInt32(msg.WSMessageType, "ws_message_type")
+		if err != nil {
+			return nil, err
+		}
+		return &tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_StreamData{StreamData: &tunnelpb.StreamData{
+			RequestId:   msg.ID,
+			Data:        msg.Body,
+			MessageType: messageType,
+		}}}, nil
 	case MessageTypeStreamEnd:
 		return &tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_StreamEnd{StreamEnd: &tunnelpb.StreamEnd{RequestId: msg.ID}}}, nil
 	case MessageTypeRegister:
-		return &tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_Register{Register: &tunnelpb.RegisterRequest{AgentToken: msg.AgentToken}}}, nil
+		return &tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_Register{Register: &tunnelpb.RegisterRequest{
+			AgentToken:      msg.AgentToken,
+			AgentInstanceId: msg.AgentInstance,
+			Capabilities:    append([]string(nil), msg.Capabilities...),
+			ResumeSessionId: msg.ResumeSession,
+		}}}, nil
 	case MessageTypeEvent:
 		if msg.Event == nil {
 			return nil, fmt.Errorf("event payload is required for message type: %s", msg.Type)
@@ -157,7 +278,48 @@ func tunnelMessageToAgentProto(msg *TunnelMessage) (*tunnelpb.AgentMessage, erro
 			Username:     msg.Event.Username,
 			MetadataJson: append([]byte(nil), msg.Event.MetadataJSON...),
 		}}}, nil
-	case MessageTypeRequest, MessageTypeHeartbeatAck, MessageTypeWebSocketStart, MessageTypeRegisterResponse:
+	case MessageTypeCommandAck:
+		return &tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_CommandAck{CommandAck: &tunnelpb.CommandAck{
+			CommandId: msg.ID,
+		}}}, nil
+	case MessageTypeCommandOutput:
+		return &tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_CommandOutput{CommandOutput: &tunnelpb.CommandOutput{
+			CommandId: msg.ID,
+			Data:      msg.Body,
+			Sequence:  msg.Sequence,
+		}}}, nil
+	case MessageTypeCommandComplete:
+		status, err := intToInt32(msg.Status, "status")
+		if err != nil {
+			return nil, err
+		}
+		return &tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_CommandComplete{CommandComplete: &tunnelpb.CommandComplete{
+			CommandId: msg.ID,
+			Status:    status,
+			Headers:   cloneHeaderMap(msg.Headers),
+			Body:      msg.Body,
+			Error:     msg.Error,
+			Streaming: msg.Streaming,
+		}}}, nil
+	case MessageTypeFileChunk:
+		return &tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_FileChunk{FileChunk: &tunnelpb.FileChunk{
+			TransferId: msg.ID,
+			Data:       msg.Body,
+			Sequence:   msg.Sequence,
+			Eof:        msg.EOF,
+		}}}, nil
+	case MessageTypeStreamClose:
+		return &tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_StreamClose{StreamClose: &tunnelpb.StreamClose{
+			StreamId: msg.ID,
+			Error:    msg.Error,
+		}}}, nil
+	case MessageTypeRequest,
+		MessageTypeHeartbeatAck,
+		MessageTypeWebSocketStart,
+		MessageTypeRegisterResponse,
+		MessageTypeCommandRequest,
+		MessageTypeStreamOpen,
+		MessageTypeCancelRequest:
 		return nil, fmt.Errorf("unsupported agent message type: %s", msg.Type)
 	default:
 		return nil, fmt.Errorf("unsupported agent message type: %s", msg.Type)
@@ -190,11 +352,22 @@ func agentProtoToTunnelMessage(msg *tunnelpb.AgentMessage) (*TunnelMessage, erro
 	case *tunnelpb.AgentMessage_WsClose:
 		return &TunnelMessage{ID: payload.WsClose.GetStreamId(), Type: MessageTypeWebSocketClose}, nil
 	case *tunnelpb.AgentMessage_StreamData:
-		return &TunnelMessage{ID: payload.StreamData.GetRequestId(), Type: MessageTypeStreamData, Body: payload.StreamData.GetData()}, nil
+		return &TunnelMessage{
+			ID:            payload.StreamData.GetRequestId(),
+			Type:          MessageTypeStreamData,
+			Body:          payload.StreamData.GetData(),
+			WSMessageType: int(payload.StreamData.GetMessageType()),
+		}, nil
 	case *tunnelpb.AgentMessage_StreamEnd:
 		return &TunnelMessage{ID: payload.StreamEnd.GetRequestId(), Type: MessageTypeStreamEnd}, nil
 	case *tunnelpb.AgentMessage_Register:
-		return &TunnelMessage{Type: MessageTypeRegister, AgentToken: payload.Register.GetAgentToken()}, nil
+		return &TunnelMessage{
+			Type:          MessageTypeRegister,
+			AgentToken:    payload.Register.GetAgentToken(),
+			AgentInstance: payload.Register.GetAgentInstanceId(),
+			Capabilities:  append([]string(nil), payload.Register.GetCapabilities()...),
+			ResumeSession: payload.Register.GetResumeSessionId(),
+		}, nil
 	case *tunnelpb.AgentMessage_Event:
 		return &TunnelMessage{
 			Type: MessageTypeEvent,
@@ -210,6 +383,39 @@ func agentProtoToTunnelMessage(msg *tunnelpb.AgentMessage) (*TunnelMessage, erro
 				Username:     payload.Event.GetUsername(),
 				MetadataJSON: append([]byte(nil), payload.Event.GetMetadataJson()...),
 			},
+		}, nil
+	case *tunnelpb.AgentMessage_CommandAck:
+		return &TunnelMessage{ID: payload.CommandAck.GetCommandId(), Type: MessageTypeCommandAck}, nil
+	case *tunnelpb.AgentMessage_CommandOutput:
+		return &TunnelMessage{
+			ID:       payload.CommandOutput.GetCommandId(),
+			Type:     MessageTypeCommandOutput,
+			Body:     payload.CommandOutput.GetData(),
+			Sequence: payload.CommandOutput.GetSequence(),
+		}, nil
+	case *tunnelpb.AgentMessage_CommandComplete:
+		return &TunnelMessage{
+			ID:        payload.CommandComplete.GetCommandId(),
+			Type:      MessageTypeCommandComplete,
+			Status:    int(payload.CommandComplete.GetStatus()),
+			Headers:   cloneHeaderMap(payload.CommandComplete.GetHeaders()),
+			Body:      payload.CommandComplete.GetBody(),
+			Error:     payload.CommandComplete.GetError(),
+			Streaming: payload.CommandComplete.GetStreaming(),
+		}, nil
+	case *tunnelpb.AgentMessage_FileChunk:
+		return &TunnelMessage{
+			ID:       payload.FileChunk.GetTransferId(),
+			Type:     MessageTypeFileChunk,
+			Body:     payload.FileChunk.GetData(),
+			Sequence: payload.FileChunk.GetSequence(),
+			EOF:      payload.FileChunk.GetEof(),
+		}, nil
+	case *tunnelpb.AgentMessage_StreamClose:
+		return &TunnelMessage{
+			ID:    payload.StreamClose.GetStreamId(),
+			Type:  MessageTypeStreamClose,
+			Error: payload.StreamClose.GetError(),
 		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported agent payload type %T", payload)

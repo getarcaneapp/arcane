@@ -21,6 +21,11 @@ message AgentMessage {
     StreamEnd stream_end = 6;
     RegisterRequest register = 7;
     EventLog event = 8;
+    CommandAck command_ack = 9;
+    CommandOutput command_output = 10;
+    CommandComplete command_complete = 11;
+    FileChunk file_chunk = 12;
+    StreamClose stream_close = 13;
   }
 }
 
@@ -33,17 +38,87 @@ message ManagerMessage {
     WebSocketData ws_data = 4;
     WebSocketClose ws_close = 5;
     RegisterResponse register_response = 6;
+    CommandRequest command_request = 7;
+    StreamOpen stream_open = 8;
+    StreamClose stream_close = 9;
+    CancelRequest cancel_request = 10;
+    FileChunk file_chunk = 11;
   }
 }
 
 message RegisterRequest {
   string agent_token = 1;
+  string agent_instance_id = 2;
+  repeated string capabilities = 3;
+  string resume_session_id = 4;
 }
 
 message RegisterResponse {
   bool accepted = 1;
   string environment_id = 2;
   string error = 3;
+  string session_id = 4;
+  string security_mode = 5;
+  repeated string capabilities = 6;
+  bool drain_previous = 7;
+}
+
+message CommandRequest {
+  string command_id = 1;
+  string command_name = 2;
+  string method = 3;
+  string path = 4;
+  string query = 5;
+  map<string, string> headers = 6;
+  bytes body = 7;
+  int64 timeout_millis = 8;
+  string session_id = 9;
+  string agent_instance_id = 10;
+  map<string, string> metadata = 11;
+}
+
+message CommandAck {
+  string command_id = 1;
+}
+
+message CommandOutput {
+  string command_id = 1;
+  bytes data = 2;
+  int64 sequence = 3;
+}
+
+message CommandComplete {
+  string command_id = 1;
+  int32 status = 2;
+  map<string, string> headers = 3;
+  bytes body = 4;
+  string error = 5;
+  bool streaming = 6;
+}
+
+message FileChunk {
+  string transfer_id = 1;
+  bytes data = 2;
+  int64 sequence = 3;
+  bool eof = 4;
+}
+
+message StreamOpen {
+  string stream_id = 1;
+  string command_name = 2;
+  string path = 3;
+  string query = 4;
+  map<string, string> headers = 5;
+  string session_id = 6;
+}
+
+message StreamClose {
+  string stream_id = 1;
+  string error = 2;
+}
+
+message CancelRequest {
+  string command_id = 1;
 }
 
 message HttpRequest {
@@ -66,6 +141,7 @@ message HttpResponse {
 message StreamData {
   string request_id = 1;
   bytes data = 2;
+  int32 message_type = 3;
 }
 
 message StreamEnd {

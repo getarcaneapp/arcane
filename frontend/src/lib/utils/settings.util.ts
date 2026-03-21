@@ -8,6 +8,7 @@ export type LocalSettings = {
 	mobileNavigationShowLabels: boolean;
 	sidebarHoverExpansion: boolean;
 	keyboardShortcutsEnabled: boolean;
+	edgeMTLSManagerCAAvailable?: boolean;
 };
 
 const LOCAL_SETTING_KEYS = new Set([
@@ -33,7 +34,8 @@ const LOCAL_SETTING_KEYS = new Set([
 	'oidcAdminClaim',
 	'oidcAdminValue',
 	'oidcProviderName',
-	'oidcProviderLogoUrl'
+	'oidcProviderLogoUrl',
+	'edgeMTLSManagerCAAvailable'
 ]);
 
 export function isLocalSetting(key: string): boolean {

@@ -27,6 +27,7 @@ type Watcher struct {
 	mu             sync.Mutex
 	started        bool
 	stopped        bool
+	stopOnce       sync.Once
 	stopErr        error
 }
 
@@ -92,29 +93,28 @@ func (fw *Watcher) Start(ctx context.Context) error {
 }
 
 func (fw *Watcher) Stop() error {
-	fw.mu.Lock()
-	if fw.stopped {
-		err := fw.stopErr
+	fw.stopOnce.Do(func() {
+		fw.mu.Lock()
+		fw.stopped = true
+		started := fw.started
 		fw.mu.Unlock()
-		return err
-	}
 
-	fw.stopped = true
-	started := fw.started
-	fw.mu.Unlock()
+		if started {
+			close(fw.stopCh)
+			<-fw.stoppedCh // Wait for watchLoop to finish
+		}
 
-	if started {
-		close(fw.stopCh)
-		<-fw.stoppedCh // Wait for watchLoop to finish
-	}
+		err := fw.watcher.Close()
 
-	err := fw.watcher.Close()
+		fw.mu.Lock()
+		fw.stopErr = err
+		fw.mu.Unlock()
+	})
 
 	fw.mu.Lock()
-	fw.stopErr = err
-	fw.mu.Unlock()
+	defer fw.mu.Unlock()
 
-	return err
+	return fw.stopErr
 }
 
 func (fw *Watcher) watchLoop(ctx context.Context) {

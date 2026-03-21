@@ -12,10 +12,13 @@ import (
 
 	tunnelpb "github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge/proto/tunnel/v1"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 )
 
@@ -37,6 +40,9 @@ var tunnelUpgrader = websocket.Upgrader{
 // EnvironmentResolver resolves an agent token to an environment ID.
 type EnvironmentResolver func(ctx context.Context, token string) (environmentID string, err error)
 
+// EnvironmentNameResolver resolves a display name for an environment ID.
+type EnvironmentNameResolver func(ctx context.Context, environmentID string) (environmentName string, err error)
+
 // StatusUpdateCallback is called when an edge agent connects or disconnects.
 // The connected parameter is true on connect, false on disconnect.
 type StatusUpdateCallback func(ctx context.Context, environmentID string, connected bool)
@@ -48,9 +54,11 @@ type EventCallback func(ctx context.Context, environmentID string, event *Tunnel
 type TunnelServer struct {
 	registry       *TunnelRegistry
 	resolver       EnvironmentResolver
+	nameResolver   EnvironmentNameResolver
 	statusCallback StatusUpdateCallback
 	eventCallback  EventCallback
 	cleanupDone    chan struct{}
+	cfg            *Config
 }
 
 // NewTunnelServer creates a new tunnel server.
@@ -72,6 +80,14 @@ func NewTunnelServerWithRegistry(registry *TunnelRegistry, resolver EnvironmentR
 	}
 }
 
+// SetEnvironmentNameResolver configures environment name lookup for manager-generated assets.
+func (s *TunnelServer) SetEnvironmentNameResolver(resolver EnvironmentNameResolver) {
+	if s == nil {
+		return
+	}
+	s.nameResolver = resolver
+}
+
 type resolvedEnvironmentIDKey struct{}
 
 // GRPCServerOptions returns the stream interceptor chain used by the tunnel service.
@@ -91,28 +107,20 @@ func (s *TunnelServer) SetEventCallback(callback EventCallback) {
 	s.eventCallback = callback
 }
 
+// SetConfig attaches edge tunnel runtime config to the manager-side server.
+func (s *TunnelServer) SetConfig(cfg *Config) {
+	s.cfg = cfg
+}
+
 // HandleConnect is the WebSocket handler for edge agent connections.
 // This is registered at /api/tunnel/connect.
 func (s *TunnelServer) HandleConnect(c *gin.Context) {
 	ctx := c.Request.Context()
 	callbackCtx := context.WithoutCancel(ctx)
 
-	// Get agent token from headers.
-	token := c.GetHeader(HeaderAgentToken)
-	if token == "" {
-		token = c.GetHeader(HeaderAPIKey)
-	}
-	if token == "" {
-		slog.WarnContext(ctx, "Edge tunnel connection attempt without token")
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "agent token required"})
-		return
-	}
-
-	// Resolve token to environment ID.
-	envID, err := s.resolveEnvironment(ctx, token)
-	if err != nil {
-		slog.WarnContext(ctx, "Failed to resolve agent token", "error", err)
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid agent token"})
+	if err := s.requireClientCertificateInternal(c.Request); err != nil {
+		slog.WarnContext(ctx, "Rejected websocket edge tunnel without required client certificate", "error", err)
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -123,8 +131,93 @@ func (s *TunnelServer) HandleConnect(c *gin.Context) {
 		return
 	}
 
-	tunnel := NewAgentTunnel(envID, conn)
+	tunnelConn := NewTunnelConn(conn)
+	firstMsg, err := tunnelConn.Receive()
+	if err != nil {
+		slog.WarnContext(ctx, "Failed to receive websocket edge tunnel registration", "error", err)
+		_ = tunnelConn.Close()
+		return
+	}
+	if firstMsg == nil || firstMsg.Type != MessageTypeRegister {
+		slog.WarnContext(ctx, "Websocket edge tunnel missing register message")
+		_ = tunnelConn.Close()
+		return
+	}
+
+	token := strings.TrimSpace(firstMsg.AgentToken)
+	if token == "" {
+		token = strings.TrimSpace(c.GetHeader(HeaderAgentToken))
+	}
+	if token == "" {
+		token = strings.TrimSpace(c.GetHeader(HeaderAPIKey))
+	}
+	if token == "" {
+		slog.WarnContext(ctx, "Edge tunnel connection attempt without token")
+		_ = tunnelConn.Close()
+		return
+	}
+
+	envID, err := s.resolveEnvironment(ctx, token)
+	if err != nil {
+		slog.WarnContext(ctx, "Failed to resolve agent token", "error", err)
+		_ = tunnelConn.Send(&TunnelMessage{Type: MessageTypeRegisterResponse, Accepted: false, Error: "invalid agent token"})
+		_ = tunnelConn.Close()
+		return
+	}
+
+	tunnel := NewAgentTunnelWithConn(envID, tunnelConn)
+	s.populateSessionMetadata(tunnel, firstMsg, requestSecurityModeInternal(c.Request))
 	s.manageConnectedTunnel(ctx, callbackCtx, tunnel)
+}
+
+// HandleMTLSEnroll returns manager-generated edge client certificates for the
+// calling environment when auto-generated edge mTLS is enabled.
+func (s *TunnelServer) HandleMTLSEnroll(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	if s == nil || s.cfg == nil || !shouldAutoGenerateManagerCAInternal(s.cfg) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "edge mTLS enrollment is not available"})
+		return
+	}
+
+	token := strings.TrimSpace(c.GetHeader(HeaderAgentToken))
+	if token == "" {
+		token = strings.TrimSpace(c.GetHeader(HeaderAPIKey))
+	}
+	if token == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "agent token required"})
+		return
+	}
+
+	envID, err := s.resolveEnvironment(ctx, token)
+	if err != nil {
+		slog.WarnContext(ctx, "Failed to resolve edge token for mTLS enrollment", "error", err)
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid agent token"})
+		return
+	}
+
+	envName := ""
+	if s.nameResolver != nil {
+		resolvedName, resolveErr := s.nameResolver(ctx, envID)
+		if resolveErr != nil {
+			slog.WarnContext(ctx, "Failed to resolve environment name for edge mTLS enrollment", "environment_id", envID, "error", resolveErr)
+		} else {
+			envName = resolvedName
+		}
+	}
+
+	assets, err := GenerateManagerClientMTLSAssets(s.cfg, envID, envName)
+	if err != nil {
+		slog.ErrorContext(ctx, "Failed to generate edge mTLS enrollment assets", "environment_id", envID, "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate edge mTLS assets"})
+		return
+	}
+	if assets == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "edge mTLS enrollment assets unavailable"})
+		return
+	}
+
+	c.JSON(http.StatusOK, enrollMTLSResponse{Files: assets.Files})
 }
 
 // Connect is the gRPC bidi stream handler for edge agent connections.
@@ -165,8 +258,36 @@ func (s *TunnelServer) Connect(stream grpc.BidiStreamingServer[tunnelpb.AgentMes
 	}
 
 	tunnel := NewAgentTunnelWithConn(envID, NewGRPCManagerTunnelConn(stream))
+	s.populateSessionMetadata(tunnel, &TunnelMessage{
+		AgentInstance: register.GetAgentInstanceId(),
+		Capabilities:  append([]string(nil), register.GetCapabilities()...),
+		ResumeSession: register.GetResumeSessionId(),
+	}, securityModeFromGRPCContextInternal(ctx))
 	s.manageConnectedTunnel(ctx, callbackCtx, tunnel)
 	return nil
+}
+
+func (s *TunnelServer) populateSessionMetadata(tunnel *AgentTunnel, registerMsg *TunnelMessage, securityMode string) {
+	if tunnel == nil {
+		return
+	}
+
+	tunnel.SessionID = uuid.NewString()
+	tunnel.SecurityMode = securityMode
+	if tunnel.SecurityMode == "" {
+		tunnel.SecurityMode = "token"
+	}
+	if registerMsg != nil {
+		tunnel.AgentInstance = strings.TrimSpace(registerMsg.AgentInstance)
+		tunnel.Capabilities = append([]string(nil), registerMsg.Capabilities...)
+	}
+
+	switch tunnel.Conn.(type) {
+	case *GRPCManagerTunnelConn:
+		tunnel.Transport = EdgeTransportGRPC
+	default:
+		tunnel.Transport = EdgeTransportWebSocket
+	}
 }
 
 func (s *TunnelServer) resolveEnvironment(ctx context.Context, token string) (string, error) {
@@ -201,30 +322,55 @@ func tokenFromMetadata(ctx context.Context) string {
 }
 
 func (s *TunnelServer) manageConnectedTunnel(ctx context.Context, callbackCtx context.Context, tunnel *AgentTunnel) {
-	slog.InfoContext(ctx, "Edge agent connected", "environment_id", tunnel.EnvironmentID)
-
-	if _, ok := tunnel.Conn.(*GRPCManagerTunnelConn); ok {
-		if err := tunnel.Conn.Send(&TunnelMessage{
+	accepted, drainPrevious, rejectReason := s.registry.RegisterSession(tunnel, TunnelStaleTimeout)
+	if !accepted {
+		slog.WarnContext(ctx, "Rejected duplicate edge agent session",
+			"environment_id", tunnel.EnvironmentID,
+			"agent_instance_id", tunnel.AgentInstance,
+			"reason", rejectReason,
+		)
+		_ = tunnel.Conn.Send(&TunnelMessage{
 			Type:          MessageTypeRegisterResponse,
-			Accepted:      true,
+			Accepted:      false,
 			EnvironmentID: tunnel.EnvironmentID,
-		}); err != nil {
-			slog.WarnContext(ctx, "Failed to send register response", "environment_id", tunnel.EnvironmentID, "error", err)
-			_ = tunnel.Close()
-			return
-		}
+			Error:         rejectReason,
+		})
+		_ = tunnel.CloseWithReason(rejectReason)
+		return
 	}
 
-	s.registry.Register(tunnel.EnvironmentID, tunnel)
+	slog.InfoContext(ctx, "Edge agent connected",
+		"environment_id", tunnel.EnvironmentID,
+		"session_id", tunnel.SessionID,
+		"security_mode", tunnel.SecurityMode,
+	)
+
+	if err := tunnel.Conn.Send(&TunnelMessage{
+		Type:          MessageTypeRegisterResponse,
+		Accepted:      true,
+		EnvironmentID: tunnel.EnvironmentID,
+		SessionID:     tunnel.SessionID,
+		SecurityMode:  tunnel.SecurityMode,
+		Capabilities:  append([]string(nil), tunnel.Capabilities...),
+		DrainPrevious: drainPrevious,
+	}); err != nil {
+		slog.WarnContext(ctx, "Failed to send register response", "environment_id", tunnel.EnvironmentID, "error", err)
+		_ = tunnel.Close()
+		_, _ = s.registry.UnregisterCurrent(tunnel.EnvironmentID, tunnel)
+		return
+	}
 
 	if s.statusCallback != nil {
 		s.statusCallback(callbackCtx, tunnel.EnvironmentID, true)
 	}
 
 	defer func() {
-		s.registry.Unregister(tunnel.EnvironmentID)
-		slog.InfoContext(ctx, "Edge agent disconnected", "environment_id", tunnel.EnvironmentID)
-		if s.statusCallback != nil {
+		removed, active := s.registry.UnregisterCurrent(tunnel.EnvironmentID, tunnel)
+		if !removed {
+			return
+		}
+		slog.InfoContext(ctx, "Edge agent disconnected", "environment_id", tunnel.EnvironmentID, "session_id", tunnel.SessionID)
+		if s.statusCallback != nil && !active {
 			s.statusCallback(callbackCtx, tunnel.EnvironmentID, false)
 		}
 	}()
@@ -258,11 +404,13 @@ func (s *TunnelServer) handleTunnelMessage(ctx context.Context, tunnel *AgentTun
 		s.handleHeartbeat(ctx, tunnel, msg)
 	case MessageTypeResponse:
 		s.deliverResponse(ctx, tunnel, msg)
+	case MessageTypeCommandAck, MessageTypeCommandOutput, MessageTypeCommandComplete, MessageTypeFileChunk:
+		s.deliverResponse(ctx, tunnel, msg)
 	case MessageTypeEvent:
 		s.handleEvent(ctx, tunnel, msg)
-	case MessageTypeStreamData, MessageTypeStreamEnd, MessageTypeWebSocketData, MessageTypeWebSocketClose:
+	case MessageTypeStreamData, MessageTypeStreamEnd, MessageTypeWebSocketData, MessageTypeWebSocketClose, MessageTypeStreamClose:
 		s.deliverStream(ctx, tunnel, msg)
-	case MessageTypeRequest, MessageTypeHeartbeatAck, MessageTypeWebSocketStart, MessageTypeRegisterResponse:
+	case MessageTypeRequest, MessageTypeHeartbeatAck, MessageTypeWebSocketStart, MessageTypeRegisterResponse, MessageTypeCommandRequest, MessageTypeStreamOpen, MessageTypeCancelRequest:
 		slog.DebugContext(ctx, "Ignoring message type from agent", "type", msg.Type, "environment_id", tunnel.EnvironmentID)
 	case MessageTypeRegister:
 		slog.DebugContext(ctx, "Ignoring duplicate register message from agent", "environment_id", tunnel.EnvironmentID)
@@ -363,6 +511,10 @@ func (s *TunnelServer) authStreamInterceptorInternal(ctx context.Context) grpc.S
 			return handler(srv, ss)
 		}
 
+		if err := s.requireClientCertificateFromContextInternal(ss.Context()); err != nil {
+			return status.Error(codes.Unauthenticated, err.Error())
+		}
+
 		token := tokenFromMetadata(ss.Context())
 		envID, err := s.resolveEnvironment(ss.Context(), token)
 		if err != nil {
@@ -433,4 +585,44 @@ func resolvedEnvironmentIDFromContextInternal(ctx context.Context) (string, bool
 	}
 
 	return envID, true
+}
+
+func (s *TunnelServer) requireClientCertificateInternal(req *http.Request) error {
+	if NormalizeEdgeMTLSMode(s.edgeMTLSModeInternal()) != EdgeMTLSModeRequired {
+		return nil
+	}
+	if hasVerifiedPeerCertificateInternal(req.TLS) {
+		return nil
+	}
+	return errors.New("verified client certificate required")
+}
+
+func (s *TunnelServer) requireClientCertificateFromContextInternal(ctx context.Context) error {
+	if NormalizeEdgeMTLSMode(s.edgeMTLSModeInternal()) != EdgeMTLSModeRequired {
+		return nil
+	}
+
+	p, ok := peer.FromContext(ctx)
+	if !ok {
+		return errors.New("verified client certificate required")
+	}
+	if tlsInfo, ok := p.AuthInfo.(credentials.TLSInfo); ok && hasVerifiedPeerCertificateInternal(&tlsInfo.State) {
+		return nil
+	}
+	return errors.New("verified client certificate required")
+}
+
+func (s *TunnelServer) edgeMTLSModeInternal() string {
+	if s == nil || s.cfg == nil {
+		return EdgeMTLSModeDisabled
+	}
+	return s.cfg.EdgeMTLSMode
+}
+
+func securityModeFromGRPCContextInternal(ctx context.Context) string {
+	p, ok := peer.FromContext(ctx)
+	if !ok {
+		return "token"
+	}
+	return grpcContextSecurityModeInternal(*p)
 }

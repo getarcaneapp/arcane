@@ -69,6 +69,13 @@ type Config struct {
 	EdgeAgent               bool   `env:"EDGE_AGENT" default:"false"`
 	EdgeTransport           string `env:"EDGE_TRANSPORT" default:"auto" options:"toLower"`
 	EdgeReconnectInterval   int    `env:"EDGE_RECONNECT_INTERVAL" default:"5"` // seconds
+	EdgeMTLSMode            string `env:"EDGE_MTLS_MODE" default:"disabled" options:"toLower"`
+	EdgeMTLSAutoGenerate    bool   `env:"EDGE_MTLS_AUTO_GENERATE" default:"false"`
+	EdgeMTLSCAFile          string `env:"EDGE_MTLS_CA_FILE" default:""`
+	EdgeMTLSCertFile        string `env:"EDGE_MTLS_CERT_FILE" default:""`
+	EdgeMTLSKeyFile         string `env:"EDGE_MTLS_KEY_FILE" default:""`
+	EdgeMTLSServerName      string `env:"EDGE_MTLS_SERVER_NAME" default:""`
+	EdgeMTLSAssetsDir       string `env:"EDGE_MTLS_ASSETS_DIR" default:""`
 
 	FilePerm   os.FileMode `env:"FILE_PERM" default:"0644"`
 	DirPerm    os.FileMode `env:"DIR_PERM" default:"0755"`

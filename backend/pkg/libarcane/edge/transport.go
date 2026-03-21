@@ -11,6 +11,13 @@ type Config struct {
 	EdgeAgent             bool
 	EdgeTransport         string
 	EdgeReconnectInterval int
+	EdgeMTLSMode          string
+	EdgeMTLSAutoGenerate  bool
+	EdgeMTLSCAFile        string
+	EdgeMTLSCertFile      string
+	EdgeMTLSKeyFile       string
+	EdgeMTLSServerName    string
+	EdgeMTLSAssetsDir     string
 	ManagerApiUrl         string
 	AgentToken            string
 	Port                  string
@@ -62,6 +69,11 @@ type TunnelRuntimeState struct {
 	Transport     string
 	ConnectedAt   *time.Time
 	LastHeartbeat *time.Time
+	SessionID     string
+	AgentInstance string
+	SecurityMode  string
+	Capabilities  []string
+	State         string
 }
 
 const (
@@ -75,6 +87,13 @@ const (
 	// EdgeTransportAuto preserves the legacy managed tunnel behavior: try gRPC
 	// first and fall back to websocket when available.
 	EdgeTransportAuto = "auto"
+
+	// EdgeMTLSModeDisabled disables edge tunnel mTLS.
+	EdgeMTLSModeDisabled = "disabled"
+	// EdgeMTLSModeOptional enables edge tunnel mTLS when certificates are configured.
+	EdgeMTLSModeOptional = "optional"
+	// EdgeMTLSModeRequired requires a verified client certificate on edge tunnel endpoints.
+	EdgeMTLSModeRequired = "required"
 )
 
 // NormalizeEdgeTransport normalizes transport config and defaults to the legacy
@@ -91,6 +110,18 @@ func NormalizeEdgeTransport(value string) string {
 		return EdgeTransportAuto
 	default:
 		return EdgeTransportAuto
+	}
+}
+
+// NormalizeEdgeMTLSMode normalizes edge mTLS config and defaults to disabled.
+func NormalizeEdgeMTLSMode(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case EdgeMTLSModeOptional:
+		return EdgeMTLSModeOptional
+	case EdgeMTLSModeRequired:
+		return EdgeMTLSModeRequired
+	default:
+		return EdgeMTLSModeDisabled
 	}
 }
 
@@ -158,6 +189,11 @@ func GetTunnelRuntimeState(envID string) (*TunnelRuntimeState, bool) {
 	lastHeartbeat := tunnel.GetLastHeartbeat()
 	state.ConnectedAt = &connectedAt
 	state.LastHeartbeat = &lastHeartbeat
+	state.SessionID = tunnel.SessionID
+	state.AgentInstance = tunnel.AgentInstance
+	state.SecurityMode = tunnel.SecurityMode
+	state.Capabilities = append([]string(nil), tunnel.Capabilities...)
+	state.State = tunnel.State
 
 	return state, true
 }

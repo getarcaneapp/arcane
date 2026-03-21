@@ -7,12 +7,11 @@
 package tunnelpb
 
 import (
+	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
+	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
-
-	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
-	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 )
 
 const (
@@ -35,6 +34,11 @@ type AgentMessage struct {
 	//	*AgentMessage_StreamEnd
 	//	*AgentMessage_Register
 	//	*AgentMessage_Event
+	//	*AgentMessage_CommandAck
+	//	*AgentMessage_CommandOutput
+	//	*AgentMessage_CommandComplete
+	//	*AgentMessage_FileChunk
+	//	*AgentMessage_StreamClose
 	Payload       isAgentMessage_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -149,6 +153,51 @@ func (x *AgentMessage) GetEvent() *EventLog {
 	return nil
 }
 
+func (x *AgentMessage) GetCommandAck() *CommandAck {
+	if x != nil {
+		if x, ok := x.Payload.(*AgentMessage_CommandAck); ok {
+			return x.CommandAck
+		}
+	}
+	return nil
+}
+
+func (x *AgentMessage) GetCommandOutput() *CommandOutput {
+	if x != nil {
+		if x, ok := x.Payload.(*AgentMessage_CommandOutput); ok {
+			return x.CommandOutput
+		}
+	}
+	return nil
+}
+
+func (x *AgentMessage) GetCommandComplete() *CommandComplete {
+	if x != nil {
+		if x, ok := x.Payload.(*AgentMessage_CommandComplete); ok {
+			return x.CommandComplete
+		}
+	}
+	return nil
+}
+
+func (x *AgentMessage) GetFileChunk() *FileChunk {
+	if x != nil {
+		if x, ok := x.Payload.(*AgentMessage_FileChunk); ok {
+			return x.FileChunk
+		}
+	}
+	return nil
+}
+
+func (x *AgentMessage) GetStreamClose() *StreamClose {
+	if x != nil {
+		if x, ok := x.Payload.(*AgentMessage_StreamClose); ok {
+			return x.StreamClose
+		}
+	}
+	return nil
+}
+
 type isAgentMessage_Payload interface {
 	isAgentMessage_Payload()
 }
@@ -185,6 +234,26 @@ type AgentMessage_Event struct {
 	Event *EventLog `protobuf:"bytes,8,opt,name=event,proto3,oneof"`
 }
 
+type AgentMessage_CommandAck struct {
+	CommandAck *CommandAck `protobuf:"bytes,9,opt,name=command_ack,json=commandAck,proto3,oneof"`
+}
+
+type AgentMessage_CommandOutput struct {
+	CommandOutput *CommandOutput `protobuf:"bytes,10,opt,name=command_output,json=commandOutput,proto3,oneof"`
+}
+
+type AgentMessage_CommandComplete struct {
+	CommandComplete *CommandComplete `protobuf:"bytes,11,opt,name=command_complete,json=commandComplete,proto3,oneof"`
+}
+
+type AgentMessage_FileChunk struct {
+	FileChunk *FileChunk `protobuf:"bytes,12,opt,name=file_chunk,json=fileChunk,proto3,oneof"`
+}
+
+type AgentMessage_StreamClose struct {
+	StreamClose *StreamClose `protobuf:"bytes,13,opt,name=stream_close,json=streamClose,proto3,oneof"`
+}
+
 func (*AgentMessage_HttpResponse) isAgentMessage_Payload() {}
 
 func (*AgentMessage_HeartbeatPing) isAgentMessage_Payload() {}
@@ -201,6 +270,16 @@ func (*AgentMessage_Register) isAgentMessage_Payload() {}
 
 func (*AgentMessage_Event) isAgentMessage_Payload() {}
 
+func (*AgentMessage_CommandAck) isAgentMessage_Payload() {}
+
+func (*AgentMessage_CommandOutput) isAgentMessage_Payload() {}
+
+func (*AgentMessage_CommandComplete) isAgentMessage_Payload() {}
+
+func (*AgentMessage_FileChunk) isAgentMessage_Payload() {}
+
+func (*AgentMessage_StreamClose) isAgentMessage_Payload() {}
+
 // Messages sent from the manager to the agent.
 type ManagerMessage struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -212,6 +291,11 @@ type ManagerMessage struct {
 	//	*ManagerMessage_WsData
 	//	*ManagerMessage_WsClose
 	//	*ManagerMessage_RegisterResponse
+	//	*ManagerMessage_CommandRequest
+	//	*ManagerMessage_StreamOpen
+	//	*ManagerMessage_StreamClose
+	//	*ManagerMessage_CancelRequest
+	//	*ManagerMessage_FileChunk
 	Payload       isManagerMessage_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -308,6 +392,51 @@ func (x *ManagerMessage) GetRegisterResponse() *RegisterResponse {
 	return nil
 }
 
+func (x *ManagerMessage) GetCommandRequest() *CommandRequest {
+	if x != nil {
+		if x, ok := x.Payload.(*ManagerMessage_CommandRequest); ok {
+			return x.CommandRequest
+		}
+	}
+	return nil
+}
+
+func (x *ManagerMessage) GetStreamOpen() *StreamOpen {
+	if x != nil {
+		if x, ok := x.Payload.(*ManagerMessage_StreamOpen); ok {
+			return x.StreamOpen
+		}
+	}
+	return nil
+}
+
+func (x *ManagerMessage) GetStreamClose() *StreamClose {
+	if x != nil {
+		if x, ok := x.Payload.(*ManagerMessage_StreamClose); ok {
+			return x.StreamClose
+		}
+	}
+	return nil
+}
+
+func (x *ManagerMessage) GetCancelRequest() *CancelRequest {
+	if x != nil {
+		if x, ok := x.Payload.(*ManagerMessage_CancelRequest); ok {
+			return x.CancelRequest
+		}
+	}
+	return nil
+}
+
+func (x *ManagerMessage) GetFileChunk() *FileChunk {
+	if x != nil {
+		if x, ok := x.Payload.(*ManagerMessage_FileChunk); ok {
+			return x.FileChunk
+		}
+	}
+	return nil
+}
+
 type isManagerMessage_Payload interface {
 	isManagerMessage_Payload()
 }
@@ -336,6 +465,26 @@ type ManagerMessage_RegisterResponse struct {
 	RegisterResponse *RegisterResponse `protobuf:"bytes,6,opt,name=register_response,json=registerResponse,proto3,oneof"`
 }
 
+type ManagerMessage_CommandRequest struct {
+	CommandRequest *CommandRequest `protobuf:"bytes,7,opt,name=command_request,json=commandRequest,proto3,oneof"`
+}
+
+type ManagerMessage_StreamOpen struct {
+	StreamOpen *StreamOpen `protobuf:"bytes,8,opt,name=stream_open,json=streamOpen,proto3,oneof"`
+}
+
+type ManagerMessage_StreamClose struct {
+	StreamClose *StreamClose `protobuf:"bytes,9,opt,name=stream_close,json=streamClose,proto3,oneof"`
+}
+
+type ManagerMessage_CancelRequest struct {
+	CancelRequest *CancelRequest `protobuf:"bytes,10,opt,name=cancel_request,json=cancelRequest,proto3,oneof"`
+}
+
+type ManagerMessage_FileChunk struct {
+	FileChunk *FileChunk `protobuf:"bytes,11,opt,name=file_chunk,json=fileChunk,proto3,oneof"`
+}
+
 func (*ManagerMessage_HttpRequest) isManagerMessage_Payload() {}
 
 func (*ManagerMessage_HeartbeatPong) isManagerMessage_Payload() {}
@@ -348,11 +497,24 @@ func (*ManagerMessage_WsClose) isManagerMessage_Payload() {}
 
 func (*ManagerMessage_RegisterResponse) isManagerMessage_Payload() {}
 
+func (*ManagerMessage_CommandRequest) isManagerMessage_Payload() {}
+
+func (*ManagerMessage_StreamOpen) isManagerMessage_Payload() {}
+
+func (*ManagerMessage_StreamClose) isManagerMessage_Payload() {}
+
+func (*ManagerMessage_CancelRequest) isManagerMessage_Payload() {}
+
+func (*ManagerMessage_FileChunk) isManagerMessage_Payload() {}
+
 type RegisterRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	AgentToken    string                 `protobuf:"bytes,1,opt,name=agent_token,json=agentToken,proto3" json:"agent_token,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	AgentToken      string                 `protobuf:"bytes,1,opt,name=agent_token,json=agentToken,proto3" json:"agent_token,omitempty"`
+	AgentInstanceId string                 `protobuf:"bytes,2,opt,name=agent_instance_id,json=agentInstanceId,proto3" json:"agent_instance_id,omitempty"`
+	Capabilities    []string               `protobuf:"bytes,3,rep,name=capabilities,proto3" json:"capabilities,omitempty"`
+	ResumeSessionId string                 `protobuf:"bytes,4,opt,name=resume_session_id,json=resumeSessionId,proto3" json:"resume_session_id,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *RegisterRequest) Reset() {
@@ -392,11 +554,36 @@ func (x *RegisterRequest) GetAgentToken() string {
 	return ""
 }
 
+func (x *RegisterRequest) GetAgentInstanceId() string {
+	if x != nil {
+		return x.AgentInstanceId
+	}
+	return ""
+}
+
+func (x *RegisterRequest) GetCapabilities() []string {
+	if x != nil {
+		return x.Capabilities
+	}
+	return nil
+}
+
+func (x *RegisterRequest) GetResumeSessionId() string {
+	if x != nil {
+		return x.ResumeSessionId
+	}
+	return ""
+}
+
 type RegisterResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Accepted      bool                   `protobuf:"varint,1,opt,name=accepted,proto3" json:"accepted,omitempty"`
 	EnvironmentId string                 `protobuf:"bytes,2,opt,name=environment_id,json=environmentId,proto3" json:"environment_id,omitempty"`
 	Error         string                 `protobuf:"bytes,3,opt,name=error,proto3" json:"error,omitempty"`
+	SessionId     string                 `protobuf:"bytes,4,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	SecurityMode  string                 `protobuf:"bytes,5,opt,name=security_mode,json=securityMode,proto3" json:"security_mode,omitempty"`
+	Capabilities  []string               `protobuf:"bytes,6,rep,name=capabilities,proto3" json:"capabilities,omitempty"`
+	DrainPrevious bool                   `protobuf:"varint,7,opt,name=drain_previous,json=drainPrevious,proto3" json:"drain_previous,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -452,6 +639,594 @@ func (x *RegisterResponse) GetError() string {
 	return ""
 }
 
+func (x *RegisterResponse) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *RegisterResponse) GetSecurityMode() string {
+	if x != nil {
+		return x.SecurityMode
+	}
+	return ""
+}
+
+func (x *RegisterResponse) GetCapabilities() []string {
+	if x != nil {
+		return x.Capabilities
+	}
+	return nil
+}
+
+func (x *RegisterResponse) GetDrainPrevious() bool {
+	if x != nil {
+		return x.DrainPrevious
+	}
+	return false
+}
+
+type CommandRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	CommandId       string                 `protobuf:"bytes,1,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
+	CommandName     string                 `protobuf:"bytes,2,opt,name=command_name,json=commandName,proto3" json:"command_name,omitempty"`
+	Method          string                 `protobuf:"bytes,3,opt,name=method,proto3" json:"method,omitempty"`
+	Path            string                 `protobuf:"bytes,4,opt,name=path,proto3" json:"path,omitempty"`
+	Query           string                 `protobuf:"bytes,5,opt,name=query,proto3" json:"query,omitempty"`
+	Headers         map[string]string      `protobuf:"bytes,6,rep,name=headers,proto3" json:"headers,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Body            []byte                 `protobuf:"bytes,7,opt,name=body,proto3" json:"body,omitempty"`
+	TimeoutMillis   int64                  `protobuf:"varint,8,opt,name=timeout_millis,json=timeoutMillis,proto3" json:"timeout_millis,omitempty"`
+	SessionId       string                 `protobuf:"bytes,9,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	AgentInstanceId string                 `protobuf:"bytes,10,opt,name=agent_instance_id,json=agentInstanceId,proto3" json:"agent_instance_id,omitempty"`
+	Metadata        map[string]string      `protobuf:"bytes,11,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *CommandRequest) Reset() {
+	*x = CommandRequest{}
+	mi := &file_tunnel_v1_tunnel_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CommandRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CommandRequest) ProtoMessage() {}
+
+func (x *CommandRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tunnel_v1_tunnel_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CommandRequest.ProtoReflect.Descriptor instead.
+func (*CommandRequest) Descriptor() ([]byte, []int) {
+	return file_tunnel_v1_tunnel_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *CommandRequest) GetCommandId() string {
+	if x != nil {
+		return x.CommandId
+	}
+	return ""
+}
+
+func (x *CommandRequest) GetCommandName() string {
+	if x != nil {
+		return x.CommandName
+	}
+	return ""
+}
+
+func (x *CommandRequest) GetMethod() string {
+	if x != nil {
+		return x.Method
+	}
+	return ""
+}
+
+func (x *CommandRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *CommandRequest) GetQuery() string {
+	if x != nil {
+		return x.Query
+	}
+	return ""
+}
+
+func (x *CommandRequest) GetHeaders() map[string]string {
+	if x != nil {
+		return x.Headers
+	}
+	return nil
+}
+
+func (x *CommandRequest) GetBody() []byte {
+	if x != nil {
+		return x.Body
+	}
+	return nil
+}
+
+func (x *CommandRequest) GetTimeoutMillis() int64 {
+	if x != nil {
+		return x.TimeoutMillis
+	}
+	return 0
+}
+
+func (x *CommandRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *CommandRequest) GetAgentInstanceId() string {
+	if x != nil {
+		return x.AgentInstanceId
+	}
+	return ""
+}
+
+func (x *CommandRequest) GetMetadata() map[string]string {
+	if x != nil {
+		return x.Metadata
+	}
+	return nil
+}
+
+type CommandAck struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	CommandId     string                 `protobuf:"bytes,1,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CommandAck) Reset() {
+	*x = CommandAck{}
+	mi := &file_tunnel_v1_tunnel_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CommandAck) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CommandAck) ProtoMessage() {}
+
+func (x *CommandAck) ProtoReflect() protoreflect.Message {
+	mi := &file_tunnel_v1_tunnel_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CommandAck.ProtoReflect.Descriptor instead.
+func (*CommandAck) Descriptor() ([]byte, []int) {
+	return file_tunnel_v1_tunnel_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *CommandAck) GetCommandId() string {
+	if x != nil {
+		return x.CommandId
+	}
+	return ""
+}
+
+type CommandOutput struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	CommandId     string                 `protobuf:"bytes,1,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
+	Data          []byte                 `protobuf:"bytes,2,opt,name=data,proto3" json:"data,omitempty"`
+	Sequence      int64                  `protobuf:"varint,3,opt,name=sequence,proto3" json:"sequence,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CommandOutput) Reset() {
+	*x = CommandOutput{}
+	mi := &file_tunnel_v1_tunnel_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CommandOutput) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CommandOutput) ProtoMessage() {}
+
+func (x *CommandOutput) ProtoReflect() protoreflect.Message {
+	mi := &file_tunnel_v1_tunnel_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CommandOutput.ProtoReflect.Descriptor instead.
+func (*CommandOutput) Descriptor() ([]byte, []int) {
+	return file_tunnel_v1_tunnel_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *CommandOutput) GetCommandId() string {
+	if x != nil {
+		return x.CommandId
+	}
+	return ""
+}
+
+func (x *CommandOutput) GetData() []byte {
+	if x != nil {
+		return x.Data
+	}
+	return nil
+}
+
+func (x *CommandOutput) GetSequence() int64 {
+	if x != nil {
+		return x.Sequence
+	}
+	return 0
+}
+
+type CommandComplete struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	CommandId     string                 `protobuf:"bytes,1,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
+	Status        int32                  `protobuf:"varint,2,opt,name=status,proto3" json:"status,omitempty"`
+	Headers       map[string]string      `protobuf:"bytes,3,rep,name=headers,proto3" json:"headers,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Body          []byte                 `protobuf:"bytes,4,opt,name=body,proto3" json:"body,omitempty"`
+	Error         string                 `protobuf:"bytes,5,opt,name=error,proto3" json:"error,omitempty"`
+	Streaming     bool                   `protobuf:"varint,6,opt,name=streaming,proto3" json:"streaming,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CommandComplete) Reset() {
+	*x = CommandComplete{}
+	mi := &file_tunnel_v1_tunnel_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CommandComplete) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CommandComplete) ProtoMessage() {}
+
+func (x *CommandComplete) ProtoReflect() protoreflect.Message {
+	mi := &file_tunnel_v1_tunnel_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CommandComplete.ProtoReflect.Descriptor instead.
+func (*CommandComplete) Descriptor() ([]byte, []int) {
+	return file_tunnel_v1_tunnel_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *CommandComplete) GetCommandId() string {
+	if x != nil {
+		return x.CommandId
+	}
+	return ""
+}
+
+func (x *CommandComplete) GetStatus() int32 {
+	if x != nil {
+		return x.Status
+	}
+	return 0
+}
+
+func (x *CommandComplete) GetHeaders() map[string]string {
+	if x != nil {
+		return x.Headers
+	}
+	return nil
+}
+
+func (x *CommandComplete) GetBody() []byte {
+	if x != nil {
+		return x.Body
+	}
+	return nil
+}
+
+func (x *CommandComplete) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+func (x *CommandComplete) GetStreaming() bool {
+	if x != nil {
+		return x.Streaming
+	}
+	return false
+}
+
+type FileChunk struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TransferId    string                 `protobuf:"bytes,1,opt,name=transfer_id,json=transferId,proto3" json:"transfer_id,omitempty"`
+	Data          []byte                 `protobuf:"bytes,2,opt,name=data,proto3" json:"data,omitempty"`
+	Sequence      int64                  `protobuf:"varint,3,opt,name=sequence,proto3" json:"sequence,omitempty"`
+	Eof           bool                   `protobuf:"varint,4,opt,name=eof,proto3" json:"eof,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FileChunk) Reset() {
+	*x = FileChunk{}
+	mi := &file_tunnel_v1_tunnel_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FileChunk) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FileChunk) ProtoMessage() {}
+
+func (x *FileChunk) ProtoReflect() protoreflect.Message {
+	mi := &file_tunnel_v1_tunnel_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FileChunk.ProtoReflect.Descriptor instead.
+func (*FileChunk) Descriptor() ([]byte, []int) {
+	return file_tunnel_v1_tunnel_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *FileChunk) GetTransferId() string {
+	if x != nil {
+		return x.TransferId
+	}
+	return ""
+}
+
+func (x *FileChunk) GetData() []byte {
+	if x != nil {
+		return x.Data
+	}
+	return nil
+}
+
+func (x *FileChunk) GetSequence() int64 {
+	if x != nil {
+		return x.Sequence
+	}
+	return 0
+}
+
+func (x *FileChunk) GetEof() bool {
+	if x != nil {
+		return x.Eof
+	}
+	return false
+}
+
+type StreamOpen struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	StreamId      string                 `protobuf:"bytes,1,opt,name=stream_id,json=streamId,proto3" json:"stream_id,omitempty"`
+	CommandName   string                 `protobuf:"bytes,2,opt,name=command_name,json=commandName,proto3" json:"command_name,omitempty"`
+	Path          string                 `protobuf:"bytes,3,opt,name=path,proto3" json:"path,omitempty"`
+	Query         string                 `protobuf:"bytes,4,opt,name=query,proto3" json:"query,omitempty"`
+	Headers       map[string]string      `protobuf:"bytes,5,rep,name=headers,proto3" json:"headers,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	SessionId     string                 `protobuf:"bytes,6,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StreamOpen) Reset() {
+	*x = StreamOpen{}
+	mi := &file_tunnel_v1_tunnel_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StreamOpen) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StreamOpen) ProtoMessage() {}
+
+func (x *StreamOpen) ProtoReflect() protoreflect.Message {
+	mi := &file_tunnel_v1_tunnel_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StreamOpen.ProtoReflect.Descriptor instead.
+func (*StreamOpen) Descriptor() ([]byte, []int) {
+	return file_tunnel_v1_tunnel_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *StreamOpen) GetStreamId() string {
+	if x != nil {
+		return x.StreamId
+	}
+	return ""
+}
+
+func (x *StreamOpen) GetCommandName() string {
+	if x != nil {
+		return x.CommandName
+	}
+	return ""
+}
+
+func (x *StreamOpen) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *StreamOpen) GetQuery() string {
+	if x != nil {
+		return x.Query
+	}
+	return ""
+}
+
+func (x *StreamOpen) GetHeaders() map[string]string {
+	if x != nil {
+		return x.Headers
+	}
+	return nil
+}
+
+func (x *StreamOpen) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+type StreamClose struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	StreamId      string                 `protobuf:"bytes,1,opt,name=stream_id,json=streamId,proto3" json:"stream_id,omitempty"`
+	Error         string                 `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StreamClose) Reset() {
+	*x = StreamClose{}
+	mi := &file_tunnel_v1_tunnel_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StreamClose) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StreamClose) ProtoMessage() {}
+
+func (x *StreamClose) ProtoReflect() protoreflect.Message {
+	mi := &file_tunnel_v1_tunnel_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StreamClose.ProtoReflect.Descriptor instead.
+func (*StreamClose) Descriptor() ([]byte, []int) {
+	return file_tunnel_v1_tunnel_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *StreamClose) GetStreamId() string {
+	if x != nil {
+		return x.StreamId
+	}
+	return ""
+}
+
+func (x *StreamClose) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+type CancelRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	CommandId     string                 `protobuf:"bytes,1,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CancelRequest) Reset() {
+	*x = CancelRequest{}
+	mi := &file_tunnel_v1_tunnel_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CancelRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CancelRequest) ProtoMessage() {}
+
+func (x *CancelRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tunnel_v1_tunnel_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CancelRequest.ProtoReflect.Descriptor instead.
+func (*CancelRequest) Descriptor() ([]byte, []int) {
+	return file_tunnel_v1_tunnel_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *CancelRequest) GetCommandId() string {
+	if x != nil {
+		return x.CommandId
+	}
+	return ""
+}
+
 type HttpRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
@@ -466,7 +1241,7 @@ type HttpRequest struct {
 
 func (x *HttpRequest) Reset() {
 	*x = HttpRequest{}
-	mi := &file_tunnel_v1_tunnel_proto_msgTypes[4]
+	mi := &file_tunnel_v1_tunnel_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -478,7 +1253,7 @@ func (x *HttpRequest) String() string {
 func (*HttpRequest) ProtoMessage() {}
 
 func (x *HttpRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tunnel_v1_tunnel_proto_msgTypes[4]
+	mi := &file_tunnel_v1_tunnel_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -491,7 +1266,7 @@ func (x *HttpRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HttpRequest.ProtoReflect.Descriptor instead.
 func (*HttpRequest) Descriptor() ([]byte, []int) {
-	return file_tunnel_v1_tunnel_proto_rawDescGZIP(), []int{4}
+	return file_tunnel_v1_tunnel_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *HttpRequest) GetRequestId() string {
@@ -548,7 +1323,7 @@ type HttpResponse struct {
 
 func (x *HttpResponse) Reset() {
 	*x = HttpResponse{}
-	mi := &file_tunnel_v1_tunnel_proto_msgTypes[5]
+	mi := &file_tunnel_v1_tunnel_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -560,7 +1335,7 @@ func (x *HttpResponse) String() string {
 func (*HttpResponse) ProtoMessage() {}
 
 func (x *HttpResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tunnel_v1_tunnel_proto_msgTypes[5]
+	mi := &file_tunnel_v1_tunnel_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -573,7 +1348,7 @@ func (x *HttpResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HttpResponse.ProtoReflect.Descriptor instead.
 func (*HttpResponse) Descriptor() ([]byte, []int) {
-	return file_tunnel_v1_tunnel_proto_rawDescGZIP(), []int{5}
+	return file_tunnel_v1_tunnel_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *HttpResponse) GetRequestId() string {
@@ -609,13 +1384,14 @@ type StreamData struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
 	Data          []byte                 `protobuf:"bytes,2,opt,name=data,proto3" json:"data,omitempty"`
+	MessageType   int32                  `protobuf:"varint,3,opt,name=message_type,json=messageType,proto3" json:"message_type,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *StreamData) Reset() {
 	*x = StreamData{}
-	mi := &file_tunnel_v1_tunnel_proto_msgTypes[6]
+	mi := &file_tunnel_v1_tunnel_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -627,7 +1403,7 @@ func (x *StreamData) String() string {
 func (*StreamData) ProtoMessage() {}
 
 func (x *StreamData) ProtoReflect() protoreflect.Message {
-	mi := &file_tunnel_v1_tunnel_proto_msgTypes[6]
+	mi := &file_tunnel_v1_tunnel_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -640,7 +1416,7 @@ func (x *StreamData) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamData.ProtoReflect.Descriptor instead.
 func (*StreamData) Descriptor() ([]byte, []int) {
-	return file_tunnel_v1_tunnel_proto_rawDescGZIP(), []int{6}
+	return file_tunnel_v1_tunnel_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *StreamData) GetRequestId() string {
@@ -657,6 +1433,13 @@ func (x *StreamData) GetData() []byte {
 	return nil
 }
 
+func (x *StreamData) GetMessageType() int32 {
+	if x != nil {
+		return x.MessageType
+	}
+	return 0
+}
+
 type StreamEnd struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
@@ -666,7 +1449,7 @@ type StreamEnd struct {
 
 func (x *StreamEnd) Reset() {
 	*x = StreamEnd{}
-	mi := &file_tunnel_v1_tunnel_proto_msgTypes[7]
+	mi := &file_tunnel_v1_tunnel_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -678,7 +1461,7 @@ func (x *StreamEnd) String() string {
 func (*StreamEnd) ProtoMessage() {}
 
 func (x *StreamEnd) ProtoReflect() protoreflect.Message {
-	mi := &file_tunnel_v1_tunnel_proto_msgTypes[7]
+	mi := &file_tunnel_v1_tunnel_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -691,7 +1474,7 @@ func (x *StreamEnd) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamEnd.ProtoReflect.Descriptor instead.
 func (*StreamEnd) Descriptor() ([]byte, []int) {
-	return file_tunnel_v1_tunnel_proto_rawDescGZIP(), []int{7}
+	return file_tunnel_v1_tunnel_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *StreamEnd) GetRequestId() string {
@@ -709,7 +1492,7 @@ type HeartbeatPing struct {
 
 func (x *HeartbeatPing) Reset() {
 	*x = HeartbeatPing{}
-	mi := &file_tunnel_v1_tunnel_proto_msgTypes[8]
+	mi := &file_tunnel_v1_tunnel_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -721,7 +1504,7 @@ func (x *HeartbeatPing) String() string {
 func (*HeartbeatPing) ProtoMessage() {}
 
 func (x *HeartbeatPing) ProtoReflect() protoreflect.Message {
-	mi := &file_tunnel_v1_tunnel_proto_msgTypes[8]
+	mi := &file_tunnel_v1_tunnel_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -734,7 +1517,7 @@ func (x *HeartbeatPing) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HeartbeatPing.ProtoReflect.Descriptor instead.
 func (*HeartbeatPing) Descriptor() ([]byte, []int) {
-	return file_tunnel_v1_tunnel_proto_rawDescGZIP(), []int{8}
+	return file_tunnel_v1_tunnel_proto_rawDescGZIP(), []int{16}
 }
 
 type HeartbeatPong struct {
@@ -745,7 +1528,7 @@ type HeartbeatPong struct {
 
 func (x *HeartbeatPong) Reset() {
 	*x = HeartbeatPong{}
-	mi := &file_tunnel_v1_tunnel_proto_msgTypes[9]
+	mi := &file_tunnel_v1_tunnel_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -757,7 +1540,7 @@ func (x *HeartbeatPong) String() string {
 func (*HeartbeatPong) ProtoMessage() {}
 
 func (x *HeartbeatPong) ProtoReflect() protoreflect.Message {
-	mi := &file_tunnel_v1_tunnel_proto_msgTypes[9]
+	mi := &file_tunnel_v1_tunnel_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -770,7 +1553,7 @@ func (x *HeartbeatPong) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HeartbeatPong.ProtoReflect.Descriptor instead.
 func (*HeartbeatPong) Descriptor() ([]byte, []int) {
-	return file_tunnel_v1_tunnel_proto_rawDescGZIP(), []int{9}
+	return file_tunnel_v1_tunnel_proto_rawDescGZIP(), []int{17}
 }
 
 type WebSocketStart struct {
@@ -785,7 +1568,7 @@ type WebSocketStart struct {
 
 func (x *WebSocketStart) Reset() {
 	*x = WebSocketStart{}
-	mi := &file_tunnel_v1_tunnel_proto_msgTypes[10]
+	mi := &file_tunnel_v1_tunnel_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -797,7 +1580,7 @@ func (x *WebSocketStart) String() string {
 func (*WebSocketStart) ProtoMessage() {}
 
 func (x *WebSocketStart) ProtoReflect() protoreflect.Message {
-	mi := &file_tunnel_v1_tunnel_proto_msgTypes[10]
+	mi := &file_tunnel_v1_tunnel_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -810,7 +1593,7 @@ func (x *WebSocketStart) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WebSocketStart.ProtoReflect.Descriptor instead.
 func (*WebSocketStart) Descriptor() ([]byte, []int) {
-	return file_tunnel_v1_tunnel_proto_rawDescGZIP(), []int{10}
+	return file_tunnel_v1_tunnel_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *WebSocketStart) GetStreamId() string {
@@ -852,7 +1635,7 @@ type WebSocketData struct {
 
 func (x *WebSocketData) Reset() {
 	*x = WebSocketData{}
-	mi := &file_tunnel_v1_tunnel_proto_msgTypes[11]
+	mi := &file_tunnel_v1_tunnel_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -864,7 +1647,7 @@ func (x *WebSocketData) String() string {
 func (*WebSocketData) ProtoMessage() {}
 
 func (x *WebSocketData) ProtoReflect() protoreflect.Message {
-	mi := &file_tunnel_v1_tunnel_proto_msgTypes[11]
+	mi := &file_tunnel_v1_tunnel_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -877,7 +1660,7 @@ func (x *WebSocketData) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WebSocketData.ProtoReflect.Descriptor instead.
 func (*WebSocketData) Descriptor() ([]byte, []int) {
-	return file_tunnel_v1_tunnel_proto_rawDescGZIP(), []int{11}
+	return file_tunnel_v1_tunnel_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *WebSocketData) GetStreamId() string {
@@ -910,7 +1693,7 @@ type WebSocketClose struct {
 
 func (x *WebSocketClose) Reset() {
 	*x = WebSocketClose{}
-	mi := &file_tunnel_v1_tunnel_proto_msgTypes[12]
+	mi := &file_tunnel_v1_tunnel_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -922,7 +1705,7 @@ func (x *WebSocketClose) String() string {
 func (*WebSocketClose) ProtoMessage() {}
 
 func (x *WebSocketClose) ProtoReflect() protoreflect.Message {
-	mi := &file_tunnel_v1_tunnel_proto_msgTypes[12]
+	mi := &file_tunnel_v1_tunnel_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -935,7 +1718,7 @@ func (x *WebSocketClose) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WebSocketClose.ProtoReflect.Descriptor instead.
 func (*WebSocketClose) Descriptor() ([]byte, []int) {
-	return file_tunnel_v1_tunnel_proto_rawDescGZIP(), []int{12}
+	return file_tunnel_v1_tunnel_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *WebSocketClose) GetStreamId() string {
@@ -964,7 +1747,7 @@ type EventLog struct {
 
 func (x *EventLog) Reset() {
 	*x = EventLog{}
-	mi := &file_tunnel_v1_tunnel_proto_msgTypes[13]
+	mi := &file_tunnel_v1_tunnel_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -976,7 +1759,7 @@ func (x *EventLog) String() string {
 func (*EventLog) ProtoMessage() {}
 
 func (x *EventLog) ProtoReflect() protoreflect.Message {
-	mi := &file_tunnel_v1_tunnel_proto_msgTypes[13]
+	mi := &file_tunnel_v1_tunnel_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -989,7 +1772,7 @@ func (x *EventLog) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EventLog.ProtoReflect.Descriptor instead.
 func (*EventLog) Descriptor() ([]byte, []int) {
-	return file_tunnel_v1_tunnel_proto_rawDescGZIP(), []int{13}
+	return file_tunnel_v1_tunnel_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *EventLog) GetType() string {
@@ -1066,7 +1849,7 @@ var File_tunnel_v1_tunnel_proto protoreflect.FileDescriptor
 
 const file_tunnel_v1_tunnel_proto_rawDesc = "" +
 	"\n" +
-	"\x16tunnel/v1/tunnel.proto\x12\ttunnel.v1\"\xe1\x03\n" +
+	"\x16tunnel/v1/tunnel.proto\x12\ttunnel.v1\"\x9b\x06\n" +
 	"\fAgentMessage\x12>\n" +
 	"\rhttp_response\x18\x01 \x01(\v2\x17.tunnel.v1.HttpResponseH\x00R\fhttpResponse\x12A\n" +
 	"\x0eheartbeat_ping\x18\x02 \x01(\v2\x18.tunnel.v1.HeartbeatPingH\x00R\rheartbeatPing\x123\n" +
@@ -1077,23 +1860,112 @@ const file_tunnel_v1_tunnel_proto_rawDesc = "" +
 	"\n" +
 	"stream_end\x18\x06 \x01(\v2\x14.tunnel.v1.StreamEndH\x00R\tstreamEnd\x128\n" +
 	"\bregister\x18\a \x01(\v2\x1a.tunnel.v1.RegisterRequestH\x00R\bregister\x12+\n" +
-	"\x05event\x18\b \x01(\v2\x13.tunnel.v1.EventLogH\x00R\x05eventB\t\n" +
-	"\apayload\"\x8c\x03\n" +
+	"\x05event\x18\b \x01(\v2\x13.tunnel.v1.EventLogH\x00R\x05event\x128\n" +
+	"\vcommand_ack\x18\t \x01(\v2\x15.tunnel.v1.CommandAckH\x00R\n" +
+	"commandAck\x12A\n" +
+	"\x0ecommand_output\x18\n" +
+	" \x01(\v2\x18.tunnel.v1.CommandOutputH\x00R\rcommandOutput\x12G\n" +
+	"\x10command_complete\x18\v \x01(\v2\x1a.tunnel.v1.CommandCompleteH\x00R\x0fcommandComplete\x125\n" +
+	"\n" +
+	"file_chunk\x18\f \x01(\v2\x14.tunnel.v1.FileChunkH\x00R\tfileChunk\x12;\n" +
+	"\fstream_close\x18\r \x01(\v2\x16.tunnel.v1.StreamCloseH\x00R\vstreamCloseB\t\n" +
+	"\apayload\"\xc3\x05\n" +
 	"\x0eManagerMessage\x12;\n" +
 	"\fhttp_request\x18\x01 \x01(\v2\x16.tunnel.v1.HttpRequestH\x00R\vhttpRequest\x12A\n" +
 	"\x0eheartbeat_pong\x18\x02 \x01(\v2\x18.tunnel.v1.HeartbeatPongH\x00R\rheartbeatPong\x126\n" +
 	"\bws_start\x18\x03 \x01(\v2\x19.tunnel.v1.WebSocketStartH\x00R\awsStart\x123\n" +
 	"\aws_data\x18\x04 \x01(\v2\x18.tunnel.v1.WebSocketDataH\x00R\x06wsData\x126\n" +
 	"\bws_close\x18\x05 \x01(\v2\x19.tunnel.v1.WebSocketCloseH\x00R\awsClose\x12J\n" +
-	"\x11register_response\x18\x06 \x01(\v2\x1b.tunnel.v1.RegisterResponseH\x00R\x10registerResponseB\t\n" +
-	"\apayload\"2\n" +
+	"\x11register_response\x18\x06 \x01(\v2\x1b.tunnel.v1.RegisterResponseH\x00R\x10registerResponse\x12D\n" +
+	"\x0fcommand_request\x18\a \x01(\v2\x19.tunnel.v1.CommandRequestH\x00R\x0ecommandRequest\x128\n" +
+	"\vstream_open\x18\b \x01(\v2\x15.tunnel.v1.StreamOpenH\x00R\n" +
+	"streamOpen\x12;\n" +
+	"\fstream_close\x18\t \x01(\v2\x16.tunnel.v1.StreamCloseH\x00R\vstreamClose\x12A\n" +
+	"\x0ecancel_request\x18\n" +
+	" \x01(\v2\x18.tunnel.v1.CancelRequestH\x00R\rcancelRequest\x125\n" +
+	"\n" +
+	"file_chunk\x18\v \x01(\v2\x14.tunnel.v1.FileChunkH\x00R\tfileChunkB\t\n" +
+	"\apayload\"\xae\x01\n" +
 	"\x0fRegisterRequest\x12\x1f\n" +
 	"\vagent_token\x18\x01 \x01(\tR\n" +
-	"agentToken\"k\n" +
+	"agentToken\x12*\n" +
+	"\x11agent_instance_id\x18\x02 \x01(\tR\x0fagentInstanceId\x12\"\n" +
+	"\fcapabilities\x18\x03 \x03(\tR\fcapabilities\x12*\n" +
+	"\x11resume_session_id\x18\x04 \x01(\tR\x0fresumeSessionId\"\xfa\x01\n" +
 	"\x10RegisterResponse\x12\x1a\n" +
 	"\baccepted\x18\x01 \x01(\bR\baccepted\x12%\n" +
 	"\x0eenvironment_id\x18\x02 \x01(\tR\renvironmentId\x12\x14\n" +
-	"\x05error\x18\x03 \x01(\tR\x05error\"\xfd\x01\n" +
+	"\x05error\x18\x03 \x01(\tR\x05error\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x04 \x01(\tR\tsessionId\x12#\n" +
+	"\rsecurity_mode\x18\x05 \x01(\tR\fsecurityMode\x12\"\n" +
+	"\fcapabilities\x18\x06 \x03(\tR\fcapabilities\x12%\n" +
+	"\x0edrain_previous\x18\a \x01(\bR\rdrainPrevious\"\x9a\x04\n" +
+	"\x0eCommandRequest\x12\x1d\n" +
+	"\n" +
+	"command_id\x18\x01 \x01(\tR\tcommandId\x12!\n" +
+	"\fcommand_name\x18\x02 \x01(\tR\vcommandName\x12\x16\n" +
+	"\x06method\x18\x03 \x01(\tR\x06method\x12\x12\n" +
+	"\x04path\x18\x04 \x01(\tR\x04path\x12\x14\n" +
+	"\x05query\x18\x05 \x01(\tR\x05query\x12@\n" +
+	"\aheaders\x18\x06 \x03(\v2&.tunnel.v1.CommandRequest.HeadersEntryR\aheaders\x12\x12\n" +
+	"\x04body\x18\a \x01(\fR\x04body\x12%\n" +
+	"\x0etimeout_millis\x18\b \x01(\x03R\rtimeoutMillis\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\t \x01(\tR\tsessionId\x12*\n" +
+	"\x11agent_instance_id\x18\n" +
+	" \x01(\tR\x0fagentInstanceId\x12C\n" +
+	"\bmetadata\x18\v \x03(\v2'.tunnel.v1.CommandRequest.MetadataEntryR\bmetadata\x1a:\n" +
+	"\fHeadersEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a;\n" +
+	"\rMetadataEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"+\n" +
+	"\n" +
+	"CommandAck\x12\x1d\n" +
+	"\n" +
+	"command_id\x18\x01 \x01(\tR\tcommandId\"^\n" +
+	"\rCommandOutput\x12\x1d\n" +
+	"\n" +
+	"command_id\x18\x01 \x01(\tR\tcommandId\x12\x12\n" +
+	"\x04data\x18\x02 \x01(\fR\x04data\x12\x1a\n" +
+	"\bsequence\x18\x03 \x01(\x03R\bsequence\"\x8f\x02\n" +
+	"\x0fCommandComplete\x12\x1d\n" +
+	"\n" +
+	"command_id\x18\x01 \x01(\tR\tcommandId\x12\x16\n" +
+	"\x06status\x18\x02 \x01(\x05R\x06status\x12A\n" +
+	"\aheaders\x18\x03 \x03(\v2'.tunnel.v1.CommandComplete.HeadersEntryR\aheaders\x12\x12\n" +
+	"\x04body\x18\x04 \x01(\fR\x04body\x12\x14\n" +
+	"\x05error\x18\x05 \x01(\tR\x05error\x12\x1c\n" +
+	"\tstreaming\x18\x06 \x01(\bR\tstreaming\x1a:\n" +
+	"\fHeadersEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"n\n" +
+	"\tFileChunk\x12\x1f\n" +
+	"\vtransfer_id\x18\x01 \x01(\tR\n" +
+	"transferId\x12\x12\n" +
+	"\x04data\x18\x02 \x01(\fR\x04data\x12\x1a\n" +
+	"\bsequence\x18\x03 \x01(\x03R\bsequence\x12\x10\n" +
+	"\x03eof\x18\x04 \x01(\bR\x03eof\"\x8f\x02\n" +
+	"\n" +
+	"StreamOpen\x12\x1b\n" +
+	"\tstream_id\x18\x01 \x01(\tR\bstreamId\x12!\n" +
+	"\fcommand_name\x18\x02 \x01(\tR\vcommandName\x12\x12\n" +
+	"\x04path\x18\x03 \x01(\tR\x04path\x12\x14\n" +
+	"\x05query\x18\x04 \x01(\tR\x05query\x12<\n" +
+	"\aheaders\x18\x05 \x03(\v2\".tunnel.v1.StreamOpen.HeadersEntryR\aheaders\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x06 \x01(\tR\tsessionId\x1a:\n" +
+	"\fHeadersEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"@\n" +
+	"\vStreamClose\x12\x1b\n" +
+	"\tstream_id\x18\x01 \x01(\tR\bstreamId\x12\x14\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error\".\n" +
+	"\rCancelRequest\x12\x1d\n" +
+	"\n" +
+	"command_id\x18\x01 \x01(\tR\tcommandId\"\xfd\x01\n" +
 	"\vHttpRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12\x16\n" +
@@ -1113,12 +1985,13 @@ const file_tunnel_v1_tunnel_proto_rawDesc = "" +
 	"\x04body\x18\x04 \x01(\fR\x04body\x1a:\n" +
 	"\fHeadersEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"?\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"b\n" +
 	"\n" +
 	"StreamData\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12\x12\n" +
-	"\x04data\x18\x02 \x01(\fR\x04data\"*\n" +
+	"\x04data\x18\x02 \x01(\fR\x04data\x12!\n" +
+	"\fmessage_type\x18\x03 \x01(\x05R\vmessageType\"*\n" +
 	"\tStreamEnd\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\"\x0f\n" +
@@ -1166,51 +2039,77 @@ func file_tunnel_v1_tunnel_proto_rawDescGZIP() []byte {
 	return file_tunnel_v1_tunnel_proto_rawDescData
 }
 
-var file_tunnel_v1_tunnel_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
+var file_tunnel_v1_tunnel_proto_msgTypes = make([]protoimpl.MessageInfo, 29)
 var file_tunnel_v1_tunnel_proto_goTypes = []any{
 	(*AgentMessage)(nil),     // 0: tunnel.v1.AgentMessage
 	(*ManagerMessage)(nil),   // 1: tunnel.v1.ManagerMessage
 	(*RegisterRequest)(nil),  // 2: tunnel.v1.RegisterRequest
 	(*RegisterResponse)(nil), // 3: tunnel.v1.RegisterResponse
-	(*HttpRequest)(nil),      // 4: tunnel.v1.HttpRequest
-	(*HttpResponse)(nil),     // 5: tunnel.v1.HttpResponse
-	(*StreamData)(nil),       // 6: tunnel.v1.StreamData
-	(*StreamEnd)(nil),        // 7: tunnel.v1.StreamEnd
-	(*HeartbeatPing)(nil),    // 8: tunnel.v1.HeartbeatPing
-	(*HeartbeatPong)(nil),    // 9: tunnel.v1.HeartbeatPong
-	(*WebSocketStart)(nil),   // 10: tunnel.v1.WebSocketStart
-	(*WebSocketData)(nil),    // 11: tunnel.v1.WebSocketData
-	(*WebSocketClose)(nil),   // 12: tunnel.v1.WebSocketClose
-	(*EventLog)(nil),         // 13: tunnel.v1.EventLog
-	nil,                      // 14: tunnel.v1.HttpRequest.HeadersEntry
-	nil,                      // 15: tunnel.v1.HttpResponse.HeadersEntry
-	nil,                      // 16: tunnel.v1.WebSocketStart.HeadersEntry
+	(*CommandRequest)(nil),   // 4: tunnel.v1.CommandRequest
+	(*CommandAck)(nil),       // 5: tunnel.v1.CommandAck
+	(*CommandOutput)(nil),    // 6: tunnel.v1.CommandOutput
+	(*CommandComplete)(nil),  // 7: tunnel.v1.CommandComplete
+	(*FileChunk)(nil),        // 8: tunnel.v1.FileChunk
+	(*StreamOpen)(nil),       // 9: tunnel.v1.StreamOpen
+	(*StreamClose)(nil),      // 10: tunnel.v1.StreamClose
+	(*CancelRequest)(nil),    // 11: tunnel.v1.CancelRequest
+	(*HttpRequest)(nil),      // 12: tunnel.v1.HttpRequest
+	(*HttpResponse)(nil),     // 13: tunnel.v1.HttpResponse
+	(*StreamData)(nil),       // 14: tunnel.v1.StreamData
+	(*StreamEnd)(nil),        // 15: tunnel.v1.StreamEnd
+	(*HeartbeatPing)(nil),    // 16: tunnel.v1.HeartbeatPing
+	(*HeartbeatPong)(nil),    // 17: tunnel.v1.HeartbeatPong
+	(*WebSocketStart)(nil),   // 18: tunnel.v1.WebSocketStart
+	(*WebSocketData)(nil),    // 19: tunnel.v1.WebSocketData
+	(*WebSocketClose)(nil),   // 20: tunnel.v1.WebSocketClose
+	(*EventLog)(nil),         // 21: tunnel.v1.EventLog
+	nil,                      // 22: tunnel.v1.CommandRequest.HeadersEntry
+	nil,                      // 23: tunnel.v1.CommandRequest.MetadataEntry
+	nil,                      // 24: tunnel.v1.CommandComplete.HeadersEntry
+	nil,                      // 25: tunnel.v1.StreamOpen.HeadersEntry
+	nil,                      // 26: tunnel.v1.HttpRequest.HeadersEntry
+	nil,                      // 27: tunnel.v1.HttpResponse.HeadersEntry
+	nil,                      // 28: tunnel.v1.WebSocketStart.HeadersEntry
 }
 var file_tunnel_v1_tunnel_proto_depIdxs = []int32{
-	5,  // 0: tunnel.v1.AgentMessage.http_response:type_name -> tunnel.v1.HttpResponse
-	8,  // 1: tunnel.v1.AgentMessage.heartbeat_ping:type_name -> tunnel.v1.HeartbeatPing
-	11, // 2: tunnel.v1.AgentMessage.ws_data:type_name -> tunnel.v1.WebSocketData
-	12, // 3: tunnel.v1.AgentMessage.ws_close:type_name -> tunnel.v1.WebSocketClose
-	6,  // 4: tunnel.v1.AgentMessage.stream_data:type_name -> tunnel.v1.StreamData
-	7,  // 5: tunnel.v1.AgentMessage.stream_end:type_name -> tunnel.v1.StreamEnd
+	13, // 0: tunnel.v1.AgentMessage.http_response:type_name -> tunnel.v1.HttpResponse
+	16, // 1: tunnel.v1.AgentMessage.heartbeat_ping:type_name -> tunnel.v1.HeartbeatPing
+	19, // 2: tunnel.v1.AgentMessage.ws_data:type_name -> tunnel.v1.WebSocketData
+	20, // 3: tunnel.v1.AgentMessage.ws_close:type_name -> tunnel.v1.WebSocketClose
+	14, // 4: tunnel.v1.AgentMessage.stream_data:type_name -> tunnel.v1.StreamData
+	15, // 5: tunnel.v1.AgentMessage.stream_end:type_name -> tunnel.v1.StreamEnd
 	2,  // 6: tunnel.v1.AgentMessage.register:type_name -> tunnel.v1.RegisterRequest
-	13, // 7: tunnel.v1.AgentMessage.event:type_name -> tunnel.v1.EventLog
-	4,  // 8: tunnel.v1.ManagerMessage.http_request:type_name -> tunnel.v1.HttpRequest
-	9,  // 9: tunnel.v1.ManagerMessage.heartbeat_pong:type_name -> tunnel.v1.HeartbeatPong
-	10, // 10: tunnel.v1.ManagerMessage.ws_start:type_name -> tunnel.v1.WebSocketStart
-	11, // 11: tunnel.v1.ManagerMessage.ws_data:type_name -> tunnel.v1.WebSocketData
-	12, // 12: tunnel.v1.ManagerMessage.ws_close:type_name -> tunnel.v1.WebSocketClose
-	3,  // 13: tunnel.v1.ManagerMessage.register_response:type_name -> tunnel.v1.RegisterResponse
-	14, // 14: tunnel.v1.HttpRequest.headers:type_name -> tunnel.v1.HttpRequest.HeadersEntry
-	15, // 15: tunnel.v1.HttpResponse.headers:type_name -> tunnel.v1.HttpResponse.HeadersEntry
-	16, // 16: tunnel.v1.WebSocketStart.headers:type_name -> tunnel.v1.WebSocketStart.HeadersEntry
-	0,  // 17: tunnel.v1.TunnelService.Connect:input_type -> tunnel.v1.AgentMessage
-	1,  // 18: tunnel.v1.TunnelService.Connect:output_type -> tunnel.v1.ManagerMessage
-	18, // [18:19] is the sub-list for method output_type
-	17, // [17:18] is the sub-list for method input_type
-	17, // [17:17] is the sub-list for extension type_name
-	17, // [17:17] is the sub-list for extension extendee
-	0,  // [0:17] is the sub-list for field type_name
+	21, // 7: tunnel.v1.AgentMessage.event:type_name -> tunnel.v1.EventLog
+	5,  // 8: tunnel.v1.AgentMessage.command_ack:type_name -> tunnel.v1.CommandAck
+	6,  // 9: tunnel.v1.AgentMessage.command_output:type_name -> tunnel.v1.CommandOutput
+	7,  // 10: tunnel.v1.AgentMessage.command_complete:type_name -> tunnel.v1.CommandComplete
+	8,  // 11: tunnel.v1.AgentMessage.file_chunk:type_name -> tunnel.v1.FileChunk
+	10, // 12: tunnel.v1.AgentMessage.stream_close:type_name -> tunnel.v1.StreamClose
+	12, // 13: tunnel.v1.ManagerMessage.http_request:type_name -> tunnel.v1.HttpRequest
+	17, // 14: tunnel.v1.ManagerMessage.heartbeat_pong:type_name -> tunnel.v1.HeartbeatPong
+	18, // 15: tunnel.v1.ManagerMessage.ws_start:type_name -> tunnel.v1.WebSocketStart
+	19, // 16: tunnel.v1.ManagerMessage.ws_data:type_name -> tunnel.v1.WebSocketData
+	20, // 17: tunnel.v1.ManagerMessage.ws_close:type_name -> tunnel.v1.WebSocketClose
+	3,  // 18: tunnel.v1.ManagerMessage.register_response:type_name -> tunnel.v1.RegisterResponse
+	4,  // 19: tunnel.v1.ManagerMessage.command_request:type_name -> tunnel.v1.CommandRequest
+	9,  // 20: tunnel.v1.ManagerMessage.stream_open:type_name -> tunnel.v1.StreamOpen
+	10, // 21: tunnel.v1.ManagerMessage.stream_close:type_name -> tunnel.v1.StreamClose
+	11, // 22: tunnel.v1.ManagerMessage.cancel_request:type_name -> tunnel.v1.CancelRequest
+	8,  // 23: tunnel.v1.ManagerMessage.file_chunk:type_name -> tunnel.v1.FileChunk
+	22, // 24: tunnel.v1.CommandRequest.headers:type_name -> tunnel.v1.CommandRequest.HeadersEntry
+	23, // 25: tunnel.v1.CommandRequest.metadata:type_name -> tunnel.v1.CommandRequest.MetadataEntry
+	24, // 26: tunnel.v1.CommandComplete.headers:type_name -> tunnel.v1.CommandComplete.HeadersEntry
+	25, // 27: tunnel.v1.StreamOpen.headers:type_name -> tunnel.v1.StreamOpen.HeadersEntry
+	26, // 28: tunnel.v1.HttpRequest.headers:type_name -> tunnel.v1.HttpRequest.HeadersEntry
+	27, // 29: tunnel.v1.HttpResponse.headers:type_name -> tunnel.v1.HttpResponse.HeadersEntry
+	28, // 30: tunnel.v1.WebSocketStart.headers:type_name -> tunnel.v1.WebSocketStart.HeadersEntry
+	0,  // 31: tunnel.v1.TunnelService.Connect:input_type -> tunnel.v1.AgentMessage
+	1,  // 32: tunnel.v1.TunnelService.Connect:output_type -> tunnel.v1.ManagerMessage
+	32, // [32:33] is the sub-list for method output_type
+	31, // [31:32] is the sub-list for method input_type
+	31, // [31:31] is the sub-list for extension type_name
+	31, // [31:31] is the sub-list for extension extendee
+	0,  // [0:31] is the sub-list for field type_name
 }
 
 func init() { file_tunnel_v1_tunnel_proto_init() }
@@ -1227,6 +2126,11 @@ func file_tunnel_v1_tunnel_proto_init() {
 		(*AgentMessage_StreamEnd)(nil),
 		(*AgentMessage_Register)(nil),
 		(*AgentMessage_Event)(nil),
+		(*AgentMessage_CommandAck)(nil),
+		(*AgentMessage_CommandOutput)(nil),
+		(*AgentMessage_CommandComplete)(nil),
+		(*AgentMessage_FileChunk)(nil),
+		(*AgentMessage_StreamClose)(nil),
 	}
 	file_tunnel_v1_tunnel_proto_msgTypes[1].OneofWrappers = []any{
 		(*ManagerMessage_HttpRequest)(nil),
@@ -1235,6 +2139,11 @@ func file_tunnel_v1_tunnel_proto_init() {
 		(*ManagerMessage_WsData)(nil),
 		(*ManagerMessage_WsClose)(nil),
 		(*ManagerMessage_RegisterResponse)(nil),
+		(*ManagerMessage_CommandRequest)(nil),
+		(*ManagerMessage_StreamOpen)(nil),
+		(*ManagerMessage_StreamClose)(nil),
+		(*ManagerMessage_CancelRequest)(nil),
+		(*ManagerMessage_FileChunk)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -1242,7 +2151,7 @@ func file_tunnel_v1_tunnel_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tunnel_v1_tunnel_proto_rawDesc), len(file_tunnel_v1_tunnel_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   17,
+			NumMessages:   29,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
