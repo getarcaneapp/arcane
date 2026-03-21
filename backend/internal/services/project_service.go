@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/compose-spec/compose-go/v2/dotenv"
 	"github.com/compose-spec/compose-go/v2/loader"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
@@ -1874,7 +1875,7 @@ func (s *ProjectService) ApplyGitSyncProjectFiles(ctx context.Context, projectID
 		return nil, fmt.Errorf("failed to resolve git env state: %w", err)
 	}
 
-	if err := s.validateComposeContentForUpdate(ctx, proj.Path, proj.Name, composeContent, envUpdate.effectiveContent); err != nil {
+	if err := s.validateComposeContentForUpdate(ctx, projectsDirectory, proj.Path, proj.Name, composeContent, envUpdate.effectiveContent); err != nil {
 		return nil, fmt.Errorf("invalid compose file: %w", err)
 	}
 
@@ -1952,7 +1953,7 @@ func (s *ProjectService) persistUpdatedProjectFiles(ctx context.Context, proj *m
 		if err != nil {
 			return fmt.Errorf("invalid compose file: %w", err)
 		}
-		if err := s.validateComposeContentForUpdate(ctx, proj.Path, proj.Name, *composeContent, effectiveEnvContent); err != nil {
+		if err := s.validateComposeContentForUpdate(ctx, projectsDirectory, proj.Path, proj.Name, *composeContent, effectiveEnvContent); err != nil {
 			return fmt.Errorf("invalid compose file: %w", err)
 		}
 		if err := projects.WriteComposeFile(projectsDirectory, proj.Path, *composeContent); err != nil {
@@ -1974,35 +1975,16 @@ func (s *ProjectService) persistUpdatedProjectFiles(ctx context.Context, proj *m
 	return nil
 }
 
-func (s *ProjectService) validateComposeContentForUpdate(ctx context.Context, projectPath, projectName, composeContent string, effectiveEnvContent *string) (err error) {
+func (s *ProjectService) validateComposeContentForUpdate(ctx context.Context, projectsDirectory, projectPath, projectName, composeContent string, effectiveEnvContent *string) (err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			err = fmt.Errorf("compose file contains invalid syntax: %v", recovered)
 		}
 	}()
 
-	// Load safe environment variables for ${VAR} interpolation during validation.
-	// Only the project's own .env is used — host process env and .env.global are
-	// both intentionally excluded to prevent leaking Arcane secrets.
-	fullEnvMap := make(projects.EnvMap)
-	if absWorkdir, absErr := filepath.Abs(projectPath); absErr == nil {
-		fullEnvMap["PWD"] = absWorkdir
-	}
-
-	// Prefer the provided effective environment content if available, otherwise read from disk.
-	if effectiveEnvContent != nil {
-		if fileEnv, envErr := projects.ParseProjectEnvContent(*effectiveEnvContent, fullEnvMap); envErr != nil {
-			return fmt.Errorf("parse provided env content: %w", envErr)
-		} else {
-			maps.Copy(fullEnvMap, fileEnv)
-		}
-	} else {
-		projectEnvPath := filepath.Join(projectPath, ".env")
-		if fileEnv, envErr := projects.ParseProjectEnvFile(projectEnvPath, fullEnvMap); envErr != nil {
-			return fmt.Errorf("parse project env file: %w", envErr)
-		} else {
-			maps.Copy(fullEnvMap, fileEnv)
-		}
+	fullEnvMap, envErr := buildComposeValidationEnvironment(projectsDirectory, projectPath, effectiveEnvContent)
+	if envErr != nil {
+		return envErr
 	}
 
 	validationProjectName := normalizeComposeProjectName(projectName)
@@ -2025,6 +2007,72 @@ func (s *ProjectService) validateComposeContentForUpdate(ctx context.Context, pr
 	})
 
 	return err
+}
+
+func buildComposeValidationEnvironment(projectsDirectory, projectPath string, effectiveEnvContent *string) (projects.EnvMap, error) {
+	// Validation should match project-visible env sources without inheriting the
+	// Arcane process environment, which may contain unrelated secrets.
+	fullEnvMap := make(projects.EnvMap)
+	if absWorkdir, absErr := filepath.Abs(projectPath); absErr == nil {
+		fullEnvMap["PWD"] = absWorkdir
+	} else {
+		fullEnvMap["PWD"] = projectPath
+	}
+
+	globalEnvPath := filepath.Join(projectsDirectory, projects.GlobalEnvFileName)
+	globalEnv, err := parseComposeValidationEnvFile(globalEnvPath, fullEnvMap)
+	if err != nil {
+		return nil, fmt.Errorf("parse global env file: %w", err)
+	}
+	maps.Copy(fullEnvMap, globalEnv)
+
+	if effectiveEnvContent != nil {
+		projectEnv, err := parseComposeValidationEnvContent(*effectiveEnvContent, fullEnvMap)
+		if err != nil {
+			return nil, fmt.Errorf("parse provided env content: %w", err)
+		}
+		maps.Copy(fullEnvMap, projectEnv)
+		return fullEnvMap, nil
+	}
+
+	projectEnvPath := filepath.Join(projectPath, ".env")
+	projectEnv, err := parseComposeValidationEnvFile(projectEnvPath, fullEnvMap)
+	if err != nil {
+		return nil, fmt.Errorf("parse project env file: %w", err)
+	}
+	maps.Copy(fullEnvMap, projectEnv)
+
+	return fullEnvMap, nil
+}
+
+func parseComposeValidationEnvFile(path string, contextEnv projects.EnvMap) (projects.EnvMap, error) {
+	if _, err := os.Stat(path); err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("stat file: %w", err)
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read file: %w", err)
+	}
+
+	return parseComposeValidationEnvContent(string(content), contextEnv)
+}
+
+func parseComposeValidationEnvContent(content string, contextEnv projects.EnvMap) (projects.EnvMap, error) {
+	lookupFn := func(key string) (string, bool) {
+		value, ok := contextEnv[key]
+		return value, ok
+	}
+
+	envMap, err := dotenv.ParseWithLookup(strings.NewReader(content), lookupFn)
+	if err != nil {
+		return nil, fmt.Errorf("parse env: %w", err)
+	}
+
+	return projects.EnvMap(envMap), nil
 }
 
 func withTransientValidationEnvFile(projectPath string, effectiveEnvContent *string, run func() error) (err error) {
