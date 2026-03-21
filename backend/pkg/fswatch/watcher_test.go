@@ -20,8 +20,7 @@ func TestWatcher_StartWatchesExistingSymlinkDirectoriesWhenEnabled(t *testing.T)
 	require.NoError(t, os.Symlink(targetPath, linkPath))
 
 	changeCh := make(chan struct{}, 1)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	watcher, err := NewWatcher(root, WatcherOptions{
 		Debounce:          25 * time.Millisecond,
@@ -59,8 +58,7 @@ func TestWatcher_StartSkipsExistingSymlinkDirectoriesWhenDisabled(t *testing.T) 
 	require.NoError(t, os.Symlink(targetPath, linkPath))
 
 	changeCh := make(chan struct{}, 1)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	watcher, err := NewWatcher(root, WatcherOptions{
 		Debounce: 25 * time.Millisecond,
