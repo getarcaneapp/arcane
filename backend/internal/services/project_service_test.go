@@ -1557,7 +1557,7 @@ func TestProjectService_UpdateProject_WritesThroughSymlinkedProjectPath(t *testi
 	project := &models.Project{
 		BaseModel: models.BaseModel{ID: "proj-symlink-update"},
 		Name:      "demo",
-		DirName:   ptr("demo"),
+		DirName:   new("demo"),
 		Path:      linkPath,
 		Status:    models.ProjectStatusStopped,
 	}
@@ -1566,7 +1566,7 @@ func TestProjectService_UpdateProject_WritesThroughSymlinkedProjectPath(t *testi
 	updatedCompose := "services:\n  app:\n    image: nginx:1.27-alpine\n"
 	updatedEnv := "FOO=updated\n"
 
-	updated, err := svc.UpdateProject(ctx, project.ID, nil, ptr(updatedCompose), ptr(updatedEnv), models.User{
+	updated, err := svc.UpdateProject(ctx, project.ID, nil, new(updatedCompose), new(updatedEnv), models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})

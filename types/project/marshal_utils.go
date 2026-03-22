@@ -191,8 +191,8 @@ func normalizeJSONObjectForTypeInternal(value any, destType reflect.Type) (any, 
 	normalized := make(map[string]any, len(object))
 	maps.Copy(normalized, object)
 
-	for i := 0; i < destType.NumField(); i++ {
-		field := destType.Field(i)
+	for field := range destType.Fields() {
+		field := field
 		if field.PkgPath != "" {
 			continue
 		}
