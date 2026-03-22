@@ -17,7 +17,7 @@ require (
 	github.com/danielgtaylor/huma/v2 v2.37.2
 	github.com/depot/depot-go v0.5.2
 	github.com/docker/cli v29.2.1+incompatible
-	github.com/docker/compose/v5 v5.1.0
+	github.com/docker/compose/v5 v5.1.1
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/getarcaneapp/arcane/cli v1.16.3
@@ -93,7 +93,7 @@ require (
 	github.com/cloudwego/base64x v0.1.6 // indirect
 	github.com/containerd/console v1.0.5 // indirect
 	github.com/containerd/containerd/api v1.10.0 // indirect
-	github.com/containerd/containerd/v2 v2.2.1 // indirect
+	github.com/containerd/containerd/v2 v2.2.2 // indirect
 	github.com/containerd/continuity v0.4.5 // indirect
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
 	github.com/containerd/log v0.1.0 // indirect
