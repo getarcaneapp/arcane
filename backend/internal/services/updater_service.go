@@ -1343,7 +1343,8 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 
 	// Pre-scan sorted containers to group compose project services that need updates.
 	// We only group containers that are explicitly marked for restart (p.newRef != "").
-	projectToServices := make(map[string][]string) // projectID -> []serviceName
+	projectToServices := make(map[string][]string)                // projectID -> []serviceName
+	projectToSeenServices := make(map[string]map[string]struct{}) // projectID -> set(serviceName)
 	projectIDToObj := make(map[string]*models.Project)
 	projectNameToID := make(map[string]string)
 
@@ -1357,7 +1358,13 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 		if projectName != "" && serviceName != "" {
 			proj, err := s.projectService.GetProjectByComposeName(ctx, projectName)
 			if err == nil {
-				projectToServices[proj.ID] = append(projectToServices[proj.ID], serviceName)
+				if _, ok := projectToSeenServices[proj.ID]; !ok {
+					projectToSeenServices[proj.ID] = make(map[string]struct{})
+				}
+				if _, seen := projectToSeenServices[proj.ID][serviceName]; !seen {
+					projectToServices[proj.ID] = append(projectToServices[proj.ID], serviceName)
+					projectToSeenServices[proj.ID][serviceName] = struct{}{}
+				}
 				projectIDToObj[proj.ID] = proj
 				projectNameToID[proj.Name] = proj.ID
 				projectNameToID[loader.NormalizeProjectName(proj.Name)] = proj.ID

@@ -1,4 +1,4 @@
-import { execSync } from 'child_process';
+import { execFileSync, execSync } from 'child_process';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -41,7 +41,22 @@ async function globalTeardown() {
 					} catch (err: any) {
 						if (err.code === 'EACCES' || err.code === 'EPERM') {
 							// Arcane container creates files as root, fallback to docker to remove them
-							execSync(`docker run --rm -v "${projectsDir}:/projects" alpine sh -c "rm -rf /projects/${item}"`);
+							execFileSync(
+								'docker',
+								[
+									'run',
+									'--rm',
+									'-v',
+									`${projectsDir}:/projects`,
+									'alpine',
+									'sh',
+									'-c',
+									'rm -rf "/projects/$1"',
+									'--',
+									item
+								],
+								{ stdio: 'inherit' }
+							);
 						} else {
 							throw err;
 						}

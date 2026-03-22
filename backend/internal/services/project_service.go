@@ -277,7 +277,21 @@ func (s *ProjectService) UpdateProjectServices(ctx context.Context, projectID st
 	}
 
 	// 6. Finalize status
-	return s.updateProjectStatusandCountsInternal(ctx, projectID, models.ProjectStatusRunning)
+	if err := s.updateProjectStatusandCountsInternal(ctx, projectID, models.ProjectStatusRunning); err != nil {
+		return err
+	}
+
+	metadata := models.JSON{
+		"action":      "update_services",
+		"projectID":   projectID,
+		"projectName": projectFromDb.Name,
+		"services":    append([]string(nil), servicesToUpdate...),
+	}
+	if logErr := s.eventService.LogProjectEvent(ctx, models.EventTypeProjectUpdate, projectID, projectFromDb.Name, user.ID, user.Username, "0", metadata); logErr != nil {
+		slog.ErrorContext(ctx, "could not log project service update action", "error", logErr)
+	}
+
+	return nil
 }
 
 func (s *ProjectService) getServiceCounts(services []ProjectServiceInfo) (total int, running int) {
@@ -1552,6 +1566,14 @@ func resolveDockerfilePathInternal(svc composetypes.ServiceConfig) (string, erro
 	return dockerfilePath, nil
 }
 
+func translateBuildPathInternal(path string, pathMapper *projects.PathMapper) (string, error) {
+	if pathMapper == nil || strings.TrimSpace(path) == "" || !filepath.IsAbs(path) {
+		return path, nil
+	}
+
+	return pathMapper.ContainerToHost(path)
+}
+
 func buildArgsFromCompose(args map[string]*string) map[string]string {
 	buildArgs := map[string]string{}
 	for key, value := range args {
@@ -1684,6 +1706,10 @@ func (s *ProjectService) prepareServiceBuildRequest(
 	if err != nil {
 		return imagetypes.BuildRequest{}, updatedSvc, updated, err
 	}
+	contextDir, err = translateBuildPathInternal(contextDir, pathMapper)
+	if err != nil {
+		return imagetypes.BuildRequest{}, updatedSvc, updated, fmt.Errorf("translate build context for service %s: %w", serviceName, err)
+	}
 
 	dockerfileInline := updatedSvc.Build.DockerfileInline
 	if strings.TrimSpace(updatedSvc.Build.Dockerfile) != "" && strings.TrimSpace(dockerfileInline) != "" {
@@ -1695,6 +1721,10 @@ func (s *ProjectService) prepareServiceBuildRequest(
 		dockerfilePath, err = resolveDockerfilePathInternal(updatedSvc)
 		if err != nil {
 			return imagetypes.BuildRequest{}, updatedSvc, updated, err
+		}
+		dockerfilePath, err = translateBuildPathInternal(dockerfilePath, pathMapper)
+		if err != nil {
+			return imagetypes.BuildRequest{}, updatedSvc, updated, fmt.Errorf("translate Dockerfile path for service %s: %w", serviceName, err)
 		}
 	}
 

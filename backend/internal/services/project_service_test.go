@@ -1346,8 +1346,8 @@ func TestProjectService_PrepareServiceBuildRequest_UsesExecutorVisiblePaths(t *t
 	)
 	require.NoError(t, err)
 
-	assert.Equal(t, "/app/data/projects/demo", req.ContextDir)
-	assert.Equal(t, "/app/data/projects/demo/Dockerfile.custom", req.Dockerfile)
+	assert.Equal(t, "/docker-data/arcane/projects/demo", req.ContextDir)
+	assert.Equal(t, "/docker-data/arcane/projects/demo/Dockerfile.custom", req.Dockerfile)
 }
 
 func TestProjectService_PrepareServiceBuildRequest_UsesInlineDockerfile(t *testing.T) {
