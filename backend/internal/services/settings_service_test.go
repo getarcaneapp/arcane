@@ -91,6 +91,22 @@ func TestSettingsService_GetSettings_UnknownKeysIgnored(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestSettingsService_GetSettings_UsesCachedSnapshotWithoutDatabase(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	require.NoError(t, svc.SetStringSetting(ctx, "baseServerUrl", "http://cached"))
+
+	// GetSettings should clone the in-memory snapshot and not touch the database.
+	svc.db = nil
+
+	settings, err := svc.GetSettings(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "http://cached", settings.BaseServerURL.Value)
+}
+
 func TestSettingsService_PruneUnknownSettings_RemovesStaleKeys(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
@@ -295,6 +311,51 @@ func TestSettingsService_UpdateSetting(t *testing.T) {
 	require.Equal(t, "all", sv.Value)
 }
 
+func TestSettingsService_UpdateSetting_RefreshesCachedSnapshot(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	require.Equal(t, "http://localhost", svc.GetSettingsConfig().BaseServerURL.Value)
+	require.NoError(t, svc.UpdateSetting(ctx, "baseServerUrl", "https://arcane.test"))
+
+	require.Equal(t, "https://arcane.test", svc.GetSettingsConfig().BaseServerURL.Value)
+
+	settings, err := svc.GetSettings(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "https://arcane.test", settings.BaseServerURL.Value)
+}
+
+func BenchmarkSettingsService_GetSettings(b *testing.B) {
+	ctx := context.Background()
+	db, err := gorm.Open(glsqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		b.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.SettingVariable{}); err != nil {
+		b.Fatal(err)
+	}
+	settingsDB := &database.DB{DB: db}
+	svc, err := NewSettingsService(ctx, settingsDB)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for b.Loop() {
+		settings, err := svc.GetSettings(ctx)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if settings == nil {
+			b.Fatal("settings should not be nil")
+		}
+	}
+}
+
 func TestSettingsService_EnsureEncryptionKey(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
@@ -420,6 +481,31 @@ func TestSettingsService_UpdateSettings_RefreshesCache(t *testing.T) {
 		}
 	}
 	require.True(t, found, "projectsDirectory setting not found in cached list")
+}
+
+func TestSettingsService_UpdateSettings_ReturnsEnvOverriddenValues(t *testing.T) {
+	t.Setenv("DOCKER_HOST", "tcp://env-docker:2375")
+
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, svc.EnsureDefaultSettings(ctx))
+
+	newDir := "custom/projects2"
+	settingsList, err := svc.UpdateSettings(ctx, settings.Update{
+		ProjectsDirectory: &newDir,
+	})
+	require.NoError(t, err)
+
+	found := false
+	for _, sv := range settingsList {
+		if sv.Key == "dockerHost" {
+			found = true
+			require.Equal(t, "tcp://env-docker:2375", sv.Value)
+		}
+	}
+	require.True(t, found, "dockerHost setting not found in update response")
 }
 
 func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyScanTimeout(t *testing.T) {

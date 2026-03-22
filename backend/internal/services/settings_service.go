@@ -57,10 +57,6 @@ func NewSettingsService(ctx context.Context, db *database.DB) (*SettingsService,
 		return nil, fmt.Errorf("failed to setup instance ID: %w", err)
 	}
 
-	if err = svc.LoadDatabaseSettings(ctx); err != nil {
-		return nil, fmt.Errorf("failed to reload settings after instance ID setup: %w", err)
-	}
-
 	return svc, nil
 }
 
@@ -80,6 +76,14 @@ func (s *SettingsService) LoadDatabaseSettings(ctx context.Context) (err error) 
 	}
 
 	s.config.Store(dst)
+
+	return nil
+}
+
+func (s *SettingsService) refreshSettingsCacheInternal(ctx context.Context) error {
+	if err := s.LoadDatabaseSettings(ctx); err != nil {
+		return fmt.Errorf("failed to refresh settings cache: %w", err)
+	}
 
 	return nil
 }
@@ -326,28 +330,8 @@ func (s *SettingsService) isEnvOverrideActiveInternal(key string) bool {
 }
 
 func (s *SettingsService) GetSettings(ctx context.Context) (*models.Settings, error) {
-	var settingVars []models.SettingVariable
-	err := s.db.WithContext(ctx).Find(&settingVars).Error
-	if err != nil {
-		return nil, err
-	}
-
-	settings := &models.Settings{}
-
-	for _, sv := range settingVars {
-		if err := settings.UpdateField(sv.Key, sv.Value, false); err != nil {
-			var notFoundErr models.SettingKeyNotFoundError
-			if !errors.As(err, &notFoundErr) {
-				return nil, fmt.Errorf("failed to load setting %s: %w", sv.Key, err)
-			}
-		}
-	}
-
-	// Apply environment variable overrides for fields tagged with "envOverride".
-	// This keeps behavior consistent with the cached settings path (LoadDatabaseSettingsInternal)
-	// and allows env vars like OIDC_MERGE_ACCOUNTS to affect runtime behavior.
+	settings := s.GetSettingsConfig().Clone()
 	s.applyEnvOverrides(ctx, settings)
-
 	return settings, nil
 }
 
@@ -459,6 +443,14 @@ func (s *SettingsService) migrateOidcKeyNames(ctx context.Context) error {
 }
 
 func (s *SettingsService) UpdateSetting(ctx context.Context, key, value string) error {
+	if err := s.updateSettingValueNoRefreshInternal(ctx, key, value); err != nil {
+		return err
+	}
+
+	return s.refreshSettingsCacheInternal(ctx)
+}
+
+func (s *SettingsService) updateSettingValueNoRefreshInternal(ctx context.Context, key, value string) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		settingVar := &models.SettingVariable{
 			Key:   key,
@@ -488,13 +480,10 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates settings.U
 		return nil, err
 	}
 
-	// Reload and store settings BEFORE calling callbacks so they read updated values
-	settings, err := s.GetSettings(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to retrieve updated settings: %w", err)
+	if err := s.refreshSettingsCacheInternal(ctx); err != nil {
+		return nil, err
 	}
-
-	s.config.Store(settings)
+	settings := s.GetSettingsConfig()
 
 	// Now call callbacks after in-memory config is updated
 	if changedPolling && s.OnImagePollingSettingsChanged != nil {
@@ -667,7 +656,7 @@ func (s *SettingsService) handleOidcConfigUpdate(ctx context.Context, updates se
 			return fmt.Errorf("failed to marshal merged OIDC config: %w", err)
 		}
 
-		if err := s.UpdateSetting(ctx, "authOidcConfig", string(mergedBytes)); err != nil {
+		if err := s.updateSettingValueNoRefreshInternal(ctx, "authOidcConfig", string(mergedBytes)); err != nil {
 			return fmt.Errorf("failed to update authOidcConfig: %w", err)
 		}
 	}
@@ -688,7 +677,7 @@ func (s *SettingsService) handleOidcConfigUpdate(ctx context.Context, updates se
 			}
 		}
 
-		if err := s.UpdateSetting(ctx, "oidcClientSecret", secret); err != nil {
+		if err := s.updateSettingValueNoRefreshInternal(ctx, "oidcClientSecret", secret); err != nil {
 			return fmt.Errorf("failed to update oidcClientSecret: %w", err)
 		}
 	}
@@ -916,34 +905,15 @@ func (s *SettingsService) GetStringSetting(ctx context.Context, key, defaultValu
 }
 
 func (s *SettingsService) SetBoolSetting(ctx context.Context, key string, value bool) error {
-	if err := s.UpdateSetting(ctx, key, fmt.Sprintf("%t", value)); err != nil {
-		return err
-	}
-	// Rebuild a fresh snapshot instead of mutating current pointer (avoids races)
-	if err := s.LoadDatabaseSettings(ctx); err != nil {
-		return fmt.Errorf("failed to refresh settings cache: %w", err)
-	}
-	return nil
+	return s.UpdateSetting(ctx, key, fmt.Sprintf("%t", value))
 }
 
 func (s *SettingsService) SetIntSetting(ctx context.Context, key string, value int) error {
-	if err := s.UpdateSetting(ctx, key, fmt.Sprintf("%d", value)); err != nil {
-		return err
-	}
-	if err := s.LoadDatabaseSettings(ctx); err != nil {
-		return fmt.Errorf("failed to refresh settings cache: %w", err)
-	}
-	return nil
+	return s.UpdateSetting(ctx, key, fmt.Sprintf("%d", value))
 }
 
 func (s *SettingsService) SetStringSetting(ctx context.Context, key, value string) error {
-	if err := s.UpdateSetting(ctx, key, value); err != nil {
-		return err
-	}
-	if err := s.LoadDatabaseSettings(ctx); err != nil {
-		return fmt.Errorf("failed to refresh settings cache: %w", err)
-	}
-	return nil
+	return s.UpdateSetting(ctx, key, value)
 }
 
 func (s *SettingsService) EnsureEncryptionKey(ctx context.Context) (string, error) {
@@ -1041,10 +1011,6 @@ func (s *SettingsService) NormalizeProjectsDirectory(ctx context.Context, projec
 			return fmt.Errorf("failed to update projectsDirectory: %w", err)
 		}
 
-		if err := s.LoadDatabaseSettings(ctx); err != nil {
-			return fmt.Errorf("failed to reload settings after normalization: %w", err)
-		}
-
 		slog.InfoContext(ctx, "Successfully normalized projects directory")
 	} else {
 		slog.DebugContext(ctx, "Projects directory already normalized or custom, skipping", "value", projectsDirSetting.Value)
@@ -1089,10 +1055,6 @@ func (s *SettingsService) NormalizeBuildsDirectory(ctx context.Context) error {
 
 		if err := s.UpdateSetting(ctx, buildsKey, absPath); err != nil {
 			return fmt.Errorf("failed to update buildsDirectory: %w", err)
-		}
-
-		if err := s.LoadDatabaseSettings(ctx); err != nil {
-			return fmt.Errorf("failed to reload settings after normalization: %w", err)
 		}
 
 		slog.InfoContext(ctx, "Successfully normalized builds directory")
