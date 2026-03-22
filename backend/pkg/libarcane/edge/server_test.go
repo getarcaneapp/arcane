@@ -2,6 +2,7 @@ package edge
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -62,14 +63,28 @@ func TestTunnelServer_HandleConnect(t *testing.T) {
 
 	assert.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
 
+	err = conn.WriteJSON(&TunnelMessage{
+		Type:          MessageTypeRegister,
+		AgentToken:    "valid-token",
+		AgentInstance: "agent-connected",
+	})
+	require.NoError(t, err)
+
+	var registerResp TunnelMessage
+	err = conn.ReadJSON(&registerResp)
+	require.NoError(t, err)
+	assert.Equal(t, MessageTypeRegisterResponse, registerResp.Type)
+	assert.True(t, registerResp.Accepted)
+
 	// Check registry
 	reg := GetRegistry()
 	var tunnel *AgentTunnel
 	require.Eventually(t, func() bool {
 		var ok bool
 		tunnel, ok = reg.Get("env-connected")
-		return ok && tunnel != nil
+		return ok && tunnel != nil && tunnel.SessionID != ""
 	}, time.Second, 10*time.Millisecond)
+	assert.Equal(t, "agent-connected", tunnel.AgentInstance)
 
 	select {
 	case <-statusCallbackCalled:
@@ -170,12 +185,23 @@ func TestTunnelServer_HandleConnect_InvalidToken(t *testing.T) {
 	headers := http.Header{}
 	headers.Set(HeaderAgentToken, "bad-token")
 
-	_, resp, err := websocket.DefaultDialer.Dial(url, headers)
-	require.Error(t, err)
+	conn, resp, err := websocket.DefaultDialer.Dial(url, headers)
+	require.NoError(t, err)
 	if resp != nil {
 		defer func() { _ = resp.Body.Close() }()
 	}
-	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+	defer func() { _ = conn.Close() }()
+	assert.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
+
+	err = conn.WriteJSON(&TunnelMessage{Type: MessageTypeRegister, AgentToken: "bad-token"})
+	require.NoError(t, err)
+
+	var registerResp TunnelMessage
+	err = conn.ReadJSON(&registerResp)
+	require.NoError(t, err)
+	assert.Equal(t, MessageTypeRegisterResponse, registerResp.Type)
+	assert.False(t, registerResp.Accepted)
+	assert.Equal(t, "invalid agent token", registerResp.Error)
 }
 
 func TestTunnelServer_HandleConnect_NoToken(t *testing.T) {
@@ -188,12 +214,20 @@ func TestTunnelServer_HandleConnect_NoToken(t *testing.T) {
 
 	url := "ws" + strings.TrimPrefix(ts.URL, "http") + "/connect"
 
-	_, resp, err := websocket.DefaultDialer.Dial(url, nil)
-	require.Error(t, err)
+	conn, resp, err := websocket.DefaultDialer.Dial(url, nil)
+	require.NoError(t, err)
 	if resp != nil {
 		defer func() { _ = resp.Body.Close() }()
 	}
-	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+	defer func() { _ = conn.Close() }()
+	assert.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
+
+	err = conn.WriteJSON(&TunnelMessage{Type: MessageTypeRegister})
+	require.NoError(t, err)
+
+	var registerResp TunnelMessage
+	err = conn.ReadJSON(&registerResp)
+	require.Error(t, err)
 }
 
 func TestTunnelConnectRouteRegistration(t *testing.T) {
@@ -209,8 +243,41 @@ func TestTunnelConnectRouteRegistration(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/tunnel/connect", nil)
 	router.ServeHTTP(w, req)
 
-	// Should be 401 because no token, which means the handler was reached
-	assert.Equal(t, http.StatusUnauthorized, w.Code)
+	// Plain HTTP requests hit the route but fail websocket upgrade.
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestTunnelServer_HandleMTLSEnroll(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	server := NewTunnelServer(func(ctx context.Context, token string) (string, error) {
+		if token != "valid-token" {
+			return "", errors.New("invalid token")
+		}
+		return "env-mtls", nil
+	}, nil)
+	server.SetConfig(&Config{
+		EdgeMTLSMode:      EdgeMTLSModeRequired,
+		EdgeMTLSAssetsDir: t.TempDir(),
+	})
+
+	router := gin.New()
+	router.POST("/enroll", server.HandleMTLSEnroll)
+
+	req := httptest.NewRequest(http.MethodPost, "/enroll", nil)
+	req.Header.Set(HeaderAgentToken, "valid-token")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var resp enrollMTLSResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	require.Len(t, resp.Files, 3)
+	assert.Equal(t, "ca.crt", resp.Files[0].Name)
+	assert.Contains(t, resp.Files[0].Content, "BEGIN CERTIFICATE")
+	assert.Equal(t, "agent.key", resp.Files[2].Name)
+	assert.Contains(t, resp.Files[2].Content, "BEGIN EC PRIVATE KEY")
 }
 
 func TestTunnelServer_CleanupLoop(t *testing.T) {
@@ -389,7 +456,7 @@ func (f *registerResponseOrderConn) SendRequest(ctx context.Context, msg *Tunnel
 	return nil, errors.New("not implemented")
 }
 
-func TestTunnelServer_ManageConnectedTunnel_SendsGRPCRegisterResponseBeforeRegistering(t *testing.T) {
+func TestTunnelServer_ManageConnectedTunnel_RegistersBeforeSendingGRPCRegisterResponse(t *testing.T) {
 	server := NewTunnelServer(nil, nil)
 	envID := "env-grpc-register-order"
 	server.registry.Unregister(envID)
@@ -399,7 +466,7 @@ func TestTunnelServer_ManageConnectedTunnel_SendsGRPCRegisterResponseBeforeRegis
 	conn.sendHook = func(msg *TunnelMessage) error {
 		require.Equal(t, MessageTypeRegisterResponse, msg.Type)
 		_, ok := server.registry.Get(envID)
-		assert.False(t, ok, "gRPC tunnel should not be routable before register response is sent")
+		assert.True(t, ok, "gRPC tunnel should already be registered when the register response is sent")
 		return nil
 	}
 

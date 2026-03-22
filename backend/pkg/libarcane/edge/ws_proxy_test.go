@@ -32,11 +32,11 @@ func TestProxyWebSocketRequest(t *testing.T) {
 			var msg TunnelMessage
 			_ = json.Unmarshal(data, &msg)
 
-			if msg.Type == MessageTypeWebSocketStart {
+			if msg.Type == MessageTypeStreamOpen {
 				// 1. Send Data
 				resp := &TunnelMessage{
 					ID:            msg.ID,
-					Type:          MessageTypeWebSocketData,
+					Type:          MessageTypeStreamData,
 					Body:          []byte("hello"),
 					WSMessageType: websocket.TextMessage,
 				}
@@ -54,7 +54,7 @@ func TestProxyWebSocketRequest(t *testing.T) {
 				// 3. Send Close
 				closeMsg := &TunnelMessage{
 					ID:   msg.ID,
-					Type: MessageTypeWebSocketClose,
+					Type: MessageTypeStreamClose,
 				}
 				closeData, _ := json.Marshal(closeMsg)
 				_ = conn.WriteMessage(websocket.TextMessage, closeData)
@@ -71,7 +71,7 @@ func TestProxyWebSocketRequest(t *testing.T) {
 		defer func() { _ = resp.Body.Close() }()
 	}
 
-	tunnel := NewAgentTunnel("env-ws-proxy", agentConn)
+	tunnel := newWebSocketAgentTunnel("env-ws-proxy", agentConn)
 	defer func() { _ = tunnel.Close() }()
 
 	// Start receiving on tunnel
@@ -95,7 +95,7 @@ func TestProxyWebSocketRequest(t *testing.T) {
 	// Setup Manager
 	ginRouter := gin.New()
 	ginRouter.GET("/proxy-ws", func(c *gin.Context) {
-		ProxyWebSocketRequest(c, tunnel, "/target/ws")
+		ProxyWebSocketRequest(c, tunnel, "/api/environments/0/ws/system/stats")
 	})
 
 	proxyServer := httptest.NewServer(ginRouter)
@@ -151,7 +151,7 @@ func TestProxyWebSocketRequest_ClientClose(t *testing.T) {
 		defer func() { _ = resp.Body.Close() }()
 	}
 
-	tunnel := NewAgentTunnel("env-ws-close", agentConn)
+	tunnel := newWebSocketAgentTunnel("env-ws-close", agentConn)
 	defer func() { _ = tunnel.Close() }()
 
 	go func() {
@@ -164,7 +164,7 @@ func TestProxyWebSocketRequest_ClientClose(t *testing.T) {
 
 	ginRouter := gin.New()
 	ginRouter.GET("/proxy-ws", func(c *gin.Context) {
-		ProxyWebSocketRequest(c, tunnel, "/target/ws")
+		ProxyWebSocketRequest(c, tunnel, "/api/environments/0/ws/system/stats")
 	})
 	proxyServer := httptest.NewServer(ginRouter)
 	defer proxyServer.Close()
@@ -207,7 +207,7 @@ func TestSendWebSocketData(t *testing.T) {
 		var msg TunnelMessage
 		_ = json.Unmarshal(data, &msg)
 
-		assert.Equal(t, MessageTypeWebSocketData, msg.Type)
+		assert.Equal(t, MessageTypeStreamData, msg.Type)
 		assert.Equal(t, "test-stream", msg.ID)
 		assert.Equal(t, websocket.TextMessage, msg.WSMessageType)
 		assert.Equal(t, "payload", string(msg.Body))
@@ -222,7 +222,7 @@ func TestSendWebSocketData(t *testing.T) {
 	}
 	defer func() { _ = conn.Close() }()
 
-	tunnel := NewAgentTunnel("env-helper", conn)
+	tunnel := newWebSocketAgentTunnel("env-helper", conn)
 	defer func() { _ = tunnel.Close() }()
 
 	err = sendWebSocketData(tunnel, "test-stream", websocket.TextMessage, []byte("payload"))
@@ -245,7 +245,7 @@ func TestSendWebSocketClose(t *testing.T) {
 		var msg TunnelMessage
 		_ = json.Unmarshal(data, &msg)
 
-		assert.Equal(t, MessageTypeWebSocketClose, msg.Type)
+		assert.Equal(t, MessageTypeStreamClose, msg.Type)
 		assert.Equal(t, "test-stream", msg.ID)
 	}))
 	defer server.Close()
@@ -257,8 +257,46 @@ func TestSendWebSocketClose(t *testing.T) {
 		defer func() { _ = resp.Body.Close() }()
 	}
 
-	tunnel := NewAgentTunnel("env-helper-close", conn)
+	tunnel := newWebSocketAgentTunnel("env-helper-close", conn)
 	defer func() { _ = tunnel.Close() }()
 
 	sendWebSocketClose(tunnel, "test-stream")
+}
+
+func TestHandleAgentMessage_StreamDataPreservesTextFrame(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	serverConnCh := make(chan *websocket.Conn, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upgrader := websocket.Upgrader{}
+		conn, err := upgrader.Upgrade(w, r, nil)
+		require.NoError(t, err)
+		serverConnCh <- conn
+	}))
+	defer server.Close()
+
+	clientURL := "ws" + strings.TrimPrefix(server.URL, "http")
+	clientConn, resp, err := websocket.DefaultDialer.Dial(clientURL, nil)
+	require.NoError(t, err)
+	if resp != nil {
+		defer func() { _ = resp.Body.Close() }()
+	}
+	defer func() { _ = clientConn.Close() }()
+
+	serverConn := <-serverConnCh
+	defer func() { _ = serverConn.Close() }()
+
+	stop, err := handleAgentMessage(t.Context(), serverConn, &TunnelMessage{
+		ID:            "stats-stream",
+		Type:          MessageTypeStreamData,
+		Body:          []byte(`{"cpuPercent":12.5}`),
+		WSMessageType: websocket.TextMessage,
+	}, "stats-stream")
+	require.NoError(t, err)
+	assert.False(t, stop)
+
+	msgType, payload, err := clientConn.ReadMessage()
+	require.NoError(t, err)
+	assert.Equal(t, websocket.TextMessage, msgType)
+	assert.Equal(t, `{"cpuPercent":12.5}`, string(payload))
 }

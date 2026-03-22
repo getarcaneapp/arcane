@@ -139,8 +139,23 @@ type PairEnvironmentOutput struct {
 }
 
 type DeploymentSnippet struct {
-	DockerRun     string `json:"dockerRun" doc:"Docker run command snippet"`
-	DockerCompose string `json:"dockerCompose" doc:"Docker compose YAML snippet"`
+	DockerRun     string                 `json:"dockerRun" doc:"Docker run command snippet"`
+	DockerCompose string                 `json:"dockerCompose" doc:"Docker compose YAML snippet"`
+	MTLS          *DeploymentSnippetMTLS `json:"mtls,omitempty" doc:"Optional Arcane-generated mTLS deployment assets for edge agents"`
+}
+
+type DeploymentSnippetFile struct {
+	Name          string `json:"name" doc:"Suggested filename"`
+	Content       string `json:"content" doc:"PEM file contents"`
+	ContainerPath string `json:"containerPath" doc:"Container mount path expected by the mTLS snippet"`
+	Permissions   string `json:"permissions" doc:"Suggested file mode"`
+}
+
+type DeploymentSnippetMTLS struct {
+	DockerRun     string                  `json:"dockerRun" doc:"Docker run snippet using Arcane-generated mTLS assets"`
+	DockerCompose string                  `json:"dockerCompose" doc:"Docker compose snippet using Arcane-generated mTLS assets"`
+	Files         []DeploymentSnippetFile `json:"files" doc:"Generated PEM files to place on the edge host"`
+	HostDirHint   string                  `json:"hostDirHint" doc:"Suggested host directory containing the generated PEM files"`
 }
 
 type GetDeploymentSnippetsInput struct {
@@ -628,6 +643,10 @@ func (h *EnvironmentHandler) applyEdgeRuntimeState(env *environment.Environment)
 	env.LastHeartbeat = nil
 	env.LastPollAt = nil
 	env.EdgeTransport = nil
+	env.EdgeSecurityMode = nil
+	env.EdgeSessionID = nil
+	env.EdgeAgentInstance = nil
+	env.EdgeCapabilities = nil
 
 	if pollState, ok := edge.GetPollRuntimeRegistry().Get(env.ID, time.Now()); ok {
 		env.LastPollAt = pollState.LastPollAt
@@ -639,6 +658,18 @@ func (h *EnvironmentHandler) applyEdgeRuntimeState(env *environment.Environment)
 		env.Status = string(models.EnvironmentStatusOnline)
 		env.ConnectedAt = runtimeState.ConnectedAt
 		env.LastHeartbeat = runtimeState.LastHeartbeat
+		if runtimeState.SecurityMode != "" {
+			env.EdgeSecurityMode = &runtimeState.SecurityMode
+		}
+		if runtimeState.SessionID != "" {
+			env.EdgeSessionID = &runtimeState.SessionID
+		}
+		if runtimeState.AgentInstance != "" {
+			env.EdgeAgentInstance = &runtimeState.AgentInstance
+		}
+		if len(runtimeState.Capabilities) > 0 {
+			env.EdgeCapabilities = append([]string(nil), runtimeState.Capabilities...)
+		}
 		if transport, ok := edge.GetActiveTunnelTransport(env.ID); ok {
 			env.EdgeTransport = &transport
 		} else if runtimeState.Transport != "" {
@@ -982,7 +1013,12 @@ func (h *EnvironmentHandler) GetDeploymentSnippets(ctx context.Context, input *G
 	// Use edge snippets for edge environments
 	var snippets *services.DeploymentSnippets
 	if env.IsEdge {
-		snippets, err = h.environmentService.GenerateEdgeDeploymentSnippets(ctx, env.ID, h.cfg.GetAppURL(), *env.AccessToken)
+		snippets, err = h.environmentService.GenerateEdgeDeploymentSnippets(ctx, env.ID, h.cfg.GetAppURL(), *env.AccessToken, &edge.Config{
+			EdgeMTLSMode:         h.cfg.EdgeMTLSMode,
+			EdgeMTLSAutoGenerate: h.cfg.EdgeMTLSAutoGenerate,
+			EdgeMTLSCAFile:       h.cfg.EdgeMTLSCAFile,
+			EdgeMTLSAssetsDir:    h.cfg.EdgeMTLSAssetsDir,
+		})
 	} else {
 		snippets, err = h.environmentService.GenerateDeploymentSnippets(ctx, env.ID, h.cfg.GetAppURL(), *env.AccessToken)
 	}
@@ -991,12 +1027,32 @@ func (h *EnvironmentHandler) GetDeploymentSnippets(ctx context.Context, input *G
 		return nil, huma.Error500InternalServerError("Failed to generate deployment snippets")
 	}
 
+	var mtls *DeploymentSnippetMTLS
+	if snippets.MTLS != nil {
+		files := make([]DeploymentSnippetFile, 0, len(snippets.MTLS.Files))
+		for _, file := range snippets.MTLS.Files {
+			files = append(files, DeploymentSnippetFile{
+				Name:          file.Name,
+				Content:       file.Content,
+				ContainerPath: file.ContainerPath,
+				Permissions:   file.Permissions,
+			})
+		}
+		mtls = &DeploymentSnippetMTLS{
+			DockerRun:     snippets.MTLS.DockerRun,
+			DockerCompose: snippets.MTLS.DockerCompose,
+			Files:         files,
+			HostDirHint:   snippets.MTLS.HostDirHint,
+		}
+	}
+
 	return &GetDeploymentSnippetsOutput{
 		Body: base.ApiResponse[DeploymentSnippet]{
 			Success: true,
 			Data: DeploymentSnippet{
 				DockerRun:     snippets.DockerRun,
 				DockerCompose: snippets.DockerCompose,
+				MTLS:          mtls,
 			},
 		},
 	}, nil

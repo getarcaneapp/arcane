@@ -205,18 +205,20 @@ func startEdgeTunnelClientIfConfigured(appCtx context.Context, cfg *config.Confi
 		EdgeAgent:             cfg.EdgeAgent,
 		EdgeTransport:         cfg.EdgeTransport,
 		EdgeReconnectInterval: cfg.EdgeReconnectInterval,
+		EdgeMTLSMode:          cfg.EdgeMTLSMode,
+		EdgeMTLSAutoGenerate:  cfg.EdgeMTLSAutoGenerate,
+		EdgeMTLSCAFile:        cfg.EdgeMTLSCAFile,
+		EdgeMTLSCertFile:      cfg.EdgeMTLSCertFile,
+		EdgeMTLSKeyFile:       cfg.EdgeMTLSKeyFile,
+		EdgeMTLSServerName:    cfg.EdgeMTLSServerName,
+		EdgeMTLSAssetsDir:     cfg.EdgeMTLSAssetsDir,
 		ManagerApiUrl:         cfg.ManagerApiUrl,
 		AgentToken:            cfg.AgentToken,
 		Port:                  cfg.Port,
 		Listen:                cfg.Listen,
 	}
 
-	slog.InfoContext(appCtx, "Starting edge tunnel client",
-		"transport_mode", edge.NormalizeEdgeTransport(edgeCfg.EdgeTransport),
-		"live_tunnel_attempt_grpc", edge.UseGRPCEdgeTransport(edgeCfg) || (edge.UsePollEdgeTransport(edgeCfg) && strings.TrimSpace(edgeCfg.GetManagerGRPCAddr()) != ""),
-		"live_tunnel_attempt_websocket", edge.UseWebSocketEdgeTransport(edgeCfg) || (edge.UsePollEdgeTransport(edgeCfg) && strings.TrimSpace(edgeCfg.GetManagerBaseURL()) != ""),
-		"manager_url", cfg.ManagerApiUrl,
-	)
+	slog.InfoContext(appCtx, "Starting edge agent session client", edge.StartupLogAttrs(edgeCfg)...)
 	errCh, err := edge.StartTunnelClientWithErrors(appCtx, edgeCfg, router)
 	if err != nil {
 		slog.ErrorContext(appCtx, "Failed to start edge tunnel client", "error", err)
@@ -245,6 +247,23 @@ func handleAgentBootstrapPairing(ctx context.Context, cfg *config.Config, httpCl
 	}
 
 	req.Header.Set("X-API-Key", cfg.AgentToken)
+
+	if cfg.EdgeAgent && strings.TrimSpace(cfg.ManagerApiUrl) != "" {
+		edgeClient, edgeErr := edge.NewManagerHTTPClient(&edge.Config{
+			ManagerApiUrl:        cfg.ManagerApiUrl,
+			EdgeMTLSMode:         cfg.EdgeMTLSMode,
+			EdgeMTLSAutoGenerate: cfg.EdgeMTLSAutoGenerate,
+			EdgeMTLSCAFile:       cfg.EdgeMTLSCAFile,
+			EdgeMTLSCertFile:     cfg.EdgeMTLSCertFile,
+			EdgeMTLSKeyFile:      cfg.EdgeMTLSKeyFile,
+			EdgeMTLSServerName:   cfg.EdgeMTLSServerName,
+			EdgeMTLSAssetsDir:    cfg.EdgeMTLSAssetsDir,
+		}, 10*time.Second)
+		if edgeErr != nil {
+			return fmt.Errorf("failed to configure edge pairing client: %w", edgeErr)
+		}
+		httpClient = edgeClient
+	}
 
 	resp, err := httpClient.Do(req) //nolint:gosec // intentional request to configured manager pairing endpoint
 	if err != nil {
@@ -290,45 +309,17 @@ func runServices(appCtx context.Context, cfg *config.Config, router http.Handler
 	}
 
 	listenAddr := cfg.ListenAddr()
-	httpHandler := router
-	useTLS := cfg.TLSEnabled
-	tlsCertFile := strings.TrimSpace(cfg.TLSCertFile)
-	tlsKeyFile := strings.TrimSpace(cfg.TLSKeyFile)
-
-	if useTLS && (tlsCertFile == "" || tlsKeyFile == "") {
-		return fmt.Errorf("TLS_ENABLED requires both TLS_CERT_FILE and TLS_KEY_FILE")
+	useTLS, tlsCertFile, tlsKeyFile, edgeCfg, err := prepareServerTLSInternal(cfg)
+	if err != nil {
+		return err
 	}
 
-	var grpcServer *grpc.Server
-	if !cfg.AgentMode && tunnelServer != nil {
-		grpcServer = grpc.NewServer(tunnelServer.GRPCServerOptions(appCtx)...)
-		tunnelpb.RegisterTunnelServiceServer(grpcServer, tunnelServer)
+	httpHandler, grpcServer := configureTunnelServerInternal(appCtx, cfg, router, tunnelServer, listenAddr)
+	httpHandler, protocols := configureHTTPProtocolsInternal(useTLS, httpHandler)
 
-		httpHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if isTunnelGRPCRequestInternal(r) {
-				grpcReq := normalizeTunnelGRPCRequestPathInternal(r)
-				grpcServer.ServeHTTP(w, grpcReq)
-				return
-			}
-			router.ServeHTTP(w, r)
-		})
-		slog.InfoContext(appCtx, "Using shared HTTP/gRPC listener for edge tunnel", "addr", listenAddr)
-	}
-
-	var protocols http.Protocols
-	protocols.SetHTTP1(true)
-	if useTLS {
-		protocols.SetHTTP2(true)
-	} else {
-		protocols.SetUnencryptedHTTP2(true)
-		httpHandler = h2c.NewHandler(httpHandler, &http2.Server{})
-	}
-
-	srv := &http.Server{
-		Addr:              listenAddr,
-		Handler:           httpHandler,
-		Protocols:         &protocols,
-		ReadHeaderTimeout: 5 * time.Second,
+	srv, err := newHTTPServerInternal(listenAddr, httpHandler, protocols, useTLS, edgeCfg)
+	if err != nil {
+		return err
 	}
 
 	go func() {
@@ -376,6 +367,109 @@ func runServices(appCtx context.Context, cfg *config.Config, router http.Handler
 
 	slog.InfoContext(shutdownCtx, "Server stopped gracefully") //nolint:contextcheck
 	return nil
+}
+
+func prepareServerTLSInternal(cfg *config.Config) (bool, string, string, *edge.Config, error) {
+	useTLS := cfg.TLSEnabled
+	tlsCertFile := strings.TrimSpace(cfg.TLSCertFile)
+	tlsKeyFile := strings.TrimSpace(cfg.TLSKeyFile)
+	edgeCfg := buildEdgeRuntimeConfigInternal(cfg)
+	if useTLS && (tlsCertFile == "" || tlsKeyFile == "") {
+		return false, "", "", nil, fmt.Errorf("TLS_ENABLED requires both TLS_CERT_FILE and TLS_KEY_FILE")
+	}
+
+	if cfg.AgentMode {
+		return useTLS, tlsCertFile, tlsKeyFile, edgeCfg, nil
+	}
+
+	if err := edge.PrepareManagerMTLSAssets(edgeCfg); err != nil {
+		return false, "", "", nil, err
+	}
+
+	if edge.NormalizeEdgeMTLSMode(cfg.EdgeMTLSMode) != edge.EdgeMTLSModeDisabled {
+		if !useTLS {
+			return false, "", "", nil, fmt.Errorf("EDGE_MTLS_MODE requires TLS_ENABLED=true on the manager")
+		}
+		if err := edge.ValidateManagerMTLSConfig(edgeCfg); err != nil {
+			return false, "", "", nil, err
+		}
+	}
+
+	return useTLS, tlsCertFile, tlsKeyFile, edgeCfg, nil
+}
+
+func configureTunnelServerInternal(appCtx context.Context, cfg *config.Config, router http.Handler, tunnelServer *edge.TunnelServer, listenAddr string) (http.Handler, *grpc.Server) {
+	httpHandler := router
+	var grpcServer *grpc.Server
+
+	if !cfg.AgentMode && tunnelServer != nil {
+		grpcServer = grpc.NewServer(tunnelServer.GRPCServerOptions(appCtx)...)
+		tunnelpb.RegisterTunnelServiceServer(grpcServer, tunnelServer)
+
+		httpHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if isTunnelGRPCRequestInternal(r) {
+				grpcReq := normalizeTunnelGRPCRequestPathInternal(r)
+				grpcServer.ServeHTTP(w, grpcReq)
+				return
+			}
+			router.ServeHTTP(w, r)
+		})
+		slog.InfoContext(appCtx, "Using shared HTTP/gRPC listener for edge tunnel", "addr", listenAddr)
+	}
+
+	return httpHandler, grpcServer
+}
+
+func configureHTTPProtocolsInternal(useTLS bool, handler http.Handler) (http.Handler, *http.Protocols) {
+	var protocols http.Protocols
+	protocols.SetHTTP1(true)
+	if useTLS {
+		protocols.SetHTTP2(true)
+		return handler, &protocols
+	}
+
+	protocols.SetUnencryptedHTTP2(true)
+	return h2c.NewHandler(handler, &http2.Server{}), &protocols
+}
+
+func newHTTPServerInternal(listenAddr string, handler http.Handler, protocols *http.Protocols, useTLS bool, edgeCfg *edge.Config) (*http.Server, error) {
+	srv := &http.Server{
+		Addr:              listenAddr,
+		Handler:           handler,
+		Protocols:         protocols,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	if !useTLS {
+		return srv, nil
+	}
+
+	tlsConfig, err := edge.BuildManagerServerTLSConfig(edgeCfg)
+	if err != nil {
+		return nil, err
+	}
+	if tlsConfig != nil {
+		srv.TLSConfig = tlsConfig
+	}
+	return srv, nil
+}
+
+func buildEdgeRuntimeConfigInternal(cfg *config.Config) *edge.Config {
+	return &edge.Config{
+		EdgeAgent:             cfg.EdgeAgent,
+		EdgeTransport:         cfg.EdgeTransport,
+		EdgeReconnectInterval: cfg.EdgeReconnectInterval,
+		EdgeMTLSMode:          cfg.EdgeMTLSMode,
+		EdgeMTLSAutoGenerate:  cfg.EdgeMTLSAutoGenerate,
+		EdgeMTLSCAFile:        cfg.EdgeMTLSCAFile,
+		EdgeMTLSCertFile:      cfg.EdgeMTLSCertFile,
+		EdgeMTLSKeyFile:       cfg.EdgeMTLSKeyFile,
+		EdgeMTLSServerName:    cfg.EdgeMTLSServerName,
+		EdgeMTLSAssetsDir:     cfg.EdgeMTLSAssetsDir,
+		ManagerApiUrl:         cfg.ManagerApiUrl,
+		AgentToken:            cfg.AgentToken,
+		Port:                  cfg.Port,
+		Listen:                cfg.Listen,
+	}
 }
 
 func normalizeTunnelGRPCRequestPathInternal(r *http.Request) *http.Request {

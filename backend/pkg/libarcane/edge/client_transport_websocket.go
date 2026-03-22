@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -21,6 +22,13 @@ func (c *TunnelClient) connectAndServeWebSocket(ctx context.Context) error {
 	dialer := websocket.Dialer{
 		Proxy:            http.ProxyFromEnvironment,
 		HandshakeTimeout: 30 * time.Second,
+	}
+	if strings.HasPrefix(strings.ToLower(managerWSURL), "wss://") {
+		tlsConfig, err := buildManagerClientTLSConfigInternal(c.cfg)
+		if err != nil {
+			return fmt.Errorf("failed to configure edge websocket TLS: %w", err)
+		}
+		dialer.TLSClientConfig = tlsConfig
 	}
 
 	headers := http.Header{}
@@ -43,7 +51,18 @@ func (c *TunnelClient) connectAndServeWebSocket(ctx context.Context) error {
 	c.conn = NewTunnelConn(conn)
 	setActiveAgentTunnelConn(c.conn)
 	defer clearActiveAgentTunnelConn(c.conn)
+	if err := c.conn.Send(c.registerMessageInternal()); err != nil {
+		return fmt.Errorf("failed to send websocket register message: %w", err)
+	}
+	registerMsg, err := c.awaitRegistrationInternal(ctx)
+	if err != nil {
+		return err
+	}
 	slog.InfoContext(ctx, "WebSocket edge tunnel connected to manager", "manager_url", managerWSURL)
+	slog.InfoContext(ctx, "Edge websocket tunnel registered",
+		"environment_id", registerMsg.EnvironmentID,
+		"session_id", registerMsg.SessionID,
+	)
 	c.markTransportConnectedInternal(EdgeTransportWebSocket)
 
 	heartbeatCtx, heartbeatCancel := context.WithCancel(ctx)

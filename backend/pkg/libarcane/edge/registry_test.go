@@ -35,7 +35,7 @@ func TestTunnelRegistry(t *testing.T) {
 	// Create a tunnel
 	conn := createTestConn(t)
 	defer func() { _ = conn.Close() }()
-	tunnel := NewAgentTunnel(envID, conn)
+	tunnel := newWebSocketAgentTunnel(envID, conn)
 
 	// Register
 	r.Register(envID, tunnel)
@@ -60,12 +60,12 @@ func TestTunnelRegistry_RegisterReplace(t *testing.T) {
 
 	conn1 := createTestConn(t)
 	defer func() { _ = conn1.Close() }()
-	tunnel1 := NewAgentTunnel(envID, conn1)
+	tunnel1 := newWebSocketAgentTunnel(envID, conn1)
 	r.Register(envID, tunnel1)
 
 	conn2 := createTestConn(t)
 	defer func() { _ = conn2.Close() }()
-	tunnel2 := NewAgentTunnel(envID, conn2)
+	tunnel2 := newWebSocketAgentTunnel(envID, conn2)
 
 	// Register replacement
 	r.Register(envID, tunnel2)
@@ -80,13 +80,75 @@ func TestTunnelRegistry_RegisterReplace(t *testing.T) {
 	assert.False(t, tunnel2.Conn.IsClosed())
 }
 
+func TestTunnelRegistry_RegisterSessionRejectsCompetingAgent(t *testing.T) {
+	r := NewTunnelRegistry()
+	envID := "env-session-reject"
+
+	conn1 := createTestConn(t)
+	defer func() { _ = conn1.Close() }()
+	tunnel1 := newWebSocketAgentTunnel(envID, conn1)
+	tunnel1.AgentInstance = "agent-a"
+	tunnel1.SessionID = "session-a"
+
+	accepted, drainPrevious, reason := r.RegisterSession(tunnel1, TunnelStaleTimeout)
+	assert.True(t, accepted)
+	assert.False(t, drainPrevious)
+	assert.Equal(t, "", reason)
+
+	conn2 := createTestConn(t)
+	defer func() { _ = conn2.Close() }()
+	tunnel2 := newWebSocketAgentTunnel(envID, conn2)
+	tunnel2.AgentInstance = "agent-b"
+	tunnel2.SessionID = "session-b"
+
+	accepted, drainPrevious, reason = r.RegisterSession(tunnel2, TunnelStaleTimeout)
+	assert.False(t, accepted)
+	assert.False(t, drainPrevious)
+	assert.Equal(t, "another edge agent session is already active", reason)
+
+	got, ok := r.Get(envID)
+	assert.True(t, ok)
+	assert.Equal(t, tunnel1, got)
+	assert.False(t, tunnel1.Conn.IsClosed())
+}
+
+func TestTunnelRegistry_RegisterSessionReplacesSameAgentInstance(t *testing.T) {
+	r := NewTunnelRegistry()
+	envID := "env-session-replace"
+
+	conn1 := createTestConn(t)
+	defer func() { _ = conn1.Close() }()
+	tunnel1 := newWebSocketAgentTunnel(envID, conn1)
+	tunnel1.AgentInstance = "agent-a"
+	tunnel1.SessionID = "session-a"
+	accepted, drainPrevious, reason := r.RegisterSession(tunnel1, TunnelStaleTimeout)
+	assert.True(t, accepted)
+	assert.False(t, drainPrevious)
+	assert.Equal(t, "", reason)
+
+	conn2 := createTestConn(t)
+	defer func() { _ = conn2.Close() }()
+	tunnel2 := newWebSocketAgentTunnel(envID, conn2)
+	tunnel2.AgentInstance = "agent-a"
+	tunnel2.SessionID = "session-b"
+	accepted, drainPrevious, reason = r.RegisterSession(tunnel2, TunnelStaleTimeout)
+	assert.True(t, accepted)
+	assert.True(t, drainPrevious)
+	assert.Equal(t, "", reason)
+	assert.True(t, tunnel1.Conn.IsClosed())
+
+	got, ok := r.Get(envID)
+	assert.True(t, ok)
+	assert.Equal(t, tunnel2, got)
+}
+
 func TestTunnelRegistry_CleanupStale(t *testing.T) {
 	r := NewTunnelRegistry()
 	envID := "env-1"
 
 	conn := createTestConn(t)
 	defer func() { _ = conn.Close() }()
-	tunnel := NewAgentTunnel(envID, conn)
+	tunnel := newWebSocketAgentTunnel(envID, conn)
 
 	// Manually set last heartbeat to past
 	tunnel.mu.Lock()
@@ -113,7 +175,7 @@ func TestGetRegistry(t *testing.T) {
 func TestAgentTunnel_Heartbeat(t *testing.T) {
 	conn := createTestConn(t)
 	defer func() { _ = conn.Close() }()
-	tunnel := NewAgentTunnel("env-1", conn)
+	tunnel := newWebSocketAgentTunnel("env-1", conn)
 
 	initial := tunnel.GetLastHeartbeat()
 	time.Sleep(10 * time.Millisecond)
