@@ -2114,6 +2114,8 @@
 	"notifications_event_prune_report_description": "Receive a summary report when a scheduled prune operation completes",
 	"notifications_event_auto_heal_label": "Auto-Heal Restart",
 	"notifications_event_auto_heal_description": "Notify when an unhealthy container is automatically restarted",
+	"use_compose_update": "Use Compose Update",
+	"use_compose_update_description": "Updates containers belonging to a compose project.",
 	"version_info_build_features": "Build Features",
 	"builds_and_deployments": "Builds and Deployments",
 	"builds": "Builds",
