@@ -22,6 +22,7 @@
 	import ContainerStorage from '../components/ContainerStorage.svelte';
 	import ContainerLogsPanel from '../components/ContainerLogsPanel.svelte';
 	import ContainerShell from '../components/ContainerShell.svelte';
+	import ContainerComposePanel from '../components/ContainerComposePanel.svelte';
 	import { createContainerStatsWebSocket, type ReconnectingWebSocket } from '$lib/utils/ws';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import IconImage from '$lib/components/icon-image.svelte';
@@ -36,9 +37,11 @@
 		NetworksIcon,
 		TerminalIcon,
 		ContainersIcon,
-		StatsIcon
+		StatsIcon,
+		CodeIcon
 	} from '$lib/icons';
-
+	import { parse as parseYaml } from 'yaml';
+	import type { IncludeFile } from '$lib/types/project.type';
 	let { data } = $props();
 	let container = $derived(data?.container as ContainerDetailsDto);
 	let stats = $state(null as ContainerStatsType | null);
@@ -223,6 +226,48 @@
 	const showStats = $derived(!!container?.state?.running);
 	const showShell = $derived(!!container?.state?.running);
 
+	const project = $derived(data?.project ?? null);
+	const composeInfo = $derived(container?.composeInfo ?? null);
+	const composeServiceName = $derived(composeInfo?.serviceName ?? '');
+	const rootComposeFilename = $derived.by(() => {
+		const cf = composeInfo?.configFiles;
+		if (!cf) return 'compose.yml';
+		const first = cf.split(',')[0].trim();
+		return first.split('/').pop() || 'compose.yml';
+	});
+
+	// Find which file (root compose or an include file) directly defines this service.
+	// Returns { includeFile: null } for root compose, { includeFile: <file> } for a sub-file,
+	// or null if the service isn't found anywhere (hides the tab).
+	const serviceComposeSource = $derived(
+		(() => {
+			if (!project || !composeServiceName || !composeInfo) return null;
+
+			const hasService = (content: string): boolean => {
+				try {
+					const parsed = parseYaml(content) as Record<string, unknown> | null;
+					return !!(parsed?.services && (parsed.services as Record<string, unknown>)[composeServiceName]);
+				} catch {
+					return false;
+				}
+			};
+
+			if (project.composeContent && hasService(project.composeContent)) {
+				return { includeFile: null as IncludeFile | null };
+			}
+
+			for (const f of project.includeFiles ?? []) {
+				if (hasService(f.content)) {
+					return { includeFile: f };
+				}
+			}
+
+			return null;
+		})()
+	);
+
+	const showComposeTab = $derived(!!composeInfo && !!serviceComposeSource);
+
 	const tabItems = $derived<TabItem[]>([
 		{ value: 'overview', label: m.common_overview(), icon: ContainersIcon },
 		...(showStats ? [{ value: 'stats', label: m.containers_nav_metrics(), icon: StatsIcon }] : []),
@@ -230,7 +275,8 @@
 		...(showShell ? [{ value: 'shell', label: m.common_shell(), icon: TerminalIcon }] : []),
 		...(showConfiguration ? [{ value: 'config', label: m.common_configuration(), icon: SettingsIcon }] : []),
 		...(showNetworkTab ? [{ value: 'network', label: m.containers_nav_networks(), icon: NetworksIcon }] : []),
-		...(hasMounts ? [{ value: 'storage', label: m.containers_nav_storage(), icon: VolumesIcon }] : [])
+		...(hasMounts ? [{ value: 'storage', label: m.containers_nav_storage(), icon: VolumesIcon }] : []),
+		...(showComposeTab ? [{ value: 'compose', label: m.tabs_compose(), icon: CodeIcon }] : [])
 	]);
 
 	$effect(() => {
@@ -382,6 +428,19 @@
 			{#if hasMounts}
 				<Tabs.Content value="storage" class="h-full">
 					<ContainerStorage {container} />
+				</Tabs.Content>
+			{/if}
+
+			{#if project && serviceComposeSource}
+				<Tabs.Content value="compose" class="h-full min-h-0">
+					{#key `${project?.id}-${serviceComposeSource?.includeFile?.relativePath ?? 'root'}`}
+						<ContainerComposePanel
+							{project}
+							serviceName={composeServiceName}
+							includeFile={serviceComposeSource.includeFile}
+							rootFilename={rootComposeFilename}
+						/>
+					{/key}
 				</Tabs.Content>
 			{/if}
 		{/snippet}

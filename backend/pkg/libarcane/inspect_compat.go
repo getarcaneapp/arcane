@@ -47,6 +47,10 @@ func (c *inspectCompatibilityClient) NetworkInspect(ctx context.Context, network
 	return NetworkInspectWithCompatibility(ctx, c.APIClient, networkID, options)
 }
 
+func (c *inspectCompatibilityClient) NetworkList(ctx context.Context, options client.NetworkListOptions) (client.NetworkListResult, error) {
+	return NetworkListWithCompatibility(ctx, c.APIClient, options)
+}
+
 // ContainerInspectWithCompatibility retries inspect decoding against raw daemon
 // JSON when the primary typed decode fails on a ParseAddr-style CIDR issue.
 func ContainerInspectWithCompatibility(ctx context.Context, apiClient client.APIClient, containerID string, options client.ContainerInspectOptions) (client.ContainerInspectResult, error) {
@@ -123,6 +127,43 @@ func NetworkInspectWithCompatibility(ctx context.Context, apiClient client.APICl
 	return client.NetworkInspectResult{
 		Network: repaired,
 		Raw:     normalized,
+	}, nil
+}
+
+// NetworkListWithCompatibility retries list decoding against raw daemon JSON
+// when the primary typed decode fails on a ParseAddr-style CIDR issue.
+func NetworkListWithCompatibility(ctx context.Context, apiClient client.APIClient, options client.NetworkListOptions) (client.NetworkListResult, error) {
+	if apiClient == nil {
+		return client.NetworkListResult{}, fmt.Errorf("docker api client is nil")
+	}
+
+	result, err := apiClient.NetworkList(ctx, options)
+	if err == nil || !isInspectAddressParseErrorInternal(err) {
+		return result, err
+	}
+
+	query, queryErr := buildNetworkListQueryInternal(options)
+	if queryErr != nil {
+		return client.NetworkListResult{}, err
+	}
+
+	raw, fetchErr := fetchDockerAPIJSONInternal(ctx, apiClient, "/networks", query)
+	if fetchErr != nil {
+		return client.NetworkListResult{}, err
+	}
+
+	normalized, changed, normalizeErr := normalizeNetworkListRawJSONInternal(raw)
+	if normalizeErr != nil || !changed {
+		return client.NetworkListResult{}, err
+	}
+
+	var repaired []networktypes.Summary
+	if unmarshalErr := json.Unmarshal(normalized, &repaired); unmarshalErr != nil {
+		return client.NetworkListResult{}, err
+	}
+
+	return client.NetworkListResult{
+		Items: repaired,
 	}, nil
 }
 
@@ -228,12 +269,51 @@ func normalizeContainerInspectRawJSONInternal(raw []byte) ([]byte, bool, error) 
 	return normalized, true, nil
 }
 
+func normalizeNetworkListRawJSONInternal(raw []byte) ([]byte, bool, error) {
+	var payload []any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return nil, false, err
+	}
+
+	changed := false
+	for _, item := range payload {
+		networkPayload, ok := asMapInternal(item)
+		if !ok {
+			continue
+		}
+		changed = normalizeNetworkObjectInternal(networkPayload) || changed
+	}
+
+	if !changed {
+		return raw, false, nil
+	}
+
+	normalized, err := json.Marshal(payload)
+	if err != nil {
+		return nil, false, err
+	}
+	return normalized, true, nil
+}
+
 func normalizeNetworkInspectRawJSONInternal(raw []byte) ([]byte, bool, error) {
 	payload := map[string]any{}
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		return nil, false, err
 	}
 
+	changed := normalizeNetworkObjectInternal(payload)
+	if !changed {
+		return raw, false, nil
+	}
+
+	normalized, err := json.Marshal(payload)
+	if err != nil {
+		return nil, false, err
+	}
+	return normalized, true, nil
+}
+
+func normalizeNetworkObjectInternal(payload map[string]any) bool {
 	changed := false
 	if ipam, ok := asMapInternal(payload["IPAM"]); ok {
 		if configs, ok := asSliceInternal(ipam["Config"]); ok {
@@ -260,16 +340,7 @@ func normalizeNetworkInspectRawJSONInternal(raw []byte) ([]byte, bool, error) {
 			changed = normalizePrefixStringFieldInternal(endpoint, "IPv6Address") || changed
 		}
 	}
-
-	if !changed {
-		return raw, false, nil
-	}
-
-	normalized, err := json.Marshal(payload)
-	if err != nil {
-		return nil, false, err
-	}
-	return normalized, true, nil
+	return changed
 }
 
 func normalizeAddressStringFieldInternal(obj map[string]any, key string) bool {
@@ -452,6 +523,20 @@ func asMapInternal(value any) (map[string]any, bool) {
 func asSliceInternal(value any) ([]any, bool) {
 	out, ok := value.([]any)
 	return out, ok
+}
+
+func buildNetworkListQueryInternal(options client.NetworkListOptions) (url.Values, error) {
+	query := url.Values{}
+	if len(options.Filters) == 0 {
+		return query, nil
+	}
+
+	filtersJSON, err := json.Marshal(options.Filters)
+	if err != nil {
+		return nil, err
+	}
+	query.Set("filters", string(filtersJSON))
+	return query, nil
 }
 
 func isInspectAddressParseErrorInternal(err error) bool {
