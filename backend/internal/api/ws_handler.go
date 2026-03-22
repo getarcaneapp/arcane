@@ -455,7 +455,14 @@ func (h *WebSocketHandler) startContainerLogHub(containerID, format string, batc
 	lines := make(chan string, 256)
 	go func(ctx context.Context) {
 		defer close(lines)
-		_ = h.containerService.StreamLogs(ctx, containerID, lines, follow, tail, since, timestamps)
+		if err := h.containerService.StreamLogs(ctx, containerID, lines, follow, tail, since, timestamps); err != nil {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return
+			}
+
+			slog.Warn("container log stream failed", "containerID", containerID, "error", err)
+			broadcastContainerLogStreamErrorInternal(ls, err)
+		}
 	}(ctx)
 
 	if format == "json" {
@@ -487,6 +494,28 @@ func (h *WebSocketHandler) startContainerLogHub(containerID, format string, batc
 	}
 
 	return ls.hub
+}
+
+func broadcastContainerLogStreamErrorInternal(stream *wsLogStream, err error) {
+	if stream == nil || stream.hub == nil || err == nil {
+		return
+	}
+
+	message := "Failed to stream container logs: " + err.Error()
+	if stream.format == "json" {
+		msg := ws.LogMessage{
+			Seq:       stream.seq.Add(1),
+			Level:     "error",
+			Message:   message,
+			Timestamp: ws.NowRFC3339(),
+		}
+		if b, marshalErr := json.Marshal(msg); marshalErr == nil {
+			stream.hub.Broadcast(b)
+		}
+		return
+	}
+
+	stream.hub.Broadcast([]byte(message))
 }
 
 // ContainerStats streams container stats over WebSocket.
