@@ -609,6 +609,11 @@ func (s *ContainerService) StreamLogs(ctx context.Context, containerID string, l
 		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
+	containerInspect, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to inspect container for logs: %w", err)
+	}
+
 	options := client.ContainerLogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
@@ -624,114 +629,147 @@ func (s *ContainerService) StreamLogs(ctx context.Context, containerID string, l
 	}
 	defer func() { _ = logs.Close() }()
 
+	isTTY := containerInspect.Container.Config != nil && containerInspect.Container.Config.Tty
+	return s.streamContainerLogsInternal(ctx, logs, logsChan, follow, isTTY)
+}
+
+func (s *ContainerService) streamContainerLogsInternal(ctx context.Context, logs io.ReadCloser, logsChan chan<- string, follow bool, isTTY bool) error {
+	if isTTY {
+		return s.streamRawLogsInternal(ctx, logs, logsChan)
+	}
 	if follow {
 		return s.streamMultiplexedLogs(ctx, logs, logsChan)
 	}
-
-	return s.readAllLogs(logs, logsChan)
+	return s.readAllLogs(ctx, logs, logsChan)
 }
 
-func (s *ContainerService) streamMultiplexedLogs(ctx context.Context, logs io.ReadCloser, logsChan chan<- string) error {
+func (s *ContainerService) streamRawLogsInternal(ctx context.Context, logs io.Reader, logsChan chan<- string) error {
+	return s.readLogsFromReader(ctx, logs, logsChan, "")
+}
+
+func (s *ContainerService) streamMultiplexedLogs(ctx context.Context, logs io.Reader, logsChan chan<- string) error {
 	// Use stdcopy to demultiplex Docker's stream format
 	// Docker multiplexes stdout and stderr in a special format
 	stdoutReader, stdoutWriter := io.Pipe()
 	stderrReader, stderrWriter := io.Pipe()
+	errCh := make(chan error, 3)
 
 	// Start demultiplexing in a goroutine
 	go func() {
-		defer func() { _ = stdoutWriter.Close() }()
-		defer func() { _ = stderrWriter.Close() }()
 		_, err := stdcopy.StdCopy(stdoutWriter, stderrWriter, logs)
 		if err != nil && !errors.Is(err, io.EOF) {
-			fmt.Printf("Error demultiplexing logs: %v\n", err)
+			_ = stdoutWriter.CloseWithError(err)
+			_ = stderrWriter.CloseWithError(err)
+			errCh <- fmt.Errorf("failed to demultiplex logs: %w", err)
+			return
 		}
+		_ = stdoutWriter.Close()
+		_ = stderrWriter.Close()
+		errCh <- nil
 	}()
 
 	// Read from both stdout and stderr concurrently
-	done := make(chan error, 2)
-
-	// Read stdout
 	go func() {
-		done <- s.readLogsFromReader(ctx, stdoutReader, logsChan, "stdout")
+		defer func() { _ = stdoutReader.Close() }()
+		errCh <- s.readLogsFromReader(ctx, stdoutReader, logsChan, "")
 	}()
 
-	// Read stderr
 	go func() {
-		done <- s.readLogsFromReader(ctx, stderrReader, logsChan, "stderr")
+		defer func() { _ = stderrReader.Close() }()
+		errCh <- s.readLogsFromReader(ctx, stderrReader, logsChan, "[STDERR] ")
 	}()
 
-	// Wait for context cancellation or error
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case err := <-done:
-		if err != nil && !errors.Is(err, io.EOF) {
-			return err
-		}
-		// Wait for the other goroutine or context cancellation
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-done:
-			return nil
+	var firstErr error
+	for range 3 {
+		err := <-errCh
+		switch {
+		case err == nil:
+		case errors.Is(err, io.EOF):
+		case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		default:
+			if firstErr == nil {
+				firstErr = err
+			}
 		}
 	}
+
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	return firstErr
 }
 
 // readLogsFromReader reads logs line by line from a reader
-func (s *ContainerService) readLogsFromReader(ctx context.Context, reader io.Reader, logsChan chan<- string, source string) error {
-	scanner := bufio.NewScanner(reader)
+func (s *ContainerService) readLogsFromReader(ctx context.Context, reader io.Reader, logsChan chan<- string, prefix string) error {
+	bufferedReader := bufio.NewReader(reader)
 
-	for scanner.Scan() {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-			line := scanner.Text()
-			if line != "" {
-				// Add source prefix for stderr logs
-				if source == "stderr" {
-					line = "[STDERR] " + line
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
+		line, err := bufferedReader.ReadString('\n')
+		if len(line) > 0 {
+			trimmed := strings.TrimRight(line, "\r\n")
+			if trimmed != "" {
+				if prefix != "" {
+					trimmed = prefix + trimmed
 				}
 
 				select {
-				case logsChan <- line:
+				case logsChan <- trimmed:
 				case <-ctx.Done():
 					return ctx.Err()
 				}
 			}
 		}
-	}
 
-	return scanner.Err()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			return err
+		}
+	}
 }
 
-func (s *ContainerService) readAllLogs(logs io.ReadCloser, logsChan chan<- string) error {
+func (s *ContainerService) readAllLogs(ctx context.Context, logs io.ReadCloser, logsChan chan<- string) error {
 	stdoutBuf := &strings.Builder{}
 	stderrBuf := &strings.Builder{}
+	stdCopyDone := make(chan struct{})
+	defer close(stdCopyDone)
+
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = logs.Close()
+		case <-stdCopyDone:
+		}
+	}()
 
 	_, err := stdcopy.StdCopy(stdoutBuf, stderrBuf, logs)
 	if err != nil && !errors.Is(err, io.EOF) {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
 		return fmt.Errorf("failed to demultiplex logs: %w", err)
+	}
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return ctxErr
 	}
 
 	// Send stdout lines
 	if stdoutBuf.Len() > 0 {
-		lines := strings.SplitSeq(strings.TrimRight(stdoutBuf.String(), "\n"), "\n")
-		for line := range lines {
-			if line != "" {
-				logsChan <- line
-			}
+		if err := s.readLogsFromReader(ctx, strings.NewReader(stdoutBuf.String()), logsChan, ""); err != nil {
+			return err
 		}
 	}
 
 	// Send stderr lines with prefix
 	if stderrBuf.Len() > 0 {
-		lines := strings.SplitSeq(strings.TrimRight(stderrBuf.String(), "\n"), "\n")
-		for line := range lines {
-			if line != "" {
-				logsChan <- "[STDERR] " + line
-			}
+		if err := s.readLogsFromReader(ctx, strings.NewReader(stderrBuf.String()), logsChan, "[STDERR] "); err != nil {
+			return err
 		}
 	}
 
