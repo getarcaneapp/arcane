@@ -1345,10 +1345,11 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 	// We only group containers that are explicitly marked for restart (p.newRef != "").
 	projectToServices := make(map[string][]string) // projectID -> []serviceName
 	projectIDToObj := make(map[string]*models.Project)
+	projectNameToID := make(map[string]string)
 
 	for _, cd := range sorted {
 		p := plansByName[cd.Name]
-		if p == nil || p.newRef == "" {
+		if p == nil || p.newRef == "" || p.inspect == nil || p.inspect.Config == nil {
 			continue
 		}
 		projectName := p.inspect.Config.Labels["com.docker.compose.project"]
@@ -1358,6 +1359,8 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 			if err == nil {
 				projectToServices[proj.ID] = append(projectToServices[proj.ID], serviceName)
 				projectIDToObj[proj.ID] = proj
+				projectNameToID[proj.Name] = proj.ID
+				projectNameToID[loader.NormalizeProjectName(proj.Name)] = proj.ID
 			}
 		}
 	}
@@ -1423,12 +1426,8 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 			serviceName := labels["com.docker.compose.service"]
 			var proj *models.Project
 			if projectName != "" {
-				// Find our resolved project object
-				for _, pobj := range projectIDToObj {
-					if pobj.Name == projectName || loader.NormalizeProjectName(pobj.Name) == projectName {
-						proj = pobj
-						break
-					}
+				if projectID, ok := projectNameToID[projectName]; ok {
+					proj = projectIDToObj[projectID]
 				}
 			}
 
