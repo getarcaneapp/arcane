@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/compose-spec/compose-go/v2/loader"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	glsqlite "github.com/glebarez/sqlite"
@@ -282,6 +283,32 @@ func TestUpdaterService_UpgradeServiceNotNilCheck(t *testing.T) {
 	}
 
 	assert.True(t, mockUpgrade.triggerCalled, "Should call CLI upgrade when service is not nil")
+}
+
+func TestLookupComposeProjectIDInternal(t *testing.T) {
+	t.Run("exact match", func(t *testing.T) {
+		projectID, ok := lookupComposeProjectIDInternal("myproject", map[string]string{
+			"myproject": "p1",
+		})
+		require.True(t, ok)
+		assert.Equal(t, "p1", projectID)
+	})
+
+	t.Run("normalized fallback", func(t *testing.T) {
+		projectID, ok := lookupComposeProjectIDInternal("My Project", map[string]string{
+			loader.NormalizeProjectName("myproject"): "p1",
+		})
+		require.True(t, ok)
+		assert.Equal(t, "p1", projectID)
+	})
+
+	t.Run("missing project", func(t *testing.T) {
+		projectID, ok := lookupComposeProjectIDInternal("missing", map[string]string{
+			"other": "p1",
+		})
+		require.False(t, ok)
+		assert.Empty(t, projectID)
+	})
 }
 
 func TestAnyImageIDsInUseSet(t *testing.T) {

@@ -599,6 +599,9 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 
 		proj, err := s.projectService.GetProjectByComposeName(ctx, projectName)
 		if err == nil {
+			// The direct image pull above is still required to compare digests and
+			// skip no-op updates. Compose project updates intentionally pull again
+			// inside UpdateProjectServices to keep project redeploy behavior unified.
 			if err := s.projectService.UpdateProjectServices(ctx, proj.ID, []string{serviceName}, systemUser); err != nil {
 				out.Items = append(out.Items, updater.ResourceResult{
 					ResourceID:   targetContainer.ID,
@@ -1356,10 +1359,7 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 		projectName := p.inspect.Config.Labels["com.docker.compose.project"]
 		serviceName := p.inspect.Config.Labels["com.docker.compose.service"]
 		if projectName != "" && serviceName != "" {
-			projectID, ok := projectNameToID[projectName]
-			if !ok {
-				projectID, ok = projectNameToID[loader.NormalizeProjectName(projectName)]
-			}
+			projectID, ok := lookupComposeProjectIDInternal(projectName, projectNameToID)
 			if !ok {
 				proj, err := s.projectService.GetProjectByComposeName(ctx, projectName)
 				if err != nil {
@@ -1441,7 +1441,7 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 			serviceName := labels["com.docker.compose.service"]
 			var proj *models.Project
 			if projectName != "" {
-				if projectID, ok := projectNameToID[projectName]; ok {
+				if projectID, ok := lookupComposeProjectIDInternal(projectName, projectNameToID); ok {
 					proj = projectIDToObj[projectID]
 				}
 			}
@@ -1584,6 +1584,17 @@ func composeProjectNameFromLabelsInternal(labels map[string]string) string {
 		return ""
 	}
 	return strings.TrimSpace(labels["com.docker.compose.project"])
+}
+
+func lookupComposeProjectIDInternal(projectName string, projectNameToID map[string]string) (string, bool) {
+	if projectName == "" || len(projectNameToID) == 0 {
+		return "", false
+	}
+	if projectID, ok := projectNameToID[projectName]; ok {
+		return projectID, true
+	}
+	projectID, ok := projectNameToID[loader.NormalizeProjectName(projectName)]
+	return projectID, ok
 }
 
 func (s *UpdaterService) statusSnapshotInternal() updater.Status {
