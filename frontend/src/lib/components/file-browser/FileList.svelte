@@ -280,33 +280,50 @@
 </div>
 
 <style>
-	@reference "../../../app.css";
-
 	:global(.file-browser-table--card thead tr) {
-		@apply bg-muted/30 hover:bg-muted/30;
+		background-color: color-mix(in oklch, var(--muted) 30%, transparent);
 	}
 
 	:global(.file-browser-table--card tbody tr) {
-		@apply hover:bg-muted/50 cursor-default border-none transition-colors;
+		cursor: default;
+		border: 0;
+		transition:
+			background-color 150ms ease,
+			border-color 150ms ease,
+			color 150ms ease;
+	}
+
+	:global(.file-browser-table--card tbody tr:hover) {
+		background-color: color-mix(in oklch, var(--muted) 50%, transparent);
 	}
 
 	:global(.file-browser-table--card td) {
-		@apply py-2;
+		padding-top: 0.5rem;
+		padding-bottom: 0.5rem;
 	}
 
 	:global(.file-browser-table--minimal thead tr) {
-		@apply bg-transparent;
+		background-color: transparent;
 	}
 
 	:global(.file-browser-table--minimal tbody tr) {
-		@apply border-border/40 border-b hover:bg-transparent;
+		border-bottom: 1px solid color-mix(in oklch, var(--border) 40%, transparent);
+	}
+
+	:global(.file-browser-table--minimal tbody tr:hover) {
+		background-color: transparent;
 	}
 
 	:global(.file-browser-table--minimal th) {
-		@apply text-muted-foreground/80 text-[11px] font-medium tracking-[0.08em] uppercase;
+		color: color-mix(in oklch, var(--muted-foreground) 80%, transparent);
+		font-size: 11px;
+		font-weight: 500;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
 	}
 
 	:global(.file-browser-table--minimal td) {
-		@apply py-2.5;
+		padding-top: 0.625rem;
+		padding-bottom: 0.625rem;
 	}
 </style>

@@ -4,7 +4,7 @@
 	import ActionButtons from '$lib/components/action-buttons.svelte';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import bytes from '$lib/utils/bytes';
-	import { onDestroy, tick, untrack } from 'svelte';
+	import { tick } from 'svelte';
 	import { page } from '$app/state';
 	import type {
 		ContainerDetailsDto,
@@ -23,8 +23,7 @@
 	import ContainerLogsPanel from '../components/ContainerLogsPanel.svelte';
 	import ContainerShell from '../components/ContainerShell.svelte';
 	import ContainerComposePanel from '../components/ContainerComposePanel.svelte';
-	import { createContainerStatsWebSocket, type ReconnectingWebSocket } from '$lib/utils/ws';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import ContainerDetailStatsSync from '../components/container-detail-stats-sync.svelte';
 	import IconImage from '$lib/components/icon-image.svelte';
 	import { getArcaneIconUrlFromLabels } from '$lib/utils/arcane-labels';
 	import { calculateMemoryUsage } from '$lib/utils/container-stats.utils';
@@ -46,20 +45,9 @@
 	let container = $derived(data?.container as ContainerDetailsDto);
 	let stats = $state(null as ContainerStatsType | null);
 
-	let starting = $state(false);
-	let stopping = $state(false);
-	let restarting = $state(false);
-	let removing = $state(false);
-	let isRefreshing = $state(false);
-
 	let selectedTab = $state<string>('overview');
 	let autoScrollLogs = $state(true);
-	let isStreaming = $state(false);
-
-	let statsWebSocket: ReconnectingWebSocket<any> | null = $state(null);
-	let isConnecting = $state(false);
 	let hasInitialStatsLoaded = $state(false);
-	let statsStreamEnabled = $state(false);
 
 	const cleanContainerName = (name: string | undefined): string => {
 		if (!name) return m.common_not_found_title({ resource: m.containers_title() });
@@ -68,80 +56,6 @@
 
 	const containerDisplayName = $derived(cleanContainerName(container?.name));
 	const containerIconUrl = $derived(getArcaneIconUrlFromLabels(container?.labels));
-
-	async function startStatsStream() {
-		if (isConnecting || statsWebSocket || !container?.id || !container.state?.running) {
-			return;
-		}
-
-		isConnecting = true;
-		statsStreamEnabled = true;
-		try {
-			const envId = await environmentStore.getCurrentEnvironmentId();
-
-			const ws = createContainerStatsWebSocket({
-				getEnvId: () => envId,
-				containerId: container.id,
-				onMessage: (statsData) => {
-					if (statsData.removed) {
-						invalidateAll();
-						return;
-					}
-					stats = statsData;
-					hasInitialStatsLoaded = true;
-				},
-				onOpen: () => {
-					isConnecting = false;
-				},
-				onError: (err) => {
-					console.error('Stats WebSocket error:', err);
-					isConnecting = false;
-				},
-				onClose: () => {
-					isConnecting = false;
-				},
-				maxBackoff: 5000,
-				shouldReconnect: () => {
-					return statsStreamEnabled && container?.state?.running === true;
-				}
-			});
-
-			ws.connect();
-			statsWebSocket = ws;
-		} catch (error) {
-			console.error('Failed to connect to stats stream:', error);
-			isConnecting = false;
-		}
-	}
-
-	function closeStatsStream() {
-		statsStreamEnabled = false;
-		if (statsWebSocket) {
-			statsWebSocket.close();
-			statsWebSocket = null;
-		}
-		isConnecting = false;
-		hasInitialStatsLoaded = false;
-	}
-
-	$effect(() => {
-		const isStatsTab = selectedTab === 'stats';
-
-		untrack(() => {
-			const containerRunning = container?.state?.running;
-			const hasWebSocket = !!statsWebSocket;
-
-			if (isStatsTab && containerRunning && !hasWebSocket) {
-				void startStatsStream();
-			} else if (!isStatsTab && hasWebSocket) {
-				closeStatsStream();
-			}
-		});
-	});
-
-	onDestroy(() => {
-		closeStatsStream();
-	});
 
 	const calculateCPUPercent = (statsData: ContainerStatsType | null): number => {
 		if (!statsData || !statsData.cpu_stats || !statsData.precpu_stats) {
@@ -184,34 +98,13 @@
 
 	const primaryIpAddress = $derived(getPrimaryIpAddress(container?.networkSettings));
 
-	$effect(() => {
-		starting = false;
-		stopping = false;
-		restarting = false;
-		removing = false;
-	});
-
 	async function refreshData() {
-		isRefreshing = true;
 		await invalidateAll();
-		setTimeout(() => {
-			isRefreshing = false;
-		}, 500);
-	}
-
-	function handleLogStart() {
-		isStreaming = true;
-	}
-
-	function handleLogStop() {
-		isStreaming = false;
 	}
 
 	function handleLogClear() {
-		invalidateAll();
+		void invalidateAll();
 	}
-
-	function handleToggleAutoScroll() {}
 
 	const hasEnvVars = $derived(!!(container?.config?.env && container.config.env.length > 0));
 	const hasPorts = $derived(!!(container?.ports && container.ports.length > 0));
@@ -279,10 +172,12 @@
 		...(showComposeTab ? [{ value: 'compose', label: m.tabs_compose(), icon: CodeIcon }] : [])
 	]);
 
-	$effect(() => {
-		if (!tabItems.some((t) => t.value === selectedTab)) {
-			selectedTab = tabItems[0]?.value ?? 'overview';
+	const activeTab = $derived.by(() => {
+		if (tabItems.some((t) => t.value === selectedTab)) {
+			return selectedTab;
 		}
+
+		return tabItems[0]?.value ?? 'overview';
 	});
 
 	function onTabChange(value: string) {
@@ -300,26 +195,6 @@
 		});
 	}
 
-	function parseDockerDate(input: string | Date | undefined | null): Date | null {
-		if (!input) return null;
-		if (input instanceof Date) return isNaN(input.getTime()) ? null : input;
-
-		const s = String(input).trim();
-		if (!s || s.startsWith('0001-01-01')) return null;
-
-		const m = s.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(\.\d+)?Z$/);
-		let normalized = s;
-		if (m) {
-			const base = m[1];
-			const frac = m[2] ? m[2].slice(1) : '';
-			const ms = frac ? '.' + frac.slice(0, 3).padEnd(3, '0') : '';
-			normalized = `${base}${ms}Z`;
-		}
-
-		const d = new Date(normalized);
-		return isNaN(d.getTime()) ? null : d;
-	}
-
 	const backUrl = $derived.by(() => {
 		const from = page.url.searchParams.get('from');
 		const projectId = page.url.searchParams.get('projectId');
@@ -333,7 +208,14 @@
 </script>
 
 {#if container}
-	<TabbedPageLayout {backUrl} backLabel={m.common_back()} {tabItems} {selectedTab} {onTabChange}>
+	<ContainerDetailStatsSync
+		containerId={container.id}
+		enabled={activeTab === 'stats' && !!container.state?.running}
+		bind:stats
+		bind:hasInitialStatsLoaded
+	/>
+
+	<TabbedPageLayout {backUrl} backLabel={m.common_back()} {tabItems} selectedTab={activeTab} {onTabChange}>
 		{#snippet headerInfo()}
 			<div class="flex items-center gap-2">
 				<IconImage
@@ -362,7 +244,6 @@
 				type="container"
 				itemState={container.state?.running ? 'running' : 'stopped'}
 				desktopVariant="adaptive"
-				loading={{ start: starting, stop: stopping, restart: restarting, remove: removing }}
 			/>
 		{/snippet}
 
@@ -377,7 +258,7 @@
 
 			{#if showStats}
 				<Tabs.Content value="stats" class="h-full">
-					{#if selectedTab === 'stats'}
+					{#if activeTab === 'stats'}
 						<ContainerStats
 							{container}
 							{stats}
@@ -393,21 +274,14 @@
 			{/if}
 
 			<Tabs.Content value="logs" class="h-full">
-				{#if selectedTab === 'logs'}
-					<ContainerLogsPanel
-						containerId={container?.id}
-						bind:autoScroll={autoScrollLogs}
-						onStart={handleLogStart}
-						onStop={handleLogStop}
-						onClear={handleLogClear}
-						onToggleAutoScroll={handleToggleAutoScroll}
-					/>
+				{#if activeTab === 'logs'}
+					<ContainerLogsPanel containerId={container?.id} bind:autoScroll={autoScrollLogs} onClear={handleLogClear} />
 				{/if}
 			</Tabs.Content>
 
 			{#if showShell}
 				<Tabs.Content value="shell" class="h-full">
-					{#if selectedTab === 'shell'}
+					{#if activeTab === 'shell'}
 						<ContainerShell containerId={container?.id} />
 					{/if}
 				</Tabs.Content>

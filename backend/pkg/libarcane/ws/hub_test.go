@@ -207,6 +207,32 @@ func TestHub_OnEmptyCallback(t *testing.T) {
 	require.Eventually(t, called.Load, time.Second, 5*time.Millisecond, "onEmpty callback was not called")
 }
 
+func TestHub_OnFirstClientCallback(t *testing.T) {
+	h := NewHub(10)
+	ctx := t.Context()
+	go h.Run(ctx)
+
+	var callCount atomic.Int32
+	h.SetOnFirstClient(func() {
+		callCount.Add(1)
+	})
+
+	_, sc1, cleanup1 := newTestWSPair(t)
+	defer cleanup1()
+	_, sc2, cleanup2 := newTestWSPair(t)
+	defer cleanup2()
+
+	h.register <- NewClient(sc1, 16)
+	h.register <- NewClient(sc2, 16)
+
+	require.Eventually(t, func() bool {
+		return h.ClientCount() == 2
+	}, time.Second, 5*time.Millisecond)
+	require.Eventually(t, func() bool {
+		return callCount.Load() == 1
+	}, time.Second, 5*time.Millisecond)
+}
+
 func TestHub_OnEmptyCalledOnlyOnce(t *testing.T) {
 	h := NewHub(10)
 	ctx := t.Context()

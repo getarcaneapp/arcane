@@ -59,7 +59,6 @@
 		).dashboardActionItems
 	);
 	let debugAllGood = $derived((data as { debugAllGood?: boolean }).debugAllGood ?? false);
-	let initialUserFromData = $derived((data as { user?: User | null }).user ?? null);
 	let currentUser = $state<User | null>(null);
 
 	let systemStats = $state<SystemStats | null>(null);
@@ -210,6 +209,7 @@
 		const count = currentStats?.gpuCount ?? 0;
 		return count > 0 ? `${count} ${count === 1 ? m.dashboard_meter_gpu_device() : m.dashboard_meter_gpu_devices()}` : '--';
 	});
+	const dashboardUser = $derived.by(() => currentUser ?? (data as { user?: User | null }).user ?? null);
 	const greetingBase = $derived.by(() => {
 		const hour = new Date().getHours();
 		if (hour >= 5 && hour < 12) return m.dashboard_greeting_morning();
@@ -218,7 +218,7 @@
 		return m.dashboard_greeting_welcome_back();
 	});
 	const greetingUserName = $derived.by(() => {
-		const name = currentUser?.displayName?.trim() || currentUser?.username?.trim() || '';
+		const name = dashboardUser?.displayName?.trim() || dashboardUser?.username?.trim() || '';
 		return name;
 	});
 	const dashboardHeroGreeting = $derived.by(() =>
@@ -226,12 +226,6 @@
 			? m.dashboard_greeting_with_name({ greeting: greetingBase, name: greetingUserName })
 			: m.dashboard_greeting_without_name({ greeting: greetingBase })
 	);
-
-	$effect(() => {
-		if (!currentUser && initialUserFromData) {
-			currentUser = initialUserFromData;
-		}
-	});
 
 	function formatPercent(value: number | null): string {
 		return value === null ? '--' : `${value.toFixed(1)}%`;
@@ -245,23 +239,36 @@
 
 	onMount(() => {
 		let mounted = true;
+		let currentEnvId: string | null = null;
 		const unsubscribeUser = userStore.subscribe((user) => {
-			currentUser = user ?? initialUserFromData;
+			currentUser = user;
+		});
+		const unsubscribeEnvironment = environmentStore.subscribeSelected((environment) => {
+			const nextEnvId = environment?.id ?? '0';
+			if (!mounted || nextEnvId === currentEnvId) {
+				return;
+			}
+
+			currentEnvId = nextEnvId;
+			resetStats();
+			setupStatsWS(nextEnvId);
+			void refreshData();
 		});
 
 		(async () => {
 			await environmentStore.ready;
 
-			if (mounted) {
-				setupStatsWS();
+			if (mounted && currentEnvId === null) {
+				currentEnvId = environmentStore.selected?.id ?? '0';
+				setupStatsWS(currentEnvId);
 			}
 		})();
 
 		return () => {
 			mounted = false;
 			unsubscribeUser();
-			statsWSClient?.close();
-			statsWSClient = null;
+			unsubscribeEnvironment();
+			closeStatsWS();
 		};
 	});
 
@@ -270,19 +277,17 @@
 		hasInitialStatsLoaded = false;
 	}
 
-	function setupStatsWS() {
+	function closeStatsWS() {
 		if (statsWSClient) {
 			statsWSClient.close();
 			statsWSClient = null;
 		}
+	}
 
-		const getEnvId = () => {
-			const env = environmentStore.selected;
-			return env ? env.id : '0';
-		};
-
+	function setupStatsWS(envId: string) {
+		closeStatsWS();
 		statsWSClient = createStatsWebSocket({
-			getEnvId,
+			getEnvId: () => envId,
 			onOpen: () => {
 				if (!hasInitialStatsLoaded) {
 					isLoading.loadingStats = true;
@@ -299,24 +304,6 @@
 		});
 		statsWSClient.connect();
 	}
-
-	let lastEnvId: string | null = null;
-	$effect(() => {
-		const env = environmentStore.selected;
-		if (!env) return;
-		if (lastEnvId === null) {
-			lastEnvId = env.id;
-			return;
-		}
-		if (env.id !== lastEnvId) {
-			lastEnvId = env.id;
-			statsWSClient?.close();
-			statsWSClient = null;
-			resetStats();
-			setupStatsWS();
-			refreshData();
-		}
-	});
 
 	async function handleStartAll() {
 		if (isLoading.starting || !dockerInfo || stoppedContainers === 0) return;

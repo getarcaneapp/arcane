@@ -4,17 +4,7 @@
 	import { cn } from '$lib/utils';
 	import { ArrowLeftIcon, EllipsisIcon } from '$lib/icons';
 	import type { Snippet } from 'svelte';
-	import type { Action } from '$lib/components/arcane-button/index.js';
-
-	export interface DetailAction {
-		id: string;
-		action: Action;
-		label: string;
-		loadingLabel?: string;
-		loading?: boolean;
-		disabled?: boolean;
-		onclick: () => void;
-	}
+	import type { DetailAction } from './types.js';
 
 	interface Props {
 		backUrl: string;
