@@ -2,11 +2,13 @@ package fswatch
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
@@ -22,6 +24,10 @@ type Watcher struct {
 	debounce       time.Duration
 	stopCh         chan struct{}
 	stoppedCh      chan struct{}
+	mu             sync.Mutex
+	started        bool
+	stopped        bool
+	stopErr        error
 }
 
 type WatcherOptions struct {
@@ -58,6 +64,16 @@ func NewWatcher(watchPath string, opts WatcherOptions) (*Watcher, error) {
 }
 
 func (fw *Watcher) Start(ctx context.Context) error {
+	fw.mu.Lock()
+	defer fw.mu.Unlock()
+
+	if fw.started {
+		return nil
+	}
+	if fw.stopped {
+		return fmt.Errorf("watcher already stopped")
+	}
+
 	if err := fw.watcher.Add(fw.watchedPath); err != nil {
 		return err
 	}
@@ -69,15 +85,36 @@ func (fw *Watcher) Start(ctx context.Context) error {
 	}
 
 	go fw.watchLoop(ctx)
+	fw.started = true
 
 	slog.InfoContext(ctx, "Filesystem watcher started", "path", fw.watchedPath)
 	return nil
 }
 
 func (fw *Watcher) Stop() error {
-	close(fw.stopCh)
-	<-fw.stoppedCh // Wait for watchLoop to finish
-	return fw.watcher.Close()
+	fw.mu.Lock()
+	if fw.stopped {
+		err := fw.stopErr
+		fw.mu.Unlock()
+		return err
+	}
+
+	fw.stopped = true
+	started := fw.started
+	fw.mu.Unlock()
+
+	if started {
+		close(fw.stopCh)
+		<-fw.stoppedCh // Wait for watchLoop to finish
+	}
+
+	err := fw.watcher.Close()
+
+	fw.mu.Lock()
+	fw.stopErr = err
+	fw.mu.Unlock()
+
+	return err
 }
 
 func (fw *Watcher) watchLoop(ctx context.Context) {

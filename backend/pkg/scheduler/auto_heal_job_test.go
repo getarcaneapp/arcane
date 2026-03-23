@@ -106,6 +106,17 @@ func TestAutoHeal_Schedule_Default(t *testing.T) {
 	require.Equal(t, "auto-heal", job.Name())
 }
 
+func TestAutoHeal_ShouldSchedule(t *testing.T) {
+	ctx := context.Background()
+	_, settingsSvc, _ := setupAnalyticsStateServicesInternal(t)
+	job := NewAutoHealJob(nil, settingsSvc, nil, nil)
+
+	require.False(t, job.ShouldSchedule(ctx))
+
+	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "autoHealEnabled", true))
+	require.True(t, job.ShouldSchedule(ctx))
+}
+
 func TestAutoHeal_ResetRestartTracking(t *testing.T) {
 	job := newTestAutoHealJob()
 

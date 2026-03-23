@@ -3,6 +3,7 @@ package scheduler
 import (
 	"context"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/internal/services"
@@ -16,6 +17,7 @@ type FilesystemWatcherJob struct {
 	settingsService  *services.SettingsService
 	projectsWatcher  *fswatch.Watcher
 	templatesWatcher *fswatch.Watcher
+	mu               sync.Mutex
 }
 
 func NewFilesystemWatcherJob(
@@ -118,14 +120,21 @@ func (j *FilesystemWatcherJob) Start(ctx context.Context) error {
 }
 
 func (j *FilesystemWatcherJob) Stop() error {
+	j.mu.Lock()
+	projectsWatcher := j.projectsWatcher
+	templatesWatcher := j.templatesWatcher
+	j.projectsWatcher = nil
+	j.templatesWatcher = nil
+	j.mu.Unlock()
+
 	var firstErr error
-	if j.projectsWatcher != nil {
-		if err := j.projectsWatcher.Stop(); err != nil {
+	if projectsWatcher != nil {
+		if err := projectsWatcher.Stop(); err != nil {
 			firstErr = err
 		}
 	}
-	if j.templatesWatcher != nil {
-		if err := j.templatesWatcher.Stop(); err != nil && firstErr == nil {
+	if templatesWatcher != nil {
+		if err := templatesWatcher.Stop(); err != nil && firstErr == nil {
 			firstErr = err
 		}
 	}
@@ -158,9 +167,13 @@ func (j *FilesystemWatcherJob) handleTemplatesChange(ctx context.Context) {
 func (j *FilesystemWatcherJob) RestartProjectsWatcher(ctx context.Context) error {
 	slog.InfoContext(ctx, "Restarting projects filesystem watcher")
 
-	// Stop the existing projects watcher if it exists
-	if j.projectsWatcher != nil {
-		if err := j.projectsWatcher.Stop(); err != nil {
+	j.mu.Lock()
+	oldProjectsWatcher := j.projectsWatcher
+	j.projectsWatcher = nil
+	j.mu.Unlock()
+
+	if oldProjectsWatcher != nil {
+		if err := oldProjectsWatcher.Stop(); err != nil {
 			slog.WarnContext(ctx, "Failed to stop projects watcher during restart", "error", err)
 		}
 	}
@@ -187,12 +200,14 @@ func (j *FilesystemWatcherJob) RestartProjectsWatcher(ctx context.Context) error
 		return err
 	}
 
-	j.projectsWatcher = sw
-
 	// Start the new watcher
-	if err := j.projectsWatcher.Start(ctx); err != nil {
+	if err := sw.Start(ctx); err != nil {
 		return err
 	}
+
+	j.mu.Lock()
+	j.projectsWatcher = sw
+	j.mu.Unlock()
 
 	slog.InfoContext(ctx, "Projects filesystem watcher restarted", "path", projectsDirectory)
 

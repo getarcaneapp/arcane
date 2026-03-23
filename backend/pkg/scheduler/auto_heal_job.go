@@ -58,6 +58,10 @@ func (j *AutoHealJob) Name() string {
 	return AutoHealJobName
 }
 
+func (j *AutoHealJob) ShouldSchedule(ctx context.Context) bool {
+	return j.settingsService.GetBoolSetting(ctx, "autoHealEnabled", false)
+}
+
 func (j *AutoHealJob) Schedule(ctx context.Context) string {
 	schedule := j.settingsService.GetStringSetting(ctx, "autoHealInterval", "*/30 * * * * *")
 	if schedule == "" {
