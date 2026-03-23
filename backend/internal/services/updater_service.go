@@ -1356,18 +1356,26 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 		projectName := p.inspect.Config.Labels["com.docker.compose.project"]
 		serviceName := p.inspect.Config.Labels["com.docker.compose.service"]
 		if projectName != "" && serviceName != "" {
-			proj, err := s.projectService.GetProjectByComposeName(ctx, projectName)
-			if err == nil {
-				if _, ok := projectToSeenServices[proj.ID]; !ok {
-					projectToSeenServices[proj.ID] = make(map[string]struct{})
+			projectID, ok := projectNameToID[projectName]
+			if !ok {
+				projectID, ok = projectNameToID[loader.NormalizeProjectName(projectName)]
+			}
+			if !ok {
+				proj, err := s.projectService.GetProjectByComposeName(ctx, projectName)
+				if err != nil {
+					continue
 				}
-				if _, seen := projectToSeenServices[proj.ID][serviceName]; !seen {
-					projectToServices[proj.ID] = append(projectToServices[proj.ID], serviceName)
-					projectToSeenServices[proj.ID][serviceName] = struct{}{}
-				}
+				projectID = proj.ID
 				projectIDToObj[proj.ID] = proj
 				projectNameToID[proj.Name] = proj.ID
 				projectNameToID[loader.NormalizeProjectName(proj.Name)] = proj.ID
+			}
+			if _, ok := projectToSeenServices[projectID]; !ok {
+				projectToSeenServices[projectID] = make(map[string]struct{})
+			}
+			if _, seen := projectToSeenServices[projectID][serviceName]; !seen {
+				projectToServices[projectID] = append(projectToServices[projectID], serviceName)
+				projectToSeenServices[projectID][serviceName] = struct{}{}
 			}
 		}
 	}

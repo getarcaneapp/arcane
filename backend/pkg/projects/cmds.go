@@ -70,11 +70,14 @@ func ComposePull(ctx context.Context, proj *types.Project, services []string) er
 }
 
 func ComposeStop(ctx context.Context, proj *types.Project, services []string) error {
+	if len(services) == 0 {
+		return nil
+	}
 	c, err := NewClient(ctx)
 	if err != nil {
 		return err
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 	return c.svc.Stop(ctx, proj.Name, api.StopOptions{Services: services})
 }
 

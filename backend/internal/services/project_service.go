@@ -226,7 +226,13 @@ func (s *ProjectService) GetProjectByComposeName(ctx context.Context, name strin
 	normalized := normalizeComposeProjectName(name)
 
 	var proj models.Project
-	if err := s.db.WithContext(ctx).Where("name = ? OR name = ?", name, normalized).First(&proj).Error; err != nil {
+	query := s.db.WithContext(ctx)
+	if normalized == name {
+		query = query.Where("name = ?", name)
+	} else {
+		query = query.Where("name = ? OR name = ?", name, normalized)
+	}
+	if err := query.First(&proj).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, fmt.Errorf("project not found: %s", name)
 		}
