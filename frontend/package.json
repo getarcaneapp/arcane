@@ -1,7 +1,7 @@
 {
   "name": "arcane-frontend",
   "private": true,
-  "version": "1.16.3",
+  "version": "1.16.4",
   "type": "module",
   "scripts": {
     "dev": "vite dev --port 3000 --host",
