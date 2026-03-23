@@ -44,17 +44,15 @@
 		envContent: z.string().optional().default('')
 	});
 
-	const initialName = $derived(
-		data.selectedTemplate ? data.selectedTemplate.name.toLowerCase().replace(/[^a-z0-9-_]/g, '-') : ''
-	);
-
-	let formData = $derived({
-		name: initialName,
+	// Initial form values intentionally come from the page load data once.
+	// svelte-ignore state_referenced_locally
+	const formData = {
+		name: data.selectedTemplate ? data.selectedTemplate.name.toLowerCase().replace(/[^a-z0-9-_]/g, '-') : '',
 		composeContent: data.defaultTemplate || '',
 		envContent: data.envTemplate || ''
-	});
+	};
 
-	let { inputs, ...form } = $derived(createForm<typeof formSchema>(formSchema, formData));
+	const { inputs, ...form } = createForm<typeof formSchema>(formSchema, formData);
 
 	let dockerRunCommand = $state('');
 	let composeOpen = $state(true);
@@ -393,7 +391,7 @@
 			<div class="space-y-2">
 				<Label class="text-muted-foreground text-xs">{m.compose_example_commands_label()}</Label>
 				<div class="space-y-1">
-					{#each exampleCommands as command}
+					{#each exampleCommands as command (command)}
 						<ArcaneButton
 							action="base"
 							tone="ghost"

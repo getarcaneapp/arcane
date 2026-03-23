@@ -17,8 +17,9 @@
 	} = $props();
 
 	const sourceContent = $derived(includeFile ? includeFile.content : (project.composeContent ?? ''));
-
-	let composeContent = $state(includeFile ? includeFile.content : (project.composeContent ?? ''));
+	// This component is keyed by compose source identity in the parent route, so capturing the initial source is intentional.
+	// svelte-ignore state_referenced_locally
+	let composeContent = $state(sourceContent);
 
 	const isDirty = $derived(composeContent !== sourceContent);
 

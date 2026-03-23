@@ -12,7 +12,6 @@
 	import { m } from '$lib/paraglide/messages';
 	import { containerService } from '$lib/services/container-service';
 	import { goto } from '$app/navigation';
-	import { untrack } from 'svelte';
 	import { IsMobile } from '$lib/hooks';
 	import { ContainersIcon, ArrowRightIcon } from '$lib/icons';
 	import IconImage from '$lib/components/icon-image.svelte';
@@ -28,8 +27,10 @@
 
 	const isMobile = new IsMobile();
 	let selectedIds = $state<string[]>([]);
-	let contentHeight = $state(0);
-	let lastFetchedLimit = $state(5);
+	let displayLimit = $state(containers.pagination?.itemsPerPage ?? 5);
+	let lastFetchedLimit = $state(containers.pagination?.itemsPerPage ?? 5);
+	let resizeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+	let lastMeasuredHeight = $state(0);
 
 	// Estimate row height: ~57px per row (including borders/padding), plus ~145px for header
 	const ROW_HEIGHT = 57;
@@ -43,48 +44,72 @@
 		sort: { column: 'created', direction: 'desc' }
 	});
 
-	const shouldReserveFooter = $derived.by(() => {
-		const limit = requestOptions.pagination?.limit ?? containers.pagination?.itemsPerPage ?? MIN_ROWS;
-		const dataLength = containers.data?.length ?? 0;
+	function shouldReserveFooter(limit: number) {
 		const totalItems = containers.pagination?.totalItems ?? 0;
-		return dataLength >= limit && totalItems > limit;
-	});
+		return totalItems > limit;
+	}
 
-	const calculatedLimit = $derived.by(() => {
+	function calculateLimitForHeight(height: number) {
 		if (isMobile.current) return 10;
-		if (contentHeight <= 0) return 5;
-		let availableHeight = contentHeight - HEADER_HEIGHT;
-		if (shouldReserveFooter) {
+		if (height <= 0) return 5;
+
+		let availableHeight = height - HEADER_HEIGHT;
+		const initialRows = Math.floor(Math.max(0, availableHeight) / ROW_HEIGHT);
+		const footerLimit = Math.max(MIN_ROWS, Math.min(MAX_ROWS, initialRows));
+		if (shouldReserveFooter(footerLimit)) {
 			availableHeight -= FOOTER_HEIGHT;
 		}
+
 		const rows = Math.floor(Math.max(0, availableHeight) / ROW_HEIGHT);
 		return Math.max(MIN_ROWS, Math.min(MAX_ROWS, rows));
-	});
+	}
 
-	$effect(() => {
-		const limit = calculatedLimit;
+	async function syncLimit(limit: number) {
+		displayLimit = limit;
+
+		const pagination = requestOptions.pagination;
 		const currentLimit = containers.pagination?.itemsPerPage;
+		if (!pagination || (limit === lastFetchedLimit && (currentLimit === undefined || currentLimit === limit))) {
+			return;
+		}
 
-		const tid = untrack(() => {
-			if (requestOptions.pagination && (limit !== lastFetchedLimit || (currentLimit !== undefined && currentLimit !== limit))) {
-				return setTimeout(() => {
-					untrack(() => {
-						lastFetchedLimit = limit;
-						if (requestOptions.pagination) {
-							requestOptions.pagination.limit = limit;
-							containerService.getContainers(requestOptions).then((result) => {
-								untrack(() => {
-									containers = result;
-								});
-							});
-						}
-					});
-				}, 300);
+		if (resizeDebounceTimer) {
+			clearTimeout(resizeDebounceTimer);
+		}
+
+		resizeDebounceTimer = setTimeout(async () => {
+			try {
+				lastFetchedLimit = limit;
+				requestOptions = {
+					...requestOptions,
+					pagination: {
+						page: pagination.page ?? 1,
+						limit
+					}
+				};
+				containers = await containerService.getContainers(requestOptions);
+				void handleLayoutChange(lastMeasuredHeight);
+			} catch (error) {
+				console.error('Failed to sync container limit:', error);
+			} finally {
+				resizeDebounceTimer = null;
 			}
-		});
+		}, 300);
+	}
 
-		if (tid) return () => clearTimeout(tid);
-	});
+	async function handleLayoutChange(height: number) {
+		lastMeasuredHeight = height;
+		const nextLimit = calculateLimitForHeight(height);
+		await syncLimit(nextLimit);
+	}
+
+	async function refreshContainers(options: SearchPaginationSortRequest) {
+		requestOptions = options;
+		const result = await containerService.getContainers(options);
+		containers = result;
+		await handleLayoutChange(lastMeasuredHeight);
+		return result;
+	}
 
 	const columns = [
 		{ accessorKey: 'names', title: m.common_name(), cell: NameCell },
@@ -149,7 +174,7 @@
 	/>
 {/snippet}
 
-<div class="flex h-full min-h-0 flex-col" bind:clientHeight={contentHeight}>
+<div class="flex h-full min-h-0 flex-col" bind:clientHeight={() => lastMeasuredHeight, (value) => void handleLayoutChange(value)}>
 	<Card.Root class="flex h-full min-h-0 flex-col">
 		<Card.Header icon={ContainersIcon} class="shrink-0">
 			<div class="flex flex-1 items-center justify-between">
@@ -167,10 +192,10 @@
 		</Card.Header>
 		<Card.Content class="flex min-h-0 flex-1 flex-col px-0">
 			<ArcaneTable
-				items={{ ...containers, data: containers.data.slice(0, calculatedLimit) }}
+				items={{ ...containers, data: containers.data.slice(0, displayLimit) }}
 				bind:requestOptions
 				bind:selectedIds
-				onRefresh={async (options) => (containers = await containerService.getContainers(options))}
+				onRefresh={refreshContainers}
 				{columns}
 				mobileCard={DashContainerMobileCard}
 				withoutSearch
@@ -179,10 +204,10 @@
 				unstyled
 			/>
 		</Card.Content>
-		{#if containers.data.length >= calculatedLimit && containers.pagination.totalItems > calculatedLimit}
+		{#if containers.data.length >= displayLimit && containers.pagination.totalItems > displayLimit}
 			<Card.Footer class="border-t px-6 py-3">
 				<span class="text-muted-foreground text-xs">
-					{m.containers_showing_of_total({ shown: calculatedLimit, total: containers.pagination.totalItems })}
+					{m.containers_showing_of_total({ shown: displayLimit, total: containers.pagination.totalItems })}
 				</span>
 			</Card.Footer>
 		{/if}

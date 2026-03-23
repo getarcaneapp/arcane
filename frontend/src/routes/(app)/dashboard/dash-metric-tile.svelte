@@ -42,7 +42,7 @@
 		<div class="mt-2.5">
 			<div class="bg-muted/45 relative h-1.5 overflow-hidden rounded-full">
 				<div class="pointer-events-none absolute inset-0">
-					{#each [25, 50, 75] as tick}
+					{#each [25, 50, 75] as tick (tick)}
 						<span class="bg-foreground/15 absolute top-0 h-full w-px opacity-60" style={`left: ${tick}%`}></span>
 					{/each}
 				</div>

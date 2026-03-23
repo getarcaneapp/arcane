@@ -193,7 +193,7 @@
 									<Icon class="size-5 sm:size-6" />
 								</div>
 								<div class="min-w-0 flex-1">
-									<h3 class="text-sm leading-tight font-semibold sm:text-base">{category.title}</h3>
+									<h2 class="text-sm leading-tight font-semibold sm:text-base">{category.title}</h2>
 									<p class="text-muted-foreground mt-1 text-xs leading-relaxed sm:text-sm">{category.description}</p>
 								</div>
 							</div>
