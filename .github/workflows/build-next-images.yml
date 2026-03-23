@@ -17,6 +17,7 @@ permissions:
 
 jobs:
   build-next-images:
+    if: ${{ github.repository_owner != 'getarcaneapp' && github.actor != 'getarcaneappbot' }}
     runs-on: depot-ubuntu-24.04-8
 
     env:
