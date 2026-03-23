@@ -27,6 +27,10 @@ func (j *ImagePollingJob) Name() string {
 	return "image-polling"
 }
 
+func (j *ImagePollingJob) ShouldSchedule(ctx context.Context) bool {
+	return j.settingsService.GetBoolSetting(ctx, "pollingEnabled", true)
+}
+
 func (j *ImagePollingJob) Schedule(ctx context.Context) string {
 	s := j.settingsService.GetStringSetting(ctx, "pollingInterval", "0 0 * * * *")
 	if s == "" {

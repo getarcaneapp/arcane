@@ -31,6 +31,10 @@ func (j *ScheduledPruneJob) Name() string {
 	return ScheduledPruneJobName
 }
 
+func (j *ScheduledPruneJob) ShouldSchedule(ctx context.Context) bool {
+	return j.settingsService.GetBoolSetting(ctx, "scheduledPruneEnabled", false)
+}
+
 func (j *ScheduledPruneJob) Schedule(ctx context.Context) string {
 	schedule := j.settingsService.GetStringSetting(ctx, "scheduledPruneInterval", "0 0 0 * * *")
 	if schedule == "" {
