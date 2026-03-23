@@ -692,13 +692,14 @@ func (s *SettingsService) EnsureDefaultSettings(ctx context.Context) error {
 			var existing models.SettingVariable
 			err := tx.Where("key = ?", defaultSetting.Key).First(&existing).Error
 
-			if errors.Is(err, gorm.ErrRecordNotFound) {
+			switch {
+			case errors.Is(err, gorm.ErrRecordNotFound):
 				if err := tx.Create(&defaultSetting).Error; err != nil {
 					return fmt.Errorf("failed to create default setting %s: %w", defaultSetting.Key, err)
 				}
-			} else if err != nil {
+			case err != nil:
 				return fmt.Errorf("failed to check for existing setting %s: %w", defaultSetting.Key, err)
-			} else if defaultSetting.Key == "trivyImage" && existing.Value != defaultSetting.Value {
+			case defaultSetting.Key == "trivyImage" && existing.Value != defaultSetting.Value:
 				if err := tx.Model(&existing).Update("value", defaultSetting.Value).Error; err != nil {
 					return fmt.Errorf("failed to enforce default setting %s: %w", defaultSetting.Key, err)
 				}
