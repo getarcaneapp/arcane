@@ -1,9 +1,6 @@
 name: Build Next Images
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
 
 concurrency:
@@ -17,7 +14,8 @@ permissions:
 
 jobs:
   build-next-images:
-    runs-on: depot-ubuntu-latest
+    if: ${{ github.repository_owner != 'getarcaneapp' && github.actor != 'getarcaneappbot' }}
+    runs-on: depot-ubuntu-24.04-8
 
     env:
       MANAGER_IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/arcane
@@ -26,14 +24,16 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Setup PNPM
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v5
         with:
           run_install: false
 
       - name: Setup Just
-        uses: extractions/setup-just@v3
+        uses: taiki-e/install-action@just
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -49,6 +49,8 @@ jobs:
 
       - name: Set up Depot CLI
         uses: depot/setup-action@v1
+        env:
+          DEPOT_TOKEN: ${{ secrets.DEPOT_TOKEN }}
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v4
@@ -68,10 +70,10 @@ jobs:
           echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
       - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v7
+        uses: goreleaser/goreleaser-action@ec59f474b9834571250b370d4735c50f8e2d1e29 #v7.0.0
         with:
           distribution: goreleaser-pro
-          version: "~> v2"
+          version: "~> 2"
           args: release --clean --skip=sign,announce,validate,nfpm,homebrew
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

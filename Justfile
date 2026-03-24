@@ -323,6 +323,18 @@ _utils-hotfix:
         git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname --merged "$ref" | head -n1
     }
 
+    cherry_pick_in_progress() {
+        git rev-parse -q --verify CHERRY_PICK_HEAD >/dev/null 2>&1
+    }
+
+    has_unmerged_conflicts() {
+        [ -n "$(git diff --name-only --diff-filter=U)" ]
+    }
+
+    working_tree_dirty() {
+        [ -n "$(git status --porcelain)" ]
+    }
+
     LATEST_TAG=$(get_latest_repo_tag "main")
     if [ -z "$LATEST_TAG" ]; then
         LATEST_TAG=$(get_latest_repo_tag "HEAD")
@@ -420,10 +432,21 @@ _utils-hotfix:
 
         case "$INPUT" in
             done)
+                if cherry_pick_in_progress || has_unmerged_conflicts; then
+                    echo -e "${RED}A cherry-pick is still in progress.${NC}"
+                    echo -e "Run ${YELLOW}git add <resolved-files>${NC} and ${YELLOW}git cherry-pick --continue${NC} first,"
+                    echo -e "or run ${YELLOW}git cherry-pick --abort${NC} to discard it."
+                    continue
+                fi
                 break
                 ;;
             quit)
                 echo -e "${YELLOW}Aborting hotfix release...${NC}"
+                if cherry_pick_in_progress || has_unmerged_conflicts || working_tree_dirty; then
+                    echo -e "${YELLOW}Working tree is not clean; staying on ${RELEASE_BRANCH}.${NC}"
+                    echo -e "Resolve the cherry-pick manually with ${GREEN}git cherry-pick --continue${NC} or ${GREEN}git cherry-pick --abort${NC}."
+                    exit 1
+                fi
                 git checkout main
                 read -p "Delete release branch ${RELEASE_BRANCH}? (y/n) " DELETE_BRANCH
                 if [[ "$DELETE_BRANCH" == "y" ]]; then
@@ -453,6 +476,9 @@ _utils-hotfix:
                     if [[ "$RESOLVE" == "abort" ]]; then
                         git cherry-pick --abort
                         echo -e "${YELLOW}Cherry-pick aborted${NC}"
+                    elif cherry_pick_in_progress || has_unmerged_conflicts; then
+                        echo -e "${YELLOW}Cherry-pick is still in progress.${NC}"
+                        echo -e "Run ${GREEN}git add <resolved-files>${NC} and ${GREEN}git cherry-pick --continue${NC}, then choose another action."
                     fi
                 fi
                 ;;
@@ -468,6 +494,11 @@ _utils-hotfix:
 
     if [ "$COMMITS_ADDED" -eq 0 ]; then
         echo -e "${RED}No commits were cherry-picked. Aborting hotfix release.${NC}"
+        if cherry_pick_in_progress || has_unmerged_conflicts || working_tree_dirty; then
+            echo -e "${YELLOW}Working tree is not clean; staying on ${RELEASE_BRANCH}.${NC}"
+            echo -e "Resolve the cherry-pick manually with ${GREEN}git cherry-pick --continue${NC} or ${GREEN}git cherry-pick --abort${NC}."
+            exit 1
+        fi
         git checkout main
         git branch -D "${RELEASE_BRANCH}" 2>/dev/null || true
         exit 0

@@ -343,6 +343,50 @@ var containersUpdateCmd = &cobra.Command{
 	},
 }
 
+var containersRedeployCmd = &cobra.Command{
+	Use:          "redeploy <container-id|name>",
+	Short:        "Redeploy a container (pull image and recreate)",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := client.NewFromConfig()
+		if err != nil {
+			return err
+		}
+
+		resolved, _, err := resolveContainer(cmd.Context(), c, args[0], false)
+		if err != nil {
+			return err
+		}
+
+		c.SetTimeout(30 * time.Minute)
+
+		path := types.Endpoints.ContainerRedeploy(c.EnvID(), resolved.ID)
+		resp, err := c.Post(cmd.Context(), path, nil)
+		if err != nil {
+			return fmt.Errorf("failed to redeploy container: %w", err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+
+		var result base.ApiResponse[container.Details]
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			return fmt.Errorf("failed to parse response: %w", err)
+		}
+
+		if jsonOutput {
+			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
+			if err != nil {
+				return fmt.Errorf("failed to marshal JSON: %w", err)
+			}
+			fmt.Println(string(resultBytes))
+			return nil
+		}
+
+		output.Success("Container %s redeployed successfully", containerDisplayName(resolved))
+		return nil
+	},
+}
+
 var containersDeleteCmd = &cobra.Command{
 	Use:          "delete <container-id|name>",
 	Aliases:      []string{"rm", "remove"},
@@ -582,6 +626,7 @@ func init() {
 	ContainersCmd.AddCommand(containersStopCmd)
 	ContainersCmd.AddCommand(containersRestartCmd)
 	ContainersCmd.AddCommand(containersUpdateCmd)
+	ContainersCmd.AddCommand(containersRedeployCmd)
 	ContainersCmd.AddCommand(containersDeleteCmd)
 	ContainersCmd.AddCommand(containersCountsCmd)
 	ContainersCmd.AddCommand(containersCreateCmd)
@@ -620,6 +665,7 @@ func init() {
 	containersStopCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	containersRestartCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	containersUpdateCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
+	containersRedeployCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	containersDeleteCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	containersCountsCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 }

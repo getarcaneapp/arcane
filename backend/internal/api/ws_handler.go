@@ -23,9 +23,9 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/docker"
-	httputil "github.com/getarcaneapp/arcane/backend/internal/utils/http"
-	ws "github.com/getarcaneapp/arcane/backend/internal/utils/ws"
+	docker "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
+	ws "github.com/getarcaneapp/arcane/backend/pkg/libarcane/ws"
+	httputil "github.com/getarcaneapp/arcane/backend/pkg/utils/httpx"
 	systemtypes "github.com/getarcaneapp/arcane/types/system"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -37,6 +37,7 @@ import (
 
 const (
 	gpuCacheDuration = 30 * time.Second
+	cgroupCacheTTL   = 30 * time.Second
 )
 
 // amdGPUSysfsPath is the base path for AMD GPU sysfs entries
@@ -156,9 +157,32 @@ type WebSocketHandler struct {
 	wsUpgrader        websocket.Upgrader
 	wsMetrics         *WebSocketMetrics
 	activeConnections sync.Map
+	logStreamsMu      sync.Mutex
+	logStreams        map[string]*wsLogStream
 	cpuCache          struct {
 		sync.RWMutex
 		value     float64
+		timestamp time.Time
+	}
+	systemStaticInfo struct {
+		once     sync.Once
+		cpuCount int
+		hostname string
+	}
+	systemStatsSampler struct {
+		stateMu     sync.RWMutex
+		latest      systemtypes.SystemStats
+		timestamp   time.Time
+		lifecycleMu sync.Mutex
+		clients     int
+		cancel      context.CancelFunc
+		ready       chan struct{}
+		running     bool
+	}
+	cgroupCache struct {
+		sync.RWMutex
+		value     *docker.CgroupLimits
+		detected  bool
 		timestamp time.Time
 	}
 	diskUsagePathCache struct {
@@ -177,13 +201,22 @@ type WebSocketHandler struct {
 	detectionMutex       sync.Mutex
 	gpuMonitoringEnabled bool
 	gpuType              string
+	projectLogStreamer   func(ctx context.Context, projectID string, logsChan chan<- string, follow bool, tail, since string, timestamps bool) error
+	containerLogStreamer func(ctx context.Context, containerID string, logsChan chan<- string, follow bool, tail, since string, timestamps bool) error
+	systemStatsCollector func(ctx context.Context) systemtypes.SystemStats
+	cpuUsageReader       func(interval time.Duration) (float64, bool)
+	cgroupLimitsDetector func() (*docker.CgroupLimits, error)
 }
 
 type wsLogStream struct {
-	hub    *ws.Hub
-	cancel context.CancelFunc
-	format string
-	seq    atomic.Uint64
+	hub             *ws.Hub
+	cancel          context.CancelFunc
+	firstSubscriber chan struct{}
+	format          string
+	key             string
+	refs            int
+	done            bool
+	seq             atomic.Uint64
 }
 
 func getContextUserIDInternal(c *gin.Context) string {
@@ -206,6 +239,98 @@ func buildWSConnectionInfoInternal(c *gin.Context, kind, resourceID string) syst
 	}
 }
 
+func buildLogStreamKeyInternal(envID, kind, resourceID, format string, batched, follow bool, tail, since string, timestamps bool) string {
+	return strings.Join([]string{
+		envID,
+		kind,
+		resourceID,
+		format,
+		strconv.FormatBool(batched),
+		strconv.FormatBool(follow),
+		tail,
+		since,
+		strconv.FormatBool(timestamps),
+	}, "|")
+}
+
+func (h *WebSocketHandler) streamProjectLogsInternal(ctx context.Context, projectID string, logsChan chan<- string, follow bool, tail, since string, timestamps bool) error {
+	if h.projectLogStreamer != nil {
+		return h.projectLogStreamer(ctx, projectID, logsChan, follow, tail, since, timestamps)
+	}
+	return h.projectService.StreamProjectLogs(ctx, projectID, logsChan, follow, tail, since, timestamps)
+}
+
+func (h *WebSocketHandler) streamContainerLogsInternal(ctx context.Context, containerID string, logsChan chan<- string, follow bool, tail, since string, timestamps bool) error {
+	if h.containerLogStreamer != nil {
+		return h.containerLogStreamer(ctx, containerID, logsChan, follow, tail, since, timestamps)
+	}
+	return h.containerService.StreamLogs(ctx, containerID, logsChan, follow, tail, since, timestamps)
+}
+
+func (h *WebSocketHandler) getOrCreateLogStreamInternal(key string, create func(onEmpty func(*wsLogStream)) *wsLogStream) *wsLogStream {
+	h.logStreamsMu.Lock()
+	defer h.logStreamsMu.Unlock()
+
+	if stream, ok := h.logStreams[key]; ok {
+		if !stream.done {
+			stream.refs++
+			return stream
+		}
+	}
+
+	stream := create(func(stream *wsLogStream) {
+		h.markLogStreamDoneInternal(key, stream)
+	})
+	stream.key = key
+	stream.refs = 1
+	h.logStreams[key] = stream
+	return stream
+}
+
+func takeLogStreamCancelInternal(stream *wsLogStream) context.CancelFunc {
+	cancel := stream.cancel
+	stream.cancel = nil
+	return cancel
+}
+
+func (h *WebSocketHandler) releaseLogStreamInternal(key string, stream *wsLogStream) {
+	var cancel context.CancelFunc
+
+	h.logStreamsMu.Lock()
+	if stream.refs > 0 {
+		stream.refs--
+	}
+	if stream.refs == 0 {
+		if current, ok := h.logStreams[key]; ok && current == stream {
+			delete(h.logStreams, key)
+		}
+		cancel = takeLogStreamCancelInternal(stream)
+	}
+	h.logStreamsMu.Unlock()
+
+	if cancel != nil {
+		cancel()
+	}
+}
+
+func (h *WebSocketHandler) markLogStreamDoneInternal(key string, stream *wsLogStream) {
+	var cancel context.CancelFunc
+
+	h.logStreamsMu.Lock()
+	stream.done = true
+	if stream.refs == 0 {
+		if current, ok := h.logStreams[key]; ok && current == stream {
+			delete(h.logStreams, key)
+		}
+		cancel = takeLogStreamCancelInternal(stream)
+	}
+	h.logStreamsMu.Unlock()
+
+	if cancel != nil {
+		cancel()
+	}
+}
+
 func NewWebSocketHandler(
 	group *gin.RouterGroup,
 	projectService *services.ProjectService,
@@ -219,6 +344,7 @@ func NewWebSocketHandler(
 		containerService:     containerService,
 		systemService:        systemService,
 		wsMetrics:            defaultWebSocketMetrics,
+		logStreams:           make(map[string]*wsLogStream),
 		gpuMonitoringEnabled: cfg.GPUMonitoringEnabled,
 		gpuType:              cfg.GPUType,
 		wsUpgrader: websocket.Upgrader{
@@ -228,7 +354,6 @@ func NewWebSocketHandler(
 			EnableCompression: true,
 		},
 	}
-
 	wsGroup := group.Group("/environments/:id/ws")
 	wsGroup.Use(authMiddleware.WithAdminNotRequired().Add())
 	{
@@ -283,101 +408,162 @@ func (h *WebSocketHandler) ProjectLogs(c *gin.Context) {
 		return
 	}
 
-	connID := h.wsMetrics.RegisterConnection(buildWSConnectionInfoInternal(c, systemtypes.WSKindProjectLogs, projectID))
-	hub := h.startProjectLogHub(projectID, format, batched, follow, tail, since, timestamps, func() {
-		h.wsMetrics.UnregisterConnection(connID)
+	streamKey := buildLogStreamKeyInternal(c.Param("id"), systemtypes.WSKindProjectLogs, projectID, format, batched, follow, tail, since, timestamps)
+	stream := h.getOrCreateLogStreamInternal(streamKey, func(onEmpty func(*wsLogStream)) *wsLogStream {
+		return h.startProjectLogHub(streamKey, projectID, format, batched, follow, tail, since, timestamps, onEmpty)
 	})
+	connID := h.wsMetrics.RegisterConnection(buildWSConnectionInfoInternal(c, systemtypes.WSKindProjectLogs, projectID))
 	// WebSocket connections use context.Background() because they are long-lived and should not
 	// be tied to the HTTP request context. Cleanup is handled via the hub's OnEmpty callback
 	// which triggers when all clients disconnect.
-	ws.ServeClient(context.Background(), hub, conn)
+	ws.ServeClientWithOnRemove(context.Background(), stream.hub, conn, func() {
+		h.wsMetrics.UnregisterConnection(connID)
+		h.releaseLogStreamInternal(streamKey, stream)
+	})
 }
 
-func (h *WebSocketHandler) startProjectLogHub(projectID, format string, batched, follow bool, tail, since string, timestamps bool, onEmptyHook func()) *ws.Hub {
+func newWSLogStreamInternal(key, format string) (*wsLogStream, context.Context) {
 	ls := &wsLogStream{
-		hub:    ws.NewHub(1024),
-		format: format,
+		hub:             ws.NewHub(1024),
+		firstSubscriber: make(chan struct{}),
+		format:          format,
+		key:             key,
 	}
+	ls.hub.SetOnFirstClient(func() {
+		close(ls.firstSubscriber)
+	})
 
 	ctx, cancel := context.WithCancel(context.Background()) //nolint:gosec // cancel is intentionally retained and invoked by the hub OnEmpty callback.
 	ls.cancel = cancel
 
-	ls.hub.SetOnEmpty(func() {
-		if onEmptyHook != nil {
-			onEmptyHook()
-		}
-		slog.Debug("client disconnected, cleaning up project log hub", "projectID", projectID)
-		cancel()
-	})
-
 	go ls.hub.Run(ctx)
 
+	return ls, ctx
+}
+
+func (h *WebSocketHandler) startProjectLogSourceInternal(ctx context.Context, key, projectID, format string, follow bool, tail, since string, timestamps bool, ls *wsLogStream) <-chan string {
 	lines := make(chan string, 256)
-	go func(ctx context.Context) {
+
+	go func() {
 		defer close(lines)
-		if err := h.projectService.StreamProjectLogs(ctx, projectID, lines, follow, tail, since, timestamps); err != nil {
+		if !waitForLogStreamSubscriberInternal(ctx, ls.firstSubscriber) {
+			return
+		}
+
+		if err := h.streamProjectLogsInternal(ctx, projectID, lines, follow, tail, since, timestamps); err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				return
 			}
 
-			slog.Warn("project log stream failed", "projectID", projectID, "error", err)
-
-			if format == "json" {
-				msg := ws.LogMessage{
-					Seq:       ls.seq.Add(1),
-					Level:     "error",
-					Message:   "Failed to stream project logs: " + err.Error(),
-					Service:   "arcane",
-					Timestamp: ws.NowRFC3339(),
-				}
-				if b, merr := json.Marshal(msg); merr == nil {
-					ls.hub.Broadcast(b)
-				}
-				return
-			}
-
-			ls.hub.Broadcast([]byte("Failed to stream project logs: " + err.Error()))
+			h.broadcastProjectLogStreamErrorInternal(projectID, format, err, ls)
+			h.markLogStreamDoneInternal(key, ls)
+			return
 		}
-	}(ctx)
+
+		if ctx.Err() == nil {
+			h.markLogStreamDoneInternal(key, ls)
+		}
+	}()
+
+	return lines
+}
+
+func waitForLogStreamSubscriberInternal(ctx context.Context, firstSubscriber <-chan struct{}) bool {
+	for {
+		select {
+		case <-ctx.Done():
+			return false
+		case <-firstSubscriber:
+			return true
+		}
+	}
+}
+
+func (h *WebSocketHandler) broadcastProjectLogStreamErrorInternal(projectID, format string, err error, ls *wsLogStream) {
+	slog.Warn("project log stream failed", "projectID", projectID, "error", err)
 
 	if format == "json" {
-		msgs := make(chan ws.LogMessage, 256)
-		go func() {
-			defer close(msgs)
-			for line := range lines {
-				level, service, msg, ts := ws.NormalizeProjectLine(line)
-				seq := ls.seq.Add(1)
-				timestamp := ts
-				if timestamp == "" {
-					timestamp = ws.NowRFC3339()
-				}
-				msgs <- ws.LogMessage{
-					Seq:       seq,
-					Level:     level,
-					Message:   msg,
-					Service:   service,
-					Timestamp: timestamp,
-				}
-			}
-		}()
-		if batched {
-			go ws.ForwardLogJSONBatched(ctx, ls.hub, msgs, 50, 400*time.Millisecond)
-		} else {
-			go ws.ForwardLogJSON(ctx, ls.hub, msgs)
+		msg := ws.LogMessage{
+			Seq:       ls.seq.Add(1),
+			Level:     "error",
+			Message:   "Failed to stream project logs: " + err.Error(),
+			Service:   "arcane",
+			Timestamp: ws.NowRFC3339(),
 		}
-	} else {
-		cleanChan := make(chan string, 256)
-		go func() {
-			defer close(cleanChan)
-			for line := range lines {
-				_, _, msg, _ := ws.NormalizeProjectLine(line)
-				cleanChan <- msg
-			}
-		}()
-		go ws.ForwardLines(ctx, ls.hub, cleanChan)
+		if b, marshalErr := json.Marshal(msg); marshalErr == nil {
+			ls.hub.Broadcast(b)
+		}
+		return
 	}
 
-	return ls.hub
+	ls.hub.Broadcast([]byte("Failed to stream project logs: " + err.Error()))
+}
+
+func startProjectLogForwardersInternal(ctx context.Context, format string, batched bool, lines <-chan string, ls *wsLogStream) {
+	if format == "json" {
+		startProjectJSONForwarderInternal(ctx, batched, lines, ls)
+		return
+	}
+
+	startProjectTextForwarderInternal(ctx, lines, ls)
+}
+
+func startProjectJSONForwarderInternal(ctx context.Context, batched bool, lines <-chan string, ls *wsLogStream) {
+	msgs := make(chan ws.LogMessage, 256)
+	go func() {
+		defer close(msgs)
+		for line := range lines {
+			level, service, msg, ts := ws.NormalizeProjectLine(line)
+			seq := ls.seq.Add(1)
+			timestamp := ts
+			if timestamp == "" {
+				timestamp = ws.NowRFC3339()
+			}
+			msgs <- ws.LogMessage{
+				Seq:       seq,
+				Level:     level,
+				Message:   msg,
+				Service:   service,
+				Timestamp: timestamp,
+			}
+		}
+	}()
+
+	if batched {
+		go ws.ForwardLogJSONBatched(ctx, ls.hub, msgs, 50, 400*time.Millisecond)
+		return
+	}
+
+	go ws.ForwardLogJSON(ctx, ls.hub, msgs)
+}
+
+func startProjectTextForwarderInternal(ctx context.Context, lines <-chan string, ls *wsLogStream) {
+	cleanChan := make(chan string, 256)
+	go func() {
+		defer close(cleanChan)
+		for line := range lines {
+			_, _, msg, _ := ws.NormalizeProjectLine(line)
+			cleanChan <- msg
+		}
+	}()
+
+	go ws.ForwardLines(ctx, ls.hub, cleanChan)
+}
+
+func (h *WebSocketHandler) startProjectLogHub(key, projectID, format string, batched, follow bool, tail, since string, timestamps bool, onEmptyHook func(*wsLogStream)) *wsLogStream {
+	ls, ctx := newWSLogStreamInternal(key, format)
+
+	ls.hub.SetOnEmpty(func() {
+		if onEmptyHook != nil {
+			onEmptyHook(ls)
+		}
+		slog.Debug("client disconnected, cleaning up project log hub", "projectID", projectID)
+	})
+
+	lines := h.startProjectLogSourceInternal(ctx, key, projectID, format, follow, tail, since, timestamps, ls)
+	startProjectLogForwardersInternal(ctx, format, batched, lines, ls)
+
+	return ls
 }
 
 // ============================================================================
@@ -423,39 +609,50 @@ func (h *WebSocketHandler) ContainerLogs(c *gin.Context) {
 		return
 	}
 
-	connID := h.wsMetrics.RegisterConnection(buildWSConnectionInfoInternal(c, systemtypes.WSKindContainerLogs, containerID))
-	hub := h.startContainerLogHub(containerID, format, batched, follow, tail, since, timestamps, func() {
-		h.wsMetrics.UnregisterConnection(connID)
+	streamKey := buildLogStreamKeyInternal(c.Param("id"), systemtypes.WSKindContainerLogs, containerID, format, batched, follow, tail, since, timestamps)
+	stream := h.getOrCreateLogStreamInternal(streamKey, func(onEmpty func(*wsLogStream)) *wsLogStream {
+		return h.startContainerLogHub(streamKey, containerID, format, batched, follow, tail, since, timestamps, onEmpty)
 	})
+	connID := h.wsMetrics.RegisterConnection(buildWSConnectionInfoInternal(c, systemtypes.WSKindContainerLogs, containerID))
 	// WebSocket connections use context.Background() because they are long-lived and should not
 	// be tied to the HTTP request context. Cleanup is handled via the hub's OnEmpty callback
 	// which triggers when all clients disconnect.
-	ws.ServeClient(context.Background(), hub, conn)
+	ws.ServeClientWithOnRemove(context.Background(), stream.hub, conn, func() {
+		h.wsMetrics.UnregisterConnection(connID)
+		h.releaseLogStreamInternal(streamKey, stream)
+	})
 }
 
-func (h *WebSocketHandler) startContainerLogHub(containerID, format string, batched, follow bool, tail, since string, timestamps bool, onEmptyHook func()) *ws.Hub {
-	ls := &wsLogStream{
-		hub:    ws.NewHub(1024),
-		format: format,
-	}
-
-	ctx, cancel := context.WithCancel(context.Background()) //nolint:gosec // cancel is intentionally retained and invoked by the hub OnEmpty callback.
-	ls.cancel = cancel
+func (h *WebSocketHandler) startContainerLogHub(key, containerID, format string, batched, follow bool, tail, since string, timestamps bool, onEmptyHook func(*wsLogStream)) *wsLogStream {
+	ls, ctx := newWSLogStreamInternal(key, format)
 
 	ls.hub.SetOnEmpty(func() {
 		if onEmptyHook != nil {
-			onEmptyHook()
+			onEmptyHook(ls)
 		}
 		slog.Debug("client disconnected, cleaning up container log hub", "containerID", containerID)
-		cancel()
 	})
-
-	go ls.hub.Run(ctx)
 
 	lines := make(chan string, 256)
 	go func(ctx context.Context) {
 		defer close(lines)
-		_ = h.containerService.StreamLogs(ctx, containerID, lines, follow, tail, since, timestamps)
+		if !waitForLogStreamSubscriberInternal(ctx, ls.firstSubscriber) {
+			return
+		}
+
+		if err := h.streamContainerLogsInternal(ctx, containerID, lines, follow, tail, since, timestamps); err != nil {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return
+			}
+
+			h.broadcastContainerLogStreamErrorInternal(containerID, format, err, ls)
+			h.markLogStreamDoneInternal(key, ls)
+			return
+		}
+
+		if ctx.Err() == nil {
+			h.markLogStreamDoneInternal(key, ls)
+		}
 	}(ctx)
 
 	if format == "json" {
@@ -486,7 +683,27 @@ func (h *WebSocketHandler) startContainerLogHub(containerID, format string, batc
 		go ws.ForwardLines(ctx, ls.hub, lines)
 	}
 
-	return ls.hub
+	return ls
+}
+
+func (h *WebSocketHandler) broadcastContainerLogStreamErrorInternal(containerID, format string, err error, ls *wsLogStream) {
+	slog.Warn("container log stream failed", "containerID", containerID, "error", err)
+
+	if format == "json" {
+		msg := ws.LogMessage{
+			Seq:       ls.seq.Add(1),
+			Level:     "error",
+			Message:   "Failed to stream container logs: " + err.Error(),
+			Service:   "arcane",
+			Timestamp: ws.NowRFC3339(),
+		}
+		if b, marshalErr := json.Marshal(msg); marshalErr == nil {
+			ls.hub.Broadcast(b)
+		}
+		return
+	}
+
+	ls.hub.Broadcast([]byte("Failed to stream container logs: " + err.Error()))
 }
 
 // ContainerStats streams container stats over WebSocket.
@@ -711,23 +928,115 @@ func (h *WebSocketHandler) releaseRateLimit(clientIP string, count *int32) {
 	}
 }
 
-// startCPUSampler starts a background goroutine that samples CPU usage.
-func (h *WebSocketHandler) startCPUSampler(ctx context.Context, ticker *time.Ticker) {
-	go func(ctx context.Context) {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				if vals, err := cpu.Percent(0, false); err == nil && len(vals) > 0 {
-					h.cpuCache.Lock()
-					h.cpuCache.value = vals[0]
-					h.cpuCache.timestamp = time.Now()
-					h.cpuCache.Unlock()
-				}
-			}
+func (h *WebSocketHandler) acquireSystemStatsSamplerInternal(ctx context.Context) bool {
+	h.systemStatsSampler.lifecycleMu.Lock()
+
+	h.systemStatsSampler.clients++
+	if h.systemStatsSampler.running {
+		ready := h.systemStatsSampler.ready
+		h.systemStatsSampler.lifecycleMu.Unlock()
+		return waitForSystemStatsSamplerReadyInternal(ctx, ready)
+	}
+
+	samplerCtx, cancel := context.WithCancel(context.WithoutCancel(ctx)) //nolint:gosec // cancel is intentionally retained in sampler state and invoked when the last subscriber disconnects.
+	ready := make(chan struct{})
+	h.systemStatsSampler.cancel = cancel
+	h.systemStatsSampler.ready = ready
+	h.systemStatsSampler.running = true
+	h.systemStatsSampler.lifecycleMu.Unlock()
+
+	go func() {
+		closeReady := sync.OnceFunc(func() {
+			close(ready)
+		})
+		if !h.initializeCPUCacheCtx(samplerCtx) {
+			closeReady()
+			return
 		}
-	}(ctx)
+		if samplerCtx.Err() != nil {
+			closeReady()
+			return
+		}
+
+		h.storeSystemStatsSnapshotInternal(h.collectSystemStatsSnapshotInternal(samplerCtx))
+		closeReady()
+		if samplerCtx.Err() != nil {
+			return
+		}
+
+		h.runSystemStatsSamplerInternal(samplerCtx)
+	}()
+
+	return waitForSystemStatsSamplerReadyInternal(ctx, ready)
+}
+
+func waitForSystemStatsSamplerReadyInternal(ctx context.Context, ready <-chan struct{}) bool {
+	if ready == nil {
+		return true
+	}
+
+	select {
+	case <-ctx.Done():
+		return false
+	case <-ready:
+		return ctx.Err() == nil
+	}
+}
+
+func (h *WebSocketHandler) releaseSystemStatsSamplerInternal() {
+	var cancel context.CancelFunc
+
+	h.systemStatsSampler.lifecycleMu.Lock()
+	if h.systemStatsSampler.clients > 0 {
+		h.systemStatsSampler.clients--
+	}
+	if h.systemStatsSampler.clients == 0 && h.systemStatsSampler.running {
+		cancel = h.systemStatsSampler.cancel
+		h.systemStatsSampler.cancel = nil
+		h.systemStatsSampler.ready = nil
+		h.systemStatsSampler.running = false
+	}
+	h.systemStatsSampler.lifecycleMu.Unlock()
+
+	if cancel != nil {
+		cancel()
+	}
+}
+
+func (h *WebSocketHandler) runSystemStatsSamplerInternal(ctx context.Context) {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			h.updateCPUCacheInternal(0)
+			h.storeSystemStatsSnapshotInternal(h.collectSystemStatsSnapshotInternal(ctx))
+		}
+	}
+}
+
+func (h *WebSocketHandler) storeSystemStatsSnapshotInternal(stats systemtypes.SystemStats) {
+	h.systemStatsSampler.stateMu.Lock()
+	h.systemStatsSampler.latest = stats
+	h.systemStatsSampler.timestamp = time.Now()
+	h.systemStatsSampler.stateMu.Unlock()
+}
+
+func (h *WebSocketHandler) latestSystemStatsSnapshotInternal() systemtypes.SystemStats {
+	h.systemStatsSampler.stateMu.RLock()
+	stats := h.systemStatsSampler.latest
+	h.systemStatsSampler.stateMu.RUnlock()
+	return stats
+}
+
+func (h *WebSocketHandler) collectSystemStatsSnapshotInternal(ctx context.Context) systemtypes.SystemStats {
+	if h.systemStatsCollector != nil {
+		return h.systemStatsCollector(ctx)
+	}
+	return h.collectSystemStats(ctx)
 }
 
 // collectSystemStats gathers all system statistics.
@@ -760,11 +1069,26 @@ func (h *WebSocketHandler) collectSystemStats(ctx context.Context) systemtypes.S
 
 // getCPUCount returns the number of CPUs.
 func (h *WebSocketHandler) getCPUCount() int {
-	cpuCount, err := cpu.Counts(true)
-	if err != nil {
-		return runtime.NumCPU()
-	}
-	return cpuCount
+	h.initSystemStaticInfoInternal()
+	return h.systemStaticInfo.cpuCount
+}
+
+func (h *WebSocketHandler) initSystemStaticInfoInternal() {
+	h.systemStaticInfo.once.Do(func() {
+		cpuCount, err := cpu.Counts(true)
+		if err != nil {
+			cpuCount = runtime.NumCPU()
+		}
+
+		hostInfo, _ := host.Info()
+		hostname := ""
+		if hostInfo != nil {
+			hostname = hostInfo.Hostname
+		}
+
+		h.systemStaticInfo.cpuCount = cpuCount
+		h.systemStaticInfo.hostname = hostname
+	})
 }
 
 // getMemoryInfo returns memory usage and total.
@@ -778,8 +1102,8 @@ func (h *WebSocketHandler) getMemoryInfo() (uint64, uint64) {
 
 // applyCgroupLimits applies cgroup limits when running in a container.
 func (h *WebSocketHandler) applyCgroupLimits(cpuCount int, memUsed, memTotal uint64) (int, uint64, uint64) {
-	cgroupLimits, err := docker.DetectCgroupLimits()
-	if err != nil {
+	cgroupLimits := h.getCachedCgroupLimitsInternal()
+	if cgroupLimits == nil {
 		return cpuCount, memUsed, memTotal
 	}
 
@@ -815,11 +1139,8 @@ func (h *WebSocketHandler) getDiskInfo(ctx context.Context) (uint64, uint64) {
 
 // getHostname returns the system hostname.
 func (h *WebSocketHandler) getHostname() string {
-	hostInfo, _ := host.Info()
-	if hostInfo == nil {
-		return ""
-	}
-	return hostInfo.Hostname
+	h.initSystemStaticInfoInternal()
+	return h.systemStaticInfo.hostname
 }
 
 // getGPUInfo returns GPU statistics if monitoring is enabled.
@@ -834,14 +1155,100 @@ func (h *WebSocketHandler) getGPUInfo(ctx context.Context) ([]systemtypes.GPUSta
 	return gpuData, len(gpuData)
 }
 
-// initializeCPUCache performs initial CPU sampling.
-func (h *WebSocketHandler) initializeCPUCache() {
-	if vals, err := cpu.Percent(time.Second, false); err == nil && len(vals) > 0 {
-		h.cpuCache.Lock()
-		h.cpuCache.value = vals[0]
-		h.cpuCache.timestamp = time.Now()
-		h.cpuCache.Unlock()
+// initializeCPUCacheCtx performs initial CPU sampling and returns early if the sampler is canceled.
+func (h *WebSocketHandler) initializeCPUCacheCtx(ctx context.Context) bool {
+	result := make(chan float64, 1)
+
+	go func() {
+		if val, ok := h.readCPUUsageInternal(time.Second); ok {
+			result <- val
+		}
+		close(result)
+	}()
+
+	select {
+	case <-ctx.Done():
+		return false
+	case val, ok := <-result:
+		if !ok || ctx.Err() != nil {
+			return false
+		}
+		h.storeCPUCacheValueInternal(val)
+		return true
 	}
+}
+
+func (h *WebSocketHandler) updateCPUCacheInternal(interval time.Duration) {
+	if val, ok := h.readCPUUsageInternal(interval); ok {
+		h.storeCPUCacheValueInternal(val)
+	}
+}
+
+func (h *WebSocketHandler) readCPUUsageInternal(interval time.Duration) (float64, bool) {
+	if h.cpuUsageReader != nil {
+		return h.cpuUsageReader(interval)
+	}
+
+	return defaultReadCPUUsageInternal(interval)
+}
+
+var defaultReadCPUUsageInternal = func(interval time.Duration) (float64, bool) {
+	if vals, err := cpu.Percent(interval, false); err == nil && len(vals) > 0 {
+		return vals[0], true
+	}
+
+	return 0, false
+}
+
+func (h *WebSocketHandler) storeCPUCacheValueInternal(value float64) {
+	h.cpuCache.Lock()
+	h.cpuCache.value = value
+	h.cpuCache.timestamp = time.Now()
+	h.cpuCache.Unlock()
+}
+
+func (h *WebSocketHandler) getCachedCgroupLimitsInternal() *docker.CgroupLimits {
+	h.cgroupCache.RLock()
+	value := h.cgroupCache.value
+	detected := h.cgroupCache.detected
+	fresh := time.Since(h.cgroupCache.timestamp) < cgroupCacheTTL
+	h.cgroupCache.RUnlock()
+	if fresh {
+		if detected {
+			return value
+		}
+		return nil
+	}
+
+	h.cgroupCache.Lock()
+	defer h.cgroupCache.Unlock()
+
+	if time.Since(h.cgroupCache.timestamp) < cgroupCacheTTL {
+		if h.cgroupCache.detected {
+			return h.cgroupCache.value
+		}
+		return nil
+	}
+
+	detect := h.cgroupLimitsDetector
+	if detect == nil {
+		detect = docker.DetectCgroupLimits
+	}
+
+	limits, err := detect()
+	h.cgroupCache.timestamp = time.Now()
+	if err != nil {
+		h.cgroupCache.value = nil
+		h.cgroupCache.detected = false
+	} else {
+		h.cgroupCache.value = limits
+		h.cgroupCache.detected = true
+	}
+	if !h.cgroupCache.detected {
+		return nil
+	}
+
+	return h.cgroupCache.value
 }
 
 // SystemStats streams system stats over WebSocket.
@@ -895,23 +1302,21 @@ func (h *WebSocketHandler) SystemStats(c *gin.Context) {
 	pingTicker := time.NewTicker(statsPingPeriod)
 	defer pingTicker.Stop()
 
-	cpuUpdateTicker := time.NewTicker(1 * time.Second)
-	defer cpuUpdateTicker.Stop()
-
 	ctx, cancel := context.WithCancel(c.Request.Context())
 	defer cancel()
+	if !h.acquireSystemStatsSamplerInternal(ctx) {
+		h.releaseSystemStatsSamplerInternal()
+		return
+	}
+	defer h.releaseSystemStatsSamplerInternal()
 
 	go h.readSystemStatsPumpInternal(ctx, cancel, conn)
 
-	h.startCPUSampler(ctx, cpuUpdateTicker)
-
 	send := func() error {
-		stats := h.collectSystemStats(ctx)
+		stats := h.latestSystemStatsSnapshotInternal()
 		_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 		return conn.WriteJSON(stats)
 	}
-
-	h.initializeCPUCache()
 
 	if err := send(); err != nil {
 		return

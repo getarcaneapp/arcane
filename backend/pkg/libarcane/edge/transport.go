@@ -1,11 +1,61 @@
 package edge
 
 import (
+	"net/url"
 	"strings"
 	"time"
-
-	"github.com/getarcaneapp/arcane/backend/internal/config"
 )
+
+// Config contains the public edge-tunnel runtime settings needed by pkg/libarcane/edge.
+type Config struct {
+	EdgeAgent             bool
+	EdgeTransport         string
+	EdgeReconnectInterval int
+	ManagerApiUrl         string
+	AgentToken            string
+	Port                  string
+	Listen                string
+}
+
+// GetManagerBaseURL returns the base URL of the manager application.
+// It strips any trailing slashes or /api suffix from MANAGER_API_URL.
+func (c *Config) GetManagerBaseURL() string {
+	if c == nil || c.ManagerApiUrl == "" {
+		return ""
+	}
+	managerURL := strings.TrimRight(c.ManagerApiUrl, "/")
+	managerURL = strings.TrimSuffix(managerURL, "/api")
+	return managerURL
+}
+
+// GetManagerGRPCAddr returns the manager gRPC address in host:port form.
+func (c *Config) GetManagerGRPCAddr() string {
+	baseURL := c.GetManagerBaseURL()
+	if baseURL == "" {
+		return ""
+	}
+
+	parsed, err := url.Parse(baseURL)
+	if err != nil {
+		return ""
+	}
+
+	host := parsed.Hostname()
+	if host == "" {
+		return ""
+	}
+
+	port := parsed.Port()
+	if port == "" {
+		if strings.EqualFold(parsed.Scheme, "https") {
+			port = "443"
+		} else {
+			port = "80"
+		}
+	}
+
+	return host + ":" + port
+}
 
 // TunnelRuntimeState describes the live, in-memory state of an active edge tunnel.
 type TunnelRuntimeState struct {
@@ -45,7 +95,7 @@ func NormalizeEdgeTransport(value string) string {
 }
 
 // UseGRPCEdgeTransport reports whether gRPC managed tunnel mode should be attempted.
-func UseGRPCEdgeTransport(cfg *config.Config) bool {
+func UseGRPCEdgeTransport(cfg *Config) bool {
 	if cfg == nil {
 		return false
 	}
@@ -54,7 +104,7 @@ func UseGRPCEdgeTransport(cfg *config.Config) bool {
 }
 
 // UseWebSocketEdgeTransport reports whether websocket managed tunnel mode is allowed.
-func UseWebSocketEdgeTransport(cfg *config.Config) bool {
+func UseWebSocketEdgeTransport(cfg *Config) bool {
 	if cfg == nil {
 		return false
 	}
@@ -64,7 +114,7 @@ func UseWebSocketEdgeTransport(cfg *config.Config) bool {
 
 // UsePollEdgeTransport reports whether the Portainer-style polling control plane
 // should be used.
-func UsePollEdgeTransport(cfg *config.Config) bool {
+func UsePollEdgeTransport(cfg *Config) bool {
 	if cfg == nil {
 		return false
 	}

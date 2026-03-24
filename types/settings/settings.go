@@ -37,6 +37,11 @@ type Update struct {
 	// Required: false
 	ProjectsDirectory *string `json:"projectsDirectory,omitempty"`
 
+	// FollowProjectSymlinks controls whether symlinked child directories in the projects directory are discovered as projects.
+	//
+	// Required: false
+	FollowProjectSymlinks *string `json:"followProjectSymlinks,omitempty"`
+
 	// DiskUsagePath is the path to monitor for disk usage.
 	//
 	// Required: false
@@ -156,6 +161,11 @@ type Update struct {
 	//
 	// Required: false
 	AccentColor *string `json:"accentColor,omitempty"`
+
+	// ApplicationTheme is the overall application theme preset.
+	//
+	// Required: false
+	ApplicationTheme *string `json:"applicationTheme,omitempty"`
 
 	// AuthLocalEnabled indicates if local authentication is enabled.
 	//

@@ -9,7 +9,7 @@ import (
 	"github.com/moby/moby/client"
 	ref "go.podman.io/image/v5/docker/reference"
 
-	"github.com/getarcaneapp/arcane/backend/internal/utils/registry"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils/registry"
 )
 
 type remoteDigestResolver interface {

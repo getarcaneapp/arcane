@@ -6,16 +6,16 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/backend/internal/common"
+	pkgutils "github.com/getarcaneapp/arcane/backend/pkg/utils"
 )
 
 func TestWriteIncludeFilePermissions(t *testing.T) {
 	// Save original perms
-	origFilePerm := common.FilePerm
-	origDirPerm := common.DirPerm
+	origFilePerm := pkgutils.FilePerm
+	origDirPerm := pkgutils.DirPerm
 	defer func() {
-		common.FilePerm = origFilePerm
-		common.DirPerm = origDirPerm
+		pkgutils.FilePerm = origFilePerm
+		pkgutils.DirPerm = origDirPerm
 	}()
 
 	projectDir := t.TempDir()
@@ -23,8 +23,8 @@ func TestWriteIncludeFilePermissions(t *testing.T) {
 	content := "services: {}\n"
 
 	t.Run("Uses custom permissions", func(t *testing.T) {
-		common.FilePerm = 0o600
-		common.DirPerm = 0o700
+		pkgutils.FilePerm = 0o600
+		pkgutils.DirPerm = 0o700
 
 		if err := WriteIncludeFile(projectDir, includePath, content); err != nil {
 			t.Fatalf("WriteIncludeFile() returned error: %v", err)

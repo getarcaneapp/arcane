@@ -9,8 +9,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/crypto"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/crypto"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils/mapper"
 	"github.com/getarcaneapp/arcane/types/base"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 )
@@ -356,6 +356,21 @@ func (h *ContainerRegistryHandler) TestRegistry(ctx context.Context, input *Test
 	if err != nil {
 		apiErr := models.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.RegistryRetrievalError{Err: err}).Error())
+	}
+
+	// ECR registries use a different auth flow: generate a temporary token via AWS API.
+	if reg.RegistryType == "ecr" {
+		if err := h.registryService.TestECRRegistry(ctx, reg); err != nil {
+			return nil, huma.Error400BadRequest((&common.RegistryTestError{Err: err}).Error())
+		}
+		return &TestContainerRegistryOutput{
+			Body: base.ApiResponse[base.MessageResponse]{
+				Success: true,
+				Data: base.MessageResponse{
+					Message: "ECR authentication succeeded",
+				},
+			},
+		}, nil
 	}
 
 	decryptedToken, err := crypto.Decrypt(reg.Token)

@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/compose-spec/compose-go/v2/dotenv"
-	"github.com/getarcaneapp/arcane/backend/internal/common"
+	pkgutils "github.com/getarcaneapp/arcane/backend/pkg/utils"
 )
 
 const (
@@ -104,10 +104,10 @@ func (l *EnvLoader) ensureGlobalEnvFile(ctx context.Context, path string) error 
 	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
 		header := fmt.Sprintf(globalEnvHeader, time.Now().Format(time.RFC3339))
 		dir := filepath.Dir(path)
-		if err := os.MkdirAll(dir, common.DirPerm); err != nil {
+		if err := os.MkdirAll(dir, pkgutils.DirPerm); err != nil {
 			return fmt.Errorf("create dir: %w", err)
 		}
-		if err := os.WriteFile(path, []byte(header), common.FilePerm); err != nil {
+		if err := os.WriteFile(path, []byte(header), pkgutils.FilePerm); err != nil {
 			return fmt.Errorf("write file: %w", err)
 		}
 		slog.InfoContext(ctx, "Created global env file", "path", path)

@@ -4,6 +4,7 @@ export type ApiKey = {
 	description?: string;
 	keyPrefix: string;
 	userId: string;
+	isStatic: boolean;
 	expiresAt?: string;
 	lastUsedAt?: string;
 	createdAt: string;

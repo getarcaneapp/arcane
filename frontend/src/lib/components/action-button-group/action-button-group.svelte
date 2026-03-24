@@ -1,22 +1,10 @@
 <script lang="ts">
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import type { Action, ArcaneButtonSize } from '$lib/components/arcane-button/index.js';
-	import { EllipsisIcon, type IconType } from '$lib/icons';
+	import type { ArcaneButtonSize } from '$lib/components/arcane-button/index.js';
+	import { EllipsisIcon } from '$lib/icons';
 	import { cn } from '$lib/utils';
-
-	export interface ActionButton {
-		id: string;
-		action: Action;
-		label: string;
-		loadingLabel?: string;
-		loading?: boolean;
-		disabled?: boolean;
-		onclick: () => void;
-		showOnMobile?: boolean;
-		badge?: string | number;
-		icon?: IconType | null;
-	}
+	import type { ActionButton } from './types.js';
 
 	interface Props {
 		buttons?: ActionButton[];

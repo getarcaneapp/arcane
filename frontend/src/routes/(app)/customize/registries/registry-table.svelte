@@ -32,7 +32,15 @@
 	let removingId = $state<string | null>(null);
 	let testingId = $state<string | null>(null);
 
-	function getRegistryDisplayName(url: string) {
+	function maskAccessKeyId(keyId: string | undefined): string {
+		if (!keyId) return m.common_na();
+		if (keyId.length <= 4) return keyId;
+		return '*'.repeat(11) + keyId.slice(-4);
+	}
+
+	function getRegistryDisplayName(item: ContainerRegistry) {
+		if (item.registryType === 'ecr') return m.registry_amazon_ecr();
+		const url = item.url;
 		if (!url || url === 'docker.io') return m.registry_docker_hub();
 		if (url.includes('ghcr.io')) return m.registry_github_container_registry();
 		if (url.includes('gcr.io')) return m.registry_google_container_registry();
@@ -130,7 +138,7 @@
 		},
 		{
 			accessorKey: 'username',
-			title: m.common_username(),
+			title: m.registries_username_key_label(),
 			sortable: true,
 			cell: UsernameCell
 		},
@@ -156,7 +164,7 @@
 
 	const mobileFields = [
 		{ id: 'id', label: m.common_id(), defaultVisible: false },
-		{ id: 'username', label: m.common_username(), defaultVisible: true },
+		{ id: 'username', label: m.registries_username_key_label(), defaultVisible: true },
 		{ id: 'description', label: m.common_description(), defaultVisible: true },
 		{ id: 'enabled', label: m.common_status(), defaultVisible: true },
 		{ id: 'createdAt', label: m.common_created(), defaultVisible: true }
@@ -184,12 +192,16 @@
 {#snippet UrlCell({ item }: { item: ContainerRegistry })}
 	<div class="flex flex-col">
 		<span class="font-medium">{item.url || 'docker.io'}</span>
-		<span class="text-muted-foreground text-xs">{getRegistryDisplayName(item.url)}</span>
+		<span class="text-muted-foreground text-xs">{getRegistryDisplayName(item)}</span>
 	</div>
 {/snippet}
 
-{#snippet UsernameCell({ value }: { value: unknown })}
-	<span class="font-mono text-sm">{String(value ?? m.common_na())}</span>
+{#snippet UsernameCell({ item }: { item: ContainerRegistry })}
+	{#if item.registryType === 'ecr'}
+		<span class="font-mono text-sm">{maskAccessKeyId(item.awsAccessKeyId)}</span>
+	{:else}
+		<span class="font-mono text-sm">{String(item.username ?? m.common_na())}</span>
+	{/if}
 {/snippet}
 
 {#snippet DescriptionCell({ value }: { value: unknown })}
@@ -220,11 +232,14 @@
 		badges={[{ variant: 'purple' as const, text: m.common_registry() }]}
 		fields={[
 			{
-				label: m.common_username(),
-				getValue: (item: ContainerRegistry) => item.username,
+				label: item.registryType === 'ecr' ? m.registries_username_key_label() : m.common_username(),
+				getValue: (item: ContainerRegistry) =>
+					item.registryType === 'ecr' ? maskAccessKeyId(item.awsAccessKeyId) : item.username,
 				icon: UserIcon,
 				iconVariant: 'gray' as const,
-				show: (mobileFieldVisibility.username ?? true) && item.username !== undefined
+				show:
+					(mobileFieldVisibility.username ?? true) &&
+					(item.registryType === 'ecr' ? !!item.awsAccessKeyId : item.username !== undefined)
 			},
 			{
 				label: m.common_description(),

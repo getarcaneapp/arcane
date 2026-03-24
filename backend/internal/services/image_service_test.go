@@ -12,7 +12,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/crypto"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/crypto"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
 	"github.com/getarcaneapp/arcane/types/vulnerability"
 	dockerauthconfig "github.com/moby/moby/api/pkg/authconfig"
@@ -60,8 +60,8 @@ func setupImageServiceAuthTest(t *testing.T) (*ImageService, *database.DB) {
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&models.ContainerRegistry{}))
 
-	crypto.InitEncryption(&config.Config{
-		Environment:   config.AppEnvironmentTest,
+	crypto.InitEncryption(&crypto.Config{
+		Environment:   string(config.AppEnvironmentTest),
 		EncryptionKey: "test-encryption-key-for-testing-32bytes-min",
 	})
 
@@ -80,10 +80,11 @@ func createTestPullRegistry(t *testing.T, db *database.DB, url, username, token 
 	require.NoError(t, err)
 
 	reg := &models.ContainerRegistry{
-		URL:      url,
-		Username: username,
-		Token:    encryptedToken,
-		Enabled:  true,
+		URL:          url,
+		Username:     username,
+		Token:        encryptedToken,
+		Enabled:      true,
+		RegistryType: registryTypeGeneric,
 	}
 	require.NoError(t, db.WithContext(context.Background()).Create(reg).Error)
 }

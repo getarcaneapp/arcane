@@ -10,15 +10,13 @@
 		autoScroll = $bindable(),
 		onStart,
 		onStop,
-		onClear,
-		onToggleAutoScroll
+		onClear
 	}: {
 		containerId: string | undefined;
 		autoScroll: boolean;
-		onStart: () => void;
-		onStop: () => void;
+		onStart?: () => void;
+		onStop?: () => void;
 		onClear: () => void;
-		onToggleAutoScroll: () => void;
 	} = $props();
 
 	let isStreaming = $state(false);
@@ -47,12 +45,12 @@
 	// Sync isStreaming from viewer callbacks
 	function handleStreamStart() {
 		isStreaming = true;
-		onStart();
+		onStart?.();
 	}
 
 	function handleStreamStop() {
 		isStreaming = false;
-		onStop();
+		onStop?.();
 	}
 
 	$effect(() => {

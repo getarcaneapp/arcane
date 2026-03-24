@@ -22,7 +22,8 @@
 	import configStore from '$lib/stores/config-store';
 	import { arcaneDarkInit } from './theme';
 	import { createDefaultSummary, ENV_SNIPPETS, YAML_SNIPPETS } from './editor-constants';
-	import { createMergeEnterIndentKeymap, createMergeHostAction, type MergeActionParams } from './merge-editor';
+	import { createEnterIndentKeymap } from './enter-indentation';
+	import { createMergeHostAction, type MergeActionParams } from './merge-editor';
 	import {
 		analyzeComposeContent,
 		findYamlPositionContext,
@@ -521,9 +522,18 @@
 		return analysis.diagnostics;
 	};
 
+	const enterIndentKeymaps: Record<CodeLanguage, Extension> = {
+		yaml: createEnterIndentKeymap('yaml'),
+		env: createEnterIndentKeymap('env')
+	};
+
 	function getLanguageExtension(lang: CodeLanguage, options: { lightweight?: boolean } = {}): Extension[] {
 		const lightweight = options.lightweight === true;
 		const extensions: Extension[] = [editorLifecycleExtension, shortcutKeymapExtension];
+
+		if (!readOnly) {
+			extensions.push(enterIndentKeymaps[lang]);
+		}
 
 		switch (lang) {
 			case 'yaml':
@@ -563,10 +573,8 @@
 		return arcaneDarkInit();
 	});
 
-	const mergeEnterIndentKeymap = createMergeEnterIndentKeymap();
 	const mergeHostAction = createMergeHostAction({
 		getTheme: () => theme,
-		mergeEnterIndentKeymap,
 		getLanguageExtension,
 		onValueChange: (nextValue) => {
 			value = nextValue;
@@ -654,8 +662,6 @@
 		<span>{diagnosticSummary.errors} errors</span>
 		<span>{diagnosticSummary.warnings} warnings</span>
 		<span>Schema: {diagnosticSummary.schemaStatus}</span>
-		<span>Unresolved vars: {diagnosticSummary.unresolvedVariables.length}</span>
-		<span>Secrets: {diagnosticSummary.secretWarnings}</span>
 		<span>Ln {diagnosticSummary.cursorLine}, Col {diagnosticSummary.cursorCol}</span>
 		<span>Diagnostics: {countCurrentDiagnostics()}</span>
 		{#if !validationReady}

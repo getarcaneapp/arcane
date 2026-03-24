@@ -2,12 +2,10 @@
 	import * as ResponsiveDialog from '$lib/components/ui/responsive-dialog/index.js';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import FormInput from '$lib/components/form/form-input.svelte';
-	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import type { ApiKey } from '$lib/types/api-key.type';
 	import { z } from 'zod/v4';
 	import { createForm, preventDefault } from '$lib/utils/form.utils';
 	import * as m from '$lib/paraglide/messages.js';
-	import { ApiKeyIcon, SaveIcon } from '$lib/icons';
 
 	type ApiKeyFormProps = {
 		open: boolean;
@@ -23,7 +21,7 @@
 	let { open = $bindable(false), apiKeyToEdit = $bindable(), onSubmit, isLoading }: ApiKeyFormProps = $props();
 
 	let isEditMode = $derived(!!apiKeyToEdit);
-	let SubmitIcon = $derived(isEditMode ? SaveIcon : ApiKeyIcon);
+	let isStaticApiKey = $derived(apiKeyToEdit?.isStatic ?? false);
 
 	const formSchema = z.object({
 		name: z.string().min(1, m.common_field_required({ field: m.api_key_name() })),
@@ -40,6 +38,8 @@
 	let { inputs, ...form } = $derived(createForm<typeof formSchema>(formSchema, formData));
 
 	function handleSubmit() {
+		if (isStaticApiKey) return;
+
 		const data = form.validate();
 		if (!data) return;
 
@@ -64,9 +64,15 @@
 	bind:open
 	onOpenChange={handleOpenChange}
 	variant="sheet"
-	title={isEditMode ? m.api_key_edit_title() : m.api_key_create_title()}
+	title={isStaticApiKey
+		? (apiKeyToEdit?.name ?? m.api_key_static_title())
+		: isEditMode
+			? m.api_key_edit_title()
+			: m.api_key_create_title()}
 	description={isEditMode
-		? m.api_key_edit_description({ name: apiKeyToEdit?.name ?? m.common_unknown() })
+		? isStaticApiKey
+			? m.api_key_static_description()
+			: m.api_key_edit_description({ name: apiKeyToEdit?.name ?? m.common_unknown() })
 		: m.api_key_create_description()}
 	contentClass="sm:max-w-[500px]"
 >
@@ -78,6 +84,7 @@
 				placeholder={m.api_key_name_placeholder()}
 				description={m.api_key_name_description()}
 				bind:input={$inputs.name}
+				disabled={isStaticApiKey}
 			/>
 			<FormInput
 				label={m.api_key_description_label()}
@@ -85,12 +92,14 @@
 				placeholder={m.api_key_description_placeholder()}
 				description={m.api_key_description_help()}
 				bind:input={$inputs.description}
+				disabled={isStaticApiKey}
 			/>
 			<FormInput
 				label={m.api_key_expires_at()}
 				type="date"
 				description={m.api_key_expires_at_description()}
 				bind:input={$inputs.expiresAt}
+				disabled={isStaticApiKey}
 			/>
 		</form>
 	{/snippet}
@@ -105,15 +114,17 @@
 				onclick={() => (open = false)}
 				disabled={isLoading}
 			/>
-			<ArcaneButton
-				action={isEditMode ? 'save' : 'create'}
-				type="submit"
-				class="flex-1"
-				disabled={isLoading}
-				loading={isLoading}
-				onclick={handleSubmit}
-				customLabel={isEditMode ? m.api_key_save_changes() : m.api_key_create_button()}
-			/>
+			{#if !isStaticApiKey}
+				<ArcaneButton
+					action={isEditMode ? 'save' : 'create'}
+					type="submit"
+					class="flex-1"
+					disabled={isLoading}
+					loading={isLoading}
+					onclick={handleSubmit}
+					customLabel={isEditMode ? m.api_key_save_changes() : m.api_key_create_button()}
+				/>
+			{/if}
 		</div>
 	{/snippet}
 </ResponsiveDialog.Root>

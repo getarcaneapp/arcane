@@ -34,13 +34,14 @@ type ArcaneApiEndpoints struct {
 	EnvironmentVersionEndpoint string
 
 	// Containers
-	ContainersEndpoint       string
-	ContainerEndpoint        string
-	ContainerStartEndpoint   string
-	ContainerStopEndpoint    string
-	ContainerRestartEndpoint string
-	ContainerUpdateEndpoint  string
-	ContainersCountsEndpoint string
+	ContainersEndpoint        string
+	ContainerEndpoint         string
+	ContainerStartEndpoint    string
+	ContainerStopEndpoint     string
+	ContainerRestartEndpoint  string
+	ContainerUpdateEndpoint   string
+	ContainerRedeployEndpoint string
+	ContainersCountsEndpoint  string
 
 	// Images
 	ImagesEndpoint       string
@@ -197,13 +198,14 @@ var Endpoints = ArcaneApiEndpoints{ //nolint:gosec // static endpoint paths; aut
 	EnvironmentVersionEndpoint: "/api/environments/%s/version",
 
 	// Containers
-	ContainersEndpoint:       "/api/environments/%s/containers",
-	ContainerEndpoint:        "/api/environments/%s/containers/%s",
-	ContainerStartEndpoint:   "/api/environments/%s/containers/%s/start",
-	ContainerStopEndpoint:    "/api/environments/%s/containers/%s/stop",
-	ContainerRestartEndpoint: "/api/environments/%s/containers/%s/restart",
-	ContainerUpdateEndpoint:  "/api/environments/%s/containers/%s/update",
-	ContainersCountsEndpoint: "/api/environments/%s/containers/counts",
+	ContainersEndpoint:        "/api/environments/%s/containers",
+	ContainerEndpoint:         "/api/environments/%s/containers/%s",
+	ContainerStartEndpoint:    "/api/environments/%s/containers/%s/start",
+	ContainerStopEndpoint:     "/api/environments/%s/containers/%s/stop",
+	ContainerRestartEndpoint:  "/api/environments/%s/containers/%s/restart",
+	ContainerUpdateEndpoint:   "/api/environments/%s/containers/%s/update",
+	ContainerRedeployEndpoint: "/api/environments/%s/containers/%s/redeploy",
+	ContainersCountsEndpoint:  "/api/environments/%s/containers/counts",
 
 	// Images
 	ImagesEndpoint:       "/api/environments/%s/images",
@@ -386,6 +388,10 @@ func (e ArcaneApiEndpoints) ContainerRestart(envID, containerID string) string {
 
 func (e ArcaneApiEndpoints) ContainerUpdate(envID, containerID string) string {
 	return fmt.Sprintf(e.ContainerUpdateEndpoint, envID, containerID)
+}
+
+func (e ArcaneApiEndpoints) ContainerRedeploy(envID, containerID string) string {
+	return fmt.Sprintf(e.ContainerRedeployEndpoint, envID, containerID)
 }
 
 func (e ArcaneApiEndpoints) ContainersCounts(envID string) string {

@@ -44,18 +44,22 @@ func TestSettingsService_EnsureDefaultSettings_Idempotent(t *testing.T) {
 	require.Equal(t, count1, count2)
 
 	// Spot-check core and automation defaults exist with correct values
-	for _, key := range []string{"authLocalEnabled", "projectsDirectory", "autoUpdateExcludedContainers", "vulnerabilityScanEnabled", "vulnerabilityScanInterval", "trivyNetwork", "trivySecurityOpts", "trivyPrivileged", "trivyPreserveCacheOnVolumePrune", "trivyResourceLimitsEnabled", "trivyCpuLimit", "trivyMemoryLimitMb", "trivyConcurrentScanContainers"} {
+	for _, key := range []string{"authLocalEnabled", "projectsDirectory", "followProjectSymlinks", "autoUpdateExcludedContainers", "vulnerabilityScanEnabled", "vulnerabilityScanInterval", "trivyImage", "trivyNetwork", "trivySecurityOpts", "trivyPrivileged", "trivyPreserveCacheOnVolumePrune", "trivyResourceLimitsEnabled", "trivyCpuLimit", "trivyMemoryLimitMb", "trivyConcurrentScanContainers"} {
 		var sv models.SettingVariable
 		err := svc.db.WithContext(ctx).Where("key = ?", key).First(&sv).Error
 		require.NoErrorf(t, err, "missing default key %s", key)
 
 		switch key {
+		case "followProjectSymlinks":
+			require.Equal(t, "false", sv.Value)
 		case "autoUpdateExcludedContainers":
 			require.Equal(t, "", sv.Value)
 		case "vulnerabilityScanEnabled":
 			require.Equal(t, "false", sv.Value)
 		case "vulnerabilityScanInterval":
 			require.Equal(t, "0 0 0 * * *", sv.Value)
+		case "trivyImage":
+			require.Equal(t, DefaultTrivyImage, sv.Value)
 		case "trivyNetwork":
 			require.Equal(t, "", sv.Value)
 		case "trivySecurityOpts":
@@ -76,6 +80,20 @@ func TestSettingsService_EnsureDefaultSettings_Idempotent(t *testing.T) {
 	}
 }
 
+func TestSettingsService_EnsureDefaultSettings_OverridesExistingTrivyImage(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	require.NoError(t, svc.UpdateSetting(ctx, "trivyImage", "ghcr.io/aquasecurity/trivy:latest"))
+	require.NoError(t, svc.EnsureDefaultSettings(ctx))
+
+	var sv models.SettingVariable
+	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "trivyImage").First(&sv).Error)
+	require.Equal(t, DefaultTrivyImage, sv.Value)
+}
+
 func TestSettingsService_GetSettings_UnknownKeysIgnored(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
@@ -87,6 +105,22 @@ func TestSettingsService_GetSettings_UnknownKeysIgnored(t *testing.T) {
 
 	_, err = svc.GetSettings(ctx)
 	require.NoError(t, err)
+}
+
+func TestSettingsService_GetSettings_UsesCachedSnapshotWithoutDatabase(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	require.NoError(t, svc.SetStringSetting(ctx, "baseServerUrl", "http://cached"))
+
+	// GetSettings should clone the in-memory snapshot and not touch the database.
+	svc.db = nil
+
+	settings, err := svc.GetSettings(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "http://cached", settings.BaseServerURL.Value)
 }
 
 func TestSettingsService_PruneUnknownSettings_RemovesStaleKeys(t *testing.T) {
@@ -195,6 +229,24 @@ func TestSettingsService_GetSettings_EnvOverride_TrivyNetwork(t *testing.T) {
 	require.Equal(t, "arcane-external", settings2.TrivyNetwork.Value)
 }
 
+func TestSettingsService_GetSettings_EnvOverride_FollowProjectSymlinks(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, svc.EnsureDefaultSettings(ctx))
+
+	settings1, err := svc.GetSettings(ctx)
+	require.NoError(t, err)
+	require.False(t, settings1.FollowProjectSymlinks.IsTrue())
+
+	t.Setenv("FOLLOW_PROJECT_SYMLINKS", "true")
+	settings2, err := svc.GetSettings(ctx)
+	require.NoError(t, err)
+	require.True(t, settings2.FollowProjectSymlinks.IsTrue())
+}
+
 func TestSettingsService_GetSettings_EnvOverride_TrivyRuntimeSecurity(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
@@ -273,6 +325,51 @@ func TestSettingsService_UpdateSetting(t *testing.T) {
 	var sv models.SettingVariable
 	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "pruneMode").First(&sv).Error)
 	require.Equal(t, "all", sv.Value)
+}
+
+func TestSettingsService_UpdateSetting_RefreshesCachedSnapshot(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	require.Equal(t, "http://localhost", svc.GetSettingsConfig().BaseServerURL.Value)
+	require.NoError(t, svc.UpdateSetting(ctx, "baseServerUrl", "https://arcane.test"))
+
+	require.Equal(t, "https://arcane.test", svc.GetSettingsConfig().BaseServerURL.Value)
+
+	settings, err := svc.GetSettings(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "https://arcane.test", settings.BaseServerURL.Value)
+}
+
+func BenchmarkSettingsService_GetSettings(b *testing.B) {
+	ctx := context.Background()
+	db, err := gorm.Open(glsqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		b.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.SettingVariable{}); err != nil {
+		b.Fatal(err)
+	}
+	settingsDB := &database.DB{DB: db}
+	svc, err := NewSettingsService(ctx, settingsDB)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for b.Loop() {
+		settings, err := svc.GetSettings(ctx)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if settings == nil {
+			b.Fatal("settings should not be nil")
+		}
+	}
 }
 
 func TestSettingsService_EnsureEncryptionKey(t *testing.T) {
@@ -375,6 +472,22 @@ func TestSettingsService_LoadDatabaseSettings_UIConfigurationDisabled_Env(t *tes
 	require.Equal(t, "https://env.example", cfg.BaseServerURL.Value)
 }
 
+func TestSettingsService_PersistEnvSettingsIfMissing_DoesNotOverrideForcedTrivyImage(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, svc.EnsureDefaultSettings(ctx))
+
+	t.Setenv("TRIVY_IMAGE", "ghcr.io/aquasecurity/trivy:latest")
+	require.NoError(t, svc.PersistEnvSettingsIfMissing(ctx))
+
+	var sv models.SettingVariable
+	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "trivyImage").First(&sv).Error)
+	require.Equal(t, DefaultTrivyImage, sv.Value)
+	require.Equal(t, DefaultTrivyImage, svc.GetSettingsConfig().TrivyImage.Value)
+}
+
 func TestSettingsService_UpdateSettings_RefreshesCache(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
@@ -400,6 +513,31 @@ func TestSettingsService_UpdateSettings_RefreshesCache(t *testing.T) {
 		}
 	}
 	require.True(t, found, "projectsDirectory setting not found in cached list")
+}
+
+func TestSettingsService_UpdateSettings_ReturnsEnvOverriddenValues(t *testing.T) {
+	t.Setenv("DOCKER_HOST", "tcp://env-docker:2375")
+
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, svc.EnsureDefaultSettings(ctx))
+
+	newDir := "custom/projects2"
+	settingsList, err := svc.UpdateSettings(ctx, settings.Update{
+		ProjectsDirectory: &newDir,
+	})
+	require.NoError(t, err)
+
+	found := false
+	for _, sv := range settingsList {
+		if sv.Key == "dockerHost" {
+			found = true
+			require.Equal(t, "tcp://env-docker:2375", sv.Value)
+		}
+	}
+	require.True(t, found, "dockerHost setting not found in update response")
 }
 
 func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyScanTimeout(t *testing.T) {

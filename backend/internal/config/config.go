@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/internal/common"
+	pkgutils "github.com/getarcaneapp/arcane/backend/pkg/utils"
 )
 
 type AppEnvironment string
@@ -27,18 +28,19 @@ const (
 // Fields with `options:"file"` support Docker secrets via the _FILE suffix.
 // Available options: file, toLower, trimTrailingSlash
 type Config struct {
-	AppUrl           string         `env:"APP_URL" default:"http://localhost:3552"`
-	DatabaseURL      string         `env:"DATABASE_URL" default:"file:data/arcane.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(2500)&_txlock=immediate" options:"file"`
-	AllowDowngrade   bool           `env:"ALLOW_DOWNGRADE" default:"false"`
-	Port             string         `env:"PORT" default:"3552"`
-	Listen           string         `env:"LISTEN" default:""`
-	TLSEnabled       bool           `env:"TLS_ENABLED" default:"false"`
-	TLSCertFile      string         `env:"TLS_CERT_FILE" default:""`
-	TLSKeyFile       string         `env:"TLS_KEY_FILE" default:""`
-	Environment      AppEnvironment `env:"ENVIRONMENT" default:"production"`
-	JWTSecret        string         `env:"JWT_SECRET" default:"default-jwt-secret-change-me" options:"file"` //nolint:gosec // configuration field name is part of stable config API
-	JWTRefreshExpiry time.Duration  `env:"JWT_REFRESH_EXPIRY" default:"168h"`
-	EncryptionKey    string         `env:"ENCRYPTION_KEY" default:"arcane-dev-key-32-characters!!!" options:"file"`
+	AppUrl            string         `env:"APP_URL" default:"http://localhost:3552"`
+	DatabaseURL       string         `env:"DATABASE_URL" default:"file:data/arcane.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(2500)&_txlock=immediate" options:"file"`
+	AllowDowngrade    bool           `env:"ALLOW_DOWNGRADE" default:"false"`
+	Port              string         `env:"PORT" default:"3552"`
+	Listen            string         `env:"LISTEN" default:""`
+	TLSEnabled        bool           `env:"TLS_ENABLED" default:"false"`
+	TLSCertFile       string         `env:"TLS_CERT_FILE" default:""`
+	TLSKeyFile        string         `env:"TLS_KEY_FILE" default:""`
+	Environment       AppEnvironment `env:"ENVIRONMENT" default:"production"`
+	JWTSecret         string         `env:"JWT_SECRET" default:"default-jwt-secret-change-me" options:"file"` //nolint:gosec // configuration field name is part of stable config API
+	JWTRefreshExpiry  time.Duration  `env:"JWT_REFRESH_EXPIRY" default:"168h"`
+	EncryptionKey     string         `env:"ENCRYPTION_KEY" default:"arcane-dev-key-32-characters!!!" options:"file"`
+	AdminStaticAPIKey string         `env:"ADMIN_STATIC_API_KEY" default:"" options:"file"`
 
 	OidcEnabled                bool   `env:"OIDC_ENABLED" default:"false"`
 	OidcClientID               string `env:"OIDC_CLIENT_ID" default:"" options:"file"`
@@ -98,6 +100,8 @@ func Load() *Config {
 	// Set global file permissions
 	common.FilePerm = cfg.FilePerm
 	common.DirPerm = cfg.DirPerm
+	pkgutils.FilePerm = cfg.FilePerm
+	pkgutils.DirPerm = cfg.DirPerm
 
 	return cfg
 }

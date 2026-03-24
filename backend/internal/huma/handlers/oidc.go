@@ -10,8 +10,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/cookie"
-	httputils "github.com/getarcaneapp/arcane/backend/internal/utils/http"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils/cookie"
+	httputils "github.com/getarcaneapp/arcane/backend/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/types/auth"
 	"github.com/getarcaneapp/arcane/types/user"
 )

@@ -1,7 +1,10 @@
 import type { TemplateRegistryConfig } from './template.type';
 
+export type ApplicationTheme = 'default' | 'graphite' | 'ocean' | 'amber' | 'github' | 'nord' | 'everforest' | 'rosepine';
+
 export type Settings = {
 	projectsDirectory: string;
+	followProjectSymlinks: boolean;
 	diskUsagePath: string;
 	autoUpdate: boolean;
 	autoUpdateInterval: number;
@@ -30,6 +33,7 @@ export type Settings = {
 	uiConfigDisabled: boolean;
 	defaultShell: string;
 	dockerHost: string;
+	applicationTheme: ApplicationTheme;
 	accentColor: string;
 	oledMode: boolean;
 	autoInjectEnv: boolean;

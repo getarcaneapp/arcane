@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/internal/utils/remenv"
 	tunnelpb "github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge/proto/tunnel/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -234,7 +233,7 @@ func TestGRPCTunnel_MetadataAuthFallback(t *testing.T) {
 
 	client := tunnelpb.NewTunnelServiceClient(conn)
 	streamCtx := metadata.NewOutgoingContext(ctx, metadata.Pairs(
-		strings.ToLower(remenv.HeaderAgentToken), "  valid-token  ",
+		strings.ToLower(HeaderAgentToken), "  valid-token  ",
 	))
 	stream, err := client.Connect(streamCtx)
 	require.NoError(t, err)
@@ -281,7 +280,7 @@ func TestGRPCTunnel_MetadataAPIKeyFallback(t *testing.T) {
 
 	client := tunnelpb.NewTunnelServiceClient(conn)
 	streamCtx := metadata.NewOutgoingContext(ctx, metadata.Pairs(
-		strings.ToLower(remenv.HeaderAPIKey), " valid-token ",
+		strings.ToLower(HeaderAPIKey), " valid-token ",
 	))
 	stream, err := client.Connect(streamCtx)
 	require.NoError(t, err)

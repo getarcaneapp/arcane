@@ -33,6 +33,7 @@ function createEnvironmentManagementStore() {
 	let _availableEnvironments = $state<Environment[]>([]);
 	let _initialized = false;
 	let _initializedWithData = false;
+	const _selectedSubscribers = new Set<(environment: Environment | null) => void>();
 
 	let _resolveReadyPromiseFunction: () => void;
 	const _readyPromise = new Promise<void>((resolve) => {
@@ -49,16 +50,27 @@ function createEnvironmentManagementStore() {
 		return sorted;
 	}
 
+	function _notifySelectedSubscribers() {
+		for (const subscriber of _selectedSubscribers) {
+			subscriber(_selectedEnvironment);
+		}
+	}
+
 	function _isAutoSelectableEnvironment(environment: Environment): boolean {
 		if (!environment.enabled) return false;
 		if (environment.id === LOCAL_DOCKER_ENVIRONMENT_ID) return true;
 		return isEnvironmentOnline(environment);
 	}
 
-	function _setSelectedEnvironment(environment: Environment): Environment {
+	function _assignSelectedEnvironment(environment: Environment | null): Environment | null {
 		_selectedEnvironment = environment;
-		selectedEnvironmentId.current = environment.id;
+		selectedEnvironmentId.current = environment?.id ?? null;
+		_notifySelectedSubscribers();
 		return environment;
+	}
+
+	function _setSelectedEnvironment(environment: Environment): Environment {
+		return _assignSelectedEnvironment(environment) as Environment;
 	}
 
 	function _selectInitialEnvironment(available: Environment[]): Environment | null {
@@ -81,7 +93,7 @@ function createEnvironmentManagementStore() {
 			return _setSelectedEnvironment(firstReachable);
 		}
 
-		_selectedEnvironment = null;
+		_assignSelectedEnvironment(null);
 		return null;
 	}
 
@@ -111,7 +123,7 @@ function createEnvironmentManagementStore() {
 				if (_selectedEnvironment) {
 					const updated = available.find((env) => env.id === _selectedEnvironment!.id);
 					if (updated) {
-						_selectedEnvironment = updated;
+						_assignSelectedEnvironment(updated);
 						// If the current environment was disabled, switch to an enabled one
 						if (!updated.enabled) {
 							_selectInitialEnvironment(available);
@@ -128,8 +140,7 @@ function createEnvironmentManagementStore() {
 		setEnvironment: async (environment: Environment) => {
 			if (!environment.enabled) return;
 			if (_selectedEnvironment?.id !== environment.id) {
-				_selectedEnvironment = environment;
-				selectedEnvironmentId.current = environment.id;
+				_assignSelectedEnvironment(environment);
 
 				// Check if we're on a resource detail page (e.g., /containers/abc123)
 				// These pages show environment-specific resources that won't exist in the new environment
@@ -141,6 +152,12 @@ function createEnvironmentManagementStore() {
 					await invalidateAll();
 				}
 			}
+		},
+		subscribeSelected: (subscriber: (environment: Environment | null) => void) => {
+			_selectedSubscribers.add(subscriber);
+			return () => {
+				_selectedSubscribers.delete(subscriber);
+			};
 		},
 		isInitialized: () => _initialized,
 		getLocalEnvironment: () => _availableEnvironments.find((env) => env.id === LOCAL_DOCKER_ENVIRONMENT_ID) || null,

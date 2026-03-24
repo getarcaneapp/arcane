@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/internal/utils/remenv"
 	tunnelpb "github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge/proto/tunnel/v1"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -99,9 +98,9 @@ func (s *TunnelServer) HandleConnect(c *gin.Context) {
 	callbackCtx := context.WithoutCancel(ctx)
 
 	// Get agent token from headers.
-	token := c.GetHeader(remenv.HeaderAgentToken)
+	token := c.GetHeader(HeaderAgentToken)
 	if token == "" {
-		token = c.GetHeader(remenv.HeaderAPIKey)
+		token = c.GetHeader(HeaderAPIKey)
 	}
 	if token == "" {
 		slog.WarnContext(ctx, "Edge tunnel connection attempt without token")
@@ -187,8 +186,8 @@ func tokenFromMetadata(ctx context.Context) string {
 		return ""
 	}
 	for _, key := range []string{
-		strings.ToLower(remenv.HeaderAgentToken),
-		strings.ToLower(remenv.HeaderAPIKey),
+		strings.ToLower(HeaderAgentToken),
+		strings.ToLower(HeaderAPIKey),
 	} {
 		values := md.Get(key)
 		for _, value := range values {

@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
-	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -19,6 +19,21 @@ const (
 type SettingVariable struct {
 	Key   string `gorm:"primaryKey"`
 	Value string
+}
+
+type settingFieldMeta struct {
+	index       int
+	key         string
+	attrs       string
+	isPublic    bool
+	isSensitive bool
+	isLocal     bool
+}
+
+var settingsFieldCache struct {
+	once    sync.Once
+	ordered []settingFieldMeta
+	byKey   map[string]settingFieldMeta
 }
 
 // IsTrue returns true if the value is a truthy string
@@ -45,11 +60,13 @@ func (s SettingVariable) AsDurationSeconds() time.Duration {
 type Settings struct {
 	// General category
 	ProjectsDirectory         SettingVariable `key:"projectsDirectory,envOverride" meta:"label=Projects Directory;type=text;keywords=projects,directory,path,folder,location,storage,files,compose,docker-compose;category=internal;description=Configure where project files are stored"`
+	FollowProjectSymlinks     SettingVariable `key:"followProjectSymlinks,envOverride" meta:"label=Follow Project Symlinks;type=boolean;keywords=projects,symlink,symlinks,symbolic links,compose,directory,discovery;category=general;description=Treat symlinked child directories inside the projects directory as Docker Compose projects"`
 	DiskUsagePath             SettingVariable `key:"diskUsagePath" meta:"label=Disk Usage Path;type=text;keywords=disk,usage,path,storage,folder,files;category=general;description=Path used for disk usage calculations"`
 	BaseServerURL             SettingVariable `key:"baseServerUrl" meta:"label=Base Server URL;type=text;keywords=base,url,server,domain,host,endpoint,address,link;category=general;description=Set the base URL for the application"`
 	EnableGravatar            SettingVariable `key:"enableGravatar" meta:"label=Enable Gravatar;type=boolean;keywords=gravatar,avatar,profile,picture,image,user,photo;category=general;description=Enable Gravatar profile pictures for users"`
 	DefaultShell              SettingVariable `key:"defaultShell" meta:"label=Default Shell;type=text;keywords=shell,default,shellpath,path,login;category=general;description=Default shell to use for commands"`
 	EnvironmentHealthInterval SettingVariable `key:"environmentHealthInterval" meta:"label=Environment Health Check Interval;type=cron;keywords=environment,health,check,interval,frequency,heartbeat,status,monitoring,uptime,jobs,schedule;description=How often to check environment connectivity (cron expression)" catmeta:"id=jobschedule;title=Job Schedule;icon=jobs;url=/settings/jobs;description=Configure how often Arcane background jobs run"`
+	ApplicationTheme          SettingVariable `key:"applicationTheme,public,local" meta:"label=Application Theme;type=select;keywords=theme,appearance,style,visual,palette,background,interface,ui;category=appearance;description=Choose the overall visual theme for the application"`
 	AccentColor               SettingVariable `key:"accentColor,public,local" meta:"label=Accent Color;type=text;keywords=color,accent,theme,css,appearance,ui;category=general;description=Primary accent color for UI"`
 	OledMode                  SettingVariable `key:"oledMode,public,local" meta:"label=OLED Mode;type=boolean;keywords=oled,dark,theme,black,amoled,appearance,display;category=general;description=Use true-black backgrounds for OLED displays (only active in dark mode)"`
 
@@ -90,7 +107,7 @@ type Settings struct {
 	AuthPasswordPolicy              SettingVariable `key:"authPasswordPolicy" meta:"label=Password Policy;type=select;keywords=password,policy,strength,complexity,requirements,security,rules;category=authentication;description=Set password strength requirements"`
 	VulnerabilityScanEnabled        SettingVariable `key:"vulnerabilityScanEnabled" meta:"label=Scheduled Vulnerability Scan;type=boolean;keywords=vulnerability,scan,security,trivy,schedule,automatic,cve;category=security;description=Enable scheduled vulnerability scanning of all Docker images" catmeta:"id=security;title=Security;icon=shield;url=/settings/security;description=Configure vulnerability scanning and runtime security settings"`
 	VulnerabilityScanInterval       SettingVariable `key:"vulnerabilityScanInterval" meta:"label=Vulnerability Scan Interval;type=cron;keywords=vulnerability,scan,interval,schedule,frequency,trivy,cve;category=security;description=How often to run scheduled vulnerability scans (cron expression)"`
-	TrivyImage                      SettingVariable `key:"trivyImage,envOverride" meta:"label=Trivy Image;type=text;keywords=trivy,scanner,vulnerability,security,image;category=security;description=Override the Trivy image used for vulnerability scans"`
+	TrivyImage                      SettingVariable `key:"trivyImage" meta:"label=Trivy Image;type=text;keywords=trivy,scanner,vulnerability,security,image;category=security;description=Override the Trivy image used for vulnerability scans"`
 	TrivyNetwork                    SettingVariable `key:"trivyNetwork,envOverride" meta:"label=Trivy Network;type=text;keywords=trivy,network,mode,bridge,host,none,scanner,vulnerability,security;category=security;description=Docker network mode/network name used for Trivy scan containers. Leave empty to inherit Arcane's network automatically."`
 	TrivySecurityOpts               SettingVariable `key:"trivySecurityOpts,envOverride" meta:"label=Trivy Security Options;type=textarea;keywords=trivy,security,opt,security_opt,selinux,labels,apparmor,scanner;category=security;description=Docker security options applied to Trivy scan containers. Use commas or new lines to separate entries (for example: label=disable)"`
 	TrivyPrivileged                 SettingVariable `key:"trivyPrivileged,envOverride" meta:"label=Trivy Privileged;type=boolean;keywords=trivy,privileged,security,selinux,scanner;category=security;description=Run Trivy scan containers in privileged mode when required by the host security policy"`
@@ -152,29 +169,63 @@ func (SettingVariable) TableName() string {
 	return "settings"
 }
 
-func (s *Settings) ToSettingVariableSlice(showAll bool, redactSensitiveValues bool) []SettingVariable {
-	cfgValue := reflect.ValueOf(s).Elem()
-	cfgType := cfgValue.Type()
+func buildSettingsFieldCacheInternal() {
+	rt := reflect.TypeFor[Settings]()
+	ordered := make([]settingFieldMeta, 0, rt.NumField())
+	byKey := make(map[string]settingFieldMeta, rt.NumField())
 
-	var res []SettingVariable
-
-	for i := 0; i < cfgType.NumField(); i++ {
-		field := cfgType.Field(i)
-
+	for i := 0; i < rt.NumField(); i++ {
+		field := rt.Field(i)
 		key, attrs, _ := strings.Cut(field.Tag.Get("key"), ",")
 		if key == "" {
 			continue
 		}
 
-		if !showAll && !strings.Contains(attrs, "public") {
+		meta := settingFieldMeta{
+			index:       i,
+			key:         key,
+			attrs:       attrs,
+			isPublic:    strings.Contains(attrs, "public"),
+			isSensitive: strings.Contains(attrs, "sensitive"),
+			isLocal:     strings.Contains(attrs, "local"),
+		}
+		ordered = append(ordered, meta)
+		byKey[key] = meta
+	}
+
+	settingsFieldCache.ordered = ordered
+	settingsFieldCache.byKey = byKey
+}
+
+func getSettingsFieldCacheInternal() ([]settingFieldMeta, map[string]settingFieldMeta) {
+	settingsFieldCache.once.Do(buildSettingsFieldCacheInternal)
+	return settingsFieldCache.ordered, settingsFieldCache.byKey
+}
+
+func (s *Settings) Clone() *Settings {
+	if s == nil {
+		return &Settings{}
+	}
+
+	clone := *s
+	return &clone
+}
+
+func (s *Settings) ToSettingVariableSlice(showAll bool, redactSensitiveValues bool) []SettingVariable {
+	cfgValue := reflect.ValueOf(s).Elem()
+	fields, _ := getSettingsFieldCacheInternal()
+
+	res := make([]SettingVariable, 0, len(fields))
+	for _, field := range fields {
+		if !showAll && !field.isPublic {
 			continue
 		}
 
-		value := cfgValue.Field(i).FieldByName("Value").String()
-		value = redactSettingValue(key, value, attrs, redactSensitiveValues)
+		value := cfgValue.Field(field.index).FieldByName("Value").String()
+		value = redactSettingValue(field.key, value, field.attrs, redactSensitiveValues)
 
 		settingVariable := SettingVariable{
-			Key:   key,
+			Key:   field.key,
 			Value: value,
 		}
 		res = append(res, settingVariable)
@@ -185,65 +236,47 @@ func (s *Settings) ToSettingVariableSlice(showAll bool, redactSensitiveValues bo
 
 func (s *Settings) FieldByKey(key string) (defaultValue string, isPublic bool, isSensitive bool, err error) {
 	rv := reflect.ValueOf(s).Elem()
-	rt := rv.Type()
+	_, byKey := getSettingsFieldCacheInternal()
 
-	for i := 0; i < rt.NumField(); i++ {
-		tagValue := strings.Split(rt.Field(i).Tag.Get("key"), ",")
-		keyFromTag := tagValue[0]
-		isPublic = slices.Contains(tagValue, "public")
-		isSensitive = slices.Contains(tagValue, "sensitive")
-
-		if keyFromTag != key {
-			continue
-		}
-
-		valueField := rv.Field(i).FieldByName("Value")
-		return valueField.String(), isPublic, isSensitive, nil
+	field, ok := byKey[key]
+	if !ok {
+		return "", false, false, SettingKeyNotFoundError{field: key}
 	}
 
-	return "", false, false, SettingKeyNotFoundError{field: key}
+	valueField := rv.Field(field.index).FieldByName("Value")
+	return valueField.String(), field.isPublic, field.isSensitive, nil
 }
 
 func (s *Settings) IsLocalSetting(key string) bool {
-	rt := reflect.TypeFor[Settings]()
-
-	for field := range rt.Fields() {
-		tagValue := strings.Split(field.Tag.Get("key"), ",")
-		keyFromTag := tagValue[0]
-
-		if keyFromTag == key {
-			return slices.Contains(tagValue, "local")
-		}
+	_, byKey := getSettingsFieldCacheInternal()
+	field, ok := byKey[key]
+	if !ok {
+		return false
 	}
 
-	return false
+	return field.isLocal
 }
 
 func (s *Settings) UpdateField(key string, value string, noSensitive bool) error {
 	rv := reflect.ValueOf(s).Elem()
-	rt := rv.Type()
+	_, byKey := getSettingsFieldCacheInternal()
 
-	for i := 0; i < rt.NumField(); i++ {
-		tagValue, attrs, _ := strings.Cut(rt.Field(i).Tag.Get("key"), ",")
-		if tagValue != key {
-			continue
-		}
-
-		// If the field is sensitive and noSensitive is true, we skip that
-		if noSensitive && strings.Contains(attrs, "sensitive") {
-			return SettingSensitiveForbiddenError{field: key}
-		}
-
-		valueField := rv.Field(i).FieldByName("Value")
-		if !valueField.CanSet() {
-			return fmt.Errorf("field Value in SettingVariable is not settable for config key '%s'", key)
-		}
-
-		valueField.SetString(value)
-		return nil
+	field, ok := byKey[key]
+	if !ok {
+		return SettingKeyNotFoundError{field: key}
 	}
 
-	return SettingKeyNotFoundError{field: key}
+	if noSensitive && field.isSensitive {
+		return SettingSensitiveForbiddenError{field: key}
+	}
+
+	valueField := rv.Field(field.index).FieldByName("Value")
+	if !valueField.CanSet() {
+		return fmt.Errorf("field Value in SettingVariable is not settable for config key '%s'", key)
+	}
+
+	valueField.SetString(value)
+	return nil
 }
 
 // helper keeps redaction logic in one place; behavior unchanged

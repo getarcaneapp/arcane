@@ -17,7 +17,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/crypto"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/crypto"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 )
 
@@ -32,7 +32,11 @@ func setupEnvironmentServiceTestDB(t *testing.T) *database.DB {
 		EncryptionKey: "test-encryption-key-for-testing-32bytes-min",
 		Environment:   "test",
 	}
-	crypto.InitEncryption(testCfg)
+	crypto.InitEncryption(&crypto.Config{
+		EncryptionKey: testCfg.EncryptionKey,
+		Environment:   string(testCfg.Environment),
+		AgentMode:     testCfg.AgentMode,
+	})
 
 	return &database.DB{DB: db}
 }
@@ -96,13 +100,40 @@ func createTestRegistry(t *testing.T, db *database.DB, id string) {
 			CreatedAt: now,
 			UpdatedAt: &now,
 		},
-		URL:       "registry.example.com",
-		Username:  "registry-user",
-		Token:     encryptedToken,
-		Enabled:   true,
-		Insecure:  false,
-		CreatedAt: now,
-		UpdatedAt: now,
+		URL:          "registry.example.com",
+		Username:     "registry-user",
+		Token:        encryptedToken,
+		Enabled:      true,
+		Insecure:     false,
+		RegistryType: registryTypeGeneric,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+
+	require.NoError(t, db.WithContext(context.Background()).Create(registry).Error)
+}
+
+func createTestECRRegistry(t *testing.T, db *database.DB, id string) {
+	t.Helper()
+
+	encryptedSecret, err := crypto.Encrypt("aws-secret")
+	require.NoError(t, err)
+
+	now := time.Now()
+	registry := &models.ContainerRegistry{
+		BaseModel: models.BaseModel{
+			ID:        id,
+			CreatedAt: now,
+			UpdatedAt: &now,
+		},
+		URL:                "123456789012.dkr.ecr.us-east-1.amazonaws.com",
+		Enabled:            true,
+		RegistryType:       registryTypeECR,
+		AWSAccessKeyID:     "AKIA1234567890EXAMPLE",
+		AWSSecretAccessKey: encryptedSecret,
+		AWSRegion:          "us-east-1",
+		CreatedAt:          now,
+		UpdatedAt:          now,
 	}
 
 	require.NoError(t, db.WithContext(context.Background()).Create(registry).Error)
@@ -159,6 +190,42 @@ func TestEnvironmentService_SyncRegistriesToRemoteEnvironments_SyncsEligibleRemo
 	require.NoError(t, err)
 	require.EqualValues(t, 1, env1Calls.Load())
 	require.EqualValues(t, 1, env2Calls.Load())
+}
+
+func TestEnvironmentService_SyncRegistriesToEnvironment_IncludesECRFields(t *testing.T) {
+	ctx := context.Background()
+	db := setupEnvironmentServiceTestDB(t)
+	svc := NewEnvironmentService(db, nil, nil, nil, nil)
+
+	createTestECRRegistry(t, db, "reg-ecr")
+
+	token := "token-1"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, http.MethodPost, r.Method)
+		require.Equal(t, "/api/container-registries/sync", r.URL.Path)
+
+		var syncReq containerregistry.SyncRequest
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&syncReq))
+		require.Len(t, syncReq.Registries, 1)
+
+		registry := syncReq.Registries[0]
+		require.Equal(t, registryTypeECR, registry.RegistryType)
+		require.Equal(t, "123456789012.dkr.ecr.us-east-1.amazonaws.com", registry.URL)
+		require.Equal(t, "AKIA1234567890EXAMPLE", registry.AWSAccessKeyID)
+		require.Equal(t, "aws-secret", registry.AWSSecretAccessKey)
+		require.Equal(t, "us-east-1", registry.AWSRegion)
+		require.Empty(t, registry.Username)
+		require.Empty(t, registry.Token)
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"data":{"message":"ok"}}`))
+	}))
+	defer server.Close()
+
+	createTestEnvironment(t, db, "env-1", server.URL, &token)
+
+	err := svc.SyncRegistriesToEnvironment(ctx, "env-1")
+	require.NoError(t, err)
 }
 
 func TestEnvironmentService_SyncRegistriesToRemoteEnvironments_SkipsRemoteWithoutAccessToken(t *testing.T) {

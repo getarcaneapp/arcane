@@ -634,6 +634,29 @@ type Summary struct {
 	UpdateInfo *imagetypes.UpdateInfo `json:"updateInfo,omitempty"`
 }
 
+// ComposeInfo contains Docker Compose project information extracted from container labels.
+type ComposeInfo struct {
+	// ProjectName is the name of the Docker Compose project.
+	//
+	// Required: true
+	ProjectName string `json:"projectName"`
+
+	// ServiceName is the name of the service within the Compose project.
+	//
+	// Required: true
+	ServiceName string `json:"serviceName"`
+
+	// WorkingDir is the working directory of the Compose project.
+	//
+	// Required: false
+	WorkingDir string `json:"workingDir,omitempty"`
+
+	// ConfigFiles is the list of Compose config file paths for the project.
+	//
+	// Required: false
+	ConfigFiles string `json:"configFiles,omitempty"`
+}
+
 // SummaryGroup represents a group of container summaries.
 type SummaryGroup struct {
 	// GroupName is the group label, such as a compose project name.
@@ -708,6 +731,12 @@ type Details struct {
 	//
 	// Required: false
 	Labels map[string]string `json:"labels,omitempty"`
+
+	// ComposeInfo contains Docker Compose project information.
+	// Only present if container is part of a Compose project.
+	//
+	// Required: false
+	ComposeInfo *ComposeInfo `json:"composeInfo,omitempty"`
 }
 
 // Created represents a newly created container.
@@ -887,6 +916,23 @@ func NewDetails(c *container.InspectResponse) Details {
 		}
 	}
 
+	// Extract Docker Compose information from labels if present
+	var composeInfo *ComposeInfo
+	if projectName, hasProject := labels["com.docker.compose.project"]; hasProject {
+		if serviceName, hasService := labels["com.docker.compose.service"]; hasService {
+			composeInfo = &ComposeInfo{
+				ProjectName: projectName,
+				ServiceName: serviceName,
+			}
+			if workingDir, ok := labels["com.docker.compose.project.working_dir"]; ok {
+				composeInfo.WorkingDir = workingDir
+			}
+			if configFiles, ok := labels["com.docker.compose.project.config_files"]; ok {
+				composeInfo.ConfigFiles = configFiles
+			}
+		}
+	}
+
 	return Details{
 		ID:         c.ID,
 		Name:       name,
@@ -899,9 +945,10 @@ func NewDetails(c *container.InspectResponse) Details {
 		NetworkSettings: NetworkSettings{
 			Networks: networks,
 		},
-		Ports:  ports,
-		Mounts: mounts,
-		Labels: labels,
+		Ports:       ports,
+		Mounts:      mounts,
+		Labels:      labels,
+		ComposeInfo: composeInfo,
 	}
 }
 
