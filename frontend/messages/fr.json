@@ -183,7 +183,7 @@
 	"common_logout": "Logout",
 	"common_redeploy": "Redéployer",
 	"common_use_template": "Utiliser le modèle",
-	"maintenance_title": "Entretien",
+	"maintenance_title": "Maintenance",
 	"scheduled_prune_title": "Nettoyage programmé",
 	"scheduled_prune_description": "Nettoyer automatiquement les ressources Docker inutilisées selon un calendrier",
 	"scheduled_prune_interval_label": "Intervalle de nettoyage",
