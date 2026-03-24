@@ -95,3 +95,29 @@ func TestParseWWWAuthInternal_AllowsCommasInsideQuotedRealm(t *testing.T) {
 	assert.Equal(t, "https://auth.example.com/token?a=1,b=2", realm)
 	assert.Equal(t, "registry.example.com", service)
 }
+
+func TestFetchDigestWithHTTPClient_RejectsUntrustedTokenRealm(t *testing.T) {
+	registry := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("WWW-Authenticate", `Bearer realm="https://169.254.169.254/token",service="registry.example.com"`)
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer registry.Close()
+
+	digest, err := FetchDigestWithHTTPClient(
+		context.Background(),
+		registry.URL,
+		"team/app",
+		"latest",
+		nil,
+		registry.Client(),
+	)
+
+	require.Error(t, err)
+	assert.Empty(t, digest)
+	assert.Contains(t, err.Error(), "untrusted auth realm host")
+}
+
+func TestValidateAuthRealmInternal_AllowsDockerHubAuthHost(t *testing.T) {
+	err := validateAuthRealmInternal("registry-1.docker.io", "https://auth.docker.io/token")
+	require.NoError(t, err)
+}

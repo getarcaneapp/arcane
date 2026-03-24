@@ -149,6 +149,9 @@ func fetchWithTokenAuthInternal(ctx context.Context, httpClient *http.Client, re
 	if realm == "" {
 		return "", fmt.Errorf("no auth realm found")
 	}
+	if err := validateAuthRealmInternal(registryHost, realm); err != nil {
+		return "", err
+	}
 
 	token, err := fetchRegistryTokenInternal(ctx, httpClient, realm, service, repository, credential)
 	if err != nil {
@@ -400,6 +403,31 @@ func serviceNameFromAuthURLInternal(authURL string) string {
 	}
 
 	return host
+}
+
+func validateAuthRealmInternal(registryHost, realm string) error {
+	parsedRealm, err := url.Parse(strings.TrimSpace(realm))
+	if err != nil {
+		return fmt.Errorf("invalid auth realm: %w", err)
+	}
+
+	realmHost := normalizeRegistryForComparisonInternal(parsedRealm.Host)
+	registry := normalizeRegistryForComparisonInternal(registryHost)
+
+	if realmHost == "" {
+		return fmt.Errorf("invalid auth realm host")
+	}
+	if realmHost == registry {
+		return nil
+	}
+
+	// Docker Hub serves token auth from auth.docker.io while image pulls are made
+	// against index.docker.io / registry-1.docker.io.
+	if registry == "docker.io" && realmHost == "auth.docker.io" {
+		return nil
+	}
+
+	return fmt.Errorf("untrusted auth realm host %q for registry %q", realmHost, registry)
 }
 
 func normalizeRegistryForComparisonInternal(raw string) string {
