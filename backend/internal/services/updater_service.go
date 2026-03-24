@@ -1186,6 +1186,15 @@ func (s *UpdaterService) resolveLocalImageIDsForRef(ctx context.Context, ref str
 	return ids, nil
 }
 
+type restartPlan struct {
+	cnt      container.Summary
+	inspect  *container.InspectResponse
+	newRef   string
+	match    string
+	explicit bool
+	implicit bool
+}
+
 //nolint:gocognit
 func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldIDToNewRef map[string]string, oldRefToNewRef map[string]string) ([]updater.ResourceResult, error) {
 	dcli, err := s.dockerService.GetClient(ctx)
@@ -1213,15 +1222,6 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 	updatedNorm := map[string]string{}
 	for oldRef, nr := range oldRefToNewRef {
 		updatedNorm[s.normalizeRef(oldRef)] = nr
-	}
-
-	type restartPlan struct {
-		cnt      container.Summary
-		inspect  *container.InspectResponse
-		newRef   string
-		match    string
-		explicit bool
-		implicit bool
 	}
 
 	plansByName := map[string]*restartPlan{}
@@ -1408,6 +1408,11 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 			inspect := inspectResult.Container
 			inspectCopy := inspect
 			p.inspect = &inspectCopy
+
+			// If this container belongs to a compose project that was missed during the
+			// pre-scan (inspect was nil), register it now so the main loop routes it
+			// through the compose-aware update path instead of standalone stop/rm/run.
+			s.lazyRegisterComposeProjectInternal(ctx, p, projectNameToID, projectIDToObj, projectToServices, projectToSeenServices)
 		}
 		if p.inspect.Config != nil && p.inspect.Config.Labels != nil {
 			labels = p.inspect.Config.Labels
@@ -1543,6 +1548,45 @@ func (s *UpdaterService) triggerSelfUpdateViaCLIInternal(ctx context.Context, so
 	}
 
 	return nil
+}
+
+// lazyRegisterComposeProjectInternal registers a compose project into the pre-scan lookup maps when the
+// container's inspect data was unavailable during the pre-scan (inspect was nil at that point).
+// Without this, the main loop's lookupComposeProjectIDInternal call would miss the project and
+// fall through to the destructive standalone stop/rm/run path.
+func (s *UpdaterService) lazyRegisterComposeProjectInternal(
+	ctx context.Context,
+	p *restartPlan,
+	projectNameToID map[string]string,
+	projectIDToObj map[string]*models.Project,
+	projectToServices map[string][]string,
+	projectToSeenServices map[string]map[string]struct{},
+) {
+	if p.newRef == "" || p.inspect == nil || p.inspect.Config == nil {
+		return
+	}
+	projectName := p.inspect.Config.Labels["com.docker.compose.project"]
+	serviceName := p.inspect.Config.Labels["com.docker.compose.service"]
+	if projectName == "" || serviceName == "" {
+		return
+	}
+	if _, registered := projectNameToID[projectName]; registered {
+		return
+	}
+	proj, err := s.projectService.GetProjectByComposeName(ctx, projectName)
+	if err != nil {
+		return
+	}
+	projectIDToObj[proj.ID] = proj
+	projectNameToID[proj.Name] = proj.ID
+	projectNameToID[loader.NormalizeProjectName(proj.Name)] = proj.ID
+	if _, ok := projectToSeenServices[proj.ID]; !ok {
+		projectToSeenServices[proj.ID] = make(map[string]struct{})
+	}
+	if _, seen := projectToSeenServices[proj.ID][serviceName]; !seen {
+		projectToServices[proj.ID] = append(projectToServices[proj.ID], serviceName)
+		projectToSeenServices[proj.ID][serviceName] = struct{}{}
+	}
 }
 
 func (s *UpdaterService) beginContainerUpdateInternal(containerID string) func() {

@@ -278,7 +278,9 @@ func (s *ProjectService) UpdateProjectServices(ctx context.Context, projectID st
 
 	// 5. Up specific services
 	if err := projects.ComposeUp(ctx, compProj, servicesToUpdate, false, false); err != nil {
-		_ = s.updateProjectStatusandCountsInternal(ctx, projectID, models.ProjectStatusStopped)
+		if statusErr := s.updateProjectStatusandCountsInternal(ctx, projectID, models.ProjectStatusStopped); statusErr != nil {
+			slog.ErrorContext(ctx, "UpdateProjectServices: failed to set stopped status after compose up failure", "projectID", projectID, "error", statusErr)
+		}
 		return fmt.Errorf("failed to up services: %w", err)
 	}
 
