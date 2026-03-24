@@ -117,7 +117,76 @@ func TestFetchDigestWithHTTPClient_RejectsUntrustedTokenRealm(t *testing.T) {
 	assert.Contains(t, err.Error(), "untrusted auth realm host")
 }
 
-func TestValidateAuthRealmInternal_AllowsDockerHubAuthHost(t *testing.T) {
-	err := validateAuthRealmInternal("registry-1.docker.io", "https://auth.docker.io/token")
-	require.NoError(t, err)
+func TestValidateAuthRealmInternal(t *testing.T) {
+	tests := []struct {
+		name         string
+		registryHost string
+		realm        string
+		wantErr      bool
+		errContains  string
+	}{
+		{
+			name:         "same host allowed",
+			registryHost: "registry.example.com",
+			realm:        "https://registry.example.com/token",
+		},
+		{
+			name:         "same host with explicit default https port allowed",
+			registryHost: "registry.example.com",
+			realm:        "https://registry.example.com:443/token",
+		},
+		{
+			name:         "docker hub auth host allowed",
+			registryHost: "registry-1.docker.io",
+			realm:        "https://auth.docker.io/token",
+		},
+		{
+			name:         "non https realm rejected",
+			registryHost: "registry.example.com",
+			realm:        "http://registry.example.com/token",
+			wantErr:      true,
+			errContains:  "auth realm must use HTTPS",
+		},
+		{
+			name:         "empty realm rejected",
+			registryHost: "registry.example.com",
+			realm:        "",
+			wantErr:      true,
+			errContains:  "auth realm must use HTTPS",
+		},
+		{
+			name:         "malformed realm rejected",
+			registryHost: "registry.example.com",
+			realm:        "https://%zz",
+			wantErr:      true,
+			errContains:  "invalid auth realm",
+		},
+		{
+			name:         "relative realm rejected",
+			registryHost: "registry.example.com",
+			realm:        "/token",
+			wantErr:      true,
+			errContains:  "auth realm must use HTTPS",
+		},
+		{
+			name:         "untrusted realm rejected",
+			registryHost: "registry.example.com",
+			realm:        "https://evil.com/token",
+			wantErr:      true,
+			errContains:  "untrusted auth realm host",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateAuthRealmInternal(tc.registryHost, tc.realm)
+			if tc.wantErr {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tc.errContains)
+				return
+			}
+
+			require.NoError(t, err)
+		})
+	}
 }

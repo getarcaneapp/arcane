@@ -411,7 +411,11 @@ func validateAuthRealmInternal(registryHost, realm string) error {
 		return fmt.Errorf("invalid auth realm: %w", err)
 	}
 
-	realmHost := normalizeRegistryForComparisonInternal(parsedRealm.Host)
+	if !strings.EqualFold(parsedRealm.Scheme, "https") {
+		return fmt.Errorf("auth realm must use HTTPS, got %q", parsedRealm.Scheme)
+	}
+
+	realmHost := normalizeRegistryForComparisonInternal(parsedRealm.Hostname())
 	registry := normalizeRegistryForComparisonInternal(registryHost)
 
 	if realmHost == "" {
