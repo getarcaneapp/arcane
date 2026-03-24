@@ -49,6 +49,15 @@
 	});
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 
+	function getProjectDetailsUrl(projectId: string): string {
+		const params = new URLSearchParams({
+			from: 'gitops',
+			environmentId
+		});
+
+		return `/projects/${projectId}?${params.toString()}`;
+	}
+
 	async function handleDeleteSelected(ids: string[]) {
 		if (!ids?.length) return;
 
@@ -203,9 +212,13 @@
 </script>
 
 {#snippet NameCell({ item, value }: { item: GitOpsSync; value: any; row: Row<GitOpsSync> })}
-	<a class="font-medium hover:underline" href="/projects/{item.projectId}">
-		{value}
-	</a>
+	{#if item.projectId}
+		<a class="font-medium hover:underline" href={getProjectDetailsUrl(item.projectId)}>
+			{value}
+		</a>
+	{:else}
+		<span class="font-medium">{value}</span>
+	{/if}
 {/snippet}
 
 {#snippet BranchCell({ value }: { value: any; item: GitOpsSync; row: Row<GitOpsSync> })}

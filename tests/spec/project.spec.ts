@@ -28,7 +28,22 @@ async function setCodeMirrorValue(page: Page, editor: Locator, text: string) {
 async function getCodeMirrorValue(editor: Locator) {
 	const content = editor.locator('.cm-content').first();
 	await expect(content).toBeVisible();
-	return content.evaluate((node) => (node as HTMLElement).innerText ?? '');
+	return content.evaluate((node) => {
+		const lineNodes = Array.from(node.querySelectorAll('.cm-line'));
+		if (lineNodes.length > 0) {
+			return lineNodes.map((line) => line.textContent ?? '').join('\n');
+		}
+
+		return (node as { textContent?: string | null }).textContent ?? '';
+	});
+}
+
+function getPathname(url: string): string {
+	return url.replace(/^[a-z]+:\/\/[^/]+/i, '').split(/[?#]/)[0] || '/';
+}
+
+function getProjectIdFromPageUrl(url: string): string {
+	return url.split('/projects/')[1]?.split(/[?#]/)[0] ?? '';
 }
 
 async function createProjectViaUI(page: Page, projectName: string) {
@@ -60,7 +75,7 @@ async function createProjectViaUI(page: Page, projectName: string) {
 	await page.waitForURL(/\/projects\/(?!new$).+/, { timeout: 10000 });
 	await expect(page.getByRole('button', { name: projectName })).toBeVisible();
 
-	return new URL(page.url()).pathname.split('/').pop()!;
+	return getProjectIdFromPageUrl(page.url());
 }
 
 async function destroyCurrentProjectViaUI(page: Page) {
@@ -462,7 +477,7 @@ test.describe('New Compose Project Page', () => {
 			await createProjectViaUI(page, projectName);
 
 			// Reset scroll so the floating header doesn't appear from stale scroll state
-			await page.evaluate(() => window.scrollTo(0, 0));
+			await page.mouse.wheel(0, -100000);
 
 			await page.route('**/api/environments/*/projects/*/up', async (route) => {
 				await route.fulfill({
@@ -503,9 +518,7 @@ test.describe('New Compose Project Page', () => {
 			// Set up request listener right before clicking to minimize timeout window
 			const deployRequestPromise = page.waitForRequest((request) => {
 				if (request.method() !== 'POST') return false;
-				return /\/api\/environments\/[^/]+\/projects\/[^/]+\/up$/.test(
-					new URL(request.url()).pathname
-				);
+				return /\/api\/environments\/[^/]+\/projects\/[^/]+\/up$/.test(getPathname(request.url()));
 			});
 
 			await page.getByRole('button', { name: 'Up', exact: true }).click();
@@ -524,7 +537,7 @@ test.describe('New Compose Project Page', () => {
 				forceRecreate: true
 			});
 		} finally {
-			if (!page.isClosed() && /\/projects\/.+/.test(new URL(page.url()).pathname)) {
+			if (!page.isClosed() && /\/projects\/.+/.test(getPathname(page.url()))) {
 				await destroyCurrentProjectViaUI(page);
 			} else {
 				await destroyProjectByNameViaUI(page, projectName);
@@ -582,6 +595,24 @@ test.describe('New Compose Project Page', () => {
 });
 
 test.describe('GitOps Managed Project', () => {
+	test('should navigate back to gitops when opened from the git syncs page', async ({ page }) => {
+		await page.goto('/environments/0/gitops');
+		await page.waitForLoadState('networkidle');
+
+		const projectLink = page.locator('tbody tr').locator('a[href^="/projects/"]').first();
+		test.skip((await projectLink.count()) === 0, 'No GitOps project links found');
+
+		await projectLink.click();
+		await page.waitForURL(/\/projects\/.+/, { timeout: 10000 });
+
+		const backLink = page.getByRole('link', { name: /^Back$/i }).first();
+		await expect(backLink).toBeVisible();
+		await backLink.click();
+
+		await page.waitForURL('/environments/0/gitops', { timeout: 10000 });
+		await expect(page).toHaveURL('/environments/0/gitops');
+	});
+
 	test('should show read-only alert when project is GitOps managed', async ({ page }) => {
 		const gitOpsProject = realProjects.find((p) => p.gitOpsManagedBy);
 		test.skip(!gitOpsProject, 'No GitOps-managed projects found');
@@ -669,9 +700,9 @@ test.describe('GitOps Managed Project', () => {
 
 		await page.waitForTimeout(800);
 		const envEditor = page.locator('.cm-editor:visible').nth(1);
-		const envContent = envEditor.locator('.cm-content');
 		const marker = `ARCANE_E2E_${Date.now()}`;
-		const originalEnv = await envContent.evaluate((node) => (node as HTMLElement).innerText ?? '');
+		const envContent = envEditor.locator('.cm-content');
+		const originalEnv = await getCodeMirrorValue(envEditor);
 		const updatedEnv = `${originalEnv.trimEnd()}\n${marker}=1\n`;
 
 		await expect(envContent).not.toHaveAttribute('aria-readonly', 'true');
@@ -740,6 +771,21 @@ test.describe('GitOps Managed Project', () => {
 });
 
 test.describe('Project Detail Page', () => {
+	test('should navigate back to projects by default', async ({ page }) => {
+		test.skip(!realProjects.length, 'No projects available for back navigation test');
+
+		const firstProject = realProjects[0];
+		await page.goto(`/projects/${firstProject.id || firstProject.name}`);
+		await page.waitForLoadState('networkidle');
+
+		const backLink = page.getByRole('link', { name: /^Back$/i }).first();
+		await expect(backLink).toBeVisible();
+		await backLink.click();
+
+		await page.waitForURL(ROUTES.page, { timeout: 10000 });
+		await expect(page).toHaveURL(ROUTES.page);
+	});
+
 	test('should display project details for existing project', async ({ page }) => {
 		test.skip(!realProjects.length, 'No projects available for detail page test');
 
@@ -768,7 +814,8 @@ test.describe('Project Detail Page', () => {
 	test('should display services tab content', async ({ page }) => {
 		test.skip(!realProjects.length, 'No projects available for services test');
 
-		const projectWithServices = realProjects.find((p) => p.serviceCount > 0) || realProjects[0];
+		const projectWithServices =
+			realProjects.find((p) => (p.serviceCount ?? 0) > 0) ?? realProjects[0]!;
 		await page.goto(`/projects/${projectWithServices.id || projectWithServices.name}`);
 		await page.waitForLoadState('networkidle');
 
@@ -856,8 +903,9 @@ test.describe('Project Detail Page', () => {
 
 		const runningProject = realProjects.find((p) => p.status === 'running');
 		test.skip(!runningProject, 'No running projects found for logs test');
+		const targetProject = runningProject!;
 
-		await page.goto(`/projects/${runningProject.id || runningProject.name}`);
+		await page.goto(`/projects/${targetProject.id || targetProject.name}`);
 		await page.waitForLoadState('networkidle');
 
 		const logsTab = page.getByRole('tab', { name: /Logs/i });
