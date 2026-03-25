@@ -125,7 +125,7 @@ func (s *SettingsService) getDefaultSettings() *models.Settings {
 		AuthPasswordPolicy:              models.SettingVariable{Value: "strong"},
 		VulnerabilityScanEnabled:        models.SettingVariable{Value: "false"},
 		VulnerabilityScanInterval:       models.SettingVariable{Value: "0 0 0 * * *"},
-		TrivyImage:                      models.SettingVariable{Value: "ghcr.io/aquasecurity/trivy:latest"},
+		TrivyImage:                      models.SettingVariable{Value: DefaultTrivyImage},
 		TrivyNetwork:                    models.SettingVariable{Value: ""},
 		TrivySecurityOpts:               models.SettingVariable{Value: ""},
 		TrivyPrivileged:                 models.SettingVariable{Value: "false"},
@@ -692,12 +692,17 @@ func (s *SettingsService) EnsureDefaultSettings(ctx context.Context) error {
 			var existing models.SettingVariable
 			err := tx.Where("key = ?", defaultSetting.Key).First(&existing).Error
 
-			if errors.Is(err, gorm.ErrRecordNotFound) {
+			switch {
+			case errors.Is(err, gorm.ErrRecordNotFound):
 				if err := tx.Create(&defaultSetting).Error; err != nil {
 					return fmt.Errorf("failed to create default setting %s: %w", defaultSetting.Key, err)
 				}
-			} else if err != nil {
+			case err != nil:
 				return fmt.Errorf("failed to check for existing setting %s: %w", defaultSetting.Key, err)
+			case defaultSetting.Key == "trivyImage" && existing.Value != defaultSetting.Value:
+				if err := tx.Model(&existing).Update("value", defaultSetting.Value).Error; err != nil {
+					return fmt.Errorf("failed to enforce default setting %s: %w", defaultSetting.Key, err)
+				}
 			}
 		}
 		return nil
@@ -788,6 +793,10 @@ func (s *SettingsService) processEnvField(ctx context.Context, tx *gorm.DB, fiel
 
 func (s *SettingsService) shouldProcessField(key, attrs string, isEnvOnlyMode bool) bool {
 	if key == "" || strings.Contains(attrs, "internal") {
+		return false
+	}
+
+	if key == "trivyImage" {
 		return false
 	}
 

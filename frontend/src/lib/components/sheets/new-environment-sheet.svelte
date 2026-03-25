@@ -39,7 +39,7 @@
 
 	let isLoadingSnippets = $state(false);
 	const createEnvironmentMutation = createMutation(() => ({
-		mutationFn: ({ dto, apiUrl, isEdge }: { dto: CreateEnvironmentDTO; apiUrl: string; isEdge: boolean }) =>
+		mutationFn: ({ dto }: { dto: CreateEnvironmentDTO; apiUrl: string; isEdge: boolean }) =>
 			environmentManagementService.create(dto),
 		onSuccess: async (created, variables) => {
 			await queryClient.invalidateQueries({ queryKey: queryKeys.environments.all });

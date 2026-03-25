@@ -65,7 +65,9 @@
 
 		if (!result.success) {
 			const firstError = result.error.issues[0];
-			toast.error(firstError.message);
+			if (firstError) {
+				toast.error(firstError.message);
+			}
 			return;
 		}
 

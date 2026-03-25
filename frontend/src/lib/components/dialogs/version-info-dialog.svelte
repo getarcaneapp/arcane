@@ -23,7 +23,7 @@
 	const logoUrl = $derived(getApplicationLogo(false, accentColor, accentColor));
 </script>
 
-<ResponsiveDialog bind:open {onOpenChange} description={m.version_info_description()} contentClass="sm:max-w-md">
+<ResponsiveDialog {open} {onOpenChange} description={m.version_info_description()} contentClass="sm:max-w-md">
 	{#snippet title()}
 		<div class="flex items-center gap-2">
 			<img src={logoUrl} alt="Arcane" class="size-6" />

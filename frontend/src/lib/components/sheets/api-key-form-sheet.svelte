@@ -61,7 +61,7 @@
 </script>
 
 <ResponsiveDialog.Root
-	bind:open
+	{open}
 	onOpenChange={handleOpenChange}
 	variant="sheet"
 	title={isStaticApiKey

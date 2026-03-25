@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -148,6 +149,9 @@ func fetchWithTokenAuthInternal(ctx context.Context, httpClient *http.Client, re
 	realm, service := parseWWWAuthInternal(challenge)
 	if realm == "" {
 		return "", fmt.Errorf("no auth realm found")
+	}
+	if err := validateAuthRealmInternal(registryHost, realm); err != nil {
+		return "", err
 	}
 
 	token, err := fetchRegistryTokenInternal(ctx, httpClient, realm, service, repository, credential)
@@ -400,6 +404,53 @@ func serviceNameFromAuthURLInternal(authURL string) string {
 	}
 
 	return host
+}
+
+func validateAuthRealmInternal(registryHost, realm string) error {
+	parsedRealm, err := url.Parse(strings.TrimSpace(realm))
+	if err != nil {
+		return fmt.Errorf("invalid auth realm: %w", err)
+	}
+
+	if !strings.EqualFold(parsedRealm.Scheme, "https") {
+		return fmt.Errorf("auth realm must use HTTPS, got %q", parsedRealm.Scheme)
+	}
+
+	realmHost := normalizeAuthRealmHostInternal(parsedRealm.Host)
+	registry := normalizeAuthRealmHostInternal(registryHost)
+
+	if realmHost == "" {
+		return fmt.Errorf("invalid auth realm host")
+	}
+	if realmHost == registry {
+		return nil
+	}
+
+	// Docker Hub serves token auth from auth.docker.io while image pulls are made
+	// against index.docker.io / registry-1.docker.io.
+	if registry == "docker.io" && realmHost == "auth.docker.io" {
+		return nil
+	}
+
+	return fmt.Errorf("untrusted auth realm host %q for registry %q", realmHost, registry)
+}
+
+func normalizeAuthRealmHostInternal(raw string) string {
+	normalized := normalizeRegistryForComparisonInternal(raw)
+	if normalized == "" {
+		return ""
+	}
+
+	host, port, err := net.SplitHostPort(normalized)
+	if err != nil {
+		return normalized
+	}
+
+	if port == "443" {
+		return host
+	}
+
+	return net.JoinHostPort(host, port)
 }
 
 func normalizeRegistryForComparisonInternal(raw string) string {

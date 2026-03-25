@@ -67,7 +67,8 @@
 			<div
 				class={cn(
 					'flex size-10 items-center justify-center rounded-full transition-colors duration-300',
-					'bg-transparent group-hover:bg-(--stat-hover-tint)/10'
+					bgColor,
+					'group-hover:bg-(--stat-hover-tint)/10'
 				)}
 			>
 				<Icon class={cn('size-6 transition-transform duration-300 group-hover:scale-110', iconColor)} />

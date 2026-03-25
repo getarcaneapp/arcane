@@ -51,7 +51,7 @@
 		}
 	});
 
-	function handleCalendarInteraction(newDateValue?: DateValue) {
+	function handleCalendarInteraction(_newDateValue?: DateValue) {
 		open = false;
 	}
 
@@ -61,7 +61,7 @@
 </script>
 
 <div class="w-full" {...restProps}>
-	<Popover.Root bind:open>
+	<Popover.Root {open} onOpenChange={(nextOpen) => (open = nextOpen)}>
 		<Popover.Trigger {id} class="w-full">
 			{#snippet child({ props })}
 				<ArcaneButton

@@ -35,19 +35,7 @@ jobs:
           run_install: false
 
       - name: Setup Just
-        uses: extractions/setup-just@f8a3cce218d9f83db3a2ecd90e41ac3de6cdfd9b
-
-      - name: Ensure Just is on PATH
-        shell: bash
-        run: |
-          JUST_BIN="$(command -v just)"
-          if [ -z "$JUST_BIN" ]; then
-            echo "just not found in PATH after setup"
-            exit 1
-          fi
-          echo "$(dirname "$JUST_BIN")" >> "$GITHUB_PATH"
-          echo "JUST_BIN=$JUST_BIN" >> "$GITHUB_ENV"
-          just --version
+        uses: taiki-e/install-action@just
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -63,20 +51,23 @@ jobs:
 
       - name: Set up Depot CLI
         uses: depot/setup-action@v1
-        env:
-          DEPOT_TOKEN: ${{ secrets.DEPOT_TOKEN }}
-
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup depot buildx driver
         id: setup-buildx-driver
         run: |
           depot configure-docker
+
+      # - name: Snapshot Setup Environment
+      #   uses: depot/snapshot-action@v1
+      #   with:
+      #     image: g7r5wqb57k.registry.depot.dev/arcane-env:latest
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ vars.GHCR_USERNAME }}
+          password: ${{ secrets.ARCANE_BOT_TOKEN }}
 
       - name: Set Short Git Commit SHA
         id: vars
@@ -88,9 +79,9 @@ jobs:
         with:
           distribution: goreleaser-pro
           version: '~> 2'
-          args: release --clean --skip=sign,announce,validate,nfpm,homebrew --verbose
+          args: release --clean --skip=sign,announce,validate,nfpm,homebrew
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.ARCANE_BOT_TOKEN }}
           BUILD_NEXT: 'true'
           SKIP_RELEASE: 'true'
           SKIP_CHANGELOG: 'true'

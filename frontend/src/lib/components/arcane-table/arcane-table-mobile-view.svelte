@@ -14,8 +14,6 @@
 		mobileFieldVisibility,
 		groupedRows = null,
 		groupIcon,
-		onGroupToggle,
-		groupCollapsedState = {},
 		unstyled = false
 	}: {
 		table: TableType<any>;
@@ -23,8 +21,6 @@
 		mobileFieldVisibility: Record<string, boolean>;
 		groupedRows?: GroupedData<any>[] | null;
 		groupIcon?: (groupName: string) => Component;
-		onGroupToggle?: (groupName: string) => void;
-		groupCollapsedState?: Record<string, boolean>;
 		unstyled?: boolean;
 	} = $props();
 

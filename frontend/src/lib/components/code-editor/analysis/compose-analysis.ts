@@ -1,10 +1,10 @@
 import type { ErrorObject } from 'ajv';
 import type { Diagnostic } from '@codemirror/lint';
 import type { EditorView } from '@codemirror/view';
-import { LineCounter, isMap, isPair, isScalar, isSeq, parseDocument, type Pair, type ParsedNode, type Scalar } from 'yaml';
+import { LineCounter, isMap, isPair, isScalar, isSeq, parseDocument, type ParsedNode, type Scalar } from 'yaml';
 import type { AnalysisResult, EditorContext, OutlineItem } from './types';
 import type { ComposeSchemaContext } from './compose-schema';
-import { getMissingComposeVariables, resolveVariableSource } from './vars-analysis';
+import { resolveVariableSource } from './vars-analysis';
 
 const MAX_SCHEMA_DIAGNOSTICS_DEFAULT = 30;
 const TAB_INDENT_REGEX = /(^|\n)(\t+)/g;
@@ -170,8 +170,8 @@ function findKeyRangeInSource(source: string, key: string): { from: number; to: 
 function toSchemaDiagnostic(error: ErrorObject, doc: YamlDocLike, source: string): Diagnostic | null {
 	const path = pointerToPath(error.instancePath || '');
 	const params = error.params as Record<string, unknown>;
-	const missingProperty = typeof params.missingProperty === 'string' ? params.missingProperty : null;
-	const additionalProperty = typeof params.additionalProperty === 'string' ? params.additionalProperty : null;
+	const missingProperty = typeof params['missingProperty'] === 'string' ? params['missingProperty'] : null;
+	const additionalProperty = typeof params['additionalProperty'] === 'string' ? params['additionalProperty'] : null;
 
 	const range = getNodeRangeByPath(doc, path) ||
 		(missingProperty ? findKeyRangeInSource(source, missingProperty) : null) ||
