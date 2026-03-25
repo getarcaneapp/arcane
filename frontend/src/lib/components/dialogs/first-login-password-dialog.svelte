@@ -58,7 +58,7 @@
 </script>
 
 <ResponsiveDialog
-	bind:open
+	{open}
 	onOpenChange={(isOpen) => {
 		if (!isOpen) {
 			open = true;

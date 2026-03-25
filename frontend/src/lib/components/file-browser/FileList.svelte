@@ -47,12 +47,19 @@
 		minimal?: boolean;
 	} = $props();
 
+	// Kept for component API compatibility with callers that pass the current path.
+	// svelte-ignore state_referenced_locally
+	void currentPath;
+
 	let requestOptions = $state<SearchPaginationSortRequest>({
 		pagination: { page: 1, limit: 100 },
 		sort: { column: 'name', direction: 'asc' }
 	});
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
+	// Bound to ArcaneTable so mobile visibility preferences can persist externally.
+	// svelte-ignore state_referenced_locally
+	void mobileFieldVisibility;
 
 	function compareByColumn(a: FileEntry, b: FileEntry, column: string): number {
 		switch (column) {
@@ -244,7 +251,7 @@
 				getValue: (item) => (item.isDirectory ? '--' : formatBytes(item.size)),
 				icon: EyeOnIcon,
 				iconVariant: 'gray',
-				show: mobileFieldVisibility.size ?? true
+				show: mobileFieldVisibility['size'] ?? true
 			}
 		]}
 		footer={{

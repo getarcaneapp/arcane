@@ -4,7 +4,6 @@ import type {
 	ContainerStatusCounts,
 	ContainerSummaryDto,
 	ContainerSummaryGroupDto,
-	ContainerStats,
 	ContainerCreateRequest,
 	ContainerDetailsDto
 } from '$lib/types/container.type';
@@ -39,7 +38,7 @@ export class ContainerService extends BaseAPIService {
 	): Promise<ContainersPaginatedResponse> {
 		const params = transformPaginationParams(options);
 		if (options?.groupByProject) {
-			params.groupBy = 'project';
+			params['groupBy'] = 'project';
 		}
 		const res = await this.api.get(`/environments/${environmentId}/containers`, { params });
 		return res.data;
@@ -87,8 +86,8 @@ export class ContainerService extends BaseAPIService {
 	async deleteContainer(containerId: string, opts?: { force?: boolean; volumes?: boolean }): Promise<any> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		const params: Record<string, string> = {};
-		if (opts?.force !== undefined) params.force = String(!!opts.force);
-		if (opts?.volumes !== undefined) params.volumes = String(!!opts.volumes);
+		if (opts?.force !== undefined) params['force'] = String(!!opts.force);
+		if (opts?.volumes !== undefined) params['volumes'] = String(!!opts.volumes);
 
 		return this.handleResponse(this.api.delete(`/environments/${envId}/containers/${containerId}`, { params }));
 	}

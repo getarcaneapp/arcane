@@ -45,6 +45,8 @@
 	import { arcaneButtonVariants, actionConfigs } from './variants';
 	import { m } from '$lib/paraglide/messages';
 
+	void arcaneButtonVariants;
+
 	let {
 		ref = $bindable(null),
 		action,
@@ -73,8 +75,6 @@
 	let isIconOnlyButton = $derived(size === 'icon' || !showLabel);
 
 	let IconComponent = $derived(icon === null ? null : (icon ?? config.IconComponent));
-
-	let hasChildren = $derived(!!children);
 </script>
 
 <svelte:element
@@ -88,7 +88,7 @@
 	role={href && disabled ? 'link' : undefined}
 	tabindex={href && disabled ? -1 : tabindex}
 	class={cn('relative', arcaneButtonVariants({ tone: tone ?? config.tone, size, hoverEffect }), className)}
-	aria-label={hasChildren ? undefined : isIconOnlyButton ? displayLabel : undefined}
+	aria-label={children ? undefined : isIconOnlyButton ? displayLabel : undefined}
 	bind:this={ref}
 	onclick={async (e: any) => {
 		onclick?.(e);

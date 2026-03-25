@@ -45,7 +45,6 @@ export class MobileNavInteractionManager {
 	private state: MobileNavInteractionState;
 
 	private navElement: HTMLElement | null = null;
-	private lastGestureTime = 0;
 	private lastScrollDirection: string | null = null;
 	private lastScrollY = 0;
 
@@ -85,7 +84,6 @@ export class MobileNavInteractionManager {
 		this.swipeDetector = new SwipeGestureDetector(
 			(direction: SwipeDirection) => {
 				if (direction === 'up') {
-					this.lastGestureTime = Date.now();
 					this.callbacks.onMenuOpen();
 				}
 			},
@@ -145,6 +143,8 @@ export class MobileNavInteractionManager {
 			// Only track if we moved off an interactive element
 			if (this.isInteractiveTouch) {
 				const touch = e.touches[0];
+				if (!touch) return;
+
 				const target = document.elementFromPoint(touch.clientX, touch.clientY) as HTMLElement;
 				const stillOnInteractive = target && target.closest('button, a, [role="button"], input, select, textarea');
 
@@ -155,7 +155,7 @@ export class MobileNavInteractionManager {
 			}
 		};
 
-		const handleTouchEnd = (e: TouchEvent) => {
+		const handleTouchEnd = () => {
 			// Reset touch state
 			this.touchStartTarget = null;
 			this.isInteractiveTouch = false;

@@ -105,8 +105,8 @@
 		}
 
 		// Fallback: use 'event' field if no message found
-		if (!message && obj.event) {
-			message = String(obj.event);
+		if (!message && obj['event']) {
+			message = String(obj['event']);
 		}
 
 		const rawTimestamp = findValue(obj, TIMESTAMP_KEYS);

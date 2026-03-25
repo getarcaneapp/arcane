@@ -25,8 +25,10 @@
 		tabindex = -1,
 		children
 	}: CopyButtonProps = $props();
+	void ref;
 
 	const clipboard = new UseClipboard();
+	void scale;
 
 	const resolvedSize = $derived(size === 'icon' && children ? 'default' : size);
 

@@ -33,6 +33,10 @@
 	function selectProtocol(p: 'https' | 'http') {
 		protocol = p;
 	}
+
+	function handleInput(e: Event) {
+		value = (e.target as HTMLInputElement).value;
+	}
 </script>
 
 <div class="grid gap-2">
@@ -62,7 +66,7 @@
 			</DropdownMenu.Content>
 		</DropdownMenu.Root>
 		<InputGroup.Root class={['flex-1', error ? 'border-destructive' : ''].filter(Boolean).join(' ')}>
-			<InputGroup.Input {id} bind:value {placeholder} {disabled} {required} aria-invalid={!!error} />
+			<InputGroup.Input {id} {value} oninput={handleInput} {placeholder} {disabled} {required} aria-invalid={!!error} />
 		</InputGroup.Root>
 	</ButtonGroup.Root>
 

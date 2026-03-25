@@ -34,7 +34,7 @@
 
 		let usedWidth = DROPDOWN_WIDTH;
 		for (let i = 0; i < total; i++) {
-			const needed = buttonWidths[i] + (i > 0 ? GAP : 0);
+			const needed = (buttonWidths[i] ?? 0) + (i > 0 ? GAP : 0);
 			if (usedWidth + needed > containerWidth) {
 				return i;
 			}

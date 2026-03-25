@@ -8,7 +8,6 @@
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Textarea } from '$lib/components/ui/textarea/index.js';
-	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import type { ContainerCreateRequest } from '$lib/types/container.type';
 	import { z } from 'zod/v4';
 	import { createForm, preventDefault } from '$lib/utils/form.utils';
@@ -131,7 +130,7 @@
 			const [key, ...valueParts] = trimmed.split('=');
 			const value = valueParts.join('=');
 
-			if (key.trim()) {
+			if (key?.trim()) {
 				result[key.trim()] = value.trim();
 			}
 		}
@@ -288,7 +287,7 @@
 </script>
 
 <ResponsiveDialog
-	bind:open
+	{open}
 	onOpenChange={handleOpenChange}
 	title={m.create_container_title()}
 	description={m.create_container_description()}

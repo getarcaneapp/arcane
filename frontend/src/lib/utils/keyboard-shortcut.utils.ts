@@ -41,12 +41,15 @@ export function matchesShortcutEvent(keys: ShortcutKey[], event: KeyboardEvent, 
 	const key = event.key.toLowerCase();
 	if (MODIFIER_KEYS.has(key)) return false;
 
-	const expectedCode = getExpectedCode(nonModifierKeys[0]);
+	const primaryKey = nonModifierKeys[0];
+	if (!primaryKey) return false;
+
+	const expectedCode = getExpectedCode(primaryKey);
 	if (expectedCode) {
 		return event.code.toLowerCase() === expectedCode;
 	}
 
-	return key === nonModifierKeys[0];
+	return key === primaryKey;
 }
 
 export function isEditableTarget(target: EventTarget | null): boolean {

@@ -282,8 +282,9 @@
 		if (entries.length === 0) return m.progress_deploy_starting();
 
 		const waiting = entries.filter(([_, v]) => v.phase === 'service_waiting_healthy').sort(([a], [b]) => a.localeCompare(b));
-		if (waiting.length > 0) {
-			const [service, v] = waiting[0];
+		const firstWaiting = waiting[0];
+		if (firstWaiting) {
+			const [service, v] = firstWaiting;
 			const health = String(v.health ?? '').trim();
 			return health
 				? m.progress_deploy_waiting_for_service_with_health({ service, health })
@@ -293,8 +294,9 @@
 		const stateIssues = entries
 			.filter(([_, v]) => v.phase === 'service_state' && (v.state ?? '').toLowerCase() !== 'running')
 			.sort(([a], [b]) => a.localeCompare(b));
-		if (stateIssues.length > 0) {
-			const [service, v] = stateIssues[0];
+		const firstStateIssue = stateIssues[0];
+		if (firstStateIssue) {
+			const [service, v] = firstStateIssue;
 			return m.progress_deploy_service_state({ service, state: String(v.state ?? '') });
 		}
 
