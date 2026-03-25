@@ -311,6 +311,57 @@ func TestLookupComposeProjectIDInternal(t *testing.T) {
 	})
 }
 
+func TestUpdaterService_LazyRegisterComposeProjectInternal_AddsServicesForRegisteredProject(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "p1"},
+		Name:      "My Project!",
+		Path:      "/tmp/my-project",
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	projectService := NewProjectService(db, nil, nil, nil, nil, nil)
+	svc := &UpdaterService{projectService: projectService}
+
+	projectNameToID := map[string]string{}
+	projectIDToObj := map[string]*models.Project{}
+	projectToServices := map[string][]string{}
+	projectToSeenServices := map[string]map[string]struct{}{}
+
+	firstPlan := &restartPlan{
+		newRef: "nginx:latest",
+		inspect: &container.InspectResponse{
+			Config: &container.Config{
+				Labels: map[string]string{
+					"com.docker.compose.project": "myproject",
+					"com.docker.compose.service": "web",
+				},
+			},
+		},
+	}
+	secondPlan := &restartPlan{
+		newRef: "nginx:latest",
+		inspect: &container.InspectResponse{
+			Config: &container.Config{
+				Labels: map[string]string{
+					"com.docker.compose.project": "myproject",
+					"com.docker.compose.service": "worker",
+				},
+			},
+		},
+	}
+
+	svc.lazyRegisterComposeProjectInternal(ctx, firstPlan, projectNameToID, projectIDToObj, projectToServices, projectToSeenServices)
+	svc.lazyRegisterComposeProjectInternal(ctx, secondPlan, projectNameToID, projectIDToObj, projectToServices, projectToSeenServices)
+
+	require.Contains(t, projectToServices, project.ID)
+	assert.Equal(t, []string{"web", "worker"}, projectToServices[project.ID])
+	assert.Equal(t, project.ID, projectNameToID[project.Name])
+	assert.Equal(t, project.ID, projectNameToID[loader.NormalizeProjectName(project.Name)])
+}
+
 func TestAnyImageIDsInUseSet(t *testing.T) {
 	inUseSet := map[string]struct{}{
 		"sha256:one": {},

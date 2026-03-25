@@ -226,19 +226,25 @@ func (s *ProjectService) GetProjectByComposeName(ctx context.Context, name strin
 	normalized := normalizeComposeProjectName(name)
 
 	var proj models.Project
-	query := s.db.WithContext(ctx)
-	if normalized == name {
-		query = query.Where("name = ?", name)
-	} else {
-		query = query.Where("name = ? OR name = ?", name, normalized)
+	err := s.db.WithContext(ctx).Where("name = ? OR name = ?", name, normalized).First(&proj).Error
+	if err == nil {
+		return &proj, nil
 	}
-	if err := query.First(&proj).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, fmt.Errorf("project not found: %s", name)
-		}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, fmt.Errorf("failed to get project by name: %w", err)
 	}
-	return &proj, nil
+
+	var projects []models.Project
+	if err := s.db.WithContext(ctx).Find(&projects).Error; err != nil {
+		return nil, fmt.Errorf("failed to list projects by compose name: %w", err)
+	}
+	for i := range projects {
+		if normalizeComposeProjectName(projects[i].Name) == normalized {
+			return &projects[i], nil
+		}
+	}
+
+	return nil, fmt.Errorf("project not found: %s", name)
 }
 
 func (s *ProjectService) UpdateProjectServices(ctx context.Context, projectID string, servicesToUpdate []string, user models.User) error {

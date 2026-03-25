@@ -275,28 +275,54 @@ func TestProjectService_NormalizeComposeProjectName(t *testing.T) {
 }
 
 func TestProjectService_GetProjectByComposeName(t *testing.T) {
-	db := setupProjectTestDB(t)
 	ctx := context.Background()
 
-	svc := NewProjectService(db, nil, nil, nil, nil, nil)
-
-	proj := &models.Project{
-		BaseModel: models.BaseModel{ID: "p1"},
-		Name:      "myproject",
-		Path:      "/tmp/myproject",
-	}
-	require.NoError(t, db.Create(proj).Error)
-
 	t.Run("exact match", func(t *testing.T) {
+		db := setupProjectTestDB(t)
+		svc := NewProjectService(db, nil, nil, nil, nil, nil)
+
+		proj := &models.Project{
+			BaseModel: models.BaseModel{ID: "p1"},
+			Name:      "myproject",
+			Path:      "/tmp/myproject",
+		}
+		require.NoError(t, db.Create(proj).Error)
+
 		found, err := svc.GetProjectByComposeName(ctx, "myproject")
 		require.NoError(t, err)
 		assert.Equal(t, proj.ID, found.ID)
 	})
 
 	t.Run("normalized fallback", func(t *testing.T) {
+		db := setupProjectTestDB(t)
+		svc := NewProjectService(db, nil, nil, nil, nil, nil)
+
+		proj := &models.Project{
+			BaseModel: models.BaseModel{ID: "p1"},
+			Name:      "myproject",
+			Path:      "/tmp/myproject",
+		}
+		require.NoError(t, db.Create(proj).Error)
+
 		found, err := svc.GetProjectByComposeName(ctx, "My Project!")
 		require.NoError(t, err)
 		assert.Equal(t, proj.ID, found.ID)
+	})
+
+	t.Run("display name in db, normalized compose label input", func(t *testing.T) {
+		db := setupProjectTestDB(t)
+		svc := NewProjectService(db, nil, nil, nil, nil, nil)
+
+		display := &models.Project{
+			BaseModel: models.BaseModel{ID: "p2"},
+			Name:      "My Project!",
+			Path:      "/tmp/my-project",
+		}
+		require.NoError(t, db.Create(display).Error)
+
+		found, err := svc.GetProjectByComposeName(ctx, "myproject")
+		require.NoError(t, err)
+		assert.Equal(t, display.ID, found.ID)
 	})
 }
 

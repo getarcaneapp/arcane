@@ -1570,22 +1570,24 @@ func (s *UpdaterService) lazyRegisterComposeProjectInternal(
 	if projectName == "" || serviceName == "" {
 		return
 	}
-	if _, registered := projectNameToID[projectName]; registered {
-		return
+
+	projectID, registered := lookupComposeProjectIDInternal(projectName, projectNameToID)
+	if !registered {
+		proj, err := s.projectService.GetProjectByComposeName(ctx, projectName)
+		if err != nil {
+			return
+		}
+		projectID = proj.ID
+		projectIDToObj[proj.ID] = proj
+		projectNameToID[proj.Name] = proj.ID
+		projectNameToID[loader.NormalizeProjectName(proj.Name)] = proj.ID
 	}
-	proj, err := s.projectService.GetProjectByComposeName(ctx, projectName)
-	if err != nil {
-		return
+	if _, ok := projectToSeenServices[projectID]; !ok {
+		projectToSeenServices[projectID] = make(map[string]struct{})
 	}
-	projectIDToObj[proj.ID] = proj
-	projectNameToID[proj.Name] = proj.ID
-	projectNameToID[loader.NormalizeProjectName(proj.Name)] = proj.ID
-	if _, ok := projectToSeenServices[proj.ID]; !ok {
-		projectToSeenServices[proj.ID] = make(map[string]struct{})
-	}
-	if _, seen := projectToSeenServices[proj.ID][serviceName]; !seen {
-		projectToServices[proj.ID] = append(projectToServices[proj.ID], serviceName)
-		projectToSeenServices[proj.ID][serviceName] = struct{}{}
+	if _, seen := projectToSeenServices[projectID][serviceName]; !seen {
+		projectToServices[projectID] = append(projectToServices[projectID], serviceName)
+		projectToSeenServices[projectID][serviceName] = struct{}{}
 	}
 }
 
