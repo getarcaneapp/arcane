@@ -404,6 +404,7 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 
 	// Enrich with details
 	s.enrichWithIncludeFiles(ctx, proj.Path, &resp)
+	s.enrichWithDirectoryFiles(ctx, proj.Path, &resp)
 	s.enrichWithGitOpsInfo(ctx, proj, &resp)
 
 	// Load compose project for service definitions
@@ -458,6 +459,89 @@ func (s *ProjectService) enrichWithIncludeFiles(ctx context.Context, projectPath
 			slog.WarnContext(ctx, "Failed to parse includes", "error", parseErr, "path", projectPath)
 		}
 	}
+}
+
+func (s *ProjectService) enrichWithDirectoryFiles(ctx context.Context, projectPath string, resp *project.Details) {
+	if projectPath == "" {
+		return
+	}
+
+	// Build set of already-shown files to skip
+	shownFiles := map[string]bool{
+		".env":                 true,
+		"compose.yaml":         true,
+		"compose.yml":          true,
+		"docker-compose.yaml":  true,
+		"docker-compose.yml":   true,
+	}
+	for _, inc := range resp.IncludeFiles {
+		shownFiles[inc.RelativePath] = true
+	}
+
+	var dirFiles []project.IncludeFile
+
+	err := filepath.WalkDir(projectPath, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil // skip files we can't access
+		}
+
+		// Skip .git directory
+		if d.IsDir() && d.Name() == ".git" {
+			return filepath.SkipDir
+		}
+
+		// Skip directories
+		if d.IsDir() {
+			return nil
+		}
+
+		relPath, relErr := filepath.Rel(projectPath, path)
+		if relErr != nil {
+			return nil
+		}
+
+		// Skip already-shown files
+		if shownFiles[relPath] {
+			return nil
+		}
+
+		// Skip large files (>1MB)
+		info, infoErr := d.Info()
+		if infoErr != nil || info.Size() > 1024*1024 {
+			return nil
+		}
+
+		// Read content
+		content, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return nil
+		}
+
+		// Skip binary files (null byte check on first 512 bytes)
+		checkSize := len(content)
+		if checkSize > 512 {
+			checkSize = 512
+		}
+		for _, b := range content[:checkSize] {
+			if b == 0 {
+				return nil // binary file, skip
+			}
+		}
+
+		dirFiles = append(dirFiles, project.IncludeFile{
+			Path:         path,
+			RelativePath: relPath,
+			Content:      string(content),
+		})
+
+		return nil
+	})
+
+	if err != nil {
+		slog.WarnContext(ctx, "Failed to scan project directory files", "error", err, "path", projectPath)
+	}
+
+	resp.DirectoryFiles = dirFiles
 }
 
 func (s *ProjectService) enrichWithGitOpsInfo(ctx context.Context, proj *models.Project, resp *project.Details) {

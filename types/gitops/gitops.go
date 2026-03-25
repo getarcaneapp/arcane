@@ -112,6 +112,34 @@ type GitOpsSync struct {
 	// Required: true
 	SyncInterval int `json:"syncInterval"`
 
+	// SyncDirectory indicates if the entire directory containing the compose file should be synced.
+	// When true, all files in the compose file's directory (and subdirectories) are synced.
+	// When false, only the compose file itself is synced.
+	//
+	// Required: true
+	SyncDirectory bool `json:"syncDirectory"`
+
+	// SyncedFiles is a JSON-encoded list of file paths that were synced in the last successful sync.
+	// Only populated when SyncDirectory is true. Parse as JSON array of strings.
+	//
+	// Required: false
+	SyncedFiles *string `json:"syncedFiles,omitempty"`
+
+	// MaxSyncFiles is the maximum number of files to sync. 0 means unlimited.
+	//
+	// Required: true
+	MaxSyncFiles int `json:"maxSyncFiles"`
+
+	// MaxSyncTotalSize is the maximum total size in bytes for all synced files. 0 means unlimited.
+	//
+	// Required: true
+	MaxSyncTotalSize int64 `json:"maxSyncTotalSize"`
+
+	// MaxSyncBinarySize is the maximum size in bytes for individual binary files. 0 means unlimited.
+	//
+	// Required: true
+	MaxSyncBinarySize int64 `json:"maxSyncBinarySize"`
+
 	// LastSyncAt is the date and time of the last successful sync.
 	//
 	// Required: false
@@ -298,6 +326,31 @@ type CreateSyncRequest struct {
 	//
 	// Required: false
 	SyncInterval *int `json:"syncInterval,omitempty"`
+
+	// SyncDirectory indicates if the entire directory containing the compose file should be synced.
+	// When true (default), all files in the compose file's directory are synced.
+	// When false, only the compose file itself is synced.
+	//
+	// Required: false
+	SyncDirectory *bool `json:"syncDirectory,omitempty"`
+
+	// MaxSyncFiles is the maximum number of files to sync. 0 means unlimited.
+	// Default: 500
+	//
+	// Required: false
+	MaxSyncFiles *int `json:"maxSyncFiles,omitempty"`
+
+	// MaxSyncTotalSize is the maximum total size in bytes for all synced files. 0 means unlimited.
+	// Default: 52428800 (50MB)
+	//
+	// Required: false
+	MaxSyncTotalSize *int64 `json:"maxSyncTotalSize,omitempty"`
+
+	// MaxSyncBinarySize is the maximum size in bytes for individual binary files. 0 means unlimited.
+	// Default: 10485760 (10MB)
+	//
+	// Required: false
+	MaxSyncBinarySize *int64 `json:"maxSyncBinarySize,omitempty"`
 }
 
 // UpdateSyncRequest represents the request to update a gitops sync.
@@ -336,6 +389,28 @@ type UpdateSyncRequest struct {
 	//
 	// Required: false
 	SyncInterval *int `json:"syncInterval,omitempty"`
+
+	// SyncDirectory indicates if the entire directory containing the compose file should be synced.
+	// When true, all files in the compose file's directory are synced.
+	// When false, only the compose file itself is synced.
+	//
+	// Required: false
+	SyncDirectory *bool `json:"syncDirectory,omitempty"`
+
+	// MaxSyncFiles is the maximum number of files to sync. 0 means unlimited.
+	//
+	// Required: false
+	MaxSyncFiles *int `json:"maxSyncFiles,omitempty"`
+
+	// MaxSyncTotalSize is the maximum total size in bytes for all synced files. 0 means unlimited.
+	//
+	// Required: false
+	MaxSyncTotalSize *int64 `json:"maxSyncTotalSize,omitempty"`
+
+	// MaxSyncBinarySize is the maximum size in bytes for individual binary files. 0 means unlimited.
+	//
+	// Required: false
+	MaxSyncBinarySize *int64 `json:"maxSyncBinarySize,omitempty"`
 }
 
 // SyncResult represents the result of a sync operation.
@@ -581,6 +656,27 @@ type ImportGitOpsSyncRequest struct {
 	//
 	// Required: true
 	SyncInterval int `json:"syncInterval"`
+
+	// SyncDirectory indicates if the entire directory containing the compose file should be synced.
+	// When true (default), all files in the compose file's directory are synced.
+	//
+	// Required: false
+	SyncDirectory *bool `json:"syncDirectory,omitempty"`
+
+	// MaxSyncFiles is the maximum number of files to sync. 0 means unlimited.
+	//
+	// Required: false
+	MaxSyncFiles *int `json:"maxSyncFiles,omitempty"`
+
+	// MaxSyncTotalSize is the maximum total size in bytes for all synced files. 0 means unlimited.
+	//
+	// Required: false
+	MaxSyncTotalSize *int64 `json:"maxSyncTotalSize,omitempty"`
+
+	// MaxSyncBinarySize is the maximum size in bytes for individual binary files. 0 means unlimited.
+	//
+	// Required: false
+	MaxSyncBinarySize *int64 `json:"maxSyncBinarySize,omitempty"`
 }
 
 // ImportGitOpsSyncResponse represents the response for importing gitops syncs.

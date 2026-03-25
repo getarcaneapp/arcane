@@ -1,6 +1,7 @@
 package git
 
 import (
+	"context"
 	"net"
 	"os"
 	"path/filepath"
@@ -292,6 +293,140 @@ func TestNewClient(t *testing.T) {
 			t.Errorf("expected empty workDir, got %s", client.workDir)
 		}
 	})
+}
+
+func writeFile(t *testing.T, dir, name string, content []byte) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, name), content, 0644); err != nil {
+		t.Fatalf("failed to write file %s: %v", name, err)
+	}
+}
+
+func minimalCompose() []byte {
+	return []byte("services:\n  test:\n    image: alpine\n")
+}
+
+func TestWalkDirectory_BasicWalk(t *testing.T) {
+	tmpDir := t.TempDir()
+	writeFile(t, tmpDir, "compose.yaml", minimalCompose())
+	writeFile(t, tmpDir, "file1.txt", []byte("hello world"))
+	writeFile(t, tmpDir, "file2.txt", []byte("another file"))
+
+	client := NewClient("")
+	result, err := client.WalkDirectory(context.Background(), tmpDir, "compose.yaml", 0, 0, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.TotalFiles != 3 {
+		t.Errorf("expected 3 files, got %d", result.TotalFiles)
+	}
+	if len(result.Files) != 3 {
+		t.Errorf("expected 3 entries in Files, got %d", len(result.Files))
+	}
+}
+
+func TestWalkDirectory_MaxFilesLimit(t *testing.T) {
+	tmpDir := t.TempDir()
+	writeFile(t, tmpDir, "compose.yaml", minimalCompose())
+	writeFile(t, tmpDir, "a.txt", []byte("a"))
+	writeFile(t, tmpDir, "b.txt", []byte("b"))
+	writeFile(t, tmpDir, "c.txt", []byte("c"))
+	writeFile(t, tmpDir, "d.txt", []byte("d"))
+
+	client := NewClient("")
+	_, err := client.WalkDirectory(context.Background(), tmpDir, "compose.yaml", 3, 0, 0)
+	if err == nil {
+		t.Fatal("expected error for file count limit, got nil")
+	}
+	if !strings.Contains(err.Error(), "file count limit exceeded") {
+		t.Errorf("expected 'file count limit exceeded' error, got: %v", err)
+	}
+}
+
+func TestWalkDirectory_MaxFilesUnlimited(t *testing.T) {
+	tmpDir := t.TempDir()
+	writeFile(t, tmpDir, "compose.yaml", minimalCompose())
+	writeFile(t, tmpDir, "a.txt", []byte("a"))
+	writeFile(t, tmpDir, "b.txt", []byte("b"))
+	writeFile(t, tmpDir, "c.txt", []byte("c"))
+	writeFile(t, tmpDir, "d.txt", []byte("d"))
+
+	client := NewClient("")
+	result, err := client.WalkDirectory(context.Background(), tmpDir, "compose.yaml", 0, 0, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.TotalFiles != 5 {
+		t.Errorf("expected 5 files, got %d", result.TotalFiles)
+	}
+}
+
+func TestWalkDirectory_MaxTotalSizeLimit(t *testing.T) {
+	tmpDir := t.TempDir()
+	writeFile(t, tmpDir, "compose.yaml", minimalCompose())
+	writeFile(t, tmpDir, "big1.txt", []byte(strings.Repeat("x", 40)))
+	writeFile(t, tmpDir, "big2.txt", []byte(strings.Repeat("y", 40)))
+
+	client := NewClient("")
+	_, err := client.WalkDirectory(context.Background(), tmpDir, "compose.yaml", 0, 50, 0)
+	if err == nil {
+		t.Fatal("expected error for total size limit, got nil")
+	}
+	if !strings.Contains(err.Error(), "total size limit exceeded") {
+		t.Errorf("expected 'total size limit exceeded' error, got: %v", err)
+	}
+}
+
+func TestWalkDirectory_MaxTotalSizeUnlimited(t *testing.T) {
+	tmpDir := t.TempDir()
+	writeFile(t, tmpDir, "compose.yaml", minimalCompose())
+	writeFile(t, tmpDir, "big1.txt", []byte(strings.Repeat("x", 500)))
+	writeFile(t, tmpDir, "big2.txt", []byte(strings.Repeat("y", 500)))
+
+	client := NewClient("")
+	result, err := client.WalkDirectory(context.Background(), tmpDir, "compose.yaml", 0, 0, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.TotalFiles != 3 {
+		t.Errorf("expected 3 files, got %d", result.TotalFiles)
+	}
+}
+
+func TestWalkDirectory_MaxBinarySizeSkips(t *testing.T) {
+	tmpDir := t.TempDir()
+	writeFile(t, tmpDir, "compose.yaml", minimalCompose())
+	// Binary content: null bytes cause isBinaryContent to return true
+	binaryContent := []byte{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13}
+	writeFile(t, tmpDir, "data.bin", binaryContent)
+
+	client := NewClient("")
+	result, err := client.WalkDirectory(context.Background(), tmpDir, "compose.yaml", 0, 0, 5)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.SkippedBinaries == 0 {
+		t.Error("expected at least one skipped binary file, got 0")
+	}
+}
+
+func TestWalkDirectory_MaxBinarySizeUnlimited(t *testing.T) {
+	tmpDir := t.TempDir()
+	writeFile(t, tmpDir, "compose.yaml", minimalCompose())
+	binaryContent := []byte{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13}
+	writeFile(t, tmpDir, "data.bin", binaryContent)
+
+	client := NewClient("")
+	result, err := client.WalkDirectory(context.Background(), tmpDir, "compose.yaml", 0, 0, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.SkippedBinaries != 0 {
+		t.Errorf("expected no skipped binaries with unlimited size, got %d", result.SkippedBinaries)
+	}
+	if result.TotalFiles != 2 {
+		t.Errorf("expected 2 files (compose + binary), got %d", result.TotalFiles)
+	}
 }
 
 // generateTestPublicKey creates a test ED25519 public key for testing

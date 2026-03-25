@@ -85,6 +85,7 @@ export interface Project {
 	composeContent?: string;
 	envContent?: string;
 	includeFiles?: IncludeFile[];
+	directoryFiles?: IncludeFile[];
 }
 
 export interface ProjectStatusCounts {

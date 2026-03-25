@@ -304,9 +304,10 @@
 		autoScrollStackLogs = cur.autoScroll ?? defaultComposeUIPrefs.autoScroll;
 		selectedFile = cur.selectedFile ?? defaultComposeUIPrefs.selectedFile ?? 'compose';
 
-		// Auto-detect layout mode based on includeFiles
+		// Auto-detect layout mode based on includeFiles or directoryFiles
 		const hasIncludes = project?.includeFiles && project.includeFiles.length > 0;
-		const defaultMode = hasIncludes ? 'tree' : 'classic';
+		const hasDirectoryFiles = project?.directoryFiles && project.directoryFiles.length > 0;
+		const defaultMode = hasIncludes || hasDirectoryFiles ? 'tree' : 'classic';
 		layoutMode = cur.layoutMode ?? defaultMode;
 	});
 
@@ -645,7 +646,7 @@
 							{#if isTablet.current}
 								<div class="flex h-full min-h-0 flex-col gap-4">
 									<Card.Root class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-										<Card.Header icon={FileTextIcon} class="shrink-0 items-center">
+										<Card.Header icon={FileTextIcon} class="flex-shrink-0 items-center">
 											<Card.Title>
 												<h2>{m.project_files()}</h2>
 											</Card.Title>
@@ -687,6 +688,20 @@
 														{/each}
 													</TreeView.Folder>
 												{/if}
+
+												{#if project?.directoryFiles && project.directoryFiles.length > 0}
+													{#each project.directoryFiles as dirFile (dirFile.relativePath)}
+														<TreeView.File
+															name={dirFile.relativePath}
+															onclick={() => (selectedFile = `dir:${dirFile.relativePath}`)}
+															class={selectedFile === `dir:${dirFile.relativePath}` ? 'bg-accent' : ''}
+														>
+															{#snippet icon()}
+																<FileTextIcon class="size-4 text-muted-foreground" />
+															{/snippet}
+														</TreeView.File>
+													{/each}
+												{/if}
 											</TreeView.Root>
 										</Card.Content>
 									</Card.Root>
@@ -700,12 +715,6 @@
 												bind:value={$inputs.composeContent.value}
 												error={$inputs.composeContent.error ?? undefined}
 												readOnly={!canEditCompose}
-												bind:hasErrors={composeHasErrors}
-												bind:validationReady={composeValidationReady}
-												fileId={`project:${projectId}:compose`}
-												originalValue={originalComposeContent}
-												enableDiff={true}
-												editorContext={codeEditorContext}
 											/>
 										{:else if selectedFile === 'env'}
 											<CodePanel
@@ -714,14 +723,19 @@
 												language="env"
 												bind:value={$inputs.envContent.value}
 												error={$inputs.envContent.error ?? undefined}
-												readOnly={!canEditEnv}
-												bind:hasErrors={envHasErrors}
-												bind:validationReady={envValidationReady}
-												fileId={`project:${projectId}:env`}
-												originalValue={originalEnvContent}
-												enableDiff={true}
-												editorContext={codeEditorContext}
 											/>
+										{:else if selectedFile.startsWith('dir:')}
+											{@const dirRelPath = selectedFile.slice(4)}
+											{@const dirFile = project?.directoryFiles?.find((f) => f.relativePath === dirRelPath)}
+											{#if dirFile}
+												<CodePanel
+													open={true}
+													title={dirFile.relativePath}
+													language="yaml"
+													value={dirFile.content}
+													readOnly={true}
+												/>
+											{/if}
 										{:else}
 											{@const includeFile = project?.includeFiles?.find((f) => f.relativePath === selectedFile)}
 											{#if includeFile}
@@ -730,12 +744,6 @@
 													title={includeFile.relativePath}
 													language="yaml"
 													bind:value={includeFilesState[includeFile.relativePath]}
-													bind:hasErrors={includeFilesHasErrors[includeFile.relativePath]}
-													bind:validationReady={includeFilesValidationReady[includeFile.relativePath]}
-													fileId={`project:${projectId}:include:${includeFile.relativePath}`}
-													originalValue={originalIncludeFiles[includeFile.relativePath]}
-													enableDiff={true}
-													editorContext={codeEditorContext}
 												/>
 											{/if}
 										{/if}
@@ -798,6 +806,20 @@
 															{/each}
 														</TreeView.Folder>
 													{/if}
+
+													{#if project?.directoryFiles && project.directoryFiles.length > 0}
+														{#each project.directoryFiles as dirFile (dirFile.relativePath)}
+															<TreeView.File
+																name={dirFile.relativePath}
+																onclick={() => (selectedFile = `dir:${dirFile.relativePath}`)}
+																class={selectedFile === `dir:${dirFile.relativePath}` ? 'bg-accent' : ''}
+															>
+																{#snippet icon()}
+																	<FileTextIcon class="size-4 text-muted-foreground" />
+																{/snippet}
+															</TreeView.File>
+														{/each}
+													{/if}
 												</TreeView.Root>
 											</Card.Content>
 										</Card.Root>
@@ -835,6 +857,18 @@
 													enableDiff={true}
 													editorContext={codeEditorContext}
 												/>
+											{:else if selectedFile.startsWith('dir:')}
+												{@const dirRelPath = selectedFile.slice(4)}
+												{@const dirFile = project?.directoryFiles?.find((f) => f.relativePath === dirRelPath)}
+												{#if dirFile}
+													<CodePanel
+														open={true}
+														title={dirFile.relativePath}
+														language="yaml"
+														value={dirFile.content}
+														readOnly={true}
+													/>
+												{/if}
 											{:else}
 												{@const includeFile = project?.includeFiles?.find((f) => f.relativePath === selectedFile)}
 												{#if includeFile}
