@@ -12,6 +12,7 @@
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { getStatusVariant } from '$lib/utils/status.utils';
 	import { capitalizeFirstLetter } from '$lib/utils/string.utils';
+	import { page } from '$app/state';
 	import { invalidateAll } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 	import { tryCatch } from '$lib/utils/try-catch';
@@ -427,11 +428,22 @@
 			return trimmed;
 		}
 	}
+
+	const backUrl = $derived.by(() => {
+		const from = page.url.searchParams.get('from');
+		const sourceEnvironmentId = page.url.searchParams.get('environmentId');
+
+		if (from === 'gitops' && sourceEnvironmentId) {
+			return `/environments/${sourceEnvironmentId}/gitops`;
+		}
+
+		return '/projects';
+	});
 </script>
 
 {#if project}
 	<TabbedPageLayout
-		backUrl="/projects"
+		{backUrl}
 		backLabel={m.common_back()}
 		{tabItems}
 		{selectedTab}

@@ -19,7 +19,7 @@
 	data-slot="sidebar-rail"
 	aria-label="Toggle Sidebar"
 	tabindex={sidebar.isTablet ? -1 : -1}
-	onclick={(e) => {
+	onclick={() => {
 		if (!sidebar.isTablet) {
 			sidebar.toggle();
 		}

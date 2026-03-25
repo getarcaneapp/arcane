@@ -3,7 +3,6 @@
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import FormInput from '$lib/components/form/form-input.svelte';
 	import SwitchWithLabel from '$lib/components/form/labeled-switch.svelte';
-	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { z } from 'zod/v4';
 	import { createForm, preventDefault } from '$lib/utils/form.utils';
 	import * as Alert from '$lib/components/ui/alert/index.js';
@@ -71,7 +70,7 @@
 </script>
 
 <ResponsiveDialog.Root
-	bind:open
+	{open}
 	onOpenChange={handleOpenChange}
 	variant="sheet"
 	title={m.templates_add_registry_title()}

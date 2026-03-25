@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { DropdownMenu as DropdownMenuPrimitive } from 'bits-ui';
-	import { CheckIcon } from '$lib/icons';
 	import { cn, type WithoutChild } from '$lib/utils.js';
 
 	let {

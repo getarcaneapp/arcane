@@ -151,8 +151,9 @@
 				<TextInputWithLabel
 					bind:value={$formInputs.trivyImage.value}
 					error={$formInputs.trivyImage.error}
+					disabled={true}
 					label={m.security_trivy_image_label()}
-					placeholder="ghcr.io/aquasecurity/trivy:latest"
+					placeholder="ghcr.io/aquasecurity/trivy@sha256:bcc376de8d77cfe086a917230e818dc9f8528e3c852f7b1aff648949b6258d1c"
 					type="text"
 				/>
 			</div>

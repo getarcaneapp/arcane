@@ -37,7 +37,7 @@
 
 {#if isDesktop.current}
 	{#if variant === 'sheet'}
-		<Sheet.Root bind:open onOpenChange={handleOpenChange}>
+		<Sheet.Root {open} onOpenChange={handleOpenChange}>
 			{#if trigger}
 				<Sheet.Trigger>
 					{@render trigger()}
@@ -67,7 +67,7 @@
 			</Sheet.Content>
 		</Sheet.Root>
 	{:else}
-		<Dialog.Root bind:open onOpenChange={handleOpenChange}>
+		<Dialog.Root {open} onOpenChange={handleOpenChange}>
 			{#if trigger}
 				<Dialog.Trigger>
 					{@render trigger()}
@@ -101,7 +101,7 @@
 		</Dialog.Root>
 	{/if}
 {:else}
-	<Drawer.Root bind:open onOpenChange={handleOpenChange}>
+	<Drawer.Root {open} onOpenChange={handleOpenChange}>
 		{#if trigger}
 			<Drawer.Trigger>
 				{@render trigger()}

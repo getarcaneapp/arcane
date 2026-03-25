@@ -135,18 +135,11 @@
 	{/snippet}
 
 	{#snippet additionalContent()}
-		<UserFormSheet
-			bind:open={isDialogOpen.create}
-			userToEdit={null}
-			roles={[]}
-			onSubmit={handleUserSubmit}
-			isLoading={isLoading.creating}
-		/>
+		<UserFormSheet bind:open={isDialogOpen.create} userToEdit={null} onSubmit={handleUserSubmit} isLoading={isLoading.creating} />
 
 		<UserFormSheet
 			bind:open={isDialogOpen.edit}
 			{userToEdit}
-			roles={[]}
 			onSubmit={handleUserSubmit}
 			isLoading={isLoading.editing}
 			allowUsernameEdit={true}

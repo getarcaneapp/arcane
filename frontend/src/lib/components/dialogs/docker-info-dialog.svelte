@@ -32,7 +32,8 @@
 </script>
 
 <ResponsiveDialog
-	bind:open
+	{open}
+	onOpenChange={(nextOpen) => (open = nextOpen)}
 	title={m.docker_engine_title({ engine: dockerInfo?.Name ?? 'Docker Engine' })}
 	description={m.docker_info_dialog_description()}
 	contentClass="sm:max-w-[1100px]"

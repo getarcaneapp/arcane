@@ -55,7 +55,7 @@
 										<Avatar.Image src={getDefaultProfilePicture()} alt={user.displayName} />
 									{:then url}
 										<Avatar.Image src={url} alt={user.displayName} />
-									{:catch _}
+									{:catch}
 										<Avatar.Image src={getDefaultProfilePicture()} alt={user.displayName} />
 									{/await}
 								{:else}
@@ -106,7 +106,7 @@
 										<Avatar.Image src={getDefaultProfilePicture()} alt={user.displayName} />
 									{:then url}
 										<Avatar.Image src={url} alt={user.displayName} />
-									{:catch _}
+									{:catch}
 										<Avatar.Image src={getDefaultProfilePicture()} alt={user.displayName} />
 									{/await}
 								{:else}
