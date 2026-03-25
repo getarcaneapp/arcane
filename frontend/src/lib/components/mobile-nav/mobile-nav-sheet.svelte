@@ -130,7 +130,7 @@
 	}
 </script>
 
-<Drawer.Root bind:open shouldScaleBackground direction="bottom" modal={true}>
+<Drawer.Root {open} onOpenChange={(nextOpen) => (open = nextOpen)} shouldScaleBackground direction="bottom" modal={true}>
 	<Drawer.Overlay class="fixed inset-0 z-40 bg-black/40 backdrop-blur-xl" />
 	<Drawer.Content
 		data-testid="mobile-nav-sheet"

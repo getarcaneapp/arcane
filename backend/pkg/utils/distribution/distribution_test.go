@@ -136,6 +136,11 @@ func TestValidateAuthRealmInternal(t *testing.T) {
 			realm:        "https://registry.example.com:443/token",
 		},
 		{
+			name:         "same host with matching non-default port allowed",
+			registryHost: "127.0.0.1:5000",
+			realm:        "https://127.0.0.1:5000/token",
+		},
+		{
 			name:         "docker hub auth host allowed",
 			registryHost: "registry-1.docker.io",
 			realm:        "https://auth.docker.io/token",

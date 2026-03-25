@@ -1,7 +1,7 @@
 <script lang="ts">
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { ArcaneButton } from '$lib/components/arcane-button';
-	import { FileDropZone, displaySize, MEGABYTE, type FileDropZoneProps } from '$lib/components/ui/file-drop-zone';
+	import { FileDropZone, displaySize, type FileDropZoneProps } from '$lib/components/ui/file-drop-zone';
 	import { toast } from 'svelte-sonner';
 	import * as m from '$lib/paraglide/messages.js';
 	import { CloseIcon } from '$lib/icons';
@@ -50,8 +50,9 @@
 </script>
 
 <Dialog.Root
-	bind:open
+	{open}
 	onOpenChange={(isOpen) => {
+		open = isOpen;
 		if (!isOpen) files = [];
 	}}
 >

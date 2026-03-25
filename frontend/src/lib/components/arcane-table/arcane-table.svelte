@@ -683,8 +683,6 @@
 					{mobileFieldVisibility}
 					groupedRows={effectiveGroupedRows}
 					{groupIcon}
-					{groupCollapsedState}
-					onGroupToggle={handleGroupToggle}
 					{unstyled}
 				/>
 			</div>
@@ -731,15 +729,7 @@
 		</div>
 
 		<div class="block flex-1 overflow-auto md:hidden">
-			<ArcaneTableMobileView
-				{table}
-				{mobileCard}
-				{mobileFieldVisibility}
-				groupedRows={effectiveGroupedRows}
-				{groupIcon}
-				{groupCollapsedState}
-				onGroupToggle={handleGroupToggle}
-			/>
+			<ArcaneTableMobileView {table} {mobileCard} {mobileFieldVisibility} groupedRows={effectiveGroupedRows} {groupIcon} />
 		</div>
 
 		{#if !withoutPagination}

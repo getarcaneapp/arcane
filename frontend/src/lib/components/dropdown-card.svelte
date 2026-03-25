@@ -26,6 +26,7 @@
 
 	let expanded = $state(false);
 	let initialized = $state(false);
+	void slide;
 
 	function loadExpandedState() {
 		const state = JSON.parse(localStorage.getItem('collapsible-cards-expanded') || '{}');

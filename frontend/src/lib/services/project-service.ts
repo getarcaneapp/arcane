@@ -125,13 +125,13 @@ export class ProjectService extends BaseAPIService {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		const payload: Record<string, string> = {};
 		if (name !== undefined) {
-			payload.name = name;
+			payload['name'] = name;
 		}
 		if (composeContent !== undefined) {
-			payload.composeContent = composeContent;
+			payload['composeContent'] = composeContent;
 		}
 		if (envContent !== undefined) {
-			payload.envContent = envContent;
+			payload['envContent'] = envContent;
 		}
 		return this.handleResponse(this.api.put(`/environments/${envId}/projects/${projectId}`, payload));
 	}

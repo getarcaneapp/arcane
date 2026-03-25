@@ -3,7 +3,6 @@
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { Card } from '$lib/components/ui/card/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
-	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { ScrollArea } from '$lib/components/ui/scroll-area/index.js';
 	import type { Template } from '$lib/types/template.type';
 	import { Label } from '$lib/components/ui/label/index.js';
@@ -34,6 +33,7 @@
 	}
 
 	let { open = $bindable(), templates = [], onSelect, onDownloadSuccess }: Props = $props();
+	void open;
 
 	let loadingStates = $state<Set<string>>(new Set());
 	let sortBy = $state<'name-asc' | 'name-desc'>('name-asc');
