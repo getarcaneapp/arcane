@@ -418,7 +418,7 @@
 	"containers_update_column": "更新",
 	"containers_update_container": "更新容器",
 	"containers_update_confirm_title": "更新容器",
-	"containers_update_confirm_message": "將拉取最新映像檔並重新啟動容器「{name}」。是否繼續？",
+	"containers_update_confirm_message": "這將為 \"{name}\" 取得最新的映像，並套用適當的更新。要繼續嗎？",
 	"containers_update_pulling_image": "正在拉取最新映像檔…",
 	"containers_update_success": "「{name}」容器更新成功",
 	"containers_update_failed": "更新「{name}」容器時失敗",
