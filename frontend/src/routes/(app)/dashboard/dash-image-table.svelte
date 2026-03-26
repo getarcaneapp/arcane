@@ -24,13 +24,11 @@
 
 	const isMobile = new IsMobile();
 	let displayLimit = $state(images.pagination?.itemsPerPage ?? 5);
-	let resizeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 	let lastMeasuredHeight = $state(0);
 
-	// Estimate row height: ~57px per row (including borders/padding), plus ~145px for header
 	const ROW_HEIGHT = 57;
 	const HEADER_HEIGHT = 145;
-	const FOOTER_HEIGHT = 48; // Reserve space for the "showing" footer overlay
+	const FOOTER_HEIGHT = 48;
 	const MIN_ROWS = 3;
 	const MAX_ROWS = 50;
 
@@ -38,6 +36,8 @@
 		pagination: { page: 1, limit: 5 },
 		sort: { column: 'size', direction: 'desc' }
 	});
+
+	let selectedIds = $state<string[]>([]);
 
 	function shouldReserveFooter(limit: number) {
 		const totalItems = images.pagination?.totalItems ?? 0;
@@ -59,53 +59,29 @@
 		return Math.max(MIN_ROWS, Math.min(MAX_ROWS, rows));
 	}
 
-	let selectedIds = $state<string[]>([]);
-	let lastFetchedLimit = $state(images.pagination?.itemsPerPage ?? 5);
-
-	async function syncLimit(limit: number) {
-		displayLimit = limit;
-
-		const pagination = requestOptions.pagination;
-		const currentLimit = images.pagination?.itemsPerPage;
-		if (!pagination || (limit === lastFetchedLimit && (currentLimit === undefined || currentLimit === limit))) {
-			return;
-		}
-
-		if (resizeDebounceTimer) {
-			clearTimeout(resizeDebounceTimer);
-		}
-
-		resizeDebounceTimer = setTimeout(async () => {
-			try {
-				lastFetchedLimit = limit;
-				requestOptions = {
-					...requestOptions,
-					pagination: {
-						page: pagination.page ?? 1,
-						limit
-					}
-				};
-				images = await imageService.getImages(requestOptions);
-				void handleLayoutChange(lastMeasuredHeight);
-			} catch (error) {
-				console.error('Failed to sync image limit:', error);
-			} finally {
-				resizeDebounceTimer = null;
+	function updateRequestLimit(limit: number) {
+		requestOptions = {
+			...requestOptions,
+			pagination: {
+				page: requestOptions.pagination?.page ?? 1,
+				limit
 			}
-		}, 300);
+		};
 	}
 
-	async function handleLayoutChange(height: number) {
+	function handleLayoutChange(height: number) {
 		lastMeasuredHeight = height;
 		const nextLimit = calculateLimitForHeight(height);
-		await syncLimit(nextLimit);
+		displayLimit = nextLimit;
+		updateRequestLimit(nextLimit);
 	}
 
 	async function refreshImages(options: SearchPaginationSortRequest) {
 		requestOptions = options;
 		const result = await imageService.getImages(options);
 		images = result;
-		await handleLayoutChange(lastMeasuredHeight);
+		displayLimit = result.pagination?.itemsPerPage ?? displayLimit;
+		handleLayoutChange(lastMeasuredHeight);
 		return result;
 	}
 
@@ -179,7 +155,7 @@
 	/>
 {/snippet}
 
-<div class="flex h-full min-h-0 flex-col" bind:clientHeight={() => lastMeasuredHeight, (value) => void handleLayoutChange(value)}>
+<div class="flex h-full min-h-0 flex-col" bind:clientHeight={() => lastMeasuredHeight, (value) => handleLayoutChange(value)}>
 	<Card.Root class="flex h-full min-h-0 flex-col">
 		<Card.Header icon={ImagesIcon} class="shrink-0">
 			<div class="flex flex-1 items-center justify-between">

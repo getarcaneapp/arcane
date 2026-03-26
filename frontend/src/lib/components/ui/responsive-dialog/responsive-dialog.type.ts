@@ -53,6 +53,12 @@ export interface ResponsiveDialogProps {
 	contentClass?: string;
 
 	/**
+	 * Whether to show the default desktop dialog close button
+	 * @default true
+	 */
+	showCloseButton?: boolean;
+
+	/**
 	 * The variant of the dialog on desktop
 	 * @default 'dialog'
 	 */

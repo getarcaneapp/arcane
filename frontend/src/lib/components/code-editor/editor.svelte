@@ -75,10 +75,10 @@
 		diffOpen?: boolean;
 		commandPaletteOpen?: boolean;
 	} = $props();
+	void hasErrors;
 
 	let activeOutlineItems = $state<OutlineItem[]>([]);
 	let activeView = $state<EditorView | null>(null);
-	let normalView = $state<EditorView | null>(null);
 	let schemaState = $state<ComposeSchemaContext | null>(null);
 	let shortcutsEnabled = $derived($configStore?.keyboardShortcutsEnabled !== false);
 
@@ -202,10 +202,6 @@
 		} catch {
 			// ignore bad state payload
 		}
-	}
-
-	function focusEditor() {
-		activeView?.focus();
 	}
 
 	function jumpToOutlineItem(item: OutlineItem) {
@@ -607,7 +603,6 @@
 	});
 
 	function wireNormalView(view: EditorView) {
-		normalView = view;
 		if (!isDiffActive) {
 			activeView = view;
 			restoreEditorState(view);

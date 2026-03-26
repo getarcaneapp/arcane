@@ -12,11 +12,9 @@ export class SwipeGestureDetector {
 	private startX = 0;
 	private startY = 0;
 	private startTime = 0;
-	private element = $state<HTMLElement | null>(null);
 	private onSwipe: (direction: SwipeDirection, details: SwipeDetails) => void;
 	private options: Required<SwipeGestureOptions>;
 	private cleanupFn: (() => void) | null = null;
-	private isInteractiveTouch = false;
 
 	constructor(onSwipe: (direction: SwipeDirection, details: SwipeDetails) => void, options: SwipeGestureOptions = {}) {
 		this.onSwipe = onSwipe;
@@ -42,24 +40,21 @@ export class SwipeGestureDetector {
 			this.cleanupFn = null;
 		}
 
-		this.element = element;
-
 		if (!element) return;
 
 		const handleTouchStart = (e: TouchEvent) => {
 			const touch = e.touches[0];
+			if (!touch) return;
+
 			this.startX = touch.clientX;
 			this.startY = touch.clientY;
 			this.startTime = Date.now();
-
-			// Store if this started on an interactive element
-			const target = e.target as HTMLElement;
-			const isInteractive = target.closest('button, a, [role="button"], input, textarea, select');
-			this.isInteractiveTouch = !!isInteractive;
 		};
 
 		const handleTouchEnd = (e: TouchEvent) => {
 			const touch = e.changedTouches[0];
+			if (!touch) return;
+
 			const endX = touch.clientX;
 			const endY = touch.clientY;
 			const endTime = Date.now();

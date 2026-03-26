@@ -4,10 +4,8 @@
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Textarea } from '$lib/components/ui/textarea/index.js';
-	import { toast } from 'svelte-sonner';
 	import type { ImportGitOpsSyncRequest } from '$lib/types/gitops.type';
 	import { m } from '$lib/paraglide/messages';
-	import { preventDefault } from '$lib/utils/form.utils';
 
 	type GitOpsImportFormProps = {
 		open: boolean;
@@ -69,7 +67,8 @@
 </script>
 
 <ResponsiveDialog
-	bind:open
+	{open}
+	onOpenChange={(nextOpen) => (open = nextOpen)}
 	title={m.git_sync_import_title()}
 	description={m.git_sync_import_description()}
 	contentClass="sm:max-w-2xl"

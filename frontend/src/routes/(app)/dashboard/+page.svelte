@@ -19,10 +19,12 @@
 	import DashboardMetricTile from './dash-metric-tile.svelte';
 	import DashboardContainerTable from './dash-container-table.svelte';
 	import DashboardImageTable from './dash-image-table.svelte';
+	import type { PageData } from './$types';
 	import { m } from '$lib/paraglide/messages';
 	import { invalidateAll } from '$app/navigation';
 	import { systemService } from '$lib/services/system-service';
 	import bytes from '$lib/utils/bytes';
+	import type { DockerInfo } from '$lib/types/docker-info.type';
 	import {
 		CpuIcon,
 		MemoryStickIcon,
@@ -38,32 +40,24 @@
 		CheckIcon
 	} from '$lib/icons';
 
-	let { data } = $props();
-	let containers = $derived(data.containers);
-	let images = $derived(data.images);
-	let dockerInfo = $derived(data.dockerInfo);
-	let containerStatusCounts = $derived(data.containerStatusCounts);
-	let settings = $derived(data.settings);
-	let imageUsageCounts = $derived(
-		(
-			data as {
-				imageUsageCounts?: { imagesInuse?: number; imagesUnused?: number } | null;
-			}
-		).imageUsageCounts
+	let { data }: { data: PageData } = $props();
+	let containers = $derived(data.dashboard.containers);
+	let images = $derived(data.dashboard.images);
+	let containerStatusCounts = $derived(
+		data.dashboard.containers.counts ?? { runningContainers: 0, stoppedContainers: 0, totalContainers: 0 }
 	);
-	let dashboardActionItems = $derived(
-		(
-			data as {
-				dashboardActionItems?: { items?: Array<{ kind: string; count: number }> } | null;
-			}
-		).dashboardActionItems
-	);
-	let debugAllGood = $derived((data as { debugAllGood?: boolean }).debugAllGood ?? false);
+	let settings = $derived(data.dashboard.settings);
+	let imageUsageCounts = $derived(data.dashboard.imageUsageCounts);
+	let dashboardActionItems = $derived(data.dashboard.actionItems);
+	let debugAllGood = $derived(data.debugAllGood ?? false);
 	let currentUser = $state<User | null>(null);
 
 	let systemStats = $state<SystemStats | null>(null);
 	let isPruneDialogOpen = $state(false);
 	let dockerInfoDialogOpen = $state(false);
+	let dockerInfo = $state<DockerInfo | null>(null);
+	let dockerInfoPromise = $state<Promise<DockerInfo> | null>(null);
+	let dockerInfoError = $state<string | null>(null);
 
 	type PruneType = 'containers' | 'images' | 'networks' | 'volumes' | 'buildCache';
 
@@ -72,10 +66,7 @@
 		stopping: false,
 		refreshing: false,
 		pruning: false,
-		loadingStats: true,
-		loadingDockerInfo: false,
-		loadingContainers: false,
-		loadingImages: false
+		loadingStats: true
 	});
 
 	let statsWSClient: ReconnectingWebSocket<SystemStats> | null = null;
@@ -117,7 +108,6 @@
 	const imagesInUseCount = $derived(imageUsageCounts?.imagesInuse ?? 0);
 	const imagesUnusedCount = $derived(imageUsageCounts?.imagesUnused ?? 0);
 
-	const containerHealthPercent = $derived(totalContainers > 0 ? Math.round((runningContainers / totalContainers) * 100) : 100);
 	const diskUsagePercent = $derived.by(() => {
 		if (!currentStats?.diskTotal || currentStats.diskTotal <= 0 || currentStats.diskUsage === undefined) return null;
 		return (currentStats.diskUsage / currentStats.diskTotal) * 100;
@@ -144,14 +134,6 @@
 		return 'gray';
 	});
 	const hasDiskPressureAlert = $derived(!debugAllGood && (diskRisk === 'critical' || diskRisk === 'high'));
-	const showNeedsAttention = $derived(
-		!debugAllGood &&
-			(stoppedContainersAttentionCount > 0 ||
-				imageUpdatesAttentionCount > 0 ||
-				actionableVulnerabilitiesAttentionCount > 0 ||
-				expiringApiKeysAttentionCount > 0 ||
-				hasDiskPressureAlert)
-	);
 	const attentionItemsCount = $derived(
 		debugAllGood
 			? 0
@@ -165,7 +147,6 @@
 	const imageUpdatesBadgeText = $derived(`${imageUpdatesAttentionCount} ${m.common_pending()}`);
 	const actionableVulnerabilitiesBadgeText = $derived(`${m.vuln_severity_critical()} + ${m.vuln_severity_high()}`);
 	const expiringApiKeysBadgeText = $derived(`${expiringApiKeysAttentionCount} ${m.common_pending()}`);
-	const containerHealthLabel = $derived(`${runningContainers}/${totalContainers} ${m.common_running()}`);
 	const imageUsageLabel = $derived(`${imagesInUseCount} ${m.common_in_use()} · ${imagesUnusedCount} ${m.common_unused()}`);
 	const diskPressureValue = $derived(diskUsagePercent === null ? '--' : `${diskUsagePercent.toFixed(1)}%`);
 	const diskPressureDescription = $derived.by(() => {
@@ -209,7 +190,10 @@
 		const count = currentStats?.gpuCount ?? 0;
 		return count > 0 ? `${count} ${count === 1 ? m.dashboard_meter_gpu_device() : m.dashboard_meter_gpu_devices()}` : '--';
 	});
-	const dashboardUser = $derived.by(() => currentUser ?? (data as { user?: User | null }).user ?? null);
+	const overviewHost = $derived(currentStats?.hostname?.trim() || dockerInfo?.Name || m.common_unknown());
+	const overviewPlatform = $derived(currentStats?.platform ?? dockerInfo?.OperatingSystem ?? '-');
+	const overviewArchitecture = $derived(currentStats?.architecture ?? dockerInfo?.Architecture ?? '-');
+	const dashboardUser = $derived.by(() => currentUser ?? data.user ?? null);
 	const greetingBase = $derived.by(() => {
 		const hour = new Date().getHours();
 		if (hour >= 5 && hour < 12) return m.dashboard_greeting_morning();
@@ -275,6 +259,9 @@
 	function resetStats() {
 		systemStats = null;
 		hasInitialStatsLoaded = false;
+		dockerInfo = null;
+		dockerInfoPromise = null;
+		dockerInfoError = null;
 	}
 
 	function closeStatsWS() {
@@ -305,8 +292,32 @@
 		statsWSClient.connect();
 	}
 
+	async function loadDockerInfo(): Promise<DockerInfo> {
+		try {
+			const envId = await environmentStore.getCurrentEnvironmentId();
+			const info = await systemService.getDockerInfoForEnvironment(envId);
+			dockerInfo = info;
+			return info;
+		} catch (error) {
+			console.error('Failed to load docker info:', error);
+			dockerInfoError = m.common_failed();
+			toast.error(dockerInfoError);
+			throw error;
+		} finally {
+			dockerInfoPromise = null;
+		}
+	}
+
+	function openDockerInfoDialog() {
+		dockerInfoDialogOpen = true;
+		if (dockerInfo || dockerInfoPromise) return;
+
+		dockerInfoError = null;
+		dockerInfoPromise = loadDockerInfo();
+	}
+
 	async function handleStartAll() {
-		if (isLoading.starting || !dockerInfo || stoppedContainers === 0) return;
+		if (isLoading.starting || stoppedContainers === 0) return;
 		isLoading.starting = true;
 		handleApiResultWithCallbacks({
 			result: await tryCatch(systemService.startAllStoppedContainers()),
@@ -320,7 +331,7 @@
 	}
 
 	async function handleStopAll() {
-		if (isLoading.stopping || !dockerInfo || dockerInfo?.ContainersRunning === 0) return;
+		if (isLoading.stopping || runningContainers === 0) return;
 		openConfirmDialog({
 			title: m.dashboard_stop_all_title(),
 			message: m.dashboard_stop_all_confirm(),
@@ -381,9 +392,9 @@
 	}
 </script>
 
-<div class="flex min-h-full flex-col gap-4 pt-3 md:gap-5 md:pt-4">
+<div class="flex h-full min-h-0 flex-col gap-4 overflow-hidden pt-3 md:gap-5 md:pt-4">
 	<header
-		class="dark:border-surface/80 dark:bg-surface/10 rounded-xl border border-white/80 bg-white/10 p-4 shadow-sm backdrop-blur-sm sm:p-5"
+		class="dark:border-surface/80 dark:bg-surface/10 shrink-0 rounded-xl border border-white/80 bg-white/10 p-4 shadow-sm backdrop-blur-sm sm:p-5"
 	>
 		<div class="relative flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
 			<div class="space-y-1.5">
@@ -395,10 +406,8 @@
 				class="w-full justify-start lg:w-auto lg:justify-end"
 				compact
 				user={data.user}
-				{dockerInfo}
 				{stoppedContainers}
 				{runningContainers}
-				loadingDockerInfo={isLoading.loadingDockerInfo}
 				isLoading={{ starting: isLoading.starting, stopping: isLoading.stopping, pruning: isLoading.pruning }}
 				onStartAll={handleStartAll}
 				onStopAll={handleStopAll}
@@ -409,7 +418,7 @@
 		</div>
 	</header>
 
-	<section class="space-y-1.5">
+	<section class="shrink-0 space-y-1.5">
 		{#if attentionItemsCount > 0}
 			<div class="flex flex-col gap-1">
 				<h2 class="text-lg font-semibold tracking-tight">{m.dashboard_action_items_title()}</h2>
@@ -493,7 +502,7 @@
 		{/if}
 	</section>
 
-	<header>
+	<header class="shrink-0">
 		<Card.Root class="overflow-hidden">
 			<Card.Header icon={StatsIcon} class="items-start">
 				<div class="flex w-full min-w-0 flex-col gap-2">
@@ -544,7 +553,7 @@
 
 				<div class="mt-1 flex flex-col gap-2 border-t pt-3 md:flex-row md:items-center md:justify-between">
 					<div class="min-w-0 space-y-1">
-						<div class="text-sm font-medium">{m.docker_engine_title({ engine: dockerInfo?.Name ?? m.common_unknown() })}</div>
+						<div class="text-sm font-medium">{m.docker_engine_title({ engine: overviewHost })}</div>
 						<div class="text-muted-foreground flex flex-wrap items-center gap-2 text-xs">
 							<span class="inline-flex items-center gap-1.5">
 								<ContainersIcon class="size-3" />
@@ -561,28 +570,27 @@
 							<span class="text-muted-foreground/50">•</span>
 							<span>{imageUsageLabel}</span>
 							<span class="text-muted-foreground/50">•</span>
-							<span class="font-mono">{dockerInfo?.OperatingSystem ?? '-'} / {dockerInfo?.Architecture ?? '-'}</span>
+							<span class="font-mono">{overviewPlatform} / {overviewArchitecture}</span>
 						</div>
 					</div>
 
-					{#if dockerInfo}
-						<ArcaneButton
-							action="base"
-							tone="ghost"
-							size="sm"
-							icon={InfoIcon}
-							showLabel={false}
-							customLabel={m.common_inspect()}
-							class="h-7 px-2.5 text-xs"
-							onclick={() => (dockerInfoDialogOpen = true)}
-						/>
-					{/if}
+					<ArcaneButton
+						action="base"
+						tone="ghost"
+						size="sm"
+						icon={InfoIcon}
+						showLabel={false}
+						customLabel={m.common_inspect()}
+						class="h-7 px-2.5 text-xs"
+						loading={!!dockerInfoPromise}
+						onclick={openDockerInfoDialog}
+					/>
 				</div>
 			</Card.Content>
 		</Card.Root>
 	</header>
 
-	<section class="flex min-h-0 flex-1 flex-col">
+	<section class="flex min-h-0 flex-1 flex-col overflow-hidden">
 		<div class="mb-3 flex items-center justify-between gap-3">
 			<h2 class="text-lg font-semibold tracking-tight">{m.dashboard_resource_tables_title()}</h2>
 			<div class="hidden items-center gap-2 md:flex">
@@ -594,13 +602,15 @@
 				</ArcaneButton>
 			</div>
 		</div>
-		<div class="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-2">
-			<DashboardContainerTable bind:containers isLoading={isLoading.loadingContainers} />
-			<DashboardImageTable bind:images isLoading={isLoading.loadingImages} />
+		<div class="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-hidden lg:grid-cols-2">
+			<DashboardContainerTable bind:containers isLoading={false} />
+			<DashboardImageTable bind:images isLoading={false} />
 		</div>
 	</section>
 
-	<DockerInfoDialog bind:open={dockerInfoDialogOpen} {dockerInfo} />
+	{#if dockerInfoDialogOpen}
+		<DockerInfoDialog bind:open={dockerInfoDialogOpen} {dockerInfo} {dockerInfoPromise} errorMessage={dockerInfoError} />
+	{/if}
 
 	<PruneConfirmationDialog
 		bind:open={isPruneDialogOpen}

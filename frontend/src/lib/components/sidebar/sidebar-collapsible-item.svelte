@@ -37,7 +37,7 @@
 	{#snippet child({ props })}
 		<Sidebar.MenuItem {...props}>
 			<Collapsible.Trigger>
-				{#snippet child({ props })}
+				{#snippet child()}
 					{@const Icon = item.icon}
 					<Sidebar.MenuButton tooltipContent={showTooltip ? tooltipContent : undefined} isActive={item.isActive}>
 						{#snippet child({ props })}

@@ -41,7 +41,7 @@
 	const persistedAutoStart = new PersistedState('arcane_log_auto_start', 'false');
 	const persistedJsonParsing = new PersistedState('arcane_log_json_parsing', 'false');
 
-	let selectedTail = $state<string>(persistedTailLines.current);
+	let selectedTail = $state<string>(persistedTailLines.current || (tailLines >= 999999 ? 'all' : String(tailLines)));
 
 	$effect(() => {
 		persistedTailLines.current = selectedTail;

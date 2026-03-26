@@ -29,6 +29,13 @@ type GitOpsSyncService struct {
 
 const defaultGitSyncTimeout = 5 * time.Minute
 
+type scheduledGitOpsSync struct {
+	ID            string
+	EnvironmentID string
+	SyncInterval  int
+	LastSyncAt    *time.Time
+}
+
 func NewGitOpsSyncService(db *database.DB, repoService *GitRepositoryService, projectService *ProjectService, eventService *EventService) *GitOpsSyncService {
 	return &GitOpsSyncService{
 		db:             db,
@@ -458,10 +465,10 @@ func (s *GitOpsSyncService) GetSyncStatus(ctx context.Context, environmentID, id
 }
 
 func (s *GitOpsSyncService) SyncAllEnabled(ctx context.Context) error {
-	var syncs []models.GitOpsSync
+	var syncs []scheduledGitOpsSync
 	if err := s.db.WithContext(ctx).
-		Preload("Repository").
-		Preload("Project").
+		Table("gitops_syncs").
+		Select("id", "environment_id", "sync_interval", "last_sync_at").
 		Where("auto_sync = ?", true).
 		Find(&syncs).Error; err != nil {
 		return fmt.Errorf("failed to get auto-sync enabled syncs: %w", err)

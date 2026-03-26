@@ -8,10 +8,10 @@ function extractServerMessage(data: any, includeErrors = false): string | undefi
 	}
 	if (inner) {
 		// Support both old format (error/message) and Huma RFC 7807 format (detail)
-		const msg = inner.error || inner.message || inner.detail || inner.error_description;
+		const msg = inner['error'] || inner['message'] || inner['detail'] || inner['error_description'];
 		if (msg) return msg;
-		if (includeErrors && Array.isArray(inner.errors) && inner.errors.length) {
-			return inner.errors[0]?.message || inner.errors[0];
+		if (includeErrors && Array.isArray(inner['errors']) && inner['errors'].length) {
+			return inner['errors'][0]?.message || inner['errors'][0];
 		}
 	}
 	return undefined;
@@ -30,8 +30,9 @@ abstract class BaseAPIService {
 	}
 
 	constructor() {
-		if (typeof process !== 'undefined' && process?.env?.DEV_BACKEND_URL) {
-			this.api.defaults.baseURL = process.env.DEV_BACKEND_URL;
+		const devBackendUrl = typeof process !== 'undefined' ? process?.env?.['DEV_BACKEND_URL'] : undefined;
+		if (devBackendUrl) {
+			this.api.defaults.baseURL = devBackendUrl;
 		}
 
 		this.api.interceptors.response.use(
@@ -56,7 +57,7 @@ abstract class BaseAPIService {
 							const u = new URL(reqUrl, baseURL);
 							reqUrl = u.pathname;
 						}
-					} catch (e) {
+					} catch {
 						// ignore URL parse errors and fall back to raw reqUrl
 					}
 

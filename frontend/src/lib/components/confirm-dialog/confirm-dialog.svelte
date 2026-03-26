@@ -56,7 +56,7 @@
 							<Checkbox
 								id={checkbox.id}
 								checked={false}
-								onchange={(e) => (checkboxStates[checkbox.id] = true)}
+								onchange={() => (checkboxStates[checkbox.id] = true)}
 								aria-labelledby={`${checkbox.id}-label`}
 								class="mt-0.5"
 							/>

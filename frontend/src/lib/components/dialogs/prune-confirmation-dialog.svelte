@@ -3,10 +3,9 @@
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as Checkbox from '$lib/components/ui/checkbox/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
-	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import * as Alert from '$lib/components/ui/alert/index.js';
 	import { m } from '$lib/paraglide/messages';
-	import { TrashIcon, AlertIcon } from '$lib/icons';
+	import { AlertIcon } from '$lib/icons';
 
 	type PruneType = 'containers' | 'images' | 'networks' | 'volumes' | 'buildCache';
 
@@ -56,7 +55,7 @@
 </script>
 
 <ResponsiveDialog
-	bind:open
+	{open}
 	onOpenChange={(isOpen) => !isOpen && handleCancel()}
 	title={m.prune_confirm_system_title()}
 	description={m.prune_confirm_description()}

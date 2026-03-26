@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -416,8 +417,8 @@ func validateAuthRealmInternal(registryHost, realm string) error {
 		return fmt.Errorf("auth realm must use HTTPS, got %q", parsedRealm.Scheme)
 	}
 
-	realmHost := normalizeRegistryForComparisonInternal(parsedRealm.Hostname())
-	registry := normalizeRegistryForComparisonInternal(registryHost)
+	realmHost := normalizeAuthRealmHostInternal(parsedRealm.Host)
+	registry := normalizeAuthRealmHostInternal(registryHost)
 
 	if realmHost == "" {
 		return fmt.Errorf("invalid auth realm host")
@@ -438,6 +439,24 @@ func validateAuthRealmInternal(registryHost, realm string) error {
 	}
 
 	return fmt.Errorf("untrusted auth realm host %q for registry %q", realmHost, registry)
+}
+
+func normalizeAuthRealmHostInternal(raw string) string {
+	normalized := normalizeRegistryForComparisonInternal(raw)
+	if normalized == "" {
+		return ""
+	}
+
+	host, port, err := net.SplitHostPort(normalized)
+	if err != nil {
+		return normalized
+	}
+
+	if port == "443" {
+		return host
+	}
+
+	return net.JoinHostPort(host, port)
 }
 
 func normalizeRegistryForComparisonInternal(raw string) string {

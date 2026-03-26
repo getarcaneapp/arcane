@@ -75,6 +75,8 @@ export const queryKeys = {
 		dockerInfo: (environmentId: string) => ['system', 'docker-info', environmentId] as const
 	},
 	dashboard: {
+		snapshot: (environmentId: string, debugAllGood = false) =>
+			['dashboard', 'snapshot', environmentId, debugAllGood ? 'debug-all-good' : 'normal'] as const,
 		actionItems: (environmentId: string, debugAllGood = false) =>
 			['dashboard', 'action-items', environmentId, debugAllGood ? 'debug-all-good' : 'normal'] as const
 	},

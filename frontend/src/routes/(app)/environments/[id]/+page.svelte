@@ -173,7 +173,7 @@
 		trivyCpuLimit: z.coerce.number().int(m.security_session_timeout_integer()).nonnegative(),
 		trivyMemoryLimitMb: z.coerce.number().int().nonnegative(),
 		trivyConcurrentScanContainers: z.coerce.number().int().min(1, m.security_trivy_concurrent_scan_containers_min()),
-		autoUpdateExcludedContainers: z.string(),
+		autoUpdateExcludedContainers: z.string().optional(),
 		autoHealEnabled: z.boolean(),
 		autoHealExcludedContainers: z.string(),
 		autoHealMaxRestarts: z.coerce.number().int().min(1),

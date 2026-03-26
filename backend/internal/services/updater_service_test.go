@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/compose-spec/compose-go/v2/loader"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	glsqlite "github.com/glebarez/sqlite"
@@ -282,6 +283,96 @@ func TestUpdaterService_UpgradeServiceNotNilCheck(t *testing.T) {
 	}
 
 	assert.True(t, mockUpgrade.triggerCalled, "Should call CLI upgrade when service is not nil")
+}
+
+func TestLookupComposeProjectIDInternal(t *testing.T) {
+	t.Run("exact match", func(t *testing.T) {
+		projectID, ok := lookupComposeProjectIDInternal("myproject", map[string]string{
+			"myproject": "p1",
+		})
+		require.True(t, ok)
+		assert.Equal(t, "p1", projectID)
+	})
+
+	t.Run("normalized fallback", func(t *testing.T) {
+		projectID, ok := lookupComposeProjectIDInternal("My Project", map[string]string{
+			loader.NormalizeProjectName("myproject"): "p1",
+		})
+		require.True(t, ok)
+		assert.Equal(t, "p1", projectID)
+	})
+
+	t.Run("missing project", func(t *testing.T) {
+		projectID, ok := lookupComposeProjectIDInternal("missing", map[string]string{
+			"other": "p1",
+		})
+		require.False(t, ok)
+		assert.Empty(t, projectID)
+	})
+}
+
+func TestUpdaterService_LazyRegisterComposeProjectInternal_AddsServicesForRegisteredProject(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "p1"},
+		Name:      "My Project!",
+		Path:      "/tmp/my-project",
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	projectService := NewProjectService(db, nil, nil, nil, nil, nil)
+	svc := &UpdaterService{projectService: projectService}
+
+	projectNameToID := map[string]string{}
+	projectIDToObj := map[string]*models.Project{}
+	projectToServices := map[string][]string{}
+	projectToSeenServices := map[string]map[string]struct{}{}
+
+	firstPlan := &restartPlan{
+		newRef: "nginx:latest",
+		inspect: &container.InspectResponse{
+			Config: &container.Config{
+				Labels: map[string]string{
+					"com.docker.compose.project": "myproject",
+					"com.docker.compose.service": "web",
+				},
+			},
+		},
+	}
+	secondPlan := &restartPlan{
+		newRef: "nginx:latest",
+		inspect: &container.InspectResponse{
+			Config: &container.Config{
+				Labels: map[string]string{
+					"com.docker.compose.project": "myproject",
+					"com.docker.compose.service": "worker",
+				},
+			},
+		},
+	}
+
+	svc.lazyRegisterComposeProjectInternal(ctx, firstPlan, projectNameToID, projectIDToObj, projectToServices, projectToSeenServices)
+	svc.lazyRegisterComposeProjectInternal(ctx, secondPlan, projectNameToID, projectIDToObj, projectToServices, projectToSeenServices)
+
+	require.Contains(t, projectToServices, project.ID)
+	assert.Equal(t, []string{"web", "worker"}, projectToServices[project.ID])
+	assert.Equal(t, project.ID, projectNameToID[project.Name])
+	assert.Equal(t, project.ID, projectNameToID[loader.NormalizeProjectName(project.Name)])
+}
+
+func TestPendingComposeProjectServicesInternal(t *testing.T) {
+	processedProjectServices := map[string]map[string]struct{}{}
+
+	assert.Equal(t, []string{"A"}, pendingComposeProjectServicesInternal(processedProjectServices, "project-1", []string{"A"}))
+
+	markComposeProjectServicesProcessedInternal(processedProjectServices, "project-1", []string{"A"})
+	assert.Empty(t, pendingComposeProjectServicesInternal(processedProjectServices, "project-1", []string{"A"}))
+	assert.Equal(t, []string{"B"}, pendingComposeProjectServicesInternal(processedProjectServices, "project-1", []string{"A", "B"}))
+
+	markComposeProjectServicesProcessedInternal(processedProjectServices, "project-1", []string{"B"})
+	assert.Empty(t, pendingComposeProjectServicesInternal(processedProjectServices, "project-1", []string{"A", "B"}))
 }
 
 func TestAnyImageIDsInUseSet(t *testing.T) {

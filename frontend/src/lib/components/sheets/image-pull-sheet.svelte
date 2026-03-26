@@ -23,7 +23,7 @@
 		isIndeterminatePhase,
 		getAggregateStatus
 	} from '$lib/utils/pull-progress';
-	import { ArrowDownIcon, SuccessIcon, DownloadIcon } from '$lib/icons';
+	import { ArrowDownIcon } from '$lib/icons';
 
 	type ImagePullFormProps = {
 		open: boolean;

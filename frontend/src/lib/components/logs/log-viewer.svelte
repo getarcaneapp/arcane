@@ -362,7 +362,7 @@
 		for (let i = 0; i < service.length; i++) {
 			hash = service.charCodeAt(i) + ((hash << 5) - hash);
 		}
-		return colors[Math.abs(hash) % colors.length];
+		return colors[Math.abs(hash) % colors.length] ?? 'text-gray-300';
 	}
 
 	function tryParseJson(message: string): { isJson: boolean; parsed?: any } {

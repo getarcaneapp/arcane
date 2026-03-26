@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { type Table as TableType, type Header, type Cell } from '@tanstack/table-core';
+	import { type Table as TableType, type Cell } from '@tanstack/table-core';
 	import * as Table from '$lib/components/ui/table/index.js';
 	import * as Empty from '$lib/components/ui/empty/index.js';
 	import FlexRender from '$lib/components/ui/data-table/flex-render.svelte';

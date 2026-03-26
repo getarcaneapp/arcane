@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/compose-spec/compose-go/v2/dotenv"
@@ -42,6 +43,9 @@ type ProjectService struct {
 	imageService    *ImageService
 	dockerService   *DockerClientService
 	buildService    *BuildService
+
+	composeNameCacheMu  sync.RWMutex
+	composeNameToProjID map[string]string
 }
 
 func NewProjectService(db *database.DB, settingsService *SettingsService, eventService *EventService, imageService *ImageService, dockerService *DockerClientService, buildService *BuildService) *ProjectService {
@@ -205,6 +209,96 @@ func normalizeComposeProjectName(name string) string {
 	return normalized
 }
 
+func (s *ProjectService) getCachedComposeProjectIDInternal(normalizedName string) (string, bool) {
+	if normalizedName == "" {
+		return "", false
+	}
+
+	s.composeNameCacheMu.RLock()
+	defer s.composeNameCacheMu.RUnlock()
+
+	if s.composeNameToProjID == nil {
+		return "", false
+	}
+
+	projectID, ok := s.composeNameToProjID[normalizedName]
+	return projectID, ok
+}
+
+func (s *ProjectService) cacheComposeProjectIDInternal(normalizedName, projectID string) {
+	if normalizedName == "" || projectID == "" {
+		return
+	}
+
+	s.composeNameCacheMu.Lock()
+	defer s.composeNameCacheMu.Unlock()
+
+	if s.composeNameToProjID == nil {
+		s.composeNameToProjID = make(map[string]string)
+	}
+	s.composeNameToProjID[normalizedName] = projectID
+}
+
+func (s *ProjectService) invalidateCachedComposeProjectIDInternal(normalizedName string) {
+	if normalizedName == "" {
+		return
+	}
+
+	s.composeNameCacheMu.Lock()
+	defer s.composeNameCacheMu.Unlock()
+
+	delete(s.composeNameToProjID, normalizedName)
+}
+
+func (s *ProjectService) lookupProjectByCachedComposeNameInternal(ctx context.Context, normalizedName string) (*models.Project, bool, error) {
+	projectID, ok := s.getCachedComposeProjectIDInternal(normalizedName)
+	if !ok {
+		return nil, false, nil
+	}
+
+	var project models.Project
+	if err := s.db.WithContext(ctx).Where("id = ?", projectID).First(&project).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			s.invalidateCachedComposeProjectIDInternal(normalizedName)
+			return nil, false, nil
+		}
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, false, fmt.Errorf("request canceled or timed out: %w", err)
+		}
+		return nil, false, fmt.Errorf("failed to get project by cached compose name: %w", err)
+	}
+	if normalizeComposeProjectName(project.Name) != normalizedName {
+		s.invalidateCachedComposeProjectIDInternal(normalizedName)
+		return nil, false, nil
+	}
+
+	return &project, true, nil
+}
+
+func (s *ProjectService) rebuildComposeNameCacheInternal(ctx context.Context) error {
+	var projects []models.Project
+	if err := s.db.WithContext(ctx).Select("id", "name").Find(&projects).Error; err != nil {
+		return err
+	}
+
+	cache := make(map[string]string, len(projects))
+	for i := range projects {
+		normalizedName := normalizeComposeProjectName(projects[i].Name)
+		if normalizedName == "" {
+			continue
+		}
+		if _, exists := cache[normalizedName]; !exists {
+			cache[normalizedName] = projects[i].ID
+		}
+	}
+
+	s.composeNameCacheMu.Lock()
+	s.composeNameToProjID = cache
+	s.composeNameCacheMu.Unlock()
+
+	return nil
+}
+
 func (s *ProjectService) GetProjectFromDatabaseByID(ctx context.Context, id string) (*models.Project, error) {
 	var project models.Project
 	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&project).Error; err != nil {
@@ -217,6 +311,102 @@ func (s *ProjectService) GetProjectFromDatabaseByID(ctx context.Context, id stri
 		return nil, fmt.Errorf("failed to get project: %w", err)
 	}
 	return &project, nil
+}
+
+func (s *ProjectService) GetProjectByComposeName(ctx context.Context, name string) (*models.Project, error) {
+	if name == "" {
+		return nil, fmt.Errorf("project name is empty")
+	}
+	normalized := normalizeComposeProjectName(name)
+
+	var proj models.Project
+	err := s.db.WithContext(ctx).Where("name = ? OR name = ?", name, normalized).First(&proj).Error
+	if err == nil {
+		s.cacheComposeProjectIDInternal(normalized, proj.ID)
+		return &proj, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, fmt.Errorf("failed to get project by name: %w", err)
+	}
+
+	if cachedProject, found, cacheErr := s.lookupProjectByCachedComposeNameInternal(ctx, normalized); cacheErr != nil {
+		return nil, cacheErr
+	} else if found {
+		return cachedProject, nil
+	}
+
+	if err := s.rebuildComposeNameCacheInternal(ctx); err != nil {
+		return nil, fmt.Errorf("failed to list projects by compose name: %w", err)
+	}
+
+	if cachedProject, found, cacheErr := s.lookupProjectByCachedComposeNameInternal(ctx, normalized); cacheErr != nil {
+		return nil, cacheErr
+	} else if found {
+		return cachedProject, nil
+	}
+
+	return nil, fmt.Errorf("project not found: %s", name)
+}
+
+func (s *ProjectService) UpdateProjectServices(ctx context.Context, projectID string, servicesToUpdate []string, user models.User) error {
+	projectFromDb, err := s.GetProjectFromDatabaseByID(ctx, projectID)
+	if err != nil {
+		return err
+	}
+
+	// 1. Load project
+	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
+	projectsDirectory, err := projects.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
+	if err != nil {
+		projectsDirectory = "/app/data/projects"
+	}
+
+	pathMapper, _ := s.getPathMapper(ctx)
+	autoInjectEnv := s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false)
+	compProj, _, err := projects.LoadComposeProjectFromDir(ctx, projectFromDb.Path, normalizeComposeProjectName(projectFromDb.Name), projectsDirectory, autoInjectEnv, pathMapper)
+	if err != nil {
+		return fmt.Errorf("failed to load compose project: %w", err)
+	}
+
+	// 2. Set status to deploying/restarting
+	if err := s.updateProjectStatusInternal(ctx, projectID, models.ProjectStatusDeploying); err != nil {
+		return err
+	}
+
+	// 3. Pull images for specific services
+	if err := projects.ComposePull(ctx, compProj, servicesToUpdate); err != nil {
+		slog.WarnContext(ctx, "compose pull failed, continuing", "error", err)
+	}
+
+	// 4. Stop specific services
+	if err := projects.ComposeStop(ctx, compProj, servicesToUpdate); err != nil {
+		slog.WarnContext(ctx, "compose stop failed, continuing", "error", err)
+	}
+
+	// 5. Up specific services
+	if err := projects.ComposeUp(ctx, compProj, servicesToUpdate, false, false); err != nil {
+		if statusErr := s.updateProjectStatusandCountsInternal(ctx, projectID, models.ProjectStatusStopped); statusErr != nil {
+			slog.ErrorContext(ctx, "UpdateProjectServices: failed to set stopped status after compose up failure", "projectID", projectID, "error", statusErr)
+		}
+		return fmt.Errorf("failed to up services: %w", err)
+	}
+
+	// 6. Finalize status
+	if err := s.updateProjectStatusandCountsInternal(ctx, projectID, models.ProjectStatusRunning); err != nil {
+		return err
+	}
+
+	metadata := models.JSON{
+		"action":      "update_services",
+		"projectID":   projectID,
+		"projectName": projectFromDb.Name,
+		"services":    append([]string(nil), servicesToUpdate...),
+	}
+	if logErr := s.eventService.LogProjectEvent(ctx, models.EventTypeProjectUpdate, projectID, projectFromDb.Name, user.ID, user.Username, "0", metadata); logErr != nil {
+		slog.ErrorContext(ctx, "could not log project service update action", "error", logErr)
+	}
+
+	return nil
 }
 
 func (s *ProjectService) getServiceCounts(services []ProjectServiceInfo) (total int, running int) {
@@ -554,6 +744,12 @@ func (s *ProjectService) upsertProjectForDir(ctx context.Context, dirName, dirPa
 		Where("path = ? OR dir_name = ?", dirPath, dirName).
 		First(&existing).Error
 
+	filesystemProject := models.Project{
+		Name: dirName,
+		Path: dirPath,
+	}
+	serviceCount, serviceCountErr := s.countServicesFromCompose(ctx, filesystemProject)
+
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		// Create a minimal project entry
 		reason := "Project discovered from filesystem, status pending Docker service query"
@@ -563,13 +759,16 @@ func (s *ProjectService) upsertProjectForDir(ctx context.Context, dirName, dirPa
 			Path:         dirPath,
 			Status:       models.ProjectStatusUnknown,
 			StatusReason: new(reason),
-			ServiceCount: 0,
+			ServiceCount: serviceCount,
 			RunningCount: 0,
 		}
 		slog.InfoContext(ctx, "Discovered new project with unknown status",
 			"project", dirName,
 			"path", dirPath,
 			"reason", reason)
+		if serviceCountErr != nil {
+			slog.WarnContext(ctx, "failed to read compose service count during project discovery", "project", dirName, "path", dirPath, "error", serviceCountErr)
+		}
 		if cerr := s.db.WithContext(ctx).Create(proj).Error; cerr != nil {
 			return fmt.Errorf("create project for %q failed: %w", dirPath, cerr)
 		}
@@ -585,6 +784,11 @@ func (s *ProjectService) upsertProjectForDir(ctx context.Context, dirName, dirPa
 	}
 	if existing.DirName == nil || *existing.DirName != dirName {
 		updates["dir_name"] = dirName
+	}
+	if serviceCountErr == nil && existing.ServiceCount != serviceCount {
+		updates["service_count"] = serviceCount
+	} else if serviceCountErr != nil {
+		slog.WarnContext(ctx, "failed to refresh compose service count during project sync", "projectID", existing.ID, "path", dirPath, "error", serviceCountErr)
 	}
 	if len(updates) == 0 {
 		return nil
@@ -1491,6 +1695,14 @@ func resolveDockerfilePathInternal(svc composetypes.ServiceConfig) (string, erro
 	return dockerfilePath, nil
 }
 
+func translateBuildPathInternal(path string, pathMapper *projects.PathMapper) (string, error) {
+	if pathMapper == nil || strings.TrimSpace(path) == "" || !filepath.IsAbs(path) {
+		return path, nil
+	}
+
+	return pathMapper.ContainerToHost(path)
+}
+
 func buildArgsFromCompose(args map[string]*string) map[string]string {
 	buildArgs := map[string]string{}
 	for key, value := range args {
@@ -1623,6 +1835,10 @@ func (s *ProjectService) prepareServiceBuildRequest(
 	if err != nil {
 		return imagetypes.BuildRequest{}, updatedSvc, updated, err
 	}
+	contextDir, err = translateBuildPathInternal(contextDir, pathMapper)
+	if err != nil {
+		return imagetypes.BuildRequest{}, updatedSvc, updated, fmt.Errorf("translate build context for service %s: %w", serviceName, err)
+	}
 
 	dockerfileInline := updatedSvc.Build.DockerfileInline
 	if strings.TrimSpace(updatedSvc.Build.Dockerfile) != "" && strings.TrimSpace(dockerfileInline) != "" {
@@ -1634,6 +1850,10 @@ func (s *ProjectService) prepareServiceBuildRequest(
 		dockerfilePath, err = resolveDockerfilePathInternal(updatedSvc)
 		if err != nil {
 			return imagetypes.BuildRequest{}, updatedSvc, updated, err
+		}
+		dockerfilePath, err = translateBuildPathInternal(dockerfilePath, pathMapper)
+		if err != nil {
+			return imagetypes.BuildRequest{}, updatedSvc, updated, fmt.Errorf("translate Dockerfile path for service %s: %w", serviceName, err)
 		}
 	}
 
@@ -2737,6 +2957,13 @@ func (s *ProjectService) mapProjectToDto(ctx context.Context, p models.Project, 
 	// since we are not parsing the YAML here.
 	resp.ServiceCount = p.ServiceCount
 	resp.RunningCount = runningCount
+	if resp.ServiceCount == 0 && len(services) > 0 {
+		resp.ServiceCount = len(services)
+		// Persist the inferred count so later list loads do not need compose parsing.
+		go func(ctx context.Context, pid string, count int) {
+			s.db.WithContext(ctx).Model(&models.Project{}).Where("id = ?", pid).Update("service_count", count)
+		}(context.WithoutCancel(ctx), p.ID, resp.ServiceCount)
+	}
 
 	// Fix for missing service count (e.g. newly discovered projects)
 	if resp.ServiceCount == 0 {
