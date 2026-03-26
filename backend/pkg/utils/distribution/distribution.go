@@ -16,6 +16,14 @@ import (
 
 const defaultRegistryHost = "index.docker.io"
 
+// trustedAuthDelegations maps registry hosts to their trusted external auth realm hosts.
+// Some registries serve images under their own domain but delegate token auth to a
+// separate host (e.g. lscr.io delegates to ghcr.io).
+var trustedAuthDelegations = map[string]string{
+	"docker.io": "auth.docker.io",
+	"lscr.io":   "ghcr.io",
+}
+
 type Credentials struct {
 	Username string
 	Token    string
@@ -427,14 +435,7 @@ func validateAuthRealmInternal(registryHost, realm string) error {
 		return nil
 	}
 
-	// Some registries serve images under their own domain but delegate token auth
-	// to a separate trusted host. Docker Hub uses auth.docker.io; lscr.io (LinuxServer)
-	// is a vanity domain backed by ghcr.io and delegates auth there.
-	trustedDelegations := map[string]string{
-		"docker.io": "auth.docker.io",
-		"lscr.io":   "ghcr.io",
-	}
-	if trustedRealm, ok := trustedDelegations[registry]; ok && realmHost == trustedRealm {
+	if trustedRealm, ok := trustedAuthDelegations[registry]; ok && realmHost == trustedRealm {
 		return nil
 	}
 
