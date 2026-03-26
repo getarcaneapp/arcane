@@ -418,7 +418,7 @@
 	"containers_update_column": "Mises à jour",
 	"containers_update_container": "Mettre à jour le conteneur",
 	"containers_update_confirm_title": "Mettre à jour le conteneur",
-	"containers_update_confirm_message": "Cela va récupérer la dernière image et redémarrer le conteneur \"{name}\". Voulez-vous continuer ?",
+	"containers_update_confirm_message": "Cela permettra de récupérer la dernière image et d'appliquer la mise à jour appropriée pour \"{name}\". Voulez-vous continuer ?",
 	"containers_update_pulling_image": "Récupération de la dernière image...",
 	"containers_update_success": "Le conteneur \"{name}\" a été mis à jour avec succès",
 	"containers_update_failed": "Impossible de mettre à jour le conteneur \"{name}\"",
