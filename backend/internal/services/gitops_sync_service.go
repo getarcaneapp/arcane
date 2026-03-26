@@ -922,7 +922,8 @@ func (s *GitOpsSyncService) walkAndParseSyncDirectory(ctx context.Context, sync 
 		"totalSize", walkResult.TotalSize,
 		"skippedBinaries", walkResult.SkippedBinaries)
 
-	// Find the compose file content from the walked files
+	// WalkDirectory roots the walk at filepath.Dir(sync.ComposePath), so the
+	// compose file is always emitted at the top level as filepath.Base(sync.ComposePath).
 	composeFileName := filepath.Base(sync.ComposePath)
 	var composeContent string
 

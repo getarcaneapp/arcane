@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"net"
 	nethttp "net/http"
@@ -601,12 +602,25 @@ func (c *Client) walkSyncEntry(
 		return nil
 	}
 
-	return c.appendSyncFile(root, path, result, limits)
+	return c.appendSyncFile(root, path, d, result, limits)
 }
 
-func (c *Client) appendSyncFile(root *os.Root, path string, result *DirectoryWalkResult, limits syncWalkLimits) error {
+func (c *Client) appendSyncFile(root *os.Root, path string, d fs.DirEntry, result *DirectoryWalkResult, limits syncWalkLimits) error {
 	if limits.maxFiles > 0 && result.TotalFiles >= limits.maxFiles {
 		return fmt.Errorf("file count limit exceeded (max %d files)", limits.maxFiles)
+	}
+
+	if limits.maxBinarySize > 0 {
+		if info, err := d.Info(); err == nil && info.Size() > limits.maxBinarySize {
+			isBinary, err := c.isBinarySyncFile(root, path)
+			if err != nil {
+				return fmt.Errorf("failed to inspect file %s: %w", path, err)
+			}
+			if isBinary {
+				result.SkippedBinaries++
+				return nil
+			}
+		}
 	}
 
 	content, err := root.ReadFile(path)
@@ -636,6 +650,22 @@ func (c *Client) appendSyncFile(root *os.Root, path string, result *DirectoryWal
 	result.TotalSize += fileSize
 
 	return nil
+}
+
+func (c *Client) isBinarySyncFile(root *os.Root, path string) (bool, error) {
+	file, err := root.Open(path)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = file.Close() }()
+
+	buf := make([]byte, 512)
+	n, err := file.Read(buf)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return false, err
+	}
+
+	return isBinaryContent(buf[:n]), nil
 }
 
 // isBinaryContent detects if content is binary using HTTP content type detection.

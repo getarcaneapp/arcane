@@ -429,6 +429,24 @@ func TestWalkDirectory_MaxBinarySizeUnlimited(t *testing.T) {
 	}
 }
 
+func TestWalkDirectory_LargeTextFileNotSkippedByBinaryLimit(t *testing.T) {
+	tmpDir := t.TempDir()
+	writeFile(t, tmpDir, "compose.yaml", minimalCompose())
+	writeFile(t, tmpDir, "notes.txt", []byte(strings.Repeat("plain text\n", 32)))
+
+	client := NewClient("")
+	result, err := client.WalkDirectory(context.Background(), tmpDir, "compose.yaml", 0, 0, 16)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.SkippedBinaries != 0 {
+		t.Errorf("expected no skipped binaries for large text file, got %d", result.SkippedBinaries)
+	}
+	if result.TotalFiles != 2 {
+		t.Errorf("expected 2 files (compose + text), got %d", result.TotalFiles)
+	}
+}
+
 // generateTestPublicKey creates a test ED25519 public key for testing
 func generateTestPublicKey(t *testing.T) gossh.PublicKey {
 	t.Helper()

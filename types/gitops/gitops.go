@@ -125,17 +125,20 @@ type GitOpsSync struct {
 	// Required: false
 	SyncedFiles *string `json:"syncedFiles,omitempty"`
 
-	// MaxSyncFiles is the maximum number of files to sync. 0 means unlimited.
+	// MaxSyncFiles is the maximum number of files to sync.
+	// 0 means inherit the environment limit; unlimited only applies when the effective environment limit is also 0.
 	//
 	// Required: true
 	MaxSyncFiles int `json:"maxSyncFiles"`
 
-	// MaxSyncTotalSize is the maximum total size in bytes for all synced files. 0 means unlimited.
+	// MaxSyncTotalSize is the maximum total size in bytes for all synced files.
+	// 0 means inherit the environment limit; unlimited only applies when the effective environment limit is also 0.
 	//
 	// Required: true
 	MaxSyncTotalSize int64 `json:"maxSyncTotalSize"`
 
-	// MaxSyncBinarySize is the maximum size in bytes for individual binary files. 0 means unlimited.
+	// MaxSyncBinarySize is the maximum size in bytes for individual binary files.
+	// 0 means inherit the environment limit; unlimited only applies when the effective environment limit is also 0.
 	//
 	// Required: true
 	MaxSyncBinarySize int64 `json:"maxSyncBinarySize"`
@@ -334,19 +337,22 @@ type CreateSyncRequest struct {
 	// Required: false
 	SyncDirectory *bool `json:"syncDirectory,omitempty"`
 
-	// MaxSyncFiles is the maximum number of files to sync. 0 means unlimited.
+	// MaxSyncFiles is the maximum number of files to sync.
+	// 0 means inherit the environment limit; unlimited only applies when the effective environment limit is also 0.
 	// Default: 500
 	//
 	// Required: false
 	MaxSyncFiles *int `json:"maxSyncFiles,omitempty"`
 
-	// MaxSyncTotalSize is the maximum total size in bytes for all synced files. 0 means unlimited.
+	// MaxSyncTotalSize is the maximum total size in bytes for all synced files.
+	// 0 means inherit the environment limit; unlimited only applies when the effective environment limit is also 0.
 	// Default: 52428800 (50MB)
 	//
 	// Required: false
 	MaxSyncTotalSize *int64 `json:"maxSyncTotalSize,omitempty"`
 
-	// MaxSyncBinarySize is the maximum size in bytes for individual binary files. 0 means unlimited.
+	// MaxSyncBinarySize is the maximum size in bytes for individual binary files.
+	// 0 means inherit the environment limit; unlimited only applies when the effective environment limit is also 0.
 	// Default: 10485760 (10MB)
 	//
 	// Required: false
@@ -397,17 +403,20 @@ type UpdateSyncRequest struct {
 	// Required: false
 	SyncDirectory *bool `json:"syncDirectory,omitempty"`
 
-	// MaxSyncFiles is the maximum number of files to sync. 0 means unlimited.
+	// MaxSyncFiles is the maximum number of files to sync.
+	// 0 means inherit the environment limit; unlimited only applies when the effective environment limit is also 0.
 	//
 	// Required: false
 	MaxSyncFiles *int `json:"maxSyncFiles,omitempty"`
 
-	// MaxSyncTotalSize is the maximum total size in bytes for all synced files. 0 means unlimited.
+	// MaxSyncTotalSize is the maximum total size in bytes for all synced files.
+	// 0 means inherit the environment limit; unlimited only applies when the effective environment limit is also 0.
 	//
 	// Required: false
 	MaxSyncTotalSize *int64 `json:"maxSyncTotalSize,omitempty"`
 
-	// MaxSyncBinarySize is the maximum size in bytes for individual binary files. 0 means unlimited.
+	// MaxSyncBinarySize is the maximum size in bytes for individual binary files.
+	// 0 means inherit the environment limit; unlimited only applies when the effective environment limit is also 0.
 	//
 	// Required: false
 	MaxSyncBinarySize *int64 `json:"maxSyncBinarySize,omitempty"`
@@ -663,17 +672,20 @@ type ImportGitOpsSyncRequest struct {
 	// Required: false
 	SyncDirectory *bool `json:"syncDirectory,omitempty"`
 
-	// MaxSyncFiles is the maximum number of files to sync. 0 means unlimited.
+	// MaxSyncFiles is the maximum number of files to sync.
+	// 0 means inherit the environment limit; unlimited only applies when the effective environment limit is also 0.
 	//
 	// Required: false
 	MaxSyncFiles *int `json:"maxSyncFiles,omitempty"`
 
-	// MaxSyncTotalSize is the maximum total size in bytes for all synced files. 0 means unlimited.
+	// MaxSyncTotalSize is the maximum total size in bytes for all synced files.
+	// 0 means inherit the environment limit; unlimited only applies when the effective environment limit is also 0.
 	//
 	// Required: false
 	MaxSyncTotalSize *int64 `json:"maxSyncTotalSize,omitempty"`
 
-	// MaxSyncBinarySize is the maximum size in bytes for individual binary files. 0 means unlimited.
+	// MaxSyncBinarySize is the maximum size in bytes for individual binary files.
+	// 0 means inherit the environment limit; unlimited only applies when the effective environment limit is also 0.
 	//
 	// Required: false
 	MaxSyncBinarySize *int64 `json:"maxSyncBinarySize,omitempty"`
