@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net"
 	nethttp "net/http"
 	"os"
@@ -517,6 +518,12 @@ type DirectoryWalkResult struct {
 	SkippedBinaries int
 }
 
+type syncWalkLimits struct {
+	maxFiles      int
+	maxTotalSize  int64
+	maxBinarySize int64
+}
+
 // WalkDirectory walks the directory containing the compose file and returns all files.
 // It enforces limits on file count, total size, and skips large binary files.
 // The composePath is the path to the compose file within the repo - the directory
@@ -535,87 +542,23 @@ func (c *Client) WalkDirectory(ctx context.Context, repoPath, composePath string
 	// Get the directory containing the compose file
 	syncDir := filepath.Dir(filepath.Join(repoPath, composePath))
 
-	// Verify the sync directory exists
-	info, err := os.Stat(syncDir)
+	root, err := os.OpenRoot(syncDir)
 	if err != nil {
 		return nil, fmt.Errorf("sync directory not found: %w", err)
 	}
-	if !info.IsDir() {
-		return nil, fmt.Errorf("sync path is not a directory")
-	}
+	defer func() { _ = root.Close() }()
 
 	result := &DirectoryWalkResult{
 		Files: make([]SyncFileInfo, 0),
 	}
+	limits := syncWalkLimits{
+		maxFiles:      maxFiles,
+		maxTotalSize:  maxTotalSize,
+		maxBinarySize: maxBinarySize,
+	}
 
-	err = filepath.Walk(syncDir, func(path string, info os.FileInfo, err error) error {
-		// Check context cancellation
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-
-		if err != nil {
-			return err
-		}
-
-		// Skip symlinks to prevent path traversal attacks via malicious symlinks
-		if info.Mode()&os.ModeSymlink != 0 {
-			if info.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-
-		// Skip directories but continue walking into them
-		if info.IsDir() {
-			// Skip .git directory entirely
-			if info.Name() == ".git" {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-
-		// Check file count limit (0 = unlimited)
-		if maxFiles > 0 && result.TotalFiles >= maxFiles {
-			return fmt.Errorf("file count limit exceeded (max %d files)", maxFiles)
-		}
-
-		// Get relative path from sync directory
-		relPath, err := filepath.Rel(syncDir, path)
-		if err != nil {
-			return fmt.Errorf("failed to get relative path: %w", err)
-		}
-
-		// Read file content
-		content, err := os.ReadFile(path)
-		if err != nil {
-			return fmt.Errorf("failed to read file %s: %w", relPath, err)
-		}
-
-		fileSize := int64(len(content))
-		isBinary := isBinaryContent(content)
-
-		// Skip large binary files (0 = unlimited)
-		if isBinary && maxBinarySize > 0 && fileSize > maxBinarySize {
-			result.SkippedBinaries++
-			return nil
-		}
-
-		// Check total size limit (0 = unlimited)
-		if maxTotalSize > 0 && result.TotalSize+fileSize > maxTotalSize {
-			return fmt.Errorf("total size limit exceeded (max %d bytes)", maxTotalSize)
-		}
-
-		result.Files = append(result.Files, SyncFileInfo{
-			RelativePath: relPath,
-			Content:      content,
-			Size:         fileSize,
-			IsBinary:     isBinary,
-		})
-		result.TotalFiles++
-		result.TotalSize += fileSize
-
-		return nil
+	err = fs.WalkDir(root.FS(), ".", func(path string, d fs.DirEntry, walkErr error) error {
+		return c.walkSyncEntry(ctx, root, path, d, walkErr, result, limits)
 	})
 
 	if err != nil {
@@ -628,6 +571,71 @@ func (c *Client) WalkDirectory(ctx context.Context, repoPath, composePath string
 	}
 
 	return result, nil
+}
+
+func (c *Client) walkSyncEntry(
+	ctx context.Context,
+	root *os.Root,
+	path string,
+	d fs.DirEntry,
+	walkErr error,
+	result *DirectoryWalkResult,
+	limits syncWalkLimits,
+) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if walkErr != nil {
+		return walkErr
+	}
+	if path == "." {
+		return nil
+	}
+	if d.Type()&os.ModeSymlink != 0 {
+		return nil
+	}
+	if d.IsDir() {
+		if d.Name() == ".git" {
+			return fs.SkipDir
+		}
+		return nil
+	}
+
+	return c.appendSyncFile(root, path, result, limits)
+}
+
+func (c *Client) appendSyncFile(root *os.Root, path string, result *DirectoryWalkResult, limits syncWalkLimits) error {
+	if limits.maxFiles > 0 && result.TotalFiles >= limits.maxFiles {
+		return fmt.Errorf("file count limit exceeded (max %d files)", limits.maxFiles)
+	}
+
+	content, err := root.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("failed to read file %s: %w", path, err)
+	}
+
+	fileSize := int64(len(content))
+	isBinary := isBinaryContent(content)
+
+	if isBinary && limits.maxBinarySize > 0 && fileSize > limits.maxBinarySize {
+		result.SkippedBinaries++
+		return nil
+	}
+
+	if limits.maxTotalSize > 0 && result.TotalSize+fileSize > limits.maxTotalSize {
+		return fmt.Errorf("total size limit exceeded (max %d bytes)", limits.maxTotalSize)
+	}
+
+	result.Files = append(result.Files, SyncFileInfo{
+		RelativePath: path,
+		Content:      content,
+		Size:         fileSize,
+		IsBinary:     isBinary,
+	})
+	result.TotalFiles++
+	result.TotalSize += fileSize
+
+	return nil
 }
 
 // isBinaryContent detects if content is binary using HTTP content type detection.

@@ -43,6 +43,10 @@ export interface GitOpsSyncCreateDto {
 	projectName?: string;
 	autoSync?: boolean;
 	syncInterval?: number;
+	syncDirectory?: boolean;
+	maxSyncFiles?: number;
+	maxSyncTotalSize?: number;
+	maxSyncBinarySize?: number;
 }
 
 export interface GitOpsSyncUpdateDto {
@@ -53,6 +57,10 @@ export interface GitOpsSyncUpdateDto {
 	projectName?: string;
 	autoSync?: boolean;
 	syncInterval?: number;
+	syncDirectory?: boolean;
+	maxSyncFiles?: number;
+	maxSyncTotalSize?: number;
+	maxSyncBinarySize?: number;
 }
 
 export interface GitOpsSync {
@@ -67,6 +75,11 @@ export interface GitOpsSync {
 	projectId?: string;
 	autoSync: boolean;
 	syncInterval: number;
+	syncDirectory: boolean;
+	syncedFiles?: string;
+	maxSyncFiles: number;
+	maxSyncTotalSize: number;
+	maxSyncBinarySize: number;
 	lastSyncAt?: string;
 	lastSyncStatus?: string;
 	lastSyncError?: string;

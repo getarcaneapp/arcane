@@ -31,11 +31,12 @@ type GitOpsSyncService struct {
 
 const defaultGitSyncTimeout = 5 * time.Minute
 
-// Default directory sync limits (used when creating new syncs)
 const (
-	defaultMaxSyncFiles      = 500              // Maximum number of files to sync
-	defaultMaxSyncTotalSize  = 50 * 1024 * 1024 // 50MB total size limit
-	defaultMaxSyncBinarySize = 10 * 1024 * 1024 // 10MB per binary file limit
+	defaultMaxSyncFiles        = 500
+	defaultMaxSyncTotalSizeMB  = 50
+	defaultMaxSyncBinarySizeMB = 10
+	defaultMaxSyncTotalSize    = defaultMaxSyncTotalSizeMB * 1024 * 1024
+	defaultMaxSyncBinarySize   = defaultMaxSyncBinarySizeMB * 1024 * 1024
 )
 
 func validateSyncLimits(maxFiles *int, maxTotalSize, maxBinarySize *int64) error {
@@ -51,6 +52,43 @@ func validateSyncLimits(maxFiles *int, maxTotalSize, maxBinarySize *int64) error
 	return nil
 }
 
+func normalizeSyncLimitSetting(value, defaultValue int) int {
+	if value < 0 {
+		return defaultValue
+	}
+	return value
+}
+
+func megabytesToBytes(value int) int64 {
+	return int64(value) * 1024 * 1024
+}
+
+func effectiveIntLimit(syncLimit, environmentLimit int) int {
+	switch {
+	case syncLimit == 0:
+		return environmentLimit
+	case environmentLimit == 0:
+		return syncLimit
+	case syncLimit < environmentLimit:
+		return syncLimit
+	default:
+		return environmentLimit
+	}
+}
+
+func effectiveInt64Limit(syncLimit, environmentLimit int64) int64 {
+	switch {
+	case syncLimit == 0:
+		return environmentLimit
+	case environmentLimit == 0:
+		return syncLimit
+	case syncLimit < environmentLimit:
+		return syncLimit
+	default:
+		return environmentLimit
+	}
+}
+
 func NewGitOpsSyncService(db *database.DB, repoService *GitRepositoryService, projectService *ProjectService, eventService *EventService, settingsService *SettingsService) *GitOpsSyncService {
 	return &GitOpsSyncService{
 		db:              db,
@@ -59,6 +97,32 @@ func NewGitOpsSyncService(db *database.DB, repoService *GitRepositoryService, pr
 		eventService:    eventService,
 		settingsService: settingsService,
 	}
+}
+
+func (s *GitOpsSyncService) getEnvironmentSyncLimits(ctx context.Context) (int, int64, int64) {
+	if s.settingsService == nil {
+		return defaultMaxSyncFiles, defaultMaxSyncTotalSize, defaultMaxSyncBinarySize
+	}
+
+	maxFiles := normalizeSyncLimitSetting(s.settingsService.GetIntSetting(ctx, "gitSyncMaxFiles", defaultMaxSyncFiles), defaultMaxSyncFiles)
+	maxTotalSizeMB := normalizeSyncLimitSetting(
+		s.settingsService.GetIntSetting(ctx, "gitSyncMaxTotalSizeMb", defaultMaxSyncTotalSizeMB),
+		defaultMaxSyncTotalSizeMB,
+	)
+	maxBinarySizeMB := normalizeSyncLimitSetting(
+		s.settingsService.GetIntSetting(ctx, "gitSyncMaxBinarySizeMb", defaultMaxSyncBinarySizeMB),
+		defaultMaxSyncBinarySizeMB,
+	)
+
+	return maxFiles, megabytesToBytes(maxTotalSizeMB), megabytesToBytes(maxBinarySizeMB)
+}
+
+func (s *GitOpsSyncService) getEffectiveSyncLimits(ctx context.Context, sync *models.GitOpsSync) (int, int64, int64) {
+	environmentMaxFiles, environmentMaxTotalSize, environmentMaxBinarySize := s.getEnvironmentSyncLimits(ctx)
+
+	return effectiveIntLimit(sync.MaxSyncFiles, environmentMaxFiles),
+		effectiveInt64Limit(sync.MaxSyncTotalSize, environmentMaxTotalSize),
+		effectiveInt64Limit(sync.MaxSyncBinarySize, environmentMaxBinarySize)
 }
 
 func (s *GitOpsSyncService) ListSyncIntervalsRaw(ctx context.Context) ([]startup.IntervalMigrationItem, error) {
@@ -190,6 +254,8 @@ func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string
 		projectName = req.Name
 	}
 
+	defaultMaxFiles, defaultMaxTotalSize, defaultMaxBinarySize := s.getEnvironmentSyncLimits(ctx)
+
 	sync := models.GitOpsSync{
 		Name:              req.Name,
 		EnvironmentID:     environmentID,
@@ -201,9 +267,9 @@ func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string
 		AutoSync:          false,
 		SyncInterval:      60,
 		SyncDirectory:     true, // Default to directory sync
-		MaxSyncFiles:      defaultMaxSyncFiles,
-		MaxSyncTotalSize:  defaultMaxSyncTotalSize,
-		MaxSyncBinarySize: defaultMaxSyncBinarySize,
+		MaxSyncFiles:      defaultMaxFiles,
+		MaxSyncTotalSize:  defaultMaxTotalSize,
+		MaxSyncBinarySize: defaultMaxBinarySize,
 	}
 
 	if req.AutoSync != nil {
@@ -836,9 +902,7 @@ func (s *GitOpsSyncService) walkAndParseSyncDirectory(ctx context.Context, sync 
 	slog.InfoContext(ctx, "Starting directory walk", "syncId", sync.ID, "composePath", sync.ComposePath)
 
 	// Walk the directory to get all files
-	maxFiles := sync.MaxSyncFiles
-	maxTotalSize := sync.MaxSyncTotalSize
-	maxBinarySize := sync.MaxSyncBinarySize
+	maxFiles, maxTotalSize, maxBinarySize := s.getEffectiveSyncLimits(ctx, sync)
 
 	walkResult, err := s.repoService.gitClient.WalkDirectory(ctx, repoPath, sync.ComposePath, maxFiles, maxTotalSize, maxBinarySize)
 	if err != nil {

@@ -697,7 +697,7 @@
 															class={selectedFile === `dir:${dirFile.relativePath}` ? 'bg-accent' : ''}
 														>
 															{#snippet icon()}
-																<FileTextIcon class="size-4 text-muted-foreground" />
+																<FileTextIcon class="text-muted-foreground size-4" />
 															{/snippet}
 														</TreeView.File>
 													{/each}
@@ -815,7 +815,7 @@
 																class={selectedFile === `dir:${dirFile.relativePath}` ? 'bg-accent' : ''}
 															>
 																{#snippet icon()}
-																	<FileTextIcon class="size-4 text-muted-foreground" />
+																	<FileTextIcon class="text-muted-foreground size-4" />
 																{/snippet}
 															</TreeView.File>
 														{/each}

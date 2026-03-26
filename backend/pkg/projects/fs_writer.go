@@ -338,12 +338,7 @@ func CleanupRemovedFiles(projectsRoot, projectPath string, oldFiles, newFiles []
 // up to (but not including) the project root.
 func cleanupEmptyDirs(projectRoot, startDir string) {
 	current := startDir
-	for {
-		// Don't delete the project root
-		if current == projectRoot || !IsSafeSubdirectory(projectRoot, current) {
-			break
-		}
-
+	for current != projectRoot && IsSafeSubdirectory(projectRoot, current) {
 		// Try to remove the directory (will fail if not empty)
 		err := os.Remove(current)
 		if err != nil {

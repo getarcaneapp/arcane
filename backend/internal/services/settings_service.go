@@ -160,6 +160,9 @@ func (s *SettingsService) getDefaultSettings() *models.Settings {
 		AccentColor:                models.SettingVariable{Value: "oklch(0.606 0.25 292.717)"},
 		OledMode:                   models.SettingVariable{Value: "false"},
 		MaxImageUploadSize:         models.SettingVariable{Value: "500"},
+		GitSyncMaxFiles:            models.SettingVariable{Value: "500"},
+		GitSyncMaxTotalSizeMb:      models.SettingVariable{Value: "50"},
+		GitSyncMaxBinarySizeMb:     models.SettingVariable{Value: "10"},
 		EnvironmentHealthInterval:  models.SettingVariable{Value: "0 */2 * * * *"},
 
 		DockerAPITimeout:       models.SettingVariable{Value: "30"},
