@@ -418,7 +418,7 @@
 	"containers_update_column": "Обновления",
 	"containers_update_container": "Обновить контейнер",
 	"containers_update_confirm_title": "Обновление контейнера",
-	"containers_update_confirm_message": "Это приведет к созданию последнего образа и перезапуску контейнера \"{name}\". Вы хотите продолжить?",
+	"containers_update_confirm_message": "Это позволит получить последний образ и применить соответствующее обновление для \"{name}\". Вы хотите продолжить?",
 	"containers_update_pulling_image": "Получение последнего образа...",
 	"containers_update_success": "Контейнер \"{name}\" успешно обновлен",
 	"containers_update_failed": "Не удалось обновить контейнер \"{name}\"",
