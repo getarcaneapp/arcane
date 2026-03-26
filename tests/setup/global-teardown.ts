@@ -1,4 +1,4 @@
-import { execSync } from 'child_process';
+import { execFileSync, execSync } from 'child_process';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -36,7 +36,31 @@ async function globalTeardown() {
 				if (item === '.env.global' || item === 'test-project-static') continue;
 
 				if (fs.lstatSync(itemPath).isDirectory()) {
-					fs.rmSync(itemPath, { recursive: true, force: true });
+					try {
+						fs.rmSync(itemPath, { recursive: true, force: true });
+					} catch (err: any) {
+						if (err.code === 'EACCES' || err.code === 'EPERM') {
+							// Arcane container creates files as root, fallback to docker to remove them
+							execFileSync(
+								'docker',
+								[
+									'run',
+									'--rm',
+									'-v',
+									`${projectsDir}:/projects`,
+									'alpine',
+									'sh',
+									'-c',
+									'rm -rf "/projects/$1"',
+									'--',
+									item
+								],
+								{ stdio: 'inherit' }
+							);
+						} else {
+							throw err;
+						}
+					}
 					console.log(`   - Removed directory: ${item}`);
 				} else if (item.startsWith('test-project-')) {
 					fs.unlinkSync(itemPath);
