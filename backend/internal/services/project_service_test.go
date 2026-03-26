@@ -325,7 +325,7 @@ func TestProjectService_GetProjectByComposeName(t *testing.T) {
 		assert.Equal(t, display.ID, found.ID)
 	})
 
-	t.Run("invalidates stale normalized cache entries", func(t *testing.T) {
+	t.Run("invalidates stale normalized cache entries after deletion", func(t *testing.T) {
 		db := setupProjectTestDB(t)
 		svc := NewProjectService(db, nil, nil, nil, nil, nil)
 
@@ -340,7 +340,7 @@ func TestProjectService_GetProjectByComposeName(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, original.ID, found.ID)
 
-		cachedProjectID, cached := svc.getCachedComposeProjectID("myproject")
+		cachedProjectID, cached := svc.getCachedComposeProjectIDInternal("myproject")
 		require.True(t, cached)
 		assert.Equal(t, original.ID, cachedProjectID)
 
@@ -357,9 +357,41 @@ func TestProjectService_GetProjectByComposeName(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, replacement.ID, found.ID)
 
-		cachedProjectID, cached = svc.getCachedComposeProjectID("myproject")
+		cachedProjectID, cached = svc.getCachedComposeProjectIDInternal("myproject")
 		require.True(t, cached)
 		assert.Equal(t, replacement.ID, cachedProjectID)
+	})
+
+	t.Run("invalidates stale normalized cache entries after rename", func(t *testing.T) {
+		db := setupProjectTestDB(t)
+		svc := NewProjectService(db, nil, nil, nil, nil, nil)
+
+		original := &models.Project{
+			BaseModel: models.BaseModel{ID: "p5"},
+			Name:      "My App!",
+			Path:      "/tmp/my-app",
+		}
+		require.NoError(t, db.Create(original).Error)
+
+		found, err := svc.GetProjectByComposeName(ctx, "myapp")
+		require.NoError(t, err)
+		assert.Equal(t, original.ID, found.ID)
+
+		cachedProjectID, cached := svc.getCachedComposeProjectIDInternal("myapp")
+		require.True(t, cached)
+		assert.Equal(t, original.ID, cachedProjectID)
+
+		require.NoError(t, db.Model(&models.Project{}).Where("id = ?", original.ID).Updates(map[string]any{
+			"name": "New Service",
+			"path": "/tmp/new-service",
+		}).Error)
+
+		_, err = svc.GetProjectByComposeName(ctx, "myapp")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "project not found")
+
+		_, cached = svc.getCachedComposeProjectIDInternal("myapp")
+		assert.False(t, cached)
 	})
 }
 

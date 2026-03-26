@@ -362,17 +362,17 @@ func TestUpdaterService_LazyRegisterComposeProjectInternal_AddsServicesForRegist
 	assert.Equal(t, project.ID, projectNameToID[loader.NormalizeProjectName(project.Name)])
 }
 
-func TestShouldUpdateComposeProjectInternal(t *testing.T) {
-	updatedProjectServiceCounts := map[string]int{}
+func TestPendingComposeProjectServicesInternal(t *testing.T) {
+	processedProjectServices := map[string]map[string]struct{}{}
 
-	assert.True(t, shouldUpdateComposeProjectInternal(updatedProjectServiceCounts, "project-1", 1))
+	assert.Equal(t, []string{"A"}, pendingComposeProjectServicesInternal(processedProjectServices, "project-1", []string{"A"}))
 
-	updatedProjectServiceCounts["project-1"] = 1
-	assert.False(t, shouldUpdateComposeProjectInternal(updatedProjectServiceCounts, "project-1", 1))
-	assert.True(t, shouldUpdateComposeProjectInternal(updatedProjectServiceCounts, "project-1", 2))
+	markComposeProjectServicesProcessedInternal(processedProjectServices, "project-1", []string{"A"})
+	assert.Empty(t, pendingComposeProjectServicesInternal(processedProjectServices, "project-1", []string{"A"}))
+	assert.Equal(t, []string{"B"}, pendingComposeProjectServicesInternal(processedProjectServices, "project-1", []string{"A", "B"}))
 
-	updatedProjectServiceCounts["project-1"] = 2
-	assert.False(t, shouldUpdateComposeProjectInternal(updatedProjectServiceCounts, "project-1", 2))
+	markComposeProjectServicesProcessedInternal(processedProjectServices, "project-1", []string{"B"})
+	assert.Empty(t, pendingComposeProjectServicesInternal(processedProjectServices, "project-1", []string{"A", "B"}))
 }
 
 func TestAnyImageIDsInUseSet(t *testing.T) {

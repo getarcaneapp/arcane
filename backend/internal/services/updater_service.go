@@ -1380,7 +1380,7 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 		}
 	}
 
-	updatedProjectServiceCounts := make(map[string]int)
+	processedProjectServices := make(map[string]map[string]struct{})
 	projectResults := make(map[string]error) // stores error from the project-level update run
 
 	var results []updater.ResourceResult
@@ -1452,28 +1452,33 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 			}
 
 			if proj != nil && serviceName != "" && !libupdater.IsArcaneContainer(labels) {
-				svcs := projectToServices[proj.ID]
-				if shouldUpdateComposeProjectInternal(updatedProjectServiceCounts, proj.ID, len(svcs)) {
-					slog.InfoContext(ctx, "restartContainersUsingOldIDs: executing project-level update", "project", proj.Name, "services", svcs)
-					err := s.projectService.UpdateProjectServices(ctx, proj.ID, svcs, systemUser)
-					if err != nil {
-						slog.ErrorContext(ctx, "restartContainersUsingOldIDs: project update failed", "project", proj.Name, "err", err)
-						projectResults[proj.ID] = err
-					}
-					updatedProjectServiceCounts[proj.ID] = len(svcs)
-				}
-
 				if pErr, failed := projectResults[proj.ID]; failed {
 					res.Status = "failed"
 					res.Error = fmt.Sprintf("project-level update failed: %v", pErr)
 				} else {
-					res.Status = "updated"
-					res.UpdateAvailable = true
-					res.UpdateApplied = true
-					// Send notification
-					if s.notificationService != nil {
-						if notifErr := s.notificationService.SendContainerUpdateNotification(ctx, name, p.newRef, p.match, s.normalizeRef(p.newRef)); notifErr != nil {
-							slog.WarnContext(ctx, "Failed to send container update notification", "containerId", p.cnt.ID, "containerName", name, "imageRef", p.newRef, "error", notifErr.Error())
+					pendingServices := pendingComposeProjectServicesInternal(processedProjectServices, proj.ID, projectToServices[proj.ID])
+					if len(pendingServices) > 0 {
+						slog.InfoContext(ctx, "restartContainersUsingOldIDs: executing project-level update", "project", proj.Name, "services", pendingServices)
+						err := s.projectService.UpdateProjectServices(ctx, proj.ID, pendingServices, systemUser)
+						markComposeProjectServicesProcessedInternal(processedProjectServices, proj.ID, pendingServices)
+						if err != nil {
+							slog.ErrorContext(ctx, "restartContainersUsingOldIDs: project update failed", "project", proj.Name, "err", err)
+							projectResults[proj.ID] = err
+						}
+					}
+
+					if pErr, failed := projectResults[proj.ID]; failed {
+						res.Status = "failed"
+						res.Error = fmt.Sprintf("project-level update failed: %v", pErr)
+					} else {
+						res.Status = "updated"
+						res.UpdateAvailable = true
+						res.UpdateApplied = true
+						// Send notification
+						if s.notificationService != nil {
+							if notifErr := s.notificationService.SendContainerUpdateNotification(ctx, name, p.newRef, p.match, s.normalizeRef(p.newRef)); notifErr != nil {
+								slog.WarnContext(ctx, "Failed to send container update notification", "containerId", p.cnt.ID, "containerName", name, "imageRef", p.newRef, "error", notifErr.Error())
+							}
 						}
 					}
 				}
@@ -1550,9 +1555,37 @@ func (s *UpdaterService) triggerSelfUpdateViaCLIInternal(ctx context.Context, so
 	return nil
 }
 
-func shouldUpdateComposeProjectInternal(updatedProjectServiceCounts map[string]int, projectID string, serviceCount int) bool {
-	lastUpdatedServiceCount, updatedBefore := updatedProjectServiceCounts[projectID]
-	return !updatedBefore || serviceCount > lastUpdatedServiceCount
+func pendingComposeProjectServicesInternal(processedProjectServices map[string]map[string]struct{}, projectID string, services []string) []string {
+	if len(services) == 0 {
+		return nil
+	}
+
+	processed := processedProjectServices[projectID]
+	pending := make([]string, 0, len(services))
+	for _, service := range services {
+		if processed == nil {
+			pending = append(pending, service)
+			continue
+		}
+		if _, alreadyProcessed := processed[service]; !alreadyProcessed {
+			pending = append(pending, service)
+		}
+	}
+
+	return pending
+}
+
+func markComposeProjectServicesProcessedInternal(processedProjectServices map[string]map[string]struct{}, projectID string, services []string) {
+	if len(services) == 0 {
+		return
+	}
+
+	if _, exists := processedProjectServices[projectID]; !exists {
+		processedProjectServices[projectID] = make(map[string]struct{}, len(services))
+	}
+	for _, service := range services {
+		processedProjectServices[projectID][service] = struct{}{}
+	}
 }
 
 // lazyRegisterComposeProjectInternal registers a compose project into the pre-scan lookup maps when the

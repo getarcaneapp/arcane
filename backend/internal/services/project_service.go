@@ -209,7 +209,7 @@ func normalizeComposeProjectName(name string) string {
 	return normalized
 }
 
-func (s *ProjectService) getCachedComposeProjectID(normalizedName string) (string, bool) {
+func (s *ProjectService) getCachedComposeProjectIDInternal(normalizedName string) (string, bool) {
 	if normalizedName == "" {
 		return "", false
 	}
@@ -225,7 +225,7 @@ func (s *ProjectService) getCachedComposeProjectID(normalizedName string) (strin
 	return projectID, ok
 }
 
-func (s *ProjectService) cacheComposeProjectID(normalizedName, projectID string) {
+func (s *ProjectService) cacheComposeProjectIDInternal(normalizedName, projectID string) {
 	if normalizedName == "" || projectID == "" {
 		return
 	}
@@ -239,7 +239,7 @@ func (s *ProjectService) cacheComposeProjectID(normalizedName, projectID string)
 	s.composeNameToProjID[normalizedName] = projectID
 }
 
-func (s *ProjectService) invalidateCachedComposeProjectID(normalizedName string) {
+func (s *ProjectService) invalidateCachedComposeProjectIDInternal(normalizedName string) {
 	if normalizedName == "" {
 		return
 	}
@@ -250,8 +250,8 @@ func (s *ProjectService) invalidateCachedComposeProjectID(normalizedName string)
 	delete(s.composeNameToProjID, normalizedName)
 }
 
-func (s *ProjectService) lookupProjectByCachedComposeName(ctx context.Context, normalizedName string) (*models.Project, bool, error) {
-	projectID, ok := s.getCachedComposeProjectID(normalizedName)
+func (s *ProjectService) lookupProjectByCachedComposeNameInternal(ctx context.Context, normalizedName string) (*models.Project, bool, error) {
+	projectID, ok := s.getCachedComposeProjectIDInternal(normalizedName)
 	if !ok {
 		return nil, false, nil
 	}
@@ -259,19 +259,23 @@ func (s *ProjectService) lookupProjectByCachedComposeName(ctx context.Context, n
 	var project models.Project
 	if err := s.db.WithContext(ctx).Where("id = ?", projectID).First(&project).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			s.invalidateCachedComposeProjectID(normalizedName)
+			s.invalidateCachedComposeProjectIDInternal(normalizedName)
 			return nil, false, nil
 		}
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, false, fmt.Errorf("request canceled or timed out")
+			return nil, false, fmt.Errorf("request canceled or timed out: %w", err)
 		}
 		return nil, false, fmt.Errorf("failed to get project by cached compose name: %w", err)
+	}
+	if normalizeComposeProjectName(project.Name) != normalizedName {
+		s.invalidateCachedComposeProjectIDInternal(normalizedName)
+		return nil, false, nil
 	}
 
 	return &project, true, nil
 }
 
-func (s *ProjectService) rebuildComposeNameCache(ctx context.Context) error {
+func (s *ProjectService) rebuildComposeNameCacheInternal(ctx context.Context) error {
 	var projects []models.Project
 	if err := s.db.WithContext(ctx).Select("id", "name").Find(&projects).Error; err != nil {
 		return err
@@ -318,24 +322,24 @@ func (s *ProjectService) GetProjectByComposeName(ctx context.Context, name strin
 	var proj models.Project
 	err := s.db.WithContext(ctx).Where("name = ? OR name = ?", name, normalized).First(&proj).Error
 	if err == nil {
-		s.cacheComposeProjectID(normalized, proj.ID)
+		s.cacheComposeProjectIDInternal(normalized, proj.ID)
 		return &proj, nil
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, fmt.Errorf("failed to get project by name: %w", err)
 	}
 
-	if cachedProject, found, cacheErr := s.lookupProjectByCachedComposeName(ctx, normalized); cacheErr != nil {
+	if cachedProject, found, cacheErr := s.lookupProjectByCachedComposeNameInternal(ctx, normalized); cacheErr != nil {
 		return nil, cacheErr
 	} else if found {
 		return cachedProject, nil
 	}
 
-	if err := s.rebuildComposeNameCache(ctx); err != nil {
+	if err := s.rebuildComposeNameCacheInternal(ctx); err != nil {
 		return nil, fmt.Errorf("failed to list projects by compose name: %w", err)
 	}
 
-	if cachedProject, found, cacheErr := s.lookupProjectByCachedComposeName(ctx, normalized); cacheErr != nil {
+	if cachedProject, found, cacheErr := s.lookupProjectByCachedComposeNameInternal(ctx, normalized); cacheErr != nil {
 		return nil, cacheErr
 	} else if found {
 		return cachedProject, nil
