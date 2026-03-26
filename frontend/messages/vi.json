@@ -418,7 +418,7 @@
 	"containers_update_column": "Cập nhật",
 	"containers_update_container": "Cập nhật Container",
 	"containers_update_confirm_title": "Cập nhật Container",
-	"containers_update_confirm_message": "Thao tác này sẽ pull Image mới nhất và khởi động lại Container \"{name}\". Bạn có muốn tiếp tục?",
+	"containers_update_confirm_message": "Thao tác này sẽ tải xuống bản hình ảnh mới nhất và áp dụng bản cập nhật phù hợp cho \"{name}\". Bạn có muốn tiếp tục không?",
 	"containers_update_pulling_image": "Đang pull Image mới nhất...",
 	"containers_update_success": "Container \"{name}\" đã được cập nhật thành công",
 	"containers_update_failed": "Cập nhật Container \"{name}\" thất bại",
