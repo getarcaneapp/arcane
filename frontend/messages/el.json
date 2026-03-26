@@ -418,7 +418,7 @@
 	"containers_update_column": "Ενημερώσεις",
 	"containers_update_container": "Ενημέρωση Περιέκτη",
 	"containers_update_confirm_title": "Ενημέρωση Περιέκτη",
-	"containers_update_confirm_message": "Αυτό θα τραβήξει την τελευταία εικόνα και θα επανεκκινήσει το δοχείο \"{name}\". Θέλετε να συνεχίσετε?",
+	"containers_update_confirm_message": "Αυτό θα αντλήσει την πιο πρόσφατη εικόνα και θα εφαρμόσει την κατάλληλη ενημέρωση για το \"{name}\". Θέλετε να συνεχίσετε;",
 	"containers_update_pulling_image": "Τραβήξτε την τελευταία εικόνα...",
 	"containers_update_success": "Container \"{name}\" ενημερώθηκε με επιτυχία",
 	"containers_update_failed": "Απέτυχε η ενημέρωση του περιέκτη \"{name}\"",
