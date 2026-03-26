@@ -85,3 +85,61 @@ export const arcaneDarkInit = (options?: Partial<CreateThemeOptions>) => {
 };
 
 export const arcaneDark = arcaneDarkInit();
+
+export const arcaneLightInit = (options?: Partial<CreateThemeOptions>) => {
+	const { theme = 'light', settings = {}, styles = [] } = options || {};
+
+	const accentColor = getAccentColor();
+	const accentWithAlpha35 = getAccentColorWithAlpha(0.35);
+	const accentWithAlpha15 = getAccentColorWithAlpha(0.15);
+	const accentWithAlpha05 = getAccentColorWithAlpha(0.05);
+
+	const dynamicSettings: CreateThemeOptions['settings'] = {
+		background: '#ffffff',
+		foreground: '#24292f',
+		caret: accentColor,
+		selection: accentWithAlpha35,
+		selectionMatch: accentWithAlpha15,
+		lineHighlight: accentWithAlpha05,
+		gutterBackground: '#ffffff',
+		gutterForeground: '#8c959f',
+		gutterActiveForeground: '#24292f',
+		gutterBorder: 'transparent',
+
+		fontFamily: '"Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", "Courier New", monospace',
+		fontSize: '13px'
+	};
+
+	const dynamicStyles: CreateThemeOptions['styles'] = [
+		{ tag: [t.comment, t.meta], color: '#6e7781' },
+		{ tag: [t.keyword, t.modifier, t.operatorKeyword], color: '#cf222e' },
+
+		{ tag: [t.typeName, t.namespace, t.number, t.atom, t.bool], color: '#953800' },
+		{ tag: [t.function(t.variableName), t.labelName], color: accentColor },
+		{
+			tag: [t.className, t.definition(t.variableName), t.propertyName, t.attributeName],
+			color: '#8250df'
+		},
+
+		{ tag: [t.variableName, t.name], color: '#24292f' },
+		{ tag: [t.string, t.inserted, t.regexp, t.special(t.string)], color: '#0a3069' },
+		{ tag: [t.operator, t.url, t.link, t.escape], color: '#0550ae' },
+
+		{ tag: [t.separator, t.punctuation], color: '#6e7781' },
+
+		{ tag: t.heading, color: '#24292f', fontWeight: 'bold' },
+		{ tag: t.strong, fontWeight: 'bold' },
+		{ tag: t.emphasis, fontStyle: 'italic' },
+		{ tag: t.strikethrough, textDecoration: 'line-through' },
+		{ tag: t.invalid, color: '#cf222e' },
+		{ tag: t.link, textDecoration: 'underline' }
+	];
+
+	return createTheme({
+		theme,
+		settings: { ...dynamicSettings, ...settings },
+		styles: [...dynamicStyles, ...styles]
+	});
+};
+
+export const arcaneLight = arcaneLightInit();
