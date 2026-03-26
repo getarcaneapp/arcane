@@ -1380,7 +1380,7 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 		}
 	}
 
-	updatedProjects := make(map[string]bool)
+	updatedProjectServiceCounts := make(map[string]int)
 	projectResults := make(map[string]error) // stores error from the project-level update run
 
 	var results []updater.ResourceResult
@@ -1452,15 +1452,15 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 			}
 
 			if proj != nil && serviceName != "" && !libupdater.IsArcaneContainer(labels) {
-				if _, done := updatedProjects[proj.ID]; !done {
-					svcs := projectToServices[proj.ID]
+				svcs := projectToServices[proj.ID]
+				if shouldUpdateComposeProjectInternal(updatedProjectServiceCounts, proj.ID, len(svcs)) {
 					slog.InfoContext(ctx, "restartContainersUsingOldIDs: executing project-level update", "project", proj.Name, "services", svcs)
 					err := s.projectService.UpdateProjectServices(ctx, proj.ID, svcs, systemUser)
 					if err != nil {
 						slog.ErrorContext(ctx, "restartContainersUsingOldIDs: project update failed", "project", proj.Name, "err", err)
 						projectResults[proj.ID] = err
 					}
-					updatedProjects[proj.ID] = true
+					updatedProjectServiceCounts[proj.ID] = len(svcs)
 				}
 
 				if pErr, failed := projectResults[proj.ID]; failed {
@@ -1548,6 +1548,11 @@ func (s *UpdaterService) triggerSelfUpdateViaCLIInternal(ctx context.Context, so
 	}
 
 	return nil
+}
+
+func shouldUpdateComposeProjectInternal(updatedProjectServiceCounts map[string]int, projectID string, serviceCount int) bool {
+	lastUpdatedServiceCount, updatedBefore := updatedProjectServiceCounts[projectID]
+	return !updatedBefore || serviceCount > lastUpdatedServiceCount
 }
 
 // lazyRegisterComposeProjectInternal registers a compose project into the pre-scan lookup maps when the

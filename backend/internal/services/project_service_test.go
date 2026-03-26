@@ -324,6 +324,43 @@ func TestProjectService_GetProjectByComposeName(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, display.ID, found.ID)
 	})
+
+	t.Run("invalidates stale normalized cache entries", func(t *testing.T) {
+		db := setupProjectTestDB(t)
+		svc := NewProjectService(db, nil, nil, nil, nil, nil)
+
+		original := &models.Project{
+			BaseModel: models.BaseModel{ID: "p3"},
+			Name:      "My Project!",
+			Path:      "/tmp/my-project",
+		}
+		require.NoError(t, db.Create(original).Error)
+
+		found, err := svc.GetProjectByComposeName(ctx, "myproject")
+		require.NoError(t, err)
+		assert.Equal(t, original.ID, found.ID)
+
+		cachedProjectID, cached := svc.getCachedComposeProjectID("myproject")
+		require.True(t, cached)
+		assert.Equal(t, original.ID, cachedProjectID)
+
+		require.NoError(t, db.Delete(&models.Project{}, "id = ?", original.ID).Error)
+
+		replacement := &models.Project{
+			BaseModel: models.BaseModel{ID: "p4"},
+			Name:      "My Project!",
+			Path:      "/tmp/my-project-recreated",
+		}
+		require.NoError(t, db.Create(replacement).Error)
+
+		found, err = svc.GetProjectByComposeName(ctx, "myproject")
+		require.NoError(t, err)
+		assert.Equal(t, replacement.ID, found.ID)
+
+		cachedProjectID, cached = svc.getCachedComposeProjectID("myproject")
+		require.True(t, cached)
+		assert.Equal(t, replacement.ID, cachedProjectID)
+	})
 }
 
 func TestResolveServiceImagePullMode(t *testing.T) {

@@ -49,24 +49,19 @@ func ComposePull(ctx context.Context, proj *types.Project, services []string) er
 	}
 	defer func() { _ = c.Close() }()
 
-	// api.PullOptions has no Services field in compose v5.
-	// Create a shallow copy of the project with only the requested services
-	// so that Pull only pulls images for those services.
-	if len(services) > 0 {
-		svcSet := make(map[string]bool, len(services))
-		for _, s := range services {
-			svcSet[s] = true
-		}
-		filtered := *proj // shallow copy
-		filtered.Services = make(types.Services)
-		for name, svc := range proj.Services {
-			if svcSet[name] {
-				filtered.Services[name] = svc
-			}
-		}
-		return c.svc.Pull(ctx, &filtered, api.PullOptions{})
+	filteredProject, err := filterProjectServicesForPullInternal(proj, services)
+	if err != nil {
+		return err
 	}
-	return c.svc.Pull(ctx, proj, api.PullOptions{})
+	return c.svc.Pull(ctx, filteredProject, api.PullOptions{})
+}
+
+func filterProjectServicesForPullInternal(proj *types.Project, services []string) (*types.Project, error) {
+	if proj == nil || len(services) == 0 {
+		return proj, nil
+	}
+
+	return proj.WithSelectedServices(services, types.IgnoreDependencies)
 }
 
 func ComposeStop(ctx context.Context, proj *types.Project, services []string) error {

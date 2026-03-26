@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/compose-spec/compose-go/v2/dotenv"
@@ -42,6 +43,9 @@ type ProjectService struct {
 	imageService    *ImageService
 	dockerService   *DockerClientService
 	buildService    *BuildService
+
+	composeNameCacheMu  sync.RWMutex
+	composeNameToProjID map[string]string
 }
 
 func NewProjectService(db *database.DB, settingsService *SettingsService, eventService *EventService, imageService *ImageService, dockerService *DockerClientService, buildService *BuildService) *ProjectService {
@@ -205,6 +209,92 @@ func normalizeComposeProjectName(name string) string {
 	return normalized
 }
 
+func (s *ProjectService) getCachedComposeProjectID(normalizedName string) (string, bool) {
+	if normalizedName == "" {
+		return "", false
+	}
+
+	s.composeNameCacheMu.RLock()
+	defer s.composeNameCacheMu.RUnlock()
+
+	if s.composeNameToProjID == nil {
+		return "", false
+	}
+
+	projectID, ok := s.composeNameToProjID[normalizedName]
+	return projectID, ok
+}
+
+func (s *ProjectService) cacheComposeProjectID(normalizedName, projectID string) {
+	if normalizedName == "" || projectID == "" {
+		return
+	}
+
+	s.composeNameCacheMu.Lock()
+	defer s.composeNameCacheMu.Unlock()
+
+	if s.composeNameToProjID == nil {
+		s.composeNameToProjID = make(map[string]string)
+	}
+	s.composeNameToProjID[normalizedName] = projectID
+}
+
+func (s *ProjectService) invalidateCachedComposeProjectID(normalizedName string) {
+	if normalizedName == "" {
+		return
+	}
+
+	s.composeNameCacheMu.Lock()
+	defer s.composeNameCacheMu.Unlock()
+
+	delete(s.composeNameToProjID, normalizedName)
+}
+
+func (s *ProjectService) lookupProjectByCachedComposeName(ctx context.Context, normalizedName string) (*models.Project, bool, error) {
+	projectID, ok := s.getCachedComposeProjectID(normalizedName)
+	if !ok {
+		return nil, false, nil
+	}
+
+	var project models.Project
+	if err := s.db.WithContext(ctx).Where("id = ?", projectID).First(&project).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			s.invalidateCachedComposeProjectID(normalizedName)
+			return nil, false, nil
+		}
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, false, fmt.Errorf("request canceled or timed out")
+		}
+		return nil, false, fmt.Errorf("failed to get project by cached compose name: %w", err)
+	}
+
+	return &project, true, nil
+}
+
+func (s *ProjectService) rebuildComposeNameCache(ctx context.Context) error {
+	var projects []models.Project
+	if err := s.db.WithContext(ctx).Select("id", "name").Find(&projects).Error; err != nil {
+		return err
+	}
+
+	cache := make(map[string]string, len(projects))
+	for i := range projects {
+		normalizedName := normalizeComposeProjectName(projects[i].Name)
+		if normalizedName == "" {
+			continue
+		}
+		if _, exists := cache[normalizedName]; !exists {
+			cache[normalizedName] = projects[i].ID
+		}
+	}
+
+	s.composeNameCacheMu.Lock()
+	s.composeNameToProjID = cache
+	s.composeNameCacheMu.Unlock()
+
+	return nil
+}
+
 func (s *ProjectService) GetProjectFromDatabaseByID(ctx context.Context, id string) (*models.Project, error) {
 	var project models.Project
 	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&project).Error; err != nil {
@@ -228,20 +318,27 @@ func (s *ProjectService) GetProjectByComposeName(ctx context.Context, name strin
 	var proj models.Project
 	err := s.db.WithContext(ctx).Where("name = ? OR name = ?", name, normalized).First(&proj).Error
 	if err == nil {
+		s.cacheComposeProjectID(normalized, proj.ID)
 		return &proj, nil
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, fmt.Errorf("failed to get project by name: %w", err)
 	}
 
-	var projects []models.Project
-	if err := s.db.WithContext(ctx).Find(&projects).Error; err != nil {
+	if cachedProject, found, cacheErr := s.lookupProjectByCachedComposeName(ctx, normalized); cacheErr != nil {
+		return nil, cacheErr
+	} else if found {
+		return cachedProject, nil
+	}
+
+	if err := s.rebuildComposeNameCache(ctx); err != nil {
 		return nil, fmt.Errorf("failed to list projects by compose name: %w", err)
 	}
-	for i := range projects {
-		if normalizeComposeProjectName(projects[i].Name) == normalized {
-			return &projects[i], nil
-		}
+
+	if cachedProject, found, cacheErr := s.lookupProjectByCachedComposeName(ctx, normalized); cacheErr != nil {
+		return nil, cacheErr
+	} else if found {
+		return cachedProject, nil
 	}
 
 	return nil, fmt.Errorf("project not found: %s", name)

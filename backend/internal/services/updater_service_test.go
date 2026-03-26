@@ -362,6 +362,19 @@ func TestUpdaterService_LazyRegisterComposeProjectInternal_AddsServicesForRegist
 	assert.Equal(t, project.ID, projectNameToID[loader.NormalizeProjectName(project.Name)])
 }
 
+func TestShouldUpdateComposeProjectInternal(t *testing.T) {
+	updatedProjectServiceCounts := map[string]int{}
+
+	assert.True(t, shouldUpdateComposeProjectInternal(updatedProjectServiceCounts, "project-1", 1))
+
+	updatedProjectServiceCounts["project-1"] = 1
+	assert.False(t, shouldUpdateComposeProjectInternal(updatedProjectServiceCounts, "project-1", 1))
+	assert.True(t, shouldUpdateComposeProjectInternal(updatedProjectServiceCounts, "project-1", 2))
+
+	updatedProjectServiceCounts["project-1"] = 2
+	assert.False(t, shouldUpdateComposeProjectInternal(updatedProjectServiceCounts, "project-1", 2))
+}
+
 func TestAnyImageIDsInUseSet(t *testing.T) {
 	inUseSet := map[string]struct{}{
 		"sha256:one": {},
