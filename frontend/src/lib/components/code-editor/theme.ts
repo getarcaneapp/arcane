@@ -142,4 +142,3 @@ export const arcaneLightInit = (options?: Partial<CreateThemeOptions>) => {
 	});
 };
 
-export const arcaneLight = arcaneLightInit();
