@@ -90,6 +90,7 @@ func IsFallbackEligibleDaemonError(err error) bool {
 		"unsupported",
 		"distribution disabled",
 		"distribution api",
+		"proxyconnect",
 	}
 
 	for _, indicator := range indicators {
@@ -425,9 +426,14 @@ func validateAuthRealmInternal(registryHost, realm string) error {
 		return nil
 	}
 
-	// Docker Hub serves token auth from auth.docker.io while image pulls are made
-	// against index.docker.io / registry-1.docker.io.
-	if registry == "docker.io" && realmHost == "auth.docker.io" {
+	// Some registries serve images under their own domain but delegate token auth
+	// to a separate trusted host. Docker Hub uses auth.docker.io; lscr.io (LinuxServer)
+	// is a vanity domain backed by ghcr.io and delegates auth there.
+	trustedDelegations := map[string]string{
+		"docker.io": "auth.docker.io",
+		"lscr.io":   "ghcr.io",
+	}
+	if trustedRealm, ok := trustedDelegations[registry]; ok && realmHost == trustedRealm {
 		return nil
 	}
 
