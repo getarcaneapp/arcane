@@ -392,9 +392,7 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*update
 func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID string) (*updater.Result, error) {
 	start := time.Now()
 	out := &updater.Result{Items: []updater.ResourceResult{}}
-
 	slog.InfoContext(ctx, "UpdateSingleContainer: starting", "containerID", containerID)
-
 	dcli, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("docker connect: %w", err)
@@ -593,6 +591,50 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 	}
 
 	// Update the container
+	projectName := inspect.Config.Labels["com.docker.compose.project"]
+	serviceName := inspect.Config.Labels["com.docker.compose.service"]
+
+	if projectName != "" && serviceName != "" {
+		slog.InfoContext(ctx, "UpdateSingleContainer: detected compose container, using project-based update", "containerID", containerID, "project", projectName, "service", serviceName)
+
+		proj, err := s.projectService.GetProjectByComposeName(ctx, projectName)
+		if err == nil {
+			// The direct image pull above is still required to compare digests and
+			// skip no-op updates. Compose project updates intentionally pull again
+			// inside UpdateProjectServices to keep project redeploy behavior unified.
+			if err := s.projectService.UpdateProjectServices(ctx, proj.ID, []string{serviceName}, systemUser); err != nil {
+				out.Items = append(out.Items, updater.ResourceResult{
+					ResourceID:   targetContainer.ID,
+					ResourceType: "container",
+					ResourceName: containerName,
+					Status:       "failed",
+					Error:        fmt.Sprintf("project update failed: %v", err),
+				})
+				out.Failed++
+				out.Duration = time.Since(start).String()
+				return out, nil
+			}
+
+			out.Items = append(out.Items, updater.ResourceResult{
+				ResourceID:   targetContainer.ID,
+				ResourceType: "container",
+				ResourceName: containerName,
+				Status:       "updated",
+			})
+			out.Updated++
+			out.Checked = 1
+			out.Duration = time.Since(start).String()
+
+			// Prune old image if no longer in use
+			if inspectBefore.Image != "" {
+				_ = s.pruneImageIDsWithInUseSetInternal(ctx, []string{inspectBefore.Image}, nil)
+			}
+
+			return out, nil
+		}
+		slog.WarnContext(ctx, "UpdateSingleContainer: compose labels found but project not found in DB, falling back to standalone update", "project", projectName, "err", err)
+	}
+
 	if err := s.updateContainer(ctx, *targetContainer, inspect, normalizedRef); err != nil {
 		out.Items = append(out.Items, updater.ResourceResult{
 			ResourceID:   targetContainer.ID,
@@ -1144,6 +1186,15 @@ func (s *UpdaterService) resolveLocalImageIDsForRef(ctx context.Context, ref str
 	return ids, nil
 }
 
+type restartPlan struct {
+	cnt      container.Summary
+	inspect  *container.InspectResponse
+	newRef   string
+	match    string
+	explicit bool
+	implicit bool
+}
+
 //nolint:gocognit
 func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldIDToNewRef map[string]string, oldRefToNewRef map[string]string) ([]updater.ResourceResult, error) {
 	dcli, err := s.dockerService.GetClient(ctx)
@@ -1171,15 +1222,6 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 	updatedNorm := map[string]string{}
 	for oldRef, nr := range oldRefToNewRef {
 		updatedNorm[s.normalizeRef(oldRef)] = nr
-	}
-
-	type restartPlan struct {
-		cnt      container.Summary
-		inspect  *container.InspectResponse
-		newRef   string
-		match    string
-		explicit bool
-		implicit bool
 	}
 
 	plansByName := map[string]*restartPlan{}
@@ -1302,6 +1344,45 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 		sorted = candidates
 	}
 
+	// Pre-scan sorted containers to group compose project services that need updates.
+	// We only group containers that are explicitly marked for restart (p.newRef != "").
+	projectToServices := make(map[string][]string)                // projectID -> []serviceName
+	projectToSeenServices := make(map[string]map[string]struct{}) // projectID -> set(serviceName)
+	projectIDToObj := make(map[string]*models.Project)
+	projectNameToID := make(map[string]string)
+
+	for _, cd := range sorted {
+		p := plansByName[cd.Name]
+		if p == nil || p.newRef == "" || p.inspect == nil || p.inspect.Config == nil {
+			continue
+		}
+		projectName := p.inspect.Config.Labels["com.docker.compose.project"]
+		serviceName := p.inspect.Config.Labels["com.docker.compose.service"]
+		if projectName != "" && serviceName != "" {
+			projectID, ok := lookupComposeProjectIDInternal(projectName, projectNameToID)
+			if !ok {
+				proj, err := s.projectService.GetProjectByComposeName(ctx, projectName)
+				if err != nil {
+					continue
+				}
+				projectID = proj.ID
+				projectIDToObj[proj.ID] = proj
+				projectNameToID[proj.Name] = proj.ID
+				projectNameToID[loader.NormalizeProjectName(proj.Name)] = proj.ID
+			}
+			if _, ok := projectToSeenServices[projectID]; !ok {
+				projectToSeenServices[projectID] = make(map[string]struct{})
+			}
+			if _, seen := projectToSeenServices[projectID][serviceName]; !seen {
+				projectToServices[projectID] = append(projectToServices[projectID], serviceName)
+				projectToSeenServices[projectID][serviceName] = struct{}{}
+			}
+		}
+	}
+
+	processedProjectServices := make(map[string]map[string]struct{})
+	projectResults := make(map[string]error) // stores error from the project-level update run
+
 	var results []updater.ResourceResult
 	for _, cd := range sorted {
 		p := plansByName[cd.Name]
@@ -1327,6 +1408,11 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 			inspect := inspectResult.Container
 			inspectCopy := inspect
 			p.inspect = &inspectCopy
+
+			// If this container belongs to a compose project that was missed during the
+			// pre-scan (inspect was nil), register it now so the main loop routes it
+			// through the compose-aware update path instead of standalone stop/rm/run.
+			s.lazyRegisterComposeProjectInternal(ctx, p, projectNameToID, projectIDToObj, projectToServices, projectToSeenServices)
 		}
 		if p.inspect.Config != nil && p.inspect.Config.Labels != nil {
 			labels = p.inspect.Config.Labels
@@ -1348,7 +1434,7 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 			continue
 		}
 
-		slog.DebugContext(ctx, "restartContainersUsingOldIDs: restarting container", "containerId", p.cnt.ID, "container", name, "match", p.match, "newRef", p.newRef, "implicit", p.implicit)
+		slog.DebugContext(ctx, "restartContainersUsingOldIDs: processing container", "containerId", p.cnt.ID, "container", name, "match", p.match, "newRef", p.newRef, "implicit", p.implicit)
 
 		func() {
 			endContainerStatus := s.beginContainerUpdateInternal(p.cnt.ID)
@@ -1356,7 +1442,47 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 			endProjectStatus := s.beginProjectUpdateInternal(composeProjectNameFromLabelsInternal(labels))
 			defer endProjectStatus()
 
-			// Arcane self-updates must go through the detached CLI upgrader.
+			projectName := labels["com.docker.compose.project"]
+			serviceName := labels["com.docker.compose.service"]
+			var proj *models.Project
+			if projectName != "" {
+				if projectID, ok := lookupComposeProjectIDInternal(projectName, projectNameToID); ok {
+					proj = projectIDToObj[projectID]
+				}
+			}
+
+			if proj != nil && serviceName != "" && !libupdater.IsArcaneContainer(labels) {
+				if pErr, failed := projectResults[proj.ID]; failed {
+					res.Status = "failed"
+					res.Error = fmt.Sprintf("project-level update failed: %v", pErr)
+				} else {
+					pendingServices := pendingComposeProjectServicesInternal(processedProjectServices, proj.ID, projectToServices[proj.ID])
+					if len(pendingServices) > 0 {
+						slog.InfoContext(ctx, "restartContainersUsingOldIDs: executing project-level update", "project", proj.Name, "services", pendingServices)
+						err := s.projectService.UpdateProjectServices(ctx, proj.ID, pendingServices, systemUser)
+						markComposeProjectServicesProcessedInternal(processedProjectServices, proj.ID, pendingServices)
+						if err != nil {
+							slog.ErrorContext(ctx, "restartContainersUsingOldIDs: project update failed", "project", proj.Name, "err", err)
+							projectResults[proj.ID] = err
+						}
+					}
+
+					if pErr, failed := projectResults[proj.ID]; failed {
+						res.Status = "failed"
+						res.Error = fmt.Sprintf("project-level update failed: %v", pErr)
+					} else {
+						res.Status = "updated"
+						res.UpdateAvailable = true
+						res.UpdateApplied = true
+						// Send notification
+						if s.notificationService != nil {
+							if notifErr := s.notificationService.SendContainerUpdateNotification(ctx, name, p.newRef, p.match, s.normalizeRef(p.newRef)); notifErr != nil {
+								slog.WarnContext(ctx, "Failed to send container update notification", "containerId", p.cnt.ID, "containerName", name, "imageRef", p.newRef, "error", notifErr.Error())
+							}
+						}
+					}
+				}
+			} else // Arcane self-updates must go through the detached CLI upgrader.
 			if libupdater.IsArcaneContainer(labels) {
 				if err := s.triggerSelfUpdateViaCLIInternal(ctx, "restartContainersUsingOldIDs", p.cnt.ID, name, labels); err != nil {
 					res.Status = "failed"
@@ -1429,6 +1555,80 @@ func (s *UpdaterService) triggerSelfUpdateViaCLIInternal(ctx context.Context, so
 	return nil
 }
 
+func pendingComposeProjectServicesInternal(processedProjectServices map[string]map[string]struct{}, projectID string, services []string) []string {
+	if len(services) == 0 {
+		return nil
+	}
+
+	processed := processedProjectServices[projectID]
+	pending := make([]string, 0, len(services))
+	for _, service := range services {
+		if processed == nil {
+			pending = append(pending, service)
+			continue
+		}
+		if _, alreadyProcessed := processed[service]; !alreadyProcessed {
+			pending = append(pending, service)
+		}
+	}
+
+	return pending
+}
+
+func markComposeProjectServicesProcessedInternal(processedProjectServices map[string]map[string]struct{}, projectID string, services []string) {
+	if len(services) == 0 {
+		return
+	}
+
+	if _, exists := processedProjectServices[projectID]; !exists {
+		processedProjectServices[projectID] = make(map[string]struct{}, len(services))
+	}
+	for _, service := range services {
+		processedProjectServices[projectID][service] = struct{}{}
+	}
+}
+
+// lazyRegisterComposeProjectInternal registers a compose project into the pre-scan lookup maps when the
+// container's inspect data was unavailable during the pre-scan (inspect was nil at that point).
+// Without this, the main loop's lookupComposeProjectIDInternal call would miss the project and
+// fall through to the destructive standalone stop/rm/run path.
+func (s *UpdaterService) lazyRegisterComposeProjectInternal(
+	ctx context.Context,
+	p *restartPlan,
+	projectNameToID map[string]string,
+	projectIDToObj map[string]*models.Project,
+	projectToServices map[string][]string,
+	projectToSeenServices map[string]map[string]struct{},
+) {
+	if p.newRef == "" || p.inspect == nil || p.inspect.Config == nil {
+		return
+	}
+	projectName := p.inspect.Config.Labels["com.docker.compose.project"]
+	serviceName := p.inspect.Config.Labels["com.docker.compose.service"]
+	if projectName == "" || serviceName == "" {
+		return
+	}
+
+	projectID, registered := lookupComposeProjectIDInternal(projectName, projectNameToID)
+	if !registered {
+		proj, err := s.projectService.GetProjectByComposeName(ctx, projectName)
+		if err != nil {
+			return
+		}
+		projectID = proj.ID
+		projectIDToObj[proj.ID] = proj
+		projectNameToID[proj.Name] = proj.ID
+		projectNameToID[loader.NormalizeProjectName(proj.Name)] = proj.ID
+	}
+	if _, ok := projectToSeenServices[projectID]; !ok {
+		projectToSeenServices[projectID] = make(map[string]struct{})
+	}
+	if _, seen := projectToSeenServices[projectID][serviceName]; !seen {
+		projectToServices[projectID] = append(projectToServices[projectID], serviceName)
+		projectToSeenServices[projectID][serviceName] = struct{}{}
+	}
+}
+
 func (s *UpdaterService) beginContainerUpdateInternal(containerID string) func() {
 	containerID = strings.TrimSpace(containerID)
 	if containerID == "" {
@@ -1468,6 +1668,17 @@ func composeProjectNameFromLabelsInternal(labels map[string]string) string {
 		return ""
 	}
 	return strings.TrimSpace(labels["com.docker.compose.project"])
+}
+
+func lookupComposeProjectIDInternal(projectName string, projectNameToID map[string]string) (string, bool) {
+	if projectName == "" || len(projectNameToID) == 0 {
+		return "", false
+	}
+	if projectID, ok := projectNameToID[projectName]; ok {
+		return projectID, true
+	}
+	projectID, ok := projectNameToID[loader.NormalizeProjectName(projectName)]
+	return projectID, ok
 }
 
 func (s *UpdaterService) statusSnapshotInternal() updater.Status {

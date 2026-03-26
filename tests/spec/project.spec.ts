@@ -916,7 +916,7 @@ test.describe('Project Detail Page', () => {
 		if (logsSelected === 'true') {
 			await expect(page.getByText(/Real-time project logs/i)).toBeVisible();
 			await expect(page.getByRole('button', { name: /^(Start|Stop)$/i })).toBeVisible();
-			await expect(page.getByRole('button', { name: 'Clear', exact: true })).toBeVisible();
+			await expect(page.getByTitle('Refresh')).toBeVisible();
 
 			const startButton = page.getByRole('button', {
 				name: 'Start',

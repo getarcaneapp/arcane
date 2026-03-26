@@ -11,6 +11,48 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestIsFallbackEligibleDaemonError(t *testing.T) {
+	eligible := []string{
+		"not found",
+		"status: 404",
+		"status 404",
+		" 404 ",
+		"403 forbidden",
+		"status: 403",
+		"status 403",
+		"not implemented",
+		"unsupported",
+		"distribution disabled",
+		"distribution api",
+		"administrative rules",
+		"proxyconnect tcp: dial tcp :0: connect: connection refused",
+	}
+	for _, msg := range eligible {
+		t.Run("eligible/"+msg, func(t *testing.T) {
+			assert.True(t, IsFallbackEligibleDaemonError(fmt.Errorf("%s", msg)))
+		})
+	}
+
+	notEligible := []string{
+		"unauthorized",
+		"authentication required",
+		"no basic auth credentials",
+		"access denied",
+		"status: 401",
+		"x509: certificate signed by unknown authority",
+		"tls handshake timeout",
+		"connection refused",
+		"no such host",
+	}
+	for _, msg := range notEligible {
+		t.Run("not-eligible/"+msg, func(t *testing.T) {
+			assert.False(t, IsFallbackEligibleDaemonError(fmt.Errorf("%s", msg)))
+		})
+	}
+
+	assert.False(t, IsFallbackEligibleDaemonError(nil))
+}
+
 func TestFetchDigestWithHTTPClient_FallsBackToGetOnMethodNotAllowed(t *testing.T) {
 	var headCalls int
 	var getCalls int
@@ -144,6 +186,11 @@ func TestValidateAuthRealmInternal(t *testing.T) {
 			name:         "docker hub auth host allowed",
 			registryHost: "registry-1.docker.io",
 			realm:        "https://auth.docker.io/token",
+		},
+		{
+			name:         "lscr.io delegates auth to ghcr.io",
+			registryHost: "lscr.io",
+			realm:        "https://ghcr.io/token",
 		},
 		{
 			name:         "non https realm rejected",

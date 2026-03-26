@@ -28,6 +28,9 @@ export type Settings = {
 	autoHealMaxRestarts?: number;
 	autoHealRestartWindow?: number;
 	maxImageUploadSize: number;
+	gitSyncMaxFiles: number;
+	gitSyncMaxTotalSizeMb: number;
+	gitSyncMaxBinarySizeMb: number;
 	baseServerUrl: string;
 	enableGravatar: boolean;
 	uiConfigDisabled: boolean;

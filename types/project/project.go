@@ -238,6 +238,12 @@ type Details struct {
 	// Required: false
 	IncludeFiles []IncludeFile `json:"includeFiles,omitempty"`
 
+	// DirectoryFiles contains all other files in the project directory
+	// (excluding compose files, .env, and include files which are shown separately).
+	//
+	// Required: false
+	DirectoryFiles []IncludeFile `json:"directoryFiles,omitempty"`
+
 	// Status is the current status of the project.
 	//
 	// Required: true

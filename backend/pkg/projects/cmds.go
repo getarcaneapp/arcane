@@ -42,6 +42,40 @@ func ComposeRestart(ctx context.Context, proj *types.Project, services []string)
 	return c.svc.Restart(ctx, proj.Name, api.RestartOptions{Services: services})
 }
 
+func ComposePull(ctx context.Context, proj *types.Project, services []string) error {
+	c, err := NewClient(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = c.Close() }()
+
+	filteredProject, err := filterProjectServicesForPullInternal(proj, services)
+	if err != nil {
+		return err
+	}
+	return c.svc.Pull(ctx, filteredProject, api.PullOptions{})
+}
+
+func filterProjectServicesForPullInternal(proj *types.Project, services []string) (*types.Project, error) {
+	if proj == nil || len(services) == 0 {
+		return proj, nil
+	}
+
+	return proj.WithSelectedServices(services, types.IgnoreDependencies)
+}
+
+func ComposeStop(ctx context.Context, proj *types.Project, services []string) error {
+	if len(services) == 0 {
+		return nil
+	}
+	c, err := NewClient(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = c.Close() }()
+	return c.svc.Stop(ctx, proj.Name, api.StopOptions{Services: services})
+}
+
 func ComposeUp(ctx context.Context, proj *types.Project, services []string, removeOrphans bool, forceRecreate bool) error {
 	c, err := NewClient(ctx)
 	if err != nil {

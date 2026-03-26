@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -21,21 +22,114 @@ import (
 )
 
 type GitOpsSyncService struct {
-	db             *database.DB
-	repoService    *GitRepositoryService
-	projectService *ProjectService
-	eventService   *EventService
+	db              *database.DB
+	repoService     *GitRepositoryService
+	projectService  *ProjectService
+	eventService    *EventService
+	settingsService *SettingsService
 }
 
 const defaultGitSyncTimeout = 5 * time.Minute
 
-func NewGitOpsSyncService(db *database.DB, repoService *GitRepositoryService, projectService *ProjectService, eventService *EventService) *GitOpsSyncService {
-	return &GitOpsSyncService{
-		db:             db,
-		repoService:    repoService,
-		projectService: projectService,
-		eventService:   eventService,
+const (
+	defaultMaxSyncFiles        = 500
+	defaultMaxSyncTotalSizeMB  = 50
+	defaultMaxSyncBinarySizeMB = 10
+	defaultMaxSyncTotalSize    = defaultMaxSyncTotalSizeMB * 1024 * 1024
+	defaultMaxSyncBinarySize   = defaultMaxSyncBinarySizeMB * 1024 * 1024
+)
+
+type scheduledGitOpsSync struct {
+	ID            string
+	EnvironmentID string
+	SyncInterval  int
+	LastSyncAt    *time.Time
+}
+
+func validateSyncLimits(maxFiles *int, maxTotalSize, maxBinarySize *int64) error {
+	if maxFiles != nil && *maxFiles < 0 {
+		return fmt.Errorf("maxSyncFiles must be non-negative")
 	}
+	if maxTotalSize != nil && *maxTotalSize < 0 {
+		return fmt.Errorf("maxSyncTotalSize must be non-negative")
+	}
+	if maxBinarySize != nil && *maxBinarySize < 0 {
+		return fmt.Errorf("maxSyncBinarySize must be non-negative")
+	}
+	return nil
+}
+
+func normalizeSyncLimitSetting(value, defaultValue int) int {
+	if value < 0 {
+		return defaultValue
+	}
+	return value
+}
+
+func megabytesToBytes(value int) int64 {
+	return int64(value) * 1024 * 1024
+}
+
+func effectiveIntLimit(syncLimit, environmentLimit int) int {
+	switch {
+	case syncLimit == 0:
+		return environmentLimit
+	case environmentLimit == 0:
+		return syncLimit
+	case syncLimit < environmentLimit:
+		return syncLimit
+	default:
+		return environmentLimit
+	}
+}
+
+func effectiveInt64Limit(syncLimit, environmentLimit int64) int64 {
+	switch {
+	case syncLimit == 0:
+		return environmentLimit
+	case environmentLimit == 0:
+		return syncLimit
+	case syncLimit < environmentLimit:
+		return syncLimit
+	default:
+		return environmentLimit
+	}
+}
+
+func NewGitOpsSyncService(db *database.DB, repoService *GitRepositoryService, projectService *ProjectService, eventService *EventService, settingsService *SettingsService) *GitOpsSyncService {
+	return &GitOpsSyncService{
+		db:              db,
+		repoService:     repoService,
+		projectService:  projectService,
+		eventService:    eventService,
+		settingsService: settingsService,
+	}
+}
+
+func (s *GitOpsSyncService) getEnvironmentSyncLimits(ctx context.Context) (int, int64, int64) {
+	if s.settingsService == nil {
+		return defaultMaxSyncFiles, defaultMaxSyncTotalSize, defaultMaxSyncBinarySize
+	}
+
+	maxFiles := normalizeSyncLimitSetting(s.settingsService.GetIntSetting(ctx, "gitSyncMaxFiles", defaultMaxSyncFiles), defaultMaxSyncFiles)
+	maxTotalSizeMB := normalizeSyncLimitSetting(
+		s.settingsService.GetIntSetting(ctx, "gitSyncMaxTotalSizeMb", defaultMaxSyncTotalSizeMB),
+		defaultMaxSyncTotalSizeMB,
+	)
+	maxBinarySizeMB := normalizeSyncLimitSetting(
+		s.settingsService.GetIntSetting(ctx, "gitSyncMaxBinarySizeMb", defaultMaxSyncBinarySizeMB),
+		defaultMaxSyncBinarySizeMB,
+	)
+
+	return maxFiles, megabytesToBytes(maxTotalSizeMB), megabytesToBytes(maxBinarySizeMB)
+}
+
+func (s *GitOpsSyncService) getEffectiveSyncLimits(ctx context.Context, sync *models.GitOpsSync) (int, int64, int64) {
+	environmentMaxFiles, environmentMaxTotalSize, environmentMaxBinarySize := s.getEnvironmentSyncLimits(ctx)
+
+	return effectiveIntLimit(sync.MaxSyncFiles, environmentMaxFiles),
+		effectiveInt64Limit(sync.MaxSyncTotalSize, environmentMaxTotalSize),
+		effectiveInt64Limit(sync.MaxSyncBinarySize, environmentMaxBinarySize)
 }
 
 func (s *GitOpsSyncService) ListSyncIntervalsRaw(ctx context.Context) ([]startup.IntervalMigrationItem, error) {
@@ -167,16 +261,22 @@ func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string
 		projectName = req.Name
 	}
 
+	defaultMaxFiles, defaultMaxTotalSize, defaultMaxBinarySize := s.getEnvironmentSyncLimits(ctx)
+
 	sync := models.GitOpsSync{
-		Name:          req.Name,
-		EnvironmentID: environmentID,
-		RepositoryID:  req.RepositoryID,
-		Branch:        req.Branch,
-		ComposePath:   req.ComposePath,
-		ProjectName:   projectName,
-		ProjectID:     nil, // Will be set during first sync
-		AutoSync:      false,
-		SyncInterval:  60,
+		Name:              req.Name,
+		EnvironmentID:     environmentID,
+		RepositoryID:      req.RepositoryID,
+		Branch:            req.Branch,
+		ComposePath:       req.ComposePath,
+		ProjectName:       projectName,
+		ProjectID:         nil, // Will be set during first sync
+		AutoSync:          false,
+		SyncInterval:      60,
+		SyncDirectory:     true, // Default to directory sync
+		MaxSyncFiles:      defaultMaxFiles,
+		MaxSyncTotalSize:  defaultMaxTotalSize,
+		MaxSyncBinarySize: defaultMaxBinarySize,
 	}
 
 	if req.AutoSync != nil {
@@ -184,6 +284,21 @@ func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string
 	}
 	if req.SyncInterval != nil {
 		sync.SyncInterval = *req.SyncInterval
+	}
+	if req.SyncDirectory != nil {
+		sync.SyncDirectory = *req.SyncDirectory
+	}
+	if err := validateSyncLimits(req.MaxSyncFiles, req.MaxSyncTotalSize, req.MaxSyncBinarySize); err != nil {
+		return nil, err
+	}
+	if req.MaxSyncFiles != nil {
+		sync.MaxSyncFiles = *req.MaxSyncFiles
+	}
+	if req.MaxSyncTotalSize != nil {
+		sync.MaxSyncTotalSize = *req.MaxSyncTotalSize
+	}
+	if req.MaxSyncBinarySize != nil {
+		sync.MaxSyncBinarySize = *req.MaxSyncBinarySize
 	}
 
 	if err := s.db.WithContext(ctx).Create(&sync).Error; err != nil {
@@ -247,6 +362,21 @@ func (s *GitOpsSyncService) UpdateSync(ctx context.Context, environmentID, id st
 	}
 	if req.SyncInterval != nil {
 		updates["sync_interval"] = *req.SyncInterval
+	}
+	if req.SyncDirectory != nil {
+		updates["sync_directory"] = *req.SyncDirectory
+	}
+	if err := validateSyncLimits(req.MaxSyncFiles, req.MaxSyncTotalSize, req.MaxSyncBinarySize); err != nil {
+		return nil, err
+	}
+	if req.MaxSyncFiles != nil {
+		updates["max_sync_files"] = *req.MaxSyncFiles
+	}
+	if req.MaxSyncTotalSize != nil {
+		updates["max_sync_total_size"] = *req.MaxSyncTotalSize
+	}
+	if req.MaxSyncBinarySize != nil {
+		updates["max_sync_binary_size"] = *req.MaxSyncBinarySize
 	}
 
 	if len(updates) > 0 {
@@ -381,17 +511,67 @@ func (s *GitOpsSyncService) PerformSync(ctx context.Context, environmentID, id s
 		}
 	}
 
-	// Get or create project
-	project, err := s.getOrCreateProjectInternal(syncCtx, sync, id, composeContent, envContent, result, actor)
-	if err != nil {
-		return result, err
+	var project *models.Project
+	var syncedFiles []string
+
+	if sync.SyncDirectory {
+		// Directory sync mode - sync entire directory containing compose file
+		slog.InfoContext(syncCtx, "Using directory sync mode", "syncId", id, "composePath", sync.ComposePath)
+
+		// Walk directory once and get all files
+		var dirComposeContent string
+		var syncFiles []projects.SyncFile
+		var err error
+		dirComposeContent, syncFiles, err = s.walkAndParseSyncDirectory(syncCtx, sync, repoPath)
+		if err != nil {
+			return result, s.failSync(syncCtx, id, result, sync, actor, "Failed to walk directory", err.Error())
+		}
+
+		// Get or create project with compose content
+		project, err = s.getOrCreateProjectInternal(syncCtx, sync, id, dirComposeContent, nil, result, actor)
+		if err != nil {
+			return result, err
+		}
+
+		// Write all directory files to the project
+		oldSyncedFiles := parseSyncedFiles(sync.SyncedFiles)
+		syncedFiles, err = s.writeSyncFilesToProject(syncCtx, sync, project, syncFiles, oldSyncedFiles)
+		if err != nil {
+			slog.ErrorContext(syncCtx, "Failed to write directory files to project", "error", err, "syncId", id)
+			// Don't fail the sync - the project was created/updated with compose content
+			// Fall back to just tracking the file paths
+			syncedFiles = make([]string, len(syncFiles))
+			for i, f := range syncFiles {
+				syncedFiles[i] = f.RelativePath
+			}
+		}
+
+		// Update sync status with synced files
+		s.updateSyncStatusWithFiles(syncCtx, id, "success", "", commitHash, syncedFiles)
+	} else {
+		// Single file sync mode - existing behavior
+		slog.InfoContext(syncCtx, "Using single file sync mode", "syncId", id, "composePath", sync.ComposePath)
+
+		// Get or create project (uses composeContent and envContent already read above)
+		var err error
+		project, err = s.getOrCreateProjectInternal(syncCtx, sync, id, composeContent, envContent, result, actor)
+		if err != nil {
+			return result, err
+		}
+
+		// Track single compose file as synced
+		syncedFiles = []string{filepath.Base(sync.ComposePath)}
+
+		// Update sync status with synced files
+		s.updateSyncStatusWithFiles(syncCtx, id, "success", "", commitHash, syncedFiles)
 	}
 
-	// Update sync status
-	s.updateSyncStatus(syncCtx, id, "success", "", commitHash)
-
 	result.Success = true
-	result.Message = fmt.Sprintf("Successfully synced compose file from %s to project %s", sync.ComposePath, project.Name)
+	if sync.SyncDirectory {
+		result.Message = fmt.Sprintf("Successfully synced directory with %d files to project %s", len(syncedFiles), project.Name)
+	} else {
+		result.Message = fmt.Sprintf("Successfully synced compose file from %s to project %s", sync.ComposePath, project.Name)
+	}
 
 	// Log success event
 	_, _ = s.eventService.CreateEvent(syncCtx, CreateEventRequest{
@@ -458,10 +638,10 @@ func (s *GitOpsSyncService) GetSyncStatus(ctx context.Context, environmentID, id
 }
 
 func (s *GitOpsSyncService) SyncAllEnabled(ctx context.Context) error {
-	var syncs []models.GitOpsSync
+	var syncs []scheduledGitOpsSync
 	if err := s.db.WithContext(ctx).
-		Preload("Repository").
-		Preload("Project").
+		Table("gitops_syncs").
+		Select("id", "environment_id", "sync_interval", "last_sync_at").
 		Where("auto_sync = ?", true).
 		Find(&syncs).Error; err != nil {
 		return fmt.Errorf("failed to get auto-sync enabled syncs: %w", err)
@@ -551,13 +731,17 @@ func (s *GitOpsSyncService) ImportSyncs(ctx context.Context, environmentID strin
 		}
 
 		createReq := gitops.CreateSyncRequest{
-			Name:         importItem.SyncName,
-			RepositoryID: repo.ID,
-			Branch:       importItem.Branch,
-			ComposePath:  importItem.DockerComposePath,
-			ProjectName:  importItem.SyncName,
-			AutoSync:     new(importItem.AutoSync),
-			SyncInterval: new(importItem.SyncInterval),
+			Name:              importItem.SyncName,
+			RepositoryID:      repo.ID,
+			Branch:            importItem.Branch,
+			ComposePath:       importItem.DockerComposePath,
+			ProjectName:       importItem.SyncName,
+			AutoSync:          new(importItem.AutoSync),
+			SyncInterval:      new(importItem.SyncInterval),
+			SyncDirectory:     importItem.SyncDirectory,
+			MaxSyncFiles:      importItem.MaxSyncFiles,
+			MaxSyncTotalSize:  importItem.MaxSyncTotalSize,
+			MaxSyncBinarySize: importItem.MaxSyncBinarySize,
 		}
 
 		_, err = s.CreateSync(ctx, environmentID, createReq, actor)
@@ -686,4 +870,134 @@ func envContentChangedInternal(oldEnv, newEnv string) bool {
 	}
 
 	return !maps.Equal(oldEnvMap, newEnvMap)
+}
+
+// getProjectsDirectory returns the configured projects directory path
+func (s *GitOpsSyncService) getProjectsDirectory(ctx context.Context) (string, error) {
+	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
+	return projects.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
+}
+
+// parseSyncedFiles parses the JSON array of synced file paths from the database
+func parseSyncedFiles(syncedFilesJSON *string) []string {
+	if syncedFilesJSON == nil || *syncedFilesJSON == "" {
+		return nil
+	}
+	var files []string
+	if err := json.Unmarshal([]byte(*syncedFilesJSON), &files); err != nil {
+		return nil
+	}
+	return files
+}
+
+// marshalSyncedFiles converts a list of file paths to JSON for storage
+func marshalSyncedFiles(files []string) *string {
+	if len(files) == 0 {
+		return nil
+	}
+	data, err := json.Marshal(files)
+	if err != nil {
+		return nil
+	}
+	result := string(data)
+	return &result
+}
+
+// walkAndParseSyncDirectory walks the repository directory and returns all files with their contents.
+// Returns the compose file content, the list of SyncFile entries, and an error if any.
+func (s *GitOpsSyncService) walkAndParseSyncDirectory(ctx context.Context, sync *models.GitOpsSync, repoPath string) (string, []projects.SyncFile, error) {
+	slog.InfoContext(ctx, "Starting directory walk", "syncId", sync.ID, "composePath", sync.ComposePath)
+
+	// Walk the directory to get all files
+	maxFiles, maxTotalSize, maxBinarySize := s.getEffectiveSyncLimits(ctx, sync)
+
+	walkResult, err := s.repoService.gitClient.WalkDirectory(ctx, repoPath, sync.ComposePath, maxFiles, maxTotalSize, maxBinarySize)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to walk directory: %w", err)
+	}
+
+	slog.InfoContext(ctx, "Directory walk complete",
+		"syncId", sync.ID,
+		"totalFiles", walkResult.TotalFiles,
+		"totalSize", walkResult.TotalSize,
+		"skippedBinaries", walkResult.SkippedBinaries)
+
+	// WalkDirectory roots the walk at filepath.Dir(sync.ComposePath), so the
+	// compose file is always emitted at the top level as filepath.Base(sync.ComposePath).
+	composeFileName := filepath.Base(sync.ComposePath)
+	var composeContent string
+
+	// Convert walked files to SyncFile format
+	syncFiles := make([]projects.SyncFile, len(walkResult.Files))
+	for i, f := range walkResult.Files {
+		syncFiles[i] = projects.SyncFile{
+			RelativePath: f.RelativePath,
+			Content:      f.Content,
+		}
+		if f.RelativePath == composeFileName {
+			composeContent = string(f.Content)
+		}
+	}
+
+	if composeContent == "" {
+		return "", nil, fmt.Errorf("compose file %s not found in walked directory", composeFileName)
+	}
+
+	return composeContent, syncFiles, nil
+}
+
+// writeSyncFilesToProject writes the given sync files to the project directory.
+// If oldSyncedFiles is provided, removed files will be cleaned up first.
+func (s *GitOpsSyncService) writeSyncFilesToProject(ctx context.Context, sync *models.GitOpsSync, project *models.Project, syncFiles []projects.SyncFile, oldSyncedFiles []string) ([]string, error) {
+	projectsDir, err := s.getProjectsDirectory(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get projects directory: %w", err)
+	}
+
+	// Build list of new file paths
+	newFiles := make([]string, len(syncFiles))
+	for i, f := range syncFiles {
+		newFiles[i] = f.RelativePath
+	}
+
+	// Clean up removed files if we have old sync data
+	if len(oldSyncedFiles) > 0 {
+		if err := projects.CleanupRemovedFiles(projectsDir, project.Path, oldSyncedFiles, newFiles); err != nil {
+			slog.WarnContext(ctx, "Failed to cleanup removed files", "error", err, "syncId", sync.ID)
+			// Continue despite cleanup error - it's best effort
+		}
+	}
+
+	// Write all files to project directory
+	writtenPaths, err := projects.WriteSyncedDirectory(projectsDir, project.Path, syncFiles)
+	if err != nil {
+		return nil, fmt.Errorf("failed to write synced directory: %w", err)
+	}
+
+	slog.InfoContext(ctx, "Directory sync written", "syncId", sync.ID, "projectId", project.ID, "filesWritten", len(writtenPaths))
+	return writtenPaths, nil
+}
+
+// updateSyncStatusWithFiles updates sync status including the list of synced files
+func (s *GitOpsSyncService) updateSyncStatusWithFiles(ctx context.Context, id, status, errorMsg, commitHash string, syncedFiles []string) {
+	now := time.Now()
+	updates := map[string]interface{}{
+		"last_sync_at":     now,
+		"last_sync_status": status,
+		"synced_files":     marshalSyncedFiles(syncedFiles),
+	}
+
+	if errorMsg != "" {
+		updates["last_sync_error"] = errorMsg
+	} else {
+		updates["last_sync_error"] = nil
+	}
+
+	if commitHash != "" {
+		updates["last_sync_commit"] = commitHash
+	}
+
+	if err := s.db.WithContext(ctx).Model(&models.GitOpsSync{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+		slog.ErrorContext(ctx, "Failed to update sync status with files", "error", err, "syncId", id)
+	}
 }

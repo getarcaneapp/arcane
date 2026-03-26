@@ -16,6 +16,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	dockerutils "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/containerstats"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	containertypes "github.com/getarcaneapp/arcane/types/container"
@@ -33,6 +34,7 @@ type ContainerService struct {
 	eventService    *EventService
 	imageService    *ImageService
 	settingsService *SettingsService
+	statsHistory    containerstats.Store
 }
 
 const (
@@ -578,13 +580,14 @@ func (s *ContainerService) StreamStats(ctx context.Context, containerID string, 
 	defer func() { _ = stats.Body.Close() }()
 
 	decoder := json.NewDecoder(stats.Body)
+	historySent := false
 
 	for {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 
-		var statsData any
+		var statsData container.StatsResponse
 		if err := decoder.Decode(&statsData); err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
@@ -595,8 +598,25 @@ func (s *ContainerService) StreamStats(ctx context.Context, containerID string, 
 			return fmt.Errorf("failed to decode stats: %w", err)
 		}
 
+		recordedAt := statsData.Read
+		if recordedAt.IsZero() {
+			recordedAt = time.Now()
+		}
+
+		payload := containertypes.StatsStreamPayload{
+			StatsResponse:        statsData,
+			CurrentHistorySample: containerstats.BuildSample(statsData),
+		}
+		payload.StatsHistory = s.statsHistory.Record(
+			containerID,
+			payload.CurrentHistorySample,
+			!historySent,
+			recordedAt,
+		)
+		historySent = true
+
 		select {
-		case statsChan <- statsData:
+		case statsChan <- payload:
 		case <-ctx.Done():
 			return ctx.Err()
 		}

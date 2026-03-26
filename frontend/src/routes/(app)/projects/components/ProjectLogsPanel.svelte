@@ -30,10 +30,6 @@
 		viewer?.stopLogStream();
 	}
 
-	function handleClear() {
-		viewer?.clearLogs();
-	}
-
 	async function handleRefresh() {
 		await viewer?.clearLogs({ hard: true, restart: true });
 	}
@@ -78,7 +74,6 @@
 				disabled={!projectId}
 				onStart={handleStart}
 				onStop={handleStop}
-				onClear={handleClear}
 				onRefresh={handleRefresh}
 			/>
 		</div>

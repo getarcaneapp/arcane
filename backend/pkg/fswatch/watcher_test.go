@@ -48,6 +48,75 @@ func TestWatcher_StartWatchesExistingSymlinkDirectoriesWhenEnabled(t *testing.T)
 	}
 }
 
+func TestWatcher_StartTriggersOnAtomicSaveTempFileInsideProjectDir(t *testing.T) {
+	root := t.TempDir()
+	projectDir := filepath.Join(root, "demo")
+	require.NoError(t, os.MkdirAll(projectDir, 0o755))
+
+	changeCh := make(chan struct{}, 1)
+	ctx := t.Context()
+
+	watcher, err := NewWatcher(root, WatcherOptions{
+		Debounce: 25 * time.Millisecond,
+		MaxDepth: 1,
+		OnChange: func(context.Context) {
+			select {
+			case changeCh <- struct{}{}:
+			default:
+			}
+		},
+	})
+	require.NoError(t, err)
+	require.NoError(t, watcher.Start(ctx))
+	defer func() {
+		require.NoError(t, watcher.Stop())
+	}()
+
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, ".compose.yaml.tmp"), []byte("services: {}\n"), 0o644))
+
+	select {
+	case <-changeCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected temp file change inside project directory to trigger watcher callback")
+	}
+}
+
+func TestWatcher_StartTriggersOnChmodInsideProjectDir(t *testing.T) {
+	root := t.TempDir()
+	projectDir := filepath.Join(root, "demo")
+	require.NoError(t, os.MkdirAll(projectDir, 0o755))
+
+	targetFile := filepath.Join(projectDir, "notes.tmp")
+	require.NoError(t, os.WriteFile(targetFile, []byte("demo\n"), 0o644))
+
+	changeCh := make(chan struct{}, 1)
+	ctx := t.Context()
+
+	watcher, err := NewWatcher(root, WatcherOptions{
+		Debounce: 25 * time.Millisecond,
+		MaxDepth: 1,
+		OnChange: func(context.Context) {
+			select {
+			case changeCh <- struct{}{}:
+			default:
+			}
+		},
+	})
+	require.NoError(t, err)
+	require.NoError(t, watcher.Start(ctx))
+	defer func() {
+		require.NoError(t, watcher.Stop())
+	}()
+
+	require.NoError(t, os.Chmod(targetFile, 0o600))
+
+	select {
+	case <-changeCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected chmod inside project directory to trigger watcher callback")
+	}
+}
+
 func TestWatcher_StartSkipsExistingSymlinkDirectoriesWhenDisabled(t *testing.T) {
 	root := t.TempDir()
 	targetRoot := t.TempDir()

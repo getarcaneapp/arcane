@@ -28,13 +28,15 @@
 	const projectsQuery = createQuery(() => ({
 		queryKey: queryKeys.projects.list(envId, projectRequestOptions),
 		queryFn: () => projectService.getProjectsForEnvironment(envId, projectRequestOptions),
-		initialData: data.projects
+		initialData: data.projects,
+		refetchOnMount: false
 	}));
 
 	const projectStatusCountsQuery = createQuery(() => ({
 		queryKey: queryKeys.projects.statusCounts(envId),
 		queryFn: () => projectService.getProjectStatusCountsForEnvironment(envId),
-		initialData: data.projectStatusCounts
+		initialData: data.projectStatusCounts,
+		refetchOnMount: false
 	}));
 
 	const checkUpdatesMutation = createMutation(() => ({

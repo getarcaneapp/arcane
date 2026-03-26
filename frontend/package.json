@@ -46,7 +46,7 @@
 		"svelte": "^5.54.1",
 		"svelte-codemirror-editor": "^2.1.0",
 		"svelte-motion": "^0.12.2",
-		"yaml": "^2.8.2"
+		"yaml": "^2.8.3"
 	},
 	"devDependencies": {
 		"@iconify/json": "^2.2.449",

@@ -20,7 +20,8 @@
 	import { browser } from '$app/environment';
 	import { m } from '$lib/paraglide/messages';
 	import configStore from '$lib/stores/config-store';
-	import { arcaneDarkInit } from './theme';
+	import { mode } from 'mode-watcher';
+	import { arcaneDarkInit, arcaneLightInit } from './theme';
 	import { createDefaultSummary, ENV_SNIPPETS, YAML_SNIPPETS } from './editor-constants';
 	import { createEnterIndentKeymap } from './enter-indentation';
 	import { createMergeHostAction, type MergeActionParams } from './merge-editor';
@@ -566,7 +567,7 @@
 
 	const theme = $derived.by(() => {
 		$configStore;
-		return arcaneDarkInit();
+		return mode.current === 'dark' ? arcaneDarkInit() : arcaneLightInit();
 	});
 
 	const mergeHostAction = createMergeHostAction({
@@ -720,13 +721,21 @@
 	:global(.arcane-code-editor .cm-editor .cm-scroller) {
 		overflow-x: auto;
 	}
-	:global(.arcane-code-editor .cm-editor .cm-gutters) {
+	:global(.dark .arcane-code-editor .cm-editor .cm-gutters) {
 		background-color: #18181b;
 		border-right: none;
 	}
-	:global(.arcane-code-editor .cm-editor .cm-activeLineGutter) {
+	:global(.dark .arcane-code-editor .cm-editor .cm-activeLineGutter) {
 		background-color: #2c313a;
 		color: #e5e7eb;
+	}
+	:global(:root:not(.dark) .arcane-code-editor .cm-editor .cm-gutters) {
+		background-color: #ffffff;
+		border-right: none;
+	}
+	:global(:root:not(.dark) .arcane-code-editor .cm-editor .cm-activeLineGutter) {
+		background-color: #f0f1f3;
+		color: #24292f;
 	}
 	:global(.arcane-code-editor .cm-mergeView) {
 		height: 100%;
