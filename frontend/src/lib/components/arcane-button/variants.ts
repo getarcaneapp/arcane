@@ -205,7 +205,7 @@ export const actionConfigs = {
 		loadingLabel: m.common_action_fetching_logs()
 	},
 	json: {
-		defaultLabel: m.common_json(),
+		defaultLabel: m.common_parsed(),
 		IconComponent: CodeIcon,
 		tone: 'outline',
 		loadingLabel: m.common_processing()

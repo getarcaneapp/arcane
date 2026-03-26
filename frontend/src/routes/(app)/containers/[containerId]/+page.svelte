@@ -102,10 +102,6 @@
 		await invalidateAll();
 	}
 
-	function handleLogClear() {
-		void invalidateAll();
-	}
-
 	const hasEnvVars = $derived(!!(container?.config?.env && container.config.env.length > 0));
 	const hasPorts = $derived(!!(container?.ports && container.ports.length > 0));
 	const hasLabels = $derived(!!(container?.labels && Object.keys(container.labels).length > 0));
@@ -210,7 +206,7 @@
 {#if container}
 	<ContainerDetailStatsSync
 		containerId={container.id}
-		enabled={activeTab === 'stats' && !!container.state?.running}
+		enabled={(activeTab === 'stats' || activeTab === 'logs') && !!container.state?.running}
 		bind:stats
 		bind:hasInitialStatsLoaded
 	/>
@@ -275,7 +271,14 @@
 
 			<Tabs.Content value="logs" class="h-full">
 				{#if activeTab === 'logs'}
-					<ContainerLogsPanel containerId={container?.id} bind:autoScroll={autoScrollLogs} onClear={handleLogClear} />
+					<ContainerLogsPanel
+						containerId={container?.id}
+						{stats}
+						{hasInitialStatsLoaded}
+						isRunning={!!container.state?.running}
+						{cpuLimit}
+						bind:autoScroll={autoScrollLogs}
+					/>
 				{/if}
 			</Tabs.Content>
 

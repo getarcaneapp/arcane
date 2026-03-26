@@ -141,4 +141,3 @@ export const arcaneLightInit = (options?: Partial<CreateThemeOptions>) => {
 		styles: [...dynamicStyles, ...styles]
 	});
 };
-
