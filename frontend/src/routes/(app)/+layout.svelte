@@ -95,14 +95,14 @@
 	<main class="flex-1">
 		<section
 			class={cn(
-				'px-2',
+				'px-3',
 				navigationMode === 'docked'
 					? navigationSettings.scrollToHide
-						? 'pt-5 sm:px-5 sm:pt-5'
-						: 'pt-5 pb-(--mobile-docked-nav-offset,calc(3.5rem+env(safe-area-inset-bottom))) sm:p-5'
+						? 'pt-5'
+						: 'pt-5 pb-(--mobile-docked-nav-offset,calc(3.5rem+env(safe-area-inset-bottom)))'
 					: navigationSettings.scrollToHide
-						? 'py-5 sm:p-5'
-						: 'py-5 pb-(--mobile-floating-nav-offset,6rem) sm:p-5'
+						? 'py-5'
+						: 'py-5 pb-(--mobile-floating-nav-offset,6rem)'
 			)}
 		>
 			{@render children()}
