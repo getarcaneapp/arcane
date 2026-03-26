@@ -104,7 +104,7 @@ func RegisterUpdater(api huma.API, updaterService *services.UpdaterService) {
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/containers/{containerId}/update",
 		Summary:     "Update a single container",
-		Description: "Pull the latest image and recreate a specific container",
+		Description: "Pull the latest image and apply the appropriate update strategy for a specific container",
 		Tags:        []string{"Updater", "Containers"},
 		Security: []map[string][]string{
 			{"BearerAuth": {}},
@@ -177,7 +177,7 @@ func (h *UpdaterHandler) GetUpdaterHistory(ctx context.Context, input *GetUpdate
 	}, nil
 }
 
-// UpdateContainer updates a single container by pulling the latest image and recreating it.
+// UpdateContainer updates a single container by pulling the latest image and applying the appropriate update flow.
 func (h *UpdaterHandler) UpdateContainer(ctx context.Context, input *UpdateContainerInput) (*UpdateContainerOutput, error) {
 	if h.updaterService == nil {
 		return nil, huma.Error500InternalServerError("service not available")

@@ -274,6 +274,127 @@ func TestProjectService_NormalizeComposeProjectName(t *testing.T) {
 	}
 }
 
+func TestProjectService_GetProjectByComposeName(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("exact match", func(t *testing.T) {
+		db := setupProjectTestDB(t)
+		svc := NewProjectService(db, nil, nil, nil, nil, nil)
+
+		proj := &models.Project{
+			BaseModel: models.BaseModel{ID: "p1"},
+			Name:      "myproject",
+			Path:      "/tmp/myproject",
+		}
+		require.NoError(t, db.Create(proj).Error)
+
+		found, err := svc.GetProjectByComposeName(ctx, "myproject")
+		require.NoError(t, err)
+		assert.Equal(t, proj.ID, found.ID)
+	})
+
+	t.Run("normalized fallback", func(t *testing.T) {
+		db := setupProjectTestDB(t)
+		svc := NewProjectService(db, nil, nil, nil, nil, nil)
+
+		proj := &models.Project{
+			BaseModel: models.BaseModel{ID: "p1"},
+			Name:      "myproject",
+			Path:      "/tmp/myproject",
+		}
+		require.NoError(t, db.Create(proj).Error)
+
+		found, err := svc.GetProjectByComposeName(ctx, "My Project!")
+		require.NoError(t, err)
+		assert.Equal(t, proj.ID, found.ID)
+	})
+
+	t.Run("display name in db, normalized compose label input", func(t *testing.T) {
+		db := setupProjectTestDB(t)
+		svc := NewProjectService(db, nil, nil, nil, nil, nil)
+
+		display := &models.Project{
+			BaseModel: models.BaseModel{ID: "p2"},
+			Name:      "My Project!",
+			Path:      "/tmp/my-project",
+		}
+		require.NoError(t, db.Create(display).Error)
+
+		found, err := svc.GetProjectByComposeName(ctx, "myproject")
+		require.NoError(t, err)
+		assert.Equal(t, display.ID, found.ID)
+	})
+
+	t.Run("invalidates stale normalized cache entries after deletion", func(t *testing.T) {
+		db := setupProjectTestDB(t)
+		svc := NewProjectService(db, nil, nil, nil, nil, nil)
+
+		original := &models.Project{
+			BaseModel: models.BaseModel{ID: "p3"},
+			Name:      "My Project!",
+			Path:      "/tmp/my-project",
+		}
+		require.NoError(t, db.Create(original).Error)
+
+		found, err := svc.GetProjectByComposeName(ctx, "myproject")
+		require.NoError(t, err)
+		assert.Equal(t, original.ID, found.ID)
+
+		cachedProjectID, cached := svc.getCachedComposeProjectIDInternal("myproject")
+		require.True(t, cached)
+		assert.Equal(t, original.ID, cachedProjectID)
+
+		require.NoError(t, db.Delete(&models.Project{}, "id = ?", original.ID).Error)
+
+		replacement := &models.Project{
+			BaseModel: models.BaseModel{ID: "p4"},
+			Name:      "My Project!",
+			Path:      "/tmp/my-project-recreated",
+		}
+		require.NoError(t, db.Create(replacement).Error)
+
+		found, err = svc.GetProjectByComposeName(ctx, "myproject")
+		require.NoError(t, err)
+		assert.Equal(t, replacement.ID, found.ID)
+
+		cachedProjectID, cached = svc.getCachedComposeProjectIDInternal("myproject")
+		require.True(t, cached)
+		assert.Equal(t, replacement.ID, cachedProjectID)
+	})
+
+	t.Run("invalidates stale normalized cache entries after rename", func(t *testing.T) {
+		db := setupProjectTestDB(t)
+		svc := NewProjectService(db, nil, nil, nil, nil, nil)
+
+		original := &models.Project{
+			BaseModel: models.BaseModel{ID: "p5"},
+			Name:      "My App!",
+			Path:      "/tmp/my-app",
+		}
+		require.NoError(t, db.Create(original).Error)
+
+		found, err := svc.GetProjectByComposeName(ctx, "myapp")
+		require.NoError(t, err)
+		assert.Equal(t, original.ID, found.ID)
+
+		cachedProjectID, cached := svc.getCachedComposeProjectIDInternal("myapp")
+		require.True(t, cached)
+		assert.Equal(t, original.ID, cachedProjectID)
+
+		require.NoError(t, db.Model(&models.Project{}).Where("id = ?", original.ID).Updates(map[string]any{
+			"name": "New Service",
+			"path": "/tmp/new-service",
+		}).Error)
+
+		_, err = svc.GetProjectByComposeName(ctx, "myapp")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "project not found")
+
+		_, cached = svc.getCachedComposeProjectIDInternal("myapp")
+		assert.False(t, cached)
+	})
+}
+
 func TestResolveServiceImagePullMode(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -1346,8 +1467,8 @@ func TestProjectService_PrepareServiceBuildRequest_UsesExecutorVisiblePaths(t *t
 	)
 	require.NoError(t, err)
 
-	assert.Equal(t, "/app/data/projects/demo", req.ContextDir)
-	assert.Equal(t, "/app/data/projects/demo/Dockerfile.custom", req.Dockerfile)
+	assert.Equal(t, "/docker-data/arcane/projects/demo", req.ContextDir)
+	assert.Equal(t, "/docker-data/arcane/projects/demo/Dockerfile.custom", req.Dockerfile)
 }
 
 func TestProjectService_PrepareServiceBuildRequest_UsesInlineDockerfile(t *testing.T) {
