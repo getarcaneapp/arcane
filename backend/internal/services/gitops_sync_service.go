@@ -39,6 +39,13 @@ const (
 	defaultMaxSyncBinarySize   = defaultMaxSyncBinarySizeMB * 1024 * 1024
 )
 
+type scheduledGitOpsSync struct {
+	ID            string
+	EnvironmentID string
+	SyncInterval  int
+	LastSyncAt    *time.Time
+}
+
 func validateSyncLimits(maxFiles *int, maxTotalSize, maxBinarySize *int64) error {
 	if maxFiles != nil && *maxFiles < 0 {
 		return fmt.Errorf("maxSyncFiles must be non-negative")
@@ -631,10 +638,10 @@ func (s *GitOpsSyncService) GetSyncStatus(ctx context.Context, environmentID, id
 }
 
 func (s *GitOpsSyncService) SyncAllEnabled(ctx context.Context) error {
-	var syncs []models.GitOpsSync
+	var syncs []scheduledGitOpsSync
 	if err := s.db.WithContext(ctx).
-		Preload("Repository").
-		Preload("Project").
+		Table("gitops_syncs").
+		Select("id", "environment_id", "sync_interval", "last_sync_at").
 		Where("auto_sync = ?", true).
 		Find(&syncs).Error; err != nil {
 		return fmt.Errorf("failed to get auto-sync enabled syncs: %w", err)

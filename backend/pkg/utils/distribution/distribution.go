@@ -16,6 +16,14 @@ import (
 
 const defaultRegistryHost = "index.docker.io"
 
+// trustedAuthDelegations maps registry hosts to their trusted external auth realm hosts.
+// Some registries serve images under their own domain but delegate token auth to a
+// separate host (e.g. lscr.io delegates to ghcr.io).
+var trustedAuthDelegations = map[string]string{
+	"docker.io": "auth.docker.io",
+	"lscr.io":   "ghcr.io",
+}
+
 type Credentials struct {
 	Username string
 	Token    string
@@ -74,10 +82,14 @@ func IsFallbackEligibleDaemonError(err error) bool {
 		return false
 	}
 
-	// Network-level daemon errors are intentionally not fallback-eligible.
-	// If the daemon cannot reach the registry at all, the backend's direct HTTP
-	// client is also unlikely to succeed, so only registry/API capability
-	// failures are allowed to trigger fallback.
+	// Most network-level daemon errors are not fallback-eligible: if the daemon
+	// cannot reach the registry, the backend's direct HTTP client is also unlikely
+	// to succeed. Only registry/API capability failures trigger fallback.
+	//
+	// Exception: "proxyconnect" errors indicate the daemon's HTTP transport has a
+	// broken proxy configured at the OS level (e.g. Synology NAS with Docker 20.10).
+	// The Arcane backend container does not inherit that proxy, so the direct HTTP
+	// client can still reach the registry successfully.
 	indicators := []string{
 		"not found",
 		" 404 ",
@@ -91,6 +103,7 @@ func IsFallbackEligibleDaemonError(err error) bool {
 		"unsupported",
 		"distribution disabled",
 		"distribution api",
+		"proxyconnect",
 	}
 
 	for _, indicator := range indicators {
@@ -426,9 +439,7 @@ func validateAuthRealmInternal(registryHost, realm string) error {
 		return nil
 	}
 
-	// Docker Hub serves token auth from auth.docker.io while image pulls are made
-	// against index.docker.io / registry-1.docker.io.
-	if registry == "docker.io" && realmHost == "auth.docker.io" {
+	if trustedRealm, ok := trustedAuthDelegations[registry]; ok && realmHost == trustedRealm {
 		return nil
 	}
 

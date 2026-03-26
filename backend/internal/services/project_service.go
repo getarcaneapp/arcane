@@ -853,6 +853,12 @@ func (s *ProjectService) upsertProjectForDir(ctx context.Context, dirName, dirPa
 		Where("path = ? OR dir_name = ?", dirPath, dirName).
 		First(&existing).Error
 
+	filesystemProject := models.Project{
+		Name: dirName,
+		Path: dirPath,
+	}
+	serviceCount, serviceCountErr := s.countServicesFromCompose(ctx, filesystemProject)
+
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		// Create a minimal project entry
 		reason := "Project discovered from filesystem, status pending Docker service query"
@@ -862,13 +868,16 @@ func (s *ProjectService) upsertProjectForDir(ctx context.Context, dirName, dirPa
 			Path:         dirPath,
 			Status:       models.ProjectStatusUnknown,
 			StatusReason: new(reason),
-			ServiceCount: 0,
+			ServiceCount: serviceCount,
 			RunningCount: 0,
 		}
 		slog.InfoContext(ctx, "Discovered new project with unknown status",
 			"project", dirName,
 			"path", dirPath,
 			"reason", reason)
+		if serviceCountErr != nil {
+			slog.WarnContext(ctx, "failed to read compose service count during project discovery", "project", dirName, "path", dirPath, "error", serviceCountErr)
+		}
 		if cerr := s.db.WithContext(ctx).Create(proj).Error; cerr != nil {
 			return fmt.Errorf("create project for %q failed: %w", dirPath, cerr)
 		}
@@ -884,6 +893,11 @@ func (s *ProjectService) upsertProjectForDir(ctx context.Context, dirName, dirPa
 	}
 	if existing.DirName == nil || *existing.DirName != dirName {
 		updates["dir_name"] = dirName
+	}
+	if serviceCountErr == nil && existing.ServiceCount != serviceCount {
+		updates["service_count"] = serviceCount
+	} else if serviceCountErr != nil {
+		slog.WarnContext(ctx, "failed to refresh compose service count during project sync", "projectID", existing.ID, "path", dirPath, "error", serviceCountErr)
 	}
 	if len(updates) == 0 {
 		return nil
@@ -3052,6 +3066,13 @@ func (s *ProjectService) mapProjectToDto(ctx context.Context, p models.Project, 
 	// since we are not parsing the YAML here.
 	resp.ServiceCount = p.ServiceCount
 	resp.RunningCount = runningCount
+	if resp.ServiceCount == 0 && len(services) > 0 {
+		resp.ServiceCount = len(services)
+		// Persist the inferred count so later list loads do not need compose parsing.
+		go func(ctx context.Context, pid string, count int) {
+			s.db.WithContext(ctx).Model(&models.Project{}).Where("id = ?", pid).Update("service_count", count)
+		}(context.WithoutCancel(ctx), p.ID, resp.ServiceCount)
+	}
 
 	// Fix for missing service count (e.g. newly discovered projects)
 	if resp.ServiceCount == 0 {

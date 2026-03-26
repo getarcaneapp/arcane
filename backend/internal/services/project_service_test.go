@@ -1794,6 +1794,33 @@ func TestProjectService_SyncProjectsFromFileSystem_RemovesSymlinkedProjectsWhenD
 	require.NoError(t, statErr)
 }
 
+func TestProjectService_SyncProjectsFromFileSystem_RefreshesServiceCountOnComposeChange(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsRoot := t.TempDir()
+	projectPath := createComposeProjectDir(t, projectsRoot, "demo")
+
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil)
+	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
+
+	var project models.Project
+	require.NoError(t, db.WithContext(ctx).Where("path = ?", projectPath).First(&project).Error)
+	assert.Equal(t, 1, project.ServiceCount)
+
+	updatedCompose := "services:\n  app:\n    image: nginx:alpine\n  worker:\n    image: busybox:latest\n"
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte(updatedCompose), 0o644))
+
+	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
+	require.NoError(t, db.WithContext(ctx).Where("id = ?", project.ID).First(&project).Error)
+	assert.Equal(t, 2, project.ServiceCount)
+}
+
 func TestProjectService_UpdateProject_WritesThroughSymlinkedProjectPath(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
