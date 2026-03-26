@@ -590,7 +590,7 @@
 		</Card.Root>
 	</header>
 
-	<section class="flex min-h-0 flex-1 flex-col overflow-hidden">
+	<section class="flex flex-col lg:min-h-0 lg:flex-1 lg:overflow-hidden">
 		<div class="mb-3 flex items-center justify-between gap-3">
 			<h2 class="text-lg font-semibold tracking-tight">{m.dashboard_resource_tables_title()}</h2>
 			<div class="hidden items-center gap-2 md:flex">
@@ -602,7 +602,7 @@
 				</ArcaneButton>
 			</div>
 		</div>
-		<div class="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-hidden lg:grid-cols-2">
+		<div class="grid grid-cols-1 gap-4 lg:min-h-0 lg:flex-1 lg:grid-cols-2 lg:overflow-hidden">
 			<DashboardContainerTable bind:containers isLoading={false} />
 			<DashboardImageTable bind:images isLoading={false} />
 		</div>

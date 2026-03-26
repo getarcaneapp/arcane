@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { ActionButtonGroup, type ActionButton } from '$lib/components/action-button-group/index.js';
+	import { IsTablet } from '$lib/hooks/is-tablet.svelte.js';
 	import { m } from '$lib/paraglide/messages';
 	import { StartIcon, StopIcon, TrashIcon } from '$lib/icons';
 	import { cn } from '$lib/utils';
@@ -38,6 +39,7 @@
 		class?: string;
 	} = $props();
 
+	const isTablet = new IsTablet();
 	const isAnyActionLoading = $derived(isLoading.starting || isLoading.stopping || isLoading.pruning);
 
 	const currentUserIsAdmin = $derived(!!user?.roles?.includes('admin'));
@@ -84,7 +86,26 @@
 
 <section class={cn(compact ? 'flex min-w-0 flex-1 items-center justify-end' : '', className)}>
 	{#if compact}
-		<ActionButtonGroup buttons={actionButtons} />
+		{#if isTablet.current}
+			<div class="flex w-full min-w-0 items-center justify-center gap-2">
+				{#each actionButtons as button (button.id)}
+					<ArcaneButton
+						action={button.action}
+						customLabel={button.label}
+						loadingLabel={button.loadingLabel}
+						loading={button.loading}
+						disabled={button.disabled}
+						onclick={button.onclick}
+						size="icon"
+						showLabel={false}
+						icon={button.icon}
+						class="min-w-0 flex-1"
+					/>
+				{/each}
+			</div>
+		{:else}
+			<ActionButtonGroup buttons={actionButtons} />
+		{/if}
 	{:else if currentUserIsAdmin}
 		<h2 class="mb-3 text-lg font-semibold tracking-tight">{m.quick_actions_title()}</h2>
 
