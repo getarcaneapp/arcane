@@ -117,11 +117,16 @@ func TestMigrateDatabase_DirtyOlderVersionRequiresResolution(t *testing.T) {
 	driver := newSQLiteMigrationDriverInternal(t, dbDir, "arcane-test.db")
 	require.NoError(t, migrateDatabase(driver, "sqlite", MigrationOptions{}))
 	targetVersion := downgradeTargetVersionInternal(t)
+	highestVersion, err := getHighestEmbeddedMigrationVersionInternal("sqlite")
+	require.NoError(t, err)
+	sourceDriver, err := newEmbeddedMigrationSourceInternal("sqlite")
+	require.NoError(t, err)
+
+	require.NoError(t, migrateDatabaseFromSourceInternal(newSQLiteMigrationDriverInternal(t, dbDir, "arcane-test.db"), "sqlite", highestVersion, targetVersion, "iofs", "test embedded migrate source", sourceDriver))
+
 	targetVersionInt, err := safeUintToIntInternal(targetVersion)
 	require.NoError(t, err)
 	require.NoError(t, newSQLiteMigrationDriverInternal(t, dbDir, "arcane-test.db").SetVersion(targetVersionInt, true))
-	highestVersion, err := getHighestEmbeddedMigrationVersionInternal("sqlite")
-	require.NoError(t, err)
 
 	err = migrateDatabaseToVersionInternal(newSQLiteMigrationDriverInternal(t, dbDir, "arcane-test.db"), "sqlite", MigrationOptions{}, highestVersion)
 	require.Error(t, err)
