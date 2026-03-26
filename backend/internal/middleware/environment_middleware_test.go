@@ -53,6 +53,30 @@ func TestEnvironmentMiddleware_ReturnsBadGatewayForEdgeResourcesWithoutTunnel(t 
 	assert.False(t, localHandlerHit)
 }
 
+func TestEnvironmentMiddleware_ProxiesDashboardResourcesForRemoteEnvironments(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	middleware := newTestEnvironmentMiddleware()
+	router := gin.New()
+	api := router.Group("/api")
+	api.Use(middleware.Handle)
+
+	localHandlerHit := false
+	api.GET("/environments/:id/dashboard", func(c *gin.Context) {
+		localHandlerHit = true
+		c.JSON(http.StatusOK, gin.H{"success": true})
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/environments/env-edge/dashboard", nil)
+	recorder := httptest.NewRecorder()
+
+	router.ServeHTTP(recorder, req)
+
+	assert.Equal(t, http.StatusBadGateway, recorder.Code)
+	assert.Contains(t, recorder.Body.String(), "Edge agent is not connected")
+	assert.False(t, localHandlerHit)
+}
+
 func TestEnvironmentMiddleware_KeepsEdgeManagementEndpointsLocal(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

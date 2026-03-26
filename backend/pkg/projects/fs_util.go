@@ -24,15 +24,7 @@ func GetProjectsDirectory(ctx context.Context, projectsDir string) (string, erro
 		}
 	}
 
-	// Always resolve to an absolute, cleaned path so downstream code and DB
-	// store a canonical location (prevents relative paths like "data/projects").
-	absDir, err := filepath.Abs(projectsDirectory)
-	if err == nil {
-		projectsDirectory = filepath.Clean(absDir)
-	} else {
-		// If Abs fails for any reason, still clean the provided value
-		projectsDirectory = filepath.Clean(projectsDirectory)
-	}
+	projectsDirectory = resolveProjectsDirectoryPath(projectsDirectory)
 
 	if _, err := os.Stat(projectsDirectory); os.IsNotExist(err) {
 		if err := os.MkdirAll(projectsDirectory, pkgutils.DirPerm); err != nil {
@@ -42,6 +34,56 @@ func GetProjectsDirectory(ctx context.Context, projectsDir string) (string, erro
 	}
 
 	return projectsDirectory, nil
+}
+
+func resolveProjectsDirectoryPath(projectsDirectory string) string {
+	if filepath.IsAbs(projectsDirectory) {
+		return filepath.Clean(projectsDirectory)
+	}
+
+	if backendRoot, ok := findBackendModuleRoot(); ok {
+		return filepath.Clean(filepath.Join(backendRoot, projectsDirectory))
+	}
+
+	absDir, err := filepath.Abs(projectsDirectory)
+	if err == nil {
+		return filepath.Clean(absDir)
+	}
+
+	return filepath.Clean(projectsDirectory)
+}
+
+func findBackendModuleRoot() (string, bool) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", false
+	}
+
+	candidates := []string{
+		cwd,
+		filepath.Join(cwd, "backend"),
+	}
+
+	for _, candidate := range candidates {
+		if isBackendModuleRoot(candidate) {
+			return candidate, true
+		}
+	}
+
+	return "", false
+}
+
+func isBackendModuleRoot(path string) bool {
+	if _, err := os.Stat(filepath.Join(path, "go.mod")); err != nil {
+		return false
+	}
+	if _, err := os.Stat(filepath.Join(path, "internal")); err != nil {
+		return false
+	}
+	if _, err := os.Stat(filepath.Join(path, "pkg")); err != nil {
+		return false
+	}
+	return true
 }
 
 func ReadProjectFiles(projectPath string) (composeContent, envContent string, err error) {

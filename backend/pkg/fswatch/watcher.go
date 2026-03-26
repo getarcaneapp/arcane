@@ -210,8 +210,8 @@ func (fw *Watcher) shouldHandleEvent(event fsnotify.Event) bool {
 	name := filepath.Base(event.Name)
 
 	// Watch for new directories, compose files, .env being manipulated.
-	if event.Has(fsnotify.Write) || event.Has(fsnotify.Create) || event.Has(fsnotify.Rename) || event.Has(fsnotify.Remove) {
-		if fw.isWatchableDirectory(event.Name) || projects.IsProjectFile(name) {
+	if event.Has(fsnotify.Write) || event.Has(fsnotify.Create) || event.Has(fsnotify.Rename) || event.Has(fsnotify.Remove) || event.Has(fsnotify.Chmod) {
+		if fw.isWatchableDirectory(event.Name) || projects.IsProjectFile(name) || fw.isWatchablePath(event.Name) {
 			return true
 		}
 	}
@@ -326,4 +326,18 @@ func (fw *Watcher) isWatchableDirectory(path string) bool {
 	}
 
 	return resolvedInfo.IsDir()
+}
+
+func (fw *Watcher) isWatchablePath(path string) bool {
+	cleanPath := filepath.Clean(path)
+	if cleanPath == fw.watchedPath {
+		return true
+	}
+
+	parent := filepath.Dir(cleanPath)
+	if parent == "." {
+		return false
+	}
+
+	return fw.shouldWatchDir(parent)
 }

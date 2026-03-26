@@ -16,6 +16,7 @@
 		footer,
 		class: className,
 		contentClass,
+		showCloseButton = true,
 		variant = 'dialog'
 	}: ResponsiveDialogProps = $props();
 
@@ -78,6 +79,7 @@
 					'max-h-[calc(100vh-2rem)] grid-rows-[auto_minmax(0,1fr)_auto]! overflow-hidden p-0!',
 					contentClass ?? 'sm:max-w-[425px]'
 				)}
+				{showCloseButton}
 			>
 				{#if title || description}
 					<Dialog.Header class="shrink-0 px-6 pt-6">

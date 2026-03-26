@@ -28,14 +28,11 @@
 	const isMobile = new IsMobile();
 	let selectedIds = $state<string[]>([]);
 	let displayLimit = $state(containers.pagination?.itemsPerPage ?? 5);
-	let lastFetchedLimit = $state(containers.pagination?.itemsPerPage ?? 5);
-	let resizeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 	let lastMeasuredHeight = $state(0);
 
-	// Estimate row height: ~57px per row (including borders/padding), plus ~145px for header
 	const ROW_HEIGHT = 57;
 	const HEADER_HEIGHT = 145;
-	const FOOTER_HEIGHT = 48; // Reserve space for the "showing" footer overlay
+	const FOOTER_HEIGHT = 48;
 	const MIN_ROWS = 3;
 	const MAX_ROWS = 50;
 
@@ -64,50 +61,29 @@
 		return Math.max(MIN_ROWS, Math.min(MAX_ROWS, rows));
 	}
 
-	async function syncLimit(limit: number) {
-		displayLimit = limit;
-
-		const pagination = requestOptions.pagination;
-		const currentLimit = containers.pagination?.itemsPerPage;
-		if (!pagination || (limit === lastFetchedLimit && (currentLimit === undefined || currentLimit === limit))) {
-			return;
-		}
-
-		if (resizeDebounceTimer) {
-			clearTimeout(resizeDebounceTimer);
-		}
-
-		resizeDebounceTimer = setTimeout(async () => {
-			try {
-				lastFetchedLimit = limit;
-				requestOptions = {
-					...requestOptions,
-					pagination: {
-						page: pagination.page ?? 1,
-						limit
-					}
-				};
-				containers = await containerService.getContainers(requestOptions);
-				void handleLayoutChange(lastMeasuredHeight);
-			} catch (error) {
-				console.error('Failed to sync container limit:', error);
-			} finally {
-				resizeDebounceTimer = null;
+	function updateRequestLimit(limit: number) {
+		requestOptions = {
+			...requestOptions,
+			pagination: {
+				page: requestOptions.pagination?.page ?? 1,
+				limit
 			}
-		}, 300);
+		};
 	}
 
-	async function handleLayoutChange(height: number) {
+	function handleLayoutChange(height: number) {
 		lastMeasuredHeight = height;
 		const nextLimit = calculateLimitForHeight(height);
-		await syncLimit(nextLimit);
+		displayLimit = nextLimit;
+		updateRequestLimit(nextLimit);
 	}
 
 	async function refreshContainers(options: SearchPaginationSortRequest) {
 		requestOptions = options;
 		const result = await containerService.getContainers(options);
 		containers = result;
-		await handleLayoutChange(lastMeasuredHeight);
+		displayLimit = result.pagination?.itemsPerPage ?? displayLimit;
+		handleLayoutChange(lastMeasuredHeight);
 		return result;
 	}
 
@@ -174,7 +150,7 @@
 	/>
 {/snippet}
 
-<div class="flex h-full min-h-0 flex-col" bind:clientHeight={() => lastMeasuredHeight, (value) => void handleLayoutChange(value)}>
+<div class="flex h-full min-h-0 flex-col" bind:clientHeight={() => lastMeasuredHeight, (value) => handleLayoutChange(value)}>
 	<Card.Root class="flex h-full min-h-0 flex-col">
 		<Card.Header icon={ContainersIcon} class="shrink-0">
 			<div class="flex flex-1 items-center justify-between">
