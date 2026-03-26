@@ -82,10 +82,14 @@ func IsFallbackEligibleDaemonError(err error) bool {
 		return false
 	}
 
-	// Network-level daemon errors are intentionally not fallback-eligible.
-	// If the daemon cannot reach the registry at all, the backend's direct HTTP
-	// client is also unlikely to succeed, so only registry/API capability
-	// failures are allowed to trigger fallback.
+	// Most network-level daemon errors are not fallback-eligible: if the daemon
+	// cannot reach the registry, the backend's direct HTTP client is also unlikely
+	// to succeed. Only registry/API capability failures trigger fallback.
+	//
+	// Exception: "proxyconnect" errors indicate the daemon's HTTP transport has a
+	// broken proxy configured at the OS level (e.g. Synology NAS with Docker 20.10).
+	// The Arcane backend container does not inherit that proxy, so the direct HTTP
+	// client can still reach the registry successfully.
 	indicators := []string{
 		"not found",
 		" 404 ",
