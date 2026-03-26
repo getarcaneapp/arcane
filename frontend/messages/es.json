@@ -418,7 +418,7 @@
 	"containers_update_column": "Actualizaciones",
 	"containers_update_container": "Actualizar Contenedor",
 	"containers_update_confirm_title": "Actualizar Contenedor",
-	"containers_update_confirm_message": "Esto extraerá la última imagen y reiniciará el contenedor \"{name}\". ¿Desea continuar?",
+	"containers_update_confirm_message": "Esto sacará la última imagen y aplicará la actualización apropiada para \"{name}\". ¿Desea continuar?",
 	"containers_update_pulling_image": "Expulsando la última imagen...",
 	"containers_update_success": "Contenedor \"{name}\" actualizado correctamente",
 	"containers_update_failed": "No se pudo actualizar el contenedor \"{name}\"",
