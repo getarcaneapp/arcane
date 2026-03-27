@@ -1,6 +1,7 @@
 package startup
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"net/url"
@@ -27,7 +28,7 @@ type runtimeIdentityRequest struct {
 
 // ApplyRequestedRuntimeIdentity switches the current process to the configured
 // runtime UID/GID before the rest of the app initializes.
-func ApplyRequestedRuntimeIdentity() error {
+func ApplyRequestedRuntimeIdentity(ctx context.Context) error {
 	req, warning, err := loadRuntimeIdentityRequestInternal(os.Getenv)
 	if warning != "" {
 		fmt.Fprintf(os.Stderr, "Runtime identity warning: %s\n", warning)
@@ -58,7 +59,7 @@ func ApplyRequestedRuntimeIdentity() error {
 		return err
 	}
 
-	return reexecWithRuntimeIdentityInternal(req)
+	return reexecWithRuntimeIdentityInternal(ctx, req)
 }
 
 func loadRuntimeIdentityRequestInternal(getenv func(string) string) (runtimeIdentityRequest, string, error) {

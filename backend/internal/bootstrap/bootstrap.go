@@ -31,7 +31,7 @@ import (
 
 func Bootstrap(ctx context.Context) error {
 	_ = godotenv.Load()
-	if err := startup.ApplyRequestedRuntimeIdentity(); err != nil {
+	if err := startup.ApplyRequestedRuntimeIdentity(ctx); err != nil {
 		return fmt.Errorf("apply runtime identity: %w", err)
 	}
 	cfg := config.Load()

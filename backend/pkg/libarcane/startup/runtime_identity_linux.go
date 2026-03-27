@@ -12,13 +12,13 @@ import (
 	"syscall"
 )
 
-func reexecWithRuntimeIdentityInternal(req runtimeIdentityRequest) error {
+func reexecWithRuntimeIdentityInternal(ctx context.Context, req runtimeIdentityRequest) error {
 	executable, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("resolve executable: %w", err)
 	}
 
-	cmd := exec.CommandContext(context.Background(), executable, os.Args[1:]...) //nolint:gosec // re-executing our own binary with the same args under a different UID/GID
+	cmd := exec.CommandContext(ctx, executable, os.Args[1:]...) //nolint:gosec // re-executing our own binary with the same args under a different UID/GID
 	cmd.Env = os.Environ()
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
