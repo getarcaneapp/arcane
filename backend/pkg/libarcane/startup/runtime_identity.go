@@ -47,6 +47,8 @@ func ApplyRequestedRuntimeIdentity(ctx context.Context) error {
 	}
 
 	if os.Geteuid() != 0 {
+		fmt.Fprintf(os.Stderr, "Runtime identity warning: process is not root (euid=%d), cannot switch to PUID=%d PGID=%d; continuing as current user\n",
+			os.Geteuid(), runtimeUID, runtimeGID)
 		return ensureSQLiteFilesExistInternal(os.Getenv("DATABASE_URL"))
 	}
 
@@ -167,7 +169,7 @@ func prepareWritablePathsInternal(req runtimeIdentityRequest, mountpoints map[st
 		if _, mounted := mountpoints[entryPath]; mounted {
 			continue
 		}
-		if err := chownRecursiveInternal(entryPath, uid, gid); err != nil {
+		if err := chownRecursiveInternal(entryPath, uid, gid, mountpoints); err != nil {
 			return fmt.Errorf("chown %s: %w", entryPath, err)
 		}
 	}
@@ -183,7 +185,7 @@ func prepareWritablePathsInternal(req runtimeIdentityRequest, mountpoints map[st
 		return fmt.Errorf("stat builds directory: %w", err)
 	}
 
-	if err := chownRecursiveInternal(defaultBuildsDirectory, uid, gid); err != nil {
+	if err := chownRecursiveInternal(defaultBuildsDirectory, uid, gid, mountpoints); err != nil {
 		return fmt.Errorf("chown builds directory: %w", err)
 	}
 
@@ -252,10 +254,16 @@ func sqliteDatabasePathInternal(databaseURL string) (string, bool, error) {
 	return filepath.Clean(pathPart), true, nil
 }
 
-func chownRecursiveInternal(path string, uid int, gid int) error {
+func chownRecursiveInternal(path string, uid int, gid int, mountpoints map[string]struct{}) error {
 	return filepath.Walk(path, func(currentPath string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
+		}
+		// Skip any sub-tree that is a separate mountpoint.
+		if currentPath != path {
+			if _, mounted := mountpoints[filepath.Clean(currentPath)]; mounted {
+				return filepath.SkipDir
+			}
 		}
 		//nolint:gosec // currentPath comes from fixed container paths under /app/data or /builds
 		return os.Lchown(currentPath, uid, gid)

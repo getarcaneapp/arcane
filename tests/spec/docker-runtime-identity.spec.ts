@@ -50,7 +50,7 @@ function dockerFileStat(volumePath: string, filePath: string) {
 		'sh',
 		IMAGE,
 		'-lc',
-		`stat -c '%u:%g' ${filePath}`
+		`stat -c '%u:%g' '${filePath}'`
 	]);
 }
 
@@ -115,7 +115,7 @@ async function waitForFile(container: string, filePath: string) {
 		.poll(
 			() => {
 				try {
-					return dockerExec(container, `test -f ${filePath} && echo present`);
+					return dockerExec(container, `test -f '${filePath}' && echo present`);
 				} catch {
 					return 'missing';
 				}
