@@ -898,6 +898,72 @@ test.describe('Project Detail Page', () => {
 		}
 	});
 
+	test('should enable Save when editing the initial file in restored tree view', async ({
+		page
+	}) => {
+		const regularProject = realProjects.find((p) => !p.gitOpsManagedBy);
+		test.skip(!regularProject, 'No regular (non-GitOps) projects found');
+
+		await page.goto(`/projects/${regularProject!.id || regularProject!.name}`);
+		await page.waitForLoadState('networkidle');
+
+		const configTab = page.getByRole('tab', { name: /Configuration|Config/i });
+		await configTab.click();
+		await page.waitForLoadState('networkidle');
+
+		let layoutSwitch = page.getByRole('switch', {
+			name: /Classic|Tree View/i
+		});
+		test.skip(
+			(await layoutSwitch.count()) === 0,
+			'No layout switch available for project configuration'
+		);
+
+		const projectFilesHeading = page.getByRole('heading', {
+			name: /Project Files/i
+		});
+
+		if (!(await projectFilesHeading.isVisible().catch(() => false))) {
+			await layoutSwitch.click();
+			await expect(projectFilesHeading).toBeVisible();
+		}
+
+		await page.reload();
+		await page.waitForLoadState('networkidle');
+
+		const restoredConfigTab = page.getByRole('tab', { name: /Configuration|Config/i });
+		if ((await restoredConfigTab.getAttribute('aria-selected')) !== 'true') {
+			await restoredConfigTab.click();
+			await page.waitForLoadState('networkidle');
+		}
+
+		await expect(projectFilesHeading).toBeVisible();
+		await expect(page.getByRole('heading', { name: 'compose.yaml' })).toBeVisible();
+
+		const treeComposeEditor = page.locator('.cm-editor:visible').first();
+		await expect(treeComposeEditor).toBeVisible();
+
+		const marker = `ARCANE_TREE_SAVE_${Date.now()}`;
+		const originalCompose = await getCodeMirrorValue(treeComposeEditor);
+		const updatedCompose = `${originalCompose.trimEnd()}\n# ${marker}\n`;
+		await setCodeMirrorValue(page, treeComposeEditor, updatedCompose);
+
+		const saveButton = page.getByRole('button', { name: 'Save', exact: true }).first();
+		await expect(saveButton).toBeVisible();
+		await expect(saveButton).toBeEnabled();
+
+		const envFileButton = page.getByRole('button', { name: '.env' }).first();
+		await expect(envFileButton).toBeVisible();
+
+		layoutSwitch = page.getByRole('switch', {
+			name: /Classic|Tree View/i
+		});
+		await layoutSwitch.click();
+		await expect(page.getByRole('heading', { name: 'compose.yaml' })).toBeVisible();
+		await expect(page.getByRole('button', { name: 'Save', exact: true }).first()).toBeVisible();
+		await expect(page.getByRole('button', { name: 'Save', exact: true }).first()).toBeEnabled();
+	});
+
 	test('should show logs tab for running projects', async ({ page }) => {
 		test.skip(!realProjects.length, 'No projects available for logs test');
 

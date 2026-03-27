@@ -123,14 +123,20 @@
 	let composeValidationReady = $state(false);
 	let envValidationReady = $state(false);
 	let includeFilesValidationReady = $state<Record<string, boolean>>({});
+	let composeHasChanges = $derived($inputs.composeContent.value !== originalComposeContent);
+	let envHasChanges = $derived($inputs.envContent.value !== originalEnvContent);
+	let changedIncludeFilePaths = $derived.by(() =>
+		Object.keys(includeFilesState).filter(
+			(relativePath) => includeFilesState[relativePath] !== originalIncludeFiles[relativePath]
+		)
+	);
 
 	let hasAnyErrors = $derived(
-		!composeValidationReady ||
-			!envValidationReady ||
-			Object.values(includeFilesValidationReady).some((isReady) => !isReady) ||
-			composeHasErrors ||
-			envHasErrors ||
-			Object.values(includeFilesHasErrors).some((hasError) => hasError)
+		(composeHasChanges && (!composeValidationReady || composeHasErrors)) ||
+			(envHasChanges && (!envValidationReady || envHasErrors)) ||
+			changedIncludeFilePaths.some(
+				(relativePath) => !includeFilesValidationReady[relativePath] || !!includeFilesHasErrors[relativePath]
+			)
 	);
 
 	let canSave = $derived(hasChanges && !hasAnyErrors);
@@ -334,9 +340,14 @@
 				let savedProject = updatedProject;
 
 				for (const relativePath of Object.keys(includeFilesState)) {
-					if (includeFilesState[relativePath] !== originalIncludeFiles[relativePath]) {
+					const includeFileContent = includeFilesState[relativePath];
+					if (includeFileContent === undefined) {
+						continue;
+					}
+
+					if (includeFileContent !== originalIncludeFiles[relativePath]) {
 						const includeResult = await tryCatch(
-							projectService.updateProjectIncludeFile(projectId, relativePath, includeFilesState[relativePath])
+							projectService.updateProjectIncludeFile(projectId, relativePath, includeFileContent)
 						);
 						if (includeResult.error) {
 							toast.error(includeResult.error.message || m.common_update_failed({ resource: relativePath }));
@@ -529,7 +540,7 @@
 
 		{#snippet headerActions()}
 			<div class="flex items-center gap-2">
-				{#if hasChanges && !hasAnyErrors}
+				{#if hasChanges}
 					<ArcaneButton
 						action="save"
 						loading={isLoading.saving}
@@ -715,6 +726,12 @@
 												bind:value={$inputs.composeContent.value}
 												error={$inputs.composeContent.error ?? undefined}
 												readOnly={!canEditCompose}
+												bind:hasErrors={composeHasErrors}
+												bind:validationReady={composeValidationReady}
+												fileId={`project:${projectId}:compose`}
+												originalValue={originalComposeContent}
+												enableDiff={true}
+												editorContext={codeEditorContext}
 											/>
 										{:else if selectedFile === 'env'}
 											<CodePanel
@@ -723,6 +740,13 @@
 												language="env"
 												bind:value={$inputs.envContent.value}
 												error={$inputs.envContent.error ?? undefined}
+												readOnly={!canEditEnv}
+												bind:hasErrors={envHasErrors}
+												bind:validationReady={envValidationReady}
+												fileId={`project:${projectId}:env`}
+												originalValue={originalEnvContent}
+												enableDiff={true}
+												editorContext={codeEditorContext}
 											/>
 										{:else if selectedFile.startsWith('dir:')}
 											{@const dirRelPath = selectedFile.slice(4)}
@@ -744,6 +768,12 @@
 													title={includeFile.relativePath}
 													language="yaml"
 													bind:value={includeFilesState[includeFile.relativePath]}
+													bind:hasErrors={includeFilesHasErrors[includeFile.relativePath]}
+													bind:validationReady={includeFilesValidationReady[includeFile.relativePath]}
+													fileId={`project:${projectId}:include:${includeFile.relativePath}`}
+													originalValue={originalIncludeFiles[includeFile.relativePath]}
+													enableDiff={true}
+													editorContext={codeEditorContext}
 												/>
 											{/if}
 										{/if}

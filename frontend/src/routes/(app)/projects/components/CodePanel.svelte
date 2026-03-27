@@ -10,9 +10,9 @@
 
 	let {
 		title,
-		open = $bindable(),
+		open = $bindable(true),
 		language,
-		value = $bindable(),
+		value = $bindable(''),
 		error,
 		autoHeight = false,
 		readOnly = false,
@@ -38,9 +38,9 @@
 		commandPaletteOpen = $bindable(false)
 	}: {
 		title: string;
-		open: boolean;
+		open?: boolean;
 		language: CodeLanguage;
-		value: string;
+		value?: string;
 		error?: string;
 		autoHeight?: boolean;
 		readOnly?: boolean;
