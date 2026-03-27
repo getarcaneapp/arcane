@@ -18,6 +18,8 @@ func reexecWithRuntimeIdentityInternal(ctx context.Context, req runtimeIdentityR
 		return fmt.Errorf("resolve executable: %w", err)
 	}
 
+	groups := runtimeIdentitySupplementaryGroupsInternal(os.Getenv, resolveSocketGroupInternal)
+
 	cmd := exec.CommandContext(ctx, executable, os.Args[1:]...) //nolint:gosec // re-executing our own binary with the same args under a different UID/GID
 	cmd.Env = os.Environ()
 	cmd.Stdin = os.Stdin
@@ -25,8 +27,9 @@ func reexecWithRuntimeIdentityInternal(ctx context.Context, req runtimeIdentityR
 	cmd.Stderr = os.Stderr
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Credential: &syscall.Credential{
-			Uid: req.UID,
-			Gid: req.GID,
+			Uid:    req.UID,
+			Gid:    req.GID,
+			Groups: groups,
 		},
 	}
 
@@ -68,4 +71,18 @@ func reexecWithRuntimeIdentityInternal(ctx context.Context, req runtimeIdentityR
 			return fmt.Errorf("wait for runtime identity child: %w", err)
 		}
 	}
+}
+
+func resolveSocketGroupInternal(socketPath string) (uint32, bool) {
+	info, err := os.Stat(socketPath)
+	if err != nil {
+		return 0, false
+	}
+
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return 0, false
+	}
+
+	return stat.Gid, true
 }

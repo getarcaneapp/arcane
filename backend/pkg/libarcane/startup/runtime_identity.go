@@ -3,7 +3,6 @@ package startup
 import (
 	"context"
 	"fmt"
-	"math"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -14,10 +13,11 @@ import (
 )
 
 const (
-	defaultDataDirectory   = "/app/data"
-	defaultBuildsDirectory = "/builds"
-	defaultDatabaseURL     = "file:data/arcane.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(2500)&_txlock=immediate"
-	mountInfoPath          = "/proc/self/mountinfo"
+	defaultDataDirectory    = "/app/data"
+	defaultBuildsDirectory  = "/builds"
+	defaultDatabaseURL      = "file:data/arcane.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(2500)&_txlock=immediate"
+	defaultDockerSocketPath = "/var/run/docker.sock"
+	mountInfoPath           = "/proc/self/mountinfo"
 )
 
 type runtimeIdentityRequest struct {
@@ -96,11 +96,53 @@ func parseRuntimeIdentityValueInternal(raw string, key string) (uint32, error) {
 	if err != nil {
 		return 0, fmt.Errorf("parse %s: %w", key, err)
 	}
-	if value > uint64(math.MaxInt) {
-		return 0, fmt.Errorf("parse %s: value %q exceeds platform int range", key, raw)
-	}
 
 	return uint32(value), nil
+}
+
+func runtimeIdentitySupplementaryGroupsInternal(getenv func(string) string, resolveSocketGroup func(string) (uint32, bool)) []uint32 {
+	socketPath, ok := dockerSocketPathInternal(getenv("DOCKER_HOST"))
+	if !ok {
+		return nil
+	}
+
+	socketGID, ok := resolveSocketGroup(socketPath)
+	if !ok {
+		return nil
+	}
+
+	return []uint32{socketGID}
+}
+
+func dockerSocketPathInternal(raw string) (string, bool) {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return defaultDockerSocketPath, true
+	}
+
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Scheme != "unix" {
+		return "", false
+	}
+
+	if parsed.Host != "" || parsed.Path != "" {
+		socketPath := parsed.Host + parsed.Path
+		if !strings.HasPrefix(socketPath, "/") {
+			socketPath = "/" + socketPath
+		}
+		return filepath.Clean(socketPath), true
+	}
+
+	if parsed.Opaque == "" {
+		return "", false
+	}
+
+	socketPath := strings.TrimPrefix(parsed.Opaque, "//")
+	if !strings.HasPrefix(socketPath, "/") {
+		socketPath = "/" + socketPath
+	}
+
+	return filepath.Clean(socketPath), true
 }
 
 func prepareWritablePathsInternal(req runtimeIdentityRequest, mountpoints map[string]struct{}) error {

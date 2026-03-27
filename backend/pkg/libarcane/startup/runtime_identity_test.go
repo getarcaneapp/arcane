@@ -72,6 +72,56 @@ func TestLoadRuntimeIdentityRequest(t *testing.T) {
 	})
 }
 
+func TestRuntimeIdentitySupplementaryGroups(t *testing.T) {
+	t.Run("maps default docker socket group when docker host unset", func(t *testing.T) {
+		groups := runtimeIdentitySupplementaryGroupsInternal(
+			func(string) string { return "" },
+			func(socketPath string) (uint32, bool) {
+				require.Equal(t, defaultDockerSocketPath, socketPath)
+				return 997, true
+			},
+		)
+
+		require.Equal(t, []uint32{997}, groups)
+	})
+
+	t.Run("maps custom unix docker host socket group", func(t *testing.T) {
+		groups := runtimeIdentitySupplementaryGroupsInternal(
+			func(string) string { return "unix:///tmp/docker.sock" },
+			func(socketPath string) (uint32, bool) {
+				require.Equal(t, "/tmp/docker.sock", socketPath)
+				return 998, true
+			},
+		)
+
+		require.Equal(t, []uint32{998}, groups)
+	})
+
+	t.Run("skips non unix docker host", func(t *testing.T) {
+		called := false
+
+		groups := runtimeIdentitySupplementaryGroupsInternal(
+			func(string) string { return "tcp://docker:2375" },
+			func(string) (uint32, bool) {
+				called = true
+				return 0, false
+			},
+		)
+
+		require.Nil(t, groups)
+		require.False(t, called)
+	})
+
+	t.Run("skips socket group when socket lookup fails", func(t *testing.T) {
+		groups := runtimeIdentitySupplementaryGroupsInternal(
+			func(string) string { return "unix:///tmp/missing.sock" },
+			func(string) (uint32, bool) { return 0, false },
+		)
+
+		require.Nil(t, groups)
+	})
+}
+
 func TestParseMountpoints(t *testing.T) {
 	data := `36 25 0:32 / /proc rw,nosuid,nodev,noexec,relatime - proc proc rw
 97 92 0:44 / /app/data rw,relatime - ext4 /dev/sda1 rw
