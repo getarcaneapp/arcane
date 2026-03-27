@@ -23,7 +23,7 @@ export function buildLogDisplayEntries(
 	logs: LogViewerEntry[],
 	options: {
 		groupAdjacentLines?: boolean;
-		type: 'container' | 'project';
+		type: 'container' | 'project' | 'service';
 	}
 ): LogViewerDisplayEntry[] {
 	if (!options.groupAdjacentLines || options.type !== 'container') {

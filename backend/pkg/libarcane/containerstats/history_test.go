@@ -37,7 +37,7 @@ func TestStoreRecordCapsAndPreservesOrder(t *testing.T) {
 	var store Store
 	baseTime := time.Date(2026, 3, 26, 12, 0, 0, 0, time.UTC)
 
-	for i := 0; i < HistoryCapacity+5; i++ {
+	for i := range HistoryCapacity + 5 {
 		store.Record(
 			"container-1",
 			containertypes.StatsHistorySample{

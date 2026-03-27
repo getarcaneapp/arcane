@@ -348,6 +348,26 @@ func (s *TemplateService) GetComposeTemplate() string {
 	return string(content)
 }
 
+func (s *TemplateService) GetSwarmStackTemplate() string {
+	swarmStackPath := filepath.Join("data", "templates", ".swarm-stack.template")
+	content, err := os.ReadFile(swarmStackPath)
+	if err != nil {
+		slog.Warn("failed to read swarm stack template", "error", err)
+		return projects.DefaultSwarmStackTemplate()
+	}
+	return string(content)
+}
+
+func (s *TemplateService) GetSwarmStackEnvTemplate() string {
+	swarmStackEnvPath := filepath.Join("data", "templates", ".swarm-stack.env.template")
+	content, err := os.ReadFile(swarmStackEnvPath)
+	if err != nil {
+		slog.Warn("failed to read swarm stack env template", "error", err)
+		return projects.DefaultSwarmStackEnvTemplate()
+	}
+	return string(content)
+}
+
 func (s *TemplateService) SaveComposeTemplate(content string) error {
 	templateDir := filepath.Join("data", "templates")
 	composePath := filepath.Join(templateDir, ".compose.template")

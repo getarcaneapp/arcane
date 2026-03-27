@@ -1,7 +1,6 @@
 import {
 	ApiKeyIcon,
 	ApperanceIcon,
-	JobsIcon,
 	UsersIcon,
 	LockIcon,
 	NotificationsIcon,
@@ -13,11 +12,15 @@ import {
 	ImagesIcon,
 	NetworksIcon,
 	VolumesIcon,
+	DockIcon,
+	JobsIcon,
+	LayersIcon,
 	EventsIcon,
 	SettingsIcon,
 	GitBranchIcon,
 	ShieldAlertIcon,
-	HammerIcon
+	HammerIcon,
+	TemplateIcon
 } from '$lib/icons';
 import { m } from '$lib/paraglide/messages';
 import type { ShortcutKey } from '$lib/utils/keyboard-shortcut.utils';
@@ -34,6 +37,7 @@ export type NavigationSections = {
 	managementItems: NavigationItem[];
 	resourceItems: NavigationItem[];
 	deploymentItems: NavigationItem[];
+	swarmItems: NavigationItem[];
 	securityItems: NavigationItem[];
 	settingsItems: NavigationItem[];
 };
@@ -52,6 +56,15 @@ export const navigationItems: NavigationSections = {
 		{ title: m.volumes_title(), url: '/volumes', icon: VolumesIcon, shortcut: ['mod', '8'] }
 	],
 	deploymentItems: [{ title: m.builds(), url: '/images/builds', icon: HammerIcon, shortcut: ['mod', 'b'] }],
+	swarmItems: [
+		{ title: 'Services', url: '/swarm/services', icon: DockIcon },
+		{ title: 'Nodes', url: '/swarm/nodes', icon: UsersIcon },
+		{ title: 'Tasks', url: '/swarm/tasks', icon: JobsIcon },
+		{ title: 'Stacks', url: '/swarm/stacks', icon: LayersIcon },
+		{ title: 'Cluster', url: '/swarm/cluster', icon: SettingsIcon },
+		{ title: 'Configs', url: '/swarm/configs', icon: TemplateIcon },
+		{ title: 'Secrets', url: '/swarm/secrets', icon: LockIcon }
+	],
 	securityItems: [{ title: m.vuln_title(), url: '/security', icon: ShieldAlertIcon, shortcut: ['mod', 's'] }],
 	settingsItems: [
 		{
@@ -102,21 +115,36 @@ export type MobileNavigationSettings = {
 	scrollToHide: boolean;
 };
 
-export function getAvailableMobileNavItems(): NavigationItem[] {
-	const flatItems: NavigationItem[] = [
-		...navigationItems.managementItems,
-		...navigationItems.resourceItems,
-		...navigationItems.deploymentItems,
-		...navigationItems.securityItems
-	];
+export function getAvailableMobileNavItems(options?: { includeSwarm?: boolean }): NavigationItem[] {
+	const flatItems: NavigationItem[] = [];
+	if (navigationItems.managementItems) {
+		flatItems.push(...navigationItems.managementItems);
+	}
 
-	const settingsTopLevel = navigationItems.settingsItems.filter((item) => !item.items);
-	flatItems.push(...settingsTopLevel);
+	if (navigationItems.resourceItems) {
+		flatItems.push(...navigationItems.resourceItems);
+	}
 
-	// Also add the main settings item itself if it has children, as it's a valid navigation target
-	const settingsMain = navigationItems.settingsItems.find((item) => item.items);
-	if (settingsMain) {
-		flatItems.push(settingsMain);
+	if (navigationItems.deploymentItems) {
+		flatItems.push(...navigationItems.deploymentItems);
+	}
+
+	if (options?.includeSwarm && navigationItems.swarmItems) {
+		flatItems.push(...navigationItems.swarmItems);
+	}
+
+	if (navigationItems.securityItems) {
+		flatItems.push(...navigationItems.securityItems);
+	}
+
+	if (navigationItems.settingsItems) {
+		const settingsTopLevel = navigationItems.settingsItems.filter((item) => !item.items);
+		flatItems.push(...settingsTopLevel);
+
+		const settingsMain = navigationItems.settingsItems.find((item) => item.items);
+		if (settingsMain) {
+			flatItems.push(settingsMain);
+		}
 	}
 
 	return flatItems;

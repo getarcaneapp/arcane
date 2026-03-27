@@ -33,6 +33,7 @@ type EnvironmentService struct {
 	dockerService   *DockerClientService
 	eventService    *EventService
 	settingsService *SettingsService
+	apiKeyService   *ApiKeyService
 	tokenCacheMu    sync.RWMutex
 	tokenCache      map[string]edgeTokenCacheEntry
 	tokenByEnvID    map[string]string
@@ -50,7 +51,7 @@ var (
 	ErrInvalidEnvironmentAccessToken  = errors.New("invalid environment access token")
 )
 
-func NewEnvironmentService(db *database.DB, httpClient *http.Client, dockerService *DockerClientService, eventService *EventService, settingsService *SettingsService) *EnvironmentService {
+func NewEnvironmentService(db *database.DB, httpClient *http.Client, dockerService *DockerClientService, eventService *EventService, settingsService *SettingsService, apiKeyService *ApiKeyService) *EnvironmentService {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
@@ -60,6 +61,7 @@ func NewEnvironmentService(db *database.DB, httpClient *http.Client, dockerServi
 		dockerService:   dockerService,
 		eventService:    eventService,
 		settingsService: settingsService,
+		apiKeyService:   apiKeyService,
 		tokenCache:      make(map[string]edgeTokenCacheEntry),
 		tokenByEnvID:    make(map[string]string),
 	}
@@ -242,6 +244,169 @@ func (s *EnvironmentService) CreateEnvironment(ctx context.Context, environment 
 	return environment, nil
 }
 
+func (s *EnvironmentService) ListSwarmNodeAgentEnvironments(ctx context.Context, parentEnvironmentID string) ([]models.Environment, error) {
+	var envs []models.Environment
+	if err := s.db.WithContext(ctx).
+		Model(&models.Environment{}).
+		Where("hidden = ?", true).
+		Where("parent_environment_id = ?", parentEnvironmentID).
+		Find(&envs).Error; err != nil {
+		return nil, fmt.Errorf("failed to list swarm node agent environments: %w", err)
+	}
+
+	return envs, nil
+}
+
+func buildSwarmNodeAgentNameInternal(hostname, nodeID string) string {
+	trimmedHostname := strings.TrimSpace(hostname)
+	if trimmedHostname != "" {
+		return fmt.Sprintf("Swarm Node Agent - %s", trimmedHostname)
+	}
+	if len(nodeID) > 12 {
+		nodeID = nodeID[:12]
+	}
+	return fmt.Sprintf("Swarm Node Agent - %s", nodeID)
+}
+
+func buildSwarmNodeAgentURLInternal(nodeID string) string {
+	shortNodeID := nodeID
+	if len(shortNodeID) > 12 {
+		shortNodeID = shortNodeID[:12]
+	}
+	return "edge://swarm-node-" + shortNodeID
+}
+
+func (s *EnvironmentService) applySwarmNodeAgentApiKeyInternal(
+	ctx context.Context,
+	env *models.Environment,
+	userID, username string,
+	rotate bool,
+) (string, error) {
+	if env == nil {
+		return "", fmt.Errorf("environment is required")
+	}
+
+	if !rotate && env.AccessToken != nil && strings.TrimSpace(*env.AccessToken) != "" {
+		return strings.TrimSpace(*env.AccessToken), nil
+	}
+
+	if s.apiKeyService == nil {
+		return "", fmt.Errorf("api key service not configured")
+	}
+
+	apiKeyDto, err := s.apiKeyService.CreateEnvironmentApiKey(ctx, env.ID, userID)
+	if err != nil {
+		return "", fmt.Errorf("failed to create environment API key: %w", err)
+	}
+
+	if err := s.RegenerateEnvironmentApiKey(ctx, env.ID, apiKeyDto.ID, apiKeyDto.Key, userID, username, env.Name); err != nil {
+		return "", err
+	}
+
+	return apiKeyDto.Key, nil
+}
+
+func (s *EnvironmentService) EnsureSwarmNodeAgentEnvironment(
+	ctx context.Context,
+	parentEnvironmentID, nodeID, hostname, userID, username string,
+	rotate bool,
+) (*models.Environment, string, error) {
+	if strings.TrimSpace(parentEnvironmentID) == "" {
+		return nil, "", fmt.Errorf("parent environment ID is required")
+	}
+	if strings.TrimSpace(nodeID) == "" {
+		return nil, "", fmt.Errorf("swarm node ID is required")
+	}
+
+	var env models.Environment
+	err := s.db.WithContext(ctx).
+		Where("hidden = ?", true).
+		Where("parent_environment_id = ?", parentEnvironmentID).
+		Where("swarm_node_id = ?", nodeID).
+		First(&env).Error
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, "", fmt.Errorf("failed to load swarm node agent environment: %w", err)
+	}
+
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		parentEnvironmentIDCopy := parentEnvironmentID
+		nodeIDCopy := nodeID
+		createdEnv := &models.Environment{
+			Name:                buildSwarmNodeAgentNameInternal(hostname, nodeID),
+			ApiUrl:              buildSwarmNodeAgentURLInternal(nodeID),
+			Status:              string(models.EnvironmentStatusPending),
+			Enabled:             true,
+			IsEdge:              true,
+			Hidden:              true,
+			ParentEnvironmentID: &parentEnvironmentIDCopy,
+			SwarmNodeID:         &nodeIDCopy,
+		}
+
+		userIDCopy := userID
+		usernameCopy := username
+		if _, createErr := s.CreateEnvironment(ctx, createdEnv, &userIDCopy, &usernameCopy); createErr != nil {
+			return nil, "", fmt.Errorf("failed to create swarm node agent environment: %w", createErr)
+		}
+		env = *createdEnv
+	} else {
+		updates := map[string]any{}
+		expectedName := buildSwarmNodeAgentNameInternal(hostname, nodeID)
+		if env.Name != expectedName {
+			updates["name"] = expectedName
+		}
+		if !env.Hidden {
+			updates["hidden"] = true
+		}
+		if !env.IsEdge {
+			updates["is_edge"] = true
+		}
+		if !env.Enabled {
+			updates["enabled"] = true
+		}
+		if env.ParentEnvironmentID == nil || *env.ParentEnvironmentID != parentEnvironmentID {
+			updates["parent_environment_id"] = parentEnvironmentID
+		}
+		if env.SwarmNodeID == nil || *env.SwarmNodeID != nodeID {
+			updates["swarm_node_id"] = nodeID
+		}
+		if len(updates) > 0 {
+			userIDCopy := userID
+			usernameCopy := username
+			updatedEnv, updateErr := s.UpdateEnvironment(ctx, env.ID, updates, &userIDCopy, &usernameCopy)
+			if updateErr != nil {
+				return nil, "", fmt.Errorf("failed to update swarm node agent environment: %w", updateErr)
+			}
+			env = *updatedEnv
+		}
+	}
+
+	apiKey, err := s.applySwarmNodeAgentApiKeyInternal(ctx, &env, userID, username, rotate)
+	if err != nil {
+		return nil, "", err
+	}
+
+	refreshedEnv, err := s.GetEnvironmentByID(ctx, env.ID)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to refresh swarm node agent environment: %w", err)
+	}
+
+	return refreshedEnv, apiKey, nil
+}
+
+func (s *EnvironmentService) UpdateSwarmNodeIdentity(ctx context.Context, envID, swarmNodeID string) error {
+	now := time.Now()
+	updates := map[string]any{
+		"swarm_node_id": swarmNodeID,
+		"updated_at":    &now,
+	}
+
+	if err := s.db.WithContext(ctx).Model(&models.Environment{}).Where("id = ?", envID).Updates(updates).Error; err != nil {
+		return fmt.Errorf("failed to update swarm node identity: %w", err)
+	}
+
+	return nil
+}
+
 func (s *EnvironmentService) GetEnvironmentByID(ctx context.Context, id string) (*models.Environment, error) {
 	var environment models.Environment
 	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&environment).Error; err != nil {
@@ -255,7 +420,7 @@ func (s *EnvironmentService) GetEnvironmentByID(ctx context.Context, id string) 
 
 func (s *EnvironmentService) ListEnvironmentsPaginated(ctx context.Context, params pagination.QueryParams) ([]environment.Environment, pagination.Response, error) {
 	var envs []models.Environment
-	q := s.db.WithContext(ctx).Model(&models.Environment{})
+	q := s.db.WithContext(ctx).Model(&models.Environment{}).Where("hidden = ?", false)
 
 	if term := strings.TrimSpace(params.Search); term != "" {
 		searchPattern := "%" + term + "%"
@@ -288,6 +453,7 @@ func (s *EnvironmentService) ListRemoteEnvironments(ctx context.Context) ([]mode
 		Model(&models.Environment{}).
 		Where("id != ?", "0").
 		Where("enabled = ?", true).
+		Where("hidden = ?", false).
 		Find(&envs).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to list remote environments: %w", err)
