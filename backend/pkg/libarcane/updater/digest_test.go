@@ -3,10 +3,13 @@ package updater
 import (
 	"testing"
 
+	digest "github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestParseImageRef(t *testing.T) {
+	redisDigest := digest.FromString("redis").String()
+
 	tests := []struct {
 		name     string
 		imageRef string
@@ -30,7 +33,7 @@ func TestParseImageRef(t *testing.T) {
 		},
 		{
 			name:     "digest reference defaults to latest tag",
-			imageRef: "docker.io/library/redis@sha256:abcdef",
+			imageRef: "docker.io/library/redis@" + redisDigest,
 			wantHost: "docker.io",
 			wantRepo: "library/redis",
 			wantTag:  "latest",

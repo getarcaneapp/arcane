@@ -10,6 +10,7 @@ import (
 	nethttp "net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -676,10 +677,7 @@ func isBinaryContent(content []byte) bool {
 	}
 
 	// Check first 512 bytes (or less if file is smaller)
-	checkSize := 512
-	if len(content) < checkSize {
-		checkSize = len(content)
-	}
+	checkSize := min(len(content), 512)
 
 	// Use net/http's content type detection
 	contentType := detectContentType(content[:checkSize])
@@ -708,13 +706,7 @@ func isBinaryContent(content []byte) bool {
 	// For application/octet-stream, do additional null-byte check
 	// Text files rarely have null bytes, so their presence indicates binary
 	if contentType == "application/octet-stream" {
-		for _, b := range content[:checkSize] {
-			if b == 0 {
-				return true
-			}
-		}
-		// No null bytes found, likely a text file (Dockerfile, Makefile, etc.)
-		return false
+		return slices.Contains(content[:checkSize], 0)
 	}
 
 	// Everything else is considered binary

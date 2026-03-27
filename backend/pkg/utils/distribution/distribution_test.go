@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	digest "github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -56,6 +57,7 @@ func TestIsFallbackEligibleDaemonError(t *testing.T) {
 func TestFetchDigestWithHTTPClient_FallsBackToGetOnMethodNotAllowed(t *testing.T) {
 	var headCalls int
 	var getCalls int
+	wantDigest := digest.FromString("method-not-allowed").String()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
@@ -64,7 +66,7 @@ func TestFetchDigestWithHTTPClient_FallsBackToGetOnMethodNotAllowed(t *testing.T
 			w.WriteHeader(http.StatusMethodNotAllowed)
 		case http.MethodGet:
 			getCalls++
-			w.Header().Set("Docker-Content-Digest", "sha256:method-not-allowed")
+			w.Header().Set("Docker-Content-Digest", wantDigest)
 			w.WriteHeader(http.StatusOK)
 		default:
 			t.Fatalf("unexpected method %s", r.Method)
@@ -81,7 +83,7 @@ func TestFetchDigestWithHTTPClient_FallsBackToGetOnMethodNotAllowed(t *testing.T
 		server.Client(),
 	)
 	require.NoError(t, err)
-	assert.Equal(t, "sha256:method-not-allowed", digest)
+	assert.Equal(t, wantDigest, digest)
 	assert.Equal(t, 1, headCalls)
 	assert.Equal(t, 1, getCalls)
 }

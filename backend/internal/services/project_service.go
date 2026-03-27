@@ -10,6 +10,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -747,16 +748,8 @@ func (s *ProjectService) collectDirectoryFiles(
 }
 
 func isBinaryProjectFileContent(content []byte) bool {
-	checkSize := len(content)
-	if checkSize > 512 {
-		checkSize = 512
-	}
-	for _, b := range content[:checkSize] {
-		if b == 0 {
-			return true
-		}
-	}
-	return false
+	checkSize := min(len(content), 512)
+	return slices.Contains(content[:checkSize], 0)
 }
 
 func (s *ProjectService) enrichWithGitOpsInfo(ctx context.Context, proj *models.Project, resp *project.Details) {

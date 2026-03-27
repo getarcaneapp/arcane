@@ -3,7 +3,6 @@ module github.com/getarcaneapp/arcane/backend
 go 1.26.0
 
 replace github.com/getarcaneapp/arcane/cli => ../cli
-
 replace github.com/getarcaneapp/arcane/types => ../types
 
 require (

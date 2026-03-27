@@ -20,6 +20,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils/cache"
 	utilsdistribution "github.com/getarcaneapp/arcane/backend/pkg/utils/distribution"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils/imagedigest"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils/mapper"
 	utilsregistry "github.com/getarcaneapp/arcane/backend/pkg/utils/registry"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
@@ -529,9 +530,9 @@ func (s *ContainerRegistryService) inspectImageDigestViaDaemonInternal(ctx conte
 
 	inspectResult, err := dockerClient.DistributionInspect(ctx, normalizedRef, client.DistributionInspectOptions{})
 	if err == nil {
-		digest := strings.TrimSpace(string(inspectResult.Descriptor.Digest))
-		if digest == "" {
-			return nil, fmt.Errorf("distribution inspect returned empty digest for %s", normalizedRef)
+		digest, normalizeErr := imagedigest.Normalize(inspectResult.Descriptor.Digest.String())
+		if normalizeErr != nil {
+			return nil, fmt.Errorf("distribution inspect returned invalid digest for %s: %w", normalizedRef, normalizeErr)
 		}
 		return &registryDigestResult{
 			Digest:       digest,
@@ -563,9 +564,9 @@ func (s *ContainerRegistryService) inspectImageDigestViaDaemonInternal(ctx conte
 			EncodedRegistryAuth: authHeader,
 		})
 		if err == nil {
-			digest := strings.TrimSpace(string(inspectResult.Descriptor.Digest))
-			if digest == "" {
-				return nil, fmt.Errorf("distribution inspect returned empty digest for %s", normalizedRef)
+			digest, normalizeErr := imagedigest.Normalize(inspectResult.Descriptor.Digest.String())
+			if normalizeErr != nil {
+				return nil, fmt.Errorf("distribution inspect returned invalid digest for %s: %w", normalizedRef, normalizeErr)
 			}
 			return &registryDigestResult{
 				Digest:         digest,

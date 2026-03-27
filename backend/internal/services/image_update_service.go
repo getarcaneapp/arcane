@@ -12,6 +12,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/crypto"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils/imagedigest"
 	registry "github.com/getarcaneapp/arcane/backend/pkg/utils/registry"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 	"github.com/getarcaneapp/arcane/types/imageupdate"
@@ -211,7 +212,7 @@ func (s *ImageUpdateService) parseImageReference(imageRef string) *ImageParts {
 // Fallback parser for cases where the official parser fails
 func (s *ImageUpdateService) parseImageReferenceFallback(imageRef string) *ImageParts {
 	var registryHost, repository, tag string
-	if strings.Contains(imageRef, "@sha256:") {
+	if _, ok := imagedigest.FromReferenceSuffix(imageRef); ok {
 		digestParts := strings.Split(imageRef, "@")
 		if len(digestParts) != 2 {
 			return nil
@@ -350,16 +351,16 @@ func (s *ImageUpdateService) inspectLocalImageSnapshotInternal(ctx context.Conte
 	// Extract all digests from RepoDigests
 	if len(inspectResponse.RepoDigests) > 0 {
 		for _, repoDigest := range inspectResponse.RepoDigests {
-			// Format: repository@sha256:...
-			digestParts := strings.Split(repoDigest, "@")
-			if len(digestParts) == 2 {
-				digest := digestParts[1]
-				allDigests = append(allDigests, digest)
+			digest, ok := imagedigest.FromReferenceSuffix(repoDigest)
+			if !ok {
+				continue
+			}
 
-				// Use first digest as primary if not yet set
-				if primaryDigest == "" {
-					primaryDigest = digest
-				}
+			allDigests = append(allDigests, digest)
+
+			// Use first digest as primary if not yet set
+			if primaryDigest == "" {
+				primaryDigest = digest
 			}
 		}
 	}
