@@ -658,66 +658,13 @@ func (s *ContainerService) streamContainerLogsInternal(ctx context.Context, logs
 		return s.streamRawLogsInternal(ctx, logs, logsChan)
 	}
 	if follow {
-		return s.streamMultiplexedLogs(ctx, logs, logsChan)
+		return streamMultiplexedLogs(ctx, logs, logsChan)
 	}
 	return s.readAllLogs(ctx, logs, logsChan)
 }
 
 func (s *ContainerService) streamRawLogsInternal(ctx context.Context, logs io.Reader, logsChan chan<- string) error {
 	return s.readLogsFromReader(ctx, logs, logsChan, "")
-}
-
-func (s *ContainerService) streamMultiplexedLogs(ctx context.Context, logs io.Reader, logsChan chan<- string) error {
-	// Use stdcopy to demultiplex Docker's stream format
-	// Docker multiplexes stdout and stderr in a special format
-	stdoutReader, stdoutWriter := io.Pipe()
-	stderrReader, stderrWriter := io.Pipe()
-	errCh := make(chan error, 3)
-
-	// Start demultiplexing in a goroutine
-	go func() {
-		_, err := stdcopy.StdCopy(stdoutWriter, stderrWriter, logs)
-		if err != nil && !errors.Is(err, io.EOF) {
-			_ = stdoutWriter.CloseWithError(err)
-			_ = stderrWriter.CloseWithError(err)
-			errCh <- fmt.Errorf("failed to demultiplex logs: %w", err)
-			return
-		}
-		_ = stdoutWriter.Close()
-		_ = stderrWriter.Close()
-		errCh <- nil
-	}()
-
-	// Read from both stdout and stderr concurrently
-	go func() {
-		defer func() { _ = stdoutReader.Close() }()
-		errCh <- s.readLogsFromReader(ctx, stdoutReader, logsChan, "")
-	}()
-
-	go func() {
-		defer func() { _ = stderrReader.Close() }()
-		errCh <- s.readLogsFromReader(ctx, stderrReader, logsChan, "[STDERR] ")
-	}()
-
-	var firstErr error
-	for range 3 {
-		err := <-errCh
-		switch {
-		case err == nil:
-		case errors.Is(err, io.EOF):
-		case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
-		default:
-			if firstErr == nil {
-				firstErr = err
-			}
-		}
-	}
-
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-
-	return firstErr
 }
 
 // readLogsFromReader reads logs line by line from a reader

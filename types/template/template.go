@@ -230,12 +230,22 @@ type UpdateRequest struct {
 	EnvContent string `json:"envContent"`
 }
 
-// DefaultTemplatesResponse contains the default compose and env templates.
+// DefaultTemplatesResponse contains the default compose, swarm stack, and env templates.
 type DefaultTemplatesResponse struct {
 	// ComposeTemplate is the default Docker Compose template content.
 	//
 	// Required: true
 	ComposeTemplate string `json:"composeTemplate"`
+
+	// SwarmStackTemplate is the default Docker Swarm stack template content.
+	//
+	// Required: true
+	SwarmStackTemplate string `json:"swarmStackTemplate"`
+
+	// SwarmStackEnvTemplate is the default environment template content for Docker Swarm stacks.
+	//
+	// Required: true
+	SwarmStackEnvTemplate string `json:"swarmStackEnvTemplate"`
 
 	// EnvTemplate is the default environment template content.
 	//
