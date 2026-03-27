@@ -47,6 +47,10 @@ services:
     environment:
       - ENCRYPTION_KEY=xxxxxxxxxxxxxxxxxxxxxx
       - JWT_SECRET=xxxxxxxxxxxxxxxxxxxxxx
+      # Optional: run Arcane as a specific host UID/GID instead of the default runtime user.
+      # With DOCKER_HOST over TCP, no Unix socket group mapping is needed.
+      # - PUID=1000
+      # - PGID=1000
       - DOCKER_HOST=tcp://docker-socket-proxy:2375 # Use the proxy instead of direct socket
     networks:
       - arcane-internal
