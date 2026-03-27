@@ -3,6 +3,7 @@
 package startup
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -17,7 +18,7 @@ func reexecWithRuntimeIdentityInternal(req runtimeIdentityRequest) error {
 		return fmt.Errorf("resolve executable: %w", err)
 	}
 
-	cmd := exec.Command(executable, os.Args[1:]...) //nolint:gosec // re-executing our own binary with the same args under a different UID/GID
+	cmd := exec.CommandContext(context.Background(), executable, os.Args[1:]...) //nolint:gosec // re-executing our own binary with the same args under a different UID/GID
 	cmd.Env = os.Environ()
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
