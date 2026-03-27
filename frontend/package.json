@@ -43,7 +43,7 @@
 		"prettier": "^3.8.1",
 		"prettier-plugin-svelte": "^3.5.1",
 		"prettier-plugin-tailwindcss": "^0.7.2",
-		"svelte": "^5.54.1",
+		"svelte": "^5.55.0",
 		"svelte-codemirror-editor": "^2.1.0",
 		"svelte-motion": "^0.12.2",
 		"yaml": "^2.8.3"
