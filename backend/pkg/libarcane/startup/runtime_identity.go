@@ -161,7 +161,7 @@ func ensureSQLiteFilesExistInternal(databaseURL string) error {
 	// prepareWritablePathsInternal is not called.
 	dir := filepath.Dir(sqlitePath)
 	if dir != "" && dir != "." {
-		if err := os.MkdirAll(dir, pkgutils.DirPerm); err != nil {
+		if err := os.MkdirAll(dir, pkgutils.DirPerm); err != nil { //nolint:gosec // path is derived from the configured SQLite DSN, not user input
 			return fmt.Errorf("create sqlite directory %s: %w", dir, err)
 		}
 	}

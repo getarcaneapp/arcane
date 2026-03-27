@@ -17,7 +17,7 @@ func reexecWithRuntimeIdentityInternal(req runtimeIdentityRequest) error {
 		return fmt.Errorf("resolve executable: %w", err)
 	}
 
-	cmd := exec.Command(executable, os.Args[1:]...)
+	cmd := exec.Command(executable, os.Args[1:]...) //nolint:gosec // re-executing our own binary with the same args under a different UID/GID
 	cmd.Env = os.Environ()
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
@@ -35,7 +35,6 @@ func reexecWithRuntimeIdentityInternal(req runtimeIdentityRequest) error {
 
 	sigCh := make(chan os.Signal, 2)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
-	defer signal.Stop(sigCh)
 
 	done := make(chan error, 1)
 	go func() {
@@ -49,6 +48,7 @@ func reexecWithRuntimeIdentityInternal(req runtimeIdentityRequest) error {
 				_ = cmd.Process.Signal(sig)
 			}
 		case err := <-done:
+			signal.Stop(sigCh)
 			if err == nil {
 				os.Exit(0)
 			}
