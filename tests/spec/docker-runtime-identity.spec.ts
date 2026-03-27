@@ -62,6 +62,20 @@ function cleanupContainer(name: string) {
 	}
 }
 
+function cleanupDir(dir: string) {
+	try {
+		// Files may be owned by root inside the container, so use Docker to remove them.
+		docker(['run', '--rm', '-v', `${dir}:/mnt`, 'alpine:latest', 'rm', '-rf', '/mnt']);
+	} catch {
+		// ignore
+	}
+	try {
+		fs.rmSync(dir, { recursive: true, force: true });
+	} catch {
+		// ignore cleanup failures
+	}
+}
+
 function cleanupNetwork(name: string) {
 	try {
 		docker(['network', 'rm', name], { stdio: 'inherit' });
@@ -180,7 +194,7 @@ test.describe.serial('Docker runtime identity', () => {
 			expect(status).toContain('Gid:\t0\t0\t0\t0');
 		} finally {
 			cleanupContainer(containerName);
-			fs.rmSync(dataDir, { recursive: true, force: true });
+			cleanupDir(dataDir);
 		}
 	});
 
@@ -228,8 +242,8 @@ test.describe.serial('Docker runtime identity', () => {
 			expect(processStatuses.some((status) => /^(?!1:)\d+:1:1001:1001:/.test(status))).toBe(true);
 		} finally {
 			cleanupContainer(containerName);
-			fs.rmSync(dataDir, { recursive: true, force: true });
-			fs.rmSync(projectsDir, { recursive: true, force: true });
+			cleanupDir(dataDir);
+			cleanupDir(projectsDir);
 		}
 	});
 
@@ -303,7 +317,7 @@ test.describe.serial('Docker runtime identity', () => {
 			cleanupContainer(containerName);
 			cleanupContainer(proxyName);
 			cleanupNetwork(networkName);
-			fs.rmSync(dataDir, { recursive: true, force: true });
+			cleanupDir(dataDir);
 		}
 	});
 });
