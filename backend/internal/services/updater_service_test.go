@@ -855,6 +855,8 @@ func TestDockerProxyContainerNameInternal(t *testing.T) {
 		{"tcp with ip address", "tcp://192.168.1.100:2375", ""},
 		{"tcp with localhost", "tcp://localhost:2375", ""},
 		{"tcp with fqdn", "tcp://docker.example.com:2375", ""},
+		{"tcp with ipv6 address", "tcp://[::1]:2375", ""},
+		{"tcp with ipv6 no port", "tcp://[::1]", ""},
 		{"tcp with spaces", "  tcp://my-proxy:2375  ", "my-proxy"},
 	}
 

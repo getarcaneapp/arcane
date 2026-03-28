@@ -7,6 +7,8 @@ import (
 	"io"
 	"log/slog"
 	"maps"
+	"net"
+	"net/url"
 	"slices"
 	"strings"
 	"sync"
@@ -1959,21 +1961,19 @@ func (s *UpdaterService) parseRepoAndTag(ref string) (string, string) {
 
 // dockerProxyContainerNameInternal extracts the container hostname from a TCP
 // DOCKER_HOST value (e.g. "tcp://my-proxy:2375" → "my-proxy"). Returns empty
-// string when DOCKER_HOST is not a TCP address or cannot be parsed.
+// string when DOCKER_HOST is not a TCP address, is an IP, or cannot be parsed.
 func dockerProxyContainerNameInternal(dockerHost string) string {
 	dockerHost = strings.TrimSpace(dockerHost)
-	if dockerHost == "" || !strings.HasPrefix(dockerHost, "tcp://") {
+	if dockerHost == "" {
 		return ""
 	}
-	// Remove scheme
-	hostPort := strings.TrimPrefix(dockerHost, "tcp://")
-	// Strip port if present
-	if idx := strings.LastIndex(hostPort, ":"); idx != -1 {
-		hostPort = hostPort[:idx]
-	}
-	// Ignore bare IP addresses — only container hostnames are relevant
-	if hostPort == "" || hostPort == "localhost" || strings.Contains(hostPort, ".") {
+	u, err := url.Parse(dockerHost)
+	if err != nil || strings.ToLower(u.Scheme) != "tcp" {
 		return ""
 	}
-	return hostPort
+	host := u.Hostname() // strips brackets from IPv6, strips port
+	if host == "" || host == "localhost" || strings.Contains(host, ".") || net.ParseIP(host) != nil {
+		return ""
+	}
+	return host
 }
