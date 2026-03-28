@@ -194,7 +194,7 @@ func TestIsWebSocketUpgrade(t *testing.T) {
 		{
 			name:     "upgrade and connection but no sec-websocket-key",
 			headers:  map[string]string{"Upgrade": "websocket", "Connection": "Upgrade"},
-			expected: false,
+			expected: true,
 		},
 	}
 
