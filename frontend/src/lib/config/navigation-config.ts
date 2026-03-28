@@ -20,7 +20,8 @@ import {
 	GitBranchIcon,
 	ShieldAlertIcon,
 	HammerIcon,
-	TemplateIcon
+	TemplateIcon,
+	GlobeIcon
 } from '$lib/icons';
 import { m } from '$lib/paraglide/messages';
 import type { ShortcutKey } from '$lib/utils/keyboard-shortcut.utils';
@@ -80,6 +81,7 @@ export const navigationItems: NavigationSections = {
 			shortcut: ['mod', '0'],
 			items: [
 				{ title: m.api_key_page_title(), url: '/settings/api-keys', icon: ApiKeyIcon, shortcut: ['mod', 'shift', '1'] },
+				{ title: m.webhook_page_title(), url: '/settings/webhooks', icon: GlobeIcon },
 				{ title: m.appearance_title(), url: '/settings/appearance', icon: ApperanceIcon, shortcut: ['mod', 'shift', '2'] },
 				{
 					title: m.authentication_title(),

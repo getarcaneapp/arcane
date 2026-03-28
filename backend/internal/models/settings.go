@@ -159,6 +159,9 @@ type Settings struct {
 	// API Keys category (admin management page - no actual settings)
 	ApiKeysCategoryPlaceholder SettingVariable `key:"apiKeysCategory,internal" meta:"label=API Keys;type=internal;keywords=api,keys,tokens,authentication,access,programmatic,integration;category=apikeys;description=Manage API keys for programmatic access" catmeta:"id=apikeys;title=API Keys;icon=apikey;url=/settings/api-keys;description=Create and manage API keys for programmatic access to Arcane"`
 
+	// Webhooks category (management page - no actual settings)
+	WebhooksCategoryPlaceholder SettingVariable `key:"webhooksCategory,internal" meta:"label=Webhooks;type=internal;keywords=webhooks,trigger,inbound,http,container,stack,gitops,updater,automation,ci,cd;category=webhooks;description=Manage inbound webhooks to trigger updates" catmeta:"id=webhooks;title=Webhooks;icon=globe;url=/settings/webhooks;description=Create and manage inbound webhooks to trigger container, stack, or GitOps updates"`
+
 	// Timeout category
 	DockerAPITimeout       SettingVariable `key:"dockerApiTimeout,envOverride" meta:"label=Docker API Timeout;type=number;keywords=docker,api,timeout,seconds,list,operations;category=timeouts;description=Timeout for Docker list operations in seconds (default: 30)" catmeta:"id=timeouts;title=Timeouts;icon=clock;url=/settings/timeouts;description=Configure operation timeouts for slow networks or hardware"`
 	DockerImagePullTimeout SettingVariable `key:"dockerImagePullTimeout,envOverride" meta:"label=Docker Image Pull Timeout;type=number;keywords=docker,image,pull,timeout,seconds,download;category=timeouts;description=Timeout for Docker image pulls in seconds (default: 600 = 10 minutes)"`

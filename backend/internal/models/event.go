@@ -79,6 +79,11 @@ const (
 	EventTypeEnvironmentDelete            EventType = "environment.delete"
 	EventTypeEnvironmentApiKeyRegenerated EventType = "environment.api_key.regenerated"
 
+	EventTypeWebhookCreate  EventType = "webhook.create"
+	EventTypeWebhookUpdate  EventType = "webhook.update"
+	EventTypeWebhookDelete  EventType = "webhook.delete"
+	EventTypeWebhookTrigger EventType = "webhook.trigger"
+
 	// Event severities
 	EventSeverityInfo    EventSeverity = "info"
 	EventSeverityWarning EventSeverity = "warning"

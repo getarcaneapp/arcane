@@ -169,6 +169,7 @@ type Services struct {
 	SystemUpgrade     *services.SystemUpgradeService
 	GitRepository     *services.GitRepositoryService
 	GitOpsSync        *services.GitOpsSyncService
+	Webhook           *services.WebhookService
 	Vulnerability     *services.VulnerabilityService
 	Dashboard         *services.DashboardService
 	Config            *config.Config
@@ -332,6 +333,7 @@ func registerHandlers(api huma.API, svc *Services) {
 	var systemUpgradeSvc *services.SystemUpgradeService
 	var gitRepositorySvc *services.GitRepositoryService
 	var gitOpsSyncSvc *services.GitOpsSyncService
+	var webhookSvc *services.WebhookService
 	var vulnerabilitySvc *services.VulnerabilityService
 	var dashboardSvc *services.DashboardService
 	var cfg *config.Config
@@ -369,6 +371,7 @@ func registerHandlers(api huma.API, svc *Services) {
 		systemUpgradeSvc = svc.SystemUpgrade
 		gitRepositorySvc = svc.GitRepository
 		gitOpsSyncSvc = svc.GitOpsSync
+		webhookSvc = svc.Webhook
 		vulnerabilitySvc = svc.Vulnerability
 		dashboardSvc = svc.Dashboard
 		cfg = svc.Config
@@ -401,6 +404,7 @@ func registerHandlers(api huma.API, svc *Services) {
 	handlers.RegisterSystem(api, dockerSvc, systemSvc, systemUpgradeSvc, cfg)
 	handlers.RegisterGitRepositories(api, gitRepositorySvc)
 	handlers.RegisterGitOpsSyncs(api, gitOpsSyncSvc)
+	handlers.RegisterWebhooks(api, webhookSvc)
 	handlers.RegisterVulnerability(api, vulnerabilitySvc)
 	handlers.RegisterDashboard(api, dashboardSvc)
 }
