@@ -15,7 +15,7 @@ const (
 type Project struct {
 	Name            string        `json:"name" sortable:"true"`
 	DirName         *string       `json:"dir_name"`
-	Path            string        `json:"path"`
+	Path            string        `json:"path" sortable:"true" gorm:"uniqueIndex"`
 	Status          ProjectStatus `json:"status" sortable:"true"`
 	StatusReason    *string       `json:"status_reason"`
 	ServiceCount    int           `json:"service_count" sortable:"true"`

@@ -3,6 +3,7 @@ package scheduler
 import (
 	"context"
 	"log/slog"
+	"runtime"
 	"sync"
 	"time"
 
@@ -55,11 +56,12 @@ func (j *FilesystemWatcherJob) Start(ctx context.Context) error {
 		return err
 	}
 	followProjectSymlinks := settings.FollowProjectSymlinks.IsTrue()
+	j.logRecursiveProjectsWatchLimitWarningInternal(ctx, projectsDirectory)
 
 	sw, err := fswatch.NewWatcher(projectsDirectory, fswatch.WatcherOptions{
 		Debounce:          3 * time.Second, // Wait 3 seconds after last change before syncing
 		OnChange:          j.handleFilesystemChange,
-		MaxDepth:          1,
+		MaxDepth:          0,
 		FollowSymlinkDirs: followProjectSymlinks,
 	})
 	if err != nil {
@@ -188,12 +190,13 @@ func (j *FilesystemWatcherJob) RestartProjectsWatcher(ctx context.Context) error
 		return err
 	}
 	followProjectSymlinks := settings.FollowProjectSymlinks.IsTrue()
+	j.logRecursiveProjectsWatchLimitWarningInternal(ctx, projectsDirectory)
 
 	// Create a new watcher with the updated path
 	sw, err := fswatch.NewWatcher(projectsDirectory, fswatch.WatcherOptions{
 		Debounce:          3 * time.Second,
 		OnChange:          j.handleFilesystemChange,
-		MaxDepth:          1,
+		MaxDepth:          0,
 		FollowSymlinkDirs: followProjectSymlinks,
 	})
 	if err != nil {
@@ -217,4 +220,15 @@ func (j *FilesystemWatcherJob) RestartProjectsWatcher(ctx context.Context) error
 	}
 
 	return nil
+}
+
+func (j *FilesystemWatcherJob) logRecursiveProjectsWatchLimitWarningInternal(ctx context.Context, projectsDirectory string) {
+	if runtime.GOOS != "linux" {
+		return
+	}
+
+	slog.WarnContext(ctx,
+		"Projects filesystem watcher is monitoring directories recursively; very deep trees may require increasing fs.inotify.max_user_watches",
+		"path", projectsDirectory,
+		"sysctl", "fs.inotify.max_user_watches")
 }

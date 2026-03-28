@@ -10,6 +10,7 @@ import (
 	"time"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
+	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/pkg/projects"
 	buildtypes "github.com/getarcaneapp/arcane/types/builds"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
@@ -1758,6 +1759,146 @@ func TestProjectService_CountProjectFolders_RespectsFollowProjectSymlinks(t *tes
 	count, err = svc.countProjectFolders(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, 2, count)
+}
+
+func TestProjectService_SyncProjectsFromFileSystem_DiscoversNestedProjectsAndRelativePaths(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsRoot := t.TempDir()
+	nestedPath := createComposeProjectDir(t, projectsRoot, filepath.Join("main-project", "sub-project1"))
+	topLevelPath := createComposeProjectDir(t, projectsRoot, "project2")
+
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil)
+	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
+
+	items, page, err := svc.ListProjects(ctx, pagination.QueryParams{
+		SortParams:       pagination.SortParams{Sort: "path", Order: pagination.SortAsc},
+		PaginationParams: pagination.PaginationParams{Limit: -1},
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 2, page.TotalItems)
+	require.Len(t, items, 2)
+
+	assert.Equal(t, "main-project/sub-project1", items[0].RelativePath)
+	assert.Equal(t, nestedPath, items[0].Path)
+	assert.Equal(t, "sub-project1", items[0].DirName)
+
+	assert.Equal(t, "project2", items[1].RelativePath)
+	assert.Equal(t, topLevelPath, items[1].Path)
+	assert.Equal(t, "project2", items[1].DirName)
+}
+
+func TestProjectService_CountProjectFolders_RecursivelyCountsNestedProjects(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsRoot := t.TempDir()
+	createComposeProjectDir(t, projectsRoot, filepath.Join("main-project", "sub-project1"))
+	createComposeProjectDir(t, projectsRoot, filepath.Join("main-project", "sub-project2"))
+	createComposeProjectDir(t, projectsRoot, "project2")
+
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil)
+
+	count, err := svc.countProjectFolders(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 3, count)
+}
+
+func TestProjectService_SyncProjectsFromFileSystem_RemovesDeletedNestedProject(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsRoot := t.TempDir()
+	projectPath := createComposeProjectDir(t, projectsRoot, filepath.Join("main-project", "sub-project1"))
+
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil)
+	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
+
+	items, err := svc.ListAllProjects(ctx)
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+
+	require.NoError(t, os.Remove(filepath.Join(projectPath, "compose.yaml")))
+	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
+
+	items, err = svc.ListAllProjects(ctx)
+	require.NoError(t, err)
+	assert.Empty(t, items)
+}
+
+func TestProjectService_SyncProjectsFromFileSystem_AllowsDuplicateLeafDirectoriesInDifferentParents(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsRoot := t.TempDir()
+	firstPath := createComposeProjectDir(t, projectsRoot, filepath.Join("main-project1", "app"))
+	secondPath := createComposeProjectDir(t, projectsRoot, filepath.Join("main-project2", "app"))
+
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil)
+	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
+
+	var items []models.Project
+	require.NoError(t, db.WithContext(ctx).Order("path asc").Find(&items).Error)
+	require.Len(t, items, 2)
+
+	require.NotNil(t, items[0].DirName)
+	require.NotNil(t, items[1].DirName)
+	assert.Equal(t, "app", *items[0].DirName)
+	assert.Equal(t, "app", *items[1].DirName)
+	assert.Equal(t, firstPath, items[0].Path)
+	assert.Equal(t, secondPath, items[1].Path)
+}
+
+func TestProjectService_SyncProjectsFromFileSystem_DetectsNestedSymlinkedProjectDirsWhenEnabled(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsRoot := t.TempDir()
+	targetRoot := t.TempDir()
+	targetPath := createComposeProjectDir(t, targetRoot, filepath.Join("main-project", "sub-project1"))
+	linkPath := filepath.Join(projectsRoot, "linked-root")
+	require.NoError(t, os.Symlink(filepath.Join(targetRoot, "main-project"), linkPath))
+
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+	require.NoError(t, settingsService.SetStringSetting(ctx, "followProjectSymlinks", "true"))
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil)
+	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
+
+	items, page, err := svc.ListProjects(ctx, pagination.QueryParams{
+		SortParams:       pagination.SortParams{Sort: "path", Order: pagination.SortAsc},
+		PaginationParams: pagination.PaginationParams{Limit: -1},
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 1, page.TotalItems)
+	require.Len(t, items, 1)
+	assert.Equal(t, filepath.Join(linkPath, "sub-project1"), items[0].Path)
+	assert.Equal(t, "linked-root/sub-project1", items[0].RelativePath)
+	assert.Equal(t, targetPath, filepath.Join(targetRoot, "main-project", "sub-project1"))
 }
 
 func TestProjectService_SyncProjectsFromFileSystem_RemovesSymlinkedProjectsWhenDisabled(t *testing.T) {

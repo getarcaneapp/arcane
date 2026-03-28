@@ -209,7 +209,7 @@ func TestInitialize_CreatesQueryPerformanceIndexes(t *testing.T) {
 		"idx_gitops_syncs_environment_last_sync_status",
 		"idx_gitops_syncs_environment_repository_id",
 		"idx_gitops_syncs_environment_project_id",
-		"idx_projects_path",
+		"idx_projects_path_unique",
 		"idx_projects_dir_name_not_null",
 		"idx_compose_templates_lookup_name",
 		"idx_compose_templates_lookup_description",

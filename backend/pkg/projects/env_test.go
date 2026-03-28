@@ -69,6 +69,27 @@ func TestLoadEnvironment(t *testing.T) {
 	})
 }
 
+func TestLoadEnvironment_DoesNotCreateMissingGlobalEnvFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	projectsDir := filepath.Join(tmpDir, "projects")
+	workdir := filepath.Join(projectsDir, "myproject")
+
+	require.NoError(t, os.MkdirAll(workdir, pkgutils.DirPerm))
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, ".env"), []byte("PROJECT_VAR=project_value\n"), pkgutils.FilePerm))
+
+	loader := NewEnvLoader(projectsDir, workdir, false)
+	ctx := context.Background()
+
+	envMap, injectionVars, err := loader.LoadEnvironment(ctx)
+	require.NoError(t, err)
+
+	assert.Equal(t, "project_value", envMap["PROJECT_VAR"])
+	assert.Empty(t, injectionVars)
+
+	_, statErr := os.Stat(filepath.Join(projectsDir, GlobalEnvFileName))
+	assert.ErrorIs(t, statErr, os.ErrNotExist)
+}
+
 func TestBuildEffectiveEnvContent(t *testing.T) {
 	gitContent := "BASE_URL=https://example.com\nSHARED=git\n"
 	overrideContent := "API_TOKEN=secret\nSHARED=override\n"
