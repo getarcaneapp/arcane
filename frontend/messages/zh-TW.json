@@ -1045,6 +1045,7 @@
 	"_comment_projects": "=== PROJECTS (COMPOSE) ===",
 	"projects_title": "專案",
 	"projects_col_provider": "提供者",
+	"projects_col_directory": "目錄",
 	"projects_provider_local": "本機",
 	"projects_provider_git": "Git",
 	"projects_status_partial": "部分執行中",
