@@ -49,33 +49,29 @@
 	let autoScrollLogs = $state(true);
 	let hasInitialStatsLoaded = $state(false);
 
-	// Auto-update exclusion: check both the Docker label and the settings exclusion list
+	// Auto-update: detect whether the Docker label controls the state (not toggleable via UI)
+	function isAutoUpdateLabelControlled(c: ContainerDetailsDto): boolean {
+		if (!c?.labels) return false;
+		const labelValue = Object.entries(c.labels).find(
+			([k]) => k.toLowerCase() === 'com.getarcaneapp.arcane.updater'
+		)?.[1];
+		return !!labelValue && ['false', '0', 'no', 'off'].includes(labelValue.trim().toLowerCase());
+	}
+
 	function isAutoUpdateEnabled(c: ContainerDetailsDto, settings: any): boolean {
-		// Check Docker label first
-		if (c?.labels) {
-			const labelValue = Object.entries(c.labels).find(
-				([k]) => k.toLowerCase() === 'com.getarcaneapp.arcane.updater'
-			)?.[1];
-			if (labelValue && ['false', '0', 'no', 'off'].includes(labelValue.trim().toLowerCase())) {
-				return false;
-			}
-		}
-		// Check settings exclusion list
+		if (isAutoUpdateLabelControlled(c)) return false;
 		const excluded = settings?.autoUpdateExcludedContainers ?? '';
 		const containerName = c?.name?.replace(/^\/+/, '') ?? '';
 		if (containerName && excluded) {
 			const excludedList = excluded.split(',').map((s: string) => s.trim());
-			if (excludedList.includes(containerName)) {
-				return false;
-			}
+			if (excludedList.includes(containerName)) return false;
 		}
 		return true;
 	}
 
-	let autoUpdateEnabled = $state(true);
-	$effect(() => {
-		autoUpdateEnabled = isAutoUpdateEnabled(container, data?.settings);
-	});
+	const autoUpdateLabelControlled = $derived(isAutoUpdateLabelControlled(container));
+	let autoUpdateOverride = $state<boolean | null>(null);
+	const autoUpdateEnabled = $derived(autoUpdateOverride ?? isAutoUpdateEnabled(container, data?.settings));
 
 	const cleanContainerName = (name: string | undefined): string => {
 		if (!name) return m.common_not_found_title({ resource: m.containers_title() });
@@ -277,7 +273,8 @@
 					{container}
 					{primaryIpAddress}
 					{autoUpdateEnabled}
-					onAutoUpdateChange={(enabled) => { autoUpdateEnabled = enabled; }}
+					{autoUpdateLabelControlled}
+					onAutoUpdateChange={(enabled) => { autoUpdateOverride = enabled; }}
 					onViewPortMappings={showNetworkTab ? navigateToNetworkPortMappings : undefined}
 				/>
 			</Tabs.Content>

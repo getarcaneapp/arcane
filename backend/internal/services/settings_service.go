@@ -927,18 +927,6 @@ func (s *SettingsService) SetStringSetting(ctx context.Context, key, value strin
 	return s.UpdateSetting(ctx, key, value)
 }
 
-// IsContainerAutoUpdateExcludedInternal checks whether the given container name
-// appears in the autoUpdateExcludedContainers comma-separated setting.
-func (s *SettingsService) IsContainerAutoUpdateExcludedInternal(ctx context.Context, containerName string) bool {
-	raw := s.GetStringSetting(ctx, "autoUpdateExcludedContainers", "")
-	for part := range strings.SplitSeq(raw, ",") {
-		if strings.TrimSpace(part) == containerName {
-			return true
-		}
-	}
-	return false
-}
-
 // SetContainerAutoUpdateExclusionInternal adds or removes a container name from
 // the autoUpdateExcludedContainers setting. When excluded is true the container
 // is added to the list; when false it is removed.

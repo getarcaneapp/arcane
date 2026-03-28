@@ -13,11 +13,12 @@
 		container: ContainerDetailsDto;
 		primaryIpAddress: string;
 		autoUpdateEnabled?: boolean;
+		autoUpdateLabelControlled?: boolean;
 		onAutoUpdateChange?: (enabled: boolean) => void;
 		onViewPortMappings?: () => void;
 	}
 
-	let { container, primaryIpAddress, autoUpdateEnabled = true, onAutoUpdateChange, onViewPortMappings }: Props = $props();
+	let { container, primaryIpAddress, autoUpdateEnabled = true, autoUpdateLabelControlled = false, onAutoUpdateChange, onViewPortMappings }: Props = $props();
 
 	let autoUpdateToggling = $state(false);
 
@@ -268,13 +269,16 @@
 					<div class="flex items-center gap-3">
 						<Switch
 							checked={autoUpdateEnabled}
-							disabled={autoUpdateToggling}
+							disabled={autoUpdateToggling || autoUpdateLabelControlled}
 							onCheckedChange={handleAutoUpdateToggle}
 						/>
 						<span class="text-foreground text-sm font-medium">
 							{autoUpdateEnabled ? 'Enabled' : 'Disabled'}
 						</span>
 					</div>
+					{#if autoUpdateLabelControlled}
+						<span class="text-muted-foreground text-xs">Controlled by Docker label</span>
+					{/if}
 				</Card.Content>
 			</Card.Root>
 

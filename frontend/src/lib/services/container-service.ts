@@ -102,7 +102,7 @@ export class ContainerService extends BaseAPIService {
 		return this.handleResponse(this.api.post(`/environments/${envId}/containers/${containerId}/redeploy`));
 	}
 
-	async setAutoUpdate(containerId: string, enabled: boolean): Promise<any> {
+	async setAutoUpdate(containerId: string, enabled: boolean): Promise<{ success: boolean; data: { message: string } }> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		return this.handleResponse(
 			this.api.put(`/environments/${envId}/containers/${containerId}/auto-update`, { enabled })
