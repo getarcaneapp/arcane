@@ -39,11 +39,11 @@ func writeJSONLine(w io.Writer, v any) {
 const defaultComposeTimeout = 30 * time.Minute
 
 // detachFromHTTPContextInternal creates a new context derived from
-// context.Background() that carries any values from the parent (such as
-// ProgressWriterKey) but is **not** cancelled when the parent is.
-// This allows compose operations to survive HTTP request timeouts and
-// proxy deadline cancellations. A standalone timeout is applied so the
-// operation cannot run forever. See #1209.
+// context.WithoutCancel(parent) that carries any values from the parent
+// (such as ProgressWriterKey) but is **not** cancelled or deadline-bounded
+// by the parent. This allows compose operations to survive HTTP request
+// timeouts and proxy deadline cancellations. A standalone timeout is applied
+// so the operation cannot run forever. See #1209.
 func detachFromHTTPContextInternal(parent context.Context) (context.Context, context.CancelFunc) {
 	ctx := context.WithoutCancel(parent)
 	return context.WithTimeout(ctx, defaultComposeTimeout)

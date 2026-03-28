@@ -3,6 +3,7 @@ package projects
 import (
 	"context"
 	"testing"
+	"time"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/stretchr/testify/require"
@@ -41,6 +42,22 @@ func TestDetachFromHTTPContextInternal(t *testing.T) {
 		deadline, ok := detached.Deadline()
 		require.True(t, ok)
 		require.False(t, deadline.IsZero())
+	})
+
+	t.Run("survives parent deadline expiry", func(t *testing.T) {
+		parent, parentCancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
+		defer parentCancel()
+
+		time.Sleep(5 * time.Millisecond) // ensure parent deadline has passed
+
+		detached, detachedCancel := detachFromHTTPContextInternal(parent)
+		defer detachedCancel()
+
+		require.NoError(t, detached.Err())
+
+		deadline, ok := detached.Deadline()
+		require.True(t, ok)
+		require.InDelta(t, float64(defaultComposeTimeout), float64(time.Until(deadline)), float64(5*time.Second))
 	})
 }
 
