@@ -12,6 +12,7 @@ import {
 	ImagesIcon,
 	NetworksIcon,
 	VolumesIcon,
+	HashIcon,
 	DockIcon,
 	JobsIcon,
 	LayersIcon,
@@ -52,7 +53,16 @@ export const navigationItems: NavigationSections = {
 	resourceItems: [
 		{ title: m.containers_title(), url: '/containers', icon: ContainersIcon, shortcut: ['mod', '5'] },
 		{ title: m.images_title(), url: '/images', icon: ImagesIcon, shortcut: ['mod', '6'] },
-		{ title: m.networks_title(), url: '/networks', icon: NetworksIcon, shortcut: ['mod', '7'] },
+		{
+			title: m.networks_title(),
+			url: '/networks',
+			icon: NetworksIcon,
+			shortcut: ['mod', '7'],
+			items: [
+				{ title: m.ports_title(), url: '/ports', icon: HashIcon },
+				{ title: m.networks_topology_button(), url: '/networks/topology', icon: GitBranchIcon }
+			]
+		},
 		{ title: m.volumes_title(), url: '/volumes', icon: VolumesIcon, shortcut: ['mod', '8'] }
 	],
 	deploymentItems: [{ title: m.builds(), url: '/images/builds', icon: HammerIcon, shortcut: ['mod', 'b'] }],

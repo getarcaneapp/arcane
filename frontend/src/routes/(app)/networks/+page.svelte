@@ -1,5 +1,7 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import { NetworksIcon, ConnectionIcon } from '$lib/icons';
+	import { GitBranchIcon } from '$lib/icons';
 	import { toast } from 'svelte-sonner';
 	import type { NetworkCreateOptions, NetworkUsageCounts } from '$lib/types/network.type';
 	import CreateNetworkSheet from '$lib/components/sheets/create-network-sheet.svelte';
@@ -74,6 +76,13 @@
 			onclick: refresh,
 			loading: isRefreshing,
 			disabled: isRefreshing
+		},
+		{
+			id: 'topology',
+			action: 'inspect',
+			label: m.networks_topology_button(),
+			icon: GitBranchIcon,
+			onclick: () => void goto('/networks/topology')
 		}
 	]);
 

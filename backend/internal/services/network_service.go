@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/getarcaneapp/arcane/backend/internal/database"
@@ -14,6 +15,7 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
+	"golang.org/x/sync/errgroup"
 )
 
 type NetworkService struct {
@@ -43,6 +45,129 @@ func (s *NetworkService) GetNetworkByID(ctx context.Context, id string) (*networ
 
 	inspect := networkInspect.Network
 	return &inspect, nil
+}
+
+func (s *NetworkService) GetNetworkTopology(ctx context.Context) (*networktypes.Topology, error) {
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
+	}
+
+	containerList, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list containers: %w", err)
+	}
+
+	containerInfoByID := buildTopologyContainerInfoInternal(containerList.Items)
+
+	networkList, err := libarcane.NetworkListWithCompatibility(ctx, dockerClient, client.NetworkListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list Docker networks: %w", err)
+	}
+
+	topology := &networktypes.Topology{
+		Nodes: make([]networktypes.TopologyNode, 0, len(networkList.Items)),
+		Edges: make([]networktypes.TopologyEdge, 0),
+	}
+	containerNodeIDs := make(map[string]struct{})
+	inspectedNetworks := make([]struct {
+		summary network.Summary
+		inspect network.Inspect
+	}, len(networkList.Items))
+
+	g, groupCtx := errgroup.WithContext(ctx)
+	g.SetLimit(8)
+
+	for i := range networkList.Items {
+		rawNetwork := networkList.Items[i]
+		g.Go(func() error {
+			inspected, err := libarcane.NetworkInspectWithCompatibility(groupCtx, dockerClient, rawNetwork.ID, client.NetworkInspectOptions{})
+			if err != nil {
+				return fmt.Errorf("failed to inspect network %s: %w", rawNetwork.Name, err)
+			}
+
+			inspectedNetworks[i] = struct {
+				summary network.Summary
+				inspect network.Inspect
+			}{
+				summary: rawNetwork,
+				inspect: inspected.Network,
+			}
+			return nil
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+
+	for _, inspectedNetwork := range inspectedNetworks {
+		rawNetwork := inspectedNetwork.summary
+		topology.Nodes = append(topology.Nodes, networktypes.TopologyNode{
+			ID:   rawNetwork.ID,
+			Name: rawNetwork.Name,
+			Type: networktypes.TopologyNodeTypeNetwork,
+			Metadata: networktypes.TopologyNodeMetadata{
+				Driver:    rawNetwork.Driver,
+				Scope:     rawNetwork.Scope,
+				IsDefault: dockerutil.IsDefaultNetwork(rawNetwork.Name),
+			},
+		})
+
+		for containerID, endpoint := range inspectedNetwork.inspect.Containers {
+			info, ok := containerInfoByID[containerID]
+			if !ok {
+				info = topologyContainerInfo{Name: endpoint.Name}
+			}
+			if info.Name == "" {
+				info.Name = endpoint.Name
+			}
+
+			if _, exists := containerNodeIDs[containerID]; !exists {
+				topology.Nodes = append(topology.Nodes, networktypes.TopologyNode{
+					ID:   containerID,
+					Name: info.Name,
+					Type: networktypes.TopologyNodeTypeContainer,
+					Metadata: networktypes.TopologyNodeMetadata{
+						Status: info.State,
+						Image:  info.Image,
+					},
+				})
+				containerNodeIDs[containerID] = struct{}{}
+			}
+
+			edge := networktypes.TopologyEdge{
+				ID:     fmt.Sprintf("%s:%s", rawNetwork.ID, containerID),
+				Source: rawNetwork.ID,
+				Target: containerID,
+			}
+			if endpoint.IPv4Address.IsValid() {
+				edge.IPv4Address = endpoint.IPv4Address.String()
+			}
+			if endpoint.IPv6Address.IsValid() {
+				edge.IPv6Address = endpoint.IPv6Address.String()
+			}
+
+			topology.Edges = append(topology.Edges, edge)
+		}
+	}
+
+	sort.Slice(topology.Nodes, func(i, j int) bool {
+		left, right := topology.Nodes[i], topology.Nodes[j]
+		if left.Type != right.Type {
+			return left.Type < right.Type
+		}
+		return strings.ToLower(left.Name) < strings.ToLower(right.Name)
+	})
+	sort.Slice(topology.Edges, func(i, j int) bool {
+		left, right := topology.Edges[i], topology.Edges[j]
+		if left.Source != right.Source {
+			return left.Source < right.Source
+		}
+		return left.Target < right.Target
+	})
+
+	return topology, nil
 }
 
 func (s *NetworkService) CreateNetwork(ctx context.Context, name string, options client.NetworkCreateOptions, user models.User) (*network.CreateResponse, error) {
@@ -180,6 +305,28 @@ func (s *NetworkService) buildNetworkUsageMaps(containers []container.Summary) (
 		}
 	}
 	return inUseByID, inUseByName
+}
+
+type topologyContainerInfo struct {
+	Name  string
+	Image string
+	State string
+}
+
+func buildTopologyContainerInfoInternal(containers []container.Summary) map[string]topologyContainerInfo {
+	infoByID := make(map[string]topologyContainerInfo, len(containers))
+	for _, rawContainer := range containers {
+		name := rawContainer.ID
+		if len(rawContainer.Names) > 0 {
+			name = strings.TrimPrefix(rawContainer.Names[0], "/")
+		}
+		infoByID[rawContainer.ID] = topologyContainerInfo{
+			Name:  name,
+			Image: rawContainer.Image,
+			State: string(rawContainer.State),
+		}
+	}
+	return infoByID
 }
 
 func (s *NetworkService) convertToNetworkSummaries(rawNets []network.Summary, inUseByID, inUseByName map[string]bool) []networktypes.Summary {

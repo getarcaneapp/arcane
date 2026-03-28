@@ -113,7 +113,13 @@ export const queryKeys = {
 		all: ['networks'] as const,
 		list: (environmentId: string, options: SearchPaginationSortRequest) =>
 			['networks', environmentId, stableSerialize(options)] as const,
-		detail: (environmentId: string, networkId: string) => ['network', environmentId, networkId] as const
+		detail: (environmentId: string, networkId: string) => ['network', environmentId, networkId] as const,
+		topology: (environmentId: string) => ['networks', environmentId, 'topology'] as const
+	},
+	ports: {
+		all: ['ports'] as const,
+		list: (environmentId: string, options: SearchPaginationSortRequest) =>
+			['ports', environmentId, stableSerialize(options)] as const
 	},
 	gitOpsSyncs: {
 		all: ['gitops-syncs'] as const,

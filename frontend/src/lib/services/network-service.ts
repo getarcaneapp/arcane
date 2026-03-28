@@ -5,7 +5,8 @@ import type {
 	NetworkUsageCounts,
 	NetworkCreateRequest,
 	NetworkCreateOptions,
-	NetworkInspectDto
+	NetworkInspectDto,
+	NetworkTopologyDto
 } from '$lib/types/network.type';
 import type { SearchPaginationSortRequest, Paginated } from '$lib/types/pagination.type';
 import { transformPaginationParams } from '$lib/utils/params.util';
@@ -49,6 +50,11 @@ export class NetworkService extends BaseAPIService {
 	): Promise<NetworkInspectDto> {
 		const params = transformPaginationParams(options);
 		return this.handleResponse(this.api.get(`/environments/${environmentId}/networks/${networkId}`, { params }));
+	}
+
+	async getNetworkTopology(environmentId?: string): Promise<NetworkTopologyDto> {
+		const envId = await this.resolveEnvironmentId(environmentId);
+		return this.handleResponse(this.api.get(`/environments/${envId}/networks/topology`));
 	}
 
 	async createNetwork(name: string, options: NetworkCreateOptions): Promise<any> {

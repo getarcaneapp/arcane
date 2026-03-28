@@ -113,3 +113,33 @@ export interface NetworkInspectDto {
 	peers?: PeerInfo[];
 	services?: Record<string, ServiceInfo>;
 }
+
+export type TopologyNodeType = 'network' | 'container';
+
+export interface TopologyNodeMetadata {
+	driver?: string;
+	scope?: string;
+	status?: string;
+	image?: string;
+	isDefault?: boolean;
+}
+
+export interface TopologyNodeDto {
+	id: string;
+	name: string;
+	type: TopologyNodeType;
+	metadata: TopologyNodeMetadata;
+}
+
+export interface TopologyEdgeDto {
+	id: string;
+	source: string;
+	target: string;
+	ipv4Address?: string;
+	ipv6Address?: string;
+}
+
+export interface NetworkTopologyDto {
+	nodes: TopologyNodeDto[];
+	edges: TopologyEdgeDto[];
+}
