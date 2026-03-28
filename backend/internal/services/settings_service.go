@@ -927,6 +927,53 @@ func (s *SettingsService) SetStringSetting(ctx context.Context, key, value strin
 	return s.UpdateSetting(ctx, key, value)
 }
 
+// IsContainerAutoUpdateExcludedInternal checks whether the given container name
+// appears in the autoUpdateExcludedContainers comma-separated setting.
+func (s *SettingsService) IsContainerAutoUpdateExcludedInternal(ctx context.Context, containerName string) bool {
+	raw := s.GetStringSetting(ctx, "autoUpdateExcludedContainers", "")
+	for part := range strings.SplitSeq(raw, ",") {
+		if strings.TrimSpace(part) == containerName {
+			return true
+		}
+	}
+	return false
+}
+
+// SetContainerAutoUpdateExclusionInternal adds or removes a container name from
+// the autoUpdateExcludedContainers setting. When excluded is true the container
+// is added to the list; when false it is removed.
+func (s *SettingsService) SetContainerAutoUpdateExclusionInternal(ctx context.Context, containerName string, excluded bool) error {
+	raw := s.GetStringSetting(ctx, "autoUpdateExcludedContainers", "")
+	existing := make(map[string]struct{})
+	var ordered []string
+	for part := range strings.SplitSeq(raw, ",") {
+		name := strings.TrimSpace(part)
+		if name == "" {
+			continue
+		}
+		if _, ok := existing[name]; !ok {
+			existing[name] = struct{}{}
+			ordered = append(ordered, name)
+		}
+	}
+
+	if excluded {
+		if _, ok := existing[containerName]; !ok {
+			ordered = append(ordered, containerName)
+		}
+	} else {
+		filtered := ordered[:0]
+		for _, name := range ordered {
+			if name != containerName {
+				filtered = append(filtered, name)
+			}
+		}
+		ordered = filtered
+	}
+
+	return s.SetStringSetting(ctx, "autoUpdateExcludedContainers", strings.Join(ordered, ","))
+}
+
 func (s *SettingsService) EnsureEncryptionKey(ctx context.Context) (string, error) {
 	const keyName = "encryptionKey"
 	var key string

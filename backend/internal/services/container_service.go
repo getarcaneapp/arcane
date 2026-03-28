@@ -437,6 +437,15 @@ func (s *ContainerService) GetContainerByID(ctx context.Context, id string) (*co
 	return &containerInfo, nil
 }
 
+// GetContainerNameByID resolves a container's clean name from its Docker ID.
+func (s *ContainerService) GetContainerNameByID(ctx context.Context, id string) (string, error) {
+	info, err := s.GetContainerByID(ctx, id)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimPrefix(info.Name, "/"), nil
+}
+
 func (s *ContainerService) DeleteContainer(ctx context.Context, containerID string, force bool, removeVolumes bool, user models.User) error {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {

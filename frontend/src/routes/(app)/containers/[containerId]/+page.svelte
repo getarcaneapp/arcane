@@ -49,6 +49,34 @@
 	let autoScrollLogs = $state(true);
 	let hasInitialStatsLoaded = $state(false);
 
+	// Auto-update exclusion: check both the Docker label and the settings exclusion list
+	function isAutoUpdateEnabled(c: ContainerDetailsDto, settings: any): boolean {
+		// Check Docker label first
+		if (c?.labels) {
+			const labelValue = Object.entries(c.labels).find(
+				([k]) => k.toLowerCase() === 'com.getarcaneapp.arcane.updater'
+			)?.[1];
+			if (labelValue && ['false', '0', 'no', 'off'].includes(labelValue.trim().toLowerCase())) {
+				return false;
+			}
+		}
+		// Check settings exclusion list
+		const excluded = settings?.autoUpdateExcludedContainers ?? '';
+		const containerName = c?.name?.replace(/^\/+/, '') ?? '';
+		if (containerName && excluded) {
+			const excludedList = excluded.split(',').map((s: string) => s.trim());
+			if (excludedList.includes(containerName)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	let autoUpdateEnabled = $state(true);
+	$effect(() => {
+		autoUpdateEnabled = isAutoUpdateEnabled(container, data?.settings);
+	});
+
 	const cleanContainerName = (name: string | undefined): string => {
 		if (!name) return m.common_not_found_title({ resource: m.containers_title() });
 		return name.replace(/^\/+/, '');
@@ -248,6 +276,8 @@
 				<ContainerOverview
 					{container}
 					{primaryIpAddress}
+					{autoUpdateEnabled}
+					onAutoUpdateChange={(enabled) => { autoUpdateEnabled = enabled; }}
 					onViewPortMappings={showNetworkTab ? navigateToNetworkPortMappings : undefined}
 				/>
 			</Tabs.Content>

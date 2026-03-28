@@ -101,6 +101,13 @@ export class ContainerService extends BaseAPIService {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		return this.handleResponse(this.api.post(`/environments/${envId}/containers/${containerId}/redeploy`));
 	}
+
+	async setAutoUpdate(containerId: string, enabled: boolean): Promise<any> {
+		const envId = await environmentStore.getCurrentEnvironmentId();
+		return this.handleResponse(
+			this.api.put(`/environments/${envId}/containers/${containerId}/auto-update`, { enabled })
+		);
+	}
 }
 
 export const containerService = new ContainerService();
