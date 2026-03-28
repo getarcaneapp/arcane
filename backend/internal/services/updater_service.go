@@ -1219,6 +1219,14 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 		}
 	}
 
+	// Detect the Docker socket proxy container (if DOCKER_HOST is TCP) so we
+	// can skip it during auto-update. Updating it would sever Arcane's own
+	// Docker connectivity mid-operation. See #1881.
+	dockerProxyName := dockerProxyContainerNameInternal(s.dockerService.DockerHost())
+	if dockerProxyName != "" {
+		slog.InfoContext(ctx, "restartContainersUsingOldIDs: detected Docker socket proxy container; excluding from auto-update", "proxyContainer", dockerProxyName)
+	}
+
 	updatedNorm := map[string]string{}
 	for oldRef, nr := range oldRefToNewRef {
 		updatedNorm[s.normalizeRef(oldRef)] = nr
@@ -1249,6 +1257,22 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 		// Skip containers with opt-out label
 		if libupdater.IsUpdateDisabled(c.Labels) {
 			continue
+		}
+
+		// Skip the Docker socket proxy container to preserve Arcane's Docker connectivity (#1881)
+		if dockerProxyName != "" {
+			isProxy := false
+			for _, cname := range c.Names {
+				if strings.TrimPrefix(cname, "/") == dockerProxyName {
+					isProxy = true
+					break
+				}
+			}
+			if isProxy {
+				slog.WarnContext(ctx, "restartContainersUsingOldIDs: skipping Docker socket proxy container to preserve connectivity",
+					"containerId", c.ID, "containerName", dockerProxyName)
+				continue
+			}
 		}
 
 		// Ensure labels map exists to avoid nil panics in implicit restart marking
@@ -1931,4 +1955,25 @@ func (s *UpdaterService) parseRepoAndTag(ref string) (string, string) {
 	}
 	// Keep registry in repository as stored in records (they store Repository without tag)
 	return ref, tag
+}
+
+// dockerProxyContainerNameInternal extracts the container hostname from a TCP
+// DOCKER_HOST value (e.g. "tcp://my-proxy:2375" → "my-proxy"). Returns empty
+// string when DOCKER_HOST is not a TCP address or cannot be parsed.
+func dockerProxyContainerNameInternal(dockerHost string) string {
+	dockerHost = strings.TrimSpace(dockerHost)
+	if dockerHost == "" || !strings.HasPrefix(dockerHost, "tcp://") {
+		return ""
+	}
+	// Remove scheme
+	hostPort := strings.TrimPrefix(dockerHost, "tcp://")
+	// Strip port if present
+	if idx := strings.LastIndex(hostPort, ":"); idx != -1 {
+		hostPort = hostPort[:idx]
+	}
+	// Ignore bare IP addresses — only container hostnames are relevant
+	if hostPort == "" || hostPort == "localhost" || strings.Contains(hostPort, ".") {
+		return ""
+	}
+	return hostPort
 }
