@@ -1045,6 +1045,7 @@
 	"_comment_projects": "=== PROJECTS (COMPOSE) ===",
 	"projects_title": "Projects",
 	"projects_col_provider": "Nhà cung cấp",
+	"projects_col_directory": "Danh bạ",
 	"projects_provider_local": "Địa phương",
 	"projects_provider_git": "Git",
 	"projects_status_partial": "Hoạt động một phần",
