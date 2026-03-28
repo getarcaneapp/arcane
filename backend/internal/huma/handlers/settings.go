@@ -212,36 +212,7 @@ func (h *SettingsHandler) GetPublicSettings(ctx context.Context, input *GetPubli
 		return nil, huma.Error500InternalServerError((&common.SettingsMappingError{Err: err}).Error())
 	}
 
-	// Add UI config disabled setting
-	uiConfigDisabled := false
-	if h.cfg != nil {
-		uiConfigDisabled = h.cfg.UIConfigurationDisabled
-	}
-	settingsDto = append(settingsDto, settings.PublicSetting{
-		Key:   "uiConfigDisabled",
-		Value: strconv.FormatBool(uiConfigDisabled),
-		Type:  "boolean",
-	})
-	backupVolumeName := "arcane-backups"
-	if h.cfg != nil && strings.TrimSpace(h.cfg.BackupVolumeName) != "" {
-		backupVolumeName = h.cfg.BackupVolumeName
-	}
-	settingsDto = append(settingsDto, settings.PublicSetting{
-		Key:   "backupVolumeName",
-		Value: backupVolumeName,
-		Type:  "string",
-	})
-	if h.settingsService != nil {
-		cfg := h.settingsService.GetSettingsConfig()
-		depotConfigured := strings.TrimSpace(cfg.DepotProjectId.Value) != "" && strings.TrimSpace(cfg.DepotToken.Value) != ""
-		settingsDto = append(settingsDto, settings.PublicSetting{
-			Key:   "depotConfigured",
-			Value: strconv.FormatBool(depotConfigured),
-			Type:  "boolean",
-		})
-	}
-
-	return &GetPublicSettingsOutput{Body: settingsDto}, nil
+	return &GetPublicSettingsOutput{Body: h.appendRuntimeSettings(settingsDto)}, nil
 }
 
 // GetSettings returns all settings for an environment.
@@ -278,7 +249,10 @@ func (h *SettingsHandler) GetSettings(ctx context.Context, input *GetSettingsInp
 		return nil, huma.Error500InternalServerError((&common.SettingsMappingError{Err: err}).Error())
 	}
 
-	// Add UI config disabled setting
+	return &GetSettingsOutput{Body: h.appendRuntimeSettings(settingsDto)}, nil
+}
+
+func (h *SettingsHandler) appendRuntimeSettings(settingsDto []settings.PublicSetting) []settings.PublicSetting {
 	uiConfigDisabled := false
 	if h.cfg != nil {
 		uiConfigDisabled = h.cfg.UIConfigurationDisabled
@@ -288,6 +262,7 @@ func (h *SettingsHandler) GetSettings(ctx context.Context, input *GetSettingsInp
 		Value: strconv.FormatBool(uiConfigDisabled),
 		Type:  "boolean",
 	})
+
 	backupVolumeName := "arcane-backups"
 	if h.cfg != nil && strings.TrimSpace(h.cfg.BackupVolumeName) != "" {
 		backupVolumeName = h.cfg.BackupVolumeName
@@ -297,6 +272,7 @@ func (h *SettingsHandler) GetSettings(ctx context.Context, input *GetSettingsInp
 		Value: backupVolumeName,
 		Type:  "string",
 	})
+
 	if h.settingsService != nil {
 		cfg := h.settingsService.GetSettingsConfig()
 		depotConfigured := strings.TrimSpace(cfg.DepotProjectId.Value) != "" && strings.TrimSpace(cfg.DepotToken.Value) != ""
@@ -307,7 +283,7 @@ func (h *SettingsHandler) GetSettings(ctx context.Context, input *GetSettingsInp
 		})
 	}
 
-	return &GetSettingsOutput{Body: settingsDto}, nil
+	return settingsDto
 }
 
 // UpdateSettings updates settings for an environment.

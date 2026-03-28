@@ -125,11 +125,16 @@ test.describe('Token refresh behaviour', () => {
 		});
 
 		// Force a protected data endpoint to 401 so the axios interceptor always runs refresh logic.
-		await injectExpired401Always(page, /\/api\/environments\/0\/containers/);
+		await injectExpired401Always(page, /\/api\/environments\/[^/]+\/containers(?:\/.*)?$/);
+		// Keep /auth/me unauthenticated too so the login page does not immediately bounce back.
+		await injectExpired401Always(page, /\/api\/auth\/me$/);
 
 		await page.goto('/containers');
 		await expect.poll(() => refreshCalled).toBe(true);
 		await page.waitForURL(/\/login(\?|$)/, { timeout: 15_000 });
+		await expect(
+			page.getByRole('button', { name: 'Sign in to Arcane', exact: true })
+		).toBeVisible();
 	});
 
 	test('unauthenticated users are redirected to /login', async ({ page }) => {

@@ -60,6 +60,10 @@ export interface ServiceVirtualIP {
 	addr: string;
 }
 
+export interface SwarmRuntimeStatus {
+	enabled: boolean;
+}
+
 export interface RawServiceVirtualIP {
 	NetworkID?: string;
 	networkID?: string;

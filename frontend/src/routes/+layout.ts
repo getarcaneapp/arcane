@@ -1,6 +1,7 @@
 import { browser } from '$app/environment';
 import { environmentManagementService } from '$lib/services/env-mgmt-service';
 import { settingsService } from '$lib/services/settings-service';
+import { swarmService } from '$lib/services/swarm-service';
 import { userService } from '$lib/services/user-service';
 import versionService from '$lib/services/version-service';
 import settingsStore from '$lib/stores/config-store';
@@ -12,8 +13,6 @@ import { authService } from '$lib/services/auth-service';
 import { tryCatch } from '$lib/utils/try-catch';
 import { QueryClient } from '@tanstack/svelte-query';
 import { queryKeys } from '$lib/query/query-keys';
-import { systemService } from '$lib/services/system-service';
-import type { DockerInfo } from '$lib/types/docker-info.type';
 
 export const ssr = false;
 
@@ -63,8 +62,7 @@ export const load = async () => {
 
 	// Step 2: Only fetch authenticated data if user is logged in
 	let settings = null;
-	let dockerInfo: DockerInfo | null = null;
-
+	let swarmEnabled = false;
 	if (user) {
 		// Initialize environment store (required for settings service)
 		const environmentRequestOptions: SearchPaginationSortRequest = {
@@ -83,8 +81,12 @@ export const load = async () => {
 
 		// Fetch settings after environment store is initialized
 		// Settings service depends on environmentStore.getCurrentEnvironmentId()
-		settings = await settingsService.getSettings().catch(() => null);
-		dockerInfo = await systemService.getDockerInfo().catch(() => null);
+		const [loadedSettings, loadedSwarmStatus] = await Promise.all([
+			settingsService.getSettings().catch(() => null),
+			swarmService.getSwarmStatus().catch(() => null)
+		]);
+		settings = loadedSettings;
+		swarmEnabled = loadedSwarmStatus?.enabled === true;
 	} else {
 		// Initialize empty environment store for unauthenticated users
 		await environmentStore.initialize([]);
@@ -138,6 +140,6 @@ export const load = async () => {
 		settings,
 		versionInformation,
 		queryClient,
-		dockerInfo
+		swarmEnabled
 	};
 };

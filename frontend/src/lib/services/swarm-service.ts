@@ -8,6 +8,7 @@ import type {
 	SwarmTaskSummary,
 	SwarmStackSummary,
 	SwarmInfo,
+	SwarmRuntimeStatus,
 	SwarmNodeAgentDeployment,
 	SwarmServiceCreateRequest,
 	SwarmServiceUpdateRequest,
@@ -189,6 +190,11 @@ export class SwarmService extends BaseAPIService {
 	async getSwarmInfo(): Promise<SwarmInfo> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		return this.handleResponse(this.api.get(`/environments/${envId}/swarm/info`));
+	}
+
+	async getSwarmStatus(): Promise<SwarmRuntimeStatus> {
+		const envId = await environmentStore.getCurrentEnvironmentId();
+		return this.handleResponse(this.api.get(`/environments/${envId}/swarm/status`));
 	}
 
 	async initSwarm(request: SwarmInitRequest): Promise<SwarmInitResponse> {

@@ -6,6 +6,10 @@ import (
 	"github.com/moby/moby/api/types/swarm"
 )
 
+type RuntimeStatus struct {
+	Enabled bool `json:"enabled"`
+}
+
 type SwarmInfo struct {
 	// ID is the swarm ID.
 	//

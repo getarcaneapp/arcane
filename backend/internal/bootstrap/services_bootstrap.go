@@ -84,7 +84,7 @@ func initializeServices(ctx context.Context, db *database.DB, cfg *config.Config
 	svcs.Dashboard = services.NewDashboardService(db, svcs.Docker, svcs.Container, svcs.Settings, svcs.Vulnerability)
 	svcs.Volume = services.NewVolumeService(db, svcs.Docker, svcs.Event, svcs.Settings, svcs.Container, svcs.Image, cfg.BackupVolumeName)
 	svcs.Network = services.NewNetworkService(db, svcs.Docker, svcs.Event)
-	svcs.Swarm = services.NewSwarmService(svcs.Docker, svcs.Settings, svcs.ContainerRegistry, svcs.Environment)
+	svcs.Swarm = services.NewSwarmService(svcs.Docker, svcs.Settings, svcs.KV, svcs.ContainerRegistry, svcs.Environment)
 	svcs.Template = services.NewTemplateService(ctx, db, httpClient, svcs.Settings)
 	svcs.Auth = services.NewAuthService(svcs.User, svcs.Settings, svcs.Event, cfg.JWTSecret, cfg)
 	svcs.Oidc = services.NewOidcService(svcs.Auth, cfg, httpClient)

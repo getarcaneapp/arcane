@@ -108,6 +108,14 @@ export const defaultMobilePinnedItems: NavigationItem[] = [
 	navigationItems.resourceItems[1]!
 ];
 
+export function getSwarmNavigationItems(swarmEnabled: boolean): NavigationItem[] {
+	if (swarmEnabled) {
+		return navigationItems.swarmItems;
+	}
+
+	return navigationItems.swarmItems.filter((item) => item.url === '/swarm/cluster');
+}
+
 export type MobileNavigationSettings = {
 	pinnedItems: string[];
 	mode: 'floating' | 'docked';
@@ -115,7 +123,7 @@ export type MobileNavigationSettings = {
 	scrollToHide: boolean;
 };
 
-export function getAvailableMobileNavItems(options?: { includeSwarm?: boolean }): NavigationItem[] {
+export function getAvailableMobileNavItems(options?: { swarmEnabled?: boolean }): NavigationItem[] {
 	const flatItems: NavigationItem[] = [];
 	if (navigationItems.managementItems) {
 		flatItems.push(...navigationItems.managementItems);
@@ -129,8 +137,9 @@ export function getAvailableMobileNavItems(options?: { includeSwarm?: boolean })
 		flatItems.push(...navigationItems.deploymentItems);
 	}
 
-	if (options?.includeSwarm && navigationItems.swarmItems) {
-		flatItems.push(...navigationItems.swarmItems);
+	const swarmItems = getSwarmNavigationItems(!!options?.swarmEnabled);
+	if (swarmItems.length > 0) {
+		flatItems.push(...swarmItems);
 	}
 
 	if (navigationItems.securityItems) {

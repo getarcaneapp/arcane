@@ -192,7 +192,7 @@ func (fw *Watcher) handleEvent(ctx context.Context, event fsnotify.Event) {
 	if event.Has(fsnotify.Create) {
 		if fw.isWatchableDirectory(event.Name) {
 			if fw.shouldWatchDir(event.Name) {
-				if err := fw.watcher.Add(event.Name); err != nil {
+				if err := fw.addExistingDirectories(event.Name); err != nil {
 					slog.WarnContext(ctx, "Failed to add new directory to watcher",
 						"path", event.Name,
 						"error", err)
@@ -220,59 +220,53 @@ func (fw *Watcher) shouldHandleEvent(event fsnotify.Event) bool {
 }
 
 func (fw *Watcher) addExistingDirectories(root string) error {
-	if err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			slog.Warn("Error walking directory",
-				"path", path,
-				"error", err)
-			return err
-		}
+	return fw.addExistingDirectoriesRecursiveInternal(root, map[string]struct{}{})
+}
 
-		if info.IsDir() && path != root {
-			depth := fw.dirDepth(path)
-			if depth < 0 {
-				return filepath.SkipDir
-			}
-			if fw.maxDepth > 0 && depth > fw.maxDepth {
-				return filepath.SkipDir
-			}
-
-			if err := fw.watcher.Add(path); err != nil {
-				slog.Warn("Failed to add directory to watcher",
-					"path", path,
-					"error", err)
-			}
-
-			if fw.maxDepth > 0 && depth == fw.maxDepth {
-				return filepath.SkipDir
-			}
-		}
-		return nil
-	}); err != nil {
+func (fw *Watcher) addExistingDirectoriesRecursiveInternal(path string, ancestors map[string]struct{}) error {
+	identity, err := projects.ResolveDirectoryIdentityInternal(path)
+	if err != nil {
 		return err
 	}
-
-	if !fw.followSymlinks {
+	if _, seen := ancestors[identity]; seen {
 		return nil
 	}
 
-	entries, err := os.ReadDir(root)
+	ancestors[identity] = struct{}{}
+	defer delete(ancestors, identity)
+
+	if path != fw.watchedPath {
+		depth := fw.dirDepth(path)
+		if depth < 0 {
+			return nil
+		}
+		if fw.maxDepth > 0 && depth > fw.maxDepth {
+			return nil
+		}
+
+		if err := fw.watcher.Add(path); err != nil {
+			slog.Warn("Failed to add directory to watcher",
+				"path", path,
+				"error", err)
+		}
+
+		if fw.maxDepth > 0 && depth == fw.maxDepth {
+			return nil
+		}
+	}
+
+	entries, err := os.ReadDir(path)
 	if err != nil {
 		return err
 	}
 
 	for _, entry := range entries {
-		path := filepath.Join(root, entry.Name())
-		if !projects.IsProjectDirectoryEntry(entry, path, fw.followSymlinks) || entry.IsDir() {
+		childPath := filepath.Join(path, entry.Name())
+		if !projects.IsProjectDirectoryEntry(entry, childPath, fw.followSymlinks) {
 			continue
 		}
-		if !fw.shouldWatchDir(path) {
-			continue
-		}
-		if err := fw.watcher.Add(path); err != nil {
-			slog.Warn("Failed to add symlink directory to watcher",
-				"path", path,
-				"error", err)
+		if err := fw.addExistingDirectoriesRecursiveInternal(childPath, ancestors); err != nil {
+			return err
 		}
 	}
 

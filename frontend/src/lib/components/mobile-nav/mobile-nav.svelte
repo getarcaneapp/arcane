@@ -1,14 +1,13 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import type { MobileNavigationSettings } from '$lib/config/navigation-config';
-	import { getAvailableMobileNavItems } from '$lib/config/navigation-config';
+	import { getAvailableMobileNavItems, getSwarmNavigationItems } from '$lib/config/navigation-config';
 	import MobileNavItem from './mobile-nav-item.svelte';
 	import MobileNavMenuButton from './mobile-nav-menu-button.svelte';
 	import { cn } from '$lib/utils';
 	import MobileNavSheet from './mobile-nav-sheet.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { MobileNavGestures } from './gestures.svelte';
-	import type { DockerInfo } from '$lib/types/docker-info.type';
 	import './styles.css';
 	import type { AppVersionInformation } from '$lib/types/application-configuration';
 
@@ -16,21 +15,21 @@
 		navigationSettings,
 		user = null,
 		versionInformation,
-		dockerInfo = null,
+		swarmEnabled = false,
 		class: className = ''
 	}: {
 		navigationSettings: MobileNavigationSettings;
 		user?: any;
 		versionInformation?: AppVersionInformation;
-		dockerInfo?: DockerInfo | null;
+		swarmEnabled?: boolean;
 		class?: string;
 	} = $props();
 
-	const swarmEnabled = $derived(dockerInfo?.Swarm?.LocalNodeState === 'active');
+	const swarmItems = $derived(getSwarmNavigationItems(swarmEnabled));
 
 	const pinnedItems = $derived.by(() => {
 		if (!navigationSettings?.pinnedItems) return [];
-		const availableItems = getAvailableMobileNavItems({ includeSwarm: swarmEnabled });
+		const availableItems = getAvailableMobileNavItems({ swarmEnabled });
 		return navigationSettings.pinnedItems
 			.map((url) => availableItems.find((item) => item.url === url))
 			.filter((item) => item !== undefined);
@@ -189,4 +188,4 @@
 	{/if}
 </nav>
 
-<MobileNavSheet bind:open={menuOpen} {user} {versionInformation} {swarmEnabled} />
+<MobileNavSheet bind:open={menuOpen} {user} {versionInformation} {swarmItems} />

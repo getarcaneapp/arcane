@@ -129,6 +129,7 @@ test.describe('Dashboard system stats websocket', () => {
 		await expect(page.getByText('7 CPUs', { exact: true })).toBeVisible();
 		await expect(page.getByText('512 MB / 1 GB', { exact: true })).toBeVisible();
 		await expect(page.getByText('256 MB / 1 GB', { exact: true })).toBeVisible();
+		await expect(page.locator('a[href="/swarm/cluster"]').first()).toBeVisible();
 	});
 
 	test('loads dashboard content from the snapshot endpoint without dashboard REST fan-out', async ({
@@ -149,11 +150,14 @@ test.describe('Dashboard system stats websocket', () => {
 			/\/api\/environments\/[^/]+\/containers\/counts$/,
 			/\/api\/environments\/[^/]+\/images$/,
 			/\/api\/environments\/[^/]+\/images\/counts$/,
-			/\/api\/environments\/[^/]+\/dashboard\/action-items$/,
-			/\/api\/environments\/[^/]+\/system\/docker\/info$/
+			/\/api\/environments\/[^/]+\/dashboard\/action-items$/
 		]) {
 			expect(countMatchingRequests(requestPaths, blockedPattern)).toBe(0);
 		}
+
+		expect(
+			countMatchingRequests(requestPaths, /\/api\/environments\/[^/]+\/system\/docker\/info$/)
+		).toBe(0);
 	});
 
 	test('lazy loads docker info when the inspect dialog opens and reuses the cached result', async ({
@@ -169,14 +173,10 @@ test.describe('Dashboard system stats websocket', () => {
 			countMatchingRequests(requestPaths, /\/api\/environments\/[^/]+\/system\/docker\/info$/)
 		).toBe(0);
 
-		const dockerInfoRequest = page.waitForRequest((request) =>
-			/\/api\/environments\/[^/]+\/system\/docker\/info$/.test(new URL(request.url()).pathname)
-		);
 		await page
 			.getByRole('button', { name: /^Inspect$/ })
 			.first()
 			.click();
-		await dockerInfoRequest;
 		await expect(page.getByRole('dialog')).toBeVisible();
 		await expect
 			.poll(() =>

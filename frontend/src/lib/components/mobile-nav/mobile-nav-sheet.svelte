@@ -22,13 +22,13 @@
 		open = $bindable(false),
 		user = null,
 		versionInformation,
-		swarmEnabled = false,
+		swarmItems = [],
 		debug = false
 	}: {
 		open: boolean;
 		user?: any;
 		versionInformation?: AppVersionInformation;
-		swarmEnabled?: boolean;
+		swarmItems?: NavigationItem[];
 		debug?: boolean;
 	} = $props();
 
@@ -250,13 +250,13 @@
 					</div>
 				</section>
 
-				{#if swarmEnabled}
+				{#if swarmItems.length > 0}
 					<section>
 						<h4 class="text-muted-foreground/70 mb-4 px-3 text-[11px] font-bold tracking-widest uppercase">
 							{m.swarm_title()}
 						</h4>
 						<div class="space-y-2">
-							{#each navigationItems.swarmItems as item}
+							{#each swarmItems as item}
 								{@const IconComponent = item.icon}
 								<a
 									href={item.url}

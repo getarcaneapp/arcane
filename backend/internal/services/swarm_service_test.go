@@ -39,7 +39,7 @@ func TestSwarmService_FetchSwarmNodeIdentityViaEdgeInternal_UsesEnvironmentAcces
 		&accessToken,
 	)
 
-	svc := NewSwarmService(nil, nil, nil, envSvc)
+	svc := NewSwarmService(nil, nil, nil, nil, envSvc)
 
 	identity, err := svc.fetchSwarmNodeIdentityViaEdgeInternal(ctx, "env-1")
 	require.NoError(t, err)

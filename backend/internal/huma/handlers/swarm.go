@@ -321,6 +321,14 @@ type GetSwarmInfoOutput struct {
 	Body base.ApiResponse[swarmtypes.SwarmInfo]
 }
 
+type GetSwarmStatusInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+}
+
+type GetSwarmStatusOutput struct {
+	Body base.ApiResponse[swarmtypes.RuntimeStatus]
+}
+
 type InitSwarmInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Body          swarmtypes.SwarmInitRequest
@@ -530,6 +538,7 @@ func RegisterSwarm(api huma.API, swarmSvc *services.SwarmService, environmentSvc
 	huma.Register(api, huma.Operation{OperationID: "list-swarm-stack-tasks", Method: http.MethodGet, Path: "/environments/{id}/swarm/stacks/{name}/tasks", Summary: "List swarm stack tasks", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, h.ListStackTasks)
 	huma.Register(api, huma.Operation{OperationID: "render-swarm-stack-config", Method: http.MethodPost, Path: "/environments/{id}/swarm/stacks/config/render", Summary: "Render/validate swarm stack config", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, h.RenderStackConfig)
 
+	huma.Register(api, huma.Operation{OperationID: "get-swarm-status", Method: http.MethodGet, Path: "/environments/{id}/swarm/status", Summary: "Get swarm status", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, h.GetSwarmStatus)
 	huma.Register(api, huma.Operation{OperationID: "get-swarm-info", Method: http.MethodGet, Path: "/environments/{id}/swarm/info", Summary: "Get swarm info", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, h.GetSwarmInfo)
 	huma.Register(api, huma.Operation{OperationID: "init-swarm", Method: http.MethodPost, Path: "/environments/{id}/swarm/init", Summary: "Initialize swarm", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, h.InitSwarm)
 	huma.Register(api, huma.Operation{OperationID: "join-swarm", Method: http.MethodPost, Path: "/environments/{id}/swarm/join", Summary: "Join swarm", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, h.JoinSwarm)
@@ -1336,6 +1345,34 @@ func (h *SwarmHandler) RenderStackConfig(ctx context.Context, input *RenderSwarm
 	}
 
 	return &RenderSwarmStackConfigOutput{Body: base.ApiResponse[swarmtypes.StackRenderConfigResponse]{Success: true, Data: *resp}}, nil
+}
+
+// GetSwarmInfo returns the current swarm cluster metadata for an environment.
+//
+// It delegates to the swarm service to inspect the local swarm state and maps
+// service-layer failures to the API's HTTP error model.
+//
+// ctx carries request-scoped cancellation and auth context.
+// input identifies the environment whose swarm metadata should be returned.
+//
+// Returns the current swarm information when swarm mode is available.
+// Returns a mapped HTTP error when swarm inspection fails.
+func (h *SwarmHandler) GetSwarmStatus(ctx context.Context, input *GetSwarmStatusInput) (*GetSwarmStatusOutput, error) {
+	if h.swarmService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	enabled, err := h.swarmService.IsEnabled(ctx)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("failed to read swarm status")
+	}
+
+	return &GetSwarmStatusOutput{
+		Body: base.ApiResponse[swarmtypes.RuntimeStatus]{
+			Success: true,
+			Data:    swarmtypes.RuntimeStatus{Enabled: enabled},
+		},
+	}, nil
 }
 
 // GetSwarmInfo returns the current swarm cluster metadata for an environment.

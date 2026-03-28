@@ -1,5 +1,5 @@
 <script lang="ts" module>
-	import { navigationItems, getBuildAndDeploymentItems } from '$lib/config/navigation-config';
+	import { navigationItems, getBuildAndDeploymentItems, getSwarmNavigationItems } from '$lib/config/navigation-config';
 </script>
 
 <script lang="ts">
@@ -12,7 +12,6 @@
 	import type { ComponentProps } from 'svelte';
 	import type { User } from '$lib/types/user.type';
 	import type { AppVersionInformation } from '$lib/types/application-configuration';
-	import type { DockerInfo } from '$lib/types/docker-info.type';
 	import SidebarLogo from './sidebar-logo.svelte';
 	import SidebarUpdatebanner from './sidebar-updatebanner.svelte';
 	import SidebarPinButton from './sidebar-pin-button.svelte';
@@ -31,12 +30,12 @@
 		variant = 'floating',
 		user,
 		versionInformation,
-		dockerInfo = null,
+		swarmEnabled = false,
 		...restProps
 	}: ComponentProps<typeof Sidebar.Root> & {
 		versionInformation: AppVersionInformation;
 		user?: User | null;
-		dockerInfo?: DockerInfo | null;
+		swarmEnabled?: boolean;
 	} = $props();
 
 	let autoLoginEnabled = $state(false);
@@ -67,7 +66,7 @@
 
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
 	const buildDeploymentItems = $derived(getBuildAndDeploymentItems(currentEnvId));
-	const swarmEnabled = $derived(dockerInfo?.Swarm?.LocalNodeState === 'active');
+	const swarmItems = $derived(getSwarmNavigationItems(swarmEnabled));
 </script>
 
 <VersionInfoDialog
@@ -105,8 +104,8 @@
 		<SidebarItemGroup label={m.sidebar_management()} items={navigationItems.managementItems} />
 		<SidebarItemGroup label={m.sidebar_resources()} items={navigationItems.resourceItems} />
 		<SidebarItemGroup label={m.builds_and_deployments()} items={buildDeploymentItems} />
-		{#if swarmEnabled}
-			<SidebarItemGroup label={m.swarm_title()} items={navigationItems.swarmItems} />
+		{#if swarmItems.length > 0}
+			<SidebarItemGroup label={m.swarm_title()} items={swarmItems} />
 		{/if}
 		<SidebarItemGroup label={m.security_title()} items={navigationItems.securityItems} />
 		{#if isAdmin}

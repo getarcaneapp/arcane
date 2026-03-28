@@ -175,6 +175,11 @@ func initializeStartupState(appCtx context.Context, cfg *config.Config, appServi
 		slog.InfoContext(ctx, "Docker API versions detected", "client_api_version", dockerClient.ClientVersion(), "server_api_version", version.APIVersion, "effective_api_version", effectiveAPIVersion)
 		return nil
 	})
+	if appServices.Swarm != nil {
+		if err := appServices.Swarm.SyncSwarmEnabledState(appCtx); err != nil {
+			slog.WarnContext(appCtx, "Failed to persist swarm enabled state", "error", err)
+		}
+	}
 
 	startup.InitializeNonAgentFeatures(appCtx, runtimeCfg,
 		appServices.User.CreateDefaultAdmin,

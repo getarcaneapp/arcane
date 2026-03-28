@@ -35,11 +35,13 @@ var ErrSwarmNotEnabled = errors.New("swarm mode is not enabled")
 var ErrSwarmManagerRequired = errors.New("swarm manager access required")
 
 const swarmNodeIdentityProbeConcurrency = 5
+const KVKeySwarmEnabled = "swarm.enabled"
 
 // SwarmService provides Docker Swarm related operations.
 type SwarmService struct {
 	dockerService      *DockerClientService
 	settingsService    *SettingsService
+	kvService          *KVService
 	registryService    *ContainerRegistryService
 	environmentService *EnvironmentService
 }
@@ -47,12 +49,14 @@ type SwarmService struct {
 func NewSwarmService(
 	dockerService *DockerClientService,
 	settingsService *SettingsService,
+	kvService *KVService,
 	registryService *ContainerRegistryService,
 	environmentService *EnvironmentService,
 ) *SwarmService {
 	return &SwarmService{
 		dockerService:      dockerService,
 		settingsService:    settingsService,
+		kvService:          kvService,
 		registryService:    registryService,
 		environmentService: environmentService,
 	}
@@ -71,6 +75,19 @@ type swarmNodeAgentRuntime struct {
 	lastHeartbeat *time.Time
 	lastPollAt    *time.Time
 	identity      *SwarmNodeIdentity
+}
+
+func (s *SwarmService) IsEnabled(ctx context.Context) (bool, error) {
+	if s.kvService == nil {
+		return false, nil
+	}
+
+	enabled, err := s.kvService.GetBool(ctx, KVKeySwarmEnabled, false)
+	if err != nil {
+		return false, fmt.Errorf("failed to read swarm enabled state: %w", err)
+	}
+
+	return enabled, nil
 }
 
 func (s *SwarmService) ListServicesPaginated(ctx context.Context, params pagination.QueryParams) ([]swarmtypes.ServiceSummary, pagination.Response, error) {
@@ -875,6 +892,8 @@ func (s *SwarmService) InitSwarm(ctx context.Context, req swarmtypes.SwarmInitRe
 		return nil, fmt.Errorf("failed to initialize swarm: %w", err)
 	}
 
+	s.persistSwarmEnabledStateInternal(ctx, true)
+
 	return &swarmtypes.SwarmInitResponse{NodeID: initResult.NodeID}, nil
 }
 
@@ -895,6 +914,8 @@ func (s *SwarmService) JoinSwarm(ctx context.Context, req swarmtypes.SwarmJoinRe
 		return fmt.Errorf("failed to join swarm: %w", err)
 	}
 
+	s.persistSwarmEnabledStateInternal(ctx, true)
+
 	return nil
 }
 
@@ -911,6 +932,8 @@ func (s *SwarmService) LeaveSwarm(ctx context.Context, req swarmtypes.SwarmLeave
 	if _, err := dockerClient.SwarmLeave(ctx, dockerclient.SwarmLeaveOptions{Force: req.Force}); err != nil {
 		return fmt.Errorf("failed to leave swarm: %w", err)
 	}
+
+	s.persistSwarmEnabledStateInternal(ctx, false)
 
 	return nil
 }
@@ -1976,6 +1999,34 @@ func (s *SwarmService) getDockerInfoInternal(ctx context.Context) (system.Info, 
 	}
 
 	return infoResult.Info, nil
+}
+
+func (s *SwarmService) SyncSwarmEnabledState(ctx context.Context) error {
+	info, err := s.getDockerInfoInternal(ctx)
+	if err != nil {
+		return err
+	}
+
+	enabled := info.Swarm.LocalNodeState == swarm.LocalNodeStateActive && strings.TrimSpace(info.Swarm.NodeID) != ""
+	if s.kvService == nil {
+		return nil
+	}
+
+	if err := s.kvService.SetBool(ctx, KVKeySwarmEnabled, enabled); err != nil {
+		return fmt.Errorf("persist swarm enabled state: %w", err)
+	}
+
+	return nil
+}
+
+func (s *SwarmService) persistSwarmEnabledStateInternal(ctx context.Context, enabled bool) {
+	if s.kvService == nil {
+		return
+	}
+
+	if err := s.kvService.SetBool(ctx, KVKeySwarmEnabled, enabled); err != nil {
+		slog.WarnContext(ctx, "Failed to persist swarm enabled state", "enabled", enabled, "error", err)
+	}
 }
 
 func (s *SwarmService) buildServicePaginationConfigInternal() pagination.Config[swarmtypes.ServiceSummary] {
