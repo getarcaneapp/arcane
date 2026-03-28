@@ -1045,6 +1045,7 @@
 	"_comment_projects": "=== 项目 (编排) ===",
 	"projects_title": "项目",
 	"projects_col_provider": "来源",
+	"projects_col_directory": "目录",
 	"projects_provider_local": "本地",
 	"projects_provider_git": "Git",
 	"projects_status_partial": "部分运行中",
