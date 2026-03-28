@@ -1045,6 +1045,7 @@
 	"_comment_projects": "=== PROJECTS (COMPOSE) ===",
 	"projects_title": "Progetti",
 	"projects_col_provider": "Provider",
+	"projects_col_directory": "Elenco",
 	"projects_provider_local": "Locale",
 	"projects_provider_git": "Git",
 	"projects_status_partial": "Parzialmente In Esecuzione",
