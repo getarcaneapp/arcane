@@ -1045,6 +1045,7 @@
 	"_comment_projects": "=== PROJECTS (COMPOSE) ===",
 	"projects_title": "프로젝트",
 	"projects_col_provider": "유형",
+	"projects_col_directory": "디렉토리",
 	"projects_provider_local": "로컬",
 	"projects_provider_git": "Git",
 	"projects_status_partial": "부분 실행 중",
