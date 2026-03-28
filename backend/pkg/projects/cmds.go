@@ -33,17 +33,41 @@ func writeJSONLine(w io.Writer, v any) {
 	}
 }
 
+// defaultComposeTimeout is applied to compose operations that have been
+// detached from the HTTP request context. It must be generous enough to
+// cover large image pulls + health-check waits.
+const defaultComposeTimeout = 30 * time.Minute
+
+// detachFromHTTPContextInternal creates a new context derived from
+// context.Background() that carries any values from the parent (such as
+// ProgressWriterKey) but is **not** cancelled when the parent is.
+// This allows compose operations to survive HTTP request timeouts and
+// proxy deadline cancellations. A standalone timeout is applied so the
+// operation cannot run forever. See #1209.
+func detachFromHTTPContextInternal(parent context.Context) (context.Context, context.CancelFunc) {
+	ctx := context.WithoutCancel(parent)
+	return context.WithTimeout(ctx, defaultComposeTimeout)
+}
+
 func ComposeRestart(ctx context.Context, proj *types.Project, services []string) error {
-	c, err := NewClient(ctx)
+	restartCtx, cancel := detachFromHTTPContextInternal(ctx)
+	defer cancel()
+
+	c, err := NewClient(restartCtx)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = c.Close() }()
-	return c.svc.Restart(ctx, proj.Name, api.RestartOptions{Services: services})
+	return c.svc.Restart(restartCtx, proj.Name, api.RestartOptions{Services: services})
 }
 
 func ComposePull(ctx context.Context, proj *types.Project, services []string) error {
-	c, err := NewClient(ctx)
+	// Detach from the HTTP request context so that proxy timeouts do not cancel
+	// long image pulls. See #1209.
+	pullCtx, cancel := detachFromHTTPContextInternal(ctx)
+	defer cancel()
+
+	c, err := NewClient(pullCtx)
 	if err != nil {
 		return err
 	}
@@ -53,7 +77,7 @@ func ComposePull(ctx context.Context, proj *types.Project, services []string) er
 	if err != nil {
 		return err
 	}
-	return c.svc.Pull(ctx, filteredProject, api.PullOptions{})
+	return c.svc.Pull(pullCtx, filteredProject, api.PullOptions{})
 }
 
 func filterProjectServicesForPullInternal(proj *types.Project, services []string) (*types.Project, error) {
@@ -68,16 +92,25 @@ func ComposeStop(ctx context.Context, proj *types.Project, services []string) er
 	if len(services) == 0 {
 		return nil
 	}
-	c, err := NewClient(ctx)
+	// Detach from the HTTP request context. See #1209.
+	stopCtx, cancel := detachFromHTTPContextInternal(ctx)
+	defer cancel()
+
+	c, err := NewClient(stopCtx)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = c.Close() }()
-	return c.svc.Stop(ctx, proj.Name, api.StopOptions{Services: services})
+	return c.svc.Stop(stopCtx, proj.Name, api.StopOptions{Services: services})
 }
 
 func ComposeUp(ctx context.Context, proj *types.Project, services []string, removeOrphans bool, forceRecreate bool) error {
-	c, err := NewClient(ctx)
+	// Detach from the HTTP request context so that proxy timeouts and client
+	// disconnects do not cancel a long-running compose up. See #1209.
+	composeCtx, cancel := detachFromHTTPContextInternal(ctx)
+	defer cancel()
+
+	c, err := NewClient(composeCtx)
 	if err != nil {
 		return err
 	}
@@ -89,10 +122,10 @@ func ComposeUp(ctx context.Context, proj *types.Project, services []string, remo
 
 	// If we don't need progress, just run compose up normally.
 	if progressWriter == nil {
-		return c.svc.Up(ctx, proj, api.UpOptions{Create: upOptions, Start: startOptions})
+		return c.svc.Up(composeCtx, proj, api.UpOptions{Create: upOptions, Start: startOptions})
 	}
 
-	return composeUpWithProgress(ctx, c.svc, proj, api.UpOptions{Create: upOptions, Start: startOptions}, progressWriter)
+	return composeUpWithProgress(composeCtx, c.svc, proj, api.UpOptions{Create: upOptions, Start: startOptions}, progressWriter)
 }
 
 func composeUpOptions(proj *types.Project, services []string, removeOrphans bool, forceRecreate bool) (api.CreateOptions, api.StartOptions) {
@@ -223,13 +256,16 @@ func ComposePs(ctx context.Context, proj *types.Project, services []string, all 
 }
 
 func ComposeDown(ctx context.Context, proj *types.Project, removeVolumes bool) error {
-	c, err := NewClient(ctx)
+	downCtx, cancel := detachFromHTTPContextInternal(ctx)
+	defer cancel()
+
+	c, err := NewClient(downCtx)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = c.Close() }()
 
-	return c.svc.Down(ctx, proj.Name, api.DownOptions{RemoveOrphans: true, Volumes: removeVolumes})
+	return c.svc.Down(downCtx, proj.Name, api.DownOptions{RemoveOrphans: true, Volumes: removeVolumes})
 }
 
 func ComposeLogs(ctx context.Context, projectName string, out io.Writer, follow bool, tail string) error {
