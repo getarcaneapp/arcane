@@ -1045,6 +1045,7 @@
 	"_comment_projects": "=== PROJECTS (COMPOSE) ===",
 	"projects_title": "Projects",
 	"projects_col_provider": "プロバイダー",
+	"projects_col_directory": "ディレクトリ",
 	"projects_provider_local": "ローカル",
 	"projects_provider_git": "Git",
 	"projects_status_partial": "部分的に実行",
