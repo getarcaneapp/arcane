@@ -181,6 +181,27 @@ func TestStreamContainerLogs_TTYPythonLikeFollowDoesNotReturnEmptyLogs(t *testin
 	}, lines)
 }
 
+func TestCompareContainerPortsForSortDesc_KeepsContainersWithoutPortsLast(t *testing.T) {
+	withPublished := containertypes.Summary{
+		ID:    "published",
+		Names: []string{"/published"},
+		Ports: []containertypes.Port{{PublicPort: 8080, PrivatePort: 80, Type: "tcp"}},
+	}
+	withPrivateOnly := containertypes.Summary{
+		ID:    "private",
+		Names: []string{"/private"},
+		Ports: []containertypes.Port{{PrivatePort: 3000, Type: "tcp"}},
+	}
+	withoutPorts := containertypes.Summary{
+		ID:    "none",
+		Names: []string{"/none"},
+	}
+
+	require.Equal(t, -1, compareContainerPortsForSortDescInternal(withPublished, withPrivateOnly))
+	require.Equal(t, -1, compareContainerPortsForSortDescInternal(withPrivateOnly, withoutPorts))
+	require.Equal(t, 1, compareContainerPortsForSortDescInternal(withoutPorts, withPublished))
+}
+
 func TestStreamMultiplexedLogs_ContextCancelDoesNotDeadlock(t *testing.T) {
 	var stream bytes.Buffer
 	writeDockerLogFrameInternal(t, &stream, 1, "line 1\n")

@@ -22,6 +22,7 @@ import (
 type ContainerHandler struct {
 	containerService *services.ContainerService
 	dockerService    *services.DockerClientService
+	settingsService  *services.SettingsService
 }
 
 // Paginated response
@@ -121,10 +122,23 @@ type DeleteContainerOutput struct {
 }
 
 // RegisterContainers registers container endpoints.
-func RegisterContainers(api huma.API, containerSvc *services.ContainerService, dockerSvc *services.DockerClientService) {
+type SetAutoUpdateInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	ContainerID   string `path:"containerId" doc:"Container ID"`
+	Body          struct {
+		Enabled bool `json:"enabled" doc:"Whether auto-update is enabled for this container"`
+	}
+}
+
+type SetAutoUpdateOutput struct {
+	Body ContainerActionResponse
+}
+
+func RegisterContainers(api huma.API, containerSvc *services.ContainerService, dockerSvc *services.DockerClientService, settingsSvc *services.SettingsService) {
 	h := &ContainerHandler{
 		containerService: containerSvc,
 		dockerService:    dockerSvc,
+		settingsService:  settingsSvc,
 	}
 
 	huma.Register(api, huma.Operation{
@@ -209,6 +223,16 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Tags:        []string{"Containers"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
 	}, h.DeleteContainer)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "set-container-auto-update",
+		Method:      http.MethodPut,
+		Path:        "/environments/{id}/containers/{containerId}/auto-update",
+		Summary:     "Set container auto-update",
+		Description: "Enable or disable auto-update for a specific container",
+		Tags:        []string{"Containers", "Updater"},
+		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+	}, h.SetAutoUpdate)
 }
 
 func (h *ContainerHandler) ListContainers(ctx context.Context, input *ListContainersInput) (*ListContainersOutput, error) {
@@ -692,6 +716,35 @@ func (h *ContainerHandler) DeleteContainer(ctx context.Context, input *DeleteCon
 		Body: ContainerActionResponse{
 			Success: true,
 			Data:    base.MessageResponse{Message: "Container deleted successfully"},
+		},
+	}, nil
+}
+
+func (h *ContainerHandler) SetAutoUpdate(ctx context.Context, input *SetAutoUpdateInput) (*SetAutoUpdateOutput, error) {
+	if h.settingsService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	// Resolve container name from ID
+	containerName, err := h.containerService.GetContainerNameByID(ctx, input.ContainerID)
+	if err != nil {
+		return nil, huma.Error404NotFound("container not found")
+	}
+
+	excluded := !input.Body.Enabled
+	if err := h.settingsService.SetContainerAutoUpdateExclusionInternal(ctx, containerName, excluded); err != nil {
+		return nil, huma.Error500InternalServerError("failed to update auto-update setting")
+	}
+
+	msg := "Auto-update enabled"
+	if excluded {
+		msg = "Auto-update disabled"
+	}
+
+	return &SetAutoUpdateOutput{
+		Body: ContainerActionResponse{
+			Success: true,
+			Data:    base.MessageResponse{Message: msg},
 		},
 	}, nil
 }

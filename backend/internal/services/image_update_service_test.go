@@ -16,6 +16,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/types/imageupdate"
 	glsqlite "github.com/glebarez/sqlite"
+	dockertypescontainer "github.com/moby/moby/api/types/container"
 	dockertypesimage "github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/client"
 	digest "github.com/opencontainers/go-digest"
@@ -401,6 +402,74 @@ func newImageUpdateFallbackServer(t *testing.T, repositoryTag, localDigest, remo
 			http.NotFound(w, r)
 		}
 	}))
+}
+
+func newImageRefResolutionServer(t *testing.T, containers []dockertypescontainer.Summary) *httptest.Server {
+	t.Helper()
+
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json"):
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		case strings.HasSuffix(r.URL.Path, "/containers/json"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(containers))
+			return
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+}
+
+func TestImageUpdateService_GetImageRefByIDInternal_UsesContainerFallback(t *testing.T) {
+	t.Parallel()
+
+	const imageID = "sha256:test-image-id"
+
+	tests := []struct {
+		name       string
+		containers []dockertypescontainer.Summary
+		wantRef    string
+		wantErr    string
+	}{
+		{
+			name: "uses repo tag from matching container when inspect fails",
+			containers: []dockertypescontainer.Summary{
+				{ImageID: imageID, Image: "frooodle/s-pdf:latest"},
+			},
+			wantRef: "frooodle/s-pdf:latest",
+		},
+		{
+			name: "ignores named digest references from matching container",
+			containers: []dockertypescontainer.Summary{
+				{ImageID: imageID, Image: "frooodle/s-pdf@sha256:abc123"},
+			},
+			wantErr: "no local image or running container found",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := newImageRefResolutionServer(t, tt.containers)
+			defer server.Close()
+
+			svc := &ImageUpdateService{
+				dockerService: &DockerClientService{client: newTestDockerClient(t, server)},
+			}
+
+			ref, err := svc.getImageRefByIDInternal(context.Background(), imageID)
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.ErrorContains(t, err, tt.wantErr)
+				assert.Empty(t, ref)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantRef, ref)
+		})
+	}
 }
 
 func TestImageUpdateService_CheckImageUpdate_UsesRegistryFallback(t *testing.T) {

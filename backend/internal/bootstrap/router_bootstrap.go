@@ -149,6 +149,7 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services)
 		Volume:            appServices.Volume,
 		Container:         appServices.Container,
 		Network:           appServices.Network,
+		Port:              appServices.Port,
 		Swarm:             appServices.Swarm,
 		Notification:      appServices.Notification,
 		Apprise:           appServices.Apprise,

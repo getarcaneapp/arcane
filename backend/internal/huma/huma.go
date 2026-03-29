@@ -160,6 +160,7 @@ type Services struct {
 	Volume            *services.VolumeService
 	Container         *services.ContainerService
 	Network           *services.NetworkService
+	Port              *services.PortService
 	Swarm             *services.SwarmService
 	Notification      *services.NotificationService
 	Apprise           *services.AppriseService //nolint:staticcheck // Apprise still functional, deprecated in favor of Shoutrrr
@@ -324,6 +325,7 @@ func registerHandlers(api huma.API, svc *Services) {
 	var volumeSvc *services.VolumeService
 	var containerSvc *services.ContainerService
 	var networkSvc *services.NetworkService
+	var portSvc *services.PortService
 	var swarmSvc *services.SwarmService
 	var notificationSvc *services.NotificationService
 	var appriseSvc *services.AppriseService //nolint:staticcheck // Apprise still functional, deprecated in favor of Shoutrrr
@@ -362,6 +364,7 @@ func registerHandlers(api huma.API, svc *Services) {
 		volumeSvc = svc.Volume
 		containerSvc = svc.Container
 		networkSvc = svc.Network
+		portSvc = svc.Port
 		swarmSvc = svc.Swarm
 		notificationSvc = svc.Notification
 		appriseSvc = svc.Apprise
@@ -395,7 +398,8 @@ func registerHandlers(api huma.API, svc *Services) {
 	handlers.RegisterSettings(api, settingsSvc, settingsSearchSvc, environmentSvc, cfg)
 	handlers.RegisterJobSchedules(api, jobScheduleSvc, environmentSvc)
 	handlers.RegisterVolumes(api, dockerSvc, volumeSvc)
-	handlers.RegisterContainers(api, containerSvc, dockerSvc)
+	handlers.RegisterContainers(api, containerSvc, dockerSvc, settingsSvc)
+	handlers.RegisterPorts(api, portSvc)
 	handlers.RegisterNetworks(api, networkSvc, dockerSvc)
 	handlers.RegisterSwarm(api, swarmSvc, environmentSvc, eventSvc, cfg)
 	handlers.RegisterNotifications(api, notificationSvc, appriseSvc, cfg)

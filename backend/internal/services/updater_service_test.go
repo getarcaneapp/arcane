@@ -841,3 +841,28 @@ func TestComposeProjectNameFromLabelsInternal(t *testing.T) {
 		"com.docker.compose.project": " my-project ",
 	}))
 }
+
+func TestDockerProxyContainerNameInternal(t *testing.T) {
+	tests := []struct {
+		name       string
+		dockerHost string
+		expected   string
+	}{
+		{"empty", "", ""},
+		{"unix socket", "unix:///var/run/docker.sock", ""},
+		{"tcp with container hostname", "tcp://arcane-docker-socket-proxy:2375", "arcane-docker-socket-proxy"},
+		{"tcp with container hostname no port", "tcp://my-proxy", "my-proxy"},
+		{"tcp with ip address", "tcp://192.168.1.100:2375", ""},
+		{"tcp with localhost", "tcp://localhost:2375", ""},
+		{"tcp with fqdn", "tcp://docker.example.com:2375", ""},
+		{"tcp with ipv6 address", "tcp://[::1]:2375", ""},
+		{"tcp with ipv6 no port", "tcp://[::1]", ""},
+		{"tcp with spaces", "  tcp://my-proxy:2375  ", "my-proxy"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, dockerProxyContainerNameInternal(tt.dockerHost))
+		})
+	}
+}

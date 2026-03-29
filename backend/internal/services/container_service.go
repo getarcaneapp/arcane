@@ -437,6 +437,15 @@ func (s *ContainerService) GetContainerByID(ctx context.Context, id string) (*co
 	return &containerInfo, nil
 }
 
+// GetContainerNameByID resolves a container's clean name from its Docker ID.
+func (s *ContainerService) GetContainerNameByID(ctx context.Context, id string) (string, error) {
+	info, err := s.GetContainerByID(ctx, id)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimPrefix(info.Name, "/"), nil
+}
+
 func (s *ContainerService) DeleteContainer(ctx context.Context, containerID string, force bool, removeVolumes bool, user models.User) error {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
@@ -1021,6 +1030,11 @@ func (s *ContainerService) buildContainerSortBindings() []pagination.SortBinding
 			},
 		},
 		{
+			Key:    "ports",
+			Fn:     compareContainerPortsForSortInternal,
+			DescFn: compareContainerPortsForSortDescInternal,
+		},
+		{
 			Key: "created",
 			Fn: func(a, b containertypes.Summary) int {
 				if a.Created < b.Created {
@@ -1033,6 +1047,83 @@ func (s *ContainerService) buildContainerSortBindings() []pagination.SortBinding
 			},
 		},
 	}
+}
+
+func compareContainerPortsForSortInternal(a, b containertypes.Summary) int {
+	hasPortsA, portA := lowestContainerPortSortValueInternal(a.Ports)
+	hasPortsB, portB := lowestContainerPortSortValueInternal(b.Ports)
+
+	switch {
+	case !hasPortsA && !hasPortsB:
+		return compareContainerNamesForSortInternal(a, b)
+	case !hasPortsA:
+		return 1
+	case !hasPortsB:
+		return -1
+	case portA < portB:
+		return -1
+	case portA > portB:
+		return 1
+	default:
+		return compareContainerNamesForSortInternal(a, b)
+	}
+}
+
+func compareContainerPortsForSortDescInternal(a, b containertypes.Summary) int {
+	hasPortsA, portA := lowestContainerPortSortValueInternal(a.Ports)
+	hasPortsB, portB := lowestContainerPortSortValueInternal(b.Ports)
+
+	switch {
+	case !hasPortsA && !hasPortsB:
+		return compareContainerNamesForSortInternal(a, b)
+	case !hasPortsA:
+		return 1
+	case !hasPortsB:
+		return -1
+	case portA > portB:
+		return -1
+	case portA < portB:
+		return 1
+	default:
+		return compareContainerNamesForSortInternal(a, b)
+	}
+}
+
+func lowestContainerPortSortValueInternal(ports []containertypes.Port) (bool, int) {
+	if len(ports) == 0 {
+		return false, 0
+	}
+
+	lowestPublished := 0
+	lowestPrivate := 0
+	for _, port := range ports {
+		if port.PublicPort > 0 && (lowestPublished == 0 || port.PublicPort < lowestPublished) {
+			lowestPublished = port.PublicPort
+		}
+		if port.PrivatePort > 0 && (lowestPrivate == 0 || port.PrivatePort < lowestPrivate) {
+			lowestPrivate = port.PrivatePort
+		}
+	}
+
+	switch {
+	case lowestPublished > 0:
+		return true, lowestPublished
+	case lowestPrivate > 0:
+		return true, lowestPrivate
+	default:
+		return false, 0
+	}
+}
+
+func compareContainerNamesForSortInternal(a, b containertypes.Summary) int {
+	nameA, nameB := "", ""
+	if len(a.Names) > 0 {
+		nameA = a.Names[0]
+	}
+	if len(b.Names) > 0 {
+		nameB = b.Names[0]
+	}
+	return strings.Compare(nameA, nameB)
 }
 
 func (s *ContainerService) buildContainerFilterAccessors() []pagination.FilterAccessor[containertypes.Summary] {
