@@ -276,49 +276,55 @@ func (s *ImageUpdateService) getImageRefByID(ctx context.Context, imageID string
 	}
 
 	imageID = strings.TrimPrefix(imageID, "sha256:")
-	inspectResponse, err := dockerClient.ImageInspect(ctx, imageID)
-	if err == nil {
-		if len(inspectResponse.RepoTags) > 0 {
-			for _, tag := range inspectResponse.RepoTags {
-				if tag != "<none>:<none>" {
-					return tag, nil
-				}
-			}
-		}
-		if len(inspectResponse.RepoDigests) > 0 {
-			for _, digest := range inspectResponse.RepoDigests {
-				if digest != "<none>@<none>" {
-					digestParts := strings.Split(digest, "@")
-					if len(digestParts) == 2 {
-						return digestParts[0] + ":latest", nil
-					}
-				}
-			}
-		}
+
+	if ref, refErr := s.resolveImageRefFromInspect(ctx, dockerClient, imageID); refErr == nil {
+		return ref, nil
 	}
 
 	// Fallback: if the image was pruned, look up the image reference from
 	// running containers that were started from this image ID.
-	fullID := "sha256:" + imageID
-	containers, listErr := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
-	if listErr != nil {
-		if err != nil {
-			return "", fmt.Errorf("image not found: %w", err)
-		}
-		return "", fmt.Errorf("no valid repository tags or digests found for image")
+	if ref, refErr := s.resolveImageRefFromContainers(ctx, dockerClient, imageID); refErr == nil {
+		return ref, nil
 	}
-	for _, c := range containers.Items {
-		if c.ImageID == fullID || c.ImageID == imageID {
-			if c.Image != "" && !strings.HasPrefix(c.Image, "sha256:") {
-				return c.Image, nil
+
+	return "", fmt.Errorf("image not found: no local image or running container found for %s", imageID)
+}
+
+func (s *ImageUpdateService) resolveImageRefFromInspect(ctx context.Context, dockerClient client.APIClient, imageID string) (string, error) {
+	inspectResponse, err := dockerClient.ImageInspect(ctx, imageID)
+	if err != nil {
+		return "", err
+	}
+	for _, tag := range inspectResponse.RepoTags {
+		if tag != "<none>:<none>" {
+			return tag, nil
+		}
+	}
+	for _, digest := range inspectResponse.RepoDigests {
+		if digest != "<none>@<none>" {
+			if repo, _, ok := strings.Cut(digest, "@"); ok {
+				return repo + ":latest", nil
 			}
 		}
 	}
+	return "", fmt.Errorf("no valid tags or digests")
+}
 
+func (s *ImageUpdateService) resolveImageRefFromContainers(ctx context.Context, dockerClient client.APIClient, imageID string) (string, error) {
+	fullID := "sha256:" + imageID
+	containers, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
 	if err != nil {
-		return "", fmt.Errorf("image not found: %w", err)
+		return "", err
 	}
-	return "", fmt.Errorf("no valid repository tags or digests found for image")
+	for _, c := range containers.Items {
+		if c.ImageID != fullID && c.ImageID != imageID {
+			continue
+		}
+		if c.Image != "" && !strings.HasPrefix(c.Image, "sha256:") && !strings.Contains(c.Image, "@sha256:") {
+			return c.Image, nil
+		}
+	}
+	return "", fmt.Errorf("no container found using image %s", imageID)
 }
 
 func (s *ImageUpdateService) getAllImageRefsInternal(ctx context.Context, limit int) ([]string, error) {
