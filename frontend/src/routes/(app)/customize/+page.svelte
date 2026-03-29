@@ -144,7 +144,7 @@
 
 	{#if !showSearchResults}
 		<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 xl:grid-cols-3">
-			{#each customizeCategories as category}
+			{#each customizeCategories as category (category.id)}
 				{@const Icon = getIconComponent(category.icon)}
 				<Card class="hover:border-primary/20 group cursor-pointer transition-all duration-200 hover:shadow-md">
 					<button onclick={() => navigateToCategory(category.url)} class="w-full p-4 text-left sm:p-6">
@@ -190,7 +190,7 @@
 				</div>
 			{:else}
 				<div class="space-y-4 sm:space-y-6">
-					{#each searchResults as result}
+					{#each searchResults as result (result.id)}
 						{@const Icon = getIconComponent(result.icon)}
 						<div class="bg-background/40 rounded-lg border shadow-sm">
 							<div class="border-b p-4 sm:p-6">
@@ -212,7 +212,7 @@
 							{#if result.matchingCustomizations && result.matchingCustomizations.length > 0}
 								<div class="space-y-3 p-4 sm:p-6">
 									<h4 class="text-muted-foreground mb-3 text-sm font-medium">{m.customize_available_options()}</h4>
-									{#each result.matchingCustomizations as customization}
+									{#each result.matchingCustomizations as customization (customization.key)}
 										<div class="bg-background/60 border-primary/20 rounded-md border-l-2 p-3">
 											<div class="flex items-start justify-between gap-3">
 												<div class="min-w-0 flex-1">
@@ -222,7 +222,7 @@
 													{/if}
 													{#if customization.keywords && customization.keywords.length > 0}
 														<div class="mt-2 flex flex-wrap gap-1">
-															{#each customization.keywords.slice(0, 6) as keyword}
+															{#each customization.keywords.slice(0, 6) as keyword (keyword)}
 																<span class="bg-muted/50 text-muted-foreground rounded px-2 py-0.5 text-xs">
 																	{keyword}
 																</span>

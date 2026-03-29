@@ -26,6 +26,7 @@
 	import { debounced } from '$lib/utils/utils';
 	import * as InputGroup from '$lib/components/ui/input-group/index.js';
 	import { getSettingsSubpageUrlsInNavOrder } from '$lib/config/navigation-config';
+	import HeaderCard from '$lib/components/header-card.svelte';
 
 	let searchQuery = $state('');
 	let showSearchResults = $state(false);
@@ -126,73 +127,63 @@
 	}
 </script>
 
-<div class="px-2 py-4 sm:px-6 sm:py-6 lg:px-8">
-	<div class="mb-6 sm:mb-8">
-		<div
-			class="from-background/60 via-background/40 to-background/60 relative overflow-hidden rounded-xl border bg-linear-to-br p-4 shadow-sm sm:p-6"
-		>
-			<div class="bg-primary/10 pointer-events-none absolute -top-10 -right-10 size-40 rounded-full blur-3xl"></div>
-			<div class="bg-muted/40 pointer-events-none absolute -bottom-10 -left-10 size-40 rounded-full blur-3xl"></div>
-			<div class="relative">
-				<div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-					<div class="flex w-full items-start gap-3 sm:gap-4">
-						<div
-							class="bg-primary/10 text-primary ring-primary/20 flex size-8 shrink-0 items-center justify-center rounded-lg ring-1 sm:size-10"
-						>
-							<SettingsIcon class="size-4 sm:size-5" />
-						</div>
-						<div class="min-w-0 flex-1">
-							<div class="flex items-start justify-between gap-3">
-								<h1 class="min-w-0 text-xl font-bold tracking-tight sm:text-2xl">{m.sidebar_settings()}</h1>
-								<div class="shrink-0">
-									<UiConfigDisabledTag />
-								</div>
-							</div>
-							<p class="text-muted-foreground mt-1 text-sm sm:text-base">{m.settings_subtitle()}</p>
-						</div>
-					</div>
+<div class="space-y-8 pb-5 md:space-y-10 md:pb-5">
+	<HeaderCard>
+		<div class="flex items-center justify-between gap-4">
+			<div class="flex min-w-64 flex-1 items-center gap-3 sm:gap-4">
+				<div
+					class="bg-primary/10 text-primary ring-primary/20 flex size-8 shrink-0 items-center justify-center rounded-lg ring-1 sm:size-10"
+				>
+					<SettingsIcon class="size-4 sm:size-5" />
 				</div>
-
-				<div class="relative mt-4 w-full sm:mt-6 sm:max-w-md">
-					<InputGroup.Root>
-						<InputGroup.Input
-							placeholder={m.settings_search_placeholder()}
-							value={searchQuery}
-							oninput={(e) => {
-								searchQuery = e.currentTarget.value;
-								debouncedSearch(e.currentTarget.value);
-							}}
-							onkeydown={(e) => {
-								if (e.key === 'Enter') {
-									performSearch((e.currentTarget as HTMLInputElement).value, true);
-								}
-							}}
-						/>
-						<InputGroup.Addon>
-							{#if showSearchResults}
-								<ArcaneButton
-									action="base"
-									tone="ghost"
-									size="sm"
-									onclick={clearSearch}
-									class="h-6 w-6 p-0"
-									icon={CloseIcon}
-									showLabel={false}
-									customLabel={m.settings_clear_search()}
-								/>
-							{:else}
-								<SearchIcon />
-							{/if}
-						</InputGroup.Addon>
-					</InputGroup.Root>
+				<div class="min-w-0">
+					<h1 class="text-3xl font-bold tracking-tight">{m.sidebar_settings()}</h1>
+					<p class="text-muted-foreground mt-1 text-sm sm:text-base">{m.settings_subtitle()}</p>
 				</div>
 			</div>
+			<div class="flex items-center gap-3">
+				<UiConfigDisabledTag />
+			</div>
 		</div>
-	</div>
+
+		<div class="relative mt-4 w-full sm:mt-6 sm:max-w-md">
+			<InputGroup.Root>
+				<InputGroup.Input
+					placeholder={m.settings_search_placeholder()}
+					value={searchQuery}
+					oninput={(e) => {
+						searchQuery = e.currentTarget.value;
+						debouncedSearch(e.currentTarget.value);
+					}}
+					onkeydown={(e) => {
+						if (e.key === 'Enter') {
+							performSearch((e.currentTarget as HTMLInputElement).value, true);
+						}
+					}}
+				/>
+				<InputGroup.Addon>
+					{#if showSearchResults}
+						<ArcaneButton
+							action="base"
+							tone="ghost"
+							size="sm"
+							onclick={clearSearch}
+							class="h-6 w-6 p-0"
+							icon={CloseIcon}
+							showLabel={false}
+							customLabel={m.settings_clear_search()}
+						/>
+					{:else}
+						<SearchIcon />
+					{/if}
+				</InputGroup.Addon>
+			</InputGroup.Root>
+		</div>
+	</HeaderCard>
 
 	{#if !showSearchResults}
 		<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 xl:grid-cols-3">
-			{#each settingsCategories as category}
+			{#each settingsCategories as category (category.id)}
 				{@const Icon = getIconComponent(category.icon)}
 				<Card class="hover:border-primary/20 group cursor-pointer transition-all duration-200 hover:shadow-md">
 					<button onclick={() => navigateToCategory(category.url)} class="w-full p-4 text-left sm:p-6">
@@ -237,7 +228,7 @@
 				</div>
 			{:else}
 				<div class="space-y-4 sm:space-y-6">
-					{#each searchResults as result}
+					{#each searchResults as result (result.id)}
 						{@const Icon = getIconComponent(result.icon)}
 						<div class="bg-background/40 rounded-lg border shadow-sm">
 							<div class="border-b p-4 sm:p-6">
@@ -264,7 +255,7 @@
 							{#if result.matchingSettings && result.matchingSettings.length > 0}
 								<div class="space-y-3 p-4 sm:p-6">
 									<h4 class="text-muted-foreground mb-3 text-sm font-medium">{m.settings_matching_settings()}</h4>
-									{#each result.matchingSettings as setting}
+									{#each result.matchingSettings as setting (setting.key)}
 										<div class="bg-background/60 border-primary/20 rounded-md border-l-2 p-3">
 											<div class="flex items-start justify-between gap-3">
 												<div class="min-w-0 flex-1">
@@ -274,7 +265,7 @@
 													{/if}
 													{#if setting.keywords && setting.keywords.length > 0}
 														<div class="mt-2 flex flex-wrap gap-1">
-															{#each setting.keywords.slice(0, 6) as keyword}
+															{#each setting.keywords.slice(0, 6) as keyword (keyword)}
 																<span class="bg-muted/50 text-muted-foreground rounded px-2 py-0.5 text-xs">
 																	{keyword}
 																</span>
