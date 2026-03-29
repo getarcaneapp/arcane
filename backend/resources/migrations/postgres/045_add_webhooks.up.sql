@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS webhooks (
     token_hash       TEXT NOT NULL UNIQUE,
     token_prefix     TEXT NOT NULL,
     target_type      TEXT NOT NULL,
+    action_type      TEXT NOT NULL DEFAULT '',
     target_id        TEXT NOT NULL,
     environment_id   TEXT NOT NULL DEFAULT '',
     enabled          BOOLEAN NOT NULL DEFAULT TRUE,

@@ -154,30 +154,15 @@ func (h *WebhookHandler) ListWebhooks(ctx context.Context, input *ListWebhooksIn
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	webhooks, err := h.webhookService.ListWebhooks(ctx, input.EnvironmentID)
+	webhooks, err := h.webhookService.ListWebhookSummaries(ctx, input.EnvironmentID)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to list webhooks")
-	}
-
-	summaries := make([]webhook.Summary, len(webhooks))
-	for i, wh := range webhooks {
-		summaries[i] = webhook.Summary{
-			ID:              wh.ID,
-			Name:            wh.Name,
-			TokenPrefix:     wh.TokenPrefix,
-			TargetType:      wh.TargetType,
-			TargetID:        wh.TargetID,
-			EnvironmentID:   wh.EnvironmentID,
-			Enabled:         wh.Enabled,
-			LastTriggeredAt: wh.LastTriggeredAt,
-			CreatedAt:       wh.CreatedAt,
-		}
 	}
 
 	return &ListWebhooksOutput{
 		Body: base.ApiResponse[[]webhook.Summary]{
 			Success: true,
-			Data:    summaries,
+			Data:    webhooks,
 		},
 	}, nil
 }
@@ -200,6 +185,7 @@ func (h *WebhookHandler) CreateWebhook(ctx context.Context, input *CreateWebhook
 		ctx,
 		input.Body.Name,
 		input.Body.TargetType,
+		input.Body.ActionType,
 		input.Body.TargetID,
 		input.EnvironmentID,
 		actor,
@@ -210,6 +196,9 @@ func (h *WebhookHandler) CreateWebhook(ctx context.Context, input *CreateWebhook
 		}
 		if errors.Is(err, services.ErrWebhookMissingTarget) {
 			return nil, huma.Error400BadRequest("target ID is required for container, project, and gitops webhook types")
+		}
+		if errors.Is(err, services.ErrWebhookInvalidAction) {
+			return nil, huma.Error400BadRequest("invalid action type for target type")
 		}
 		return nil, huma.Error500InternalServerError("failed to create webhook")
 	}
@@ -222,6 +211,7 @@ func (h *WebhookHandler) CreateWebhook(ctx context.Context, input *CreateWebhook
 				Name:       wh.Name,
 				Token:      rawToken,
 				TargetType: wh.TargetType,
+				ActionType: wh.ActionType,
 				TargetID:   wh.TargetID,
 				CreatedAt:  wh.CreatedAt,
 			},

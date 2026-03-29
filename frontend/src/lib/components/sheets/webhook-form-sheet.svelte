@@ -3,7 +3,7 @@
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import FormInput from '$lib/components/form/form-input.svelte';
 	import SelectWithLabel from '$lib/components/form/select-with-label.svelte';
-	import type { WebhookTargetType, CreateWebhook } from '$lib/types/webhook.type';
+	import type { WebhookActionType, WebhookTargetType, CreateWebhook } from '$lib/types/webhook.type';
 	import { containerService } from '$lib/services/container-service';
 	import { projectService } from '$lib/services/project-service';
 	import { gitOpsSyncService } from '$lib/services/gitops-sync-service';
@@ -27,11 +27,64 @@
 		{ value: 'gitops', label: m.webhook_target_type_gitops(), description: m.webhook_target_type_gitops_description() }
 	]);
 
+	function getDefaultActionType(targetType: WebhookTargetType): WebhookActionType {
+		switch (targetType) {
+			case 'container':
+			case 'project':
+				return 'update';
+			case 'updater':
+				return 'run';
+			case 'gitops':
+				return 'sync';
+			default:
+				return 'update';
+		}
+	}
+
+	function getActionTypeOptions(
+		targetType: WebhookTargetType
+	): { value: WebhookActionType; label: string; description: string }[] {
+		switch (targetType) {
+			case 'container':
+				return [
+					{ value: 'update', label: m.webhook_action_type_update(), description: m.webhook_action_type_update_description() },
+					{ value: 'start', label: m.webhook_action_type_start(), description: m.webhook_action_type_start_description() },
+					{ value: 'stop', label: m.webhook_action_type_stop(), description: m.webhook_action_type_stop_description() },
+					{ value: 'restart', label: m.webhook_action_type_restart(), description: m.webhook_action_type_restart_description() },
+					{
+						value: 'redeploy',
+						label: m.webhook_action_type_redeploy(),
+						description: m.webhook_action_type_redeploy_description()
+					}
+				];
+			case 'project':
+				return [
+					{ value: 'update', label: m.webhook_action_type_update(), description: m.webhook_action_type_update_description() },
+					{ value: 'up', label: m.webhook_action_type_up(), description: m.webhook_action_type_up_description() },
+					{ value: 'down', label: m.webhook_action_type_down(), description: m.webhook_action_type_down_description() },
+					{ value: 'restart', label: m.webhook_action_type_restart(), description: m.webhook_action_type_restart_description() },
+					{
+						value: 'redeploy',
+						label: m.webhook_action_type_redeploy(),
+						description: m.webhook_action_type_redeploy_description()
+					}
+				];
+			case 'updater':
+				return [{ value: 'run', label: m.webhook_action_type_run(), description: m.webhook_action_type_run_description() }];
+			case 'gitops':
+				return [{ value: 'sync', label: m.webhook_action_type_sync(), description: m.webhook_action_type_sync_description() }];
+			default:
+				return [];
+		}
+	}
+
 	let selectedTargetType = $state<WebhookTargetType>('container');
+	let selectedActionType = $state<WebhookActionType>(getDefaultActionType('container'));
 	let selectedTargetId = $state('');
 	let targetOptions = $state<{ label: string; value: string }[]>([]);
 	let targetOptionsLoading = $state(false);
 	let loadGeneration = 0;
+	let actionTypeOptions = $derived(getActionTypeOptions(selectedTargetType));
 
 	const formSchema = z.object({
 		name: z.string().min(1, m.common_field_required({ field: m.webhook_name_label() }))
@@ -85,6 +138,7 @@
 
 	function handleTargetTypeChange(value: string) {
 		selectedTargetType = value as WebhookTargetType;
+		selectedActionType = getDefaultActionType(selectedTargetType);
 		selectedTargetId = '';
 	}
 
@@ -96,6 +150,7 @@
 		onSubmit({
 			name: data.name,
 			targetType: selectedTargetType,
+			actionType: selectedActionType,
 			targetId: selectedTargetId
 		});
 	}
@@ -104,6 +159,7 @@
 		open = newOpenState;
 		if (!newOpenState) {
 			selectedTargetType = 'container';
+			selectedActionType = getDefaultActionType('container');
 			selectedTargetId = '';
 			targetOptions = [];
 		}
@@ -135,6 +191,16 @@
 				value={selectedTargetType}
 				options={targetTypeOptions}
 				onValueChange={handleTargetTypeChange}
+			/>
+
+			<SelectWithLabel
+				id="webhook-action-type"
+				label={m.webhook_action_type_label()}
+				description={m.webhook_action_type_description()}
+				value={selectedActionType}
+				options={actionTypeOptions}
+				onValueChange={(value) => (selectedActionType = value as WebhookActionType)}
+				disabled={actionTypeOptions.length === 1}
 			/>
 
 			{#if selectedTargetType !== 'updater'}

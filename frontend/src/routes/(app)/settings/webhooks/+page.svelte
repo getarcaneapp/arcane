@@ -27,6 +27,15 @@
 
 	let isLoading = $state({ creating: false });
 
+	let newlyCreatedWebhookUrl = $derived.by(() => {
+		if (!newlyCreatedWebhook?.token) {
+			return '';
+		}
+
+		const origin = globalThis.location?.origin ?? '';
+		return `${origin}/api/webhooks/trigger/${encodeURIComponent(newlyCreatedWebhook.token)}`;
+	});
+
 	async function handleCreateWebhook(webhook: CreateWebhook) {
 		isLoading.creating = true;
 		const result = await tryCatch(webhookService.create(webhook));
@@ -86,7 +95,7 @@
 					<div class="bg-muted rounded-lg p-4">
 						<p class="text-muted-foreground mb-2 text-sm font-medium">{m.webhook_token_label()}</p>
 						<Snippet
-							text={newlyCreatedWebhook?.token || ''}
+							text={newlyCreatedWebhookUrl}
 							onCopy={(status) => {
 								if (status === 'success') {
 									toast.success(m.webhook_token_copied());
@@ -98,7 +107,6 @@
 						<p class="text-sm text-yellow-800 dark:text-yellow-200">
 							<strong>{m.common_important()}:</strong>
 							{m.webhook_token_warning()}
-							<code class="rounded bg-yellow-100 px-1 dark:bg-yellow-900/40">/api/webhooks/trigger/&lt;token&gt;</code>.
 						</p>
 					</div>
 				</div>
