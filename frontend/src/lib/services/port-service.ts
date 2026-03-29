@@ -18,7 +18,8 @@ export class PortService extends BaseAPIService {
 
 	async getPortsForEnvironment(environmentId: string, options?: SearchPaginationSortRequest): Promise<PortsPaginatedResponse> {
 		const params = transformPaginationParams(options);
-		return this.handleResponse(this.api.get(`/environments/${environmentId}/ports`, { params }));
+		const res = await this.api.get(`/environments/${environmentId}/ports`, { params });
+		return res.data;
 	}
 }
 
