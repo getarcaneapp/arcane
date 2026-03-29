@@ -513,6 +513,7 @@
 	"containers_env_vars_description": "容器的執行階段環境變數",
 	"containers_no_env_vars": "沒有環境變數",
 	"containers_no_ports": "沒有連接埠",
+	"containers_hide_unexposed_ports": "隱藏未暴露的連接埠",
 	"containers_show_fewer_ports": "顯示較少的連接埠",
 	"containers_show_more_ports": "顯示 {count} 更多的連接埠",
 	"containers_no_labels_defined": "沒有指定標籤",
