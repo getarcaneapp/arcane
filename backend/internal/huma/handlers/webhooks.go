@@ -136,7 +136,11 @@ func RegisterWebhookTrigger(router *gin.RouterGroup, webhookService *services.We
 			} else if errors.Is(err, services.ErrWebhookDisabled) {
 				status = http.StatusForbidden
 			}
-			c.JSON(status, gin.H{"success": false, "error": err.Error()})
+			msg := err.Error()
+			if status == http.StatusInternalServerError {
+				msg = "internal server error"
+			}
+			c.JSON(status, gin.H{"success": false, "error": msg})
 			return
 		}
 
