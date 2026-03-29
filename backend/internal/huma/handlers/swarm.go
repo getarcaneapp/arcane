@@ -15,6 +15,7 @@ import (
 	humamw "github.com/getarcaneapp/arcane/backend/internal/huma/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	"github.com/getarcaneapp/arcane/types/base"
 	swarmtypes "github.com/getarcaneapp/arcane/types/swarm"
@@ -896,7 +897,12 @@ func (h *SwarmHandler) GetNodeAgentDeployment(ctx context.Context, input *GetSwa
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 
-	snippets, err := h.environmentService.GenerateEdgeDeploymentSnippets(ctx, env.ID, h.cfg.GetAppURL(), apiKey)
+	snippets, err := h.environmentService.GenerateEdgeDeploymentSnippets(ctx, env.ID, h.cfg.GetAppURL(), apiKey, &edge.Config{
+		EdgeMTLSMode:         h.cfg.EdgeMTLSMode,
+		EdgeMTLSAutoGenerate: h.cfg.EdgeMTLSAutoGenerate,
+		EdgeMTLSCAFile:       h.cfg.EdgeMTLSCAFile,
+		EdgeMTLSAssetsDir:    h.cfg.EdgeMTLSAssetsDir,
+	})
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}

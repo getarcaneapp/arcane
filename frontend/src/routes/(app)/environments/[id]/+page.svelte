@@ -3,8 +3,10 @@
 	import { z } from 'zod/v4';
 	import * as Tabs from '$lib/components/ui/tabs/index.js';
 	import { TabBar, type TabItem } from '$lib/components/tab-bar';
+	import { ActionButtonGroup, type ActionButton } from '$lib/components/action-button-group/index.js';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
+	import { CopyButton } from '$lib/components/ui/copy-button';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
 	import { toast } from 'svelte-sonner';
@@ -21,19 +23,19 @@
 	import GeneralTab from './components/GeneralTab.svelte';
 	import DockerTab from './components/DockerTab.svelte';
 	import JobsTab from './components/JobsTab.svelte';
-	import AgentTab from './components/AgentTab.svelte';
 	import TrivySecuritySettings from '$lib/components/settings/trivy-security-settings.svelte';
 	import {
 		ArrowLeftIcon,
 		EnvironmentsIcon,
 		AlertIcon,
+		DownloadIcon,
 		RefreshIcon,
-		ApiKeyIcon,
 		DockerBrandIcon,
 		SecurityIcon,
 		SettingsIcon,
 		GitBranchIcon,
-		JobsIcon
+		JobsIcon,
+		ResetIcon
 	} from '$lib/icons';
 
 	let { data } = $props();
@@ -48,41 +50,126 @@
 
 	let activeTab = $state('details');
 
+	let isRefreshing = $state(false);
+	let isTestingConnection = $state(false);
+	let isSyncing = $state(false);
+	let isRegeneratingKey = $state(false);
+	let showRegenerateDialog = $state(false);
+	let regeneratedApiKey = $state<string | null>(null);
+
+	// Version state
+	let remoteVersion = $state<AppVersionInformation | null>(null);
+	let isLoadingVersion = $state(false);
+
+	// Only non-edge custom URL tests should temporarily override the displayed status.
+	let statusOverride = $state<EnvironmentStatus | null>(null);
+	let currentStatus = $derived(resolveEnvironmentStatus(runtimeEnvironment, statusOverride));
+	let isCurrentlyOnline = $derived(isEnvironmentOnline(runtimeEnvironment, statusOverride));
+	let isCurrentlyStandby = $derived(currentStatus === 'standby');
+	let showSettingsTabs = $derived(runtimeEnvironment.enabled && isCurrentlyOnline && settings !== null);
+	let hasMTLSAssets = $derived(Boolean(runtimeEnvironment.edgeMTLSCertificate));
+	let showMTLSDownloads = $derived(
+		runtimeEnvironment.id !== '0' &&
+			runtimeEnvironment.isEdge &&
+			(runtimeEnvironment.edgeSecurityMode === 'mtls' || hasMTLSAssets)
+	);
+	let mtlsBundleDownloadHref = $derived(`/api/environments/${runtimeEnvironment.id}/deployment/mtls/bundle`);
+	let mtlsCertificateDownloadHref = $derived(`/api/environments/${runtimeEnvironment.id}/deployment/mtls/agent.crt`);
+	let mtlsKeyDownloadHref = $derived(`/api/environments/${runtimeEnvironment.id}/deployment/mtls/agent.key`);
+	let headerActions = $derived.by((): ActionButton[] => {
+		const actions: ActionButton[] = [];
+
+		if (environment.id !== '0') {
+			actions.push({
+				id: 'sync',
+				action: 'base',
+				label: m.sync_environment(),
+				onclick: syncEnvironment,
+				disabled: isSyncing,
+				loading: isSyncing,
+				icon: RefreshIcon
+			});
+
+			if (showMTLSDownloads) {
+				actions.push({
+					id: 'mtls-downloads',
+					action: 'base',
+					label: m.environments_agent_mtls_download_bundle(),
+					href: mtlsBundleDownloadHref,
+					rel: 'external',
+					icon: DownloadIcon,
+					menuItems: [
+						{
+							id: 'mtls-certificate',
+							label: m.environments_agent_mtls_download_certificate(),
+							href: mtlsCertificateDownloadHref
+						},
+						{
+							id: 'mtls-key',
+							label: m.environments_agent_mtls_download_key(),
+							href: mtlsKeyDownloadHref
+						}
+					]
+				});
+			}
+
+			actions.push({
+				id: 'regenerate-api-key',
+				action: 'base',
+				label: m.environments_regenerate_api_key(),
+				onclick: () => {
+					showRegenerateDialog = true;
+				},
+				disabled: isRegeneratingKey,
+				loading: isRegeneratingKey,
+				icon: ResetIcon
+			});
+		}
+
+		actions.push({
+			id: 'refresh',
+			action: 'refresh',
+			label: m.common_refresh(),
+			onclick: refreshEnvironment,
+			disabled: isRefreshing,
+			loading: isRefreshing
+		});
+
+		return actions;
+	});
+
 	const tabItems = $derived.by((): TabItem[] => {
 		const items: TabItem[] = [
 			{
 				value: 'details',
 				label: m.environments_overview_title(),
 				icon: EnvironmentsIcon
-			},
-			{
-				value: 'general',
-				label: m.general_title(),
-				icon: SettingsIcon
-			},
-			{
-				value: 'docker',
-				label: m.environments_docker_settings_title(),
-				icon: DockerBrandIcon
-			},
-			{
-				value: 'security',
-				label: m.security_title(),
-				icon: SecurityIcon
-			},
-			{
-				value: 'jobs',
-				label: m.jobs_title(),
-				icon: JobsIcon
 			}
 		];
 
-		if (environment.id !== '0') {
-			items.push({
-				value: 'agent',
-				label: m.environments_agent_config_title(),
-				icon: ApiKeyIcon
-			});
+		if (showSettingsTabs) {
+			items.push(
+				{
+					value: 'general',
+					label: m.general_title(),
+					icon: SettingsIcon
+				},
+				{
+					value: 'docker',
+					label: m.environments_docker_settings_title(),
+					icon: DockerBrandIcon
+				},
+				{
+					value: 'security',
+					label: m.security_title(),
+					icon: SecurityIcon
+				},
+				{
+					value: 'jobs',
+					label: m.jobs_title(),
+					icon: JobsIcon
+				}
+			);
 		}
 
 		items.push({
@@ -121,23 +208,6 @@
 		}
 		activeTab = value;
 	}
-
-	let isRefreshing = $state(false);
-	let isTestingConnection = $state(false);
-	let isSyncing = $state(false);
-	let isRegeneratingKey = $state(false);
-	let showRegenerateDialog = $state(false);
-	let regeneratedApiKey = $state<string | null>(null);
-
-	// Version state
-	let remoteVersion = $state<AppVersionInformation | null>(null);
-	let isLoadingVersion = $state(false);
-
-	// Only non-edge custom URL tests should temporarily override the displayed status.
-	let statusOverride = $state<EnvironmentStatus | null>(null);
-	let currentStatus = $derived(resolveEnvironmentStatus(runtimeEnvironment, statusOverride));
-	let isCurrentlyOnline = $derived(isEnvironmentOnline(runtimeEnvironment, statusOverride));
-	let isCurrentlyStandby = $derived(currentStatus === 'standby');
 
 	// Form schema combining environment info and settings
 	const formSchema = z.object({
@@ -474,8 +544,8 @@
 				<p class="text-muted-foreground mt-1.5 text-sm wrap-break-word sm:text-base">{m.environments_page_subtitle()}</p>
 			</div>
 
-			<div class="flex flex-wrap items-center gap-2">
-				<div class="hidden items-center gap-2 sm:flex">
+			<div class="flex min-w-0 flex-1 flex-col items-start gap-3 sm:items-end">
+				<div class="hidden flex-wrap items-center gap-2 self-start sm:flex sm:self-end">
 					{#if settingsForm.hasChanges}
 						<span class="text-xs text-orange-600 dark:text-orange-400">{m.environments_unsaved_changes()}</span>
 					{:else}
@@ -501,28 +571,10 @@
 						loadingLabel={m.common_saving()}
 					/>
 				</div>
-
-				{#if environment.id !== '0'}
-					<ArcaneButton
-						action="base"
-						tone="outline"
-						onclick={syncEnvironment}
-						disabled={isSyncing}
-						loading={isSyncing}
-						icon={RefreshIcon}
-						customLabel={m.sync_environment()}
-					/>
-				{/if}
-
-				<ArcaneButton
-					action="refresh"
-					tone="outline"
-					onclick={refreshEnvironment}
-					disabled={isRefreshing}
-					loading={isRefreshing}
-				/>
 			</div>
 		</div>
+
+		<ActionButtonGroup buttons={headerActions} class="justify-end" />
 
 		{#if environment.enabled && settings && isCurrentlyStandby}
 			<div
@@ -557,6 +609,31 @@
 		{/if}
 	</div>
 
+	{#if regeneratedApiKey}
+		<div class="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-4 text-emerald-950 dark:text-emerald-100">
+			<div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+				<div class="space-y-2">
+					<p class="text-sm font-medium">{m.environments_new_api_key()}</p>
+					<div class="flex items-center gap-2">
+						<code class="bg-background/70 flex-1 rounded-md px-3 py-2 font-mono text-sm break-all">
+							{regeneratedApiKey}
+						</code>
+						<CopyButton text={regeneratedApiKey} size="icon" class="size-8 shrink-0" />
+					</div>
+					<p class="text-sm">{m.environments_api_key_save_warning()}</p>
+				</div>
+
+				<ArcaneButton
+					action="base"
+					tone="outline"
+					onclick={() => (regeneratedApiKey = null)}
+					customLabel={m.common_dismiss()}
+					class="shrink-0"
+				/>
+			</div>
+		</div>
+	{/if}
+
 	<Tabs.Root bind:value={activeTab} class="w-full">
 		<div class="my-4">
 			<TabBar items={tabItems} value={activeTab} onValueChange={handleTabChange} class="w-full" />
@@ -575,7 +652,7 @@
 			/>
 		</Tabs.Content>
 
-		{#if settings}
+		{#if showSettingsTabs}
 			<Tabs.Content value="general">
 				<GeneralTab {formInputs} />
 			</Tabs.Content>
@@ -597,12 +674,6 @@
 
 			<Tabs.Content value="jobs">
 				<JobsTab {formInputs} environmentId={environment.id} />
-			</Tabs.Content>
-		{/if}
-
-		{#if environment.id !== '0'}
-			<Tabs.Content value="agent">
-				<AgentTab bind:regeneratedApiKey {isRegeneratingKey} bind:showRegenerateDialog />
 			</Tabs.Content>
 		{/if}
 

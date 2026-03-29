@@ -91,6 +91,33 @@ type TestConnectionRequest struct {
 	ApiUrl *string `json:"apiUrl,omitempty"`
 }
 
+type EdgeMTLSCertificate struct {
+	// CommonName is the certificate subject common name.
+	//
+	// Required: false
+	CommonName *string `json:"commonName,omitempty"`
+
+	// ExpiresAt is when the generated mTLS client certificate expires.
+	//
+	// Required: false
+	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
+
+	// DaysRemaining is the rounded number of days until certificate expiry.
+	//
+	// Required: false
+	DaysRemaining *int `json:"daysRemaining,omitempty"`
+
+	// Expired indicates whether the certificate is already expired.
+	//
+	// Required: false
+	Expired bool `json:"expired"`
+
+	// ExpiringSoon indicates whether the certificate is within the warning window.
+	//
+	// Required: false
+	ExpiringSoon bool `json:"expiringSoon"`
+}
+
 // Environment represents an environment in API responses.
 type Environment struct {
 	// ID of the environment.
@@ -129,6 +156,27 @@ type Environment struct {
 	// Required: false
 	EdgeTransport *string `json:"edgeTransport,omitempty"`
 
+	// EdgeSecurityMode indicates how the current edge tunnel authenticated.
+	// Values include "token" and "mtls".
+	//
+	// Required: false
+	EdgeSecurityMode *string `json:"edgeSecurityMode,omitempty"`
+
+	// EdgeSessionID is the manager-issued ID for the current live edge session.
+	//
+	// Required: false
+	EdgeSessionID *string `json:"edgeSessionId,omitempty"`
+
+	// EdgeAgentInstance identifies the currently connected agent runtime instance.
+	//
+	// Required: false
+	EdgeAgentInstance *string `json:"edgeAgentInstance,omitempty"`
+
+	// EdgeCapabilities lists the commands advertised by the connected edge agent.
+	//
+	// Required: false
+	EdgeCapabilities []string `json:"edgeCapabilities,omitempty"`
+
 	// Connected reports whether an edge environment currently has a live tunnel.
 	//
 	// Required: false
@@ -150,6 +198,11 @@ type Environment struct {
 	//
 	// Required: false
 	LastPollAt *time.Time `json:"lastPollAt,omitempty"`
+
+	// EdgeMTLSCertificate describes the generated edge client certificate when available.
+	//
+	// Required: false
+	EdgeMTLSCertificate *EdgeMTLSCertificate `json:"edgeMTLSCertificate,omitempty"`
 
 	// ApiKey is returned only when creating or regenerating
 	//

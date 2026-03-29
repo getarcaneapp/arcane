@@ -883,6 +883,21 @@ func (s *EnvironmentService) GetEnabledRegistryCredentials(ctx context.Context) 
 type DeploymentSnippets struct {
 	DockerRun     string
 	DockerCompose string
+	MTLS          *DeploymentSnippetMTLS
+}
+
+type DeploymentSnippetFile struct {
+	Name          string
+	Content       string
+	ContainerPath string
+	Permissions   string
+}
+
+type DeploymentSnippetMTLS struct {
+	DockerRun     string
+	DockerCompose string
+	Files         []DeploymentSnippetFile
+	HostDirHint   string
 }
 
 const deploymentSnippetsDataPath = "/app/data"
@@ -934,7 +949,7 @@ func (s *EnvironmentService) GenerateDeploymentSnippets(ctx context.Context, env
 
 // GenerateEdgeDeploymentSnippets generates Docker deployment snippets for an edge agent.
 // Edge agents connect outbound to the manager and don't require exposed ports.
-func (s *EnvironmentService) GenerateEdgeDeploymentSnippets(ctx context.Context, envID string, managerURL string, apiKey string) (*DeploymentSnippets, error) {
+func (s *EnvironmentService) GenerateEdgeDeploymentSnippets(ctx context.Context, envID string, managerURL string, apiKey string, edgeCfg *edge.Config) (*DeploymentSnippets, error) {
 	managerURL = strings.TrimRight(managerURL, "/")
 
 	dockerRun := strings.Join([]string{
@@ -970,10 +985,93 @@ func (s *EnvironmentService) GenerateEdgeDeploymentSnippets(ctx context.Context,
 		"  arcane-data:",
 	}, "\n")
 
-	return &DeploymentSnippets{
+	snippets := &DeploymentSnippets{
 		DockerRun:     dockerRun,
 		DockerCompose: dockerCompose,
-	}, nil
+	}
+
+	envName := ""
+	if s != nil && s.db != nil {
+		if env, getErr := s.GetEnvironmentByID(ctx, envID); getErr == nil && env != nil {
+			envName = env.Name
+		}
+	}
+
+	generatedAssets, err := edge.GenerateManagerClientMTLSAssets(edgeCfg, envID, envName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate edge mTLS assets: %w", err)
+	}
+	if generatedAssets == nil {
+		return snippets, nil
+	}
+
+	snippets.MTLS = buildMTLSDeploymentSnippetInternal(managerURL, apiKey, generatedAssets)
+	return snippets, nil
+}
+
+func buildMTLSDeploymentSnippetInternal(managerURL string, apiKey string, generatedAssets *edge.GeneratedMTLSAssets) *DeploymentSnippetMTLS {
+	if generatedAssets == nil {
+		return nil
+	}
+
+	hostDir := strings.TrimSpace(generatedAssets.HostDirHint)
+	if hostDir == "" {
+		hostDir = "./arcane-edge-certs"
+	}
+
+	mtlsDockerRun := strings.Join([]string{
+		"docker run -d \\",
+		"  --name arcane-edge-agent \\",
+		"  --restart unless-stopped \\",
+		"  -e EDGE_AGENT=true \\",
+		"  -e EDGE_TRANSPORT=poll \\",
+		"  -e EDGE_MTLS_MODE=required \\",
+		"  -e EDGE_MTLS_ASSETS_DIR=/app/data/edge-mtls-agent \\",
+		fmt.Sprintf("  -e AGENT_TOKEN=%s \\", apiKey),
+		fmt.Sprintf("  -e MANAGER_API_URL=%s \\", managerURL),
+		"  -v /var/run/docker.sock:/var/run/docker.sock \\",
+		fmt.Sprintf("  -v arcane-data:%s \\", deploymentSnippetsDataPath),
+		"  ghcr.io/getarcaneapp/arcane-headless:latest",
+	}, "\n")
+
+	mtlsDockerCompose := strings.Join([]string{
+		"# Edge agent with Arcane-generated mTLS assets",
+		"services:",
+		"  arcane-edge-agent:",
+		"    image: ghcr.io/getarcaneapp/arcane-headless:latest",
+		"    container_name: arcane-edge-agent",
+		"    restart: unless-stopped",
+		"    environment:",
+		"      - EDGE_AGENT=true",
+		"      - EDGE_TRANSPORT=poll",
+		"      - EDGE_MTLS_MODE=required",
+		"      - EDGE_MTLS_ASSETS_DIR=/app/data/edge-mtls-agent",
+		fmt.Sprintf("      - AGENT_TOKEN=%s", apiKey),
+		fmt.Sprintf("      - MANAGER_API_URL=%s", managerURL),
+		"    volumes:",
+		"      - /var/run/docker.sock:/var/run/docker.sock",
+		fmt.Sprintf("      - arcane-data:%s", deploymentSnippetsDataPath),
+		"",
+		"volumes:",
+		"  arcane-data:",
+	}, "\n")
+
+	files := make([]DeploymentSnippetFile, 0, len(generatedAssets.Files))
+	for _, file := range generatedAssets.Files {
+		files = append(files, DeploymentSnippetFile{
+			Name:          file.Name,
+			Content:       file.Content,
+			ContainerPath: file.ContainerPath,
+			Permissions:   file.Permissions,
+		})
+	}
+
+	return &DeploymentSnippetMTLS{
+		DockerRun:     mtlsDockerRun,
+		DockerCompose: mtlsDockerCompose,
+		Files:         files,
+		HostDirHint:   hostDir,
+	}
 }
 
 // SyncRegistriesToEnvironment syncs all registries from this manager to a remote environment

@@ -30,6 +30,7 @@ const (
 	// DefaultWebSocketPreferenceTTL keeps websocket as the preferred transport
 	// for a short period after a successful auto-mode fallback.
 	DefaultWebSocketPreferenceTTL = 2 * time.Minute
+	defaultCommandChunkSize       = 256 * 1024
 )
 
 // activeWSStream tracks an active WebSocket stream on the agent side.
@@ -64,6 +65,8 @@ type TunnelClient struct {
 	activeStreams           sync.Map // map[string]*activeWSStream
 	transportPreferenceMu   sync.RWMutex
 	preferWebSocketUntil    time.Time
+	agentInstanceID         string
+	sessionID               string
 }
 
 // NewTunnelClient creates a new tunnel client
@@ -99,18 +102,13 @@ func NewTunnelClient(cfg *Config, handler http.Handler) *TunnelClient {
 		httpClient:              &http.Client{},
 		stopCh:                  make(chan struct{}),
 		requestTimeout:          DefaultRequestTimeout,
+		agentInstanceID:         uuid.NewString(),
 	}
 }
 
 // StartWithErrorChan runs the tunnel client and optionally emits connection errors.
 func (c *TunnelClient) StartWithErrorChan(ctx context.Context, errCh chan error) {
-	transport := NormalizeEdgeTransport(c.cfg.EdgeTransport)
-	slog.InfoContext(ctx, "Starting edge tunnel client",
-		"transport_mode", transport,
-		"attempt_grpc", c.shouldAttemptGRPCTunnelInternal(),
-		"attempt_websocket", c.shouldAttemptWebSocketTunnelInternal(),
-		"manager_url", c.managerURL,
-	)
+	slog.InfoContext(ctx, "Starting edge agent session client", StartupLogAttrs(c.cfg)...)
 	if errCh != nil {
 		defer close(errCh)
 	}
@@ -146,6 +144,47 @@ func (c *TunnelClient) StartWithErrorChan(ctx context.Context, errCh chan error)
 			}
 		}
 	}
+}
+
+func StartupLogAttrs(cfg *Config) []any {
+	if cfg == nil {
+		return []any{
+			"control_plane", "unknown",
+			"managed_session_transports", []string{},
+			"security_mode", NormalizeEdgeMTLSMode(""),
+		}
+	}
+
+	controlPlane := "managed"
+	if UsePollEdgeTransport(cfg) {
+		controlPlane = EdgeTransportPoll
+	}
+
+	managedSessionTransports := make([]string, 0, 2)
+	if UseGRPCEdgeTransport(cfg) || (UsePollEdgeTransport(cfg) && strings.TrimSpace(cfg.GetManagerGRPCAddr()) != "") {
+		managedSessionTransports = append(managedSessionTransports, EdgeTransportGRPC)
+	}
+	if UseWebSocketEdgeTransport(cfg) || (UsePollEdgeTransport(cfg) && strings.TrimSpace(cfg.GetManagerBaseURL()) != "") {
+		managedSessionTransports = append(managedSessionTransports, EdgeTransportWebSocket)
+	}
+
+	attrs := []any{
+		"control_plane", controlPlane,
+		"managed_session_transports", managedSessionTransports,
+		"security_mode", NormalizeEdgeMTLSMode(cfg.EdgeMTLSMode),
+	}
+
+	if managerAPIURL := strings.TrimSpace(cfg.ManagerApiUrl); managerAPIURL != "" {
+		attrs = append(attrs, "manager_api_url", managerAPIURL)
+	}
+	if managerGRPCAddr := strings.TrimSpace(cfg.GetManagerGRPCAddr()); managerGRPCAddr != "" {
+		attrs = append(attrs, "manager_grpc_addr", managerGRPCAddr)
+	}
+	if managerBaseURL := strings.TrimSpace(cfg.GetManagerBaseURL()); managerBaseURL != "" {
+		attrs = append(attrs, "manager_base_url", managerBaseURL)
+	}
+
+	return attrs
 }
 
 // connectAndServe establishes a connection and handles messages.
@@ -283,6 +322,61 @@ func (c *TunnelClient) markTransportConnectedInternal(transport string) {
 	}
 }
 
+func (c *TunnelClient) registerMessageInternal() *TunnelMessage {
+	return &TunnelMessage{
+		Type:          MessageTypeRegister,
+		AgentToken:    c.cfg.AgentToken,
+		AgentInstance: c.agentInstanceID,
+		Capabilities:  AdvertisedEdgeCommands(),
+		ResumeSession: c.sessionID,
+	}
+}
+
+func (c *TunnelClient) awaitRegistrationInternal(ctx context.Context) (*TunnelMessage, error) {
+	if c == nil || c.conn == nil {
+		return nil, fmt.Errorf("edge tunnel connection is not initialized")
+	}
+
+	type registrationResult struct {
+		msg *TunnelMessage
+		err error
+	}
+
+	timeout := c.grpcRegistrationTimeoutInternal()
+	recvCh := make(chan registrationResult, 1)
+	go func() {
+		msg, err := c.conn.Receive()
+		recvCh <- registrationResult{msg: msg, err: err}
+	}()
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		_ = c.conn.Close()
+		return nil, ctx.Err()
+	case <-timer.C:
+		_ = c.conn.Close()
+		return nil, fmt.Errorf("timed out waiting for tunnel registration response after %s", timeout)
+	case result := <-recvCh:
+		if result.err != nil {
+			return nil, fmt.Errorf("failed to receive tunnel registration response: %w", result.err)
+		}
+		if result.msg == nil {
+			return nil, fmt.Errorf("received empty tunnel registration response")
+		}
+		if result.msg.Type != MessageTypeRegisterResponse {
+			return nil, fmt.Errorf("unexpected first tunnel message: %s", result.msg.Type)
+		}
+		if !result.msg.Accepted {
+			return nil, fmt.Errorf("manager rejected tunnel registration: %s", result.msg.Error)
+		}
+		c.sessionID = result.msg.SessionID
+		return result.msg, nil
+	}
+}
+
 // heartbeatLoop sends periodic heartbeats
 func (c *TunnelClient) heartbeatLoop(ctx context.Context) {
 	ticker := time.NewTicker(c.heartbeatInterval)
@@ -330,13 +424,23 @@ func (c *TunnelClient) messageLoop(ctx context.Context) error {
 			switch msg.Type {
 			case MessageTypeRequest:
 				go c.handleRequest(ctx, msg)
+			case MessageTypeCommandRequest:
+				go c.handleCommandRequest(ctx, msg)
 			case MessageTypeWebSocketStart:
 				c.handleWebSocketStart(ctx, msg)
+			case MessageTypeStreamOpen:
+				c.handleStreamOpen(ctx, msg)
 			case MessageTypeWebSocketData:
 				c.handleWebSocketData(ctx, msg)
+			case MessageTypeStreamData:
+				c.handleStreamData(ctx, msg)
 			case MessageTypeWebSocketClose:
 				c.handleWebSocketClose(ctx, msg)
-			case MessageTypeResponse, MessageTypeHeartbeat, MessageTypeStreamData, MessageTypeStreamEnd, MessageTypeEvent:
+			case MessageTypeStreamClose:
+				c.handleStreamClose(ctx, msg)
+			case MessageTypeCancelRequest:
+				slog.DebugContext(ctx, "Ignoring edge cancel request on agent", "id", msg.ID)
+			case MessageTypeResponse, MessageTypeHeartbeat, MessageTypeStreamEnd, MessageTypeEvent, MessageTypeCommandAck, MessageTypeCommandOutput, MessageTypeCommandComplete, MessageTypeFileChunk:
 				slog.DebugContext(ctx, "Ignoring message type on agent", "type", msg.Type)
 			case MessageTypeHeartbeatAck:
 				slog.DebugContext(ctx, "Received heartbeat ack")
@@ -355,6 +459,67 @@ func (c *TunnelClient) messageLoop(ctx context.Context) error {
 			}
 		}
 	}
+}
+
+func (c *TunnelClient) handleCommandRequest(ctx context.Context, msg *TunnelMessage) {
+	if !ValidateEdgeCommand(msg.Command, msg.Method, msg.Path, false) {
+		c.sendCommandComplete(msg.ID, http.StatusBadRequest, nil, nil, "unsupported edge command", false)
+		return
+	}
+	if err := c.conn.Send(&TunnelMessage{ID: msg.ID, Type: MessageTypeCommandAck, Command: msg.Command}); err != nil {
+		slog.WarnContext(ctx, "Failed to acknowledge edge command", "id", msg.ID, "command", msg.Command, "error", err)
+		return
+	}
+
+	reqCtx, cancel := context.WithTimeout(ctx, c.requestTimeout)
+	defer cancel()
+
+	req, err := c.buildLocalHTTPRequest(reqCtx, msg)
+	if err != nil {
+		c.sendCommandComplete(msg.ID, http.StatusInternalServerError, nil, nil, fmt.Sprintf("failed to create request: %v", err), false)
+		return
+	}
+
+	recorder := newCommandResponseRecorderInternal(msg.ID, msg.Command, c.conn)
+	c.handler.ServeHTTP(recorder, req)
+	if err := recorder.Close(); err != nil {
+		slog.WarnContext(reqCtx, "Failed to finalize command response", "id", msg.ID, "command", msg.Command, "error", err)
+	}
+}
+
+func (c *TunnelClient) buildLocalHTTPRequest(ctx context.Context, msg *TunnelMessage) (*http.Request, error) {
+	var body io.Reader
+	var bodyBytes []byte
+	if len(msg.Body) > 0 {
+		bodyBytes = append([]byte(nil), msg.Body...)
+		body = bytes.NewReader(bodyBytes)
+	}
+
+	path := msg.Path
+	if msg.Query != "" {
+		path = path + "?" + msg.Query
+	}
+
+	req, err := http.NewRequestWithContext(ctx, msg.Method, path, body)
+	if err != nil {
+		return nil, err
+	}
+
+	if bodyBytes != nil {
+		req.GetBody = func() (io.ReadCloser, error) {
+			return io.NopCloser(bytes.NewReader(bodyBytes)), nil
+		}
+	}
+
+	for k, v := range msg.Headers {
+		if http.CanonicalHeaderKey(k) == "Host" {
+			req.Host = v
+			continue
+		}
+		req.Header.Set(k, v)
+	}
+
+	return req, nil
 }
 
 // handleRequest processes an incoming request and sends back a response
@@ -494,6 +659,11 @@ func (c *TunnelClient) handleRequestStreaming(ctx context.Context, msg *TunnelMe
 
 // handleWebSocketStart handles a WebSocket stream start request from the manager.
 func (c *TunnelClient) handleWebSocketStart(ctx context.Context, msg *TunnelMessage) {
+	if msg.Command == "" {
+		if commandName, ok := ResolveEdgeCommandName(http.MethodGet, msg.Path, true); ok {
+			msg.Command = commandName
+		}
+	}
 	streamID := msg.ID
 	slog.DebugContext(ctx, "Starting WebSocket stream", "stream_id", streamID, "path", msg.Path)
 
@@ -526,6 +696,22 @@ func (c *TunnelClient) handleWebSocketStart(ctx context.Context, msg *TunnelMess
 
 	go c.startLocalWebSocketReadLoop(ctx, streamCtx, streamID, ws, stream)
 	go c.startLocalWebSocketWriteLoop(ctx, streamCtx, ws, stream, cancel)
+}
+
+func (c *TunnelClient) handleStreamOpen(ctx context.Context, msg *TunnelMessage) {
+	if !ValidateEdgeCommand(msg.Command, http.MethodGet, msg.Path, true) {
+		c.sendStreamCloseMessage(msg.ID, "unsupported edge stream")
+		return
+	}
+
+	c.handleWebSocketStart(ctx, &TunnelMessage{
+		ID:      msg.ID,
+		Type:    MessageTypeWebSocketStart,
+		Command: msg.Command,
+		Path:    msg.Path,
+		Query:   msg.Query,
+		Headers: msg.Headers,
+	})
 }
 
 func (c *TunnelClient) buildLocalWebSocketURLInternal(msg *TunnelMessage) string {
@@ -577,6 +763,7 @@ var localDialSkipHeaders = map[string]bool{
 	"Sec-Websocket-Extensions": true,
 	"Upgrade":                  true,
 	"Connection":               true,
+	"Host":                     true,
 
 	// Browser headers forwarded through the tunnel that are invalid
 	// for a server-to-server local dial.
@@ -698,7 +885,7 @@ func (c *TunnelClient) startLocalWebSocketWriteLoop(ctx context.Context, streamC
 func (c *TunnelClient) sendWebSocketData(streamID string, msgType int, data []byte) error {
 	wsDataMsg := &TunnelMessage{
 		ID:            streamID,
-		Type:          MessageTypeWebSocketData,
+		Type:          MessageTypeStreamData,
 		Body:          data,
 		WSMessageType: msgType,
 	}
@@ -706,15 +893,24 @@ func (c *TunnelClient) sendWebSocketData(streamID string, msgType int, data []by
 }
 
 func (c *TunnelClient) sendWebSocketClose(streamID string) {
+	c.sendStreamCloseMessage(streamID, "")
+}
+
+func (c *TunnelClient) sendStreamCloseMessage(streamID string, message string) {
 	closeMsg := &TunnelMessage{
-		ID:   streamID,
-		Type: MessageTypeWebSocketClose,
+		ID:    streamID,
+		Type:  MessageTypeStreamClose,
+		Error: message,
 	}
 	_ = c.conn.Send(closeMsg)
 }
 
 // handleWebSocketData handles incoming WebSocket data from the manager.
 func (c *TunnelClient) handleWebSocketData(ctx context.Context, msg *TunnelMessage) {
+	c.handleStreamData(ctx, msg)
+}
+
+func (c *TunnelClient) handleStreamData(ctx context.Context, msg *TunnelMessage) {
 	streamRaw, ok := c.activeStreams.Load(msg.ID)
 	if !ok {
 		slog.DebugContext(ctx, "Received WebSocket data for unknown stream", "stream_id", msg.ID)
@@ -738,6 +934,10 @@ func (c *TunnelClient) handleWebSocketData(ctx context.Context, msg *TunnelMessa
 
 // handleWebSocketClose handles WebSocket close from the manager.
 func (c *TunnelClient) handleWebSocketClose(ctx context.Context, msg *TunnelMessage) {
+	c.handleStreamClose(ctx, msg)
+}
+
+func (c *TunnelClient) handleStreamClose(ctx context.Context, msg *TunnelMessage) {
 	streamRaw, ok := c.activeStreams.Load(msg.ID)
 	if !ok {
 		return
@@ -758,11 +958,177 @@ func (c *TunnelClient) sendErrorResponse(requestID string, status int, message s
 	_ = c.conn.Send(resp)
 }
 
+func (c *TunnelClient) sendCommandComplete(commandID string, status int, headers map[string]string, body []byte, message string, streaming bool) {
+	_ = c.conn.Send(&TunnelMessage{
+		ID:        commandID,
+		Type:      MessageTypeCommandComplete,
+		Status:    status,
+		Headers:   headers,
+		Body:      body,
+		Error:     message,
+		Streaming: streaming,
+	})
+}
+
 // responseRecorder captures HTTP responses
 type responseRecorder struct {
 	headers    http.Header
 	body       bytes.Buffer
 	statusCode int
+}
+
+type commandResponseRecorder struct {
+	commandID   string
+	commandName string
+	conn        TunnelConnection
+	headers     http.Header
+	statusCode  int
+	buffer      bytes.Buffer
+	wroteHeader bool
+	streaming   bool
+	sequence    int64
+	closed      bool
+	mu          sync.Mutex
+}
+
+func newCommandResponseRecorderInternal(commandID, commandName string, conn TunnelConnection) *commandResponseRecorder {
+	return &commandResponseRecorder{
+		commandID:   commandID,
+		commandName: commandName,
+		conn:        conn,
+		headers:     make(http.Header),
+		statusCode:  http.StatusOK,
+	}
+}
+
+func (r *commandResponseRecorder) Header() http.Header {
+	return r.headers
+}
+
+func (r *commandResponseRecorder) Write(b []byte) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	originalLen := len(b)
+
+	if len(b) == 0 {
+		return 0, nil
+	}
+
+	if !r.streaming && r.buffer.Len()+len(b) <= defaultCommandChunkSize {
+		return r.buffer.Write(b)
+	}
+
+	r.streaming = true
+	if err := r.flushBufferLocked(); err != nil {
+		return 0, err
+	}
+
+	for len(b) > 0 {
+		chunk := b
+		if len(chunk) > defaultCommandChunkSize {
+			chunk = chunk[:defaultCommandChunkSize]
+		}
+		if err := r.conn.Send(&TunnelMessage{
+			ID:       r.commandID,
+			Type:     MessageTypeCommandOutput,
+			Body:     append([]byte(nil), chunk...),
+			Sequence: r.sequence,
+			Command:  r.commandName,
+		}); err != nil {
+			return 0, err
+		}
+		r.sequence++
+		b = b[len(chunk):]
+	}
+
+	return originalLen, nil
+}
+
+func (r *commandResponseRecorder) WriteHeader(statusCode int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.statusCode = statusCode
+	r.wroteHeader = true
+}
+
+func (r *commandResponseRecorder) Flush() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.streaming = true
+	_ = r.flushBufferLocked()
+}
+
+func (r *commandResponseRecorder) Close() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.closed {
+		return nil
+	}
+
+	if !r.streaming {
+		err := r.conn.Send(&TunnelMessage{
+			ID:        r.commandID,
+			Type:      MessageTypeCommandComplete,
+			Status:    r.statusCode,
+			Headers:   flattenResponseHeadersInternal(r.headers),
+			Body:      append([]byte(nil), r.buffer.Bytes()...),
+			Streaming: false,
+			Command:   r.commandName,
+		})
+		if err != nil {
+			return err
+		}
+		r.closed = true
+		return nil
+	}
+
+	if err := r.flushBufferLocked(); err != nil {
+		return err
+	}
+	if err := r.conn.Send(&TunnelMessage{
+		ID:        r.commandID,
+		Type:      MessageTypeCommandComplete,
+		Status:    r.statusCode,
+		Headers:   flattenResponseHeadersInternal(r.headers),
+		Streaming: true,
+		Command:   r.commandName,
+	}); err != nil {
+		return err
+	}
+
+	r.closed = true
+	return nil
+}
+
+func (r *commandResponseRecorder) flushBufferLocked() error {
+	if r.buffer.Len() == 0 {
+		return nil
+	}
+	if err := r.conn.Send(&TunnelMessage{
+		ID:       r.commandID,
+		Type:     MessageTypeCommandOutput,
+		Body:     append([]byte(nil), r.buffer.Bytes()...),
+		Sequence: r.sequence,
+		Command:  r.commandName,
+	}); err != nil {
+		return err
+	}
+	r.sequence++
+	r.buffer.Reset()
+	return nil
+}
+
+func flattenResponseHeadersInternal(headers http.Header) map[string]string {
+	if len(headers) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(headers))
+	for k, vs := range headers {
+		if len(vs) > 0 {
+			out[k] = vs[0]
+		}
+	}
+	return out
 }
 
 func (r *responseRecorder) Header() http.Header {
@@ -914,6 +1280,13 @@ func StartTunnelClientWithErrors(ctx context.Context, cfg *Config, handler http.
 
 	if cfg.AgentToken == "" {
 		return nil, fmt.Errorf("AGENT_TOKEN is required")
+	}
+
+	if err := EnsureAgentMTLSAssets(ctx, cfg); err != nil {
+		return nil, err
+	}
+	if err := ValidateAgentMTLSConfig(cfg); err != nil {
+		return nil, err
 	}
 
 	client := NewTunnelClient(cfg, handler)

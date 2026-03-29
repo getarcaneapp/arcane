@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 )
 
 const (
@@ -30,50 +29,34 @@ func DefaultTunnelAcquireTimeout() time.Duration {
 // ProxyRequest sends an HTTP request through an edge tunnel
 // Returns the response status, headers, and body
 func ProxyRequest(ctx context.Context, tunnel *AgentTunnel, method, path, query string, headers map[string]string, body []byte) (int, map[string]string, []byte, error) {
-	requestID := uuid.New().String()
-
-	msg := &TunnelMessage{
-		ID:      requestID,
-		Type:    MessageTypeRequest,
+	result, err := DefaultCommandClient.Execute(ctx, tunnel, &CommandRequest{
 		Method:  method,
 		Path:    path,
 		Query:   query,
 		Headers: headers,
 		Body:    body,
-	}
-
-	// Keep request/response flow compatibility for WebSocket transport.
-	if _, isGRPC := tunnel.Conn.(*GRPCManagerTunnelConn); !isGRPC {
-		return proxyRequestLegacy(ctx, tunnel, msg)
-	}
-
-	return proxyRequestGRPC(ctx, tunnel, method, requestID, msg)
-}
-
-func proxyRequestLegacy(ctx context.Context, tunnel *AgentTunnel, msg *TunnelMessage) (int, map[string]string, []byte, error) {
-	resp, err := tunnel.Conn.SendRequest(ctx, msg, &tunnel.Pending)
+	})
 	if err != nil {
-		return 0, nil, nil, fmt.Errorf("tunnel request failed: %w", err)
+		return 0, nil, nil, err
 	}
-	return resp.Status, resp.Headers, resp.Body, nil
+
+	return result.Status, result.Headers, result.Body, nil
 }
 
-func proxyRequestGRPC(ctx context.Context, tunnel *AgentTunnel, method, requestID string, msg *TunnelMessage) (int, map[string]string, []byte, error) {
+func registerPendingRequestInternal(tunnel *AgentTunnel, requestID string) (<-chan *TunnelMessage, error) {
+	if requestID == "" {
+		return nil, fmt.Errorf("request ID is required")
+	}
+
 	respCh := make(chan *TunnelMessage, 256)
 	tunnel.Pending.Store(requestID, &PendingRequest{
 		ResponseCh: respCh,
 		CreatedAt:  time.Now(),
 	})
-	defer tunnel.Pending.Delete(requestID)
-
-	if err := tunnel.Conn.Send(msg); err != nil {
-		return 0, nil, nil, fmt.Errorf("tunnel request failed: %w", err)
-	}
-
-	return collectGRPCResponse(ctx, method, respCh)
+	return respCh, nil
 }
 
-func collectGRPCResponse(ctx context.Context, method string, respCh <-chan *TunnelMessage) (int, map[string]string, []byte, error) {
+func collectCommandResponseInternal(ctx context.Context, respCh <-chan *TunnelMessage) (int, map[string]string, []byte, error) {
 	state := &grpcResponseState{}
 
 	for {
@@ -87,21 +70,29 @@ func collectGRPCResponse(ctx context.Context, method string, respCh <-chan *Tunn
 
 			switch incoming.Type {
 			case MessageTypeResponse:
-				if done, status, headers, body := state.handleResponse(method, incoming); done {
-					return status, headers, body, nil
-				}
-			case MessageTypeStreamData:
+				return incoming.Status, stripInternalTunnelHeaders(incoming.Headers), incoming.Body, nil
+			case MessageTypeCommandAck:
+				continue
+			case MessageTypeCommandOutput, MessageTypeStreamData, MessageTypeFileChunk:
 				state.handleStreamData(incoming)
+			case MessageTypeCommandComplete:
+				if done, status, headers, body, err := state.handleCommandComplete(incoming); done {
+					return status, headers, body, err
+				}
 			case MessageTypeStreamEnd:
 				if done, status, headers, body := state.handleStreamEnd(); done {
 					return status, headers, body, nil
 				}
 			case MessageTypeRequest,
+				MessageTypeCommandRequest,
 				MessageTypeHeartbeat,
 				MessageTypeHeartbeatAck,
 				MessageTypeWebSocketStart,
 				MessageTypeWebSocketData,
 				MessageTypeWebSocketClose,
+				MessageTypeStreamOpen,
+				MessageTypeStreamClose,
+				MessageTypeCancelRequest,
 				MessageTypeRegister,
 				MessageTypeRegisterResponse,
 				MessageTypeEvent:
@@ -118,30 +109,7 @@ type grpcResponseState struct {
 	gotResponse bool
 }
 
-func (s *grpcResponseState) handleResponse(method string, incoming *TunnelMessage) (bool, int, map[string]string, []byte) {
-	if !s.gotResponse {
-		s.gotResponse = true
-		s.status = incoming.Status
-		s.respHeaders = incoming.Headers
-	}
-
-	if len(incoming.Body) > 0 {
-		s.respBody.Write(incoming.Body)
-		return true, s.status, stripInternalTunnelHeaders(s.respHeaders), s.respBody.Bytes()
-	}
-
-	if method == http.MethodHead || s.status == http.StatusNoContent || s.status == http.StatusNotModified {
-		return true, s.status, stripInternalTunnelHeaders(s.respHeaders), nil
-	}
-
-	return false, 0, nil, nil
-}
-
 func (s *grpcResponseState) handleStreamData(incoming *TunnelMessage) {
-	if !s.gotResponse {
-		// Ignore out-of-order stream chunks until the response envelope arrives.
-		return
-	}
 	if len(incoming.Body) > 0 {
 		s.respBody.Write(incoming.Body)
 	}
@@ -152,6 +120,21 @@ func (s *grpcResponseState) handleStreamEnd() (bool, int, map[string]string, []b
 		return false, 0, nil, nil
 	}
 	return true, s.status, stripInternalTunnelHeaders(s.respHeaders), s.respBody.Bytes()
+}
+
+func (s *grpcResponseState) handleCommandComplete(incoming *TunnelMessage) (bool, int, map[string]string, []byte, error) {
+	if !s.gotResponse {
+		s.gotResponse = true
+		s.status = incoming.Status
+		s.respHeaders = incoming.Headers
+	}
+	if len(incoming.Body) > 0 {
+		s.respBody.Write(incoming.Body)
+	}
+	if incoming.Error != "" && incoming.Status >= http.StatusBadRequest {
+		return true, incoming.Status, stripInternalTunnelHeaders(s.respHeaders), s.respBody.Bytes(), fmt.Errorf("%s", incoming.Error)
+	}
+	return true, incoming.Status, stripInternalTunnelHeaders(s.respHeaders), s.respBody.Bytes(), nil
 }
 
 // ProxyHTTPRequest is a helper that proxies a gin context through a tunnel

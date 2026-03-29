@@ -1,11 +1,16 @@
 package handlers
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -139,8 +144,23 @@ type PairEnvironmentOutput struct {
 }
 
 type DeploymentSnippet struct {
-	DockerRun     string `json:"dockerRun" doc:"Docker run command snippet"`
-	DockerCompose string `json:"dockerCompose" doc:"Docker compose YAML snippet"`
+	DockerRun     string                 `json:"dockerRun" doc:"Docker run command snippet"`
+	DockerCompose string                 `json:"dockerCompose" doc:"Docker compose YAML snippet"`
+	MTLS          *DeploymentSnippetMTLS `json:"mtls,omitempty" doc:"Optional Arcane-generated mTLS deployment assets for edge agents"`
+}
+
+type DeploymentSnippetFile struct {
+	Name          string `json:"name" doc:"Suggested filename"`
+	Content       string `json:"content" doc:"PEM file contents"`
+	ContainerPath string `json:"containerPath" doc:"Container mount path expected by the mTLS snippet"`
+	Permissions   string `json:"permissions" doc:"Suggested file mode"`
+}
+
+type DeploymentSnippetMTLS struct {
+	DockerRun     string                  `json:"dockerRun" doc:"Docker run snippet using Arcane-generated mTLS assets"`
+	DockerCompose string                  `json:"dockerCompose" doc:"Docker compose snippet using Arcane-generated mTLS assets"`
+	Files         []DeploymentSnippetFile `json:"files" doc:"Generated PEM files to place on the edge host"`
+	HostDirHint   string                  `json:"hostDirHint" doc:"Suggested host directory containing the generated PEM files"`
 }
 
 type GetDeploymentSnippetsInput struct {
@@ -157,6 +177,17 @@ type GetEnvironmentVersionInput struct {
 
 type GetEnvironmentVersionOutput struct {
 	Body base.ApiResponse[version.Info]
+}
+
+type DownloadEdgeMTLSCAInput struct{}
+
+type DownloadEnvironmentMTLSBundleInput struct {
+	ID string `path:"id" doc:"Environment ID"`
+}
+
+type DownloadEnvironmentMTLSFileInput struct {
+	ID       string `path:"id" doc:"Environment ID"`
+	FileName string `path:"fileName" doc:"mTLS asset filename"`
 }
 
 // ============================================================================
@@ -314,6 +345,32 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 	}, h.GetDeploymentSnippets)
 
 	huma.Register(api, huma.Operation{
+		OperationID: "downloadEnvironmentMTLSBundle",
+		Method:      "GET",
+		Path:        "/environments/{id}/deployment/mtls/bundle",
+		Summary:     "Download environment mTLS bundle",
+		Description: "Download the generated mTLS client certificate bundle for an edge environment",
+		Tags:        []string{"Environments"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.DownloadEnvironmentMTLSBundle)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "downloadEnvironmentMTLSFile",
+		Method:      "GET",
+		Path:        "/environments/{id}/deployment/mtls/{fileName}",
+		Summary:     "Download environment mTLS asset",
+		Description: "Download an individual generated mTLS client certificate asset for an edge environment",
+		Tags:        []string{"Environments"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.DownloadEnvironmentMTLSFile)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "getEnvironmentVersion",
 		Method:      "GET",
 		Path:        "/environments/{id}/version",
@@ -325,6 +382,19 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 			{"ApiKeyAuth": {}},
 		},
 	}, h.GetEnvironmentVersion)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "downloadEdgeMTLSCA",
+		Method:      "GET",
+		Path:        "/edge-mtls/ca",
+		Summary:     "Download Arcane-generated edge mTLS CA",
+		Description: "Download the Arcane-managed certificate authority used for generated edge mTLS client certificates",
+		Tags:        []string{"Environments"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.DownloadEdgeMTLSCA)
 }
 
 // ============================================================================
@@ -515,6 +585,9 @@ func (h *EnvironmentHandler) GetEnvironment(ctx context.Context, input *GetEnvir
 		return nil, huma.Error500InternalServerError((&common.EnvironmentMappingError{Err: mapErr}).Error())
 	}
 	h.applyEdgeRuntimeState(&out)
+	if certInfo, certErr := readGeneratedEdgeMTLSCertificateInfoInternal(h.cfg, env.ID); certErr == nil {
+		out.EdgeMTLSCertificate = certInfo
+	}
 
 	return &GetEnvironmentOutput{
 		Body: base.ApiResponse[environment.Environment]{
@@ -628,6 +701,10 @@ func (h *EnvironmentHandler) applyEdgeRuntimeState(env *environment.Environment)
 	env.LastHeartbeat = nil
 	env.LastPollAt = nil
 	env.EdgeTransport = nil
+	env.EdgeSecurityMode = nil
+	env.EdgeSessionID = nil
+	env.EdgeAgentInstance = nil
+	env.EdgeCapabilities = nil
 
 	if pollState, ok := edge.GetPollRuntimeRegistry().Get(env.ID, time.Now()); ok {
 		env.LastPollAt = pollState.LastPollAt
@@ -639,6 +716,18 @@ func (h *EnvironmentHandler) applyEdgeRuntimeState(env *environment.Environment)
 		env.Status = string(models.EnvironmentStatusOnline)
 		env.ConnectedAt = runtimeState.ConnectedAt
 		env.LastHeartbeat = runtimeState.LastHeartbeat
+		if runtimeState.SecurityMode != "" {
+			env.EdgeSecurityMode = &runtimeState.SecurityMode
+		}
+		if runtimeState.SessionID != "" {
+			env.EdgeSessionID = &runtimeState.SessionID
+		}
+		if runtimeState.AgentInstance != "" {
+			env.EdgeAgentInstance = &runtimeState.AgentInstance
+		}
+		if len(runtimeState.Capabilities) > 0 {
+			env.EdgeCapabilities = append([]string(nil), runtimeState.Capabilities...)
+		}
 		if transport, ok := edge.GetActiveTunnelTransport(env.ID); ok {
 			env.EdgeTransport = &transport
 		} else if runtimeState.Transport != "" {
@@ -982,7 +1071,12 @@ func (h *EnvironmentHandler) GetDeploymentSnippets(ctx context.Context, input *G
 	// Use edge snippets for edge environments
 	var snippets *services.DeploymentSnippets
 	if env.IsEdge {
-		snippets, err = h.environmentService.GenerateEdgeDeploymentSnippets(ctx, env.ID, h.cfg.GetAppURL(), *env.AccessToken)
+		snippets, err = h.environmentService.GenerateEdgeDeploymentSnippets(ctx, env.ID, h.cfg.GetAppURL(), *env.AccessToken, &edge.Config{
+			EdgeMTLSMode:         h.cfg.EdgeMTLSMode,
+			EdgeMTLSAutoGenerate: h.cfg.EdgeMTLSAutoGenerate,
+			EdgeMTLSCAFile:       h.cfg.EdgeMTLSCAFile,
+			EdgeMTLSAssetsDir:    h.cfg.EdgeMTLSAssetsDir,
+		})
 	} else {
 		snippets, err = h.environmentService.GenerateDeploymentSnippets(ctx, env.ID, h.cfg.GetAppURL(), *env.AccessToken)
 	}
@@ -991,12 +1085,32 @@ func (h *EnvironmentHandler) GetDeploymentSnippets(ctx context.Context, input *G
 		return nil, huma.Error500InternalServerError("Failed to generate deployment snippets")
 	}
 
+	var mtls *DeploymentSnippetMTLS
+	if snippets.MTLS != nil {
+		files := make([]DeploymentSnippetFile, 0, len(snippets.MTLS.Files))
+		for _, file := range snippets.MTLS.Files {
+			files = append(files, DeploymentSnippetFile{
+				Name:          file.Name,
+				Content:       file.Content,
+				ContainerPath: file.ContainerPath,
+				Permissions:   file.Permissions,
+			})
+		}
+		mtls = &DeploymentSnippetMTLS{
+			DockerRun:     snippets.MTLS.DockerRun,
+			DockerCompose: snippets.MTLS.DockerCompose,
+			Files:         files,
+			HostDirHint:   snippets.MTLS.HostDirHint,
+		}
+	}
+
 	return &GetDeploymentSnippetsOutput{
 		Body: base.ApiResponse[DeploymentSnippet]{
 			Success: true,
 			Data: DeploymentSnippet{
 				DockerRun:     snippets.DockerRun,
 				DockerCompose: snippets.DockerCompose,
+				MTLS:          mtls,
 			},
 		},
 	}, nil
@@ -1073,4 +1187,189 @@ func (h *EnvironmentHandler) GetEnvironmentVersion(ctx context.Context, input *G
 			Data:    versionInfo,
 		},
 	}, nil
+}
+
+// DownloadEdgeMTLSCA downloads the Arcane-managed edge mTLS CA certificate.
+func (h *EnvironmentHandler) DownloadEdgeMTLSCA(ctx context.Context, _ *DownloadEdgeMTLSCAInput) (*huma.StreamResponse, error) {
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
+	}
+
+	caPath, err := generatedEdgeMTLSCAPathInternal(h.cfg)
+	if err != nil {
+		return nil, huma.Error404NotFound("Arcane-managed edge mTLS CA is not available")
+	}
+
+	caPEM, err := os.ReadFile(caPath)
+	if err != nil {
+		slog.ErrorContext(ctx, "Failed to read generated edge mTLS CA", "path", caPath, "error", err.Error())
+		return nil, huma.Error500InternalServerError("Failed to read Arcane-generated edge mTLS CA")
+	}
+
+	fileName := filepath.Base(caPath)
+	if strings.TrimSpace(fileName) == "" {
+		fileName = "ca.crt"
+	}
+
+	return &huma.StreamResponse{
+		Body: func(humaCtx huma.Context) {
+			humaCtx.SetHeader("Content-Type", "application/x-pem-file")
+			humaCtx.SetHeader("Content-Disposition", "attachment; filename="+fileName)
+			humaCtx.SetHeader("Content-Length", strconv.Itoa(len(caPEM)))
+
+			_, _ = humaCtx.BodyWriter().Write(bytes.Clone(caPEM))
+		},
+	}, nil
+}
+
+func (h *EnvironmentHandler) DownloadEnvironmentMTLSBundle(ctx context.Context, input *DownloadEnvironmentMTLSBundleInput) (*huma.StreamResponse, error) {
+	env, files, err := h.loadEnvironmentMTLSFiles(ctx, input.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	var archive bytes.Buffer
+	zipWriter := zip.NewWriter(&archive)
+
+	for _, file := range files {
+		downloadName := environmentMTLSAssetDownloadNameInternal(env, file.Name)
+		entry, createErr := zipWriter.Create(downloadName)
+		if createErr != nil {
+			slog.ErrorContext(ctx, "Failed to create mTLS bundle entry", "environmentID", input.ID, "fileName", downloadName, "error", createErr.Error())
+			return nil, huma.Error500InternalServerError("Failed to build mTLS bundle")
+		}
+
+		if _, writeErr := entry.Write([]byte(file.Content)); writeErr != nil {
+			slog.ErrorContext(ctx, "Failed to write mTLS bundle entry", "environmentID", input.ID, "fileName", downloadName, "error", writeErr.Error())
+			return nil, huma.Error500InternalServerError("Failed to build mTLS bundle")
+		}
+	}
+
+	if err := zipWriter.Close(); err != nil {
+		slog.ErrorContext(ctx, "Failed to finalize mTLS bundle", "environmentID", input.ID, "error", err.Error())
+		return nil, huma.Error500InternalServerError("Failed to build mTLS bundle")
+	}
+
+	fileName := environmentMTLSDownloadBaseNameInternal(env) + "-mtls.zip"
+
+	return &huma.StreamResponse{
+		Body: func(humaCtx huma.Context) {
+			humaCtx.SetHeader("Content-Type", "application/zip")
+			humaCtx.SetHeader("Content-Disposition", fmt.Sprintf("attachment; filename=%q", fileName))
+			humaCtx.SetHeader("Content-Length", strconv.Itoa(archive.Len()))
+
+			_, _ = humaCtx.BodyWriter().Write(archive.Bytes())
+		},
+	}, nil
+}
+
+func (h *EnvironmentHandler) DownloadEnvironmentMTLSFile(ctx context.Context, input *DownloadEnvironmentMTLSFileInput) (*huma.StreamResponse, error) {
+	env, files, err := h.loadEnvironmentMTLSFiles(ctx, input.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, file := range files {
+		if file.Name != input.FileName {
+			continue
+		}
+
+		fileContent := []byte(file.Content)
+		downloadName := environmentMTLSAssetDownloadNameInternal(env, file.Name)
+		return &huma.StreamResponse{
+			Body: func(humaCtx huma.Context) {
+				humaCtx.SetHeader("Content-Type", "application/x-pem-file")
+				humaCtx.SetHeader("Content-Disposition", fmt.Sprintf("attachment; filename=%q", downloadName))
+				humaCtx.SetHeader("Content-Length", strconv.Itoa(len(fileContent)))
+
+				_, _ = humaCtx.BodyWriter().Write(fileContent)
+			},
+		}, nil
+	}
+
+	return nil, huma.Error404NotFound("Requested mTLS asset was not found")
+}
+
+func (h *EnvironmentHandler) loadEnvironmentMTLSFiles(ctx context.Context, environmentID string) (*models.Environment, []services.DeploymentSnippetFile, error) {
+	if h.environmentService == nil {
+		return nil, nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if err := checkAdmin(ctx); err != nil {
+		return nil, nil, err
+	}
+
+	env, err := h.environmentService.GetEnvironmentByID(ctx, environmentID)
+	if err != nil {
+		return nil, nil, huma.Error404NotFound("Environment not found")
+	}
+
+	if !env.IsEdge {
+		return nil, nil, huma.Error400BadRequest("Environment is not an edge agent")
+	}
+
+	if env.ApiKeyID == nil {
+		return nil, nil, huma.Error400BadRequest("Environment does not have an API key configured")
+	}
+
+	if env.AccessToken == nil || *env.AccessToken == "" {
+		return nil, nil, huma.Error400BadRequest("Environment is missing access token")
+	}
+
+	snippets, err := h.environmentService.GenerateEdgeDeploymentSnippets(ctx, env.ID, h.cfg.GetAppURL(), *env.AccessToken, &edge.Config{
+		EdgeMTLSMode:         h.cfg.EdgeMTLSMode,
+		EdgeMTLSAutoGenerate: h.cfg.EdgeMTLSAutoGenerate,
+		EdgeMTLSCAFile:       h.cfg.EdgeMTLSCAFile,
+		EdgeMTLSAssetsDir:    h.cfg.EdgeMTLSAssetsDir,
+	})
+	if err != nil {
+		slog.ErrorContext(ctx, "Failed to generate environment mTLS assets", "environmentID", environmentID, "error", err.Error())
+		return nil, nil, huma.Error500InternalServerError("Failed to generate environment mTLS assets")
+	}
+
+	if snippets.MTLS == nil || len(snippets.MTLS.Files) == 0 {
+		return nil, nil, huma.Error404NotFound("mTLS assets are not available for this environment")
+	}
+
+	return env, snippets.MTLS.Files, nil
+}
+
+func environmentMTLSDownloadBaseNameInternal(env *models.Environment) string {
+	base := strings.TrimSpace(env.Name)
+	if base == "" {
+		base = "environment"
+	}
+
+	base = strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z':
+			return r
+		case r >= 'A' && r <= 'Z':
+			return r
+		case r >= '0' && r <= '9':
+			return r
+		default:
+			return '-'
+		}
+	}, base)
+
+	base = strings.Trim(base, "-")
+	if base == "" {
+		base = "environment"
+	}
+
+	return base + "-" + env.ID
+}
+
+func environmentMTLSAssetDownloadNameInternal(env *models.Environment, fileName string) string {
+	base := environmentMTLSDownloadBaseNameInternal(env)
+
+	switch fileName {
+	case "agent.crt":
+		return base + ".pem"
+	case "agent.key":
+		return base + ".key"
+	default:
+		return fileName
+	}
 }

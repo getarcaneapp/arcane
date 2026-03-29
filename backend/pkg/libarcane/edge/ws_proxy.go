@@ -35,7 +35,13 @@ func ProxyWebSocketRequest(c *gin.Context, tunnel *AgentTunnel, targetPath strin
 	defer cancel()
 
 	headers := buildWebSocketHeaders(c.Request)
-	if err := sendWebSocketStart(tunnel, streamID, targetPath, c.Request.URL.RawQuery, headers); err != nil {
+	if err := DefaultCommandClient.OpenStream(streamCtx, tunnel, &CommandRequest{
+		ID:      streamID,
+		Method:  http.MethodGet,
+		Path:    targetPath,
+		Query:   c.Request.URL.RawQuery,
+		Headers: headers,
+	}); err != nil {
 		slog.ErrorContext(ctx, "Failed to send WebSocket start to agent", "error", err)
 		return
 	}
@@ -70,17 +76,6 @@ func buildWebSocketHeaders(req *http.Request) map[string]string {
 		}
 	}
 	return headers
-}
-
-func sendWebSocketStart(tunnel *AgentTunnel, streamID, targetPath, query string, headers map[string]string) error {
-	startMsg := &TunnelMessage{
-		ID:      streamID,
-		Type:    MessageTypeWebSocketStart,
-		Path:    targetPath,
-		Query:   query,
-		Headers: headers,
-	}
-	return tunnel.Conn.Send(startMsg)
 }
 
 func forwardClientToAgent(ctx context.Context, streamCtx context.Context, clientWS *websocket.Conn, tunnel *AgentTunnel, streamID string, doneCh chan<- struct{}) {
@@ -136,12 +131,26 @@ func forwardAgentToClient(ctx context.Context, streamCtx context.Context, client
 
 func handleAgentMessage(ctx context.Context, clientWS *websocket.Conn, msg *TunnelMessage, streamID string) (bool, error) {
 	switch msg.Type {
-	case MessageTypeWebSocketData:
+	case MessageTypeWebSocketData, MessageTypeStreamData:
 		return false, writeWebSocketData(clientWS, msg)
-	case MessageTypeWebSocketClose, MessageTypeStreamEnd:
+	case MessageTypeWebSocketClose, MessageTypeStreamClose, MessageTypeStreamEnd:
 		slog.DebugContext(ctx, "Agent closed WebSocket stream", "stream_id", streamID)
 		return true, nil
-	case MessageTypeRequest, MessageTypeResponse, MessageTypeHeartbeat, MessageTypeHeartbeatAck, MessageTypeStreamData, MessageTypeWebSocketStart, MessageTypeRegister, MessageTypeRegisterResponse, MessageTypeEvent:
+	case MessageTypeRequest,
+		MessageTypeResponse,
+		MessageTypeHeartbeat,
+		MessageTypeHeartbeatAck,
+		MessageTypeWebSocketStart,
+		MessageTypeRegister,
+		MessageTypeRegisterResponse,
+		MessageTypeEvent,
+		MessageTypeCommandRequest,
+		MessageTypeCommandAck,
+		MessageTypeCommandOutput,
+		MessageTypeCommandComplete,
+		MessageTypeFileChunk,
+		MessageTypeStreamOpen,
+		MessageTypeCancelRequest:
 		slog.DebugContext(ctx, "Ignoring tunnel message", "type", msg.Type, "stream_id", streamID)
 		return false, nil
 	default:
@@ -159,10 +168,10 @@ func writeWebSocketData(clientWS *websocket.Conn, msg *TunnelMessage) error {
 	return clientWS.WriteMessage(msgType, msg.Body)
 }
 
-func sendWebSocketData(tunnel *AgentTunnel, streamID string, msgType int, data []byte) error {
+func sendStreamData(tunnel *AgentTunnel, streamID string, msgType int, data []byte) error {
 	wsDataMsg := &TunnelMessage{
 		ID:            streamID,
-		Type:          MessageTypeWebSocketData,
+		Type:          MessageTypeStreamData,
 		Body:          data,
 		WSMessageType: msgType,
 	}
@@ -172,9 +181,13 @@ func sendWebSocketData(tunnel *AgentTunnel, streamID string, msgType int, data [
 func sendWebSocketClose(tunnel *AgentTunnel, streamID string) {
 	closeMsg := &TunnelMessage{
 		ID:   streamID,
-		Type: MessageTypeWebSocketClose,
+		Type: MessageTypeStreamClose,
 	}
 	_ = tunnel.Conn.Send(closeMsg)
+}
+
+func sendWebSocketData(tunnel *AgentTunnel, streamID string, msgType int, data []byte) error {
+	return sendStreamData(tunnel, streamID, msgType, data)
 }
 
 func isForwardableWSMessage(msgType int) bool {

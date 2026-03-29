@@ -4,17 +4,19 @@
 	import * as Tabs from '$lib/components/ui/tabs/index.js';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import FormInput from '$lib/components/form/form-input.svelte';
+	import LabeledSwitch from '$lib/components/form/labeled-switch.svelte';
 	import UrlInput from '$lib/components/form/url-input.svelte';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { CopyButton } from '$lib/components/ui/copy-button';
-	import type { CreateEnvironmentDTO } from '$lib/types/environment.type';
+	import type { CreateEnvironmentDTO, DeploymentSnippetFile } from '$lib/types/environment.type';
 	import { z } from 'zod/v4';
 	import { createForm, preventDefault } from '$lib/utils/form.utils';
 	import { m } from '$lib/paraglide/messages';
 	import { environmentManagementService } from '$lib/services/env-mgmt-service';
 	import { queryKeys } from '$lib/query/query-keys';
-	import { RemoteEnvironmentIcon, EdgeConnectionIcon } from '$lib/icons';
+	import { RemoteEnvironmentIcon, EdgeConnectionIcon, DownloadIcon } from '$lib/icons';
 	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
+	import { downloadTextFile } from '$lib/utils/download-text-file';
 
 	type NewEnvironmentSheetProps = {
 		open: boolean;
@@ -33,14 +35,16 @@
 		name: string;
 		apiUrl: string;
 		isEdge: boolean;
+		mtlsEnabled: boolean;
+		mtlsFiles?: DeploymentSnippetFile[];
 		dockerRun?: string;
 		dockerCompose?: string;
 	} | null>(null);
 
 	let isLoadingSnippets = $state(false);
 	const createEnvironmentMutation = createMutation(() => ({
-		mutationFn: ({ dto }: { dto: CreateEnvironmentDTO; apiUrl: string; isEdge: boolean }) =>
-			environmentManagementService.create(dto),
+		mutationFn: (variables: { dto: CreateEnvironmentDTO; apiUrl: string; isEdge: boolean; useMTLS: boolean }) =>
+			environmentManagementService.create(variables.dto),
 		onSuccess: async (created, variables) => {
 			await queryClient.invalidateQueries({ queryKey: queryKeys.environments.all });
 
@@ -50,7 +54,8 @@
 					apiKey: created.apiKey,
 					name: created.name,
 					apiUrl: variables.apiUrl,
-					isEdge: variables.isEdge
+					isEdge: variables.isEdge,
+					mtlsEnabled: false
 				};
 
 				isLoadingSnippets = true;
@@ -60,8 +65,15 @@
 						queryFn: () => environmentManagementService.getDeploymentSnippets(created.id),
 						staleTime: 0
 					});
-					createdEnvironment.dockerRun = snippets.dockerRun;
-					createdEnvironment.dockerCompose = snippets.dockerCompose;
+					const useGeneratedMTLS = variables.useMTLS && !!snippets.mtls;
+					if (variables.useMTLS && !snippets.mtls) {
+						toast.warning('Manager mTLS assets are not available. Showing the standard edge agent config instead.');
+					}
+
+					createdEnvironment.dockerRun = useGeneratedMTLS ? snippets.mtls!.dockerRun : snippets.dockerRun;
+					createdEnvironment.dockerCompose = useGeneratedMTLS ? snippets.mtls!.dockerCompose : snippets.dockerCompose;
+					createdEnvironment.mtlsEnabled = useGeneratedMTLS;
+					createdEnvironment.mtlsFiles = useGeneratedMTLS ? snippets.mtls!.files : [];
 				} catch (err) {
 					console.error('Failed to fetch deployment snippets:', err);
 				} finally {
@@ -82,6 +94,7 @@
 
 	let newAgentUrlProtocol = $state<'https' | 'http'>('http');
 	let newAgentUrlHost = $state('');
+	let edgeMTLSEnabled = $state(false);
 
 	// Direct mode form schema requires URL
 	const directFormSchema = z.object({
@@ -110,6 +123,7 @@
 			connectionMode = 'direct';
 			newAgentUrlProtocol = 'http';
 			newAgentUrlHost = '';
+			edgeMTLSEnabled = false;
 			$directInputs.name.value = '';
 			$directInputs.apiUrl.value = '';
 			$edgeInputs.name.value = '';
@@ -134,7 +148,7 @@
 			isEdge: false
 		};
 
-		createEnvironmentMutation.mutate({ dto, apiUrl: fullUrl, isEdge: false });
+		createEnvironmentMutation.mutate({ dto, apiUrl: fullUrl, isEdge: false, useMTLS: false });
 	}
 
 	function handleEdgeSubmit() {
@@ -155,12 +169,22 @@
 			isEdge: true
 		};
 
-		createEnvironmentMutation.mutate({ dto, apiUrl: '', isEdge: true });
+		createEnvironmentMutation.mutate({ dto, apiUrl: '', isEdge: true, useMTLS: edgeMTLSEnabled });
 	}
 
 	function handleDone() {
 		onEnvironmentCreated?.();
 		open = false;
+	}
+
+	function findCreatedMTLSFile(fileName: string): DeploymentSnippetFile | undefined {
+		return createdEnvironment?.mtlsFiles?.find((file) => file.name === fileName);
+	}
+
+	function downloadCreatedMTLSFile(fileName: string) {
+		const file = findCreatedMTLSFile(fileName);
+		if (!file) return;
+		downloadTextFile(file.name, file.content);
 	}
 </script>
 
@@ -194,6 +218,37 @@
 						</div>
 						<p class="text-muted-foreground text-xs">{m.environments_api_key_warning()}</p>
 					</div>
+
+					{#if createdEnvironment.mtlsEnabled}
+						<div class="space-y-3 rounded-lg border border-sky-500/25 bg-sky-500/8 p-4">
+							<div class="space-y-1">
+								<p class="text-sm font-medium">Manager mTLS is enabled for this edge agent.</p>
+								<p class="text-muted-foreground text-xs">
+									Download the generated client certificate and private key before starting the agent.
+								</p>
+							</div>
+							<div class="flex flex-col gap-2 sm:flex-row">
+								<ArcaneButton
+									action="base"
+									tone="outline"
+									class="flex-1"
+									icon={DownloadIcon}
+									customLabel="Download certificate"
+									onclick={() => downloadCreatedMTLSFile('agent.crt')}
+									disabled={!findCreatedMTLSFile('agent.crt')}
+								/>
+								<ArcaneButton
+									action="base"
+									tone="outline"
+									class="flex-1"
+									icon={DownloadIcon}
+									customLabel="Download key"
+									onclick={() => downloadCreatedMTLSFile('agent.key')}
+									disabled={!findCreatedMTLSFile('agent.key')}
+								/>
+							</div>
+						</div>
+					{/if}
 
 					{#if isLoadingSnippets}
 						<div class="flex items-center justify-center py-8">
@@ -276,6 +331,15 @@
 						</p>
 						<form onsubmit={preventDefault(handleEdgeSubmit)} class="space-y-4">
 							<FormInput label={m.common_name()} placeholder="Remote Docker Host" bind:input={$edgeInputs.name} />
+
+							<LabeledSwitch
+								id="new-edge-agent-mtls"
+								label="Enable manager mTLS"
+								description="Use Arcane-generated edge mTLS assets when they are available on the manager."
+								checked={edgeMTLSEnabled}
+								onCheckedChange={(checked) => (edgeMTLSEnabled = checked)}
+								disabled={isSubmittingNewAgent}
+							/>
 
 							<ArcaneButton
 								action="confirm"

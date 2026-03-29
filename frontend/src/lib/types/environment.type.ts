@@ -1,5 +1,13 @@
 export type EnvironmentStatus = 'online' | 'standby' | 'offline' | 'error' | 'pending';
 
+export type EdgeMTLSCertificate = {
+	commonName?: string;
+	expiresAt?: string;
+	daysRemaining?: number;
+	expired: boolean;
+	expiringSoon: boolean;
+};
+
 export type Environment = {
 	id: string;
 	name: string;
@@ -8,11 +16,13 @@ export type Environment = {
 	enabled: boolean;
 	isEdge: boolean;
 	edgeTransport?: 'grpc' | 'websocket';
+	edgeSecurityMode?: 'token' | 'mtls';
 	connected?: boolean;
 	connectedAt?: string;
 	lastHeartbeat?: string;
 	lastPollAt?: string;
 	lastSeen?: string;
+	edgeMTLSCertificate?: EdgeMTLSCertificate;
 	apiKey?: string;
 };
 
@@ -33,7 +43,22 @@ export interface UpdateEnvironmentDTO {
 	regenerateApiKey?: boolean;
 }
 
+export interface DeploymentSnippetFile {
+	name: string;
+	content: string;
+	containerPath: string;
+	permissions: string;
+}
+
+export interface DeploymentSnippetMTLS {
+	dockerRun: string;
+	dockerCompose: string;
+	files: DeploymentSnippetFile[];
+	hostDirHint: string;
+}
+
 export interface DeploymentSnippets {
 	dockerRun: string;
 	dockerCompose: string;
+	mtls?: DeploymentSnippetMTLS;
 }

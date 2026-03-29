@@ -234,6 +234,10 @@ func isManagementPathInternal(suffix string) bool {
 		return true
 	}
 
+	if strings.HasPrefix(suffix, "/deployment/mtls/") {
+		return true
+	}
+
 	_, isManagement := managementEndpointSet[suffix]
 	return isManagement
 }

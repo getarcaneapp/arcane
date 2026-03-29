@@ -82,6 +82,18 @@
 		}
 	});
 
+	let mtlsCertificateBadge = $derived.by((): { text: string; variant: 'green' | 'amber' | 'red' } | null => {
+		const cert = environment.edgeMTLSCertificate;
+		if (!cert) return null;
+		if (cert.expired) {
+			return { text: m.environments_edge_mtls_certificate_status_expired(), variant: 'red' };
+		}
+		if (cert.expiringSoon) {
+			return { text: m.environments_edge_mtls_certificate_status_expiring_soon(), variant: 'amber' };
+		}
+		return { text: m.environments_edge_mtls_certificate_status_valid(), variant: 'green' };
+	});
+
 	let tunnelBadge = $derived.by((): { text: string; variant: 'green' | 'blue' | 'gray' | 'amber' | 'red' } => {
 		if (!environment.isEdge) {
 			return statusBadge;
@@ -304,5 +316,48 @@
 				</div>
 			</div>
 		</div>
+
+		{#if mtlsCertificateBadge && environment.edgeMTLSCertificate}
+			<div class="space-y-3 rounded-lg border p-4">
+				<div class="space-y-1">
+					<h3 class="text-sm font-medium">{m.environments_agent_mtls_section_title()}</h3>
+					<p class="text-muted-foreground text-xs">{m.environments_agent_mtls_description()}</p>
+				</div>
+
+				<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+					<div>
+						<Label class="text-muted-foreground text-xs font-medium">
+							{m.environments_edge_mtls_certificate_status_label()}
+						</Label>
+						<div class="mt-1">
+							<StatusBadge text={mtlsCertificateBadge.text} variant={mtlsCertificateBadge.variant} />
+						</div>
+					</div>
+					<div>
+						<Label class="text-muted-foreground text-xs font-medium">
+							{m.environments_edge_mtls_certificate_expires_label()}
+						</Label>
+						<div class="mt-1 space-y-1">
+							<div class="font-mono text-sm">{formatDateTime(environment.edgeMTLSCertificate.expiresAt)}</div>
+							{#if environment.edgeMTLSCertificate.daysRemaining !== undefined}
+								<div class="text-muted-foreground text-xs">
+									{m.environments_edge_mtls_certificate_days_remaining({
+										count: environment.edgeMTLSCertificate.daysRemaining
+									})}
+								</div>
+							{/if}
+						</div>
+					</div>
+					{#if environment.edgeMTLSCertificate.commonName}
+						<div class="sm:col-span-2">
+							<Label class="text-muted-foreground text-xs font-medium">
+								{m.environments_edge_mtls_certificate_common_name_label()}
+							</Label>
+							<div class="mt-1 font-mono text-sm">{environment.edgeMTLSCertificate.commonName}</div>
+						</div>
+					{/if}
+				</div>
+			</div>
+		{/if}
 	</Card.Content>
 </Card.Root>
