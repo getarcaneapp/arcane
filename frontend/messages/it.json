@@ -513,6 +513,7 @@
 	"containers_env_vars_description": "Variabili dell'ambiente di esecuzione del tuo container",
 	"containers_no_env_vars": "Nessuna variabile d'ambiente",
 	"containers_no_ports": "Nessuna porta",
+	"containers_hide_unexposed_ports": "Nascondere le porte non esposte",
 	"containers_show_fewer_ports": "Mostra un minor numero di porte",
 	"containers_show_more_ports": "Mostra {count} altre porte",
 	"containers_no_labels_defined": "Nessuna label definita",
