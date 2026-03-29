@@ -701,7 +701,14 @@
 	<DropdownMenu.CheckboxItem bind:checked={() => showInternal, (v) => setShowInternal(!!v)}>
 		{`${m.common_show()} ${m.internal()} ${m.containers_title()}`}
 	</DropdownMenu.CheckboxItem>
-	<DropdownMenu.CheckboxItem bind:checked={() => hideExposedPorts, (v) => { customSettings = { ...customSettings, hideExposedPorts: !!v }; }}>
+	<DropdownMenu.CheckboxItem
+		bind:checked={
+			() => hideExposedPorts,
+			(v) => {
+				customSettings = { ...customSettings, hideExposedPorts: !!v };
+			}
+		}
+	>
 		{m.containers_hide_unexposed_ports()}
 	</DropdownMenu.CheckboxItem>
 {/snippet}

@@ -18,7 +18,14 @@
 		onViewPortMappings?: () => void;
 	}
 
-	let { container, primaryIpAddress, autoUpdateEnabled = true, autoUpdateLabelControlled = false, onAutoUpdateChange, onViewPortMappings }: Props = $props();
+	let {
+		container,
+		primaryIpAddress,
+		autoUpdateEnabled = true,
+		autoUpdateLabelControlled = false,
+		onAutoUpdateChange,
+		onViewPortMappings
+	}: Props = $props();
 
 	let autoUpdateToggling = $state(false);
 

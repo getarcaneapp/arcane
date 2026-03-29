@@ -52,9 +52,7 @@
 	// Auto-update: detect whether the Docker label controls the state (not toggleable via UI)
 	function isAutoUpdateLabelControlled(c: ContainerDetailsDto): boolean {
 		if (!c?.labels) return false;
-		const labelValue = Object.entries(c.labels).find(
-			([k]) => k.toLowerCase() === 'com.getarcaneapp.arcane.updater'
-		)?.[1];
+		const labelValue = Object.entries(c.labels).find(([k]) => k.toLowerCase() === 'com.getarcaneapp.arcane.updater')?.[1];
 		return !!labelValue && ['false', '0', 'no', 'off'].includes(labelValue.trim().toLowerCase());
 	}
 
@@ -274,7 +272,9 @@
 					{primaryIpAddress}
 					{autoUpdateEnabled}
 					{autoUpdateLabelControlled}
-					onAutoUpdateChange={(enabled) => { autoUpdateOverride = enabled; }}
+					onAutoUpdateChange={(enabled) => {
+						autoUpdateOverride = enabled;
+					}}
 					onViewPortMappings={showNetworkTab ? navigateToNetworkPortMappings : undefined}
 				/>
 			</Tabs.Content>

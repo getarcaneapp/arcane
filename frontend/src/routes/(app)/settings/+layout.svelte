@@ -2,19 +2,13 @@
 	import { page } from '$app/state';
 	import { goto, beforeNavigate } from '$app/navigation';
 	import { setContext } from 'svelte';
-	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { SettingsIcon, ArrowRightIcon, ArrowLeftIcon } from '$lib/icons';
-	import { useSidebar } from '$lib/components/ui/sidebar/context.svelte.js';
 	import { m } from '$lib/paraglide/messages';
 	import settingsStore from '$lib/stores/config-store';
 	import { IsMobile } from '$lib/hooks/is-mobile.svelte.js';
-	import { IsTablet } from '$lib/hooks/is-tablet.svelte.js';
-	import { getEffectiveNavigationSettings } from '$lib/utils/navigation.utils';
 	import { cn } from '$lib/utils';
-	import { navigationItems } from '$lib/config/navigation-config';
 	import MobileFloatingFormActions from '$lib/components/form/mobile-floating-form-actions.svelte';
-	import SidebarItemTooltipContent from '$lib/components/sidebar/sidebar-item-tooltip-content.svelte';
 
 	interface Props {
 		children: import('svelte').Snippet;
@@ -22,116 +16,12 @@
 
 	let { children }: Props = $props();
 
-	let currentPath = $derived(page.url.pathname);
-	let isSubPage = $derived(currentPath !== '/settings');
+	let isSubPage = $derived(page.url.pathname !== '/settings');
 	let currentPageName = $derived(page.url.pathname.split('/').pop() || 'settings');
 
-	const sidebar = useSidebar();
 	const isMobile = new IsMobile();
-	const isTablet = new IsTablet();
 	const isReadOnly = $derived.by(() => $settingsStore.uiConfigDisabled);
-	const navigationSettings = $derived(getEffectiveNavigationSettings());
-	const scrollToHideEnabled = $derived(navigationSettings.scrollToHide);
-	const shortcutsEnabled = $derived($settingsStore?.keyboardShortcutsEnabled ?? true);
-
-	const navItems = $derived.by(() => {
-		const settingsEntry = navigationItems.settingsItems.find((item) => item.url === '/settings');
-		return (
-			settingsEntry?.items?.map((item) => ({
-				href: item.url,
-				label: item.title,
-				icon: item.icon,
-				shortcut: item.shortcut
-			})) ?? []
-		);
-	});
-
-	// Track mobile nav visibility for FAB positioning
-	let mobileNavVisible = $state(true);
-
-	// Monitor mobile nav visibility when scroll-to-hide is enabled
-	$effect(() => {
-		if (typeof window === 'undefined') return;
-		if (!scrollToHideEnabled || !(isMobile.current || isTablet.current)) {
-			mobileNavVisible = true;
-			return;
-		}
-
-		// Check the mobile nav element's transform to determine visibility
-		const checkNavVisibility = () => {
-			const navElement = document.querySelector('[data-testid="mobile-floating-nav"], [data-testid="mobile-docked-nav"]');
-			if (!navElement) {
-				mobileNavVisible = true;
-				return;
-			}
-
-			const style = window.getComputedStyle(navElement);
-			const transform = style.transform;
-			const opacity = parseFloat(style.opacity);
-
-			// Check if nav is translated away or has low opacity
-			if (transform !== 'none' && transform.includes('matrix')) {
-				const matrix = transform.match(/matrix.*\((.+)\)/);
-				if (matrix) {
-					const values = matrix[1].split(', ');
-					const translateY = parseFloat(values[5] || '0');
-					// If translateY is positive (moved down), nav is hidden
-					mobileNavVisible = translateY === 0 && opacity > 0.5;
-				}
-			} else {
-				mobileNavVisible = opacity > 0.5;
-			}
-		};
-
-		// Initial check
-		checkNavVisibility();
-
-		// Use MutationObserver to watch for style changes on nav
-		const observer = new MutationObserver(checkNavVisibility);
-		const navElement = document.querySelector('[data-testid="mobile-floating-nav"], [data-testid="mobile-docked-nav"]');
-
-		if (navElement) {
-			observer.observe(navElement, {
-				attributes: true,
-				attributeFilter: ['style', 'class']
-			});
-		}
-
-		// Also check on scroll as a fallback
-		const handleScroll = () => {
-			requestAnimationFrame(checkNavVisibility);
-		};
-
-		window.addEventListener('scroll', handleScroll, { passive: true });
-
-		return () => {
-			observer.disconnect();
-			window.removeEventListener('scroll', handleScroll);
-		};
-	});
-
-	// Calculate left position based on sidebar state to match sidebar spacing system
-	// Uses the same CSS variables and spacing as the sidebar component
-	const leftPosition = $derived(() => {
-		const margin = '1rem'; // Standard spacing-4 equivalent
-
-		// On mobile, use standard margin without sidebar offset
-		if (isMobile.current) {
-			return margin;
-		}
-
-		if (sidebar.state === 'expanded') {
-			// Full sidebar width + standard margin
-			return `calc(var(--sidebar-width) + ${margin})`;
-		} else {
-			// For floating variant with icon collapsible:
-			// sidebar-width-icon + spacing(4) + 2px padding + standard margin
-			// This matches the exact calculation from sidebar.svelte line 84
-			return `calc(var(--sidebar-width-icon) + 1rem + 2px + ${margin})`;
-		}
-	});
-
-	let pageTitle = $derived(() => {
+	let pageTitle = $derived.by(() => {
 		switch (currentPageName) {
 			case 'jobs':
 				return m.jobs_title();
@@ -188,44 +78,7 @@
 	}
 </script>
 
-<div class="flex h-full min-h-full flex-col md:flex-row">
-	<!-- Desktop Sidebar -->
-	<aside class={cn('relative hidden w-64 shrink-0 self-stretch md:block md:h-full md:min-h-full', 'backdrop-blur-sm')}>
-		<div aria-hidden="true" class="bg-border/60 pointer-events-none absolute top-4 right-0 bottom-4 w-px"></div>
-		<div class="sticky top-0 px-3 py-4">
-			<h2 class="mb-4 px-4 text-lg font-semibold tracking-tight">{m.settings_title()}</h2>
-			<nav class="flex min-w-0 flex-col gap-1">
-				{#each navItems as item (item.href)}
-					{@const isActive = currentPath.startsWith(item.href)}
-					{@const linkClass = cn(
-						'flex w-full min-w-0 items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-						isActive ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-					)}
-					<div class="w-full min-w-0">
-						{#if item.shortcut?.length && shortcutsEnabled}
-							<ArcaneTooltip.Root>
-								<ArcaneTooltip.Trigger class="w-full">
-									<a href={item.href} class={linkClass}>
-										<item.icon class="size-4 shrink-0" />
-										<span class="truncate">{item.label}</span>
-									</a>
-								</ArcaneTooltip.Trigger>
-								<ArcaneTooltip.Content side="right" align="start">
-									<SidebarItemTooltipContent title={item.label} shortcut={item.shortcut} includeTitle={false} />
-								</ArcaneTooltip.Content>
-							</ArcaneTooltip.Root>
-						{:else}
-							<a href={item.href} class={linkClass}>
-								<item.icon class="size-4 shrink-0" />
-								<span class="truncate">{item.label}</span>
-							</a>
-						{/if}
-					</div>
-				{/each}
-			</nav>
-		</div>
-	</aside>
-
+<div class="flex h-full min-h-full flex-col">
 	<!-- Main Content -->
 	<main class="min-w-0 flex-1">
 		{#if isSubPage}
@@ -258,7 +111,7 @@
 									customLabel={m.settings_title()}
 								/>
 								<ArrowRightIcon class="text-muted-foreground size-4 shrink-0" />
-								<span class="text-foreground truncate font-medium">{pageTitle()}</span>
+								<span class="text-foreground truncate font-medium">{pageTitle}</span>
 							</nav>
 						</div>
 					</div>
