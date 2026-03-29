@@ -513,6 +513,7 @@
 	"containers_env_vars_description": "Ejecutar variables de entorno para su contenedor",
 	"containers_no_env_vars": "No hay variables de entorno",
 	"containers_no_ports": "Sin puertos",
+	"containers_hide_unexposed_ports": "Ocultar puertos no expuestos",
 	"containers_show_fewer_ports": "Mostrar menos puertos",
 	"containers_show_more_ports": "Mostrar {count} más puertos",
 	"containers_no_labels_defined": "No hay etiquetas definidas",
