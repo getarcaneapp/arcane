@@ -1,18 +1,39 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Switch } from '$lib/components/ui/switch';
 	import { m } from '$lib/paraglide/messages';
 	import type { ContainerDetailsDto } from '$lib/types/container.type';
 	import { format, formatDistanceToNow } from 'date-fns';
 	import { InfoIcon, StartIcon, StopIcon, NetworksIcon, VolumesIcon, HealthIcon } from '$lib/icons';
+	import { containerService } from '$lib/services/container-service';
+	import { toast } from 'svelte-sonner';
 
 	interface Props {
 		container: ContainerDetailsDto;
 		primaryIpAddress: string;
+		autoUpdateEnabled?: boolean;
+		autoUpdateLabelControlled?: boolean;
+		onAutoUpdateChange?: (enabled: boolean) => void;
 		onViewPortMappings?: () => void;
 	}
 
-	let { container, primaryIpAddress, onViewPortMappings }: Props = $props();
+	let { container, primaryIpAddress, autoUpdateEnabled = true, autoUpdateLabelControlled = false, onAutoUpdateChange, onViewPortMappings }: Props = $props();
+
+	let autoUpdateToggling = $state(false);
+
+	async function handleAutoUpdateToggle(checked: boolean) {
+		autoUpdateToggling = true;
+		try {
+			await containerService.setAutoUpdate(container.id, checked);
+			onAutoUpdateChange?.(checked);
+			toast.success(checked ? m.auto_update_enabled_toast() : m.auto_update_disabled_toast());
+		} catch {
+			toast.error(m.auto_update_failed());
+		} finally {
+			autoUpdateToggling = false;
+		}
+	}
 
 	function parseDockerDate(input: string | Date | undefined | null): Date | null {
 		if (!input) return null;
@@ -239,6 +260,25 @@
 					<div class="text-foreground text-sm font-medium capitalize">
 						{restartPolicy}
 					</div>
+				</Card.Content>
+			</Card.Root>
+
+			<Card.Root variant="subtle">
+				<Card.Content class="flex flex-col gap-2 p-4">
+					<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{m.auto_update_title()}</div>
+					<div class="flex items-center gap-3">
+						<Switch
+							checked={autoUpdateEnabled}
+							disabled={autoUpdateToggling || autoUpdateLabelControlled}
+							onCheckedChange={handleAutoUpdateToggle}
+						/>
+						<span class="text-foreground text-sm font-medium">
+							{autoUpdateEnabled ? m.common_enabled() : m.common_disabled()}
+						</span>
+					</div>
+					{#if autoUpdateLabelControlled}
+						<span class="text-muted-foreground text-xs">{m.auto_update_controlled_by_label()}</span>
+					{/if}
 				</Card.Content>
 			</Card.Root>
 
