@@ -39,10 +39,7 @@ export type NavigationItem = {
 export type NavigationSections = {
 	managementItems: NavigationItem[];
 	resourceItems: NavigationItem[];
-	deploymentItems: NavigationItem[];
-	gitOpsItems: NavigationItem[];
 	swarmItems: NavigationItem[];
-	securityItems: NavigationItem[];
 	settingsItems: NavigationItem[];
 };
 
@@ -66,7 +63,16 @@ export const navigationItems: NavigationSections = {
 	],
 	resourceItems: [
 		{ title: m.containers_title(), url: '/containers', icon: ContainersIcon, shortcut: ['mod', '5'] },
-		{ title: m.images_title(), url: '/images', icon: ImagesIcon, shortcut: ['mod', '6'] },
+		{
+			title: m.images_title(),
+			url: '/images',
+			icon: ImagesIcon,
+			shortcut: ['mod', '6'],
+			items: [
+				{ title: m.builds(), url: '/images/builds', icon: HammerIcon },
+				{ title: m.vuln_title(), url: '/images/vulnerabilities', icon: ShieldAlertIcon }
+			]
+		},
 		{
 			title: m.networks_title(),
 			url: '/networks',
@@ -79,8 +85,6 @@ export const navigationItems: NavigationSections = {
 		},
 		{ title: m.volumes_title(), url: '/volumes', icon: VolumesIcon, shortcut: ['mod', '8'] }
 	],
-	deploymentItems: [{ title: m.builds(), url: '/images/builds', icon: HammerIcon, shortcut: ['mod', 'b'] }],
-	gitOpsItems: [],
 	swarmItems: [
 		{ title: 'Services', url: '/swarm/services', icon: DockIcon },
 		{ title: 'Nodes', url: '/swarm/nodes', icon: UsersIcon },
@@ -90,7 +94,6 @@ export const navigationItems: NavigationSections = {
 		{ title: 'Configs', url: '/swarm/configs', icon: TemplateIcon },
 		{ title: 'Secrets', url: '/swarm/secrets', icon: LockIcon }
 	],
-	securityItems: [{ title: m.vuln_title(), url: '/security', icon: ShieldAlertIcon, shortcut: ['mod', 's'] }],
 	settingsItems: [
 		{
 			title: m.events_title(),
@@ -174,21 +177,9 @@ export function getAvailableMobileNavItems(options?: { swarmEnabled?: boolean })
 		flatItems.push(...navigationItems.resourceItems);
 	}
 
-	if (navigationItems.deploymentItems) {
-		flatItems.push(...navigationItems.deploymentItems);
-	}
-
-	if (navigationItems.gitOpsItems) {
-		flatItems.push(...navigationItems.gitOpsItems);
-	}
-
 	const swarmItems = getSwarmNavigationItems(!!options?.swarmEnabled);
 	if (swarmItems.length > 0) {
 		flatItems.push(...swarmItems);
-	}
-
-	if (navigationItems.securityItems) {
-		flatItems.push(...navigationItems.securityItems);
 	}
 
 	if (navigationItems.settingsItems) {
@@ -211,13 +202,8 @@ export const defaultMobileNavigationSettings: MobileNavigationSettings = {
 	scrollToHide: true
 };
 
-export function getBuildAndDeploymentItems(): NavigationItem[] {
-	return [...navigationItems.deploymentItems];
-}
-
 export function getGitOpsItems(environmentId: string): NavigationItem[] {
 	return [
-		...navigationItems.gitOpsItems,
 		{
 			title: m.git_syncs_title(),
 			url: `/environments/${environmentId}/gitops`,

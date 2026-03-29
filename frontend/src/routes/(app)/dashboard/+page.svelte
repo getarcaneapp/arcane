@@ -459,7 +459,7 @@
 						value={actionableVulnerabilitiesAttentionCount}
 						description={m.security_subtitle()}
 						ctaLabel={m.common_view()}
-						href="/security"
+						href="/images/vulnerabilities"
 					/>
 				{/if}
 

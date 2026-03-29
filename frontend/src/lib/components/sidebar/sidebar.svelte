@@ -1,10 +1,5 @@
 <script lang="ts" module>
-	import {
-		navigationItems,
-		getBuildAndDeploymentItems,
-		getGitOpsItems,
-		getSwarmNavigationItems
-	} from '$lib/config/navigation-config';
+	import { navigationItems, getGitOpsItems, getSwarmNavigationItems } from '$lib/config/navigation-config';
 </script>
 
 <script lang="ts">
@@ -60,7 +55,6 @@
 	let envSwitcherOpen = $state(false);
 
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
-	const buildDeploymentItems = $derived(getBuildAndDeploymentItems());
 	const gitOpsItems = $derived(getGitOpsItems(currentEnvId));
 	const swarmItems = $derived(getSwarmNavigationItems(swarmEnabled));
 </script>
@@ -99,12 +93,10 @@
 	<Sidebar.Content class={!isCollapsed ? '-mt-2' : ''}>
 		<SidebarItemGroup label={m.sidebar_management()} items={navigationItems.managementItems} />
 		<SidebarItemGroup label={m.sidebar_resources()} items={navigationItems.resourceItems} />
-		<SidebarItemGroup label={m.builds_and_deployments()} items={buildDeploymentItems} />
-		<SidebarItemGroup label="GitOps" items={gitOpsItems} />
+		<SidebarItemGroup label={m.sidebar_gitops()} items={gitOpsItems} />
 		{#if swarmItems.length > 0}
 			<SidebarItemGroup label={m.swarm_title()} items={swarmItems} />
 		{/if}
-		<SidebarItemGroup label={m.security_title()} items={navigationItems.securityItems} />
 		{#if isAdmin}
 			<SidebarItemGroup label={m.sidebar_administration()} items={navigationItems.settingsItems} />
 		{/if}

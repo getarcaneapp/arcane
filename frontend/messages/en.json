@@ -1841,6 +1841,7 @@
 	"sidebar_management": "Management",
 	"sidebar_resources": "Resources",
 	"sidebar_administration": "Administration",
+	"sidebar_gitops": "GitOps",
 	"sidebar_settings": "Settings",
 	"_comment_quick_actions": "=== QUICK ACTIONS & PROGRESS ===",
 	"quick_actions_title": "Quick Actions",

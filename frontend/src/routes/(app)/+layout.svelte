@@ -10,12 +10,7 @@
 	import { getEffectiveNavigationSettings, navigationSettingsOverridesStore } from '$lib/utils/navigation.utils';
 	import { browser } from '$app/environment';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import {
-		navigationItems,
-		getBuildAndDeploymentItems,
-		getGitOpsItems,
-		type NavigationItem
-	} from '$lib/config/navigation-config';
+	import { navigationItems, getGitOpsItems, type NavigationItem } from '$lib/config/navigation-config';
 	import { isEditableTarget, matchesShortcutEvent } from '$lib/utils/keyboard-shortcut.utils';
 	import { cn } from '$lib/utils';
 	import type { Snippet } from 'svelte';
@@ -46,14 +41,12 @@
 	const isAdmin = $derived(!!user?.roles?.includes('admin'));
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
 	const managementItems = $derived(navigationItems.managementItems);
-	const buildDeploymentItems = $derived(getBuildAndDeploymentItems(currentEnvId));
 	const gitOpsItems = $derived(getGitOpsItems(currentEnvId));
 	const settingsShortcutItems = $derived.by(() => (isAdmin ? (navigationItems.settingsItems ?? []) : []));
 	const shortcutItems = $derived.by(() => {
 		const items: NavigationItem[] = [
 			...managementItems,
 			...navigationItems.resourceItems,
-			...buildDeploymentItems,
 			...gitOpsItems,
 			...settingsShortcutItems
 		];
