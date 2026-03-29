@@ -7,7 +7,17 @@
 	import { cn } from '$lib/utils';
 	import { mode } from 'mode-watcher';
 	import { onMount } from 'svelte';
-	import { Background, BackgroundVariant, Controls, MiniMap, Position, SvelteFlow, type Edge, type Node } from '@xyflow/svelte';
+	import {
+		Background,
+		BackgroundVariant,
+		Controls,
+		MiniMap,
+		Position,
+		SvelteFlow,
+		type Edge,
+		type Node,
+		type XYPosition
+	} from '@xyflow/svelte';
 	import '@xyflow/svelte/dist/style.css';
 
 	let {
@@ -28,6 +38,16 @@
 		href: string;
 		kind: 'network' | 'container';
 		label: string;
+	};
+
+	type DiagramLayout = {
+		networkPositions: Record<string, XYPosition>;
+		containerPositions: Record<string, XYPosition>;
+	};
+
+	type ContainerConnection = {
+		address: string;
+		networkName?: string;
 	};
 
 	type NodePalette = {
@@ -184,50 +204,140 @@
 		return labels.join(' | ');
 	}
 
-	function containerSourceMap(edges: TopologyEdgeDto[]): Map<string, string[]> {
-		const map = new Map<string, string[]>();
+	function containerSourceMap(edges: TopologyEdgeDto[]): Record<string, string[]> {
+		const map: Record<string, string[]> = {};
 		for (const edge of edges) {
-			const existing = map.get(edge.target) ?? [];
-			existing.push(edge.source);
-			map.set(edge.target, existing);
+			map[edge.target] = [...(map[edge.target] ?? []), edge.source];
 		}
 		return map;
 	}
 
-	function buildContainerYPositions(
-		containers: TopologyNodeDto[],
+	function containerConnections(
 		edges: TopologyEdgeDto[],
-		networkY: Map<string, number>
-	): Map<string, number> {
-		const positions = new Map<string, number>();
-		const sourcesByContainer = containerSourceMap(edges);
-		const staged = containers.map((node, index) => {
-			const sources = sourcesByContainer.get(node.id) ?? [];
-			const connectedY = sources.map((source) => networkY.get(source)).filter((value): value is number => value !== undefined);
-			const averageY =
-				connectedY.length > 0 ? connectedY.reduce((sum, value) => sum + value, 0) / connectedY.length : index * 180;
+		networksById: Record<string, TopologyNodeDto>,
+		sourceOrder: Record<string, number>
+	): Record<string, ContainerConnection[]> {
+		const map: Record<string, ContainerConnection[]> = {};
 
-			return {
-				node,
-				averageY
-			};
+		const orderedEdges = [...edges].sort((left, right) => {
+			const leftOrder = sourceOrder[left.source] ?? Number.MAX_SAFE_INTEGER;
+			const rightOrder = sourceOrder[right.source] ?? Number.MAX_SAFE_INTEGER;
+			if (leftOrder !== rightOrder) {
+				return leftOrder - rightOrder;
+			}
+			return left.target.localeCompare(right.target);
 		});
 
-		staged.sort((a, b) => a.averageY - b.averageY || a.node.name.localeCompare(b.node.name));
+		for (const edge of orderedEdges) {
+			const address = edgeLabel(edge);
+			if (!address) {
+				continue;
+			}
 
-		let lastY = -180;
-		for (const entry of staged) {
-			const nextY = Math.max(entry.averageY, lastY + 150);
-			positions.set(entry.node.id, nextY);
-			lastY = nextY;
+			map[edge.target] = [
+				...(map[edge.target] ?? []),
+				{
+					address,
+					networkName: networksById[edge.source]?.name
+				}
+			];
 		}
 
-		return positions;
+		return map;
+	}
+
+	function containerLabel(node: TopologyNodeDto, connections: ContainerConnection[]): string {
+		const header = node.metadata.status ? `${node.name} · ${node.metadata.status}` : node.name;
+		if (connections.length === 0) {
+			return header;
+		}
+
+		const details =
+			connections.length === 1
+				? connections.map((connection) => connection.address)
+				: connections.map((connection) =>
+						connection.networkName ? `${connection.networkName}: ${connection.address}` : connection.address
+					);
+
+		return [header, ...details].join('\n');
+	}
+
+	function buildDiagramLayout(
+		networks: TopologyNodeDto[],
+		edges: TopologyEdgeDto[],
+		containers: TopologyNodeDto[]
+	): DiagramLayout {
+		const networkPositions: Record<string, XYPosition> = {};
+		const containerPositions: Record<string, XYPosition> = {};
+		const sourcesByContainer = containerSourceMap(edges);
+		const networkOrder = Object.fromEntries(networks.map((node, index) => [node.id, index]));
+		const containersByPrimaryNetwork: Record<string, TopologyNodeDto[]> = {};
+
+		for (const network of networks) {
+			containersByPrimaryNetwork[network.id] = [];
+		}
+
+		for (const container of containers) {
+			const orderedSources = [...(sourcesByContainer[container.id] ?? [])].sort((left, right) => {
+				const leftOrder = networkOrder[left] ?? Number.MAX_SAFE_INTEGER;
+				const rightOrder = networkOrder[right] ?? Number.MAX_SAFE_INTEGER;
+				return leftOrder - rightOrder;
+			});
+			const primaryNetworkId = orderedSources[0] ?? networks[0]?.id;
+			if (!primaryNetworkId) {
+				continue;
+			}
+
+			containersByPrimaryNetwork[primaryNetworkId] = [...(containersByPrimaryNetwork[primaryNetworkId] ?? []), container];
+		}
+
+		for (const groupedContainers of Object.values(containersByPrimaryNetwork)) {
+			groupedContainers.sort((left, right) => left.name.localeCompare(right.name));
+		}
+
+		const maxGroupSize = Math.max(...Object.values(containersByPrimaryNetwork).map((group) => group.length), 1);
+		const columns = maxGroupSize <= 2 ? maxGroupSize || 1 : Math.min(4, Math.max(2, Math.ceil(Math.sqrt(maxGroupSize))));
+
+		const networkX = 40;
+		const containerStartX = 440;
+		const containerColumnGap = 360;
+		const containerRowGap = 170;
+		const groupGap = 130;
+		const minimumGroupHeight = 140;
+
+		let currentTop = 0;
+		for (const network of networks) {
+			const groupedContainers = containersByPrimaryNetwork[network.id] ?? [];
+			const rows = groupedContainers.length === 0 ? 1 : Math.ceil(groupedContainers.length / columns);
+			const groupHeight = Math.max(minimumGroupHeight, 96 + (rows - 1) * containerRowGap);
+			const networkY = currentTop + Math.max(0, (rows - 1) * containerRowGap * 0.5);
+
+			networkPositions[network.id] = { x: networkX, y: networkY };
+
+			for (const [index, container] of groupedContainers.entries()) {
+				const row = Math.floor(index / columns);
+				const column = index % columns;
+
+				containerPositions[container.id] = {
+					x: containerStartX + column * containerColumnGap,
+					y: currentTop + row * containerRowGap
+				};
+			}
+
+			currentTop += groupHeight + groupGap;
+		}
+
+		return {
+			networkPositions,
+			containerPositions
+		};
 	}
 
 	const diagramNodes = $derived.by<Node<DiagramNodeData>[]>(() => {
-		const networkY = new Map(networkNodes.map((node, index) => [node.id, index * 180]));
-		const containerY = buildContainerYPositions(containerNodes, topology.edges, networkY);
+		const networksById = Object.fromEntries(networkNodes.map((node) => [node.id, node]));
+		const sourceOrder = Object.fromEntries(networkNodes.map((node, index) => [node.id, index]));
+		const connectionsByContainer = containerConnections(topology.edges, networksById, sourceOrder);
+		const layout = buildDiagramLayout(networkNodes, topology.edges, containerNodes);
 
 		const graphNodes: Node<DiagramNodeData>[] = [];
 
@@ -235,7 +345,7 @@
 			const palette = networkPalette(node.metadata.driver, isDarkMode);
 			graphNodes.push({
 				id: node.id,
-				position: { x: 40, y: networkY.get(node.id) ?? 0 },
+				position: layout.networkPositions[node.id] ?? { x: 40, y: 0 },
 				sourcePosition: Position.Right,
 				targetPosition: Position.Left,
 				type: 'default',
@@ -267,11 +377,11 @@
 			const palette = containerPalette(node.metadata.status, isDarkMode);
 			graphNodes.push({
 				id: node.id,
-				position: { x: 440, y: containerY.get(node.id) ?? 0 },
+				position: layout.containerPositions[node.id] ?? { x: 440, y: 0 },
 				data: {
 					href: `/containers/${node.id}`,
 					kind: 'container',
-					label: nodeLabel(node)
+					label: containerLabel(node, connectionsByContainer[node.id] ?? [])
 				},
 				sourcePosition: Position.Right,
 				targetPosition: Position.Left,
@@ -285,6 +395,7 @@
 					`background: linear-gradient(135deg, ${palette.background}, ${palette.surface})`,
 					`color: ${palette.text}`,
 					`box-shadow: ${canvasTheme.nodeShadow}`,
+					'white-space: pre-line',
 					'font-size: 13px',
 					'font-weight: 600'
 				].join('; '),
@@ -303,9 +414,10 @@
 			id: edge.id,
 			source: edge.source,
 			target: edge.target,
-			type: 'smoothstep',
-			label: edgeLabel(edge),
-			labelStyle: `fill: ${canvasTheme.edgeLabel}; font-size: 11px; font-weight: 600;`,
+			type: 'step',
+			pathOptions: {
+				offset: 28
+			},
 			style: `stroke: ${canvasTheme.edgeStroke}; stroke-width: 1.5;`,
 			interactionWidth: 24,
 			selectable: false,
@@ -364,9 +476,10 @@
 				fitView
 				minZoom={0.35}
 				maxZoom={1.75}
-				panOnScroll
+				zoomOnScroll
+				zoomOnPinch
 				panOnDrag
-				nodesDraggable={false}
+				nodesDraggable
 				nodesConnectable={false}
 				elementsSelectable
 				attributionPosition="bottom-left"
