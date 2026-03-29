@@ -508,6 +508,7 @@
 	"containers_env_vars_description": "Runtime environment variables for your container",
 	"containers_no_env_vars": "No environment variables",
 	"containers_no_ports": "No ports",
+	"containers_hide_exposed_ports": "Hide unexposed ports",
 	"containers_show_fewer_ports": "Show fewer ports",
 	"containers_show_more_ports": "Show {count} more ports",
 	"containers_no_labels_defined": "No labels defined",

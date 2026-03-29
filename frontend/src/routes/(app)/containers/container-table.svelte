@@ -150,6 +150,9 @@
 	let showInternal = $derived.by(() => {
 		return (customSettings.showInternalContainers as boolean) ?? false;
 	});
+	let hideExposedPorts = $derived.by(() => {
+		return (customSettings.hideExposedPorts as boolean) ?? false;
+	});
 	let collapsedGroupsState = $state<PersistedState<Record<string, boolean>> | null>(null);
 	let collapsedGroups = $derived(collapsedGroupsState?.current ?? {});
 	let columnVisibility = $state<Record<string, boolean>>({});
@@ -343,7 +346,7 @@
 {/snippet}
 
 {#snippet PortsCell({ item }: { item: ContainerSummaryDto })}
-	<PortBadge ports={item.ports ?? []} />
+	<PortBadge ports={item.ports ?? []} hideExposed={hideExposedPorts} />
 {/snippet}
 
 {#snippet NameCell({ item }: { item: ContainerSummaryDto })}
@@ -543,7 +546,7 @@
 								{m.common_ports()}
 							</div>
 							<div class="mt-1">
-								<PortBadge ports={item.ports} />
+								<PortBadge ports={item.ports} hideExposed={hideExposedPorts} />
 							</div>
 						</div>
 					</div>
@@ -697,5 +700,8 @@
 	</DropdownMenu.CheckboxItem>
 	<DropdownMenu.CheckboxItem bind:checked={() => showInternal, (v) => setShowInternal(!!v)}>
 		{`${m.common_show()} ${m.internal()} ${m.containers_title()}`}
+	</DropdownMenu.CheckboxItem>
+	<DropdownMenu.CheckboxItem bind:checked={() => hideExposedPorts, (v) => { customSettings = { ...customSettings, hideExposedPorts: !!v }; }}>
+		{m.containers_hide_exposed_ports()}
 	</DropdownMenu.CheckboxItem>
 {/snippet}
