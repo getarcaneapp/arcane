@@ -513,6 +513,7 @@
 	"containers_env_vars_description": "Runtime environment variables for your container",
 	"containers_no_env_vars": "No environment variables",
 	"containers_no_ports": "No ports",
+	"containers_hide_unexposed_ports": "Приховати нерозкриті порти",
 	"containers_show_fewer_ports": "Показати менше портів",
 	"containers_show_more_ports": "Показати {count} більше портів",
 	"containers_no_labels_defined": "No labels defined",
