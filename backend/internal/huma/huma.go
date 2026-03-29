@@ -395,7 +395,7 @@ func registerHandlers(api huma.API, svc *Services) {
 	handlers.RegisterSettings(api, settingsSvc, settingsSearchSvc, environmentSvc, cfg)
 	handlers.RegisterJobSchedules(api, jobScheduleSvc, environmentSvc)
 	handlers.RegisterVolumes(api, dockerSvc, volumeSvc)
-	handlers.RegisterContainers(api, containerSvc, dockerSvc)
+	handlers.RegisterContainers(api, containerSvc, dockerSvc, settingsSvc)
 	handlers.RegisterPorts(api, portSvc)
 	handlers.RegisterNetworks(api, networkSvc, dockerSvc)
 	handlers.RegisterSwarm(api, swarmSvc, environmentSvc, eventSvc, cfg)
