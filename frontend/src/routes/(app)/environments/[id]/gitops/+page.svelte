@@ -157,7 +157,7 @@
 			action: 'edit',
 			label: m.git_repositories_title(),
 			icon: GitBranchIcon,
-			onclick: () => goto('/git-repositories')
+			onclick: () => goto('/customize/git-repositories')
 		},
 		{
 			id: 'refresh',

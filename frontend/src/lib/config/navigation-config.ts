@@ -8,6 +8,7 @@ import {
 	ProjectsIcon,
 	EnvironmentsIcon,
 	CustomizeIcon,
+	RegistryIcon,
 	ContainersIcon,
 	ImagesIcon,
 	NetworksIcon,
@@ -21,7 +22,8 @@ import {
 	GitBranchIcon,
 	ShieldAlertIcon,
 	HammerIcon,
-	TemplateIcon
+	TemplateIcon,
+	VariableIcon
 } from '$lib/icons';
 import { m } from '$lib/paraglide/messages';
 import type { ShortcutKey } from '$lib/utils/keyboard-shortcut.utils';
@@ -49,7 +51,18 @@ export const navigationItems: NavigationSections = {
 		{ title: m.dashboard_title(), url: '/dashboard', icon: DashboardIcon, shortcut: ['mod', '1'] },
 		{ title: m.projects_title(), url: '/projects', icon: ProjectsIcon, shortcut: ['mod', '2'] },
 		{ title: m.environments_title(), url: '/environments', icon: EnvironmentsIcon, shortcut: ['mod', '3'] },
-		{ title: m.customize_title(), url: '/customize', icon: CustomizeIcon, shortcut: ['mod', '4'] }
+		{
+			title: m.customize_title(),
+			url: '/customize',
+			icon: CustomizeIcon,
+			shortcut: ['mod', '4'],
+			items: [
+				{ title: m.templates_title(), url: '/customize/templates', icon: TemplateIcon },
+				{ title: m.registries_title(), url: '/customize/registries', icon: RegistryIcon },
+				{ title: m.variables_title(), url: '/customize/variables', icon: VariableIcon },
+				{ title: m.git_repositories_title(), url: '/customize/git-repositories', icon: GitBranchIcon }
+			]
+		}
 	],
 	resourceItems: [
 		{ title: m.containers_title(), url: '/containers', icon: ContainersIcon, shortcut: ['mod', '5'] },
@@ -67,7 +80,7 @@ export const navigationItems: NavigationSections = {
 		{ title: m.volumes_title(), url: '/volumes', icon: VolumesIcon, shortcut: ['mod', '8'] }
 	],
 	deploymentItems: [{ title: m.builds(), url: '/images/builds', icon: HammerIcon, shortcut: ['mod', 'b'] }],
-	gitOpsItems: [{ title: m.git_repositories_title(), url: '/git-repositories', icon: GitBranchIcon }],
+	gitOpsItems: [],
 	swarmItems: [
 		{ title: 'Services', url: '/swarm/services', icon: DockIcon },
 		{ title: 'Nodes', url: '/swarm/nodes', icon: UsersIcon },
@@ -121,6 +134,11 @@ export const navigationItems: NavigationSections = {
 
 export function getSettingsSubpageUrlsInNavOrder(): string[] {
 	const entry = navigationItems.settingsItems.find((item) => item.url === '/settings');
+	return entry?.items?.map((item) => item.url) ?? [];
+}
+
+export function getCustomizeSubpageUrlsInNavOrder(): string[] {
+	const entry = navigationItems.managementItems.find((item) => item.url === '/customize');
 	return entry?.items?.map((item) => item.url) ?? [];
 }
 

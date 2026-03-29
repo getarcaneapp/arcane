@@ -9,6 +9,7 @@
 	import type { CustomizeCategory } from '$lib/types/customize-search.type';
 	import { debounced } from '$lib/utils/utils';
 	import * as InputGroup from '$lib/components/ui/input-group/index.js';
+	import { getCustomizeSubpageUrlsInNavOrder } from '$lib/config/navigation-config';
 	import {
 		SearchIcon,
 		TemplateIcon,
@@ -39,11 +40,24 @@
 
 	onMount(async () => {
 		try {
-			customizeCategories = await customizeSearchService.getCategories();
+			customizeCategories = orderCategoriesByNav(await customizeSearchService.getCategories());
 		} catch (error) {
 			console.error('Failed to load categories:', error);
 		}
 	});
+
+	function orderCategoriesByNav(categories: CustomizeCategory[]) {
+		const navUrls = getCustomizeSubpageUrlsInNavOrder();
+		const categoriesByUrl = new Map(categories.map((category) => [category.url, category]));
+		const orderedCategories = navUrls
+			.map((url) => categoriesByUrl.get(url))
+			.filter((category): category is CustomizeCategory => Boolean(category));
+		const unmatchedCategories = categories
+			.filter((category) => !navUrls.includes(category.url))
+			.sort((a, b) => a.title.localeCompare(b.title));
+
+		return [...orderedCategories, ...unmatchedCategories];
+	}
 
 	async function performSearch(query: string, immediate = false) {
 		const trimmedQuery = query.trim();
