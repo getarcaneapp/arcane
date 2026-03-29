@@ -116,7 +116,7 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services)
 	}
 
 	// Register public webhook trigger endpoint before auth middleware (token in URL is the sole auth)
-	handlers.RegisterWebhookTrigger(apiGroup, appServices.Webhook)
+	handlers.RegisterWebhookTrigger(apiGroup, appServices.Webhook) //nolint:contextcheck
 
 	apiGroup.Use(middleware.NewEnvProxyMiddlewareWithParam(
 		types.LOCAL_DOCKER_ENVIRONMENT_ID,
