@@ -513,6 +513,7 @@
 	"containers_env_vars_description": "컨테이너의 런타임 환경 변수",
 	"containers_no_env_vars": "환경 변수 없음",
 	"containers_no_ports": "포트 없음",
+	"containers_hide_unexposed_ports": "노출되지 않은 포트 숨기기",
 	"containers_show_fewer_ports": "더 적은 포트 표시",
 	"containers_show_more_ports": "{count} 포트 더 보기",
 	"containers_no_labels_defined": "정의된 레이블 없음",
