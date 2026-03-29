@@ -513,6 +513,7 @@
 	"containers_env_vars_description": "Rultempaj medi-variabloj por via ujo",
 	"containers_no_env_vars": "Neniuj medi-variabloj",
 	"containers_no_ports": "Neniuj pordoj",
+	"containers_hide_unexposed_ports": "Hide unexposed ports",
 	"containers_show_fewer_ports": "Show fewer ports",
 	"containers_show_more_ports": "Show {count} more ports",
 	"containers_no_labels_defined": "Neniuj etikedoj difinitaj",
