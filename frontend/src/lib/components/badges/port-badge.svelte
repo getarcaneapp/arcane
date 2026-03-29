@@ -78,7 +78,11 @@
 	);
 	const published = $derived(visiblePorts.filter((p) => p.isPublished));
 	const exposedOnly = $derived(hideExposed ? [] : visiblePorts.filter((p) => !p.isPublished));
-	const hiddenCount = $derived(allPorts.length - visiblePorts.length);
+	const hiddenCount = $derived(
+		hideExposed
+			? allPorts.filter((p) => p.isPublished).length - published.length
+			: allPorts.length - visiblePorts.length
+	);
 </script>
 
 {#if allPorts.length === 0}
