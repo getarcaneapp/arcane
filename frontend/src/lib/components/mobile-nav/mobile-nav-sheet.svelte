@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { navigationItems, getBuildAndDeploymentItems } from '$lib/config/navigation-config';
+	import { navigationItems, getBuildAndDeploymentItems, getGitOpsItems } from '$lib/config/navigation-config';
 	import type { NavigationItem } from '$lib/config/navigation-config';
 	import { cn } from '$lib/utils';
 	import { page } from '$app/state';
@@ -42,7 +42,8 @@
 	const currentPath = $derived(page.url.pathname);
 	const memoizedUser = $derived.by(() => user ?? storeUser);
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
-	const buildDeploymentItems = $derived(getBuildAndDeploymentItems(currentEnvId));
+	const buildDeploymentItems = $derived(getBuildAndDeploymentItems());
+	const gitOpsItems = $derived(getGitOpsItems(currentEnvId));
 
 	let upgrading = $state(false);
 	let showConfirmDialog = $state(false);
@@ -245,6 +246,30 @@
 					</h4>
 					<div class="space-y-2">
 						{#each buildDeploymentItems as item (item.url)}
+							{@const IconComponent = item.icon}
+							<a
+								href={item.url}
+								onclick={handleItemClick}
+								class={cn(
+									'flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition-all duration-200 ease-out',
+									'focus-visible:ring-muted-foreground/50 hover:scale-[1.01] focus-visible:ring-1 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent',
+									isActiveItem(item)
+										? 'bg-muted text-foreground hover:bg-muted/70 shadow-sm'
+										: 'text-foreground hover:bg-muted/50'
+								)}
+								aria-current={isActiveItem(item) ? 'page' : undefined}
+							>
+								<IconComponent size={20} />
+								<span>{item.title}</span>
+							</a>
+						{/each}
+					</div>
+				</section>
+
+				<section>
+					<h4 class="text-muted-foreground/70 mb-4 px-3 text-[11px] font-bold tracking-widest uppercase">GitOps</h4>
+					<div class="space-y-2">
+						{#each gitOpsItems as item (item.url)}
 							{@const IconComponent = item.icon}
 							<a
 								href={item.url}

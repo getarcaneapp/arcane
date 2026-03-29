@@ -17,7 +17,7 @@ setup('create gitops sync in arcane', async ({ page }) => {
 	console.log('Creating GitOps sync configuration in Arcane...');
 
 	// Step 1: Create a Git Repository in Arcane pointing to GitHub
-	await page.goto('/customize/git-repositories');
+	await page.goto('/git-repositories');
 	await page.waitForLoadState('networkidle');
 
 	// Check if test repo already exists

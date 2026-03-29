@@ -17,7 +17,7 @@
 	import { applyAccentColor } from '$lib/utils/accent-color-util';
 	import { APPLICATION_THEME_VALUES, applyApplicationTheme } from '$lib/utils/application-theme-util';
 	import { applyOledMode } from '$lib/utils/oled-mode-util';
-	import { ApperanceIcon, MonitorSpeakerIcon, DockIcon, MoonIcon, SunIcon } from '$lib/icons';
+	import { AppearanceIcon, MonitorSpeakerIcon, DockIcon, MoonIcon, SunIcon } from '$lib/icons';
 	import SwitchWithLabel from '$lib/components/form/labeled-switch.svelte';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 
@@ -135,7 +135,7 @@
 <SettingsPageLayout
 	title={m.appearance_title()}
 	description={m.appearance_description()}
-	icon={ApperanceIcon}
+	icon={AppearanceIcon}
 	pageType="form"
 	showReadOnlyTag={isReadOnly}
 >

@@ -69,19 +69,19 @@
 		if (!prereq.settingsUrl) return undefined;
 		if (!environmentId) return prereq.settingsUrl;
 
-		const envBase = `/environments/${environmentId}`;
+		const envBase = `/settings/environments?environment=${environmentId}`;
 		switch (prereq.settingKey) {
 			case 'pollingEnabled':
 			case 'autoUpdate':
-				return `${envBase}?tab=docker`;
+				return `${envBase}&tab=docker`;
 			case 'gitopsSyncEnabled':
-				return `${envBase}?tab=gitops`;
+				return `/environments/${environmentId}/gitops`;
 			case 'scheduledPruneEnabled':
 				return undefined;
 			case 'vulnerabilityScanEnabled':
 				return undefined;
 			case 'autoHealEnabled':
-				return `${envBase}?tab=jobs`;
+				return `${envBase}&tab=jobs`;
 			default:
 				return prereq.settingsUrl;
 		}

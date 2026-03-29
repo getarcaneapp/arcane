@@ -1,6 +1,6 @@
 import {
 	ApiKeyIcon,
-	ApperanceIcon,
+	AppearanceIcon,
 	UsersIcon,
 	LockIcon,
 	NotificationsIcon,
@@ -38,6 +38,7 @@ export type NavigationSections = {
 	managementItems: NavigationItem[];
 	resourceItems: NavigationItem[];
 	deploymentItems: NavigationItem[];
+	gitOpsItems: NavigationItem[];
 	swarmItems: NavigationItem[];
 	securityItems: NavigationItem[];
 	settingsItems: NavigationItem[];
@@ -66,6 +67,7 @@ export const navigationItems: NavigationSections = {
 		{ title: m.volumes_title(), url: '/volumes', icon: VolumesIcon, shortcut: ['mod', '8'] }
 	],
 	deploymentItems: [{ title: m.builds(), url: '/images/builds', icon: HammerIcon, shortcut: ['mod', 'b'] }],
+	gitOpsItems: [{ title: m.git_repositories_title(), url: '/git-repositories', icon: GitBranchIcon }],
 	swarmItems: [
 		{ title: 'Services', url: '/swarm/services', icon: DockIcon },
 		{ title: 'Nodes', url: '/swarm/nodes', icon: UsersIcon },
@@ -90,12 +92,18 @@ export const navigationItems: NavigationSections = {
 			shortcut: ['mod', '0'],
 			items: [
 				{ title: m.api_key_page_title(), url: '/settings/api-keys', icon: ApiKeyIcon, shortcut: ['mod', 'shift', '1'] },
-				{ title: m.appearance_title(), url: '/settings/appearance', icon: ApperanceIcon, shortcut: ['mod', 'shift', '2'] },
+				{ title: m.appearance_title(), url: '/settings/appearance', icon: AppearanceIcon, shortcut: ['mod', 'shift', '2'] },
 				{
 					title: m.authentication_title(),
 					url: '/settings/authentication',
 					icon: LockIcon,
 					shortcut: ['mod', 'shift', '3']
+				},
+				{
+					title: m.environments_title(),
+					url: '/settings/environments',
+					icon: EnvironmentsIcon,
+					shortcut: ['mod', 'shift', '5']
 				},
 				{
 					title: m.notifications_title(),
@@ -147,6 +155,10 @@ export function getAvailableMobileNavItems(options?: { swarmEnabled?: boolean })
 		flatItems.push(...navigationItems.deploymentItems);
 	}
 
+	if (navigationItems.gitOpsItems) {
+		flatItems.push(...navigationItems.gitOpsItems);
+	}
+
 	const swarmItems = getSwarmNavigationItems(!!options?.swarmEnabled);
 	if (swarmItems.length > 0) {
 		flatItems.push(...swarmItems);
@@ -176,9 +188,13 @@ export const defaultMobileNavigationSettings: MobileNavigationSettings = {
 	scrollToHide: true
 };
 
-export function getBuildAndDeploymentItems(environmentId: string): NavigationItem[] {
+export function getBuildAndDeploymentItems(): NavigationItem[] {
+	return [...navigationItems.deploymentItems];
+}
+
+export function getGitOpsItems(environmentId: string): NavigationItem[] {
 	return [
-		...navigationItems.deploymentItems,
+		...navigationItems.gitOpsItems,
 		{
 			title: m.git_syncs_title(),
 			url: `/environments/${environmentId}/gitops`,

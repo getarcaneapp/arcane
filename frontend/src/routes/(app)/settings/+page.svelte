@@ -11,7 +11,8 @@
 		ArrowRightIcon,
 		DockerBrandIcon,
 		ApiKeyIcon,
-		ApperanceIcon,
+		AppearanceIcon,
+		EnvironmentsIcon,
 		CloseIcon,
 		JobsIcon,
 		CodeIcon
@@ -39,12 +40,13 @@
 		database: DockerBrandIcon,
 		lock: LockIcon,
 		shield: SecurityIcon,
-		appearance: ApperanceIcon,
+		appearance: AppearanceIcon,
 		bell: NotificationsIcon,
 		user: UserIcon,
 		apikey: ApiKeyIcon,
 		jobs: JobsIcon,
-		code: CodeIcon
+		code: CodeIcon,
+		environment: EnvironmentsIcon
 	};
 
 	onMount(async () => {

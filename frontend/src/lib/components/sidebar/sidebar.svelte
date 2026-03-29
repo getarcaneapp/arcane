@@ -1,5 +1,10 @@
 <script lang="ts" module>
-	import { navigationItems, getBuildAndDeploymentItems, getSwarmNavigationItems } from '$lib/config/navigation-config';
+	import {
+		navigationItems,
+		getBuildAndDeploymentItems,
+		getGitOpsItems,
+		getSwarmNavigationItems
+	} from '$lib/config/navigation-config';
 </script>
 
 <script lang="ts">
@@ -65,7 +70,8 @@
 		}) ?? [];
 
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
-	const buildDeploymentItems = $derived(getBuildAndDeploymentItems(currentEnvId));
+	const buildDeploymentItems = $derived(getBuildAndDeploymentItems());
+	const gitOpsItems = $derived(getGitOpsItems(currentEnvId));
 	const swarmItems = $derived(getSwarmNavigationItems(swarmEnabled));
 </script>
 
@@ -104,6 +110,7 @@
 		<SidebarItemGroup label={m.sidebar_management()} items={navigationItems.managementItems} />
 		<SidebarItemGroup label={m.sidebar_resources()} items={navigationItems.resourceItems} />
 		<SidebarItemGroup label={m.builds_and_deployments()} items={buildDeploymentItems} />
+		<SidebarItemGroup label="GitOps" items={gitOpsItems} />
 		{#if swarmItems.length > 0}
 			<SidebarItemGroup label={m.swarm_title()} items={swarmItems} />
 		{/if}
