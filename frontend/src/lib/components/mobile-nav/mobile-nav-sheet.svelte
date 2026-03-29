@@ -283,7 +283,7 @@
 				<section>
 					<h4 class="text-muted-foreground/70 mb-4 px-3 text-[11px] font-bold tracking-widest uppercase">{m.sidebar_gitops()}</h4>
 					<div class="space-y-2">
-						{#each buildDeploymentItems as item (item.url)}
+						{#each gitOpsItems as item (item.url)}
 							{@const IconComponent = item.icon}
 							<a
 								href={item.url}
