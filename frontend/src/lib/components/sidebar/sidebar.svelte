@@ -59,16 +59,6 @@
 	const isAdmin = $derived(!!effectiveUser?.roles?.includes('admin'));
 	let envSwitcherOpen = $state(false);
 
-	// Filter out sub-items for settings on desktop since we have a dedicated settings sidebar
-	const desktopSettingsItems =
-		navigationItems.settingsItems?.map((item) => {
-			if (item.url === '/settings') {
-				const { items, ...rest } = item;
-				return rest;
-			}
-			return item;
-		}) ?? [];
-
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
 	const buildDeploymentItems = $derived(getBuildAndDeploymentItems());
 	const gitOpsItems = $derived(getGitOpsItems(currentEnvId));
@@ -116,7 +106,7 @@
 		{/if}
 		<SidebarItemGroup label={m.security_title()} items={navigationItems.securityItems} />
 		{#if isAdmin}
-			<SidebarItemGroup label={m.sidebar_administration()} items={desktopSettingsItems} />
+			<SidebarItemGroup label={m.sidebar_administration()} items={navigationItems.settingsItems} />
 		{/if}
 	</Sidebar.Content>
 	<Sidebar.Footer>

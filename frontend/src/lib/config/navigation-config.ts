@@ -119,6 +119,11 @@ export const navigationItems: NavigationSections = {
 	]
 };
 
+export function getSettingsSubpageUrlsInNavOrder(): string[] {
+	const entry = navigationItems.settingsItems.find((item) => item.url === '/settings');
+	return entry?.items?.map((item) => item.url) ?? [];
+}
+
 export const defaultMobilePinnedItems: NavigationItem[] = [
 	navigationItems.managementItems[0]!,
 	navigationItems.managementItems[1]!,

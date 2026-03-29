@@ -25,8 +25,8 @@
 	import type { SettingsCategory } from '$lib/types/settings-search.type';
 	import { debounced } from '$lib/utils/utils';
 	import * as InputGroup from '$lib/components/ui/input-group/index.js';
+	import { getSettingsSubpageUrlsInNavOrder } from '$lib/config/navigation-config';
 
-	let { data } = $props();
 	let searchQuery = $state('');
 	let showSearchResults = $state(false);
 	let searchResults = $state<SettingsCategory[]>([]);
@@ -51,7 +51,7 @@
 
 	onMount(async () => {
 		try {
-			settingsCategories = sortCategories((await settingsSearchService.getCategories()).filter(isVisibleCategory));
+			settingsCategories = orderCategoriesByNav((await settingsSearchService.getCategories()).filter(isVisibleCategory));
 		} catch (error) {
 			console.error('Failed to load categories:', error);
 		}
@@ -76,7 +76,7 @@
 		try {
 			const response = await settingsSearchService.search(trimmedQuery);
 			if (requestId === currentSearchRequest) {
-				searchResults = sortCategories((response.results || []).filter(isVisibleCategory));
+				searchResults = (response.results || []).filter(isVisibleCategory);
 				isSearching = false;
 			}
 		} catch (error) {
@@ -100,8 +100,17 @@
 		return !hiddenCategoryUrls.has(category.url);
 	}
 
-	function sortCategories(categories: SettingsCategory[]) {
-		return [...categories].sort((a, b) => a.title.localeCompare(b.title));
+	function orderCategoriesByNav(categories: SettingsCategory[]) {
+		const navUrls = getSettingsSubpageUrlsInNavOrder();
+		const categoriesByUrl = new Map(categories.map((category) => [category.url, category]));
+		const orderedCategories = navUrls
+			.map((url) => categoriesByUrl.get(url))
+			.filter((category): category is SettingsCategory => Boolean(category));
+		const unmatchedCategories = categories
+			.filter((category) => !navUrls.includes(category.url))
+			.sort((a, b) => a.title.localeCompare(b.title));
+
+		return [...orderedCategories, ...unmatchedCategories];
 	}
 
 	function clearSearch() {
