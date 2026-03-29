@@ -104,9 +104,7 @@ export class ContainerService extends BaseAPIService {
 
 	async setAutoUpdate(containerId: string, enabled: boolean): Promise<{ success: boolean; data: { message: string } }> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.handleResponse(
-			this.api.put(`/environments/${envId}/containers/${containerId}/auto-update`, { enabled })
-		);
+		return this.handleResponse(this.api.put(`/environments/${envId}/containers/${containerId}/auto-update`, { enabled }));
 	}
 }
 
