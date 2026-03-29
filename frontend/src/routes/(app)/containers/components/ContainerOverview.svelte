@@ -27,9 +27,9 @@
 		try {
 			await containerService.setAutoUpdate(container.id, checked);
 			onAutoUpdateChange?.(checked);
-			toast.success(checked ? 'Auto-update enabled' : 'Auto-update disabled');
+			toast.success(checked ? m.auto_update_enabled_toast() : m.auto_update_disabled_toast());
 		} catch {
-			toast.error('Failed to update auto-update setting');
+			toast.error(m.auto_update_failed());
 		} finally {
 			autoUpdateToggling = false;
 		}
@@ -265,7 +265,7 @@
 
 			<Card.Root variant="subtle">
 				<Card.Content class="flex flex-col gap-2 p-4">
-					<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">Auto-Update</div>
+					<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{m.auto_update_title()}</div>
 					<div class="flex items-center gap-3">
 						<Switch
 							checked={autoUpdateEnabled}
@@ -273,11 +273,11 @@
 							onCheckedChange={handleAutoUpdateToggle}
 						/>
 						<span class="text-foreground text-sm font-medium">
-							{autoUpdateEnabled ? 'Enabled' : 'Disabled'}
+							{autoUpdateEnabled ? m.common_enabled() : m.common_disabled()}
 						</span>
 					</div>
 					{#if autoUpdateLabelControlled}
-						<span class="text-muted-foreground text-xs">Controlled by Docker label</span>
+						<span class="text-muted-foreground text-xs">{m.auto_update_controlled_by_label()}</span>
 					{/if}
 				</Card.Content>
 			</Card.Root>
