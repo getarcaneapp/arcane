@@ -792,6 +792,19 @@ func (s *UpdaterService) updateContainer(ctx context.Context, cnt container.Summ
 	cfg := inspect.Config
 	cfg.Image = newRef
 
+	// Update the com.docker.compose.image label so that `docker compose up -d`
+	// recognises the container as up-to-date and does not recreate it.
+	if cfg.Labels != nil {
+		if _, ok := cfg.Labels["com.docker.compose.image"]; ok {
+			if imgInspect, err := dcli.ImageInspect(ctx, newRef); err == nil {
+				cfg.Labels["com.docker.compose.image"] = imgInspect.ID
+			} else {
+				slog.WarnContext(ctx, "updateContainer: could not inspect new image to update compose label",
+					"newRef", newRef, "err", err)
+			}
+		}
+	}
+
 	hostConfig, sanitizedMemorySwappiness, engineInfo, err := libarcane.PrepareRecreateHostConfigForEngine(ctx, dcli, inspect.HostConfig)
 	if err != nil {
 		return fmt.Errorf("prepare host config: %w", err)
