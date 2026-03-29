@@ -277,25 +277,46 @@ func (s *ImageUpdateService) getImageRefByID(ctx context.Context, imageID string
 
 	imageID = strings.TrimPrefix(imageID, "sha256:")
 	inspectResponse, err := dockerClient.ImageInspect(ctx, imageID)
-	if err != nil {
-		return "", fmt.Errorf("image not found: %w", err)
-	}
-	if len(inspectResponse.RepoTags) > 0 {
-		for _, tag := range inspectResponse.RepoTags {
-			if tag != "<none>:<none>" {
-				return tag, nil
-			}
-		}
-	}
-	if len(inspectResponse.RepoDigests) > 0 {
-		for _, digest := range inspectResponse.RepoDigests {
-			if digest != "<none>@<none>" {
-				digestParts := strings.Split(digest, "@")
-				if len(digestParts) == 2 {
-					return digestParts[0] + ":latest", nil
+	if err == nil {
+		if len(inspectResponse.RepoTags) > 0 {
+			for _, tag := range inspectResponse.RepoTags {
+				if tag != "<none>:<none>" {
+					return tag, nil
 				}
 			}
 		}
+		if len(inspectResponse.RepoDigests) > 0 {
+			for _, digest := range inspectResponse.RepoDigests {
+				if digest != "<none>@<none>" {
+					digestParts := strings.Split(digest, "@")
+					if len(digestParts) == 2 {
+						return digestParts[0] + ":latest", nil
+					}
+				}
+			}
+		}
+	}
+
+	// Fallback: if the image was pruned, look up the image reference from
+	// running containers that were started from this image ID.
+	fullID := "sha256:" + imageID
+	containers, listErr := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
+	if listErr != nil {
+		if err != nil {
+			return "", fmt.Errorf("image not found: %w", err)
+		}
+		return "", fmt.Errorf("no valid repository tags or digests found for image")
+	}
+	for _, c := range containers.Items {
+		if c.ImageID == fullID || c.ImageID == imageID {
+			if c.Image != "" && !strings.HasPrefix(c.Image, "sha256:") {
+				return c.Image, nil
+			}
+		}
+	}
+
+	if err != nil {
+		return "", fmt.Errorf("image not found: %w", err)
 	}
 	return "", fmt.Errorf("no valid repository tags or digests found for image")
 }
