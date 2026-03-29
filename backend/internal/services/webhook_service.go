@@ -235,7 +235,7 @@ func (s *WebhookService) ListWebhookSummaries(ctx context.Context, environmentID
 			TargetType:      wh.TargetType,
 			ActionType:      resolvedWebhookActionTypeInternal(wh.TargetType, wh.ActionType),
 			TargetID:        wh.TargetID,
-			TargetName:      s.resolveWebhookTargetName(ctx, &wh),
+			TargetName:      s.resolveWebhookTargetNameInternal(ctx, &wh),
 			EnvironmentID:   wh.EnvironmentID,
 			Enabled:         wh.Enabled,
 			LastTriggeredAt: wh.LastTriggeredAt,
@@ -246,7 +246,7 @@ func (s *WebhookService) ListWebhookSummaries(ctx context.Context, environmentID
 	return summaries, nil
 }
 
-func (s *WebhookService) resolveWebhookTargetName(ctx context.Context, wh *models.Webhook) string {
+func (s *WebhookService) resolveWebhookTargetNameInternal(ctx context.Context, wh *models.Webhook) string {
 	switch wh.TargetType {
 	case models.WebhookTargetTypeContainer:
 		if s.containerService == nil {
@@ -406,7 +406,7 @@ func (s *WebhookService) TriggerByToken(ctx context.Context, rawToken string) (*
 		return nil, err
 	}
 
-	result, err = s.executeWebhookAction(ctx, wh, actionType)
+	result, err = s.executeWebhookActionInternal(ctx, wh, actionType)
 	if err != nil {
 		return nil, err
 	}
@@ -415,52 +415,52 @@ func (s *WebhookService) TriggerByToken(ctx context.Context, rawToken string) (*
 	now := time.Now()
 	_ = s.db.WithContext(ctx).Model(wh).Update("last_triggered_at", now).Error //nolint:errcheck
 
-	s.logWebhookEvent(ctx, wh, actionType, models.EventSeveritySuccess, "")
+	s.logWebhookEventInternal(ctx, wh, actionType, models.EventSeveritySuccess, "")
 
 	return result, nil
 }
 
-func (s *WebhookService) executeWebhookAction(ctx context.Context, wh *models.Webhook, actionType string) (*updater.Result, error) {
+func (s *WebhookService) executeWebhookActionInternal(ctx context.Context, wh *models.Webhook, actionType string) (*updater.Result, error) {
 	switch wh.TargetType {
 	case models.WebhookTargetTypeContainer:
-		return s.executeContainerWebhookAction(ctx, wh, actionType)
+		return s.executeContainerWebhookActionInternal(ctx, wh, actionType)
 	case models.WebhookTargetTypeProject:
-		return s.executeProjectWebhookAction(ctx, wh, actionType)
+		return s.executeProjectWebhookActionInternal(ctx, wh, actionType)
 	case models.WebhookTargetTypeUpdater:
-		return s.executeUpdaterWebhookAction(ctx, wh, actionType)
+		return s.executeUpdaterWebhookActionInternal(ctx, wh, actionType)
 	case models.WebhookTargetTypeGitOps:
-		return s.executeGitOpsWebhookAction(ctx, wh, actionType)
+		return s.executeGitOpsWebhookActionInternal(ctx, wh, actionType)
 	default:
 		return nil, ErrWebhookInvalidType
 	}
 }
 
-func (s *WebhookService) executeContainerWebhookAction(ctx context.Context, wh *models.Webhook, actionType string) (*updater.Result, error) {
+func (s *WebhookService) executeContainerWebhookActionInternal(ctx context.Context, wh *models.Webhook, actionType string) (*updater.Result, error) {
 	switch actionType {
 	case models.WebhookActionTypeUpdate:
 		result, err := s.updaterService.UpdateSingleContainer(ctx, wh.TargetID)
 		if err != nil {
-			return nil, s.wrapWebhookActionError(ctx, wh, "container", actionType, err)
+			return nil, s.wrapWebhookActionErrorInternal(ctx, wh, "container", actionType, err)
 		}
 		return result, nil
 	case models.WebhookActionTypeStart:
 		if err := s.containerService.StartContainer(ctx, wh.TargetID, systemUser); err != nil {
-			return nil, s.wrapWebhookActionError(ctx, wh, "container", actionType, err)
+			return nil, s.wrapWebhookActionErrorInternal(ctx, wh, "container", actionType, err)
 		}
 		return nil, nil
 	case models.WebhookActionTypeStop:
 		if err := s.containerService.StopContainer(ctx, wh.TargetID, systemUser); err != nil {
-			return nil, s.wrapWebhookActionError(ctx, wh, "container", actionType, err)
+			return nil, s.wrapWebhookActionErrorInternal(ctx, wh, "container", actionType, err)
 		}
 		return nil, nil
 	case models.WebhookActionTypeRestart:
 		if err := s.containerService.RestartContainer(ctx, wh.TargetID, systemUser); err != nil {
-			return nil, s.wrapWebhookActionError(ctx, wh, "container", actionType, err)
+			return nil, s.wrapWebhookActionErrorInternal(ctx, wh, "container", actionType, err)
 		}
 		return nil, nil
 	case models.WebhookActionTypeRedeploy:
 		if _, err := s.containerService.RedeployContainer(ctx, wh.TargetID, systemUser); err != nil {
-			return nil, s.wrapWebhookActionError(ctx, wh, "container", actionType, err)
+			return nil, s.wrapWebhookActionErrorInternal(ctx, wh, "container", actionType, err)
 		}
 		return nil, nil
 	default:
@@ -468,31 +468,31 @@ func (s *WebhookService) executeContainerWebhookAction(ctx context.Context, wh *
 	}
 }
 
-func (s *WebhookService) executeProjectWebhookAction(ctx context.Context, wh *models.Webhook, actionType string) (*updater.Result, error) {
+func (s *WebhookService) executeProjectWebhookActionInternal(ctx context.Context, wh *models.Webhook, actionType string) (*updater.Result, error) {
 	switch actionType {
 	case models.WebhookActionTypeUpdate:
 		if err := s.projectService.UpdateProjectServices(ctx, wh.TargetID, nil, systemUser); err != nil {
-			return nil, s.wrapWebhookActionError(ctx, wh, "project", actionType, err)
+			return nil, s.wrapWebhookActionErrorInternal(ctx, wh, "project", actionType, err)
 		}
 		return nil, nil
 	case models.WebhookActionTypeUp:
 		if err := s.projectService.DeployProject(ctx, wh.TargetID, systemUser, nil); err != nil {
-			return nil, s.wrapWebhookActionError(ctx, wh, "project", actionType, err)
+			return nil, s.wrapWebhookActionErrorInternal(ctx, wh, "project", actionType, err)
 		}
 		return nil, nil
 	case models.WebhookActionTypeDown:
 		if err := s.projectService.DownProject(ctx, wh.TargetID, systemUser); err != nil {
-			return nil, s.wrapWebhookActionError(ctx, wh, "project", actionType, err)
+			return nil, s.wrapWebhookActionErrorInternal(ctx, wh, "project", actionType, err)
 		}
 		return nil, nil
 	case models.WebhookActionTypeRestart:
 		if err := s.projectService.RestartProject(ctx, wh.TargetID, systemUser); err != nil {
-			return nil, s.wrapWebhookActionError(ctx, wh, "project", actionType, err)
+			return nil, s.wrapWebhookActionErrorInternal(ctx, wh, "project", actionType, err)
 		}
 		return nil, nil
 	case models.WebhookActionTypeRedeploy:
 		if err := s.projectService.RedeployProject(ctx, wh.TargetID, systemUser); err != nil {
-			return nil, s.wrapWebhookActionError(ctx, wh, "project", actionType, err)
+			return nil, s.wrapWebhookActionErrorInternal(ctx, wh, "project", actionType, err)
 		}
 		return nil, nil
 	default:
@@ -500,38 +500,38 @@ func (s *WebhookService) executeProjectWebhookAction(ctx context.Context, wh *mo
 	}
 }
 
-func (s *WebhookService) executeUpdaterWebhookAction(ctx context.Context, wh *models.Webhook, actionType string) (*updater.Result, error) {
+func (s *WebhookService) executeUpdaterWebhookActionInternal(ctx context.Context, wh *models.Webhook, actionType string) (*updater.Result, error) {
 	if actionType != models.WebhookActionTypeRun {
 		return nil, ErrWebhookInvalidAction
 	}
 
 	result, err := s.updaterService.ApplyPending(ctx, false)
 	if err != nil {
-		return nil, s.wrapWebhookActionError(ctx, wh, "updater", actionType, err)
+		return nil, s.wrapWebhookActionErrorInternal(ctx, wh, "updater", actionType, err)
 	}
 
 	return result, nil
 }
 
-func (s *WebhookService) executeGitOpsWebhookAction(ctx context.Context, wh *models.Webhook, actionType string) (*updater.Result, error) {
+func (s *WebhookService) executeGitOpsWebhookActionInternal(ctx context.Context, wh *models.Webhook, actionType string) (*updater.Result, error) {
 	if actionType != models.WebhookActionTypeSync {
 		return nil, ErrWebhookInvalidAction
 	}
 
 	if _, err := s.gitOpsSyncService.PerformSync(ctx, wh.EnvironmentID, wh.TargetID, systemUser); err != nil {
-		return nil, s.wrapWebhookActionError(ctx, wh, "gitops", actionType, err)
+		return nil, s.wrapWebhookActionErrorInternal(ctx, wh, "gitops", actionType, err)
 	}
 
 	return nil, nil
 }
 
-func (s *WebhookService) wrapWebhookActionError(ctx context.Context, wh *models.Webhook, targetKind, actionType string, err error) error {
+func (s *WebhookService) wrapWebhookActionErrorInternal(ctx context.Context, wh *models.Webhook, targetKind, actionType string, err error) error {
 	msg := fmt.Sprintf("%s %s failed: %s", targetKind, actionType, err)
-	s.logWebhookEvent(ctx, wh, actionType, models.EventSeverityError, msg)
+	s.logWebhookEventInternal(ctx, wh, actionType, models.EventSeverityError, msg)
 	return fmt.Errorf("%s %s failed: %w", targetKind, actionType, err)
 }
 
-func (s *WebhookService) logWebhookEvent(ctx context.Context, wh *models.Webhook, actionType string, severity models.EventSeverity, errMsg string) {
+func (s *WebhookService) logWebhookEventInternal(ctx context.Context, wh *models.Webhook, actionType string, severity models.EventSeverity, errMsg string) {
 	if s.eventService == nil {
 		return
 	}

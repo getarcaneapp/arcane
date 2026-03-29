@@ -93,12 +93,6 @@
 	let formData = $derived({ name: '' });
 	let { inputs, ...form } = $derived(createForm<typeof formSchema>(formSchema, formData));
 
-	$effect(() => {
-		if (open) {
-			loadTargetOptions(selectedTargetType);
-		}
-	});
-
 	async function loadTargetOptions(type: WebhookTargetType) {
 		if (type === 'updater') {
 			targetOptions = [];
@@ -140,6 +134,7 @@
 		selectedTargetType = value as WebhookTargetType;
 		selectedActionType = getDefaultActionType(selectedTargetType);
 		selectedTargetId = '';
+		void loadTargetOptions(selectedTargetType);
 	}
 
 	function handleSubmit() {
@@ -157,6 +152,10 @@
 
 	function handleOpenChange(newOpenState: boolean) {
 		open = newOpenState;
+		if (newOpenState) {
+			void loadTargetOptions(selectedTargetType);
+			return;
+		}
 		if (!newOpenState) {
 			selectedTargetType = 'container';
 			selectedActionType = getDefaultActionType('container');
