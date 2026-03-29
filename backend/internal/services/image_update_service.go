@@ -269,7 +269,7 @@ func (s *ImageUpdateService) parseImageReferenceFallback(imageRef string) *Image
 	return &ImageParts{Registry: registry.NormalizeRegistryForComparison(registryHost), Repository: repository, Tag: tag}
 }
 
-func (s *ImageUpdateService) getImageRefByID(ctx context.Context, imageID string) (string, error) {
+func (s *ImageUpdateService) getImageRefByIDInternal(ctx context.Context, imageID string) (string, error) {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to connect to Docker: %w", err)
@@ -417,7 +417,7 @@ func (s *ImageUpdateService) normalizeRepository(regHost, repo string) string {
 }
 
 func (s *ImageUpdateService) CheckImageUpdateByID(ctx context.Context, imageID string) (*imageupdate.Response, error) {
-	imageRef, err := s.getImageRefByID(ctx, imageID)
+	imageRef, err := s.getImageRefByIDInternal(ctx, imageID)
 	if err != nil {
 		metadata := models.JSON{
 			"action":  "check_update_by_id",
