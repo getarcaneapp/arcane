@@ -8,11 +8,13 @@
 	let {
 		ports = [] as ContainerPorts[],
 		collapsible = true,
-		maxVisible = 3
+		maxVisible = 3,
+		hideExposed = false
 	} = $props<{
 		ports?: ContainerPorts[];
 		collapsible?: boolean;
 		maxVisible?: number;
+		hideExposed?: boolean;
 	}>();
 
 	let expanded = $state(false);
@@ -75,8 +77,12 @@
 		collapsible && !expanded && allPorts.length > maxVisible ? allPorts.slice(0, maxVisible) : allPorts
 	);
 	const published = $derived(visiblePorts.filter((p) => p.isPublished));
-	const exposedOnly = $derived(visiblePorts.filter((p) => !p.isPublished));
-	const hiddenCount = $derived(allPorts.length - visiblePorts.length);
+	const exposedOnly = $derived(hideExposed ? [] : visiblePorts.filter((p) => !p.isPublished));
+	const hiddenCount = $derived(
+		hideExposed
+			? allPorts.filter((p) => p.isPublished).length - published.length
+			: allPorts.length - visiblePorts.length
+	);
 </script>
 
 {#if allPorts.length === 0}
