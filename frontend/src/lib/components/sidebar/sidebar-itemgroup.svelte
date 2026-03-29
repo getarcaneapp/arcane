@@ -63,9 +63,6 @@
 	);
 
 	function getIsOpen(itemTitle: string, isActive: boolean): boolean {
-		if (sidebar.hoverExpansionEnabled) {
-			return isActive;
-		}
 		if (openStates[itemTitle] === undefined) {
 			return isActive;
 		}
@@ -86,7 +83,7 @@
 					{#snippet tooltipContent()}
 						<SidebarItemTooltipContent title={item.title} shortcut={item.shortcut} includeTitle={true} />
 					{/snippet}
-					{@const groupExpanded = hoveredGroup === item.title || item.isActive}
+					{@const groupExpanded = hoveredGroup === item.title}
 					<div
 						class={['rounded-lg transition-colors duration-150', groupExpanded && 'bg-sidebar-accent/40 py-0.5']}
 						role="group"
@@ -159,9 +156,7 @@
 						{includeTitleInTooltip}
 						{getIsOpen}
 						onOpenChange={(open) => {
-							if (!sidebar.hoverExpansionEnabled) {
-								openStates[item.title] = open;
-							}
+							openStates[item.title] = open;
 						}}
 						content={collapsibleSubMenu}
 					/>
