@@ -506,7 +506,7 @@
 	"containers_stats_cpu_unit_singular": "CPU",
 	"containers_stats_cpu_user_mode": "Modo Usuário",
 	"containers_stats_cpu_kernel_mode": "Modo Kernel",
-	"containers_stats_cpu_throttled_periods": "Throttled Periods",
+	"containers_stats_cpu_throttled_periods": "Período de perda de performance",
 	"containers_stats_cpu_throttled_time": "Throttled Time",
 	"containers_logs_title": "Registros do container",
 	"containers_logs_description": "Registros do container em tempo real",
