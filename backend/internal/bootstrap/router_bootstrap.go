@@ -13,6 +13,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/api"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/huma"
+	"github.com/getarcaneapp/arcane/backend/internal/huma/handlers"
 	"github.com/getarcaneapp/arcane/backend/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils/cookie"
@@ -114,6 +115,9 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services)
 		return env.ApiUrl, env.AccessToken, env.Enabled, nil
 	}
 
+	// Register public webhook trigger endpoint before auth middleware (token in URL is the sole auth)
+	handlers.RegisterWebhookTrigger(apiGroup, appServices.Webhook) //nolint:contextcheck
+
 	apiGroup.Use(middleware.NewEnvProxyMiddlewareWithParam(
 		types.LOCAL_DOCKER_ENVIRONMENT_ID,
 		"id",
@@ -155,6 +159,7 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services)
 		SystemUpgrade:     appServices.SystemUpgrade,
 		GitRepository:     appServices.GitRepository,
 		GitOpsSync:        appServices.GitOpsSync,
+		Webhook:           appServices.Webhook,
 		Vulnerability:     appServices.Vulnerability,
 		Dashboard:         appServices.Dashboard,
 		Config:            cfg,

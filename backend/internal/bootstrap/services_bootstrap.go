@@ -45,6 +45,7 @@ type Services struct {
 	ApiKey            *services.ApiKeyService
 	GitRepository     *services.GitRepositoryService
 	GitOpsSync        *services.GitOpsSyncService
+	Webhook           *services.WebhookService
 	Font              *services.FontService
 	Vulnerability     *services.VulnerabilityService
 	Dashboard         *services.DashboardService
@@ -95,6 +96,7 @@ func initializeServices(ctx context.Context, db *database.DB, cfg *config.Config
 	svcs.SystemUpgrade = services.NewSystemUpgradeService(svcs.Docker, svcs.Version, svcs.Event, svcs.Settings)
 	svcs.Updater = services.NewUpdaterService(db, svcs.Settings, svcs.Docker, svcs.Project, svcs.ImageUpdate, svcs.ContainerRegistry, svcs.Event, svcs.Image, svcs.Notification, svcs.SystemUpgrade)
 	svcs.GitOpsSync = services.NewGitOpsSyncService(db, svcs.GitRepository, svcs.Project, svcs.Event, svcs.Settings)
+	svcs.Webhook = services.NewWebhookService(db, svcs.Updater, svcs.Project, svcs.GitOpsSync, svcs.Event)
 
 	return svcs, dockerClient, nil
 }

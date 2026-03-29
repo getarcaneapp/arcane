@@ -13,7 +13,8 @@
 	import { createForm, preventDefault } from '$lib/utils/form.utils';
 	import { queryKeys } from '$lib/query/query-keys';
 	import { m } from '$lib/paraglide/messages';
-	import { FolderOpenIcon } from '$lib/icons';
+	import { FolderOpenIcon, InfoIcon } from '$lib/icons';
+	import * as Alert from '$lib/components/ui/alert';
 	import { createQuery } from '@tanstack/svelte-query';
 
 	type GitOpsSyncFormProps = {
@@ -240,6 +241,16 @@
 				/>
 
 				<FormInput label={m.git_sync_sync_interval()} type="number" placeholder="5" bind:input={$inputs.syncInterval} />
+
+				<Alert.Root class="border-primary/20 bg-primary/5 dark:border-primary/30 dark:bg-primary/10">
+					<InfoIcon class="size-4" />
+					<Alert.Title>{m.webhook_hint_title()}</Alert.Title>
+					<Alert.Description>
+						{m.webhook_hint_description()}
+						<a href="/settings/webhooks" class="underline">{m.sidebar_settings()} → {m.webhook_page_title()}</a>
+						{m.git_sync_webhook_hint_suffix()}
+					</Alert.Description>
+				</Alert.Root>
 			</form>
 		{/if}
 	{/snippet}
