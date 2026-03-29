@@ -43,6 +43,7 @@
 	}
 
 	let openStates = $state<Record<string, boolean>>({});
+	let hoveredGroup = $state<string | null>(null);
 
 	const enhancedItems = $derived(
 		items.map((item) => {
@@ -82,45 +83,50 @@
 		{#each enhancedItems as item (item.title)}
 			{#if (item.items?.length ?? 0) > 0}
 				{#if sidebar.state === 'collapsed' && !sidebar.hoverExpansionEnabled}
-					<!-- In collapsed mode without hover expansion, show parent and children as separate icon buttons -->
 					{#snippet tooltipContent()}
 						<SidebarItemTooltipContent title={item.title} shortcut={item.shortcut} includeTitle={true} />
 					{/snippet}
-					<Sidebar.MenuItem>
-						<Sidebar.MenuButton isActive={item.isActive} {tooltipContent}>
-							{#snippet child({ props })}
-								{@const Icon = item.icon}
-								<a href={item.url} {...props}>
-									{#if item.icon}
-										<Icon />
-									{/if}
-									<span>{item.title}</span>
-								</a>
-							{/snippet}
-						</Sidebar.MenuButton>
-					</Sidebar.MenuItem>
-					<!-- Separator before sub-items -->
-					<div class="flex justify-center px-2 py-1">
-						<Sidebar.Separator class="my-0 w-6" />
-					</div>
-					{#each item.items ?? [] as subItem (subItem.title)}
-						{#snippet subItemTooltipContent()}
-							<SidebarItemTooltipContent title={subItem.title} shortcut={subItem.shortcut} includeTitle={true} />
-						{/snippet}
+					{@const groupExpanded = hoveredGroup === item.title || item.isActive}
+					<div
+						class={['rounded-lg transition-colors duration-150', groupExpanded && 'bg-sidebar-accent/40 py-0.5']}
+						role="group"
+						onmouseenter={() => (hoveredGroup = item.title)}
+						onmouseleave={() => (hoveredGroup = null)}
+					>
 						<Sidebar.MenuItem>
-							<Sidebar.MenuButton isActive={subItem.isActive} tooltipContent={subItemTooltipContent}>
+							<Sidebar.MenuButton isActive={item.isActive} {tooltipContent}>
 								{#snippet child({ props })}
-									{@const SubIcon = subItem.icon}
-									<a href={subItem.url} {...props}>
-										{#if subItem.icon}
-											<SubIcon />
+									{@const Icon = item.icon}
+									<a href={item.url} {...props}>
+										{#if item.icon}
+											<Icon />
 										{/if}
-										<span>{subItem.title}</span>
+										<span>{item.title}</span>
 									</a>
 								{/snippet}
 							</Sidebar.MenuButton>
 						</Sidebar.MenuItem>
-					{/each}
+						{#if groupExpanded}
+							{#each item.items ?? [] as subItem (subItem.title)}
+								{#snippet subItemTooltipContent()}
+									<SidebarItemTooltipContent title={subItem.title} shortcut={subItem.shortcut} includeTitle={true} />
+								{/snippet}
+								<Sidebar.MenuItem>
+									<Sidebar.MenuButton isActive={subItem.isActive} tooltipContent={subItemTooltipContent}>
+										{#snippet child({ props })}
+											{@const SubIcon = subItem.icon}
+											<a href={subItem.url} {...props}>
+												{#if subItem.icon}
+													<SubIcon />
+												{/if}
+												<span>{subItem.title}</span>
+											</a>
+										{/snippet}
+									</Sidebar.MenuButton>
+								</Sidebar.MenuItem>
+							{/each}
+						{/if}
+					</div>
 				{:else}
 					{#snippet collapsibleSubMenu()}
 						<Collapsible.Content>
