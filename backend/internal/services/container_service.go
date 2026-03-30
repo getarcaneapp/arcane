@@ -422,13 +422,13 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 	return createResp.ID, nil
 }
 
-func (s *ContainerService) GetContainerByID(ctx context.Context, id string) (*container.InspectResponse, error) {
+func (s *ContainerService) GetContainerByReference(ctx context.Context, ref string) (*container.InspectResponse, error) {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	containerInspect, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, id, client.ContainerInspectOptions{})
+	containerInspect, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, ref, client.ContainerInspectOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("container not found: %w", err)
 	}
@@ -437,13 +437,22 @@ func (s *ContainerService) GetContainerByID(ctx context.Context, id string) (*co
 	return &containerInfo, nil
 }
 
-// GetContainerNameByID resolves a container's clean name from its Docker ID.
-func (s *ContainerService) GetContainerNameByID(ctx context.Context, id string) (string, error) {
-	info, err := s.GetContainerByID(ctx, id)
+func (s *ContainerService) GetContainerByID(ctx context.Context, id string) (*container.InspectResponse, error) {
+	return s.GetContainerByReference(ctx, id)
+}
+
+// GetContainerNameByReference resolves a container's clean name from a Docker ID or name.
+func (s *ContainerService) GetContainerNameByReference(ctx context.Context, ref string) (string, error) {
+	info, err := s.GetContainerByReference(ctx, ref)
 	if err != nil {
 		return "", err
 	}
 	return strings.TrimPrefix(info.Name, "/"), nil
+}
+
+// GetContainerNameByID resolves a container's clean name from its Docker ID.
+func (s *ContainerService) GetContainerNameByID(ctx context.Context, id string) (string, error) {
+	return s.GetContainerNameByReference(ctx, id)
 }
 
 func (s *ContainerService) DeleteContainer(ctx context.Context, containerID string, force bool, removeVolumes bool, user models.User) error {

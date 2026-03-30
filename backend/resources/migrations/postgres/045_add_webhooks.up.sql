@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS webhooks (
     target_type      TEXT NOT NULL,
     action_type      TEXT NOT NULL DEFAULT '',
     target_id        TEXT NOT NULL,
+    target_ref       TEXT NOT NULL DEFAULT '',
     environment_id   TEXT NOT NULL DEFAULT '',
     enabled          BOOLEAN NOT NULL DEFAULT TRUE,
     last_triggered_at TIMESTAMPTZ,

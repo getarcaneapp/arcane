@@ -161,11 +161,20 @@ func (s *WebhookService) CreateWebhook(ctx context.Context, name, targetType, ac
 		return nil, "", err
 	}
 
+	targetRef := ""
+
 	// The updater target type operates environment-wide and has no specific target resource.
 	if targetType == models.WebhookTargetTypeUpdater {
 		targetID = ""
 	} else if strings.TrimSpace(targetID) == "" {
 		return nil, "", ErrWebhookMissingTarget
+	}
+
+	if targetType == models.WebhookTargetTypeContainer {
+		targetRef, err = s.resolveContainerWebhookTargetRefInternal(ctx, targetID)
+		if err != nil {
+			return nil, "", err
+		}
 	}
 
 	raw, hash, prefix, err := generateWebhookTokenInternal()
@@ -180,6 +189,7 @@ func (s *WebhookService) CreateWebhook(ctx context.Context, name, targetType, ac
 		TargetType:    targetType,
 		ActionType:    resolvedActionType,
 		TargetID:      targetID,
+		TargetRef:     targetRef,
 		EnvironmentID: environmentID,
 		Enabled:       true,
 	}
@@ -249,6 +259,16 @@ func (s *WebhookService) ListWebhookSummaries(ctx context.Context, environmentID
 func (s *WebhookService) resolveWebhookTargetNameInternal(ctx context.Context, wh *models.Webhook) string {
 	switch wh.TargetType {
 	case models.WebhookTargetTypeContainer:
+		if strings.TrimSpace(wh.TargetRef) != "" {
+			if s.containerService == nil {
+				return wh.TargetRef
+			}
+			name, err := s.containerService.GetContainerNameByReference(ctx, wh.TargetRef)
+			if err == nil {
+				return name
+			}
+			return wh.TargetRef
+		}
 		if s.containerService == nil {
 			return ""
 		}
@@ -436,36 +456,104 @@ func (s *WebhookService) executeWebhookActionInternal(ctx context.Context, wh *m
 }
 
 func (s *WebhookService) executeContainerWebhookActionInternal(ctx context.Context, wh *models.Webhook, actionType string) (*updater.Result, error) {
+	containerID, err := s.resolveContainerWebhookTargetIDInternal(ctx, wh)
+	if err != nil {
+		return nil, s.wrapWebhookActionErrorInternal(ctx, wh, "container", actionType, err)
+	}
+
 	switch actionType {
 	case models.WebhookActionTypeUpdate:
-		result, err := s.updaterService.UpdateSingleContainer(ctx, wh.TargetID)
+		result, err := s.updaterService.UpdateSingleContainer(ctx, containerID)
 		if err != nil {
 			return nil, s.wrapWebhookActionErrorInternal(ctx, wh, "container", actionType, err)
 		}
 		return result, nil
 	case models.WebhookActionTypeStart:
-		if err := s.containerService.StartContainer(ctx, wh.TargetID, systemUser); err != nil {
+		if err := s.containerService.StartContainer(ctx, containerID, systemUser); err != nil {
 			return nil, s.wrapWebhookActionErrorInternal(ctx, wh, "container", actionType, err)
 		}
 		return nil, nil
 	case models.WebhookActionTypeStop:
-		if err := s.containerService.StopContainer(ctx, wh.TargetID, systemUser); err != nil {
+		if err := s.containerService.StopContainer(ctx, containerID, systemUser); err != nil {
 			return nil, s.wrapWebhookActionErrorInternal(ctx, wh, "container", actionType, err)
 		}
 		return nil, nil
 	case models.WebhookActionTypeRestart:
-		if err := s.containerService.RestartContainer(ctx, wh.TargetID, systemUser); err != nil {
+		if err := s.containerService.RestartContainer(ctx, containerID, systemUser); err != nil {
 			return nil, s.wrapWebhookActionErrorInternal(ctx, wh, "container", actionType, err)
 		}
 		return nil, nil
 	case models.WebhookActionTypeRedeploy:
-		if _, err := s.containerService.RedeployContainer(ctx, wh.TargetID, systemUser); err != nil {
+		if _, err := s.containerService.RedeployContainer(ctx, containerID, systemUser); err != nil {
 			return nil, s.wrapWebhookActionErrorInternal(ctx, wh, "container", actionType, err)
 		}
 		return nil, nil
 	default:
 		return nil, ErrWebhookInvalidAction
 	}
+}
+
+func (s *WebhookService) resolveContainerWebhookTargetRefInternal(ctx context.Context, targetID string) (string, error) {
+	if s.containerService == nil {
+		return "", nil
+	}
+
+	containerName, err := s.containerService.GetContainerNameByReference(ctx, targetID)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve container target reference: %w", err)
+	}
+
+	return containerName, nil
+}
+
+func (s *WebhookService) resolveContainerWebhookTargetIDInternal(ctx context.Context, wh *models.Webhook) (string, error) {
+	if s.containerService == nil {
+		return wh.TargetID, nil
+	}
+
+	references := make([]string, 0, 2)
+	if strings.TrimSpace(wh.TargetRef) != "" {
+		references = append(references, wh.TargetRef)
+	}
+	if strings.TrimSpace(wh.TargetID) != "" {
+		references = append(references, wh.TargetID)
+	}
+
+	var lastErr error
+	for _, ref := range references {
+		containerInfo, err := s.containerService.GetContainerByReference(ctx, ref)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		containerName := strings.TrimPrefix(containerInfo.Name, "/")
+		s.syncWebhookContainerTargetInternal(ctx, wh, containerInfo.ID, containerName)
+		return containerInfo.ID, nil
+	}
+
+	if lastErr != nil {
+		return "", lastErr
+	}
+
+	return "", ErrWebhookMissingTarget
+}
+
+func (s *WebhookService) syncWebhookContainerTargetInternal(ctx context.Context, wh *models.Webhook, containerID, containerName string) {
+	updates := map[string]any{}
+	if containerID != "" && containerID != wh.TargetID {
+		updates["target_id"] = containerID
+		wh.TargetID = containerID
+	}
+	if containerName != "" && containerName != wh.TargetRef {
+		updates["target_ref"] = containerName
+		wh.TargetRef = containerName
+	}
+	if len(updates) == 0 {
+		return
+	}
+
+	_ = s.db.WithContext(ctx).Model(wh).Updates(updates).Error //nolint:errcheck
 }
 
 func (s *WebhookService) executeProjectWebhookActionInternal(ctx context.Context, wh *models.Webhook, actionType string) (*updater.Result, error) {
