@@ -11,6 +11,16 @@ import (
 	"github.com/goccy/go-yaml"
 )
 
+// expandEnvVars expands ${VAR} and $VAR references in a string using the provided env map.
+func expandEnvVars(s string, envMap EnvMap) string {
+	return os.Expand(s, func(key string) string {
+		if val, ok := envMap[key]; ok {
+			return val
+		}
+		return ""
+	})
+}
+
 // Security Model for Include Files:
 // - READ: Docker Compose allows include files from anywhere (parent dirs, absolute paths, etc.)
 //         We allow reading from any path to maintain compatibility with standard Docker Compose behavior
@@ -23,8 +33,9 @@ type IncludeFile struct {
 	Content      string `json:"content"`
 }
 
-// ParseIncludes reads a compose file and extracts all include directives
-func ParseIncludes(composeFilePath string) ([]IncludeFile, error) {
+// ParseIncludes reads a compose file and extracts all include directives.
+// envMap is used to expand variables (e.g., ${VAR}) in include paths.
+func ParseIncludes(composeFilePath string, envMap EnvMap) ([]IncludeFile, error) {
 	content, err := os.ReadFile(composeFilePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read compose file: %w", err)
@@ -47,12 +58,12 @@ func ParseIncludes(composeFilePath string) ([]IncludeFile, error) {
 	switch v := includes.(type) {
 	case []any:
 		for _, item := range v {
-			if include, err := parseIncludeItem(item, composeDir); err == nil {
+			if include, err := parseIncludeItemInternal(item, composeDir, envMap); err == nil {
 				includeFiles = append(includeFiles, include)
 			}
 		}
 	case string:
-		if include, err := parseIncludeItem(v, composeDir); err == nil {
+		if include, err := parseIncludeItemInternal(v, composeDir, envMap); err == nil {
 			includeFiles = append(includeFiles, include)
 		}
 	}
@@ -60,7 +71,7 @@ func ParseIncludes(composeFilePath string) ([]IncludeFile, error) {
 	return includeFiles, nil
 }
 
-func parseIncludeItem(item any, baseDir string) (IncludeFile, error) {
+func parseIncludeItemInternal(item any, baseDir string, envMap EnvMap) (IncludeFile, error) {
 	var includePath string
 
 	switch v := item.(type) {
@@ -76,6 +87,11 @@ func parseIncludeItem(item any, baseDir string) (IncludeFile, error) {
 
 	if includePath == "" {
 		return IncludeFile{}, fmt.Errorf("empty include path")
+	}
+
+	// Expand environment variables in the include path (e.g., ${PROJECT_STACK_DIR})
+	if len(envMap) > 0 {
+		includePath = expandEnvVars(includePath, envMap)
 	}
 
 	fullPath := includePath
