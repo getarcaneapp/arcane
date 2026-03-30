@@ -638,10 +638,7 @@ func (s *ProjectService) enrichWithIncludeFiles(ctx context.Context, projectPath
 		projectsDirectory, _ := projects.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
 		autoInjectEnv := s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false)
 		envLoader := projects.NewEnvLoader(projectsDirectory, filepath.Dir(composeFile), autoInjectEnv)
-		envMap, _, envErr := envLoader.LoadEnvironment(ctx)
-		if envErr != nil {
-			slog.WarnContext(ctx, "Failed to load environment for include expansion", "error", envErr)
-		}
+		envMap, _, _ := envLoader.LoadEnvironment(ctx)
 
 		includes, parseErr := projects.ParseIncludes(composeFile, envMap)
 		if parseErr == nil {

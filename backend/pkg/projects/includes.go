@@ -11,8 +11,8 @@ import (
 	"github.com/goccy/go-yaml"
 )
 
-// expandEnvVars expands ${VAR} and $VAR references in a string using the provided env map.
-func expandEnvVars(s string, envMap EnvMap) string {
+// expandEnvVarsInternal expands ${VAR} and $VAR references in a string using the provided env map.
+func expandEnvVarsInternal(s string, envMap EnvMap) string {
 	return os.Expand(s, func(key string) string {
 		if val, ok := envMap[key]; ok {
 			return val
@@ -91,7 +91,7 @@ func parseIncludeItemInternal(item any, baseDir string, envMap EnvMap) (IncludeF
 
 	// Expand environment variables in the include path (e.g., ${PROJECT_STACK_DIR})
 	if len(envMap) > 0 {
-		includePath = expandEnvVars(includePath, envMap)
+		includePath = expandEnvVarsInternal(includePath, envMap)
 	}
 
 	fullPath := includePath
