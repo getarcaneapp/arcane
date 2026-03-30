@@ -32,7 +32,8 @@ type DashboardService struct {
 }
 
 type DashboardActionItemsOptions struct {
-	DebugAllGood bool
+	EnvironmentID string
+	DebugAllGood  bool
 }
 
 func NewDashboardService(
@@ -189,7 +190,7 @@ func (s *DashboardService) GetActionItems(ctx context.Context, options Dashboard
 	})
 
 	g.Go(func() error {
-		count, err := s.getActionableVulnerabilitiesCountInternal(groupCtx)
+		count, err := s.getActionableVulnerabilitiesCountInternal(groupCtx, options.EnvironmentID)
 		if err != nil {
 			return err
 		}
@@ -275,7 +276,7 @@ func (s *DashboardService) buildActionItemsForSnapshotInternal(
 	})
 
 	g.Go(func() error {
-		count, err := s.getActionableVulnerabilitiesCountInternal(groupCtx)
+		count, err := s.getActionableVulnerabilitiesCountInternal(groupCtx, options.EnvironmentID)
 		if err != nil {
 			return err
 		}
@@ -411,12 +412,12 @@ func (s *DashboardService) getDashboardDockerPruneModeInternal(ctx context.Conte
 	return s.settingsService.GetStringSetting(ctx, "dockerPruneMode", "dangling")
 }
 
-func (s *DashboardService) getActionableVulnerabilitiesCountInternal(ctx context.Context) (int, error) {
+func (s *DashboardService) getActionableVulnerabilitiesCountInternal(ctx context.Context, envID string) (int, error) {
 	if s.vulnerabilityService == nil {
 		return 0, nil
 	}
 
-	summary, err := s.vulnerabilityService.GetEnvironmentSummary(ctx)
+	summary, err := s.vulnerabilityService.GetEnvironmentSummary(ctx, envID)
 	if err != nil {
 		return 0, fmt.Errorf("failed to load vulnerability summary: %w", err)
 	}

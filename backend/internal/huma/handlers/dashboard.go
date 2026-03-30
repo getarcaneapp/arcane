@@ -67,11 +67,9 @@ func (h *DashboardHandler) GetDashboard(ctx context.Context, input *GetDashboard
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	// EnvironmentID is consumed by env proxy/auth middleware for routing/validation.
-	_ = input.EnvironmentID
-
 	snapshot, err := h.dashboardService.GetSnapshot(ctx, services.DashboardActionItemsOptions{
-		DebugAllGood: input.DebugAllGood,
+		EnvironmentID: input.EnvironmentID,
+		DebugAllGood:  input.DebugAllGood,
 	})
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
@@ -94,11 +92,9 @@ func (h *DashboardHandler) GetActionItems(ctx context.Context, input *GetDashboa
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	// EnvironmentID is consumed by env proxy/auth middleware for routing/validation.
-	_ = input.EnvironmentID
-
 	actionItems, err := h.dashboardService.GetActionItems(ctx, services.DashboardActionItemsOptions{
-		DebugAllGood: input.DebugAllGood,
+		EnvironmentID: input.EnvironmentID,
+		DebugAllGood:  input.DebugAllGood,
 	})
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())

@@ -430,7 +430,7 @@ func (h *VulnerabilityHandler) GetEnvironmentSummary(ctx context.Context, input 
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	summary, err := h.vulnerabilityService.GetEnvironmentSummary(ctx)
+	summary, err := h.vulnerabilityService.GetEnvironmentSummary(ctx, input.EnvironmentID)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.VulnerabilityScanRetrievalError{Err: err}).Error())
 	}
