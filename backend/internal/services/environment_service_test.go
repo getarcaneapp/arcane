@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -18,15 +19,28 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/crypto"
+	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 )
 
 func setupEnvironmentServiceTestDB(t *testing.T) *database.DB {
 	t.Helper()
 
-	db, err := gorm.Open(glsqlite.Open(":memory:"), &gorm.Config{})
+	dsn := fmt.Sprintf("file:%s?mode=memory&cache=shared", strings.NewReplacer("/", "_", " ", "_").Replace(t.Name()))
+	db, err := gorm.Open(glsqlite.Open(dsn), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&models.Environment{}, &models.ContainerRegistry{}, &models.SettingVariable{}))
+	require.NoError(t, db.AutoMigrate(
+		&models.Environment{},
+		&models.ContainerRegistry{},
+		&models.SettingVariable{},
+		&models.User{},
+		&models.ApiKey{},
+	))
+
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	sqlDB.SetMaxOpenConns(1)
+	sqlDB.SetMaxIdleConns(1)
 
 	testCfg := &config.Config{
 		EncryptionKey: "test-encryption-key-for-testing-32bytes-min",
@@ -39,6 +53,20 @@ func setupEnvironmentServiceTestDB(t *testing.T) *database.DB {
 	})
 
 	return &database.DB{DB: db}
+}
+
+func createTestEnvironmentServiceUser(t *testing.T, ctx context.Context, userService *UserService, id string) *models.User {
+	t.Helper()
+
+	user := &models.User{
+		BaseModel: models.BaseModel{ID: id},
+		Username:  fmt.Sprintf("user-%s", id),
+		Roles:     models.StringSlice{"admin"},
+	}
+
+	created, err := userService.CreateUser(ctx, user)
+	require.NoError(t, err)
+	return created
 }
 
 func createTestEnvironment(t *testing.T, db *database.DB, id string, apiURL string, accessToken *string) {
@@ -142,7 +170,7 @@ func createTestECRRegistry(t *testing.T, db *database.DB, id string) {
 func TestEnvironmentService_SyncRegistriesToRemoteEnvironments_SyncsEligibleRemotes(t *testing.T) {
 	ctx := context.Background()
 	db := setupEnvironmentServiceTestDB(t)
-	svc := NewEnvironmentService(db, nil, nil, nil, nil)
+	svc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
 
 	createTestRegistry(t, db, "reg-1")
 
@@ -195,7 +223,7 @@ func TestEnvironmentService_SyncRegistriesToRemoteEnvironments_SyncsEligibleRemo
 func TestEnvironmentService_SyncRegistriesToEnvironment_IncludesECRFields(t *testing.T) {
 	ctx := context.Background()
 	db := setupEnvironmentServiceTestDB(t)
-	svc := NewEnvironmentService(db, nil, nil, nil, nil)
+	svc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
 
 	createTestECRRegistry(t, db, "reg-ecr")
 
@@ -231,7 +259,7 @@ func TestEnvironmentService_SyncRegistriesToEnvironment_IncludesECRFields(t *tes
 func TestEnvironmentService_SyncRegistriesToRemoteEnvironments_SkipsRemoteWithoutAccessToken(t *testing.T) {
 	ctx := context.Background()
 	db := setupEnvironmentServiceTestDB(t)
-	svc := NewEnvironmentService(db, nil, nil, nil, nil)
+	svc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
 
 	createTestRegistry(t, db, "reg-1")
 
@@ -255,7 +283,7 @@ func TestEnvironmentService_SyncRegistriesToRemoteEnvironments_SkipsRemoteWithou
 func TestEnvironmentService_SyncRegistriesToRemoteEnvironments_ReportsFailuresButContinues(t *testing.T) {
 	ctx := context.Background()
 	db := setupEnvironmentServiceTestDB(t)
-	svc := NewEnvironmentService(db, nil, nil, nil, nil)
+	svc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
 
 	createTestRegistry(t, db, "reg-1")
 
@@ -281,7 +309,7 @@ func TestEnvironmentService_SyncRegistriesToRemoteEnvironments_ReportsFailuresBu
 func TestEnvironmentService_ReconcileEdgeStatusesOnStartup(t *testing.T) {
 	ctx := context.Background()
 	db := setupEnvironmentServiceTestDB(t)
-	svc := NewEnvironmentService(db, nil, nil, nil, nil)
+	svc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
 
 	createTestEnvironmentWithState(t, db, "edge-online", "edge://online", string(models.EnvironmentStatusOnline), true, nil)
 	createTestEnvironmentWithState(t, db, "edge-error", "edge://error", string(models.EnvironmentStatusError), true, nil)
@@ -311,7 +339,7 @@ func TestEnvironmentService_ReconcileEdgeStatusesOnStartup(t *testing.T) {
 func TestEnvironmentService_UpdateEnvironmentConnectionState(t *testing.T) {
 	ctx := context.Background()
 	db := setupEnvironmentServiceTestDB(t)
-	svc := NewEnvironmentService(db, nil, nil, nil, nil)
+	svc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
 
 	createTestEnvironmentWithState(t, db, "edge-runtime", "edge://runtime", string(models.EnvironmentStatusOffline), true, nil)
 
@@ -337,7 +365,7 @@ func TestEnvironmentService_UpdateEnvironmentConnectionState(t *testing.T) {
 func TestEnvironmentService_ResolveEdgeEnvironmentByToken_CachesAndInvalidatesOnUpdate(t *testing.T) {
 	ctx := context.Background()
 	db := setupEnvironmentServiceTestDB(t)
-	svc := NewEnvironmentService(db, nil, nil, nil, nil)
+	svc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
 
 	oldToken := "edge-token-old"
 	newToken := "edge-token-new"
@@ -367,7 +395,7 @@ func TestEnvironmentService_ResolveEdgeEnvironmentByToken_CachesAndInvalidatesOn
 func TestEnvironmentService_UpdateEnvironment_ClearingAccessTokenInvalidatesCache(t *testing.T) {
 	ctx := context.Background()
 	db := setupEnvironmentServiceTestDB(t)
-	svc := NewEnvironmentService(db, nil, nil, nil, nil)
+	svc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
 
 	oldToken := "edge-token-clear"
 	createTestEnvironmentWithState(t, db, "edge-auth-clear", "edge://auth-clear", string(models.EnvironmentStatusPending), true, &oldToken)
@@ -397,7 +425,7 @@ func TestEnvironmentService_UpdateEnvironment_ClearingAccessTokenInvalidatesCach
 }
 
 func TestEnvironmentService_getCachedEnvironmentIDForTokenInternal_ExpiresAndCleansReverseIndex(t *testing.T) {
-	svc := NewEnvironmentService(nil, nil, nil, nil, nil)
+	svc := NewEnvironmentService(nil, nil, nil, nil, nil, nil)
 	now := time.Now()
 
 	svc.cacheEnvironmentTokenInternal("env-expired", "expired-token", now.Add(-2*edgeTokenCacheTTL))
@@ -418,7 +446,7 @@ func TestEnvironmentService_getCachedEnvironmentIDForTokenInternal_ExpiresAndCle
 func TestEnvironmentService_ResolveEnvironmentByAccessToken(t *testing.T) {
 	ctx := context.Background()
 	db := setupEnvironmentServiceTestDB(t)
-	svc := NewEnvironmentService(db, nil, nil, nil, nil)
+	svc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
 
 	accessToken := "remote-token"
 	createNamedTestEnvironmentInternal(t, db, "env-remote", "Remote Alpha", "http://remote.example", &accessToken)
@@ -435,7 +463,7 @@ func TestEnvironmentService_ResolveEnvironmentByAccessToken(t *testing.T) {
 }
 
 func TestEnvironmentService_GenerateDeploymentSnippets_ExplicitlyUsePollTransport(t *testing.T) {
-	svc := NewEnvironmentService(nil, nil, nil, nil, nil)
+	svc := NewEnvironmentService(nil, nil, nil, nil, nil, nil)
 
 	standard, err := svc.GenerateDeploymentSnippets(context.Background(), "env-1", "https://manager.example.com", "token-123")
 	require.NoError(t, err)
@@ -460,4 +488,114 @@ func TestEnvironmentService_GenerateDeploymentSnippets_ExplicitlyUsePollTranspor
 	require.Contains(t, edgeSnippets.DockerRun, "-v arcane-data:/app/data")
 	require.Contains(t, edgeSnippets.DockerCompose, "- arcane-data:/app/data")
 	require.NotContains(t, edgeSnippets.DockerRun, "-v arcane-data:/data")
+}
+
+func TestEnvironmentService_EnsureSwarmNodeAgentEnvironment_CreatesHiddenChildAndReusesToken(t *testing.T) {
+	ctx := context.Background()
+	db := setupEnvironmentServiceTestDB(t)
+	userService := NewUserService(db)
+	apiKeyService := NewApiKeyService(db, userService)
+	svc := NewEnvironmentService(db, nil, nil, nil, nil, apiKeyService)
+	user := createTestEnvironmentServiceUser(t, ctx, userService, "swarm-admin")
+
+	createdEnv, createdToken, err := svc.EnsureSwarmNodeAgentEnvironment(
+		ctx,
+		"manager-env",
+		"node-1234567890abcdef",
+		"worker-1",
+		user.ID,
+		user.Username,
+		false,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, createdEnv)
+	require.NotEmpty(t, createdToken)
+	require.Equal(t, "Swarm Node Agent - worker-1", createdEnv.Name)
+	require.Equal(t, "edge://swarm-node-node-1234567", createdEnv.ApiUrl)
+	require.True(t, createdEnv.Hidden)
+	require.True(t, createdEnv.IsEdge)
+	require.True(t, createdEnv.Enabled)
+	require.Equal(t, string(models.EnvironmentStatusPending), createdEnv.Status)
+	require.NotNil(t, createdEnv.ParentEnvironmentID)
+	require.Equal(t, "manager-env", *createdEnv.ParentEnvironmentID)
+	require.NotNil(t, createdEnv.SwarmNodeID)
+	require.Equal(t, "node-1234567890abcdef", *createdEnv.SwarmNodeID)
+	require.NotNil(t, createdEnv.AccessToken)
+	require.Equal(t, createdToken, *createdEnv.AccessToken)
+	require.NotNil(t, createdEnv.ApiKeyID)
+
+	var childEnvironments []models.Environment
+	require.NoError(t, db.WithContext(ctx).
+		Where("parent_environment_id = ?", "manager-env").
+		Where("swarm_node_id = ?", "node-1234567890abcdef").
+		Find(&childEnvironments).Error)
+	require.Len(t, childEnvironments, 1)
+
+	var apiKeys []models.ApiKey
+	require.NoError(t, db.WithContext(ctx).
+		Where("environment_id = ?", createdEnv.ID).
+		Order("created_at asc").
+		Find(&apiKeys).Error)
+	require.Len(t, apiKeys, 1)
+	require.Equal(t, user.ID, apiKeys[0].UserID)
+
+	reusedEnv, reusedToken, err := svc.EnsureSwarmNodeAgentEnvironment(
+		ctx,
+		"manager-env",
+		"node-1234567890abcdef",
+		"worker-1",
+		user.ID,
+		user.Username,
+		false,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, reusedEnv)
+	require.Equal(t, createdEnv.ID, reusedEnv.ID)
+	require.Equal(t, createdToken, reusedToken)
+	require.Equal(t, createdEnv.ApiKeyID, reusedEnv.ApiKeyID)
+
+	var apiKeysAfterReuse []models.ApiKey
+	require.NoError(t, db.WithContext(ctx).
+		Where("environment_id = ?", createdEnv.ID).
+		Order("created_at asc").
+		Find(&apiKeysAfterReuse).Error)
+	require.Len(t, apiKeysAfterReuse, 1)
+}
+
+func TestEnvironmentService_ListMethods_ExcludeHiddenEnvironments(t *testing.T) {
+	ctx := context.Background()
+	db := setupEnvironmentServiceTestDB(t)
+	svc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
+
+	createTestEnvironment(t, db, "0", "http://localhost:3552", nil)
+	visibleToken := "visible-token"
+	hiddenToken := "hidden-token"
+
+	createNamedTestEnvironmentInternal(t, db, "env-visible", "Visible Remote", "http://visible.example", &visibleToken)
+	createNamedTestEnvironmentInternal(t, db, "env-hidden", "Hidden Node Agent", "edge://swarm-node-hidden", &hiddenToken)
+
+	require.NoError(t, db.WithContext(ctx).
+		Model(&models.Environment{}).
+		Where("id = ?", "env-hidden").
+		Updates(map[string]any{
+			"hidden":                true,
+			"is_edge":               true,
+			"parent_environment_id": "0",
+			"swarm_node_id":         "node-hidden",
+		}).Error)
+
+	listedEnvironments, _, err := svc.ListEnvironmentsPaginated(ctx, pagination.QueryParams{
+		PaginationParams: pagination.PaginationParams{Start: 0, Limit: 20},
+		Filters:          map[string]string{},
+	})
+	require.NoError(t, err)
+	require.Len(t, listedEnvironments, 2)
+	for _, env := range listedEnvironments {
+		require.NotEqual(t, "env-hidden", env.ID)
+	}
+
+	remoteEnvironments, err := svc.ListRemoteEnvironments(ctx)
+	require.NoError(t, err)
+	require.Len(t, remoteEnvironments, 1)
+	require.Equal(t, "env-visible", remoteEnvironments[0].ID)
 }

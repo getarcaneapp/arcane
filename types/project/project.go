@@ -150,6 +150,11 @@ type CreateReponse struct {
 	// Required: false
 	DirName string `json:"dirName,omitempty"`
 
+	// RelativePath is the path to the project directory relative to the configured projects root.
+	//
+	// Required: false
+	RelativePath string `json:"relativePath,omitempty"`
+
 	// Path is the file path to the project.
 	//
 	// Required: true
@@ -208,6 +213,11 @@ type Details struct {
 	// Required: false
 	DirName string `json:"dirName,omitempty"`
 
+	// RelativePath is the path to the project directory relative to the configured projects root.
+	//
+	// Required: false
+	RelativePath string `json:"relativePath,omitempty"`
+
 	// Path is the file path to the project.
 	//
 	// Required: true
@@ -237,6 +247,12 @@ type Details struct {
 	//
 	// Required: false
 	IncludeFiles []IncludeFile `json:"includeFiles,omitempty"`
+
+	// DirectoryFiles contains all other files in the project directory
+	// (excluding compose files, .env, and include files which are shown separately).
+	//
+	// Required: false
+	DirectoryFiles []IncludeFile `json:"directoryFiles,omitempty"`
 
 	// Status is the current status of the project.
 	//

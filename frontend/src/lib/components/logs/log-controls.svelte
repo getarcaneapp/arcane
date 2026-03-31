@@ -1,5 +1,9 @@
 <script lang="ts">
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
+	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
+	import SwitchWithLabel from '$lib/components/form/labeled-switch.svelte';
+	import { EllipsisIcon } from '$lib/icons';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import * as Select from '$lib/components/ui/select';
 	import { m } from '$lib/paraglide/messages';
 	import { PersistedState } from 'runed';
@@ -9,22 +13,24 @@
 		tailLines = $bindable(100),
 		autoStartLogs = $bindable(false),
 		showParsedJson = $bindable(false),
+		mobileLayout = 'full',
+		showDesktop = true,
 		isStreaming = false,
 		disabled = false,
 		onStart,
 		onStop,
-		onClear,
 		onRefresh
 	}: {
 		autoScroll: boolean;
 		tailLines?: number;
 		autoStartLogs?: boolean;
 		showParsedJson?: boolean;
+		mobileLayout?: 'full' | 'menu-only' | 'actions-only' | 'none';
+		showDesktop?: boolean;
 		isStreaming?: boolean;
 		disabled?: boolean;
 		onStart?: () => void;
 		onStop?: () => void;
-		onClear?: () => void;
 		onRefresh?: () => void;
 	} = $props();
 
@@ -39,7 +45,7 @@
 
 	const persistedTailLines = new PersistedState('arcane_log_tail_lines', '100');
 	const persistedAutoStart = new PersistedState('arcane_log_auto_start', 'false');
-	const persistedJsonParsing = new PersistedState('arcane_log_json_parsing', 'false');
+	const persistedJsonParsing = new PersistedState('arcane_log_json_parsing_v3', 'false');
 
 	let selectedTail = $state<string>(persistedTailLines.current || (tailLines >= 999999 ? 'all' : String(tailLines)));
 
@@ -71,59 +77,280 @@
 	const selectedLabel = $derived(tailOptions.find((o) => o.value === selectedTail)?.label ?? m.log_tail_100_lines());
 </script>
 
-<div class="flex flex-col gap-3 sm:flex-row sm:items-center">
-	<label class="flex items-center gap-2">
-		<input type="checkbox" bind:checked={autoScroll} class="size-4" />
-		<span class="text-sm font-medium">{m.common_autoscroll()}</span>
-	</label>
+{#if mobileLayout !== 'none'}
+	<div class="lg:hidden">
+		{#if mobileLayout === 'full'}
+			<div class="flex items-center justify-end gap-1">
+				{#if isStreaming}
+					<ArcaneButton
+						action="stop"
+						tone="ghost"
+						size="icon"
+						class="text-muted-foreground hover:text-foreground size-8 shrink-0"
+						onclick={onStop}
+						aria-label={m.common_stop()}
+					/>
+				{:else}
+					<ArcaneButton
+						action="start"
+						tone="ghost"
+						size="icon"
+						class="text-muted-foreground hover:text-foreground size-8 shrink-0"
+						onclick={onStart}
+						aria-label={m.common_start()}
+						{disabled}
+					/>
+				{/if}
+				<ArcaneButton
+					action="refresh"
+					tone="ghost"
+					size="icon"
+					class="text-muted-foreground hover:text-foreground size-8 shrink-0"
+					onclick={onRefresh}
+					aria-label={m.log_refresh_aria_label()}
+				/>
 
-	<label class="flex items-center gap-2">
-		<input type="checkbox" bind:checked={autoStartLogs} class="size-4" />
-		<span class="text-sm font-medium">{m.auto_start()}</span>
-	</label>
+				<DropdownMenu.Root>
+					<DropdownMenu.Trigger>
+						{#snippet child({ props })}
+							<ArcaneButton
+								{...props}
+								action="base"
+								tone="ghost"
+								size="icon"
+								class="text-muted-foreground hover:text-foreground size-8 shrink-0"
+								aria-label={m.common_open_menu()}
+							>
+								<span class="sr-only">{m.common_open_menu()}</span>
+								<EllipsisIcon class="size-4" />
+							</ArcaneButton>
+						{/snippet}
+					</DropdownMenu.Trigger>
 
-	<Select.Root type="single" bind:value={selectedTail} disabled={isStreaming} onValueChange={(v: string) => (selectedTail = v)}>
-		<Select.Trigger class="h-9 w-32 text-xs">
-			<span>{selectedLabel}</span>
-		</Select.Trigger>
-		<Select.Content>
-			{#each tailOptions as option (option.value)}
-				<Select.Item value={option.value}>{option.label}</Select.Item>
-			{/each}
-		</Select.Content>
-	</Select.Root>
+					<DropdownMenu.Content align="end" class="w-72">
+						<DropdownMenu.Label>{selectedLabel}</DropdownMenu.Label>
+						<DropdownMenu.RadioGroup value={selectedTail} onValueChange={(value) => (selectedTail = value)}>
+							{#each tailOptions as option (option.value)}
+								<DropdownMenu.RadioItem value={option.value} disabled={isStreaming}>{option.label}</DropdownMenu.RadioItem>
+							{/each}
+						</DropdownMenu.RadioGroup>
 
-	<div class="flex items-center gap-2">
-		<ArcaneButton
-			action="base"
-			tone="outline"
-			size="sm"
-			class="text-xs font-medium"
-			onclick={onClear}
-			customLabel={m.common_clear()}
-		/>
-		{#if isStreaming}
-			<ArcaneButton action="stop" tone="outline" size="sm" class="text-xs font-medium" onclick={onStop} />
-		{:else}
-			<ArcaneButton action="start" tone="outline" size="sm" class="text-xs font-medium" onclick={onStart} {disabled} />
+						<DropdownMenu.Separator />
+
+						<DropdownMenu.CheckboxItem
+							checked={autoScroll}
+							onCheckedChange={(checked) => {
+								autoScroll = checked === true;
+							}}
+						>
+							<div class="flex flex-col gap-0.5">
+								<span class="font-medium">{m.common_autoscroll()}</span>
+								<span class="text-muted-foreground text-xs">{m.log_auto_scroll_tooltip()}</span>
+							</div>
+						</DropdownMenu.CheckboxItem>
+						<DropdownMenu.CheckboxItem
+							checked={autoStartLogs}
+							onCheckedChange={(checked) => {
+								autoStartLogs = checked === true;
+							}}
+						>
+							<div class="flex flex-col gap-0.5">
+								<span class="font-medium">{m.auto_start()}</span>
+								<span class="text-muted-foreground text-xs">{m.log_auto_start_tooltip()}</span>
+							</div>
+						</DropdownMenu.CheckboxItem>
+						<DropdownMenu.CheckboxItem
+							checked={showParsedJson}
+							onCheckedChange={(checked) => {
+								showParsedJson = checked === true;
+							}}
+						>
+							<div class="flex flex-col gap-0.5">
+								<span class="font-medium">{showParsedJson ? m.common_parsed() : m.common_raw()}</span>
+								<span class="text-muted-foreground text-xs">{m.log_parsed_mode_tooltip()}</span>
+							</div>
+						</DropdownMenu.CheckboxItem>
+					</DropdownMenu.Content>
+				</DropdownMenu.Root>
+			</div>
+		{:else if mobileLayout === 'actions-only'}
+			<div class="flex items-center justify-end gap-1">
+				{#if isStreaming}
+					<ArcaneButton
+						action="stop"
+						tone="ghost"
+						size="icon"
+						class="text-muted-foreground hover:text-foreground size-8 shrink-0"
+						onclick={onStop}
+						aria-label={m.common_stop()}
+					/>
+				{:else}
+					<ArcaneButton
+						action="start"
+						tone="ghost"
+						size="icon"
+						class="text-muted-foreground hover:text-foreground size-8 shrink-0"
+						onclick={onStart}
+						aria-label={m.common_start()}
+						{disabled}
+					/>
+				{/if}
+				<ArcaneButton
+					action="refresh"
+					tone="ghost"
+					size="icon"
+					class="text-muted-foreground hover:text-foreground size-8 shrink-0"
+					onclick={onRefresh}
+					aria-label={m.log_refresh_aria_label()}
+				/>
+			</div>
+		{:else if mobileLayout === 'menu-only'}
+			<div class="flex items-center justify-end">
+				<DropdownMenu.Root>
+					<DropdownMenu.Trigger>
+						{#snippet child({ props })}
+							<ArcaneButton
+								{...props}
+								action="base"
+								tone="ghost"
+								size="icon"
+								class="text-muted-foreground hover:text-foreground size-8 shrink-0"
+								aria-label={m.common_open_menu()}
+							>
+								<span class="sr-only">{m.common_open_menu()}</span>
+								<EllipsisIcon class="size-4" />
+							</ArcaneButton>
+						{/snippet}
+					</DropdownMenu.Trigger>
+
+					<DropdownMenu.Content align="end" class="w-72">
+						<DropdownMenu.Label>{selectedLabel}</DropdownMenu.Label>
+						<DropdownMenu.RadioGroup value={selectedTail} onValueChange={(value) => (selectedTail = value)}>
+							{#each tailOptions as option (option.value)}
+								<DropdownMenu.RadioItem value={option.value} disabled={isStreaming}>{option.label}</DropdownMenu.RadioItem>
+							{/each}
+						</DropdownMenu.RadioGroup>
+
+						<DropdownMenu.Separator />
+
+						<DropdownMenu.CheckboxItem
+							checked={autoScroll}
+							onCheckedChange={(checked) => {
+								autoScroll = checked === true;
+							}}
+						>
+							<div class="flex flex-col gap-0.5">
+								<span class="font-medium">{m.common_autoscroll()}</span>
+								<span class="text-muted-foreground text-xs">{m.log_auto_scroll_tooltip()}</span>
+							</div>
+						</DropdownMenu.CheckboxItem>
+						<DropdownMenu.CheckboxItem
+							checked={autoStartLogs}
+							onCheckedChange={(checked) => {
+								autoStartLogs = checked === true;
+							}}
+						>
+							<div class="flex flex-col gap-0.5">
+								<span class="font-medium">{m.auto_start()}</span>
+								<span class="text-muted-foreground text-xs">{m.log_auto_start_tooltip()}</span>
+							</div>
+						</DropdownMenu.CheckboxItem>
+						<DropdownMenu.CheckboxItem
+							checked={showParsedJson}
+							onCheckedChange={(checked) => {
+								showParsedJson = checked === true;
+							}}
+						>
+							<div class="flex flex-col gap-0.5">
+								<span class="font-medium">{showParsedJson ? m.common_parsed() : m.common_raw()}</span>
+								<span class="text-muted-foreground text-xs">{m.log_parsed_mode_tooltip()}</span>
+							</div>
+						</DropdownMenu.CheckboxItem>
+					</DropdownMenu.Content>
+				</DropdownMenu.Root>
+			</div>
 		{/if}
-		<ArcaneButton
-			action="refresh"
-			tone="outline"
-			size="sm"
-			class="px-2"
-			onclick={onRefresh}
-			aria-label={m.log_refresh_aria_label()}
-			title={m.common_refresh()}
-			showLabel={false}
-		/>
-		<ArcaneButton
-			action="json"
-			tone={showParsedJson ? 'outline-primary' : 'outline'}
-			size="sm"
-			class="text-xs font-medium"
-			customLabel={showParsedJson ? m.common_raw() : m.common_json()}
-			onclick={() => (showParsedJson = !showParsedJson)}
-		/>
 	</div>
-</div>
+{/if}
+
+{#if showDesktop}
+	<div class="hidden flex-col gap-3 lg:flex lg:flex-row lg:items-center lg:justify-end">
+		<div class="flex flex-wrap items-center gap-4">
+			<ArcaneTooltip.Root>
+				<ArcaneTooltip.Trigger>
+					<SwitchWithLabel
+						id="auto-scroll-toggle"
+						checked={autoScroll}
+						label={m.common_autoscroll()}
+						onCheckedChange={(checked) => {
+							autoScroll = checked;
+						}}
+					/>
+				</ArcaneTooltip.Trigger>
+				<ArcaneTooltip.Content side="bottom" class="max-w-xs">
+					{m.log_auto_scroll_tooltip()}
+				</ArcaneTooltip.Content>
+			</ArcaneTooltip.Root>
+
+			<ArcaneTooltip.Root>
+				<ArcaneTooltip.Trigger>
+					<SwitchWithLabel
+						id="auto-start-logs-toggle"
+						checked={autoStartLogs}
+						label={m.auto_start()}
+						onCheckedChange={(checked) => {
+							autoStartLogs = checked;
+						}}
+					/>
+				</ArcaneTooltip.Trigger>
+				<ArcaneTooltip.Content side="bottom" class="max-w-xs">
+					{m.log_auto_start_tooltip()}
+				</ArcaneTooltip.Content>
+			</ArcaneTooltip.Root>
+
+			<ArcaneTooltip.Root>
+				<ArcaneTooltip.Trigger>
+					<SwitchWithLabel
+						id="parsed-log-mode-toggle"
+						checked={showParsedJson}
+						label={showParsedJson ? m.common_parsed() : m.common_raw()}
+						onCheckedChange={(checked) => {
+							showParsedJson = checked;
+						}}
+					/>
+				</ArcaneTooltip.Trigger>
+				<ArcaneTooltip.Content side="bottom" class="max-w-xs">
+					{m.log_parsed_mode_tooltip()}
+				</ArcaneTooltip.Content>
+			</ArcaneTooltip.Root>
+		</div>
+
+		<Select.Root type="single" bind:value={selectedTail} disabled={isStreaming} onValueChange={(v: string) => (selectedTail = v)}>
+			<Select.Trigger class="h-9 w-32 text-xs">
+				<span>{selectedLabel}</span>
+			</Select.Trigger>
+			<Select.Content>
+				{#each tailOptions as option (option.value)}
+					<Select.Item value={option.value}>{option.label}</Select.Item>
+				{/each}
+			</Select.Content>
+		</Select.Root>
+
+		<div class="flex items-center gap-3">
+			{#if isStreaming}
+				<ArcaneButton action="stop" tone="outline" size="sm" class="text-xs font-medium" onclick={onStop} />
+			{:else}
+				<ArcaneButton action="start" tone="outline" size="sm" class="text-xs font-medium" onclick={onStart} {disabled} />
+			{/if}
+			<ArcaneButton
+				action="refresh"
+				tone="outline"
+				size="sm"
+				class="text-xs font-medium"
+				onclick={onRefresh}
+				aria-label={m.log_refresh_aria_label()}
+				title={m.common_refresh()}
+			/>
+		</div>
+	</div>
+{/if}

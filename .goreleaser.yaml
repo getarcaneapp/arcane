@@ -9,6 +9,10 @@ before:
   hooks:
     - just deps install all
     - just build single frontend
+    - mkdir -p completions
+    - sh -c 'cd cli && go run . completion bash > ../completions/arcane-cli.bash'
+    - sh -c 'cd cli && go run . completion zsh > ../completions/arcane-cli.zsh'
+    - sh -c 'cd cli && go run . completion fish > ../completions/arcane-cli.fish'
 
 builds:
   - id: arcane
@@ -109,6 +113,13 @@ archives:
     formats:
       - tar.gz
     name_template: '{{ .Binary }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}'
+    files:
+      - src: completions/arcane-cli.bash
+        dst: completions/arcane-cli.bash
+      - src: completions/arcane-cli.zsh
+        dst: completions/arcane-cli.zsh
+      - src: completions/arcane-cli.fish
+        dst: completions/arcane-cli.fish
   - id: default
     ids:
       - arcane
@@ -170,6 +181,16 @@ homebrew_casks:
       - arcane-cli-archive
     binaries:
       - arcane-cli
+    completions:
+      bash: completions/arcane-cli.bash
+      zsh: completions/arcane-cli.zsh
+      fish: completions/arcane-cli.fish
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/arcane-cli"]
+          end
     description: 'Arcane CLI - Modern Docker Management, Designed for Everyone.'
     homepage: 'https://getarcane.app'
     skip_upload: '{{ if eq (index .Env "BUILD_NEXT") "true" }}true{{ end }}'

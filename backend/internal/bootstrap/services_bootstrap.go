@@ -27,6 +27,8 @@ type Services struct {
 	BuildWorkspace    *services.BuildWorkspaceService
 	Volume            *services.VolumeService
 	Network           *services.NetworkService
+	Port              *services.PortService
+	Swarm             *services.SwarmService
 	ImageUpdate       *services.ImageUpdateService
 	Auth              *services.AuthService
 	Oidc              *services.OidcService
@@ -65,10 +67,11 @@ func initializeServices(ctx context.Context, db *database.DB, cfg *config.Config
 	dockerClient := services.NewDockerClientService(db, cfg, svcs.Settings)
 	svcs.Docker = dockerClient
 	svcs.User = services.NewUserService(db)
+	svcs.ApiKey = services.NewApiKeyService(db, svcs.User)
 	svcs.ContainerRegistry = services.NewContainerRegistryService(db, func(ctx context.Context) (services.RegistryDaemonClient, error) {
 		return dockerClient.GetClient(ctx)
 	})
-	svcs.Environment = services.NewEnvironmentService(db, httpClient, svcs.Docker, svcs.Event, svcs.Settings)
+	svcs.Environment = services.NewEnvironmentService(db, httpClient, svcs.Docker, svcs.Event, svcs.Settings, svcs.ApiKey)
 	svcs.Notification = services.NewNotificationService(db, cfg, svcs.Environment)
 	svcs.Apprise = services.NewAppriseService(db, cfg)
 	svcs.Vulnerability = services.NewVulnerabilityService(db, svcs.Docker, svcs.Event, svcs.Settings, svcs.Notification)
@@ -82,15 +85,16 @@ func initializeServices(ctx context.Context, db *database.DB, cfg *config.Config
 	svcs.Dashboard = services.NewDashboardService(db, svcs.Docker, svcs.Container, svcs.Settings, svcs.Vulnerability)
 	svcs.Volume = services.NewVolumeService(db, svcs.Docker, svcs.Event, svcs.Settings, svcs.Container, svcs.Image, cfg.BackupVolumeName)
 	svcs.Network = services.NewNetworkService(db, svcs.Docker, svcs.Event)
+	svcs.Port = services.NewPortService(svcs.Docker)
+	svcs.Swarm = services.NewSwarmService(svcs.Docker, svcs.Settings, svcs.KV, svcs.ContainerRegistry, svcs.Environment)
 	svcs.Template = services.NewTemplateService(ctx, db, httpClient, svcs.Settings)
 	svcs.Auth = services.NewAuthService(svcs.User, svcs.Settings, svcs.Event, cfg.JWTSecret, cfg)
 	svcs.Oidc = services.NewOidcService(svcs.Auth, cfg, httpClient)
-	svcs.ApiKey = services.NewApiKeyService(db, svcs.User)
 	svcs.System = services.NewSystemService(db, svcs.Docker, svcs.Container, svcs.Image, svcs.Volume, svcs.Network, svcs.Settings)
 	svcs.Version = services.NewVersionService(httpClient, cfg.UpdateCheckDisabled, config.Version, config.Revision, svcs.ContainerRegistry, svcs.Docker)
 	svcs.SystemUpgrade = services.NewSystemUpgradeService(svcs.Docker, svcs.Version, svcs.Event, svcs.Settings)
 	svcs.Updater = services.NewUpdaterService(db, svcs.Settings, svcs.Docker, svcs.Project, svcs.ImageUpdate, svcs.ContainerRegistry, svcs.Event, svcs.Image, svcs.Notification, svcs.SystemUpgrade)
-	svcs.GitOpsSync = services.NewGitOpsSyncService(db, svcs.GitRepository, svcs.Project, svcs.Event)
+	svcs.GitOpsSync = services.NewGitOpsSyncService(db, svcs.GitRepository, svcs.Project, svcs.Event, svcs.Settings)
 
 	return svcs, dockerClient, nil
 }

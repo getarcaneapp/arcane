@@ -89,6 +89,19 @@ type GetNetworkOutput struct {
 	Body NetworkInspectApiResponse
 }
 
+type NetworkTopologyApiResponse struct {
+	Success bool                  `json:"success"`
+	Data    networktypes.Topology `json:"data"`
+}
+
+type GetNetworkTopologyInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+}
+
+type GetNetworkTopologyOutput struct {
+	Body NetworkTopologyApiResponse
+}
+
 // NetworkMessageApiResponse is a dedicated response type
 type NetworkMessageApiResponse struct {
 	Success bool                 `json:"success"`
@@ -151,6 +164,15 @@ func RegisterNetworks(api huma.API, networkSvc *services.NetworkService, dockerS
 		Tags:        []string{"Networks"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
 	}, h.CreateNetwork)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-network-topology",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/networks/topology",
+		Summary:     "Get network topology",
+		Tags:        []string{"Networks"},
+		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+	}, h.GetNetworkTopology)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "get-network",
@@ -351,6 +373,20 @@ func (h *NetworkHandler) GetNetwork(ctx context.Context, input *GetNetworkInput)
 		Body: NetworkInspectApiResponse{
 			Success: true,
 			Data:    out,
+		},
+	}, nil
+}
+
+func (h *NetworkHandler) GetNetworkTopology(ctx context.Context, input *GetNetworkTopologyInput) (*GetNetworkTopologyOutput, error) {
+	topology, err := h.networkService.GetNetworkTopology(ctx)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("failed to build network topology")
+	}
+
+	return &GetNetworkTopologyOutput{
+		Body: NetworkTopologyApiResponse{
+			Success: true,
+			Data:    *topology,
 		},
 	}, nil
 }

@@ -34,27 +34,27 @@
 {/snippet}
 
 <Collapsible.Root open={getIsOpen(item.title, item.isActive)} {onOpenChange} class="group/collapsible">
-	{#snippet child({ props })}
-		<Sidebar.MenuItem {...props}>
-			<Collapsible.Trigger>
-				{#snippet child()}
-					{@const Icon = item.icon}
-					<Sidebar.MenuButton tooltipContent={showTooltip ? tooltipContent : undefined} isActive={item.isActive}>
-						{#snippet child({ props })}
-							<a href={item.url} {...props}>
-								{#if item.icon}
-									<Icon />
-								{/if}
-								<span>{item.title}</span>
-								<ArrowRightIcon class="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
-							</a>
-						{/snippet}
-					</Sidebar.MenuButton>
-				{/snippet}
-			</Collapsible.Trigger>
-			{#if content}
-				{@render content()}
-			{/if}
-		</Sidebar.MenuItem>
-	{/snippet}
+	<Sidebar.MenuItem class="flex-col">
+		{@const Icon = item.icon}
+		<Sidebar.MenuButton tooltipContent={showTooltip ? tooltipContent : undefined} isActive={item.isActive}>
+			{#snippet child({ props })}
+				<a href={item.url} {...props}>
+					{#if item.icon}
+						<Icon />
+					{/if}
+					<span>{item.title}</span>
+				</a>
+			{/snippet}
+		</Sidebar.MenuButton>
+		<Collapsible.Trigger>
+			{#snippet child({ props })}
+				<Sidebar.MenuAction {...props} aria-label="Toggle submenu" class="data-[state=open]:bg-sidebar-accent">
+					<ArrowRightIcon class="transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
+				</Sidebar.MenuAction>
+			{/snippet}
+		</Collapsible.Trigger>
+		{#if content}
+			{@render content()}
+		{/if}
+	</Sidebar.MenuItem>
 </Collapsible.Root>

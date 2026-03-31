@@ -292,6 +292,12 @@ export interface StorageStats {
 	write_size_bytes?: number;
 }
 
+export interface ContainerStatsHistorySample {
+	cpuTenths: number;
+	memoryTenths: number;
+	memoryUsageBytes: number;
+}
+
 export interface ContainerStats {
 	id: string;
 	name: string;
@@ -305,4 +311,6 @@ export interface ContainerStats {
 	memory_stats: MemoryStats;
 	networks: Record<string, NetworkStats>;
 	storage_stats: StorageStats;
+	statsHistory?: ContainerStatsHistorySample[];
+	currentHistorySample?: ContainerStatsHistorySample;
 }

@@ -78,12 +78,7 @@ func loadComposeProjectInternal(
 
 	workdir := filepath.Dir(composeFile)
 
-	projectsDir := projectsDirectory
-	if projectsDir == "" {
-		projectsDir = filepath.Dir(workdir)
-	}
-
-	envLoader := NewEnvLoader(projectsDir, workdir, autoInjectEnv)
+	envLoader := NewEnvLoader(projectsDirectory, workdir, autoInjectEnv)
 
 	// Load full environment (process + global + project .env) for service injection
 	fullEnvMap, injectionVars, err := envLoader.LoadEnvironment(ctx)
@@ -175,10 +170,6 @@ func LoadComposeProjectFromDir(ctx context.Context, dir, projectName, projectsDi
 	composeFile, err := DetectComposeFile(dir)
 	if err != nil {
 		return nil, "", err
-	}
-
-	if projectsDirectory == "" {
-		projectsDirectory = filepath.Dir(dir)
 	}
 
 	proj, err := LoadComposeProject(ctx, composeFile, projectName, projectsDirectory, autoInjectEnv, pathMapper)

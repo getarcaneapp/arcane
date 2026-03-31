@@ -127,7 +127,7 @@ setup('create gitops sync in arcane', async ({ page }) => {
 		}
 
 		// Disable auto-sync for tests
-		const autoSyncSwitch = dialog.getByRole('switch');
+		const autoSyncSwitch = dialog.locator('#autoSyncSwitch');
 		if ((await autoSyncSwitch.count()) > 0) {
 			const isChecked = await autoSyncSwitch.getAttribute('data-state');
 			if (isChecked === 'checked') {

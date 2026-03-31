@@ -1,5 +1,5 @@
 <script lang="ts" module>
-	import { navigationItems, getBuildAndDeploymentItems } from '$lib/config/navigation-config';
+	import { navigationItems, getBuildAndDeploymentItems, getSwarmNavigationItems } from '$lib/config/navigation-config';
 </script>
 
 <script lang="ts">
@@ -30,10 +30,12 @@
 		variant = 'floating',
 		user,
 		versionInformation,
+		swarmEnabled = false,
 		...restProps
 	}: ComponentProps<typeof Sidebar.Root> & {
 		versionInformation: AppVersionInformation;
 		user?: User | null;
+		swarmEnabled?: boolean;
 	} = $props();
 
 	let autoLoginEnabled = $state(false);
@@ -64,6 +66,7 @@
 
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
 	const buildDeploymentItems = $derived(getBuildAndDeploymentItems(currentEnvId));
+	const swarmItems = $derived(getSwarmNavigationItems(swarmEnabled));
 </script>
 
 <VersionInfoDialog
@@ -101,6 +104,9 @@
 		<SidebarItemGroup label={m.sidebar_management()} items={navigationItems.managementItems} />
 		<SidebarItemGroup label={m.sidebar_resources()} items={navigationItems.resourceItems} />
 		<SidebarItemGroup label={m.builds_and_deployments()} items={buildDeploymentItems} />
+		{#if swarmItems.length > 0}
+			<SidebarItemGroup label={m.swarm_title()} items={swarmItems} />
+		{/if}
 		<SidebarItemGroup label={m.security_title()} items={navigationItems.securityItems} />
 		{#if isAdmin}
 			<SidebarItemGroup label={m.sidebar_administration()} items={desktopSettingsItems} />

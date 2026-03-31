@@ -5,6 +5,7 @@ export type ApplicationTheme = 'default' | 'graphite' | 'ocean' | 'amber' | 'git
 export type Settings = {
 	projectsDirectory: string;
 	followProjectSymlinks: boolean;
+	swarmStackSourcesDirectory: string;
 	diskUsagePath: string;
 	autoUpdate: boolean;
 	autoUpdateInterval: number;
@@ -28,6 +29,9 @@ export type Settings = {
 	autoHealMaxRestarts?: number;
 	autoHealRestartWindow?: number;
 	maxImageUploadSize: number;
+	gitSyncMaxFiles: number;
+	gitSyncMaxTotalSizeMb: number;
+	gitSyncMaxBinarySizeMb: number;
 	baseServerUrl: string;
 	enableGravatar: boolean;
 	uiConfigDisabled: boolean;

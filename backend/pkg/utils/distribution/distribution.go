@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/getarcaneapp/arcane/backend/pkg/utils/imagedigest"
 	ref "go.podman.io/image/v5/docker/reference"
 )
 
@@ -339,13 +340,13 @@ func basicAuthHeaderInternal(username, token string) string {
 }
 
 func extractDigestFromHeadersInternal(headers http.Header) string {
-	if digest := headers.Get("Docker-Content-Digest"); digest != "" {
-		return digest
+	if normalized, err := imagedigest.Normalize(headers.Get("Docker-Content-Digest")); err == nil {
+		return normalized
 	}
 
 	etag := strings.Trim(headers.Get("ETag"), `"`)
-	if strings.HasPrefix(etag, "sha256:") {
-		return etag
+	if normalized, err := imagedigest.Normalize(etag); err == nil {
+		return normalized
 	}
 
 	return ""

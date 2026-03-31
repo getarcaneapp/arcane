@@ -17,8 +17,9 @@ type SortParams struct {
 type (
 	SortOption[T any]  func(a, b T) int
 	SortBinding[T any] struct {
-		Key string
-		Fn  SortOption[T]
+		Key    string
+		Fn     SortOption[T]
+		DescFn SortOption[T]
 	}
 )
 
@@ -27,7 +28,11 @@ func sortFunction[T any](items []T, params SortParams, sorts []SortBinding[T]) [
 		if sort.Key == params.Sort {
 			fn := sort.Fn
 			if params.Order == SortDesc {
-				fn = reverSortFn(fn)
+				if sort.DescFn != nil {
+					fn = sort.DescFn
+				} else {
+					fn = reverSortFn(fn)
+				}
 			}
 			slices.SortStableFunc(items, fn)
 		}

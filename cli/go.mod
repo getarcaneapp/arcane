@@ -3,12 +3,12 @@ module github.com/getarcaneapp/arcane/cli
 go 1.26.0
 
 require (
-	charm.land/bubbles/v2 v2.0.0
+	charm.land/bubbles/v2 v2.1.0
 	charm.land/bubbletea/v2 v2.0.2
 	charm.land/lipgloss/v2 v2.0.2
 	github.com/charmbracelet/x/term v0.2.2
 	github.com/fatih/color v1.19.0
-	github.com/getarcaneapp/arcane/types v1.16.3
+	github.com/getarcaneapp/arcane/types v1.16.4
 	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/mattn/go-runewidth v0.0.21
 	github.com/sirupsen/logrus v1.9.4

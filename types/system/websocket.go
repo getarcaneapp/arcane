@@ -9,6 +9,7 @@ const (
 	WSKindContainerStats = "container_stats"
 	WSKindContainerExec  = "container_exec"
 	WSKindSystemStats    = "system_stats"
+	WSKindServiceLogs    = "service_logs"
 )
 
 // WebSocketConnectionInfo describes a single active WebSocket connection.
@@ -50,4 +51,6 @@ type WebSocketMetricsSnapshot struct {
 	ContainerExec int64 `json:"containerExec"`
 	// SystemStats is the number of active system-stats streams.
 	SystemStats int64 `json:"systemStats"`
+	// ServiceLogsActive is the number of active swarm service-log streams.
+	ServiceLogsActive int64 `json:"serviceLogsActive"`
 }

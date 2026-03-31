@@ -11,20 +11,24 @@ import (
 	pkgutils "github.com/getarcaneapp/arcane/backend/pkg/utils"
 )
 
-func GetProjectsDirectory(ctx context.Context, projectsDir string) (string, error) {
-	projectsDirectory := projectsDir
-	if projectsDirectory == "" {
-		projectsDirectory = "/app/data/projects"
+func ResolveConfiguredContainerDirectory(configuredPath, defaultPath string) string {
+	directory := strings.TrimSpace(configuredPath)
+	if directory == "" {
+		directory = defaultPath
 	}
 
 	// Handle mapping format: "container_path:host_path"
-	if parts := strings.SplitN(projectsDirectory, ":", 2); len(parts) == 2 {
-		if !IsWindowsDrivePath(projectsDirectory) && strings.HasPrefix(parts[0], "/") { // First part must be absolute container path
-			projectsDirectory = parts[0]
+	if parts := strings.SplitN(directory, ":", 2); len(parts) == 2 {
+		if !IsWindowsDrivePath(directory) && strings.HasPrefix(parts[0], "/") {
+			directory = parts[0]
 		}
 	}
 
-	projectsDirectory = resolveProjectsDirectoryPath(projectsDirectory)
+	return resolveProjectsDirectoryPath(directory)
+}
+
+func GetProjectsDirectory(ctx context.Context, projectsDir string) (string, error) {
+	projectsDirectory := ResolveConfiguredContainerDirectory(projectsDir, "/app/data/projects")
 
 	if _, err := os.Stat(projectsDirectory); os.IsNotExist(err) {
 		if err := os.MkdirAll(projectsDirectory, pkgutils.DirPerm); err != nil {

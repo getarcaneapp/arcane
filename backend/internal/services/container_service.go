@@ -16,6 +16,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	dockerutils "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/containerstats"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	containertypes "github.com/getarcaneapp/arcane/types/container"
@@ -33,6 +34,7 @@ type ContainerService struct {
 	eventService    *EventService
 	imageService    *ImageService
 	settingsService *SettingsService
+	statsHistory    containerstats.Store
 }
 
 const (
@@ -435,6 +437,15 @@ func (s *ContainerService) GetContainerByID(ctx context.Context, id string) (*co
 	return &containerInfo, nil
 }
 
+// GetContainerNameByID resolves a container's clean name from its Docker ID.
+func (s *ContainerService) GetContainerNameByID(ctx context.Context, id string) (string, error) {
+	info, err := s.GetContainerByID(ctx, id)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimPrefix(info.Name, "/"), nil
+}
+
 func (s *ContainerService) DeleteContainer(ctx context.Context, containerID string, force bool, removeVolumes bool, user models.User) error {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
@@ -578,13 +589,14 @@ func (s *ContainerService) StreamStats(ctx context.Context, containerID string, 
 	defer func() { _ = stats.Body.Close() }()
 
 	decoder := json.NewDecoder(stats.Body)
+	historySent := false
 
 	for {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 
-		var statsData any
+		var statsData container.StatsResponse
 		if err := decoder.Decode(&statsData); err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
@@ -595,8 +607,25 @@ func (s *ContainerService) StreamStats(ctx context.Context, containerID string, 
 			return fmt.Errorf("failed to decode stats: %w", err)
 		}
 
+		recordedAt := statsData.Read
+		if recordedAt.IsZero() {
+			recordedAt = time.Now()
+		}
+
+		payload := containertypes.StatsStreamPayload{
+			StatsResponse:        statsData,
+			CurrentHistorySample: containerstats.BuildSample(statsData),
+		}
+		payload.StatsHistory = s.statsHistory.Record(
+			containerID,
+			payload.CurrentHistorySample,
+			!historySent,
+			recordedAt,
+		)
+		historySent = true
+
 		select {
-		case statsChan <- statsData:
+		case statsChan <- payload:
 		case <-ctx.Done():
 			return ctx.Err()
 		}
@@ -638,66 +667,13 @@ func (s *ContainerService) streamContainerLogsInternal(ctx context.Context, logs
 		return s.streamRawLogsInternal(ctx, logs, logsChan)
 	}
 	if follow {
-		return s.streamMultiplexedLogs(ctx, logs, logsChan)
+		return streamMultiplexedLogs(ctx, logs, logsChan)
 	}
 	return s.readAllLogs(ctx, logs, logsChan)
 }
 
 func (s *ContainerService) streamRawLogsInternal(ctx context.Context, logs io.Reader, logsChan chan<- string) error {
 	return s.readLogsFromReader(ctx, logs, logsChan, "")
-}
-
-func (s *ContainerService) streamMultiplexedLogs(ctx context.Context, logs io.Reader, logsChan chan<- string) error {
-	// Use stdcopy to demultiplex Docker's stream format
-	// Docker multiplexes stdout and stderr in a special format
-	stdoutReader, stdoutWriter := io.Pipe()
-	stderrReader, stderrWriter := io.Pipe()
-	errCh := make(chan error, 3)
-
-	// Start demultiplexing in a goroutine
-	go func() {
-		_, err := stdcopy.StdCopy(stdoutWriter, stderrWriter, logs)
-		if err != nil && !errors.Is(err, io.EOF) {
-			_ = stdoutWriter.CloseWithError(err)
-			_ = stderrWriter.CloseWithError(err)
-			errCh <- fmt.Errorf("failed to demultiplex logs: %w", err)
-			return
-		}
-		_ = stdoutWriter.Close()
-		_ = stderrWriter.Close()
-		errCh <- nil
-	}()
-
-	// Read from both stdout and stderr concurrently
-	go func() {
-		defer func() { _ = stdoutReader.Close() }()
-		errCh <- s.readLogsFromReader(ctx, stdoutReader, logsChan, "")
-	}()
-
-	go func() {
-		defer func() { _ = stderrReader.Close() }()
-		errCh <- s.readLogsFromReader(ctx, stderrReader, logsChan, "[STDERR] ")
-	}()
-
-	var firstErr error
-	for range 3 {
-		err := <-errCh
-		switch {
-		case err == nil:
-		case errors.Is(err, io.EOF):
-		case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
-		default:
-			if firstErr == nil {
-				firstErr = err
-			}
-		}
-	}
-
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-
-	return firstErr
 }
 
 // readLogsFromReader reads logs line by line from a reader
@@ -1054,6 +1030,11 @@ func (s *ContainerService) buildContainerSortBindings() []pagination.SortBinding
 			},
 		},
 		{
+			Key:    "ports",
+			Fn:     compareContainerPortsForSortInternal,
+			DescFn: compareContainerPortsForSortDescInternal,
+		},
+		{
 			Key: "created",
 			Fn: func(a, b containertypes.Summary) int {
 				if a.Created < b.Created {
@@ -1066,6 +1047,83 @@ func (s *ContainerService) buildContainerSortBindings() []pagination.SortBinding
 			},
 		},
 	}
+}
+
+func compareContainerPortsForSortInternal(a, b containertypes.Summary) int {
+	hasPortsA, portA := lowestContainerPortSortValueInternal(a.Ports)
+	hasPortsB, portB := lowestContainerPortSortValueInternal(b.Ports)
+
+	switch {
+	case !hasPortsA && !hasPortsB:
+		return compareContainerNamesForSortInternal(a, b)
+	case !hasPortsA:
+		return 1
+	case !hasPortsB:
+		return -1
+	case portA < portB:
+		return -1
+	case portA > portB:
+		return 1
+	default:
+		return compareContainerNamesForSortInternal(a, b)
+	}
+}
+
+func compareContainerPortsForSortDescInternal(a, b containertypes.Summary) int {
+	hasPortsA, portA := lowestContainerPortSortValueInternal(a.Ports)
+	hasPortsB, portB := lowestContainerPortSortValueInternal(b.Ports)
+
+	switch {
+	case !hasPortsA && !hasPortsB:
+		return compareContainerNamesForSortInternal(a, b)
+	case !hasPortsA:
+		return 1
+	case !hasPortsB:
+		return -1
+	case portA > portB:
+		return -1
+	case portA < portB:
+		return 1
+	default:
+		return compareContainerNamesForSortInternal(a, b)
+	}
+}
+
+func lowestContainerPortSortValueInternal(ports []containertypes.Port) (bool, int) {
+	if len(ports) == 0 {
+		return false, 0
+	}
+
+	lowestPublished := 0
+	lowestPrivate := 0
+	for _, port := range ports {
+		if port.PublicPort > 0 && (lowestPublished == 0 || port.PublicPort < lowestPublished) {
+			lowestPublished = port.PublicPort
+		}
+		if port.PrivatePort > 0 && (lowestPrivate == 0 || port.PrivatePort < lowestPrivate) {
+			lowestPrivate = port.PrivatePort
+		}
+	}
+
+	switch {
+	case lowestPublished > 0:
+		return true, lowestPublished
+	case lowestPrivate > 0:
+		return true, lowestPrivate
+	default:
+		return false, 0
+	}
+}
+
+func compareContainerNamesForSortInternal(a, b containertypes.Summary) int {
+	nameA, nameB := "", ""
+	if len(a.Names) > 0 {
+		nameA = a.Names[0]
+	}
+	if len(b.Names) > 0 {
+		nameB = b.Names[0]
+	}
+	return strings.Compare(nameA, nameB)
 }
 
 func (s *ContainerService) buildContainerFilterAccessors() []pagination.FilterAccessor[containertypes.Summary] {

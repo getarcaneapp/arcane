@@ -123,14 +123,20 @@
 	let composeValidationReady = $state(false);
 	let envValidationReady = $state(false);
 	let includeFilesValidationReady = $state<Record<string, boolean>>({});
+	let composeHasChanges = $derived($inputs.composeContent.value !== originalComposeContent);
+	let envHasChanges = $derived($inputs.envContent.value !== originalEnvContent);
+	let changedIncludeFilePaths = $derived.by(() =>
+		Object.keys(includeFilesState).filter(
+			(relativePath) => includeFilesState[relativePath] !== originalIncludeFiles[relativePath]
+		)
+	);
 
 	let hasAnyErrors = $derived(
-		!composeValidationReady ||
-			!envValidationReady ||
-			Object.values(includeFilesValidationReady).some((isReady) => !isReady) ||
-			composeHasErrors ||
-			envHasErrors ||
-			Object.values(includeFilesHasErrors).some((hasError) => hasError)
+		(composeHasChanges && (!composeValidationReady || composeHasErrors)) ||
+			(envHasChanges && (!envValidationReady || envHasErrors)) ||
+			changedIncludeFilePaths.some(
+				(relativePath) => !includeFilesValidationReady[relativePath] || !!includeFilesHasErrors[relativePath]
+			)
 	);
 
 	let canSave = $derived(hasChanges && !hasAnyErrors);
@@ -304,9 +310,10 @@
 		autoScrollStackLogs = cur.autoScroll ?? defaultComposeUIPrefs.autoScroll;
 		selectedFile = cur.selectedFile ?? defaultComposeUIPrefs.selectedFile ?? 'compose';
 
-		// Auto-detect layout mode based on includeFiles
+		// Auto-detect layout mode based on includeFiles or directoryFiles
 		const hasIncludes = project?.includeFiles && project.includeFiles.length > 0;
-		const defaultMode = hasIncludes ? 'tree' : 'classic';
+		const hasDirectoryFiles = project?.directoryFiles && project.directoryFiles.length > 0;
+		const defaultMode = hasIncludes || hasDirectoryFiles ? 'tree' : 'classic';
 		layoutMode = cur.layoutMode ?? defaultMode;
 	});
 
@@ -333,9 +340,14 @@
 				let savedProject = updatedProject;
 
 				for (const relativePath of Object.keys(includeFilesState)) {
-					if (includeFilesState[relativePath] !== originalIncludeFiles[relativePath]) {
+					const includeFileContent = includeFilesState[relativePath];
+					if (includeFileContent === undefined) {
+						continue;
+					}
+
+					if (includeFileContent !== originalIncludeFiles[relativePath]) {
 						const includeResult = await tryCatch(
-							projectService.updateProjectIncludeFile(projectId, relativePath, includeFilesState[relativePath])
+							projectService.updateProjectIncludeFile(projectId, relativePath, includeFileContent)
 						);
 						if (includeResult.error) {
 							toast.error(includeResult.error.message || m.common_update_failed({ resource: relativePath }));
@@ -528,7 +540,7 @@
 
 		{#snippet headerActions()}
 			<div class="flex items-center gap-2">
-				{#if hasChanges && !hasAnyErrors}
+				{#if hasChanges}
 					<ArcaneButton
 						action="save"
 						loading={isLoading.saving}
@@ -645,7 +657,7 @@
 							{#if isTablet.current}
 								<div class="flex h-full min-h-0 flex-col gap-4">
 									<Card.Root class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-										<Card.Header icon={FileTextIcon} class="shrink-0 items-center">
+										<Card.Header icon={FileTextIcon} class="flex-shrink-0 items-center">
 											<Card.Title>
 												<h2>{m.project_files()}</h2>
 											</Card.Title>
@@ -687,6 +699,20 @@
 														{/each}
 													</TreeView.Folder>
 												{/if}
+
+												{#if project?.directoryFiles && project.directoryFiles.length > 0}
+													{#each project.directoryFiles as dirFile (dirFile.relativePath)}
+														<TreeView.File
+															name={dirFile.relativePath}
+															onclick={() => (selectedFile = `dir:${dirFile.relativePath}`)}
+															class={selectedFile === `dir:${dirFile.relativePath}` ? 'bg-accent' : ''}
+														>
+															{#snippet icon()}
+																<FileTextIcon class="text-muted-foreground size-4" />
+															{/snippet}
+														</TreeView.File>
+													{/each}
+												{/if}
 											</TreeView.Root>
 										</Card.Content>
 									</Card.Root>
@@ -722,6 +748,18 @@
 												enableDiff={true}
 												editorContext={codeEditorContext}
 											/>
+										{:else if selectedFile.startsWith('dir:')}
+											{@const dirRelPath = selectedFile.slice(4)}
+											{@const dirFile = project?.directoryFiles?.find((f) => f.relativePath === dirRelPath)}
+											{#if dirFile}
+												<CodePanel
+													open={true}
+													title={dirFile.relativePath}
+													language="yaml"
+													value={dirFile.content}
+													readOnly={true}
+												/>
+											{/if}
 										{:else}
 											{@const includeFile = project?.includeFiles?.find((f) => f.relativePath === selectedFile)}
 											{#if includeFile}
@@ -798,6 +836,20 @@
 															{/each}
 														</TreeView.Folder>
 													{/if}
+
+													{#if project?.directoryFiles && project.directoryFiles.length > 0}
+														{#each project.directoryFiles as dirFile (dirFile.relativePath)}
+															<TreeView.File
+																name={dirFile.relativePath}
+																onclick={() => (selectedFile = `dir:${dirFile.relativePath}`)}
+																class={selectedFile === `dir:${dirFile.relativePath}` ? 'bg-accent' : ''}
+															>
+																{#snippet icon()}
+																	<FileTextIcon class="text-muted-foreground size-4" />
+																{/snippet}
+															</TreeView.File>
+														{/each}
+													{/if}
 												</TreeView.Root>
 											</Card.Content>
 										</Card.Root>
@@ -835,6 +887,18 @@
 													enableDiff={true}
 													editorContext={codeEditorContext}
 												/>
+											{:else if selectedFile.startsWith('dir:')}
+												{@const dirRelPath = selectedFile.slice(4)}
+												{@const dirFile = project?.directoryFiles?.find((f) => f.relativePath === dirRelPath)}
+												{#if dirFile}
+													<CodePanel
+														open={true}
+														title={dirFile.relativePath}
+														language="yaml"
+														value={dirFile.content}
+														readOnly={true}
+													/>
+												{/if}
 											{:else}
 												{@const includeFile = project?.includeFiles?.find((f) => f.relativePath === selectedFile)}
 												{#if includeFile}

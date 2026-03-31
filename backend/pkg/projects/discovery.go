@@ -1,6 +1,17 @@
 package projects
 
-import "os"
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+)
+
+type DiscoveredProjectDir struct {
+	DirName string
+	Path    string
+}
 
 // IsProjectDirectoryEntry reports whether a directory entry should be treated as a project directory.
 // Regular directories are always accepted. Symlinked directories are accepted only when enabled.
@@ -47,4 +58,67 @@ func IsProjectDirectoryPath(path string, followSymlinks bool) (bool, error) {
 	}
 
 	return resolvedInfo.IsDir(), nil
+}
+
+func DiscoverProjectDirectories(root string, followSymlinks bool) ([]DiscoveredProjectDir, error) {
+	root = filepath.Clean(root)
+
+	isDir, err := IsProjectDirectoryPath(root, followSymlinks)
+	if err != nil {
+		return nil, err
+	}
+	if !isDir {
+		return nil, fmt.Errorf("project root is not a directory: %s", root)
+	}
+
+	discovered := make([]DiscoveredProjectDir, 0)
+	ancestors := make(map[string]struct{})
+
+	if err := walkProjectDirectoriesInternal(root, followSymlinks, ancestors, &discovered); err != nil {
+		return nil, err
+	}
+
+	slices.SortStableFunc(discovered, func(a, b DiscoveredProjectDir) int {
+		return strings.Compare(filepath.Clean(a.Path), filepath.Clean(b.Path))
+	})
+
+	return discovered, nil
+}
+
+func walkProjectDirectoriesInternal(path string, followSymlinks bool, ancestors map[string]struct{}, discovered *[]DiscoveredProjectDir) error {
+	identity, err := ResolveDirectoryIdentityInternal(path)
+	if err != nil {
+		return err
+	}
+	if _, seen := ancestors[identity]; seen {
+		return nil
+	}
+
+	ancestors[identity] = struct{}{}
+	defer delete(ancestors, identity)
+
+	if _, err := DetectComposeFile(path); err == nil {
+		*discovered = append(*discovered, DiscoveredProjectDir{
+			DirName: filepath.Base(path),
+			Path:    path,
+		})
+	}
+
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		childPath := filepath.Join(path, entry.Name())
+		if !IsProjectDirectoryEntry(entry, childPath, followSymlinks) {
+			continue
+		}
+
+		if err := walkProjectDirectoriesInternal(childPath, followSymlinks, ancestors, discovered); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

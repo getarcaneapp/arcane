@@ -92,6 +92,7 @@ func (s *SettingsService) getDefaultSettings() *models.Settings {
 	return &models.Settings{
 		ProjectsDirectory:               models.SettingVariable{Value: "/app/data/projects"},
 		FollowProjectSymlinks:           models.SettingVariable{Value: "false"},
+		SwarmStackSourcesDirectory:      models.SettingVariable{Value: "/app/data/swarm/sources"},
 		DiskUsagePath:                   models.SettingVariable{Value: "/app/data/projects"},
 		AutoUpdate:                      models.SettingVariable{Value: "false"},
 		AutoUpdateInterval:              models.SettingVariable{Value: "0 0 0 * * *"},
@@ -160,6 +161,9 @@ func (s *SettingsService) getDefaultSettings() *models.Settings {
 		AccentColor:                models.SettingVariable{Value: "oklch(0.606 0.25 292.717)"},
 		OledMode:                   models.SettingVariable{Value: "false"},
 		MaxImageUploadSize:         models.SettingVariable{Value: "500"},
+		GitSyncMaxFiles:            models.SettingVariable{Value: "500"},
+		GitSyncMaxTotalSizeMb:      models.SettingVariable{Value: "50"},
+		GitSyncMaxBinarySizeMb:     models.SettingVariable{Value: "10"},
 		EnvironmentHealthInterval:  models.SettingVariable{Value: "0 */2 * * * *"},
 
 		DockerAPITimeout:       models.SettingVariable{Value: "30"},
@@ -921,6 +925,41 @@ func (s *SettingsService) SetIntSetting(ctx context.Context, key string, value i
 
 func (s *SettingsService) SetStringSetting(ctx context.Context, key, value string) error {
 	return s.UpdateSetting(ctx, key, value)
+}
+
+// SetContainerAutoUpdateExclusionInternal adds or removes a container name from
+// the autoUpdateExcludedContainers setting. When excluded is true the container
+// is added to the list; when false it is removed.
+func (s *SettingsService) SetContainerAutoUpdateExclusionInternal(ctx context.Context, containerName string, excluded bool) error {
+	raw := s.GetStringSetting(ctx, "autoUpdateExcludedContainers", "")
+	existing := make(map[string]struct{})
+	var ordered []string
+	for part := range strings.SplitSeq(raw, ",") {
+		name := strings.TrimSpace(part)
+		if name == "" {
+			continue
+		}
+		if _, ok := existing[name]; !ok {
+			existing[name] = struct{}{}
+			ordered = append(ordered, name)
+		}
+	}
+
+	if excluded {
+		if _, ok := existing[containerName]; !ok {
+			ordered = append(ordered, containerName)
+		}
+	} else {
+		filtered := ordered[:0]
+		for _, name := range ordered {
+			if name != containerName {
+				filtered = append(filtered, name)
+			}
+		}
+		ordered = filtered
+	}
+
+	return s.SetStringSetting(ctx, "autoUpdateExcludedContainers", strings.Join(ordered, ","))
 }
 
 func (s *SettingsService) EnsureEncryptionKey(ctx context.Context) (string, error) {

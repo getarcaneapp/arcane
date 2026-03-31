@@ -59,6 +59,44 @@ test.describe('Containers Page', () => {
 		).toBeVisible();
 	});
 
+	test('should show live CPU and memory monitors on the logs tab for running containers', async ({
+		page
+	}) => {
+		const running = containersData.data.find((c) => c.state === 'running');
+		test.skip(!running, 'No running container available');
+
+		await page.goto(`/containers/${running!.id}`);
+		await page.waitForLoadState('networkidle');
+
+		await page.getByRole('tab', { name: 'Logs' }).click();
+
+		await expect(page.locator('[data-testid="container-log-cpu-monitor"]')).toBeVisible();
+		await expect(page.locator('[data-testid="container-log-memory-monitor"]')).toBeVisible();
+		await expect(page.locator('[data-testid="container-log-cpu-monitor"]')).not.toContainText(
+			'N/A'
+		);
+		await expect(page.locator('[data-testid="container-log-memory-monitor"]')).not.toContainText(
+			'N/A'
+		);
+	});
+
+	test('should show non-live fallback monitors on the logs tab for stopped containers', async ({
+		page
+	}) => {
+		const stopped = containersData.data.find((c) => c.state !== 'running');
+		test.skip(!stopped, 'No stopped container available');
+
+		await page.goto(`/containers/${stopped!.id}`);
+		await page.waitForLoadState('networkidle');
+
+		await page.getByRole('tab', { name: 'Logs' }).click();
+
+		await expect(page.locator('[data-testid="container-log-cpu-monitor"]')).toBeVisible();
+		await expect(page.locator('[data-testid="container-log-memory-monitor"]')).toBeVisible();
+		await expect(page.locator('[data-testid="container-log-cpu-monitor"]')).toContainText('N/A');
+		await expect(page.locator('[data-testid="container-log-memory-monitor"]')).toContainText('N/A');
+	});
+
 	test('should show correct actions based on container state (without changing state)', async ({
 		page
 	}) => {

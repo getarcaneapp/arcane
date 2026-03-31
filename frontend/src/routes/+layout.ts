@@ -1,6 +1,7 @@
 import { browser } from '$app/environment';
 import { environmentManagementService } from '$lib/services/env-mgmt-service';
 import { settingsService } from '$lib/services/settings-service';
+import { swarmService } from '$lib/services/swarm-service';
 import { userService } from '$lib/services/user-service';
 import versionService from '$lib/services/version-service';
 import settingsStore from '$lib/stores/config-store';
@@ -61,7 +62,7 @@ export const load = async () => {
 
 	// Step 2: Only fetch authenticated data if user is logged in
 	let settings = null;
-
+	let swarmEnabled = false;
 	if (user) {
 		// Initialize environment store (required for settings service)
 		const environmentRequestOptions: SearchPaginationSortRequest = {
@@ -80,7 +81,12 @@ export const load = async () => {
 
 		// Fetch settings after environment store is initialized
 		// Settings service depends on environmentStore.getCurrentEnvironmentId()
-		settings = await settingsService.getSettings().catch(() => null);
+		const [loadedSettings, loadedSwarmStatus] = await Promise.all([
+			settingsService.getSettings().catch(() => null),
+			swarmService.getSwarmStatus().catch(() => null)
+		]);
+		settings = loadedSettings;
+		swarmEnabled = loadedSwarmStatus?.enabled === true;
 	} else {
 		// Initialize empty environment store for unauthenticated users
 		await environmentStore.initialize([]);
@@ -133,6 +139,7 @@ export const load = async () => {
 		user,
 		settings,
 		versionInformation,
-		queryClient
+		queryClient,
+		swarmEnabled
 	};
 };

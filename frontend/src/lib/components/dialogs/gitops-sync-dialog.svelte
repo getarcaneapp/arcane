@@ -33,6 +33,7 @@
 		repositoryId: z.string().min(1, m.common_required()),
 		branch: z.string().min(1, m.common_required()),
 		composePath: z.string().min(1, m.common_required()),
+		syncDirectory: z.boolean().default(true),
 		autoSync: z.boolean().default(true),
 		syncInterval: z.number().min(1).default(5)
 	});
@@ -42,6 +43,7 @@
 		repositoryId: open && syncToEdit ? syncToEdit.repositoryId : '',
 		branch: open && syncToEdit ? syncToEdit.branch : 'main',
 		composePath: open && syncToEdit ? syncToEdit.composePath : 'docker-compose.yml',
+		syncDirectory: open && syncToEdit ? (syncToEdit.syncDirectory ?? true) : true,
 		autoSync: open && syncToEdit ? (syncToEdit.autoSync ?? true) : true,
 		syncInterval: open && syncToEdit ? (syncToEdit.syncInterval ?? 5) : 5
 	});
@@ -104,6 +106,7 @@
 			branch: data.branch,
 			composePath: data.composePath,
 			projectName: data.name,
+			syncDirectory: data.syncDirectory,
 			autoSync: data.autoSync,
 			syncInterval: data.syncInterval
 		};
@@ -219,6 +222,14 @@
 						<p class="text-muted-foreground text-xs">Select a repository and branch to browse files</p>
 					{/if}
 				</div>
+
+				<SwitchWithLabel
+					id="syncDirectorySwitch"
+					label={m.git_sync_sync_files()}
+					description={m.git_sync_sync_files_description()}
+					error={$inputs.syncDirectory.error}
+					bind:checked={$inputs.syncDirectory.value}
+				/>
 
 				<SwitchWithLabel
 					id="autoSyncSwitch"

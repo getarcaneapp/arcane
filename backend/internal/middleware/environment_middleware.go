@@ -289,13 +289,13 @@ func (m *EnvironmentMiddleware) buildProxyPath(c *gin.Context, envID string) str
 }
 
 // isWebSocketUpgrade checks if this is a WebSocket upgrade request.
+// A valid WebSocket handshake requires ALL of: Upgrade: websocket header,
+// Connection: upgrade header, and Sec-WebSocket-Key header. Checking them
+// individually causes false positives when a reverse proxy (e.g. nginx with
+// proxy_set_header Upgrade/Connection) forwards partial headers on normal
+// HTTP requests, resulting in 426 Upgrade Required errors. See #1216.
 func (m *EnvironmentMiddleware) isWebSocketUpgrade(c *gin.Context) bool {
-	if websocket.IsWebSocketUpgrade(c.Request) {
-		return true
-	}
-	return strings.EqualFold(c.GetHeader(edge.HeaderUpgrade), "websocket") ||
-		strings.Contains(strings.ToLower(c.GetHeader(edge.HeaderConnection)), edge.ConnectionUpgradeToken) ||
-		c.GetHeader("Sec-Websocket-Key") != ""
+	return websocket.IsWebSocketUpgrade(c.Request)
 }
 
 func isEdgeEnvironmentURLInternal(apiURL string) bool {

@@ -74,3 +74,21 @@ func TestLoadComposeProjectFromDir_SupportsPodmanComposeNames(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadComposeProjectFromDir_EmptyProjectsDirectoryDoesNotCreateParentGlobalEnv(t *testing.T) {
+	t.Parallel()
+
+	projectsRoot := t.TempDir()
+	projectDir := filepath.Join(projectsRoot, "nested", "services")
+	require.NoError(t, os.MkdirAll(projectDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte("services:\n  app:\n    image: nginx:alpine\n"), 0o600))
+
+	project, composePath, err := LoadComposeProjectFromDir(context.Background(), projectDir, "nested-services", "", false, nil)
+	require.NoError(t, err)
+	require.NotNil(t, project)
+
+	assert.Equal(t, filepath.Join(projectDir, "compose.yaml"), composePath)
+
+	_, statErr := os.Stat(filepath.Join(projectsRoot, "nested", GlobalEnvFileName))
+	assert.ErrorIs(t, statErr, os.ErrNotExist)
+}

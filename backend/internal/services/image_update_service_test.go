@@ -16,8 +16,10 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/types/imageupdate"
 	glsqlite "github.com/glebarez/sqlite"
+	dockertypescontainer "github.com/moby/moby/api/types/container"
 	dockertypesimage "github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/client"
+	digest "github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	ref "go.podman.io/image/v5/docker/reference"
@@ -27,6 +29,9 @@ import (
 // TestParseImageReference tests the parseImageReference function with various image formats
 // This is used for digest-based update checking
 func TestImageUpdateService_ParseImageReference(t *testing.T) {
+	alpineDigest := digest.FromString("alpine").String()
+	serviceDigest := digest.FromString("registry-app-service").String()
+
 	tests := []struct {
 		name           string
 		imageRef       string
@@ -92,14 +97,14 @@ func TestImageUpdateService_ParseImageReference(t *testing.T) {
 		},
 		{
 			name:           "Image with digest",
-			imageRef:       "alpine@sha256:1234567890abcdef",
+			imageRef:       "alpine@" + alpineDigest,
 			wantRegistry:   "docker.io",
 			wantRepository: "library/alpine",
 			wantTag:        "latest",
 		},
 		{
 			name:           "Custom registry image with digest",
-			imageRef:       "registry.io/app/service@sha256:abcdef123456",
+			imageRef:       "registry.io/app/service@" + serviceDigest,
 			wantRegistry:   "registry.io",
 			wantRepository: "app/service",
 			wantTag:        "latest",
@@ -205,9 +210,11 @@ func TestImageUpdateService_GetLocalImageDigestWithAll_Logic(t *testing.T) {
 	t.Run("Multiple digests in RepoDigests", func(t *testing.T) {
 		// This test demonstrates the expected behavior
 		// In practice, you'd use a mock Docker client
+		firstDigest := digest.FromString("redis-primary").String()
+		secondDigest := digest.FromString("redis-secondary").String()
 		repoDigests := []string{
-			"docker.io/library/redis@sha256:abc123",
-			"redis@sha256:def456",
+			"docker.io/library/redis@" + firstDigest,
+			"redis@" + secondDigest,
 		}
 
 		var allDigests []string
@@ -219,8 +226,8 @@ func TestImageUpdateService_GetLocalImageDigestWithAll_Logic(t *testing.T) {
 		}
 
 		assert.Len(t, allDigests, 2)
-		assert.Contains(t, allDigests, "sha256:abc123")
-		assert.Contains(t, allDigests, "sha256:def456")
+		assert.Contains(t, allDigests, firstDigest)
+		assert.Contains(t, allDigests, secondDigest)
 	})
 }
 
@@ -397,10 +404,80 @@ func newImageUpdateFallbackServer(t *testing.T, repositoryTag, localDigest, remo
 	}))
 }
 
+func newImageRefResolutionServer(t *testing.T, containers []dockertypescontainer.Summary) *httptest.Server {
+	t.Helper()
+
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json"):
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		case strings.HasSuffix(r.URL.Path, "/containers/json"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(containers))
+			return
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+}
+
+func TestImageUpdateService_GetImageRefByIDInternal_UsesContainerFallback(t *testing.T) {
+	t.Parallel()
+
+	const imageID = "sha256:test-image-id"
+
+	tests := []struct {
+		name       string
+		containers []dockertypescontainer.Summary
+		wantRef    string
+		wantErr    string
+	}{
+		{
+			name: "uses repo tag from matching container when inspect fails",
+			containers: []dockertypescontainer.Summary{
+				{ImageID: imageID, Image: "frooodle/s-pdf:latest"},
+			},
+			wantRef: "frooodle/s-pdf:latest",
+		},
+		{
+			name: "ignores named digest references from matching container",
+			containers: []dockertypescontainer.Summary{
+				{ImageID: imageID, Image: "frooodle/s-pdf@sha256:abc123"},
+			},
+			wantErr: "no local image or running container found",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := newImageRefResolutionServer(t, tt.containers)
+			defer server.Close()
+
+			svc := &ImageUpdateService{
+				dockerService: &DockerClientService{client: newTestDockerClient(t, server)},
+			}
+
+			ref, err := svc.getImageRefByIDInternal(context.Background(), imageID)
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.ErrorContains(t, err, tt.wantErr)
+				assert.Empty(t, ref)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantRef, ref)
+		})
+	}
+}
+
 func TestImageUpdateService_CheckImageUpdate_UsesRegistryFallback(t *testing.T) {
 	db := setupImageUpdateTestDB(t)
+	localDigest := digest.FromString("localdigest").String()
+	remoteDigest := digest.FromString("remotedigest").String()
 
-	server := newImageUpdateFallbackServer(t, "team/app:1.2.3", "sha256:localdigest", "sha256:remotedigest")
+	server := newImageUpdateFallbackServer(t, "team/app:1.2.3", localDigest, remoteDigest)
 	defer server.Close()
 
 	serverURL, err := url.Parse(server.URL)
@@ -425,20 +502,22 @@ func TestImageUpdateService_CheckImageUpdate_UsesRegistryFallback(t *testing.T) 
 	require.NotNil(t, result)
 	assert.True(t, result.HasUpdate)
 	assert.Equal(t, "digest", result.UpdateType)
-	assert.Equal(t, "sha256:localdigest", result.CurrentDigest)
-	assert.Equal(t, "sha256:remotedigest", result.LatestDigest)
+	assert.Equal(t, localDigest, result.CurrentDigest)
+	assert.Equal(t, remoteDigest, result.LatestDigest)
 	assert.Equal(t, "anonymous", result.AuthMethod)
 	assert.Equal(t, serverURL.Host, result.AuthRegistry)
 
 	var saved models.ImageUpdateRecord
 	require.NoError(t, db.WithContext(context.Background()).Where("id = ?", "sha256:local-image-id").First(&saved).Error)
-	assert.Equal(t, "sha256:remotedigest", stringPtrToString(saved.LatestDigest))
+	assert.Equal(t, remoteDigest, stringPtrToString(saved.LatestDigest))
 }
 
 func TestImageUpdateService_CheckMultipleImages_UsesRegistryFallback(t *testing.T) {
 	db := setupImageUpdateTestDB(t)
+	localDigest := digest.FromString("batchlocal").String()
+	remoteDigest := digest.FromString("batchremote").String()
 
-	server := newImageUpdateFallbackServer(t, "team/app:1.2.3", "sha256:batchlocal", "sha256:batchremote")
+	server := newImageUpdateFallbackServer(t, "team/app:1.2.3", localDigest, remoteDigest)
 	defer server.Close()
 
 	serverURL, err := url.Parse(server.URL)
@@ -465,14 +544,14 @@ func TestImageUpdateService_CheckMultipleImages_UsesRegistryFallback(t *testing.
 	result := results[imageRef]
 	require.NotNil(t, result)
 	assert.True(t, result.HasUpdate)
-	assert.Equal(t, "sha256:batchlocal", result.CurrentDigest)
-	assert.Equal(t, "sha256:batchremote", result.LatestDigest)
+	assert.Equal(t, localDigest, result.CurrentDigest)
+	assert.Equal(t, remoteDigest, result.LatestDigest)
 	assert.Equal(t, "anonymous", result.AuthMethod)
 	assert.Equal(t, serverURL.Host, result.AuthRegistry)
 
 	var saved models.ImageUpdateRecord
 	require.NoError(t, db.WithContext(context.Background()).Where("id = ?", "sha256:local-image-id").First(&saved).Error)
-	assert.Equal(t, "sha256:batchremote", stringPtrToString(saved.LatestDigest))
+	assert.Equal(t, remoteDigest, stringPtrToString(saved.LatestDigest))
 }
 
 // TestNotificationSentLogic tests the notification_sent flag behavior

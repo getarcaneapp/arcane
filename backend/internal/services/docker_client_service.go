@@ -95,6 +95,11 @@ func (s *DockerClientService) GetClient(ctx context.Context) (*client.Client, er
 	return s.client, nil
 }
 
+// DockerHost returns the configured DOCKER_HOST value.
+func (s *DockerClientService) DockerHost() string {
+	return s.config.DockerHost
+}
+
 func (s *DockerClientService) GetAllContainers(ctx context.Context) ([]container.Summary, int, int, int, error) {
 	dockerClient, err := s.GetClient(ctx)
 	if err != nil {

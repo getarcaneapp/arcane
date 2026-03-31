@@ -11,10 +11,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/compose-spec/compose-go/v2/dotenv"
-	pkgutils "github.com/getarcaneapp/arcane/backend/pkg/utils"
 )
 
 const (
@@ -22,11 +20,6 @@ const (
 	EffectiveEnvFileName = ".env"
 	GitSourceEnvFileName = ".env.git"
 	OverrideEnvFileName  = "project.env"
-	globalEnvHeader      = `# Global Environment Variables
-# These variables are available to all projects
-# Created: %s
-
-`
 )
 
 type EnvMap = map[string]string
@@ -73,13 +66,11 @@ func (l *EnvLoader) LoadEnvironment(ctx context.Context) (envMap EnvMap, injecti
 	envMap = l.loadProcessEnv()
 	injectionVars = make(EnvMap)
 
-	globalEnvPath := filepath.Join(l.projectsDir, GlobalEnvFileName)
-	if err := l.ensureGlobalEnvFile(ctx, globalEnvPath); err != nil {
-		slog.WarnContext(ctx, "Failed to ensure global env file", "path", globalEnvPath, "error", err)
-	}
-
-	if err := l.loadAndMergeGlobalEnv(ctx, globalEnvPath, envMap, injectionVars); err != nil {
-		slog.WarnContext(ctx, "Failed to load global env", "path", globalEnvPath, "error", err)
+	if strings.TrimSpace(l.projectsDir) != "" {
+		globalEnvPath := filepath.Join(l.projectsDir, GlobalEnvFileName)
+		if err := l.loadAndMergeGlobalEnv(ctx, globalEnvPath, envMap, injectionVars); err != nil && !errors.Is(err, os.ErrNotExist) {
+			slog.WarnContext(ctx, "Failed to load global env", "path", globalEnvPath, "error", err)
+		}
 	}
 
 	projectEnvPath := filepath.Join(l.workdir, EffectiveEnvFileName)
@@ -98,23 +89,6 @@ func (l *EnvLoader) loadProcessEnv() EnvMap {
 		}
 	}
 	return envMap
-}
-
-func (l *EnvLoader) ensureGlobalEnvFile(ctx context.Context, path string) error {
-	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
-		header := fmt.Sprintf(globalEnvHeader, time.Now().Format(time.RFC3339))
-		dir := filepath.Dir(path)
-		if err := os.MkdirAll(dir, pkgutils.DirPerm); err != nil {
-			return fmt.Errorf("create dir: %w", err)
-		}
-		if err := os.WriteFile(path, []byte(header), pkgutils.FilePerm); err != nil {
-			return fmt.Errorf("write file: %w", err)
-		}
-		slog.InfoContext(ctx, "Created global env file", "path", path)
-	} else if err != nil {
-		slog.DebugContext(ctx, "Could not stat global env file", "path", path, "error", err)
-	}
-	return nil
 }
 
 func (l *EnvLoader) loadAndMergeGlobalEnv(ctx context.Context, path string, envMap, injectionVars EnvMap) error {

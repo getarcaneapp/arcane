@@ -42,6 +42,12 @@ type Update struct {
 	// Required: false
 	FollowProjectSymlinks *string `json:"followProjectSymlinks,omitempty"`
 
+	// SwarmStackSourcesDirectory is the directory path where swarm stack source files are stored.
+	// Must be an absolute path.
+	//
+	// Required: false
+	SwarmStackSourcesDirectory *string `json:"swarmStackSourcesDirectory,omitempty"`
+
 	// DiskUsagePath is the path to monitor for disk usage.
 	//
 	// Required: false
@@ -136,6 +142,24 @@ type Update struct {
 	//
 	// Required: false
 	MaxImageUploadSize *string `json:"maxImageUploadSize,omitempty"`
+
+	// GitSyncMaxFiles is the maximum number of repository files copied during a Git sync.
+	// Set to "0" to disable the environment cap.
+	//
+	// Required: false
+	GitSyncMaxFiles *string `json:"gitSyncMaxFiles,omitempty"`
+
+	// GitSyncMaxTotalSizeMb is the maximum combined size in megabytes for files copied during a Git sync.
+	// Set to "0" to disable the environment cap.
+	//
+	// Required: false
+	GitSyncMaxTotalSizeMb *string `json:"gitSyncMaxTotalSizeMb,omitempty"`
+
+	// GitSyncMaxBinarySizeMb is the maximum size in megabytes for a single binary file copied during a Git sync.
+	// Set to "0" to disable the environment cap.
+	//
+	// Required: false
+	GitSyncMaxBinarySizeMb *string `json:"gitSyncMaxBinarySizeMb,omitempty"`
 
 	// BaseServerURL is the base URL of the server.
 	//

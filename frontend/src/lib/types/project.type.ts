@@ -67,6 +67,8 @@ export interface RuntimeService {
 export interface Project {
 	id: string;
 	name: string;
+	dirName?: string;
+	relativePath?: string;
 	path: string;
 	iconUrl?: string;
 	urls?: string[];
@@ -85,6 +87,7 @@ export interface Project {
 	composeContent?: string;
 	envContent?: string;
 	includeFiles?: IncludeFile[];
+	directoryFiles?: IncludeFile[];
 }
 
 export interface ProjectStatusCounts {

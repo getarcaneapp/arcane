@@ -3,20 +3,19 @@ module github.com/getarcaneapp/arcane/backend
 go 1.26.0
 
 replace github.com/getarcaneapp/arcane/cli => ../cli
-
 replace github.com/getarcaneapp/arcane/types => ../types
 
 require (
-	github.com/aws/aws-sdk-go-v2/config v1.32.12
-	github.com/aws/aws-sdk-go-v2/credentials v1.19.12
-	github.com/aws/aws-sdk-go-v2/service/ecr v1.56.1
+	github.com/aws/aws-sdk-go-v2/config v1.32.13
+	github.com/aws/aws-sdk-go-v2/credentials v1.19.13
+	github.com/aws/aws-sdk-go-v2/service/ecr v1.56.2
 	github.com/cenkalti/backoff/v5 v5.0.3
 	github.com/compose-spec/compose-go/v2 v2.10.1
 	github.com/containerd/errdefs v1.0.0
 	github.com/coreos/go-oidc/v3 v3.17.0
-	github.com/danielgtaylor/huma/v2 v2.37.2
+	github.com/danielgtaylor/huma/v2 v2.37.3
 	github.com/depot/depot-go v0.5.2
-	github.com/docker/cli v29.2.1+incompatible
+	github.com/docker/cli v29.3.1+incompatible
 	github.com/docker/compose/v5 v5.1.1
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/fsnotify/fsnotify v1.9.0
@@ -36,11 +35,11 @@ require (
 	github.com/jinzhu/copier v0.4.0
 	github.com/joho/godotenv v1.5.1
 	github.com/lmittmann/tint v1.1.3
-	github.com/moby/buildkit v0.28.0
+	github.com/moby/buildkit v0.28.1
 	github.com/moby/go-archive v0.2.0
 	github.com/moby/moby/api v1.54.0
 	github.com/moby/moby/client v0.3.0
-	github.com/moby/patternmatcher v0.6.0
+	github.com/moby/patternmatcher v0.6.1
 	github.com/nicholas-fedor/shoutrrr v0.14.1
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
@@ -71,17 +70,17 @@ require (
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/ProtonMail/go-crypto v1.3.0 // indirect
 	github.com/acarl005/stripansi v0.0.0-20180116102854-5a71ef0e047d // indirect
-	github.com/aws/aws-sdk-go-v2 v1.41.4 // indirect
-	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.18.20 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.20 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.20 // indirect
+	github.com/aws/aws-sdk-go-v2 v1.41.5 // indirect
+	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.18.21 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.21 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.21 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/ini v1.8.6 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.7 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.20 // indirect
-	github.com/aws/aws-sdk-go-v2/service/signin v1.0.8 // indirect
-	github.com/aws/aws-sdk-go-v2/service/sso v1.30.13 // indirect
-	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.35.17 // indirect
-	github.com/aws/aws-sdk-go-v2/service/sts v1.41.9 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.21 // indirect
+	github.com/aws/aws-sdk-go-v2/service/signin v1.0.9 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sso v1.30.14 // indirect
+	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.35.18 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sts v1.41.10 // indirect
 	github.com/aws/smithy-go v1.24.2 // indirect
 	github.com/buger/goterm v1.0.4 // indirect
 	github.com/bytedance/gopkg v0.1.3 // indirect

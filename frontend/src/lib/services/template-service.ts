@@ -27,11 +27,18 @@ export default class TemplateService extends BaseAPIService {
 		return response.data?.data;
 	}
 
-	async getDefaultTemplates(): Promise<{ composeTemplate: string; envTemplate: string }> {
+	async getDefaultTemplates(): Promise<{
+		composeTemplate: string;
+		swarmStackTemplate: string;
+		swarmStackEnvTemplate: string;
+		envTemplate: string;
+	}> {
 		const response = await this.api.get('/templates/default');
 		const data = response.data?.data;
 		return {
 			composeTemplate: data?.composeTemplate ?? '',
+			swarmStackTemplate: data?.swarmStackTemplate ?? '',
+			swarmStackEnvTemplate: data?.swarmStackEnvTemplate ?? '',
 			envTemplate: data?.envTemplate ?? ''
 		};
 	}

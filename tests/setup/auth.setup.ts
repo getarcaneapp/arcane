@@ -4,11 +4,11 @@ import authUtil from '../utils/auth.util';
 const authFile = '.auth/login.json';
 
 setup('authenticate', async ({ page }) => {
-	await authUtil.login(page);
+	const currentPassword = await authUtil.login(page);
 
 	await page.waitForURL('/dashboard');
 
-	await authUtil.changeDefaultPassword(page, 'test-password-123');
+	await authUtil.changeDefaultPassword(page, currentPassword, authUtil.TEST_PASSWORD);
 
 	await page.context().storageState({ path: authFile });
 });

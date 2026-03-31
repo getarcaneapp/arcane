@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/getarcaneapp/arcane/backend/pkg/utils/imagedigest"
 	"github.com/moby/moby/client"
 	ref "go.podman.io/image/v5/docker/reference"
 
@@ -99,11 +100,8 @@ func (c *DigestChecker) getLocalDigest(ctx context.Context, imageRef string) (st
 
 	// Try to get digest from RepoDigests
 	for _, rd := range inspect.RepoDigests {
-		if strings.Contains(rd, "@sha256:") {
-			parts := strings.Split(rd, "@")
-			if len(parts) == 2 {
-				return parts[1], nil
-			}
+		if normalized, ok := imagedigest.FromReferenceSuffix(rd); ok {
+			return normalized, nil
 		}
 	}
 

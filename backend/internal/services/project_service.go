@@ -10,6 +10,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -107,6 +108,44 @@ func (s *ProjectService) getPathMapper(ctx context.Context) (*projects.PathMappe
 	}
 
 	return pm, nil
+}
+
+func (s *ProjectService) getProjectsDirectoryInternal(ctx context.Context) (string, error) {
+	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
+	projectsDir, err := projects.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
+	if err != nil {
+		return "", err
+	}
+
+	return filepath.Clean(projectsDir), nil
+}
+
+func (s *ProjectService) GetProjectRelativePath(ctx context.Context, projectPath string) string {
+	projectsDir, err := s.getProjectsDirectoryInternal(ctx)
+	if err != nil {
+		return ""
+	}
+
+	return s.getProjectRelativePathInternal(projectsDir, projectPath)
+}
+
+func (s *ProjectService) getProjectRelativePathInternal(projectsDir, projectPath string) string {
+	if strings.TrimSpace(projectsDir) == "" {
+		return ""
+	}
+
+	relativePath, err := filepath.Rel(projectsDir, filepath.Clean(projectPath))
+	if err != nil {
+		return ""
+	}
+	if relativePath == "." {
+		return ""
+	}
+	if relativePath == ".." || strings.HasPrefix(relativePath, ".."+string(os.PathSeparator)) {
+		return ""
+	}
+
+	return filepath.ToSlash(relativePath)
 }
 
 // Helpers
@@ -559,6 +598,7 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 	if err != nil {
 		return project.Details{}, err
 	}
+	projectsDir, _ := s.getProjectsDirectoryInternal(ctx)
 
 	composeContent, _, _ := s.GetProjectContent(ctx, projectID)
 	envState, err := projects.ReadProjectEnvState(proj.Path)
@@ -582,6 +622,7 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 	resp.EnvContent = effectiveEnvContent
 	resp.HasBuildDirective = false
 	resp.DirName = utils.DerefString(proj.DirName)
+	resp.RelativePath = s.getProjectRelativePathInternal(projectsDir, proj.Path)
 	resp.GitOpsManagedBy = proj.GitOpsManagedBy
 	meta := s.getProjectMetadataFromPath(ctx, proj.Path)
 	resp.IconURL = meta.ProjectIconURL
@@ -594,6 +635,7 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 
 	// Enrich with details
 	s.enrichWithIncludeFiles(ctx, proj.Path, &resp)
+	s.enrichWithDirectoryFiles(ctx, proj.Path, &resp)
 	s.enrichWithGitOpsInfo(ctx, proj, &resp)
 
 	// Load compose project for service definitions
@@ -650,6 +692,106 @@ func (s *ProjectService) enrichWithIncludeFiles(ctx context.Context, projectPath
 	}
 }
 
+func (s *ProjectService) enrichWithDirectoryFiles(ctx context.Context, projectPath string, resp *project.Details) {
+	if projectPath == "" {
+		return
+	}
+
+	// Build set of already-shown files to skip
+	shownFiles := map[string]bool{
+		".env":                true,
+		"compose.yaml":        true,
+		"compose.yml":         true,
+		"docker-compose.yaml": true,
+		"docker-compose.yml":  true,
+	}
+	for _, inc := range resp.IncludeFiles {
+		shownFiles[inc.RelativePath] = true
+	}
+
+	var dirFiles []project.IncludeFile
+
+	root, err := os.OpenRoot(projectPath)
+	if err != nil {
+		slog.WarnContext(ctx, "Failed to open project root for directory scan", "error", err, "path", projectPath)
+		resp.DirectoryFiles = dirFiles
+		return
+	}
+	defer func() { _ = root.Close() }()
+
+	err = s.collectDirectoryFiles(root, ".", projectPath, shownFiles, &dirFiles)
+
+	if err != nil {
+		slog.WarnContext(ctx, "Failed to scan project directory files", "error", err, "path", projectPath)
+	}
+
+	resp.DirectoryFiles = dirFiles
+}
+
+func (s *ProjectService) collectDirectoryFiles(
+	root *os.Root,
+	relDir string,
+	projectPath string,
+	shownFiles map[string]bool,
+	dirFiles *[]project.IncludeFile,
+) error {
+	dir, err := root.Open(relDir)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = dir.Close() }()
+
+	entries, err := dir.ReadDir(-1)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		relPath := entry.Name()
+		if relDir != "." {
+			relPath = filepath.Join(relDir, entry.Name())
+		}
+		if entry.Type()&os.ModeSymlink != 0 {
+			continue
+		}
+		if entry.IsDir() {
+			if entry.Name() == ".git" {
+				continue
+			}
+			if err := s.collectDirectoryFiles(root, relPath, projectPath, shownFiles, dirFiles); err != nil {
+				slog.Debug("Skipping unreadable project subdirectory", "relativePath", relPath, "error", err)
+			}
+			continue
+		}
+		if shownFiles[relPath] {
+			continue
+		}
+
+		info, err := entry.Info()
+		if err != nil || info.Size() > 1024*1024 {
+			continue
+		}
+
+		content, err := root.ReadFile(relPath)
+		if err != nil || isBinaryProjectFileContent(content) {
+			continue
+		}
+
+		*dirFiles = append(*dirFiles, project.IncludeFile{
+			Path:         filepath.Join(projectPath, relPath),
+			RelativePath: relPath,
+			Content:      string(content),
+		})
+	}
+
+	return nil
+}
+
+func isBinaryProjectFileContent(content []byte) bool {
+	checkSize := min(len(content), 512)
+	return slices.Contains(content[:checkSize], 0)
+}
+
 func (s *ProjectService) enrichWithGitOpsInfo(ctx context.Context, proj *models.Project, resp *project.Details) {
 	if proj.GitOpsManagedBy != nil {
 		var sync models.GitOpsSync
@@ -696,39 +838,29 @@ func (s *ProjectService) enrichWithComposeServiceConfigs(ctx context.Context, pr
 }
 
 func (s *ProjectService) SyncProjectsFromFileSystem(ctx context.Context) error {
-	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
 	followProjectSymlinks := s.settingsService.GetBoolSetting(ctx, "followProjectSymlinks", false)
-	projectsDir, err := projects.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
+	projectsDir, err := s.getProjectsDirectoryInternal(ctx)
 	if err != nil {
 		slog.WarnContext(ctx, "unable to prepare projects directory", "error", err)
 		return nil
 	}
-	projectsDir = filepath.Clean(projectsDir)
 
-	entries, rerr := os.ReadDir(projectsDir)
-	if rerr != nil {
-		slog.WarnContext(ctx, "failed to read projects directory", "dir", projectsDir, "error", rerr)
+	discoveredProjects, discoveryErr := projects.DiscoverProjectDirectories(projectsDir, followProjectSymlinks)
+	if discoveryErr != nil {
+		if os.IsNotExist(discoveryErr) {
+			return nil
+		}
+		slog.WarnContext(ctx, "failed to discover projects directory contents", "dir", projectsDir, "error", discoveryErr)
 		return nil
 	}
 
 	seen := map[string]struct{}{}
-	for _, e := range entries {
-		dirPath := filepath.Join(projectsDir, e.Name())
-		if !projects.IsProjectDirectoryEntry(e, dirPath, followProjectSymlinks) {
+	for _, discoveredProject := range discoveredProjects {
+		if uerr := s.upsertProjectForDir(ctx, discoveredProject.DirName, discoveredProject.Path); uerr != nil {
+			slog.WarnContext(ctx, "failed to sync project from folder", "dir", discoveredProject.Path, "error", uerr)
 			continue
 		}
-		dirName := e.Name()
-
-		// Only consider folders that contain a compose file
-		if _, derr := projects.DetectComposeFile(dirPath); derr != nil {
-			continue
-		}
-
-		if uerr := s.upsertProjectForDir(ctx, dirName, dirPath); uerr != nil {
-			slog.WarnContext(ctx, "failed to sync project from folder", "dir", dirPath, "error", uerr)
-			continue
-		}
-		seen[dirPath] = struct{}{}
+		seen[discoveredProject.Path] = struct{}{}
 	}
 
 	if cerr := s.cleanupDBProjects(ctx, seen, followProjectSymlinks); cerr != nil {
@@ -741,7 +873,7 @@ func (s *ProjectService) SyncProjectsFromFileSystem(ctx context.Context) error {
 func (s *ProjectService) upsertProjectForDir(ctx context.Context, dirName, dirPath string) error {
 	var existing models.Project
 	err := s.db.WithContext(ctx).
-		Where("path = ? OR dir_name = ?", dirPath, dirName).
+		Where("path = ?", dirPath).
 		First(&existing).Error
 
 	filesystemProject := models.Project{
@@ -876,13 +1008,11 @@ func formatDockerPorts(ports []container.PortSummary) []string {
 }
 
 func (s *ProjectService) countProjectFolders(ctx context.Context) (int, error) {
-	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
 	followProjectSymlinks := s.settingsService.GetBoolSetting(ctx, "followProjectSymlinks", false)
-	projectsDir, err := projects.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
+	projectsDir, err := s.getProjectsDirectoryInternal(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("could not determine projects directory: %w", err)
 	}
-	projectsDir = filepath.Clean(projectsDir)
 
 	info, statErr := os.Stat(projectsDir)
 	if os.IsNotExist(statErr) {
@@ -896,22 +1026,12 @@ func (s *ProjectService) countProjectFolders(ctx context.Context) (int, error) {
 		return 0, nil
 	}
 
-	entries, readErr := os.ReadDir(projectsDir)
-	if readErr != nil {
-		return 0, fmt.Errorf("failed to read projects directory %s: %w", projectsDir, readErr)
+	discoveredProjects, discoveryErr := projects.DiscoverProjectDirectories(projectsDir, followProjectSymlinks)
+	if discoveryErr != nil {
+		return 0, fmt.Errorf("failed to discover project directories in %s: %w", projectsDir, discoveryErr)
 	}
 
-	count := 0
-	for _, e := range entries {
-		dirPath := filepath.Join(projectsDir, e.Name())
-		if !projects.IsProjectDirectoryEntry(e, dirPath, followProjectSymlinks) {
-			continue
-		}
-		if _, err := projects.DetectComposeFile(dirPath); err == nil {
-			count++
-		}
-	}
-	return count, nil
+	return len(discoveredProjects), nil
 }
 
 func (s *ProjectService) incrementStatusCounts(status models.ProjectStatus, running, stopped *int) {
@@ -2804,6 +2924,7 @@ func (s *ProjectService) listProjectsByStatus(
 		SearchAccessors: []pagination.SearchAccessor[project.Details]{
 			func(p project.Details) (string, error) { return p.Name, nil },
 			func(p project.Details) (string, error) { return p.Path, nil },
+			func(p project.Details) (string, error) { return p.RelativePath, nil },
 			func(p project.Details) (string, error) { return p.Status, nil },
 			func(p project.Details) (string, error) { return p.DirName, nil },
 		},
@@ -2830,6 +2951,12 @@ func (s *ProjectService) listProjectsByStatus(
 						return 1
 					}
 					return 0
+				},
+			},
+			{
+				Key: "path",
+				Fn: func(a, b project.Details) int {
+					return strings.Compare(a.RelativePath, b.RelativePath)
 				},
 			},
 			{
@@ -2869,6 +2996,11 @@ func (s *ProjectService) listProjectsByStatus(
 // fetchProjectStatusConcurrently fetches live Docker status for multiple projects in parallel
 // Optimized to use a single Docker API call instead of N calls + N file reads
 func (s *ProjectService) fetchProjectStatusConcurrently(ctx context.Context, projectsList []models.Project) []project.Details {
+	projectsDir, err := s.getProjectsDirectoryInternal(ctx)
+	if err != nil {
+		slog.WarnContext(ctx, "failed to resolve projects directory for relative project paths", "error", err)
+	}
+
 	// 1. Fetch all compose containers in one go
 	containers, err := projects.ListGlobalComposeContainers(ctx)
 	if err != nil {
@@ -2877,6 +3009,14 @@ func (s *ProjectService) fetchProjectStatusConcurrently(ctx context.Context, pro
 		results := make([]project.Details, len(projectsList))
 		for i, p := range projectsList {
 			_ = mapper.MapStruct(p, &results[i])
+			results[i].CreatedAt = p.CreatedAt.Format(time.RFC3339)
+			results[i].UpdatedAt = p.UpdatedAt.Format(time.RFC3339)
+			results[i].DirName = utils.DerefString(p.DirName)
+			results[i].RelativePath = s.getProjectRelativePathInternal(projectsDir, p.Path)
+			results[i].GitOpsManagedBy = p.GitOpsManagedBy
+			meta := s.getProjectMetadataFromPath(ctx, p.Path)
+			results[i].IconURL = meta.ProjectIconURL
+			results[i].URLs = meta.ProjectURLS
 			results[i].Status = string(models.ProjectStatusUnknown)
 		}
 		return results
@@ -2894,19 +3034,20 @@ func (s *ProjectService) fetchProjectStatusConcurrently(ctx context.Context, pro
 	// 3. Map to DTOs
 	results := make([]project.Details, len(projectsList))
 	for i, p := range projectsList {
-		results[i] = s.mapProjectToDto(ctx, p, containersByProject)
+		results[i] = s.mapProjectToDto(ctx, projectsDir, p, containersByProject)
 	}
 
 	return results
 }
 
-func (s *ProjectService) mapProjectToDto(ctx context.Context, p models.Project, containersByProject map[string][]container.Summary) project.Details {
+func (s *ProjectService) mapProjectToDto(ctx context.Context, projectsDir string, p models.Project, containersByProject map[string][]container.Summary) project.Details {
 	var resp project.Details
 	_ = mapper.MapStruct(p, &resp)
 
 	resp.CreatedAt = p.CreatedAt.Format(time.RFC3339)
 	resp.UpdatedAt = p.UpdatedAt.Format(time.RFC3339)
 	resp.DirName = utils.DerefString(p.DirName)
+	resp.RelativePath = s.getProjectRelativePathInternal(projectsDir, p.Path)
 	resp.GitOpsManagedBy = p.GitOpsManagedBy
 	meta := s.getProjectMetadataFromPath(ctx, p.Path)
 	resp.IconURL = meta.ProjectIconURL

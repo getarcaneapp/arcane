@@ -12,6 +12,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/crypto"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils/imagedigest"
 	registry "github.com/getarcaneapp/arcane/backend/pkg/utils/registry"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 	"github.com/getarcaneapp/arcane/types/imageupdate"
@@ -211,7 +212,7 @@ func (s *ImageUpdateService) parseImageReference(imageRef string) *ImageParts {
 // Fallback parser for cases where the official parser fails
 func (s *ImageUpdateService) parseImageReferenceFallback(imageRef string) *ImageParts {
 	var registryHost, repository, tag string
-	if strings.Contains(imageRef, "@sha256:") {
+	if _, ok := imagedigest.FromReferenceSuffix(imageRef); ok {
 		digestParts := strings.Split(imageRef, "@")
 		if len(digestParts) != 2 {
 			return nil
@@ -268,35 +269,62 @@ func (s *ImageUpdateService) parseImageReferenceFallback(imageRef string) *Image
 	return &ImageParts{Registry: registry.NormalizeRegistryForComparison(registryHost), Repository: repository, Tag: tag}
 }
 
-func (s *ImageUpdateService) getImageRefByID(ctx context.Context, imageID string) (string, error) {
+func (s *ImageUpdateService) getImageRefByIDInternal(ctx context.Context, imageID string) (string, error) {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	imageID = strings.TrimPrefix(imageID, "sha256:")
+
+	if ref, refErr := s.resolveImageRefFromInspect(ctx, dockerClient, imageID); refErr == nil {
+		return ref, nil
+	}
+
+	// Fallback: if the image was pruned, look up the image reference from
+	// running containers that were started from this image ID.
+	if ref, refErr := s.resolveImageRefFromContainers(ctx, dockerClient, imageID); refErr == nil {
+		return ref, nil
+	}
+
+	return "", fmt.Errorf("image not found: no local image or running container found for %s", imageID)
+}
+
+func (s *ImageUpdateService) resolveImageRefFromInspect(ctx context.Context, dockerClient client.APIClient, imageID string) (string, error) {
 	inspectResponse, err := dockerClient.ImageInspect(ctx, imageID)
 	if err != nil {
-		return "", fmt.Errorf("image not found: %w", err)
+		return "", err
 	}
-	if len(inspectResponse.RepoTags) > 0 {
-		for _, tag := range inspectResponse.RepoTags {
-			if tag != "<none>:<none>" {
-				return tag, nil
+	for _, tag := range inspectResponse.RepoTags {
+		if tag != "<none>:<none>" {
+			return tag, nil
+		}
+	}
+	for _, digest := range inspectResponse.RepoDigests {
+		if digest != "<none>@<none>" {
+			if repo, _, ok := strings.Cut(digest, "@"); ok {
+				return repo + ":latest", nil
 			}
 		}
 	}
-	if len(inspectResponse.RepoDigests) > 0 {
-		for _, digest := range inspectResponse.RepoDigests {
-			if digest != "<none>@<none>" {
-				digestParts := strings.Split(digest, "@")
-				if len(digestParts) == 2 {
-					return digestParts[0] + ":latest", nil
-				}
-			}
+	return "", fmt.Errorf("no valid tags or digests")
+}
+
+func (s *ImageUpdateService) resolveImageRefFromContainers(ctx context.Context, dockerClient client.APIClient, imageID string) (string, error) {
+	fullID := "sha256:" + imageID
+	containers, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
+	if err != nil {
+		return "", err
+	}
+	for _, c := range containers.Items {
+		if c.ImageID != fullID && c.ImageID != imageID {
+			continue
+		}
+		if c.Image != "" && !strings.HasPrefix(c.Image, "sha256:") && !strings.Contains(c.Image, "@sha256:") {
+			return c.Image, nil
 		}
 	}
-	return "", fmt.Errorf("no valid repository tags or digests found for image")
+	return "", fmt.Errorf("no container found using image %s", imageID)
 }
 
 func (s *ImageUpdateService) getAllImageRefsInternal(ctx context.Context, limit int) ([]string, error) {
@@ -350,16 +378,16 @@ func (s *ImageUpdateService) inspectLocalImageSnapshotInternal(ctx context.Conte
 	// Extract all digests from RepoDigests
 	if len(inspectResponse.RepoDigests) > 0 {
 		for _, repoDigest := range inspectResponse.RepoDigests {
-			// Format: repository@sha256:...
-			digestParts := strings.Split(repoDigest, "@")
-			if len(digestParts) == 2 {
-				digest := digestParts[1]
-				allDigests = append(allDigests, digest)
+			digest, ok := imagedigest.FromReferenceSuffix(repoDigest)
+			if !ok {
+				continue
+			}
 
-				// Use first digest as primary if not yet set
-				if primaryDigest == "" {
-					primaryDigest = digest
-				}
+			allDigests = append(allDigests, digest)
+
+			// Use first digest as primary if not yet set
+			if primaryDigest == "" {
+				primaryDigest = digest
 			}
 		}
 	}
@@ -389,7 +417,7 @@ func (s *ImageUpdateService) normalizeRepository(regHost, repo string) string {
 }
 
 func (s *ImageUpdateService) CheckImageUpdateByID(ctx context.Context, imageID string) (*imageupdate.Response, error) {
-	imageRef, err := s.getImageRefByID(ctx, imageID)
+	imageRef, err := s.getImageRefByIDInternal(ctx, imageID)
 	if err != nil {
 		metadata := models.JSON{
 			"action":  "check_update_by_id",

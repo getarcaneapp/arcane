@@ -884,6 +884,21 @@ main {
 	overflow-x: hidden;
 }
 
+/* Override browser autofill background to match theme */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active,
+input:autofill,
+input:autofill:hover,
+input:autofill:focus,
+input:autofill:active {
+	-webkit-box-shadow: 0 0 0 9999px transparent inset !important;
+	box-shadow: 0 0 0 9999px transparent inset !important;
+	-webkit-text-fill-color: var(--foreground) !important;
+	transition: background-color 5000s ease-in-out 0s;
+}
+
 @media (max-width: 768px) {
 	.mobile-centered-popover {
 		position: fixed !important;
