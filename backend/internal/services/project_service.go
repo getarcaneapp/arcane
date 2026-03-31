@@ -1094,30 +1094,7 @@ func (s *ProjectService) GetProjectStatusCounts(ctx context.Context) (folderCoun
 		if len(services) == 0 {
 			status = models.ProjectStatusStopped
 		} else {
-			// We have containers, calculate status based on their state
-			// Note: calculateProjectStatus doesn't know about "missing" services (ServiceCount)
-			// So we need to check if runningCount == p.ServiceCount here if we want strict "Running"
-
-			// Re-implement logic here to be safe or rely on calculateProjectStatus?
-			// calculateProjectStatus returns Running if ALL *present* containers are running.
-			// But if we have 2/3 containers running, it returns Running? No.
-			// calculateProjectStatus: if runningCount == len(services) -> Running.
-			// But len(services) is only the *running* containers (or present ones).
-			// If we have 3 services defined, but only 2 containers exist (both running),
-			// calculateProjectStatus will say "Running".
-			// But strictly it should be "Partial" or "Restarting" or something.
-
-			// However, for the dashboard count, "Running" usually means "Healthy".
-			// Let's stick to calculateProjectStatus for consistency with previous logic,
-			// but maybe check ServiceCount.
-
-			st := s.calculateProjectStatus(services)
-
-			// Refine: if all containers are running, but we have fewer containers than defined services
-			if st == models.ProjectStatusRunning && len(services) < p.ServiceCount {
-				st = models.ProjectStatusPartiallyRunning
-			}
-			status = st
+			status = s.calculateProjectStatus(services)
 		}
 
 		s.incrementStatusCounts(status, &runningProjects, &stoppedProjects)
@@ -3117,12 +3094,18 @@ func (s *ProjectService) mapProjectToDto(ctx context.Context, projectsDir string
 		}
 	}
 
-	// Calculate Status
-	if len(services) == 0 {
+	// Calculate Status using actual container count from Docker rather than the
+	// (potentially stale) DB ServiceCount. The DB value can become outdated when
+	// a service is removed from the compose file but compose parsing fails during
+	// filesystem sync, leaving the old count in the database. This mirrors the
+	// logic in calculateProjectStatus and GetProjectDetails, which both use the
+	// live container/service list as the source of truth.
+	actualServiceCount := len(services)
+	if actualServiceCount == 0 {
 		resp.Status = string(models.ProjectStatusStopped)
 	} else {
 		switch {
-		case runningCount >= resp.ServiceCount && resp.ServiceCount > 0:
+		case runningCount >= actualServiceCount:
 			resp.Status = string(models.ProjectStatusRunning)
 		case runningCount > 0:
 			resp.Status = string(models.ProjectStatusPartiallyRunning)
