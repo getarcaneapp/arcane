@@ -3,6 +3,7 @@ module github.com/getarcaneapp/arcane/backend
 go 1.26.0
 
 replace github.com/getarcaneapp/arcane/cli => ../cli
+
 replace github.com/getarcaneapp/arcane/types => ../types
 
 require (
@@ -20,11 +21,11 @@ require (
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/getarcaneapp/arcane/cli v1.16.3
-	github.com/getarcaneapp/arcane/types v1.16.3
+	github.com/getarcaneapp/arcane/types v1.16.4
 	github.com/gin-contrib/cors v1.7.6
 	github.com/gin-gonic/gin v1.12.0
 	github.com/glebarez/sqlite v1.11.0
-	github.com/go-git/go-git/v5 v5.17.0
+	github.com/go-git/go-git/v5 v5.17.1
 	github.com/goccy/go-yaml v1.19.2
 	github.com/gofrs/flock v0.13.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
