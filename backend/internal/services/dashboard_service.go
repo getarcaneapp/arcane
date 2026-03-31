@@ -416,16 +416,7 @@ func (s *DashboardService) getActionableVulnerabilitiesCountInternal(ctx context
 		return 0, nil
 	}
 
-	summary, err := s.vulnerabilityService.GetEnvironmentSummary(ctx)
-	if err != nil {
-		return 0, fmt.Errorf("failed to load vulnerability summary: %w", err)
-	}
-
-	if summary == nil || summary.Summary == nil {
-		return 0, nil
-	}
-
-	return summary.Summary.Critical + summary.Summary.High, nil
+	return s.vulnerabilityService.GetActionableCountExcludingIgnoredInternal(ctx)
 }
 
 func (s *DashboardService) getExpiringAPIKeysCountInternal(ctx context.Context) (int, error) {
