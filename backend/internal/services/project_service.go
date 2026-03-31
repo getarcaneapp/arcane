@@ -944,12 +944,7 @@ func (s *ProjectService) upsertProjectForDir(ctx context.Context, dirName, dirPa
 		Where("path = ?", dirPath).
 		First(&existing).Error
 
-	filesystemProject := models.Project{
-		Name: dirName,
-		Path: dirPath,
-	}
-	serviceCount, serviceCountErr := s.countServicesFromCompose(ctx, filesystemProject)
-	composeProjectName := s.resolveComposeProjectNameInternal(ctx, dirPath, dirName)
+	serviceCount, composeProjectName, serviceCountErr := s.loadComposeMetadataForSyncInternal(ctx, dirPath, dirName)
 
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		// Create a minimal project entry
@@ -3151,35 +3146,47 @@ func (s *ProjectService) countServicesFromCompose(ctx context.Context, p models.
 	return len(proj.Services), nil
 }
 
-// resolveComposeProjectNameInternal loads the compose project without forcing a
-// project name so that compose-go can resolve it from COMPOSE_PROJECT_NAME in
-// the .env file (or fall back to the directory name). Returns the effective
-// project name that Docker Compose would use when starting containers, or nil
-// if it matches the normalized directory name (no override needed).
-func (s *ProjectService) resolveComposeProjectNameInternal(ctx context.Context, dirPath, dirName string) *string {
+// loadComposeMetadataForSyncInternal loads the compose file once and returns
+// both the service count and the effective compose project name. This avoids
+// parsing the compose file twice during project sync (once for service count
+// and once for the project name).
+// The effective name is nil when it matches the normalized directory name.
+func (s *ProjectService) loadComposeMetadataForSyncInternal(ctx context.Context, dirPath, dirName string) (serviceCount int, composeProjectName *string, err error) {
 	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
-	projectsDirectory, err := projects.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
-	if err != nil {
-		return nil
+	projectsDirectory, pErr := projects.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
+	if pErr != nil {
+		return 0, nil, pErr
 	}
 
 	pathMapper, pmErr := s.getPathMapper(ctx)
 	if pmErr != nil {
-		slog.WarnContext(ctx, "failed to create path mapper for compose name resolution", "error", pmErr)
+		slog.WarnContext(ctx, "failed to create path mapper, continuing without translation", "error", pmErr)
 	}
 
+	normName := normalizeComposeProjectName(dirName)
 	autoInjectEnv := s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false)
-	// Pass empty project name so compose-go resolves it from COMPOSE_PROJECT_NAME or directory name
+
+	// First, try loading without forcing a project name so compose-go can
+	// resolve COMPOSE_PROJECT_NAME from the .env file. If this fails (e.g.
+	// no .env and directory name is not a valid compose project name), fall
+	// back to the normalized directory name.
 	proj, _, err := projects.LoadComposeProjectFromDir(ctx, dirPath, "", projectsDirectory, autoInjectEnv, pathMapper)
 	if err != nil {
-		return nil
+		proj, _, err = projects.LoadComposeProjectFromDir(ctx, dirPath, normName, projectsDirectory, autoInjectEnv, pathMapper)
+		if err != nil {
+			return 0, nil, err
+		}
 	}
 
-	effectiveName := proj.Name
-	if effectiveName == "" || effectiveName == normalizeComposeProjectName(dirName) {
-		return nil
+	serviceCount = len(proj.Services)
+
+	// If compose-go resolved a different name (from COMPOSE_PROJECT_NAME),
+	// store it so we can match containers correctly.
+	if proj.Name != "" && proj.Name != normName {
+		composeProjectName = new(proj.Name)
 	}
-	return &effectiveName
+
+	return serviceCount, composeProjectName, nil
 }
 
 func (s *ProjectService) calculateProjectStatus(services []ProjectServiceInfo) models.ProjectStatus {
