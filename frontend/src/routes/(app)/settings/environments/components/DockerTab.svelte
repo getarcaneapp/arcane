@@ -25,8 +25,8 @@
 			<Card.Description>{m.environments_config_description()}</Card.Description>
 		</div>
 	</Card.Header>
-	<Card.Content class="space-y-6 p-4">
-		<div class="grid gap-6 sm:grid-cols-2">
+	<Card.Content class="space-y-6 lg:p-6 lg:pt-0">
+		<div class="grid gap-6 sm:grid-cols-2 lg:gap-8">
 			<!-- Prune Mode -->
 			<div class="space-y-2">
 				<SelectWithLabel
@@ -80,7 +80,7 @@
 				/>
 			</div>
 
-			<div class="space-y-4 rounded-lg border p-4">
+			<div class="space-y-4 pt-1 sm:col-span-2">
 				<div class="flex items-center justify-between">
 					<div class="space-y-0.5">
 						<Label for="auto-inject-env" class="text-sm font-medium">{m.docker_auto_inject_env_label()}</Label>

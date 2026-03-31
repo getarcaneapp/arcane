@@ -34,14 +34,14 @@
 			<Card.Description>{m.environments_config_description()}</Card.Description>
 		</div>
 	</Card.Header>
-	<Card.Content class="space-y-6 p-4">
-		<div class="space-y-6 rounded-lg border p-4">
+	<Card.Content class="space-y-6 lg:p-6 lg:pt-0">
+		<div class="space-y-6">
 			<div class="space-y-0.5">
 				<h3 class="text-sm font-medium">{m.resource_environment_cap()}</h3>
 				<div class="text-muted-foreground text-xs">{m.environments_basic_info_description()}</div>
 			</div>
 
-			<div class="grid gap-6 sm:grid-cols-2">
+			<div class="grid gap-6 sm:grid-cols-2 lg:gap-8">
 				<div class="space-y-2">
 					<TextInputWithLabel
 						id="env-name"
@@ -52,8 +52,8 @@
 					/>
 				</div>
 
-				<div class="space-y-4 rounded-lg border p-4">
-					<div class="flex items-center justify-between gap-4">
+				<div class="space-y-2">
+					<div class="flex items-center justify-between gap-4 pt-1 lg:pt-8">
 						<div class="space-y-0.5">
 							<Label for="env-enabled" class="text-sm font-medium">{m.common_enabled()}</Label>
 							<div class="text-muted-foreground text-xs">{m.environments_enable_disable_description()}</div>
@@ -125,7 +125,8 @@
 		</div>
 
 		{#if showSettingsSections}
-			<div class="grid gap-6 sm:grid-cols-2">
+			<div class="border-border mt-4 border-t pt-6"></div>
+			<div class="grid gap-6 sm:grid-cols-2 lg:gap-8">
 				<div class="space-y-2">
 					<TextInputWithLabel
 						id="projects-directory"
@@ -172,12 +173,12 @@
 						helpText={m.docker_max_upload_size_description()}
 					/>
 				</div>
-				<div class="space-y-4 rounded-lg border p-4 sm:col-span-2">
+				<div class="border-border space-y-4 border-t pt-4 sm:col-span-2">
 					<div class="space-y-0.5">
 						<h3 class="text-sm font-medium">{m.git_sync_file_limits_title()}</h3>
 						<div class="text-muted-foreground text-xs">{m.git_sync_file_limits_description()}</div>
 					</div>
-					<div class="grid gap-4 sm:grid-cols-3">
+					<div class="grid gap-6 sm:grid-cols-3">
 						<TextInputWithLabel
 							id="git-sync-max-files"
 							type="number"
@@ -204,7 +205,7 @@
 						/>
 					</div>
 				</div>
-				<div class="space-y-4 rounded-lg border p-4 sm:col-span-2">
+				<div class="border-border space-y-4 border-t pt-4 sm:col-span-2">
 					<div class="flex items-center justify-between gap-4">
 						<div class="space-y-0.5">
 							<Label for="follow-project-symlinks" class="text-sm font-medium">

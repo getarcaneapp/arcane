@@ -2,8 +2,13 @@ import { test, expect, type Locator, type Page } from '@playwright/test';
 
 const LOCAL_ENV_ID = '0';
 
+function getEnvironmentSettingsUrl(environmentId: string) {
+	const params = new URLSearchParams({ environment: environmentId });
+	return `/settings/environments?${params.toString()}`;
+}
+
 async function openEnvironment(page: Page, environmentId: string) {
-	await page.goto(`/environments/${environmentId}`);
+	await page.goto(getEnvironmentSettingsUrl(environmentId));
 	await page.waitForLoadState('networkidle');
 	await expect(page.locator('#env-name')).toBeVisible();
 	await expect(page.getByRole('button', { name: 'Save', exact: true }).first()).toBeVisible();
@@ -89,6 +94,10 @@ test.describe('Environment Settings UI', () => {
 			await expect(page).toHaveURL(/\/environments\/[^/]+$/);
 
 			const environmentId = new URL(page.url()).pathname.split('/').pop()!;
+			await page.goto(getEnvironmentSettingsUrl(environmentId));
+			await page.waitForLoadState('networkidle');
+			await expect(page.locator('#env-name')).toBeVisible();
+
 			const nameInput = page.locator('#env-name');
 			await nameInput.fill(updatedName);
 			await saveAndWaitForPut(page, `/api/environments/${environmentId}`);

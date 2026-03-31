@@ -1,7 +1,9 @@
 import { test, expect, type Page } from '@playwright/test';
 
 const ROUTES = {
-	environments: '/environments'
+	environments: '/environments',
+	environmentSettings: (environmentId: string) =>
+		`/settings/environments?${new URLSearchParams({ environment: environmentId }).toString()}`
 };
 
 async function openNewEnvironmentSheet(page: Page) {
@@ -135,9 +137,13 @@ test.describe('Edge Agent Environment', () => {
 				await expect(page).toHaveURL(new RegExp(`/environments/${createdEnvironmentId}`));
 			}
 
-			await expect(page.locator('#api-url')).toHaveValue(/edge:\/\/edge-agent-/);
+			const environmentId = createdEnvironmentId ?? new URL(page.url()).pathname.split('/').pop()!;
 			await expect(page.getByText('Edge', { exact: true }).first()).toBeVisible();
 			await expect(page.getByText('Live Tunnel', { exact: true })).toBeVisible();
+
+			await page.goto(ROUTES.environmentSettings(environmentId));
+			await page.waitForLoadState('networkidle');
+			await expect(page.locator('#api-url')).toHaveValue(/edge:\/\/edge-agent-/);
 		} finally {
 			if (createdEnvironmentId) {
 				await page.request.delete(`/api/environments/${createdEnvironmentId}`);
