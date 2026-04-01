@@ -124,7 +124,6 @@ test.describe('Token refresh behaviour', () => {
 			});
 		});
 
-		// Force a protected data endpoint to 401 so the axios interceptor always runs refresh logic.
 		await injectExpired401Always(page, /\/api\/environments\/[^/]+\/containers(?:\/.*)?$/);
 		// Keep /auth/me unauthenticated too so the login page does not immediately bounce back.
 		await injectExpired401Always(page, /\/api\/auth\/me$/);

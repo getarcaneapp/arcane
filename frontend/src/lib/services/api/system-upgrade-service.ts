@@ -1,4 +1,4 @@
-import axios from 'axios';
+import { apiClient } from '../api-service';
 import type { AppVersionInformation } from '$lib/types/application-configuration';
 
 export interface UpgradeCheckResponse {
@@ -28,7 +28,7 @@ type ApiResponse<T> = {
  * @returns Promise with upgrade availability status
  */
 async function checkUpgradeAvailable(): Promise<UpgradeCheckResponse> {
-	const res = await axios.get<UpgradeCheckResponse>('/api/environments/0/system/upgrade/check');
+	const res = await apiClient.get<UpgradeCheckResponse>('/environments/0/system/upgrade/check');
 	return res.data;
 }
 
@@ -37,7 +37,7 @@ async function checkUpgradeAvailable(): Promise<UpgradeCheckResponse> {
  * @returns Promise with upgrade initiation result
  */
 async function triggerUpgrade(): Promise<UpgradeResponse> {
-	const res = await axios.post<UpgradeResponse>('/api/environments/0/system/upgrade');
+	const res = await apiClient.post<UpgradeResponse>('/environments/0/system/upgrade');
 	return res.data;
 }
 
@@ -48,8 +48,8 @@ async function triggerUpgrade(): Promise<UpgradeResponse> {
  */
 async function checkHealth(environmentId: string = '0'): Promise<HealthCheckResult> {
 	try {
-		const endpoint = environmentId === '0' ? '/api/health' : `/api/environments/${environmentId}/system/health`;
-		const res = await axios.head(endpoint, {
+		const endpoint = environmentId === '0' ? '/health' : `/environments/${environmentId}/system/health`;
+		const res = await apiClient.head(endpoint, {
 			timeout: 3000
 		});
 		return { healthy: res.status === 200 };
@@ -64,11 +64,11 @@ async function checkHealth(environmentId: string = '0'): Promise<HealthCheckResu
  */
 async function getVersionInfo(environmentId: string = '0'): Promise<AppVersionInformation> {
 	if (environmentId === '0') {
-		const res = await axios.get<AppVersionInformation>('/api/app-version', { timeout: 5000 });
+		const res = await apiClient.get<AppVersionInformation>('/app-version', { timeout: 5000 });
 		return res.data;
 	}
 
-	const res = await axios.get<ApiResponse<AppVersionInformation>>(`/api/environments/${environmentId}/version`, {
+	const res = await apiClient.get<ApiResponse<AppVersionInformation>>(`/environments/${environmentId}/version`, {
 		timeout: 5000
 	});
 	return res.data.data;

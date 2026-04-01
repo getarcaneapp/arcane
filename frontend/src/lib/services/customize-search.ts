@@ -1,18 +1,18 @@
-import axios from 'axios';
+import { apiClient } from './api-service';
 import type { CustomizeSearchResponse, CustomizeCategory } from '$lib/types/customize-search.type';
 
 export class CustomizeSearchService {
-	private baseUrl = '/api/customize';
+	private baseUrl = '/customize';
 
 	async search(query: string): Promise<CustomizeSearchResponse> {
-		const response = await axios.post<CustomizeSearchResponse>(`${this.baseUrl}/search`, {
+		const response = await apiClient.post<CustomizeSearchResponse>(`${this.baseUrl}/search`, {
 			query
 		});
 		return response.data;
 	}
 
 	async getCategories(): Promise<CustomizeCategory[]> {
-		const response = await axios.get<CustomizeCategory[]>(`${this.baseUrl}/categories`);
+		const response = await apiClient.get<CustomizeCategory[]>(`${this.baseUrl}/categories`);
 		return response.data;
 	}
 }

@@ -1,5 +1,5 @@
 import { version as currentVersion } from '$app/environment';
-import axios from 'axios';
+import { apiClient } from './api-service';
 import type { AppVersionInformation } from '$lib/types/application-configuration';
 
 function getCurrentVersion() {
@@ -8,7 +8,7 @@ function getCurrentVersion() {
 
 async function getVersionInformation(): Promise<AppVersionInformation> {
 	try {
-		const res = await axios.get('/api/app-version', {
+		const res = await apiClient.get('/app-version', {
 			timeout: 2000
 		});
 		const data = res.data as {
