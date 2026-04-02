@@ -64,6 +64,19 @@ export interface RuntimeService {
 	serviceConfig?: ProjectService;
 }
 
+export interface ProjectUpdateInfo {
+	status: 'has_update' | 'up_to_date' | 'unknown' | 'error';
+	hasUpdate: boolean;
+	imageCount: number;
+	checkedImageCount: number;
+	imagesWithUpdates: number;
+	errorCount: number;
+	errorMessage?: string;
+	imageRefs?: string[];
+	updatedImageRefs?: string[];
+	lastCheckedAt?: string;
+}
+
 export interface Project {
 	id: string;
 	name: string;
@@ -82,6 +95,7 @@ export interface Project {
 	lastSyncCommit?: string;
 	gitRepositoryURL?: string;
 	hasBuildDirective?: boolean;
+	updateInfo?: ProjectUpdateInfo;
 	services?: ProjectService[];
 	runtimeServices?: RuntimeService[];
 	composeContent?: string;

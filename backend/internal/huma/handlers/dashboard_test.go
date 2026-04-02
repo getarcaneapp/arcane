@@ -111,7 +111,7 @@ func TestDashboardHandlerGetDashboardReturnsSnapshot(t *testing.T) {
 
 	dockerSvc := newDashboardHandlerTestDockerService(t, settingsSvc, containers, images)
 	handler := &DashboardHandler{
-		dashboardService: services.NewDashboardService(db, dockerSvc, nil, settingsSvc, nil, nil, nil),
+		dashboardService: services.NewDashboardService(db, dockerSvc, nil, nil, settingsSvc, nil, nil, nil),
 	}
 
 	output, err := handler.GetDashboard(context.Background(), &GetDashboardInput{EnvironmentID: "0"})
@@ -144,7 +144,16 @@ func TestDashboardHandlerGetEnvironmentsOverviewReturnsAggregateSummary(t *testi
 	}).Error)
 
 	handler := &DashboardHandler{
-		dashboardService: services.NewDashboardService(db, nil, nil, settingsSvc, nil, services.NewEnvironmentService(db, http.DefaultClient, nil, nil, settingsSvc, nil), services.NewVersionService(nil, true, "1.2.3", "abcdef1234567890", nil, nil)),
+		dashboardService: services.NewDashboardService(
+			db,
+			nil,
+			nil,
+			nil,
+			settingsSvc,
+			nil,
+			services.NewEnvironmentService(db, http.DefaultClient, nil, nil, settingsSvc, nil),
+			services.NewVersionService(nil, true, "1.2.3", "abcdef1234567890", nil, nil),
+		),
 	}
 
 	output, err := handler.GetEnvironmentsOverview(context.Background(), &GetDashboardEnvironmentsOverviewInput{})

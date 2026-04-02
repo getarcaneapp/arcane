@@ -6,6 +6,9 @@ import { TEST_COMPOSE_YAML, TEST_ENV_FILE } from '../setup/project.data';
 const ROUTES = {
 	page: '/projects',
 	apiProjects: '/api/environments/0/projects',
+	apiImageUpdatesCheckAll: '/api/environments/0/image-updates/check-all',
+	apiImageUpdatesCheckBatch: '/api/environments/0/image-updates/check-batch',
+	apiUpdaterRun: '/api/environments/0/updater/run',
 	newProject: '/projects/new'
 };
 
@@ -46,6 +49,69 @@ async function openDropdownMenu(page: Page, trigger: Locator) {
 	await expect(menu).toBeVisible();
 
 	return menu;
+}
+
+async function clickProjectsPageUpdateAction(page: Page) {
+	const updateProjectsButton = page.getByRole('button', { name: 'Update Projects', exact: true });
+	if (await updateProjectsButton.isVisible().catch(() => false)) {
+		await updateProjectsButton.click();
+		return;
+	}
+
+	const moreActionsButton = page.getByRole('button', { name: 'More actions', exact: true });
+	await expect(moreActionsButton).toBeVisible();
+	await moreActionsButton.click();
+	await page.getByRole('menuitem', { name: 'Update Projects', exact: true }).click();
+}
+
+async function clickProjectDetailUpdateAction(page: Page) {
+	const recheckButton = page.getByRole('button', { name: 'Re-check Updates', exact: true }).first();
+	if (await recheckButton.isVisible().catch(() => false)) {
+		await recheckButton.click();
+		return true;
+	}
+
+	const updateTrigger = page.getByTestId('project-update-trigger').first();
+	if (!(await updateTrigger.isVisible().catch(() => false))) {
+		return false;
+	}
+	await updateTrigger.click();
+
+	if (!(await recheckButton.isVisible().catch(() => false))) {
+		return false;
+	}
+
+	await recheckButton.click();
+	return true;
+}
+
+async function fetchProjectDetail(page: Page, projectId: string): Promise<Project | null> {
+	const res = await page.request.get(`/api/environments/0/projects/${projectId}`);
+	if (!res.ok()) {
+		return null;
+	}
+
+	const body = await res.json().catch(() => null as any);
+	if (!body) return null;
+	if (body.project) return body.project as Project;
+	if (body.data?.project) return body.data.project as Project;
+	if (body.data) return body.data as Project;
+	return body as Project;
+}
+
+async function findProjectWithDetailUpdateAction(page: Page): Promise<Project | null> {
+	for (const project of realProjects) {
+		if (Number(project.serviceCount ?? 0) <= 0) {
+			continue;
+		}
+
+		const detail = await fetchProjectDetail(page, project.id || project.name);
+		if ((detail?.updateInfo?.imageRefs?.length ?? 0) > 0) {
+			return detail;
+		}
+	}
+
+	return null;
 }
 
 function getPathname(url: string): string {
@@ -185,6 +251,10 @@ test.describe('Projects Page', () => {
 		await expect(page.locator('table')).toBeVisible();
 	});
 
+	test('should display the updates column', async ({ page }) => {
+		await expect(page.getByRole('columnheader', { name: 'Updates' })).toBeVisible();
+	});
+
 	test('should show project actions menu', async ({ page }) => {
 		test.skip(!realProjects.length, 'No projects available for actions menu test');
 
@@ -237,6 +307,34 @@ test.describe('Projects Page', () => {
 			await expect(page.getByRole('link', { name: firstProject.name })).toBeVisible();
 			await searchInput.clear();
 		}
+	});
+
+	test('should check project updates without triggering updater run', async ({ page }) => {
+		let checkAllRequests = 0;
+		let updaterRunRequests = 0;
+
+		await page.route('**/api/environments/*/image-updates/check-all', async (route) => {
+			checkAllRequests += 1;
+			await route.fulfill({
+				status: 200,
+				contentType: 'application/json',
+				body: JSON.stringify({ success: true, data: {} })
+			});
+		});
+
+		await page.route('**/api/environments/*/updater/run', async (route) => {
+			updaterRunRequests += 1;
+			await route.fulfill({
+				status: 200,
+				contentType: 'application/json',
+				body: JSON.stringify({ success: true, data: { items: [] } })
+			});
+		});
+
+		await clickProjectsPageUpdateAction(page);
+
+		await expect.poll(() => checkAllRequests).toBe(1);
+		expect(updaterRunRequests).toBe(0);
 	});
 
 	test('should display project status badges', async ({ page }) => {
@@ -884,6 +982,50 @@ test.describe('Project Detail Page', () => {
 		await expect(page.getByRole('tab', { name: /Services/i })).toBeVisible();
 		await expect(page.getByRole('tab', { name: /Configuration|Config/i })).toBeVisible();
 		await expect(page.getByRole('tab', { name: /Logs/i })).toBeVisible();
+	});
+
+	test('should check updates for the current project via the image batch endpoint', async ({
+		page
+	}) => {
+		const projectWithServices = await findProjectWithDetailUpdateAction(page);
+		test.skip(
+			!projectWithServices,
+			'No project with detail-page update action available for project update check test'
+		);
+
+		let batchRequests = 0;
+		let updaterRunRequests = 0;
+
+		await page.route('**/api/environments/*/image-updates/check-batch', async (route) => {
+			batchRequests += 1;
+			const body = route.request().postDataJSON() as { imageRefs?: string[] } | null;
+			expect(Array.isArray(body?.imageRefs)).toBe(true);
+			expect((body?.imageRefs?.length ?? 0) > 0).toBe(true);
+
+			await route.fulfill({
+				status: 200,
+				contentType: 'application/json',
+				body: JSON.stringify({ success: true, data: {} })
+			});
+		});
+
+		await page.route('**/api/environments/*/updater/run', async (route) => {
+			updaterRunRequests += 1;
+			await route.fulfill({
+				status: 200,
+				contentType: 'application/json',
+				body: JSON.stringify({ success: true, data: { items: [] } })
+			});
+		});
+
+		await page.goto(`/projects/${projectWithServices!.id || projectWithServices!.name}`);
+		await page.waitForLoadState('networkidle');
+
+		const clicked = await clickProjectDetailUpdateAction(page);
+		test.skip(!clicked, 'Current project detail view has no clickable update action');
+
+		await expect.poll(() => batchRequests).toBe(1);
+		expect(updaterRunRequests).toBe(0);
 	});
 
 	test('should display services tab content', async ({ page }) => {

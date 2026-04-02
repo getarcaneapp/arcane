@@ -717,6 +717,8 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 		resp.RuntimeServices = runtimeServices
 	}
 
+	s.enrichProjectUpdateInfoInternal(ctx, &resp)
+
 	return resp, nil
 }
 
@@ -821,6 +823,229 @@ func (s *ProjectService) enrichWithIncludeFiles(ctx context.Context, composeFile
 	} else {
 		slog.WarnContext(ctx, "Failed to parse includes", "error", parseErr, "path", composeFile)
 	}
+}
+
+func (s *ProjectService) enrichProjectUpdateInfoInternal(ctx context.Context, resp *project.Details) {
+	if resp == nil {
+		return
+	}
+
+	imageRefs := buildProjectImageRefsFromComposeConfigsInternal(resp.Services)
+	if len(imageRefs) == 0 {
+		imageRefs = buildProjectImageRefsFromRuntimeServicesInternal(resp.RuntimeServices)
+	}
+
+	var updateInfoByRef map[string]*imagetypes.UpdateInfo
+	if len(imageRefs) > 0 && s.imageService != nil {
+		lookupResult, err := s.imageService.GetUpdateInfoByImageRefs(ctx, imageRefs)
+		if err != nil {
+			slog.WarnContext(ctx, "failed to fetch project update info", "projectID", resp.ID, "projectName", resp.Name, "error", err)
+		} else {
+			updateInfoByRef = lookupResult
+		}
+	}
+
+	resp.UpdateInfo = buildProjectUpdateInfoSummaryInternal(imageRefs, updateInfoByRef)
+}
+
+func (s *ProjectService) enrichProjectsWithUpdateInfoInternal(
+	ctx context.Context,
+	projectsList []models.Project,
+	details []project.Details,
+) {
+	if len(projectsList) == 0 || len(details) == 0 {
+		return
+	}
+
+	imageRefsByProjectID := make(map[string][]string, len(projectsList))
+	allImageRefs := make([]string, 0)
+
+	const maxConcurrentComposeReads = 8
+	type imageRefsResult struct {
+		projectID string
+		refs      []string
+	}
+
+	sem := make(chan struct{}, maxConcurrentComposeReads)
+	resultsCh := make(chan imageRefsResult, len(projectsList))
+
+	var wg sync.WaitGroup
+	for _, proj := range projectsList {
+		wg.Add(1)
+		go func(proj models.Project) {
+			defer wg.Done()
+
+			select {
+			case sem <- struct{}{}:
+			case <-ctx.Done():
+				return
+			}
+			defer func() { <-sem }()
+
+			refs, err := s.getProjectImageRefsFromComposeInternal(ctx, proj)
+			if err != nil {
+				slog.WarnContext(ctx, "failed to resolve project image refs for update summary", "projectID", proj.ID, "projectName", proj.Name, "error", err)
+				return
+			}
+
+			resultsCh <- imageRefsResult{projectID: proj.ID, refs: refs}
+		}(proj)
+	}
+
+	wg.Wait()
+	close(resultsCh)
+
+	for result := range resultsCh {
+		imageRefsByProjectID[result.projectID] = result.refs
+		allImageRefs = append(allImageRefs, result.refs...)
+	}
+
+	var updateInfoByRef map[string]*imagetypes.UpdateInfo
+	if len(allImageRefs) > 0 && s.imageService != nil {
+		lookupResult, err := s.imageService.GetUpdateInfoByImageRefs(ctx, allImageRefs)
+		if err != nil {
+			slog.WarnContext(ctx, "failed to fetch project list update info", "error", err)
+		} else {
+			updateInfoByRef = lookupResult
+		}
+	}
+
+	for i := range details {
+		details[i].UpdateInfo = buildProjectUpdateInfoSummaryInternal(imageRefsByProjectID[details[i].ID], updateInfoByRef)
+	}
+}
+
+func (s *ProjectService) getProjectImageRefsFromComposeInternal(ctx context.Context, proj models.Project) ([]string, error) {
+	projectsDir, err := s.getProjectsDirectoryInternal(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	pathMapper, pmErr := s.getPathMapper(ctx)
+	if pmErr != nil {
+		slog.WarnContext(ctx, "failed to create path mapper while resolving project image refs", "projectID", proj.ID, "projectName", proj.Name, "error", pmErr)
+	}
+
+	autoInjectEnv := s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false)
+	composeProject, _, loadErr := projects.LoadComposeProjectFromDir(
+		ctx,
+		proj.Path,
+		normalizeComposeProjectName(proj.Name),
+		projectsDir,
+		autoInjectEnv,
+		pathMapper,
+	)
+	if loadErr != nil {
+		return nil, fmt.Errorf("load compose project: %w", loadErr)
+	}
+
+	return buildProjectImageRefsFromComposeServicesInternal(composeProject.Services), nil
+}
+
+func buildProjectImageRefsFromComposeServicesInternal(services composetypes.Services) []string {
+	serviceConfigs := make([]composetypes.ServiceConfig, 0, len(services))
+	for _, svc := range services {
+		serviceConfigs = append(serviceConfigs, svc)
+	}
+
+	return buildProjectImageRefsFromComposeConfigsInternal(serviceConfigs)
+}
+
+func buildProjectImageRefsFromComposeConfigsInternal(services []composetypes.ServiceConfig) []string {
+	refs := make([]string, 0, len(services))
+	seen := make(map[string]struct{}, len(services))
+
+	for _, svc := range services {
+		ref := strings.TrimSpace(svc.Image)
+		if ref == "" {
+			continue
+		}
+		if _, exists := seen[ref]; exists {
+			continue
+		}
+		seen[ref] = struct{}{}
+		refs = append(refs, ref)
+	}
+
+	return refs
+}
+
+func buildProjectImageRefsFromRuntimeServicesInternal(services []project.RuntimeService) []string {
+	refs := make([]string, 0, len(services))
+	seen := make(map[string]struct{}, len(services))
+
+	for _, svc := range services {
+		ref := strings.TrimSpace(svc.Image)
+		if ref == "" {
+			continue
+		}
+		if _, exists := seen[ref]; exists {
+			continue
+		}
+		seen[ref] = struct{}{}
+		refs = append(refs, ref)
+	}
+
+	return refs
+}
+
+func buildProjectUpdateInfoSummaryInternal(
+	imageRefs []string,
+	updateInfoByRef map[string]*imagetypes.UpdateInfo,
+) *project.UpdateInfo {
+	imageCount := len(imageRefs)
+	summary := &project.UpdateInfo{
+		Status:     "unknown",
+		HasUpdate:  false,
+		ImageCount: imageCount,
+		ImageRefs:  append([]string(nil), imageRefs...),
+	}
+
+	if imageCount == 0 {
+		return summary
+	}
+
+	var latestCheckTime *time.Time
+
+	for _, imageRef := range imageRefs {
+		info := updateInfoByRef[imageRef]
+		if info == nil {
+			continue
+		}
+
+		summary.CheckedImageCount++
+		if info.HasUpdate {
+			summary.HasUpdate = true
+			summary.ImagesWithUpdates++
+			summary.UpdatedImageRefs = append(summary.UpdatedImageRefs, imageRef)
+		}
+		if strings.TrimSpace(info.Error) != "" {
+			summary.ErrorCount++
+			if summary.ErrorMessage == nil {
+				errMsg := strings.TrimSpace(info.Error)
+				summary.ErrorMessage = &errMsg
+			}
+		}
+		if !info.CheckTime.IsZero() && (latestCheckTime == nil || info.CheckTime.After(*latestCheckTime)) {
+			checkTime := info.CheckTime
+			latestCheckTime = &checkTime
+		}
+	}
+
+	summary.LastCheckedAt = latestCheckTime
+
+	switch {
+	case summary.ImagesWithUpdates > 0:
+		summary.Status = "has_update"
+	case summary.ErrorCount > 0:
+		summary.Status = "error"
+	case summary.CheckedImageCount == imageCount:
+		summary.Status = "up_to_date"
+	default:
+		summary.Status = "unknown"
+	}
+
+	return summary
 }
 
 func (s *ProjectService) enrichWithDirectoryFiles(ctx context.Context, projectPath string, resp *project.Details) {
@@ -2801,11 +3026,13 @@ func (s *ProjectService) StreamProjectLogs(ctx context.Context, projectID string
 func (s *ProjectService) ListProjects(ctx context.Context, params pagination.QueryParams) ([]project.Details, pagination.Response, error) {
 	query := s.db.WithContext(ctx).Model(&models.Project{})
 	statusFilter := ""
+	updatesFilter := ""
 	if params.Filters != nil {
 		statusFilter = strings.TrimSpace(params.Filters["status"])
+		updatesFilter = strings.TrimSpace(params.Filters["updates"])
 	}
-	if statusFilter != "" {
-		return s.listProjectsByStatus(ctx, params, query)
+	if statusFilter != "" || updatesFilter != "" {
+		return s.listProjectsWithDerivedFiltersInternal(ctx, params, query)
 	}
 
 	if term := strings.TrimSpace(params.Search); term != "" {
@@ -2829,6 +3056,7 @@ func (s *ProjectService) ListProjects(ctx context.Context, params pagination.Que
 
 	// Fetch live status concurrently for all projects
 	result := s.fetchProjectStatusConcurrently(ctx, projectsArray)
+	s.enrichProjectsWithUpdateInfoInternal(ctx, projectsArray, result)
 
 	slog.DebugContext(ctx, "Completed ListProjects request",
 		"result_count", len(result))
@@ -2836,11 +3064,37 @@ func (s *ProjectService) ListProjects(ctx context.Context, params pagination.Que
 	return result, paginationResp, nil
 }
 
-func (s *ProjectService) listProjectsByStatus(
+func (s *ProjectService) listProjectsWithDerivedFiltersInternal(
 	ctx context.Context,
 	params pagination.QueryParams,
 	query *gorm.DB,
 ) ([]project.Details, pagination.Response, error) {
+	limit := params.Limit
+	switch {
+	case limit == -1:
+		// Public API contract: exact -1 means "all" (used by the table page-size selector).
+	case limit <= 0:
+		limit = 20
+	case limit > 100:
+		limit = 100
+	}
+	params.Limit = limit
+
+	result, err := s.filterProjectsWithDerivedFiltersInternal(ctx, params, query)
+	if err != nil {
+		return nil, pagination.Response{}, err
+	}
+	paginationResp := pagination.BuildResponseFromFilterResult(result, params)
+
+	return result.Items, paginationResp, nil
+
+}
+
+func (s *ProjectService) filterProjectsWithDerivedFiltersInternal(
+	ctx context.Context,
+	params pagination.QueryParams,
+	query *gorm.DB,
+) (pagination.FilterResult[project.Details], error) {
 	var projectsArray []models.Project
 	if term := strings.TrimSpace(params.Search); term != "" {
 		searchPattern := "%" + term + "%"
@@ -2850,20 +3104,17 @@ func (s *ProjectService) listProjectsByStatus(
 		)
 	}
 	if err := query.Find(&projectsArray).Error; err != nil {
-		return nil, pagination.Response{}, fmt.Errorf("failed to list projects: %w", err)
+		return pagination.FilterResult[project.Details]{}, fmt.Errorf("failed to list projects: %w", err)
 	}
 
 	items := s.fetchProjectStatusConcurrently(ctx, projectsArray)
+	s.enrichProjectsWithUpdateInfoInternal(ctx, projectsArray, items)
 
-	limit := params.Limit
-	if limit <= 0 {
-		limit = 20
-	} else if limit > 100 {
-		limit = 100
-	}
-	params.Limit = limit
+	return pagination.SearchOrderAndPaginate(items, params, s.buildProjectDerivedPaginationConfigInternal()), nil
+}
 
-	config := pagination.Config[project.Details]{
+func (s *ProjectService) buildProjectDerivedPaginationConfigInternal() pagination.Config[project.Details] {
+	return pagination.Config[project.Details]{
 		SearchAccessors: []pagination.SearchAccessor[project.Details]{
 			func(p project.Details) (string, error) { return p.Name, nil },
 			func(p project.Details) (string, error) { return p.Path, nil },
@@ -2921,19 +3172,57 @@ func (s *ProjectService) listProjectsByStatus(
 			},
 		},
 		FilterAccessors: []pagination.FilterAccessor[project.Details]{
-			{
-				Key: "status",
-				Fn: func(p project.Details, filterValue string) bool {
-					return strings.EqualFold(strings.TrimSpace(p.Status), strings.TrimSpace(filterValue))
-				},
-			},
+			s.buildProjectStatusFilterAccessorInternal(),
+			s.buildProjectUpdatesFilterAccessorInternal(),
 		},
 	}
+}
 
-	result := pagination.SearchOrderAndPaginate(items, params, config)
-	paginationResp := pagination.BuildResponseFromFilterResult(result, params)
+func (s *ProjectService) buildProjectStatusFilterAccessorInternal() pagination.FilterAccessor[project.Details] {
+	return pagination.FilterAccessor[project.Details]{
+		Key: "status",
+		Fn: func(p project.Details, filterValue string) bool {
+			return strings.EqualFold(strings.TrimSpace(p.Status), strings.TrimSpace(filterValue))
+		},
+	}
+}
 
-	return result.Items, paginationResp, nil
+func (s *ProjectService) buildProjectUpdatesFilterAccessorInternal() pagination.FilterAccessor[project.Details] {
+	return pagination.FilterAccessor[project.Details]{
+		Key: "updates",
+		Fn: func(p project.Details, filterValue string) bool {
+			return strings.EqualFold(strings.TrimSpace(getProjectUpdateStatusInternal(p.UpdateInfo)), strings.TrimSpace(filterValue))
+		},
+	}
+}
+
+func getProjectUpdateStatusInternal(updateInfo *project.UpdateInfo) string {
+	if updateInfo == nil || strings.TrimSpace(updateInfo.Status) == "" {
+		return "unknown"
+	}
+
+	return updateInfo.Status
+}
+
+func (s *ProjectService) countProjectsByUpdateStatusInternal(ctx context.Context, status string) (int, error) {
+	if strings.TrimSpace(status) == "" {
+		return 0, nil
+	}
+
+	result, err := s.filterProjectsWithDerivedFiltersInternal(ctx, pagination.QueryParams{
+		Filters: map[string]string{
+			"updates": status,
+		},
+		PaginationParams: pagination.PaginationParams{
+			Start: 0,
+			Limit: 0,
+		},
+	}, s.db.WithContext(ctx).Model(&models.Project{}))
+	if err != nil {
+		return 0, err
+	}
+
+	return int(result.TotalCount), nil
 }
 
 // fetchProjectStatusConcurrently fetches live Docker status for multiple projects in parallel

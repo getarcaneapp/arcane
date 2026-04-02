@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/types/base"
@@ -20,6 +23,7 @@ import (
 	dockercontainer "github.com/moby/moby/api/types/container"
 	dockerimage "github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/client"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
@@ -96,7 +100,7 @@ func newDashboardTestVersionServiceInternal() *VersionService {
 
 func TestDashboardService_GetActionItems_IncludesExpiringAPIKeys(t *testing.T) {
 	db, settingsSvc := setupDashboardServiceTestDB(t)
-	svc := NewDashboardService(db, nil, nil, settingsSvc, nil, nil, nil)
+	svc := NewDashboardService(db, nil, nil, nil, settingsSvc, nil, nil, nil)
 
 	now := time.Now()
 	createDashboardTestAPIKey(t, db, models.ApiKey{
@@ -140,7 +144,7 @@ func TestDashboardService_GetActionItems_IncludesExpiringAPIKeys(t *testing.T) {
 
 func TestDashboardService_GetActionItems_DebugAllGoodReturnsNoItems(t *testing.T) {
 	db, settingsSvc := setupDashboardServiceTestDB(t)
-	svc := NewDashboardService(db, nil, nil, settingsSvc, nil, nil, nil)
+	svc := NewDashboardService(db, nil, nil, nil, settingsSvc, nil, nil, nil)
 
 	createDashboardTestAPIKey(t, db, models.ApiKey{
 		Name:      "expiring-soon",
@@ -201,7 +205,12 @@ func TestDashboardService_GetSnapshot_ReturnsDashboardSnapshot(t *testing.T) {
 		{ID: "sha256:image-c", RepoTags: []string{"ghcr.io/getarcaneapp/arcane:latest"}, Created: 1730000000, Size: 175},
 	}
 
-	createDashboardTestImageUpdateRecord(t, db, models.ImageUpdateRecord{ID: "sha256:image-b", HasUpdate: true})
+	createDashboardTestImageUpdateRecord(t, db, models.ImageUpdateRecord{
+		ID:         "sha256:image-b",
+		Repository: "docker.io/repo/worker",
+		Tag:        "latest",
+		HasUpdate:  true,
+	})
 
 	createDashboardTestAPIKey(t, db, models.ApiKey{
 		Name:      "expiring-soon",
@@ -212,7 +221,20 @@ func TestDashboardService_GetSnapshot_ReturnsDashboardSnapshot(t *testing.T) {
 	})
 
 	dockerSvc := newDashboardTestDockerService(t, settingsSvc, containers, images)
-	svc := NewDashboardService(db, dockerSvc, nil, settingsSvc, nil, nil, nil)
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	require.NoError(t, settingsSvc.SetStringSetting(context.Background(), "projectsDirectory", projectsDir))
+	projectPath := createComposeProjectDir(t, projectsDir, "project-with-update")
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("services:\n  app:\n    image: repo/worker:latest\n"), 0o644))
+	require.NoError(t, db.WithContext(context.Background()).Create(&models.Project{
+		BaseModel: models.BaseModel{ID: "project-with-update"},
+		Name:      "project-with-update",
+		DirName:   ptr("project-with-update"),
+		Path:      projectPath,
+		Status:    models.ProjectStatusStopped,
+	}).Error)
+	projectSvc := NewProjectService(db, settingsSvc, nil, &ImageService{db: db}, nil, nil, config.Load())
+	svc := NewDashboardService(db, dockerSvc, nil, projectSvc, settingsSvc, nil, nil, nil)
 
 	snapshot, err := svc.GetSnapshot(context.Background(), DashboardActionItemsOptions{})
 	require.NoError(t, err)
@@ -235,7 +257,7 @@ func TestDashboardService_GetSnapshot_ReturnsDashboardSnapshot(t *testing.T) {
 
 	require.ElementsMatch(t, []dashboardtypes.ActionItem{
 		{Kind: dashboardtypes.ActionItemKindStoppedContainers, Count: 1, Severity: dashboardtypes.ActionItemSeverityWarning},
-		{Kind: dashboardtypes.ActionItemKindImageUpdates, Count: 1, Severity: dashboardtypes.ActionItemSeverityWarning},
+		{Kind: dashboardtypes.ActionItemKindImageUpdates, Count: 2, Severity: dashboardtypes.ActionItemSeverityWarning},
 		{Kind: dashboardtypes.ActionItemKindExpiringKeys, Count: 1, Severity: dashboardtypes.ActionItemSeverityWarning},
 	}, snapshot.ActionItems.Items)
 }
@@ -262,7 +284,7 @@ func TestDashboardService_GetSnapshot_DebugAllGoodOnlyClearsActionItems(t *testi
 	createDashboardTestImageUpdateRecord(t, db, models.ImageUpdateRecord{ID: "sha256:image-b", HasUpdate: true})
 
 	dockerSvc := newDashboardTestDockerService(t, settingsSvc, containers, images)
-	svc := NewDashboardService(db, dockerSvc, nil, settingsSvc, nil, nil, nil)
+	svc := NewDashboardService(db, dockerSvc, nil, nil, settingsSvc, nil, nil, nil)
 
 	snapshot, err := svc.GetSnapshot(context.Background(), DashboardActionItemsOptions{DebugAllGood: true})
 	require.NoError(t, err)
@@ -359,7 +381,7 @@ func TestDashboardService_GetEnvironmentsOverview_ReturnsLocalAndRemoteSummaries
 
 	dockerSvc := newDashboardTestDockerService(t, settingsSvc, containers, images)
 	envSvc := NewEnvironmentService(db, remoteServer.Client(), nil, nil, settingsSvc, nil)
-	svc := NewDashboardService(db, dockerSvc, nil, settingsSvc, nil, envSvc, newDashboardTestVersionServiceInternal())
+	svc := NewDashboardService(db, dockerSvc, nil, nil, settingsSvc, nil, envSvc, newDashboardTestVersionServiceInternal())
 
 	overview, err := svc.GetEnvironmentsOverview(context.Background(), DashboardActionItemsOptions{})
 	require.NoError(t, err)
@@ -405,7 +427,7 @@ func TestDashboardService_GetEnvironmentsOverview_HandlesRemoteSnapshotFailure(t
 	})
 
 	envSvc := NewEnvironmentService(db, http.DefaultClient, nil, nil, settingsSvc, nil)
-	svc := NewDashboardService(db, nil, nil, settingsSvc, nil, envSvc, newDashboardTestVersionServiceInternal())
+	svc := NewDashboardService(db, nil, nil, nil, settingsSvc, nil, envSvc, newDashboardTestVersionServiceInternal())
 
 	overview, err := svc.GetEnvironmentsOverview(context.Background(), DashboardActionItemsOptions{})
 	require.NoError(t, err)
@@ -471,7 +493,7 @@ func TestDashboardService_GetEnvironmentsOverview_OmitsVersionInfoWhenFetchFails
 	})
 
 	envSvc := NewEnvironmentService(db, remoteServer.Client(), nil, nil, settingsSvc, nil)
-	svc := NewDashboardService(db, nil, nil, settingsSvc, nil, envSvc, newDashboardTestVersionServiceInternal())
+	svc := NewDashboardService(db, nil, nil, nil, settingsSvc, nil, envSvc, newDashboardTestVersionServiceInternal())
 
 	overview, err := svc.GetEnvironmentsOverview(context.Background(), DashboardActionItemsOptions{})
 	require.NoError(t, err)
@@ -481,4 +503,64 @@ func TestDashboardService_GetEnvironmentsOverview_OmitsVersionInfoWhenFetchFails
 	require.Equal(t, dashboardtypes.EnvironmentSnapshotStateReady, overview.Environments[0].SnapshotState)
 	require.Equal(t, 1, overview.Environments[0].Containers.TotalContainers)
 	require.Nil(t, overview.Environments[0].VersionInfo)
+}
+
+func TestDashboardService_GetActionItems_CountsAffectedResources(t *testing.T) {
+	db, settingsSvc := setupDashboardServiceTestDB(t)
+	ctx := context.Background()
+
+	containers := []dockercontainer.Summary{
+		{
+			ID:      "container-updated",
+			Names:   []string{"/updated-app"},
+			Image:   "repo/app:latest",
+			ImageID: "sha256:image-a",
+			Created: 1700000000,
+			State:   "running",
+			Status:  "Up 2 hours",
+			Labels:  map[string]string{},
+		},
+	}
+	images := []dockerimage.Summary{
+		{ID: "sha256:image-a", RepoTags: []string{"repo/app:latest"}, Created: 1710000000, Size: 100},
+		{ID: "sha256:image-unused", RepoTags: []string{"repo/unused:latest"}, Created: 1710000001, Size: 50},
+	}
+
+	createDashboardTestImageUpdateRecord(t, db, models.ImageUpdateRecord{
+		ID:         "sha256:image-a",
+		Repository: "docker.io/repo/app",
+		Tag:        "latest",
+		HasUpdate:  true,
+	})
+	createDashboardTestImageUpdateRecord(t, db, models.ImageUpdateRecord{
+		ID:         "sha256:image-unused",
+		Repository: "docker.io/repo/unused",
+		Tag:        "latest",
+		HasUpdate:  true,
+	})
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	require.NoError(t, settingsSvc.SetStringSetting(ctx, "projectsDirectory", projectsDir))
+	projectPath := createComposeProjectDir(t, projectsDir, "project-with-update")
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("services:\n  app:\n    image: repo/app:latest\n"), 0o644))
+	require.NoError(t, db.WithContext(ctx).Create(&models.Project{
+		BaseModel: models.BaseModel{ID: "project-with-update"},
+		Name:      "project-with-update",
+		DirName:   ptr("project-with-update"),
+		Path:      projectPath,
+		Status:    models.ProjectStatusStopped,
+	}).Error)
+
+	dockerSvc := newDashboardTestDockerService(t, settingsSvc, containers, images)
+	projectSvc := NewProjectService(db, settingsSvc, nil, &ImageService{db: db}, nil, nil, config.Load())
+	svc := NewDashboardService(db, dockerSvc, nil, projectSvc, settingsSvc, nil, nil, nil)
+
+	actionItems, err := svc.GetActionItems(ctx, DashboardActionItemsOptions{})
+	require.NoError(t, err)
+	require.NotNil(t, actionItems)
+
+	require.Len(t, actionItems.Items, 1)
+	assert.Equal(t, dashboardtypes.ActionItemKindImageUpdates, actionItems.Items[0].Kind)
+	assert.Equal(t, 2, actionItems.Items[0].Count)
 }

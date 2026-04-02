@@ -44,6 +44,7 @@ type ListContainersInput struct {
 	GroupBy         string `query:"groupBy" doc:"Optional grouping mode (for example: project)"`
 	IncludeInternal bool   `query:"includeInternal" default:"false" doc:"Include internal containers"`
 	Updates         string `query:"updates" doc:"Filter by update status (has_update, up_to_date, error, unknown)"`
+	Standalone      string `query:"standalone" doc:"Filter standalone containers only (true/false)"`
 }
 
 type ListContainersOutput struct {
@@ -243,6 +244,9 @@ func (h *ContainerHandler) ListContainers(ctx context.Context, input *ListContai
 	filters := make(map[string]string)
 	if input.Updates != "" {
 		filters["updates"] = input.Updates
+	}
+	if input.Standalone != "" {
+		filters["standalone"] = input.Standalone
 	}
 
 	params := pagination.QueryParams{

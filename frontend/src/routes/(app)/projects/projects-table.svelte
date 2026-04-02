@@ -6,6 +6,7 @@
 	import { EditIcon, StartIcon, RestartIcon, StopIcon, TrashIcon, RedeployIcon, EllipsisIcon } from '$lib/icons';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { goto } from '$app/navigation';
+	import { toast } from 'svelte-sonner';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import { getStatusVariant } from '$lib/utils/status.utils';
@@ -14,26 +15,37 @@
 	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
+	import { imageService } from '$lib/services/image-service';
 	import { projectService } from '$lib/services/project-service';
 	import { FolderOpenIcon, LayersIcon, CalendarIcon, ProjectsIcon, GitBranchIcon, RefreshIcon } from '$lib/icons';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import IconImage from '$lib/components/icon-image.svelte';
 	import type { ActionStatus } from './projects-table.helpers';
 	import { createProjectActions } from './projects-table.actions';
+	import ProjectUpdateItem from '$lib/components/project-update-item.svelte';
+	import {
+		getProjectUpdateStatus,
+		getProjectUpdateText,
+		getProjectUpdateTooltip,
+		getProjectUpdateVariant
+	} from '$lib/utils/project-update.util';
 
 	let {
 		projects = $bindable(),
 		selectedIds = $bindable(),
 		requestOptions = $bindable(),
+		withoutFilters = false,
 		onRefreshData
 	}: {
 		projects: Paginated<Project>;
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
+		withoutFilters?: boolean;
 		onRefreshData?: (options: SearchPaginationSortRequest) => Promise<void>;
 	} = $props();
 
 	let actionStatus = $state<Record<string, ActionStatus>>({});
+	let checkingProjectIds = $state<Record<string, boolean>>({});
 
 	let isBulkLoading = $state({
 		up: false,
@@ -47,6 +59,39 @@
 			return;
 		}
 		projects = await projectService.getProjects(options);
+	}
+
+	async function handleCheckProjectUpdates(project: Project) {
+		const imageRefs = project.updateInfo?.imageRefs ?? [];
+		if (imageRefs.length === 0 || checkingProjectIds[project.id]) {
+			return;
+		}
+
+		checkingProjectIds = {
+			...checkingProjectIds,
+			[project.id]: true
+		};
+
+		try {
+			const results = await imageService.checkMultipleImages(imageRefs);
+			const firstError = Object.values(results)
+				.find((result) => !!result?.error?.trim())
+				?.error?.trim();
+			const hasErrors = !!firstError;
+			if (hasErrors) {
+				toast.error(firstError || m.containers_check_updates_failed());
+			} else {
+				toast.success(m.images_update_check_completed());
+			}
+			await refreshProjects(requestOptions);
+		} catch {
+			toast.error(m.containers_check_updates_failed());
+		} finally {
+			checkingProjectIds = {
+				...checkingProjectIds,
+				[project.id]: false
+			};
+		}
 	}
 
 	function getStatusTooltip(project: Project): string | undefined {
@@ -75,18 +120,26 @@
 	const columns = [
 		{ accessorKey: 'id', title: m.common_id(), hidden: true },
 		{ accessorKey: 'name', title: m.common_name(), sortable: true, cell: NameCell },
-		{ accessorKey: 'path', title: m.projects_col_directory(), sortable: true, cell: DirectoryCell },
+		{ accessorKey: 'path', title: m.common_working_directory(), sortable: true, cell: DirectoryCell },
 		{ accessorKey: 'gitOpsManagedBy', title: m.projects_col_provider(), cell: ProviderCell },
 		{ accessorKey: 'status', title: m.common_status(), sortable: true, cell: StatusCell },
+		{
+			id: 'updates',
+			accessorFn: (row) => getProjectUpdateStatus(row.updateInfo),
+			title: m.containers_update_column(),
+			sortable: false,
+			cell: UpdatesCell
+		},
 		{ accessorKey: 'createdAt', title: m.common_created(), sortable: true, cell: CreatedCell },
 		{ accessorKey: 'serviceCount', title: m.compose_services(), sortable: true }
 	] satisfies ColumnSpec<Project>[];
 
 	const mobileFields = [
 		{ id: 'id', label: m.common_id(), defaultVisible: false },
-		{ id: 'directory', label: m.projects_col_directory(), defaultVisible: true },
+		{ id: 'directory', label: m.common_working_directory(), defaultVisible: true },
 		{ id: 'provider', label: m.projects_col_provider(), defaultVisible: true },
 		{ id: 'status', label: m.common_status(), defaultVisible: true },
+		{ id: 'updates', label: m.containers_update_column(), defaultVisible: true },
 		{ id: 'serviceCount', label: m.compose_services(), defaultVisible: true },
 		{ id: 'createdAt', label: m.common_created(), defaultVisible: true }
 	];
@@ -163,16 +216,23 @@
 	/>
 {/snippet}
 
+{#snippet UpdatesCell({ item }: { item: Project })}
+	<ProjectUpdateItem
+		updateInfo={item.updateInfo}
+		onCheck={() => handleCheckProjectUpdates(item)}
+		checking={!!checkingProjectIds[item.id]}
+		class="mr-2"
+	/>
+{/snippet}
+
 {#snippet CreatedCell({ value }: { value: unknown })}
 	{#if value}{format(new Date(String(value)), 'PP p')}{/if}
 {/snippet}
 
 {#snippet ProjectMobileCardSnippet({
-	row,
 	item,
 	mobileFieldVisibility
 }: {
-	row: any;
 	item: Project;
 	mobileFieldVisibility: MobileFieldVisibility;
 })}
@@ -185,24 +245,32 @@
 			alt: item.name
 		})}
 		title={(item: Project) => item.name}
-		subtitle={(item: Project) => ((mobileFieldVisibility.id ?? true) ? item.id : null)}
+		subtitle={(item: Project) => ((mobileFieldVisibility['id'] ?? true) ? item.id : null)}
 		badges={[
 			(item: Project) =>
-				(mobileFieldVisibility.status ?? true)
+				(mobileFieldVisibility['status'] ?? true)
 					? {
 							variant: getStatusVariant(item.status),
 							text: capitalizeFirstLetter(item.status),
 							tooltip: getStatusTooltip(item)
 						}
+					: null,
+			(item: Project) =>
+				(mobileFieldVisibility['updates'] ?? true)
+					? {
+							variant: getProjectUpdateVariant(item.updateInfo),
+							text: getProjectUpdateText(item.updateInfo),
+							tooltip: getProjectUpdateTooltip(item.updateInfo)
+						}
 					: null
 		]}
 		fields={[
 			{
-				label: m.projects_col_directory(),
+				label: m.common_working_directory(),
 				getValue: (item: Project) => item.relativePath ?? item.dirName ?? item.path,
 				icon: FolderOpenIcon,
 				iconVariant: 'gray' as const,
-				show: mobileFieldVisibility.directory ?? true
+				show: mobileFieldVisibility['directory'] ?? true
 			},
 			{
 				label: m.projects_col_provider(),
@@ -212,7 +280,7 @@
 					text: item.gitOpsManagedBy ? m.projects_provider_git() : m.projects_provider_local()
 				}),
 				component: ProviderField,
-				show: mobileFieldVisibility.provider ?? true
+				show: mobileFieldVisibility['provider'] ?? true
 			},
 			{
 				label: m.compose_services(),
@@ -222,10 +290,10 @@
 				},
 				icon: LayersIcon,
 				iconVariant: 'gray' as const,
-				show: mobileFieldVisibility.serviceCount ?? true
+				show: mobileFieldVisibility['serviceCount'] ?? true
 			}
 		]}
-		footer={(mobileFieldVisibility.createdAt ?? true) && item.createdAt
+		footer={(mobileFieldVisibility['createdAt'] ?? true) && item.createdAt
 			? {
 					label: m.common_created(),
 					getValue: (item: Project) => format(new Date(item.createdAt), 'PP p'),
@@ -346,6 +414,7 @@
 	bind:requestOptions
 	bind:selectedIds
 	bind:mobileFieldVisibility
+	{withoutFilters}
 	onRefresh={async (options) => {
 		requestOptions = options;
 		await refreshProjects(options);
