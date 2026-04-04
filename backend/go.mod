@@ -25,7 +25,7 @@ require (
 	github.com/gin-contrib/cors v1.7.6
 	github.com/gin-gonic/gin v1.12.0
 	github.com/glebarez/sqlite v1.11.0
-	github.com/go-git/go-git/v5 v5.17.1
+	github.com/go-git/go-git/v5 v5.17.2
 	github.com/goccy/go-yaml v1.19.2
 	github.com/gofrs/flock v0.13.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
@@ -39,7 +39,7 @@ require (
 	github.com/moby/buildkit v0.28.1
 	github.com/moby/go-archive v0.2.0
 	github.com/moby/moby/api v1.54.1
-	github.com/moby/moby/client v0.3.0
+	github.com/moby/moby/client v0.4.0
 	github.com/moby/patternmatcher v0.6.1
 	github.com/nicholas-fedor/shoutrrr v0.14.1
 	github.com/opencontainers/go-digest v1.0.0
