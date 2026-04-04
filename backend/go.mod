@@ -38,7 +38,7 @@ require (
 	github.com/lmittmann/tint v1.1.3
 	github.com/moby/buildkit v0.28.1
 	github.com/moby/go-archive v0.2.0
-	github.com/moby/moby/api v1.54.0
+	github.com/moby/moby/api v1.54.1
 	github.com/moby/moby/client v0.3.0
 	github.com/moby/patternmatcher v0.6.1
 	github.com/nicholas-fedor/shoutrrr v0.14.1
