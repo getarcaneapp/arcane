@@ -31,7 +31,7 @@
 		"@sveltejs/kit": "^2.55.0",
 		"@tanstack/svelte-query": "^6.1.13",
 		"@tanstack/table-core": "^8.21.3",
-		"@uiw/codemirror-themes": "^4.25.8",
+		"@uiw/codemirror-themes": "^4.25.9",
 		"@xterm/addon-fit": "^0.11.0",
 		"@xterm/xterm": "^6.0.0",
 		"@xyflow/svelte": "^1.5.2",
