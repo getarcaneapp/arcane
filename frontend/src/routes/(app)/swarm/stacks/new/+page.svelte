@@ -34,7 +34,18 @@
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { ComposeEditorSplit } from '$lib/components/compose';
 
-	let { data } = $props();
+	type StackPageData = {
+		isEditMode?: boolean;
+		sourceStackName?: string | null;
+		selectedTemplate?: Template | null;
+		defaultTemplate?: string | null;
+		envTemplate?: string | null;
+		globalVariables?: { key: string; value: string }[];
+		composeTemplates?: Template[];
+	};
+
+	let { data: pageData }: PageProps = $props();
+	const data = $derived(pageData as StackPageData);
 
 	let saving = $state(false);
 	let converting = $state(false);

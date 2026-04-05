@@ -2,7 +2,7 @@
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import type { ColumnSpec, MobileFieldVisibility } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
-	import { LayersIcon, EllipsisIcon, InspectIcon, TrashIcon } from '$lib/icons';
+	import { LayersIcon, EllipsisIcon, InspectIcon, StopIcon } from '$lib/icons';
 	import { m } from '$lib/paraglide/messages';
 	import { swarmService } from '$lib/services/swarm-service';
 	import type { SwarmStackSummary } from '$lib/types/swarm.type';
@@ -35,20 +35,20 @@
 		goto(`/swarm/stacks/${encodeURIComponent(stack.name)}`);
 	}
 
-	function handleDelete(stack: SwarmStackSummary) {
+	function handleDown(stack: SwarmStackSummary) {
 		openConfirmDialog({
-			title: m.common_delete_title({ resource: m.swarm_stack() }),
-			message: m.common_delete_confirm({ resource: m.swarm_stack() }),
+			title: `${m.common_down()} ${m.swarm_stack()}`,
+			message: `Bring down the live runtime for "${stack.name}" and keep any saved files?`,
 			confirm: {
-				label: m.common_delete(),
+				label: m.common_down(),
 				destructive: true,
 				action: async () => {
 					handleApiResultWithCallbacks({
-						result: await tryCatch(swarmService.removeStack(stack.name)),
-						message: m.common_delete_failed({ resource: `${m.swarm_stack()} "${stack.name}"` }),
+						result: await tryCatch(swarmService.downStack(stack.name)),
+						message: m.common_action_failed(),
 						setLoadingState: (v) => (isLoading = v),
 						onSuccess: async () => {
-							toast.success(m.common_delete_success({ resource: `${m.swarm_stack()} "${stack.name}"` }));
+							toast.success(`${m.swarm_stack()} "${stack.name}" was brought down.`);
 							stacks = await swarmService.getStacks(requestOptions);
 						}
 					});
@@ -141,9 +141,9 @@
 					{m.common_inspect()}
 				</DropdownMenu.Item>
 				<DropdownMenu.Separator />
-				<DropdownMenu.Item variant="destructive" onclick={() => handleDelete(item)} disabled={isLoading}>
-					<TrashIcon class="size-4" />
-					{m.common_delete()}
+				<DropdownMenu.Item variant="destructive" onclick={() => handleDown(item)} disabled={isLoading}>
+					<StopIcon class="size-4" />
+					{m.common_down()}
 				</DropdownMenu.Item>
 			</DropdownMenu.Group>
 		</DropdownMenu.Content>

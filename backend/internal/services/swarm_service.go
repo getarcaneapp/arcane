@@ -20,6 +20,7 @@ import (
 
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
+	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	dockerutil "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge"
@@ -32,6 +33,7 @@ import (
 	"github.com/moby/moby/api/types/system"
 	dockerclient "github.com/moby/moby/client"
 	"golang.org/x/sync/errgroup"
+	"gorm.io/gorm"
 )
 
 const swarmNodeIdentityProbeConcurrency = 5
@@ -40,6 +42,7 @@ const defaultSwarmListenAddr = "0.0.0.0:2377"
 
 // SwarmService provides Docker Swarm related operations.
 type SwarmService struct {
+	db                 *database.DB
 	dockerService      *DockerClientService
 	settingsService    *SettingsService
 	kvService          *KVService
@@ -48,6 +51,7 @@ type SwarmService struct {
 }
 
 func NewSwarmService(
+	db *database.DB,
 	dockerService *DockerClientService,
 	settingsService *SettingsService,
 	kvService *KVService,
@@ -55,6 +59,7 @@ func NewSwarmService(
 	environmentService *EnvironmentService,
 ) *SwarmService {
 	return &SwarmService{
+		db:                 db,
 		dockerService:      dockerService,
 		settingsService:    settingsService,
 		kvService:          kvService,
@@ -76,6 +81,11 @@ type swarmNodeAgentRuntime struct {
 	lastHeartbeat *time.Time
 	lastPollAt    *time.Time
 	identity      *SwarmNodeIdentity
+}
+
+type stackProjectRuntimeInternal struct {
+	State        swarmtypes.StackProjectRuntimeState
+	ServiceCount int
 }
 
 func (s *SwarmService) IsEnabled(ctx context.Context) (bool, error) {
@@ -744,7 +754,7 @@ func (s *SwarmService) ListTasksPaginated(ctx context.Context, params pagination
 	return result.Items, paginationResp, nil
 }
 
-func (s *SwarmService) ListStacksPaginated(ctx context.Context, environmentID string, params pagination.QueryParams) ([]swarmtypes.StackSummary, pagination.Response, error) {
+func (s *SwarmService) ListStacksPaginated(ctx context.Context, _ string, params pagination.QueryParams) ([]swarmtypes.StackSummary, pagination.Response, error) {
 	if err := s.ensureSwarmManagerInternal(ctx); err != nil {
 		return nil, pagination.Response{}, err
 	}
@@ -787,17 +797,6 @@ func (s *SwarmService) ListStacksPaginated(ctx context.Context, environmentID st
 		if service.UpdatedAt.After(entry.UpdatedAt) {
 			entry.UpdatedAt = service.UpdatedAt
 		}
-	}
-
-	persistedStacks, err := s.listPersistedStackSourcesInternal(ctx, environmentID)
-	if err != nil {
-		return nil, pagination.Response{}, err
-	}
-	for stackName, persisted := range persistedStacks {
-		if _, exists := stacks[stackName]; exists {
-			continue
-		}
-		stacks[stackName] = new(persisted)
 	}
 
 	items := make([]swarmtypes.StackSummary, 0, len(stacks))
@@ -1255,7 +1254,7 @@ func (s *SwarmService) ListNodeTasksPaginated(ctx context.Context, nodeID string
 	return s.listTasksPaginatedWithFiltersInternal(ctx, filters, params)
 }
 
-func (s *SwarmService) GetStack(ctx context.Context, environmentID, stackName string) (*swarmtypes.StackInspect, error) {
+func (s *SwarmService) GetStack(ctx context.Context, _ string, stackName string) (*swarmtypes.StackInspect, error) {
 	if err := s.ensureSwarmManagerInternal(ctx); err != nil {
 		return nil, err
 	}
@@ -1270,21 +1269,7 @@ func (s *SwarmService) GetStack(ctx context.Context, environmentID, stackName st
 		return nil, err
 	}
 	if len(services) == 0 {
-		persisted, err := s.getPersistedStackSourceSummaryInternal(ctx, environmentID, stackName)
-		if err != nil {
-			if cerrdefs.IsNotFound(err) {
-				return nil, cerrdefs.ErrNotFound
-			}
-			return nil, err
-		}
-
-		return &swarmtypes.StackInspect{
-			Name:      persisted.Name,
-			Namespace: persisted.Namespace,
-			Services:  persisted.Services,
-			CreatedAt: persisted.CreatedAt,
-			UpdatedAt: persisted.UpdatedAt,
-		}, nil
+		return nil, cerrdefs.ErrNotFound
 	}
 
 	createdAt := services[0].CreatedAt
@@ -1313,12 +1298,12 @@ func (s *SwarmService) GetStackSource(ctx context.Context, environmentID, stackN
 		return nil, errors.New("stack name is required")
 	}
 
-	_, stackSourceDir, err := s.resolveSwarmStackSourceDirInternal(ctx, environmentID, stackName)
+	stackProject, err := s.getStackProjectRecordInternal(ctx, environmentID, stackName, true)
 	if err != nil {
 		return nil, err
 	}
 
-	composeContent, err := os.ReadFile(filepath.Join(stackSourceDir, swarmStackComposeFilename))
+	composeContent, err := os.ReadFile(filepath.Join(stackProject.Path, swarmStackComposeFilename))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, cerrdefs.ErrNotFound
@@ -1327,7 +1312,7 @@ func (s *SwarmService) GetStackSource(ctx context.Context, environmentID, stackN
 	}
 
 	envContent := ""
-	envBytes, err := os.ReadFile(filepath.Join(stackSourceDir, swarmStackEnvFilename))
+	envBytes, err := os.ReadFile(filepath.Join(stackProject.Path, swarmStackEnvFilename))
 	if err == nil {
 		envContent = string(envBytes)
 	} else if !errors.Is(err, os.ErrNotExist) {
@@ -1335,7 +1320,7 @@ func (s *SwarmService) GetStackSource(ctx context.Context, environmentID, stackN
 	}
 
 	var files []swarmtypes.SyncFile
-	root, err := os.OpenRoot(stackSourceDir)
+	root, err := os.OpenRoot(stackProject.Path)
 	if err == nil {
 		defer func() { _ = root.Close() }()
 		err = fs.WalkDir(root.FS(), ".", func(path string, d fs.DirEntry, walkErr error) error {
@@ -1367,7 +1352,7 @@ func (s *SwarmService) GetStackSource(ctx context.Context, environmentID, stackN
 	}
 
 	return &swarmtypes.StackSource{
-		Name:           stackName,
+		Name:           stackProject.Name,
 		ComposeContent: string(composeContent),
 		EnvContent:     envContent,
 		Files:          files,
@@ -1375,101 +1360,314 @@ func (s *SwarmService) GetStackSource(ctx context.Context, environmentID, stackN
 }
 
 func (s *SwarmService) UpdateStackSource(ctx context.Context, environmentID, stackName string, req swarmtypes.StackSourceUpdateRequest) (*swarmtypes.StackSource, error) {
-	stackName = strings.TrimSpace(stackName)
-	if stackName == "" {
+	currentStackName := strings.TrimSpace(stackName)
+	if currentStackName == "" {
 		return nil, errors.New("stack name is required")
 	}
 	if strings.TrimSpace(req.ComposeContent) == "" {
 		return nil, errors.New("stack compose source is required")
 	}
 
-	if err := s.upsertStackSourceInternal(ctx, environmentID, stackName, req.ComposeContent, req.EnvContent, req.Files); err != nil {
+	targetStackName := currentStackName
+	if requestedName := strings.TrimSpace(req.Name); requestedName != "" {
+		targetStackName = requestedName
+	}
+
+	if targetStackName != currentStackName {
+		if err := s.renameStackProjectInternal(ctx, environmentID, currentStackName, targetStackName); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := s.upsertStackSourceInternal(ctx, environmentID, targetStackName, req.ComposeContent, req.EnvContent, req.Files); err != nil {
 		return nil, err
 	}
 
 	return &swarmtypes.StackSource{
-		Name:           stackName,
+		Name:           targetStackName,
 		ComposeContent: req.ComposeContent,
 		EnvContent:     req.EnvContent,
 		Files:          req.Files,
 	}, nil
 }
 
-func (s *SwarmService) listPersistedStackSourcesInternal(ctx context.Context, environmentID string) (map[string]swarmtypes.StackSummary, error) {
-	_, environmentDir, err := s.resolveSwarmStackSourceEnvironmentDirInternal(ctx, environmentID)
+func (s *SwarmService) ListStackProjectsPaginated(
+	ctx context.Context,
+	environmentID string,
+	params pagination.QueryParams,
+) ([]swarmtypes.StackProjectSummary, pagination.Response, error) {
+	if err := s.SyncStackProjectsFromFileSystem(ctx, environmentID); err != nil {
+		return nil, pagination.Response{}, err
+	}
+
+	persistedStacks, err := s.listPersistedStackSourcesInternal(ctx, environmentID)
+	if err != nil {
+		return nil, pagination.Response{}, err
+	}
+
+	runtimeByName, runtimeAvailable := s.listStackProjectRuntimeStatesInternal(ctx)
+	items := make([]swarmtypes.StackProjectSummary, 0, len(persistedStacks))
+	for _, persisted := range persistedStacks {
+		items = append(items, buildStackProjectSummaryFromPersistedInternal(persisted, runtimeByName, runtimeAvailable))
+	}
+
+	config := s.buildStackProjectPaginationConfigInternal()
+	result := pagination.SearchOrderAndPaginate(items, params, config)
+	paginationResp := buildPaginationResponseInternal(result, params)
+
+	return result.Items, paginationResp, nil
+}
+
+func (s *SwarmService) GetStackProjectStatusCounts(ctx context.Context, environmentID string) (swarmtypes.StackProjectCounts, error) {
+	if err := s.SyncStackProjectsFromFileSystem(ctx, environmentID); err != nil {
+		return swarmtypes.StackProjectCounts{}, err
+	}
+
+	persistedStacks, err := s.listPersistedStackSourcesInternal(ctx, environmentID)
+	if err != nil {
+		return swarmtypes.StackProjectCounts{}, err
+	}
+
+	runtimeByName, runtimeAvailable := s.listStackProjectRuntimeStatesInternal(ctx)
+	counts := swarmtypes.StackProjectCounts{}
+	for _, persisted := range persistedStacks {
+		summary := buildStackProjectSummaryFromPersistedInternal(persisted, runtimeByName, runtimeAvailable)
+		incrementStackProjectCountsInternal(&counts, summary.RuntimeState)
+	}
+
+	return counts, nil
+}
+
+func (s *SwarmService) GetStackProject(ctx context.Context, environmentID, stackName string) (*swarmtypes.StackProjectDetails, error) {
+	stackName = strings.TrimSpace(stackName)
+	if stackName == "" {
+		return nil, errors.New("stack name is required")
+	}
+
+	stackProject, err := s.getStackProjectRecordInternal(ctx, environmentID, stackName, true)
 	if err != nil {
 		return nil, err
 	}
 
-	entries, err := os.ReadDir(environmentDir)
+	source, err := s.GetStackSource(ctx, environmentID, stackName)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return map[string]swarmtypes.StackSummary{}, nil
-		}
-		return nil, fmt.Errorf("failed to list swarm stack source directories: %w", err)
+		return nil, err
 	}
 
-	stacks := make(map[string]swarmtypes.StackSummary, len(entries))
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
+	runtime := s.getStackProjectRuntimeStateInternal(ctx, stackProject.Name)
 
-		summary, err := s.buildPersistedStackSourceSummaryInternal(filepath.Join(environmentDir, entry.Name()), entry.Name())
-		if err != nil {
-			if cerrdefs.IsNotFound(err) {
-				continue
-			}
-			return nil, err
-		}
+	return &swarmtypes.StackProjectDetails{
+		ID:             stackProject.ID,
+		Name:           stackProject.Name,
+		RuntimeState:   runtime.State,
+		ServiceCount:   stackProject.ServiceCount,
+		CreatedAt:      stackProject.CreatedAt,
+		UpdatedAt:      stackProjectUpdatedAtInternal(*stackProject),
+		ComposeContent: source.ComposeContent,
+		EnvContent:     source.EnvContent,
+	}, nil
+}
 
-		stacks[summary.Name] = *summary
+func (s *SwarmService) UpsertStackProject(
+	ctx context.Context,
+	environmentID,
+	stackName string,
+	req swarmtypes.StackSourceUpdateRequest,
+) (*swarmtypes.StackProjectDetails, error) {
+	targetStackName := strings.TrimSpace(req.Name)
+	if targetStackName == "" {
+		targetStackName = strings.TrimSpace(stackName)
+	}
+
+	if _, err := s.UpdateStackSource(ctx, environmentID, stackName, req); err != nil {
+		return nil, err
+	}
+
+	return s.GetStackProject(ctx, environmentID, targetStackName)
+}
+
+func (s *SwarmService) DeleteStackProject(ctx context.Context, environmentID, stackName string) error {
+	stackName = strings.TrimSpace(stackName)
+	if stackName == "" {
+		return errors.New("stack name is required")
+	}
+
+	stackProject, err := s.getStackProjectRecordInternal(ctx, environmentID, stackName, true)
+	if err != nil {
+		if cerrdefs.IsNotFound(err) {
+			return cerrdefs.ErrNotFound
+		}
+		return err
+	}
+
+	runtime := s.getStackProjectRuntimeStateInternal(ctx, stackProject.Name)
+	if runtime.State == swarmtypes.StackProjectRuntimeStateLive {
+		return fmt.Errorf("swarm stack %q is still deployed: %w", stackProject.Name, cerrdefs.ErrConflict)
+	}
+
+	return s.deleteStackSourceInternal(ctx, environmentID, stackProject.Name)
+}
+
+func (s *SwarmService) DownStack(ctx context.Context, stackName string) error {
+	if err := s.ensureSwarmManagerInternal(ctx); err != nil {
+		return err
+	}
+
+	stackName = strings.TrimSpace(stackName)
+	if stackName == "" {
+		return errors.New("stack name is required")
+	}
+
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to connect to Docker: %w", err)
+	}
+
+	services, err := s.listStackServicesRawInternal(ctx, dockerClient, stackName)
+	if err != nil {
+		return err
+	}
+	if len(services) == 0 {
+		return nil
+	}
+
+	if err := s.removeStackServicesInternal(ctx, dockerClient, services); err != nil {
+		return err
+	}
+
+	stackLabel := fmt.Sprintf("%s=%s", swarmtypes.StackNamespaceLabel, stackName)
+	if err := s.removeStackConfigsInternal(ctx, dockerClient, stackLabel); err != nil {
+		return err
+	}
+	if err := s.removeStackSecretsInternal(ctx, dockerClient, stackLabel); err != nil {
+		return err
+	}
+	if err := s.removeStackNetworksInternal(ctx, dockerClient, stackLabel); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *SwarmService) listPersistedStackSourcesInternal(ctx context.Context, environmentID string) (map[string]swarmtypes.StackSummary, error) {
+	var stackProjects []models.SwarmStackProject
+	if err := s.db.WithContext(ctx).
+		Where("environment_id = ?", normalizeSwarmEnvironmentIDInternal(environmentID)).
+		Order("name ASC").
+		Find(&stackProjects).Error; err != nil {
+		return nil, fmt.Errorf("failed to list swarm stack projects: %w", err)
+	}
+
+	stacks := make(map[string]swarmtypes.StackSummary, len(stackProjects))
+	for _, stackProject := range stackProjects {
+		summary := stackProjectModelToSummaryInternal(stackProject)
+		stacks[summary.Name] = summary
 	}
 
 	return stacks, nil
 }
 
 func (s *SwarmService) getPersistedStackSourceSummaryInternal(ctx context.Context, environmentID, stackName string) (*swarmtypes.StackSummary, error) {
-	_, stackSourceDir, err := s.resolveSwarmStackSourceDirInternal(ctx, environmentID, stackName)
+	stackProject, err := s.getStackProjectRecordInternal(ctx, environmentID, stackName, true)
 	if err != nil {
 		return nil, err
 	}
 
-	return s.buildPersistedStackSourceSummaryInternal(stackSourceDir, stackName)
+	summary := stackProjectModelToSummaryInternal(*stackProject)
+	return &summary, nil
 }
 
-func (s *SwarmService) buildPersistedStackSourceSummaryInternal(stackSourceDir, stackName string) (*swarmtypes.StackSummary, error) {
-	composeInfo, err := os.Stat(filepath.Join(stackSourceDir, swarmStackComposeFilename))
+func buildStackProjectSummaryFromPersistedInternal(
+	persisted swarmtypes.StackSummary,
+	runtimeByName map[string]stackProjectRuntimeInternal,
+	runtimeAvailable bool,
+) swarmtypes.StackProjectSummary {
+	runtimeState := swarmtypes.StackProjectRuntimeStateUnavailable
+	serviceCount := persisted.Services
+	if runtimeAvailable {
+		runtimeState = swarmtypes.StackProjectRuntimeStateDown
+	}
+	if runtime, ok := runtimeByName[persisted.Name]; ok {
+		runtimeState = runtime.State
+	}
+
+	return swarmtypes.StackProjectSummary{
+		ID:           persisted.ID,
+		Name:         persisted.Name,
+		RuntimeState: runtimeState,
+		ServiceCount: serviceCount,
+		CreatedAt:    persisted.CreatedAt,
+		UpdatedAt:    persisted.UpdatedAt,
+	}
+}
+
+func incrementStackProjectCountsInternal(counts *swarmtypes.StackProjectCounts, runtimeState swarmtypes.StackProjectRuntimeState) {
+	counts.TotalStackProjects++
+	switch runtimeState {
+	case swarmtypes.StackProjectRuntimeStateLive:
+		counts.LiveStackProjects++
+	case swarmtypes.StackProjectRuntimeStateDown:
+		counts.DownStackProjects++
+	case swarmtypes.StackProjectRuntimeStateUnavailable:
+		counts.UnavailableStackProjects++
+	}
+}
+
+func (s *SwarmService) listStackProjectRuntimeStatesInternal(
+	ctx context.Context,
+) (map[string]stackProjectRuntimeInternal, bool) {
+	if s.dockerService == nil {
+		return map[string]stackProjectRuntimeInternal{}, false
+	}
+
+	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, cerrdefs.ErrNotFound
-		}
-		return nil, fmt.Errorf("failed to stat swarm stack compose source: %w", err)
+		return map[string]stackProjectRuntimeInternal{}, false
 	}
 
-	createdAt := composeInfo.ModTime()
-	updatedAt := composeInfo.ModTime()
-
-	envInfo, err := os.Stat(filepath.Join(stackSourceDir, swarmStackEnvFilename))
-	if err == nil {
-		if envInfo.ModTime().Before(createdAt) {
-			createdAt = envInfo.ModTime()
-		}
-		if envInfo.ModTime().After(updatedAt) {
-			updatedAt = envInfo.ModTime()
-		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return nil, fmt.Errorf("failed to stat swarm stack env source: %w", err)
+	servicesResult, err := dockerClient.ServiceList(ctx, dockerclient.ServiceListOptions{})
+	if err != nil {
+		return map[string]stackProjectRuntimeInternal{}, false
 	}
 
-	return &swarmtypes.StackSummary{
-		ID:        stackName,
-		Name:      stackName,
-		Namespace: stackName,
-		Services:  0,
-		CreatedAt: createdAt,
-		UpdatedAt: updatedAt,
-	}, nil
+	runtimeByName := map[string]stackProjectRuntimeInternal{}
+	for _, service := range servicesResult.Items {
+		stackName := strings.TrimSpace(service.Spec.Labels[swarmtypes.StackNamespaceLabel])
+		if stackName == "" {
+			continue
+		}
+
+		runtime := runtimeByName[stackName]
+		runtime.State = swarmtypes.StackProjectRuntimeStateLive
+		runtime.ServiceCount++
+		runtimeByName[stackName] = runtime
+	}
+
+	return runtimeByName, true
+}
+
+func (s *SwarmService) getStackProjectRuntimeStateInternal(ctx context.Context, stackName string) stackProjectRuntimeInternal {
+	if s.dockerService == nil {
+		return stackProjectRuntimeInternal{State: swarmtypes.StackProjectRuntimeStateUnavailable}
+	}
+
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		return stackProjectRuntimeInternal{State: swarmtypes.StackProjectRuntimeStateUnavailable}
+	}
+
+	services, err := s.listStackServicesRawInternal(ctx, dockerClient, stackName)
+	if err != nil {
+		return stackProjectRuntimeInternal{State: swarmtypes.StackProjectRuntimeStateUnavailable}
+	}
+	if len(services) == 0 {
+		return stackProjectRuntimeInternal{State: swarmtypes.StackProjectRuntimeStateDown}
+	}
+
+	return stackProjectRuntimeInternal{
+		State:        swarmtypes.StackProjectRuntimeStateLive,
+		ServiceCount: len(services),
+	}
 }
 
 func (s *SwarmService) RemoveStack(ctx context.Context, environmentID, stackName string) error {
@@ -1995,6 +2193,9 @@ func (s *SwarmService) waitForRemovedServiceTasksInternal(ctx context.Context, d
 	for {
 		tasksResult, err := dockerClient.TaskList(waitCtx, dockerclient.TaskListOptions{Filters: taskFilters})
 		if err != nil {
+			if isRemovedServiceTaskListGoneInternal(err) {
+				return nil
+			}
 			return fmt.Errorf("failed to list tasks while waiting for stack removal: %w", err)
 		}
 
@@ -2015,6 +2216,19 @@ func (s *SwarmService) waitForRemovedServiceTasksInternal(ctx context.Context, d
 		case <-ticker.C:
 		}
 	}
+}
+
+func isRemovedServiceTaskListGoneInternal(err error) bool {
+	if err == nil {
+		return false
+	}
+	if cerrdefs.IsNotFound(err) {
+		return true
+	}
+
+	errLower := strings.ToLower(err.Error())
+	return strings.Contains(errLower, "service") &&
+		(strings.Contains(errLower, "not found") || strings.Contains(errLower, "no such service"))
 }
 
 func isTaskTerminalInternal(state swarm.TaskState) bool {
@@ -2150,7 +2364,7 @@ func (s *SwarmService) upsertStackSourceInternal(ctx context.Context, environmen
 		}
 	}
 
-	return nil
+	return s.syncStackProjectRecordInternal(ctx, environmentID, stackName)
 }
 
 func (s *SwarmService) deleteStackSourceInternal(ctx context.Context, environmentID, stackName string) error {
@@ -2165,6 +2379,10 @@ func (s *SwarmService) deleteStackSourceInternal(ctx context.Context, environmen
 
 	if err := os.RemoveAll(stackSourceDir); err != nil {
 		return fmt.Errorf("failed to remove swarm stack source directory: %w", err)
+	}
+
+	if err := s.deleteStackProjectRecordInternal(ctx, environmentID, stackName); err != nil {
+		return err
 	}
 
 	// Best-effort cleanup of now-empty environment directory.
@@ -2186,6 +2404,362 @@ func (s *SwarmService) deleteStackSourceInternal(ctx context.Context, environmen
 	}
 
 	return nil
+}
+
+func (s *SwarmService) renameStackProjectInternal(ctx context.Context, environmentID, currentName, targetName string) error {
+	currentName = strings.TrimSpace(currentName)
+	targetName = strings.TrimSpace(targetName)
+	if currentName == "" || targetName == "" {
+		return errors.New("stack name is required")
+	}
+	if currentName == targetName {
+		return nil
+	}
+
+	runtime := s.getStackProjectRuntimeStateInternal(ctx, currentName)
+	if runtime.State == swarmtypes.StackProjectRuntimeStateLive {
+		return fmt.Errorf("swarm stack %q is still deployed: %w", currentName, cerrdefs.ErrConflict)
+	}
+
+	_, currentDir, err := s.resolveSwarmStackSourceDirInternal(ctx, environmentID, currentName)
+	if err != nil {
+		return err
+	}
+
+	_, targetDir, err := s.resolveSwarmStackSourceDirInternal(ctx, environmentID, targetName)
+	if err != nil {
+		return err
+	}
+
+	if _, err := os.Stat(currentDir); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return cerrdefs.ErrNotFound
+		}
+		return fmt.Errorf("failed to inspect current swarm stack source directory: %w", err)
+	}
+
+	if _, err := os.Stat(targetDir); err == nil {
+		return fmt.Errorf("swarm stack %q already exists: %w", targetName, cerrdefs.ErrConflict)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("failed to inspect target swarm stack source directory: %w", err)
+	}
+
+	if err := os.Rename(currentDir, targetDir); err != nil {
+		return fmt.Errorf("failed to rename swarm stack source directory: %w", err)
+	}
+
+	if err := s.deleteStackProjectRecordInternal(ctx, environmentID, currentName); err != nil {
+		rollbackErr := os.Rename(targetDir, currentDir)
+		if rollbackErr != nil {
+			slog.WarnContext(ctx, "failed to rollback swarm stack project rename after DB delete failure", "from", targetDir, "to", currentDir, "error", rollbackErr)
+		}
+		return err
+	}
+
+	if err := s.syncStackProjectRecordInternal(ctx, environmentID, targetName); err != nil {
+		rollbackErr := os.Rename(targetDir, currentDir)
+		if rollbackErr != nil {
+			slog.WarnContext(ctx, "failed to rollback swarm stack project rename after sync failure", "from", targetDir, "to", currentDir, "error", rollbackErr)
+			return err
+		}
+
+		if restoreErr := s.syncStackProjectRecordInternal(ctx, environmentID, currentName); restoreErr != nil {
+			slog.WarnContext(ctx, "failed to restore swarm stack project record after rename rollback", "stackName", currentName, "error", restoreErr)
+		}
+		return err
+	}
+
+	return nil
+}
+
+func (s *SwarmService) SyncStackProjectsFromFileSystem(ctx context.Context, environmentID string) error {
+	_, environmentDir, err := s.resolveSwarmStackSourceEnvironmentDirInternal(ctx, environmentID)
+	if err != nil {
+		return err
+	}
+
+	entries, err := os.ReadDir(environmentDir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return s.cleanupStackProjectRecordsInternal(ctx, environmentID, map[string]struct{}{})
+		}
+		return fmt.Errorf("failed to list swarm stack project directories: %w", err)
+	}
+
+	seen := make(map[string]struct{}, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		stackProject, err := s.buildStackProjectRecordFromDirInternal(ctx, environmentID, entry.Name())
+		if err != nil {
+			if cerrdefs.IsNotFound(err) {
+				continue
+			}
+			return err
+		}
+
+		if err := s.upsertStackProjectRecordInternal(ctx, stackProject); err != nil {
+			return err
+		}
+		seen[stackProject.Path] = struct{}{}
+	}
+
+	return s.cleanupStackProjectRecordsInternal(ctx, environmentID, seen)
+}
+
+func (s *SwarmService) syncStackProjectRecordInternal(ctx context.Context, environmentID, stackName string) error {
+	stackProject, err := s.buildStackProjectRecordFromDirInternal(ctx, environmentID, stackName)
+	if err != nil {
+		return err
+	}
+
+	return s.upsertStackProjectRecordInternal(ctx, stackProject)
+}
+
+func (s *SwarmService) buildStackProjectRecordFromDirInternal(
+	ctx context.Context,
+	environmentID,
+	stackName string,
+) (*models.SwarmStackProject, error) {
+	_, stackSourceDir, err := s.resolveSwarmStackSourceDirInternal(ctx, environmentID, stackName)
+	if err != nil {
+		return nil, err
+	}
+
+	composeInfo, err := os.Stat(filepath.Join(stackSourceDir, swarmStackComposeFilename))
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, cerrdefs.ErrNotFound
+		}
+		return nil, fmt.Errorf("failed to stat swarm stack compose source: %w", err)
+	}
+
+	createdAt := composeInfo.ModTime()
+	updatedAt := composeInfo.ModTime()
+
+	envInfo, err := os.Stat(filepath.Join(stackSourceDir, swarmStackEnvFilename))
+	if err == nil {
+		if envInfo.ModTime().Before(createdAt) {
+			createdAt = envInfo.ModTime()
+		}
+		if envInfo.ModTime().After(updatedAt) {
+			updatedAt = envInfo.ModTime()
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("failed to stat swarm stack env source: %w", err)
+	}
+
+	dirName := filepath.Base(stackSourceDir)
+	dirNameCopy := dirName
+	serviceCount, serviceCountErr := s.countStackProjectServicesFromComposeInternal(ctx, environmentID, stackName, stackSourceDir)
+	if serviceCountErr != nil {
+		slog.WarnContext(ctx,
+			"failed to read swarm stack compose service count during project sync",
+			"stack", dirName,
+			"path", stackSourceDir,
+			"error", serviceCountErr,
+		)
+	}
+
+	return &models.SwarmStackProject{
+		Name:          dirName,
+		DirName:       &dirNameCopy,
+		EnvironmentID: normalizeSwarmEnvironmentIDInternal(environmentID),
+		Path:          stackSourceDir,
+		ServiceCount:  serviceCount,
+		BaseModel: models.BaseModel{
+			CreatedAt: createdAt,
+			UpdatedAt: &updatedAt,
+		},
+	}, nil
+}
+
+func (s *SwarmService) upsertStackProjectRecordInternal(ctx context.Context, stackProject *models.SwarmStackProject) error {
+	if stackProject == nil {
+		return errors.New("stack project is required")
+	}
+
+	var existing models.SwarmStackProject
+	err := s.db.WithContext(ctx).
+		Where("environment_id = ? AND name = ?", stackProject.EnvironmentID, stackProject.Name).
+		First(&existing).Error
+
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		if err := s.db.WithContext(ctx).Create(stackProject).Error; err != nil {
+			return fmt.Errorf("create swarm stack project %q failed: %w", stackProject.Name, err)
+		}
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("query swarm stack project %q failed: %w", stackProject.Name, err)
+	}
+
+	updates := map[string]any{}
+	if existing.Path != stackProject.Path {
+		updates["path"] = stackProject.Path
+	}
+	if existing.ServiceCount != stackProject.ServiceCount {
+		updates["service_count"] = stackProject.ServiceCount
+	}
+	if stringValueInternal(existing.DirName) != stringValueInternal(stackProject.DirName) {
+		updates["dir_name"] = stackProject.DirName
+	}
+	if !existing.CreatedAt.Equal(stackProject.CreatedAt) {
+		updates["created_at"] = stackProject.CreatedAt
+	}
+	if !timePtrEqualInternal(existing.UpdatedAt, stackProject.UpdatedAt) {
+		updates["updated_at"] = stackProject.UpdatedAt
+	}
+	if len(updates) == 0 {
+		return nil
+	}
+
+	if err := s.db.WithContext(ctx).
+		Model(&models.SwarmStackProject{}).
+		Where("id = ?", existing.ID).
+		Updates(updates).Error; err != nil {
+		return fmt.Errorf("update swarm stack project %q failed: %w", stackProject.Name, err)
+	}
+
+	return nil
+}
+
+func (s *SwarmService) cleanupStackProjectRecordsInternal(
+	ctx context.Context,
+	environmentID string,
+	seen map[string]struct{},
+) error {
+	var stackProjects []models.SwarmStackProject
+	if err := s.db.WithContext(ctx).
+		Where("environment_id = ?", normalizeSwarmEnvironmentIDInternal(environmentID)).
+		Find(&stackProjects).Error; err != nil {
+		return fmt.Errorf("list swarm stack projects for cleanup failed: %w", err)
+	}
+
+	for _, stackProject := range stackProjects {
+		if _, ok := seen[stackProject.Path]; ok {
+			continue
+		}
+
+		composePath := filepath.Join(stackProject.Path, swarmStackComposeFilename)
+		composeInfo, err := os.Stat(composePath)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				if derr := s.db.WithContext(ctx).Delete(&models.SwarmStackProject{}, "id = ?", stackProject.ID).Error; derr != nil {
+					slog.WarnContext(ctx, "failed to delete missing swarm stack project", "stackProjectID", stackProject.ID, "error", derr)
+				}
+				continue
+			}
+			return fmt.Errorf("stat swarm stack project compose source: %w", err)
+		}
+
+		if !composeInfo.Mode().IsRegular() {
+			if derr := s.db.WithContext(ctx).Delete(&models.SwarmStackProject{}, "id = ?", stackProject.ID).Error; derr != nil {
+				slog.WarnContext(ctx, "failed to delete invalid swarm stack project", "stackProjectID", stackProject.ID, "error", derr)
+			}
+		}
+	}
+
+	return nil
+}
+
+func (s *SwarmService) deleteStackProjectRecordInternal(ctx context.Context, environmentID, stackName string) error {
+	if err := s.db.WithContext(ctx).
+		Delete(&models.SwarmStackProject{}, "environment_id = ? AND name = ?", normalizeSwarmEnvironmentIDInternal(environmentID), appfs.SanitizeProjectName(strings.TrimSpace(stackName))).
+		Error; err != nil {
+		return fmt.Errorf("delete swarm stack project record: %w", err)
+	}
+
+	return nil
+}
+
+func (s *SwarmService) getStackProjectRecordInternal(
+	ctx context.Context,
+	environmentID,
+	stackName string,
+	sync bool,
+) (*models.SwarmStackProject, error) {
+	stackName = appfs.SanitizeProjectName(strings.TrimSpace(stackName))
+	if stackName == "" {
+		return nil, errors.New("stack name is required")
+	}
+
+	if sync {
+		if err := s.SyncStackProjectsFromFileSystem(ctx, environmentID); err != nil {
+			return nil, err
+		}
+	}
+
+	var stackProject models.SwarmStackProject
+	if err := s.db.WithContext(ctx).
+		Where("environment_id = ? AND name = ?", normalizeSwarmEnvironmentIDInternal(environmentID), stackName).
+		First(&stackProject).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, cerrdefs.ErrNotFound
+		}
+		return nil, fmt.Errorf("failed to load swarm stack project %q: %w", stackName, err)
+	}
+
+	return &stackProject, nil
+}
+
+func stackProjectModelToSummaryInternal(stackProject models.SwarmStackProject) swarmtypes.StackSummary {
+	return swarmtypes.StackSummary{
+		ID:        stackProject.ID,
+		Name:      stackProject.Name,
+		Namespace: stackProject.Name,
+		Services:  stackProject.ServiceCount,
+		CreatedAt: stackProject.CreatedAt,
+		UpdatedAt: stackProjectUpdatedAtInternal(stackProject),
+	}
+}
+
+func (s *SwarmService) countStackProjectServicesFromComposeInternal(
+	ctx context.Context,
+	environmentID,
+	stackName,
+	stackSourceDir string,
+) (int, error) {
+	_, environmentDir, err := s.resolveSwarmStackSourceEnvironmentDirInternal(ctx, environmentID)
+	if err != nil {
+		return 0, err
+	}
+
+	autoInjectEnv := false
+	if s.settingsService != nil {
+		autoInjectEnv = s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false)
+	}
+
+	projectName := normalizeComposeProjectName(stackName)
+	project, _, err := appfs.LoadComposeProjectFromDir(ctx, stackSourceDir, projectName, environmentDir, autoInjectEnv, nil)
+	if err != nil {
+		return 0, err
+	}
+
+	return len(project.Services), nil
+}
+
+func stackProjectUpdatedAtInternal(stackProject models.SwarmStackProject) time.Time {
+	if stackProject.UpdatedAt != nil {
+		return *stackProject.UpdatedAt
+	}
+	return stackProject.CreatedAt
+}
+
+func timePtrEqualInternal(a, b *time.Time) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return a.Equal(*b)
+}
+
+func stringValueInternal(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 func normalizeSwarmEnvironmentIDInternal(environmentID string) string {
@@ -2442,6 +3016,26 @@ func (s *SwarmService) buildStackPaginationConfigInternal() pagination.Config[sw
 			{Key: "services", Fn: func(a, b swarmtypes.StackSummary) int { return compareIntInternal(a.Services, b.Services) }},
 			{Key: "created", Fn: func(a, b swarmtypes.StackSummary) int { return compareTimeInternal(a.CreatedAt, b.CreatedAt) }},
 			{Key: "updated", Fn: func(a, b swarmtypes.StackSummary) int { return compareTimeInternal(a.UpdatedAt, b.UpdatedAt) }},
+		},
+	}
+}
+
+func (s *SwarmService) buildStackProjectPaginationConfigInternal() pagination.Config[swarmtypes.StackProjectSummary] {
+	return pagination.Config[swarmtypes.StackProjectSummary]{
+		SearchAccessors: []pagination.SearchAccessor[swarmtypes.StackProjectSummary]{
+			func(stack swarmtypes.StackProjectSummary) (string, error) { return stack.Name, nil },
+			func(stack swarmtypes.StackProjectSummary) (string, error) { return string(stack.RuntimeState), nil },
+		},
+		SortBindings: []pagination.SortBinding[swarmtypes.StackProjectSummary]{
+			{Key: "name", Fn: func(a, b swarmtypes.StackProjectSummary) int { return strings.Compare(a.Name, b.Name) }},
+			{Key: "runtimeState", Fn: func(a, b swarmtypes.StackProjectSummary) int {
+				return strings.Compare(string(a.RuntimeState), string(b.RuntimeState))
+			}},
+			{Key: "serviceCount", Fn: func(a, b swarmtypes.StackProjectSummary) int {
+				return compareIntInternal(a.ServiceCount, b.ServiceCount)
+			}},
+			{Key: "created", Fn: func(a, b swarmtypes.StackProjectSummary) int { return compareTimeInternal(a.CreatedAt, b.CreatedAt) }},
+			{Key: "updated", Fn: func(a, b swarmtypes.StackProjectSummary) int { return compareTimeInternal(a.UpdatedAt, b.UpdatedAt) }},
 		},
 	}
 }

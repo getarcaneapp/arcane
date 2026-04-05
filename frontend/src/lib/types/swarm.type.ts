@@ -339,7 +339,37 @@ export interface SwarmStackSource {
 	envContent?: string;
 }
 
+export type SwarmStackProjectRuntimeState = 'live' | 'down' | 'unavailable';
+
+export interface SwarmStackProjectSummary {
+	id: string;
+	name: string;
+	runtimeState: SwarmStackProjectRuntimeState;
+	serviceCount: number;
+	createdAt: string;
+	updatedAt: string;
+}
+
+export interface SwarmStackProjectDetails {
+	id: string;
+	name: string;
+	runtimeState: SwarmStackProjectRuntimeState;
+	serviceCount: number;
+	createdAt: string;
+	updatedAt: string;
+	composeContent: string;
+	envContent?: string;
+}
+
+export interface SwarmStackProjectCounts {
+	totalStackProjects: number;
+	liveStackProjects: number;
+	downStackProjects: number;
+	unavailableStackProjects: number;
+}
+
 export interface SwarmStackSourceUpdateRequest {
+	name?: string;
 	composeContent: string;
 	envContent?: string;
 }

@@ -1,52 +1,44 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { TabBar, type TabItem } from '$lib/components/tab-bar';
-	import CodeEditor from '$lib/components/code-editor/editor.svelte';
 	import * as Card from '$lib/components/ui/card';
 	import * as Tabs from '$lib/components/ui/tabs';
 	import { useEnvironmentRefresh } from '$lib/hooks/use-environment-refresh.svelte';
-	import { LayersIcon, DockIcon, JobsIcon, TrashIcon, EditIcon, FileTextIcon, CodeIcon } from '$lib/icons';
+	import { LayersIcon, DockIcon, JobsIcon, EditIcon } from '$lib/icons';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
 	import { m } from '$lib/paraglide/messages';
 	import { swarmService } from '$lib/services/swarm-service';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
 	import { tryCatch } from '$lib/utils/try-catch';
-	import { onMount } from 'svelte';
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import SwarmServicesTable from '../../services/services-table.svelte';
 	import SwarmTasksTable from '../../tasks/tasks-table.svelte';
-	import type { SwarmStackSource } from '$lib/types/swarm.type';
 
 	let { data } = $props();
 
 	let stack = $state(untrack(() => data.stack));
 	let services = $state(untrack(() => data.services));
 	let tasks = $state(untrack(() => data.tasks));
-	let source = $state<SwarmStackSource | null>(untrack(() => data.source));
-	let sourceState = $state<'loading' | 'available' | 'missing' | 'forbidden' | 'error'>(untrack(() => data.sourceState));
+	let stackProject = $state(untrack(() => data.stackProject));
+	let stackProjectState = $state<'available' | 'missing' | 'error'>(untrack(() => data.stackProjectState));
 	let servicesRequestOptions = $state(untrack(() => data.servicesRequestOptions));
 	let tasksRequestOptions = $state(untrack(() => data.tasksRequestOptions));
-	type StackTab = 'services' | 'tasks' | 'source';
-	let selectedTab = $state<StackTab>(
-		untrack(() => ((data.stack?.services ?? 0) > 0 ? 'services' : data.sourceState !== 'forbidden' ? 'source' : 'services'))
-	);
-	let isLoading = $state({ refresh: false, remove: false });
+	type StackTab = 'services' | 'tasks';
+	let selectedTab = $state<StackTab>('services');
+	let isLoading = $state({ refresh: false, down: false });
 
 	const stackName = $derived(stack?.name ?? data.stackName);
-	const hasLiveStack = $derived((stack?.services ?? 0) > 0);
-	const canViewSource = $derived(sourceState !== 'forbidden');
 	const tabItems = $derived<TabItem[]>([
-		...(hasLiveStack ? [{ value: 'services', label: m.swarm_services_title(), icon: DockIcon }] : []),
-		...(hasLiveStack ? [{ value: 'tasks', label: m.swarm_tasks_title(), icon: JobsIcon }] : []),
-		...(canViewSource ? [{ value: 'source', label: 'Source', icon: FileTextIcon }] : [])
+		{ value: 'services', label: m.swarm_services_title(), icon: DockIcon },
+		{ value: 'tasks', label: m.swarm_tasks_title(), icon: JobsIcon }
 	]);
 	const totalServices = $derived(services?.pagination?.totalItems ?? services?.data?.length ?? 0);
 	const totalTasks = $derived(tasks?.pagination?.totalItems ?? tasks?.data?.length ?? 0);
-	const stackSubtitle = $derived(
-		hasLiveStack ? m.swarm_stack_namespace({ namespace: stack?.namespace ?? stackName }) : `Saved source for ${stackName}`
-	);
+	const stackSubtitle = $derived(m.swarm_stack_namespace({ namespace: stack?.namespace ?? stackName }));
+	const savedFilesHref = $derived(`/projects/swarm/${encodeURIComponent(stackName)}`);
+	const hasSavedFiles = $derived(stackProjectState === 'available' && !!stackProject);
 
 	async function fetchStackServices(options: typeof servicesRequestOptions) {
 		return swarmService.getStackServices(stackName, options);
@@ -56,37 +48,14 @@
 		return swarmService.getStackTasks(stackName, options);
 	}
 
-	async function refreshSource(showErrorToast = false) {
-		try {
-			source = await swarmService.getStackSource(stackName);
-			sourceState = 'available';
-		} catch (err: any) {
-			if (err?.status === 404) {
-				source = null;
-				sourceState = 'missing';
-				return;
-			}
-			if (err?.status === 403) {
-				source = null;
-				sourceState = 'forbidden';
-				return;
-			}
-
-			source = null;
-			sourceState = 'error';
-			if (showErrorToast) {
-				toast.error(m.common_refresh_failed({ resource: `saved source (${stackName})` }));
-			}
-		}
-	}
-
 	async function refresh() {
 		isLoading.refresh = true;
 		try {
-			const [stackResult, servicesResult, tasksResult] = await Promise.allSettled([
+			const [stackResult, servicesResult, tasksResult, stackProjectResult] = await Promise.allSettled([
 				swarmService.getStack(stackName),
 				swarmService.getStackServices(stackName, servicesRequestOptions),
-				swarmService.getStackTasks(stackName, tasksRequestOptions)
+				swarmService.getStackTasks(stackName, tasksRequestOptions),
+				swarmService.getStackProject(stackName)
 			]);
 
 			if (stackResult.status === 'fulfilled') {
@@ -106,17 +75,23 @@
 			} else {
 				toast.error(m.common_refresh_failed({ resource: `${m.swarm_tasks_title()} (${stackName})` }));
 			}
-			await refreshSource(true);
+
+			if (stackProjectResult.status === 'fulfilled') {
+				stackProject = stackProjectResult.value;
+				stackProjectState = 'available';
+			} else if ((stackProjectResult.reason as { status?: number } | undefined)?.status === 404) {
+				stackProject = null;
+				stackProjectState = 'missing';
+			} else {
+				stackProject = null;
+				stackProjectState = 'error';
+			}
 		} finally {
 			isLoading.refresh = false;
 		}
 	}
 
 	useEnvironmentRefresh(refresh);
-
-	onMount(() => {
-		void refreshSource();
-	});
 
 	$effect(() => {
 		const validTabs = tabItems.map((item) => item.value as StackTab);
@@ -125,21 +100,21 @@
 		}
 	});
 
-	function handleDelete() {
+	function handleDown() {
 		openConfirmDialog({
-			title: m.common_delete_title({ resource: m.swarm_stack() }),
-			message: m.common_delete_confirm({ resource: m.swarm_stack() }),
+			title: `${m.common_down()} ${m.swarm_stack()}`,
+			message: `Bring down the live runtime for "${stackName}" and keep any saved files?`,
 			confirm: {
-				label: m.common_delete(),
+				label: m.common_down(),
 				destructive: true,
 				action: async () => {
 					handleApiResultWithCallbacks({
-						result: await tryCatch(swarmService.removeStack(stackName)),
-						message: m.common_delete_failed({ resource: `${m.swarm_stack()} "${stackName}"` }),
-						setLoadingState: (v) => (isLoading.remove = v),
+						result: await tryCatch(swarmService.downStack(stackName)),
+						message: m.common_action_failed(),
+						setLoadingState: (v) => (isLoading.down = v),
 						onSuccess: async () => {
-							toast.success(m.common_delete_success({ resource: `${m.swarm_stack()} "${stackName}"` }));
-							goto('/swarm/stacks');
+							toast.success(`${m.swarm_stack()} "${stackName}" was brought down.`);
+							goto(`/projects/swarm/${encodeURIComponent(stackName)}`, { invalidateAll: true });
 						}
 					});
 				}
@@ -149,21 +124,20 @@
 
 	const actionButtons: ActionButton[] = $derived([
 		{
-			id: 'edit',
+			id: 'saved-files',
 			action: 'base',
-			label: m.common_edit(),
+			label: hasSavedFiles ? 'Open saved files' : 'Create saved files',
 			icon: EditIcon,
-			onclick: () => goto(`/swarm/stacks/new?fromStack=${encodeURIComponent(stackName)}`),
-			disabled: isLoading.remove
+			onclick: () => goto(savedFilesHref),
+			disabled: isLoading.down
 		},
 		{
-			id: 'remove',
-			action: 'remove',
-			label: m.common_delete(),
-			icon: TrashIcon,
-			onclick: handleDelete,
-			loading: isLoading.remove,
-			disabled: isLoading.remove
+			id: 'down',
+			action: 'stop',
+			label: m.common_down(),
+			onclick: handleDown,
+			loading: isLoading.down,
+			disabled: isLoading.down
 		},
 		{
 			id: 'refresh',
@@ -194,13 +168,24 @@
 <ResourcePageLayout title={stackName} subtitle={stackSubtitle} icon={LayersIcon} {actionButtons} {statCards}>
 	{#snippet mainContent()}
 		<div class="flex min-h-[calc(100vh-18rem)] flex-col gap-4">
-			{#if !hasLiveStack && canViewSource}
-				<Card.Root variant="subtle">
-					<Card.Content class="p-4 text-sm">
-						This stack is not currently deployed, but Arcane still found its saved source files.
-					</Card.Content>
-				</Card.Root>
-			{/if}
+			<Card.Root variant="subtle">
+				<Card.Content class="space-y-2 p-4 text-sm">
+					{#if hasSavedFiles}
+						<p class="font-medium">Saved stack files are managed in Projects.</p>
+						<p class="text-muted-foreground">
+							Use the button above to edit the saved compose files separately from this live runtime view.
+						</p>
+					{:else if stackProjectState === 'missing'}
+						<p class="font-medium">No saved files exist for this live stack yet.</p>
+						<p class="text-muted-foreground">
+							Use Create saved files to start managing compose files for "{stackName}" in Projects.
+						</p>
+					{:else}
+						<p class="font-medium">Arcane could not confirm whether saved files exist for this stack.</p>
+						<p class="text-muted-foreground">You can still open the Projects route to create or inspect saved files.</p>
+					{/if}
+				</Card.Content>
+			</Card.Root>
 
 			<Tabs.Root value={selectedTab} class="flex min-h-0 flex-1 flex-col">
 				<div class="w-fit pb-3">
@@ -222,79 +207,6 @@
 						fetchTasks={fetchStackTasks}
 						persistKey={`arcane-swarm-stack-tasks-table-${stackName}`}
 					/>
-				</Tabs.Content>
-				<Tabs.Content value="source" class="flex min-h-0 flex-1 flex-col">
-					{#if sourceState === 'available' && source}
-						<div class="grid min-h-0 flex-1 auto-rows-fr gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-							<Card.Root class="flex min-h-0 min-w-0 flex-col overflow-hidden">
-								<Card.Header icon={CodeIcon} class="flex-shrink-0">
-									<Card.Title>
-										<h2>compose.yaml</h2>
-									</Card.Title>
-								</Card.Header>
-								<Card.Content class="relative z-0 flex min-h-0 flex-1 flex-col overflow-visible p-0">
-									<div class="absolute inset-0 min-h-0 w-full min-w-0 rounded-b-xl">
-										<CodeEditor
-											value={source.composeContent}
-											language="yaml"
-											readOnly={true}
-											fontSize="13px"
-											fileId={`swarm-stack-source:${stackName}:compose.yaml`}
-										/>
-									</div>
-								</Card.Content>
-							</Card.Root>
-
-							<Card.Root class="flex min-h-0 min-w-0 flex-col overflow-hidden">
-								<Card.Header icon={FileTextIcon} class="flex-shrink-0">
-									<Card.Title>
-										<h2>.env</h2>
-									</Card.Title>
-								</Card.Header>
-								<Card.Content class="relative z-0 flex min-h-0 flex-1 flex-col overflow-visible p-0">
-									{#if source.envContent?.trim()}
-										<div class="absolute inset-0 min-h-0 w-full min-w-0 rounded-b-xl">
-											<CodeEditor
-												value={source.envContent}
-												language="env"
-												readOnly={true}
-												fontSize="13px"
-												fileId={`swarm-stack-source:${stackName}:.env`}
-											/>
-										</div>
-									{:else}
-										<div class="text-muted-foreground flex flex-1 items-center justify-center p-6 text-center text-sm">
-											No saved `.env` file was stored for this stack.
-										</div>
-									{/if}
-								</Card.Content>
-							</Card.Root>
-						</div>
-					{:else if sourceState === 'loading'}
-						<Card.Root variant="subtle">
-							<Card.Content class="text-muted-foreground p-6 text-center text-sm">Loading saved source...</Card.Content>
-						</Card.Root>
-					{:else if sourceState === 'missing'}
-						<Card.Root variant="subtle">
-							<Card.Content class="p-6 text-sm">
-								<div class="space-y-2">
-									<p class="font-medium">{m.common_not_found_title({ resource: 'Saved source' })}</p>
-									<p class="text-muted-foreground">
-										{m.common_not_found_description({ resource: 'saved source' })}
-									</p>
-								</div>
-							</Card.Content>
-						</Card.Root>
-					{:else if sourceState === 'error'}
-						<Card.Root variant="subtle">
-							<Card.Content class="p-6 text-sm">
-								<div class="space-y-2">
-									<p class="font-medium">{m.common_action_failed()}</p>
-									<p class="text-muted-foreground">Arcane couldn’t load the saved source files for this stack.</p>
-								</div>
-							</Card.Content>
-						</Card.Root>
-					{/if}
 				</Tabs.Content>
 			</Tabs.Root>
 		</div>

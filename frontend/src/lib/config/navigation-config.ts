@@ -16,7 +16,6 @@ import {
 	HashIcon,
 	DockIcon,
 	JobsIcon,
-	LayersIcon,
 	EventsIcon,
 	SettingsIcon,
 	GitBranchIcon,
@@ -92,7 +91,6 @@ export const navigationItems: NavigationSections = {
 		{ title: 'Services', url: '/swarm/services', icon: DockIcon },
 		{ title: 'Nodes', url: '/swarm/nodes', icon: UsersIcon },
 		{ title: 'Tasks', url: '/swarm/tasks', icon: JobsIcon },
-		{ title: 'Stacks', url: '/swarm/stacks', icon: LayersIcon },
 		{ title: 'Cluster', url: '/swarm/cluster', icon: SettingsIcon },
 		{ title: 'Configs', url: '/swarm/configs', icon: TemplateIcon },
 		{ title: 'Secrets', url: '/swarm/secrets', icon: LockIcon }

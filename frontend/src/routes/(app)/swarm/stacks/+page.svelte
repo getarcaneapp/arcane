@@ -7,7 +7,6 @@
 	import { useEnvironmentRefresh } from '$lib/hooks/use-environment-refresh.svelte';
 	import { parallelRefresh } from '$lib/utils/refresh.util';
 	import SwarmStacksTable from './stacks-table.svelte';
-	import { goto } from '$app/navigation';
 
 	let { data } = $props();
 
@@ -35,12 +34,6 @@
 	const totalStacks = $derived(stacks?.pagination?.totalItems ?? stacks?.data?.length ?? 0);
 
 	const actionButtons: ActionButton[] = $derived([
-		{
-			id: 'create',
-			action: 'create',
-			label: m.common_create_button({ resource: m.swarm_stack() }),
-			onclick: () => goto('/swarm/stacks/new')
-		},
 		{
 			id: 'refresh',
 			action: 'restart',

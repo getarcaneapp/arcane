@@ -5,14 +5,20 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	cerrdefs "github.com/containerd/errdefs"
+	"github.com/getarcaneapp/arcane/backend/internal/config"
+	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
+	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	swarmtypes "github.com/getarcaneapp/arcane/types/swarm"
-	"github.com/moby/moby/api/types/swarm"
+	dockerswarm "github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/api/types/system"
+	dockerclient "github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
 )
 
@@ -63,7 +69,7 @@ func TestSwarmService_FetchSwarmNodeIdentityViaEdgeInternal_UsesEnvironmentAcces
 		&accessToken,
 	)
 
-	svc := NewSwarmService(nil, nil, nil, nil, envSvc)
+	svc := NewSwarmService(db, nil, nil, nil, nil, envSvc)
 
 	identity, err := svc.fetchSwarmNodeIdentityViaEdgeInternal(ctx, "env-1")
 	require.NoError(t, err)
@@ -77,14 +83,14 @@ func TestSwarmService_FetchSwarmNodeIdentityViaEdgeInternal_UsesEnvironmentAcces
 
 func TestSwarmService_UpdateAndGetStackSource_UsesStoredFilesWithoutSwarmManager(t *testing.T) {
 	ctx := context.Background()
-	db := setupSettingsTestDB(t)
+	db := setupSwarmTestDB(t)
 	rootDir := t.TempDir()
 	t.Setenv("SWARM_STACK_SOURCES_DIRECTORY", rootDir)
 
 	settingsSvc, err := NewSettingsService(ctx, db)
 	require.NoError(t, err)
 
-	svc := NewSwarmService(nil, settingsSvc, nil, nil, nil)
+	svc := NewSwarmService(db, nil, settingsSvc, nil, nil, nil)
 
 	updated, err := svc.UpdateStackSource(ctx, "0", "demo-stack", swarmtypes.StackSourceUpdateRequest{
 		ComposeContent: "services:\n  web:\n    image: nginx:alpine\n",
@@ -126,7 +132,7 @@ func TestSwarmService_getPathMapperInternal(t *testing.T) {
 	settingsSvc, err := NewSettingsService(ctx, db)
 	require.NoError(t, err)
 
-	svc := NewSwarmService(nil, settingsSvc, nil, nil, nil)
+	svc := NewSwarmService(nil, nil, settingsSvc, nil, nil, nil)
 
 	t.Run("returns nil when paths match", func(t *testing.T) {
 		pm, err := svc.getPathMapperInternal(ctx)
@@ -161,14 +167,14 @@ func TestSwarmService_ScaleService_HandlesServiceModesInternal(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		mode       swarm.ServiceMode
-		assertMode func(*testing.T, swarm.ServiceMode)
+		mode       dockerswarm.ServiceMode
+		assertMode func(*testing.T, dockerswarm.ServiceMode)
 		wantErr    bool
 	}{
 		{
 			name: "replicated",
-			mode: swarm.ServiceMode{Replicated: &swarm.ReplicatedService{}},
-			assertMode: func(t *testing.T, mode swarm.ServiceMode) {
+			mode: dockerswarm.ServiceMode{Replicated: &dockerswarm.ReplicatedService{}},
+			assertMode: func(t *testing.T, mode dockerswarm.ServiceMode) {
 				t.Helper()
 				require.NotNil(t, mode.Replicated)
 				require.NotNil(t, mode.Replicated.Replicas)
@@ -178,8 +184,8 @@ func TestSwarmService_ScaleService_HandlesServiceModesInternal(t *testing.T) {
 		},
 		{
 			name: "replicated job",
-			mode: swarm.ServiceMode{ReplicatedJob: &swarm.ReplicatedJob{MaxConcurrent: &maxConcurrent}},
-			assertMode: func(t *testing.T, mode swarm.ServiceMode) {
+			mode: dockerswarm.ServiceMode{ReplicatedJob: &dockerswarm.ReplicatedJob{MaxConcurrent: &maxConcurrent}},
+			assertMode: func(t *testing.T, mode dockerswarm.ServiceMode) {
 				t.Helper()
 				require.Nil(t, mode.Replicated)
 				require.NotNil(t, mode.ReplicatedJob)
@@ -191,12 +197,12 @@ func TestSwarmService_ScaleService_HandlesServiceModesInternal(t *testing.T) {
 		},
 		{
 			name:    "global",
-			mode:    swarm.ServiceMode{Global: &swarm.GlobalService{}},
+			mode:    dockerswarm.ServiceMode{Global: &dockerswarm.GlobalService{}},
 			wantErr: true,
 		},
 		{
 			name:    "global job",
-			mode:    swarm.ServiceMode{GlobalJob: &swarm.GlobalJob{}},
+			mode:    dockerswarm.ServiceMode{GlobalJob: &dockerswarm.GlobalJob{}},
 			wantErr: true,
 		},
 	}
@@ -204,7 +210,7 @@ func TestSwarmService_ScaleService_HandlesServiceModesInternal(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			updateCalls := 0
-			var updatedSpec swarm.ServiceSpec
+			var updatedSpec dockerswarm.ServiceSpec
 
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
@@ -212,19 +218,19 @@ func TestSwarmService_ScaleService_HandlesServiceModesInternal(t *testing.T) {
 				switch {
 				case r.Method == http.MethodGet && r.URL.Path == "/v1.41/info":
 					require.NoError(t, json.NewEncoder(w).Encode(system.Info{
-						Swarm: swarm.Info{
-							LocalNodeState:   swarm.LocalNodeStateActive,
+						Swarm: dockerswarm.Info{
+							LocalNodeState:   dockerswarm.LocalNodeStateActive,
 							ControlAvailable: true,
 						},
 					}))
 				case r.Method == http.MethodGet && r.URL.Path == "/v1.41/services/service-1":
-					require.NoError(t, json.NewEncoder(w).Encode(swarm.Service{
+					require.NoError(t, json.NewEncoder(w).Encode(dockerswarm.Service{
 						ID: "service-1",
-						Meta: swarm.Meta{
-							Version: swarm.Version{Index: 7},
+						Meta: dockerswarm.Meta{
+							Version: dockerswarm.Version{Index: 7},
 						},
-						Spec: swarm.ServiceSpec{
-							Annotations: swarm.Annotations{Name: "service-1"},
+						Spec: dockerswarm.ServiceSpec{
+							Annotations: dockerswarm.Annotations{Name: "service-1"},
 							Mode:        tt.mode,
 						},
 					}))
@@ -239,7 +245,7 @@ func TestSwarmService_ScaleService_HandlesServiceModesInternal(t *testing.T) {
 			}))
 			t.Cleanup(server.Close)
 
-			svc := NewSwarmService(&DockerClientService{client: newTestDockerClient(t, server)}, nil, nil, nil, nil)
+			svc := NewSwarmService(nil, &DockerClientService{client: newTestDockerClient(t, server)}, nil, nil, nil, nil)
 
 			resp, err := svc.ScaleService(ctx, "service-1", replicas)
 			if tt.wantErr {
@@ -256,4 +262,375 @@ func TestSwarmService_ScaleService_HandlesServiceModesInternal(t *testing.T) {
 			tt.assertMode(t, updatedSpec.Mode)
 		})
 	}
+}
+
+func TestSwarmService_GetStackProject_UsesStoredFilesWithoutDocker(t *testing.T) {
+	ctx := context.Background()
+	db := setupSwarmTestDB(t)
+	rootDir := t.TempDir()
+	t.Setenv("SWARM_STACK_SOURCES_DIRECTORY", rootDir)
+
+	settingsSvc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	svc := NewSwarmService(db, nil, settingsSvc, nil, nil, nil)
+
+	_, err = svc.UpsertStackProject(ctx, "0", "demo-stack", swarmtypes.StackSourceUpdateRequest{
+		ComposeContent: "services:\n  web:\n    image: nginx:alpine\n",
+		EnvContent:     "FOO=bar\n",
+	})
+	require.NoError(t, err)
+
+	stackProject, err := svc.GetStackProject(ctx, "0", "demo-stack")
+	require.NoError(t, err)
+	require.Equal(t, "demo-stack", stackProject.Name)
+	require.Equal(t, swarmtypes.StackProjectRuntimeStateUnavailable, stackProject.RuntimeState)
+	require.Equal(t, 1, stackProject.ServiceCount)
+	require.Contains(t, stackProject.ComposeContent, "nginx:alpine")
+	require.Equal(t, "FOO=bar\n", stackProject.EnvContent)
+
+	counts, err := svc.GetStackProjectStatusCounts(ctx, "0")
+	require.NoError(t, err)
+	require.Equal(t, 1, counts.TotalStackProjects)
+	require.Equal(t, 0, counts.LiveStackProjects)
+	require.Equal(t, 0, counts.DownStackProjects)
+	require.Equal(t, 1, counts.UnavailableStackProjects)
+}
+
+func TestSwarmService_GetStackProject_LoadsDiskStateIntoDatabase(t *testing.T) {
+	ctx := context.Background()
+	db := setupSwarmTestDB(t)
+	rootDir := t.TempDir()
+	t.Setenv("SWARM_STACK_SOURCES_DIRECTORY", rootDir)
+
+	settingsSvc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	stackDir := filepath.Join(rootDir, "0", "demo-stack")
+	require.NoError(t, os.MkdirAll(stackDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(stackDir, "compose.yaml"), []byte("services:\n  web:\n    image: nginx:alpine\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(stackDir, ".env"), []byte("FOO=bar\n"), 0o644))
+
+	svc := NewSwarmService(db, nil, settingsSvc, nil, nil, nil)
+
+	stackProject, err := svc.GetStackProject(ctx, "0", "demo-stack")
+	require.NoError(t, err)
+	require.Equal(t, "demo-stack", stackProject.Name)
+	require.Equal(t, 1, stackProject.ServiceCount)
+	require.Equal(t, "FOO=bar\n", stackProject.EnvContent)
+
+	var persisted models.SwarmStackProject
+	require.NoError(t, db.WithContext(ctx).Where("environment_id = ? AND name = ?", "0", "demo-stack").First(&persisted).Error)
+	require.Equal(t, filepath.Join(rootDir, "0", "demo-stack"), persisted.Path)
+	require.Equal(t, 1, persisted.ServiceCount)
+}
+
+func TestSwarmService_ListStackProjectsPaginated_UsesStoredComposeServiceCountWhenDown(t *testing.T) {
+	ctx := context.Background()
+	db := setupSwarmTestDB(t)
+	rootDir := t.TempDir()
+	t.Setenv("SWARM_STACK_SOURCES_DIRECTORY", rootDir)
+
+	settingsSvc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	dockerSvc := newSwarmTestDockerService(t, settingsSvc, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/services"):
+			_, _ = w.Write([]byte(`[]`))
+		default:
+			http.NotFound(w, r)
+		}
+	})
+
+	svc := NewSwarmService(db, dockerSvc, settingsSvc, nil, nil, nil)
+
+	_, err = svc.UpsertStackProject(ctx, "0", "demo-stack", swarmtypes.StackSourceUpdateRequest{
+		ComposeContent: "services:\n  web:\n    image: nginx:alpine\n  worker:\n    image: busybox\n",
+	})
+	require.NoError(t, err)
+
+	items, paginationResp, err := svc.ListStackProjectsPaginated(ctx, "0", pagination.QueryParams{})
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	require.EqualValues(t, 1, paginationResp.TotalItems)
+	require.Equal(t, swarmtypes.StackProjectRuntimeStateDown, items[0].RuntimeState)
+	require.Equal(t, 2, items[0].ServiceCount)
+}
+
+func TestSwarmService_UpsertStackProject_RenamesStoppedProject(t *testing.T) {
+	ctx := context.Background()
+	db := setupSwarmTestDB(t)
+	rootDir := t.TempDir()
+	t.Setenv("SWARM_STACK_SOURCES_DIRECTORY", rootDir)
+
+	settingsSvc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	svc := NewSwarmService(db, nil, settingsSvc, nil, nil, nil)
+
+	_, err = svc.UpsertStackProject(ctx, "0", "demo-stack", swarmtypes.StackSourceUpdateRequest{
+		ComposeContent: "services:\n  web:\n    image: nginx:alpine\n",
+		EnvContent:     "FOO=bar\n",
+	})
+	require.NoError(t, err)
+
+	renamed, err := svc.UpsertStackProject(ctx, "0", "demo-stack", swarmtypes.StackSourceUpdateRequest{
+		Name:           "renamed-stack",
+		ComposeContent: "services:\n  web:\n    image: nginx:stable-alpine\n",
+		EnvContent:     "FOO=baz\n",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "renamed-stack", renamed.Name)
+	require.Equal(t, "FOO=baz\n", renamed.EnvContent)
+
+	require.NoFileExists(t, filepath.Join(rootDir, "0", "demo-stack", "compose.yaml"))
+	require.FileExists(t, filepath.Join(rootDir, "0", "renamed-stack", "compose.yaml"))
+
+	_, err = svc.GetStackProject(ctx, "0", "demo-stack")
+	require.True(t, cerrdefs.IsNotFound(err))
+
+	var persisted models.SwarmStackProject
+	require.NoError(t, db.WithContext(ctx).Where("environment_id = ? AND name = ?", "0", "renamed-stack").First(&persisted).Error)
+	require.Equal(t, filepath.Join(rootDir, "0", "renamed-stack"), persisted.Path)
+}
+
+func TestSwarmService_ListStacksPaginated_ExcludesSavedOnlyStackProjects(t *testing.T) {
+	ctx := context.Background()
+	db := setupSwarmTestDB(t)
+	rootDir := t.TempDir()
+	t.Setenv("SWARM_STACK_SOURCES_DIRECTORY", rootDir)
+
+	settingsSvc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	dockerSvc := newSwarmTestDockerService(t, settingsSvc, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/info"):
+			_, _ = w.Write([]byte(`{"Swarm":{"LocalNodeState":"active","ControlAvailable":true}}`))
+		case strings.HasSuffix(r.URL.Path, "/services"):
+			_, _ = w.Write([]byte(`[]`))
+		default:
+			http.NotFound(w, r)
+		}
+	})
+
+	svc := NewSwarmService(db, dockerSvc, settingsSvc, nil, nil, nil)
+
+	_, err = svc.UpsertStackProject(ctx, "0", "demo-stack", swarmtypes.StackSourceUpdateRequest{
+		ComposeContent: "services:\n  web:\n    image: nginx:alpine\n",
+	})
+	require.NoError(t, err)
+
+	items, paginationResp, err := svc.ListStacksPaginated(ctx, "0", pagination.QueryParams{})
+	require.NoError(t, err)
+	require.Empty(t, items)
+	require.EqualValues(t, 0, paginationResp.TotalItems)
+}
+
+func TestSwarmService_DeleteStackProject_ReturnsConflictWhenStackIsLive(t *testing.T) {
+	ctx := context.Background()
+	db := setupSwarmTestDB(t)
+	rootDir := t.TempDir()
+	t.Setenv("SWARM_STACK_SOURCES_DIRECTORY", rootDir)
+
+	settingsSvc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	dockerSvc := newSwarmTestDockerService(t, settingsSvc, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/services"):
+			require.NoError(t, json.NewEncoder(w).Encode([]dockerswarm.Service{
+				{
+					ID: "service-1",
+					Spec: dockerswarm.ServiceSpec{
+						Annotations: dockerswarm.Annotations{
+							Name: "demo-stack_web",
+							Labels: map[string]string{
+								swarmtypes.StackNamespaceLabel: "demo-stack",
+							},
+						},
+					},
+				},
+			}))
+		default:
+			http.NotFound(w, r)
+		}
+	})
+
+	svc := NewSwarmService(db, dockerSvc, settingsSvc, nil, nil, nil)
+
+	_, err = svc.UpsertStackProject(ctx, "0", "demo-stack", swarmtypes.StackSourceUpdateRequest{
+		ComposeContent: "services:\n  web:\n    image: nginx:alpine\n",
+	})
+	require.NoError(t, err)
+
+	err = svc.DeleteStackProject(ctx, "0", "demo-stack")
+	require.Error(t, err)
+	require.True(t, cerrdefs.IsConflict(err))
+	require.FileExists(t, filepath.Join(rootDir, "0", "demo-stack", "compose.yaml"))
+}
+
+func TestSwarmService_DownStack_PreservesSavedFiles(t *testing.T) {
+	ctx := context.Background()
+	db := setupSwarmTestDB(t)
+	rootDir := t.TempDir()
+	t.Setenv("SWARM_STACK_SOURCES_DIRECTORY", rootDir)
+
+	settingsSvc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	serviceRemoved := false
+	dockerSvc := newSwarmTestDockerService(t, settingsSvc, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/info"):
+			_, _ = w.Write([]byte(`{"Swarm":{"LocalNodeState":"active","ControlAvailable":true}}`))
+		case strings.HasSuffix(r.URL.Path, "/services") && r.Method == http.MethodGet:
+			require.NoError(t, json.NewEncoder(w).Encode([]dockerswarm.Service{
+				{
+					ID: "service-1",
+					Spec: dockerswarm.ServiceSpec{
+						Annotations: dockerswarm.Annotations{
+							Name: "demo-stack_web",
+							Labels: map[string]string{
+								swarmtypes.StackNamespaceLabel: "demo-stack",
+							},
+						},
+					},
+				},
+			}))
+		case strings.Contains(r.URL.Path, "/services/service-1") && r.Method == http.MethodDelete:
+			serviceRemoved = true
+			w.WriteHeader(http.StatusOK)
+		case strings.HasSuffix(r.URL.Path, "/tasks"):
+			_, _ = w.Write([]byte(`[]`))
+		case strings.HasSuffix(r.URL.Path, "/configs"):
+			_, _ = w.Write([]byte(`[]`))
+		case strings.HasSuffix(r.URL.Path, "/secrets"):
+			_, _ = w.Write([]byte(`[]`))
+		case strings.HasSuffix(r.URL.Path, "/networks"):
+			_, _ = w.Write([]byte(`[]`))
+		default:
+			http.NotFound(w, r)
+		}
+	})
+
+	svc := NewSwarmService(db, dockerSvc, settingsSvc, nil, nil, nil)
+
+	_, err = svc.UpsertStackProject(ctx, "0", "demo-stack", swarmtypes.StackSourceUpdateRequest{
+		ComposeContent: "services:\n  web:\n    image: nginx:alpine\n",
+		EnvContent:     "FOO=bar\n",
+	})
+	require.NoError(t, err)
+
+	err = svc.DownStack(ctx, "demo-stack")
+	require.NoError(t, err)
+	require.True(t, serviceRemoved)
+	require.FileExists(t, filepath.Join(rootDir, "0", "demo-stack", "compose.yaml"))
+
+	envContent, err := os.ReadFile(filepath.Join(rootDir, "0", "demo-stack", ".env"))
+	require.NoError(t, err)
+	require.Equal(t, "FOO=bar\n", string(envContent))
+}
+
+func TestSwarmService_DownStack_IgnoresTaskListServiceNotFoundAfterRemoval(t *testing.T) {
+	ctx := context.Background()
+	db := setupSwarmTestDB(t)
+	rootDir := t.TempDir()
+	t.Setenv("SWARM_STACK_SOURCES_DIRECTORY", rootDir)
+
+	settingsSvc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	serviceRemoved := false
+	dockerSvc := newSwarmTestDockerService(t, settingsSvc, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/info"):
+			_, _ = w.Write([]byte(`{"Swarm":{"LocalNodeState":"active","ControlAvailable":true}}`))
+		case strings.HasSuffix(r.URL.Path, "/services") && r.Method == http.MethodGet:
+			require.NoError(t, json.NewEncoder(w).Encode([]dockerswarm.Service{
+				{
+					ID: "service-1",
+					Spec: dockerswarm.ServiceSpec{
+						Annotations: dockerswarm.Annotations{
+							Name: "demo-stack_web",
+							Labels: map[string]string{
+								swarmtypes.StackNamespaceLabel: "demo-stack",
+							},
+						},
+					},
+				},
+			}))
+		case strings.Contains(r.URL.Path, "/services/service-1") && r.Method == http.MethodDelete:
+			serviceRemoved = true
+			w.WriteHeader(http.StatusOK)
+		case strings.HasSuffix(r.URL.Path, "/tasks"):
+			http.Error(w, "Error response from daemon: service service-1 not found", http.StatusNotFound)
+		case strings.HasSuffix(r.URL.Path, "/configs"):
+			_, _ = w.Write([]byte(`[]`))
+		case strings.HasSuffix(r.URL.Path, "/secrets"):
+			_, _ = w.Write([]byte(`[]`))
+		case strings.HasSuffix(r.URL.Path, "/networks"):
+			_, _ = w.Write([]byte(`[]`))
+		default:
+			http.NotFound(w, r)
+		}
+	})
+
+	svc := NewSwarmService(db, dockerSvc, settingsSvc, nil, nil, nil)
+
+	_, err = svc.UpsertStackProject(ctx, "0", "demo-stack", swarmtypes.StackSourceUpdateRequest{
+		ComposeContent: "services:\n  web:\n    image: nginx:alpine\n",
+	})
+	require.NoError(t, err)
+
+	err = svc.DownStack(ctx, "demo-stack")
+	require.NoError(t, err)
+	require.True(t, serviceRemoved)
+	require.FileExists(t, filepath.Join(rootDir, "0", "demo-stack", "compose.yaml"))
+}
+
+func newSwarmTestDockerService(
+	t *testing.T,
+	settingsSvc *SettingsService,
+	handler http.HandlerFunc,
+) *DockerClientService {
+	t.Helper()
+
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+
+	dockerCli, err := dockerclient.NewClientWithOpts(
+		dockerclient.WithHost(server.URL),
+		dockerclient.WithVersion("1.41"),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = dockerCli.Close()
+	})
+
+	return &DockerClientService{
+		client:          dockerCli,
+		config:          &config.Config{DockerHost: server.URL},
+		settingsService: settingsSvc,
+	}
+}
+
+func setupSwarmTestDB(t *testing.T) *database.DB {
+	t.Helper()
+
+	db := setupSettingsTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.SwarmStackProject{}))
+
+	return db
 }

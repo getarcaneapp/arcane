@@ -10,9 +10,22 @@ function getResourceListPage(): string | null {
 	const routeId = page.route?.id;
 	if (!routeId) return null;
 
+	if (routeId.includes('/projects/swarm/[')) {
+		return '/projects';
+	}
+
 	// Check if route has a dynamic segment (contains [...] pattern)
 	// and is a resource detail page (not settings, environments management, etc.)
-	const resourcePrefixes = ['/containers', '/images', '/projects', '/networks', '/volumes'];
+	const resourcePrefixes = [
+		'/containers',
+		'/images',
+		'/projects',
+		'/networks',
+		'/volumes',
+		'/swarm/stacks',
+		'/swarm/services',
+		'/swarm/nodes'
+	];
 
 	for (const prefix of resourcePrefixes) {
 		// Match routes like /containers/[containerId] or /(app)/containers/[containerId]

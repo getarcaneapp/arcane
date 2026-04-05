@@ -28,6 +28,16 @@ export const load: PageLoad = async ({ parent, url }) => {
 		delete filters['archived'];
 	}
 	projectRequestOptions.filters = Object.keys(filters).length ? filters : undefined;
+	const swarmRequestOptions = resolveInitialTableRequest('arcane-swarm-stack-projects-table', {
+		pagination: {
+			page: 1,
+			limit: 20
+		},
+		sort: {
+			column: 'name',
+			direction: 'asc'
+		}
+	} satisfies SearchPaginationSortRequest);
 
 	let projects;
 	let projectStatusCounts;
@@ -46,5 +56,5 @@ export const load: PageLoad = async ({ parent, url }) => {
 		throwPageLoadError(err, 'Failed to load projects');
 	}
 
-	return { projects, projectRequestOptions, projectStatusCounts, showArchived };
+	return { projects, projectRequestOptions, projectStatusCounts, showArchived, swarmRequestOptions };
 };

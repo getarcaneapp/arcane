@@ -286,6 +286,64 @@ type DeleteSwarmStackOutput struct {
 	Body base.ApiResponse[base.MessageResponse]
 }
 
+type DownSwarmStackInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	Name          string `path:"name" doc:"Stack name"`
+}
+
+type DownSwarmStackOutput struct {
+	Body base.ApiResponse[base.MessageResponse]
+}
+
+type ListSwarmStackProjectsInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	Search        string `query:"search" doc:"Search query"`
+	Sort          string `query:"sort" doc:"Column to sort by"`
+	Order         string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
+	Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
+	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
+}
+
+type ListSwarmStackProjectsOutput struct {
+	Body SwarmPaginatedResponse[swarmtypes.StackProjectSummary]
+}
+
+type GetSwarmStackProjectCountsInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+}
+
+type GetSwarmStackProjectCountsOutput struct {
+	Body base.ApiResponse[swarmtypes.StackProjectCounts]
+}
+
+type GetSwarmStackProjectInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	Name          string `path:"name" doc:"Stack name"`
+}
+
+type GetSwarmStackProjectOutput struct {
+	Body base.ApiResponse[swarmtypes.StackProjectDetails]
+}
+
+type UpdateSwarmStackProjectInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	Name          string `path:"name" doc:"Stack name"`
+	Body          swarmtypes.StackSourceUpdateRequest
+}
+
+type UpdateSwarmStackProjectOutput struct {
+	Body base.ApiResponse[swarmtypes.StackProjectDetails]
+}
+
+type DeleteSwarmStackProjectInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	Name          string `path:"name" doc:"Stack name"`
+}
+
+type DeleteSwarmStackProjectOutput struct {
+	Body base.ApiResponse[base.MessageResponse]
+}
+
 type ListSwarmStackServicesInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Name          string `path:"name" doc:"Stack name"`
@@ -545,6 +603,12 @@ func RegisterSwarm(api huma.API, swarmSvc *services.SwarmService, environmentSvc
 	huma.Register(api, huma.Operation{OperationID: "get-swarm-stack-source", Method: http.MethodGet, Path: "/environments/{id}/swarm/stacks/{name}/source", Summary: "Get swarm stack source", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}, Middlewares: humamw.RequireAdmin(api)}, h.GetStackSource)
 	huma.Register(api, huma.Operation{OperationID: "update-swarm-stack-source", Method: http.MethodPut, Path: "/environments/{id}/swarm/stacks/{name}/source", Summary: "Update swarm stack source", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}, Middlewares: humamw.RequireAdmin(api)}, h.UpdateStackSource)
 	huma.Register(api, huma.Operation{OperationID: "delete-swarm-stack", Method: http.MethodDelete, Path: "/environments/{id}/swarm/stacks/{name}", Summary: "Delete swarm stack", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}, Middlewares: humamw.RequireAdmin(api)}, h.DeleteStack)
+	huma.Register(api, huma.Operation{OperationID: "down-swarm-stack", Method: http.MethodPost, Path: "/environments/{id}/swarm/stacks/{name}/down", Summary: "Bring down swarm stack runtime", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}, Middlewares: humamw.RequireAdmin(api)}, h.DownStack)
+	huma.Register(api, huma.Operation{OperationID: "list-swarm-stack-projects", Method: http.MethodGet, Path: "/environments/{id}/swarm/stackprojects", Summary: "List saved swarm stack projects", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, h.ListStackProjects)
+	huma.Register(api, huma.Operation{OperationID: "get-swarm-stack-project-counts", Method: http.MethodGet, Path: "/environments/{id}/swarm/stackprojects/counts", Summary: "Get saved swarm stack project counts", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, h.GetStackProjectCounts)
+	huma.Register(api, huma.Operation{OperationID: "get-swarm-stack-project", Method: http.MethodGet, Path: "/environments/{id}/swarm/stackprojects/{name}", Summary: "Get saved swarm stack project", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, h.GetStackProject)
+	huma.Register(api, huma.Operation{OperationID: "update-swarm-stack-project", Method: http.MethodPut, Path: "/environments/{id}/swarm/stackprojects/{name}", Summary: "Create or update saved swarm stack project", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}, Middlewares: humamw.RequireAdmin(api)}, h.UpdateStackProject)
+	huma.Register(api, huma.Operation{OperationID: "delete-swarm-stack-project", Method: http.MethodDelete, Path: "/environments/{id}/swarm/stackprojects/{name}", Summary: "Delete saved swarm stack project", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}, Middlewares: humamw.RequireAdmin(api)}, h.DeleteStackProject)
 	huma.Register(api, huma.Operation{OperationID: "list-swarm-stack-services", Method: http.MethodGet, Path: "/environments/{id}/swarm/stacks/{name}/services", Summary: "List swarm stack services", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, h.ListStackServices)
 	huma.Register(api, huma.Operation{OperationID: "list-swarm-stack-tasks", Method: http.MethodGet, Path: "/environments/{id}/swarm/stacks/{name}/tasks", Summary: "List swarm stack tasks", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, h.ListStackTasks)
 	huma.Register(api, huma.Operation{OperationID: "render-swarm-stack-config", Method: http.MethodPost, Path: "/environments/{id}/swarm/stacks/config/render", Summary: "Render/validate swarm stack config", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, h.RenderStackConfig)
@@ -1187,6 +1251,155 @@ func (h *SwarmHandler) DeployStack(ctx context.Context, input *DeploySwarmStackI
 	h.auditSwarmMutation(ctx, input.EnvironmentID, "stack.deploy", "swarm_stack", input.Body.Name, input.Body.Name, map[string]any{"stack": input.Body.Name})
 
 	return &DeploySwarmStackOutput{Body: base.ApiResponse[swarmtypes.StackDeployResponse]{Success: true, Data: *resp}}, nil
+}
+
+func (h *SwarmHandler) DownStack(ctx context.Context, input *DownSwarmStackInput) (*DownSwarmStackOutput, error) {
+	if h.swarmService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
+
+	if err := h.swarmService.DownStack(ctx, input.Name); err != nil {
+		return nil, mapSwarmServiceError(err, "Failed to bring down swarm stack")
+	}
+
+	h.auditSwarmMutation(ctx, input.EnvironmentID, "stack.down", "swarm_stack", input.Name, input.Name, map[string]any{"stack": input.Name})
+
+	return &DownSwarmStackOutput{
+		Body: base.ApiResponse[base.MessageResponse]{
+			Success: true,
+			Data:    base.MessageResponse{Message: "Swarm stack brought down successfully"},
+		},
+	}, nil
+}
+
+func (h *SwarmHandler) ListStackProjects(
+	ctx context.Context,
+	input *ListSwarmStackProjectsInput,
+) (*ListSwarmStackProjectsOutput, error) {
+	if h.swarmService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
+
+	params := buildSwarmQueryParams(input.Search, input.Sort, input.Order, input.Start, input.Limit)
+	items, paginationResp, err := h.swarmService.ListStackProjectsPaginated(ctx, input.EnvironmentID, params)
+	if err != nil {
+		return nil, mapSwarmServiceError(err, "Failed to list saved swarm stack projects")
+	}
+	if items == nil {
+		items = []swarmtypes.StackProjectSummary{}
+	}
+
+	return &ListSwarmStackProjectsOutput{Body: toSwarmPaginatedResponse(items, paginationResp)}, nil
+}
+
+func (h *SwarmHandler) GetStackProjectCounts(
+	ctx context.Context,
+	input *GetSwarmStackProjectCountsInput,
+) (*GetSwarmStackProjectCountsOutput, error) {
+	if h.swarmService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
+
+	counts, err := h.swarmService.GetStackProjectStatusCounts(ctx, input.EnvironmentID)
+	if err != nil {
+		return nil, mapSwarmServiceError(err, "Failed to load saved swarm stack project counts")
+	}
+
+	return &GetSwarmStackProjectCountsOutput{
+		Body: base.ApiResponse[swarmtypes.StackProjectCounts]{Success: true, Data: counts},
+	}, nil
+}
+
+func (h *SwarmHandler) GetStackProject(
+	ctx context.Context,
+	input *GetSwarmStackProjectInput,
+) (*GetSwarmStackProjectOutput, error) {
+	if h.swarmService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
+
+	stackProject, err := h.swarmService.GetStackProject(ctx, input.EnvironmentID, input.Name)
+	if err != nil {
+		if errdefs.IsNotFound(err) {
+			return nil, huma.Error404NotFound("Saved swarm stack project not found")
+		}
+		return nil, mapSwarmServiceError(err, "Failed to load saved swarm stack project")
+	}
+
+	return &GetSwarmStackProjectOutput{
+		Body: base.ApiResponse[swarmtypes.StackProjectDetails]{Success: true, Data: *stackProject},
+	}, nil
+}
+
+func (h *SwarmHandler) UpdateStackProject(
+	ctx context.Context,
+	input *UpdateSwarmStackProjectInput,
+) (*UpdateSwarmStackProjectOutput, error) {
+	if h.swarmService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
+
+	stackProject, err := h.swarmService.UpsertStackProject(ctx, input.EnvironmentID, input.Name, input.Body)
+	if err != nil {
+		return nil, mapSwarmServiceError(err, "Failed to update saved swarm stack project")
+	}
+
+	h.auditSwarmMutation(
+		ctx,
+		input.EnvironmentID,
+		"stack.project.update",
+		"swarm_stack",
+		stackProject.Name,
+		input.Name,
+		map[string]any{"stack": stackProject.Name, "previousStack": input.Name},
+	)
+
+	return &UpdateSwarmStackProjectOutput{
+		Body: base.ApiResponse[swarmtypes.StackProjectDetails]{Success: true, Data: *stackProject},
+	}, nil
+}
+
+func (h *SwarmHandler) DeleteStackProject(
+	ctx context.Context,
+	input *DeleteSwarmStackProjectInput,
+) (*DeleteSwarmStackProjectOutput, error) {
+	if h.swarmService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
+
+	if err := h.swarmService.DeleteStackProject(ctx, input.EnvironmentID, input.Name); err != nil {
+		if errdefs.IsNotFound(err) {
+			return nil, huma.Error404NotFound("Saved swarm stack project not found")
+		}
+		return nil, mapSwarmServiceError(err, "Failed to delete saved swarm stack project")
+	}
+
+	h.auditSwarmMutation(ctx, input.EnvironmentID, "stack.project.delete", "swarm_stack", input.Name, input.Name, map[string]any{"stack": input.Name})
+
+	return &DeleteSwarmStackProjectOutput{
+		Body: base.ApiResponse[base.MessageResponse]{
+			Success: true,
+			Data:    base.MessageResponse{Message: "Saved swarm stack project deleted successfully"},
+		},
+	}, nil
 }
 
 // GetStack returns detailed information for a specific swarm stack.

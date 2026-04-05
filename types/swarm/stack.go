@@ -2,6 +2,14 @@ package swarm
 
 import "time"
 
+type StackProjectRuntimeState string
+
+const (
+	StackProjectRuntimeStateLive        StackProjectRuntimeState = "live"
+	StackProjectRuntimeStateDown        StackProjectRuntimeState = "down"
+	StackProjectRuntimeStateUnavailable StackProjectRuntimeState = "unavailable"
+)
+
 type StackSummary struct {
 	// ID is the unique identifier for the stack (uses namespace).
 	//
@@ -143,6 +151,11 @@ type StackSource struct {
 }
 
 type StackSourceUpdateRequest struct {
+	// Name is the stack name to persist. When omitted, the current stack name is preserved.
+	//
+	// Required: false
+	Name string `json:"name,omitempty"`
+
 	// ComposeContent is the Docker Compose YAML content to persist for the stack.
 	//
 	// Required: true
@@ -157,4 +170,101 @@ type StackSourceUpdateRequest struct {
 	//
 	// Required: false
 	Files []SyncFile `json:"files,omitempty"`
+}
+
+type StackProjectSummary struct {
+	// ID is the unique identifier for the saved stack project.
+	//
+	// Required: true
+	ID string `json:"id"`
+
+	// Name is the stack name.
+	//
+	// Required: true
+	Name string `json:"name"`
+
+	// RuntimeState describes whether the stack is live, down, or unavailable.
+	//
+	// Required: true
+	RuntimeState StackProjectRuntimeState `json:"runtimeState"`
+
+	// ServiceCount is the number of services defined in the saved compose project.
+	//
+	// Required: true
+	ServiceCount int `json:"serviceCount"`
+
+	// CreatedAt is the earliest persisted source timestamp.
+	//
+	// Required: true
+	CreatedAt time.Time `json:"createdAt"`
+
+	// UpdatedAt is the latest persisted source timestamp.
+	//
+	// Required: true
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+type StackProjectDetails struct {
+	// ID is the unique identifier for the saved stack project.
+	//
+	// Required: true
+	ID string `json:"id"`
+
+	// Name is the stack name.
+	//
+	// Required: true
+	Name string `json:"name"`
+
+	// RuntimeState describes whether the stack is live, down, or unavailable.
+	//
+	// Required: true
+	RuntimeState StackProjectRuntimeState `json:"runtimeState"`
+
+	// ServiceCount is the number of services defined in the saved compose project.
+	//
+	// Required: true
+	ServiceCount int `json:"serviceCount"`
+
+	// CreatedAt is the earliest persisted source timestamp.
+	//
+	// Required: true
+	CreatedAt time.Time `json:"createdAt"`
+
+	// UpdatedAt is the latest persisted source timestamp.
+	//
+	// Required: true
+	UpdatedAt time.Time `json:"updatedAt"`
+
+	// ComposeContent is the original Docker Compose YAML content used for deployment.
+	//
+	// Required: true
+	ComposeContent string `json:"composeContent"`
+
+	// EnvContent is the optional original environment file content used for deployment.
+	//
+	// Required: false
+	EnvContent string `json:"envContent,omitempty"`
+}
+
+type StackProjectCounts struct {
+	// TotalStackProjects is the total number of saved stack projects.
+	//
+	// Required: true
+	TotalStackProjects int `json:"totalStackProjects"`
+
+	// LiveStackProjects is the number of saved stack projects with live services.
+	//
+	// Required: true
+	LiveStackProjects int `json:"liveStackProjects"`
+
+	// DownStackProjects is the number of saved stack projects without live services.
+	//
+	// Required: true
+	DownStackProjects int `json:"downStackProjects"`
+
+	// UnavailableStackProjects is the number of saved stack projects whose runtime state
+	// could not be determined.
+	//
+	// Required: true
+	UnavailableStackProjects int `json:"unavailableStackProjects"`
 }

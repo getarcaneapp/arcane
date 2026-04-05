@@ -22,8 +22,10 @@ import type {
 	SwarmStackInspect,
 	SwarmStackRenderConfigRequest,
 	SwarmStackRenderConfigResponse,
-	SwarmStackSource,
 	SwarmStackSourceUpdateRequest,
+	SwarmStackProjectSummary,
+	SwarmStackProjectDetails,
+	SwarmStackProjectCounts,
 	SwarmInitRequest,
 	SwarmInitResponse,
 	SwarmJoinRequest,
@@ -45,6 +47,7 @@ export type SwarmServicesPaginatedResponse = Paginated<SwarmServiceSummary>;
 export type SwarmNodesPaginatedResponse = Paginated<SwarmNodeSummary>;
 export type SwarmTasksPaginatedResponse = Paginated<SwarmTaskSummary>;
 export type SwarmStacksPaginatedResponse = Paginated<SwarmStackSummary>;
+export type SwarmStackProjectsPaginatedResponse = Paginated<SwarmStackProjectSummary>;
 
 export class SwarmService extends BaseAPIService {
 	async getServices(options?: SearchPaginationSortRequest): Promise<SwarmServicesPaginatedResponse> {
@@ -149,6 +152,33 @@ export class SwarmService extends BaseAPIService {
 		return res.data;
 	}
 
+	async getStackProjects(options?: SearchPaginationSortRequest): Promise<SwarmStackProjectsPaginatedResponse> {
+		const envId = await environmentStore.getCurrentEnvironmentId();
+		const params = transformPaginationParams(options);
+		const res = await this.api.get(`/environments/${envId}/swarm/stackprojects`, { params });
+		return res.data;
+	}
+
+	async getStackProjectCounts(): Promise<SwarmStackProjectCounts> {
+		const envId = await environmentStore.getCurrentEnvironmentId();
+		return this.handleResponse(this.api.get(`/environments/${envId}/swarm/stackprojects/counts`));
+	}
+
+	async getStackProject(name: string): Promise<SwarmStackProjectDetails> {
+		const envId = await environmentStore.getCurrentEnvironmentId();
+		return this.handleResponse(this.api.get(`/environments/${envId}/swarm/stackprojects/${name}`));
+	}
+
+	async upsertStackProject(name: string, request: SwarmStackSourceUpdateRequest): Promise<SwarmStackProjectDetails> {
+		const envId = await environmentStore.getCurrentEnvironmentId();
+		return this.handleResponse(this.api.put(`/environments/${envId}/swarm/stackprojects/${name}`, request));
+	}
+
+	async deleteStackProject(name: string): Promise<void> {
+		const envId = await environmentStore.getCurrentEnvironmentId();
+		await this.handleResponse(this.api.delete(`/environments/${envId}/swarm/stackprojects/${name}`));
+	}
+
 	async deployStack(request: SwarmStackDeployRequest): Promise<SwarmStackDeployResponse> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		return this.handleResponse(this.api.post(`/environments/${envId}/swarm/stacks`, request));
@@ -159,19 +189,9 @@ export class SwarmService extends BaseAPIService {
 		return this.handleResponse(this.api.get(`/environments/${envId}/swarm/stacks/${name}`));
 	}
 
-	async getStackSource(name: string): Promise<SwarmStackSource> {
+	async downStack(name: string): Promise<void> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.handleResponse(this.api.get(`/environments/${envId}/swarm/stacks/${name}/source`));
-	}
-
-	async updateStackSource(name: string, request: SwarmStackSourceUpdateRequest): Promise<SwarmStackSource> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.handleResponse(this.api.put(`/environments/${envId}/swarm/stacks/${name}/source`, request));
-	}
-
-	async removeStack(name: string): Promise<void> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		await this.handleResponse(this.api.delete(`/environments/${envId}/swarm/stacks/${name}`));
+		await this.handleResponse(this.api.post(`/environments/${envId}/swarm/stacks/${name}/down`, {}));
 	}
 
 	async getStackServices(name: string, options?: SearchPaginationSortRequest): Promise<SwarmServicesPaginatedResponse> {

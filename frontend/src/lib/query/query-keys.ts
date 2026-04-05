@@ -116,6 +116,14 @@ export const queryKeys = {
 		statusCounts: (environmentId: string) => ['projects', 'status-counts', environmentId] as const,
 		detail: (environmentId: string, projectId: string) => ['project', environmentId, projectId] as const
 	},
+	swarm: {
+		all: ['swarm'] as const,
+		stackProjectsList: (environmentId: string, options: SearchPaginationSortRequest) =>
+			['swarm', environmentId, 'stack-projects', stableSerialize(options)] as const,
+		stackProjectCounts: (environmentId: string) => ['swarm', environmentId, 'stack-project-counts'] as const,
+		stackProjectDetail: (environmentId: string, stackName: string) =>
+			['swarm', environmentId, 'stack-project', stackName] as const
+	},
 	networks: {
 		all: ['networks'] as const,
 		list: (environmentId: string, options: SearchPaginationSortRequest) =>

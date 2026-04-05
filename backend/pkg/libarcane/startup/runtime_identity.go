@@ -191,51 +191,6 @@ func configureRuntimeDockerConfigEnvInternal(cfg *RuntimeIdentityConfig, setenv 
 	return configDir, nil
 }
 
-func runtimeIdentitySupplementaryGroupsInternal(dockerHost string, resolveSocketGroup func(string) (uint32, bool)) []uint32 {
-	socketPath, ok := dockerSocketPathInternal(dockerHost)
-	if !ok {
-		return nil
-	}
-
-	socketGID, ok := resolveSocketGroup(socketPath)
-	if !ok {
-		return nil
-	}
-
-	return []uint32{socketGID}
-}
-
-func dockerSocketPathInternal(raw string) (string, bool) {
-	value := strings.TrimSpace(raw)
-	if value == "" {
-		return defaultDockerSocketPath, true
-	}
-
-	parsed, err := url.Parse(value)
-	if err != nil || parsed.Scheme != "unix" {
-		return "", false
-	}
-
-	if parsed.Host != "" || parsed.Path != "" {
-		socketPath := parsed.Host + parsed.Path
-		if !strings.HasPrefix(socketPath, "/") {
-			socketPath = "/" + socketPath
-		}
-		return filepath.Clean(socketPath), true
-	}
-
-	if parsed.Opaque == "" {
-		return "", false
-	}
-
-	socketPath := strings.TrimPrefix(parsed.Opaque, "//")
-	if !strings.HasPrefix(socketPath, "/") {
-		socketPath = "/" + socketPath
-	}
-
-	return filepath.Clean(socketPath), true
-}
-
 func prepareWritablePathsInternal(uid int, gid int, mountpoints map[string]struct{}, projectsDir string) error {
 	return prepareWritablePathsWithRootsInternal(uid, gid, mountpoints, projectsDir, defaultDataDirectory, defaultBuildsDirectory)
 }

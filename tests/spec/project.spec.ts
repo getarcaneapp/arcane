@@ -20,6 +20,52 @@ async function navigateToProjects(page: Page) {
 	await page.waitForLoadState('networkidle');
 }
 
+async function getComposeProjectsPanel(page: Page) {
+	const composeTab = page.getByRole('tab', { name: 'Compose Projects' });
+	await expect(composeTab).toBeVisible();
+
+	if ((await composeTab.getAttribute('data-state')) !== 'active') {
+		await composeTab.click();
+	}
+
+	const panelId = await composeTab.getAttribute('aria-controls');
+	if (!panelId) {
+		throw new Error('Compose Projects tab is missing aria-controls');
+	}
+
+	const panel = page.locator(`#${panelId}`);
+	await expect(panel).toBeVisible();
+
+	return panel;
+}
+
+async function getComposeProjectsTable(page: Page) {
+	const panel = await getComposeProjectsPanel(page);
+	const table = panel.locator('table').first();
+
+	await expect(table).toBeVisible();
+	await expect(table.getByRole('columnheader', { name: 'Name', exact: true })).toBeVisible();
+	await expect(
+		table.getByRole('columnheader', { name: 'Working Directory', exact: true })
+	).toBeVisible();
+	await expect(table.getByRole('columnheader', { name: 'Provider', exact: true })).toBeVisible();
+	await expect(table.getByRole('columnheader', { name: 'Status', exact: true })).toBeVisible();
+	await expect(table.getByRole('columnheader', { name: 'Updates', exact: true })).toBeVisible();
+	await expect(table.getByRole('columnheader', { name: 'Created', exact: true })).toBeVisible();
+	await expect(table.getByRole('columnheader', { name: 'Services', exact: true })).toBeVisible();
+
+	return table;
+}
+
+async function getComposeProjectsSearchInput(page: Page) {
+	const panel = await getComposeProjectsPanel(page);
+	const searchInput = panel.getByPlaceholder('Search…');
+
+	await expect(searchInput).toBeVisible();
+
+	return searchInput;
+}
+
 async function setCodeMirrorValue(page: Page, editor: Locator, text: string) {
 	const content = editor.locator('.cm-content').first();
 	await expect(content).toBeVisible();
@@ -182,12 +228,11 @@ async function destroyProjectByNameViaUI(page: Page, projectName: string) {
 	await page.goto(ROUTES.page);
 	await page.waitForLoadState('networkidle');
 
-	const searchInput = page.getByPlaceholder('Search…');
-	if (await searchInput.isVisible().catch(() => false)) {
-		await searchInput.fill(projectName);
-	}
+	const searchInput = await getComposeProjectsSearchInput(page);
+	await searchInput.fill(projectName);
 
-	const row = page.locator('tbody tr').filter({ hasText: projectName }).first();
+	const table = await getComposeProjectsTable(page);
+	const row = table.locator('tbody tr').filter({ hasText: projectName }).first();
 	if (!(await row.isVisible().catch(() => false))) {
 		return;
 	}
@@ -200,7 +245,7 @@ async function destroyProjectByNameViaUI(page: Page, projectName: string) {
 	await dialog.getByLabel(/Remove project files/i).check();
 	await dialog.getByRole('button', { name: 'Destroy', exact: true }).click();
 
-	await expect(page.locator('tbody tr').filter({ hasText: projectName })).toHaveCount(0, {
+	await expect(table.locator('tbody tr').filter({ hasText: projectName })).toHaveCount(0, {
 		timeout: 15000
 	});
 }
@@ -269,7 +314,7 @@ test.describe('Projects Page', () => {
 	});
 
 	test('should display projects list', async ({ page }) => {
-		await expect(page.locator('table')).toBeVisible();
+		await getComposeProjectsTable(page);
 	});
 
 	test('should display the updates column', async ({ page }) => {
@@ -280,7 +325,8 @@ test.describe('Projects Page', () => {
 		test.skip(!realProjects.length, 'No projects available for actions menu test');
 
 		await page.waitForLoadState('networkidle');
-		const firstRow = page.locator('tbody tr').first();
+		const table = await getComposeProjectsTable(page);
+		const firstRow = table.locator('tbody tr').first();
 		const menu = await openDropdownMenu(page, firstRow.getByRole('button', { name: 'Open menu' }));
 
 		await expect(menu.getByRole('menuitem', { name: 'Edit' })).toBeVisible();
@@ -345,8 +391,9 @@ test.describe('Projects Page', () => {
 		test.skip(!realProjects.length, 'No projects available for navigation test');
 
 		await page.waitForLoadState('networkidle');
+		const table = await getComposeProjectsTable(page);
 		// Get the first project link that points to /projects/ (not the "Git" indicator link)
-		const firstProjectLink = page
+		const firstProjectLink = table
 			.locator('tbody tr')
 			.first()
 			.getByRole('link')
@@ -362,8 +409,7 @@ test.describe('Projects Page', () => {
 	test('should allow searching/filtering projects', async ({ page }) => {
 		test.skip(!realProjects.length, 'No projects available for search test');
 
-		const searchInput = page.getByPlaceholder('Search…');
-		await expect(searchInput).toBeVisible();
+		const searchInput = await getComposeProjectsSearchInput(page);
 
 		const firstProject = realProjects[0];
 		if (firstProject?.name) {
@@ -748,8 +794,7 @@ test.describe('New Compose Project Page', () => {
 				});
 			});
 
-			const searchInput = page.getByPlaceholder('Search…');
-			await expect(searchInput).toBeVisible();
+			const searchInput = await getComposeProjectsSearchInput(page);
 			const filteredProjectsResponse = page.waitForResponse((response) => {
 				if (response.request().method() !== 'GET') return false;
 				return (
@@ -760,7 +805,8 @@ test.describe('New Compose Project Page', () => {
 			await searchInput.fill(projectName);
 			await filteredProjectsResponse;
 
-			const row = page.locator('tbody tr').filter({ hasText: projectName }).first();
+			const table = await getComposeProjectsTable(page);
+			const row = table.locator('tbody tr').filter({ hasText: projectName }).first();
 			await expect(row).toBeVisible();
 			const menu = await openDropdownMenu(page, row.getByRole('button', { name: 'Open menu' }));
 			const redeployMenuItem = menu.getByRole('menuitem', { name: 'Pull & Redeploy' });
