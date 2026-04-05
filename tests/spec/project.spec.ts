@@ -545,6 +545,65 @@ test.describe('New Compose Project Page', () => {
 		}
 	});
 
+	test('should allow redeploy requests to complete after 10 seconds without client timeout', async ({
+		page
+	}) => {
+		test.slow();
+
+		const projectName = `test-redeploy-timeout-${Date.now()}`;
+		let redeployRequestStartedAt: number | undefined;
+
+		try {
+			await createProjectViaUI(page, projectName);
+			await page.goto(ROUTES.page);
+			await page.waitForLoadState('networkidle');
+
+			await page.route('**/api/environments/*/projects/*/redeploy', async (route) => {
+				if (route.request().method() !== 'POST') {
+					await route.continue();
+					return;
+				}
+
+				redeployRequestStartedAt = Date.now();
+				await new Promise((resolve) => setTimeout(resolve, 11_000));
+				await route.fulfill({
+					status: 200,
+					contentType: 'application/json',
+					body: JSON.stringify({
+						success: true,
+						data: {
+							message: 'Project redeployed successfully'
+						}
+					})
+				});
+			});
+
+			const searchInput = page.getByPlaceholder('Search…');
+			await expect(searchInput).toBeVisible();
+			await searchInput.fill(projectName);
+
+			const row = page.locator('tbody tr').filter({ hasText: projectName }).first();
+			await expect(row).toBeVisible();
+			await row.getByRole('button', { name: 'Open menu' }).click();
+			const redeployMenuItem = page.getByRole('menuitem', { name: 'Pull & Redeploy' }).first();
+			await expect(redeployMenuItem).toBeVisible();
+			await redeployMenuItem.click({ force: true });
+
+			await expect
+				.poll(() => redeployRequestStartedAt, {
+					message: 'Expected the redeploy request to be issued'
+				})
+				.toBeDefined();
+
+			await expect(page.getByText('Project pulled successfully.', { exact: true })).toBeVisible({
+				timeout: 20_000
+			});
+			expect(Date.now() - redeployRequestStartedAt!).toBeGreaterThanOrEqual(11_000);
+		} finally {
+			await destroyProjectByNameViaUI(page, projectName);
+		}
+	});
+
 	test('should destroy the project and remove files from disk', async ({ page }) => {
 		const projectName = `test-destroy-${Date.now()}`;
 

@@ -188,7 +188,7 @@ class APIClient {
 				headers: config.headers,
 				retry: config.retry ?? 0,
 				searchParams: config.params,
-				timeout: config.timeout
+				timeout: config.timeout ?? false
 			};
 
 			const bodyData = data !== undefined ? data : config.data;
