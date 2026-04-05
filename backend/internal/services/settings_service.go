@@ -89,6 +89,11 @@ func (s *SettingsService) refreshSettingsCacheInternal(ctx context.Context) erro
 }
 
 func (s *SettingsService) getDefaultSettings() *models.Settings {
+	return DefaultSettingsConfig()
+}
+
+// DefaultSettingsConfig returns the canonical default settings model used by Arcane.
+func DefaultSettingsConfig() *models.Settings {
 	return &models.Settings{
 		ProjectsDirectory:               models.SettingVariable{Value: "/app/data/projects"},
 		FollowProjectSymlinks:           models.SettingVariable{Value: "false"},

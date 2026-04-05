@@ -210,6 +210,24 @@ deploy scope kind *args:
 proto-backend:
     cd {{ edge_proto_dir }} && go run github.com/bufbuild/buf/cmd/buf@v1.65.0 generate
 
+# Generate the docs config schema JSON.
+[group('docs')]
+_docs-config output="" source_root=".":
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    cmd=(go run -tags exclude_frontend ./backend/cmd config-schema --source-root "{{ source_root }}")
+    if [ -n "{{ output }}" ]; then
+        cmd+=(--output "{{ output }}")
+    fi
+
+    "${cmd[@]}"
+
+# Docs targets. Example: just docs config
+[group('docs')]
+docs target *args:
+    @just "_docs-{{ target }}" {{ args }}
+
 # Benchmark edge tunnel transport performance (gRPC vs WebSocket) with allocations.
 
 # Usage: just bench-edge-tunnel [count] [benchtime]
