@@ -1979,7 +1979,7 @@
 	"volume_advanced_settings": "Cài đặt nâng cao",
 	"volume_driver_options_placeholder": "key=value\nkey2=value2",
 	"volume_driver_options_description": "Nhập các tùy chọn driver dưới dạng key=value, mỗi cặp một dòng",
-	"volume_labels_placeholder": "com.example.description=Production data\ncom.example.department=Finance",
+	"volume_labels_placeholder": "",
 	"_comment_misc": "=== MISCELLANEOUS ===",
 	"file_drop_zone_drag_drop": "Kéo và thả tệp vào đây, hoặc nhấp để chọn tệp",
 	"file_drop_zone_max_files": "Bạn có thể upload tối đa {maxFiles} tệp",
