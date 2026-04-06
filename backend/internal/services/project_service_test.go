@@ -1669,16 +1669,16 @@ func TestResolveBuildContextInternal_AllowsRemoteGitContext(t *testing.T) {
 	assert.Equal(t, "https://github.com/getarcaneapp/arcane.git#main:docker/app", contextDir)
 }
 
-func TestResolveBuildContextInternal_RejectsUnsupportedRemoteContext(t *testing.T) {
+func TestResolveBuildContextInternal_AllowsRemoteGitContextWithoutGitSuffix(t *testing.T) {
 	svc := composetypes.ServiceConfig{
 		Build: &composetypes.BuildConfig{
-			Context: "https://example.com/archive.tar.gz",
+			Context: "https://git.sr.ht/~jordanreger/nws-alerts#main:docker/app",
 		},
 	}
 
-	_, err := resolveBuildContextInternal("/projects/demo", svc, "web")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "only git repository URLs are supported")
+	contextDir, err := resolveBuildContextInternal("/projects/demo", svc, "web")
+	require.NoError(t, err)
+	assert.Equal(t, "https://git.sr.ht/~jordanreger/nws-alerts#main:docker/app", contextDir)
 }
 
 func TestProjectService_SyncProjectsFromFileSystem_IgnoresSymlinkedProjectDirsWhenDisabled(t *testing.T) {

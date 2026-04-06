@@ -153,7 +153,7 @@ test.describe('Build workspace provider flows', () => {
 		await switchContextMode(page, 'Remote Git');
 		await page
 			.locator('#remote-context-url')
-			.fill('https://github.com/getarcaneapp/arcane.git#main:docker/app');
+			.fill('https://git.sr.ht/~jordanreger/nws-alerts#main:docker/app');
 		await setRequiredBuildInputs(page, `e2e/remote:${Date.now()}`);
 
 		let buildPayload: Record<string, unknown> | null = null;
@@ -170,7 +170,7 @@ test.describe('Build workspace provider flows', () => {
 		await expect.poll(() => buildPayload, { timeout: 10000 }).not.toBeNull();
 
 		expect(buildPayload?.contextDir).toBe(
-			'https://github.com/getarcaneapp/arcane.git#main:docker/app'
+			'https://git.sr.ht/~jordanreger/nws-alerts#main:docker/app'
 		);
 	});
 

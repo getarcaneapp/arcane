@@ -104,6 +104,10 @@ func TestBuildService_ResolveBuildRequest_ClonesRemoteGitContext(t *testing.T) {
 
 	cleanupCalled := false
 	svc := &BuildService{
+		gitProbeFn: func(context.Context, string, buildgit.AuthConfig) error {
+			t.Fatal("git remote probe should not run for .git URLs")
+			return nil
+		},
 		gitCloneFn: func(_ context.Context, repositoryURL, ref string, auth buildgit.AuthConfig) (string, error) {
 			assert.Equal(t, "https://github.com/getarcaneapp/arcane.git", repositoryURL)
 			assert.Equal(t, "main", ref)
@@ -129,17 +133,40 @@ func TestBuildService_ResolveBuildRequest_ClonesRemoteGitContext(t *testing.T) {
 	assert.True(t, cleanupCalled)
 }
 
-func TestBuildService_ResolveBuildRequest_RejectsUnsupportedRemoteContext(t *testing.T) {
-	svc := &BuildService{}
+func TestBuildService_ResolveBuildRequest_ProbesAndClonesRemoteGitContextWithoutGitSuffix(t *testing.T) {
+	repoPath := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(repoPath, "docker", "app"), 0o755))
 
-	_, cleanup, err := svc.resolveBuildRequestInternal(
+	probeCalled := false
+	cloneCalled := false
+	svc := &BuildService{
+		gitProbeFn: func(_ context.Context, repositoryURL string, auth buildgit.AuthConfig) error {
+			probeCalled = true
+			assert.Equal(t, "https://git.sr.ht/~jordanreger/nws-alerts", repositoryURL)
+			assert.Equal(t, buildgit.AuthConfig{}, auth)
+			return nil
+		},
+		gitCloneFn: func(_ context.Context, repositoryURL, ref string, auth buildgit.AuthConfig) (string, error) {
+			cloneCalled = true
+			assert.True(t, probeCalled)
+			assert.Equal(t, "https://git.sr.ht/~jordanreger/nws-alerts", repositoryURL)
+			assert.Equal(t, "main", ref)
+			assert.Equal(t, buildgit.AuthConfig{}, auth)
+			return repoPath, nil
+		},
+		gitCleanupFn: func(string) error { return nil },
+	}
+
+	resolvedReq, cleanup, err := svc.resolveBuildRequestInternal(
 		context.Background(),
-		image.BuildRequest{ContextDir: "https://example.com/archive.tar.gz"},
+		image.BuildRequest{ContextDir: "https://git.sr.ht/~jordanreger/nws-alerts#main:docker/app"},
 		nil,
 		"",
 	)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "only git repository URLs are supported")
+	require.NoError(t, err)
+	assert.True(t, probeCalled)
+	assert.True(t, cloneCalled)
+	assert.Equal(t, filepath.Join(repoPath, "docker", "app"), resolvedReq.ContextDir)
 	require.NoError(t, cleanup())
 }
 
@@ -154,6 +181,32 @@ func TestBuildService_ResolveBuildRequest_RequiresGitRepositoryServiceForRemoteC
 	)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "git repository service not available")
+	require.NoError(t, cleanup())
+}
+
+func TestBuildService_ResolveBuildRequest_RejectsNonGitHTTPContextViaProbeFailure(t *testing.T) {
+	svc := &BuildService{
+		gitProbeFn: func(_ context.Context, repositoryURL string, auth buildgit.AuthConfig) error {
+			assert.Equal(t, "https://example.com/archive.tar.gz", repositoryURL)
+			assert.Equal(t, buildgit.AuthConfig{}, auth)
+			return assert.AnError
+		},
+		gitCloneFn: func(context.Context, string, string, buildgit.AuthConfig) (string, error) {
+			t.Fatal("git clone should not run when remote probe fails")
+			return "", nil
+		},
+	}
+
+	_, cleanup, err := svc.resolveBuildRequestInternal(
+		context.Background(),
+		image.BuildRequest{ContextDir: "https://example.com/archive.tar.gz"},
+		nil,
+		"",
+	)
+	require.Error(t, err)
+	// HTTP(S) URLs without a .git suffix now reach the remote probe step instead of failing suffix validation.
+	assert.Contains(t, err.Error(), "failed to verify remote git repository")
+	assert.Contains(t, err.Error(), "archive.tar.gz")
 	require.NoError(t, cleanup())
 }
 
@@ -183,7 +236,15 @@ func TestBuildService_ResolveBuildRequest_UsesSavedGitCredentials(t *testing.T) 
 	t.Run("http auth", func(t *testing.T) {
 		svc := &BuildService{
 			gitRepository: repoService,
-			gitCloneFn: func(_ context.Context, _ string, _ string, auth buildgit.AuthConfig) (string, error) {
+			gitProbeFn: func(_ context.Context, repositoryURL string, auth buildgit.AuthConfig) error {
+				assert.Equal(t, "https://github.com/getarcaneapp/private-build", repositoryURL)
+				assert.Equal(t, "http", auth.AuthType)
+				assert.Equal(t, "builder", auth.Username)
+				assert.Equal(t, "token-123", auth.Token)
+				return nil
+			},
+			gitCloneFn: func(_ context.Context, repositoryURL, _ string, auth buildgit.AuthConfig) (string, error) {
+				assert.Equal(t, "https://github.com/getarcaneapp/private-build", repositoryURL)
 				assert.Equal(t, "http", auth.AuthType)
 				assert.Equal(t, "builder", auth.Username)
 				assert.Equal(t, "token-123", auth.Token)
@@ -194,7 +255,7 @@ func TestBuildService_ResolveBuildRequest_UsesSavedGitCredentials(t *testing.T) 
 
 		_, cleanup, err := svc.resolveBuildRequestInternal(
 			context.Background(),
-			image.BuildRequest{ContextDir: "https://github.com/getarcaneapp/private-build.git#main"},
+			image.BuildRequest{ContextDir: "https://github.com/getarcaneapp/private-build#main"},
 			nil,
 			"",
 		)
@@ -205,6 +266,10 @@ func TestBuildService_ResolveBuildRequest_UsesSavedGitCredentials(t *testing.T) 
 	t.Run("ssh auth", func(t *testing.T) {
 		svc := &BuildService{
 			gitRepository: repoService,
+			gitProbeFn: func(context.Context, string, buildgit.AuthConfig) error {
+				t.Fatal("git remote probe should not run for ssh URLs")
+				return nil
+			},
 			gitCloneFn: func(_ context.Context, _ string, _ string, auth buildgit.AuthConfig) (string, error) {
 				assert.Equal(t, "ssh", auth.AuthType)
 				assert.Equal(t, "ssh-private-key", auth.SSHKey)

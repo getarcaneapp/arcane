@@ -30,6 +30,7 @@ type BuildService struct {
 	registryService *ContainerRegistryService
 	gitRepository   *GitRepositoryService
 	builder         buildtypes.Builder
+	gitProbeFn      func(context.Context, string, buildgit.AuthConfig) error
 	gitCloneFn      func(context.Context, string, string, buildgit.AuthConfig) (string, error)
 	gitCleanupFn    func(string) error
 }
@@ -190,6 +191,12 @@ func (s *BuildService) resolveBuildRequestInternal(
 	if matchedRepository {
 		writeBuildProgressStatusInternal(progressWriter, serviceName, fmt.Sprintf("using saved git credentials for %s", source.RepositoryURL))
 	}
+	if libbuild.RequiresGitRemoteProbe(source.RepositoryURL) {
+		writeBuildProgressStatusInternal(progressWriter, serviceName, fmt.Sprintf("verifying remote git repository %s", source.RepositoryURL))
+		if err := s.probeGitContextInternal(ctx, source.RepositoryURL, authConfig); err != nil {
+			return imagetypes.BuildRequest{}, func() error { return nil }, fmt.Errorf("failed to verify remote git repository %q: %w", source.RepositoryURL, err)
+		}
+	}
 
 	repoPath, err := s.cloneGitContextInternal(ctx, source.RepositoryURL, source.Ref, authConfig)
 	if err != nil {
@@ -242,6 +249,18 @@ func (s *BuildService) resolveGitBuildAuthInternal(ctx context.Context, rawURL s
 	}
 
 	return authConfig, true, nil
+}
+
+func (s *BuildService) probeGitContextInternal(ctx context.Context, repositoryURL string, authConfig buildgit.AuthConfig) error {
+	if s.gitProbeFn != nil {
+		return s.gitProbeFn(ctx, repositoryURL, authConfig)
+	}
+
+	if s.gitRepository != nil && s.gitRepository.gitClient != nil {
+		return s.gitRepository.gitClient.ProbeRemote(ctx, repositoryURL, authConfig)
+	}
+
+	return errors.New("git repository service not available")
 }
 
 func (s *BuildService) cloneGitContextInternal(ctx context.Context, repositoryURL, ref string, authConfig buildgit.AuthConfig) (string, error) {

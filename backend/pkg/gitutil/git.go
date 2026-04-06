@@ -294,28 +294,9 @@ func (c *Client) ListBranches(ctx context.Context, url string, auth AuthConfig) 
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	authMethod, err := c.getAuth(auth)
+	refs, err := c.listRemoteReferences(ctx, url, auth)
 	if err != nil {
 		return nil, err
-	}
-
-	// Create a remote without cloning
-	rem := git.NewRemote(nil, &config.RemoteConfig{
-		Name: "origin",
-		URLs: []string{url},
-	})
-
-	listOptions := &git.ListOptions{}
-	if authMethod != nil {
-		listOptions.Auth = authMethod
-	}
-
-	listCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
-	defer cancel()
-
-	refs, err := rem.ListContext(listCtx, listOptions)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list remote references: %w", err)
 	}
 
 	var branches []BranchInfo
@@ -361,6 +342,48 @@ func (c *Client) ListBranches(ctx context.Context, url string, auth AuthConfig) 
 	})
 
 	return branches, nil
+}
+
+// ProbeRemote verifies that a remote repository is reachable without cloning it.
+func (c *Client) ProbeRemote(ctx context.Context, url string, auth AuthConfig) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	_, err := c.listRemoteReferences(ctx, url, auth)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (c *Client) listRemoteReferences(ctx context.Context, url string, auth AuthConfig) ([]*plumbing.Reference, error) {
+	authMethod, err := c.getAuth(auth)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create a remote without cloning
+	rem := git.NewRemote(nil, &config.RemoteConfig{
+		Name: "origin",
+		URLs: []string{url},
+	})
+
+	listOptions := &git.ListOptions{}
+	if authMethod != nil {
+		listOptions.Auth = authMethod
+	}
+
+	listCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+
+	refs, err := rem.ListContext(listCtx, listOptions)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list remote references: %w", err)
+	}
+
+	return refs, nil
 }
 
 // ValidatePath ensures the path is safe and doesn't escape the repo

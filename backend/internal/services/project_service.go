@@ -1777,8 +1777,6 @@ func resolveBuildContextInternal(workingDir string, svc composetypes.ServiceConf
 		contextDir = workingDir
 	} else if _, isGitContext, err := libbuild.ParseGitBuildContextSource(contextDir); err != nil {
 		return "", fmt.Errorf("invalid build context for service %s: %w", serviceName, err)
-	} else if libbuild.IsPotentialRemoteBuildContextSource(contextDir) && !isGitContext {
-		return "", fmt.Errorf("unsupported remote build context for service %s: only git repository URLs are supported", serviceName)
 	} else if !isGitContext && !filepath.IsAbs(contextDir) {
 		contextDir = filepath.Join(workingDir, contextDir)
 	}
