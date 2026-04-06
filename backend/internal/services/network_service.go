@@ -43,8 +43,7 @@ func (s *NetworkService) GetNetworkByID(ctx context.Context, id string) (*networ
 		return nil, fmt.Errorf("network not found: %w", err)
 	}
 
-	inspect := networkInspect.Network
-	return &inspect, nil
+	return new(networkInspect.Network), nil
 }
 
 func (s *NetworkService) GetNetworkTopology(ctx context.Context) (*networktypes.Topology, error) {

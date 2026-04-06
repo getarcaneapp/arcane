@@ -1175,8 +1175,7 @@ func (s *UpdaterService) recordRun(ctx context.Context, item updater.ResourceRes
 		rec.NewImageVersions = newv
 	}
 
-	end := time.Now()
-	rec.EndTime = &end
+	rec.EndTime = new(time.Now())
 
 	return s.db.WithContext(ctx).Create(rec).Error
 }
@@ -1339,8 +1338,7 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 			containersWithDeps[i] = libupdater.ExtractContainerDeps(ctx, dcli, cwd.Container, inspect)
 
 			if p, ok := plansByName[containersWithDeps[i].Name]; ok {
-				inspectCopy := inspect
-				p.inspect = &inspectCopy
+				p.inspect = new(inspect)
 			}
 		}
 	}
@@ -1445,8 +1443,7 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 				continue
 			}
 			inspect := inspectResult.Container
-			inspectCopy := inspect
-			p.inspect = &inspectCopy
+			p.inspect = new(inspect)
 
 			// If this container belongs to a compose project that was missed during the
 			// pre-scan (inspect was nil), register it now so the main loop routes it

@@ -414,8 +414,7 @@ func upgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 
 	fmt.Println("PROGRESS:70:Stopping old container")
 	slog.Info("Stopping old container", "name", oldName)
-	timeout := 10
-	if _, err := dockerClient.ContainerStop(ctx, oldContainer.ID, client.ContainerStopOptions{Timeout: &timeout}); err != nil {
+	if _, err := dockerClient.ContainerStop(ctx, oldContainer.ID, client.ContainerStopOptions{Timeout: new(10)}); err != nil {
 		_, _ = dockerClient.ContainerRename(ctx, oldContainer.ID, client.ContainerRenameOptions{NewName: originalName})
 		return fmt.Errorf("stop old container: %w", err)
 	}

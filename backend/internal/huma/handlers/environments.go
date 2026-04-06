@@ -709,8 +709,7 @@ func (h *EnvironmentHandler) TestConnection(ctx context.Context, input *TestConn
 	status, err := h.environmentService.TestConnection(ctx, input.ID, apiUrl)
 	resp := environment.Test{Status: status}
 	if err != nil {
-		msg := err.Error()
-		resp.Message = &msg
+		resp.Message = new(err.Error())
 		return &TestConnectionOutput{
 			Body: base.ApiResponse[environment.Test]{
 				Success: false,

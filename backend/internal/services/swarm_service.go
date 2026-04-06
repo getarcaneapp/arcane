@@ -502,8 +502,7 @@ func (s *SwarmService) GetNode(ctx context.Context, environmentID, nodeID string
 
 	items := []swarmtypes.NodeSummary{swarmtypes.NewNodeSummary(nodeResult.Node)}
 	s.enrichNodeAgentStatusesInternal(ctx, environmentID, items)
-	out := items[0]
-	return &out, nil
+	return new(items[0]), nil
 }
 
 func (s *SwarmService) GetLocalNodeIdentity(ctx context.Context) (*SwarmNodeIdentity, error) {
@@ -801,8 +800,7 @@ func (s *SwarmService) ListStacksPaginated(ctx context.Context, environmentID st
 		if _, exists := stacks[stackName]; exists {
 			continue
 		}
-		stack := persisted
-		stacks[stackName] = &stack
+		stacks[stackName] = new(persisted)
 	}
 
 	items := make([]swarmtypes.StackSummary, 0, len(stacks))
@@ -871,8 +869,7 @@ func (s *SwarmService) GetSwarmInfo(ctx context.Context) (*swarmtypes.SwarmInfo,
 		return nil, fmt.Errorf("failed to inspect swarm: %w", err)
 	}
 
-	out := swarmtypes.NewSwarmInfo(infoResult.Swarm)
-	return &out, nil
+	return new(swarmtypes.NewSwarmInfo(infoResult.Swarm)), nil
 }
 
 func (s *SwarmService) InitSwarm(ctx context.Context, req swarmtypes.SwarmInitRequest) (*swarmtypes.SwarmInitResponse, error) {
@@ -1218,13 +1215,11 @@ func (s *SwarmService) RemoveNode(ctx context.Context, nodeID string, force bool
 }
 
 func (s *SwarmService) PromoteNode(ctx context.Context, nodeID string) error {
-	role := swarm.NodeRoleManager
-	return s.UpdateNode(ctx, nodeID, swarmtypes.NodeUpdateRequest{Role: &role})
+	return s.UpdateNode(ctx, nodeID, swarmtypes.NodeUpdateRequest{Role: new(swarm.NodeRoleManager)})
 }
 
 func (s *SwarmService) DemoteNode(ctx context.Context, nodeID string) error {
-	role := swarm.NodeRoleWorker
-	return s.UpdateNode(ctx, nodeID, swarmtypes.NodeUpdateRequest{Role: &role})
+	return s.UpdateNode(ctx, nodeID, swarmtypes.NodeUpdateRequest{Role: new(swarm.NodeRoleWorker)})
 }
 
 func (s *SwarmService) ListNodeTasksPaginated(ctx context.Context, nodeID string, params pagination.QueryParams) ([]swarmtypes.TaskSummary, pagination.Response, error) {
@@ -1657,8 +1652,7 @@ func (s *SwarmService) GetConfig(ctx context.Context, configID string) (*swarmty
 		return nil, fmt.Errorf("failed to inspect swarm config: %w", err)
 	}
 
-	item := swarmtypes.NewConfigSummary(cfgResult.Config)
-	return &item, nil
+	return new(swarmtypes.NewConfigSummary(cfgResult.Config)), nil
 }
 
 func (s *SwarmService) CreateConfig(ctx context.Context, req swarmtypes.ConfigCreateRequest) (*swarmtypes.ConfigSummary, error) {
@@ -1744,8 +1738,7 @@ func (s *SwarmService) GetSecret(ctx context.Context, secretID string) (*swarmty
 		return nil, fmt.Errorf("failed to inspect swarm secret: %w", err)
 	}
 
-	item := swarmtypes.NewSecretSummary(secretResult.Secret)
-	return &item, nil
+	return new(swarmtypes.NewSecretSummary(secretResult.Secret)), nil
 }
 
 func (s *SwarmService) CreateSecret(ctx context.Context, req swarmtypes.SecretCreateRequest) (*swarmtypes.SecretSummary, error) {

@@ -150,8 +150,7 @@ func prepareDockerBuildInputInternal(req imagetypes.BuildRequest) (dockerBuildIn
 
 	buildArgs := map[string]*string{}
 	for key, val := range req.BuildArgs {
-		v := val
-		buildArgs[key] = &v
+		buildArgs[key] = new(val)
 	}
 
 	labels := map[string]string{}

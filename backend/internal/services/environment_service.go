@@ -329,8 +329,6 @@ func (s *EnvironmentService) EnsureSwarmNodeAgentEnvironment(
 	}
 
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		parentEnvironmentIDCopy := parentEnvironmentID
-		nodeIDCopy := nodeID
 		createdEnv := &models.Environment{
 			Name:                buildSwarmNodeAgentNameInternal(hostname, nodeID),
 			ApiUrl:              buildSwarmNodeAgentURLInternal(nodeID),
@@ -338,13 +336,11 @@ func (s *EnvironmentService) EnsureSwarmNodeAgentEnvironment(
 			Enabled:             true,
 			IsEdge:              true,
 			Hidden:              true,
-			ParentEnvironmentID: &parentEnvironmentIDCopy,
-			SwarmNodeID:         &nodeIDCopy,
+			ParentEnvironmentID: new(parentEnvironmentID),
+			SwarmNodeID:         new(nodeID),
 		}
 
-		userIDCopy := userID
-		usernameCopy := username
-		if _, createErr := s.CreateEnvironment(ctx, createdEnv, &userIDCopy, &usernameCopy); createErr != nil {
+		if _, createErr := s.CreateEnvironment(ctx, createdEnv, new(userID), new(username)); createErr != nil {
 			return nil, "", fmt.Errorf("failed to create swarm node agent environment: %w", createErr)
 		}
 		env = *createdEnv
@@ -370,9 +366,7 @@ func (s *EnvironmentService) EnsureSwarmNodeAgentEnvironment(
 			updates["swarm_node_id"] = nodeID
 		}
 		if len(updates) > 0 {
-			userIDCopy := userID
-			usernameCopy := username
-			updatedEnv, updateErr := s.UpdateEnvironment(ctx, env.ID, updates, &userIDCopy, &usernameCopy)
+			updatedEnv, updateErr := s.UpdateEnvironment(ctx, env.ID, updates, new(userID), new(username))
 			if updateErr != nil {
 				return nil, "", fmt.Errorf("failed to update swarm node agent environment: %w", updateErr)
 			}
@@ -394,10 +388,9 @@ func (s *EnvironmentService) EnsureSwarmNodeAgentEnvironment(
 }
 
 func (s *EnvironmentService) UpdateSwarmNodeIdentity(ctx context.Context, envID, swarmNodeID string) error {
-	now := time.Now()
 	updates := map[string]any{
 		"swarm_node_id": swarmNodeID,
-		"updated_at":    &now,
+		"updated_at":    new(time.Now()),
 	}
 
 	if err := s.db.WithContext(ctx).Model(&models.Environment{}).Where("id = ?", envID).Updates(updates).Error; err != nil {
@@ -499,8 +492,7 @@ func (s *EnvironmentService) SyncRegistriesToRemoteEnvironments(ctx context.Cont
 }
 
 func (s *EnvironmentService) UpdateEnvironment(ctx context.Context, id string, updates map[string]any, userID, username *string) (*models.Environment, error) {
-	now := time.Now()
-	updates["updated_at"] = &now
+	updates["updated_at"] = new(time.Now())
 
 	if err := s.db.WithContext(ctx).Model(&models.Environment{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 		return nil, fmt.Errorf("failed to update environment: %w", err)
@@ -713,15 +705,13 @@ func (s *EnvironmentService) UpdateEnvironmentConnectionState(ctx context.Contex
 // Live edge tunnels are process-local runtime state, so persisted "online" flags can be stale
 // after a restart until agents reconnect. Pending environments are left untouched.
 func (s *EnvironmentService) ReconcileEdgeStatusesOnStartup(ctx context.Context) error {
-	now := time.Now()
-
 	result := s.db.WithContext(ctx).Model(&models.Environment{}).
 		Where("is_edge = ?", true).
 		Where("status <> ?", string(models.EnvironmentStatusPending)).
 		Where("status <> ?", string(models.EnvironmentStatusOffline)).
 		Updates(map[string]any{
 			"status":     string(models.EnvironmentStatusOffline),
-			"updated_at": &now,
+			"updated_at": new(time.Now()),
 		})
 	if result.Error != nil {
 		return fmt.Errorf("failed to reconcile edge environment statuses: %w", result.Error)

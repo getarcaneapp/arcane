@@ -155,8 +155,7 @@ func (s *VolumeService) CreateVolume(ctx context.Context, options client.VolumeC
 
 	docker.InvalidateVolumeUsageCache()
 
-	dtoVol := volumetypes.NewSummary(vol.Volume)
-	return &dtoVol, nil
+	return new(volumetypes.NewSummary(vol.Volume)), nil
 }
 
 func (s *VolumeService) DeleteVolume(ctx context.Context, name string, force bool, user models.User) error {

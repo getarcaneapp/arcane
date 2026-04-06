@@ -86,30 +86,26 @@ func TestDashboardService_GetActionItems_IncludesExpiringAPIKeys(t *testing.T) {
 	svc := NewDashboardService(db, nil, nil, settingsSvc, nil)
 
 	now := time.Now()
-	expiringSoon := now.Add(24 * time.Hour)
-	alreadyExpired := now.Add(-24 * time.Hour)
-	farFuture := now.Add(45 * 24 * time.Hour)
-
 	createDashboardTestAPIKey(t, db, models.ApiKey{
 		Name:      "expiring-soon",
 		KeyHash:   "hash-soon",
 		KeyPrefix: "arc_test_s",
 		UserID:    "user-1",
-		ExpiresAt: &expiringSoon,
+		ExpiresAt: new(now.Add(24 * time.Hour)),
 	})
 	createDashboardTestAPIKey(t, db, models.ApiKey{
 		Name:      "already-expired",
 		KeyHash:   "hash-expired",
 		KeyPrefix: "arc_test_e",
 		UserID:    "user-1",
-		ExpiresAt: &alreadyExpired,
+		ExpiresAt: new(now.Add(-24 * time.Hour)),
 	})
 	createDashboardTestAPIKey(t, db, models.ApiKey{
 		Name:      "future",
 		KeyHash:   "hash-future",
 		KeyPrefix: "arc_test_f",
 		UserID:    "user-1",
-		ExpiresAt: &farFuture,
+		ExpiresAt: new(now.Add(45 * 24 * time.Hour)),
 	})
 	createDashboardTestAPIKey(t, db, models.ApiKey{
 		Name:      "never-expires",
@@ -133,13 +129,12 @@ func TestDashboardService_GetActionItems_DebugAllGoodReturnsNoItems(t *testing.T
 	db, settingsSvc := setupDashboardServiceTestDB(t)
 	svc := NewDashboardService(db, nil, nil, settingsSvc, nil)
 
-	expiresAt := time.Now().Add(2 * time.Hour)
 	createDashboardTestAPIKey(t, db, models.ApiKey{
 		Name:      "expiring-soon",
 		KeyHash:   "hash-soon",
 		KeyPrefix: "arc_test_d",
 		UserID:    "user-1",
-		ExpiresAt: &expiresAt,
+		ExpiresAt: new(time.Now().Add(2 * time.Hour)),
 	})
 
 	actionItems, err := svc.GetActionItems(context.Background(), DashboardActionItemsOptions{
@@ -195,13 +190,12 @@ func TestDashboardService_GetSnapshot_ReturnsDashboardSnapshot(t *testing.T) {
 
 	createDashboardTestImageUpdateRecord(t, db, models.ImageUpdateRecord{ID: "sha256:image-b", HasUpdate: true})
 
-	expiresSoon := time.Now().Add(12 * time.Hour)
 	createDashboardTestAPIKey(t, db, models.ApiKey{
 		Name:      "expiring-soon",
 		KeyHash:   "hash-soon",
 		KeyPrefix: "arc_test_snapshot",
 		UserID:    "user-1",
-		ExpiresAt: &expiresSoon,
+		ExpiresAt: new(time.Now().Add(12 * time.Hour)),
 	})
 
 	dockerSvc := newDashboardTestDockerService(t, settingsSvc, containers, images)

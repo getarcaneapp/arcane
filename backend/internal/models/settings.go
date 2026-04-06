@@ -214,8 +214,7 @@ func (s *Settings) Clone() *Settings {
 		return &Settings{}
 	}
 
-	clone := *s
-	return &clone
+	return new(*s)
 }
 
 func (s *Settings) ToSettingVariableSlice(showAll bool, redactSensitiveValues bool) []SettingVariable {

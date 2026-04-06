@@ -36,8 +36,7 @@ const (
 )
 
 var defaultAdminAPIKeyDescription = func() *string {
-	description := "Environment-managed static API key for the built-in admin account"
-	return &description
+	return new("Environment-managed static API key for the built-in admin account")
 }()
 
 type ApiKeyService struct {
@@ -169,11 +168,10 @@ func toAPIKeyDTOInternal(ak *models.ApiKey) apikey.ApiKey {
 }
 
 func (s *ApiKeyService) CreateDefaultAdminAPIKey(ctx context.Context, userID, rawKey string) (*apikey.ApiKeyCreatedDto, error) {
-	managedBy := managedByAdminBootstrap
 	return s.createAPIKeyWithRawKey(ctx, userID, rawKey, apikey.CreateApiKey{
 		Name:        defaultAdminAPIKeyName,
 		Description: defaultAdminAPIKeyDescription,
-	}, &managedBy, nil)
+	}, new(managedByAdminBootstrap), nil)
 }
 
 func (s *ApiKeyService) getDefaultAdminUser(ctx context.Context) (*models.User, error) {
@@ -254,13 +252,12 @@ func (s *ApiKeyService) createManagedDefaultAdminAPIKey(tx *gorm.DB, userID, raw
 		return fmt.Errorf("failed to hash API key: %w", err)
 	}
 
-	managedBy := managedByAdminBootstrap
 	ak := &models.ApiKey{
 		Name:        defaultAdminAPIKeyName,
 		Description: defaultAdminAPIKeyDescription,
 		KeyHash:     keyHash,
 		KeyPrefix:   keyPrefix,
-		ManagedBy:   &managedBy,
+		ManagedBy:   new(managedByAdminBootstrap),
 		UserID:      userID,
 	}
 
@@ -319,11 +316,9 @@ func (s *ApiKeyService) CreateEnvironmentApiKey(ctx context.Context, environment
 		envIDShort = environmentID[:8]
 	}
 	name := fmt.Sprintf("Environment Bootstrap Key - %s", envIDShort)
-	description := "Auto-generated key for environment pairing"
-
 	return s.createAPIKeyWithRawKey(ctx, userID, rawKey, apikey.CreateApiKey{
 		Name:        name,
-		Description: &description,
+		Description: new("Auto-generated key for environment pairing"),
 	}, nil, &environmentID)
 }
 

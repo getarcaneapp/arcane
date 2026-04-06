@@ -112,8 +112,7 @@ func (s *GitRepositoryService) FindEnabledRepositoryByURL(ctx context.Context, r
 
 	for i := range repositories {
 		if libbuild.NormalizeGitBuildContextSourceForMatch(repositories[i].URL) == normalizedURL {
-			repository := repositories[i]
-			return &repository, nil
+			return new(repositories[i]), nil
 		}
 	}
 

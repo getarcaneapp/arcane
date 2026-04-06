@@ -502,8 +502,7 @@ func TestProjectService_UpdateProject_RenamesDirectoryWhenNameChanges(t *testing
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	updatedName := "bar"
-	updated, err := svc.UpdateProject(ctx, project.ID, &updatedName, nil, nil, models.User{
+	updated, err := svc.UpdateProject(ctx, project.ID, new("bar"), nil, nil, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
@@ -554,8 +553,7 @@ func TestProjectService_UpdateProject_RenameFailsWhenTargetDirectoryExists(t *te
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	updatedName := "bar"
-	_, err = svc.UpdateProject(ctx, project.ID, &updatedName, nil, nil, models.User{
+	_, err = svc.UpdateProject(ctx, project.ID, new("bar"), nil, nil, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
@@ -598,8 +596,7 @@ func TestProjectService_UpdateProject_RenameFailsWhenProjectRunning(t *testing.T
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	updatedName := "bar"
-	_, err = svc.UpdateProject(ctx, project.ID, &updatedName, nil, nil, models.User{
+	_, err = svc.UpdateProject(ctx, project.ID, new("bar"), nil, nil, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
@@ -958,8 +955,7 @@ func TestProjectService_UpdateProject_DerivesProjectOverrideEnvWhenGitSourceExis
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	env := "BASE=git\nTOKEN=secret\n"
-	updated, err := svc.UpdateProject(ctx, project.ID, nil, nil, &env, models.User{
+	updated, err := svc.UpdateProject(ctx, project.ID, nil, nil, new("BASE=git\nTOKEN=secret\n"), models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
@@ -1006,8 +1002,7 @@ func TestProjectService_UpdateProject_DeletingGitBackedKeyFallsBackToGit(t *test
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	env := "BASE=git\nLOCAL_ONLY=1\n"
-	updated, err := svc.UpdateProject(ctx, project.ID, nil, nil, &env, models.User{
+	updated, err := svc.UpdateProject(ctx, project.ID, nil, nil, new("BASE=git\nLOCAL_ONLY=1\n"), models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
@@ -1107,8 +1102,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_NormalizesStaleCopiedGitOverrid
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	gitEnv := "BASE=git-updated\nSHARED=1\nREMOTE_ONLY=1\n"
-	updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:alpine\n", &gitEnv, models.User{
+	updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:alpine\n", new("BASE=git-updated\nSHARED=1\nREMOTE_ONLY=1\n"), models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
@@ -1156,8 +1150,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_RemovesLegacyDeletedGitMasks(t 
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	gitEnv := "TOKEN=git-updated\nSHARED=1\nREMOTE_ONLY=1\n"
-	updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:alpine\n", &gitEnv, models.User{
+	updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:alpine\n", new("TOKEN=git-updated\nSHARED=1\nREMOTE_ONLY=1\n"), models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
@@ -1288,8 +1281,7 @@ func TestProjectService_PersistGitSyncEnvFiles_UsesPreparedState(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(projectPath, ".env.git"), []byte("BASE=git\nTOKEN=git\n"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "project.env"), []byte("TOKEN=local\n"), 0o600))
 
-	gitEnv := "BASE=git-updated\nTOKEN=git\nREMOTE=1\n"
-	update, err := svc.prepareGitSyncEnvUpdateInternal(projectPath, &gitEnv)
+	update, err := svc.prepareGitSyncEnvUpdateInternal(projectPath, new("BASE=git-updated\nTOKEN=git\nREMOTE=1\n"))
 	require.NoError(t, err)
 	require.NotNil(t, update.effectiveContent)
 
@@ -1565,14 +1557,13 @@ func TestProjectService_PrepareServiceBuildRequest_GeneratedImageProviderGuardra
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "must define an image when using depot")
 
-	push := true
 	_, _, _, err = svc.prepareServiceBuildRequest(
 		context.Background(),
 		"project-id",
 		proj,
 		"web",
 		serviceCfg,
-		ProjectBuildOptions{Provider: "local", Push: &push},
+		ProjectBuildOptions{Provider: "local", Push: new(true)},
 		nil,
 	)
 	require.Error(t, err)

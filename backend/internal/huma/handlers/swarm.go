@@ -1978,26 +1978,21 @@ func (h *SwarmHandler) auditSwarmMutation(ctx context.Context, environmentID, ac
 	var userID *string
 	var username *string
 	if user, ok := humamw.GetCurrentUserFromContext(ctx); ok {
-		uid := user.ID
-		uname := user.Username
-		userID = &uid
-		username = &uname
+		userID = new(user.ID)
+		username = new(user.Username)
 	}
 
 	var resourceTypePtr *string
 	if strings.TrimSpace(resourceType) != "" {
-		rt := resourceType
-		resourceTypePtr = &rt
+		resourceTypePtr = new(resourceType)
 	}
 	var resourceIDPtr *string
 	if strings.TrimSpace(resourceID) != "" {
-		rid := resourceID
-		resourceIDPtr = &rid
+		resourceIDPtr = new(resourceID)
 	}
 	var resourceNamePtr *string
 	if strings.TrimSpace(resourceName) != "" {
-		rn := resourceName
-		resourceNamePtr = &rn
+		resourceNamePtr = new(resourceName)
 	}
 
 	env := strings.TrimSpace(environmentID)

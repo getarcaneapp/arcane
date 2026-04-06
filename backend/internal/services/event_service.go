@@ -256,10 +256,8 @@ func normalizeEventActor(userID, username *string) (*string, *string) {
 		normalizedUserID = copyOptionalStringPtr(normalizedUsername)
 	}
 	if normalizedUserID == nil && normalizedUsername == nil {
-		systemID := "system"
-		systemName := "System"
-		normalizedUserID = &systemID
-		normalizedUsername = &systemName
+		normalizedUserID = new("system")
+		normalizedUsername = new("System")
 	}
 
 	return normalizedUserID, normalizedUsername
@@ -280,8 +278,7 @@ func copyOptionalStringPtr(value *string) *string {
 	if value == nil {
 		return nil
 	}
-	cloned := *value
-	return &cloned
+	return new(*value)
 }
 
 func (s *EventService) CreateEventFromDto(ctx context.Context, req event.CreateEvent) (*event.Event, error) {

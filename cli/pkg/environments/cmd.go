@@ -352,12 +352,10 @@ var updateCmd = &cobra.Command{
 			req.ApiUrl = &envUpdateApiUrl
 		}
 		if cmd.Flags().Changed("enabled") {
-			enabled := true
-			req.Enabled = &enabled
+			req.Enabled = new(true)
 		}
 		if cmd.Flags().Changed("disabled") {
-			enabled := false
-			req.Enabled = &enabled
+			req.Enabled = new(false)
 		}
 
 		resp, err := c.Put(cmd.Context(), types.Endpoints.Environment(args[0]), req)

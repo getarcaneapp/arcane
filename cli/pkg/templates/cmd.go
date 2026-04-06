@@ -552,8 +552,7 @@ func selectTemplateMatch(identifier string, matches []template.Template) (*templ
 		return nil, err
 	}
 
-	selected := ordered[choice]
-	return &selected, nil
+	return new(ordered[choice]), nil
 }
 
 type rankedTemplateMatch struct {

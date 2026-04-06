@@ -97,7 +97,6 @@ func TestDashboardHandlerGetDashboardReturnsSnapshot(t *testing.T) {
 		{ID: "sha256:image-b", RepoTags: []string{"repo/worker:latest"}, Created: 1720000000, Size: 250},
 	}
 
-	expiresSoon := time.Now().Add(12 * time.Hour)
 	require.NoError(t, db.WithContext(context.Background()).Create(&models.ImageUpdateRecord{
 		ID:        "sha256:image-b",
 		HasUpdate: true,
@@ -107,7 +106,7 @@ func TestDashboardHandlerGetDashboardReturnsSnapshot(t *testing.T) {
 		KeyHash:   "hash-soon",
 		KeyPrefix: "arc_test_handler",
 		UserID:    "user-1",
-		ExpiresAt: &expiresSoon,
+		ExpiresAt: new(time.Now().Add(12 * time.Hour)),
 	}).Error)
 
 	dockerSvc := newDashboardHandlerTestDockerService(t, settingsSvc, containers, images)

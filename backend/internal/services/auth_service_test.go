@@ -76,13 +76,11 @@ func TestVerifyToken_ValidClaims(t *testing.T) {
 	s.userService = userSvc
 
 	// Create user in DB
-	email := "a@example.com"
-	displayName := "Alice"
 	user := &models.User{
 		BaseModel:   models.BaseModel{ID: "u123"},
 		Username:    "alice",
-		Email:       &email,
-		DisplayName: &displayName,
+		Email:       new("a@example.com"),
+		DisplayName: new("Alice"),
 		Roles:       models.StringSlice{"user", "admin"},
 	}
 	_, err := userSvc.CreateUser(context.Background(), user)

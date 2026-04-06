@@ -199,13 +199,12 @@ func (s *WebhookService) CreateWebhook(ctx context.Context, name, targetType, ac
 	}
 
 	if s.eventService != nil {
-		resourceType := "webhook"
 		_, _ = s.eventService.CreateEvent(ctx, CreateEventRequest{
 			Type:          models.EventTypeWebhookCreate,
 			Severity:      models.EventSeveritySuccess,
 			Title:         fmt.Sprintf("Webhook created: %s", wh.Name),
 			Description:   fmt.Sprintf("Created webhook '%s' targeting %s (%s)", wh.Name, wh.TargetType, wh.ActionType),
-			ResourceType:  &resourceType,
+			ResourceType:  new("webhook"),
 			ResourceID:    &wh.ID,
 			ResourceName:  &wh.Name,
 			UserID:        &actor.ID,
@@ -335,13 +334,12 @@ func (s *WebhookService) DeleteWebhook(ctx context.Context, id, environmentID st
 	}
 
 	if s.eventService != nil {
-		resourceType := "webhook"
 		_, _ = s.eventService.CreateEvent(ctx, CreateEventRequest{
 			Type:          models.EventTypeWebhookDelete,
 			Severity:      models.EventSeverityInfo,
 			Title:         fmt.Sprintf("Webhook deleted: %s", wh.Name),
 			Description:   fmt.Sprintf("Deleted webhook '%s'", wh.Name),
-			ResourceType:  &resourceType,
+			ResourceType:  new("webhook"),
 			ResourceID:    &wh.ID,
 			ResourceName:  &wh.Name,
 			UserID:        &actor.ID,
@@ -371,13 +369,12 @@ func (s *WebhookService) UpdateWebhook(ctx context.Context, id, environmentID st
 	}
 
 	if s.eventService != nil {
-		resourceType := "webhook"
 		_, _ = s.eventService.CreateEvent(ctx, CreateEventRequest{
 			Type:          models.EventTypeWebhookUpdate,
 			Severity:      models.EventSeveritySuccess,
 			Title:         fmt.Sprintf("Webhook updated: %s", wh.Name),
 			Description:   fmt.Sprintf("Updated webhook '%s' enabled=%v", wh.Name, enabled),
-			ResourceType:  &resourceType,
+			ResourceType:  new("webhook"),
 			ResourceID:    &wh.ID,
 			ResourceName:  &wh.Name,
 			UserID:        &actor.ID,
@@ -631,13 +628,12 @@ func (s *WebhookService) logWebhookEventInternal(ctx context.Context, wh *models
 	if errMsg != "" {
 		description = errMsg
 	}
-	resourceType := "webhook"
 	_, _ = s.eventService.CreateEvent(ctx, CreateEventRequest{
 		Type:          models.EventTypeWebhookTrigger,
 		Severity:      severity,
 		Title:         title,
 		Description:   description,
-		ResourceType:  &resourceType,
+		ResourceType:  new("webhook"),
 		ResourceID:    &wh.ID,
 		ResourceName:  &wh.Name,
 		EnvironmentID: &wh.EnvironmentID,

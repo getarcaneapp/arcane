@@ -145,8 +145,7 @@ func PrepareContainerCreateOptionsForDockerAPI(options client.ContainerCreateOpt
 
 	adjusted := options
 	if options.HostConfig != nil {
-		hostConfigCopy := *options.HostConfig
-		adjusted.HostConfig = &hostConfigCopy
+		adjusted.HostConfig = new(*options.HostConfig)
 	}
 	if adjusted.HostConfig == nil {
 		adjusted.HostConfig = &container.HostConfig{}

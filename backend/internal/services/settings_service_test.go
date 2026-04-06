@@ -436,10 +436,8 @@ func TestSettingsService_UpdateSettings_MergeOidcSecret(t *testing.T) {
 	}
 	nb, err := json.Marshal(incoming)
 	require.NoError(t, err)
-	s := string(nb)
-
 	updates := settings.Update{
-		AuthOidcConfig: &s,
+		AuthOidcConfig: new(string(nb)),
 	}
 	_, err = svc.UpdateSettings(ctx, updates)
 	require.NoError(t, err)
@@ -546,9 +544,8 @@ func TestSettingsService_UpdateSettings_ReturnsEnvOverriddenValues(t *testing.T)
 	require.NoError(t, err)
 	require.NoError(t, svc.EnsureDefaultSettings(ctx))
 
-	newDir := "custom/projects2"
 	settingsList, err := svc.UpdateSettings(ctx, settings.Update{
-		ProjectsDirectory: &newDir,
+		ProjectsDirectory: new("custom/projects2"),
 	})
 	require.NoError(t, err)
 
@@ -574,8 +571,7 @@ func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyScanTimeout(
 		callbackPayload = timeoutSettings
 	}
 
-	newTimeout := "1200"
-	_, err = svc.UpdateSettings(ctx, settings.Update{TrivyScanTimeout: &newTimeout})
+	_, err = svc.UpdateSettings(ctx, settings.Update{TrivyScanTimeout: new("1200")})
 	require.NoError(t, err)
 
 	require.NotNil(t, callbackPayload)
@@ -594,13 +590,10 @@ func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyResourceLimi
 		callbackPayload = timeoutSettings
 	}
 
-	limitsEnabled := "false"
-	cpuLimit := "2.5"
-	memoryLimit := "3072"
 	_, err = svc.UpdateSettings(ctx, settings.Update{
-		TrivyResourceLimitsEnabled: &limitsEnabled,
-		TrivyCpuLimit:              &cpuLimit,
-		TrivyMemoryLimitMb:         &memoryLimit,
+		TrivyResourceLimitsEnabled: new("false"),
+		TrivyCpuLimit:              new("2.5"),
+		TrivyMemoryLimitMb:         new("3072"),
 	})
 	require.NoError(t, err)
 
@@ -622,8 +615,7 @@ func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyConcurrentSc
 		callbackPayload = timeoutSettings
 	}
 
-	concurrentContainers := "4"
-	_, err = svc.UpdateSettings(ctx, settings.Update{TrivyConcurrentScanContainers: &concurrentContainers})
+	_, err = svc.UpdateSettings(ctx, settings.Update{TrivyConcurrentScanContainers: new("4")})
 	require.NoError(t, err)
 
 	require.NotNil(t, callbackPayload)
@@ -642,8 +634,7 @@ func TestSettingsService_UpdateSettings_TrivyNetworkTriggersVulnerabilityCallbac
 		callbackCalled = true
 	}
 
-	trivyNetwork := "arcane-external"
-	_, err = svc.UpdateSettings(ctx, settings.Update{TrivyNetwork: &trivyNetwork})
+	_, err = svc.UpdateSettings(ctx, settings.Update{TrivyNetwork: new("arcane-external")})
 	require.NoError(t, err)
 	require.True(t, callbackCalled)
 }
@@ -660,8 +651,7 @@ func TestSettingsService_UpdateSettings_TrivyNetworkDoesNotTriggerTimeoutCallbac
 		callbackPayload = timeoutSettings
 	}
 
-	trivyNetwork := "arcane-external"
-	_, err = svc.UpdateSettings(ctx, settings.Update{TrivyNetwork: &trivyNetwork})
+	_, err = svc.UpdateSettings(ctx, settings.Update{TrivyNetwork: new("arcane-external")})
 	require.NoError(t, err)
 	require.Nil(t, callbackPayload)
 }
@@ -678,11 +668,9 @@ func TestSettingsService_UpdateSettings_TrivyRuntimeSecurityTriggersVulnerabilit
 		callbackCalled = true
 	}
 
-	securityOpts := "label=disable"
-	privileged := "true"
 	_, err = svc.UpdateSettings(ctx, settings.Update{
-		TrivySecurityOpts: &securityOpts,
-		TrivyPrivileged:   &privileged,
+		TrivySecurityOpts: new("label=disable"),
+		TrivyPrivileged:   new("true"),
 	})
 	require.NoError(t, err)
 	require.True(t, callbackCalled)
@@ -700,11 +688,9 @@ func TestSettingsService_UpdateSettings_TrivyRuntimeSecurityDoesNotTriggerTimeou
 		callbackPayload = timeoutSettings
 	}
 
-	securityOpts := "label=disable"
-	privileged := "true"
 	_, err = svc.UpdateSettings(ctx, settings.Update{
-		TrivySecurityOpts: &securityOpts,
-		TrivyPrivileged:   &privileged,
+		TrivySecurityOpts: new("label=disable"),
+		TrivyPrivileged:   new("true"),
 	})
 	require.NoError(t, err)
 	require.Nil(t, callbackPayload)
@@ -717,8 +703,7 @@ func TestSettingsService_UpdateSettings_TrivyPreserveCacheOnVolumePrunePersists(
 	require.NoError(t, err)
 	require.NoError(t, svc.EnsureDefaultSettings(ctx))
 
-	preserveCache := "false"
-	_, err = svc.UpdateSettings(ctx, settings.Update{TrivyPreserveCacheOnVolumePrune: &preserveCache})
+	_, err = svc.UpdateSettings(ctx, settings.Update{TrivyPreserveCacheOnVolumePrune: new("false")})
 	require.NoError(t, err)
 
 	current, err := svc.GetSettings(ctx)
@@ -743,8 +728,7 @@ func TestSettingsService_UpdateSettings_TrivyPreserveCacheOnVolumePruneDoesNotTr
 		callbackPayload = timeoutSettings
 	}
 
-	preserveCache := "false"
-	_, err = svc.UpdateSettings(ctx, settings.Update{TrivyPreserveCacheOnVolumePrune: &preserveCache})
+	_, err = svc.UpdateSettings(ctx, settings.Update{TrivyPreserveCacheOnVolumePrune: new("false")})
 	require.NoError(t, err)
 	require.Nil(t, callbackPayload)
 }
