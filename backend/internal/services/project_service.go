@@ -10,8 +10,6 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
-	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -21,6 +19,7 @@ import (
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
+	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	dockerutil "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
@@ -45,12 +44,13 @@ type ProjectService struct {
 	imageService    *ImageService
 	dockerService   *DockerClientService
 	buildService    *BuildService
+	config          *config.Config
 
 	composeNameCacheMu  sync.RWMutex
 	composeNameToProjID map[string]string
 }
 
-func NewProjectService(db *database.DB, settingsService *SettingsService, eventService *EventService, imageService *ImageService, dockerService *DockerClientService, buildService *BuildService) *ProjectService {
+func NewProjectService(db *database.DB, settingsService *SettingsService, eventService *EventService, imageService *ImageService, dockerService *DockerClientService, buildService *BuildService, cfg *config.Config) *ProjectService {
 	return &ProjectService{
 		db:              db,
 		settingsService: settingsService,
@@ -58,6 +58,7 @@ func NewProjectService(db *database.DB, settingsService *SettingsService, eventS
 		imageService:    imageService,
 		dockerService:   dockerService,
 		buildService:    buildService,
+		config:          cfg,
 	}
 }
 
@@ -700,35 +701,6 @@ func (s *ProjectService) enrichWithIncludeFiles(ctx context.Context, projectPath
 	}
 }
 
-// defaultProjectScanMaxDepth is the default maximum directory depth for
-// scanning project files. Override via PROJECT_SCAN_MAX_DEPTH env var.
-const defaultProjectScanMaxDepth = 3
-
-// defaultSkipDirectories contains directory names that are skipped during
-// project file scanning — these are dependency/build/cache directories that
-// can contain thousands of files irrelevant to compose project configuration.
-// Override via PROJECT_SCAN_SKIP_DIRS env var (comma-separated list).
-const defaultSkipDirectories = ".git,node_modules,vendor,.venv,venv,__pycache__,.cache,dist,build,target,.next,.nuxt,.svelte-kit"
-
-func getSkipDirectoriesInternal() map[string]bool {
-	raw := os.Getenv("PROJECT_SCAN_SKIP_DIRS")
-	if raw == "" {
-		raw = defaultSkipDirectories
-	}
-	dirs := map[string]bool{}
-	for _, d := range strings.Split(raw, ",") {
-		d = strings.TrimSpace(d)
-		if d != "" {
-			dirs[d] = true
-		}
-	}
-	// Always skip .git regardless of user overrides — it may contain
-	// credentials (e.g. .git/config with embedded tokens) that must never
-	// be exposed via the project file browser.
-	dirs[".git"] = true
-	return dirs
-}
-
 func (s *ProjectService) enrichWithDirectoryFiles(ctx context.Context, projectPath string, resp *project.Details) {
 	if projectPath == "" {
 		return
@@ -746,102 +718,12 @@ func (s *ProjectService) enrichWithDirectoryFiles(ctx context.Context, projectPa
 		shownFiles[inc.RelativePath] = true
 	}
 
-	maxDepth := defaultProjectScanMaxDepth
-	if v := os.Getenv("PROJECT_SCAN_MAX_DEPTH"); v != "" {
-		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 {
-			maxDepth = parsed
-		}
-	}
-
-	skipDirs := getSkipDirectoriesInternal()
-	var dirFiles []project.IncludeFile
-
-	root, err := os.OpenRoot(projectPath)
-	if err != nil {
-		slog.WarnContext(ctx, "Failed to open project root for directory scan", "error", err, "path", projectPath)
-		resp.DirectoryFiles = dirFiles
-		return
-	}
-	defer func() { _ = root.Close() }()
-
-	err = s.collectDirectoryFiles(root, ".", projectPath, shownFiles, &dirFiles, 0, maxDepth, skipDirs)
-
+	dirFiles, err := projects.ReadProjectDirectoryFiles(projectPath, shownFiles, s.config.ProjectScanMaxDepth, s.config.ProjectScanSkipDirs)
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to scan project directory files", "error", err, "path", projectPath)
 	}
 
 	resp.DirectoryFiles = dirFiles
-}
-
-func (s *ProjectService) collectDirectoryFiles(
-	root *os.Root,
-	relDir string,
-	projectPath string,
-	shownFiles map[string]bool,
-	dirFiles *[]project.IncludeFile,
-	currentDepth int,
-	maxDepth int,
-	skipDirs map[string]bool,
-) error {
-	if currentDepth >= maxDepth {
-		return nil
-	}
-
-	dir, err := root.Open(relDir)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = dir.Close() }()
-
-	entries, err := dir.ReadDir(-1)
-	if err != nil {
-		return err
-	}
-
-	for _, entry := range entries {
-		relPath := entry.Name()
-		if relDir != "." {
-			relPath = filepath.Join(relDir, entry.Name())
-		}
-		if entry.Type()&os.ModeSymlink != 0 {
-			continue
-		}
-		if entry.IsDir() {
-			if skipDirs[entry.Name()] {
-				continue
-			}
-			if err := s.collectDirectoryFiles(root, relPath, projectPath, shownFiles, dirFiles, currentDepth+1, maxDepth, skipDirs); err != nil {
-				slog.Debug("Skipping unreadable project subdirectory", "relativePath", relPath, "error", err)
-			}
-			continue
-		}
-		if shownFiles[relPath] {
-			continue
-		}
-
-		info, err := entry.Info()
-		if err != nil || info.Size() > 1024*1024 {
-			continue
-		}
-
-		content, err := root.ReadFile(relPath)
-		if err != nil || isBinaryProjectFileContent(content) {
-			continue
-		}
-
-		*dirFiles = append(*dirFiles, project.IncludeFile{
-			Path:         filepath.Join(projectPath, relPath),
-			RelativePath: relPath,
-			Content:      string(content),
-		})
-	}
-
-	return nil
-}
-
-func isBinaryProjectFileContent(content []byte) bool {
-	checkSize := min(len(content), 512)
-	return slices.Contains(content[:checkSize], 0)
 }
 
 func (s *ProjectService) enrichWithGitOpsInfo(ctx context.Context, proj *models.Project, resp *project.Details) {

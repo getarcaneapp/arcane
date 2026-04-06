@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/pkg/projects"
@@ -29,7 +30,7 @@ func setupGitOpsSyncDirectoryTestService(t *testing.T) (*GitOpsSyncService, *dat
 	projectsDir := t.TempDir()
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
-	projectService := NewProjectService(db, settingsService, nil, nil, nil, nil)
+	projectService := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
 
 	return NewGitOpsSyncService(db, nil, projectService, nil, settingsService), db, projectsDir
 }
