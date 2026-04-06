@@ -3,6 +3,7 @@ package dashboard
 import (
 	"github.com/getarcaneapp/arcane/types/base"
 	containertypes "github.com/getarcaneapp/arcane/types/container"
+	environmenttypes "github.com/getarcaneapp/arcane/types/environment"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
 )
 
@@ -102,4 +103,113 @@ type Snapshot struct {
 	//
 	// Required: true
 	Settings SnapshotSettings `json:"settings"`
+}
+
+type EnvironmentSnapshotState string
+
+const (
+	EnvironmentSnapshotStateReady   EnvironmentSnapshotState = "ready"
+	EnvironmentSnapshotStateSkipped EnvironmentSnapshotState = "skipped"
+	EnvironmentSnapshotStateError   EnvironmentSnapshotState = "error"
+)
+
+type EnvironmentOverview struct {
+	// Environment is the normalized runtime environment record.
+	//
+	// Required: true
+	Environment environmenttypes.Environment `json:"environment"`
+
+	// Containers is the summarized container status for the environment.
+	//
+	// Required: true
+	Containers containertypes.StatusCounts `json:"containers"`
+
+	// ImageUsageCounts is the summarized image usage for the environment.
+	//
+	// Required: true
+	ImageUsageCounts imagetypes.UsageCounts `json:"imageUsageCounts"`
+
+	// ActionItems is the environment attention summary.
+	//
+	// Required: true
+	ActionItems ActionItems `json:"actionItems"`
+
+	// Settings is the minimal dashboard settings payload needed for per-environment actions.
+	//
+	// Required: true
+	Settings SnapshotSettings `json:"settings"`
+
+	// SnapshotState indicates whether the environment snapshot was fetched.
+	//
+	// Required: true
+	SnapshotState EnvironmentSnapshotState `json:"snapshotState"`
+
+	// SnapshotError contains a non-fatal snapshot retrieval error.
+	//
+	// Required: false
+	SnapshotError *string `json:"snapshotError,omitempty"`
+}
+
+type EnvironmentsSummary struct {
+	// TotalEnvironments is the number of visible environments.
+	//
+	// Required: true
+	TotalEnvironments int `json:"totalEnvironments"`
+
+	// OnlineEnvironments is the number of online environments.
+	//
+	// Required: true
+	OnlineEnvironments int `json:"onlineEnvironments"`
+
+	// StandbyEnvironments is the number of standby environments.
+	//
+	// Required: true
+	StandbyEnvironments int `json:"standbyEnvironments"`
+
+	// OfflineEnvironments is the number of offline environments.
+	//
+	// Required: true
+	OfflineEnvironments int `json:"offlineEnvironments"`
+
+	// PendingEnvironments is the number of pending environments.
+	//
+	// Required: true
+	PendingEnvironments int `json:"pendingEnvironments"`
+
+	// ErrorEnvironments is the number of error environments.
+	//
+	// Required: true
+	ErrorEnvironments int `json:"errorEnvironments"`
+
+	// DisabledEnvironments is the number of disabled environments.
+	//
+	// Required: true
+	DisabledEnvironments int `json:"disabledEnvironments"`
+
+	// Containers is the aggregated container status counts.
+	//
+	// Required: true
+	Containers containertypes.StatusCounts `json:"containers"`
+
+	// ImageUsageCounts is the aggregated image usage.
+	//
+	// Required: true
+	ImageUsageCounts imagetypes.UsageCounts `json:"imageUsageCounts"`
+
+	// EnvironmentsWithActionItems is the number of environments with attention items.
+	//
+	// Required: true
+	EnvironmentsWithActionItems int `json:"environmentsWithActionItems"`
+}
+
+type EnvironmentsOverview struct {
+	// Summary is the aggregated fleet summary.
+	//
+	// Required: true
+	Summary EnvironmentsSummary `json:"summary"`
+
+	// Environments contains per-environment overview rows.
+	//
+	// Required: true
+	Environments []EnvironmentOverview `json:"environments"`
 }

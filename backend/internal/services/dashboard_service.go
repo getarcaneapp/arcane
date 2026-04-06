@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/base"
 	containertypes "github.com/getarcaneapp/arcane/types/container"
 	dashboardtypes "github.com/getarcaneapp/arcane/types/dashboard"
+	environmenttypes "github.com/getarcaneapp/arcane/types/environment"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
 	dockercontainer "github.com/moby/moby/api/types/container"
 	dockerimage "github.com/moby/moby/api/types/image"
@@ -22,6 +24,9 @@ import (
 
 const defaultDashboardAPIKeyExpiryWindow = 14 * 24 * time.Hour
 const dashboardSnapshotPreloadLimit = 50
+const defaultAggregateDashboardConcurrency = 4
+const defaultAggregateDashboardTimeout = 20 * time.Second
+const localEnvironmentID = "0"
 
 type DashboardService struct {
 	db                   *database.DB
@@ -29,6 +34,7 @@ type DashboardService struct {
 	containerService     *ContainerService
 	settingsService      *SettingsService
 	vulnerabilityService *VulnerabilityService
+	environmentService   *EnvironmentService
 }
 
 type DashboardActionItemsOptions struct {
@@ -41,6 +47,7 @@ func NewDashboardService(
 	containerService *ContainerService,
 	settingsService *SettingsService,
 	vulnerabilityService *VulnerabilityService,
+	environmentService *EnvironmentService,
 ) *DashboardService {
 	return &DashboardService{
 		db:                   db,
@@ -48,6 +55,7 @@ func NewDashboardService(
 		containerService:     containerService,
 		settingsService:      settingsService,
 		vulnerabilityService: vulnerabilityService,
+		environmentService:   environmentService,
 	}
 }
 
@@ -245,6 +253,56 @@ func (s *DashboardService) GetActionItems(ctx context.Context, options Dashboard
 	return &dashboardtypes.ActionItems{Items: actionItems}, nil
 }
 
+func (s *DashboardService) GetEnvironmentsOverview(
+	ctx context.Context,
+	options DashboardActionItemsOptions,
+) (*dashboardtypes.EnvironmentsOverview, error) {
+	if s.environmentService == nil {
+		return nil, fmt.Errorf("environment service not available")
+	}
+
+	environments, err := s.environmentService.ListVisibleEnvironments(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list environments: %w", err)
+	}
+
+	overview := &dashboardtypes.EnvironmentsOverview{
+		Environments: make([]dashboardtypes.EnvironmentOverview, len(environments)),
+	}
+
+	g, groupCtx := errgroup.WithContext(ctx)
+	g.SetLimit(defaultAggregateDashboardConcurrency)
+
+	for i := range environments {
+		index := i
+		env := environments[i]
+
+		g.Go(func() error {
+			overview.Environments[index] = s.buildEnvironmentOverviewInternal(groupCtx, env, options)
+			return nil
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		return nil, fmt.Errorf("failed to build environments overview: %w", err)
+	}
+
+	sort.SliceStable(overview.Environments, func(i, j int) bool {
+		left := overview.Environments[i].Environment
+		right := overview.Environments[j].Environment
+		if left.ID == localEnvironmentID {
+			return true
+		}
+		if right.ID == localEnvironmentID {
+			return false
+		}
+		return left.Name < right.Name
+	})
+
+	overview.Summary = summarizeEnvironmentOverviewInternal(overview.Environments)
+	return overview, nil
+}
+
 func (s *DashboardService) buildActionItemsForSnapshotInternal(
 	ctx context.Context,
 	options DashboardActionItemsOptions,
@@ -347,6 +405,95 @@ func buildDashboardActionItemsInternal(
 	return &dashboardtypes.ActionItems{Items: actionItems}
 }
 
+func (s *DashboardService) buildEnvironmentOverviewInternal(
+	ctx context.Context,
+	env environmenttypes.Environment,
+	options DashboardActionItemsOptions,
+) dashboardtypes.EnvironmentOverview {
+	overview := dashboardtypes.EnvironmentOverview{
+		Environment:      env,
+		Containers:       containertypes.StatusCounts{},
+		ImageUsageCounts: imagetypes.UsageCounts{},
+		ActionItems:      dashboardtypes.ActionItems{Items: []dashboardtypes.ActionItem{}},
+		Settings:         dashboardtypes.SnapshotSettings{},
+		SnapshotState:    dashboardtypes.EnvironmentSnapshotStateSkipped,
+	}
+
+	if !env.Enabled || !shouldFetchEnvironmentSnapshotInternal(env) {
+		return overview
+	}
+
+	snapshot, err := s.getSnapshotForEnvironmentInternal(ctx, env, options)
+	if err != nil {
+		message := err.Error()
+		overview.SnapshotState = dashboardtypes.EnvironmentSnapshotStateError
+		overview.SnapshotError = &message
+		return overview
+	}
+
+	overview.Containers = snapshot.Containers.Counts
+	overview.ImageUsageCounts = snapshot.ImageUsageCounts
+	overview.ActionItems = snapshot.ActionItems
+	overview.Settings = snapshot.Settings
+	overview.SnapshotState = dashboardtypes.EnvironmentSnapshotStateReady
+
+	return overview
+}
+
+func shouldFetchEnvironmentSnapshotInternal(env environmenttypes.Environment) bool {
+	switch env.Status {
+	case string(models.EnvironmentStatusOnline), string(models.EnvironmentStatusStandby):
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *DashboardService) getSnapshotForEnvironmentInternal(
+	ctx context.Context,
+	env environmenttypes.Environment,
+	options DashboardActionItemsOptions,
+) (*dashboardtypes.Snapshot, error) {
+	reqCtx, cancel := context.WithTimeout(ctx, defaultAggregateDashboardTimeout)
+	defer cancel()
+
+	if env.ID == localEnvironmentID {
+		return s.GetSnapshot(reqCtx, options)
+	}
+
+	respBody, statusCode, err := s.environmentService.ProxyRequest(
+		reqCtx,
+		env.ID,
+		"GET",
+		buildEnvironmentDashboardProxyPathInternal(options),
+		nil,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to proxy dashboard snapshot: %w", err)
+	}
+	if statusCode < 200 || statusCode >= 300 {
+		return nil, fmt.Errorf("unexpected dashboard status code: %d", statusCode)
+	}
+
+	var response base.ApiResponse[dashboardtypes.Snapshot]
+	if err := json.Unmarshal(respBody, &response); err != nil {
+		return nil, fmt.Errorf("failed to decode dashboard snapshot: %w", err)
+	}
+	if !response.Success {
+		return nil, fmt.Errorf("dashboard snapshot request was not successful")
+	}
+
+	return &response.Data, nil
+}
+
+func buildEnvironmentDashboardProxyPathInternal(options DashboardActionItemsOptions) string {
+	if options.DebugAllGood {
+		return fmt.Sprintf("/api/environments/%s/dashboard?debugAllGood=true", localEnvironmentID)
+	}
+
+	return fmt.Sprintf("/api/environments/%s/dashboard", localEnvironmentID)
+}
+
 func (s *DashboardService) getStoppedContainersCountInternal(ctx context.Context) (int, error) {
 	if s.dockerService == nil {
 		return 0, nil
@@ -369,6 +516,46 @@ func (s *DashboardService) getStoppedContainersCountInternal(ctx context.Context
 	}
 
 	return stoppedCount, nil
+}
+
+func summarizeEnvironmentOverviewInternal(items []dashboardtypes.EnvironmentOverview) dashboardtypes.EnvironmentsSummary {
+	summary := dashboardtypes.EnvironmentsSummary{}
+
+	for _, item := range items {
+		summary.TotalEnvironments++
+
+		if !item.Environment.Enabled {
+			summary.DisabledEnvironments++
+		} else {
+			switch item.Environment.Status {
+			case string(models.EnvironmentStatusOnline):
+				summary.OnlineEnvironments++
+			case string(models.EnvironmentStatusStandby):
+				summary.StandbyEnvironments++
+			case string(models.EnvironmentStatusPending):
+				summary.PendingEnvironments++
+			case string(models.EnvironmentStatusError):
+				summary.ErrorEnvironments++
+			default:
+				summary.OfflineEnvironments++
+			}
+		}
+
+		summary.Containers.RunningContainers += item.Containers.RunningContainers
+		summary.Containers.StoppedContainers += item.Containers.StoppedContainers
+		summary.Containers.TotalContainers += item.Containers.TotalContainers
+
+		summary.ImageUsageCounts.Inuse += item.ImageUsageCounts.Inuse
+		summary.ImageUsageCounts.Unused += item.ImageUsageCounts.Unused
+		summary.ImageUsageCounts.Total += item.ImageUsageCounts.Total
+		summary.ImageUsageCounts.TotalSize += item.ImageUsageCounts.TotalSize
+
+		if len(item.ActionItems.Items) > 0 {
+			summary.EnvironmentsWithActionItems++
+		}
+	}
+
+	return summary
 }
 
 func (s *DashboardService) getPendingImageUpdatesCountInternal(ctx context.Context) (int, error) {
