@@ -704,23 +704,25 @@ func (s *ProjectService) enrichWithIncludeFiles(ctx context.Context, projectPath
 // scanning project files. Override via PROJECT_SCAN_MAX_DEPTH env var.
 const defaultProjectScanMaxDepth = 3
 
-// skipDirectories contains directory names that are always skipped during
+// defaultSkipDirectories contains directory names that are skipped during
 // project file scanning — these are dependency/build/cache directories that
 // can contain thousands of files irrelevant to compose project configuration.
-var skipDirectories = map[string]bool{
-	".git":         true,
-	"node_modules": true,
-	"vendor":       true,
-	".venv":        true,
-	"venv":         true,
-	"__pycache__":  true,
-	".cache":       true,
-	"dist":         true,
-	"build":        true,
-	"target":       true,
-	".next":        true,
-	".nuxt":        true,
-	".svelte-kit":  true,
+// Override via PROJECT_SCAN_SKIP_DIRS env var (comma-separated list).
+var defaultSkipDirectories = ".git,node_modules,vendor,.venv,venv,__pycache__,.cache,dist,build,target,.next,.nuxt,.svelte-kit"
+
+func getSkipDirectories() map[string]bool {
+	raw := os.Getenv("PROJECT_SCAN_SKIP_DIRS")
+	if raw == "" {
+		raw = defaultSkipDirectories
+	}
+	dirs := map[string]bool{}
+	for _, d := range strings.Split(raw, ",") {
+		d = strings.TrimSpace(d)
+		if d != "" {
+			dirs[d] = true
+		}
+	}
+	return dirs
 }
 
 func (s *ProjectService) enrichWithDirectoryFiles(ctx context.Context, projectPath string, resp *project.Details) {
@@ -747,6 +749,7 @@ func (s *ProjectService) enrichWithDirectoryFiles(ctx context.Context, projectPa
 		}
 	}
 
+	skipDirs := getSkipDirectories()
 	var dirFiles []project.IncludeFile
 
 	root, err := os.OpenRoot(projectPath)
@@ -757,7 +760,7 @@ func (s *ProjectService) enrichWithDirectoryFiles(ctx context.Context, projectPa
 	}
 	defer func() { _ = root.Close() }()
 
-	err = s.collectDirectoryFiles(root, ".", projectPath, shownFiles, &dirFiles, 0, maxDepth)
+	err = s.collectDirectoryFiles(root, ".", projectPath, shownFiles, &dirFiles, 0, maxDepth, skipDirs)
 
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to scan project directory files", "error", err, "path", projectPath)
@@ -774,6 +777,7 @@ func (s *ProjectService) collectDirectoryFiles(
 	dirFiles *[]project.IncludeFile,
 	currentDepth int,
 	maxDepth int,
+	skipDirs map[string]bool,
 ) error {
 	if currentDepth >= maxDepth {
 		return nil
@@ -799,10 +803,10 @@ func (s *ProjectService) collectDirectoryFiles(
 			continue
 		}
 		if entry.IsDir() {
-			if skipDirectories[entry.Name()] {
+			if skipDirs[entry.Name()] {
 				continue
 			}
-			if err := s.collectDirectoryFiles(root, relPath, projectPath, shownFiles, dirFiles, currentDepth+1, maxDepth); err != nil {
+			if err := s.collectDirectoryFiles(root, relPath, projectPath, shownFiles, dirFiles, currentDepth+1, maxDepth, skipDirs); err != nil {
 				slog.Debug("Skipping unreadable project subdirectory", "relativePath", relPath, "error", err)
 			}
 			continue
