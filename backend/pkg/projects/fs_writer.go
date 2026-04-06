@@ -20,6 +20,12 @@ var composeFileCandidates = []string{
 	"podman-compose.yml",
 }
 
+// ComposeFileCandidates returns the supported compose filenames in Arcane's
+// detection order. A copy is returned so callers can't mutate package state.
+func ComposeFileCandidates() []string {
+	return append([]string(nil), composeFileCandidates...)
+}
+
 // detectExistingComposeFile finds an existing compose file in the directory
 func detectExistingComposeFile(dir string) string {
 	for _, filename := range composeFileCandidates {
