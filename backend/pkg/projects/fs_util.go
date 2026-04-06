@@ -132,12 +132,12 @@ func ReadProjectDirectoryFiles(projectPath string, shownFiles map[string]bool, m
 	}
 	defer func() { _ = root.Close() }()
 
-	err = collectProjectDirectoryFiles(root, ".", projectPath, shownFiles, &dirFiles, 0, maxDepth, projectScanSkipDirectorySet(skipDirectories))
+	err = collectProjectDirectoryFilesInternal(root, ".", projectPath, shownFiles, &dirFiles, 0, maxDepth, projectScanSkipDirectorySetInternal(skipDirectories))
 
 	return dirFiles, err
 }
 
-func projectScanSkipDirectorySet(skipDirectories string) map[string]bool {
+func projectScanSkipDirectorySetInternal(skipDirectories string) map[string]bool {
 	if strings.TrimSpace(skipDirectories) == "" {
 		skipDirectories = config.Load().ProjectScanSkipDirs
 	}
@@ -156,7 +156,7 @@ func projectScanSkipDirectorySet(skipDirectories string) map[string]bool {
 	return dirs
 }
 
-func collectProjectDirectoryFiles(
+func collectProjectDirectoryFilesInternal(
 	root *os.Root,
 	relDir string,
 	projectPath string,
@@ -193,7 +193,7 @@ func collectProjectDirectoryFiles(
 			if skipDirs[entry.Name()] {
 				continue
 			}
-			if err := collectProjectDirectoryFiles(root, relPath, projectPath, shownFiles, dirFiles, currentDepth+1, maxDepth, skipDirs); err != nil {
+			if err := collectProjectDirectoryFilesInternal(root, relPath, projectPath, shownFiles, dirFiles, currentDepth+1, maxDepth, skipDirs); err != nil {
 				slog.Debug("Skipping unreadable project subdirectory", "relativePath", relPath, "error", err)
 			}
 			continue
@@ -208,7 +208,7 @@ func collectProjectDirectoryFiles(
 		}
 
 		content, err := root.ReadFile(relPath)
-		if err != nil || isBinaryProjectFileContent(content) {
+		if err != nil || isBinaryProjectFileContentInternal(content) {
 			continue
 		}
 
@@ -222,7 +222,7 @@ func collectProjectDirectoryFiles(
 	return nil
 }
 
-func isBinaryProjectFileContent(content []byte) bool {
+func isBinaryProjectFileContentInternal(content []byte) bool {
 	checkSize := min(len(content), 512)
 	return slices.Contains(content[:checkSize], 0)
 }
