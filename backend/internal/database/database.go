@@ -83,26 +83,18 @@ func Initialize(ctx context.Context, databaseURL string, options MigrationOption
 		return nil, fmt.Errorf("failed to get sql.DB: %w", err)
 	}
 
-	// Determine database provider for migrations
+	// Determine database provider and choose the correct migration driver.
 	var dbProvider string
+	var driver database.Driver
 	switch {
 	case strings.HasPrefix(databaseURL, "file:"):
 		dbProvider = "sqlite"
+		driver, err = sqliteMigrate.WithInstance(sqlDB, &sqliteMigrate.Config{})
 	case strings.HasPrefix(databaseURL, "postgres"):
 		dbProvider = "postgres"
-	default:
-		return nil, fmt.Errorf("unsupported database type in URL: %s", databaseURL)
-	}
-
-	// Choose the correct driver for migrations
-	var driver database.Driver
-	switch dbProvider {
-	case "sqlite":
-		driver, err = sqliteMigrate.WithInstance(sqlDB, &sqliteMigrate.Config{})
-	case "postgres":
 		driver, err = postgresMigrate.WithInstance(sqlDB, &postgresMigrate.Config{})
 	default:
-		return nil, fmt.Errorf("unsupported database provider: %s", dbProvider)
+		return nil, fmt.Errorf("unsupported database type in URL: %s", databaseURL)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to create migration driver: %w", err)

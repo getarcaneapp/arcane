@@ -10,18 +10,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	"github.com/getarcaneapp/arcane/types/apikey"
 	"gorm.io/gorm"
-)
-
-var (
-	ErrApiKeyNotFound  = errors.New("API key not found")
-	ErrApiKeyExpired   = errors.New("API key has expired")
-	ErrApiKeyInvalid   = errors.New("invalid API key")
-	ErrApiKeyProtected = errors.New("API key is protected")
 )
 
 const (
@@ -76,12 +70,12 @@ func normalizeAPIKeyInputInternal(rawKey string) string {
 func parseAPIKeyPrefixInternal(rawKey string) (string, error) {
 	rawKey = normalizeAPIKeyInputInternal(rawKey)
 	if !strings.HasPrefix(rawKey, apiKeyPrefix) {
-		return "", ErrApiKeyInvalid
+		return "", &common.ApiKeyInvalidError{}
 	}
 
 	prefixLen := len(apiKeyPrefix) + apiKeyPrefixLen
 	if len(rawKey) < prefixLen {
-		return "", ErrApiKeyInvalid
+		return "", &common.ApiKeyInvalidError{}
 	}
 
 	return rawKey[:prefixLen], nil
@@ -326,7 +320,7 @@ func (s *ApiKeyService) GetApiKey(ctx context.Context, id string) (*apikey.ApiKe
 	var ak models.ApiKey
 	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&ak).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrApiKeyNotFound
+			return nil, &common.ApiKeyNotFoundError{}
 		}
 		return nil, fmt.Errorf("failed to get API key: %w", err)
 	}
@@ -374,12 +368,12 @@ func (s *ApiKeyService) UpdateApiKey(ctx context.Context, id string, req apikey.
 	var ak models.ApiKey
 	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&ak).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrApiKeyNotFound
+			return nil, &common.ApiKeyNotFoundError{}
 		}
 		return nil, fmt.Errorf("failed to get API key: %w", err)
 	}
 	if isStaticAPIKeyInternal(ak) {
-		return nil, ErrApiKeyProtected
+		return nil, &common.ApiKeyProtectedError{}
 	}
 
 	if req.Name != nil {
@@ -414,12 +408,12 @@ func (s *ApiKeyService) DeleteApiKey(ctx context.Context, id string) error {
 	var apiKey models.ApiKey
 	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&apiKey).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return ErrApiKeyNotFound
+			return &common.ApiKeyNotFoundError{}
 		}
 		return fmt.Errorf("failed to load API key: %w", err)
 	}
 	if isStaticAPIKeyInternal(apiKey) {
-		return ErrApiKeyProtected
+		return &common.ApiKeyProtectedError{}
 	}
 
 	result := s.db.WithContext(ctx).Delete(&models.ApiKey{}, "id = ?", id)
@@ -427,7 +421,7 @@ func (s *ApiKeyService) DeleteApiKey(ctx context.Context, id string) error {
 		return fmt.Errorf("failed to delete API key: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return ErrApiKeyNotFound
+		return &common.ApiKeyNotFoundError{}
 	}
 	return nil
 }
@@ -447,11 +441,11 @@ func (s *ApiKeyService) ValidateApiKey(ctx context.Context, rawKey string) (*mod
 	for _, apiKey := range apiKeys {
 		if err := s.validateApiKeyHash(apiKey.KeyHash, rawKey); err == nil {
 			if apiKey.ExpiresAt != nil && apiKey.ExpiresAt.Before(time.Now()) {
-				return nil, ErrApiKeyExpired
+				return nil, &common.ApiKeyExpiredError{}
 			}
 
 			if apiKey.UserID == nil {
-				return nil, ErrApiKeyInvalid
+				return nil, &common.ApiKeyInvalidError{}
 			}
 
 			s.markApiKeyUsedAsync(ctx, apiKey.ID)
@@ -465,7 +459,7 @@ func (s *ApiKeyService) ValidateApiKey(ctx context.Context, rawKey string) (*mod
 		}
 	}
 
-	return nil, ErrApiKeyInvalid
+	return nil, &common.ApiKeyInvalidError{}
 }
 
 func (s *ApiKeyService) GetEnvironmentByApiKey(ctx context.Context, rawKey string) (*string, error) {
@@ -483,7 +477,7 @@ func (s *ApiKeyService) GetEnvironmentByApiKey(ctx context.Context, rawKey strin
 	for _, apiKey := range apiKeys {
 		if err := s.validateApiKeyHash(apiKey.KeyHash, rawKey); err == nil {
 			if apiKey.ExpiresAt != nil && apiKey.ExpiresAt.Before(time.Now()) {
-				return nil, ErrApiKeyExpired
+				return nil, &common.ApiKeyExpiredError{}
 			}
 
 			s.markApiKeyUsedAsync(ctx, apiKey.ID)
@@ -492,5 +486,5 @@ func (s *ApiKeyService) GetEnvironmentByApiKey(ctx context.Context, rawKey strin
 		}
 	}
 
-	return nil, ErrApiKeyInvalid
+	return nil, &common.ApiKeyInvalidError{}
 }

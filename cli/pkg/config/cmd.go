@@ -25,8 +25,7 @@ var (
 	setResourceLimit []string
 )
 
-// ConfigCmd is the command for managing API configuration
-var ConfigCmd = &cobra.Command{
+var Cmd = &cobra.Command{
 	Use:   "config",
 	Short: "Manage Arcane CLI's Configuration",
 }
@@ -40,7 +39,7 @@ var configShowCmd = &cobra.Command{
 			return fmt.Errorf("failed to load config: %w", err)
 		}
 
-		path, _ := config.ConfigPath()
+		path, _ := config.Path()
 		fmt.Printf("Config file: %s\n\n", path)
 		fmt.Printf("Server URL:          %s\n", maskIfEmpty(cfg.ServerURL, "(not set)"))
 		fmt.Printf("API Key:             %s\n", maskAPIKey(cfg.APIKey))
@@ -142,7 +141,7 @@ Legacy flag syntax (flags shown below) is still supported:
 			return fmt.Errorf("failed to save config: %w", err)
 		}
 
-		path, _ := config.ConfigPath()
+		path, _ := config.Path()
 		fmt.Printf("\nConfiguration saved to %s\n", path)
 
 		return nil
@@ -153,7 +152,7 @@ var configPathCmd = &cobra.Command{
 	Use:   "path",
 	Short: "Print the config file path",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		path, err := config.ConfigPath()
+		path, err := config.Path()
 		if err != nil {
 			return err
 		}
@@ -215,7 +214,7 @@ var configInitCmd = &cobra.Command{
 
 If the config file already exists, this command is a no-op and does not overwrite it.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		path, err := config.ConfigPath()
+		path, err := config.Path()
 		if err != nil {
 			return err
 		}
@@ -244,7 +243,7 @@ var configBackupCmd = &cobra.Command{
 
 This removes the original config file from its previous path.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		path, err := config.ConfigPath()
+		path, err := config.Path()
 		if err != nil {
 			return err
 		}
@@ -265,12 +264,12 @@ This removes the original config file from its previous path.`,
 }
 
 func init() {
-	ConfigCmd.AddCommand(configShowCmd)
-	ConfigCmd.AddCommand(configSetCmd)
-	ConfigCmd.AddCommand(configInitCmd)
-	ConfigCmd.AddCommand(configBackupCmd)
-	ConfigCmd.AddCommand(configPathCmd)
-	ConfigCmd.AddCommand(configTestCmd)
+	Cmd.AddCommand(configShowCmd)
+	Cmd.AddCommand(configSetCmd)
+	Cmd.AddCommand(configInitCmd)
+	Cmd.AddCommand(configBackupCmd)
+	Cmd.AddCommand(configPathCmd)
+	Cmd.AddCommand(configTestCmd)
 
 	configSetCmd.Flags().StringVar(&setServerURL, "server-url", "", "Arcane server URL (e.g., http://localhost:3553)")
 	configSetCmd.Flags().StringVar(&setAPIKey, "api-key", "", "API key for authentication")

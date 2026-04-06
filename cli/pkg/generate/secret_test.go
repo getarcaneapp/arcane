@@ -36,7 +36,7 @@ func captureOutput(fn func() error) (string, error) {
 }
 
 func TestSecretDefaultBase64(t *testing.T) {
-	cmd := gen.GenerateCmd
+	cmd := gen.Cmd
 	cmd.SetArgs([]string{"secret"})
 
 	out, err := captureOutput(func() error {
@@ -83,7 +83,7 @@ func TestSecretDefaultBase64(t *testing.T) {
 }
 
 func TestSecretAllFormatContainsSections(t *testing.T) {
-	cmd := gen.GenerateCmd
+	cmd := gen.Cmd
 	cmd.SetArgs([]string{"secret", "-f", "all"})
 
 	out, err := captureOutput(func() error {

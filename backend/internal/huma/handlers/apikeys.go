@@ -256,10 +256,10 @@ func (h *ApiKeyHandler) UpdateApiKey(ctx context.Context, input *UpdateApiKeyInp
 
 	apiKey, err := h.apiKeyService.UpdateApiKey(ctx, input.ID, input.Body)
 	if err != nil {
-		if errors.Is(err, services.ErrApiKeyNotFound) {
+		if _, ok := errors.AsType[*common.ApiKeyNotFoundError](err); ok {
 			return nil, huma.Error404NotFound((&common.ApiKeyNotFoundError{}).Error())
 		}
-		if errors.Is(err, services.ErrApiKeyProtected) {
+		if _, ok := errors.AsType[*common.ApiKeyProtectedError](err); ok {
 			return nil, huma.Error403Forbidden("static API keys cannot be updated")
 		}
 		return nil, huma.Error500InternalServerError((&common.ApiKeyUpdateError{Err: err}).Error())
@@ -285,10 +285,10 @@ func (h *ApiKeyHandler) DeleteApiKey(ctx context.Context, input *DeleteApiKeyInp
 	}
 
 	if err := h.apiKeyService.DeleteApiKey(ctx, input.ID); err != nil {
-		if errors.Is(err, services.ErrApiKeyNotFound) {
+		if _, ok := errors.AsType[*common.ApiKeyNotFoundError](err); ok {
 			return nil, huma.Error404NotFound((&common.ApiKeyNotFoundError{}).Error())
 		}
-		if errors.Is(err, services.ErrApiKeyProtected) {
+		if _, ok := errors.AsType[*common.ApiKeyProtectedError](err); ok {
 			return nil, huma.Error403Forbidden("static API keys cannot be deleted")
 		}
 		return nil, huma.Error500InternalServerError((&common.ApiKeyDeletionError{Err: err}).Error())

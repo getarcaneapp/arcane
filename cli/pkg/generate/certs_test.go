@@ -16,7 +16,7 @@ import (
 func TestGenerateMTLSCommandWritesECDSAP384Assets(t *testing.T) {
 	outDir := t.TempDir()
 
-	cmd := gen.GenerateCmd
+	cmd := gen.Cmd
 	cmd.SetArgs([]string{"mtls", "--out-dir", outDir, "--env-id", "env-123", "--app-url", "https://manager.example.com"})
 
 	_, err := captureOutput(func() error {
@@ -39,7 +39,7 @@ func TestGenerateMTLSCommandWritesECDSAP384Assets(t *testing.T) {
 func TestGenerateTLSCommandWritesECDSAP384ServerCert(t *testing.T) {
 	outDir := t.TempDir()
 
-	cmd := gen.GenerateCmd
+	cmd := gen.Cmd
 	cmd.SetArgs([]string{"tls", "--out-dir", outDir, "--common-name", "localhost", "--host", "localhost", "--host", "127.0.0.1", "--cert-name", "local-manager.crt", "--key-name", "local-manager.key"})
 
 	_, err := captureOutput(func() error {
@@ -64,7 +64,7 @@ func TestGenerateTLSCommandWritesECDSAP384ServerCert(t *testing.T) {
 func TestGenerateTLSCommandOverwritesCertificateAtomically(t *testing.T) {
 	outDir := t.TempDir()
 
-	cmd := gen.GenerateCmd
+	cmd := gen.Cmd
 	cmd.SetArgs([]string{"tls", "--out-dir", outDir, "--common-name", "localhost", "--host", "localhost", "--cert-name", "server.crt", "--key-name", "server.key"})
 	_, err := captureOutput(func() error {
 		_, err := cmd.ExecuteC()

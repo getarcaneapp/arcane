@@ -10,7 +10,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	git "github.com/getarcaneapp/arcane/backend/pkg/gitutil"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/crypto"
-	libbuild "github.com/getarcaneapp/arcane/backend/pkg/libarcane/libbuild"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/libbuild"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils"

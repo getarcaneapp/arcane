@@ -5,4 +5,4 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var GenerateCmd *cobra.Command = cligenerate.GenerateCmd
+var Cmd *cobra.Command = cligenerate.Cmd

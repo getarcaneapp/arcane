@@ -34,16 +34,24 @@ func TestBuildSolveOptInternal_StagesInlineDockerfile(t *testing.T) {
 	assert.Nil(t, loadErrCh)
 	assert.Equal(t, ".arcane.inline.Dockerfile", solveOpt.FrontendAttrs["filename"])
 
-	contextPath := solveOpt.LocalDirs["context"]
-	dockerfileDir := solveOpt.LocalDirs["dockerfile"]
-	assert.NotEmpty(t, contextPath)
-	assert.Equal(t, contextPath, dockerfileDir)
+	contextMount := solveOpt.LocalMounts["context"]
+	dockerfileMount := solveOpt.LocalMounts["dockerfile"]
+	require.NotNil(t, contextMount)
+	require.NotNil(t, dockerfileMount)
 
-	contents, err := os.ReadFile(filepath.Join(dockerfileDir, solveOpt.FrontendAttrs["filename"]))
+	dockerfileReader, err := dockerfileMount.Open(solveOpt.FrontendAttrs["filename"])
+	require.NoError(t, err)
+	defer dockerfileReader.Close()
+
+	contents, err := io.ReadAll(dockerfileReader)
 	require.NoError(t, err)
 	assert.Equal(t, "FROM alpine:3.20\nCOPY app.txt /app.txt\n", string(contents))
 
-	appContents, err := os.ReadFile(filepath.Join(contextPath, "app.txt"))
+	appReader, err := contextMount.Open("app.txt")
+	require.NoError(t, err)
+	defer appReader.Close()
+
+	appContents, err := io.ReadAll(appReader)
 	require.NoError(t, err)
 	assert.Equal(t, "hello\n", string(appContents))
 }

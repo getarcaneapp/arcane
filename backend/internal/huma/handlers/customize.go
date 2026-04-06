@@ -80,7 +80,7 @@ func (h *CustomizeHandler) Search(ctx context.Context, input *SearchCustomizeInp
 	results := h.customizeSearchService.Search(input.Body.Query)
 
 	if !humamw.IsAdminFromContext(ctx) {
-		filtered := []category.Category{}
+		var filtered []category.Category
 		for _, cat := range results.Results {
 			if cat.ID != "registries" && cat.ID != "variables" {
 				filtered = append(filtered, cat)
@@ -104,7 +104,7 @@ func (h *CustomizeHandler) GetCategories(ctx context.Context, input *GetCustomiz
 	categories := h.customizeSearchService.GetCustomizeCategories()
 
 	if !humamw.IsAdminFromContext(ctx) {
-		filtered := []category.Category{}
+		var filtered []category.Category
 		for _, cat := range categories {
 			if cat.ID != "registries" && cat.ID != "variables" {
 				filtered = append(filtered, cat)

@@ -3,7 +3,7 @@ package updater
 import (
 	"testing"
 
-	digest "github.com/opencontainers/go-digest"
+	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/assert"
 )
 

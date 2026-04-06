@@ -402,7 +402,7 @@ func (s *ContainerRegistryService) GetAllRegistryAuthConfigs(ctx context.Context
 			Password:      token,
 			ServerAddress: serverAddress,
 		}
-		for _, key := range utilsregistry.RegistryAuthLookupKeys(normalizedHost) {
+		for _, key := range utilsregistry.AuthLookupKeys(normalizedHost) {
 			authConfigs[key] = authConfig
 		}
 	}

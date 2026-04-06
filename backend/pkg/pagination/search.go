@@ -4,7 +4,7 @@ import (
 	"strings"
 )
 
-// Return any error to skip the field (for  when matching an unknown state on an enum)
+// SearchAccessor Will Return any error to skip the field (for  when matching an unknown state on an enum)
 //
 // Note: returning ("", nil) will match!
 type SearchAccessor[T any] = func(T) (string, error)
@@ -20,7 +20,7 @@ func searchFn[T any](items []T, params SearchQuery, accessors []SearchAccessor[T
 		return items
 	}
 
-	results := []T{}
+	var results []T
 
 	for iIdx := range items {
 		for aIdx := range accessors {

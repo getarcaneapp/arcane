@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/getarcaneapp/arcane/cli/internal/client"
+	"github.com/getarcaneapp/arcane/cli/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/internal/output"
 	"github.com/getarcaneapp/arcane/cli/internal/types"
 	"github.com/getarcaneapp/arcane/types/base"
@@ -14,8 +15,7 @@ import (
 
 var jsonOutput bool
 
-// UpdatesCmd is the parent command for image update operations.
-var UpdatesCmd = &cobra.Command{
+var Cmd = &cobra.Command{
 	Use:   "updates",
 	Short: "Check for image updates",
 }
@@ -42,12 +42,7 @@ var checkCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Header("Image Update Check Results")
@@ -86,12 +81,7 @@ var checkAllCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Header("Check All Results")
@@ -131,12 +121,7 @@ var checkImageCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Header("Image Update Status")
@@ -174,12 +159,7 @@ var summaryCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Header("Image Updates Summary")
@@ -192,10 +172,10 @@ var summaryCmd = &cobra.Command{
 }
 
 func init() {
-	UpdatesCmd.AddCommand(checkCmd)
-	UpdatesCmd.AddCommand(checkAllCmd)
-	UpdatesCmd.AddCommand(checkImageCmd)
-	UpdatesCmd.AddCommand(summaryCmd)
+	Cmd.AddCommand(checkCmd)
+	Cmd.AddCommand(checkAllCmd)
+	Cmd.AddCommand(checkImageCmd)
+	Cmd.AddCommand(summaryCmd)
 
 	checkCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	checkAllCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")

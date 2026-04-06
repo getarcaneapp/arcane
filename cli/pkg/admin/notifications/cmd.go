@@ -18,8 +18,7 @@ var (
 	notifForceFlag bool
 )
 
-// NotificationsCmd is the parent command for notification operations
-var NotificationsCmd = &cobra.Command{
+var Cmd = &cobra.Command{
 	Use:     "notifications",
 	Aliases: []string{"notif", "notify"},
 	Short:   "Manage notifications",
@@ -57,12 +56,7 @@ var appriseGetCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Header("Apprise Configuration")
@@ -97,12 +91,7 @@ var settingsGetCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result)
 		}
 
 		headers := []string{"ID", "PROVIDER", "ENABLED"}
@@ -142,12 +131,10 @@ var appriseTestCmd = &cobra.Command{
 
 		if jsonOutput {
 			var result base.ApiResponse[any]
-			if err := json.NewDecoder(resp.Body).Decode(&result); err == nil {
-				if resultBytes, err := json.MarshalIndent(result.Data, "", "  "); err == nil {
-					fmt.Println(string(resultBytes))
-				}
+			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+				return fmt.Errorf("failed to parse response: %w", err)
 			}
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Apprise notification test successful")
@@ -213,12 +200,10 @@ var testProviderCmd = &cobra.Command{
 
 		if jsonOutput {
 			var result base.ApiResponse[any]
-			if err := json.NewDecoder(resp.Body).Decode(&result); err == nil {
-				if resultBytes, err := json.MarshalIndent(result.Data, "", "  "); err == nil {
-					fmt.Println(string(resultBytes))
-				}
+			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+				return fmt.Errorf("failed to parse response: %w", err)
 			}
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Notification test for %s successful", args[0])
@@ -227,9 +212,9 @@ var testProviderCmd = &cobra.Command{
 }
 
 func init() {
-	NotificationsCmd.AddCommand(appriseCmd)
-	NotificationsCmd.AddCommand(settingsCmd)
-	NotificationsCmd.AddCommand(testProviderCmd)
+	Cmd.AddCommand(appriseCmd)
+	Cmd.AddCommand(settingsCmd)
+	Cmd.AddCommand(testProviderCmd)
 
 	appriseCmd.AddCommand(appriseGetCmd)
 	appriseCmd.AddCommand(appriseTestCmd)

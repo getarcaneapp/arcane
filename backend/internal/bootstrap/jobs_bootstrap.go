@@ -8,47 +8,47 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
-	pkg_scheduler "github.com/getarcaneapp/arcane/backend/pkg/scheduler"
+	"github.com/getarcaneapp/arcane/backend/pkg/scheduler"
 )
 
-func registerJobs(appCtx context.Context, newScheduler *pkg_scheduler.JobScheduler, appServices *Services, appConfig *config.Config) {
-	autoUpdateJob := pkg_scheduler.NewAutoUpdateJob(appServices.Updater, appServices.Settings)
+func registerJobs(appCtx context.Context, newScheduler *scheduler.JobScheduler, appServices *Services, appConfig *config.Config) {
+	autoUpdateJob := scheduler.NewAutoUpdateJob(appServices.Updater, appServices.Settings)
 	newScheduler.RegisterJob(autoUpdateJob)
 
-	imagePollingJob := pkg_scheduler.NewImagePollingJob(appServices.ImageUpdate, appServices.Settings, appServices.Environment)
+	imagePollingJob := scheduler.NewImagePollingJob(appServices.ImageUpdate, appServices.Settings, appServices.Environment)
 	newScheduler.RegisterJob(imagePollingJob)
 
-	environmentHealthJob := pkg_scheduler.NewEnvironmentHealthJob(appServices.Environment, appServices.Settings)
+	environmentHealthJob := scheduler.NewEnvironmentHealthJob(appServices.Environment, appServices.Settings)
 	if !appConfig.AgentMode {
 		newScheduler.RegisterJob(environmentHealthJob)
 	}
 
-	dockerClientRefreshJob := pkg_scheduler.NewDockerClientRefreshJob(appServices.Docker, appServices.Settings)
+	dockerClientRefreshJob := scheduler.NewDockerClientRefreshJob(appServices.Docker, appServices.Settings)
 	newScheduler.RegisterJob(dockerClientRefreshJob)
 
-	analyticsJob := pkg_scheduler.NewAnalyticsJob(appServices.Settings, appServices.KV, nil, appConfig)
+	analyticsJob := scheduler.NewAnalyticsJob(appServices.Settings, appServices.KV, nil, appConfig)
 	newScheduler.RegisterJob(analyticsJob)
 	// Send initial heartbeat on startup without blocking bootstrap.
 	go analyticsJob.Run(appCtx)
 
-	eventCleanupJob := pkg_scheduler.NewEventCleanupJob(appServices.Event, appServices.Settings)
+	eventCleanupJob := scheduler.NewEventCleanupJob(appServices.Event, appServices.Settings)
 	newScheduler.RegisterJob(eventCleanupJob)
 
-	scheduledPruneJob := pkg_scheduler.NewScheduledPruneJob(appServices.System, appServices.Settings, appServices.Notification)
+	scheduledPruneJob := scheduler.NewScheduledPruneJob(appServices.System, appServices.Settings, appServices.Notification)
 	newScheduler.RegisterJob(scheduledPruneJob)
 
-	fsWatcherJob, err := pkg_scheduler.RegisterFilesystemWatcherJob(appCtx, appServices.Project, appServices.Template, appServices.Settings, appConfig.ProjectScanMaxDepth)
+	fsWatcherJob, err := scheduler.RegisterFilesystemWatcherJob(appCtx, appServices.Project, appServices.Template, appServices.Settings, appConfig.ProjectScanMaxDepth)
 	if err != nil {
 		slog.ErrorContext(appCtx, "Failed to register filesystem watcher job", "error", err)
 	}
 
-	gitOpsSyncJob := pkg_scheduler.NewGitOpsSyncJob(appServices.GitOpsSync, appServices.Settings)
+	gitOpsSyncJob := scheduler.NewGitOpsSyncJob(appServices.GitOpsSync, appServices.Settings)
 	newScheduler.RegisterJob(gitOpsSyncJob)
 
-	vulnerabilityScanJob := pkg_scheduler.NewVulnerabilityScanJob(appServices.Vulnerability, appServices.Settings)
+	vulnerabilityScanJob := scheduler.NewVulnerabilityScanJob(appServices.Vulnerability, appServices.Settings)
 	newScheduler.RegisterJob(vulnerabilityScanJob)
 
-	autoHealJob := pkg_scheduler.NewAutoHealJob(appServices.Docker, appServices.Settings, appServices.Event, appServices.Notification)
+	autoHealJob := scheduler.NewAutoHealJob(appServices.Docker, appServices.Settings, appServices.Event, appServices.Notification)
 	newScheduler.RegisterJob(autoHealJob)
 
 	setupJobScheduleCallbacks(
@@ -73,16 +73,16 @@ func setupJobScheduleCallbacks(
 	lifecycleCtx context.Context,
 	appServices *Services,
 	appConfig *config.Config,
-	newScheduler *pkg_scheduler.JobScheduler,
-	imagePollingJob *pkg_scheduler.ImagePollingJob,
-	autoUpdateJob *pkg_scheduler.AutoUpdateJob,
-	dockerClientRefreshJob *pkg_scheduler.DockerClientRefreshJob,
-	environmentHealthJob *pkg_scheduler.EnvironmentHealthJob,
-	eventCleanupJob *pkg_scheduler.EventCleanupJob,
-	scheduledPruneJob *pkg_scheduler.ScheduledPruneJob,
-	gitOpsSyncJob *pkg_scheduler.GitOpsSyncJob,
-	vulnerabilityScanJob *pkg_scheduler.VulnerabilityScanJob,
-	autoHealJob *pkg_scheduler.AutoHealJob,
+	newScheduler *scheduler.JobScheduler,
+	imagePollingJob *scheduler.ImagePollingJob,
+	autoUpdateJob *scheduler.AutoUpdateJob,
+	dockerClientRefreshJob *scheduler.DockerClientRefreshJob,
+	environmentHealthJob *scheduler.EnvironmentHealthJob,
+	eventCleanupJob *scheduler.EventCleanupJob,
+	scheduledPruneJob *scheduler.ScheduledPruneJob,
+	gitOpsSyncJob *scheduler.GitOpsSyncJob,
+	vulnerabilityScanJob *scheduler.VulnerabilityScanJob,
+	autoHealJob *scheduler.AutoHealJob,
 ) {
 	if appServices.JobSchedule == nil {
 		return
@@ -114,16 +114,16 @@ func handleJobScheduleChangeInternal(
 	ctx context.Context,
 	key string,
 	appConfig *config.Config,
-	newScheduler *pkg_scheduler.JobScheduler,
-	imagePollingJob *pkg_scheduler.ImagePollingJob,
-	autoUpdateJob *pkg_scheduler.AutoUpdateJob,
-	dockerClientRefreshJob *pkg_scheduler.DockerClientRefreshJob,
-	environmentHealthJob *pkg_scheduler.EnvironmentHealthJob,
-	eventCleanupJob *pkg_scheduler.EventCleanupJob,
-	scheduledPruneJob *pkg_scheduler.ScheduledPruneJob,
-	gitOpsSyncJob *pkg_scheduler.GitOpsSyncJob,
-	vulnerabilityScanJob *pkg_scheduler.VulnerabilityScanJob,
-	autoHealJob *pkg_scheduler.AutoHealJob,
+	newScheduler *scheduler.JobScheduler,
+	imagePollingJob *scheduler.ImagePollingJob,
+	autoUpdateJob *scheduler.AutoUpdateJob,
+	dockerClientRefreshJob *scheduler.DockerClientRefreshJob,
+	environmentHealthJob *scheduler.EnvironmentHealthJob,
+	eventCleanupJob *scheduler.EventCleanupJob,
+	scheduledPruneJob *scheduler.ScheduledPruneJob,
+	gitOpsSyncJob *scheduler.GitOpsSyncJob,
+	vulnerabilityScanJob *scheduler.VulnerabilityScanJob,
+	autoHealJob *scheduler.AutoHealJob,
 ) {
 	switch key {
 	case "pollingInterval":
@@ -168,7 +168,7 @@ func handleJobScheduleChangeInternal(
 	}
 }
 
-func setupSettingsCallbacks(lifecycleCtx context.Context, appServices *Services, appConfig *config.Config, newScheduler *pkg_scheduler.JobScheduler, imagePollingJob *pkg_scheduler.ImagePollingJob, autoUpdateJob *pkg_scheduler.AutoUpdateJob, environmentHealthJob *pkg_scheduler.EnvironmentHealthJob, fsWatcherJob *pkg_scheduler.FilesystemWatcherJob, scheduledPruneJob *pkg_scheduler.ScheduledPruneJob, vulnerabilityScanJob *pkg_scheduler.VulnerabilityScanJob, autoHealJob *pkg_scheduler.AutoHealJob) {
+func setupSettingsCallbacks(lifecycleCtx context.Context, appServices *Services, appConfig *config.Config, newScheduler *scheduler.JobScheduler, imagePollingJob *scheduler.ImagePollingJob, autoUpdateJob *scheduler.AutoUpdateJob, environmentHealthJob *scheduler.EnvironmentHealthJob, fsWatcherJob *scheduler.FilesystemWatcherJob, scheduledPruneJob *scheduler.ScheduledPruneJob, vulnerabilityScanJob *scheduler.VulnerabilityScanJob, autoHealJob *scheduler.AutoHealJob) {
 	appServices.Settings.OnImagePollingSettingsChanged = func(_ context.Context) {
 		if err := newScheduler.RescheduleJob(lifecycleCtx, imagePollingJob); err != nil {
 			slog.WarnContext(lifecycleCtx, "Failed to reschedule image-polling job", "error", err)

@@ -449,11 +449,9 @@ func TestSettingsService_UpdateSettings_PruneModesDoNotTriggerScheduledPruneCall
 		callbackCalls++
 	}
 
-	imageMode := "all"
-	containerUntil := "24h"
 	_, err = svc.UpdateSettings(ctx, settings.Update{
-		PruneImageMode:      &imageMode,
-		PruneContainerUntil: &containerUntil,
+		PruneImageMode:      new("all"),
+		PruneContainerUntil: new("24h"),
 	})
 	require.NoError(t, err)
 	require.Equal(t, 0, callbackCalls)
@@ -470,9 +468,8 @@ func TestSettingsService_UpdateSettings_ScheduledPruneScheduleTriggersCallback(t
 		callbackCalls++
 	}
 
-	enabled := "true"
 	_, err = svc.UpdateSettings(ctx, settings.Update{
-		ScheduledPruneEnabled: &enabled,
+		ScheduledPruneEnabled: new("true"),
 	})
 	require.NoError(t, err)
 	require.Equal(t, 1, callbackCalls)

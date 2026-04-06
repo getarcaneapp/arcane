@@ -15,8 +15,7 @@ import (
 
 var debugAllGood bool
 
-// AlertsCmd shows dashboard alerts/action items.
-var AlertsCmd = &cobra.Command{
+var Cmd = &cobra.Command{
 	Use:          "alerts",
 	Aliases:      []string{"alert", "actionitems"},
 	Short:        "Show dashboard alerts",
@@ -96,6 +95,6 @@ func formatActionItemKind(kind dashboardtypes.ActionItemKind) string {
 }
 
 func init() {
-	AlertsCmd.Flags().Bool("json", false, "Output in JSON format")
-	AlertsCmd.Flags().BoolVar(&debugAllGood, "debug-all-good", false, "Force no alerts (debug mode)")
+	Cmd.Flags().Bool("json", false, "Output in JSON format")
+	Cmd.Flags().BoolVar(&debugAllGood, "debug-all-good", false, "Force no alerts (debug mode)")
 }

@@ -40,8 +40,7 @@ var (
 
 const maxPromptOptions = 20
 
-// ProjectsCmd is the parent command for project operations
-var ProjectsCmd = &cobra.Command{
+var Cmd = &cobra.Command{
 	Use:     "projects",
 	Aliases: []string{"project", "proj", "p"},
 	Short:   "Manage projects",
@@ -88,12 +87,7 @@ func runProjectsList(cmd *cobra.Command, forceHasUpdateFilter bool) error {
 	}
 
 	if jsonOutput {
-		resultBytes, err := json.MarshalIndent(result, "", "  ")
-		if err != nil {
-			return fmt.Errorf("failed to marshal JSON: %w", err)
-		}
-		fmt.Println(string(resultBytes))
-		return nil
+		return cmdutil.PrintJSON(result)
 	}
 
 	effectiveUpdatesFilter := strings.TrimSpace(projectsUpdatesFilter)
@@ -254,12 +248,7 @@ var getCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(resolved, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(resolved)
 		}
 
 		output.Header("Project Details")
@@ -474,12 +463,7 @@ var createCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Project %s created successfully", result.Data.Name)
@@ -544,12 +528,7 @@ var updateCmd = &cobra.Command{
 			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 				return fmt.Errorf("failed to parse response: %w", err)
 			}
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Project %s updated successfully", resolved.Name)
@@ -597,12 +576,7 @@ var updateIncludesCmd = &cobra.Command{
 			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 				return fmt.Errorf("failed to parse response: %w", err)
 			}
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Include file %s updated successfully for project %s", filepath.Base(includesFile), resolved.Name)
@@ -632,12 +606,7 @@ var countsCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Header("Project Counts")
@@ -649,19 +618,19 @@ var countsCmd = &cobra.Command{
 }
 
 func init() {
-	ProjectsCmd.AddCommand(listCmd)
-	ProjectsCmd.AddCommand(updatesCmd)
-	ProjectsCmd.AddCommand(getCmd)
-	ProjectsCmd.AddCommand(upCmd)
-	ProjectsCmd.AddCommand(downCmd)
-	ProjectsCmd.AddCommand(restartCmd)
-	ProjectsCmd.AddCommand(redeployCmd)
-	ProjectsCmd.AddCommand(pullCmd)
-	ProjectsCmd.AddCommand(countsCmd)
-	ProjectsCmd.AddCommand(destroyCmd)
-	ProjectsCmd.AddCommand(createCmd)
-	ProjectsCmd.AddCommand(updateCmd)
-	ProjectsCmd.AddCommand(updateIncludesCmd)
+	Cmd.AddCommand(listCmd)
+	Cmd.AddCommand(updatesCmd)
+	Cmd.AddCommand(getCmd)
+	Cmd.AddCommand(upCmd)
+	Cmd.AddCommand(downCmd)
+	Cmd.AddCommand(restartCmd)
+	Cmd.AddCommand(redeployCmd)
+	Cmd.AddCommand(pullCmd)
+	Cmd.AddCommand(countsCmd)
+	Cmd.AddCommand(destroyCmd)
+	Cmd.AddCommand(createCmd)
+	Cmd.AddCommand(updateCmd)
+	Cmd.AddCommand(updateIncludesCmd)
 
 	// List command flags
 	listCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of projects to show")

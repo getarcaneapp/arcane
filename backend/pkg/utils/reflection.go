@@ -28,7 +28,7 @@ func ParseMetaTag(tag string) map[string]string {
 // ParseKeywords parses a comma-separated keywords string into a slice
 // Returns an empty slice if the input is empty or contains only whitespace
 func ParseKeywords(keywordsStr string) []string {
-	keywords := []string{}
+	var keywords []string
 	if k := strings.TrimSpace(keywordsStr); k != "" {
 		for kk := range strings.SplitSeq(k, ",") {
 			if t := strings.TrimSpace(kk); t != "" {

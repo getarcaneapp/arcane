@@ -208,10 +208,10 @@ func TestPersistOidcTokens_SetsFields(t *testing.T) {
 		t.Errorf("expiresAt nil")
 	}
 	// Check approx expiry within [start+7s, start+12s] to allow CI slop
-	min := start.Add(7 * time.Second)
-	max := start.Add(12 * time.Second)
-	if user.OidcAccessTokenExpiresAt.Before(min) || user.OidcAccessTokenExpiresAt.After(max) {
-		t.Errorf("expiresAt %v not in [%v,%v]", user.OidcAccessTokenExpiresAt, min, max)
+	authMin := start.Add(7 * time.Second)
+	authMax := start.Add(12 * time.Second)
+	if user.OidcAccessTokenExpiresAt.Before(authMin) || user.OidcAccessTokenExpiresAt.After(authMax) {
+		t.Errorf("expiresAt %v not in [%v,%v]", user.OidcAccessTokenExpiresAt, authMin, authMax)
 	}
 }
 

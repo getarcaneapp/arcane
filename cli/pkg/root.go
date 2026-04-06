@@ -223,28 +223,30 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&logJSONOutput, "log-json", false, "Log in JSON format")
 	rootCmd.Flags().BoolVarP(&showVersion, "version", "v", false, "Print version information")
 
-	rootCmd.AddCommand(configClient.ConfigCmd)
-	rootCmd.AddCommand(completion.NewCommand(rootCmd))
-	rootCmd.AddCommand(doctor.DoctorCmd)
-	rootCmd.AddCommand(generate.GenerateCmd)
-	rootCmd.AddCommand(version.VersionCmd)
-	rootCmd.AddCommand(auth.AuthCmd)
-	rootCmd.AddCommand(alerts.AlertsCmd)
-	rootCmd.AddCommand(containers.ContainersCmd)
-	rootCmd.AddCommand(images.ImagesCmd)
-	rootCmd.AddCommand(volumes.VolumesCmd)
-	rootCmd.AddCommand(networks.NetworksCmd)
-	rootCmd.AddCommand(projects.ProjectsCmd)
-	rootCmd.AddCommand(environments.EnvironmentsCmd)
-	rootCmd.AddCommand(registries.RegistriesCmd)
-	rootCmd.AddCommand(repos.ReposCmd)
-	rootCmd.AddCommand(templates.TemplatesCmd)
-	rootCmd.AddCommand(settings.SettingsCmd)
-	rootCmd.AddCommand(jobs.JobsCmd)
-	rootCmd.AddCommand(system.SystemCmd)
-	rootCmd.AddCommand(updater.UpdaterCmd)
-	rootCmd.AddCommand(admin.AdminCmd)
-	rootCmd.AddCommand(gitops.GitopsCmd)
+	rootCmd.AddCommand(
+		configClient.Cmd,
+		completion.NewCommand(rootCmd),
+		doctor.Cmd,
+		generate.Cmd,
+		version.Cmd,
+		auth.Cmd,
+		alerts.Cmd,
+		containers.Cmd,
+		images.Cmd,
+		volumes.Cmd,
+		networks.Cmd,
+		projects.Cmd,
+		environments.Cmd,
+		registries.Cmd,
+		repos.Cmd,
+		templates.Cmd,
+		settings.Cmd,
+		jobs.Cmd,
+		system.Cmd,
+		updater.Cmd,
+		admin.Cmd,
+		gitops.Cmd,
+	)
 }
 
 func renderCommandHelp(cmd *cobra.Command) {

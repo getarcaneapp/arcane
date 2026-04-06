@@ -69,8 +69,7 @@ var (
 
 const maxPromptOptions = 20
 
-// ImagesCmd is the parent command for image operations
-var ImagesCmd = &cobra.Command{
+var Cmd = &cobra.Command{
 	Use:     "images",
 	Aliases: []string{"image", "i"},
 	Short:   "Manage images",
@@ -151,12 +150,7 @@ var imagesListCmd = &cobra.Command{
 		result.Pagination.TotalItems = int64(len(result.Data))
 
 		if cmdutil.JSONOutputEnabled(cmd) {
-			resultBytes, err := json.MarshalIndent(result, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result)
 		}
 
 		headers := []string{"ID", "REPOSITORY:TAG", "SIZE", "IN USE"}
@@ -704,7 +698,7 @@ var imagesUploadCmd = &cobra.Command{
 }
 
 func init() {
-	ImagesCmd.AddCommand(imagesListCmd)
+	Cmd.AddCommand(imagesListCmd)
 	imagesListCmd.Flags().IntVarP(&imagesLimit, "limit", "n", 0, "Number of images to show (server default 20)")
 	imagesListCmd.Flags().IntVar(&imagesStart, "start", 0, "Offset for pagination")
 	imagesListCmd.Flags().StringVar(&imagesSort, "sort", "", "Field to sort by")
@@ -713,20 +707,20 @@ func init() {
 	imagesListCmd.Flags().BoolVar(&imagesInUseOnly, "inuse", false, "Only show images currently in use")
 	imagesListCmd.Flags().BoolVar(&imagesUnusedOnly, "unused", false, "Only show images not in use")
 
-	ImagesCmd.AddCommand(imagesGetCmd)
+	Cmd.AddCommand(imagesGetCmd)
 
-	ImagesCmd.AddCommand(imagesRemoveCmd)
+	Cmd.AddCommand(imagesRemoveCmd)
 	imagesRemoveCmd.Flags().BoolVarP(&removeForce, "force", "f", false, "Force removal of image")
 
-	ImagesCmd.AddCommand(imagesPullCmd)
+	Cmd.AddCommand(imagesPullCmd)
 
-	ImagesCmd.AddCommand(imagesPruneCmd)
+	Cmd.AddCommand(imagesPruneCmd)
 	imagesPruneCmd.Flags().BoolVar(&pruneDangling, "dangling", false, "Only remove dangling images")
 
-	ImagesCmd.AddCommand(imagesCountsCmd)
-	ImagesCmd.AddCommand(updates.UpdatesCmd)
+	Cmd.AddCommand(imagesCountsCmd)
+	Cmd.AddCommand(updates.Cmd)
 
-	ImagesCmd.AddCommand(imagesUploadCmd)
+	Cmd.AddCommand(imagesUploadCmd)
 }
 
 func resolveImageID(ctx context.Context, c *client.Client, identifier string, allowPrompt bool) (string, error) {

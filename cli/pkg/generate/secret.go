@@ -24,7 +24,7 @@ var secretCmd = &cobra.Command{
 }
 
 func init() {
-	GenerateCmd.AddCommand(secretCmd)
+	Cmd.AddCommand(secretCmd)
 	secretCmd.Flags().StringVarP(&secretFormat, "format", "f", "base64", "output format: base64, hex, env, docker, all")
 	secretCmd.Flags().IntVarP(&secretLength, "length", "l", 32, "secret length in bytes (default: 32 for AES-256)")
 }

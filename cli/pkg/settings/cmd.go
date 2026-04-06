@@ -15,8 +15,7 @@ import (
 
 var jsonOutput bool
 
-// SettingsCmd is the parent command for settings operations
-var SettingsCmd = &cobra.Command{
+var Cmd = &cobra.Command{
 	Use:     "settings",
 	Aliases: []string{"setting"},
 	Short:   "Manage settings",
@@ -45,12 +44,7 @@ var listCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result)
 		}
 
 		headers := []string{"KEY", "TYPE", "VALUE"}
@@ -102,12 +96,10 @@ var updateCmd = &cobra.Command{
 
 		if jsonOutput {
 			var result any
-			if err := json.NewDecoder(resp.Body).Decode(&result); err == nil {
-				if resultBytes, err := json.MarshalIndent(result, "", "  "); err == nil {
-					fmt.Println(string(resultBytes))
-				}
+			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+				return fmt.Errorf("failed to parse response: %w", err)
 			}
-			return nil
+			return cmdutil.PrintJSON(result)
 		}
 
 		output.Success("Settings updated successfully")
@@ -137,12 +129,7 @@ var publicCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result)
 		}
 
 		headers := []string{"KEY", "TYPE", "VALUE"}
@@ -158,9 +145,9 @@ var publicCmd = &cobra.Command{
 }
 
 func init() {
-	SettingsCmd.AddCommand(listCmd)
-	SettingsCmd.AddCommand(updateCmd)
-	SettingsCmd.AddCommand(publicCmd)
+	Cmd.AddCommand(listCmd)
+	Cmd.AddCommand(updateCmd)
+	Cmd.AddCommand(publicCmd)
 
 	listCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 

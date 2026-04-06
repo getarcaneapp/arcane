@@ -6,7 +6,7 @@ import (
 )
 
 func TestAPIKeyCommandAvailableInBackendCLI(t *testing.T) {
-	cmd := GenerateCmd
+	cmd := Cmd
 	cmd.SetArgs([]string{"api-key"})
 
 	out, err := captureOutput(func() error {

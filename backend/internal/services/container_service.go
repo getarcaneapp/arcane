@@ -1007,7 +1007,7 @@ func paginateContainerProjectGroupsInternal(
 		requestedPage = totalPages
 	}
 
-	pageGroups := []containertypes.SummaryGroup{}
+	var pageGroups []containertypes.SummaryGroup
 	if len(pages) > 0 {
 		pageGroups = pages[requestedPage-1]
 	}

@@ -39,8 +39,7 @@ var (
 	enabledStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("#6d28d9"))
 )
 
-// EnvironmentsCmd is the parent command for environment operations
-var EnvironmentsCmd = &cobra.Command{
+var Cmd = &cobra.Command{
 	Use:     "environments",
 	Aliases: []string{"environment", "env", "e"},
 	Short:   "Manage environments",
@@ -75,12 +74,7 @@ var listCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result)
 		}
 
 		headers := []string{"ID", "NAME", "API URL", "STATUS", "ENABLED"}
@@ -165,12 +159,7 @@ var getCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(buildEnvironmentPayloadInternal(result.Data), "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(buildEnvironmentPayloadInternal(result.Data))
 		}
 
 		output.Header("Environment Details")
@@ -205,12 +194,10 @@ var testCmd = &cobra.Command{
 
 		if jsonOutput {
 			var result base.ApiResponse[any]
-			if err := json.NewDecoder(resp.Body).Decode(&result); err == nil {
-				if resultBytes, err := json.MarshalIndent(result.Data, "", "  "); err == nil {
-					fmt.Println(string(resultBytes))
-				}
+			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+				return fmt.Errorf("failed to parse response: %w", err)
 			}
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Environment connection test successful")
@@ -374,12 +361,7 @@ var updateCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(buildEnvironmentPayloadInternal(result.Data), "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(buildEnvironmentPayloadInternal(result.Data))
 		}
 
 		output.Success("Environment updated successfully")
@@ -426,12 +408,7 @@ var versionCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result)
 		}
 
 		output.Header("Environment Version")
@@ -475,13 +452,13 @@ func buildEnvironmentPayloadInternal(env environment.Environment) map[string]any
 }
 
 func init() {
-	EnvironmentsCmd.AddCommand(listCmd)
-	EnvironmentsCmd.AddCommand(getCmd)
-	EnvironmentsCmd.AddCommand(testCmd)
-	EnvironmentsCmd.AddCommand(deleteCmd)
-	EnvironmentsCmd.AddCommand(switchCmd)
-	EnvironmentsCmd.AddCommand(updateCmd)
-	EnvironmentsCmd.AddCommand(versionCmd)
+	Cmd.AddCommand(listCmd)
+	Cmd.AddCommand(getCmd)
+	Cmd.AddCommand(testCmd)
+	Cmd.AddCommand(deleteCmd)
+	Cmd.AddCommand(switchCmd)
+	Cmd.AddCommand(updateCmd)
+	Cmd.AddCommand(versionCmd)
 
 	// List command flags
 	listCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of environments to show")

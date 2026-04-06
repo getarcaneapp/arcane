@@ -95,7 +95,7 @@ func DecodeAuthHeader(authEncoded string) (dockerregistry.AuthConfig, error) {
 	return *cfg, nil
 }
 
-func RegistryAuthLookupKeys(url string) []string {
+func AuthLookupKeys(url string) []string {
 	normalizedHost := NormalizeRegistryForComparison(url)
 	if normalizedHost == "" {
 		return nil

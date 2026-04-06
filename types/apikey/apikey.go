@@ -2,7 +2,7 @@ package apikey
 
 import "time"
 
-// Create represents the request body for creating an API key.
+// CreateApiKey represents the request body for creating an API key.
 type CreateApiKey struct {
 	Name        string     `json:"name" minLength:"1" maxLength:"255" doc:"Name of the API key" example:"My API Key"`
 	Description *string    `json:"description,omitempty" maxLength:"1000" doc:"Optional description of the API key"`
@@ -29,7 +29,7 @@ type ApiKeyCreatedDto struct {
 	Key string `json:"key" doc:"The full API key secret (only shown once)"`
 }
 
-// Update represents the request body for updating an API key.
+// UpdateApiKey represents the request body for updating an API key.
 type UpdateApiKey struct {
 	Name        *string    `json:"name,omitempty" maxLength:"255" doc:"New name for the API key"`
 	Description *string    `json:"description,omitempty" maxLength:"1000" doc:"New description for the API key"`

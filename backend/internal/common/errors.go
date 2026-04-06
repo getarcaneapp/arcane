@@ -1211,6 +1211,24 @@ func (e *ApiKeyNotFoundError) Error() string {
 	return "API key not found"
 }
 
+type ApiKeyExpiredError struct{}
+
+func (e *ApiKeyExpiredError) Error() string {
+	return "API key has expired"
+}
+
+type ApiKeyInvalidError struct{}
+
+func (e *ApiKeyInvalidError) Error() string {
+	return "invalid API key"
+}
+
+type ApiKeyProtectedError struct{}
+
+func (e *ApiKeyProtectedError) Error() string {
+	return "API key is protected"
+}
+
 type ApiKeyUpdateError struct {
 	Err error
 }

@@ -14,8 +14,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// VersionCmd gets the server version
-var VersionCmd = &cobra.Command{
+var Cmd = &cobra.Command{
 	Use:          "version",
 	Short:        "Get the Arcane server version",
 	SilenceUsage: true,

@@ -9,6 +9,8 @@ var (
 )
 
 // ShortRevision returns the first 8 characters of the revision hash
+//
+//goland:noinspection GoBoolExpressions
 func ShortRevision() string {
 	if len(Revision) > 8 {
 		return Revision[:8]

@@ -30,8 +30,7 @@ var (
 
 const maxPromptOptions = 20
 
-// NetworksCmd is the parent command for network operations
-var NetworksCmd = &cobra.Command{
+var Cmd = &cobra.Command{
 	Use:     "networks",
 	Aliases: []string{"network", "net", "n"},
 	Short:   "Manage networks",
@@ -71,12 +70,7 @@ var listCmd = &cobra.Command{
 		result.Pagination.TotalItems = int64(len(result.Data))
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result)
 		}
 
 		headers := []string{"ID", "NAME", "DRIVER", "SCOPE", "CREATED", "IN USE"}
@@ -131,12 +125,7 @@ var getCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		display := resolvedName
@@ -205,12 +194,7 @@ var deleteCmd = &cobra.Command{
 			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 				return fmt.Errorf("failed to parse response: %w", err)
 			}
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Network %s deleted successfully", display)
@@ -240,12 +224,7 @@ var countsCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Header("Network Usage Counts")
@@ -292,12 +271,7 @@ var pruneCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Networks pruned successfully")
@@ -307,11 +281,11 @@ var pruneCmd = &cobra.Command{
 }
 
 func init() {
-	NetworksCmd.AddCommand(listCmd)
-	NetworksCmd.AddCommand(getCmd)
-	NetworksCmd.AddCommand(deleteCmd)
-	NetworksCmd.AddCommand(countsCmd)
-	NetworksCmd.AddCommand(pruneCmd)
+	Cmd.AddCommand(listCmd)
+	Cmd.AddCommand(getCmd)
+	Cmd.AddCommand(deleteCmd)
+	Cmd.AddCommand(countsCmd)
+	Cmd.AddCommand(pruneCmd)
 
 	// List command flags
 	listCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of networks to show")

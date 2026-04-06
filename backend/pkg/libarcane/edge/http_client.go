@@ -12,19 +12,19 @@ import (
 // EdgeAwareClient is an HTTP client that automatically routes requests
 // to edge environments through the active edge tunnel instead of direct HTTP.
 // Works with both gRPC and WebSocket tunnel transports.
-type EdgeAwareClient struct {
+type AwareClient struct {
 	httpClient *http.Client
 }
 
 // NewEdgeAwareClient creates a new edge-aware HTTP client
-func NewEdgeAwareClient(timeout time.Duration) *EdgeAwareClient {
-	return &EdgeAwareClient{
+func NewEdgeAwareClient(timeout time.Duration) *AwareClient {
+	return &AwareClient{
 		httpClient: &http.Client{Timeout: timeout},
 	}
 }
 
 // EdgeResponse wraps the response from either direct HTTP or tunnel request
-type EdgeResponse struct {
+type Response struct {
 	StatusCode int
 	Body       []byte
 	Headers    map[string]string
@@ -43,7 +43,7 @@ type EdgeResponse struct {
 //   - body: request body (can be nil)
 //
 // Returns EdgeResponse with status code, body bytes, and headers
-func (c *EdgeAwareClient) DoForEnvironment(
+func (c *AwareClient) DoForEnvironment(
 	ctx context.Context,
 	envID string,
 	isEdge bool,
@@ -52,7 +52,7 @@ func (c *EdgeAwareClient) DoForEnvironment(
 	path string,
 	headers map[string]string,
 	body []byte,
-) (*EdgeResponse, error) {
+) (*Response, error) {
 	// For edge environments with active tunnels, route through tunnel
 	if isEdge && HasActiveTunnel(envID) {
 		return c.doViaTunnel(ctx, envID, method, path, headers, body)
@@ -70,14 +70,14 @@ func (c *EdgeAwareClient) DoForEnvironment(
 }
 
 // doViaTunnel routes the request through the edge tunnel
-func (c *EdgeAwareClient) doViaTunnel(
+func (c *AwareClient) doViaTunnel(
 	ctx context.Context,
 	envID string,
 	method string,
 	path string,
 	headers map[string]string,
 	body []byte,
-) (*EdgeResponse, error) {
+) (*Response, error) {
 	tunnel, ok := GetRegistry().Get(envID)
 	if !ok {
 		return nil, fmt.Errorf("no active tunnel for environment %s", envID)
@@ -92,7 +92,7 @@ func (c *EdgeAwareClient) doViaTunnel(
 		return nil, fmt.Errorf("tunnel request failed: %w", err)
 	}
 
-	return &EdgeResponse{
+	return &Response{
 		StatusCode: statusCode,
 		Body:       respBody,
 		Headers:    respHeaders,
@@ -100,13 +100,13 @@ func (c *EdgeAwareClient) doViaTunnel(
 }
 
 // doDirectHTTP makes a direct HTTP request
-func (c *EdgeAwareClient) doDirectHTTP(
+func (c *AwareClient) doDirectHTTP(
 	ctx context.Context,
 	method string,
 	url string,
 	headers map[string]string,
 	body []byte,
-) (*EdgeResponse, error) {
+) (*Response, error) {
 	var bodyReader io.Reader
 	if body != nil {
 		bodyReader = bytes.NewReader(body)
@@ -141,7 +141,7 @@ func (c *EdgeAwareClient) doDirectHTTP(
 		}
 	}
 
-	return &EdgeResponse{
+	return &Response{
 		StatusCode: resp.StatusCode,
 		Body:       respBody,
 		Headers:    respHeaders,
@@ -151,8 +151,7 @@ func (c *EdgeAwareClient) doDirectHTTP(
 // DefaultEdgeAwareClient is a singleton client with reasonable defaults
 var DefaultEdgeAwareClient = NewEdgeAwareClient(30 * time.Second)
 
-// DoRequest is a convenience function for making edge-aware requests
-// using the default client
+// DoEdgeAwareRequest is a convenience function for making edge-aware requests using the default client
 func DoEdgeAwareRequest(
 	ctx context.Context,
 	envID string,
@@ -162,6 +161,6 @@ func DoEdgeAwareRequest(
 	path string,
 	headers map[string]string,
 	body []byte,
-) (*EdgeResponse, error) {
+) (*Response, error) {
 	return DefaultEdgeAwareClient.DoForEnvironment(ctx, envID, isEdge, method, url, path, headers, body)
 }

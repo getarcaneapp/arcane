@@ -38,8 +38,7 @@ var (
 
 const maxPromptOptions = 20
 
-// GitopsCmd is the parent command for gitops sync operations
-var GitopsCmd = &cobra.Command{
+var Cmd = &cobra.Command{
 	Use:     "gitops",
 	Aliases: []string{"gitops-syncs", "gs"},
 	Short:   "Manage GitOps syncs",
@@ -74,12 +73,7 @@ var listCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result)
 		}
 
 		headers := []string{"ID", "NAME", "BRANCH", "AUTO-SYNC", "LAST STATUS", "LAST SYNC"}
@@ -159,12 +153,7 @@ var createCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("GitOps sync %s created successfully (ID: %s)", result.Data.Name, result.Data.ID)
@@ -204,12 +193,7 @@ var getCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(resolved, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(resolved)
 		}
 
 		output.Header("GitOps Sync Details")
@@ -361,12 +345,7 @@ var statusCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Header("GitOps Sync Status")
@@ -419,12 +398,7 @@ var syncCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		if result.Data.Success {
@@ -469,12 +443,7 @@ var filesCmd = &cobra.Command{
 
 		files := result.Data.Files
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(files, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(files)
 		}
 
 		headers := []string{"NAME", "TYPE", "PATH", "SIZE"}
@@ -527,12 +496,7 @@ var importCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Import completed: %d succeeded, %d failed", result.Data.SuccessCount, result.Data.FailedCount)
@@ -547,15 +511,15 @@ var importCmd = &cobra.Command{
 }
 
 func init() {
-	GitopsCmd.AddCommand(listCmd)
-	GitopsCmd.AddCommand(createCmd)
-	GitopsCmd.AddCommand(getCmd)
-	GitopsCmd.AddCommand(updateCmd)
-	GitopsCmd.AddCommand(deleteCmd)
-	GitopsCmd.AddCommand(statusCmd)
-	GitopsCmd.AddCommand(syncCmd)
-	GitopsCmd.AddCommand(filesCmd)
-	GitopsCmd.AddCommand(importCmd)
+	Cmd.AddCommand(listCmd)
+	Cmd.AddCommand(createCmd)
+	Cmd.AddCommand(getCmd)
+	Cmd.AddCommand(updateCmd)
+	Cmd.AddCommand(deleteCmd)
+	Cmd.AddCommand(statusCmd)
+	Cmd.AddCommand(syncCmd)
+	Cmd.AddCommand(filesCmd)
+	Cmd.AddCommand(importCmd)
 
 	// List command flags
 	listCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of syncs to show")

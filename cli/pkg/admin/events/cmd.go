@@ -20,8 +20,7 @@ var (
 	jsonOutput bool
 )
 
-// EventsCmd is the parent command for event operations
-var EventsCmd = &cobra.Command{
+var Cmd = &cobra.Command{
 	Use:     "events",
 	Aliases: []string{"event", "evt"},
 	Short:   "Manage events",
@@ -56,12 +55,7 @@ var listCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result)
 		}
 
 		headers := []string{"ID", "TYPE", "RESOURCE", "USER", "TIMESTAMP"}
@@ -118,12 +112,7 @@ var listEnvCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result)
 		}
 
 		headers := []string{"ID", "TYPE", "RESOURCE", "USER", "TIMESTAMP"}
@@ -190,9 +179,9 @@ var deleteCmd = &cobra.Command{
 }
 
 func init() {
-	EventsCmd.AddCommand(listCmd)
-	EventsCmd.AddCommand(listEnvCmd)
-	EventsCmd.AddCommand(deleteCmd)
+	Cmd.AddCommand(listCmd)
+	Cmd.AddCommand(listEnvCmd)
+	Cmd.AddCommand(deleteCmd)
 
 	listCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of events to show")
 	listCmd.Flags().IntVar(&startFlag, "start", 0, "Offset for pagination")

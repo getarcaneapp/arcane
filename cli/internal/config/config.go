@@ -124,7 +124,7 @@ func DefaultConfig() *types.Config {
 // ConfigPath returns the absolute path to the configuration file.
 // The config file is located at ~/.config/arcanecli.yml.
 // Returns an error if the user's home directory cannot be determined.
-func ConfigPath() (string, error) {
+func Path() (string, error) {
 	if customConfigPath != "" {
 		return customConfigPath, nil
 	}
@@ -170,7 +170,7 @@ func SetConfigPath(path string) error {
 // If the config file does not exist, default values are returned.
 // Returns an error if the file exists but cannot be read or parsed.
 func Load() (*types.Config, error) {
-	path, err := ConfigPath()
+	path, err := Path()
 	if err != nil {
 		return nil, err
 	}
@@ -230,7 +230,7 @@ func Load() (*types.Config, error) {
 // The config directory is created if it does not exist.
 // The file is created with 0600 permissions for security.
 func Save(c *types.Config) error {
-	path, err := ConfigPath()
+	path, err := Path()
 	if err != nil {
 		return err
 	}
@@ -311,7 +311,7 @@ func Save(c *types.Config) error {
 // not already exist. It returns true when a file is created, or false when an
 // existing file is left unchanged.
 func InitDefaultFile() (bool, error) {
-	path, err := ConfigPath()
+	path, err := Path()
 	if err != nil {
 		return false, err
 	}
@@ -370,7 +370,7 @@ func InitDefaultFile() (bool, error) {
 // original file from its previous location. If no config file exists, it
 // returns moved=false and no error.
 func BackupFile() (backupPath string, moved bool, err error) {
-	path, err := ConfigPath()
+	path, err := Path()
 	if err != nil {
 		return "", false, err
 	}

@@ -20,8 +20,8 @@ import (
 
 var jsonOutput bool
 
-// AuthCmd is the parent command for authentication operations
-var AuthCmd = &cobra.Command{
+// Cmd is the parent command for authentication operations
+var Cmd = &cobra.Command{
 	Use:     "auth",
 	Aliases: []string{"authentication"},
 	Short:   "Authentication operations",
@@ -133,18 +133,13 @@ var loginCmd = &cobra.Command{
 			}
 
 			if cmdutil.JSONOutputEnabled(cmd) || jsonOutput {
-				resultBytes, err := json.MarshalIndent(map[string]any{
+				return cmdutil.PrintJSON(map[string]any{
 					"success":      tokenResult.Success,
 					"token":        tokenResult.Token,
 					"refreshToken": tokenResult.RefreshToken,
 					"expiresAt":    tokenResult.ExpiresAt,
 					"user":         tokenResult.User,
-				}, "", "  ")
-				if err != nil {
-					return fmt.Errorf("failed to marshal JSON: %w", err)
-				}
-				fmt.Println(string(resultBytes))
-				return nil
+				})
 			}
 
 			cfg, err := config.Load()
@@ -159,7 +154,7 @@ var loginCmd = &cobra.Command{
 			}
 
 			output.Success("Login successful")
-			path, _ := config.ConfigPath()
+			path, _ := config.Path()
 			output.KeyValue("JWT token saved to config", path)
 			return nil
 		}
@@ -198,16 +193,14 @@ var logoutCmd = &cobra.Command{
 
 		if cmdutil.JSONOutputEnabled(cmd) || jsonOutput {
 			var result base.ApiResponse[any]
-			if err := json.NewDecoder(resp.Body).Decode(&result); err == nil {
-				if resultBytes, err := json.MarshalIndent(result.Data, "", "  "); err == nil {
-					fmt.Println(string(resultBytes))
-				}
+			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+				return fmt.Errorf("failed to parse response: %w", err)
 			}
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Logout successful")
-		path, _ := config.ConfigPath()
+		path, _ := config.Path()
 		output.KeyValue("JWT token cleared from config", path)
 		return nil
 	},
@@ -238,12 +231,7 @@ var meCmd = &cobra.Command{
 		}
 
 		if cmdutil.JSONOutputEnabled(cmd) || jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Header("Current User")
@@ -310,12 +298,10 @@ var passwordCmd = &cobra.Command{
 
 		if cmdutil.JSONOutputEnabled(cmd) || jsonOutput {
 			var result base.ApiResponse[any]
-			if err := json.NewDecoder(resp.Body).Decode(&result); err == nil {
-				if resultBytes, err := json.MarshalIndent(result.Data, "", "  "); err == nil {
-					fmt.Println(string(resultBytes))
-				}
+			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+				return fmt.Errorf("failed to parse response: %w", err)
 			}
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Password changed successfully")
@@ -370,16 +356,11 @@ var refreshCmd = &cobra.Command{
 		}
 
 		if cmdutil.JSONOutputEnabled(cmd) || jsonOutput {
-			resultBytes, err := json.MarshalIndent(map[string]any{
+			return cmdutil.PrintJSON(map[string]any{
 				"token":        result.Data.Token,
 				"refreshToken": result.Data.RefreshToken,
 				"expiresAt":    result.Data.ExpiresAt,
-			}, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			})
 		}
 
 		// Save new JWT token to config
@@ -393,7 +374,7 @@ var refreshCmd = &cobra.Command{
 		}
 
 		output.Success("Token refreshed successfully")
-		path, _ := config.ConfigPath()
+		path, _ := config.Path()
 		output.KeyValue("New JWT token saved to config", path)
 		return nil
 	},
@@ -428,12 +409,7 @@ var oidcStatusCmd = &cobra.Command{
 		}
 
 		if cmdutil.JSONOutputEnabled(cmd) || jsonOutput {
-			resultBytes, err := json.MarshalIndent(result, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result)
 		}
 
 		output.Header("OIDC Status")
@@ -445,12 +421,12 @@ var oidcStatusCmd = &cobra.Command{
 }
 
 func init() {
-	AuthCmd.AddCommand(loginCmd)
-	AuthCmd.AddCommand(logoutCmd)
-	AuthCmd.AddCommand(meCmd)
-	AuthCmd.AddCommand(passwordCmd)
-	AuthCmd.AddCommand(refreshCmd)
-	AuthCmd.AddCommand(oidcStatusCmd)
+	Cmd.AddCommand(loginCmd)
+	Cmd.AddCommand(logoutCmd)
+	Cmd.AddCommand(meCmd)
+	Cmd.AddCommand(passwordCmd)
+	Cmd.AddCommand(refreshCmd)
+	Cmd.AddCommand(oidcStatusCmd)
 
 	// Login command flags
 	loginCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")

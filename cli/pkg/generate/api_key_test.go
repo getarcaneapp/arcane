@@ -8,7 +8,7 @@ import (
 )
 
 func TestAPIKeyDefaultOutput(t *testing.T) {
-	cmd := gen.GenerateCmd
+	cmd := gen.Cmd
 	cmd.SetArgs([]string{"api-key"})
 
 	out, err := captureOutput(func() error {
@@ -31,7 +31,7 @@ func TestAPIKeyDefaultOutput(t *testing.T) {
 }
 
 func TestGenerateAPIKeyProducesArcanePrefix(t *testing.T) {
-	apiKey, err := gen.GenerateAPIKey()
+	apiKey, err := gen.APIKey()
 	if err != nil {
 		t.Fatalf("GenerateAPIKey failed: %v", err)
 	}

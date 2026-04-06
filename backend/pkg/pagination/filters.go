@@ -41,7 +41,7 @@ func filterFn[T any](items []T, filters map[string]string, accessors []FilterAcc
 		return items
 	}
 
-	results := []T{}
+	var results []T
 	for _, item := range items {
 		if itemMatches(item, filters, accessors) {
 			results = append(results, item)

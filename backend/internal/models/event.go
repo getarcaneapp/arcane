@@ -10,7 +10,6 @@ type (
 )
 
 const (
-	// Event types
 	EventTypeContainerStart   EventType = "container.start"
 	EventTypeContainerStop    EventType = "container.stop"
 	EventTypeContainerRestart EventType = "container.restart"
@@ -88,7 +87,6 @@ const (
 	EventTypeWebhookDelete  EventType = "webhook.delete"
 	EventTypeWebhookTrigger EventType = "webhook.trigger"
 
-	// Event severities
 	EventSeverityInfo    EventSeverity = "info"
 	EventSeverityWarning EventSeverity = "warning"
 	EventSeverityError   EventSeverity = "error"

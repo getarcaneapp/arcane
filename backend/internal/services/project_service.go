@@ -23,7 +23,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	dockerutil "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
-	libbuild "github.com/getarcaneapp/arcane/backend/pkg/libarcane/libbuild"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/libbuild"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/timeouts"
 	libupdater "github.com/getarcaneapp/arcane/backend/pkg/libarcane/updater"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
@@ -1126,13 +1126,11 @@ func buildProjectUpdateInfoSummaryInternal(
 		if strings.TrimSpace(info.Error) != "" {
 			summary.ErrorCount++
 			if summary.ErrorMessage == nil {
-				errMsg := strings.TrimSpace(info.Error)
-				summary.ErrorMessage = &errMsg
+				summary.ErrorMessage = new(strings.TrimSpace(info.Error))
 			}
 		}
 		if !info.CheckTime.IsZero() && (latestCheckTime == nil || info.CheckTime.After(*latestCheckTime)) {
-			checkTime := info.CheckTime
-			latestCheckTime = &checkTime
+			latestCheckTime = new(info.CheckTime)
 		}
 	}
 
@@ -1968,7 +1966,7 @@ func (s *ProjectService) buildServiceImageForDeploy(
 		project.Services[serviceName] = updatedSvc
 	}
 
-	if _, err := s.buildService.BuildImage(ctx, types.LOCAL_DOCKER_ENVIRONMENT_ID, buildReq, progressWriter, serviceName, user); err != nil {
+	if _, err := s.buildService.BuildImage(ctx, types.LocalDockerEnvironmentId, buildReq, progressWriter, serviceName, user); err != nil {
 		return err
 	}
 
@@ -2338,7 +2336,7 @@ func (s *ProjectService) buildProjectServicesInternal(ctx context.Context, proje
 		}
 
 		buildCount++
-		if _, err := s.buildService.BuildImage(ctx, types.LOCAL_DOCKER_ENVIRONMENT_ID, buildReq, progressWriter, name, user); err != nil {
+		if _, err := s.buildService.BuildImage(ctx, types.LocalDockerEnvironmentId, buildReq, progressWriter, name, user); err != nil {
 			return err
 		}
 	}

@@ -786,7 +786,9 @@ func (s *EnvironmentService) RegenerateEnvironmentApiKey(ctx context.Context, en
 	return nil
 }
 
-// Deprecated - Use the Api Key flow
+// PairAgentWithBootstrap Uses a predefined bootstrap token to register with agents.
+//
+// Deprecated: PairAgentWithBootstrap will be removed in a future release, Use the API Key flow instead.
 func (s *EnvironmentService) PairAgentWithBootstrap(ctx context.Context, apiUrl, bootstrapToken string) (string, error) {
 	reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()

@@ -53,8 +53,8 @@ var tlsCmd = &cobra.Command{
 }
 
 func init() {
-	GenerateCmd.AddCommand(mtlsCmd)
-	GenerateCmd.AddCommand(tlsCmd)
+	Cmd.AddCommand(mtlsCmd)
+	Cmd.AddCommand(tlsCmd)
 
 	mtlsCmd.Flags().StringVar(&mtlsOutDir, "out-dir", "./edge-mtls", "directory to write generated edge mTLS assets")
 	mtlsCmd.Flags().StringVar(&mtlsEnvID, "env-id", "local-edge", "environment identifier to embed in the generated edge agent certificate")

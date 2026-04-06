@@ -23,10 +23,10 @@ var apiKeyCmd = &cobra.Command{
 }
 
 func init() {
-	GenerateCmd.AddCommand(apiKeyCmd)
+	Cmd.AddCommand(apiKeyCmd)
 }
 
-func GenerateAPIKey() (string, error) {
+func APIKey() (string, error) {
 	keyBytes := make([]byte, apiKeyLength)
 	if _, err := crand.Read(keyBytes); err != nil {
 		return "", fmt.Errorf("failed to generate API key: %w", err)
@@ -36,7 +36,7 @@ func GenerateAPIKey() (string, error) {
 }
 
 func generateAPIKeyOutputInternal() error {
-	apiKey, err := GenerateAPIKey()
+	apiKey, err := APIKey()
 	if err != nil {
 		return err
 	}

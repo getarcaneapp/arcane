@@ -3,14 +3,17 @@ package updater
 import "strings"
 
 const (
-	// Core labels
-	LabelArcane      = "com.getarcaneapp.arcane"         // Identifies the Arcane container itself
-	LabelArcaneAgent = "com.getarcaneapp.arcane.agent"   // Identifies an Arcane agent container
-	LabelUpdater     = "com.getarcaneapp.arcane.updater" // Enable/disable updates (true/false)
+	// LabelArcane Identifies the Arcane container itself
+	LabelArcane = "com.getarcaneapp.arcane"
+	// LabelArcaneAgent Identifies an Arcane agent container
+	LabelArcaneAgent = "com.getarcaneapp.arcane.agent"
+	// LabelUpdater Enable/disable updates (true/false)
+	LabelUpdater = "com.getarcaneapp.arcane.updater"
 
-	// Dependency labels
-	LabelDependsOn  = "com.getarcaneapp.arcane.depends-on"  // Comma-separated list of container names this depends on
-	LabelStopSignal = "com.getarcaneapp.arcane.stop-signal" // Custom stop signal (e.g., SIGINT)
+	// LabelDependsOn Comma-separated list of container names the selected container depends on
+	LabelDependsOn = "com.getarcaneapp.arcane.depends-on"
+	// LabelStopSignal Custom stop signal (e.g., SIGINT)
+	LabelStopSignal = "com.getarcaneapp.arcane.stop-signal"
 )
 
 // IsArcaneContainer checks if the container is the Arcane application itself

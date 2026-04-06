@@ -469,9 +469,8 @@ func (s *DashboardService) buildEnvironmentOverviewInternal(
 	}
 
 	if snapshotErr != nil {
-		message := snapshotErr.Error()
 		overview.SnapshotState = dashboardtypes.EnvironmentSnapshotStateError
-		overview.SnapshotError = &message
+		overview.SnapshotError = new(snapshotErr.Error())
 		return overview
 	}
 

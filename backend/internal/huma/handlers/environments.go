@@ -536,7 +536,7 @@ func (h *EnvironmentHandler) createEnvironmentWithApiKey(ctx context.Context, en
 func (h *EnvironmentHandler) createEnvironmentLegacy(ctx context.Context, env *models.Environment, user *models.User, body environment.Create) (*CreateEnvironmentOutput, error) {
 	// Legacy pairing flows
 	if (body.AccessToken == nil || *body.AccessToken == "") && body.BootstrapToken != nil && *body.BootstrapToken != "" {
-		token, err := h.environmentService.PairAgentWithBootstrap(ctx, body.ApiUrl, *body.BootstrapToken)
+		token, err := h.environmentService.PairAgentWithBootstrap(ctx, body.ApiUrl, *body.BootstrapToken) //nolint:staticcheck
 		if err != nil {
 			slog.ErrorContext(ctx, "Failed to pair with agent", "apiUrl", body.ApiUrl, "error", err.Error())
 			return nil, huma.Error502BadGateway((&common.AgentPairingError{Err: err}).Error())
@@ -878,7 +878,7 @@ func (h *EnvironmentHandler) handleEnvironmentPairing(ctx context.Context, envir
 	pairingSucceeded := false
 
 	if isLocalEnv {
-		return pairingSucceeded, nil
+		return false, nil
 	}
 
 	if req.AccessToken == nil && req.BootstrapToken != nil && *req.BootstrapToken != "" {

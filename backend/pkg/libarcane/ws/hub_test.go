@@ -337,7 +337,7 @@ func TestHub_ConcurrentOperations(t *testing.T) {
 	}, goroutines)
 	for i := range goroutines {
 		_, pairs[i].sc, pairs[i].cleanup = newTestWSPair(t)
-		defer pairs[i].cleanup()
+		t.Cleanup(pairs[i].cleanup)
 	}
 
 	for i := range goroutines {

@@ -141,7 +141,7 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services)
 	handlers.RegisterWebhookTrigger(apiGroup, appServices.Webhook) //nolint:contextcheck
 
 	envProxyMiddleware := middleware.NewEnvProxyMiddlewareWithParam(
-		types.LOCAL_DOCKER_ENVIRONMENT_ID,
+		types.LocalDockerEnvironmentId,
 		"id",
 		envResolver,
 		createAuthValidator(appServices),

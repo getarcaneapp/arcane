@@ -50,8 +50,7 @@ var (
 
 const maxPromptOptions = 20
 
-// ContainersCmd is the parent command for container operations
-var ContainersCmd = &cobra.Command{
+var Cmd = &cobra.Command{
 	Use:     "containers",
 	Aliases: []string{"container", "c"},
 	Short:   "Manage containers",
@@ -98,12 +97,7 @@ func runContainersList(cmd *cobra.Command, forceHasUpdateFilter bool) error {
 	}
 
 	if jsonOutput {
-		resultBytes, err := json.MarshalIndent(result, "", "  ")
-		if err != nil {
-			return fmt.Errorf("failed to marshal JSON: %w", err)
-		}
-		fmt.Println(string(resultBytes))
-		return nil
+		return cmdutil.PrintJSON(result)
 	}
 
 	effectiveUpdatesFilter := strings.TrimSpace(containersUpdatesFilter)
@@ -240,12 +234,7 @@ var containersGetCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(resolved, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(resolved)
 		}
 
 		output.Header("Container Details")
@@ -287,12 +276,7 @@ var containersStartCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Container %s started successfully", containerDisplayName(resolved))
@@ -329,12 +313,7 @@ var containersStopCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Container %s stopped successfully", containerDisplayName(resolved))
@@ -371,12 +350,7 @@ var containersRestartCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Container %s restarted successfully", containerDisplayName(resolved))
@@ -416,12 +390,7 @@ var containersUpdateCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Container %s updated successfully", containerDisplayName(resolved))
@@ -460,12 +429,7 @@ var containersRedeployCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Container %s redeployed successfully", containerDisplayName(resolved))
@@ -524,12 +488,7 @@ var containersDeleteCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Container %s deleted successfully", displayName)
@@ -560,12 +519,7 @@ var containersCountsCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Header("Container Status Counts")
@@ -688,12 +642,7 @@ var containersCreateCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Container %s created successfully", result.Data.Name)
@@ -706,17 +655,17 @@ var containersCreateCmd = &cobra.Command{
 }
 
 func init() {
-	ContainersCmd.AddCommand(containersListCmd)
-	ContainersCmd.AddCommand(containersUpdatesCmd)
-	ContainersCmd.AddCommand(containersGetCmd)
-	ContainersCmd.AddCommand(containersStartCmd)
-	ContainersCmd.AddCommand(containersStopCmd)
-	ContainersCmd.AddCommand(containersRestartCmd)
-	ContainersCmd.AddCommand(containersUpdateCmd)
-	ContainersCmd.AddCommand(containersRedeployCmd)
-	ContainersCmd.AddCommand(containersDeleteCmd)
-	ContainersCmd.AddCommand(containersCountsCmd)
-	ContainersCmd.AddCommand(containersCreateCmd)
+	Cmd.AddCommand(containersListCmd)
+	Cmd.AddCommand(containersUpdatesCmd)
+	Cmd.AddCommand(containersGetCmd)
+	Cmd.AddCommand(containersStartCmd)
+	Cmd.AddCommand(containersStopCmd)
+	Cmd.AddCommand(containersRestartCmd)
+	Cmd.AddCommand(containersUpdateCmd)
+	Cmd.AddCommand(containersRedeployCmd)
+	Cmd.AddCommand(containersDeleteCmd)
+	Cmd.AddCommand(containersCountsCmd)
+	Cmd.AddCommand(containersCreateCmd)
 
 	// Create command flags
 	containersCreateCmd.Flags().StringVarP(&containerCreateFile, "file", "f", "", "JSON config file for container creation")

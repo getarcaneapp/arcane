@@ -27,8 +27,7 @@ var (
 	apikeyUpdateExpiresAt   string
 )
 
-// ApiKeysCmd is the parent command for API key operations
-var ApiKeysCmd = &cobra.Command{
+var Cmd = &cobra.Command{
 	Use:     "api-keys",
 	Aliases: []string{"apikey", "keys", "key"},
 	Short:   "Manage API keys",
@@ -63,12 +62,7 @@ var listCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result)
 		}
 
 		headers := []string{"ID", "NAME", "DESCRIPTION", "CREATED", "LAST USED"}
@@ -144,12 +138,7 @@ var createCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("API key created successfully")
@@ -200,12 +189,7 @@ var deleteCmd = &cobra.Command{
 			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 				return fmt.Errorf("failed to parse response: %w", err)
 			}
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("API key deleted successfully")
@@ -236,12 +220,7 @@ var getCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Header("API Key Details")
@@ -299,12 +278,10 @@ var updateCmd = &cobra.Command{
 
 		if jsonOutput {
 			var result base.ApiResponse[any]
-			if err := json.NewDecoder(resp.Body).Decode(&result); err == nil {
-				if resultBytes, err := json.MarshalIndent(result.Data, "", "  "); err == nil {
-					fmt.Println(string(resultBytes))
-				}
+			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+				return fmt.Errorf("failed to parse response: %w", err)
 			}
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("API key updated successfully")
@@ -313,11 +290,11 @@ var updateCmd = &cobra.Command{
 }
 
 func init() {
-	ApiKeysCmd.AddCommand(listCmd)
-	ApiKeysCmd.AddCommand(createCmd)
-	ApiKeysCmd.AddCommand(getCmd)
-	ApiKeysCmd.AddCommand(updateCmd)
-	ApiKeysCmd.AddCommand(deleteCmd)
+	Cmd.AddCommand(listCmd)
+	Cmd.AddCommand(createCmd)
+	Cmd.AddCommand(getCmd)
+	Cmd.AddCommand(updateCmd)
+	Cmd.AddCommand(deleteCmd)
 
 	// List command flags
 	listCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of API keys to show")

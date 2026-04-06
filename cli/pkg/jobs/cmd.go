@@ -15,8 +15,7 @@ import (
 
 var jsonOutput bool
 
-// JobsCmd is the parent command for job schedule operations.
-var JobsCmd = &cobra.Command{
+var Cmd = &cobra.Command{
 	Use:     "jobs",
 	Aliases: []string{"job"},
 	Short:   "Manage background jobs",
@@ -47,12 +46,7 @@ var getCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			b, err := json.MarshalIndent(cfg, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(b))
-			return nil
+			return cmdutil.PrintJSON(cfg)
 		}
 
 		output.Header("Job Schedules")
@@ -101,12 +95,7 @@ var updateCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			b, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(b))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Job schedules updated")
@@ -117,8 +106,8 @@ var updateCmd = &cobra.Command{
 }
 
 func init() {
-	JobsCmd.AddCommand(getCmd)
-	JobsCmd.AddCommand(updateCmd)
+	Cmd.AddCommand(getCmd)
+	Cmd.AddCommand(updateCmd)
 
 	getCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	updateCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")

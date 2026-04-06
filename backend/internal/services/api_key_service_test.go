@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/getarcaneapp/arcane/backend/internal/common"
 	glsqlite "github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -176,7 +177,8 @@ func TestDeleteApiKeyRejectsStaticKey(t *testing.T) {
 	require.NoError(t, err)
 
 	err = service.DeleteApiKey(ctx, created.ApiKey.ID)
-	require.ErrorIs(t, err, ErrApiKeyProtected)
+	var protectedErr *common.ApiKeyProtectedError
+	require.ErrorAs(t, err, &protectedErr)
 
 	apiKeys := listAPIKeysForUser(t, db, adminUser.ID)
 	require.Len(t, apiKeys, 1)
@@ -196,7 +198,8 @@ func TestUpdateApiKeyRejectsStaticKey(t *testing.T) {
 		Description: new("updated description"),
 	})
 	require.Nil(t, updated)
-	require.ErrorIs(t, err, ErrApiKeyProtected)
+	var protectedErr *common.ApiKeyProtectedError
+	require.ErrorAs(t, err, &protectedErr)
 
 	apiKeys := listAPIKeysForUser(t, db, adminUser.ID)
 	require.Len(t, apiKeys, 1)
@@ -238,7 +241,8 @@ func TestReconcileDefaultAdminAPIKeyReplacesManagedKeyOnRotation(t *testing.T) {
 	require.NotEqual(t, first[0].ID, second[0].ID)
 
 	_, err := service.ValidateApiKey(ctx, oldKey)
-	require.ErrorIs(t, err, ErrApiKeyInvalid)
+	var invalidErr *common.ApiKeyInvalidError
+	require.ErrorAs(t, err, &invalidErr)
 
 	validatedUser, err := service.ValidateApiKey(ctx, newKey)
 	require.NoError(t, err)
@@ -324,7 +328,8 @@ func TestReconcileDefaultAdminAPIKeyRejectsInvalidKey(t *testing.T) {
 	adminUser := createDefaultAdminUser(t, ctx, userService)
 
 	err := service.ReconcileDefaultAdminAPIKey(ctx, "invalid-key")
-	require.ErrorIs(t, err, ErrApiKeyInvalid)
+	var invalidErr *common.ApiKeyInvalidError
+	require.ErrorAs(t, err, &invalidErr)
 	require.Empty(t, listAPIKeysForUser(t, db, adminUser.ID))
 }
 
@@ -372,7 +377,8 @@ func TestValidateAPIKeyInvalidDoesNotUpdateLastUsedAt(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = service.ValidateApiKey(ctx, invalidateAPIKey(created.Key))
-	require.ErrorIs(t, err, ErrApiKeyInvalid)
+	var invalidErr *common.ApiKeyInvalidError
+	require.ErrorAs(t, err, &invalidErr)
 
 	assertAPIKeyLastUsedStable(t, db, created.ApiKey.ID, nil, 500*time.Millisecond)
 	apiKey := fetchAPIKey(t, db, created.ApiKey.ID)
@@ -384,7 +390,8 @@ func TestValidateAPIKeyRejectsShortPrefixedInput(t *testing.T) {
 	service, _, _ := setupAPIKeyService(t)
 
 	_, err := service.ValidateApiKey(ctx, "arc_123")
-	require.ErrorIs(t, err, ErrApiKeyInvalid)
+	var invalidErr *common.ApiKeyInvalidError
+	require.ErrorAs(t, err, &invalidErr)
 }
 
 func TestGetEnvironmentByAPIKeyExpiredDoesNotUpdateLastUsedAt(t *testing.T) {
@@ -400,7 +407,8 @@ func TestGetEnvironmentByAPIKeyExpiredDoesNotUpdateLastUsedAt(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = service.GetEnvironmentByApiKey(ctx, created.Key)
-	require.ErrorIs(t, err, ErrApiKeyExpired)
+	var expiredErr *common.ApiKeyExpiredError
+	require.ErrorAs(t, err, &expiredErr)
 
 	assertAPIKeyLastUsedStable(t, db, created.ApiKey.ID, nil, 500*time.Millisecond)
 	apiKey := fetchAPIKey(t, db, created.ApiKey.ID)

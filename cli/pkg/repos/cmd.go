@@ -29,8 +29,7 @@ var (
 
 const maxPromptOptions = 20
 
-// ReposCmd is the parent command for git repository operations.
-var ReposCmd = &cobra.Command{
+var Cmd = &cobra.Command{
 	Use:     "repos",
 	Aliases: []string{"repo", "git-repositories", "git-repos"},
 	Short:   "Manage git repositories",
@@ -97,12 +96,7 @@ var listCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result)
 		}
 
 		headers := []string{"ID", "NAME", "URL", "AUTH TYPE", "ENABLED", "CREATED"}
@@ -182,12 +176,7 @@ var createCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Repository created successfully")
@@ -217,12 +206,7 @@ var getCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(resolved, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(resolved)
 		}
 
 		output.Header("Repository Details")
@@ -315,12 +299,7 @@ var updateCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Repository updated successfully")
@@ -402,12 +381,10 @@ var testCmd = &cobra.Command{
 
 		if jsonOutput {
 			var result base.ApiResponse[any]
-			if err := json.NewDecoder(resp.Body).Decode(&result); err == nil {
-				if resultBytes, err := json.MarshalIndent(result.Data, "", "  "); err == nil {
-					fmt.Println(string(resultBytes))
-				}
+			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+				return fmt.Errorf("failed to parse response: %w", err)
 			}
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Repository connection test successful")
@@ -443,12 +420,7 @@ var branchesCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		headers := []string{"BRANCH", "DEFAULT"}
@@ -511,12 +483,7 @@ var filesCmd = &cobra.Command{
 
 		files := result.Data.Files
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(files, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(files)
 		}
 
 		headers := []string{"NAME", "TYPE", "PATH", "SIZE"}
@@ -561,12 +528,10 @@ var syncCmd = &cobra.Command{
 
 		if jsonOutput {
 			var result base.ApiResponse[any]
-			if err := json.NewDecoder(resp.Body).Decode(&result); err == nil {
-				if resultBytes, err := json.MarshalIndent(result.Data, "", "  "); err == nil {
-					fmt.Println(string(resultBytes))
-				}
+			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+				return fmt.Errorf("failed to parse response: %w", err)
 			}
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Repositories synced successfully")
@@ -644,15 +609,15 @@ func resolveGitRepository(ctx context.Context, c *client.Client, identifier stri
 }
 
 func init() {
-	ReposCmd.AddCommand(listCmd)
-	ReposCmd.AddCommand(createCmd)
-	ReposCmd.AddCommand(getCmd)
-	ReposCmd.AddCommand(updateCmd)
-	ReposCmd.AddCommand(deleteCmd)
-	ReposCmd.AddCommand(testCmd)
-	ReposCmd.AddCommand(branchesCmd)
-	ReposCmd.AddCommand(filesCmd)
-	ReposCmd.AddCommand(syncCmd)
+	Cmd.AddCommand(listCmd)
+	Cmd.AddCommand(createCmd)
+	Cmd.AddCommand(getCmd)
+	Cmd.AddCommand(updateCmd)
+	Cmd.AddCommand(deleteCmd)
+	Cmd.AddCommand(testCmd)
+	Cmd.AddCommand(branchesCmd)
+	Cmd.AddCommand(filesCmd)
+	Cmd.AddCommand(syncCmd)
 
 	// List command flags
 	listCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of repositories to show")

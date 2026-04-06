@@ -11,6 +11,7 @@ import (
 	dockerutils "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
 	buildkit "github.com/moby/buildkit/client"
+	"github.com/tonistiigi/fsutil"
 )
 
 func parseBuildkitCacheEntriesInternal(values []string) []buildkit.CacheOptionsEntry {
@@ -99,6 +100,39 @@ func normalizeEntitlementsInternal(entitlements []string, privileged bool) []str
 	return out
 }
 
+func resolveBuildkitDockerfileMountInternal(contextDir, dockerfilePath string) (string, string) {
+	dockerfileRelDir := filepath.Dir(filepath.FromSlash(dockerfilePath))
+	if dockerfileRelDir == "." {
+		return contextDir, dockerfilePath
+	}
+
+	return filepath.Join(contextDir, dockerfileRelDir), filepath.Base(dockerfilePath)
+}
+
+func createBuildkitLocalMountsInternal(contextDir, dockerfileDir string) (map[string]fsutil.FS, error) {
+	contextMount, err := fsutil.NewFS(contextDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create context mount: %w", err)
+	}
+
+	if dockerfileDir == contextDir {
+		return map[string]fsutil.FS{
+			"context":    contextMount,
+			"dockerfile": contextMount,
+		}, nil
+	}
+
+	dockerfileMount, err := fsutil.NewFS(dockerfileDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create dockerfile mount: %w", err)
+	}
+
+	return map[string]fsutil.FS{
+		"context":    contextMount,
+		"dockerfile": dockerfileMount,
+	}, nil
+}
+
 func (b *builder) buildSolveOptInternal(ctx context.Context, req imagetypes.BuildRequest, providerName string) (buildkit.SolveOpt, <-chan error, func(), error) {
 	fsInput, err := prepareBuildFilesystemInputInternal(req)
 	if err != nil {
@@ -110,11 +144,11 @@ func (b *builder) buildSolveOptInternal(ctx context.Context, req imagetypes.Buil
 		return buildkit.SolveOpt{}, nil, nil, err
 	}
 
-	dockerfileDir := contextDir
-	dockerfileFilename := dockerfilePath
-	if dockerfileRelDir := filepath.Dir(filepath.FromSlash(dockerfilePath)); dockerfileRelDir != "." {
-		dockerfileDir = filepath.Join(contextDir, dockerfileRelDir)
-		dockerfileFilename = filepath.Base(dockerfilePath)
+	dockerfileDir, dockerfileFilename := resolveBuildkitDockerfileMountInternal(contextDir, dockerfilePath)
+	localMounts, err := createBuildkitLocalMountsInternal(contextDir, dockerfileDir)
+	if err != nil {
+		cleanup()
+		return buildkit.SolveOpt{}, nil, nil, err
 	}
 
 	frontendAttrs := map[string]string{
@@ -144,12 +178,9 @@ func (b *builder) buildSolveOptInternal(ctx context.Context, req imagetypes.Buil
 	}
 
 	solveOpt := buildkit.SolveOpt{
-		Frontend:      "dockerfile.v0",
-		FrontendAttrs: frontendAttrs,
-		LocalDirs: map[string]string{
-			"context":    contextDir,
-			"dockerfile": dockerfileDir,
-		},
+		Frontend:            "dockerfile.v0",
+		FrontendAttrs:       frontendAttrs,
+		LocalMounts:         localMounts,
 		CacheImports:        parseBuildkitCacheEntriesInternal(req.CacheFrom),
 		CacheExports:        parseBuildkitCacheEntriesInternal(req.CacheTo),
 		AllowedEntitlements: normalizeEntitlementsInternal(req.Entitlements, req.Privileged),

@@ -584,7 +584,7 @@ func readDockerignoreInternal(contextDir string) []string {
 	}
 	defer file.Close()
 
-	patterns := []string{}
+	var patterns []string
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())

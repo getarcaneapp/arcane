@@ -8,16 +8,15 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// AdminCmd is the parent command for administrative operations.
-var AdminCmd = &cobra.Command{
+var Cmd = &cobra.Command{
 	Use:     "admin",
 	Aliases: []string{"adm"},
 	Short:   "Administration & platform management",
 }
 
 func init() {
-	AdminCmd.AddCommand(users.UsersCmd)
-	AdminCmd.AddCommand(apikeys.ApiKeysCmd)
-	AdminCmd.AddCommand(events.EventsCmd)
-	AdminCmd.AddCommand(notifications.NotificationsCmd)
+	Cmd.AddCommand(users.Cmd)
+	Cmd.AddCommand(apikeys.Cmd)
+	Cmd.AddCommand(events.Cmd)
+	Cmd.AddCommand(notifications.Cmd)
 }

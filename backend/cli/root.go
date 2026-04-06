@@ -39,7 +39,7 @@ func Execute() {
 
 func init() {
 	rootCmd.AddCommand(upgrade.UpgradeCmd)
-	rootCmd.AddCommand(generate.GenerateCmd)
+	rootCmd.AddCommand(generate.Cmd)
 }
 
 func getVersion() string {

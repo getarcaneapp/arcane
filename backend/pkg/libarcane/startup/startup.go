@@ -386,28 +386,28 @@ func cronToMinutes(fields []string) (int, bool, string) {
 		return 0, false, ""
 	}
 
-	sec, min, hour, day, month, weekday := fields[0], fields[1], fields[2], fields[3], fields[4], fields[5]
+	sec, minute, hour, day, month, weekday := fields[0], fields[1], fields[2], fields[3], fields[4], fields[5]
 
-	if mins, ok, warn := tryConvertSecondStep(sec, min, hour, day, month, weekday); ok {
+	if mins, ok, warn := tryConvertSecondStep(sec, minute, hour, day, month, weekday); ok {
 		return mins, ok, warn
 	}
-	if mins, ok, warn := tryConvertMinuteOrHour(sec, min, hour, day, month, weekday); ok {
+	if mins, ok, warn := tryConvertMinuteOrHour(sec, minute, hour, day, month, weekday); ok {
 		return mins, ok, warn
 	}
-	if mins, ok, warn := tryConvertDayStep(sec, min, hour, day, month, weekday); ok {
+	if mins, ok, warn := tryConvertDayStep(sec, minute, hour, day, month, weekday); ok {
 		return mins, ok, warn
 	}
 
 	return 0, false, ""
 }
 
-func tryConvertSecondStep(sec, min, hour, day, month, weekday string) (int, bool, string) {
+func tryConvertSecondStep(sec, minute, hour, day, month, weekday string) (int, bool, string) {
 	step, ok := parseCronStep(sec)
 	if !ok {
 		return 0, false, ""
 	}
 
-	if min == "*" && hour == "*" && day == "*" && month == "*" && weekday == "*" {
+	if minute == "*" && hour == "*" && day == "*" && month == "*" && weekday == "*" {
 		minutes := max((step+59)/60, 1)
 		warn := ""
 		if step%60 != 0 {
@@ -418,18 +418,18 @@ func tryConvertSecondStep(sec, min, hour, day, month, weekday string) (int, bool
 	return 0, false, ""
 }
 
-func tryConvertMinuteOrHour(sec, min, hour, day, month, weekday string) (int, bool, string) {
+func tryConvertMinuteOrHour(sec, minute, hour, day, month, weekday string) (int, bool, string) {
 	if (sec != "0" && sec != "*") || day != "*" || month != "*" || weekday != "*" {
 		return 0, false, ""
 	}
 
-	if step, ok := parseCronStep(min); ok && hour == "*" {
+	if step, ok := parseCronStep(minute); ok && hour == "*" {
 		return step, true, ""
 	}
-	if min == "*" && hour == "*" {
+	if minute == "*" && hour == "*" {
 		return 1, true, ""
 	}
-	if min == "0" {
+	if minute == "0" {
 		if step, ok := parseCronStep(hour); ok && day == "*" {
 			return step * 60, true, ""
 		}
@@ -440,8 +440,8 @@ func tryConvertMinuteOrHour(sec, min, hour, day, month, weekday string) (int, bo
 	return 0, false, ""
 }
 
-func tryConvertDayStep(sec, min, hour, day, month, weekday string) (int, bool, string) {
-	if (sec == "0" || sec == "*") && min == "0" && hour == "0" && month == "*" && weekday == "*" {
+func tryConvertDayStep(sec, minute, hour, day, month, weekday string) (int, bool, string) {
+	if (sec == "0" || sec == "*") && minute == "0" && hour == "0" && month == "*" && weekday == "*" {
 		if step, ok := parseCronStep(day); ok {
 			return step * 1440, true, ""
 		}

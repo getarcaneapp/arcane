@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/cli/internal/client"
+	"github.com/getarcaneapp/arcane/cli/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/internal/output"
 	"github.com/getarcaneapp/arcane/cli/internal/types"
 	"github.com/getarcaneapp/arcane/types/base"
@@ -15,8 +16,7 @@ import (
 
 var jsonOutput bool
 
-// UpdaterCmd is the parent command for updater operations
-var UpdaterCmd = &cobra.Command{
+var Cmd = &cobra.Command{
 	Use:     "updater",
 	Aliases: []string{"upd"},
 	Short:   "Auto-updater operations",
@@ -44,12 +44,7 @@ var statusCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Header("Updater Status")
@@ -84,12 +79,7 @@ var runCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Header("Updater Results")
@@ -124,12 +114,7 @@ var historyCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		headers := []string{"CHECKED", "UPDATED", "FAILED", "DURATION"}
@@ -150,9 +135,9 @@ var historyCmd = &cobra.Command{
 }
 
 func init() {
-	UpdaterCmd.AddCommand(statusCmd)
-	UpdaterCmd.AddCommand(runCmd)
-	UpdaterCmd.AddCommand(historyCmd)
+	Cmd.AddCommand(statusCmd)
+	Cmd.AddCommand(runCmd)
+	Cmd.AddCommand(historyCmd)
 
 	statusCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	runCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")

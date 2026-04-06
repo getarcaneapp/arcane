@@ -167,11 +167,14 @@ func ValidateIncludePathForWrite(projectDir, includePath string) (string, error)
 
 	// Resolve symlinks in the include path to prevent symlink-based path traversal attacks
 	evalPath := absFullPath
-	if evalFullPath, err := filepath.EvalSymlinks(absFullPath); err == nil {
+	evalFullPath, err := filepath.EvalSymlinks(absFullPath)
+	if err == nil {
 		evalPath = evalFullPath
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return "", fmt.Errorf("failed to resolve include path: %w", err)
-	} else {
+	}
+
+	if errors.Is(err, os.ErrNotExist) {
 		// File doesn't exist yet - evaluate parent directory symlinks
 		dir := filepath.Dir(absFullPath)
 		if evalDir, err := filepath.EvalSymlinks(dir); err == nil {

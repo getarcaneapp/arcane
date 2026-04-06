@@ -26,7 +26,7 @@ var (
 	registryUpdateDisabled bool
 )
 
-var RegistriesCmd = &cobra.Command{
+var Cmd = &cobra.Command{
 	Use:     "registries",
 	Aliases: []string{"registry", "reg"},
 	Short:   "Manage container registries",
@@ -61,12 +61,7 @@ var listCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result)
 		}
 
 		headers := []string{"ID", "URL", "USERNAME", "ENABLED", "INSECURE"}
@@ -116,12 +111,10 @@ var syncCmd = &cobra.Command{
 
 		if jsonOutput {
 			var result base.ApiResponse[any]
-			if err := json.NewDecoder(resp.Body).Decode(&result); err == nil {
-				if resultBytes, err := json.MarshalIndent(result.Data, "", "  "); err == nil {
-					fmt.Println(string(resultBytes))
-				}
+			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+				return fmt.Errorf("failed to parse response: %w", err)
 			}
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Registries synced successfully")
@@ -151,12 +144,10 @@ var testCmd = &cobra.Command{
 
 		if jsonOutput {
 			var result base.ApiResponse[any]
-			if err := json.NewDecoder(resp.Body).Decode(&result); err == nil {
-				if resultBytes, err := json.MarshalIndent(result.Data, "", "  "); err == nil {
-					fmt.Println(string(resultBytes))
-				}
+			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+				return fmt.Errorf("failed to parse response: %w", err)
 			}
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Registry connection test successful")
@@ -187,12 +178,7 @@ var getCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Header("Registry Details")
@@ -253,12 +239,10 @@ var updateCmd = &cobra.Command{
 
 		if jsonOutput {
 			var result base.ApiResponse[any]
-			if err := json.NewDecoder(resp.Body).Decode(&result); err == nil {
-				if resultBytes, err := json.MarshalIndent(result.Data, "", "  "); err == nil {
-					fmt.Println(string(resultBytes))
-				}
+			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+				return fmt.Errorf("failed to parse response: %w", err)
 			}
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Registry updated successfully")
@@ -304,12 +288,12 @@ var deleteCmd = &cobra.Command{
 }
 
 func init() {
-	RegistriesCmd.AddCommand(listCmd)
-	RegistriesCmd.AddCommand(getCmd)
-	RegistriesCmd.AddCommand(syncCmd)
-	RegistriesCmd.AddCommand(testCmd)
-	RegistriesCmd.AddCommand(updateCmd)
-	RegistriesCmd.AddCommand(deleteCmd)
+	Cmd.AddCommand(listCmd)
+	Cmd.AddCommand(getCmd)
+	Cmd.AddCommand(syncCmd)
+	Cmd.AddCommand(testCmd)
+	Cmd.AddCommand(updateCmd)
+	Cmd.AddCommand(deleteCmd)
 
 	listCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of registries to show")
 	listCmd.Flags().IntVar(&startFlag, "start", 0, "Offset for pagination")

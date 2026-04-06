@@ -16,8 +16,7 @@ import (
 
 var jsonOutput bool
 
-// SystemCmd is the parent command for system operations
-var SystemCmd = &cobra.Command{
+var Cmd = &cobra.Command{
 	Use:     "system",
 	Aliases: []string{"sys"},
 	Short:   "System operations",
@@ -51,12 +50,7 @@ var pruneCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Header("System Prune Results")
@@ -87,12 +81,7 @@ var dockerInfoCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Header("Docker Info")
@@ -167,12 +156,10 @@ var startStoppedCmd = &cobra.Command{
 
 		if jsonOutput {
 			var result base.ApiResponse[any]
-			if err := json.NewDecoder(resp.Body).Decode(&result); err == nil {
-				if resultBytes, err := json.MarshalIndent(result.Data, "", "  "); err == nil {
-					fmt.Println(string(resultBytes))
-				}
+			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+				return fmt.Errorf("failed to parse response: %w", err)
 			}
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Started all stopped containers")
@@ -217,12 +204,7 @@ var convertCmd = &cobra.Command{
 				"envVars":       result.EnvVars,
 				"serviceName":   result.ServiceName,
 			}
-			resultBytes, err := json.MarshalIndent(out, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(out)
 		}
 
 		output.Header("Conversion Result")
@@ -275,12 +257,10 @@ var upgradeCmd = &cobra.Command{
 
 		if jsonOutput {
 			var result base.ApiResponse[any]
-			if err := json.NewDecoder(resp.Body).Decode(&result); err == nil {
-				if resultBytes, err := json.MarshalIndent(result.Data, "", "  "); err == nil {
-					fmt.Println(string(resultBytes))
-				}
+			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+				return fmt.Errorf("failed to parse response: %w", err)
 			}
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("System upgrade initiated")
@@ -318,12 +298,7 @@ var upgradeCheckCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result)
 		}
 
 		output.Header("Upgrade Check")
@@ -337,14 +312,14 @@ var upgradeCheckCmd = &cobra.Command{
 }
 
 func init() {
-	SystemCmd.AddCommand(pruneCmd)
-	SystemCmd.AddCommand(dockerInfoCmd)
-	SystemCmd.AddCommand(containersStartAllCmd)
-	SystemCmd.AddCommand(containersStopAllCmd)
-	SystemCmd.AddCommand(startStoppedCmd)
-	SystemCmd.AddCommand(convertCmd)
-	SystemCmd.AddCommand(upgradeCmd)
-	SystemCmd.AddCommand(upgradeCheckCmd)
+	Cmd.AddCommand(pruneCmd)
+	Cmd.AddCommand(dockerInfoCmd)
+	Cmd.AddCommand(containersStartAllCmd)
+	Cmd.AddCommand(containersStopAllCmd)
+	Cmd.AddCommand(startStoppedCmd)
+	Cmd.AddCommand(convertCmd)
+	Cmd.AddCommand(upgradeCmd)
+	Cmd.AddCommand(upgradeCheckCmd)
 
 	pruneCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	dockerInfoCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")

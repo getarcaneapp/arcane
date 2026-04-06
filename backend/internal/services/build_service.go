@@ -16,7 +16,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	buildgit "github.com/getarcaneapp/arcane/backend/pkg/gitutil"
-	libbuild "github.com/getarcaneapp/arcane/backend/pkg/libarcane/libbuild"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/libbuild"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	buildtypes "github.com/getarcaneapp/arcane/types/builds"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
@@ -553,21 +553,21 @@ func buildToRecord(build models.ImageBuild, includeOutput bool) imagetypes.Build
 		ContextDir:      build.ContextDir,
 		Dockerfile:      build.Dockerfile,
 		Target:          build.Target,
-		Tags:            []string(build.Tags),
-		Platforms:       []string(build.Platforms),
+		Tags:            build.Tags,
+		Platforms:       build.Platforms,
 		BuildArgs:       buildArgs,
 		Labels:          labels,
-		CacheFrom:       []string(build.CacheFrom),
-		CacheTo:         []string(build.CacheTo),
+		CacheFrom:       build.CacheFrom,
+		CacheTo:         build.CacheTo,
 		NoCache:         build.NoCache,
 		Pull:            build.Pull,
 		Network:         build.BuildNetwork,
 		Isolation:       build.Isolation,
 		ShmSize:         build.ShmSize,
 		Ulimits:         ulimits,
-		Entitlements:    []string(build.Entitlements),
+		Entitlements:    build.Entitlements,
 		Privileged:      build.Privileged,
-		ExtraHosts:      []string(build.ExtraHosts),
+		ExtraHosts:      build.ExtraHosts,
 		Push:            build.Push,
 		Load:            build.Load,
 		Digest:          build.Digest,

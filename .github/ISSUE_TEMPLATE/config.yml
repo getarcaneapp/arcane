@@ -2,6 +2,7 @@ blank_issues_enabled: false
 contact_links:
   - name: Track the Most Upvoted Features
     url: https://upvotes.getarcane.app/
+    about: Track the Most Upvoted Features
   - name: 💬 Discord
     url: https://discord.gg/WyXYpdyV3Z
     about: For help and chatting with the community

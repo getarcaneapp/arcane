@@ -25,7 +25,7 @@ type ContainerHandler struct {
 	settingsService  *services.SettingsService
 }
 
-// Paginated response
+// ContainerPaginatedResponse response
 type ContainerPaginatedResponse struct {
 	Success    bool                          `json:"success"`
 	Data       []containertypes.Summary      `json:"data"`
@@ -122,7 +122,7 @@ type DeleteContainerOutput struct {
 	Body ContainerActionResponse
 }
 
-// RegisterContainers registers container endpoints.
+// SetAutoUpdateInput sets the auto update value for a container.
 type SetAutoUpdateInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ContainerID   string `path:"containerId" doc:"Container ID"`

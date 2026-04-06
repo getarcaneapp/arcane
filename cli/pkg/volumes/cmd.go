@@ -37,8 +37,7 @@ var (
 
 const maxPromptOptions = 20
 
-// VolumesCmd is the parent command for volume operations
-var VolumesCmd = &cobra.Command{
+var Cmd = &cobra.Command{
 	Use:     "volumes",
 	Aliases: []string{"volume", "vol", "v"},
 	Short:   "Manage volumes",
@@ -78,12 +77,7 @@ var listCmd = &cobra.Command{
 		result.Pagination.TotalItems = int64(len(result.Data))
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result)
 		}
 
 		headers := []string{"NAME", "DRIVER", "MOUNTPOINT", "CREATED", "IN USE"}
@@ -126,12 +120,7 @@ var getCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(resolved, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(resolved)
 		}
 
 		output.Header("Volume Details")
@@ -213,12 +202,7 @@ var countsCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Header("Volume Usage Counts")
@@ -267,12 +251,7 @@ var pruneCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Volumes pruned successfully")
@@ -302,12 +281,7 @@ var sizesCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Header("Volume Sizes")
@@ -349,12 +323,7 @@ var usageCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Header("Volume Usage: %s", resolved.Name)
@@ -418,12 +387,7 @@ var createCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Volume %s created successfully", result.Data.Name)
@@ -435,14 +399,14 @@ var createCmd = &cobra.Command{
 }
 
 func init() {
-	VolumesCmd.AddCommand(listCmd)
-	VolumesCmd.AddCommand(getCmd)
-	VolumesCmd.AddCommand(deleteCmd)
-	VolumesCmd.AddCommand(countsCmd)
-	VolumesCmd.AddCommand(pruneCmd)
-	VolumesCmd.AddCommand(sizesCmd)
-	VolumesCmd.AddCommand(usageCmd)
-	VolumesCmd.AddCommand(createCmd)
+	Cmd.AddCommand(listCmd)
+	Cmd.AddCommand(getCmd)
+	Cmd.AddCommand(deleteCmd)
+	Cmd.AddCommand(countsCmd)
+	Cmd.AddCommand(pruneCmd)
+	Cmd.AddCommand(sizesCmd)
+	Cmd.AddCommand(usageCmd)
+	Cmd.AddCommand(createCmd)
 
 	// List command flags
 	listCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of volumes to show")

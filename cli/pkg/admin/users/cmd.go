@@ -38,8 +38,7 @@ var (
 	userUpdateRoles       []string
 )
 
-// UsersCmd is the parent command for user operations
-var UsersCmd = &cobra.Command{
+var Cmd = &cobra.Command{
 	Use:     "users",
 	Aliases: []string{"user", "usr"},
 	Short:   "Manage users",
@@ -74,12 +73,7 @@ var listCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result)
 		}
 
 		headers := []string{"ID", "USERNAME", "DISPLAY NAME", "EMAIL", "ROLES"}
@@ -158,12 +152,7 @@ var createCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("User %s created successfully", result.Data.Username)
@@ -197,12 +186,7 @@ var getCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Header("User Details")
@@ -256,12 +240,10 @@ var updateCmd = &cobra.Command{
 
 		if jsonOutput {
 			var result base.ApiResponse[any]
-			if err := json.NewDecoder(resp.Body).Decode(&result); err == nil {
-				if resultBytes, err := json.MarshalIndent(result.Data, "", "  "); err == nil {
-					fmt.Println(string(resultBytes))
-				}
+			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+				return fmt.Errorf("failed to parse response: %w", err)
 			}
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("User updated successfully")
@@ -307,11 +289,11 @@ var deleteCmd = &cobra.Command{
 }
 
 func init() {
-	UsersCmd.AddCommand(listCmd)
-	UsersCmd.AddCommand(createCmd)
-	UsersCmd.AddCommand(getCmd)
-	UsersCmd.AddCommand(updateCmd)
-	UsersCmd.AddCommand(deleteCmd)
+	Cmd.AddCommand(listCmd)
+	Cmd.AddCommand(createCmd)
+	Cmd.AddCommand(getCmd)
+	Cmd.AddCommand(updateCmd)
+	Cmd.AddCommand(deleteCmd)
 
 	listCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of users to show")
 	listCmd.Flags().IntVar(&startFlag, "start", 0, "Offset for pagination")

@@ -1209,7 +1209,7 @@ func (h *SwarmHandler) GetStack(ctx context.Context, input *GetSwarmStackInput) 
 	stack, err := h.swarmService.GetStack(ctx, input.EnvironmentID, input.Name)
 	if err != nil {
 		if errdefs.IsNotFound(err) {
-			return nil, huma.Error404NotFound(("Swarm stack not found"))
+			return nil, huma.Error404NotFound("Swarm stack not found")
 		}
 		return nil, mapSwarmServiceError(err, "Failed to inspect swarm stack")
 	}
@@ -1387,7 +1387,7 @@ func (h *SwarmHandler) RenderStackConfig(ctx context.Context, input *RenderSwarm
 	return &RenderSwarmStackConfigOutput{Body: base.ApiResponse[swarmtypes.StackRenderConfigResponse]{Success: true, Data: *resp}}, nil
 }
 
-// GetSwarmInfo returns the current swarm cluster metadata for an environment.
+// GetSwarmStatus GetSwarmInfo returns the current swarm cluster metadata for an environment.
 //
 // It delegates to the swarm service to inspect the local swarm state and maps
 // service-layer failures to the API's HTTP error model.

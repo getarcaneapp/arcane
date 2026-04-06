@@ -595,7 +595,7 @@ func TestContainerRegistryService_InspectImageDigest_FallsBackWhenDistributionNo
 				calls++
 				assert.Equal(t, serverURL.Host+"/team/app:1.2.3", imageRef)
 				assert.Empty(t, options.EncodedRegistryAuth)
-				return client.DistributionInspectResult{}, errors.New("Error response from daemon: Not Found")
+				return client.DistributionInspectResult{}, errors.New("error response from daemon: Not Found")
 			},
 		}, nil
 	}, nil)
@@ -632,7 +632,7 @@ func TestContainerRegistryService_InspectImageDigest_FallsBackWhenDistributionFo
 				calls++
 				assert.Equal(t, serverURL.Host+"/team/app:1.2.3", imageRef)
 				assert.Empty(t, options.EncodedRegistryAuth)
-				return client.DistributionInspectResult{}, errors.New("Error response from daemon: <html><body><h1>403 Forbidden</h1> Request forbidden by administrative rules. </body></html>")
+				return client.DistributionInspectResult{}, errors.New("error response from daemon: <html><body><h1>403 Forbidden</h1> Request forbidden by administrative rules. </body></html>")
 			},
 		}, nil
 	}, nil)
@@ -698,7 +698,7 @@ func TestContainerRegistryService_InspectImageDigest_RetriesStoredCredentialsAft
 	svc := NewContainerRegistryService(db, func(context.Context) (RegistryDaemonClient, error) {
 		return &fakeRegistryDaemonClient{
 			distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
-				return client.DistributionInspectResult{}, errors.New("Error response from daemon: Not Found")
+				return client.DistributionInspectResult{}, errors.New("error response from daemon: Not Found")
 			},
 		}, nil
 	}, nil)
@@ -737,7 +737,7 @@ func TestContainerRegistryService_InspectImageDigest_DoesNotFallbackOnTLSFailure
 }
 
 func TestContainerRegistryService_InspectImageDigest_PreservesDaemonAndFallbackErrors(t *testing.T) {
-	daemonErr := errors.New("Error response from daemon: Not Found")
+	daemonErr := errors.New("error response from daemon: Not Found")
 	fallbackErr := errors.New("dial tcp: i/o timeout")
 
 	svc := NewContainerRegistryService(nil, func(context.Context) (RegistryDaemonClient, error) {
@@ -789,7 +789,7 @@ func TestContainerRegistryService_InspectImageDigest_PreservesAnonymousUnauthori
 	svc := NewContainerRegistryService(db, func(context.Context) (RegistryDaemonClient, error) {
 		return &fakeRegistryDaemonClient{
 			distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
-				return client.DistributionInspectResult{}, errors.New("Error response from daemon: Not Found")
+				return client.DistributionInspectResult{}, errors.New("error response from daemon: Not Found")
 			},
 		}, nil
 	}, nil)

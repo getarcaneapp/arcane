@@ -1,10 +1,10 @@
 package doctor
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
+	"github.com/getarcaneapp/arcane/cli/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/internal/config"
 	"github.com/getarcaneapp/arcane/cli/internal/output"
 	runtimectx "github.com/getarcaneapp/arcane/cli/internal/runtime"
@@ -24,8 +24,7 @@ type report struct {
 
 var jsonOutput bool
 
-// DoctorCmd runs environment and connection diagnostics.
-var DoctorCmd = &cobra.Command{
+var Cmd = &cobra.Command{
 	Use:          "doctor",
 	Short:        "Run CLI diagnostics",
 	SilenceUsage: true,
@@ -45,7 +44,7 @@ var DoctorCmd = &cobra.Command{
 		}
 
 		rep := report{Healthy: true}
-		path, _ := config.ConfigPath()
+		path, _ := config.Path()
 		rep.Checks = append(rep.Checks, checkResult{
 			Name:    "config_path",
 			Status:  "ok",
@@ -103,23 +102,19 @@ var DoctorCmd = &cobra.Command{
 		}
 
 		if jsonOutput || app.IsJSON() {
-			b, err := json.MarshalIndent(rep, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal doctor output: %w", err)
-			}
-			fmt.Println(string(b))
+			return cmdutil.PrintJSON(rep)
+		}
+
+		output.Header("Arcane CLI Diagnostics")
+		rows := make([][]string, 0, len(rep.Checks))
+		for _, item := range rep.Checks {
+			rows = append(rows, []string{item.Name, item.Status, item.Details})
+		}
+		output.Table([]string{"CHECK", "STATUS", "DETAILS"}, rows)
+		if rep.Healthy {
+			output.Success("Doctor checks passed")
 		} else {
-			output.Header("Arcane CLI Diagnostics")
-			rows := make([][]string, 0, len(rep.Checks))
-			for _, item := range rep.Checks {
-				rows = append(rows, []string{item.Name, item.Status, item.Details})
-			}
-			output.Table([]string{"CHECK", "STATUS", "DETAILS"}, rows)
-			if rep.Healthy {
-				output.Success("Doctor checks passed")
-			} else {
-				output.Warning("Doctor found issues")
-			}
+			output.Warning("Doctor found issues")
 		}
 
 		if !rep.Healthy {
@@ -130,5 +125,5 @@ var DoctorCmd = &cobra.Command{
 }
 
 func init() {
-	DoctorCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
+	Cmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 }

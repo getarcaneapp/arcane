@@ -41,7 +41,7 @@ func (s *CustomizeSearchService) buildCategoriesFromModel() []category.Category 
 
 	// map category id -> list of customizations
 	categories := map[string][]meta.Metadata{}
-	categoryOrder := []string{} // Track order from first appearance in struct
+	var categoryOrder []string // Track order from first appearance in struct
 
 	rt := reflect.TypeFor[models.CustomizeItem]()
 	for field := range rt.Fields() {
@@ -84,7 +84,7 @@ func (s *CustomizeSearchService) buildCategoriesFromModel() []category.Category 
 	}
 
 	// Build final category list in struct order
-	result := []category.Category{}
+	var result []category.Category
 	for _, catID := range categoryOrder {
 		catMeta := catMetaMap[catID]
 		if catMeta == nil {
@@ -123,7 +123,7 @@ func (s *CustomizeSearchService) Search(query string) search.Response {
 	}
 
 	categories := s.GetCustomizeCategories()
-	results := []category.Category{}
+	var results []category.Category
 
 	for _, cat := range categories {
 		// Check if category matches
@@ -132,7 +132,7 @@ func (s *CustomizeSearchService) Search(query string) search.Response {
 			containsKeyword(cat.Keywords, query)
 
 		// Check individual settings
-		matchingSettings := []meta.Metadata{}
+		var matchingSettings []meta.Metadata
 		for _, setting := range cat.Settings {
 			if matchesSetting(setting, query) {
 				matchingSettings = append(matchingSettings, setting)

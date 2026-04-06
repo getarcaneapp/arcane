@@ -12,13 +12,13 @@ import (
 	"sync"
 	"time"
 
-	backoff "github.com/cenkalti/backoff/v5"
+	"github.com/cenkalti/backoff/v5"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 )
 
 const (
-	AnalyticsJobName                 = "analytics-heartbeat"
+	analyticsJobName                 = "analytics-heartbeat"
 	defaultHeartbeatEndpoint         = "https://checkin.getarcane.app/heartbeat"
 	devHeartbeatEndpoint             = "http://localhost:8080/heartbeat"
 	analyticsHeartbeatLastAttemptKey = "analytics.heartbeat.last_attempt_at"
@@ -60,7 +60,7 @@ func NewAnalyticsJob(
 }
 
 func (j *AnalyticsJob) Name() string {
-	return AnalyticsJobName
+	return analyticsJobName
 }
 
 func (j *AnalyticsJob) Schedule(_ context.Context) string {
@@ -108,7 +108,7 @@ func (j *AnalyticsJob) Run(ctx context.Context) {
 		ctx,
 		"sending analytics heartbeat",
 		"jobName",
-		AnalyticsJobName,
+		analyticsJobName,
 		"version",
 		payload.Version,
 		"instanceID",
@@ -172,7 +172,7 @@ func (j *AnalyticsJob) Run(ctx context.Context) {
 		ctx,
 		"analytics heartbeat sent successfully",
 		"jobName",
-		AnalyticsJobName,
+		analyticsJobName,
 		"version",
 		payload.Version,
 		"instanceID",
@@ -225,7 +225,7 @@ func (j *AnalyticsJob) claimHeartbeatAttemptWindowInternal(ctx context.Context) 
 					ctx,
 					"skipping analytics heartbeat; already attempted within dedupe window",
 					"jobName",
-					AnalyticsJobName,
+					analyticsJobName,
 					"lastAttemptAt",
 					lastAttemptAt,
 					"nextEligibleAt",

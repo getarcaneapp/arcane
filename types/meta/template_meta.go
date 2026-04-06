@@ -1,6 +1,6 @@
 package meta
 
-// Template represents metadata about a template.
+// TemplateMeta represents metadata about a template.
 type TemplateMeta struct {
 	// Version of the template.
 	//

@@ -51,8 +51,7 @@ var (
 	templateRegUpdateDisabled bool
 )
 
-// TemplatesCmd is the parent command for template operations
-var TemplatesCmd = &cobra.Command{
+var Cmd = &cobra.Command{
 	Use:     "templates",
 	Aliases: []string{"template", "tpl"},
 	Short:   "Manage Docker Compose templates",
@@ -119,12 +118,7 @@ var listCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(jsonPayload, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(jsonPayload)
 		}
 
 		headers := []string{"NAME", "CUSTOM", "REMOTE", "DESCRIPTION"}
@@ -174,12 +168,7 @@ var defaultCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Header("Default Templates")
@@ -212,12 +201,7 @@ var contentCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Header("Template Content")
@@ -258,12 +242,7 @@ var registriesCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		headers := []string{"ID", "NAME", "URL", "ENABLED"}
@@ -310,12 +289,7 @@ var variablesCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		headers := []string{"KEY", "VALUE"}
@@ -423,12 +397,7 @@ var getCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(resolved, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(resolved)
 		}
 
 		tpl := *resolved
@@ -770,13 +739,13 @@ func minInt(values ...int) int {
 	if len(values) == 0 {
 		return 0
 	}
-	min := values[0]
+	minValue := values[0]
 	for _, value := range values[1:] {
-		if value < min {
-			min = value
+		if value < minValue {
+			minValue = value
 		}
 	}
-	return min
+	return minValue
 }
 
 func maxInt(a, b int) int {
@@ -855,12 +824,7 @@ var createCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Template created successfully")
@@ -914,12 +878,7 @@ var updateCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Template updated successfully")
@@ -1012,12 +971,7 @@ var defaultsSaveCmd = &cobra.Command{
 			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 				return fmt.Errorf("failed to parse response: %w", err)
 			}
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Default templates saved successfully")
@@ -1060,12 +1014,7 @@ var variablesUpdateCmd = &cobra.Command{
 			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 				return fmt.Errorf("failed to parse response: %w", err)
 			}
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Template variables updated successfully")
@@ -1103,12 +1052,7 @@ var registriesUpdateCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Template registry updated successfully")
@@ -1142,12 +1086,7 @@ var fetchCmd = &cobra.Command{
 			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 				return fmt.Errorf("failed to parse response: %w", err)
 			}
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Remote templates fetched successfully")
@@ -1156,21 +1095,21 @@ var fetchCmd = &cobra.Command{
 }
 
 func init() {
-	TemplatesCmd.AddCommand(listCmd)
-	TemplatesCmd.AddCommand(defaultCmd)
-	TemplatesCmd.AddCommand(contentCmd)
-	TemplatesCmd.AddCommand(registriesCmd)
-	TemplatesCmd.AddCommand(variablesCmd)
-	TemplatesCmd.AddCommand(deleteCmd)
-	TemplatesCmd.AddCommand(deleteRegistryCmd)
-	TemplatesCmd.AddCommand(getCmd)
-	TemplatesCmd.AddCommand(createCmd)
-	TemplatesCmd.AddCommand(updateCmd)
-	TemplatesCmd.AddCommand(downloadCmd)
-	TemplatesCmd.AddCommand(defaultsSaveCmd)
-	TemplatesCmd.AddCommand(variablesUpdateCmd)
-	TemplatesCmd.AddCommand(registriesUpdateCmd)
-	TemplatesCmd.AddCommand(fetchCmd)
+	Cmd.AddCommand(listCmd)
+	Cmd.AddCommand(defaultCmd)
+	Cmd.AddCommand(contentCmd)
+	Cmd.AddCommand(registriesCmd)
+	Cmd.AddCommand(variablesCmd)
+	Cmd.AddCommand(deleteCmd)
+	Cmd.AddCommand(deleteRegistryCmd)
+	Cmd.AddCommand(getCmd)
+	Cmd.AddCommand(createCmd)
+	Cmd.AddCommand(updateCmd)
+	Cmd.AddCommand(downloadCmd)
+	Cmd.AddCommand(defaultsSaveCmd)
+	Cmd.AddCommand(variablesUpdateCmd)
+	Cmd.AddCommand(registriesUpdateCmd)
+	Cmd.AddCommand(fetchCmd)
 
 	listCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of templates to show")
 	listCmd.Flags().IntVar(&startFlag, "start", 0, "Offset for pagination")
