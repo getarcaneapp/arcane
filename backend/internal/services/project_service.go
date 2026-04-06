@@ -708,9 +708,9 @@ const defaultProjectScanMaxDepth = 3
 // project file scanning — these are dependency/build/cache directories that
 // can contain thousands of files irrelevant to compose project configuration.
 // Override via PROJECT_SCAN_SKIP_DIRS env var (comma-separated list).
-var defaultSkipDirectories = ".git,node_modules,vendor,.venv,venv,__pycache__,.cache,dist,build,target,.next,.nuxt,.svelte-kit"
+const defaultSkipDirectories = ".git,node_modules,vendor,.venv,venv,__pycache__,.cache,dist,build,target,.next,.nuxt,.svelte-kit"
 
-func getSkipDirectories() map[string]bool {
+func getSkipDirectoriesInternal() map[string]bool {
 	raw := os.Getenv("PROJECT_SCAN_SKIP_DIRS")
 	if raw == "" {
 		raw = defaultSkipDirectories
@@ -722,6 +722,10 @@ func getSkipDirectories() map[string]bool {
 			dirs[d] = true
 		}
 	}
+	// Always skip .git regardless of user overrides — it may contain
+	// credentials (e.g. .git/config with embedded tokens) that must never
+	// be exposed via the project file browser.
+	dirs[".git"] = true
 	return dirs
 }
 
@@ -749,7 +753,7 @@ func (s *ProjectService) enrichWithDirectoryFiles(ctx context.Context, projectPa
 		}
 	}
 
-	skipDirs := getSkipDirectories()
+	skipDirs := getSkipDirectoriesInternal()
 	var dirFiles []project.IncludeFile
 
 	root, err := os.OpenRoot(projectPath)
