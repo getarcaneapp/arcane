@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -700,7 +701,7 @@ func (s *ProjectService) enrichWithIncludeFiles(ctx context.Context, projectPath
 }
 
 // defaultProjectScanMaxDepth is the default maximum directory depth for
-// scanning project files. Override via the "projectScanMaxDepth" setting.
+// scanning project files. Override via PROJECT_SCAN_MAX_DEPTH env var.
 const defaultProjectScanMaxDepth = 3
 
 // skipDirectories contains directory names that are always skipped during
@@ -739,9 +740,11 @@ func (s *ProjectService) enrichWithDirectoryFiles(ctx context.Context, projectPa
 		shownFiles[inc.RelativePath] = true
 	}
 
-	maxDepth := s.settingsService.GetIntSetting(ctx, "projectScanMaxDepth", defaultProjectScanMaxDepth)
-	if maxDepth <= 0 {
-		maxDepth = defaultProjectScanMaxDepth
+	maxDepth := defaultProjectScanMaxDepth
+	if v := os.Getenv("PROJECT_SCAN_MAX_DEPTH"); v != "" {
+		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 {
+			maxDepth = parsed
+		}
 	}
 
 	var dirFiles []project.IncludeFile
