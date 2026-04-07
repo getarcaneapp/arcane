@@ -34,7 +34,7 @@
 		repositoryId: z.string().min(1, m.common_required()),
 		branch: z.string().min(1, m.common_required()),
 		composePath: z.string().min(1, m.common_required()),
-		syncDirectory: z.boolean().default(true),
+		syncDirectory: z.boolean().default(false),
 		autoSync: z.boolean().default(true),
 		syncInterval: z.number().min(1).default(5)
 	});
@@ -44,7 +44,7 @@
 		repositoryId: open && syncToEdit ? syncToEdit.repositoryId : '',
 		branch: open && syncToEdit ? syncToEdit.branch : 'main',
 		composePath: open && syncToEdit ? syncToEdit.composePath : 'docker-compose.yml',
-		syncDirectory: open && syncToEdit ? (syncToEdit.syncDirectory ?? true) : true,
+		syncDirectory: open && syncToEdit ? (syncToEdit.syncDirectory ?? false) : false,
 		autoSync: open && syncToEdit ? (syncToEdit.autoSync ?? true) : true,
 		syncInterval: open && syncToEdit ? (syncToEdit.syncInterval ?? 5) : 5
 	});
