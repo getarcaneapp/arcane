@@ -127,24 +127,19 @@ func (e *ValidationError) Error() string {
 }
 
 func ToAPIError(err error) *APIError {
-	var apiErr *APIError
-	if errors.As(err, &apiErr) {
+	if apiErr, ok := errors.AsType[*APIError](err); ok {
 		return apiErr
 	}
-	var notFoundErr *NotFoundError
-	if errors.As(err, &notFoundErr) {
+	if notFoundErr, ok := errors.AsType[*NotFoundError](err); ok {
 		return NewNotFoundError(notFoundErr.Message)
 	}
-	var conflictErr *ConflictError
-	if errors.As(err, &conflictErr) {
+	if conflictErr, ok := errors.AsType[*ConflictError](err); ok {
 		return NewConflictError(conflictErr.Message)
 	}
-	var validationErr *ValidationError
-	if errors.As(err, &validationErr) {
+	if validationErr, ok := errors.AsType[*ValidationError](err); ok {
 		return NewValidationError(validationErr.Message, map[string]string{"field": validationErr.Field})
 	}
-	var dockerAPIErr *DockerAPIError
-	if errors.As(err, &dockerAPIErr) {
+	if dockerAPIErr, ok := errors.AsType[*DockerAPIError](err); ok {
 		return NewAPIErrorWithDetails(dockerAPIErr.Message, APIErrorCodeDockerAPIError, dockerAPIErr.HTTPStatus(), dockerAPIErr.Details)
 	}
 	return NewInternalServerError(err.Error())

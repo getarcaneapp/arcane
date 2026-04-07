@@ -145,8 +145,7 @@ func (c *Client) createAcceptNewHostKeyCallback() (gossh.HostKeyCallback, error)
 				return nil // Host key matches
 			}
 			// Check if it's a "key mismatch" error vs "unknown host"
-			var keyErr *knownhosts.KeyError
-			if errors.As(err, &keyErr) && len(keyErr.Want) > 0 {
+			if keyErr, ok := errors.AsType[*knownhosts.KeyError](err); ok && len(keyErr.Want) > 0 {
 				// Host is known but key doesn't match - this is a security concern
 				return fmt.Errorf("host key mismatch for %s (possible MITM attack): %w", hostname, err)
 			}

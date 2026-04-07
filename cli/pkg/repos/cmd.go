@@ -283,8 +283,7 @@ var updateCmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("failed to read SSH key file: %w", err)
 			}
-			sshKey := string(sshKeyData)
-			req.SSHKey = &sshKey
+			req.SSHKey = new(string(sshKeyData))
 		}
 		if cmd.Flags().Changed("ssh-host-key-verification") {
 			req.SSHHostKeyVerification = &repoUpdateSSHHostKeyVerify

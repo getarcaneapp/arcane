@@ -157,8 +157,7 @@ func injectServiceConfiguration(project *composetypes.Project, injectionVars Env
 
 		for k, v := range injectionVars {
 			if _, exists := s.Environment[k]; !exists {
-				vcopy := v
-				s.Environment[k] = &vcopy
+				s.Environment[k] = new(v)
 			}
 		}
 

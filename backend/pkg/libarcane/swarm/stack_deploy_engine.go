@@ -1063,16 +1063,14 @@ func convertDurationPtr(duration *composegotypes.Duration) *time.Duration {
 	if duration == nil {
 		return nil
 	}
-	value := time.Duration(*duration)
-	return &value
+	return new(time.Duration(*duration))
 }
 
 func toUint64Pointer(value int) *uint64 {
 	if value < 0 {
 		return nil
 	}
-	converted := uint64(value)
-	return &converted
+	return new(uint64(value))
 }
 
 func fileModeOrDefault(mode *composegotypes.FileMode) os.FileMode {

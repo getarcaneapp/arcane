@@ -183,8 +183,7 @@ func (s *ContainerService) prepareContainerForRedeployInternal(ctx context.Conte
 		return nil
 	}
 
-	timeout := 30
-	_, err := dockerClient.ContainerStop(ctx, containerID, client.ContainerStopOptions{Timeout: &timeout})
+	_, err := dockerClient.ContainerStop(ctx, containerID, client.ContainerStopOptions{Timeout: new(30)})
 	if err == nil {
 		return nil
 	}
@@ -270,8 +269,7 @@ func (s *ContainerService) StopContainer(ctx context.Context, containerID string
 		return fmt.Errorf("failed to log action: %w", err)
 	}
 
-	timeout := 30
-	_, err = dockerClient.ContainerStop(ctx, containerID, client.ContainerStopOptions{Timeout: &timeout})
+	_, err = dockerClient.ContainerStop(ctx, containerID, client.ContainerStopOptions{Timeout: new(30)})
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, models.JSON{"action": "stop"})
 	}
@@ -433,8 +431,7 @@ func (s *ContainerService) GetContainerByReference(ctx context.Context, ref stri
 		return nil, fmt.Errorf("container not found: %w", err)
 	}
 
-	containerInfo := containerInspect.Container
-	return &containerInfo, nil
+	return new(containerInspect.Container), nil
 }
 
 func (s *ContainerService) GetContainerByID(ctx context.Context, id string) (*container.InspectResponse, error) {
@@ -581,8 +578,7 @@ func (s *ContainerService) CreateContainer(ctx context.Context, config *containe
 		return nil, fmt.Errorf("failed to inspect created container: %w", err)
 	}
 
-	containerInfo := containerJSON.Container
-	return &containerInfo, nil
+	return new(containerJSON.Container), nil
 }
 
 func (s *ContainerService) StreamStats(ctx context.Context, containerID string, statsChan chan<- any) error {

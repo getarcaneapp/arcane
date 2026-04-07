@@ -87,8 +87,7 @@ func (s *VersionService) GetLatestVersion(ctx context.Context) (string, error) {
 		return payload.TagName, nil
 	})
 
-	var staleErr *cache.ErrStale
-	if errors.As(err, &staleErr) {
+	if staleErr, ok := errors.AsType[*cache.ErrStale](err); ok {
 		slog.Warn("Failed to fetch latest version, returning stale cache", "error", staleErr.Err)
 		return version, nil
 	}
@@ -160,8 +159,7 @@ func (s *VersionService) GetVersionInformation(ctx context.Context, currentVersi
 
 	latest, err := s.GetLatestVersion(ctx)
 	if err != nil {
-		var staleErr *cache.ErrStale
-		if errors.As(err, &staleErr) {
+		if staleErr, ok := errors.AsType[*cache.ErrStale](err); ok {
 			slog.Warn("Failed to refresh latest version; using stale cache", "error", staleErr.Err)
 		} else {
 			return check, err

@@ -125,8 +125,6 @@ func (s *BuildService) BuildImage(ctx context.Context, environmentID string, req
 	}
 
 	completedAt := time.Now()
-	durationMs := completedAt.Sub(startedAt).Milliseconds()
-
 	if cleanupErr := cleanupResolvedContext(); cleanupErr != nil {
 		slog.WarnContext(ctx, "failed to cleanup temporary git build context", "error", cleanupErr)
 	}
@@ -153,11 +151,10 @@ func (s *BuildService) BuildImage(ctx context.Context, environmentID string, req
 		var errMsg *string
 		if err != nil {
 			status = models.ImageBuildStatusFailed
-			msg := err.Error()
-			errMsg = &msg
+			errMsg = new(err.Error())
 		}
 
-		if updateErr := s.completeBuildRecord(ctx, buildRecordID, status, outputPtr, logCapture.Truncated(), errMsg, digest, provider, completedAt, &durationMs); updateErr != nil {
+		if updateErr := s.completeBuildRecord(ctx, buildRecordID, status, outputPtr, logCapture.Truncated(), errMsg, digest, provider, completedAt, new(completedAt.Sub(startedAt).Milliseconds())); updateErr != nil {
 			slog.WarnContext(ctx, "failed to update build history record", "error", updateErr)
 		}
 	}
@@ -348,8 +345,7 @@ func (s *BuildService) GetImageBuildByID(ctx context.Context, environmentID, bui
 		return nil, err
 	}
 
-	record := buildToRecord(build, true)
-	return &record, nil
+	return new(buildToRecord(build, true)), nil
 }
 
 func (s *BuildService) createBuildRecord(ctx context.Context, environmentID string, req imagetypes.BuildRequest, user *models.User) (*models.ImageBuild, error) {

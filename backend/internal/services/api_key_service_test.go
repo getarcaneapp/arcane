@@ -191,11 +191,9 @@ func TestUpdateApiKeyRejectsStaticKey(t *testing.T) {
 	created, err := service.CreateDefaultAdminAPIKey(ctx, adminUser.ID, "arc_bootstrapupdateprotected1234567890")
 	require.NoError(t, err)
 
-	name := "renamed"
-	description := "updated description"
 	updated, err := service.UpdateApiKey(ctx, created.ApiKey.ID, apikey.UpdateApiKey{
-		Name:        &name,
-		Description: &description,
+		Name:        new("renamed"),
+		Description: new("updated description"),
 	})
 	require.Nil(t, updated)
 	require.ErrorIs(t, err, ErrApiKeyProtected)

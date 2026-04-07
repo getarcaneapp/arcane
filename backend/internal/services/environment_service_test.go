@@ -227,7 +227,6 @@ func TestEnvironmentService_SyncRegistriesToEnvironment_IncludesECRFields(t *tes
 
 	createTestECRRegistry(t, db, "reg-ecr")
 
-	token := "token-1"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, http.MethodPost, r.Method)
 		require.Equal(t, "/api/container-registries/sync", r.URL.Path)
@@ -250,7 +249,7 @@ func TestEnvironmentService_SyncRegistriesToEnvironment_IncludesECRFields(t *tes
 	}))
 	defer server.Close()
 
-	createTestEnvironment(t, db, "env-1", server.URL, &token)
+	createTestEnvironment(t, db, "env-1", server.URL, new("token-1"))
 
 	err := svc.SyncRegistriesToEnvironment(ctx, "env-1")
 	require.NoError(t, err)
@@ -264,7 +263,6 @@ func TestEnvironmentService_SyncRegistriesToRemoteEnvironments_SkipsRemoteWithou
 	createTestRegistry(t, db, "reg-1")
 
 	var syncCalls atomic.Int32
-	token := "token-with-auth"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		syncCalls.Add(1)
 		w.Header().Set("Content-Type", "application/json")
@@ -272,7 +270,7 @@ func TestEnvironmentService_SyncRegistriesToRemoteEnvironments_SkipsRemoteWithou
 	}))
 	defer server.Close()
 
-	createTestEnvironment(t, db, "env-auth", server.URL, &token)
+	createTestEnvironment(t, db, "env-auth", server.URL, new("token-with-auth"))
 	createTestEnvironment(t, db, "env-no-token", "http://127.0.0.1:1", nil)
 
 	err := svc.SyncRegistriesToRemoteEnvironments(ctx)
@@ -288,7 +286,6 @@ func TestEnvironmentService_SyncRegistriesToRemoteEnvironments_ReportsFailuresBu
 	createTestRegistry(t, db, "reg-1")
 
 	var successCalls atomic.Int32
-	successToken := "token-success"
 	successServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		successCalls.Add(1)
 		w.Header().Set("Content-Type", "application/json")
@@ -296,9 +293,8 @@ func TestEnvironmentService_SyncRegistriesToRemoteEnvironments_ReportsFailuresBu
 	}))
 	defer successServer.Close()
 
-	failingToken := "token-fail"
-	createTestEnvironment(t, db, "env-success", successServer.URL, &successToken)
-	createTestEnvironment(t, db, "env-fail", "http://127.0.0.1:1", &failingToken)
+	createTestEnvironment(t, db, "env-success", successServer.URL, new("token-success"))
+	createTestEnvironment(t, db, "env-fail", "http://127.0.0.1:1", new("token-fail"))
 
 	err := svc.SyncRegistriesToRemoteEnvironments(ctx)
 	require.Error(t, err)
@@ -568,11 +564,8 @@ func TestEnvironmentService_ListMethods_ExcludeHiddenEnvironments(t *testing.T) 
 	svc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
 
 	createTestEnvironment(t, db, "0", "http://localhost:3552", nil)
-	visibleToken := "visible-token"
-	hiddenToken := "hidden-token"
-
-	createNamedTestEnvironmentInternal(t, db, "env-visible", "Visible Remote", "http://visible.example", &visibleToken)
-	createNamedTestEnvironmentInternal(t, db, "env-hidden", "Hidden Node Agent", "edge://swarm-node-hidden", &hiddenToken)
+	createNamedTestEnvironmentInternal(t, db, "env-visible", "Visible Remote", "http://visible.example", new("visible-token"))
+	createNamedTestEnvironmentInternal(t, db, "env-hidden", "Hidden Node Agent", "edge://swarm-node-hidden", new("hidden-token"))
 
 	require.NoError(t, db.WithContext(ctx).
 		Model(&models.Environment{}).

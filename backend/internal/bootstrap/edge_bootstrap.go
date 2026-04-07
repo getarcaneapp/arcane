@@ -118,13 +118,12 @@ func createEdgeConnectionEvent(ctx context.Context, eventService *services.Event
 		severity = models.EventSeveritySuccess
 	}
 
-	resourceType := "environment"
 	_, err := eventService.CreateEvent(ctx, services.CreateEventRequest{
 		Type:          eventType,
 		Severity:      severity,
 		Title:         title,
 		Description:   description,
-		ResourceType:  &resourceType,
+		ResourceType:  new("environment"),
 		ResourceID:    &envID,
 		ResourceName:  &envName,
 		EnvironmentID: &envID,

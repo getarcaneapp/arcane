@@ -250,8 +250,7 @@ func (s *TemplateService) GetTemplate(ctx context.Context, id string) (*models.C
 
 	for _, remoteTemplate := range copied {
 		if remoteTemplate.ID == id {
-			t := remoteTemplate
-			return &t, nil
+			return new(remoteTemplate), nil
 		}
 	}
 
@@ -872,8 +871,7 @@ func cloneRegistry(registry *models.TemplateRegistry) *models.TemplateRegistry {
 		return nil
 	}
 
-	cloned := *registry
-	return &cloned
+	return new(*registry)
 }
 
 func (s *TemplateService) invalidateRemoteCache() {

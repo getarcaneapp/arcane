@@ -928,8 +928,7 @@ func marshalSyncedFiles(files []string) *string {
 	if err != nil {
 		return nil
 	}
-	result := string(data)
-	return &result
+	return new(string(data))
 }
 
 // walkAndParseSyncDirectory walks the repository directory and returns all files with their contents.

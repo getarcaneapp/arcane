@@ -378,8 +378,7 @@ var createCmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("failed to read env file: %w", err)
 			}
-			envStr := string(envBytes)
-			body.EnvContent = &envStr
+			body.EnvContent = new(string(envBytes))
 		}
 
 		// Creating can take a long time as it may pull images
@@ -445,8 +444,7 @@ var updateCmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("failed to read compose file: %w", err)
 			}
-			composeStr := string(composeBytes)
-			body.ComposeContent = &composeStr
+			body.ComposeContent = new(string(composeBytes))
 		}
 
 		if cmd.Flags().Changed("env-file") {
@@ -454,8 +452,7 @@ var updateCmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("failed to read env file: %w", err)
 			}
-			envStr := string(envBytes)
-			body.EnvContent = &envStr
+			body.EnvContent = new(string(envBytes))
 		}
 
 		resp, err := c.Put(cmd.Context(), types.Endpoints.Project(c.EnvID(), resolved.ID), body)
