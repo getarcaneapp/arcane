@@ -77,7 +77,7 @@ func TestDiscoverProjectDirectories_RootWithComposeAndSiblings(t *testing.T) {
 	writeComposeFile(t, filepath.Join(root, "app1"))
 	writeComposeFile(t, filepath.Join(root, "app2"))
 
-	discovered, err := DiscoveredProjectDirectories_call(t, root)
+	discovered := DiscoveredProjectDirectories_call(t, root)
 
 	names := discoveredNames(discovered)
 	require.Len(t, names, 3)
@@ -105,9 +105,9 @@ func TestDiscoverProjectDirectories_NestedStandaloneProject(t *testing.T) {
 
 // DiscoveredProjectDirectories_call is a tiny helper so tests can share the
 // err-check boilerplate.
-func DiscoveredProjectDirectories_call(t *testing.T, root string) ([]DiscoveredProjectDir, error) {
+func DiscoveredProjectDirectories_call(t *testing.T, root string) []DiscoveredProjectDir {
 	t.Helper()
 	d, err := DiscoverProjectDirectories(root, false)
 	require.NoError(t, err)
-	return d, err
+	return d
 }
