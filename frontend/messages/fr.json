@@ -2546,7 +2546,7 @@
 	"settings_default_deploy_pull_policy_description": "Pull de l'image par défaut lors du déploiement de projets",
 	"authentication_title": "Authentification",
 	"authentication_description": "Configurer les fournisseurs d'authentification, la politique de mot de passe et le comportement de la session.",
-	"webhook_page_title": "Crochets Web",
+	"webhook_page_title": "Webhooks",
 	"webhook_page_description": "Gérer les webhooks entrants pour déclencher des actions de conteneur, de projet, de mise à jour ou de GitOps à partir de systèmes externes.",
 	"webhook_create_button": "Créer un Webhook",
 	"webhook_create_title": "Créer un Webhook",
