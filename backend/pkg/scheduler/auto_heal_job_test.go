@@ -6,12 +6,12 @@ import (
 	"testing"
 	"time"
 
+	gosdkclient "github.com/docker/go-sdk/client"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	glsqlite "github.com/glebarez/sqlite"
 	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
@@ -146,8 +146,8 @@ func TestAutoHeal_Run_UsesBoundedConcurrency(t *testing.T) {
 	require.NoError(t, settingsSvc.SetStringSetting(ctx, "autoHealExcludedContainers", "skip-me"))
 
 	job := NewAutoHealJob(nil, settingsSvc, nil, nil)
-	job.getDockerClient = func() (*client.Client, error) { return nil, nil }
-	job.listContainers = func(ctx context.Context, dockerClient *client.Client) ([]container.Summary, error) {
+	job.getDockerClient = func() (gosdkclient.SDKClient, error) { return nil, nil }
+	job.listContainers = func(ctx context.Context, dockerClient gosdkclient.SDKClient) ([]container.Summary, error) {
 		return []container.Summary{
 			{ID: "c1", Names: []string{"/one"}},
 			{ID: "c2", Names: []string{"/two"}},
@@ -163,7 +163,7 @@ func TestAutoHeal_Run_UsesBoundedConcurrency(t *testing.T) {
 	var maxConcurrent int32
 	var restarts int32
 
-	job.inspectContainer = func(ctx context.Context, dockerClient *client.Client, containerID string) (container.InspectResponse, error) {
+	job.inspectContainer = func(ctx context.Context, dockerClient gosdkclient.SDKClient, containerID string) (container.InspectResponse, error) {
 		active := atomic.AddInt32(&current, 1)
 		for {
 			maxSeen := atomic.LoadInt32(&maxConcurrent)
@@ -184,7 +184,7 @@ func TestAutoHeal_Run_UsesBoundedConcurrency(t *testing.T) {
 			return container.InspectResponse{State: &container.State{Health: &container.Health{Status: container.Unhealthy}}}, nil
 		}
 	}
-	job.restartContainer = func(ctx context.Context, dockerClient *client.Client, containerID string) error {
+	job.restartContainer = func(ctx context.Context, dockerClient gosdkclient.SDKClient, containerID string) error {
 		atomic.AddInt32(&restarts, 1)
 		return nil
 	}

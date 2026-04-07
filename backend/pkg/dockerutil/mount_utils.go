@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 
+	gosdkclient "github.com/docker/go-sdk/client"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/pkg/projects"
 	containertypes "github.com/moby/moby/api/types/container"
@@ -15,7 +16,7 @@ import (
 // GetHostPathForContainerPath attempts to discover the host-side path for a given container path
 // by inspecting the container itself. This is useful for Docker-in-Docker scenarios
 // where the application needs to know host paths for volume mapping.
-func GetHostPathForContainerPath(ctx context.Context, dockerCli *client.Client, containerPath string) (string, error) {
+func GetHostPathForContainerPath(ctx context.Context, dockerCli gosdkclient.SDKClient, containerPath string) (string, error) {
 	if dockerCli == nil {
 		return "", nil // No docker client, can't discover
 	}

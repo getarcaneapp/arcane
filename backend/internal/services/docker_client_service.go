@@ -3,11 +3,10 @@ package services
 import (
 	"context"
 	"fmt"
-	"log/slog"
-	"strings"
 	"sync"
 	"time"
 
+	gosdkclient "github.com/docker/go-sdk/client"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	docker "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
@@ -27,7 +26,7 @@ type DockerClientService struct {
 	db              *database.DB
 	config          *config.Config
 	settingsService *SettingsService
-	client          *client.Client
+	client          gosdkclient.SDKClient
 	mu              sync.Mutex
 }
 
@@ -39,46 +38,41 @@ func NewDockerClientService(db *database.DB, cfg *config.Config, settingsService
 	}
 }
 
-func newDockerClientInternal(ctx context.Context, host string) (*client.Client, error) {
-	probeClient, err := client.New(
-		client.WithHost(host),
+// newDockerClientInternal creates and returns and instance of a docker client customized with arcanes config values
+func newDockerClientInternal(ctx context.Context, host string) (gosdkclient.SDKClient, error) {
+	var clientApiVersion string
+	healthCheck := func(parentCtx context.Context) func(c gosdkclient.SDKClient) error {
+		return func(c gosdkclient.SDKClient) error {
+			hcCtx, cancel := context.WithTimeout(parentCtx, 2*time.Second)
+			defer cancel()
+
+			pingResponse, err := c.Ping(hcCtx, client.PingOptions{})
+			if err != nil {
+				return fmt.Errorf("docker health check failed: %w", err)
+			}
+			clientApiVersion = pingResponse.APIVersion
+
+			return nil
+		}
+	}
+
+	cli, err := gosdkclient.New(ctx,
+		gosdkclient.WithDockerHost(host),
+		gosdkclient.WithHealthCheck(healthCheck),
+		gosdkclient.FromDockerOpt(
+			client.WithAPIVersion(clientApiVersion),
+		),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Docker probe client: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, dockerClientNegotiationTimeout)
-	defer cancel()
-
-	pingResult, err := probeClient.Ping(ctx, client.PingOptions{})
-	if err != nil {
-		if closeErr := probeClient.Close(); closeErr != nil {
-			slog.Warn("failed to close probe Docker client after ping failure", "error", closeErr)
-		}
-		return nil, fmt.Errorf("failed to negotiate Docker API version: %w", err)
-	}
-
-	apiVersion := strings.TrimSpace(pingResult.APIVersion)
-	if apiVersion == "" {
-		return probeClient, nil
-	}
-
-	_ = probeClient.Close()
-
-	configuredClient, err := client.New(
-		client.WithHost(host),
-		client.WithAPIVersion(apiVersion),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to configure Docker client API version %s: %w", apiVersion, err)
-	}
-
-	return configuredClient, nil
+	return cli, nil
 }
 
 // GetClient returns a singleton Docker client instance.
 // It initializes the client on the first call.
-func (s *DockerClientService) GetClient(ctx context.Context) (*client.Client, error) {
+func (s *DockerClientService) GetClient(ctx context.Context) (gosdkclient.SDKClient, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -101,32 +95,35 @@ func (s *DockerClientService) DockerHost() string {
 }
 
 func (s *DockerClientService) GetAllContainers(ctx context.Context) ([]container.Summary, int, int, int, error) {
-	dockerClient, err := s.GetClient(ctx)
+	cli, err := gosdkclient.New(ctx,
+		gosdkclient.WithDockerHost(s.config.DockerHost),
+	)
 	if err != nil {
-		return nil, 0, 0, 0, fmt.Errorf("failed to connect to Docker: %w", err)
+		return nil, 0, 0, 0, fmt.Errorf("failed to create docker client: %v", err)
 	}
+	defer cli.Close()
 
 	settings := s.settingsService.GetSettingsConfig()
 	apiCtx, cancel := timeouts.WithTimeout(ctx, settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI)
 	defer cancel()
 
-	containerList, err := dockerClient.ContainerList(apiCtx, client.ContainerListOptions{All: true})
+	containerList, err := cli.ContainerList(apiCtx, client.ContainerListOptions{All: true})
 	if err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("failed to list Docker containers: %w", err)
 	}
-	containers := containerList.Items
 
-	var running, stopped, total int
-	for _, c := range containers {
-		total++
-		if c.State == "running" {
-			running++
-		} else {
-			stopped++
+	var totalRunning, totalStopped, totalContainers int
+	for _, c := range containerList.Items {
+		totalContainers++
+		switch c.State {
+		case "running":
+			totalRunning++
+		case "stopped":
+			totalStopped++
 		}
 	}
 
-	return containers, running, stopped, total, nil
+	return containerList.Items, totalRunning, totalStopped, totalContainers, nil
 }
 
 func (s *DockerClientService) GetAllImages(ctx context.Context) ([]image.Summary, int, int, int, error) {

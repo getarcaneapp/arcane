@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	gosdkclient "github.com/docker/go-sdk/client"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
@@ -33,10 +34,10 @@ type AutoHealJob struct {
 	mu       sync.Mutex
 	restarts map[string]*restartRecord
 
-	getDockerClient  func() (*client.Client, error)
-	listContainers   func(ctx context.Context, dockerClient *client.Client) ([]container.Summary, error)
-	inspectContainer func(ctx context.Context, dockerClient *client.Client, containerID string) (container.InspectResponse, error)
-	restartContainer func(ctx context.Context, dockerClient *client.Client, containerID string) error
+	getDockerClient  func() (gosdkclient.SDKClient, error)
+	listContainers   func(ctx context.Context, dockerClient gosdkclient.SDKClient) ([]container.Summary, error)
+	inspectContainer func(ctx context.Context, dockerClient gosdkclient.SDKClient, containerID string) (container.InspectResponse, error)
+	restartContainer func(ctx context.Context, dockerClient gosdkclient.SDKClient, containerID string) error
 }
 
 func NewAutoHealJob(
@@ -137,7 +138,7 @@ func (j *AutoHealJob) filterCandidatesInternal(containers []container.Summary, e
 
 func (j *AutoHealJob) processCandidateInternal(
 	ctx context.Context,
-	dockerClient *client.Client,
+	dockerClient gosdkclient.SDKClient,
 	candidate container.Summary,
 	maxRestarts int,
 	restartWindow time.Duration,
@@ -277,7 +278,7 @@ func (j *AutoHealJob) isExcluded(name string, excluded map[string]struct{}) bool
 	return ok
 }
 
-func (j *AutoHealJob) inspectContainerInternal(ctx context.Context, dockerClient *client.Client, containerID string) (container.InspectResponse, error) {
+func (j *AutoHealJob) inspectContainerInternal(ctx context.Context, dockerClient gosdkclient.SDKClient, containerID string) (container.InspectResponse, error) {
 	if j.inspectContainer != nil {
 		return j.inspectContainer(ctx, dockerClient, containerID)
 	}
@@ -290,7 +291,7 @@ func (j *AutoHealJob) inspectContainerInternal(ctx context.Context, dockerClient
 	return inspect.Container, nil
 }
 
-func (j *AutoHealJob) restartContainerInternal(ctx context.Context, dockerClient *client.Client, containerID string) error {
+func (j *AutoHealJob) restartContainerInternal(ctx context.Context, dockerClient gosdkclient.SDKClient, containerID string) error {
 	if j.restartContainer != nil {
 		return j.restartContainer(ctx, dockerClient, containerID)
 	}
@@ -299,7 +300,7 @@ func (j *AutoHealJob) restartContainerInternal(ctx context.Context, dockerClient
 	return err
 }
 
-func (j *AutoHealJob) getDockerClientInternal(ctx context.Context) (*client.Client, error) {
+func (j *AutoHealJob) getDockerClientInternal(ctx context.Context) (gosdkclient.SDKClient, error) {
 	if j.getDockerClient != nil {
 		return j.getDockerClient()
 	}
@@ -307,7 +308,7 @@ func (j *AutoHealJob) getDockerClientInternal(ctx context.Context) (*client.Clie
 	return j.dockerClientService.GetClient(ctx)
 }
 
-func (j *AutoHealJob) listContainersInternal(ctx context.Context, dockerClient *client.Client) ([]container.Summary, error) {
+func (j *AutoHealJob) listContainersInternal(ctx context.Context, dockerClient gosdkclient.SDKClient) ([]container.Summary, error) {
 	if j.listContainers != nil {
 		return j.listContainers(ctx, dockerClient)
 	}
