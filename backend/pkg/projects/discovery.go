@@ -74,7 +74,7 @@ func DiscoverProjectDirectories(root string, followSymlinks bool) ([]DiscoveredP
 	discovered := make([]DiscoveredProjectDir, 0)
 	ancestors := make(map[string]struct{})
 
-	if err := walkProjectDirectoriesInternal(root, followSymlinks, ancestors, &discovered); err != nil {
+	if err := walkProjectDirectoriesInternal(root, true, followSymlinks, ancestors, &discovered); err != nil {
 		return nil, err
 	}
 
@@ -85,7 +85,7 @@ func DiscoverProjectDirectories(root string, followSymlinks bool) ([]DiscoveredP
 	return discovered, nil
 }
 
-func walkProjectDirectoriesInternal(path string, followSymlinks bool, ancestors map[string]struct{}, discovered *[]DiscoveredProjectDir) error {
+func walkProjectDirectoriesInternal(path string, isRoot bool, followSymlinks bool, ancestors map[string]struct{}, discovered *[]DiscoveredProjectDir) error {
 	identity, err := ResolveDirectoryIdentityInternal(path)
 	if err != nil {
 		return err
@@ -97,11 +97,22 @@ func walkProjectDirectoriesInternal(path string, followSymlinks bool, ancestors 
 	ancestors[identity] = struct{}{}
 	defer delete(ancestors, identity)
 
+	// If this directory contains a compose file, treat it as a single project
+	// and stop descending. Nested compose files are assumed to belong to the
+	// parent project (e.g. via compose `include:` directives) and should not
+	// be discovered as separate top-level projects.
+	//
+	// The projects root directory itself is exempt — we always descend into it
+	// so siblings under the root are all discovered, even if the root happens
+	// to contain its own compose file.
 	if _, err := DetectComposeFile(path); err == nil {
 		*discovered = append(*discovered, DiscoveredProjectDir{
 			DirName: filepath.Base(path),
 			Path:    path,
 		})
+		if !isRoot {
+			return nil
+		}
 	}
 
 	entries, err := os.ReadDir(path)
@@ -115,7 +126,7 @@ func walkProjectDirectoriesInternal(path string, followSymlinks bool, ancestors 
 			continue
 		}
 
-		if err := walkProjectDirectoriesInternal(childPath, followSymlinks, ancestors, discovered); err != nil {
+		if err := walkProjectDirectoriesInternal(childPath, false, followSymlinks, ancestors, discovered); err != nil {
 			return err
 		}
 	}
