@@ -1,8 +1,10 @@
 package projects
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +12,139 @@ import (
 	pkgutils "github.com/getarcaneapp/arcane/backend/pkg/utils"
 	"github.com/goccy/go-yaml"
 )
+
+// buildServiceOriginMap walks `include:` directives in composeFilePath and
+// returns a map of service name -> origin (working dir + compose file) for
+// every service contributed by an include. Services defined directly in the
+// top-level compose file are NOT in the map; callers should fall back to
+// the top-level workdir for those.
+//
+// Per the Docker Compose spec, an include's effective working directory is
+// its `project_directory` if set, otherwise the directory of the first
+// listed include path. Relative bind mounts inside an included compose
+// resolve against that working directory — losing it (as Arcane v1.17.0 did)
+// caused #2264, where included services' bind mounts were re-rooted at the
+// top-level project's directory and Postgres ran initdb on what it thought
+// were empty data directories.
+func buildServiceOriginMap(ctx context.Context, composeFilePath string, envMap EnvMap) map[string]serviceOrigin {
+	out := map[string]serviceOrigin{}
+	visited := map[string]bool{}
+	collectServiceOriginsInternal(ctx, composeFilePath, envMap, out, visited)
+	return out
+}
+
+func collectServiceOriginsInternal(ctx context.Context, composeFilePath string, envMap EnvMap, out map[string]serviceOrigin, visited map[string]bool) {
+	abs, err := filepath.Abs(composeFilePath)
+	if err != nil {
+		return
+	}
+	abs = filepath.Clean(abs)
+	if visited[abs] {
+		return // cycle guard
+	}
+	visited[abs] = true
+
+	content, err := os.ReadFile(abs)
+	if err != nil {
+		return
+	}
+	var data map[string]any
+	if err := yaml.Unmarshal(content, &data); err != nil {
+		slog.DebugContext(ctx, "buildServiceOriginMap: failed to parse compose file", "path", abs, "error", err)
+		return
+	}
+
+	composeDir := filepath.Dir(abs)
+
+	includesRaw, ok := data["include"]
+	if !ok {
+		return
+	}
+	var items []any
+	switch v := includesRaw.(type) {
+	case []any:
+		items = v
+	case string:
+		items = []any{v}
+	default:
+		return
+	}
+
+	for _, item := range items {
+		var pathField string
+		var projectDirField string
+		switch v := item.(type) {
+		case string:
+			pathField = v
+		case map[string]any:
+			if p, ok := v["path"].(string); ok {
+				pathField = p
+			} else if pl, ok := v["path"].([]any); ok && len(pl) > 0 {
+				if first, ok := pl[0].(string); ok {
+					pathField = first
+				}
+			}
+			if pd, ok := v["project_directory"].(string); ok {
+				projectDirField = pd
+			}
+		default:
+			continue
+		}
+		if pathField == "" {
+			continue
+		}
+
+		if len(envMap) > 0 {
+			pathField = expandEnvVarsInternal(pathField, envMap)
+			if projectDirField != "" {
+				projectDirField = expandEnvVarsInternal(projectDirField, envMap)
+			}
+		}
+
+		includePath := pathField
+		if !filepath.IsAbs(includePath) {
+			includePath = filepath.Join(composeDir, includePath)
+		}
+		includePath = filepath.Clean(includePath)
+
+		// Per spec: project_directory if set, otherwise dir of the first
+		// include path.
+		var workingDir string
+		switch {
+		case projectDirField == "":
+			workingDir = filepath.Dir(includePath)
+		case filepath.IsAbs(projectDirField):
+			workingDir = filepath.Clean(projectDirField)
+		default:
+			workingDir = filepath.Clean(filepath.Join(composeDir, projectDirField))
+		}
+
+		// Parse included file to enumerate its services and recurse into
+		// any nested includes.
+		incContent, err := os.ReadFile(includePath)
+		if err != nil {
+			continue
+		}
+		var incData map[string]any
+		if err := yaml.Unmarshal(incContent, &incData); err != nil {
+			continue
+		}
+		if svcs, ok := incData["services"].(map[string]any); ok {
+			for svcName := range svcs {
+				// First write wins: if a service appears in multiple
+				// includes, keep the earliest origin (matches compose's
+				// merge order).
+				if _, exists := out[svcName]; !exists {
+					out[svcName] = serviceOrigin{
+						WorkingDir:  workingDir,
+						ComposeFile: includePath,
+					}
+				}
+			}
+		}
+		collectServiceOriginsInternal(ctx, includePath, envMap, out, visited)
+	}
+}
 
 // expandEnvVarsInternal expands ${VAR} and $VAR references in a string using the provided env map.
 func expandEnvVarsInternal(s string, envMap EnvMap) string {

@@ -1,6 +1,7 @@
 package projects
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -8,6 +9,142 @@ import (
 
 	pkgutils "github.com/getarcaneapp/arcane/backend/pkg/utils"
 )
+
+// writeFile is a small test helper.
+func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+}
+
+// TestBuildServiceOriginMap_PreservesIncludeProjectDirectory is the regression
+// test for issue #2264. Services pulled in via `include:` with an explicit
+// `project_directory` must be mapped to the include's working dir, not the
+// top-level compose file's directory. Losing this mapping caused Postgres
+// containers to be recreated against empty bind-mount paths.
+func TestBuildServiceOriginMap_PreservesIncludeProjectDirectory(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	topDir := filepath.Join(root, "top")
+	includeDir := filepath.Join(root, "media", "seerr")
+
+	topCompose := filepath.Join(topDir, "compose.yaml")
+	includeCompose := filepath.Join(includeDir, "compose.yaml")
+
+	writeFile(t, topCompose, `
+include:
+  - path: `+filepath.ToSlash(includeCompose)+`
+    project_directory: `+filepath.ToSlash(includeDir)+`
+services:
+  top_only:
+    image: nginx:alpine
+`)
+	writeFile(t, includeCompose, `
+services:
+  seerr:
+    image: linuxserver/jellyseerr
+    volumes:
+      - ./config:/config
+`)
+
+	originMap := buildServiceOriginMap(context.Background(), topCompose, EnvMap{})
+
+	origin, ok := originMap["seerr"]
+	if !ok {
+		t.Fatalf("expected seerr to be in origin map, got %#v", originMap)
+	}
+	if origin.WorkingDir != includeDir {
+		t.Errorf("seerr WorkingDir = %q, want %q", origin.WorkingDir, includeDir)
+	}
+	if origin.ComposeFile != includeCompose {
+		t.Errorf("seerr ComposeFile = %q, want %q", origin.ComposeFile, includeCompose)
+	}
+
+	if _, present := originMap["top_only"]; present {
+		t.Errorf("top_only should NOT be in origin map (it's defined in the top-level compose), got %#v", originMap["top_only"])
+	}
+}
+
+// TestBuildServiceOriginMap_DefaultsToIncludeFileDirectory verifies the
+// Docker Compose spec behavior: when an include has no `project_directory`,
+// the include's own directory is used as the working dir.
+func TestBuildServiceOriginMap_DefaultsToIncludeFileDirectory(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	topDir := filepath.Join(root, "top")
+	includeDir := filepath.Join(root, "shared")
+
+	topCompose := filepath.Join(topDir, "compose.yaml")
+	includeCompose := filepath.Join(includeDir, "compose.yaml")
+
+	writeFile(t, topCompose, `
+include:
+  - `+filepath.ToSlash(includeCompose)+`
+`)
+	writeFile(t, includeCompose, `
+services:
+  shared_svc:
+    image: alpine
+`)
+
+	originMap := buildServiceOriginMap(context.Background(), topCompose, EnvMap{})
+
+	origin, ok := originMap["shared_svc"]
+	if !ok {
+		t.Fatalf("expected shared_svc in origin map")
+	}
+	if origin.WorkingDir != includeDir {
+		t.Errorf("shared_svc WorkingDir = %q, want %q (include file's dir)", origin.WorkingDir, includeDir)
+	}
+}
+
+// TestBuildServiceOriginMap_NestedIncludes verifies the recursive walk and
+// the cycle guard.
+func TestBuildServiceOriginMap_NestedIncludes(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	aDir := filepath.Join(root, "a")
+	bDir := filepath.Join(root, "b")
+	cDir := filepath.Join(root, "c")
+
+	a := filepath.Join(aDir, "compose.yaml")
+	b := filepath.Join(bDir, "compose.yaml")
+	c := filepath.Join(cDir, "compose.yaml")
+
+	writeFile(t, a, `
+include:
+  - path: `+filepath.ToSlash(b)+`
+`)
+	writeFile(t, b, `
+include:
+  - path: `+filepath.ToSlash(c)+`
+  - path: `+filepath.ToSlash(a)+`
+services:
+  b_svc:
+    image: alpine
+`)
+	writeFile(t, c, `
+services:
+  c_svc:
+    image: alpine
+`)
+
+	originMap := buildServiceOriginMap(context.Background(), a, EnvMap{})
+
+	if origin := originMap["b_svc"]; origin.WorkingDir != bDir {
+		t.Errorf("b_svc WorkingDir = %q, want %q", origin.WorkingDir, bDir)
+	}
+	if origin := originMap["c_svc"]; origin.WorkingDir != cDir {
+		t.Errorf("c_svc WorkingDir = %q, want %q", origin.WorkingDir, cDir)
+	}
+}
 
 func TestWriteIncludeFilePermissions(t *testing.T) {
 	// Save original perms

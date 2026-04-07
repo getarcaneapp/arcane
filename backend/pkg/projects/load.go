@@ -54,6 +54,20 @@ func LoadComposeProject(ctx context.Context, composeFile, projectName, projectsD
 	return loadComposeProjectInternal(ctx, composeFile, projectName, projectsDirectory, autoInjectEnv, pathMapper, nil, nil)
 }
 
+// serviceOrigin records where a compose service was actually defined, so we
+// can stamp accurate `com.docker.compose.project.working_dir` and
+// `com.docker.compose.project.config_files` labels on its container. For
+// services pulled in via an `include:` directive with a `project_directory`,
+// the working_dir of the *include* (not the top-level compose file) is what
+// resolves the service's relative bind-mount paths. Stamping the wrong
+// working_dir causes compose to recreate the container with bind mounts
+// rooted at the wrong base — which has destroyed databases in the wild
+// (see issue #2264).
+type serviceOrigin struct {
+	WorkingDir  string
+	ComposeFile string
+}
+
 func loadComposeProjectInternal(
 	ctx context.Context,
 	composeFile string,
@@ -129,7 +143,12 @@ func loadComposeProjectInternal(
 		}
 	}
 
-	injectServiceConfiguration(project, injectionVars, workdir, composeFile)
+	// Build a per-service origin map by walking `include:` directives, so
+	// services pulled in via includes are labeled with the include's own
+	// working_dir/compose_file rather than the top-level compose file's.
+	originMap := buildServiceOriginMap(ctx, composeFile, fullEnvMap)
+
+	injectServiceConfiguration(project, injectionVars, workdir, composeFile, originMap)
 
 	project.ComposeFiles = []string{composeFile}
 	return project, nil
@@ -146,9 +165,22 @@ func applyCustomLabelsInternal(projectName string, serviceName string, workingDi
 	}
 }
 
-func injectServiceConfiguration(project *composetypes.Project, injectionVars EnvMap, workdir, composeFile string) {
+func injectServiceConfiguration(project *composetypes.Project, injectionVars EnvMap, workdir, composeFile string, origins map[string]serviceOrigin) {
 	for i, s := range project.Services {
-		s.CustomLabels = applyCustomLabelsInternal(project.Name, s.Name, workdir, composeFile)
+		// Default to the top-level compose file's directory + path. For
+		// services that came from an `include:` with its own
+		// project_directory, override with the include's own working dir
+		// so that compose's reconcile/recreate uses the right base for
+		// relative bind-mount paths. See issue #2264.
+		svcWorkdir := workdir
+		svcComposeFile := composeFile
+		if origin, ok := origins[s.Name]; ok && origin.WorkingDir != "" {
+			svcWorkdir = origin.WorkingDir
+			if origin.ComposeFile != "" {
+				svcComposeFile = origin.ComposeFile
+			}
+		}
+		s.CustomLabels = applyCustomLabelsInternal(project.Name, s.Name, svcWorkdir, svcComposeFile)
 
 		// Initialize environment if nil
 		if s.Environment == nil {
