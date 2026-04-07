@@ -198,7 +198,7 @@
 	"scheduled_prune_title": "Pausa programada",
 	"scheduled_prune_description": "Limpiar automáticamente los recursos de Docker no utilizados en un programa",
 	"scheduled_prune_interval_label": "Intervalo de purga",
-	"scheduled_prune_interval_description": "Tiempo entre operaciones de poda automáticas (60-10080 minutos)",
+	"scheduled_prune_interval_description": "Tiempo entre operaciones de purga automáticas (60-10080 minutos)",
 	"scheduled_prune_containers_label": "Limpiar contenedores",
 	"scheduled_prune_containers_description": "Eliminar contenedores parados",
 	"scheduled_prune_images_label": "Prune Images",
