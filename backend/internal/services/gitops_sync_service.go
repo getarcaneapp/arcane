@@ -295,7 +295,7 @@ func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string
 		ProjectID:         nil, // Will be set during first sync
 		AutoSync:          false,
 		SyncInterval:      60,
-		SyncDirectory:     true, // Default to directory sync
+		SyncDirectory:     false, // Default to single-file sync
 		MaxSyncFiles:      defaultMaxFiles,
 		MaxSyncTotalSize:  defaultMaxTotalSize,
 		MaxSyncBinarySize: defaultMaxBinarySize,

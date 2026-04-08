@@ -17,7 +17,7 @@ type GitOpsSync struct {
 	Project           *Project       `json:"project,omitempty" gorm:"foreignKey:ProjectID"`
 	AutoSync          bool           `json:"autoSync" sortable:"true" search:"auto,automatic,sync,continuous,scheduled"`
 	SyncInterval      int            `json:"syncInterval" sortable:"true" search:"interval,frequency,schedule,cron,minutes"` // in minutes
-	SyncDirectory     bool           `json:"syncDirectory" gorm:"column:sync_directory;default:true"`                        // Sync entire directory containing compose file
+	SyncDirectory     bool           `json:"syncDirectory" gorm:"column:sync_directory"`                                     // Sync entire directory containing compose file
 	SyncedFiles       *string        `json:"syncedFiles,omitempty" gorm:"column:synced_files"`                               // JSON array of synced file paths
 	MaxSyncFiles      int            `json:"maxSyncFiles" gorm:"column:max_sync_files;default:500"`                          // 0 = inherit environment limit; unlimited only if the effective environment limit is also 0
 	MaxSyncTotalSize  int64          `json:"maxSyncTotalSize" gorm:"column:max_sync_total_size;default:52428800"`            // bytes; 0 = inherit environment limit; unlimited only if the effective environment limit is also 0

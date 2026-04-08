@@ -18,7 +18,6 @@ require (
 	github.com/depot/depot-go v0.5.2
 	github.com/docker/cli v29.3.1+incompatible
 	github.com/docker/compose/v5 v5.1.1
-	github.com/docker/docker v28.5.2+incompatible
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/getarcaneapp/arcane/cli v1.16.3
 	github.com/getarcaneapp/arcane/types v1.16.4
@@ -104,6 +103,7 @@ require (
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/distribution/reference v0.6.0 // indirect
 	github.com/docker/buildx v0.31.1 // indirect
+	github.com/docker/docker v28.5.2+incompatible // indirect
 	github.com/docker/docker-credential-helpers v0.9.5 // indirect
 	github.com/docker/go-connections v0.6.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect

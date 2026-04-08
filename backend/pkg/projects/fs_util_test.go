@@ -64,3 +64,53 @@ func TestResolveConfiguredContainerDirectory(t *testing.T) {
 		assert.Equal(t, filepath.Join(cwd, "data", "swarm", "sources"), got)
 	})
 }
+
+func TestReadProjectDirectoryFiles_RespectsDepthAndSkipDirectories(t *testing.T) {
+	projectPath := t.TempDir()
+
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "README.md"), []byte("root"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "shown.txt"), []byte("shown"), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(projectPath, "nested", "deep"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "nested", "config.txt"), []byte("nested"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "nested", "deep", "secret.txt"), []byte("deep"), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(projectPath, "vendor"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "vendor", "ignored.txt"), []byte("skip"), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(projectPath, ".git"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, ".git", "config"), []byte("token=secret"), 0o644))
+
+	t.Run("uses configured max depth", func(t *testing.T) {
+		dirFiles, err := ReadProjectDirectoryFiles(projectPath, map[string]bool{"shown.txt": true}, 1, "")
+		require.NoError(t, err)
+
+		relativePaths := make([]string, 0, len(dirFiles))
+		for _, file := range dirFiles {
+			relativePaths = append(relativePaths, file.RelativePath)
+		}
+
+		assert.ElementsMatch(t, []string{"README.md"}, relativePaths)
+	})
+
+	t.Run("uses configured skip directories", func(t *testing.T) {
+		dirFiles, err := ReadProjectDirectoryFiles(projectPath, map[string]bool{"shown.txt": true}, 3, "vendor")
+		require.NoError(t, err)
+
+		relativePaths := make([]string, 0, len(dirFiles))
+		for _, file := range dirFiles {
+			relativePaths = append(relativePaths, file.RelativePath)
+		}
+
+		assert.ElementsMatch(t, []string{"README.md", filepath.Join("nested", "config.txt"), filepath.Join("nested", "deep", "secret.txt")}, relativePaths)
+	})
+
+	t.Run("always skips git directory", func(t *testing.T) {
+		dirFiles, err := ReadProjectDirectoryFiles(projectPath, map[string]bool{"shown.txt": true}, 3, "vendor,nested")
+		require.NoError(t, err)
+
+		relativePaths := make([]string, 0, len(dirFiles))
+		for _, file := range dirFiles {
+			relativePaths = append(relativePaths, file.RelativePath)
+		}
+
+		assert.ElementsMatch(t, []string{"README.md"}, relativePaths)
+	})
+}

@@ -6,9 +6,12 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
+	"github.com/getarcaneapp/arcane/backend/internal/config"
 	pkgutils "github.com/getarcaneapp/arcane/backend/pkg/utils"
+	"github.com/getarcaneapp/arcane/types/project"
 )
 
 func ResolveConfiguredContainerDirectory(configuredPath, defaultPath string) string {
@@ -114,6 +117,114 @@ func GetTemplatesDirectory(ctx context.Context) (string, error) {
 		slog.InfoContext(ctx, "Created templates directory", "path", templatesDir)
 	}
 	return templatesDir, nil
+}
+
+func ReadProjectDirectoryFiles(projectPath string, shownFiles map[string]bool, maxDepth int, skipDirectories string) ([]project.IncludeFile, error) {
+	if maxDepth <= 0 {
+		maxDepth = config.Load().ProjectScanMaxDepth
+	}
+
+	var dirFiles []project.IncludeFile
+
+	root, err := os.OpenRoot(projectPath)
+	if err != nil {
+		return dirFiles, err
+	}
+	defer func() { _ = root.Close() }()
+
+	err = collectProjectDirectoryFilesInternal(root, ".", projectPath, shownFiles, &dirFiles, 0, maxDepth, projectScanSkipDirectorySetInternal(skipDirectories))
+
+	return dirFiles, err
+}
+
+func projectScanSkipDirectorySetInternal(skipDirectories string) map[string]bool {
+	if strings.TrimSpace(skipDirectories) == "" {
+		skipDirectories = config.Load().ProjectScanSkipDirs
+	}
+
+	dirs := map[string]bool{}
+	for _, dir := range strings.Split(skipDirectories, ",") {
+		dir = strings.TrimSpace(dir)
+		if dir != "" {
+			dirs[dir] = true
+		}
+	}
+
+	// Never allow .git contents to be exposed through the project file browser.
+	dirs[".git"] = true
+
+	return dirs
+}
+
+func collectProjectDirectoryFilesInternal(
+	root *os.Root,
+	relDir string,
+	projectPath string,
+	shownFiles map[string]bool,
+	dirFiles *[]project.IncludeFile,
+	currentDepth int,
+	maxDepth int,
+	skipDirs map[string]bool,
+) error {
+	if currentDepth >= maxDepth {
+		return nil
+	}
+
+	dir, err := root.Open(relDir)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = dir.Close() }()
+
+	entries, err := dir.ReadDir(-1)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		relPath := entry.Name()
+		if relDir != "." {
+			relPath = filepath.Join(relDir, entry.Name())
+		}
+		if entry.Type()&os.ModeSymlink != 0 {
+			continue
+		}
+		if entry.IsDir() {
+			if skipDirs[entry.Name()] {
+				continue
+			}
+			if err := collectProjectDirectoryFilesInternal(root, relPath, projectPath, shownFiles, dirFiles, currentDepth+1, maxDepth, skipDirs); err != nil {
+				slog.Debug("Skipping unreadable project subdirectory", "relativePath", relPath, "error", err)
+			}
+			continue
+		}
+		if shownFiles[relPath] {
+			continue
+		}
+
+		info, err := entry.Info()
+		if err != nil || info.Size() > 1024*1024 {
+			continue
+		}
+
+		content, err := root.ReadFile(relPath)
+		if err != nil || isBinaryProjectFileContentInternal(content) {
+			continue
+		}
+
+		*dirFiles = append(*dirFiles, project.IncludeFile{
+			Path:         filepath.Join(projectPath, relPath),
+			RelativePath: relPath,
+			Content:      string(content),
+		})
+	}
+
+	return nil
+}
+
+func isBinaryProjectFileContentInternal(content []byte) bool {
+	checkSize := min(len(content), 512)
+	return slices.Contains(content[:checkSize], 0)
 }
 
 // CreateUniqueDir creates a unique directory within the allowed projectsRoot.
