@@ -114,13 +114,7 @@ func (c *Client) getSSHHostKeyCallback(mode string) (gossh.HostKeyCallback, erro
 func (c *Client) createAcceptNewHostKeyCallback() (gossh.HostKeyCallback, error) {
 	knownHostsPath := getKnownHostsPath()
 
-	// Ensure the directory exists
-	dir := filepath.Dir(knownHostsPath)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return nil, fmt.Errorf("failed to create known_hosts directory: %w", err)
-	}
-
-	// Create the file if it doesn't exist
+	// Create the file if it doesn't exist (directory is already ensured by getKnownHostsPath)
 	if _, err := os.Stat(knownHostsPath); os.IsNotExist(err) {
 		file, err := os.OpenFile(knownHostsPath, os.O_CREATE|os.O_WRONLY, 0o600)
 		if err != nil {
@@ -175,7 +169,7 @@ func getKnownHostsPath() string {
 	// still return /root which is not accessible to the runtime user.
 	if homeDir, err := os.UserHomeDir(); err == nil {
 		sshDir := filepath.Join(homeDir, ".ssh")
-		if isDirWritable(sshDir) {
+		if ensureDirWritableInternal(sshDir) {
 			return filepath.Join(sshDir, "known_hosts")
 		}
 	}
@@ -184,8 +178,9 @@ func getKnownHostsPath() string {
 	return filepath.Join(os.TempDir(), ".ssh", "known_hosts")
 }
 
-// isDirWritable checks whether dir exists and is writable, or can be created.
-func isDirWritable(dir string) bool {
+// ensureDirWritableInternal checks whether dir exists and is writable,
+// creating it if necessary. Returns true if the directory is usable.
+func ensureDirWritableInternal(dir string) bool {
 	info, err := os.Stat(dir)
 	if err == nil && info.IsDir() {
 		// Directory exists — try creating a temp file to verify write access

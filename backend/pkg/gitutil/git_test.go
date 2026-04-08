@@ -26,20 +26,19 @@ func TestGetKnownHostsPath(t *testing.T) {
 	t.Run("returns home path when writable", func(t *testing.T) {
 		t.Setenv("SSH_KNOWN_HOSTS", "")
 
-		result := getKnownHostsPath()
 		homeDir, err := os.UserHomeDir()
 		if err != nil {
 			t.Skip("no home directory available")
 		}
-		// When home .ssh is writable, we expect the home-based path
+
+		result := getKnownHostsPath()
 		sshDir := filepath.Join(homeDir, ".ssh")
-		if isDirWritable(sshDir) {
+		if ensureDirWritableInternal(sshDir) {
 			expected := filepath.Join(sshDir, "known_hosts")
 			if result != expected {
 				t.Errorf("expected %s, got %s", expected, result)
 			}
 		} else {
-			// Otherwise expect the temp fallback
 			expected := filepath.Join(os.TempDir(), ".ssh", "known_hosts")
 			if result != expected {
 				t.Errorf("expected %s, got %s", expected, result)
@@ -48,17 +47,16 @@ func TestGetKnownHostsPath(t *testing.T) {
 	})
 
 	t.Run("falls back to temp when home is not writable", func(t *testing.T) {
+		if os.Getuid() == 0 {
+			t.Skip("running as root; /root is writable, fallback path not exercised")
+		}
 		t.Setenv("SSH_KNOWN_HOSTS", "")
-		// Override HOME to a non-writable path
 		t.Setenv("HOME", "/root")
 
 		result := getKnownHostsPath()
-		// If /root/.ssh is not writable (typical for non-root), expect temp fallback
-		if !isDirWritable("/root/.ssh") {
-			expected := filepath.Join(os.TempDir(), ".ssh", "known_hosts")
-			if result != expected {
-				t.Errorf("expected %s, got %s", expected, result)
-			}
+		expected := filepath.Join(os.TempDir(), ".ssh", "known_hosts")
+		if result != expected {
+			t.Errorf("expected %s, got %s", expected, result)
 		}
 	})
 }
