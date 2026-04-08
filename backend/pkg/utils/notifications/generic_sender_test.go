@@ -134,14 +134,14 @@ func TestBuildGenericURL(t *testing.T) {
 			config: models.GenericConfig{
 				WebhookURL: "http://www.pushplus.plus/send?token=abc123",
 			},
-			wantURL: "generic://www.pushplus.plus/send?token=abc123?disabletls=yes&template=json",
+			wantURL: "generic://www.pushplus.plus/send%3Ftoken=abc123?disabletls=yes&template=json",
 		},
 		{
 			name: "webhook URL with multiple query params preserved",
 			config: models.GenericConfig{
 				WebhookURL: "https://api.example.com/webhook?token=abc&channel=general",
 			},
-			wantURL: "generic://api.example.com/webhook?token=abc&channel=general?disabletls=no&template=json",
+			wantURL: "generic://api.example.com/webhook%3Ftoken=abc&channel=general?disabletls=no&template=json",
 		},
 		{
 			name: "empty webhook URL",
