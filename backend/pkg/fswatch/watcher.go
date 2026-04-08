@@ -155,10 +155,16 @@ func (fw *Watcher) processEventInternal(ctx context.Context, event fsnotify.Even
 	if !ok {
 		return true
 	}
-	if !fw.shouldHandleEvent(event) {
+
+	// handleEventInternal runs for every event — its job is to keep the
+	// underlying fsnotify subscriptions in sync (attaching newly-created
+	// directories so we can discover compose files that land inside them
+	// afterwards). Sync-firing is gated separately by shouldHandleEventInternal.
+	fw.handleEventInternal(ctx, event)
+
+	if !fw.shouldHandleEventInternal(event) {
 		return false
 	}
-	fw.handleEvent(ctx, event)
 	if !debounceTimer.Stop() {
 		select {
 		case <-debounceTimer.C:
@@ -188,7 +194,12 @@ func (fw *Watcher) fireDebounceInternal(ctx context.Context, debouncePending *bo
 	return false
 }
 
-func (fw *Watcher) handleEvent(ctx context.Context, event fsnotify.Event) {
+// handleEventInternal keeps the underlying fsnotify subscriptions in sync with
+// the filesystem: when a new directory is created inside a watched path, it is
+// attached recursively so that compose files dropped inside it are discovered.
+// It does NOT decide whether the event should trigger a sync — that is
+// shouldHandleEventInternal's job.
+func (fw *Watcher) handleEventInternal(ctx context.Context, event fsnotify.Event) {
 	if event.Has(fsnotify.Create) {
 		if fw.isWatchableDirectory(event.Name) {
 			if fw.shouldWatchDir(event.Name) {
@@ -206,17 +217,19 @@ func (fw *Watcher) handleEvent(ctx context.Context, event fsnotify.Event) {
 		"operation", event.Op.String())
 }
 
-func (fw *Watcher) shouldHandleEvent(event fsnotify.Event) bool {
-	name := filepath.Base(event.Name)
-
-	// Watch for new directories, compose files, .env being manipulated.
-	if event.Has(fsnotify.Write) || event.Has(fsnotify.Create) || event.Has(fsnotify.Rename) || event.Has(fsnotify.Remove) || event.Has(fsnotify.Chmod) {
-		if fw.isWatchableDirectory(event.Name) || projects.IsProjectFile(name) || fw.isWatchablePath(event.Name) {
-			return true
-		}
+// shouldHandleEventInternal reports whether an fsnotify event should trigger a
+// project sync. Only events on known compose / env files qualify; bare
+// directory events do not, because build tools (ESPHome, PlatformIO, npm,
+// etc.) churn through subdirectories and would otherwise spin the sync loop
+// forever. New project directories are still discovered: once the directory
+// create event has been processed by handleEventInternal (which attaches a
+// watch), the compose file's own Create event reaches this filter and passes
+// via IsProjectFile.
+func (fw *Watcher) shouldHandleEventInternal(event fsnotify.Event) bool {
+	if !event.Has(fsnotify.Write) && !event.Has(fsnotify.Create) && !event.Has(fsnotify.Rename) && !event.Has(fsnotify.Remove) {
+		return false
 	}
-
-	return false
+	return projects.IsProjectFile(filepath.Base(event.Name))
 }
 
 func (fw *Watcher) addExistingDirectories(root string) error {
@@ -322,16 +335,3 @@ func (fw *Watcher) isWatchableDirectory(path string) bool {
 	return resolvedInfo.IsDir()
 }
 
-func (fw *Watcher) isWatchablePath(path string) bool {
-	cleanPath := filepath.Clean(path)
-	if cleanPath == fw.watchedPath {
-		return true
-	}
-
-	parent := filepath.Dir(cleanPath)
-	if parent == "." {
-		return false
-	}
-
-	return fw.shouldWatchDir(parent)
-}
