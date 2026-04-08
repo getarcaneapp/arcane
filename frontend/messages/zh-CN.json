@@ -1037,7 +1037,7 @@
 	"swarm_node_agent_warning_title": "某些 Swarm 节点缺少已验证的代理覆盖范围",
 	"swarm_node_agent_warning_description": "{count} 节点尚未连接到 Arcane。在每个节点上部署代理，在整个集群中解锁节点本地资源管理。",
 	"swarm_node_agent_status_none": "未部署",
-	"swarm_node_agent_status_pending": "待定",
+	"swarm_node_agent_status_pending": "等待中",
 	"swarm_node_agent_status_offline": "离线",
 	"swarm_node_agent_status_connected": "已连接",
 	"swarm_node_agent_status_mismatched": "不匹配",
