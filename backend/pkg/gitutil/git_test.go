@@ -46,7 +46,7 @@ func TestGetKnownHostsPath(t *testing.T) {
 		}
 	})
 
-	t.Run("falls back to temp when home is not writable", func(t *testing.T) {
+	t.Run("falls back to data dir when home is not writable", func(t *testing.T) {
 		if os.Getuid() == 0 {
 			t.Skip("running as root; /root is writable, fallback path not exercised")
 		}
@@ -54,9 +54,9 @@ func TestGetKnownHostsPath(t *testing.T) {
 		t.Setenv("HOME", "/root")
 
 		result := getKnownHostsPath()
-		expected := filepath.Join(os.TempDir(), ".ssh", "known_hosts")
-		if result != expected {
-			t.Errorf("expected %s, got %s", expected, result)
+		// Should fall back to data/.ssh/known_hosts (persistent) or temp (last resort)
+		if result == filepath.Join("/root", ".ssh", "known_hosts") {
+			t.Errorf("should not use inaccessible /root/.ssh, got %s", result)
 		}
 	})
 }

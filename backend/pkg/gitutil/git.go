@@ -163,7 +163,10 @@ func (c *Client) createAcceptNewHostKeyCallback() (gossh.HostKeyCallback, error)
 	}, nil
 }
 
-// getKnownHostsPath returns the path to the known_hosts file
+// getKnownHostsPath returns the path to the known_hosts file.
+// The returned path must be on a persistent volume so that host keys survive
+// container restarts; using a temporary directory would silently degrade
+// "accept_new" mode to effectively no verification.
 func getKnownHostsPath() string {
 	// Check environment variable first
 	if path := os.Getenv("SSH_KNOWN_HOSTS"); path != "" {
@@ -180,7 +183,17 @@ func getKnownHostsPath() string {
 		}
 	}
 
-	// Fall back to a temp-based location that is always writable
+	// Fall back to the persistent data directory. /app/data is mounted as a
+	// Docker volume in the standard Arcane deployment, so host keys are
+	// preserved across container restarts.
+	dataSSHDir := filepath.Join("data", ".ssh")
+	if ensureDirWritableInternal(dataSSHDir) {
+		return filepath.Join(dataSSHDir, "known_hosts")
+	}
+
+	// Last resort: log a warning because a temp path loses keys on restart.
+	fmt.Fprintln(os.Stderr, "Warning: no persistent path available for SSH known_hosts; "+
+		"host keys will be lost on restart. Set SSH_KNOWN_HOSTS to a persistent path.")
 	return filepath.Join(os.TempDir(), ".ssh", "known_hosts")
 }
 
