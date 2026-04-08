@@ -170,13 +170,38 @@ func getKnownHostsPath() string {
 		return path
 	}
 
-	// Fall back to default location
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		// Use a fallback in the working directory
-		return filepath.Join(os.TempDir(), ".ssh", "known_hosts")
+	// Try the user's home directory, but verify it's actually writable.
+	// When running with PUID/PGID (e.g. UID 1000), os.UserHomeDir() may
+	// still return /root which is not accessible to the runtime user.
+	if homeDir, err := os.UserHomeDir(); err == nil {
+		sshDir := filepath.Join(homeDir, ".ssh")
+		if isDirWritable(sshDir) {
+			return filepath.Join(sshDir, "known_hosts")
+		}
 	}
-	return filepath.Join(homeDir, ".ssh", "known_hosts")
+
+	// Fall back to a temp-based location that is always writable
+	return filepath.Join(os.TempDir(), ".ssh", "known_hosts")
+}
+
+// isDirWritable checks whether dir exists and is writable, or can be created.
+func isDirWritable(dir string) bool {
+	info, err := os.Stat(dir)
+	if err == nil && info.IsDir() {
+		// Directory exists — try creating a temp file to verify write access
+		f, err := os.CreateTemp(dir, ".probe-*")
+		if err != nil {
+			return false
+		}
+		_ = f.Close()
+		_ = os.Remove(f.Name())
+		return true
+	}
+	// Directory doesn't exist — try to create it
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return false
+	}
+	return true
 }
 
 // addHostKey adds a host key to the known_hosts file
