@@ -34,6 +34,7 @@ type ContainerService struct {
 	eventService    *EventService
 	imageService    *ImageService
 	settingsService *SettingsService
+	projectService  *ProjectService
 	statsHistory    containerstats.Store
 }
 
@@ -49,13 +50,14 @@ type ContainerListResult struct {
 	Counts     containertypes.StatusCounts
 }
 
-func NewContainerService(db *database.DB, eventService *EventService, dockerService *DockerClientService, imageService *ImageService, settingsService *SettingsService) *ContainerService {
+func NewContainerService(db *database.DB, eventService *EventService, dockerService *DockerClientService, imageService *ImageService, settingsService *SettingsService, projectService *ProjectService) *ContainerService {
 	return &ContainerService{
 		db:              db,
 		eventService:    eventService,
 		dockerService:   dockerService,
 		imageService:    imageService,
 		settingsService: settingsService,
+		projectService:  projectService,
 	}
 }
 
@@ -300,6 +302,105 @@ func (s *ContainerService) RestartContainer(ctx context.Context, containerID str
 	return err
 }
 
+// tryRedeployViaComposeProjectInternal attempts to redeploy a compose-managed
+// container by delegating to ProjectService.UpdateProjectServices, which loads
+// the compose project with full project_directory / env-file / include context
+// and runs pull/stop/up for just the target service. Returns (newContainerID, true)
+// when the compose path was used (success or failure both swallow the original
+// standalone fallback by returning handled=true on success). On any pre-flight
+// failure (no labels, project not in DB, etc.) it returns handled=false so that
+// the caller falls back to the existing standalone redeploy path.
+func (s *ContainerService) tryRedeployViaComposeProjectInternal(ctx context.Context, dockerClient *client.Client, containerInfo container.InspectResponse, containerID, containerName string, user models.User) (string, bool) {
+	if s.projectService == nil || containerInfo.Config == nil {
+		return "", false
+	}
+	labels := containerInfo.Config.Labels
+	projectName := strings.TrimSpace(labels["com.docker.compose.project"])
+	serviceName := strings.TrimSpace(labels["com.docker.compose.service"])
+	if projectName == "" || serviceName == "" {
+		return "", false
+	}
+
+	proj, err := s.projectService.GetProjectByComposeName(ctx, projectName)
+	if err != nil || proj == nil {
+		slog.WarnContext(ctx, "RedeployContainer: compose labels found but project not registered, falling back to standalone redeploy",
+			"containerId", containerID,
+			"project", projectName,
+			"service", serviceName,
+			"err", err,
+		)
+		return "", false
+	}
+
+	slog.InfoContext(ctx, "RedeployContainer: detected compose container, using project-based redeploy",
+		"containerId", containerID,
+		"project", projectName,
+		"service", serviceName,
+	)
+
+	if err := s.projectService.UpdateProjectServices(ctx, proj.ID, []string{serviceName}, user); err != nil {
+		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, containerName, user.ID, user.Username, "0", err, models.JSON{
+			"action":      "redeploy",
+			"step":        "compose_update_services",
+			"project":     projectName,
+			"service":     serviceName,
+			"projectId":   proj.ID,
+			"projectName": proj.Name,
+		})
+		// Return handled=true so we don't double-recreate via the standalone path,
+		// which would clobber the compose recreation result.
+		return "", true
+	}
+
+	newID := s.findComposeServiceContainerIDInternal(ctx, dockerClient, projectName, serviceName)
+	if newID == "" {
+		// Recreated successfully but couldn't locate the new container; return the
+		// original ID so the handler can degrade gracefully.
+		newID = containerID
+	}
+
+	if logErr := s.eventService.LogContainerEvent(ctx, models.EventTypeContainerDeploy, newID, containerName, user.ID, user.Username, "0", models.JSON{
+		"action":        "redeploy",
+		"containerId":   newID,
+		"containerName": containerName,
+		"project":       projectName,
+		"service":       serviceName,
+		"projectId":     proj.ID,
+		"via":           "compose",
+	}); logErr != nil {
+		slog.WarnContext(ctx, "failed to log compose redeploy event", "err", logErr)
+	}
+
+	return newID, true
+}
+
+// findComposeServiceContainerIDInternal locates the (presumably newly recreated)
+// container for a given compose project+service pair. Returns "" when none found.
+func (s *ContainerService) findComposeServiceContainerIDInternal(ctx context.Context, dockerClient *client.Client, projectName, serviceName string) string {
+	listResult, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
+	if err != nil {
+		slog.WarnContext(ctx, "failed to list containers while resolving compose redeploy result",
+			"project", projectName,
+			"service", serviceName,
+			"err", err,
+		)
+		return ""
+	}
+	for _, c := range listResult.Items {
+		if c.Labels == nil {
+			continue
+		}
+		if strings.TrimSpace(c.Labels["com.docker.compose.project"]) != projectName {
+			continue
+		}
+		if strings.TrimSpace(c.Labels["com.docker.compose.service"]) != serviceName {
+			continue
+		}
+		return c.ID
+	}
+	return ""
+}
+
 func (s *ContainerService) RedeployContainer(ctx context.Context, containerID string, user models.User) (string, error) {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
@@ -333,6 +434,15 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 	imageName := containerInfo.Config.Image
 	wasRunning := containerInfo.State != nil && containerInfo.State.Running
 	apiVersion := libarcane.DetectDockerAPIVersion(ctx, dockerClient)
+
+	// If this container belongs to a known compose project, redeploy through the
+	// compose-aware path so that compose file changes (healthchecks, env, etc.) and
+	// the project's include/project_directory/env-file context are honored. The
+	// standalone Docker-API path below only clones the existing container config
+	// from the daemon and would silently ignore any compose edits.
+	if newID, handled := s.tryRedeployViaComposeProjectInternal(ctx, dockerClient, containerInfo, containerID, containerName, user); handled {
+		return newID, nil
+	}
 
 	metadata := models.JSON{
 		"action":        "redeploy",
