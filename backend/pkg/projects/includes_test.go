@@ -9,6 +9,36 @@ import (
 	pkgutils "github.com/getarcaneapp/arcane/backend/pkg/utils"
 )
 
+func TestParseIncludes_NormalizesRelativePaths(t *testing.T) {
+	t.Parallel()
+
+	projectDir := t.TempDir()
+	composePath := filepath.Join(projectDir, "compose.yaml")
+	includePath := filepath.Join(projectDir, "includes", "config.yaml")
+
+	requireNoError := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	}
+
+	requireNoError(os.MkdirAll(filepath.Dir(includePath), 0o755))
+	requireNoError(os.WriteFile(includePath, []byte("services: {}\n"), 0o600))
+	requireNoError(os.WriteFile(composePath, []byte("include:\n  - ./includes/config.yaml\n"), 0o600))
+
+	includes, err := ParseIncludes(composePath, nil)
+	requireNoError(err)
+
+	if len(includes) != 1 {
+		t.Fatalf("expected 1 include, got %d", len(includes))
+	}
+
+	if includes[0].RelativePath != "includes/config.yaml" {
+		t.Fatalf("unexpected relative path: got %q, want %q", includes[0].RelativePath, "includes/config.yaml")
+	}
+}
+
 func TestWriteIncludeFilePermissions(t *testing.T) {
 	// Save original perms
 	origFilePerm := pkgutils.FilePerm

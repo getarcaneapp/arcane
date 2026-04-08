@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/compose-spec/compose-go/v2/loader"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
@@ -117,6 +118,10 @@ func loadComposeProjectInternal(
 		return nil, fmt.Errorf("load compose project: %w", err)
 	}
 
+	for _, configFile := range cfg.ConfigFiles {
+		project.ComposeFiles = append(project.ComposeFiles, configFile.Filename)
+	}
+
 	project = project.WithoutUnnecessaryResources()
 
 	// Resolve relative paths for bind mounts, secrets, and configs
@@ -129,26 +134,24 @@ func loadComposeProjectInternal(
 		}
 	}
 
-	injectServiceConfiguration(project, injectionVars, workdir, composeFile)
-
-	project.ComposeFiles = []string{composeFile}
+	injectServiceConfiguration(project, injectionVars)
 	return project, nil
 }
 
-func applyCustomLabelsInternal(projectName string, serviceName string, workingDirectory string, composeFile string) composetypes.Labels {
+func applyCustomLabelsInternal(projectName string, serviceName string, workingDirectory string, composeFiles []string) composetypes.Labels {
 	return composetypes.Labels{
 		api.ProjectLabel:     projectName,
 		api.ServiceLabel:     serviceName,
 		api.VersionLabel:     api.ComposeVersion,
 		api.OneoffLabel:      "False",
 		api.WorkingDirLabel:  workingDirectory,
-		api.ConfigFilesLabel: composeFile,
+		api.ConfigFilesLabel: strings.Join(composeFiles, ","),
 	}
 }
 
-func injectServiceConfiguration(project *composetypes.Project, injectionVars EnvMap, workdir, composeFile string) {
+func injectServiceConfiguration(project *composetypes.Project, injectionVars EnvMap) {
 	for i, s := range project.Services {
-		s.CustomLabels = applyCustomLabelsInternal(project.Name, s.Name, workdir, composeFile)
+		s.CustomLabels = applyCustomLabelsInternal(project.Name, s.Name, project.WorkingDir, project.ComposeFiles)
 
 		// Initialize environment if nil
 		if s.Environment == nil {
