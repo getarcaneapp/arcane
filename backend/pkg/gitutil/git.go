@@ -44,6 +44,8 @@ const (
 	SSHHostKeyVerificationStrict    = "strict"     // Require host key in known_hosts
 	SSHHostKeyVerificationAcceptNew = "accept_new" // Auto-add unknown host keys
 	SSHHostKeyVerificationSkip      = "skip"       // Skip host key verification (insecure)
+	defaultKnownHostsDataDir        = "/app/data"
+	defaultKnownHostsPath           = "/app/data/.ssh/known_hosts"
 )
 
 // AuthConfig holds authentication configuration
@@ -165,18 +167,29 @@ func (c *Client) createAcceptNewHostKeyCallback() (gossh.HostKeyCallback, error)
 
 // getKnownHostsPath returns the path to the known_hosts file
 func getKnownHostsPath() string {
+	return getKnownHostsPathInternal(os.Getenv, os.Stat, os.UserHomeDir)
+}
+
+func getKnownHostsPathInternal(getenv func(string) string, stat func(string) (os.FileInfo, error), userHomeDir func() (string, error)) string {
 	// Check environment variable first
-	if path := os.Getenv("SSH_KNOWN_HOSTS"); path != "" {
+	if path := getenv("SSH_KNOWN_HOSTS"); path != "" {
 		return path
 	}
 
-	// Fall back to default location
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		// Use a fallback in the working directory
-		return filepath.Join(os.TempDir(), ".ssh", "known_hosts")
+	// Prefer Arcane's writable persistent data directory when it is available,
+	// which is the case for published container images and PUID/PGID setups.
+	if info, err := stat(defaultKnownHostsDataDir); err == nil && info.IsDir() {
+		return defaultKnownHostsPath
 	}
-	return filepath.Join(homeDir, ".ssh", "known_hosts")
+
+	// Fall back to the user's home directory for local development and CI.
+	homeDir, err := userHomeDir()
+	if err == nil && homeDir != "" {
+		return filepath.Join(homeDir, ".ssh", "known_hosts")
+	}
+
+	// Last resort for environments without a resolvable home directory.
+	return filepath.Join(os.TempDir(), ".ssh", "known_hosts")
 }
 
 // addHostKey adds a host key to the known_hosts file

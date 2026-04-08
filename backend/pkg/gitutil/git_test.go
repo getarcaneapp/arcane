@@ -2,12 +2,14 @@ package git
 
 import (
 	"context"
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	gossh "golang.org/x/crypto/ssh"
 )
@@ -15,26 +17,74 @@ import (
 func TestGetKnownHostsPath(t *testing.T) {
 	t.Run("returns SSH_KNOWN_HOSTS env var when set", func(t *testing.T) {
 		customPath := "/custom/path/known_hosts"
-		t.Setenv("SSH_KNOWN_HOSTS", customPath)
 
-		result := getKnownHostsPath()
+		result := getKnownHostsPathInternal(
+			func(string) string { return customPath },
+			os.Stat,
+			os.UserHomeDir,
+		)
 		if result != customPath {
 			t.Errorf("expected %s, got %s", customPath, result)
 		}
 	})
 
-	t.Run("returns default path when env var not set", func(t *testing.T) {
-		t.Setenv("SSH_KNOWN_HOSTS", "")
+	t.Run("returns Arcane data path when data directory exists", func(t *testing.T) {
+		result := getKnownHostsPathInternal(
+			func(string) string { return "" },
+			func(path string) (os.FileInfo, error) {
+				if path == defaultKnownHostsDataDir {
+					return stubFileInfo{dir: true}, nil
+				}
+				return nil, os.ErrNotExist
+			},
+			func() (string, error) { return "/home/tester", nil },
+		)
 
-		result := getKnownHostsPath()
-		homeDir, _ := os.UserHomeDir()
-		expected := filepath.Join(homeDir, ".ssh", "known_hosts")
+		expected := defaultKnownHostsPath
 
 		if result != expected {
 			t.Errorf("expected %s, got %s", expected, result)
 		}
 	})
+
+	t.Run("falls back to home directory when Arcane data directory is unavailable", func(t *testing.T) {
+		homeDir := "/home/tester"
+		result := getKnownHostsPathInternal(
+			func(string) string { return "" },
+			func(string) (os.FileInfo, error) { return nil, os.ErrNotExist },
+			func() (string, error) { return homeDir, nil },
+		)
+
+		expected := filepath.Join(homeDir, ".ssh", "known_hosts")
+		if result != expected {
+			t.Errorf("expected %s, got %s", expected, result)
+		}
+	})
+
+	t.Run("falls back to temp dir when data directory and home are unavailable", func(t *testing.T) {
+		result := getKnownHostsPathInternal(
+			func(string) string { return "" },
+			func(string) (os.FileInfo, error) { return nil, os.ErrNotExist },
+			func() (string, error) { return "", errors.New("no home directory") },
+		)
+
+		expected := filepath.Join(os.TempDir(), ".ssh", "known_hosts")
+		if result != expected {
+			t.Errorf("expected %s, got %s", expected, result)
+		}
+	})
 }
+
+type stubFileInfo struct {
+	dir bool
+}
+
+func (s stubFileInfo) Name() string       { return "stub" }
+func (s stubFileInfo) Size() int64        { return 0 }
+func (s stubFileInfo) Mode() os.FileMode  { return 0o755 }
+func (s stubFileInfo) ModTime() time.Time { return time.Time{} }
+func (s stubFileInfo) IsDir() bool        { return s.dir }
+func (s stubFileInfo) Sys() any           { return nil }
 
 func TestGetSSHHostKeyCallback(t *testing.T) {
 	client := NewClient("")

@@ -123,10 +123,6 @@ func ReadProjectDirectoryFiles(projectPath string, shownFiles map[string]bool, m
 	return readProjectDirectoryFilesInternal(projectPath, shownFiles, maxDepth, skipDirectories, false)
 }
 
-func ReadProjectDirectoryFilesWithContent(projectPath string, shownFiles map[string]bool, maxDepth int, skipDirectories string) ([]project.IncludeFile, error) {
-	return readProjectDirectoryFilesInternal(projectPath, shownFiles, maxDepth, skipDirectories, true)
-}
-
 func readProjectDirectoryFilesInternal(projectPath string, shownFiles map[string]bool, maxDepth int, skipDirectories string, includeContent bool) ([]project.IncludeFile, error) {
 	if maxDepth <= 0 {
 		maxDepth = config.Load().ProjectScanMaxDepth
