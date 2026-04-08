@@ -744,6 +744,14 @@ func (e *ProjectFileNotFoundError) Error() string {
 	return "Project file not found"
 }
 
+type ProjectComposeFileNotFoundError struct {
+	Err error
+}
+
+func (e *ProjectComposeFileNotFoundError) Error() string {
+	return fmt.Sprintf("Project compose file not found: %v", e.Err)
+}
+
 type ProjectRedeploymentError struct {
 	Err error
 }

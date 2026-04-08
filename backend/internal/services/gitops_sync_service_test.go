@@ -243,6 +243,140 @@ func TestGitOpsSyncService_CreateDirectorySyncProjectInternal_RollsBackProjectOn
 	assert.ErrorIs(t, statErr, os.ErrNotExist)
 }
 
+func TestProjectsRemoveStaleComposeFiles_RemovesStaleCustomComposeFiles(t *testing.T) {
+	t.Parallel()
+
+	projectPath := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "radarr.yaml"), []byte("services:\n  app:\n    image: nginx:alpine\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "sonarr.yaml"), []byte("services:\n  app:\n    image: nginx:alpine\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "values.yaml"), []byte("replicaCount: 2\nimage:\n  tag: latest\n"), 0o644))
+
+	err := projects.RemoveStaleComposeFiles(projectPath, "sonarr.yaml", []string{"sonarr.yaml"})
+	require.NoError(t, err)
+
+	_, statErr := os.Stat(filepath.Join(projectPath, "radarr.yaml"))
+	assert.ErrorIs(t, statErr, os.ErrNotExist)
+
+	_, statErr = os.Stat(filepath.Join(projectPath, "sonarr.yaml"))
+	require.NoError(t, statErr)
+
+	_, statErr = os.Stat(filepath.Join(projectPath, "values.yaml"))
+	require.NoError(t, statErr)
+}
+
+func TestGitOpsSyncService_GetDirectorySyncProjectInternal_RelinksManagedProjectWhenProjectIDStale(t *testing.T) {
+	ctx := context.Background()
+	svc, db, projectsDir := setupGitOpsSyncDirectoryTestService(t)
+
+	projectPath := filepath.Join(projectsDir, "Radarr-3")
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "radarr.yaml"), []byte("services:\n  app:\n    image: lscr.io/linuxserver/radarr:latest\n"), 0o644))
+
+	sync := &models.GitOpsSync{
+		BaseModel:     models.BaseModel{ID: "sync-directory-relink"},
+		Name:          "radarr-sync",
+		EnvironmentID: "0",
+		RepositoryID:  "repo-1",
+		ComposePath:   "apps/media/radarr.yaml",
+		ProjectName:   "Radarr",
+		ProjectID:     ptr("missing-project"),
+		SyncDirectory: true,
+	}
+	require.NoError(t, db.Create(sync).Error)
+
+	project := &models.Project{
+		BaseModel:       models.BaseModel{ID: "proj-directory-relink"},
+		Name:            "Radarr",
+		DirName:         ptr("Radarr-3"),
+		Path:            projectPath,
+		Status:          models.ProjectStatusStopped,
+		GitOpsManagedBy: &sync.ID,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	recovered, err := svc.getDirectorySyncProjectInternal(ctx, sync)
+	require.NoError(t, err)
+	require.NotNil(t, recovered)
+	assert.Equal(t, project.ID, recovered.ID)
+
+	var storedSync models.GitOpsSync
+	require.NoError(t, db.First(&storedSync, "id = ?", sync.ID).Error)
+	require.NotNil(t, storedSync.ProjectID)
+	assert.Equal(t, project.ID, *storedSync.ProjectID)
+}
+
+func TestGitOpsSyncService_GetDirectorySyncProjectInternal_RecoversUniqueDirectoryCandidate(t *testing.T) {
+	ctx := context.Background()
+	svc, db, projectsDir := setupGitOpsSyncDirectoryTestService(t)
+
+	projectPath := filepath.Join(projectsDir, "Radarr-3")
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "radarr.yaml"), []byte("services:\n  app:\n    image: lscr.io/linuxserver/radarr:latest\n"), 0o644))
+
+	sync := &models.GitOpsSync{
+		BaseModel:     models.BaseModel{ID: "sync-directory-disk-recovery"},
+		Name:          "radarr-sync",
+		EnvironmentID: "0",
+		RepositoryID:  "repo-1",
+		ComposePath:   "apps/media/radarr.yaml",
+		ProjectName:   "Radarr",
+		ProjectID:     ptr("missing-project"),
+		SyncDirectory: true,
+	}
+	require.NoError(t, db.Create(sync).Error)
+
+	recovered, err := svc.getDirectorySyncProjectInternal(ctx, sync)
+	require.NoError(t, err)
+	require.NotNil(t, recovered)
+	assert.Equal(t, projectPath, recovered.Path)
+	require.NotNil(t, recovered.GitOpsManagedBy)
+	assert.Equal(t, sync.ID, *recovered.GitOpsManagedBy)
+
+	var storedSync models.GitOpsSync
+	require.NoError(t, db.First(&storedSync, "id = ?", sync.ID).Error)
+	require.NotNil(t, storedSync.ProjectID)
+	assert.Equal(t, recovered.ID, *storedSync.ProjectID)
+
+	var storedProject models.Project
+	require.NoError(t, db.First(&storedProject, "id = ?", recovered.ID).Error)
+	assert.Equal(t, projectPath, storedProject.Path)
+	assert.Equal(t, 1, storedProject.ServiceCount)
+}
+
+func TestGitOpsSyncService_ReconcileDirectorySyncProjectsOnStartup_SkipsAmbiguousDuplicates(t *testing.T) {
+	ctx := context.Background()
+	svc, db, projectsDir := setupGitOpsSyncDirectoryTestService(t)
+
+	for _, dirName := range []string{"Radarr-3", "Radarr-30"} {
+		projectPath := filepath.Join(projectsDir, dirName)
+		require.NoError(t, os.MkdirAll(projectPath, 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(projectPath, "radarr.yaml"), []byte("services:\n  app:\n    image: lscr.io/linuxserver/radarr:latest\n"), 0o644))
+	}
+
+	sync := &models.GitOpsSync{
+		BaseModel:     models.BaseModel{ID: "sync-directory-ambiguous"},
+		Name:          "radarr-sync",
+		EnvironmentID: "0",
+		RepositoryID:  "repo-1",
+		ComposePath:   "apps/media/radarr.yaml",
+		ProjectName:   "Radarr",
+		ProjectID:     ptr("missing-project"),
+		SyncDirectory: true,
+	}
+	require.NoError(t, db.Create(sync).Error)
+
+	require.NoError(t, svc.ReconcileDirectorySyncProjectsOnStartup(ctx))
+
+	var projectsCount int64
+	require.NoError(t, db.Model(&models.Project{}).Count(&projectsCount).Error)
+	assert.Zero(t, projectsCount)
+
+	var storedSync models.GitOpsSync
+	require.NoError(t, db.First(&storedSync, "id = ?", sync.ID).Error)
+	require.NotNil(t, storedSync.ProjectID)
+	assert.Equal(t, "missing-project", *storedSync.ProjectID)
+}
+
 func TestEnvContentChangedInternal(t *testing.T) {
 	t.Run("ignores formatting-only changes", func(t *testing.T) {
 		oldEnv := "B=2\nA=1\n# comment\n"

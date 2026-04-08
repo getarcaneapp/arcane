@@ -1,6 +1,7 @@
 package projects
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"log/slog"
@@ -12,6 +13,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	pkgutils "github.com/getarcaneapp/arcane/backend/pkg/utils"
 	"github.com/getarcaneapp/arcane/types/project"
+	"github.com/goccy/go-yaml"
 )
 
 func ResolveConfiguredContainerDirectory(configuredPath, defaultPath string) string {
@@ -93,9 +95,13 @@ func isBackendModuleRoot(path string) bool {
 	return true
 }
 
-func ReadProjectFiles(projectPath string) (composeContent, envContent string, err error) {
-	if composeFile, derr := DetectComposeFile(projectPath); derr == nil && composeFile != "" {
-		if content, rerr := os.ReadFile(composeFile); rerr == nil {
+func ReadProjectFiles(projectPath, composePath string) (composeContent, envContent string, err error) {
+	if strings.TrimSpace(composePath) == "" {
+		composePath, _ = DetectComposeFile(projectPath)
+	}
+
+	if strings.TrimSpace(composePath) != "" {
+		if content, rerr := os.ReadFile(composePath); rerr == nil {
 			composeContent = string(content)
 		}
 	}
@@ -106,6 +112,22 @@ func ReadProjectFiles(projectPath string) (composeContent, envContent string, er
 	}
 
 	return composeContent, envContent, nil
+}
+
+func HasComposeRootKeysInFile(path string) (bool, error) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return false, err
+	}
+
+	composeData := map[string]any{}
+	if err := yaml.Unmarshal(content, &composeData); err != nil {
+		return false, err
+	}
+
+	_, hasServices := composeData["services"]
+	_, hasInclude := composeData["include"]
+	return hasServices || hasInclude, nil
 }
 
 func GetTemplatesDirectory(ctx context.Context) (string, error) {
@@ -234,6 +256,163 @@ func collectProjectDirectoryFilesInternal(
 func IsBinaryProjectFileContent(content []byte) bool {
 	checkSize := min(len(content), 512)
 	return slices.Contains(content[:checkSize], 0)
+}
+
+func DirectorySyncContentsChanged(projectPath string, syncFiles []SyncFile, oldSyncedFiles []string, composeFileName string) (bool, error) {
+	if info, err := os.Stat(projectPath); err != nil {
+		if os.IsNotExist(err) {
+			return true, nil
+		}
+		return false, err
+	} else if !info.IsDir() {
+		return false, fmt.Errorf("project path is not a directory: %s", projectPath)
+	}
+
+	newFileSet := make(map[string]struct{}, len(syncFiles))
+	for _, file := range syncFiles {
+		newFileSet[file.RelativePath] = struct{}{}
+		existingContent, err := os.ReadFile(filepath.Join(projectPath, file.RelativePath))
+		if err != nil {
+			if os.IsNotExist(err) {
+				return true, nil
+			}
+			return false, err
+		}
+		if !bytes.Equal(existingContent, file.Content) {
+			return true, nil
+		}
+	}
+
+	for _, oldFile := range oldSyncedFiles {
+		if _, exists := newFileSet[oldFile]; exists {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(projectPath, oldFile)); err == nil {
+			return true, nil
+		} else if !os.IsNotExist(err) {
+			return false, err
+		}
+	}
+
+	for _, candidate := range ComposeFileCandidates() {
+		if candidate == composeFileName {
+			continue
+		}
+		if _, exists := newFileSet[candidate]; exists {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(projectPath, candidate)); err == nil {
+			return true, nil
+		} else if !os.IsNotExist(err) {
+			return false, err
+		}
+	}
+
+	return false, nil
+}
+
+func RemoveStaleComposeFiles(projectPath, composeFileName string, syncedFiles []string) error {
+	syncedFileSet := make(map[string]struct{}, len(syncedFiles))
+	for _, file := range syncedFiles {
+		syncedFileSet[file] = struct{}{}
+	}
+
+	for _, candidate := range ComposeFileCandidates() {
+		if candidate == composeFileName {
+			continue
+		}
+		if _, exists := syncedFileSet[candidate]; exists {
+			continue
+		}
+		if err := os.Remove(filepath.Join(projectPath, candidate)); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
+
+	entries, err := os.ReadDir(projectPath)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		name := entry.Name()
+		if name == composeFileName {
+			continue
+		}
+		if _, exists := syncedFileSet[name]; exists {
+			continue
+		}
+		if slices.Contains(ComposeFileCandidates(), name) || !IsProjectFile(name) {
+			continue
+		}
+
+		path := filepath.Join(projectPath, name)
+		hasComposeRootKeys, rootKeysErr := HasComposeRootKeysInFile(path)
+		if rootKeysErr != nil || !hasComposeRootKeys {
+			continue
+		}
+
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func CopyDirectoryContents(srcDir, destDir string) error {
+	srcRoot, err := os.OpenRoot(srcDir)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = srcRoot.Close() }()
+
+	destRoot, err := os.OpenRoot(destDir)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = destRoot.Close() }()
+
+	return filepath.WalkDir(srcDir, func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if path == srcDir {
+			return nil
+		}
+
+		relPath, err := filepath.Rel(srcDir, path)
+		if err != nil {
+			return err
+		}
+
+		if d.IsDir() {
+			return destRoot.MkdirAll(relPath, 0o755)
+		}
+		if d.Type()&os.ModeSymlink != 0 {
+			return nil
+		}
+
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+
+		content, err := srcRoot.ReadFile(relPath)
+		if err != nil {
+			return err
+		}
+
+		if err := destRoot.MkdirAll(filepath.Dir(relPath), 0o755); err != nil {
+			return err
+		}
+
+		return destRoot.WriteFile(relPath, content, info.Mode())
+	})
 }
 
 // CreateUniqueDir creates a unique directory within the allowed projectsRoot.

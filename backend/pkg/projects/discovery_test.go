@@ -103,6 +103,19 @@ func TestDiscoverProjectDirectories_NestedStandaloneProject(t *testing.T) {
 	require.Equal(t, []string{"nested"}, names)
 }
 
+func TestDiscoverProjectDirectories_SupportsCustomComposeFilename(t *testing.T) {
+	root := t.TempDir()
+	projectDir := filepath.Join(root, "Radarr-3")
+	require.NoError(t, os.MkdirAll(projectDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "radarr.yaml"), []byte("services: {}\n"), 0o644))
+
+	discovered, err := DiscoverProjectDirectories(root, false)
+	require.NoError(t, err)
+	require.Len(t, discovered, 1)
+	require.Equal(t, "Radarr-3", discovered[0].DirName)
+	require.Equal(t, projectDir, discovered[0].Path)
+}
+
 // DiscoveredProjectDirectories_call is a tiny helper so tests can share the
 // err-check boilerplate.
 func DiscoveredProjectDirectories_call(t *testing.T, root string) []DiscoveredProjectDir {

@@ -65,6 +65,30 @@ func TestResolveConfiguredContainerDirectory(t *testing.T) {
 	})
 }
 
+func TestReadProjectFiles(t *testing.T) {
+	t.Run("detects compose path when not provided", func(t *testing.T) {
+		projectPath := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("services:\n  app:\n    image: nginx:alpine\n"), 0o644))
+		require.NoError(t, os.WriteFile(filepath.Join(projectPath, ".env"), []byte("TZ=UTC\n"), 0o644))
+
+		composeContent, envContent, err := ReadProjectFiles(projectPath, "")
+		require.NoError(t, err)
+		assert.Contains(t, composeContent, "services:")
+		assert.Equal(t, "TZ=UTC\n", envContent)
+	})
+
+	t.Run("uses explicit compose path when provided", func(t *testing.T) {
+		projectPath := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(projectPath, "radarr.yaml"), []byte("services:\n  app:\n    image: lscr.io/linuxserver/radarr:latest\n"), 0o644))
+		require.NoError(t, os.WriteFile(filepath.Join(projectPath, ".env"), []byte("TZ=UTC\n"), 0o644))
+
+		composeContent, envContent, err := ReadProjectFiles(projectPath, filepath.Join(projectPath, "radarr.yaml"))
+		require.NoError(t, err)
+		assert.Contains(t, composeContent, "radarr")
+		assert.Equal(t, "TZ=UTC\n", envContent)
+	})
+}
+
 func TestReadProjectDirectoryFiles_RespectsDepthAndSkipDirectories(t *testing.T) {
 	projectPath := t.TempDir()
 

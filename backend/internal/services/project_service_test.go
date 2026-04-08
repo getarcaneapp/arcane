@@ -1954,6 +1954,110 @@ func TestProjectService_SyncProjectsFromFileSystem_RefreshesServiceCountOnCompos
 	assert.Equal(t, 2, project.ServiceCount)
 }
 
+func TestProjectService_SyncProjectsFromFileSystem_PreservesGitOpsProjectWithCustomComposeFilename(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+	require.NoError(t, db.AutoMigrate(&models.GitOpsSync{}))
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsRoot := t.TempDir()
+	projectDir := filepath.Join(projectsRoot, "Radarr-3")
+	require.NoError(t, os.MkdirAll(projectDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "radarr.yaml"), []byte("services:\n  app:\n    image: lscr.io/linuxserver/radarr:latest\n"), 0o644))
+
+	syncProjectID := "proj-custom-compose"
+	syncID := "sync-custom-compose"
+	sync := &models.GitOpsSync{
+		BaseModel:     models.BaseModel{ID: syncID},
+		Name:          "Radarr Sync",
+		EnvironmentID: "0",
+		RepositoryID:  "repo-1",
+		ComposePath:   "apps/media/radarr.yaml",
+		ProjectName:   "Radarr",
+		ProjectID:     &syncProjectID,
+		SyncDirectory: true,
+	}
+	require.NoError(t, db.Create(sync).Error)
+
+	project := &models.Project{
+		BaseModel:       models.BaseModel{ID: syncProjectID},
+		Name:            "Radarr",
+		DirName:         ptr("Radarr-3"),
+		Path:            projectDir,
+		Status:          models.ProjectStatusStopped,
+		GitOpsManagedBy: &syncID,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
+	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
+
+	items, err := svc.ListAllProjects(ctx)
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	assert.Equal(t, syncProjectID, items[0].ID)
+	assert.Equal(t, projectDir, items[0].Path)
+	assert.Equal(t, syncID, *items[0].GitOpsManagedBy)
+}
+
+func TestProjectService_GetProjectDetails_UsesGitOpsCustomComposeFilename(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+	require.NoError(t, db.AutoMigrate(&models.GitOpsSync{}))
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsRoot := t.TempDir()
+	projectDir := filepath.Join(projectsRoot, "Radarr-3")
+	composeContent := "services:\n  app:\n    image: lscr.io/linuxserver/radarr:latest\n"
+	require.NoError(t, os.MkdirAll(projectDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "radarr.yaml"), []byte(composeContent), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, ".env"), []byte("TZ=UTC\n"), 0o644))
+
+	syncProjectID := "proj-custom-compose-details"
+	syncID := "sync-custom-compose-details"
+	require.NoError(t, db.Create(&models.GitOpsSync{
+		BaseModel:     models.BaseModel{ID: syncID},
+		Name:          "Radarr Sync",
+		EnvironmentID: "0",
+		RepositoryID:  "repo-1",
+		ComposePath:   "apps/media/radarr.yaml",
+		ProjectName:   "Radarr",
+		ProjectID:     &syncProjectID,
+		SyncDirectory: true,
+	}).Error)
+
+	require.NoError(t, db.Create(&models.Project{
+		BaseModel:       models.BaseModel{ID: syncProjectID},
+		Name:            "Radarr",
+		DirName:         ptr("Radarr-3"),
+		Path:            projectDir,
+		Status:          models.ProjectStatusStopped,
+		GitOpsManagedBy: &syncID,
+	}).Error)
+
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
+
+	composeFromContent, envFromContent, err := svc.GetProjectContent(ctx, syncProjectID)
+	require.NoError(t, err)
+	assert.Equal(t, composeContent, composeFromContent)
+	assert.Equal(t, "TZ=UTC\n", envFromContent)
+
+	details, err := svc.GetProjectDetails(ctx, syncProjectID)
+	require.NoError(t, err)
+	assert.Equal(t, "radarr.yaml", details.ComposeFileName)
+	assert.Equal(t, composeContent, details.ComposeContent)
+	assert.Equal(t, "TZ=UTC\n", details.EnvContent)
+	assert.Equal(t, 1, len(details.Services))
+}
+
 func TestProjectService_UpdateProject_WritesThroughSymlinkedProjectPath(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := context.Background()

@@ -26,13 +26,11 @@ func ComposeFileCandidates() []string {
 	return append([]string(nil), composeFileCandidates...)
 }
 
-// detectExistingComposeFile finds an existing compose file in the directory
-func detectExistingComposeFile(dir string) string {
-	for _, filename := range composeFileCandidates {
-		fullPath := filepath.Join(dir, filename)
-		if info, err := os.Stat(fullPath); err == nil && !info.IsDir() {
-			return fullPath
-		}
+// detectExistingComposeFileInternal finds an existing compose file in the directory
+func detectExistingComposeFileInternal(dir string) string {
+	composePath, err := DetectComposeFile(dir)
+	if err == nil {
+		return composePath
 	}
 	return ""
 }
@@ -65,7 +63,7 @@ func WriteComposeFile(projectsRoot, dirPath, content string) error {
 	}
 
 	var composePath string
-	if existingFile := detectExistingComposeFile(dirPath); existingFile != "" {
+	if existingFile := detectExistingComposeFileInternal(dirPath); existingFile != "" {
 		composePath = existingFile
 	} else {
 		composePath = filepath.Join(dirPath, "compose.yaml")

@@ -40,6 +40,56 @@ func TestDetectComposeFile_SupportsPodmanComposeNames(t *testing.T) {
 	}
 }
 
+func TestDetectComposeFile_SupportsSingleCustomComposeName(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	expectedPath := filepath.Join(dir, "radarr.yaml")
+	require.NoError(t, os.WriteFile(expectedPath, []byte("services:\n  app:\n    image: nginx:alpine\n"), 0o600))
+
+	composePath, err := DetectComposeFile(dir)
+	require.NoError(t, err)
+	assert.Equal(t, expectedPath, composePath)
+}
+
+func TestDetectComposeFile_PrefersDirectoryMatchedCustomComposeName(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	dir := filepath.Join(root, "Radarr-3")
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	expectedPath := filepath.Join(dir, "radarr.yaml")
+	require.NoError(t, os.WriteFile(expectedPath, []byte("services:\n  app:\n    image: nginx:alpine\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("x-extra: true\n"), 0o600))
+
+	composePath, err := DetectComposeFile(dir)
+	require.NoError(t, err)
+	assert.Equal(t, expectedPath, composePath)
+}
+
+func TestDetectComposeFile_ReturnsErrorForAmbiguousCustomComposeNames(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "alpha.yaml"), []byte("services:\n  a:\n    image: nginx:alpine\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "beta.yml"), []byte("services:\n  b:\n    image: busybox:latest\n"), 0o600))
+
+	_, err := DetectComposeFile(dir)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "multiple custom compose files")
+}
+
+func TestDetectComposeFile_IgnoresSingleNonComposeYaml(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "values.yaml"), []byte("replicaCount: 2\nimage:\n  tag: latest\n"), 0o600))
+
+	_, err := DetectComposeFile(dir)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no compose file found")
+}
+
 func TestLoadComposeProjectFromDir_SupportsPodmanComposeNames(t *testing.T) {
 	composeContent := "services:\n  app:\n    image: nginx:alpine\n"
 
@@ -75,6 +125,27 @@ func TestLoadComposeProjectFromDir_SupportsPodmanComposeNames(t *testing.T) {
 			assert.NotEmpty(t, project.Services)
 		})
 	}
+}
+
+func TestLoadComposeProjectFromDir_SupportsCustomComposeNames(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	expectedPath := filepath.Join(dir, "radarr.yaml")
+	require.NoError(t, os.WriteFile(expectedPath, []byte("services:\n  app:\n    image: nginx:alpine\n"), 0o600))
+
+	project, composePath, err := LoadComposeProjectFromDir(
+		context.Background(),
+		dir,
+		"radarr",
+		filepath.Dir(dir),
+		false,
+		nil,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, project)
+	assert.Equal(t, expectedPath, composePath)
+	assert.Equal(t, []string{expectedPath}, project.ComposeFiles)
 }
 
 func TestLoadComposeProjectFromDir_EmptyProjectsDirectoryDoesNotCreateParentGlobalEnv(t *testing.T) {

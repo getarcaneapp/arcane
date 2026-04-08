@@ -1,7 +1,6 @@
 package services
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/startup"
@@ -713,6 +713,37 @@ func (s *GitOpsSyncService) SyncAllEnabled(ctx context.Context) error {
 	return nil
 }
 
+func (s *GitOpsSyncService) ReconcileDirectorySyncProjectsOnStartup(ctx context.Context) error {
+	var syncs []models.GitOpsSync
+	if err := s.db.WithContext(ctx).
+		Where("sync_directory = ?", true).
+		Find(&syncs).Error; err != nil {
+		return fmt.Errorf("failed to list directory syncs for startup reconciliation: %w", err)
+	}
+
+	for i := range syncs {
+		originalProjectID := ""
+		if syncs[i].ProjectID != nil {
+			originalProjectID = *syncs[i].ProjectID
+		}
+
+		project, err := s.getDirectorySyncProjectInternal(ctx, &syncs[i])
+		if err != nil {
+			slog.WarnContext(ctx, "Failed to reconcile directory GitOps sync on startup", "syncId", syncs[i].ID, "error", err)
+			continue
+		}
+		if project == nil {
+			continue
+		}
+
+		if originalProjectID != project.ID {
+			slog.InfoContext(ctx, "Reconciled directory GitOps sync on startup", "syncId", syncs[i].ID, "projectId", project.ID)
+		}
+	}
+
+	return nil
+}
+
 func (s *GitOpsSyncService) BrowseFiles(ctx context.Context, environmentID, id string, path string) (*gitops.BrowseResponse, error) {
 	browseCtx, cancel := context.WithTimeout(ctx, defaultGitSyncTimeout)
 	defer cancel()
@@ -849,12 +880,16 @@ func (s *GitOpsSyncService) createProjectForSyncInternal(ctx context.Context, sy
 
 func (s *GitOpsSyncService) getOrCreateProjectInternal(ctx context.Context, sync *models.GitOpsSync, id string, composeContent string, envContent *string, result *gitops.SyncResult, actor models.User) (*models.Project, error) {
 	var project *models.Project
-	var err error
 
 	if sync.ProjectID != nil && *sync.ProjectID != "" {
-		project, err = s.projectService.GetProjectFromDatabaseByID(ctx, *sync.ProjectID)
-		if err != nil {
-			slog.WarnContext(ctx, "Existing project not found, will create new one", "projectId", *sync.ProjectID, "error", err)
+		var found bool
+		var lookupErr error
+		project, found, lookupErr = s.lookupProjectByIDInternal(ctx, *sync.ProjectID)
+		if lookupErr != nil {
+			return nil, s.failSync(ctx, id, result, sync, actor, "Failed to load existing project", lookupErr.Error())
+		}
+		if !found {
+			slog.WarnContext(ctx, "Existing project not found, will create new one", "projectId", *sync.ProjectID)
 			project = nil
 		}
 	}
@@ -1022,7 +1057,7 @@ func (s *GitOpsSyncService) stageDirectorySyncInternal(ctx context.Context, sync
 	}
 
 	if project != nil {
-		if err := copyDirectoryContentsInternal(project.Path, stagePath); err != nil {
+		if err := projects.CopyDirectoryContents(project.Path, stagePath); err != nil {
 			_ = os.RemoveAll(stagePath)
 			return nil, fmt.Errorf("failed to stage current project files: %w", err)
 		}
@@ -1042,15 +1077,18 @@ func (s *GitOpsSyncService) stageDirectorySyncInternal(ctx context.Context, sync
 	}
 
 	composeFileName := filepath.Base(sync.ComposePath)
-	if err := removeStaleComposeFilesInternal(stagePath, composeFileName, syncedFiles); err != nil {
+	if err := projects.RemoveStaleComposeFiles(stagePath, composeFileName, syncedFiles); err != nil {
 		_ = os.RemoveAll(stagePath)
 		return nil, fmt.Errorf("failed to remove stale compose files: %w", err)
 	}
 
-	contentsChanged, err := directorySyncContentsChangedInternal(project, syncFiles, oldSyncedFiles, composeFileName)
-	if err != nil {
-		_ = os.RemoveAll(stagePath)
-		return nil, fmt.Errorf("failed to compare staged directory changes: %w", err)
+	contentsChanged := true
+	if project != nil {
+		contentsChanged, err = projects.DirectorySyncContentsChanged(project.Path, syncFiles, oldSyncedFiles, composeFileName)
+		if err != nil {
+			_ = os.RemoveAll(stagePath)
+			return nil, fmt.Errorf("failed to compare staged directory changes: %w", err)
+		}
 	}
 
 	// Write the repo files after cleanup so validation sees the final on-disk
@@ -1076,24 +1114,269 @@ func (s *GitOpsSyncService) stageDirectorySyncInternal(ctx context.Context, sync
 	}, nil
 }
 
-// getDirectorySyncProjectInternal resolves the linked project for a sync when one
-// exists, while tolerating deleted/stale project references.
-func (s *GitOpsSyncService) getDirectorySyncProjectInternal(ctx context.Context, sync *models.GitOpsSync) (*models.Project, error) {
-	if sync.ProjectID == nil || *sync.ProjectID == "" {
-		return nil, nil
+func (s *GitOpsSyncService) lookupProjectByIDInternal(ctx context.Context, projectID string) (*models.Project, bool, error) {
+	var project models.Project
+	if err := s.db.WithContext(ctx).Where("id = ?", projectID).First(&project).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, false, nil
+		}
+		return nil, false, fmt.Errorf("failed to get project %s: %w", projectID, err)
 	}
 
-	project, err := s.projectService.GetProjectFromDatabaseByID(ctx, *sync.ProjectID)
+	return &project, true, nil
+}
+
+func (s *GitOpsSyncService) lookupProjectByPathInternal(ctx context.Context, projectPath string) (*models.Project, bool, error) {
+	var project models.Project
+	if err := s.db.WithContext(ctx).Where("path = ?", projectPath).First(&project).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, false, nil
+		}
+		return nil, false, fmt.Errorf("failed to get project by path %s: %w", projectPath, err)
+	}
+
+	return &project, true, nil
+}
+
+func (s *GitOpsSyncService) ensureDirectorySyncProjectLinkedInternal(ctx context.Context, sync *models.GitOpsSync, project *models.Project) error {
+	if sync == nil || project == nil {
+		return nil
+	}
+
+	if project.GitOpsManagedBy != nil && *project.GitOpsManagedBy != "" && *project.GitOpsManagedBy != sync.ID {
+		return fmt.Errorf("project %s is already managed by a different GitOps sync", project.ID)
+	}
+
+	if sync.ProjectID != nil && *sync.ProjectID == project.ID && project.GitOpsManagedBy != nil && *project.GitOpsManagedBy == sync.ID {
+		s.projectService.cacheComposeProjectIDInternal(normalizeComposeProjectName(project.Name), project.ID)
+		return nil
+	}
+
+	updatesSync := map[string]any{}
+	updatesProject := map[string]any{}
+	if sync.ProjectID == nil || *sync.ProjectID != project.ID {
+		updatesSync["project_id"] = project.ID
+	}
+	if project.GitOpsManagedBy == nil || *project.GitOpsManagedBy != sync.ID {
+		updatesProject["gitops_managed_by"] = sync.ID
+	}
+
+	if len(updatesSync) == 0 && len(updatesProject) == 0 {
+		s.projectService.cacheComposeProjectIDInternal(normalizeComposeProjectName(project.Name), project.ID)
+		return nil
+	}
+
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if len(updatesSync) > 0 {
+			if err := tx.Model(&models.GitOpsSync{}).Where("id = ?", sync.ID).Updates(updatesSync).Error; err != nil {
+				return fmt.Errorf("failed to relink GitOps sync %s: %w", sync.ID, err)
+			}
+		}
+		if len(updatesProject) > 0 {
+			if err := tx.Model(&models.Project{}).Where("id = ?", project.ID).Updates(updatesProject).Error; err != nil {
+				return fmt.Errorf("failed to relink project %s to GitOps sync %s: %w", project.ID, sync.ID, err)
+			}
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	sync.ProjectID = &project.ID
+	project.GitOpsManagedBy = &sync.ID
+	s.projectService.cacheComposeProjectIDInternal(normalizeComposeProjectName(project.Name), project.ID)
+
+	return nil
+}
+
+func (s *GitOpsSyncService) findRecoverableManagedProjectInternal(ctx context.Context, sync *models.GitOpsSync) (*models.Project, error) {
+	var managedProjects []models.Project
+	if err := s.db.WithContext(ctx).
+		Where("gitops_managed_by = ?", sync.ID).
+		Find(&managedProjects).Error; err != nil {
+		return nil, fmt.Errorf("failed to list GitOps-managed projects for sync %s: %w", sync.ID, err)
+	}
+
+	matches := make([]models.Project, 0, len(managedProjects))
+	for i := range managedProjects {
+		project := managedProjects[i]
+		if err := s.projectService.ensureProjectPathUnderRoot(ctx, &project, true); err != nil {
+			return nil, err
+		}
+		if _, err := s.projectService.resolveProjectComposeFileInternal(ctx, &project); err != nil {
+			if _, ok := errors.AsType[*common.ProjectComposeFileNotFoundError](err); ok {
+				continue
+			}
+			return nil, err
+		}
+		matches = append(matches, project)
+	}
+
+	switch len(matches) {
+	case 0:
+		return nil, nil
+	case 1:
+		return &matches[0], nil
+	default:
+		return nil, fmt.Errorf("multiple GitOps-managed projects match sync %s; refusing automatic relink", sync.ID)
+	}
+}
+
+func (s *GitOpsSyncService) findUniqueProjectDirectoryCandidateInternal(ctx context.Context, sync *models.GitOpsSync) (string, error) {
+	projectsDir, err := s.projectService.getProjectsDirectoryInternal(ctx)
 	if err != nil {
-		slog.WarnContext(ctx, "Existing project not found, will create new one", "projectId", *sync.ProjectID, "error", err)
-		return nil, nil
+		return "", err
 	}
 
-	if err := s.projectService.ensureProjectPathUnderRoot(ctx, project, false); err != nil {
+	entries, err := os.ReadDir(projectsDir)
+	if err != nil {
+		return "", fmt.Errorf("failed to list projects directory %s: %w", projectsDir, err)
+	}
+
+	composeFileName := strings.TrimSpace(filepath.Base(sync.ComposePath))
+	if composeFileName == "" || composeFileName == "." {
+		return "", nil
+	}
+
+	prefix := projects.SanitizeProjectName(sync.ProjectName)
+	matches := make([]string, 0, 1)
+	for _, entry := range entries {
+		candidatePath := filepath.Join(projectsDir, entry.Name())
+		if !projects.IsProjectDirectoryEntry(entry, candidatePath, false) {
+			continue
+		}
+		if prefix != "" && entry.Name() != prefix && !strings.HasPrefix(entry.Name(), prefix+"-") {
+			continue
+		}
+
+		composePath := filepath.Join(candidatePath, composeFileName)
+		if info, statErr := os.Stat(composePath); statErr == nil {
+			if !info.IsDir() {
+				matches = append(matches, candidatePath)
+			}
+		} else if !os.IsNotExist(statErr) {
+			return "", fmt.Errorf("failed to inspect recovery candidate %s: %w", composePath, statErr)
+		}
+	}
+
+	switch len(matches) {
+	case 0:
+		return "", nil
+	case 1:
+		return matches[0], nil
+	default:
+		return "", fmt.Errorf("multiple project directories match sync %s; refusing automatic relink", sync.ID)
+	}
+}
+
+func (s *GitOpsSyncService) createRecoveredProjectFromDirectoryInternal(ctx context.Context, sync *models.GitOpsSync, projectPath string) (*models.Project, error) {
+	dirName := filepath.Base(projectPath)
+	reason := "Project recovered from existing GitOps-managed directory"
+	project := &models.Project{
+		Name:            sync.ProjectName,
+		DirName:         &dirName,
+		Path:            projectPath,
+		Status:          models.ProjectStatusUnknown,
+		StatusReason:    &reason,
+		ServiceCount:    0,
+		RunningCount:    0,
+		GitOpsManagedBy: &sync.ID,
+	}
+
+	if serviceCount, err := s.projectService.countServicesFromCompose(ctx, *project); err == nil {
+		project.ServiceCount = serviceCount
+	} else {
+		slog.WarnContext(ctx, "Failed to count services while recovering GitOps project", "syncId", sync.ID, "path", projectPath, "error", err)
+	}
+
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(project).Error; err != nil {
+			return fmt.Errorf("failed to create recovered project for sync %s: %w", sync.ID, err)
+		}
+
+		if err := tx.Model(&models.GitOpsSync{}).Where("id = ?", sync.ID).Update("project_id", project.ID).Error; err != nil {
+			return fmt.Errorf("failed to relink sync %s to recovered project %s: %w", sync.ID, project.ID, err)
+		}
+
+		return nil
+	}); err != nil {
 		return nil, err
 	}
 
+	sync.ProjectID = &project.ID
+	s.projectService.cacheComposeProjectIDInternal(normalizeComposeProjectName(project.Name), project.ID)
+
 	return project, nil
+}
+
+func (s *GitOpsSyncService) recoverProjectFromDirectoryCandidateInternal(ctx context.Context, sync *models.GitOpsSync) (*models.Project, error) {
+	projectPath, err := s.findUniqueProjectDirectoryCandidateInternal(ctx, sync)
+	if err != nil || projectPath == "" {
+		return nil, err
+	}
+
+	project, found, err := s.lookupProjectByPathInternal(ctx, projectPath)
+	if err != nil {
+		return nil, err
+	}
+	if found {
+		if err := s.projectService.ensureProjectPathUnderRoot(ctx, project, true); err != nil {
+			return nil, err
+		}
+		if err := s.ensureDirectorySyncProjectLinkedInternal(ctx, sync, project); err != nil {
+			return nil, err
+		}
+		return project, nil
+	}
+
+	return s.createRecoveredProjectFromDirectoryInternal(ctx, sync, projectPath)
+}
+
+// getDirectorySyncProjectInternal resolves the linked project for a sync when one
+// exists, while tolerating deleted/stale project references.
+func (s *GitOpsSyncService) getDirectorySyncProjectInternal(ctx context.Context, sync *models.GitOpsSync) (*models.Project, error) {
+	if sync == nil {
+		return nil, nil
+	}
+
+	if sync.ProjectID != nil && *sync.ProjectID != "" {
+		project, found, err := s.lookupProjectByIDInternal(ctx, *sync.ProjectID)
+		if err != nil {
+			return nil, err
+		}
+		if found {
+			if err := s.projectService.ensureProjectPathUnderRoot(ctx, project, true); err != nil {
+				return nil, err
+			}
+			if err := s.ensureDirectorySyncProjectLinkedInternal(ctx, sync, project); err != nil {
+				return nil, err
+			}
+			return project, nil
+		}
+
+		slog.WarnContext(ctx, "Existing project not found, attempting recovery", "projectId", *sync.ProjectID, "syncId", sync.ID)
+	}
+
+	project, err := s.findRecoverableManagedProjectInternal(ctx, sync)
+	if err != nil {
+		return nil, err
+	}
+	if project != nil {
+		if err := s.ensureDirectorySyncProjectLinkedInternal(ctx, sync, project); err != nil {
+			return nil, err
+		}
+		return project, nil
+	}
+
+	project, err = s.recoverProjectFromDirectoryCandidateInternal(ctx, sync)
+	if err != nil {
+		return nil, err
+	}
+	if project != nil {
+		return project, nil
+	}
+
+	return nil, nil
 }
 
 // validateDirectorySyncStageInternal loads the staged compose project using the real
@@ -1234,141 +1517,6 @@ func (s *GitOpsSyncService) updateDirectorySyncProjectInternal(ctx context.Conte
 	}
 
 	return project, nil
-}
-
-// directorySyncContentsChangedInternal compares the currently managed synced files with
-// the newly fetched repo files to decide whether a redeploy is needed.
-func directorySyncContentsChangedInternal(project *models.Project, syncFiles []projects.SyncFile, oldSyncedFiles []string, composeFileName string) (bool, error) {
-	if project == nil {
-		return true, nil
-	}
-
-	if info, err := os.Stat(project.Path); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return true, nil
-		}
-		return false, err
-	} else if !info.IsDir() {
-		return false, fmt.Errorf("project path is not a directory: %s", project.Path)
-	}
-
-	newFileSet := make(map[string]struct{}, len(syncFiles))
-	for _, file := range syncFiles {
-		newFileSet[file.RelativePath] = struct{}{}
-		existingContent, err := os.ReadFile(filepath.Join(project.Path, file.RelativePath))
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				return true, nil
-			}
-			return false, err
-		}
-		if !bytes.Equal(existingContent, file.Content) {
-			return true, nil
-		}
-	}
-
-	for _, oldFile := range oldSyncedFiles {
-		if _, exists := newFileSet[oldFile]; exists {
-			continue
-		}
-		if _, err := os.Stat(filepath.Join(project.Path, oldFile)); err == nil {
-			return true, nil
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return false, err
-		}
-	}
-
-	for _, candidate := range projects.ComposeFileCandidates() {
-		if candidate == composeFileName {
-			continue
-		}
-		if _, exists := newFileSet[candidate]; exists {
-			continue
-		}
-		if _, err := os.Stat(filepath.Join(project.Path, candidate)); err == nil {
-			return true, nil
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return false, err
-		}
-	}
-
-	return false, nil
-}
-
-// removeStaleComposeFilesInternal drops old canonical compose filenames from the staged
-// project when the repo now uses a different compose filename.
-func removeStaleComposeFilesInternal(projectPath, composeFileName string, syncedFiles []string) error {
-	syncedFileSet := make(map[string]struct{}, len(syncedFiles))
-	for _, file := range syncedFiles {
-		syncedFileSet[file] = struct{}{}
-	}
-
-	for _, candidate := range projects.ComposeFileCandidates() {
-		if candidate == composeFileName {
-			continue
-		}
-		if _, exists := syncedFileSet[candidate]; exists {
-			continue
-		}
-		if err := os.Remove(filepath.Join(projectPath, candidate)); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// copyDirectoryContentsInternal clones the current project tree into the staging
-// directory so directory sync updates can preserve non-synced local files.
-func copyDirectoryContentsInternal(srcDir, destDir string) error {
-	srcRoot, err := os.OpenRoot(srcDir)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = srcRoot.Close() }()
-
-	destRoot, err := os.OpenRoot(destDir)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = destRoot.Close() }()
-
-	return filepath.WalkDir(srcDir, func(path string, d os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if path == srcDir {
-			return nil
-		}
-
-		relPath, err := filepath.Rel(srcDir, path)
-		if err != nil {
-			return err
-		}
-
-		if d.IsDir() {
-			return destRoot.MkdirAll(relPath, 0o755)
-		}
-		if d.Type()&os.ModeSymlink != 0 {
-			return nil
-		}
-
-		info, err := d.Info()
-		if err != nil {
-			return err
-		}
-
-		content, err := srcRoot.ReadFile(relPath)
-		if err != nil {
-			return err
-		}
-
-		if err := destRoot.MkdirAll(filepath.Dir(relPath), 0o755); err != nil {
-			return err
-		}
-
-		return destRoot.WriteFile(relPath, content, info.Mode())
-	})
 }
 
 // updateSyncStatusWithFiles updates sync status including the list of synced files
