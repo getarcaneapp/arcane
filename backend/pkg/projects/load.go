@@ -146,7 +146,7 @@ func loadComposeProjectInternal(
 	// Build a per-service origin map by walking `include:` directives, so
 	// services pulled in via includes are labeled with the include's own
 	// working_dir/compose_file rather than the top-level compose file's.
-	originMap := buildServiceOriginMap(ctx, composeFile, fullEnvMap)
+	originMap := buildServiceOriginMapInternal(ctx, composeFile, fullEnvMap)
 
 	injectServiceConfiguration(project, injectionVars, workdir, composeFile, originMap)
 

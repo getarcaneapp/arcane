@@ -52,7 +52,7 @@ services:
       - ./config:/config
 `)
 
-	originMap := buildServiceOriginMap(context.Background(), topCompose, EnvMap{})
+	originMap := buildServiceOriginMapInternal(context.Background(), topCompose, EnvMap{})
 
 	origin, ok := originMap["seerr"]
 	if !ok {
@@ -93,7 +93,7 @@ services:
     image: alpine
 `)
 
-	originMap := buildServiceOriginMap(context.Background(), topCompose, EnvMap{})
+	originMap := buildServiceOriginMapInternal(context.Background(), topCompose, EnvMap{})
 
 	origin, ok := originMap["shared_svc"]
 	if !ok {
@@ -136,7 +136,7 @@ services:
     image: alpine
 `)
 
-	originMap := buildServiceOriginMap(context.Background(), a, EnvMap{})
+	originMap := buildServiceOriginMapInternal(context.Background(), a, EnvMap{})
 
 	if origin := originMap["b_svc"]; origin.WorkingDir != bDir {
 		t.Errorf("b_svc WorkingDir = %q, want %q", origin.WorkingDir, bDir)

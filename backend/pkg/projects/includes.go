@@ -13,7 +13,7 @@ import (
 	"github.com/goccy/go-yaml"
 )
 
-// buildServiceOriginMap walks `include:` directives in composeFilePath and
+// buildServiceOriginMapInternal walks `include:` directives in composeFilePath and
 // returns a map of service name -> origin (working dir + compose file) for
 // every service contributed by an include. Services defined directly in the
 // top-level compose file are NOT in the map; callers should fall back to
@@ -26,7 +26,7 @@ import (
 // caused #2264, where included services' bind mounts were re-rooted at the
 // top-level project's directory and Postgres ran initdb on what it thought
 // were empty data directories.
-func buildServiceOriginMap(ctx context.Context, composeFilePath string, envMap EnvMap) map[string]serviceOrigin {
+func buildServiceOriginMapInternal(ctx context.Context, composeFilePath string, envMap EnvMap) map[string]serviceOrigin {
 	out := map[string]serviceOrigin{}
 	visited := map[string]bool{}
 	collectServiceOriginsInternal(ctx, composeFilePath, envMap, out, visited)
@@ -50,7 +50,7 @@ func collectServiceOriginsInternal(ctx context.Context, composeFilePath string, 
 	}
 	var data map[string]any
 	if err := yaml.Unmarshal(content, &data); err != nil {
-		slog.DebugContext(ctx, "buildServiceOriginMap: failed to parse compose file", "path", abs, "error", err)
+		slog.DebugContext(ctx, "buildServiceOriginMapInternal: failed to parse compose file", "path", abs, "error", err)
 		return
 	}
 
