@@ -29,6 +29,13 @@
 	let isLoading = $state({ remove: false });
 	const createdDate = $derived(volume.createdAt ? format(new Date(volume.createdAt), 'PP p') : m.common_unknown());
 
+	const effectiveMountpoint = $derived.by(() => {
+		if (volume.options?.type === 'none' && volume.options?.device) {
+			return volume.options.device;
+		}
+		return volume.mountpoint;
+	});
+
 	let selectedTab = $state('overview');
 
 	const tabItems = $derived([
@@ -205,7 +212,7 @@
 									<div class="min-w-0 flex-1">
 										<p class="text-muted-foreground text-sm font-medium">{m.common_mountpoint()}</p>
 										<div class="bg-muted/50 mt-2 cursor-pointer rounded-lg border p-3 select-all" title="Click to select">
-											<code class="font-mono text-sm break-all">{volume.mountpoint}</code>
+											<code class="font-mono text-sm break-all">{effectiveMountpoint}</code>
 										</div>
 									</div>
 								</div>

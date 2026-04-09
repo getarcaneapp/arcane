@@ -124,11 +124,16 @@ type Create struct {
 //
 // InUse is set to true if the volume's UsageData.RefCount is >= 1, false otherwise.
 func NewSummary(v volume.Volume) Volume {
+	mountpoint := v.Mountpoint
+	if v.Options["type"] == "none" && v.Options["device"] != "" {
+		mountpoint = v.Options["device"]
+	}
+
 	dto := Volume{
 		ID:         v.Name,
 		Name:       v.Name,
 		Driver:     v.Driver,
-		Mountpoint: v.Mountpoint,
+		Mountpoint: mountpoint,
 		Scope:      v.Scope,
 		Options:    v.Options,
 		Labels:     v.Labels,
