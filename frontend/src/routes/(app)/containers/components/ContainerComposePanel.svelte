@@ -2,7 +2,12 @@
 	import { ComposeEditorWrapper } from '$lib/components/compose';
 	import CodePanel from '../../projects/components/CodePanel.svelte';
 	import { projectService } from '$lib/services/project-service';
+	import { useQueryClient } from '@tanstack/svelte-query';
+	import { queryKeys } from '$lib/query/query-keys';
+	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import type { Project, IncludeFile } from '$lib/types/project.type';
+
+	const queryClient = useQueryClient();
 
 	let {
 		project,
@@ -32,6 +37,13 @@
 			await projectService.updateProjectIncludeFile(project.id, includeFile.relativePath, composeContent);
 		} else {
 			await projectService.updateProject(project.id, undefined, composeContent);
+		}
+
+		// Invalidate cached project details so the editor reflects the saved content
+		// without requiring a full page refresh.
+		const envId = await environmentStore.getCurrentEnvironmentId().catch(() => null);
+		if (envId) {
+			await queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(envId, project.id) });
 		}
 	}
 </script>
