@@ -5,7 +5,6 @@
 	import { goto } from '$app/navigation';
 	import { m } from '$lib/paraglide/messages';
 	import { projectService } from '$lib/services/project-service';
-	import { imageService } from '$lib/services/image-service';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { queryKeys } from '$lib/query/query-keys';
 	import type { ProjectStatusCounts } from '$lib/types/project.type';
@@ -41,7 +40,13 @@
 
 	const checkUpdatesMutation = createMutation(() => ({
 		mutationKey: ['projects', 'check-updates', envId],
-		mutationFn: () => imageService.runAutoUpdate(),
+		mutationFn: async () => {
+			const projectList = projects?.data ?? [];
+			for (const proj of projectList) {
+				await projectService.pullProjectImages(proj.id);
+				await projectService.deployProject(proj.id, { pullPolicy: 'always' });
+			}
+		},
 		onSuccess: async () => {
 			toast.success(m.compose_update_success());
 			await projectsQuery.refetch();
