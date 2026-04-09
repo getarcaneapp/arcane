@@ -319,7 +319,7 @@ func (s *ContainerService) RestartContainer(ctx context.Context, containerID str
 //   - handled=true, err!=nil: compose path was attempted and failed. The
 //     caller MUST surface the error and MUST NOT fall back to the standalone
 //     path, which would clobber whatever partial state ComposeUp left behind.
-func (s *ContainerService) tryRedeployViaComposeProjectInternal(ctx context.Context, dockerClient *client.Client, containerInfo container.InspectResponse, containerID, containerName string, user models.User) (string, bool, error) {
+func (s *ContainerService) tryRedeployViaComposeProjectInternal(ctx context.Context, containerInfo container.InspectResponse, containerID, containerName string, user models.User) (string, bool, error) {
 	if s.projectService == nil || containerInfo.Config == nil {
 		return "", false, nil
 	}
@@ -464,7 +464,7 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 	// the project's include/project_directory/env-file context are honored. The
 	// standalone Docker-API path below only clones the existing container config
 	// from the daemon and would silently ignore any compose edits.
-	if newID, handled, composeErr := s.tryRedeployViaComposeProjectInternal(ctx, dockerClient, containerInfo, containerID, containerName, user); handled {
+	if newID, handled, composeErr := s.tryRedeployViaComposeProjectInternal(ctx, containerInfo, containerID, containerName, user); handled {
 		if composeErr != nil {
 			return "", composeErr
 		}
