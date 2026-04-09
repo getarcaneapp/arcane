@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	clipkg "github.com/getarcaneapp/arcane/cli/pkg"
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 var stdoutCaptureMuInternal sync.Mutex
@@ -37,6 +39,7 @@ func executeCLIIntegrationCommandInternal(t *testing.T, args []string) (string, 
 	t.Helper()
 
 	root := clipkg.RootCommand()
+	resetCommandFlagsInternal(t, root)
 	errOut := &strings.Builder{}
 	root.SetErr(errOut)
 	root.SetArgs(args)
@@ -69,4 +72,41 @@ func executeCLIIntegrationCommandInternal(t *testing.T, args []string) (string, 
 	}
 
 	return outBuf, errOut.String(), runErr
+}
+
+func resetCommandFlagsInternal(t *testing.T, root *cobra.Command) {
+	t.Helper()
+
+	if root == nil {
+		return
+	}
+
+	resetFlagSetInternal(t, root.PersistentFlags())
+	resetFlagSetInternal(t, root.Flags())
+	for _, cmd := range root.Commands() {
+		resetCommandFlagsInternal(t, cmd)
+	}
+}
+
+func resetFlagSetInternal(t *testing.T, flagSet *pflag.FlagSet) {
+	t.Helper()
+
+	if flagSet == nil {
+		return
+	}
+
+	flagSet.VisitAll(func(flag *pflag.Flag) {
+		defValue := flag.DefValue
+		switch flag.Value.Type() {
+		case "stringSlice", "stringArray":
+			if defValue == "[]" {
+				defValue = ""
+			}
+		}
+
+		if err := flag.Value.Set(defValue); err != nil {
+			t.Fatalf("reset flag %s: %v", flag.Name, err)
+		}
+		flag.Changed = false
+	})
 }

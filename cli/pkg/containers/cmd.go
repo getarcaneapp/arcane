@@ -23,6 +23,7 @@ import (
 
 var (
 	containersLimit int
+	containersStart int
 	containersAll   bool
 	forceFlag       bool
 	jsonOutput      bool
@@ -67,16 +68,16 @@ var containersListCmd = &cobra.Command{
 		}
 
 		path := types.Endpoints.Containers(c.EnvID())
-		effectiveLimit := cmdutil.EffectiveLimit(cmd, "containers", "limit", containersLimit, 20)
-		if effectiveLimit > 0 {
-			path = fmt.Sprintf("%s?pageSize=%d", path, effectiveLimit)
-		}
 		if containersAll {
-			separator := "?"
-			if strings.Contains(path, "?") {
-				separator = "&"
+			if cmd.Flags().Changed("limit") || cmd.Flags().Changed("start") {
+				return fmt.Errorf("--all cannot be combined with explicit pagination flags")
 			}
-			path = fmt.Sprintf("%s%sall=true", path, separator)
+			path = fmt.Sprintf("%s?all=true", path)
+		} else {
+			path, err = cmdutil.ApplyPaginationParams(cmd, path, "containers", "limit", containersLimit, 20, "start", containersStart)
+			if err != nil {
+				return fmt.Errorf("failed to build pagination query: %w", err)
+			}
 		}
 
 		resp, err := c.Get(cmd.Context(), path)
@@ -116,7 +117,7 @@ var containersListCmd = &cobra.Command{
 		}
 
 		output.Table(headers, rows)
-		fmt.Printf("\nTotal: %d containers\n", result.Pagination.TotalItems)
+		output.Showing(len(result.Data), result.Pagination.TotalItems, "containers")
 		return nil
 	},
 }
@@ -653,6 +654,7 @@ func init() {
 
 	// List command flags
 	containersListCmd.Flags().IntVarP(&containersLimit, "limit", "n", 20, "Number of containers to show")
+	containersListCmd.Flags().IntVar(&containersStart, "start", 0, "Offset for pagination")
 	containersListCmd.Flags().BoolVarP(&containersAll, "all", "a", false, "Show all containers (including stopped)")
 	containersListCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 

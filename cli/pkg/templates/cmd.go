@@ -27,6 +27,7 @@ const maxTemplatePromptOptions = 20
 
 var (
 	limitFlag       int
+	startFlag       int
 	templateListAll bool
 	forceFlag       bool
 	jsonOutput      bool
@@ -68,29 +69,57 @@ var listCmd = &cobra.Command{
 			return err
 		}
 
-		path := types.Endpoints.Templates()
+		var (
+			templates   []template.Template
+			totalItems  int64
+			jsonPayload any
+			path        string
+		)
+
 		if templateListAll {
-			path = types.Endpoints.TemplatesAll()
-		} else {
-			effectiveLimit := cmdutil.EffectiveLimit(cmd, "templates", "limit", limitFlag, 20)
-			if effectiveLimit > 0 {
-				path = fmt.Sprintf("%s?limit=%d", path, effectiveLimit)
+			if cmd.Flags().Changed("limit") || cmd.Flags().Changed("start") {
+				return fmt.Errorf("--all cannot be combined with explicit pagination flags")
 			}
-		}
+			path = types.Endpoints.TemplatesAll()
+			resp, err := c.Get(cmd.Context(), path)
+			if err != nil {
+				return fmt.Errorf("failed to list templates: %w", err)
+			}
+			defer func() { _ = resp.Body.Close() }()
 
-		resp, err := c.Get(cmd.Context(), path)
-		if err != nil {
-			return fmt.Errorf("failed to list templates: %w", err)
-		}
-		defer func() { _ = resp.Body.Close() }()
+			var result base.ApiResponse[[]template.Template]
+			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+				return fmt.Errorf("failed to parse response: %w", err)
+			}
 
-		var result base.ApiResponse[[]template.Template]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+			templates = result.Data
+			totalItems = int64(len(result.Data))
+			jsonPayload = result.Data
+		} else {
+			path = types.Endpoints.Templates()
+			path, err = cmdutil.ApplyPaginationParams(cmd, path, "templates", "limit", limitFlag, 20, "start", startFlag)
+			if err != nil {
+				return fmt.Errorf("failed to build pagination query: %w", err)
+			}
+
+			resp, err := c.Get(cmd.Context(), path)
+			if err != nil {
+				return fmt.Errorf("failed to list templates: %w", err)
+			}
+			defer func() { _ = resp.Body.Close() }()
+
+			var result base.Paginated[template.Template]
+			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+				return fmt.Errorf("failed to parse response: %w", err)
+			}
+
+			templates = result.Data
+			totalItems = result.Pagination.TotalItems
+			jsonPayload = result
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
+			resultBytes, err := json.MarshalIndent(jsonPayload, "", "  ")
 			if err != nil {
 				return fmt.Errorf("failed to marshal JSON: %w", err)
 			}
@@ -99,8 +128,8 @@ var listCmd = &cobra.Command{
 		}
 
 		headers := []string{"NAME", "CUSTOM", "REMOTE", "DESCRIPTION"}
-		rows := make([][]string, len(result.Data))
-		for i, tpl := range result.Data {
+		rows := make([][]string, len(templates))
+		for i, tpl := range templates {
 			custom := "no"
 			if tpl.IsCustom {
 				custom = "yes"
@@ -118,7 +147,7 @@ var listCmd = &cobra.Command{
 		}
 
 		output.Table(headers, rows)
-		fmt.Printf("\nTotal: %d templates\n", len(result.Data))
+		output.Showing(len(templates), totalItems, "templates")
 		return nil
 	},
 }
@@ -1144,6 +1173,7 @@ func init() {
 	TemplatesCmd.AddCommand(fetchCmd)
 
 	listCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of templates to show")
+	listCmd.Flags().IntVar(&startFlag, "start", 0, "Offset for pagination")
 	listCmd.Flags().BoolVarP(&templateListAll, "all", "a", false, "List all templates (including remote)")
 	listCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	defaultCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")

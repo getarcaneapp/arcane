@@ -15,6 +15,7 @@ import (
 
 var (
 	limitFlag  int
+	startFlag  int
 	forceFlag  bool
 	jsonOutput bool
 )
@@ -38,9 +39,9 @@ var listCmd = &cobra.Command{
 		}
 
 		path := types.Endpoints.Events()
-		effectiveLimit := cmdutil.EffectiveLimit(cmd, "events", "limit", limitFlag, 20)
-		if effectiveLimit > 0 {
-			path = fmt.Sprintf("%s?limit=%d", path, effectiveLimit)
+		path, err = cmdutil.ApplyPaginationParams(cmd, path, "events", "limit", limitFlag, 20, "start", startFlag)
+		if err != nil {
+			return fmt.Errorf("failed to build pagination query: %w", err)
 		}
 
 		resp, err := c.Get(cmd.Context(), path)
@@ -84,7 +85,7 @@ var listCmd = &cobra.Command{
 		}
 
 		output.Table(headers, rows)
-		fmt.Printf("\nTotal: %d events\n", result.Pagination.TotalItems)
+		output.Showing(len(result.Data), result.Pagination.TotalItems, "events")
 		return nil
 	},
 }
@@ -100,9 +101,9 @@ var listEnvCmd = &cobra.Command{
 		}
 
 		path := types.Endpoints.EventsEnvironment(c.EnvID())
-		effectiveLimit := cmdutil.EffectiveLimit(cmd, "events", "limit", limitFlag, 20)
-		if effectiveLimit > 0 {
-			path = fmt.Sprintf("%s?limit=%d", path, effectiveLimit)
+		path, err = cmdutil.ApplyPaginationParams(cmd, path, "events", "limit", limitFlag, 20, "start", startFlag)
+		if err != nil {
+			return fmt.Errorf("failed to build pagination query: %w", err)
 		}
 
 		resp, err := c.Get(cmd.Context(), path)
@@ -146,7 +147,7 @@ var listEnvCmd = &cobra.Command{
 		}
 
 		output.Table(headers, rows)
-		fmt.Printf("\nTotal: %d events\n", result.Pagination.TotalItems)
+		output.Showing(len(result.Data), result.Pagination.TotalItems, "events")
 		return nil
 	},
 }
@@ -194,9 +195,11 @@ func init() {
 	EventsCmd.AddCommand(deleteCmd)
 
 	listCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of events to show")
+	listCmd.Flags().IntVar(&startFlag, "start", 0, "Offset for pagination")
 	listCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 
 	listEnvCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of events to show")
+	listEnvCmd.Flags().IntVar(&startFlag, "start", 0, "Offset for pagination")
 	listEnvCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 
 	deleteCmd.Flags().BoolVarP(&forceFlag, "force", "f", false, "Force deletion without confirmation")

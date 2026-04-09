@@ -30,6 +30,8 @@ var KnownPaginatedResources = []string{
 	"environments",
 	"registries",
 	"templates",
+	"repos",
+	"gitops-syncs",
 	"users",
 	"events",
 	"apikeys",
@@ -56,10 +58,14 @@ func NormalizePaginatedResource(resource string) string {
 		return "projects"
 	case "environment":
 		return "environments"
-	case "registry", "registrys":
+	case "registry", "registries":
 		return "registries"
 	case "template":
 		return "templates"
+	case "repo", "repos", "gitrepository", "gitrepositories", "gitrepo", "gitrepos":
+		return "repos"
+	case "gitops", "gitop", "gitopssync", "gitopssyncs":
+		return "gitops-syncs"
 	case "user":
 		return "users"
 	case "event":

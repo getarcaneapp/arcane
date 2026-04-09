@@ -154,6 +154,11 @@ func KeyValue(key string, value any) {
 	fmt.Printf("%s: %v\n", render(keyStyle, keyText), render(valueStyle, valueText))
 }
 
+// Showing prints a pagination summary in the form "Showing: shown/total label".
+func Showing(shown int, total int64, label string) {
+	fmt.Printf("\nShowing: %d/%d %s\n", shown, total, label)
+}
+
 func hasAnsi(s string) bool {
 	if s == "" {
 		return false

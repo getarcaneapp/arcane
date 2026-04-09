@@ -21,6 +21,7 @@ import (
 
 var (
 	limitFlag      int
+	startFlag      int
 	forceFlag      bool
 	jsonOutput     bool
 	inUseOnlyFlag  bool
@@ -51,9 +52,9 @@ var listCmd = &cobra.Command{
 		}
 
 		path := types.Endpoints.Networks(c.EnvID())
-		effectiveLimit := cmdutil.EffectiveLimit(cmd, "networks", "limit", limitFlag, 20)
-		if effectiveLimit > 0 {
-			path = fmt.Sprintf("%s?limit=%d", path, effectiveLimit)
+		path, err = cmdutil.ApplyPaginationParams(cmd, path, "networks", "limit", limitFlag, 20, "start", startFlag)
+		if err != nil {
+			return fmt.Errorf("failed to build pagination query: %w", err)
 		}
 
 		resp, err := c.Get(cmd.Context(), path)
@@ -96,7 +97,7 @@ var listCmd = &cobra.Command{
 		}
 
 		output.Table(headers, rows)
-		fmt.Printf("\nTotal: %d networks\n", result.Pagination.TotalItems)
+		output.Showing(len(result.Data), result.Pagination.TotalItems, "networks")
 		return nil
 	},
 }
@@ -314,6 +315,7 @@ func init() {
 
 	// List command flags
 	listCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of networks to show")
+	listCmd.Flags().IntVar(&startFlag, "start", 0, "Offset for pagination")
 	listCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	listCmd.Flags().BoolVar(&inUseOnlyFlag, "inuse", false, "Only show networks currently in use")
 	listCmd.Flags().BoolVar(&unusedOnlyFlag, "unused", false, "Only show networks not in use")
