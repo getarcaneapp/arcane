@@ -118,28 +118,38 @@
 		transform: translate3d(0, 0, 0);
 	}
 
+	/*
+	 * Svelte scopes class selectors but NOT @keyframes names, so we
+	 * prefix with `login-` to reduce collision surface with any future
+	 * component that might introduce its own `orb-float`.
+	 *
+	 * `backwards` fill-mode is required: each orb has a 0.5-1.8s startup
+	 * delay, and without it the element sits at the base
+	 * `translate3d(0,0,0)` during the delay and then snaps to the 0%
+	 * keyframe offset when the animation fires (visible pop).
+	 */
 	.orb-1 {
 		--orb-x: -80px;
 		--orb-y: 120px;
-		animation: orb-float 18s ease-in-out 0.5s infinite;
+		animation: login-orb-float 18s ease-in-out 0.5s infinite backwards;
 	}
 	.orb-2 {
 		--orb-x: 140px;
 		--orb-y: -40px;
-		animation: orb-float 22s ease-in-out 1.2s infinite;
+		animation: login-orb-float 22s ease-in-out 1.2s infinite backwards;
 	}
 	.orb-3 {
 		--orb-x: -60px;
 		--orb-y: -120px;
-		animation: orb-float 20s ease-in-out 0.8s infinite;
+		animation: login-orb-float 20s ease-in-out 0.8s infinite backwards;
 	}
 	.orb-4 {
 		--orb-x: 100px;
 		--orb-y: 60px;
-		animation: orb-float 16s ease-in-out 1.8s infinite;
+		animation: login-orb-float 16s ease-in-out 1.8s infinite backwards;
 	}
 
-	@keyframes orb-float {
+	@keyframes login-orb-float {
 		0%,
 		100% {
 			transform: translate3d(calc(var(--orb-x) - 20px), calc(var(--orb-y) - 20px), 0) scale(1);
