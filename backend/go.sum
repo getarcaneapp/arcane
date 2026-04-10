@@ -617,8 +617,8 @@ go.opentelemetry.io/otel/trace v1.43.0 h1:BkNrHpup+4k4w+ZZ86CZoHHEkohws8AY+WTX09
 go.opentelemetry.io/otel/trace v1.43.0/go.mod h1:/QJhyVBUUswCphDVxq+8mld+AvhXZLhe+8WVFxiFff0=
 go.opentelemetry.io/proto/otlp v1.10.0 h1:IQRWgT5srOCYfiWnpqUYz9CVmbO8bFmKcwYxpuCSL2g=
 go.opentelemetry.io/proto/otlp v1.10.0/go.mod h1:/CV4QoCR/S9yaPj8utp3lvQPoqMtxXdzn7ozvvozVqk=
-go.podman.io/image/v5 v5.39.1 h1:loIw4qHzZzBlUguYZau40u8HbR5MrTPQhwT4Hy6sCm0=
-go.podman.io/image/v5 v5.39.1/go.mod h1:SlaR6Pra1ATIx4BcuZ16oafb3QcCHISaKcJbtlN/G/0=
+go.podman.io/image/v5 v5.39.2 h1:EJua/pRtvgLV/a5y8/RvA+ekKukZh0UuKMvLdTmEWFk=
+go.podman.io/image/v5 v5.39.2/go.mod h1:SlaR6Pra1ATIx4BcuZ16oafb3QcCHISaKcJbtlN/G/0=
 go.podman.io/storage v1.62.0 h1:0QjX1XlzVmbiaulb+aR/CG6p9+pzaqwIeZPe3tEjHbY=
 go.podman.io/storage v1.62.0/go.mod h1:A3UBK0XypjNZ6pghRhuxg62+2NIm5lcUGv/7XyMhMUI=
 go.uber.org/goleak v1.3.0 h1:2K3zAYmnTNqV73imy9J1T3WC+gmCePx2hEGkimedGto=

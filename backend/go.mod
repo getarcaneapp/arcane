@@ -49,7 +49,7 @@ require (
 	github.com/shirou/gopsutil/v4 v4.26.2
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
-	go.podman.io/image/v5 v5.39.1
+	go.podman.io/image/v5 v5.39.2
 	golang.org/x/crypto v0.50.0
 	golang.org/x/mod v0.34.0
 	golang.org/x/net v0.53.0
