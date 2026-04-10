@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -20,6 +21,27 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
+
+type repeatedByteReader struct {
+	remaining int
+}
+
+func (r *repeatedByteReader) Read(p []byte) (int, error) {
+	if r.remaining == 0 {
+		return 0, io.EOF
+	}
+
+	n := len(p)
+	if n > r.remaining {
+		n = r.remaining
+	}
+	for i := range n {
+		p[i] = 'x'
+	}
+	r.remaining -= n
+
+	return n, nil
+}
 
 // setupMockAgentServer creates a WS server that acts as an agent
 // It receives requests and sends back responses
@@ -235,6 +257,40 @@ func TestProxyHTTPRequest_GRPCTunnel(t *testing.T) {
 	assert.Equal(t, `{"success":true}`, w.Body.String())
 
 	require.NoError(t, <-agentErrCh)
+}
+
+func TestProxyHTTPRequest_RejectsOversizedBody(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	originalLimit := maxBufferedProxyRequestBodyBytes
+	maxBufferedProxyRequestBodyBytes = 8
+	defer func() {
+		maxBufferedProxyRequestBodyBytes = originalLimit
+	}()
+
+	requestForwarded := false
+	server, tunnel := setupMockAgentServer(t, func(msg *TunnelMessage) *TunnelMessage {
+		requestForwarded = true
+		return &TunnelMessage{
+			ID:     msg.ID,
+			Type:   MessageTypeResponse,
+			Status: http.StatusOK,
+			Body:   []byte("ok"),
+		}
+	})
+	defer server.Close()
+	defer func() { _ = tunnel.Close() }()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/test", &repeatedByteReader{remaining: 9})
+	c.Request.ContentLength = -1
+
+	ProxyHTTPRequest(c, tunnel, "/target/path")
+
+	assert.Equal(t, http.StatusRequestEntityTooLarge, w.Code)
+	assert.Contains(t, w.Body.String(), "Request body exceeds maximum allowed size of 1 MB")
+	assert.False(t, requestForwarded)
 }
 
 func TestDoRequest(t *testing.T) {

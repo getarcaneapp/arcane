@@ -1,10 +1,8 @@
 package middleware
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"path"
@@ -404,25 +402,14 @@ func (m *EnvironmentMiddleware) proxyHTTP(c *gin.Context, target string, accessT
 
 // createProxyRequest builds the HTTP request to forward to the remote environment.
 func (m *EnvironmentMiddleware) createProxyRequest(c *gin.Context, target string, accessToken *string) (*http.Request, error) {
-	var bodyBytes []byte
-	if c.Request.Body != nil {
-		var err error
-		bodyBytes, err = io.ReadAll(c.Request.Body)
-		_ = c.Request.Body.Close()
-		if err != nil {
-			return nil, fmt.Errorf("failed to read request body: %w", err)
-		}
-	}
+	slog.DebugContext(c.Request.Context(), "Creating proxy request",
+		"method", c.Request.Method,
+		"target", target,
+		"contentLength", c.Request.ContentLength,
+		"contentType", c.GetHeader("Content-Type"),
+	)
 
-	slog.DebugContext(c.Request.Context(), "Creating proxy request", "method", c.Request.Method, "target", target, "contentLength", c.Request.ContentLength, "contentType", c.GetHeader("Content-Type"), "bodyLength", len(bodyBytes), "body", string(bodyBytes))
-
-	// bytes.NewReader is preferred over bytes.NewBuffer: it implements io.ReadSeeker
-	// and avoids the internal grow-buffer logic that NewBuffer carries.
-	var body io.Reader
-	if len(bodyBytes) > 0 {
-		body = bytes.NewReader(bodyBytes)
-	}
-	req, err := http.NewRequestWithContext(c.Request.Context(), c.Request.Method, target, body)
+	req, err := http.NewRequestWithContext(c.Request.Context(), c.Request.Method, target, c.Request.Body)
 	if err != nil {
 		return nil, err
 	}
@@ -433,9 +420,8 @@ func (m *EnvironmentMiddleware) createProxyRequest(c *gin.Context, target string
 	edge.SetAgentToken(req, accessToken)
 	edge.SetForwardedHeaders(req, c.ClientIP(), c.Request.Host)
 
-	// Set Content-Length based on actual body size
-	if len(bodyBytes) > 0 {
-		req.ContentLength = int64(len(bodyBytes))
+	if c.Request.ContentLength >= 0 {
+		req.ContentLength = c.Request.ContentLength
 	}
 
 	return req, nil

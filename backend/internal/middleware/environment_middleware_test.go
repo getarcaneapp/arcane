@@ -1,24 +1,33 @@
 package middleware
 
 import (
+	"bytes"
 	"context"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func newTestEnvironmentMiddleware() *EnvironmentMiddleware {
+	return newTestEnvironmentMiddlewareWithResolver(func(ctx context.Context, id string) (string, *string, bool, error) {
+		_ = ctx
+		return "edge://oracle-1", nil, true, nil
+	})
+}
+
+func newTestEnvironmentMiddlewareWithResolver(resolver EnvResolver) *EnvironmentMiddleware {
 	return &EnvironmentMiddleware{
 		localID:   "0",
 		paramName: "id",
-		resolver: func(ctx context.Context, id string) (string, *string, bool, error) {
-			_ = ctx
-			return "edge://oracle-1", nil, true, nil
-		},
+		resolver:  resolver,
 		authValidator: func(ctx context.Context, c *gin.Context) bool {
 			_ = ctx
 			_ = c
@@ -27,6 +36,89 @@ func newTestEnvironmentMiddleware() *EnvironmentMiddleware {
 		httpClient: &http.Client{Timeout: proxyTimeout},
 		registry:   edge.NewTunnelRegistry(),
 	}
+}
+
+func TestEnvironmentMiddleware_ProxyHTTPStreamsRequestBodyToRemote(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	var (
+		receivedBody          string
+		receivedPath          string
+		receivedContentType   string
+		receivedContentLength int64
+	)
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+
+		receivedBody = string(body)
+		receivedPath = r.URL.Path
+		receivedContentType = r.Header.Get("Content-Type")
+		receivedContentLength = r.ContentLength
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"proxied":true}`))
+	}))
+	defer upstream.Close()
+
+	middleware := newTestEnvironmentMiddlewareWithResolver(func(ctx context.Context, id string) (string, *string, bool, error) {
+		_ = ctx
+		_ = id
+		return upstream.URL, nil, true, nil
+	})
+
+	router := gin.New()
+	api := router.Group("/api")
+	api.Use(middleware.Handle)
+
+	localHandlerHit := false
+	api.POST("/environments/:id/projects", func(c *gin.Context) {
+		localHandlerHit = true
+		c.JSON(http.StatusOK, gin.H{"success": true})
+	})
+
+	requestBody := `{"name":"remote project"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/environments/env-remote/projects?from=test", strings.NewReader(requestBody))
+	req.Header.Set("Content-Type", "application/json")
+
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, req)
+
+	assert.Equal(t, http.StatusCreated, recorder.Code)
+	assert.Equal(t, `{"proxied":true}`, recorder.Body.String())
+	assert.Equal(t, "/api/environments/0/projects", receivedPath)
+	assert.Equal(t, "application/json", receivedContentType)
+	assert.Equal(t, int64(len(requestBody)), receivedContentLength)
+	assert.Equal(t, requestBody, receivedBody)
+	assert.False(t, localHandlerHit)
+}
+
+func TestEnvironmentMiddleware_CreateProxyRequestDoesNotLogRequestBody(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	var logBuffer bytes.Buffer
+	originalLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logBuffer, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	defer slog.SetDefault(originalLogger)
+
+	middleware := newTestEnvironmentMiddleware()
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+
+	secretBody := "super-secret-payload"
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/environments/env-remote/projects", strings.NewReader(secretBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	req, err := middleware.createProxyRequest(c, "https://example.com/api/environments/0/projects", nil)
+	require.NoError(t, err)
+	require.NotNil(t, req)
+
+	output := logBuffer.String()
+	assert.Contains(t, output, "Creating proxy request")
+	assert.NotContains(t, output, secretBody)
+	assert.NotContains(t, output, " body=")
 }
 
 func TestEnvironmentMiddleware_ReturnsBadGatewayForEdgeResourcesWithoutTunnel(t *testing.T) {

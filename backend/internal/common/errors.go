@@ -450,6 +450,21 @@ func (e *FileUploadReadError) Error() string {
 	return fmt.Sprintf("Failed to read upload: %v", e.Err)
 }
 
+type RequestBodyTooLargeError struct {
+	LimitBytes int64
+}
+
+func (e *RequestBodyTooLargeError) Error() string {
+	limitMB := e.LimitBytes / (1024 * 1024)
+	if e.LimitBytes%(1024*1024) != 0 {
+		limitMB++
+	}
+	if limitMB == 0 && e.LimitBytes > 0 {
+		limitMB = 1
+	}
+	return fmt.Sprintf("Request body exceeds maximum allowed size of %d MB", limitMB)
+}
+
 type NoFileUploadedError struct{}
 
 func (e *NoFileUploadedError) Error() string {

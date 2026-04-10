@@ -3,12 +3,14 @@ package edge
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"time"
 
+	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -19,6 +21,15 @@ const (
 	// DefaultTunnelAcquirePollEvery is how frequently the manager checks for a
 	// newly activated edge tunnel while waiting for poll mode to connect.
 	DefaultTunnelAcquirePollEvery = 100 * time.Millisecond
+)
+
+var (
+	errProxyRequestBodyTooLarge = errors.New("proxy request body too large")
+
+	// maxBufferedProxyRequestBodyBytes caps manager-side buffering for edge tunnel
+	// requests. The tunnel protocol still forwards request bodies as []byte, so
+	// we fail fast once a request exceeds the compatibility ceiling.
+	maxBufferedProxyRequestBodyBytes int64 = 500 * 1024 * 1024
 )
 
 // DefaultTunnelAcquireTimeout returns a poll-aware wait timeout for acquiring
@@ -163,17 +174,10 @@ func ProxyHTTPRequest(c *gin.Context, tunnel *AgentTunnel, targetPath string) {
 	defer cancel()
 
 	// Read request body
-	var body []byte
-	if c.Request.Body != nil {
-		var err error
-		body, err = io.ReadAll(c.Request.Body)
-		if err != nil {
-			slog.ErrorContext(ctx, "Failed to read request body for tunnel proxy", "error", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read request body"})
-			return
-		}
-		// Restore body for potential retry
-		c.Request.Body = io.NopCloser(bytes.NewReader(body))
+	body, err := readBufferedProxyRequestBody(c.Request, maxBufferedProxyRequestBodyBytes)
+	if err != nil {
+		writeProxyRequestBodyError(c, ctx, err)
+		return
 	}
 
 	// Build headers map, stripping hop-by-hop and browser-security headers.
@@ -223,6 +227,42 @@ func ProxyHTTPRequest(c *gin.Context, tunnel *AgentTunnel, targetPath string) {
 
 	// Write response
 	c.Data(status, respHeaders["Content-Type"], respBody)
+}
+
+func readBufferedProxyRequestBody(req *http.Request, maxBytes int64) ([]byte, error) {
+	if req == nil || req.Body == nil {
+		return nil, nil
+	}
+	if maxBytes > 0 && req.ContentLength > maxBytes {
+		return nil, errProxyRequestBodyTooLarge
+	}
+
+	body, err := io.ReadAll(io.LimitReader(req.Body, maxBytes+1))
+	_ = req.Body.Close()
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(body)) > maxBytes {
+		return nil, errProxyRequestBodyTooLarge
+	}
+
+	req.Body = io.NopCloser(bytes.NewReader(body))
+	req.ContentLength = int64(len(body))
+
+	return body, nil
+}
+
+func writeProxyRequestBodyError(c *gin.Context, ctx context.Context, err error) {
+	if errors.Is(err, errProxyRequestBodyTooLarge) {
+		slog.WarnContext(ctx, "Rejected oversized request body for edge tunnel proxy", "contentLength", c.Request.ContentLength, "limitBytes", maxBufferedProxyRequestBodyBytes)
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": (&common.RequestBodyTooLargeError{
+			LimitBytes: maxBufferedProxyRequestBodyBytes,
+		}).Error()})
+		return
+	}
+
+	slog.ErrorContext(ctx, "Failed to read request body for tunnel proxy", "error", err)
+	c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read request body"})
 }
 
 // isHopByHopHeader returns true if the header should not be forwarded
