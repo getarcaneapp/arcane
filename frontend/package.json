@@ -25,7 +25,7 @@
     "@codemirror/lint": "^6.9.5",
     "@codemirror/merge": "^6.12.1",
     "@codemirror/state": "^6.6.0",
-    "@codemirror/view": "^6.40.0",
+    "@codemirror/view": "^6.41.0",
     "@lezer/highlight": "^1.2.3",
     "@sveltejs/adapter-static": "^3.0.10",
     "@sveltejs/kit": "^2.55.0",
