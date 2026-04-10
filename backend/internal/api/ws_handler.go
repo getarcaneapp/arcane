@@ -40,8 +40,8 @@ const (
 	cgroupCacheTTL   = 30 * time.Second
 )
 
-// amdGPUSysfsPath is the base path for AMD GPU sysfs entries
-const amdGPUSysfsPath = "/sys/class/drm"
+// gpuDRMSysfsPath is the base path for Linux DRM sysfs entries.
+const gpuDRMSysfsPath = "/sys/class/drm"
 
 // ============================================================================
 // WebSocket Metrics
@@ -206,6 +206,8 @@ type WebSocketHandler struct {
 	detectionMutex       sync.Mutex
 	gpuMonitoringEnabled bool
 	gpuType              string
+	gpuSysfsPath         string
+	execLookPath         func(file string) (string, error)
 	projectLogStreamer   func(ctx context.Context, projectID string, logsChan chan<- string, follow bool, tail, since string, timestamps bool) error
 	containerLogStreamer func(ctx context.Context, containerID string, logsChan chan<- string, follow bool, tail, since string, timestamps bool) error
 	systemStatsCollector func(ctx context.Context) systemtypes.SystemStats
@@ -354,6 +356,8 @@ func NewWebSocketHandler(
 		logStreams:           make(map[string]*wsLogStream),
 		gpuMonitoringEnabled: cfg.GPUMonitoringEnabled,
 		gpuType:              cfg.GPUType,
+		gpuSysfsPath:         gpuDRMSysfsPath,
+		execLookPath:         exec.LookPath,
 		wsUpgrader: websocket.Upgrader{
 			CheckOrigin:       httputil.ValidateWebSocketOrigin(cfg.GetAppURL()),
 			ReadBufferSize:    32 * 1024,
@@ -1594,88 +1598,54 @@ func (h *WebSocketHandler) detectGPUs(ctx context.Context) error {
 	h.detectionMutex.Lock()
 	defer h.detectionMutex.Unlock()
 
+	gpuSysfsPath := h.getGPUSysfsPathInternal()
+
 	if h.gpuType != "" && h.gpuType != "auto" {
 		switch h.gpuType {
 		case "nvidia":
-			if path, err := exec.LookPath("nvidia-smi"); err == nil {
-				h.gpuDetectionCache.Lock()
-				h.gpuDetectionCache.detected = true
-				h.gpuDetectionCache.gpuType = "nvidia"
-				h.gpuDetectionCache.toolPath = path
-				h.gpuDetectionCache.timestamp = time.Now()
-				h.gpuDetectionCache.Unlock()
-				h.detectionDone = true
+			if path, err := h.execLookPathInternal("nvidia-smi"); err == nil {
+				h.cacheDetectedGPUInternal("nvidia", path)
 				slog.InfoContext(ctx, "Using configured GPU type", "type", "nvidia")
 				return nil
 			}
 			return fmt.Errorf("nvidia-smi not found but GPU_TYPE set to nvidia")
 
 		case "amd":
-			if hasAMDGPUInternal() {
-				h.gpuDetectionCache.Lock()
-				h.gpuDetectionCache.detected = true
-				h.gpuDetectionCache.gpuType = "amd"
-				h.gpuDetectionCache.toolPath = amdGPUSysfsPath
-				h.gpuDetectionCache.timestamp = time.Now()
-				h.gpuDetectionCache.Unlock()
-				h.detectionDone = true
+			if hasAMDGPUInternal(gpuSysfsPath) {
+				h.cacheDetectedGPUInternal("amd", gpuSysfsPath)
 				slog.InfoContext(ctx, "Using configured GPU type", "type", "amd")
 				return nil
 			}
 			return fmt.Errorf("AMD GPU not found in sysfs but GPU_TYPE set to amd")
 
 		case "intel":
-			if path, err := exec.LookPath("intel_gpu_top"); err == nil {
-				h.gpuDetectionCache.Lock()
-				h.gpuDetectionCache.detected = true
-				h.gpuDetectionCache.gpuType = "intel"
-				h.gpuDetectionCache.toolPath = path
-				h.gpuDetectionCache.timestamp = time.Now()
-				h.gpuDetectionCache.Unlock()
-				h.detectionDone = true
+			if path, ok := findIntelGPUPathInternal(gpuSysfsPath); ok {
+				h.cacheDetectedGPUInternal("intel", path)
 				slog.InfoContext(ctx, "Using configured GPU type", "type", "intel")
 				return nil
 			}
-			return fmt.Errorf("intel_gpu_top not found but GPU_TYPE set to intel")
+			slog.WarnContext(ctx, "Intel GPU not found in sysfs, falling back to auto-detection", "gpu_type", h.gpuType)
 
 		default:
 			slog.WarnContext(ctx, "Invalid GPU_TYPE specified, falling back to auto-detection", "gpu_type", h.gpuType)
 		}
 	}
 
-	if path, err := exec.LookPath("nvidia-smi"); err == nil {
-		h.gpuDetectionCache.Lock()
-		h.gpuDetectionCache.detected = true
-		h.gpuDetectionCache.gpuType = "nvidia"
-		h.gpuDetectionCache.toolPath = path
-		h.gpuDetectionCache.timestamp = time.Now()
-		h.gpuDetectionCache.Unlock()
-		h.detectionDone = true
+	if path, err := h.execLookPathInternal("nvidia-smi"); err == nil {
+		h.cacheDetectedGPUInternal("nvidia", path)
 		slog.InfoContext(ctx, "NVIDIA GPU detected", "tool", "nvidia-smi", "path", path)
 		return nil
 	}
 
-	if hasAMDGPUInternal() {
-		h.gpuDetectionCache.Lock()
-		h.gpuDetectionCache.detected = true
-		h.gpuDetectionCache.gpuType = "amd"
-		h.gpuDetectionCache.toolPath = amdGPUSysfsPath
-		h.gpuDetectionCache.timestamp = time.Now()
-		h.gpuDetectionCache.Unlock()
-		h.detectionDone = true
-		slog.InfoContext(ctx, "AMD GPU detected", "method", "sysfs", "path", amdGPUSysfsPath)
+	if hasAMDGPUInternal(gpuSysfsPath) {
+		h.cacheDetectedGPUInternal("amd", gpuSysfsPath)
+		slog.InfoContext(ctx, "AMD GPU detected", "method", "sysfs", "path", gpuSysfsPath)
 		return nil
 	}
 
-	if path, err := exec.LookPath("intel_gpu_top"); err == nil {
-		h.gpuDetectionCache.Lock()
-		h.gpuDetectionCache.detected = true
-		h.gpuDetectionCache.gpuType = "intel"
-		h.gpuDetectionCache.toolPath = path
-		h.gpuDetectionCache.timestamp = time.Now()
-		h.gpuDetectionCache.Unlock()
-		h.detectionDone = true
-		slog.InfoContext(ctx, "Intel GPU detected", "tool", "intel_gpu_top", "path", path)
+	if path, ok := findIntelGPUPathInternal(gpuSysfsPath); ok {
+		h.cacheDetectedGPUInternal("intel", path)
+		slog.InfoContext(ctx, "Intel GPU detected", "method", "sysfs", "path", path)
 		return nil
 	}
 
@@ -1753,8 +1723,10 @@ func (h *WebSocketHandler) getNvidiaStats(ctx context.Context) ([]systemtypes.GP
 func (h *WebSocketHandler) getAMDStats(ctx context.Context) ([]systemtypes.GPUStats, error) {
 	var stats []systemtypes.GPUStats
 
+	gpuSysfsPath := h.getGPUSysfsPathInternal()
+
 	// Find AMD GPU cards by looking for mem_info_vram_total in /sys/class/drm/card*/device/
-	entries, err := os.ReadDir(amdGPUSysfsPath)
+	entries, err := os.ReadDir(gpuSysfsPath)
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to read DRM sysfs directory", "error", err)
 		return nil, fmt.Errorf("failed to read sysfs: %w", err)
@@ -1763,16 +1735,11 @@ func (h *WebSocketHandler) getAMDStats(ctx context.Context) ([]systemtypes.GPUSt
 	index := 0
 	for _, entry := range entries {
 		name := entry.Name()
-		// Only check card* entries (card0, card1, etc.) - skip renderD* and connector entries
-		if !strings.HasPrefix(name, "card") {
-			continue
-		}
-		// Skip connector entries like card0-DP-1, card0-HDMI-A-1
-		if strings.Contains(name, "-") {
+		if !isDRMCardEntryInternal(name) {
 			continue
 		}
 
-		devicePath := fmt.Sprintf("%s/%s/device", amdGPUSysfsPath, name)
+		devicePath := fmt.Sprintf("%s/%s/device", gpuSysfsPath, name)
 
 		// Check if this is an AMD GPU by looking for VRAM info files
 		memTotalPath := fmt.Sprintf("%s/mem_info_vram_total", devicePath)
@@ -1816,26 +1783,21 @@ func readSysfsValueInternal(path string) (uint64, error) {
 	return strconv.ParseUint(strings.TrimSpace(string(data)), 10, 64)
 }
 
-// hasAMDGPUInternal checks if an AMD GPU is present by looking for VRAM info in sysfs
-func hasAMDGPUInternal() bool {
-	entries, err := os.ReadDir(amdGPUSysfsPath)
+// hasAMDGPUInternal checks if an AMD GPU is present by looking for VRAM info in sysfs.
+func hasAMDGPUInternal(sysfsPath string) bool {
+	entries, err := os.ReadDir(sysfsPath)
 	if err != nil {
 		return false
 	}
 
 	for _, entry := range entries {
 		name := entry.Name()
-		// Only check card* entries (card0, card1, etc.) - skip card0-DP-1 style entries
-		if !strings.HasPrefix(name, "card") {
-			continue
-		}
-		// Skip connector entries like card0-DP-1, card0-HDMI-A-1
-		if strings.Contains(name, "-") {
+		if !isDRMCardEntryInternal(name) {
 			continue
 		}
 
 		// Check if this card has AMD VRAM info
-		memTotalPath := fmt.Sprintf("%s/%s/device/mem_info_vram_total", amdGPUSysfsPath, name)
+		memTotalPath := fmt.Sprintf("%s/%s/device/mem_info_vram_total", sysfsPath, name)
 		if _, err := os.Stat(memTotalPath); err == nil {
 			return true
 		}
@@ -1844,7 +1806,73 @@ func hasAMDGPUInternal() bool {
 	return false
 }
 
-// getIntelStats collects Intel GPU statistics using intel_gpu_top
+func (h *WebSocketHandler) cacheDetectedGPUInternal(gpuType, toolPath string) {
+	h.gpuDetectionCache.Lock()
+	h.gpuDetectionCache.detected = true
+	h.gpuDetectionCache.gpuType = gpuType
+	h.gpuDetectionCache.toolPath = toolPath
+	h.gpuDetectionCache.timestamp = time.Now()
+	h.gpuDetectionCache.Unlock()
+	h.detectionDone = true
+}
+
+func (h *WebSocketHandler) getGPUSysfsPathInternal() string {
+	if h.gpuSysfsPath != "" {
+		return h.gpuSysfsPath
+	}
+	return gpuDRMSysfsPath
+}
+
+func (h *WebSocketHandler) execLookPathInternal(file string) (string, error) {
+	if h.execLookPath != nil {
+		return h.execLookPath(file)
+	}
+	return exec.LookPath(file)
+}
+
+func isDRMCardEntryInternal(name string) bool {
+	if !strings.HasPrefix(name, "card") {
+		return false
+	}
+	return !strings.Contains(name, "-")
+}
+
+func readSysfsStringInternal(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(data)), nil
+}
+
+func findIntelGPUPathInternal(sysfsPath string) (string, bool) {
+	entries, err := os.ReadDir(sysfsPath)
+	if err != nil {
+		return "", false
+	}
+
+	for _, entry := range entries {
+		name := entry.Name()
+		if !isDRMCardEntryInternal(name) {
+			continue
+		}
+
+		devicePath := fmt.Sprintf("%s/%s/device", sysfsPath, name)
+		vendorPath := fmt.Sprintf("%s/vendor", devicePath)
+		vendor, err := readSysfsStringInternal(vendorPath)
+		if err != nil {
+			continue
+		}
+
+		if strings.EqualFold(vendor, "0x8086") {
+			return devicePath, true
+		}
+	}
+
+	return "", false
+}
+
+// getIntelStats collects Intel GPU statistics using sysfs detection.
 func (h *WebSocketHandler) getIntelStats(ctx context.Context) ([]systemtypes.GPUStats, error) {
 	stats := []systemtypes.GPUStats{
 		{

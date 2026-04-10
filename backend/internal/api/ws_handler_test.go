@@ -6,6 +6,9 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -105,12 +108,151 @@ func newTestWSPairInternal(t *testing.T) (clientConn *websocket.Conn, serverConn
 
 func newTestWebSocketHandler() *WebSocketHandler {
 	return &WebSocketHandler{
-		wsMetrics:  NewWebSocketMetrics(),
-		logStreams: make(map[string]*wsLogStream),
+		wsMetrics:    NewWebSocketMetrics(),
+		logStreams:   make(map[string]*wsLogStream),
+		gpuSysfsPath: gpuDRMSysfsPath,
+		execLookPath: exec.LookPath,
 		wsUpgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool { return true },
 		},
 	}
+}
+
+func TestDetectGPUsInternal_IntelAutoDetectsFromSysfs(t *testing.T) {
+	t.Parallel()
+
+	sysfsPath := t.TempDir()
+	writeTestGPUFileInternal(t, filepath.Join(sysfsPath, "card0", "device", "vendor"), "0x8086\n")
+
+	handler := newTestWebSocketHandler()
+	handler.gpuSysfsPath = sysfsPath
+	handler.execLookPath = func(file string) (string, error) {
+		return "", exec.ErrNotFound
+	}
+
+	err := handler.detectGPUs(t.Context())
+	require.NoError(t, err)
+
+	handler.gpuDetectionCache.RLock()
+	defer handler.gpuDetectionCache.RUnlock()
+	require.Equal(t, "intel", handler.gpuDetectionCache.gpuType)
+	require.Equal(t, filepath.Join(sysfsPath, "card0", "device"), handler.gpuDetectionCache.toolPath)
+}
+
+func TestFindIntelGPUPathInternal_IgnoresConnectorEntries(t *testing.T) {
+	t.Parallel()
+
+	sysfsPath := t.TempDir()
+	writeTestGPUFileInternal(t, filepath.Join(sysfsPath, "card0-DP-1", "device", "vendor"), "0x8086\n")
+
+	path, ok := findIntelGPUPathInternal(sysfsPath)
+	require.False(t, ok)
+	require.Empty(t, path)
+}
+
+func TestFindIntelGPUPathInternal_IgnoresNonIntelVendors(t *testing.T) {
+	t.Parallel()
+
+	sysfsPath := t.TempDir()
+	writeTestGPUFileInternal(t, filepath.Join(sysfsPath, "card0", "device", "vendor"), "0x1002\n")
+
+	path, ok := findIntelGPUPathInternal(sysfsPath)
+	require.False(t, ok)
+	require.Empty(t, path)
+}
+
+func TestDetectGPUsInternal_AMDWinsOverIntel(t *testing.T) {
+	t.Parallel()
+
+	sysfsPath := t.TempDir()
+	writeTestGPUFileInternal(t, filepath.Join(sysfsPath, "card0", "device", "vendor"), "0x8086\n")
+	writeTestGPUFileInternal(t, filepath.Join(sysfsPath, "card1", "device", "vendor"), "0x1002\n")
+	writeTestGPUFileInternal(t, filepath.Join(sysfsPath, "card1", "device", "mem_info_vram_total"), "1024\n")
+	writeTestGPUFileInternal(t, filepath.Join(sysfsPath, "card1", "device", "mem_info_vram_used"), "128\n")
+
+	handler := newTestWebSocketHandler()
+	handler.gpuSysfsPath = sysfsPath
+	handler.execLookPath = func(file string) (string, error) {
+		return "", exec.ErrNotFound
+	}
+
+	err := handler.detectGPUs(t.Context())
+	require.NoError(t, err)
+
+	handler.gpuDetectionCache.RLock()
+	defer handler.gpuDetectionCache.RUnlock()
+	require.Equal(t, "amd", handler.gpuDetectionCache.gpuType)
+	require.Equal(t, sysfsPath, handler.gpuDetectionCache.toolPath)
+}
+
+func TestDetectGPUsInternal_NVIDIAWinsOverIntel(t *testing.T) {
+	t.Parallel()
+
+	sysfsPath := t.TempDir()
+	writeTestGPUFileInternal(t, filepath.Join(sysfsPath, "card0", "device", "vendor"), "0x8086\n")
+
+	handler := newTestWebSocketHandler()
+	handler.gpuSysfsPath = sysfsPath
+	handler.execLookPath = func(file string) (string, error) {
+		if file == "nvidia-smi" {
+			return "/usr/bin/nvidia-smi", nil
+		}
+		return "", exec.ErrNotFound
+	}
+
+	err := handler.detectGPUs(t.Context())
+	require.NoError(t, err)
+
+	handler.gpuDetectionCache.RLock()
+	defer handler.gpuDetectionCache.RUnlock()
+	require.Equal(t, "nvidia", handler.gpuDetectionCache.gpuType)
+	require.Equal(t, "/usr/bin/nvidia-smi", handler.gpuDetectionCache.toolPath)
+}
+
+func TestDetectGPUsInternal_GPUTypeIntelFallsBackToAuto(t *testing.T) {
+	t.Parallel()
+
+	handler := newTestWebSocketHandler()
+	handler.gpuType = "intel"
+	handler.gpuSysfsPath = t.TempDir()
+	handler.execLookPath = func(file string) (string, error) {
+		if file == "nvidia-smi" {
+			return "/usr/bin/nvidia-smi", nil
+		}
+		return "", exec.ErrNotFound
+	}
+
+	err := handler.detectGPUs(t.Context())
+	require.NoError(t, err)
+
+	handler.gpuDetectionCache.RLock()
+	defer handler.gpuDetectionCache.RUnlock()
+	require.Equal(t, "nvidia", handler.gpuDetectionCache.gpuType)
+	require.Equal(t, "/usr/bin/nvidia-smi", handler.gpuDetectionCache.toolPath)
+}
+
+func TestGetIntelStatsInternal_RemainsPlaceholder(t *testing.T) {
+	t.Parallel()
+
+	handler := newTestWebSocketHandler()
+
+	stats, err := handler.getIntelStats(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, []systemtypes.GPUStats{
+		{
+			Name:        "Intel GPU",
+			Index:       0,
+			MemoryUsed:  0,
+			MemoryTotal: 0,
+		},
+	}, stats)
+}
+
+func writeTestGPUFileInternal(t *testing.T, path string, contents string) {
+	t.Helper()
+
+	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+	require.NoError(t, os.WriteFile(path, []byte(contents), 0o644))
 }
 
 func dialWebSocket(t *testing.T, serverURL, path string) *websocket.Conn {

@@ -73,9 +73,6 @@ ARG REVISION
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl tzdata tar gzip \
     vainfo clinfo libdrm2 libsystemd0 \
-    && if [ "$TARGETARCH" = "amd64" ]; then \
-        apt-get install -y --no-install-recommends intel-gpu-tools; \
-    fi \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 ENV GIN_MODE=release
@@ -85,8 +82,7 @@ ENV NVIDIA_VISIBLE_DEVICES=all \
     NVIDIA_DRIVER_CAPABILITIES=compute,utility \
     ROCR_VISIBLE_DEVICES=all \
     HIP_VISIBLE_DEVICES=all \
-    ONEAPI_DEVICE_SELECTOR=level_zero:*,opencl:* \
-    LD_LIBRARY_PATH=/usr/local/nvidia/lib:/usr/local/nvidia/lib64:/opt/rocm/lib:/opt/intel/oneapi/lib:/opt/intel/oneapi/lib/intel64:/usr/lib/x86_64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib64:/usr/lib:/lib64:/lib
+    ONEAPI_DEVICE_SELECTOR=level_zero:*,opencl:*
 
 
 WORKDIR /app
