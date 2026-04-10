@@ -399,8 +399,7 @@ func (c *Client) shouldRetry(method string, status int, err error) bool {
 			return false
 		}
 
-		var netErr net.Error
-		if errors.As(err, &netErr) {
+		if netErr, ok := errors.AsType[net.Error](err); ok {
 			return netErr.Timeout()
 		}
 		return true

@@ -3,13 +3,11 @@
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import FormInput from '$lib/components/form/form-input.svelte';
 	import * as Accordion from '$lib/components/ui/accordion/index.js';
-	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import type { VolumeCreateRequest } from '$lib/types/volume.type';
 	import { z } from 'zod/v4';
 	import { createForm, preventDefault } from '$lib/utils/form.utils';
 	import SelectWithLabel from '../form/select-with-label.svelte';
 	import { m } from '$lib/paraglide/messages';
-	import { AddIcon, VolumesIcon } from '$lib/icons';
 
 	type CreateVolumeFormProps = {
 		open: boolean;
@@ -56,7 +54,7 @@
 			const [key, ...valueParts] = trimmed.split('=');
 			const value = valueParts.join('=');
 
-			if (key.trim()) {
+			if (key?.trim()) {
 				result[key.trim()] = value.trim();
 			}
 		}
@@ -93,7 +91,7 @@
 </script>
 
 <ResponsiveDialog.Root
-	bind:open
+	{open}
 	onOpenChange={handleOpenChange}
 	variant="sheet"
 	title={m.create_volume_title()}

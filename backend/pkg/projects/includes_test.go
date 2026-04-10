@@ -6,16 +6,46 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/backend/internal/common"
+	pkgutils "github.com/getarcaneapp/arcane/backend/pkg/utils"
 )
+
+func TestParseIncludes_NormalizesRelativePaths(t *testing.T) {
+	t.Parallel()
+
+	projectDir := t.TempDir()
+	composePath := filepath.Join(projectDir, "compose.yaml")
+	includePath := filepath.Join(projectDir, "includes", "config.yaml")
+
+	requireNoError := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	}
+
+	requireNoError(os.MkdirAll(filepath.Dir(includePath), 0o755))
+	requireNoError(os.WriteFile(includePath, []byte("services: {}\n"), 0o600))
+	requireNoError(os.WriteFile(composePath, []byte("include:\n  - ./includes/config.yaml\n"), 0o600))
+
+	includes, err := ParseIncludes(composePath, nil, false)
+	requireNoError(err)
+
+	if len(includes) != 1 {
+		t.Fatalf("expected 1 include, got %d", len(includes))
+	}
+
+	if includes[0].RelativePath != "includes/config.yaml" {
+		t.Fatalf("unexpected relative path: got %q, want %q", includes[0].RelativePath, "includes/config.yaml")
+	}
+}
 
 func TestWriteIncludeFilePermissions(t *testing.T) {
 	// Save original perms
-	origFilePerm := common.FilePerm
-	origDirPerm := common.DirPerm
+	origFilePerm := pkgutils.FilePerm
+	origDirPerm := pkgutils.DirPerm
 	defer func() {
-		common.FilePerm = origFilePerm
-		common.DirPerm = origDirPerm
+		pkgutils.FilePerm = origFilePerm
+		pkgutils.DirPerm = origDirPerm
 	}()
 
 	projectDir := t.TempDir()
@@ -23,8 +53,8 @@ func TestWriteIncludeFilePermissions(t *testing.T) {
 	content := "services: {}\n"
 
 	t.Run("Uses custom permissions", func(t *testing.T) {
-		common.FilePerm = 0o600
-		common.DirPerm = 0o700
+		pkgutils.FilePerm = 0o600
+		pkgutils.DirPerm = 0o700
 
 		if err := WriteIncludeFile(projectDir, includePath, content); err != nil {
 			t.Fatalf("WriteIncludeFile() returned error: %v", err)

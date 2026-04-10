@@ -11,8 +11,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	humamw "github.com/getarcaneapp/arcane/backend/internal/huma/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
+	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	"github.com/getarcaneapp/arcane/types/base"
 	containertypes "github.com/getarcaneapp/arcane/types/container"
 	dockercontainer "github.com/moby/moby/api/types/container"
@@ -22,14 +22,16 @@ import (
 type ContainerHandler struct {
 	containerService *services.ContainerService
 	dockerService    *services.DockerClientService
+	settingsService  *services.SettingsService
 }
 
 // Paginated response
 type ContainerPaginatedResponse struct {
-	Success    bool                        `json:"success"`
-	Data       []containertypes.Summary    `json:"data"`
-	Counts     containertypes.StatusCounts `json:"counts"`
-	Pagination base.PaginationResponse     `json:"pagination"`
+	Success    bool                          `json:"success"`
+	Data       []containertypes.Summary      `json:"data"`
+	Groups     []containertypes.SummaryGroup `json:"groups,omitempty"`
+	Counts     containertypes.StatusCounts   `json:"counts"`
+	Pagination base.PaginationResponse       `json:"pagination"`
 }
 
 type ListContainersInput struct {
@@ -39,6 +41,7 @@ type ListContainersInput struct {
 	Order           string `query:"order" default:"asc" doc:"Sort direction"`
 	Start           int    `query:"start" default:"0" doc:"Start index"`
 	Limit           int    `query:"limit" default:"20" doc:"Limit"`
+	GroupBy         string `query:"groupBy" doc:"Optional grouping mode (for example: project)"`
 	IncludeInternal bool   `query:"includeInternal" default:"false" doc:"Include internal containers"`
 	Updates         string `query:"updates" doc:"Filter by update status (has_update, up_to_date, error, unknown)"`
 }
@@ -119,10 +122,23 @@ type DeleteContainerOutput struct {
 }
 
 // RegisterContainers registers container endpoints.
-func RegisterContainers(api huma.API, containerSvc *services.ContainerService, dockerSvc *services.DockerClientService) {
+type SetAutoUpdateInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	ContainerID   string `path:"containerId" doc:"Container ID"`
+	Body          struct {
+		Enabled bool `json:"enabled" doc:"Whether auto-update is enabled for this container"`
+	}
+}
+
+type SetAutoUpdateOutput struct {
+	Body ContainerActionResponse
+}
+
+func RegisterContainers(api huma.API, containerSvc *services.ContainerService, dockerSvc *services.DockerClientService, settingsSvc *services.SettingsService) {
 	h := &ContainerHandler{
 		containerService: containerSvc,
 		dockerService:    dockerSvc,
+		settingsService:  settingsSvc,
 	}
 
 	huma.Register(api, huma.Operation{
@@ -190,6 +206,16 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 	}, h.RestartContainer)
 
 	huma.Register(api, huma.Operation{
+		OperationID: "redeploy-container",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/containers/{containerId}/redeploy",
+		Summary:     "Redeploy container",
+		Description: "Pull latest image and recreate container",
+		Tags:        []string{"Containers"},
+		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+	}, h.RedeployContainer)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "delete-container",
 		Method:      http.MethodDelete,
 		Path:        "/environments/{id}/containers/{containerId}",
@@ -197,6 +223,16 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Tags:        []string{"Containers"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
 	}, h.DeleteContainer)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "set-container-auto-update",
+		Method:      http.MethodPut,
+		Path:        "/environments/{id}/containers/{containerId}/auto-update",
+		Summary:     "Set container auto-update",
+		Description: "Enable or disable auto-update for a specific container",
+		Tags:        []string{"Containers", "Updater"},
+		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+	}, h.SetAutoUpdate)
 }
 
 func (h *ContainerHandler) ListContainers(ctx context.Context, input *ListContainersInput) (*ListContainersOutput, error) {
@@ -222,7 +258,7 @@ func (h *ContainerHandler) ListContainers(ctx context.Context, input *ListContai
 		Filters: filters,
 	}
 
-	containers, paginationResp, counts, err := h.containerService.ListContainersPaginated(ctx, params, true, input.IncludeInternal)
+	result, err := h.containerService.ListContainersPaginated(ctx, params, true, input.IncludeInternal, input.GroupBy)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.ContainerListError{Err: err}).Error())
 	}
@@ -230,14 +266,15 @@ func (h *ContainerHandler) ListContainers(ctx context.Context, input *ListContai
 	return &ListContainersOutput{
 		Body: ContainerPaginatedResponse{
 			Success: true,
-			Data:    containers,
-			Counts:  counts,
+			Data:    result.Items,
+			Groups:  result.Groups,
+			Counts:  result.Counts,
 			Pagination: base.PaginationResponse{
-				TotalPages:      paginationResp.TotalPages,
-				TotalItems:      paginationResp.TotalItems,
-				CurrentPage:     paginationResp.CurrentPage,
-				ItemsPerPage:    paginationResp.ItemsPerPage,
-				GrandTotalItems: paginationResp.GrandTotalItems,
+				TotalPages:      result.Pagination.TotalPages,
+				TotalItems:      result.Pagination.TotalItems,
+				CurrentPage:     result.Pagination.CurrentPage,
+				ItemsPerPage:    result.Pagination.ItemsPerPage,
+				GrandTotalItems: result.Pagination.GrandTotalItems,
 			},
 		},
 	}, nil
@@ -621,6 +658,46 @@ func (h *ContainerHandler) RestartContainer(ctx context.Context, input *Containe
 	}, nil
 }
 
+func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *ContainerActionInput) (*GetContainerOutput, error) {
+	if h.containerService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	user, exists := humamw.GetCurrentUserFromContext(ctx)
+	if !exists {
+		return nil, huma.Error401Unauthorized("not authenticated")
+	}
+
+	newContainerID, err := h.containerService.RedeployContainer(ctx, input.ContainerID, *user)
+	if err != nil {
+		return nil, huma.Error500InternalServerError((&common.ContainerRedeployError{Err: err}).Error())
+	}
+
+	// Fetch full container details to return (consistent with other endpoints)
+	containerInspect, inspectErr := h.containerService.GetContainerByID(ctx, newContainerID)
+	if inspectErr == nil {
+		details := containertypes.NewDetails(containerInspect)
+
+		return &GetContainerOutput{
+			Body: ContainerDetailsResponse{
+				Success: true,
+				Data:    details,
+			},
+		}, nil
+	}
+
+	// Container was redeployed successfully, but we couldn't fetch full details.
+	// Return minimal response with just the ID so frontend can still navigate.
+	return &GetContainerOutput{
+		Body: ContainerDetailsResponse{
+			Success: true,
+			Data: containertypes.Details{
+				ID: newContainerID,
+			},
+		},
+	}, nil
+}
+
 func (h *ContainerHandler) DeleteContainer(ctx context.Context, input *DeleteContainerInput) (*DeleteContainerOutput, error) {
 	if h.containerService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
@@ -639,6 +716,35 @@ func (h *ContainerHandler) DeleteContainer(ctx context.Context, input *DeleteCon
 		Body: ContainerActionResponse{
 			Success: true,
 			Data:    base.MessageResponse{Message: "Container deleted successfully"},
+		},
+	}, nil
+}
+
+func (h *ContainerHandler) SetAutoUpdate(ctx context.Context, input *SetAutoUpdateInput) (*SetAutoUpdateOutput, error) {
+	if h.settingsService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	// Resolve container name from ID
+	containerName, err := h.containerService.GetContainerNameByID(ctx, input.ContainerID)
+	if err != nil {
+		return nil, huma.Error404NotFound("container not found")
+	}
+
+	excluded := !input.Body.Enabled
+	if err := h.settingsService.SetContainerAutoUpdateExclusionInternal(ctx, containerName, excluded); err != nil {
+		return nil, huma.Error500InternalServerError("failed to update auto-update setting")
+	}
+
+	msg := "Auto-update enabled"
+	if excluded {
+		msg = "Auto-update disabled"
+	}
+
+	return &SetAutoUpdateOutput{
+		Body: ContainerActionResponse{
+			Success: true,
+			Data:    base.MessageResponse{Message: msg},
 		},
 	}, nil
 }

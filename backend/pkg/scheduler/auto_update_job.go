@@ -25,6 +25,12 @@ func (j *AutoUpdateJob) Name() string {
 	return "auto-update"
 }
 
+func (j *AutoUpdateJob) ShouldSchedule(ctx context.Context) bool {
+	enabled := j.settingsService.GetBoolSetting(ctx, "autoUpdate", false)
+	pollingEnabled := j.settingsService.GetBoolSetting(ctx, "pollingEnabled", true)
+	return enabled && pollingEnabled
+}
+
 func (j *AutoUpdateJob) Schedule(ctx context.Context) string {
 	s := j.settingsService.GetStringSetting(ctx, "autoUpdateInterval", "0 0 0 * * *")
 	if s == "" {

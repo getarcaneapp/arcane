@@ -18,9 +18,8 @@ const (
 )
 
 type healthEnvironment struct {
-	ID      string
-	Name    string
-	Enabled bool
+	ID   string
+	Name string
 }
 
 type EnvironmentHealthJob struct {
@@ -80,6 +79,7 @@ func (j *EnvironmentHealthJob) Run(ctx context.Context) {
 	if err := db.WithContext(ctx).
 		Model(&healthEnvironment{}).
 		Table("environments").
+		Select("id", "name").
 		Where("enabled = ?", true).
 		Find(&environments).Error; err != nil {
 		slog.ErrorContext(ctx, "failed to list environments for health check", "error", err)

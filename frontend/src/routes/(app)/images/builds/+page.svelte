@@ -251,13 +251,14 @@
 			});
 
 			if (!response.ok || !response.body) {
-				const errorData = await response.json().catch(() => ({
+				const errorData = (await response.json().catch(() => ({
 					data: { message: m.build_request_failed() }
-				}));
+				}))) as Record<string, unknown>;
+				const errorDataPayload = errorData['data'] as Record<string, unknown> | undefined;
 				const errorMessage =
-					errorData.data?.message ||
-					errorData.error ||
-					errorData.message ||
+					errorDataPayload?.['message'] ||
+					errorData['error'] ||
+					errorData['message'] ||
 					m.build_request_failed_http({ status: response.status });
 				throw new Error(String(errorMessage));
 			}
@@ -615,7 +616,7 @@
 			const protocol = parsed.protocol.toLowerCase();
 			if (protocol === 'ssh:' || protocol === 'git:') return true;
 			if (protocol === 'http:' || protocol === 'https:') {
-				return parsed.pathname.toLowerCase().endsWith('.git');
+				return parsed.pathname !== '/';
 			}
 		} catch {
 			return false;
@@ -658,21 +659,21 @@
 					if (!data || typeof data !== 'object') {
 						return { raw: sanitizeLogText(line), isJson: false } satisfies BuildOutputEntry;
 					}
-					const progressDetail = data.progressDetail as Record<string, unknown> | undefined;
+					const progressDetail = data['progressDetail'] as Record<string, unknown> | undefined;
 					const progress = progressDetail
 						? {
-								current: typeof progressDetail.current === 'number' ? progressDetail.current : undefined,
-								total: typeof progressDetail.total === 'number' ? progressDetail.total : undefined
+								current: typeof progressDetail['current'] === 'number' ? progressDetail['current'] : undefined,
+								total: typeof progressDetail['total'] === 'number' ? progressDetail['total'] : undefined
 							}
 						: undefined;
 					return {
 						raw: sanitizeLogText(line),
 						isJson: true,
-						type: typeof data.type === 'string' ? data.type : undefined,
-						status: data.status ? sanitizeLogText(String(data.status)) : undefined,
-						id: data.id ? String(data.id) : undefined,
-						phase: typeof data.phase === 'string' ? data.phase : undefined,
-						error: data.error ? sanitizeLogText(String(data.error)) : undefined,
+						type: typeof data['type'] === 'string' ? data['type'] : undefined,
+						status: data['status'] ? sanitizeLogText(String(data['status'])) : undefined,
+						id: data['id'] ? String(data['id']) : undefined,
+						phase: typeof data['phase'] === 'string' ? data['phase'] : undefined,
+						error: data['error'] ? sanitizeLogText(String(data['error'])) : undefined,
 						progress
 					} satisfies BuildOutputEntry;
 				} catch {
@@ -927,7 +928,7 @@
 				item.status === 'success' ? 'emerald' : item.status === 'failed' ? 'red' : item.status === 'running' ? 'blue' : 'gray'
 		})}
 		title={(item: ImageBuildRecord) => getBuildTitle(item)}
-		subtitle={(item: ImageBuildRecord) => ((mobileFieldVisibility.context ?? true) ? item.contextDir : null)}
+		subtitle={(item: ImageBuildRecord) => ((mobileFieldVisibility['context'] ?? true) ? item.contextDir : null)}
 		badges={[
 			(item: ImageBuildRecord) => ({
 				variant: getStatusBadgeVariant(item.status),
@@ -940,28 +941,28 @@
 				getValue: (item: ImageBuildRecord) => item.tags?.join(', ') || '-',
 				icon: TagIcon,
 				iconVariant: 'gray' as const,
-				show: mobileFieldVisibility.tags ?? true
+				show: mobileFieldVisibility['tags'] ?? true
 			},
 			{
 				label: m.build_provider(),
 				getValue: (item: ImageBuildRecord) => item.provider || '-',
 				icon: SettingsIcon,
 				iconVariant: 'gray' as const,
-				show: mobileFieldVisibility.provider ?? true
+				show: mobileFieldVisibility['provider'] ?? true
 			},
 			{
 				label: m.common_created(),
 				getValue: (item: ImageBuildRecord) => formatTimestamp(item.createdAt),
 				icon: ClockIcon,
 				iconVariant: 'gray' as const,
-				show: mobileFieldVisibility.createdAt ?? true
+				show: mobileFieldVisibility['createdAt'] ?? true
 			},
 			{
 				label: m.build_duration_label(),
 				getValue: (item: ImageBuildRecord) => formatDuration(item.durationMs ?? 0),
 				icon: ArrowDownIcon,
 				iconVariant: 'gray' as const,
-				show: mobileFieldVisibility.durationMs ?? false
+				show: mobileFieldVisibility['durationMs'] ?? false
 			}
 		]}
 		onclick={(item: ImageBuildRecord) => openBuildDetails(item)}

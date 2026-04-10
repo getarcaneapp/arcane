@@ -7,9 +7,19 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/backend/internal/common"
+	pkgutils "github.com/getarcaneapp/arcane/backend/pkg/utils"
 	"github.com/goccy/go-yaml"
 )
+
+// expandEnvVarsInternal expands ${VAR} and $VAR references in a string using the provided env map.
+func expandEnvVarsInternal(s string, envMap EnvMap) string {
+	return os.Expand(s, func(key string) string {
+		if val, ok := envMap[key]; ok {
+			return val
+		}
+		return ""
+	})
+}
 
 // Security Model for Include Files:
 // - READ: Docker Compose allows include files from anywhere (parent dirs, absolute paths, etc.)
@@ -23,8 +33,9 @@ type IncludeFile struct {
 	Content      string `json:"content"`
 }
 
-// ParseIncludes reads a compose file and extracts all include directives
-func ParseIncludes(composeFilePath string) ([]IncludeFile, error) {
+// ParseIncludes reads a compose file and extracts all include directives.
+// envMap is used to expand variables (e.g., ${VAR}) in include paths.
+func ParseIncludes(composeFilePath string, envMap EnvMap, includeContent bool) ([]IncludeFile, error) {
 	content, err := os.ReadFile(composeFilePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read compose file: %w", err)
@@ -47,12 +58,12 @@ func ParseIncludes(composeFilePath string) ([]IncludeFile, error) {
 	switch v := includes.(type) {
 	case []any:
 		for _, item := range v {
-			if include, err := parseIncludeItem(item, composeDir); err == nil {
+			if include, err := parseIncludeItemInternal(item, composeDir, envMap, includeContent); err == nil {
 				includeFiles = append(includeFiles, include)
 			}
 		}
 	case string:
-		if include, err := parseIncludeItem(v, composeDir); err == nil {
+		if include, err := parseIncludeItemInternal(v, composeDir, envMap, includeContent); err == nil {
 			includeFiles = append(includeFiles, include)
 		}
 	}
@@ -60,7 +71,7 @@ func ParseIncludes(composeFilePath string) ([]IncludeFile, error) {
 	return includeFiles, nil
 }
 
-func parseIncludeItem(item any, baseDir string) (IncludeFile, error) {
+func parseIncludeItemInternal(item any, baseDir string, envMap EnvMap, includeContent bool) (IncludeFile, error) {
 	var includePath string
 
 	switch v := item.(type) {
@@ -78,6 +89,11 @@ func parseIncludeItem(item any, baseDir string) (IncludeFile, error) {
 		return IncludeFile{}, fmt.Errorf("empty include path")
 	}
 
+	// Expand environment variables in the include path (e.g., ${PROJECT_STACK_DIR})
+	if len(envMap) > 0 {
+		includePath = expandEnvVarsInternal(includePath, envMap)
+	}
+
 	fullPath := includePath
 	if !filepath.IsAbs(includePath) {
 		fullPath = filepath.Join(baseDir, includePath)
@@ -85,16 +101,18 @@ func parseIncludeItem(item any, baseDir string) (IncludeFile, error) {
 	fullPath = filepath.Clean(fullPath)
 
 	var content string
-	fileContent, err := os.ReadFile(fullPath)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			// File doesn't exist yet - return empty content so it can be created
-			content = "# This file will be created when you save changes\nservices:\n"
+	if includeContent {
+		fileContent, err := os.ReadFile(fullPath)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				// File doesn't exist yet - return empty content so it can be created
+				content = "# This file will be created when you save changes\nservices:\n"
+			} else {
+				return IncludeFile{}, fmt.Errorf("failed to read include file %s: %w", includePath, err)
+			}
 		} else {
-			return IncludeFile{}, fmt.Errorf("failed to read include file %s: %w", includePath, err)
+			content = string(fileContent)
 		}
-	} else {
-		content = string(fileContent)
 	}
 
 	relativePath := includePath
@@ -102,6 +120,10 @@ func parseIncludeItem(item any, baseDir string) (IncludeFile, error) {
 		if rel, err := filepath.Rel(baseDir, fullPath); err == nil {
 			relativePath = rel
 		}
+	}
+	relativePath = filepath.ToSlash(filepath.Clean(relativePath))
+	if relativePath == "." {
+		relativePath = filepath.Base(fullPath)
 	}
 
 	return IncludeFile{
@@ -190,12 +212,12 @@ func WriteIncludeFile(projectDir, includePath, content string) error {
 
 	// Only create directory if it doesn't exist
 	if _, err := os.Stat(dir); errors.Is(err, os.ErrNotExist) {
-		if err := os.MkdirAll(dir, common.DirPerm); err != nil {
+		if err := os.MkdirAll(dir, pkgutils.DirPerm); err != nil {
 			return fmt.Errorf("failed to create directory: %w", err)
 		}
 	}
 
-	if err := os.WriteFile(validatedPath, []byte(content), common.FilePerm); err != nil {
+	if err := os.WriteFile(validatedPath, []byte(content), pkgutils.FilePerm); err != nil {
 		return fmt.Errorf("failed to write include file: %w", err)
 	}
 

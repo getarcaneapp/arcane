@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
@@ -46,4 +47,25 @@ func (s *KVService) Set(ctx context.Context, key, value string) error {
 	}
 
 	return nil
+}
+
+func (s *KVService) GetBool(ctx context.Context, key string, defaultValue bool) (bool, error) {
+	rawValue, ok, err := s.Get(ctx, key)
+	if err != nil {
+		return defaultValue, err
+	}
+	if !ok {
+		return defaultValue, nil
+	}
+
+	parsedValue, err := strconv.ParseBool(rawValue)
+	if err != nil {
+		return defaultValue, fmt.Errorf("failed to parse kv entry %q as bool: %w", key, err)
+	}
+
+	return parsedValue, nil
+}
+
+func (s *KVService) SetBool(ctx context.Context, key string, value bool) error {
+	return s.Set(ctx, key, strconv.FormatBool(value))
 }

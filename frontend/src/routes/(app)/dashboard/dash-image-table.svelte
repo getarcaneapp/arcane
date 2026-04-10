@@ -11,7 +11,6 @@
 	import { m } from '$lib/paraglide/messages';
 	import { imageService } from '$lib/services/image-service';
 	import { goto } from '$app/navigation';
-	import { untrack } from 'svelte';
 	import { IsMobile } from '$lib/hooks';
 	import { ImagesIcon, ArrowRightIcon } from '$lib/icons';
 
@@ -24,12 +23,13 @@
 	} = $props();
 
 	const isMobile = new IsMobile();
-	let contentHeight = $state(0);
+	let displayLimit = $state(images.pagination?.itemsPerPage ?? 5);
+	let lastMeasuredHeight = $state(0);
 
-	// Estimate row height: ~57px per row (including borders/padding), plus ~145px for header
+	const MOBILE_ROWS = 4;
 	const ROW_HEIGHT = 57;
 	const HEADER_HEIGHT = 145;
-	const FOOTER_HEIGHT = 48; // Reserve space for the "showing" footer overlay
+	const FOOTER_HEIGHT = 48;
 	const MIN_ROWS = 3;
 	const MAX_ROWS = 50;
 
@@ -38,51 +38,53 @@
 		sort: { column: 'size', direction: 'desc' }
 	});
 
-	const shouldReserveFooter = $derived.by(() => {
-		const limit = requestOptions.pagination?.limit ?? images.pagination?.itemsPerPage ?? MIN_ROWS;
-		const dataLength = images.data?.length ?? 0;
-		const totalItems = images.pagination?.totalItems ?? 0;
-		return dataLength >= limit && totalItems > limit;
-	});
+	let selectedIds = $state<string[]>([]);
 
-	const calculatedLimit = $derived.by(() => {
-		if (isMobile.current) return 10;
-		if (contentHeight <= 0) return 5;
-		let availableHeight = contentHeight - HEADER_HEIGHT;
-		if (shouldReserveFooter) {
+	function shouldReserveFooter(limit: number) {
+		const totalItems = images.pagination?.totalItems ?? 0;
+		return totalItems > limit;
+	}
+
+	function calculateLimitForHeight(height: number) {
+		if (isMobile.current) return MOBILE_ROWS;
+		if (height <= 0) return 5;
+
+		let availableHeight = height - HEADER_HEIGHT;
+		const initialRows = Math.floor(Math.max(0, availableHeight) / ROW_HEIGHT);
+		const footerLimit = Math.max(MIN_ROWS, Math.min(MAX_ROWS, initialRows));
+		if (shouldReserveFooter(footerLimit)) {
 			availableHeight -= FOOTER_HEIGHT;
 		}
+
 		const rows = Math.floor(Math.max(0, availableHeight) / ROW_HEIGHT);
 		return Math.max(MIN_ROWS, Math.min(MAX_ROWS, rows));
-	});
+	}
 
-	let selectedIds = $state<string[]>([]);
-	let lastFetchedLimit = $state(5);
-
-	$effect(() => {
-		const limit = calculatedLimit;
-		const currentLimit = images.pagination?.itemsPerPage;
-
-		const tid = untrack(() => {
-			if (requestOptions.pagination && (limit !== lastFetchedLimit || (currentLimit !== undefined && currentLimit !== limit))) {
-				return setTimeout(() => {
-					untrack(() => {
-						lastFetchedLimit = limit;
-						if (requestOptions.pagination) {
-							requestOptions.pagination.limit = limit;
-							imageService.getImages(requestOptions).then((result) => {
-								untrack(() => {
-									images = result;
-								});
-							});
-						}
-					});
-				}, 300);
+	function updateRequestLimit(limit: number) {
+		requestOptions = {
+			...requestOptions,
+			pagination: {
+				page: requestOptions.pagination?.page ?? 1,
+				limit
 			}
-		});
+		};
+	}
 
-		if (tid) return () => clearTimeout(tid);
-	});
+	function handleLayoutChange(height: number) {
+		lastMeasuredHeight = height;
+		const nextLimit = calculateLimitForHeight(height);
+		displayLimit = nextLimit;
+		updateRequestLimit(nextLimit);
+	}
+
+	async function refreshImages(options: SearchPaginationSortRequest) {
+		requestOptions = options;
+		const result = await imageService.getImages(options);
+		images = result;
+		displayLimit = result.pagination?.itemsPerPage ?? displayLimit;
+		handleLayoutChange(lastMeasuredHeight);
+		return result;
+	}
 
 	const columns = [
 		{ accessorKey: 'repoTags', title: m.images_repository(), cell: NameCell },
@@ -154,8 +156,11 @@
 	/>
 {/snippet}
 
-<div class="flex h-full min-h-0 flex-col" bind:clientHeight={contentHeight}>
-	<Card.Root class="flex h-full min-h-0 flex-col">
+<div
+	class="flex flex-col lg:h-full lg:min-h-0"
+	bind:clientHeight={() => lastMeasuredHeight, (value) => handleLayoutChange(value)}
+>
+	<Card.Root class="flex flex-col lg:h-full lg:min-h-0">
 		<Card.Header icon={ImagesIcon} class="shrink-0">
 			<div class="flex flex-1 items-center justify-between">
 				<div class="flex flex-col space-y-1.5">
@@ -170,12 +175,12 @@
 				</ArcaneButton>
 			</div>
 		</Card.Header>
-		<Card.Content class="flex min-h-0 flex-1 flex-col px-0">
+		<Card.Content class="px-0 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
 			<ArcaneTable
-				items={{ ...images, data: images.data.slice(0, calculatedLimit) }}
+				items={{ ...images, data: images.data.slice(0, displayLimit) }}
 				bind:requestOptions
 				bind:selectedIds
-				onRefresh={async (options) => (images = await imageService.getImages(options))}
+				onRefresh={refreshImages}
 				{columns}
 				mobileCard={DashImageMobileCard}
 				withoutSearch
@@ -184,10 +189,10 @@
 				unstyled
 			/>
 		</Card.Content>
-		{#if images.data.length >= calculatedLimit && images.pagination.totalItems > calculatedLimit}
+		{#if images.data.length >= displayLimit && images.pagination.totalItems > displayLimit}
 			<Card.Footer class="border-t px-6 py-3">
 				<span class="text-muted-foreground text-xs">
-					{m.images_showing_of_total({ shown: calculatedLimit, total: images.pagination.totalItems })}
+					{m.images_showing_of_total({ shown: displayLimit, total: images.pagination.totalItems })}
 				</span>
 			</Card.Footer>
 		{/if}

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/compose-spec/compose-go/v2/loader"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	glsqlite "github.com/glebarez/sqlite"
@@ -18,7 +19,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/arcaneupdater"
+	libupdater "github.com/getarcaneapp/arcane/backend/pkg/libarcane/updater"
 )
 
 // mockSystemUpgradeService is a simple mock implementation for testing
@@ -54,7 +55,7 @@ func TestUpdaterService_ArcaneLabel_TriggersCLIUpgrade(t *testing.T) {
 	}
 
 	// Verify that IsArcaneContainer correctly identifies the label
-	isArcane := arcaneupdater.IsArcaneContainer(labels)
+	isArcane := libupdater.IsArcaneContainer(labels)
 	assert.True(t, isArcane, "IsArcaneContainer should return true for Arcane label")
 
 	// Simulate the logic from restartContainersUsingOldIDs:
@@ -65,6 +66,23 @@ func TestUpdaterService_ArcaneLabel_TriggersCLIUpgrade(t *testing.T) {
 
 	// Verify CLI upgrade was called
 	assert.True(t, mockUpgrade.triggerCalled, "TriggerUpgradeViaCLI should have been called for Arcane container")
+}
+
+func TestUpdaterService_ArcaneAgentLabel_TriggersCLIUpgrade(t *testing.T) {
+	ctx := context.Background()
+	mockUpgrade := &mockSystemUpgradeService{}
+	service := &UpdaterService{upgradeService: mockUpgrade}
+
+	labels := map[string]string{
+		libupdater.LabelArcaneAgent: "true",
+	}
+
+	err := service.triggerSelfUpdateViaCLIInternal(ctx, "test", "container-1", "arcane-agent", labels)
+
+	require.NoError(t, err)
+	assert.True(t, mockUpgrade.triggerCalled, "TriggerUpgradeViaCLI should have been called for Arcane agent container")
+	assert.NotNil(t, mockUpgrade.capturedUser)
+	assert.Equal(t, systemUser.ID, mockUpgrade.capturedUser.ID)
 }
 
 // TestUpdaterService_NonArcaneLabel_DoesNotTriggerCLI verifies that containers without
@@ -81,7 +99,7 @@ func TestUpdaterService_NonArcaneLabel_DoesNotTriggerCLI(t *testing.T) {
 	}
 
 	// Verify that IsArcaneContainer returns false
-	isArcane := arcaneupdater.IsArcaneContainer(labels)
+	isArcane := libupdater.IsArcaneContainer(labels)
 	assert.False(t, isArcane, "IsArcaneContainer should return false for non-Arcane container")
 
 	// Simulate the logic from restartContainersUsingOldIDs
@@ -91,6 +109,22 @@ func TestUpdaterService_NonArcaneLabel_DoesNotTriggerCLI(t *testing.T) {
 
 	// Verify CLI upgrade was NOT called
 	assert.False(t, mockUpgrade.triggerCalled, "TriggerUpgradeViaCLI should not have been called for non-Arcane container")
+}
+
+func TestUpdaterService_TriggerSelfUpdateViaCLI_NonArcaneContainer(t *testing.T) {
+	ctx := context.Background()
+	mockUpgrade := &mockSystemUpgradeService{}
+	service := &UpdaterService{upgradeService: mockUpgrade}
+
+	labels := map[string]string{
+		"some.other.label": "true",
+	}
+
+	err := service.triggerSelfUpdateViaCLIInternal(ctx, "test", "container-1", "not-arcane", labels)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "container is not an Arcane self-update target")
+	assert.False(t, mockUpgrade.triggerCalled, "non-Arcane containers must not trigger the CLI upgrade path")
 }
 
 // TestUpdaterService_ArcaneLabelWithError_PropagatesError verifies that CLI upgrade errors
@@ -108,7 +142,7 @@ func TestUpdaterService_ArcaneLabelWithError_PropagatesError(t *testing.T) {
 		"com.getarcaneapp.arcane": "true",
 	}
 
-	isArcane := arcaneupdater.IsArcaneContainer(labels)
+	isArcane := libupdater.IsArcaneContainer(labels)
 	assert.True(t, isArcane, "Should detect Arcane container")
 
 	// Call the upgrade method
@@ -126,19 +160,31 @@ func TestUpdaterService_ArcaneLabelWithError_PropagatesError(t *testing.T) {
 // TestUpdaterService_NilUpgradeService_GracefulHandling verifies graceful handling
 // when upgrade service is nil
 func TestUpdaterService_NilUpgradeService_GracefulHandling(t *testing.T) {
-	var mockUpgrade *mockSystemUpgradeService = nil
+	ctx := context.Background()
+	service := &UpdaterService{}
 
 	labels := map[string]string{
-		"com.getarcaneapp.arcane": "true",
+		libupdater.LabelArcane: "true",
 	}
 
-	isArcane := arcaneupdater.IsArcaneContainer(labels)
-	assert.True(t, isArcane, "Should detect Arcane container")
+	err := service.triggerSelfUpdateViaCLIInternal(ctx, "test", "container-1", "arcane", labels)
 
-	// When upgradeService is nil, ensure we don't attempt to call it.
-	assert.Nil(t, mockUpgrade, "Upgrade service should be nil; should not attempt to call it")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "server self-update requires CLI upgrade service")
+}
 
-	// Test passes if no panic occurs
+func TestUpdaterService_ArcaneAgentLabel_MissingUpgradeServiceReturnsError(t *testing.T) {
+	ctx := context.Background()
+	service := &UpdaterService{}
+
+	labels := map[string]string{
+		libupdater.LabelArcaneAgent: "true",
+	}
+
+	err := service.triggerSelfUpdateViaCLIInternal(ctx, "test", "container-1", "arcane-agent", labels)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "agent self-update requires CLI upgrade service")
 }
 
 // TestUpdaterService_ArcaneLabelVariations tests various label formats
@@ -189,7 +235,7 @@ func TestUpdaterService_ArcaneLabelVariations(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			isArcane := arcaneupdater.IsArcaneContainer(tt.labels)
+			isArcane := libupdater.IsArcaneContainer(tt.labels)
 			assert.Equal(t, tt.expectedArcane, isArcane, tt.description)
 		})
 	}
@@ -205,7 +251,7 @@ func TestUpdaterService_CLICalledWithSystemUser(t *testing.T) {
 		"com.getarcaneapp.arcane": "true",
 	}
 
-	isArcane := arcaneupdater.IsArcaneContainer(labels)
+	isArcane := libupdater.IsArcaneContainer(labels)
 	assert.True(t, isArcane)
 
 	if isArcane {
@@ -229,7 +275,7 @@ func TestUpdaterService_UpgradeServiceNotNilCheck(t *testing.T) {
 
 	// Test with non-nil upgrade service
 	mockUpgrade := &mockSystemUpgradeService{}
-	isArcane := arcaneupdater.IsArcaneContainer(labels)
+	isArcane := libupdater.IsArcaneContainer(labels)
 
 	// This is the actual logic from restartContainersUsingOldIDs
 	if isArcane {
@@ -237,6 +283,96 @@ func TestUpdaterService_UpgradeServiceNotNilCheck(t *testing.T) {
 	}
 
 	assert.True(t, mockUpgrade.triggerCalled, "Should call CLI upgrade when service is not nil")
+}
+
+func TestLookupComposeProjectIDInternal(t *testing.T) {
+	t.Run("exact match", func(t *testing.T) {
+		projectID, ok := lookupComposeProjectIDInternal("myproject", map[string]string{
+			"myproject": "p1",
+		})
+		require.True(t, ok)
+		assert.Equal(t, "p1", projectID)
+	})
+
+	t.Run("normalized fallback", func(t *testing.T) {
+		projectID, ok := lookupComposeProjectIDInternal("My Project", map[string]string{
+			loader.NormalizeProjectName("myproject"): "p1",
+		})
+		require.True(t, ok)
+		assert.Equal(t, "p1", projectID)
+	})
+
+	t.Run("missing project", func(t *testing.T) {
+		projectID, ok := lookupComposeProjectIDInternal("missing", map[string]string{
+			"other": "p1",
+		})
+		require.False(t, ok)
+		assert.Empty(t, projectID)
+	})
+}
+
+func TestUpdaterService_LazyRegisterComposeProjectInternal_AddsServicesForRegisteredProject(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "p1"},
+		Name:      "My Project!",
+		Path:      "/tmp/my-project",
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	projectService := NewProjectService(db, nil, nil, nil, nil, nil, config.Load())
+	svc := &UpdaterService{projectService: projectService}
+
+	projectNameToID := map[string]string{}
+	projectIDToObj := map[string]*models.Project{}
+	projectToServices := map[string][]string{}
+	projectToSeenServices := map[string]map[string]struct{}{}
+
+	firstPlan := &restartPlan{
+		newRef: "nginx:latest",
+		inspect: &container.InspectResponse{
+			Config: &container.Config{
+				Labels: map[string]string{
+					"com.docker.compose.project": "myproject",
+					"com.docker.compose.service": "web",
+				},
+			},
+		},
+	}
+	secondPlan := &restartPlan{
+		newRef: "nginx:latest",
+		inspect: &container.InspectResponse{
+			Config: &container.Config{
+				Labels: map[string]string{
+					"com.docker.compose.project": "myproject",
+					"com.docker.compose.service": "worker",
+				},
+			},
+		},
+	}
+
+	svc.lazyRegisterComposeProjectInternal(ctx, firstPlan, projectNameToID, projectIDToObj, projectToServices, projectToSeenServices)
+	svc.lazyRegisterComposeProjectInternal(ctx, secondPlan, projectNameToID, projectIDToObj, projectToServices, projectToSeenServices)
+
+	require.Contains(t, projectToServices, project.ID)
+	assert.Equal(t, []string{"web", "worker"}, projectToServices[project.ID])
+	assert.Equal(t, project.ID, projectNameToID[project.Name])
+	assert.Equal(t, project.ID, projectNameToID[loader.NormalizeProjectName(project.Name)])
+}
+
+func TestPendingComposeProjectServicesInternal(t *testing.T) {
+	processedProjectServices := map[string]map[string]struct{}{}
+
+	assert.Equal(t, []string{"A"}, pendingComposeProjectServicesInternal(processedProjectServices, "project-1", []string{"A"}))
+
+	markComposeProjectServicesProcessedInternal(processedProjectServices, "project-1", []string{"A"})
+	assert.Empty(t, pendingComposeProjectServicesInternal(processedProjectServices, "project-1", []string{"A"}))
+	assert.Equal(t, []string{"B"}, pendingComposeProjectServicesInternal(processedProjectServices, "project-1", []string{"A", "B"}))
+
+	markComposeProjectServicesProcessedInternal(processedProjectServices, "project-1", []string{"B"})
+	assert.Empty(t, pendingComposeProjectServicesInternal(processedProjectServices, "project-1", []string{"A", "B"}))
 }
 
 func TestAnyImageIDsInUseSet(t *testing.T) {
@@ -545,7 +681,7 @@ func TestCollectUsedImagesFromComposeContainersInternal(t *testing.T) {
 			Image: "redis:7",
 			Labels: map[string]string{
 				"com.docker.compose.project": "myapp",
-				arcaneupdater.LabelUpdater:   "false",
+				libupdater.LabelUpdater:      "false",
 			},
 		},
 		{
@@ -704,4 +840,29 @@ func TestComposeProjectNameFromLabelsInternal(t *testing.T) {
 	assert.Equal(t, "my-project", composeProjectNameFromLabelsInternal(map[string]string{
 		"com.docker.compose.project": " my-project ",
 	}))
+}
+
+func TestDockerProxyContainerNameInternal(t *testing.T) {
+	tests := []struct {
+		name       string
+		dockerHost string
+		expected   string
+	}{
+		{"empty", "", ""},
+		{"unix socket", "unix:///var/run/docker.sock", ""},
+		{"tcp with container hostname", "tcp://arcane-docker-socket-proxy:2375", "arcane-docker-socket-proxy"},
+		{"tcp with container hostname no port", "tcp://my-proxy", "my-proxy"},
+		{"tcp with ip address", "tcp://192.168.1.100:2375", ""},
+		{"tcp with localhost", "tcp://localhost:2375", ""},
+		{"tcp with fqdn", "tcp://docker.example.com:2375", ""},
+		{"tcp with ipv6 address", "tcp://[::1]:2375", ""},
+		{"tcp with ipv6 no port", "tcp://[::1]", ""},
+		{"tcp with spaces", "  tcp://my-proxy:2375  ", "my-proxy"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, dockerProxyContainerNameInternal(tt.dockerHost))
+		})
+	}
 }

@@ -75,6 +75,8 @@ export const queryKeys = {
 		dockerInfo: (environmentId: string) => ['system', 'docker-info', environmentId] as const
 	},
 	dashboard: {
+		snapshot: (environmentId: string, debugAllGood = false) =>
+			['dashboard', 'snapshot', environmentId, debugAllGood ? 'debug-all-good' : 'normal'] as const,
 		actionItems: (environmentId: string, debugAllGood = false) =>
 			['dashboard', 'action-items', environmentId, debugAllGood ? 'debug-all-good' : 'normal'] as const
 	},
@@ -111,7 +113,13 @@ export const queryKeys = {
 		all: ['networks'] as const,
 		list: (environmentId: string, options: SearchPaginationSortRequest) =>
 			['networks', environmentId, stableSerialize(options)] as const,
-		detail: (environmentId: string, networkId: string) => ['network', environmentId, networkId] as const
+		detail: (environmentId: string, networkId: string) => ['network', environmentId, networkId] as const,
+		topology: (environmentId: string) => ['networks', environmentId, 'topology'] as const
+	},
+	ports: {
+		all: ['ports'] as const,
+		list: (environmentId: string, options: SearchPaginationSortRequest) =>
+			['ports', environmentId, stableSerialize(options)] as const
 	},
 	gitOpsSyncs: {
 		all: ['gitops-syncs'] as const,

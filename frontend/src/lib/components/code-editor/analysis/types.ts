@@ -17,10 +17,6 @@ export type DiagnosticSummary = {
 	hints: number;
 	schemaStatus: SchemaStatus;
 	schemaMessage?: string;
-	unresolvedVariables: string[];
-	secretWarnings: number;
-	duplicateKeyWarnings: number;
-	duplicateEnvWarnings: number;
 	cursorLine: number;
 	cursorCol: number;
 	validationReady: boolean;

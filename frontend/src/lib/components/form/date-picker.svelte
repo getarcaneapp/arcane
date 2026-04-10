@@ -12,9 +12,10 @@
 	type Props = {
 		value?: Date;
 		id?: string;
+		disabled?: boolean;
 	} & HTMLAttributes<HTMLDivElement>;
 
-	let { value = $bindable(undefined), id, ...restProps }: Props = $props();
+	let { value = $bindable(undefined), id, disabled = false, ...restProps }: Props = $props();
 
 	let calendarDisplayDate: CalendarDate | undefined = $state(value ? dateToCalendarDate(value) : undefined);
 
@@ -50,7 +51,7 @@
 		}
 	});
 
-	function handleCalendarInteraction(newDateValue?: DateValue) {
+	function handleCalendarInteraction(_newDateValue?: DateValue) {
 		open = false;
 	}
 
@@ -60,7 +61,7 @@
 </script>
 
 <div class="w-full" {...restProps}>
-	<Popover.Root bind:open>
+	<Popover.Root {open} onOpenChange={(nextOpen) => (open = nextOpen)}>
 		<Popover.Trigger {id} class="w-full">
 			{#snippet child({ props })}
 				<ArcaneButton
@@ -71,6 +72,7 @@
 					aria-label={m.select_a_date()}
 					icon={CalendarIcon}
 					customLabel={calendarDisplayDate ? df.format(calendarDisplayDate.toDate(getLocalTimeZone())) : m.select_a_date()}
+					{disabled}
 				/>
 			{/snippet}
 		</Popover.Trigger>

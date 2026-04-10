@@ -172,6 +172,14 @@ func (e *ContainerRestartError) Error() string {
 	return fmt.Sprintf("Failed to restart container: %v", e.Err)
 }
 
+type ContainerRedeployError struct {
+	Err error
+}
+
+func (e *ContainerRedeployError) Error() string {
+	return fmt.Sprintf("Failed to redeploy container: %v", e.Err)
+}
+
 type ContainerDeleteError struct {
 	Err error
 }
@@ -714,6 +722,36 @@ func (e *ProjectDetailsError) Error() string {
 	return fmt.Sprintf("Failed to get project details: %v", e.Err)
 }
 
+type ProjectFileBadRequestError struct {
+	Err error
+}
+
+func (e *ProjectFileBadRequestError) Error() string {
+	return fmt.Sprintf("Invalid project file request: %v", e.Err)
+}
+
+type ProjectFileForbiddenError struct {
+	Err error
+}
+
+func (e *ProjectFileForbiddenError) Error() string {
+	return fmt.Sprintf("Forbidden project file path: %v", e.Err)
+}
+
+type ProjectFileNotFoundError struct{}
+
+func (e *ProjectFileNotFoundError) Error() string {
+	return "Project file not found"
+}
+
+type ProjectComposeFileNotFoundError struct {
+	Err error
+}
+
+func (e *ProjectComposeFileNotFoundError) Error() string {
+	return fmt.Sprintf("Project compose file not found: %v", e.Err)
+}
+
 type ProjectRedeploymentError struct {
 	Err error
 }
@@ -975,7 +1013,7 @@ type RegistryFetchError struct {
 }
 
 func (e *RegistryFetchError) Error() string {
-	return fmt.Sprintf("Failed to fetch registry: %v", e.Err)
+	return "Failed to fetch registry"
 }
 
 type InvalidJSONResponseError struct {
@@ -983,7 +1021,15 @@ type InvalidJSONResponseError struct {
 }
 
 func (e *InvalidJSONResponseError) Error() string {
-	return fmt.Sprintf("Invalid JSON response: %v", e.Err)
+	return "Invalid JSON response"
+}
+
+type UnsafeRemoteURLError struct {
+	Err error
+}
+
+func (e *UnsafeRemoteURLError) Error() string {
+	return fmt.Sprintf("Remote URL is not allowed: %v", e.Err)
 }
 
 type TemplateAlreadyLocalError struct{}
@@ -1331,4 +1377,104 @@ type VulnerabilityScanRetrievalError struct {
 
 func (e *VulnerabilityScanRetrievalError) Error() string {
 	return fmt.Sprintf("Failed to retrieve vulnerability scan: %v", e.Err)
+}
+
+type SwarmNotEnabledError struct{}
+
+func (e *SwarmNotEnabledError) Error() string {
+	return "Swarm mode is not enabled"
+}
+
+type SwarmManagerRequiredError struct{}
+
+func (e *SwarmManagerRequiredError) Error() string {
+	return "Swarm manager access required"
+}
+
+type SwarmServiceListError struct {
+	Err error
+}
+
+func (e *SwarmServiceListError) Error() string {
+	return fmt.Sprintf("Failed to list swarm services: %v", e.Err)
+}
+
+type SwarmServiceNotFoundError struct {
+	Err error
+}
+
+func (e *SwarmServiceNotFoundError) Error() string {
+	return fmt.Sprintf("Swarm service not found: %v", e.Err)
+}
+
+type SwarmServiceCreateError struct {
+	Err error
+}
+
+func (e *SwarmServiceCreateError) Error() string {
+	return fmt.Sprintf("Failed to create swarm service: %v", e.Err)
+}
+
+type SwarmServiceUpdateError struct {
+	Err error
+}
+
+func (e *SwarmServiceUpdateError) Error() string {
+	return fmt.Sprintf("Failed to update swarm service: %v", e.Err)
+}
+
+type SwarmServiceRemoveError struct {
+	Err error
+}
+
+func (e *SwarmServiceRemoveError) Error() string {
+	return fmt.Sprintf("Failed to remove swarm service: %v", e.Err)
+}
+
+type SwarmNodeListError struct {
+	Err error
+}
+
+func (e *SwarmNodeListError) Error() string {
+	return fmt.Sprintf("Failed to list swarm nodes: %v", e.Err)
+}
+
+type SwarmNodeNotFoundError struct {
+	Err error
+}
+
+func (e *SwarmNodeNotFoundError) Error() string {
+	return fmt.Sprintf("Swarm node not found: %v", e.Err)
+}
+
+type SwarmTaskListError struct {
+	Err error
+}
+
+func (e *SwarmTaskListError) Error() string {
+	return fmt.Sprintf("Failed to list swarm tasks: %v", e.Err)
+}
+
+type SwarmStackListError struct {
+	Err error
+}
+
+func (e *SwarmStackListError) Error() string {
+	return fmt.Sprintf("Failed to list swarm stacks: %v", e.Err)
+}
+
+type SwarmStackDeployError struct {
+	Err error
+}
+
+func (e *SwarmStackDeployError) Error() string {
+	return fmt.Sprintf("Failed to deploy swarm stack: %v", e.Err)
+}
+
+type SwarmInspectError struct {
+	Err error
+}
+
+func (e *SwarmInspectError) Error() string {
+	return fmt.Sprintf("Failed to inspect swarm: %v", e.Err)
 }

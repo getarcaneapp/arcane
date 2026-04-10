@@ -6,18 +6,18 @@ export function transformPaginationParams(options?: SearchPaginationSortRequest)
 	if (!options) return params;
 
 	if (options.search) {
-		params.search = options.search;
+		params['search'] = options.search;
 	}
 
 	if (options.pagination) {
 		const { page, limit } = options.pagination;
-		params.start = Math.max(0, (page - 1) * limit);
-		params.limit = limit;
+		params['start'] = Math.max(0, (page - 1) * limit);
+		params['limit'] = limit;
 	}
 
 	if (options.sort) {
-		params.sort = options.sort.column;
-		params.order = options.sort.direction;
+		params['sort'] = options.sort.column;
+		params['order'] = options.sort.direction;
 	}
 
 	if (options.filters) {
@@ -31,7 +31,7 @@ export function transformPaginationParams(options?: SearchPaginationSortRequest)
 	}
 
 	if (typeof options.includeInternal === 'boolean') {
-		params.includeInternal = String(options.includeInternal);
+		params['includeInternal'] = String(options.includeInternal);
 	}
 
 	return params;

@@ -294,6 +294,5 @@ func (s *JobService) calculateNextRunInternal(schedule string) *time.Time {
 
 	// Calculate next run using the configured timezone.
 	now := time.Now().In(location)
-	nextRun := sched.Next(now)
-	return &nextRun
+	return new(sched.Next(now))
 }

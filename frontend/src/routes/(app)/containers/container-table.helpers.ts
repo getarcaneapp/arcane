@@ -1,7 +1,7 @@
 import { m } from '$lib/paraglide/messages';
 import type { ContainerSummaryDto } from '$lib/types/container.type';
 
-export type ActionStatus = 'starting' | 'stopping' | 'restarting' | 'updating' | 'removing' | '';
+export type ActionStatus = 'starting' | 'stopping' | 'restarting' | 'updating' | 'removing' | 'redeploying' | '';
 export type StateBadgeVariant = 'green' | 'red' | 'amber';
 
 export function parseImageRef(imageRef: string): { repo: string; tag: string } {
@@ -30,6 +30,7 @@ const actionStatusMessages: Record<ActionStatus, () => string> = {
 	starting: () => m.common_action_starting(),
 	stopping: () => m.common_action_stopping(),
 	restarting: () => m.common_action_restarting(),
+	redeploying: () => m.common_action_redeploying(),
 	updating: () => m.common_action_updating(),
 	removing: () => m.common_action_removing(),
 	'': () => ''

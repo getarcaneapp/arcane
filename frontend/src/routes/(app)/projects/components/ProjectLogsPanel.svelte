@@ -30,10 +30,6 @@
 		viewer?.stopLogStream();
 	}
 
-	function handleClear() {
-		viewer?.clearLogs();
-	}
-
 	async function handleRefresh() {
 		await viewer?.clearLogs({ hard: true, restart: true });
 	}
@@ -56,16 +52,31 @@
 	<Card.Header icon={TerminalIcon}>
 		<div class="flex flex-1 flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
 			<div class="flex flex-col gap-1.5">
-				<div class="flex items-center gap-2">
-					<Card.Title>
-						<h2>{m.compose_logs_title()}</h2>
-					</Card.Title>
-					{#if isStreaming}
-						<div class="flex items-center gap-2">
-							<div class="size-2 animate-pulse rounded-full bg-green-500"></div>
-							<span class="text-xs font-semibold text-green-600 sm:text-sm">{m.common_live()}</span>
-						</div>
-					{/if}
+				<div class="flex items-start justify-between gap-3 lg:block">
+					<div class="flex items-center gap-2">
+						<Card.Title>
+							<h2>{m.compose_logs_title()}</h2>
+						</Card.Title>
+						{#if isStreaming}
+							<div class="flex items-center gap-2">
+								<div class="size-2 animate-pulse rounded-full bg-green-500"></div>
+								<span class="text-xs font-semibold text-green-600 sm:text-sm">{m.common_live()}</span>
+							</div>
+						{/if}
+					</div>
+					<LogControls
+						bind:autoScroll
+						bind:tailLines
+						bind:autoStartLogs
+						bind:showParsedJson
+						mobileLayout="full"
+						showDesktop={false}
+						{isStreaming}
+						disabled={!projectId}
+						onStart={handleStart}
+						onStop={handleStop}
+						onRefresh={handleRefresh}
+					/>
 				</div>
 				<Card.Description>Real-time project logs</Card.Description>
 			</div>
@@ -74,11 +85,11 @@
 				bind:tailLines
 				bind:autoStartLogs
 				bind:showParsedJson
+				mobileLayout="none"
 				{isStreaming}
 				disabled={!projectId}
 				onStart={handleStart}
 				onStop={handleStop}
-				onClear={handleClear}
 				onRefresh={handleRefresh}
 			/>
 		</div>

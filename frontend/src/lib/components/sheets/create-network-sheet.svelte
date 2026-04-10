@@ -6,13 +6,12 @@
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Textarea } from '$lib/components/ui/textarea/index.js';
-	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import type { NetworkCreateOptions } from '$lib/types/network.type';
 	import { z } from 'zod/v4';
 	import { createForm, preventDefault } from '$lib/utils/form.utils';
 	import SelectWithLabel from '../form/select-with-label.svelte';
 	import { m } from '$lib/paraglide/messages';
-	import { AddIcon, CloseIcon, NetworksIcon } from '$lib/icons';
+	import { CloseIcon } from '$lib/icons';
 
 	type CreateNetworkFormProps = {
 		open: boolean;
@@ -72,7 +71,7 @@
 			const [key, ...valueParts] = trimmed.split('=');
 			const value = valueParts.join('=');
 
-			if (key.trim()) {
+			if (key?.trim()) {
 				result[key.trim()] = value.trim();
 			}
 		}
@@ -156,7 +155,7 @@
 </script>
 
 <ResponsiveDialog.Root
-	bind:open
+	{open}
 	onOpenChange={handleOpenChange}
 	variant="sheet"
 	title={m.create_network_title()}

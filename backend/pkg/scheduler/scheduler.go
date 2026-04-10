@@ -48,44 +48,24 @@ func (js *JobScheduler) GetJob(jobID string) (schedulertypes.Job, bool) {
 
 func (js *JobScheduler) StartScheduler() {
 	for _, job := range js.jobs {
-		currentJob := job
-		schedule := currentJob.Schedule(js.context)
-
-		slog.InfoContext(js.context, "Starting Job", "name", currentJob.Name(), "schedule", schedule)
-
-		entryID, err := js.cron.AddFunc(schedule, func() {
-			slog.InfoContext(js.context, "Job starting", "name", currentJob.Name(), "schedule", schedule)
-			currentJob.Run(js.context)
-			slog.InfoContext(js.context, "Job finished", "name", currentJob.Name())
-		})
-		if err != nil {
-			slog.ErrorContext(js.context, "Failed to schedule job", "name", currentJob.Name(), "schedule", schedule, "error", err)
-			continue
+		if err := js.scheduleJobInternal(js.context, job); err != nil {
+			slog.ErrorContext(js.context, "Failed to schedule job", "name", job.Name(), "error", err)
 		}
-
-		js.entryIDs[currentJob.Name()] = entryID
 	}
 	js.cron.Start()
 }
 
 func (js *JobScheduler) RescheduleJob(ctx context.Context, job schedulertypes.Job) error {
-	schedule := job.Schedule(ctx)
-
 	if entryID, ok := js.entryIDs[job.Name()]; ok {
 		js.cron.Remove(entryID)
+		delete(js.entryIDs, job.Name())
 	}
 
-	entryID, err := js.cron.AddFunc(schedule, func() {
-		slog.InfoContext(ctx, "Job starting", "name", job.Name(), "schedule", schedule)
-		job.Run(ctx)
-		slog.InfoContext(ctx, "Job finished", "name", job.Name())
-	})
-	if err != nil {
+	if err := js.scheduleJobInternal(ctx, job); err != nil {
 		return err
 	}
 
-	js.entryIDs[job.Name()] = entryID
-	slog.DebugContext(ctx, "Job rescheduled", "name", job.Name(), "schedule", schedule, "contextCanceled", ctx.Err() != nil)
+	slog.DebugContext(ctx, "Job rescheduled", "name", job.Name(), "scheduled", js.isJobScheduledInternal(job.Name()), "contextCanceled", ctx.Err() != nil)
 	return nil
 }
 
@@ -99,4 +79,31 @@ func (js *JobScheduler) Run(ctx context.Context) error {
 	<-ctx.Done()
 	js.cron.Stop()
 	return nil
+}
+
+func (js *JobScheduler) scheduleJobInternal(ctx context.Context, job schedulertypes.Job) error {
+	if conditionalJob, ok := job.(schedulertypes.ConditionalJob); ok && !conditionalJob.ShouldSchedule(ctx) {
+		slog.DebugContext(ctx, "Job disabled; not scheduling", "name", job.Name())
+		return nil
+	}
+
+	schedule := job.Schedule(ctx)
+	slog.InfoContext(ctx, "Starting Job", "name", job.Name(), "schedule", schedule)
+
+	entryID, err := js.cron.AddFunc(schedule, func() {
+		slog.InfoContext(ctx, "Job starting", "name", job.Name(), "schedule", schedule)
+		job.Run(ctx)
+		slog.InfoContext(ctx, "Job finished", "name", job.Name())
+	})
+	if err != nil {
+		return err
+	}
+
+	js.entryIDs[job.Name()] = entryID
+	return nil
+}
+
+func (js *JobScheduler) isJobScheduledInternal(jobName string) bool {
+	_, ok := js.entryIDs[jobName]
+	return ok
 }

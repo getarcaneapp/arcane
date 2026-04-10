@@ -1,10 +1,16 @@
+export type RegistryType = 'generic' | 'ecr';
+
 export interface ContainerRegistryCreateDto {
 	url: string;
-	username: string;
-	token: string;
+	username?: string;
+	token?: string;
 	description?: string;
 	insecure?: boolean;
 	enabled?: boolean;
+	registryType?: RegistryType;
+	awsAccessKeyId?: string;
+	awsSecretAccessKey?: string;
+	awsRegion?: string;
 }
 
 export interface ContainerRegistryUpdateDto {
@@ -14,6 +20,10 @@ export interface ContainerRegistryUpdateDto {
 	description?: string;
 	insecure?: boolean;
 	enabled?: boolean;
+	registryType?: RegistryType;
+	awsAccessKeyId?: string;
+	awsSecretAccessKey?: string;
+	awsRegion?: string;
 }
 
 export interface ContainerRegistry {
@@ -24,6 +34,9 @@ export interface ContainerRegistry {
 	description?: string;
 	insecure?: boolean;
 	enabled?: boolean;
+	registryType?: RegistryType;
+	awsAccessKeyId?: string;
+	awsRegion?: string;
 	createdAt?: string;
 	updatedAt?: string;
 }

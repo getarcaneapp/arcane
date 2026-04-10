@@ -23,9 +23,9 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/pathmapper"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/stringutils"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
+	"github.com/getarcaneapp/arcane/backend/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils"
 	"github.com/getarcaneapp/arcane/types/settings"
 )
 
@@ -57,10 +57,6 @@ func NewSettingsService(ctx context.Context, db *database.DB) (*SettingsService,
 		return nil, fmt.Errorf("failed to setup instance ID: %w", err)
 	}
 
-	if err = svc.LoadDatabaseSettings(ctx); err != nil {
-		return nil, fmt.Errorf("failed to reload settings after instance ID setup: %w", err)
-	}
-
 	return svc, nil
 }
 
@@ -84,48 +80,66 @@ func (s *SettingsService) LoadDatabaseSettings(ctx context.Context) (err error) 
 	return nil
 }
 
+func (s *SettingsService) refreshSettingsCacheInternal(ctx context.Context) error {
+	if err := s.LoadDatabaseSettings(ctx); err != nil {
+		return fmt.Errorf("failed to refresh settings cache: %w", err)
+	}
+
+	return nil
+}
+
 func (s *SettingsService) getDefaultSettings() *models.Settings {
+	return DefaultSettingsConfig()
+}
+
+// DefaultSettingsConfig returns the canonical default settings model used by Arcane.
+func DefaultSettingsConfig() *models.Settings {
 	return &models.Settings{
-		ProjectsDirectory:             models.SettingVariable{Value: "/app/data/projects"},
-		DiskUsagePath:                 models.SettingVariable{Value: "/app/data/projects"},
-		AutoUpdate:                    models.SettingVariable{Value: "false"},
-		AutoUpdateInterval:            models.SettingVariable{Value: "0 0 0 * * *"},
-		AutoUpdateExcludedContainers:  models.SettingVariable{Value: ""},
-		PollingEnabled:                models.SettingVariable{Value: "true"},
-		PollingInterval:               models.SettingVariable{Value: "0 0 * * * *"},
-		EventCleanupInterval:          models.SettingVariable{Value: "0 0 */6 * * *"},
-		AutoInjectEnv:                 models.SettingVariable{Value: "false"},
-		PruneMode:                     models.SettingVariable{Value: "dangling"},
-		DefaultDeployPullPolicy:       models.SettingVariable{Value: "missing"},
-		ScheduledPruneEnabled:         models.SettingVariable{Value: "false"},
-		ScheduledPruneInterval:        models.SettingVariable{Value: "0 0 0 * * *"},
-		ScheduledPruneContainers:      models.SettingVariable{Value: "true"},
-		ScheduledPruneImages:          models.SettingVariable{Value: "true"},
-		ScheduledPruneVolumes:         models.SettingVariable{Value: "false"},
-		ScheduledPruneNetworks:        models.SettingVariable{Value: "true"},
-		ScheduledPruneBuildCache:      models.SettingVariable{Value: "false"},
-		AutoHealEnabled:               models.SettingVariable{Value: "false"},
-		AutoHealInterval:              models.SettingVariable{Value: "*/30 * * * * *"},
-		AutoHealExcludedContainers:    models.SettingVariable{Value: ""},
-		AutoHealMaxRestarts:           models.SettingVariable{Value: "5"},
-		AutoHealRestartWindow:         models.SettingVariable{Value: "30"},
-		GitopsSyncInterval:            models.SettingVariable{Value: "0 */1 * * * *"},
-		BaseServerURL:                 models.SettingVariable{Value: "http://localhost"},
-		EnableGravatar:                models.SettingVariable{Value: "true"},
-		DefaultShell:                  models.SettingVariable{Value: "/bin/sh"},
-		DockerHost:                    models.SettingVariable{Value: "unix:///var/run/docker.sock"},
-		BuildsDirectory:               models.SettingVariable{Value: "/builds"},
-		AuthLocalEnabled:              models.SettingVariable{Value: "true"},
-		AuthSessionTimeout:            models.SettingVariable{Value: "1440"},
-		AuthPasswordPolicy:            models.SettingVariable{Value: "strong"},
-		VulnerabilityScanEnabled:      models.SettingVariable{Value: "false"},
-		VulnerabilityScanInterval:     models.SettingVariable{Value: "0 0 0 * * *"},
-		TrivyImage:                    models.SettingVariable{Value: "ghcr.io/aquasecurity/trivy:latest"},
-		TrivyNetwork:                  models.SettingVariable{Value: "bridge"},
-		TrivyResourceLimitsEnabled:    models.SettingVariable{Value: "true"},
-		TrivyCpuLimit:                 models.SettingVariable{Value: "1"},
-		TrivyMemoryLimitMb:            models.SettingVariable{Value: "0"},
-		TrivyConcurrentScanContainers: models.SettingVariable{Value: "1"},
+		ProjectsDirectory:               models.SettingVariable{Value: "/app/data/projects"},
+		FollowProjectSymlinks:           models.SettingVariable{Value: "false"},
+		SwarmStackSourcesDirectory:      models.SettingVariable{Value: "/app/data/swarm/sources"},
+		DiskUsagePath:                   models.SettingVariable{Value: "/app/data/projects"},
+		AutoUpdate:                      models.SettingVariable{Value: "false"},
+		AutoUpdateInterval:              models.SettingVariable{Value: "0 0 0 * * *"},
+		AutoUpdateExcludedContainers:    models.SettingVariable{Value: ""},
+		PollingEnabled:                  models.SettingVariable{Value: "true"},
+		PollingInterval:                 models.SettingVariable{Value: "0 0 * * * *"},
+		EventCleanupInterval:            models.SettingVariable{Value: "0 0 */6 * * *"},
+		AutoInjectEnv:                   models.SettingVariable{Value: "false"},
+		PruneMode:                       models.SettingVariable{Value: "dangling"},
+		DefaultDeployPullPolicy:         models.SettingVariable{Value: "missing"},
+		ScheduledPruneEnabled:           models.SettingVariable{Value: "false"},
+		ScheduledPruneInterval:          models.SettingVariable{Value: "0 0 0 * * *"},
+		ScheduledPruneContainers:        models.SettingVariable{Value: "true"},
+		ScheduledPruneImages:            models.SettingVariable{Value: "true"},
+		ScheduledPruneVolumes:           models.SettingVariable{Value: "false"},
+		ScheduledPruneNetworks:          models.SettingVariable{Value: "true"},
+		ScheduledPruneBuildCache:        models.SettingVariable{Value: "false"},
+		AutoHealEnabled:                 models.SettingVariable{Value: "false"},
+		AutoHealInterval:                models.SettingVariable{Value: "*/30 * * * * *"},
+		AutoHealExcludedContainers:      models.SettingVariable{Value: ""},
+		AutoHealMaxRestarts:             models.SettingVariable{Value: "5"},
+		AutoHealRestartWindow:           models.SettingVariable{Value: "30"},
+		GitopsSyncInterval:              models.SettingVariable{Value: "0 */1 * * * *"},
+		BaseServerURL:                   models.SettingVariable{Value: "http://localhost"},
+		EnableGravatar:                  models.SettingVariable{Value: "true"},
+		DefaultShell:                    models.SettingVariable{Value: "/bin/sh"},
+		DockerHost:                      models.SettingVariable{Value: "unix:///var/run/docker.sock"},
+		BuildsDirectory:                 models.SettingVariable{Value: "/builds"},
+		AuthLocalEnabled:                models.SettingVariable{Value: "true"},
+		AuthSessionTimeout:              models.SettingVariable{Value: "1440"},
+		AuthPasswordPolicy:              models.SettingVariable{Value: "strong"},
+		VulnerabilityScanEnabled:        models.SettingVariable{Value: "false"},
+		VulnerabilityScanInterval:       models.SettingVariable{Value: "0 0 0 * * *"},
+		TrivyImage:                      models.SettingVariable{Value: DefaultTrivyImage},
+		TrivyNetwork:                    models.SettingVariable{Value: ""},
+		TrivySecurityOpts:               models.SettingVariable{Value: ""},
+		TrivyPrivileged:                 models.SettingVariable{Value: "false"},
+		TrivyPreserveCacheOnVolumePrune: models.SettingVariable{Value: "true"},
+		TrivyResourceLimitsEnabled:      models.SettingVariable{Value: "true"},
+		TrivyCpuLimit:                   models.SettingVariable{Value: "1"},
+		TrivyMemoryLimitMb:              models.SettingVariable{Value: "0"},
+		TrivyConcurrentScanContainers:   models.SettingVariable{Value: "1"},
 		// AuthOidcConfig DEPRECATED will be removed in a future release
 		AuthOidcConfig:             models.SettingVariable{Value: "{}"},
 		OidcEnabled:                models.SettingVariable{Value: "false"},
@@ -148,9 +162,13 @@ func (s *SettingsService) getDefaultSettings() *models.Settings {
 		MobileNavigationShowLabels: models.SettingVariable{Value: "true"},
 		SidebarHoverExpansion:      models.SettingVariable{Value: "true"},
 		KeyboardShortcutsEnabled:   models.SettingVariable{Value: "true"},
+		ApplicationTheme:           models.SettingVariable{Value: "default"},
 		AccentColor:                models.SettingVariable{Value: "oklch(0.606 0.25 292.717)"},
 		OledMode:                   models.SettingVariable{Value: "false"},
 		MaxImageUploadSize:         models.SettingVariable{Value: "500"},
+		GitSyncMaxFiles:            models.SettingVariable{Value: "500"},
+		GitSyncMaxTotalSizeMb:      models.SettingVariable{Value: "50"},
+		GitSyncMaxBinarySizeMb:     models.SettingVariable{Value: "10"},
 		EnvironmentHealthInterval:  models.SettingVariable{Value: "0 */2 * * * *"},
 
 		DockerAPITimeout:       models.SettingVariable{Value: "30"},
@@ -230,7 +248,7 @@ func (s *SettingsService) loadDatabaseConfigFromEnv(ctx context.Context, db *dat
 			continue
 		}
 
-		envVarName := stringutils.CamelCaseToScreamingSnakeCase(key)
+		envVarName := utils.CamelCaseToScreamingSnakeCase(key)
 
 		// debug: log each env name checked and whether a value exists
 		if val, ok := os.LookupEnv(envVarName); ok {
@@ -239,7 +257,7 @@ func (s *SettingsService) loadDatabaseConfigFromEnv(ctx context.Context, db *dat
 				mask = fmt.Sprintf("%d chars", len(val))
 			}
 			slog.DebugContext(ctx, "loadDatabaseConfigFromEnv: env override found", "key", key, "env", envVarName, "valueMasked", mask)
-			rv.Field(i).FieldByName("Value").SetString(stringutils.TrimQuotes(val))
+			rv.Field(i).FieldByName("Value").SetString(utils.TrimQuotes(val))
 			continue
 		} else if val, ok := settingsMap[key]; ok {
 			// Fallback to database if environment variable is not set
@@ -285,10 +303,10 @@ func (s *SettingsService) applyEnvOverrides(ctx context.Context, dest *models.Se
 		}
 
 		// Check if environment variable is set
-		envVarName := stringutils.CamelCaseToScreamingSnakeCase(key)
+		envVarName := utils.CamelCaseToScreamingSnakeCase(key)
 		if val, ok := os.LookupEnv(envVarName); ok && val != "" {
 			slog.DebugContext(ctx, "applyEnvOverrides: applying env override", "key", key, "env", envVarName)
-			rv.Field(i).FieldByName("Value").SetString(stringutils.TrimQuotes(val))
+			rv.Field(i).FieldByName("Value").SetString(utils.TrimQuotes(val))
 		}
 	}
 }
@@ -312,7 +330,7 @@ func (s *SettingsService) isEnvOverrideActiveInternal(key string) bool {
 			return false
 		}
 
-		envVarName := stringutils.CamelCaseToScreamingSnakeCase(key)
+		envVarName := utils.CamelCaseToScreamingSnakeCase(key)
 		val, ok := os.LookupEnv(envVarName)
 		return ok && val != ""
 	}
@@ -321,29 +339,14 @@ func (s *SettingsService) isEnvOverrideActiveInternal(key string) bool {
 }
 
 func (s *SettingsService) GetSettings(ctx context.Context) (*models.Settings, error) {
-	var settingVars []models.SettingVariable
-	err := s.db.WithContext(ctx).Find(&settingVars).Error
-	if err != nil {
-		return nil, err
-	}
-
-	settings := &models.Settings{}
-
-	for _, sv := range settingVars {
-		if err := settings.UpdateField(sv.Key, sv.Value, false); err != nil {
-			var notFoundErr models.SettingKeyNotFoundError
-			if !errors.As(err, &notFoundErr) {
-				return nil, fmt.Errorf("failed to load setting %s: %w", sv.Key, err)
-			}
-		}
-	}
-
-	// Apply environment variable overrides for fields tagged with "envOverride".
-	// This keeps behavior consistent with the cached settings path (LoadDatabaseSettingsInternal)
-	// and allows env vars like OIDC_MERGE_ACCOUNTS to affect runtime behavior.
-	s.applyEnvOverrides(ctx, settings)
-
+	settings := s.getEffectiveSettingsConfig(ctx)
 	return settings, nil
+}
+
+func (s *SettingsService) getEffectiveSettingsConfig(ctx context.Context) *models.Settings {
+	settings := s.GetSettingsConfig().Clone()
+	s.applyEnvOverrides(ctx, settings)
+	return settings
 }
 
 // MigrateOidcConfigToFields migrates the legacy JSON authOidcConfig to individual fields,
@@ -454,6 +457,14 @@ func (s *SettingsService) migrateOidcKeyNames(ctx context.Context) error {
 }
 
 func (s *SettingsService) UpdateSetting(ctx context.Context, key, value string) error {
+	if err := s.updateSettingValueNoRefreshInternal(ctx, key, value); err != nil {
+		return err
+	}
+
+	return s.refreshSettingsCacheInternal(ctx)
+}
+
+func (s *SettingsService) updateSettingValueNoRefreshInternal(ctx context.Context, key, value string) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		settingVar := &models.SettingVariable{
 			Key:   key,
@@ -465,10 +476,8 @@ func (s *SettingsService) UpdateSetting(ctx context.Context, key, value string) 
 
 func (s *SettingsService) UpdateSettings(ctx context.Context, updates settings.Update) ([]models.SettingVariable, error) {
 	defaultCfg := s.getDefaultSettings()
-	cfg, err := s.GetSettings(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load current settings: %w", err)
-	}
+	cfg := s.GetSettingsConfig().Clone()
+	s.applyEnvOverrides(ctx, cfg)
 
 	valuesToUpdate, changedPolling, changedAutoUpdate, changedScheduledPrune, changedVulnerabilityScan, changedAutoHeal, changedTimeouts, err := s.prepareUpdateValues(updates, cfg, defaultCfg)
 	if err != nil {
@@ -483,13 +492,10 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates settings.U
 		return nil, err
 	}
 
-	// Reload and store settings BEFORE calling callbacks so they read updated values
-	settings, err := s.GetSettings(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to retrieve updated settings: %w", err)
+	if err := s.refreshSettingsCacheInternal(ctx); err != nil {
+		return nil, err
 	}
-
-	s.config.Store(settings)
+	settings := s.GetSettingsConfig()
 
 	// Now call callbacks after in-memory config is updated
 	if changedPolling && s.OnImagePollingSettingsChanged != nil {
@@ -507,7 +513,9 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates settings.U
 	if changedAutoHeal && s.OnAutoHealSettingsChanged != nil {
 		s.OnAutoHealSettingsChanged(ctx)
 	}
-	if slices.ContainsFunc(valuesToUpdate, func(sv models.SettingVariable) bool { return sv.Key == "projectsDirectory" }) && s.OnProjectsDirectoryChanged != nil {
+	if slices.ContainsFunc(valuesToUpdate, func(sv models.SettingVariable) bool {
+		return sv.Key == "projectsDirectory" || sv.Key == "followProjectSymlinks"
+	}) && s.OnProjectsDirectoryChanged != nil {
 		s.OnProjectsDirectoryChanged(ctx)
 	}
 	if len(changedTimeouts) > 0 && s.OnTimeoutSettingsChanged != nil {
@@ -589,7 +597,7 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 			changedAutoUpdate = true
 		case "scheduledPruneEnabled", "scheduledPruneInterval", "scheduledPruneContainers", "scheduledPruneImages", "scheduledPruneVolumes", "scheduledPruneNetworks", "scheduledPruneBuildCache":
 			changedScheduledPrune = true
-		case "vulnerabilityScanEnabled", "vulnerabilityScanInterval", "trivyNetwork", "trivyResourceLimitsEnabled", "trivyCpuLimit", "trivyMemoryLimitMb", "trivyConcurrentScanContainers":
+		case "vulnerabilityScanEnabled", "vulnerabilityScanInterval", "trivyNetwork", "trivySecurityOpts", "trivyPrivileged", "trivyResourceLimitsEnabled", "trivyCpuLimit", "trivyMemoryLimitMb", "trivyConcurrentScanContainers":
 			changedVulnerabilityScan = true
 		case "autoHealEnabled", "autoHealInterval", "autoHealExcludedContainers", "autoHealMaxRestarts", "autoHealRestartWindow":
 			changedAutoHeal = true
@@ -660,7 +668,7 @@ func (s *SettingsService) handleOidcConfigUpdate(ctx context.Context, updates se
 			return fmt.Errorf("failed to marshal merged OIDC config: %w", err)
 		}
 
-		if err := s.UpdateSetting(ctx, "authOidcConfig", string(mergedBytes)); err != nil {
+		if err := s.updateSettingValueNoRefreshInternal(ctx, "authOidcConfig", string(mergedBytes)); err != nil {
 			return fmt.Errorf("failed to update authOidcConfig: %w", err)
 		}
 	}
@@ -681,7 +689,7 @@ func (s *SettingsService) handleOidcConfigUpdate(ctx context.Context, updates se
 			}
 		}
 
-		if err := s.UpdateSetting(ctx, "oidcClientSecret", secret); err != nil {
+		if err := s.updateSettingValueNoRefreshInternal(ctx, "oidcClientSecret", secret); err != nil {
 			return fmt.Errorf("failed to update oidcClientSecret: %w", err)
 		}
 	}
@@ -698,12 +706,17 @@ func (s *SettingsService) EnsureDefaultSettings(ctx context.Context) error {
 			var existing models.SettingVariable
 			err := tx.Where("key = ?", defaultSetting.Key).First(&existing).Error
 
-			if errors.Is(err, gorm.ErrRecordNotFound) {
+			switch {
+			case errors.Is(err, gorm.ErrRecordNotFound):
 				if err := tx.Create(&defaultSetting).Error; err != nil {
 					return fmt.Errorf("failed to create default setting %s: %w", defaultSetting.Key, err)
 				}
-			} else if err != nil {
+			case err != nil:
 				return fmt.Errorf("failed to check for existing setting %s: %w", defaultSetting.Key, err)
+			case defaultSetting.Key == "trivyImage" && existing.Value != defaultSetting.Value:
+				if err := tx.Model(&existing).Update("value", defaultSetting.Value).Error; err != nil {
+					return fmt.Errorf("failed to enforce default setting %s: %w", defaultSetting.Key, err)
+				}
 			}
 		}
 		return nil
@@ -782,18 +795,22 @@ func (s *SettingsService) processEnvField(ctx context.Context, tx *gorm.DB, fiel
 		return nil
 	}
 
-	envVarName := stringutils.CamelCaseToScreamingSnakeCase(key)
+	envVarName := utils.CamelCaseToScreamingSnakeCase(key)
 	envVal, ok := os.LookupEnv(envVarName)
 	if !ok {
 		return nil
 	}
-	envVal = stringutils.TrimQuotes(envVal)
+	envVal = utils.TrimQuotes(envVal)
 
 	return s.upsertEnvSetting(ctx, tx, key, envVal)
 }
 
 func (s *SettingsService) shouldProcessField(key, attrs string, isEnvOnlyMode bool) bool {
 	if key == "" || strings.Contains(attrs, "internal") {
+		return false
+	}
+
+	if key == "trivyImage" {
 		return false
 	}
 
@@ -874,7 +891,7 @@ func (s *SettingsService) setupInstanceID(ctx context.Context) error {
 }
 
 func (s *SettingsService) GetBoolSetting(ctx context.Context, key string, defaultValue bool) bool {
-	cfg := s.GetSettingsConfig()
+	cfg := s.getEffectiveSettingsConfig(ctx)
 	val, _, _, err := cfg.FieldByKey(key)
 	if err != nil || val == "" {
 		return defaultValue
@@ -887,7 +904,7 @@ func (s *SettingsService) GetBoolSetting(ctx context.Context, key string, defaul
 }
 
 func (s *SettingsService) GetIntSetting(ctx context.Context, key string, defaultValue int) int {
-	cfg := s.GetSettingsConfig()
+	cfg := s.getEffectiveSettingsConfig(ctx)
 	val, _, _, err := cfg.FieldByKey(key)
 	if err != nil || val == "" {
 		return defaultValue
@@ -900,7 +917,7 @@ func (s *SettingsService) GetIntSetting(ctx context.Context, key string, default
 }
 
 func (s *SettingsService) GetStringSetting(ctx context.Context, key, defaultValue string) string {
-	cfg := s.GetSettingsConfig()
+	cfg := s.getEffectiveSettingsConfig(ctx)
 	val, _, _, err := cfg.FieldByKey(key)
 	if err != nil || val == "" {
 		return defaultValue
@@ -909,34 +926,50 @@ func (s *SettingsService) GetStringSetting(ctx context.Context, key, defaultValu
 }
 
 func (s *SettingsService) SetBoolSetting(ctx context.Context, key string, value bool) error {
-	if err := s.UpdateSetting(ctx, key, fmt.Sprintf("%t", value)); err != nil {
-		return err
-	}
-	// Rebuild a fresh snapshot instead of mutating current pointer (avoids races)
-	if err := s.LoadDatabaseSettings(ctx); err != nil {
-		return fmt.Errorf("failed to refresh settings cache: %w", err)
-	}
-	return nil
+	return s.UpdateSetting(ctx, key, fmt.Sprintf("%t", value))
 }
 
 func (s *SettingsService) SetIntSetting(ctx context.Context, key string, value int) error {
-	if err := s.UpdateSetting(ctx, key, fmt.Sprintf("%d", value)); err != nil {
-		return err
-	}
-	if err := s.LoadDatabaseSettings(ctx); err != nil {
-		return fmt.Errorf("failed to refresh settings cache: %w", err)
-	}
-	return nil
+	return s.UpdateSetting(ctx, key, fmt.Sprintf("%d", value))
 }
 
 func (s *SettingsService) SetStringSetting(ctx context.Context, key, value string) error {
-	if err := s.UpdateSetting(ctx, key, value); err != nil {
-		return err
+	return s.UpdateSetting(ctx, key, value)
+}
+
+// SetContainerAutoUpdateExclusionInternal adds or removes a container name from
+// the autoUpdateExcludedContainers setting. When excluded is true the container
+// is added to the list; when false it is removed.
+func (s *SettingsService) SetContainerAutoUpdateExclusionInternal(ctx context.Context, containerName string, excluded bool) error {
+	raw := s.GetStringSetting(ctx, "autoUpdateExcludedContainers", "")
+	existing := make(map[string]struct{})
+	var ordered []string
+	for part := range strings.SplitSeq(raw, ",") {
+		name := strings.TrimSpace(part)
+		if name == "" {
+			continue
+		}
+		if _, ok := existing[name]; !ok {
+			existing[name] = struct{}{}
+			ordered = append(ordered, name)
+		}
 	}
-	if err := s.LoadDatabaseSettings(ctx); err != nil {
-		return fmt.Errorf("failed to refresh settings cache: %w", err)
+
+	if excluded {
+		if _, ok := existing[containerName]; !ok {
+			ordered = append(ordered, containerName)
+		}
+	} else {
+		filtered := ordered[:0]
+		for _, name := range ordered {
+			if name != containerName {
+				filtered = append(filtered, name)
+			}
+		}
+		ordered = filtered
 	}
-	return nil
+
+	return s.SetStringSetting(ctx, "autoUpdateExcludedContainers", strings.Join(ordered, ","))
 }
 
 func (s *SettingsService) EnsureEncryptionKey(ctx context.Context) (string, error) {
@@ -1015,7 +1048,7 @@ func (s *SettingsService) NormalizeProjectsDirectory(ctx context.Context, projec
 		// Treat as mapping if the container side looks like an absolute Unix path
 		// or a Windows drive path (C:/ or C:\). We purposely avoid splitting on the
 		// first colon to not break on Windows drive letters.
-		if strings.HasPrefix(value, "/") || pathmapper.IsWindowsDrivePath(value) {
+		if strings.HasPrefix(value, "/") || projects.IsWindowsDrivePath(value) {
 			isMapping = true
 		}
 	}
@@ -1034,10 +1067,6 @@ func (s *SettingsService) NormalizeProjectsDirectory(ctx context.Context, projec
 			return fmt.Errorf("failed to update projectsDirectory: %w", err)
 		}
 
-		if err := s.LoadDatabaseSettings(ctx); err != nil {
-			return fmt.Errorf("failed to reload settings after normalization: %w", err)
-		}
-
 		slog.InfoContext(ctx, "Successfully normalized projects directory")
 	} else {
 		slog.DebugContext(ctx, "Projects directory already normalized or custom, skipping", "value", projectsDirSetting.Value)
@@ -1048,7 +1077,7 @@ func (s *SettingsService) NormalizeProjectsDirectory(ctx context.Context, projec
 
 func (s *SettingsService) NormalizeBuildsDirectory(ctx context.Context) error {
 	const buildsKey = "buildsDirectory"
-	envVarName := stringutils.CamelCaseToScreamingSnakeCase(buildsKey)
+	envVarName := utils.CamelCaseToScreamingSnakeCase(buildsKey)
 	if envVal, ok := os.LookupEnv(envVarName); ok && strings.TrimSpace(envVal) != "" {
 		slog.DebugContext(ctx, "BUILDS_DIRECTORY environment variable is set, skipping normalization", "value", envVal)
 		return nil
@@ -1082,10 +1111,6 @@ func (s *SettingsService) NormalizeBuildsDirectory(ctx context.Context) error {
 
 		if err := s.UpdateSetting(ctx, buildsKey, absPath); err != nil {
 			return fmt.Errorf("failed to update buildsDirectory: %w", err)
-		}
-
-		if err := s.LoadDatabaseSettings(ctx); err != nil {
-			return fmt.Errorf("failed to reload settings after normalization: %w", err)
 		}
 
 		slog.InfoContext(ctx, "Successfully normalized builds directory")

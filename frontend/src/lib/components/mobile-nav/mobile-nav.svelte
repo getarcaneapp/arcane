@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import type { MobileNavigationSettings } from '$lib/config/navigation-config';
-	import { getAvailableMobileNavItems } from '$lib/config/navigation-config';
+	import { getAvailableMobileNavItems, getSwarmNavigationItems } from '$lib/config/navigation-config';
 	import MobileNavItem from './mobile-nav-item.svelte';
 	import MobileNavMenuButton from './mobile-nav-menu-button.svelte';
 	import { cn } from '$lib/utils';
@@ -15,17 +15,21 @@
 		navigationSettings,
 		user = null,
 		versionInformation,
+		swarmEnabled = false,
 		class: className = ''
 	}: {
 		navigationSettings: MobileNavigationSettings;
 		user?: any;
 		versionInformation?: AppVersionInformation;
+		swarmEnabled?: boolean;
 		class?: string;
 	} = $props();
 
+	const swarmItems = $derived(getSwarmNavigationItems(swarmEnabled));
+
 	const pinnedItems = $derived.by(() => {
 		if (!navigationSettings?.pinnedItems) return [];
-		const availableItems = getAvailableMobileNavItems();
+		const availableItems = getAvailableMobileNavItems({ swarmEnabled });
 		return navigationSettings.pinnedItems
 			.map((url) => availableItems.find((item) => item.url === url))
 			.filter((item) => item !== undefined);
@@ -184,4 +188,4 @@
 	{/if}
 </nav>
 
-<MobileNavSheet bind:open={menuOpen} {user} {versionInformation} />
+<MobileNavSheet bind:open={menuOpen} {user} {versionInformation} {swarmItems} />

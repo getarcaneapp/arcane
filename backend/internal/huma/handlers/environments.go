@@ -15,10 +15,10 @@ import (
 	humamw "github.com/getarcaneapp/arcane/backend/internal/huma/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/stringutils"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge"
+	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils/mapper"
 	"github.com/getarcaneapp/arcane/types/base"
 	"github.com/getarcaneapp/arcane/types/environment"
 	"github.com/getarcaneapp/arcane/types/version"
@@ -709,8 +709,7 @@ func (h *EnvironmentHandler) TestConnection(ctx context.Context, input *TestConn
 	status, err := h.environmentService.TestConnection(ctx, input.ID, apiUrl)
 	resp := environment.Test{Status: status}
 	if err != nil {
-		msg := err.Error()
-		resp.Message = &msg
+		resp.Message = new(err.Error())
 		return &TestConnectionOutput{
 			Body: base.ApiResponse[environment.Test]{
 				Success: false,
@@ -763,7 +762,7 @@ func (h *EnvironmentHandler) PairAgent(ctx context.Context, input *PairAgentInpu
 
 	shouldRotate := input.Body != nil && input.Body.Rotate != nil && *input.Body.Rotate
 	if h.cfg.AgentToken == "" || shouldRotate {
-		h.cfg.AgentToken = stringutils.GenerateRandomString(48)
+		h.cfg.AgentToken = utils.GenerateRandomString(48)
 	}
 
 	if err := h.settingsService.SetStringSetting(ctx, "agentToken", h.cfg.AgentToken); err != nil {
@@ -874,7 +873,7 @@ func (h *EnvironmentHandler) triggerPostUpdateTasks(ctx context.Context, environ
 		}(detachedCtx, environmentID, updated.Name)
 	}
 
-	if pairingSucceeded || (req.AccessToken != nil && *req.AccessToken != "") {
+	if updated.AccessToken != nil && *updated.AccessToken != "" && (pairingSucceeded || (req.AccessToken != nil && *req.AccessToken != "") || req.Name != nil) {
 		h.triggerEnvironmentResourceSync(ctx, environmentID, updated.Name, "environment update")
 	}
 }

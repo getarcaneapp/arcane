@@ -25,6 +25,98 @@ func (j *testSchedulerJob) Run(ctx context.Context) {
 	}
 }
 
+type conditionalTestSchedulerJob struct {
+	*testSchedulerJob
+	shouldSchedule func(context.Context) bool
+}
+
+func (j *conditionalTestSchedulerJob) ShouldSchedule(ctx context.Context) bool {
+	if j.shouldSchedule == nil {
+		return true
+	}
+
+	return j.shouldSchedule(ctx)
+}
+
+func TestJobScheduler_StartScheduler_SkipsDisabledConditionalJobs(t *testing.T) {
+	js := NewJobScheduler(context.Background(), nil)
+
+	job := &conditionalTestSchedulerJob{
+		testSchedulerJob: &testSchedulerJob{
+			name:     "test-disabled-startup",
+			schedule: "*/1 * * * * *",
+		},
+		shouldSchedule: func(context.Context) bool { return false },
+	}
+
+	js.RegisterJob(job)
+	js.StartScheduler()
+	defer js.cron.Stop()
+
+	require.NotContains(t, js.entryIDs, job.Name())
+	require.Empty(t, js.cron.Entries())
+}
+
+func TestJobScheduler_RescheduleJob_RemovesEntryWhenDisabled(t *testing.T) {
+	js := NewJobScheduler(context.Background(), nil)
+	enabled := true
+
+	job := &conditionalTestSchedulerJob{
+		testSchedulerJob: &testSchedulerJob{
+			name:     "test-disabled-reschedule",
+			schedule: "*/1 * * * * *",
+		},
+		shouldSchedule: func(context.Context) bool { return enabled },
+	}
+
+	require.NoError(t, js.RescheduleJob(context.Background(), job))
+	require.Contains(t, js.entryIDs, job.Name())
+
+	enabled = false
+
+	require.NoError(t, js.RescheduleJob(context.Background(), job))
+	require.NotContains(t, js.entryIDs, job.Name())
+	require.Empty(t, js.cron.Entries())
+}
+
+func TestJobScheduler_RescheduleJob_AddsEntryWhenEnabled(t *testing.T) {
+	js := NewJobScheduler(context.Background(), nil)
+	enabled := false
+
+	job := &conditionalTestSchedulerJob{
+		testSchedulerJob: &testSchedulerJob{
+			name:     "test-enabled-reschedule",
+			schedule: "*/1 * * * * *",
+		},
+		shouldSchedule: func(context.Context) bool { return enabled },
+	}
+
+	require.NoError(t, js.RescheduleJob(context.Background(), job))
+	require.NotContains(t, js.entryIDs, job.Name())
+
+	enabled = true
+
+	require.NoError(t, js.RescheduleJob(context.Background(), job))
+	require.Contains(t, js.entryIDs, job.Name())
+	require.Len(t, js.cron.Entries(), 1)
+}
+
+func TestJobScheduler_StartScheduler_SchedulesNonConditionalJobs(t *testing.T) {
+	js := NewJobScheduler(context.Background(), nil)
+
+	job := &testSchedulerJob{
+		name:     "test-non-conditional-startup",
+		schedule: "*/1 * * * * *",
+	}
+
+	js.RegisterJob(job)
+	js.StartScheduler()
+	defer js.cron.Stop()
+
+	require.Contains(t, js.entryIDs, job.Name())
+	require.Len(t, js.cron.Entries(), 1)
+}
+
 func TestJobScheduler_RescheduleJob_UsesProvidedContext(t *testing.T) {
 	js := NewJobScheduler(context.Background(), nil)
 

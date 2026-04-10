@@ -86,7 +86,10 @@
 		try {
 			backups = await provider.listBackups();
 			if (backups.length > 0) {
-				selectedBackupId = backups[0].id;
+				const firstBackup = backups[0];
+				if (firstBackup) {
+					selectedBackupId = firstBackup.id;
+				}
 			}
 		} catch (e: any) {
 			toast.error(e.message || m.common_failed());
@@ -237,7 +240,8 @@
 {/if}
 
 <ResponsiveDialog
-	bind:open={showRestoreFile}
+	open={showRestoreFile}
+	onOpenChange={(nextOpen) => (showRestoreFile = nextOpen)}
 	title="Restore file from backup"
 	description="Select a backup to restore the chosen file."
 	contentClass="sm:max-w-[520px]"

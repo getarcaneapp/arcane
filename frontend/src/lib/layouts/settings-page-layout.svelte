@@ -5,34 +5,11 @@
 	import HeaderCard from '$lib/components/header-card.svelte';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import type { Action } from '$lib/components/arcane-button/index.js';
 	import { getContext } from 'svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { EllipsisIcon, ResetIcon, type IconType } from '$lib/icons';
 	import { cn } from '$lib/utils';
-
-	export interface SettingsActionButton {
-		id: string;
-		action: Action;
-		label: string;
-		loadingLabel?: string;
-		loading?: boolean;
-		disabled?: boolean;
-		onclick: () => void;
-		showOnMobile?: boolean;
-	}
-
-	export interface SettingsStatCard {
-		title: string;
-		value: string | number;
-		subtitle?: string;
-		icon: IconType;
-		iconColor?: string;
-		bgColor?: string;
-		class?: string;
-	}
-
-	export type SettingsPageType = 'form' | 'management';
+	import type { SettingsActionButton, SettingsPageType, SettingsStatCard } from './types.js';
 
 	interface Props {
 		title: string;

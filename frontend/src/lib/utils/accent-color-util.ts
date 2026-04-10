@@ -55,7 +55,9 @@ function getColorBrightness(color: string): number {
 		return 0.5;
 	}
 
-	const [, r, g, b] = rgbMatch.map(Number);
+	const r = Number.parseInt(rgbMatch[1] ?? '0', 10);
+	const g = Number.parseInt(rgbMatch[2] ?? '0', 10);
+	const b = Number.parseInt(rgbMatch[3] ?? '0', 10);
 
 	// Calculate relative luminance using the standard formula
 	// https://www.w3.org/WAI/WCAG21/Understanding/contrast-minimum.html

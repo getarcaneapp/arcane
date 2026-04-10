@@ -2,19 +2,24 @@ package services
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/crypto"
-	utilsregistry "github.com/getarcaneapp/arcane/backend/internal/utils/registry"
-	"github.com/getarcaneapp/arcane/types/containerregistry"
 	"github.com/getarcaneapp/arcane/types/imageupdate"
 	glsqlite "github.com/glebarez/sqlite"
+	dockertypescontainer "github.com/moby/moby/api/types/container"
 	dockertypesimage "github.com/moby/moby/api/types/image"
+	"github.com/moby/moby/client"
+	digest "github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	ref "go.podman.io/image/v5/docker/reference"
@@ -24,6 +29,9 @@ import (
 // TestParseImageReference tests the parseImageReference function with various image formats
 // This is used for digest-based update checking
 func TestImageUpdateService_ParseImageReference(t *testing.T) {
+	alpineDigest := digest.FromString("alpine").String()
+	serviceDigest := digest.FromString("registry-app-service").String()
+
 	tests := []struct {
 		name           string
 		imageRef       string
@@ -89,14 +97,14 @@ func TestImageUpdateService_ParseImageReference(t *testing.T) {
 		},
 		{
 			name:           "Image with digest",
-			imageRef:       "alpine@sha256:1234567890abcdef",
+			imageRef:       "alpine@" + alpineDigest,
 			wantRegistry:   "docker.io",
 			wantRepository: "library/alpine",
 			wantTag:        "latest",
 		},
 		{
 			name:           "Custom registry image with digest",
-			imageRef:       "registry.io/app/service@sha256:abcdef123456",
+			imageRef:       "registry.io/app/service@" + serviceDigest,
 			wantRegistry:   "registry.io",
 			wantRepository: "app/service",
 			wantTag:        "latest",
@@ -202,9 +210,11 @@ func TestImageUpdateService_GetLocalImageDigestWithAll_Logic(t *testing.T) {
 	t.Run("Multiple digests in RepoDigests", func(t *testing.T) {
 		// This test demonstrates the expected behavior
 		// In practice, you'd use a mock Docker client
+		firstDigest := digest.FromString("redis-primary").String()
+		secondDigest := digest.FromString("redis-secondary").String()
 		repoDigests := []string{
-			"docker.io/library/redis@sha256:abc123",
-			"redis@sha256:def456",
+			"docker.io/library/redis@" + firstDigest,
+			"redis@" + secondDigest,
 		}
 
 		var allDigests []string
@@ -216,8 +226,8 @@ func TestImageUpdateService_GetLocalImageDigestWithAll_Logic(t *testing.T) {
 		}
 
 		assert.Len(t, allDigests, 2)
-		assert.Contains(t, allDigests, "sha256:abc123")
-		assert.Contains(t, allDigests, "sha256:def456")
+		assert.Contains(t, allDigests, firstDigest)
+		assert.Contains(t, allDigests, secondDigest)
 	})
 }
 
@@ -353,8 +363,195 @@ func setupImageUpdateTestDB(t *testing.T) *database.DB {
 	dsn := fmt.Sprintf("file:image-update-test-%d?mode=memory&cache=shared", time.Now().UnixNano())
 	db, err := gorm.Open(glsqlite.Open(dsn), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&models.ImageUpdateRecord{}))
+	require.NoError(t, db.AutoMigrate(&models.ImageUpdateRecord{}, &models.Event{}))
 	return &database.DB{DB: db}
+}
+
+func newImageUpdateFallbackServer(t *testing.T, repositoryTag, localDigest, remoteDigest string) *httptest.Server {
+	t.Helper()
+
+	repository := repositoryTag
+	tag := "latest"
+	if tagIndex := strings.LastIndex(repositoryTag, ":"); tagIndex > strings.LastIndex(repositoryTag, "/") {
+		repository = repositoryTag[:tagIndex]
+		tag = repositoryTag[tagIndex+1:]
+	}
+	manifestPath := fmt.Sprintf("/v2/%s/manifests/%s", repository, tag)
+
+	return httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json"):
+			imageRef := r.Host + "/" + repositoryTag
+			repositoryRef := imageRef
+			if tagIndex := strings.LastIndex(imageRef, ":"); tagIndex > strings.LastIndex(imageRef, "/") {
+				repositoryRef = imageRef[:tagIndex]
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(dockertypesimage.InspectResponse{
+				ID:          "sha256:local-image-id",
+				RepoTags:    []string{imageRef},
+				RepoDigests: []string{repositoryRef + "@" + localDigest},
+			}))
+			return
+		case r.URL.Path == manifestPath:
+			w.Header().Set("Docker-Content-Digest", remoteDigest)
+			w.WriteHeader(http.StatusOK)
+			return
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+}
+
+func newImageRefResolutionServer(t *testing.T, containers []dockertypescontainer.Summary) *httptest.Server {
+	t.Helper()
+
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json"):
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		case strings.HasSuffix(r.URL.Path, "/containers/json"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(containers))
+			return
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+}
+
+func TestImageUpdateService_GetImageRefByIDInternal_UsesContainerFallback(t *testing.T) {
+	t.Parallel()
+
+	const imageID = "sha256:test-image-id"
+
+	tests := []struct {
+		name       string
+		containers []dockertypescontainer.Summary
+		wantRef    string
+		wantErr    string
+	}{
+		{
+			name: "uses repo tag from matching container when inspect fails",
+			containers: []dockertypescontainer.Summary{
+				{ImageID: imageID, Image: "frooodle/s-pdf:latest"},
+			},
+			wantRef: "frooodle/s-pdf:latest",
+		},
+		{
+			name: "ignores named digest references from matching container",
+			containers: []dockertypescontainer.Summary{
+				{ImageID: imageID, Image: "frooodle/s-pdf@sha256:abc123"},
+			},
+			wantErr: "no local image or running container found",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := newImageRefResolutionServer(t, tt.containers)
+			defer server.Close()
+
+			svc := &ImageUpdateService{
+				dockerService: &DockerClientService{client: newTestDockerClient(t, server)},
+			}
+
+			ref, err := svc.getImageRefByIDInternal(context.Background(), imageID)
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.ErrorContains(t, err, tt.wantErr)
+				assert.Empty(t, ref)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantRef, ref)
+		})
+	}
+}
+
+func TestImageUpdateService_CheckImageUpdate_UsesRegistryFallback(t *testing.T) {
+	db := setupImageUpdateTestDB(t)
+	localDigest := digest.FromString("localdigest").String()
+	remoteDigest := digest.FromString("remotedigest").String()
+
+	server := newImageUpdateFallbackServer(t, "team/app:1.2.3", localDigest, remoteDigest)
+	defer server.Close()
+
+	serverURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+	imageRef := serverURL.Host + "/team/app:1.2.3"
+
+	registryService := NewContainerRegistryService(db, func(context.Context) (RegistryDaemonClient, error) {
+		return &fakeRegistryDaemonClient{
+			distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+				return client.DistributionInspectResult{}, errors.New("Error response from daemon: Not Found")
+			},
+		}, nil
+	})
+	registryService.distributionHTTPClient = server.Client()
+
+	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
+	eventService := NewEventService(db, nil, nil)
+	svc := NewImageUpdateService(db, nil, registryService, dockerService, eventService, nil)
+
+	result, err := svc.CheckImageUpdate(context.Background(), imageRef)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.True(t, result.HasUpdate)
+	assert.Equal(t, "digest", result.UpdateType)
+	assert.Equal(t, localDigest, result.CurrentDigest)
+	assert.Equal(t, remoteDigest, result.LatestDigest)
+	assert.Equal(t, "anonymous", result.AuthMethod)
+	assert.Equal(t, serverURL.Host, result.AuthRegistry)
+
+	var saved models.ImageUpdateRecord
+	require.NoError(t, db.WithContext(context.Background()).Where("id = ?", "sha256:local-image-id").First(&saved).Error)
+	assert.Equal(t, remoteDigest, stringPtrToString(saved.LatestDigest))
+}
+
+func TestImageUpdateService_CheckMultipleImages_UsesRegistryFallback(t *testing.T) {
+	db := setupImageUpdateTestDB(t)
+	localDigest := digest.FromString("batchlocal").String()
+	remoteDigest := digest.FromString("batchremote").String()
+
+	server := newImageUpdateFallbackServer(t, "team/app:1.2.3", localDigest, remoteDigest)
+	defer server.Close()
+
+	serverURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+	imageRef := serverURL.Host + "/team/app:1.2.3"
+
+	registryService := NewContainerRegistryService(db, func(context.Context) (RegistryDaemonClient, error) {
+		return &fakeRegistryDaemonClient{
+			distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+				return client.DistributionInspectResult{}, errors.New("Error response from daemon: <html><body><h1>403 Forbidden</h1> Request forbidden by administrative rules. </body></html>")
+			},
+		}, nil
+	})
+	registryService.distributionHTTPClient = server.Client()
+
+	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
+	eventService := NewEventService(db, nil, nil)
+	svc := NewImageUpdateService(db, nil, registryService, dockerService, eventService, nil)
+
+	results, err := svc.CheckMultipleImages(context.Background(), []string{imageRef}, nil)
+	require.NoError(t, err)
+	require.Contains(t, results, imageRef)
+
+	result := results[imageRef]
+	require.NotNil(t, result)
+	assert.True(t, result.HasUpdate)
+	assert.Equal(t, localDigest, result.CurrentDigest)
+	assert.Equal(t, remoteDigest, result.LatestDigest)
+	assert.Equal(t, "anonymous", result.AuthMethod)
+	assert.Equal(t, serverURL.Host, result.AuthRegistry)
+
+	var saved models.ImageUpdateRecord
+	require.NoError(t, db.WithContext(context.Background()).Where("id = ?", "sha256:local-image-id").First(&saved).Error)
+	assert.Equal(t, remoteDigest, stringPtrToString(saved.LatestDigest))
 }
 
 // TestNotificationSentLogic tests the notification_sent flag behavior
@@ -759,70 +956,6 @@ func TestImageUpdateService_ParseAndGroupImages_DedupesNormalizedRefs(t *testing
 		containsAll(secondRefSet, "redis:7", "docker.io/library/redis:7")) ||
 		(containsAll(secondRefSet, "nginx:latest", "docker.io/library/nginx:latest") &&
 			containsAll(firstRefSet, "redis:7", "docker.io/library/redis:7")))
-}
-
-func TestImageUpdateService_BuildCredentialMap_ExternalCredsDedupesEnabledRegistriesByHost(t *testing.T) {
-	crypto.InitEncryption(&config.Config{
-		Environment:   config.AppEnvironmentTest,
-		EncryptionKey: "test-encryption-key-for-testing-32bytes-min",
-	})
-
-	svc := &ImageUpdateService{}
-	ctx := context.Background()
-
-	externalCreds := []containerregistry.Credential{
-		{URL: "https://ghcr.io", Username: "first-user", Token: "first-token", Enabled: true},
-		{URL: "ghcr.io/", Username: "second-user", Token: "second-token", Enabled: true},
-		{URL: "https://docker.io", Username: "docker-user", Token: "docker-token", Enabled: true},
-	}
-
-	credMap, enabledRegs := svc.buildCredentialMap(ctx, externalCreds)
-
-	require.Len(t, credMap, 2)
-	require.Len(t, enabledRegs, 2)
-
-	// Keep first credential per normalized host for token exchange calls.
-	assert.Equal(t, "first-user", credMap["ghcr.io"].username)
-	assert.Equal(t, "first-token", credMap["ghcr.io"].token)
-	assert.Equal(t, "docker-user", credMap["docker.io"].username)
-	assert.Equal(t, "docker-token", credMap["docker.io"].token)
-
-	// Enabled registry records used for auth fallback should be de-duplicated per host.
-	enabledByHost := make(map[string]models.ContainerRegistry, len(enabledRegs))
-	for _, reg := range enabledRegs {
-		host := utilsregistry.NormalizeRegistryForComparison(reg.URL)
-		enabledByHost[host] = reg
-	}
-	require.Contains(t, enabledByHost, "ghcr.io")
-	require.Contains(t, enabledByHost, "docker.io")
-
-	assert.Equal(t, "first-user", enabledByHost["ghcr.io"].Username)
-	assert.NotEmpty(t, enabledByHost["ghcr.io"].Token)
-	assert.Equal(t, "docker-user", enabledByHost["docker.io"].Username)
-	assert.NotEmpty(t, enabledByHost["docker.io"].Token)
-}
-
-func TestImageUpdateService_BuildCredentialMap_ExternalCredsSkipsInvalidEntries(t *testing.T) {
-	crypto.InitEncryption(&config.Config{
-		Environment:   config.AppEnvironmentTest,
-		EncryptionKey: "test-encryption-key-for-testing-32bytes-min",
-	})
-
-	svc := &ImageUpdateService{}
-	ctx := context.Background()
-
-	externalCreds := []containerregistry.Credential{
-		{URL: "https://ghcr.io", Username: "valid-user", Token: "valid-token", Enabled: true},
-		{URL: "https://ghcr.io", Username: "", Token: "missing-user", Enabled: true},
-		{URL: "https://ghcr.io", Username: "disabled", Token: "disabled-token", Enabled: false},
-		{URL: "", Username: "missing-url", Token: "token", Enabled: true},
-	}
-
-	credMap, enabledRegs := svc.buildCredentialMap(ctx, externalCreds)
-
-	require.Len(t, credMap, 1)
-	require.Len(t, enabledRegs, 1)
-	assert.Equal(t, "valid-user", credMap["ghcr.io"].username)
 }
 
 func TestDedupeImageRefsFromSummaries_WithLimit(t *testing.T) {

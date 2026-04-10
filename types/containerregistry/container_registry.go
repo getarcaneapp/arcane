@@ -34,6 +34,21 @@ type ContainerRegistry struct {
 	// Required: true
 	Enabled bool `json:"enabled"`
 
+	// RegistryType indicates the type of registry (generic, ecr).
+	//
+	// Required: true
+	RegistryType string `json:"registryType"`
+
+	// AWSAccessKeyID is the AWS Access Key ID for ECR registries.
+	//
+	// Required: false
+	AWSAccessKeyID string `json:"awsAccessKeyId,omitempty"`
+
+	// AWSRegion is the AWS region for ECR registries.
+	//
+	// Required: false
+	AWSRegion string `json:"awsRegion,omitempty"`
+
 	// CreatedAt is the date and time at which the registry was created.
 	//
 	// Required: true
@@ -59,12 +74,12 @@ type Sync struct {
 	// Username for authentication with the container registry.
 	//
 	// Required: true
-	Username string `json:"username" binding:"required"`
+	Username string `json:"username"`
 
 	// Token for authentication with the container registry.
 	//
 	// Required: true
-	Token string `json:"token" binding:"required"`
+	Token string `json:"token"`
 
 	// Description of the container registry.
 	//
@@ -80,6 +95,27 @@ type Sync struct {
 	//
 	// Required: true
 	Enabled bool `json:"enabled"`
+
+	// RegistryType indicates the type of registry (generic, ecr).
+	//
+	// Required: true
+	RegistryType string `json:"registryType"`
+
+	// AWSAccessKeyID is the AWS Access Key ID for ECR registries.
+	//
+	// Required: false
+	AWSAccessKeyID string `json:"awsAccessKeyId,omitempty"`
+
+	// AWSSecretAccessKey is the AWS Secret Access Key for ECR registries.
+	// Sent decrypted between manager and agent for sync purposes.
+	//
+	// Required: false
+	AWSSecretAccessKey string `json:"awsSecretAccessKey,omitempty"`
+
+	// AWSRegion is the AWS region for ECR registries.
+	//
+	// Required: false
+	AWSRegion string `json:"awsRegion,omitempty"`
 
 	// CreatedAt is the date and time at which the registry was created.
 	//

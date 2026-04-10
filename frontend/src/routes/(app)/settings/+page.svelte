@@ -6,6 +6,7 @@
 		SettingsIcon,
 		UserIcon,
 		SecurityIcon,
+		LockIcon,
 		NotificationsIcon,
 		ArrowRightIcon,
 		DockerBrandIcon,
@@ -13,7 +14,8 @@
 		ApperanceIcon,
 		CloseIcon,
 		JobsIcon,
-		CodeIcon
+		CodeIcon,
+		GlobeIcon
 	} from '$lib/icons';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { Card } from '$lib/components/ui/card';
@@ -31,22 +33,25 @@
 	let isSearching = $state(false);
 	let settingsCategories = $state<SettingsCategory[]>([]);
 	let currentSearchRequest = $state(0);
+	const hiddenCategoryUrls = new Set(['/settings/security']);
 
 	const iconMap: Record<string, any> = {
 		settings: SettingsIcon,
 		database: DockerBrandIcon,
+		lock: LockIcon,
 		shield: SecurityIcon,
 		appearance: ApperanceIcon,
 		bell: NotificationsIcon,
 		user: UserIcon,
 		apikey: ApiKeyIcon,
 		jobs: JobsIcon,
-		code: CodeIcon
+		code: CodeIcon,
+		globe: GlobeIcon
 	};
 
 	onMount(async () => {
 		try {
-			settingsCategories = await settingsSearchService.getCategories();
+			settingsCategories = sortCategories((await settingsSearchService.getCategories()).filter(isVisibleCategory));
 		} catch (error) {
 			console.error('Failed to load categories:', error);
 		}
@@ -71,7 +76,7 @@
 		try {
 			const response = await settingsSearchService.search(trimmedQuery);
 			if (requestId === currentSearchRequest) {
-				searchResults = response.results || [];
+				searchResults = sortCategories((response.results || []).filter(isVisibleCategory));
 				isSearching = false;
 			}
 		} catch (error) {
@@ -89,6 +94,14 @@
 
 	function navigateToCategory(categoryUrl: string) {
 		goto(categoryUrl);
+	}
+
+	function isVisibleCategory(category: SettingsCategory) {
+		return !hiddenCategoryUrls.has(category.url);
+	}
+
+	function sortCategories(categories: SettingsCategory[]) {
+		return [...categories].sort((a, b) => a.title.localeCompare(b.title));
 	}
 
 	function clearSearch() {
@@ -182,7 +195,7 @@
 									<Icon class="size-5 sm:size-6" />
 								</div>
 								<div class="min-w-0 flex-1">
-									<h3 class="text-sm leading-tight font-semibold sm:text-base">{category.title}</h3>
+									<h2 class="text-sm leading-tight font-semibold sm:text-base">{category.title}</h2>
 									<p class="text-muted-foreground mt-1 text-xs leading-relaxed sm:text-sm">{category.description}</p>
 								</div>
 							</div>

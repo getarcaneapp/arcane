@@ -19,8 +19,16 @@ type IncludeFile struct {
 
 	// Content is the file content.
 	//
+	// Required: false
+	Content string `json:"content,omitempty"`
+}
+
+// FileContentRequest requests the contents of a single project-related file.
+type FileContentRequest struct {
+	// RelativePath is the path to the file relative to the project.
+	//
 	// Required: true
-	Content string `json:"content"`
+	RelativePath string `json:"relativePath" query:"relativePath" binding:"required"`
 }
 
 // CreateProject is used to create a new project.
@@ -150,6 +158,11 @@ type CreateReponse struct {
 	// Required: false
 	DirName string `json:"dirName,omitempty"`
 
+	// RelativePath is the path to the project directory relative to the configured projects root.
+	//
+	// Required: false
+	RelativePath string `json:"relativePath,omitempty"`
+
 	// Path is the file path to the project.
 	//
 	// Required: true
@@ -208,6 +221,11 @@ type Details struct {
 	// Required: false
 	DirName string `json:"dirName,omitempty"`
 
+	// RelativePath is the path to the project directory relative to the configured projects root.
+	//
+	// Required: false
+	RelativePath string `json:"relativePath,omitempty"`
+
 	// Path is the file path to the project.
 	//
 	// Required: true
@@ -228,6 +246,11 @@ type Details struct {
 	// Required: false
 	ComposeContent string `json:"composeContent,omitempty"`
 
+	// ComposeFileName is the detected compose file name for the project.
+	//
+	// Required: false
+	ComposeFileName string `json:"composeFileName,omitempty"`
+
 	// EnvContent is the environment file content.
 	//
 	// Required: false
@@ -237,6 +260,12 @@ type Details struct {
 	//
 	// Required: false
 	IncludeFiles []IncludeFile `json:"includeFiles,omitempty"`
+
+	// DirectoryFiles contains all other files in the project directory
+	// (excluding compose files, .env, and include files which are shown separately).
+	//
+	// Required: false
+	DirectoryFiles []IncludeFile `json:"directoryFiles,omitempty"`
 
 	// Status is the current status of the project.
 	//

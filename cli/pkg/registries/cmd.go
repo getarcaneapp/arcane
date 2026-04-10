@@ -15,6 +15,7 @@ import (
 
 var (
 	limitFlag  int
+	startFlag  int
 	forceFlag  bool
 	jsonOutput bool
 
@@ -43,9 +44,9 @@ var listCmd = &cobra.Command{
 		}
 
 		path := types.Endpoints.ContainerRegistries()
-		effectiveLimit := cmdutil.EffectiveLimit(cmd, "registries", "limit", limitFlag, 20)
-		if effectiveLimit > 0 {
-			path = fmt.Sprintf("%s?limit=%d", path, effectiveLimit)
+		path, err = cmdutil.ApplyPaginationParams(cmd, path, "registries", "limit", limitFlag, 20, "start", startFlag)
+		if err != nil {
+			return fmt.Errorf("failed to build pagination query: %w", err)
 		}
 
 		resp, err := c.Get(cmd.Context(), path)
@@ -89,7 +90,7 @@ var listCmd = &cobra.Command{
 		}
 
 		output.Table(headers, rows)
-		fmt.Printf("\nTotal: %d registries\n", result.Pagination.TotalItems)
+		output.Showing(len(result.Data), result.Pagination.TotalItems, "registries")
 		return nil
 	},
 }
@@ -311,6 +312,7 @@ func init() {
 	RegistriesCmd.AddCommand(deleteCmd)
 
 	listCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of registries to show")
+	listCmd.Flags().IntVar(&startFlag, "start", 0, "Offset for pagination")
 	listCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 
 	getCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")

@@ -12,6 +12,7 @@
 	}
 
 	let { ref = $bindable(null), variant, size, disabled, class: className, onclick, children }: Props = $props();
+	void ref;
 </script>
 
 <ArcaneButton

@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/internal/utils/remenv"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -45,7 +44,7 @@ func TestTunnelServer_HandlePoll(t *testing.T) {
 	TouchTunnelDemand("env-poll-1", time.Minute)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/tunnel/poll", bytes.NewBufferString(`{"transport":"poll"}`))
-	req.Header.Set(remenv.HeaderAgentToken, "valid-token")
+	req.Header.Set(HeaderAgentToken, "valid-token")
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
@@ -64,7 +63,7 @@ func TestTunnelServer_HandlePoll(t *testing.T) {
 	t.Cleanup(func() { registry.Unregister("env-poll-1") })
 
 	req = httptest.NewRequest(http.MethodPost, "/api/tunnel/poll", bytes.NewBufferString(`{"transport":"poll","connected":true}`))
-	req.Header.Set(remenv.HeaderAgentToken, "valid-token")
+	req.Header.Set(HeaderAgentToken, "valid-token")
 	rec = httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 

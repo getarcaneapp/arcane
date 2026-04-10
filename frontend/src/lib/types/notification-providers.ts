@@ -166,100 +166,136 @@ export interface ProviderState<T> {
 	errors: Partial<Record<keyof T, string>>;
 }
 
+type ProviderConfig = Record<string, unknown>;
+type ProviderEvents = Partial<
+	Record<'image_update' | 'container_update' | 'vulnerability_found' | 'prune_report' | 'auto_heal', boolean>
+>;
+
+function getConfig(settings?: NotificationSettings): ProviderConfig {
+	return (settings?.config ?? {}) as ProviderConfig;
+}
+
+function getEvents(config: ProviderConfig): ProviderEvents {
+	return (config['events'] ?? {}) as ProviderEvents;
+}
+
+function getString(config: ProviderConfig, key: string, fallback = ''): string {
+	return typeof config[key] === 'string' ? (config[key] as string) : fallback;
+}
+
+function getNumber(config: ProviderConfig, key: string, fallback = 0): number {
+	return typeof config[key] === 'number' ? (config[key] as number) : fallback;
+}
+
+function getBoolean(config: ProviderConfig, key: string, fallback = false): boolean {
+	return typeof config[key] === 'boolean' ? (config[key] as boolean) : fallback;
+}
+
+function getStringArray(config: ProviderConfig, key: string): string[] {
+	const value = config[key];
+	if (!Array.isArray(value)) return [];
+	return value.filter((item): item is string => typeof item === 'string');
+}
+
+function getStringRecord(config: ProviderConfig, key: string): Record<string, string> {
+	const value = config[key];
+	if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+	return Object.fromEntries(
+		Object.entries(value as Record<string, unknown>).filter(([, entryValue]) => typeof entryValue === 'string') as Array<
+			[string, string]
+		>
+	);
+}
+
+function eventFlagsToFormValues(
+	events: ProviderEvents
+): Pick<
+	BaseProviderFormValues,
+	'eventImageUpdate' | 'eventContainerUpdate' | 'eventVulnerabilityFound' | 'eventPruneReport' | 'eventAutoHeal'
+> {
+	return {
+		eventImageUpdate: events['image_update'] ?? true,
+		eventContainerUpdate: events['container_update'] ?? true,
+		eventVulnerabilityFound: events['vulnerability_found'] ?? true,
+		eventPruneReport: events['prune_report'] ?? true,
+		eventAutoHeal: events['auto_heal'] ?? true
+	};
+}
+
 // Helper to convert settings to form values
 export function discordSettingsToFormValues(settings?: NotificationSettings): DiscordFormValues {
-	const cfg = (settings?.config ?? {}) as Record<string, unknown>;
-	const events = (cfg?.events ?? {}) as Record<string, boolean>;
+	const cfg = getConfig(settings);
+	const events = getEvents(cfg);
 	return {
 		enabled: settings?.enabled ?? false,
-		webhookId: (cfg?.webhookId as string) || '',
-		token: (cfg?.token as string) || '',
-		username: (cfg?.username as string) || 'Arcane',
-		avatarUrl: (cfg?.avatarUrl as string) || '',
-		eventImageUpdate: events?.image_update ?? true,
-		eventContainerUpdate: events?.container_update ?? true,
-		eventVulnerabilityFound: events?.vulnerability_found ?? true,
-		eventPruneReport: events?.prune_report ?? true,
-		eventAutoHeal: events?.auto_heal ?? true
+		webhookId: getString(cfg, 'webhookId'),
+		token: getString(cfg, 'token'),
+		username: getString(cfg, 'username', 'Arcane'),
+		avatarUrl: getString(cfg, 'avatarUrl'),
+		...eventFlagsToFormValues(events)
 	};
 }
 
 export function emailSettingsToFormValues(settings?: NotificationSettings): EmailFormValues {
-	const cfg = (settings?.config ?? {}) as Record<string, unknown>;
-	const events = (cfg?.events ?? {}) as Record<string, boolean>;
+	const cfg = getConfig(settings);
+	const events = getEvents(cfg);
 	return {
 		enabled: settings?.enabled ?? false,
-		smtpHost: (cfg?.smtpHost as string) || '',
-		smtpPort: (cfg?.smtpPort as number) || 587,
-		smtpUsername: (cfg?.smtpUsername as string) || '',
-		smtpPassword: (cfg?.smtpPassword as string) || '',
-		fromAddress: (cfg?.fromAddress as string) || '',
-		toAddresses: Array.isArray(cfg?.toAddresses) ? (cfg.toAddresses as string[]).join(', ') : '',
-		tlsMode: ((cfg?.tlsMode as string) || 'starttls') as EmailTLSMode,
-		eventImageUpdate: events?.image_update ?? true,
-		eventContainerUpdate: events?.container_update ?? true,
-		eventVulnerabilityFound: events?.vulnerability_found ?? true,
-		eventPruneReport: events?.prune_report ?? true,
-		eventAutoHeal: events?.auto_heal ?? true
+		smtpHost: getString(cfg, 'smtpHost'),
+		smtpPort: getNumber(cfg, 'smtpPort', 587),
+		smtpUsername: getString(cfg, 'smtpUsername'),
+		smtpPassword: getString(cfg, 'smtpPassword'),
+		fromAddress: getString(cfg, 'fromAddress'),
+		toAddresses: getStringArray(cfg, 'toAddresses').join(', '),
+		tlsMode: getString(cfg, 'tlsMode', 'starttls') as EmailTLSMode,
+		...eventFlagsToFormValues(events)
 	};
 }
 
 export function telegramSettingsToFormValues(settings?: NotificationSettings): TelegramFormValues {
-	const cfg = (settings?.config ?? {}) as Record<string, unknown>;
-	const events = (cfg?.events ?? {}) as Record<string, boolean>;
+	const cfg = getConfig(settings);
+	const events = getEvents(cfg);
 	return {
 		enabled: settings?.enabled ?? false,
-		botToken: (cfg?.botToken as string) || '',
-		chatIds: Array.isArray(cfg?.chatIds) ? (cfg.chatIds as string[]).join(', ') : '',
-		preview: (cfg?.preview as boolean) ?? true,
-		notification: (cfg?.notification as boolean) ?? true,
-		title: (cfg?.title as string) || '',
-		eventImageUpdate: events?.image_update ?? true,
-		eventContainerUpdate: events?.container_update ?? true,
-		eventVulnerabilityFound: events?.vulnerability_found ?? true,
-		eventPruneReport: events?.prune_report ?? true,
-		eventAutoHeal: events?.auto_heal ?? true
+		botToken: getString(cfg, 'botToken'),
+		chatIds: getStringArray(cfg, 'chatIds').join(', '),
+		preview: getBoolean(cfg, 'preview', true),
+		notification: getBoolean(cfg, 'notification', true),
+		title: getString(cfg, 'title'),
+		...eventFlagsToFormValues(events)
 	};
 }
 
 export function signalSettingsToFormValues(settings?: NotificationSettings): SignalFormValues {
-	const cfg = (settings?.config ?? {}) as Record<string, unknown>;
-	const events = (cfg?.events ?? {}) as Record<string, boolean>;
+	const cfg = getConfig(settings);
+	const events = getEvents(cfg);
 	return {
 		enabled: settings?.enabled ?? false,
-		host: (cfg?.host as string) || 'localhost',
-		port: (cfg?.port as number) || 8080,
-		user: (cfg?.user as string) || '',
-		password: (cfg?.password as string) || '',
-		token: (cfg?.token as string) || '',
-		source: (cfg?.source as string) || '',
-		recipients: Array.isArray(cfg?.recipients) ? (cfg.recipients as string[]).join(', ') : '',
-		disableTls: (cfg?.disableTls as boolean) ?? false,
-		eventImageUpdate: events?.image_update ?? true,
-		eventContainerUpdate: events?.container_update ?? true,
-		eventVulnerabilityFound: events?.vulnerability_found ?? true,
-		eventPruneReport: events?.prune_report ?? true,
-		eventAutoHeal: events?.auto_heal ?? true
+		host: getString(cfg, 'host', 'localhost'),
+		port: getNumber(cfg, 'port', 8080),
+		user: getString(cfg, 'user'),
+		password: getString(cfg, 'password'),
+		token: getString(cfg, 'token'),
+		source: getString(cfg, 'source'),
+		recipients: getStringArray(cfg, 'recipients').join(', '),
+		disableTls: getBoolean(cfg, 'disableTls', false),
+		...eventFlagsToFormValues(events)
 	};
 }
 
 export function slackSettingsToFormValues(settings?: NotificationSettings): SlackFormValues {
-	const cfg = (settings?.config ?? {}) as Record<string, unknown>;
-	const events = (cfg?.events ?? {}) as Record<string, boolean>;
+	const cfg = getConfig(settings);
+	const events = getEvents(cfg);
 	return {
 		enabled: settings?.enabled ?? false,
-		token: (cfg?.token as string) || '',
-		botName: (cfg?.botName as string) || 'Arcane',
-		icon: (cfg?.icon as string) || '',
-		color: (cfg?.color as string) || '',
-		title: (cfg?.title as string) || '',
-		channel: (cfg?.channel as string) || '',
-		threadTs: (cfg?.threadTs as string) || '',
-		eventImageUpdate: events?.image_update ?? true,
-		eventContainerUpdate: events?.container_update ?? true,
-		eventVulnerabilityFound: events?.vulnerability_found ?? true,
-		eventPruneReport: events?.prune_report ?? true,
-		eventAutoHeal: events?.auto_heal ?? true
+		token: getString(cfg, 'token'),
+		botName: getString(cfg, 'botName', 'Arcane'),
+		icon: getString(cfg, 'icon'),
+		color: getString(cfg, 'color'),
+		title: getString(cfg, 'title'),
+		channel: getString(cfg, 'channel'),
+		threadTs: getString(cfg, 'threadTs'),
+		...eventFlagsToFormValues(events)
 	};
 }
 
@@ -394,91 +430,75 @@ export function slackFormValuesToSettings(values: SlackFormValues): Notification
 }
 
 export function ntfySettingsToFormValues(settings?: NotificationSettings): NtfyFormValues {
-	const cfg = (settings?.config ?? {}) as Record<string, unknown>;
-	const events = (cfg?.events ?? {}) as Record<string, boolean>;
+	const cfg = getConfig(settings);
+	const events = getEvents(cfg);
 	return {
 		enabled: settings?.enabled ?? false,
-		host: (cfg?.host as string) || 'ntfy.sh',
-		port: (cfg?.port as number) || 0,
-		topic: (cfg?.topic as string) || '',
-		username: (cfg?.username as string) || '',
-		password: (cfg?.password as string) || '',
-		title: (cfg?.title as string) || '',
-		priority: (cfg?.priority as string) || 'default',
-		tags: Array.isArray(cfg?.tags) ? (cfg.tags as string[]).join(', ') : '',
-		icon: (cfg?.icon as string) || '',
-		cache: (cfg?.cache as boolean) ?? true,
-		firebase: (cfg?.firebase as boolean) ?? true,
-		disableTlsVerification: (cfg?.disableTlsVerification as boolean) ?? false,
-		eventImageUpdate: events?.image_update ?? true,
-		eventContainerUpdate: events?.container_update ?? true,
-		eventVulnerabilityFound: events?.vulnerability_found ?? true,
-		eventPruneReport: events?.prune_report ?? true,
-		eventAutoHeal: events?.auto_heal ?? true
+		host: getString(cfg, 'host', 'ntfy.sh'),
+		port: getNumber(cfg, 'port', 0),
+		topic: getString(cfg, 'topic'),
+		username: getString(cfg, 'username'),
+		password: getString(cfg, 'password'),
+		title: getString(cfg, 'title'),
+		priority: getString(cfg, 'priority', 'default'),
+		tags: getStringArray(cfg, 'tags').join(', '),
+		icon: getString(cfg, 'icon'),
+		cache: getBoolean(cfg, 'cache', true),
+		firebase: getBoolean(cfg, 'firebase', true),
+		disableTlsVerification: getBoolean(cfg, 'disableTlsVerification', false),
+		...eventFlagsToFormValues(events)
 	};
 }
 
 export function pushoverSettingsToFormValues(settings?: NotificationSettings): PushoverFormValues {
-	const cfg = (settings?.config ?? {}) as Record<string, unknown>;
-	const events = (cfg?.events ?? {}) as Record<string, boolean>;
+	const cfg = getConfig(settings);
+	const events = getEvents(cfg);
 	return {
 		enabled: settings?.enabled ?? false,
-		token: (cfg?.token as string) || '',
-		user: (cfg?.user as string) || '',
-		devices: Array.isArray(cfg?.devices) ? (cfg.devices as string[]).join(', ') : '',
-		priority: Number(cfg?.priority ?? 0),
-		title: (cfg?.title as string) || '',
-		eventImageUpdate: events?.image_update ?? true,
-		eventContainerUpdate: events?.container_update ?? true,
-		eventVulnerabilityFound: events?.vulnerability_found ?? true,
-		eventPruneReport: events?.prune_report ?? true,
-		eventAutoHeal: events?.auto_heal ?? true
+		token: getString(cfg, 'token'),
+		user: getString(cfg, 'user'),
+		devices: getStringArray(cfg, 'devices').join(', '),
+		priority: Number(cfg['priority'] ?? 0),
+		title: getString(cfg, 'title'),
+		...eventFlagsToFormValues(events)
 	};
 }
 
 export function gotifySettingsToFormValues(settings?: NotificationSettings): GotifyFormValues {
-	const cfg = (settings?.config ?? {}) as Record<string, unknown>;
-	const events = (cfg?.events ?? {}) as Record<string, boolean>;
+	const cfg = getConfig(settings);
+	const events = getEvents(cfg);
 	return {
 		enabled: settings?.enabled ?? false,
-		host: (cfg?.host as string) || '',
-		port: (cfg?.port as number) || 0,
-		token: (cfg?.token as string) || '',
-		path: (cfg?.path as string) || '',
-		priority: Number(cfg?.priority ?? 0),
-		title: (cfg?.title as string) || '',
-		disableTls: (cfg?.disableTls as boolean) ?? false,
-		eventImageUpdate: events?.image_update ?? true,
-		eventContainerUpdate: events?.container_update ?? true,
-		eventVulnerabilityFound: events?.vulnerability_found ?? true,
-		eventPruneReport: events?.prune_report ?? true,
-		eventAutoHeal: events?.auto_heal ?? true
+		host: getString(cfg, 'host'),
+		port: getNumber(cfg, 'port', 0),
+		token: getString(cfg, 'token'),
+		path: getString(cfg, 'path'),
+		priority: Number(cfg['priority'] ?? 0),
+		title: getString(cfg, 'title'),
+		disableTls: getBoolean(cfg, 'disableTls', false),
+		...eventFlagsToFormValues(events)
 	};
 }
 
 export function matrixSettingsToFormValues(settings?: NotificationSettings): MatrixFormValues {
-	const cfg = (settings?.config ?? {}) as Record<string, unknown>;
-	const events = (cfg?.events ?? {}) as Record<string, boolean>;
+	const cfg = getConfig(settings);
+	const events = getEvents(cfg);
 	return {
 		enabled: settings?.enabled ?? false,
-		host: (cfg?.host as string) || '',
-		port: (cfg?.port as number) || 0,
-		rooms: (cfg?.rooms as string) || '',
-		username: (cfg?.username as string) || '',
-		password: (cfg?.password as string) || '',
-		disableTlsVerification: (cfg?.disableTlsVerification as boolean) ?? false,
-		eventImageUpdate: events?.image_update ?? true,
-		eventContainerUpdate: events?.container_update ?? true,
-		eventVulnerabilityFound: events?.vulnerability_found ?? true,
-		eventPruneReport: events?.prune_report ?? true,
-		eventAutoHeal: events?.auto_heal ?? true
+		host: getString(cfg, 'host'),
+		port: getNumber(cfg, 'port', 0),
+		rooms: getString(cfg, 'rooms'),
+		username: getString(cfg, 'username'),
+		password: getString(cfg, 'password'),
+		disableTlsVerification: getBoolean(cfg, 'disableTlsVerification', false),
+		...eventFlagsToFormValues(events)
 	};
 }
 
 export function genericSettingsToFormValues(settings?: NotificationSettings): GenericFormValues {
-	const cfg = (settings?.config ?? {}) as Record<string, unknown>;
-	const events = (cfg?.events ?? {}) as Record<string, boolean>;
-	const customHeaders = (cfg?.customHeaders ?? {}) as Record<string, string>;
+	const cfg = getConfig(settings);
+	const events = getEvents(cfg);
+	const customHeaders = getStringRecord(cfg, 'customHeaders');
 
 	// Convert customHeaders object to string format (key1:value1, key2:value2)
 	const customHeadersStr = Object.entries(customHeaders)
@@ -487,17 +507,13 @@ export function genericSettingsToFormValues(settings?: NotificationSettings): Ge
 
 	return {
 		enabled: settings?.enabled ?? false,
-		webhookUrl: (cfg?.webhookUrl as string) || '',
-		method: (cfg?.method as string) || 'POST',
-		contentType: (cfg?.contentType as string) || 'application/json',
-		titleKey: (cfg?.titleKey as string) || 'title',
-		messageKey: (cfg?.messageKey as string) || 'message',
+		webhookUrl: getString(cfg, 'webhookUrl'),
+		method: getString(cfg, 'method', 'POST'),
+		contentType: getString(cfg, 'contentType', 'application/json'),
+		titleKey: getString(cfg, 'titleKey', 'title'),
+		messageKey: getString(cfg, 'messageKey', 'message'),
 		customHeaders: customHeadersStr,
-		eventImageUpdate: events?.image_update ?? true,
-		eventContainerUpdate: events?.container_update ?? true,
-		eventVulnerabilityFound: events?.vulnerability_found ?? true,
-		eventPruneReport: events?.prune_report ?? true,
-		eventAutoHeal: events?.auto_heal ?? true
+		...eventFlagsToFormValues(events)
 	};
 }
 

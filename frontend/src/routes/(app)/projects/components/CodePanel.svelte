@@ -4,15 +4,13 @@
 	import CodeEditor from '$lib/components/code-editor/editor.svelte';
 	import { CodeIcon, FileTextIcon, SearchIcon, ArrowsUpDownIcon } from '$lib/icons';
 	import { IsMobile } from '$lib/hooks/is-mobile.svelte.js';
-	import type { DiagnosticSummary, EditorContext } from '$lib/components/code-editor/analysis/types';
-
-	type CodeLanguage = 'yaml' | 'env';
+	import type { CodeLanguage, DiagnosticSummary, EditorContext } from '$lib/components/code-editor/analysis/types';
 
 	let {
 		title,
-		open = $bindable(),
+		open = $bindable(true),
 		language,
-		value = $bindable(),
+		value = $bindable(''),
 		error,
 		autoHeight = false,
 		readOnly = false,
@@ -25,10 +23,6 @@
 			hints: 0,
 			schemaStatus: 'unavailable',
 			schemaMessage: undefined,
-			unresolvedVariables: [],
-			secretWarnings: 0,
-			duplicateKeyWarnings: 0,
-			duplicateEnvWarnings: 0,
 			cursorLine: 1,
 			cursorCol: 1,
 			validationReady: false
@@ -42,9 +36,9 @@
 		commandPaletteOpen = $bindable(false)
 	}: {
 		title: string;
-		open: boolean;
+		open?: boolean;
 		language: CodeLanguage;
-		value: string;
+		value?: string;
 		error?: string;
 		autoHeight?: boolean;
 		readOnly?: boolean;

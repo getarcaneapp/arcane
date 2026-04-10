@@ -37,7 +37,7 @@
 	}
 </script>
 
-<Dialog.Root bind:open>
+<Dialog.Root {open} onOpenChange={(nextOpen) => (open = nextOpen)}>
 	<Dialog.Content class="sm:max-w-[425px]">
 		<Dialog.Header>
 			<Dialog.Title>{m.volumes_browser_new_folder()}</Dialog.Title>

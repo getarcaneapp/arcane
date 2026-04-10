@@ -8,12 +8,10 @@
 	import { createForm, preventDefault } from '$lib/utils/form.utils';
 	import { isValidUserEmail } from '$lib/utils/email.utils';
 	import { m } from '$lib/paraglide/messages';
-	import { AddIcon, SaveIcon } from '$lib/icons';
 
 	type UserFormProps = {
 		open: boolean;
 		userToEdit: User | null;
-		roles: { id: string; name: string }[];
 		onSubmit: (data: { user: Partial<User> & { password?: string }; isEditMode: boolean; userId?: string }) => void;
 		isLoading: boolean;
 		allowUsernameEdit?: boolean;
@@ -22,11 +20,11 @@
 	let {
 		open = $bindable(false),
 		userToEdit = $bindable(),
-		roles,
 		onSubmit,
 		isLoading,
 		allowUsernameEdit = false
 	}: UserFormProps = $props();
+	void open;
 
 	let isEditMode = $derived(!!userToEdit);
 	let canEditUsername = $derived(!isEditMode || allowUsernameEdit);

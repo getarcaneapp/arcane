@@ -12,8 +12,9 @@
 	import { m } from '$lib/paraglide/messages';
 	import settingsStore from '$lib/stores/config-store';
 	import { deployOptionsStore } from '$lib/stores/deploy-options.store.svelte';
-	import { containerService } from '$lib/services/container-service';
+	import { containerService, type ContainerDetailsResponse } from '$lib/services/container-service';
 	import { projectService, type DeployProjectOptions } from '$lib/services/project-service';
+	import type { Project } from '$lib/types/project.type';
 	import { isDownloadingLine, calculateOverallProgress, areAllLayersComplete } from '$lib/utils/pull-progress';
 	import { sanitizeLogText } from '$lib/utils/log-text';
 	import { EllipsisIcon, DownloadIcon, HammerIcon } from '$lib/icons';
@@ -140,8 +141,13 @@
 	}));
 
 	const redeployMutation = createMutation(() => ({
-		mutationKey: ['action', 'redeploy', id],
-		mutationFn: () => tryCatch(projectService.redeployProject(id)),
+		mutationKey: ['action', 'redeploy', type, id],
+		mutationFn: () =>
+			tryCatch(
+				(type === 'container' ? containerService.redeployContainer(id) : projectService.redeployProject(id)) as Promise<
+					ContainerDetailsResponse | Project
+				>
+			),
 		onMutate: () => setLoading('redeploy', true),
 		onSettled: () => setLoading('redeploy', false)
 	}));
@@ -276,8 +282,9 @@
 		if (entries.length === 0) return m.progress_deploy_starting();
 
 		const waiting = entries.filter(([_, v]) => v.phase === 'service_waiting_healthy').sort(([a], [b]) => a.localeCompare(b));
-		if (waiting.length > 0) {
-			const [service, v] = waiting[0];
+		const firstWaiting = waiting[0];
+		if (firstWaiting) {
+			const [service, v] = firstWaiting;
 			const health = String(v.health ?? '').trim();
 			return health
 				? m.progress_deploy_waiting_for_service_with_health({ service, health })
@@ -287,8 +294,9 @@
 		const stateIssues = entries
 			.filter(([_, v]) => v.phase === 'service_state' && (v.state ?? '').toLowerCase() !== 'running')
 			.sort(([a], [b]) => a.localeCompare(b));
-		if (stateIssues.length > 0) {
-			const [service, v] = stateIssues[0];
+		const firstStateIssue = stateIssues[0];
+		if (firstStateIssue) {
+			const [service, v] = firstStateIssue;
 			return m.progress_deploy_service_state({ service, state: String(v.state ?? '') });
 		}
 
@@ -407,8 +415,8 @@
 			});
 		} else if (action === 'redeploy') {
 			openConfirmDialog({
-				title: m.common_confirm_redeploy_title(),
-				message: m.common_confirm_redeploy_message(),
+				title: type === 'container' ? m.container_confirm_redeploy_title() : m.common_confirm_redeploy_title(),
+				message: type === 'container' ? m.container_confirm_redeploy_message() : m.common_confirm_redeploy_message(),
 				confirm: {
 					label: m.common_redeploy(),
 					action: async () => {
@@ -416,9 +424,18 @@
 						handleApiResultWithCallbacks({
 							result,
 							message: m.common_action_failed_with_type({ action: m.common_redeploy(), type }),
-							onSuccess: async () => {
-								toast.success(m.common_redeploy_success({ type: name || type }));
-								onActionComplete('running');
+							onSuccess: async (data) => {
+								toast.success(
+									type === 'container' ? m.container_redeploy_success() : m.common_redeploy_success({ type: name || type })
+								);
+								const containerData = data as ContainerDetailsResponse;
+								if (type === 'container' && containerData?.data?.id) {
+									goto(`/containers/${containerData.data.id}`);
+								} else if (type === 'container') {
+									goto('/containers');
+								} else {
+									onActionComplete('running');
+								}
 							}
 						});
 					}
@@ -869,6 +886,13 @@
 
 				{#if type === 'container'}
 					<ArcaneButton
+						action="redeploy"
+						size={adaptiveIconOnly ? 'icon' : 'default'}
+						showLabel={!adaptiveIconOnly}
+						onclick={() => confirmAction('redeploy')}
+						loading={uiLoading.redeploy}
+					/>
+					<ArcaneButton
 						action="remove"
 						size={adaptiveIconOnly ? 'icon' : 'default'}
 						showLabel={!adaptiveIconOnly}
@@ -1003,6 +1027,9 @@
 							{/if}
 
 							{#if type === 'container'}
+								<DropdownMenu.Item onclick={() => confirmAction('redeploy')} disabled={uiLoading.redeploy}>
+									{m.common_redeploy()}
+								</DropdownMenu.Item>
 								<DropdownMenu.Item onclick={() => confirmAction('remove')} disabled={uiLoading.remove}>
 									{m.common_remove()}
 								</DropdownMenu.Item>
@@ -1127,6 +1154,7 @@
 			{/if}
 
 			{#if type === 'container'}
+				<ArcaneButton action="redeploy" onclick={() => confirmAction('redeploy')} loading={uiLoading.redeploy} />
 				<ArcaneButton action="remove" onclick={() => confirmAction('remove')} loading={uiLoading.remove} />
 			{:else}
 				<ArcaneButton action="redeploy" onclick={() => confirmAction('redeploy')} loading={uiLoading.redeploy} />
@@ -1230,6 +1258,9 @@
 						{/if}
 
 						{#if type === 'container'}
+							<DropdownMenu.Item onclick={() => confirmAction('redeploy')} disabled={uiLoading.redeploy}>
+								{m.common_redeploy()}
+							</DropdownMenu.Item>
 							<DropdownMenu.Item onclick={() => confirmAction('remove')} disabled={uiLoading.remove}>
 								{m.common_remove()}
 							</DropdownMenu.Item>

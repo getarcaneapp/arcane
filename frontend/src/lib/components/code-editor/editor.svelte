@@ -20,9 +20,11 @@
 	import { browser } from '$app/environment';
 	import { m } from '$lib/paraglide/messages';
 	import configStore from '$lib/stores/config-store';
-	import { arcaneDarkInit } from './theme';
+	import { mode } from 'mode-watcher';
+	import { arcaneDarkInit, arcaneLightInit } from './theme';
 	import { createDefaultSummary, ENV_SNIPPETS, YAML_SNIPPETS } from './editor-constants';
-	import { createMergeEnterIndentKeymap, createMergeHostAction, type MergeActionParams } from './merge-editor';
+	import { createEnterIndentKeymap } from './enter-indentation';
+	import { createMergeHostAction, type MergeActionParams } from './merge-editor';
 	import {
 		analyzeComposeContent,
 		findYamlPositionContext,
@@ -74,10 +76,10 @@
 		diffOpen?: boolean;
 		commandPaletteOpen?: boolean;
 	} = $props();
+	void hasErrors;
 
 	let activeOutlineItems = $state<OutlineItem[]>([]);
 	let activeView = $state<EditorView | null>(null);
-	let normalView = $state<EditorView | null>(null);
 	let schemaState = $state<ComposeSchemaContext | null>(null);
 	let shortcutsEnabled = $derived($configStore?.keyboardShortcutsEnabled !== false);
 
@@ -201,10 +203,6 @@
 		} catch {
 			// ignore bad state payload
 		}
-	}
-
-	function focusEditor() {
-		activeView?.focus();
 	}
 
 	function jumpToOutlineItem(item: OutlineItem) {
@@ -521,9 +519,18 @@
 		return analysis.diagnostics;
 	};
 
+	const enterIndentKeymaps: Record<CodeLanguage, Extension> = {
+		yaml: createEnterIndentKeymap('yaml'),
+		env: createEnterIndentKeymap('env')
+	};
+
 	function getLanguageExtension(lang: CodeLanguage, options: { lightweight?: boolean } = {}): Extension[] {
 		const lightweight = options.lightweight === true;
 		const extensions: Extension[] = [editorLifecycleExtension, shortcutKeymapExtension];
+
+		if (!readOnly) {
+			extensions.push(enterIndentKeymaps[lang]);
+		}
 
 		switch (lang) {
 			case 'yaml':
@@ -560,13 +567,11 @@
 
 	const theme = $derived.by(() => {
 		$configStore;
-		return arcaneDarkInit();
+		return mode.current === 'dark' ? arcaneDarkInit() : arcaneLightInit();
 	});
 
-	const mergeEnterIndentKeymap = createMergeEnterIndentKeymap();
 	const mergeHostAction = createMergeHostAction({
 		getTheme: () => theme,
-		mergeEnterIndentKeymap,
 		getLanguageExtension,
 		onValueChange: (nextValue) => {
 			value = nextValue;
@@ -599,7 +604,6 @@
 	});
 
 	function wireNormalView(view: EditorView) {
-		normalView = view;
 		if (!isDiffActive) {
 			activeView = view;
 			restoreEditorState(view);
@@ -654,8 +658,6 @@
 		<span>{diagnosticSummary.errors} errors</span>
 		<span>{diagnosticSummary.warnings} warnings</span>
 		<span>Schema: {diagnosticSummary.schemaStatus}</span>
-		<span>Unresolved vars: {diagnosticSummary.unresolvedVariables.length}</span>
-		<span>Secrets: {diagnosticSummary.secretWarnings}</span>
 		<span>Ln {diagnosticSummary.cursorLine}, Col {diagnosticSummary.cursorCol}</span>
 		<span>Diagnostics: {countCurrentDiagnostics()}</span>
 		{#if !validationReady}
@@ -719,13 +721,21 @@
 	:global(.arcane-code-editor .cm-editor .cm-scroller) {
 		overflow-x: auto;
 	}
-	:global(.arcane-code-editor .cm-editor .cm-gutters) {
+	:global(.dark .arcane-code-editor .cm-editor .cm-gutters) {
 		background-color: #18181b;
 		border-right: none;
 	}
-	:global(.arcane-code-editor .cm-editor .cm-activeLineGutter) {
+	:global(.dark .arcane-code-editor .cm-editor .cm-activeLineGutter) {
 		background-color: #2c313a;
 		color: #e5e7eb;
+	}
+	:global(:root:not(.dark) .arcane-code-editor .cm-editor .cm-gutters) {
+		background-color: #ffffff;
+		border-right: none;
+	}
+	:global(:root:not(.dark) .arcane-code-editor .cm-editor .cm-activeLineGutter) {
+		background-color: #f0f1f3;
+		color: #24292f;
 	}
 	:global(.arcane-code-editor .cm-mergeView) {
 		height: 100%;

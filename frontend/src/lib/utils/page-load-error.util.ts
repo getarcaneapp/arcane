@@ -1,10 +1,13 @@
 import { error as kitError } from '@sveltejs/kit';
-import { AxiosError } from 'axios';
 import { extractApiErrorMessage } from './api.util';
 
 export function extractApiErrorStatus(err: unknown, fallbackStatus = 500): number {
-	if (err instanceof AxiosError) {
-		return err.response?.status ?? fallbackStatus;
+	if (err && typeof err === 'object') {
+		const maybeResponse = (err as { response?: { status?: unknown } }).response;
+		const responseStatus = maybeResponse?.status;
+		if (typeof responseStatus === 'number' && Number.isFinite(responseStatus)) {
+			return responseStatus;
+		}
 	}
 
 	if (err && typeof err === 'object') {

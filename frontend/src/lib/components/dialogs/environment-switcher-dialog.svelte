@@ -15,7 +15,7 @@
 	import { debounced } from '$lib/utils/utils';
 	import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import { tick } from 'svelte';
-	import { EnvironmentsIcon, RemoteEnvironmentIcon, AddIcon, SearchIcon, CloseIcon } from '$lib/icons';
+	import { EnvironmentsIcon, RemoteEnvironmentIcon, AddIcon, SearchIcon, CloseIcon, SettingsIcon } from '$lib/icons';
 	import { useQueryClient } from '@tanstack/svelte-query';
 
 	type Props = {
@@ -35,7 +35,6 @@
 	let scrollContainer = $state<HTMLDivElement | null>(null);
 	let lastScrollTop = $state(0);
 	let loadError = $state<string | null>(null);
-	let environmentsPromise = $state<Promise<void> | null>(null);
 	let currentRequestId = 0;
 
 	const PAGE_SIZE = 10;
@@ -116,7 +115,6 @@
 		searchQuery = '';
 		requestOptions = DEFAULT_REQUEST_OPTIONS;
 		lastScrollTop = 0;
-		environmentsPromise = null;
 		loadError = null;
 		// Keep environments around or clear? Clear so reopening always shows a clean slate
 		environments = [];
@@ -125,7 +123,7 @@
 	}
 
 	function startInitialLoad() {
-		environmentsPromise = Promise.resolve().then(() => loadInitial());
+		void loadInitial();
 	}
 
 	function closeDialog() {
@@ -133,7 +131,7 @@
 		resetDialogState();
 	}
 
-	function openSession(node: HTMLElement) {
+	function openSession(_node: HTMLElement) {
 		// Runs when the dialog content mounts (i.e., when `open` becomes true)
 		startInitialLoad();
 		return {
@@ -153,11 +151,11 @@
 			pagination: { page: 1, limit: PAGE_SIZE },
 			sort: { column: 'name', direction: 'asc' }
 		};
-		environmentsPromise = Promise.resolve().then(async () => {
+		void (async () => {
 			if (query !== searchQuery) return;
 			await resetScrollToTop();
 			await fetchEnvironments(options, false, true);
-		});
+		})();
 	}, 300);
 
 	function clearSearch() {
@@ -168,10 +166,10 @@
 			pagination: { page: 1, limit: PAGE_SIZE },
 			sort: { column: 'name', direction: 'asc' }
 		};
-		environmentsPromise = Promise.resolve().then(async () => {
+		void (async () => {
 			await resetScrollToTop();
 			await fetchEnvironments(options, false, true);
-		});
+		})();
 	}
 
 	function handleScroll(e: Event) {
@@ -225,6 +223,11 @@
 		}
 	}
 
+	function handleOpenSettings(env: Environment) {
+		closeDialog();
+		goto(`/environments/${env.id}`);
+	}
+
 	function getConnectionString(env: Environment): string {
 		if (env.id === '0') {
 			const host = $settingsStore ? $settingsStore.dockerHost : 'unix:///var/run/docker.sock';
@@ -266,30 +269,39 @@
 			</div>
 
 			<div bind:this={scrollContainer} onscroll={handleScroll} class="max-h-[50vh] min-h-[200px] overflow-y-auto">
-				{#await environmentsPromise}
+				{#if isLoading}
 					<div class="flex items-center justify-center py-10">
 						<Spinner class="size-6" />
 					</div>
-				{:then}
-					{#if environments.length === 0}
-						<div class="text-muted-foreground py-10 text-center">
-							<EnvironmentsIcon class="mx-auto mb-4 size-12 opacity-50" />
-							<p>{m.sidebar_no_environments()}</p>
-						</div>
-					{:else}
-						<div class="space-y-1">
-							{#each environments as env (env.id)}
-								{@const isActive = environmentStore.selected?.id === env.id}
-								{@const isDisabled = !env.enabled}
+				{:else if loadError}
+					<div class="text-destructive py-10 text-center">
+						<p>{m.error_generic()}</p>
+					</div>
+				{:else if environments.length === 0}
+					<div class="text-muted-foreground py-10 text-center">
+						<EnvironmentsIcon class="mx-auto mb-4 size-12 opacity-50" />
+						<p>{m.sidebar_no_environments()}</p>
+					</div>
+				{:else}
+					<div class="space-y-1">
+						{#each environments as env (env.id)}
+							{@const isActive = environmentStore.selected?.id === env.id}
+							{@const isDisabled = !env.enabled}
+							<div
+								class={cn(
+									'flex items-center gap-2 rounded-lg border p-1 transition-colors',
+									isActive && 'bg-primary/10 border-primary font-medium',
+									!isActive && !isDisabled && 'hover:bg-muted/50',
+									!isActive && isDisabled && 'opacity-50'
+								)}
+							>
 								<button
 									type="button"
 									onclick={() => !isActive && !isDisabled && handleSelect(env)}
 									disabled={isDisabled}
 									class={cn(
-										'flex w-full items-center gap-3 rounded-lg p-3 text-left transition-colors',
-										isActive && 'bg-primary/10 border-primary border font-medium',
-										!isActive && !isDisabled && 'hover:bg-muted/50',
-										isDisabled && 'cursor-not-allowed opacity-50'
+										'flex min-w-0 flex-1 items-center gap-3 rounded-md p-2 text-left',
+										isDisabled && 'cursor-not-allowed'
 									)}
 								>
 									<div
@@ -310,24 +322,34 @@
 											{getConnectionString(env)}
 										</span>
 									</div>
-									{#if isActive}
-										<span class="text-primary text-xs font-medium">{m.environments_current_environment()}</span>
-									{/if}
 								</button>
-							{/each}
-
-							{#if isLoadingMore}
-								<div class="flex items-center justify-center py-4">
-									<Spinner class="size-5" />
+								<div class="flex shrink-0 items-center gap-2 pr-2">
+									{#if isActive}
+										<span class="text-primary hidden text-xs font-medium sm:inline">
+											{m.environments_current_environment()}
+										</span>
+									{/if}
+									<ArcaneButton
+										action="base"
+										tone="ghost"
+										size="icon"
+										class="size-8"
+										icon={SettingsIcon}
+										showLabel={false}
+										customLabel={m.settings_title()}
+										onclick={() => handleOpenSettings(env)}
+									/>
 								</div>
-							{/if}
-						</div>
-					{/if}
-				{:catch}
-					<div class="text-destructive py-10 text-center">
-						<p>{m.error_generic()}</p>
+							</div>
+						{/each}
+
+						{#if isLoadingMore}
+							<div class="flex items-center justify-center py-4">
+								<Spinner class="size-5" />
+							</div>
+						{/if}
 					</div>
-				{/await}
+				{/if}
 			</div>
 		</div>
 	{/snippet}

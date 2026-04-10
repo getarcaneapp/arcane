@@ -16,6 +16,7 @@
 		footer,
 		class: className,
 		contentClass,
+		showCloseButton = true,
 		variant = 'dialog'
 	}: ResponsiveDialogProps = $props();
 
@@ -37,7 +38,7 @@
 
 {#if isDesktop.current}
 	{#if variant === 'sheet'}
-		<Sheet.Root bind:open onOpenChange={handleOpenChange}>
+		<Sheet.Root {open} onOpenChange={handleOpenChange}>
 			{#if trigger}
 				<Sheet.Trigger>
 					{@render trigger()}
@@ -67,7 +68,7 @@
 			</Sheet.Content>
 		</Sheet.Root>
 	{:else}
-		<Dialog.Root bind:open onOpenChange={handleOpenChange}>
+		<Dialog.Root {open} onOpenChange={handleOpenChange}>
 			{#if trigger}
 				<Dialog.Trigger>
 					{@render trigger()}
@@ -78,6 +79,7 @@
 					'max-h-[calc(100vh-2rem)] grid-rows-[auto_minmax(0,1fr)_auto]! overflow-hidden p-0!',
 					contentClass ?? 'sm:max-w-[425px]'
 				)}
+				{showCloseButton}
 			>
 				{#if title || description}
 					<Dialog.Header class="shrink-0 px-6 pt-6">
@@ -101,7 +103,7 @@
 		</Dialog.Root>
 	{/if}
 {:else}
-	<Drawer.Root bind:open onOpenChange={handleOpenChange}>
+	<Drawer.Root {open} onOpenChange={handleOpenChange}>
 		{#if trigger}
 			<Drawer.Trigger>
 				{@render trigger()}

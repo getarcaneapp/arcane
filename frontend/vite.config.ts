@@ -25,10 +25,10 @@ export default defineConfig({
 		target: 'es2022'
 	},
 	server: {
-		host: process.env.HOST,
+		host: process.env['HOST'],
 		proxy: {
 			'/api': {
-				target: process.env.DEV_BACKEND_URL || 'http://localhost:3552',
+				target: process.env['DEV_BACKEND_URL'] || 'http://localhost:3552',
 				changeOrigin: true,
 				ws: true
 			}

@@ -54,12 +54,30 @@
 		return 'green';
 	}
 
+	function isStaticApiKey(apiKey: ApiKey): boolean {
+		return apiKey.isStatic;
+	}
+
+	const selectedStaticApiKeyCount = $derived.by(
+		() => apiKeys.data.filter((apiKey) => selectedIds.includes(apiKey.id) && isStaticApiKey(apiKey)).length
+	);
+	const selectedDeletableApiKeyIds = $derived.by(() =>
+		apiKeys.data.filter((apiKey) => selectedIds.includes(apiKey.id) && !isStaticApiKey(apiKey)).map((apiKey) => apiKey.id)
+	);
+
 	async function handleDeleteSelected() {
 		if (selectedIds.length === 0) return;
+		if (selectedDeletableApiKeyIds.length === 0) {
+			toast.info(m.api_key_bulk_delete_static_only());
+			return;
+		}
+		if (selectedStaticApiKeyCount > 0) {
+			toast.info(m.api_key_bulk_delete_static_skipped({ count: selectedStaticApiKeyCount }));
+		}
 
 		openConfirmDialog({
-			title: m.api_key_delete_selected_title({ count: selectedIds.length }),
-			message: m.api_key_delete_selected_message({ count: selectedIds.length }),
+			title: m.api_key_delete_selected_title({ count: selectedDeletableApiKeyIds.length }),
+			message: m.api_key_delete_selected_message({ count: selectedDeletableApiKeyIds.length }),
 			confirm: {
 				label: m.common_delete(),
 				destructive: true,
@@ -68,7 +86,7 @@
 					let successCount = 0;
 					let failureCount = 0;
 
-					for (const apiKeyId of selectedIds) {
+					for (const apiKeyId of selectedDeletableApiKeyIds) {
 						const result = await tryCatch(apiKeyService.delete(apiKeyId));
 						handleApiResultWithCallbacks({
 							result,
@@ -147,7 +165,7 @@
 			action: 'remove',
 			onClick: handleDeleteSelected,
 			loading: isLoading.removing,
-			disabled: isLoading.removing,
+			disabled: isLoading.removing || selectedDeletableApiKeyIds.length === 0,
 			icon: TrashIcon
 		}
 	]);
@@ -242,14 +260,17 @@
 		</DropdownMenu.Trigger>
 		<DropdownMenu.Content align="end">
 			<DropdownMenu.Group>
-				<DropdownMenu.Item onclick={() => onEditApiKey(item)}>
+				<DropdownMenu.Item onclick={() => onEditApiKey(item)} disabled={isStaticApiKey(item)}>
 					<EditIcon class="size-4" />
 					{m.common_edit()}
 				</DropdownMenu.Item>
-
 				<DropdownMenu.Separator />
 
-				<DropdownMenu.Item variant="destructive" onclick={() => handleDeleteApiKey(item.id, item.name)}>
+				<DropdownMenu.Item
+					variant="destructive"
+					onclick={() => handleDeleteApiKey(item.id, item.name)}
+					disabled={isStaticApiKey(item)}
+				>
 					<TrashIcon class="size-4" />
 					{m.common_delete()}
 				</DropdownMenu.Item>

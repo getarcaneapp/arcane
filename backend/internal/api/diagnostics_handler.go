@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/internal/middleware"
-	ws "github.com/getarcaneapp/arcane/backend/internal/utils/ws"
+	ws "github.com/getarcaneapp/arcane/backend/pkg/libarcane/ws"
 	"github.com/gin-gonic/gin"
 )
 

@@ -10,8 +10,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/cookie"
 	pkgutils "github.com/getarcaneapp/arcane/backend/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils/cookie"
 	"github.com/gin-gonic/gin"
 )
 
@@ -196,10 +196,9 @@ func isPreflight(c *gin.Context) bool {
 }
 
 func agentSudo(c *gin.Context) {
-	email := "agent@getarcane.app"
 	agentUser := &models.User{
 		BaseModel: models.BaseModel{ID: "agent"},
-		Email:     &email,
+		Email:     new("agent@getarcane.app"),
 		Roles:     []string{"admin"},
 	}
 	c.Set("userID", agentUser.ID)

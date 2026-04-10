@@ -10,7 +10,9 @@ import (
 	"time"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/pathmapper"
+	"github.com/getarcaneapp/arcane/backend/internal/config"
+	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/pkg/projects"
 	buildtypes "github.com/getarcaneapp/arcane/types/builds"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
 	glsqlite "github.com/glebarez/sqlite"
@@ -50,7 +52,7 @@ func TestProjectService_GetProjectFromDatabaseByID(t *testing.T) {
 
 	// Setup dependencies
 	settingsService, _ := NewSettingsService(ctx, db)
-	svc := NewProjectService(db, settingsService, nil, nil, nil, nil)
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
 
 	// Create test project
 	proj := &models.Project{
@@ -167,7 +169,7 @@ func TestProjectService_CalculateProjectStatus(t *testing.T) {
 func TestProjectService_UpdateProjectStatusInternal(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
-	svc := NewProjectService(db, nil, nil, nil, nil, nil)
+	svc := NewProjectService(db, nil, nil, nil, nil, nil, config.Load())
 
 	proj := &models.Project{
 		BaseModel: models.BaseModel{
@@ -274,6 +276,127 @@ func TestProjectService_NormalizeComposeProjectName(t *testing.T) {
 	}
 }
 
+func TestProjectService_GetProjectByComposeName(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("exact match", func(t *testing.T) {
+		db := setupProjectTestDB(t)
+		svc := NewProjectService(db, nil, nil, nil, nil, nil, config.Load())
+
+		proj := &models.Project{
+			BaseModel: models.BaseModel{ID: "p1"},
+			Name:      "myproject",
+			Path:      "/tmp/myproject",
+		}
+		require.NoError(t, db.Create(proj).Error)
+
+		found, err := svc.GetProjectByComposeName(ctx, "myproject")
+		require.NoError(t, err)
+		assert.Equal(t, proj.ID, found.ID)
+	})
+
+	t.Run("normalized fallback", func(t *testing.T) {
+		db := setupProjectTestDB(t)
+		svc := NewProjectService(db, nil, nil, nil, nil, nil, config.Load())
+
+		proj := &models.Project{
+			BaseModel: models.BaseModel{ID: "p1"},
+			Name:      "myproject",
+			Path:      "/tmp/myproject",
+		}
+		require.NoError(t, db.Create(proj).Error)
+
+		found, err := svc.GetProjectByComposeName(ctx, "My Project!")
+		require.NoError(t, err)
+		assert.Equal(t, proj.ID, found.ID)
+	})
+
+	t.Run("display name in db, normalized compose label input", func(t *testing.T) {
+		db := setupProjectTestDB(t)
+		svc := NewProjectService(db, nil, nil, nil, nil, nil, config.Load())
+
+		display := &models.Project{
+			BaseModel: models.BaseModel{ID: "p2"},
+			Name:      "My Project!",
+			Path:      "/tmp/my-project",
+		}
+		require.NoError(t, db.Create(display).Error)
+
+		found, err := svc.GetProjectByComposeName(ctx, "myproject")
+		require.NoError(t, err)
+		assert.Equal(t, display.ID, found.ID)
+	})
+
+	t.Run("invalidates stale normalized cache entries after deletion", func(t *testing.T) {
+		db := setupProjectTestDB(t)
+		svc := NewProjectService(db, nil, nil, nil, nil, nil, config.Load())
+
+		original := &models.Project{
+			BaseModel: models.BaseModel{ID: "p3"},
+			Name:      "My Project!",
+			Path:      "/tmp/my-project",
+		}
+		require.NoError(t, db.Create(original).Error)
+
+		found, err := svc.GetProjectByComposeName(ctx, "myproject")
+		require.NoError(t, err)
+		assert.Equal(t, original.ID, found.ID)
+
+		cachedProjectID, cached := svc.getCachedComposeProjectIDInternal("myproject")
+		require.True(t, cached)
+		assert.Equal(t, original.ID, cachedProjectID)
+
+		require.NoError(t, db.Delete(&models.Project{}, "id = ?", original.ID).Error)
+
+		replacement := &models.Project{
+			BaseModel: models.BaseModel{ID: "p4"},
+			Name:      "My Project!",
+			Path:      "/tmp/my-project-recreated",
+		}
+		require.NoError(t, db.Create(replacement).Error)
+
+		found, err = svc.GetProjectByComposeName(ctx, "myproject")
+		require.NoError(t, err)
+		assert.Equal(t, replacement.ID, found.ID)
+
+		cachedProjectID, cached = svc.getCachedComposeProjectIDInternal("myproject")
+		require.True(t, cached)
+		assert.Equal(t, replacement.ID, cachedProjectID)
+	})
+
+	t.Run("invalidates stale normalized cache entries after rename", func(t *testing.T) {
+		db := setupProjectTestDB(t)
+		svc := NewProjectService(db, nil, nil, nil, nil, nil, config.Load())
+
+		original := &models.Project{
+			BaseModel: models.BaseModel{ID: "p5"},
+			Name:      "My App!",
+			Path:      "/tmp/my-app",
+		}
+		require.NoError(t, db.Create(original).Error)
+
+		found, err := svc.GetProjectByComposeName(ctx, "myapp")
+		require.NoError(t, err)
+		assert.Equal(t, original.ID, found.ID)
+
+		cachedProjectID, cached := svc.getCachedComposeProjectIDInternal("myapp")
+		require.True(t, cached)
+		assert.Equal(t, original.ID, cachedProjectID)
+
+		require.NoError(t, db.Model(&models.Project{}).Where("id = ?", original.ID).Updates(map[string]any{
+			"name": "New Service",
+			"path": "/tmp/new-service",
+		}).Error)
+
+		_, err = svc.GetProjectByComposeName(ctx, "myapp")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "project not found")
+
+		_, cached = svc.getCachedComposeProjectIDInternal("myapp")
+		assert.False(t, cached)
+	})
+}
+
 func TestResolveServiceImagePullMode(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -365,7 +488,7 @@ func TestProjectService_UpdateProject_RenamesDirectoryWhenNameChanges(t *testing
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
 
 	originalDirName := "Foo"
 	originalPath := filepath.Join(projectsDir, originalDirName)
@@ -380,8 +503,7 @@ func TestProjectService_UpdateProject_RenamesDirectoryWhenNameChanges(t *testing
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	updatedName := "bar"
-	updated, err := svc.UpdateProject(ctx, project.ID, &updatedName, nil, nil, models.User{
+	updated, err := svc.UpdateProject(ctx, project.ID, new("bar"), nil, nil, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
@@ -414,7 +536,7 @@ func TestProjectService_UpdateProject_RenameFailsWhenTargetDirectoryExists(t *te
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
 
 	originalDirName := "Foo"
 	originalPath := filepath.Join(projectsDir, originalDirName)
@@ -432,8 +554,7 @@ func TestProjectService_UpdateProject_RenameFailsWhenTargetDirectoryExists(t *te
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	updatedName := "bar"
-	_, err = svc.UpdateProject(ctx, project.ID, &updatedName, nil, nil, models.User{
+	_, err = svc.UpdateProject(ctx, project.ID, new("bar"), nil, nil, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
@@ -461,7 +582,7 @@ func TestProjectService_UpdateProject_RenameFailsWhenProjectRunning(t *testing.T
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
 
 	originalDirName := "Foo"
 	originalPath := filepath.Join(projectsDir, originalDirName)
@@ -476,8 +597,7 @@ func TestProjectService_UpdateProject_RenameFailsWhenProjectRunning(t *testing.T
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	updatedName := "bar"
-	_, err = svc.UpdateProject(ctx, project.ID, &updatedName, nil, nil, models.User{
+	_, err = svc.UpdateProject(ctx, project.ID, new("bar"), nil, nil, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
@@ -505,7 +625,7 @@ func TestProjectService_UpdateProject_ValidatesComposeUsingExistingProjectName(t
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
 
 	dirName := "demo"
 	projectPath := filepath.Join(projectsDir, dirName)
@@ -547,7 +667,7 @@ func TestProjectService_UpdateProject_AllowsMissingEnvFileDuringComposeValidatio
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
 
 	dirName := "env-required"
 	projectPath := filepath.Join(projectsDir, dirName)
@@ -591,7 +711,7 @@ func TestProjectService_UpdateProject_UsesExistingEnvFileDuringComposeValidation
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
 
 	dirName := "env-existing"
 	projectPath := filepath.Join(projectsDir, dirName)
@@ -637,7 +757,7 @@ func TestProjectService_UpdateProject_UsesProvidedEnvContentDuringComposeValidat
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
 
 	dirName := "env-updated"
 	projectPath := filepath.Join(projectsDir, dirName)
@@ -683,7 +803,7 @@ func TestProjectService_UpdateProject_ReturnsEnvParseErrorDuringComposeValidatio
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
 
 	dirName := "env-invalid"
 	projectPath := filepath.Join(projectsDir, dirName)
@@ -714,6 +834,504 @@ func TestProjectService_UpdateProject_ReturnsEnvParseErrorDuringComposeValidatio
 	assert.Nil(t, updated)
 	assert.Contains(t, err.Error(), "invalid compose file: parse provided env content")
 	assert.Contains(t, err.Error(), "parse env")
+}
+
+func TestProjectService_UpdateProject_UsesGlobalEnvDuringComposeValidation(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
+
+	dirName := "global-env-update"
+	projectPath := filepath.Join(projectsDir, dirName)
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectsDir, projects.GlobalEnvFileName), []byte("DATA_NAS_FOLDER=/srv/media\nMYPATH=/containers/\n"), 0o600))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-global-env-update"},
+		Name:      dirName,
+		DirName:   &dirName,
+		Path:      projectPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	compose := `services:
+  cats:
+    image: mikesir87/cats:1.0
+    volumes:
+      - ${DATA_NAS_FOLDER}:/data
+      - ${MYPATH}cats/templates:/app/templates
+`
+
+	updated, err := svc.UpdateProject(ctx, project.ID, nil, new(compose), nil, models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "tester",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, updated)
+
+	composeBytes, readErr := os.ReadFile(filepath.Join(projectPath, "compose.yaml"))
+	require.NoError(t, readErr)
+	assert.Equal(t, compose, string(composeBytes))
+}
+
+func TestProjectService_UpdateProject_DoesNotResolveHostEnvThroughGlobalEnvDuringComposeValidation(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("HOST_ONLY_PATH", "/host/secret")
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
+
+	dirName := "host-env-guard"
+	projectPath := filepath.Join(projectsDir, dirName)
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectsDir, projects.GlobalEnvFileName), []byte("DATA_NAS_FOLDER=${HOST_ONLY_PATH}\n"), 0o600))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-host-env-guard"},
+		Name:      dirName,
+		DirName:   &dirName,
+		Path:      projectPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	compose := `services:
+  app:
+    image: nginx:alpine
+    volumes:
+      - ${DATA_NAS_FOLDER}:/data
+`
+
+	updated, err := svc.UpdateProject(ctx, project.ID, nil, new(compose), nil, models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "tester",
+	})
+	require.Error(t, err)
+	assert.Nil(t, updated)
+	assert.Contains(t, err.Error(), "invalid compose file")
+}
+
+func TestProjectService_UpdateProject_DerivesProjectOverrideEnvWhenGitSourceExists(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
+
+	dirName := "override-edit"
+	projectPath := filepath.Join(projectsDir, dirName)
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("services:\n  app:\n    image: nginx:alpine\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, ".env"), []byte("BASE=git\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, ".env.git"), []byte("BASE=git\n"), 0o600))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-override-edit"},
+		Name:      "override-edit",
+		DirName:   &dirName,
+		Path:      projectPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	updated, err := svc.UpdateProject(ctx, project.ID, nil, nil, new("BASE=git\nTOKEN=secret\n"), models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "tester",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, updated)
+
+	overrideBytes, readErr := os.ReadFile(filepath.Join(projectPath, "project.env"))
+	require.NoError(t, readErr)
+	assert.Equal(t, "TOKEN=secret\n", string(overrideBytes))
+
+	effectiveBytes, readErr := os.ReadFile(filepath.Join(projectPath, ".env"))
+	require.NoError(t, readErr)
+	assert.Contains(t, string(effectiveBytes), "BASE=git\n")
+	assert.Contains(t, string(effectiveBytes), "TOKEN=secret\n")
+}
+
+func TestProjectService_UpdateProject_DeletingGitBackedKeyFallsBackToGit(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
+
+	dirName := "override-delete"
+	projectPath := filepath.Join(projectsDir, dirName)
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("services:\n  app:\n    image: nginx:alpine\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, ".env"), []byte("BASE=git\nTOKEN=local\nLOCAL_ONLY=1\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, ".env.git"), []byte("BASE=git\nTOKEN=git\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "project.env"), []byte("TOKEN=local\nLOCAL_ONLY=1\n"), 0o600))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-override-delete"},
+		Name:      "override-delete",
+		DirName:   &dirName,
+		Path:      projectPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	updated, err := svc.UpdateProject(ctx, project.ID, nil, nil, new("BASE=git\nLOCAL_ONLY=1\n"), models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "tester",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, updated)
+
+	overrideBytes, readErr := os.ReadFile(filepath.Join(projectPath, "project.env"))
+	require.NoError(t, readErr)
+	assert.Equal(t, "LOCAL_ONLY=1\n", string(overrideBytes))
+
+	effectiveBytes, readErr := os.ReadFile(filepath.Join(projectPath, ".env"))
+	require.NoError(t, readErr)
+	assert.Contains(t, string(effectiveBytes), "BASE=git\n")
+	assert.Contains(t, string(effectiveBytes), "TOKEN=git\n")
+	assert.Contains(t, string(effectiveBytes), "LOCAL_ONLY=1\n")
+	assert.NotContains(t, string(overrideBytes), "TOKEN=")
+}
+
+func TestProjectService_ApplyGitSyncProjectFiles_MigratesDirectEnvIntoProjectOverride(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
+
+	dirName := "git-sync-migrate"
+	projectPath := filepath.Join(projectsDir, dirName)
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("services:\n  app:\n    image: nginx:alpine\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, ".env"), []byte("TOKEN=stale-local\nLOCAL_ONLY=1\n"), 0o600))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-git-sync-migrate"},
+		Name:      "git-sync-migrate",
+		DirName:   &dirName,
+		Path:      projectPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	gitEnv := "TOKEN=git\nREMOTE_ONLY=1\n"
+	updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:alpine\n", &gitEnv, models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "tester",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, updated)
+
+	gitSourceBytes, readErr := os.ReadFile(filepath.Join(projectPath, ".env.git"))
+	require.NoError(t, readErr)
+	assert.Equal(t, gitEnv, string(gitSourceBytes))
+
+	overrideBytes, readErr := os.ReadFile(filepath.Join(projectPath, "project.env"))
+	require.NoError(t, readErr)
+	assert.Equal(t, "LOCAL_ONLY=1\n", string(overrideBytes))
+
+	effectiveBytes, readErr := os.ReadFile(filepath.Join(projectPath, ".env"))
+	require.NoError(t, readErr)
+	assert.Contains(t, string(effectiveBytes), "TOKEN=git\n")
+	assert.Contains(t, string(effectiveBytes), "LOCAL_ONLY=1\n")
+	assert.Contains(t, string(effectiveBytes), "REMOTE_ONLY=1\n")
+}
+
+func TestProjectService_ApplyGitSyncProjectFiles_NormalizesStaleCopiedGitOverrides(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
+
+	dirName := "git-sync-normalize"
+	projectPath := filepath.Join(projectsDir, dirName)
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("services:\n  app:\n    image: nginx:alpine\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, ".env.git"), []byte("BASE=git\nSHARED=1\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "project.env"), []byte("BASE=git\nSHARED=1\nTOKEN=local\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, ".env"), []byte("BASE=git\nSHARED=1\nTOKEN=local\n"), 0o600))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-git-sync-normalize"},
+		Name:      "git-sync-normalize",
+		DirName:   &dirName,
+		Path:      projectPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:alpine\n", new("BASE=git-updated\nSHARED=1\nREMOTE_ONLY=1\n"), models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "tester",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, updated)
+
+	overrideBytes, readErr := os.ReadFile(filepath.Join(projectPath, "project.env"))
+	require.NoError(t, readErr)
+	assert.Equal(t, "TOKEN=local\n", string(overrideBytes))
+
+	effectiveBytes, readErr := os.ReadFile(filepath.Join(projectPath, ".env"))
+	require.NoError(t, readErr)
+	assert.Contains(t, string(effectiveBytes), "BASE=git-updated\n")
+	assert.Contains(t, string(effectiveBytes), "REMOTE_ONLY=1\n")
+	assert.Contains(t, string(effectiveBytes), "TOKEN=local\n")
+}
+
+func TestProjectService_ApplyGitSyncProjectFiles_RemovesLegacyDeletedGitMasks(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
+
+	dirName := "git-sync-delete-mask"
+	projectPath := filepath.Join(projectsDir, dirName)
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("services:\n  app:\n    image: nginx:alpine\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, ".env.git"), []byte("TOKEN=git\nSHARED=1\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "project.env"), []byte("TOKEN=\nLOCAL_ONLY=1\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, ".env"), []byte("LOCAL_ONLY=1\nSHARED=1\n"), 0o600))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-git-sync-delete-mask"},
+		Name:      "git-sync-delete-mask",
+		DirName:   &dirName,
+		Path:      projectPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:alpine\n", new("TOKEN=git-updated\nSHARED=1\nREMOTE_ONLY=1\n"), models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "tester",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, updated)
+
+	overrideBytes, readErr := os.ReadFile(filepath.Join(projectPath, "project.env"))
+	require.NoError(t, readErr)
+	assert.Equal(t, "LOCAL_ONLY=1\n", string(overrideBytes))
+
+	effectiveBytes, readErr := os.ReadFile(filepath.Join(projectPath, ".env"))
+	require.NoError(t, readErr)
+	assert.Contains(t, string(effectiveBytes), "TOKEN=git-updated\n")
+	assert.Contains(t, string(effectiveBytes), "LOCAL_ONLY=1\n")
+	assert.Contains(t, string(effectiveBytes), "REMOTE_ONLY=1\n")
+	assert.NotContains(t, string(overrideBytes), "TOKEN=")
+}
+
+func TestProjectService_ApplyGitSyncProjectFiles_RemovesGitEnvSource(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
+
+	dirName := "git-sync-remove"
+	projectPath := filepath.Join(projectsDir, dirName)
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("services:\n  app:\n    image: nginx:alpine\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, ".env"), []byte("BASE=git\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, ".env.git"), []byte("BASE=git\n"), 0o600))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-git-sync-remove"},
+		Name:      "git-sync-remove",
+		DirName:   &dirName,
+		Path:      projectPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:alpine\n", nil, models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "tester",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, updated)
+
+	_, statErr := os.Stat(filepath.Join(projectPath, ".env.git"))
+	assert.True(t, os.IsNotExist(statErr))
+
+	effectiveBytes, readErr := os.ReadFile(filepath.Join(projectPath, ".env"))
+	require.NoError(t, readErr)
+	assert.Equal(t, "BASE=git\n", string(effectiveBytes))
+}
+
+func TestProjectService_ApplyGitSyncProjectFiles_UsesGlobalEnvDuringComposeValidation(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
+
+	dirName := "git-sync-global-env"
+	projectPath := filepath.Join(projectsDir, dirName)
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectsDir, projects.GlobalEnvFileName), []byte("DATA_NAS_FOLDER=/srv/media\nMYPATH=/containers/\n"), 0o600))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-git-sync-global-env"},
+		Name:      dirName,
+		DirName:   &dirName,
+		Path:      projectPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	compose := `services:
+  cats:
+    image: mikesir87/cats:1.0
+    volumes:
+      - ${DATA_NAS_FOLDER}:/data
+      - ${MYPATH}cats/templates:/app/templates
+`
+
+	updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, compose, nil, models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "tester",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, updated)
+
+	composeBytes, readErr := os.ReadFile(filepath.Join(projectPath, "compose.yaml"))
+	require.NoError(t, readErr)
+	assert.Equal(t, compose, string(composeBytes))
+}
+
+func TestProjectService_PersistGitSyncEnvFiles_UsesPreparedState(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
+
+	dirName := "git-sync-prepared-state"
+	projectPath := filepath.Join(projectsDir, dirName)
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("services:\n  app:\n    image: nginx:alpine\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, ".env"), []byte("BASE=git\nTOKEN=local\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, ".env.git"), []byte("BASE=git\nTOKEN=git\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "project.env"), []byte("TOKEN=local\n"), 0o600))
+
+	update, err := svc.prepareGitSyncEnvUpdateInternal(projectPath, new("BASE=git-updated\nTOKEN=git\nREMOTE=1\n"))
+	require.NoError(t, err)
+	require.NotNil(t, update.effectiveContent)
+
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "project.env"), []byte("TOKEN=unexpected\n"), 0o600))
+
+	require.NoError(t, svc.persistGitSyncEnvFilesInternal(projectPath, projectsDir, update))
+
+	overrideBytes, readErr := os.ReadFile(filepath.Join(projectPath, "project.env"))
+	require.NoError(t, readErr)
+	assert.Equal(t, "TOKEN=local\n", string(overrideBytes))
+
+	effectiveBytes, readErr := os.ReadFile(filepath.Join(projectPath, ".env"))
+	require.NoError(t, readErr)
+	assert.Equal(t, "BASE=git-updated\nREMOTE=1\nTOKEN=local\n", string(effectiveBytes))
+}
+
+func TestProjectService_GetProjectDetails_ReturnsEffectiveEnvContent(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
+
+	dirName := "details-override"
+	projectPath := filepath.Join(projectsDir, dirName)
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("services:\n  app:\n    image: nginx:alpine\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, ".env"), []byte("BASE=git\nTOKEN=secret\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, ".env.git"), []byte("BASE=git\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "project.env"), []byte("TOKEN=secret\n"), 0o600))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-details-override"},
+		Name:      "details-override",
+		DirName:   &dirName,
+		Path:      projectPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	details, err := svc.GetProjectDetails(ctx, project.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "BASE=git\nTOKEN=secret\n", details.EnvContent)
 }
 
 func TestProjectService_MergeBuildTags(t *testing.T) {
@@ -821,7 +1439,7 @@ func TestProjectService_PrepareServiceBuildRequest_MapsComposeFields(t *testing.
 func TestProjectService_PrepareServiceBuildRequest_UsesExecutorVisiblePaths(t *testing.T) {
 	svc := &ProjectService{}
 	proj := &composetypes.Project{WorkingDir: "/app/data/projects/demo", Name: "demo"}
-	pm := pathmapper.NewPathMapper("/app/data/projects", "/docker-data/arcane/projects")
+	pm := projects.NewPathMapper("/app/data/projects", "/docker-data/arcane/projects")
 
 	serviceCfg := composetypes.ServiceConfig{
 		Name:  "web",
@@ -843,8 +1461,8 @@ func TestProjectService_PrepareServiceBuildRequest_UsesExecutorVisiblePaths(t *t
 	)
 	require.NoError(t, err)
 
-	assert.Equal(t, "/app/data/projects/demo", req.ContextDir)
-	assert.Equal(t, "/app/data/projects/demo/Dockerfile.custom", req.Dockerfile)
+	assert.Equal(t, "/docker-data/arcane/projects/demo", req.ContextDir)
+	assert.Equal(t, "/docker-data/arcane/projects/demo/Dockerfile.custom", req.Dockerfile)
 }
 
 func TestProjectService_PrepareServiceBuildRequest_UsesInlineDockerfile(t *testing.T) {
@@ -940,14 +1558,13 @@ func TestProjectService_PrepareServiceBuildRequest_GeneratedImageProviderGuardra
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "must define an image when using depot")
 
-	push := true
 	_, _, _, err = svc.prepareServiceBuildRequest(
 		context.Background(),
 		"project-id",
 		proj,
 		"web",
 		serviceCfg,
-		ProjectBuildOptions{Provider: "local", Push: &push},
+		ProjectBuildOptions{Provider: "local", Push: new(true)},
 		nil,
 	)
 	require.Error(t, err)
@@ -980,7 +1597,7 @@ func TestProjectService_DeployProject_StopsOnBuildPreparationError(t *testing.T)
 	require.NoError(t, db.Create(proj).Error)
 
 	buildSvc := &BuildService{builder: testBuildBuilder{err: errors.New("boom build")}}
-	svc := NewProjectService(db, settingsService, nil, nil, nil, buildSvc)
+	svc := NewProjectService(db, settingsService, nil, nil, nil, buildSvc, config.Load())
 
 	err = svc.DeployProject(ctx, "p1", models.User{BaseModel: models.BaseModel{ID: "u1"}, Username: "tester"}, nil)
 	require.Error(t, err)
@@ -1022,7 +1639,7 @@ func TestProjectService_DeployProject_BuildsGeneratedImageWithoutPull(t *testing
 	require.NoError(t, db.Create(proj).Error)
 
 	buildSvc := &BuildService{builder: testBuildBuilder{err: errors.New("boom build")}}
-	svc := NewProjectService(db, settingsService, nil, nil, nil, buildSvc)
+	svc := NewProjectService(db, settingsService, nil, nil, nil, buildSvc, config.Load())
 
 	err = svc.DeployProject(ctx, proj.ID, models.User{BaseModel: models.BaseModel{ID: "u1"}, Username: "tester"}, nil)
 	require.Error(t, err)
@@ -1044,16 +1661,459 @@ func TestResolveBuildContextInternal_AllowsRemoteGitContext(t *testing.T) {
 	assert.Equal(t, "https://github.com/getarcaneapp/arcane.git#main:docker/app", contextDir)
 }
 
-func TestResolveBuildContextInternal_RejectsUnsupportedRemoteContext(t *testing.T) {
+func TestResolveBuildContextInternal_AllowsRemoteGitContextWithoutGitSuffix(t *testing.T) {
 	svc := composetypes.ServiceConfig{
 		Build: &composetypes.BuildConfig{
-			Context: "https://example.com/archive.tar.gz",
+			Context: "https://git.sr.ht/~jordanreger/nws-alerts#main:docker/app",
 		},
 	}
 
-	_, err := resolveBuildContextInternal("/projects/demo", svc, "web")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "only git repository URLs are supported")
+	contextDir, err := resolveBuildContextInternal("/projects/demo", svc, "web")
+	require.NoError(t, err)
+	assert.Equal(t, "https://git.sr.ht/~jordanreger/nws-alerts#main:docker/app", contextDir)
+}
+
+func TestProjectService_SyncProjectsFromFileSystem_IgnoresSymlinkedProjectDirsWhenDisabled(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsRoot := t.TempDir()
+	targetRoot := t.TempDir()
+	createComposeProjectDir(t, projectsRoot, "regular")
+	linkTarget := createComposeProjectDir(t, targetRoot, "linked-target")
+	require.NoError(t, os.Symlink(linkTarget, filepath.Join(projectsRoot, "linked")))
+
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+	require.NoError(t, settingsService.SetStringSetting(ctx, "followProjectSymlinks", "false"))
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
+	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
+
+	items, err := svc.ListAllProjects(ctx)
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	assert.Equal(t, "regular", items[0].Name)
+	assert.Equal(t, filepath.Join(projectsRoot, "regular"), items[0].Path)
+}
+
+func TestProjectService_SyncProjectsFromFileSystem_DetectsSymlinkedProjectDirsWhenEnabled(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsRoot := t.TempDir()
+	targetRoot := t.TempDir()
+	linkTarget := createComposeProjectDir(t, targetRoot, "linked-target")
+	linkPath := filepath.Join(projectsRoot, "linked")
+	require.NoError(t, os.Symlink(linkTarget, linkPath))
+
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+	require.NoError(t, settingsService.SetStringSetting(ctx, "followProjectSymlinks", "true"))
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
+	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
+
+	items, err := svc.ListAllProjects(ctx)
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	assert.Equal(t, "linked", items[0].Name)
+	assert.Equal(t, linkPath, items[0].Path)
+}
+
+func TestProjectService_CountProjectFolders_RespectsFollowProjectSymlinks(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsRoot := t.TempDir()
+	targetRoot := t.TempDir()
+	createComposeProjectDir(t, projectsRoot, "regular")
+	linkTarget := createComposeProjectDir(t, targetRoot, "linked-target")
+	require.NoError(t, os.Symlink(linkTarget, filepath.Join(projectsRoot, "linked")))
+
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
+
+	require.NoError(t, settingsService.SetStringSetting(ctx, "followProjectSymlinks", "false"))
+	count, err := svc.countProjectFolders(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 1, count)
+
+	require.NoError(t, settingsService.SetStringSetting(ctx, "followProjectSymlinks", "true"))
+	count, err = svc.countProjectFolders(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 2, count)
+}
+
+func TestProjectService_SyncProjectsFromFileSystem_DiscoversNestedProjectsAndRelativePaths(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsRoot := t.TempDir()
+	nestedPath := createComposeProjectDir(t, projectsRoot, filepath.Join("main-project", "sub-project1"))
+	topLevelPath := createComposeProjectDir(t, projectsRoot, "project2")
+
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
+	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
+
+	items, page, err := svc.ListProjects(ctx, pagination.QueryParams{
+		SortParams:       pagination.SortParams{Sort: "path", Order: pagination.SortAsc},
+		PaginationParams: pagination.PaginationParams{Limit: -1},
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 2, page.TotalItems)
+	require.Len(t, items, 2)
+
+	assert.Equal(t, "main-project/sub-project1", items[0].RelativePath)
+	assert.Equal(t, nestedPath, items[0].Path)
+	assert.Equal(t, "sub-project1", items[0].DirName)
+
+	assert.Equal(t, "project2", items[1].RelativePath)
+	assert.Equal(t, topLevelPath, items[1].Path)
+	assert.Equal(t, "project2", items[1].DirName)
+}
+
+func TestProjectService_CountProjectFolders_RecursivelyCountsNestedProjects(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsRoot := t.TempDir()
+	createComposeProjectDir(t, projectsRoot, filepath.Join("main-project", "sub-project1"))
+	createComposeProjectDir(t, projectsRoot, filepath.Join("main-project", "sub-project2"))
+	createComposeProjectDir(t, projectsRoot, "project2")
+
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
+
+	count, err := svc.countProjectFolders(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 3, count)
+}
+
+func TestProjectService_SyncProjectsFromFileSystem_RemovesDeletedNestedProject(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsRoot := t.TempDir()
+	projectPath := createComposeProjectDir(t, projectsRoot, filepath.Join("main-project", "sub-project1"))
+
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
+	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
+
+	items, err := svc.ListAllProjects(ctx)
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+
+	require.NoError(t, os.Remove(filepath.Join(projectPath, "compose.yaml")))
+	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
+
+	items, err = svc.ListAllProjects(ctx)
+	require.NoError(t, err)
+	assert.Empty(t, items)
+}
+
+func TestProjectService_SyncProjectsFromFileSystem_AllowsDuplicateLeafDirectoriesInDifferentParents(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsRoot := t.TempDir()
+	firstPath := createComposeProjectDir(t, projectsRoot, filepath.Join("main-project1", "app"))
+	secondPath := createComposeProjectDir(t, projectsRoot, filepath.Join("main-project2", "app"))
+
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
+	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
+
+	var items []models.Project
+	require.NoError(t, db.WithContext(ctx).Order("path asc").Find(&items).Error)
+	require.Len(t, items, 2)
+
+	require.NotNil(t, items[0].DirName)
+	require.NotNil(t, items[1].DirName)
+	assert.Equal(t, "app", *items[0].DirName)
+	assert.Equal(t, "app", *items[1].DirName)
+	assert.Equal(t, firstPath, items[0].Path)
+	assert.Equal(t, secondPath, items[1].Path)
+}
+
+func TestProjectService_SyncProjectsFromFileSystem_DetectsNestedSymlinkedProjectDirsWhenEnabled(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsRoot := t.TempDir()
+	targetRoot := t.TempDir()
+	targetPath := createComposeProjectDir(t, targetRoot, filepath.Join("main-project", "sub-project1"))
+	linkPath := filepath.Join(projectsRoot, "linked-root")
+	require.NoError(t, os.Symlink(filepath.Join(targetRoot, "main-project"), linkPath))
+
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+	require.NoError(t, settingsService.SetStringSetting(ctx, "followProjectSymlinks", "true"))
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
+	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
+
+	items, page, err := svc.ListProjects(ctx, pagination.QueryParams{
+		SortParams:       pagination.SortParams{Sort: "path", Order: pagination.SortAsc},
+		PaginationParams: pagination.PaginationParams{Limit: -1},
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 1, page.TotalItems)
+	require.Len(t, items, 1)
+	assert.Equal(t, filepath.Join(linkPath, "sub-project1"), items[0].Path)
+	assert.Equal(t, "linked-root/sub-project1", items[0].RelativePath)
+	assert.Equal(t, targetPath, filepath.Join(targetRoot, "main-project", "sub-project1"))
+}
+
+func TestProjectService_SyncProjectsFromFileSystem_RemovesSymlinkedProjectsWhenDisabled(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsRoot := t.TempDir()
+	targetRoot := t.TempDir()
+	linkTarget := createComposeProjectDir(t, targetRoot, "linked-target")
+	linkPath := filepath.Join(projectsRoot, "linked")
+	require.NoError(t, os.Symlink(linkTarget, linkPath))
+
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+	require.NoError(t, settingsService.SetStringSetting(ctx, "followProjectSymlinks", "true"))
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
+	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
+
+	items, err := svc.ListAllProjects(ctx)
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+
+	require.NoError(t, settingsService.SetStringSetting(ctx, "followProjectSymlinks", "false"))
+	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
+
+	items, err = svc.ListAllProjects(ctx)
+	require.NoError(t, err)
+	assert.Empty(t, items)
+
+	_, statErr := os.Lstat(linkPath)
+	require.NoError(t, statErr)
+}
+
+func TestProjectService_SyncProjectsFromFileSystem_RefreshesServiceCountOnComposeChange(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsRoot := t.TempDir()
+	projectPath := createComposeProjectDir(t, projectsRoot, "demo")
+
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
+	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
+
+	var project models.Project
+	require.NoError(t, db.WithContext(ctx).Where("path = ?", projectPath).First(&project).Error)
+	assert.Equal(t, 1, project.ServiceCount)
+
+	updatedCompose := "services:\n  app:\n    image: nginx:alpine\n  worker:\n    image: busybox:latest\n"
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte(updatedCompose), 0o644))
+
+	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
+	require.NoError(t, db.WithContext(ctx).Where("id = ?", project.ID).First(&project).Error)
+	assert.Equal(t, 2, project.ServiceCount)
+}
+
+func TestProjectService_SyncProjectsFromFileSystem_PreservesGitOpsProjectWithCustomComposeFilename(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+	require.NoError(t, db.AutoMigrate(&models.GitOpsSync{}))
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsRoot := t.TempDir()
+	projectDir := filepath.Join(projectsRoot, "Radarr-3")
+	require.NoError(t, os.MkdirAll(projectDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "radarr.yaml"), []byte("services:\n  app:\n    image: lscr.io/linuxserver/radarr:latest\n"), 0o644))
+
+	syncProjectID := "proj-custom-compose"
+	syncID := "sync-custom-compose"
+	sync := &models.GitOpsSync{
+		BaseModel:     models.BaseModel{ID: syncID},
+		Name:          "Radarr Sync",
+		EnvironmentID: "0",
+		RepositoryID:  "repo-1",
+		ComposePath:   "apps/media/radarr.yaml",
+		ProjectName:   "Radarr",
+		ProjectID:     &syncProjectID,
+		SyncDirectory: true,
+	}
+	require.NoError(t, db.Create(sync).Error)
+
+	project := &models.Project{
+		BaseModel:       models.BaseModel{ID: syncProjectID},
+		Name:            "Radarr",
+		DirName:         ptr("Radarr-3"),
+		Path:            projectDir,
+		Status:          models.ProjectStatusStopped,
+		GitOpsManagedBy: &syncID,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
+	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
+
+	items, err := svc.ListAllProjects(ctx)
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	assert.Equal(t, syncProjectID, items[0].ID)
+	assert.Equal(t, projectDir, items[0].Path)
+	assert.Equal(t, syncID, *items[0].GitOpsManagedBy)
+}
+
+func TestProjectService_GetProjectDetails_UsesGitOpsCustomComposeFilename(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+	require.NoError(t, db.AutoMigrate(&models.GitOpsSync{}))
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsRoot := t.TempDir()
+	projectDir := filepath.Join(projectsRoot, "Radarr-3")
+	composeContent := "services:\n  app:\n    image: lscr.io/linuxserver/radarr:latest\n"
+	require.NoError(t, os.MkdirAll(projectDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "radarr.yaml"), []byte(composeContent), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, ".env"), []byte("TZ=UTC\n"), 0o644))
+
+	syncProjectID := "proj-custom-compose-details"
+	syncID := "sync-custom-compose-details"
+	require.NoError(t, db.Create(&models.GitOpsSync{
+		BaseModel:     models.BaseModel{ID: syncID},
+		Name:          "Radarr Sync",
+		EnvironmentID: "0",
+		RepositoryID:  "repo-1",
+		ComposePath:   "apps/media/radarr.yaml",
+		ProjectName:   "Radarr",
+		ProjectID:     &syncProjectID,
+		SyncDirectory: true,
+	}).Error)
+
+	require.NoError(t, db.Create(&models.Project{
+		BaseModel:       models.BaseModel{ID: syncProjectID},
+		Name:            "Radarr",
+		DirName:         ptr("Radarr-3"),
+		Path:            projectDir,
+		Status:          models.ProjectStatusStopped,
+		GitOpsManagedBy: &syncID,
+	}).Error)
+
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
+
+	composeFromContent, envFromContent, err := svc.GetProjectContent(ctx, syncProjectID)
+	require.NoError(t, err)
+	assert.Equal(t, composeContent, composeFromContent)
+	assert.Equal(t, "TZ=UTC\n", envFromContent)
+
+	details, err := svc.GetProjectDetails(ctx, syncProjectID)
+	require.NoError(t, err)
+	assert.Equal(t, "radarr.yaml", details.ComposeFileName)
+	assert.Equal(t, composeContent, details.ComposeContent)
+	assert.Equal(t, "TZ=UTC\n", details.EnvContent)
+	assert.Equal(t, 1, len(details.Services))
+}
+
+func TestProjectService_UpdateProject_WritesThroughSymlinkedProjectPath(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsRoot := t.TempDir()
+	targetRoot := t.TempDir()
+	targetPath := createComposeProjectDir(t, targetRoot, "demo-target")
+	linkPath := filepath.Join(projectsRoot, "demo")
+	require.NoError(t, os.Symlink(targetPath, linkPath))
+
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+	require.NoError(t, settingsService.SetStringSetting(ctx, "followProjectSymlinks", "true"))
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-symlink-update"},
+		Name:      "demo",
+		DirName:   new("demo"),
+		Path:      linkPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	updatedCompose := "services:\n  app:\n    image: nginx:1.27-alpine\n"
+	updatedEnv := "FOO=updated\n"
+
+	updated, err := svc.UpdateProject(ctx, project.ID, nil, new(updatedCompose), new(updatedEnv), models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "tester",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, updated)
+	assert.Equal(t, linkPath, updated.Path)
+
+	composeBytes, readErr := os.ReadFile(filepath.Join(targetPath, "compose.yaml"))
+	require.NoError(t, readErr)
+	assert.Equal(t, updatedCompose, string(composeBytes))
+
+	envBytes, readErr := os.ReadFile(filepath.Join(targetPath, ".env"))
+	require.NoError(t, readErr)
+	assert.Equal(t, updatedEnv, string(envBytes))
+}
+
+func createComposeProjectDir(t *testing.T, root, name string) string {
+	t.Helper()
+
+	projectPath := filepath.Join(root, name)
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("services:\n  app:\n    image: nginx:alpine\n"), 0o644))
+
+	return projectPath
 }
 
 //go:fix inline

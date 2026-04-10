@@ -12,8 +12,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/internal/config"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/remenv"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 )
@@ -50,7 +48,7 @@ type wsPayload struct {
 
 // TunnelClient represents the agent-side tunnel client
 type TunnelClient struct {
-	cfg                     *config.Config
+	cfg                     *Config
 	handler                 http.Handler
 	reconnectInterval       time.Duration
 	heartbeatInterval       time.Duration
@@ -69,7 +67,7 @@ type TunnelClient struct {
 }
 
 // NewTunnelClient creates a new tunnel client
-func NewTunnelClient(cfg *config.Config, handler http.Handler) *TunnelClient {
+func NewTunnelClient(cfg *Config, handler http.Handler) *TunnelClient {
 	reconnectInterval := time.Duration(cfg.EdgeReconnectInterval) * time.Second
 	if reconnectInterval < time.Second {
 		reconnectInterval = 5 * time.Second
@@ -78,7 +76,7 @@ func NewTunnelClient(cfg *config.Config, handler http.Handler) *TunnelClient {
 	managerURL := ""
 	if managerBaseURL := strings.TrimRight(cfg.GetManagerBaseURL(), "/"); managerBaseURL != "" {
 		// Convert HTTP to WebSocket URL
-		managerURL = remenv.HTTPToWebSocketURL(managerBaseURL) + "/api/tunnel/connect"
+		managerURL = HTTPToWebSocketURL(managerBaseURL) + "/api/tunnel/connect"
 	}
 	managerGRPCAddr := cfg.GetManagerGRPCAddr()
 
@@ -235,7 +233,7 @@ func (c *TunnelClient) managerWebSocketURLInternal() string {
 	if managerBaseURL == "" {
 		return ""
 	}
-	return remenv.HTTPToWebSocketURL(managerBaseURL) + "/api/tunnel/connect"
+	return HTTPToWebSocketURL(managerBaseURL) + "/api/tunnel/connect"
 }
 
 func (c *TunnelClient) grpcRegistrationTimeoutInternal() time.Duration {
@@ -605,8 +603,8 @@ func (c *TunnelClient) buildLocalWebSocketHeadersInternal(msg *TunnelMessage) ht
 	}
 
 	if c.cfg.AgentToken != "" {
-		headers.Set(remenv.HeaderAPIKey, c.cfg.AgentToken)
-		headers.Set(remenv.HeaderAgentToken, c.cfg.AgentToken)
+		headers.Set(HeaderAPIKey, c.cfg.AgentToken)
+		headers.Set(HeaderAgentToken, c.cfg.AgentToken)
 	}
 
 	return headers
@@ -895,7 +893,7 @@ func (r *streamingResponseRecorder) writeHeaderLocked(statusCode int) error {
 }
 
 // StartTunnelClientWithErrors starts the tunnel client and returns a channel for connection errors.
-func StartTunnelClientWithErrors(ctx context.Context, cfg *config.Config, handler http.Handler) (<-chan error, error) {
+func StartTunnelClientWithErrors(ctx context.Context, cfg *Config, handler http.Handler) (<-chan error, error) {
 	if !cfg.EdgeAgent {
 		return nil, fmt.Errorf("edge tunnel disabled")
 	}

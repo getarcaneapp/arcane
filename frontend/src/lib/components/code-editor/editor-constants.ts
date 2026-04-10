@@ -38,10 +38,6 @@ export function createDefaultSummary(): DiagnosticSummary {
 		hints: 0,
 		schemaStatus: 'unavailable',
 		schemaMessage: undefined,
-		unresolvedVariables: [],
-		secretWarnings: 0,
-		duplicateKeyWarnings: 0,
-		duplicateEnvWarnings: 0,
 		cursorLine: 1,
 		cursorCol: 1,
 		validationReady: false

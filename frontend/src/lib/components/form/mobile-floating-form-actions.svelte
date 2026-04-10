@@ -47,10 +47,15 @@
 			if (transform !== 'none' && transform.includes('matrix')) {
 				const matrix = transform.match(/matrix.*\((.+)\)/);
 				if (matrix) {
-					const values = matrix[1].split(', ');
-					const translateY = parseFloat(values[5] || '0');
-					// If translateY is positive (moved down), nav is hidden
-					mobileNavVisible = translateY === 0 && opacity > 0.5;
+					const rawValues = matrix[1];
+					if (rawValues) {
+						const values = rawValues.split(', ');
+						const translateY = parseFloat(values[5] ?? '0');
+						// If translateY is positive (moved down), nav is hidden
+						mobileNavVisible = translateY === 0 && opacity > 0.5;
+					} else {
+						mobileNavVisible = opacity > 0.5;
+					}
 				}
 			} else {
 				mobileNavVisible = opacity > 0.5;

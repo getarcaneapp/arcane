@@ -160,6 +160,8 @@ type Services struct {
 	Volume            *services.VolumeService
 	Container         *services.ContainerService
 	Network           *services.NetworkService
+	Port              *services.PortService
+	Swarm             *services.SwarmService
 	Notification      *services.NotificationService
 	Apprise           *services.AppriseService //nolint:staticcheck // Apprise still functional, deprecated in favor of Shoutrrr
 	Updater           *services.UpdaterService
@@ -168,6 +170,7 @@ type Services struct {
 	SystemUpgrade     *services.SystemUpgradeService
 	GitRepository     *services.GitRepositoryService
 	GitOpsSync        *services.GitOpsSyncService
+	Webhook           *services.WebhookService
 	Vulnerability     *services.VulnerabilityService
 	Dashboard         *services.DashboardService
 	Config            *config.Config
@@ -322,6 +325,8 @@ func registerHandlers(api huma.API, svc *Services) {
 	var volumeSvc *services.VolumeService
 	var containerSvc *services.ContainerService
 	var networkSvc *services.NetworkService
+	var portSvc *services.PortService
+	var swarmSvc *services.SwarmService
 	var notificationSvc *services.NotificationService
 	var appriseSvc *services.AppriseService //nolint:staticcheck // Apprise still functional, deprecated in favor of Shoutrrr
 	var updaterSvc *services.UpdaterService
@@ -330,6 +335,7 @@ func registerHandlers(api huma.API, svc *Services) {
 	var systemUpgradeSvc *services.SystemUpgradeService
 	var gitRepositorySvc *services.GitRepositoryService
 	var gitOpsSyncSvc *services.GitOpsSyncService
+	var webhookSvc *services.WebhookService
 	var vulnerabilitySvc *services.VulnerabilityService
 	var dashboardSvc *services.DashboardService
 	var cfg *config.Config
@@ -358,6 +364,8 @@ func registerHandlers(api huma.API, svc *Services) {
 		volumeSvc = svc.Volume
 		containerSvc = svc.Container
 		networkSvc = svc.Network
+		portSvc = svc.Port
+		swarmSvc = svc.Swarm
 		notificationSvc = svc.Notification
 		appriseSvc = svc.Apprise
 		updaterSvc = svc.Updater
@@ -366,6 +374,7 @@ func registerHandlers(api huma.API, svc *Services) {
 		systemUpgradeSvc = svc.SystemUpgrade
 		gitRepositorySvc = svc.GitRepository
 		gitOpsSyncSvc = svc.GitOpsSync
+		webhookSvc = svc.Webhook
 		vulnerabilitySvc = svc.Vulnerability
 		dashboardSvc = svc.Dashboard
 		cfg = svc.Config
@@ -382,21 +391,24 @@ func registerHandlers(api huma.API, svc *Services) {
 	handlers.RegisterOidc(api, authSvc, oidcSvc, cfg)
 	handlers.RegisterEnvironments(api, environmentSvc, settingsSvc, apiKeySvc, eventSvc, cfg)
 	handlers.RegisterContainerRegistries(api, containerRegistrySvc, environmentSvc)
-	handlers.RegisterTemplates(api, templateSvc)
+	handlers.RegisterTemplates(api, templateSvc, environmentSvc)
 	handlers.RegisterImages(api, dockerSvc, imageSvc, imageUpdateSvc, settingsSvc, buildSvc)
 	handlers.RegisterBuildWorkspaces(api, buildWorkspaceSvc)
 	handlers.RegisterImageUpdates(api, imageUpdateSvc)
 	handlers.RegisterSettings(api, settingsSvc, settingsSearchSvc, environmentSvc, cfg)
 	handlers.RegisterJobSchedules(api, jobScheduleSvc, environmentSvc)
 	handlers.RegisterVolumes(api, dockerSvc, volumeSvc)
-	handlers.RegisterContainers(api, containerSvc, dockerSvc)
+	handlers.RegisterContainers(api, containerSvc, dockerSvc, settingsSvc)
+	handlers.RegisterPorts(api, portSvc)
 	handlers.RegisterNetworks(api, networkSvc, dockerSvc)
-	handlers.RegisterNotifications(api, notificationSvc, appriseSvc)
+	handlers.RegisterSwarm(api, swarmSvc, environmentSvc, eventSvc, cfg)
+	handlers.RegisterNotifications(api, notificationSvc, appriseSvc, cfg)
 	handlers.RegisterUpdater(api, updaterSvc)
 	handlers.RegisterCustomize(api, customizeSearchSvc)
 	handlers.RegisterSystem(api, dockerSvc, systemSvc, systemUpgradeSvc, cfg)
 	handlers.RegisterGitRepositories(api, gitRepositorySvc)
 	handlers.RegisterGitOpsSyncs(api, gitOpsSyncSvc)
+	handlers.RegisterWebhooks(api, webhookSvc)
 	handlers.RegisterVulnerability(api, vulnerabilitySvc)
 	handlers.RegisterDashboard(api, dashboardSvc)
 }

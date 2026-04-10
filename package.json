@@ -1,7 +1,7 @@
 {
   "name": "arcane-repo",
   "private": true,
-  "packageManager": "pnpm@10.30.3+sha512.c961d1e0a2d8e354ecaa5166b822516668b7f44cb5bd95122d590dd81922f606f5473b6d23ec4a5be05e7fcd18e8488d47d978bbe981872f1145d06e9a740017",
+  "packageManager": "pnpm@10.33.0+sha512.10568bb4a6afb58c9eb3630da90cc9516417abebd3fabbe6739f0ae795728da1491e9db5a544c76ad8eb7570f5c4bb3d6c637b2cb41bfdcdb47fa823c8649319",
   "engines": {
     "node": ">=25"
   },
@@ -15,12 +15,18 @@
     "prepare": "husky"
   },
   "lint-staged": {
-    "*": [
-      "sh -c 'just format all --check'"
+    "frontend/**/*": [
+      "sh -c 'just format frontend --check'"
+    ],
+    "{tests,email-templates}/**/*.{ts,tsx,js,jsx,mts,cts}": [
+      "sh -c 'just format js --check'"
+    ],
+    "{backend,cli,types}/**/*": [
+      "sh -c 'just format go --check'"
     ]
   },
   "devDependencies": {
     "husky": "^9.1.7",
-    "lint-staged": "^16.3.2"
+    "lint-staged": "^16.4.0"
   }
 }

@@ -43,6 +43,7 @@
 		variant?: BadgeVariant;
 		hoverEffect?: BadgeHoverEffect;
 	} = $props();
+	void cn;
 </script>
 
 <svelte:element

@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/internal/config"
 	tunnelpb "github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge/proto/tunnel/v1"
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
@@ -48,7 +47,7 @@ func TestTunnelClient_connectAndServePoll_OpensGRPCWhenRequired(t *testing.T) {
 	})
 	defer stopManager()
 
-	client := NewTunnelClient(&config.Config{
+	client := NewTunnelClient(&Config{
 		EdgeTransport: EdgeTransportPoll,
 		ManagerApiUrl: managerURL,
 		AgentToken:    "valid-token",
@@ -109,7 +108,7 @@ func TestTunnelClient_connectAndServePoll_OpensWebSocketWhenRequired(t *testing.
 	}))
 	defer managerServer.Close()
 
-	client := NewTunnelClient(&config.Config{
+	client := NewTunnelClient(&Config{
 		EdgeTransport: EdgeTransportPoll,
 		ManagerApiUrl: managerServer.URL,
 		AgentToken:    "valid-token",
@@ -148,7 +147,7 @@ func TestTunnelClient_pollTunnelControlInternal_UsesConfiguredHTTPClient(t *test
 		return baseClient.Transport.RoundTrip(clone)
 	})
 
-	client := NewTunnelClient(&config.Config{AgentToken: "valid-token"}, http.NotFoundHandler())
+	client := NewTunnelClient(&Config{AgentToken: "valid-token"}, http.NotFoundHandler())
 	client.httpClient = &http.Client{Transport: rewriteTransport}
 
 	resp, err := client.pollTunnelControlInternal(context.Background(), "http://127.0.0.1:1/api/tunnel/poll", false)
@@ -191,7 +190,7 @@ func TestTunnelClient_connectAndServePoll_DoesNotOpenWebSocketWhenIdle(t *testin
 	}))
 	defer managerServer.Close()
 
-	client := NewTunnelClient(&config.Config{
+	client := NewTunnelClient(&Config{
 		EdgeTransport: EdgeTransportPoll,
 		ManagerApiUrl: managerServer.URL,
 		AgentToken:    "valid-token",
@@ -249,7 +248,7 @@ func TestTunnelClient_connectAndServePoll_RetriesAfterTransientPollError(t *test
 	}))
 	defer managerServer.Close()
 
-	client := NewTunnelClient(&config.Config{
+	client := NewTunnelClient(&Config{
 		EdgeTransport: EdgeTransportPoll,
 		ManagerApiUrl: managerServer.URL,
 		AgentToken:    "valid-token",

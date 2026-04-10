@@ -3,7 +3,6 @@
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { m } from '$lib/paraglide/messages';
-	import { RefreshIcon } from '$lib/icons';
 
 	let {
 		selectedShell = $bindable(),

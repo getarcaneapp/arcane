@@ -9,9 +9,12 @@
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import type { ContainerCreateRequest, ContainerStatusCounts } from '$lib/types/container.type';
-	import { createMutation, createQuery } from '@tanstack/svelte-query';
+	import { createMutation } from '@tanstack/svelte-query';
 	import { BoxIcon } from '$lib/icons';
 	import { queryKeys } from '$lib/query/query-keys';
+	import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
+	import type { ContainerListRequestOptions } from '$lib/services/container-service';
+	import ContainerEnvironmentSync from './components/container-environment-sync.svelte';
 
 	let { data } = $props();
 
@@ -19,7 +22,10 @@
 	let selectedIds = $state<string[]>([]);
 	let isCreateDialogOpen = $state(false);
 	let containers = $state(untrack(() => data.containers));
+	let isRefreshing = $state(false);
 	const envId = $derived(environmentStore.selected?.id || '0');
+	let groupByProject = $state(false);
+	let hasSeenEnvironmentSync = $state(false);
 
 	const countsFallback: ContainerStatusCounts = {
 		runningContainers: 0,
@@ -27,18 +33,30 @@
 		totalContainers: 0
 	};
 
-	const containersQuery = createQuery(() => ({
-		queryKey: queryKeys.containers.list(envId, requestOptions),
-		queryFn: () => containerService.getContainersForEnvironment(envId, requestOptions),
-		initialData: data.containers
-	}));
+	function buildRequestOptions(options: SearchPaginationSortRequest = requestOptions): ContainerListRequestOptions {
+		return {
+			...options,
+			groupByProject
+		};
+	}
+
+	async function refreshContainers(options: ContainerListRequestOptions = buildRequestOptions()) {
+		isRefreshing = true;
+		try {
+			const next = await containerService.getContainersForEnvironment(envId, options);
+			containers = next;
+			return next;
+		} finally {
+			isRefreshing = false;
+		}
+	}
 
 	const checkUpdatesMutation = createMutation(() => ({
 		mutationKey: queryKeys.containers.checkUpdates(envId),
 		mutationFn: () => imageService.runAutoUpdate(),
 		onSuccess: async () => {
 			toast.success(m.containers_check_updates_success());
-			await containersQuery.refetch();
+			await refreshContainers();
 		},
 		onError: () => {
 			toast.error(m.containers_check_updates_failed());
@@ -50,7 +68,7 @@
 		mutationFn: (options: ContainerCreateRequest) => containerService.createContainer(options),
 		onSuccess: async () => {
 			toast.success(m.common_create_success({ resource: m.resource_container() }));
-			await containersQuery.refetch();
+			await refreshContainers();
 			isCreateDialogOpen = false;
 		},
 		onError: () => {
@@ -58,21 +76,31 @@
 		}
 	}));
 
-	$effect(() => {
-		if (containersQuery.data) {
-			containers = containersQuery.data;
+	function handleEnvironmentChange() {
+		if (!hasSeenEnvironmentSync) {
+			hasSeenEnvironmentSync = true;
+			return;
 		}
-	});
+
+		const nextOptions: SearchPaginationSortRequest = {
+			...requestOptions,
+			pagination: {
+				page: 1,
+				limit: requestOptions.pagination?.limit ?? containers.pagination?.itemsPerPage ?? 20
+			}
+		};
+		requestOptions = nextOptions;
+		return refreshContainers(buildRequestOptions(nextOptions));
+	}
 
 	async function handleCheckForUpdates() {
 		await checkUpdatesMutation.mutateAsync();
 	}
 
 	async function refresh() {
-		await containersQuery.refetch();
+		await refreshContainers();
 	}
 
-	const isRefreshing = $derived(containersQuery.isFetching && !containersQuery.isPending);
 	const containerStatusCounts = $derived(containers.counts ?? countsFallback);
 
 	const actionButtons: ActionButton[] = $derived([
@@ -124,15 +152,26 @@
 	]);
 </script>
 
+{#key envId}
+	<ContainerEnvironmentSync onActivate={handleEnvironmentChange} />
+{/key}
+
 <ResourcePageLayout title={m.containers_title()} subtitle={m.containers_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
 		<ContainerTable
 			bind:containers
 			bind:selectedIds
 			bind:requestOptions
+			bind:groupByProject
 			onRefreshData={async (options) => {
-				requestOptions = options;
-				await containersQuery.refetch();
+				requestOptions = {
+					search: options.search,
+					pagination: options.pagination,
+					sort: options.sort,
+					filters: options.filters,
+					includeInternal: options.includeInternal
+				};
+				return refreshContainers(options);
 			}}
 		/>
 	{/snippet}

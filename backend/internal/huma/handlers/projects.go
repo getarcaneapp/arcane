@@ -12,10 +12,10 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	humamw "github.com/getarcaneapp/arcane/backend/internal/huma/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"github.com/getarcaneapp/arcane/backend/internal/utils"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
+	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	projects "github.com/getarcaneapp/arcane/backend/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils/mapper"
 	"github.com/getarcaneapp/arcane/types/base"
 	"github.com/getarcaneapp/arcane/types/project"
 )
@@ -91,6 +91,16 @@ type GetProjectInput struct {
 
 type GetProjectOutput struct {
 	Body base.ApiResponse[project.Details]
+}
+
+type GetProjectFileInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	ProjectID     string `path:"projectId" doc:"Project ID"`
+	RelativePath  string `query:"relativePath" doc:"Path to the file relative to the project"`
+}
+
+type GetProjectFileOutput struct {
+	Body base.ApiResponse[project.IncludeFile]
 }
 
 type RedeployProjectInput struct {
@@ -253,6 +263,19 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService) {
 			{"ApiKeyAuth": {}},
 		},
 	}, h.GetProject)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-project-file",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/projects/{projectId}/file",
+		Summary:     "Get a project file",
+		Description: "Get the contents of a single project-related file by relative path",
+		Tags:        []string{"Projects"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.GetProjectFile)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "redeploy-project",
@@ -515,6 +538,7 @@ func (h *ProjectHandler) CreateProject(ctx context.Context, input *CreateProject
 	response.CreatedAt = proj.CreatedAt.Format(time.RFC3339)
 	response.UpdatedAt = proj.UpdatedAt.Format(time.RFC3339)
 	response.DirName = utils.DerefString(proj.DirName)
+	response.RelativePath = h.projectService.GetProjectRelativePath(ctx, proj.Path)
 	response.GitOpsManagedBy = proj.GitOpsManagedBy
 
 	return &CreateProjectOutput{
@@ -544,6 +568,43 @@ func (h *ProjectHandler) GetProject(ctx context.Context, input *GetProjectInput)
 		Body: base.ApiResponse[project.Details]{
 			Success: true,
 			Data:    details,
+		},
+	}, nil
+}
+
+func (h *ProjectHandler) GetProjectFile(ctx context.Context, input *GetProjectFileInput) (*GetProjectFileOutput, error) {
+	if h.projectService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+	if input.ProjectID == "" {
+		return nil, huma.Error400BadRequest((&common.ProjectIDRequiredError{}).Error())
+	}
+	if input.RelativePath == "" {
+		return nil, huma.Error400BadRequest("relativePath is required")
+	}
+
+	file, err := h.projectService.GetProjectFileContent(ctx, input.ProjectID, input.RelativePath)
+	if err != nil {
+		var badRequestErr *common.ProjectFileBadRequestError
+		var forbiddenErr *common.ProjectFileForbiddenError
+		var notFoundErr *common.ProjectFileNotFoundError
+
+		switch {
+		case errors.As(err, &badRequestErr):
+			return nil, huma.Error400BadRequest(err.Error())
+		case errors.As(err, &forbiddenErr):
+			return nil, huma.Error403Forbidden(err.Error())
+		case errors.As(err, &notFoundErr):
+			return nil, huma.Error404NotFound("project file not found")
+		default:
+			return nil, huma.Error500InternalServerError("internal error")
+		}
+	}
+
+	return &GetProjectFileOutput{
+		Body: base.ApiResponse[project.IncludeFile]{
+			Success: true,
+			Data:    file,
 		},
 	}, nil
 }

@@ -1,7 +1,7 @@
 import { m } from '$lib/paraglide/messages';
 import { environmentStore } from '$lib/stores/environment.store.svelte';
 import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
-import type { Project, ProjectStatusCounts } from '$lib/types/project.type';
+import type { IncludeFile, Project, ProjectStatusCounts } from '$lib/types/project.type';
 import { transformPaginationParams } from '$lib/utils/params.util';
 import BaseAPIService from './api-service';
 
@@ -111,6 +111,19 @@ export class ProjectService extends BaseAPIService {
 		return response.project ? response.project : (response as Project);
 	}
 
+	async getProjectFile(projectId: string, relativePath: string): Promise<IncludeFile> {
+		const envId = await this.resolveEnvironmentId();
+		return this.getProjectFileForEnvironment(envId, projectId, relativePath);
+	}
+
+	async getProjectFileForEnvironment(environmentId: string, projectId: string, relativePath: string): Promise<IncludeFile> {
+		return this.handleResponse<IncludeFile>(
+			this.api.get(`/environments/${environmentId}/projects/${projectId}/file`, {
+				params: { relativePath }
+			})
+		);
+	}
+
 	async getProjectStatusCounts(): Promise<ProjectStatusCounts> {
 		const envId = await this.resolveEnvironmentId();
 		return this.getProjectStatusCountsForEnvironment(envId);
@@ -125,13 +138,13 @@ export class ProjectService extends BaseAPIService {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		const payload: Record<string, string> = {};
 		if (name !== undefined) {
-			payload.name = name;
+			payload['name'] = name;
 		}
 		if (composeContent !== undefined) {
-			payload.composeContent = composeContent;
+			payload['composeContent'] = composeContent;
 		}
 		if (envContent !== undefined) {
-			payload.envContent = envContent;
+			payload['envContent'] = envContent;
 		}
 		return this.handleResponse(this.api.put(`/environments/${envId}/projects/${projectId}`, payload));
 	}

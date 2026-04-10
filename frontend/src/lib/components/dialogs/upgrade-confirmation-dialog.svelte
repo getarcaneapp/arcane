@@ -41,7 +41,6 @@
 	let countdownInterval: ReturnType<typeof setInterval> | null = null;
 	let fallbackTimeout: ReturnType<typeof setTimeout> | null = null;
 	let baselineVersionInfo = $state<AppVersionInformation | null>(null);
-	let lastSeenVersionInfo = $state<AppVersionInformation | null>(null);
 	let consecutiveHealthyChecks = $state(0);
 
 	function short(v?: string | null, n = 12): string {
@@ -121,8 +120,6 @@
 					queryFn: () => systemUpgradeService.getVersionInfo(envId),
 					staleTime: 0
 				});
-				lastSeenVersionInfo = info;
-
 				const expVer = expectedVersion?.trim();
 				const expDig = expectedDigest?.trim();
 				const ok = matchesExpected(info);
@@ -169,7 +166,6 @@
 				queryFn: () => systemUpgradeService.getVersionInfo(environmentId ?? '0'),
 				staleTime: 0
 			});
-			lastSeenVersionInfo = baselineVersionInfo;
 			if (!baselineVersionInfo) return;
 
 			const baseline = baselineVersionInfo;
@@ -247,7 +243,7 @@
 	});
 </script>
 
-<Dialog.Root bind:open>
+<Dialog.Root {open} onOpenChange={(nextOpen) => (open = nextOpen)}>
 	<Dialog.Content
 		class={cn('sm:max-w-[500px]', upgrading && '[&>button]:hidden')}
 		onInteractOutside={(e: Event) => {

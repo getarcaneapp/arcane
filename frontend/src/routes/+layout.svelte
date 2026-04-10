@@ -17,18 +17,10 @@
 	import { QueryClientProvider } from '@tanstack/svelte-query';
 	import { SvelteQueryDevtools } from '@tanstack/svelte-query-devtools';
 	import { ModeWatcher } from 'mode-watcher';
-	import type { Snippet } from 'svelte';
 	import { onMount } from 'svelte';
 	import '../app.css';
-	import type { LayoutData } from './$types';
 
-	let {
-		data,
-		children
-	}: {
-		data: LayoutData;
-		children: Snippet;
-	} = $props();
+	let { data, children }: LayoutProps = $props();
 
 	onMount(() => {
 		if (!dev && browser && 'serviceWorker' in navigator) {

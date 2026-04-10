@@ -2,6 +2,7 @@ import { browser } from '$app/environment';
 import { PersistedState } from 'runed';
 import { decodeSort, type CompactTablePrefs } from '$lib/components/arcane-table/arcane-table.types.svelte';
 import type { FilterMap, FilterValue, SearchPaginationSortRequest } from '$lib/types/pagination.type';
+import { normalizeTablePageSize } from '$lib/utils/table-pagination.util';
 
 const DEFAULT_LIMIT = 20;
 
@@ -44,15 +45,6 @@ function buildFilterMap(pairs?: [string, unknown][]): FilterMap {
 	}
 
 	return filters;
-}
-
-function normalizeLimit(limit: unknown): number | undefined {
-	if (typeof limit === 'number' && Number.isFinite(limit) && limit > 0) return limit;
-	if (typeof limit === 'string') {
-		const parsed = Number.parseInt(limit, 10);
-		if (Number.isFinite(parsed) && parsed > 0) return parsed;
-	}
-	return undefined;
 }
 
 function normalizeSearch(value: unknown): string | undefined {
@@ -99,7 +91,7 @@ export function resolveInitialTableRequest(
 			base.pagination = { ...base.pagination!, page: 1 };
 		}
 
-		const limit = normalizeLimit(current.l);
+		const limit = normalizeTablePageSize(current.l);
 		if (limit !== undefined && base.pagination?.limit !== limit) {
 			base.pagination = { page: 1, limit };
 		}

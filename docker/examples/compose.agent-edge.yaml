@@ -7,6 +7,10 @@ services:
       - EDGE_AGENT=true
       - AGENT_TOKEN=arc_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
       - MANAGER_API_URL=https://your-manager.example.com
+      # Optional: run the agent as a specific host UID/GID instead of the default runtime user.
+      # When using the mounted Docker socket, Arcane will map the socket group automatically.
+      # - PUID=1000
+      # - PGID=1000
       # Set to grpc to enable protobuf transport over the manager API port.
       - EDGE_TRANSPORT=websocket
     volumes:

@@ -41,6 +41,23 @@ func TestJobService_ListJobs_AnalyticsHeartbeatIsManagedInternally(t *testing.T)
 	require.False(t, analyticsJob.IsContinuous)
 }
 
+func TestJobService_ListJobs_IncludesDisabledAutoHealJob(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+
+	settingsSvc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "autoHealEnabled", false))
+
+	jobSvc := NewJobService(db, settingsSvc, &config.Config{})
+	jobs, err := jobSvc.ListJobs(ctx)
+	require.NoError(t, err)
+
+	autoHealJob := findJobStatusByIDInternal(t, jobs.Jobs, "auto-heal")
+	require.False(t, autoHealJob.Enabled)
+	require.Equal(t, "autoHealInterval", autoHealJob.SettingsKey)
+}
+
 func findJobStatusByIDInternal(t *testing.T, jobs []jobschedule.JobStatus, id string) jobschedule.JobStatus {
 	t.Helper()
 

@@ -11,7 +11,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/cli/upgrade"
 	"github.com/getarcaneapp/arcane/backend/internal/bootstrap"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/signals"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils/signals"
 )
 
 var rootCmd = &cobra.Command{

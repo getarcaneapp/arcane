@@ -18,6 +18,7 @@ const (
 	EventTypeContainerCreate  EventType = "container.create"
 	EventTypeContainerScan    EventType = "container.scan"
 	EventTypeContainerUpdate  EventType = "container.update"
+	EventTypeContainerDeploy  EventType = "container.deploy"
 	EventTypeContainerError   EventType = "container.error"
 
 	EventTypeImagePull              EventType = "image.pull"
@@ -77,6 +78,11 @@ const (
 	EventTypeEnvironmentUpdate            EventType = "environment.update"
 	EventTypeEnvironmentDelete            EventType = "environment.delete"
 	EventTypeEnvironmentApiKeyRegenerated EventType = "environment.api_key.regenerated"
+
+	EventTypeWebhookCreate  EventType = "webhook.create"
+	EventTypeWebhookUpdate  EventType = "webhook.update"
+	EventTypeWebhookDelete  EventType = "webhook.delete"
+	EventTypeWebhookTrigger EventType = "webhook.trigger"
 
 	// Event severities
 	EventSeverityInfo    EventSeverity = "info"

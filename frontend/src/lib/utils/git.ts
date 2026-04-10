@@ -33,7 +33,10 @@ export function toGitWebUrl(raw: string): string | null {
 	const scpMatch = /^(?:.+@)?([^:\/]+):(.+)$/.exec(trimmed);
 	if (scpMatch) {
 		const host = scpMatch[1];
-		const path = stripGitSuffix(scpMatch[2].replace(/^\/+/, ''));
+		const matchedPath = scpMatch[2];
+		if (!host || !matchedPath) return null;
+
+		const path = stripGitSuffix(matchedPath.replace(/^\/+/, ''));
 		if (!host || !path) return null;
 		return `https://${host}/${path}`;
 	}
@@ -41,7 +44,10 @@ export function toGitWebUrl(raw: string): string | null {
 	const hostPathMatch = /^([^\/]+)\/(.+)$/.exec(trimmed);
 	if (hostPathMatch) {
 		const host = hostPathMatch[1];
-		const path = stripGitSuffix(hostPathMatch[2].replace(/^\/+/, ''));
+		const matchedPath = hostPathMatch[2];
+		if (!host || !matchedPath) return null;
+
+		const path = stripGitSuffix(matchedPath.replace(/^\/+/, ''));
 		if (!host || !path) return null;
 		return `https://${host}/${path}`;
 	}

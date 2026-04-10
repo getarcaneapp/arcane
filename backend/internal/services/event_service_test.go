@@ -208,13 +208,12 @@ func TestEventService_CreateEvent_ForwardsToManagerAPIInAgentMode(t *testing.T) 
 	}
 	svc := NewEventService(db, cfg, server.Client())
 
-	envID := "0"
 	_, err := svc.CreateEvent(ctx, CreateEventRequest{
 		Type:          models.EventTypeContainerStart,
 		Severity:      models.EventSeverityInfo,
 		Title:         "Container started: web",
 		Description:   "Container 'web' has been started",
-		EnvironmentID: &envID,
+		EnvironmentID: new("0"),
 		Metadata:      models.JSON{"source": "test"},
 	})
 	require.NoError(t, err)
@@ -251,12 +250,11 @@ func TestEventService_CreateEvent_NormalizesActor(t *testing.T) {
 	})
 
 	t.Run("copies user id to username when username is missing", func(t *testing.T) {
-		uid := "u-123"
 		evt, err := svc.CreateEvent(ctx, CreateEventRequest{
 			Type:     models.EventTypeProjectDeploy,
 			Severity: models.EventSeverityInfo,
 			Title:    "Deploy",
-			UserID:   &uid,
+			UserID:   new("u-123"),
 		})
 		require.NoError(t, err)
 		require.NotNil(t, evt.UserID)
@@ -266,12 +264,11 @@ func TestEventService_CreateEvent_NormalizesActor(t *testing.T) {
 	})
 
 	t.Run("copies username to user id when user id is missing", func(t *testing.T) {
-		name := "kmendell"
 		evt, err := svc.CreateEvent(ctx, CreateEventRequest{
 			Type:     models.EventTypeProjectDeploy,
 			Severity: models.EventSeverityInfo,
 			Title:    "Deploy",
-			Username: &name,
+			Username: new("kmendell"),
 		})
 		require.NoError(t, err)
 		require.NotNil(t, evt.UserID)

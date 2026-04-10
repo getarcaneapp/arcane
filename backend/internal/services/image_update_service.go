@@ -11,8 +11,9 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/crypto"
-	registry "github.com/getarcaneapp/arcane/backend/internal/utils/registry"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/crypto"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils/imagedigest"
+	registry "github.com/getarcaneapp/arcane/backend/pkg/utils/registry"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 	"github.com/getarcaneapp/arcane/types/imageupdate"
 	"github.com/moby/moby/api/types/image"
@@ -68,9 +69,7 @@ func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef stri
 		}, nil
 	}
 
-	registries := s.getRegistriesForImage(ctx, parts.Registry)
-
-	digestResult, snapshot, err := s.checkDigestUpdateWithSnapshotInternal(ctx, parts, registries)
+	digestResult, snapshot, err := s.checkDigestUpdateWithSnapshotInternal(ctx, parts)
 	if err != nil {
 		result := &imageupdate.Response{
 			Error:          err.Error(),
@@ -119,91 +118,32 @@ func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef stri
 	return digestResult, nil
 }
 
-type authDetails struct {
-	Method   string
-	Username string
-	Registry string
-}
-
-// Try anonymous first, then each matching registry credential (decrypting token)
-// until one returns a token. If auth is not required, returns empty token.
-func (s *ImageUpdateService) getRegistryToken(ctx context.Context, regHost, repository string, regs []models.ContainerRegistry) (string, *authDetails, error) {
-	rc := registry.NewClient()
-
-	slog.DebugContext(ctx, "Checking registry auth", "registry", regHost, "repository", repository)
-
-	authURL, err := rc.CheckAuth(ctx, regHost)
-	if err != nil {
-		slog.DebugContext(ctx, "Registry auth check failed", "registry", regHost, "error", err.Error())
-		return "", nil, fmt.Errorf("failed to check auth: %w", err)
+func (s *ImageUpdateService) checkDigestUpdateWithSnapshotInternal(ctx context.Context, parts *ImageParts) (*imageupdate.Response, *localImageSnapshot, error) {
+	if s.registryService == nil {
+		return nil, nil, fmt.Errorf("registry service unavailable")
 	}
 
-	// No auth required
-	if authURL == "" {
-		return "", &authDetails{Method: "none", Registry: regHost}, nil
-	}
-
-	// 1) Try anonymous (works for many public repos)
-	anonToken, anonErr := rc.GetToken(ctx, authURL, repository, nil)
-	if anonErr == nil && anonToken != "" {
-		return anonToken, &authDetails{Method: "anonymous", Registry: regHost}, nil
-	}
-
-	// 2) Try each matching enabled registry credential
-	var lastErr error
-	for i, reg := range regs {
-		if reg.Username == "" || reg.Token == "" {
-			continue
-		}
-		decrypted, decErr := crypto.Decrypt(reg.Token)
-		if decErr != nil {
-			lastErr = decErr
-			continue
-		}
-		creds := &registry.Credentials{Username: reg.Username, Token: decrypted}
-		token, err := rc.GetToken(ctx, authURL, repository, creds)
-		if err == nil && token != "" {
-			return token, &authDetails{Method: "credential", Username: reg.Username, Registry: regHost}, nil
-		}
-		if err != nil {
-			lastErr = err
-		} else {
-			lastErr = fmt.Errorf("empty token (cred idx %d)", i)
-		}
-	}
-
-	if lastErr != nil {
-		return "", nil, fmt.Errorf("failed to get registry token: %w", lastErr)
-	}
-	return "", nil, fmt.Errorf("failed to get registry token")
-}
-
-func (s *ImageUpdateService) checkDigestUpdateWithSnapshotInternal(ctx context.Context, parts *ImageParts, registries []models.ContainerRegistry) (*imageupdate.Response, *localImageSnapshot, error) {
-	rc := registry.NewClient()
-
-	token, auth, err := s.getRegistryToken(ctx, parts.Registry, parts.Repository, registries)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get registry token: %w", err)
-	}
-
-	normalizedRepo := s.normalizeRepository(parts.Registry, parts.Repository)
-
+	imageRef := fmt.Sprintf("%s/%s:%s", parts.Registry, parts.Repository, parts.Tag)
 	start := time.Now()
-	remoteDigest, _, err := rc.GetLatestDigestTimed(ctx, parts.Registry, normalizedRepo, parts.Tag, token)
-	if err != nil && strings.Contains(strings.ToLower(err.Error()), "unauthorized") {
-		// Attempt to resolve auth header via registry helpers and retry once
-		enabledRegs, _ := s.registryService.GetEnabledRegistries(ctx)
-		authHeader, _, _, resolveErr := registry.ResolveAuthHeaderForRepository(ctx, parts.Registry, normalizedRepo, parts.Tag, enabledRegs)
-		if resolveErr == nil && authHeader != "" {
-			remoteDigest, _, err = rc.GetLatestDigestTimed(ctx, parts.Registry, normalizedRepo, parts.Tag, authHeader)
-		}
-	}
+	digestResult, err := s.registryService.inspectImageDigestInternal(ctx, imageRef, nil)
 	elapsed := time.Since(start)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get remote digest: %w", err)
+		partial := digestResult // may contain auth metadata even on error
+		if partial == nil {
+			return nil, nil, fmt.Errorf("failed to get remote digest: %w", err)
+		}
+		return &imageupdate.Response{
+			Error:          err.Error(),
+			CheckTime:      time.Now(),
+			ResponseTimeMs: int(elapsed.Milliseconds()),
+			AuthMethod:     partial.AuthMethod,
+			AuthUsername:   partial.AuthUsername,
+			AuthRegistry:   partial.AuthRegistry,
+			UsedCredential: partial.UsedCredential,
+		}, nil, fmt.Errorf("failed to get remote digest: %w", err)
 	}
 
-	snapshot, err := s.inspectLocalImageSnapshotInternal(ctx, fmt.Sprintf("%s/%s:%s", parts.Registry, parts.Repository, parts.Tag))
+	snapshot, err := s.inspectLocalImageSnapshotInternal(ctx, imageRef)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get local digest: %w", err)
 	}
@@ -211,7 +151,7 @@ func (s *ImageUpdateService) checkDigestUpdateWithSnapshotInternal(ctx context.C
 	localDigest := snapshot.PrimaryDigest
 	hasUpdate := true
 	for _, localDig := range snapshot.AllDigests {
-		if localDig == remoteDigest {
+		if localDig == digestResult.Digest {
 			localDigest = localDig
 			hasUpdate = false
 			break
@@ -219,23 +159,23 @@ func (s *ImageUpdateService) checkDigestUpdateWithSnapshotInternal(ctx context.C
 	}
 
 	slog.DebugContext(ctx, "digest comparison",
-		"imageRef", fmt.Sprintf("%s/%s:%s", parts.Registry, parts.Repository, parts.Tag),
+		"imageRef", imageRef,
 		"primaryLocalDigest", localDigest,
 		"allLocalDigests", snapshot.AllDigests,
-		"remoteDigest", remoteDigest,
+		"remoteDigest", digestResult.Digest,
 		"hasUpdate", hasUpdate)
 
 	return &imageupdate.Response{
 		HasUpdate:      hasUpdate,
 		UpdateType:     "digest",
 		CurrentDigest:  localDigest,
-		LatestDigest:   remoteDigest,
+		LatestDigest:   digestResult.Digest,
 		CheckTime:      time.Now(),
 		ResponseTimeMs: int(elapsed.Milliseconds()),
-		AuthMethod:     auth.Method,
-		AuthUsername:   auth.Username,
-		AuthRegistry:   auth.Registry,
-		UsedCredential: auth.Method == "credential",
+		AuthMethod:     digestResult.AuthMethod,
+		AuthUsername:   digestResult.AuthUsername,
+		AuthRegistry:   digestResult.AuthRegistry,
+		UsedCredential: digestResult.UsedCredential,
 	}, snapshot, nil
 }
 
@@ -272,7 +212,7 @@ func (s *ImageUpdateService) parseImageReference(imageRef string) *ImageParts {
 // Fallback parser for cases where the official parser fails
 func (s *ImageUpdateService) parseImageReferenceFallback(imageRef string) *ImageParts {
 	var registryHost, repository, tag string
-	if strings.Contains(imageRef, "@sha256:") {
+	if _, ok := imagedigest.FromReferenceSuffix(imageRef); ok {
 		digestParts := strings.Split(imageRef, "@")
 		if len(digestParts) != 2 {
 			return nil
@@ -329,35 +269,62 @@ func (s *ImageUpdateService) parseImageReferenceFallback(imageRef string) *Image
 	return &ImageParts{Registry: registry.NormalizeRegistryForComparison(registryHost), Repository: repository, Tag: tag}
 }
 
-func (s *ImageUpdateService) getImageRefByID(ctx context.Context, imageID string) (string, error) {
+func (s *ImageUpdateService) getImageRefByIDInternal(ctx context.Context, imageID string) (string, error) {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	imageID = strings.TrimPrefix(imageID, "sha256:")
+
+	if ref, refErr := s.resolveImageRefFromInspect(ctx, dockerClient, imageID); refErr == nil {
+		return ref, nil
+	}
+
+	// Fallback: if the image was pruned, look up the image reference from
+	// running containers that were started from this image ID.
+	if ref, refErr := s.resolveImageRefFromContainers(ctx, dockerClient, imageID); refErr == nil {
+		return ref, nil
+	}
+
+	return "", fmt.Errorf("image not found: no local image or running container found for %s", imageID)
+}
+
+func (s *ImageUpdateService) resolveImageRefFromInspect(ctx context.Context, dockerClient client.APIClient, imageID string) (string, error) {
 	inspectResponse, err := dockerClient.ImageInspect(ctx, imageID)
 	if err != nil {
-		return "", fmt.Errorf("image not found: %w", err)
+		return "", err
 	}
-	if len(inspectResponse.RepoTags) > 0 {
-		for _, tag := range inspectResponse.RepoTags {
-			if tag != "<none>:<none>" {
-				return tag, nil
+	for _, tag := range inspectResponse.RepoTags {
+		if tag != "<none>:<none>" {
+			return tag, nil
+		}
+	}
+	for _, digest := range inspectResponse.RepoDigests {
+		if digest != "<none>@<none>" {
+			if repo, _, ok := strings.Cut(digest, "@"); ok {
+				return repo + ":latest", nil
 			}
 		}
 	}
-	if len(inspectResponse.RepoDigests) > 0 {
-		for _, digest := range inspectResponse.RepoDigests {
-			if digest != "<none>@<none>" {
-				digestParts := strings.Split(digest, "@")
-				if len(digestParts) == 2 {
-					return digestParts[0] + ":latest", nil
-				}
-			}
+	return "", fmt.Errorf("no valid tags or digests")
+}
+
+func (s *ImageUpdateService) resolveImageRefFromContainers(ctx context.Context, dockerClient client.APIClient, imageID string) (string, error) {
+	fullID := "sha256:" + imageID
+	containers, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
+	if err != nil {
+		return "", err
+	}
+	for _, c := range containers.Items {
+		if c.ImageID != fullID && c.ImageID != imageID {
+			continue
+		}
+		if c.Image != "" && !strings.HasPrefix(c.Image, "sha256:") && !strings.Contains(c.Image, "@sha256:") {
+			return c.Image, nil
 		}
 	}
-	return "", fmt.Errorf("no valid repository tags or digests found for image")
+	return "", fmt.Errorf("no container found using image %s", imageID)
 }
 
 func (s *ImageUpdateService) getAllImageRefsInternal(ctx context.Context, limit int) ([]string, error) {
@@ -411,16 +378,16 @@ func (s *ImageUpdateService) inspectLocalImageSnapshotInternal(ctx context.Conte
 	// Extract all digests from RepoDigests
 	if len(inspectResponse.RepoDigests) > 0 {
 		for _, repoDigest := range inspectResponse.RepoDigests {
-			// Format: repository@sha256:...
-			digestParts := strings.Split(repoDigest, "@")
-			if len(digestParts) == 2 {
-				digest := digestParts[1]
-				allDigests = append(allDigests, digest)
+			digest, ok := imagedigest.FromReferenceSuffix(repoDigest)
+			if !ok {
+				continue
+			}
 
-				// Use first digest as primary if not yet set
-				if primaryDigest == "" {
-					primaryDigest = digest
-				}
+			allDigests = append(allDigests, digest)
+
+			// Use first digest as primary if not yet set
+			if primaryDigest == "" {
+				primaryDigest = digest
 			}
 		}
 	}
@@ -442,36 +409,6 @@ func (s *ImageUpdateService) inspectLocalImageSnapshotInternal(ctx context.Conte
 	}, nil
 }
 
-// Returns all enabled credentials whose URL matches the image registry domain (normalized)
-func (s *ImageUpdateService) getRegistriesForImage(ctx context.Context, regHost string) []models.ContainerRegistry {
-	normalizedDomain := registry.NormalizeRegistryForComparison(regHost)
-
-	registries, err := s.registryService.GetAllRegistries(ctx)
-	if err != nil {
-		slog.DebugContext(ctx, "Failed to load registries for image", "registry", regHost, "error", err.Error())
-		return nil
-	}
-
-	var matches []models.ContainerRegistry
-	for _, reg := range registries {
-		if !reg.Enabled {
-			continue
-		}
-		normalizedRegURL := registry.NormalizeRegistryForComparison(reg.URL)
-		if normalizedRegURL == normalizedDomain {
-			matches = append(matches, reg)
-		}
-	}
-
-	slog.DebugContext(ctx, "Matched registry credentials for image", "registry", regHost, "normalizedDomain", normalizedDomain, "matchCount", len(matches))
-
-	for i, reg := range matches {
-		slog.DebugContext(ctx, "Matched credential", "index", i, "registryURL", reg.URL, "username", reg.Username)
-	}
-
-	return matches
-}
-
 func (s *ImageUpdateService) normalizeRepository(regHost, repo string) string {
 	if regHost == "docker.io" && !strings.Contains(repo, "/") {
 		return "library/" + repo
@@ -480,7 +417,7 @@ func (s *ImageUpdateService) normalizeRepository(regHost, repo string) string {
 }
 
 func (s *ImageUpdateService) CheckImageUpdateByID(ctx context.Context, imageID string) (*imageupdate.Response, error) {
-	imageRef, err := s.getImageRefByID(ctx, imageID)
+	imageRef, err := s.getImageRefByIDInternal(ctx, imageID)
 	if err != nil {
 		metadata := models.JSON{
 			"action":  "check_update_by_id",
@@ -681,16 +618,6 @@ func (s *ImageUpdateService) MarkUpdatesAsNotified(ctx context.Context, imageIDs
 		Update("notification_sent", true).Error
 }
 
-type batchCred struct {
-	username string
-	token    string
-}
-
-type regAuth struct {
-	token string
-	auth  *authDetails
-}
-
 type batchImage struct {
 	refs         []string
 	canonicalRef string
@@ -733,201 +660,50 @@ func (s *ImageUpdateService) parseAndGroupImagesInternal(imageRefs []string) (ma
 	return regRepos, results, images
 }
 
-func (s *ImageUpdateService) buildCredentialMap(ctx context.Context, externalCreds []containerregistry.Credential) (map[string]batchCred, []models.ContainerRegistry) {
-	var enabledRegs []models.ContainerRegistry
-	credMap := make(map[string]batchCred)
-
-	if len(externalCreds) > 0 {
-		enabledRegHosts := make(map[string]struct{})
-		for _, c := range externalCreds {
-			if !c.Enabled || c.Username == "" || c.Token == "" {
-				continue
-			}
-			host := registry.NormalizeRegistryForComparison(c.URL)
-			if host == "" {
-				continue
-			}
-			if _, exists := credMap[host]; !exists {
-				credMap[host] = batchCred{username: c.Username, token: c.Token}
-			}
-			if _, exists := enabledRegHosts[host]; exists {
-				continue
-			}
-			encToken, encErr := crypto.Encrypt(c.Token)
-			if encErr != nil {
-				slog.WarnContext(ctx, "Failed to encrypt external registry token", "registryURL", c.URL, "error", encErr.Error())
-				continue
-			}
-			enabledRegs = append(enabledRegs, models.ContainerRegistry{
-				URL:      c.URL,
-				Username: c.Username,
-				Token:    encToken,
-				Enabled:  c.Enabled,
-			})
-			enabledRegHosts[host] = struct{}{}
-		}
-		slog.DebugContext(ctx, "Using external credentials for batch check", "credentialCount", len(credMap))
-		return credMap, enabledRegs
-	}
-
-	dbRegs, err := s.registryService.GetEnabledRegistries(ctx)
-	if err != nil {
-		slog.DebugContext(ctx, "Failed to load enabled registries", "error", err.Error())
-		return credMap, nil
-	}
-	enabledRegs = dbRegs
-
-	for _, r := range dbRegs {
-		if r.Username == "" || r.Token == "" {
-			continue
-		}
-		host := registry.NormalizeRegistryForComparison(r.URL)
-		if host == "" {
-			continue
-		}
-		dec, decErr := crypto.Decrypt(r.Token)
-		if decErr != nil {
-			slog.DebugContext(ctx, "Decrypt registry token failed", "registryURL", r.URL, "error", decErr.Error())
-			continue
-		}
-		if _, exists := credMap[host]; !exists {
-			credMap[host] = batchCred{username: r.Username, token: dec}
-		}
-	}
-	return credMap, enabledRegs
-}
-
-func (s *ImageUpdateService) buildRegistryAuthMap(ctx context.Context, rc *registry.Client, regRepos map[string]map[string]struct{}, credMap map[string]batchCred) map[string]regAuth {
-	regAuthMap := make(map[string]regAuth, len(regRepos))
-
-	slog.DebugContext(ctx, "Building registry auth map",
-		"registryCount", len(regRepos),
-		"registries", func() []string {
-			regs := make([]string, 0, len(regRepos))
-			for r := range regRepos {
-				regs = append(regs, r)
-			}
-			return regs
-		}(),
-		"credMapKeys", func() []string {
-			keys := make([]string, 0, len(credMap))
-			for k := range credMap {
-				keys = append(keys, k)
-			}
-			return keys
-		}())
-
-	for regHost, set := range regRepos {
-		repos := make([]string, 0, len(set))
-		for r := range set {
-			repos = append(repos, r)
-		}
-
-		authURL, err := rc.CheckAuth(ctx, regHost)
-		if err != nil {
-			slog.DebugContext(ctx, "Auth probe failed", "registry", regHost, "error", err.Error())
-			regAuthMap[regHost] = regAuth{token: "", auth: &authDetails{Method: "unknown", Registry: regHost}}
-			continue
-		}
-		// No auth required
-		if authURL == "" {
-			regAuthMap[regHost] = regAuth{token: "", auth: &authDetails{Method: "none", Registry: regHost}}
-			continue
-		}
-
-		// Credential attempt first (if available)
-		host := registry.NormalizeRegistryForComparison(regHost)
-		slog.DebugContext(ctx, "Looking up credentials for registry",
-			"registry", regHost,
-			"normalizedHost", host,
-			"hasCredentials", credMap[host].username != "")
-		if c, ok := credMap[host]; ok && c.username != "" && c.token != "" {
-			creds := &registry.Credentials{Username: c.username, Token: c.token}
-			if tok, tokErr := rc.GetTokenMulti(ctx, authURL, repos, creds); tokErr == nil && tok != "" {
-				slog.InfoContext(ctx, "Using credential auth for registry", "registry", regHost, "username", c.username)
-				regAuthMap[regHost] = regAuth{
-					token: tok,
-					auth:  &authDetails{Method: "credential", Username: c.username, Registry: regHost},
-				}
-				continue
-			} else {
-				slog.WarnContext(ctx, "Failed to get token with credentials, falling back to anonymous",
-					"registry", regHost,
-					"username", c.username,
-					"error", func() string {
-						if tokErr != nil {
-							return tokErr.Error()
-						}
-						return "empty token"
-					}())
-			}
-		}
-
-		// Anonymous multi-scope fallback
-		if anonToken, anonErr := rc.GetTokenMulti(ctx, authURL, repos, nil); anonErr == nil && anonToken != "" {
-			slog.DebugContext(ctx, "Using anonymous auth for registry", "registry", regHost)
-			regAuthMap[regHost] = regAuth{token: anonToken, auth: &authDetails{Method: "anonymous", Registry: regHost}}
-			continue
-		}
-		// Fallback unknown
-		slog.DebugContext(ctx, "No valid credentials found for registry, using unknown auth", "registry", regHost)
-		regAuthMap[regHost] = regAuth{token: "", auth: &authDetails{Method: "unknown", Registry: regHost}}
-	}
-	return regAuthMap
-}
-
-func (s *ImageUpdateService) checkSingleImageInBatchInternal(
-	ctx context.Context,
-	rc *registry.Client,
-	authMap map[string]regAuth,
-	enabledRegs []models.ContainerRegistry,
-	parts *ImageParts,
-) (*imageupdate.Response, *localImageSnapshot) {
-	start := time.Now()
-	authInfo := authMap[parts.Registry]
-	token := authInfo.token
-	auth := authInfo.auth
-	normalizedRepo := s.normalizeRepository(parts.Registry, parts.Repository)
-
-	remoteDigest, _, digestErr := rc.GetLatestDigestTimed(ctx, parts.Registry, normalizedRepo, parts.Tag, token)
-	if digestErr != nil && strings.Contains(strings.ToLower(digestErr.Error()), "unauthorized") {
-		authHeader, method, username, resolveErr := registry.ResolveAuthHeaderForRepository(ctx, parts.Registry, normalizedRepo, parts.Tag, enabledRegs)
-		if resolveErr == nil && authHeader != "" {
-			remoteDigest, _, digestErr = rc.GetLatestDigestTimed(ctx, parts.Registry, normalizedRepo, parts.Tag, authHeader)
-			if digestErr == nil {
-				auth = &authDetails{Method: method, Username: username, Registry: parts.Registry}
-			}
-		}
-	}
-	if digestErr != nil {
+func (s *ImageUpdateService) checkSingleImageInBatchInternal(ctx context.Context, externalCreds []containerregistry.Credential, parts *ImageParts) (*imageupdate.Response, *localImageSnapshot) {
+	if s.registryService == nil {
 		return &imageupdate.Response{
-			Error:          digestErr.Error(),
+			Error:          "registry service unavailable",
 			CheckTime:      time.Now(),
-			ResponseTimeMs: int(time.Since(start).Milliseconds()),
-			AuthMethod:     auth.Method,
-			AuthUsername:   auth.Username,
-			AuthRegistry:   auth.Registry,
-			UsedCredential: auth.Method == "credential",
+			ResponseTimeMs: 0,
 		}, nil
 	}
 
-	snapshot, ldErr := s.inspectLocalImageSnapshotInternal(ctx, fmt.Sprintf("%s/%s:%s", parts.Registry, parts.Repository, parts.Tag))
+	start := time.Now()
+	imageRef := fmt.Sprintf("%s/%s:%s", parts.Registry, parts.Repository, parts.Tag)
+	digestResult, digestErr := s.registryService.inspectImageDigestInternal(ctx, imageRef, externalCreds)
+	if digestErr != nil {
+		resp := &imageupdate.Response{
+			Error:          digestErr.Error(),
+			CheckTime:      time.Now(),
+			ResponseTimeMs: int(time.Since(start).Milliseconds()),
+		}
+		if digestResult != nil {
+			resp.AuthMethod = digestResult.AuthMethod
+			resp.AuthUsername = digestResult.AuthUsername
+			resp.AuthRegistry = digestResult.AuthRegistry
+			resp.UsedCredential = digestResult.UsedCredential
+		}
+		return resp, nil
+	}
+
+	snapshot, ldErr := s.inspectLocalImageSnapshotInternal(ctx, imageRef)
 	if ldErr != nil {
 		return &imageupdate.Response{
 			Error:          ldErr.Error(),
 			CheckTime:      time.Now(),
 			ResponseTimeMs: int(time.Since(start).Milliseconds()),
-			AuthMethod:     auth.Method,
-			AuthUsername:   auth.Username,
-			AuthRegistry:   auth.Registry,
-			UsedCredential: auth.Method == "credential",
+			AuthMethod:     digestResult.AuthMethod,
+			AuthUsername:   digestResult.AuthUsername,
+			AuthRegistry:   digestResult.AuthRegistry,
+			UsedCredential: digestResult.UsedCredential,
 		}, nil
 	}
 
 	localDigest := snapshot.PrimaryDigest
 	hasDigestUpdate := true
 	for _, localDig := range snapshot.AllDigests {
-		if localDig == remoteDigest {
+		if localDig == digestResult.Digest {
 			localDigest = localDig
 			hasDigestUpdate = false
 			break
@@ -938,14 +714,63 @@ func (s *ImageUpdateService) checkSingleImageInBatchInternal(
 		HasUpdate:      hasDigestUpdate,
 		UpdateType:     "digest",
 		CurrentDigest:  localDigest,
-		LatestDigest:   remoteDigest,
+		LatestDigest:   digestResult.Digest,
 		CheckTime:      time.Now(),
 		ResponseTimeMs: int(time.Since(start).Milliseconds()),
-		AuthMethod:     auth.Method,
-		AuthUsername:   auth.Username,
-		AuthRegistry:   auth.Registry,
-		UsedCredential: auth.Method == "credential",
+		AuthMethod:     digestResult.AuthMethod,
+		AuthUsername:   digestResult.AuthUsername,
+		AuthRegistry:   digestResult.AuthRegistry,
+		UsedCredential: digestResult.UsedCredential,
 	}, snapshot
+}
+
+func (s *ImageUpdateService) resolveBatchCredentialsInternal(ctx context.Context, externalCreds []containerregistry.Credential) []containerregistry.Credential {
+	if len(externalCreds) > 0 {
+		filtered := make([]containerregistry.Credential, 0, len(externalCreds))
+		for _, cred := range externalCreds {
+			if !cred.Enabled || strings.TrimSpace(cred.URL) == "" || strings.TrimSpace(cred.Username) == "" || strings.TrimSpace(cred.Token) == "" {
+				continue
+			}
+			filtered = append(filtered, cred)
+		}
+		return filtered
+	}
+
+	if s.registryService == nil {
+		return nil
+	}
+
+	registries, err := s.registryService.GetEnabledRegistries(ctx)
+	if err != nil {
+		slog.DebugContext(ctx, "failed to load enabled registries for batch check", "error", err.Error())
+		return nil
+	}
+
+	credentials := make([]containerregistry.Credential, 0, len(registries))
+	for _, reg := range registries {
+		if strings.TrimSpace(reg.URL) == "" || strings.TrimSpace(reg.Username) == "" || reg.Token == "" {
+			continue
+		}
+
+		token, decryptErr := crypto.Decrypt(reg.Token)
+		if decryptErr != nil {
+			slog.DebugContext(ctx, "failed to decrypt registry token for batch check", "registryURL", reg.URL, "error", decryptErr.Error())
+			continue
+		}
+		token = strings.TrimSpace(token)
+		if token == "" {
+			continue
+		}
+
+		credentials = append(credentials, containerregistry.Credential{
+			URL:      reg.URL,
+			Username: reg.Username,
+			Token:    token,
+			Enabled:  reg.Enabled,
+		})
+	}
+
+	return credentials
 }
 
 func (s *ImageUpdateService) CheckMultipleImages(ctx context.Context, imageRefs []string, externalCreds []containerregistry.Credential) (map[string]*imageupdate.Response, error) {
@@ -957,16 +782,12 @@ func (s *ImageUpdateService) CheckMultipleImages(ctx context.Context, imageRefs 
 
 	slog.DebugContext(ctx, "Starting batch image update check", "imageCount", len(imageRefs), "externalCredCount", len(externalCreds))
 
-	rc := registry.NewClient()
-
 	regRepos, initialResults, images := s.parseAndGroupImagesInternal(imageRefs)
 	maps.Copy(results, initialResults)
 
-	credMap, enabledRegs := s.buildCredentialMap(ctx, externalCreds)
+	resolvedCreds := s.resolveBatchCredentialsInternal(ctx, externalCreds)
 
-	slog.DebugContext(ctx, "Built credential map", "credMapSize", len(credMap), "enabledRegsCount", len(enabledRegs))
-
-	regAuthMap := s.buildRegistryAuthMap(ctx, rc, regRepos, credMap)
+	slog.DebugContext(ctx, "Resolved batch registry credentials", "credentialCount", len(resolvedCreds), "registryCount", len(regRepos))
 
 	var mu sync.Mutex
 	g, groupCtx := errgroup.WithContext(ctx)
@@ -974,7 +795,7 @@ func (s *ImageUpdateService) CheckMultipleImages(ctx context.Context, imageRefs 
 
 	for _, img := range images {
 		g.Go(func() error {
-			res, snapshot := s.checkSingleImageInBatchInternal(groupCtx, rc, regAuthMap, enabledRegs, img.parts)
+			res, snapshot := s.checkSingleImageInBatchInternal(groupCtx, resolvedCreds, img.parts)
 
 			mu.Lock()
 			for _, ref := range img.refs {

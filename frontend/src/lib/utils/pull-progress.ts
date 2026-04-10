@@ -73,11 +73,11 @@ export function isDownloadingLine(data: unknown): boolean {
 	if (!data || typeof data !== 'object') return false;
 
 	const obj = data as Record<string, unknown>;
-	const status = String(obj?.status ?? '').toLowerCase();
-	const pd = obj?.progressDetail as Record<string, unknown> | undefined;
+	const status = String(obj['status'] ?? '').toLowerCase();
+	const pd = obj['progressDetail'] as Record<string, unknown> | undefined;
 
 	// Open if we see byte progress or any of the common pull statuses
-	if (pd && (typeof pd.total === 'number' || typeof pd.current === 'number')) return true;
+	if (pd && (typeof pd['total'] === 'number' || typeof pd['current'] === 'number')) return true;
 
 	return (
 		status.includes('downloading') ||
@@ -178,12 +178,12 @@ export function extractErrorMessage(data: unknown, fallbackMessage: string): str
 	if (!data || typeof data !== 'object') return fallbackMessage;
 
 	const obj = data as Record<string, unknown>;
-	if (!obj.error) return '';
+	if (!obj['error']) return '';
 
-	if (typeof obj.error === 'string') return obj.error;
-	if (typeof obj.error === 'object' && obj.error !== null) {
-		const errObj = obj.error as Record<string, unknown>;
-		if (typeof errObj.message === 'string') return errObj.message;
+	if (typeof obj['error'] === 'string') return obj['error'];
+	if (typeof obj['error'] === 'object' && obj['error'] !== null) {
+		const errObj = obj['error'] as Record<string, unknown>;
+		if (typeof errObj['message'] === 'string') return errObj['message'];
 	}
 
 	return fallbackMessage;
@@ -196,20 +196,20 @@ export function updateLayerFromStreamData(layers: Record<string, LayerProgress>,
 	if (!data || typeof data !== 'object') return layers;
 
 	const obj = data as Record<string, unknown>;
-	const id = obj.id as string | undefined;
+	const id = obj['id'] as string | undefined;
 	if (!id) return layers;
 
 	const currentLayer = layers[id] || { current: 0, total: 0, status: '' };
-	const status = obj.status as string | undefined;
+	const status = obj['status'] as string | undefined;
 
 	if (status) {
 		currentLayer.status = status;
 	}
 
-	const progressDetail = obj.progressDetail as Record<string, unknown> | undefined;
+	const progressDetail = obj['progressDetail'] as Record<string, unknown> | undefined;
 	if (progressDetail) {
-		const current = progressDetail.current as number | undefined;
-		const total = progressDetail.total as number | undefined;
+		const current = progressDetail['current'] as number | undefined;
+		const total = progressDetail['total'] as number | undefined;
 		if (typeof current === 'number') currentLayer.current = current;
 		if (typeof total === 'number') currentLayer.total = total;
 	}
@@ -249,8 +249,8 @@ export function createPullStreamHandler(callbacks: {
 
 		// Update status text
 		const obj = data as Record<string, unknown>;
-		if (obj.status && typeof obj.status === 'string') {
-			callbacks.onStatusChange(obj.status);
+		if (obj['status'] && typeof obj['status'] === 'string') {
+			callbacks.onStatusChange(obj['status']);
 		}
 
 		// Update layer progress

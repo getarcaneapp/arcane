@@ -11,7 +11,6 @@
 	let {
 		dockerInfo,
 		containersRunning,
-		containersStopped,
 		totalContainers,
 		totalImages,
 		loading = false,
@@ -19,7 +18,6 @@
 	}: {
 		dockerInfo: DockerInfo | null;
 		containersRunning: number;
-		containersStopped: number;
 		totalContainers: number;
 		totalImages: number;
 		loading?: boolean;

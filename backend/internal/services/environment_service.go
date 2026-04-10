@@ -14,11 +14,11 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/crypto"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/timeouts"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/crypto"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/timeouts"
+	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils/mapper"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 	"github.com/getarcaneapp/arcane/types/environment"
 	"github.com/getarcaneapp/arcane/types/gitops"
@@ -33,6 +33,7 @@ type EnvironmentService struct {
 	dockerService   *DockerClientService
 	eventService    *EventService
 	settingsService *SettingsService
+	apiKeyService   *ApiKeyService
 	tokenCacheMu    sync.RWMutex
 	tokenCache      map[string]edgeTokenCacheEntry
 	tokenByEnvID    map[string]string
@@ -45,7 +46,12 @@ type edgeTokenCacheEntry struct {
 
 const edgeTokenCacheTTL = time.Minute
 
-func NewEnvironmentService(db *database.DB, httpClient *http.Client, dockerService *DockerClientService, eventService *EventService, settingsService *SettingsService) *EnvironmentService {
+var (
+	ErrEnvironmentAccessTokenRequired = errors.New("environment access token required")
+	ErrInvalidEnvironmentAccessToken  = errors.New("invalid environment access token")
+)
+
+func NewEnvironmentService(db *database.DB, httpClient *http.Client, dockerService *DockerClientService, eventService *EventService, settingsService *SettingsService, apiKeyService *ApiKeyService) *EnvironmentService {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
@@ -55,6 +61,7 @@ func NewEnvironmentService(db *database.DB, httpClient *http.Client, dockerServi
 		dockerService:   dockerService,
 		eventService:    eventService,
 		settingsService: settingsService,
+		apiKeyService:   apiKeyService,
 		tokenCache:      make(map[string]edgeTokenCacheEntry),
 		tokenByEnvID:    make(map[string]string),
 	}
@@ -237,6 +244,162 @@ func (s *EnvironmentService) CreateEnvironment(ctx context.Context, environment 
 	return environment, nil
 }
 
+func (s *EnvironmentService) ListSwarmNodeAgentEnvironments(ctx context.Context, parentEnvironmentID string) ([]models.Environment, error) {
+	var envs []models.Environment
+	if err := s.db.WithContext(ctx).
+		Model(&models.Environment{}).
+		Where("hidden = ?", true).
+		Where("parent_environment_id = ?", parentEnvironmentID).
+		Find(&envs).Error; err != nil {
+		return nil, fmt.Errorf("failed to list swarm node agent environments: %w", err)
+	}
+
+	return envs, nil
+}
+
+func buildSwarmNodeAgentNameInternal(hostname, nodeID string) string {
+	trimmedHostname := strings.TrimSpace(hostname)
+	if trimmedHostname != "" {
+		return fmt.Sprintf("Swarm Node Agent - %s", trimmedHostname)
+	}
+	if len(nodeID) > 12 {
+		nodeID = nodeID[:12]
+	}
+	return fmt.Sprintf("Swarm Node Agent - %s", nodeID)
+}
+
+func buildSwarmNodeAgentURLInternal(nodeID string) string {
+	shortNodeID := nodeID
+	if len(shortNodeID) > 12 {
+		shortNodeID = shortNodeID[:12]
+	}
+	return "edge://swarm-node-" + shortNodeID
+}
+
+func (s *EnvironmentService) applySwarmNodeAgentApiKeyInternal(
+	ctx context.Context,
+	env *models.Environment,
+	userID, username string,
+	rotate bool,
+) (string, error) {
+	if env == nil {
+		return "", fmt.Errorf("environment is required")
+	}
+
+	if !rotate && env.AccessToken != nil && strings.TrimSpace(*env.AccessToken) != "" {
+		return strings.TrimSpace(*env.AccessToken), nil
+	}
+
+	if s.apiKeyService == nil {
+		return "", fmt.Errorf("api key service not configured")
+	}
+
+	apiKeyDto, err := s.apiKeyService.CreateEnvironmentApiKey(ctx, env.ID, userID)
+	if err != nil {
+		return "", fmt.Errorf("failed to create environment API key: %w", err)
+	}
+
+	if err := s.RegenerateEnvironmentApiKey(ctx, env.ID, apiKeyDto.ID, apiKeyDto.Key, userID, username, env.Name); err != nil {
+		return "", err
+	}
+
+	return apiKeyDto.Key, nil
+}
+
+func (s *EnvironmentService) EnsureSwarmNodeAgentEnvironment(
+	ctx context.Context,
+	parentEnvironmentID, nodeID, hostname, userID, username string,
+	rotate bool,
+) (*models.Environment, string, error) {
+	if strings.TrimSpace(parentEnvironmentID) == "" {
+		return nil, "", fmt.Errorf("parent environment ID is required")
+	}
+	if strings.TrimSpace(nodeID) == "" {
+		return nil, "", fmt.Errorf("swarm node ID is required")
+	}
+
+	var env models.Environment
+	err := s.db.WithContext(ctx).
+		Where("hidden = ?", true).
+		Where("parent_environment_id = ?", parentEnvironmentID).
+		Where("swarm_node_id = ?", nodeID).
+		First(&env).Error
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, "", fmt.Errorf("failed to load swarm node agent environment: %w", err)
+	}
+
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		createdEnv := &models.Environment{
+			Name:                buildSwarmNodeAgentNameInternal(hostname, nodeID),
+			ApiUrl:              buildSwarmNodeAgentURLInternal(nodeID),
+			Status:              string(models.EnvironmentStatusPending),
+			Enabled:             true,
+			IsEdge:              true,
+			Hidden:              true,
+			ParentEnvironmentID: new(parentEnvironmentID),
+			SwarmNodeID:         new(nodeID),
+		}
+
+		if _, createErr := s.CreateEnvironment(ctx, createdEnv, new(userID), new(username)); createErr != nil {
+			return nil, "", fmt.Errorf("failed to create swarm node agent environment: %w", createErr)
+		}
+		env = *createdEnv
+	} else {
+		updates := map[string]any{}
+		expectedName := buildSwarmNodeAgentNameInternal(hostname, nodeID)
+		if env.Name != expectedName {
+			updates["name"] = expectedName
+		}
+		if !env.Hidden {
+			updates["hidden"] = true
+		}
+		if !env.IsEdge {
+			updates["is_edge"] = true
+		}
+		if !env.Enabled {
+			updates["enabled"] = true
+		}
+		if env.ParentEnvironmentID == nil || *env.ParentEnvironmentID != parentEnvironmentID {
+			updates["parent_environment_id"] = parentEnvironmentID
+		}
+		if env.SwarmNodeID == nil || *env.SwarmNodeID != nodeID {
+			updates["swarm_node_id"] = nodeID
+		}
+		if len(updates) > 0 {
+			updatedEnv, updateErr := s.UpdateEnvironment(ctx, env.ID, updates, new(userID), new(username))
+			if updateErr != nil {
+				return nil, "", fmt.Errorf("failed to update swarm node agent environment: %w", updateErr)
+			}
+			env = *updatedEnv
+		}
+	}
+
+	apiKey, err := s.applySwarmNodeAgentApiKeyInternal(ctx, &env, userID, username, rotate)
+	if err != nil {
+		return nil, "", err
+	}
+
+	refreshedEnv, err := s.GetEnvironmentByID(ctx, env.ID)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to refresh swarm node agent environment: %w", err)
+	}
+
+	return refreshedEnv, apiKey, nil
+}
+
+func (s *EnvironmentService) UpdateSwarmNodeIdentity(ctx context.Context, envID, swarmNodeID string) error {
+	updates := map[string]any{
+		"swarm_node_id": swarmNodeID,
+		"updated_at":    new(time.Now()),
+	}
+
+	if err := s.db.WithContext(ctx).Model(&models.Environment{}).Where("id = ?", envID).Updates(updates).Error; err != nil {
+		return fmt.Errorf("failed to update swarm node identity: %w", err)
+	}
+
+	return nil
+}
+
 func (s *EnvironmentService) GetEnvironmentByID(ctx context.Context, id string) (*models.Environment, error) {
 	var environment models.Environment
 	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&environment).Error; err != nil {
@@ -250,7 +413,7 @@ func (s *EnvironmentService) GetEnvironmentByID(ctx context.Context, id string) 
 
 func (s *EnvironmentService) ListEnvironmentsPaginated(ctx context.Context, params pagination.QueryParams) ([]environment.Environment, pagination.Response, error) {
 	var envs []models.Environment
-	q := s.db.WithContext(ctx).Model(&models.Environment{})
+	q := s.db.WithContext(ctx).Model(&models.Environment{}).Where("hidden = ?", false)
 
 	if term := strings.TrimSpace(params.Search); term != "" {
 		searchPattern := "%" + term + "%"
@@ -283,6 +446,7 @@ func (s *EnvironmentService) ListRemoteEnvironments(ctx context.Context) ([]mode
 		Model(&models.Environment{}).
 		Where("id != ?", "0").
 		Where("enabled = ?", true).
+		Where("hidden = ?", false).
 		Find(&envs).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to list remote environments: %w", err)
@@ -328,8 +492,7 @@ func (s *EnvironmentService) SyncRegistriesToRemoteEnvironments(ctx context.Cont
 }
 
 func (s *EnvironmentService) UpdateEnvironment(ctx context.Context, id string, updates map[string]any, userID, username *string) (*models.Environment, error) {
-	now := time.Now()
-	updates["updated_at"] = &now
+	updates["updated_at"] = new(time.Now())
 
 	if err := s.db.WithContext(ctx).Model(&models.Environment{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 		return nil, fmt.Errorf("failed to update environment: %w", err)
@@ -542,15 +705,13 @@ func (s *EnvironmentService) UpdateEnvironmentConnectionState(ctx context.Contex
 // Live edge tunnels are process-local runtime state, so persisted "online" flags can be stale
 // after a restart until agents reconnect. Pending environments are left untouched.
 func (s *EnvironmentService) ReconcileEdgeStatusesOnStartup(ctx context.Context) error {
-	now := time.Now()
-
 	result := s.db.WithContext(ctx).Model(&models.Environment{}).
 		Where("is_edge = ?", true).
 		Where("status <> ?", string(models.EnvironmentStatusPending)).
 		Where("status <> ?", string(models.EnvironmentStatusOffline)).
 		Updates(map[string]any{
 			"status":     string(models.EnvironmentStatusOffline),
-			"updated_at": &now,
+			"updated_at": new(time.Now()),
 		})
 	if result.Error != nil {
 		return fmt.Errorf("failed to reconcile edge environment statuses: %w", result.Error)
@@ -658,6 +819,25 @@ func (s *EnvironmentService) PairAndPersistAgentToken(ctx context.Context, envir
 
 func (s *EnvironmentService) GetDB() *database.DB {
 	return s.db
+}
+
+func (s *EnvironmentService) ResolveEnvironmentByAccessToken(ctx context.Context, token string) (*models.Environment, error) {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return nil, ErrEnvironmentAccessTokenRequired
+	}
+
+	var env models.Environment
+	if err := s.db.WithContext(ctx).
+		Where("access_token = ?", token).
+		First(&env).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrInvalidEnvironmentAccessToken
+		}
+		return nil, fmt.Errorf("failed to resolve environment by access token: %w", err)
+	}
+
+	return &env, nil
 }
 
 func (s *EnvironmentService) GetEnabledRegistryCredentials(ctx context.Context) ([]containerregistry.Credential, error) {
@@ -809,26 +989,47 @@ func (s *EnvironmentService) SyncRegistriesToEnvironment(ctx context.Context, en
 
 	slog.InfoContext(ctx, "Found registries to sync", "count", len(registries))
 
-	// Prepare sync items with decrypted tokens
+	// Prepare sync items with decrypted credentials
 	syncItems := make([]containerregistry.Sync, 0, len(registries))
 	for _, reg := range registries {
-		decryptedToken, err := crypto.Decrypt(reg.Token)
-		if err != nil {
-			slog.WarnContext(ctx, "Failed to decrypt registry token for sync", "registryID", reg.ID, "registryURL", reg.URL, "error", err.Error())
-			continue
+		registryType, typeErr := normalizeRegistryTypeInternal(reg.RegistryType)
+		if typeErr != nil {
+			return fmt.Errorf("normalize registry type for sync %s: %w", reg.ID, typeErr)
 		}
 
-		syncItems = append(syncItems, containerregistry.Sync{
-			ID:          reg.ID,
-			URL:         reg.URL,
-			Username:    reg.Username,
-			Token:       decryptedToken,
-			Description: reg.Description,
-			Insecure:    reg.Insecure,
-			Enabled:     reg.Enabled,
-			CreatedAt:   reg.CreatedAt,
-			UpdatedAt:   reg.UpdatedAt,
-		})
+		syncItem := containerregistry.Sync{
+			ID:           reg.ID,
+			URL:          reg.URL,
+			Description:  reg.Description,
+			Insecure:     reg.Insecure,
+			Enabled:      reg.Enabled,
+			RegistryType: registryType,
+			CreatedAt:    reg.CreatedAt,
+			UpdatedAt:    reg.UpdatedAt,
+		}
+
+		if registryType == registryTypeECR {
+			decryptedSecret, err := crypto.Decrypt(reg.AWSSecretAccessKey)
+			if err != nil {
+				slog.WarnContext(ctx, "Failed to decrypt ECR secret for sync", "registryID", reg.ID, "registryURL", reg.URL, "error", err.Error())
+				continue
+			}
+
+			syncItem.AWSAccessKeyID = reg.AWSAccessKeyID
+			syncItem.AWSSecretAccessKey = decryptedSecret
+			syncItem.AWSRegion = reg.AWSRegion
+		} else {
+			decryptedToken, err := crypto.Decrypt(reg.Token)
+			if err != nil {
+				slog.WarnContext(ctx, "Failed to decrypt registry token for sync", "registryID", reg.ID, "registryURL", reg.URL, "error", err.Error())
+				continue
+			}
+
+			syncItem.Username = reg.Username
+			syncItem.Token = decryptedToken
+		}
+
+		syncItems = append(syncItems, syncItem)
 	}
 
 	// Prepare the sync request
@@ -1046,7 +1247,6 @@ func (s *EnvironmentService) ProxyRequest(ctx context.Context, envID string, met
 		headers["X-Arcane-Agent-Token"] = *environment.AccessToken
 		headers["X-API-Key"] = *environment.AccessToken
 	}
-
 	// Use edge-aware client that routes through tunnel for edge environments
 	resp, err := edge.DoEdgeAwareRequest(proxyCtx, envID, environment.IsEdge, method, targetURL, path, headers, body)
 	if err != nil {

@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
-	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -19,6 +19,21 @@ const (
 type SettingVariable struct {
 	Key   string `gorm:"primaryKey"`
 	Value string
+}
+
+type settingFieldMeta struct {
+	index       int
+	key         string
+	attrs       string
+	isPublic    bool
+	isSensitive bool
+	isLocal     bool
+}
+
+var settingsFieldCache struct {
+	once    sync.Once
+	ordered []settingFieldMeta
+	byKey   map[string]settingFieldMeta
 }
 
 // IsTrue returns true if the value is a truthy string
@@ -44,14 +59,17 @@ func (s SettingVariable) AsDurationSeconds() time.Duration {
 
 type Settings struct {
 	// General category
-	ProjectsDirectory         SettingVariable `key:"projectsDirectory,envOverride" meta:"label=Projects Directory;type=text;keywords=projects,directory,path,folder,location,storage,files,compose,docker-compose;category=internal;description=Configure where project files are stored"`
-	DiskUsagePath             SettingVariable `key:"diskUsagePath" meta:"label=Disk Usage Path;type=text;keywords=disk,usage,path,storage,folder,files;category=general;description=Path used for disk usage calculations"`
-	BaseServerURL             SettingVariable `key:"baseServerUrl" meta:"label=Base Server URL;type=text;keywords=base,url,server,domain,host,endpoint,address,link;category=general;description=Set the base URL for the application"`
-	EnableGravatar            SettingVariable `key:"enableGravatar" meta:"label=Enable Gravatar;type=boolean;keywords=gravatar,avatar,profile,picture,image,user,photo;category=general;description=Enable Gravatar profile pictures for users"`
-	DefaultShell              SettingVariable `key:"defaultShell" meta:"label=Default Shell;type=text;keywords=shell,default,shellpath,path,login;category=general;description=Default shell to use for commands"`
-	EnvironmentHealthInterval SettingVariable `key:"environmentHealthInterval" meta:"label=Environment Health Check Interval;type=cron;keywords=environment,health,check,interval,frequency,heartbeat,status,monitoring,uptime,jobs,schedule;description=How often to check environment connectivity (cron expression)" catmeta:"id=jobschedule;title=Job Schedule;icon=jobs;url=/settings/jobs;description=Configure how often Arcane background jobs run"`
-	AccentColor               SettingVariable `key:"accentColor,public,local" meta:"label=Accent Color;type=text;keywords=color,accent,theme,css,appearance,ui;category=general;description=Primary accent color for UI"`
-	OledMode                  SettingVariable `key:"oledMode,public,local" meta:"label=OLED Mode;type=boolean;keywords=oled,dark,theme,black,amoled,appearance,display;category=general;description=Use true-black backgrounds for OLED displays (only active in dark mode)"`
+	ProjectsDirectory          SettingVariable `key:"projectsDirectory,envOverride" meta:"label=Projects Directory;type=text;keywords=projects,directory,path,folder,location,storage,files,compose,docker-compose;category=internal;description=Configure where project files are stored"`
+	FollowProjectSymlinks      SettingVariable `key:"followProjectSymlinks,envOverride" meta:"label=Follow Project Symlinks;type=boolean;keywords=projects,symlink,symlinks,symbolic links,compose,directory,discovery;category=general;description=Treat symlinked child directories inside the projects directory as Docker Compose projects"`
+	SwarmStackSourcesDirectory SettingVariable `key:"swarmStackSourcesDirectory,envOverride" meta:"label=Swarm Stack Sources Directory;type=text;keywords=swarm,stacks,stack,source,sources,directory,path,folder,location,storage,compose,env;category=internal;description=Configure where swarm stack source files are stored"`
+	DiskUsagePath              SettingVariable `key:"diskUsagePath" meta:"label=Disk Usage Path;type=text;keywords=disk,usage,path,storage,folder,files;category=general;description=Path used for disk usage calculations"`
+	BaseServerURL              SettingVariable `key:"baseServerUrl" meta:"label=Base Server URL;type=text;keywords=base,url,server,domain,host,endpoint,address,link;category=general;description=Set the base URL for the application"`
+	EnableGravatar             SettingVariable `key:"enableGravatar" meta:"label=Enable Gravatar;type=boolean;keywords=gravatar,avatar,profile,picture,image,user,photo;category=general;description=Enable Gravatar profile pictures for users"`
+	DefaultShell               SettingVariable `key:"defaultShell" meta:"label=Default Shell;type=text;keywords=shell,default,shellpath,path,login;category=general;description=Default shell to use for commands"`
+	EnvironmentHealthInterval  SettingVariable `key:"environmentHealthInterval" meta:"label=Environment Health Check Interval;type=cron;keywords=environment,health,check,interval,frequency,heartbeat,status,monitoring,uptime,jobs,schedule;description=How often to check environment connectivity (cron expression)" catmeta:"id=jobschedule;title=Job Schedule;icon=jobs;url=/settings/jobs;description=Configure how often Arcane background jobs run"`
+	ApplicationTheme           SettingVariable `key:"applicationTheme,public,local" meta:"label=Application Theme;type=select;keywords=theme,appearance,style,visual,palette,background,interface,ui;category=appearance;description=Choose the overall visual theme for the application"`
+	AccentColor                SettingVariable `key:"accentColor,public,local" meta:"label=Accent Color;type=text;keywords=color,accent,theme,css,appearance,ui;category=general;description=Primary accent color for UI"`
+	OledMode                   SettingVariable `key:"oledMode,public,local" meta:"label=OLED Mode;type=boolean;keywords=oled,dark,theme,black,amoled,appearance,display;category=general;description=Use true-black backgrounds for OLED displays (only active in dark mode)"`
 
 	// Docker category
 	AutoUpdate                   SettingVariable `key:"autoUpdate" meta:"label=Auto Update;type=boolean;keywords=auto,update,automatic,upgrade,refresh,restart,deploy;category=internal;description=Automatically update containers when new images are available"`
@@ -77,6 +95,9 @@ type Settings struct {
 	AutoHealMaxRestarts          SettingVariable `key:"autoHealMaxRestarts" meta:"label=Auto Heal Max Restarts;type=number;keywords=auto,heal,max,restarts,limit,loop,protection;category=internal;description=Maximum auto-heal restarts per container within the restart window (default: 5)"`
 	AutoHealRestartWindow        SettingVariable `key:"autoHealRestartWindow" meta:"label=Auto Heal Restart Window;type=number;keywords=auto,heal,restart,window,minutes,cooldown,protection;category=internal;description=Time window in minutes for counting auto-heal restarts (default: 30)"`
 	MaxImageUploadSize           SettingVariable `key:"maxImageUploadSize" meta:"label=Max Image Upload Size;type=number;keywords=upload,size,limit,maximum,image,tar,file,megabytes,mb,storage;category=internal;description=Maximum size in MB for image archive uploads (default: 500)"`
+	GitSyncMaxFiles              SettingVariable `key:"gitSyncMaxFiles,envOverride" meta:"label=Git Sync Max Files;type=number;keywords=git,sync,files,limit,repository,compose,gitops;category=general;description=Maximum number of repository files copied during a Git sync. Set 0 to disable the environment cap (default: 500)"`
+	GitSyncMaxTotalSizeMb        SettingVariable `key:"gitSyncMaxTotalSizeMb,envOverride" meta:"label=Git Sync Max Total Size (MB);type=number;keywords=git,sync,size,limit,repository,compose,gitops,mb;category=general;description=Maximum combined size in MB for files copied during a Git sync. Set 0 to disable the environment cap (default: 50)"`
+	GitSyncMaxBinarySizeMb       SettingVariable `key:"gitSyncMaxBinarySizeMb,envOverride" meta:"label=Git Sync Max Binary Size (MB);type=number;keywords=git,sync,binary,size,limit,repository,compose,gitops,mb;category=general;description=Maximum size in MB for a single binary file copied during a Git sync. Set 0 to disable the environment cap (default: 10)"`
 	DockerHost                   SettingVariable `key:"dockerHost,public,envOverride" meta:"label=Docker Host;type=text;keywords=docker,host,daemon,socket,unix,remote;category=internal;description=URI for Docker daemon"`
 	BuildProvider                SettingVariable `key:"buildProvider,envOverride" meta:"label=Build Provider;type=select;keywords=build,buildkit,depot,provider,remote,local;category=build;description=Default build provider (local or depot)" catmeta:"id=build;title=Build;icon=code;url=/settings/builds;description=Configure BuildKit and Depot build settings"`
 	BuildsDirectory              SettingVariable `key:"buildsDirectory,envOverride" meta:"label=Builds Directory;type=text;keywords=builds,directory,path,workspace,context;category=build;description=Root directory for manual build workspaces"`
@@ -84,38 +105,41 @@ type Settings struct {
 	DepotProjectId               SettingVariable `key:"depotProjectId,envOverride" meta:"label=Depot Project ID;type=text;keywords=depot,project,id,build,provider;category=build;description=Depot project identifier"`
 	DepotToken                   SettingVariable `key:"depotToken,envOverride,sensitive" meta:"label=Depot Token;type=password;keywords=depot,token,api,secret,build,provider;category=build;description=Depot API token"`
 
-	// Security category
-	AuthLocalEnabled                SettingVariable `key:"authLocalEnabled,public" meta:"label=Local Authentication;type=boolean;keywords=local,auth,authentication,username,password,login,credentials;category=security;description=Enable local username/password authentication" catmeta:"id=security;title=Security;icon=shield;url=/settings/security;description=Manage authentication and security settings"`
-	AuthSessionTimeout              SettingVariable `key:"authSessionTimeout" meta:"label=Session Timeout;type=number;keywords=session,timeout,expire,duration,lifetime,minutes,logout;category=security;description=How long user sessions remain active"`
-	AuthPasswordPolicy              SettingVariable `key:"authPasswordPolicy" meta:"label=Password Policy;type=select;keywords=password,policy,strength,complexity,requirements,security,rules;category=security;description=Set password strength requirements"`
-	VulnerabilityScanEnabled        SettingVariable `key:"vulnerabilityScanEnabled" meta:"label=Scheduled Vulnerability Scan;type=boolean;keywords=vulnerability,scan,security,trivy,schedule,automatic,cve;category=security;description=Enable scheduled vulnerability scanning of all Docker images"`
+	// Authentication and security categories
+	AuthLocalEnabled                SettingVariable `key:"authLocalEnabled,public" meta:"label=Local Authentication;type=boolean;keywords=local,auth,authentication,username,password,login,credentials;category=authentication;description=Enable local username/password authentication" catmeta:"id=authentication;title=Authentication;icon=lock;url=/settings/authentication;description=Manage authentication providers, password policy, and session behavior"`
+	AuthSessionTimeout              SettingVariable `key:"authSessionTimeout" meta:"label=Session Timeout;type=number;keywords=session,timeout,expire,duration,lifetime,minutes,logout;category=authentication;description=How long user sessions remain active"`
+	AuthPasswordPolicy              SettingVariable `key:"authPasswordPolicy" meta:"label=Password Policy;type=select;keywords=password,policy,strength,complexity,requirements,security,rules;category=authentication;description=Set password strength requirements"`
+	VulnerabilityScanEnabled        SettingVariable `key:"vulnerabilityScanEnabled" meta:"label=Scheduled Vulnerability Scan;type=boolean;keywords=vulnerability,scan,security,trivy,schedule,automatic,cve;category=security;description=Enable scheduled vulnerability scanning of all Docker images" catmeta:"id=security;title=Security;icon=shield;url=/settings/security;description=Configure vulnerability scanning and runtime security settings"`
 	VulnerabilityScanInterval       SettingVariable `key:"vulnerabilityScanInterval" meta:"label=Vulnerability Scan Interval;type=cron;keywords=vulnerability,scan,interval,schedule,frequency,trivy,cve;category=security;description=How often to run scheduled vulnerability scans (cron expression)"`
-	TrivyImage                      SettingVariable `key:"trivyImage,envOverride" meta:"label=Trivy Image;type=text;keywords=trivy,scanner,vulnerability,security,image;category=security;description=Override the Trivy image used for vulnerability scans"`
-	TrivyNetwork                    SettingVariable `key:"trivyNetwork,envOverride" meta:"label=Trivy Network;type=text;keywords=trivy,network,mode,bridge,host,none,scanner,vulnerability,security;category=security;description=Docker network mode/network name used for Trivy scan containers (default: bridge)"`
+	TrivyImage                      SettingVariable `key:"trivyImage" meta:"label=Trivy Image;type=text;keywords=trivy,scanner,vulnerability,security,image;category=security;description=Override the Trivy image used for vulnerability scans"`
+	TrivyNetwork                    SettingVariable `key:"trivyNetwork,envOverride" meta:"label=Trivy Network;type=text;keywords=trivy,network,mode,bridge,host,none,scanner,vulnerability,security;category=security;description=Docker network mode/network name used for Trivy scan containers. Leave empty to inherit Arcane's network automatically."`
+	TrivySecurityOpts               SettingVariable `key:"trivySecurityOpts,envOverride" meta:"label=Trivy Security Options;type=textarea;keywords=trivy,security,opt,security_opt,selinux,labels,apparmor,scanner;category=security;description=Docker security options applied to Trivy scan containers. Use commas or new lines to separate entries (for example: label=disable)"`
+	TrivyPrivileged                 SettingVariable `key:"trivyPrivileged,envOverride" meta:"label=Trivy Privileged;type=boolean;keywords=trivy,privileged,security,selinux,scanner;category=security;description=Run Trivy scan containers in privileged mode when required by the host security policy"`
+	TrivyPreserveCacheOnVolumePrune SettingVariable `key:"trivyPreserveCacheOnVolumePrune,envOverride" meta:"label=Preserve Trivy Cache On Volume Prune;type=boolean;keywords=trivy,cache,volume,prune,preserve,cleanup,security;category=security;description=Keep the Trivy cache volume when unused volumes are pruned manually or on a schedule"`
 	TrivyResourceLimitsEnabled      SettingVariable `key:"trivyResourceLimitsEnabled,envOverride" meta:"label=Trivy Resource Limits;type=boolean;keywords=trivy,resources,limits,cpu,memory,ram,security,scan;category=security;description=Enable CPU and memory limits for Trivy scan containers"`
 	TrivyCpuLimit                   SettingVariable `key:"trivyCpuLimit,envOverride" meta:"label=Trivy CPU Limit (cores);type=number;keywords=trivy,cpu,cores,limit,scanner,resources;category=security;description=Maximum CPU cores for Trivy scan containers (supports decimals, e.g. 1.5). Set 0 to disable CPU limit"`
 	TrivyMemoryLimitMb              SettingVariable `key:"trivyMemoryLimitMb,envOverride" meta:"label=Trivy Memory Limit (MB);type=number;keywords=trivy,memory,ram,mb,limit,scanner,resources;category=security;description=Maximum memory for Trivy scan containers in MB. Set 0 to disable memory limit"`
 	TrivyConcurrentScanContainers   SettingVariable `key:"trivyConcurrentScanContainers,envOverride" meta:"label=Trivy Concurrent Scan Containers;type=number;keywords=trivy,concurrent,scan,containers,parallel,workers,limit,security;category=security;description=Maximum number of concurrent Trivy scan containers for manual and scheduled scans. Minimum 1"`
 	TrivyConfig                     SettingVariable `key:"trivyConfig" meta:"label=Trivy Config (YAML);type=textarea;keywords=trivy,config,yaml,configuration,scanner,settings;category=security;description=Trivy configuration file content in YAML format"`
 	TrivyIgnore                     SettingVariable `key:"trivyIgnore" meta:"label=.trivyignore;type=textarea;keywords=trivy,ignore,ignorefile,vulnerabilities,exceptions,exclusions;category=security;description=Trivy ignore file content - one vulnerability ID per line"`
-	AuthOidcConfig                  SettingVariable `key:"authOidcConfig,sensitive,deprecated" meta:"label=OIDC Config;type=text;keywords=oidc,config,client,id,issuer,secret,oauth;category=security;description=OIDC provider configuration (deprecated - use individual fields)"`
-	OidcEnabled                     SettingVariable `key:"oidcEnabled,public,envOverride" meta:"label=OIDC Authentication;type=boolean;keywords=oidc,openid,connect,sso,oauth,external,provider,federation;category=security;description=Enable OpenID Connect (OIDC) authentication"`
-	OidcClientId                    SettingVariable `key:"oidcClientId,public,envOverride" meta:"label=OIDC Client ID;type=text;keywords=oidc,client,id,oauth,openid;category=security;description=OIDC provider client ID"`
-	OidcClientSecret                SettingVariable `key:"oidcClientSecret,sensitive,envOverride" meta:"label=OIDC Client Secret;type=password;keywords=oidc,client,secret,oauth,openid;category=security;description=OIDC provider client secret"`
-	OidcIssuerUrl                   SettingVariable `key:"oidcIssuerUrl,public,envOverride" meta:"label=OIDC Issuer URL;type=text;keywords=oidc,issuer,url,oauth,openid,provider;category=security;description=OIDC provider issuer URL"`
-	OidcAuthorizationEndpoint       SettingVariable `key:"oidcAuthorizationEndpoint,envOverride" meta:"label=OIDC Authorization Endpoint;type=text;keywords=oidc,authorization,endpoint,oauth,openid;category=security;description=Override OIDC authorization endpoint"`
-	OidcTokenEndpoint               SettingVariable `key:"oidcTokenEndpoint,envOverride" meta:"label=OIDC Token Endpoint;type=text;keywords=oidc,token,endpoint,oauth,openid;category=security;description=Override OIDC token endpoint"`
-	OidcUserinfoEndpoint            SettingVariable `key:"oidcUserinfoEndpoint,envOverride" meta:"label=OIDC Userinfo Endpoint;type=text;keywords=oidc,userinfo,endpoint,oauth,openid;category=security;description=Override OIDC userinfo endpoint"`
-	OidcJwksEndpoint                SettingVariable `key:"oidcJwksEndpoint,envOverride" meta:"label=OIDC JWKS Endpoint;type=text;keywords=oidc,jwks,keys,endpoint,oauth,openid;category=security;description=Override OIDC JWKS endpoint"`
-	OidcDeviceAuthorizationEndpoint SettingVariable `key:"oidcDeviceAuthorizationEndpoint,envOverride" meta:"label=OIDC Device Authorization Endpoint;type=text;keywords=oidc,device,authorization,endpoint,oauth,openid,cli;category=security;description=Override OIDC device authorization endpoint for CLI authentication"`
-	OidcScopes                      SettingVariable `key:"oidcScopes,public,envOverride" meta:"label=OIDC Scopes;type=text;keywords=oidc,scopes,oauth,openid,permissions;category=security;description=OIDC scopes to request"`
-	OidcAdminClaim                  SettingVariable `key:"oidcAdminClaim,public,envOverride" meta:"label=OIDC Admin Claim;type=text;keywords=oidc,admin,claim,role,group;category=security;description=Claim name for admin role mapping"`
-	OidcAdminValue                  SettingVariable `key:"oidcAdminValue,public,envOverride" meta:"label=OIDC Admin Value;type=text;keywords=oidc,admin,value,role,group;category=security;description=Claim value that grants admin access"`
-	OidcSkipTlsVerify               SettingVariable `key:"oidcSkipTlsVerify,public,envOverride" meta:"label=OIDC Skip TLS Verify;type=boolean;keywords=oidc,tls,verify,skip,insecure;category=security;description=Skip TLS verification for OIDC provider"`
-	OidcAutoRedirectToProvider      SettingVariable `key:"oidcAutoRedirectToProvider,public,envOverride" meta:"label=OIDC Auto Redirect;type=boolean;keywords=oidc,auto,redirect,automatic,login,provider,sso;category=security;description=Automatically redirect to OIDC provider on login page"`
-	OidcMergeAccounts               SettingVariable `key:"oidcMergeAccounts,public,envOverride" meta:"label=OIDC Account Merging;type=boolean;keywords=oidc,merge,link,accounts,email,match,existing,users,combine;category=security;description=Allow OIDC logins to merge with existing accounts by email"`
-	OidcProviderName                SettingVariable `key:"oidcProviderName,public,envOverride" meta:"label=OIDC Provider Name;type=text;keywords=oidc,provider,name,display,label,sso;category=security;description=Custom name for the OIDC provider (e.g., Authentik, Keycloak)"`
-	OidcProviderLogoUrl             SettingVariable `key:"oidcProviderLogoUrl,public,envOverride" meta:"label=OIDC Provider Logo URL;type=text;keywords=oidc,provider,logo,url,image,icon,sso;category=security;description=Custom logo URL for the OIDC provider"`
+	AuthOidcConfig                  SettingVariable `key:"authOidcConfig,sensitive,deprecated" meta:"label=OIDC Config;type=text;keywords=oidc,config,client,id,issuer,secret,oauth;category=authentication;description=OIDC provider configuration (deprecated - use individual fields)"`
+	OidcEnabled                     SettingVariable `key:"oidcEnabled,public,envOverride" meta:"label=OIDC Authentication;type=boolean;keywords=oidc,openid,connect,sso,oauth,external,provider,federation;category=authentication;description=Enable OpenID Connect (OIDC) authentication"`
+	OidcClientId                    SettingVariable `key:"oidcClientId,public,envOverride" meta:"label=OIDC Client ID;type=text;keywords=oidc,client,id,oauth,openid;category=authentication;description=OIDC provider client ID"`
+	OidcClientSecret                SettingVariable `key:"oidcClientSecret,sensitive,envOverride" meta:"label=OIDC Client Secret;type=password;keywords=oidc,client,secret,oauth,openid;category=authentication;description=OIDC provider client secret"`
+	OidcIssuerUrl                   SettingVariable `key:"oidcIssuerUrl,public,envOverride" meta:"label=OIDC Issuer URL;type=text;keywords=oidc,issuer,url,oauth,openid,provider;category=authentication;description=OIDC provider issuer URL"`
+	OidcAuthorizationEndpoint       SettingVariable `key:"oidcAuthorizationEndpoint,envOverride" meta:"label=OIDC Authorization Endpoint;type=text;keywords=oidc,authorization,endpoint,oauth,openid;category=authentication;description=Override OIDC authorization endpoint"`
+	OidcTokenEndpoint               SettingVariable `key:"oidcTokenEndpoint,envOverride" meta:"label=OIDC Token Endpoint;type=text;keywords=oidc,token,endpoint,oauth,openid;category=authentication;description=Override OIDC token endpoint"`
+	OidcUserinfoEndpoint            SettingVariable `key:"oidcUserinfoEndpoint,envOverride" meta:"label=OIDC Userinfo Endpoint;type=text;keywords=oidc,userinfo,endpoint,oauth,openid;category=authentication;description=Override OIDC userinfo endpoint"`
+	OidcJwksEndpoint                SettingVariable `key:"oidcJwksEndpoint,envOverride" meta:"label=OIDC JWKS Endpoint;type=text;keywords=oidc,jwks,keys,endpoint,oauth,openid;category=authentication;description=Override OIDC JWKS endpoint"`
+	OidcDeviceAuthorizationEndpoint SettingVariable `key:"oidcDeviceAuthorizationEndpoint,envOverride" meta:"label=OIDC Device Authorization Endpoint;type=text;keywords=oidc,device,authorization,endpoint,oauth,openid,cli;category=authentication;description=Override OIDC device authorization endpoint for CLI authentication"`
+	OidcScopes                      SettingVariable `key:"oidcScopes,public,envOverride" meta:"label=OIDC Scopes;type=text;keywords=oidc,scopes,oauth,openid,permissions;category=authentication;description=OIDC scopes to request"`
+	OidcAdminClaim                  SettingVariable `key:"oidcAdminClaim,public,envOverride" meta:"label=OIDC Admin Claim;type=text;keywords=oidc,admin,claim,role,group;category=authentication;description=Claim name for admin role mapping"`
+	OidcAdminValue                  SettingVariable `key:"oidcAdminValue,public,envOverride" meta:"label=OIDC Admin Value;type=text;keywords=oidc,admin,value,role,group;category=authentication;description=Claim value that grants admin access"`
+	OidcSkipTlsVerify               SettingVariable `key:"oidcSkipTlsVerify,public,envOverride" meta:"label=OIDC Skip TLS Verify;type=boolean;keywords=oidc,tls,verify,skip,insecure;category=authentication;description=Skip TLS verification for OIDC provider"`
+	OidcAutoRedirectToProvider      SettingVariable `key:"oidcAutoRedirectToProvider,public,envOverride" meta:"label=OIDC Auto Redirect;type=boolean;keywords=oidc,auto,redirect,automatic,login,provider,sso;category=authentication;description=Automatically redirect to OIDC provider on login page"`
+	OidcMergeAccounts               SettingVariable `key:"oidcMergeAccounts,public,envOverride" meta:"label=OIDC Account Merging;type=boolean;keywords=oidc,merge,link,accounts,email,match,existing,users,combine;category=authentication;description=Allow OIDC logins to merge with existing accounts by email"`
+	OidcProviderName                SettingVariable `key:"oidcProviderName,public,envOverride" meta:"label=OIDC Provider Name;type=text;keywords=oidc,provider,name,display,label,sso;category=authentication;description=Custom name for the OIDC provider (e.g., Authentik, Keycloak)"`
+	OidcProviderLogoUrl             SettingVariable `key:"oidcProviderLogoUrl,public,envOverride" meta:"label=OIDC Provider Logo URL;type=text;keywords=oidc,provider,logo,url,image,icon,sso;category=authentication;description=Custom logo URL for the OIDC provider"`
 
 	// Appearance category
 	MobileNavigationMode       SettingVariable `key:"mobileNavigationMode,public,local" meta:"label=Mobile Navigation Mode;type=select;keywords=mode,style,type,floating,docked,position,layout,design,appearance,bottom;category=appearance;description=Choose between floating or docked navigation on mobile" catmeta:"id=appearance;title=Appearance;icon=appearance;url=/settings/appearance;description=Customize navigation, theme, and interface behavior"`
@@ -135,6 +159,9 @@ type Settings struct {
 	// API Keys category (admin management page - no actual settings)
 	ApiKeysCategoryPlaceholder SettingVariable `key:"apiKeysCategory,internal" meta:"label=API Keys;type=internal;keywords=api,keys,tokens,authentication,access,programmatic,integration;category=apikeys;description=Manage API keys for programmatic access" catmeta:"id=apikeys;title=API Keys;icon=apikey;url=/settings/api-keys;description=Create and manage API keys for programmatic access to Arcane"`
 
+	// Webhooks category (management page - no actual settings)
+	WebhooksCategoryPlaceholder SettingVariable `key:"webhooksCategory,internal" meta:"label=Webhooks;type=internal;keywords=webhooks,trigger,inbound,http,container,stack,gitops,updater,automation,ci,cd;category=webhooks;description=Manage inbound webhooks to trigger updates" catmeta:"id=webhooks;title=Webhooks;icon=globe;url=/settings/webhooks;description=Create and manage inbound webhooks to trigger container, stack, or GitOps updates"`
+
 	// Timeout category
 	DockerAPITimeout       SettingVariable `key:"dockerApiTimeout,envOverride" meta:"label=Docker API Timeout;type=number;keywords=docker,api,timeout,seconds,list,operations;category=timeouts;description=Timeout for Docker list operations in seconds (default: 30)" catmeta:"id=timeouts;title=Timeouts;icon=clock;url=/settings/timeouts;description=Configure operation timeouts for slow networks or hardware"`
 	DockerImagePullTimeout SettingVariable `key:"dockerImagePullTimeout,envOverride" meta:"label=Docker Image Pull Timeout;type=number;keywords=docker,image,pull,timeout,seconds,download;category=timeouts;description=Timeout for Docker image pulls in seconds (default: 600 = 10 minutes)"`
@@ -149,29 +176,62 @@ func (SettingVariable) TableName() string {
 	return "settings"
 }
 
-func (s *Settings) ToSettingVariableSlice(showAll bool, redactSensitiveValues bool) []SettingVariable {
-	cfgValue := reflect.ValueOf(s).Elem()
-	cfgType := cfgValue.Type()
+func buildSettingsFieldCacheInternal() {
+	rt := reflect.TypeFor[Settings]()
+	ordered := make([]settingFieldMeta, 0, rt.NumField())
+	byKey := make(map[string]settingFieldMeta, rt.NumField())
 
-	var res []SettingVariable
-
-	for i := 0; i < cfgType.NumField(); i++ {
-		field := cfgType.Field(i)
-
+	for i := 0; i < rt.NumField(); i++ {
+		field := rt.Field(i)
 		key, attrs, _ := strings.Cut(field.Tag.Get("key"), ",")
 		if key == "" {
 			continue
 		}
 
-		if !showAll && !strings.Contains(attrs, "public") {
+		meta := settingFieldMeta{
+			index:       i,
+			key:         key,
+			attrs:       attrs,
+			isPublic:    strings.Contains(attrs, "public"),
+			isSensitive: strings.Contains(attrs, "sensitive"),
+			isLocal:     strings.Contains(attrs, "local"),
+		}
+		ordered = append(ordered, meta)
+		byKey[key] = meta
+	}
+
+	settingsFieldCache.ordered = ordered
+	settingsFieldCache.byKey = byKey
+}
+
+func getSettingsFieldCacheInternal() ([]settingFieldMeta, map[string]settingFieldMeta) {
+	settingsFieldCache.once.Do(buildSettingsFieldCacheInternal)
+	return settingsFieldCache.ordered, settingsFieldCache.byKey
+}
+
+func (s *Settings) Clone() *Settings {
+	if s == nil {
+		return &Settings{}
+	}
+
+	return new(*s)
+}
+
+func (s *Settings) ToSettingVariableSlice(showAll bool, redactSensitiveValues bool) []SettingVariable {
+	cfgValue := reflect.ValueOf(s).Elem()
+	fields, _ := getSettingsFieldCacheInternal()
+
+	res := make([]SettingVariable, 0, len(fields))
+	for _, field := range fields {
+		if !showAll && !field.isPublic {
 			continue
 		}
 
-		value := cfgValue.Field(i).FieldByName("Value").String()
-		value = redactSettingValue(key, value, attrs, redactSensitiveValues)
+		value := cfgValue.Field(field.index).FieldByName("Value").String()
+		value = redactSettingValue(field.key, value, field.attrs, redactSensitiveValues)
 
 		settingVariable := SettingVariable{
-			Key:   key,
+			Key:   field.key,
 			Value: value,
 		}
 		res = append(res, settingVariable)
@@ -182,65 +242,47 @@ func (s *Settings) ToSettingVariableSlice(showAll bool, redactSensitiveValues bo
 
 func (s *Settings) FieldByKey(key string) (defaultValue string, isPublic bool, isSensitive bool, err error) {
 	rv := reflect.ValueOf(s).Elem()
-	rt := rv.Type()
+	_, byKey := getSettingsFieldCacheInternal()
 
-	for i := 0; i < rt.NumField(); i++ {
-		tagValue := strings.Split(rt.Field(i).Tag.Get("key"), ",")
-		keyFromTag := tagValue[0]
-		isPublic = slices.Contains(tagValue, "public")
-		isSensitive = slices.Contains(tagValue, "sensitive")
-
-		if keyFromTag != key {
-			continue
-		}
-
-		valueField := rv.Field(i).FieldByName("Value")
-		return valueField.String(), isPublic, isSensitive, nil
+	field, ok := byKey[key]
+	if !ok {
+		return "", false, false, SettingKeyNotFoundError{field: key}
 	}
 
-	return "", false, false, SettingKeyNotFoundError{field: key}
+	valueField := rv.Field(field.index).FieldByName("Value")
+	return valueField.String(), field.isPublic, field.isSensitive, nil
 }
 
 func (s *Settings) IsLocalSetting(key string) bool {
-	rt := reflect.TypeFor[Settings]()
-
-	for field := range rt.Fields() {
-		tagValue := strings.Split(field.Tag.Get("key"), ",")
-		keyFromTag := tagValue[0]
-
-		if keyFromTag == key {
-			return slices.Contains(tagValue, "local")
-		}
+	_, byKey := getSettingsFieldCacheInternal()
+	field, ok := byKey[key]
+	if !ok {
+		return false
 	}
 
-	return false
+	return field.isLocal
 }
 
 func (s *Settings) UpdateField(key string, value string, noSensitive bool) error {
 	rv := reflect.ValueOf(s).Elem()
-	rt := rv.Type()
+	_, byKey := getSettingsFieldCacheInternal()
 
-	for i := 0; i < rt.NumField(); i++ {
-		tagValue, attrs, _ := strings.Cut(rt.Field(i).Tag.Get("key"), ",")
-		if tagValue != key {
-			continue
-		}
-
-		// If the field is sensitive and noSensitive is true, we skip that
-		if noSensitive && strings.Contains(attrs, "sensitive") {
-			return SettingSensitiveForbiddenError{field: key}
-		}
-
-		valueField := rv.Field(i).FieldByName("Value")
-		if !valueField.CanSet() {
-			return fmt.Errorf("field Value in SettingVariable is not settable for config key '%s'", key)
-		}
-
-		valueField.SetString(value)
-		return nil
+	field, ok := byKey[key]
+	if !ok {
+		return SettingKeyNotFoundError{field: key}
 	}
 
-	return SettingKeyNotFoundError{field: key}
+	if noSensitive && field.isSensitive {
+		return SettingSensitiveForbiddenError{field: key}
+	}
+
+	valueField := rv.Field(field.index).FieldByName("Value")
+	if !valueField.CanSet() {
+		return fmt.Errorf("field Value in SettingVariable is not settable for config key '%s'", key)
+	}
+
+	valueField.SetString(value)
+	return nil
 }
 
 // helper keeps redaction logic in one place; behavior unchanged

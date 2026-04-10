@@ -19,12 +19,12 @@
 		'flex-shrink-0 rounded-full transition-all duration-200 ease-out active:scale-95',
 		'flex items-center justify-center',
 		// Keep a large tap target but allow a slightly smaller footprint on the smallest screens.
-		'size-[52px] sm:size-14'
+		showLabels ? 'size-[52px] sm:size-14' : 'size-12 sm:size-[52px]'
 	)}
 	aria-label={m.mobile_navigation()}
 	{onclick}
 	data-testid="mobile-nav-open"
 >
-	<MobileNavDrawerIcon class="size-8 sm:size-8.5" aria-hidden="true" />
+	<MobileNavDrawerIcon class={showLabels ? 'size-8 sm:size-8.5' : 'size-7.5 sm:size-8'} aria-hidden="true" />
 	<span class="sr-only">{m.mobile_navigation()}</span>
 </button>

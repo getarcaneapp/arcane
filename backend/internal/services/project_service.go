@@ -11,23 +11,24 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/compose-spec/compose-go/v2/dotenv"
 	"github.com/compose-spec/compose-go/v2/loader"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
+	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/internal/utils"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/docker"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/fs"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/pathmapper"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/timeouts"
+	dockerutil "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
 	libbuild "github.com/getarcaneapp/arcane/backend/pkg/libarcane/libbuild"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/timeouts"
+	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils/mapper"
 	"github.com/getarcaneapp/arcane/types"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
@@ -43,9 +44,13 @@ type ProjectService struct {
 	imageService    *ImageService
 	dockerService   *DockerClientService
 	buildService    *BuildService
+	config          *config.Config
+
+	composeNameCacheMu  sync.RWMutex
+	composeNameToProjID map[string]string
 }
 
-func NewProjectService(db *database.DB, settingsService *SettingsService, eventService *EventService, imageService *ImageService, dockerService *DockerClientService, buildService *BuildService) *ProjectService {
+func NewProjectService(db *database.DB, settingsService *SettingsService, eventService *EventService, imageService *ImageService, dockerService *DockerClientService, buildService *BuildService, cfg *config.Config) *ProjectService {
 	return &ProjectService{
 		db:              db,
 		settingsService: settingsService,
@@ -53,10 +58,11 @@ func NewProjectService(db *database.DB, settingsService *SettingsService, eventS
 		imageService:    imageService,
 		dockerService:   dockerService,
 		buildService:    buildService,
+		config:          cfg,
 	}
 }
 
-func (s *ProjectService) getPathMapper(ctx context.Context) (*pathmapper.PathMapper, error) {
+func (s *ProjectService) getPathMapper(ctx context.Context) (*projects.PathMapper, error) {
 	configuredPath := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
 
 	var containerDir, hostDir string
@@ -64,7 +70,7 @@ func (s *ProjectService) getPathMapper(ctx context.Context) (*pathmapper.PathMap
 	// Handle mapping format: "container_path:host_path"
 	if parts := strings.SplitN(configuredPath, ":", 2); len(parts) == 2 {
 		// Only treat as mapping if first part is absolute Linux path (not Windows drive)
-		if !pathmapper.IsWindowsDrivePath(configuredPath) && strings.HasPrefix(parts[0], "/") {
+		if !projects.IsWindowsDrivePath(configuredPath) && strings.HasPrefix(parts[0], "/") {
 			containerDir = parts[0]
 			hostDir = parts[1]
 		}
@@ -75,17 +81,17 @@ func (s *ProjectService) getPathMapper(ctx context.Context) (*pathmapper.PathMap
 	}
 
 	// Resolve container directory to absolute path
-	containerDirResolved, err := fs.GetProjectsDirectory(ctx, strings.TrimSpace(containerDir))
+	containerDirResolved, err := projects.GetProjectsDirectory(ctx, strings.TrimSpace(containerDir))
 	if err != nil {
 		slog.WarnContext(ctx, "unable to resolve container projects directory, using default", "error", err)
 		containerDirResolved = "/app/data/projects"
 	}
 
 	// If hostDir not obtained from mapping, attempt auto-discovery from Docker mounts
-	if hostDir == "" {
+	if hostDir == "" && s.dockerService != nil {
 		if dockerCli, derr := s.dockerService.GetClient(ctx); derr == nil {
 			absContainerDir, _ := filepath.Abs(containerDirResolved)
-			if discovery, aerr := docker.GetHostPathForContainerPath(ctx, dockerCli, absContainerDir); aerr == nil && discovery != "" {
+			if discovery, aerr := dockerutil.GetHostPathForContainerPath(ctx, dockerCli, absContainerDir); aerr == nil && discovery != "" {
 				hostDir = discovery
 				slog.DebugContext(ctx, "Auto-discovered host path for projects", "container", absContainerDir, "host", hostDir)
 			}
@@ -98,12 +104,50 @@ func (s *ProjectService) getPathMapper(ctx context.Context) (*pathmapper.PathMap
 		hostDirResolved = filepath.Clean(hostDirResolved)
 	}
 
-	pm := pathmapper.NewPathMapper(containerDirResolved, hostDirResolved)
+	pm := projects.NewPathMapper(containerDirResolved, hostDirResolved)
 	if !pm.IsNonMatchingMount() {
 		return nil, nil
 	}
 
 	return pm, nil
+}
+
+func (s *ProjectService) getProjectsDirectoryInternal(ctx context.Context) (string, error) {
+	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
+	projectsDir, err := projects.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
+	if err != nil {
+		return "", err
+	}
+
+	return filepath.Clean(projectsDir), nil
+}
+
+func (s *ProjectService) GetProjectRelativePath(ctx context.Context, projectPath string) string {
+	projectsDir, err := s.getProjectsDirectoryInternal(ctx)
+	if err != nil {
+		return ""
+	}
+
+	return s.getProjectRelativePathInternal(projectsDir, projectPath)
+}
+
+func (s *ProjectService) getProjectRelativePathInternal(projectsDir, projectPath string) string {
+	if strings.TrimSpace(projectsDir) == "" {
+		return ""
+	}
+
+	relativePath, err := filepath.Rel(projectsDir, filepath.Clean(projectPath))
+	if err != nil {
+		return ""
+	}
+	if relativePath == "." {
+		return ""
+	}
+	if relativePath == ".." || strings.HasPrefix(relativePath, ".."+string(os.PathSeparator)) {
+		return ""
+	}
+
+	return filepath.ToSlash(relativePath)
 }
 
 // Helpers
@@ -206,6 +250,96 @@ func normalizeComposeProjectName(name string) string {
 	return normalized
 }
 
+func (s *ProjectService) getCachedComposeProjectIDInternal(normalizedName string) (string, bool) {
+	if normalizedName == "" {
+		return "", false
+	}
+
+	s.composeNameCacheMu.RLock()
+	defer s.composeNameCacheMu.RUnlock()
+
+	if s.composeNameToProjID == nil {
+		return "", false
+	}
+
+	projectID, ok := s.composeNameToProjID[normalizedName]
+	return projectID, ok
+}
+
+func (s *ProjectService) cacheComposeProjectIDInternal(normalizedName, projectID string) {
+	if normalizedName == "" || projectID == "" {
+		return
+	}
+
+	s.composeNameCacheMu.Lock()
+	defer s.composeNameCacheMu.Unlock()
+
+	if s.composeNameToProjID == nil {
+		s.composeNameToProjID = make(map[string]string)
+	}
+	s.composeNameToProjID[normalizedName] = projectID
+}
+
+func (s *ProjectService) invalidateCachedComposeProjectIDInternal(normalizedName string) {
+	if normalizedName == "" {
+		return
+	}
+
+	s.composeNameCacheMu.Lock()
+	defer s.composeNameCacheMu.Unlock()
+
+	delete(s.composeNameToProjID, normalizedName)
+}
+
+func (s *ProjectService) lookupProjectByCachedComposeNameInternal(ctx context.Context, normalizedName string) (*models.Project, bool, error) {
+	projectID, ok := s.getCachedComposeProjectIDInternal(normalizedName)
+	if !ok {
+		return nil, false, nil
+	}
+
+	var project models.Project
+	if err := s.db.WithContext(ctx).Where("id = ?", projectID).First(&project).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			s.invalidateCachedComposeProjectIDInternal(normalizedName)
+			return nil, false, nil
+		}
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, false, fmt.Errorf("request canceled or timed out: %w", err)
+		}
+		return nil, false, fmt.Errorf("failed to get project by cached compose name: %w", err)
+	}
+	if normalizeComposeProjectName(project.Name) != normalizedName {
+		s.invalidateCachedComposeProjectIDInternal(normalizedName)
+		return nil, false, nil
+	}
+
+	return &project, true, nil
+}
+
+func (s *ProjectService) rebuildComposeNameCacheInternal(ctx context.Context) error {
+	var projects []models.Project
+	if err := s.db.WithContext(ctx).Select("id", "name").Find(&projects).Error; err != nil {
+		return err
+	}
+
+	cache := make(map[string]string, len(projects))
+	for i := range projects {
+		normalizedName := normalizeComposeProjectName(projects[i].Name)
+		if normalizedName == "" {
+			continue
+		}
+		if _, exists := cache[normalizedName]; !exists {
+			cache[normalizedName] = projects[i].ID
+		}
+	}
+
+	s.composeNameCacheMu.Lock()
+	s.composeNameToProjID = cache
+	s.composeNameCacheMu.Unlock()
+
+	return nil
+}
+
 func (s *ProjectService) GetProjectFromDatabaseByID(ctx context.Context, id string) (*models.Project, error) {
 	var project models.Project
 	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&project).Error; err != nil {
@@ -218,6 +352,156 @@ func (s *ProjectService) GetProjectFromDatabaseByID(ctx context.Context, id stri
 		return nil, fmt.Errorf("failed to get project: %w", err)
 	}
 	return &project, nil
+}
+
+func (s *ProjectService) GetProjectByComposeName(ctx context.Context, name string) (*models.Project, error) {
+	if name == "" {
+		return nil, fmt.Errorf("project name is empty")
+	}
+	normalized := normalizeComposeProjectName(name)
+
+	var proj models.Project
+	err := s.db.WithContext(ctx).Where("name = ? OR name = ?", name, normalized).First(&proj).Error
+	if err == nil {
+		s.cacheComposeProjectIDInternal(normalized, proj.ID)
+		return &proj, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, fmt.Errorf("failed to get project by name: %w", err)
+	}
+
+	if cachedProject, found, cacheErr := s.lookupProjectByCachedComposeNameInternal(ctx, normalized); cacheErr != nil {
+		return nil, cacheErr
+	} else if found {
+		return cachedProject, nil
+	}
+
+	if err := s.rebuildComposeNameCacheInternal(ctx); err != nil {
+		return nil, fmt.Errorf("failed to list projects by compose name: %w", err)
+	}
+
+	if cachedProject, found, cacheErr := s.lookupProjectByCachedComposeNameInternal(ctx, normalized); cacheErr != nil {
+		return nil, cacheErr
+	} else if found {
+		return cachedProject, nil
+	}
+
+	return nil, fmt.Errorf("project not found: %s", name)
+}
+
+func (s *ProjectService) resolveProjectComposeFileInternal(ctx context.Context, proj *models.Project) (string, error) {
+	if proj == nil {
+		return "", fmt.Errorf("project is nil")
+	}
+
+	if proj.GitOpsManagedBy != nil && strings.TrimSpace(*proj.GitOpsManagedBy) != "" {
+		var sync models.GitOpsSync
+		if err := s.db.WithContext(ctx).
+			Select("compose_path").
+			Where("id = ?", *proj.GitOpsManagedBy).
+			First(&sync).Error; err == nil {
+			composeFileName := strings.TrimSpace(filepath.Base(sync.ComposePath))
+			if composeFileName != "" && composeFileName != "." {
+				candidate := filepath.Join(proj.Path, composeFileName)
+				if info, statErr := os.Stat(candidate); statErr == nil {
+					if !info.IsDir() {
+						return candidate, nil
+					}
+				} else if !os.IsNotExist(statErr) {
+					return "", fmt.Errorf("failed to inspect GitOps compose file %s: %w", candidate, statErr)
+				}
+			}
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", fmt.Errorf("failed to resolve GitOps compose path for project %s: %w", proj.ID, err)
+		}
+	}
+
+	composeFile, err := projects.DetectComposeFile(proj.Path)
+	if err != nil {
+		return "", &common.ProjectComposeFileNotFoundError{Err: err}
+	}
+
+	return composeFile, nil
+}
+
+func (s *ProjectService) loadComposeProjectForProjectInternal(ctx context.Context, proj *models.Project) (*composetypes.Project, string, error) {
+	composeFileFullPath, err := s.resolveProjectComposeFileInternal(ctx, proj)
+	if err != nil {
+		return nil, "", err
+	}
+
+	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
+	projectsDirectory, pdErr := projects.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
+	if pdErr != nil {
+		slog.WarnContext(ctx, "unable to determine projects directory; using default", "error", pdErr)
+		projectsDirectory = "/app/data/projects"
+	}
+
+	pathMapper, pmErr := s.getPathMapper(ctx)
+	if pmErr != nil {
+		slog.WarnContext(ctx, "failed to create path mapper, continuing without translation", "error", pmErr)
+	}
+
+	autoInjectEnv := s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false)
+	composeProject, loadErr := projects.LoadComposeProject(ctx, composeFileFullPath, normalizeComposeProjectName(proj.Name), projectsDirectory, autoInjectEnv, pathMapper)
+	if loadErr != nil {
+		return nil, "", loadErr
+	}
+
+	return composeProject, composeFileFullPath, nil
+}
+
+func (s *ProjectService) UpdateProjectServices(ctx context.Context, projectID string, servicesToUpdate []string, user models.User) error {
+	projectFromDb, err := s.GetProjectFromDatabaseByID(ctx, projectID)
+	if err != nil {
+		return err
+	}
+
+	// 1. Load project
+	compProj, _, err := s.loadComposeProjectForProjectInternal(ctx, projectFromDb)
+	if err != nil {
+		return fmt.Errorf("failed to load compose project: %w", err)
+	}
+
+	// 2. Set status to deploying/restarting
+	if err := s.updateProjectStatusInternal(ctx, projectID, models.ProjectStatusDeploying); err != nil {
+		return err
+	}
+
+	// 3. Pull images for specific services
+	if err := projects.ComposePull(ctx, compProj, servicesToUpdate); err != nil {
+		slog.WarnContext(ctx, "compose pull failed, continuing", "error", err)
+	}
+
+	// 4. Stop specific services
+	if err := projects.ComposeStop(ctx, compProj, servicesToUpdate); err != nil {
+		slog.WarnContext(ctx, "compose stop failed, continuing", "error", err)
+	}
+
+	// 5. Up specific services
+	if err := projects.ComposeUp(ctx, compProj, servicesToUpdate, false, false); err != nil {
+		if statusErr := s.updateProjectStatusandCountsInternal(ctx, projectID, models.ProjectStatusStopped); statusErr != nil {
+			slog.ErrorContext(ctx, "UpdateProjectServices: failed to set stopped status after compose up failure", "projectID", projectID, "error", statusErr)
+		}
+		return fmt.Errorf("failed to up services: %w", err)
+	}
+
+	// 6. Finalize status
+	if err := s.updateProjectStatusandCountsInternal(ctx, projectID, models.ProjectStatusRunning); err != nil {
+		return err
+	}
+
+	metadata := models.JSON{
+		"action":      "update_services",
+		"projectID":   projectID,
+		"projectName": projectFromDb.Name,
+		"services":    append([]string(nil), servicesToUpdate...),
+	}
+	if logErr := s.eventService.LogProjectEvent(ctx, models.EventTypeProjectUpdate, projectID, projectFromDb.Name, user.ID, user.Username, "0", metadata); logErr != nil {
+		slog.ErrorContext(ctx, "could not log project service update action", "error", logErr)
+	}
+
+	return nil
 }
 
 func (s *ProjectService) getServiceCounts(services []ProjectServiceInfo) (total int, running int) {
@@ -272,28 +556,9 @@ func (s *ProjectService) GetProjectServices(ctx context.Context, projectID strin
 		return nil, err
 	}
 
-	composeFileFullPath, derr := projects.DetectComposeFile(projectFromDb.Path)
+	composeProject, composeFileFullPath, derr := s.loadComposeProjectForProjectInternal(ctx, projectFromDb)
 	if derr != nil {
 		return []ProjectServiceInfo{}, fmt.Errorf("no compose file found in project directory: %s", projectFromDb.Path)
-	}
-
-	// Get configured projects directory from settings
-	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
-	projectsDirectory, pdErr := fs.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
-	if pdErr != nil {
-		slog.WarnContext(ctx, "unable to determine projects directory; using default", "error", pdErr)
-		projectsDirectory = "/app/data/projects"
-	}
-
-	pathMapper, pmErr := s.getPathMapper(ctx)
-	if pmErr != nil {
-		slog.WarnContext(ctx, "failed to create path mapper, continuing without translation", "error", pmErr)
-	}
-
-	autoInjectEnv := s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false)
-	project, loadErr := projects.LoadComposeProject(ctx, composeFileFullPath, normalizeComposeProjectName(projectFromDb.Name), projectsDirectory, autoInjectEnv, pathMapper)
-	if loadErr != nil {
-		return []ProjectServiceInfo{}, fmt.Errorf("failed to load compose project from %s: %w", projectFromDb.Path, loadErr)
 	}
 
 	meta, metaErr := projects.ParseArcaneComposeMetadata(ctx, composeFileFullPath)
@@ -301,9 +566,9 @@ func (s *ProjectService) GetProjectServices(ctx context.Context, projectID strin
 		slog.WarnContext(ctx, "failed to parse Arcane compose metadata", "path", composeFileFullPath, "error", metaErr)
 	}
 
-	containers, err := projects.ComposePs(ctx, project, nil, true)
+	containers, err := projects.ComposePs(ctx, composeProject, nil, true)
 	if err != nil {
-		slog.Error("compose ps error", "projectName", project.Name, "error", err)
+		slog.Error("compose ps error", "projectName", composeProject.Name, "error", err)
 		return nil, fmt.Errorf("failed to get compose services status: %w", err)
 	}
 
@@ -312,7 +577,7 @@ func (s *ProjectService) GetProjectServices(ctx context.Context, projectID strin
 
 	// Create a map for quick lookup of service config
 	serviceConfigs := make(map[string]composetypes.ServiceConfig)
-	for _, svc := range project.Services {
+	for _, svc := range composeProject.Services {
 		serviceConfigs[svc.Name] = svc
 	}
 
@@ -341,7 +606,7 @@ func (s *ProjectService) GetProjectServices(ctx context.Context, projectID strin
 		have[c.Service] = true
 	}
 
-	for _, svc := range project.Services {
+	for _, svc := range composeProject.Services {
 		if !have[svc.Name] {
 			services = append(services, ProjectServiceInfo{
 				Name:          svc.Name,
@@ -362,7 +627,13 @@ func (s *ProjectService) GetProjectContent(ctx context.Context, projectID string
 	if err != nil {
 		return "", "", err
 	}
-	return fs.ReadProjectFiles(proj.Path)
+
+	composePath, composeErr := s.resolveProjectComposeFileInternal(ctx, proj)
+	if composeErr != nil {
+		composePath = ""
+	}
+
+	return projects.ReadProjectFiles(proj.Path, composePath)
 }
 
 func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string) (project.Details, error) {
@@ -370,22 +641,33 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 	if err != nil {
 		return project.Details{}, err
 	}
+	projectsDir, _ := s.getProjectsDirectoryInternal(ctx)
 
-	composeContent, envContent, _ := s.GetProjectContent(ctx, projectID)
+	composeContent, _, _ := s.GetProjectContent(ctx, projectID)
+	envState, err := projects.ReadProjectEnvState(proj.Path)
+	if err != nil {
+		return project.Details{}, fmt.Errorf("failed to read project env state: %w", err)
+	}
 
 	var resp project.Details
 	if err := mapper.MapStruct(proj, &resp); err != nil {
 		return project.Details{}, fmt.Errorf("failed to map project: %w", err)
 	}
 
+	effectiveEnvContent, err := s.resolveStoredEffectiveEnvContentInternal(envState)
+	if err != nil {
+		return project.Details{}, err
+	}
+
 	resp.CreatedAt = proj.CreatedAt.Format(time.RFC3339)
 	resp.UpdatedAt = proj.UpdatedAt.Format(time.RFC3339)
 	resp.ComposeContent = composeContent
-	resp.EnvContent = envContent
+	resp.EnvContent = effectiveEnvContent
 	resp.HasBuildDirective = false
 	resp.DirName = utils.DerefString(proj.DirName)
+	resp.RelativePath = s.getProjectRelativePathInternal(projectsDir, proj.Path)
 	resp.GitOpsManagedBy = proj.GitOpsManagedBy
-	meta := s.getProjectMetadataFromPath(ctx, proj.Path)
+	meta := s.getProjectMetadataForProject(ctx, *proj)
 	resp.IconURL = meta.ProjectIconURL
 	resp.URLs = meta.ProjectURLS
 
@@ -395,14 +677,14 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 	resp.Status = string(proj.Status)
 
 	// Enrich with details
-	s.enrichWithIncludeFiles(ctx, proj.Path, &resp)
-	s.enrichWithGitOpsInfo(ctx, proj, &resp)
-
-	// Load compose project for service definitions
-	composeFile, _ := projects.DetectComposeFile(proj.Path)
-	if composeFile != "" {
+	composeFile, composeFileErr := s.resolveProjectComposeFileInternal(ctx, proj)
+	if composeFileErr == nil {
+		resp.ComposeFileName = filepath.Base(composeFile)
+		s.enrichWithIncludeFiles(ctx, composeFile, &resp)
 		s.enrichWithComposeServiceConfigs(ctx, proj, composeFile, &resp)
 	}
+	s.enrichWithDirectoryFiles(ctx, proj.Path, &resp)
+	s.enrichWithGitOpsInfo(ctx, proj, &resp)
 
 	// Get runtime services and update status/counts
 	services, serr := s.GetProjectServices(ctx, projectID)
@@ -432,24 +714,134 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 	return resp, nil
 }
 
-func (s *ProjectService) enrichWithIncludeFiles(ctx context.Context, projectPath string, resp *project.Details) {
-	composeFile, detectErr := projects.DetectComposeFile(projectPath)
+func (s *ProjectService) GetProjectFileContent(ctx context.Context, projectID, relativePath string) (project.IncludeFile, error) {
+	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
+	if err != nil {
+		return project.IncludeFile{}, err
+	}
+	if strings.TrimSpace(relativePath) == "" {
+		return project.IncludeFile{}, &common.ProjectFileBadRequestError{Err: fmt.Errorf("relative path is required")}
+	}
+
+	composeFile, detectErr := s.resolveProjectComposeFileInternal(ctx, proj)
 	if detectErr == nil {
-		includes, parseErr := projects.ParseIncludes(composeFile)
+		projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
+		projectsDirectory, _ := projects.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
+		autoInjectEnv := s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false)
+		envLoader := projects.NewEnvLoader(projectsDirectory, filepath.Dir(composeFile), autoInjectEnv)
+		envMap, _, _ := envLoader.LoadEnvironment(ctx)
+
+		includes, parseErr := projects.ParseIncludes(composeFile, envMap, true)
 		if parseErr == nil {
-			var includeFiles []project.IncludeFile
 			for _, inc := range includes {
-				includeFiles = append(includeFiles, project.IncludeFile{
-					Path:         inc.Path,
-					RelativePath: inc.RelativePath,
-					Content:      inc.Content,
-				})
+				if inc.RelativePath == relativePath {
+					return project.IncludeFile{
+						Path:         inc.Path,
+						RelativePath: inc.RelativePath,
+						Content:      inc.Content,
+					}, nil
+				}
 			}
-			resp.IncludeFiles = includeFiles
-		} else {
-			slog.WarnContext(ctx, "Failed to parse includes", "error", parseErr, "path", projectPath)
 		}
 	}
+
+	fullPath := filepath.Join(proj.Path, relativePath)
+	absProjectPath, err := filepath.Abs(proj.Path)
+	if err != nil {
+		return project.IncludeFile{}, fmt.Errorf("failed to resolve project path: %w", err)
+	}
+	absFilePath, err := filepath.Abs(fullPath)
+	if err != nil {
+		return project.IncludeFile{}, fmt.Errorf("failed to resolve file path: %w", err)
+	}
+	if !projects.IsSafeSubdirectory(absProjectPath, absFilePath) {
+		return project.IncludeFile{}, &common.ProjectFileForbiddenError{Err: fmt.Errorf("file path is outside project directory")}
+	}
+
+	info, err := os.Lstat(absFilePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return project.IncludeFile{}, &common.ProjectFileNotFoundError{}
+		}
+		return project.IncludeFile{}, fmt.Errorf("failed to stat file: %w", err)
+	}
+	if info.IsDir() {
+		return project.IncludeFile{}, &common.ProjectFileBadRequestError{Err: fmt.Errorf("path refers to a directory")}
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return project.IncludeFile{}, &common.ProjectFileForbiddenError{Err: fmt.Errorf("symlink files are not supported")}
+	}
+
+	content, err := os.ReadFile(absFilePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return project.IncludeFile{}, &common.ProjectFileNotFoundError{}
+		}
+		return project.IncludeFile{}, fmt.Errorf("failed to read file: %w", err)
+	}
+	if projects.IsBinaryProjectFileContent(content) {
+		return project.IncludeFile{}, &common.ProjectFileBadRequestError{Err: fmt.Errorf("binary files are not supported")}
+	}
+
+	return project.IncludeFile{
+		Path:         absFilePath,
+		RelativePath: relativePath,
+		Content:      string(content),
+	}, nil
+}
+
+func (s *ProjectService) enrichWithIncludeFiles(ctx context.Context, composeFile string, resp *project.Details) {
+	if strings.TrimSpace(composeFile) == "" {
+		return
+	}
+
+	// Load environment variables so that include paths with ${VAR} references are expanded
+	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
+	projectsDirectory, _ := projects.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
+	autoInjectEnv := s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false)
+	envLoader := projects.NewEnvLoader(projectsDirectory, filepath.Dir(composeFile), autoInjectEnv)
+	envMap, _, _ := envLoader.LoadEnvironment(ctx)
+
+	includes, parseErr := projects.ParseIncludes(composeFile, envMap, false)
+	if parseErr == nil {
+		var includeFiles []project.IncludeFile
+		for _, inc := range includes {
+			includeFiles = append(includeFiles, project.IncludeFile{
+				Path:         inc.Path,
+				RelativePath: inc.RelativePath,
+			})
+		}
+		resp.IncludeFiles = includeFiles
+	} else {
+		slog.WarnContext(ctx, "Failed to parse includes", "error", parseErr, "path", composeFile)
+	}
+}
+
+func (s *ProjectService) enrichWithDirectoryFiles(ctx context.Context, projectPath string, resp *project.Details) {
+	if projectPath == "" {
+		return
+	}
+
+	// Build set of already-shown files to skip
+	shownFiles := map[string]bool{
+		".env":                true,
+		"compose.yaml":        true,
+		"compose.yml":         true,
+		"docker-compose.yaml": true,
+		"docker-compose.yml":  true,
+		"podman-compose.yaml": true,
+		"podman-compose.yml":  true,
+	}
+	for _, inc := range resp.IncludeFiles {
+		shownFiles[inc.RelativePath] = true
+	}
+
+	dirFiles, err := projects.ReadProjectDirectoryFiles(projectPath, shownFiles, s.config.ProjectScanMaxDepth, s.config.ProjectScanSkipDirs)
+	if err != nil {
+		slog.WarnContext(ctx, "Failed to scan project directory files", "error", err, "path", projectPath)
+	}
+
+	resp.DirectoryFiles = dirFiles
 }
 
 func (s *ProjectService) enrichWithGitOpsInfo(ctx context.Context, proj *models.Project, resp *project.Details) {
@@ -466,7 +858,7 @@ func (s *ProjectService) enrichWithGitOpsInfo(ctx context.Context, proj *models.
 
 func (s *ProjectService) enrichWithComposeServiceConfigs(ctx context.Context, proj *models.Project, composeFile string, resp *project.Details) {
 	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
-	projectsDirectory, _ := fs.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
+	projectsDirectory, _ := projects.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
 
 	pathMapper, pmErr := s.getPathMapper(ctx)
 	if pmErr != nil {
@@ -498,41 +890,32 @@ func (s *ProjectService) enrichWithComposeServiceConfigs(ctx context.Context, pr
 }
 
 func (s *ProjectService) SyncProjectsFromFileSystem(ctx context.Context) error {
-	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
-	projectsDir, err := fs.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
+	followProjectSymlinks := s.settingsService.GetBoolSetting(ctx, "followProjectSymlinks", false)
+	projectsDir, err := s.getProjectsDirectoryInternal(ctx)
 	if err != nil {
 		slog.WarnContext(ctx, "unable to prepare projects directory", "error", err)
 		return nil
 	}
-	projectsDir = filepath.Clean(projectsDir)
 
-	entries, rerr := os.ReadDir(projectsDir)
-	if rerr != nil {
-		slog.WarnContext(ctx, "failed to read projects directory", "dir", projectsDir, "error", rerr)
+	discoveredProjects, discoveryErr := projects.DiscoverProjectDirectories(projectsDir, followProjectSymlinks)
+	if discoveryErr != nil {
+		if os.IsNotExist(discoveryErr) {
+			return nil
+		}
+		slog.WarnContext(ctx, "failed to discover projects directory contents", "dir", projectsDir, "error", discoveryErr)
 		return nil
 	}
 
 	seen := map[string]struct{}{}
-	for _, e := range entries {
-		if !e.IsDir() {
+	for _, discoveredProject := range discoveredProjects {
+		if uerr := s.upsertProjectForDir(ctx, discoveredProject.DirName, discoveredProject.Path); uerr != nil {
+			slog.WarnContext(ctx, "failed to sync project from folder", "dir", discoveredProject.Path, "error", uerr)
 			continue
 		}
-		dirName := e.Name()
-		dirPath := filepath.Join(projectsDir, dirName)
-
-		// Only consider folders that contain a compose file
-		if _, derr := projects.DetectComposeFile(dirPath); derr != nil {
-			continue
-		}
-
-		if uerr := s.upsertProjectForDir(ctx, dirName, dirPath); uerr != nil {
-			slog.WarnContext(ctx, "failed to sync project from folder", "dir", dirPath, "error", uerr)
-			continue
-		}
-		seen[dirPath] = struct{}{}
+		seen[discoveredProject.Path] = struct{}{}
 	}
 
-	if cerr := s.cleanupDBProjects(ctx, seen); cerr != nil {
+	if cerr := s.cleanupDBProjects(ctx, seen, followProjectSymlinks); cerr != nil {
 		slog.WarnContext(ctx, "error during DB cleanup of projects", "error", cerr)
 	}
 
@@ -542,8 +925,14 @@ func (s *ProjectService) SyncProjectsFromFileSystem(ctx context.Context) error {
 func (s *ProjectService) upsertProjectForDir(ctx context.Context, dirName, dirPath string) error {
 	var existing models.Project
 	err := s.db.WithContext(ctx).
-		Where("path = ? OR dir_name = ?", dirPath, dirName).
+		Where("path = ?", dirPath).
 		First(&existing).Error
+
+	filesystemProject := models.Project{
+		Name: dirName,
+		Path: dirPath,
+	}
+	serviceCount, serviceCountErr := s.countServicesFromCompose(ctx, filesystemProject)
 
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		// Create a minimal project entry
@@ -554,13 +943,16 @@ func (s *ProjectService) upsertProjectForDir(ctx context.Context, dirName, dirPa
 			Path:         dirPath,
 			Status:       models.ProjectStatusUnknown,
 			StatusReason: new(reason),
-			ServiceCount: 0,
+			ServiceCount: serviceCount,
 			RunningCount: 0,
 		}
 		slog.InfoContext(ctx, "Discovered new project with unknown status",
 			"project", dirName,
 			"path", dirPath,
 			"reason", reason)
+		if serviceCountErr != nil {
+			slog.WarnContext(ctx, "failed to read compose service count during project discovery", "project", dirName, "path", dirPath, "error", serviceCountErr)
+		}
 		if cerr := s.db.WithContext(ctx).Create(proj).Error; cerr != nil {
 			return fmt.Errorf("create project for %q failed: %w", dirPath, cerr)
 		}
@@ -577,6 +969,11 @@ func (s *ProjectService) upsertProjectForDir(ctx context.Context, dirName, dirPa
 	if existing.DirName == nil || *existing.DirName != dirName {
 		updates["dir_name"] = dirName
 	}
+	if serviceCountErr == nil && existing.ServiceCount != serviceCount {
+		updates["service_count"] = serviceCount
+	} else if serviceCountErr != nil {
+		slog.WarnContext(ctx, "failed to refresh compose service count during project sync", "projectID", existing.ID, "path", dirPath, "error", serviceCountErr)
+	}
 	if len(updates) == 0 {
 		return nil
 	}
@@ -591,7 +988,7 @@ func (s *ProjectService) upsertProjectForDir(ctx context.Context, dirName, dirPa
 	return nil
 }
 
-func (s *ProjectService) cleanupDBProjects(ctx context.Context, seen map[string]struct{}) error {
+func (s *ProjectService) cleanupDBProjects(ctx context.Context, seen map[string]struct{}, followProjectSymlinks bool) error {
 	var all []models.Project
 	if err := s.db.WithContext(ctx).Find(&all).Error; err != nil {
 		return fmt.Errorf("list projects for cleanup failed: %w", err)
@@ -603,20 +1000,29 @@ func (s *ProjectService) cleanupDBProjects(ctx context.Context, seen map[string]
 			continue
 		}
 
-		// Remove if path missing or compose file missing
-		if _, err := os.Stat(p.Path); err != nil {
+		validDir, err := projects.IsProjectDirectoryPath(p.Path, followProjectSymlinks)
+		if err != nil {
 			if os.IsNotExist(err) {
 				if derr := s.db.WithContext(ctx).Delete(&models.Project{}, "id = ?", p.ID).Error; derr != nil {
 					slog.WarnContext(ctx, "failed to delete missing-path project", "projectID", p.ID, "error", derr)
 				}
 				continue
 			}
-			// On unexpected stat error, skip deletion but warn
 			slog.WarnContext(ctx, "stat error during cleanup", "path", p.Path, "error", err)
 			continue
 		}
+		if !validDir {
+			if derr := s.db.WithContext(ctx).Delete(&models.Project{}, "id = ?", p.ID).Error; derr != nil {
+				slog.WarnContext(ctx, "failed to delete non-project path", "projectID", p.ID, "path", p.Path, "error", derr)
+			}
+			continue
+		}
 
-		if _, err := projects.DetectComposeFile(p.Path); err != nil {
+		if _, err := s.resolveProjectComposeFileInternal(ctx, &p); err != nil {
+			if _, ok := errors.AsType[*common.ProjectComposeFileNotFoundError](err); !ok {
+				slog.WarnContext(ctx, "failed to validate project compose file during cleanup", "projectID", p.ID, "path", p.Path, "error", err)
+				continue
+			}
 			if derr := s.db.WithContext(ctx).Delete(&models.Project{}, "id = ?", p.ID).Error; derr != nil {
 				slog.WarnContext(ctx, "failed to delete project without compose", "projectID", p.ID, "error", derr)
 			}
@@ -658,12 +1064,11 @@ func formatDockerPorts(ports []container.PortSummary) []string {
 }
 
 func (s *ProjectService) countProjectFolders(ctx context.Context) (int, error) {
-	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
-	projectsDir, err := fs.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
+	followProjectSymlinks := s.settingsService.GetBoolSetting(ctx, "followProjectSymlinks", false)
+	projectsDir, err := s.getProjectsDirectoryInternal(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("could not determine projects directory: %w", err)
 	}
-	projectsDir = filepath.Clean(projectsDir)
 
 	info, statErr := os.Stat(projectsDir)
 	if os.IsNotExist(statErr) {
@@ -677,22 +1082,12 @@ func (s *ProjectService) countProjectFolders(ctx context.Context) (int, error) {
 		return 0, nil
 	}
 
-	entries, readErr := os.ReadDir(projectsDir)
-	if readErr != nil {
-		return 0, fmt.Errorf("failed to read projects directory %s: %w", projectsDir, readErr)
+	discoveredProjects, discoveryErr := projects.DiscoverProjectDirectories(projectsDir, followProjectSymlinks)
+	if discoveryErr != nil {
+		return 0, fmt.Errorf("failed to discover project directories in %s: %w", projectsDir, discoveryErr)
 	}
 
-	count := 0
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		dirPath := filepath.Join(projectsDir, e.Name())
-		if _, err := projects.DetectComposeFile(dirPath); err == nil {
-			count++
-		}
-	}
-	return count, nil
+	return len(discoveredProjects), nil
 }
 
 func (s *ProjectService) incrementStatusCounts(status models.ProjectStatus, running, stopped *int) {
@@ -755,30 +1150,7 @@ func (s *ProjectService) GetProjectStatusCounts(ctx context.Context) (folderCoun
 		if len(services) == 0 {
 			status = models.ProjectStatusStopped
 		} else {
-			// We have containers, calculate status based on their state
-			// Note: calculateProjectStatus doesn't know about "missing" services (ServiceCount)
-			// So we need to check if runningCount == p.ServiceCount here if we want strict "Running"
-
-			// Re-implement logic here to be safe or rely on calculateProjectStatus?
-			// calculateProjectStatus returns Running if ALL *present* containers are running.
-			// But if we have 2/3 containers running, it returns Running? No.
-			// calculateProjectStatus: if runningCount == len(services) -> Running.
-			// But len(services) is only the *running* containers (or present ones).
-			// If we have 3 services defined, but only 2 containers exist (both running),
-			// calculateProjectStatus will say "Running".
-			// But strictly it should be "Partial" or "Restarting" or something.
-
-			// However, for the dashboard count, "Running" usually means "Healthy".
-			// Let's stick to calculateProjectStatus for consistency with previous logic,
-			// but maybe check ServiceCount.
-
-			st := s.calculateProjectStatus(services)
-
-			// Refine: if all containers are running, but we have fewer containers than defined services
-			if st == models.ProjectStatusRunning && len(services) < p.ServiceCount {
-				st = models.ProjectStatusPartiallyRunning
-			}
-			status = st
+			status = s.calculateProjectStatus(services)
 		}
 
 		s.incrementStatusCounts(status, &runningProjects, &stoppedProjects)
@@ -810,28 +1182,9 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 		resolvedPullPolicy = "missing"
 	}
 
-	composeFileFullPath, derr := projects.DetectComposeFile(projectFromDb.Path)
+	project, _, derr := s.loadComposeProjectForProjectInternal(ctx, projectFromDb)
 	if derr != nil {
 		return fmt.Errorf("no compose file found in project directory: %s", projectFromDb.Path)
-	}
-
-	// Get configured projects directory from settings
-	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
-	projectsDirectory, pdErr := fs.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
-	if pdErr != nil {
-		slog.WarnContext(ctx, "unable to determine projects directory; using default", "error", pdErr)
-		projectsDirectory = "/app/data/projects"
-	}
-
-	pathMapper, pmErr := s.getPathMapper(ctx)
-	if pmErr != nil {
-		slog.WarnContext(ctx, "failed to create path mapper, continuing without translation", "error", pmErr)
-	}
-
-	autoInjectEnv := s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false)
-	project, loadErr := projects.LoadComposeProject(ctx, composeFileFullPath, normalizeComposeProjectName(projectFromDb.Name), projectsDirectory, autoInjectEnv, pathMapper)
-	if loadErr != nil {
-		return fmt.Errorf("failed to load compose project from %s: %w", projectFromDb.Path, loadErr)
 	}
 
 	if err := s.updateProjectStatusInternal(ctx, projectID, models.ProjectStatusDeploying); err != nil {
@@ -882,21 +1235,7 @@ func (s *ProjectService) DownProject(ctx context.Context, projectID string, user
 		return err
 	}
 
-	// Get configured projects directory from settings
-	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
-	projectsDirectory, pdErr := fs.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
-	if pdErr != nil {
-		slog.WarnContext(ctx, "unable to determine projects directory; using default", "error", pdErr)
-		projectsDirectory = "/app/data/projects"
-	}
-
-	pathMapper, pmErr := s.getPathMapper(ctx)
-	if pmErr != nil {
-		slog.WarnContext(ctx, "failed to create path mapper, continuing without translation", "error", pmErr)
-	}
-
-	autoInjectEnv := s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false)
-	proj, _, lerr := projects.LoadComposeProjectFromDir(ctx, projectFromDb.Path, normalizeComposeProjectName(projectFromDb.Name), projectsDirectory, autoInjectEnv, pathMapper)
+	proj, _, lerr := s.loadComposeProjectForProjectInternal(ctx, projectFromDb)
 	if lerr != nil {
 		_ = s.updateProjectStatusInternal(ctx, projectID, models.ProjectStatusRunning)
 		return fmt.Errorf("failed to load compose project: %w", lerr)
@@ -924,15 +1263,15 @@ func (s *ProjectService) DownProject(ctx context.Context, projectID string, user
 }
 
 func (s *ProjectService) CreateProject(ctx context.Context, name, composeContent string, envContent *string, user models.User) (*models.Project, error) {
-	sanitized := fs.SanitizeProjectName(name)
+	sanitized := projects.SanitizeProjectName(name)
 
-	projectsDirectory, err := fs.GetProjectsDirectory(ctx, s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects"))
+	projectsDirectory, err := projects.GetProjectsDirectory(ctx, s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects"))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get projects directory: %w", err)
 	}
 
 	basePath := filepath.Join(projectsDirectory, sanitized)
-	projectPath, folderName, err := fs.CreateUniqueDir(projectsDirectory, basePath, name, common.DirPerm)
+	projectPath, folderName, err := projects.CreateUniqueDir(projectsDirectory, basePath, name, common.DirPerm)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create project directory: %w", err)
 	}
@@ -950,7 +1289,7 @@ func (s *ProjectService) CreateProject(ctx context.Context, name, composeContent
 		return nil, fmt.Errorf("failed to create project: %w", err)
 	}
 
-	if err := fs.SaveOrUpdateProjectFiles(projectsDirectory, projectPath, composeContent, envContent); err != nil {
+	if err := projects.SaveOrUpdateProjectFiles(projectsDirectory, projectPath, composeContent, envContent); err != nil {
 		// Best-effort cleanup to restore pre-transaction behavior.
 		_ = s.db.WithContext(ctx).Delete(proj).Error
 		return nil, fmt.Errorf("failed to save project files: %w", err)
@@ -986,21 +1325,7 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, r
 	}
 
 	if removeVolumes {
-		// Get configured projects directory from settings
-		projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
-		projectsDirectory, pdErr := fs.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
-		if pdErr != nil {
-			slog.WarnContext(ctx, "unable to determine projects directory; using default", "error", pdErr)
-			projectsDirectory = "/app/data/projects"
-		}
-
-		autoInjectEnv := s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false)
-		pathMapper, pmErr := s.getPathMapper(ctx)
-		if pmErr != nil {
-			slog.WarnContext(ctx, "failed to create path mapper, continuing without translation", "error", pmErr)
-		}
-
-		if compProj, _, lerr := projects.LoadComposeProjectFromDir(ctx, proj.Path, normalizeComposeProjectName(proj.Name), projectsDirectory, autoInjectEnv, pathMapper); lerr == nil {
+		if compProj, _, lerr := s.loadComposeProjectForProjectInternal(ctx, proj); lerr == nil {
 			if derr := projects.ComposeDown(ctx, compProj, true); derr != nil {
 				slog.WarnContext(ctx, "failed to remove volumes", "error", derr)
 			}
@@ -1056,21 +1381,7 @@ func (s *ProjectService) PullProjectImages(ctx context.Context, projectID string
 		return err
 	}
 
-	// Get configured projects directory from settings
-	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
-	projectsDirectory, pdErr := fs.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
-	if pdErr != nil {
-		slog.WarnContext(ctx, "unable to determine projects directory; using default", "error", pdErr)
-		projectsDirectory = "/app/data/projects"
-	}
-
-	pathMapper, pmErr := s.getPathMapper(ctx)
-	if pmErr != nil {
-		slog.WarnContext(ctx, "failed to create path mapper, continuing without translation", "error", pmErr)
-	}
-
-	autoInjectEnv := s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false)
-	compProj, _, lerr := projects.LoadComposeProjectFromDir(ctx, proj.Path, normalizeComposeProjectName(proj.Name), projectsDirectory, autoInjectEnv, pathMapper)
+	compProj, _, lerr := s.loadComposeProjectForProjectInternal(ctx, proj)
 	if lerr != nil {
 		return fmt.Errorf("failed to load compose project: %w", lerr)
 	}
@@ -1111,27 +1422,9 @@ func (s *ProjectService) BuildProjectServices(ctx context.Context, projectID str
 		return err
 	}
 
-	composeFileFullPath, derr := projects.DetectComposeFile(projectFromDb.Path)
+	project, _, derr := s.loadComposeProjectForProjectInternal(ctx, projectFromDb)
 	if derr != nil {
 		return fmt.Errorf("no compose file found in project directory: %s", projectFromDb.Path)
-	}
-
-	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
-	projectsDirectory, pdErr := fs.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
-	if pdErr != nil {
-		slog.WarnContext(ctx, "unable to determine projects directory; using default", "error", pdErr)
-		projectsDirectory = "/app/data/projects"
-	}
-
-	pathMapper, pmErr := s.getPathMapper(ctx)
-	if pmErr != nil {
-		slog.WarnContext(ctx, "failed to create path mapper, continuing without translation", "error", pmErr)
-	}
-
-	autoInjectEnv := s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false)
-	project, loadErr := projects.LoadComposeProject(ctx, composeFileFullPath, normalizeComposeProjectName(projectFromDb.Name), projectsDirectory, autoInjectEnv, pathMapper)
-	if loadErr != nil {
-		return fmt.Errorf("failed to load compose project from %s: %w", projectFromDb.Path, loadErr)
 	}
 
 	return s.buildProjectServicesInternal(ctx, projectID, project, options, progressWriter, user)
@@ -1148,21 +1441,7 @@ func (s *ProjectService) EnsureProjectImagesPresent(ctx context.Context, project
 		return err
 	}
 
-	// Get configured projects directory from settings
-	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
-	projectsDirectory, pdErr := fs.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
-	if pdErr != nil {
-		slog.WarnContext(ctx, "unable to determine projects directory; using default", "error", pdErr)
-		projectsDirectory = "/app/data/projects"
-	}
-
-	pathMapper, pmErr := s.getPathMapper(ctx)
-	if pmErr != nil {
-		slog.WarnContext(ctx, "failed to create path mapper, continuing without translation", "error", pmErr)
-	}
-
-	autoInjectEnv := s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false)
-	compProj, _, lerr := projects.LoadComposeProjectFromDir(ctx, proj.Path, normalizeComposeProjectName(proj.Name), projectsDirectory, autoInjectEnv, pathMapper)
+	compProj, _, lerr := s.loadComposeProjectForProjectInternal(ctx, proj)
 	if lerr != nil {
 		return fmt.Errorf("failed to load compose project: %w", lerr)
 	}
@@ -1296,7 +1575,7 @@ func (s *ProjectService) ensureDeployServiceImageReady(
 	progressWriter io.Writer,
 	credentials []containerregistry.Credential,
 	user *models.User,
-	pathMapper *pathmapper.PathMapper,
+	pathMapper *projects.PathMapper,
 ) error {
 	if decision.Build {
 		return s.buildServiceImageForDeploy(ctx, projectID, project, serviceName, svc, progressWriter, user, pathMapper)
@@ -1336,7 +1615,7 @@ func (s *ProjectService) buildServiceImageForDeploy(
 	svc composetypes.ServiceConfig,
 	progressWriter io.Writer,
 	user *models.User,
-	pathMapper *pathmapper.PathMapper,
+	pathMapper *projects.PathMapper,
 ) error {
 	if s.buildService == nil {
 		return fmt.Errorf("build service not available for service %s", serviceName)
@@ -1454,8 +1733,6 @@ func resolveBuildContextInternal(workingDir string, svc composetypes.ServiceConf
 		contextDir = workingDir
 	} else if _, isGitContext, err := libbuild.ParseGitBuildContextSource(contextDir); err != nil {
 		return "", fmt.Errorf("invalid build context for service %s: %w", serviceName, err)
-	} else if libbuild.IsPotentialRemoteBuildContextSource(contextDir) && !isGitContext {
-		return "", fmt.Errorf("unsupported remote build context for service %s: only git repository URLs are supported", serviceName)
 	} else if !isGitContext && !filepath.IsAbs(contextDir) {
 		contextDir = filepath.Join(workingDir, contextDir)
 	}
@@ -1474,6 +1751,14 @@ func resolveDockerfilePathInternal(svc composetypes.ServiceConfig) (string, erro
 	}
 
 	return dockerfilePath, nil
+}
+
+func translateBuildPathInternal(path string, pathMapper *projects.PathMapper) (string, error) {
+	if pathMapper == nil || strings.TrimSpace(path) == "" || !filepath.IsAbs(path) {
+		return path, nil
+	}
+
+	return pathMapper.ContainerToHost(path)
 }
 
 func buildArgsFromCompose(args map[string]*string) map[string]string {
@@ -1591,7 +1876,7 @@ func (s *ProjectService) prepareServiceBuildRequest(
 	serviceName string,
 	svc composetypes.ServiceConfig,
 	options ProjectBuildOptions,
-	pathMapper *pathmapper.PathMapper,
+	pathMapper *projects.PathMapper,
 ) (imagetypes.BuildRequest, composetypes.ServiceConfig, bool, error) {
 	_ = ctx
 	imageName, updatedSvc, updated := ensureServiceImage(projectID, project.Name, serviceName, svc)
@@ -1608,6 +1893,10 @@ func (s *ProjectService) prepareServiceBuildRequest(
 	if err != nil {
 		return imagetypes.BuildRequest{}, updatedSvc, updated, err
 	}
+	contextDir, err = translateBuildPathInternal(contextDir, pathMapper)
+	if err != nil {
+		return imagetypes.BuildRequest{}, updatedSvc, updated, fmt.Errorf("translate build context for service %s: %w", serviceName, err)
+	}
 
 	dockerfileInline := updatedSvc.Build.DockerfileInline
 	if strings.TrimSpace(updatedSvc.Build.Dockerfile) != "" && strings.TrimSpace(dockerfileInline) != "" {
@@ -1619,6 +1908,10 @@ func (s *ProjectService) prepareServiceBuildRequest(
 		dockerfilePath, err = resolveDockerfilePathInternal(updatedSvc)
 		if err != nil {
 			return imagetypes.BuildRequest{}, updatedSvc, updated, err
+		}
+		dockerfilePath, err = translateBuildPathInternal(dockerfilePath, pathMapper)
+		if err != nil {
+			return imagetypes.BuildRequest{}, updatedSvc, updated, fmt.Errorf("translate Dockerfile path for service %s: %w", serviceName, err)
 		}
 	}
 
@@ -1774,7 +2067,7 @@ func (s *ProjectService) RestartProject(ctx context.Context, projectID string, u
 
 	// Get configured projects directory from settings
 	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
-	projectsDirectory, pdErr := fs.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
+	projectsDirectory, pdErr := projects.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
 	if pdErr != nil {
 		slog.WarnContext(ctx, "unable to determine projects directory; using default", "error", pdErr)
 		projectsDirectory = "/app/data/projects"
@@ -1830,6 +2123,14 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 		return nil, err
 	}
 
+	// When compose content changes, recalculate service counts and status so the
+	// overview doesn't show stale values (e.g. ghost services after removal).
+	if composeContent != nil {
+		if err := s.updateProjectStatusandCountsInternal(ctx, proj.ID, proj.Status); err != nil {
+			slog.WarnContext(ctx, "failed to update service counts after compose edit", "projectID", proj.ID, "error", err)
+		}
+	}
+
 	metadata := models.JSON{
 		"action":      "update",
 		"projectID":   proj.ID,
@@ -1849,6 +2150,53 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 	return &proj, nil
 }
 
+func (s *ProjectService) ApplyGitSyncProjectFiles(ctx context.Context, projectID string, composeContent string, gitEnvContent *string, user models.User) (*models.Project, error) {
+	proj, projectsDirectory, err := s.getProjectForUpdate(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+
+	envUpdate, err := s.prepareGitSyncEnvUpdateInternal(proj.Path, gitEnvContent)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve git env state: %w", err)
+	}
+
+	if err := s.validateComposeContentForUpdate(ctx, projectsDirectory, proj.Path, proj.Name, composeContent, envUpdate.effectiveContent); err != nil {
+		return nil, fmt.Errorf("invalid compose file: %w", err)
+	}
+
+	if err := projects.WriteComposeFile(projectsDirectory, proj.Path, composeContent); err != nil {
+		return nil, fmt.Errorf("failed to save compose file: %w", err)
+	}
+	if err := s.persistGitSyncEnvFilesInternal(proj.Path, projectsDirectory, envUpdate); err != nil {
+		return nil, fmt.Errorf("failed to sync git env files: %w", err)
+	}
+	if err := s.db.WithContext(ctx).Save(&proj).Error; err != nil {
+		return nil, fmt.Errorf("failed to update project: %w", err)
+	}
+
+	// Recalculate service counts and status after compose file sync
+	if err := s.updateProjectStatusandCountsInternal(ctx, proj.ID, proj.Status); err != nil {
+		slog.WarnContext(ctx, "failed to update service counts after git sync", "projectID", proj.ID, "error", err)
+	}
+
+	metadata := models.JSON{
+		"action":         "git_sync_update",
+		"projectID":      proj.ID,
+		"projectName":    proj.Name,
+		"composeUpdated": true,
+		"envUpdated":     gitEnvContent != nil,
+	}
+	if gitEnvContent == nil {
+		metadata["envSourceRemoved"] = true
+	}
+	if logErr := s.eventService.LogProjectEvent(ctx, models.EventTypeProjectUpdate, proj.ID, proj.Name, user.ID, user.Username, "0", metadata); logErr != nil {
+		slog.ErrorContext(ctx, "could not log git sync project update action", "error", logErr)
+	}
+
+	return &proj, nil
+}
+
 func (s *ProjectService) getProjectForUpdate(ctx context.Context, projectID string) (models.Project, string, error) {
 	var proj models.Project
 	if err := s.db.WithContext(ctx).First(&proj, "id = ?", projectID).Error; err != nil {
@@ -1858,7 +2206,7 @@ func (s *ProjectService) getProjectForUpdate(ctx context.Context, projectID stri
 		return models.Project{}, "", fmt.Errorf("failed to get project: %w", err)
 	}
 
-	projectsDirectory, err := fs.GetProjectsDirectory(ctx, s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects"))
+	projectsDirectory, err := projects.GetProjectsDirectory(ctx, s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects"))
 	if err != nil {
 		return models.Project{}, "", fmt.Errorf("failed to get projects directory: %w", err)
 	}
@@ -1892,14 +2240,25 @@ func (s *ProjectService) withProjectRenameRollback(ctx context.Context, proj *mo
 func (s *ProjectService) persistUpdatedProjectFiles(ctx context.Context, proj *models.Project, projectsDirectory string, composeContent, envContent *string) error {
 	switch {
 	case composeContent != nil:
-		if err := s.validateComposeContentForUpdate(ctx, proj.Path, proj.Name, *composeContent, envContent); err != nil {
+		effectiveEnvContent, err := s.resolveEffectiveEnvContentForUpdateInternal(proj.Path, envContent)
+		if err != nil {
 			return fmt.Errorf("invalid compose file: %w", err)
 		}
-		if err := fs.SaveOrUpdateProjectFiles(projectsDirectory, proj.Path, *composeContent, envContent); err != nil {
+		if err := s.validateComposeContentForUpdate(ctx, projectsDirectory, proj.Path, proj.Name, *composeContent, effectiveEnvContent); err != nil {
+			return fmt.Errorf("invalid compose file: %w", err)
+		}
+		if err := projects.WriteComposeFile(projectsDirectory, proj.Path, *composeContent); err != nil {
+			return fmt.Errorf("failed to save project files: %w", err)
+		}
+		if envContent != nil {
+			if err := s.persistEffectiveEnvContentInternal(proj.Path, projectsDirectory, *envContent); err != nil {
+				return fmt.Errorf("failed to save project files: %w", err)
+			}
+		} else if err := s.ensureEffectiveEnvFileInternal(proj.Path, projectsDirectory); err != nil {
 			return fmt.Errorf("failed to save project files: %w", err)
 		}
 	case envContent != nil:
-		if err := fs.WriteEnvFile(projectsDirectory, proj.Path, *envContent); err != nil {
+		if err := s.persistEffectiveEnvContentInternal(proj.Path, projectsDirectory, *envContent); err != nil {
 			return err
 		}
 	}
@@ -1907,35 +2266,16 @@ func (s *ProjectService) persistUpdatedProjectFiles(ctx context.Context, proj *m
 	return nil
 }
 
-func (s *ProjectService) validateComposeContentForUpdate(ctx context.Context, projectPath, projectName, composeContent string, envContent *string) (err error) {
+func (s *ProjectService) validateComposeContentForUpdate(ctx context.Context, projectsDirectory, projectPath, projectName, composeContent string, effectiveEnvContent *string) (err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			err = fmt.Errorf("compose file contains invalid syntax: %v", recovered)
 		}
 	}()
 
-	// Load safe environment variables for ${VAR} interpolation during validation.
-	// Only the project's own .env is used — host process env and .env.global are
-	// both intentionally excluded to prevent leaking Arcane secrets.
-	fullEnvMap := make(projects.EnvMap)
-	if absWorkdir, absErr := filepath.Abs(projectPath); absErr == nil {
-		fullEnvMap["PWD"] = absWorkdir
-	}
-
-	// Prefer the provided new environment content if available, otherwise read from disk.
-	if envContent != nil {
-		if fileEnv, envErr := projects.ParseProjectEnvContent(*envContent, fullEnvMap); envErr != nil {
-			return fmt.Errorf("parse provided env content: %w", envErr)
-		} else {
-			maps.Copy(fullEnvMap, fileEnv)
-		}
-	} else {
-		projectEnvPath := filepath.Join(projectPath, ".env")
-		if fileEnv, envErr := projects.ParseProjectEnvFile(projectEnvPath, fullEnvMap); envErr != nil {
-			return fmt.Errorf("parse project env file: %w", envErr)
-		} else {
-			maps.Copy(fullEnvMap, fileEnv)
-		}
+	fullEnvMap, envErr := buildComposeValidationEnvironment(projectsDirectory, projectPath, effectiveEnvContent)
+	if envErr != nil {
+		return envErr
 	}
 
 	validationProjectName := normalizeComposeProjectName(projectName)
@@ -1948,7 +2288,7 @@ func (s *ProjectService) validateComposeContentForUpdate(ctx context.Context, pr
 		Environment: composetypes.Mapping(fullEnvMap),
 	}
 
-	err = withTransientValidationEnvFile(projectPath, envContent, func() error {
+	err = withTransientValidationEnvFile(projectPath, effectiveEnvContent, func() error {
 		_, loadErr := loader.LoadWithContext(ctx, cfg, func(opts *loader.Options) {
 			if validationProjectName != "" {
 				opts.SetProjectName(validationProjectName, true)
@@ -1960,7 +2300,73 @@ func (s *ProjectService) validateComposeContentForUpdate(ctx context.Context, pr
 	return err
 }
 
-func withTransientValidationEnvFile(projectPath string, envContent *string, run func() error) (err error) {
+func buildComposeValidationEnvironment(projectsDirectory, projectPath string, effectiveEnvContent *string) (projects.EnvMap, error) {
+	// Validation should match project-visible env sources without inheriting the
+	// Arcane process environment, which may contain unrelated secrets.
+	fullEnvMap := make(projects.EnvMap)
+	if absWorkdir, absErr := filepath.Abs(projectPath); absErr == nil {
+		fullEnvMap["PWD"] = absWorkdir
+	} else {
+		fullEnvMap["PWD"] = projectPath
+	}
+
+	globalEnvPath := filepath.Join(projectsDirectory, projects.GlobalEnvFileName)
+	globalEnv, err := parseComposeValidationEnvFile(globalEnvPath, fullEnvMap)
+	if err != nil {
+		return nil, fmt.Errorf("parse global env file: %w", err)
+	}
+	maps.Copy(fullEnvMap, globalEnv)
+
+	if effectiveEnvContent != nil {
+		projectEnv, err := parseComposeValidationEnvContent(*effectiveEnvContent, fullEnvMap)
+		if err != nil {
+			return nil, fmt.Errorf("parse provided env content: %w", err)
+		}
+		maps.Copy(fullEnvMap, projectEnv)
+		return fullEnvMap, nil
+	}
+
+	projectEnvPath := filepath.Join(projectPath, ".env")
+	projectEnv, err := parseComposeValidationEnvFile(projectEnvPath, fullEnvMap)
+	if err != nil {
+		return nil, fmt.Errorf("parse project env file: %w", err)
+	}
+	maps.Copy(fullEnvMap, projectEnv)
+
+	return fullEnvMap, nil
+}
+
+func parseComposeValidationEnvFile(path string, contextEnv projects.EnvMap) (projects.EnvMap, error) {
+	if _, err := os.Stat(path); err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("stat file: %w", err)
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read file: %w", err)
+	}
+
+	return parseComposeValidationEnvContent(string(content), contextEnv)
+}
+
+func parseComposeValidationEnvContent(content string, contextEnv projects.EnvMap) (projects.EnvMap, error) {
+	lookupFn := func(key string) (string, bool) {
+		value, ok := contextEnv[key]
+		return value, ok
+	}
+
+	envMap, err := dotenv.ParseWithLookup(strings.NewReader(content), lookupFn)
+	if err != nil {
+		return nil, fmt.Errorf("parse env: %w", err)
+	}
+
+	return projects.EnvMap(envMap), nil
+}
+
+func withTransientValidationEnvFile(projectPath string, effectiveEnvContent *string, run func() error) (err error) {
 	envPath := filepath.Join(projectPath, ".env")
 	originalContent, readErr := os.ReadFile(envPath)
 	originalExists := readErr == nil
@@ -1968,13 +2374,13 @@ func withTransientValidationEnvFile(projectPath string, envContent *string, run 
 		return fmt.Errorf("prepare env file for compose validation: %w", readErr)
 	}
 
-	shouldWrite := envContent != nil || !originalExists
+	shouldWrite := effectiveEnvContent != nil || !originalExists
 	if shouldWrite {
 		content := ""
-		if envContent != nil {
-			content = *envContent
+		if effectiveEnvContent != nil {
+			content = *effectiveEnvContent
 		}
-		if writeErr := fs.WriteEnvFile(projectPath, projectPath, content); writeErr != nil {
+		if writeErr := projects.WriteEnvFile(projectPath, projectPath, content); writeErr != nil {
 			return fmt.Errorf("prepare env file for compose validation: %w", writeErr)
 		}
 
@@ -1982,8 +2388,8 @@ func withTransientValidationEnvFile(projectPath string, envContent *string, run 
 			var restoreErr error
 			switch {
 			case originalExists:
-				restoreErr = fs.WriteEnvFile(projectPath, projectPath, string(originalContent))
-			case envContent != nil:
+				restoreErr = projects.WriteEnvFile(projectPath, projectPath, string(originalContent))
+			case effectiveEnvContent != nil:
 				restoreErr = os.Remove(envPath)
 			default:
 				restoreErr = os.Remove(envPath)
@@ -2004,6 +2410,226 @@ func withTransientValidationEnvFile(projectPath string, envContent *string, run 
 	return run()
 }
 
+func (s *ProjectService) resolveEffectiveEnvContentForUpdateInternal(projectPath string, envContent *string) (*string, error) {
+	if envContent != nil {
+		return envContent, nil
+	}
+
+	state, err := projects.ReadProjectEnvState(projectPath)
+	if err != nil {
+		return nil, fmt.Errorf("read project env state: %w", err)
+	}
+
+	effectiveContent, err := s.resolveStoredEffectiveEnvContentInternal(state)
+	if err != nil {
+		return nil, err
+	}
+	if effectiveContent == "" && !state.HasEffective && !state.HasGitSource && !state.HasOverride {
+		return nil, nil
+	}
+
+	return &effectiveContent, nil
+}
+
+func (s *ProjectService) resolveStoredEffectiveEnvContentInternal(state projects.ProjectEnvState) (string, error) {
+	if state.HasEffective {
+		return state.EffectiveContent, nil
+	}
+	if state.HasGitSource || state.HasOverride {
+		effectiveContent, err := projects.BuildEffectiveEnvContent(state.GitContent, state.OverrideContent)
+		if err != nil {
+			return "", fmt.Errorf("build effective env content: %w", err)
+		}
+		return effectiveContent, nil
+	}
+	return state.DirectContent, nil
+}
+
+func (s *ProjectService) persistEffectiveEnvContentInternal(projectPath, projectsDirectory, envContent string) error {
+	state, err := projects.ReadProjectEnvState(projectPath)
+	if err != nil {
+		return fmt.Errorf("read project env state: %w", err)
+	}
+
+	if !state.HasGitSource {
+		if state.HasOverride {
+			if err := projects.RemoveProjectFile(projectsDirectory, projectPath, projects.OverrideEnvFileName); err != nil {
+				return err
+			}
+		}
+		return projects.WriteEnvFile(projectsDirectory, projectPath, envContent)
+	}
+
+	overrideContent, err := projects.BuildOverrideEnvContent(state.GitContent, envContent)
+	if err != nil {
+		return fmt.Errorf("build override env content: %w", err)
+	}
+
+	effectiveContent, err := projects.BuildEffectiveEnvContent(state.GitContent, overrideContent)
+	if err != nil {
+		return fmt.Errorf("build effective env content: %w", err)
+	}
+
+	if err := projects.WriteEnvFile(projectsDirectory, projectPath, effectiveContent); err != nil {
+		return err
+	}
+
+	if strings.TrimSpace(overrideContent) == "" {
+		if err := projects.RemoveProjectFile(projectsDirectory, projectPath, projects.OverrideEnvFileName); err != nil {
+			return err
+		}
+	} else if err := projects.WriteProjectFile(projectsDirectory, projectPath, projects.OverrideEnvFileName, overrideContent); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *ProjectService) ensureEffectiveEnvFileInternal(projectPath, projectsDirectory string) error {
+	state, err := projects.ReadProjectEnvState(projectPath)
+	if err != nil {
+		return fmt.Errorf("read project env state: %w", err)
+	}
+
+	if !state.HasGitSource {
+		if state.HasOverride {
+			if err := projects.RemoveProjectFile(projectsDirectory, projectPath, projects.OverrideEnvFileName); err != nil {
+				return err
+			}
+			effectiveContent, err := s.resolveStoredEffectiveEnvContentInternal(state)
+			if err != nil {
+				return err
+			}
+			return projects.WriteEnvFile(projectsDirectory, projectPath, effectiveContent)
+		}
+		return projects.EnsureEnvFile(projectsDirectory, projectPath)
+	}
+
+	effectiveContent, err := projects.BuildEffectiveEnvContent(state.GitContent, state.OverrideContent)
+	if err != nil {
+		return fmt.Errorf("build effective env content: %w", err)
+	}
+
+	return projects.WriteEnvFile(projectsDirectory, projectPath, effectiveContent)
+}
+
+type gitSyncEnvUpdateInternal struct {
+	state            projects.ProjectEnvState
+	gitEnvContent    *string
+	overrideContent  string
+	effectiveContent *string
+}
+
+func (s *ProjectService) prepareGitSyncEnvUpdateInternal(projectPath string, gitEnvContent *string) (gitSyncEnvUpdateInternal, error) {
+	state, err := projects.ReadProjectEnvState(projectPath)
+	if err != nil {
+		return gitSyncEnvUpdateInternal{}, fmt.Errorf("read project env state: %w", err)
+	}
+
+	update := gitSyncEnvUpdateInternal{
+		state:         state,
+		gitEnvContent: gitEnvContent,
+	}
+
+	if gitEnvContent == nil {
+		effectiveContent, err := s.resolveStoredEffectiveEnvContentInternal(state)
+		if err != nil {
+			return gitSyncEnvUpdateInternal{}, err
+		}
+		if effectiveContent == "" && !state.HasEffective && !state.HasGitSource && !state.HasOverride {
+			return update, nil
+		}
+		update.effectiveContent = &effectiveContent
+		return update, nil
+	}
+
+	overrideContent, err := s.resolveOverrideContentForGitSyncInternal(state, *gitEnvContent)
+	if err != nil {
+		return gitSyncEnvUpdateInternal{}, err
+	}
+	update.overrideContent = overrideContent
+
+	effectiveContent, err := projects.BuildEffectiveEnvContent(*gitEnvContent, overrideContent)
+	if err != nil {
+		return gitSyncEnvUpdateInternal{}, fmt.Errorf("build effective env content: %w", err)
+	}
+	update.effectiveContent = &effectiveContent
+
+	return update, nil
+}
+
+func (s *ProjectService) resolveOverrideContentForGitSyncInternal(state projects.ProjectEnvState, gitEnvContent string) (string, error) {
+	switch {
+	case state.HasGitSource:
+		overrideContent, err := projects.BuildOverrideEnvContent(state.GitContent, state.OverrideContent)
+		if err != nil {
+			return "", fmt.Errorf("build override env content: %w", err)
+		}
+		return overrideContent, nil
+	case state.HasOverride:
+		effectiveContent, err := s.resolveStoredEffectiveEnvContentInternal(state)
+		if err != nil {
+			return "", err
+		}
+		overrideContent, err := projects.BuildOverrideEnvContent(gitEnvContent, effectiveContent)
+		if err != nil {
+			return "", fmt.Errorf("build override env content: %w", err)
+		}
+		return overrideContent, nil
+	case strings.TrimSpace(state.DirectContent) != "":
+		overrideContent, err := projects.BuildAdditiveOverrideEnvContent(gitEnvContent, state.DirectContent)
+		if err != nil {
+			return "", fmt.Errorf("build override env content: %w", err)
+		}
+		return overrideContent, nil
+	default:
+		return "", nil
+	}
+}
+
+func (s *ProjectService) persistGitSyncEnvFilesInternal(projectPath, projectsDirectory string, update gitSyncEnvUpdateInternal) error {
+	if update.gitEnvContent == nil {
+		if update.state.HasGitSource {
+			if err := projects.RemoveProjectFile(projectsDirectory, projectPath, projects.GitSourceEnvFileName); err != nil {
+				return err
+			}
+		}
+		if update.state.HasOverride {
+			if err := projects.RemoveProjectFile(projectsDirectory, projectPath, projects.OverrideEnvFileName); err != nil {
+				return err
+			}
+		}
+		if update.effectiveContent != nil || update.state.HasEffective || update.state.HasGitSource || update.state.HasOverride {
+			effectiveContent := ""
+			if update.effectiveContent != nil {
+				effectiveContent = *update.effectiveContent
+			}
+			return projects.WriteEnvFile(projectsDirectory, projectPath, effectiveContent)
+		}
+		return projects.EnsureEnvFile(projectsDirectory, projectPath)
+	}
+
+	if update.effectiveContent == nil {
+		return fmt.Errorf("missing effective env content for git sync update")
+	}
+
+	if err := projects.WriteEnvFile(projectsDirectory, projectPath, *update.effectiveContent); err != nil {
+		return err
+	}
+	if err := projects.WriteProjectFile(projectsDirectory, projectPath, projects.GitSourceEnvFileName, *update.gitEnvContent); err != nil {
+		return err
+	}
+	if strings.TrimSpace(update.overrideContent) == "" {
+		if err := projects.RemoveProjectFile(projectsDirectory, projectPath, projects.OverrideEnvFileName); err != nil {
+			return err
+		}
+	} else if err := projects.WriteProjectFile(projectsDirectory, projectPath, projects.OverrideEnvFileName, update.overrideContent); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (s *ProjectService) applyProjectRenameIfNeeded(proj *models.Project, name *string, projectsDirectory string) error {
 	if name == nil {
 		return nil
@@ -2018,7 +2644,7 @@ func (s *ProjectService) applyProjectRenameIfNeeded(proj *models.Project, name *
 		return fmt.Errorf("project must be stopped before renaming (current status: %s)", proj.Status)
 	}
 
-	newDirName := fs.SanitizeProjectName(newName)
+	newDirName := projects.SanitizeProjectName(newName)
 	if newDirName == "" || strings.Trim(newDirName, "_") == "" {
 		return fmt.Errorf("invalid project name: results in empty directory name")
 	}
@@ -2059,6 +2685,11 @@ func (s *ProjectService) UpdateProjectIncludeFile(ctx context.Context, projectID
 		return fmt.Errorf("failed to update include file: %w", err)
 	}
 
+	// Recalculate service counts since include files can define services
+	if err := s.updateProjectStatusandCountsInternal(ctx, proj.ID, proj.Status); err != nil {
+		slog.WarnContext(ctx, "failed to update service counts after include file edit", "projectID", proj.ID, "error", err)
+	}
+
 	metadata := models.JSON{
 		"action":       "update_include",
 		"projectID":    proj.ID,
@@ -2077,7 +2708,7 @@ func (s *ProjectService) UpdateProjectIncludeFile(ctx context.Context, projectID
 // If not, it normalizes the path to `<projectsRoot>/<dirName or sanitized project name>`. When persist=true, it saves
 // the updated project path to the database.
 func (s *ProjectService) ensureProjectPathUnderRoot(ctx context.Context, proj *models.Project, persist bool) error {
-	projectsDirectory, err := fs.GetProjectsDirectory(ctx, s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects"))
+	projectsDirectory, err := projects.GetProjectsDirectory(ctx, s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects"))
 	if err != nil {
 		return fmt.Errorf("failed to get projects directory: %w", err)
 	}
@@ -2090,14 +2721,14 @@ func (s *ProjectService) ensureProjectPathUnderRoot(ctx context.Context, proj *m
 		projPathAbs = filepath.Clean(abs)
 	}
 
-	if fs.IsSafeSubdirectory(rootAbs, projPathAbs) {
+	if projects.IsSafeSubdirectory(rootAbs, projPathAbs) {
 		return nil
 	}
 
 	// Attempt to repair using known directory name or sanitized project name
 	dirName := utils.DerefString(proj.DirName)
 	if strings.TrimSpace(dirName) == "" {
-		dirName = fs.SanitizeProjectName(proj.Name)
+		dirName = projects.SanitizeProjectName(proj.Name)
 	}
 	candidate := filepath.Join(projectsDirectory, dirName)
 
@@ -2231,6 +2862,7 @@ func (s *ProjectService) listProjectsByStatus(
 		SearchAccessors: []pagination.SearchAccessor[project.Details]{
 			func(p project.Details) (string, error) { return p.Name, nil },
 			func(p project.Details) (string, error) { return p.Path, nil },
+			func(p project.Details) (string, error) { return p.RelativePath, nil },
 			func(p project.Details) (string, error) { return p.Status, nil },
 			func(p project.Details) (string, error) { return p.DirName, nil },
 		},
@@ -2257,6 +2889,12 @@ func (s *ProjectService) listProjectsByStatus(
 						return 1
 					}
 					return 0
+				},
+			},
+			{
+				Key: "path",
+				Fn: func(a, b project.Details) int {
+					return strings.Compare(a.RelativePath, b.RelativePath)
 				},
 			},
 			{
@@ -2296,6 +2934,11 @@ func (s *ProjectService) listProjectsByStatus(
 // fetchProjectStatusConcurrently fetches live Docker status for multiple projects in parallel
 // Optimized to use a single Docker API call instead of N calls + N file reads
 func (s *ProjectService) fetchProjectStatusConcurrently(ctx context.Context, projectsList []models.Project) []project.Details {
+	projectsDir, err := s.getProjectsDirectoryInternal(ctx)
+	if err != nil {
+		slog.WarnContext(ctx, "failed to resolve projects directory for relative project paths", "error", err)
+	}
+
 	// 1. Fetch all compose containers in one go
 	containers, err := projects.ListGlobalComposeContainers(ctx)
 	if err != nil {
@@ -2304,6 +2947,14 @@ func (s *ProjectService) fetchProjectStatusConcurrently(ctx context.Context, pro
 		results := make([]project.Details, len(projectsList))
 		for i, p := range projectsList {
 			_ = mapper.MapStruct(p, &results[i])
+			results[i].CreatedAt = p.CreatedAt.Format(time.RFC3339)
+			results[i].UpdatedAt = p.UpdatedAt.Format(time.RFC3339)
+			results[i].DirName = utils.DerefString(p.DirName)
+			results[i].RelativePath = s.getProjectRelativePathInternal(projectsDir, p.Path)
+			results[i].GitOpsManagedBy = p.GitOpsManagedBy
+			meta := s.getProjectMetadataForProject(ctx, p)
+			results[i].IconURL = meta.ProjectIconURL
+			results[i].URLs = meta.ProjectURLS
 			results[i].Status = string(models.ProjectStatusUnknown)
 		}
 		return results
@@ -2321,21 +2972,22 @@ func (s *ProjectService) fetchProjectStatusConcurrently(ctx context.Context, pro
 	// 3. Map to DTOs
 	results := make([]project.Details, len(projectsList))
 	for i, p := range projectsList {
-		results[i] = s.mapProjectToDto(ctx, p, containersByProject)
+		results[i] = s.mapProjectToDto(ctx, projectsDir, p, containersByProject)
 	}
 
 	return results
 }
 
-func (s *ProjectService) mapProjectToDto(ctx context.Context, p models.Project, containersByProject map[string][]container.Summary) project.Details {
+func (s *ProjectService) mapProjectToDto(ctx context.Context, projectsDir string, p models.Project, containersByProject map[string][]container.Summary) project.Details {
 	var resp project.Details
 	_ = mapper.MapStruct(p, &resp)
 
 	resp.CreatedAt = p.CreatedAt.Format(time.RFC3339)
 	resp.UpdatedAt = p.UpdatedAt.Format(time.RFC3339)
 	resp.DirName = utils.DerefString(p.DirName)
+	resp.RelativePath = s.getProjectRelativePathInternal(projectsDir, p.Path)
 	resp.GitOpsManagedBy = p.GitOpsManagedBy
-	meta := s.getProjectMetadataFromPath(ctx, p.Path)
+	meta := s.getProjectMetadataForProject(ctx, p)
 	resp.IconURL = meta.ProjectIconURL
 	resp.URLs = meta.ProjectURLS
 
@@ -2402,24 +3054,31 @@ func (s *ProjectService) mapProjectToDto(ctx context.Context, p models.Project, 
 	// since we are not parsing the YAML here.
 	resp.ServiceCount = p.ServiceCount
 	resp.RunningCount = runningCount
-
-	// Fix for missing service count (e.g. newly discovered projects)
-	if resp.ServiceCount == 0 {
-		if count, err := s.countServicesFromCompose(ctx, p); err == nil && count > 0 {
-			resp.ServiceCount = count
-			// Update DB asynchronously
-			go func(ctx context.Context, pid string, c int) {
-				s.db.WithContext(ctx).Model(&models.Project{}).Where("id = ?", pid).Update("service_count", c)
-			}(context.WithoutCancel(ctx), p.ID, count)
-		}
+	if resp.ServiceCount == 0 && len(services) > 0 {
+		resp.ServiceCount = len(services)
+		// Persist the inferred count so later list loads do not need compose parsing.
+		go func(ctx context.Context, pid string, count int) {
+			s.db.WithContext(ctx).Model(&models.Project{}).Where("id = ?", pid).Update("service_count", count)
+		}(context.WithoutCancel(ctx), p.ID, resp.ServiceCount)
 	}
 
-	// Calculate Status
-	if len(services) == 0 {
+	// For missing service count (e.g. newly discovered projects), skip the
+	// expensive countServicesFromCompose call which loads and parses the entire
+	// compose project. The count will be populated the next time the project
+	// detail endpoint is called or during the periodic filesystem sync.
+
+	// Calculate Status using actual container count from Docker rather than the
+	// (potentially stale) DB ServiceCount. The DB value can become outdated when
+	// a service is removed from the compose file but compose parsing fails during
+	// filesystem sync, leaving the old count in the database. This mirrors the
+	// logic in calculateProjectStatus and GetProjectDetails, which both use the
+	// live container/service list as the source of truth.
+	actualServiceCount := len(services)
+	if actualServiceCount == 0 {
 		resp.Status = string(models.ProjectStatusStopped)
 	} else {
 		switch {
-		case runningCount >= resp.ServiceCount && resp.ServiceCount > 0:
+		case runningCount >= actualServiceCount:
 			resp.Status = string(models.ProjectStatusRunning)
 		case runningCount > 0:
 			resp.Status = string(models.ProjectStatusPartiallyRunning)
@@ -2431,8 +3090,8 @@ func (s *ProjectService) mapProjectToDto(ctx context.Context, p models.Project, 
 	return resp
 }
 
-func (s *ProjectService) getProjectMetadataFromPath(ctx context.Context, projectPath string) projects.ArcaneComposeMetadata {
-	composeFile, err := projects.DetectComposeFile(projectPath)
+func (s *ProjectService) getProjectMetadataForProject(ctx context.Context, p models.Project) projects.ArcaneComposeMetadata {
+	composeFile, err := s.resolveProjectComposeFileInternal(ctx, &p)
 	if err != nil {
 		return projects.ArcaneComposeMetadata{ServiceIcons: map[string]string{}}
 	}
@@ -2449,19 +3108,7 @@ func (s *ProjectService) getProjectMetadataFromPath(ctx context.Context, project
 // End Table Functions
 
 func (s *ProjectService) countServicesFromCompose(ctx context.Context, p models.Project) (int, error) {
-	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
-	projectsDirectory, err := fs.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
-	if err != nil {
-		return 0, err
-	}
-
-	pathMapper, pmErr := s.getPathMapper(ctx)
-	if pmErr != nil {
-		slog.WarnContext(ctx, "failed to create path mapper, continuing without translation", "error", pmErr)
-	}
-
-	autoInjectEnv := s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false)
-	proj, _, err := projects.LoadComposeProjectFromDir(ctx, p.Path, normalizeComposeProjectName(p.Name), projectsDirectory, autoInjectEnv, pathMapper)
+	proj, _, err := s.loadComposeProjectForProjectInternal(ctx, &p)
 	if err != nil {
 		return 0, err
 	}

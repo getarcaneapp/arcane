@@ -99,6 +99,7 @@
 
 		for (let i = 0; i < uploadFiles.length; i++) {
 			const file = uploadFiles[i];
+			if (!file) continue;
 
 			const rejectedReason = shouldAcceptFile(file, (fileCount ?? 0) + i + 1);
 

@@ -19,6 +19,7 @@
 		disabled?: boolean;
 		onCheckedChange?: (checked: boolean) => void;
 	} = $props();
+	void checked;
 </script>
 
 <div class="flex items-center space-x-2">

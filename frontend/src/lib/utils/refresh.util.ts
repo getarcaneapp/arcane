@@ -31,7 +31,9 @@ export async function parallelRefresh<T extends Record<string, RefreshTask<any>>
 
 	await Promise.all(
 		taskKeys.map(async (key) => {
-			const task = tasks[key];
+			const task = tasks[key as keyof T];
+			if (!task) return;
+
 			handleApiResultWithCallbacks({
 				result: await tryCatch(task.fetch()),
 				message: task.errorMessage,

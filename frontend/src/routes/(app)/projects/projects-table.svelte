@@ -75,6 +75,7 @@
 	const columns = [
 		{ accessorKey: 'id', title: m.common_id(), hidden: true },
 		{ accessorKey: 'name', title: m.common_name(), sortable: true, cell: NameCell },
+		{ accessorKey: 'path', title: m.projects_col_directory(), sortable: true, cell: DirectoryCell },
 		{ accessorKey: 'gitOpsManagedBy', title: m.projects_col_provider(), cell: ProviderCell },
 		{ accessorKey: 'status', title: m.common_status(), sortable: true, cell: StatusCell },
 		{ accessorKey: 'createdAt', title: m.common_created(), sortable: true, cell: CreatedCell },
@@ -83,6 +84,7 @@
 
 	const mobileFields = [
 		{ id: 'id', label: m.common_id(), defaultVisible: false },
+		{ id: 'directory', label: m.projects_col_directory(), defaultVisible: true },
 		{ id: 'provider', label: m.projects_col_provider(), defaultVisible: true },
 		{ id: 'status', label: m.common_status(), defaultVisible: true },
 		{ id: 'serviceCount', label: m.compose_services(), defaultVisible: true },
@@ -125,6 +127,10 @@
 		<IconImage src={item.iconUrl} alt={item.name} fallback={FolderOpenIcon} class="size-8" containerClass="size-10" />
 		<a class="font-medium hover:underline" href="/projects/{item.id}">{item.name}</a>
 	</div>
+{/snippet}
+
+{#snippet DirectoryCell({ item }: { item: Project })}
+	<span class="text-muted-foreground block max-w-[22rem] truncate">{item.relativePath ?? item.dirName ?? item.path}</span>
 {/snippet}
 
 {#snippet ProviderCell({ item }: { item: Project })}
@@ -191,6 +197,13 @@
 					: null
 		]}
 		fields={[
+			{
+				label: m.projects_col_directory(),
+				getValue: (item: Project) => item.relativePath ?? item.dirName ?? item.path,
+				icon: FolderOpenIcon,
+				iconVariant: 'gray' as const,
+				show: mobileFieldVisibility.directory ?? true
+			},
 			{
 				label: m.projects_col_provider(),
 				type: 'component',

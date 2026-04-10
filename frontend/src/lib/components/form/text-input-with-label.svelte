@@ -55,7 +55,7 @@
 	<Input
 		{id}
 		{name}
-		bind:value
+		{value}
 		{placeholder}
 		{disabled}
 		{type}

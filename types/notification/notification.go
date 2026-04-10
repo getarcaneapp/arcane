@@ -1,6 +1,10 @@
 package notification
 
-import "github.com/getarcaneapp/arcane/types/base"
+import (
+	"github.com/getarcaneapp/arcane/types/base"
+	"github.com/getarcaneapp/arcane/types/imageupdate"
+	"github.com/getarcaneapp/arcane/types/system"
+)
 
 // Provider is the type for notification provider identifiers.
 type Provider string
@@ -120,4 +124,60 @@ type AppriseResponse struct {
 	//
 	// Required: false
 	ContainerUpdateTag string `json:"containerUpdateTag"`
+}
+
+type DispatchKind string
+
+const (
+	DispatchKindImageUpdate        DispatchKind = "image_update"
+	DispatchKindBatchImageUpdate   DispatchKind = "batch_image_update"
+	DispatchKindContainerUpdate    DispatchKind = "container_update"
+	DispatchKindVulnerabilityFound DispatchKind = "vulnerability_found"
+	DispatchKindPruneReport        DispatchKind = "prune_report"
+	DispatchKindAutoHeal           DispatchKind = "auto_heal"
+)
+
+type DispatchImageUpdate struct {
+	ImageRef   string               `json:"imageRef"`
+	UpdateInfo imageupdate.Response `json:"updateInfo"`
+}
+
+type DispatchBatchImageUpdate struct {
+	Updates map[string]*imageupdate.Response `json:"updates"`
+}
+
+type DispatchContainerUpdate struct {
+	ContainerName string `json:"containerName"`
+	ImageRef      string `json:"imageRef"`
+	OldDigest     string `json:"oldDigest,omitempty"`
+	NewDigest     string `json:"newDigest,omitempty"`
+}
+
+type DispatchVulnerabilityFound struct {
+	CVEID            string `json:"cveId"`
+	CVELink          string `json:"cveLink"`
+	Severity         string `json:"severity"`
+	ImageName        string `json:"imageName"`
+	FixedVersion     string `json:"fixedVersion,omitempty"`
+	PkgName          string `json:"pkgName,omitempty"`
+	InstalledVersion string `json:"installedVersion,omitempty"`
+}
+
+type DispatchPruneReport struct {
+	Result system.PruneAllResult `json:"result"`
+}
+
+type DispatchAutoHeal struct {
+	ContainerName string `json:"containerName"`
+	ContainerID   string `json:"containerId"`
+}
+
+type DispatchRequest struct {
+	Kind               DispatchKind                `json:"kind"`
+	ImageUpdate        *DispatchImageUpdate        `json:"imageUpdate,omitempty"`
+	BatchImageUpdate   *DispatchBatchImageUpdate   `json:"batchImageUpdate,omitempty"`
+	ContainerUpdate    *DispatchContainerUpdate    `json:"containerUpdate,omitempty"`
+	VulnerabilityFound *DispatchVulnerabilityFound `json:"vulnerabilityFound,omitempty"`
+	PruneReport        *DispatchPruneReport        `json:"pruneReport,omitempty"`
+	AutoHeal           *DispatchAutoHeal           `json:"autoHeal,omitempty"`
 }

@@ -11,9 +11,9 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	dockerutils "github.com/getarcaneapp/arcane/backend/internal/utils/docker"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
-	utilsregistry "github.com/getarcaneapp/arcane/backend/internal/utils/registry"
+	dockerutils "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
+	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
+	utilsregistry "github.com/getarcaneapp/arcane/backend/pkg/utils/registry"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
 	"github.com/getarcaneapp/arcane/types/vulnerability"

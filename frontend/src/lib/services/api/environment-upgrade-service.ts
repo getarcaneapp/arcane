@@ -1,4 +1,4 @@
-import axios from 'axios';
+import { apiClient } from '../api-service';
 
 export interface EnvironmentUpgradeCheckResponse {
 	canUpgrade: boolean;
@@ -18,7 +18,7 @@ export interface EnvironmentUpgradeResponse {
  * @returns Promise with upgrade availability status
  */
 async function checkEnvironmentUpgradeAvailable(environmentId: string): Promise<EnvironmentUpgradeCheckResponse> {
-	const res = await axios.get<EnvironmentUpgradeCheckResponse>(`/api/environments/${environmentId}/system/upgrade/check`);
+	const res = await apiClient.get<EnvironmentUpgradeCheckResponse>(`/environments/${environmentId}/system/upgrade/check`);
 	return res.data;
 }
 
@@ -28,7 +28,7 @@ async function checkEnvironmentUpgradeAvailable(environmentId: string): Promise<
  * @returns Promise with upgrade initiation result
  */
 async function triggerEnvironmentUpgrade(environmentId: string): Promise<EnvironmentUpgradeResponse> {
-	const res = await axios.post<EnvironmentUpgradeResponse>(`/api/environments/${environmentId}/system/upgrade`);
+	const res = await apiClient.post<EnvironmentUpgradeResponse>(`/environments/${environmentId}/system/upgrade`);
 	return res.data;
 }
 

@@ -138,7 +138,7 @@ function resolveRef(root: SchemaObject, ref: string, visited: Set<string>): Sche
 
 function expandCandidates(root: SchemaObject, candidate: SchemaObject, visited: Set<string>): SchemaObject[] {
 	const expanded: SchemaObject[] = [];
-	const ref = candidate.$ref;
+	const ref = candidate['$ref'];
 	if (typeof ref === 'string') {
 		const resolved = resolveRef(root, ref, visited);
 		if (resolved) {
@@ -180,24 +180,24 @@ function getPathCandidates(root: SchemaObject, path: Array<string | number>): Sc
 			const expanded = expandCandidates(root, candidate, new Set<string>());
 			for (const node of expanded) {
 				if (typeof segment === 'number') {
-					const prefixItems = node.prefixItems;
+					const prefixItems = node['prefixItems'];
 					if (Array.isArray(prefixItems) && segment < prefixItems.length) {
 						const fromPrefix = asSchemaObject(prefixItems[segment]);
 						if (fromPrefix) nextCandidates.push(fromPrefix);
 					}
 
-					const items = asSchemaObject(node.items);
+					const items = asSchemaObject(node['items']);
 					if (items) nextCandidates.push(items);
 					continue;
 				}
 
-				const properties = asSchemaObject(node.properties);
+				const properties = asSchemaObject(node['properties']);
 				if (properties) {
 					const fromProperty = asSchemaObject(properties[segment]);
 					if (fromProperty) nextCandidates.push(fromProperty);
 				}
 
-				const patternProperties = asSchemaObject(node.patternProperties);
+				const patternProperties = asSchemaObject(node['patternProperties']);
 				if (patternProperties) {
 					for (const patternValue of Object.values(patternProperties)) {
 						const fromPattern = asSchemaObject(patternValue);
@@ -205,7 +205,7 @@ function getPathCandidates(root: SchemaObject, path: Array<string | number>): Sc
 					}
 				}
 
-				const additionalProperties = asSchemaObject(node.additionalProperties);
+				const additionalProperties = asSchemaObject(node['additionalProperties']);
 				if (additionalProperties) nextCandidates.push(additionalProperties);
 			}
 		}
@@ -231,7 +231,7 @@ function collectPropertySchemas(root: SchemaObject, path: Array<string | number>
 	for (const candidate of candidates) {
 		const expanded = expandCandidates(root, candidate, new Set<string>());
 		for (const node of expanded) {
-			const properties = asSchemaObject(node.properties);
+			const properties = asSchemaObject(node['properties']);
 			if (!properties) continue;
 			for (const [key, value] of Object.entries(properties)) {
 				const propertySchema = asSchemaObject(value);
@@ -246,13 +246,13 @@ function collectPropertySchemas(root: SchemaObject, path: Array<string | number>
 }
 
 function extractSchemaDoc(schema: SchemaObject): SchemaDoc {
-	const title = typeof schema.title === 'string' ? schema.title : undefined;
-	const description = typeof schema.description === 'string' ? schema.description : undefined;
-	const defaultValue = schema.default !== undefined ? JSON.stringify(schema.default) : undefined;
+	const title = typeof schema['title'] === 'string' ? schema['title'] : undefined;
+	const description = typeof schema['description'] === 'string' ? schema['description'] : undefined;
+	const defaultValue = schema['default'] !== undefined ? JSON.stringify(schema['default']) : undefined;
 	let examples: string[] | undefined;
 
-	if (Array.isArray(schema.examples)) {
-		examples = schema.examples.slice(0, 3).map((value) => JSON.stringify(value));
+	if (Array.isArray(schema['examples'])) {
+		examples = schema['examples'].slice(0, 3).map((value) => JSON.stringify(value));
 	}
 
 	return {
@@ -462,8 +462,8 @@ export function getEnumValueCompletions(schema: SchemaObject | null, path: Array
 	for (const candidate of candidates) {
 		const expanded = expandCandidates(schema, candidate, new Set<string>());
 		for (const node of expanded) {
-			if (!Array.isArray(node.enum)) continue;
-			for (const value of node.enum) {
+			if (!Array.isArray(node['enum'])) continue;
+			for (const value of node['enum']) {
 				if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
 					values.add(String(value));
 				}

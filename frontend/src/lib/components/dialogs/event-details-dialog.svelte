@@ -47,7 +47,7 @@
 		if (!event) {
 			return null;
 		}
-		const metadataError = event.metadata?.error;
+		const metadataError = event.metadata?.['error'];
 		if (typeof metadataError === 'string' && metadataError.trim() !== '') {
 			return metadataError;
 		}
@@ -133,7 +133,7 @@
 	}
 </script>
 
-<ResponsiveDialog bind:open contentClass="sm:max-w-[980px]">
+<ResponsiveDialog {open} onOpenChange={(nextOpen) => (open = nextOpen)} contentClass="sm:max-w-[980px]">
 	{#snippet children()}
 		<div class="space-y-4 pt-4">
 			{@render headerContent()}

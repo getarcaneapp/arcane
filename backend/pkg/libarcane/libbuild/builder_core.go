@@ -11,8 +11,8 @@ import (
 
 	"github.com/docker/cli/cli/config"
 	configtypes "github.com/docker/cli/cli/config/types"
-	utilsregistry "github.com/getarcaneapp/arcane/backend/internal/utils/registry"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/timeouts"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/timeouts"
+	utilsregistry "github.com/getarcaneapp/arcane/backend/pkg/utils/registry"
 	buildtypes "github.com/getarcaneapp/arcane/types/builds"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
 	buildkit "github.com/moby/buildkit/client"

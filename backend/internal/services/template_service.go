@@ -20,11 +20,11 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	appfs "github.com/getarcaneapp/arcane/backend/internal/utils/fs"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/mapper"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/pagination"
-	templateutil "github.com/getarcaneapp/arcane/backend/internal/utils/template"
+	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils"
+	httputils "github.com/getarcaneapp/arcane/backend/pkg/utils/httpx"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils/mapper"
 	"github.com/getarcaneapp/arcane/types/env"
 	tmpl "github.com/getarcaneapp/arcane/types/template"
 	"github.com/google/uuid"
@@ -46,6 +46,8 @@ type registryFetchMeta struct {
 type TemplateService struct {
 	db              *database.DB
 	httpClient      *http.Client
+	safeHTTPClient  *http.Client
+	lookupIP        httputils.LookupIPFunc
 	settingsService *SettingsService
 
 	remoteMu    sync.RWMutex
@@ -78,17 +80,26 @@ func NewTemplateService(ctx context.Context, db *database.DB, httpClient *http.C
 		httpClient = http.DefaultClient
 	}
 
-	if err := appfs.EnsureDefaultTemplates(ctx); err != nil {
+	if err := projects.EnsureDefaultTemplates(ctx); err != nil {
 		slog.WarnContext(ctx, "failed to ensure default templates", "error", err)
 	}
 
-	return &TemplateService{
+	service := &TemplateService{
 		db:                db,
 		httpClient:        httpClient,
+		lookupIP:          httputils.DefaultLookupIP,
 		settingsService:   settingsService,
 		remoteCache:       remoteCache{},
 		registryFetchMeta: make(map[string]*registryFetchMeta),
 	}
+	service.safeHTTPClient = service.newSafeHTTPClientInternal()
+	return service
+}
+
+func (s *TemplateService) WithLookupIPResolver(lookupIP httputils.LookupIPFunc) *TemplateService {
+	s.lookupIP = lookupIP
+	s.safeHTTPClient = s.newSafeHTTPClientInternal()
+	return s
 }
 
 func (s *TemplateService) ensureRemoteTemplatesLoaded(ctx context.Context) error {
@@ -251,8 +262,7 @@ func (s *TemplateService) GetTemplate(ctx context.Context, id string) (*models.C
 
 	for _, remoteTemplate := range copied {
 		if remoteTemplate.ID == id {
-			t := remoteTemplate
-			return &t, nil
+			return new(remoteTemplate), nil
 		}
 	}
 
@@ -316,7 +326,7 @@ func (s *TemplateService) DeleteTemplate(ctx context.Context, id string) error {
 			return fmt.Errorf("cannot delete remote template directly")
 		}
 
-		baseDir, err := appfs.GetTemplatesDirectory(ctx)
+		baseDir, err := projects.GetTemplatesDirectory(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to get templates directory: %w", err)
 		} else {
@@ -349,10 +359,30 @@ func (s *TemplateService) GetComposeTemplate() string {
 	return string(content)
 }
 
+func (s *TemplateService) GetSwarmStackTemplate() string {
+	swarmStackPath := filepath.Join("data", "templates", ".swarm-stack.template")
+	content, err := os.ReadFile(swarmStackPath)
+	if err != nil {
+		slog.Warn("failed to read swarm stack template", "error", err)
+		return projects.DefaultSwarmStackTemplate()
+	}
+	return string(content)
+}
+
+func (s *TemplateService) GetSwarmStackEnvTemplate() string {
+	swarmStackEnvPath := filepath.Join("data", "templates", ".swarm-stack.env.template")
+	content, err := os.ReadFile(swarmStackEnvPath)
+	if err != nil {
+		slog.Warn("failed to read swarm stack env template", "error", err)
+		return projects.DefaultSwarmStackEnvTemplate()
+	}
+	return string(content)
+}
+
 func (s *TemplateService) SaveComposeTemplate(content string) error {
 	templateDir := filepath.Join("data", "templates")
 	composePath := filepath.Join(templateDir, ".compose.template")
-	return appfs.WriteTemplateFile(composePath, content)
+	return projects.WriteTemplateFile(composePath, content)
 }
 
 func (s *TemplateService) GetEnvTemplate() string {
@@ -368,7 +398,7 @@ func (s *TemplateService) GetEnvTemplate() string {
 func (s *TemplateService) SaveEnvTemplate(content string) error {
 	templateDir := filepath.Join("data", "templates")
 	envPath := filepath.Join(templateDir, ".env.template")
-	return appfs.WriteTemplateFile(envPath, content)
+	return projects.WriteTemplateFile(envPath, content)
 }
 
 func (s *TemplateService) GetRegistries(ctx context.Context) ([]models.TemplateRegistry, error) {
@@ -536,11 +566,11 @@ func (s *TemplateService) FetchRaw(ctx context.Context, url string) ([]byte, err
 }
 
 func (s *TemplateService) doGET(ctx context.Context, url string) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	client, req, err := s.newSafeRequestInternal(ctx, http.MethodGet, url)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request for %s: %w", url, err)
+		return nil, err
 	}
-	resp, err := s.httpClient.Do(req) //nolint:gosec // intentional request to configured template registry URL
+	resp, err := client.Do(req) //nolint:gosec // intentional request to configured template registry URL
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch %s: %w", url, err)
 	}
@@ -564,7 +594,7 @@ func (s *TemplateService) fetchRegistryTemplates(ctx context.Context, reg *model
 	fetchMeta := s.registryFetchMeta[reg.ID]
 	s.registryMu.RUnlock()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reg.URL, nil)
+	client, req, err := s.newSafeRequestInternal(ctx, http.MethodGet, reg.URL)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
@@ -572,7 +602,7 @@ func (s *TemplateService) fetchRegistryTemplates(ctx context.Context, reg *model
 		req.Header.Set("If-Modified-Since", fetchMeta.LastModified)
 	}
 
-	resp, err := s.httpClient.Do(req) //nolint:gosec // intentional request to configured template registry URL
+	resp, err := client.Do(req) //nolint:gosec // intentional request to configured template registry URL
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
@@ -719,6 +749,38 @@ func (s *TemplateService) fetchURL(ctx context.Context, url string) (string, err
 	return string(body), nil
 }
 
+func (s *TemplateService) newSafeHTTPClientInternal() *http.Client {
+	client, err := httputils.NewSafeOutboundHTTPClient(s.httpClient, s.lookupIP)
+	if err != nil {
+		slog.Warn("failed to configure safe HTTP client", "error", err)
+		return nil
+	}
+	return client
+}
+
+func (s *TemplateService) newSafeRequestInternal(ctx context.Context, method, rawURL string) (*http.Client, *http.Request, error) {
+	parsedURL, err := httputils.ValidateSafeRemoteURL(ctx, rawURL, s.lookupIP)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	client := s.safeHTTPClient
+	if client == nil {
+		client = s.newSafeHTTPClientInternal()
+		if client == nil {
+			return nil, nil, fmt.Errorf("failed to configure safe HTTP client")
+		}
+		s.safeHTTPClient = client
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, parsedURL.String(), nil)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create request for %s: %w", rawURL, err)
+	}
+
+	return client, req, nil
+}
+
 func (s *TemplateService) DownloadTemplate(ctx context.Context, remoteTemplate *models.ComposeTemplate) (*models.ComposeTemplate, error) {
 	if !remoteTemplate.IsRemote {
 		return nil, fmt.Errorf("template is not remote")
@@ -726,11 +788,11 @@ func (s *TemplateService) DownloadTemplate(ctx context.Context, remoteTemplate *
 
 	base := s.templateBaseFromRemote(remoteTemplate)
 
-	dir, composePath, envPath, err := appfs.EnsureTemplateDir(ctx, base)
+	dir, composePath, envPath, err := projects.EnsureTemplateDir(ctx, base)
 	if err != nil {
 		return nil, err
 	}
-	srcDesc := appfs.ImportedComposeDescription(dir)
+	srcDesc := projects.ImportedComposeDescription(dir)
 
 	return s.downloadTemplateTransaction(ctx, remoteTemplate, base, composePath, envPath, srcDesc)
 }
@@ -751,7 +813,7 @@ func (s *TemplateService) downloadTemplateTransaction(ctx context.Context, remot
 				return fmt.Errorf("failed to fetch template content for existing local template: %w", err)
 			}
 
-			envPtr, werr := appfs.WriteTemplateFiles(composePath, envPath, composeContent, envContent)
+			envPtr, werr := projects.WriteTemplateFiles(composePath, envPath, composeContent, envContent)
 			if werr != nil {
 				return werr
 			}
@@ -773,7 +835,7 @@ func (s *TemplateService) downloadTemplateTransaction(ctx context.Context, remot
 			return fmt.Errorf("failed to fetch template content for download: %w", err)
 		}
 
-		envPtr, werr := appfs.WriteTemplateFiles(composePath, envPath, composeContent, envContent)
+		envPtr, werr := projects.WriteTemplateFiles(composePath, envPath, composeContent, envContent)
 		if werr != nil {
 			return werr
 		}
@@ -804,13 +866,13 @@ func (s *TemplateService) downloadTemplateTransaction(ctx context.Context, remot
 }
 
 func (s *TemplateService) templateBaseFromRemote(remoteTemplate *models.ComposeTemplate) string {
-	base := appfs.Slugify(remoteTemplate.Name)
+	base := projects.Slugify(remoteTemplate.Name)
 	if base != "" {
 		return base
 	}
 	parts := strings.Split(remoteTemplate.ID, ":")
 	if len(parts) > 0 {
-		base = appfs.Slugify(parts[len(parts)-1])
+		base = projects.Slugify(parts[len(parts)-1])
 	}
 	if base == "" {
 		base = "template-" + uuid.NewString()
@@ -853,8 +915,7 @@ func cloneRegistry(registry *models.TemplateRegistry) *models.TemplateRegistry {
 		return nil
 	}
 
-	cloned := *registry
-	return &cloned
+	return new(*registry)
 }
 
 func (s *TemplateService) invalidateRemoteCache() {
@@ -917,7 +978,7 @@ func (s *TemplateService) upsertFilesystemTemplate(ctx context.Context, name, de
 }
 
 func (s *TemplateService) processFolderEntry(ctx context.Context, baseDir, folder string) error {
-	compose, envPtr, desc, found, err := appfs.ReadFolderComposeTemplate(baseDir, folder)
+	compose, envPtr, desc, found, err := projects.ReadFolderComposeTemplate(baseDir, folder)
 	if err != nil || !found {
 		return err
 	}
@@ -932,7 +993,7 @@ func (s *TemplateService) syncFilesystemTemplatesInternal(ctx context.Context) e
 		return nil
 	}
 
-	dir, err := appfs.GetTemplatesDirectory(ctx)
+	dir, err := projects.GetTemplatesDirectory(ctx)
 	if err != nil {
 		return fmt.Errorf("ensure templates dir: %w", err)
 	}
@@ -960,7 +1021,7 @@ func (s *TemplateService) syncFilesystemTemplatesInternal(ctx context.Context) e
 }
 
 func (s *TemplateService) getGlobalVariablesPath(ctx context.Context) (string, error) {
-	projectsDirectory, err := appfs.GetProjectsDirectory(ctx, s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects"))
+	projectsDirectory, err := projects.GetProjectsDirectory(ctx, s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects"))
 	if err != nil {
 		return "", fmt.Errorf("failed to get projects directory: %w", err)
 	}
@@ -1059,7 +1120,7 @@ func (s *TemplateService) UpdateGlobalVariables(ctx context.Context, vars []env.
 		_, _ = fmt.Fprintf(&builder, "%s=%s\n", key, value)
 	}
 
-	if err := appfs.WriteFileWithPerm(envPath, builder.String(), common.FilePerm); err != nil {
+	if err := projects.WriteFileWithPerm(envPath, builder.String(), common.FilePerm); err != nil {
 		return fmt.Errorf("failed to write global variables file: %w", err)
 	}
 
@@ -1086,7 +1147,7 @@ func (s *TemplateService) ParseComposeServices(ctx context.Context, composeConte
 
 	// Create a dummy .env file to prevent env file errors
 	envPath := filepath.Join(tmpDir, ".env")
-	if err := appfs.WriteFileWithPerm(envPath, "", common.FilePerm); err != nil {
+	if err := projects.WriteFileWithPerm(envPath, "", common.FilePerm); err != nil {
 		slog.WarnContext(ctx, "Failed to create dummy env file", "error", err)
 	}
 
@@ -1128,12 +1189,12 @@ func (s *TemplateService) resolveTemplateIconURL(ctx context.Context, composeCon
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	envPath := filepath.Join(tmpDir, ".env")
-	if err := appfs.WriteFileWithPerm(envPath, envContent, common.FilePerm); err != nil {
+	if err := projects.WriteFileWithPerm(envPath, envContent, common.FilePerm); err != nil {
 		slog.WarnContext(ctx, "failed to create temp env file for template icon parsing", "error", err)
 	}
 
 	envMap := make(composetypes.Mapping)
-	for _, variable := range templateutil.ParseEnvContent(envContent) {
+	for _, variable := range projects.ParseEnvContent(envContent) {
 		if key := strings.TrimSpace(variable.Key); key != "" {
 			envMap[key] = variable.Value
 		}
@@ -1255,7 +1316,7 @@ func (s *TemplateService) GetTemplateContentWithParsedData(ctx context.Context, 
 	services := s.ParseComposeServices(ctx, composeContent)
 
 	// Parse environment variables
-	parsedEnvVars := templateutil.ParseEnvContent(envContent)
+	parsedEnvVars := projects.ParseEnvContent(envContent)
 	envVars := make([]env.Variable, len(parsedEnvVars))
 	for i, v := range parsedEnvVars {
 		envVars[i] = env.Variable{Key: v.Key, Value: v.Value}

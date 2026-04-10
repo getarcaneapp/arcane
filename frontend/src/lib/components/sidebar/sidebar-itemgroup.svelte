@@ -76,9 +76,9 @@
 	const shortcutsEnabled = $derived($settingsStore?.keyboardShortcutsEnabled ?? true);
 </script>
 
-<Sidebar.Group>
-	<Sidebar.GroupLabel>{label}</Sidebar.GroupLabel>
-	<Sidebar.Menu>
+<Sidebar.Group class="p-1.5">
+	<Sidebar.GroupLabel class="h-7 px-1.5">{label}</Sidebar.GroupLabel>
+	<Sidebar.Menu class="gap-0.5">
 		{#each enhancedItems as item (item.title)}
 			{#if (item.items?.length ?? 0) > 0}
 				{#if sidebar.state === 'collapsed' && !sidebar.hoverExpansionEnabled}
@@ -131,7 +131,7 @@
 							>
 								{#each item.items ?? [] as subItem (subItem.title)}
 									<Sidebar.MenuSubItem>
-										<Sidebar.MenuSubButton isActive={subItem.isActive}>
+										<Sidebar.MenuSubButton isActive={subItem.isActive} size="md">
 											{#snippet child({ props })}
 												{@const SubIcon = subItem.icon}
 												<a href={subItem.url} {...props}>

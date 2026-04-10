@@ -26,8 +26,7 @@ func (m *BaseModel) BeforeCreate(_ *gorm.DB) (err error) {
 }
 
 func (m *BaseModel) BeforeUpdate(_ *gorm.DB) (err error) {
-	now := time.Now()
-	m.UpdatedAt = &now
+	m.UpdatedAt = new(time.Now())
 	return nil
 }
 

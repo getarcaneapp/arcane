@@ -14,8 +14,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/internal/config"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/remenv"
 	tunnelpb "github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge/proto/tunnel/v1"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -114,7 +112,7 @@ func TestTunnelClient_GRPC_EndToEnd(t *testing.T) {
 		_, _ = w.Write([]byte("ok-from-agent"))
 	})
 
-	cfg := &config.Config{
+	cfg := &Config{
 		EdgeTransport:         EdgeTransportGRPC,
 		ManagerApiUrl:         managerURL,
 		AgentToken:            "valid-token",
@@ -164,7 +162,7 @@ func TestTunnelClient_useTLSForManagerGRPC(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			client := NewTunnelClient(&config.Config{ManagerApiUrl: tc.managerURL}, http.NotFoundHandler())
+			client := NewTunnelClient(&Config{ManagerApiUrl: tc.managerURL}, http.NotFoundHandler())
 			assert.Equal(t, tc.expected, client.useTLSForManagerGRPC())
 		})
 	}
@@ -174,13 +172,13 @@ func TestStartTunnelClientWithErrors_GRPCValidation(t *testing.T) {
 	ctx := t.Context()
 
 	t.Run("edge mode required", func(t *testing.T) {
-		_, err := StartTunnelClientWithErrors(ctx, &config.Config{}, http.NotFoundHandler())
+		_, err := StartTunnelClientWithErrors(ctx, &Config{}, http.NotFoundHandler())
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "edge tunnel disabled")
 	})
 
 	t.Run("manager url required for grpc transport", func(t *testing.T) {
-		_, err := StartTunnelClientWithErrors(ctx, &config.Config{
+		_, err := StartTunnelClientWithErrors(ctx, &Config{
 			EdgeAgent:     true,
 			EdgeTransport: EdgeTransportGRPC,
 			AgentToken:    "token",
@@ -190,7 +188,7 @@ func TestStartTunnelClientWithErrors_GRPCValidation(t *testing.T) {
 	})
 
 	t.Run("agent token required", func(t *testing.T) {
-		_, err := StartTunnelClientWithErrors(ctx, &config.Config{
+		_, err := StartTunnelClientWithErrors(ctx, &Config{
 			EdgeAgent:     true,
 			EdgeTransport: EdgeTransportGRPC,
 			ManagerApiUrl: "https://manager.example.com/arcane/api",
@@ -201,7 +199,7 @@ func TestStartTunnelClientWithErrors_GRPCValidation(t *testing.T) {
 }
 
 func TestTunnelClient_connectAndServeGRPC_EmptyManagerAddress(t *testing.T) {
-	client := NewTunnelClient(&config.Config{
+	client := NewTunnelClient(&Config{
 		EdgeTransport: EdgeTransportGRPC,
 		AgentToken:    "valid-token",
 	}, http.NotFoundHandler())
@@ -235,7 +233,7 @@ func TestTunnelClient_connectAndServeGRPC_RegistrationRejected(t *testing.T) {
 	managerURL, stopManager := startTestGRPCTunnelServerOnAPIPathInternal(t, ctx, tunnelServer)
 	defer stopManager()
 
-	client := NewTunnelClient(&config.Config{
+	client := NewTunnelClient(&Config{
 		EdgeTransport:         EdgeTransportGRPC,
 		ManagerApiUrl:         managerURL,
 		AgentToken:            "invalid-token",
@@ -257,7 +255,7 @@ func TestTunnelClient_connectAndServeGRPC_TimesOutWithoutRegisterResponse(t *tes
 	managerURL, stopManager := startTestTunnelServiceOnAPIPathInternal(t, ctx, service)
 	defer stopManager()
 
-	client := NewTunnelClient(&config.Config{
+	client := NewTunnelClient(&Config{
 		EdgeTransport: EdgeTransportGRPC,
 		ManagerApiUrl: managerURL,
 		AgentToken:    "valid-token",
@@ -322,7 +320,7 @@ func TestTunnelClient_GRPC_WebSocketProxyEndToEnd(t *testing.T) {
 			return
 		}
 
-		headerTokenCh <- r.Header.Get(remenv.HeaderAPIKey)
+		headerTokenCh <- r.Header.Get(HeaderAPIKey)
 		queryCh <- r.URL.RawQuery
 
 		upgrader := websocket.Upgrader{}
@@ -350,7 +348,7 @@ func TestTunnelClient_GRPC_WebSocketProxyEndToEnd(t *testing.T) {
 	_, localPort, err := net.SplitHostPort(parsedLocalURL.Host)
 	require.NoError(t, err)
 
-	cfg := &config.Config{
+	cfg := &Config{
 		EdgeTransport:         EdgeTransportGRPC,
 		ManagerApiUrl:         managerURL,
 		AgentToken:            "valid-token",
@@ -451,7 +449,7 @@ func TestTunnelClient_connectAndServe_WebSocketConfigFallsBackToWebSocket(t *tes
 	}))
 	defer managerServer.Close()
 
-	cfg := &config.Config{
+	cfg := &Config{
 		EdgeTransport: EdgeTransportWebSocket,
 		ManagerApiUrl: managerServer.URL,
 		AgentToken:    "valid-token",
@@ -495,7 +493,7 @@ func TestTunnelClient_connectAndServe_AutoTransportFallsBackToWebSocketWhenGRPCU
 	}))
 	defer managerServer.Close()
 
-	cfg := &config.Config{
+	cfg := &Config{
 		EdgeTransport: EdgeTransportAuto,
 		ManagerApiUrl: managerServer.URL,
 		AgentToken:    "valid-token",
@@ -539,7 +537,7 @@ func TestTunnelClient_connectAndServe_AutoTransportDerivesWebSocketFallbackURL(t
 	}))
 	defer managerServer.Close()
 
-	cfg := &config.Config{
+	cfg := &Config{
 		EdgeTransport: EdgeTransportAuto,
 		ManagerApiUrl: managerServer.URL,
 		AgentToken:    "valid-token",
@@ -580,7 +578,7 @@ func TestTunnelClient_connectAndServe_AutoTransportOpensGRPCWhenAvailable(t *tes
 	managerURL, stopManager := startTestGRPCTunnelServerOnAPIPathInternal(t, ctx, tunnelServer)
 	defer stopManager()
 
-	client := NewTunnelClient(&config.Config{
+	client := NewTunnelClient(&Config{
 		EdgeTransport: EdgeTransportAuto,
 		ManagerApiUrl: managerURL,
 		AgentToken:    "valid-token",

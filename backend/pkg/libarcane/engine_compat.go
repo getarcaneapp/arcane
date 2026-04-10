@@ -57,8 +57,7 @@ func cloneContainerHostConfigInternal(hostConfig *containertypes.HostConfig) *co
 		return nil
 	}
 
-	cloned := *hostConfig
-	return &cloned
+	return new(*hostConfig)
 }
 
 func sanitizeRecreateHostConfigInternal(hostConfig *containertypes.HostConfig, engineInfo EngineCompatibilityInfo) bool {

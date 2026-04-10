@@ -137,6 +137,8 @@
 				return m.jobs_title();
 			case 'docker':
 				return m.docker_title();
+			case 'authentication':
+				return m.authentication_title();
 			case 'security':
 				return m.security_title();
 			case 'users':
@@ -147,6 +149,8 @@
 				return m.notifications_title();
 			case 'api-keys':
 				return m.api_key_page_title();
+			case 'webhooks':
+				return m.webhook_page_title();
 			case 'build':
 				return 'Build';
 			default:

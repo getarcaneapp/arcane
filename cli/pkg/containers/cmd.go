@@ -23,6 +23,7 @@ import (
 
 var (
 	containersLimit int
+	containersStart int
 	containersAll   bool
 	forceFlag       bool
 	jsonOutput      bool
@@ -67,16 +68,16 @@ var containersListCmd = &cobra.Command{
 		}
 
 		path := types.Endpoints.Containers(c.EnvID())
-		effectiveLimit := cmdutil.EffectiveLimit(cmd, "containers", "limit", containersLimit, 20)
-		if effectiveLimit > 0 {
-			path = fmt.Sprintf("%s?pageSize=%d", path, effectiveLimit)
-		}
 		if containersAll {
-			separator := "?"
-			if strings.Contains(path, "?") {
-				separator = "&"
+			if cmd.Flags().Changed("limit") || cmd.Flags().Changed("start") {
+				return fmt.Errorf("--all cannot be combined with explicit pagination flags")
 			}
-			path = fmt.Sprintf("%s%sall=true", path, separator)
+			path = fmt.Sprintf("%s?all=true", path)
+		} else {
+			path, err = cmdutil.ApplyPaginationParams(cmd, path, "containers", "limit", containersLimit, 20, "start", containersStart)
+			if err != nil {
+				return fmt.Errorf("failed to build pagination query: %w", err)
+			}
 		}
 
 		resp, err := c.Get(cmd.Context(), path)
@@ -116,7 +117,7 @@ var containersListCmd = &cobra.Command{
 		}
 
 		output.Table(headers, rows)
-		fmt.Printf("\nTotal: %d containers\n", result.Pagination.TotalItems)
+		output.Showing(len(result.Data), result.Pagination.TotalItems, "containers")
 		return nil
 	},
 }
@@ -339,6 +340,50 @@ var containersUpdateCmd = &cobra.Command{
 		}
 
 		output.Success("Container %s updated successfully", containerDisplayName(resolved))
+		return nil
+	},
+}
+
+var containersRedeployCmd = &cobra.Command{
+	Use:          "redeploy <container-id|name>",
+	Short:        "Redeploy a container (pull image and recreate)",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := client.NewFromConfig()
+		if err != nil {
+			return err
+		}
+
+		resolved, _, err := resolveContainer(cmd.Context(), c, args[0], false)
+		if err != nil {
+			return err
+		}
+
+		c.SetTimeout(30 * time.Minute)
+
+		path := types.Endpoints.ContainerRedeploy(c.EnvID(), resolved.ID)
+		resp, err := c.Post(cmd.Context(), path, nil)
+		if err != nil {
+			return fmt.Errorf("failed to redeploy container: %w", err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+
+		var result base.ApiResponse[container.Details]
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			return fmt.Errorf("failed to parse response: %w", err)
+		}
+
+		if jsonOutput {
+			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
+			if err != nil {
+				return fmt.Errorf("failed to marshal JSON: %w", err)
+			}
+			fmt.Println(string(resultBytes))
+			return nil
+		}
+
+		output.Success("Container %s redeployed successfully", containerDisplayName(resolved))
 		return nil
 	},
 }
@@ -582,6 +627,7 @@ func init() {
 	ContainersCmd.AddCommand(containersStopCmd)
 	ContainersCmd.AddCommand(containersRestartCmd)
 	ContainersCmd.AddCommand(containersUpdateCmd)
+	ContainersCmd.AddCommand(containersRedeployCmd)
 	ContainersCmd.AddCommand(containersDeleteCmd)
 	ContainersCmd.AddCommand(containersCountsCmd)
 	ContainersCmd.AddCommand(containersCreateCmd)
@@ -608,6 +654,7 @@ func init() {
 
 	// List command flags
 	containersListCmd.Flags().IntVarP(&containersLimit, "limit", "n", 20, "Number of containers to show")
+	containersListCmd.Flags().IntVar(&containersStart, "start", 0, "Offset for pagination")
 	containersListCmd.Flags().BoolVarP(&containersAll, "all", "a", false, "Show all containers (including stopped)")
 	containersListCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 
@@ -620,6 +667,7 @@ func init() {
 	containersStopCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	containersRestartCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	containersUpdateCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
+	containersRedeployCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	containersDeleteCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	containersCountsCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 }

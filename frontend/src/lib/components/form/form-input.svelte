@@ -55,7 +55,7 @@
 			{:else if type === 'textarea'}
 				<Textarea {id} {placeholder} {rows} bind:value={input.value as string} {disabled} />
 			{:else if type === 'date'}
-				<DatePicker {id} bind:value={input.value as Date} />
+				<DatePicker {id} bind:value={input.value as Date} {disabled} />
 			{:else}
 				<Input {id} {placeholder} {type} bind:value={input.value} {disabled} {autocomplete} />
 			{/if}

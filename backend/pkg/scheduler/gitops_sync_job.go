@@ -26,6 +26,10 @@ func (j *GitOpsSyncJob) Name() string {
 	return "gitops-sync"
 }
 
+func (j *GitOpsSyncJob) ShouldSchedule(ctx context.Context) bool {
+	return j.settingsService.GetBoolSetting(ctx, "gitopsSyncEnabled", true)
+}
+
 func (j *GitOpsSyncJob) Schedule(ctx context.Context) string {
 	schedule := j.settingsService.GetStringSetting(ctx, "gitopsSyncInterval", "0 */1 * * * *")
 	if schedule == "" {

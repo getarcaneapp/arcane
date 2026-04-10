@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/internal/utils/remenv"
 	"github.com/gin-gonic/gin"
 )
 
@@ -272,9 +271,9 @@ func (s *TunnelServer) HandlePoll(c *gin.Context) {
 		return
 	}
 
-	token := c.GetHeader(remenv.HeaderAgentToken)
+	token := c.GetHeader(HeaderAgentToken)
 	if token == "" {
-		token = c.GetHeader(remenv.HeaderAPIKey)
+		token = c.GetHeader(HeaderAPIKey)
 	}
 	if token == "" {
 		slog.WarnContext(ctx, "Edge poll request without token")

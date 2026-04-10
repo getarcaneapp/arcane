@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	configtypes "github.com/docker/cli/cli/config/types"
-	utilsregistry "github.com/getarcaneapp/arcane/backend/internal/utils/registry"
+	utilsregistry "github.com/getarcaneapp/arcane/backend/pkg/utils/registry"
 	"github.com/moby/buildkit/session/auth/authprovider"
 	dockerregistry "github.com/moby/moby/api/types/registry"
 	"github.com/stretchr/testify/assert"

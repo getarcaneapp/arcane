@@ -11,6 +11,8 @@ export default class NotificationService extends BaseAPIService {
 
 	async updateSettings(provider: string, settings: NotificationSettings): Promise<NotificationSettings> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
+		// The current backend settings endpoint applies the full notification config, not a provider-specific subresource.
+		void provider;
 		const res = await this.api.post(`/environments/${envId}/notifications/settings`, settings);
 		return res.data;
 	}

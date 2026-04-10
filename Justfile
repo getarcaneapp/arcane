@@ -37,10 +37,196 @@ _dev-logs:
 dev target="docker":
     @just "_dev-{{ target }}"
 
+# --- Deploy ---
+# Deploy a local swarm worker plus a locally built Arcane edge agent into DinD.
+#
+# Usage:
+
+# just deploy swarm agent [agent_token] [manager_url] [node_name] [agent_name] [dind_image] [local_image]
+[group('deploy')]
+_deploy-swarm-agent agent_token="" manager_url="http://host.docker.internal:3552" node_name="swarm-worker-1" agent_name="arcane-edge-agent" dind_image="docker:29-dind" local_image="arcane-headless:swarm-local":
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    if ! command -v docker >/dev/null 2>&1; then
+        echo "docker is required"
+        exit 1
+    fi
+
+    if ! docker info >/dev/null 2>&1; then
+        echo "docker daemon is not running"
+        exit 1
+    fi
+
+    swarm_state="$(docker info 2>/dev/null | awk -F': ' '/Swarm:/{print tolower($2); exit}')"
+    swarm_control="$(docker info 2>/dev/null | awk -F': ' '/Is Manager:/{print tolower($2); exit}')"
+    if [ "$swarm_state" != "active" ] || [ "$swarm_control" != "true" ]; then
+        echo "host docker must already be an active swarm manager"
+        exit 1
+    fi
+
+    echo "Building local agent image {{ local_image }}..."
+    docker build -f docker/Dockerfile-agent -t "{{ local_image }}" .
+
+    if docker inspect "{{ node_name }}" >/dev/null 2>&1; then
+        echo "Reusing existing DinD worker {{ node_name }}..."
+        docker start "{{ node_name }}" >/dev/null 2>&1 || true
+    else
+        echo "Starting DinD worker {{ node_name }} from {{ dind_image }}..."
+        docker run -d \
+            --privileged \
+            --name "{{ node_name }}" \
+            --hostname "{{ node_name }}" \
+            --restart unless-stopped \
+            --add-host=host.docker.internal:host-gateway \
+            -e DOCKER_TLS_CERTDIR= \
+            "{{ dind_image }}"
+    fi
+
+    echo "Waiting for inner Docker daemon..."
+    for _ in $(seq 1 30); do
+        if docker exec "{{ node_name }}" docker info >/dev/null 2>&1; then
+            break
+        fi
+        sleep 1
+    done
+
+    if ! docker exec "{{ node_name }}" docker info >/dev/null 2>&1; then
+        echo "inner docker daemon did not become ready"
+        exit 1
+    fi
+
+    local_node_state="$(docker exec "{{ node_name }}" docker info --format '{{ "{{.Swarm.LocalNodeState}}" }}')"
+    if [ "$local_node_state" != "active" ]; then
+        join_token="$(docker swarm join-token -q worker)"
+        echo "Joining {{ node_name }} to host swarm..."
+        docker exec "{{ node_name }}" docker swarm join --token "$join_token" host.docker.internal:2377
+    else
+        echo "{{ node_name }} is already part of the swarm."
+    fi
+
+    current_node_id="$(docker exec "{{ node_name }}" docker info --format '{{ "{{.Swarm.NodeID}}" }}')"
+    echo "Current swarm node ID: $current_node_id"
+
+    if [ -n "{{ agent_token }}" ] && command -v sqlite3 >/dev/null 2>&1 && [ -f backend/data/arcane.db ]; then
+        expected_node_id="$(sqlite3 backend/data/arcane.db "SELECT COALESCE(swarm_node_id, '') FROM environments WHERE access_token = '{{ agent_token }}' LIMIT 1;")"
+        if [ -n "$expected_node_id" ] && [ "$expected_node_id" != "$current_node_id" ]; then
+            echo "agent token belongs to swarm node $expected_node_id, but {{ node_name }} is $current_node_id"
+            echo "Generate a fresh Arcane agent token from the Deploy Agent dialog for node {{ node_name }}, then rerun this command."
+            exit 1
+        fi
+    fi
+
+    if [ -z "{{ agent_token }}" ]; then
+        echo ""
+        echo "Swarm worker {{ node_name }} is ready, but no Arcane agent token was provided."
+        echo "Open Arcane, click Deploy Agent for node {{ node_name }} (node ID: $current_node_id), copy the generated token, and rerun:"
+        echo "  just deploy swarm agent <arcane_agent_token> {{ manager_url }} {{ node_name }} {{ agent_name }} {{ dind_image }} {{ local_image }}"
+        exit 0
+    fi
+
+    echo "Loading local agent image into {{ node_name }}..."
+    docker save "{{ local_image }}" | docker exec -i "{{ node_name }}" docker load >/dev/null
+
+    echo "Starting agent container {{ agent_name }} inside {{ node_name }}..."
+    docker exec "{{ node_name }}" sh -lc '
+        docker rm -f "{{ agent_name }}" >/dev/null 2>&1 || true
+        docker run -d \
+          --name "{{ agent_name }}" \
+          --restart unless-stopped \
+          -e EDGE_AGENT=true \
+          -e EDGE_TRANSPORT=poll \
+          -e AGENT_TOKEN="{{ agent_token }}" \
+          -e MANAGER_API_URL="{{ manager_url }}" \
+          -v /var/run/docker.sock:/var/run/docker.sock \
+          -v arcane-data:/app/data \
+          "{{ local_image }}"
+    '
+
+    echo ""
+    echo "Swarm worker {{ node_name }} and local agent {{ agent_name }} are up."
+    echo "Verify:"
+    echo "  docker node ls"
+    echo "  docker exec {{ node_name }} docker ps"
+    echo "  docker exec {{ node_name }} docker logs {{ agent_name }}"
+
+# Remove a local swarm worker plus its Arcane edge agent from DinD.
+#
+# Usage:
+#
+
+# just remove swarm agent [node_name] [agent_name]
+[group('deploy')]
+_remove-swarm-agent node_name="swarm-worker-1" agent_name="arcane-edge-agent":
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    if ! command -v docker >/dev/null 2>&1; then
+        echo "docker is required"
+        exit 1
+    fi
+
+    if ! docker info >/dev/null 2>&1; then
+        echo "docker daemon is not running"
+        exit 1
+    fi
+
+    if ! docker inspect "{{ node_name }}" >/dev/null 2>&1; then
+        echo "container {{ node_name }} does not exist"
+        exit 1
+    fi
+
+    echo "Stopping inner agent container {{ agent_name }} inside {{ node_name }}..."
+    docker exec "{{ node_name }}" sh -lc 'docker rm -f "{{ agent_name }}" >/dev/null 2>&1 || true'
+
+    node_id=""
+    if docker exec "{{ node_name }}" docker info >/dev/null 2>&1; then
+        local_node_state="$(docker exec "{{ node_name }}" docker info --format '{{ "{{.Swarm.LocalNodeState}}" }}' 2>/dev/null || true)"
+        if [ "$local_node_state" = "active" ]; then
+            node_id="$(docker exec "{{ node_name }}" docker info --format '{{ "{{.Swarm.NodeID}}" }}' 2>/dev/null || true)"
+            echo "Leaving swarm from {{ node_name }}..."
+            docker exec "{{ node_name }}" docker swarm leave -f >/dev/null 2>&1 || true
+        fi
+    fi
+
+    if [ -n "$node_id" ]; then
+        echo "Removing swarm node $node_id from host manager..."
+        docker node rm -f "$node_id" >/dev/null 2>&1 || true
+    fi
+
+    echo "Removing DinD worker container {{ node_name }} from host..."
+    docker rm -f "{{ node_name }}" >/dev/null
+
+    echo ""
+    echo "Removed swarm worker {{ node_name }} and inner agent {{ agent_name }}."
+
+# Deploy targets. Example: just deploy swarm agent [agent_token]
+[group('deploy')]
+deploy scope kind *args:
+    @just "_deploy-{{ scope }}-{{ kind }}" {{ args }}
+
 # Generate edge tunnel protobuf/gRPC code.
 [group('proto')]
 proto-backend:
     cd {{ edge_proto_dir }} && go run github.com/bufbuild/buf/cmd/buf@v1.65.0 generate
+
+# Generate the docs config schema JSON.
+[group('docs')]
+_docs-config output="" source_root=".":
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    cmd=(go run -tags exclude_frontend ./backend/cmd config-schema --source-root "{{ source_root }}")
+    if [ -n "{{ output }}" ]; then
+        cmd+=(--output "{{ output }}")
+    fi
+
+    "${cmd[@]}"
+
+# Docs targets. Example: just docs config
+[group('docs')]
+docs target *args:
+    @just "_docs-{{ target }}" {{ args }}
 
 # Benchmark edge tunnel transport performance (gRPC vs WebSocket) with allocations.
 
@@ -323,6 +509,18 @@ _utils-hotfix:
         git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname --merged "$ref" | head -n1
     }
 
+    cherry_pick_in_progress() {
+        git rev-parse -q --verify CHERRY_PICK_HEAD >/dev/null 2>&1
+    }
+
+    has_unmerged_conflicts() {
+        [ -n "$(git diff --name-only --diff-filter=U)" ]
+    }
+
+    working_tree_dirty() {
+        [ -n "$(git status --porcelain)" ]
+    }
+
     LATEST_TAG=$(get_latest_repo_tag "main")
     if [ -z "$LATEST_TAG" ]; then
         LATEST_TAG=$(get_latest_repo_tag "HEAD")
@@ -420,10 +618,21 @@ _utils-hotfix:
 
         case "$INPUT" in
             done)
+                if cherry_pick_in_progress || has_unmerged_conflicts; then
+                    echo -e "${RED}A cherry-pick is still in progress.${NC}"
+                    echo -e "Run ${YELLOW}git add <resolved-files>${NC} and ${YELLOW}git cherry-pick --continue${NC} first,"
+                    echo -e "or run ${YELLOW}git cherry-pick --abort${NC} to discard it."
+                    continue
+                fi
                 break
                 ;;
             quit)
                 echo -e "${YELLOW}Aborting hotfix release...${NC}"
+                if cherry_pick_in_progress || has_unmerged_conflicts || working_tree_dirty; then
+                    echo -e "${YELLOW}Working tree is not clean; staying on ${RELEASE_BRANCH}.${NC}"
+                    echo -e "Resolve the cherry-pick manually with ${GREEN}git cherry-pick --continue${NC} or ${GREEN}git cherry-pick --abort${NC}."
+                    exit 1
+                fi
                 git checkout main
                 read -p "Delete release branch ${RELEASE_BRANCH}? (y/n) " DELETE_BRANCH
                 if [[ "$DELETE_BRANCH" == "y" ]]; then
@@ -453,6 +662,9 @@ _utils-hotfix:
                     if [[ "$RESOLVE" == "abort" ]]; then
                         git cherry-pick --abort
                         echo -e "${YELLOW}Cherry-pick aborted${NC}"
+                    elif cherry_pick_in_progress || has_unmerged_conflicts; then
+                        echo -e "${YELLOW}Cherry-pick is still in progress.${NC}"
+                        echo -e "Run ${GREEN}git add <resolved-files>${NC} and ${GREEN}git cherry-pick --continue${NC}, then choose another action."
                     fi
                 fi
                 ;;
@@ -468,6 +680,11 @@ _utils-hotfix:
 
     if [ "$COMMITS_ADDED" -eq 0 ]; then
         echo -e "${RED}No commits were cherry-picked. Aborting hotfix release.${NC}"
+        if cherry_pick_in_progress || has_unmerged_conflicts || working_tree_dirty; then
+            echo -e "${YELLOW}Working tree is not clean; staying on ${RELEASE_BRANCH}.${NC}"
+            echo -e "Resolve the cherry-pick manually with ${GREEN}git cherry-pick --continue${NC} or ${GREEN}git cherry-pick --abort${NC}."
+            exit 1
+        fi
         git checkout main
         git branch -D "${RELEASE_BRANCH}" 2>/dev/null || true
         exit 0
@@ -853,13 +1070,19 @@ _test-backend:
 _test-cli:
     cd cli && go test ./... -race -coverprofile=coverage.txt -covermode=atomic -v
 
+# Run shared types Go tests
+[group('tests')]
+_test-types:
+    cd types && go test ./... -race -coverprofile=coverage.txt -covermode=atomic -v
+
 [group('tests')]
 _test-all:
     @just _test-e2e
     @just _test-backend
     @just _test-cli
+    @just _test-types
 
-# Run tests. Valid targets: "e2e", "backend", "cli", "all".
+# Run tests. Valid targets: "e2e", "backend", "cli", "types", "all".
 [group('tests')]
 test target="all":
     @just "_test-{{ target }}"
@@ -1025,10 +1248,15 @@ _gomod-sync-all:
 gomod action="tidy" target="all":
     @just "_gomod-{{ action }}-{{ target }}"
 
-# Format frontend (Prettier) and Go modules (gofmt)
+# Format frontend (Prettier), test/email TypeScript (oxfmt), and Go modules (gofmt)
 [group('format')]
 _format-frontend:
     pnpm -C frontend format
+
+[group('format')]
+_format-js:
+    pnpm -C tests exec oxfmt "**/*.{ts,tsx,js,jsx,mts,cts}"
+    pnpm -C email-templates exec oxfmt "**/*.{ts,tsx,js,jsx,mts,cts}"
 
 [group('format')]
 _format-go:
@@ -1045,6 +1273,11 @@ _format-check-frontend:
     pnpm -C frontend format:check
 
 [group('format')]
+_format-check-js:
+    pnpm -C tests exec oxfmt --check "**/*.{ts,tsx,js,jsx,mts,cts}"
+    pnpm -C email-templates exec oxfmt --check "**/*.{ts,tsx,js,jsx,mts,cts}"
+
+[group('format')]
 _format-check-go:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -1059,15 +1292,17 @@ _format-check-go:
 [group('format')]
 _format-all:
     @just _format-frontend
+    @just _format-js
     @just _format-go
     @just _format-just
 
 [group('format')]
 _format-check-all:
     @just _format-check-frontend
+    @just _format-check-js
     @just _format-check-go
 
-# Format targets. Valid: "frontend", "go", "just", "all". Use --check to verify formatting.
+# Format targets. Valid: "frontend", "js", "go", "just", "all". Use --check to verify formatting.
 [group('format')]
 format target="all" check="":
     @if [ "{{ check }}" = "--check" ]; then just "_format-check-{{ target }}"; else just "_format-{{ target }}"; fi

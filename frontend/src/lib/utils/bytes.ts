@@ -117,8 +117,14 @@ export function parse(val: string | number): number | null {
 		floatValue = Number.parseInt(val, 10);
 		unit = 'b';
 	} else {
-		floatValue = Number.parseFloat(results[1]);
-		unit = results[4].toLowerCase() as keyof typeof map;
+		const numericValue = results[1];
+		const matchedUnit = results[4];
+		if (!numericValue || !matchedUnit) {
+			return null;
+		}
+
+		floatValue = Number.parseFloat(numericValue);
+		unit = matchedUnit.toLowerCase() as keyof typeof map;
 	}
 
 	if (Number.isNaN(floatValue)) {

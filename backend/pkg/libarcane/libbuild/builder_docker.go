@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"strings"
 
-	dockerutils "github.com/getarcaneapp/arcane/backend/internal/utils/docker"
+	dockerutils "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
 	"github.com/moby/go-archive"
 	dockercontainer "github.com/moby/moby/api/types/container"
@@ -150,8 +150,7 @@ func prepareDockerBuildInputInternal(req imagetypes.BuildRequest) (dockerBuildIn
 
 	buildArgs := map[string]*string{}
 	for key, val := range req.BuildArgs {
-		v := val
-		buildArgs[key] = &v
+		buildArgs[key] = new(val)
 	}
 
 	labels := map[string]string{}

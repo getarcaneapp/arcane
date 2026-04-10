@@ -7,6 +7,8 @@ import (
 	"io"
 	"log/slog"
 	"maps"
+	"net"
+	"net/url"
 	"slices"
 	"strings"
 	"sync"
@@ -19,10 +21,10 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/internal/utils/arcaneupdater"
-	arcRegistry "github.com/getarcaneapp/arcane/backend/internal/utils/registry"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
+	libupdater "github.com/getarcaneapp/arcane/backend/pkg/libarcane/updater"
 	projectspkg "github.com/getarcaneapp/arcane/backend/pkg/projects"
+	arcRegistry "github.com/getarcaneapp/arcane/backend/pkg/utils/registry"
 	"github.com/getarcaneapp/arcane/types/updater"
 )
 
@@ -38,11 +40,15 @@ type UpdaterService struct {
 	eventService        *EventService
 	imageService        *ImageService
 	notificationService *NotificationService
-	upgradeService      *SystemUpgradeService
+	upgradeService      selfUpgradeService
 
 	statusMu           sync.RWMutex
 	updatingContainers map[string]bool
 	updatingProjects   map[string]bool
+}
+
+type selfUpgradeService interface {
+	TriggerUpgradeViaCLI(ctx context.Context, user models.User) error
 }
 
 // NewUpdaterService constructs an UpdaterService with the dependencies needed
@@ -57,7 +63,7 @@ func NewUpdaterService(
 	events *EventService,
 	imageSvc *ImageService,
 	notifications *NotificationService,
-	upgrade *SystemUpgradeService,
+	upgrade selfUpgradeService,
 ) *UpdaterService {
 	return &UpdaterService{
 		db:                  db,
@@ -158,15 +164,7 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*update
 	if err != nil {
 		return nil, fmt.Errorf("docker connect: %w", err)
 	}
-	registryClient := arcRegistry.NewClient()
-	digestChecker := arcaneupdater.NewDigestChecker(dcli, registryClient)
-
-	enabledRegs := []models.ContainerRegistry{}
-	if s.registryService != nil {
-		if regs, rerr := s.registryService.GetEnabledRegistries(ctx); rerr == nil {
-			enabledRegs = regs
-		}
-	}
+	digestChecker := libupdater.NewDigestChecker(dcli, s.registryService)
 
 	// track all old image IDs we saw for pulled updates so we can prune them after restart
 	oldIDSet := map[string]struct{}{}
@@ -202,20 +200,15 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*update
 		// Digest pre-check: if registry supports it and digests match, avoid pulling entirely.
 		// This also prevents unnecessary restarts when the update record is stale.
 		normNew := s.normalizeRef(p.newRef)
-		host, repo, tag := s.parseNormalizedRef(normNew)
-		authHeader, _, _, _ := arcRegistry.ResolveAuthHeaderForRepository(ctx, host, repo, tag, enabledRegs)
-		check := digestChecker.CheckImageNeedsUpdate(ctx, normNew, authHeader)
+		check := digestChecker.CheckImageNeedsUpdate(ctx, normNew)
 		skipPull := false
 
 		if check.CheckedViaAPI && check.Error == nil && !check.NeedsUpdate {
 			item.Status = "skipped"
 			item.Error = "image already up to date"
 			out.Skipped++
-			// We skip checking for pull, but we still proceed to container update checks
-			// treating this as "successful" for the pipeline, but invalidating oldIDs
-			// because they represent the *current* image, not a stale one.
-			plans[i].pulled = true
-			plans[i].oldIDs = nil
+			// Image is already up to date — do NOT mark as pulled so that
+			// containers using this image are not scheduled for recreation.
 			skipPull = true
 
 			s.logAutoUpdate(ctx, s.severityFromStatus(item.Status), models.JSON{
@@ -398,9 +391,7 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*update
 func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID string) (*updater.Result, error) {
 	start := time.Now()
 	out := &updater.Result{Items: []updater.ResourceResult{}}
-
 	slog.InfoContext(ctx, "UpdateSingleContainer: starting", "containerID", containerID)
-
 	dcli, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("docker connect: %w", err)
@@ -448,7 +439,7 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 		labels = inspectBefore.Config.Labels
 	}
 
-	isArcaneContainer := arcaneupdater.IsArcaneContainer(labels)
+	isArcaneContainer := libupdater.IsArcaneContainer(labels)
 	slog.InfoContext(ctx, "UpdateSingleContainer: inspected container",
 		"containerID", containerID,
 		"imageID", inspectBefore.Image,
@@ -460,7 +451,7 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 	endProjectStatus := s.beginProjectUpdateInternal(composeProjectNameFromLabelsInternal(labels))
 	defer endProjectStatus()
 
-	if arcaneupdater.IsUpdateDisabled(labels) {
+	if libupdater.IsUpdateDisabled(labels) {
 		slog.InfoContext(ctx, "UpdateSingleContainer: updates disabled by label", "containerID", containerID)
 		out.Items = append(out.Items, updater.ResourceResult{
 			ResourceID:   targetContainer.ID,
@@ -533,8 +524,10 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 		return out, nil
 	}
 
-	// Compare with pulled image to avoid unnecessary restart
-	checker := arcaneupdater.NewDigestChecker(dcli, arcRegistry.NewClient())
+	// Compare with pulled image to avoid unnecessary restart.
+	// digestResolver is intentionally nil: CompareWithPulled only inspects local
+	// images and does not need remote registry access.
+	checker := libupdater.NewDigestChecker(dcli, nil)
 	changed, cmpErr := checker.CompareWithPulled(ctx, inspectBefore.Image, normalizedRef)
 	slog.InfoContext(ctx, "UpdateSingleContainer: digest comparison",
 		"containerID", containerID,
@@ -568,16 +561,14 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 		containerLabels = inspect.Config.Labels
 	}
 
-	if arcaneupdater.IsArcaneContainer(containerLabels) && s.upgradeService != nil {
-		slog.InfoContext(ctx, "UpdateSingleContainer: detected Arcane self-update, using CLI upgrade method", "containerID", containerID)
-
-		if err := s.upgradeService.TriggerUpgradeViaCLI(ctx, systemUser); err != nil {
+	if libupdater.IsArcaneContainer(containerLabels) {
+		if err := s.triggerSelfUpdateViaCLIInternal(ctx, "UpdateSingleContainer", containerID, containerName, containerLabels); err != nil {
 			out.Items = append(out.Items, updater.ResourceResult{
 				ResourceID:   targetContainer.ID,
 				ResourceType: "container",
 				ResourceName: containerName,
 				Status:       "failed",
-				Error:        fmt.Sprintf("CLI upgrade failed: %v", err),
+				Error:        err.Error(),
 			})
 			out.Failed++
 			out.Duration = time.Since(start).String()
@@ -599,6 +590,50 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 	}
 
 	// Update the container
+	projectName := inspect.Config.Labels["com.docker.compose.project"]
+	serviceName := inspect.Config.Labels["com.docker.compose.service"]
+
+	if projectName != "" && serviceName != "" {
+		slog.InfoContext(ctx, "UpdateSingleContainer: detected compose container, using project-based update", "containerID", containerID, "project", projectName, "service", serviceName)
+
+		proj, err := s.projectService.GetProjectByComposeName(ctx, projectName)
+		if err == nil {
+			// The direct image pull above is still required to compare digests and
+			// skip no-op updates. Compose project updates intentionally pull again
+			// inside UpdateProjectServices to keep project redeploy behavior unified.
+			if err := s.projectService.UpdateProjectServices(ctx, proj.ID, []string{serviceName}, systemUser); err != nil {
+				out.Items = append(out.Items, updater.ResourceResult{
+					ResourceID:   targetContainer.ID,
+					ResourceType: "container",
+					ResourceName: containerName,
+					Status:       "failed",
+					Error:        fmt.Sprintf("project update failed: %v", err),
+				})
+				out.Failed++
+				out.Duration = time.Since(start).String()
+				return out, nil
+			}
+
+			out.Items = append(out.Items, updater.ResourceResult{
+				ResourceID:   targetContainer.ID,
+				ResourceType: "container",
+				ResourceName: containerName,
+				Status:       "updated",
+			})
+			out.Updated++
+			out.Checked = 1
+			out.Duration = time.Since(start).String()
+
+			// Prune old image if no longer in use
+			if inspectBefore.Image != "" {
+				_ = s.pruneImageIDsWithInUseSetInternal(ctx, []string{inspectBefore.Image}, nil)
+			}
+
+			return out, nil
+		}
+		slog.WarnContext(ctx, "UpdateSingleContainer: compose labels found but project not found in DB, falling back to standalone update", "project", projectName, "err", err)
+	}
+
 	if err := s.updateContainer(ctx, *targetContainer, inspect, normalizedRef); err != nil {
 		out.Items = append(out.Items, updater.ResourceResult{
 			ResourceID:   targetContainer.ID,
@@ -715,7 +750,7 @@ func (s *UpdaterService) updateContainer(ctx context.Context, cnt container.Summ
 
 	name := s.getContainerName(cnt)
 	labels := inspect.Config.Labels
-	isArcane := arcaneupdater.IsArcaneContainer(labels)
+	isArcane := libupdater.IsArcaneContainer(labels)
 
 	// Arcane containers should always use CLI upgrade, not inline update
 	// This method should not be called for Arcane containers
@@ -729,7 +764,7 @@ func (s *UpdaterService) updateContainer(ctx context.Context, cnt container.Summ
 	originalName := inspect.Name
 
 	// Get custom stop signal if configured
-	stopSignal := arcaneupdater.GetStopSignal(labels)
+	stopSignal := libupdater.GetStopSignal(labels)
 	stopOpts := client.ContainerStopOptions{}
 	if stopSignal != "" {
 		stopOpts.Signal = stopSignal
@@ -753,6 +788,19 @@ func (s *UpdaterService) updateContainer(ctx context.Context, cnt container.Summ
 	// recreate with new image ref
 	cfg := inspect.Config
 	cfg.Image = newRef
+
+	// Update the com.docker.compose.image label so that `docker compose up -d`
+	// recognises the container as up-to-date and does not recreate it.
+	if cfg.Labels != nil {
+		if _, ok := cfg.Labels["com.docker.compose.image"]; ok {
+			if imgInspect, err := dcli.ImageInspect(ctx, newRef); err == nil {
+				cfg.Labels["com.docker.compose.image"] = imgInspect.ID
+			} else {
+				slog.WarnContext(ctx, "updateContainer: could not inspect new image to update compose label",
+					"newRef", newRef, "err", err)
+			}
+		}
+	}
 
 	hostConfig, sanitizedMemorySwappiness, engineInfo, err := libarcane.PrepareRecreateHostConfigForEngine(ctx, dcli, inspect.HostConfig)
 	if err != nil {
@@ -805,12 +853,12 @@ func (s *UpdaterService) updateContainer(ctx context.Context, cnt container.Summ
 	// Use original name for new container
 	containerName := strings.TrimPrefix(originalName, "/")
 
-	resp, err := dcli.ContainerCreate(ctx, client.ContainerCreateOptions{
+	resp, err := libarcane.ContainerCreateWithCompatibilityForAPIVersion(ctx, dcli, client.ContainerCreateOptions{
 		Config:           cfg,
 		HostConfig:       hostConfig,
 		NetworkingConfig: networkingConfig,
 		Name:             containerName,
-	})
+	}, apiVersion)
 	if err != nil {
 		slog.DebugContext(ctx, "updateContainer: create failed", "containerName", containerName, "err", err)
 		return fmt.Errorf("create: %w", err)
@@ -912,7 +960,7 @@ func (s *UpdaterService) collectUsedImagesFromContainersInternal(ctx context.Con
 	list := listResult.Items
 	slog.DebugContext(ctx, "collectUsedImagesFromContainersInternal: container list fetched", "count", len(list))
 	for _, c := range list {
-		if arcaneupdater.IsUpdateDisabled(c.Labels) {
+		if libupdater.IsUpdateDisabled(c.Labels) {
 			slog.DebugContext(ctx, "collectUsedImagesFromContainersInternal: container opted out by labels", "containerId", c.ID)
 			continue
 		}
@@ -929,7 +977,7 @@ func (s *UpdaterService) collectUsedImagesFromContainersInternal(ctx context.Con
 			continue
 		}
 		inspect := inspectResult.Container
-		if inspect.Config != nil && arcaneupdater.IsUpdateDisabled(inspect.Config.Labels) {
+		if inspect.Config != nil && libupdater.IsUpdateDisabled(inspect.Config.Labels) {
 			slog.DebugContext(ctx, "collectUsedImagesFromContainersInternal: container inspect labels opted out", "containerId", c.ID)
 			continue
 		}
@@ -1041,7 +1089,7 @@ func (s *UpdaterService) collectUsedImagesFromComposeContainersInternal(composeC
 		if _, isActive := activeProjectNames[projectName]; !isActive {
 			continue
 		}
-		if arcaneupdater.IsUpdateDisabled(c.Labels) {
+		if libupdater.IsUpdateDisabled(c.Labels) {
 			continue
 		}
 
@@ -1124,8 +1172,7 @@ func (s *UpdaterService) recordRun(ctx context.Context, item updater.ResourceRes
 		rec.NewImageVersions = newv
 	}
 
-	end := time.Now()
-	rec.EndTime = &end
+	rec.EndTime = new(time.Now())
 
 	return s.db.WithContext(ctx).Create(rec).Error
 }
@@ -1140,13 +1187,23 @@ func (s *UpdaterService) resolveLocalImageIDsForRef(ctx context.Context, ref str
 		return nil, err
 	}
 
-	checker := arcaneupdater.NewDigestChecker(dcli, arcRegistry.NewClient())
+	// digestResolver is intentionally nil: GetImageIDsForRef only inspects local images.
+	checker := libupdater.NewDigestChecker(dcli, nil)
 	ids, err := checker.GetImageIDsForRef(ctx, ref)
 	if err != nil {
 		return nil, err
 	}
 	slog.DebugContext(ctx, "resolveLocalImageIDsForRef: resolved ids", "ref", ref, "ids", ids)
 	return ids, nil
+}
+
+type restartPlan struct {
+	cnt      container.Summary
+	inspect  *container.InspectResponse
+	newRef   string
+	match    string
+	explicit bool
+	implicit bool
 }
 
 //nolint:gocognit
@@ -1173,23 +1230,22 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 		}
 	}
 
+	// Detect the Docker socket proxy container (if DOCKER_HOST is TCP) so we
+	// can skip it during auto-update. Updating it would sever Arcane's own
+	// Docker connectivity mid-operation. See #1881.
+	dockerProxyName := dockerProxyContainerNameInternal(s.dockerService.DockerHost())
+	if dockerProxyName != "" {
+		slog.InfoContext(ctx, "restartContainersUsingOldIDs: detected Docker socket proxy container; excluding from auto-update", "proxyContainer", dockerProxyName)
+	}
+
 	updatedNorm := map[string]string{}
 	for oldRef, nr := range oldRefToNewRef {
 		updatedNorm[s.normalizeRef(oldRef)] = nr
 	}
 
-	type restartPlan struct {
-		cnt      container.Summary
-		inspect  *container.InspectResponse
-		newRef   string
-		match    string
-		explicit bool
-		implicit bool
-	}
-
 	plansByName := map[string]*restartPlan{}
 	markedForRestart := map[string]bool{}
-	containersWithDeps := make([]arcaneupdater.ContainerWithDeps, 0, len(list))
+	containersWithDeps := make([]libupdater.ContainerWithDeps, 0, len(list))
 
 	// Cache resolved IDs for newRefs to avoid repeated API calls
 	targetImageIDs := map[string][]string{}
@@ -1210,8 +1266,24 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 		}
 
 		// Skip containers with opt-out label
-		if arcaneupdater.IsUpdateDisabled(c.Labels) {
+		if libupdater.IsUpdateDisabled(c.Labels) {
 			continue
+		}
+
+		// Skip the Docker socket proxy container to preserve Arcane's Docker connectivity (#1881)
+		if dockerProxyName != "" {
+			isProxy := false
+			for _, cname := range c.Names {
+				if strings.TrimPrefix(cname, "/") == dockerProxyName {
+					isProxy = true
+					break
+				}
+			}
+			if isProxy {
+				slog.WarnContext(ctx, "restartContainersUsingOldIDs: skipping Docker socket proxy container to preserve connectivity",
+					"containerId", c.ID, "containerName", dockerProxyName)
+				continue
+			}
 		}
 
 		// Ensure labels map exists to avoid nil panics in implicit restart marking
@@ -1220,7 +1292,7 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 		}
 
 		name := s.getContainerName(c)
-		containersWithDeps = append(containersWithDeps, arcaneupdater.ContainerWithDeps{
+		containersWithDeps = append(containersWithDeps, libupdater.ContainerWithDeps{
 			Container: c,
 			Name:      name,
 		})
@@ -1260,18 +1332,17 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 				continue
 			}
 			inspect := inspectResult.Container
-			containersWithDeps[i] = arcaneupdater.ExtractContainerDeps(ctx, dcli, cwd.Container, inspect)
+			containersWithDeps[i] = libupdater.ExtractContainerDeps(ctx, dcli, cwd.Container, inspect)
 
 			if p, ok := plansByName[containersWithDeps[i].Name]; ok {
-				inspectCopy := inspect
-				p.inspect = &inspectCopy
+				p.inspect = new(inspect)
 			}
 		}
 	}
 
 	// Propagate implicit restarts: if a dependency is restarting, restart dependents too.
 	for {
-		added := arcaneupdater.UpdateImplicitRestart(containersWithDeps, markedForRestart)
+		added := libupdater.UpdateImplicitRestart(containersWithDeps, markedForRestart)
 		if len(added) == 0 {
 			break
 		}
@@ -1292,20 +1363,59 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 	}
 
 	// Build the set of containers that will be restarted and sort them by dependency order.
-	candidates := make([]arcaneupdater.ContainerWithDeps, 0, len(containersWithDeps))
+	candidates := make([]libupdater.ContainerWithDeps, 0, len(containersWithDeps))
 	for _, cd := range containersWithDeps {
 		if markedForRestart[cd.Name] {
 			candidates = append(candidates, cd)
 		}
 	}
 
-	sorter := arcaneupdater.NewContainerSorter(candidates)
+	sorter := libupdater.NewContainerSorter(candidates)
 	sorted, sortErr := sorter.Sort()
 	_, _ = sorter.SortReverse() // keep method used; reverse order may be useful for future stop-first flows
 	if sortErr != nil {
 		slog.WarnContext(ctx, "restartContainersUsingOldIDs: dependency sort failed, falling back to unsorted order", "error", sortErr.Error())
 		sorted = candidates
 	}
+
+	// Pre-scan sorted containers to group compose project services that need updates.
+	// We only group containers that are explicitly marked for restart (p.newRef != "").
+	projectToServices := make(map[string][]string)                // projectID -> []serviceName
+	projectToSeenServices := make(map[string]map[string]struct{}) // projectID -> set(serviceName)
+	projectIDToObj := make(map[string]*models.Project)
+	projectNameToID := make(map[string]string)
+
+	for _, cd := range sorted {
+		p := plansByName[cd.Name]
+		if p == nil || p.newRef == "" || p.inspect == nil || p.inspect.Config == nil {
+			continue
+		}
+		projectName := p.inspect.Config.Labels["com.docker.compose.project"]
+		serviceName := p.inspect.Config.Labels["com.docker.compose.service"]
+		if projectName != "" && serviceName != "" {
+			projectID, ok := lookupComposeProjectIDInternal(projectName, projectNameToID)
+			if !ok {
+				proj, err := s.projectService.GetProjectByComposeName(ctx, projectName)
+				if err != nil {
+					continue
+				}
+				projectID = proj.ID
+				projectIDToObj[proj.ID] = proj
+				projectNameToID[proj.Name] = proj.ID
+				projectNameToID[loader.NormalizeProjectName(proj.Name)] = proj.ID
+			}
+			if _, ok := projectToSeenServices[projectID]; !ok {
+				projectToSeenServices[projectID] = make(map[string]struct{})
+			}
+			if _, seen := projectToSeenServices[projectID][serviceName]; !seen {
+				projectToServices[projectID] = append(projectToServices[projectID], serviceName)
+				projectToSeenServices[projectID][serviceName] = struct{}{}
+			}
+		}
+	}
+
+	processedProjectServices := make(map[string]map[string]struct{})
+	projectResults := make(map[string]error) // stores error from the project-level update run
 
 	var results []updater.ResourceResult
 	for _, cd := range sorted {
@@ -1330,8 +1440,12 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 				continue
 			}
 			inspect := inspectResult.Container
-			inspectCopy := inspect
-			p.inspect = &inspectCopy
+			p.inspect = new(inspect)
+
+			// If this container belongs to a compose project that was missed during the
+			// pre-scan (inspect was nil), register it now so the main loop routes it
+			// through the compose-aware update path instead of standalone stop/rm/run.
+			s.lazyRegisterComposeProjectInternal(ctx, p, projectNameToID, projectIDToObj, projectToServices, projectToSeenServices)
 		}
 		if p.inspect.Config != nil && p.inspect.Config.Labels != nil {
 			labels = p.inspect.Config.Labels
@@ -1353,7 +1467,7 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 			continue
 		}
 
-		slog.DebugContext(ctx, "restartContainersUsingOldIDs: restarting container", "containerId", p.cnt.ID, "container", name, "match", p.match, "newRef", p.newRef, "implicit", p.implicit)
+		slog.DebugContext(ctx, "restartContainersUsingOldIDs: processing container", "containerId", p.cnt.ID, "container", name, "match", p.match, "newRef", p.newRef, "implicit", p.implicit)
 
 		func() {
 			endContainerStatus := s.beginContainerUpdateInternal(p.cnt.ID)
@@ -1361,14 +1475,51 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 			endProjectStatus := s.beginProjectUpdateInternal(composeProjectNameFromLabelsInternal(labels))
 			defer endProjectStatus()
 
-			// Check if this is Arcane self-update - use CLI upgrade instead
-			if arcaneupdater.IsArcaneContainer(labels) && s.upgradeService != nil {
-				slog.InfoContext(ctx, "restartContainersUsingOldIDs: detected Arcane self-update, using CLI upgrade method", "containerId", p.cnt.ID, "container", name)
+			projectName := labels["com.docker.compose.project"]
+			serviceName := labels["com.docker.compose.service"]
+			var proj *models.Project
+			if projectName != "" {
+				if projectID, ok := lookupComposeProjectIDInternal(projectName, projectNameToID); ok {
+					proj = projectIDToObj[projectID]
+				}
+			}
 
-				if err := s.upgradeService.TriggerUpgradeViaCLI(ctx, systemUser); err != nil {
+			if proj != nil && serviceName != "" && !libupdater.IsArcaneContainer(labels) {
+				if pErr, failed := projectResults[proj.ID]; failed {
 					res.Status = "failed"
-					res.Error = fmt.Sprintf("CLI upgrade failed: %v", err)
-					slog.WarnContext(ctx, "restartContainersUsingOldIDs: CLI upgrade failed", "containerId", p.cnt.ID, "err", err)
+					res.Error = fmt.Sprintf("project-level update failed: %v", pErr)
+				} else {
+					pendingServices := pendingComposeProjectServicesInternal(processedProjectServices, proj.ID, projectToServices[proj.ID])
+					if len(pendingServices) > 0 {
+						slog.InfoContext(ctx, "restartContainersUsingOldIDs: executing project-level update", "project", proj.Name, "services", pendingServices)
+						err := s.projectService.UpdateProjectServices(ctx, proj.ID, pendingServices, systemUser)
+						markComposeProjectServicesProcessedInternal(processedProjectServices, proj.ID, pendingServices)
+						if err != nil {
+							slog.ErrorContext(ctx, "restartContainersUsingOldIDs: project update failed", "project", proj.Name, "err", err)
+							projectResults[proj.ID] = err
+						}
+					}
+
+					if pErr, failed := projectResults[proj.ID]; failed {
+						res.Status = "failed"
+						res.Error = fmt.Sprintf("project-level update failed: %v", pErr)
+					} else {
+						res.Status = "updated"
+						res.UpdateAvailable = true
+						res.UpdateApplied = true
+						// Send notification
+						if s.notificationService != nil {
+							if notifErr := s.notificationService.SendContainerUpdateNotification(ctx, name, p.newRef, p.match, s.normalizeRef(p.newRef)); notifErr != nil {
+								slog.WarnContext(ctx, "Failed to send container update notification", "containerId", p.cnt.ID, "containerName", name, "imageRef", p.newRef, "error", notifErr.Error())
+							}
+						}
+					}
+				}
+			} else // Arcane self-updates must go through the detached CLI upgrader.
+			if libupdater.IsArcaneContainer(labels) {
+				if err := s.triggerSelfUpdateViaCLIInternal(ctx, "restartContainersUsingOldIDs", p.cnt.ID, name, labels); err != nil {
+					res.Status = "failed"
+					res.Error = err.Error()
 				} else {
 					res.Status = "updated"
 					res.UpdateAvailable = true
@@ -1397,6 +1548,118 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 	}
 	slog.DebugContext(ctx, "restartContainersUsingOldIDs: completed scanning", "results", len(results))
 	return results, nil
+}
+
+func (s *UpdaterService) triggerSelfUpdateViaCLIInternal(ctx context.Context, source, containerID, containerName string, labels map[string]string) error {
+	if !libupdater.IsArcaneContainer(labels) {
+		return fmt.Errorf("%s: container is not an Arcane self-update target", source)
+	}
+
+	instanceType := "server"
+	if libupdater.IsArcaneAgentContainer(labels) {
+		instanceType = "agent"
+	}
+
+	if s.upgradeService == nil {
+		err := fmt.Errorf("%s self-update requires CLI upgrade service", instanceType)
+		slog.ErrorContext(ctx, source+": missing CLI upgrade service for Arcane self-update",
+			"containerId", containerID,
+			"container", containerName,
+			"instanceType", instanceType,
+			"err", err)
+		return err
+	}
+
+	slog.InfoContext(ctx, source+": detected Arcane self-update, using CLI upgrade method",
+		"containerId", containerID,
+		"container", containerName,
+		"instanceType", instanceType)
+
+	if err := s.upgradeService.TriggerUpgradeViaCLI(ctx, systemUser); err != nil {
+		wrappedErr := fmt.Errorf("CLI upgrade failed: %w", err)
+		slog.WarnContext(ctx, source+": CLI upgrade failed",
+			"containerId", containerID,
+			"container", containerName,
+			"instanceType", instanceType,
+			"err", err)
+		return wrappedErr
+	}
+
+	return nil
+}
+
+func pendingComposeProjectServicesInternal(processedProjectServices map[string]map[string]struct{}, projectID string, services []string) []string {
+	if len(services) == 0 {
+		return nil
+	}
+
+	processed := processedProjectServices[projectID]
+	pending := make([]string, 0, len(services))
+	for _, service := range services {
+		if processed == nil {
+			pending = append(pending, service)
+			continue
+		}
+		if _, alreadyProcessed := processed[service]; !alreadyProcessed {
+			pending = append(pending, service)
+		}
+	}
+
+	return pending
+}
+
+func markComposeProjectServicesProcessedInternal(processedProjectServices map[string]map[string]struct{}, projectID string, services []string) {
+	if len(services) == 0 {
+		return
+	}
+
+	if _, exists := processedProjectServices[projectID]; !exists {
+		processedProjectServices[projectID] = make(map[string]struct{}, len(services))
+	}
+	for _, service := range services {
+		processedProjectServices[projectID][service] = struct{}{}
+	}
+}
+
+// lazyRegisterComposeProjectInternal registers a compose project into the pre-scan lookup maps when the
+// container's inspect data was unavailable during the pre-scan (inspect was nil at that point).
+// Without this, the main loop's lookupComposeProjectIDInternal call would miss the project and
+// fall through to the destructive standalone stop/rm/run path.
+func (s *UpdaterService) lazyRegisterComposeProjectInternal(
+	ctx context.Context,
+	p *restartPlan,
+	projectNameToID map[string]string,
+	projectIDToObj map[string]*models.Project,
+	projectToServices map[string][]string,
+	projectToSeenServices map[string]map[string]struct{},
+) {
+	if p.newRef == "" || p.inspect == nil || p.inspect.Config == nil {
+		return
+	}
+	projectName := p.inspect.Config.Labels["com.docker.compose.project"]
+	serviceName := p.inspect.Config.Labels["com.docker.compose.service"]
+	if projectName == "" || serviceName == "" {
+		return
+	}
+
+	projectID, registered := lookupComposeProjectIDInternal(projectName, projectNameToID)
+	if !registered {
+		proj, err := s.projectService.GetProjectByComposeName(ctx, projectName)
+		if err != nil {
+			return
+		}
+		projectID = proj.ID
+		projectIDToObj[proj.ID] = proj
+		projectNameToID[proj.Name] = proj.ID
+		projectNameToID[loader.NormalizeProjectName(proj.Name)] = proj.ID
+	}
+	if _, ok := projectToSeenServices[projectID]; !ok {
+		projectToSeenServices[projectID] = make(map[string]struct{})
+	}
+	if _, seen := projectToSeenServices[projectID][serviceName]; !seen {
+		projectToServices[projectID] = append(projectToServices[projectID], serviceName)
+		projectToSeenServices[projectID][serviceName] = struct{}{}
+	}
 }
 
 func (s *UpdaterService) beginContainerUpdateInternal(containerID string) func() {
@@ -1438,6 +1701,17 @@ func composeProjectNameFromLabelsInternal(labels map[string]string) string {
 		return ""
 	}
 	return strings.TrimSpace(labels["com.docker.compose.project"])
+}
+
+func lookupComposeProjectIDInternal(projectName string, projectNameToID map[string]string) (string, bool) {
+	if projectName == "" || len(projectNameToID) == 0 {
+		return "", false
+	}
+	if projectID, ok := projectNameToID[projectName]; ok {
+		return projectID, true
+	}
+	projectID, ok := projectNameToID[loader.NormalizeProjectName(projectName)]
+	return projectID, ok
 }
 
 func (s *UpdaterService) statusSnapshotInternal() updater.Status {
@@ -1499,25 +1773,6 @@ func resolvePullableImageRefInternal(summaryImage, inspectConfigImage string, re
 	}
 
 	return "", ""
-}
-
-// parseNormalizedRef expects a normalized ref in the form "host/repository:tag".
-func (s *UpdaterService) parseNormalizedRef(ref string) (host, repository, tag string) {
-	// host/repo:tag
-	parts := strings.SplitN(ref, "/", 2)
-	if len(parts) != 2 {
-		return "", "", ""
-	}
-	host = parts[0]
-	rest := parts[1]
-	tag = "latest"
-	if i := strings.LastIndex(rest, ":"); i != -1 && strings.LastIndex(rest, "/") < i {
-		tag = rest[i+1:]
-		repository = rest[:i]
-	} else {
-		repository = rest
-	}
-	return host, repository, tag
 }
 
 func (s *UpdaterService) logAutoUpdate(ctx context.Context, sev models.EventSeverity, metadata models.JSON) {
@@ -1709,4 +1964,23 @@ func (s *UpdaterService) parseRepoAndTag(ref string) (string, string) {
 	}
 	// Keep registry in repository as stored in records (they store Repository without tag)
 	return ref, tag
+}
+
+// dockerProxyContainerNameInternal extracts the container hostname from a TCP
+// DOCKER_HOST value (e.g. "tcp://my-proxy:2375" → "my-proxy"). Returns empty
+// string when DOCKER_HOST is not a TCP address, is an IP, or cannot be parsed.
+func dockerProxyContainerNameInternal(dockerHost string) string {
+	dockerHost = strings.TrimSpace(dockerHost)
+	if dockerHost == "" {
+		return ""
+	}
+	u, err := url.Parse(dockerHost)
+	if err != nil || strings.ToLower(u.Scheme) != "tcp" {
+		return ""
+	}
+	host := u.Hostname() // strips brackets from IPv6, strips port
+	if host == "" || host == "localhost" || strings.Contains(host, ".") || net.ParseIP(host) != nil {
+		return ""
+	}
+	return host
 }
