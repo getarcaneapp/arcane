@@ -36,9 +36,24 @@ type ArcaneComposeMetadata struct {
 }
 
 // ParseArcaneComposeMetadata reads a Docker Compose file and extracts Arcane-specific metadata.
-func ParseArcaneComposeMetadata(ctx context.Context, composeFilePath string) (ArcaneComposeMetadata, error) {
+// When projectsDirectory is set, Arcane's project env loading is used so .env.global is available.
+func ParseArcaneComposeMetadata(ctx context.Context, composeFilePath, projectsDirectory string, autoInjectEnv bool) (ArcaneComposeMetadata, error) {
+	if composeFilePath == "" {
+		return ArcaneComposeMetadata{ServiceIcons: map[string]string{}}, nil
+	}
+
 	workdir := filepath.Dir(composeFilePath)
-	envMap := loadComposeEnvironment(workdir)
+	if strings.TrimSpace(projectsDirectory) == "" {
+		envMap := loadComposeEnvironment(workdir)
+		return ParseArcaneComposeMetadataWithEnv(ctx, composeFilePath, envMap)
+	}
+
+	envLoader := NewEnvLoader(projectsDirectory, workdir, autoInjectEnv)
+	envMap, _, err := envLoader.LoadEnvironment(ctx)
+	if err != nil {
+		return ArcaneComposeMetadata{ServiceIcons: map[string]string{}}, fmt.Errorf("load project environment: %w", err)
+	}
+
 	return ParseArcaneComposeMetadataWithEnv(ctx, composeFilePath, envMap)
 }
 

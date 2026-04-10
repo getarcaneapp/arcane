@@ -28,7 +28,7 @@ x-arcane:
 	composePath := filepath.Join(tempDir, "compose.yaml")
 	require.NoError(t, os.WriteFile(composePath, []byte(composeContent), 0o600))
 
-	meta, err := ParseArcaneComposeMetadata(context.Background(), composePath)
+	meta, err := ParseArcaneComposeMetadata(context.Background(), composePath, tempDir, false)
 	require.NoError(t, err)
 	require.Equal(t, "https://cdn.jsdelivr.net/gh/homarr-labs/webp/raspberry-pi.webp", meta.ProjectIconURL)
 	require.Equal(t, []string{"https://www.example.com"}, meta.ProjectURLS)
@@ -53,8 +53,64 @@ services:
 `
 	require.NoError(t, os.WriteFile(filepath.Join(tempDir, "meta.yaml"), []byte(metaContent), 0o600))
 
-	meta, err := ParseArcaneComposeMetadata(context.Background(), composePath)
+	meta, err := ParseArcaneComposeMetadata(context.Background(), composePath, tempDir, false)
 	require.NoError(t, err)
 	require.Equal(t, "https://example.com/icon.png", meta.ProjectIconURL)
 	require.Equal(t, []string{"https://example.com/docs"}, meta.ProjectURLS)
+}
+
+func TestParseArcaneComposeMetadata_LoadsGlobalEnvForIncludedMetadata(t *testing.T) {
+	projectsRoot := t.TempDir()
+	projectDir := filepath.Join(projectsRoot, "demo")
+	require.NoError(t, os.MkdirAll(projectDir, 0o755))
+
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectsRoot, GlobalEnvFileName),
+		[]byte("ICON_CDN_URL=https://cdn.jsdelivr.net/gh/selfhst/icons@main\n"),
+		0o600,
+	))
+
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte(`include:
+  - metadata.yaml
+services:
+  watchtower:
+    image: nickfedor/watchtower:latest
+`), 0o600))
+
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "metadata.yaml"), []byte(`x-watchtower-icon: &watchtower-icon "${ICON_CDN_URL:+${ICON_CDN_URL}/svg/watchtower.svg}"
+x-arcane:
+  icon: *watchtower-icon
+`), 0o600))
+
+	meta, err := ParseArcaneComposeMetadata(context.Background(), filepath.Join(projectDir, "compose.yaml"), projectsRoot, false)
+	require.NoError(t, err)
+	require.Equal(t, "https://cdn.jsdelivr.net/gh/selfhst/icons@main/svg/watchtower.svg", meta.ProjectIconURL)
+}
+
+func TestParseArcaneComposeMetadata_LoadsGlobalEnvForNestedProjects(t *testing.T) {
+	projectsRoot := t.TempDir()
+	projectDir := filepath.Join(projectsRoot, "group", "demo")
+	require.NoError(t, os.MkdirAll(projectDir, 0o755))
+
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectsRoot, GlobalEnvFileName),
+		[]byte("ICON_CDN_URL=https://cdn.jsdelivr.net/gh/selfhst/icons@main\n"),
+		0o600,
+	))
+
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte(`include:
+  - metadata.yaml
+services:
+  watchtower:
+    image: nickfedor/watchtower:latest
+`), 0o600))
+
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "metadata.yaml"), []byte(`x-watchtower-icon: &watchtower-icon "${ICON_CDN_URL:+${ICON_CDN_URL}/svg/watchtower.svg}"
+x-arcane:
+  icon: *watchtower-icon
+`), 0o600))
+
+	meta, err := ParseArcaneComposeMetadata(context.Background(), filepath.Join(projectDir, "compose.yaml"), projectsRoot, false)
+	require.NoError(t, err)
+	require.Equal(t, "https://cdn.jsdelivr.net/gh/selfhst/icons@main/svg/watchtower.svg", meta.ProjectIconURL)
 }

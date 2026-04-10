@@ -561,7 +561,13 @@ func (s *ProjectService) GetProjectServices(ctx context.Context, projectID strin
 		return []ProjectServiceInfo{}, fmt.Errorf("no compose file found in project directory: %s", projectFromDb.Path)
 	}
 
-	meta, metaErr := projects.ParseArcaneComposeMetadata(ctx, composeFileFullPath)
+	projectsDirectory, projectsDirErr := s.getProjectsDirectoryInternal(ctx)
+	if projectsDirErr != nil {
+		slog.WarnContext(ctx, "failed to resolve projects directory for Arcane compose metadata", "path", composeFileFullPath, "error", projectsDirErr)
+	}
+	autoInjectEnv := s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false)
+
+	meta, metaErr := projects.ParseArcaneComposeMetadata(ctx, composeFileFullPath, projectsDirectory, autoInjectEnv)
 	if metaErr != nil {
 		slog.WarnContext(ctx, "failed to parse Arcane compose metadata", "path", composeFileFullPath, "error", metaErr)
 	}
@@ -3096,7 +3102,13 @@ func (s *ProjectService) getProjectMetadataForProject(ctx context.Context, p mod
 		return projects.ArcaneComposeMetadata{ServiceIcons: map[string]string{}}
 	}
 
-	meta, err := projects.ParseArcaneComposeMetadata(ctx, composeFile)
+	projectsDirectory, projectsDirErr := s.getProjectsDirectoryInternal(ctx)
+	if projectsDirErr != nil {
+		slog.WarnContext(ctx, "failed to resolve projects directory for Arcane compose metadata", "path", composeFile, "error", projectsDirErr)
+	}
+	autoInjectEnv := s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false)
+
+	meta, err := projects.ParseArcaneComposeMetadata(ctx, composeFile, projectsDirectory, autoInjectEnv)
 	if err != nil {
 		slog.WarnContext(ctx, "failed to parse Arcane compose metadata", "path", composeFile, "error", err)
 		return projects.ArcaneComposeMetadata{ServiceIcons: map[string]string{}}

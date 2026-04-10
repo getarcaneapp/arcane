@@ -1786,6 +1786,54 @@ func TestProjectService_SyncProjectsFromFileSystem_DiscoversNestedProjectsAndRel
 	assert.Equal(t, "project2", items[1].DirName)
 }
 
+func TestProjectService_ListProjects_LoadsProjectIconFromGlobalEnvInIncludedMetadata(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsRoot := t.TempDir()
+	projectPath := filepath.Join(projectsRoot, "demo")
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
+
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectsRoot, projects.GlobalEnvFileName),
+		[]byte("ICON_CDN_URL=https://cdn.jsdelivr.net/gh/selfhst/icons@main\n"),
+		0o600,
+	))
+
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte(`include:
+  - metadata.yaml
+services:
+  watchtower:
+    image: nickfedor/watchtower:latest
+`), 0o600))
+
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "metadata.yaml"), []byte(`x-watchtower-icon: &watchtower-icon "${ICON_CDN_URL:+${ICON_CDN_URL}/svg/watchtower.svg}"
+x-arcane:
+  icon: *watchtower-icon
+services:
+  watchtower:
+    labels:
+      com.getarcaneapp.arcane.icon: *watchtower-icon
+`), 0o600))
+
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
+	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
+
+	items, page, err := svc.ListProjects(ctx, pagination.QueryParams{
+		SortParams:       pagination.SortParams{Sort: "path", Order: pagination.SortAsc},
+		PaginationParams: pagination.PaginationParams{Limit: -1},
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 1, page.TotalItems)
+	require.Len(t, items, 1)
+	assert.Equal(t, "https://cdn.jsdelivr.net/gh/selfhst/icons@main/svg/watchtower.svg", items[0].IconURL)
+}
+
 func TestProjectService_CountProjectFolders_RecursivelyCountsNestedProjects(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
