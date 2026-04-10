@@ -284,6 +284,12 @@ func (s *ApiKeyService) ValidateApiKey(ctx context.Context, rawKey string) (*mod
 				return nil, ErrApiKeyExpired
 			}
 
+			// Environment bootstrap keys are scoped to agent pairing flows and must
+			// not authenticate as manager API users.
+			if apiKey.EnvironmentID != nil {
+				return nil, ErrApiKeyInvalid
+			}
+
 			s.markApiKeyUsedAsync(ctx, apiKey.ID)
 
 			user, err := s.userService.GetUserByID(ctx, apiKey.UserID)

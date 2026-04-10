@@ -138,6 +138,22 @@ func TestGetEnvironmentByAPIKeyUpdatesLastUsedAt(t *testing.T) {
 	require.NotNil(t, apiKey.LastUsedAt)
 }
 
+func TestValidateAPIKeyRejectsEnvironmentBootstrapKey(t *testing.T) {
+	ctx := context.Background()
+	service, db, userService := setupAPIKeyService(t)
+	user := createTestAPIKeyUser(t, ctx, userService, "user-env-bootstrap")
+
+	created, err := service.CreateEnvironmentApiKey(ctx, "env-bootstrap", user.ID)
+	require.NoError(t, err)
+
+	_, err = service.ValidateApiKey(ctx, created.Key)
+	require.ErrorIs(t, err, ErrApiKeyInvalid)
+
+	assertAPIKeyLastUsedStable(t, db, created.ApiKey.ID, nil, 500*time.Millisecond)
+	apiKey := fetchAPIKey(t, db, created.ApiKey.ID)
+	require.Nil(t, apiKey.LastUsedAt)
+}
+
 func TestValidateAPIKeyInvalidDoesNotUpdateLastUsedAt(t *testing.T) {
 	ctx := context.Background()
 	service, db, userService := setupAPIKeyService(t)
