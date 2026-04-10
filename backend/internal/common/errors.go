@@ -1013,7 +1013,7 @@ type RegistryFetchError struct {
 }
 
 func (e *RegistryFetchError) Error() string {
-	return fmt.Sprintf("Failed to fetch registry: %v", e.Err)
+	return "Failed to fetch registry"
 }
 
 type InvalidJSONResponseError struct {
@@ -1021,7 +1021,15 @@ type InvalidJSONResponseError struct {
 }
 
 func (e *InvalidJSONResponseError) Error() string {
-	return fmt.Sprintf("Invalid JSON response: %v", e.Err)
+	return "Invalid JSON response"
+}
+
+type UnsafeRemoteURLError struct {
+	Err error
+}
+
+func (e *UnsafeRemoteURLError) Error() string {
+	return fmt.Sprintf("Remote URL is not allowed: %v", e.Err)
 }
 
 type TemplateAlreadyLocalError struct{}

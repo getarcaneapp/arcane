@@ -199,9 +199,7 @@
 		return null;
 	}
 
-	const serviceComposeSourcePromise = $derived(
-		resolveServiceComposeSource(project, composeServiceName, composeInfo)
-	);
+	const serviceComposeSourcePromise = $derived(resolveServiceComposeSource(project, composeServiceName, composeInfo));
 
 	const showComposeTab = $derived(!!composeInfo && !!project);
 

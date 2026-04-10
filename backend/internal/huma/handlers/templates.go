@@ -185,6 +185,10 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService, 
 		Summary:     "Fetch remote registry",
 		Description: "Fetch templates from a remote registry URL",
 		Tags:        []string{"Templates"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
 	}, h.FetchRegistry)
 
 	huma.Register(api, huma.Operation{
