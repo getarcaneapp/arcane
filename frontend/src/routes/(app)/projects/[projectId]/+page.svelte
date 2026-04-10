@@ -404,8 +404,7 @@
 
 				// Match the signature to data.project (the stale page-load value)
 				// so the $effect guard doesn't re-apply old content to the editor.
-				const currentPageProject = withLoadedProjectFileContent(data.project);
-				lastSeenProjectSignature = buildProjectSyncSignature(currentPageProject);
+				lastSeenProjectSignature = buildProjectSyncSignature(data.project);
 
 				toast.success(m.common_update_success({ resource: m.project() }));
 			}
