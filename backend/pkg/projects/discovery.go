@@ -60,7 +60,7 @@ func IsProjectDirectoryPath(path string, followSymlinks bool) (bool, error) {
 	return resolvedInfo.IsDir(), nil
 }
 
-func DiscoverProjectDirectories(root string, followSymlinks bool) ([]DiscoveredProjectDir, error) {
+func DiscoverProjectDirectories(root string, followSymlinks bool, maxDepth int) ([]DiscoveredProjectDir, error) {
 	root = filepath.Clean(root)
 
 	isDir, err := IsProjectDirectoryPath(root, followSymlinks)
@@ -74,7 +74,7 @@ func DiscoverProjectDirectories(root string, followSymlinks bool) ([]DiscoveredP
 	discovered := make([]DiscoveredProjectDir, 0)
 	ancestors := make(map[string]struct{})
 
-	if err := walkProjectDirectoriesInternal(root, true, followSymlinks, ancestors, &discovered); err != nil {
+	if err := walkProjectDirectoriesInternal(root, true, 0, maxDepth, followSymlinks, ancestors, &discovered); err != nil {
 		return nil, err
 	}
 
@@ -85,7 +85,7 @@ func DiscoverProjectDirectories(root string, followSymlinks bool) ([]DiscoveredP
 	return discovered, nil
 }
 
-func walkProjectDirectoriesInternal(path string, isRoot bool, followSymlinks bool, ancestors map[string]struct{}, discovered *[]DiscoveredProjectDir) error {
+func walkProjectDirectoriesInternal(path string, isRoot bool, currentDepth int, maxDepth int, followSymlinks bool, ancestors map[string]struct{}, discovered *[]DiscoveredProjectDir) error {
 	identity, err := ResolveDirectoryIdentityInternal(path)
 	if err != nil {
 		return err
@@ -115,6 +115,10 @@ func walkProjectDirectoriesInternal(path string, isRoot bool, followSymlinks boo
 		}
 	}
 
+	if maxDepth > 0 && currentDepth >= maxDepth {
+		return nil
+	}
+
 	entries, err := os.ReadDir(path)
 	if err != nil {
 		return err
@@ -126,7 +130,7 @@ func walkProjectDirectoriesInternal(path string, isRoot bool, followSymlinks boo
 			continue
 		}
 
-		if err := walkProjectDirectoriesInternal(childPath, false, followSymlinks, ancestors, discovered); err != nil {
+		if err := walkProjectDirectoriesInternal(childPath, false, currentDepth+1, maxDepth, followSymlinks, ancestors, discovered); err != nil {
 			return err
 		}
 	}

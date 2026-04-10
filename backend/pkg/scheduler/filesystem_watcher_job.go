@@ -16,6 +16,7 @@ type FilesystemWatcherJob struct {
 	projectService   *services.ProjectService
 	templateService  *services.TemplateService
 	settingsService  *services.SettingsService
+	projectScanDepth int
 	projectsWatcher  *fswatch.Watcher
 	templatesWatcher *fswatch.Watcher
 	mu               sync.Mutex
@@ -25,16 +26,18 @@ func NewFilesystemWatcherJob(
 	projectService *services.ProjectService,
 	templateService *services.TemplateService,
 	settingsService *services.SettingsService,
+	projectScanDepth int,
 ) *FilesystemWatcherJob {
 	return &FilesystemWatcherJob{
-		projectService:  projectService,
-		templateService: templateService,
-		settingsService: settingsService,
+		projectService:   projectService,
+		templateService:  templateService,
+		settingsService:  settingsService,
+		projectScanDepth: projectScanDepth,
 	}
 }
 
-func RegisterFilesystemWatcherJob(ctx context.Context, projectService *services.ProjectService, templateService *services.TemplateService, settingsService *services.SettingsService) (*FilesystemWatcherJob, error) {
-	job := NewFilesystemWatcherJob(projectService, templateService, settingsService)
+func RegisterFilesystemWatcherJob(ctx context.Context, projectService *services.ProjectService, templateService *services.TemplateService, settingsService *services.SettingsService, projectScanDepth int) (*FilesystemWatcherJob, error) {
+	job := NewFilesystemWatcherJob(projectService, templateService, settingsService, projectScanDepth)
 
 	go func() {
 		if err := job.Start(ctx); err != nil {
@@ -58,12 +61,7 @@ func (j *FilesystemWatcherJob) Start(ctx context.Context) error {
 	followProjectSymlinks := settings.FollowProjectSymlinks.IsTrue()
 	j.logRecursiveProjectsWatchLimitWarningInternal(ctx, projectsDirectory)
 
-	sw, err := fswatch.NewWatcher(projectsDirectory, fswatch.WatcherOptions{
-		Debounce:          3 * time.Second, // Wait 3 seconds after last change before syncing
-		OnChange:          j.handleFilesystemChange,
-		MaxDepth:          0,
-		FollowSymlinkDirs: followProjectSymlinks,
-	})
+	sw, err := fswatch.NewWatcher(projectsDirectory, j.projectWatcherOptionsInternal(followProjectSymlinks))
 	if err != nil {
 		return err
 	}
@@ -193,12 +191,7 @@ func (j *FilesystemWatcherJob) RestartProjectsWatcher(ctx context.Context) error
 	j.logRecursiveProjectsWatchLimitWarningInternal(ctx, projectsDirectory)
 
 	// Create a new watcher with the updated path
-	sw, err := fswatch.NewWatcher(projectsDirectory, fswatch.WatcherOptions{
-		Debounce:          3 * time.Second,
-		OnChange:          j.handleFilesystemChange,
-		MaxDepth:          0,
-		FollowSymlinkDirs: followProjectSymlinks,
-	})
+	sw, err := fswatch.NewWatcher(projectsDirectory, j.projectWatcherOptionsInternal(followProjectSymlinks))
 	if err != nil {
 		return err
 	}
@@ -231,4 +224,13 @@ func (j *FilesystemWatcherJob) logRecursiveProjectsWatchLimitWarningInternal(ctx
 		"Projects filesystem watcher is monitoring directories recursively; very deep trees may require increasing fs.inotify.max_user_watches",
 		"path", projectsDirectory,
 		"sysctl", "fs.inotify.max_user_watches")
+}
+
+func (j *FilesystemWatcherJob) projectWatcherOptionsInternal(followProjectSymlinks bool) fswatch.WatcherOptions {
+	return fswatch.WatcherOptions{
+		Debounce:          3 * time.Second, // Wait 3 seconds after last change before syncing
+		OnChange:          j.handleFilesystemChange,
+		MaxDepth:          j.projectScanDepth,
+		FollowSymlinkDirs: followProjectSymlinks,
+	}
 }

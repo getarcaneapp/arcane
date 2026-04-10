@@ -1786,6 +1786,30 @@ func TestProjectService_SyncProjectsFromFileSystem_DiscoversNestedProjectsAndRel
 	assert.Equal(t, "project2", items[1].DirName)
 }
 
+func TestProjectService_SyncProjectsFromFileSystem_RespectsConfiguredScanMaxDepth(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsRoot := t.TempDir()
+	topLevelPath := createComposeProjectDir(t, projectsRoot, "project1")
+	createComposeProjectDir(t, projectsRoot, filepath.Join("group", "project2"))
+
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+	t.Setenv("PROJECT_SCAN_MAX_DEPTH", "1")
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
+	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
+
+	items, err := svc.ListAllProjects(ctx)
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	assert.Equal(t, "project1", items[0].Name)
+	assert.Equal(t, topLevelPath, items[0].Path)
+}
+
 func TestProjectService_ListProjects_LoadsProjectIconFromGlobalEnvInIncludedMetadata(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
@@ -1853,6 +1877,27 @@ func TestProjectService_CountProjectFolders_RecursivelyCountsNestedProjects(t *t
 	count, err := svc.countProjectFolders(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, 3, count)
+}
+
+func TestProjectService_CountProjectFolders_RespectsConfiguredScanMaxDepth(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsRoot := t.TempDir()
+	createComposeProjectDir(t, projectsRoot, "project1")
+	createComposeProjectDir(t, projectsRoot, filepath.Join("group", "project2"))
+
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+	t.Setenv("PROJECT_SCAN_MAX_DEPTH", "1")
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
+
+	count, err := svc.countProjectFolders(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 1, count)
 }
 
 func TestProjectService_SyncProjectsFromFileSystem_RemovesDeletedNestedProject(t *testing.T) {
