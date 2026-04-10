@@ -57,7 +57,7 @@
     "@sveltejs/vite-plugin-svelte": "^7.0.0",
     "@tailwindcss/vite": "^4.2.2",
     "@tanstack/eslint-plugin-query": "^5.91.4",
-    "@tanstack/svelte-query-devtools": "^6.0.4",
+    "@tanstack/svelte-query-devtools": "^6.1.14",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^25.5.0",
     "@typescript/native-preview": "7.0.0-dev.20260322.1",

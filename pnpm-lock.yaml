@@ -184,8 +184,8 @@ importers:
         specifier: ^5.91.4
         version: 5.91.4(eslint@9.39.2(jiti@2.6.1))(typescript@6.0.2)
       '@tanstack/svelte-query-devtools':
-        specifier: ^6.0.4
-        version: 6.0.4(@tanstack/svelte-query@6.1.13(svelte@5.55.0))(svelte@5.55.0)
+        specifier: ^6.1.14
+        version: 6.1.14(@tanstack/svelte-query@6.1.13(svelte@5.55.0))(svelte@5.55.0)
       '@types/js-yaml':
         specifier: ^4.0.9
         version: 4.0.9
@@ -2213,13 +2213,13 @@ packages:
   '@tanstack/query-core@5.96.2':
     resolution: {integrity: sha512-hzI6cTVh4KNRk8UtoIBS7Lv9g6BnJPXvBKsvYH1aGWvv0347jT3BnSvztOE+kD76XGvZnRC/t6qdW1CaIfwCeA==}
 
-  '@tanstack/query-devtools@5.93.0':
-    resolution: {integrity: sha512-+kpsx1NQnOFTZsw6HAFCW3HkKg0+2cepGtAWXjiiSOJJ1CtQpt72EE2nyZb+AjAbLRPoeRmPJ8MtQd8r8gsPdg==}
+  '@tanstack/query-devtools@5.97.0':
+    resolution: {integrity: sha512-ZMjAuYhQCKwKLKFMrD+HJDehHwWBVTGOuWBf4vEjR9unO+UGUjQ1mw2TuVbQKoLN/eRwB7qtlPsWBqobBoRBMQ==}
 
-  '@tanstack/svelte-query-devtools@6.0.4':
-    resolution: {integrity: sha512-jHcpWb8KrL3QxoyBHpceR1tIfZUQB1uCiXjh+rDBrmkw1AMIMnIKANzLoz8eQgIGJC7C2dUZXRvDpUvtLDgRAQ==}
+  '@tanstack/svelte-query-devtools@6.1.14':
+    resolution: {integrity: sha512-q47IT4b3FJ/U7JjTkSZXm+ky4TGVtre0826vcvM7KpZsYJG0cPySqBquyK0QagJ7sJYHeGH8MXNThMwxKdNEXw==}
     peerDependencies:
-      '@tanstack/svelte-query': ^6.0.18
+      '@tanstack/svelte-query': ^6.1.14
       svelte: ^5.25.0
 
   '@tanstack/svelte-query@6.1.13':
@@ -5694,11 +5694,11 @@ snapshots:
 
   '@tanstack/query-core@5.96.2': {}
 
-  '@tanstack/query-devtools@5.93.0': {}
+  '@tanstack/query-devtools@5.97.0': {}
 
-  '@tanstack/svelte-query-devtools@6.0.4(@tanstack/svelte-query@6.1.13(svelte@5.55.0))(svelte@5.55.0)':
+  '@tanstack/svelte-query-devtools@6.1.14(@tanstack/svelte-query@6.1.13(svelte@5.55.0))(svelte@5.55.0)':
     dependencies:
-      '@tanstack/query-devtools': 5.93.0
+      '@tanstack/query-devtools': 5.97.0
       '@tanstack/svelte-query': 6.1.13(svelte@5.55.0)
       esm-env: 1.2.2
       svelte: 5.55.0
