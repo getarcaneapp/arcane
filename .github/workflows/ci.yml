@@ -155,7 +155,7 @@ jobs:
 
       - name: Delete comment if no deadcode found
         if: steps.deadcode.outputs.count == '0' && steps.fc.outputs.comment-id != ''
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             github.rest.issues.deleteComment({
