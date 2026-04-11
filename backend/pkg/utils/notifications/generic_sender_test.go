@@ -134,14 +134,28 @@ func TestBuildGenericURL(t *testing.T) {
 			config: models.GenericConfig{
 				WebhookURL: "http://www.pushplus.plus/send?token=abc123",
 			},
-			wantURL: "generic://www.pushplus.plus/send%3Ftoken=abc123?disabletls=yes&template=json",
+			wantURL: "generic://www.pushplus.plus/send?disabletls=yes&template=json&token=abc123",
 		},
 		{
 			name: "webhook URL with multiple query params preserved",
 			config: models.GenericConfig{
 				WebhookURL: "https://api.example.com/webhook?token=abc&channel=general",
 			},
-			wantURL: "generic://api.example.com/webhook%3Ftoken=abc&channel=general?disabletls=no&template=json",
+			wantURL: "generic://api.example.com/webhook?channel=general&disabletls=no&template=json&token=abc",
+		},
+		{
+			name: "PushPlus webhook with content message key",
+			config: models.GenericConfig{
+				WebhookURL: "http://www.pushplus.plus/send?token=abc123",
+				Method:     "POST",
+				MessageKey: "content",
+			},
+			// Shoutrrr's generic service preserves `token=abc123` through to the
+			// outbound HTTP request untouched, while consuming the config keys
+			// (disabletls, template, method, messagekey). This is what PushPlus
+			// needs: POST http://www.pushplus.plus/send?token=abc123 with
+			// {"title":"...","content":"..."} at the root.
+			wantURL: "generic://www.pushplus.plus/send?disabletls=yes&messagekey=content&method=POST&template=json&token=abc123",
 		},
 		{
 			name: "empty webhook URL",

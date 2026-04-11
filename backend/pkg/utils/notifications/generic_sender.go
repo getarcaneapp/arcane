@@ -42,31 +42,18 @@ func BuildGenericURL(config models.GenericConfig) (string, error) {
 
 	// Build generic service URL
 	// Format: generic://host[:port]/path?params
-	// Shoutrrr's generic service uses HTTP or HTTPS based on the DisableTLS setting
-	scheme := "generic"
+	// Shoutrrr's generic service uses HTTP or HTTPS based on the DisableTLS setting.
 
-	// Start with the base URL.
-	// Preserve any query parameters from the original webhook URL by encoding
-	// the ? as %3F so it stays in the path component. Shoutrrr decodes the path
-	// when constructing the outbound HTTP request, recovering the original query
-	// string for the upstream service.
-	rawPath := webhookURL.Path
-	decodedPath := webhookURL.Path
-	if webhookURL.RawQuery != "" {
-		rawPath = webhookURL.Path + "%3F" + webhookURL.RawQuery
-		decodedPath = webhookURL.Path + "?" + webhookURL.RawQuery
-	}
-	shoutrrrURL := &url.URL{
-		Scheme:  scheme,
-		Host:    webhookURL.Host,
-		RawPath: rawPath,
-		Path:    decodedPath,
-	}
+	// Start from the user's existing query parameters. Shoutrrr's generic
+	// service preserves any query keys it does not recognise, so provider
+	// tokens embedded in the webhook URL (e.g. PushPlus's `?token=...`) flow
+	// straight through to the outbound HTTP request untouched.
+	query := webhookURL.Query()
 
-	// Build query parameters
-	query := url.Values{}
-
-	// Set template to JSON (default for generic webhooks)
+	// Set template to JSON (default for generic webhooks). Shoutrrr's JSON
+	// template marshals the notification params as a flat JSON object at the
+	// root level, which is the format most providers (PushPlus, custom APIs,
+	// Home Assistant, etc.) expect.
 	query.Set("template", "json")
 
 	// Set content type if provided
@@ -106,7 +93,12 @@ func BuildGenericURL(config models.GenericConfig) (string, error) {
 		}
 	}
 
-	shoutrrrURL.RawQuery = query.Encode()
+	shoutrrrURL := &url.URL{
+		Scheme:   "generic",
+		Host:     webhookURL.Host,
+		Path:     webhookURL.Path,
+		RawQuery: query.Encode(),
+	}
 
 	return shoutrrrURL.String(), nil
 }
