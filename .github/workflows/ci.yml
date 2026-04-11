@@ -46,7 +46,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Setup Just
-        uses: extractions/setup-just@v3
+        uses: extractions/setup-just@v4
 
       - name: Set up Depot CLI
         if: matrix.module.gcc
@@ -206,7 +206,7 @@ jobs:
           cache: pnpm
 
       - name: Setup Just
-        uses: extractions/setup-just@v3
+        uses: extractions/setup-just@v4
 
       - name: Install Fontend Dependencies
         run: just deps install frontend
@@ -251,7 +251,7 @@ jobs:
           run_install: false
 
       - name: Setup Just
-        uses: extractions/setup-just@v3
+        uses: extractions/setup-just@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v6

@@ -26,7 +26,7 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Just
-        uses: extractions/setup-just@v3
+        uses: extractions/setup-just@v4
 
       - name: Setup PNPM
         uses: pnpm/action-setup@v5
