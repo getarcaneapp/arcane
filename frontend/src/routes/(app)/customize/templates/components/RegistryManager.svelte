@@ -77,7 +77,7 @@
 								<p class="text-muted-foreground mt-1 text-sm">{registry.description}</p>
 							{/if}
 							{#if registry.lastFetchError}
-								<div class="mt-2 flex items-start gap-1.5 rounded-md border border-destructive/30 bg-destructive/10 px-2 py-1.5">
+								<div class="border-destructive/30 bg-destructive/10 mt-2 flex items-start gap-1.5 rounded-md border px-2 py-1.5">
 									<AlertTriangleIcon class="text-destructive mt-0.5 size-3.5 shrink-0" />
 									<p class="text-destructive text-xs break-all">{registry.lastFetchError}</p>
 								</div>
