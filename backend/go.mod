@@ -20,7 +20,7 @@ require (
 	github.com/docker/compose/v5 v5.1.2
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/getarcaneapp/arcane/cli v1.16.3
-	github.com/getarcaneapp/arcane/types v1.17.2
+	github.com/getarcaneapp/arcane/types v1.17.3
 	github.com/gin-contrib/cors v1.7.7
 	github.com/gin-gonic/gin v1.12.0
 	github.com/glebarez/sqlite v1.11.0
@@ -51,7 +51,7 @@ require (
 	github.com/stretchr/testify v1.11.1
 	go.podman.io/image/v5 v5.39.2
 	golang.org/x/crypto v0.50.0
-	golang.org/x/mod v0.34.0
+	golang.org/x/mod v0.35.0
 	golang.org/x/net v0.53.0
 	golang.org/x/oauth2 v0.36.0
 	golang.org/x/sync v0.20.0
