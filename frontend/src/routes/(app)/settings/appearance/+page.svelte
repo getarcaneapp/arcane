@@ -213,7 +213,7 @@
 								<LocalePicker
 									inline={true}
 									id="appearanceLocalePicker"
-									class="bg-background/50 border-border/30 text-foreground h-9 w-32 text-sm font-medium"
+									class="border-border/30 text-foreground h-9 w-32 text-sm font-medium"
 								/>
 							</div>
 						</div>
