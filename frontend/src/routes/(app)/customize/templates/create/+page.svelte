@@ -1,17 +1,17 @@
 <script lang="ts">
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import * as Card from '$lib/components/ui/card';
-	import CodeEditor from '$lib/components/code-editor/editor.svelte';
-	import FormInput from '$lib/components/form/form-input.svelte';
 	import { goto } from '$app/navigation';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
+	import FormInput from '$lib/components/form/form-input.svelte';
+	import { ArrowLeftIcon } from '$lib/icons';
 	import { m } from '$lib/paraglide/messages';
 	import { templateService } from '$lib/services/template-service';
-	import { createForm } from '$lib/utils/form.utils';
-	import { tryCatch } from '$lib/utils/try-catch';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
+	import { createForm, preventDefault } from '$lib/utils/form.utils';
+	import { tryCatch } from '$lib/utils/try-catch';
 	import { toast } from 'svelte-sonner';
 	import { z } from 'zod/v4';
-	import { ArrowLeftIcon, CodeIcon, VariableIcon } from '$lib/icons';
+	import CodePanel from '../../../projects/components/CodePanel.svelte';
+	import EditableName from '../../../projects/components/EditableName.svelte';
 
 	let { data } = $props();
 
@@ -20,6 +20,7 @@
 	let envHasErrors = $state(false);
 	let composeValidationReady = $state(false);
 	let envValidationReady = $state(false);
+	let nameInputRef = $state<HTMLInputElement | null>(null);
 
 	const globalVariableMap = $derived.by(() =>
 		Object.fromEntries((data.globalVariables ?? []).map((item) => [item.key, item.value]))
@@ -39,15 +40,17 @@
 		envContent: ''
 	};
 
-	let { inputs, ...form } = $derived(createForm<typeof formSchema>(formSchema, initialValues));
+	const { inputs, ...form } = createForm<typeof formSchema>(formSchema, initialValues);
 
-	const canCreate = $derived(composeValidationReady && envValidationReady && !composeHasErrors && !envHasErrors);
+	const hasEditorErrors = $derived(!composeValidationReady || !envValidationReady || composeHasErrors || envHasErrors);
+	const canCreate = $derived(!!$inputs.name.value && !!$inputs.composeContent.value && !hasEditorErrors && !saving);
 
 	async function handleCreate() {
-		if (!composeValidationReady || !envValidationReady || composeHasErrors || envHasErrors) {
+		if (hasEditorErrors) {
 			toast.error(m.templates_validation_error());
 			return;
 		}
+
 		const validated = form.validate();
 		if (!validated) {
 			toast.error(m.templates_validation_error());
@@ -73,113 +76,112 @@
 	}
 </script>
 
-<div class="container mx-auto flex h-full min-h-0 max-w-full flex-col gap-6 overflow-hidden p-2 pb-10 sm:p-6 sm:pb-10">
-	<div class="space-y-3 sm:space-y-4">
-		<ArcaneButton action="base" tone="ghost" onclick={() => goto('/customize/templates')} class="w-fit gap-2">
-			<ArrowLeftIcon class="size-4" />
-			<span>{m.common_back_to({ resource: m.templates_title() })}</span>
-		</ArcaneButton>
-
-		<div class="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
-			<div class="min-w-0 flex-1 space-y-3">
-				<FormInput
-					input={$inputs.name}
-					label={m.templates_template_name_label()}
-					placeholder={m.templates_template_name_placeholder()}
-					disabled={saving}
+<div class="bg-background flex h-full min-h-0 flex-col">
+	<div class="bg-background/95 supports-[backdrop-filter]:bg-background/80 sticky top-0 z-10 mb-2 border-b backdrop-blur">
+		<div class="mx-auto flex h-16 max-w-full items-center justify-between gap-4 px-6">
+			<div class="flex min-w-0 items-center gap-4">
+				<ArcaneButton
+					action="base"
+					tone="ghost"
+					size="sm"
+					class="gap-2 bg-transparent"
+					icon={ArrowLeftIcon}
+					customLabel={m.common_back()}
+					onclick={() => goto('/customize/templates')}
 				/>
-				<FormInput
-					input={$inputs.description}
-					label={m.templates_template_description_label()}
-					placeholder={m.templates_template_description_placeholder()}
-					disabled={saving}
-				/>
-			</div>
-			<div class="flex flex-col gap-2 sm:flex-row sm:items-start">
-				<ArcaneButton action="cancel" onclick={() => goto('/customize/templates')} disabled={saving}>
-					{m.common_cancel()}
-				</ArcaneButton>
-				{#if composeValidationReady && envValidationReady && !composeHasErrors && !envHasErrors}
-					<ArcaneButton
-						action="create"
-						customLabel={m.templates_create_template()}
-						onclick={handleCreate}
-						disabled={!canCreate}
-						loading={saving}
-						loadingLabel={m.common_action_saving()}
+				<div class="bg-border hidden h-4 w-px sm:block"></div>
+				<div class="hidden min-w-0 items-center gap-3 sm:flex">
+					<EditableName
+						bind:value={$inputs.name.value}
+						bind:ref={nameInputRef}
+						variant="inline"
+						error={$inputs.name.error ?? undefined}
+						originalValue=""
+						placeholder={m.templates_template_name_placeholder()}
+						canEdit={!saving}
+						class="hidden sm:block"
 					/>
-				{/if}
+				</div>
+			</div>
+
+			<div class="flex items-center gap-2">
+				<ArcaneButton action="cancel" onclick={() => goto('/customize/templates')} disabled={saving} />
+				<ArcaneButton
+					action="create"
+					customLabel={m.templates_create_template()}
+					onclick={handleCreate}
+					disabled={!canCreate}
+					loading={saving}
+					loadingLabel={m.common_action_creating()}
+				/>
 			</div>
 		</div>
 	</div>
 
-	<div class="flex min-h-0 flex-1 flex-col gap-6 lg:grid lg:grid-cols-5 lg:grid-rows-1 lg:items-stretch">
-		<Card.Root class="flex min-h-0 min-w-0 flex-1 flex-col lg:col-span-3">
-			<Card.Header icon={CodeIcon} class="shrink-0">
-				<div class="flex flex-col space-y-1.5">
-					<Card.Title>
-						<h2>{m.templates_compose_template_label()}</h2>
-					</Card.Title>
-					<Card.Description>{m.templates_service_definitions()}</Card.Description>
-				</div>
-			</Card.Header>
-			<Card.Content class="flex min-h-0 min-w-0 flex-1 flex-col p-0">
-				<div class="min-h-0 min-w-0 flex-1 rounded-b-xl">
-					<CodeEditor
-						bind:value={$inputs.composeContent.value}
-						language="yaml"
-						readOnly={saving}
-						fontSize="13px"
-						bind:hasErrors={composeHasErrors}
-						bind:validationReady={composeValidationReady}
-						fileId="templates:create:compose"
-						editorContext={{
-							envContent: $inputs.envContent.value,
-							composeContents: [$inputs.composeContent.value],
-							globalVariables: globalVariableMap
-						}}
+	<div class="flex min-h-0 flex-1 overflow-hidden">
+		<div class="mx-auto flex h-full w-full max-w-full min-w-0 flex-col px-2 pb-6 sm:px-6 sm:pb-6">
+			<form class="flex min-h-0 flex-1 flex-col gap-4" onsubmit={preventDefault(handleCreate)}>
+				<div class="block flex-shrink-0 py-4 sm:hidden">
+					<EditableName
+						bind:value={$inputs.name.value}
+						bind:ref={nameInputRef}
+						variant="block"
+						error={$inputs.name.error ?? undefined}
+						originalValue=""
+						placeholder={m.templates_template_name_placeholder()}
+						canEdit={!saving}
 					/>
 				</div>
-			</Card.Content>
-			{#if $inputs.composeContent.error}
-				<Card.Footer class="pt-0">
-					<p class="text-destructive text-xs font-medium">{$inputs.composeContent.error}</p>
-				</Card.Footer>
-			{/if}
-		</Card.Root>
 
-		<Card.Root class="flex min-h-0 min-w-0 flex-1 flex-col lg:col-span-2">
-			<Card.Header icon={VariableIcon} class="shrink-0">
-				<div class="flex flex-col space-y-1.5">
-					<Card.Title>
-						<h2>{m.templates_env_template_label()}</h2>
-					</Card.Title>
-					<Card.Description>{m.templates_default_config_values()}</Card.Description>
+				<div class="flex-shrink-0 px-1 pt-1">
+					<div class="max-w-2xl">
+						<FormInput
+							input={$inputs.description}
+							label={m.templates_template_description_label()}
+							placeholder={m.templates_template_description_placeholder()}
+							disabled={saving}
+						/>
+					</div>
 				</div>
-			</Card.Header>
-			<Card.Content class="flex min-h-0 min-w-0 flex-1 flex-col p-0">
-				<div class="min-h-0 min-w-0 flex-1 rounded-b-xl">
-					<CodeEditor
-						bind:value={$inputs.envContent.value}
-						language="env"
-						readOnly={saving}
-						fontSize="13px"
-						bind:hasErrors={envHasErrors}
-						bind:validationReady={envValidationReady}
-						fileId="templates:create:env"
-						editorContext={{
-							envContent: $inputs.envContent.value,
-							composeContents: [$inputs.composeContent.value],
-							globalVariables: globalVariableMap
-						}}
-					/>
+
+				<div class="flex min-h-0 flex-1 flex-col gap-4 lg:grid lg:grid-cols-5 lg:grid-rows-1 lg:items-stretch">
+					<div class="flex min-h-0 flex-1 flex-col lg:col-span-3">
+						<CodePanel
+							title="compose.yaml"
+							language="yaml"
+							bind:value={$inputs.composeContent.value}
+							error={$inputs.composeContent.error ?? undefined}
+							readOnly={saving}
+							bind:hasErrors={composeHasErrors}
+							bind:validationReady={composeValidationReady}
+							fileId="templates:create:compose"
+							editorContext={{
+								envContent: $inputs.envContent.value,
+								composeContents: [$inputs.composeContent.value],
+								globalVariables: globalVariableMap
+							}}
+						/>
+					</div>
+
+					<div class="flex min-h-0 flex-1 flex-col lg:col-span-2">
+						<CodePanel
+							title=".env"
+							language="env"
+							bind:value={$inputs.envContent.value}
+							error={$inputs.envContent.error ?? undefined}
+							readOnly={saving}
+							bind:hasErrors={envHasErrors}
+							bind:validationReady={envValidationReady}
+							fileId="templates:create:env"
+							editorContext={{
+								envContent: $inputs.envContent.value,
+								composeContents: [$inputs.composeContent.value],
+								globalVariables: globalVariableMap
+							}}
+						/>
+					</div>
 				</div>
-			</Card.Content>
-			{#if $inputs.envContent.error}
-				<Card.Footer class="pt-0">
-					<p class="text-destructive text-xs font-medium">{$inputs.envContent.error}</p>
-				</Card.Footer>
-			{/if}
-		</Card.Root>
+			</form>
+		</div>
 	</div>
 </div>
