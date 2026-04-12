@@ -271,8 +271,6 @@ var (
 	cgroupV2ContainerPattern = regexp.MustCompile(`docker-([a-f0-9]{64})\.scope`)
 )
 
-// GetCurrentContainerID detects the current container ID using multiple detection methods
-// It tries cgroup, mountinfo, and hostname in that order
 // IsDockerContainer reports whether the current process is running inside a
 // Docker container (as opposed to an LXC container, a VM, or bare metal).
 //
