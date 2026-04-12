@@ -7,7 +7,7 @@
 	import { Snippet } from '$lib/components/ui/snippet';
 	import { m } from '$lib/paraglide/messages';
 	import type { TemplateRegistry } from '$lib/types/template.type';
-	import { TrashIcon, RegistryIcon, CommunityIcon, RefreshIcon, ExternalLinkIcon, AddIcon } from '$lib/icons';
+	import { TrashIcon, RegistryIcon, CommunityIcon, RefreshIcon, ExternalLinkIcon, AddIcon, AlertTriangleIcon } from '$lib/icons';
 
 	let {
 		registries,
@@ -75,6 +75,12 @@
 							<p class="text-muted-foreground text-sm break-all">{registry.url}</p>
 							{#if registry.description}
 								<p class="text-muted-foreground mt-1 text-sm">{registry.description}</p>
+							{/if}
+							{#if registry.lastFetchError}
+								<div class="mt-2 flex items-start gap-1.5 rounded-md border border-destructive/30 bg-destructive/10 px-2 py-1.5">
+									<AlertTriangleIcon class="text-destructive mt-0.5 size-3.5 shrink-0" />
+									<p class="text-destructive text-xs break-all">{registry.lastFetchError}</p>
+								</div>
 							{/if}
 						</div>
 						<div class="flex items-center gap-2 self-end sm:self-center">

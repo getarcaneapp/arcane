@@ -1006,6 +1006,13 @@ func (s *ProjectService) cleanupDBProjects(ctx context.Context, seen map[string]
 			continue
 		}
 
+		// Skip projects whose lifecycle is owned by the gitops system.
+		// Their compose files may not exist on disk yet (e.g. during a sync
+		// or after an SSH/clone failure) and should never be deleted here.
+		if p.GitOpsManagedBy != nil && strings.TrimSpace(*p.GitOpsManagedBy) != "" {
+			continue
+		}
+
 		validDir, err := projects.IsProjectDirectoryPath(p.Path, followProjectSymlinks)
 		if err != nil {
 			if os.IsNotExist(err) {
@@ -1759,14 +1766,6 @@ func resolveDockerfilePathInternal(svc composetypes.ServiceConfig) (string, erro
 	return dockerfilePath, nil
 }
 
-func translateBuildPathInternal(path string, pathMapper *projects.PathMapper) (string, error) {
-	if pathMapper == nil || strings.TrimSpace(path) == "" || !filepath.IsAbs(path) {
-		return path, nil
-	}
-
-	return pathMapper.ContainerToHost(path)
-}
-
 func buildArgsFromCompose(args map[string]*string) map[string]string {
 	buildArgs := map[string]string{}
 	for key, value := range args {
@@ -1895,13 +1894,17 @@ func (s *ProjectService) prepareServiceBuildRequest(
 		return imagetypes.BuildRequest{}, updatedSvc, updated, fmt.Errorf("service %s must define an image when push is enabled", serviceName)
 	}
 
+	// The build context (and any absolute Dockerfile path) is read locally by
+	// Arcane — both the docker provider (`archive.TarWithOptions`) and the
+	// buildkit provider (`SolveOpt.LocalDirs`) stream the directory contents
+	// to the daemon from the Arcane process's own filesystem. It must
+	// therefore stay as a container path; translating it to the host path
+	// (which is what bind mount sources need) makes `os.Stat` fail because
+	// the host path doesn't exist inside the Arcane container. See #2314.
+	// pathMapper is intentionally not consumed here for that reason.
 	contextDir, err := resolveBuildContextInternal(project.WorkingDir, updatedSvc, serviceName)
 	if err != nil {
 		return imagetypes.BuildRequest{}, updatedSvc, updated, err
-	}
-	contextDir, err = translateBuildPathInternal(contextDir, pathMapper)
-	if err != nil {
-		return imagetypes.BuildRequest{}, updatedSvc, updated, fmt.Errorf("translate build context for service %s: %w", serviceName, err)
 	}
 
 	dockerfileInline := updatedSvc.Build.DockerfileInline
@@ -1914,10 +1917,6 @@ func (s *ProjectService) prepareServiceBuildRequest(
 		dockerfilePath, err = resolveDockerfilePathInternal(updatedSvc)
 		if err != nil {
 			return imagetypes.BuildRequest{}, updatedSvc, updated, err
-		}
-		dockerfilePath, err = translateBuildPathInternal(dockerfilePath, pathMapper)
-		if err != nil {
-			return imagetypes.BuildRequest{}, updatedSvc, updated, fmt.Errorf("translate Dockerfile path for service %s: %w", serviceName, err)
 		}
 	}
 

@@ -1436,7 +1436,13 @@ func TestProjectService_PrepareServiceBuildRequest_MapsComposeFields(t *testing.
 	assert.Contains(t, req.ExtraHosts[0], "10.0.0.5")
 }
 
-func TestProjectService_PrepareServiceBuildRequest_UsesExecutorVisiblePaths(t *testing.T) {
+// TestProjectService_PrepareServiceBuildRequest_KeepsContainerPaths is a
+// regression test for #2314: Arcane's local build pipeline (the docker and
+// buildkit providers both read the build context via the Arcane process's own
+// filesystem) cannot use host paths, so prepareServiceBuildRequest must leave
+// the build context and any absolute Dockerfile path as container paths even
+// when the projects mount has a non-matching host prefix.
+func TestProjectService_PrepareServiceBuildRequest_KeepsContainerPaths(t *testing.T) {
 	svc := &ProjectService{}
 	proj := &composetypes.Project{WorkingDir: "/app/data/projects/demo", Name: "demo"}
 	pm := projects.NewPathMapper("/app/data/projects", "/docker-data/arcane/projects")
@@ -1461,8 +1467,42 @@ func TestProjectService_PrepareServiceBuildRequest_UsesExecutorVisiblePaths(t *t
 	)
 	require.NoError(t, err)
 
-	assert.Equal(t, "/docker-data/arcane/projects/demo", req.ContextDir)
-	assert.Equal(t, "/docker-data/arcane/projects/demo/Dockerfile.custom", req.Dockerfile)
+	assert.Equal(t, "/app/data/projects/demo", req.ContextDir)
+	assert.Equal(t, "/app/data/projects/demo/Dockerfile.custom", req.Dockerfile)
+}
+
+// TestProjectService_PrepareServiceBuildRequest_BuildDotKeepsContainerPath
+// reproduces the exact configuration from #2314: a compose file with
+// `build: .` next to its Dockerfile, on an installation where the projects
+// directory is bind-mounted from a different host path than the container
+// path. The resulting BuildRequest must point at the container path so the
+// local builder can stat / tar the directory.
+func TestProjectService_PrepareServiceBuildRequest_BuildDotKeepsContainerPath(t *testing.T) {
+	svc := &ProjectService{}
+	proj := &composetypes.Project{WorkingDir: "/app/data/projects/caddy", Name: "caddy"}
+	pm := projects.NewPathMapper("/app/data/projects", "/storage/volumes/arcane/projects")
+
+	serviceCfg := composetypes.ServiceConfig{
+		Name:  "caddy",
+		Image: "caddy",
+		Build: &composetypes.BuildConfig{
+			Context: ".",
+		},
+	}
+
+	req, _, _, err := svc.prepareServiceBuildRequest(
+		context.Background(),
+		"project-id",
+		proj,
+		"caddy",
+		serviceCfg,
+		ProjectBuildOptions{},
+		pm,
+	)
+	require.NoError(t, err)
+
+	assert.Equal(t, "/app/data/projects/caddy", req.ContextDir)
+	assert.Equal(t, "Dockerfile", req.Dockerfile)
 }
 
 func TestProjectService_PrepareServiceBuildRequest_UsesInlineDockerfile(t *testing.T) {
