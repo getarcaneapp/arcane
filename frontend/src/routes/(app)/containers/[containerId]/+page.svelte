@@ -38,7 +38,8 @@
 		TerminalIcon,
 		ContainersIcon,
 		StatsIcon,
-		CodeIcon
+		CodeIcon,
+		InspectIcon
 	} from '$lib/icons';
 	import { parse as parseYaml } from 'yaml';
 	import type { IncludeFile } from '$lib/types/project.type';
@@ -213,7 +214,7 @@
 		...(showNetworkTab ? [{ value: 'network', label: m.containers_nav_networks(), icon: NetworksIcon }] : []),
 		...(hasMounts ? [{ value: 'storage', label: m.containers_nav_storage(), icon: VolumesIcon }] : []),
 		...(showComposeTab ? [{ value: 'compose', label: m.tabs_compose(), icon: CodeIcon }] : []),
-		{ value: 'inspect', label: m.tabs_inspect(), icon: CodeIcon }
+		{ value: 'inspect', label: m.tabs_inspect(), icon: InspectIcon }
 	]);
 
 	const activeTab = $derived.by(() => {

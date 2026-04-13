@@ -414,6 +414,8 @@
 	"container_hostname_placeholder": "my-hostname",
 	"container_domain_label": "Nome do domínio",
 	"container_domain_placeholder": "exemplo.com",
+	"tabs_compose": "Compose",
+	"tabs_inspect": "Inspect",
 	"tabs_environment": "Environment",
 	"tabs_volumes": "Volumes",
 	"tabs_network_security": "Rede e Segurança",
