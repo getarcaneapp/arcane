@@ -2546,7 +2546,7 @@
 	"settings_default_deploy_pull_policy_description": "Criterio pull immagine predefinito quando si distribuiscono progetti",
 	"authentication_title": "Autenticazione",
 	"authentication_description": "Configurare i provider di autenticazione, i criteri di password e il comportamento della sessione.",
-	"webhook_page_title": "Ganci web",
+	"webhook_page_title": "Webhook",
 	"webhook_page_description": "Gestite i webhook in entrata per attivare azioni su container, progetti, updater o GitOps da sistemi esterni.",
 	"webhook_create_button": "Creare un webhook",
 	"webhook_create_title": "Creare un webhook",
