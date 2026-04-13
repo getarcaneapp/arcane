@@ -25,6 +25,17 @@ export function formatDateTimeShort(date: Date | string | null | undefined): str
 	return format(d, 'PPp');
 }
 
+/**
+ * Format only the time portion of a date, locale-aware (e.g. "3:45:22 PM").
+ * Drop-in replacement for toLocaleTimeString() that respects the app locale.
+ */
+export function formatTime(date: Date | string | null | undefined): string {
+	if (!date) return '';
+	const d = typeof date === 'string' ? new Date(date) : date;
+	if (isNaN(d.getTime())) return '';
+	return format(d, 'pp');
+}
+
 export async function setLocale(locale: Locale, reload = true) {
 	let dateFnsLocale: string = locale;
 	if (dateFnsLocale === 'en') {
