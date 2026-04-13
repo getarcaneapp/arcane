@@ -53,8 +53,9 @@ WHERE user_id IS NOT NULL;
 DROP TABLE api_keys;
 ALTER TABLE api_keys_old RENAME TO api_keys;
 
-CREATE INDEX IF NOT EXISTS idx_api_keys_user_id ON api_keys(user_id);
 CREATE INDEX IF NOT EXISTS idx_api_keys_key_hash ON api_keys(key_hash);
 CREATE INDEX IF NOT EXISTS idx_api_keys_key_prefix ON api_keys(key_prefix);
+CREATE INDEX IF NOT EXISTS idx_api_keys_expires_at_not_null ON api_keys(expires_at) WHERE expires_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_api_keys_user_managed_by_created_at ON api_keys(user_id, managed_by, created_at, id);
 
 PRAGMA foreign_keys=ON;
