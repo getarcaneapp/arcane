@@ -262,8 +262,25 @@ func buildVolumePruneMetadataInternal(all bool, volumesDeleted int, spaceReclaim
 
 // --- Volume Browsing & Backup ---
 
+// isBrowsableVolumeInternal returns an error if the volume uses driver options
+// (e.g. type=none) that prevent it from being mounted inside a helper container.
+func (s *VolumeService) isBrowsableVolumeInternal(ctx context.Context, volumeName string) error {
+	vol, err := s.GetVolumeByName(ctx, volumeName)
+	if err != nil {
+		return fmt.Errorf("failed to inspect volume: %w", err)
+	}
+	if vol.Options["type"] == "none" {
+		return fmt.Errorf("volume %q uses a custom mount type (type=none) and cannot be browsed", volumeName)
+	}
+	return nil
+}
+
 func (s *VolumeService) ListDirectory(ctx context.Context, volumeName, dirPath string) ([]volumetypes.FileEntry, error) {
 	slog.DebugContext(ctx, "volume service: list directory", "volume", volumeName, "path", dirPath)
+
+	if err := s.isBrowsableVolumeInternal(ctx, volumeName); err != nil {
+		return nil, err
+	}
 
 	sanitizedPath, err := s.sanitizeBrowsePathInternal(dirPath)
 	if err != nil {
@@ -348,6 +365,10 @@ func (s *VolumeService) ListDirectory(ctx context.Context, volumeName, dirPath s
 func (s *VolumeService) GetFileContent(ctx context.Context, volumeName, filePath string, maxBytes int64) ([]byte, string, error) {
 	slog.DebugContext(ctx, "volume service: get file content", "volume", volumeName, "path", filePath, "max_bytes", maxBytes)
 
+	if err := s.isBrowsableVolumeInternal(ctx, volumeName); err != nil {
+		return nil, "", err
+	}
+
 	sanitizedPath, err := s.sanitizeBrowsePathInternal(filePath)
 	if err != nil {
 		return nil, "", fmt.Errorf("invalid path: %w", err)
@@ -374,6 +395,10 @@ func (s *VolumeService) GetFileContent(ctx context.Context, volumeName, filePath
 
 func (s *VolumeService) DownloadFile(ctx context.Context, volumeName, filePath string) (io.ReadCloser, int64, error) {
 	slog.DebugContext(ctx, "volume service: download file", "volume", volumeName, "path", filePath)
+
+	if err := s.isBrowsableVolumeInternal(ctx, volumeName); err != nil {
+		return nil, 0, err
+	}
 
 	sanitizedPath, err := s.sanitizeBrowsePathInternal(filePath)
 	if err != nil {
