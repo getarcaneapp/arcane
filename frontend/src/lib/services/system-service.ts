@@ -1,17 +1,10 @@
 import BaseAPIService from './api-service';
 import { environmentStore } from '$lib/stores/environment.store.svelte';
 import type { DockerInfo } from '$lib/types/docker-info.type';
+import type { SystemPruneRequest } from '$lib/types/prune.type';
 
 export class SystemService extends BaseAPIService {
-	async pruneAll(options: {
-		containers?: boolean;
-		images?: boolean;
-		volumes?: boolean;
-		networks?: boolean;
-		buildCache?: boolean;
-		dangling?: boolean;
-		until?: string;
-	}) {
+	async pruneAll(options: SystemPruneRequest) {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		return this.handleResponse(this.api.post(`/environments/${envId}/system/prune`, options));
 	}

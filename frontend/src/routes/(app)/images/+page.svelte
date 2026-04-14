@@ -16,6 +16,7 @@
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
 	import { CloseIcon, VolumesIcon, LocalFolderComputerIcon, CodeIcon } from '$lib/icons';
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
+	import PruneModeCard from '$lib/components/prune/prune-mode-card.svelte';
 
 	let { data } = $props();
 
@@ -26,6 +27,8 @@
 	let isUploadDialogOpen = $state(false);
 	let isConfirmPruneDialogOpen = $state(false);
 	let uploadedFiles = $state<File[]>([]);
+	let imagePruneMode = $state<'dangling' | 'all' | 'olderThan'>('dangling');
+	let imagePruneUntil = $state('');
 	const envId = $derived(environmentStore.selected?.id || '0');
 	const imageUsageFallback: ImageUsageCounts = {
 		imagesInuse: 0,
@@ -35,7 +38,6 @@
 	};
 
 	const maxUploadSizeMB = $derived(parseInt(String(data.settings?.maxImageUploadSize || '500'), 10));
-	const shouldPruneDangling = $derived(data.settings?.dockerPruneMode === 'dangling');
 
 	const imagesQuery = createQuery(() => ({
 		queryKey: queryKeys.images.list(envId, requestOptions),
@@ -51,7 +53,11 @@
 
 	const pruneImagesMutation = createMutation(() => ({
 		mutationKey: ['images', 'prune', envId],
-		mutationFn: () => imageService.pruneImages(shouldPruneDangling),
+		mutationFn: () =>
+			imageService.pruneImages({
+				mode: imagePruneMode,
+				...(imagePruneMode === 'olderThan' ? { until: imagePruneUntil } : {})
+			}),
 		onSuccess: async () => {
 			toast.success(m.images_pruned_success());
 			await Promise.all([imagesQuery.refetch(), imageUsageCountsQuery.refetch()]);
@@ -131,6 +137,12 @@
 	async function handlePruneImages() {
 		await pruneImagesMutation.mutateAsync();
 	}
+
+	const imagePruneModes = [
+		{ value: 'dangling', label: m.prune_images_mode_dangling() },
+		{ value: 'all', label: m.prune_images_mode_all() },
+		{ value: 'olderThan', label: m.prune_mode_older_than() }
+	];
 
 	async function refresh() {
 		await Promise.all([imagesQuery.refetch(), imageUsageCountsQuery.refetch()]);
@@ -273,10 +285,18 @@
 			<Dialog.Content>
 				<Dialog.Header>
 					<Dialog.Title>{m.images_prune_confirm_title()}</Dialog.Title>
-					<Dialog.Description
-						>{m.images_prune_confirm_description({ mode: String(data.settings.dockerPruneMode) })}</Dialog.Description
-					>
+					<Dialog.Description>{m.images_prune_confirm_description()}</Dialog.Description>
 				</Dialog.Header>
+				<div class="py-4">
+					<PruneModeCard
+						title={m.prune_images_label()}
+						description={m.prune_images_dialog_description()}
+						modeOptions={imagePruneModes}
+						bind:value={imagePruneMode}
+						bind:untilValue={imagePruneUntil}
+						disabled={isPruning}
+					/>
+				</div>
 				<div class="flex justify-end gap-3 pt-6">
 					<ArcaneButton action="cancel" onclick={() => (isConfirmPruneDialogOpen = false)} disabled={isPruning} />
 					<ArcaneButton
