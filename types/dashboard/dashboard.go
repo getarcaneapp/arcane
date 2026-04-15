@@ -46,12 +46,7 @@ type ActionItems struct {
 	Items []ActionItem `json:"items"`
 }
 
-type SnapshotSettings struct {
-	// DockerPruneMode controls whether prune defaults to all or dangling images.
-	//
-	// Required: true
-	DockerPruneMode string `json:"dockerPruneMode"`
-}
+type SnapshotSettings struct{}
 
 type SnapshotContainers struct {
 	// Data is the first dashboard page of container summaries.
