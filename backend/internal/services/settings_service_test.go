@@ -129,6 +129,80 @@ func TestSettingsService_GetSettings_UsesCachedSnapshotWithoutDatabase(t *testin
 	require.Equal(t, "http://cached", settings.BaseServerURL.Value)
 }
 
+func TestSettingsService_LoadDatabaseSettings_MigratesLegacyPruneSettings(t *testing.T) {
+	ctx := context.Background()
+	t.Setenv("UI_CONFIGURATION_DISABLED", "false")
+	t.Setenv("AGENT_MODE", "false")
+	t.Setenv("EDGE_AGENT", "false")
+
+	tests := []struct {
+		name      string
+		legacy    []models.SettingVariable
+		assertCfg func(t *testing.T, cfg *models.Settings)
+	}{
+		{
+			name: "maps all prune mode to aggressive resource modes",
+			legacy: []models.SettingVariable{
+				{Key: "dockerPruneMode", Value: "all"},
+				{Key: "scheduledPruneContainers", Value: "true"},
+				{Key: "scheduledPruneImages", Value: "true"},
+				{Key: "scheduledPruneVolumes", Value: "true"},
+				{Key: "scheduledPruneNetworks", Value: "true"},
+				{Key: "scheduledPruneBuildCache", Value: "true"},
+			},
+			assertCfg: func(t *testing.T, cfg *models.Settings) {
+				require.Equal(t, "stopped", cfg.PruneContainerMode.Value)
+				require.Equal(t, "all", cfg.PruneImageMode.Value)
+				require.Equal(t, "all", cfg.PruneVolumeMode.Value)
+				require.Equal(t, "unused", cfg.PruneNetworkMode.Value)
+				require.Equal(t, "all", cfg.PruneBuildCacheMode.Value)
+			},
+		},
+		{
+			name: "uses dangling defaults when legacy booleans are missing",
+			legacy: []models.SettingVariable{
+				{Key: "dockerPruneMode", Value: "dangling"},
+			},
+			assertCfg: func(t *testing.T, cfg *models.Settings) {
+				require.Equal(t, "stopped", cfg.PruneContainerMode.Value)
+				require.Equal(t, "dangling", cfg.PruneImageMode.Value)
+				require.Equal(t, "none", cfg.PruneVolumeMode.Value)
+				require.Equal(t, "unused", cfg.PruneNetworkMode.Value)
+				require.Equal(t, "none", cfg.PruneBuildCacheMode.Value)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := setupSettingsTestDB(t)
+			require.NoError(t, db.DB.Create(&tt.legacy).Error)
+
+			svc := &SettingsService{db: db}
+			cfg, err := svc.loadDatabaseSettingsInternal(ctx, db)
+			require.NoError(t, err)
+
+			tt.assertCfg(t, cfg)
+
+			for _, key := range []string{
+				"pruneContainerMode",
+				"pruneContainerUntil",
+				"pruneImageMode",
+				"pruneImageUntil",
+				"pruneVolumeMode",
+				"pruneNetworkMode",
+				"pruneNetworkUntil",
+				"pruneBuildCacheMode",
+				"pruneBuildCacheUntil",
+			} {
+				var setting models.SettingVariable
+				err := db.DB.Where("key = ?", key).First(&setting).Error
+				require.NoErrorf(t, err, "expected migrated key %s to be persisted", key)
+			}
+		})
+	}
+}
+
 func TestSettingsService_PruneUnknownSettings_RemovesStaleKeys(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
@@ -341,11 +415,10 @@ func TestSettingsService_UpdateSetting(t *testing.T) {
 	svc, err := NewSettingsService(ctx, db)
 	require.NoError(t, err)
 
-	// Use an existing key ("pruneMode") instead of a non-existent one
-	require.NoError(t, svc.UpdateSetting(ctx, "pruneMode", "all"))
+	require.NoError(t, svc.UpdateSetting(ctx, "pruneImageMode", "all"))
 
 	var sv models.SettingVariable
-	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "pruneMode").First(&sv).Error)
+	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "pruneImageMode").First(&sv).Error)
 	require.Equal(t, "all", sv.Value)
 }
 
@@ -363,6 +436,46 @@ func TestSettingsService_UpdateSetting_RefreshesCachedSnapshot(t *testing.T) {
 	settings, err := svc.GetSettings(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "https://arcane.test", settings.BaseServerURL.Value)
+}
+
+func TestSettingsService_UpdateSettings_PruneModesDoNotTriggerScheduledPruneCallback(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	callbackCalls := 0
+	svc.OnScheduledPruneSettingsChanged = func(context.Context) {
+		callbackCalls++
+	}
+
+	imageMode := "all"
+	containerUntil := "24h"
+	_, err = svc.UpdateSettings(ctx, settings.Update{
+		PruneImageMode:      &imageMode,
+		PruneContainerUntil: &containerUntil,
+	})
+	require.NoError(t, err)
+	require.Equal(t, 0, callbackCalls)
+}
+
+func TestSettingsService_UpdateSettings_ScheduledPruneScheduleTriggersCallback(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	callbackCalls := 0
+	svc.OnScheduledPruneSettingsChanged = func(context.Context) {
+		callbackCalls++
+	}
+
+	enabled := "true"
+	_, err = svc.UpdateSettings(ctx, settings.Update{
+		ScheduledPruneEnabled: &enabled,
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, callbackCalls)
 }
 
 func BenchmarkSettingsService_GetSettings(b *testing.B) {

@@ -13,7 +13,6 @@ export type Settings = {
 	pollingEnabled: boolean;
 	pollingInterval: number;
 	environmentHealthInterval: number;
-	dockerPruneMode: 'all' | 'dangling';
 	defaultDeployPullPolicy: 'missing' | 'always' | 'never';
 	scheduledPruneEnabled?: boolean;
 	scheduledPruneInterval?: number;
@@ -22,6 +21,15 @@ export type Settings = {
 	scheduledPruneVolumes?: boolean;
 	scheduledPruneNetworks?: boolean;
 	scheduledPruneBuildCache?: boolean;
+	pruneContainerMode?: 'none' | 'stopped' | 'olderThan';
+	pruneContainerUntil?: string;
+	pruneImageMode?: 'none' | 'dangling' | 'all' | 'olderThan';
+	pruneImageUntil?: string;
+	pruneVolumeMode?: 'none' | 'anonymous' | 'all';
+	pruneNetworkMode?: 'none' | 'unused' | 'olderThan';
+	pruneNetworkUntil?: string;
+	pruneBuildCacheMode?: 'none' | 'unused' | 'all' | 'olderThan';
+	pruneBuildCacheUntil?: string;
 	vulnerabilityScanEnabled?: boolean;
 	vulnerabilityScanInterval?: number;
 	autoHealEnabled?: boolean;

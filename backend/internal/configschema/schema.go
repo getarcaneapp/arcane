@@ -102,19 +102,60 @@ var overrideDocRules = map[string]overrideDocRule{
 		requires: "SCHEDULED_PRUNE_ENABLED=true to have effect at runtime.",
 	},
 	"scheduledPruneContainers": {
-		requires: "SCHEDULED_PRUNE_ENABLED=true to have effect at runtime.",
+		deprecated: true,
+		requires:   "SCHEDULED_PRUNE_ENABLED=true to have effect at runtime.",
+		note:       "Legacy boolean prune flag retained for migration compatibility. Prefer PRUNE_CONTAINER_MODE.",
 	},
 	"scheduledPruneImages": {
-		requires: "SCHEDULED_PRUNE_ENABLED=true to have effect at runtime.",
+		deprecated: true,
+		requires:   "SCHEDULED_PRUNE_ENABLED=true to have effect at runtime.",
+		note:       "Legacy boolean prune flag retained for migration compatibility. Prefer PRUNE_IMAGE_MODE.",
 	},
 	"scheduledPruneVolumes": {
-		requires: "SCHEDULED_PRUNE_ENABLED=true to have effect at runtime.",
+		deprecated: true,
+		requires:   "SCHEDULED_PRUNE_ENABLED=true to have effect at runtime.",
+		note:       "Legacy boolean prune flag retained for migration compatibility. Prefer PRUNE_VOLUME_MODE.",
 	},
 	"scheduledPruneNetworks": {
-		requires: "SCHEDULED_PRUNE_ENABLED=true to have effect at runtime.",
+		deprecated: true,
+		requires:   "SCHEDULED_PRUNE_ENABLED=true to have effect at runtime.",
+		note:       "Legacy boolean prune flag retained for migration compatibility. Prefer PRUNE_NETWORK_MODE.",
 	},
 	"scheduledPruneBuildCache": {
+		deprecated: true,
+		requires:   "SCHEDULED_PRUNE_ENABLED=true to have effect at runtime.",
+		note:       "Legacy boolean prune flag retained for migration compatibility. Prefer PRUNE_BUILD_CACHE_MODE.",
+	},
+	"pruneContainerMode": {
 		requires: "SCHEDULED_PRUNE_ENABLED=true to have effect at runtime.",
+	},
+	"pruneContainerUntil": {
+		requires: "SCHEDULED_PRUNE_ENABLED=true and PRUNE_CONTAINER_MODE=olderThan to have effect at runtime.",
+	},
+	"pruneImageMode": {
+		requires: "SCHEDULED_PRUNE_ENABLED=true to have effect at runtime.",
+	},
+	"pruneImageUntil": {
+		requires: "SCHEDULED_PRUNE_ENABLED=true and PRUNE_IMAGE_MODE=olderThan to have effect at runtime.",
+	},
+	"pruneVolumeMode": {
+		requires: "SCHEDULED_PRUNE_ENABLED=true to have effect at runtime.",
+	},
+	"pruneNetworkMode": {
+		requires: "SCHEDULED_PRUNE_ENABLED=true to have effect at runtime.",
+	},
+	"pruneNetworkUntil": {
+		requires: "SCHEDULED_PRUNE_ENABLED=true and PRUNE_NETWORK_MODE=olderThan to have effect at runtime.",
+	},
+	"pruneBuildCacheMode": {
+		requires: "SCHEDULED_PRUNE_ENABLED=true to have effect at runtime.",
+	},
+	"pruneBuildCacheUntil": {
+		requires: "SCHEDULED_PRUNE_ENABLED=true and PRUNE_BUILD_CACHE_MODE=olderThan to have effect at runtime.",
+	},
+	"dockerPruneMode": {
+		deprecated: true,
+		note:       "Legacy prune mode retained for migration compatibility. Prefer the granular scheduled prune mode settings.",
 	},
 	"vulnerabilityScanInterval": {
 		requires: "VULNERABILITY_SCAN_ENABLED=true to have effect at runtime.",
