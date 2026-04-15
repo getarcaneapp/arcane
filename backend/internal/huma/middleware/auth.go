@@ -60,6 +60,10 @@ type operationProvider interface {
 	Operation() *huma.Operation
 }
 
+type environmentAccessTokenResolver interface {
+	ResolveEnvironmentByAccessToken(ctx context.Context, token string) (*models.Environment, error)
+}
+
 // parseSecurityRequirements extracts security requirements from a Huma operation.
 func parseSecurityRequirements(ctx operationProvider) securityRequirements {
 	reqs := securityRequirements{}
@@ -107,6 +111,19 @@ func tryApiKeyAuth(ctx huma.Context, apiKeyService *services.ApiKeyService) (*mo
 	return user, true
 }
 
+func tryEnvironmentAccessTokenAuth(ctx huma.Context, resolver environmentAccessTokenResolver, token string) (*models.User, bool) {
+	if resolver == nil || strings.TrimSpace(token) == "" {
+		return nil, false
+	}
+
+	env, err := resolver.ResolveEnvironmentByAccessToken(ctx.Context(), token)
+	if err != nil || env == nil {
+		return nil, false
+	}
+
+	return createEnvironmentSudoUser(env), true
+}
+
 // tryAgentAuth checks if the request is from an authenticated agent.
 // Returns a sudo agent user if the agent token is valid.
 func tryAgentAuth(ctx huma.Context, cfg *config.Config) (*models.User, bool) {
@@ -142,13 +159,22 @@ func createAgentSudoUser() *models.User {
 	return &models.User{
 		BaseModel: models.BaseModel{ID: "agent"},
 		Email:     new(email),
+		Username:  "agent",
+		Roles:     []string{"admin"},
+	}
+}
+
+func createEnvironmentSudoUser(env *models.Environment) *models.User {
+	return &models.User{
+		BaseModel: models.BaseModel{ID: "environment:" + env.ID},
+		Username:  env.Name,
 		Roles:     []string{"admin"},
 	}
 }
 
 // NewAuthBridge creates a Huma middleware that validates JWT tokens and
 // enforces security requirements defined on operations.
-func NewAuthBridge(api huma.API, authService *services.AuthService, apiKeyService *services.ApiKeyService, cfg *config.Config) func(ctx huma.Context, next func(huma.Context)) {
+func NewAuthBridge(api huma.API, authService *services.AuthService, apiKeyService *services.ApiKeyService, envTokenResolver environmentAccessTokenResolver, cfg *config.Config) func(ctx huma.Context, next func(huma.Context)) {
 	return func(ctx huma.Context, next func(huma.Context)) {
 		if authService == nil {
 			next(ctx)
@@ -180,8 +206,21 @@ func NewAuthBridge(api huma.API, authService *services.AuthService, apiKeyServic
 				next(ctx)
 				return
 			}
+			if user, ok := tryEnvironmentAccessTokenAuth(ctx, envTokenResolver, ctx.Header(headerApiKey)); ok {
+				newCtx := setUserInContext(ctx.Context(), user)
+				ctx = huma.WithContext(ctx, newCtx)
+				next(ctx)
+				return
+			}
 			// API key was present but invalid. Fail immediately.
 			_ = huma.WriteErr(api, ctx, http.StatusUnauthorized, "Unauthorized: invalid API key")
+			return
+		}
+
+		if user, ok := tryEnvironmentAccessTokenAuth(ctx, envTokenResolver, ctx.Header(headerAgentToken)); ok {
+			newCtx := setUserInContext(ctx.Context(), user)
+			ctx = huma.WithContext(ctx, newCtx)
+			next(ctx)
 			return
 		}
 

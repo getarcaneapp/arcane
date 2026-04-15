@@ -116,7 +116,7 @@ func newTemplateFetchTestRouter(t *testing.T, httpClient *http.Client) *gin.Engi
 	}
 
 	api := humagin.NewWithGroup(router, apiGroup, humaConfig)
-	api.UseMiddleware(humamiddleware.NewAuthBridge(api, authService, nil, &config.Config{}))
+	api.UseMiddleware(humamiddleware.NewAuthBridge(api, authService, nil, nil, &config.Config{}))
 	RegisterTemplates(api, templateService, nil)
 
 	return router

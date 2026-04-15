@@ -100,7 +100,9 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services)
 		Filters: []sloggin.Filter{shouldLogRequest},
 	}))
 
-	authMiddleware := middleware.NewAuthMiddleware(appServices.Auth, cfg).WithApiKeyValidator(appServices.ApiKey)
+	authMiddleware := middleware.NewAuthMiddleware(appServices.Auth, cfg).
+		WithApiKeyValidator(appServices.ApiKey).
+		WithEnvironmentAccessTokenResolver(appServices.Environment)
 	corsMiddleware := middleware.NewCORSMiddleware(cfg).Add()
 	router.Use(corsMiddleware)
 
