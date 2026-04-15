@@ -25,6 +25,7 @@
 	import { systemService } from '$lib/services/system-service';
 	import bytes from '$lib/utils/bytes';
 	import type { DockerInfo } from '$lib/types/docker-info.type';
+	import type { SystemPruneRequest } from '$lib/types/prune.type';
 	import {
 		CpuIcon,
 		MemoryStickIcon,
@@ -43,10 +44,10 @@
 	let { data }: { data: PageData } = $props();
 	let containers = $derived(data.dashboard.containers);
 	let images = $derived(data.dashboard.images);
+	let settings = $derived(data.settings);
 	let containerStatusCounts = $derived(
 		data.dashboard.containers.counts ?? { runningContainers: 0, stoppedContainers: 0, totalContainers: 0 }
 	);
-	let settings = $derived(data.dashboard.settings);
 	let imageUsageCounts = $derived(data.dashboard.imageUsageCounts);
 	let dashboardActionItems = $derived(data.dashboard.actionItems);
 	let debugAllGood = $derived(data.debugAllGood ?? false);
@@ -353,18 +354,10 @@
 		});
 	}
 
-	async function confirmPrune(selectedTypes: PruneType[]) {
+	async function confirmPrune(pruneRequest: SystemPruneRequest) {
+		const selectedTypes = Object.keys(pruneRequest) as PruneType[];
 		if (isLoading.pruning || selectedTypes.length === 0) return;
 		isLoading.pruning = true;
-
-		const pruneOptions = {
-			containers: selectedTypes.includes('containers'),
-			images: selectedTypes.includes('images'),
-			volumes: selectedTypes.includes('volumes'),
-			networks: selectedTypes.includes('networks'),
-			buildCache: selectedTypes.includes('buildCache'),
-			dangling: settings?.dockerPruneMode === 'dangling'
-		};
 
 		const typeLabels: Record<PruneType, string> = {
 			containers: m.prune_stopped_containers(),
@@ -376,7 +369,7 @@
 		const typesString = selectedTypes.map((t) => typeLabels[t]).join(', ');
 
 		handleApiResultWithCallbacks({
-			result: await tryCatch(systemService.pruneAll(pruneOptions)),
+			result: await tryCatch(systemService.pruneAll(pruneRequest)),
 			message: m.dashboard_prune_failed({ types: typesString }),
 			setLoadingState: (value) => (isLoading.pruning = value),
 			onSuccess: async () => {
@@ -614,8 +607,8 @@
 
 	<PruneConfirmationDialog
 		bind:open={isPruneDialogOpen}
+		defaults={settings}
 		isPruning={isLoading.pruning}
-		imagePruneMode={(settings?.dockerPruneMode as 'dangling' | 'all') || 'dangling'}
 		onConfirm={confirmPrune}
 		onCancel={() => (isPruneDialogOpen = false)}
 	/>
