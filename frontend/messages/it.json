@@ -733,7 +733,7 @@
 	"volumes_no_containers_using": "No containers are currently using this volume.",
 	"volumes_labels_description": "User-defined metadata attached to this volume",
 	"volumes_driver_options_description": "Volume driver-specific options",
-	"volumes_no_labels_or_options": "This volume has no additional labels or driver options.",
+	"volumes_no_labels_or_options": "Questo volume non ha etichette o opzioni di driver aggiuntive.",
 	"volume_name_required": "Nome del volume richiesto",
 	"volumes_remove_confirm_message": "Sei sicuro di voler rimuovere il volume {name}?",
 	"volumes_remove_selected_title": "Rimuovi Volumi {count}",
