@@ -114,6 +114,11 @@ type TemplateRegistry struct {
 	//
 	// Required: true
 	Enabled bool `json:"enabled"`
+
+	// LastFetchError is the error message from the most recent failed fetch, if any.
+	//
+	// Required: false
+	LastFetchError *string `json:"lastFetchError,omitempty"`
 }
 
 // TemplateContent contains a template with its associated content and metadata.

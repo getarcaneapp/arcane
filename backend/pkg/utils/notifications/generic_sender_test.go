@@ -134,14 +134,28 @@ func TestBuildGenericURL(t *testing.T) {
 			config: models.GenericConfig{
 				WebhookURL: "http://www.pushplus.plus/send?token=abc123",
 			},
-			wantURL: "generic://www.pushplus.plus/send%3Ftoken=abc123?disabletls=yes&template=json",
+			wantURL: "generic://www.pushplus.plus/send?disabletls=yes&template=json&token=abc123",
 		},
 		{
 			name: "webhook URL with multiple query params preserved",
 			config: models.GenericConfig{
 				WebhookURL: "https://api.example.com/webhook?token=abc&channel=general",
 			},
-			wantURL: "generic://api.example.com/webhook%3Ftoken=abc&channel=general?disabletls=no&template=json",
+			wantURL: "generic://api.example.com/webhook?channel=general&disabletls=no&template=json&token=abc",
+		},
+		{
+			name: "PushPlus webhook with content message key",
+			config: models.GenericConfig{
+				WebhookURL: "http://www.pushplus.plus/send?token=abc123",
+				Method:     "POST",
+				MessageKey: "content",
+			},
+			// Shoutrrr's generic service preserves `token=abc123` through to the
+			// outbound HTTP request untouched, while consuming the config keys
+			// (disabletls, template, method, messagekey). This is what PushPlus
+			// needs: POST http://www.pushplus.plus/send?token=abc123 with
+			// {"title":"...","content":"..."} at the root.
+			wantURL: "generic://www.pushplus.plus/send?disabletls=yes&messagekey=content&method=POST&template=json&token=abc123",
 		},
 		{
 			name: "empty webhook URL",
@@ -334,6 +348,68 @@ func TestBuildGenericURL_CustomKeys(t *testing.T) {
 				assert.Contains(t, gotURL, tt.wantMsg)
 			} else if tt.messageKey == "" {
 				assert.NotContains(t, gotURL, "messagekey=")
+			}
+		})
+	}
+}
+
+// TestBuildGenericURL_PreservesUserShoutrrrConfigKeys verifies that an
+// explicit Shoutrrr config key embedded by the user in the webhook URL is
+// never silently overwritten by the provider defaults, the configured field
+// values, or the URL-scheme-derived TLS flag.
+func TestBuildGenericURL_PreservesUserShoutrrrConfigKeys(t *testing.T) {
+	tests := []struct {
+		name      string
+		config    models.GenericConfig
+		wantInURL []string
+		notInURL  []string
+	}{
+		{
+			name: "user template wins over default json",
+			config: models.GenericConfig{
+				WebhookURL: "https://example.com/api?template=custom",
+			},
+			wantInURL: []string{"template=custom"},
+			notInURL:  []string{"template=json"},
+		},
+		{
+			name: "user disabletls wins over scheme-derived value",
+			config: models.GenericConfig{
+				WebhookURL: "https://example.com/api?disabletls=yes",
+			},
+			wantInURL: []string{"disabletls=yes"},
+			notInURL:  []string{"disabletls=no"},
+		},
+		{
+			name: "user messagekey wins over configured value",
+			config: models.GenericConfig{
+				WebhookURL: "https://example.com/api?messagekey=user_msg",
+				MessageKey: "configured_msg",
+			},
+			wantInURL: []string{"messagekey=user_msg"},
+			notInURL:  []string{"messagekey=configured_msg"},
+		},
+		{
+			name: "user method wins over configured value",
+			config: models.GenericConfig{
+				WebhookURL: "https://example.com/api?method=PUT",
+				Method:     "POST",
+			},
+			wantInURL: []string{"method=PUT"},
+			notInURL:  []string{"method=POST"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotURL, err := BuildGenericURL(tt.config)
+			require.NoError(t, err)
+
+			for _, want := range tt.wantInURL {
+				assert.Contains(t, gotURL, want)
+			}
+			for _, notWant := range tt.notInURL {
+				assert.NotContains(t, gotURL, notWant)
 			}
 		})
 	}

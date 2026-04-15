@@ -18,8 +18,10 @@
 
 	let { icon, label, value, detail, history, tone = 'cpu', loading = false, disabled = false, testId }: Props = $props();
 
-	const barColorClass = $derived(tone === 'cpu' ? 'bg-sky-400/75' : 'bg-emerald-400/75');
-	const iconColorClass = $derived(tone === 'cpu' ? 'text-sky-300' : 'text-emerald-300');
+	const barColorClass = $derived(
+		tone === 'cpu' ? 'bg-sky-500/75 dark:bg-sky-400/75' : 'bg-emerald-500/75 dark:bg-emerald-400/75'
+	);
+	const iconColorClass = $derived(tone === 'cpu' ? 'text-sky-600 dark:text-sky-300' : 'text-emerald-600 dark:text-emerald-300');
 	const Icon = $derived(icon);
 </script>
 
@@ -32,15 +34,15 @@
 >
 	<div class="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3">
 		<div class="flex min-w-0 items-center gap-2">
-			<div class="bg-background/70 flex size-7 shrink-0 items-center justify-center rounded-md border border-white/8">
+			<div class="bg-background/70 border-border/60 flex size-7 shrink-0 items-center justify-center rounded-md border">
 				<Icon class={cn('size-4', disabled ? 'text-muted-foreground' : iconColorClass)} />
 			</div>
 			<div class="min-w-0">
-				<div class="text-[11px] font-medium tracking-normal text-white/70">{label}</div>
+				<div class="text-muted-foreground text-[11px] font-medium tracking-normal">{label}</div>
 				{#if loading}
 					<Skeleton class="mt-1 h-5 w-20" />
 				{:else}
-					<div class={cn('truncate text-sm font-semibold tabular-nums', disabled ? 'text-muted-foreground' : 'text-white')}>
+					<div class={cn('truncate text-sm font-semibold tabular-nums', disabled ? 'text-muted-foreground' : 'text-foreground')}>
 						{value}
 					</div>
 				{/if}
@@ -50,19 +52,19 @@
 		{#if loading}
 			<Skeleton class="mt-0.5 h-4 w-16 justify-self-end" />
 		{:else}
-			<div class="shrink-0 justify-self-end pl-2 text-right text-[11px] text-white/55 tabular-nums">{detail}</div>
+			<div class="text-muted-foreground shrink-0 justify-self-end pl-2 text-right text-[11px] tabular-nums">{detail}</div>
 		{/if}
 	</div>
 
 	{#if loading}
 		<Skeleton class="h-8 w-full" />
 	{:else}
-		<div class="bg-background/60 flex h-8 items-end gap-[3px] overflow-hidden rounded-md border border-white/8 px-1.5 py-1">
+		<div class="bg-background/60 border-border/60 flex h-8 items-end gap-[3px] overflow-hidden rounded-md border px-1.5 py-1">
 			{#each history as sample, index (`${tone}-${index}`)}
 				<ArcaneTooltip.Root>
 					<ArcaneTooltip.Trigger class="flex h-full min-w-0 flex-1 items-end self-stretch">
 						<div
-							class={cn('min-w-0 flex-1 rounded-[2px] transition-opacity', disabled ? 'bg-white/8' : barColorClass)}
+							class={cn('min-w-0 flex-1 rounded-[2px] transition-opacity', disabled ? 'bg-muted' : barColorClass)}
 							style={`height: ${Math.max(disabled ? 12 : Math.min(Math.max(sample.percent, 6), 100), 6)}%; opacity: ${disabled ? 0.35 : 0.45 + Math.min(sample.percent, 100) / 180};`}
 						></div>
 					</ArcaneTooltip.Trigger>

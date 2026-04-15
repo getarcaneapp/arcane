@@ -150,6 +150,37 @@ upx:
     lzma: true
     brute: true
 
+binary_signs:
+  - id: cosign-binaries
+    cmd: cosign
+    ids:
+      - arcane
+      - arcane-agent
+      - arcane-cli
+    signature: "${artifact}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}{{ with .Mips }}_{{ . }}{{ end }}{{ if not (eq .Amd64 \"v1\") }}{{ .Amd64 }}{{ end }}.sigstore.json"
+    stdin: "{{ .Env.COSIGN_PASSWORD }}"
+    args:
+      - sign-blob
+      - --key=env://COSIGN_PRIVATE_KEY
+      - --bundle=${signature}
+      - "${artifact}"
+      - --yes
+    output: true
+
+signs:
+  - id: cosign-checksums
+    cmd: cosign
+    artifacts: checksum
+    signature: "${artifact}.sigstore.json"
+    stdin: "{{ .Env.COSIGN_PASSWORD }}"
+    args:
+      - sign-blob
+      - --key=env://COSIGN_PRIVATE_KEY
+      - --bundle=${signature}
+      - "${artifact}"
+      - --yes
+    output: true
+
 nfpms:
   - id: arcane-cli
     package_name: arcane-cli
@@ -308,6 +339,22 @@ dockers_v2:
     disable: '{{ if not (index .Env "BUILD_NEXT") }}true{{ end }}'
     sbom: true
 
+docker_signs:
+  - id: cosign-next-images
+    cmd: cosign
+    ids:
+      - arcane-next
+      - arcane-agent-next
+      - arcane-next-distroless
+      - arcane-agent-next-distroless
+    stdin: "{{ .Env.COSIGN_PASSWORD }}"
+    args:
+      - sign
+      - --key=env://COSIGN_PRIVATE_KEY
+      - "${artifact}@${digest}"
+      - --yes
+    output: true
+
 blobs:
   - provider: s3
     endpoint: '{{ index .Env "R2_ENDPOINT" }}'
@@ -318,16 +365,28 @@ blobs:
     extra_files:
       - glob: dist/arcane-cli_linux_amd64_v1/arcane-cli
         name_template: arcane-cli_linux_amd64
+      - glob: dist/arcane-cli_linux_amd64_v1/arcane-cli_linux_amd64.sigstore.json
+        name_template: arcane-cli_linux_amd64.sigstore.json
       - glob: dist/arcane-cli_linux_arm64_v8.0/arcane-cli
         name_template: arcane-cli_linux_arm64
+      - glob: dist/arcane-cli_linux_arm64_v8.0/arcane-cli_linux_arm64.sigstore.json
+        name_template: arcane-cli_linux_arm64.sigstore.json
       - glob: dist/arcane-cli_linux_386_sse2/arcane-cli
         name_template: arcane-cli_linux_386
+      - glob: dist/arcane-cli_linux_386_sse2/arcane-cli_linux_386.sigstore.json
+        name_template: arcane-cli_linux_386.sigstore.json
       - glob: dist/arcane-cli_linux_arm_7/arcane-cli
         name_template: arcane-cli_linux_armv7
+      - glob: dist/arcane-cli_linux_arm_7/arcane-cli_linux_armv7.sigstore.json
+        name_template: arcane-cli_linux_armv7.sigstore.json
       - glob: dist/arcane-cli_darwin_amd64_v1/arcane-cli
         name_template: arcane-cli_darwin_amd64
+      - glob: dist/arcane-cli_darwin_amd64_v1/arcane-cli_darwin_amd64.sigstore.json
+        name_template: arcane-cli_darwin_amd64.sigstore.json
       - glob: dist/arcane-cli_darwin_arm64_v8.0/arcane-cli
         name_template: arcane-cli_darwin_arm64
+      - glob: dist/arcane-cli_darwin_arm64_v8.0/arcane-cli_darwin_arm64.sigstore.json
+        name_template: arcane-cli_darwin_arm64.sigstore.json
     include_meta: false
     disable: '{{ if not (index .Env "BUILD_NEXT") }}true{{ end }}'
 
@@ -338,6 +397,33 @@ blobs:
     ids:
       - default
     directory: bin/arcane-next
+    extra_files:
+      - glob: dist/arcane_linux_amd64_v1/arcane_linux_amd64.sigstore.json
+        name_template: arcane_linux_amd64.sigstore.json
+      - glob: dist/arcane_linux_arm64_v8.0/arcane_linux_arm64.sigstore.json
+        name_template: arcane_linux_arm64.sigstore.json
+      - glob: dist/arcane_linux_386_sse2/arcane_linux_386.sigstore.json
+        name_template: arcane_linux_386.sigstore.json
+      - glob: dist/arcane_linux_arm_7/arcane_linux_armv7.sigstore.json
+        name_template: arcane_linux_armv7.sigstore.json
+      - glob: dist/arcane_darwin_amd64_v1/arcane_darwin_amd64.sigstore.json
+        name_template: arcane_darwin_amd64.sigstore.json
+      - glob: dist/arcane_darwin_arm64_v8.0/arcane_darwin_arm64.sigstore.json
+        name_template: arcane_darwin_arm64.sigstore.json
+      - glob: dist/arcane-agent_linux_amd64_v1/arcane-agent_linux_amd64.sigstore.json
+        name_template: arcane-agent_linux_amd64.sigstore.json
+      - glob: dist/arcane-agent_linux_arm64_v8.0/arcane-agent_linux_arm64.sigstore.json
+        name_template: arcane-agent_linux_arm64.sigstore.json
+      - glob: dist/arcane-agent_linux_386_sse2/arcane-agent_linux_386.sigstore.json
+        name_template: arcane-agent_linux_386.sigstore.json
+      - glob: dist/arcane-agent_linux_arm_7/arcane-agent_linux_armv7.sigstore.json
+        name_template: arcane-agent_linux_armv7.sigstore.json
+      - glob: dist/arcane-agent_darwin_amd64_v1/arcane-agent_darwin_amd64.sigstore.json
+        name_template: arcane-agent_darwin_amd64.sigstore.json
+      - glob: dist/arcane-agent_darwin_arm64_v8.0/arcane-agent_darwin_arm64.sigstore.json
+        name_template: arcane-agent_darwin_arm64.sigstore.json
+      - glob: dist/arcane_next-static-*_checksums.txt.sigstore.json
+        name_template: arcane_checksums.sigstore.json
     include_meta: false
     disable: '{{ if not (index .Env "BUILD_NEXT") }}true{{ end }}'
 

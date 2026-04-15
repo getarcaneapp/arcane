@@ -7,6 +7,7 @@
 	import type { DockerInfo } from '$lib/types/docker-info.type';
 	import { m } from '$lib/paraglide/messages';
 	import bytes from '$lib/utils/bytes';
+	import { formatDateTimeShort } from '$lib/utils/locale.util';
 
 	interface Props {
 		open: boolean;
@@ -23,11 +24,7 @@
 
 	function formatTime(timeStr: string | undefined) {
 		if (!timeStr) return '-';
-		try {
-			return new Date(timeStr).toLocaleString();
-		} catch {
-			return timeStr;
-		}
+		return formatDateTimeShort(timeStr) || timeStr;
 	}
 </script>
 

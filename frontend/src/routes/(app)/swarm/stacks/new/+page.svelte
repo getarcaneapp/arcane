@@ -103,7 +103,7 @@
 		const { name, composeContent, envContent } = validated;
 
 		handleApiResultWithCallbacks({
-			result: await tryCatch(swarmService.updateStackSource(name, { composeContent, envContent })),
+			result: await tryCatch(swarmService.deployStack({ name, composeContent, envContent })),
 			message: m.common_update_failed({ resource: `${m.swarm_stack()} "${name}"` }),
 			setLoadingState: (value) => (saving = value),
 			onSuccess: async () => {

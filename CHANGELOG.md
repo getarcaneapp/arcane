@@ -1,3 +1,45 @@
+## v1.17.4
+
+### Bug fixes
+
+* truncate long image refs in container table  ([#2318](https://github.com/getarcaneapp/arcane/pull/2318) by @GiulioSavini)
+* project icons not loading when used with yaml/env aliases ([#2324](https://github.com/getarcaneapp/arcane/pull/2324) by @kmendell)
+* surface actual compose load error instead of generic 'no compose file found' ([#2326](https://github.com/getarcaneapp/arcane/pull/2326) by @mkaltner)
+* project max depth not working for filesystem discovery ([#2325](https://github.com/getarcaneapp/arcane/pull/2325) by @kmendell)
+* Locale selector background was inconsistent ([#2348](https://github.com/getarcaneapp/arcane/pull/2348) by @RJMurg)
+* light mode contrast for container stats CPU/memory monitor  ([#2344](https://github.com/getarcaneapp/arcane/pull/2344) by @GiulioSavini)
+* keep project build context as container path so local builder can stat it  ([#2346](https://github.com/getarcaneapp/arcane/pull/2346) by @GiulioSavini)
+* preserve webhook URL query params in generic notification provider  ([#2345](https://github.com/getarcaneapp/arcane/pull/2345) by @GiulioSavini)
+* surface registry fetch errors in GET /templates/registries  ([#2355](https://github.com/getarcaneapp/arcane/pull/2355) by @GiulioSavini)
+* detect provider-level failures in generic webhook notifications  ([#2356](https://github.com/getarcaneapp/arcane/pull/2356) by @GiulioSavini)
+* skip gitops-managed projects in filesystem cleanup  ([#2354](https://github.com/getarcaneapp/arcane/pull/2354) by @GiulioSavini)
+* Update Projects button only updates project containers ([#2289](https://github.com/getarcaneapp/arcane/pull/2289) by @GiulioSavini)
+* svelte reactivity issues in project editors ([#2329](https://github.com/getarcaneapp/arcane/pull/2329) by @kmendell)
+* send notification on single container update ([#2357](https://github.com/getarcaneapp/arcane/pull/2357) by @GiulioSavini)
+
+### Dependencies
+
+* bump github.com/mattn/go-runewidth from 0.0.22 to 0.0.23 in /cli ([#2303](https://github.com/getarcaneapp/arcane/pull/2303) by @dependabot[bot])
+* bump prettier from 3.8.1 to 3.8.2 ([#2313](https://github.com/getarcaneapp/arcane/pull/2313) by @dependabot[bot])
+* bump @codemirror/view from 6.40.0 to 6.41.0 ([#2306](https://github.com/getarcaneapp/arcane/pull/2306) by @dependabot[bot])
+* bump @sveltejs/kit from 2.55.0 to 2.57.1 in the npm_and_yarn group across 1 directory ([#2327](https://github.com/getarcaneapp/arcane/pull/2327) by @dependabot[bot])
+* bump extractions/setup-just from 3 to 4 ([#2331](https://github.com/getarcaneapp/arcane/pull/2331) by @dependabot[bot])
+* bump pnpm/action-setup from 5 to 6 ([#2333](https://github.com/getarcaneapp/arcane/pull/2333) by @dependabot[bot])
+* bump actions/github-script from 8 to 9 ([#2330](https://github.com/getarcaneapp/arcane/pull/2330) by @dependabot[bot])
+* bump github.com/coreos/go-oidc/v3 from 3.17.0 to 3.18.0 in /backend ([#2334](https://github.com/getarcaneapp/arcane/pull/2334) by @dependabot[bot])
+* bump github.com/getarcaneapp/arcane/types from 1.17.2 to 1.17.3 in /cli ([#2332](https://github.com/getarcaneapp/arcane/pull/2332) by @dependabot[bot])
+* bump @tanstack/svelte-query from 6.1.13 to 6.1.14 ([#2336](https://github.com/getarcaneapp/arcane/pull/2336) by @dependabot[bot])
+* bump golang.org/x/mod from 0.34.0 to 0.35.0 in /backend ([#2335](https://github.com/getarcaneapp/arcane/pull/2335) by @dependabot[bot])
+* bump svelte from 5.55.0 to 5.55.3 ([#2338](https://github.com/getarcaneapp/arcane/pull/2338) by @dependabot[bot])
+
+### Other
+
+* add missing permissions for attestations([8362f97](https://github.com/getarcaneapp/arcane/commit/8362f970765fefc263b29376f868fc2bfb9d28b4) by @kmendell)
+
+
+
+**Full Changelog**: https://github.com/getarcaneapp/arcane/compare/v1.17.3...v1.17.4
+
 ## v1.17.3
 
 ### Bug fixes
