@@ -16,6 +16,7 @@ import (
 	utilsregistry "github.com/getarcaneapp/arcane/backend/pkg/utils/registry"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
+	systemtypes "github.com/getarcaneapp/arcane/types/system"
 	"github.com/getarcaneapp/arcane/types/vulnerability"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/image"
@@ -366,17 +367,27 @@ func isUnauthorizedPullErrorInternal(err error) bool {
 	return false
 }
 
-func (s *ImageService) PruneImages(ctx context.Context, dangling bool) (*image.PruneReport, error) {
+func (s *ImageService) PruneImages(ctx context.Context, options systemtypes.PruneImagesOptions) (*image.PruneReport, error) {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	filterArgs := make(client.Filters)
-	if dangling {
+	switch options.Mode {
+	case systemtypes.PruneImageModeNone:
+		return nil, fmt.Errorf("image prune mode none is not allowed")
+	case systemtypes.PruneImageModeDangling:
 		filterArgs = filterArgs.Add("dangling", "true")
-	} else {
+	case systemtypes.PruneImageModeAll:
 		filterArgs = filterArgs.Add("dangling", "false")
+	case systemtypes.PruneImageModeOlderThan:
+		if strings.TrimSpace(options.Until) == "" {
+			return nil, fmt.Errorf("image prune mode olderThan requires until")
+		}
+		filterArgs = filterArgs.Add("until", options.Until)
+	default:
+		return nil, fmt.Errorf("unsupported image prune mode: %s", options.Mode)
 	}
 
 	report, err := dockerClient.ImagePrune(ctx, client.ImagePruneOptions{Filters: filterArgs})
@@ -392,7 +403,8 @@ func (s *ImageService) PruneImages(ctx context.Context, dangling bool) (*image.P
 
 	metadata := models.JSON{
 		"action":         "prune",
-		"dangling":       dangling,
+		"mode":           options.Mode,
+		"until":          options.Until,
 		"imagesDeleted":  len(pruneReport.ImagesDeleted),
 		"spaceReclaimed": pruneReport.SpaceReclaimed,
 	}

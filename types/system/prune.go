@@ -1,36 +1,242 @@
 package system
 
+import "encoding/json"
+
+type PruneContainerMode string
+
+const (
+	PruneContainerModeNone      PruneContainerMode = "none"
+	PruneContainerModeStopped   PruneContainerMode = "stopped"
+	PruneContainerModeOlderThan PruneContainerMode = "olderThan"
+)
+
+type PruneImageMode string
+
+const (
+	PruneImageModeNone      PruneImageMode = "none"
+	PruneImageModeDangling  PruneImageMode = "dangling"
+	PruneImageModeAll       PruneImageMode = "all"
+	PruneImageModeOlderThan PruneImageMode = "olderThan"
+)
+
+type PruneVolumeMode string
+
+const (
+	PruneVolumeModeNone      PruneVolumeMode = "none"
+	PruneVolumeModeAnonymous PruneVolumeMode = "anonymous"
+	PruneVolumeModeAll       PruneVolumeMode = "all"
+)
+
+type PruneNetworkMode string
+
+const (
+	PruneNetworkModeNone      PruneNetworkMode = "none"
+	PruneNetworkModeUnused    PruneNetworkMode = "unused"
+	PruneNetworkModeOlderThan PruneNetworkMode = "olderThan"
+)
+
+type PruneBuildCacheMode string
+
+const (
+	PruneBuildCacheModeNone      PruneBuildCacheMode = "none"
+	PruneBuildCacheModeUnused    PruneBuildCacheMode = "unused"
+	PruneBuildCacheModeAll       PruneBuildCacheMode = "all"
+	PruneBuildCacheModeOlderThan PruneBuildCacheMode = "olderThan"
+)
+
+type PruneContainersOptions struct {
+	Mode  PruneContainerMode `json:"mode"`
+	Until string             `json:"until,omitempty"`
+}
+
+type PruneImagesOptions struct {
+	Mode  PruneImageMode `json:"mode"`
+	Until string         `json:"until,omitempty"`
+}
+
+type PruneVolumesOptions struct {
+	Mode PruneVolumeMode `json:"mode"`
+}
+
+type PruneNetworksOptions struct {
+	Mode  PruneNetworkMode `json:"mode"`
+	Until string           `json:"until,omitempty"`
+}
+
+type PruneBuildCacheOptions struct {
+	Mode  PruneBuildCacheMode `json:"mode"`
+	Until string              `json:"until,omitempty"`
+}
+
 // PruneAllRequest is used to request pruning of Docker system resources.
 type PruneAllRequest struct {
-	// Containers indicates if containers should be pruned.
-	//
-	// Required: true
-	Containers bool `json:"containers"`
+	Containers *PruneContainersOptions `json:"containers,omitempty"`
+	Images     *PruneImagesOptions     `json:"images,omitempty"`
+	Volumes    *PruneVolumesOptions    `json:"volumes,omitempty"`
+	Networks   *PruneNetworksOptions   `json:"networks,omitempty"`
+	BuildCache *PruneBuildCacheOptions `json:"buildCache,omitempty"`
+}
 
-	// Images indicates if images should be pruned.
-	//
-	// Required: true
-	Images bool `json:"images"`
+type pruneAllRequestWireInternal struct {
+	Containers json.RawMessage `json:"containers,omitempty"`
+	Images     json.RawMessage `json:"images,omitempty"`
+	Volumes    json.RawMessage `json:"volumes,omitempty"`
+	Networks   json.RawMessage `json:"networks,omitempty"`
+	BuildCache json.RawMessage `json:"buildCache,omitempty"`
+	Dangling   *bool           `json:"dangling,omitempty"`
+}
 
-	// Volumes indicates if volumes should be pruned.
-	//
-	// Required: true
-	Volumes bool `json:"volumes"`
+func (r *PruneAllRequest) UnmarshalJSON(data []byte) error {
+	var wire pruneAllRequestWireInternal
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
 
-	// Networks indicates if networks should be pruned.
-	//
-	// Required: true
-	Networks bool `json:"networks"`
+	*r = PruneAllRequest{}
 
-	// BuildCache indicates if build cache should be pruned.
-	//
-	// Required: true
-	BuildCache bool `json:"buildCache"`
+	containers, err := decodePruneContainersOptionsInternal(wire.Containers)
+	if err != nil {
+		return err
+	}
+	r.Containers = containers
 
-	// Dangling indicates if only dangling resources should be pruned.
-	//
-	// Required: true
-	Dangling bool `json:"dangling"`
+	images, err := decodePruneImagesOptionsInternal(wire.Images, wire.Dangling)
+	if err != nil {
+		return err
+	}
+	r.Images = images
+
+	volumes, err := decodePruneVolumesOptionsInternal(wire.Volumes, wire.Dangling)
+	if err != nil {
+		return err
+	}
+	r.Volumes = volumes
+
+	networks, err := decodePruneNetworksOptionsInternal(wire.Networks)
+	if err != nil {
+		return err
+	}
+	r.Networks = networks
+
+	buildCache, err := decodePruneBuildCacheOptionsInternal(wire.BuildCache, wire.Dangling)
+	if err != nil {
+		return err
+	}
+	r.BuildCache = buildCache
+
+	return nil
+}
+
+func decodePruneContainersOptionsInternal(raw json.RawMessage) (*PruneContainersOptions, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, nil
+	}
+
+	var enabled bool
+	if err := json.Unmarshal(raw, &enabled); err == nil {
+		if !enabled {
+			return nil, nil
+		}
+		return &PruneContainersOptions{Mode: PruneContainerModeStopped}, nil
+	}
+
+	var options PruneContainersOptions
+	if err := json.Unmarshal(raw, &options); err != nil {
+		return nil, err
+	}
+	return &options, nil
+}
+
+func decodePruneImagesOptionsInternal(raw json.RawMessage, dangling *bool) (*PruneImagesOptions, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, nil
+	}
+
+	var enabled bool
+	if err := json.Unmarshal(raw, &enabled); err == nil {
+		if !enabled {
+			return nil, nil
+		}
+		mode := PruneImageModeDangling
+		if dangling != nil && !*dangling {
+			mode = PruneImageModeAll
+		}
+		return &PruneImagesOptions{Mode: mode}, nil
+	}
+
+	var options PruneImagesOptions
+	if err := json.Unmarshal(raw, &options); err != nil {
+		return nil, err
+	}
+	return &options, nil
+}
+
+func decodePruneVolumesOptionsInternal(raw json.RawMessage, dangling *bool) (*PruneVolumesOptions, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, nil
+	}
+
+	var enabled bool
+	if err := json.Unmarshal(raw, &enabled); err == nil {
+		if !enabled {
+			return nil, nil
+		}
+		mode := PruneVolumeModeAnonymous
+		if dangling != nil && !*dangling {
+			mode = PruneVolumeModeAll
+		}
+		return &PruneVolumesOptions{Mode: mode}, nil
+	}
+
+	var options PruneVolumesOptions
+	if err := json.Unmarshal(raw, &options); err != nil {
+		return nil, err
+	}
+	return &options, nil
+}
+
+func decodePruneNetworksOptionsInternal(raw json.RawMessage) (*PruneNetworksOptions, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, nil
+	}
+
+	var enabled bool
+	if err := json.Unmarshal(raw, &enabled); err == nil {
+		if !enabled {
+			return nil, nil
+		}
+		return &PruneNetworksOptions{Mode: PruneNetworkModeUnused}, nil
+	}
+
+	var options PruneNetworksOptions
+	if err := json.Unmarshal(raw, &options); err != nil {
+		return nil, err
+	}
+	return &options, nil
+}
+
+func decodePruneBuildCacheOptionsInternal(raw json.RawMessage, dangling *bool) (*PruneBuildCacheOptions, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, nil
+	}
+
+	var enabled bool
+	if err := json.Unmarshal(raw, &enabled); err == nil {
+		if !enabled {
+			return nil, nil
+		}
+		mode := PruneBuildCacheModeUnused
+		if dangling != nil && !*dangling {
+			mode = PruneBuildCacheModeAll
+		}
+		return &PruneBuildCacheOptions{Mode: mode}, nil
+	}
+
+	var options PruneBuildCacheOptions
+	if err := json.Unmarshal(raw, &options); err != nil {
+		return nil, err
+	}
+	return &options, nil
 }
 
 // PruneAllResult is the result of a prune operation on Docker system resources.

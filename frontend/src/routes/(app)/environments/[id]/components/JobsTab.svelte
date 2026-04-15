@@ -12,7 +12,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import * as ScrollArea from '$lib/components/ui/scroll-area';
-	import { JobsIcon, AlertIcon } from '$lib/icons';
+	import { JobsIcon } from '$lib/icons';
 	import type { JobStatus, JobPrerequisite } from '$lib/types/job-schedule.type';
 	import type { ContainerSummaryDto } from '$lib/types/container.type';
 
@@ -77,7 +77,7 @@
 			case 'gitopsSyncEnabled':
 				return `${envBase}?tab=gitops`;
 			case 'scheduledPruneEnabled':
-				return undefined;
+				return `${envBase}?tab=jobs`;
 			case 'vulnerabilityScanEnabled':
 				return undefined;
 			case 'autoHealEnabled':
@@ -411,60 +411,6 @@
 															</ScrollArea.Root>
 														</div>
 													</div>
-												{/if}
-
-												{#if job.id === 'scheduled-prune'}
-													{#if $formInputs.scheduledPruneEnabled.value}
-														<div class="border-border/20 space-y-4 border-t pt-3">
-															<div class="grid gap-3 sm:grid-cols-2">
-																<div class="bg-muted/20 ring-border/20 flex items-start justify-between rounded-lg p-3 ring-1">
-																	<div class="space-y-0.5">
-																		<Label class="text-sm font-medium">{m.scheduled_prune_containers_label()}</Label>
-																		<p class="text-muted-foreground text-xs">{m.scheduled_prune_containers_description()}</p>
-																	</div>
-																	<Switch bind:checked={$formInputs.scheduledPruneContainers.value} />
-																</div>
-																<div class="bg-muted/20 ring-border/20 flex items-start justify-between rounded-lg p-3 ring-1">
-																	<div class="space-y-0.5">
-																		<Label class="text-sm font-medium">{m.scheduled_prune_images_label()}</Label>
-																		<p class="text-muted-foreground text-xs">{m.scheduled_prune_images_description()}</p>
-																	</div>
-																	<Switch bind:checked={$formInputs.scheduledPruneImages.value} />
-																</div>
-																<div class="bg-muted/20 ring-border/20 flex items-start justify-between rounded-lg p-3 ring-1">
-																	<div class="space-y-0.5">
-																		<Label class="text-sm font-medium">{m.scheduled_prune_volumes_label()}</Label>
-																		<p class="text-muted-foreground text-xs">{m.scheduled_prune_volumes_description()}</p>
-																	</div>
-																	<Switch bind:checked={$formInputs.scheduledPruneVolumes.value} />
-																</div>
-																<div class="bg-muted/20 ring-border/20 flex items-start justify-between rounded-lg p-3 ring-1">
-																	<div class="space-y-0.5">
-																		<Label class="text-sm font-medium">{m.scheduled_prune_networks_label()}</Label>
-																		<p class="text-muted-foreground text-xs">{m.scheduled_prune_networks_description()}</p>
-																	</div>
-																	<Switch bind:checked={$formInputs.scheduledPruneNetworks.value} />
-																</div>
-																<div class="bg-muted/20 ring-border/20 flex items-start justify-between rounded-lg p-3 ring-1">
-																	<div class="space-y-0.5">
-																		<Label class="text-sm font-medium">{m.scheduled_prune_build_cache_label()}</Label>
-																		<p class="text-muted-foreground text-xs">{m.scheduled_prune_build_cache_description()}</p>
-																	</div>
-																	<Switch bind:checked={$formInputs.scheduledPruneBuildCache.value} />
-																</div>
-															</div>
-															{#if $formInputs.scheduledPruneVolumes.value}
-																<div
-																	class="flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-amber-900 dark:text-amber-200"
-																>
-																	<AlertIcon class="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" />
-																	<div class="space-y-1 text-sm">
-																		<p class="font-medium">{m.scheduled_prune_volumes_warning()}</p>
-																	</div>
-																</div>
-															{/if}
-														</div>
-													{/if}
 												{/if}
 											</JobCard>
 										{/each}

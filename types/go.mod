@@ -7,6 +7,7 @@ require (
 	github.com/docker/go-units v0.5.0
 	github.com/moby/moby/api v1.54.1
 	github.com/moby/moby/client v0.4.0
+	github.com/stretchr/testify v1.11.1
 )
 
 require (
@@ -38,4 +39,5 @@ require (
 	go.yaml.in/yaml/v4 v4.0.0-rc.4 // indirect
 	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.43.0 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

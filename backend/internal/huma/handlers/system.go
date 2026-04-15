@@ -360,8 +360,7 @@ func (h *SystemHandler) PruneAll(ctx context.Context, input *PruneAllInput) (*Pr
 		"images", input.Body.Images,
 		"volumes", input.Body.Volumes,
 		"networks", input.Body.Networks,
-		"build_cache", input.Body.BuildCache,
-		"dangling", input.Body.Dangling)
+		"build_cache", input.Body.BuildCache)
 
 	result, err := h.systemService.PruneAll(ctx, input.Body)
 	if err != nil {

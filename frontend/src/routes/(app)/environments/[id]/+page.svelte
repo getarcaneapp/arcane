@@ -150,7 +150,6 @@
 		autoUpdate: z.boolean(),
 		autoInjectEnv: z.boolean(),
 		followProjectSymlinks: z.boolean(),
-		dockerPruneMode: z.enum(['all', 'dangling']),
 		defaultDeployPullPolicy: z.enum(['missing', 'always', 'never']),
 		defaultShell: z.string(),
 		projectsDirectory: z.string(),
@@ -162,11 +161,15 @@
 		gitSyncMaxBinarySizeMb: z.coerce.number().int().nonnegative(),
 		baseServerUrl: z.string(),
 		scheduledPruneEnabled: z.boolean(),
-		scheduledPruneContainers: z.boolean(),
-		scheduledPruneImages: z.boolean(),
-		scheduledPruneVolumes: z.boolean(),
-		scheduledPruneNetworks: z.boolean(),
-		scheduledPruneBuildCache: z.boolean(),
+		pruneContainerMode: z.enum(['none', 'stopped', 'olderThan']),
+		pruneContainerUntil: z.string(),
+		pruneImageMode: z.enum(['none', 'dangling', 'all', 'olderThan']),
+		pruneImageUntil: z.string(),
+		pruneVolumeMode: z.enum(['none', 'anonymous', 'all']),
+		pruneNetworkMode: z.enum(['none', 'unused', 'olderThan']),
+		pruneNetworkUntil: z.string(),
+		pruneBuildCacheMode: z.enum(['none', 'unused', 'all', 'olderThan']),
+		pruneBuildCacheUntil: z.string(),
 		vulnerabilityScanEnabled: z.boolean(),
 		trivyImage: z.string(),
 		trivyNetwork: z.string(),
@@ -193,7 +196,6 @@
 		autoUpdate: settings?.autoUpdate ?? false,
 		autoInjectEnv: settings?.autoInjectEnv ?? false,
 		followProjectSymlinks: settings?.followProjectSymlinks ?? false,
-		dockerPruneMode: (settings?.dockerPruneMode as 'all' | 'dangling') || 'dangling',
 		defaultDeployPullPolicy: (settings?.defaultDeployPullPolicy as 'missing' | 'always' | 'never') || 'missing',
 		defaultShell: settings?.defaultShell || '/bin/sh',
 		projectsDirectory: settings?.projectsDirectory || '/app/data/projects',
@@ -205,11 +207,15 @@
 		gitSyncMaxBinarySizeMb: settings?.gitSyncMaxBinarySizeMb ?? 10,
 		baseServerUrl: settings?.baseServerUrl || 'http://localhost',
 		scheduledPruneEnabled: settings?.scheduledPruneEnabled ?? false,
-		scheduledPruneContainers: settings?.scheduledPruneContainers ?? true,
-		scheduledPruneImages: settings?.scheduledPruneImages ?? true,
-		scheduledPruneVolumes: settings?.scheduledPruneVolumes ?? false,
-		scheduledPruneNetworks: settings?.scheduledPruneNetworks ?? true,
-		scheduledPruneBuildCache: settings?.scheduledPruneBuildCache ?? false,
+		pruneContainerMode: settings?.pruneContainerMode ?? 'stopped',
+		pruneContainerUntil: settings?.pruneContainerUntil ?? '',
+		pruneImageMode: settings?.pruneImageMode ?? 'dangling',
+		pruneImageUntil: settings?.pruneImageUntil ?? '',
+		pruneVolumeMode: settings?.pruneVolumeMode ?? 'none',
+		pruneNetworkMode: settings?.pruneNetworkMode ?? 'unused',
+		pruneNetworkUntil: settings?.pruneNetworkUntil ?? '',
+		pruneBuildCacheMode: settings?.pruneBuildCacheMode ?? 'none',
+		pruneBuildCacheUntil: settings?.pruneBuildCacheUntil ?? '',
 		vulnerabilityScanEnabled: settings?.vulnerabilityScanEnabled ?? false,
 		trivyImage: settings?.trivyImage || '',
 		trivyNetwork: settings?.trivyNetwork || '',
@@ -243,7 +249,6 @@
 				autoUpdate: formData.autoUpdate,
 				autoInjectEnv: formData.autoInjectEnv,
 				followProjectSymlinks: formData.followProjectSymlinks,
-				dockerPruneMode: formData.dockerPruneMode,
 				defaultDeployPullPolicy: formData.defaultDeployPullPolicy,
 				defaultShell: formData.defaultShell,
 				projectsDirectory: formData.projectsDirectory,
@@ -255,11 +260,15 @@
 				gitSyncMaxBinarySizeMb: formData.gitSyncMaxBinarySizeMb,
 				baseServerUrl: formData.baseServerUrl,
 				scheduledPruneEnabled: formData.scheduledPruneEnabled,
-				scheduledPruneContainers: formData.scheduledPruneContainers,
-				scheduledPruneImages: formData.scheduledPruneImages,
-				scheduledPruneVolumes: formData.scheduledPruneVolumes,
-				scheduledPruneNetworks: formData.scheduledPruneNetworks,
-				scheduledPruneBuildCache: formData.scheduledPruneBuildCache,
+				pruneContainerMode: formData.pruneContainerMode,
+				pruneContainerUntil: formData.pruneContainerUntil,
+				pruneImageMode: formData.pruneImageMode,
+				pruneImageUntil: formData.pruneImageUntil,
+				pruneVolumeMode: formData.pruneVolumeMode,
+				pruneNetworkMode: formData.pruneNetworkMode,
+				pruneNetworkUntil: formData.pruneNetworkUntil,
+				pruneBuildCacheMode: formData.pruneBuildCacheMode,
+				pruneBuildCacheUntil: formData.pruneBuildCacheUntil,
 				vulnerabilityScanEnabled: formData.vulnerabilityScanEnabled,
 				trivyImage: formData.trivyImage,
 				trivyNetwork: formData.trivyNetwork,
@@ -304,15 +313,6 @@
 		})
 	);
 
-	const pruneModeOptions = [
-		{ value: 'all', label: m.docker_prune_all(), description: m.docker_prune_all_description() },
-		{ value: 'dangling', label: m.docker_prune_dangling(), description: m.docker_prune_dangling_description() }
-	];
-
-	let pruneModeDescription = $derived(
-		pruneModeOptions.find((o) => o.value === $formInputs.dockerPruneMode.value)?.description ?? m.docker_prune_mode_description()
-	);
-
 	const shellOptions = [
 		{ value: '/bin/sh', label: '/bin/sh', description: m.docker_shell_sh_description() },
 		{ value: '/bin/bash', label: '/bin/bash', description: m.docker_shell_bash_description() },
@@ -327,7 +327,7 @@
 
 	function handleShellSelectChange(value: string) {
 		if (value !== 'custom') {
-			$formInputs.defaultShell.value = value;
+			formInputs.defaultShell.value = value;
 		}
 	}
 
@@ -406,7 +406,7 @@
 		if (isTestingConnection) return;
 		try {
 			isTestingConnection = true;
-			const customUrl = $formInputs.apiUrl.value !== environment.apiUrl ? $formInputs.apiUrl.value : undefined;
+			const customUrl = formInputs.apiUrl.value !== environment.apiUrl ? formInputs.apiUrl.value : undefined;
 			const result = await environmentManagementService.testConnection(environment.id, customUrl);
 
 			const nextStatus = result.status as EnvironmentStatus;
@@ -581,14 +581,7 @@
 			</Tabs.Content>
 
 			<Tabs.Content value="docker">
-				<DockerTab
-					{formInputs}
-					{shellSelectValue}
-					{handleShellSelectChange}
-					{shellOptions}
-					{pruneModeDescription}
-					{pruneModeOptions}
-				/>
+				<DockerTab {formInputs} {shellSelectValue} {handleShellSelectChange} {shellOptions} />
 			</Tabs.Content>
 
 			<Tabs.Content value="security">

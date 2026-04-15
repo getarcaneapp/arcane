@@ -218,7 +218,7 @@ func TestDashboardService_GetSnapshot_ReturnsDashboardSnapshot(t *testing.T) {
 	require.Equal(t, 1, snapshot.ImageUsageCounts.Unused)
 	require.Equal(t, 3, snapshot.ImageUsageCounts.Total)
 	require.EqualValues(t, 525, snapshot.ImageUsageCounts.TotalSize)
-	require.Equal(t, "dangling", snapshot.Settings.DockerPruneMode)
+	require.Equal(t, dashboardtypes.SnapshotSettings{}, snapshot.Settings)
 
 	require.ElementsMatch(t, []dashboardtypes.ActionItem{
 		{Kind: dashboardtypes.ActionItemKindStoppedContainers, Count: 1, Severity: dashboardtypes.ActionItemSeverityWarning},

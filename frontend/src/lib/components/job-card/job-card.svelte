@@ -7,6 +7,7 @@
 	import { Spinner } from '$lib/components/ui/spinner';
 	import { jobScheduleService } from '$lib/services/job-schedule-service';
 	import { formatDistanceToNow } from 'date-fns';
+	import { formatDateTimeShort } from '$lib/utils/locale.util';
 	import type { Snippet } from 'svelte';
 	import type { JobStatus } from '$lib/types/job-schedule.type';
 	import JobScheduleDialog from './job-schedule-dialog.svelte';
@@ -40,7 +41,7 @@
 		if (!job.nextRun) return null;
 		const nextRunDate = new Date(job.nextRun);
 		const relative = formatDistanceToNow(nextRunDate, { addSuffix: true });
-		const absolute = nextRunDate.toLocaleString();
+		const absolute = formatDateTimeShort(nextRunDate);
 		return `${relative} (${absolute})`;
 	});
 
