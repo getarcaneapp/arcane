@@ -177,7 +177,7 @@ type UpdateGlobalVariablesOutput struct {
 func RegisterTemplates(api huma.API, templateService *services.TemplateService, environmentService *services.EnvironmentService) {
 	h := &TemplateHandler{templateService: templateService, environmentService: environmentService}
 
-	// Public endpoints (no auth required in original)
+	// Template registry endpoint.
 	huma.Register(api, huma.Operation{
 		OperationID: "fetchTemplateRegistry",
 		Method:      "GET",

@@ -298,6 +298,7 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 		Description:  "Agent sends API key to complete environment pairing",
 		Tags:         []string{"Environments"},
 		MaxBodyBytes: 1024,
+		Security:     []map[string][]string{},
 	}, h.PairEnvironment)
 
 	huma.Register(api, huma.Operation{

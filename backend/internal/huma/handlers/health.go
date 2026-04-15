@@ -22,6 +22,7 @@ func RegisterHealth(api huma.API) {
 		Summary:     "Health check",
 		Description: "Check if the API is healthy",
 		Tags:        []string{"Health"},
+		Security:    []map[string][]string{},
 	}, func(ctx context.Context, input *struct{}) (*HealthOutput, error) {
 		return &HealthOutput{
 			Body: system.HealthResponse{
@@ -37,6 +38,7 @@ func RegisterHealth(api huma.API) {
 		Summary:     "Health check (HEAD)",
 		Description: "Check if the API is healthy (HEAD request)",
 		Tags:        []string{"Health"},
+		Security:    []map[string][]string{},
 	}, func(ctx context.Context, input *struct{}) (*struct{}, error) {
 		return nil, nil
 	})

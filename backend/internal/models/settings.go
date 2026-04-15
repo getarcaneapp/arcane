@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,13 +22,22 @@ type SettingVariable struct {
 	Value string
 }
 
+type SettingVisibility int
+
+const (
+	SettingVisibilityPublic SettingVisibility = iota
+	SettingVisibilityNonAdmin
+	SettingVisibilityAll
+)
+
 type settingFieldMeta struct {
-	index       int
-	key         string
-	attrs       string
-	isPublic    bool
-	isSensitive bool
-	isLocal     bool
+	index               int
+	key                 string
+	attrs               string
+	isPublic            bool
+	isVisibleToNonAdmin bool
+	isSensitive         bool
+	isLocal             bool
 }
 
 var settingsFieldCache struct {
@@ -113,7 +123,7 @@ type Settings struct {
 	GitSyncMaxFiles            SettingVariable `key:"gitSyncMaxFiles,envOverride" meta:"label=Git Sync Max Files;type=number;keywords=git,sync,files,limit,repository,compose,gitops;category=general;description=Maximum number of repository files copied during a Git sync. Set 0 to disable the environment cap (default: 500)"`
 	GitSyncMaxTotalSizeMb      SettingVariable `key:"gitSyncMaxTotalSizeMb,envOverride" meta:"label=Git Sync Max Total Size (MB);type=number;keywords=git,sync,size,limit,repository,compose,gitops,mb;category=general;description=Maximum combined size in MB for files copied during a Git sync. Set 0 to disable the environment cap (default: 50)"`
 	GitSyncMaxBinarySizeMb     SettingVariable `key:"gitSyncMaxBinarySizeMb,envOverride" meta:"label=Git Sync Max Binary Size (MB);type=number;keywords=git,sync,binary,size,limit,repository,compose,gitops,mb;category=general;description=Maximum size in MB for a single binary file copied during a Git sync. Set 0 to disable the environment cap (default: 10)"`
-	DockerHost                 SettingVariable `key:"dockerHost,public,envOverride" meta:"label=Docker Host;type=text;keywords=docker,host,daemon,socket,unix,remote;category=internal;description=URI for Docker daemon"`
+	DockerHost                 SettingVariable `key:"dockerHost,authrequired,envOverride" meta:"label=Docker Host;type=text;keywords=docker,host,daemon,socket,unix,remote;category=internal;description=URI for Docker daemon"`
 	BuildProvider              SettingVariable `key:"buildProvider,envOverride" meta:"label=Build Provider;type=select;keywords=build,buildkit,depot,provider,remote,local;category=build;description=Default build provider (local or depot)" catmeta:"id=build;title=Build;icon=code;url=/settings/builds;description=Configure BuildKit and Depot build settings"`
 	BuildsDirectory            SettingVariable `key:"buildsDirectory,envOverride" meta:"label=Builds Directory;type=text;keywords=builds,directory,path,workspace,context;category=build;description=Root directory for manual build workspaces"`
 	BuildTimeout               SettingVariable `key:"buildTimeout,envOverride" meta:"label=Build Timeout;type=number;keywords=build,timeout,seconds,buildkit;category=build;description=Timeout for BuildKit builds in seconds (default: 1800 = 30 minutes)"`
@@ -139,28 +149,28 @@ type Settings struct {
 	TrivyIgnore                     SettingVariable `key:"trivyIgnore" meta:"label=.trivyignore;type=textarea;keywords=trivy,ignore,ignorefile,vulnerabilities,exceptions,exclusions;category=security;description=Trivy ignore file content - one vulnerability ID per line"`
 	AuthOidcConfig                  SettingVariable `key:"authOidcConfig,sensitive,deprecated" meta:"label=OIDC Config;type=text;keywords=oidc,config,client,id,issuer,secret,oauth;category=authentication;description=OIDC provider configuration (deprecated - use individual fields)"`
 	OidcEnabled                     SettingVariable `key:"oidcEnabled,public,envOverride" meta:"label=OIDC Authentication;type=boolean;keywords=oidc,openid,connect,sso,oauth,external,provider,federation;category=authentication;description=Enable OpenID Connect (OIDC) authentication"`
-	OidcClientId                    SettingVariable `key:"oidcClientId,public,envOverride" meta:"label=OIDC Client ID;type=text;keywords=oidc,client,id,oauth,openid;category=authentication;description=OIDC provider client ID"`
+	OidcClientId                    SettingVariable `key:"oidcClientId,authrequired,envOverride" meta:"label=OIDC Client ID;type=text;keywords=oidc,client,id,oauth,openid;category=authentication;description=OIDC provider client ID"`
 	OidcClientSecret                SettingVariable `key:"oidcClientSecret,sensitive,envOverride" meta:"label=OIDC Client Secret;type=password;keywords=oidc,client,secret,oauth,openid;category=authentication;description=OIDC provider client secret"`
-	OidcIssuerUrl                   SettingVariable `key:"oidcIssuerUrl,public,envOverride" meta:"label=OIDC Issuer URL;type=text;keywords=oidc,issuer,url,oauth,openid,provider;category=authentication;description=OIDC provider issuer URL"`
+	OidcIssuerUrl                   SettingVariable `key:"oidcIssuerUrl,authrequired,envOverride" meta:"label=OIDC Issuer URL;type=text;keywords=oidc,issuer,url,oauth,openid,provider;category=authentication;description=OIDC provider issuer URL"`
 	OidcAuthorizationEndpoint       SettingVariable `key:"oidcAuthorizationEndpoint,envOverride" meta:"label=OIDC Authorization Endpoint;type=text;keywords=oidc,authorization,endpoint,oauth,openid;category=authentication;description=Override OIDC authorization endpoint"`
 	OidcTokenEndpoint               SettingVariable `key:"oidcTokenEndpoint,envOverride" meta:"label=OIDC Token Endpoint;type=text;keywords=oidc,token,endpoint,oauth,openid;category=authentication;description=Override OIDC token endpoint"`
 	OidcUserinfoEndpoint            SettingVariable `key:"oidcUserinfoEndpoint,envOverride" meta:"label=OIDC Userinfo Endpoint;type=text;keywords=oidc,userinfo,endpoint,oauth,openid;category=authentication;description=Override OIDC userinfo endpoint"`
 	OidcJwksEndpoint                SettingVariable `key:"oidcJwksEndpoint,envOverride" meta:"label=OIDC JWKS Endpoint;type=text;keywords=oidc,jwks,keys,endpoint,oauth,openid;category=authentication;description=Override OIDC JWKS endpoint"`
 	OidcDeviceAuthorizationEndpoint SettingVariable `key:"oidcDeviceAuthorizationEndpoint,envOverride" meta:"label=OIDC Device Authorization Endpoint;type=text;keywords=oidc,device,authorization,endpoint,oauth,openid,cli;category=authentication;description=Override OIDC device authorization endpoint for CLI authentication"`
-	OidcScopes                      SettingVariable `key:"oidcScopes,public,envOverride" meta:"label=OIDC Scopes;type=text;keywords=oidc,scopes,oauth,openid,permissions;category=authentication;description=OIDC scopes to request"`
-	OidcAdminClaim                  SettingVariable `key:"oidcAdminClaim,public,envOverride" meta:"label=OIDC Admin Claim;type=text;keywords=oidc,admin,claim,role,group;category=authentication;description=Claim name for admin role mapping"`
-	OidcAdminValue                  SettingVariable `key:"oidcAdminValue,public,envOverride" meta:"label=OIDC Admin Value;type=text;keywords=oidc,admin,value,role,group;category=authentication;description=Claim value that grants admin access"`
-	OidcSkipTlsVerify               SettingVariable `key:"oidcSkipTlsVerify,public,envOverride" meta:"label=OIDC Skip TLS Verify;type=boolean;keywords=oidc,tls,verify,skip,insecure;category=authentication;description=Skip TLS verification for OIDC provider"`
+	OidcScopes                      SettingVariable `key:"oidcScopes,authrequired,envOverride" meta:"label=OIDC Scopes;type=text;keywords=oidc,scopes,oauth,openid,permissions;category=authentication;description=OIDC scopes to request"`
+	OidcAdminClaim                  SettingVariable `key:"oidcAdminClaim,authrequired,envOverride" meta:"label=OIDC Admin Claim;type=text;keywords=oidc,admin,claim,role,group;category=authentication;description=Claim name for admin role mapping"`
+	OidcAdminValue                  SettingVariable `key:"oidcAdminValue,authrequired,envOverride" meta:"label=OIDC Admin Value;type=text;keywords=oidc,admin,value,role,group;category=authentication;description=Claim value that grants admin access"`
+	OidcSkipTlsVerify               SettingVariable `key:"oidcSkipTlsVerify,authrequired,envOverride" meta:"label=OIDC Skip TLS Verify;type=boolean;keywords=oidc,tls,verify,skip,insecure;category=authentication;description=Skip TLS verification for OIDC provider"`
 	OidcAutoRedirectToProvider      SettingVariable `key:"oidcAutoRedirectToProvider,public,envOverride" meta:"label=OIDC Auto Redirect;type=boolean;keywords=oidc,auto,redirect,automatic,login,provider,sso;category=authentication;description=Automatically redirect to OIDC provider on login page"`
-	OidcMergeAccounts               SettingVariable `key:"oidcMergeAccounts,public,envOverride" meta:"label=OIDC Account Merging;type=boolean;keywords=oidc,merge,link,accounts,email,match,existing,users,combine;category=authentication;description=Allow OIDC logins to merge with existing accounts by email"`
+	OidcMergeAccounts               SettingVariable `key:"oidcMergeAccounts,authrequired,envOverride" meta:"label=OIDC Account Merging;type=boolean;keywords=oidc,merge,link,accounts,email,match,existing,users,combine;category=authentication;description=Allow OIDC logins to merge with existing accounts by email"`
 	OidcProviderName                SettingVariable `key:"oidcProviderName,public,envOverride" meta:"label=OIDC Provider Name;type=text;keywords=oidc,provider,name,display,label,sso;category=authentication;description=Custom name for the OIDC provider (e.g., Authentik, Keycloak)"`
 	OidcProviderLogoUrl             SettingVariable `key:"oidcProviderLogoUrl,public,envOverride" meta:"label=OIDC Provider Logo URL;type=text;keywords=oidc,provider,logo,url,image,icon,sso;category=authentication;description=Custom logo URL for the OIDC provider"`
 
 	// Appearance category
-	MobileNavigationMode       SettingVariable `key:"mobileNavigationMode,public,local" meta:"label=Mobile Navigation Mode;type=select;keywords=mode,style,type,floating,docked,position,layout,design,appearance,bottom;category=appearance;description=Choose between floating or docked navigation on mobile" catmeta:"id=appearance;title=Appearance;icon=appearance;url=/settings/appearance;description=Customize navigation, theme, and interface behavior"`
-	MobileNavigationShowLabels SettingVariable `key:"mobileNavigationShowLabels,public,local" meta:"label=Show Navigation Labels;type=boolean;keywords=labels,text,icons,display,show,hide,names,captions,titles,visible,toggle;category=appearance;description=Display text labels alongside navigation icons"`
-	SidebarHoverExpansion      SettingVariable `key:"sidebarHoverExpansion,public,local" meta:"label=Sidebar Hover Expansion;type=boolean;keywords=sidebar,hover,expansion,expand,desktop,mouse,over,collapsed,collapsible,icon,labels,text,preview,peek,tooltip,overlay,temporary,quick,access,navigation,menu,items,submenu,nested;category=appearance;description=Expand sidebar on hover in desktop mode"`
-	KeyboardShortcutsEnabled   SettingVariable `key:"keyboardShortcutsEnabled,public,local" meta:"label=Keyboard Shortcuts;type=boolean;keywords=keyboard,shortcuts,hotkeys,keybindings,navigation,tooltips,disable;category=appearance;description=Enable keyboard shortcuts for navigation and show shortcut hints in tooltips"`
+	MobileNavigationMode       SettingVariable `key:"mobileNavigationMode,authrequired,local" meta:"label=Mobile Navigation Mode;type=select;keywords=mode,style,type,floating,docked,position,layout,design,appearance,bottom;category=appearance;description=Choose between floating or docked navigation on mobile" catmeta:"id=appearance;title=Appearance;icon=appearance;url=/settings/appearance;description=Customize navigation, theme, and interface behavior"`
+	MobileNavigationShowLabels SettingVariable `key:"mobileNavigationShowLabels,authrequired,local" meta:"label=Show Navigation Labels;type=boolean;keywords=labels,text,icons,display,show,hide,names,captions,titles,visible,toggle;category=appearance;description=Display text labels alongside navigation icons"`
+	SidebarHoverExpansion      SettingVariable `key:"sidebarHoverExpansion,authrequired,local" meta:"label=Sidebar Hover Expansion;type=boolean;keywords=sidebar,hover,expansion,expand,desktop,mouse,over,collapsed,collapsible,icon,labels,text,preview,peek,tooltip,overlay,temporary,quick,access,navigation,menu,items,submenu,nested;category=appearance;description=Expand sidebar on hover in desktop mode"`
+	KeyboardShortcutsEnabled   SettingVariable `key:"keyboardShortcutsEnabled,authrequired,local" meta:"label=Keyboard Shortcuts;type=boolean;keywords=keyboard,shortcuts,hotkeys,keybindings,navigation,tooltips,disable;category=appearance;description=Enable keyboard shortcuts for navigation and show shortcut hints in tooltips"`
 
 	// Notifications category (placeholder for category metadata only - actual settings managed via notification service)
 	NotificationsCategoryPlaceholder SettingVariable `key:"notificationsCategory,internal" meta:"label=Notifications;type=internal;keywords=notifications,alerts,email,discord,webhooks,events,messages;category=notifications;description=Configure notification providers and alerts" catmeta:"id=notifications;title=Notifications;icon=bell;url=/settings/notifications;description=Configure email and Discord notifications for container and image updates"`
@@ -203,13 +213,16 @@ func buildSettingsFieldCacheInternal() {
 			continue
 		}
 
+		attrList := splitSettingAttrsInternal(attrs)
+
 		meta := settingFieldMeta{
-			index:       i,
-			key:         key,
-			attrs:       attrs,
-			isPublic:    strings.Contains(attrs, "public"),
-			isSensitive: strings.Contains(attrs, "sensitive"),
-			isLocal:     strings.Contains(attrs, "local"),
+			index:               i,
+			key:                 key,
+			attrs:               attrs,
+			isPublic:            slices.Contains(attrList, "public"),
+			isVisibleToNonAdmin: slices.Contains(attrList, "public") || slices.Contains(attrList, "authrequired"),
+			isSensitive:         slices.Contains(attrList, "sensitive"),
+			isLocal:             slices.Contains(attrList, "local"),
 		}
 		ordered = append(ordered, meta)
 		byKey[key] = meta
@@ -224,6 +237,14 @@ func getSettingsFieldCacheInternal() ([]settingFieldMeta, map[string]settingFiel
 	return settingsFieldCache.ordered, settingsFieldCache.byKey
 }
 
+func splitSettingAttrsInternal(attrs string) []string {
+	if attrs == "" {
+		return nil
+	}
+
+	return strings.Split(attrs, ",")
+}
+
 func (s *Settings) Clone() *Settings {
 	if s == nil {
 		return &Settings{}
@@ -232,13 +253,13 @@ func (s *Settings) Clone() *Settings {
 	return new(*s)
 }
 
-func (s *Settings) ToSettingVariableSlice(showAll bool, redactSensitiveValues bool) []SettingVariable {
+func (s *Settings) ToSettingVariableSlice(visibility SettingVisibility, redactSensitiveValues bool) []SettingVariable {
 	cfgValue := reflect.ValueOf(s).Elem()
 	fields, _ := getSettingsFieldCacheInternal()
 
 	res := make([]SettingVariable, 0, len(fields))
 	for _, field := range fields {
-		if !showAll && !field.isPublic {
+		if !fieldVisibleForSettingVisibilityInternal(field, visibility) {
 			continue
 		}
 
@@ -253,6 +274,19 @@ func (s *Settings) ToSettingVariableSlice(showAll bool, redactSensitiveValues bo
 	}
 
 	return res
+}
+
+func fieldVisibleForSettingVisibilityInternal(field settingFieldMeta, visibility SettingVisibility) bool {
+	switch visibility {
+	case SettingVisibilityPublic:
+		return field.isPublic
+	case SettingVisibilityNonAdmin:
+		return field.isVisibleToNonAdmin
+	case SettingVisibilityAll:
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Settings) FieldByKey(key string) (defaultValue string, isPublic bool, isSensitive bool, err error) {

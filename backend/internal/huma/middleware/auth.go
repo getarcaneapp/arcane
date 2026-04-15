@@ -60,28 +60,43 @@ type operationProvider interface {
 	Operation() *huma.Operation
 }
 
-// parseSecurityRequirements extracts security requirements from a Huma operation.
-func parseSecurityRequirements(ctx operationProvider) securityRequirements {
+// parseSecurityRequirementsInternal extracts security requirements from a Huma operation.
+func parseSecurityRequirementsInternal(api huma.API, ctx operationProvider) securityRequirements {
 	reqs := securityRequirements{}
-	if ctx.Operation() == nil || len(ctx.Operation().Security) == 0 {
+	if ctx.Operation() == nil {
 		return reqs
 	}
-	for _, secReq := range ctx.Operation().Security {
+
+	security := ctx.Operation().Security
+	if security == nil && api != nil && api.OpenAPI() != nil {
+		security = api.OpenAPI().Security
+	}
+	if len(security) == 0 {
+		return reqs
+	}
+
+	optional := false
+	for _, secReq := range security {
+		if len(secReq) == 0 {
+			optional = true
+			continue
+		}
 		if _, ok := secReq["BearerAuth"]; ok {
-			reqs.isRequired = true
 			reqs.bearerAuth = true
 		}
 		if _, ok := secReq["ApiKeyAuth"]; ok {
-			reqs.isRequired = true
 			reqs.apiKeyAuth = true
 		}
 	}
+
+	reqs.isRequired = !optional && (reqs.bearerAuth || reqs.apiKeyAuth)
+
 	return reqs
 }
 
-// tryBearerAuth attempts Bearer token authentication.
-func tryBearerAuth(ctx huma.Context, authService *services.AuthService) (*models.User, bool) {
-	token := extractBearerToken(ctx)
+// tryBearerAuthInternal attempts Bearer token authentication.
+func tryBearerAuthInternal(ctx huma.Context, authService *services.AuthService) (*models.User, bool) {
+	token := extractBearerTokenInternal(ctx)
 	if token == "" {
 		return nil, false
 	}
@@ -92,8 +107,8 @@ func tryBearerAuth(ctx huma.Context, authService *services.AuthService) (*models
 	return user, true
 }
 
-// tryApiKeyAuth checks if API key authentication should be allowed through.
-func tryApiKeyAuth(ctx huma.Context, apiKeyService *services.ApiKeyService) (*models.User, bool) {
+// tryApiKeyAuthInternal checks if API key authentication should be allowed through.
+func tryApiKeyAuthInternal(ctx huma.Context, apiKeyService *services.ApiKeyService) (*models.User, bool) {
 	apiKey := ctx.Header(headerApiKey)
 	if apiKey == "" {
 		return nil, false
@@ -107,9 +122,9 @@ func tryApiKeyAuth(ctx huma.Context, apiKeyService *services.ApiKeyService) (*mo
 	return user, true
 }
 
-// tryAgentAuth checks if the request is from an authenticated agent.
+// tryAgentAuthInternal checks if the request is from an authenticated agent.
 // Returns a sudo agent user if the agent token is valid.
-func tryAgentAuth(ctx huma.Context, cfg *config.Config) (*models.User, bool) {
+func tryAgentAuthInternal(ctx huma.Context, cfg *config.Config) (*models.User, bool) {
 	if cfg == nil || !cfg.AgentMode {
 		return nil, false
 	}
@@ -120,24 +135,24 @@ func tryAgentAuth(ctx huma.Context, cfg *config.Config) (*models.User, bool) {
 	if strings.HasPrefix(path, agentPairingPrefix) &&
 		cfg.AgentToken != "" &&
 		ctx.Header(headerAgentBootstrap) == cfg.AgentToken {
-		return createAgentSudoUser(), true
+		return createAgentSudoUserInternal(), true
 	}
 
 	// Check for agent token
 	if tok := ctx.Header(headerAgentToken); tok != "" && cfg.AgentToken != "" && tok == cfg.AgentToken {
-		return createAgentSudoUser(), true
+		return createAgentSudoUserInternal(), true
 	}
 
 	// Check for API key as agent token
 	if tok := ctx.Header(headerApiKey); tok != "" && cfg.AgentToken != "" && tok == cfg.AgentToken {
-		return createAgentSudoUser(), true
+		return createAgentSudoUserInternal(), true
 	}
 
 	return nil, false
 }
 
-// createAgentSudoUser creates a sudo user for agent authentication.
-func createAgentSudoUser() *models.User {
+// createAgentSudoUserInternal creates a sudo user for agent authentication.
+func createAgentSudoUserInternal() *models.User {
 	email := "agent@getarcane.app"
 	return &models.User{
 		BaseModel: models.BaseModel{ID: "agent"},
@@ -157,15 +172,15 @@ func NewAuthBridge(api huma.API, authService *services.AuthService, apiKeyServic
 
 		// Check agent authentication first (if in agent mode)
 		if cfg != nil && cfg.AgentMode {
-			if user, ok := tryAgentAuth(ctx, cfg); ok {
-				newCtx := setUserInContext(ctx.Context(), user)
+			if user, ok := tryAgentAuthInternal(ctx, cfg); ok {
+				newCtx := setUserInContextInternal(ctx.Context(), user)
 				ctx = huma.WithContext(ctx, newCtx)
 				next(ctx)
 				return
 			}
 		}
 
-		reqs := parseSecurityRequirements(ctx)
+		reqs := parseSecurityRequirementsInternal(api, ctx)
 		if !reqs.isRequired {
 			next(ctx)
 			return
@@ -174,8 +189,8 @@ func NewAuthBridge(api huma.API, authService *services.AuthService, apiKeyServic
 		// If API key header is present and API key auth is allowed, prioritize it.
 		// If validation fails, do NOT fall back to Bearer auth.
 		if reqs.apiKeyAuth && ctx.Header(headerApiKey) != "" {
-			if user, ok := tryApiKeyAuth(ctx, apiKeyService); ok {
-				newCtx := setUserInContext(ctx.Context(), user)
+			if user, ok := tryApiKeyAuthInternal(ctx, apiKeyService); ok {
+				newCtx := setUserInContextInternal(ctx.Context(), user)
 				ctx = huma.WithContext(ctx, newCtx)
 				next(ctx)
 				return
@@ -186,8 +201,8 @@ func NewAuthBridge(api huma.API, authService *services.AuthService, apiKeyServic
 		}
 
 		if reqs.bearerAuth {
-			if user, ok := tryBearerAuth(ctx, authService); ok {
-				newCtx := setUserInContext(ctx.Context(), user)
+			if user, ok := tryBearerAuthInternal(ctx, authService); ok {
+				newCtx := setUserInContextInternal(ctx.Context(), user)
 				ctx = huma.WithContext(ctx, newCtx)
 				next(ctx)
 				return
@@ -199,8 +214,8 @@ func NewAuthBridge(api huma.API, authService *services.AuthService, apiKeyServic
 	}
 }
 
-// extractBearerToken extracts the JWT token from Authorization header or cookie.
-func extractBearerToken(ctx huma.Context) string {
+// extractBearerTokenInternal extracts the JWT token from Authorization header or cookie.
+func extractBearerTokenInternal(ctx huma.Context) string {
 	// Try Authorization header first
 	authHeader := ctx.Header("Authorization")
 	if len(authHeader) > 7 && strings.ToLower(authHeader[:7]) == "bearer " {
@@ -210,14 +225,14 @@ func extractBearerToken(ctx huma.Context) string {
 	// Try cookie as fallback
 	cookieHeader := ctx.Header("Cookie")
 	if cookieHeader != "" {
-		return extractTokenFromCookieHeader(cookieHeader)
+		return extractTokenFromCookieHeaderInternal(cookieHeader)
 	}
 
 	return ""
 }
 
-// extractTokenFromCookieHeader parses the token cookie from a Cookie header string.
-func extractTokenFromCookieHeader(cookieHeader string) string {
+// extractTokenFromCookieHeaderInternal parses the token cookie from a Cookie header string.
+func extractTokenFromCookieHeaderInternal(cookieHeader string) string {
 	cookies := strings.SplitSeq(cookieHeader, ";")
 	for c := range cookies {
 		c = strings.TrimSpace(c)
@@ -231,8 +246,8 @@ func extractTokenFromCookieHeader(cookieHeader string) string {
 	return ""
 }
 
-// setUserInContext adds the authenticated user to the context.
-func setUserInContext(ctx context.Context, user *models.User) context.Context {
+// setUserInContextInternal adds the authenticated user to the context.
+func setUserInContextInternal(ctx context.Context, user *models.User) context.Context {
 	ctx = context.WithValue(ctx, ContextKeyUserID, user.ID)
 	ctx = context.WithValue(ctx, ContextKeyCurrentUser, user)
 	ctx = context.WithValue(ctx, ContextKeyUserIsAdmin, pkgutils.UserHasRole(user.Roles, "admin"))
