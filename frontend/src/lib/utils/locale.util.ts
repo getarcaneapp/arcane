@@ -1,6 +1,40 @@
 import { setLocale as setParaglideLocale, type Locale } from '$lib/paraglide/runtime';
-import { setDefaultOptions } from 'date-fns';
+import { format, setDefaultOptions } from 'date-fns';
 import { z } from 'zod/v4';
+
+/**
+ * Format a date/timestamp as a locale-aware datetime string.
+ * Uses date-fns which picks up the locale set by setLocale(), so it
+ * reflects the language the user has chosen in the app rather than
+ * defaulting to the browser's system locale.
+ */
+export function formatDateTime(date: Date | string | null | undefined): string {
+	if (!date) return '';
+	const d = typeof date === 'string' ? new Date(date) : date;
+	if (isNaN(d.getTime())) return '';
+	return format(d, 'PPpp');
+}
+
+/**
+ * Same as formatDateTime but omits seconds (PPp).
+ */
+export function formatDateTimeShort(date: Date | string | null | undefined): string {
+	if (!date) return '';
+	const d = typeof date === 'string' ? new Date(date) : date;
+	if (isNaN(d.getTime())) return '';
+	return format(d, 'PPp');
+}
+
+/**
+ * Format only the time portion of a date, locale-aware (e.g. "3:45:22 PM").
+ * Drop-in replacement for toLocaleTimeString() that respects the app locale.
+ */
+export function formatTime(date: Date | string | null | undefined): string {
+	if (!date) return '';
+	const d = typeof date === 'string' ? new Date(date) : date;
+	if (isNaN(d.getTime())) return '';
+	return format(d, 'pp');
+}
 
 export async function setLocale(locale: Locale, reload = true) {
 	let dateFnsLocale: string = locale;

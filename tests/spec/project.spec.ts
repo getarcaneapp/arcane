@@ -1039,6 +1039,74 @@ test.describe('Project Detail Page', () => {
 		await expect(page.getByRole('button', { name: 'Save', exact: true }).first()).toBeEnabled();
 	});
 
+	test('should keep saved compose edits visible without a page refresh', async ({ page }) => {
+		const projectName = `save-persist-${Date.now()}`;
+		await createProjectViaUI(page, projectName);
+
+		try {
+			const configTab = page.getByRole('tab', { name: /Configuration|Config/i });
+			await configTab.click();
+			await page.waitForLoadState('networkidle');
+
+			let composeEditor = page.locator('.cm-editor:visible').first();
+			await expect(composeEditor).toBeVisible();
+
+			const marker = `ARCANE_SAVE_PERSIST_${Date.now()}`;
+			const composeContent = composeEditor.locator('.cm-content').first();
+			await expect(composeContent).toBeVisible();
+			await composeContent.click({ position: { x: 10, y: 10 } });
+			await page.keyboard.type(`# ${marker}\n`, { delay: 0 });
+
+			const saveButtons = page.getByRole('button', { name: 'Save', exact: true });
+			await expect(saveButtons.first()).toBeVisible();
+			await expect(saveButtons.first()).toBeEnabled();
+			await saveButtons.first().click();
+
+			await expect(saveButtons).toHaveCount(0);
+
+			composeEditor = page.locator('.cm-editor:visible').first();
+			await expect
+				.poll(async () => getCodeMirrorValue(composeEditor), {
+					message: 'expected saved compose editor content to remain visible'
+				})
+				.toContain(marker);
+
+			const layoutSwitch = page.getByRole('switch', {
+				name: /Classic|Tree View/i
+			});
+			if (await layoutSwitch.count()) {
+				await layoutSwitch.click();
+				await expect(page.locator('.cm-editor:visible').first()).toBeVisible();
+
+				composeEditor = page.locator('.cm-editor:visible').first();
+				await expect
+					.poll(async () => getCodeMirrorValue(composeEditor), {
+						message: 'expected saved compose editor content to persist across layout changes'
+					})
+					.toContain(marker);
+			}
+
+			await page.reload();
+			await page.waitForLoadState('networkidle');
+
+			const restoredConfigTab = page.getByRole('tab', { name: /Configuration|Config/i });
+			if ((await restoredConfigTab.getAttribute('aria-selected')) !== 'true') {
+				await restoredConfigTab.click();
+				await page.waitForLoadState('networkidle');
+			}
+
+			composeEditor = page.locator('.cm-editor:visible').first();
+			await expect(composeEditor).toBeVisible();
+			await expect
+				.poll(async () => getCodeMirrorValue(composeEditor), {
+					message: 'expected saved compose editor content to persist after reload'
+				})
+				.toContain(marker);
+		} finally {
+			await destroyCurrentProjectViaUI(page);
+		}
+	});
+
 	test('should show logs tab for running projects', async ({ page }) => {
 		test.skip(!realProjects.length, 'No projects available for logs test');
 

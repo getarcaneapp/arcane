@@ -37,11 +37,10 @@
 	import { queryKeys } from '$lib/query/query-keys';
 	import { RefreshIcon } from '$lib/icons';
 	import IconImage from '$lib/components/icon-image.svelte';
-	import { useQueryClient } from '@tanstack/svelte-query';
+	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 
 	let { data } = $props();
 	let projectId = $derived(data.projectId);
-	let project = $state(untrack(() => data.project));
 	const queryClient = useQueryClient();
 	const isTablet = new IsTablet();
 
@@ -58,17 +57,22 @@
 		syncing: false
 	});
 
-	const envId = $derived(environmentStore.selected?.id);
+	const envId = $derived(environmentStore.selected?.id || '0');
 
-	let originalName = $state(untrack(() => data.editorState.originalName));
-	let originalComposeContent = $state(untrack(() => data.editorState.originalComposeContent));
-	let originalEnvContent = $state(untrack(() => data.editorState.originalEnvContent || ''));
 	let includeFilesState = $state<Record<string, string>>({});
-	let originalIncludeFiles = $state<Record<string, string>>({});
+	let loadedIncludeFileContents = $state<Record<string, string>>({});
+	let loadedDirectoryFileContents = $state<Record<string, string>>({});
 	let projectFilePromises: Record<string, Promise<IncludeFile> | undefined> = {};
 	const globalVariableMap = $derived.by(() =>
 		Object.fromEntries((data.globalVariables ?? []).map((item) => [item.key, item.value]))
 	);
+
+	const projectDetailQuery = createQuery(() => ({
+		queryKey: queryKeys.projects.detail(envId, projectId),
+		queryFn: () => projectService.getProjectForEnvironment(envId, projectId),
+		initialData: data.project,
+		refetchOnMount: false
+	}));
 
 	const formSchema = z.object({
 		name: z
@@ -87,11 +91,39 @@
 
 	const { inputs, ...form } = createForm<typeof formSchema>(formSchema, initialFormData);
 
+	function withLoadedProjectFileContent(details: Project | null | undefined): Project | null {
+		if (!details) return null;
+
+		return {
+			...details,
+			includeFiles: (details.includeFiles ?? []).map((file) => ({
+				...file,
+				content: file.content ?? loadedIncludeFileContents[file.relativePath]
+			})),
+			directoryFiles: (details.directoryFiles ?? []).map((file) => ({
+				...file,
+				content: file.content ?? loadedDirectoryFileContents[file.relativePath]
+			}))
+		};
+	}
+
+	const project = $derived.by(() => withLoadedProjectFileContent(projectDetailQuery.data ?? data.project));
+	const serverName = $derived(project?.name ?? '');
+	const serverComposeContent = $derived(project?.composeContent ?? '');
+	const serverEnvContent = $derived(project?.envContent ?? '');
+	const serverIncludeFiles = $derived.by(() =>
+		Object.fromEntries(
+			(project?.includeFiles ?? []).flatMap((file) =>
+				file.content === undefined ? [] : [[file.relativePath, file.content] as const]
+			)
+		)
+	);
+
 	let hasChanges = $derived(
-		$inputs.name.value !== originalName ||
-			$inputs.composeContent.value !== originalComposeContent ||
-			$inputs.envContent.value !== originalEnvContent ||
-			JSON.stringify(includeFilesState) !== JSON.stringify(originalIncludeFiles)
+		$inputs.name.value !== serverName ||
+			$inputs.composeContent.value !== serverComposeContent ||
+			$inputs.envContent.value !== serverEnvContent ||
+			Object.entries(includeFilesState).some(([relativePath, content]) => content !== serverIncludeFiles[relativePath])
 	);
 
 	let isGitOpsManaged = $derived(!!project?.gitOpsManagedBy);
@@ -109,9 +141,9 @@
 	let composeOpen = $state(true);
 	let envOpen = $state(true);
 	let includeFilesPanelStates = $state<Record<string, boolean>>({});
-	let selectedFile = $state<'compose' | 'env' | string>('compose');
+	let selectedFilePreference = $state<'compose' | 'env' | string>('compose');
 	let layoutMode = $state<'classic' | 'tree'>('classic');
-	let selectedIncludeTab = $state<string | null>(null);
+	let selectedIncludeTabPreference = $state<string | null>(null);
 	let treePaneWidth = $state(320);
 	let composeSplitWidth = $state<number | null>(null);
 	const minTreePaneWidth = 200;
@@ -125,12 +157,24 @@
 	let composeValidationReady = $state(false);
 	let envValidationReady = $state(false);
 	let includeFilesValidationReady = $state<Record<string, boolean>>({});
-	let composeHasChanges = $derived($inputs.composeContent.value !== originalComposeContent);
-	let envHasChanges = $derived($inputs.envContent.value !== originalEnvContent);
+	const includeFilePaths = $derived.by(() => new Set((project?.includeFiles ?? []).map((file) => file.relativePath)));
+	const directoryFilePaths = $derived.by(() => new Set((project?.directoryFiles ?? []).map((file) => file.relativePath)));
+	const selectedFile = $derived.by(() => {
+		const current = selectedFilePreference;
+		if (current === 'compose' || current === 'env') return current;
+		if (current.startsWith('dir:')) {
+			return directoryFilePaths.has(current.slice(4)) ? current : 'compose';
+		}
+		return includeFilePaths.has(current) ? current : 'compose';
+	});
+	const selectedIncludeTab = $derived.by(() => {
+		if (!selectedIncludeTabPreference) return null;
+		return includeFilePaths.has(selectedIncludeTabPreference) ? selectedIncludeTabPreference : null;
+	});
+	let composeHasChanges = $derived($inputs.composeContent.value !== serverComposeContent);
+	let envHasChanges = $derived($inputs.envContent.value !== serverEnvContent);
 	let changedIncludeFilePaths = $derived.by(() =>
-		Object.keys(includeFilesState).filter(
-			(relativePath) => includeFilesState[relativePath] !== originalIncludeFiles[relativePath]
-		)
+		Object.keys(includeFilesState).filter((relativePath) => includeFilesState[relativePath] !== serverIncludeFiles[relativePath])
 	);
 
 	let hasAnyErrors = $derived(
@@ -184,112 +228,41 @@
 	};
 
 	let prefs: PersistedState<ComposeUIPrefs> | null = null;
-	let lastAppliedProjectId = $state<string | null>(null);
-	let lastSeenProjectSignature = $state<string | null>(null);
 	let lastPrefsProjectId = $state<string | null>(null);
 
-	type ApplyProjectMode = 'initialize' | 'saved' | 'refresh';
-
-	function buildProjectSyncSignature(details: Project): string {
-		return JSON.stringify({
-			id: details.id,
-			name: details.name,
-			status: details.status,
-			statusReason: details.statusReason,
-			runningCount: details.runningCount,
-			serviceCount: details.serviceCount,
-			updatedAt: details.updatedAt,
-			composeContent: details.composeContent ?? '',
-			envContent: details.envContent ?? '',
-			includeFiles: (details.includeFiles ?? []).map((file) => ({
-				relativePath: file.relativePath
-			})),
-			directoryFiles: (details.directoryFiles ?? []).map((file) => ({
-				relativePath: file.relativePath
-			})),
-			runtimeServices: (details.runtimeServices ?? []).map((service) => ({
-				name: service.name,
-				status: service.status,
-				containerId: service.containerId,
-				containerName: service.containerName
-			})),
-			composeFileName: details.composeFileName ?? ''
-		});
-	}
-
-	function buildIncludeFilesMap(details: Project): Record<string, string> {
-		return Object.fromEntries((details.includeFiles ?? []).map((file) => [file.relativePath, file.content ?? '']));
-	}
-
-	function withLoadedProjectFileContent(details: Project): Project {
-		const existingIncludeFiles = project?.includeFiles ?? [];
-		const existingDirectoryFiles = project?.directoryFiles ?? [];
-
-		return {
-			...details,
-			includeFiles: (details.includeFiles ?? []).map((file) => ({
-				...file,
-				content:
-					file.content ??
-					includeFilesState[file.relativePath] ??
-					originalIncludeFiles[file.relativePath] ??
-					existingIncludeFiles.find((existingFile) => existingFile.relativePath === file.relativePath)?.content
-			})),
-			directoryFiles: (details.directoryFiles ?? []).map((file) => ({
-				...file,
-				content:
-					file.content ?? existingDirectoryFiles.find((existingFile) => existingFile.relativePath === file.relativePath)?.content
-			}))
-		};
-	}
-
-	function syncIncludeFileUiState(details: Project) {
-		const nextPanelStates: Record<string, boolean> = {};
-		const nextErrors: Record<string, boolean> = {};
-		const nextValidationReady: Record<string, boolean> = {};
-
-		for (const file of details.includeFiles ?? []) {
-			nextPanelStates[file.relativePath] = includeFilesPanelStates[file.relativePath] ?? true;
-			nextErrors[file.relativePath] = includeFilesHasErrors[file.relativePath] ?? false;
-			nextValidationReady[file.relativePath] = includeFilesValidationReady[file.relativePath] ?? true;
+	function ensureIncludeFileUiState(relativePath: string) {
+		if (includeFilesPanelStates[relativePath] === undefined) {
+			includeFilesPanelStates = {
+				...includeFilesPanelStates,
+				[relativePath]: true
+			};
 		}
-
-		includeFilesPanelStates = nextPanelStates;
-		includeFilesHasErrors = nextErrors;
-		includeFilesValidationReady = nextValidationReady;
-
-		if (selectedIncludeTab && !(selectedIncludeTab in nextPanelStates)) {
-			selectedIncludeTab = null;
+		if (includeFilesHasErrors[relativePath] === undefined) {
+			includeFilesHasErrors = {
+				...includeFilesHasErrors,
+				[relativePath]: false
+			};
 		}
-		if (selectedFile !== 'compose' && selectedFile !== 'env' && !(selectedFile in nextPanelStates)) {
-			selectedFile = 'compose';
+		if (includeFilesValidationReady[relativePath] === undefined) {
+			includeFilesValidationReady = {
+				...includeFilesValidationReady,
+				[relativePath]: true
+			};
 		}
 	}
 
-	function applyProjectDetailsToEditor(details: Project, mode: ApplyProjectMode) {
-		details = withLoadedProjectFileContent(details);
-		project = details;
-		lastSeenProjectSignature = buildProjectSyncSignature(details);
-		syncIncludeFileUiState(details);
+	function rebaseEditorDraft(details: Project) {
+		const normalizedProject = withLoadedProjectFileContent(details);
+		if (!normalizedProject) return;
 
-		const nextName = details.name || '';
-		const nextComposeContent = details.composeContent || '';
-		const nextEnvContent = details.envContent || '';
-		const nextIncludeFiles = buildIncludeFilesMap(details);
-		const shouldSyncEditorState = mode === 'initialize' || mode === 'saved' || lastAppliedProjectId !== details.id || !hasChanges;
-
-		if (shouldSyncEditorState) {
-			originalName = nextName;
-			originalComposeContent = nextComposeContent;
-			originalEnvContent = nextEnvContent;
-			originalIncludeFiles = { ...nextIncludeFiles };
-			$inputs.name.value = nextName;
-			$inputs.composeContent.value = nextComposeContent;
-			$inputs.envContent.value = nextEnvContent;
-			includeFilesState = { ...nextIncludeFiles };
-		}
-
-		lastAppliedProjectId = details.id;
+		$inputs.name.value = normalizedProject.name || '';
+		$inputs.composeContent.value = normalizedProject.composeContent || '';
+		$inputs.envContent.value = normalizedProject.envContent || '';
+		includeFilesState = Object.fromEntries(
+			(normalizedProject.includeFiles ?? []).flatMap((file) =>
+				file.content === undefined ? [] : [[file.relativePath, file.content] as const]
+			)
+		);
 	}
 
 	async function syncProjectQueries(updatedProject: Project) {
@@ -301,27 +274,6 @@
 			queryClient.invalidateQueries({ queryKey: queryKeys.projects.statusCounts(currentEnvId) })
 		]);
 	}
-
-	$effect(() => {
-		const incomingProject = data.project;
-		if (!incomingProject) return;
-
-		const normalizedProject = withLoadedProjectFileContent(incomingProject);
-		const incomingProjectSignature = buildProjectSyncSignature(normalizedProject);
-		const previousSignature = untrack(() => lastSeenProjectSignature);
-		if (incomingProjectSignature === previousSignature) return;
-
-		lastSeenProjectSignature = incomingProjectSignature;
-
-		const projectChanged = untrack(() => lastAppliedProjectId) !== normalizedProject.id;
-		if (projectChanged || !hasChanges) {
-			applyProjectDetailsToEditor(normalizedProject, projectChanged ? 'initialize' : 'refresh');
-			return;
-		}
-
-		project = normalizedProject;
-		syncIncludeFileUiState(normalizedProject);
-	});
 
 	$effect(() => {
 		if (!project?.id) return;
@@ -337,7 +289,7 @@
 		composeOpen = cur.composeOpen ?? defaultComposeUIPrefs.composeOpen;
 		envOpen = cur.envOpen ?? defaultComposeUIPrefs.envOpen;
 		autoScrollStackLogs = cur.autoScroll ?? defaultComposeUIPrefs.autoScroll;
-		selectedFile = cur.selectedFile ?? defaultComposeUIPrefs.selectedFile ?? 'compose';
+		selectedFilePreference = cur.selectedFile ?? defaultComposeUIPrefs.selectedFile ?? 'compose';
 
 		// Auto-detect layout mode based on includeFiles or directoryFiles
 		const hasIncludes = project?.includeFiles && project.includeFiles.length > 0;
@@ -374,7 +326,7 @@
 						continue;
 					}
 
-					if (includeFileContent !== originalIncludeFiles[relativePath]) {
+					if (includeFileContent !== serverIncludeFiles[relativePath]) {
 						const includeResult = await tryCatch(
 							projectService.updateProjectIncludeFile(projectId, relativePath, includeFileContent)
 						);
@@ -386,19 +338,23 @@
 					}
 				}
 
-				applyProjectDetailsToEditor(savedProject, 'saved');
-				// Pass the enriched project (with locally-preserved include file
-				// content) to the query cache so that any reactive re-read after
-				// save doesn't revert the editor to the lazy-loaded (content-less)
-				// server response.
-				await syncProjectQueries(withLoadedProjectFileContent(savedProject));
+				loadedIncludeFileContents = {
+					...loadedIncludeFileContents,
+					...Object.fromEntries(
+						Object.entries(includeFilesState).filter(([relativePath]) =>
+							(savedProject.includeFiles ?? []).some((file) => file.relativePath === relativePath)
+						)
+					)
+				};
+				rebaseEditorDraft(savedProject);
+				await syncProjectQueries(savedProject);
 				toast.success(m.common_update_success({ resource: m.project() }));
 			}
 		});
 	}
 
 	function saveNameIfChanged() {
-		if ($inputs.name.value === originalName) return;
+		if ($inputs.name.value === serverName) return;
 		const validated = form.validate();
 		if (!validated) return;
 		handleSaveChanges();
@@ -430,31 +386,24 @@
 	}
 
 	function updateLoadedProjectFile(kind: ProjectFileKind, relativePath: string, content: string) {
-		if (!project) return;
-
 		if (kind === 'include') {
-			project = {
-				...project,
-				includeFiles: (project.includeFiles ?? []).map((file) =>
-					file.relativePath === relativePath ? { ...file, content } : file
-				)
-			};
-			includeFilesState = {
-				...includeFilesState,
+			ensureIncludeFileUiState(relativePath);
+			loadedIncludeFileContents = {
+				...loadedIncludeFileContents,
 				[relativePath]: content
 			};
-			originalIncludeFiles = {
-				...originalIncludeFiles,
-				[relativePath]: content
-			};
+			if (includeFilesState[relativePath] === undefined) {
+				includeFilesState = {
+					...includeFilesState,
+					[relativePath]: content
+				};
+			}
 			return;
 		}
 
-		project = {
-			...project,
-			directoryFiles: (project.directoryFiles ?? []).map((file) =>
-				file.relativePath === relativePath ? { ...file, content } : file
-			)
+		loadedDirectoryFileContents = {
+			...loadedDirectoryFileContents,
+			[relativePath]: content
 		};
 	}
 
@@ -462,6 +411,9 @@
 		const currentProjectId = project?.id;
 		if (!currentProjectId) {
 			throw new Error('Project is not loaded');
+		}
+		if (kind === 'include') {
+			ensureIncludeFileUiState(relativePath);
 		}
 
 		const targetFile =
@@ -500,23 +452,25 @@
 	}
 
 	function selectComposeFile() {
-		selectedFile = 'compose';
+		selectedFilePreference = 'compose';
 	}
 
 	function selectEnvFile() {
-		selectedFile = 'env';
+		selectedFilePreference = 'env';
 	}
 
 	function selectIncludeFile(relativePath: string) {
-		selectedFile = relativePath;
+		ensureIncludeFileUiState(relativePath);
+		selectedFilePreference = relativePath;
 	}
 
 	function selectDirectoryFile(relativePath: string) {
-		selectedFile = `dir:${relativePath}`;
+		selectedFilePreference = `dir:${relativePath}`;
 	}
 
 	function toggleIncludeFileTab(relativePath: string) {
-		selectedIncludeTab = selectedIncludeTab === relativePath ? null : relativePath;
+		ensureIncludeFileUiState(relativePath);
+		selectedIncludeTabPreference = selectedIncludeTab === relativePath ? null : relativePath;
 	}
 
 	const allComposeContents = $derived.by(() => {
@@ -533,15 +487,11 @@
 		handleApiResultWithCallbacks({
 			result: await tryCatch(projectService.getProject(projectId)),
 			message: m.common_refresh_failed({ resource: m.project() }),
-			onSuccess: (updatedProject) => {
-				updatedProject = withLoadedProjectFileContent(updatedProject);
-				if (hasChanges && lastAppliedProjectId === updatedProject.id) {
-					project = updatedProject;
-					syncIncludeFileUiState(updatedProject);
-					return;
+			onSuccess: async (updatedProject) => {
+				if (!hasChanges) {
+					rebaseEditorDraft(updatedProject);
 				}
-
-				applyProjectDetailsToEditor(updatedProject, 'refresh');
+				await syncProjectQueries(updatedProject);
 			}
 		});
 	}
@@ -610,7 +560,7 @@
 							bind:ref={nameInputRef}
 							variant="inline"
 							error={$inputs.name.error ?? undefined}
-							originalValue={originalName}
+							originalValue={serverName}
 							canEdit={canEditName}
 							onCommit={saveNameIfChanged}
 							class="max-w-[10rem] min-w-0 sm:max-w-[14rem] md:max-w-[18rem] lg:max-w-[22rem]"
@@ -704,7 +654,7 @@
 					bind:restartLoading={isLoading.restarting}
 					bind:removeLoading={isLoading.removing}
 					bind:redeployLoading={isLoading.redeploying}
-					onActionComplete={() => invalidateAll()}
+					onActionComplete={refreshProjectDetails}
 					onRefresh={refreshProjectDetails}
 				/>
 			</div>
@@ -774,8 +724,8 @@
 							onCheckedChange={(checked) => {
 								layoutMode = checked ? 'tree' : 'classic';
 								if (checked) {
-									selectedFile = 'compose';
-									selectedIncludeTab = null;
+									selectedFilePreference = 'compose';
+									selectedIncludeTabPreference = null;
 								}
 								persistPrefs();
 							}}
@@ -855,7 +805,7 @@
 												bind:hasErrors={composeHasErrors}
 												bind:validationReady={composeValidationReady}
 												fileId={`project:${projectId}:compose`}
-												originalValue={originalComposeContent}
+												originalValue={serverComposeContent}
 												enableDiff={true}
 												editorContext={codeEditorContext}
 											/>
@@ -870,7 +820,7 @@
 												bind:hasErrors={envHasErrors}
 												bind:validationReady={envValidationReady}
 												fileId={`project:${projectId}:env`}
-												originalValue={originalEnvContent}
+												originalValue={serverEnvContent}
 												enableDiff={true}
 												editorContext={codeEditorContext}
 											/>
@@ -914,7 +864,7 @@
 														bind:hasErrors={includeFilesHasErrors[includeFile.relativePath]}
 														bind:validationReady={includeFilesValidationReady[includeFile.relativePath]}
 														fileId={`project:${projectId}:include:${includeFile.relativePath}`}
-														originalValue={originalIncludeFiles[includeFile.relativePath]}
+														originalValue={serverIncludeFiles[includeFile.relativePath] ?? ''}
 														enableDiff={true}
 														editorContext={codeEditorContext}
 													/>
@@ -1014,7 +964,7 @@
 													bind:hasErrors={composeHasErrors}
 													bind:validationReady={composeValidationReady}
 													fileId={`project:${projectId}:compose`}
-													originalValue={originalComposeContent}
+													originalValue={serverComposeContent}
 													enableDiff={true}
 													editorContext={codeEditorContext}
 												/>
@@ -1029,7 +979,7 @@
 													bind:hasErrors={envHasErrors}
 													bind:validationReady={envValidationReady}
 													fileId={`project:${projectId}:env`}
-													originalValue={originalEnvContent}
+													originalValue={serverEnvContent}
 													enableDiff={true}
 													editorContext={codeEditorContext}
 												/>
@@ -1073,7 +1023,7 @@
 															bind:hasErrors={includeFilesHasErrors[includeFile.relativePath]}
 															bind:validationReady={includeFilesValidationReady[includeFile.relativePath]}
 															fileId={`project:${projectId}:include:${includeFile.relativePath}`}
-															originalValue={originalIncludeFiles[includeFile.relativePath]}
+															originalValue={serverIncludeFiles[includeFile.relativePath] ?? ''}
 															enableDiff={true}
 															editorContext={codeEditorContext}
 														/>
@@ -1126,7 +1076,7 @@
 												bind:hasErrors={includeFilesHasErrors[includeFile.relativePath]}
 												bind:validationReady={includeFilesValidationReady[includeFile.relativePath]}
 												fileId={`project:${projectId}:include:${includeFile.relativePath}`}
-												originalValue={originalIncludeFiles[includeFile.relativePath]}
+												originalValue={serverIncludeFiles[includeFile.relativePath] ?? ''}
 												enableDiff={true}
 												editorContext={codeEditorContext}
 											/>
@@ -1150,7 +1100,7 @@
 											bind:hasErrors={composeHasErrors}
 											bind:validationReady={composeValidationReady}
 											fileId={`project:${projectId}:compose`}
-											originalValue={originalComposeContent}
+											originalValue={serverComposeContent}
 											enableDiff={true}
 											editorContext={codeEditorContext}
 										/>
@@ -1164,7 +1114,7 @@
 											bind:hasErrors={envHasErrors}
 											bind:validationReady={envValidationReady}
 											fileId={`project:${projectId}:env`}
-											originalValue={originalEnvContent}
+											originalValue={serverEnvContent}
 											enableDiff={true}
 											editorContext={codeEditorContext}
 										/>
@@ -1194,7 +1144,7 @@
 													bind:hasErrors={composeHasErrors}
 													bind:validationReady={composeValidationReady}
 													fileId={`project:${projectId}:compose`}
-													originalValue={originalComposeContent}
+													originalValue={serverComposeContent}
 													enableDiff={true}
 													editorContext={codeEditorContext}
 												/>
@@ -1213,7 +1163,7 @@
 													bind:hasErrors={envHasErrors}
 													bind:validationReady={envValidationReady}
 													fileId={`project:${projectId}:env`}
-													originalValue={originalEnvContent}
+													originalValue={serverEnvContent}
 													enableDiff={true}
 													editorContext={codeEditorContext}
 												/>

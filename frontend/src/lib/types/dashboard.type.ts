@@ -16,9 +16,7 @@ export interface DashboardActionItems {
 	items: DashboardActionItem[];
 }
 
-export interface DashboardSnapshotSettings {
-	dockerPruneMode: 'all' | 'dangling';
-}
+export interface DashboardSnapshotSettings {}
 
 export interface DashboardSnapshot {
 	containers: Paginated<ContainerSummaryDto, ContainerStatusCounts>;

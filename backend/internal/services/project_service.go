@@ -558,10 +558,16 @@ func (s *ProjectService) GetProjectServices(ctx context.Context, projectID strin
 
 	composeProject, composeFileFullPath, derr := s.loadComposeProjectForProjectInternal(ctx, projectFromDb)
 	if derr != nil {
-		return []ProjectServiceInfo{}, fmt.Errorf("no compose file found in project directory: %s", projectFromDb.Path)
+		return []ProjectServiceInfo{}, fmt.Errorf("failed to load compose project in %s: %w", projectFromDb.Path, derr)
 	}
 
-	meta, metaErr := projects.ParseArcaneComposeMetadata(ctx, composeFileFullPath)
+	projectsDirectory, projectsDirErr := s.getProjectsDirectoryInternal(ctx)
+	if projectsDirErr != nil {
+		slog.WarnContext(ctx, "failed to resolve projects directory for Arcane compose metadata", "path", composeFileFullPath, "error", projectsDirErr)
+	}
+	autoInjectEnv := s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false)
+
+	meta, metaErr := projects.ParseArcaneComposeMetadata(ctx, composeFileFullPath, projectsDirectory, autoInjectEnv)
 	if metaErr != nil {
 		slog.WarnContext(ctx, "failed to parse Arcane compose metadata", "path", composeFileFullPath, "error", metaErr)
 	}
@@ -897,7 +903,7 @@ func (s *ProjectService) SyncProjectsFromFileSystem(ctx context.Context) error {
 		return nil
 	}
 
-	discoveredProjects, discoveryErr := projects.DiscoverProjectDirectories(projectsDir, followProjectSymlinks)
+	discoveredProjects, discoveryErr := projects.DiscoverProjectDirectories(projectsDir, followProjectSymlinks, s.config.ProjectScanMaxDepth)
 	if discoveryErr != nil {
 		if os.IsNotExist(discoveryErr) {
 			return nil
@@ -1000,6 +1006,13 @@ func (s *ProjectService) cleanupDBProjects(ctx context.Context, seen map[string]
 			continue
 		}
 
+		// Skip projects whose lifecycle is owned by the gitops system.
+		// Their compose files may not exist on disk yet (e.g. during a sync
+		// or after an SSH/clone failure) and should never be deleted here.
+		if p.GitOpsManagedBy != nil && strings.TrimSpace(*p.GitOpsManagedBy) != "" {
+			continue
+		}
+
 		validDir, err := projects.IsProjectDirectoryPath(p.Path, followProjectSymlinks)
 		if err != nil {
 			if os.IsNotExist(err) {
@@ -1082,7 +1095,7 @@ func (s *ProjectService) countProjectFolders(ctx context.Context) (int, error) {
 		return 0, nil
 	}
 
-	discoveredProjects, discoveryErr := projects.DiscoverProjectDirectories(projectsDir, followProjectSymlinks)
+	discoveredProjects, discoveryErr := projects.DiscoverProjectDirectories(projectsDir, followProjectSymlinks, s.config.ProjectScanMaxDepth)
 	if discoveryErr != nil {
 		return 0, fmt.Errorf("failed to discover project directories in %s: %w", projectsDir, discoveryErr)
 	}
@@ -1184,7 +1197,7 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 
 	project, _, derr := s.loadComposeProjectForProjectInternal(ctx, projectFromDb)
 	if derr != nil {
-		return fmt.Errorf("no compose file found in project directory: %s", projectFromDb.Path)
+		return fmt.Errorf("failed to load compose project in %s: %w", projectFromDb.Path, derr)
 	}
 
 	if err := s.updateProjectStatusInternal(ctx, projectID, models.ProjectStatusDeploying); err != nil {
@@ -1424,7 +1437,7 @@ func (s *ProjectService) BuildProjectServices(ctx context.Context, projectID str
 
 	project, _, derr := s.loadComposeProjectForProjectInternal(ctx, projectFromDb)
 	if derr != nil {
-		return fmt.Errorf("no compose file found in project directory: %s", projectFromDb.Path)
+		return fmt.Errorf("failed to load compose project in %s: %w", projectFromDb.Path, derr)
 	}
 
 	return s.buildProjectServicesInternal(ctx, projectID, project, options, progressWriter, user)
@@ -1753,14 +1766,6 @@ func resolveDockerfilePathInternal(svc composetypes.ServiceConfig) (string, erro
 	return dockerfilePath, nil
 }
 
-func translateBuildPathInternal(path string, pathMapper *projects.PathMapper) (string, error) {
-	if pathMapper == nil || strings.TrimSpace(path) == "" || !filepath.IsAbs(path) {
-		return path, nil
-	}
-
-	return pathMapper.ContainerToHost(path)
-}
-
 func buildArgsFromCompose(args map[string]*string) map[string]string {
 	buildArgs := map[string]string{}
 	for key, value := range args {
@@ -1889,13 +1894,17 @@ func (s *ProjectService) prepareServiceBuildRequest(
 		return imagetypes.BuildRequest{}, updatedSvc, updated, fmt.Errorf("service %s must define an image when push is enabled", serviceName)
 	}
 
+	// The build context (and any absolute Dockerfile path) is read locally by
+	// Arcane — both the docker provider (`archive.TarWithOptions`) and the
+	// buildkit provider (`SolveOpt.LocalDirs`) stream the directory contents
+	// to the daemon from the Arcane process's own filesystem. It must
+	// therefore stay as a container path; translating it to the host path
+	// (which is what bind mount sources need) makes `os.Stat` fail because
+	// the host path doesn't exist inside the Arcane container. See #2314.
+	// pathMapper is intentionally not consumed here for that reason.
 	contextDir, err := resolveBuildContextInternal(project.WorkingDir, updatedSvc, serviceName)
 	if err != nil {
 		return imagetypes.BuildRequest{}, updatedSvc, updated, err
-	}
-	contextDir, err = translateBuildPathInternal(contextDir, pathMapper)
-	if err != nil {
-		return imagetypes.BuildRequest{}, updatedSvc, updated, fmt.Errorf("translate build context for service %s: %w", serviceName, err)
 	}
 
 	dockerfileInline := updatedSvc.Build.DockerfileInline
@@ -1908,10 +1917,6 @@ func (s *ProjectService) prepareServiceBuildRequest(
 		dockerfilePath, err = resolveDockerfilePathInternal(updatedSvc)
 		if err != nil {
 			return imagetypes.BuildRequest{}, updatedSvc, updated, err
-		}
-		dockerfilePath, err = translateBuildPathInternal(dockerfilePath, pathMapper)
-		if err != nil {
-			return imagetypes.BuildRequest{}, updatedSvc, updated, fmt.Errorf("translate Dockerfile path for service %s: %w", serviceName, err)
 		}
 	}
 
@@ -3096,7 +3101,13 @@ func (s *ProjectService) getProjectMetadataForProject(ctx context.Context, p mod
 		return projects.ArcaneComposeMetadata{ServiceIcons: map[string]string{}}
 	}
 
-	meta, err := projects.ParseArcaneComposeMetadata(ctx, composeFile)
+	projectsDirectory, projectsDirErr := s.getProjectsDirectoryInternal(ctx)
+	if projectsDirErr != nil {
+		slog.WarnContext(ctx, "failed to resolve projects directory for Arcane compose metadata", "path", composeFile, "error", projectsDirErr)
+	}
+	autoInjectEnv := s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false)
+
+	meta, err := projects.ParseArcaneComposeMetadata(ctx, composeFile, projectsDirectory, autoInjectEnv)
 	if err != nil {
 		slog.WarnContext(ctx, "failed to parse Arcane compose metadata", "path", composeFile, "error", err)
 		return projects.ArcaneComposeMetadata{ServiceIcons: map[string]string{}}

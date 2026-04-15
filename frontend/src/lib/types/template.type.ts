@@ -6,6 +6,7 @@ export interface TemplateRegistry {
 	description: string;
 	createdAt?: string;
 	updatedAt?: string;
+	lastFetchError?: string;
 }
 
 export interface Template {

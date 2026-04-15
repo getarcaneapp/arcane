@@ -87,6 +87,24 @@ export default class TemplateService extends BaseAPIService {
 		await this.api.delete(`/templates/registries/${id}`);
 	}
 
+	async updateTemplate(
+		id: string,
+		template: {
+			name: string;
+			description?: string;
+			content: string;
+			envContent?: string;
+		}
+	): Promise<Template> {
+		const response = await this.api.put(`/templates/${encodeURIComponent(id)}`, {
+			name: template.name,
+			description: template.description || '',
+			content: template.content,
+			envContent: template.envContent || ''
+		});
+		return response.data?.data;
+	}
+
 	async deleteTemplate(id: string): Promise<void> {
 		await this.api.delete(`/templates/${encodeURIComponent(id)}`);
 	}

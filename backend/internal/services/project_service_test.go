@@ -1436,7 +1436,13 @@ func TestProjectService_PrepareServiceBuildRequest_MapsComposeFields(t *testing.
 	assert.Contains(t, req.ExtraHosts[0], "10.0.0.5")
 }
 
-func TestProjectService_PrepareServiceBuildRequest_UsesExecutorVisiblePaths(t *testing.T) {
+// TestProjectService_PrepareServiceBuildRequest_KeepsContainerPaths is a
+// regression test for #2314: Arcane's local build pipeline (the docker and
+// buildkit providers both read the build context via the Arcane process's own
+// filesystem) cannot use host paths, so prepareServiceBuildRequest must leave
+// the build context and any absolute Dockerfile path as container paths even
+// when the projects mount has a non-matching host prefix.
+func TestProjectService_PrepareServiceBuildRequest_KeepsContainerPaths(t *testing.T) {
 	svc := &ProjectService{}
 	proj := &composetypes.Project{WorkingDir: "/app/data/projects/demo", Name: "demo"}
 	pm := projects.NewPathMapper("/app/data/projects", "/docker-data/arcane/projects")
@@ -1461,8 +1467,42 @@ func TestProjectService_PrepareServiceBuildRequest_UsesExecutorVisiblePaths(t *t
 	)
 	require.NoError(t, err)
 
-	assert.Equal(t, "/docker-data/arcane/projects/demo", req.ContextDir)
-	assert.Equal(t, "/docker-data/arcane/projects/demo/Dockerfile.custom", req.Dockerfile)
+	assert.Equal(t, "/app/data/projects/demo", req.ContextDir)
+	assert.Equal(t, "/app/data/projects/demo/Dockerfile.custom", req.Dockerfile)
+}
+
+// TestProjectService_PrepareServiceBuildRequest_BuildDotKeepsContainerPath
+// reproduces the exact configuration from #2314: a compose file with
+// `build: .` next to its Dockerfile, on an installation where the projects
+// directory is bind-mounted from a different host path than the container
+// path. The resulting BuildRequest must point at the container path so the
+// local builder can stat / tar the directory.
+func TestProjectService_PrepareServiceBuildRequest_BuildDotKeepsContainerPath(t *testing.T) {
+	svc := &ProjectService{}
+	proj := &composetypes.Project{WorkingDir: "/app/data/projects/caddy", Name: "caddy"}
+	pm := projects.NewPathMapper("/app/data/projects", "/storage/volumes/arcane/projects")
+
+	serviceCfg := composetypes.ServiceConfig{
+		Name:  "caddy",
+		Image: "caddy",
+		Build: &composetypes.BuildConfig{
+			Context: ".",
+		},
+	}
+
+	req, _, _, err := svc.prepareServiceBuildRequest(
+		context.Background(),
+		"project-id",
+		proj,
+		"caddy",
+		serviceCfg,
+		ProjectBuildOptions{},
+		pm,
+	)
+	require.NoError(t, err)
+
+	assert.Equal(t, "/app/data/projects/caddy", req.ContextDir)
+	assert.Equal(t, "Dockerfile", req.Dockerfile)
 }
 
 func TestProjectService_PrepareServiceBuildRequest_UsesInlineDockerfile(t *testing.T) {
@@ -1786,6 +1826,78 @@ func TestProjectService_SyncProjectsFromFileSystem_DiscoversNestedProjectsAndRel
 	assert.Equal(t, "project2", items[1].DirName)
 }
 
+func TestProjectService_SyncProjectsFromFileSystem_RespectsConfiguredScanMaxDepth(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsRoot := t.TempDir()
+	topLevelPath := createComposeProjectDir(t, projectsRoot, "project1")
+	createComposeProjectDir(t, projectsRoot, filepath.Join("group", "project2"))
+
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+	t.Setenv("PROJECT_SCAN_MAX_DEPTH", "1")
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
+	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
+
+	items, err := svc.ListAllProjects(ctx)
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	assert.Equal(t, "project1", items[0].Name)
+	assert.Equal(t, topLevelPath, items[0].Path)
+}
+
+func TestProjectService_ListProjects_LoadsProjectIconFromGlobalEnvInIncludedMetadata(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsRoot := t.TempDir()
+	projectPath := filepath.Join(projectsRoot, "demo")
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
+
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectsRoot, projects.GlobalEnvFileName),
+		[]byte("ICON_CDN_URL=https://cdn.jsdelivr.net/gh/selfhst/icons@main\n"),
+		0o600,
+	))
+
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte(`include:
+  - metadata.yaml
+services:
+  watchtower:
+    image: nickfedor/watchtower:latest
+`), 0o600))
+
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "metadata.yaml"), []byte(`x-watchtower-icon: &watchtower-icon "${ICON_CDN_URL:+${ICON_CDN_URL}/svg/watchtower.svg}"
+x-arcane:
+  icon: *watchtower-icon
+services:
+  watchtower:
+    labels:
+      com.getarcaneapp.arcane.icon: *watchtower-icon
+`), 0o600))
+
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
+	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
+
+	items, page, err := svc.ListProjects(ctx, pagination.QueryParams{
+		SortParams:       pagination.SortParams{Sort: "path", Order: pagination.SortAsc},
+		PaginationParams: pagination.PaginationParams{Limit: -1},
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 1, page.TotalItems)
+	require.Len(t, items, 1)
+	assert.Equal(t, "https://cdn.jsdelivr.net/gh/selfhst/icons@main/svg/watchtower.svg", items[0].IconURL)
+}
+
 func TestProjectService_CountProjectFolders_RecursivelyCountsNestedProjects(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
@@ -1805,6 +1917,27 @@ func TestProjectService_CountProjectFolders_RecursivelyCountsNestedProjects(t *t
 	count, err := svc.countProjectFolders(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, 3, count)
+}
+
+func TestProjectService_CountProjectFolders_RespectsConfiguredScanMaxDepth(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsRoot := t.TempDir()
+	createComposeProjectDir(t, projectsRoot, "project1")
+	createComposeProjectDir(t, projectsRoot, filepath.Join("group", "project2"))
+
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+	t.Setenv("PROJECT_SCAN_MAX_DEPTH", "1")
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
+
+	count, err := svc.countProjectFolders(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 1, count)
 }
 
 func TestProjectService_SyncProjectsFromFileSystem_RemovesDeletedNestedProject(t *testing.T) {

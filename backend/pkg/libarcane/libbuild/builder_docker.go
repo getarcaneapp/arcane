@@ -210,7 +210,7 @@ func createBuildContextInternal(contextDir string) (io.ReadCloser, error) {
 	return archive.TarWithOptions(contextDir, &archive.TarOptions{ExcludePatterns: excludes})
 }
 
-func copyFileWithModeInternal(src, dst string, mode os.FileMode) error {
+func copyFileWithModeInternal(src, dst string, mode os.FileMode) (copyErr error) {
 	in, err := os.Open(src)
 	if err != nil {
 		return err
@@ -221,10 +221,18 @@ func copyFileWithModeInternal(src, dst string, mode os.FileMode) error {
 	if err != nil {
 		return err
 	}
-	defer out.Close()
+	defer func() {
+		if err := out.Close(); copyErr == nil && err != nil {
+			copyErr = err
+		}
+	}()
 
 	_, err = io.Copy(out, in)
-	return err
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func copyContextTreeInternal(srcRoot, dstRoot string) error {

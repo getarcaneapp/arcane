@@ -85,6 +85,8 @@ type Update struct {
 
 	// PruneMode is the Docker prune mode ("all" or "dangling").
 	//
+	// Deprecated: Use the granular prune mode settings instead.
+	//
 	// Required: false
 	PruneMode *string `json:"dockerPruneMode,omitempty" binding:"omitempty,oneof=all dangling"`
 
@@ -105,28 +107,83 @@ type Update struct {
 
 	// ScheduledPruneContainers indicates if stopped containers should be pruned.
 	//
+	// Deprecated: Use pruneContainerMode instead.
+	//
 	// Required: false
 	ScheduledPruneContainers *string `json:"scheduledPruneContainers,omitempty"`
 
 	// ScheduledPruneImages indicates if unused images should be pruned.
+	//
+	// Deprecated: Use pruneImageMode instead.
 	//
 	// Required: false
 	ScheduledPruneImages *string `json:"scheduledPruneImages,omitempty"`
 
 	// ScheduledPruneVolumes indicates if unused volumes should be pruned.
 	//
+	// Deprecated: Use pruneVolumeMode instead.
+	//
 	// Required: false
 	ScheduledPruneVolumes *string `json:"scheduledPruneVolumes,omitempty"`
 
 	// ScheduledPruneNetworks indicates if unused networks should be pruned.
+	//
+	// Deprecated: Use pruneNetworkMode instead.
 	//
 	// Required: false
 	ScheduledPruneNetworks *string `json:"scheduledPruneNetworks,omitempty"`
 
 	// ScheduledPruneBuildCache indicates if build cache should be pruned.
 	//
+	// Deprecated: Use pruneBuildCacheMode instead.
+	//
 	// Required: false
 	ScheduledPruneBuildCache *string `json:"scheduledPruneBuildCache,omitempty"`
+
+	// PruneContainerMode controls how containers are pruned during scheduled prune.
+	//
+	// Required: false
+	PruneContainerMode *string `json:"pruneContainerMode,omitempty" binding:"omitempty,oneof=none stopped olderThan"`
+
+	// PruneContainerUntil is the Docker duration string used when the container prune mode is olderThan.
+	//
+	// Required: false
+	PruneContainerUntil *string `json:"pruneContainerUntil,omitempty"`
+
+	// PruneImageMode controls how images are pruned during scheduled prune.
+	//
+	// Required: false
+	PruneImageMode *string `json:"pruneImageMode,omitempty" binding:"omitempty,oneof=none dangling all olderThan"`
+
+	// PruneImageUntil is the Docker duration string used when the image prune mode is olderThan.
+	//
+	// Required: false
+	PruneImageUntil *string `json:"pruneImageUntil,omitempty"`
+
+	// PruneVolumeMode controls how volumes are pruned during scheduled prune.
+	//
+	// Required: false
+	PruneVolumeMode *string `json:"pruneVolumeMode,omitempty" binding:"omitempty,oneof=none anonymous all"`
+
+	// PruneNetworkMode controls how networks are pruned during scheduled prune.
+	//
+	// Required: false
+	PruneNetworkMode *string `json:"pruneNetworkMode,omitempty" binding:"omitempty,oneof=none unused olderThan"`
+
+	// PruneNetworkUntil is the Docker duration string used when the network prune mode is olderThan.
+	//
+	// Required: false
+	PruneNetworkUntil *string `json:"pruneNetworkUntil,omitempty"`
+
+	// PruneBuildCacheMode controls how build cache is pruned during scheduled prune.
+	//
+	// Required: false
+	PruneBuildCacheMode *string `json:"pruneBuildCacheMode,omitempty" binding:"omitempty,oneof=none unused all olderThan"`
+
+	// PruneBuildCacheUntil is the Docker duration string used when the build cache prune mode is olderThan.
+	//
+	// Required: false
+	PruneBuildCacheUntil *string `json:"pruneBuildCacheUntil,omitempty"`
 
 	// VulnerabilityScanEnabled indicates if scheduled vulnerability scanning is enabled.
 	//

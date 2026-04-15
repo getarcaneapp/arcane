@@ -241,6 +241,72 @@ func TestWatcher_StartTriggersOnNestedProjectFileBeyondDepthOne(t *testing.T) {
 	}
 }
 
+func TestWatcher_StartDoesNotTriggerOnNestedProjectFileBeyondConfiguredDepth(t *testing.T) {
+	root := t.TempDir()
+	nestedDir := filepath.Join(root, "main-project", "sub-project1")
+	require.NoError(t, os.MkdirAll(nestedDir, 0o755))
+
+	changeCh := make(chan struct{}, 1)
+	ctx := t.Context()
+
+	watcher, err := NewWatcher(root, WatcherOptions{
+		Debounce: 25 * time.Millisecond,
+		MaxDepth: 1,
+		OnChange: func(context.Context) {
+			select {
+			case changeCh <- struct{}{}:
+			default:
+			}
+		},
+	})
+	require.NoError(t, err)
+	require.NoError(t, watcher.Start(ctx))
+	defer func() {
+		require.NoError(t, watcher.Stop())
+	}()
+
+	require.NoError(t, os.WriteFile(filepath.Join(nestedDir, "compose.yaml"), []byte("services: {}\n"), 0o644))
+
+	select {
+	case <-changeCh:
+		t.Fatal("did not expect nested compose file beyond max depth to trigger watcher callback")
+	case <-time.After(500 * time.Millisecond):
+	}
+}
+
+func TestWatcher_StartTriggersOnDirectChildProjectFileAtConfiguredDepth(t *testing.T) {
+	root := t.TempDir()
+	projectDir := filepath.Join(root, "main-project")
+	require.NoError(t, os.MkdirAll(projectDir, 0o755))
+
+	changeCh := make(chan struct{}, 1)
+	ctx := t.Context()
+
+	watcher, err := NewWatcher(root, WatcherOptions{
+		Debounce: 25 * time.Millisecond,
+		MaxDepth: 1,
+		OnChange: func(context.Context) {
+			select {
+			case changeCh <- struct{}{}:
+			default:
+			}
+		},
+	})
+	require.NoError(t, err)
+	require.NoError(t, watcher.Start(ctx))
+	defer func() {
+		require.NoError(t, watcher.Stop())
+	}()
+
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte("services: {}\n"), 0o644))
+
+	select {
+	case <-changeCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected direct child compose file at max depth to trigger watcher callback")
+	}
+}
+
 func TestWatcher_StartIgnoresBareNestedDirectoryCreateAndRemove(t *testing.T) {
 	root := t.TempDir()
 

@@ -7,6 +7,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID } from '$lib/stores/environment.store.svelte';
 	import { AlertIcon, InfoIcon, EnvironmentsIcon, UserIcon, ClockIcon } from '$lib/icons';
+	import { formatDateTime } from '$lib/utils/locale.util';
 
 	type Severity = 'success' | 'warning' | 'error' | 'info';
 
@@ -61,11 +62,7 @@
 	});
 
 	function formatDate(timestamp: string): string {
-		try {
-			return new Date(timestamp).toLocaleString();
-		} catch {
-			return timestamp;
-		}
+		return formatDateTime(timestamp) || timestamp;
 	}
 
 	function stringifyForDisplay(value: unknown): string {

@@ -72,19 +72,9 @@ func (j *ScheduledPruneJob) Run(ctx context.Context) {
 		return
 	}
 
-	pruneMode := j.settingsService.GetStringSetting(ctx, "dockerPruneMode", "dangling")
-	danglingOnly := pruneMode != "all"
+	req := buildScheduledPruneRequestInternal(ctx, j.settingsService)
 
-	req := system.PruneAllRequest{
-		Containers: j.settingsService.GetBoolSetting(ctx, "scheduledPruneContainers", true),
-		Images:     j.settingsService.GetBoolSetting(ctx, "scheduledPruneImages", true),
-		Volumes:    j.settingsService.GetBoolSetting(ctx, "scheduledPruneVolumes", false),
-		Networks:   j.settingsService.GetBoolSetting(ctx, "scheduledPruneNetworks", true),
-		BuildCache: j.settingsService.GetBoolSetting(ctx, "scheduledPruneBuildCache", false),
-		Dangling:   danglingOnly,
-	}
-
-	if !req.Containers && !req.Images && !req.Volumes && !req.Networks && !req.BuildCache {
+	if !hasScheduledPruneTargetsInternal(req) {
 		slog.InfoContext(ctx, "scheduled prune run skipped; no resource types selected")
 		return
 	}
@@ -95,7 +85,6 @@ func (j *ScheduledPruneJob) Run(ctx context.Context) {
 		"volumes", req.Volumes,
 		"networks", req.Networks,
 		"build_cache", req.BuildCache,
-		"dangling_only", req.Dangling,
 	)
 
 	result, err := j.systemService.PruneAll(ctx, req)
@@ -126,4 +115,75 @@ func (j *ScheduledPruneJob) Run(ctx context.Context) {
 func (j *ScheduledPruneJob) Reschedule(ctx context.Context) error {
 	slog.InfoContext(ctx, "rescheduling scheduled prune job in new scheduler; currently requires restart")
 	return nil
+}
+
+func buildScheduledPruneRequestInternal(ctx context.Context, settingsService *services.SettingsService) system.PruneAllRequest {
+	return system.PruneAllRequest{
+		Containers: buildScheduledContainerPruneOptionsInternal(ctx, settingsService),
+		Images:     buildScheduledImagePruneOptionsInternal(ctx, settingsService),
+		Volumes:    buildScheduledVolumePruneOptionsInternal(ctx, settingsService),
+		Networks:   buildScheduledNetworkPruneOptionsInternal(ctx, settingsService),
+		BuildCache: buildScheduledBuildCachePruneOptionsInternal(ctx, settingsService),
+	}
+}
+
+func hasScheduledPruneTargetsInternal(req system.PruneAllRequest) bool {
+	return req.Containers != nil || req.Images != nil || req.Volumes != nil || req.Networks != nil || req.BuildCache != nil
+}
+
+func buildScheduledContainerPruneOptionsInternal(ctx context.Context, settingsService *services.SettingsService) *system.PruneContainersOptions {
+	mode := settingsService.GetStringSetting(ctx, "pruneContainerMode", "stopped")
+	if mode == "" || mode == string(system.PruneContainerModeNone) {
+		return nil
+	}
+
+	return &system.PruneContainersOptions{
+		Mode:  system.PruneContainerMode(mode),
+		Until: settingsService.GetStringSetting(ctx, "pruneContainerUntil", ""),
+	}
+}
+
+func buildScheduledImagePruneOptionsInternal(ctx context.Context, settingsService *services.SettingsService) *system.PruneImagesOptions {
+	mode := settingsService.GetStringSetting(ctx, "pruneImageMode", "dangling")
+	if mode == "" || mode == string(system.PruneImageModeNone) {
+		return nil
+	}
+
+	return &system.PruneImagesOptions{
+		Mode:  system.PruneImageMode(mode),
+		Until: settingsService.GetStringSetting(ctx, "pruneImageUntil", ""),
+	}
+}
+
+func buildScheduledVolumePruneOptionsInternal(ctx context.Context, settingsService *services.SettingsService) *system.PruneVolumesOptions {
+	mode := settingsService.GetStringSetting(ctx, "pruneVolumeMode", "none")
+	if mode == "" || mode == string(system.PruneVolumeModeNone) {
+		return nil
+	}
+
+	return &system.PruneVolumesOptions{Mode: system.PruneVolumeMode(mode)}
+}
+
+func buildScheduledNetworkPruneOptionsInternal(ctx context.Context, settingsService *services.SettingsService) *system.PruneNetworksOptions {
+	mode := settingsService.GetStringSetting(ctx, "pruneNetworkMode", "unused")
+	if mode == "" || mode == string(system.PruneNetworkModeNone) {
+		return nil
+	}
+
+	return &system.PruneNetworksOptions{
+		Mode:  system.PruneNetworkMode(mode),
+		Until: settingsService.GetStringSetting(ctx, "pruneNetworkUntil", ""),
+	}
+}
+
+func buildScheduledBuildCachePruneOptionsInternal(ctx context.Context, settingsService *services.SettingsService) *system.PruneBuildCacheOptions {
+	mode := settingsService.GetStringSetting(ctx, "pruneBuildCacheMode", "none")
+	if mode == "" || mode == string(system.PruneBuildCacheModeNone) {
+		return nil
+	}
+
+	return &system.PruneBuildCacheOptions{
+		Mode:  system.PruneBuildCacheMode(mode),
+		Until: settingsService.GetStringSetting(ctx, "pruneBuildCacheUntil", ""),
+	}
 }

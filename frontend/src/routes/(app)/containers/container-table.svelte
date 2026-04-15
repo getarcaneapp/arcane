@@ -7,7 +7,7 @@
 	import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { format } from 'date-fns';
-	import { capitalizeFirstLetter } from '$lib/utils/string.utils';
+	import { capitalizeFirstLetter, truncateImageDigest } from '$lib/utils/string.utils';
 	import type { ContainerSummaryDto } from '$lib/types/container.type';
 	import type { ColumnSpec, BulkAction } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
@@ -228,7 +228,7 @@
 	const columns = $derived([
 		{ accessorKey: 'id', title: m.common_id(), cell: IdCell, hidden: true },
 		{ accessorKey: 'names', id: 'name', title: m.common_name(), sortable: !groupByProject, cell: NameCell },
-		{ accessorKey: 'image', title: m.common_image(), sortable: !groupByProject, cell: ImageCell },
+		{ accessorKey: 'image', title: m.common_image(), sortable: !groupByProject, cell: ImageCell, truncate: true },
 		{ accessorKey: 'state', title: m.common_state(), sortable: !groupByProject, cell: StateCell },
 		{
 			id: 'updates',
@@ -429,13 +429,13 @@
 
 {#snippet ImageCell({ item }: { item: ContainerSummaryDto })}
 	<ArcaneTooltip.Root>
-		<ArcaneTooltip.Trigger>
-			<span class="block w-full cursor-default truncate text-left">
-				{item.image}
+		<ArcaneTooltip.Trigger class="block w-full min-w-0">
+			<span class="block w-full cursor-default truncate text-left font-mono text-xs">
+				{truncateImageDigest(item.image)}
 			</span>
 		</ArcaneTooltip.Trigger>
 		<ArcaneTooltip.Content>
-			<p>{item.image}</p>
+			<p class="max-w-xl break-all">{item.image}</p>
 		</ArcaneTooltip.Content>
 	</ArcaneTooltip.Root>
 {/snippet}

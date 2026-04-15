@@ -705,6 +705,16 @@ func (h *TemplateHandler) GetRegistries(ctx context.Context, _ *GetTemplateRegis
 		return nil, huma.Error500InternalServerError((&common.RegistryFetchError{Err: mapErr}).Error())
 	}
 
+	// Overlay the last fetch error from the in-memory tracker so the UI can
+	// display why a registry is not returning templates without requiring the
+	// user to check server logs.
+	fetchErrors := h.templateService.GetRegistryFetchErrors()
+	for i := range out {
+		if msg, ok := fetchErrors[out[i].ID]; ok {
+			out[i].LastFetchError = &msg
+		}
+	}
+
 	return &GetTemplateRegistriesOutput{
 		Body: base.ApiResponse[[]template.TemplateRegistry]{
 			Success: true,

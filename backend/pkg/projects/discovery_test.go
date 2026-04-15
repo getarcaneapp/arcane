@@ -8,15 +8,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// writeComposeFile creates an empty compose.yml at the given directory.
-func writeComposeFile(t *testing.T, dir string) {
+// writeComposeFileInternal creates an empty compose.yml at the given directory.
+func writeComposeFileInternal(t *testing.T, dir string) {
 	t.Helper()
 	require.NoError(t, os.MkdirAll(dir, 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "compose.yml"), []byte("services: {}\n"), 0o644))
 }
 
-// discoveredNames returns the DirName of each discovered project, preserving order.
-func discoveredNames(dirs []DiscoveredProjectDir) []string {
+// discoveredNamesInternal returns the DirName of each discovered project, preserving order.
+func discoveredNamesInternal(dirs []DiscoveredProjectDir) []string {
 	out := make([]string, 0, len(dirs))
 	for _, d := range dirs {
 		out = append(out, d.DirName)
@@ -35,14 +35,14 @@ func TestDiscoverProjectDirectories_StopsDescentAtCompose(t *testing.T) {
 	//   root/networking/compose.yml
 	//   root/networking/adguardhome/compose.yml
 	//   root/networking/nginx-proxy-manager/compose.yml
-	writeComposeFile(t, filepath.Join(root, "networking"))
-	writeComposeFile(t, filepath.Join(root, "networking", "adguardhome"))
-	writeComposeFile(t, filepath.Join(root, "networking", "nginx-proxy-manager"))
+	writeComposeFileInternal(t, filepath.Join(root, "networking"))
+	writeComposeFileInternal(t, filepath.Join(root, "networking", "adguardhome"))
+	writeComposeFileInternal(t, filepath.Join(root, "networking", "nginx-proxy-manager"))
 
-	discovered, err := DiscoverProjectDirectories(root, false)
+	discovered, err := DiscoverProjectDirectories(root, false, 0)
 	require.NoError(t, err)
 
-	names := discoveredNames(discovered)
+	names := discoveredNamesInternal(discovered)
 	require.Equal(t, []string{"networking"}, names,
 		"only the parent compose project should be discovered; children are assumed to be included")
 }
@@ -53,13 +53,13 @@ func TestDiscoverProjectDirectories_StopsDescentAtCompose(t *testing.T) {
 func TestDiscoverProjectDirectories_SiblingProjectsAtRoot(t *testing.T) {
 	root := t.TempDir()
 
-	writeComposeFile(t, filepath.Join(root, "app1"))
-	writeComposeFile(t, filepath.Join(root, "app2"))
+	writeComposeFileInternal(t, filepath.Join(root, "app1"))
+	writeComposeFileInternal(t, filepath.Join(root, "app2"))
 
-	discovered, err := DiscoverProjectDirectories(root, false)
+	discovered, err := DiscoverProjectDirectories(root, false, 0)
 	require.NoError(t, err)
 
-	names := discoveredNames(discovered)
+	names := discoveredNamesInternal(discovered)
 	require.ElementsMatch(t, []string{"app1", "app2"}, names)
 }
 
@@ -73,13 +73,13 @@ func TestDiscoverProjectDirectories_RootWithComposeAndSiblings(t *testing.T) {
 	// root/compose.yml (a root-level "project")
 	// root/app1/compose.yml
 	// root/app2/compose.yml
-	writeComposeFile(t, root)
-	writeComposeFile(t, filepath.Join(root, "app1"))
-	writeComposeFile(t, filepath.Join(root, "app2"))
+	writeComposeFileInternal(t, root)
+	writeComposeFileInternal(t, filepath.Join(root, "app1"))
+	writeComposeFileInternal(t, filepath.Join(root, "app2"))
 
-	discovered := DiscoveredProjectDirectories_call(t, root)
+	discovered := discoverProjectDirectoriesInternal(t, root)
 
-	names := discoveredNames(discovered)
+	names := discoveredNamesInternal(discovered)
 	require.Len(t, names, 3)
 	require.Contains(t, names, "app1")
 	require.Contains(t, names, "app2")
@@ -94,12 +94,12 @@ func TestDiscoverProjectDirectories_NestedStandaloneProject(t *testing.T) {
 	root := t.TempDir()
 
 	// root/sub/nested/compose.yml (no compose file at root/sub/)
-	writeComposeFile(t, filepath.Join(root, "sub", "nested"))
+	writeComposeFileInternal(t, filepath.Join(root, "sub", "nested"))
 
-	discovered, err := DiscoverProjectDirectories(root, false)
+	discovered, err := DiscoverProjectDirectories(root, false, 0)
 	require.NoError(t, err)
 
-	names := discoveredNames(discovered)
+	names := discoveredNamesInternal(discovered)
 	require.Equal(t, []string{"nested"}, names)
 }
 
@@ -109,18 +109,43 @@ func TestDiscoverProjectDirectories_SupportsCustomComposeFilename(t *testing.T) 
 	require.NoError(t, os.MkdirAll(projectDir, 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "radarr.yaml"), []byte("services: {}\n"), 0o644))
 
-	discovered, err := DiscoverProjectDirectories(root, false)
+	discovered, err := DiscoverProjectDirectories(root, false, 0)
 	require.NoError(t, err)
 	require.Len(t, discovered, 1)
 	require.Equal(t, "Radarr-3", discovered[0].DirName)
 	require.Equal(t, projectDir, discovered[0].Path)
 }
 
-// DiscoveredProjectDirectories_call is a tiny helper so tests can share the
+// discoverProjectDirectoriesInternal is a tiny helper so tests can share the
 // err-check boilerplate.
-func DiscoveredProjectDirectories_call(t *testing.T, root string) []DiscoveredProjectDir {
+func discoverProjectDirectoriesInternal(t *testing.T, root string) []DiscoveredProjectDir {
 	t.Helper()
-	d, err := DiscoverProjectDirectories(root, false)
+	d, err := DiscoverProjectDirectories(root, false, 0)
 	require.NoError(t, err)
 	return d
+}
+
+func TestDiscoverProjectDirectories_RespectsMaxDepth(t *testing.T) {
+	root := t.TempDir()
+
+	writeComposeFileInternal(t, filepath.Join(root, "top-level"))
+	writeComposeFileInternal(t, filepath.Join(root, "group", "nested"))
+
+	discovered, err := DiscoverProjectDirectories(root, false, 1)
+	require.NoError(t, err)
+
+	names := discoveredNamesInternal(discovered)
+	require.Equal(t, []string{"top-level"}, names)
+}
+
+func TestDiscoverProjectDirectories_UnlimitedDepthStillFindsNestedProject(t *testing.T) {
+	root := t.TempDir()
+
+	writeComposeFileInternal(t, filepath.Join(root, "group", "nested"))
+
+	discovered, err := DiscoverProjectDirectories(root, false, 0)
+	require.NoError(t, err)
+
+	names := discoveredNamesInternal(discovered)
+	require.Equal(t, []string{"nested"}, names)
 }

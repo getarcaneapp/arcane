@@ -12,6 +12,10 @@ build
 data/
 dist/
 arcane
+arcane-*
+
+# Claude
+CLAUDE.md
 
 # OS
 .DS_Store
