@@ -1006,6 +1006,13 @@ func (s *ProjectService) cleanupDBProjects(ctx context.Context, seen map[string]
 			continue
 		}
 
+		// Skip projects whose lifecycle is owned by the gitops system.
+		// Their compose files may not exist on disk yet (e.g. during a sync
+		// or after an SSH/clone failure) and should never be deleted here.
+		if p.GitOpsManagedBy != nil && strings.TrimSpace(*p.GitOpsManagedBy) != "" {
+			continue
+		}
+
 		validDir, err := projects.IsProjectDirectoryPath(p.Path, followProjectSymlinks)
 		if err != nil {
 			if os.IsNotExist(err) {

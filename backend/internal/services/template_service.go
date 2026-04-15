@@ -55,6 +55,7 @@ type TemplateService struct {
 
 	registryMu        sync.RWMutex
 	registryFetchMeta map[string]*registryFetchMeta
+	registryErrors    map[string]string // last fetch error per registry ID, cleared on success
 
 	fsSyncMu   sync.Mutex
 	lastFsSync time.Time
@@ -91,6 +92,7 @@ func NewTemplateService(ctx context.Context, db *database.DB, httpClient *http.C
 		settingsService:   settingsService,
 		remoteCache:       remoteCache{},
 		registryFetchMeta: make(map[string]*registryFetchMeta),
+		registryErrors:    make(map[string]string),
 	}
 	service.safeHTTPClient = service.newSafeHTTPClientInternal()
 	return service
@@ -404,6 +406,18 @@ func (s *TemplateService) GetRegistries(ctx context.Context) ([]models.TemplateR
 	return registries, nil
 }
 
+// GetRegistryFetchErrors returns a snapshot of the last fetch error per registry ID.
+// An absent entry means the registry fetched successfully (or has never been attempted).
+func (s *TemplateService) GetRegistryFetchErrors() map[string]string {
+	s.registryMu.RLock()
+	defer s.registryMu.RUnlock()
+	out := make(map[string]string, len(s.registryErrors))
+	for k, v := range s.registryErrors {
+		out[k] = v
+	}
+	return out
+}
+
 func (s *TemplateService) CreateRegistry(ctx context.Context, registry *models.TemplateRegistry) error {
 	// Hydrate metadata if needed
 	if registry.Name == "" || registry.Description == "" {
@@ -534,8 +548,15 @@ func (s *TemplateService) loadRemoteTemplates(ctx context.Context) ([]models.Com
 			remoteTemplates, err := s.fetchRegistryTemplates(groupCtx, &reg)
 			if err != nil {
 				slog.WarnContext(groupCtx, "failed to fetch templates from registry", "registry", reg.Name, "url", reg.URL, "error", err)
+				s.registryMu.Lock()
+				s.registryErrors[reg.ID] = err.Error()
+				s.registryMu.Unlock()
 				return nil // Don't fail the whole group if one registry fails
 			}
+
+			s.registryMu.Lock()
+			delete(s.registryErrors, reg.ID)
+			s.registryMu.Unlock()
 
 			mu.Lock()
 			defer mu.Unlock()

@@ -150,9 +150,7 @@ func (s *DashboardService) GetSnapshot(ctx context.Context, options DashboardAct
 		},
 		ImageUsageCounts: imageUsageCounts,
 		ActionItems:      *actionItems,
-		Settings: dashboardtypes.SnapshotSettings{
-			DockerPruneMode: s.getDashboardDockerPruneModeInternal(ctx),
-		},
+		Settings:         dashboardtypes.SnapshotSettings{},
 	}, nil
 }
 
@@ -401,14 +399,6 @@ func (s *DashboardService) getPendingImageUpdatesCountForImageIDs(ctx context.Co
 	}
 
 	return int(count), nil
-}
-
-func (s *DashboardService) getDashboardDockerPruneModeInternal(ctx context.Context) string {
-	if s.settingsService == nil {
-		return "dangling"
-	}
-
-	return s.settingsService.GetStringSetting(ctx, "dockerPruneMode", "dangling")
 }
 
 func (s *DashboardService) getActionableVulnerabilitiesCountInternal(ctx context.Context) (int, error) {

@@ -624,6 +624,12 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 			out.Checked = 1
 			out.Duration = time.Since(start).String()
 
+			if s.notificationService != nil {
+				if notifErr := s.notificationService.SendContainerUpdateNotification(ctx, containerName, imageRef, inspectBefore.Image, normalizedRef); notifErr != nil {
+					slog.WarnContext(ctx, "Failed to send container update notification", "containerID", containerID, "containerName", containerName, "imageRef", normalizedRef, "error", notifErr.Error())
+				}
+			}
+
 			// Prune old image if no longer in use
 			if inspectBefore.Image != "" {
 				_ = s.pruneImageIDsWithInUseSetInternal(ctx, []string{inspectBefore.Image}, nil)
@@ -651,6 +657,12 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 			Status:       "updated",
 		})
 		out.Updated++
+
+		if s.notificationService != nil {
+			if notifErr := s.notificationService.SendContainerUpdateNotification(ctx, containerName, imageRef, inspectBefore.Image, normalizedRef); notifErr != nil {
+				slog.WarnContext(ctx, "Failed to send container update notification", "containerID", containerID, "containerName", containerName, "imageRef", normalizedRef, "error", notifErr.Error())
+			}
+		}
 
 		// Clear the update record for this exact image ID when no running container still uses it.
 		// This avoids repo-name canonicalization mismatches (e.g. "nginx" vs "docker.io/library/nginx").

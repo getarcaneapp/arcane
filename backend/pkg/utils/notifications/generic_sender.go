@@ -1,8 +1,12 @@
 package notifications
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"strings"
 
@@ -11,38 +15,52 @@ import (
 	shoutrrrTypes "github.com/nicholas-fedor/shoutrrr/pkg/types"
 )
 
-// BuildGenericURL converts GenericConfig to Shoutrrr URL format for generic webhooks
-func BuildGenericURL(config models.GenericConfig) (string, error) {
+// resolveWebhookURLInternal parses and normalises the configured webhook URL,
+// adding a default scheme when the user omitted one. It is the single source
+// of truth for scheme normalisation and host validation used by both
+// BuildGenericURL and sendGenericDirectInternal.
+func resolveWebhookURLInternal(config models.GenericConfig) (*url.URL, error) {
 	if config.WebhookURL == "" {
-		return "", fmt.Errorf("webhook URL is empty")
+		return nil, fmt.Errorf("webhook URL is empty")
 	}
 
-	// Parse the webhook URL
-	webhookURL, err := url.Parse(config.WebhookURL)
+	parsed, err := url.Parse(config.WebhookURL)
 	if err != nil {
-		return "", fmt.Errorf("invalid webhook URL: %w", err)
+		return nil, fmt.Errorf("invalid webhook URL: %w", err)
 	}
 
 	hasScheme := strings.Contains(config.WebhookURL, "://")
-	if webhookURL.Host == "" && !hasScheme {
-		fallbackScheme := "https"
+	if parsed.Host == "" && !hasScheme {
+		scheme := "https"
 		if config.DisableTLS {
-			fallbackScheme = "http"
+			scheme = "http"
 		}
 		normalized := strings.TrimPrefix(config.WebhookURL, "//")
-		webhookURL, err = url.Parse(fmt.Sprintf("%s://%s", fallbackScheme, normalized))
+		parsed, err = url.Parse(fmt.Sprintf("%s://%s", scheme, normalized))
 		if err != nil {
-			return "", fmt.Errorf("invalid webhook URL: %w", err)
+			return nil, fmt.Errorf("invalid webhook URL: %w", err)
 		}
 	}
 
-	if webhookURL.Host == "" {
-		return "", fmt.Errorf("invalid webhook URL: missing host")
+	if parsed.Host == "" {
+		return nil, fmt.Errorf("invalid webhook URL: missing host")
 	}
 
-	// Build generic service URL
-	// Format: generic://host[:port]/path?params
-	// Shoutrrr's generic service uses HTTP or HTTPS based on the DisableTLS setting.
+	switch strings.ToLower(parsed.Scheme) {
+	case "http", "https":
+	default:
+		return nil, fmt.Errorf("invalid webhook URL scheme: %s", parsed.Scheme)
+	}
+
+	return parsed, nil
+}
+
+// BuildGenericURL converts GenericConfig to Shoutrrr URL format for generic webhooks
+func BuildGenericURL(config models.GenericConfig) (string, error) {
+	webhookURL, err := resolveWebhookURLInternal(config)
+	if err != nil {
+		return "", err
+	}
 
 	// Start from the user's existing query parameters. Shoutrrr's generic
 	// service preserves any query keys it does not recognise, so provider
@@ -78,16 +96,12 @@ func BuildGenericURL(config models.GenericConfig) (string, error) {
 	setDefault("messagekey", config.MessageKey)
 
 	// Determine TLS setting from the webhook URL scheme (http/https) when the
-	// user has not already passed `disabletls` explicitly. If the scheme is
-	// missing here we treat it as a hard error because Shoutrrr needs an
-	// explicit transport.
+	// user has not already passed `disabletls` explicitly.
 	switch strings.ToLower(webhookURL.Scheme) {
 	case "http":
 		setDefault("disabletls", "yes")
 	case "https":
 		setDefault("disabletls", "no")
-	default:
-		return "", fmt.Errorf("invalid webhook URL scheme: %s", webhookURL.Scheme)
 	}
 
 	// Add custom headers as query parameters with @ prefix
@@ -108,10 +122,21 @@ func BuildGenericURL(config models.GenericConfig) (string, error) {
 	return shoutrrrURL.String(), nil
 }
 
-// SendGenericWithTitle sends a message with title via Shoutrrr Generic webhook
+// SendGenericWithTitle sends a message with title via Shoutrrr Generic webhook.
+// When config.SuccessBodyContains is set the response body is also inspected —
+// this is necessary for providers (e.g. PushPlus) that always return HTTP 200
+// but embed a success/failure indicator inside the JSON body.
 func SendGenericWithTitle(ctx context.Context, config models.GenericConfig, title, message string) error {
 	if config.WebhookURL == "" {
 		return fmt.Errorf("webhook URL is empty")
+	}
+
+	// When the caller needs response-body validation we make the HTTP request
+	// ourselves so that we can inspect the body.  Otherwise we delegate to
+	// shoutrrr, which preserves the existing behaviour for everyone who does
+	// not set SuccessBodyContains.
+	if config.SuccessBodyContains != "" {
+		return sendGenericDirectInternal(ctx, config, title, message)
 	}
 
 	shoutrrrURL, err := BuildGenericURL(config)
@@ -137,5 +162,76 @@ func SendGenericWithTitle(ctx context.Context, config models.GenericConfig, titl
 			return fmt.Errorf("failed to send Generic webhook message with title via shoutrrr: %w", err)
 		}
 	}
+	return nil
+}
+
+// sendGenericDirectInternal makes the webhook HTTP call directly, giving access
+// to the response body so that provider-level success/failure can be detected
+// even when the HTTP status is always 200.
+func sendGenericDirectInternal(ctx context.Context, config models.GenericConfig, title, message string) error {
+	webhookURL, err := resolveWebhookURLInternal(config)
+	if err != nil {
+		return err
+	}
+
+	// Build JSON payload using the configured message/title keys.
+	msgKey := config.MessageKey
+	if msgKey == "" {
+		msgKey = "message"
+	}
+	titleKey := config.TitleKey
+	if titleKey == "" {
+		titleKey = "title"
+	}
+
+	payload := map[string]string{msgKey: message}
+	if title != "" {
+		payload[titleKey] = title
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal webhook payload: %w", err)
+	}
+
+	method := strings.ToUpper(config.Method)
+	if method == "" {
+		method = http.MethodPost
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, webhookURL.String(), bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("failed to create webhook request: %w", err)
+	}
+
+	contentType := config.ContentType
+	if contentType == "" {
+		contentType = "application/json"
+	}
+	req.Header.Set("Content-Type", contentType)
+
+	for k, v := range config.CustomHeaders {
+		req.Header.Set(k, v)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send webhook request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read webhook response body: %w", err)
+	}
+
+	if resp.StatusCode >= http.StatusBadRequest {
+		return fmt.Errorf("webhook returned HTTP %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	if !strings.Contains(string(respBody), config.SuccessBodyContains) {
+		return fmt.Errorf("webhook response did not contain expected success indicator %q: %s", config.SuccessBodyContains, string(respBody))
+	}
+
 	return nil
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	"github.com/getarcaneapp/arcane/types/base"
 	"github.com/getarcaneapp/arcane/types/image"
+	"github.com/getarcaneapp/arcane/types/system"
 	"gorm.io/gorm"
 )
 
@@ -114,6 +115,8 @@ type PruneImagesInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Dangling      bool   `query:"dangling" doc:"Only remove dangling images"`
 	Body          *struct {
+		Mode     *string             `json:"mode,omitempty"`
+		Until    *string             `json:"until,omitempty"`
 		Dangling *bool               `json:"dangling,omitempty"`
 		Filters  map[string][]string `json:"filters,omitempty"`
 	}
@@ -549,21 +552,13 @@ func (h *ImageHandler) PruneImages(ctx context.Context, input *PruneImagesInput)
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	dangling := input.Dangling
-	if input.Body != nil {
-		if input.Body.Dangling != nil {
-			dangling = *input.Body.Dangling
-		} else if vals, ok := input.Body.Filters["dangling"]; ok {
-			for _, v := range vals {
-				if v == "true" || v == "1" {
-					dangling = true
-					break
-				}
-			}
-		}
-	}
+	mode := resolvePruneImageModeInternal(input)
+	until := resolvePruneImageUntilInternal(input)
 
-	report, err := h.imageService.PruneImages(ctx, dangling)
+	report, err := h.imageService.PruneImages(ctx, system.PruneImagesOptions{
+		Mode:  system.PruneImageMode(mode),
+		Until: until,
+	})
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.ImagePruneError{Err: err}).Error())
 	}
@@ -576,6 +571,58 @@ func (h *ImageHandler) PruneImages(ctx context.Context, input *PruneImagesInput)
 			Data:    out,
 		},
 	}, nil
+}
+
+func resolvePruneImageModeInternal(input *PruneImagesInput) string {
+	mode := resolveLegacyPruneImageModeInternal(input.Dangling)
+	if input.Body == nil {
+		return mode
+	}
+
+	if input.Body.Mode != nil && strings.TrimSpace(*input.Body.Mode) != "" {
+		return strings.TrimSpace(*input.Body.Mode)
+	}
+
+	if input.Body.Dangling != nil {
+		return resolveLegacyPruneImageModeInternal(*input.Body.Dangling)
+	}
+
+	if vals, ok := input.Body.Filters["dangling"]; ok {
+		for _, value := range vals {
+			switch value {
+			case "true", "1":
+				return "dangling"
+			case "false", "0":
+				return "all"
+			}
+		}
+	}
+
+	return mode
+}
+
+func resolvePruneImageUntilInternal(input *PruneImagesInput) string {
+	if input.Body == nil {
+		return ""
+	}
+
+	if input.Body.Until != nil {
+		return strings.TrimSpace(*input.Body.Until)
+	}
+
+	if vals, ok := input.Body.Filters["until"]; ok && len(vals) > 0 {
+		return strings.TrimSpace(vals[0])
+	}
+
+	return ""
+}
+
+func resolveLegacyPruneImageModeInternal(dangling bool) string {
+	if dangling {
+		return "dangling"
+	}
+
+	return "all"
 }
 
 // GetImageUsageCounts returns counts of images by usage status.

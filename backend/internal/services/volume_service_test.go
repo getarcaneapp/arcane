@@ -130,6 +130,14 @@ func TestBuildVolumePruneOptionsInternal_PreservesTrivyCache(t *testing.T) {
 	require.True(t, options.Filters["label!"][trivyCacheVolumePruneFilterValue])
 }
 
+func TestBuildVolumePruneOptionsInternal_PreservesTrivyCacheForAnonymousVolumes(t *testing.T) {
+	options := buildVolumePruneOptionsInternal(false, true)
+
+	require.False(t, options.All)
+	require.NotNil(t, options.Filters)
+	require.True(t, options.Filters["label!"][trivyCacheVolumePruneFilterValue])
+}
+
 func TestBuildVolumePruneOptionsInternal_DisabledPreservationOmitsFilter(t *testing.T) {
 	options := buildVolumePruneOptionsInternal(true, false)
 

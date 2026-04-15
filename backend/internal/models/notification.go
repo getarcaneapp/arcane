@@ -191,6 +191,13 @@ type GenericConfig struct {
 	CustomHeaders map[string]string              `json:"customHeaders,omitempty"`
 	DisableTLS    bool                           `json:"disableTls"`
 	Events        map[NotificationEventType]bool `json:"events,omitempty"`
+	// SuccessBodyContains is an optional substring that must appear in the
+	// response body for the send to be considered successful. Useful for
+	// providers that always return HTTP 200 but embed a status indicator in
+	// the JSON body (e.g. PushPlus returns {"code":200,...} on success and
+	// {"code":900,...} on failure). When empty, only the HTTP status code is
+	// checked (existing behaviour).
+	SuccessBodyContains string `json:"successBodyContains,omitempty"`
 }
 
 type AppriseSettings struct {

@@ -41,13 +41,58 @@
 
 	const checkUpdatesMutation = createMutation(() => ({
 		mutationKey: ['projects', 'check-updates', envId],
-		mutationFn: () => imageService.runAutoUpdate(),
-		onSuccess: async () => {
-			toast.success(m.compose_update_success());
+		mutationFn: async () => {
+			// Refresh update info for all images, then use the image->project usage
+			// map to narrow the redeploy to projects that actually have updates.
+			// This avoids hitting every project (and its registry) when nothing has
+			// changed, which is especially expensive on instances with many projects.
+			await imageService.checkAllImages();
+
+			const images = await imageService.getImagesForEnvironment(envId, { pagination: { page: 1, limit: 10000 } });
+			const projectIdsWithUpdates = new Set<string>();
+			for (const img of images.data) {
+				if (!img.updateInfo?.hasUpdate) continue;
+				for (const user of img.usedBy ?? []) {
+					if (user.type === 'project' && user.id) {
+						projectIdsWithUpdates.add(user.id);
+					}
+				}
+			}
+
+			if (projectIdsWithUpdates.size === 0) {
+				return { updated: 0 };
+			}
+
+			const allProjects = await projectService.getProjectsForEnvironment(envId, { pagination: { page: 1, limit: 1000 } });
+			const projectsToUpdate = allProjects.data.filter((p) => projectIdsWithUpdates.has(p.id));
+
+			const results = await Promise.allSettled(
+				projectsToUpdate.map(async (proj) => {
+					// deployProject with pullPolicy 'always' already pulls fresh images,
+					// so no separate pullProjectImages call is needed.
+					await projectService.deployProject(proj.id, { pullPolicy: 'always' });
+					return proj.name;
+				})
+			);
+			const failed = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+			if (failed.length > 0) {
+				const succeeded = results.length - failed.length;
+				throw new Error(`${failed.length} project(s) failed to update (${succeeded} succeeded)`);
+			}
+
+			return { updated: results.length };
+		},
+		onSuccess: async (result) => {
+			if (result && result.updated === 0) {
+				toast.success(m.image_update_up_to_date_title());
+			} else {
+				toast.success(m.compose_update_success());
+			}
 			await projectsQuery.refetch();
 		},
-		onError: () => {
-			toast.error(m.containers_check_updates_failed());
+		onError: (error) => {
+			toast.error(error instanceof Error ? error.message : m.containers_check_updates_failed());
+			projectsQuery.refetch();
 		}
 	}));
 
