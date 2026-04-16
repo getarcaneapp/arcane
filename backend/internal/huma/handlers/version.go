@@ -47,6 +47,7 @@ func RegisterVersion(api huma.API, versionService *services.VersionService) {
 		Summary:     "Get version information",
 		Description: "Get application version information and check for updates",
 		Tags:        []string{"Version"},
+		Security:    []map[string][]string{},
 	}, h.GetVersion)
 
 	huma.Register(api, huma.Operation{
@@ -56,6 +57,7 @@ func RegisterVersion(api huma.API, versionService *services.VersionService) {
 		Summary:     "Get app version",
 		Description: "Get the current application version",
 		Tags:        []string{"Version"},
+		Security:    []map[string][]string{},
 	}, h.GetAppVersion)
 }
 

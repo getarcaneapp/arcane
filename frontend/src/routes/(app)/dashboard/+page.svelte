@@ -1,4 +1,7 @@
 <script lang="ts">
+	import * as Tabs from '$lib/components/ui/tabs/index.js';
+	import { TabBar, type TabItem } from '$lib/components/tab-bar';
+	import { page } from '$app/state';
 	import { toast } from 'svelte-sonner';
 	import PruneConfirmationDialog from '$lib/components/dialogs/prune-confirmation-dialog.svelte';
 	import DockerInfoDialog from '$lib/components/dialogs/docker-info-dialog.svelte';
@@ -7,7 +10,6 @@
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
 	import { tryCatch } from '$lib/utils/try-catch';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
-	import { onMount } from 'svelte';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import userStore from '$lib/stores/user-store';
 	import { createStatsWebSocket } from '$lib/utils/ws';
@@ -19,13 +21,15 @@
 	import DashboardMetricTile from './dash-metric-tile.svelte';
 	import DashboardContainerTable from './dash-container-table.svelte';
 	import DashboardImageTable from './dash-image-table.svelte';
+	import DashboardAllEnvironmentsView from './dashboard-all-environments-view.svelte';
 	import type { PageData } from './$types';
 	import { m } from '$lib/paraglide/messages';
-	import { invalidateAll } from '$app/navigation';
+	import { goto, invalidateAll } from '$app/navigation';
 	import { systemService } from '$lib/services/system-service';
 	import bytes from '$lib/utils/bytes';
 	import type { DockerInfo } from '$lib/types/docker-info.type';
-	import type { SystemPruneRequest } from '$lib/types/prune.type';
+	import type { DashboardSnapshot } from '$lib/types/dashboard.type';
+	import type { SystemPruneRequest, PruneType } from '$lib/types/prune.type';
 	import {
 		CpuIcon,
 		MemoryStickIcon,
@@ -42,16 +46,37 @@
 	} from '$lib/icons';
 
 	let { data }: { data: PageData } = $props();
-	let containers = $derived(data.dashboard.containers);
-	let images = $derived(data.dashboard.images);
-	let settings = $derived(data.settings);
+	const emptyDashboard: DashboardSnapshot = {
+		containers: {
+			data: [],
+			counts: { runningContainers: 0, stoppedContainers: 0, totalContainers: 0 },
+			pagination: { totalPages: 1, totalItems: 0, currentPage: 1, itemsPerPage: 50, grandTotalItems: 0 }
+		},
+		images: {
+			data: [],
+			pagination: { totalPages: 1, totalItems: 0, currentPage: 1, itemsPerPage: 50, grandTotalItems: 0 }
+		},
+		imageUsageCounts: { imagesInuse: 0, imagesUnused: 0, totalImages: 0, totalImageSize: 0 },
+		actionItems: { items: [] },
+		settings: {}
+	};
+
+	let activeView = $derived(data.view === 'current' ? 'current' : 'all');
+	let currentDashboard = $derived(data.dashboard ?? emptyDashboard);
+	let containers = $derived(currentDashboard.containers);
+	let images = $derived(currentDashboard.images);
+	let settings = $derived(data.settings ?? null);
 	let containerStatusCounts = $derived(
-		data.dashboard.containers.counts ?? { runningContainers: 0, stoppedContainers: 0, totalContainers: 0 }
+		currentDashboard.containers.counts ?? { runningContainers: 0, stoppedContainers: 0, totalContainers: 0 }
 	);
-	let imageUsageCounts = $derived(data.dashboard.imageUsageCounts);
-	let dashboardActionItems = $derived(data.dashboard.actionItems);
+	let imageUsageCounts = $derived(currentDashboard.imageUsageCounts);
+	let dashboardActionItems = $derived(currentDashboard.actionItems);
 	let debugAllGood = $derived(data.debugAllGood ?? false);
 	let currentUser = $state<User | null>(null);
+	const viewTabs = $derived.by((): TabItem[] => [
+		{ value: 'all', label: m.common_all(), icon: ContainersIcon },
+		{ value: 'current', label: m.common_current(), icon: StatsIcon }
+	]);
 
 	let systemStats = $state<SystemStats | null>(null);
 	let isPruneDialogOpen = $state(false);
@@ -59,9 +84,6 @@
 	let dockerInfo = $state<DockerInfo | null>(null);
 	let dockerInfoPromise = $state<Promise<DockerInfo> | null>(null);
 	let dockerInfoError = $state<string | null>(null);
-
-	type PruneType = 'containers' | 'images' | 'networks' | 'volumes' | 'buildCache';
-
 	let isLoading = $state({
 		starting: false,
 		stopping: false,
@@ -194,6 +216,7 @@
 	const overviewHost = $derived(currentStats?.hostname?.trim() || dockerInfo?.Name || m.common_unknown());
 	const overviewPlatform = $derived(currentStats?.platform ?? dockerInfo?.OperatingSystem ?? '-');
 	const overviewArchitecture = $derived(currentStats?.architecture ?? dockerInfo?.Architecture ?? '-');
+	const currentEnvironmentName = $derived(environmentStore.selected?.name?.trim() || m.common_unknown());
 	const dashboardUser = $derived.by(() => currentUser ?? data.user ?? null);
 	const greetingBase = $derived.by(() => {
 		const hour = new Date().getHours();
@@ -212,6 +235,19 @@
 			: m.dashboard_greeting_without_name({ greeting: greetingBase })
 	);
 
+	async function handleViewChange(nextView: string) {
+		if (nextView === activeView) return;
+
+		const nextUrl = new URL(page.url);
+		if (nextView === 'current') {
+			nextUrl.searchParams.set('view', 'current');
+		} else {
+			nextUrl.searchParams.delete('view');
+		}
+
+		await goto(nextUrl.toString(), { keepFocus: true });
+	}
+
 	function formatPercent(value: number | null): string {
 		return value === null ? '--' : `${value.toFixed(1)}%`;
 	}
@@ -222,7 +258,12 @@
 		isLoading.refreshing = false;
 	}
 
-	onMount(() => {
+	$effect(() => {
+		if (activeView !== 'current') {
+			closeStatsWS();
+			return;
+		}
+
 		let mounted = true;
 		let currentEnvId: string | null = null;
 		const unsubscribeUser = userStore.subscribe((user) => {
@@ -385,231 +426,246 @@
 	}
 </script>
 
-<div class="flex h-full min-h-0 flex-col gap-4 overflow-hidden pt-3 md:gap-5 md:pt-4">
-	<header
-		class="dark:border-surface/80 dark:bg-surface/10 shrink-0 rounded-xl border border-white/80 bg-white/10 p-4 shadow-sm backdrop-blur-sm sm:p-5"
-	>
-		<div class="relative flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-			<div class="space-y-1.5">
-				<p class="text-muted-foreground text-[11px] font-semibold tracking-[0.14em] uppercase">{m.dashboard_title()}</p>
-				<h1 class="text-2xl font-bold tracking-tight sm:text-3xl">{dashboardHeroGreeting}</h1>
-			</div>
+<Tabs.Root value={activeView} class="w-full">
+	<div class="pt-3 md:pt-4">
+		<TabBar items={viewTabs} value={activeView} onValueChange={handleViewChange} class="w-full" />
+	</div>
 
-			<QuickActions
-				class="w-full justify-start lg:w-auto lg:justify-end"
-				compact
-				user={data.user}
-				{stoppedContainers}
-				{runningContainers}
-				isLoading={{ starting: isLoading.starting, stopping: isLoading.stopping, pruning: isLoading.pruning }}
-				onStartAll={handleStartAll}
-				onStopAll={handleStopAll}
-				onOpenPruneDialog={() => (isPruneDialogOpen = true)}
-				onRefresh={refreshData}
-				refreshing={isLoading.refreshing}
-			/>
-		</div>
-	</header>
-
-	<section class="shrink-0 space-y-1.5">
-		{#if attentionItemsCount > 0}
-			<div class="flex flex-col gap-1">
-				<h2 class="text-lg font-semibold tracking-tight">{m.dashboard_action_items_title()}</h2>
-			</div>
-			<div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-				{#if stoppedContainersAttentionCount > 0}
-					<DashboardActionCard
-						title={m.containers_title()}
-						icon={ContainersIcon}
-						badgeText={stoppedContainersBadgeText}
-						badgeVariant="red"
-						value={`${runningContainers}/${totalContainers}`}
-						description={m.common_running()}
-						ctaLabel={m.common_view_all()}
-						href="/containers"
-					/>
-				{/if}
-
-				{#if imageUpdatesAttentionCount > 0}
-					<DashboardActionCard
-						title={m.images_updates()}
-						icon={UpdateIcon}
-						badgeText={imageUpdatesBadgeText}
-						badgeVariant="amber"
-						value={imageUpdatesAttentionCount}
-						description={m.image_update_tag_description()}
-						ctaLabel={m.common_view_all()}
-						href="/images"
-					/>
-				{/if}
-
-				{#if actionableVulnerabilitiesAttentionCount > 0}
-					<DashboardActionCard
-						title={m.security_title()}
-						icon={AlertTriangleIcon}
-						badgeText={actionableVulnerabilitiesBadgeText}
-						badgeVariant="red"
-						value={actionableVulnerabilitiesAttentionCount}
-						description={m.security_subtitle()}
-						ctaLabel={m.common_view()}
-						href="/security"
-					/>
-				{/if}
-
-				{#if hasDiskPressureAlert}
-					<DashboardActionCard
-						title={m.dashboard_meter_disk()}
-						icon={VolumesIcon}
-						badgeText={diskRiskLabel}
-						badgeVariant={diskRiskBadgeVariant}
-						value={diskPressureValue}
-						description={diskPressureDescription}
-						ctaLabel={m.common_view_all()}
-						href="/volumes"
-					/>
-				{/if}
-
-				{#if expiringApiKeysAttentionCount > 0}
-					<DashboardActionCard
-						title={m.api_key_page_title()}
-						icon={ApiKeyIcon}
-						badgeText={expiringApiKeysBadgeText}
-						badgeVariant="orange"
-						value={expiringApiKeysAttentionCount}
-						description={m.api_key_expires_at_description()}
-						ctaLabel={m.common_view_all()}
-						href="/settings/api-keys"
-					/>
-				{/if}
-			</div>
-		{:else}
-			<Card.Root variant="outlined" class="border-emerald-500/30 bg-emerald-500/5 shadow-sm">
-				<Card.Content class="space-y-2.5 p-4">
-					<div class="flex items-center gap-2 text-sm font-semibold text-emerald-700 dark:text-emerald-300">
-						<CheckIcon class="size-4" />
-						<span>{m.progress_deploy_service_healthy({ service: m.environments_title() })}</span>
-					</div>
-					<p class="text-muted-foreground text-xs leading-relaxed">{m.dashboard_no_actionable_events()}</p>
-				</Card.Content>
-			</Card.Root>
-		{/if}
-	</section>
-
-	<header class="shrink-0">
-		<Card.Root class="overflow-hidden">
-			<Card.Header icon={StatsIcon} class="items-start">
-				<div class="flex w-full min-w-0 flex-col gap-2">
-					<h2 class="text-lg font-semibold tracking-tight">{m.common_overview()}</h2>
-					<p class="text-muted-foreground text-sm">{m.dashboard_overview_caption()}</p>
-				</div>
-			</Card.Header>
-			<Card.Content class="space-y-2.5 pt-0 pb-3">
-				<div
-					class={`grid grid-cols-2 gap-1 md:grid-cols-3 md:gap-1.5 ${gpuMetric !== null ? 'xl:grid-cols-4' : 'xl:grid-cols-3'}`}
+	{#if activeView === 'all'}
+		<Tabs.Content value="all">
+			<DashboardAllEnvironmentsView heroGreeting={dashboardHeroGreeting} {debugAllGood} />
+		</Tabs.Content>
+	{:else}
+		<Tabs.Content value="current">
+			<div class="flex h-full min-h-0 flex-col gap-4 overflow-hidden pt-3 md:gap-5 md:pt-4">
+				<header
+					class="dark:border-surface/80 dark:bg-surface/10 shrink-0 rounded-xl border border-white/80 bg-white/10 p-4 shadow-sm backdrop-blur-sm sm:p-5"
 				>
-					<DashboardMetricTile
-						title={m.dashboard_meter_cpu()}
-						icon={CpuIcon}
-						value={formatPercent(cpuMetric)}
-						label={cpuMetricLabel}
-						meterValue={cpuMetric}
-					/>
+					<div class="relative flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+						<div class="space-y-1.5">
+							<p class="text-muted-foreground text-[11px] font-semibold tracking-[0.14em] uppercase">{m.dashboard_title()}</p>
+							<h1 class="text-2xl font-bold tracking-tight sm:text-3xl">{currentEnvironmentName}</h1>
+						</div>
 
-					<DashboardMetricTile
-						title={m.dashboard_meter_memory()}
-						icon={MemoryStickIcon}
-						value={formatPercent(memoryMetric)}
-						label={memoryMetricLabel}
-						labelClass="truncate"
-						meterValue={memoryMetric}
-					/>
-
-					<DashboardMetricTile
-						title={m.dashboard_meter_disk()}
-						icon={VolumesIcon}
-						value={formatPercent(diskMetric)}
-						label={diskMetricLabel}
-						labelClass="truncate"
-						meterValue={diskMetric}
-					/>
-
-					{#if gpuMetric !== null}
-						<DashboardMetricTile
-							title={m.dashboard_meter_gpu()}
-							icon={GpuIcon}
-							value={formatPercent(gpuMetric)}
-							label={gpuMetricLabel}
-							meterValue={gpuMetric}
+						<QuickActions
+							class="w-full justify-start lg:w-auto lg:justify-end"
+							compact
+							user={data.user}
+							{stoppedContainers}
+							{runningContainers}
+							isLoading={{ starting: isLoading.starting, stopping: isLoading.stopping, pruning: isLoading.pruning }}
+							onStartAll={handleStartAll}
+							onStopAll={handleStopAll}
+							onOpenPruneDialog={() => (isPruneDialogOpen = true)}
+							onRefresh={refreshData}
+							refreshing={isLoading.refreshing}
 						/>
-					{/if}
-				</div>
+					</div>
+				</header>
 
-				<div class="mt-1 flex flex-col gap-2 border-t pt-3 md:flex-row md:items-center md:justify-between">
-					<div class="min-w-0 space-y-1">
-						<div class="text-sm font-medium">{m.docker_engine_title({ engine: overviewHost })}</div>
-						<div class="text-muted-foreground flex flex-wrap items-center gap-2 text-xs">
-							<span class="inline-flex items-center gap-1.5">
-								<ContainersIcon class="size-3" />
-								<span class="font-medium text-emerald-600">{runningContainers}</span>
-								<span class="text-muted-foreground/70">/</span>
-								<span>{totalContainers}</span>
-							</span>
-							<span class="text-muted-foreground/50">•</span>
-							<span class="inline-flex items-center gap-1.5">
-								<ImagesIcon class="size-3" />
-								<span>{images.pagination.totalItems}</span>
-								<span class="text-muted-foreground/70">{m.images_title()}</span>
-							</span>
-							<span class="text-muted-foreground/50">•</span>
-							<span>{imageUsageLabel}</span>
-							<span class="text-muted-foreground/50">•</span>
-							<span class="font-mono">{overviewPlatform} / {overviewArchitecture}</span>
+				<section class="shrink-0 space-y-3">
+					{#if attentionItemsCount > 0}
+						<div class="flex flex-col gap-1">
+							<h2 class="text-lg font-semibold tracking-tight">{m.dashboard_action_items_title()}</h2>
+						</div>
+						<div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+							{#if stoppedContainersAttentionCount > 0}
+								<DashboardActionCard
+									title={m.containers_title()}
+									icon={ContainersIcon}
+									badgeText={stoppedContainersBadgeText}
+									badgeVariant="red"
+									value={`${runningContainers}/${totalContainers}`}
+									description={m.common_running()}
+									ctaLabel={m.common_view_all()}
+									href="/containers"
+								/>
+							{/if}
+
+							{#if imageUpdatesAttentionCount > 0}
+								<DashboardActionCard
+									title={m.images_updates()}
+									icon={UpdateIcon}
+									badgeText={imageUpdatesBadgeText}
+									badgeVariant="amber"
+									value={imageUpdatesAttentionCount}
+									description={m.image_update_tag_description()}
+									ctaLabel={m.common_view_all()}
+									href="/images"
+								/>
+							{/if}
+
+							{#if actionableVulnerabilitiesAttentionCount > 0}
+								<DashboardActionCard
+									title={m.security_title()}
+									icon={AlertTriangleIcon}
+									badgeText={actionableVulnerabilitiesBadgeText}
+									badgeVariant="red"
+									value={actionableVulnerabilitiesAttentionCount}
+									description={m.security_subtitle()}
+									ctaLabel={m.common_view()}
+									href="/security"
+								/>
+							{/if}
+
+							{#if hasDiskPressureAlert}
+								<DashboardActionCard
+									title={m.dashboard_meter_disk()}
+									icon={VolumesIcon}
+									badgeText={diskRiskLabel}
+									badgeVariant={diskRiskBadgeVariant}
+									value={diskPressureValue}
+									description={diskPressureDescription}
+									ctaLabel={m.common_view_all()}
+									href="/volumes"
+								/>
+							{/if}
+
+							{#if expiringApiKeysAttentionCount > 0}
+								<DashboardActionCard
+									title={m.api_key_page_title()}
+									icon={ApiKeyIcon}
+									badgeText={expiringApiKeysBadgeText}
+									badgeVariant="orange"
+									value={expiringApiKeysAttentionCount}
+									description={m.api_key_expires_at_description()}
+									ctaLabel={m.common_view_all()}
+									href="/settings/api-keys"
+								/>
+							{/if}
+						</div>
+					{:else}
+						<Card.Root variant="outlined" class="border-emerald-500/30 bg-emerald-500/5 shadow-sm">
+							<Card.Content class="space-y-2.5 p-4">
+								<div class="space-y-2.5">
+									<div class="flex items-center gap-2 text-sm font-semibold text-emerald-700 dark:text-emerald-300">
+										<CheckIcon class="size-4" />
+										<span>{m.progress_deploy_service_healthy({ service: m.environments_title() })}</span>
+									</div>
+									<p class="text-muted-foreground text-xs leading-relaxed">{m.dashboard_no_actionable_events()}</p>
+								</div>
+							</Card.Content>
+						</Card.Root>
+					{/if}
+				</section>
+
+				<header class="shrink-0">
+					<Card.Root class="overflow-hidden">
+						<Card.Header icon={StatsIcon} class="items-start">
+							<div class="flex w-full min-w-0 flex-col gap-2">
+								<h2 class="text-lg font-semibold tracking-tight">{m.common_overview()}</h2>
+							</div>
+						</Card.Header>
+						<Card.Content class="space-y-2.5 pt-0 pb-3">
+							<div
+								class={`grid grid-cols-2 gap-1 md:grid-cols-3 md:gap-1.5 ${gpuMetric !== null ? 'xl:grid-cols-4' : 'xl:grid-cols-3'}`}
+							>
+								<DashboardMetricTile
+									title={m.dashboard_meter_cpu()}
+									icon={CpuIcon}
+									value={formatPercent(cpuMetric)}
+									label={cpuMetricLabel}
+									meterValue={cpuMetric}
+								/>
+
+								<DashboardMetricTile
+									title={m.dashboard_meter_memory()}
+									icon={MemoryStickIcon}
+									value={formatPercent(memoryMetric)}
+									label={memoryMetricLabel}
+									labelClass="truncate"
+									meterValue={memoryMetric}
+								/>
+
+								<DashboardMetricTile
+									title={m.dashboard_meter_disk()}
+									icon={VolumesIcon}
+									value={formatPercent(diskMetric)}
+									label={diskMetricLabel}
+									labelClass="truncate"
+									meterValue={diskMetric}
+								/>
+
+								{#if gpuMetric !== null}
+									<DashboardMetricTile
+										title={m.dashboard_meter_gpu()}
+										icon={GpuIcon}
+										value={formatPercent(gpuMetric)}
+										label={gpuMetricLabel}
+										meterValue={gpuMetric}
+									/>
+								{/if}
+							</div>
+
+							<div class="mt-1 flex flex-col gap-2 border-t pt-3 md:flex-row md:items-center md:justify-between">
+								<div class="min-w-0 space-y-1">
+									<div class="text-sm font-medium">{m.docker_engine_title({ engine: overviewHost })}</div>
+									<div class="text-muted-foreground flex flex-wrap items-center gap-2 text-xs">
+										<span class="inline-flex items-center gap-1.5">
+											<ContainersIcon class="size-3" />
+											<span class="font-medium text-emerald-600">{runningContainers}</span>
+											<span class="text-muted-foreground/70">/</span>
+											<span>{totalContainers}</span>
+										</span>
+										<span class="text-muted-foreground/50">•</span>
+										<span class="inline-flex items-center gap-1.5">
+											<ImagesIcon class="size-3" />
+											<span>{images.pagination.totalItems}</span>
+											<span class="text-muted-foreground/70">{m.images_title()}</span>
+										</span>
+										<span class="text-muted-foreground/50">•</span>
+										<span>{imageUsageLabel}</span>
+										<span class="text-muted-foreground/50">•</span>
+										<span class="font-mono">{overviewPlatform} / {overviewArchitecture}</span>
+									</div>
+								</div>
+
+								<ArcaneButton
+									action="base"
+									tone="ghost"
+									size="sm"
+									icon={InfoIcon}
+									showLabel={false}
+									customLabel={m.common_inspect()}
+									class="h-7 px-2.5 text-xs"
+									loading={!!dockerInfoPromise}
+									onclick={openDockerInfoDialog}
+								/>
+							</div>
+						</Card.Content>
+					</Card.Root>
+				</header>
+
+				<section class="flex flex-col lg:min-h-0 lg:flex-1 lg:overflow-hidden">
+					<div class="mb-3 flex items-center justify-between gap-3">
+						<h2 class="text-lg font-semibold tracking-tight">{m.dashboard_resource_tables_title()}</h2>
+						<div class="hidden items-center gap-2 md:flex">
+							<ArcaneButton action="base" tone="ghost" size="sm" href="/containers">
+								{m.containers_title()}
+							</ArcaneButton>
+							<ArcaneButton action="base" tone="ghost" size="sm" href="/images">
+								{m.images_title()}
+							</ArcaneButton>
 						</div>
 					</div>
+					<div class="grid grid-cols-1 gap-4 lg:min-h-0 lg:flex-1 lg:grid-cols-2 lg:overflow-hidden">
+						<DashboardContainerTable bind:containers isLoading={false} />
+						<DashboardImageTable bind:images isLoading={false} />
+					</div>
+				</section>
 
-					<ArcaneButton
-						action="base"
-						tone="ghost"
-						size="sm"
-						icon={InfoIcon}
-						showLabel={false}
-						customLabel={m.common_inspect()}
-						class="h-7 px-2.5 text-xs"
-						loading={!!dockerInfoPromise}
-						onclick={openDockerInfoDialog}
-					/>
-				</div>
-			</Card.Content>
-		</Card.Root>
-	</header>
+				{#if dockerInfoDialogOpen}
+					<DockerInfoDialog bind:open={dockerInfoDialogOpen} {dockerInfo} {dockerInfoPromise} errorMessage={dockerInfoError} />
+				{/if}
 
-	<section class="flex flex-col lg:min-h-0 lg:flex-1 lg:overflow-hidden">
-		<div class="mb-3 flex items-center justify-between gap-3">
-			<h2 class="text-lg font-semibold tracking-tight">{m.dashboard_resource_tables_title()}</h2>
-			<div class="hidden items-center gap-2 md:flex">
-				<ArcaneButton action="base" tone="ghost" size="sm" href="/containers">
-					{m.containers_title()}
-				</ArcaneButton>
-				<ArcaneButton action="base" tone="ghost" size="sm" href="/images">
-					{m.images_title()}
-				</ArcaneButton>
+				<PruneConfirmationDialog
+					bind:open={isPruneDialogOpen}
+					defaults={settings}
+					isPruning={isLoading.pruning}
+					onConfirm={confirmPrune}
+					onCancel={() => (isPruneDialogOpen = false)}
+				/>
 			</div>
-		</div>
-		<div class="grid grid-cols-1 gap-4 lg:min-h-0 lg:flex-1 lg:grid-cols-2 lg:overflow-hidden">
-			<DashboardContainerTable bind:containers isLoading={false} />
-			<DashboardImageTable bind:images isLoading={false} />
-		</div>
-	</section>
-
-	{#if dockerInfoDialogOpen}
-		<DockerInfoDialog bind:open={dockerInfoDialogOpen} {dockerInfo} {dockerInfoPromise} errorMessage={dockerInfoError} />
+		</Tabs.Content>
 	{/if}
-
-	<PruneConfirmationDialog
-		bind:open={isPruneDialogOpen}
-		defaults={settings}
-		isPruning={isLoading.pruning}
-		onConfirm={confirmPrune}
-		onCancel={() => (isPruneDialogOpen = false)}
-	/>
-</div>
+</Tabs.Root>

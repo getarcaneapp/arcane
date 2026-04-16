@@ -26,7 +26,7 @@ func setupDashboardHandlerTestDB(t *testing.T) (*database.DB, *services.Settings
 
 	db, err := gorm.Open(glsqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&models.ApiKey{}, &models.ImageUpdateRecord{}, &models.Project{}, &models.SettingVariable{}))
+	require.NoError(t, db.AutoMigrate(&models.ApiKey{}, &models.Environment{}, &models.ImageUpdateRecord{}, &models.Project{}, &models.SettingVariable{}))
 
 	databaseDB := &database.DB{DB: db}
 	settingsSvc, err := services.NewSettingsService(context.Background(), databaseDB)
@@ -111,7 +111,7 @@ func TestDashboardHandlerGetDashboardReturnsSnapshot(t *testing.T) {
 
 	dockerSvc := newDashboardHandlerTestDockerService(t, settingsSvc, containers, images)
 	handler := &DashboardHandler{
-		dashboardService: services.NewDashboardService(db, dockerSvc, nil, settingsSvc, nil),
+		dashboardService: services.NewDashboardService(db, dockerSvc, nil, settingsSvc, nil, nil),
 	}
 
 	output, err := handler.GetDashboard(context.Background(), &GetDashboardInput{EnvironmentID: "0"})
@@ -130,4 +130,29 @@ func TestDashboardHandlerGetDashboardReturnsSnapshot(t *testing.T) {
 		{Kind: dashboardtypes.ActionItemKindImageUpdates, Count: 1, Severity: dashboardtypes.ActionItemSeverityWarning},
 		{Kind: dashboardtypes.ActionItemKindExpiringKeys, Count: 1, Severity: dashboardtypes.ActionItemSeverityWarning},
 	}, snapshot.ActionItems.Items)
+}
+
+func TestDashboardHandlerGetEnvironmentsOverviewReturnsAggregateSummary(t *testing.T) {
+	db, settingsSvc := setupDashboardHandlerTestDB(t)
+
+	require.NoError(t, db.WithContext(context.Background()).Create(&models.Environment{
+		BaseModel: models.BaseModel{ID: "0", CreatedAt: time.Now()},
+		Name:      "Local Docker",
+		ApiUrl:    "http://local.test",
+		Status:    string(models.EnvironmentStatusOffline),
+		Enabled:   true,
+	}).Error)
+
+	handler := &DashboardHandler{
+		dashboardService: services.NewDashboardService(db, nil, nil, settingsSvc, nil, services.NewEnvironmentService(db, http.DefaultClient, nil, nil, settingsSvc, nil)),
+	}
+
+	output, err := handler.GetEnvironmentsOverview(context.Background(), &GetDashboardEnvironmentsOverviewInput{})
+	require.NoError(t, err)
+	require.NotNil(t, output)
+	require.True(t, output.Body.Success)
+	require.Equal(t, 1, output.Body.Data.Summary.TotalEnvironments)
+	require.Len(t, output.Body.Data.Environments, 1)
+	require.Equal(t, "0", output.Body.Data.Environments[0].Environment.ID)
+	require.Equal(t, dashboardtypes.EnvironmentSnapshotStateSkipped, output.Body.Data.Environments[0].SnapshotState)
 }

@@ -1,6 +1,6 @@
 import BaseAPIService from './api-service';
 import { environmentStore } from '$lib/stores/environment.store.svelte';
-import type { DashboardActionItems, DashboardSnapshot } from '$lib/types/dashboard.type';
+import type { DashboardActionItems, DashboardEnvironmentsOverview, DashboardSnapshot } from '$lib/types/dashboard.type';
 
 interface GetDashboardActionItemsOptions {
 	debugAllGood?: boolean;
@@ -28,6 +28,11 @@ export class DashboardService extends BaseAPIService {
 	): Promise<DashboardActionItems> {
 		const params = options?.debugAllGood ? { debugAllGood: 'true' } : undefined;
 		return this.handleResponse(this.api.get(`/environments/${environmentId}/dashboard/action-items`, { params }));
+	}
+
+	async getDashboardEnvironmentsOverview(options?: GetDashboardActionItemsOptions): Promise<DashboardEnvironmentsOverview> {
+		const params = options?.debugAllGood ? { debugAllGood: 'true' } : undefined;
+		return this.handleResponse(this.api.get('/dashboard/environments', { params }));
 	}
 }
 
