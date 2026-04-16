@@ -6,7 +6,11 @@ import type { SystemPruneRequest } from '$lib/types/prune.type';
 export class SystemService extends BaseAPIService {
 	async pruneAll(options: SystemPruneRequest) {
 		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.handleResponse(this.api.post(`/environments/${envId}/system/prune`, options));
+		return this.pruneAllForEnvironment(envId, options);
+	}
+
+	async pruneAllForEnvironment(environmentId: string, options: SystemPruneRequest) {
+		return this.handleResponse(this.api.post(`/environments/${environmentId}/system/prune`, options));
 	}
 
 	async startAllStoppedContainers() {

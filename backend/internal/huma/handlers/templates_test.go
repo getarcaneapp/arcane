@@ -73,6 +73,44 @@ func TestFetchTemplateRegistryAuthenticatedUnsafeTargetIsSanitized(t *testing.T)
 	require.NotContains(t, rec.Body.String(), "Invalid JSON response")
 }
 
+func TestTemplateReadEndpointsRequireAuthentication(t *testing.T) {
+	router := newTemplateFetchTestRouter(t, http.DefaultClient)
+
+	testCases := []struct {
+		name string
+		path string
+	}{
+		{name: "list templates", path: "/api/templates"},
+		{name: "list all templates", path: "/api/templates/all"},
+		{name: "get template", path: "/api/templates/test-template"},
+		{name: "get template content", path: "/api/templates/test-template/content"},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, testCase.path, nil)
+			rec := httptest.NewRecorder()
+
+			router.ServeHTTP(rec, req)
+
+			require.Equal(t, http.StatusUnauthorized, rec.Code)
+			require.Contains(t, rec.Body.String(), "Unauthorized")
+		})
+	}
+}
+
+func TestHealthEndpointRemainsPublic(t *testing.T) {
+	router := newTemplateFetchTestRouter(t, http.DefaultClient)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/health", nil)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Body.String(), "UP")
+}
+
 func newTemplateFetchTestRouter(t *testing.T, httpClient *http.Client) *gin.Engine {
 	t.Helper()
 
@@ -114,9 +152,14 @@ func newTemplateFetchTestRouter(t *testing.T, httpClient *http.Client) *gin.Engi
 			Name: "X-API-Key",
 		},
 	}
+	humaConfig.Security = []map[string][]string{
+		{"BearerAuth": {}},
+		{"ApiKeyAuth": {}},
+	}
 
 	api := humagin.NewWithGroup(router, apiGroup, humaConfig)
 	api.UseMiddleware(humamiddleware.NewAuthBridge(api, authService, nil, &config.Config{}))
+	RegisterHealth(api)
 	RegisterTemplates(api, templateService, nil)
 
 	return router

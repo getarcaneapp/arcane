@@ -439,6 +439,28 @@ func (s *EnvironmentService) ListEnvironmentsPaginated(ctx context.Context, para
 	return out, paginationResp, nil
 }
 
+func (s *EnvironmentService) ListVisibleEnvironments(ctx context.Context) ([]environment.Environment, error) {
+	var envs []models.Environment
+	if err := s.db.WithContext(ctx).
+		Model(&models.Environment{}).
+		Where("hidden = ?", false).
+		Order("created_at asc, id asc").
+		Find(&envs).Error; err != nil {
+		return nil, fmt.Errorf("failed to list visible environments: %w", err)
+	}
+
+	out, mapErr := mapper.MapSlice[models.Environment, environment.Environment](envs)
+	if mapErr != nil {
+		return nil, fmt.Errorf("failed to map environments: %w", mapErr)
+	}
+
+	for i := range out {
+		ApplyEnvironmentRuntimeState(&out[i])
+	}
+
+	return out, nil
+}
+
 // ListRemoteEnvironments returns all non-local, enabled environments for syncing purposes.
 func (s *EnvironmentService) ListRemoteEnvironments(ctx context.Context) ([]models.Environment, error) {
 	var envs []models.Environment

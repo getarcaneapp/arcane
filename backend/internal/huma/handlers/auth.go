@@ -76,6 +76,7 @@ func RegisterAuth(api huma.API, userService *services.UserService, authService *
 		Summary:     "Login",
 		Description: "Authenticate a user with username and password",
 		Tags:        []string{"Auth"},
+		Security:    []map[string][]string{},
 	}, h.Login)
 
 	huma.Register(api, huma.Operation{
@@ -85,6 +86,7 @@ func RegisterAuth(api huma.API, userService *services.UserService, authService *
 		Summary:     "Logout",
 		Description: "Clear authentication session",
 		Tags:        []string{"Auth"},
+		Security:    []map[string][]string{},
 	}, h.Logout)
 
 	huma.Register(api, huma.Operation{
@@ -107,6 +109,7 @@ func RegisterAuth(api huma.API, userService *services.UserService, authService *
 		Summary:     "Refresh token",
 		Description: "Obtain a new access token using a refresh token",
 		Tags:        []string{"Auth"},
+		Security:    []map[string][]string{},
 	}, h.RefreshToken)
 
 	huma.Register(api, huma.Operation{

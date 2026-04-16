@@ -685,7 +685,7 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates settings.U
 		s.OnTimeoutSettingsChanged(ctx, changedTimeouts)
 	}
 
-	return settings.ToSettingVariableSlice(false, false), nil
+	return settings.ToSettingVariableSlice(models.SettingVisibilityNonAdmin, false), nil
 }
 
 func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defaultCfg *models.Settings) ([]models.SettingVariable, bool, bool, bool, bool, bool, []libarcane.SettingUpdate, error) {
@@ -868,7 +868,7 @@ func (s *SettingsService) handleOidcConfigUpdate(ctx context.Context, updates se
 
 func (s *SettingsService) EnsureDefaultSettings(ctx context.Context) error {
 	defaultSettings := s.getDefaultSettings()
-	defaultSettingVars := defaultSettings.ToSettingVariableSlice(true, false)
+	defaultSettingVars := defaultSettings.ToSettingVariableSlice(models.SettingVisibilityAll, false)
 
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for _, defaultSetting := range defaultSettingVars {
@@ -1016,8 +1016,8 @@ func (s *SettingsService) upsertEnvSetting(ctx context.Context, tx *gorm.DB, key
 	return nil
 }
 
-func (s *SettingsService) ListSettings(all bool) []models.SettingVariable {
-	return s.GetSettingsConfig().ToSettingVariableSlice(all, true)
+func (s *SettingsService) ListSettings(visibility models.SettingVisibility) []models.SettingVariable {
+	return s.GetSettingsConfig().ToSettingVariableSlice(visibility, true)
 }
 
 // GetSettingType returns the type from the setting metadata
