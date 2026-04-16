@@ -166,6 +166,28 @@ func TestLoadComposeProjectFromDir_EmptyProjectsDirectoryDoesNotCreateParentGlob
 	assert.ErrorIs(t, statErr, os.ErrNotExist)
 }
 
+func TestLoadComposeProjectLenient_ToleratesUndefinedVariables(t *testing.T) {
+	t.Parallel()
+
+	// Reproduces the GitSync chicken-and-egg problem: a compose file references
+	// ${CONFIG_FILE} in a bind-mount source, but no .env exists yet.  The strict
+	// loader would resolve ${CONFIG_FILE} to "" and produce ":/etc/app/app.conf"
+	// (empty section between colons).  The lenient loader must succeed instead.
+	dir := t.TempDir()
+	composePath := filepath.Join(dir, "compose.yaml")
+	require.NoError(t, os.WriteFile(composePath, []byte(`services:
+  app:
+    image: nginx:alpine
+    volumes:
+      - ${CONFIG_FILE}:/etc/app/app.conf
+`), 0o600))
+
+	project, err := LoadComposeProjectLenient(context.Background(), composePath, "demo", dir, false, nil)
+	require.NoError(t, err)
+	require.NotNil(t, project)
+	assert.Len(t, project.Services, 1)
+}
+
 func TestLoadComposeProject_UsesProjectLevelComposeLabelsForIncludedServices(t *testing.T) {
 	t.Parallel()
 
