@@ -43,13 +43,17 @@
 		VolumesIcon
 	} from '$lib/icons';
 	import DashboardMetricTile from './dash-metric-tile.svelte';
+	import DashboardEnvironmentUpgradeAction from './dashboard-environment-upgrade-action.svelte';
+	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
 
 	let {
 		heroGreeting,
-		debugAllGood = false
+		debugAllGood = false,
+		debugUpgrade = false
 	}: {
 		heroGreeting: string;
 		debugAllGood?: boolean;
+		debugUpgrade?: boolean;
 	} = $props();
 
 	const emptySnapshotSettings: DashboardSnapshot['settings'] = {};
@@ -127,11 +131,7 @@
 			}));
 	}
 
-	async function buildOverviewSummaryFromCards(): Promise<DashboardOverviewSummary> {
-		const settledEnvironments = await Promise.all(
-			environmentCards.map((item) => item.loadPromise ?? Promise.resolve(createBaseEnvironmentOverview(item.environment)))
-		);
-
+	function buildOverviewSummaryFromItemsInternal(settledEnvironments: DashboardEnvironmentOverview[]): DashboardOverviewSummary {
 		return {
 			totalEnvironments: settledEnvironments.length,
 			reachableEnvironments: settledEnvironments.filter(
@@ -189,6 +189,10 @@
 		}
 
 		const liveStatsState = liveStatsByEnvironmentId[environment.id];
+		if (!liveStatsState) {
+			return;
+		}
+
 		if (liveStatsState.client) {
 			return;
 		}
@@ -246,21 +250,39 @@
 
 				return a.index - b.index;
 			})
-			.map(({ environment }) => ({
-				environment,
-				loadPromise: shouldLoadEnvironment(environment) ? buildEnvironmentLoadPromise(environment, debugAllGood) : null
-			}));
+			.map(({ environment }) => ({ environment }));
 	});
 
-	const overviewSummaryPromise = $derived.by(async (): Promise<DashboardOverviewSummary> => {
-		void reloadVersion;
-		const result = await tryCatch(dashboardService.getDashboardEnvironmentsOverview({ debugAllGood }));
-		if (!result.error) {
-			return mapOverviewSummary(result.data.summary);
+	const environmentBoardStatePromise = $derived.by(
+		async (): Promise<{
+			overviewById: Map<string, DashboardEnvironmentOverview>;
+			summary: DashboardOverviewSummary;
+		}> => {
+			void reloadVersion;
+
+			const currentEnvironmentCards = environmentCards;
+			const result = await tryCatch(dashboardService.getDashboardEnvironmentsOverview({ debugAllGood }));
+			if (!result.error) {
+				return {
+					overviewById: new Map(result.data.environments.map((item) => [item.environment.id, item])),
+					summary: mapOverviewSummary(result.data.summary)
+				};
+			}
+
+			const fallbackItems = await Promise.all(
+				currentEnvironmentCards.map((item) =>
+					shouldLoadEnvironment(item.environment)
+						? buildEnvironmentLoadPromise(item.environment, debugAllGood)
+						: Promise.resolve(createBaseEnvironmentOverview(item.environment))
+				)
+			);
+
+			return {
+				overviewById: new Map(fallbackItems.map((item) => [item.environment.id, item])),
+				summary: buildOverviewSummaryFromItemsInternal(fallbackItems)
+			};
 		}
-
-		return buildOverviewSummaryFromCards();
-	});
+	);
 
 	$effect(() => {
 		const reachableEnvironmentIds: string[] = [];
@@ -627,7 +649,7 @@
 	<section class="shrink-0 space-y-3">
 		<h2 class="text-lg font-semibold tracking-tight">{m.common_overview()}</h2>
 
-		{#await overviewSummaryPromise}
+		{#await environmentBoardStatePromise}
 			<div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
 				{#each [1, 2, 3, 4] as tile (tile)}
 					<div class="border-border/50 bg-background/50 rounded-xl border p-4">
@@ -637,7 +659,8 @@
 					</div>
 				{/each}
 			</div>
-		{:then summary}
+		{:then boardState}
+			{@const summary = boardState.summary}
 			<div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
 				<div class="border-border/50 bg-background/50 rounded-xl border p-4">
 					<div class="text-muted-foreground flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase">
@@ -723,6 +746,43 @@
 											minWidth="none"
 										/>
 										<StatusBadge text={transportBadge.text} variant={transportBadge.variant} size="sm" minWidth="none" />
+										{#await environmentBoardStatePromise then boardState}
+											{@const loadedItem = boardState.overviewById.get(environment.id) ?? baseItem}
+											{@const vInfo =
+												loadedItem.versionInfo ||
+												(debugUpgrade
+													? ({ displayVersion: 'debug', updateAvailable: true, newestVersion: 'debug-v2' } as any)
+													: null)}
+											{#if vInfo}
+												<div class="flex items-center">
+													{#if vInfo.updateAvailable || debugUpgrade}
+														<ArcaneTooltip.Root>
+															<ArcaneTooltip.Trigger
+																class="bg-surface/50 text-muted-foreground border-border/50 hover:text-foreground inline-flex items-center rounded-md border px-2 py-[2px] font-mono text-[11px] font-medium transition-colors"
+															>
+																v{vInfo.displayVersion || vInfo.currentTag || vInfo.currentVersion || 'unknown'}
+																<span class="relative ml-1.5 flex h-2 w-2">
+																	<span
+																		class="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75"
+																	></span>
+																	<span class="relative inline-flex h-2 w-2 rounded-full bg-amber-500"></span>
+																</span>
+															</ArcaneTooltip.Trigger>
+															<ArcaneTooltip.Content>
+																{m.sidebar_update_available()}{#if vInfo.newestVersion || vInfo.newestDigest}: {vInfo.newestVersion ||
+																		vInfo.newestDigest.slice(0, 12)}{/if}
+															</ArcaneTooltip.Content>
+														</ArcaneTooltip.Root>
+													{:else}
+														<div
+															class="bg-surface/50 text-muted-foreground border-border/50 hover:text-foreground inline-flex items-center rounded-md border px-2 py-[2px] font-mono text-[11px] font-medium transition-colors"
+														>
+															v{vInfo.displayVersion || vInfo.currentTag || vInfo.currentVersion || 'unknown'}
+														</div>
+													{/if}
+												</div>
+											{/if}
+										{/await}
 									</div>
 
 									<div class="text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
@@ -732,95 +792,87 @@
 									</div>
 								</div>
 
-								<div class="flex min-w-0 flex-1 justify-end">
-									{#if item.loadPromise}
-										{#await item.loadPromise}
-											<ActionButtonGroup buttons={getEnvironmentActionButtons(baseItem, isCurrent)} size="sm" />
-										{:then loadedItem}
-											<ActionButtonGroup buttons={getEnvironmentActionButtons(loadedItem, isCurrent)} size="sm" />
-										{/await}
-									{:else}
+								<div class="flex min-w-0 flex-1 items-start justify-end pt-1 sm:pt-0">
+									{#await environmentBoardStatePromise}
 										<ActionButtonGroup buttons={getEnvironmentActionButtons(baseItem, isCurrent)} size="sm" />
-									{/if}
+									{:then boardState}
+										{@const loadedItem = boardState.overviewById.get(environment.id) ?? baseItem}
+										{@const vInfo =
+											loadedItem.versionInfo ||
+											(debugUpgrade
+												? ({ displayVersion: 'debug', updateAvailable: true, newestVersion: 'debug-v2' } as any)
+												: null)}
+										<div class="flex items-center gap-2">
+											{#if vInfo}
+												<DashboardEnvironmentUpgradeAction
+													environment={loadedItem.environment}
+													versionInfo={vInfo}
+													isAdmin={currentUserIsAdmin}
+													debug={debugUpgrade}
+													onRefreshRequested={refreshOverview}
+												/>
+											{/if}
+											<ActionButtonGroup buttons={getEnvironmentActionButtons(loadedItem, isCurrent)} size="sm" />
+										</div>
+									{/await}
 								</div>
 							</div>
 
-							{#if item.loadPromise || isEnvironmentOnline(environment)}
+							{#if shouldLoadEnvironment(environment) || isEnvironmentOnline(environment)}
 								<div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
 									<div class="border-border/50 bg-background/50 rounded-lg border p-3">
 										<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
 											{m.containers_title()}
 										</div>
-										{#if item.loadPromise}
-											{#await item.loadPromise}
-												<div class="mt-2 space-y-2">
-													<Skeleton class="h-6 w-20" />
-													<Skeleton class="h-3 w-24" />
-												</div>
-											{:then loadedItem}
-												<div class="mt-1 text-lg font-semibold">
-													{loadedItem.containers.runningContainers}/{loadedItem.containers.totalContainers}
-												</div>
-												<div class="text-muted-foreground text-xs">
-													{loadedItem.containers.stoppedContainers}
-													{m.common_stopped()}
-												</div>
-											{/await}
-										{:else}
+										{#await environmentBoardStatePromise}
+											<div class="mt-2 space-y-2">
+												<Skeleton class="h-6 w-20" />
+												<Skeleton class="h-3 w-24" />
+											</div>
+										{:then boardState}
+											{@const loadedItem = boardState.overviewById.get(environment.id) ?? baseItem}
 											<div class="mt-1 text-lg font-semibold">
-												{baseItem.containers.runningContainers}/{baseItem.containers.totalContainers}
+												{loadedItem.containers.runningContainers}/{loadedItem.containers.totalContainers}
 											</div>
 											<div class="text-muted-foreground text-xs">
-												{baseItem.containers.stoppedContainers}
+												{loadedItem.containers.stoppedContainers}
 												{m.common_stopped()}
 											</div>
-										{/if}
+										{/await}
 									</div>
 
 									<div class="border-border/50 bg-background/50 rounded-lg border p-3">
 										<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">{m.images_title()}</div>
-										{#if item.loadPromise}
-											{#await item.loadPromise}
-												<div class="mt-2 space-y-2">
-													<Skeleton class="h-6 w-14" />
-													<Skeleton class="h-3 w-28" />
-												</div>
-											{:then loadedItem}
-												<div class="mt-1 text-lg font-semibold">{loadedItem.imageUsageCounts.totalImages}</div>
-												<div class="text-muted-foreground text-xs">
-													{loadedItem.imageUsageCounts.imagesInuse}
-													{m.common_in_use()} · {loadedItem.imageUsageCounts.imagesUnused}
-													{m.common_unused()}
-												</div>
-											{/await}
-										{:else}
-											<div class="mt-1 text-lg font-semibold">{baseItem.imageUsageCounts.totalImages}</div>
+										{#await environmentBoardStatePromise}
+											<div class="mt-2 space-y-2">
+												<Skeleton class="h-6 w-14" />
+												<Skeleton class="h-3 w-28" />
+											</div>
+										{:then boardState}
+											{@const loadedItem = boardState.overviewById.get(environment.id) ?? baseItem}
+											<div class="mt-1 text-lg font-semibold">{loadedItem.imageUsageCounts.totalImages}</div>
 											<div class="text-muted-foreground text-xs">
-												{baseItem.imageUsageCounts.imagesInuse}
-												{m.common_in_use()} · {baseItem.imageUsageCounts.imagesUnused}
+												{loadedItem.imageUsageCounts.imagesInuse}
+												{m.common_in_use()} · {loadedItem.imageUsageCounts.imagesUnused}
 												{m.common_unused()}
 											</div>
-										{/if}
+										{/await}
 									</div>
 
 									<div class="border-border/50 bg-background/50 rounded-lg border p-3">
 										<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
 											{m.dashboard_action_items_title()}
 										</div>
-										{#if item.loadPromise}
-											{#await item.loadPromise}
-												<div class="mt-2 space-y-2">
-													<Skeleton class="h-6 w-12" />
-													<Skeleton class="h-3 w-32" />
-												</div>
-											{:then loadedItem}
-												<div class="mt-1 text-lg font-semibold">{loadedItem.actionItems.items.length}</div>
-												<div class="text-muted-foreground text-xs">{getActionSummary(loadedItem)}</div>
-											{/await}
-										{:else}
-											<div class="mt-1 text-lg font-semibold">{baseItem.actionItems.items.length}</div>
-											<div class="text-muted-foreground text-xs">{getActionSummary(baseItem)}</div>
-										{/if}
+										{#await environmentBoardStatePromise}
+											<div class="mt-2 space-y-2">
+												<Skeleton class="h-6 w-12" />
+												<Skeleton class="h-3 w-32" />
+											</div>
+										{:then boardState}
+											{@const loadedItem = boardState.overviewById.get(environment.id) ?? baseItem}
+											<div class="mt-1 text-lg font-semibold">{loadedItem.actionItems.items.length}</div>
+											<div class="text-muted-foreground text-xs">{getActionSummary(loadedItem)}</div>
+										{/await}
 									</div>
 								</div>
 							{:else}
@@ -875,17 +927,14 @@
 								</div>
 							{/if}
 
-							{#if item.loadPromise}
-								{#await item.loadPromise then loadedItem}
-									{#if loadedItem.snapshotState === 'error' && loadedItem.snapshotError}
-										<div
-											class="rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 text-xs text-red-700 dark:text-red-300"
-										>
-											{m.dashboard_all_summary_unavailable({ error: loadedItem.snapshotError })}
-										</div>
-									{/if}
-								{/await}
-							{/if}
+							{#await environmentBoardStatePromise then boardState}
+								{@const loadedItem = boardState.overviewById.get(environment.id) ?? baseItem}
+								{#if loadedItem.snapshotState === 'error' && loadedItem.snapshotError}
+									<div class="rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 text-xs text-red-700 dark:text-red-300">
+										{m.dashboard_all_summary_unavailable({ error: loadedItem.snapshotError })}
+									</div>
+								{/if}
+							{/await}
 						</Card.Content>
 					</Card.Root>
 				{/each}

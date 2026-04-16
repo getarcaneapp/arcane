@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"sort"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	dashboardtypes "github.com/getarcaneapp/arcane/types/dashboard"
 	environmenttypes "github.com/getarcaneapp/arcane/types/environment"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
+	versiontypes "github.com/getarcaneapp/arcane/types/version"
 	dockercontainer "github.com/moby/moby/api/types/container"
 	dockerimage "github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/client"
@@ -35,6 +37,7 @@ type DashboardService struct {
 	settingsService      *SettingsService
 	vulnerabilityService *VulnerabilityService
 	environmentService   *EnvironmentService
+	versionService       *VersionService
 }
 
 type DashboardActionItemsOptions struct {
@@ -48,6 +51,7 @@ func NewDashboardService(
 	settingsService *SettingsService,
 	vulnerabilityService *VulnerabilityService,
 	environmentService *EnvironmentService,
+	versionService *VersionService,
 ) *DashboardService {
 	return &DashboardService{
 		db:                   db,
@@ -56,6 +60,7 @@ func NewDashboardService(
 		settingsService:      settingsService,
 		vulnerabilityService: vulnerabilityService,
 		environmentService:   environmentService,
+		versionService:       versionService,
 	}
 }
 
@@ -423,9 +428,32 @@ func (s *DashboardService) buildEnvironmentOverviewInternal(
 		return overview
 	}
 
-	snapshot, err := s.getSnapshotForEnvironmentInternal(ctx, env, options)
-	if err != nil {
-		message := err.Error()
+	var (
+		snapshot    *dashboardtypes.Snapshot
+		snapshotErr error
+		versionInfo *versiontypes.Info
+	)
+
+	g, groupCtx := errgroup.WithContext(ctx)
+
+	g.Go(func() error {
+		snapshot, snapshotErr = s.getSnapshotForEnvironmentInternal(groupCtx, env, options)
+		return nil
+	})
+
+	g.Go(func() error {
+		versionInfo = s.getVersionInfoForEnvironmentInternal(groupCtx, env)
+		return nil
+	})
+
+	_ = g.Wait()
+
+	if versionInfo != nil {
+		overview.VersionInfo = versionInfo
+	}
+
+	if snapshotErr != nil {
+		message := snapshotErr.Error()
 		overview.SnapshotState = dashboardtypes.EnvironmentSnapshotStateError
 		overview.SnapshotError = &message
 		return overview
@@ -492,6 +520,50 @@ func buildEnvironmentDashboardProxyPathInternal(options DashboardActionItemsOpti
 	}
 
 	return fmt.Sprintf("/api/environments/%s/dashboard", localEnvironmentID)
+}
+
+func (s *DashboardService) getVersionInfoForEnvironmentInternal(
+	ctx context.Context,
+	env environmenttypes.Environment,
+) *versiontypes.Info {
+	if s.versionService == nil {
+		return nil
+	}
+
+	reqCtx, cancel := context.WithTimeout(ctx, defaultAggregateDashboardTimeout)
+	defer cancel()
+
+	if env.ID == localEnvironmentID {
+		return s.versionService.GetAppVersionInfo(reqCtx)
+	}
+
+	if s.environmentService == nil {
+		return nil
+	}
+
+	respBody, statusCode, err := s.environmentService.ProxyRequest(
+		reqCtx,
+		env.ID,
+		"GET",
+		"/api/app-version",
+		nil,
+	)
+	if err != nil {
+		slog.DebugContext(reqCtx, "Failed to fetch environment version info for dashboard", "environment_id", env.ID, "error", err)
+		return nil
+	}
+	if statusCode < 200 || statusCode >= 300 {
+		slog.DebugContext(reqCtx, "Unexpected environment version status code for dashboard", "environment_id", env.ID, "status_code", statusCode)
+		return nil
+	}
+
+	var versionInfo versiontypes.Info
+	if err := json.Unmarshal(respBody, &versionInfo); err != nil {
+		slog.DebugContext(reqCtx, "Failed to decode environment version info for dashboard", "environment_id", env.ID, "error", err)
+		return nil
+	}
+
+	return &versionInfo
 }
 
 func (s *DashboardService) getStoppedContainersCountInternal(ctx context.Context) (int, error) {

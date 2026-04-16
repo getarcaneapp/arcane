@@ -72,6 +72,7 @@
 	let imageUsageCounts = $derived(currentDashboard.imageUsageCounts);
 	let dashboardActionItems = $derived(currentDashboard.actionItems);
 	let debugAllGood = $derived(data.debugAllGood ?? false);
+	let debugUpgrade = $state(false);
 	let currentUser = $state<User | null>(null);
 	const viewTabs = $derived.by((): TabItem[] => [
 		{ value: 'all', label: m.common_all(), icon: ContainersIcon },
@@ -433,7 +434,7 @@
 
 	{#if activeView === 'all'}
 		<Tabs.Content value="all">
-			<DashboardAllEnvironmentsView heroGreeting={dashboardHeroGreeting} {debugAllGood} />
+			<DashboardAllEnvironmentsView heroGreeting={dashboardHeroGreeting} {debugAllGood} {debugUpgrade} />
 		</Tabs.Content>
 	{:else}
 		<Tabs.Content value="current">

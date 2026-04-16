@@ -15,6 +15,7 @@ import (
 	containertypes "github.com/getarcaneapp/arcane/types/container"
 	dashboardtypes "github.com/getarcaneapp/arcane/types/dashboard"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
+	versiontypes "github.com/getarcaneapp/arcane/types/version"
 	glsqlite "github.com/glebarez/sqlite"
 	dockercontainer "github.com/moby/moby/api/types/container"
 	dockerimage "github.com/moby/moby/api/types/image"
@@ -89,9 +90,13 @@ func newDashboardTestDockerService(
 	}
 }
 
+func newDashboardTestVersionServiceInternal() *VersionService {
+	return NewVersionService(nil, true, "1.2.3", "abcdef1234567890", nil, nil)
+}
+
 func TestDashboardService_GetActionItems_IncludesExpiringAPIKeys(t *testing.T) {
 	db, settingsSvc := setupDashboardServiceTestDB(t)
-	svc := NewDashboardService(db, nil, nil, settingsSvc, nil, nil)
+	svc := NewDashboardService(db, nil, nil, settingsSvc, nil, nil, nil)
 
 	now := time.Now()
 	createDashboardTestAPIKey(t, db, models.ApiKey{
@@ -135,7 +140,7 @@ func TestDashboardService_GetActionItems_IncludesExpiringAPIKeys(t *testing.T) {
 
 func TestDashboardService_GetActionItems_DebugAllGoodReturnsNoItems(t *testing.T) {
 	db, settingsSvc := setupDashboardServiceTestDB(t)
-	svc := NewDashboardService(db, nil, nil, settingsSvc, nil, nil)
+	svc := NewDashboardService(db, nil, nil, settingsSvc, nil, nil, nil)
 
 	createDashboardTestAPIKey(t, db, models.ApiKey{
 		Name:      "expiring-soon",
@@ -207,7 +212,7 @@ func TestDashboardService_GetSnapshot_ReturnsDashboardSnapshot(t *testing.T) {
 	})
 
 	dockerSvc := newDashboardTestDockerService(t, settingsSvc, containers, images)
-	svc := NewDashboardService(db, dockerSvc, nil, settingsSvc, nil, nil)
+	svc := NewDashboardService(db, dockerSvc, nil, settingsSvc, nil, nil, nil)
 
 	snapshot, err := svc.GetSnapshot(context.Background(), DashboardActionItemsOptions{})
 	require.NoError(t, err)
@@ -257,7 +262,7 @@ func TestDashboardService_GetSnapshot_DebugAllGoodOnlyClearsActionItems(t *testi
 	createDashboardTestImageUpdateRecord(t, db, models.ImageUpdateRecord{ID: "sha256:image-b", HasUpdate: true})
 
 	dockerSvc := newDashboardTestDockerService(t, settingsSvc, containers, images)
-	svc := NewDashboardService(db, dockerSvc, nil, settingsSvc, nil, nil)
+	svc := NewDashboardService(db, dockerSvc, nil, settingsSvc, nil, nil, nil)
 
 	snapshot, err := svc.GetSnapshot(context.Background(), DashboardActionItemsOptions{DebugAllGood: true})
 	require.NoError(t, err)
@@ -313,10 +318,24 @@ func TestDashboardService_GetEnvironmentsOverview_ReturnsLocalAndRemoteSummaries
 		},
 	}
 
+	remoteVersion := versiontypes.Info{
+		CurrentVersion:  "v2.4.0",
+		DisplayVersion:  "v2.4.0",
+		Revision:        "1234567890abcdef",
+		ShortRevision:   "12345678",
+		GoVersion:       "go1.24.0",
+		IsSemverVersion: true,
+		UpdateAvailable: true,
+		NewestVersion:   "v2.5.0",
+		ReleaseURL:      "https://github.com/getarcaneapp/arcane/releases/tag/v2.5.0",
+	}
+
 	remoteServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/environments/0/dashboard":
 			require.NoError(t, json.NewEncoder(w).Encode(remoteSnapshot))
+		case "/api/app-version":
+			require.NoError(t, json.NewEncoder(w).Encode(remoteVersion))
 		default:
 			http.NotFound(w, r)
 		}
@@ -340,7 +359,7 @@ func TestDashboardService_GetEnvironmentsOverview_ReturnsLocalAndRemoteSummaries
 
 	dockerSvc := newDashboardTestDockerService(t, settingsSvc, containers, images)
 	envSvc := NewEnvironmentService(db, remoteServer.Client(), nil, nil, settingsSvc, nil)
-	svc := NewDashboardService(db, dockerSvc, nil, settingsSvc, nil, envSvc)
+	svc := NewDashboardService(db, dockerSvc, nil, settingsSvc, nil, envSvc, newDashboardTestVersionServiceInternal())
 
 	overview, err := svc.GetEnvironmentsOverview(context.Background(), DashboardActionItemsOptions{})
 	require.NoError(t, err)
@@ -356,11 +375,15 @@ func TestDashboardService_GetEnvironmentsOverview_ReturnsLocalAndRemoteSummaries
 	require.Equal(t, "0", overview.Environments[0].Environment.ID)
 	require.Equal(t, dashboardtypes.EnvironmentSnapshotStateReady, overview.Environments[0].SnapshotState)
 	require.Equal(t, 1, overview.Environments[0].Containers.TotalContainers)
+	require.NotNil(t, overview.Environments[0].VersionInfo)
+	require.Equal(t, "v1.2.3", overview.Environments[0].VersionInfo.CurrentVersion)
 
 	require.Equal(t, "env-remote", overview.Environments[1].Environment.ID)
 	require.Equal(t, dashboardtypes.EnvironmentSnapshotStateReady, overview.Environments[1].SnapshotState)
 	require.Equal(t, 3, overview.Environments[1].Containers.TotalContainers)
 	require.Len(t, overview.Environments[1].ActionItems.Items, 1)
+	require.NotNil(t, overview.Environments[1].VersionInfo)
+	require.Equal(t, "v2.5.0", overview.Environments[1].VersionInfo.NewestVersion)
 }
 
 func TestDashboardService_GetEnvironmentsOverview_HandlesRemoteSnapshotFailure(t *testing.T) {
@@ -382,7 +405,7 @@ func TestDashboardService_GetEnvironmentsOverview_HandlesRemoteSnapshotFailure(t
 	})
 
 	envSvc := NewEnvironmentService(db, http.DefaultClient, nil, nil, settingsSvc, nil)
-	svc := NewDashboardService(db, nil, nil, settingsSvc, nil, envSvc)
+	svc := NewDashboardService(db, nil, nil, settingsSvc, nil, envSvc, newDashboardTestVersionServiceInternal())
 
 	overview, err := svc.GetEnvironmentsOverview(context.Background(), DashboardActionItemsOptions{})
 	require.NoError(t, err)
@@ -396,8 +419,66 @@ func TestDashboardService_GetEnvironmentsOverview_HandlesRemoteSnapshotFailure(t
 
 	require.Equal(t, dashboardtypes.EnvironmentSnapshotStateSkipped, byID["env-offline"].SnapshotState)
 	require.Nil(t, byID["env-offline"].SnapshotError)
+	require.Nil(t, byID["env-offline"].VersionInfo)
 
 	require.Equal(t, dashboardtypes.EnvironmentSnapshotStateError, byID["env-error"].SnapshotState)
 	require.NotNil(t, byID["env-error"].SnapshotError)
 	require.Contains(t, *byID["env-error"].SnapshotError, "failed to proxy dashboard snapshot")
+	require.Nil(t, byID["env-error"].VersionInfo)
+}
+
+func TestDashboardService_GetEnvironmentsOverview_OmitsVersionInfoWhenFetchFails(t *testing.T) {
+	db, settingsSvc := setupDashboardServiceTestDB(t)
+
+	remoteSnapshot := base.ApiResponse[dashboardtypes.Snapshot]{
+		Success: true,
+		Data: dashboardtypes.Snapshot{
+			Containers: dashboardtypes.SnapshotContainers{
+				Counts: containertypes.StatusCounts{
+					RunningContainers: 1,
+					StoppedContainers: 0,
+					TotalContainers:   1,
+				},
+			},
+			ImageUsageCounts: imagetypes.UsageCounts{
+				Inuse:     1,
+				Unused:    0,
+				Total:     1,
+				TotalSize: 128,
+			},
+			ActionItems: dashboardtypes.ActionItems{Items: []dashboardtypes.ActionItem{}},
+		},
+	}
+
+	remoteServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/environments/0/dashboard":
+			require.NoError(t, json.NewEncoder(w).Encode(remoteSnapshot))
+		case "/api/app-version":
+			http.Error(w, "version unavailable", http.StatusInternalServerError)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(remoteServer.Close)
+
+	createDashboardTestEnvironment(t, db, models.Environment{
+		BaseModel: models.BaseModel{ID: "env-remote", CreatedAt: time.Now()},
+		Name:      "Remote Alpha",
+		ApiUrl:    remoteServer.URL,
+		Status:    string(models.EnvironmentStatusOnline),
+		Enabled:   true,
+	})
+
+	envSvc := NewEnvironmentService(db, remoteServer.Client(), nil, nil, settingsSvc, nil)
+	svc := NewDashboardService(db, nil, nil, settingsSvc, nil, envSvc, newDashboardTestVersionServiceInternal())
+
+	overview, err := svc.GetEnvironmentsOverview(context.Background(), DashboardActionItemsOptions{})
+	require.NoError(t, err)
+	require.NotNil(t, overview)
+	require.Len(t, overview.Environments, 1)
+
+	require.Equal(t, dashboardtypes.EnvironmentSnapshotStateReady, overview.Environments[0].SnapshotState)
+	require.Equal(t, 1, overview.Environments[0].Containers.TotalContainers)
+	require.Nil(t, overview.Environments[0].VersionInfo)
 }
