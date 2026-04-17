@@ -17,17 +17,20 @@
 		versionInfo,
 		isAdmin,
 		debug = false,
-		onRefreshRequested
+		onRefreshRequested,
+		render = 'both',
+		open = $bindable(false),
+		upgrading = $bindable(false)
 	}: {
 		environment: Environment;
 		versionInfo: AppVersionInformation;
 		isAdmin: boolean;
 		debug?: boolean;
 		onRefreshRequested?: () => void | Promise<void>;
+		render?: 'both' | 'trigger' | 'dialog';
+		open?: boolean;
+		upgrading?: boolean;
 	} = $props();
-
-	let showConfirmDialog = $state(false);
-	let upgrading = $state(false);
 
 	const shouldCheckUpgrade = $derived(!!(versionInfo.updateAvailable && isAdmin && !debug));
 	const isLocalEnvironment = $derived(environment.id === '0');
@@ -108,7 +111,7 @@
 			return;
 		}
 
-		showConfirmDialog = false;
+		open = false;
 
 		try {
 			const result = await environmentUpgradeService.triggerEnvironmentUpgrade(environment.id);
@@ -132,25 +135,27 @@
 	}
 </script>
 
-{#if shouldShowUpgrade}
+{#if shouldShowUpgrade && render !== 'dialog'}
 	<ArcaneButton
 		action="update"
 		size="sm"
 		class="shrink-0"
-		onclick={() => (showConfirmDialog = true)}
+		onclick={() => (open = true)}
 		disabled={upgrading || checkingUpgrade}
 		customLabel={upgradeButtonText}
 		icon={DownloadIcon}
 	/>
 {/if}
 
-<UpgradeConfirmationDialog
-	bind:open={showConfirmDialog}
-	bind:upgrading
-	version={confirmVersion}
-	expectedVersion={versionInfo.newestVersion}
-	expectedDigest={versionInfo.newestDigest}
-	environmentName={isLocalEnvironment ? undefined : environment.name}
-	environmentId={environment.id}
-	onConfirm={handleConfirmUpgradeInternal}
-/>
+{#if render !== 'trigger'}
+	<UpgradeConfirmationDialog
+		bind:open
+		bind:upgrading
+		version={confirmVersion}
+		expectedVersion={versionInfo.newestVersion}
+		expectedDigest={versionInfo.newestDigest}
+		environmentName={isLocalEnvironment ? undefined : environment.name}
+		environmentId={environment.id}
+		onConfirm={handleConfirmUpgradeInternal}
+	/>
+{/if}

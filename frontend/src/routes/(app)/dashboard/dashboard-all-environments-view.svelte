@@ -71,6 +71,21 @@
 	let pruningEnvironmentId = $state<string | null>(null);
 	let reloadVersion = $state(0);
 	let liveStatsByEnvironmentId = $state<Record<string, EnvironmentLiveStatsState>>({});
+	let upgradeDialogOpenById = $state<Record<string, boolean>>({});
+	let upgradeDialogUpgradingById = $state<Record<string, boolean>>({});
+
+	function getUpgradeOpen(id: string): boolean {
+		return upgradeDialogOpenById[id] ?? false;
+	}
+	function setUpgradeOpen(id: string, value: boolean): void {
+		upgradeDialogOpenById[id] = value;
+	}
+	function getUpgradeUpgrading(id: string): boolean {
+		return upgradeDialogUpgradingById[id] ?? false;
+	}
+	function setUpgradeUpgrading(id: string, value: boolean): void {
+		upgradeDialogUpgradingById[id] = value;
+	}
 
 	const storeUser = fromStore(userStore);
 	const availableEnvironments = $derived(environmentStore.available);
@@ -768,19 +783,47 @@
 																	<span class="relative inline-flex h-2 w-2 rounded-full bg-amber-500"></span>
 																</span>
 															</ArcaneTooltip.Trigger>
-															<ArcaneTooltip.Content>
-																{m.sidebar_update_available()}{#if vInfo.newestVersion || vInfo.newestDigest}: {vInfo.newestVersion ||
-																		vInfo.newestDigest.slice(0, 12)}{/if}
+															<ArcaneTooltip.Content class="flex flex-col items-start gap-2">
+																<span>
+																	{m.sidebar_update_available()}{#if vInfo.newestVersion || vInfo.newestDigest}: {vInfo.newestVersion ||
+																			vInfo.newestDigest.slice(0, 12)}{/if}
+																</span>
+																<DashboardEnvironmentUpgradeAction
+																	{environment}
+																	versionInfo={vInfo}
+																	isAdmin={currentUserIsAdmin}
+																	debug={debugUpgrade}
+																	onRefreshRequested={refreshOverview}
+																	render="trigger"
+																	bind:open={() => getUpgradeOpen(environment.id), (v) => setUpgradeOpen(environment.id, v)}
+																	bind:upgrading={
+																		() => getUpgradeUpgrading(environment.id), (v) => setUpgradeUpgrading(environment.id, v)
+																	}
+																/>
 															</ArcaneTooltip.Content>
 														</ArcaneTooltip.Root>
 													{:else}
 														<div
 															class="bg-surface/50 text-muted-foreground border-border/50 hover:text-foreground inline-flex items-center rounded-md border px-2 py-[2px] font-mono text-[11px] font-medium transition-colors"
 														>
-															v{vInfo.displayVersion || vInfo.currentTag || vInfo.currentVersion || 'unknown'}
+															{vInfo.displayVersion || vInfo.currentTag || vInfo.currentVersion || 'unknown'}
 														</div>
 													{/if}
 												</div>
+												{#if vInfo.updateAvailable || debugUpgrade}
+													<DashboardEnvironmentUpgradeAction
+														{environment}
+														versionInfo={vInfo}
+														isAdmin={currentUserIsAdmin}
+														debug={debugUpgrade}
+														onRefreshRequested={refreshOverview}
+														render="dialog"
+														bind:open={() => getUpgradeOpen(environment.id), (v) => setUpgradeOpen(environment.id, v)}
+														bind:upgrading={
+															() => getUpgradeUpgrading(environment.id), (v) => setUpgradeUpgrading(environment.id, v)
+														}
+													/>
+												{/if}
 											{/if}
 										{/await}
 									</div>
@@ -797,23 +840,7 @@
 										<ActionButtonGroup buttons={getEnvironmentActionButtons(baseItem, isCurrent)} size="sm" />
 									{:then boardState}
 										{@const loadedItem = boardState.overviewById.get(environment.id) ?? baseItem}
-										{@const vInfo =
-											loadedItem.versionInfo ||
-											(debugUpgrade
-												? ({ displayVersion: 'debug', updateAvailable: true, newestVersion: 'debug-v2' } as any)
-												: null)}
-										<div class="flex items-center gap-2">
-											{#if vInfo}
-												<DashboardEnvironmentUpgradeAction
-													environment={loadedItem.environment}
-													versionInfo={vInfo}
-													isAdmin={currentUserIsAdmin}
-													debug={debugUpgrade}
-													onRefreshRequested={refreshOverview}
-												/>
-											{/if}
-											<ActionButtonGroup buttons={getEnvironmentActionButtons(loadedItem, isCurrent)} size="sm" />
-										</div>
+										<ActionButtonGroup buttons={getEnvironmentActionButtons(loadedItem, isCurrent)} size="sm" />
 									{/await}
 								</div>
 							</div>
