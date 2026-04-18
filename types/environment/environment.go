@@ -123,6 +123,11 @@ type Environment struct {
 	// Required: false
 	IsEdge bool `json:"isEdge"`
 
+	// LastSeen is the last successful manager-side health/contact timestamp.
+	//
+	// Required: false
+	LastSeen *time.Time `json:"lastSeen,omitempty"`
+
 	// EdgeTransport indicates the active tunnel transport for an edge environment.
 	// Values are "grpc" or "websocket" when connected.
 	//

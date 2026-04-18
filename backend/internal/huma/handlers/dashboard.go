@@ -32,6 +32,14 @@ type GetDashboardActionItemsOutput struct {
 	Body base.ApiResponse[dashboardtypes.ActionItems]
 }
 
+type GetDashboardEnvironmentsOverviewInput struct {
+	DebugAllGood bool `query:"debugAllGood" default:"false" doc:"Debug mode: force empty action item lists"`
+}
+
+type GetDashboardEnvironmentsOverviewOutput struct {
+	Body base.ApiResponse[dashboardtypes.EnvironmentsOverview]
+}
+
 func RegisterDashboard(api huma.API, dashboardService *services.DashboardService) {
 	h := &DashboardHandler{dashboardService: dashboardService}
 
@@ -60,6 +68,19 @@ func RegisterDashboard(api huma.API, dashboardService *services.DashboardService
 			{"ApiKeyAuth": {}},
 		},
 	}, h.GetActionItems)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-dashboard-environments-overview",
+		Method:      http.MethodGet,
+		Path:        "/dashboard/environments",
+		Summary:     "Get aggregate environments dashboard overview",
+		Description: "Returns dashboard summary data for all visible environments",
+		Tags:        []string{"Dashboard"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.GetEnvironmentsOverview)
 }
 
 func (h *DashboardHandler) GetDashboard(ctx context.Context, input *GetDashboardInput) (*GetDashboardOutput, error) {
@@ -114,6 +135,33 @@ func (h *DashboardHandler) GetActionItems(ctx context.Context, input *GetDashboa
 		Body: base.ApiResponse[dashboardtypes.ActionItems]{
 			Success: true,
 			Data:    *actionItems,
+		},
+	}, nil
+}
+
+func (h *DashboardHandler) GetEnvironmentsOverview(
+	ctx context.Context,
+	input *GetDashboardEnvironmentsOverviewInput,
+) (*GetDashboardEnvironmentsOverviewOutput, error) {
+	if h.dashboardService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	overview, err := h.dashboardService.GetEnvironmentsOverview(ctx, services.DashboardActionItemsOptions{
+		DebugAllGood: input.DebugAllGood,
+	})
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+
+	if overview == nil {
+		return nil, huma.Error500InternalServerError("dashboard environments overview not available")
+	}
+
+	return &GetDashboardEnvironmentsOverviewOutput{
+		Body: base.ApiResponse[dashboardtypes.EnvironmentsOverview]{
+			Success: true,
+			Data:    *overview,
 		},
 	}, nil
 }

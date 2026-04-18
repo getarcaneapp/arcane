@@ -73,6 +73,7 @@
 	bind:open={showVersionDialog}
 	onOpenChange={(open) => (showVersionDialog = open)}
 	versionInfo={versionInformation}
+	debugMode={false}
 />
 
 <EnvironmentSwitcherDialog bind:open={envSwitcherOpen} {isAdmin} />

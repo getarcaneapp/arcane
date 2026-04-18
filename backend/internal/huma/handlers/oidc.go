@@ -99,6 +99,7 @@ func RegisterOidc(api huma.API, authService *services.AuthService, oidcService *
 		Summary:     "Get OIDC status",
 		Description: "Get the current OIDC configuration status",
 		Tags:        []string{"OIDC"},
+		Security:    []map[string][]string{},
 	}, h.GetOidcStatus)
 
 	huma.Register(api, huma.Operation{
@@ -108,6 +109,7 @@ func RegisterOidc(api huma.API, authService *services.AuthService, oidcService *
 		Summary:     "Get OIDC config",
 		Description: "Get the OIDC client configuration",
 		Tags:        []string{"OIDC"},
+		Security:    []map[string][]string{},
 	}, h.GetOidcConfig)
 
 	huma.Register(api, huma.Operation{
@@ -117,6 +119,7 @@ func RegisterOidc(api huma.API, authService *services.AuthService, oidcService *
 		Summary:     "Get OIDC auth URL",
 		Description: "Generate an OIDC authorization URL for login",
 		Tags:        []string{"OIDC"},
+		Security:    []map[string][]string{},
 	}, h.GetOidcAuthUrl)
 
 	huma.Register(api, huma.Operation{
@@ -126,6 +129,7 @@ func RegisterOidc(api huma.API, authService *services.AuthService, oidcService *
 		Summary:     "Handle OIDC callback",
 		Description: "Process the OIDC callback and complete authentication",
 		Tags:        []string{"OIDC"},
+		Security:    []map[string][]string{},
 	}, h.HandleOidcCallback)
 
 	huma.Register(api, huma.Operation{
@@ -135,6 +139,7 @@ func RegisterOidc(api huma.API, authService *services.AuthService, oidcService *
 		Summary:     "Initiate OIDC device authorization",
 		Description: "Start the device authorization flow for CLI authentication",
 		Tags:        []string{"OIDC"},
+		Security:    []map[string][]string{},
 	}, h.InitiateDeviceAuth)
 
 	huma.Register(api, huma.Operation{
@@ -144,6 +149,7 @@ func RegisterOidc(api huma.API, authService *services.AuthService, oidcService *
 		Summary:     "Exchange device code for tokens",
 		Description: "Exchange a device code for authentication tokens",
 		Tags:        []string{"OIDC"},
+		Security:    []map[string][]string{},
 	}, h.ExchangeDeviceToken)
 }
 

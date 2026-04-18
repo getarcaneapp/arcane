@@ -1,5 +1,8 @@
 import { test, expect, type Page } from '@playwright/test';
 
+const defaultDashboardPath = '/dashboard';
+const currentDashboardPath = '/dashboard?view=current';
+
 const mockedStats = {
 	cpuUsage: 12.3,
 	memoryUsage: 512 * 1024 * 1024,
@@ -99,12 +102,12 @@ async function mockDashboardStatsWebSocket(page: Page) {
 	}, mockedStats);
 }
 
-function collectEnvironmentRequestPaths(page: Page): string[] {
+function collectDashboardRequestPaths(page: Page): string[] {
 	const requestPaths: string[] = [];
 
 	page.on('request', (request) => {
 		const pathname = new URL(request.url()).pathname;
-		if (pathname.startsWith('/api/environments/')) {
+		if (pathname.startsWith('/api/environments/') || pathname.startsWith('/api/dashboard/')) {
 			requestPaths.push(pathname);
 		}
 	});
@@ -120,32 +123,35 @@ test.describe('Dashboard system stats websocket', () => {
 	test('renders metrics from the system stats websocket stream', async ({ page }) => {
 		await mockDashboardStatsWebSocket(page);
 
-		await page.goto('/dashboard');
+		await page.goto(defaultDashboardPath);
 		await page.waitForLoadState('networkidle');
 
+		await expect(page.getByRole('tab', { name: 'All' })).toHaveAttribute('data-state', 'active');
+		await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible();
+		await expect(page.getByRole('heading', { name: 'Environment Board' })).toBeVisible();
 		await expect(page.getByText('12.3%', { exact: true })).toBeVisible();
 		await expect(page.getByText('50.0%', { exact: true })).toBeVisible();
 		await expect(page.getByText('25.0%', { exact: true })).toBeVisible();
 		await expect(page.getByText('7 CPUs', { exact: true })).toBeVisible();
 		await expect(page.getByText('512 MB / 1 GB', { exact: true })).toBeVisible();
 		await expect(page.getByText('256 MB / 1 GB', { exact: true })).toBeVisible();
-		await expect(page.locator('a[href="/swarm/cluster"]').first()).toBeVisible();
+		await expect(page.getByText('Current', { exact: true }).first()).toBeVisible();
+		await expect(page.getByText('HTTP', { exact: true }).first()).toBeVisible();
 	});
 
-	test('loads dashboard content from the snapshot endpoint without dashboard REST fan-out', async ({
+	test('loads dashboard content from the aggregated overview endpoint without dashboard REST fan-out', async ({
 		page
 	}) => {
 		await mockDashboardStatsWebSocket(page);
-		const requestPaths = collectEnvironmentRequestPaths(page);
+		const requestPaths = collectDashboardRequestPaths(page);
 
-		await page.goto('/dashboard');
+		await page.goto(defaultDashboardPath);
 		await page.waitForLoadState('networkidle');
 
-		expect(
-			requestPaths.some((path) => /\/api\/environments\/[^/]+\/dashboard$/.test(path))
-		).toBeTruthy();
+		expect(requestPaths).toContain('/api/dashboard/environments');
 
 		for (const blockedPattern of [
+			/\/api\/environments\/[^/]+\/dashboard$/,
 			/\/api\/environments\/[^/]+\/containers$/,
 			/\/api\/environments\/[^/]+\/containers\/counts$/,
 			/\/api\/environments\/[^/]+\/images$/,
@@ -164,9 +170,12 @@ test.describe('Dashboard system stats websocket', () => {
 		page
 	}) => {
 		await mockDashboardStatsWebSocket(page);
-		const requestPaths = collectEnvironmentRequestPaths(page);
+		const requestPaths = collectDashboardRequestPaths(page);
 
-		await page.goto('/dashboard');
+		await page.goto(defaultDashboardPath);
+		await page.waitForLoadState('networkidle');
+		await page.getByRole('tab', { name: 'Current' }).click();
+		await expect(page).toHaveURL(currentDashboardPath);
 		await page.waitForLoadState('networkidle');
 
 		expect(

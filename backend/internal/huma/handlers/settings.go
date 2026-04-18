@@ -12,6 +12,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	humamw "github.com/getarcaneapp/arcane/backend/internal/huma/middleware"
+	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils/mapper"
@@ -68,11 +69,11 @@ type GetCategoriesOutput struct {
 	Body []category.Category
 }
 
-// validateProjectsDirectoryValue validates a projects directory value allowing:
+// validateProjectsDirectoryValueInternal validates a projects directory value allowing:
 // - Unix absolute paths (/...)
 // - Windows drive paths (C:/..., C:\...)
 // - Mapping format "container:host" where container is absolute Unix or Windows path
-func validateProjectsDirectoryValue(path string) error {
+func validateProjectsDirectoryValueInternal(path string) error {
 	switch {
 	case projects.IsWindowsDrivePath(path):
 		return nil
@@ -94,10 +95,10 @@ func validateProjectsDirectoryValue(path string) error {
 	}
 }
 
-// validateAbsoluteDirectoryPath validates a plain absolute directory path allowing:
+// validateAbsoluteDirectoryPathInternal validates a plain absolute directory path allowing:
 // - Unix absolute paths (/...)
 // - Windows drive paths (C:/..., C:\...)
-func validateAbsoluteDirectoryPath(path string) error {
+func validateAbsoluteDirectoryPathInternal(path string) error {
 	switch {
 	case projects.IsWindowsDrivePath(path):
 		return nil
@@ -125,6 +126,7 @@ func RegisterSettings(api huma.API, settingsService *services.SettingsService, s
 		Summary:     "Get public settings",
 		Description: "Get all public settings for an environment",
 		Tags:        []string{"Settings"},
+		Security:    []map[string][]string{},
 	}, h.GetPublicSettings)
 
 	huma.Register(api, huma.Operation{
@@ -205,14 +207,14 @@ func (h *SettingsHandler) GetPublicSettings(ctx context.Context, input *GetPubli
 		return &GetPublicSettingsOutput{Body: settingsDto}, nil
 	}
 
-	settingsList := h.settingsService.ListSettings(false)
+	settingsList := h.settingsService.ListSettings(models.SettingVisibilityPublic)
 
 	var settingsDto []settings.PublicSetting
 	if err := mapper.MapStructList(settingsList, &settingsDto); err != nil {
 		return nil, huma.Error500InternalServerError((&common.SettingsMappingError{Err: err}).Error())
 	}
 
-	return &GetPublicSettingsOutput{Body: h.appendRuntimeSettings(settingsDto)}, nil
+	return &GetPublicSettingsOutput{Body: h.appendRuntimeSettings(settingsDto, false)}, nil
 }
 
 // GetSettings returns all settings for an environment.
@@ -241,46 +243,51 @@ func (h *SettingsHandler) GetSettings(ctx context.Context, input *GetSettingsInp
 		return &GetSettingsOutput{Body: settingsDto}, nil
 	}
 
-	showAll := isAdmin
-	settingsList := h.settingsService.ListSettings(showAll)
+	visibility := models.SettingVisibilityNonAdmin
+	if isAdmin {
+		visibility = models.SettingVisibilityAll
+	}
+	settingsList := h.settingsService.ListSettings(visibility)
 
 	var settingsDto []settings.PublicSetting
 	if err := mapper.MapStructList(settingsList, &settingsDto); err != nil {
 		return nil, huma.Error500InternalServerError((&common.SettingsMappingError{Err: err}).Error())
 	}
 
-	return &GetSettingsOutput{Body: h.appendRuntimeSettings(settingsDto)}, nil
+	return &GetSettingsOutput{Body: h.appendRuntimeSettings(settingsDto, true)}, nil
 }
 
-func (h *SettingsHandler) appendRuntimeSettings(settingsDto []settings.PublicSetting) []settings.PublicSetting {
+func (h *SettingsHandler) appendRuntimeSettings(settingsDto []settings.PublicSetting, includeAuthenticatedOnly bool) []settings.PublicSetting {
 	uiConfigDisabled := false
-	if h.cfg != nil {
+	if includeAuthenticatedOnly && h.cfg != nil {
 		uiConfigDisabled = h.cfg.UIConfigurationDisabled
 	}
-	settingsDto = append(settingsDto, settings.PublicSetting{
-		Key:   "uiConfigDisabled",
-		Value: strconv.FormatBool(uiConfigDisabled),
-		Type:  "boolean",
-	})
-
-	backupVolumeName := "arcane-backups"
-	if h.cfg != nil && strings.TrimSpace(h.cfg.BackupVolumeName) != "" {
-		backupVolumeName = h.cfg.BackupVolumeName
-	}
-	settingsDto = append(settingsDto, settings.PublicSetting{
-		Key:   "backupVolumeName",
-		Value: backupVolumeName,
-		Type:  "string",
-	})
-
-	if h.settingsService != nil {
-		cfg := h.settingsService.GetSettingsConfig()
-		depotConfigured := strings.TrimSpace(cfg.DepotProjectId.Value) != "" && strings.TrimSpace(cfg.DepotToken.Value) != ""
+	if includeAuthenticatedOnly {
 		settingsDto = append(settingsDto, settings.PublicSetting{
-			Key:   "depotConfigured",
-			Value: strconv.FormatBool(depotConfigured),
+			Key:   "uiConfigDisabled",
+			Value: strconv.FormatBool(uiConfigDisabled),
 			Type:  "boolean",
 		})
+
+		backupVolumeName := "arcane-backups"
+		if h.cfg != nil && strings.TrimSpace(h.cfg.BackupVolumeName) != "" {
+			backupVolumeName = h.cfg.BackupVolumeName
+		}
+		settingsDto = append(settingsDto, settings.PublicSetting{
+			Key:   "backupVolumeName",
+			Value: backupVolumeName,
+			Type:  "string",
+		})
+
+		if h.settingsService != nil {
+			cfg := h.settingsService.GetSettingsConfig()
+			depotConfigured := strings.TrimSpace(cfg.DepotProjectId.Value) != "" && strings.TrimSpace(cfg.DepotToken.Value) != ""
+			settingsDto = append(settingsDto, settings.PublicSetting{
+				Key:   "depotConfigured",
+				Value: strconv.FormatBool(depotConfigured),
+				Type:  "boolean",
+			})
+		}
 	}
 
 	return settingsDto
@@ -315,7 +322,7 @@ func (h *SettingsHandler) validateSettingsUpdateInput(input settings.Update) err
 	if input.ProjectsDirectory != nil && *input.ProjectsDirectory != "" {
 		currentDir := h.settingsService.GetSettingsConfig().ProjectsDirectory.Value
 		if *input.ProjectsDirectory != currentDir {
-			if err := validateProjectsDirectoryValue(*input.ProjectsDirectory); err != nil {
+			if err := validateProjectsDirectoryValueInternal(*input.ProjectsDirectory); err != nil {
 				return huma.Error400BadRequest(err.Error())
 			}
 		}
@@ -324,7 +331,7 @@ func (h *SettingsHandler) validateSettingsUpdateInput(input settings.Update) err
 	if input.SwarmStackSourcesDirectory != nil && *input.SwarmStackSourcesDirectory != "" {
 		currentDir := h.settingsService.GetSettingsConfig().SwarmStackSourcesDirectory.Value
 		if *input.SwarmStackSourcesDirectory != currentDir {
-			if err := validateAbsoluteDirectoryPath(*input.SwarmStackSourcesDirectory); err != nil {
+			if err := validateAbsoluteDirectoryPathInternal(*input.SwarmStackSourcesDirectory); err != nil {
 				return huma.Error400BadRequest("swarmStackSourcesDirectory " + err.Error())
 			}
 		}
@@ -339,7 +346,7 @@ func (h *SettingsHandler) updateSettingsForRemoteEnvironment(ctx context.Context
 	}
 
 	// Check if trying to update auth settings on non-local environment.
-	if hasAuthSettingsUpdate(input.Body) {
+	if hasAuthSettingsUpdateInternal(input.Body) {
 		return nil, huma.Error403Forbidden((&common.AuthSettingsUpdateError{}).Error())
 	}
 
@@ -389,7 +396,7 @@ func (h *SettingsHandler) updateSettingsForLocalEnvironment(ctx context.Context,
 	}, nil
 }
 
-func hasAuthSettingsUpdate(req settings.Update) bool {
+func hasAuthSettingsUpdateInternal(req settings.Update) bool {
 	return req.AuthLocalEnabled != nil || req.OidcEnabled != nil ||
 		req.AuthSessionTimeout != nil || req.AuthPasswordPolicy != nil ||
 		req.AuthOidcConfig != nil || req.OidcClientId != nil ||

@@ -637,7 +637,7 @@ func TestSettingsService_UpdateSettings_RefreshesCache(t *testing.T) {
 	require.NoError(t, err)
 
 	// ListSettings uses the cached snapshot; should reflect updated value
-	list := svc.ListSettings(true)
+	list := svc.ListSettings(models.SettingVisibilityAll)
 	found := false
 	for _, sv := range list {
 		if sv.Key == "projectsDirectory" {

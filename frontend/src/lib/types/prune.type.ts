@@ -35,3 +35,5 @@ export interface SystemPruneRequest {
 	networks?: PruneNetworksOptions;
 	buildCache?: PruneBuildCacheOptions;
 }
+
+export type PruneType = 'containers' | 'images' | 'networks' | 'volumes' | 'buildCache';

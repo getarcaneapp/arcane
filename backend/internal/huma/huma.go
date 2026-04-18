@@ -210,6 +210,10 @@ func SetupAPI(router *gin.Engine, apiGroup *gin.RouterGroup, cfg *config.Config,
 			Description: "API Key authentication",
 		},
 	}
+	humaConfig.Security = []map[string][]string{
+		{"BearerAuth": {}},
+		{"ApiKeyAuth": {}},
+	}
 
 	// Use custom schema namer to avoid conflicts between types with same name
 	// from different packages (e.g., image.Summary vs env.Summary)
@@ -286,6 +290,10 @@ func SetupAPIForSpec() huma.API {
 			Name:        "X-API-Key",
 			Description: "API Key authentication",
 		},
+	}
+	humaConfig.Security = []map[string][]string{
+		{"BearerAuth": {}},
+		{"ApiKeyAuth": {}},
 	}
 
 	// Use custom schema namer to avoid conflicts between types with same name
