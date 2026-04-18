@@ -463,6 +463,11 @@ type Update struct {
 	// Required: false
 	AutoUpdateWindowDays *string `json:"autoUpdateWindowDays,omitempty"`
 
+	// AutoUpdateWindowInterval is the cron expression for how often to check for updates within the active window.
+	//
+	// Required: false
+	AutoUpdateWindowInterval *string `json:"autoUpdateWindowInterval,omitempty"`
+
 	// AutoHealEnabled indicates if automatic container healing is enabled.
 	//
 	// Required: false

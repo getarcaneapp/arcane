@@ -35,7 +35,7 @@ func (j *AutoUpdateJob) ShouldSchedule(ctx context.Context) bool {
 
 func (j *AutoUpdateJob) Schedule(ctx context.Context) string {
 	if j.settingsService.GetBoolSetting(ctx, "autoUpdateWindowEnabled", false) {
-		return "*/5 * * * * *"
+		return j.settingsService.GetStringSetting(ctx, "autoUpdateWindowInterval", "*/5 * * * * *")
 	}
 
 	s := j.settingsService.GetStringSetting(ctx, "autoUpdateInterval", "0 0 0 * * *")

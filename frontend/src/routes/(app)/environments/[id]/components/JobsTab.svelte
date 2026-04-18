@@ -16,7 +16,11 @@
 	import type { JobStatus, JobPrerequisite } from '$lib/types/job-schedule.type';
 	import type { ContainerSummaryDto } from '$lib/types/container.type';
 
-	let { formInputs, environmentId } = $props();
+	let {
+		formInputs,
+		environmentId,
+		onSaveBeforeRun
+	}: { formInputs: any; environmentId: string; onSaveBeforeRun?: () => Promise<void> } = $props();
 
 	let refreshSignal = $state(0);
 
@@ -241,6 +245,7 @@
 												isAgent={jobsResponse.isAgent}
 												onScheduleUpdate={loadJobs}
 												enabledOverride={getEnabledOverride(job)}
+												onBeforeRun={job.id === 'auto-update' ? onSaveBeforeRun : undefined}
 											>
 												{#snippet headerAccessory()}
 													{#if job.id === 'image-polling'}
@@ -382,11 +387,11 @@
 																		{m.auto_update_window_cron_label()}
 																	</summary>
 																	<div class="mt-1.5 space-y-1">
-																		<input
+																		<Input
 																			type="text"
-																			readonly
-																			value="*/5 * * * * *"
-																			class="border-input bg-muted text-muted-foreground h-9 w-full cursor-default rounded-md border px-3 py-1 font-mono text-sm"
+																			bind:value={$formInputs.autoUpdateWindowInterval.value}
+																			placeholder="*/5 * * * * *"
+																			class="h-9 font-mono text-sm"
 																		/>
 																		<p class="text-muted-foreground text-xs">{m.auto_update_window_cron_hint()}</p>
 																	</div>

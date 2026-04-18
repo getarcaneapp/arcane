@@ -6,6 +6,7 @@
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import { goto, invalidateAll } from '$app/navigation';
+	import { get } from 'svelte/store';
 	import { page } from '$app/state';
 	import { toast } from 'svelte-sonner';
 	import { m } from '$lib/paraglide/messages';
@@ -185,6 +186,7 @@
 		autoUpdateWindowStart: z.string(),
 		autoUpdateWindowEnd: z.string(),
 		autoUpdateWindowDays: z.string(),
+		autoUpdateWindowInterval: z.string(),
 		autoHealEnabled: z.boolean(),
 		autoHealExcludedContainers: z.string(),
 		autoHealMaxRestarts: z.coerce.number().int().min(1),
@@ -235,6 +237,7 @@
 		autoUpdateWindowStart: settings?.autoUpdateWindowStart || '02:00',
 		autoUpdateWindowEnd: settings?.autoUpdateWindowEnd || '04:00',
 		autoUpdateWindowDays: settings?.autoUpdateWindowDays || '0,1,2,3,4,5,6',
+		autoUpdateWindowInterval: settings?.autoUpdateWindowInterval || '*/5 * * * * *',
 		autoHealEnabled: settings?.autoHealEnabled ?? false,
 		autoHealExcludedContainers: settings?.autoHealExcludedContainers || '',
 		autoHealMaxRestarts: settings?.autoHealMaxRestarts ?? 5,
@@ -292,6 +295,7 @@
 				autoUpdateWindowStart: formData.autoUpdateWindowStart,
 				autoUpdateWindowEnd: formData.autoUpdateWindowEnd,
 				autoUpdateWindowDays: formData.autoUpdateWindowDays,
+				autoUpdateWindowInterval: formData.autoUpdateWindowInterval,
 				autoHealEnabled: formData.autoHealEnabled,
 				autoHealExcludedContainers: formData.autoHealExcludedContainers,
 				autoHealMaxRestarts: formData.autoHealMaxRestarts,
@@ -324,6 +328,17 @@
 			onReset: () => toast.info(m.environments_changes_reset())
 		})
 	);
+
+	async function saveAutoUpdateExcludedIfChanged() {
+		if (!settings) return;
+		const current = settings.autoUpdateExcludedContainers ?? '';
+		const pending = get(formInputs).autoUpdateExcludedContainers?.value ?? '';
+		if (pending === current) return;
+		await settingsService.updateSettingsForEnvironment(environment.id, {
+			autoUpdateExcludedContainers: pending
+		});
+		invalidateAll();
+	}
 
 	const shellOptions = [
 		{ value: '/bin/sh', label: '/bin/sh', description: m.docker_shell_sh_description() },
@@ -601,7 +616,7 @@
 			</Tabs.Content>
 
 			<Tabs.Content value="jobs">
-				<JobsTab {formInputs} environmentId={environment.id} />
+				<JobsTab {formInputs} environmentId={environment.id} onSaveBeforeRun={saveAutoUpdateExcludedIfChanged} />
 			</Tabs.Content>
 		{/if}
 

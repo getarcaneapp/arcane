@@ -22,6 +22,7 @@
 	} = $props();
 
 	let scheduleValue = $state('');
+	let selectedExample = $state('');
 	let error = $state<string | null>(null);
 	const saveMutation = createMutation(() => ({
 		mutationFn: (update: Record<string, string>) => jobScheduleService.updateJobSchedules(update, environmentId),
@@ -74,12 +75,14 @@
 
 	function useCronExample(value: string) {
 		scheduleValue = value;
+		selectedExample = value;
 		error = null;
 	}
 
 	function handleOpenChange(isOpen: boolean) {
 		if (isOpen) {
 			scheduleValue = job.schedule;
+			selectedExample = cronExamples.find((e) => e.value === job.schedule)?.value ?? '';
 			error = null;
 		}
 	}
@@ -110,7 +113,7 @@
 			<div class="grid grid-cols-2 gap-3 pt-2">
 				{#each cronExamples as example (example.value)}
 					<Button
-						variant="outline"
+						variant={selectedExample === example.value ? 'default' : 'outline'}
 						onclick={() => useCronExample(example.value)}
 						class="min-h-12 items-start justify-start px-3 py-2 whitespace-normal"
 					>

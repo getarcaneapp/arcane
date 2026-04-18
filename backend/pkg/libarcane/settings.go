@@ -46,6 +46,7 @@ var autoUpdateWindowSettingKeys = []string{
 	"autoUpdateWindowStart",
 	"autoUpdateWindowEnd",
 	"autoUpdateWindowDays",
+	"autoUpdateWindowInterval",
 }
 
 var cronParser = cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)

@@ -12,12 +12,14 @@
 	import type { JobStatus } from '$lib/types/job-schedule.type';
 	import JobScheduleDialog from './job-schedule-dialog.svelte';
 	import { createMutation } from '@tanstack/svelte-query';
+	import { toast } from 'svelte-sonner';
 
 	let {
 		job,
 		environmentId = '0',
 		isAgent = false,
 		onScheduleUpdate,
+		onBeforeRun,
 		children,
 		enabledOverride,
 		headerAccessory
@@ -26,16 +28,25 @@
 		environmentId?: string;
 		isAgent?: boolean;
 		onScheduleUpdate?: () => void;
+		onBeforeRun?: () => Promise<void>;
 		children?: Snippet;
 		enabledOverride?: boolean;
 		headerAccessory?: Snippet;
 	} = $props();
 
 	let showScheduleDialog = $state(false);
+	let localRunning = $state(false);
 	const runJobMutation = createMutation(() => ({
-		mutationFn: () => jobScheduleService.runJob(job.id, environmentId)
+		mutationFn: () => jobScheduleService.runJob(job.id, environmentId),
+		onSuccess: () => {
+			toast.success(m.jobs_run_success());
+		},
+		onError: (err) => {
+			localRunning = false;
+			toast.error(err instanceof Error ? err.message : m.jobs_run_failed());
+		}
 	}));
-	const isRunning = $derived(runJobMutation.isPending);
+	const isRunning = $derived(runJobMutation.isPending || localRunning);
 
 	const nextRunText = $derived.by(() => {
 		if (!job.nextRun) return null;
@@ -49,9 +60,22 @@
 
 	const canRun = $derived(isEnabled && job.canRunManually && !isRunning && !(isAgent && job.managerOnly));
 
-	function runJobNow() {
+	async function runJobNow() {
 		if (!canRun) return;
-		runJobMutation.mutate();
+		if (onBeforeRun) {
+			try {
+				await onBeforeRun();
+			} catch (err) {
+				console.error('onBeforeRun failed:', err);
+			}
+		}
+		localRunning = true;
+		runJobMutation.mutate(undefined, {
+			onSettled: () =>
+				setTimeout(() => {
+					localRunning = false;
+				}, 3000)
+		});
 	}
 
 	function openScheduleDialog() {
