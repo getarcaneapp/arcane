@@ -38,7 +38,7 @@ func TestAutoUpdateJob_Schedule_WindowEnabled(t *testing.T) {
 	require.Equal(t, "*/5 * * * * *", job.Schedule(ctx))
 }
 
-func TestAutoUpdateJob_isWithinWindow_NormalRange(t *testing.T) {
+func TestAutoUpdateJob_isWithinWindowInternal_NormalRange(t *testing.T) {
 	ctx := context.Background()
 	_, settingsSvc, _ := setupAnalyticsStateServicesInternal(t)
 	job := NewAutoUpdateJob(nil, settingsSvc)
@@ -49,13 +49,13 @@ func TestAutoUpdateJob_isWithinWindow_NormalRange(t *testing.T) {
 
 	loc := time.UTC
 
-	require.True(t, job.isWithinWindow(ctx, time.Date(2026, 1, 1, 3, 0, 0, 0, loc)))
-	require.True(t, job.isWithinWindow(ctx, time.Date(2026, 1, 1, 2, 0, 0, 0, loc)))
-	require.False(t, job.isWithinWindow(ctx, time.Date(2026, 1, 1, 1, 59, 0, 0, loc)))
-	require.False(t, job.isWithinWindow(ctx, time.Date(2026, 1, 1, 4, 0, 0, 0, loc)))
+	require.True(t, job.isWithinWindowInternal(ctx, time.Date(2026, 1, 1, 3, 0, 0, 0, loc)))
+	require.True(t, job.isWithinWindowInternal(ctx, time.Date(2026, 1, 1, 2, 0, 0, 0, loc)))
+	require.False(t, job.isWithinWindowInternal(ctx, time.Date(2026, 1, 1, 1, 59, 0, 0, loc)))
+	require.False(t, job.isWithinWindowInternal(ctx, time.Date(2026, 1, 1, 4, 0, 0, 0, loc)))
 }
 
-func TestAutoUpdateJob_isWithinWindow_OvernightRange(t *testing.T) {
+func TestAutoUpdateJob_isWithinWindowInternal_OvernightRange(t *testing.T) {
 	ctx := context.Background()
 	_, settingsSvc, _ := setupAnalyticsStateServicesInternal(t)
 	job := NewAutoUpdateJob(nil, settingsSvc)
@@ -66,13 +66,13 @@ func TestAutoUpdateJob_isWithinWindow_OvernightRange(t *testing.T) {
 
 	loc := time.UTC
 
-	require.True(t, job.isWithinWindow(ctx, time.Date(2026, 1, 1, 23, 30, 0, 0, loc)))
-	require.True(t, job.isWithinWindow(ctx, time.Date(2026, 1, 2, 0, 30, 0, 0, loc)))
-	require.False(t, job.isWithinWindow(ctx, time.Date(2026, 1, 1, 12, 0, 0, 0, loc)))
-	require.False(t, job.isWithinWindow(ctx, time.Date(2026, 1, 2, 1, 0, 0, 0, loc)))
+	require.True(t, job.isWithinWindowInternal(ctx, time.Date(2026, 1, 1, 23, 30, 0, 0, loc)))
+	require.True(t, job.isWithinWindowInternal(ctx, time.Date(2026, 1, 2, 0, 30, 0, 0, loc)))
+	require.False(t, job.isWithinWindowInternal(ctx, time.Date(2026, 1, 1, 12, 0, 0, 0, loc)))
+	require.False(t, job.isWithinWindowInternal(ctx, time.Date(2026, 1, 2, 1, 0, 0, 0, loc)))
 }
 
-func TestAutoUpdateJob_isWithinWindow_DayFilter(t *testing.T) {
+func TestAutoUpdateJob_isWithinWindowInternal_DayFilter(t *testing.T) {
 	ctx := context.Background()
 	_, settingsSvc, _ := setupAnalyticsStateServicesInternal(t)
 	job := NewAutoUpdateJob(nil, settingsSvc)
@@ -85,11 +85,11 @@ func TestAutoUpdateJob_isWithinWindow_DayFilter(t *testing.T) {
 
 	// 2026-01-05 is Monday (Weekday=1)
 	monday := time.Date(2026, 1, 5, 3, 0, 0, 0, loc)
-	require.True(t, job.isWithinWindow(ctx, monday))
+	require.True(t, job.isWithinWindowInternal(ctx, monday))
 
 	// 2026-01-04 is Sunday (Weekday=0)
 	sunday := time.Date(2026, 1, 4, 3, 0, 0, 0, loc)
-	require.False(t, job.isWithinWindow(ctx, sunday))
+	require.False(t, job.isWithinWindowInternal(ctx, sunday))
 }
 
 func TestAutoUpdateJob_Run_SkipsOutsideWindow(t *testing.T) {
@@ -109,6 +109,6 @@ func TestAutoUpdateJob_Run_SkipsOutsideWindow(t *testing.T) {
 	loc := time.UTC
 	outsideWindow := time.Date(2026, 1, 1, 10, 0, 0, 0, loc)
 	require.NotPanics(t, func() {
-		job.runAt(ctx, outsideWindow)
+		job.runAtInternal(ctx, outsideWindow)
 	})
 }

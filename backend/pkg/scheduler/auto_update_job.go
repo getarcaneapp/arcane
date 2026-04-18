@@ -61,10 +61,10 @@ func (j *AutoUpdateJob) Schedule(ctx context.Context) string {
 }
 
 func (j *AutoUpdateJob) Run(ctx context.Context) {
-	j.runAt(ctx, time.Now())
+	j.runAtInternal(ctx, time.Now())
 }
 
-func (j *AutoUpdateJob) runAt(ctx context.Context, now time.Time) {
+func (j *AutoUpdateJob) runAtInternal(ctx context.Context, now time.Time) {
 	enabled := j.settingsService.GetBoolSetting(ctx, "autoUpdate", false)
 	pollingEnabled := j.settingsService.GetBoolSetting(ctx, "pollingEnabled", true)
 	if !enabled || !pollingEnabled {
@@ -74,7 +74,7 @@ func (j *AutoUpdateJob) runAt(ctx context.Context, now time.Time) {
 	}
 
 	if j.settingsService.GetBoolSetting(ctx, "autoUpdateWindowEnabled", false) {
-		if !j.isWithinWindow(ctx, now) {
+		if !j.isWithinWindowInternal(ctx, now) {
 			slog.DebugContext(ctx, "auto-update skipped: outside configured time window")
 			return
 		}
@@ -101,11 +101,11 @@ func (j *AutoUpdateJob) Reschedule(ctx context.Context) error {
 	return nil
 }
 
-// isWithinWindow reports whether now falls within the configured update window.
+// isWithinWindowInternal reports whether now falls within the configured update window.
 // Reads autoUpdateWindowStart (HH:MM), autoUpdateWindowEnd (HH:MM), and
 // autoUpdateWindowDays (CSV of 0=Sun…6=Sat). Overnight ranges (start > end)
 // wrap midnight correctly.
-func (j *AutoUpdateJob) isWithinWindow(ctx context.Context, now time.Time) bool {
+func (j *AutoUpdateJob) isWithinWindowInternal(ctx context.Context, now time.Time) bool {
 	startStr := j.settingsService.GetStringSetting(ctx, "autoUpdateWindowStart", "02:00")
 	endStr := j.settingsService.GetStringSetting(ctx, "autoUpdateWindowEnd", "04:00")
 	daysStr := j.settingsService.GetStringSetting(ctx, "autoUpdateWindowDays", "0,1,2,3,4,5,6")

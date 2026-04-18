@@ -67,6 +67,8 @@
 				await onBeforeRun();
 			} catch (err) {
 				console.error('onBeforeRun failed:', err);
+				toast.error(err instanceof Error ? err.message : m.jobs_run_failed());
+				return;
 			}
 		}
 		localRunning = true;
