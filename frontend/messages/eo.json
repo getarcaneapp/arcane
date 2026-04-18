@@ -362,6 +362,8 @@
 	"_comment_auth": "=== AŬTENTIGO ===",
 	"auth_welcome_back_title": "Bonvenon reen",
 	"auth_login_subtitle": "Ensalutu por administri viajn ujojn",
+	"auth_tagline_line1": "Moderna Docker-administrado",
+	"auth_tagline_line2": "Dizajnita por ĉiuj.",
 	"auth_login_problem_title": "Ensaluta problemo",
 	"auth_failed_title": "Aŭtentikigo malsukcesis",
 	"auth_no_login_methods_title": "Neniuj ensalut-metodoj agorditaj",
