@@ -362,6 +362,8 @@
 	"_comment_auth": "=== АУТЕНТИФИКАЦИЯ ===",
 	"auth_welcome_back_title": "С возвращением",
 	"auth_login_subtitle": "Войдите для управления контейнерами",
+	"auth_tagline_line1": "Современное управление Docker,",
+	"auth_tagline_line2": "Предназначен для всех.",
 	"auth_login_problem_title": "Проблема при входе в систему",
 	"auth_failed_title": "Ошибка авторизации",
 	"auth_no_login_methods_title": "Не настроены методы входа",
