@@ -262,6 +262,7 @@ var expectedSettingOverrideKeys = []string{
 	"autoUpdateWindowDays",
 	"autoUpdateWindowEnabled",
 	"autoUpdateWindowEnd",
+	"autoUpdateWindowInterval",
 	"autoUpdateWindowStart",
 	"baseServerUrl",
 	"buildProvider",
