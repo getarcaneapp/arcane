@@ -362,6 +362,8 @@
 	"_comment_auth": "=== AUTENTICAZIONE ===",
 	"auth_welcome_back_title": "Bentornato",
 	"auth_login_subtitle": "Accedi per gestire i tuoi container",
+	"auth_tagline_line1": "Gestione moderna di Docker,",
+	"auth_tagline_line2": "Progettato per tutti.",
 	"auth_login_problem_title": "Problema di accesso",
 	"auth_failed_title": "Autenticazione Non Riuscita",
 	"auth_no_login_methods_title": "Nessun Metodo Di Accesso Configurato",
