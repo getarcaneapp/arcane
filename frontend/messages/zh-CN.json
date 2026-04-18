@@ -362,6 +362,8 @@
 	"_comment_auth": "=== 认证===",
 	"auth_welcome_back_title": "欢迎回来",
 	"auth_login_subtitle": "登录以管理您的容器",
+	"auth_tagline_line1": "现代 Docker 管理",
+	"auth_tagline_line2": "专为每个人设计",
 	"auth_login_problem_title": "【不能登录】如何登录",
 	"auth_failed_title": "身份验证失败",
 	"auth_no_login_methods_title": "未配置登录方法",
