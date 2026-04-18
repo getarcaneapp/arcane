@@ -57,3 +57,4 @@ arcane-devcli
 
 cli/arcane-cli
 completions
+.worktrees/
