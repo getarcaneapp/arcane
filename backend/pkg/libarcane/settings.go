@@ -41,6 +41,13 @@ var cronSettingKeys = []string{
 	"vulnerabilityScanInterval",
 }
 
+var autoUpdateWindowSettingKeys = []string{
+	"autoUpdateWindowEnabled",
+	"autoUpdateWindowStart",
+	"autoUpdateWindowEnd",
+	"autoUpdateWindowDays",
+}
+
 var cronParser = cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
 
 func IsTimeoutSettingKey(key string) bool {
