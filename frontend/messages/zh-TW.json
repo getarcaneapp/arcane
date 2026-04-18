@@ -362,6 +362,8 @@
 	"_comment_auth": "=== AUTHENTICATION ===",
 	"auth_welcome_back_title": "歡迎回來",
 	"auth_login_subtitle": "登入以管理您的容器",
+	"auth_tagline_line1": "現代 Docker 管理、",
+	"auth_tagline_line2": "專為每個人設計。",
 	"auth_login_problem_title": "登入問題",
 	"auth_failed_title": "身分驗證失敗",
 	"auth_no_login_methods_title": "未設定任何登入方式",
