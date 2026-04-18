@@ -362,6 +362,8 @@
 	"_comment_auth": "=== AUTHENTICATION ===",
 	"auth_welcome_back_title": "Chào mừng quay trở lại",
 	"auth_login_subtitle": "Đăng nhập để quản lý các Container của bạn",
+	"auth_tagline_line1": "Quản lý Docker hiện đại,",
+	"auth_tagline_line2": "Được thiết kế dành cho mọi người.",
 	"auth_login_problem_title": "Sự cố đăng nhập",
 	"auth_failed_title": "Xác thực thất bại",
 	"auth_no_login_methods_title": "Không có phương thức đăng nhập nào được cấu hình",
