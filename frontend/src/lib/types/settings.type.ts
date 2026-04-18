@@ -10,6 +10,10 @@ export type Settings = {
 	autoUpdate: boolean;
 	autoUpdateInterval: number;
 	autoUpdateExcludedContainers?: string;
+	autoUpdateWindowEnabled?: boolean;
+	autoUpdateWindowStart?: string;
+	autoUpdateWindowEnd?: string;
+	autoUpdateWindowDays?: string;
 	pollingEnabled: boolean;
 	pollingInterval: number;
 	dockerClientRefreshInterval?: string;
