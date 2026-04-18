@@ -443,6 +443,26 @@ type Update struct {
 	// Required: false
 	AutoUpdateExcludedContainers *string `json:"autoUpdateExcludedContainers,omitempty"`
 
+	// AutoUpdateWindowEnabled indicates if automatic updates should be restricted to a time window.
+	//
+	// Required: false
+	AutoUpdateWindowEnabled *string `json:"autoUpdateWindowEnabled,omitempty"`
+
+	// AutoUpdateWindowStart is the start time of the auto-update window in HH:MM 24h format.
+	//
+	// Required: false
+	AutoUpdateWindowStart *string `json:"autoUpdateWindowStart,omitempty"`
+
+	// AutoUpdateWindowEnd is the end time of the auto-update window in HH:MM 24h format.
+	//
+	// Required: false
+	AutoUpdateWindowEnd *string `json:"autoUpdateWindowEnd,omitempty"`
+
+	// AutoUpdateWindowDays is a comma-separated list of day numbers (0=Sun,...,6=Sat) when the window is active.
+	//
+	// Required: false
+	AutoUpdateWindowDays *string `json:"autoUpdateWindowDays,omitempty"`
+
 	// AutoHealEnabled indicates if automatic container healing is enabled.
 	//
 	// Required: false
