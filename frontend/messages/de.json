@@ -362,6 +362,8 @@
 	"_comment_auth": "=== AUTHENTIFIZIERUNG ===",
 	"auth_welcome_back_title": "Willkommen zurück",
 	"auth_login_subtitle": "Melde dich an, um deine Container zu verwalten",
+	"auth_tagline_line1": "Modernes Docker-Management,",
+	"auth_tagline_line2": "Konzipiert für alle.",
 	"auth_login_problem_title": "Anmeldeproblem",
 	"auth_failed_title": "Authentifizierung fehlgeschlagen",
 	"auth_no_login_methods_title": "Keine Anmeldemethoden konfiguriert",
