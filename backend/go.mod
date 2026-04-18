@@ -9,7 +9,7 @@ replace github.com/getarcaneapp/arcane/types => ../types
 require (
 	github.com/aws/aws-sdk-go-v2/config v1.32.14
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.15
-	github.com/aws/aws-sdk-go-v2/service/ecr v1.57.0
+	github.com/aws/aws-sdk-go-v2/service/ecr v1.57.1
 	github.com/cenkalti/backoff/v5 v5.0.3
 	github.com/compose-spec/compose-go/v2 v2.10.2
 	github.com/containerd/errdefs v1.0.0
@@ -20,7 +20,7 @@ require (
 	github.com/docker/compose/v5 v5.1.3
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/getarcaneapp/arcane/cli v1.16.3
-	github.com/getarcaneapp/arcane/types v1.17.3
+	github.com/getarcaneapp/arcane/types v1.17.4
 	github.com/gin-contrib/cors v1.7.7
 	github.com/gin-gonic/gin v1.12.0
 	github.com/glebarez/sqlite v1.11.0
