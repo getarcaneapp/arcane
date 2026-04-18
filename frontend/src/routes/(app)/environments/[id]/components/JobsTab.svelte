@@ -317,6 +317,82 @@
 																</div>
 															</ScrollArea.Root>
 														</div>
+
+														<!-- Time window -->
+														<div class="border-border/20 space-y-3 border-t pt-3">
+															<div class="flex items-center justify-between">
+																<Label class="text-sm font-medium">{m.auto_update_window_enabled()}</Label>
+																<Switch bind:checked={$formInputs.autoUpdateWindowEnabled.value} />
+															</div>
+
+															{#if $formInputs.autoUpdateWindowEnabled.value}
+																<div class="flex items-center gap-3">
+																	<div class="flex flex-1 flex-col gap-1">
+																		<Label class="text-xs">{m.auto_update_window_from()}</Label>
+																		<input
+																			type="time"
+																			class="border-input bg-background text-foreground focus-visible:ring-ring h-9 w-full rounded-md border px-3 py-1 text-sm shadow-sm focus-visible:ring-1 focus-visible:outline-none"
+																			bind:value={$formInputs.autoUpdateWindowStart.value}
+																		/>
+																	</div>
+																	<div class="flex flex-1 flex-col gap-1">
+																		<Label class="text-xs">{m.auto_update_window_to()}</Label>
+																		<input
+																			type="time"
+																			class="border-input bg-background text-foreground focus-visible:ring-ring h-9 w-full rounded-md border px-3 py-1 text-sm shadow-sm focus-visible:ring-1 focus-visible:outline-none"
+																			bind:value={$formInputs.autoUpdateWindowEnd.value}
+																		/>
+																	</div>
+																</div>
+
+																<div class="space-y-1.5">
+																	<Label class="text-xs">{m.auto_update_window_days()}</Label>
+																	<div class="flex flex-wrap gap-1.5">
+																		{#each [{ day: 1, label: 'Mon' }, { day: 2, label: 'Tue' }, { day: 3, label: 'Wed' }, { day: 4, label: 'Thu' }, { day: 5, label: 'Fri' }, { day: 6, label: 'Sat' }, { day: 0, label: 'Sun' }] as { day, label } (day)}
+																			{@const activeDays = $formInputs.autoUpdateWindowDays.value
+																				.split(',')
+																				.map((d: string) => d.trim())
+																				.filter(Boolean)}
+																			{@const isActive = activeDays.includes(String(day))}
+																			<button
+																				type="button"
+																				onclick={() => {
+																					const current = $formInputs.autoUpdateWindowDays.value
+																						.split(',')
+																						.map((d: string) => d.trim())
+																						.filter(Boolean);
+																					const dayStr = String(day);
+																					const next = current.includes(dayStr)
+																						? current.filter((d: string) => d !== dayStr)
+																						: [...current, dayStr].sort();
+																					$formInputs.autoUpdateWindowDays.value = next.join(',');
+																				}}
+																				class="rounded-md border px-2.5 py-1 text-xs font-medium transition-colors {isActive
+																					? 'bg-primary text-primary-foreground border-primary'
+																					: 'border-border/40 text-muted-foreground hover:bg-white/5'}"
+																			>
+																				{label}
+																			</button>
+																		{/each}
+																	</div>
+																</div>
+
+																<details class="space-y-1">
+																	<summary class="text-muted-foreground cursor-pointer text-xs select-none">
+																		{m.auto_update_window_cron_label()}
+																	</summary>
+																	<div class="mt-1.5 space-y-1">
+																		<input
+																			type="text"
+																			readonly
+																			value="*/5 * * * * *"
+																			class="border-input bg-muted text-muted-foreground h-9 w-full cursor-default rounded-md border px-3 py-1 font-mono text-sm"
+																		/>
+																		<p class="text-muted-foreground text-xs">{m.auto_update_window_cron_hint()}</p>
+																	</div>
+																</details>
+															{/if}
+														</div>
 													</div>
 												{/if}
 
