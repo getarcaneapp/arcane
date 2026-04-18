@@ -463,7 +463,7 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 	// Arcane cannot safely redeploy itself via the compose path: the compose
 	// stop+up sequence would kill the running process before the new container
 	// is ready to serve requests. Use the system upgrade flow instead.
-	if libupdater.IsArcaneContainer(containerInfo.Config.Labels) {
+	if libupdater.IsArcaneContainer(containerInfo.Config.Labels) && !libupdater.IsArcaneAgentContainer(containerInfo.Config.Labels) {
 		projectName := strings.TrimSpace(containerInfo.Config.Labels["com.docker.compose.project"])
 		if projectName != "" {
 			err = errors.New("Arcane cannot redeploy itself when managed as a compose project — use the system upgrade flow (Settings → Updates) instead")
