@@ -12,7 +12,6 @@
 		DockerBrandIcon,
 		ApiKeyIcon,
 		AppearanceIcon,
-		EnvironmentsIcon,
 		CloseIcon,
 		JobsIcon,
 		CodeIcon,
@@ -48,7 +47,6 @@
 		apikey: ApiKeyIcon,
 		jobs: JobsIcon,
 		code: CodeIcon,
-		environment: EnvironmentsIcon,
 		globe: GlobeIcon
 	};
 

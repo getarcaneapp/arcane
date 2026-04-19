@@ -17,7 +17,7 @@
 			<Card.Description>{m.environments_agent_config_description()}</Card.Description>
 		</div>
 	</Card.Header>
-	<Card.Content class="space-y-4 lg:p-6 lg:pt-0">
+	<Card.Content class="space-y-4 p-4">
 		{#if regeneratedApiKey}
 			<div class="space-y-4">
 				<div class="space-y-2">

@@ -39,8 +39,6 @@
 				return m.notifications_title();
 			case 'api-keys':
 				return m.api_key_page_title();
-			case 'environments':
-				return m.environments_title();
 			case 'webhooks':
 				return m.webhook_page_title();
 			case 'build':

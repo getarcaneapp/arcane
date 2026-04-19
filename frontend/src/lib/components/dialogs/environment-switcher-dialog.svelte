@@ -225,7 +225,7 @@
 
 	function handleOpenSettings(env: Environment) {
 		closeDialog();
-		goto(`/settings/environments?environment=${env.id}`);
+		goto(`/environments/${env.id}`);
 	}
 
 	function getConnectionString(env: Environment): string {
