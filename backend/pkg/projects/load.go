@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/compose-spec/compose-go/v2/loader"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
@@ -24,30 +25,114 @@ var ProjectFileCandidates = []string{
 	".env",
 }
 
-// IsProjectFile reports whether filename is a Compose file or an environment file.
+// IsProjectFile reports whether filename is a known project file or a plausible
+// custom YAML filename worth watching for compose discovery.
 func IsProjectFile(filename string) bool {
-	return slices.Contains(ProjectFileCandidates, filename)
+	if slices.Contains(ProjectFileCandidates, filename) {
+		return true
+	}
+
+	ext := strings.ToLower(filepath.Ext(filename))
+	if ext != ".yaml" && ext != ".yml" {
+		return false
+	}
+
+	base := filepath.Base(filename)
+	return base != "" && !strings.HasPrefix(base, ".")
 }
 
-func locateComposeFile(dir string) string {
+func stripTrailingProjectCounterInternal(name string) string {
+	trimmed := strings.TrimSpace(name)
+	withoutDigits := strings.TrimRight(trimmed, "0123456789")
+	if len(withoutDigits) == len(trimmed) || withoutDigits == "" {
+		return trimmed
+	}
+
+	if last := withoutDigits[len(withoutDigits)-1]; last != '-' && last != '_' {
+		return trimmed
+	}
+
+	return withoutDigits[:len(withoutDigits)-1]
+}
+
+func DetectComposeFile(dir string) (string, error) {
 	for _, filename := range ProjectFileCandidates {
 		if filename == ".env" {
 			continue
 		}
-		fullPath := filepath.Join(dir, filename)
-		if info, err := os.Stat(fullPath); err == nil && !info.IsDir() {
-			return fullPath
+
+		composePath := filepath.Join(dir, filename)
+		if info, err := os.Stat(composePath); err == nil && !info.IsDir() {
+			return composePath, nil
 		}
 	}
-	return ""
-}
 
-func DetectComposeFile(dir string) (string, error) {
-	compose := locateComposeFile(dir)
-	if compose == "" {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", err
+	}
+
+	dirBase := filepath.Base(filepath.Clean(dir))
+	normalizedDirBase := loader.NormalizeProjectName(dirBase)
+	normalizedTrimmedDirBase := loader.NormalizeProjectName(stripTrailingProjectCounterInternal(dirBase))
+
+	customCandidates := make([]string, 0)
+	dirMatchedCandidates := make([]string, 0)
+	composeNamedCandidates := make([]string, 0)
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		name := entry.Name()
+		if slices.Contains(ProjectFileCandidates, name) || !IsProjectFile(name) {
+			continue
+		}
+
+		candidatePath := filepath.Join(dir, name)
+
+		stem := strings.TrimSuffix(name, filepath.Ext(name))
+		normalizedStem := loader.NormalizeProjectName(strings.TrimSpace(stem))
+		dirMatched := normalizedStem != "" && (normalizedStem == normalizedDirBase || normalizedStem == normalizedTrimmedDirBase)
+		composeNamed := strings.Contains(strings.ToLower(stem), "compose")
+
+		hasComposeRootKeys, rootKeysErr := HasComposeRootKeysInFile(candidatePath)
+		if rootKeysErr == nil {
+			if !hasComposeRootKeys {
+				continue
+			}
+		} else if !dirMatched && !composeNamed {
+			continue
+		}
+
+		if dirMatched {
+			dirMatchedCandidates = append(dirMatchedCandidates, candidatePath)
+		}
+
+		if composeNamed {
+			composeNamedCandidates = append(composeNamedCandidates, candidatePath)
+		}
+
+		customCandidates = append(customCandidates, candidatePath)
+	}
+
+	switch {
+	case len(dirMatchedCandidates) == 1:
+		return dirMatchedCandidates[0], nil
+	case len(dirMatchedCandidates) > 1:
+		return "", fmt.Errorf("multiple custom compose files found in %q", dir)
+	case len(composeNamedCandidates) == 1:
+		return composeNamedCandidates[0], nil
+	case len(composeNamedCandidates) > 1:
+		return "", fmt.Errorf("multiple custom compose files found in %q", dir)
+	case len(customCandidates) == 1:
+		return customCandidates[0], nil
+	case len(customCandidates) > 1:
+		return "", fmt.Errorf("multiple custom compose files found in %q", dir)
+	default:
 		return "", fmt.Errorf("no compose file found in %q", dir)
 	}
-	return compose, nil
 }
 
 func LoadComposeProject(ctx context.Context, composeFile, projectName, projectsDirectory string, autoInjectEnv bool, pathMapper *PathMapper) (*composetypes.Project, error) {
@@ -117,6 +202,10 @@ func loadComposeProjectInternal(
 		return nil, fmt.Errorf("load compose project: %w", err)
 	}
 
+	for _, configFile := range cfg.ConfigFiles {
+		project.ComposeFiles = append(project.ComposeFiles, configFile.Filename)
+	}
+
 	project = project.WithoutUnnecessaryResources()
 
 	// Resolve relative paths for bind mounts, secrets, and configs
@@ -129,26 +218,24 @@ func loadComposeProjectInternal(
 		}
 	}
 
-	injectServiceConfiguration(project, injectionVars, workdir, composeFile)
-
-	project.ComposeFiles = []string{composeFile}
+	injectServiceConfiguration(project, injectionVars)
 	return project, nil
 }
 
-func applyCustomLabelsInternal(projectName string, serviceName string, workingDirectory string, composeFile string) composetypes.Labels {
+func applyCustomLabelsInternal(projectName string, serviceName string, workingDirectory string, composeFiles []string) composetypes.Labels {
 	return composetypes.Labels{
 		api.ProjectLabel:     projectName,
 		api.ServiceLabel:     serviceName,
 		api.VersionLabel:     api.ComposeVersion,
 		api.OneoffLabel:      "False",
 		api.WorkingDirLabel:  workingDirectory,
-		api.ConfigFilesLabel: composeFile,
+		api.ConfigFilesLabel: strings.Join(composeFiles, ","),
 	}
 }
 
-func injectServiceConfiguration(project *composetypes.Project, injectionVars EnvMap, workdir, composeFile string) {
+func injectServiceConfiguration(project *composetypes.Project, injectionVars EnvMap) {
 	for i, s := range project.Services {
-		s.CustomLabels = applyCustomLabelsInternal(project.Name, s.Name, workdir, composeFile)
+		s.CustomLabels = applyCustomLabelsInternal(project.Name, s.Name, project.WorkingDir, project.ComposeFiles)
 
 		// Initialize environment if nil
 		if s.Environment == nil {
@@ -157,8 +244,7 @@ func injectServiceConfiguration(project *composetypes.Project, injectionVars Env
 
 		for k, v := range injectionVars {
 			if _, exists := s.Environment[k]; !exists {
-				vcopy := v
-				s.Environment[k] = &vcopy
+				s.Environment[k] = new(v)
 			}
 		}
 

@@ -55,15 +55,21 @@ var systemUser = models.User{
 }
 
 func (s *SystemService) PruneAll(ctx context.Context, req system.PruneAllRequest) (*system.PruneAllResult, error) {
-	slog.InfoContext(ctx, "Starting selective prune operation", "containers", req.Containers, "images", req.Images, "volumes", req.Volumes, "networks", req.Networks, "build_cache", req.BuildCache, "dangling", req.Dangling)
+	slog.InfoContext(ctx, "Starting selective prune operation",
+		"containers", req.Containers,
+		"images", req.Images,
+		"volumes", req.Volumes,
+		"networks", req.Networks,
+		"build_cache", req.BuildCache,
+	)
 
 	result := &system.PruneAllResult{Success: true}
 	var mu sync.Mutex
 
 	// 1. Prune Containers first (sequential) as it may free up other resources
-	if req.Containers {
-		slog.InfoContext(ctx, "Pruning stopped containers...")
-		if err := s.pruneContainers(ctx, result); err != nil {
+	if req.Containers != nil && req.Containers.Mode != system.PruneContainerModeNone {
+		slog.InfoContext(ctx, "Pruning containers...", "mode", req.Containers.Mode, "until", req.Containers.Until)
+		if err := s.pruneContainersInternal(ctx, *req.Containers, result); err != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("Container pruning failed: %v", err))
 			result.Success = false
 		}
@@ -72,16 +78,11 @@ func (s *SystemService) PruneAll(ctx context.Context, req system.PruneAllRequest
 	// 2. Prune other resources in parallel
 	g, groupCtx := errgroup.WithContext(ctx)
 
-	if req.Images {
+	if req.Images != nil && req.Images.Mode != system.PruneImageModeNone {
 		g.Go(func() error {
-			danglingOnly := req.Dangling
-			if settingsDangling, _ := s.getDanglingModeFromSettings(groupCtx); settingsDangling != danglingOnly {
-				slog.DebugContext(groupCtx, "Prune request overriding stored image prune mode", "settings_dangling_only", settingsDangling, "request_dangling_only", danglingOnly)
-			}
-
-			slog.InfoContext(groupCtx, "Pruning images...", "dangling_only", danglingOnly)
+			slog.InfoContext(groupCtx, "Pruning images...", "mode", req.Images.Mode, "until", req.Images.Until)
 			localResult := &system.PruneAllResult{}
-			if err := s.pruneImages(groupCtx, danglingOnly, localResult); err != nil {
+			if err := s.pruneImagesInternal(groupCtx, *req.Images, localResult); err != nil {
 				mu.Lock()
 				result.Errors = append(result.Errors, fmt.Sprintf("Image pruning failed: %v", err))
 				result.Success = false
@@ -97,11 +98,11 @@ func (s *SystemService) PruneAll(ctx context.Context, req system.PruneAllRequest
 		})
 	}
 
-	if req.BuildCache {
+	if req.BuildCache != nil && req.BuildCache.Mode != system.PruneBuildCacheModeNone {
 		g.Go(func() error {
-			slog.InfoContext(groupCtx, "Pruning build cache...")
+			slog.InfoContext(groupCtx, "Pruning build cache...", "mode", req.BuildCache.Mode, "until", req.BuildCache.Until)
 			localResult := &system.PruneAllResult{}
-			if err := s.pruneBuildCache(groupCtx, localResult, !req.Dangling); err != nil {
+			if err := s.pruneBuildCacheInternal(groupCtx, *req.BuildCache, localResult); err != nil {
 				slog.WarnContext(groupCtx, "Build cache pruning encountered an error", "error", err.Error())
 				// Build cache errors are often non-critical, but we log them
 			} else {
@@ -114,11 +115,11 @@ func (s *SystemService) PruneAll(ctx context.Context, req system.PruneAllRequest
 		})
 	}
 
-	if req.Volumes {
+	if req.Volumes != nil && req.Volumes.Mode != system.PruneVolumeModeNone {
 		g.Go(func() error {
-			slog.InfoContext(groupCtx, "Pruning unused volumes...")
+			slog.InfoContext(groupCtx, "Pruning volumes...", "mode", req.Volumes.Mode)
 			localResult := &system.PruneAllResult{}
-			if err := s.pruneVolumes(groupCtx, localResult); err != nil {
+			if err := s.pruneVolumesInternal(groupCtx, *req.Volumes, localResult); err != nil {
 				mu.Lock()
 				result.Errors = append(result.Errors, fmt.Sprintf("Volume pruning failed: %v", err))
 				result.Success = false
@@ -134,11 +135,11 @@ func (s *SystemService) PruneAll(ctx context.Context, req system.PruneAllRequest
 		})
 	}
 
-	if req.Networks {
+	if req.Networks != nil && req.Networks.Mode != system.PruneNetworkModeNone {
 		g.Go(func() error {
-			slog.InfoContext(groupCtx, "Pruning unused networks...")
+			slog.InfoContext(groupCtx, "Pruning networks...", "mode", req.Networks.Mode, "until", req.Networks.Until)
 			localResult := &system.PruneAllResult{}
-			if err := s.pruneNetworks(groupCtx, localResult); err != nil {
+			if err := s.pruneNetworksInternal(groupCtx, *req.Networks, localResult); err != nil {
 				mu.Lock()
 				result.Errors = append(result.Errors, fmt.Sprintf("Network pruning failed: %v", err))
 				result.Success = false
@@ -159,19 +160,6 @@ func (s *SystemService) PruneAll(ctx context.Context, req system.PruneAllRequest
 	slog.InfoContext(ctx, "Selective prune operation completed", "success", result.Success, "containers_pruned", len(result.ContainersPruned), "images_deleted", len(result.ImagesDeleted), "volumes_deleted", len(result.VolumesDeleted), "networks_deleted", len(result.NetworksDeleted), "space_reclaimed", result.SpaceReclaimed, "error_count", len(result.Errors))
 
 	return result, nil
-}
-
-func (s *SystemService) getDanglingModeFromSettings(ctx context.Context) (bool, error) {
-	pruneMode := s.settingsService.GetStringSetting(ctx, "dockerPruneMode", "dangling")
-
-	switch pruneMode {
-	case "dangling":
-		return true, nil
-	case "all":
-		return false, nil
-	default:
-		return true, nil
-	}
 }
 
 func (s *SystemService) performBatchContainerAction(ctx context.Context, containers []container.Summary, actionName string, shouldProcess func(container.Summary) bool, action func(context.Context, string) error) *containertypes.ActionResult {
@@ -264,13 +252,19 @@ func (s *SystemService) StopAllContainers(ctx context.Context) (*containertypes.
 		}), nil
 }
 
-func (s *SystemService) pruneContainers(ctx context.Context, result *system.PruneAllResult) error {
+func (s *SystemService) pruneContainersInternal(ctx context.Context, options system.PruneContainersOptions, result *system.PruneAllResult) error {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	filterArgs := make(client.Filters)
+	if options.Mode == system.PruneContainerModeOlderThan {
+		if strings.TrimSpace(options.Until) == "" {
+			return fmt.Errorf("container prune mode olderThan requires until")
+		}
+		filterArgs = filterArgs.Add("until", options.Until)
+	}
 
 	report, err := dockerClient.ContainerPrune(ctx, client.ContainerPruneOptions{Filters: filterArgs})
 	if err != nil {
@@ -283,24 +277,28 @@ func (s *SystemService) pruneContainers(ctx context.Context, result *system.Prun
 	return nil
 }
 
-func (s *SystemService) pruneImages(ctx context.Context, danglingOnly bool, result *system.PruneAllResult) error {
-	slog.DebugContext(ctx, "Starting image pruning", "dangling_only", danglingOnly)
-
+func (s *SystemService) pruneImagesInternal(ctx context.Context, options system.PruneImagesOptions, result *system.PruneAllResult) error {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	var filterArgs client.Filters
-
-	if danglingOnly {
-		slog.DebugContext(ctx, "Configured to prune only dangling images")
-		filterArgs = make(client.Filters)
+	filterArgs := make(client.Filters)
+	switch options.Mode {
+	case system.PruneImageModeNone:
+		return fmt.Errorf("image prune mode none is not allowed")
+	case system.PruneImageModeDangling:
 		filterArgs = filterArgs.Add("dangling", "true")
-	} else {
-		slog.DebugContext(ctx, "Configured to prune all unused images (including non-dangling)")
-		filterArgs = make(client.Filters)
+	case system.PruneImageModeAll:
 		filterArgs = filterArgs.Add("dangling", "false")
+	case system.PruneImageModeOlderThan:
+		if strings.TrimSpace(options.Until) == "" {
+			return fmt.Errorf("image prune mode olderThan requires until")
+		}
+		filterArgs = filterArgs.Add("dangling", "false")
+		filterArgs = filterArgs.Add("until", options.Until)
+	default:
+		return fmt.Errorf("unsupported image prune mode: %s", options.Mode)
 	}
 
 	report, err := dockerClient.ImagePrune(ctx, client.ImagePruneOptions{Filters: filterArgs})
@@ -333,7 +331,7 @@ func (s *SystemService) pruneImages(ctx context.Context, danglingOnly bool, resu
 	return nil
 }
 
-func (s *SystemService) pruneBuildCache(ctx context.Context, result *system.PruneAllResult, pruneAllCache bool) error {
+func (s *SystemService) pruneBuildCacheInternal(ctx context.Context, options system.PruneBuildCacheOptions, result *system.PruneAllResult) error {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		result.Errors = append(result.Errors, fmt.Errorf("build cache pruning failed (connection): %w", err).Error())
@@ -341,12 +339,19 @@ func (s *SystemService) pruneBuildCache(ctx context.Context, result *system.Prun
 		return fmt.Errorf("failed to connect to Docker for build cache prune: %w", err)
 	}
 
-	options := client.BuildCachePruneOptions{
-		All: pruneAllCache,
+	pruneOptions := client.BuildCachePruneOptions{
+		All: options.Mode == system.PruneBuildCacheModeAll,
+	}
+	if options.Mode == system.PruneBuildCacheModeOlderThan {
+		if strings.TrimSpace(options.Until) == "" {
+			return fmt.Errorf("build cache prune mode olderThan requires until")
+		}
+		pruneOptions.Filters = make(client.Filters)
+		pruneOptions.Filters = pruneOptions.Filters.Add("until", options.Until)
 	}
 
-	slog.DebugContext(ctx, "starting build cache pruning", "prune_all", pruneAllCache)
-	report, err := dockerClient.BuildCachePrune(ctx, options)
+	slog.DebugContext(ctx, "starting build cache pruning", "mode", options.Mode, "until", options.Until)
+	report, err := dockerClient.BuildCachePrune(ctx, pruneOptions)
 	if err != nil {
 		result.Errors = append(result.Errors, fmt.Errorf("build cache pruning failed: %w", err).Error())
 		slog.ErrorContext(ctx, "Error pruning build cache", "error", err.Error())
@@ -360,12 +365,8 @@ func (s *SystemService) pruneBuildCache(ctx context.Context, result *system.Prun
 	return nil
 }
 
-func (s *SystemService) pruneVolumes(ctx context.Context, result *system.PruneAllResult) error {
-	// Prune ALL unused volumes (both named and anonymous)
-	// Note: Docker API only prunes volumes that are NOT in use by any containers (running or stopped)
-	// With all=true, it will remove both named and anonymous unused volumes
-	// With all=false, it only removes anonymous (unnamed) unused volumes
-	allVolumes := true
+func (s *SystemService) pruneVolumesInternal(ctx context.Context, options system.PruneVolumesOptions, result *system.PruneAllResult) error {
+	allVolumes := options.Mode == system.PruneVolumeModeAll
 	report, err := s.volumeService.PruneVolumesWithOptions(ctx, allVolumes)
 	if err != nil {
 		return err
@@ -379,16 +380,28 @@ func (s *SystemService) pruneVolumes(ctx context.Context, result *system.PruneAl
 	return nil
 }
 
-func (s *SystemService) pruneNetworks(ctx context.Context, result *system.PruneAllResult) error {
-	// Note: Docker API only prunes networks that are NOT in use by any containers
-	report, err := s.networkService.PruneNetworks(ctx)
+func (s *SystemService) pruneNetworksInternal(ctx context.Context, options system.PruneNetworksOptions, result *system.PruneAllResult) error {
+	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	slog.InfoContext(ctx, "Network prune completed", "networks_deleted", len(report.NetworksDeleted))
+	filterArgs := make(client.Filters)
+	if options.Mode == system.PruneNetworkModeOlderThan {
+		if strings.TrimSpace(options.Until) == "" {
+			return fmt.Errorf("network prune mode olderThan requires until")
+		}
+		filterArgs = filterArgs.Add("until", options.Until)
+	}
 
-	result.NetworksDeleted = report.NetworksDeleted
+	report, err := dockerClient.NetworkPrune(ctx, client.NetworkPruneOptions{Filters: filterArgs})
+	if err != nil {
+		return fmt.Errorf("failed to prune networks: %w", err)
+	}
+
+	slog.InfoContext(ctx, "Network prune completed", "networks_deleted", len(report.Report.NetworksDeleted))
+
+	result.NetworksDeleted = report.Report.NetworksDeleted
 	return nil
 }
 

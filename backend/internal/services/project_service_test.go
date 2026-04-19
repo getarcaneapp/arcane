@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
+	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/pkg/projects"
 	buildtypes "github.com/getarcaneapp/arcane/types/builds"
@@ -41,7 +43,7 @@ func setupProjectTestDB(t *testing.T) *database.DB {
 	t.Helper()
 	db, err := gorm.Open(glsqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&models.Project{}, &models.SettingVariable{}))
+	require.NoError(t, db.AutoMigrate(&models.Project{}, &models.SettingVariable{}, &models.ImageUpdateRecord{}))
 	return &database.DB{DB: db}
 }
 
@@ -51,7 +53,7 @@ func TestProjectService_GetProjectFromDatabaseByID(t *testing.T) {
 
 	// Setup dependencies
 	settingsService, _ := NewSettingsService(ctx, db)
-	svc := NewProjectService(db, settingsService, nil, nil, nil, nil)
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
 
 	// Create test project
 	proj := &models.Project{
@@ -168,7 +170,7 @@ func TestProjectService_CalculateProjectStatus(t *testing.T) {
 func TestProjectService_UpdateProjectStatusInternal(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
-	svc := NewProjectService(db, nil, nil, nil, nil, nil)
+	svc := NewProjectService(db, nil, nil, nil, nil, nil, config.Load())
 
 	proj := &models.Project{
 		BaseModel: models.BaseModel{
@@ -280,7 +282,7 @@ func TestProjectService_GetProjectByComposeName(t *testing.T) {
 
 	t.Run("exact match", func(t *testing.T) {
 		db := setupProjectTestDB(t)
-		svc := NewProjectService(db, nil, nil, nil, nil, nil)
+		svc := NewProjectService(db, nil, nil, nil, nil, nil, config.Load())
 
 		proj := &models.Project{
 			BaseModel: models.BaseModel{ID: "p1"},
@@ -296,7 +298,7 @@ func TestProjectService_GetProjectByComposeName(t *testing.T) {
 
 	t.Run("normalized fallback", func(t *testing.T) {
 		db := setupProjectTestDB(t)
-		svc := NewProjectService(db, nil, nil, nil, nil, nil)
+		svc := NewProjectService(db, nil, nil, nil, nil, nil, config.Load())
 
 		proj := &models.Project{
 			BaseModel: models.BaseModel{ID: "p1"},
@@ -312,7 +314,7 @@ func TestProjectService_GetProjectByComposeName(t *testing.T) {
 
 	t.Run("display name in db, normalized compose label input", func(t *testing.T) {
 		db := setupProjectTestDB(t)
-		svc := NewProjectService(db, nil, nil, nil, nil, nil)
+		svc := NewProjectService(db, nil, nil, nil, nil, nil, config.Load())
 
 		display := &models.Project{
 			BaseModel: models.BaseModel{ID: "p2"},
@@ -328,7 +330,7 @@ func TestProjectService_GetProjectByComposeName(t *testing.T) {
 
 	t.Run("invalidates stale normalized cache entries after deletion", func(t *testing.T) {
 		db := setupProjectTestDB(t)
-		svc := NewProjectService(db, nil, nil, nil, nil, nil)
+		svc := NewProjectService(db, nil, nil, nil, nil, nil, config.Load())
 
 		original := &models.Project{
 			BaseModel: models.BaseModel{ID: "p3"},
@@ -365,7 +367,7 @@ func TestProjectService_GetProjectByComposeName(t *testing.T) {
 
 	t.Run("invalidates stale normalized cache entries after rename", func(t *testing.T) {
 		db := setupProjectTestDB(t)
-		svc := NewProjectService(db, nil, nil, nil, nil, nil)
+		svc := NewProjectService(db, nil, nil, nil, nil, nil, config.Load())
 
 		original := &models.Project{
 			BaseModel: models.BaseModel{ID: "p5"},
@@ -487,7 +489,7 @@ func TestProjectService_UpdateProject_RenamesDirectoryWhenNameChanges(t *testing
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
 
 	originalDirName := "Foo"
 	originalPath := filepath.Join(projectsDir, originalDirName)
@@ -502,8 +504,7 @@ func TestProjectService_UpdateProject_RenamesDirectoryWhenNameChanges(t *testing
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	updatedName := "bar"
-	updated, err := svc.UpdateProject(ctx, project.ID, &updatedName, nil, nil, models.User{
+	updated, err := svc.UpdateProject(ctx, project.ID, new("bar"), nil, nil, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
@@ -536,7 +537,7 @@ func TestProjectService_UpdateProject_RenameFailsWhenTargetDirectoryExists(t *te
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
 
 	originalDirName := "Foo"
 	originalPath := filepath.Join(projectsDir, originalDirName)
@@ -554,8 +555,7 @@ func TestProjectService_UpdateProject_RenameFailsWhenTargetDirectoryExists(t *te
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	updatedName := "bar"
-	_, err = svc.UpdateProject(ctx, project.ID, &updatedName, nil, nil, models.User{
+	_, err = svc.UpdateProject(ctx, project.ID, new("bar"), nil, nil, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
@@ -583,7 +583,7 @@ func TestProjectService_UpdateProject_RenameFailsWhenProjectRunning(t *testing.T
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
 
 	originalDirName := "Foo"
 	originalPath := filepath.Join(projectsDir, originalDirName)
@@ -598,8 +598,7 @@ func TestProjectService_UpdateProject_RenameFailsWhenProjectRunning(t *testing.T
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	updatedName := "bar"
-	_, err = svc.UpdateProject(ctx, project.ID, &updatedName, nil, nil, models.User{
+	_, err = svc.UpdateProject(ctx, project.ID, new("bar"), nil, nil, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
@@ -627,7 +626,7 @@ func TestProjectService_UpdateProject_ValidatesComposeUsingExistingProjectName(t
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
 
 	dirName := "demo"
 	projectPath := filepath.Join(projectsDir, dirName)
@@ -669,7 +668,7 @@ func TestProjectService_UpdateProject_AllowsMissingEnvFileDuringComposeValidatio
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
 
 	dirName := "env-required"
 	projectPath := filepath.Join(projectsDir, dirName)
@@ -713,7 +712,7 @@ func TestProjectService_UpdateProject_UsesExistingEnvFileDuringComposeValidation
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
 
 	dirName := "env-existing"
 	projectPath := filepath.Join(projectsDir, dirName)
@@ -759,7 +758,7 @@ func TestProjectService_UpdateProject_UsesProvidedEnvContentDuringComposeValidat
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
 
 	dirName := "env-updated"
 	projectPath := filepath.Join(projectsDir, dirName)
@@ -805,7 +804,7 @@ func TestProjectService_UpdateProject_ReturnsEnvParseErrorDuringComposeValidatio
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
 
 	dirName := "env-invalid"
 	projectPath := filepath.Join(projectsDir, dirName)
@@ -849,7 +848,7 @@ func TestProjectService_UpdateProject_UsesGlobalEnvDuringComposeValidation(t *te
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
 
 	dirName := "global-env-update"
 	projectPath := filepath.Join(projectsDir, dirName)
@@ -897,7 +896,7 @@ func TestProjectService_UpdateProject_DoesNotResolveHostEnvThroughGlobalEnvDurin
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
 
 	dirName := "host-env-guard"
 	projectPath := filepath.Join(projectsDir, dirName)
@@ -940,7 +939,7 @@ func TestProjectService_UpdateProject_DerivesProjectOverrideEnvWhenGitSourceExis
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
 
 	dirName := "override-edit"
 	projectPath := filepath.Join(projectsDir, dirName)
@@ -958,8 +957,7 @@ func TestProjectService_UpdateProject_DerivesProjectOverrideEnvWhenGitSourceExis
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	env := "BASE=git\nTOKEN=secret\n"
-	updated, err := svc.UpdateProject(ctx, project.ID, nil, nil, &env, models.User{
+	updated, err := svc.UpdateProject(ctx, project.ID, nil, nil, new("BASE=git\nTOKEN=secret\n"), models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
@@ -987,7 +985,7 @@ func TestProjectService_UpdateProject_DeletingGitBackedKeyFallsBackToGit(t *test
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
 
 	dirName := "override-delete"
 	projectPath := filepath.Join(projectsDir, dirName)
@@ -1006,8 +1004,7 @@ func TestProjectService_UpdateProject_DeletingGitBackedKeyFallsBackToGit(t *test
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	env := "BASE=git\nLOCAL_ONLY=1\n"
-	updated, err := svc.UpdateProject(ctx, project.ID, nil, nil, &env, models.User{
+	updated, err := svc.UpdateProject(ctx, project.ID, nil, nil, new("BASE=git\nLOCAL_ONLY=1\n"), models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
@@ -1037,7 +1034,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_MigratesDirectEnvIntoProjectOve
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
 
 	dirName := "git-sync-migrate"
 	projectPath := filepath.Join(projectsDir, dirName)
@@ -1088,7 +1085,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_NormalizesStaleCopiedGitOverrid
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
 
 	dirName := "git-sync-normalize"
 	projectPath := filepath.Join(projectsDir, dirName)
@@ -1107,8 +1104,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_NormalizesStaleCopiedGitOverrid
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	gitEnv := "BASE=git-updated\nSHARED=1\nREMOTE_ONLY=1\n"
-	updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:alpine\n", &gitEnv, models.User{
+	updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:alpine\n", new("BASE=git-updated\nSHARED=1\nREMOTE_ONLY=1\n"), models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
@@ -1137,7 +1133,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_RemovesLegacyDeletedGitMasks(t 
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
 
 	dirName := "git-sync-delete-mask"
 	projectPath := filepath.Join(projectsDir, dirName)
@@ -1156,8 +1152,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_RemovesLegacyDeletedGitMasks(t 
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	gitEnv := "TOKEN=git-updated\nSHARED=1\nREMOTE_ONLY=1\n"
-	updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:alpine\n", &gitEnv, models.User{
+	updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:alpine\n", new("TOKEN=git-updated\nSHARED=1\nREMOTE_ONLY=1\n"), models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
@@ -1187,7 +1182,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_RemovesGitEnvSource(t *testing.
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
 
 	dirName := "git-sync-remove"
 	projectPath := filepath.Join(projectsDir, dirName)
@@ -1231,7 +1226,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_UsesGlobalEnvDuringComposeValid
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
 
 	dirName := "git-sync-global-env"
 	projectPath := filepath.Join(projectsDir, dirName)
@@ -1278,7 +1273,7 @@ func TestProjectService_PersistGitSyncEnvFiles_UsesPreparedState(t *testing.T) {
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
 
 	dirName := "git-sync-prepared-state"
 	projectPath := filepath.Join(projectsDir, dirName)
@@ -1288,8 +1283,7 @@ func TestProjectService_PersistGitSyncEnvFiles_UsesPreparedState(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(projectPath, ".env.git"), []byte("BASE=git\nTOKEN=git\n"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "project.env"), []byte("TOKEN=local\n"), 0o600))
 
-	gitEnv := "BASE=git-updated\nTOKEN=git\nREMOTE=1\n"
-	update, err := svc.prepareGitSyncEnvUpdateInternal(projectPath, &gitEnv)
+	update, err := svc.prepareGitSyncEnvUpdateInternal(projectPath, new("BASE=git-updated\nTOKEN=git\nREMOTE=1\n"))
 	require.NoError(t, err)
 	require.NotNil(t, update.effectiveContent)
 
@@ -1317,7 +1311,7 @@ func TestProjectService_GetProjectDetails_ReturnsEffectiveEnvContent(t *testing.
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
 
 	dirName := "details-override"
 	projectPath := filepath.Join(projectsDir, dirName)
@@ -1341,9 +1335,299 @@ func TestProjectService_GetProjectDetails_ReturnsEffectiveEnvContent(t *testing.
 	assert.Equal(t, "BASE=git\nTOKEN=secret\n", details.EnvContent)
 }
 
+func TestBuildProjectUpdateInfoSummaryInternal(t *testing.T) {
+	now := time.Now().UTC()
+
+	tests := []struct {
+		name        string
+		imageRefs   []string
+		updates     map[string]*imagetypes.UpdateInfo
+		wantStatus  string
+		wantCount   int
+		wantChecked int
+		wantErrors  int
+		wantUpdates int
+		wantError   string
+	}{
+		{
+			name:        "unknown when no checks exist",
+			imageRefs:   []string{"nginx:latest"},
+			updates:     nil,
+			wantStatus:  "unknown",
+			wantCount:   1,
+			wantChecked: 0,
+			wantErrors:  0,
+			wantUpdates: 0,
+		},
+		{
+			name:      "has update when any image has update",
+			imageRefs: []string{"nginx:latest", "redis:7"},
+			updates: map[string]*imagetypes.UpdateInfo{
+				"nginx:latest": {HasUpdate: true, CheckTime: now},
+				"redis:7":      {HasUpdate: false, CheckTime: now.Add(-time.Minute)},
+			},
+			wantStatus:  "has_update",
+			wantCount:   2,
+			wantChecked: 2,
+			wantErrors:  0,
+			wantUpdates: 1,
+		},
+		{
+			name:      "error when no updates but a check failed",
+			imageRefs: []string{"nginx:latest"},
+			updates: map[string]*imagetypes.UpdateInfo{
+				"nginx:latest": {HasUpdate: false, CheckTime: now, Error: "rate limited"},
+			},
+			wantStatus:  "error",
+			wantCount:   1,
+			wantChecked: 1,
+			wantErrors:  1,
+			wantUpdates: 0,
+			wantError:   "rate limited",
+		},
+		{
+			name:      "up to date when all images checked without updates",
+			imageRefs: []string{"nginx:latest", "redis:7"},
+			updates: map[string]*imagetypes.UpdateInfo{
+				"nginx:latest": {HasUpdate: false, CheckTime: now},
+				"redis:7":      {HasUpdate: false, CheckTime: now.Add(-time.Minute)},
+			},
+			wantStatus:  "up_to_date",
+			wantCount:   2,
+			wantChecked: 2,
+			wantErrors:  0,
+			wantUpdates: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			summary := buildProjectUpdateInfoSummaryInternal(tt.imageRefs, tt.updates)
+			require.NotNil(t, summary)
+			assert.Equal(t, tt.wantStatus, summary.Status)
+			assert.Equal(t, tt.wantCount, summary.ImageCount)
+			assert.Equal(t, tt.wantChecked, summary.CheckedImageCount)
+			assert.Equal(t, tt.wantErrors, summary.ErrorCount)
+			assert.Equal(t, tt.wantUpdates, summary.ImagesWithUpdates)
+			assert.Equal(t, tt.wantUpdates > 0, summary.HasUpdate)
+			assert.Equal(t, tt.imageRefs, summary.ImageRefs)
+			if tt.wantError != "" {
+				require.NotNil(t, summary.ErrorMessage)
+				assert.Equal(t, tt.wantError, *summary.ErrorMessage)
+			} else {
+				assert.Nil(t, summary.ErrorMessage)
+			}
+			if tt.wantUpdates > 0 {
+				assert.Equal(t, []string{tt.imageRefs[0]}, summary.UpdatedImageRefs)
+			} else {
+				assert.Empty(t, summary.UpdatedImageRefs)
+			}
+		})
+	}
+}
+
+func TestProjectService_GetProjectDetails_IncludesUpdateInfo(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
+
+	imageService := &ImageService{db: db}
+	svc := NewProjectService(db, settingsService, nil, imageService, nil, nil, config.Load())
+
+	projectPath := createComposeProjectDir(t, projectsDir, "updates-demo")
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("services:\n  app:\n    image: nginx:latest\n"), 0o644))
+
+	projectRecord := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-update-info"},
+		Name:      "updates-demo",
+		DirName:   ptr("updates-demo"),
+		Path:      projectPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(projectRecord).Error)
+
+	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+		ID:             "sha256:update-demo",
+		Repository:     "docker.io/library/nginx",
+		Tag:            "latest",
+		HasUpdate:      true,
+		UpdateType:     "digest",
+		CurrentVersion: "latest",
+		CheckTime:      time.Now().UTC(),
+	}).Error)
+
+	details, err := svc.GetProjectDetails(ctx, projectRecord.ID)
+	require.NoError(t, err)
+	require.NotNil(t, details.UpdateInfo)
+	assert.Equal(t, "has_update", details.UpdateInfo.Status)
+	assert.True(t, details.UpdateInfo.HasUpdate)
+	assert.Equal(t, 1, details.UpdateInfo.ImageCount)
+	assert.Equal(t, 1, details.UpdateInfo.CheckedImageCount)
+	assert.Equal(t, 1, details.UpdateInfo.ImagesWithUpdates)
+	assert.Equal(t, []string{"nginx:latest"}, details.UpdateInfo.ImageRefs)
+	assert.Equal(t, []string{"nginx:latest"}, details.UpdateInfo.UpdatedImageRefs)
+}
+
+func TestProjectService_ListProjects_FiltersByUpdateStatus(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
+
+	imageService := &ImageService{db: db}
+	svc := NewProjectService(db, settingsService, nil, imageService, nil, nil, config.Load())
+
+	updatedPath := createComposeProjectDir(t, projectsDir, "updated-demo")
+	require.NoError(t, os.WriteFile(filepath.Join(updatedPath, "compose.yaml"), []byte("services:\n  app:\n    image: nginx:latest\n"), 0o644))
+	upToDatePath := createComposeProjectDir(t, projectsDir, "current-demo")
+	require.NoError(t, os.WriteFile(filepath.Join(upToDatePath, "compose.yaml"), []byte("services:\n  app:\n    image: redis:7\n"), 0o644))
+	errorPath := createComposeProjectDir(t, projectsDir, "error-demo")
+	require.NoError(t, os.WriteFile(filepath.Join(errorPath, "compose.yaml"), []byte("services:\n  app:\n    image: busybox:latest\n"), 0o644))
+	unknownPath := createComposeProjectDir(t, projectsDir, "unknown-demo")
+	require.NoError(t, os.WriteFile(filepath.Join(unknownPath, "compose.yaml"), []byte("services:\n  app:\n    image: alpine:latest\n"), 0o644))
+
+	require.NoError(t, db.Create(&models.Project{
+		BaseModel: models.BaseModel{ID: "project-updated"},
+		Name:      "updated-demo",
+		DirName:   ptr("updated-demo"),
+		Path:      updatedPath,
+		Status:    models.ProjectStatusStopped,
+	}).Error)
+	require.NoError(t, db.Create(&models.Project{
+		BaseModel: models.BaseModel{ID: "project-current"},
+		Name:      "current-demo",
+		DirName:   ptr("current-demo"),
+		Path:      upToDatePath,
+		Status:    models.ProjectStatusStopped,
+	}).Error)
+	require.NoError(t, db.Create(&models.Project{
+		BaseModel: models.BaseModel{ID: "project-error"},
+		Name:      "error-demo",
+		DirName:   ptr("error-demo"),
+		Path:      errorPath,
+		Status:    models.ProjectStatusStopped,
+	}).Error)
+	require.NoError(t, db.Create(&models.Project{
+		BaseModel: models.BaseModel{ID: "project-unknown"},
+		Name:      "unknown-demo",
+		DirName:   ptr("unknown-demo"),
+		Path:      unknownPath,
+		Status:    models.ProjectStatusStopped,
+	}).Error)
+
+	now := time.Now().UTC()
+	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+		ID:             "sha256:updated-image",
+		Repository:     "docker.io/library/nginx",
+		Tag:            "latest",
+		HasUpdate:      true,
+		UpdateType:     "digest",
+		CurrentVersion: "latest",
+		CheckTime:      now,
+	}).Error)
+	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+		ID:             "sha256:current-image",
+		Repository:     "docker.io/library/redis",
+		Tag:            "7",
+		HasUpdate:      false,
+		UpdateType:     "tag",
+		CurrentVersion: "7",
+		CheckTime:      now.Add(-time.Minute),
+	}).Error)
+	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+		ID:             "sha256:error-image",
+		Repository:     "docker.io/library/busybox",
+		Tag:            "latest",
+		HasUpdate:      false,
+		UpdateType:     "error",
+		CurrentVersion: "latest",
+		CheckTime:      now.Add(-2 * time.Minute),
+		LastError:      ptr("registry timeout"),
+	}).Error)
+
+	tests := []struct {
+		name     string
+		filter   string
+		expected []string
+	}{
+		{name: "has update", filter: "has_update", expected: []string{"updated-demo"}},
+		{name: "up to date", filter: "up_to_date", expected: []string{"current-demo"}},
+		{name: "error", filter: "error", expected: []string{"error-demo"}},
+		{name: "unknown", filter: "unknown", expected: []string{"unknown-demo"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			items, page, err := svc.ListProjects(ctx, pagination.QueryParams{
+				Filters: map[string]string{
+					"updates": tt.filter,
+				},
+				PaginationParams: pagination.PaginationParams{Limit: -1},
+				SortParams:       pagination.SortParams{Sort: "name", Order: pagination.SortAsc},
+			})
+			require.NoError(t, err)
+			require.EqualValues(t, len(tt.expected), page.TotalItems)
+
+			names := make([]string, 0, len(items))
+			for _, item := range items {
+				names = append(names, item.Name)
+			}
+			assert.Equal(t, tt.expected, names)
+		})
+	}
+}
+
 func TestProjectService_MergeBuildTags(t *testing.T) {
 	tags := mergeBuildTags("example/app:latest", []string{"example/app:sha", "example/app:latest", " "})
 	assert.Equal(t, []string{"example/app:latest", "example/app:sha"}, tags)
+}
+
+func TestProjectService_ListProjects_WithDerivedStatusFilter_AllowsAllPageSizeSentinel(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsRoot := t.TempDir()
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+
+	for i := 0; i < 25; i++ {
+		projectPath := createComposeProjectDir(t, projectsRoot, fmt.Sprintf("stopped-%02d", i))
+		require.NoError(t, db.Create(&models.Project{
+			BaseModel: models.BaseModel{ID: fmt.Sprintf("project-%02d", i)},
+			Name:      fmt.Sprintf("stopped-%02d", i),
+			DirName:   ptr(fmt.Sprintf("stopped-%02d", i)),
+			Path:      projectPath,
+			Status:    models.ProjectStatusStopped,
+		}).Error)
+	}
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
+
+	items, page, err := svc.ListProjects(ctx, pagination.QueryParams{
+		Filters: map[string]string{
+			"status": string(models.ProjectStatusStopped),
+		},
+		PaginationParams: pagination.PaginationParams{Limit: -1},
+		SortParams:       pagination.SortParams{Sort: "name", Order: pagination.SortAsc},
+	})
+	require.NoError(t, err)
+	assert.EqualValues(t, 25, page.TotalItems)
+	require.Len(t, items, 25)
+	assert.Equal(t, "stopped-00", items[0].Name)
+	assert.Equal(t, "stopped-24", items[len(items)-1].Name)
 }
 
 func TestProjectService_BuildPlatformsFromCompose(t *testing.T) {
@@ -1443,7 +1727,13 @@ func TestProjectService_PrepareServiceBuildRequest_MapsComposeFields(t *testing.
 	assert.Contains(t, req.ExtraHosts[0], "10.0.0.5")
 }
 
-func TestProjectService_PrepareServiceBuildRequest_UsesExecutorVisiblePaths(t *testing.T) {
+// TestProjectService_PrepareServiceBuildRequest_KeepsContainerPaths is a
+// regression test for #2314: Arcane's local build pipeline (the docker and
+// buildkit providers both read the build context via the Arcane process's own
+// filesystem) cannot use host paths, so prepareServiceBuildRequest must leave
+// the build context and any absolute Dockerfile path as container paths even
+// when the projects mount has a non-matching host prefix.
+func TestProjectService_PrepareServiceBuildRequest_KeepsContainerPaths(t *testing.T) {
 	svc := &ProjectService{}
 	proj := &composetypes.Project{WorkingDir: "/app/data/projects/demo", Name: "demo"}
 	pm := projects.NewPathMapper("/app/data/projects", "/docker-data/arcane/projects")
@@ -1468,8 +1758,42 @@ func TestProjectService_PrepareServiceBuildRequest_UsesExecutorVisiblePaths(t *t
 	)
 	require.NoError(t, err)
 
-	assert.Equal(t, "/docker-data/arcane/projects/demo", req.ContextDir)
-	assert.Equal(t, "/docker-data/arcane/projects/demo/Dockerfile.custom", req.Dockerfile)
+	assert.Equal(t, "/app/data/projects/demo", req.ContextDir)
+	assert.Equal(t, "/app/data/projects/demo/Dockerfile.custom", req.Dockerfile)
+}
+
+// TestProjectService_PrepareServiceBuildRequest_BuildDotKeepsContainerPath
+// reproduces the exact configuration from #2314: a compose file with
+// `build: .` next to its Dockerfile, on an installation where the projects
+// directory is bind-mounted from a different host path than the container
+// path. The resulting BuildRequest must point at the container path so the
+// local builder can stat / tar the directory.
+func TestProjectService_PrepareServiceBuildRequest_BuildDotKeepsContainerPath(t *testing.T) {
+	svc := &ProjectService{}
+	proj := &composetypes.Project{WorkingDir: "/app/data/projects/caddy", Name: "caddy"}
+	pm := projects.NewPathMapper("/app/data/projects", "/storage/volumes/arcane/projects")
+
+	serviceCfg := composetypes.ServiceConfig{
+		Name:  "caddy",
+		Image: "caddy",
+		Build: &composetypes.BuildConfig{
+			Context: ".",
+		},
+	}
+
+	req, _, _, err := svc.prepareServiceBuildRequest(
+		context.Background(),
+		"project-id",
+		proj,
+		"caddy",
+		serviceCfg,
+		ProjectBuildOptions{},
+		pm,
+	)
+	require.NoError(t, err)
+
+	assert.Equal(t, "/app/data/projects/caddy", req.ContextDir)
+	assert.Equal(t, "Dockerfile", req.Dockerfile)
 }
 
 func TestProjectService_PrepareServiceBuildRequest_UsesInlineDockerfile(t *testing.T) {
@@ -1565,14 +1889,13 @@ func TestProjectService_PrepareServiceBuildRequest_GeneratedImageProviderGuardra
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "must define an image when using depot")
 
-	push := true
 	_, _, _, err = svc.prepareServiceBuildRequest(
 		context.Background(),
 		"project-id",
 		proj,
 		"web",
 		serviceCfg,
-		ProjectBuildOptions{Provider: "local", Push: &push},
+		ProjectBuildOptions{Provider: "local", Push: new(true)},
 		nil,
 	)
 	require.Error(t, err)
@@ -1605,7 +1928,7 @@ func TestProjectService_DeployProject_StopsOnBuildPreparationError(t *testing.T)
 	require.NoError(t, db.Create(proj).Error)
 
 	buildSvc := &BuildService{builder: testBuildBuilder{err: errors.New("boom build")}}
-	svc := NewProjectService(db, settingsService, nil, nil, nil, buildSvc)
+	svc := NewProjectService(db, settingsService, nil, nil, nil, buildSvc, config.Load())
 
 	err = svc.DeployProject(ctx, "p1", models.User{BaseModel: models.BaseModel{ID: "u1"}, Username: "tester"}, nil)
 	require.Error(t, err)
@@ -1647,7 +1970,7 @@ func TestProjectService_DeployProject_BuildsGeneratedImageWithoutPull(t *testing
 	require.NoError(t, db.Create(proj).Error)
 
 	buildSvc := &BuildService{builder: testBuildBuilder{err: errors.New("boom build")}}
-	svc := NewProjectService(db, settingsService, nil, nil, nil, buildSvc)
+	svc := NewProjectService(db, settingsService, nil, nil, nil, buildSvc, config.Load())
 
 	err = svc.DeployProject(ctx, proj.ID, models.User{BaseModel: models.BaseModel{ID: "u1"}, Username: "tester"}, nil)
 	require.Error(t, err)
@@ -1669,16 +1992,16 @@ func TestResolveBuildContextInternal_AllowsRemoteGitContext(t *testing.T) {
 	assert.Equal(t, "https://github.com/getarcaneapp/arcane.git#main:docker/app", contextDir)
 }
 
-func TestResolveBuildContextInternal_RejectsUnsupportedRemoteContext(t *testing.T) {
+func TestResolveBuildContextInternal_AllowsRemoteGitContextWithoutGitSuffix(t *testing.T) {
 	svc := composetypes.ServiceConfig{
 		Build: &composetypes.BuildConfig{
-			Context: "https://example.com/archive.tar.gz",
+			Context: "https://git.sr.ht/~jordanreger/nws-alerts#main:docker/app",
 		},
 	}
 
-	_, err := resolveBuildContextInternal("/projects/demo", svc, "web")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "only git repository URLs are supported")
+	contextDir, err := resolveBuildContextInternal("/projects/demo", svc, "web")
+	require.NoError(t, err)
+	assert.Equal(t, "https://git.sr.ht/~jordanreger/nws-alerts#main:docker/app", contextDir)
 }
 
 func TestProjectService_SyncProjectsFromFileSystem_IgnoresSymlinkedProjectDirsWhenDisabled(t *testing.T) {
@@ -1697,7 +2020,7 @@ func TestProjectService_SyncProjectsFromFileSystem_IgnoresSymlinkedProjectDirsWh
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
 	require.NoError(t, settingsService.SetStringSetting(ctx, "followProjectSymlinks", "false"))
 
-	svc := NewProjectService(db, settingsService, nil, nil, nil, nil)
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
 	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
 
 	items, err := svc.ListAllProjects(ctx)
@@ -1723,7 +2046,7 @@ func TestProjectService_SyncProjectsFromFileSystem_DetectsSymlinkedProjectDirsWh
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
 	require.NoError(t, settingsService.SetStringSetting(ctx, "followProjectSymlinks", "true"))
 
-	svc := NewProjectService(db, settingsService, nil, nil, nil, nil)
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
 	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
 
 	items, err := svc.ListAllProjects(ctx)
@@ -1748,7 +2071,7 @@ func TestProjectService_CountProjectFolders_RespectsFollowProjectSymlinks(t *tes
 
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
 
-	svc := NewProjectService(db, settingsService, nil, nil, nil, nil)
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
 
 	require.NoError(t, settingsService.SetStringSetting(ctx, "followProjectSymlinks", "false"))
 	count, err := svc.countProjectFolders(ctx)
@@ -1774,7 +2097,7 @@ func TestProjectService_SyncProjectsFromFileSystem_DiscoversNestedProjectsAndRel
 
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
 
-	svc := NewProjectService(db, settingsService, nil, nil, nil, nil)
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
 	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
 
 	items, page, err := svc.ListProjects(ctx, pagination.QueryParams{
@@ -1794,6 +2117,78 @@ func TestProjectService_SyncProjectsFromFileSystem_DiscoversNestedProjectsAndRel
 	assert.Equal(t, "project2", items[1].DirName)
 }
 
+func TestProjectService_SyncProjectsFromFileSystem_RespectsConfiguredScanMaxDepth(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsRoot := t.TempDir()
+	topLevelPath := createComposeProjectDir(t, projectsRoot, "project1")
+	createComposeProjectDir(t, projectsRoot, filepath.Join("group", "project2"))
+
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+	t.Setenv("PROJECT_SCAN_MAX_DEPTH", "1")
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
+	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
+
+	items, err := svc.ListAllProjects(ctx)
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	assert.Equal(t, "project1", items[0].Name)
+	assert.Equal(t, topLevelPath, items[0].Path)
+}
+
+func TestProjectService_ListProjects_LoadsProjectIconFromGlobalEnvInIncludedMetadata(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsRoot := t.TempDir()
+	projectPath := filepath.Join(projectsRoot, "demo")
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
+
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectsRoot, projects.GlobalEnvFileName),
+		[]byte("ICON_CDN_URL=https://cdn.jsdelivr.net/gh/selfhst/icons@main\n"),
+		0o600,
+	))
+
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte(`include:
+  - metadata.yaml
+services:
+  watchtower:
+    image: nickfedor/watchtower:latest
+`), 0o600))
+
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "metadata.yaml"), []byte(`x-watchtower-icon: &watchtower-icon "${ICON_CDN_URL:+${ICON_CDN_URL}/svg/watchtower.svg}"
+x-arcane:
+  icon: *watchtower-icon
+services:
+  watchtower:
+    labels:
+      com.getarcaneapp.arcane.icon: *watchtower-icon
+`), 0o600))
+
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
+	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
+
+	items, page, err := svc.ListProjects(ctx, pagination.QueryParams{
+		SortParams:       pagination.SortParams{Sort: "path", Order: pagination.SortAsc},
+		PaginationParams: pagination.PaginationParams{Limit: -1},
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 1, page.TotalItems)
+	require.Len(t, items, 1)
+	assert.Equal(t, "https://cdn.jsdelivr.net/gh/selfhst/icons@main/svg/watchtower.svg", items[0].IconURL)
+}
+
 func TestProjectService_CountProjectFolders_RecursivelyCountsNestedProjects(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
@@ -1808,11 +2203,32 @@ func TestProjectService_CountProjectFolders_RecursivelyCountsNestedProjects(t *t
 
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
 
-	svc := NewProjectService(db, settingsService, nil, nil, nil, nil)
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
 
 	count, err := svc.countProjectFolders(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, 3, count)
+}
+
+func TestProjectService_CountProjectFolders_RespectsConfiguredScanMaxDepth(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsRoot := t.TempDir()
+	createComposeProjectDir(t, projectsRoot, "project1")
+	createComposeProjectDir(t, projectsRoot, filepath.Join("group", "project2"))
+
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+	t.Setenv("PROJECT_SCAN_MAX_DEPTH", "1")
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
+
+	count, err := svc.countProjectFolders(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 1, count)
 }
 
 func TestProjectService_SyncProjectsFromFileSystem_RemovesDeletedNestedProject(t *testing.T) {
@@ -1827,7 +2243,7 @@ func TestProjectService_SyncProjectsFromFileSystem_RemovesDeletedNestedProject(t
 
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
 
-	svc := NewProjectService(db, settingsService, nil, nil, nil, nil)
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
 	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
 
 	items, err := svc.ListAllProjects(ctx)
@@ -1855,7 +2271,7 @@ func TestProjectService_SyncProjectsFromFileSystem_AllowsDuplicateLeafDirectorie
 
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
 
-	svc := NewProjectService(db, settingsService, nil, nil, nil, nil)
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
 	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
 
 	var items []models.Project
@@ -1886,7 +2302,7 @@ func TestProjectService_SyncProjectsFromFileSystem_DetectsNestedSymlinkedProject
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
 	require.NoError(t, settingsService.SetStringSetting(ctx, "followProjectSymlinks", "true"))
 
-	svc := NewProjectService(db, settingsService, nil, nil, nil, nil)
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
 	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
 
 	items, page, err := svc.ListProjects(ctx, pagination.QueryParams{
@@ -1917,7 +2333,7 @@ func TestProjectService_SyncProjectsFromFileSystem_RemovesSymlinkedProjectsWhenD
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
 	require.NoError(t, settingsService.SetStringSetting(ctx, "followProjectSymlinks", "true"))
 
-	svc := NewProjectService(db, settingsService, nil, nil, nil, nil)
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
 	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
 
 	items, err := svc.ListAllProjects(ctx)
@@ -1947,7 +2363,7 @@ func TestProjectService_SyncProjectsFromFileSystem_RefreshesServiceCountOnCompos
 
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
 
-	svc := NewProjectService(db, settingsService, nil, nil, nil, nil)
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
 	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
 
 	var project models.Project
@@ -1960,6 +2376,110 @@ func TestProjectService_SyncProjectsFromFileSystem_RefreshesServiceCountOnCompos
 	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
 	require.NoError(t, db.WithContext(ctx).Where("id = ?", project.ID).First(&project).Error)
 	assert.Equal(t, 2, project.ServiceCount)
+}
+
+func TestProjectService_SyncProjectsFromFileSystem_PreservesGitOpsProjectWithCustomComposeFilename(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+	require.NoError(t, db.AutoMigrate(&models.GitOpsSync{}))
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsRoot := t.TempDir()
+	projectDir := filepath.Join(projectsRoot, "Radarr-3")
+	require.NoError(t, os.MkdirAll(projectDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "radarr.yaml"), []byte("services:\n  app:\n    image: lscr.io/linuxserver/radarr:latest\n"), 0o644))
+
+	syncProjectID := "proj-custom-compose"
+	syncID := "sync-custom-compose"
+	sync := &models.GitOpsSync{
+		BaseModel:     models.BaseModel{ID: syncID},
+		Name:          "Radarr Sync",
+		EnvironmentID: "0",
+		RepositoryID:  "repo-1",
+		ComposePath:   "apps/media/radarr.yaml",
+		ProjectName:   "Radarr",
+		ProjectID:     &syncProjectID,
+		SyncDirectory: true,
+	}
+	require.NoError(t, db.Create(sync).Error)
+
+	project := &models.Project{
+		BaseModel:       models.BaseModel{ID: syncProjectID},
+		Name:            "Radarr",
+		DirName:         ptr("Radarr-3"),
+		Path:            projectDir,
+		Status:          models.ProjectStatusStopped,
+		GitOpsManagedBy: &syncID,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
+	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
+
+	items, err := svc.ListAllProjects(ctx)
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	assert.Equal(t, syncProjectID, items[0].ID)
+	assert.Equal(t, projectDir, items[0].Path)
+	assert.Equal(t, syncID, *items[0].GitOpsManagedBy)
+}
+
+func TestProjectService_GetProjectDetails_UsesGitOpsCustomComposeFilename(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+	require.NoError(t, db.AutoMigrate(&models.GitOpsSync{}))
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsRoot := t.TempDir()
+	projectDir := filepath.Join(projectsRoot, "Radarr-3")
+	composeContent := "services:\n  app:\n    image: lscr.io/linuxserver/radarr:latest\n"
+	require.NoError(t, os.MkdirAll(projectDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "radarr.yaml"), []byte(composeContent), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, ".env"), []byte("TZ=UTC\n"), 0o644))
+
+	syncProjectID := "proj-custom-compose-details"
+	syncID := "sync-custom-compose-details"
+	require.NoError(t, db.Create(&models.GitOpsSync{
+		BaseModel:     models.BaseModel{ID: syncID},
+		Name:          "Radarr Sync",
+		EnvironmentID: "0",
+		RepositoryID:  "repo-1",
+		ComposePath:   "apps/media/radarr.yaml",
+		ProjectName:   "Radarr",
+		ProjectID:     &syncProjectID,
+		SyncDirectory: true,
+	}).Error)
+
+	require.NoError(t, db.Create(&models.Project{
+		BaseModel:       models.BaseModel{ID: syncProjectID},
+		Name:            "Radarr",
+		DirName:         ptr("Radarr-3"),
+		Path:            projectDir,
+		Status:          models.ProjectStatusStopped,
+		GitOpsManagedBy: &syncID,
+	}).Error)
+
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
+
+	composeFromContent, envFromContent, err := svc.GetProjectContent(ctx, syncProjectID)
+	require.NoError(t, err)
+	assert.Equal(t, composeContent, composeFromContent)
+	assert.Equal(t, "TZ=UTC\n", envFromContent)
+
+	details, err := svc.GetProjectDetails(ctx, syncProjectID)
+	require.NoError(t, err)
+	assert.Equal(t, "radarr.yaml", details.ComposeFileName)
+	assert.Equal(t, composeContent, details.ComposeContent)
+	assert.Equal(t, "TZ=UTC\n", details.EnvContent)
+	assert.Equal(t, 1, len(details.Services))
 }
 
 func TestProjectService_UpdateProject_WritesThroughSymlinkedProjectPath(t *testing.T) {
@@ -1979,7 +2499,7 @@ func TestProjectService_UpdateProject_WritesThroughSymlinkedProjectPath(t *testi
 	require.NoError(t, settingsService.SetStringSetting(ctx, "followProjectSymlinks", "true"))
 
 	eventService := NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
 
 	project := &models.Project{
 		BaseModel: models.BaseModel{ID: "proj-symlink-update"},

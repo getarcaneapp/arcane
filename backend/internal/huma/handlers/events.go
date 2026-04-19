@@ -235,8 +235,7 @@ func (h *EventHandler) CreateEvent(ctx context.Context, input *CreateEventInput)
 			return nil, huma.Error401Unauthorized("invalid environment API key")
 		}
 		if resolvedEnvironmentID != nil && *resolvedEnvironmentID != "" {
-			environmentID := *resolvedEnvironmentID
-			input.Body.EnvironmentID = &environmentID
+			input.Body.EnvironmentID = new(*resolvedEnvironmentID)
 		}
 	}
 

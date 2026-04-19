@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	dockerbuildkit "github.com/docker/docker/client/buildkit"
+	docker "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
 	buildkitclient "github.com/moby/buildkit/client"
 )
@@ -23,7 +23,7 @@ func (b *builder) newLocalBuildkitSessionInternal(ctx context.Context) (*buildSe
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	bk, err := buildkitclient.New(ctx, "", dockerbuildkit.ClientOpts(dockerClient)...)
+	bk, err := buildkitclient.New(ctx, "", docker.ClientOpts(dockerClient)...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Docker BuildKit: %w", err)
 	}

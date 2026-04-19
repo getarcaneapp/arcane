@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { Label } from '$lib/components/ui/label/index.js';
-	import * as Card from '$lib/components/ui/card/index.js';
 	import * as Alert from '$lib/components/ui/alert/index.js';
 	import * as InputGroup from '$lib/components/ui/input-group/index.js';
 	import { AlertIcon, LockIcon, UserIcon, GithubIcon, OpenIdIcon } from '$lib/icons';
@@ -11,7 +10,6 @@
 	import { authService } from '$lib/services/auth-service';
 	import { queryKeys } from '$lib/query/query-keys';
 	import { getApplicationLogo } from '$lib/utils/image.util';
-	import { Motion } from 'svelte-motion';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { onMount } from 'svelte';
 	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
@@ -93,240 +91,337 @@
 	}
 
 	const showDivider = $derived(showOidcLoginButton && showLocalLoginForm);
-
-	function getOrbAnimation(startX: number, startY: number, duration: number, delay: number) {
-		const xOffset = startX * 4;
-		const yOffset = startY * 4;
-
-		return {
-			animate: {
-				x: [-20 + xOffset, 60 + xOffset, 20 + xOffset, -80 + xOffset, -20 + xOffset],
-				y: [-20 + yOffset, -80 + yOffset, 20 + yOffset, 60 + yOffset, -20 + yOffset],
-				scale: [1, 1.15, 0.95, 1.1, 1]
-			},
-			transition: {
-				duration: duration,
-				ease: 'easeInOut',
-				repeat: Infinity,
-				delay: delay
-			}
-		};
-	}
-
-	const orb1Anim = getOrbAnimation(-20, 30, 18, 0.5);
-	const orb2Anim = getOrbAnimation(35, -10, 22, 1.2);
-	const orb3Anim = getOrbAnimation(-15, -30, 20, 0.8);
-	const orb4Anim = getOrbAnimation(25, 15, 16, 1.8);
 </script>
 
-<div class="fixed inset-0 overflow-hidden">
-	<Motion animate={orb1Anim.animate} transition={orb1Anim.transition} let:motion>
-		<div
-			use:motion
-			class="bg-primary absolute top-[-150px] left-[10%] h-[330px] w-[330px] rounded-full opacity-30 blur-[57px] md:h-[500px] md:w-[500px] md:blur-[85px]"
-		></div>
-	</Motion>
-	<Motion animate={orb2Anim.animate} transition={orb2Anim.transition} let:motion>
-		<div
-			use:motion
-			class="bg-primary absolute right-[15%] bottom-[-150px] h-[280px] w-[280px] rounded-full opacity-30 blur-[57px] md:h-[420px] md:w-[420px] md:blur-[85px]"
-		></div>
-	</Motion>
-	<Motion animate={orb3Anim.animate} transition={orb3Anim.transition} let:motion>
-		<div
-			use:motion
-			class="bg-primary absolute top-[20%] right-[-120px] h-[250px] w-[250px] rounded-full opacity-30 blur-[57px] md:h-[380px] md:w-[380px] md:blur-[85px]"
-		></div>
-	</Motion>
-	<Motion animate={orb4Anim.animate} transition={orb4Anim.transition} let:motion>
-		<div
-			use:motion
-			class="bg-primary absolute bottom-[30%] left-[-100px] h-[210px] w-[210px] rounded-full opacity-30 blur-[57px] md:h-[320px] md:w-[320px] md:blur-[85px]"
-		></div>
-	</Motion>
+<svelte:head>
+	<title>{m.layout_title()}</title>
+</svelte:head>
+
+<div class="ambient" aria-hidden="true">
+	<div class="ambient__mesh"></div>
+	<div class="ambient__shimmer"></div>
+	<div class="ambient__grid"></div>
+	<div class="ambient__noise"></div>
+	<div class="ambient__vignette"></div>
 </div>
 
-<div class="relative flex min-h-dvh flex-col items-center p-6 md:p-10">
-	<div class="flex w-full flex-1 flex-col items-center justify-center">
-		<div class="w-full max-w-md">
-			<div class="mb-8 flex justify-center">
-				<div class="bg-card/60 flex items-center justify-center rounded-2xl border p-6 shadow-lg backdrop-blur-2xl">
-					<img class="h-24 w-auto" src={logoUrl} alt={m.layout_title()} />
-				</div>
+<div class="relative z-10 grid min-h-dvh grid-cols-1 lg:grid-cols-[1.05fr_minmax(420px,0.95fr)]">
+	<aside class="showcase relative hidden flex-col justify-between overflow-hidden p-10 lg:flex xl:p-14">
+		<div class="relative z-10 flex items-center gap-3">
+			<div class="bg-card/40 ring-border/40 inline-flex size-10 items-center justify-center rounded-xl border ring-1">
+				<img class="h-6 w-auto" src={logoUrl} alt="" />
 			</div>
-
-			<Card.Root class="bg-card/60 flex flex-col gap-6 overflow-hidden border shadow-lg backdrop-blur-2xl">
-				<Card.Content class="p-8">
-					<div class="mb-8 flex flex-col items-center text-center">
-						<h1 class="text-3xl font-bold tracking-tight">{m.auth_welcome_back_title()}</h1>
-						<p class="text-muted-foreground mt-2 text-sm text-balance">{m.auth_login_subtitle()}</p>
-					</div>
-
-					<div class="space-y-4">
-						{#if data.error}
-							<Alert.Root variant="destructive" class="bg-card/60 border backdrop-blur-2xl">
-								<AlertIcon class="size-4" />
-								<Alert.Title>{m.auth_login_problem_title()}</Alert.Title>
-								<Alert.Description>
-									{#if data.error === 'oidc_invalid_response'}
-										{m.auth_oidc_invalid_response()}
-									{:else if data.error === 'oidc_misconfigured'}
-										{m.auth_oidc_misconfigured()}
-									{:else if data.error === 'oidc_userinfo_failed'}
-										{m.auth_oidc_userinfo_failed()}
-									{:else if data.error === 'oidc_missing_sub'}
-										{m.auth_oidc_missing_sub()}
-									{:else if data.error === 'oidc_email_collision'}
-										{m.auth_oidc_email_collision()}
-									{:else if data.error === 'oidc_token_error'}
-										{m.auth_oidc_token_error()}
-									{:else if data.error === 'user_processing_failed'}
-										{m.auth_user_processing_failed()}
-									{:else if data.errorMessage}
-										{data.errorMessage}
-									{:else}
-										{m.auth_unexpected_error()}
-									{/if}
-								</Alert.Description>
-							</Alert.Root>
-						{/if}
-
-						{#if data.errorMessage && !data.error}
-							<Alert.Root variant="destructive" class="bg-card/60 border backdrop-blur-2xl">
-								<AlertIcon class="size-4" />
-								<Alert.Title>{m.auth_login_problem_title()}</Alert.Title>
-								<Alert.Description>{data.errorMessage}</Alert.Description>
-							</Alert.Root>
-						{/if}
-
-						{#if error}
-							<Alert.Root variant="destructive" class="bg-card/60 border backdrop-blur-2xl">
-								<AlertIcon class="size-4" />
-								<Alert.Title>{m.auth_failed_title()}</Alert.Title>
-								<Alert.Description>{error}</Alert.Description>
-							</Alert.Root>
-						{/if}
-
-						{#if !showLocalLoginForm && !showOidcLoginButton}
-							<Alert.Root variant="destructive" class="bg-card/60 border backdrop-blur-2xl">
-								<AlertIcon class="size-4" />
-								<Alert.Title>{m.auth_no_login_methods_title()}</Alert.Title>
-								<Alert.Description>{m.auth_no_login_methods_description()}</Alert.Description>
-							</Alert.Root>
-						{/if}
-
-						{#if showOidcLoginButton && !showLocalLoginForm}
-							<ArcaneButton
-								hoverEffect="none"
-								action="oidc_login"
-								onclick={() => handleOidcLogin()}
-								loading={isOidcLoading}
-								disabled={isLocalLoading}
-								icon={null}
-								customLabel=""
-							>
-								{#if oidcProviderLogoUrl}
-									<img src={oidcProviderLogoUrl} alt="" class="size-4 object-contain" />
-								{:else}
-									<OpenIdIcon class="size-4" />
-								{/if}
-								{oidcButtonLabel}
-							</ArcaneButton>
-						{/if}
-
-						{#if showLocalLoginForm}
-							<form onsubmit={handleLogin} class="space-y-4">
-								<div class="space-y-2">
-									<Label for="username" class="text-xs">{m.common_username()}</Label>
-									<InputGroup.Root>
-										<InputGroup.Addon>
-											<UserIcon />
-										</InputGroup.Addon>
-										<InputGroup.Input
-											id="username"
-											name="username"
-											type="text"
-											autocomplete="username"
-											required
-											bind:value={username}
-											placeholder={m.auth_username_placeholder()}
-											disabled={isLocalLoading || isOidcLoading}
-										/>
-									</InputGroup.Root>
-								</div>
-								<div class="space-y-2">
-									<Label for="password" class="text-xs">{m.common_password()}</Label>
-									<InputGroup.Root>
-										<InputGroup.Addon>
-											<LockIcon />
-										</InputGroup.Addon>
-										<InputGroup.Input
-											id="password"
-											name="password"
-											type="password"
-											autocomplete="current-password"
-											required
-											bind:value={password}
-											placeholder={m.auth_password_placeholder()}
-											disabled={isLocalLoading || isOidcLoading}
-										/>
-									</InputGroup.Root>
-								</div>
-								<ArcaneButton type="submit" action="login" loading={isLocalLoading} disabled={isOidcLoading} hoverEffect="none" />
-							</form>
-
-							{#if showDivider}
-								<div class="relative my-4">
-									<div class="absolute inset-0 flex items-center">
-										<div class="border-border/60 w-full border-t"></div>
-									</div>
-									<div class="relative flex justify-center text-xs">
-										<span class="bg-card/60 text-muted-foreground rounded-full border px-3 py-1 backdrop-blur-2xl">
-											{m.auth_or_continue()}
-										</span>
-									</div>
-								</div>
-							{/if}
-
-							{#if showOidcLoginButton && showDivider}
-								<ArcaneButton
-									action="oidc_login"
-									hoverEffect="none"
-									onclick={() => handleOidcLogin()}
-									loading={isOidcLoading}
-									disabled={isLocalLoading}
-									icon={null}
-									customLabel=""
-								>
-									{#if oidcProviderLogoUrl}
-										<img src={oidcProviderLogoUrl} alt="" class="size-4 object-contain" />
-									{:else}
-										<OpenIdIcon class="size-4" />
-									{/if}
-									{oidcButtonLabel}
-								</ArcaneButton>
-							{/if}
-						{/if}
-					</div>
-				</Card.Content>
-			</Card.Root>
+			<div class="flex flex-col leading-tight">
+				<span class="text-foreground/90 text-sm font-medium tracking-wide">{m.layout_title()}</span>
+				{#if data.versionInformation?.displayVersion}
+					<span class="text-muted-foreground/60 font-mono text-[10px] tracking-wider"
+						>{data.versionInformation.displayVersion}</span
+					>
+				{/if}
+			</div>
 		</div>
-	</div>
 
-	<div class="mt-auto pt-8 pb-4">
-		<div class="text-muted-foreground flex flex-col items-center justify-center gap-2">
+		<div class="relative z-10 max-w-xl">
+			<h2 class="text-foreground text-5xl leading-[1.05] font-semibold tracking-tight text-balance xl:text-6xl">
+				{m.auth_tagline_line1()}
+				<span class="to-foreground/70 bg-gradient-to-br from-[var(--primary)] via-[var(--primary)] bg-clip-text text-transparent"
+					>{m.auth_tagline_line2()}</span
+				>
+			</h2>
+		</div>
+
+		<div class="relative z-10 flex items-end justify-between gap-6">
 			<a
 				href="https://github.com/ofkm/arcane"
 				target="_blank"
 				rel="noopener noreferrer"
-				class="bg-card/60 hover:text-primary inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs shadow-sm backdrop-blur-2xl transition-colors"
+				class="bg-card/50 ring-border/40 text-muted-foreground hover:text-foreground hover:bg-card/70 inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs shadow-sm ring-1 transition-colors"
 			>
-				<GithubIcon class="size-4" />
+				<GithubIcon class="size-3.5" />
 				{m.common_view_on_github()}
 			</a>
-			{#if data.versionInformation?.displayVersion}
-				<span class="text-xs opacity-50">{data.versionInformation.displayVersion}</span>
-			{/if}
 		</div>
-	</div>
+	</aside>
+
+	<section class="form-pane relative flex min-h-dvh flex-col items-center justify-center p-6 sm:p-10 lg:p-10 xl:p-14">
+		<div class="mb-8 flex w-full max-w-md justify-center lg:hidden">
+			<div
+				class="bg-card/80 ring-border/40 flex items-center justify-center rounded-2xl border p-5 shadow-[0_8px_32px_-8px_rgba(0,0,0,0.35)] ring-1"
+			>
+				<img class="h-16 w-auto" src={logoUrl} alt={m.layout_title()} />
+			</div>
+		</div>
+
+		<div class="login-card-wrap relative w-full sm:w-[26rem] sm:max-w-full">
+			<div class="bg-primary/70 mb-8 h-px w-10 shadow-[0_0_8px_var(--primary)]"></div>
+
+			<div class="mb-8 flex flex-col text-left">
+				<h1 class="text-3xl font-semibold tracking-tight sm:text-[2rem]">{m.auth_welcome_back_title()}</h1>
+				<p class="text-muted-foreground mt-2 text-sm">{m.auth_login_subtitle()}</p>
+			</div>
+
+			<div class="space-y-4">
+				{#if data.error}
+					<Alert.Root variant="destructive">
+						<AlertIcon class="size-4" />
+						<Alert.Title>{m.auth_login_problem_title()}</Alert.Title>
+						<Alert.Description>
+							{#if data.error === 'oidc_invalid_response'}
+								{m.auth_oidc_invalid_response()}
+							{:else if data.error === 'oidc_misconfigured'}
+								{m.auth_oidc_misconfigured()}
+							{:else if data.error === 'oidc_userinfo_failed'}
+								{m.auth_oidc_userinfo_failed()}
+							{:else if data.error === 'oidc_missing_sub'}
+								{m.auth_oidc_missing_sub()}
+							{:else if data.error === 'oidc_email_collision'}
+								{m.auth_oidc_email_collision()}
+							{:else if data.error === 'oidc_token_error'}
+								{m.auth_oidc_token_error()}
+							{:else if data.error === 'user_processing_failed'}
+								{m.auth_user_processing_failed()}
+							{:else if data.errorMessage}
+								{data.errorMessage}
+							{:else}
+								{m.auth_unexpected_error()}
+							{/if}
+						</Alert.Description>
+					</Alert.Root>
+				{/if}
+
+				{#if data.errorMessage && !data.error}
+					<Alert.Root variant="destructive">
+						<AlertIcon class="size-4" />
+						<Alert.Title>{m.auth_login_problem_title()}</Alert.Title>
+						<Alert.Description>{data.errorMessage}</Alert.Description>
+					</Alert.Root>
+				{/if}
+
+				{#if error}
+					<Alert.Root variant="destructive">
+						<AlertIcon class="size-4" />
+						<Alert.Title>{m.auth_failed_title()}</Alert.Title>
+						<Alert.Description>{error}</Alert.Description>
+					</Alert.Root>
+				{/if}
+
+				{#if !showLocalLoginForm && !showOidcLoginButton}
+					<Alert.Root variant="destructive">
+						<AlertIcon class="size-4" />
+						<Alert.Title>{m.auth_no_login_methods_title()}</Alert.Title>
+						<Alert.Description>{m.auth_no_login_methods_description()}</Alert.Description>
+					</Alert.Root>
+				{/if}
+
+				{#if showOidcLoginButton && !showLocalLoginForm}
+					<ArcaneButton
+						hoverEffect="none"
+						action="oidc_login"
+						onclick={() => handleOidcLogin()}
+						loading={isOidcLoading}
+						disabled={isLocalLoading}
+						icon={null}
+						customLabel=""
+					>
+						{#if oidcProviderLogoUrl}
+							<img src={oidcProviderLogoUrl} alt="" class="size-4 object-contain" />
+						{:else}
+							<OpenIdIcon class="size-4" />
+						{/if}
+						{oidcButtonLabel}
+					</ArcaneButton>
+				{/if}
+
+				{#if showLocalLoginForm}
+					<form onsubmit={handleLogin} class="space-y-4">
+						<div class="space-y-2">
+							<Label for="username" class="text-xs">{m.common_username()}</Label>
+							<InputGroup.Root>
+								<InputGroup.Addon>
+									<UserIcon />
+								</InputGroup.Addon>
+								<InputGroup.Input
+									id="username"
+									name="username"
+									type="text"
+									autocomplete="username"
+									required
+									bind:value={username}
+									placeholder={m.auth_username_placeholder()}
+									disabled={isLocalLoading || isOidcLoading}
+								/>
+							</InputGroup.Root>
+						</div>
+						<div class="space-y-2">
+							<Label for="password" class="text-xs">{m.common_password()}</Label>
+							<InputGroup.Root>
+								<InputGroup.Addon>
+									<LockIcon />
+								</InputGroup.Addon>
+								<InputGroup.Input
+									id="password"
+									name="password"
+									type="password"
+									autocomplete="current-password"
+									required
+									bind:value={password}
+									placeholder={m.auth_password_placeholder()}
+									disabled={isLocalLoading || isOidcLoading}
+								/>
+							</InputGroup.Root>
+						</div>
+						<ArcaneButton type="submit" action="login" loading={isLocalLoading} disabled={isOidcLoading} hoverEffect="none" />
+					</form>
+
+					{#if showDivider}
+						<div class="relative my-4">
+							<div class="absolute inset-0 flex items-center">
+								<div class="border-border/60 w-full border-t"></div>
+							</div>
+							<div class="relative flex justify-center text-xs">
+								<span
+									class="bg-card/70 ring-border/40 text-muted-foreground rounded-full border px-3 py-1 shadow-sm ring-1 backdrop-blur-md"
+								>
+									{m.auth_or_continue()}
+								</span>
+							</div>
+						</div>
+					{/if}
+
+					{#if showOidcLoginButton && showDivider}
+						<ArcaneButton
+							action="oidc_login"
+							hoverEffect="none"
+							onclick={() => handleOidcLogin()}
+							loading={isOidcLoading}
+							disabled={isLocalLoading}
+							icon={null}
+							customLabel=""
+						>
+							{#if oidcProviderLogoUrl}
+								<img src={oidcProviderLogoUrl} alt="" class="size-4 object-contain" />
+							{:else}
+								<OpenIdIcon class="size-4" />
+							{/if}
+							{oidcButtonLabel}
+						</ArcaneButton>
+					{/if}
+				{/if}
+			</div>
+
+			<div class="mt-8 flex items-center justify-between gap-4 lg:hidden">
+				<a
+					href="https://github.com/ofkm/arcane"
+					target="_blank"
+					rel="noopener noreferrer"
+					class="bg-card/50 ring-border/40 text-muted-foreground hover:text-foreground hover:bg-card/70 inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs shadow-sm ring-1 transition-colors"
+				>
+					<GithubIcon class="size-3.5" />
+					{m.common_view_on_github()}
+				</a>
+				{#if data.versionInformation?.displayVersion}
+					<span class="text-muted-foreground/60 font-mono text-[11px] tracking-wider"
+						>{data.versionInformation.displayVersion}</span
+					>
+				{/if}
+			</div>
+		</div>
+	</section>
 </div>
+
+<style>
+	.ambient {
+		position: fixed;
+		inset: 0;
+		z-index: 0;
+		overflow: hidden;
+		pointer-events: none;
+		background: var(--background);
+		contain: strict;
+	}
+
+	.ambient__mesh {
+		position: absolute;
+		inset: -20%;
+		background:
+			radial-gradient(ellipse 60% 50% at 18% 22%, color-mix(in oklab, var(--primary) 14%, transparent) 0%, transparent 60%),
+			radial-gradient(ellipse 55% 45% at 82% 78%, color-mix(in oklab, var(--primary) 10%, transparent) 0%, transparent 65%),
+			radial-gradient(ellipse 45% 55% at 78% 18%, color-mix(in oklab, var(--primary) 8%, transparent) 0%, transparent 60%),
+			radial-gradient(ellipse 50% 40% at 22% 82%, color-mix(in oklab, var(--primary) 6%, transparent) 0%, transparent 65%);
+		background-repeat: no-repeat;
+		filter: saturate(1);
+		opacity: 0.5;
+	}
+
+	.ambient__shimmer {
+		position: absolute;
+		top: -400px;
+		left: -400px;
+		width: 3000px;
+		height: 3000px;
+		background: conic-gradient(
+			from 0deg,
+			transparent 0deg,
+			color-mix(in oklab, var(--primary) 8%, transparent) 60deg,
+			transparent 120deg,
+			color-mix(in oklab, var(--primary) 5%, transparent) 200deg,
+			transparent 280deg,
+			color-mix(in oklab, var(--primary) 7%, transparent) 340deg,
+			transparent 360deg
+		);
+		opacity: 0.4;
+		will-change: transform;
+		transform: translateZ(0) rotate(0deg);
+		transform-origin: center center;
+		animation: shimmerRotate 60s linear infinite;
+	}
+
+	@keyframes shimmerRotate {
+		from {
+			transform: translateZ(0) rotate(0deg);
+		}
+		to {
+			transform: translateZ(0) rotate(360deg);
+		}
+	}
+
+	.ambient__grid {
+		position: absolute;
+		inset: 0;
+		background-image: url("data:image/svg+xml,%3Csvg width='48' height='48' viewBox='0 0 48 48' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 0h48v48H0z' fill='none'/%3E%3Cpath d='M47.5 0v48M0 47.5h48' stroke='rgba(150, 150, 150, 1)' stroke-width='1' stroke-opacity='0.15'/%3E%3C/svg%3E");
+		background-repeat: repeat;
+		background-size: 48px 48px;
+		mask-image: radial-gradient(circle at 50% 50%, #000 30%, transparent 80%);
+		-webkit-mask-image: radial-gradient(circle at 50% 50%, #000 30%, transparent 80%);
+		opacity: 0.5;
+	}
+
+	.ambient__noise {
+		position: absolute;
+		inset: 0;
+		opacity: 0.05;
+		background-image: url("data:image/svg+xml;utf8,<svg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+	}
+
+	.ambient__vignette {
+		position: absolute;
+		inset: 0;
+		background: radial-gradient(ellipse at center, transparent 40%, color-mix(in oklab, var(--background) 80%, transparent) 100%);
+	}
+
+	.showcase {
+		position: relative;
+		isolation: isolate;
+	}
+
+	.form-pane {
+		isolation: isolate;
+		contain: layout paint;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.ambient__shimmer {
+			animation: none;
+		}
+	}
+</style>

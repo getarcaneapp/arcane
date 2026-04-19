@@ -23,6 +23,8 @@ import {
 	ShieldAlertIcon,
 	HammerIcon,
 	TemplateIcon,
+	GlobeIcon,
+	UpdateIcon,
 	VariableIcon
 } from '$lib/icons';
 import { m } from '$lib/paraglide/messages';
@@ -73,6 +75,7 @@ export const navigationItems: NavigationSections = {
 				{ title: m.vuln_title(), url: '/images/vulnerabilities', icon: ShieldAlertIcon }
 			]
 		},
+		{ title: m.images_updates(), url: '/updates', icon: UpdateIcon, shortcut: ['mod', 'u'] },
 		{
 			title: m.networks_title(),
 			url: '/networks',
@@ -109,6 +112,7 @@ export const navigationItems: NavigationSections = {
 			items: [
 				{ title: m.api_key_page_title(), url: '/settings/api-keys', icon: ApiKeyIcon, shortcut: ['mod', 'shift', '1'] },
 				{ title: m.appearance_title(), url: '/settings/appearance', icon: AppearanceIcon, shortcut: ['mod', 'shift', '2'] },
+				{ title: m.webhook_page_title(), url: '/settings/webhooks', icon: GlobeIcon },
 				{
 					title: m.authentication_title(),
 					url: '/settings/authentication',
@@ -116,16 +120,16 @@ export const navigationItems: NavigationSections = {
 					shortcut: ['mod', 'shift', '3']
 				},
 				{
-					title: m.environments_title(),
-					url: '/settings/environments',
-					icon: EnvironmentsIcon,
-					shortcut: ['mod', 'shift', '5']
-				},
-				{
 					title: m.notifications_title(),
 					url: '/settings/notifications',
 					icon: NotificationsIcon,
 					shortcut: ['mod', 'shift', '4']
+				},
+				{
+					title: m.environments_title(),
+					url: '/settings/environments',
+					icon: EnvironmentsIcon,
+					shortcut: ['mod', 'shift', '5']
 				},
 				{ title: m.builds(), url: '/settings/builds', icon: HammerIcon, shortcut: ['mod', 'shift', '6'] },
 				{ title: m.timeouts_settings(), url: '/settings/timeouts', icon: JobsIcon, shortcut: ['mod', 'shift', '7'] },

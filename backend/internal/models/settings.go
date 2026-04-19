@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,13 +22,22 @@ type SettingVariable struct {
 	Value string
 }
 
+type SettingVisibility int
+
+const (
+	SettingVisibilityPublic SettingVisibility = iota
+	SettingVisibilityNonAdmin
+	SettingVisibilityAll
+)
+
 type settingFieldMeta struct {
-	index       int
-	key         string
-	attrs       string
-	isPublic    bool
-	isSensitive bool
-	isLocal     bool
+	index               int
+	key                 string
+	attrs               string
+	isPublic            bool
+	isVisibleToNonAdmin bool
+	isSensitive         bool
+	isLocal             bool
 }
 
 var settingsFieldCache struct {
@@ -79,31 +89,46 @@ type Settings struct {
 	PollingInterval              SettingVariable `key:"pollingInterval" meta:"label=Polling Interval;type=cron;keywords=interval,frequency,schedule,time,minutes,period,delay;category=internal;description=How often to check for image updates (cron expression)"`
 	EventCleanupInterval         SettingVariable `key:"eventCleanupInterval" meta:"label=Event Cleanup Interval;type=cron;keywords=events,cleanup,retention,interval,frequency,schedule,history,logs,jobs;description=How often to delete old events (cron expression)"`
 	AutoInjectEnv                SettingVariable `key:"autoInjectEnv" meta:"label=Auto Inject Env Variables;type=boolean;keywords=auto,inject,env,environment,variables,interpolation;category=internal;description=Automatically inject project .env variables into all containers (default: false)"`
-	PruneMode                    SettingVariable `key:"dockerPruneMode" meta:"label=Docker Prune Action;type=select;keywords=prune,cleanup,clean,remove,delete,unused,dangling,space,disk;category=internal;description=Configure how unused Docker images are cleaned up"`
-	DefaultDeployPullPolicy      SettingVariable `key:"defaultDeployPullPolicy" meta:"label=Default Deploy Pull Policy;type=select;keywords=deploy,pull,policy,compose,up,missing,always;category=internal;description=Default image pull policy when deploying projects"`
-	ScheduledPruneEnabled        SettingVariable `key:"scheduledPruneEnabled" meta:"label=Scheduled Prune Enabled;type=boolean;keywords=prune,cleanup,maintenance,schedule,automatic;category=internal;description=Enable scheduled pruning of unused Docker resources"`
-	ScheduledPruneInterval       SettingVariable `key:"scheduledPruneInterval" meta:"label=Scheduled Prune Interval;type=cron;keywords=prune,cleanup,interval,minutes,schedule;category=internal;description=How often to run scheduled prunes (cron expression)"`
-	GitopsSyncInterval           SettingVariable `key:"gitopsSyncInterval" meta:"label=GitOps Sync Interval;type=cron;keywords=gitops,sync,interval,frequency,schedule,repository;category=internal;description=How often to run GitOps synchronization checks (cron expression)"`
-	ScheduledPruneContainers     SettingVariable `key:"scheduledPruneContainers" meta:"label=Scheduled Prune Containers;type=boolean;keywords=prune,containers,cleanup,maintenance;category=internal;description=Remove stopped containers during scheduled prune"`
-	ScheduledPruneImages         SettingVariable `key:"scheduledPruneImages" meta:"label=Scheduled Prune Images;type=boolean;keywords=prune,images,cleanup,maintenance;category=internal;description=Remove unused images during scheduled prune"`
-	ScheduledPruneVolumes        SettingVariable `key:"scheduledPruneVolumes" meta:"label=Scheduled Prune Volumes;type=boolean;keywords=prune,volumes,cleanup,maintenance;category=internal;description=Remove unused volumes during scheduled prune"`
-	ScheduledPruneNetworks       SettingVariable `key:"scheduledPruneNetworks" meta:"label=Scheduled Prune Networks;type=boolean;keywords=prune,networks,cleanup,maintenance;category=internal;description=Remove unused networks during scheduled prune"`
-	ScheduledPruneBuildCache     SettingVariable `key:"scheduledPruneBuildCache" meta:"label=Scheduled Prune Build Cache;type=boolean;keywords=prune,build cache,cleanup,maintenance;category=internal;description=Remove Docker build cache during scheduled prune"`
-	AutoHealEnabled              SettingVariable `key:"autoHealEnabled" meta:"label=Auto Heal;type=boolean;keywords=auto,heal,health,restart,unhealthy,recovery,container,healthcheck;category=internal;description=Automatically restart containers that become unhealthy"`
-	AutoHealInterval             SettingVariable `key:"autoHealInterval" meta:"label=Auto Heal Interval;type=cron;keywords=auto,heal,interval,frequency,schedule,health,jobs;description=How often to check container health (cron expression)" catmeta:"id=jobschedule"`
-	AutoHealExcludedContainers   SettingVariable `key:"autoHealExcludedContainers" meta:"label=Auto Heal Excluded Containers;type=text;keywords=auto,heal,exclude,containers,ignore,skip,health;category=internal;description=Comma-separated list of containers to exclude from auto-heal"`
-	AutoHealMaxRestarts          SettingVariable `key:"autoHealMaxRestarts" meta:"label=Auto Heal Max Restarts;type=number;keywords=auto,heal,max,restarts,limit,loop,protection;category=internal;description=Maximum auto-heal restarts per container within the restart window (default: 5)"`
-	AutoHealRestartWindow        SettingVariable `key:"autoHealRestartWindow" meta:"label=Auto Heal Restart Window;type=number;keywords=auto,heal,restart,window,minutes,cooldown,protection;category=internal;description=Time window in minutes for counting auto-heal restarts (default: 30)"`
-	MaxImageUploadSize           SettingVariable `key:"maxImageUploadSize" meta:"label=Max Image Upload Size;type=number;keywords=upload,size,limit,maximum,image,tar,file,megabytes,mb,storage;category=internal;description=Maximum size in MB for image archive uploads (default: 500)"`
-	GitSyncMaxFiles              SettingVariable `key:"gitSyncMaxFiles,envOverride" meta:"label=Git Sync Max Files;type=number;keywords=git,sync,files,limit,repository,compose,gitops;category=general;description=Maximum number of repository files copied during a Git sync. Set 0 to disable the environment cap (default: 500)"`
-	GitSyncMaxTotalSizeMb        SettingVariable `key:"gitSyncMaxTotalSizeMb,envOverride" meta:"label=Git Sync Max Total Size (MB);type=number;keywords=git,sync,size,limit,repository,compose,gitops,mb;category=general;description=Maximum combined size in MB for files copied during a Git sync. Set 0 to disable the environment cap (default: 50)"`
-	GitSyncMaxBinarySizeMb       SettingVariable `key:"gitSyncMaxBinarySizeMb,envOverride" meta:"label=Git Sync Max Binary Size (MB);type=number;keywords=git,sync,binary,size,limit,repository,compose,gitops,mb;category=general;description=Maximum size in MB for a single binary file copied during a Git sync. Set 0 to disable the environment cap (default: 10)"`
-	DockerHost                   SettingVariable `key:"dockerHost,public,envOverride" meta:"label=Docker Host;type=text;keywords=docker,host,daemon,socket,unix,remote;category=internal;description=URI for Docker daemon"`
-	BuildProvider                SettingVariable `key:"buildProvider,envOverride" meta:"label=Build Provider;type=select;keywords=build,buildkit,depot,provider,remote,local;category=build;description=Default build provider (local or depot)" catmeta:"id=build;title=Build;icon=code;url=/settings/builds;description=Configure BuildKit and Depot build settings"`
-	BuildsDirectory              SettingVariable `key:"buildsDirectory,envOverride" meta:"label=Builds Directory;type=text;keywords=builds,directory,path,workspace,context;category=build;description=Root directory for manual build workspaces"`
-	BuildTimeout                 SettingVariable `key:"buildTimeout,envOverride" meta:"label=Build Timeout;type=number;keywords=build,timeout,seconds,buildkit;category=build;description=Timeout for BuildKit builds in seconds (default: 1800 = 30 minutes)"`
-	DepotProjectId               SettingVariable `key:"depotProjectId,envOverride" meta:"label=Depot Project ID;type=text;keywords=depot,project,id,build,provider;category=build;description=Depot project identifier"`
-	DepotToken                   SettingVariable `key:"depotToken,envOverride,sensitive" meta:"label=Depot Token;type=password;keywords=depot,token,api,secret,build,provider;category=build;description=Depot API token"`
+	// Deprecated: Use the granular prune mode settings instead.
+	PruneMode               SettingVariable `key:"dockerPruneMode,internal,deprecated" meta:"label=Legacy Docker Prune Action;type=select;keywords=prune,cleanup,clean,remove,delete,unused,dangling,space,disk,legacy;category=internal;description=Legacy prune mode retained for compatibility and migration"`
+	DefaultDeployPullPolicy SettingVariable `key:"defaultDeployPullPolicy" meta:"label=Default Deploy Pull Policy;type=select;keywords=deploy,pull,policy,compose,up,missing,always;category=internal;description=Default image pull policy when deploying projects"`
+	ScheduledPruneEnabled   SettingVariable `key:"scheduledPruneEnabled" meta:"label=Scheduled Prune Enabled;type=boolean;keywords=prune,cleanup,maintenance,schedule,automatic;category=internal;description=Enable scheduled pruning of unused Docker resources"`
+	ScheduledPruneInterval  SettingVariable `key:"scheduledPruneInterval" meta:"label=Scheduled Prune Interval;type=cron;keywords=prune,cleanup,interval,minutes,schedule;category=internal;description=How often to run scheduled prunes (cron expression)"`
+	GitopsSyncInterval      SettingVariable `key:"gitopsSyncInterval" meta:"label=GitOps Sync Interval;type=cron;keywords=gitops,sync,interval,frequency,schedule,repository;category=internal;description=How often to run GitOps synchronization checks (cron expression)"`
+	// Deprecated: Use pruneContainerMode instead.
+	ScheduledPruneContainers SettingVariable `key:"scheduledPruneContainers,deprecated" meta:"label=Legacy Scheduled Prune Containers;type=boolean;keywords=prune,containers,cleanup,maintenance,legacy;category=internal;description=Legacy boolean container prune flag retained for migration compatibility"`
+	// Deprecated: Use pruneImageMode instead.
+	ScheduledPruneImages SettingVariable `key:"scheduledPruneImages,deprecated" meta:"label=Legacy Scheduled Prune Images;type=boolean;keywords=prune,images,cleanup,maintenance,legacy;category=internal;description=Legacy boolean image prune flag retained for migration compatibility"`
+	// Deprecated: Use pruneVolumeMode instead.
+	ScheduledPruneVolumes SettingVariable `key:"scheduledPruneVolumes,deprecated" meta:"label=Legacy Scheduled Prune Volumes;type=boolean;keywords=prune,volumes,cleanup,maintenance,legacy;category=internal;description=Legacy boolean volume prune flag retained for migration compatibility"`
+	// Deprecated: Use pruneNetworkMode instead.
+	ScheduledPruneNetworks SettingVariable `key:"scheduledPruneNetworks,deprecated" meta:"label=Legacy Scheduled Prune Networks;type=boolean;keywords=prune,networks,cleanup,maintenance,legacy;category=internal;description=Legacy boolean network prune flag retained for migration compatibility"`
+	// Deprecated: Use pruneBuildCacheMode instead.
+	ScheduledPruneBuildCache   SettingVariable `key:"scheduledPruneBuildCache,deprecated" meta:"label=Legacy Scheduled Prune Build Cache;type=boolean;keywords=prune,build cache,cleanup,maintenance,legacy;category=internal;description=Legacy boolean build cache prune flag retained for migration compatibility"`
+	PruneContainerMode         SettingVariable `key:"pruneContainerMode" meta:"label=Prune Containers;type=select;keywords=prune,containers,cleanup,maintenance,mode,older,stopped;category=internal;description=Select how containers should be pruned when the scheduled prune job runs"`
+	PruneContainerUntil        SettingVariable `key:"pruneContainerUntil" meta:"label=Container Age Filter;type=text;keywords=prune,containers,cleanup,maintenance,until,older,duration;category=internal;description=Duration threshold for scheduled container prune when mode is olderThan"`
+	PruneImageMode             SettingVariable `key:"pruneImageMode" meta:"label=Prune Images;type=select;keywords=prune,images,cleanup,maintenance,mode,dangling,all,older;category=internal;description=Select how images should be pruned when the scheduled prune job runs"`
+	PruneImageUntil            SettingVariable `key:"pruneImageUntil" meta:"label=Image Age Filter;type=text;keywords=prune,images,cleanup,maintenance,until,older,duration;category=internal;description=Duration threshold for scheduled image prune when mode is olderThan"`
+	PruneVolumeMode            SettingVariable `key:"pruneVolumeMode" meta:"label=Prune Volumes;type=select;keywords=prune,volumes,cleanup,maintenance,mode,anonymous,named;category=internal;description=Select how volumes should be pruned when the scheduled prune job runs"`
+	PruneNetworkMode           SettingVariable `key:"pruneNetworkMode" meta:"label=Prune Networks;type=select;keywords=prune,networks,cleanup,maintenance,mode,unused,older;category=internal;description=Select how networks should be pruned when the scheduled prune job runs"`
+	PruneNetworkUntil          SettingVariable `key:"pruneNetworkUntil" meta:"label=Network Age Filter;type=text;keywords=prune,networks,cleanup,maintenance,until,older,duration;category=internal;description=Duration threshold for scheduled network prune when mode is olderThan"`
+	PruneBuildCacheMode        SettingVariable `key:"pruneBuildCacheMode" meta:"label=Prune Build Cache;type=select;keywords=prune,build cache,cleanup,maintenance,mode,unused,all,older;category=internal;description=Select how build cache should be pruned when the scheduled prune job runs"`
+	PruneBuildCacheUntil       SettingVariable `key:"pruneBuildCacheUntil" meta:"label=Build Cache Age Filter;type=text;keywords=prune,build cache,cleanup,maintenance,until,older,duration;category=internal;description=Duration threshold for scheduled build cache prune when mode is olderThan"`
+	AutoHealEnabled            SettingVariable `key:"autoHealEnabled" meta:"label=Auto Heal;type=boolean;keywords=auto,heal,health,restart,unhealthy,recovery,container,healthcheck;category=internal;description=Automatically restart containers that become unhealthy"`
+	AutoHealInterval           SettingVariable `key:"autoHealInterval" meta:"label=Auto Heal Interval;type=cron;keywords=auto,heal,interval,frequency,schedule,health,jobs;description=How often to check container health (cron expression)" catmeta:"id=jobschedule"`
+	AutoHealExcludedContainers SettingVariable `key:"autoHealExcludedContainers" meta:"label=Auto Heal Excluded Containers;type=text;keywords=auto,heal,exclude,containers,ignore,skip,health;category=internal;description=Comma-separated list of containers to exclude from auto-heal"`
+	AutoHealMaxRestarts        SettingVariable `key:"autoHealMaxRestarts" meta:"label=Auto Heal Max Restarts;type=number;keywords=auto,heal,max,restarts,limit,loop,protection;category=internal;description=Maximum auto-heal restarts per container within the restart window (default: 5)"`
+	AutoHealRestartWindow      SettingVariable `key:"autoHealRestartWindow" meta:"label=Auto Heal Restart Window;type=number;keywords=auto,heal,restart,window,minutes,cooldown,protection;category=internal;description=Time window in minutes for counting auto-heal restarts (default: 30)"`
+	MaxImageUploadSize         SettingVariable `key:"maxImageUploadSize" meta:"label=Max Image Upload Size;type=number;keywords=upload,size,limit,maximum,image,tar,file,megabytes,mb,storage;category=internal;description=Maximum size in MB for image archive uploads (default: 500)"`
+	GitSyncMaxFiles            SettingVariable `key:"gitSyncMaxFiles,envOverride" meta:"label=Git Sync Max Files;type=number;keywords=git,sync,files,limit,repository,compose,gitops;category=general;description=Maximum number of repository files copied during a Git sync. Set 0 to disable the environment cap (default: 500)"`
+	GitSyncMaxTotalSizeMb      SettingVariable `key:"gitSyncMaxTotalSizeMb,envOverride" meta:"label=Git Sync Max Total Size (MB);type=number;keywords=git,sync,size,limit,repository,compose,gitops,mb;category=general;description=Maximum combined size in MB for files copied during a Git sync. Set 0 to disable the environment cap (default: 50)"`
+	GitSyncMaxBinarySizeMb     SettingVariable `key:"gitSyncMaxBinarySizeMb,envOverride" meta:"label=Git Sync Max Binary Size (MB);type=number;keywords=git,sync,binary,size,limit,repository,compose,gitops,mb;category=general;description=Maximum size in MB for a single binary file copied during a Git sync. Set 0 to disable the environment cap (default: 10)"`
+	DockerHost                 SettingVariable `key:"dockerHost,authrequired,envOverride" meta:"label=Docker Host;type=text;keywords=docker,host,daemon,socket,unix,remote;category=internal;description=URI for Docker daemon"`
+	BuildProvider              SettingVariable `key:"buildProvider,envOverride" meta:"label=Build Provider;type=select;keywords=build,buildkit,depot,provider,remote,local;category=build;description=Default build provider (local or depot)" catmeta:"id=build;title=Build;icon=code;url=/settings/builds;description=Configure BuildKit and Depot build settings"`
+	BuildsDirectory            SettingVariable `key:"buildsDirectory,envOverride" meta:"label=Builds Directory;type=text;keywords=builds,directory,path,workspace,context;category=build;description=Root directory for manual build workspaces"`
+	BuildTimeout               SettingVariable `key:"buildTimeout,envOverride" meta:"label=Build Timeout;type=number;keywords=build,timeout,seconds,buildkit;category=build;description=Timeout for BuildKit builds in seconds (default: 1800 = 30 minutes)"`
+	DepotProjectId             SettingVariable `key:"depotProjectId,envOverride" meta:"label=Depot Project ID;type=text;keywords=depot,project,id,build,provider;category=build;description=Depot project identifier"`
+	DepotToken                 SettingVariable `key:"depotToken,envOverride,sensitive" meta:"label=Depot Token;type=password;keywords=depot,token,api,secret,build,provider;category=build;description=Depot API token"`
 
 	// Authentication and security categories
 	AuthLocalEnabled                SettingVariable `key:"authLocalEnabled,public" meta:"label=Local Authentication;type=boolean;keywords=local,auth,authentication,username,password,login,credentials;category=authentication;description=Enable local username/password authentication" catmeta:"id=authentication;title=Authentication;icon=lock;url=/settings/authentication;description=Manage authentication providers, password policy, and session behavior"`
@@ -124,28 +149,28 @@ type Settings struct {
 	TrivyIgnore                     SettingVariable `key:"trivyIgnore" meta:"label=.trivyignore;type=textarea;keywords=trivy,ignore,ignorefile,vulnerabilities,exceptions,exclusions;category=security;description=Trivy ignore file content - one vulnerability ID per line"`
 	AuthOidcConfig                  SettingVariable `key:"authOidcConfig,sensitive,deprecated" meta:"label=OIDC Config;type=text;keywords=oidc,config,client,id,issuer,secret,oauth;category=authentication;description=OIDC provider configuration (deprecated - use individual fields)"`
 	OidcEnabled                     SettingVariable `key:"oidcEnabled,public,envOverride" meta:"label=OIDC Authentication;type=boolean;keywords=oidc,openid,connect,sso,oauth,external,provider,federation;category=authentication;description=Enable OpenID Connect (OIDC) authentication"`
-	OidcClientId                    SettingVariable `key:"oidcClientId,public,envOverride" meta:"label=OIDC Client ID;type=text;keywords=oidc,client,id,oauth,openid;category=authentication;description=OIDC provider client ID"`
+	OidcClientId                    SettingVariable `key:"oidcClientId,authrequired,envOverride" meta:"label=OIDC Client ID;type=text;keywords=oidc,client,id,oauth,openid;category=authentication;description=OIDC provider client ID"`
 	OidcClientSecret                SettingVariable `key:"oidcClientSecret,sensitive,envOverride" meta:"label=OIDC Client Secret;type=password;keywords=oidc,client,secret,oauth,openid;category=authentication;description=OIDC provider client secret"`
-	OidcIssuerUrl                   SettingVariable `key:"oidcIssuerUrl,public,envOverride" meta:"label=OIDC Issuer URL;type=text;keywords=oidc,issuer,url,oauth,openid,provider;category=authentication;description=OIDC provider issuer URL"`
+	OidcIssuerUrl                   SettingVariable `key:"oidcIssuerUrl,authrequired,envOverride" meta:"label=OIDC Issuer URL;type=text;keywords=oidc,issuer,url,oauth,openid,provider;category=authentication;description=OIDC provider issuer URL"`
 	OidcAuthorizationEndpoint       SettingVariable `key:"oidcAuthorizationEndpoint,envOverride" meta:"label=OIDC Authorization Endpoint;type=text;keywords=oidc,authorization,endpoint,oauth,openid;category=authentication;description=Override OIDC authorization endpoint"`
 	OidcTokenEndpoint               SettingVariable `key:"oidcTokenEndpoint,envOverride" meta:"label=OIDC Token Endpoint;type=text;keywords=oidc,token,endpoint,oauth,openid;category=authentication;description=Override OIDC token endpoint"`
 	OidcUserinfoEndpoint            SettingVariable `key:"oidcUserinfoEndpoint,envOverride" meta:"label=OIDC Userinfo Endpoint;type=text;keywords=oidc,userinfo,endpoint,oauth,openid;category=authentication;description=Override OIDC userinfo endpoint"`
 	OidcJwksEndpoint                SettingVariable `key:"oidcJwksEndpoint,envOverride" meta:"label=OIDC JWKS Endpoint;type=text;keywords=oidc,jwks,keys,endpoint,oauth,openid;category=authentication;description=Override OIDC JWKS endpoint"`
 	OidcDeviceAuthorizationEndpoint SettingVariable `key:"oidcDeviceAuthorizationEndpoint,envOverride" meta:"label=OIDC Device Authorization Endpoint;type=text;keywords=oidc,device,authorization,endpoint,oauth,openid,cli;category=authentication;description=Override OIDC device authorization endpoint for CLI authentication"`
-	OidcScopes                      SettingVariable `key:"oidcScopes,public,envOverride" meta:"label=OIDC Scopes;type=text;keywords=oidc,scopes,oauth,openid,permissions;category=authentication;description=OIDC scopes to request"`
-	OidcAdminClaim                  SettingVariable `key:"oidcAdminClaim,public,envOverride" meta:"label=OIDC Admin Claim;type=text;keywords=oidc,admin,claim,role,group;category=authentication;description=Claim name for admin role mapping"`
-	OidcAdminValue                  SettingVariable `key:"oidcAdminValue,public,envOverride" meta:"label=OIDC Admin Value;type=text;keywords=oidc,admin,value,role,group;category=authentication;description=Claim value that grants admin access"`
-	OidcSkipTlsVerify               SettingVariable `key:"oidcSkipTlsVerify,public,envOverride" meta:"label=OIDC Skip TLS Verify;type=boolean;keywords=oidc,tls,verify,skip,insecure;category=authentication;description=Skip TLS verification for OIDC provider"`
+	OidcScopes                      SettingVariable `key:"oidcScopes,authrequired,envOverride" meta:"label=OIDC Scopes;type=text;keywords=oidc,scopes,oauth,openid,permissions;category=authentication;description=OIDC scopes to request"`
+	OidcAdminClaim                  SettingVariable `key:"oidcAdminClaim,authrequired,envOverride" meta:"label=OIDC Admin Claim;type=text;keywords=oidc,admin,claim,role,group;category=authentication;description=Claim name for admin role mapping"`
+	OidcAdminValue                  SettingVariable `key:"oidcAdminValue,authrequired,envOverride" meta:"label=OIDC Admin Value;type=text;keywords=oidc,admin,value,role,group;category=authentication;description=Claim value that grants admin access"`
+	OidcSkipTlsVerify               SettingVariable `key:"oidcSkipTlsVerify,authrequired,envOverride" meta:"label=OIDC Skip TLS Verify;type=boolean;keywords=oidc,tls,verify,skip,insecure;category=authentication;description=Skip TLS verification for OIDC provider"`
 	OidcAutoRedirectToProvider      SettingVariable `key:"oidcAutoRedirectToProvider,public,envOverride" meta:"label=OIDC Auto Redirect;type=boolean;keywords=oidc,auto,redirect,automatic,login,provider,sso;category=authentication;description=Automatically redirect to OIDC provider on login page"`
-	OidcMergeAccounts               SettingVariable `key:"oidcMergeAccounts,public,envOverride" meta:"label=OIDC Account Merging;type=boolean;keywords=oidc,merge,link,accounts,email,match,existing,users,combine;category=authentication;description=Allow OIDC logins to merge with existing accounts by email"`
+	OidcMergeAccounts               SettingVariable `key:"oidcMergeAccounts,authrequired,envOverride" meta:"label=OIDC Account Merging;type=boolean;keywords=oidc,merge,link,accounts,email,match,existing,users,combine;category=authentication;description=Allow OIDC logins to merge with existing accounts by email"`
 	OidcProviderName                SettingVariable `key:"oidcProviderName,public,envOverride" meta:"label=OIDC Provider Name;type=text;keywords=oidc,provider,name,display,label,sso;category=authentication;description=Custom name for the OIDC provider (e.g., Authentik, Keycloak)"`
 	OidcProviderLogoUrl             SettingVariable `key:"oidcProviderLogoUrl,public,envOverride" meta:"label=OIDC Provider Logo URL;type=text;keywords=oidc,provider,logo,url,image,icon,sso;category=authentication;description=Custom logo URL for the OIDC provider"`
 
 	// Appearance category
-	MobileNavigationMode       SettingVariable `key:"mobileNavigationMode,public,local" meta:"label=Mobile Navigation Mode;type=select;keywords=mode,style,type,floating,docked,position,layout,design,appearance,bottom;category=appearance;description=Choose between floating or docked navigation on mobile" catmeta:"id=appearance;title=Appearance;icon=appearance;url=/settings/appearance;description=Customize navigation, theme, and interface behavior"`
-	MobileNavigationShowLabels SettingVariable `key:"mobileNavigationShowLabels,public,local" meta:"label=Show Navigation Labels;type=boolean;keywords=labels,text,icons,display,show,hide,names,captions,titles,visible,toggle;category=appearance;description=Display text labels alongside navigation icons"`
-	SidebarHoverExpansion      SettingVariable `key:"sidebarHoverExpansion,public,local" meta:"label=Sidebar Hover Expansion;type=boolean;keywords=sidebar,hover,expansion,expand,desktop,mouse,over,collapsed,collapsible,icon,labels,text,preview,peek,tooltip,overlay,temporary,quick,access,navigation,menu,items,submenu,nested;category=appearance;description=Expand sidebar on hover in desktop mode"`
-	KeyboardShortcutsEnabled   SettingVariable `key:"keyboardShortcutsEnabled,public,local" meta:"label=Keyboard Shortcuts;type=boolean;keywords=keyboard,shortcuts,hotkeys,keybindings,navigation,tooltips,disable;category=appearance;description=Enable keyboard shortcuts for navigation and show shortcut hints in tooltips"`
+	MobileNavigationMode       SettingVariable `key:"mobileNavigationMode,authrequired,local" meta:"label=Mobile Navigation Mode;type=select;keywords=mode,style,type,floating,docked,position,layout,design,appearance,bottom;category=appearance;description=Choose between floating or docked navigation on mobile" catmeta:"id=appearance;title=Appearance;icon=appearance;url=/settings/appearance;description=Customize navigation, theme, and interface behavior"`
+	MobileNavigationShowLabels SettingVariable `key:"mobileNavigationShowLabels,authrequired,local" meta:"label=Show Navigation Labels;type=boolean;keywords=labels,text,icons,display,show,hide,names,captions,titles,visible,toggle;category=appearance;description=Display text labels alongside navigation icons"`
+	SidebarHoverExpansion      SettingVariable `key:"sidebarHoverExpansion,authrequired,local" meta:"label=Sidebar Hover Expansion;type=boolean;keywords=sidebar,hover,expansion,expand,desktop,mouse,over,collapsed,collapsible,icon,labels,text,preview,peek,tooltip,overlay,temporary,quick,access,navigation,menu,items,submenu,nested;category=appearance;description=Expand sidebar on hover in desktop mode"`
+	KeyboardShortcutsEnabled   SettingVariable `key:"keyboardShortcutsEnabled,authrequired,local" meta:"label=Keyboard Shortcuts;type=boolean;keywords=keyboard,shortcuts,hotkeys,keybindings,navigation,tooltips,disable;category=appearance;description=Enable keyboard shortcuts for navigation and show shortcut hints in tooltips"`
 
 	// Notifications category (placeholder for category metadata only - actual settings managed via notification service)
 	NotificationsCategoryPlaceholder SettingVariable `key:"notificationsCategory,internal" meta:"label=Notifications;type=internal;keywords=notifications,alerts,email,discord,webhooks,events,messages;category=notifications;description=Configure notification providers and alerts" catmeta:"id=notifications;title=Notifications;icon=bell;url=/settings/notifications;description=Configure email and Discord notifications for container and image updates"`
@@ -161,6 +186,9 @@ type Settings struct {
 
 	// Environments category (environment-scoped settings page)
 	EnvironmentsCategoryPlaceholder SettingVariable `key:"environmentsCategory,internal" meta:"label=Environments;type=internal;keywords=environments,docker,remote,agent,connection,settings,configuration,gitops;category=environments;description=Manage environment-specific settings and connection behavior" catmeta:"id=environments;title=Environments;icon=environment;url=/settings/environments;description=Manage environment-specific Docker settings, connections, security, jobs, and agent behavior"`
+
+	// Webhooks category (management page - no actual settings)
+	WebhooksCategoryPlaceholder SettingVariable `key:"webhooksCategory,internal" meta:"label=Webhooks;type=internal;keywords=webhooks,trigger,inbound,http,container,stack,gitops,updater,automation,ci,cd;category=webhooks;description=Manage inbound webhooks to trigger updates" catmeta:"id=webhooks;title=Webhooks;icon=globe;url=/settings/webhooks;description=Create and manage inbound webhooks to trigger container, stack, or GitOps updates"`
 
 	// Timeout category
 	DockerAPITimeout       SettingVariable `key:"dockerApiTimeout,envOverride" meta:"label=Docker API Timeout;type=number;keywords=docker,api,timeout,seconds,list,operations;category=timeouts;description=Timeout for Docker list operations in seconds (default: 30)" catmeta:"id=timeouts;title=Timeouts;icon=clock;url=/settings/timeouts;description=Configure operation timeouts for slow networks or hardware"`
@@ -188,13 +216,16 @@ func buildSettingsFieldCacheInternal() {
 			continue
 		}
 
+		attrList := splitSettingAttrsInternal(attrs)
+
 		meta := settingFieldMeta{
-			index:       i,
-			key:         key,
-			attrs:       attrs,
-			isPublic:    strings.Contains(attrs, "public"),
-			isSensitive: strings.Contains(attrs, "sensitive"),
-			isLocal:     strings.Contains(attrs, "local"),
+			index:               i,
+			key:                 key,
+			attrs:               attrs,
+			isPublic:            slices.Contains(attrList, "public"),
+			isVisibleToNonAdmin: slices.Contains(attrList, "public") || slices.Contains(attrList, "authrequired"),
+			isSensitive:         slices.Contains(attrList, "sensitive"),
+			isLocal:             slices.Contains(attrList, "local"),
 		}
 		ordered = append(ordered, meta)
 		byKey[key] = meta
@@ -209,22 +240,29 @@ func getSettingsFieldCacheInternal() ([]settingFieldMeta, map[string]settingFiel
 	return settingsFieldCache.ordered, settingsFieldCache.byKey
 }
 
+func splitSettingAttrsInternal(attrs string) []string {
+	if attrs == "" {
+		return nil
+	}
+
+	return strings.Split(attrs, ",")
+}
+
 func (s *Settings) Clone() *Settings {
 	if s == nil {
 		return &Settings{}
 	}
 
-	clone := *s
-	return &clone
+	return new(*s)
 }
 
-func (s *Settings) ToSettingVariableSlice(showAll bool, redactSensitiveValues bool) []SettingVariable {
+func (s *Settings) ToSettingVariableSlice(visibility SettingVisibility, redactSensitiveValues bool) []SettingVariable {
 	cfgValue := reflect.ValueOf(s).Elem()
 	fields, _ := getSettingsFieldCacheInternal()
 
 	res := make([]SettingVariable, 0, len(fields))
 	for _, field := range fields {
-		if !showAll && !field.isPublic {
+		if !fieldVisibleForSettingVisibilityInternal(field, visibility) {
 			continue
 		}
 
@@ -239,6 +277,19 @@ func (s *Settings) ToSettingVariableSlice(showAll bool, redactSensitiveValues bo
 	}
 
 	return res
+}
+
+func fieldVisibleForSettingVisibilityInternal(field settingFieldMeta, visibility SettingVisibility) bool {
+	switch visibility {
+	case SettingVisibilityPublic:
+		return field.isPublic
+	case SettingVisibilityNonAdmin:
+		return field.isVisibleToNonAdmin
+	case SettingVisibilityAll:
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Settings) FieldByKey(key string) (defaultValue string, isPublic bool, isSensitive bool, err error) {

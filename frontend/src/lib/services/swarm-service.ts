@@ -23,6 +23,7 @@ import type {
 	SwarmStackRenderConfigRequest,
 	SwarmStackRenderConfigResponse,
 	SwarmStackSource,
+	SwarmStackSourceUpdateRequest,
 	SwarmInitRequest,
 	SwarmInitResponse,
 	SwarmJoinRequest,
@@ -161,6 +162,11 @@ export class SwarmService extends BaseAPIService {
 	async getStackSource(name: string): Promise<SwarmStackSource> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		return this.handleResponse(this.api.get(`/environments/${envId}/swarm/stacks/${name}/source`));
+	}
+
+	async updateStackSource(name: string, request: SwarmStackSourceUpdateRequest): Promise<SwarmStackSource> {
+		const envId = await environmentStore.getCurrentEnvironmentId();
+		return this.handleResponse(this.api.put(`/environments/${envId}/swarm/stacks/${name}/source`, request));
 	}
 
 	async removeStack(name: string): Promise<void> {

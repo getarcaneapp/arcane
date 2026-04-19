@@ -44,6 +44,8 @@ const (
 	SSHHostKeyVerificationStrict    = "strict"     // Require host key in known_hosts
 	SSHHostKeyVerificationAcceptNew = "accept_new" // Auto-add unknown host keys
 	SSHHostKeyVerificationSkip      = "skip"       // Skip host key verification (insecure)
+	defaultKnownHostsDataDir        = "/app/data"
+	defaultKnownHostsPath           = "/app/data/.ssh/known_hosts"
 )
 
 // AuthConfig holds authentication configuration
@@ -145,8 +147,7 @@ func (c *Client) createAcceptNewHostKeyCallback() (gossh.HostKeyCallback, error)
 				return nil // Host key matches
 			}
 			// Check if it's a "key mismatch" error vs "unknown host"
-			var keyErr *knownhosts.KeyError
-			if errors.As(err, &keyErr) && len(keyErr.Want) > 0 {
+			if keyErr, ok := errors.AsType[*knownhosts.KeyError](err); ok && len(keyErr.Want) > 0 {
 				// Host is known but key doesn't match - this is a security concern
 				return fmt.Errorf("host key mismatch for %s (possible MITM attack): %w", hostname, err)
 			}
@@ -166,18 +167,29 @@ func (c *Client) createAcceptNewHostKeyCallback() (gossh.HostKeyCallback, error)
 
 // getKnownHostsPath returns the path to the known_hosts file
 func getKnownHostsPath() string {
+	return getKnownHostsPathInternal(os.Getenv, os.Stat, os.UserHomeDir)
+}
+
+func getKnownHostsPathInternal(getenv func(string) string, stat func(string) (os.FileInfo, error), userHomeDir func() (string, error)) string {
 	// Check environment variable first
-	if path := os.Getenv("SSH_KNOWN_HOSTS"); path != "" {
+	if path := getenv("SSH_KNOWN_HOSTS"); path != "" {
 		return path
 	}
 
-	// Fall back to default location
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		// Use a fallback in the working directory
-		return filepath.Join(os.TempDir(), ".ssh", "known_hosts")
+	// Prefer Arcane's writable persistent data directory when it is available,
+	// which is the case for published container images and PUID/PGID setups.
+	if info, err := stat(defaultKnownHostsDataDir); err == nil && info.IsDir() {
+		return defaultKnownHostsPath
 	}
-	return filepath.Join(homeDir, ".ssh", "known_hosts")
+
+	// Fall back to the user's home directory for local development and CI.
+	homeDir, err := userHomeDir()
+	if err == nil && homeDir != "" {
+		return filepath.Join(homeDir, ".ssh", "known_hosts")
+	}
+
+	// Last resort for environments without a resolvable home directory.
+	return filepath.Join(os.TempDir(), ".ssh", "known_hosts")
 }
 
 // addHostKey adds a host key to the known_hosts file
@@ -294,28 +306,9 @@ func (c *Client) ListBranches(ctx context.Context, url string, auth AuthConfig) 
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	authMethod, err := c.getAuth(auth)
+	refs, err := c.listRemoteReferences(ctx, url, auth)
 	if err != nil {
 		return nil, err
-	}
-
-	// Create a remote without cloning
-	rem := git.NewRemote(nil, &config.RemoteConfig{
-		Name: "origin",
-		URLs: []string{url},
-	})
-
-	listOptions := &git.ListOptions{}
-	if authMethod != nil {
-		listOptions.Auth = authMethod
-	}
-
-	listCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
-	defer cancel()
-
-	refs, err := rem.ListContext(listCtx, listOptions)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list remote references: %w", err)
 	}
 
 	var branches []BranchInfo
@@ -361,6 +354,48 @@ func (c *Client) ListBranches(ctx context.Context, url string, auth AuthConfig) 
 	})
 
 	return branches, nil
+}
+
+// ProbeRemote verifies that a remote repository is reachable without cloning it.
+func (c *Client) ProbeRemote(ctx context.Context, url string, auth AuthConfig) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	_, err := c.listRemoteReferences(ctx, url, auth)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (c *Client) listRemoteReferences(ctx context.Context, url string, auth AuthConfig) ([]*plumbing.Reference, error) {
+	authMethod, err := c.getAuth(auth)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create a remote without cloning
+	rem := git.NewRemote(nil, &config.RemoteConfig{
+		Name: "origin",
+		URLs: []string{url},
+	})
+
+	listOptions := &git.ListOptions{}
+	if authMethod != nil {
+		listOptions.Auth = authMethod
+	}
+
+	listCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+
+	refs, err := rem.ListContext(listCtx, listOptions)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list remote references: %w", err)
+	}
+
+	return refs, nil
 }
 
 // ValidatePath ensures the path is safe and doesn't escape the repo

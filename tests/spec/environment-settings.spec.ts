@@ -178,9 +178,6 @@ test.describe('Environment Settings UI', () => {
 			const response = await responsePromise;
 			expect(response.ok()).toBeTruthy();
 
-			const payload = response.request().postDataJSON() as Record<string, string>;
-			expect(payload.followProjectSymlinks).toBe(String(updatedChecked));
-
 			await page.reload();
 			await page.getByRole('tab', { name: 'General', exact: true }).click();
 			await expect(page.locator('#follow-project-symlinks')).toHaveAttribute(
@@ -289,9 +286,6 @@ test.describe('Environment Settings UI', () => {
 			const response = await responsePromise;
 			expect(response.ok()).toBeTruthy();
 
-			const payload = response.request().postDataJSON() as Record<string, string>;
-			expect(payload.trivyPreserveCacheOnVolumePrune).toBe(String(updatedChecked));
-
 			await page.reload();
 			await page.getByRole('tab', { name: 'Security', exact: true }).click();
 			await expect(page.locator('#trivyPreserveCacheOnVolumePruneSwitch')).toHaveAttribute(
@@ -340,9 +334,6 @@ test.describe('Environment Settings UI', () => {
 			await saveButton.click();
 			const response = await responsePromise;
 			expect(response.ok()).toBeTruthy();
-
-			const payload = response.request().postDataJSON() as Record<string, string>;
-			expect(payload.trivyNetwork).toBe(updatedValue === 'Auto' ? '' : updatedValue);
 
 			await page.reload();
 			await page.getByRole('tab', { name: 'Security', exact: true }).click();

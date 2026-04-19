@@ -1,7 +1,7 @@
 import { m } from '$lib/paraglide/messages';
 import { environmentStore } from '$lib/stores/environment.store.svelte';
 import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
-import type { Project, ProjectStatusCounts } from '$lib/types/project.type';
+import type { IncludeFile, Project, ProjectStatusCounts } from '$lib/types/project.type';
 import { transformPaginationParams } from '$lib/utils/params.util';
 import BaseAPIService from './api-service';
 
@@ -109,6 +109,19 @@ export class ProjectService extends BaseAPIService {
 		);
 
 		return response.project ? response.project : (response as Project);
+	}
+
+	async getProjectFile(projectId: string, relativePath: string): Promise<IncludeFile> {
+		const envId = await this.resolveEnvironmentId();
+		return this.getProjectFileForEnvironment(envId, projectId, relativePath);
+	}
+
+	async getProjectFileForEnvironment(environmentId: string, projectId: string, relativePath: string): Promise<IncludeFile> {
+		return this.handleResponse<IncludeFile>(
+			this.api.get(`/environments/${environmentId}/projects/${projectId}/file`, {
+				params: { relativePath }
+			})
+		);
 	}
 
 	async getProjectStatusCounts(): Promise<ProjectStatusCounts> {

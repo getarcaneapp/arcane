@@ -24,6 +24,7 @@
 		selectedIds = [],
 		selectionDisabled = false,
 		bulkActions = [],
+		withoutFilters = false,
 		mobileFields = [],
 		onToggleMobileField,
 		customViewOptions,
@@ -35,6 +36,7 @@
 		selectedIds?: string[];
 		selectionDisabled?: boolean;
 		bulkActions?: BulkAction[];
+		withoutFilters?: boolean;
 		mobileFields?: { id: string; label: string; visible: boolean }[];
 		onToggleMobileField?: (fieldId: string) => void;
 		customViewOptions?: Snippet;
@@ -70,13 +72,14 @@
 
 	// Check if any filter columns exist
 	const hasFilterColumns = $derived(
-		!!(typeColumn && !severityColumn && !vulnSeverityColumn) ||
-			!!usageColumn ||
-			!!updatesColumn ||
-			!!severityColumn ||
-			!!vulnSeverityColumn ||
-			!!(imageNameColumn && imageNameFilterOptions.length > 0) ||
-			!!(statusColumn && serviceCountColumn)
+		!withoutFilters &&
+			(!!(typeColumn && !severityColumn && !vulnSeverityColumn) ||
+				!!usageColumn ||
+				!!updatesColumn ||
+				!!severityColumn ||
+				!!vulnSeverityColumn ||
+				!!(imageNameColumn && imageNameFilterOptions.length > 0) ||
+				!!(statusColumn && serviceCountColumn))
 	);
 	const activeFilterCount = $derived(table.getState().columnFilters.length);
 </script>

@@ -9,6 +9,7 @@ permissions:
   contents: write
   packages: write
   attestations: write
+  artifact-metadata: write
   id-token: write
 
 jobs:
@@ -26,10 +27,10 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Just
-        uses: extractions/setup-just@v3
+        uses: extractions/setup-just@v4
 
       - name: Setup PNPM
-        uses: pnpm/action-setup@v5
+        uses: pnpm/action-setup@v6
         with:
           run_install: false
 
@@ -63,6 +64,12 @@ jobs:
           cache-dependency-path: |
             backend/go.sum
             cli/go.sum
+
+      - name: Install envsubst
+        run: sudo apt-get update && sudo apt-get install -y gettext-base
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v4.1.1
 
       - name: Manager image metadata
         id: manager-meta
@@ -102,6 +109,13 @@ jobs:
             REVISION=${{ github.sha }}
           sbom: true
           provenance: true
+
+      - name: Sign manager image
+        run: cosign sign --yes --key env://COSIGN_PRIVATE_KEY "${MANAGER_IMAGE_NAME}@${{
+          steps.manager-build.outputs.digest }}"
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
 
       - name: Agent image metadata
         id: agent-meta
@@ -143,6 +157,13 @@ jobs:
           sbom: true
           provenance: true
 
+      - name: Sign agent image
+        run: cosign sign --yes --key env://COSIGN_PRIVATE_KEY "${AGENT_IMAGE_NAME}@${{ steps.agent-build.outputs.digest
+          }}"
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+
       - name: Container image attestation (manager)
         uses: actions/attest-build-provenance@v4
         with:
@@ -165,6 +186,8 @@ jobs:
           args: release --clean --skip=validate
         env:
           GITHUB_TOKEN: ${{ secrets.ARCANE_BOT_TOKEN }}
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
           GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
           DISCORD_WEBHOOK_ID: ${{ secrets.DISCORD_WEBHOOK_ID }}
           DISCORD_WEBHOOK_TOKEN: ${{ secrets.DISCORD_WEBHOOK_TOKEN }}

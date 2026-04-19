@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	glsqlite "github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
@@ -51,6 +52,54 @@ func TestApplyVulnerabilitySummariesToItemsInternal(t *testing.T) {
 
 	assert.Equal(t, summary, items[0].VulnerabilityScan)
 	assert.Nil(t, items[1].VulnerabilityScan)
+}
+
+func TestImageService_GetUpdateInfoByImageRefs_MatchesCanonicalAndFamiliarRepos(t *testing.T) {
+	db, err := gorm.Open(glsqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&models.ImageUpdateRecord{}))
+
+	svc := &ImageService{db: &database.DB{DB: db}}
+	now := time.Now().UTC()
+
+	records := []models.ImageUpdateRecord{
+		{
+			ID:             "sha256:nginx-latest",
+			Repository:     "docker.io/library/nginx",
+			Tag:            "latest",
+			HasUpdate:      true,
+			UpdateType:     "digest",
+			CurrentVersion: "latest",
+			CheckTime:      now,
+		},
+		{
+			ID:             "sha256:redis-seven",
+			Repository:     "library/redis",
+			Tag:            "7",
+			HasUpdate:      false,
+			UpdateType:     "digest",
+			CurrentVersion: "7",
+			CheckTime:      now.Add(-time.Minute),
+		},
+	}
+
+	for i := range records {
+		require.NoError(t, db.Create(&records[i]).Error)
+	}
+
+	updates, err := svc.GetUpdateInfoByImageRefs(context.Background(), []string{
+		"nginx:latest",
+		"docker.io/library/nginx:latest",
+		"redis:7",
+	})
+	require.NoError(t, err)
+
+	require.Contains(t, updates, "nginx:latest")
+	require.Contains(t, updates, "docker.io/library/nginx:latest")
+	require.Contains(t, updates, "redis:7")
+	assert.True(t, updates["nginx:latest"].HasUpdate)
+	assert.True(t, updates["docker.io/library/nginx:latest"].HasUpdate)
+	assert.False(t, updates["redis:7"].HasUpdate)
 }
 
 func setupImageServiceAuthTest(t *testing.T) (*ImageService, *database.DB) {

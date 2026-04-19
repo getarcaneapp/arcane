@@ -77,17 +77,17 @@
 <Sidebar.Group class="p-1.5">
 	<Sidebar.GroupLabel class="h-7 px-1.5">{label}</Sidebar.GroupLabel>
 	<Sidebar.Menu class="gap-0.5">
-		{#each enhancedItems as item (item.title)}
+		{#each enhancedItems as item (item.url)}
 			{#if (item.items?.length ?? 0) > 0}
 				{#if sidebar.state === 'collapsed' && !sidebar.hoverExpansionEnabled}
 					{#snippet tooltipContent()}
 						<SidebarItemTooltipContent title={item.title} shortcut={item.shortcut} includeTitle={true} />
 					{/snippet}
-					{@const groupExpanded = hoveredGroup === item.title}
+					{@const groupExpanded = hoveredGroup === item.url}
 					<div
 						class={['rounded-lg transition-colors duration-150', groupExpanded && 'bg-sidebar-accent/40 py-0.5']}
 						role="group"
-						onmouseenter={() => (hoveredGroup = item.title)}
+						onmouseenter={() => (hoveredGroup = item.url)}
 						onmouseleave={() => (hoveredGroup = null)}
 					>
 						<Sidebar.MenuItem>
@@ -104,7 +104,7 @@
 							</Sidebar.MenuButton>
 						</Sidebar.MenuItem>
 						{#if groupExpanded}
-							{#each item.items ?? [] as subItem (subItem.title)}
+							{#each item.items ?? [] as subItem (subItem.url)}
 								{#snippet subItemTooltipContent()}
 									<SidebarItemTooltipContent title={subItem.title} shortcut={subItem.shortcut} includeTitle={true} />
 								{/snippet}
@@ -132,7 +132,7 @@
 									? 'hidden'
 									: undefined}
 							>
-								{#each item.items ?? [] as subItem (subItem.title)}
+								{#each item.items ?? [] as subItem (subItem.url)}
 									<Sidebar.MenuSubItem>
 										<Sidebar.MenuSubButton isActive={subItem.isActive} size="md">
 											{#snippet child({ props })}
@@ -154,9 +154,9 @@
 						{item}
 						showTooltip={collapsed || (shortcutsEnabled && !!item.shortcut?.length)}
 						{includeTitleInTooltip}
-						{getIsOpen}
+						getIsOpen={(itemUrl: string, isActive: boolean) => getIsOpen(itemUrl, isActive)}
 						onOpenChange={(open) => {
-							openStates[item.title] = open;
+							openStates[item.url] = open;
 						}}
 						content={collapsibleSubMenu}
 					/>

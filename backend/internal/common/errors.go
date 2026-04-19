@@ -722,6 +722,36 @@ func (e *ProjectDetailsError) Error() string {
 	return fmt.Sprintf("Failed to get project details: %v", e.Err)
 }
 
+type ProjectFileBadRequestError struct {
+	Err error
+}
+
+func (e *ProjectFileBadRequestError) Error() string {
+	return fmt.Sprintf("Invalid project file request: %v", e.Err)
+}
+
+type ProjectFileForbiddenError struct {
+	Err error
+}
+
+func (e *ProjectFileForbiddenError) Error() string {
+	return fmt.Sprintf("Forbidden project file path: %v", e.Err)
+}
+
+type ProjectFileNotFoundError struct{}
+
+func (e *ProjectFileNotFoundError) Error() string {
+	return "Project file not found"
+}
+
+type ProjectComposeFileNotFoundError struct {
+	Err error
+}
+
+func (e *ProjectComposeFileNotFoundError) Error() string {
+	return fmt.Sprintf("Project compose file not found: %v", e.Err)
+}
+
 type ProjectRedeploymentError struct {
 	Err error
 }
@@ -983,7 +1013,7 @@ type RegistryFetchError struct {
 }
 
 func (e *RegistryFetchError) Error() string {
-	return fmt.Sprintf("Failed to fetch registry: %v", e.Err)
+	return "Failed to fetch registry"
 }
 
 type InvalidJSONResponseError struct {
@@ -991,7 +1021,15 @@ type InvalidJSONResponseError struct {
 }
 
 func (e *InvalidJSONResponseError) Error() string {
-	return fmt.Sprintf("Invalid JSON response: %v", e.Err)
+	return "Invalid JSON response"
+}
+
+type UnsafeRemoteURLError struct {
+	Err error
+}
+
+func (e *UnsafeRemoteURLError) Error() string {
+	return fmt.Sprintf("Remote URL is not allowed: %v", e.Err)
 }
 
 type TemplateAlreadyLocalError struct{}

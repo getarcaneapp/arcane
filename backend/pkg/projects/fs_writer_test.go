@@ -136,3 +136,27 @@ func TestWriteComposeFile_PreservesExistingPodmanComposeNames(t *testing.T) {
 		})
 	}
 }
+
+func TestWriteComposeFile_PreservesExistingCustomComposeNames(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	projectsRoot := tmpDir
+	projectDir := filepath.Join(tmpDir, "Radarr-3")
+	require.NoError(t, os.MkdirAll(projectDir, 0o755))
+
+	existingComposePath := filepath.Join(projectDir, "radarr.yaml")
+	require.NoError(t, os.WriteFile(existingComposePath, []byte("services: {}"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "config.yaml"), []byte("x-config: true\n"), 0o600))
+
+	expectedContent := "services:\n  app:\n    image: nginx:alpine\n"
+	err := WriteComposeFile(projectsRoot, projectDir, expectedContent)
+	require.NoError(t, err)
+
+	actualContent, err := os.ReadFile(existingComposePath)
+	require.NoError(t, err)
+	assert.Equal(t, expectedContent, string(actualContent))
+
+	_, err = os.Stat(filepath.Join(projectDir, "compose.yaml"))
+	assert.True(t, os.IsNotExist(err), "compose.yaml should not be created when an existing custom compose file is present")
+}

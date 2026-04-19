@@ -26,7 +26,7 @@ func setupDashboardHandlerTestDB(t *testing.T) (*database.DB, *services.Settings
 
 	db, err := gorm.Open(glsqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&models.ApiKey{}, &models.ImageUpdateRecord{}, &models.Project{}, &models.SettingVariable{}))
+	require.NoError(t, db.AutoMigrate(&models.ApiKey{}, &models.Environment{}, &models.ImageUpdateRecord{}, &models.Project{}, &models.SettingVariable{}))
 
 	databaseDB := &database.DB{DB: db}
 	settingsSvc, err := services.NewSettingsService(context.Background(), databaseDB)
@@ -97,7 +97,6 @@ func TestDashboardHandlerGetDashboardReturnsSnapshot(t *testing.T) {
 		{ID: "sha256:image-b", RepoTags: []string{"repo/worker:latest"}, Created: 1720000000, Size: 250},
 	}
 
-	expiresSoon := time.Now().Add(12 * time.Hour)
 	require.NoError(t, db.WithContext(context.Background()).Create(&models.ImageUpdateRecord{
 		ID:        "sha256:image-b",
 		HasUpdate: true,
@@ -107,12 +106,12 @@ func TestDashboardHandlerGetDashboardReturnsSnapshot(t *testing.T) {
 		KeyHash:   "hash-soon",
 		KeyPrefix: "arc_test_handler",
 		UserID:    "user-1",
-		ExpiresAt: &expiresSoon,
+		ExpiresAt: new(time.Now().Add(12 * time.Hour)),
 	}).Error)
 
 	dockerSvc := newDashboardHandlerTestDockerService(t, settingsSvc, containers, images)
 	handler := &DashboardHandler{
-		dashboardService: services.NewDashboardService(db, dockerSvc, nil, settingsSvc, nil),
+		dashboardService: services.NewDashboardService(db, dockerSvc, nil, nil, settingsSvc, nil, nil, nil),
 	}
 
 	output, err := handler.GetDashboard(context.Background(), &GetDashboardInput{EnvironmentID: "0"})
@@ -125,10 +124,45 @@ func TestDashboardHandlerGetDashboardReturnsSnapshot(t *testing.T) {
 	require.Len(t, snapshot.Images.Data, 2)
 	require.Equal(t, 1, snapshot.Containers.Counts.RunningContainers)
 	require.Equal(t, 1, snapshot.Containers.Counts.StoppedContainers)
-	require.Equal(t, "dangling", snapshot.Settings.DockerPruneMode)
+	require.Equal(t, dashboardtypes.SnapshotSettings{}, snapshot.Settings)
 	require.ElementsMatch(t, []dashboardtypes.ActionItem{
 		{Kind: dashboardtypes.ActionItemKindStoppedContainers, Count: 1, Severity: dashboardtypes.ActionItemSeverityWarning},
 		{Kind: dashboardtypes.ActionItemKindImageUpdates, Count: 1, Severity: dashboardtypes.ActionItemSeverityWarning},
 		{Kind: dashboardtypes.ActionItemKindExpiringKeys, Count: 1, Severity: dashboardtypes.ActionItemSeverityWarning},
 	}, snapshot.ActionItems.Items)
+}
+
+func TestDashboardHandlerGetEnvironmentsOverviewReturnsAggregateSummary(t *testing.T) {
+	db, settingsSvc := setupDashboardHandlerTestDB(t)
+
+	require.NoError(t, db.WithContext(context.Background()).Create(&models.Environment{
+		BaseModel: models.BaseModel{ID: "0", CreatedAt: time.Now()},
+		Name:      "Local Docker",
+		ApiUrl:    "http://local.test",
+		Status:    string(models.EnvironmentStatusOffline),
+		Enabled:   true,
+	}).Error)
+
+	handler := &DashboardHandler{
+		dashboardService: services.NewDashboardService(
+			db,
+			nil,
+			nil,
+			nil,
+			settingsSvc,
+			nil,
+			services.NewEnvironmentService(db, http.DefaultClient, nil, nil, settingsSvc, nil),
+			services.NewVersionService(nil, true, "1.2.3", "abcdef1234567890", nil, nil),
+		),
+	}
+
+	output, err := handler.GetEnvironmentsOverview(context.Background(), &GetDashboardEnvironmentsOverviewInput{})
+	require.NoError(t, err)
+	require.NotNil(t, output)
+	require.True(t, output.Body.Success)
+	require.Equal(t, 1, output.Body.Data.Summary.TotalEnvironments)
+	require.Len(t, output.Body.Data.Environments, 1)
+	require.Equal(t, "0", output.Body.Data.Environments[0].Environment.ID)
+	require.Equal(t, dashboardtypes.EnvironmentSnapshotStateSkipped, output.Body.Data.Environments[0].SnapshotState)
+	require.Nil(t, output.Body.Data.Environments[0].VersionInfo)
 }

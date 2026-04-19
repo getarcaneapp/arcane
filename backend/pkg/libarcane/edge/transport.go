@@ -154,10 +154,8 @@ func GetTunnelRuntimeState(envID string) (*TunnelRuntimeState, bool) {
 		state.Transport = EdgeTransportWebSocket
 	}
 
-	connectedAt := tunnel.ConnectedAt
-	lastHeartbeat := tunnel.GetLastHeartbeat()
-	state.ConnectedAt = &connectedAt
-	state.LastHeartbeat = &lastHeartbeat
+	state.ConnectedAt = new(tunnel.ConnectedAt)
+	state.LastHeartbeat = new(tunnel.GetLastHeartbeat())
 
 	return state, true
 }

@@ -267,6 +267,16 @@ type GetSwarmStackSourceOutput struct {
 	Body base.ApiResponse[swarmtypes.StackSource]
 }
 
+type UpdateSwarmStackSourceInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	Name          string `path:"name" doc:"Stack name"`
+	Body          swarmtypes.StackSourceUpdateRequest
+}
+
+type UpdateSwarmStackSourceOutput struct {
+	Body base.ApiResponse[swarmtypes.StackSource]
+}
+
 type DeleteSwarmStackInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Name          string `path:"name" doc:"Stack name"`
@@ -533,6 +543,7 @@ func RegisterSwarm(api huma.API, swarmSvc *services.SwarmService, environmentSvc
 	huma.Register(api, huma.Operation{OperationID: "deploy-swarm-stack", Method: http.MethodPost, Path: "/environments/{id}/swarm/stacks", Summary: "Deploy swarm stack", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, h.DeployStack)
 	huma.Register(api, huma.Operation{OperationID: "get-swarm-stack", Method: http.MethodGet, Path: "/environments/{id}/swarm/stacks/{name}", Summary: "Get swarm stack", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, h.GetStack)
 	huma.Register(api, huma.Operation{OperationID: "get-swarm-stack-source", Method: http.MethodGet, Path: "/environments/{id}/swarm/stacks/{name}/source", Summary: "Get swarm stack source", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, h.GetStackSource)
+	huma.Register(api, huma.Operation{OperationID: "update-swarm-stack-source", Method: http.MethodPut, Path: "/environments/{id}/swarm/stacks/{name}/source", Summary: "Update swarm stack source", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, h.UpdateStackSource)
 	huma.Register(api, huma.Operation{OperationID: "delete-swarm-stack", Method: http.MethodDelete, Path: "/environments/{id}/swarm/stacks/{name}", Summary: "Delete swarm stack", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, h.DeleteStack)
 	huma.Register(api, huma.Operation{OperationID: "list-swarm-stack-services", Method: http.MethodGet, Path: "/environments/{id}/swarm/stacks/{name}/services", Summary: "List swarm stack services", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, h.ListStackServices)
 	huma.Register(api, huma.Operation{OperationID: "list-swarm-stack-tasks", Method: http.MethodGet, Path: "/environments/{id}/swarm/stacks/{name}/tasks", Summary: "List swarm stack tasks", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, h.ListStackTasks)
@@ -1132,7 +1143,7 @@ func (h *SwarmHandler) ListStacks(ctx context.Context, input *ListSwarmStacksInp
 	}
 
 	params := buildSwarmQueryParams(input.Search, input.Sort, input.Order, input.Start, input.Limit)
-	items, paginationResp, err := h.swarmService.ListStacksPaginated(ctx, params)
+	items, paginationResp, err := h.swarmService.ListStacksPaginated(ctx, input.EnvironmentID, params)
 	if err != nil {
 		return nil, mapSwarmServiceError(err, (&common.SwarmStackListError{Err: err}).Error())
 	}
@@ -1228,6 +1239,29 @@ func (h *SwarmHandler) GetStackSource(ctx context.Context, input *GetSwarmStackS
 	}
 
 	return &GetSwarmStackSourceOutput{Body: base.ApiResponse[swarmtypes.StackSource]{Success: true, Data: *source}}, nil
+}
+
+// UpdateStackSource persists the saved compose and env source for a swarm stack.
+//
+// It requires admin privileges because stack source content can include
+// sensitive configuration. The stack name comes from the route, and the body
+// contains the replacement source files to save.
+func (h *SwarmHandler) UpdateStackSource(ctx context.Context, input *UpdateSwarmStackSourceInput) (*UpdateSwarmStackSourceOutput, error) {
+	if h.swarmService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
+	}
+
+	source, err := h.swarmService.UpdateStackSource(ctx, input.EnvironmentID, input.Name, input.Body)
+	if err != nil {
+		return nil, mapSwarmServiceError(err, "Failed to update swarm stack source")
+	}
+
+	h.auditSwarmMutation(ctx, input.EnvironmentID, "stack.source.update", "swarm_stack", input.Name, input.Name, map[string]any{"stack": input.Name})
+
+	return &UpdateSwarmStackSourceOutput{Body: base.ApiResponse[swarmtypes.StackSource]{Success: true, Data: *source}}, nil
 }
 
 // DeleteStack removes a swarm stack and its managed resources.
@@ -1944,26 +1978,21 @@ func (h *SwarmHandler) auditSwarmMutation(ctx context.Context, environmentID, ac
 	var userID *string
 	var username *string
 	if user, ok := humamw.GetCurrentUserFromContext(ctx); ok {
-		uid := user.ID
-		uname := user.Username
-		userID = &uid
-		username = &uname
+		userID = new(user.ID)
+		username = new(user.Username)
 	}
 
 	var resourceTypePtr *string
 	if strings.TrimSpace(resourceType) != "" {
-		rt := resourceType
-		resourceTypePtr = &rt
+		resourceTypePtr = new(resourceType)
 	}
 	var resourceIDPtr *string
 	if strings.TrimSpace(resourceID) != "" {
-		rid := resourceID
-		resourceIDPtr = &rid
+		resourceIDPtr = new(resourceID)
 	}
 	var resourceNamePtr *string
 	if strings.TrimSpace(resourceName) != "" {
-		rn := resourceName
-		resourceNamePtr = &rn
+		resourceNamePtr = new(resourceName)
 	}
 
 	env := strings.TrimSpace(environmentID)

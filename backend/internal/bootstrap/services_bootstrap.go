@@ -45,6 +45,7 @@ type Services struct {
 	ApiKey            *services.ApiKeyService
 	GitRepository     *services.GitRepositoryService
 	GitOpsSync        *services.GitOpsSyncService
+	Webhook           *services.WebhookService
 	Font              *services.FontService
 	Vulnerability     *services.VulnerabilityService
 	Dashboard         *services.DashboardService
@@ -72,6 +73,7 @@ func initializeServices(ctx context.Context, db *database.DB, cfg *config.Config
 		return dockerClient.GetClient(ctx)
 	})
 	svcs.Environment = services.NewEnvironmentService(db, httpClient, svcs.Docker, svcs.Event, svcs.Settings, svcs.ApiKey)
+	svcs.Version = services.NewVersionService(httpClient, cfg.UpdateCheckDisabled, config.Version, config.Revision, svcs.ContainerRegistry, svcs.Docker)
 	svcs.Notification = services.NewNotificationService(db, cfg, svcs.Environment)
 	svcs.Apprise = services.NewAppriseService(db, cfg)
 	svcs.Vulnerability = services.NewVulnerabilityService(db, svcs.Docker, svcs.Event, svcs.Settings, svcs.Notification)
@@ -80,9 +82,18 @@ func initializeServices(ctx context.Context, db *database.DB, cfg *config.Config
 	svcs.GitRepository = services.NewGitRepositoryService(db, cfg.GitWorkDir, svcs.Event, svcs.Settings)
 	svcs.Build = services.NewBuildService(db, svcs.Settings, svcs.Docker, svcs.ContainerRegistry, svcs.GitRepository)
 	svcs.BuildWorkspace = services.NewBuildWorkspaceService(svcs.Settings)
-	svcs.Project = services.NewProjectService(db, svcs.Settings, svcs.Event, svcs.Image, svcs.Docker, svcs.Build)
-	svcs.Container = services.NewContainerService(db, svcs.Event, svcs.Docker, svcs.Image, svcs.Settings)
-	svcs.Dashboard = services.NewDashboardService(db, svcs.Docker, svcs.Container, svcs.Settings, svcs.Vulnerability)
+	svcs.Project = services.NewProjectService(db, svcs.Settings, svcs.Event, svcs.Image, svcs.Docker, svcs.Build, cfg)
+	svcs.Container = services.NewContainerService(db, svcs.Event, svcs.Docker, svcs.Image, svcs.Settings, svcs.Project)
+	svcs.Dashboard = services.NewDashboardService(
+		db,
+		svcs.Docker,
+		svcs.Container,
+		svcs.Project,
+		svcs.Settings,
+		svcs.Vulnerability,
+		svcs.Environment,
+		svcs.Version,
+	)
 	svcs.Volume = services.NewVolumeService(db, svcs.Docker, svcs.Event, svcs.Settings, svcs.Container, svcs.Image, cfg.BackupVolumeName)
 	svcs.Network = services.NewNetworkService(db, svcs.Docker, svcs.Event)
 	svcs.Port = services.NewPortService(svcs.Docker)
@@ -91,10 +102,10 @@ func initializeServices(ctx context.Context, db *database.DB, cfg *config.Config
 	svcs.Auth = services.NewAuthService(svcs.User, svcs.Settings, svcs.Event, cfg.JWTSecret, cfg)
 	svcs.Oidc = services.NewOidcService(svcs.Auth, cfg, httpClient)
 	svcs.System = services.NewSystemService(db, svcs.Docker, svcs.Container, svcs.Image, svcs.Volume, svcs.Network, svcs.Settings)
-	svcs.Version = services.NewVersionService(httpClient, cfg.UpdateCheckDisabled, config.Version, config.Revision, svcs.ContainerRegistry, svcs.Docker)
 	svcs.SystemUpgrade = services.NewSystemUpgradeService(svcs.Docker, svcs.Version, svcs.Event, svcs.Settings)
 	svcs.Updater = services.NewUpdaterService(db, svcs.Settings, svcs.Docker, svcs.Project, svcs.ImageUpdate, svcs.ContainerRegistry, svcs.Event, svcs.Image, svcs.Notification, svcs.SystemUpgrade)
 	svcs.GitOpsSync = services.NewGitOpsSyncService(db, svcs.GitRepository, svcs.Project, svcs.Event, svcs.Settings)
+	svcs.Webhook = services.NewWebhookService(db, svcs.Container, svcs.Updater, svcs.Project, svcs.GitOpsSync, svcs.Event)
 
 	return svcs, dockerClient, nil
 }

@@ -4,6 +4,7 @@
 	import * as Select from '$lib/components/ui/select/index.js';
 	import { m } from '$lib/paraglide/messages';
 	import { ArrowRightIcon, ArrowLeftIcon, DoubleArrowRightIcon, DoubleArrowLeftIcon } from '$lib/icons';
+	import { TABLE_PAGE_SIZE_ALL, TABLE_PAGE_SIZE_OPTIONS } from '$lib/constants/table-pagination';
 	import type { Paginated } from '$lib/types/pagination.type';
 
 	let {
@@ -29,14 +30,13 @@
 		setPageSize: (limit: number) => void;
 	} = $props();
 
-	const pageSizeOptions = [10, 20, 30, 40, 50];
-	const isAllSelected = $derived(pageSize === -1);
+	const isAllSelected = $derived(pageSize === TABLE_PAGE_SIZE_ALL);
 	const displayValue = $derived(isAllSelected ? m.common_all() : String(pageSize));
 	const selectValue = $derived(isAllSelected ? 'all' : String(pageSize));
 
 	function handlePageSizeChange(value: string) {
 		if (value === 'all') {
-			setPageSize(-1);
+			setPageSize(TABLE_PAGE_SIZE_ALL);
 		} else {
 			setPageSize(Number(value));
 		}
@@ -55,7 +55,7 @@
 					{displayValue}
 				</Select.Trigger>
 				<Select.Content side="top">
-					{#each pageSizeOptions as size (size)}
+					{#each TABLE_PAGE_SIZE_OPTIONS as size (size)}
 						<Select.Item value={`${size}`}>
 							{size}
 						</Select.Item>

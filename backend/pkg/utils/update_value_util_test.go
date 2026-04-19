@@ -64,8 +64,7 @@ func TestUpdateIfChanged(t *testing.T) {
 	})
 
 	t.Run("*string target with *string value", func(t *testing.T) {
-		initial := "initial"
-		target := &initial
+		target := new("initial")
 		newValue := "new"
 
 		// Update from value to new value

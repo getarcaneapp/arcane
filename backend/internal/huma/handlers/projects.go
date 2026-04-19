@@ -42,6 +42,7 @@ type ListProjectsInput struct {
 	Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
 	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
 	Status        string `query:"status" doc:"Filter by status (comma-separated: running,stopped,partially running)"`
+	Updates       string `query:"updates" doc:"Filter by update status (has_update, up_to_date, error, unknown)"`
 }
 
 type ListProjectsOutput struct {
@@ -91,6 +92,16 @@ type GetProjectInput struct {
 
 type GetProjectOutput struct {
 	Body base.ApiResponse[project.Details]
+}
+
+type GetProjectFileInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	ProjectID     string `path:"projectId" doc:"Project ID"`
+	RelativePath  string `query:"relativePath" doc:"Path to the file relative to the project"`
+}
+
+type GetProjectFileOutput struct {
+	Body base.ApiResponse[project.IncludeFile]
 }
 
 type RedeployProjectInput struct {
@@ -255,6 +266,19 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService) {
 	}, h.GetProject)
 
 	huma.Register(api, huma.Operation{
+		OperationID: "get-project-file",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/projects/{projectId}/file",
+		Summary:     "Get a project file",
+		Description: "Get the contents of a single project-related file by relative path",
+		Tags:        []string{"Projects"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.GetProjectFile)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "redeploy-project",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/projects/{projectId}/redeploy",
@@ -352,6 +376,14 @@ func (h *ProjectHandler) ListProjects(ctx context.Context, input *ListProjectsIn
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
+	filters := map[string]string{}
+	if input.Status != "" {
+		filters["status"] = input.Status
+	}
+	if input.Updates != "" {
+		filters["updates"] = input.Updates
+	}
+
 	params := pagination.QueryParams{
 		SearchQuery: pagination.SearchQuery{
 			Search: input.Search,
@@ -364,9 +396,7 @@ func (h *ProjectHandler) ListProjects(ctx context.Context, input *ListProjectsIn
 			Start: input.Start,
 			Limit: input.Limit,
 		},
-		Filters: map[string]string{
-			"status": input.Status,
-		},
+		Filters: filters,
 	}
 
 	projects, paginationResp, err := h.projectService.ListProjects(ctx, params)
@@ -545,6 +575,43 @@ func (h *ProjectHandler) GetProject(ctx context.Context, input *GetProjectInput)
 		Body: base.ApiResponse[project.Details]{
 			Success: true,
 			Data:    details,
+		},
+	}, nil
+}
+
+func (h *ProjectHandler) GetProjectFile(ctx context.Context, input *GetProjectFileInput) (*GetProjectFileOutput, error) {
+	if h.projectService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+	if input.ProjectID == "" {
+		return nil, huma.Error400BadRequest((&common.ProjectIDRequiredError{}).Error())
+	}
+	if input.RelativePath == "" {
+		return nil, huma.Error400BadRequest("relativePath is required")
+	}
+
+	file, err := h.projectService.GetProjectFileContent(ctx, input.ProjectID, input.RelativePath)
+	if err != nil {
+		var badRequestErr *common.ProjectFileBadRequestError
+		var forbiddenErr *common.ProjectFileForbiddenError
+		var notFoundErr *common.ProjectFileNotFoundError
+
+		switch {
+		case errors.As(err, &badRequestErr):
+			return nil, huma.Error400BadRequest(err.Error())
+		case errors.As(err, &forbiddenErr):
+			return nil, huma.Error403Forbidden(err.Error())
+		case errors.As(err, &notFoundErr):
+			return nil, huma.Error404NotFound("project file not found")
+		default:
+			return nil, huma.Error500InternalServerError("internal error")
+		}
+	}
+
+	return &GetProjectFileOutput{
+		Body: base.ApiResponse[project.IncludeFile]{
+			Success: true,
+			Data:    file,
 		},
 	}, nil
 }

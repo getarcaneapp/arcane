@@ -3,6 +3,7 @@ import type { TemplateRegistry, Template, RemoteRegistry, TemplateContentData } 
 import type { Variable } from '$lib/types/variable.type';
 import type { SearchPaginationSortRequest, Paginated } from '$lib/types/pagination.type';
 import { transformPaginationParams } from '$lib/utils/params.util';
+import { environmentStore } from '$lib/stores/environment.store.svelte';
 
 export default class TemplateService extends BaseAPIService {
 	async getTemplates(options?: SearchPaginationSortRequest): Promise<Paginated<Template>> {
@@ -86,6 +87,24 @@ export default class TemplateService extends BaseAPIService {
 		await this.api.delete(`/templates/registries/${id}`);
 	}
 
+	async updateTemplate(
+		id: string,
+		template: {
+			name: string;
+			description?: string;
+			content: string;
+			envContent?: string;
+		}
+	): Promise<Template> {
+		const response = await this.api.put(`/templates/${encodeURIComponent(id)}`, {
+			name: template.name,
+			description: template.description || '',
+			content: template.content,
+			envContent: template.envContent || ''
+		});
+		return response.data?.data;
+	}
+
 	async deleteTemplate(id: string): Promise<void> {
 		await this.api.delete(`/templates/${encodeURIComponent(id)}`);
 	}
@@ -106,12 +125,14 @@ export default class TemplateService extends BaseAPIService {
 	}
 
 	async getGlobalVariables(): Promise<Variable[]> {
-		const response = await this.api.get('/templates/variables');
+		const envId = await environmentStore.getCurrentEnvironmentId();
+		const response = await this.api.get(`/environments/${envId}/templates/variables`);
 		return response.data?.data ?? [];
 	}
 
 	async updateGlobalVariables(variables: Variable[]): Promise<void> {
-		await this.api.put('/templates/variables', { variables });
+		const envId = await environmentStore.getCurrentEnvironmentId();
+		await this.api.put(`/environments/${envId}/templates/variables`, { variables });
 	}
 }
 

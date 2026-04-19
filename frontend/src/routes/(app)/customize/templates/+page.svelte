@@ -131,6 +131,12 @@
 
 	const actionButtons: ActionButton[] = [
 		{
+			id: 'create',
+			action: 'create',
+			label: m.templates_create_template(),
+			onclick: () => goto('/customize/templates/create')
+		},
+		{
 			id: 'default',
 			action: 'edit',
 			label: m.templates_edit_default(),

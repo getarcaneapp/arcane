@@ -34,7 +34,7 @@ func registerJobs(appCtx context.Context, newScheduler *pkg_scheduler.JobSchedul
 	scheduledPruneJob := pkg_scheduler.NewScheduledPruneJob(appServices.System, appServices.Settings, appServices.Notification)
 	newScheduler.RegisterJob(scheduledPruneJob)
 
-	fsWatcherJob, err := pkg_scheduler.RegisterFilesystemWatcherJob(appCtx, appServices.Project, appServices.Template, appServices.Settings)
+	fsWatcherJob, err := pkg_scheduler.RegisterFilesystemWatcherJob(appCtx, appServices.Project, appServices.Template, appServices.Settings, appConfig.ProjectScanMaxDepth)
 	if err != nil {
 		slog.ErrorContext(appCtx, "Failed to register filesystem watcher job", "error", err)
 	}

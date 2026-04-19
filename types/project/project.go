@@ -1,6 +1,8 @@
 package project
 
 import (
+	"time"
+
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 )
@@ -19,8 +21,16 @@ type IncludeFile struct {
 
 	// Content is the file content.
 	//
+	// Required: false
+	Content string `json:"content,omitempty"`
+}
+
+// FileContentRequest requests the contents of a single project-related file.
+type FileContentRequest struct {
+	// RelativePath is the path to the file relative to the project.
+	//
 	// Required: true
-	Content string `json:"content"`
+	RelativePath string `json:"relativePath" query:"relativePath" binding:"required"`
 }
 
 // CreateProject is used to create a new project.
@@ -133,6 +143,60 @@ type RuntimeService struct {
 	ServiceConfig *composetypes.ServiceConfig `json:"serviceConfig,omitempty"`
 }
 
+// UpdateInfo contains aggregated image update status for a project.
+type UpdateInfo struct {
+	// Status is the aggregate update status for the project.
+	//
+	// Values: has_update | up_to_date | unknown | error
+	// Required: true
+	Status string `json:"status"`
+
+	// HasUpdate indicates whether any project image has an available update.
+	//
+	// Required: true
+	HasUpdate bool `json:"hasUpdate"`
+
+	// ImageCount is the total number of unique checkable image references in the project.
+	//
+	// Required: true
+	ImageCount int `json:"imageCount"`
+
+	// CheckedImageCount is the number of project image references with persisted update-check results.
+	//
+	// Required: true
+	CheckedImageCount int `json:"checkedImageCount"`
+
+	// ImagesWithUpdates is the number of project image references with available updates.
+	//
+	// Required: true
+	ImagesWithUpdates int `json:"imagesWithUpdates"`
+
+	// ErrorCount is the number of project image references whose latest check failed.
+	//
+	// Required: true
+	ErrorCount int `json:"errorCount"`
+
+	// ErrorMessage is the first available error message from the latest project image checks.
+	//
+	// Required: false
+	ErrorMessage *string `json:"errorMessage,omitempty"`
+
+	// ImageRefs is the list of unique image references detected for the project.
+	//
+	// Required: false
+	ImageRefs []string `json:"imageRefs,omitempty"`
+
+	// UpdatedImageRefs is the subset of project image references with available updates.
+	//
+	// Required: false
+	UpdatedImageRefs []string `json:"updatedImageRefs,omitempty"`
+
+	// LastCheckedAt is the latest successful or failed image update check time for this project.
+	//
+	// Required: false
+	LastCheckedAt *time.Time `json:"lastCheckedAt,omitempty"`
+}
+
 // CreateReponse is the response when a project is created.
 type CreateReponse struct {
 	// ID is the unique identifier of the project.
@@ -238,6 +302,11 @@ type Details struct {
 	// Required: false
 	ComposeContent string `json:"composeContent,omitempty"`
 
+	// ComposeFileName is the detected compose file name for the project.
+	//
+	// Required: false
+	ComposeFileName string `json:"composeFileName,omitempty"`
+
 	// EnvContent is the environment file content.
 	//
 	// Required: false
@@ -293,6 +362,11 @@ type Details struct {
 	//
 	// Required: false
 	RuntimeServices []RuntimeService `json:"runtimeServices,omitempty"`
+
+	// UpdateInfo contains aggregated image update status for the project.
+	//
+	// Required: false
+	UpdateInfo *UpdateInfo `json:"updateInfo,omitempty"`
 
 	// HasBuildDirective indicates whether any Compose service defines a build directive.
 	//

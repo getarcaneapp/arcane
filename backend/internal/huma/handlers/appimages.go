@@ -57,6 +57,7 @@ func RegisterAppImages(api huma.API, appImagesService *services.ApplicationImage
 		Summary:     "Get application logo",
 		Description: "Get the application logo image",
 		Tags:        []string{"Application Images"},
+		Security:    []map[string][]string{},
 	}, h.GetLogo)
 
 	huma.Register(api, huma.Operation{
@@ -66,6 +67,7 @@ func RegisterAppImages(api huma.API, appImagesService *services.ApplicationImage
 		Summary:     "Get application logo for email",
 		Description: "Get the application logo image in PNG format for emails",
 		Tags:        []string{"Application Images"},
+		Security:    []map[string][]string{},
 	}, h.GetLogoEmail)
 
 	huma.Register(api, huma.Operation{
@@ -75,6 +77,7 @@ func RegisterAppImages(api huma.API, appImagesService *services.ApplicationImage
 		Summary:     "Get application favicon",
 		Description: "Get the application favicon image",
 		Tags:        []string{"Application Images"},
+		Security:    []map[string][]string{},
 	}, h.GetFavicon)
 
 	huma.Register(api, huma.Operation{
@@ -84,6 +87,7 @@ func RegisterAppImages(api huma.API, appImagesService *services.ApplicationImage
 		Summary:     "Get default profile image",
 		Description: "Get the default user profile image",
 		Tags:        []string{"Application Images"},
+		Security:    []map[string][]string{},
 	}, h.GetDefaultProfile)
 
 	huma.Register(api, huma.Operation{
@@ -93,6 +97,7 @@ func RegisterAppImages(api huma.API, appImagesService *services.ApplicationImage
 		Summary:     "Get PWA icon",
 		Description: "Get a Progressive Web App icon image",
 		Tags:        []string{"Application Images"},
+		Security:    []map[string][]string{},
 	}, h.GetPWAIcon)
 }
 

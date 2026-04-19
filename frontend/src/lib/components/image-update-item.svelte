@@ -1,5 +1,4 @@
 <script lang="ts">
-	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { toast } from 'svelte-sonner';
 	import type { ImageUpdateData } from '$lib/types/image.type';
@@ -10,6 +9,7 @@
 	import type { Component } from 'svelte';
 	import { ArrowRightIcon, RefreshIcon, AlertIcon, VerifiedCheckIcon, ApiKeyIcon, CircleArrowUpIcon, BoxIcon } from '$lib/icons';
 	import { createQuery } from '@tanstack/svelte-query';
+	import UpdateStatusPopover from '$lib/components/update-status-popover.svelte';
 
 	interface Props {
 		updateInfo?: ImageUpdateData;
@@ -436,8 +436,8 @@
 {/snippet}
 
 {#if effectiveUpdateInfo}
-	<ArcaneTooltip.Root bind:open={isOpen}>
-		<ArcaneTooltip.Trigger>
+	<UpdateStatusPopover bind:open={isOpen} contentClass="max-w-[280px] p-0">
+		{#snippet trigger()}
 			<span class="mr-2 inline-flex size-4 items-center justify-center align-middle" data-testid="image-update-trigger">
 				{#if hasError}
 					<AlertIcon class="size-4 text-red-500" />
@@ -449,8 +449,9 @@
 					<CircleArrowUpIcon class="size-4 text-yellow-500" />
 				{/if}
 			</span>
-		</ArcaneTooltip.Trigger>
-		<ArcaneTooltip.Content side="right" class="max-w-[280px] p-0">
+		{/snippet}
+
+		{#snippet content()}
 			<div class="overflow-hidden rounded-xl">
 				{#if hasError}
 					{@render errorState()}
@@ -462,24 +463,25 @@
 					{@render versionUpdateState()}
 				{/if}
 			</div>
-		</ArcaneTooltip.Content>
-	</ArcaneTooltip.Root>
+		{/snippet}
+	</UpdateStatusPopover>
 {:else if isLoadingInBackground || isChecking}
-	<ArcaneTooltip.Root>
-		<ArcaneTooltip.Trigger>
+	<UpdateStatusPopover contentClass="max-w-[220px] p-0">
+		{#snippet trigger()}
 			<span class="mr-2 inline-flex size-4 items-center justify-center" data-testid="image-update-trigger">
 				<Spinner class="size-4 text-blue-400" />
 			</span>
-		</ArcaneTooltip.Trigger>
-		<ArcaneTooltip.Content side="right" class="max-w-[220px] p-0">
+		{/snippet}
+
+		{#snippet content()}
 			<div class="overflow-hidden rounded-xl">
 				{@render loadingState()}
 			</div>
-		</ArcaneTooltip.Content>
-	</ArcaneTooltip.Root>
+		{/snippet}
+	</UpdateStatusPopover>
 {:else}
-	<ArcaneTooltip.Root interactive>
-		<ArcaneTooltip.Trigger>
+	<UpdateStatusPopover interactive contentClass="max-w-[240px] p-0">
+		{#snippet trigger()}
 			<span class="mr-2 inline-flex size-4 items-center justify-center" data-testid="image-update-trigger">
 				{#if canCheckUpdate}
 					<button
@@ -499,11 +501,12 @@
 					</div>
 				{/if}
 			</span>
-		</ArcaneTooltip.Trigger>
-		<ArcaneTooltip.Content side="right" class="max-w-[240px] p-0">
+		{/snippet}
+
+		{#snippet content()}
 			<div class="overflow-hidden rounded-xl">
 				{@render unknownState()}
 			</div>
-		</ArcaneTooltip.Content>
-	</ArcaneTooltip.Root>
+		{/snippet}
+	</UpdateStatusPopover>
 {/if}

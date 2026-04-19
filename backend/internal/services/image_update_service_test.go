@@ -404,6 +404,32 @@ func newImageUpdateFallbackServer(t *testing.T, repositoryTag, localDigest, remo
 	}))
 }
 
+func newImageUpdateRegistryOnlyServer(t *testing.T, repositoryTag, remoteDigest string) *httptest.Server {
+	t.Helper()
+
+	repository := repositoryTag
+	tag := "latest"
+	if tagIndex := strings.LastIndex(repositoryTag, ":"); tagIndex > strings.LastIndex(repositoryTag, "/") {
+		repository = repositoryTag[:tagIndex]
+		tag = repositoryTag[tagIndex+1:]
+	}
+	manifestPath := fmt.Sprintf("/v2/%s/manifests/%s", repository, tag)
+
+	return httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json"):
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		case r.URL.Path == manifestPath:
+			w.Header().Set("Docker-Content-Digest", remoteDigest)
+			w.WriteHeader(http.StatusOK)
+			return
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+}
+
 func newImageRefResolutionServer(t *testing.T, containers []dockertypescontainer.Summary) *httptest.Server {
 	t.Helper()
 
@@ -552,6 +578,86 @@ func TestImageUpdateService_CheckMultipleImages_UsesRegistryFallback(t *testing.
 	var saved models.ImageUpdateRecord
 	require.NoError(t, db.WithContext(context.Background()).Where("id = ?", "sha256:local-image-id").First(&saved).Error)
 	assert.Equal(t, remoteDigest, stringPtrToString(saved.LatestDigest))
+}
+
+func TestImageUpdateService_CheckMultipleImages_PersistsRefScopedErrorsWhenLocalImageMissing(t *testing.T) {
+	db := setupImageUpdateTestDB(t)
+	remoteDigest := digest.FromString("registry-only-remote").String()
+
+	server := newImageUpdateRegistryOnlyServer(t, "library/nginx:alpine", remoteDigest)
+	defer server.Close()
+
+	serverURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+	imageRef := serverURL.Host + "/library/nginx:alpine"
+
+	registryService := NewContainerRegistryService(db, func(context.Context) (RegistryDaemonClient, error) {
+		return &fakeRegistryDaemonClient{
+			distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+				return client.DistributionInspectResult{}, errors.New("Error response from daemon: Not Found")
+			},
+		}, nil
+	})
+	registryService.distributionHTTPClient = server.Client()
+
+	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
+	eventService := NewEventService(db, nil, nil)
+	svc := NewImageUpdateService(db, nil, registryService, dockerService, eventService, nil)
+
+	results, err := svc.CheckMultipleImages(context.Background(), []string{imageRef}, nil)
+	require.NoError(t, err)
+	require.Contains(t, results, imageRef)
+	require.NotNil(t, results[imageRef])
+	assert.Contains(t, results[imageRef].Error, "failed to inspect image")
+
+	var saved models.ImageUpdateRecord
+	repository := fmt.Sprintf("%s/library/nginx", serverURL.Host)
+	require.NoError(t, db.WithContext(context.Background()).Where("id = ?", buildSyntheticImageUpdateRecordIDInternal(repository, "alpine")).First(&saved).Error)
+	assert.Equal(t, repository, saved.Repository)
+	assert.Equal(t, "alpine", saved.Tag)
+	require.NotNil(t, saved.LastError)
+	assert.Contains(t, *saved.LastError, "failed to inspect image")
+}
+
+func TestImageUpdateService_SaveUpdateResultWithSnapshotInternal_PersistsRegistryOnlySuccessWithSyntheticID(t *testing.T) {
+	db := setupImageUpdateTestDB(t)
+	remoteDigest := digest.FromString("registry-only-success-remote").String()
+
+	server := newImageUpdateRegistryOnlyServer(t, "library/nginx:alpine", remoteDigest)
+	defer server.Close()
+
+	serverURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+	imageRef := serverURL.Host + "/library/nginx:alpine"
+
+	svc := NewImageUpdateService(db, nil, nil, &DockerClientService{client: newTestDockerClient(t, server)}, nil, nil)
+	result := &imageupdate.Response{
+		HasUpdate:      true,
+		UpdateType:     "digest",
+		CurrentVersion: "alpine",
+		LatestVersion:  "alpine",
+		CurrentDigest:  digest.FromString("registry-only-success-local").String(),
+		LatestDigest:   remoteDigest,
+		CheckTime:      time.Now(),
+		ResponseTimeMs: 25,
+	}
+
+	require.NoError(t, svc.saveUpdateResultWithSnapshotInternal(context.Background(), imageRef, result, nil))
+
+	var saved models.ImageUpdateRecord
+	repository := fmt.Sprintf("%s/library/nginx", serverURL.Host)
+	require.NoError(t, db.WithContext(context.Background()).Where("id = ?", buildSyntheticImageUpdateRecordIDInternal(repository, "alpine")).First(&saved).Error)
+	assert.Equal(t, repository, saved.Repository)
+	assert.Equal(t, "alpine", saved.Tag)
+	assert.True(t, saved.HasUpdate)
+	assert.Equal(t, remoteDigest, stringPtrToString(saved.LatestDigest))
+	assert.Nil(t, saved.LastError)
+}
+
+func TestBuildSyntheticImageUpdateRecordIDInternal_UsesUnambiguousSeparator(t *testing.T) {
+	id := buildSyntheticImageUpdateRecordIDInternal("docker.io/library/nginx", "sha256:abcdef")
+
+	require.Equal(t, "ref::docker.io/library/nginx@sha256:abcdef", id)
 }
 
 // TestNotificationSentLogic tests the notification_sent flag behavior

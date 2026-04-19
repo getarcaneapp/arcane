@@ -196,10 +196,9 @@ func isPreflight(c *gin.Context) bool {
 }
 
 func agentSudo(c *gin.Context) {
-	email := "agent@getarcane.app"
 	agentUser := &models.User{
 		BaseModel: models.BaseModel{ID: "agent"},
-		Email:     &email,
+		Email:     new("agent@getarcane.app"),
 		Roles:     []string{"admin"},
 	}
 	c.Set("userID", agentUser.ID)

@@ -320,6 +320,11 @@ export interface SwarmStackSource {
 	envContent?: string;
 }
 
+export interface SwarmStackSourceUpdateRequest {
+	composeContent: string;
+	envContent?: string;
+}
+
 export interface SwarmInfo {
 	id: string;
 	createdAt: string;

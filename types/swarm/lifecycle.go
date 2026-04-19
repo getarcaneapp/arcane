@@ -1,6 +1,8 @@
 package swarm
 
 import (
+	"encoding/json"
+
 	"github.com/moby/moby/api/types/swarm"
 )
 
@@ -10,7 +12,7 @@ type SwarmInitRequest struct {
 	DataPathAddr     string                 `json:"dataPathAddr,omitempty"`
 	DataPathPort     uint32                 `json:"dataPathPort,omitempty"`
 	ForceNewCluster  bool                   `json:"forceNewCluster,omitempty"`
-	Spec             swarm.Spec             `json:"spec"`
+	Spec             json.RawMessage        `json:"spec" doc:"Swarm specification"`
 	AutoLockManagers bool                   `json:"autoLockManagers,omitempty"`
 	Availability     swarm.NodeAvailability `json:"availability,omitempty"`
 	DefaultAddrPool  []string               `json:"defaultAddrPool,omitempty"`
@@ -53,9 +55,9 @@ type SwarmRotateJoinTokensRequest struct {
 }
 
 type SwarmUpdateRequest struct {
-	Version                uint64     `json:"version,omitempty"`
-	Spec                   swarm.Spec `json:"spec"`
-	RotateWorkerToken      bool       `json:"rotateWorkerToken,omitempty"`
-	RotateManagerToken     bool       `json:"rotateManagerToken,omitempty"`
-	RotateManagerUnlockKey bool       `json:"rotateManagerUnlockKey,omitempty"`
+	Version                uint64          `json:"version,omitempty"`
+	Spec                   json.RawMessage `json:"spec" doc:"Updated swarm specification"`
+	RotateWorkerToken      bool            `json:"rotateWorkerToken,omitempty"`
+	RotateManagerToken     bool            `json:"rotateManagerToken,omitempty"`
+	RotateManagerUnlockKey bool            `json:"rotateManagerUnlockKey,omitempty"`
 }

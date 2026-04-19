@@ -33,7 +33,13 @@ var pruneCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Post(cmd.Context(), types.Endpoints.SystemPrune(c.EnvID()), nil)
+		req := system.PruneAllRequest{
+			Containers: &system.PruneContainersOptions{Mode: system.PruneContainerModeStopped},
+			Images:     &system.PruneImagesOptions{Mode: system.PruneImageModeDangling},
+			Networks:   &system.PruneNetworksOptions{Mode: system.PruneNetworkModeUnused},
+		}
+
+		resp, err := c.Post(cmd.Context(), types.Endpoints.SystemPrune(c.EnvID()), req)
 		if err != nil {
 			return fmt.Errorf("failed to prune: %w", err)
 		}

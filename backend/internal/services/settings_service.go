@@ -89,6 +89,11 @@ func (s *SettingsService) refreshSettingsCacheInternal(ctx context.Context) erro
 }
 
 func (s *SettingsService) getDefaultSettings() *models.Settings {
+	return DefaultSettingsConfig()
+}
+
+// DefaultSettingsConfig returns the canonical default settings model used by Arcane.
+func DefaultSettingsConfig() *models.Settings {
 	return &models.Settings{
 		ProjectsDirectory:               models.SettingVariable{Value: "/app/data/projects"},
 		FollowProjectSymlinks:           models.SettingVariable{Value: "false"},
@@ -101,15 +106,24 @@ func (s *SettingsService) getDefaultSettings() *models.Settings {
 		PollingInterval:                 models.SettingVariable{Value: "0 0 * * * *"},
 		EventCleanupInterval:            models.SettingVariable{Value: "0 0 */6 * * *"},
 		AutoInjectEnv:                   models.SettingVariable{Value: "false"},
-		PruneMode:                       models.SettingVariable{Value: "dangling"},
+		PruneMode:                       models.SettingVariable{Value: "dangling"}, //nolint:staticcheck // Legacy prune setting is still seeded for migration compatibility.
 		DefaultDeployPullPolicy:         models.SettingVariable{Value: "missing"},
 		ScheduledPruneEnabled:           models.SettingVariable{Value: "false"},
 		ScheduledPruneInterval:          models.SettingVariable{Value: "0 0 0 * * *"},
-		ScheduledPruneContainers:        models.SettingVariable{Value: "true"},
-		ScheduledPruneImages:            models.SettingVariable{Value: "true"},
-		ScheduledPruneVolumes:           models.SettingVariable{Value: "false"},
-		ScheduledPruneNetworks:          models.SettingVariable{Value: "true"},
-		ScheduledPruneBuildCache:        models.SettingVariable{Value: "false"},
+		ScheduledPruneContainers:        models.SettingVariable{Value: "true"},  //nolint:staticcheck // Legacy prune setting is still seeded for migration compatibility.
+		ScheduledPruneImages:            models.SettingVariable{Value: "true"},  //nolint:staticcheck // Legacy prune setting is still seeded for migration compatibility.
+		ScheduledPruneVolumes:           models.SettingVariable{Value: "false"}, //nolint:staticcheck // Legacy prune setting is still seeded for migration compatibility.
+		ScheduledPruneNetworks:          models.SettingVariable{Value: "true"},  //nolint:staticcheck // Legacy prune setting is still seeded for migration compatibility.
+		ScheduledPruneBuildCache:        models.SettingVariable{Value: "false"}, //nolint:staticcheck // Legacy prune setting is still seeded for migration compatibility.
+		PruneContainerMode:              models.SettingVariable{Value: "stopped"},
+		PruneContainerUntil:             models.SettingVariable{Value: ""},
+		PruneImageMode:                  models.SettingVariable{Value: "dangling"},
+		PruneImageUntil:                 models.SettingVariable{Value: ""},
+		PruneVolumeMode:                 models.SettingVariable{Value: "none"},
+		PruneNetworkMode:                models.SettingVariable{Value: "unused"},
+		PruneNetworkUntil:               models.SettingVariable{Value: ""},
+		PruneBuildCacheMode:             models.SettingVariable{Value: "none"},
+		PruneBuildCacheUntil:            models.SettingVariable{Value: ""},
 		AutoHealEnabled:                 models.SettingVariable{Value: "false"},
 		AutoHealInterval:                models.SettingVariable{Value: "*/30 * * * * *"},
 		AutoHealExcludedContainers:      models.SettingVariable{Value: ""},
@@ -200,6 +214,22 @@ func (s *SettingsService) loadDatabaseSettingsInternal(ctx context.Context, db *
 		return nil, fmt.Errorf("failed to load configuration from the database: %w", err)
 	}
 
+	updated, err := s.ensureGranularPruneSettingsMigratedInternal(ctx, db, loaded) //nolint:staticcheck // Legacy prune migration remains temporarily for backward compatibility.
+	if err != nil {
+		return nil, err
+	}
+	if updated {
+		loaded = nil
+		queryCtx, queryCancel = context.WithTimeout(ctx, 10*time.Second)
+		defer queryCancel()
+		err = db.
+			WithContext(queryCtx).
+			Find(&loaded).Error
+		if err != nil {
+			return nil, fmt.Errorf("failed to reload configuration from the database after prune migration: %w", err)
+		}
+	}
+
 	for _, v := range loaded {
 		err = dest.UpdateField(v.Key, v.Value, false)
 
@@ -212,6 +242,144 @@ func (s *SettingsService) loadDatabaseSettingsInternal(ctx context.Context, db *
 	s.applyEnvOverrides(ctx, dest)
 
 	return dest, nil
+}
+
+// Deprecated: This migration path exists only to lift legacy prune settings into the granular model.
+func (s *SettingsService) ensureGranularPruneSettingsMigratedInternal(ctx context.Context, db *database.DB, loaded []models.SettingVariable) (bool, error) {
+	loadedMap := make(map[string]string, len(loaded))
+	for _, setting := range loaded {
+		loadedMap[setting.Key] = setting.Value
+	}
+
+	missingKeys := []string{
+		"pruneContainerMode",
+		"pruneContainerUntil",
+		"pruneImageMode",
+		"pruneImageUntil",
+		"pruneVolumeMode",
+		"pruneNetworkMode",
+		"pruneNetworkUntil",
+		"pruneBuildCacheMode",
+		"pruneBuildCacheUntil",
+	}
+
+	needsMigration := false
+	for _, key := range missingKeys {
+		if _, ok := loadedMap[key]; !ok {
+			needsMigration = true
+			break
+		}
+	}
+
+	if !needsMigration {
+		return false, nil
+	}
+
+	pruneMode := loadedMap["dockerPruneMode"]
+	if pruneMode == "" {
+		pruneMode = "dangling"
+	}
+
+	valuesToPersist := []models.SettingVariable{
+		{Key: "pruneContainerMode", Value: coalesceSettingValueInternal(loadedMap, migrateLegacyContainerPruneModeInternal(loadedMap["scheduledPruneContainers"]), "pruneContainerMode", "scheduledPruneContainerMode")}, //nolint:staticcheck // Legacy prune migration remains temporarily for backward compatibility.
+		{Key: "pruneContainerUntil", Value: coalesceSettingValueInternal(loadedMap, "", "pruneContainerUntil", "scheduledPruneContainerUntil")},
+		{Key: "pruneImageMode", Value: coalesceSettingValueInternal(loadedMap, migrateLegacyImagePruneModeInternal(pruneMode, loadedMap["scheduledPruneImages"]), "pruneImageMode", "scheduledPruneImageMode")}, //nolint:staticcheck // Legacy prune migration remains temporarily for backward compatibility.
+		{Key: "pruneImageUntil", Value: coalesceSettingValueInternal(loadedMap, "", "pruneImageUntil", "scheduledPruneImageUntil")},
+		{Key: "pruneVolumeMode", Value: coalesceSettingValueInternal(loadedMap, migrateLegacyVolumePruneModeInternal(pruneMode, loadedMap["scheduledPruneVolumes"]), "pruneVolumeMode", "scheduledPruneVolumeMode")}, //nolint:staticcheck // Legacy prune migration remains temporarily for backward compatibility.
+		{Key: "pruneNetworkMode", Value: coalesceSettingValueInternal(loadedMap, migrateLegacyNetworkPruneModeInternal(loadedMap["scheduledPruneNetworks"]), "pruneNetworkMode", "scheduledPruneNetworkMode")},       //nolint:staticcheck // Legacy prune migration remains temporarily for backward compatibility.
+		{Key: "pruneNetworkUntil", Value: coalesceSettingValueInternal(loadedMap, "", "pruneNetworkUntil", "scheduledPruneNetworkUntil")},
+		{Key: "pruneBuildCacheMode", Value: coalesceSettingValueInternal(loadedMap, migrateLegacyBuildCachePruneModeInternal(pruneMode, loadedMap["scheduledPruneBuildCache"]), "pruneBuildCacheMode", "scheduledPruneBuildCacheMode")}, //nolint:staticcheck // Legacy prune migration remains temporarily for backward compatibility.
+		{Key: "pruneBuildCacheUntil", Value: coalesceSettingValueInternal(loadedMap, "", "pruneBuildCacheUntil", "scheduledPruneBuildCacheUntil")},
+	}
+
+	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for _, value := range valuesToPersist {
+			if _, ok := loadedMap[value.Key]; ok {
+				continue
+			}
+			if err := tx.Save(&value).Error; err != nil {
+				return fmt.Errorf("failed to persist migrated prune setting %s: %w", value.Key, err)
+			}
+		}
+		return nil
+	}); err != nil {
+		return false, fmt.Errorf("failed to migrate granular prune settings: %w", err)
+	}
+
+	slog.InfoContext(ctx, "migrated legacy prune settings to granular prune settings")
+	return true, nil
+}
+
+// Deprecated: This migration helper exists only to translate legacy prune settings.
+func migrateLegacyContainerPruneModeInternal(legacyValue string) string {
+	if isLegacyPruneEnabledInternal(legacyValue, true) {
+		return "stopped"
+	}
+	return "none"
+}
+
+// Deprecated: This migration helper exists only to translate legacy prune settings.
+func migrateLegacyImagePruneModeInternal(pruneMode, legacyValue string) string {
+	if !isLegacyPruneEnabledInternal(legacyValue, true) {
+		return "none"
+	}
+	if pruneMode == "all" {
+		return "all"
+	}
+	return "dangling"
+}
+
+// Deprecated: This migration helper exists only to translate legacy prune settings.
+func migrateLegacyVolumePruneModeInternal(pruneMode, legacyValue string) string {
+	if !isLegacyPruneEnabledInternal(legacyValue, false) {
+		return "none"
+	}
+	if pruneMode == "all" {
+		return "all"
+	}
+	return "anonymous"
+}
+
+// Deprecated: This migration helper exists only to translate legacy prune settings.
+func migrateLegacyNetworkPruneModeInternal(legacyValue string) string {
+	if isLegacyPruneEnabledInternal(legacyValue, true) {
+		return "unused"
+	}
+	return "none"
+}
+
+// Deprecated: This migration helper exists only to translate legacy prune settings.
+func migrateLegacyBuildCachePruneModeInternal(pruneMode, legacyValue string) string {
+	if !isLegacyPruneEnabledInternal(legacyValue, false) {
+		return "none"
+	}
+	if pruneMode == "all" {
+		return "all"
+	}
+	return "unused"
+}
+
+func isLegacyPruneEnabledInternal(value string, defaultValue bool) bool {
+	if strings.TrimSpace(value) == "" {
+		return defaultValue
+	}
+
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return defaultValue
+	}
+
+	return parsed
+}
+
+func coalesceSettingValueInternal(loadedMap map[string]string, fallback string, keys ...string) string {
+	for _, key := range keys {
+		if value, ok := loadedMap[key]; ok {
+			return value
+		}
+	}
+
+	return fallback
 }
 
 func (s *SettingsService) loadDatabaseConfigFromEnv(ctx context.Context, db *database.DB) (*models.Settings, error) {
@@ -334,9 +502,14 @@ func (s *SettingsService) isEnvOverrideActiveInternal(key string) bool {
 }
 
 func (s *SettingsService) GetSettings(ctx context.Context) (*models.Settings, error) {
+	settings := s.getEffectiveSettingsConfig(ctx)
+	return settings, nil
+}
+
+func (s *SettingsService) getEffectiveSettingsConfig(ctx context.Context) *models.Settings {
 	settings := s.GetSettingsConfig().Clone()
 	s.applyEnvOverrides(ctx, settings)
-	return settings, nil
+	return settings
 }
 
 // MigrateOidcConfigToFields migrates the legacy JSON authOidcConfig to individual fields,
@@ -512,7 +685,7 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates settings.U
 		s.OnTimeoutSettingsChanged(ctx, changedTimeouts)
 	}
 
-	return settings.ToSettingVariableSlice(false, false), nil
+	return settings.ToSettingVariableSlice(models.SettingVisibilityNonAdmin, false), nil
 }
 
 func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defaultCfg *models.Settings) ([]models.SettingVariable, bool, bool, bool, bool, bool, []libarcane.SettingUpdate, error) {
@@ -585,7 +758,13 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 			changedPolling = true
 		case "autoUpdate", "autoUpdateInterval":
 			changedAutoUpdate = true
-		case "scheduledPruneEnabled", "scheduledPruneInterval", "scheduledPruneContainers", "scheduledPruneImages", "scheduledPruneVolumes", "scheduledPruneNetworks", "scheduledPruneBuildCache":
+		case "scheduledPruneEnabled",
+			"scheduledPruneInterval",
+			"scheduledPruneContainers",
+			"scheduledPruneImages",
+			"scheduledPruneVolumes",
+			"scheduledPruneNetworks",
+			"scheduledPruneBuildCache":
 			changedScheduledPrune = true
 		case "vulnerabilityScanEnabled", "vulnerabilityScanInterval", "trivyNetwork", "trivySecurityOpts", "trivyPrivileged", "trivyResourceLimitsEnabled", "trivyCpuLimit", "trivyMemoryLimitMb", "trivyConcurrentScanContainers":
 			changedVulnerabilityScan = true
@@ -689,7 +868,7 @@ func (s *SettingsService) handleOidcConfigUpdate(ctx context.Context, updates se
 
 func (s *SettingsService) EnsureDefaultSettings(ctx context.Context) error {
 	defaultSettings := s.getDefaultSettings()
-	defaultSettingVars := defaultSettings.ToSettingVariableSlice(true, false)
+	defaultSettingVars := defaultSettings.ToSettingVariableSlice(models.SettingVisibilityAll, false)
 
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for _, defaultSetting := range defaultSettingVars {
@@ -837,8 +1016,8 @@ func (s *SettingsService) upsertEnvSetting(ctx context.Context, tx *gorm.DB, key
 	return nil
 }
 
-func (s *SettingsService) ListSettings(all bool) []models.SettingVariable {
-	return s.GetSettingsConfig().ToSettingVariableSlice(all, true)
+func (s *SettingsService) ListSettings(visibility models.SettingVisibility) []models.SettingVariable {
+	return s.GetSettingsConfig().ToSettingVariableSlice(visibility, true)
 }
 
 // GetSettingType returns the type from the setting metadata
@@ -881,7 +1060,7 @@ func (s *SettingsService) setupInstanceID(ctx context.Context) error {
 }
 
 func (s *SettingsService) GetBoolSetting(ctx context.Context, key string, defaultValue bool) bool {
-	cfg := s.GetSettingsConfig()
+	cfg := s.getEffectiveSettingsConfig(ctx)
 	val, _, _, err := cfg.FieldByKey(key)
 	if err != nil || val == "" {
 		return defaultValue
@@ -894,7 +1073,7 @@ func (s *SettingsService) GetBoolSetting(ctx context.Context, key string, defaul
 }
 
 func (s *SettingsService) GetIntSetting(ctx context.Context, key string, defaultValue int) int {
-	cfg := s.GetSettingsConfig()
+	cfg := s.getEffectiveSettingsConfig(ctx)
 	val, _, _, err := cfg.FieldByKey(key)
 	if err != nil || val == "" {
 		return defaultValue
@@ -907,7 +1086,7 @@ func (s *SettingsService) GetIntSetting(ctx context.Context, key string, default
 }
 
 func (s *SettingsService) GetStringSetting(ctx context.Context, key, defaultValue string) string {
-	cfg := s.GetSettingsConfig()
+	cfg := s.getEffectiveSettingsConfig(ctx)
 	val, _, _, err := cfg.FieldByKey(key)
 	if err != nil || val == "" {
 		return defaultValue

@@ -23,6 +23,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils"
+	httputils "github.com/getarcaneapp/arcane/backend/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils/mapper"
 	"github.com/getarcaneapp/arcane/types/env"
 	tmpl "github.com/getarcaneapp/arcane/types/template"
@@ -45,6 +46,8 @@ type registryFetchMeta struct {
 type TemplateService struct {
 	db              *database.DB
 	httpClient      *http.Client
+	safeHTTPClient  *http.Client
+	lookupIP        httputils.LookupIPFunc
 	settingsService *SettingsService
 
 	remoteMu    sync.RWMutex
@@ -52,6 +55,7 @@ type TemplateService struct {
 
 	registryMu        sync.RWMutex
 	registryFetchMeta map[string]*registryFetchMeta
+	registryErrors    map[string]string // last fetch error per registry ID, cleared on success
 
 	fsSyncMu   sync.Mutex
 	lastFsSync time.Time
@@ -81,13 +85,17 @@ func NewTemplateService(ctx context.Context, db *database.DB, httpClient *http.C
 		slog.WarnContext(ctx, "failed to ensure default templates", "error", err)
 	}
 
-	return &TemplateService{
+	service := &TemplateService{
 		db:                db,
 		httpClient:        httpClient,
+		lookupIP:          httputils.DefaultLookupIP,
 		settingsService:   settingsService,
 		remoteCache:       remoteCache{},
 		registryFetchMeta: make(map[string]*registryFetchMeta),
+		registryErrors:    make(map[string]string),
 	}
+	service.safeHTTPClient = service.newSafeHTTPClientInternal()
+	return service
 }
 
 func (s *TemplateService) ensureRemoteTemplatesLoaded(ctx context.Context) error {
@@ -250,8 +258,7 @@ func (s *TemplateService) GetTemplate(ctx context.Context, id string) (*models.C
 
 	for _, remoteTemplate := range copied {
 		if remoteTemplate.ID == id {
-			t := remoteTemplate
-			return &t, nil
+			return new(remoteTemplate), nil
 		}
 	}
 
@@ -399,6 +406,18 @@ func (s *TemplateService) GetRegistries(ctx context.Context) ([]models.TemplateR
 	return registries, nil
 }
 
+// GetRegistryFetchErrors returns a snapshot of the last fetch error per registry ID.
+// An absent entry means the registry fetched successfully (or has never been attempted).
+func (s *TemplateService) GetRegistryFetchErrors() map[string]string {
+	s.registryMu.RLock()
+	defer s.registryMu.RUnlock()
+	out := make(map[string]string, len(s.registryErrors))
+	for k, v := range s.registryErrors {
+		out[k] = v
+	}
+	return out
+}
+
 func (s *TemplateService) CreateRegistry(ctx context.Context, registry *models.TemplateRegistry) error {
 	// Hydrate metadata if needed
 	if registry.Name == "" || registry.Description == "" {
@@ -529,8 +548,15 @@ func (s *TemplateService) loadRemoteTemplates(ctx context.Context) ([]models.Com
 			remoteTemplates, err := s.fetchRegistryTemplates(groupCtx, &reg)
 			if err != nil {
 				slog.WarnContext(groupCtx, "failed to fetch templates from registry", "registry", reg.Name, "url", reg.URL, "error", err)
+				s.registryMu.Lock()
+				s.registryErrors[reg.ID] = err.Error()
+				s.registryMu.Unlock()
 				return nil // Don't fail the whole group if one registry fails
 			}
+
+			s.registryMu.Lock()
+			delete(s.registryErrors, reg.ID)
+			s.registryMu.Unlock()
 
 			mu.Lock()
 			defer mu.Unlock()
@@ -555,11 +581,11 @@ func (s *TemplateService) FetchRaw(ctx context.Context, url string) ([]byte, err
 }
 
 func (s *TemplateService) doGET(ctx context.Context, url string) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	client, req, err := s.newSafeRequestInternal(ctx, http.MethodGet, url)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request for %s: %w", url, err)
+		return nil, err
 	}
-	resp, err := s.httpClient.Do(req) //nolint:gosec // intentional request to configured template registry URL
+	resp, err := client.Do(req) //nolint:gosec // intentional request to configured template registry URL
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch %s: %w", url, err)
 	}
@@ -583,7 +609,7 @@ func (s *TemplateService) fetchRegistryTemplates(ctx context.Context, reg *model
 	fetchMeta := s.registryFetchMeta[reg.ID]
 	s.registryMu.RUnlock()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reg.URL, nil)
+	client, req, err := s.newSafeRequestInternal(ctx, http.MethodGet, reg.URL)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
@@ -591,7 +617,7 @@ func (s *TemplateService) fetchRegistryTemplates(ctx context.Context, reg *model
 		req.Header.Set("If-Modified-Since", fetchMeta.LastModified)
 	}
 
-	resp, err := s.httpClient.Do(req) //nolint:gosec // intentional request to configured template registry URL
+	resp, err := client.Do(req) //nolint:gosec // intentional request to configured template registry URL
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
@@ -738,6 +764,38 @@ func (s *TemplateService) fetchURL(ctx context.Context, url string) (string, err
 	return string(body), nil
 }
 
+func (s *TemplateService) newSafeHTTPClientInternal() *http.Client {
+	client, err := httputils.NewSafeOutboundHTTPClient(s.httpClient, s.lookupIP)
+	if err != nil {
+		slog.Warn("failed to configure safe HTTP client", "error", err)
+		return nil
+	}
+	return client
+}
+
+func (s *TemplateService) newSafeRequestInternal(ctx context.Context, method, rawURL string) (*http.Client, *http.Request, error) {
+	parsedURL, err := httputils.ValidateSafeRemoteURL(ctx, rawURL, s.lookupIP)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	client := s.safeHTTPClient
+	if client == nil {
+		client = s.newSafeHTTPClientInternal()
+		if client == nil {
+			return nil, nil, fmt.Errorf("failed to configure safe HTTP client")
+		}
+		s.safeHTTPClient = client
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, parsedURL.String(), nil)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create request for %s: %w", rawURL, err)
+	}
+
+	return client, req, nil
+}
+
 func (s *TemplateService) DownloadTemplate(ctx context.Context, remoteTemplate *models.ComposeTemplate) (*models.ComposeTemplate, error) {
 	if !remoteTemplate.IsRemote {
 		return nil, fmt.Errorf("template is not remote")
@@ -872,8 +930,7 @@ func cloneRegistry(registry *models.TemplateRegistry) *models.TemplateRegistry {
 		return nil
 	}
 
-	cloned := *registry
-	return &cloned
+	return new(*registry)
 }
 
 func (s *TemplateService) invalidateRemoteCache() {

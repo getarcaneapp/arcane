@@ -16,6 +16,7 @@ import (
 	utilsregistry "github.com/getarcaneapp/arcane/backend/pkg/utils/registry"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
+	systemtypes "github.com/getarcaneapp/arcane/types/system"
 	"github.com/getarcaneapp/arcane/types/vulnerability"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/image"
@@ -366,17 +367,27 @@ func isUnauthorizedPullErrorInternal(err error) bool {
 	return false
 }
 
-func (s *ImageService) PruneImages(ctx context.Context, dangling bool) (*image.PruneReport, error) {
+func (s *ImageService) PruneImages(ctx context.Context, options systemtypes.PruneImagesOptions) (*image.PruneReport, error) {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	filterArgs := make(client.Filters)
-	if dangling {
+	switch options.Mode {
+	case systemtypes.PruneImageModeNone:
+		return nil, fmt.Errorf("image prune mode none is not allowed")
+	case systemtypes.PruneImageModeDangling:
 		filterArgs = filterArgs.Add("dangling", "true")
-	} else {
+	case systemtypes.PruneImageModeAll:
 		filterArgs = filterArgs.Add("dangling", "false")
+	case systemtypes.PruneImageModeOlderThan:
+		if strings.TrimSpace(options.Until) == "" {
+			return nil, fmt.Errorf("image prune mode olderThan requires until")
+		}
+		filterArgs = filterArgs.Add("until", options.Until)
+	default:
+		return nil, fmt.Errorf("unsupported image prune mode: %s", options.Mode)
 	}
 
 	report, err := dockerClient.ImagePrune(ctx, client.ImagePruneOptions{Filters: filterArgs})
@@ -392,7 +403,8 @@ func (s *ImageService) PruneImages(ctx context.Context, dangling bool) (*image.P
 
 	metadata := models.JSON{
 		"action":         "prune",
-		"dangling":       dangling,
+		"mode":           options.Mode,
+		"until":          options.Until,
 		"imagesDeleted":  len(pruneReport.ImagesDeleted),
 		"spaceReclaimed": pruneReport.SpaceReclaimed,
 	}
@@ -473,6 +485,65 @@ func (s *ImageService) GetUpdateInfoByImageIDs(ctx context.Context, imageIDs []s
 	return result, nil
 }
 
+type imageRefUpdateLookup struct {
+	originalRef          string
+	tag                  string
+	repositoryCandidates map[string]struct{}
+}
+
+// GetUpdateInfoByImageRefs returns persisted update information keyed by the
+// original image reference string.
+func (s *ImageService) GetUpdateInfoByImageRefs(ctx context.Context, imageRefs []string) (map[string]*imagetypes.UpdateInfo, error) {
+	result := make(map[string]*imagetypes.UpdateInfo)
+	if s.db == nil || len(imageRefs) == 0 {
+		return result, nil
+	}
+
+	lookups := buildImageRefUpdateLookupsInternal(imageRefs)
+	if len(lookups) == 0 {
+		return result, nil
+	}
+
+	repositoryCandidates := make([]string, 0)
+	repositorySeen := make(map[string]struct{})
+	tags := make([]string, 0, len(lookups))
+	tagSeen := make(map[string]struct{})
+
+	for _, lookup := range lookups {
+		if _, exists := tagSeen[lookup.tag]; !exists {
+			tagSeen[lookup.tag] = struct{}{}
+			tags = append(tags, lookup.tag)
+		}
+		for repo := range lookup.repositoryCandidates {
+			if _, exists := repositorySeen[repo]; exists {
+				continue
+			}
+			repositorySeen[repo] = struct{}{}
+			repositoryCandidates = append(repositoryCandidates, repo)
+		}
+	}
+
+	if len(repositoryCandidates) == 0 || len(tags) == 0 {
+		return result, nil
+	}
+
+	var updateRecords []models.ImageUpdateRecord
+	if err := s.db.WithContext(ctx).
+		Where("tag IN ? AND repository IN ?", tags, repositoryCandidates).
+		Order("check_time DESC").
+		Find(&updateRecords).Error; err != nil {
+		return nil, fmt.Errorf("failed to fetch update records by image refs: %w", err)
+	}
+
+	for _, lookup := range lookups {
+		if record := selectLatestMatchingImageUpdateRecordInternal(lookup, updateRecords); record != nil {
+			result[lookup.originalRef] = buildUpdateInfo(record)
+		}
+	}
+
+	return result, nil
+}
+
 func (s *ImageService) ListImagesPaginated(ctx context.Context, params pagination.QueryParams) ([]imagetypes.Summary, pagination.Response, error) {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
@@ -546,6 +617,94 @@ func (s *ImageService) ListImagesPaginated(ctx context.Context, params paginatio
 	paginationResp := pagination.BuildResponseFromFilterResult(result, params)
 
 	return result.Items, paginationResp, nil
+}
+
+func buildImageRefUpdateLookupsInternal(imageRefs []string) []imageRefUpdateLookup {
+	lookups := make([]imageRefUpdateLookup, 0, len(imageRefs))
+	seen := make(map[string]struct{}, len(imageRefs))
+
+	for _, rawRef := range imageRefs {
+		lookup, ok := parseImageRefUpdateLookupInternal(rawRef)
+		if !ok {
+			continue
+		}
+		if _, exists := seen[lookup.originalRef]; exists {
+			continue
+		}
+		seen[lookup.originalRef] = struct{}{}
+		lookups = append(lookups, lookup)
+	}
+
+	return lookups
+}
+
+func parseImageRefUpdateLookupInternal(imageRef string) (imageRefUpdateLookup, bool) {
+	trimmedRef := strings.TrimSpace(imageRef)
+	if trimmedRef == "" {
+		return imageRefUpdateLookup{}, false
+	}
+
+	named, err := ref.ParseNormalizedNamed(trimmedRef)
+	if err != nil {
+		return imageRefUpdateLookup{}, false
+	}
+
+	tag := "latest"
+	if tagged, ok := named.(ref.NamedTagged); ok {
+		tag = strings.TrimSpace(tagged.Tag())
+	}
+	if tag == "" {
+		tag = "latest"
+	}
+
+	registryHost := utilsregistry.NormalizeRegistryForComparison(ref.Domain(named))
+	repositoryPath := strings.TrimSpace(ref.Path(named))
+	familiarRepository := strings.TrimSpace(ref.FamiliarName(named))
+
+	repositoryCandidates := map[string]struct{}{}
+	for _, candidate := range []string{
+		repositoryPath,
+		familiarRepository,
+		fmt.Sprintf("%s/%s", registryHost, repositoryPath),
+	} {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" {
+			continue
+		}
+		repositoryCandidates[candidate] = struct{}{}
+	}
+
+	if registryHost == "docker.io" && strings.HasPrefix(repositoryPath, "library/") {
+		repositoryCandidates[strings.TrimPrefix(repositoryPath, "library/")] = struct{}{}
+	}
+
+	return imageRefUpdateLookup{
+		originalRef:          trimmedRef,
+		tag:                  tag,
+		repositoryCandidates: repositoryCandidates,
+	}, true
+}
+
+func selectLatestMatchingImageUpdateRecordInternal(
+	lookup imageRefUpdateLookup,
+	updateRecords []models.ImageUpdateRecord,
+) *models.ImageUpdateRecord {
+	var latest *models.ImageUpdateRecord
+
+	for i := range updateRecords {
+		record := &updateRecords[i]
+		if !strings.EqualFold(strings.TrimSpace(record.Tag), lookup.tag) {
+			continue
+		}
+		if _, exists := lookup.repositoryCandidates[strings.TrimSpace(record.Repository)]; !exists {
+			continue
+		}
+		if latest == nil || record.CheckTime.After(latest.CheckTime) {
+			latest = record
+		}
+	}
+
+	return latest
 }
 
 func convertLabels(labels map[string]string) map[string]any {

@@ -100,13 +100,6 @@ var imagesListCmd = &cobra.Command{
 		}
 		q := u.Query()
 
-		effectiveLimit := cmdutil.EffectiveLimit(cmd, "images", "limit", imagesLimit, 0)
-		if effectiveLimit > 0 {
-			q.Set("limit", fmt.Sprintf("%d", effectiveLimit))
-		}
-		if imagesStart > 0 {
-			q.Set("start", fmt.Sprintf("%d", imagesStart))
-		}
 		if imagesSort != "" {
 			q.Set("sort", imagesSort)
 		}
@@ -118,7 +111,10 @@ var imagesListCmd = &cobra.Command{
 		}
 
 		u.RawQuery = q.Encode()
-		path = u.String()
+		path, err = cmdutil.ApplyPaginationParams(cmd, u.String(), "images", "limit", imagesLimit, 0, "start", imagesStart)
+		if err != nil {
+			return fmt.Errorf("failed to build pagination query: %w", err)
+		}
 
 		log.Debugf("Listing images from: %s", path)
 
@@ -180,7 +176,7 @@ var imagesListCmd = &cobra.Command{
 		}
 
 		output.Table(headers, rows)
-		output.Info("Total: %d images", result.Pagination.TotalItems)
+		output.Showing(len(result.Data), result.Pagination.TotalItems, "images")
 
 		return nil
 	},

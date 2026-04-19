@@ -136,3 +136,15 @@ type StackSource struct {
 	// Required: false
 	EnvContent string `json:"envContent,omitempty"`
 }
+
+type StackSourceUpdateRequest struct {
+	// ComposeContent is the Docker Compose YAML content to persist for the stack.
+	//
+	// Required: true
+	ComposeContent string `json:"composeContent"`
+
+	// EnvContent is the optional environment file content to persist for the stack.
+	//
+	// Required: false
+	EnvContent string `json:"envContent,omitempty"`
+}

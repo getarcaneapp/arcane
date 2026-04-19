@@ -207,11 +207,8 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*update
 			item.Status = "skipped"
 			item.Error = "image already up to date"
 			out.Skipped++
-			// We skip checking for pull, but we still proceed to container update checks
-			// treating this as "successful" for the pipeline, but invalidating oldIDs
-			// because they represent the *current* image, not a stale one.
-			plans[i].pulled = true
-			plans[i].oldIDs = nil
+			// Image is already up to date — do NOT mark as pulled so that
+			// containers using this image are not scheduled for recreation.
 			skipPull = true
 
 			s.logAutoUpdate(ctx, s.severityFromStatus(item.Status), models.JSON{
@@ -627,6 +624,12 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 			out.Checked = 1
 			out.Duration = time.Since(start).String()
 
+			if s.notificationService != nil {
+				if notifErr := s.notificationService.SendContainerUpdateNotification(ctx, containerName, imageRef, inspectBefore.Image, normalizedRef); notifErr != nil {
+					slog.WarnContext(ctx, "Failed to send container update notification", "containerID", containerID, "containerName", containerName, "imageRef", normalizedRef, "error", notifErr.Error())
+				}
+			}
+
 			// Prune old image if no longer in use
 			if inspectBefore.Image != "" {
 				_ = s.pruneImageIDsWithInUseSetInternal(ctx, []string{inspectBefore.Image}, nil)
@@ -654,6 +657,12 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 			Status:       "updated",
 		})
 		out.Updated++
+
+		if s.notificationService != nil {
+			if notifErr := s.notificationService.SendContainerUpdateNotification(ctx, containerName, imageRef, inspectBefore.Image, normalizedRef); notifErr != nil {
+				slog.WarnContext(ctx, "Failed to send container update notification", "containerID", containerID, "containerName", containerName, "imageRef", normalizedRef, "error", notifErr.Error())
+			}
+		}
 
 		// Clear the update record for this exact image ID when no running container still uses it.
 		// This avoids repo-name canonicalization mismatches (e.g. "nginx" vs "docker.io/library/nginx").
@@ -1175,8 +1184,7 @@ func (s *UpdaterService) recordRun(ctx context.Context, item updater.ResourceRes
 		rec.NewImageVersions = newv
 	}
 
-	end := time.Now()
-	rec.EndTime = &end
+	rec.EndTime = new(time.Now())
 
 	return s.db.WithContext(ctx).Create(rec).Error
 }
@@ -1339,8 +1347,7 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 			containersWithDeps[i] = libupdater.ExtractContainerDeps(ctx, dcli, cwd.Container, inspect)
 
 			if p, ok := plansByName[containersWithDeps[i].Name]; ok {
-				inspectCopy := inspect
-				p.inspect = &inspectCopy
+				p.inspect = new(inspect)
 			}
 		}
 	}
@@ -1445,8 +1452,7 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 				continue
 			}
 			inspect := inspectResult.Container
-			inspectCopy := inspect
-			p.inspect = &inspectCopy
+			p.inspect = new(inspect)
 
 			// If this container belongs to a compose project that was missed during the
 			// pre-scan (inspect was nil), register it now so the main loop routes it

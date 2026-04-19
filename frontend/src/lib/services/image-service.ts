@@ -3,6 +3,7 @@ import { environmentStore } from '$lib/stores/environment.store.svelte';
 import type { ImageSummaryDto, ImageUsageCounts, ImageUpdateInfoDto, ImageBuildRecord } from '$lib/types/image.type';
 import type { SearchPaginationSortRequest, Paginated } from '$lib/types/pagination.type';
 import type { AutoUpdateCheck, AutoUpdateResult } from '$lib/types/auto-update.type';
+import type { PruneImagesOptions } from '$lib/types/prune.type';
 import { transformPaginationParams } from '$lib/utils/params.util';
 
 export class ImageService extends BaseAPIService {
@@ -53,10 +54,9 @@ export class ImageService extends BaseAPIService {
 		await this.handleResponse(this.api.delete(`/environments/${envId}/images/${imageId}`, { params: options }));
 	}
 
-	async pruneImages(dangling?: boolean): Promise<any> {
+	async pruneImages(options: PruneImagesOptions): Promise<any> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
-		const body = dangling !== undefined ? { dangling: !!dangling } : {};
-		return this.handleResponse(this.api.post(`/environments/${envId}/images/prune`, body));
+		return this.handleResponse(this.api.post(`/environments/${envId}/images/prune`, options));
 	}
 
 	async checkImageUpdateByID(imageId: string): Promise<ImageUpdateInfoDto> {
@@ -69,6 +69,24 @@ export class ImageService extends BaseAPIService {
 		return this.handleResponse(this.api.post(`/environments/${envId}/image-updates/check-all`, {}));
 	}
 
+	async checkMultipleImages(imageRefs: string[]): Promise<Record<string, ImageUpdateInfoDto>> {
+		const envId = await environmentStore.getCurrentEnvironmentId();
+		return this.handleResponse(this.api.post(`/environments/${envId}/image-updates/check-batch`, { imageRefs }));
+	}
+
+	async getUpdateInfoByRefs(imageRefs: string[]): Promise<Record<string, ImageUpdateInfoDto>> {
+		const envId = await environmentStore.getCurrentEnvironmentId();
+		if (imageRefs.length === 0) {
+			return {};
+		}
+
+		return this.handleResponse(
+			this.api.get(`/environments/${envId}/image-updates/by-refs`, {
+				params: { imageRefs: imageRefs.join(',') }
+			})
+		);
+	}
+
 	async runAutoUpdate(options?: AutoUpdateCheck): Promise<AutoUpdateResult> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		return this.handleResponse(this.api.post(`/environments/${envId}/updater/run`, options));
@@ -78,13 +96,7 @@ export class ImageService extends BaseAPIService {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		const formData = new FormData();
 		formData.append('file', file);
-		return this.handleResponse(
-			this.api.post(`/environments/${envId}/images/upload`, formData, {
-				headers: {
-					'Content-Type': 'multipart/form-data'
-				}
-			})
-		);
+		return this.handleResponse(this.api.post(`/environments/${envId}/images/upload`, formData));
 	}
 
 	async getImageBuilds(options?: SearchPaginationSortRequest): Promise<Paginated<ImageBuildRecord>> {

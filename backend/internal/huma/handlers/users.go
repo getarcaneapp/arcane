@@ -314,8 +314,7 @@ func (h *UserHandler) UpdateUser(ctx context.Context, input *UpdateUserInput) (*
 		userModel.PasswordHash = hashedPassword
 	}
 
-	now := time.Now()
-	userModel.UpdatedAt = &now
+	userModel.UpdatedAt = new(time.Now())
 
 	updatedUser, err := h.userService.UpdateUser(ctx, userModel)
 	if err != nil {

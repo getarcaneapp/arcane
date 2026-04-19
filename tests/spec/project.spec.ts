@@ -6,6 +6,9 @@ import { TEST_COMPOSE_YAML, TEST_ENV_FILE } from '../setup/project.data';
 const ROUTES = {
 	page: '/projects',
 	apiProjects: '/api/environments/0/projects',
+	apiImageUpdatesCheckAll: '/api/environments/0/image-updates/check-all',
+	apiImageUpdatesCheckBatch: '/api/environments/0/image-updates/check-batch',
+	apiUpdaterRun: '/api/environments/0/updater/run',
 	newProject: '/projects/new'
 };
 
@@ -36,6 +39,79 @@ async function getCodeMirrorValue(editor: Locator) {
 
 		return (node as { textContent?: string | null }).textContent ?? '';
 	});
+}
+
+async function openDropdownMenu(page: Page, trigger: Locator) {
+	await expect(trigger).toBeVisible();
+	await trigger.click();
+
+	const menu = page.locator('[data-slot="dropdown-menu-content"]:visible').last();
+	await expect(menu).toBeVisible();
+
+	return menu;
+}
+
+async function clickProjectsPageUpdateAction(page: Page) {
+	const updateProjectsButton = page.getByRole('button', { name: 'Update Projects', exact: true });
+	if (await updateProjectsButton.isVisible().catch(() => false)) {
+		await updateProjectsButton.click();
+		return;
+	}
+
+	const moreActionsButton = page.getByRole('button', { name: 'More actions', exact: true });
+	await expect(moreActionsButton).toBeVisible();
+	await moreActionsButton.click();
+	await page.getByRole('menuitem', { name: 'Update Projects', exact: true }).click();
+}
+
+async function clickProjectDetailUpdateAction(page: Page) {
+	const recheckButton = page.getByRole('button', { name: 'Re-check Updates', exact: true }).first();
+	if (await recheckButton.isVisible().catch(() => false)) {
+		await recheckButton.click();
+		return true;
+	}
+
+	const updateTrigger = page.getByTestId('project-update-trigger').first();
+	if (!(await updateTrigger.isVisible().catch(() => false))) {
+		return false;
+	}
+	await updateTrigger.click();
+
+	if (!(await recheckButton.isVisible().catch(() => false))) {
+		return false;
+	}
+
+	await recheckButton.click();
+	return true;
+}
+
+async function fetchProjectDetail(page: Page, projectId: string): Promise<Project | null> {
+	const res = await page.request.get(`/api/environments/0/projects/${projectId}`);
+	if (!res.ok()) {
+		return null;
+	}
+
+	const body = await res.json().catch(() => null as any);
+	if (!body) return null;
+	if (body.project) return body.project as Project;
+	if (body.data?.project) return body.data.project as Project;
+	if (body.data) return body.data as Project;
+	return body as Project;
+}
+
+async function findProjectWithDetailUpdateAction(page: Page): Promise<Project | null> {
+	for (const project of realProjects) {
+		if (Number(project.serviceCount ?? 0) <= 0) {
+			continue;
+		}
+
+		const detail = await fetchProjectDetail(page, project.id || project.name);
+		if ((detail?.updateInfo?.imageRefs?.length ?? 0) > 0) {
+			return detail;
+		}
+	}
+
+	return null;
 }
 
 function getPathname(url: string): string {
@@ -116,8 +192,8 @@ async function destroyProjectByNameViaUI(page: Page, projectName: string) {
 		return;
 	}
 
-	await row.getByRole('button', { name: 'Open menu' }).click();
-	await page.getByRole('menuitem', { name: 'Destroy', exact: true }).click();
+	const menu = await openDropdownMenu(page, row.getByRole('button', { name: 'Open menu' }));
+	await menu.getByRole('menuitem', { name: 'Destroy', exact: true }).click();
 
 	const dialog = page.getByRole('dialog');
 	await expect(dialog).toBeVisible();
@@ -175,28 +251,30 @@ test.describe('Projects Page', () => {
 		await expect(page.locator('table')).toBeVisible();
 	});
 
+	test('should display the updates column', async ({ page }) => {
+		await expect(page.getByRole('columnheader', { name: 'Updates' })).toBeVisible();
+	});
+
 	test('should show project actions menu', async ({ page }) => {
 		test.skip(!realProjects.length, 'No projects available for actions menu test');
 
 		await page.waitForLoadState('networkidle');
 		const firstRow = page.locator('tbody tr').first();
-		const menuButton = firstRow.getByRole('button', { name: 'Open menu' });
-		await expect(menuButton).toBeVisible();
-		await menuButton.click();
+		const menu = await openDropdownMenu(page, firstRow.getByRole('button', { name: 'Open menu' }));
 
-		await expect(page.getByRole('menuitem', { name: 'Edit' })).toBeVisible();
+		await expect(menu.getByRole('menuitem', { name: 'Edit' })).toBeVisible();
 		// Check for at least one of the state action buttons (Up/Down/Restart)
-		const upItem = page.getByRole('menuitem', { name: 'Up', exact: true });
-		const downItem = page.getByRole('menuitem', { name: 'Down', exact: true });
-		const restartItem = page.getByRole('menuitem', {
+		const upItem = menu.getByRole('menuitem', { name: 'Up', exact: true });
+		const downItem = menu.getByRole('menuitem', { name: 'Down', exact: true });
+		const restartItem = menu.getByRole('menuitem', {
 			name: 'Restart',
 			exact: true
 		});
 		const hasStateAction =
 			(await upItem.count()) > 0 || (await downItem.count()) > 0 || (await restartItem.count()) > 0;
 		expect(hasStateAction).toBe(true);
-		await expect(page.getByRole('menuitem', { name: 'Pull & Redeploy' })).toBeVisible();
-		await expect(page.getByRole('menuitem', { name: 'Destroy' })).toBeVisible();
+		await expect(menu.getByRole('menuitem', { name: 'Pull & Redeploy' })).toBeVisible();
+		await expect(menu.getByRole('menuitem', { name: 'Destroy' })).toBeVisible();
 	});
 
 	test('should navigate to project details when project name is clicked', async ({ page }) => {
@@ -229,6 +307,34 @@ test.describe('Projects Page', () => {
 			await expect(page.getByRole('link', { name: firstProject.name })).toBeVisible();
 			await searchInput.clear();
 		}
+	});
+
+	test('should check project updates without triggering updater run', async ({ page }) => {
+		let checkAllRequests = 0;
+		let updaterRunRequests = 0;
+
+		await page.route('**/api/environments/*/image-updates/check-all', async (route) => {
+			checkAllRequests += 1;
+			await route.fulfill({
+				status: 200,
+				contentType: 'application/json',
+				body: JSON.stringify({ success: true, data: {} })
+			});
+		});
+
+		await page.route('**/api/environments/*/updater/run', async (route) => {
+			updaterRunRequests += 1;
+			await route.fulfill({
+				status: 200,
+				contentType: 'application/json',
+				body: JSON.stringify({ success: true, data: { items: [] } })
+			});
+		});
+
+		await clickProjectsPageUpdateAction(page);
+
+		await expect.poll(() => checkAllRequests).toBe(1);
+		expect(updaterRunRequests).toBe(0);
 	});
 
 	test('should display project status badges', async ({ page }) => {
@@ -545,6 +651,73 @@ test.describe('New Compose Project Page', () => {
 		}
 	});
 
+	test('should allow redeploy requests to complete after 10 seconds without client timeout', async ({
+		page
+	}) => {
+		test.slow();
+
+		const projectName = `test-redeploy-timeout-${Date.now()}`;
+		let redeployRequestStartedAt: number | undefined;
+
+		try {
+			await createProjectViaUI(page, projectName);
+			await page.goto(ROUTES.page);
+			await page.waitForLoadState('networkidle');
+
+			await page.route('**/api/environments/*/projects/*/redeploy', async (route) => {
+				if (route.request().method() !== 'POST') {
+					await route.continue();
+					return;
+				}
+
+				redeployRequestStartedAt = Date.now();
+				await new Promise((resolve) => setTimeout(resolve, 11_000));
+				await route.fulfill({
+					status: 200,
+					contentType: 'application/json',
+					body: JSON.stringify({
+						success: true,
+						data: {
+							message: 'Project redeployed successfully'
+						}
+					})
+				});
+			});
+
+			const searchInput = page.getByPlaceholder('Search…');
+			await expect(searchInput).toBeVisible();
+			const filteredProjectsResponse = page.waitForResponse((response) => {
+				if (response.request().method() !== 'GET') return false;
+				return (
+					/\/api\/environments\/[^/]+\/projects(?:\?|$)/.test(response.url()) &&
+					response.url().includes(`search=${projectName}`)
+				);
+			});
+			await searchInput.fill(projectName);
+			await filteredProjectsResponse;
+
+			const row = page.locator('tbody tr').filter({ hasText: projectName }).first();
+			await expect(row).toBeVisible();
+			const menu = await openDropdownMenu(page, row.getByRole('button', { name: 'Open menu' }));
+			const redeployMenuItem = menu.getByRole('menuitem', { name: 'Pull & Redeploy' });
+			await expect(redeployMenuItem).toBeVisible();
+			await redeployMenuItem.click();
+
+			await expect
+				.poll(() => redeployRequestStartedAt, {
+					message: 'Expected the redeploy request to be issued'
+				})
+				.toBeDefined();
+
+			await expect(page.getByText('Project pulled successfully.', { exact: true })).toBeVisible({
+				timeout: 20_000
+			});
+			expect(Date.now() - redeployRequestStartedAt!).toBeGreaterThanOrEqual(11_000);
+		} finally {
+			await destroyProjectByNameViaUI(page, projectName);
+		}
+	});
+
 	test('should destroy the project and remove files from disk', async ({ page }) => {
 		const projectName = `test-destroy-${Date.now()}`;
 
@@ -811,6 +984,50 @@ test.describe('Project Detail Page', () => {
 		await expect(page.getByRole('tab', { name: /Logs/i })).toBeVisible();
 	});
 
+	test('should check updates for the current project via the image batch endpoint', async ({
+		page
+	}) => {
+		const projectWithServices = await findProjectWithDetailUpdateAction(page);
+		test.skip(
+			!projectWithServices,
+			'No project with detail-page update action available for project update check test'
+		);
+
+		let batchRequests = 0;
+		let updaterRunRequests = 0;
+
+		await page.route('**/api/environments/*/image-updates/check-batch', async (route) => {
+			batchRequests += 1;
+			const body = route.request().postDataJSON() as { imageRefs?: string[] } | null;
+			expect(Array.isArray(body?.imageRefs)).toBe(true);
+			expect((body?.imageRefs?.length ?? 0) > 0).toBe(true);
+
+			await route.fulfill({
+				status: 200,
+				contentType: 'application/json',
+				body: JSON.stringify({ success: true, data: {} })
+			});
+		});
+
+		await page.route('**/api/environments/*/updater/run', async (route) => {
+			updaterRunRequests += 1;
+			await route.fulfill({
+				status: 200,
+				contentType: 'application/json',
+				body: JSON.stringify({ success: true, data: { items: [] } })
+			});
+		});
+
+		await page.goto(`/projects/${projectWithServices!.id || projectWithServices!.name}`);
+		await page.waitForLoadState('networkidle');
+
+		const clicked = await clickProjectDetailUpdateAction(page);
+		test.skip(!clicked, 'Current project detail view has no clickable update action');
+
+		await expect.poll(() => batchRequests).toBe(1);
+		expect(updaterRunRequests).toBe(0);
+	});
+
 	test('should display services tab content', async ({ page }) => {
 		test.skip(!realProjects.length, 'No projects available for services test');
 
@@ -962,6 +1179,74 @@ test.describe('Project Detail Page', () => {
 		await expect(page.getByRole('heading', { name: 'compose.yaml' })).toBeVisible();
 		await expect(page.getByRole('button', { name: 'Save', exact: true }).first()).toBeVisible();
 		await expect(page.getByRole('button', { name: 'Save', exact: true }).first()).toBeEnabled();
+	});
+
+	test('should keep saved compose edits visible without a page refresh', async ({ page }) => {
+		const projectName = `save-persist-${Date.now()}`;
+		await createProjectViaUI(page, projectName);
+
+		try {
+			const configTab = page.getByRole('tab', { name: /Configuration|Config/i });
+			await configTab.click();
+			await page.waitForLoadState('networkidle');
+
+			let composeEditor = page.locator('.cm-editor:visible').first();
+			await expect(composeEditor).toBeVisible();
+
+			const marker = `ARCANE_SAVE_PERSIST_${Date.now()}`;
+			const composeContent = composeEditor.locator('.cm-content').first();
+			await expect(composeContent).toBeVisible();
+			await composeContent.click({ position: { x: 10, y: 10 } });
+			await page.keyboard.type(`# ${marker}\n`, { delay: 0 });
+
+			const saveButtons = page.getByRole('button', { name: 'Save', exact: true });
+			await expect(saveButtons.first()).toBeVisible();
+			await expect(saveButtons.first()).toBeEnabled();
+			await saveButtons.first().click();
+
+			await expect(saveButtons).toHaveCount(0);
+
+			composeEditor = page.locator('.cm-editor:visible').first();
+			await expect
+				.poll(async () => getCodeMirrorValue(composeEditor), {
+					message: 'expected saved compose editor content to remain visible'
+				})
+				.toContain(marker);
+
+			const layoutSwitch = page.getByRole('switch', {
+				name: /Classic|Tree View/i
+			});
+			if (await layoutSwitch.count()) {
+				await layoutSwitch.click();
+				await expect(page.locator('.cm-editor:visible').first()).toBeVisible();
+
+				composeEditor = page.locator('.cm-editor:visible').first();
+				await expect
+					.poll(async () => getCodeMirrorValue(composeEditor), {
+						message: 'expected saved compose editor content to persist across layout changes'
+					})
+					.toContain(marker);
+			}
+
+			await page.reload();
+			await page.waitForLoadState('networkidle');
+
+			const restoredConfigTab = page.getByRole('tab', { name: /Configuration|Config/i });
+			if ((await restoredConfigTab.getAttribute('aria-selected')) !== 'true') {
+				await restoredConfigTab.click();
+				await page.waitForLoadState('networkidle');
+			}
+
+			composeEditor = page.locator('.cm-editor:visible').first();
+			await expect(composeEditor).toBeVisible();
+			await expect
+				.poll(async () => getCodeMirrorValue(composeEditor), {
+					message: 'expected saved compose editor content to persist after reload'
+				})
+				.toContain(marker);
+		} finally {
+			await destroyCurrentProjectViaUI(page);
+		}
 	});
 
 	test('should show logs tab for running projects', async ({ page }) => {

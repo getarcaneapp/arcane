@@ -2,19 +2,25 @@ package services
 
 import (
 	"context"
+	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	glsqlite "github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
+	httputils "github.com/getarcaneapp/arcane/backend/pkg/utils/httpx"
 )
 
 func setupTemplateServiceTestDB(t *testing.T) *database.DB {
@@ -37,6 +43,32 @@ func setTestWorkingDir(t *testing.T, dir string) {
 	t.Cleanup(func() {
 		require.NoError(t, os.Chdir(originalDir))
 	})
+}
+
+func makePublicTestClient(t *testing.T, server *httptest.Server) (*http.Client, httputils.LookupIPFunc, string) {
+	t.Helper()
+
+	parsedURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+
+	listenerAddr := server.Listener.Addr().String()
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		dialer := &net.Dialer{}
+		return dialer.DialContext(ctx, network, listenerAddr)
+	}
+
+	client := &http.Client{
+		Transport: transport,
+		Timeout:   10 * time.Second,
+	}
+
+	lookupIP := func(ctx context.Context, host string) ([]net.IP, error) {
+		return []net.IP{net.ParseIP("93.184.216.34")}, nil
+	}
+
+	baseURL := fmt.Sprintf("http://templates.example.test:%s", parsedURL.Port())
+	return client, lookupIP, baseURL
 }
 
 func TestResolveTemplateIconURL(t *testing.T) {
@@ -164,12 +196,14 @@ services:
 	}))
 	defer server.Close()
 
-	registryURL := server.URL + "/registry.json"
-	okComposeURL = server.URL + "/ok.yml"
-	badComposeURL = server.URL + "/missing.yml"
+	client, lookupIP, baseURL := makePublicTestClient(t, server)
+	registryURL := baseURL + "/registry.json"
+	okComposeURL = baseURL + "/ok.yml"
+	badComposeURL = baseURL + "/missing.yml"
 
 	service := &TemplateService{
-		httpClient:        server.Client(),
+		httpClient:        client,
+		lookupIP:          lookupIP,
 		registryFetchMeta: make(map[string]*registryFetchMeta),
 	}
 	registry := &models.TemplateRegistry{
@@ -218,9 +252,12 @@ services:
 	}))
 	defer server.Close()
 
+	client, lookupIP, baseURL := makePublicTestClient(t, server)
+
 	service := &TemplateService{
 		db:                setupTemplateServiceTestDB(t),
-		httpClient:        server.Client(),
+		httpClient:        client,
+		lookupIP:          lookupIP,
 		registryFetchMeta: make(map[string]*registryFetchMeta),
 	}
 
@@ -232,8 +269,8 @@ services:
 		IsCustom:    false,
 		RegistryID:  stringPtr("reg-1"),
 		Metadata: &models.ComposeTemplateMetadata{
-			RemoteURL: stringPtr(server.URL + "/compose.yaml"),
-			EnvURL:    stringPtr(server.URL + "/template.env"),
+			RemoteURL: stringPtr(baseURL + "/compose.yaml"),
+			EnvURL:    stringPtr(baseURL + "/template.env"),
 			IconURL:   stringPtr("https://cdn.example/download.png"),
 		},
 	}
@@ -251,6 +288,19 @@ services:
 	require.NotNil(t, stored.Metadata)
 	require.NotNil(t, stored.Metadata.IconURL)
 	require.Equal(t, "https://cdn.example/download.png", *stored.Metadata.IconURL)
+}
+
+func TestFetchRaw_BlocksUnsafeRemoteURL(t *testing.T) {
+	service := &TemplateService{
+		httpClient:        http.DefaultClient,
+		lookupIP:          httputils.DefaultLookupIP,
+		registryFetchMeta: make(map[string]*registryFetchMeta),
+	}
+
+	_, err := service.FetchRaw(context.Background(), "http://127.0.0.1:8080/registry.json")
+	require.Error(t, err)
+	var unsafeErr *common.UnsafeRemoteURLError
+	require.ErrorAs(t, err, &unsafeErr)
 }
 
 func TestSyncFilesystemTemplatesInternal_PopulatesIconURL(t *testing.T) {

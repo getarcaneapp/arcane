@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	dockerutils "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
@@ -19,6 +20,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/containerstats"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/pkg/projects"
 	containertypes "github.com/getarcaneapp/arcane/types/container"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
@@ -34,6 +36,7 @@ type ContainerService struct {
 	eventService    *EventService
 	imageService    *ImageService
 	settingsService *SettingsService
+	projectService  *ProjectService
 	statsHistory    containerstats.Store
 }
 
@@ -49,13 +52,14 @@ type ContainerListResult struct {
 	Counts     containertypes.StatusCounts
 }
 
-func NewContainerService(db *database.DB, eventService *EventService, dockerService *DockerClientService, imageService *ImageService, settingsService *SettingsService) *ContainerService {
+func NewContainerService(db *database.DB, eventService *EventService, dockerService *DockerClientService, imageService *ImageService, settingsService *SettingsService, projectService *ProjectService) *ContainerService {
 	return &ContainerService{
 		db:              db,
 		eventService:    eventService,
 		dockerService:   dockerService,
 		imageService:    imageService,
 		settingsService: settingsService,
+		projectService:  projectService,
 	}
 }
 
@@ -183,8 +187,7 @@ func (s *ContainerService) prepareContainerForRedeployInternal(ctx context.Conte
 		return nil
 	}
 
-	timeout := 30
-	_, err := dockerClient.ContainerStop(ctx, containerID, client.ContainerStopOptions{Timeout: &timeout})
+	_, err := dockerClient.ContainerStop(ctx, containerID, client.ContainerStopOptions{Timeout: new(30)})
 	if err == nil {
 		return nil
 	}
@@ -270,8 +273,7 @@ func (s *ContainerService) StopContainer(ctx context.Context, containerID string
 		return fmt.Errorf("failed to log action: %w", err)
 	}
 
-	timeout := 30
-	_, err = dockerClient.ContainerStop(ctx, containerID, client.ContainerStopOptions{Timeout: &timeout})
+	_, err = dockerClient.ContainerStop(ctx, containerID, client.ContainerStopOptions{Timeout: new(30)})
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, models.JSON{"action": "stop"})
 	}
@@ -300,6 +302,127 @@ func (s *ContainerService) RestartContainer(ctx context.Context, containerID str
 		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, models.JSON{"action": "restart"})
 	}
 	return err
+}
+
+// tryRedeployViaComposeProjectInternal attempts to redeploy a compose-managed
+// container by delegating to ProjectService.UpdateProjectServices, which loads
+// the compose project with full project_directory / env-file / include context
+// and runs pull/stop/up for just the target service.
+//
+// Return semantics:
+//   - handled=false: this container is not eligible for the compose path (no
+//     labels, project not registered in Arcane's DB, etc.). The caller should
+//     fall back to the standalone Docker-API redeploy.
+//   - handled=true, err==nil: compose path ran successfully; newContainerID is
+//     the ID of the recreated container (or the original ID if it couldn't be
+//     re-located by labels).
+//   - handled=true, err!=nil: compose path was attempted and failed. The
+//     caller MUST surface the error and MUST NOT fall back to the standalone
+//     path, which would clobber whatever partial state ComposeUp left behind.
+func (s *ContainerService) tryRedeployViaComposeProjectInternal(ctx context.Context, containerInfo container.InspectResponse, containerID, containerName string, user models.User) (string, bool, error) {
+	if s.projectService == nil || containerInfo.Config == nil {
+		return "", false, nil
+	}
+	labels := containerInfo.Config.Labels
+	projectName := strings.TrimSpace(labels["com.docker.compose.project"])
+	serviceName := strings.TrimSpace(labels["com.docker.compose.service"])
+	if projectName == "" || serviceName == "" {
+		return "", false, nil
+	}
+
+	proj, err := s.projectService.GetProjectByComposeName(ctx, projectName)
+	if err != nil {
+		// Distinguish "not found" (safe to fall back to standalone) from real DB
+		// errors (should surface so a transient failure doesn't silently recreate
+		// the container from stale cached config).
+		if strings.Contains(err.Error(), "not found") {
+			slog.WarnContext(ctx, "RedeployContainer: compose project not registered, falling back to standalone redeploy",
+				"containerId", containerID,
+				"project", projectName,
+				"service", serviceName,
+			)
+			return "", false, nil
+		}
+		return "", true, fmt.Errorf("failed to look up compose project %s: %w", projectName, err)
+	}
+	if proj == nil {
+		slog.WarnContext(ctx, "RedeployContainer: compose project not registered, falling back to standalone redeploy",
+			"containerId", containerID,
+			"project", projectName,
+			"service", serviceName,
+		)
+		return "", false, nil
+	}
+
+	slog.InfoContext(ctx, "RedeployContainer: detected compose container, using project-based redeploy",
+		"containerId", containerID,
+		"project", projectName,
+		"service", serviceName,
+	)
+
+	if err := s.projectService.UpdateProjectServices(ctx, proj.ID, []string{serviceName}, user); err != nil {
+		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, containerName, user.ID, user.Username, "0", err, models.JSON{
+			"action":      "redeploy",
+			"step":        "compose_update_services",
+			"project":     projectName,
+			"service":     serviceName,
+			"projectId":   proj.ID,
+			"projectName": proj.Name,
+		})
+		return "", true, fmt.Errorf("compose redeploy failed for %s/%s: %w", projectName, serviceName, err)
+	}
+
+	newID := s.findComposeServiceContainerIDInternal(ctx, projectName, serviceName)
+	if newID == "" {
+		// Recreated successfully but couldn't locate the new container; return the
+		// original ID so the handler can degrade gracefully.
+		newID = containerID
+	}
+
+	if logErr := s.eventService.LogContainerEvent(ctx, models.EventTypeContainerDeploy, newID, containerName, user.ID, user.Username, "0", models.JSON{
+		"action":        "redeploy",
+		"containerId":   newID,
+		"containerName": containerName,
+		"project":       projectName,
+		"service":       serviceName,
+		"projectId":     proj.ID,
+		"via":           "compose",
+	}); logErr != nil {
+		slog.WarnContext(ctx, "failed to log compose redeploy event", "err", logErr)
+	}
+
+	return newID, true, nil
+}
+
+// findComposeServiceContainerIDInternal locates the (presumably newly recreated)
+// container for a given compose project+service pair using the compose SDK's Ps
+// command. When multiple containers match (a stopped predecessor can briefly
+// linger during recreation), the first running one is preferred; otherwise the
+// first match is returned. Returns "" when none found.
+func (s *ContainerService) findComposeServiceContainerIDInternal(ctx context.Context, projectName, serviceName string) string {
+	containers, err := projects.ComposePs(ctx, &composetypes.Project{Name: projectName}, []string{serviceName}, true)
+	if err != nil {
+		slog.WarnContext(ctx, "failed to resolve container via compose ps after redeploy",
+			"project", projectName,
+			"service", serviceName,
+			"err", err,
+		)
+		return ""
+	}
+
+	var firstMatch string
+	for _, c := range containers {
+		if c.Service != serviceName {
+			continue
+		}
+		if firstMatch == "" {
+			firstMatch = c.ID
+		}
+		if c.State == "running" {
+			return c.ID
+		}
+	}
+	return firstMatch
 }
 
 func (s *ContainerService) RedeployContainer(ctx context.Context, containerID string, user models.User) (string, error) {
@@ -335,6 +458,18 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 	imageName := containerInfo.Config.Image
 	wasRunning := containerInfo.State != nil && containerInfo.State.Running
 	apiVersion := libarcane.DetectDockerAPIVersion(ctx, dockerClient)
+
+	// If this container belongs to a known compose project, redeploy through the
+	// compose-aware path so that compose file changes (healthchecks, env, etc.) and
+	// the project's include/project_directory/env-file context are honored. The
+	// standalone Docker-API path below only clones the existing container config
+	// from the daemon and would silently ignore any compose edits.
+	if newID, handled, composeErr := s.tryRedeployViaComposeProjectInternal(ctx, containerInfo, containerID, containerName, user); handled {
+		if composeErr != nil {
+			return "", composeErr
+		}
+		return newID, nil
+	}
 
 	metadata := models.JSON{
 		"action":        "redeploy",
@@ -422,28 +557,36 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 	return createResp.ID, nil
 }
 
-func (s *ContainerService) GetContainerByID(ctx context.Context, id string) (*container.InspectResponse, error) {
+func (s *ContainerService) GetContainerByReference(ctx context.Context, ref string) (*container.InspectResponse, error) {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	containerInspect, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, id, client.ContainerInspectOptions{})
+	containerInspect, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, ref, client.ContainerInspectOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("container not found: %w", err)
 	}
 
-	containerInfo := containerInspect.Container
-	return &containerInfo, nil
+	return new(containerInspect.Container), nil
 }
 
-// GetContainerNameByID resolves a container's clean name from its Docker ID.
-func (s *ContainerService) GetContainerNameByID(ctx context.Context, id string) (string, error) {
-	info, err := s.GetContainerByID(ctx, id)
+func (s *ContainerService) GetContainerByID(ctx context.Context, id string) (*container.InspectResponse, error) {
+	return s.GetContainerByReference(ctx, id)
+}
+
+// GetContainerNameByReference resolves a container's clean name from a Docker ID or name.
+func (s *ContainerService) GetContainerNameByReference(ctx context.Context, ref string) (string, error) {
+	info, err := s.GetContainerByReference(ctx, ref)
 	if err != nil {
 		return "", err
 	}
 	return strings.TrimPrefix(info.Name, "/"), nil
+}
+
+// GetContainerNameByID resolves a container's clean name from its Docker ID.
+func (s *ContainerService) GetContainerNameByID(ctx context.Context, id string) (string, error) {
+	return s.GetContainerNameByReference(ctx, id)
 }
 
 func (s *ContainerService) DeleteContainer(ctx context.Context, containerID string, force bool, removeVolumes bool, user models.User) error {
@@ -572,8 +715,7 @@ func (s *ContainerService) CreateContainer(ctx context.Context, config *containe
 		return nil, fmt.Errorf("failed to inspect created container: %w", err)
 	}
 
-	containerInfo := containerJSON.Container
-	return &containerInfo, nil
+	return new(containerJSON.Container), nil
 }
 
 func (s *ContainerService) StreamStats(ctx context.Context, containerID string, statsChan chan<- any) error {
@@ -1140,6 +1282,20 @@ func (s *ContainerService) buildContainerFilterAccessors() []pagination.FilterAc
 					return c.UpdateInfo != nil && c.UpdateInfo.Error != ""
 				case "unknown":
 					return c.UpdateInfo == nil
+				default:
+					return true
+				}
+			},
+		},
+		{
+			Key: "standalone",
+			Fn: func(c containertypes.Summary, filterValue string) bool {
+				isStandalone := strings.TrimSpace(c.Labels["com.docker.compose.project"]) == ""
+				switch filterValue {
+				case "true", "1":
+					return isStandalone
+				case "false", "0":
+					return !isStandalone
 				default:
 					return true
 				}

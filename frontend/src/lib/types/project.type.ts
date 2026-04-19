@@ -48,7 +48,7 @@ export interface ProjectService {
 export interface IncludeFile {
 	path: string;
 	relativePath: string;
-	content: string;
+	content?: string;
 }
 
 // RuntimeService contains live container status information
@@ -62,6 +62,19 @@ export interface RuntimeService {
 	health?: string;
 	iconUrl?: string;
 	serviceConfig?: ProjectService;
+}
+
+export interface ProjectUpdateInfo {
+	status: 'has_update' | 'up_to_date' | 'unknown' | 'error';
+	hasUpdate: boolean;
+	imageCount: number;
+	checkedImageCount: number;
+	imagesWithUpdates: number;
+	errorCount: number;
+	errorMessage?: string;
+	imageRefs?: string[];
+	updatedImageRefs?: string[];
+	lastCheckedAt?: string;
 }
 
 export interface Project {
@@ -82,9 +95,11 @@ export interface Project {
 	lastSyncCommit?: string;
 	gitRepositoryURL?: string;
 	hasBuildDirective?: boolean;
+	updateInfo?: ProjectUpdateInfo;
 	services?: ProjectService[];
 	runtimeServices?: RuntimeService[];
 	composeContent?: string;
+	composeFileName?: string;
 	envContent?: string;
 	includeFiles?: IncludeFile[];
 	directoryFiles?: IncludeFile[];

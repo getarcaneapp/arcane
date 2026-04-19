@@ -70,6 +70,8 @@ export const queryKeys = {
 	},
 	system: {
 		upgradeAvailable: (scope: 'mobile-nav' | 'sidebar') => ['system', 'upgrade-available', scope] as const,
+		environmentUpgradeAvailable: (environmentId: string) =>
+			['system', 'upgrade-available', 'environment', environmentId] as const,
 		upgradeHealth: (environmentId: string) => ['system', 'upgrade-health', environmentId] as const,
 		versionInfo: (environmentId: string) => ['system', 'version-info', environmentId] as const,
 		dockerInfo: (environmentId: string) => ['system', 'docker-info', environmentId] as const
@@ -78,7 +80,8 @@ export const queryKeys = {
 		snapshot: (environmentId: string, debugAllGood = false) =>
 			['dashboard', 'snapshot', environmentId, debugAllGood ? 'debug-all-good' : 'normal'] as const,
 		actionItems: (environmentId: string, debugAllGood = false) =>
-			['dashboard', 'action-items', environmentId, debugAllGood ? 'debug-all-good' : 'normal'] as const
+			['dashboard', 'action-items', environmentId, debugAllGood ? 'debug-all-good' : 'normal'] as const,
+		environments: (debugAllGood = false) => ['dashboard', 'environments', debugAllGood ? 'debug-all-good' : 'normal'] as const
 	},
 	containers: {
 		all: ['containers'] as const,
@@ -106,6 +109,9 @@ export const queryKeys = {
 		all: ['projects'] as const,
 		list: (environmentId: string, options: SearchPaginationSortRequest) =>
 			['projects', environmentId, stableSerialize(options)] as const,
+		checkUpdates: (environmentId: string) => ['projects', 'check-updates', environmentId] as const,
+		detailCheckUpdates: (environmentId: string, projectId: string) =>
+			['project', 'check-updates', environmentId, projectId] as const,
 		statusCounts: (environmentId: string) => ['projects', 'status-counts', environmentId] as const,
 		detail: (environmentId: string, projectId: string) => ['project', environmentId, projectId] as const
 	},

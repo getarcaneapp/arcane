@@ -111,7 +111,7 @@ export function parse(val: string | number): number | null {
 
 	const results = parseRegExp.exec(val);
 	let floatValue: number;
-	let unit: keyof typeof map = 'b';
+	let unit: keyof typeof map;
 
 	if (!results) {
 		floatValue = Number.parseInt(val, 10);

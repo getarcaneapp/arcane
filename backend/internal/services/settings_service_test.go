@@ -129,6 +129,80 @@ func TestSettingsService_GetSettings_UsesCachedSnapshotWithoutDatabase(t *testin
 	require.Equal(t, "http://cached", settings.BaseServerURL.Value)
 }
 
+func TestSettingsService_LoadDatabaseSettings_MigratesLegacyPruneSettings(t *testing.T) {
+	ctx := context.Background()
+	t.Setenv("UI_CONFIGURATION_DISABLED", "false")
+	t.Setenv("AGENT_MODE", "false")
+	t.Setenv("EDGE_AGENT", "false")
+
+	tests := []struct {
+		name      string
+		legacy    []models.SettingVariable
+		assertCfg func(t *testing.T, cfg *models.Settings)
+	}{
+		{
+			name: "maps all prune mode to aggressive resource modes",
+			legacy: []models.SettingVariable{
+				{Key: "dockerPruneMode", Value: "all"},
+				{Key: "scheduledPruneContainers", Value: "true"},
+				{Key: "scheduledPruneImages", Value: "true"},
+				{Key: "scheduledPruneVolumes", Value: "true"},
+				{Key: "scheduledPruneNetworks", Value: "true"},
+				{Key: "scheduledPruneBuildCache", Value: "true"},
+			},
+			assertCfg: func(t *testing.T, cfg *models.Settings) {
+				require.Equal(t, "stopped", cfg.PruneContainerMode.Value)
+				require.Equal(t, "all", cfg.PruneImageMode.Value)
+				require.Equal(t, "all", cfg.PruneVolumeMode.Value)
+				require.Equal(t, "unused", cfg.PruneNetworkMode.Value)
+				require.Equal(t, "all", cfg.PruneBuildCacheMode.Value)
+			},
+		},
+		{
+			name: "uses dangling defaults when legacy booleans are missing",
+			legacy: []models.SettingVariable{
+				{Key: "dockerPruneMode", Value: "dangling"},
+			},
+			assertCfg: func(t *testing.T, cfg *models.Settings) {
+				require.Equal(t, "stopped", cfg.PruneContainerMode.Value)
+				require.Equal(t, "dangling", cfg.PruneImageMode.Value)
+				require.Equal(t, "none", cfg.PruneVolumeMode.Value)
+				require.Equal(t, "unused", cfg.PruneNetworkMode.Value)
+				require.Equal(t, "none", cfg.PruneBuildCacheMode.Value)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := setupSettingsTestDB(t)
+			require.NoError(t, db.DB.Create(&tt.legacy).Error)
+
+			svc := &SettingsService{db: db}
+			cfg, err := svc.loadDatabaseSettingsInternal(ctx, db)
+			require.NoError(t, err)
+
+			tt.assertCfg(t, cfg)
+
+			for _, key := range []string{
+				"pruneContainerMode",
+				"pruneContainerUntil",
+				"pruneImageMode",
+				"pruneImageUntil",
+				"pruneVolumeMode",
+				"pruneNetworkMode",
+				"pruneNetworkUntil",
+				"pruneBuildCacheMode",
+				"pruneBuildCacheUntil",
+			} {
+				var setting models.SettingVariable
+				err := db.DB.Where("key = ?", key).First(&setting).Error
+				require.NoErrorf(t, err, "expected migrated key %s to be persisted", key)
+			}
+		})
+	}
+}
+
 func TestSettingsService_PruneUnknownSettings_RemovesStaleKeys(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
@@ -275,6 +349,22 @@ func TestSettingsService_GetSettings_EnvOverride_TrivyRuntimeSecurity(t *testing
 	require.True(t, settings2.TrivyPrivileged.IsTrue())
 }
 
+func TestSettingsService_GetStringSetting_EnvOverride_SwarmStackSourcesDirectory(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, svc.UpdateSetting(ctx, "swarmStackSourcesDirectory", "/tmp/swarm-from-db"))
+
+	require.Equal(t, "/tmp/swarm-from-db", svc.GetStringSetting(ctx, "swarmStackSourcesDirectory", "/fallback"))
+
+	t.Setenv("SWARM_STACK_SOURCES_DIRECTORY", "/mnt/swarm-from-env")
+
+	require.Equal(t, "/mnt/swarm-from-env", svc.GetStringSetting(ctx, "swarmStackSourcesDirectory", "/fallback"))
+	require.Equal(t, "/tmp/swarm-from-db", svc.GetSettingsConfig().SwarmStackSourcesDirectory.Value)
+}
+
 func TestSettingsService_isEnvOverrideActiveInternal(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
@@ -325,11 +415,10 @@ func TestSettingsService_UpdateSetting(t *testing.T) {
 	svc, err := NewSettingsService(ctx, db)
 	require.NoError(t, err)
 
-	// Use an existing key ("pruneMode") instead of a non-existent one
-	require.NoError(t, svc.UpdateSetting(ctx, "pruneMode", "all"))
+	require.NoError(t, svc.UpdateSetting(ctx, "pruneImageMode", "all"))
 
 	var sv models.SettingVariable
-	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "pruneMode").First(&sv).Error)
+	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "pruneImageMode").First(&sv).Error)
 	require.Equal(t, "all", sv.Value)
 }
 
@@ -347,6 +436,46 @@ func TestSettingsService_UpdateSetting_RefreshesCachedSnapshot(t *testing.T) {
 	settings, err := svc.GetSettings(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "https://arcane.test", settings.BaseServerURL.Value)
+}
+
+func TestSettingsService_UpdateSettings_PruneModesDoNotTriggerScheduledPruneCallback(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	callbackCalls := 0
+	svc.OnScheduledPruneSettingsChanged = func(context.Context) {
+		callbackCalls++
+	}
+
+	imageMode := "all"
+	containerUntil := "24h"
+	_, err = svc.UpdateSettings(ctx, settings.Update{
+		PruneImageMode:      &imageMode,
+		PruneContainerUntil: &containerUntil,
+	})
+	require.NoError(t, err)
+	require.Equal(t, 0, callbackCalls)
+}
+
+func TestSettingsService_UpdateSettings_ScheduledPruneScheduleTriggersCallback(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	callbackCalls := 0
+	svc.OnScheduledPruneSettingsChanged = func(context.Context) {
+		callbackCalls++
+	}
+
+	enabled := "true"
+	_, err = svc.UpdateSettings(ctx, settings.Update{
+		ScheduledPruneEnabled: &enabled,
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, callbackCalls)
 }
 
 func BenchmarkSettingsService_GetSettings(b *testing.B) {
@@ -420,10 +549,8 @@ func TestSettingsService_UpdateSettings_MergeOidcSecret(t *testing.T) {
 	}
 	nb, err := json.Marshal(incoming)
 	require.NoError(t, err)
-	s := string(nb)
-
 	updates := settings.Update{
-		AuthOidcConfig: &s,
+		AuthOidcConfig: new(string(nb)),
 	}
 	_, err = svc.UpdateSettings(ctx, updates)
 	require.NoError(t, err)
@@ -510,7 +637,7 @@ func TestSettingsService_UpdateSettings_RefreshesCache(t *testing.T) {
 	require.NoError(t, err)
 
 	// ListSettings uses the cached snapshot; should reflect updated value
-	list := svc.ListSettings(true)
+	list := svc.ListSettings(models.SettingVisibilityAll)
 	found := false
 	for _, sv := range list {
 		if sv.Key == "projectsDirectory" {
@@ -530,9 +657,8 @@ func TestSettingsService_UpdateSettings_ReturnsEnvOverriddenValues(t *testing.T)
 	require.NoError(t, err)
 	require.NoError(t, svc.EnsureDefaultSettings(ctx))
 
-	newDir := "custom/projects2"
 	settingsList, err := svc.UpdateSettings(ctx, settings.Update{
-		ProjectsDirectory: &newDir,
+		ProjectsDirectory: new("custom/projects2"),
 	})
 	require.NoError(t, err)
 
@@ -558,8 +684,7 @@ func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyScanTimeout(
 		callbackPayload = timeoutSettings
 	}
 
-	newTimeout := "1200"
-	_, err = svc.UpdateSettings(ctx, settings.Update{TrivyScanTimeout: &newTimeout})
+	_, err = svc.UpdateSettings(ctx, settings.Update{TrivyScanTimeout: new("1200")})
 	require.NoError(t, err)
 
 	require.NotNil(t, callbackPayload)
@@ -578,13 +703,10 @@ func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyResourceLimi
 		callbackPayload = timeoutSettings
 	}
 
-	limitsEnabled := "false"
-	cpuLimit := "2.5"
-	memoryLimit := "3072"
 	_, err = svc.UpdateSettings(ctx, settings.Update{
-		TrivyResourceLimitsEnabled: &limitsEnabled,
-		TrivyCpuLimit:              &cpuLimit,
-		TrivyMemoryLimitMb:         &memoryLimit,
+		TrivyResourceLimitsEnabled: new("false"),
+		TrivyCpuLimit:              new("2.5"),
+		TrivyMemoryLimitMb:         new("3072"),
 	})
 	require.NoError(t, err)
 
@@ -606,8 +728,7 @@ func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyConcurrentSc
 		callbackPayload = timeoutSettings
 	}
 
-	concurrentContainers := "4"
-	_, err = svc.UpdateSettings(ctx, settings.Update{TrivyConcurrentScanContainers: &concurrentContainers})
+	_, err = svc.UpdateSettings(ctx, settings.Update{TrivyConcurrentScanContainers: new("4")})
 	require.NoError(t, err)
 
 	require.NotNil(t, callbackPayload)
@@ -626,8 +747,7 @@ func TestSettingsService_UpdateSettings_TrivyNetworkTriggersVulnerabilityCallbac
 		callbackCalled = true
 	}
 
-	trivyNetwork := "arcane-external"
-	_, err = svc.UpdateSettings(ctx, settings.Update{TrivyNetwork: &trivyNetwork})
+	_, err = svc.UpdateSettings(ctx, settings.Update{TrivyNetwork: new("arcane-external")})
 	require.NoError(t, err)
 	require.True(t, callbackCalled)
 }
@@ -644,8 +764,7 @@ func TestSettingsService_UpdateSettings_TrivyNetworkDoesNotTriggerTimeoutCallbac
 		callbackPayload = timeoutSettings
 	}
 
-	trivyNetwork := "arcane-external"
-	_, err = svc.UpdateSettings(ctx, settings.Update{TrivyNetwork: &trivyNetwork})
+	_, err = svc.UpdateSettings(ctx, settings.Update{TrivyNetwork: new("arcane-external")})
 	require.NoError(t, err)
 	require.Nil(t, callbackPayload)
 }
@@ -662,11 +781,9 @@ func TestSettingsService_UpdateSettings_TrivyRuntimeSecurityTriggersVulnerabilit
 		callbackCalled = true
 	}
 
-	securityOpts := "label=disable"
-	privileged := "true"
 	_, err = svc.UpdateSettings(ctx, settings.Update{
-		TrivySecurityOpts: &securityOpts,
-		TrivyPrivileged:   &privileged,
+		TrivySecurityOpts: new("label=disable"),
+		TrivyPrivileged:   new("true"),
 	})
 	require.NoError(t, err)
 	require.True(t, callbackCalled)
@@ -684,11 +801,9 @@ func TestSettingsService_UpdateSettings_TrivyRuntimeSecurityDoesNotTriggerTimeou
 		callbackPayload = timeoutSettings
 	}
 
-	securityOpts := "label=disable"
-	privileged := "true"
 	_, err = svc.UpdateSettings(ctx, settings.Update{
-		TrivySecurityOpts: &securityOpts,
-		TrivyPrivileged:   &privileged,
+		TrivySecurityOpts: new("label=disable"),
+		TrivyPrivileged:   new("true"),
 	})
 	require.NoError(t, err)
 	require.Nil(t, callbackPayload)
@@ -701,8 +816,7 @@ func TestSettingsService_UpdateSettings_TrivyPreserveCacheOnVolumePrunePersists(
 	require.NoError(t, err)
 	require.NoError(t, svc.EnsureDefaultSettings(ctx))
 
-	preserveCache := "false"
-	_, err = svc.UpdateSettings(ctx, settings.Update{TrivyPreserveCacheOnVolumePrune: &preserveCache})
+	_, err = svc.UpdateSettings(ctx, settings.Update{TrivyPreserveCacheOnVolumePrune: new("false")})
 	require.NoError(t, err)
 
 	current, err := svc.GetSettings(ctx)
@@ -727,8 +841,7 @@ func TestSettingsService_UpdateSettings_TrivyPreserveCacheOnVolumePruneDoesNotTr
 		callbackPayload = timeoutSettings
 	}
 
-	preserveCache := "false"
-	_, err = svc.UpdateSettings(ctx, settings.Update{TrivyPreserveCacheOnVolumePrune: &preserveCache})
+	_, err = svc.UpdateSettings(ctx, settings.Update{TrivyPreserveCacheOnVolumePrune: new("false")})
 	require.NoError(t, err)
 	require.Nil(t, callbackPayload)
 }

@@ -20,14 +20,14 @@ func GetHostPathForContainerPath(ctx context.Context, dockerCli *client.Client, 
 		return "", nil // No docker client, can't discover
 	}
 
-	// 1. Get current container ID (usually the short ID is the hostname)
-	hostname, err := os.Hostname()
+	// 1. Prefer robust current-container detection and fall back to hostname.
+	inspectTarget, err := getCurrentContainerInspectTargetInternal(GetCurrentContainerID, os.Hostname)
 	if err != nil {
 		return "", err
 	}
 
 	// 2. Inspect self
-	inspect, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerCli, hostname, client.ContainerInspectOptions{})
+	inspect, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerCli, inspectTarget, client.ContainerInspectOptions{})
 	if err != nil {
 		// Not running in a container or can't reach docker daemon
 		return "", err
@@ -68,6 +68,27 @@ func GetHostPathForContainerPath(ctx context.Context, dockerCli *client.Client, 
 	}
 
 	return "", nil
+}
+
+func getCurrentContainerInspectTargetInternal(currentContainerID func() (string, error), hostname func() (string, error)) (string, error) {
+	if currentContainerID != nil {
+		if containerID, err := currentContainerID(); err == nil {
+			if containerID = strings.TrimSpace(containerID); containerID != "" {
+				return containerID, nil
+			}
+		}
+	}
+
+	if hostname == nil {
+		hostname = os.Hostname
+	}
+
+	value, err := hostname()
+	if err != nil {
+		return "", err
+	}
+
+	return strings.TrimSpace(value), nil
 }
 
 // MountForDestination returns a Mount suitable for container creation that mirrors an

@@ -29,8 +29,7 @@ func ReadFolderComposeTemplate(baseDir, folder string) (string, *string, string,
 	for _, envName := range []string{".env.example", ".env"} {
 		envPath := filepath.Join(baseDir, folder, envName)
 		if eb, err := os.ReadFile(envPath); err == nil {
-			env := string(eb)
-			envPtr = &env
+			envPtr = new(string(eb))
 			break
 		}
 	}

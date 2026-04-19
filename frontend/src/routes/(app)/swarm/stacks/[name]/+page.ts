@@ -4,6 +4,8 @@ import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
 import { resolveInitialTableRequest } from '$lib/utils/table-persistence.util';
 import type { PageLoad } from './$types';
 
+type StackSourceState = 'loading' | 'available' | 'missing' | 'forbidden' | 'error';
+
 export const load: PageLoad = async ({ params }) => {
 	const stackName = decodeURIComponent(params.name);
 	const servicesRequestOptions = resolveInitialTableRequest(`arcane-swarm-stack-services-table-${stackName}`, {
@@ -39,6 +41,8 @@ export const load: PageLoad = async ({ params }) => {
 			stackName,
 			services,
 			tasks,
+			source: null,
+			sourceState: 'loading' as StackSourceState,
 			servicesRequestOptions,
 			tasksRequestOptions
 		};

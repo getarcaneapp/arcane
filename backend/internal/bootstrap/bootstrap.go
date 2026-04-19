@@ -137,6 +137,9 @@ func initializeStartupState(appCtx context.Context, cfg *config.Config, appServi
 			appServices.GitOpsSync.ListSyncIntervalsRaw,
 			appServices.GitOpsSync.UpdateSyncIntervalMinutes,
 		)
+		if err := appServices.GitOpsSync.ReconcileDirectorySyncProjectsOnStartup(appCtx); err != nil {
+			slog.WarnContext(appCtx, "Failed to reconcile directory GitOps projects on startup", "error", err)
+		}
 	}
 
 	if err := appServices.Settings.NormalizeProjectsDirectory(appCtx, cfg.ProjectsDirectory); err != nil {

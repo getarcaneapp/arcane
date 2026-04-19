@@ -170,6 +170,7 @@ type Services struct {
 	SystemUpgrade     *services.SystemUpgradeService
 	GitRepository     *services.GitRepositoryService
 	GitOpsSync        *services.GitOpsSyncService
+	Webhook           *services.WebhookService
 	Vulnerability     *services.VulnerabilityService
 	Dashboard         *services.DashboardService
 	Config            *config.Config
@@ -208,6 +209,10 @@ func SetupAPI(router *gin.Engine, apiGroup *gin.RouterGroup, cfg *config.Config,
 			Name:        "X-API-Key",
 			Description: "API Key authentication",
 		},
+	}
+	humaConfig.Security = []map[string][]string{
+		{"BearerAuth": {}},
+		{"ApiKeyAuth": {}},
 	}
 
 	// Use custom schema namer to avoid conflicts between types with same name
@@ -286,6 +291,10 @@ func SetupAPIForSpec() huma.API {
 			Description: "API Key authentication",
 		},
 	}
+	humaConfig.Security = []map[string][]string{
+		{"BearerAuth": {}},
+		{"ApiKeyAuth": {}},
+	}
 
 	// Use custom schema namer to avoid conflicts between types with same name
 	humaConfig.Components.Schemas = huma.NewMapRegistry("#/components/schemas/", customSchemaNamer)
@@ -334,6 +343,7 @@ func registerHandlers(api huma.API, svc *Services) {
 	var systemUpgradeSvc *services.SystemUpgradeService
 	var gitRepositorySvc *services.GitRepositoryService
 	var gitOpsSyncSvc *services.GitOpsSyncService
+	var webhookSvc *services.WebhookService
 	var vulnerabilitySvc *services.VulnerabilityService
 	var dashboardSvc *services.DashboardService
 	var cfg *config.Config
@@ -372,6 +382,7 @@ func registerHandlers(api huma.API, svc *Services) {
 		systemUpgradeSvc = svc.SystemUpgrade
 		gitRepositorySvc = svc.GitRepository
 		gitOpsSyncSvc = svc.GitOpsSync
+		webhookSvc = svc.Webhook
 		vulnerabilitySvc = svc.Vulnerability
 		dashboardSvc = svc.Dashboard
 		cfg = svc.Config
@@ -388,10 +399,10 @@ func registerHandlers(api huma.API, svc *Services) {
 	handlers.RegisterOidc(api, authSvc, oidcSvc, cfg)
 	handlers.RegisterEnvironments(api, environmentSvc, settingsSvc, apiKeySvc, eventSvc, cfg)
 	handlers.RegisterContainerRegistries(api, containerRegistrySvc, environmentSvc)
-	handlers.RegisterTemplates(api, templateSvc)
+	handlers.RegisterTemplates(api, templateSvc, environmentSvc)
 	handlers.RegisterImages(api, dockerSvc, imageSvc, imageUpdateSvc, settingsSvc, buildSvc)
 	handlers.RegisterBuildWorkspaces(api, buildWorkspaceSvc)
-	handlers.RegisterImageUpdates(api, imageUpdateSvc)
+	handlers.RegisterImageUpdates(api, imageUpdateSvc, imageSvc)
 	handlers.RegisterSettings(api, settingsSvc, settingsSearchSvc, environmentSvc, cfg)
 	handlers.RegisterJobSchedules(api, jobScheduleSvc, environmentSvc)
 	handlers.RegisterVolumes(api, dockerSvc, volumeSvc)
@@ -405,6 +416,7 @@ func registerHandlers(api huma.API, svc *Services) {
 	handlers.RegisterSystem(api, dockerSvc, systemSvc, systemUpgradeSvc, cfg)
 	handlers.RegisterGitRepositories(api, gitRepositorySvc)
 	handlers.RegisterGitOpsSyncs(api, gitOpsSyncSvc)
+	handlers.RegisterWebhooks(api, webhookSvc)
 	handlers.RegisterVulnerability(api, vulnerabilitySvc)
 	handlers.RegisterDashboard(api, dashboardSvc)
 }

@@ -72,15 +72,12 @@
 		switch (prereq.settingKey) {
 			case 'pollingEnabled':
 			case 'autoUpdate':
-				return `${envBase}&tab=docker`;
-			case 'gitopsSyncEnabled':
-				return `/environments/${environmentId}/gitops`;
 			case 'scheduledPruneEnabled':
-				return undefined;
 			case 'vulnerabilityScanEnabled':
-				return undefined;
 			case 'autoHealEnabled':
 				return `${envBase}&tab=jobs`;
+			case 'gitopsSyncEnabled':
+				return `/environments/${environmentId}/gitops`;
 			default:
 				return prereq.settingsUrl;
 		}
@@ -352,7 +349,6 @@
 														/>
 													</div>
 												{/if}
-
 												{#if job.id === 'scheduled-prune' && $formInputs.scheduledPruneEnabled.value}
 													<div class="border-border/20 space-y-4 border-t pt-3">
 														<div class="grid gap-3 sm:grid-cols-2">

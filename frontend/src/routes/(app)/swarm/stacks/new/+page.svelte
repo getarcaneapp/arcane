@@ -32,6 +32,7 @@
 	let showTemplateDialog = $state(false);
 	let showConverterDialog = $state(false);
 	let isLoadingTemplateContent = $state(false);
+	const isEditMode = $derived(data.isEditMode === true);
 
 	const formSchema = z.object({
 		name: z
@@ -49,6 +50,9 @@
 				? data.selectedTemplate.name.toLowerCase().replace(/[^a-z0-9-_]/g, '-')
 				: ''
 	);
+	const backHref = $derived(isEditMode ? `/swarm/stacks/${encodeURIComponent(initialName)}` : '/swarm/stacks');
+	const submitLabel = $derived(isEditMode ? m.common_save() : m.common_create_button({ resource: m.swarm_stack() }));
+	const submitLoadingLabel = $derived(isEditMode ? m.common_saving() : m.common_action_creating());
 
 	let formData = $derived({
 		name: initialName,
@@ -68,6 +72,10 @@
 	);
 
 	async function handleSubmit() {
+		if (isEditMode) {
+			await handleSaveStackSource();
+			return;
+		}
 		await handleDeployStack();
 	}
 
@@ -84,6 +92,23 @@
 			onSuccess: async () => {
 				toast.success(m.common_create_success({ resource: `${m.swarm_stack()} "${name}"` }));
 				goto('/swarm/stacks', { invalidateAll: true });
+			}
+		});
+	}
+
+	async function handleSaveStackSource() {
+		const validated = form.validate();
+		if (!validated) return;
+
+		const { name, composeContent, envContent } = validated;
+
+		handleApiResultWithCallbacks({
+			result: await tryCatch(swarmService.deployStack({ name, composeContent, envContent })),
+			message: m.common_update_failed({ resource: `${m.swarm_stack()} "${name}"` }),
+			setLoadingState: (value) => (saving = value),
+			onSuccess: async () => {
+				toast.success(m.common_update_success({ resource: `${m.swarm_stack()} "${name}"` }));
+				goto(`/swarm/stacks/${encodeURIComponent(name)}`, { invalidateAll: true });
 			}
 		});
 	}
@@ -179,7 +204,7 @@
 					action="base"
 					tone="ghost"
 					size="sm"
-					href="/swarm/stacks"
+					href={backHref}
 					class="gap-2 bg-transparent"
 					icon={ArrowLeftIcon}
 					customLabel={m.common_back()}
@@ -191,9 +216,9 @@
 						bind:ref={nameInputRef}
 						variant="inline"
 						error={$inputs.name.error ?? undefined}
-						originalValue=""
+						originalValue={initialName}
 						placeholder={m.compose_project_name_placeholder?.() || 'Enter name...'}
-						canEdit={!saving && !isLoadingTemplateContent}
+						canEdit={!isEditMode && !saving && !isLoadingTemplateContent}
 						class="hidden sm:block"
 					/>
 				</div>
@@ -213,8 +238,8 @@
 									onclick={() => handleSubmit()}
 									class={`${templateBtnClass} gap-2 rounded-r-none`}
 									loading={saving}
-									customLabel={m.common_create_button({ resource: m.swarm_stack() })}
-									loadingLabel={m.common_action_creating()}
+									customLabel={submitLabel}
+									loadingLabel={submitLoadingLabel}
 								/>
 							</span>
 						</ArcaneTooltip.Trigger>
@@ -285,9 +310,9 @@
 						bind:ref={nameInputRef}
 						variant="block"
 						error={$inputs.name.error ?? undefined}
-						originalValue=""
+						originalValue={initialName}
 						placeholder={m.compose_project_name_placeholder()}
-						canEdit={!saving && !isLoadingTemplateContent}
+						canEdit={!isEditMode && !saving && !isLoadingTemplateContent}
 					/>
 				</div>
 
@@ -298,11 +323,11 @@
 					<div class="flex min-h-0 flex-1 flex-col lg:col-span-3">
 						<CodePanel
 							bind:open={composeOpen}
-							title={m.compose_compose_file_title()}
+							title="compose.yaml"
 							language="yaml"
 							bind:value={$inputs.composeContent.value}
 							error={$inputs.composeContent.error ?? undefined}
-							fileId="swarm:stacks:new:compose"
+							fileId={isEditMode ? `swarm:stacks:${initialName}:compose` : 'swarm:stacks:new:compose'}
 							editorContext={{
 								envContent: $inputs.envContent.value,
 								composeContents: [$inputs.composeContent.value],
@@ -314,11 +339,11 @@
 					<div class="flex min-h-0 flex-1 flex-col lg:col-span-2">
 						<CodePanel
 							bind:open={envOpen}
-							title={m.compose_env_title()}
+							title=".env"
 							language="env"
 							bind:value={$inputs.envContent.value}
 							error={$inputs.envContent.error ?? undefined}
-							fileId="swarm:stacks:new:env"
+							fileId={isEditMode ? `swarm:stacks:${initialName}:env` : 'swarm:stacks:new:env'}
 							editorContext={{
 								envContent: $inputs.envContent.value,
 								composeContents: [$inputs.composeContent.value],

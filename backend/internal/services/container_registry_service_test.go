@@ -188,9 +188,8 @@ func TestContainerRegistryService_UpdateRegistry_RejectsBlankingUsername(t *test
 	})
 	require.NoError(t, err)
 
-	empty := ""
 	_, err = svc.UpdateRegistry(context.Background(), reg.ID, models.UpdateContainerRegistryRequest{
-		Username: &empty,
+		Username: new(""),
 	})
 	require.Error(t, err)
 
@@ -211,9 +210,8 @@ func TestContainerRegistryService_UpdateRegistry_KeepsExistingTokenWhenNotProvid
 	require.NoError(t, err)
 	originalToken := reg.Token
 
-	newUser := "updated-user"
 	updated, err := svc.UpdateRegistry(context.Background(), reg.ID, models.UpdateContainerRegistryRequest{
-		Username: &newUser,
+		Username: new("updated-user"),
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "updated-user", updated.Username)
@@ -231,9 +229,8 @@ func TestContainerRegistryService_UpdateRegistry_RejectsChangingRegistryType(t *
 	})
 	require.NoError(t, err)
 
-	ecrType := "ecr"
 	_, err = svc.UpdateRegistry(context.Background(), reg.ID, models.UpdateContainerRegistryRequest{
-		RegistryType: &ecrType,
+		RegistryType: new("ecr"),
 	})
 	require.Error(t, err)
 
@@ -253,11 +250,9 @@ func TestContainerRegistryService_UpdateRegistry_AllowsSameRegistryType(t *testi
 	})
 	require.NoError(t, err)
 
-	genericType := "generic"
-	newUser := "updated-user"
 	updated, err := svc.UpdateRegistry(context.Background(), reg.ID, models.UpdateContainerRegistryRequest{
-		RegistryType: &genericType,
-		Username:     &newUser,
+		RegistryType: new("generic"),
+		Username:     new("updated-user"),
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "updated-user", updated.Username)

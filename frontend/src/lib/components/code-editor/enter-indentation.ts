@@ -1,25 +1,22 @@
-import { getIndentUnit, getIndentation, indentString } from '@codemirror/language';
+import { getIndentUnit, indentString } from '@codemirror/language';
 import { EditorState, Prec, type Extension } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import type { CodeLanguage } from './analysis/types';
 
-function getYamlHeuristicIndent(
-	lineBreakState: EditorState,
-	textBeforeCursor: string,
-	currentIndent: string,
-	isCursorAtLineEnd: boolean
-): string | null {
-	if (!isCursorAtLineEnd) return null;
+function getYamlIndent(state: EditorState, textBeforeCursor: string, currentIndent: string, isCursorAtLineEnd: boolean): string {
+	if (!isCursorAtLineEnd) return currentIndent;
 
 	const trimmedBeforeCursor = textBeforeCursor.trimEnd();
 	const startsYamlBlock =
 		/:\s*(?:#.*)?$/.test(trimmedBeforeCursor) ||
 		/:\s*[|>][-+0-9]*\s*(?:#.*)?$/.test(trimmedBeforeCursor) ||
-		/^-\s*(?:#.*)?$/.test(trimmedBeforeCursor);
+		/^-\s*(?:#.*)?$/.test(trimmedBeforeCursor.trimStart());
 
-	if (!startsYamlBlock) return null;
+	if (startsYamlBlock) {
+		return indentString(state, currentIndent.length + getIndentUnit(state));
+	}
 
-	return indentString(lineBreakState, currentIndent.length + getIndentUnit(lineBreakState));
+	return currentIndent;
 }
 
 export function createEnterIndentKeymap(language: CodeLanguage): Extension {
@@ -46,36 +43,15 @@ export function createEnterIndentKeymap(language: CodeLanguage): Extension {
 				const currentLine = view.state.doc.lineAt(from);
 				const isCursorAtLineEnd = from === to && from === currentLine.to;
 				const currentIndent = currentLine.text.match(/^\s*/)?.[0] ?? '';
-				const nextLine = currentLine.number < view.state.doc.lines ? view.state.doc.line(currentLine.number + 1) : null;
-				const hasNextNonEmptyLine = Boolean(nextLine && nextLine.text.trim().length > 0);
+				const textBeforeCursor = currentLine.text.slice(0, Math.max(0, from - currentLine.from));
 				const lineBreakPos = from + 1;
 
-				const lineBreakTransaction = view.state.update({
-					changes: { from, to, insert: '\n' }
-				});
-				const lineBreakState = lineBreakTransaction.state;
+				let indentation: string;
 
-				let indentation = '';
-
-				if (isCursorAtLineEnd && hasNextNonEmptyLine) {
-					indentation = nextLine?.text.match(/^\s*/)?.[0] ?? '';
+				if (language === 'yaml') {
+					indentation = getYamlIndent(view.state, textBeforeCursor, currentIndent, isCursorAtLineEnd);
 				} else {
-					const computedIndent = getIndentation(lineBreakState, lineBreakPos);
-					const textBeforeCursor = currentLine.text.slice(0, Math.max(0, from - currentLine.from));
-					const yamlHeuristicIndent =
-						language === 'yaml'
-							? getYamlHeuristicIndent(lineBreakState, textBeforeCursor, currentIndent, isCursorAtLineEnd)
-							: null;
-
-					if (computedIndent !== null) {
-						indentation = indentString(lineBreakState, computedIndent);
-					}
-
-					if (yamlHeuristicIndent && yamlHeuristicIndent.length > indentation.length) {
-						indentation = yamlHeuristicIndent;
-					} else if (computedIndent === null) {
-						indentation = textBeforeCursor.match(/^\s*/)?.[0] ?? '';
-					}
+					indentation = textBeforeCursor.match(/^\s*/)?.[0] ?? '';
 				}
 
 				event.preventDefault();
