@@ -227,6 +227,9 @@ func resolveServiceImagePullMode(svc composetypes.ServiceConfig) imagePullMode {
 func buildProjectImagePullPlan(services composetypes.Services) map[string]imagePullMode {
 	plan := map[string]imagePullMode{}
 	for _, svc := range services {
+		if svc.Build != nil {
+			continue
+		}
 		img := strings.TrimSpace(svc.Image)
 		if img == "" {
 			continue
@@ -1626,6 +1629,9 @@ func (s *ProjectService) PullProjectImages(ctx context.Context, projectID string
 
 	images := map[string]struct{}{}
 	for _, svc := range compProj.Services {
+		if svc.Build != nil {
+			continue
+		}
 		img := strings.TrimSpace(svc.Image)
 		if img == "" {
 			continue

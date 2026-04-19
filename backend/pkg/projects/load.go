@@ -10,7 +10,9 @@ import (
 	"slices"
 	"strings"
 
+	interp "github.com/compose-spec/compose-go/v2/interpolation"
 	"github.com/compose-spec/compose-go/v2/loader"
+	"github.com/compose-spec/compose-go/v2/template"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
 )
@@ -136,7 +138,16 @@ func DetectComposeFile(dir string) (string, error) {
 }
 
 func LoadComposeProject(ctx context.Context, composeFile, projectName, projectsDirectory string, autoInjectEnv bool, pathMapper *PathMapper) (*composetypes.Project, error) {
-	return loadComposeProjectInternal(ctx, composeFile, projectName, projectsDirectory, autoInjectEnv, pathMapper, nil, nil)
+	return loadComposeProjectInternal(ctx, composeFile, projectName, projectsDirectory, autoInjectEnv, pathMapper, nil, nil, false)
+}
+
+// LoadComposeProjectLenient loads a compose project tolerating undefined variables.
+// Instead of substituting undefined ${VAR} references with an empty string (which
+// produces invalid volume/bind specs like ":/path"), it replaces them with a
+// placeholder value so structural validation can succeed. This is useful during
+// GitSync validation where a .env file may not yet exist.
+func LoadComposeProjectLenient(ctx context.Context, composeFile, projectName, projectsDirectory string, autoInjectEnv bool, pathMapper *PathMapper) (*composetypes.Project, error) {
+	return loadComposeProjectInternal(ctx, composeFile, projectName, projectsDirectory, autoInjectEnv, pathMapper, nil, nil, true)
 }
 
 func loadComposeProjectInternal(
@@ -148,6 +159,7 @@ func loadComposeProjectInternal(
 	pathMapper *PathMapper,
 	envOverride EnvMap,
 	configureLoader func(*loader.Options),
+	lenient bool,
 ) (project *composetypes.Project, err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
@@ -193,6 +205,24 @@ func loadComposeProjectInternal(
 	project, err = loader.LoadWithContext(ctx, cfg, func(opts *loader.Options) {
 		if projectName != "" {
 			opts.SetProjectName(projectName, true)
+		}
+		if lenient {
+			if opts.Interpolate == nil {
+				slog.WarnContext(ctx, "compose loader did not initialize Interpolate options; lenient variable substitution will not apply", "compose_file", composeFile)
+			} else {
+				realLookup := opts.Interpolate.LookupValue
+				opts.Interpolate = &interp.Options{
+					Substitute:      template.Substitute,
+					TypeCastMapping: opts.Interpolate.TypeCastMapping,
+					LookupValue: func(key string) (string, bool) {
+						if val, ok := realLookup(key); ok {
+							return val, true
+						}
+						slog.DebugContext(ctx, "compose variable undefined during lenient load, using placeholder", "variable", key, "compose_file", composeFile)
+						return "/placeholder-undefined", true
+					},
+				}
+			}
 		}
 		if configureLoader != nil {
 			configureLoader(opts)

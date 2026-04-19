@@ -1,6 +1,6 @@
 module github.com/getarcaneapp/arcane/backend
 
-go 1.26.0
+go 1.26.2
 
 replace github.com/getarcaneapp/arcane/cli => ../cli
 
