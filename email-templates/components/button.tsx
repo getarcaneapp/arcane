@@ -1,4 +1,4 @@
-import { Button as EmailButton } from '@react-email/components';
+import { Button as EmailButton } from 'react-email';
 
 interface ButtonProps {
 	href: string;

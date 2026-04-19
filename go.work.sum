@@ -746,6 +746,8 @@ github.com/moby/profiles/seccomp v0.1.0 h1:kVf1lc5ytNB1XPxEdZUVF+oPpbBYJHR50eEvP
 github.com/moby/profiles/seccomp v0.1.0/go.mod h1:Kqk57vxH6/wuOc5bmqRiSXJ6iEz8Pvo3LQRkv0ytFWs=
 github.com/moby/spdystream v0.5.0 h1:7r0J1Si3QO/kjRitvSLVVFUjxMEb/YLj6S9FF62JBCU=
 github.com/moby/spdystream v0.5.0/go.mod h1:xBAYlnt/ay+11ShkdFKNAG7LsyK/tmNBVvVOwrfMgdI=
+github.com/moby/spdystream v0.5.1 h1:9sNYeYZUcci9R6/w7KDaFWEWeV4LStVG78Mpyq/Zm/Y=
+github.com/moby/spdystream v0.5.1/go.mod h1:xBAYlnt/ay+11ShkdFKNAG7LsyK/tmNBVvVOwrfMgdI=
 github.com/moby/sys/mount v0.3.4 h1:yn5jq4STPztkkzSKpZkLcmjue+bZJ0u2AuQY1iNI1Ww=
 github.com/moby/sys/mount v0.3.4/go.mod h1:KcQJMbQdJHPlq5lcYT+/CjatWM4PuxKe+XLSVS4J6Os=
 github.com/moby/sys/reexec v0.1.0 h1:RrBi8e0EBTLEgfruBOFcxtElzRGTEUkeIFaVXgU7wok=

@@ -1,4 +1,4 @@
-import { render } from '@react-email/components';
+import { render } from 'react-email';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
