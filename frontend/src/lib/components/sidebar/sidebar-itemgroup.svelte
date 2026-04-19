@@ -62,11 +62,11 @@
 		})
 	);
 
-	function getIsOpen(itemTitle: string, isActive: boolean): boolean {
-		if (openStates[itemTitle] === undefined) {
+	function getIsOpen(itemUrl: string, isActive: boolean): boolean {
+		if (openStates[itemUrl] === undefined) {
 			return isActive;
 		}
-		return openStates[itemTitle];
+		return openStates[itemUrl];
 	}
 
 	const collapsed = $derived(sidebar.state === 'collapsed');
