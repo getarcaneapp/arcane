@@ -44,6 +44,7 @@
 		items,
 		requestOptions = $bindable(),
 		withoutSearch = $bindable(),
+		withoutFilters = false,
 		withoutPagination = false,
 		selectionDisabled = false,
 		unstyled = false,
@@ -74,6 +75,7 @@
 		items: Paginated<TData>;
 		requestOptions: SearchPaginationSortRequest;
 		withoutSearch?: boolean;
+		withoutFilters?: boolean;
 		withoutPagination?: boolean;
 		selectionDisabled?: boolean;
 		unstyled?: boolean;
@@ -662,6 +664,7 @@
 					{selectedIds}
 					{selectionDisabled}
 					{bulkActions}
+					{withoutFilters}
 					mobileFields={mobileFieldsForOptions}
 					{onToggleMobileField}
 					{customViewOptions}
@@ -722,6 +725,7 @@
 					{selectedIds}
 					{selectionDisabled}
 					{bulkActions}
+					{withoutFilters}
 					mobileFields={mobileFieldsForOptions}
 					{onToggleMobileField}
 					{customViewOptions}

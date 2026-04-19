@@ -61,12 +61,14 @@
 		selectedIds = $bindable(),
 		requestOptions = $bindable(),
 		groupByProject = $bindable(false),
+		withoutFilters = false,
 		onRefreshData
 	}: {
 		containers: ContainersPaginatedResponse;
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
 		groupByProject?: boolean;
+		withoutFilters?: boolean;
 		onRefreshData?: (options: ContainerListRequestOptions) => Promise<ContainersPaginatedResponse>;
 	} = $props();
 
@@ -680,6 +682,7 @@
 	bind:mobileFieldVisibility
 	bind:customSettings
 	bind:columnVisibility
+	{withoutFilters}
 	onRefresh={refreshContainers}
 	{columns}
 	{mobileFields}

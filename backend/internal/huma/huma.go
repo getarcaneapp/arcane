@@ -402,7 +402,7 @@ func registerHandlers(api huma.API, svc *Services) {
 	handlers.RegisterTemplates(api, templateSvc, environmentSvc)
 	handlers.RegisterImages(api, dockerSvc, imageSvc, imageUpdateSvc, settingsSvc, buildSvc)
 	handlers.RegisterBuildWorkspaces(api, buildWorkspaceSvc)
-	handlers.RegisterImageUpdates(api, imageUpdateSvc)
+	handlers.RegisterImageUpdates(api, imageUpdateSvc, imageSvc)
 	handlers.RegisterSettings(api, settingsSvc, settingsSearchSvc, environmentSvc, cfg)
 	handlers.RegisterJobSchedules(api, jobScheduleSvc, environmentSvc)
 	handlers.RegisterVolumes(api, dockerSvc, volumeSvc)

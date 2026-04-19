@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -42,7 +43,7 @@ func setupProjectTestDB(t *testing.T) *database.DB {
 	t.Helper()
 	db, err := gorm.Open(glsqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&models.Project{}, &models.SettingVariable{}))
+	require.NoError(t, db.AutoMigrate(&models.Project{}, &models.SettingVariable{}, &models.ImageUpdateRecord{}))
 	return &database.DB{DB: db}
 }
 
@@ -1334,9 +1335,299 @@ func TestProjectService_GetProjectDetails_ReturnsEffectiveEnvContent(t *testing.
 	assert.Equal(t, "BASE=git\nTOKEN=secret\n", details.EnvContent)
 }
 
+func TestBuildProjectUpdateInfoSummaryInternal(t *testing.T) {
+	now := time.Now().UTC()
+
+	tests := []struct {
+		name        string
+		imageRefs   []string
+		updates     map[string]*imagetypes.UpdateInfo
+		wantStatus  string
+		wantCount   int
+		wantChecked int
+		wantErrors  int
+		wantUpdates int
+		wantError   string
+	}{
+		{
+			name:        "unknown when no checks exist",
+			imageRefs:   []string{"nginx:latest"},
+			updates:     nil,
+			wantStatus:  "unknown",
+			wantCount:   1,
+			wantChecked: 0,
+			wantErrors:  0,
+			wantUpdates: 0,
+		},
+		{
+			name:      "has update when any image has update",
+			imageRefs: []string{"nginx:latest", "redis:7"},
+			updates: map[string]*imagetypes.UpdateInfo{
+				"nginx:latest": {HasUpdate: true, CheckTime: now},
+				"redis:7":      {HasUpdate: false, CheckTime: now.Add(-time.Minute)},
+			},
+			wantStatus:  "has_update",
+			wantCount:   2,
+			wantChecked: 2,
+			wantErrors:  0,
+			wantUpdates: 1,
+		},
+		{
+			name:      "error when no updates but a check failed",
+			imageRefs: []string{"nginx:latest"},
+			updates: map[string]*imagetypes.UpdateInfo{
+				"nginx:latest": {HasUpdate: false, CheckTime: now, Error: "rate limited"},
+			},
+			wantStatus:  "error",
+			wantCount:   1,
+			wantChecked: 1,
+			wantErrors:  1,
+			wantUpdates: 0,
+			wantError:   "rate limited",
+		},
+		{
+			name:      "up to date when all images checked without updates",
+			imageRefs: []string{"nginx:latest", "redis:7"},
+			updates: map[string]*imagetypes.UpdateInfo{
+				"nginx:latest": {HasUpdate: false, CheckTime: now},
+				"redis:7":      {HasUpdate: false, CheckTime: now.Add(-time.Minute)},
+			},
+			wantStatus:  "up_to_date",
+			wantCount:   2,
+			wantChecked: 2,
+			wantErrors:  0,
+			wantUpdates: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			summary := buildProjectUpdateInfoSummaryInternal(tt.imageRefs, tt.updates)
+			require.NotNil(t, summary)
+			assert.Equal(t, tt.wantStatus, summary.Status)
+			assert.Equal(t, tt.wantCount, summary.ImageCount)
+			assert.Equal(t, tt.wantChecked, summary.CheckedImageCount)
+			assert.Equal(t, tt.wantErrors, summary.ErrorCount)
+			assert.Equal(t, tt.wantUpdates, summary.ImagesWithUpdates)
+			assert.Equal(t, tt.wantUpdates > 0, summary.HasUpdate)
+			assert.Equal(t, tt.imageRefs, summary.ImageRefs)
+			if tt.wantError != "" {
+				require.NotNil(t, summary.ErrorMessage)
+				assert.Equal(t, tt.wantError, *summary.ErrorMessage)
+			} else {
+				assert.Nil(t, summary.ErrorMessage)
+			}
+			if tt.wantUpdates > 0 {
+				assert.Equal(t, []string{tt.imageRefs[0]}, summary.UpdatedImageRefs)
+			} else {
+				assert.Empty(t, summary.UpdatedImageRefs)
+			}
+		})
+	}
+}
+
+func TestProjectService_GetProjectDetails_IncludesUpdateInfo(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
+
+	imageService := &ImageService{db: db}
+	svc := NewProjectService(db, settingsService, nil, imageService, nil, nil, config.Load())
+
+	projectPath := createComposeProjectDir(t, projectsDir, "updates-demo")
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("services:\n  app:\n    image: nginx:latest\n"), 0o644))
+
+	projectRecord := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-update-info"},
+		Name:      "updates-demo",
+		DirName:   ptr("updates-demo"),
+		Path:      projectPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(projectRecord).Error)
+
+	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+		ID:             "sha256:update-demo",
+		Repository:     "docker.io/library/nginx",
+		Tag:            "latest",
+		HasUpdate:      true,
+		UpdateType:     "digest",
+		CurrentVersion: "latest",
+		CheckTime:      time.Now().UTC(),
+	}).Error)
+
+	details, err := svc.GetProjectDetails(ctx, projectRecord.ID)
+	require.NoError(t, err)
+	require.NotNil(t, details.UpdateInfo)
+	assert.Equal(t, "has_update", details.UpdateInfo.Status)
+	assert.True(t, details.UpdateInfo.HasUpdate)
+	assert.Equal(t, 1, details.UpdateInfo.ImageCount)
+	assert.Equal(t, 1, details.UpdateInfo.CheckedImageCount)
+	assert.Equal(t, 1, details.UpdateInfo.ImagesWithUpdates)
+	assert.Equal(t, []string{"nginx:latest"}, details.UpdateInfo.ImageRefs)
+	assert.Equal(t, []string{"nginx:latest"}, details.UpdateInfo.UpdatedImageRefs)
+}
+
+func TestProjectService_ListProjects_FiltersByUpdateStatus(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
+
+	imageService := &ImageService{db: db}
+	svc := NewProjectService(db, settingsService, nil, imageService, nil, nil, config.Load())
+
+	updatedPath := createComposeProjectDir(t, projectsDir, "updated-demo")
+	require.NoError(t, os.WriteFile(filepath.Join(updatedPath, "compose.yaml"), []byte("services:\n  app:\n    image: nginx:latest\n"), 0o644))
+	upToDatePath := createComposeProjectDir(t, projectsDir, "current-demo")
+	require.NoError(t, os.WriteFile(filepath.Join(upToDatePath, "compose.yaml"), []byte("services:\n  app:\n    image: redis:7\n"), 0o644))
+	errorPath := createComposeProjectDir(t, projectsDir, "error-demo")
+	require.NoError(t, os.WriteFile(filepath.Join(errorPath, "compose.yaml"), []byte("services:\n  app:\n    image: busybox:latest\n"), 0o644))
+	unknownPath := createComposeProjectDir(t, projectsDir, "unknown-demo")
+	require.NoError(t, os.WriteFile(filepath.Join(unknownPath, "compose.yaml"), []byte("services:\n  app:\n    image: alpine:latest\n"), 0o644))
+
+	require.NoError(t, db.Create(&models.Project{
+		BaseModel: models.BaseModel{ID: "project-updated"},
+		Name:      "updated-demo",
+		DirName:   ptr("updated-demo"),
+		Path:      updatedPath,
+		Status:    models.ProjectStatusStopped,
+	}).Error)
+	require.NoError(t, db.Create(&models.Project{
+		BaseModel: models.BaseModel{ID: "project-current"},
+		Name:      "current-demo",
+		DirName:   ptr("current-demo"),
+		Path:      upToDatePath,
+		Status:    models.ProjectStatusStopped,
+	}).Error)
+	require.NoError(t, db.Create(&models.Project{
+		BaseModel: models.BaseModel{ID: "project-error"},
+		Name:      "error-demo",
+		DirName:   ptr("error-demo"),
+		Path:      errorPath,
+		Status:    models.ProjectStatusStopped,
+	}).Error)
+	require.NoError(t, db.Create(&models.Project{
+		BaseModel: models.BaseModel{ID: "project-unknown"},
+		Name:      "unknown-demo",
+		DirName:   ptr("unknown-demo"),
+		Path:      unknownPath,
+		Status:    models.ProjectStatusStopped,
+	}).Error)
+
+	now := time.Now().UTC()
+	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+		ID:             "sha256:updated-image",
+		Repository:     "docker.io/library/nginx",
+		Tag:            "latest",
+		HasUpdate:      true,
+		UpdateType:     "digest",
+		CurrentVersion: "latest",
+		CheckTime:      now,
+	}).Error)
+	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+		ID:             "sha256:current-image",
+		Repository:     "docker.io/library/redis",
+		Tag:            "7",
+		HasUpdate:      false,
+		UpdateType:     "tag",
+		CurrentVersion: "7",
+		CheckTime:      now.Add(-time.Minute),
+	}).Error)
+	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+		ID:             "sha256:error-image",
+		Repository:     "docker.io/library/busybox",
+		Tag:            "latest",
+		HasUpdate:      false,
+		UpdateType:     "error",
+		CurrentVersion: "latest",
+		CheckTime:      now.Add(-2 * time.Minute),
+		LastError:      ptr("registry timeout"),
+	}).Error)
+
+	tests := []struct {
+		name     string
+		filter   string
+		expected []string
+	}{
+		{name: "has update", filter: "has_update", expected: []string{"updated-demo"}},
+		{name: "up to date", filter: "up_to_date", expected: []string{"current-demo"}},
+		{name: "error", filter: "error", expected: []string{"error-demo"}},
+		{name: "unknown", filter: "unknown", expected: []string{"unknown-demo"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			items, page, err := svc.ListProjects(ctx, pagination.QueryParams{
+				Filters: map[string]string{
+					"updates": tt.filter,
+				},
+				PaginationParams: pagination.PaginationParams{Limit: -1},
+				SortParams:       pagination.SortParams{Sort: "name", Order: pagination.SortAsc},
+			})
+			require.NoError(t, err)
+			require.EqualValues(t, len(tt.expected), page.TotalItems)
+
+			names := make([]string, 0, len(items))
+			for _, item := range items {
+				names = append(names, item.Name)
+			}
+			assert.Equal(t, tt.expected, names)
+		})
+	}
+}
+
 func TestProjectService_MergeBuildTags(t *testing.T) {
 	tags := mergeBuildTags("example/app:latest", []string{"example/app:sha", "example/app:latest", " "})
 	assert.Equal(t, []string{"example/app:latest", "example/app:sha"}, tags)
+}
+
+func TestProjectService_ListProjects_WithDerivedStatusFilter_AllowsAllPageSizeSentinel(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsRoot := t.TempDir()
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+
+	for i := 0; i < 25; i++ {
+		projectPath := createComposeProjectDir(t, projectsRoot, fmt.Sprintf("stopped-%02d", i))
+		require.NoError(t, db.Create(&models.Project{
+			BaseModel: models.BaseModel{ID: fmt.Sprintf("project-%02d", i)},
+			Name:      fmt.Sprintf("stopped-%02d", i),
+			DirName:   ptr(fmt.Sprintf("stopped-%02d", i)),
+			Path:      projectPath,
+			Status:    models.ProjectStatusStopped,
+		}).Error)
+	}
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
+
+	items, page, err := svc.ListProjects(ctx, pagination.QueryParams{
+		Filters: map[string]string{
+			"status": string(models.ProjectStatusStopped),
+		},
+		PaginationParams: pagination.PaginationParams{Limit: -1},
+		SortParams:       pagination.SortParams{Sort: "name", Order: pagination.SortAsc},
+	})
+	require.NoError(t, err)
+	assert.EqualValues(t, 25, page.TotalItems)
+	require.Len(t, items, 25)
+	assert.Equal(t, "stopped-00", items[0].Name)
+	assert.Equal(t, "stopped-24", items[len(items)-1].Name)
 }
 
 func TestProjectService_BuildPlatformsFromCompose(t *testing.T) {

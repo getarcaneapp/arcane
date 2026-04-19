@@ -4,6 +4,7 @@ import (
 	"maps"
 	"strconv"
 	"strings"
+	"time"
 
 	containerregistry "github.com/getarcaneapp/arcane/types/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
@@ -498,6 +499,89 @@ type State struct {
 	//
 	// Required: false
 	FinishedAt string `json:"finishedAt,omitempty"`
+
+	// Health contains the healthcheck status, if the container defines one.
+	//
+	// Required: false
+	Health *Health `json:"health,omitempty"`
+}
+
+// HealthLogEntry represents a single probe result from the healthcheck log.
+type HealthLogEntry struct {
+	// Start is when the probe started.
+	//
+	// Required: false
+	Start string `json:"start,omitempty"`
+
+	// End is when the probe finished.
+	//
+	// Required: false
+	End string `json:"end,omitempty"`
+
+	// ExitCode is the exit code of the probe command.
+	//
+	// Required: false
+	ExitCode int `json:"exitCode"`
+
+	// Output is the stdout/stderr captured from the probe.
+	//
+	// Required: false
+	Output string `json:"output,omitempty"`
+}
+
+// Health represents the current healthcheck state of a container.
+type Health struct {
+	// Status is the current healthcheck status (starting, healthy, unhealthy, none).
+	//
+	// Required: true
+	Status string `json:"status"`
+
+	// FailingStreak is the number of consecutive failures.
+	//
+	// Required: false
+	FailingStreak int `json:"failingStreak"`
+
+	// Log is the recent probe history, oldest first.
+	//
+	// Required: false
+	Log []HealthLogEntry `json:"log,omitempty"`
+}
+
+// Healthcheck represents a container's healthcheck configuration.
+// Duration values are expressed in nanoseconds (Docker SDK convention).
+type Healthcheck struct {
+	// Test is the probe command. Common forms:
+	//  - empty / nil: inherit from the image
+	//  - ["NONE"]: healthcheck disabled
+	//  - ["CMD", "..."] / ["CMD-SHELL", "..."]: probe command
+	//
+	// Required: false
+	Test []string `json:"test,omitempty"`
+
+	// Interval between probes, in nanoseconds.
+	//
+	// Required: false
+	Interval int64 `json:"interval,omitempty"`
+
+	// Timeout for a single probe, in nanoseconds.
+	//
+	// Required: false
+	Timeout int64 `json:"timeout,omitempty"`
+
+	// StartPeriod is the initialization grace period, in nanoseconds.
+	//
+	// Required: false
+	StartPeriod int64 `json:"startPeriod,omitempty"`
+
+	// StartInterval is the probe interval during the start period, in nanoseconds.
+	//
+	// Required: false
+	StartInterval int64 `json:"startInterval,omitempty"`
+
+	// Retries is the number of consecutive failures before the container is marked unhealthy.
+	//
+	// Required: false
+	Retries int `json:"retries,omitempty"`
 }
 
 // Config represents configuration details for a container.
@@ -526,6 +610,11 @@ type Config struct {
 	//
 	// Required: false
 	User string `json:"user,omitempty"`
+
+	// Healthcheck is the container's healthcheck configuration.
+	//
+	// Required: false
+	Healthcheck *Healthcheck `json:"healthcheck,omitempty"`
 }
 
 // HostConfig represents host configuration for a container.
@@ -828,34 +917,63 @@ func NewSummary(c container.Summary) Summary {
 
 // NewDetails creates a Details from a docker container.InspectResponse.
 func NewDetails(c *container.InspectResponse) Details {
-	ports := make([]Port, 0)
-	if c.NetworkSettings != nil && c.NetworkSettings.Ports != nil {
-		for p, bindings := range c.NetworkSettings.Ports {
-			privatePort := int(p.Num())
-			typ := string(p.Proto())
+	cfg, labels, imageName := mapInspectConfig(c.Config)
 
-			// When no host bindings exist, still include the private port
-			if len(bindings) == 0 {
-				ports = append(ports, Port{
-					PrivatePort: privatePort,
-					Type:        typ,
-				})
-				continue
-			}
-			for _, b := range bindings {
-				pub, _ := strconv.Atoi(b.HostPort)
-				ports = append(ports, Port{
-					IP:          b.HostIP.String(),
-					PrivatePort: privatePort,
-					PublicPort:  pub,
-					Type:        typ,
-				})
-			}
+	return Details{
+		ID:         c.ID,
+		Name:       strings.TrimPrefix(c.Name, "/"),
+		Image:      imageName,
+		ImageID:    c.Image,
+		Created:    c.Created,
+		State:      mapInspectState(c.State),
+		Config:     cfg,
+		HostConfig: mapInspectHostConfig(c.HostConfig),
+		NetworkSettings: NetworkSettings{
+			Networks: mapInspectNetworks(c.NetworkSettings),
+		},
+		Ports:       mapInspectPorts(c.NetworkSettings),
+		Mounts:      mapInspectMounts(c.Mounts),
+		Labels:      labels,
+		ComposeInfo: mapComposeInfo(labels),
+	}
+}
+
+func mapInspectPorts(networkSettings *container.NetworkSettings) []Port {
+	ports := make([]Port, 0)
+	if networkSettings == nil || networkSettings.Ports == nil {
+		return ports
+	}
+
+	for p, bindings := range networkSettings.Ports {
+		privatePort := int(p.Num())
+		typ := string(p.Proto())
+
+		// When no host bindings exist, still include the private port.
+		if len(bindings) == 0 {
+			ports = append(ports, Port{
+				PrivatePort: privatePort,
+				Type:        typ,
+			})
+			continue
+		}
+
+		for _, b := range bindings {
+			pub, _ := strconv.Atoi(b.HostPort)
+			ports = append(ports, Port{
+				IP:          b.HostIP.String(),
+				PrivatePort: privatePort,
+				PublicPort:  pub,
+				Type:        typ,
+			})
 		}
 	}
 
-	mounts := make([]Mount, 0, len(c.Mounts))
-	for _, m := range c.Mounts {
+	return ports
+}
+
+func mapInspectMounts(mountPoints []container.MountPoint) []Mount {
+	mounts := make([]Mount, 0, len(mountPoints))
+	for _, m := range mountPoints {
 		mounts = append(mounts, Mount{
 			Type:        string(m.Type),
 			Name:        m.Name,
@@ -868,88 +986,140 @@ func NewDetails(c *container.InspectResponse) Details {
 		})
 	}
 
+	return mounts
+}
+
+func mapInspectNetworks(networkSettings *container.NetworkSettings) map[string]NetworkEndpoint {
 	networks := map[string]NetworkEndpoint{}
-	if c.NetworkSettings != nil && c.NetworkSettings.Networks != nil {
-		for name, n := range c.NetworkSettings.Networks {
-			networks[name] = mapEndpointSettings(n)
-		}
+	if networkSettings == nil || networkSettings.Networks == nil {
+		return networks
 	}
 
-	var host HostConfig
-	if c.HostConfig != nil {
-		host = HostConfig{
-			RestartPolicy: string(c.HostConfig.RestartPolicy.Name),
-			Privileged:    c.HostConfig.Privileged,
-			AutoRemove:    c.HostConfig.AutoRemove,
-			NanoCPUs:      c.HostConfig.NanoCPUs,
-			Memory:        c.HostConfig.Memory,
-		}
+	for name, n := range networkSettings.Networks {
+		networks[name] = mapEndpointSettings(n)
 	}
 
-	var cfg Config
+	return networks
+}
+
+func mapInspectHostConfig(hostConfig *container.HostConfig) HostConfig {
+	if hostConfig == nil {
+		return HostConfig{}
+	}
+
+	return HostConfig{
+		RestartPolicy: string(hostConfig.RestartPolicy.Name),
+		Privileged:    hostConfig.Privileged,
+		AutoRemove:    hostConfig.AutoRemove,
+		NanoCPUs:      hostConfig.NanoCPUs,
+		Memory:        hostConfig.Memory,
+	}
+}
+
+func mapInspectConfig(config *container.Config) (Config, map[string]string, string) {
 	labels := map[string]string{}
-	imageName := ""
-	if c.Config != nil {
-		cfg = Config{
-			Env:        append([]string{}, c.Config.Env...),
-			Cmd:        append([]string{}, c.Config.Cmd...),
-			Entrypoint: append([]string{}, c.Config.Entrypoint...),
-			WorkingDir: c.Config.WorkingDir,
-			User:       c.Config.User,
-		}
-		imageName = c.Config.Image
-		if c.Config.Labels != nil {
-			maps.Copy(labels, c.Config.Labels)
-		}
+	if config == nil {
+		return Config{}, labels, ""
 	}
 
-	name := strings.TrimPrefix(c.Name, "/")
+	cfg := Config{
+		Env:        append([]string{}, config.Env...),
+		Cmd:        append([]string{}, config.Cmd...),
+		Entrypoint: append([]string{}, config.Entrypoint...),
+		WorkingDir: config.WorkingDir,
+		User:       config.User,
+	}
 
-	state := State{}
-	if c.State != nil {
-		state = State{
-			Status:     string(c.State.Status),
-			Running:    c.State.Running,
-			ExitCode:   c.State.ExitCode,
-			StartedAt:  c.State.StartedAt,
-			FinishedAt: c.State.FinishedAt,
+	if hc := config.Healthcheck; hc != nil {
+		cfg.Healthcheck = &Healthcheck{
+			Test:          append([]string{}, hc.Test...),
+			Interval:      int64(hc.Interval),
+			Timeout:       int64(hc.Timeout),
+			StartPeriod:   int64(hc.StartPeriod),
+			StartInterval: int64(hc.StartInterval),
+			Retries:       hc.Retries,
 		}
 	}
 
-	// Extract Docker Compose information from labels if present
-	var composeInfo *ComposeInfo
-	if projectName, hasProject := labels["com.docker.compose.project"]; hasProject {
-		if serviceName, hasService := labels["com.docker.compose.service"]; hasService {
-			composeInfo = &ComposeInfo{
-				ProjectName: projectName,
-				ServiceName: serviceName,
-			}
-			if workingDir, ok := labels["com.docker.compose.project.working_dir"]; ok {
-				composeInfo.WorkingDir = workingDir
-			}
-			if configFiles, ok := labels["com.docker.compose.project.config_files"]; ok {
-				composeInfo.ConfigFiles = configFiles
-			}
-		}
+	if config.Labels != nil {
+		maps.Copy(labels, config.Labels)
 	}
 
-	return Details{
-		ID:         c.ID,
-		Name:       name,
-		Image:      imageName,
-		ImageID:    c.Image,
-		Created:    c.Created,
-		State:      state,
-		Config:     cfg,
-		HostConfig: host,
-		NetworkSettings: NetworkSettings{
-			Networks: networks,
-		},
-		Ports:       ports,
-		Mounts:      mounts,
-		Labels:      labels,
-		ComposeInfo: composeInfo,
+	return cfg, labels, config.Image
+}
+
+func mapInspectState(state *container.State) State {
+	if state == nil {
+		return State{}
 	}
+
+	mappedState := State{
+		Status:     string(state.Status),
+		Running:    state.Running,
+		ExitCode:   state.ExitCode,
+		StartedAt:  state.StartedAt,
+		FinishedAt: state.FinishedAt,
+	}
+
+	if state.Health != nil {
+		mappedState.Health = mapInspectHealth(state.Health)
+	}
+
+	return mappedState
+}
+
+func mapInspectHealth(health *container.Health) *Health {
+	log := make([]HealthLogEntry, 0, len(health.Log))
+	for _, entry := range health.Log {
+		if entry == nil {
+			continue
+		}
+
+		log = append(log, HealthLogEntry{
+			Start:    formatTimeOrEmpty(entry.Start),
+			End:      formatTimeOrEmpty(entry.End),
+			ExitCode: entry.ExitCode,
+			Output:   entry.Output,
+		})
+	}
+
+	return &Health{
+		Status:        string(health.Status),
+		FailingStreak: health.FailingStreak,
+		Log:           log,
+	}
+}
+
+func formatTimeOrEmpty(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.Format("2006-01-02T15:04:05.999999999Z07:00")
+}
+
+func mapComposeInfo(labels map[string]string) *ComposeInfo {
+	projectName, hasProject := labels["com.docker.compose.project"]
+	if !hasProject {
+		return nil
+	}
+
+	serviceName, hasService := labels["com.docker.compose.service"]
+	if !hasService {
+		return nil
+	}
+
+	composeInfo := &ComposeInfo{
+		ProjectName: projectName,
+		ServiceName: serviceName,
+	}
+	if workingDir, ok := labels["com.docker.compose.project.working_dir"]; ok {
+		composeInfo.WorkingDir = workingDir
+	}
+	if configFiles, ok := labels["com.docker.compose.project.config_files"]; ok {
+		composeInfo.ConfigFiles = configFiles
+	}
+
+	return composeInfo
 }
 
 func mapEndpointSettings(n *network.EndpointSettings) NetworkEndpoint {

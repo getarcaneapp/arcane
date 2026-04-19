@@ -22,7 +22,8 @@ import {
 	ShieldAlertIcon,
 	HammerIcon,
 	TemplateIcon,
-	GlobeIcon
+	GlobeIcon,
+	UpdateIcon
 } from '$lib/icons';
 import { m } from '$lib/paraglide/messages';
 import type { ShortcutKey } from '$lib/utils/keyboard-shortcut.utils';
@@ -54,6 +55,7 @@ export const navigationItems: NavigationSections = {
 	resourceItems: [
 		{ title: m.containers_title(), url: '/containers', icon: ContainersIcon, shortcut: ['mod', '5'] },
 		{ title: m.images_title(), url: '/images', icon: ImagesIcon, shortcut: ['mod', '6'] },
+		{ title: m.images_updates(), url: '/updates', icon: UpdateIcon, shortcut: ['mod', 'u'] },
 		{
 			title: m.networks_title(),
 			url: '/networks',
