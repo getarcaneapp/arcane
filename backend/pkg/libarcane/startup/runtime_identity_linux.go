@@ -27,8 +27,8 @@ func reexecWithRuntimeIdentityInternal(ctx context.Context, req runtimeIdentityR
 	cmd.Stderr = os.Stderr
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Credential: &syscall.Credential{
-			Uid:    req.UID,
-			Gid:    req.GID,
+			Uid:    req.CredentialUID,
+			Gid:    req.CredentialGID,
 			Groups: groups,
 		},
 	}
