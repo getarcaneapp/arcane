@@ -20,11 +20,12 @@
 	type GitOpsSyncFormProps = {
 		open: boolean;
 		syncToEdit: GitOpsSync | null;
+		targetType?: string;
 		onSubmit: (detail: { sync: GitOpsSyncCreateDto | GitOpsSyncUpdateDto; isEditMode: boolean }) => void;
 		isLoading: boolean;
 	};
 
-	let { open = $bindable(false), syncToEdit = $bindable(), onSubmit, isLoading }: GitOpsSyncFormProps = $props();
+	let { open = $bindable(false), syncToEdit = $bindable(), targetType, onSubmit, isLoading }: GitOpsSyncFormProps = $props();
 
 	let isEditMode = $derived(!!syncToEdit);
 	let showFileBrowser = $state(false);
@@ -106,6 +107,7 @@
 			repositoryId: selectedRepository?.value || data.repositoryId,
 			branch: data.branch,
 			composePath: data.composePath,
+			targetType,
 			projectName: data.name,
 			syncDirectory: data.syncDirectory,
 			autoSync: data.autoSync,

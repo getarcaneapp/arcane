@@ -104,7 +104,7 @@ func initializeServices(ctx context.Context, db *database.DB, cfg *config.Config
 	svcs.System = services.NewSystemService(db, svcs.Docker, svcs.Container, svcs.Image, svcs.Volume, svcs.Network, svcs.Settings)
 	svcs.SystemUpgrade = services.NewSystemUpgradeService(svcs.Docker, svcs.Version, svcs.Event, svcs.Settings)
 	svcs.Updater = services.NewUpdaterService(db, svcs.Settings, svcs.Docker, svcs.Project, svcs.ImageUpdate, svcs.ContainerRegistry, svcs.Event, svcs.Image, svcs.Notification, svcs.SystemUpgrade)
-	svcs.GitOpsSync = services.NewGitOpsSyncService(db, svcs.GitRepository, svcs.Project, svcs.Event, svcs.Settings)
+	svcs.GitOpsSync = services.NewGitOpsSyncService(db, svcs.GitRepository, svcs.Project, svcs.Swarm, svcs.Event, svcs.Settings)
 	svcs.Webhook = services.NewWebhookService(db, svcs.Container, svcs.Updater, svcs.Project, svcs.GitOpsSync, svcs.Event)
 
 	return svcs, dockerClient, nil

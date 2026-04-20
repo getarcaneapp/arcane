@@ -44,14 +44,18 @@
 	};
 	const syncCounts = $derived(syncs?.counts ?? syncCountsFallback);
 
+	let targetTypeFromQuery = $state<string | undefined>(undefined);
+
 	$effect(() => {
 		if (page.url.searchParams.get('action') === 'create') {
+			targetTypeFromQuery = page.url.searchParams.get('targetType') || undefined;
 			// Use a small timeout to ensure the page is fully mounted and ready
 			setTimeout(() => {
 				openCreateSyncDialog();
 				// Remove the query param so it doesn't reopen on refresh
 				const newUrl = new URL(page.url);
 				newUrl.searchParams.delete('action');
+				newUrl.searchParams.delete('targetType');
 				goto(newUrl.toString(), { replaceState: true, keepFocus: true });
 			}, 100);
 		}
@@ -209,6 +213,7 @@
 		<GitOpsSyncFormSheet
 			bind:open={isSyncDialogOpen}
 			bind:syncToEdit
+			targetType={targetTypeFromQuery}
 			onSubmit={handleSyncDialogSubmit}
 			isLoading={isLoading.create || isLoading.edit}
 		/>

@@ -92,7 +92,12 @@ type GitOpsSync struct {
 	// Required: true
 	ComposePath string `json:"composePath"`
 
-	// ProjectName is the name used to create/identify the project.
+	// TargetType indicates what entity is being deployed (e.g. "project" or "swarm_stack").
+	//
+	// Required: true
+	TargetType string `json:"targetType"`
+
+	// ProjectName is the name used to create/identify the project or stack.
 	//
 	// Required: true
 	ProjectName string `json:"projectName"`
@@ -313,7 +318,12 @@ type CreateSyncRequest struct {
 	// Required: true
 	ComposePath string `json:"composePath" binding:"required"`
 
-	// ProjectName is the name of the project to create/update.
+	// TargetType specifies if this sync targets a "project" or "swarm_stack".
+	//
+	// Required: false
+	TargetType string `json:"targetType,omitempty"`
+
+	// ProjectName is the name of the project or stack to create/update.
 	// The actual project will be created on first sync, and ProjectID will be set then.
 	// If not provided, defaults to the sync name.
 	//
@@ -381,7 +391,12 @@ type UpdateSyncRequest struct {
 	// Required: false
 	ComposePath *string `json:"composePath,omitempty"`
 
-	// ProjectName is the name of the project to create/update.
+	// TargetType specifies if this sync targets a "project" or "swarm_stack".
+	//
+	// Required: false
+	TargetType *string `json:"targetType,omitempty"`
+
+	// ProjectName is the name of the project or stack to create/update.
 	//
 	// Required: false
 	ProjectName *string `json:"projectName,omitempty"`
