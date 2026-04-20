@@ -1394,7 +1394,7 @@ func (s *GitOpsSyncService) validateDirectorySyncStageInternal(ctx context.Conte
 	}
 
 	autoInjectEnv := s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false)
-	project, err := projects.LoadComposeProject(
+	project, err := projects.LoadComposeProjectLenient(
 		ctx,
 		filepath.Join(stagePath, composeFileName),
 		normalizeComposeProjectName(projectName),

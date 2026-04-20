@@ -66,8 +66,16 @@ func createAuthValidator(appServices *Services) middleware.AuthValidator {
 	return func(ctx context.Context, c *gin.Context) bool {
 		// Check for API key authentication
 		if apiKey := c.GetHeader("X-API-Key"); apiKey != "" {
-			user, err := appServices.ApiKey.ValidateApiKey(ctx, apiKey)
-			return err == nil && user != nil
+			// User-owned API key
+			if user, err := appServices.ApiKey.ValidateApiKey(ctx, apiKey); err == nil && user != nil {
+				return true
+			}
+			// Environment bootstrap key (user_id = NULL): used by the proxy when forwarding
+			// requests to a remote env whose apiUrl resolves back to this manager.
+			if _, err := appServices.ApiKey.GetEnvironmentByApiKey(ctx, apiKey); err == nil {
+				return true
+			}
+			return false
 		}
 
 		// Check for Bearer token authentication
@@ -100,7 +108,9 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services)
 		Filters: []sloggin.Filter{shouldLogRequest},
 	}))
 
-	authMiddleware := middleware.NewAuthMiddleware(appServices.Auth, cfg).WithApiKeyValidator(appServices.ApiKey)
+	authMiddleware := middleware.NewAuthMiddleware(appServices.Auth, cfg).
+		WithApiKeyValidator(appServices.ApiKey).
+		WithEnvironmentAccessTokenResolver(appServices.Environment)
 	corsMiddleware := middleware.NewCORSMiddleware(cfg).Add()
 	router.Use(corsMiddleware)
 

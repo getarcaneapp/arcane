@@ -126,15 +126,13 @@
 				<ArcaneButton action="cancel" onclick={handleReset} disabled={!hasChanges || saving || isLoadingTemplate}>
 					{m.common_reset()}
 				</ArcaneButton>
-				{#if composeValidationReady && envValidationReady && !composeHasErrors && !envHasErrors}
-					<ArcaneButton
-						action="save"
-						onclick={handleSave}
-						disabled={!canSave || isLoadingTemplate}
-						loading={saving}
-						loadingLabel={m.common_action_saving()}
-					/>
-				{/if}
+				<ArcaneButton
+					action="save"
+					onclick={handleSave}
+					disabled={!canSave || isLoadingTemplate}
+					loading={saving}
+					loadingLabel={m.common_action_saving()}
+				/>
 			</div>
 		</div>
 	</div>

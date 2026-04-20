@@ -31,11 +31,16 @@ type ApiKeyValidator interface {
 	ValidateApiKey(ctx context.Context, rawKey string) (*models.User, error)
 }
 
+type EnvironmentAccessTokenResolver interface {
+	ResolveEnvironmentByAccessToken(ctx context.Context, token string) (*models.Environment, error)
+}
+
 type AuthMiddleware struct {
-	authService     *services.AuthService
-	apiKeyValidator ApiKeyValidator
-	cfg             *config.Config
-	options         AuthOptions
+	authService      *services.AuthService
+	apiKeyValidator  ApiKeyValidator
+	envTokenResolver EnvironmentAccessTokenResolver
+	cfg              *config.Config
+	options          AuthOptions
 }
 
 func NewAuthMiddleware(authService *services.AuthService, cfg *config.Config) *AuthMiddleware {
@@ -49,6 +54,12 @@ func NewAuthMiddleware(authService *services.AuthService, cfg *config.Config) *A
 func (m *AuthMiddleware) WithApiKeyValidator(validator ApiKeyValidator) *AuthMiddleware {
 	clone := *m
 	clone.apiKeyValidator = validator
+	return &clone
+}
+
+func (m *AuthMiddleware) WithEnvironmentAccessTokenResolver(resolver EnvironmentAccessTokenResolver) *AuthMiddleware {
+	clone := *m
+	clone.envTokenResolver = resolver
 	return &clone
 }
 
@@ -108,24 +119,37 @@ func (m *AuthMiddleware) agentAuth(ctx context.Context, c *gin.Context) {
 }
 
 func (m *AuthMiddleware) managerAuth(ctx context.Context, c *gin.Context) {
+	if agentToken := c.GetHeader(headerAgentToken); agentToken != "" {
+		if env, ok := m.resolveEnvironmentAccessToken(ctx, agentToken); ok {
+			environmentSudo(c, env)
+			return
+		}
+	}
+
 	// First, check for API key in X-API-Key header
-	if apiKey := c.GetHeader(headerApiKey); apiKey != "" && m.apiKeyValidator != nil {
-		user, err := m.apiKeyValidator.ValidateApiKey(ctx, apiKey)
-		if err == nil && user != nil {
-			isAdmin := pkgutils.UserHasRole(user.Roles, "admin")
-			if m.options.AdminRequired && !isAdmin {
-				c.JSON(http.StatusForbidden, models.APIError{
-					Code:    "FORBIDDEN",
-					Message: "You don't have permission to access this resource",
-				})
-				c.Abort()
+	if apiKey := c.GetHeader(headerApiKey); apiKey != "" {
+		if m.apiKeyValidator != nil {
+			user, err := m.apiKeyValidator.ValidateApiKey(ctx, apiKey)
+			if err == nil && user != nil {
+				isAdmin := pkgutils.UserHasRole(user.Roles, "admin")
+				if m.options.AdminRequired && !isAdmin {
+					c.JSON(http.StatusForbidden, models.APIError{
+						Code:    "FORBIDDEN",
+						Message: "You don't have permission to access this resource",
+					})
+					c.Abort()
+					return
+				}
+				c.Set("userID", user.ID)
+				c.Set("currentUser", user)
+				c.Set("userIsAdmin", isAdmin)
+				c.Set("authMethod", "api_key")
+				c.Next()
 				return
 			}
-			c.Set("userID", user.ID)
-			c.Set("currentUser", user)
-			c.Set("userIsAdmin", isAdmin)
-			c.Set("authMethod", "api_key")
-			c.Next()
+		}
+		if env, ok := m.resolveEnvironmentAccessToken(ctx, apiKey); ok {
+			environmentSudo(c, env)
 			return
 		}
 		// If API key validation fails, return unauthorized
@@ -191,6 +215,19 @@ func (m *AuthMiddleware) managerAuth(ctx context.Context, c *gin.Context) {
 	c.Next()
 }
 
+func (m *AuthMiddleware) resolveEnvironmentAccessToken(ctx context.Context, token string) (*models.Environment, bool) {
+	if m.envTokenResolver == nil {
+		return nil, false
+	}
+
+	env, err := m.envTokenResolver.ResolveEnvironmentByAccessToken(ctx, token)
+	if err != nil || env == nil {
+		return nil, false
+	}
+
+	return env, true
+}
+
 func isPreflight(c *gin.Context) bool {
 	return c.Request.Method == http.MethodOptions
 }
@@ -199,11 +236,26 @@ func agentSudo(c *gin.Context) {
 	agentUser := &models.User{
 		BaseModel: models.BaseModel{ID: "agent"},
 		Email:     new("agent@getarcane.app"),
+		Username:  "agent",
 		Roles:     []string{"admin"},
 	}
 	c.Set("userID", agentUser.ID)
 	c.Set("currentUser", agentUser)
 	c.Set("userIsAdmin", true)
+	c.Set("authMethod", "agent_token")
+	c.Next()
+}
+
+func environmentSudo(c *gin.Context, env *models.Environment) {
+	envUser := &models.User{
+		BaseModel: models.BaseModel{ID: "environment:" + env.ID},
+		Username:  env.Name,
+		Roles:     []string{"admin"},
+	}
+	c.Set("userID", envUser.ID)
+	c.Set("currentUser", envUser)
+	c.Set("userIsAdmin", true)
+	c.Set("authMethod", "environment_access_token")
 	c.Next()
 }
 

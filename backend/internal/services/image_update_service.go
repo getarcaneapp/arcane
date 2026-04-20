@@ -450,9 +450,56 @@ func (s *ImageUpdateService) saveUpdateResultWithSnapshotInternal(ctx context.Co
 	}
 	imageID, err := s.getImageIDByRef(ctx, imageRef)
 	if err != nil {
-		return fmt.Errorf("failed to get image ID: %w", err)
+		repository := buildImageUpdateRepositoryInternal(parts)
+		syntheticID := buildSyntheticImageUpdateRecordIDInternal(repository, parts.Tag)
+		slog.DebugContext(ctx, "Saving image update result with synthetic ref ID",
+			"imageRef", imageRef,
+			"error", err.Error(),
+			"repository", repository,
+			"tag", parts.Tag,
+			"syntheticID", syntheticID)
+		// Persist registry results even when the local image no longer exists. This keeps
+		// project/image update status available for pruned images using a ref-scoped record.
+		return s.savePreparedUpdateResultInternal(ctx, syntheticID, repository, parts.Tag, result)
 	}
+
 	return s.saveUpdateResultByIDInternal(ctx, imageID, result)
+}
+
+func buildImageUpdateRepositoryInternal(parts *ImageParts) string {
+	if parts == nil {
+		return ""
+	}
+
+	repository := strings.TrimSpace(parts.Repository)
+	if parts.Registry == "docker.io" && repository != "" && !strings.Contains(repository, "/") {
+		repository = "library/" + repository
+	}
+	if strings.TrimSpace(parts.Registry) == "" {
+		return repository
+	}
+
+	return fmt.Sprintf("%s/%s", strings.TrimSpace(parts.Registry), repository)
+}
+
+func buildSyntheticImageUpdateRecordIDInternal(repository, tag string) string {
+	return fmt.Sprintf("ref::%s@%s", strings.ToLower(strings.TrimSpace(repository)), strings.TrimSpace(tag))
+}
+
+func countBatchResultOutcomesInternal(imageRefs []string, results map[string]*imageupdate.Response) (int, int) {
+	successCount := 0
+	errorCount := 0
+
+	for _, imageRef := range imageRefs {
+		result := results[imageRef]
+		if result != nil && strings.TrimSpace(result.Error) == "" {
+			successCount++
+			continue
+		}
+		errorCount++
+	}
+
+	return successCount, errorCount
 }
 
 func extractRepoAndTagFromImage(dockerImage image.InspectResponse) (repo, tag string) {
@@ -814,9 +861,11 @@ func (s *ImageUpdateService) CheckMultipleImages(ctx context.Context, imageRefs 
 		slog.ErrorContext(ctx, "Batch check error", "error", err)
 	}
 
+	successCount, errorCount := countBatchResultOutcomesInternal(imageRefs, results)
 	slog.InfoContext(ctx, "Batch image update check completed",
 		"totalImages", len(imageRefs),
-		"successCount", len(results),
+		"successCount", successCount,
+		"errorCount", errorCount,
 		"duration", time.Since(startBatch))
 
 	if s.notificationService != nil {

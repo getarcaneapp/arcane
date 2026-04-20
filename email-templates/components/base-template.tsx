@@ -1,4 +1,4 @@
-import { Body, Container, Head, Html, Img, Link, Section, Text } from '@react-email/components';
+import { Body, Container, Head, Html, Img, Link, Section, Text } from 'react-email';
 
 interface BaseTemplateProps {
 	logoURL?: string;

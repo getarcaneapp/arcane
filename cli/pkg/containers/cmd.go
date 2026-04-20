@@ -22,11 +22,12 @@ import (
 )
 
 var (
-	containersLimit int
-	containersStart int
-	containersAll   bool
-	forceFlag       bool
-	jsonOutput      bool
+	containersLimit         int
+	containersStart         int
+	containersAll           bool
+	containersUpdatesFilter string
+	forceFlag               bool
+	jsonOutput              bool
 
 	containerCreateFile       string
 	containerCreateName       string
@@ -62,64 +63,148 @@ var containersListCmd = &cobra.Command{
 	Short:        "List containers",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := client.NewFromConfig()
+		return runContainersList(cmd, false)
+	},
+}
+
+var containersUpdatesCmd = &cobra.Command{
+	Use:          "updates",
+	Short:        "List containers with available updates",
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runContainersList(cmd, true)
+	},
+}
+
+func runContainersList(cmd *cobra.Command, forceHasUpdateFilter bool) error {
+	c, err := client.NewFromConfig()
+	if err != nil {
+		return err
+	}
+
+	path, err := buildContainersListPath(cmd, c, forceHasUpdateFilter)
+	if err != nil {
+		return err
+	}
+	resp, err := c.Get(cmd.Context(), path)
+	if err != nil {
+		return fmt.Errorf("failed to list containers: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	var result base.Paginated[container.Summary]
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if jsonOutput {
+		resultBytes, err := json.MarshalIndent(result, "", "  ")
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to marshal JSON: %w", err)
 		}
+		fmt.Println(string(resultBytes))
+		return nil
+	}
 
-		path := types.Endpoints.Containers(c.EnvID())
-		if containersAll {
-			if cmd.Flags().Changed("limit") || cmd.Flags().Changed("start") {
-				return fmt.Errorf("--all cannot be combined with explicit pagination flags")
-			}
-			path = fmt.Sprintf("%s?all=true", path)
-		} else {
-			path, err = cmdutil.ApplyPaginationParams(cmd, path, "containers", "limit", containersLimit, 20, "start", containersStart)
-			if err != nil {
-				return fmt.Errorf("failed to build pagination query: %w", err)
-			}
-		}
-
-		resp, err := c.Get(cmd.Context(), path)
-		if err != nil {
-			return fmt.Errorf("failed to list containers: %w", err)
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result base.Paginated[container.Summary]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
-		}
-
-		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
-		}
-
-		headers := []string{"ID", "NAME", "IMAGE", "STATE", "STATUS"}
+	effectiveUpdatesFilter := strings.TrimSpace(containersUpdatesFilter)
+	if forceHasUpdateFilter {
+		effectiveUpdatesFilter = "has_update"
+	}
+	if effectiveUpdatesFilter != "" {
+		output.Header("Container Updates")
+		headers := []string{"ID", "NAME", "IMAGE", "STATE", "UPDATES", "LATEST"}
 		rows := make([][]string, len(result.Data))
-		for i, container := range result.Data {
-			name := ""
-			if len(container.Names) > 0 {
-				name = strings.TrimPrefix(container.Names[0], "/")
-			}
+		for i, item := range result.Data {
 			rows[i] = []string{
-				shortID(container.ID),
-				name,
-				container.Image,
-				container.State,
-				container.Status,
+				shortID(item.ID),
+				containerSummaryName(item),
+				item.Image,
+				item.State,
+				containerUpdateStatus(item),
+				containerUpdateLatest(item),
 			}
 		}
-
 		output.Table(headers, rows)
 		output.Showing(len(result.Data), result.Pagination.TotalItems, "containers")
 		return nil
-	},
+	}
+
+	headers := []string{"ID", "NAME", "IMAGE", "STATE", "STATUS"}
+	rows := make([][]string, len(result.Data))
+	for i, item := range result.Data {
+		rows[i] = []string{
+			shortID(item.ID),
+			containerSummaryName(item),
+			item.Image,
+			item.State,
+			item.Status,
+		}
+	}
+
+	output.Table(headers, rows)
+	output.Showing(len(result.Data), result.Pagination.TotalItems, "containers")
+	return nil
+}
+
+func buildContainersListPath(cmd *cobra.Command, c *client.Client, forceHasUpdateFilter bool) (string, error) {
+	path := types.Endpoints.Containers(c.EnvID())
+	if containersAll {
+		if cmd != nil && (cmd.Flags().Changed("limit") || cmd.Flags().Changed("start")) {
+			return "", fmt.Errorf("--all cannot be combined with explicit pagination flags")
+		}
+	} else {
+		var err error
+		path, err = cmdutil.ApplyPaginationParams(cmd, path, "containers", "limit", containersLimit, 20, "start", containersStart)
+		if err != nil {
+			return "", fmt.Errorf("failed to build pagination query: %w", err)
+		}
+	}
+
+	parsed, err := url.Parse(path)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse path: %w", err)
+	}
+
+	query := parsed.Query()
+	if containersAll {
+		query.Set("all", "true")
+	}
+	updatesFilter := strings.TrimSpace(containersUpdatesFilter)
+	if forceHasUpdateFilter {
+		updatesFilter = "has_update"
+	}
+	if updatesFilter != "" {
+		query.Set("updates", updatesFilter)
+	}
+
+	parsed.RawQuery = query.Encode()
+	return parsed.String(), nil
+}
+
+func containerUpdateStatus(item container.Summary) string {
+	switch {
+	case item.UpdateInfo == nil:
+		return "unknown"
+	case item.UpdateInfo.Error != "":
+		return "error"
+	case item.UpdateInfo.HasUpdate:
+		return "has_update"
+	default:
+		return "up_to_date"
+	}
+}
+
+func containerUpdateLatest(item container.Summary) string {
+	if item.UpdateInfo == nil {
+		return "-"
+	}
+	if strings.TrimSpace(item.UpdateInfo.LatestVersion) != "" {
+		return item.UpdateInfo.LatestVersion
+	}
+	if strings.TrimSpace(item.UpdateInfo.LatestDigest) != "" {
+		return item.UpdateInfo.LatestDigest
+	}
+	return "-"
 }
 
 var containersGetCmd = &cobra.Command{
@@ -622,6 +707,7 @@ var containersCreateCmd = &cobra.Command{
 
 func init() {
 	ContainersCmd.AddCommand(containersListCmd)
+	ContainersCmd.AddCommand(containersUpdatesCmd)
 	ContainersCmd.AddCommand(containersGetCmd)
 	ContainersCmd.AddCommand(containersStartCmd)
 	ContainersCmd.AddCommand(containersStopCmd)
@@ -656,7 +742,11 @@ func init() {
 	containersListCmd.Flags().IntVarP(&containersLimit, "limit", "n", 20, "Number of containers to show")
 	containersListCmd.Flags().IntVar(&containersStart, "start", 0, "Offset for pagination")
 	containersListCmd.Flags().BoolVarP(&containersAll, "all", "a", false, "Show all containers (including stopped)")
+	containersListCmd.Flags().StringVar(&containersUpdatesFilter, "updates", "", "Filter by update status (has_update, up_to_date, error, unknown)")
 	containersListCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
+	containersUpdatesCmd.Flags().IntVarP(&containersLimit, "limit", "n", 20, "Number of containers to show")
+	containersUpdatesCmd.Flags().IntVar(&containersStart, "start", 0, "Offset for pagination")
+	containersUpdatesCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 
 	// Delete command flags
 	containersDeleteCmd.Flags().BoolVarP(&forceFlag, "force", "f", false, "Force deletion without confirmation")

@@ -34,6 +34,7 @@ type DashboardService struct {
 	db                   *database.DB
 	dockerService        *DockerClientService
 	containerService     *ContainerService
+	projectService       *ProjectService
 	settingsService      *SettingsService
 	vulnerabilityService *VulnerabilityService
 	environmentService   *EnvironmentService
@@ -48,6 +49,7 @@ func NewDashboardService(
 	db *database.DB,
 	dockerService *DockerClientService,
 	containerService *ContainerService,
+	projectService *ProjectService,
 	settingsService *SettingsService,
 	vulnerabilityService *VulnerabilityService,
 	environmentService *EnvironmentService,
@@ -57,6 +59,7 @@ func NewDashboardService(
 		db:                   db,
 		dockerService:        dockerService,
 		containerService:     containerService,
+		projectService:       projectService,
 		settingsService:      settingsService,
 		vulnerabilityService: vulnerabilityService,
 		environmentService:   environmentService,
@@ -174,7 +177,7 @@ func (s *DashboardService) GetActionItems(ctx context.Context, options Dashboard
 
 	var (
 		stoppedContainers         int
-		pendingImageUpdates       int
+		pendingResourceUpdates    int
 		actionableVulnerabilities int
 		expiringAPIKeys           int
 	)
@@ -191,11 +194,11 @@ func (s *DashboardService) GetActionItems(ctx context.Context, options Dashboard
 	})
 
 	g.Go(func() error {
-		count, err := s.getPendingImageUpdatesCountInternal(groupCtx)
+		count, err := s.getPendingResourceUpdatesCountInternal(groupCtx)
 		if err != nil {
 			return err
 		}
-		pendingImageUpdates = count
+		pendingResourceUpdates = count
 		return nil
 	})
 
@@ -231,10 +234,10 @@ func (s *DashboardService) GetActionItems(ctx context.Context, options Dashboard
 		})
 	}
 
-	if pendingImageUpdates > 0 {
+	if pendingResourceUpdates > 0 {
 		actionItems = append(actionItems, dashboardtypes.ActionItem{
 			Kind:     dashboardtypes.ActionItemKindImageUpdates,
-			Count:    pendingImageUpdates,
+			Count:    pendingResourceUpdates,
 			Severity: dashboardtypes.ActionItemSeverityWarning,
 		})
 	}
@@ -312,14 +315,14 @@ func (s *DashboardService) buildActionItemsForSnapshotInternal(
 	ctx context.Context,
 	options DashboardActionItemsOptions,
 	containers []dockercontainer.Summary,
-	images []dockerimage.Summary,
+	_ []dockerimage.Summary,
 ) (*dashboardtypes.ActionItems, error) {
 	if options.DebugAllGood {
 		return &dashboardtypes.ActionItems{Items: []dashboardtypes.ActionItem{}}, nil
 	}
 
 	var (
-		pendingImageUpdates       int
+		pendingResourceUpdates    int
 		actionableVulnerabilities int
 		expiringAPIKeys           int
 	)
@@ -327,11 +330,11 @@ func (s *DashboardService) buildActionItemsForSnapshotInternal(
 	g, groupCtx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
-		count, err := s.getPendingImageUpdatesCountForImageIDs(groupCtx, extractDockerImageIDsInternal(images))
+		count, err := s.getPendingResourceUpdatesCountInternal(groupCtx)
 		if err != nil {
 			return err
 		}
-		pendingImageUpdates = count
+		pendingResourceUpdates = count
 		return nil
 	})
 
@@ -364,12 +367,12 @@ func (s *DashboardService) buildActionItemsForSnapshotInternal(
 		}
 	}
 
-	return buildDashboardActionItemsInternal(stoppedContainers, pendingImageUpdates, actionableVulnerabilities, expiringAPIKeys), nil
+	return buildDashboardActionItemsInternal(stoppedContainers, pendingResourceUpdates, actionableVulnerabilities, expiringAPIKeys), nil
 }
 
 func buildDashboardActionItemsInternal(
 	stoppedContainers int,
-	pendingImageUpdates int,
+	pendingResourceUpdates int,
 	actionableVulnerabilities int,
 	expiringAPIKeys int,
 ) *dashboardtypes.ActionItems {
@@ -383,10 +386,10 @@ func buildDashboardActionItemsInternal(
 		})
 	}
 
-	if pendingImageUpdates > 0 {
+	if pendingResourceUpdates > 0 {
 		actionItems = append(actionItems, dashboardtypes.ActionItem{
 			Kind:     dashboardtypes.ActionItemKindImageUpdates,
-			Count:    pendingImageUpdates,
+			Count:    pendingResourceUpdates,
 			Severity: dashboardtypes.ActionItemSeverityWarning,
 		})
 	}
@@ -630,20 +633,31 @@ func summarizeEnvironmentOverviewInternal(items []dashboardtypes.EnvironmentOver
 	return summary
 }
 
-func (s *DashboardService) getPendingImageUpdatesCountInternal(ctx context.Context) (int, error) {
+func (s *DashboardService) getPendingResourceUpdatesCountInternal(ctx context.Context) (int, error) {
 	if s.db == nil || s.dockerService == nil {
 		return 0, nil
 	}
 
-	images, _, _, _, err := s.dockerService.GetAllImages(ctx)
+	containers, _, _, _, err := s.dockerService.GetAllContainers(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("failed to load images for update counts: %w", err)
+		return 0, fmt.Errorf("failed to load containers for update counts: %w", err)
 	}
 
-	return s.getPendingImageUpdatesCountForImageIDs(ctx, extractDockerImageIDsInternal(images))
+	filteredContainers := filterInternalContainers(containers, false)
+	containerCount, err := s.getPendingContainerUpdatesCountForImageIDsInternal(ctx, collectImageIDs(filteredContainers))
+	if err != nil {
+		return 0, err
+	}
+
+	projectCount, err := s.getPendingProjectUpdatesCountInternal(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	return containerCount + projectCount, nil
 }
 
-func (s *DashboardService) getPendingImageUpdatesCountForImageIDs(ctx context.Context, imageIDs []string) (int, error) {
+func (s *DashboardService) getPendingContainerUpdatesCountForImageIDsInternal(ctx context.Context, imageIDs []string) (int, error) {
 	if s.db == nil || len(imageIDs) == 0 {
 		return 0, nil
 	}
@@ -654,12 +668,24 @@ func (s *DashboardService) getPendingImageUpdatesCountForImageIDs(ctx context.Co
 		Where("id IN ? AND has_update = ?", imageIDs, true).
 		Count(&count).Error
 	if err != nil {
-		return 0, fmt.Errorf("failed to count pending image updates: %w", err)
+		return 0, fmt.Errorf("failed to count pending container updates: %w", err)
 	}
 
 	return int(count), nil
 }
 
+func (s *DashboardService) getPendingProjectUpdatesCountInternal(ctx context.Context) (int, error) {
+	if s.projectService == nil {
+		return 0, nil
+	}
+
+	count, err := s.projectService.countProjectsByUpdateStatusInternal(ctx, "has_update")
+	if err != nil {
+		return 0, fmt.Errorf("failed to count projects with updates: %w", err)
+	}
+
+	return count, nil
+}
 func (s *DashboardService) getActionableVulnerabilitiesCountInternal(ctx context.Context) (int, error) {
 	if s.vulnerabilityService == nil {
 		return 0, nil
@@ -684,22 +710,6 @@ func (s *DashboardService) getExpiringAPIKeysCountInternal(ctx context.Context) 
 	}
 
 	return int(count), nil
-}
-
-func extractDockerImageIDsInternal(images []dockerimage.Summary) []string {
-	if len(images) == 0 {
-		return nil
-	}
-
-	imageIDs := make([]string, 0, len(images))
-	for _, img := range images {
-		if img.ID == "" {
-			continue
-		}
-		imageIDs = append(imageIDs, img.ID)
-	}
-
-	return imageIDs
 }
 
 func (s *DashboardService) listDashboardContainersInternal(ctx context.Context) ([]dockercontainer.Summary, error) {

@@ -15,7 +15,7 @@ type ApiKey struct {
 	Name        string     `json:"name" doc:"Name of the API key"`
 	Description *string    `json:"description,omitempty" doc:"Description of the API key"`
 	KeyPrefix   string     `json:"keyPrefix" doc:"Prefix of the API key for identification"`
-	UserID      string     `json:"userId" doc:"ID of the user who owns the API key"`
+	UserID      *string    `json:"userId,omitempty" doc:"ID of the user who owns the API key"`
 	IsStatic    bool       `json:"isStatic" doc:"Whether the API key is environment-managed and protected from deletion"`
 	ExpiresAt   *time.Time `json:"expiresAt,omitempty" doc:"Expiration date of the API key"`
 	LastUsedAt  *time.Time `json:"lastUsedAt,omitempty" doc:"Last time the API key was used"`

@@ -40,7 +40,7 @@
 	}));
 
 	const checkUpdatesMutation = createMutation(() => ({
-		mutationKey: ['projects', 'check-updates', envId],
+		mutationKey: queryKeys.projects.checkUpdates(envId),
 		mutationFn: async () => {
 			// Refresh update info for all images, then use the image->project usage
 			// map to narrow the redeploy to projects that actually have updates.
@@ -88,11 +88,11 @@
 			} else {
 				toast.success(m.compose_update_success());
 			}
-			await projectsQuery.refetch();
+			await Promise.all([projectsQuery.refetch(), projectStatusCountsQuery.refetch()]);
 		},
 		onError: (error) => {
 			toast.error(error instanceof Error ? error.message : m.containers_check_updates_failed());
-			projectsQuery.refetch();
+			void Promise.all([projectsQuery.refetch(), projectStatusCountsQuery.refetch()]);
 		}
 	}));
 

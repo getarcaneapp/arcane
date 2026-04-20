@@ -492,7 +492,7 @@
 									value={imageUpdatesAttentionCount}
 									description={m.image_update_tag_description()}
 									ctaLabel={m.common_view_all()}
-									href="/images"
+									href="/updates"
 								/>
 							{/if}
 
