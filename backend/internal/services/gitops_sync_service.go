@@ -20,6 +20,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils/mapper"
 	"github.com/getarcaneapp/arcane/types/gitops"
+	"github.com/getarcaneapp/arcane/types/swarm"
 	"gorm.io/gorm"
 )
 
@@ -27,6 +28,7 @@ type GitOpsSyncService struct {
 	db              *database.DB
 	repoService     *GitRepositoryService
 	projectService  *ProjectService
+	swarmService    *SwarmService
 	eventService    *EventService
 	settingsService *SettingsService
 }
@@ -118,11 +120,12 @@ func effectiveInt64Limit(syncLimit, environmentLimit int64) int64 {
 	}
 }
 
-func NewGitOpsSyncService(db *database.DB, repoService *GitRepositoryService, projectService *ProjectService, eventService *EventService, settingsService *SettingsService) *GitOpsSyncService {
+func NewGitOpsSyncService(db *database.DB, repoService *GitRepositoryService, projectService *ProjectService, swarmService *SwarmService, eventService *EventService, settingsService *SettingsService) *GitOpsSyncService {
 	return &GitOpsSyncService{
 		db:              db,
 		repoService:     repoService,
 		projectService:  projectService,
+		swarmService:    swarmService,
 		eventService:    eventService,
 		settingsService: settingsService,
 	}
@@ -291,6 +294,7 @@ func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string
 		RepositoryID:      req.RepositoryID,
 		Branch:            req.Branch,
 		ComposePath:       req.ComposePath,
+		TargetType:        req.TargetType,
 		ProjectName:       projectName,
 		ProjectID:         nil, // Will be set during first sync
 		AutoSync:          false,
@@ -375,6 +379,9 @@ func (s *GitOpsSyncService) UpdateSync(ctx context.Context, environmentID, id st
 	}
 	if req.ComposePath != nil {
 		updates["compose_path"] = *req.ComposePath
+	}
+	if req.TargetType != nil {
+		updates["target_type"] = *req.TargetType
 	}
 	if req.ProjectName != nil {
 		updates["project_name"] = *req.ProjectName
@@ -492,6 +499,10 @@ func (s *GitOpsSyncService) PerformSync(ctx context.Context, environmentID, id s
 		return result, err
 	}
 
+	if sync.TargetType == "swarm_stack" {
+		return s.performSwarmStackSync(syncCtx, sync, id, actor, result, source)
+	}
+
 	if sync.SyncDirectory {
 		return s.performDirectorySync(syncCtx, sync, id, actor, result, source)
 	}
@@ -582,7 +593,11 @@ func (s *GitOpsSyncService) performDirectorySync(ctx context.Context, sync *mode
 
 // performSingleFileSync preserves the legacy compose-only Git sync behavior.
 func (s *GitOpsSyncService) performSingleFileSync(ctx context.Context, sync *models.GitOpsSync, id string, actor models.User, result *gitops.SyncResult, source *preparedSyncSource) (*gitops.SyncResult, error) {
-	slog.InfoContext(ctx, "Using single file sync mode", "syncId", id, "composePath", sync.ComposePath)
+	slog.InfoContext(ctx, "Using single file sync mode", "syncId", id, "composePath", sync.ComposePath, "targetType", sync.TargetType)
+
+	if sync.TargetType == "swarm_stack" {
+		return s.performSwarmStackSync(ctx, sync, id, actor, result, source)
+	}
 
 	project, err := s.getOrCreateProjectInternal(ctx, sync, id, source.composeContent, source.envContent, result, actor)
 	if err != nil {
@@ -596,6 +611,54 @@ func (s *GitOpsSyncService) performSingleFileSync(ctx context.Context, sync *mod
 	s.logSyncSuccess(ctx, sync, project, actor)
 	slog.InfoContext(ctx, "GitOps sync completed", "syncId", id, "project", project.Name)
 
+	return result, nil
+}
+
+// performSwarmStackSync executes a single file sync targeted at a Swarm Stack
+func (s *GitOpsSyncService) performSwarmStackSync(ctx context.Context, sync *models.GitOpsSync, id string, actor models.User, result *gitops.SyncResult, source *preparedSyncSource) (*gitops.SyncResult, error) {
+	slog.InfoContext(ctx, "Deploying Swarm Stack from GitOps sync", "syncId", id, "stackName", sync.ProjectName)
+
+	if s.swarmService == nil {
+		return result, s.failSync(ctx, id, result, sync, actor, "Swarm service is unavailable", "swarm service is unavailable")
+	}
+
+	envContent := ""
+	if source.envContent != nil {
+		envContent = *source.envContent
+	}
+
+	req := swarm.StackDeployRequest{
+		Name:           sync.ProjectName,
+		ComposeContent: source.composeContent,
+		EnvContent:     envContent,
+		Prune:          true,
+		WorkingDir:     filepath.Dir(filepath.Join(source.repoPath, sync.ComposePath)),
+	}
+
+	if _, err := s.swarmService.DeployStack(ctx, sync.EnvironmentID, req); err != nil {
+		return result, s.failSync(ctx, id, result, sync, actor, "Failed to deploy swarm stack", err.Error())
+	}
+
+	syncedFiles := []string{filepath.Base(sync.ComposePath)}
+	s.updateSyncStatusWithFiles(ctx, id, "success", "", source.commitHash, syncedFiles)
+	result.Success = true
+	result.Message = fmt.Sprintf("Successfully deployed swarm stack %s from %s", sync.ProjectName, sync.ComposePath)
+
+	// Log event
+	_, _ = s.eventService.CreateEvent(ctx, CreateEventRequest{
+		Type:          models.EventTypeGitSyncRun,
+		Severity:      models.EventSeveritySuccess,
+		Title:         "Git sync completed for stack",
+		Description:   fmt.Sprintf("Successfully synced '%s' to swarm stack '%s'", sync.Name, sync.ProjectName),
+		ResourceType:  new("git_sync"),
+		ResourceID:    new(sync.ID),
+		ResourceName:  new(sync.Name),
+		UserID:        new(actor.ID),
+		Username:      new(actor.Username),
+		EnvironmentID: new(sync.EnvironmentID),
+	})
+
+	slog.InfoContext(ctx, "GitOps swarm stack sync completed", "syncId", id, "stack", sync.ProjectName)
 	return result, nil
 }
 
