@@ -463,8 +463,8 @@ func (h *WebSocketHandler) startProjectLogSourceInternal(ctx context.Context, ke
 				return
 			}
 
-			h.broadcastProjectLogStreamErrorInternal(projectID, format, err, ls)
 			h.markLogStreamDoneInternal(key, ls)
+			h.broadcastProjectLogStreamErrorInternal(projectID, format, err, ls)
 			return
 		}
 
@@ -653,8 +653,8 @@ func (h *WebSocketHandler) startContainerLogHub(key, containerID, format string,
 				return
 			}
 
-			h.broadcastContainerLogStreamErrorInternal(containerID, format, err, ls)
 			h.markLogStreamDoneInternal(key, ls)
+			h.broadcastContainerLogStreamErrorInternal(containerID, format, err, ls)
 			return
 		}
 
@@ -794,8 +794,8 @@ func (h *WebSocketHandler) startServiceLogHub(key, serviceID, format string, bat
 				return
 			}
 
-			h.broadcastServiceLogStreamErrorInternal(serviceID, format, err, ls)
 			h.markLogStreamDoneInternal(key, ls)
+			h.broadcastServiceLogStreamErrorInternal(serviceID, format, err, ls)
 			return
 		}
 
