@@ -105,12 +105,12 @@ func (s *ApiKeyService) CreateApiKey(ctx context.Context, userID string, req api
 		return nil, err
 	}
 
-	return s.createAPIKeyWithRawKey(ctx, userID, rawKey, req, nil, nil)
+	return s.createAPIKeyWithRawKey(ctx, &userID, rawKey, req, nil, nil)
 }
 
 func (s *ApiKeyService) createAPIKeyWithRawKey(
 	ctx context.Context,
-	userID string,
+	userID *string,
 	rawKey string,
 	req apikey.CreateApiKey,
 	managedBy *string,
@@ -168,7 +168,7 @@ func toAPIKeyDTOInternal(ak *models.ApiKey) apikey.ApiKey {
 }
 
 func (s *ApiKeyService) CreateDefaultAdminAPIKey(ctx context.Context, userID, rawKey string) (*apikey.ApiKeyCreatedDto, error) {
-	return s.createAPIKeyWithRawKey(ctx, userID, rawKey, apikey.CreateApiKey{
+	return s.createAPIKeyWithRawKey(ctx, &userID, rawKey, apikey.CreateApiKey{
 		Name:        defaultAdminAPIKeyName,
 		Description: defaultAdminAPIKeyDescription,
 	}, new(managedByAdminBootstrap), nil)
@@ -258,7 +258,7 @@ func (s *ApiKeyService) createManagedDefaultAdminAPIKey(tx *gorm.DB, userID, raw
 		KeyHash:     keyHash,
 		KeyPrefix:   keyPrefix,
 		ManagedBy:   new(managedByAdminBootstrap),
-		UserID:      userID,
+		UserID:      &userID,
 	}
 
 	if err := tx.Create(ak).Error; err != nil {
@@ -316,7 +316,7 @@ func (s *ApiKeyService) CreateEnvironmentApiKey(ctx context.Context, environment
 		envIDShort = environmentID[:8]
 	}
 	name := fmt.Sprintf("Environment Bootstrap Key - %s", envIDShort)
-	return s.createAPIKeyWithRawKey(ctx, userID, rawKey, apikey.CreateApiKey{
+	return s.createAPIKeyWithRawKey(ctx, nil, rawKey, apikey.CreateApiKey{
 		Name:        name,
 		Description: new("Auto-generated key for environment pairing"),
 	}, nil, &environmentID)
@@ -450,9 +450,13 @@ func (s *ApiKeyService) ValidateApiKey(ctx context.Context, rawKey string) (*mod
 				return nil, ErrApiKeyExpired
 			}
 
+			if apiKey.UserID == nil {
+				return nil, ErrApiKeyInvalid
+			}
+
 			s.markApiKeyUsedAsync(ctx, apiKey.ID)
 
-			user, err := s.userService.GetUserByID(ctx, apiKey.UserID)
+			user, err := s.userService.GetUserByID(ctx, *apiKey.UserID)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get user for API key: %w", err)
 			}

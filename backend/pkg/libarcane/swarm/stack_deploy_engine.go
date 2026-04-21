@@ -110,6 +110,10 @@ func DeployStack(ctx context.Context, dockerClient *dockerclient.Client, opts St
 		return err
 	}
 
+	if err := ensureSwarmVolumesInternal(ctx, dockerClient, project, stackName, stackLabels); err != nil {
+		return err
+	}
+
 	configMetaByKey, err := ensureSwarmConfigs(ctx, dockerClient, project, stackName, stackLabels)
 	if err != nil {
 		return err
@@ -393,6 +397,48 @@ func ensureSwarmConfigs(ctx context.Context, dockerClient *dockerclient.Client, 
 		result[key] = meta
 	}
 	return result, nil
+}
+
+// ensureSwarmVolumesInternal pre-creates named volumes that carry a driver or
+// driver_opts so that Swarm services pick up the correct volume configuration.
+// Without this step Docker creates a plain local volume on first use and the
+// driver options are silently ignored — the root cause of issue #2376.
+func ensureSwarmVolumesInternal(ctx context.Context, dockerClient *dockerclient.Client, project *composegotypes.Project, stackName string, stackLabels map[string]string) error {
+	for key, cfg := range project.Volumes {
+		// External volumes must already exist; nothing to create.
+		if cfg.External {
+			continue
+		}
+		// Only act when driver or driver_opts are explicitly set.
+		if cfg.Driver == "" && len(cfg.DriverOpts) == 0 {
+			continue
+		}
+
+		name := resolveResourceName(stackName, key, cfg.Name, cfg.External)
+
+		// If the volume already exists, leave it as-is to avoid disrupting
+		// running services that may be attached to it.
+		if _, err := dockerClient.VolumeInspect(ctx, name, dockerclient.VolumeInspectOptions{}); err == nil {
+			continue
+		} else if !cerrdefs.IsNotFound(err) {
+			return fmt.Errorf("failed to inspect volume %s: %w", name, err)
+		}
+
+		driver := cfg.Driver
+		if driver == "" {
+			driver = "local"
+		}
+		labels := mergeLabels(cfg.Labels, stackLabels)
+		if _, err := dockerClient.VolumeCreate(ctx, dockerclient.VolumeCreateOptions{
+			Name:       name,
+			Driver:     driver,
+			DriverOpts: cfg.DriverOpts,
+			Labels:     labels,
+		}); err != nil {
+			return fmt.Errorf("failed to create volume %s: %w", name, err)
+		}
+	}
+	return nil
 }
 
 func ensureSwarmSecrets(ctx context.Context, dockerClient *dockerclient.Client, project *composegotypes.Project, stackName string, stackLabels map[string]string) (map[string]resourceMeta, error) {

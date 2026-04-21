@@ -107,28 +107,28 @@ func TestDashboardService_GetActionItems_IncludesExpiringAPIKeys(t *testing.T) {
 		Name:      "expiring-soon",
 		KeyHash:   "hash-soon",
 		KeyPrefix: "arc_test_s",
-		UserID:    "user-1",
+		UserID:    new("user-1"),
 		ExpiresAt: new(now.Add(24 * time.Hour)),
 	})
 	createDashboardTestAPIKey(t, db, models.ApiKey{
 		Name:      "already-expired",
 		KeyHash:   "hash-expired",
 		KeyPrefix: "arc_test_e",
-		UserID:    "user-1",
+		UserID:    new("user-1"),
 		ExpiresAt: new(now.Add(-24 * time.Hour)),
 	})
 	createDashboardTestAPIKey(t, db, models.ApiKey{
 		Name:      "future",
 		KeyHash:   "hash-future",
 		KeyPrefix: "arc_test_f",
-		UserID:    "user-1",
+		UserID:    new("user-1"),
 		ExpiresAt: new(now.Add(45 * 24 * time.Hour)),
 	})
 	createDashboardTestAPIKey(t, db, models.ApiKey{
 		Name:      "never-expires",
 		KeyHash:   "hash-never",
 		KeyPrefix: "arc_test_n",
-		UserID:    "user-1",
+		UserID:    new("user-1"),
 	})
 
 	actionItems, err := svc.GetActionItems(context.Background(), DashboardActionItemsOptions{})
@@ -150,7 +150,7 @@ func TestDashboardService_GetActionItems_DebugAllGoodReturnsNoItems(t *testing.T
 		Name:      "expiring-soon",
 		KeyHash:   "hash-soon",
 		KeyPrefix: "arc_test_d",
-		UserID:    "user-1",
+		UserID:    new("user-1"),
 		ExpiresAt: new(time.Now().Add(2 * time.Hour)),
 	})
 
@@ -216,7 +216,7 @@ func TestDashboardService_GetSnapshot_ReturnsDashboardSnapshot(t *testing.T) {
 		Name:      "expiring-soon",
 		KeyHash:   "hash-soon",
 		KeyPrefix: "arc_test_snapshot",
-		UserID:    "user-1",
+		UserID:    new("user-1"),
 		ExpiresAt: new(time.Now().Add(12 * time.Hour)),
 	})
 

@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import * as Card from '$lib/components/ui/card/index.js';
 	import { Label } from '$lib/components/ui/label';
 	import { Switch } from '$lib/components/ui/switch/index.js';
@@ -127,7 +126,7 @@
 		}
 	}
 
-	onMount(() => {
+	$effect(() => {
 		void loadTrivyNetworkOptions();
 	});
 </script>
@@ -153,7 +152,7 @@
 					error={$formInputs.trivyImage.error}
 					disabled={true}
 					label={m.security_trivy_image_label()}
-					placeholder="ghcr.io/aquasecurity/trivy@sha256:bcc376de8d77cfe086a917230e818dc9f8528e3c852f7b1aff648949b6258d1c"
+					placeholder="ghcr.io/getarcaneapp/tools:latest"
 					type="text"
 				/>
 			</div>
