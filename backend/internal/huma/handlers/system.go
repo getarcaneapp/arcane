@@ -286,16 +286,24 @@ func (h *SystemHandler) GetDockerInfo(ctx context.Context, input *GetDockerInfoI
 	cpuCount := info.NCPU
 	memTotal := info.MemTotal
 
-	// Check for cgroup limits (LXC, Docker, etc.)
-	if cgroupLimits, err := docker.DetectCgroupLimits(); err == nil {
-		if limit := cgroupLimits.MemoryLimit; limit > 0 {
-			limitInt := int64(limit)
-			if memTotal == 0 || limitInt < memTotal {
-				memTotal = limitInt
+	// Apply cgroup limits only when running outside Docker (e.g. in LXC).
+	// In Docker, --cpus/--memory are artificial operator constraints that
+	// should not cap the host totals shown in the dashboard. The Docker
+	// daemon's NCPU/MemTotal already reflect the real host. In LXC the
+	// daemon may report the physical machine's full capacity while the
+	// LXC guest has a smaller cgroup budget — apply those limits so the
+	// dashboard shows what Arcane's host actually has available.
+	if !docker.IsDockerContainer() {
+		if cgroupLimits, err := docker.DetectCgroupLimits(); err == nil {
+			if limit := cgroupLimits.MemoryLimit; limit > 0 {
+				limitInt := int64(limit)
+				if memTotal == 0 || limitInt < memTotal {
+					memTotal = limitInt
+				}
 			}
-		}
-		if cgroupLimits.CPUCount > 0 && (cpuCount == 0 || cgroupLimits.CPUCount < cpuCount) {
-			cpuCount = cgroupLimits.CPUCount
+			if cgroupLimits.CPUCount > 0 && (cpuCount == 0 || cgroupLimits.CPUCount < cpuCount) {
+				cpuCount = cgroupLimits.CPUCount
+			}
 		}
 	}
 

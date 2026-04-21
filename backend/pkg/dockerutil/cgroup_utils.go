@@ -271,6 +271,30 @@ var (
 	cgroupV2ContainerPattern = regexp.MustCompile(`docker-([a-f0-9]{64})\.scope`)
 )
 
+// IsDockerContainer reports whether the current process is running inside a
+// Docker container (as opposed to an LXC container, a VM, or bare metal).
+//
+// The distinction matters for System Overview stats: in Docker the cgroup
+// limits (--cpus / --memory) are artificial constraints set by the operator
+// and should NOT be used as the host resource totals shown in the dashboard.
+// In LXC, by contrast, the cgroup limits represent the real hardware budget
+// assigned to the container — gopsutil reads the host's /proc values which are
+// higher, so the cgroup limits must be applied to show correct figures.
+//
+// Detection: Docker always creates /.dockerenv inside every container it
+// starts.  LXC does not.  We fall back to a /proc/self/cgroup pattern check
+// as a secondary signal.
+func IsDockerContainer() bool {
+	if _, err := os.Stat("/.dockerenv"); err == nil {
+		return true
+	}
+	data, err := os.ReadFile("/proc/self/cgroup")
+	if err != nil {
+		return false
+	}
+	return cgroupV1ContainerPattern.Match(data) || cgroupV2ContainerPattern.Match(data)
+}
+
 // GetCurrentContainerID detects the current container ID using multiple detection methods
 // It tries cgroup, mountinfo, and hostname in that order
 func GetCurrentContainerID() (string, error) {

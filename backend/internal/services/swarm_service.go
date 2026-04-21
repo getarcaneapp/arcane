@@ -843,6 +843,7 @@ func (s *SwarmService) DeployStack(ctx context.Context, environmentID string, re
 		},
 		Prune:        req.Prune,
 		ResolveImage: req.ResolveImage,
+		WorkingDir:   req.WorkingDir,
 	}); err != nil {
 		return nil, err
 	}

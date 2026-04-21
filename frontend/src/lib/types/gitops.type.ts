@@ -40,6 +40,7 @@ export interface GitOpsSyncCreateDto {
 	repositoryId: string;
 	branch: string;
 	composePath: string;
+	targetType?: string;
 	projectName?: string;
 	autoSync?: boolean;
 	syncInterval?: number;
@@ -54,6 +55,7 @@ export interface GitOpsSyncUpdateDto {
 	repositoryId?: string;
 	branch?: string;
 	composePath?: string;
+	targetType?: string;
 	projectName?: string;
 	autoSync?: boolean;
 	syncInterval?: number;
@@ -71,6 +73,7 @@ export interface GitOpsSync {
 	repository?: GitRepository;
 	branch: string;
 	composePath: string;
+	targetType?: string;
 	projectName: string;
 	projectId?: string;
 	autoSync: boolean;

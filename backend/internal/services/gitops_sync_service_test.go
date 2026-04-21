@@ -32,7 +32,7 @@ func setupGitOpsSyncDirectoryTestService(t *testing.T) (*GitOpsSyncService, *dat
 
 	projectService := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
 
-	return NewGitOpsSyncService(db, nil, projectService, nil, settingsService), db, projectsDir
+	return NewGitOpsSyncService(db, nil, projectService, nil, nil, settingsService), db, projectsDir
 }
 
 func TestGitOpsSyncService_SyncProjectDirectory_CreatesProjectPreservingRepoLayout(t *testing.T) {

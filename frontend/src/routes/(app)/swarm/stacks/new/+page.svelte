@@ -20,9 +20,18 @@
 	import { templateService } from '$lib/services/template-service.js';
 	import * as ButtonGroup from '$lib/components/ui/button-group/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import { ArrowLeftIcon, TerminalIcon, CopyIcon, TemplateIcon, AddIcon, ArrowDownIcon as ChevronDown } from '$lib/icons';
+	import {
+		ArrowLeftIcon,
+		TerminalIcon,
+		CopyIcon,
+		TemplateIcon,
+		AddIcon,
+		ArrowDownIcon as ChevronDown,
+		GitBranchIcon
+	} from '$lib/icons';
 	import CodePanel from '../../../projects/components/CodePanel.svelte';
 	import EditableName from '../../../projects/components/EditableName.svelte';
+	import { environmentStore } from '$lib/stores/environment.store.svelte';
 
 	let { data } = $props();
 
@@ -279,6 +288,16 @@
 								<DropdownMenu.Item class={dropdownItemClass} onclick={() => (showConverterDialog = true)}>
 									<TerminalIcon class="size-4" />
 									{m.compose_convert_from_docker_run()}
+								</DropdownMenu.Item>
+								<DropdownMenu.Item
+									class={dropdownItemClass}
+									onclick={async () =>
+										goto(
+											`/environments/${await environmentStore.getCurrentEnvironmentId()}/gitops?action=create&targetType=swarm_stack`
+										)}
+								>
+									<GitBranchIcon class="size-4" />
+									{m.git_from_git_repo()}
 								</DropdownMenu.Item>
 								<DropdownMenu.Separator />
 								<DropdownMenu.Item
