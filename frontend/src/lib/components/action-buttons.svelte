@@ -49,6 +49,7 @@
 		redeployLoading = $bindable(false),
 		refreshLoading = $bindable(false),
 		hasBuildDirective = false,
+		disableRedeploy = false,
 		onRefresh
 	}: {
 		id: string;
@@ -65,6 +66,7 @@
 		redeployLoading?: boolean;
 		refreshLoading?: boolean;
 		hasBuildDirective?: boolean;
+		disableRedeploy?: boolean;
 		onRefresh?: () => void | Promise<void>;
 	} = $props();
 
@@ -885,13 +887,15 @@
 				{/if}
 
 				{#if type === 'container'}
-					<ArcaneButton
-						action="redeploy"
-						size={adaptiveIconOnly ? 'icon' : 'default'}
-						showLabel={!adaptiveIconOnly}
-						onclick={() => confirmAction('redeploy')}
-						loading={uiLoading.redeploy}
-					/>
+					{#if !disableRedeploy}
+						<ArcaneButton
+							action="redeploy"
+							size={adaptiveIconOnly ? 'icon' : 'default'}
+							showLabel={!adaptiveIconOnly}
+							onclick={() => confirmAction('redeploy')}
+							loading={uiLoading.redeploy}
+						/>
+					{/if}
 					<ArcaneButton
 						action="remove"
 						size={adaptiveIconOnly ? 'icon' : 'default'}
@@ -1027,9 +1031,11 @@
 							{/if}
 
 							{#if type === 'container'}
-								<DropdownMenu.Item onclick={() => confirmAction('redeploy')} disabled={uiLoading.redeploy}>
-									{m.common_redeploy()}
-								</DropdownMenu.Item>
+								{#if !disableRedeploy}
+									<DropdownMenu.Item onclick={() => confirmAction('redeploy')} disabled={uiLoading.redeploy}>
+										{m.common_redeploy()}
+									</DropdownMenu.Item>
+								{/if}
 								<DropdownMenu.Item onclick={() => confirmAction('remove')} disabled={uiLoading.remove}>
 									{m.common_remove()}
 								</DropdownMenu.Item>
@@ -1154,7 +1160,9 @@
 			{/if}
 
 			{#if type === 'container'}
-				<ArcaneButton action="redeploy" onclick={() => confirmAction('redeploy')} loading={uiLoading.redeploy} />
+				{#if !disableRedeploy}
+					<ArcaneButton action="redeploy" onclick={() => confirmAction('redeploy')} loading={uiLoading.redeploy} />
+				{/if}
 				<ArcaneButton action="remove" onclick={() => confirmAction('remove')} loading={uiLoading.remove} />
 			{:else}
 				<ArcaneButton action="redeploy" onclick={() => confirmAction('redeploy')} loading={uiLoading.redeploy} />
@@ -1258,9 +1266,11 @@
 						{/if}
 
 						{#if type === 'container'}
-							<DropdownMenu.Item onclick={() => confirmAction('redeploy')} disabled={uiLoading.redeploy}>
-								{m.common_redeploy()}
-							</DropdownMenu.Item>
+							{#if !disableRedeploy}
+								<DropdownMenu.Item onclick={() => confirmAction('redeploy')} disabled={uiLoading.redeploy}>
+									{m.common_redeploy()}
+								</DropdownMenu.Item>
+							{/if}
 							<DropdownMenu.Item onclick={() => confirmAction('remove')} disabled={uiLoading.remove}>
 								{m.common_remove()}
 							</DropdownMenu.Item>
