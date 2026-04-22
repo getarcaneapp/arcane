@@ -2621,7 +2621,7 @@
 	"deploy_pull_policy_never": "Никогда не получать",
 	"deploy_force_recreate": "Принудительно пересоздать контейнеры",
 	"settings_default_deploy_pull_policy": "Политика развёртывания по умолчанию",
-	"settings_default_deploy_pull_policy_description": "Политика загрузки образов по умолчанию при развёртывании проектов",
+	"settings_default_deploy_pull_policy_description": "Политика получения образов по умолчанию при развёртывании проектов",
 	"authentication_title": "Аутентификация",
 	"authentication_description": "Настройка поставщиков аутентификации, политики паролей и поведения сеанса.",
 	"webhook_page_title": "Webhooks",
