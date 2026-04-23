@@ -2,11 +2,16 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,6 +23,8 @@ import (
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
 	glsqlite "github.com/glebarez/sqlite"
 	"github.com/moby/moby/api/types/container"
+	dockertypesimage "github.com/moby/moby/api/types/image"
+	digest "github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -43,8 +50,54 @@ func setupProjectTestDB(t *testing.T) *database.DB {
 	t.Helper()
 	db, err := gorm.Open(glsqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&models.Project{}, &models.SettingVariable{}, &models.ImageUpdateRecord{}))
+	require.NoError(t, db.AutoMigrate(&models.Project{}, &models.SettingVariable{}, &models.ImageUpdateRecord{}, &models.Event{}))
 	return &database.DB{DB: db}
+}
+
+func newProjectImagePullServer(t *testing.T, inspectByRef map[string]dockertypesimage.InspectResponse) *httptest.Server {
+	t.Helper()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/images/create"):
+			fullRef := strings.TrimSpace(r.URL.Query().Get("fromImage"))
+			tag := strings.TrimSpace(r.URL.Query().Get("tag"))
+			if fullRef != "" && tag != "" {
+				lastSlash := strings.LastIndex(fullRef, "/")
+				lastColon := strings.LastIndex(fullRef, ":")
+				if lastColon <= lastSlash {
+					fullRef += ":" + tag
+				}
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"status":"Pulled"}`+"\n")
+			return
+		case strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json"):
+			path := r.URL.Path
+			imagePathIndex := strings.Index(path, "/images/")
+			require.NotEqual(t, -1, imagePathIndex)
+			encodedRef := strings.TrimSuffix(path[imagePathIndex+len("/images/"):], "/json")
+			imageRef, err := url.PathUnescape(encodedRef)
+			require.NoError(t, err)
+
+			inspect, ok := inspectByRef[imageRef]
+			if !ok {
+				http.Error(w, "not found", http.StatusNotFound)
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(inspect))
+			return
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+
+	t.Cleanup(server.Close)
+
+	return server
 }
 
 func TestProjectService_GetProjectFromDatabaseByID(t *testing.T) {
@@ -478,6 +531,344 @@ func TestBuildProjectImagePullPlan(t *testing.T) {
 	assert.Equal(t, imagePullModeAlways, plan["redis:latest"])
 	assert.Equal(t, imagePullModeNever, plan["nginx:latest"])
 }
+
+func TestProjectService_PullProjectImages_ClearsUpdateRecordsForPulledNonBuildRefs(t *testing.T) {
+	ctx := context.Background()
+	db := setupProjectTestDB(t)
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
+
+	imageRef := "registry.example.com/team/app:1.2.3"
+	repository := "registry.example.com/team/app"
+	imageID := "sha256:team-app"
+	imageDigest := digest.FromString("team-app-digest").String()
+	buildRepository := "arcane.local/demo-builder/service"
+
+	server := newProjectImagePullServer(t, map[string]dockertypesimage.InspectResponse{
+		imageRef: {
+			ID:          imageID,
+			RepoTags:    []string{imageRef},
+			RepoDigests: []string{repository + "@" + imageDigest},
+		},
+	})
+
+	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
+	eventService := NewEventService(db, nil, nil)
+	imageUpdateService := NewImageUpdateService(db, nil, nil, dockerService, nil, nil)
+	imageService := NewImageService(db, dockerService, nil, imageUpdateService, nil, eventService)
+	svc := NewProjectService(db, settingsService, nil, imageService, dockerService, nil, config.Load())
+
+	projectPath := createComposeProjectDir(t, projectsDir, "compose-pull")
+	composeContent := fmt.Sprintf("services:\n  app:\n    image: %s\n  builder:\n    build: .\n", imageRef)
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte(composeContent), 0o644))
+
+	projectRecord := &models.Project{
+		BaseModel: models.BaseModel{ID: "project-pull"},
+		Name:      "compose-pull",
+		DirName:   ptr("compose-pull"),
+		Path:      projectPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(projectRecord).Error)
+
+	now := time.Now().UTC().Add(-time.Hour)
+	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+		ID:             "sha256:old-full",
+		Repository:     repository,
+		Tag:            "1.2.3",
+		HasUpdate:      true,
+		UpdateType:     models.UpdateTypeDigest,
+		CurrentVersion: "1.2.3",
+		CheckTime:      now,
+	}).Error)
+	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+		ID:             "sha256:old-short",
+		Repository:     "team/app",
+		Tag:            "1.2.3",
+		HasUpdate:      true,
+		UpdateType:     models.UpdateTypeDigest,
+		CurrentVersion: "1.2.3",
+		CheckTime:      now.Add(time.Minute),
+	}).Error)
+	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+		ID:             "sha256:build-only",
+		Repository:     buildRepository,
+		Tag:            "latest",
+		HasUpdate:      true,
+		UpdateType:     models.UpdateTypeDigest,
+		CurrentVersion: "latest",
+		CheckTime:      now.Add(2 * time.Minute),
+	}).Error)
+
+	require.NoError(t, svc.PullProjectImages(ctx, projectRecord.ID, io.Discard, systemUser, nil))
+
+	var fullRecord models.ImageUpdateRecord
+	require.NoError(t, db.WithContext(ctx).Where("id = ?", "sha256:old-full").First(&fullRecord).Error)
+	assert.False(t, fullRecord.HasUpdate)
+
+	var shortRecord models.ImageUpdateRecord
+	require.NoError(t, db.WithContext(ctx).Where("id = ?", "sha256:old-short").First(&shortRecord).Error)
+	assert.False(t, shortRecord.HasUpdate)
+
+	var buildRecord models.ImageUpdateRecord
+	require.NoError(t, db.WithContext(ctx).Where("id = ?", "sha256:build-only").First(&buildRecord).Error)
+	assert.True(t, buildRecord.HasUpdate)
+
+	var currentRecord models.ImageUpdateRecord
+	require.NoError(t, db.WithContext(ctx).Where("id = ?", imageID).First(&currentRecord).Error)
+	assert.False(t, currentRecord.HasUpdate)
+	assert.Equal(t, repository, currentRecord.Repository)
+	assert.Equal(t, "1.2.3", currentRecord.Tag)
+	assert.Equal(t, imageDigest, stringPtrToString(currentRecord.CurrentDigest))
+	assert.Equal(t, imageDigest, stringPtrToString(currentRecord.LatestDigest))
+}
+
+func TestProjectService_EnsureImagesPresent_ClearsUpdateRecordsAfterPull(t *testing.T) {
+	ctx := context.Background()
+	db := setupProjectTestDB(t)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	imageRef := "registry.example.com/team/api:2.0.0"
+	repository := "registry.example.com/team/api"
+	imageID := "sha256:team-api"
+	imageDigest := digest.FromString("team-api-digest").String()
+
+	server := newProjectImagePullServer(t, map[string]dockertypesimage.InspectResponse{
+		imageRef: {
+			ID:          imageID,
+			RepoTags:    []string{imageRef},
+			RepoDigests: []string{repository + "@" + imageDigest},
+		},
+	})
+
+	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
+	eventService := NewEventService(db, nil, nil)
+	imageUpdateService := NewImageUpdateService(db, nil, nil, dockerService, nil, nil)
+	imageService := NewImageService(db, dockerService, nil, imageUpdateService, nil, eventService)
+	svc := NewProjectService(db, settingsService, nil, imageService, dockerService, nil, config.Load())
+
+	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+		ID:             "sha256:old-api",
+		Repository:     repository,
+		Tag:            "2.0.0",
+		HasUpdate:      true,
+		UpdateType:     models.UpdateTypeDigest,
+		CurrentVersion: "2.0.0",
+		CheckTime:      time.Now().UTC().Add(-time.Hour),
+	}).Error)
+
+	require.NoError(t, svc.ensureImagesPresent(ctx, map[string]imagePullMode{
+		imageRef: imagePullModeAlways,
+	}, io.Discard, nil, systemUser))
+
+	var oldRecord models.ImageUpdateRecord
+	require.NoError(t, db.WithContext(ctx).Where("id = ?", "sha256:old-api").First(&oldRecord).Error)
+	assert.False(t, oldRecord.HasUpdate)
+
+	var currentRecord models.ImageUpdateRecord
+	require.NoError(t, db.WithContext(ctx).Where("id = ?", imageID).First(&currentRecord).Error)
+	assert.False(t, currentRecord.HasUpdate)
+	assert.Equal(t, imageDigest, stringPtrToString(currentRecord.LatestDigest))
+}
+
+func TestProjectService_PullImageForService_ClearsUpdateRecordsAfterPull(t *testing.T) {
+	ctx := context.Background()
+	db := setupProjectTestDB(t)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	imageRef := "registry.example.com/team/worker:3.1.4"
+	repository := "registry.example.com/team/worker"
+	imageID := "sha256:team-worker"
+	imageDigest := digest.FromString("team-worker-digest").String()
+
+	server := newProjectImagePullServer(t, map[string]dockertypesimage.InspectResponse{
+		imageRef: {
+			ID:          imageID,
+			RepoTags:    []string{imageRef},
+			RepoDigests: []string{repository + "@" + imageDigest},
+		},
+	})
+
+	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
+	eventService := NewEventService(db, nil, nil)
+	imageUpdateService := NewImageUpdateService(db, nil, nil, dockerService, nil, nil)
+	imageService := NewImageService(db, dockerService, nil, imageUpdateService, nil, eventService)
+	svc := NewProjectService(db, settingsService, nil, imageService, dockerService, nil, config.Load())
+
+	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+		ID:             "sha256:old-worker",
+		Repository:     repository,
+		Tag:            "3.1.4",
+		HasUpdate:      true,
+		UpdateType:     models.UpdateTypeDigest,
+		CurrentVersion: "3.1.4",
+		CheckTime:      time.Now().UTC().Add(-time.Hour),
+	}).Error)
+
+	require.NoError(t, svc.pullImageForService(ctx, imageRef, io.Discard, nil))
+
+	var oldRecord models.ImageUpdateRecord
+	require.NoError(t, db.WithContext(ctx).Where("id = ?", "sha256:old-worker").First(&oldRecord).Error)
+	assert.False(t, oldRecord.HasUpdate)
+
+	var currentRecord models.ImageUpdateRecord
+	require.NoError(t, db.WithContext(ctx).Where("id = ?", imageID).First(&currentRecord).Error)
+	assert.False(t, currentRecord.HasUpdate)
+	assert.Equal(t, imageDigest, stringPtrToString(currentRecord.LatestDigest))
+}
+
+func TestProjectService_ComposePullSelectedServicesInternal_ReconcilesOnlyOnSuccess(t *testing.T) {
+	ctx := context.Background()
+	db := setupProjectTestDB(t)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	imageRef := "registry.example.com/team/app:9.9.9"
+	repository := "registry.example.com/team/app"
+	imageID := "sha256:team-app-compose"
+	imageDigest := digest.FromString("team-app-compose-digest").String()
+
+	server := newProjectImagePullServer(t, map[string]dockertypesimage.InspectResponse{
+		imageRef: {
+			ID:          imageID,
+			RepoTags:    []string{imageRef},
+			RepoDigests: []string{repository + "@" + imageDigest},
+		},
+	})
+
+	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
+	eventService := NewEventService(db, nil, nil)
+	imageUpdateService := NewImageUpdateService(db, nil, nil, dockerService, nil, nil)
+	imageService := NewImageService(db, dockerService, nil, imageUpdateService, nil, eventService)
+	svc := NewProjectService(db, settingsService, nil, imageService, dockerService, nil, config.Load())
+
+	projectDef := &composetypes.Project{
+		Name: "compose-selected",
+		Services: composetypes.Services{
+			"app": {
+				Name:  "app",
+				Image: imageRef,
+			},
+			"sidecar": {
+				Name:  "sidecar",
+				Image: "registry.example.com/team/sidecar:1.0.0",
+			},
+			"builder": {
+				Name:  "builder",
+				Build: &composetypes.BuildConfig{Context: "."},
+			},
+		},
+	}
+
+	now := time.Now().UTC().Add(-time.Hour)
+	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+		ID:             "sha256:selected-old",
+		Repository:     repository,
+		Tag:            "9.9.9",
+		HasUpdate:      true,
+		UpdateType:     models.UpdateTypeDigest,
+		CurrentVersion: "9.9.9",
+		CheckTime:      now,
+	}).Error)
+	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+		ID:             "sha256:sidecar-old",
+		Repository:     "registry.example.com/team/sidecar",
+		Tag:            "1.0.0",
+		HasUpdate:      true,
+		UpdateType:     models.UpdateTypeDigest,
+		CurrentVersion: "1.0.0",
+		CheckTime:      now,
+	}).Error)
+
+	originalComposePull := composePullProjectServicesInternal
+	t.Cleanup(func() { composePullProjectServicesInternal = originalComposePull })
+
+	composePullProjectServicesInternal = func(_ context.Context, _ *composetypes.Project, services []string) error {
+		assert.Equal(t, []string{"app"}, services)
+		return nil
+	}
+
+	require.NoError(t, svc.composePullSelectedServicesInternal(ctx, projectDef, []string{"app"}))
+
+	var selectedRecord models.ImageUpdateRecord
+	require.NoError(t, db.WithContext(ctx).Where("id = ?", "sha256:selected-old").First(&selectedRecord).Error)
+	assert.False(t, selectedRecord.HasUpdate)
+
+	var sidecarRecord models.ImageUpdateRecord
+	require.NoError(t, db.WithContext(ctx).Where("id = ?", "sha256:sidecar-old").First(&sidecarRecord).Error)
+	assert.True(t, sidecarRecord.HasUpdate)
+
+	var currentRecord models.ImageUpdateRecord
+	require.NoError(t, db.WithContext(ctx).Where("id = ?", imageID).First(&currentRecord).Error)
+	assert.False(t, currentRecord.HasUpdate)
+	assert.Equal(t, imageDigest, stringPtrToString(currentRecord.LatestDigest))
+}
+
+func TestProjectService_ComposePullSelectedServicesInternal_LeavesRecordsWhenPullFails(t *testing.T) {
+	ctx := context.Background()
+	db := setupProjectTestDB(t)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	imageRef := "registry.example.com/team/app:9.9.9"
+	repository := "registry.example.com/team/app"
+
+	dockerService := &DockerClientService{}
+	imageUpdateService := NewImageUpdateService(db, nil, nil, dockerService, nil, nil)
+	imageService := NewImageService(db, dockerService, nil, imageUpdateService, nil, NewEventService(db, nil, nil))
+	svc := NewProjectService(db, settingsService, nil, imageService, dockerService, nil, config.Load())
+
+	projectDef := &composetypes.Project{
+		Name: "compose-selected",
+		Services: composetypes.Services{
+			"app": {
+				Name:  "app",
+				Image: imageRef,
+			},
+		},
+	}
+
+	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+		ID:             "sha256:selected-old",
+		Repository:     repository,
+		Tag:            "9.9.9",
+		HasUpdate:      true,
+		UpdateType:     models.UpdateTypeDigest,
+		CurrentVersion: "9.9.9",
+		CheckTime:      time.Now().UTC().Add(-time.Hour),
+	}).Error)
+
+	originalComposePull := composePullProjectServicesInternal
+	t.Cleanup(func() { composePullProjectServicesInternal = originalComposePull })
+
+	composePullProjectServicesInternal = func(context.Context, *composetypes.Project, []string) error {
+		return errors.New("compose pull failed")
+	}
+
+	err = svc.composePullSelectedServicesInternal(ctx, projectDef, []string{"app"})
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "compose pull failed")
+
+	var selectedRecord models.ImageUpdateRecord
+	require.NoError(t, db.WithContext(ctx).Where("id = ?", "sha256:selected-old").First(&selectedRecord).Error)
+	assert.True(t, selectedRecord.HasUpdate)
+
+	var count int64
+	require.NoError(t, db.WithContext(ctx).Model(&models.ImageUpdateRecord{}).Where("id = ?", "sha256:team-app-compose").Count(&count).Error)
+	assert.Zero(t, count)
+}
+
 func TestProjectService_UpdateProject_RenamesDirectoryWhenNameChanges(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := context.Background()

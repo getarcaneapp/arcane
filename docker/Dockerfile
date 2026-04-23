@@ -31,6 +31,7 @@ ARG TARGETVARIANT
 ARG BUILD_TAGS
 ARG VERSION="dev"
 ARG REVISION="unknown"
+ARG BUILD_TIME="unknown"
 WORKDIR /build
 
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl git tzdata jq \
@@ -49,7 +50,7 @@ COPY --from=frontend-builder /build/frontend/dist ./frontend/dist
 RUN --mount=type=cache,target=/root/.cache/go-build \
     if [ "${VERSION}" = "dev" ]; then VERSION=$(jq -r '.version // "dev"' ../arcane.json); fi && \
     if [ "${REVISION}" = "unknown" ]; then REVISION=$(jq -r '.revision // "unknown"' ../arcane.json); fi && \
-    BUILD_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ') && \
+    if [ "${BUILD_TIME}" = "unknown" ]; then BUILD_TIME=$(jq -r '.buildTime // "unknown"' ../arcane.json); fi && \
     export GOARCH="${TARGETARCH}" && \
     if [ "${TARGETARCH}" = "arm" ]; then \
         GOARM="${TARGETVARIANT#v}"; \

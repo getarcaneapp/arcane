@@ -34,6 +34,16 @@ func ProxyWebSocketRequest(c *gin.Context, tunnel *AgentTunnel, targetPath strin
 	streamCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	// Register the stream before sending the start message so agent replies
+	// are never dropped when the routing goroutine is faster than this goroutine.
+	agentDataCh := make(chan *TunnelMessage, 512)
+	clientDoneCh := make(chan struct{})
+
+	tunnel.Pending.Store(streamID, &PendingRequest{
+		ResponseCh: agentDataCh,
+	})
+	defer tunnel.Pending.Delete(streamID)
+
 	headers := buildWebSocketHeaders(c.Request)
 	if err := sendWebSocketStart(tunnel, streamID, targetPath, c.Request.URL.RawQuery, headers); err != nil {
 		slog.ErrorContext(ctx, "Failed to send WebSocket start to agent", "error", err)
@@ -45,16 +55,6 @@ func ProxyWebSocketRequest(c *gin.Context, tunnel *AgentTunnel, targetPath strin
 		"environment_id", tunnel.EnvironmentID,
 		"path", targetPath,
 	)
-
-	// Create channels for bidirectional data
-	agentDataCh := make(chan *TunnelMessage, 512)
-	clientDoneCh := make(chan struct{})
-
-	// Register the stream to receive data from the agent
-	tunnel.Pending.Store(streamID, &PendingRequest{
-		ResponseCh: agentDataCh,
-	})
-	defer tunnel.Pending.Delete(streamID)
 
 	// Goroutine to read from client and send to agent
 	go forwardClientToAgent(ctx, streamCtx, clientWS, tunnel, streamID, clientDoneCh)

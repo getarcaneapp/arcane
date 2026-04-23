@@ -187,6 +187,8 @@ const (
 	imagePullModeAlways
 )
 
+var composePullProjectServicesInternal = projects.ComposePull
+
 func resolveServiceImagePullMode(svc composetypes.ServiceConfig) imagePullMode {
 	rawPolicy := strings.ToLower(strings.TrimSpace(svc.PullPolicy))
 	switch {
@@ -454,6 +456,84 @@ func (s *ProjectService) loadComposeProjectForProjectInternal(ctx context.Contex
 	return composeProject, composeFileFullPath, nil
 }
 
+func buildSelectedProjectImageRefsInternal(compProj *composetypes.Project, servicesToUpdate []string) []string {
+	if compProj == nil {
+		return nil
+	}
+
+	selected := normalizeBuildSelections(servicesToUpdate)
+	refs := make([]string, 0, len(compProj.Services))
+	seen := make(map[string]struct{}, len(compProj.Services))
+
+	for name, svc := range compProj.Services {
+		if !serviceSelected(selected, name) || svc.Build != nil {
+			continue
+		}
+
+		imageRef := strings.TrimSpace(svc.Image)
+		if imageRef == "" {
+			continue
+		}
+		if _, exists := seen[imageRef]; exists {
+			continue
+		}
+
+		seen[imageRef] = struct{}{}
+		refs = append(refs, imageRef)
+	}
+
+	return refs
+}
+
+func (s *ProjectService) reconcilePulledImageRefsInternal(ctx context.Context, imageRefs []string) {
+	if s.imageService == nil {
+		return
+	}
+
+	for _, imageRef := range imageRefs {
+		if err := s.imageService.ReconcilePulledImageUpdate(ctx, imageRef); err != nil {
+			slog.WarnContext(ctx, "failed to reconcile pulled image update state", "image", imageRef, "error", err)
+		}
+	}
+}
+
+func (s *ProjectService) composePullSelectedServicesInternal(ctx context.Context, compProj *composetypes.Project, servicesToUpdate []string) error {
+	if compProj == nil {
+		return nil
+	}
+
+	imageRefsToReconcile := buildSelectedProjectImageRefsInternal(compProj, servicesToUpdate)
+	if err := composePullProjectServicesInternal(ctx, compProj, servicesToUpdate); err != nil {
+		return err
+	}
+
+	s.reconcilePulledImageRefsInternal(ctx, imageRefsToReconcile)
+	return nil
+}
+
+func (s *ProjectService) pullAndReconcileImageInternal(
+	ctx context.Context,
+	imageRef string,
+	progressWriter io.Writer,
+	user models.User,
+	credentials []containerregistry.Credential,
+) error {
+	settings := s.settingsService.GetSettingsConfig()
+
+	pullCtx, pullCancel := timeouts.WithTimeout(ctx, settings.DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull)
+	defer pullCancel()
+
+	if err := s.imageService.PullImage(pullCtx, imageRef, progressWriter, user, credentials); err != nil {
+		if errors.Is(pullCtx.Err(), context.DeadlineExceeded) {
+			return fmt.Errorf("image pull timed out for %s (increase DOCKER_IMAGE_PULL_TIMEOUT or setting)", imageRef)
+		}
+		return fmt.Errorf("failed to pull image %s: %w", imageRef, err)
+	}
+
+	s.reconcilePulledImageRefsInternal(ctx, []string{imageRef})
+	return nil
+}
+
 func (s *ProjectService) UpdateProjectServices(ctx context.Context, projectID string, servicesToUpdate []string, user models.User) error {
 	projectFromDb, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
@@ -472,7 +552,7 @@ func (s *ProjectService) UpdateProjectServices(ctx context.Context, projectID st
 	}
 
 	// 3. Pull images for specific services
-	if err := projects.ComposePull(ctx, compProj, servicesToUpdate); err != nil {
+	if err := s.composePullSelectedServicesInternal(ctx, compProj, servicesToUpdate); err != nil {
 		slog.WarnContext(ctx, "compose pull failed, continuing", "error", err)
 	}
 
@@ -1639,21 +1719,8 @@ func (s *ProjectService) PullProjectImages(ctx context.Context, projectID string
 		images[img] = struct{}{}
 	}
 
-	settings := s.settingsService.GetSettingsConfig()
-
 	for img := range images {
-		err := func() error {
-			pullCtx, pullCancel := timeouts.WithTimeout(ctx, settings.DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull)
-			defer pullCancel()
-			if err := s.imageService.PullImage(pullCtx, img, progressWriter, user, credentials); err != nil {
-				if errors.Is(pullCtx.Err(), context.DeadlineExceeded) {
-					return fmt.Errorf("image pull timed out for %s (increase DOCKER_IMAGE_PULL_TIMEOUT or setting)", img)
-				}
-				return fmt.Errorf("failed to pull image %s: %w", img, err)
-			}
-			return nil
-		}()
-		if err != nil {
+		if err := s.pullAndReconcileImageInternal(ctx, img, progressWriter, user, credentials); err != nil {
 			return err
 		}
 	}
@@ -1696,8 +1763,6 @@ func (s *ProjectService) EnsureProjectImagesPresent(ctx context.Context, project
 }
 
 func (s *ProjectService) ensureImagesPresent(ctx context.Context, pullPlan map[string]imagePullMode, progressWriter io.Writer, credentials []containerregistry.Credential, user models.User) error {
-	settings := s.settingsService.GetSettingsConfig()
-
 	for img, mode := range pullPlan {
 		exists, ierr := s.imageService.ImageExistsLocally(ctx, img)
 		if ierr != nil && mode != imagePullModeAlways {
@@ -1722,18 +1787,7 @@ func (s *ProjectService) ensureImagesPresent(ctx context.Context, pullPlan map[s
 			continue
 		}
 
-		err := func() error {
-			pullCtx, pullCancel := timeouts.WithTimeout(ctx, settings.DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull)
-			defer pullCancel()
-			if err := s.imageService.PullImage(pullCtx, img, progressWriter, user, credentials); err != nil {
-				if errors.Is(pullCtx.Err(), context.DeadlineExceeded) {
-					return fmt.Errorf("image pull timed out for %s (increase DOCKER_IMAGE_PULL_TIMEOUT or setting)", img)
-				}
-				return fmt.Errorf("failed to pull image %s: %w", img, err)
-			}
-			return nil
-		}()
-		if err != nil {
+		if err := s.pullAndReconcileImageInternal(ctx, img, progressWriter, user, credentials); err != nil {
 			return err
 		}
 	}
@@ -1741,18 +1795,7 @@ func (s *ProjectService) ensureImagesPresent(ctx context.Context, pullPlan map[s
 }
 
 func (s *ProjectService) pullImageForService(ctx context.Context, imageRef string, progressWriter io.Writer, credentials []containerregistry.Credential) error {
-	settings := s.settingsService.GetSettingsConfig()
-	pullCtx, pullCancel := timeouts.WithTimeout(ctx, settings.DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull)
-	defer pullCancel()
-
-	if err := s.imageService.PullImage(pullCtx, imageRef, progressWriter, systemUser, credentials); err != nil {
-		if errors.Is(pullCtx.Err(), context.DeadlineExceeded) {
-			return fmt.Errorf("image pull timed out for %s (increase DOCKER_IMAGE_PULL_TIMEOUT or setting)", imageRef)
-		}
-		return err
-	}
-
-	return nil
+	return s.pullAndReconcileImageInternal(ctx, imageRef, progressWriter, systemUser, credentials)
 }
 
 func (s *ProjectService) prepareProjectImagesForDeploy(

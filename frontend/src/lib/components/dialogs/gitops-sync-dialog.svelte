@@ -3,6 +3,7 @@
 	import { Button } from '$lib/components/ui/button/index.js';
 	import FormInput from '$lib/components/form/form-input.svelte';
 	import SwitchWithLabel from '$lib/components/form/labeled-switch.svelte';
+	import SelectWithLabel from '$lib/components/form/select-with-label.svelte';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import * as Select from '$lib/components/ui/select/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
@@ -20,14 +21,27 @@
 	type GitOpsSyncFormProps = {
 		open: boolean;
 		syncToEdit: GitOpsSync | null;
+		targetType?: string;
 		onSubmit: (detail: { sync: GitOpsSyncCreateDto | GitOpsSyncUpdateDto; isEditMode: boolean }) => void;
 		isLoading: boolean;
 	};
 
-	let { open = $bindable(false), syncToEdit = $bindable(), onSubmit, isLoading }: GitOpsSyncFormProps = $props();
+	let { open = $bindable(false), syncToEdit = $bindable(), targetType, onSubmit, isLoading }: GitOpsSyncFormProps = $props();
+
+	type GitOpsSyncTargetType = 'project' | 'swarm_stack';
 
 	let isEditMode = $derived(!!syncToEdit);
 	let showFileBrowser = $state(false);
+	let selectedTargetType = $state<GitOpsSyncTargetType>('project');
+
+	const targetTypeOptions = [
+		{ value: 'project', label: m.project() },
+		{ value: 'swarm_stack', label: m.swarm_stack() }
+	] satisfies { value: GitOpsSyncTargetType; label: string; description?: string }[];
+
+	function normalizeTargetType(value?: string | null): GitOpsSyncTargetType {
+		return value === 'swarm_stack' ? 'swarm_stack' : 'project';
+	}
 
 	const formSchema = z.object({
 		name: z.string().min(1, m.common_name_required()),
@@ -74,6 +88,7 @@
 		if (open) {
 			selectedRepository = undefined;
 			showFileBrowser = false;
+			selectedTargetType = isEditMode ? normalizeTargetType(syncToEdit?.targetType) : normalizeTargetType(targetType);
 			if (!isEditMode) {
 				form.reset();
 			}
@@ -106,6 +121,7 @@
 			repositoryId: selectedRepository?.value || data.repositoryId,
 			branch: data.branch,
 			composePath: data.composePath,
+			targetType: selectedTargetType,
 			projectName: data.name,
 			syncDirectory: data.syncDirectory,
 			autoSync: data.autoSync,
@@ -130,6 +146,14 @@
 		{:else}
 			<form id="sync-form" onsubmit={preventDefault(handleSubmit)} class="grid gap-y-3 py-4">
 				<FormInput label={m.git_sync_name()} type="text" placeholder={m.common_name_placeholder()} bind:input={$inputs.name} />
+
+				<SelectWithLabel
+					id="targetType"
+					label={m.webhook_target_type_label()}
+					value={selectedTargetType}
+					options={targetTypeOptions}
+					onValueChange={(value) => (selectedTargetType = value as GitOpsSyncTargetType)}
+				/>
 
 				<div class="space-y-1.5">
 					<Label for="repository">{m.git_sync_repository()}</Label>

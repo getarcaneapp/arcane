@@ -6,7 +6,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	pkgutils "github.com/getarcaneapp/arcane/backend/pkg/utils"
@@ -21,9 +20,11 @@ const (
 )
 
 type runtimeIdentityRequest struct {
-	Enabled bool
-	UID     uint32
-	GID     uint32
+	Enabled       bool
+	UID           int
+	GID           int
+	CredentialUID uint32
+	CredentialGID uint32
 }
 
 // ApplyRequestedRuntimeIdentity switches the current process to the configured
@@ -37,8 +38,8 @@ func ApplyRequestedRuntimeIdentity(ctx context.Context) error {
 		return err
 	}
 
-	runtimeUID := int(req.UID)
-	runtimeGID := int(req.GID)
+	runtimeUID := req.UID
+	runtimeGID := req.GID
 
 	// Avoid re-execing forever when the requested runtime identity is already active,
 	// including explicit root requests such as PUID=0/PGID=0.
@@ -57,7 +58,7 @@ func ApplyRequestedRuntimeIdentity(ctx context.Context) error {
 		return fmt.Errorf("load mountpoints: %w", err)
 	}
 
-	if err := prepareWritablePathsInternal(req, mountpoints); err != nil {
+	if err := prepareWritablePathsInternal(runtimeUID, runtimeGID, mountpoints); err != nil {
 		return err
 	}
 
@@ -76,30 +77,23 @@ func loadRuntimeIdentityRequestInternal(getenv func(string) string) (runtimeIden
 		return runtimeIdentityRequest{}, "PUID and PGID must both be set to enable non-root mode; continuing with default runtime user", nil
 	}
 
-	uid, err := parseRuntimeIdentityValueInternal(puid, "PUID")
+	uid, credentialUID, err := parseRuntimeIdentityValueInternal(puid, "PUID")
 	if err != nil {
 		return runtimeIdentityRequest{}, "", fmt.Errorf("invalid PUID %q: %w", puid, err)
 	}
 
-	gid, err := parseRuntimeIdentityValueInternal(pgid, "PGID")
+	gid, credentialGID, err := parseRuntimeIdentityValueInternal(pgid, "PGID")
 	if err != nil {
 		return runtimeIdentityRequest{}, "", fmt.Errorf("invalid PGID %q: %w", pgid, err)
 	}
 
 	return runtimeIdentityRequest{
-		Enabled: true,
-		UID:     uid,
-		GID:     gid,
+		Enabled:       true,
+		UID:           uid,
+		GID:           gid,
+		CredentialUID: credentialUID,
+		CredentialGID: credentialGID,
 	}, "", nil
-}
-
-func parseRuntimeIdentityValueInternal(raw string, key string) (uint32, error) {
-	value, err := strconv.ParseUint(raw, 10, 32)
-	if err != nil {
-		return 0, fmt.Errorf("parse %s: %w", key, err)
-	}
-
-	return uint32(value), nil
 }
 
 func runtimeIdentitySupplementaryGroupsInternal(getenv func(string) string, resolveSocketGroup func(string) (uint32, bool)) []uint32 {
@@ -147,10 +141,7 @@ func dockerSocketPathInternal(raw string) (string, bool) {
 	return filepath.Clean(socketPath), true
 }
 
-func prepareWritablePathsInternal(req runtimeIdentityRequest, mountpoints map[string]struct{}) error {
-	uid := int(req.UID)
-	gid := int(req.GID)
-
+func prepareWritablePathsInternal(uid int, gid int, mountpoints map[string]struct{}) error {
 	if err := os.MkdirAll(defaultDataDirectory, pkgutils.DirPerm); err != nil {
 		return fmt.Errorf("create data directory: %w", err)
 	}

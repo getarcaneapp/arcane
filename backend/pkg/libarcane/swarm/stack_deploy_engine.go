@@ -51,12 +51,14 @@ type StackDeployOptions struct {
 	RegistryAuthForImage func(context.Context, string) (string, error)
 	Prune                bool
 	ResolveImage         string
+	WorkingDir           string
 }
 
 type StackRenderOptions struct {
 	Name           string
 	ComposeContent string
 	EnvContent     string
+	WorkingDir     string
 }
 
 type StackRenderResult struct {
@@ -95,7 +97,7 @@ func DeployStack(ctx context.Context, dockerClient *dockerclient.Client, opts St
 		return err
 	}
 
-	project, err := loadComposeProject(ctx, stackName, opts.ComposeContent, opts.EnvContent)
+	project, err := loadComposeProject(ctx, stackName, opts.ComposeContent, opts.EnvContent, opts.WorkingDir)
 	if err != nil {
 		return err
 	}
@@ -107,6 +109,10 @@ func DeployStack(ctx context.Context, dockerClient *dockerclient.Client, opts St
 
 	networkNameByKey, err := ensureSwarmNetworks(ctx, dockerClient, project, stackName, stackLabels)
 	if err != nil {
+		return err
+	}
+
+	if err := ensureSwarmVolumesInternal(ctx, dockerClient, project, stackName, stackLabels); err != nil {
 		return err
 	}
 
@@ -245,7 +251,7 @@ func RenderStackConfig(ctx context.Context, opts StackRenderOptions) (*StackRend
 		return nil, errors.New("stack name is required")
 	}
 
-	project, err := loadComposeProject(ctx, stackName, opts.ComposeContent, opts.EnvContent)
+	project, err := loadComposeProject(ctx, stackName, opts.ComposeContent, opts.EnvContent, opts.WorkingDir)
 	if err != nil {
 		return nil, err
 	}
@@ -269,7 +275,7 @@ func RenderStackConfig(ctx context.Context, opts StackRenderOptions) (*StackRend
 	}, nil
 }
 
-func loadComposeProject(ctx context.Context, projectName, composeContent, envContent string) (*composegotypes.Project, error) {
+func loadComposeProject(ctx context.Context, projectName, composeContent, envContent, providedWorkingDir string) (*composegotypes.Project, error) {
 	composeContent = strings.TrimSpace(composeContent)
 	if composeContent == "" {
 		return nil, errors.New("compose content is required")
@@ -280,9 +286,14 @@ func loadComposeProject(ctx context.Context, projectName, composeContent, envCon
 		return nil, fmt.Errorf("failed to parse env content: %w", err)
 	}
 
-	workingDir, err := os.Getwd()
-	if err != nil {
-		workingDir = "/tmp"
+	workingDir := strings.TrimSpace(providedWorkingDir)
+	if workingDir == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			workingDir = "/tmp"
+		} else {
+			workingDir = cwd
+		}
 	}
 	envMap["PWD"] = workingDir
 
@@ -393,6 +404,48 @@ func ensureSwarmConfigs(ctx context.Context, dockerClient *dockerclient.Client, 
 		result[key] = meta
 	}
 	return result, nil
+}
+
+// ensureSwarmVolumesInternal pre-creates named volumes that carry a driver or
+// driver_opts so that Swarm services pick up the correct volume configuration.
+// Without this step Docker creates a plain local volume on first use and the
+// driver options are silently ignored — the root cause of issue #2376.
+func ensureSwarmVolumesInternal(ctx context.Context, dockerClient *dockerclient.Client, project *composegotypes.Project, stackName string, stackLabels map[string]string) error {
+	for key, cfg := range project.Volumes {
+		// External volumes must already exist; nothing to create.
+		if cfg.External {
+			continue
+		}
+		// Only act when driver or driver_opts are explicitly set.
+		if cfg.Driver == "" && len(cfg.DriverOpts) == 0 {
+			continue
+		}
+
+		name := resolveResourceName(stackName, key, cfg.Name, cfg.External)
+
+		// If the volume already exists, leave it as-is to avoid disrupting
+		// running services that may be attached to it.
+		if _, err := dockerClient.VolumeInspect(ctx, name, dockerclient.VolumeInspectOptions{}); err == nil {
+			continue
+		} else if !cerrdefs.IsNotFound(err) {
+			return fmt.Errorf("failed to inspect volume %s: %w", name, err)
+		}
+
+		driver := cfg.Driver
+		if driver == "" {
+			driver = "local"
+		}
+		labels := mergeLabels(cfg.Labels, stackLabels)
+		if _, err := dockerClient.VolumeCreate(ctx, dockerclient.VolumeCreateOptions{
+			Name:       name,
+			Driver:     driver,
+			DriverOpts: cfg.DriverOpts,
+			Labels:     labels,
+		}); err != nil {
+			return fmt.Errorf("failed to create volume %s: %w", name, err)
+		}
+	}
+	return nil
 }
 
 func ensureSwarmSecrets(ctx context.Context, dockerClient *dockerclient.Client, project *composegotypes.Project, stackName string, stackLabels map[string]string) (map[string]resourceMeta, error) {
@@ -636,6 +689,13 @@ func updateSwarmService(
 	}
 
 	if _, err := dockerClient.ServiceUpdate(ctx, existing.ID, opts); err != nil {
+		if strings.Contains(err.Error(), "service does not have a previous spec") {
+			opts.RegistryAuthFrom = ""
+			if _, retryErr := dockerClient.ServiceUpdate(ctx, existing.ID, opts); retryErr != nil {
+				return fmt.Errorf("failed to update swarm service %s: %w", spec.Name, retryErr)
+			}
+			return nil
+		}
 		return fmt.Errorf("failed to update swarm service %s: %w", spec.Name, err)
 	}
 	return nil

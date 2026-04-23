@@ -230,6 +230,14 @@ func (s *ImageService) PullImage(ctx context.Context, imageName string, progress
 	return nil
 }
 
+func (s *ImageService) ReconcilePulledImageUpdate(ctx context.Context, imageName string) error {
+	if s.imageUpdateService == nil {
+		return nil
+	}
+
+	return s.imageUpdateService.MarkImageRefUpToDateAfterPull(ctx, imageName)
+}
+
 func (s *ImageService) LoadImageFromReader(ctx context.Context, reader io.Reader, fileName string, user models.User, maxSizeBytes int64) (*imagetypes.LoadResult, error) {
 	// Wrap reader with size limit enforcement
 	limitedReader := io.LimitReader(reader, maxSizeBytes+1)

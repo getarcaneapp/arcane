@@ -31,6 +31,11 @@ type StackDeployRequest struct {
 	//
 	// Required: false
 	ResolveImage string `json:"resolveImage,omitempty"`
+
+	// WorkingDir defines the working directory context for evaluating compose files.
+	//
+	// Required: false
+	WorkingDir string `json:"workingDir,omitempty"`
 }
 
 // StackDeployResponse represents the result of a stack deployment.
