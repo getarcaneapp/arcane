@@ -42,19 +42,75 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     -o /out/arcane-agent \
     ./cmd/main.go
 
+FROM --platform=linux/amd64 debian:trixie-slim AS intel-gpu-top-builder
+ARG TARGETARCH
+WORKDIR /src
+
+RUN if [ "${TARGETARCH}" != "amd64" ]; then \
+        mkdir -p /out; \
+        exit 0; \
+    fi && \
+    apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates git python3 meson ninja-build pkg-config \
+    bison flex gcc g++ make libc6-dev \
+    libdrm-dev libpciaccess-dev libkmod-dev libproc2-dev libdw-dev \
+    libpixman-1-dev libcairo2-dev libpci-dev libudev-dev libglib2.0-dev \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+RUN if [ "${TARGETARCH}" != "amd64" ]; then \
+        exit 0; \
+    fi && \
+    git clone --branch "v2.4" --depth 1 \
+    https://gitlab.freedesktop.org/drm/igt-gpu-tools.git /src/igt-gpu-tools
+
+WORKDIR /src/igt-gpu-tools
+
+RUN if [ "${TARGETARCH}" != "amd64" ]; then \
+        mkdir -p /out; \
+        exit 0; \
+    fi && \
+    meson setup build \
+    -Ddocs=disabled \
+    -Dman=disabled \
+    -Dtestplan=disabled \
+    -Dtests=disabled \
+    -Dchamelium=disabled \
+    -Doverlay=disabled \
+    -Drunner=disabled \
+    -Dxe_driver=disabled \
+    -Dxe_eudebug=disabled \
+    -Dvalgrind=disabled \
+    -Dlibunwind=disabled \
+    -Dvmtb=disabled \
+    -Dlibdrm_drivers=intel && \
+    ninja -C build tools/intel_gpu_top && \
+    install -Dm755 build/tools/intel_gpu_top /out/usr/local/bin/intel_gpu_top && \
+    ldd build/tools/intel_gpu_top | awk '($2 == "=>" && $3 ~ /^\\//) || ($1 ~ /^\\//) { print ($3 ~ /^\\// ? $3 : $1) }' | sort -u | while read -r lib; do \
+        [ -f "${lib}" ] || continue; \
+        case "$(basename "${lib}")" in \
+            libc.so.6|ld-linux-*.so.*) continue ;; \
+        esac; \
+        install -Dm755 "${lib}" "/out/usr/local/lib/intel_gpu_top/$(basename "${lib}")"; \
+    done
+
+FROM debian:trixie-slim AS runtime-deps
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates tzdata \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
 FROM debian:trixie-slim AS agent
 ARG TARGETARCH
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl tzdata tar gzip \
-    vainfo clinfo libdrm2 libsystemd0 \
-    && if [ "$TARGETARCH" = "amd64" ]; then \
-        apt-get install -y --no-install-recommends intel-gpu-tools; \
-    fi \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 RUN mkdir -p /app/data
 
+COPY --from=runtime-deps /etc/ca-certificates.conf /etc/ca-certificates.conf
+COPY --from=runtime-deps /etc/localtime /etc/localtime
+COPY --from=runtime-deps /etc/ssl/certs /etc/ssl/certs
+COPY --from=runtime-deps /usr/share/ca-certificates /usr/share/ca-certificates
+COPY --from=runtime-deps /usr/share/zoneinfo /usr/share/zoneinfo
+COPY --from=intel-gpu-top-builder /out/ /
 COPY --from=agent-builder /out/arcane-agent ./arcane-agent
 
 ARG VERSION="dev"
@@ -65,7 +121,7 @@ ENV NVIDIA_VISIBLE_DEVICES=all \
     ROCR_VISIBLE_DEVICES=all \
     HIP_VISIBLE_DEVICES=all \
     ONEAPI_DEVICE_SELECTOR=level_zero:*,opencl:* \
-    LD_LIBRARY_PATH=/usr/local/nvidia/lib:/usr/local/nvidia/lib64:/opt/rocm/lib:/opt/intel/oneapi/lib:/opt/intel/oneapi/lib/intel64:/usr/lib/x86_64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib64:/usr/lib:/lib64:/lib
+    LD_LIBRARY_PATH=/usr/local/lib/intel_gpu_top:/usr/local/nvidia/lib:/usr/local/nvidia/lib64:/opt/rocm/lib:/opt/intel/oneapi/lib:/opt/intel/oneapi/lib/intel64:/usr/lib/x86_64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib64:/usr/lib:/lib64:/lib
 
 ENV ENVIRONMENT=production \
     AGENT_MODE=true \
