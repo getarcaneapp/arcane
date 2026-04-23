@@ -2,19 +2,22 @@
 	import { ResponsiveDialog } from '$lib/components/ui/responsive-dialog/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import FormInput from '$lib/components/form/form-input.svelte';
-	import SwitchWithLabel from '$lib/components/form/labeled-switch.svelte';
 	import SelectWithLabel from '$lib/components/form/select-with-label.svelte';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import * as Select from '$lib/components/ui/select/index.js';
+	import * as Collapsible from '$lib/components/ui/collapsible/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
+	import { Switch } from '$lib/components/ui/switch/index.js';
+	import { Input } from '$lib/components/ui/input/index.js';
 	import FileBrowserDialog from '$lib/components/dialogs/file-browser-dialog.svelte';
 	import type { GitOpsSync, GitOpsSyncCreateDto, GitOpsSyncUpdateDto, GitRepository, BranchInfo } from '$lib/types/gitops.type';
 	import { gitRepositoryService } from '$lib/services/git-repository-service';
+	import { settingsService } from '$lib/services/settings-service';
 	import { z } from 'zod/v4';
 	import { createForm, preventDefault } from '$lib/utils/form.utils';
 	import { queryKeys } from '$lib/query/query-keys';
 	import { m } from '$lib/paraglide/messages';
-	import { FolderOpenIcon, InfoIcon } from '$lib/icons';
+	import { ArrowRightIcon, FolderOpenIcon, InfoIcon } from '$lib/icons';
 	import * as Alert from '$lib/components/ui/alert';
 	import { createQuery } from '@tanstack/svelte-query';
 
@@ -49,9 +52,30 @@
 		branch: z.string().min(1, m.common_required()),
 		composePath: z.string().min(1, m.common_required()),
 		syncDirectory: z.boolean().default(false),
+		maxSyncFiles: z.coerce.number().int().nonnegative(),
+		maxSyncTotalSizeMb: z.coerce.number().int().nonnegative(),
+		maxSyncBinarySizeMb: z.coerce.number().int().nonnegative(),
 		autoSync: z.boolean().default(true),
 		syncInterval: z.number().min(1).default(5)
 	});
+
+	const bytesPerMegabyte = 1024 * 1024;
+
+	function bytesToMegabytesInternal(value: number | undefined, fallback: number): number {
+		if (value === undefined) return fallback;
+		return Math.round(value / bytesPerMegabyte);
+	}
+
+	function megabytesToBytesInternal(value: number): number {
+		return value * bytesPerMegabyte;
+	}
+
+	const settingsQuery = createQuery(() => ({
+		queryKey: queryKeys.settings.global(),
+		queryFn: () => settingsService.getSettings(),
+		enabled: open,
+		staleTime: 30_000
+	}));
 
 	let formData = $derived({
 		name: open && syncToEdit ? syncToEdit.name : '',
@@ -59,6 +83,15 @@
 		branch: open && syncToEdit ? syncToEdit.branch : 'main',
 		composePath: open && syncToEdit ? syncToEdit.composePath : 'docker-compose.yml',
 		syncDirectory: open && syncToEdit ? (syncToEdit.syncDirectory ?? false) : false,
+		maxSyncFiles: open && syncToEdit ? (syncToEdit.maxSyncFiles ?? 0) : (settingsQuery.data?.gitSyncMaxFiles ?? 0),
+		maxSyncTotalSizeMb:
+			open && syncToEdit
+				? bytesToMegabytesInternal(syncToEdit.maxSyncTotalSize, 0)
+				: (settingsQuery.data?.gitSyncMaxTotalSizeMb ?? 0),
+		maxSyncBinarySizeMb:
+			open && syncToEdit
+				? bytesToMegabytesInternal(syncToEdit.maxSyncBinarySize, 0)
+				: (settingsQuery.data?.gitSyncMaxBinarySizeMb ?? 0),
 		autoSync: open && syncToEdit ? (syncToEdit.autoSync ?? true) : true,
 		syncInterval: open && syncToEdit ? (syncToEdit.syncInterval ?? 5) : 5
 	});
@@ -73,7 +106,8 @@
 		staleTime: 0
 	}));
 	const repositories = $derived<GitRepository[]>(repositoriesQuery.data?.data ?? []);
-	const loadingData = $derived(repositoriesQuery.isPending || repositoriesQuery.isFetching);
+	const loadingSettings = $derived(!isEditMode && (settingsQuery.isPending || settingsQuery.isFetching));
+	const loadingData = $derived(repositoriesQuery.isPending || repositoriesQuery.isFetching || loadingSettings);
 
 	const branchesQuery = createQuery(() => ({
 		queryKey: queryKeys.gitRepositories.branches(selectedRepository?.value || ''),
@@ -124,6 +158,9 @@
 			targetType: selectedTargetType,
 			projectName: data.name,
 			syncDirectory: data.syncDirectory,
+			maxSyncFiles: data.maxSyncFiles,
+			maxSyncTotalSize: megabytesToBytesInternal(data.maxSyncTotalSizeMb),
+			maxSyncBinarySize: megabytesToBytesInternal(data.maxSyncBinarySizeMb),
 			autoSync: data.autoSync,
 			syncInterval: data.syncInterval
 		};
@@ -136,7 +173,7 @@
 	bind:open
 	title={isEditMode ? m.git_sync_edit_title() : m.git_sync_add_title()}
 	description={isEditMode ? m.common_edit_description() : m.common_add_description()}
-	contentClass="sm:max-w-2xl"
+	contentClass="sm:max-w-3xl"
 >
 	{#snippet children()}
 		{#if loadingData}
@@ -144,134 +181,205 @@
 				<Spinner class="size-6" />
 			</div>
 		{:else}
-			<form id="sync-form" onsubmit={preventDefault(handleSubmit)} class="grid gap-y-3 py-4">
-				<FormInput label={m.git_sync_name()} type="text" placeholder={m.common_name_placeholder()} bind:input={$inputs.name} />
+			<form id="sync-form" onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-4">
+				<div class="space-y-3">
+					<div class="grid gap-3 sm:grid-cols-2">
+						<FormInput
+							label={m.git_sync_name()}
+							type="text"
+							placeholder={m.common_name_placeholder()}
+							bind:input={$inputs.name}
+						/>
 
-				<SelectWithLabel
-					id="targetType"
-					label={m.webhook_target_type_label()}
-					value={selectedTargetType}
-					options={targetTypeOptions}
-					onValueChange={(value) => (selectedTargetType = value as GitOpsSyncTargetType)}
-				/>
-
-				<div class="space-y-1.5">
-					<Label for="repository">{m.git_sync_repository()}</Label>
-					<Select.Root
-						type="single"
-						value={selectedRepository?.value}
-						onValueChange={(v) => {
-							if (v) {
-								const repo = repositories.find((r) => r.id === v);
-								if (repo) {
-									selectedRepository = { value: repo.id, label: repo.name };
-									$inputs.repositoryId.value = v;
-								}
-							}
-						}}
-					>
-						<Select.Trigger id="repository" class="w-full" aria-invalid={$inputs.repositoryId.error ? 'true' : undefined}>
-							<span>{selectedRepository?.label ?? m.common_select_placeholder()}</span>
-						</Select.Trigger>
-						<Select.Content style="width: var(--bits-select-anchor-width);">
-							{#each repositories as repo}
-								<Select.Item value={repo.id} class="truncate">{repo.name}</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-					{#if $inputs.repositoryId.error}
-						<p class="mt-1 text-sm text-red-500">{$inputs.repositoryId.error}</p>
-					{/if}
-				</div>
-
-				<div class="space-y-1.5">
-					<Label for="branch">{m.git_sync_branch()}</Label>
-					{#if loadingBranches}
-						<div class="flex items-center gap-2">
-							<Spinner class="size-4" />
-							<span class="text-muted-foreground text-sm">Loading branches...</span>
-						</div>
-					{:else if branches.length > 0}
-						<Select.Root
-							type="single"
-							value={$inputs.branch.value}
-							onValueChange={(v) => {
-								if (v) {
-									$inputs.branch.value = v;
-								}
-							}}
-						>
-							<Select.Trigger id="branch" class="w-full" aria-invalid={$inputs.branch.error ? 'true' : undefined}>
-								<span>{$inputs.branch.value || m.common_select_placeholder()}</span>
-							</Select.Trigger>
-							<Select.Content style="width: var(--bits-select-anchor-width);">
-								{#each branches as branch}
-									<Select.Item value={branch.name} class="truncate">
-										{branch.name}
-										{#if branch.isDefault}
-											<span class="text-muted-foreground ml-2 text-xs">(default)</span>
-										{/if}
-									</Select.Item>
-								{/each}
-							</Select.Content>
-						</Select.Root>
-					{:else}
-						<FormInput type="text" placeholder="main" bind:input={$inputs.branch} />
-					{/if}
-					{#if $inputs.branch.error}
-						<p class="mt-1 text-sm text-red-500">{$inputs.branch.error}</p>
-					{/if}
-					<p class="text-muted-foreground text-xs">
-						{branches.length > 0 ? m.git_sync_branch_select_hint() : m.git_sync_branch_manual_hint()}
-					</p>
-				</div>
-
-				<div class="space-y-1.5">
-					<Label for="composePath">{m.git_sync_compose_path()}</Label>
-					<div class="flex gap-2">
-						<div class="flex-1">
-							<FormInput type="text" placeholder="docker-compose.yml" bind:input={$inputs.composePath} />
-						</div>
-						<Button
-							type="button"
-							variant="outline"
-							size="icon"
-							onclick={() => (showFileBrowser = true)}
-							disabled={!selectedRepository?.value || !$inputs.branch.value}
-							title="Browse files"
-						>
-							<FolderOpenIcon class="size-4" />
-						</Button>
+						<SelectWithLabel
+							id="targetType"
+							label={m.webhook_target_type_label()}
+							value={selectedTargetType}
+							options={targetTypeOptions}
+							onValueChange={(value) => (selectedTargetType = value as GitOpsSyncTargetType)}
+						/>
 					</div>
-					{#if !selectedRepository?.value || !$inputs.branch.value}
-						<p class="text-muted-foreground text-xs">Select a repository and branch to browse files</p>
-					{/if}
+
+					<div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_12rem]">
+						<div class="space-y-1.5">
+							<Label for="repository">{m.git_sync_repository()}</Label>
+							<Select.Root
+								type="single"
+								value={selectedRepository?.value}
+								onValueChange={(v) => {
+									if (v) {
+										const repo = repositories.find((r) => r.id === v);
+										if (repo) {
+											selectedRepository = { value: repo.id, label: repo.name };
+											$inputs.repositoryId.value = v;
+										}
+									}
+								}}
+							>
+								<Select.Trigger id="repository" class="w-full" aria-invalid={$inputs.repositoryId.error ? 'true' : undefined}>
+									<span>{selectedRepository?.label ?? m.common_select_placeholder()}</span>
+								</Select.Trigger>
+								<Select.Content style="width: var(--bits-select-anchor-width);">
+									{#each repositories as repo (repo.id)}
+										<Select.Item value={repo.id} class="truncate">{repo.name}</Select.Item>
+									{/each}
+								</Select.Content>
+							</Select.Root>
+							{#if $inputs.repositoryId.error}
+								<p class="mt-1 text-sm text-red-500">{$inputs.repositoryId.error}</p>
+							{/if}
+						</div>
+
+						<div class="space-y-1.5">
+							<Label for="branch">{m.git_sync_branch()}</Label>
+							{#if loadingBranches}
+								<div class="flex h-10 items-center gap-2 rounded-md border px-3">
+									<Spinner class="size-4" />
+									<span class="text-muted-foreground text-sm">{m.common_loading()}</span>
+								</div>
+							{:else if branches.length > 0}
+								<Select.Root
+									type="single"
+									value={$inputs.branch.value}
+									onValueChange={(v) => {
+										if (v) {
+											$inputs.branch.value = v;
+										}
+									}}
+								>
+									<Select.Trigger id="branch" class="w-full" aria-invalid={$inputs.branch.error ? 'true' : undefined}>
+										<span>{$inputs.branch.value || m.common_select_placeholder()}</span>
+									</Select.Trigger>
+									<Select.Content style="width: var(--bits-select-anchor-width);">
+										{#each branches as branch (branch.name)}
+											<Select.Item value={branch.name} class="truncate">
+												{branch.name}
+												{#if branch.isDefault}
+													<span class="text-muted-foreground ml-2 text-xs">({m.common_default()})</span>
+												{/if}
+											</Select.Item>
+										{/each}
+									</Select.Content>
+								</Select.Root>
+							{:else}
+								<FormInput type="text" placeholder="main" bind:input={$inputs.branch} />
+							{/if}
+							{#if $inputs.branch.error}
+								<p class="mt-1 text-sm text-red-500">{$inputs.branch.error}</p>
+							{/if}
+						</div>
+					</div>
+
+					<div class="space-y-1.5">
+						<Label for="composePath">{m.git_sync_compose_path()}</Label>
+						<div class="flex gap-2">
+							<div class="flex-1">
+								<FormInput type="text" placeholder="docker-compose.yml" bind:input={$inputs.composePath} />
+							</div>
+							<Button
+								type="button"
+								variant="outline"
+								size="icon"
+								onclick={() => (showFileBrowser = true)}
+								disabled={!selectedRepository?.value || !$inputs.branch.value}
+								title={m.git_sync_browse_files_title()}
+							>
+								<FolderOpenIcon class="size-4" />
+							</Button>
+						</div>
+					</div>
 				</div>
 
-				<SwitchWithLabel
-					id="syncDirectorySwitch"
-					label={m.git_sync_sync_files()}
-					description={m.git_sync_sync_files_description()}
-					error={$inputs.syncDirectory.error}
-					bind:checked={$inputs.syncDirectory.value}
-				/>
+				<div class="border-border/70 bg-muted/20 grid gap-3 rounded-lg border p-3 sm:grid-cols-[minmax(0,1fr)_8rem]">
+					<div class="grid gap-3 sm:grid-cols-2">
+						<div class="flex items-start gap-3">
+							<Switch id="syncDirectorySwitch" bind:checked={$inputs.syncDirectory.value} />
+							<div class="space-y-1">
+								<Label for="syncDirectorySwitch" class="mb-0 text-sm leading-none font-medium">{m.git_sync_sync_files()}</Label>
+								<p class="text-muted-foreground text-xs">{m.git_sync_sync_files_description()}</p>
+								{#if $inputs.syncDirectory.error}
+									<p class="text-destructive text-xs font-medium">{$inputs.syncDirectory.error}</p>
+								{/if}
+							</div>
+						</div>
 
-				<SwitchWithLabel
-					id="autoSyncSwitch"
-					label={m.git_sync_auto_sync()}
-					description={m.common_auto_sync_description()}
-					error={$inputs.autoSync.error}
-					bind:checked={$inputs.autoSync.value}
-				/>
+						<div class="flex items-start gap-3">
+							<Switch id="autoSyncSwitch" bind:checked={$inputs.autoSync.value} />
+							<div class="space-y-1">
+								<Label for="autoSyncSwitch" class="mb-0 text-sm leading-none font-medium">{m.git_sync_auto_sync()}</Label>
+								<p class="text-muted-foreground text-xs">{m.common_auto_sync_description()}</p>
+								{#if $inputs.autoSync.error}
+									<p class="text-destructive text-xs font-medium">{$inputs.autoSync.error}</p>
+								{/if}
+							</div>
+						</div>
+					</div>
 
-				<FormInput label={m.git_sync_sync_interval()} type="number" placeholder="5" bind:input={$inputs.syncInterval} />
+					<div class="space-y-2 sm:max-w-32">
+						<div class="space-y-1">
+							<Label for="syncInterval" class="mb-0 text-sm leading-none font-medium">
+								{m.git_sync_sync_interval()}
+							</Label>
+							<p class="text-muted-foreground text-xs">{m.git_sync_sync_interval_description()}</p>
+						</div>
+						<Input
+							id="syncInterval"
+							type="number"
+							placeholder="5"
+							bind:value={$inputs.syncInterval.value}
+							aria-invalid={$inputs.syncInterval.error ? 'true' : undefined}
+						/>
+						{#if $inputs.syncInterval.error}
+							<p class="text-destructive text-xs font-medium">{$inputs.syncInterval.error}</p>
+						{/if}
+					</div>
+				</div>
 
-				<Alert.Root class="border-primary/20 bg-primary/5 dark:border-primary/30 dark:bg-primary/10">
+				<Collapsible.Root class="group/collapsible">
+					<Collapsible.Trigger
+						type="button"
+						class="text-muted-foreground hover:text-foreground flex w-full items-start justify-between gap-3 rounded-md px-1 py-1.5 text-left text-sm transition-colors"
+					>
+						<span class="min-w-0">
+							<span class="block font-medium">{m.git_sync_per_sync_file_limits_title()}</span>
+						</span>
+						<ArrowRightIcon class="mt-0.5 size-4 shrink-0 transition-transform group-data-[state=open]/collapsible:rotate-90" />
+					</Collapsible.Trigger>
+					<Collapsible.Content>
+						<div class="border-border/70 mt-2 rounded-lg border border-dashed p-3">
+							<p class="text-muted-foreground mb-3 text-xs">{m.git_sync_per_sync_file_limits_description()}</p>
+							<div class="grid gap-3 sm:grid-cols-3">
+								<FormInput
+									label={m.git_sync_max_files_label()}
+									type="number"
+									placeholder="0"
+									helpText={m.git_sync_max_files_per_sync_help()}
+									bind:input={$inputs.maxSyncFiles}
+								/>
+								<FormInput
+									label={m.git_sync_max_total_size_label()}
+									type="number"
+									placeholder="0"
+									helpText={m.git_sync_max_total_size_per_sync_help()}
+									bind:input={$inputs.maxSyncTotalSizeMb}
+								/>
+								<FormInput
+									label={m.git_sync_max_binary_size_label()}
+									type="number"
+									placeholder="0"
+									helpText={m.git_sync_max_binary_size_per_sync_help()}
+									bind:input={$inputs.maxSyncBinarySizeMb}
+								/>
+							</div>
+						</div>
+					</Collapsible.Content>
+				</Collapsible.Root>
+
+				<Alert.Root class="border-border/70 bg-muted/20 text-muted-foreground py-2 [&>svg]:top-1/2 [&>svg]:-translate-y-1/2">
 					<InfoIcon class="size-4" />
-					<Alert.Title>{m.webhook_hint_title()}</Alert.Title>
-					<Alert.Description>
+					<Alert.Description class="text-xs">
 						{m.webhook_hint_description()}
-						<a href="/settings/webhooks" class="underline">{m.sidebar_settings()} → {m.webhook_page_title()}</a>
+						<a href="/settings/webhooks" class="text-foreground underline">{m.webhook_page_title()}</a>
 						{m.git_sync_webhook_hint_suffix()}
 					</Alert.Description>
 				</Alert.Root>

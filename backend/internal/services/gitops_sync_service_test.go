@@ -414,6 +414,10 @@ func TestGitOpsSyncService_GetEnvironmentSyncLimits(t *testing.T) {
 
 func TestGitOpsSyncService_GetEffectiveSyncLimits(t *testing.T) {
 	ctx := context.Background()
+	t.Setenv("GIT_SYNC_MAX_FILES", "")
+	t.Setenv("GIT_SYNC_MAX_TOTAL_SIZE_MB", "")
+	t.Setenv("GIT_SYNC_MAX_BINARY_SIZE_MB", "")
+
 	db := setupSettingsTestDB(t)
 	settingsSvc, err := NewSettingsService(ctx, db)
 	require.NoError(t, err)
@@ -424,7 +428,7 @@ func TestGitOpsSyncService_GetEffectiveSyncLimits(t *testing.T) {
 
 	svc := &GitOpsSyncService{settingsService: settingsSvc}
 
-	t.Run("uses environment caps when sync values are looser", func(t *testing.T) {
+	t.Run("preserves sync-specific limits when they exceed settings", func(t *testing.T) {
 		sync := &models.GitOpsSync{
 			MaxSyncFiles:      500,
 			MaxSyncTotalSize:  50 * 1024 * 1024,
@@ -433,12 +437,12 @@ func TestGitOpsSyncService_GetEffectiveSyncLimits(t *testing.T) {
 
 		maxFiles, maxTotalSize, maxBinarySize := svc.getEffectiveSyncLimits(ctx, sync)
 
-		require.Equal(t, 200, maxFiles)
-		require.Equal(t, int64(30*1024*1024), maxTotalSize)
-		require.Equal(t, int64(5*1024*1024), maxBinarySize)
+		require.Equal(t, 500, maxFiles)
+		require.Equal(t, int64(50*1024*1024), maxTotalSize)
+		require.Equal(t, int64(10*1024*1024), maxBinarySize)
 	})
 
-	t.Run("preserves tighter sync-specific limits", func(t *testing.T) {
+	t.Run("preserves sync-specific limits when they are below settings", func(t *testing.T) {
 		sync := &models.GitOpsSync{
 			MaxSyncFiles:      75,
 			MaxSyncTotalSize:  8 * 1024 * 1024,
@@ -452,7 +456,7 @@ func TestGitOpsSyncService_GetEffectiveSyncLimits(t *testing.T) {
 		require.Equal(t, int64(2*1024*1024), maxBinarySize)
 	})
 
-	t.Run("treats zero as unlimited", func(t *testing.T) {
+	t.Run("zero disables sync limits", func(t *testing.T) {
 		sync := &models.GitOpsSync{
 			MaxSyncFiles:      0,
 			MaxSyncTotalSize:  0,
@@ -461,8 +465,44 @@ func TestGitOpsSyncService_GetEffectiveSyncLimits(t *testing.T) {
 
 		maxFiles, maxTotalSize, maxBinarySize := svc.getEffectiveSyncLimits(ctx, sync)
 
-		require.Equal(t, 200, maxFiles)
-		require.Equal(t, int64(30*1024*1024), maxTotalSize)
-		require.Equal(t, int64(5*1024*1024), maxBinarySize)
+		require.Equal(t, 0, maxFiles)
+		require.Equal(t, int64(0), maxTotalSize)
+		require.Equal(t, int64(0), maxBinarySize)
+	})
+
+	t.Run("environment variables override stored sync limits", func(t *testing.T) {
+		t.Setenv("GIT_SYNC_MAX_FILES", "10000")
+		t.Setenv("GIT_SYNC_MAX_TOTAL_SIZE_MB", "1024")
+		t.Setenv("GIT_SYNC_MAX_BINARY_SIZE_MB", "12")
+
+		sync := &models.GitOpsSync{
+			MaxSyncFiles:      500,
+			MaxSyncTotalSize:  50 * 1024 * 1024,
+			MaxSyncBinarySize: 10 * 1024 * 1024,
+		}
+
+		maxFiles, maxTotalSize, maxBinarySize := svc.getEffectiveSyncLimits(ctx, sync)
+
+		require.Equal(t, 10000, maxFiles)
+		require.Equal(t, int64(1024*1024*1024), maxTotalSize)
+		require.Equal(t, int64(12*1024*1024), maxBinarySize)
+	})
+
+	t.Run("environment variable zero disables runtime caps", func(t *testing.T) {
+		t.Setenv("GIT_SYNC_MAX_FILES", "0")
+		t.Setenv("GIT_SYNC_MAX_TOTAL_SIZE_MB", "0")
+		t.Setenv("GIT_SYNC_MAX_BINARY_SIZE_MB", "0")
+
+		sync := &models.GitOpsSync{
+			MaxSyncFiles:      75,
+			MaxSyncTotalSize:  8 * 1024 * 1024,
+			MaxSyncBinarySize: 2 * 1024 * 1024,
+		}
+
+		maxFiles, maxTotalSize, maxBinarySize := svc.getEffectiveSyncLimits(ctx, sync)
+
+		require.Equal(t, 0, maxFiles)
+		require.Equal(t, int64(0), maxTotalSize)
+		require.Equal(t, int64(0), maxBinarySize)
 	})
 }
