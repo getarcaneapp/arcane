@@ -17,7 +17,7 @@ const DEPLOY_STREAM_SUCCESS =
 
 async function navigateToProjects(page: Page) {
 	await page.goto(ROUTES.page);
-	await page.waitForLoadState('networkidle');
+	await page.waitForLoadState('load');
 }
 
 async function setCodeMirrorValue(page: Page, editor: Locator, text: string) {
@@ -52,16 +52,12 @@ async function openDropdownMenu(page: Page, trigger: Locator) {
 }
 
 async function clickProjectsPageUpdateAction(page: Page) {
-	const updateProjectsButton = page.getByRole('button', { name: 'Update Projects', exact: true });
-	if (await updateProjectsButton.isVisible().catch(() => false)) {
-		await updateProjectsButton.click();
-		return;
-	}
-
-	const moreActionsButton = page.getByRole('button', { name: 'More actions', exact: true });
-	await expect(moreActionsButton).toBeVisible();
-	await moreActionsButton.click();
-	await page.getByRole('menuitem', { name: 'Update Projects', exact: true }).click();
+	const updateProjectsButton = page
+		.locator('main button:visible')
+		.filter({ hasText: 'Update Projects' })
+		.first();
+	await expect(updateProjectsButton).toBeVisible();
+	await updateProjectsButton.click();
 }
 
 async function clickProjectDetailUpdateAction(page: Page) {
@@ -139,7 +135,7 @@ async function createProjectViaUI(page: Page, projectName: string) {
 	const envFile = TEST_ENV_FILE.replace(/CONTAINER_NAME=.*/m, `CONTAINER_NAME=${containerName}`);
 
 	await page.goto(ROUTES.newProject);
-	await page.waitForLoadState('networkidle');
+	await page.waitForLoadState('load');
 
 	await page.getByRole('button', { name: 'My New Project' }).click();
 	await page.getByRole('textbox', { name: 'My New Project' }).fill(projectName);
@@ -203,7 +199,7 @@ async function destroyProjectByNameViaUI(page: Page, projectName: string) {
 	}
 
 	await page.goto(ROUTES.page);
-	await page.waitForLoadState('networkidle');
+	await page.waitForLoadState('load');
 
 	const searchInput = page.getByPlaceholder('Search…');
 	if (await searchInput.isVisible().catch(() => false)) {
@@ -302,7 +298,7 @@ test.describe('Projects Page', () => {
 	test('should show project actions menu', async ({ page }) => {
 		test.skip(!realProjects.length, 'No projects available for actions menu test');
 
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 		const firstRow = page.locator('tbody tr').first();
 		const menu = await openDropdownMenu(page, firstRow.getByRole('button', { name: 'Open menu' }));
 
@@ -337,7 +333,7 @@ test.describe('Projects Page', () => {
 			});
 
 			await page.goto(ROUTES.page);
-			await page.waitForLoadState('networkidle');
+			await page.waitForLoadState('load');
 			await expect(page.locator('tbody tr').filter({ hasText: projectName })).toHaveCount(0);
 
 			await page.getByLabel('Show archived').check();
@@ -367,7 +363,7 @@ test.describe('Projects Page', () => {
 	test('should navigate to project details when project name is clicked', async ({ page }) => {
 		test.skip(!realProjects.length, 'No projects available for navigation test');
 
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 		// Get the first project link that points to /projects/ (not the "Git" indicator link)
 		const firstProjectLink = page
 			.locator('tbody tr')
@@ -427,7 +423,7 @@ test.describe('Projects Page', () => {
 	test('should display project status badges', async ({ page }) => {
 		test.skip(!realProjects.length, 'No projects available for status badge test');
 
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		const runningProjects = realProjects.filter((p) => p.status === 'running');
 		const stoppedProjects = realProjects.filter((p) => p.status === 'stopped');
@@ -445,7 +441,7 @@ test.describe('Projects Page', () => {
 test.describe('New Compose Project Page', () => {
 	test.beforeEach(async ({ page }) => {
 		await page.goto(ROUTES.newProject);
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 	});
 
 	test('should display the create project form', async ({ page }) => {
@@ -635,7 +631,7 @@ test.describe('New Compose Project Page', () => {
 		await expect(page.getByRole('button', { name: projectName })).toBeVisible();
 
 		await page.getByRole('tab', { name: 'Services' }).click();
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		const serviceTable = page.getByRole('table');
 		const serviceNameWhenStopped = serviceTable.getByText('nginx', {
@@ -661,7 +657,7 @@ test.describe('New Compose Project Page', () => {
 		await deployButton.click();
 
 		await page.waitForTimeout(5000);
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		expect(projectPullRequestCount).toBe(0);
 		await expect(page.getByText('Running', { exact: true }).first()).toBeVisible({
@@ -760,7 +756,7 @@ test.describe('New Compose Project Page', () => {
 		try {
 			await createProjectViaUI(page, projectName);
 			await page.goto(ROUTES.page);
-			await page.waitForLoadState('networkidle');
+			await page.waitForLoadState('load');
 
 			await page.route('**/api/environments/*/projects/*/redeploy', async (route) => {
 				if (route.request().method() !== 'POST') {
@@ -837,7 +833,7 @@ test.describe('New Compose Project Page', () => {
 test.describe('GitOps Managed Project', () => {
 	test('should navigate back to gitops when opened from the git syncs page', async ({ page }) => {
 		await page.goto('/environments/0/gitops');
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		const projectLink = page.locator('tbody tr').locator('a[href^="/projects/"]').first();
 		test.skip((await projectLink.count()) === 0, 'No GitOps project links found');
@@ -858,12 +854,12 @@ test.describe('GitOps Managed Project', () => {
 		test.skip(!gitOpsProject, 'No GitOps-managed projects found');
 
 		await page.goto(`/projects/${gitOpsProject!.id}`);
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		// Navigate to Configuration tab
 		const configTab = page.getByRole('tab', { name: /Configuration|Config/i });
 		await configTab.click();
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		// Verify the GitOps read-only alert is visible (title contains "Git" and "Read-only")
 		await expect(page.getByText('Git Read-only')).toBeVisible();
@@ -875,11 +871,11 @@ test.describe('GitOps Managed Project', () => {
 		test.skip(!gitOpsProject, 'No GitOps-managed projects found');
 
 		await page.goto(`/projects/${gitOpsProject!.id}`);
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		const configTab = page.getByRole('tab', { name: /Configuration|Config/i });
 		await configTab.click();
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		// Verify the Sync from Git button is present
 		await expect(page.getByRole('button', { name: 'Sync from Git' })).toBeVisible();
@@ -890,7 +886,7 @@ test.describe('GitOps Managed Project', () => {
 		test.skip(!gitOpsProject, 'No GitOps-managed projects with sync commit found');
 
 		await page.goto(`/projects/${gitOpsProject!.id}`);
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		// The commit hash should be visible somewhere on the page
 		const commitHash = gitOpsProject!.lastSyncCommit!.substring(0, 7);
@@ -902,7 +898,7 @@ test.describe('GitOps Managed Project', () => {
 		test.skip(!gitOpsProject, 'No GitOps-managed projects found');
 
 		await page.goto(`/projects/${gitOpsProject!.id}`);
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		// The name button should be disabled for GitOps-managed projects
 		const nameButton = page.getByRole('button', { name: gitOpsProject!.name });
@@ -914,11 +910,11 @@ test.describe('GitOps Managed Project', () => {
 		test.skip(!gitOpsProject, 'No GitOps-managed projects found');
 
 		await page.goto(`/projects/${gitOpsProject!.id}`);
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		const configTab = page.getByRole('tab', { name: /Configuration|Config/i });
 		await configTab.click();
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		await page.waitForTimeout(800);
 		const composeContent = page.locator('.cm-editor:visible').first().locator('.cm-content');
@@ -932,11 +928,11 @@ test.describe('GitOps Managed Project', () => {
 		test.skip(!gitOpsProject, 'No GitOps-managed projects found');
 
 		await page.goto(`/projects/${gitOpsProject!.id}`);
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		const configTab = page.getByRole('tab', { name: /Configuration|Config/i });
 		await configTab.click();
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		await page.waitForTimeout(800);
 		const envEditor = page.locator('.cm-editor:visible').nth(1);
@@ -955,7 +951,7 @@ test.describe('GitOps Managed Project', () => {
 		});
 		if (await layoutSwitch.count()) {
 			await layoutSwitch.click();
-			await page.waitForLoadState('networkidle');
+			await page.waitForLoadState('load');
 
 			const envFileButton = page.getByRole('button', { name: '.env' }).first();
 			await expect(envFileButton).toBeVisible();
@@ -973,7 +969,7 @@ test.describe('GitOps Managed Project', () => {
 		test.skip(!regularProject, 'No regular (non-GitOps) stopped projects found');
 
 		await page.goto(`/projects/${regularProject!.id}`);
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		// The name button should be enabled for regular projects that are stopped
 		const nameButton = page.getByRole('button', { name: regularProject!.name });
@@ -982,7 +978,7 @@ test.describe('GitOps Managed Project', () => {
 		// Navigate to Configuration tab
 		const configTab = page.getByRole('tab', { name: /Configuration|Config/i });
 		await configTab.click();
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		// GitOps alert should NOT be visible
 		await expect(page.getByText('Git Read-only')).not.toBeVisible();
@@ -998,11 +994,11 @@ test.describe('GitOps Managed Project', () => {
 		test.skip(!regularProject, 'No regular (non-GitOps) projects found');
 
 		await page.goto(`/projects/${regularProject!.id}`);
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		const configTab = page.getByRole('tab', { name: /Configuration|Config/i });
 		await configTab.click();
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		// Verify no GitOps-related UI elements
 		await expect(page.getByText(/managed by Git\./i)).not.toBeVisible();
@@ -1016,7 +1012,7 @@ test.describe('Project Detail Page', () => {
 
 		const firstProject = realProjects[0];
 		await page.goto(`/projects/${firstProject.id || firstProject.name}`);
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		const backLink = page.getByRole('link', { name: /^Back$/i }).first();
 		await expect(backLink).toBeVisible();
@@ -1031,7 +1027,7 @@ test.describe('Project Detail Page', () => {
 
 		const firstProject = realProjects[0];
 		await page.goto(`/projects/${firstProject.id || firstProject.name}`);
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		await expect(page.getByRole('button', { name: firstProject.name, exact: false })).toBeVisible();
 
@@ -1044,7 +1040,7 @@ test.describe('Project Detail Page', () => {
 		test.skip(!realProjects.length, 'No projects available for navigation test');
 		const firstProject = realProjects[0];
 		await page.goto(`/projects/${firstProject.id || firstProject.name}`);
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		await expect(page.getByRole('tab', { name: /Services/i })).toBeVisible();
 		await expect(page.getByRole('tab', { name: /Configuration|Config/i })).toBeVisible();
@@ -1086,7 +1082,7 @@ test.describe('Project Detail Page', () => {
 		});
 
 		await page.goto(`/projects/${projectWithServices!.id || projectWithServices!.name}`);
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		const clicked = await clickProjectDetailUpdateAction(page);
 		test.skip(!clicked, 'Current project detail view has no clickable update action');
@@ -1101,7 +1097,7 @@ test.describe('Project Detail Page', () => {
 		const projectWithServices =
 			realProjects.find((p) => (p.serviceCount ?? 0) > 0) ?? realProjects[0]!;
 		await page.goto(`/projects/${projectWithServices.id || projectWithServices.name}`);
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		await page.getByRole('tab', { name: /Services/i }).click();
 
@@ -1125,7 +1121,7 @@ test.describe('Project Detail Page', () => {
 
 		const firstProject = realProjects[0];
 		await page.goto(`/projects/${firstProject.id || firstProject.name}`);
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		const configTab = page.getByRole('tab', { name: /Configuration|Config/i });
 		await configTab.click();
@@ -1189,11 +1185,11 @@ test.describe('Project Detail Page', () => {
 		test.skip(!regularProject, 'No regular (non-GitOps) projects found');
 
 		await page.goto(`/projects/${regularProject!.id || regularProject!.name}`);
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		const configTab = page.getByRole('tab', { name: /Configuration|Config/i });
 		await configTab.click();
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		let layoutSwitch = page.getByRole('switch', {
 			name: /Classic|Tree View/i
@@ -1213,12 +1209,12 @@ test.describe('Project Detail Page', () => {
 		}
 
 		await page.reload();
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		const restoredConfigTab = page.getByRole('tab', { name: /Configuration|Config/i });
 		if ((await restoredConfigTab.getAttribute('aria-selected')) !== 'true') {
 			await restoredConfigTab.click();
-			await page.waitForLoadState('networkidle');
+			await page.waitForLoadState('load');
 		}
 
 		await expect(projectFilesHeading).toBeVisible();
@@ -1255,7 +1251,7 @@ test.describe('Project Detail Page', () => {
 		try {
 			const configTab = page.getByRole('tab', { name: /Configuration|Config/i });
 			await configTab.click();
-			await page.waitForLoadState('networkidle');
+			await page.waitForLoadState('load');
 
 			let composeEditor = page.locator('.cm-editor:visible').first();
 			await expect(composeEditor).toBeVisible();
@@ -1296,12 +1292,12 @@ test.describe('Project Detail Page', () => {
 			}
 
 			await page.reload();
-			await page.waitForLoadState('networkidle');
+			await page.waitForLoadState('load');
 
 			const restoredConfigTab = page.getByRole('tab', { name: /Configuration|Config/i });
 			if ((await restoredConfigTab.getAttribute('aria-selected')) !== 'true') {
 				await restoredConfigTab.click();
-				await page.waitForLoadState('networkidle');
+				await page.waitForLoadState('load');
 			}
 
 			composeEditor = page.locator('.cm-editor:visible').first();
@@ -1324,7 +1320,7 @@ test.describe('Project Detail Page', () => {
 		const targetProject = runningProject!;
 
 		await page.goto(`/projects/${targetProject.id || targetProject.name}`);
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		const logsTab = page.getByRole('tab', { name: /Logs/i });
 		await expect(logsTab).toBeEnabled();

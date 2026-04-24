@@ -6,7 +6,7 @@ const CONTAINERS_ROUTE = '/containers';
 
 async function navigateToContainers(page: Page) {
 	await page.goto(CONTAINERS_ROUTE);
-	await page.waitForLoadState('networkidle');
+	await page.waitForLoadState('load');
 }
 
 let containersData: Paginated<ContainerSummary> = { data: [], pagination: { totalItems: 0 } };
@@ -66,7 +66,7 @@ test.describe('Containers Page', () => {
 		test.skip(!running, 'No running container available');
 
 		await page.goto(`/containers/${running!.id}`);
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		await page.getByRole('tab', { name: 'Logs' }).click();
 
@@ -87,7 +87,7 @@ test.describe('Containers Page', () => {
 		test.skip(!stopped, 'No stopped container available');
 
 		await page.goto(`/containers/${stopped!.id}`);
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		await page.getByRole('tab', { name: 'Logs' }).click();
 

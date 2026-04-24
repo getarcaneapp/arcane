@@ -13,6 +13,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { imageService } from '$lib/services/image-service.js';
 	import { vulnerabilityService } from '$lib/services/vulnerability-service.js';
+	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 	import {
 		startVulnerabilityScanPolling,
 		stabilizeFailedVulnerabilitySummary,
@@ -72,10 +73,11 @@
 			vulnerabilityScan = result;
 			lastScanRequestedAt = result.scanTime || new Date().toISOString();
 			if (result.status === 'completed') {
-				toast.success(m.vuln_scan_completed());
+				toast.success(m.vuln_scan_completed(), activityToastOptions(result.activityId));
 			} else if (result.status === 'failed') {
-				toast.error(result.error || m.vuln_scan_failed());
+				toast.error(result.error || m.vuln_scan_failed(), activityToastOptions(result.activityId));
 			} else {
+				toast.info(m.vuln_scan_started(), activityToastOptions(result.activityId));
 				beginScanPolling(true);
 			}
 		} catch (error) {
@@ -151,10 +153,11 @@
 					} as VulnerabilityScanResult;
 				}
 				if (showToast) {
+					const toastOptions = activityToastOptions(extractActivityId(resolvedSummary));
 					if (resolvedSummary.status === 'completed') {
-						toast.success(m.vuln_scan_completed());
+						toast.success(m.vuln_scan_completed(), toastOptions);
 					} else {
-						toast.error(resolvedSummary.error || m.vuln_scan_failed());
+						toast.error(resolvedSummary.error || m.vuln_scan_failed(), toastOptions);
 					}
 				}
 			},
@@ -221,8 +224,8 @@
 						result: await tryCatch(imageService.deleteImage(id, { force })),
 						message: m.images_remove_failed(),
 						setLoadingState: (value) => (isLoading.removing = value),
-						onSuccess: async () => {
-							toast.success(m.images_remove_success());
+						onSuccess: async (data) => {
+							toast.success(m.images_remove_success(), activityToastOptions(extractActivityId(data)));
 							goto('/images');
 						}
 					});

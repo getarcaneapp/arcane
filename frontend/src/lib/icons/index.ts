@@ -12,6 +12,7 @@ export { default as ImagesIcon } from 'virtual:icons/solar/gallery-linear';
 export { default as NetworksIcon } from 'virtual:icons/fluent/virtual-network-16-filled';
 export { default as VolumesIcon } from 'virtual:icons/fluent/hard-drive-20-filled';
 export { default as EventsIcon } from 'virtual:icons/material-symbols/event-list';
+export { default as ActivityIcon } from 'virtual:icons/lucide/activity';
 export { default as SettingsIcon } from 'virtual:icons/solar/settings-outline';
 export { default as AppearanceIcon } from 'virtual:icons/f7/paintbrush';
 export { default as DockerBrandIcon } from 'virtual:icons/cib/docker';

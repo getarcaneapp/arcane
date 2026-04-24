@@ -17,6 +17,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { networkService } from '$lib/services/network-service';
 	import { NetworksIcon, GlobeIcon, InspectIcon, TrashIcon, EllipsisIcon } from '$lib/icons';
+	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 
 	type FieldVisibility = Record<string, boolean>;
 
@@ -67,8 +68,11 @@
 						result: await tryCatch(networkService.deleteNetwork(id)),
 						message: m.common_delete_failed({ resource: `${m.resource_network()} "${safeName}"` }),
 						setLoadingState: (value) => (isLoading.remove = value),
-						onSuccess: async () => {
-							toast.success(m.common_delete_success({ resource: `${m.resource_network()} "${safeName}"` }));
+						onSuccess: async (data) => {
+							toast.success(
+								m.common_delete_success({ resource: `${m.resource_network()} "${safeName}"` }),
+								activityToastOptions(extractActivityId(data))
+							);
 							await refreshNetworks();
 						}
 					});
@@ -113,7 +117,8 @@
 							toast.success(
 								m.common_delete_success({
 									resource: `${m.resource_network()} "${network.name ?? m.common_unknown()}"`
-								})
+								}),
+								activityToastOptions(extractActivityId(result.data))
 							);
 						}
 					}

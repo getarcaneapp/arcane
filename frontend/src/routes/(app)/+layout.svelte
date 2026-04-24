@@ -5,6 +5,7 @@
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
 	import AppSidebar from '$lib/components/sidebar/sidebar.svelte';
 	import MobileNav from '$lib/components/mobile-nav/mobile-nav.svelte';
+	import ActivityCenter from '$lib/components/activity/activity-center.svelte';
 	import { IsMobile } from '$lib/hooks/is-mobile.svelte.js';
 	import { IsTablet } from '$lib/hooks/is-tablet.svelte.js';
 	import { getEffectiveNavigationSettings, navigationSettingsOverridesStore } from '$lib/utils/navigation';
@@ -105,3 +106,5 @@
 		</main>
 	</Sidebar.Provider>
 {/if}
+
+<ActivityCenter />

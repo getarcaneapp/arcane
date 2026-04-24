@@ -11,8 +11,10 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	humamw "github.com/getarcaneapp/arcane/backend/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
+	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/pkg/authz"
+	activitylib "github.com/getarcaneapp/arcane/backend/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	"github.com/getarcaneapp/arcane/types/base"
 	"github.com/getarcaneapp/arcane/types/image"
@@ -27,6 +29,7 @@ type ImageHandler struct {
 	imageUpdateService *services.ImageUpdateService
 	settingsService    *services.SettingsService
 	buildService       *services.BuildService
+	activityService    *services.ActivityService
 }
 
 // --- Huma Input/Output Wrappers ---
@@ -150,13 +153,14 @@ type UploadImageOutput struct {
 }
 
 // RegisterImages registers image management routes using Huma.
-func RegisterImages(api huma.API, dockerService *services.DockerClientService, imageService *services.ImageService, imageUpdateService *services.ImageUpdateService, settingsService *services.SettingsService, buildService *services.BuildService) {
+func RegisterImages(api huma.API, dockerService *services.DockerClientService, imageService *services.ImageService, imageUpdateService *services.ImageUpdateService, settingsService *services.SettingsService, buildService *services.BuildService, activityService *services.ActivityService) {
 	h := &ImageHandler{
 		dockerService:      dockerService,
 		imageService:       imageService,
 		imageUpdateService: imageUpdateService,
 		settingsService:    settingsService,
 		buildService:       buildService,
+		activityService:    activityService,
 	}
 
 	huma.Register(api, huma.Operation{
@@ -444,12 +448,34 @@ func (h *ImageHandler) PullImage(ctx context.Context, input *PullImageInput) (*h
 			humaCtx.SetHeader("Connection", "keep-alive")
 			humaCtx.SetHeader("X-Accel-Buffering", "no")
 
-			writer := humaCtx.BodyWriter()
+			rawWriter := humaCtx.BodyWriter()
+			activityID := activitylib.StartHandlerActivityForUser(
+				humaCtx.Context(),
+				h.activityService,
+				input.EnvironmentID,
+				models.ActivityTypeImagePull,
+				"image",
+				"",
+				fullImageName,
+				user,
+				"Pulling image",
+				"Image pull started",
+				models.JSON{"imageName": fullImageName},
+			)
+			activitylib.WriteStartedLine(rawWriter, activityID)
+			if f, ok := rawWriter.(http.Flusher); ok {
+				f.Flush()
+			}
 
+			writer := activitylib.NewWriter(humaCtx.Context(), h.activityService, activityID, rawWriter, "Pulling image")
 			if err := h.imageService.PullImage(humaCtx.Context(), fullImageName, writer, *user, credentials); err != nil {
+				activitylib.FlushWriter(writer)
+				activitylib.CompleteHandlerActivity(humaCtx.Context(), h.activityService, activityID, "Image pull failed", err)
 				_, _ = fmt.Fprintf(writer, `{"error":%q}`+"\n", err.Error())
 				return
 			}
+			activitylib.FlushWriter(writer)
+			activitylib.CompleteHandlerActivity(humaCtx.Context(), h.activityService, activityID, "Image pull completed", nil)
 		},
 	}, nil
 }
@@ -476,11 +502,38 @@ func (h *ImageHandler) BuildImage(ctx context.Context, input *BuildImageInput) (
 			humaCtx.SetHeader("Connection", "keep-alive")
 			humaCtx.SetHeader("X-Accel-Buffering", "no")
 
-			writer := humaCtx.BodyWriter()
+			rawWriter := humaCtx.BodyWriter()
+			resourceName := strings.Join(input.Body.Tags, ", ")
+			if strings.TrimSpace(resourceName) == "" {
+				resourceName = input.Body.ContextDir
+			}
+			activityID := activitylib.StartHandlerActivityForUser(
+				humaCtx.Context(),
+				h.activityService,
+				input.EnvironmentID,
+				models.ActivityTypeImageBuild,
+				"image",
+				"",
+				resourceName,
+				user,
+				"Building image",
+				"Image build started",
+				models.JSON{"contextDir": input.Body.ContextDir, "tags": input.Body.Tags},
+			)
+			activitylib.WriteStartedLine(rawWriter, activityID)
+			if f, ok := rawWriter.(http.Flusher); ok {
+				f.Flush()
+			}
+
+			writer := activitylib.NewWriter(humaCtx.Context(), h.activityService, activityID, rawWriter, "Building image")
 			if _, err := h.buildService.BuildImage(humaCtx.Context(), input.EnvironmentID, input.Body, writer, "", user); err != nil {
+				activitylib.FlushWriter(writer)
+				activitylib.CompleteHandlerActivity(humaCtx.Context(), h.activityService, activityID, "Image build failed", err)
 				_, _ = fmt.Fprintf(writer, `{"error":%q}`+"\n", err.Error())
 				return
 			}
+			activitylib.FlushWriter(writer)
+			activitylib.CompleteHandlerActivity(humaCtx.Context(), h.activityService, activityID, "Image build completed", nil)
 		},
 	}, nil
 }

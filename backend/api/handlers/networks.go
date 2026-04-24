@@ -11,9 +11,12 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	humamw "github.com/getarcaneapp/arcane/backend/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
+	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/pkg/authz"
+	activitylib "github.com/getarcaneapp/arcane/backend/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils/mapper"
 	"github.com/getarcaneapp/arcane/types/base"
 	networktypes "github.com/getarcaneapp/arcane/types/network"
@@ -21,8 +24,9 @@ import (
 )
 
 type NetworkHandler struct {
-	networkService *services.NetworkService
-	dockerService  *services.DockerClientService
+	networkService  *services.NetworkService
+	dockerService   *services.DockerClientService
+	activityService *services.ActivityService
 }
 
 type NetworkPaginatedResponse struct {
@@ -133,10 +137,11 @@ type PruneNetworksOutput struct {
 }
 
 // RegisterNetworks registers network endpoints.
-func RegisterNetworks(api huma.API, networkSvc *services.NetworkService, dockerSvc *services.DockerClientService) {
+func RegisterNetworks(api huma.API, networkSvc *services.NetworkService, dockerSvc *services.DockerClientService, activitySvc *services.ActivityService) {
 	h := &NetworkHandler{
-		networkService: networkSvc,
-		dockerService:  dockerSvc,
+		networkService:  networkSvc,
+		dockerService:   dockerSvc,
+		activityService: activitySvc,
 	}
 
 	huma.Register(api, huma.Operation{
@@ -279,7 +284,26 @@ func (h *NetworkHandler) CreateNetwork(ctx context.Context, input *CreateNetwork
 	// Convert to Docker SDK options
 	dockerOptions := input.Body.Options.ToDockerCreateOptions()
 
-	response, err := h.networkService.CreateNetwork(ctx, input.Body.Name, dockerOptions, *user)
+	var response *dockernetwork.CreateResponse
+	activityID, err := activitylib.RunHandlerActivity(ctx, h.activityService, activitylib.HandlerOptions{
+		EnvironmentID:  input.EnvironmentID,
+		Type:           models.ActivityTypeResourceAction,
+		ResourceType:   "network",
+		ResourceID:     input.Body.Name,
+		ResourceName:   input.Body.Name,
+		User:           user,
+		Step:           "Creating network",
+		Message:        "Creating network",
+		SuccessMessage: "Network created successfully",
+		Metadata: models.JSON{
+			"action": "create_network",
+			"driver": input.Body.Options.Driver,
+		},
+	}, func() error {
+		var createErr error
+		response, createErr = h.networkService.CreateNetwork(ctx, input.Body.Name, dockerOptions, *user)
+		return createErr
+	})
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.NetworkCreationError{Err: err}).Error())
 	}
@@ -288,6 +312,7 @@ func (h *NetworkHandler) CreateNetwork(ctx context.Context, input *CreateNetwork
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.NetworkMappingError{Err: err}).Error())
 	}
+	out.ActivityID = utils.StringPtrFromTrimmed(activityID)
 
 	return &CreateNetworkOutput{
 		Body: NetworkCreatedApiResponse{
@@ -405,20 +430,49 @@ func (h *NetworkHandler) DeleteNetwork(ctx context.Context, input *DeleteNetwork
 		return nil, huma.Error401Unauthorized("not authenticated")
 	}
 
-	if err := h.networkService.RemoveNetwork(ctx, input.NetworkID, *user); err != nil {
+	activityID, err := activitylib.RunHandlerActivity(ctx, h.activityService, activitylib.HandlerOptions{
+		EnvironmentID:  input.EnvironmentID,
+		Type:           models.ActivityTypeResourceAction,
+		ResourceType:   "network",
+		ResourceID:     input.NetworkID,
+		ResourceName:   input.NetworkID,
+		User:           user,
+		Step:           "Removing network",
+		Message:        "Removing network",
+		SuccessMessage: "Network removed successfully",
+		Metadata: models.JSON{
+			"action": "remove_network",
+		},
+	}, func() error {
+		return h.networkService.RemoveNetwork(ctx, input.NetworkID, *user)
+	})
+	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.NetworkRemovalError{Err: err}).Error())
 	}
 
 	return &DeleteNetworkOutput{
 		Body: NetworkMessageApiResponse{
 			Success: true,
-			Data:    base.MessageResponse{Message: "Network removed successfully"},
+			Data:    base.MessageResponse{Message: "Network removed successfully", ActivityID: utils.StringPtrFromTrimmed(activityID)},
 		},
 	}, nil
 }
 
 func (h *NetworkHandler) PruneNetworks(ctx context.Context, input *PruneNetworksInput) (*PruneNetworksOutput, error) {
-	report, err := h.networkService.PruneNetworks(ctx)
+	var report *dockernetwork.PruneReport
+	activityID, err := activitylib.RunHandlerActivity(ctx, h.activityService, activitylib.HandlerOptions{
+		EnvironmentID:  input.EnvironmentID,
+		Type:           models.ActivityTypeResourceAction,
+		ResourceType:   "network",
+		Step:           "Pruning unused networks",
+		Message:        "Pruning unused networks",
+		SuccessMessage: "Networks pruned successfully",
+		Metadata:       models.JSON{"action": "prune_networks"},
+	}, func() error {
+		var pruneErr error
+		report, pruneErr = h.networkService.PruneNetworks(ctx)
+		return pruneErr
+	})
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.NetworkPruneError{Err: err}).Error())
 	}
@@ -427,6 +481,7 @@ func (h *NetworkHandler) PruneNetworks(ctx context.Context, input *PruneNetworks
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.NetworkMappingError{Err: err}).Error())
 	}
+	out.ActivityID = utils.StringPtrFromTrimmed(activityID)
 
 	return &PruneNetworksOutput{
 		Body: NetworkPruneResponse{

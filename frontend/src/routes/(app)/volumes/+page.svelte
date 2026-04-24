@@ -11,9 +11,11 @@
 	import { queryKeys } from '$lib/query/query-keys';
 	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
-	import { createMutation, createQuery } from '@tanstack/svelte-query';
+	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
+	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 
 	let { data } = $props();
+	const queryClient = useQueryClient();
 
 	let volumes = $state(untrack(() => data.volumes));
 	let requestOptions = $state(untrack(() => data.volumeRequestOptions));
@@ -31,10 +33,13 @@
 	const createVolumeMutation = createMutation(() => ({
 		mutationKey: ['volumes', 'create', envId],
 		mutationFn: (options: VolumeCreateRequest) => volumeService.createVolume(options),
-		onSuccess: async (_data, options) => {
+		onSuccess: async (data, options) => {
 			const name = options.name?.trim() || m.common_unknown();
-			toast.success(m.common_create_success({ resource: `${m.resource_volume()} "${name}"` }));
-			await volumesQuery.refetch();
+			toast.success(
+				m.common_create_success({ resource: `${m.resource_volume()} "${name}"` }),
+				activityToastOptions(extractActivityId(data))
+			);
+			await loadVolumes();
 			isCreateDialogOpen = false;
 		},
 		onError: (_error, options) => {
@@ -53,8 +58,16 @@
 		await createVolumeMutation.mutateAsync(options);
 	}
 
+	async function loadVolumes(options = requestOptions) {
+		requestOptions = options;
+		volumes = await queryClient.fetchQuery({
+			queryKey: queryKeys.volumes.table(envId, options),
+			queryFn: () => volumeService.getVolumesForEnvironment(envId, options)
+		});
+	}
+
 	async function refresh() {
-		await volumesQuery.refetch();
+		await loadVolumes();
 	}
 
 	const isRefreshing = $derived(volumesQuery.isFetching && !volumesQuery.isPending);
@@ -103,15 +116,7 @@
 
 <ResourcePageLayout title={m.volumes_title()} subtitle={m.volumes_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
-		<VolumeTable
-			bind:volumes
-			bind:selectedIds
-			bind:requestOptions
-			onRefreshData={async (options) => {
-				requestOptions = options;
-				await volumesQuery.refetch();
-			}}
-		/>
+		<VolumeTable bind:volumes bind:selectedIds bind:requestOptions onRefreshData={loadVolumes} />
 	{/snippet}
 
 	{#snippet additionalContent()}

@@ -48,7 +48,7 @@
 >
 	<form onsubmit={handleSubmit} class="space-y-4 px-6 py-4">
 		<div class="space-y-2">
-			<Label for="label-key" class={isReservedPrefix ? 'text-red-500' : ''}>Key</Label>
+			<Label for="label-key" class={isReservedPrefix ? 'text-red-500' : ''}>{m.swarm_node_label_key()}</Label>
 			<Input
 				id="label-key"
 				bind:value={key}
@@ -58,14 +58,15 @@
 			/>
 			{#if isReservedPrefix}
 				<p class="text-[11px] font-medium text-red-500">
-					Prefixes 'engine.labels' and 'com.docker.swarm' are reserved for system use.
+					{m.swarm_node_label_reserved_prefixes()}
 				</p>
 			{/if}
 		</div>
 		<div class="space-y-2">
-			<Label for="label-value">Value</Label>
+			<Label for="label-value">{m.swarm_node_label_value()}</Label>
 			<Input id="label-value" bind:value placeholder={m.swarm_service_form_value_placeholder()} />
 		</div>
+		<button type="submit" class="hidden" aria-label={m.swarm_service_form_add_label()}></button>
 	</form>
 
 	{#snippet footer()}

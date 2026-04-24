@@ -20,6 +20,7 @@
 	import settingsStore from '$lib/stores/config-store';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { hasPermission } from '$lib/utils/auth';
+	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 
 	let { data } = $props();
 	let volume = $state(untrack(() => data.volume));
@@ -60,8 +61,8 @@
 						result: await tryCatch(volumeService.deleteVolume(safeName)),
 						message: m.volumes_remove_failed({ name: safeName }),
 						setLoadingState: (value) => (isLoading.remove = value),
-						onSuccess: async () => {
-							toast.success(m.volumes_remove_success({ name: safeName }));
+						onSuccess: async (data) => {
+							toast.success(m.volumes_remove_success({ name: safeName }), activityToastOptions(extractActivityId(data)));
 							goto('/volumes');
 						}
 					});

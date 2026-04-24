@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	ref "github.com/distribution/reference"
 	"github.com/getarcaneapp/arcane/backend/buildables"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	docker "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
@@ -19,7 +20,6 @@ import (
 	"github.com/getarcaneapp/arcane/types/version"
 	containertypes "github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
-	ref "go.podman.io/image/v5/docker/reference"
 	"golang.org/x/mod/semver"
 )
 

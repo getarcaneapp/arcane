@@ -3,7 +3,7 @@ import { fetchNetworksCountsWithRetry } from '../utils/fetch.util';
 
 async function navigateToNetworks(page: Page) {
 	await page.goto('/networks');
-	await page.waitForLoadState('networkidle');
+	await page.waitForLoadState('load');
 }
 
 test.beforeEach(async ({ page }) => {
@@ -28,6 +28,7 @@ async function createNetworkViaUI(page: Page, networkName: string) {
 
 	await page.getByRole('dialog').getByRole('button', { name: 'Create Network' }).click();
 	const createResponse = await createRequest;
+	const responseBody = await createResponse.json().catch(() => undefined);
 	if (!createResponse.ok()) {
 		const responseText = await createResponse.text().catch(() => '');
 		throw new Error(
@@ -35,8 +36,23 @@ async function createNetworkViaUI(page: Page, networkName: string) {
 		);
 	}
 
-	await navigateToNetworks(page);
-	await expect(await findNetworkRow(page, networkName, 15)).toBeVisible();
+	return responseBody?.data?.id ?? networkName;
+}
+
+async function createNetworkViaApi(page: Page, networkName: string) {
+	const response = await page.request.post('/api/environments/0/networks', {
+		data: {
+			name: networkName,
+			options: {
+				driver: 'bridge'
+			}
+		}
+	});
+	if (!response.ok()) {
+		throw new Error(
+			`Failed to create network ${networkName}: ${response.status()} ${await response.text()}`
+		);
+	}
 }
 
 async function findNetworkRow(page: Page, networkName: string, maxRetries = 10) {
@@ -54,19 +70,10 @@ async function findNetworkRow(page: Page, networkName: string, maxRetries = 10) 
 	return page.locator('tbody tr', { has: page.getByText(networkName) }).first();
 }
 
-async function removeNetworkViaUI(page: Page, networkName: string) {
-	await navigateToNetworks(page);
-
-	const row = await findNetworkRow(page, networkName, 4);
-	if ((await row.count()) === 0) return;
-
-	await row.locator('a[href*="/networks/"]').first().click();
-	await expect(page).toHaveURL(/\/networks\/.+/);
-	await page.getByRole('button', { name: 'Remove', exact: true }).click();
-	await page.getByRole('button', { name: 'Remove', exact: true }).last().click();
-	await expect(
-		page.locator('li[data-sonner-toast][data-type="success"] div[data-title]')
-	).toBeVisible();
+async function removeNetworkViaApi(page: Page, networkName: string) {
+	await page.request
+		.delete(`/api/environments/0/networks/${encodeURIComponent(networkName)}`)
+		.catch(() => undefined);
 }
 
 test.describe('Networks Page', () => {
@@ -92,51 +99,45 @@ test.describe('Networks Page', () => {
 		const networkName = `e2e-table-network-${Date.now()}`;
 		await navigateToNetworks(page);
 		try {
-			await createNetworkViaUI(page, networkName);
+			await createNetworkViaApi(page, networkName);
 			await navigateToNetworks(page);
 			await expect(page.locator('table')).toBeVisible();
 			await expect(page.getByRole('button', { name: 'Name' })).toBeVisible();
 			await expect(await findNetworkRow(page, networkName)).toBeVisible();
 		} finally {
-			await removeNetworkViaUI(page, networkName);
+			await removeNetworkViaApi(page, networkName);
 		}
 	});
 
 	test('Open Create Network sheet', async ({ page }) => {
 		const networkName = `test-network-${Date.now()}`;
 		try {
-			await createNetworkViaUI(page, networkName);
-			await navigateToNetworks(page);
-			await expect(await findNetworkRow(page, networkName)).toBeVisible();
+			const networkId = await createNetworkViaUI(page, networkName);
+			const response = await page.request.get(
+				`/api/environments/0/networks/${encodeURIComponent(networkId)}`
+			);
+			expect(response.ok()).toBe(true);
 		} finally {
-			await removeNetworkViaUI(page, networkName);
+			await removeNetworkViaApi(page, networkName);
 		}
 	});
 
 	test('Inspect Network from row actions', async ({ page }) => {
 		const networkName = `e2e-inspect-network-${Date.now()}`;
 		try {
-			await createNetworkViaUI(page, networkName);
-			await navigateToNetworks(page);
-
-			const row = await findNetworkRow(page, networkName);
-			await expect(row).toBeVisible();
-			await row.locator('a[href*="/networks/"]').first().click();
+			await createNetworkViaApi(page, networkName);
+			await page.goto(`/networks/${encodeURIComponent(networkName)}`);
 			await expect(page).toHaveURL(/\/networks\/.+/);
 			await expect(page.getByRole('heading', { level: 1, name: networkName })).toBeVisible();
 		} finally {
-			await removeNetworkViaUI(page, networkName);
+			await removeNetworkViaApi(page, networkName);
 		}
 	});
 
-	test('Remove Network from table', async ({ page }) => {
+	test('Remove Network from details page', async ({ page }) => {
 		const networkName = `test-remove-network-${Date.now()}`;
-		await createNetworkViaUI(page, networkName);
-		await navigateToNetworks(page);
-		const row = await findNetworkRow(page, networkName);
-		await expect(row).toBeVisible();
-
-		await row.locator('a[href*="/networks/"]').first().click();
+		await createNetworkViaApi(page, networkName);
+		await page.goto(`/networks/${encodeURIComponent(networkName)}`);
 		await expect(page).toHaveURL(/\/networks\/.+/);
 		await page.getByRole('button', { name: 'Remove', exact: true }).click();
 		await page.getByRole('button', { name: 'Remove', exact: true }).last().click();
@@ -144,9 +145,14 @@ test.describe('Networks Page', () => {
 			page.locator('li[data-sonner-toast][data-type="success"] div[data-title]')
 		).toBeVisible();
 
-		await navigateToNetworks(page);
-		const removedRow = await findNetworkRow(page, networkName, 2);
-		await expect(removedRow).not.toBeVisible();
+		await expect
+			.poll(async () => {
+				const response = await page.request.get(
+					`/api/environments/0/networks/${encodeURIComponent(networkName)}`
+				);
+				return response.status();
+			})
+			.toBe(404);
 	});
 
 	test('Default networks cannot be removed on details page', async ({ page }) => {
@@ -156,7 +162,7 @@ test.describe('Networks Page', () => {
 			.first();
 		await expect(bridgeRow).toBeVisible();
 		await bridgeRow.locator('a[href*="/networks/"]').first().click();
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		const removeBtn = page.getByRole('button', { name: 'Remove' });
 		await expect(removeBtn).toBeDisabled();
@@ -165,16 +171,13 @@ test.describe('Networks Page', () => {
 	test('Details page shows usage badge', async ({ page }) => {
 		const networkName = `e2e-badge-network-${Date.now()}`;
 		try {
-			await createNetworkViaUI(page, networkName);
-			await navigateToNetworks(page);
-			const row = await findNetworkRow(page, networkName);
-			await expect(row).toBeVisible();
-			await row.locator('a[href*="/networks/"]').first().click();
-			await page.waitForLoadState('networkidle');
+			await createNetworkViaApi(page, networkName);
+			await page.goto(`/networks/${encodeURIComponent(networkName)}`);
+			await page.waitForLoadState('load');
 
 			await expect(page.getByText('Unused').first()).toBeVisible();
 		} finally {
-			await removeNetworkViaUI(page, networkName);
+			await removeNetworkViaApi(page, networkName);
 		}
 	});
 });

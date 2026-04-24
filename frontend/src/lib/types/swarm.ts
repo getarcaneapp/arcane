@@ -536,6 +536,7 @@ export interface Project {
 	gitRepositoryURL?: string;
 	hasBuildDirective?: boolean;
 	redeployDisabled?: boolean;
+	activityId?: string;
 	updateInfo?: ProjectUpdateInfo;
 	services?: ProjectService[];
 	runtimeServices?: RuntimeService[];

@@ -7,7 +7,8 @@ type ErrorResponse struct {
 
 // MessageResponse represents a simple message response.
 type MessageResponse struct {
-	Message string `json:"message" doc:"Response message"`
+	Message    string  `json:"message" doc:"Response message"`
+	ActivityID *string `json:"activityId,omitempty" doc:"Background activity ID tracking this action"`
 }
 
 // PaginationResponse contains pagination metadata.
