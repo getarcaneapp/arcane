@@ -1,3 +1,74 @@
+## v1.18.1
+
+### Bug fixes
+
+* validation failed when creating git sync([d7a8bc1](https://github.com/getarcaneapp/arcane/commit/d7a8bc19f9d4b351a0f89b55cda243f2a74b7c91) by @kmendell)
+
+
+
+**Full Changelog**: https://github.com/getarcaneapp/arcane/compare/v1.18.0...v1.18.1
+
+## v1.18.0
+
+### New features
+
+* full control over prune options ([#2372](https://github.com/getarcaneapp/arcane/pull/2372) by @kmendell)
+* add UI to create and edit custom templates ([#2351](https://github.com/getarcaneapp/arcane/pull/2351) by @mohamedhagag)
+* add raw inspect tab to container detail view ([#2368](https://github.com/getarcaneapp/arcane/pull/2368) by @GiulioSavini)
+* universal environment dashboard ([#2241](https://github.com/getarcaneapp/arcane/pull/2241) by @kmendell)
+* add dedicated healthcheck tab for containers ([#2384](https://github.com/getarcaneapp/arcane/pull/2384) by @kmendell)
+* resource updates overview page ([#2204](https://github.com/getarcaneapp/arcane/pull/2204) by @kmendell)
+* add ability to deploy Docker Swarm stacks from Git repo with GitOps updates  ([#2412](https://github.com/getarcaneapp/arcane/pull/2412) by @SplinterHead)
+
+### Bug fixes
+
+* handle deferred file close errors in docker build copy helper([3cdc1dd](https://github.com/getarcaneapp/arcane/commit/3cdc1ddaa0d7e93c83bb7ac268cd37fb558b9955) by @kmendell)
+* datetime displays now respect the app's selected locale ([#2366](https://github.com/getarcaneapp/arcane/pull/2366) by @GiulioSavini)
+* guard volume file browser against non-mountable driver types ([#2364](https://github.com/getarcaneapp/arcane/pull/2364) by @GiulioSavini)
+* actually redeploy swarm stack when saving edits ([#2365](https://github.com/getarcaneapp/arcane/pull/2365) by @GiulioSavini)
+* set all api endpoints to use auth by default and explicitly remove auth for public endpoints ([#2377](https://github.com/getarcaneapp/arcane/pull/2377) by @kmendell)
+* add version label to environment cards ([#2379](https://github.com/getarcaneapp/arcane/pull/2379) by @kmendell)
+* always show save button on template pages ([#2402](https://github.com/getarcaneapp/arcane/pull/2402) by @GiulioSavini)
+* fall back to user cache dir when /tmp is not writable ([#2408](https://github.com/getarcaneapp/arcane/pull/2408) by @GiulioSavini)
+* skip image update checks for services with build config ([#2403](https://github.com/getarcaneapp/arcane/pull/2403) by @GiulioSavini)
+* tolerate undefined env vars in GitSync compose validation ([#2380](https://github.com/getarcaneapp/arcane/pull/2380) by @GiulioSavini)
+* pin trivy digest to 0.70.0([686248c](https://github.com/getarcaneapp/arcane/commit/686248c0e0cb8eededea0cd93433e92bedd03b4d) by @kmendell)
+* null user_id for env bootstrap keys + H2 support for registry fetches ([#2370](https://github.com/getarcaneapp/arcane/pull/2370) by @GiulioSavini)
+* incorrect conversion of linux runtime identity types ([#2410](https://github.com/getarcaneapp/arcane/pull/2410) by @kmendell)
+* pre-create volumes with driver_opts before stack deploy ([#2407](https://github.com/getarcaneapp/arcane/pull/2407) by @GiulioSavini)
+* show host CPU/RAM in System Overview instead of Arcane container limits  ([#2343](https://github.com/getarcaneapp/arcane/pull/2343) by @GiulioSavini)
+* compose update indicator not refreshing when a new image is pulled([e367e1f](https://github.com/getarcaneapp/arcane/commit/e367e1f3bb4836c4705b8d4d3dcdb012a6f1b3e9) by @kmendell)
+
+### Dependencies
+
+* bump github.com/jackc/pgx/v5 from 5.7.6 to 5.9.0 in /backend in the go_modules group across 1 directory ([#2383](https://github.com/getarcaneapp/arcane/pull/2383) by @dependabot[bot])
+* bump github.com/go-git/go-git/v5 from 5.17.2 to 5.18.0 in /backend in the go_modules group across 1 directory ([#2388](https://github.com/getarcaneapp/arcane/pull/2388) by @dependabot[bot])
+* bump github.com/docker/compose/v5 from 5.1.2 to 5.1.3 in /backend ([#2398](https://github.com/getarcaneapp/arcane/pull/2398) by @dependabot[bot])
+* bump charm.land/bubbletea/v2 from 2.0.2 to 2.0.6 in /cli ([#2391](https://github.com/getarcaneapp/arcane/pull/2391) by @dependabot[bot])
+* bump charm.land/lipgloss/v2 from 2.0.2 to 2.0.3 in /cli ([#2390](https://github.com/getarcaneapp/arcane/pull/2390) by @dependabot[bot])
+* bump github.com/getarcaneapp/arcane/types from 1.17.3 to 1.17.4 in /cli ([#2392](https://github.com/getarcaneapp/arcane/pull/2392) by @dependabot[bot])
+* bump github.com/aws/aws-sdk-go-v2/credentials from 1.19.14 to 1.19.15 in /backend ([#2396](https://github.com/getarcaneapp/arcane/pull/2396) by @dependabot[bot])
+* bump github.com/aws/aws-sdk-go-v2/service/ecr from 1.57.0 to 1.57.1 in /backend ([#2400](https://github.com/getarcaneapp/arcane/pull/2400) by @dependabot[bot])
+* bump github.com/aws/aws-sdk-go-v2/config from 1.32.14 to 1.32.16 in /backend ([#2401](https://github.com/getarcaneapp/arcane/pull/2401) by @dependabot[bot])
+* bump to go 1.26.2([f01ce6c](https://github.com/getarcaneapp/arcane/commit/f01ce6c163ce10ef02abb5e75cf34c5a211fc1b5) by @kmendell)
+* bump github.com/jackc/pgx/v5 from 5.9.1 to 5.9.2 in /backend in the go_modules group across 1 directory ([#2417](https://github.com/getarcaneapp/arcane/pull/2417) by @dependabot[bot])
+
+### Other
+
+* remove useless assignment of bytes variables([7b610e3](https://github.com/getarcaneapp/arcane/commit/7b610e3d669a2c840ecf12d5967c5f5259f089f8) by @kmendell)
+* use specific cosign id token([a5fd68a](https://github.com/getarcaneapp/arcane/commit/a5fd68a3f4c90d61dcb7bc35e74890a866015f54) by @kmendell)
+* use specific cosign id token([369c7b8](https://github.com/getarcaneapp/arcane/commit/369c7b879ec9176d5f7d838a2576b7095f0a0ee8) by @kmendell)
+* use non-interactive mode for cosign([53f286b](https://github.com/getarcaneapp/arcane/commit/53f286bf9cfd667d83ed457c5fd7c8b869cf660a) by @kmendell)
+* use manual cosign key([0995de3](https://github.com/getarcaneapp/arcane/commit/0995de3642871e05a6612917ecb31a079a37ea25) by @kmendell)
+* use cosign v3 syntax([1b5dd7b](https://github.com/getarcaneapp/arcane/commit/1b5dd7b36a56ac26a85c119412a25e23036990fa) by @kmendell)
+* simplify version info dialog([dbad484](https://github.com/getarcaneapp/arcane/commit/dbad48459bce0d285dc0737f9fde200dba55e279) by @kmendell)
+* redesigned login screen ([#2389](https://github.com/getarcaneapp/arcane/pull/2389) by @kmendell)
+* use arcane/tools image for volume browser and trivy scans ([#2409](https://github.com/getarcaneapp/arcane/pull/2409) by @kmendell)
+
+
+
+**Full Changelog**: https://github.com/getarcaneapp/arcane/compare/v1.17.4...v1.18.0
+
 ## v1.17.4
 
 ### Bug fixes

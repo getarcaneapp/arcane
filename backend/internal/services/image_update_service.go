@@ -581,6 +581,44 @@ func buildImageUpdateRecord(imageID, repo, tag string, result *imageupdate.Respo
 	}
 }
 
+func repositoryCandidatesSliceInternal(candidates map[string]struct{}) []string {
+	if len(candidates) == 0 {
+		return nil
+	}
+
+	repositories := make([]string, 0, len(candidates))
+	for repository := range candidates {
+		repositories = append(repositories, repository)
+	}
+	return repositories
+}
+
+func savePreparedUpdateResultWithTxInternal(tx *gorm.DB, imageID, repo, tag string, result *imageupdate.Response) error {
+	updateRecord := buildImageUpdateRecord(imageID, repo, tag, result)
+
+	// Check if there's an existing record to compare state changes
+	var existingRecord models.ImageUpdateRecord
+	if err := tx.Where("id = ?", imageID).First(&existingRecord).Error; err == nil {
+		// Existing record found - check if we need to reset notification_sent
+		stateChanged := existingRecord.HasUpdate != updateRecord.HasUpdate
+		digestChanged := stringPtrToString(existingRecord.LatestDigest) != stringPtrToString(updateRecord.LatestDigest)
+		versionChanged := stringPtrToString(existingRecord.LatestVersion) != stringPtrToString(updateRecord.LatestVersion)
+
+		// Reset notification_sent if the update state changed in any way
+		if stateChanged || (updateRecord.HasUpdate && (digestChanged || versionChanged)) {
+			updateRecord.NotificationSent = false
+		} else {
+			// Keep the existing notification_sent value if nothing changed
+			updateRecord.NotificationSent = existingRecord.NotificationSent
+		}
+	} else {
+		// New record - start with notification_sent = false
+		updateRecord.NotificationSent = false
+	}
+
+	return tx.Save(updateRecord).Error
+}
+
 func (s *ImageUpdateService) saveUpdateResultByIDInternal(ctx context.Context, imageID string, result *imageupdate.Response) error {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
@@ -598,29 +636,7 @@ func (s *ImageUpdateService) saveUpdateResultByIDInternal(ctx context.Context, i
 
 func (s *ImageUpdateService) savePreparedUpdateResultInternal(ctx context.Context, imageID, repo, tag string, result *imageupdate.Response) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		updateRecord := buildImageUpdateRecord(imageID, repo, tag, result)
-
-		// Check if there's an existing record to compare state changes
-		var existingRecord models.ImageUpdateRecord
-		if err := tx.Where("id = ?", imageID).First(&existingRecord).Error; err == nil {
-			// Existing record found - check if we need to reset notification_sent
-			stateChanged := existingRecord.HasUpdate != updateRecord.HasUpdate
-			digestChanged := stringPtrToString(existingRecord.LatestDigest) != stringPtrToString(updateRecord.LatestDigest)
-			versionChanged := stringPtrToString(existingRecord.LatestVersion) != stringPtrToString(updateRecord.LatestVersion)
-
-			// Reset notification_sent if the update state changed in any way
-			if stateChanged || (updateRecord.HasUpdate && (digestChanged || versionChanged)) {
-				updateRecord.NotificationSent = false
-			} else {
-				// Keep the existing notification_sent value if nothing changed
-				updateRecord.NotificationSent = existingRecord.NotificationSent
-			}
-		} else {
-			// New record - start with notification_sent = false
-			updateRecord.NotificationSent = false
-		}
-
-		return tx.Save(updateRecord).Error
+		return savePreparedUpdateResultWithTxInternal(tx, imageID, repo, tag, result)
 	})
 }
 
@@ -635,6 +651,49 @@ func (s *ImageUpdateService) getImageIDByRef(ctx context.Context, imageRef strin
 		return "", fmt.Errorf("image not found: %w", err)
 	}
 	return inspectResponse.ID, nil
+}
+
+func (s *ImageUpdateService) MarkImageRefUpToDateAfterPull(ctx context.Context, imageRef string) error {
+	if s.db == nil {
+		return nil
+	}
+
+	snapshot, err := s.inspectLocalImageSnapshotInternal(ctx, imageRef)
+	if err != nil {
+		return fmt.Errorf("inspect pulled image: %w", err)
+	}
+
+	checkTime := time.Now().UTC()
+	result := &imageupdate.Response{
+		HasUpdate:      false,
+		UpdateType:     models.UpdateTypeDigest,
+		CurrentVersion: snapshot.Tag,
+		LatestVersion:  snapshot.Tag,
+		CurrentDigest:  snapshot.PrimaryDigest,
+		LatestDigest:   snapshot.PrimaryDigest,
+		CheckTime:      checkTime,
+		ResponseTimeMs: 0,
+	}
+
+	lookup, hasLookup := parseImageRefUpdateLookupInternal(imageRef)
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if hasLookup {
+			repositories := repositoryCandidatesSliceInternal(lookup.repositoryCandidates)
+			if len(repositories) > 0 {
+				if err := tx.Model(&models.ImageUpdateRecord{}).
+					Where("tag = ? AND repository IN ?", lookup.tag, repositories).
+					Update("has_update", false).Error; err != nil {
+					return fmt.Errorf("clear stale image updates: %w", err)
+				}
+			}
+		}
+
+		if err := savePreparedUpdateResultWithTxInternal(tx, snapshot.ImageID, snapshot.Repository, snapshot.Tag, result); err != nil {
+			return fmt.Errorf("save pulled image update state: %w", err)
+		}
+
+		return nil
+	})
 }
 
 // GetUnnotifiedUpdates returns a map of image IDs that have updates but haven't been notified yet

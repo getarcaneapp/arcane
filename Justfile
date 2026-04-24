@@ -566,10 +566,12 @@ _utils-hotfix:
     fi
 
     if [ "$TEST" == true ]; then
+        BUILD_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
         echo ""
         echo "Test mode enabled: no changes will be made."
         echo "Would create or reuse release branch: ${RELEASE_BRANCH}"
         echo "Would cherry-pick selected commits from main."
+        echo "Would update .arcane.json to version ${NEW_VERSION}, revision <release-branch-head>, and buildTime ${BUILD_TIME}."
         echo "Would generate changelog for ${NEW_TAG} and tag release."
         echo "Would update main to version ${NEW_VERSION} after release."
         exit 0
@@ -708,10 +710,11 @@ _utils-hotfix:
     echo ""
     echo -e "${BLUE}Finalizing hotfix release ${NEW_TAG}...${NC}"
 
-    # Update .arcane.json file with the new version and revision
-    LATEST_REVISION=$(git rev-parse HEAD)
-    jq --arg version "$NEW_VERSION" --arg revision "$LATEST_REVISION" \
-      '.version = $version | .revision = $revision' .arcane.json > .arcane_tmp.json && mv .arcane_tmp.json .arcane.json
+        # Update .arcane.json file with the new version, revision, and build time
+        LATEST_REVISION=$(git rev-parse HEAD)
+        BUILD_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+        jq --arg version "$NEW_VERSION" --arg revision "$LATEST_REVISION" --arg build_time "$BUILD_TIME" \
+            '.version = $version | .revision = $revision | .buildTime = $build_time' .arcane.json > .arcane_tmp.json && mv .arcane_tmp.json .arcane.json
     git add .arcane.json
 
     # Update version in frontend/package.json
@@ -788,9 +791,9 @@ _utils-hotfix:
     git checkout main
     git pull origin main --quiet
 
-    # Update .arcane.json file with the new version and revision
-    jq --arg version "$NEW_VERSION" --arg revision "$LATEST_REVISION" \
-      '.version = $version | .revision = $revision' .arcane.json > .arcane_tmp.json && mv .arcane_tmp.json .arcane.json
+        # Update .arcane.json file with the new version, revision, and build time
+        jq --arg version "$NEW_VERSION" --arg revision "$LATEST_REVISION" --arg build_time "$BUILD_TIME" \
+            '.version = $version | .revision = $revision | .buildTime = $build_time' .arcane.json > .arcane_tmp.json && mv .arcane_tmp.json .arcane.json
 
     # Update version in frontend/package.json
     jq --arg new_version "$NEW_VERSION" '.version = $new_version' frontend/package.json > frontend/package_tmp.json && mv frontend/package_tmp.json frontend/package.json
@@ -978,10 +981,11 @@ release *args:
     LATEST_REVISION=$(git rev-parse HEAD)
 
     if [ "$TEST" == false ]; then
-        # Update .arcane.json file with the new version and revision
+        # Update .arcane.json file with the new version, revision, and build time
         echo "Updating .arcane.json file..."
-        jq --arg version "$NEW_VERSION" --arg revision "$LATEST_REVISION" \
-          '.version = $version | .revision = $revision' .arcane.json > .arcane_tmp.json && mv .arcane_tmp.json .arcane.json
+                BUILD_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+                jq --arg version "$NEW_VERSION" --arg revision "$LATEST_REVISION" --arg build_time "$BUILD_TIME" \
+                    '.version = $version | .revision = $revision | .buildTime = $build_time' .arcane.json > .arcane_tmp.json && mv .arcane_tmp.json .arcane.json
         git add .arcane.json
 
         # Update version in frontend/package.json
@@ -1031,7 +1035,8 @@ release *args:
         echo "Release process complete. New version: $NEW_VERSION"
     else
         echo "Test mode: skipping confirmation prompt and all write operations."
-        echo "Would update .arcane.json to version $NEW_VERSION and revision $LATEST_REVISION"
+        BUILD_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+        echo "Would update .arcane.json to version $NEW_VERSION, revision $LATEST_REVISION, and buildTime $BUILD_TIME"
         echo "Would update frontend/package.json to version $NEW_VERSION"
         echo "Generating changelog preview (no file write)..."
         CHANGELOG=$(git cliff $CLIFF_VERBOSE --github-token=$(gh auth token) --tag "v$NEW_VERSION" --unreleased)

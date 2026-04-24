@@ -105,7 +105,7 @@ func TestDashboardHandlerGetDashboardReturnsSnapshot(t *testing.T) {
 		Name:      "expiring-soon",
 		KeyHash:   "hash-soon",
 		KeyPrefix: "arc_test_handler",
-		UserID:    "user-1",
+		UserID:    new("user-1"),
 		ExpiresAt: new(time.Now().Add(12 * time.Hour)),
 	}).Error)
 
