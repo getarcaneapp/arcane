@@ -200,13 +200,16 @@ export const defaultMobileNavigationSettings: MobileNavigationSettings = {
 	scrollToHide: true
 };
 
-export function getGitOpsItems(environmentId: string): NavigationItem[] {
-	return [
-		{
-			title: m.git_syncs_title(),
-			url: `/environments/${environmentId}/gitops`,
-			icon: GitBranchIcon,
-			shortcut: ['mod', 'g']
-		}
-	];
+export function getManagementItems(environmentId: string): NavigationItem[] {
+	const gitSyncsItem: NavigationItem = {
+		title: m.git_syncs_title(),
+		url: `/environments/${environmentId}/gitops`,
+		icon: GitBranchIcon,
+		shortcut: ['mod', 'g']
+	};
+
+	return navigationItems.managementItems.map((item) => {
+		if (item.url !== '/environments') return item;
+		return { ...item, items: [...(item.items ?? []), gitSyncsItem] };
+	});
 }

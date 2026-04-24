@@ -1,5 +1,5 @@
 <script lang="ts" module>
-	import { navigationItems, getGitOpsItems, getSwarmNavigationItems } from '$lib/config/navigation-config';
+	import { navigationItems, getManagementItems, getSwarmNavigationItems } from '$lib/config/navigation-config';
 </script>
 
 <script lang="ts">
@@ -55,7 +55,7 @@
 	let envSwitcherOpen = $state(false);
 
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
-	const gitOpsItems = $derived(getGitOpsItems(currentEnvId));
+	const managementItems = $derived(getManagementItems(currentEnvId));
 	const swarmItems = $derived(getSwarmNavigationItems(swarmEnabled));
 </script>
 
@@ -92,9 +92,8 @@
 		{/if}
 	</Sidebar.Header>
 	<Sidebar.Content class={!isCollapsed ? '-mt-2' : ''}>
-		<SidebarItemGroup label={m.sidebar_management()} items={navigationItems.managementItems} />
+		<SidebarItemGroup label={m.sidebar_management()} items={managementItems} />
 		<SidebarItemGroup label={m.sidebar_resources()} items={navigationItems.resourceItems} />
-		<SidebarItemGroup label={m.sidebar_gitops()} items={gitOpsItems} />
 		{#if swarmItems.length > 0}
 			<SidebarItemGroup label={m.swarm_title()} items={swarmItems} />
 		{/if}
