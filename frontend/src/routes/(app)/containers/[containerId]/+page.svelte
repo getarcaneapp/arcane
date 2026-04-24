@@ -25,6 +25,7 @@
 	import ContainerComposePanel from '../components/ContainerComposePanel.svelte';
 	import ContainerInspect from '../components/ContainerInspect.svelte';
 	import ContainerDetailStatsSync from '../components/container-detail-stats-sync.svelte';
+	import ContainerHealthcheck from '../components/ContainerHealthcheck.svelte';
 	import IconImage from '$lib/components/icon-image.svelte';
 	import { getArcaneIconUrlFromLabels } from '$lib/utils/arcane-labels';
 	import { calculateMemoryUsage } from '$lib/utils/container-stats.utils';
@@ -39,7 +40,8 @@
 		ContainersIcon,
 		StatsIcon,
 		CodeIcon,
-		InspectIcon
+		InspectIcon,
+		HealthIcon
 	} from '$lib/icons';
 	import { parse as parseYaml } from 'yaml';
 	import type { IncludeFile } from '$lib/types/project.type';
@@ -140,6 +142,9 @@
 	const hasMounts = $derived(!!(container?.mounts && container.mounts.length > 0));
 	const showStats = $derived(!!container?.state?.running);
 	const showShell = $derived(!!container?.state?.running);
+	const hasHealthcheck = $derived(
+		!!(container?.config?.healthcheck?.test && container.config.healthcheck.test.length > 0) || !!container?.state?.health
+	);
 
 	const project = $derived(data?.project ?? null);
 	const composeInfo = $derived(container?.composeInfo ?? null);
@@ -210,6 +215,7 @@
 		...(showStats ? [{ value: 'stats', label: m.containers_nav_metrics(), icon: StatsIcon }] : []),
 		{ value: 'logs', label: m.containers_nav_logs(), icon: FileTextIcon },
 		...(showShell ? [{ value: 'shell', label: m.common_shell(), icon: TerminalIcon }] : []),
+		...(hasHealthcheck ? [{ value: 'healthcheck', label: m.containers_nav_healthcheck(), icon: HealthIcon }] : []),
 		...(showConfiguration ? [{ value: 'config', label: m.common_configuration(), icon: SettingsIcon }] : []),
 		...(showNetworkTab ? [{ value: 'network', label: m.containers_nav_networks(), icon: NetworksIcon }] : []),
 		...(hasMounts ? [{ value: 'storage', label: m.containers_nav_storage(), icon: VolumesIcon }] : []),
@@ -341,6 +347,12 @@
 					{#if activeTab === 'shell'}
 						<ContainerShell containerId={container?.id} />
 					{/if}
+				</Tabs.Content>
+			{/if}
+
+			{#if hasHealthcheck}
+				<Tabs.Content value="healthcheck" class="h-full">
+					<ContainerHealthcheck {container} />
 				</Tabs.Content>
 			{/if}
 

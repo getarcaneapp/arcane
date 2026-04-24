@@ -102,12 +102,12 @@ async function mockDashboardStatsWebSocket(page: Page) {
 	}, mockedStats);
 }
 
-function collectEnvironmentRequestPaths(page: Page): string[] {
+function collectDashboardRequestPaths(page: Page): string[] {
 	const requestPaths: string[] = [];
 
 	page.on('request', (request) => {
 		const pathname = new URL(request.url()).pathname;
-		if (pathname.startsWith('/api/environments/')) {
+		if (pathname.startsWith('/api/environments/') || pathname.startsWith('/api/dashboard/')) {
 			requestPaths.push(pathname);
 		}
 	});
@@ -139,20 +139,19 @@ test.describe('Dashboard system stats websocket', () => {
 		await expect(page.getByText('HTTP', { exact: true }).first()).toBeVisible();
 	});
 
-	test('loads dashboard content from the snapshot endpoint without dashboard REST fan-out', async ({
+	test('loads dashboard content from the aggregated overview endpoint without dashboard REST fan-out', async ({
 		page
 	}) => {
 		await mockDashboardStatsWebSocket(page);
-		const requestPaths = collectEnvironmentRequestPaths(page);
+		const requestPaths = collectDashboardRequestPaths(page);
 
 		await page.goto(defaultDashboardPath);
 		await page.waitForLoadState('networkidle');
 
-		expect(
-			requestPaths.some((path) => /\/api\/environments\/[^/]+\/dashboard$/.test(path))
-		).toBeTruthy();
+		expect(requestPaths).toContain('/api/dashboard/environments');
 
 		for (const blockedPattern of [
+			/\/api\/environments\/[^/]+\/dashboard$/,
 			/\/api\/environments\/[^/]+\/containers$/,
 			/\/api\/environments\/[^/]+\/containers\/counts$/,
 			/\/api\/environments\/[^/]+\/images$/,
@@ -171,7 +170,7 @@ test.describe('Dashboard system stats websocket', () => {
 		page
 	}) => {
 		await mockDashboardStatsWebSocket(page);
-		const requestPaths = collectEnvironmentRequestPaths(page);
+		const requestPaths = collectDashboardRequestPaths(page);
 
 		await page.goto(defaultDashboardPath);
 		await page.waitForLoadState('networkidle');

@@ -463,8 +463,8 @@ func (h *WebSocketHandler) startProjectLogSourceInternal(ctx context.Context, ke
 				return
 			}
 
-			h.broadcastProjectLogStreamErrorInternal(projectID, format, err, ls)
 			h.markLogStreamDoneInternal(key, ls)
+			h.broadcastProjectLogStreamErrorInternal(projectID, format, err, ls)
 			return
 		}
 
@@ -653,8 +653,8 @@ func (h *WebSocketHandler) startContainerLogHub(key, containerID, format string,
 				return
 			}
 
-			h.broadcastContainerLogStreamErrorInternal(containerID, format, err, ls)
 			h.markLogStreamDoneInternal(key, ls)
+			h.broadcastContainerLogStreamErrorInternal(containerID, format, err, ls)
 			return
 		}
 
@@ -794,8 +794,8 @@ func (h *WebSocketHandler) startServiceLogHub(key, serviceID, format string, bat
 				return
 			}
 
-			h.broadcastServiceLogStreamErrorInternal(serviceID, format, err, ls)
 			h.markLogStreamDoneInternal(key, ls)
+			h.broadcastServiceLogStreamErrorInternal(serviceID, format, err, ls)
 			return
 		}
 
@@ -1253,8 +1253,24 @@ func (h *WebSocketHandler) getMemoryInfo() (uint64, uint64) {
 	return memInfo.Used, memInfo.Total
 }
 
-// applyCgroupLimits applies cgroup limits when running in a container.
+// applyCgroupLimits applies cgroup limits when running in an LXC (or similar)
+// container where the limits represent the real hardware budget.
+//
+// It is intentionally a no-op inside Docker: Docker's --cpus / --memory flags
+// set artificial cgroup constraints that are unrelated to the host totals we
+// want to display. gopsutil already reads the correct host values there (via
+// the bind-mounted /proc). Applying cgroup limits on top would produce the
+// "#2343 regression" where the dashboard shows "512 MB RAM" while the host
+// has 32 GB (#1110).
+//
+// In LXC the situation is the opposite: gopsutil reads the host's /proc
+// (which shows the physical machine's RAM/CPU) rather than the slice of
+// resources actually allocated to the LXC guest. The cgroup limits ARE the
+// correct numbers to show.
 func (h *WebSocketHandler) applyCgroupLimits(cpuCount int, memUsed, memTotal uint64) (int, uint64, uint64) {
+	if docker.IsDockerContainer() {
+		return cpuCount, memUsed, memTotal
+	}
 	cgroupLimits := h.getCachedCgroupLimitsInternal()
 	if cgroupLimits == nil {
 		return cpuCount, memUsed, memTotal

@@ -32,12 +32,14 @@
 	import { IsTablet } from '$lib/hooks/is-tablet.svelte.js';
 	import { untrack } from 'svelte';
 	import { projectService } from '$lib/services/project-service';
+	import { imageService } from '$lib/services/image-service';
 	import { gitOpsSyncService } from '$lib/services/gitops-sync-service';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { queryKeys } from '$lib/query/query-keys';
 	import { RefreshIcon } from '$lib/icons';
 	import IconImage from '$lib/components/icon-image.svelte';
-	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
+	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
+	import ProjectUpdateItem from '$lib/components/project-update-item.svelte';
 
 	let { data } = $props();
 	let projectId = $derived(data.projectId);
@@ -108,6 +110,7 @@
 	}
 
 	const project = $derived.by(() => withLoadedProjectFileContent(projectDetailQuery.data ?? data.project));
+	const projectImageRefs = $derived.by(() => getProjectImageRefs(project));
 	const serverName = $derived(project?.name ?? '');
 	const serverComposeContent = $derived(project?.composeContent ?? '');
 	const serverEnvContent = $derived(project?.envContent ?? '');
@@ -251,6 +254,28 @@
 		}
 	}
 
+	function getProjectImageRefs(details?: Project | null): string[] {
+		const refs = new Set<string>();
+
+		for (const service of details?.services ?? []) {
+			const imageRef = service.image?.trim();
+			if (imageRef) {
+				refs.add(imageRef);
+			}
+		}
+
+		if (refs.size === 0) {
+			for (const service of details?.runtimeServices ?? []) {
+				const imageRef = service.image?.trim();
+				if (imageRef) {
+					refs.add(imageRef);
+				}
+			}
+		}
+
+		return [...refs];
+	}
+
 	function rebaseEditorDraft(details: Project) {
 		const normalizedProject = withLoadedProjectFileContent(details);
 		if (!normalizedProject) return;
@@ -274,6 +299,36 @@
 			queryClient.invalidateQueries({ queryKey: queryKeys.projects.statusCounts(currentEnvId) })
 		]);
 	}
+
+	const checkProjectUpdatesMutation = createMutation(() => ({
+		mutationKey: queryKeys.projects.detailCheckUpdates(envId ?? '0', projectId),
+		mutationFn: async () => {
+			if (projectImageRefs.length === 0) {
+				return {};
+			}
+			return imageService.checkMultipleImages(projectImageRefs);
+		},
+		onSuccess: async (results) => {
+			const currentEnvId = envId ?? (await environmentStore.getCurrentEnvironmentId());
+			const firstError = Object.values(results)
+				.find((result) => !!result?.error?.trim())
+				?.error?.trim();
+			const hasErrors = !!firstError;
+			if (hasErrors) {
+				toast.error(firstError || m.containers_check_updates_failed());
+			} else {
+				toast.success(m.images_update_check_completed());
+			}
+			await Promise.all([
+				refreshProjectDetails(),
+				queryClient.invalidateQueries({ queryKey: ['projects', currentEnvId] }),
+				queryClient.invalidateQueries({ queryKey: queryKeys.projects.statusCounts(currentEnvId) })
+			]);
+		},
+		onError: () => {
+			toast.error(m.containers_check_updates_failed());
+		}
+	}));
 
 	$effect(() => {
 		if (!project?.id) return;
@@ -510,6 +565,10 @@
 		});
 	}
 
+	async function handleCheckProjectUpdates() {
+		await checkProjectUpdatesMutation.mutateAsync();
+	}
+
 	function formatUrlLabel(raw: string): string {
 		const trimmed = raw.trim();
 		if (!trimmed) return raw;
@@ -573,6 +632,11 @@
 								tooltip={showTooltip ? project.statusReason : undefined}
 							/>
 						{/if}
+						<ProjectUpdateItem
+							updateInfo={project.updateInfo}
+							onCheck={handleCheckProjectUpdates}
+							checking={checkProjectUpdatesMutation.isPending}
+						/>
 						{#if project.urls && project.urls.length > 0}
 							<div class="flex min-w-0 flex-wrap items-center gap-2">
 								{#each project.urls as url, i (i)}

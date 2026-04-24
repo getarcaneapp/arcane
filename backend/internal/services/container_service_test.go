@@ -80,6 +80,24 @@ func TestGroupContainersByProjectUsesNoProjectBucket(t *testing.T) {
 	require.Equal(t, containerNoProjectGroup, getContainerProjectNameInternal(groups[1].Items[1]))
 }
 
+func TestBuildContainerFilterAccessors_FiltersStandaloneContainers(t *testing.T) {
+	service := &ContainerService{}
+	items := []containertypes.Summary{
+		{ID: "standalone", Labels: map[string]string{}},
+		{ID: "compose", Labels: map[string]string{"com.docker.compose.project": "alpha"}},
+	}
+
+	result := pagination.SearchOrderAndPaginate(
+		items,
+		pagination.QueryParams{Filters: map[string]string{"standalone": "true"}},
+		pagination.Config[containertypes.Summary]{FilterAccessors: service.buildContainerFilterAccessors()},
+	)
+
+	require.Len(t, result.Items, 1)
+	require.Equal(t, "standalone", result.Items[0].ID)
+	require.Equal(t, int64(1), result.TotalCount)
+}
+
 func TestBuildCleanNetworkingConfigInternalPreservesEndpointSettings(t *testing.T) {
 	containerInspect := container.InspectResponse{
 		NetworkSettings: &container.NetworkSettings{

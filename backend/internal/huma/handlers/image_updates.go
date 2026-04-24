@@ -3,16 +3,19 @@ package handlers
 import (
 	"context"
 	"net/http"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/types/base"
+	imagetypes "github.com/getarcaneapp/arcane/types/image"
 	"github.com/getarcaneapp/arcane/types/imageupdate"
 )
 
 type ImageUpdateHandler struct {
 	imageUpdateService *services.ImageUpdateService
+	imageService       *services.ImageService
 }
 
 type CheckImageUpdateInput struct {
@@ -51,6 +54,15 @@ type CheckAllImagesOutput struct {
 	Body base.ApiResponse[imageupdate.BatchResponse]
 }
 
+type GetUpdateInfoByRefsInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	ImageRefs     string `query:"imageRefs" doc:"Comma-separated image references"`
+}
+
+type GetUpdateInfoByRefsOutput struct {
+	Body base.ApiResponse[map[string]*imagetypes.UpdateInfo]
+}
+
 type GetUpdateSummaryInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 }
@@ -60,8 +72,11 @@ type GetUpdateSummaryOutput struct {
 }
 
 // RegisterImageUpdates registers image update endpoints.
-func RegisterImageUpdates(api huma.API, imageUpdateSvc *services.ImageUpdateService) {
-	h := &ImageUpdateHandler{imageUpdateService: imageUpdateSvc}
+func RegisterImageUpdates(api huma.API, imageUpdateSvc *services.ImageUpdateService, imageSvc *services.ImageService) {
+	h := &ImageUpdateHandler{
+		imageUpdateService: imageUpdateSvc,
+		imageService:       imageSvc,
+	}
 
 	huma.Register(api, huma.Operation{
 		OperationID: "check-image-update",
@@ -107,6 +122,15 @@ func RegisterImageUpdates(api huma.API, imageUpdateSvc *services.ImageUpdateServ
 		Tags:        []string{"Image Updates"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
 	}, h.CheckAllImages)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-update-info-by-refs",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/image-updates/by-refs",
+		Summary:     "Get persisted update info for image references",
+		Tags:        []string{"Image Updates"},
+		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+	}, h.GetUpdateInfoByRefs)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "get-update-summary",
@@ -192,6 +216,30 @@ func (h *ImageUpdateHandler) CheckAllImages(ctx context.Context, input *CheckAll
 	}, nil
 }
 
+func (h *ImageUpdateHandler) GetUpdateInfoByRefs(ctx context.Context, input *GetUpdateInfoByRefsInput) (*GetUpdateInfoByRefsOutput, error) {
+	imageRefs := parseImageRefsQueryInternal(input.ImageRefs)
+	if len(imageRefs) == 0 {
+		return &GetUpdateInfoByRefsOutput{
+			Body: base.ApiResponse[map[string]*imagetypes.UpdateInfo]{
+				Success: true,
+				Data:    map[string]*imagetypes.UpdateInfo{},
+			},
+		}, nil
+	}
+
+	result, err := h.imageService.GetUpdateInfoByImageRefs(ctx, imageRefs)
+	if err != nil {
+		return nil, huma.Error500InternalServerError((&common.BatchImageUpdateCheckError{Err: err}).Error())
+	}
+
+	return &GetUpdateInfoByRefsOutput{
+		Body: base.ApiResponse[map[string]*imagetypes.UpdateInfo]{
+			Success: true,
+			Data:    result,
+		},
+	}, nil
+}
+
 func (h *ImageUpdateHandler) GetUpdateSummary(ctx context.Context, input *GetUpdateSummaryInput) (*GetUpdateSummaryOutput, error) {
 	summary, err := h.imageUpdateService.GetUpdateSummary(ctx)
 	if err != nil {
@@ -204,4 +252,27 @@ func (h *ImageUpdateHandler) GetUpdateSummary(ctx context.Context, input *GetUpd
 			Data:    *summary,
 		},
 	}, nil
+}
+
+func parseImageRefsQueryInternal(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+
+	parts := strings.Split(raw, ",")
+	result := make([]string, 0, len(parts))
+	seen := make(map[string]struct{}, len(parts))
+	for _, part := range parts {
+		ref := strings.TrimSpace(part)
+		if ref == "" {
+			continue
+		}
+		if _, exists := seen[ref]; exists {
+			continue
+		}
+		seen[ref] = struct{}{}
+		result = append(result, ref)
+	}
+
+	return result
 }

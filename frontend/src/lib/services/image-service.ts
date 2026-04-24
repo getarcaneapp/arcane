@@ -69,6 +69,24 @@ export class ImageService extends BaseAPIService {
 		return this.handleResponse(this.api.post(`/environments/${envId}/image-updates/check-all`, {}));
 	}
 
+	async checkMultipleImages(imageRefs: string[]): Promise<Record<string, ImageUpdateInfoDto>> {
+		const envId = await environmentStore.getCurrentEnvironmentId();
+		return this.handleResponse(this.api.post(`/environments/${envId}/image-updates/check-batch`, { imageRefs }));
+	}
+
+	async getUpdateInfoByRefs(imageRefs: string[]): Promise<Record<string, ImageUpdateInfoDto>> {
+		const envId = await environmentStore.getCurrentEnvironmentId();
+		if (imageRefs.length === 0) {
+			return {};
+		}
+
+		return this.handleResponse(
+			this.api.get(`/environments/${envId}/image-updates/by-refs`, {
+				params: { imageRefs: imageRefs.join(',') }
+			})
+		);
+	}
+
 	async runAutoUpdate(options?: AutoUpdateCheck): Promise<AutoUpdateResult> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		return this.handleResponse(this.api.post(`/environments/${envId}/updater/run`, options));

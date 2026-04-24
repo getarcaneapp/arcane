@@ -26,6 +26,7 @@
 	const queryClient = useQueryClient();
 
 	const locales: Record<string, string> = {
+		da: 'Dansk',
 		de: 'Deutsch',
 		el: 'Ελληνικά',
 		en: 'English',

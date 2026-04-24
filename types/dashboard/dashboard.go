@@ -5,6 +5,7 @@ import (
 	containertypes "github.com/getarcaneapp/arcane/types/container"
 	environmenttypes "github.com/getarcaneapp/arcane/types/environment"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
+	versiontypes "github.com/getarcaneapp/arcane/types/version"
 )
 
 type ActionItemKind string
@@ -138,6 +139,11 @@ type EnvironmentOverview struct {
 	//
 	// Required: true
 	Settings SnapshotSettings `json:"settings"`
+
+	// VersionInfo is the environment application version metadata when available.
+	//
+	// Required: false
+	VersionInfo *versiontypes.Info `json:"versionInfo,omitempty"`
 
 	// SnapshotState indicates whether the environment snapshot was fetched.
 	//

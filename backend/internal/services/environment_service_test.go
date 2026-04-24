@@ -533,7 +533,7 @@ func TestEnvironmentService_EnsureSwarmNodeAgentEnvironment_CreatesHiddenChildAn
 		Order("created_at asc").
 		Find(&apiKeys).Error)
 	require.Len(t, apiKeys, 1)
-	require.Equal(t, user.ID, apiKeys[0].UserID)
+	require.Nil(t, apiKeys[0].UserID) // environment bootstrap keys have no owner
 
 	reusedEnv, reusedToken, err := svc.EnsureSwarmNodeAgentEnvironment(
 		ctx,

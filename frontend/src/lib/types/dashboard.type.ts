@@ -1,4 +1,5 @@
 import type { ContainerStatusCounts, ContainerSummaryDto } from './container.type';
+import type { AppVersionInformation } from './application-configuration';
 import type { Environment } from './environment.type';
 import type { ImageSummaryDto, ImageUsageCounts } from './image.type';
 import type { Paginated } from './pagination.type';
@@ -35,6 +36,7 @@ export interface DashboardEnvironmentOverview {
 	imageUsageCounts: ImageUsageCounts;
 	actionItems: DashboardActionItems;
 	settings: DashboardSnapshotSettings;
+	versionInfo?: AppVersionInformation;
 	snapshotState: EnvironmentDashboardSnapshotState;
 	snapshotError?: string;
 }
@@ -73,5 +75,4 @@ export interface DashboardOverviewSummary {
 
 export interface DashboardEnvironmentCardState {
 	environment: Environment;
-	loadPromise: Promise<DashboardEnvironmentOverview> | null;
 }

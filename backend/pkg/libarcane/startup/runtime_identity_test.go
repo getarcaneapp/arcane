@@ -67,8 +67,21 @@ func TestLoadRuntimeIdentityRequest(t *testing.T) {
 		require.NoError(t, err)
 		require.Empty(t, warning)
 		require.True(t, req.Enabled)
-		require.Equal(t, uint32(1001), req.UID)
-		require.Equal(t, uint32(2001), req.GID)
+		require.Equal(t, 1001, req.UID)
+		require.Equal(t, 2001, req.GID)
+		require.Equal(t, uint32(1001), req.CredentialUID)
+		require.Equal(t, uint32(2001), req.CredentialGID)
+	})
+
+	t.Run("error when value is negative", func(t *testing.T) {
+		_, _, err := loadRuntimeIdentityRequestInternal(func(key string) string {
+			if key == "PUID" {
+				return "-1"
+			}
+			return "1001"
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid PUID")
 	})
 }
 

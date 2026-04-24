@@ -92,7 +92,12 @@ type GitOpsSync struct {
 	// Required: true
 	ComposePath string `json:"composePath"`
 
-	// ProjectName is the name used to create/identify the project.
+	// TargetType indicates what entity is being deployed (e.g. "project" or "swarm_stack").
+	//
+	// Required: true
+	TargetType string `json:"targetType"`
+
+	// ProjectName is the name used to create/identify the project or stack.
 	//
 	// Required: true
 	ProjectName string `json:"projectName"`
@@ -126,19 +131,19 @@ type GitOpsSync struct {
 	SyncedFiles *string `json:"syncedFiles,omitempty"`
 
 	// MaxSyncFiles is the maximum number of files to sync.
-	// 0 means inherit the environment limit; unlimited only applies when the effective environment limit is also 0.
+	// 0 means unlimited; env var overrides take precedence.
 	//
 	// Required: true
 	MaxSyncFiles int `json:"maxSyncFiles"`
 
 	// MaxSyncTotalSize is the maximum total size in bytes for all synced files.
-	// 0 means inherit the environment limit; unlimited only applies when the effective environment limit is also 0.
+	// 0 means unlimited; env var overrides take precedence.
 	//
 	// Required: true
 	MaxSyncTotalSize int64 `json:"maxSyncTotalSize"`
 
 	// MaxSyncBinarySize is the maximum size in bytes for individual binary files.
-	// 0 means inherit the environment limit; unlimited only applies when the effective environment limit is also 0.
+	// 0 means unlimited; env var overrides take precedence.
 	//
 	// Required: true
 	MaxSyncBinarySize int64 `json:"maxSyncBinarySize"`
@@ -313,7 +318,12 @@ type CreateSyncRequest struct {
 	// Required: true
 	ComposePath string `json:"composePath" binding:"required"`
 
-	// ProjectName is the name of the project to create/update.
+	// TargetType specifies if this sync targets a "project" or "swarm_stack".
+	//
+	// Required: false
+	TargetType string `json:"targetType,omitempty"`
+
+	// ProjectName is the name of the project or stack to create/update.
 	// The actual project will be created on first sync, and ProjectID will be set then.
 	// If not provided, defaults to the sync name.
 	//
@@ -338,22 +348,22 @@ type CreateSyncRequest struct {
 	SyncDirectory *bool `json:"syncDirectory,omitempty"`
 
 	// MaxSyncFiles is the maximum number of files to sync.
-	// 0 means inherit the environment limit; unlimited only applies when the effective environment limit is also 0.
-	// Default: 500
+	// 0 means unlimited; env var overrides take precedence.
+	// Default: 0
 	//
 	// Required: false
 	MaxSyncFiles *int `json:"maxSyncFiles,omitempty"`
 
 	// MaxSyncTotalSize is the maximum total size in bytes for all synced files.
-	// 0 means inherit the environment limit; unlimited only applies when the effective environment limit is also 0.
-	// Default: 52428800 (50MB)
+	// 0 means unlimited; env var overrides take precedence.
+	// Default: 0
 	//
 	// Required: false
 	MaxSyncTotalSize *int64 `json:"maxSyncTotalSize,omitempty"`
 
 	// MaxSyncBinarySize is the maximum size in bytes for individual binary files.
-	// 0 means inherit the environment limit; unlimited only applies when the effective environment limit is also 0.
-	// Default: 10485760 (10MB)
+	// 0 means unlimited; env var overrides take precedence.
+	// Default: 0
 	//
 	// Required: false
 	MaxSyncBinarySize *int64 `json:"maxSyncBinarySize,omitempty"`
@@ -381,7 +391,12 @@ type UpdateSyncRequest struct {
 	// Required: false
 	ComposePath *string `json:"composePath,omitempty"`
 
-	// ProjectName is the name of the project to create/update.
+	// TargetType specifies if this sync targets a "project" or "swarm_stack".
+	//
+	// Required: false
+	TargetType *string `json:"targetType,omitempty"`
+
+	// ProjectName is the name of the project or stack to create/update.
 	//
 	// Required: false
 	ProjectName *string `json:"projectName,omitempty"`
@@ -404,19 +419,19 @@ type UpdateSyncRequest struct {
 	SyncDirectory *bool `json:"syncDirectory,omitempty"`
 
 	// MaxSyncFiles is the maximum number of files to sync.
-	// 0 means inherit the environment limit; unlimited only applies when the effective environment limit is also 0.
+	// 0 means unlimited; env var overrides take precedence.
 	//
 	// Required: false
 	MaxSyncFiles *int `json:"maxSyncFiles,omitempty"`
 
 	// MaxSyncTotalSize is the maximum total size in bytes for all synced files.
-	// 0 means inherit the environment limit; unlimited only applies when the effective environment limit is also 0.
+	// 0 means unlimited; env var overrides take precedence.
 	//
 	// Required: false
 	MaxSyncTotalSize *int64 `json:"maxSyncTotalSize,omitempty"`
 
 	// MaxSyncBinarySize is the maximum size in bytes for individual binary files.
-	// 0 means inherit the environment limit; unlimited only applies when the effective environment limit is also 0.
+	// 0 means unlimited; env var overrides take precedence.
 	//
 	// Required: false
 	MaxSyncBinarySize *int64 `json:"maxSyncBinarySize,omitempty"`
@@ -673,19 +688,19 @@ type ImportGitOpsSyncRequest struct {
 	SyncDirectory *bool `json:"syncDirectory,omitempty"`
 
 	// MaxSyncFiles is the maximum number of files to sync.
-	// 0 means inherit the environment limit; unlimited only applies when the effective environment limit is also 0.
+	// 0 means unlimited; env var overrides take precedence.
 	//
 	// Required: false
 	MaxSyncFiles *int `json:"maxSyncFiles,omitempty"`
 
 	// MaxSyncTotalSize is the maximum total size in bytes for all synced files.
-	// 0 means inherit the environment limit; unlimited only applies when the effective environment limit is also 0.
+	// 0 means unlimited; env var overrides take precedence.
 	//
 	// Required: false
 	MaxSyncTotalSize *int64 `json:"maxSyncTotalSize,omitempty"`
 
 	// MaxSyncBinarySize is the maximum size in bytes for individual binary files.
-	// 0 means inherit the environment limit; unlimited only applies when the effective environment limit is also 0.
+	// 0 means unlimited; env var overrides take precedence.
 	//
 	// Required: false
 	MaxSyncBinarySize *int64 `json:"maxSyncBinarySize,omitempty"`

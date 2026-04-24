@@ -44,7 +44,7 @@ type VolumeService struct {
 	helperByVolume   map[string]string
 }
 
-const volumeHelperImage = "busybox:stable-musl"
+const volumeHelperImage = DefaultArcaneToolsImage
 
 type backupStorageMode string
 
@@ -296,7 +296,7 @@ func (s *VolumeService) ListDirectory(ctx context.Context, volumeName, dirPath s
 
 	targetPath := path.Join("/volume", sanitizedPath)
 	quotedPath := strconv.Quote(targetPath)
-	cmd := []string{"sh", "-c", fmt.Sprintf("find %s -mindepth 1 -maxdepth 1 -exec sh -c 'for f; do out=$(stat -c \"%%s %%Y %%f %%A\" -- \"$f\" 2>/dev/null) || continue; printf \"%%s\\0%%s\\0\" \"$f\" \"$out\"; done' sh {} + || true", quotedPath)}
+	cmd := []string{"sh", "-c", fmt.Sprintf("find %s -mindepth 1 -maxdepth 1 | while IFS= read -r f; do out=$(stat -c \"%%s %%Y %%f %%A\" -- \"$f\" 2>/dev/null) || continue; printf \"%%s\\0%%s\\0\" \"$f\" \"$out\"; done", quotedPath)}
 	stdout, _, err := s.execInContainerInternal(ctx, containerID, cmd)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list directory: %w", err)
@@ -431,7 +431,7 @@ func (s *VolumeService) getHelperImageInternal(ctx context.Context, dockerClient
 	}
 
 	if _, err := dockerClient.ImageInspect(ctx, volumeHelperImage); err == nil {
-		slog.InfoContext(ctx, "volume service: helper image strategy selected", "strategy", "busybox-local", "image", volumeHelperImage)
+		slog.InfoContext(ctx, "volume service: helper image strategy selected", "strategy", "tools-local", "image", volumeHelperImage)
 		return volumeHelperImage, nil
 	}
 
@@ -439,11 +439,11 @@ func (s *VolumeService) getHelperImageInternal(ctx context.Context, dockerClient
 	if s.imageService != nil {
 		pullImageErr := s.imageService.PullImage(ctx, volumeHelperImage, io.Discard, systemUser, nil)
 		if pullImageErr == nil {
-			slog.InfoContext(ctx, "volume service: helper image strategy selected", "strategy", "busybox-pulled", "image", volumeHelperImage)
+			slog.InfoContext(ctx, "volume service: helper image strategy selected", "strategy", "tools-pulled", "image", volumeHelperImage)
 			return volumeHelperImage, nil
 		}
 		pullErr = pullImageErr
-		slog.WarnContext(ctx, "volume service: failed to pull busybox helper image, attempting arcane fallback", "error", pullImageErr.Error())
+		slog.WarnContext(ctx, "volume service: failed to pull tools helper image, attempting arcane fallback", "error", pullImageErr.Error())
 	} else {
 		pullErr = fmt.Errorf("image service unavailable")
 		slog.WarnContext(ctx, "volume service: image service unavailable, attempting arcane fallback")
@@ -454,7 +454,11 @@ func (s *VolumeService) getHelperImageInternal(ctx context.Context, dockerClient
 		return fallbackImage, nil
 	}
 
-	return "", fmt.Errorf("failed to resolve helper image: busybox unavailable and arcane fallback not found (pull error: %w)", pullErr)
+	return "", fmt.Errorf("failed to resolve helper image: tools image unavailable and arcane fallback not found (pull error: %w)", pullErr)
+}
+
+func (s *VolumeService) getArchiveHelperImageInternal(ctx context.Context, dockerClient *client.Client) (string, error) {
+	return s.getHelperImageInternal(ctx, dockerClient)
 }
 
 func (s *VolumeService) resolveArcaneHelperImageInternal(ctx context.Context, dockerClient *client.Client) (string, string, bool) {
@@ -598,7 +602,7 @@ func (s *VolumeService) getArcaneContainerIDInternal(ctx context.Context, docker
 	return containers.Items[0].ID
 }
 
-func (s *VolumeService) createBackupTempContainerWithMountInternal(ctx context.Context, dockerClient *client.Client, backupMount mount.Mount) (string, func(), error) {
+func (s *VolumeService) createBackupTempContainerWithMountInternal(ctx context.Context, dockerClient *client.Client, helperImage string, backupMount mount.Mount) (string, func(), error) {
 	var err error
 	if dockerClient == nil {
 		dockerClient, err = s.dockerService.GetClient(ctx)
@@ -607,9 +611,11 @@ func (s *VolumeService) createBackupTempContainerWithMountInternal(ctx context.C
 		}
 	}
 
-	helperImage, err := s.getHelperImageInternal(ctx, dockerClient)
-	if err != nil {
-		return "", nil, err
+	if strings.TrimSpace(helperImage) == "" {
+		helperImage, err = s.getHelperImageInternal(ctx, dockerClient)
+		if err != nil {
+			return "", nil, err
+		}
 	}
 
 	config := &container.Config{
@@ -656,7 +662,7 @@ func (s *VolumeService) createBackupTempContainerInternal(ctx context.Context, d
 		return "", nil, err
 	}
 
-	return s.createBackupTempContainerWithMountInternal(ctx, dockerClient, backupStorage.mount)
+	return s.createBackupTempContainerWithMountInternal(ctx, dockerClient, "", backupStorage.mount)
 }
 
 type cleanupReadCloser struct {
@@ -896,6 +902,22 @@ func (s *VolumeService) execInContainerInternal(ctx context.Context, containerID
 		return "", "", err
 	}
 
+	inspect, err := dockerClient.ExecInspect(ctx, execResp.ID, client.ExecInspectOptions{})
+	if err != nil {
+		return stdout.String(), stderr.String(), fmt.Errorf("failed to inspect exec result: %w", err)
+	}
+
+	if inspect.ExitCode != 0 {
+		execErr := strings.TrimSpace(stderr.String())
+		if execErr == "" {
+			execErr = strings.TrimSpace(stdout.String())
+		}
+		if execErr != "" {
+			return stdout.String(), stderr.String(), fmt.Errorf("command exited with code %d: %s", inspect.ExitCode, execErr)
+		}
+		return stdout.String(), stderr.String(), fmt.Errorf("command exited with code %d", inspect.ExitCode)
+	}
+
 	return stdout.String(), stderr.String(), nil
 }
 
@@ -1077,7 +1099,7 @@ func (s *VolumeService) CreateBackup(ctx context.Context, volumeName string, use
 		return nil, err
 	}
 
-	helperImage, err := s.getHelperImageInternal(ctx, dockerClient)
+	helperImage, err := s.getArchiveHelperImageInternal(ctx, dockerClient)
 	if err != nil {
 		return nil, err
 	}
@@ -1126,7 +1148,7 @@ func (s *VolumeService) CreateBackup(ctx context.Context, volumeName string, use
 	sizeCheckMount.Target = "/volume"
 	sizeCheckMount.ReadOnly = true
 
-	tempContainerID, cleanup, err := s.createBackupTempContainerWithMountInternal(ctx, dockerClient, sizeCheckMount)
+	tempContainerID, cleanup, err := s.createBackupTempContainerWithMountInternal(ctx, dockerClient, "", sizeCheckMount)
 	if err != nil {
 		return nil, err
 	}
@@ -1320,7 +1342,7 @@ func (s *VolumeService) RestoreBackup(ctx context.Context, volumeName, backupID 
 		return err
 	}
 
-	helperImage, err := s.getHelperImageInternal(ctx, dockerClient)
+	helperImage, err := s.getArchiveHelperImageInternal(ctx, dockerClient)
 	if err != nil {
 		return err
 	}
@@ -1460,7 +1482,22 @@ func (s *VolumeService) BackupHasPath(ctx context.Context, backupID string, file
 		return false, err
 	}
 
-	containerID, cleanup, err := s.createBackupTempContainerInternal(ctx, nil, "/volume", true)
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	helperImage, err := s.getArchiveHelperImageInternal(ctx, dockerClient)
+	if err != nil {
+		return false, err
+	}
+
+	backupStorage, err := s.resolveUsableBackupStorageMountInternal(ctx, dockerClient, "/volume", true)
+	if err != nil {
+		return false, err
+	}
+
+	containerID, cleanup, err := s.createBackupTempContainerWithMountInternal(ctx, dockerClient, helperImage, backupStorage.mount)
 	if err != nil {
 		return false, err
 	}
@@ -1502,7 +1539,22 @@ func (s *VolumeService) ListBackupFiles(ctx context.Context, backupID string) ([
 		return nil, err
 	}
 
-	containerID, cleanup, err := s.createBackupTempContainerInternal(ctx, nil, "/volume", true)
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	helperImage, err := s.getArchiveHelperImageInternal(ctx, dockerClient)
+	if err != nil {
+		return nil, err
+	}
+
+	backupStorage, err := s.resolveUsableBackupStorageMountInternal(ctx, dockerClient, "/volume", true)
+	if err != nil {
+		return nil, err
+	}
+
+	containerID, cleanup, err := s.createBackupTempContainerWithMountInternal(ctx, dockerClient, helperImage, backupStorage.mount)
 	if err != nil {
 		return nil, err
 	}
@@ -1584,7 +1636,7 @@ func (s *VolumeService) RestoreBackupFiles(ctx context.Context, volumeName, back
 		return err
 	}
 
-	helperImage, err := s.getHelperImageInternal(ctx, dockerClient)
+	helperImage, err := s.getArchiveHelperImageInternal(ctx, dockerClient)
 	if err != nil {
 		return err
 	}

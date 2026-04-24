@@ -137,24 +137,40 @@ export interface ContainerStatusCounts {
 	totalContainers: number;
 }
 
+export interface ContainerHealthLogEntry {
+	start?: string;
+	// Legacy PascalCase, kept for backwards-compat with older payloads.
+	Start?: string;
+	end?: string;
+	End?: string;
+	exitCode?: number;
+	ExitCode?: number;
+	output?: string;
+	Output?: string;
+}
+
+export interface ContainerHealthDto {
+	status: string;
+	failingStreak?: number;
+	log?: ContainerHealthLogEntry[];
+}
+
 export interface ContainerStateDto {
 	status: string;
 	running: boolean;
 	startedAt: string;
 	finishedAt: string;
-	health?: {
-		status: string;
-		log?: Array<{
-			start?: string;
-			Start?: string;
-			end?: string;
-			End?: string;
-			exitCode?: number;
-			ExitCode?: number;
-			output?: string;
-			Output?: string;
-		}>;
-	};
+	health?: ContainerHealthDto;
+}
+
+// Healthcheck configuration. Durations are in nanoseconds (Docker SDK convention).
+export interface ContainerHealthcheckDto {
+	test?: string[];
+	interval?: number;
+	timeout?: number;
+	startPeriod?: number;
+	startInterval?: number;
+	retries?: number;
 }
 
 export interface ContainerConfigDto {
@@ -163,6 +179,7 @@ export interface ContainerConfigDto {
 	entrypoint?: string[];
 	workingDir?: string;
 	user?: string;
+	healthcheck?: ContainerHealthcheckDto;
 }
 
 export interface ComposeInfo {

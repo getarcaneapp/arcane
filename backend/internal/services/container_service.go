@@ -1287,6 +1287,20 @@ func (s *ContainerService) buildContainerFilterAccessors() []pagination.FilterAc
 				}
 			},
 		},
+		{
+			Key: "standalone",
+			Fn: func(c containertypes.Summary, filterValue string) bool {
+				isStandalone := strings.TrimSpace(c.Labels["com.docker.compose.project"]) == ""
+				switch filterValue {
+				case "true", "1":
+					return isStandalone
+				case "false", "0":
+					return !isStandalone
+				default:
+					return true
+				}
+			},
+		},
 	}
 }
 

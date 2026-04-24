@@ -1,4 +1,4 @@
-import { Column, Row, Section, Text } from '@react-email/components';
+import { Column, Row, Section, Text } from 'react-email';
 import { BaseTemplate } from '../components/base-template';
 import CardHeader from '../components/card-header';
 import { sharedPreviewProps, sharedTemplateProps } from '../props';
