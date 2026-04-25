@@ -18,6 +18,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/startup"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils/mapper"
 	"github.com/getarcaneapp/arcane/types/gitops"
 	"github.com/getarcaneapp/arcane/types/swarm"
@@ -110,15 +111,10 @@ func (s *GitOpsSyncService) getEnvironmentSyncLimits(ctx context.Context) (int, 
 		return defaultMaxSyncFiles, defaultMaxSyncTotalSize, defaultMaxSyncBinarySize
 	}
 
-	maxFiles := normalizeSyncLimitSetting(s.settingsService.GetIntSetting(ctx, "gitSyncMaxFiles", defaultMaxSyncFiles), defaultMaxSyncFiles)
-	maxTotalSizeMB := normalizeSyncLimitSetting(
-		s.settingsService.GetIntSetting(ctx, "gitSyncMaxTotalSizeMb", defaultMaxSyncTotalSizeMB),
-		defaultMaxSyncTotalSizeMB,
-	)
-	maxBinarySizeMB := normalizeSyncLimitSetting(
-		s.settingsService.GetIntSetting(ctx, "gitSyncMaxBinarySizeMb", defaultMaxSyncBinarySizeMB),
-		defaultMaxSyncBinarySizeMB,
-	)
+	cfg := s.settingsService.GetSettingsOrDefaults(ctx)
+	maxFiles := normalizeSyncLimitSetting(utils.IntOrDefault(cfg.GitSyncMaxFiles.Value, defaultMaxSyncFiles), defaultMaxSyncFiles)
+	maxTotalSizeMB := normalizeSyncLimitSetting(utils.IntOrDefault(cfg.GitSyncMaxTotalSizeMb.Value, defaultMaxSyncTotalSizeMB), defaultMaxSyncTotalSizeMB)
+	maxBinarySizeMB := normalizeSyncLimitSetting(utils.IntOrDefault(cfg.GitSyncMaxBinarySizeMb.Value, defaultMaxSyncBinarySizeMB), defaultMaxSyncBinarySizeMB)
 
 	return maxFiles, megabytesToBytes(maxTotalSizeMB), megabytesToBytes(maxBinarySizeMB)
 }

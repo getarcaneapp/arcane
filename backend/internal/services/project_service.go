@@ -449,8 +449,8 @@ func (s *ProjectService) loadComposeProjectForProjectInternal(ctx context.Contex
 		return nil, "", err
 	}
 
-	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
-	projectsDirectory, pdErr := projects.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
+	cfg := s.settingsService.GetSettingsOrDefaults(ctx)
+	projectsDirectory, pdErr := projects.GetProjectsDirectory(ctx, strings.TrimSpace(cfg.ProjectsDirectory.Value))
 	if pdErr != nil {
 		slog.WarnContext(ctx, "unable to determine projects directory; using default", "error", pdErr)
 		projectsDirectory = "/app/data/projects"
@@ -461,8 +461,7 @@ func (s *ProjectService) loadComposeProjectForProjectInternal(ctx context.Contex
 		slog.WarnContext(ctx, "failed to create path mapper, continuing without translation", "error", pmErr)
 	}
 
-	autoInjectEnv := s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false)
-	composeProject, loadErr := projects.LoadComposeProject(ctx, composeFileFullPath, normalizeComposeProjectName(proj.Name), projectsDirectory, autoInjectEnv, pathMapper)
+	composeProject, loadErr := projects.LoadComposeProject(ctx, composeFileFullPath, normalizeComposeProjectName(proj.Name), projectsDirectory, utils.BoolOrDefault(cfg.AutoInjectEnv.Value, false), pathMapper)
 	if loadErr != nil {
 		return nil, "", loadErr
 	}
@@ -830,10 +829,9 @@ func (s *ProjectService) GetProjectFileContent(ctx context.Context, projectID, r
 
 	composeFile, detectErr := s.resolveProjectComposeFileInternal(ctx, proj)
 	if detectErr == nil {
-		projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
-		projectsDirectory, _ := projects.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
-		autoInjectEnv := s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false)
-		envLoader := projects.NewEnvLoader(projectsDirectory, filepath.Dir(composeFile), autoInjectEnv)
+		cfg := s.settingsService.GetSettingsOrDefaults(ctx)
+		projectsDirectory, _ := projects.GetProjectsDirectory(ctx, strings.TrimSpace(cfg.ProjectsDirectory.Value))
+		envLoader := projects.NewEnvLoader(projectsDirectory, filepath.Dir(composeFile), utils.BoolOrDefault(cfg.AutoInjectEnv.Value, false))
 		envMap, _, _ := envLoader.LoadEnvironment(ctx)
 
 		includes, parseErr := projects.ParseIncludes(composeFile, envMap, true)
@@ -901,10 +899,9 @@ func (s *ProjectService) enrichWithIncludeFiles(ctx context.Context, composeFile
 	}
 
 	// Load environment variables so that include paths with ${VAR} references are expanded
-	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
-	projectsDirectory, _ := projects.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
-	autoInjectEnv := s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false)
-	envLoader := projects.NewEnvLoader(projectsDirectory, filepath.Dir(composeFile), autoInjectEnv)
+	cfg := s.settingsService.GetSettingsOrDefaults(ctx)
+	projectsDirectory, _ := projects.GetProjectsDirectory(ctx, strings.TrimSpace(cfg.ProjectsDirectory.Value))
+	envLoader := projects.NewEnvLoader(projectsDirectory, filepath.Dir(composeFile), utils.BoolOrDefault(cfg.AutoInjectEnv.Value, false))
 	envMap, _, _ := envLoader.LoadEnvironment(ctx)
 
 	includes, parseErr := projects.ParseIncludes(composeFile, envMap, false)
@@ -1185,16 +1182,15 @@ func (s *ProjectService) enrichWithGitOpsInfo(ctx context.Context, proj *models.
 }
 
 func (s *ProjectService) enrichWithComposeServiceConfigs(ctx context.Context, proj *models.Project, composeFile string, resp *project.Details) {
-	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
-	projectsDirectory, _ := projects.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
+	cfg := s.settingsService.GetSettingsOrDefaults(ctx)
+	projectsDirectory, _ := projects.GetProjectsDirectory(ctx, strings.TrimSpace(cfg.ProjectsDirectory.Value))
 
 	pathMapper, pmErr := s.getPathMapper(ctx)
 	if pmErr != nil {
 		slog.WarnContext(ctx, "failed to create path mapper, continuing without translation", "error", pmErr)
 	}
 
-	autoInjectEnv := s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false)
-	composeProj, loadErr := projects.LoadComposeProject(ctx, composeFile, normalizeComposeProjectName(proj.Name), projectsDirectory, autoInjectEnv, pathMapper)
+	composeProj, loadErr := projects.LoadComposeProject(ctx, composeFile, normalizeComposeProjectName(proj.Name), projectsDirectory, utils.BoolOrDefault(cfg.AutoInjectEnv.Value, false), pathMapper)
 	if loadErr != nil {
 		slog.WarnContext(ctx, "failed to load compose service configs", "path", composeFile, "error", loadErr)
 		return
@@ -2358,8 +2354,8 @@ func (s *ProjectService) RestartProject(ctx context.Context, projectID string, u
 	}
 
 	// Get configured projects directory from settings
-	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
-	projectsDirectory, pdErr := projects.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
+	cfg := s.settingsService.GetSettingsOrDefaults(ctx)
+	projectsDirectory, pdErr := projects.GetProjectsDirectory(ctx, strings.TrimSpace(cfg.ProjectsDirectory.Value))
 	if pdErr != nil {
 		slog.WarnContext(ctx, "unable to determine projects directory; using default", "error", pdErr)
 		projectsDirectory = "/app/data/projects"
@@ -2370,8 +2366,7 @@ func (s *ProjectService) RestartProject(ctx context.Context, projectID string, u
 		slog.WarnContext(ctx, "failed to create path mapper, continuing without translation", "error", pmErr)
 	}
 
-	autoInjectEnv := s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false)
-	compProj, _, lerr := projects.LoadComposeProjectFromDir(ctx, proj.Path, normalizeComposeProjectName(proj.Name), projectsDirectory, autoInjectEnv, pathMapper)
+	compProj, _, lerr := projects.LoadComposeProjectFromDir(ctx, proj.Path, normalizeComposeProjectName(proj.Name), projectsDirectory, utils.BoolOrDefault(cfg.AutoInjectEnv.Value, false), pathMapper)
 	if lerr != nil {
 		_ = s.updateProjectStatusInternal(ctx, projectID, models.ProjectStatusRunning)
 		return fmt.Errorf("failed to load compose project: %w", lerr)
@@ -3482,8 +3477,8 @@ func (s *ProjectService) countServicesFromCompose(ctx context.Context, p models.
 // and once for the project name).
 // The effective name is nil when it matches the normalized directory name.
 func (s *ProjectService) loadComposeMetadataForSyncInternal(ctx context.Context, dirPath, dirName string) (serviceCount int, composeProjectName *string, err error) {
-	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
-	projectsDirectory, pErr := projects.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
+	cfg := s.settingsService.GetSettingsOrDefaults(ctx)
+	projectsDirectory, pErr := projects.GetProjectsDirectory(ctx, strings.TrimSpace(cfg.ProjectsDirectory.Value))
 	if pErr != nil {
 		return 0, nil, pErr
 	}
@@ -3494,7 +3489,7 @@ func (s *ProjectService) loadComposeMetadataForSyncInternal(ctx context.Context,
 	}
 
 	normName := normalizeComposeProjectName(dirName)
-	autoInjectEnv := s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false)
+	autoInjectEnv := utils.BoolOrDefault(cfg.AutoInjectEnv.Value, false)
 
 	// First, try loading without forcing a project name so compose-go can
 	// resolve COMPOSE_PROJECT_NAME from the .env file. If this fails (e.g.

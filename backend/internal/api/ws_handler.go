@@ -374,6 +374,92 @@ func NewWebSocketHandler(
 }
 
 // ============================================================================
+// Shared Log Stream Helpers
+// ============================================================================
+
+// logStreamParams holds the standard query parameters shared by every WS log endpoint.
+type logStreamParams struct {
+	follow     bool
+	tail       string
+	since      string
+	timestamps bool
+	format     string
+	batched    bool
+}
+
+func parseLogStreamParamsInternal(c *gin.Context) logStreamParams {
+	tail, _ := httputil.GetQueryParam(c, "tail", false)
+	if tail == "" {
+		tail = "100"
+	}
+	since, _ := httputil.GetQueryParam(c, "since", false)
+	format, _ := httputil.GetQueryParam(c, "format", false)
+	if format == "" {
+		format = "text"
+	}
+	return logStreamParams{
+		follow:     c.DefaultQuery("follow", "true") == "true",
+		tail:       tail,
+		since:      since,
+		timestamps: c.DefaultQuery("timestamps", "false") == "true",
+		format:     format,
+		batched:    c.DefaultQuery("batched", "false") == "true",
+	}
+}
+
+// serveLogStreamInternal is the shared scaffold for all three WS log endpoints (project, container, service).
+// It performs upgrade, builds the stream key, gets-or-creates the multiplexing hub, registers metrics,
+// and serves the client. The caller-supplied hubBuilder constructs the underlying *wsLogStream
+// when no hub already exists for streamKey.
+func (h *WebSocketHandler) serveLogStreamInternal(
+	c *gin.Context,
+	kind, resourceID string,
+	params logStreamParams,
+	hubBuilder func(streamKey string, onEmpty func(*wsLogStream)) *wsLogStream,
+) {
+	conn, err := h.wsUpgrader.Upgrade(c.Writer, c.Request, nil)
+	if err != nil {
+		return
+	}
+
+	streamKey := buildLogStreamKeyInternal(c.Param("id"), kind, resourceID, params.format, params.batched, params.follow, params.tail, params.since, params.timestamps)
+	stream := h.getOrCreateLogStreamInternal(streamKey, func(onEmpty func(*wsLogStream)) *wsLogStream {
+		return hubBuilder(streamKey, onEmpty)
+	})
+	connID := h.wsMetrics.RegisterConnection(buildWSConnectionInfoInternal(c, kind, resourceID))
+	// WebSocket connections use context.Background() because they are long-lived and should not
+	// be tied to the HTTP request context. Cleanup is handled via the hub's OnEmpty callback
+	// which triggers when all clients disconnect.
+	ws.ServeClientWithOnRemove(context.Background(), stream.hub, conn, func() {
+		h.wsMetrics.UnregisterConnection(connID)
+		h.releaseLogStreamInternal(streamKey, stream)
+	})
+}
+
+// broadcastLogStreamErrorInternal emits an error message to every client of a log stream.
+// resourceLabel is the human-readable noun used in slog/error text (e.g. "project log stream").
+// errorPrefix is the user-facing message prefix (e.g. "Failed to stream project logs: ").
+func broadcastLogStreamErrorInternal(resourceLabel, errorPrefix string, resourceID string, format string, err error, ls *wsLogStream) {
+	slog.Warn(resourceLabel+" failed", "resourceID", resourceID, "error", err)
+
+	if format == "json" {
+		msg := ws.LogMessage{
+			Seq:       ls.seq.Add(1),
+			Level:     "error",
+			Message:   errorPrefix + err.Error(),
+			Service:   "arcane",
+			Timestamp: ws.NowRFC3339(),
+		}
+		if b, marshalErr := json.Marshal(msg); marshalErr == nil {
+			ls.hub.Broadcast(b)
+		}
+		return
+	}
+
+	ls.hub.Broadcast([]byte(errorPrefix + err.Error()))
+}
+
+// ============================================================================
 // Project WebSocket/Streaming Endpoints
 // ============================================================================
 
@@ -398,35 +484,9 @@ func (h *WebSocketHandler) ProjectLogs(c *gin.Context) {
 		return
 	}
 
-	follow := c.DefaultQuery("follow", "true") == "true"
-	tail, _ := httputil.GetQueryParam(c, "tail", false)
-	if tail == "" {
-		tail = "100"
-	}
-	since, _ := httputil.GetQueryParam(c, "since", false)
-	timestamps := c.DefaultQuery("timestamps", "false") == "true"
-	format, _ := httputil.GetQueryParam(c, "format", false)
-	if format == "" {
-		format = "text"
-	}
-	batched := c.DefaultQuery("batched", "false") == "true"
-
-	conn, err := h.wsUpgrader.Upgrade(c.Writer, c.Request, nil)
-	if err != nil {
-		return
-	}
-
-	streamKey := buildLogStreamKeyInternal(c.Param("id"), systemtypes.WSKindProjectLogs, projectID, format, batched, follow, tail, since, timestamps)
-	stream := h.getOrCreateLogStreamInternal(streamKey, func(onEmpty func(*wsLogStream)) *wsLogStream {
-		return h.startProjectLogHub(streamKey, projectID, format, batched, follow, tail, since, timestamps, onEmpty)
-	})
-	connID := h.wsMetrics.RegisterConnection(buildWSConnectionInfoInternal(c, systemtypes.WSKindProjectLogs, projectID))
-	// WebSocket connections use context.Background() because they are long-lived and should not
-	// be tied to the HTTP request context. Cleanup is handled via the hub's OnEmpty callback
-	// which triggers when all clients disconnect.
-	ws.ServeClientWithOnRemove(context.Background(), stream.hub, conn, func() {
-		h.wsMetrics.UnregisterConnection(connID)
-		h.releaseLogStreamInternal(streamKey, stream)
+	params := parseLogStreamParamsInternal(c)
+	h.serveLogStreamInternal(c, systemtypes.WSKindProjectLogs, projectID, params, func(streamKey string, onEmpty func(*wsLogStream)) *wsLogStream {
+		return h.startProjectLogHub(streamKey, projectID, params.format, params.batched, params.follow, params.tail, params.since, params.timestamps, onEmpty)
 	})
 }
 
@@ -488,23 +548,7 @@ func waitForLogStreamSubscriberInternal(ctx context.Context, firstSubscriber <-c
 }
 
 func (h *WebSocketHandler) broadcastProjectLogStreamErrorInternal(projectID, format string, err error, ls *wsLogStream) {
-	slog.Warn("project log stream failed", "projectID", projectID, "error", err)
-
-	if format == "json" {
-		msg := ws.LogMessage{
-			Seq:       ls.seq.Add(1),
-			Level:     "error",
-			Message:   "Failed to stream project logs: " + err.Error(),
-			Service:   "arcane",
-			Timestamp: ws.NowRFC3339(),
-		}
-		if b, marshalErr := json.Marshal(msg); marshalErr == nil {
-			ls.hub.Broadcast(b)
-		}
-		return
-	}
-
-	ls.hub.Broadcast([]byte("Failed to stream project logs: " + err.Error()))
+	broadcastLogStreamErrorInternal("project log stream", "Failed to stream project logs: ", projectID, format, err, ls)
 }
 
 func startProjectLogForwardersInternal(ctx context.Context, format string, batched bool, lines <-chan string, ls *wsLogStream) {
@@ -599,35 +643,9 @@ func (h *WebSocketHandler) ContainerLogs(c *gin.Context) {
 		return
 	}
 
-	follow := c.DefaultQuery("follow", "true") == "true"
-	tail, _ := httputil.GetQueryParam(c, "tail", false)
-	if tail == "" {
-		tail = "100"
-	}
-	since, _ := httputil.GetQueryParam(c, "since", false)
-	timestamps := c.DefaultQuery("timestamps", "false") == "true"
-	format, _ := httputil.GetQueryParam(c, "format", false)
-	if format == "" {
-		format = "text"
-	}
-	batched := c.DefaultQuery("batched", "false") == "true"
-
-	conn, err := h.wsUpgrader.Upgrade(c.Writer, c.Request, nil)
-	if err != nil {
-		return
-	}
-
-	streamKey := buildLogStreamKeyInternal(c.Param("id"), systemtypes.WSKindContainerLogs, containerID, format, batched, follow, tail, since, timestamps)
-	stream := h.getOrCreateLogStreamInternal(streamKey, func(onEmpty func(*wsLogStream)) *wsLogStream {
-		return h.startContainerLogHub(streamKey, containerID, format, batched, follow, tail, since, timestamps, onEmpty)
-	})
-	connID := h.wsMetrics.RegisterConnection(buildWSConnectionInfoInternal(c, systemtypes.WSKindContainerLogs, containerID))
-	// WebSocket connections use context.Background() because they are long-lived and should not
-	// be tied to the HTTP request context. Cleanup is handled via the hub's OnEmpty callback
-	// which triggers when all clients disconnect.
-	ws.ServeClientWithOnRemove(context.Background(), stream.hub, conn, func() {
-		h.wsMetrics.UnregisterConnection(connID)
-		h.releaseLogStreamInternal(streamKey, stream)
+	params := parseLogStreamParamsInternal(c)
+	h.serveLogStreamInternal(c, systemtypes.WSKindContainerLogs, containerID, params, func(streamKey string, onEmpty func(*wsLogStream)) *wsLogStream {
+		return h.startContainerLogHub(streamKey, containerID, params.format, params.batched, params.follow, params.tail, params.since, params.timestamps, onEmpty)
 	})
 }
 
@@ -695,23 +713,7 @@ func (h *WebSocketHandler) startContainerLogHub(key, containerID, format string,
 }
 
 func (h *WebSocketHandler) broadcastContainerLogStreamErrorInternal(containerID, format string, err error, ls *wsLogStream) {
-	slog.Warn("container log stream failed", "containerID", containerID, "error", err)
-
-	if format == "json" {
-		msg := ws.LogMessage{
-			Seq:       ls.seq.Add(1),
-			Level:     "error",
-			Message:   "Failed to stream container logs: " + err.Error(),
-			Service:   "arcane",
-			Timestamp: ws.NowRFC3339(),
-		}
-		if b, marshalErr := json.Marshal(msg); marshalErr == nil {
-			ls.hub.Broadcast(b)
-		}
-		return
-	}
-
-	ls.hub.Broadcast([]byte("Failed to stream container logs: " + err.Error()))
+	broadcastLogStreamErrorInternal("container log stream", "Failed to stream container logs: ", containerID, format, err, ls)
 }
 
 // ============================================================================
@@ -733,42 +735,15 @@ func (h *WebSocketHandler) broadcastContainerLogStreamErrorInternal(containerID,
 //	@Param			batched		query	bool	false	"Batch log messages"			default(false)
 //	@Router			/api/environments/{id}/ws/swarm/services/{serviceId}/logs [get]
 func (h *WebSocketHandler) ServiceLogs(c *gin.Context) {
-	environmentID := c.Param("id")
 	serviceID := c.Param("serviceId")
 	if strings.TrimSpace(serviceID) == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "Service ID is required"})
 		return
 	}
 
-	follow := c.DefaultQuery("follow", "true") == "true"
-	tail, _ := httputil.GetQueryParam(c, "tail", false)
-	if tail == "" {
-		tail = "100"
-	}
-	since, _ := httputil.GetQueryParam(c, "since", false)
-	timestamps := c.DefaultQuery("timestamps", "false") == "true"
-	format, _ := httputil.GetQueryParam(c, "format", false)
-	if format == "" {
-		format = "text"
-	}
-	batched := c.DefaultQuery("batched", "false") == "true"
-
-	conn, err := h.wsUpgrader.Upgrade(c.Writer, c.Request, nil)
-	if err != nil {
-		return
-	}
-
-	streamKey := buildLogStreamKeyInternal(environmentID, systemtypes.WSKindServiceLogs, serviceID, format, batched, follow, tail, since, timestamps)
-	connID := h.wsMetrics.RegisterConnection(buildWSConnectionInfoInternal(c, systemtypes.WSKindServiceLogs, serviceID))
-	stream := h.getOrCreateLogStreamInternal(streamKey, func(onEmpty func(*wsLogStream)) *wsLogStream {
-		return h.startServiceLogHub(streamKey, serviceID, format, batched, follow, tail, since, timestamps, onEmpty)
-	})
-	// WebSocket connections use context.Background() because they are long-lived and should not
-	// be tied to the HTTP request context. Cleanup is handled via the hub's OnEmpty callback
-	// which triggers when all clients disconnect.
-	ws.ServeClientWithOnRemove(context.Background(), stream.hub, conn, func() {
-		h.wsMetrics.UnregisterConnection(connID)
-		h.releaseLogStreamInternal(streamKey, stream)
+	params := parseLogStreamParamsInternal(c)
+	h.serveLogStreamInternal(c, systemtypes.WSKindServiceLogs, serviceID, params, func(streamKey string, onEmpty func(*wsLogStream)) *wsLogStream {
+		return h.startServiceLogHub(streamKey, serviceID, params.format, params.batched, params.follow, params.tail, params.since, params.timestamps, onEmpty)
 	})
 }
 
@@ -836,23 +811,7 @@ func (h *WebSocketHandler) startServiceLogHub(key, serviceID, format string, bat
 }
 
 func (h *WebSocketHandler) broadcastServiceLogStreamErrorInternal(serviceID, format string, err error, ls *wsLogStream) {
-	slog.Warn("service log stream failed", "serviceID", serviceID, "error", err)
-
-	if format == "json" {
-		msg := ws.LogMessage{
-			Seq:       ls.seq.Add(1),
-			Level:     "error",
-			Message:   "Failed to stream service logs: " + err.Error(),
-			Service:   "arcane",
-			Timestamp: ws.NowRFC3339(),
-		}
-		if b, marshalErr := json.Marshal(msg); marshalErr == nil {
-			ls.hub.Broadcast(b)
-		}
-		return
-	}
-
-	ls.hub.Broadcast([]byte("Failed to stream service logs: " + err.Error()))
+	broadcastLogStreamErrorInternal("service log stream", "Failed to stream service logs: ", serviceID, format, err, ls)
 }
 
 // ContainerStats streams container stats over WebSocket.

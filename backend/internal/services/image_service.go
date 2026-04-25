@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
@@ -33,6 +35,16 @@ type ImageService struct {
 	registryService      *ContainerRegistryService
 	vulnerabilityService *VulnerabilityService
 	eventService         *EventService
+
+	projectIDCache projectIDNameCache
+}
+
+// projectIDNameCache memoizes the (project name → project ID) map used to enrich image
+// usage data with the owning project. The TTL bounds staleness; see projectIDCacheTTL.
+type projectIDNameCache struct {
+	mu      sync.RWMutex
+	byName  map[string]string
+	expires time.Time
 }
 
 func NewImageService(db *database.DB, dockerService *DockerClientService, registryService *ContainerRegistryService, imageUpdateService *ImageUpdateService, vulnerabilityService *VulnerabilityService, eventService *EventService) *ImageService {
@@ -603,7 +615,7 @@ func (s *ImageService) ListImagesPaginated(ctx context.Context, params paginatio
 		}
 	}
 
-	projectIDByName := buildProjectIDMapInternal(ctx, s.db, containers)
+	projectIDByName := s.BuildProjectIDMap(ctx, containers)
 	usageMap := buildUsageMapInternal(containers, projectIDByName)
 	updateMap := buildUpdateMap(updateRecords)
 
@@ -745,9 +757,49 @@ func (s *ImageService) GetTotalImageSize(ctx context.Context) (int64, error) {
 	return total, nil
 }
 
-func buildProjectIDMapInternal(ctx context.Context, db *database.DB, containers []container.Summary) map[string]string {
+// projectIDCacheTTL bounds how long a snapshot of all (name → id) project rows is reused.
+// Dashboard polls frequently; the projects table changes rarely, so a short TTL is safe.
+const projectIDCacheTTL = 5 * time.Second
+
+func (s *ImageService) loadProjectIDByNameCachedInternal(ctx context.Context) map[string]string {
+	s.projectIDCache.mu.RLock()
+	if cached := s.projectIDCache.byName; cached != nil && time.Now().Before(s.projectIDCache.expires) {
+		s.projectIDCache.mu.RUnlock()
+		return cached
+	}
+	s.projectIDCache.mu.RUnlock()
+
+	s.projectIDCache.mu.Lock()
+	defer s.projectIDCache.mu.Unlock()
+	if cached := s.projectIDCache.byName; cached != nil && time.Now().Before(s.projectIDCache.expires) {
+		return cached
+	}
+
+	var projects []models.Project
+	if err := s.db.WithContext(ctx).Select("id", "name").Find(&projects).Error; err != nil {
+		slog.WarnContext(ctx, "failed to load project ID map", "error", err)
+		// Return last cached value if any; otherwise an empty map (don't store, so we retry next call).
+		if s.projectIDCache.byName != nil {
+			return s.projectIDCache.byName
+		}
+		return map[string]string{}
+	}
+
+	byName := make(map[string]string, len(projects))
+	for _, p := range projects {
+		byName[p.Name] = p.ID
+	}
+	s.projectIDCache.byName = byName
+	s.projectIDCache.expires = time.Now().Add(projectIDCacheTTL)
+	return byName
+}
+
+// BuildProjectIDMap returns a map of compose project name → project ID for any
+// containers that carry the com.docker.compose.project label. The lookup uses a
+// short-TTL cache shared across all callers of this ImageService instance.
+func (s *ImageService) BuildProjectIDMap(ctx context.Context, containers []container.Summary) map[string]string {
 	projectIDs := make(map[string]string)
-	if db == nil {
+	if s.db == nil {
 		return projectIDs
 	}
 
@@ -764,20 +816,12 @@ func buildProjectIDMapInternal(ctx context.Context, db *database.DB, containers 
 		return projectIDs
 	}
 
-	projectNames := make([]string, 0, len(projectNameSet))
+	all := s.loadProjectIDByNameCachedInternal(ctx)
 	for name := range projectNameSet {
-		projectNames = append(projectNames, name)
+		if id, ok := all[name]; ok {
+			projectIDs[name] = id
+		}
 	}
-
-	var projects []models.Project
-	if err := db.WithContext(ctx).Where("name IN ?", projectNames).Find(&projects).Error; err != nil {
-		slog.WarnContext(ctx, "failed to resolve project IDs for image usage", "error", err)
-		return projectIDs
-	}
-	for _, project := range projects {
-		projectIDs[project.Name] = project.ID
-	}
-
 	return projectIDs
 }
 

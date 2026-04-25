@@ -13,7 +13,7 @@ const (
 )
 
 type Project struct {
-	Name               string        `json:"name" sortable:"true"`
+	Name               string        `json:"name" sortable:"true" gorm:"index:idx_projects_name"`
 	DirName            *string       `json:"dir_name"`
 	Path               string        `json:"path" sortable:"true" gorm:"uniqueIndex"`
 	Status             ProjectStatus `json:"status" sortable:"true"`
