@@ -13,6 +13,7 @@ import (
 	"time"
 
 	docker "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/system"
 	ws "github.com/getarcaneapp/arcane/backend/pkg/libarcane/ws"
 	systemtypes "github.com/getarcaneapp/arcane/types/system"
 	"github.com/gin-gonic/gin"
@@ -105,8 +106,10 @@ func newTestWSPairInternal(t *testing.T) (clientConn *websocket.Conn, serverConn
 
 func newTestWebSocketHandler() *WebSocketHandler {
 	return &WebSocketHandler{
-		wsMetrics:  NewWebSocketMetrics(),
-		logStreams: make(map[string]*wsLogStream),
+		wsMetrics:   NewWebSocketMetrics(),
+		logStreams:  make(map[string]*wsLogStream),
+		cgroupCache: system.NewCgroupCache(cgroupCacheTTL),
+		gpuMonitor:  system.NewGPUMonitor(false, ""),
 		wsUpgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool { return true },
 		},
@@ -575,17 +578,18 @@ func TestWebSocketHandler_LogStream_CancelsOnlyOnce(t *testing.T) {
 
 func TestWebSocketHandler_GetCachedCgroupLimitsInternal_DeduplicatesRefresh(t *testing.T) {
 	handler := newTestWebSocketHandler()
-	handler.cgroupCache.timestamp = time.Now().Add(-2 * cgroupCacheTTL)
 
 	var calls atomic.Int32
 	start := make(chan struct{})
 	release := make(chan struct{})
-	handler.cgroupLimitsDetector = func() (*docker.CgroupLimits, error) {
+	// A fresh cache has a zero timestamp, so the first Get takes the refresh path
+	// and subsequent concurrent Gets dedupe behind the write lock.
+	handler.cgroupCache = system.NewCgroupCacheWithDetector(cgroupCacheTTL, func() (*docker.CgroupLimits, error) {
 		calls.Add(1)
 		close(start)
 		<-release
 		return &docker.CgroupLimits{CPUCount: 2}, nil
-	}
+	})
 
 	const goroutines = 8
 	results := make(chan *docker.CgroupLimits, goroutines)

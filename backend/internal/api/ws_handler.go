@@ -1,17 +1,12 @@
 package api
 
 import (
-	"bytes"
 	"context"
-	"encoding/csv"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
-	"os"
-	"os/exec"
 	"runtime"
 	"strconv"
 	"strings"
@@ -24,6 +19,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	docker "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/system"
 	ws "github.com/getarcaneapp/arcane/backend/pkg/libarcane/ws"
 	httputil "github.com/getarcaneapp/arcane/backend/pkg/utils/httpx"
 	systemtypes "github.com/getarcaneapp/arcane/types/system"
@@ -35,13 +31,7 @@ import (
 	"github.com/shirou/gopsutil/v4/mem"
 )
 
-const (
-	gpuCacheDuration = 30 * time.Second
-	cgroupCacheTTL   = 30 * time.Second
-)
-
-// amdGPUSysfsPath is the base path for AMD GPU sysfs entries
-const amdGPUSysfsPath = "/sys/class/drm"
+const cgroupCacheTTL = 30 * time.Second
 
 // ============================================================================
 // WebSocket Metrics
@@ -184,33 +174,18 @@ type WebSocketHandler struct {
 		ready       chan struct{}
 		running     bool
 	}
-	cgroupCache struct {
-		sync.RWMutex
-		value     *docker.CgroupLimits
-		detected  bool
-		timestamp time.Time
-	}
+	cgroupCache *system.CgroupCache
+	gpuMonitor  *system.GPUMonitor
+
 	diskUsagePathCache struct {
 		sync.RWMutex
 		value     string
 		timestamp time.Time
 	}
-	gpuDetectionCache struct {
-		sync.RWMutex
-		detected  bool
-		timestamp time.Time
-		gpuType   string
-		toolPath  string
-	}
-	detectionDone        bool
-	detectionMutex       sync.Mutex
-	gpuMonitoringEnabled bool
-	gpuType              string
 	projectLogStreamer   func(ctx context.Context, projectID string, logsChan chan<- string, follow bool, tail, since string, timestamps bool) error
 	containerLogStreamer func(ctx context.Context, containerID string, logsChan chan<- string, follow bool, tail, since string, timestamps bool) error
 	systemStatsCollector func(ctx context.Context) systemtypes.SystemStats
 	cpuUsageReader       func(interval time.Duration) (float64, bool)
-	cgroupLimitsDetector func() (*docker.CgroupLimits, error)
 }
 
 type wsLogStream struct {
@@ -346,14 +321,14 @@ func NewWebSocketHandler(
 	cfg *config.Config,
 ) {
 	handler := &WebSocketHandler{
-		projectService:       projectService,
-		containerService:     containerService,
-		swarmService:         swarmService,
-		systemService:        systemService,
-		wsMetrics:            defaultWebSocketMetrics,
-		logStreams:           make(map[string]*wsLogStream),
-		gpuMonitoringEnabled: cfg.GPUMonitoringEnabled,
-		gpuType:              cfg.GPUType,
+		projectService:   projectService,
+		containerService: containerService,
+		swarmService:     swarmService,
+		systemService:    systemService,
+		wsMetrics:        defaultWebSocketMetrics,
+		logStreams:       make(map[string]*wsLogStream),
+		cgroupCache:      system.NewCgroupCache(cgroupCacheTTL),
+		gpuMonitor:       system.NewGPUMonitor(cfg.GPUMonitoringEnabled, cfg.GPUType),
 		wsUpgrader: websocket.Upgrader{
 			CheckOrigin:       httputil.ValidateWebSocketOrigin(cfg.GetAppURL()),
 			ReadBufferSize:    32 * 1024,
@@ -1273,10 +1248,10 @@ func (h *WebSocketHandler) getHostname() string {
 
 // getGPUInfo returns GPU statistics if monitoring is enabled.
 func (h *WebSocketHandler) getGPUInfo(ctx context.Context) ([]systemtypes.GPUStats, int) {
-	if !h.gpuMonitoringEnabled {
+	if h.gpuMonitor == nil || !h.gpuMonitor.Enabled() {
 		return nil, 0
 	}
-	gpuData, err := h.getGPUStats(ctx)
+	gpuData, err := h.gpuMonitor.Stats(ctx)
 	if err != nil {
 		return nil, 0
 	}
@@ -1336,47 +1311,10 @@ func (h *WebSocketHandler) storeCPUCacheValueInternal(value float64) {
 }
 
 func (h *WebSocketHandler) getCachedCgroupLimitsInternal() *docker.CgroupLimits {
-	h.cgroupCache.RLock()
-	value := h.cgroupCache.value
-	detected := h.cgroupCache.detected
-	fresh := time.Since(h.cgroupCache.timestamp) < cgroupCacheTTL
-	h.cgroupCache.RUnlock()
-	if fresh {
-		if detected {
-			return value
-		}
+	if h.cgroupCache == nil {
 		return nil
 	}
-
-	h.cgroupCache.Lock()
-	defer h.cgroupCache.Unlock()
-
-	if time.Since(h.cgroupCache.timestamp) < cgroupCacheTTL {
-		if h.cgroupCache.detected {
-			return h.cgroupCache.value
-		}
-		return nil
-	}
-
-	detect := h.cgroupLimitsDetector
-	if detect == nil {
-		detect = docker.DetectCgroupLimits
-	}
-
-	limits, err := detect()
-	h.cgroupCache.timestamp = time.Now()
-	if err != nil {
-		h.cgroupCache.value = nil
-		h.cgroupCache.detected = false
-	} else {
-		h.cgroupCache.value = limits
-		h.cgroupCache.detected = true
-	}
-	if !h.cgroupCache.detected {
-		return nil
-	}
-
-	return h.cgroupCache.value
+	return h.cgroupCache.Get()
 }
 
 // SystemStats streams system stats over WebSocket.
@@ -1510,326 +1448,4 @@ func (h *WebSocketHandler) getDiskUsagePath(ctx context.Context) string {
 	h.diskUsagePathCache.Unlock()
 
 	return path
-}
-
-// ============================================================================
-// GPU Monitoring
-// ============================================================================
-
-// getGPUStats collects and returns GPU statistics for all available GPUs
-func (h *WebSocketHandler) getGPUStats(ctx context.Context) ([]systemtypes.GPUStats, error) {
-	h.detectionMutex.Lock()
-	done := h.detectionDone
-	h.detectionMutex.Unlock()
-
-	if !done {
-		if err := h.detectGPUs(ctx); err != nil {
-			return nil, err
-		}
-	}
-
-	h.gpuDetectionCache.RLock()
-	if h.gpuDetectionCache.detected && time.Since(h.gpuDetectionCache.timestamp) < gpuCacheDuration {
-		gpuType := h.gpuDetectionCache.gpuType
-		h.gpuDetectionCache.RUnlock()
-
-		switch gpuType {
-		case "nvidia":
-			return h.getNvidiaStats(ctx)
-		case "amd":
-			return h.getAMDStats(ctx)
-		case "intel":
-			return h.getIntelStats(ctx)
-		}
-	}
-	h.gpuDetectionCache.RUnlock()
-
-	if err := h.detectGPUs(ctx); err != nil {
-		return nil, err
-	}
-
-	h.gpuDetectionCache.RLock()
-	gpuType := h.gpuDetectionCache.gpuType
-	h.gpuDetectionCache.RUnlock()
-
-	switch gpuType {
-	case "nvidia":
-		return h.getNvidiaStats(ctx)
-	case "amd":
-		return h.getAMDStats(ctx)
-	case "intel":
-		return h.getIntelStats(ctx)
-	default:
-		return nil, fmt.Errorf("no supported GPU found")
-	}
-}
-
-// detectGPUs detects available GPU management tools
-func (h *WebSocketHandler) detectGPUs(ctx context.Context) error {
-	h.detectionMutex.Lock()
-	defer h.detectionMutex.Unlock()
-
-	if h.gpuType != "" && h.gpuType != "auto" {
-		switch h.gpuType {
-		case "nvidia":
-			if path, err := exec.LookPath("nvidia-smi"); err == nil {
-				h.gpuDetectionCache.Lock()
-				h.gpuDetectionCache.detected = true
-				h.gpuDetectionCache.gpuType = "nvidia"
-				h.gpuDetectionCache.toolPath = path
-				h.gpuDetectionCache.timestamp = time.Now()
-				h.gpuDetectionCache.Unlock()
-				h.detectionDone = true
-				slog.InfoContext(ctx, "Using configured GPU type", "type", "nvidia")
-				return nil
-			}
-			return fmt.Errorf("nvidia-smi not found but GPU_TYPE set to nvidia")
-
-		case "amd":
-			if hasAMDGPUInternal() {
-				h.gpuDetectionCache.Lock()
-				h.gpuDetectionCache.detected = true
-				h.gpuDetectionCache.gpuType = "amd"
-				h.gpuDetectionCache.toolPath = amdGPUSysfsPath
-				h.gpuDetectionCache.timestamp = time.Now()
-				h.gpuDetectionCache.Unlock()
-				h.detectionDone = true
-				slog.InfoContext(ctx, "Using configured GPU type", "type", "amd")
-				return nil
-			}
-			return fmt.Errorf("AMD GPU not found in sysfs but GPU_TYPE set to amd")
-
-		case "intel":
-			if path, err := exec.LookPath("intel_gpu_top"); err == nil {
-				h.gpuDetectionCache.Lock()
-				h.gpuDetectionCache.detected = true
-				h.gpuDetectionCache.gpuType = "intel"
-				h.gpuDetectionCache.toolPath = path
-				h.gpuDetectionCache.timestamp = time.Now()
-				h.gpuDetectionCache.Unlock()
-				h.detectionDone = true
-				slog.InfoContext(ctx, "Using configured GPU type", "type", "intel")
-				return nil
-			}
-			return fmt.Errorf("intel_gpu_top not found but GPU_TYPE set to intel")
-
-		default:
-			slog.WarnContext(ctx, "Invalid GPU_TYPE specified, falling back to auto-detection", "gpu_type", h.gpuType)
-		}
-	}
-
-	if path, err := exec.LookPath("nvidia-smi"); err == nil {
-		h.gpuDetectionCache.Lock()
-		h.gpuDetectionCache.detected = true
-		h.gpuDetectionCache.gpuType = "nvidia"
-		h.gpuDetectionCache.toolPath = path
-		h.gpuDetectionCache.timestamp = time.Now()
-		h.gpuDetectionCache.Unlock()
-		h.detectionDone = true
-		slog.InfoContext(ctx, "NVIDIA GPU detected", "tool", "nvidia-smi", "path", path)
-		return nil
-	}
-
-	if hasAMDGPUInternal() {
-		h.gpuDetectionCache.Lock()
-		h.gpuDetectionCache.detected = true
-		h.gpuDetectionCache.gpuType = "amd"
-		h.gpuDetectionCache.toolPath = amdGPUSysfsPath
-		h.gpuDetectionCache.timestamp = time.Now()
-		h.gpuDetectionCache.Unlock()
-		h.detectionDone = true
-		slog.InfoContext(ctx, "AMD GPU detected", "method", "sysfs", "path", amdGPUSysfsPath)
-		return nil
-	}
-
-	if path, err := exec.LookPath("intel_gpu_top"); err == nil {
-		h.gpuDetectionCache.Lock()
-		h.gpuDetectionCache.detected = true
-		h.gpuDetectionCache.gpuType = "intel"
-		h.gpuDetectionCache.toolPath = path
-		h.gpuDetectionCache.timestamp = time.Now()
-		h.gpuDetectionCache.Unlock()
-		h.detectionDone = true
-		slog.InfoContext(ctx, "Intel GPU detected", "tool", "intel_gpu_top", "path", path)
-		return nil
-	}
-
-	h.detectionDone = true
-	return fmt.Errorf("no supported GPU found")
-}
-
-// getNvidiaStats collects NVIDIA GPU statistics using nvidia-smi
-func (h *WebSocketHandler) getNvidiaStats(ctx context.Context) ([]systemtypes.GPUStats, error) {
-	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "nvidia-smi",
-		"--query-gpu=index,name,memory.used,memory.total",
-		"--format=csv,noheader,nounits")
-
-	output, err := cmd.Output()
-	if err != nil {
-		slog.WarnContext(ctx, "Failed to execute nvidia-smi", "error", err)
-		return nil, fmt.Errorf("nvidia-smi execution failed: %w", err)
-	}
-
-	reader := csv.NewReader(bytes.NewReader(output))
-	reader.TrimLeadingSpace = true
-
-	records, err := reader.ReadAll()
-	if err != nil {
-		slog.WarnContext(ctx, "Failed to parse nvidia-smi CSV output", "error", err)
-		return nil, fmt.Errorf("failed to parse nvidia-smi output: %w", err)
-	}
-
-	var stats []systemtypes.GPUStats
-	for _, record := range records {
-		if len(record) < 4 {
-			continue
-		}
-
-		index, err := strconv.Atoi(strings.TrimSpace(record[0]))
-		if err != nil {
-			slog.WarnContext(ctx, "Failed to parse GPU index", "value", record[0])
-			continue
-		}
-
-		name := strings.TrimSpace(record[1])
-
-		memUsed, err := strconv.ParseFloat(strings.TrimSpace(record[2]), 64)
-		if err != nil {
-			slog.WarnContext(ctx, "Failed to parse memory used", "value", record[2])
-			continue
-		}
-
-		memTotal, err := strconv.ParseFloat(strings.TrimSpace(record[3]), 64)
-		if err != nil {
-			slog.WarnContext(ctx, "Failed to parse memory total", "value", record[3])
-			continue
-		}
-
-		stats = append(stats, systemtypes.GPUStats{
-			Name:        name,
-			Index:       index,
-			MemoryUsed:  memUsed * 1024 * 1024,
-			MemoryTotal: memTotal * 1024 * 1024,
-		})
-	}
-
-	if len(stats) == 0 {
-		return nil, fmt.Errorf("no GPU data parsed from nvidia-smi")
-	}
-
-	slog.DebugContext(ctx, "Collected NVIDIA GPU stats", "gpu_count", len(stats))
-	return stats, nil
-}
-
-// getAMDStats collects AMD GPU statistics using sysfs
-func (h *WebSocketHandler) getAMDStats(ctx context.Context) ([]systemtypes.GPUStats, error) {
-	var stats []systemtypes.GPUStats
-
-	// Find AMD GPU cards by looking for mem_info_vram_total in /sys/class/drm/card*/device/
-	entries, err := os.ReadDir(amdGPUSysfsPath)
-	if err != nil {
-		slog.WarnContext(ctx, "Failed to read DRM sysfs directory", "error", err)
-		return nil, fmt.Errorf("failed to read sysfs: %w", err)
-	}
-
-	index := 0
-	for _, entry := range entries {
-		name := entry.Name()
-		// Only check card* entries (card0, card1, etc.) - skip renderD* and connector entries
-		if !strings.HasPrefix(name, "card") {
-			continue
-		}
-		// Skip connector entries like card0-DP-1, card0-HDMI-A-1
-		if strings.Contains(name, "-") {
-			continue
-		}
-
-		devicePath := fmt.Sprintf("%s/%s/device", amdGPUSysfsPath, name)
-
-		// Check if this is an AMD GPU by looking for VRAM info files
-		memTotalPath := fmt.Sprintf("%s/mem_info_vram_total", devicePath)
-		memUsedPath := fmt.Sprintf("%s/mem_info_vram_used", devicePath)
-
-		memTotalBytes, err := readSysfsValueInternal(memTotalPath)
-		if err != nil {
-			// Not an AMD GPU or doesn't have VRAM info
-			continue
-		}
-
-		memUsedBytes, err := readSysfsValueInternal(memUsedPath)
-		if err != nil {
-			slog.WarnContext(ctx, "Failed to read AMD GPU memory used", "card", name, "error", err)
-			continue
-		}
-
-		stats = append(stats, systemtypes.GPUStats{
-			Name:        fmt.Sprintf("AMD GPU %d", index),
-			Index:       index,
-			MemoryUsed:  float64(memUsedBytes),
-			MemoryTotal: float64(memTotalBytes),
-		})
-		index++
-	}
-
-	if len(stats) == 0 {
-		return nil, fmt.Errorf("no AMD GPU data found in sysfs")
-	}
-
-	slog.DebugContext(ctx, "Collected AMD GPU stats", "gpu_count", len(stats))
-	return stats, nil
-}
-
-// readSysfsValueInternal reads a numeric value from a sysfs file
-func readSysfsValueInternal(path string) (uint64, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return 0, err
-	}
-	return strconv.ParseUint(strings.TrimSpace(string(data)), 10, 64)
-}
-
-// hasAMDGPUInternal checks if an AMD GPU is present by looking for VRAM info in sysfs
-func hasAMDGPUInternal() bool {
-	entries, err := os.ReadDir(amdGPUSysfsPath)
-	if err != nil {
-		return false
-	}
-
-	for _, entry := range entries {
-		name := entry.Name()
-		// Only check card* entries (card0, card1, etc.) - skip card0-DP-1 style entries
-		if !strings.HasPrefix(name, "card") {
-			continue
-		}
-		// Skip connector entries like card0-DP-1, card0-HDMI-A-1
-		if strings.Contains(name, "-") {
-			continue
-		}
-
-		// Check if this card has AMD VRAM info
-		memTotalPath := fmt.Sprintf("%s/%s/device/mem_info_vram_total", amdGPUSysfsPath, name)
-		if _, err := os.Stat(memTotalPath); err == nil {
-			return true
-		}
-	}
-
-	return false
-}
-
-// getIntelStats collects Intel GPU statistics using intel_gpu_top
-func (h *WebSocketHandler) getIntelStats(ctx context.Context) ([]systemtypes.GPUStats, error) {
-	stats := []systemtypes.GPUStats{
-		{
-			Name:        "Intel GPU",
-			Index:       0,
-			MemoryUsed:  0,
-			MemoryTotal: 0,
-		},
-	}
-
-	slog.DebugContext(ctx, "Intel GPU detected but detailed stats not yet implemented")
-	return stats, nil
 }
