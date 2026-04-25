@@ -2631,7 +2631,6 @@
 	"settings_default_deploy_pull_policy_description": "Default image pull policy when deploying projects",
 	"authentication_title": "Authentication",
 	"authentication_description": "Configure authentication providers, password policy, and session behavior.",
-
 	"webhook_page_title": "Webhooks",
 	"webhook_page_description": "Manage inbound webhooks to trigger container, project, updater, or GitOps actions from external systems.",
 	"webhook_create_button": "Create Webhook",
