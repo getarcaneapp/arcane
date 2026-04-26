@@ -194,6 +194,7 @@
 	"log_parsed_mode_tooltip": "Muestra los registros estructurados en forma analizada cuando están disponibles. Desactívelo para ver el texto original sin procesar.",
 	"common_logout": "Cerrar sesión",
 	"common_redeploy": "Rediseñar",
+	"common_redeploy_disabled_arcane_self": "Gestionado por Arcane; utilice Configuración > Actualizaciones.",
 	"common_use_template": "Usar Plantilla",
 	"maintenance_title": "Mantenimiento",
 	"scheduled_prune_title": "Pausa programada",
