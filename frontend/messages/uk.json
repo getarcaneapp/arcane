@@ -194,6 +194,7 @@
 	"log_parsed_mode_tooltip": "Показує структуровані логи у розбірному вигляді, коли вони доступні. Вимкніть його, щоб побачити оригінальний необроблений текст рядка.",
 	"common_logout": "Logout",
 	"common_redeploy": "Redeploy",
+	"common_redeploy_disabled_arcane_self": "Керується Arcane; використовуйте Налаштування > Оновлення.",
 	"common_use_template": "Use Template",
 	"maintenance_title": "Ремонт",
 	"scheduled_prune_title": "Запланована чистка",
