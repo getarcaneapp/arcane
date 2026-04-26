@@ -194,6 +194,7 @@
 	"log_parsed_mode_tooltip": "構造化ログが利用可能な場合、解析された形式で表示します。元の行のテキストを見るにはオフにします。",
 	"common_logout": "Logout",
 	"common_redeploy": "Redeploy",
+	"common_redeploy_disabled_arcane_self": "Arcaneによって管理されています。設定 > アップデートを使用してください。",
 	"common_use_template": "Use Template",
 	"maintenance_title": "メンテナンス",
 	"scheduled_prune_title": "スケジュールされたPrune",
