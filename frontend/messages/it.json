@@ -194,6 +194,7 @@
 	"log_parsed_mode_tooltip": "Mostra i log strutturati in forma analizzata, se disponibili. Disattivarlo per vedere il testo originale della riga grezza.",
 	"common_logout": "Esci",
 	"common_redeploy": "Redistribuisci",
+	"common_redeploy_disabled_arcane_self": "Gestito da Arcane; utilizzare Impostazioni > Aggiornamenti.",
 	"common_use_template": "Usa Modello",
 	"maintenance_title": "Manutenzione",
 	"scheduled_prune_title": "Pulizie Pianificate",
