@@ -194,6 +194,7 @@
 	"log_parsed_mode_tooltip": "Affiche les journaux structurés sous forme analysée lorsqu'ils sont disponibles. Désactivez-la pour voir le texte brut original.",
 	"common_logout": "Logout",
 	"common_redeploy": "Redéployer",
+	"common_redeploy_disabled_arcane_self": "Géré par Arcane ; utilisez Paramètres > Mises à jour.",
 	"common_use_template": "Utiliser le modèle",
 	"maintenance_title": "Maintenance",
 	"scheduled_prune_title": "Nettoyage programmé",
