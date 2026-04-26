@@ -194,6 +194,7 @@
 	"log_parsed_mode_tooltip": "Shows structured logs in parsed form when available. Turn it off to see the original raw line text.",
 	"common_logout": "Logout",
 	"common_redeploy": "Redeploy",
+	"common_redeploy_disabled_arcane_self": "Administreret af Arcane; brug Indstillinger > Opdateringer.",
 	"common_use_template": "Use Template",
 	"maintenance_title": "Maintenance",
 	"scheduled_prune_title": "Scheduled Prune",
