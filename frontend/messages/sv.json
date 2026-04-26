@@ -194,6 +194,7 @@
 	"log_parsed_mode_tooltip": "Visar strukturerade loggar i parsad form när de är tillgängliga. Stäng av den om du vill se den ursprungliga råa radtexten.",
 	"common_logout": "Logout",
 	"common_redeploy": "Redeploy",
+	"common_redeploy_disabled_arcane_self": "Hanteras av Arcane; använd Inställningar > Uppdateringar.",
 	"common_use_template": "Use Template",
 	"maintenance_title": "Underhåll",
 	"scheduled_prune_title": "Schemalagd beskär",
