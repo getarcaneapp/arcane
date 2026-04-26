@@ -194,6 +194,7 @@
 	"log_parsed_mode_tooltip": "Hiển thị nhật ký có cấu trúc dưới dạng đã được phân tích nếu có sẵn. Tắt tính năng này để xem văn bản dòng gốc chưa qua xử lý.",
 	"common_logout": "Đăng xuất",
 	"common_redeploy": "Redeploy",
+	"common_redeploy_disabled_arcane_self": "Được quản lý bởi Arcane; hãy vào Cài đặt > Cập nhật.",
 	"common_use_template": "Sử dụng Template",
 	"maintenance_title": "Bảo trì",
 	"scheduled_prune_title": "Cắt tỉa theo lịch trình",
