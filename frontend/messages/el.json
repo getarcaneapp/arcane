@@ -194,6 +194,7 @@
 	"log_parsed_mode_tooltip": "Εμφανίζει δομημένα αρχεία καταγραφής σε αναλυμένη μορφή όταν είναι διαθέσιμα. Απενεργοποιήστε το για να δείτε το αρχικό κείμενο της γραμμής.",
 	"common_logout": "Αποσύνδεση",
 	"common_redeploy": "Redeploy",
+	"common_redeploy_disabled_arcane_self": "Διαχειρίζεται από την Arcane, χρησιμοποιήστε τις Ρυθμίσεις > Ενημερώσεις.",
 	"common_use_template": "Χρήση Προτύπου",
 	"maintenance_title": "Συντήρηση",
 	"scheduled_prune_title": "Προγραμματισμένη Πράξη",
