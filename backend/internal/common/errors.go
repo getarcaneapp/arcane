@@ -180,6 +180,12 @@ func (e *ContainerRedeployError) Error() string {
 	return fmt.Sprintf("Failed to redeploy container: %v", e.Err)
 }
 
+type ArcaneSelfRedeployError struct{}
+
+func (e *ArcaneSelfRedeployError) Error() string {
+	return "arcane cannot redeploy itself; use the system upgrade flow (Settings -> Updates) instead"
+}
+
 type ContainerDeleteError struct {
 	Err error
 }

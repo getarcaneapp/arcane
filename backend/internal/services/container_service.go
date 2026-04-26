@@ -13,6 +13,7 @@ import (
 	"time"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
+	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	dockerutils "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
@@ -460,19 +461,14 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 	wasRunning := containerInfo.State != nil && containerInfo.State.Running
 	apiVersion := libarcane.DetectDockerAPIVersion(ctx, dockerClient)
 
-	// Arcane cannot safely redeploy itself via the compose path: the compose
-	// stop+up sequence would kill the running process before the new container
-	// is ready to serve requests. Use the system upgrade flow instead.
-	if libupdater.IsArcaneContainer(containerInfo.Config.Labels) && !libupdater.IsArcaneAgentContainer(containerInfo.Config.Labels) {
-		projectName := strings.TrimSpace(containerInfo.Config.Labels["com.docker.compose.project"])
-		if projectName != "" {
-			err = errors.New("arcane cannot redeploy itself when managed as a compose project — use the system upgrade flow (Settings → Updates) instead")
-			s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, containerName, user.ID, user.Username, "0", err, models.JSON{
-				"action": "redeploy",
-				"step":   "self_redeploy_blocked",
-			})
-			return "", err
-		}
+	currentContainerID, currentContainerErr := dockerutils.GetCurrentContainerID()
+	if libupdater.ShouldDisableArcaneServerRedeploy(containerInfo.Config.Labels, containerInfo.ID, currentContainerID, currentContainerErr) {
+		err = &common.ArcaneSelfRedeployError{}
+		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, containerName, user.ID, user.Username, "0", err, models.JSON{
+			"action": "redeploy",
+			"step":   "self_redeploy_blocked",
+		})
+		return "", err
 	}
 
 	// If this container belongs to a known compose project, redeploy through the
@@ -589,6 +585,19 @@ func (s *ContainerService) GetContainerByReference(ctx context.Context, ref stri
 
 func (s *ContainerService) GetContainerByID(ctx context.Context, id string) (*container.InspectResponse, error) {
 	return s.GetContainerByReference(ctx, id)
+}
+
+func (s *ContainerService) GetContainerDetails(ctx context.Context, id string) (containertypes.Details, error) {
+	containerInspect, err := s.GetContainerByID(ctx, id)
+	if err != nil {
+		return containertypes.Details{}, err
+	}
+
+	details := containertypes.NewDetails(containerInspect)
+	currentContainerID, currentContainerErr := dockerutils.GetCurrentContainerID()
+	details.RedeployDisabled = libupdater.ShouldDisableArcaneServerRedeploy(details.Labels, details.ID, currentContainerID, currentContainerErr)
+
+	return details, nil
 }
 
 // GetContainerNameByReference resolves a container's clean name from a Docker ID or name.
@@ -931,7 +940,8 @@ func (s *ContainerService) ListContainersPaginated(
 	dockerContainers = filterInternalContainers(dockerContainers, includeInternal)
 	imageIDs := collectImageIDs(dockerContainers)
 	updateInfoMap := s.getUpdateInfoMap(ctx, imageIDs)
-	items := s.buildContainerSummaries(dockerContainers, updateInfoMap)
+	currentContainerID, currentContainerErr := dockerutils.GetCurrentContainerID()
+	items := s.buildContainerSummaries(dockerContainers, updateInfoMap, currentContainerID, currentContainerErr)
 
 	config := s.buildContainerPaginationConfig()
 	counts := s.calculateContainerStatusCounts(items)
@@ -1124,13 +1134,14 @@ func (s *ContainerService) getUpdateInfoMap(ctx context.Context, imageIDs []stri
 	return updateInfoMap
 }
 
-func (s *ContainerService) buildContainerSummaries(containers []container.Summary, updateInfoMap map[string]*imagetypes.UpdateInfo) []containertypes.Summary {
+func (s *ContainerService) buildContainerSummaries(containers []container.Summary, updateInfoMap map[string]*imagetypes.UpdateInfo, currentContainerID string, currentContainerErr error) []containertypes.Summary {
 	items := make([]containertypes.Summary, 0, len(containers))
 	for _, dc := range containers {
 		summary := containertypes.NewSummary(dc)
 		if info, exists := updateInfoMap[dc.ImageID]; exists {
 			summary.UpdateInfo = info
 		}
+		summary.RedeployDisabled = libupdater.ShouldDisableArcaneServerRedeploy(summary.Labels, summary.ID, currentContainerID, currentContainerErr)
 		items = append(items, summary)
 	}
 	return items

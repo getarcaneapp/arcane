@@ -73,6 +73,7 @@ export interface ContainerSummaryDto extends BaseContainer {
 	networkSettings: ContainerNetworkSettings;
 	mounts: ContainerMounts[];
 	updateInfo?: ImageUpdateInfoDto;
+	redeployDisabled?: boolean;
 }
 
 export interface ContainerSummaryGroupDto {
@@ -203,6 +204,7 @@ export interface ContainerDetailsDto {
 	mounts: ContainerMounts[];
 	labels: Record<string, string>;
 	composeInfo?: ComposeInfo;
+	redeployDisabled?: boolean;
 }
 
 // Container Stats Types

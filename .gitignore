@@ -54,4 +54,4 @@ arcane-devcli
 .btca
 
 cli/arcane-cli
-completions.worktrees/
+completions

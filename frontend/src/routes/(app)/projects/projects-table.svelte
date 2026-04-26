@@ -116,6 +116,8 @@
 	const isAnyLoading = $derived(
 		Object.values(actionStatus).some((status) => status !== '') || Object.values(isBulkLoading).some((loading) => loading)
 	);
+	const selectedProjects = $derived.by(() => (projects?.data ?? []).filter((project) => selectedIds?.includes(project.id)));
+	const hasRedeployDisabledSelection = $derived.by(() => selectedProjects.some((project) => project.redeployDisabled));
 
 	const columns = [
 		{ accessorKey: 'id', title: m.common_id(), hidden: true },
@@ -169,7 +171,7 @@
 			action: 'redeploy',
 			onClick: handleBulkRedeploy,
 			loading: isBulkLoading.redeploy,
-			disabled: isAnyLoading,
+			disabled: isAnyLoading || hasRedeployDisabledSelection,
 			icon: RedeployIcon
 		}
 	]);
@@ -377,17 +379,19 @@
 					</DropdownMenu.Item>
 				{/if}
 
-				<DropdownMenu.Item
-					onclick={() => performProjectAction('redeploy', item.id)}
-					disabled={status === 'redeploying' || isAnyLoading}
-				>
-					{#if status === 'redeploying'}
-						<Spinner class="size-4" />
-					{:else}
-						<RedeployIcon class="size-4" />
-					{/if}
-					{m.compose_pull_redeploy()}
-				</DropdownMenu.Item>
+				{#if !item.redeployDisabled}
+					<DropdownMenu.Item
+						onclick={() => performProjectAction('redeploy', item.id)}
+						disabled={status === 'redeploying' || isAnyLoading}
+					>
+						{#if status === 'redeploying'}
+							<Spinner class="size-4" />
+						{:else}
+							<RedeployIcon class="size-4" />
+						{/if}
+						{m.compose_pull_redeploy()}
+					</DropdownMenu.Item>
+				{/if}
 
 				<DropdownMenu.Separator />
 

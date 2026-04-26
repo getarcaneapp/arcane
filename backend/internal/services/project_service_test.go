@@ -17,6 +17,7 @@ import (
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
+	libupdater "github.com/getarcaneapp/arcane/backend/pkg/libarcane/updater"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/pkg/projects"
 	buildtypes "github.com/getarcaneapp/arcane/types/builds"
@@ -1975,6 +1976,98 @@ func TestProjectService_ListProjects_FiltersByUpdateStatus(t *testing.T) {
 				names = append(names, item.Name)
 			}
 			assert.Equal(t, tt.expected, names)
+		})
+	}
+}
+
+func TestProjectService_MapProjectToDto_SetsRedeployDisabledFromRuntimeServices(t *testing.T) {
+	projectPath := filepath.Join(t.TempDir(), "arcane")
+	now := time.Now()
+	proj := models.Project{
+		Name:         "arcane",
+		Path:         projectPath,
+		ServiceCount: 1,
+		BaseModel: models.BaseModel{
+			ID:        "project-arcane",
+			CreatedAt: now,
+			UpdatedAt: &now,
+		},
+	}
+
+	tests := []struct {
+		name               string
+		containerID        string
+		currentContainerID string
+		currentErr         error
+		labels             map[string]string
+		wantProject        bool
+		wantService        bool
+	}{
+		{
+			name:               "current Arcane server container disables project redeploy",
+			containerID:        "arcane1234567890",
+			currentContainerID: "arcane1234567890",
+			labels: map[string]string{
+				"com.docker.compose.project": "arcane",
+				"com.docker.compose.service": "server",
+				libupdater.LabelArcane:       "true",
+			},
+			wantProject: true,
+			wantService: true,
+		},
+		{
+			name:        "Arcane server container fails closed when current container is unavailable",
+			containerID: "arcane1234567890",
+			currentErr:  errors.New("not running in docker"),
+			labels: map[string]string{
+				"com.docker.compose.project": "arcane",
+				"com.docker.compose.service": "server",
+				libupdater.LabelArcane:       "true",
+			},
+			wantProject: true,
+			wantService: true,
+		},
+		{
+			name:               "Arcane agent container stays redeployable",
+			containerID:        "agent1234567890",
+			currentContainerID: "agent1234567890",
+			labels: map[string]string{
+				"com.docker.compose.project": "arcane",
+				"com.docker.compose.service": "agent",
+				libupdater.LabelArcane:       "true",
+				libupdater.LabelArcaneAgent:  "true",
+			},
+		},
+		{
+			name:               "non Arcane container stays redeployable",
+			containerID:        "regular1234567890",
+			currentContainerID: "regular1234567890",
+			labels: map[string]string{
+				"com.docker.compose.project": "arcane",
+				"com.docker.compose.service": "postgres",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			service := &ProjectService{}
+			details := service.mapProjectToDto(context.Background(), filepath.Dir(projectPath), proj, map[string][]container.Summary{
+				"arcane": {
+					{
+						ID:     tt.containerID,
+						Image:  "ghcr.io/getarcaneapp/arcane:latest",
+						State:  "running",
+						Status: "Up",
+						Names:  []string{"/arcane-server"},
+						Labels: tt.labels,
+					},
+				},
+			}, tt.currentContainerID, tt.currentErr)
+
+			require.Equal(t, tt.wantProject, details.RedeployDisabled)
+			require.Len(t, details.RuntimeServices, 1)
+			require.Equal(t, tt.wantService, details.RuntimeServices[0].RedeployDisabled)
 		})
 	}
 }

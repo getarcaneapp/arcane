@@ -646,14 +646,16 @@
 					</DropdownMenu.Item>
 				{/if}
 
-				<DropdownMenu.Item onclick={() => handleRedeployContainer(item)} disabled={status === 'redeploying' || isAnyLoading}>
-					{#if status === 'redeploying'}
-						<Spinner class="size-4" />
-					{:else}
-						<RedeployIcon class="size-4" />
-					{/if}
-					{m.common_redeploy()}
-				</DropdownMenu.Item>
+				{#if !item.redeployDisabled}
+					<DropdownMenu.Item onclick={() => handleRedeployContainer(item)} disabled={status === 'redeploying' || isAnyLoading}>
+						{#if status === 'redeploying'}
+							<Spinner class="size-4" />
+						{:else}
+							<RedeployIcon class="size-4" />
+						{/if}
+						{m.common_redeploy()}
+					</DropdownMenu.Item>
+				{/if}
 
 				<DropdownMenu.Separator />
 

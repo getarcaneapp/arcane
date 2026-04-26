@@ -721,6 +721,11 @@ type Summary struct {
 	//
 	// Required: false
 	UpdateInfo *imagetypes.UpdateInfo `json:"updateInfo,omitempty"`
+
+	// RedeployDisabled indicates whether redeploy actions are disabled for this container.
+	//
+	// Required: false
+	RedeployDisabled bool `json:"redeployDisabled,omitempty"`
 }
 
 // ComposeInfo contains Docker Compose project information extracted from container labels.
@@ -826,6 +831,11 @@ type Details struct {
 	//
 	// Required: false
 	ComposeInfo *ComposeInfo `json:"composeInfo,omitempty"`
+
+	// RedeployDisabled indicates whether redeploy actions are disabled for this container.
+	//
+	// Required: false
+	RedeployDisabled bool `json:"redeployDisabled,omitempty"`
 }
 
 // Created represents a newly created container.

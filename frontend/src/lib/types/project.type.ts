@@ -62,6 +62,7 @@ export interface RuntimeService {
 	health?: string;
 	iconUrl?: string;
 	serviceConfig?: ProjectService;
+	redeployDisabled?: boolean;
 }
 
 export interface ProjectUpdateInfo {
@@ -95,6 +96,7 @@ export interface Project {
 	lastSyncCommit?: string;
 	gitRepositoryURL?: string;
 	hasBuildDirective?: boolean;
+	redeployDisabled?: boolean;
 	updateInfo?: ProjectUpdateInfo;
 	services?: ProjectService[];
 	runtimeServices?: RuntimeService[];

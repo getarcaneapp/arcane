@@ -18,6 +18,24 @@ func IsArcaneContainer(labels map[string]string) bool {
 	return hasTruthyLabelInternal(labels, LabelArcane) || IsArcaneAgentContainer(labels)
 }
 
+// IsArcaneServerContainer checks if the container is the Arcane server, excluding agents.
+func IsArcaneServerContainer(labels map[string]string) bool {
+	return hasTruthyLabelInternal(labels, LabelArcane) && !IsArcaneAgentContainer(labels)
+}
+
+// ShouldDisableArcaneServerRedeploy reports whether redeploy should be blocked for the given container.
+func ShouldDisableArcaneServerRedeploy(labels map[string]string, containerID, currentContainerID string, currentErr error) bool {
+	if !IsArcaneServerContainer(labels) {
+		return false
+	}
+
+	if currentErr != nil || strings.TrimSpace(currentContainerID) == "" {
+		return true
+	}
+
+	return containerIDsMatchInternal(containerID, currentContainerID)
+}
+
 // IsArcaneAgentContainer checks if the container is an Arcane agent container.
 func IsArcaneAgentContainer(labels map[string]string) bool {
 	return hasTruthyLabelInternal(labels, LabelArcaneAgent)
@@ -76,4 +94,14 @@ func isTruthyLabelValueInternal(v string) bool {
 	default:
 		return false
 	}
+}
+
+func containerIDsMatchInternal(a, b string) bool {
+	a = strings.TrimSpace(a)
+	b = strings.TrimSpace(b)
+	if a == "" || b == "" {
+		return false
+	}
+
+	return a == b || strings.HasPrefix(a, b) || strings.HasPrefix(b, a)
 }

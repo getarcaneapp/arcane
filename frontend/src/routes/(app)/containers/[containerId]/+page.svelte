@@ -77,12 +77,6 @@
 	let autoUpdateOverride = $state<boolean | null>(null);
 	const autoUpdateEnabled = $derived(autoUpdateOverride ?? isAutoUpdateEnabled(container, data?.settings));
 
-	const isArcaneComposeSelf = $derived(
-		container?.labels?.['com.getarcaneapp.arcane'] === 'true' &&
-			container?.labels?.['com.getarcaneapp.arcane.agent'] !== 'true' &&
-			!!container?.labels?.['com.docker.compose.project']?.trim()
-	);
-
 	const cleanContainerName = (name: string | undefined): string => {
 		if (!name) return m.common_not_found_title({ resource: m.containers_title() });
 		return name.replace(/^\/+/, '');
@@ -301,7 +295,7 @@
 				type="container"
 				itemState={container.state?.running ? 'running' : 'stopped'}
 				desktopVariant="adaptive"
-				disableRedeploy={isArcaneComposeSelf}
+				disableRedeploy={!!container.redeployDisabled}
 			/>
 		{/snippet}
 
