@@ -18,6 +18,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils/dbutil"
 	"github.com/getarcaneapp/arcane/types/user"
 )
 
@@ -132,7 +133,7 @@ func (s *UserService) validateArgon2Password(encodedHash, password string) error
 }
 
 func (s *UserService) CreateUser(ctx context.Context, user *models.User) (*models.User, error) {
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
 		if err := tx.Create(user).Error; err != nil {
 			return fmt.Errorf("failed to create user: %w", err)
 		}
@@ -145,51 +146,23 @@ func (s *UserService) CreateUser(ctx context.Context, user *models.User) (*model
 }
 
 func (s *UserService) GetUserByUsername(ctx context.Context, username string) (*models.User, error) {
-	var user models.User
-	if err := s.db.WithContext(ctx).Where("username = ?", username).First(&user).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrUserNotFound
-		}
-		return nil, fmt.Errorf("failed to get user: %w", err)
-	}
-	return &user, nil
+	return dbutil.FirstWhere[models.User](ctx, s.db.DB, ErrUserNotFound, "username = ?", username)
 }
 
 func (s *UserService) GetUserByID(ctx context.Context, id string) (*models.User, error) {
-	var user models.User
-	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&user).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrUserNotFound
-		}
-		return nil, fmt.Errorf("failed to get user: %w", err)
-	}
-	return &user, nil
+	return dbutil.FirstWhere[models.User](ctx, s.db.DB, ErrUserNotFound, "id = ?", id)
 }
 
 func (s *UserService) GetUserByOidcSubjectId(ctx context.Context, subjectId string) (*models.User, error) {
-	var user models.User
-	if err := s.db.WithContext(ctx).Where("oidc_subject_id = ?", subjectId).First(&user).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrUserNotFound
-		}
-		return nil, fmt.Errorf("failed to get user: %w", err)
-	}
-	return &user, nil
+	return dbutil.FirstWhere[models.User](ctx, s.db.DB, ErrUserNotFound, "oidc_subject_id = ?", subjectId)
 }
 
 func (s *UserService) GetUserByEmail(ctx context.Context, email string) (*models.User, error) {
-	var user models.User
-	if err := s.db.WithContext(ctx).Where("email = ?", email).First(&user).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrUserNotFound
-		}
-		return nil, fmt.Errorf("failed to get user by email: %w", err)
-	}
-	return &user, nil
+	return dbutil.FirstWhere[models.User](ctx, s.db.DB, ErrUserNotFound, "email = ?", email)
 }
 
 func (s *UserService) UpdateUser(ctx context.Context, user *models.User) (*models.User, error) {
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
 		var existing models.User
 		if err := tx.
 			Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -231,7 +204,7 @@ func (s *UserService) UpdateUser(ctx context.Context, user *models.User) (*model
 // This MUST be done inside a transaction to ensure the lock is held until the update is committed.
 func (s *UserService) AttachOidcSubjectTransactional(ctx context.Context, userID string, subject string, updateFn func(u *models.User)) (*models.User, error) {
 	var out *models.User
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
 		var u models.User
 		if err := tx.
 			Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -278,7 +251,7 @@ func (s *UserService) CreateDefaultAdmin(ctx context.Context) error {
 		return fmt.Errorf("failed to hash default admin password: %w", err)
 	}
 
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
 		var count int64
 		if err := tx.Model(&models.User{}).Count(&count).Error; err != nil {
 			return fmt.Errorf("failed to count users: %w", err)
@@ -314,7 +287,7 @@ func (s *UserService) CreateDefaultAdmin(ctx context.Context) error {
 }
 
 func (s *UserService) DeleteUser(ctx context.Context, id string) error {
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
 		var existing models.User
 		if err := tx.
 			Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -357,7 +330,7 @@ func (s *UserService) UpgradePasswordHash(ctx context.Context, userID, password 
 		return fmt.Errorf("failed to create new hash: %w", err)
 	}
 
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
 		if err := tx.Model(&models.User{}).
 			Where("id = ?", userID).
 			Update("password_hash", newHash).Error; err != nil {

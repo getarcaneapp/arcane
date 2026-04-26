@@ -505,7 +505,7 @@
 									value={actionableVulnerabilitiesAttentionCount}
 									description={m.security_subtitle()}
 									ctaLabel={m.common_view()}
-									href="/security"
+									href="/images/vulnerabilities"
 								/>
 							{/if}
 
@@ -555,6 +555,7 @@
 						<Card.Header icon={StatsIcon} class="items-start">
 							<div class="flex w-full min-w-0 flex-col gap-2">
 								<h2 class="text-lg font-semibold tracking-tight">{m.common_overview()}</h2>
+								<p class="text-muted-foreground text-sm">{m.dashboard_overview_caption()}</p>
 							</div>
 						</Card.Header>
 						<Card.Content class="space-y-2.5 pt-0 pb-3">

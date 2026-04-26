@@ -7,8 +7,8 @@
 	import { ArrowLeftIcon } from '$lib/icons';
 
 	interface Props {
-		backUrl: string;
-		backLabel: string;
+		backUrl?: string;
+		backLabel?: string;
 		tabItems: TabItem[];
 		selectedTab: string;
 		onTabChange: (value: string) => void;
@@ -58,10 +58,12 @@
 			<div class="max-w-full px-4 py-3">
 				<div class="flex items-start justify-between gap-3">
 					<div class="flex min-w-0 items-start gap-3">
-						<ArcaneButton action="base" tone="ghost" size="sm" href={backUrl}>
-							<ArrowLeftIcon class="size-4" />
-							{backLabel}
-						</ArcaneButton>
+						{#if backUrl}
+							<ArcaneButton action="base" tone="ghost" size="sm" href={backUrl}>
+								<ArrowLeftIcon class="size-4" />
+								{backLabel ?? ''}
+							</ArcaneButton>
+						{/if}
 						<div class="min-w-0">
 							{@render headerInfo()}
 						</div>

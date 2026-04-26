@@ -1,17 +1,12 @@
 package api
 
 import (
-	"bytes"
 	"context"
-	"encoding/csv"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
-	"os"
-	"os/exec"
 	"runtime"
 	"strconv"
 	"strings"
@@ -24,6 +19,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	docker "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/system"
 	ws "github.com/getarcaneapp/arcane/backend/pkg/libarcane/ws"
 	httputil "github.com/getarcaneapp/arcane/backend/pkg/utils/httpx"
 	systemtypes "github.com/getarcaneapp/arcane/types/system"
@@ -35,13 +31,7 @@ import (
 	"github.com/shirou/gopsutil/v4/mem"
 )
 
-const (
-	gpuCacheDuration = 30 * time.Second
-	cgroupCacheTTL   = 30 * time.Second
-)
-
-// amdGPUSysfsPath is the base path for AMD GPU sysfs entries
-const amdGPUSysfsPath = "/sys/class/drm"
+const cgroupCacheTTL = 30 * time.Second
 
 // ============================================================================
 // WebSocket Metrics
@@ -184,33 +174,18 @@ type WebSocketHandler struct {
 		ready       chan struct{}
 		running     bool
 	}
-	cgroupCache struct {
-		sync.RWMutex
-		value     *docker.CgroupLimits
-		detected  bool
-		timestamp time.Time
-	}
+	cgroupCache *system.CgroupCache
+	gpuMonitor  *system.GPUMonitor
+
 	diskUsagePathCache struct {
 		sync.RWMutex
 		value     string
 		timestamp time.Time
 	}
-	gpuDetectionCache struct {
-		sync.RWMutex
-		detected  bool
-		timestamp time.Time
-		gpuType   string
-		toolPath  string
-	}
-	detectionDone        bool
-	detectionMutex       sync.Mutex
-	gpuMonitoringEnabled bool
-	gpuType              string
 	projectLogStreamer   func(ctx context.Context, projectID string, logsChan chan<- string, follow bool, tail, since string, timestamps bool) error
 	containerLogStreamer func(ctx context.Context, containerID string, logsChan chan<- string, follow bool, tail, since string, timestamps bool) error
 	systemStatsCollector func(ctx context.Context) systemtypes.SystemStats
 	cpuUsageReader       func(interval time.Duration) (float64, bool)
-	cgroupLimitsDetector func() (*docker.CgroupLimits, error)
 }
 
 type wsLogStream struct {
@@ -346,14 +321,14 @@ func NewWebSocketHandler(
 	cfg *config.Config,
 ) {
 	handler := &WebSocketHandler{
-		projectService:       projectService,
-		containerService:     containerService,
-		swarmService:         swarmService,
-		systemService:        systemService,
-		wsMetrics:            defaultWebSocketMetrics,
-		logStreams:           make(map[string]*wsLogStream),
-		gpuMonitoringEnabled: cfg.GPUMonitoringEnabled,
-		gpuType:              cfg.GPUType,
+		projectService:   projectService,
+		containerService: containerService,
+		swarmService:     swarmService,
+		systemService:    systemService,
+		wsMetrics:        defaultWebSocketMetrics,
+		logStreams:       make(map[string]*wsLogStream),
+		cgroupCache:      system.NewCgroupCache(cgroupCacheTTL),
+		gpuMonitor:       system.NewGPUMonitor(cfg.GPUMonitoringEnabled, cfg.GPUType),
 		wsUpgrader: websocket.Upgrader{
 			CheckOrigin:       httputil.ValidateWebSocketOrigin(cfg.GetAppURL()),
 			ReadBufferSize:    32 * 1024,
@@ -371,6 +346,92 @@ func NewWebSocketHandler(
 		wsGroup.GET("/swarm/services/:serviceId/logs", handler.ServiceLogs)
 		wsGroup.GET("/system/stats", handler.SystemStats)
 	}
+}
+
+// ============================================================================
+// Shared Log Stream Helpers
+// ============================================================================
+
+// logStreamParams holds the standard query parameters shared by every WS log endpoint.
+type logStreamParams struct {
+	follow     bool
+	tail       string
+	since      string
+	timestamps bool
+	format     string
+	batched    bool
+}
+
+func parseLogStreamParamsInternal(c *gin.Context) logStreamParams {
+	tail, _ := httputil.GetQueryParam(c, "tail", false)
+	if tail == "" {
+		tail = "100"
+	}
+	since, _ := httputil.GetQueryParam(c, "since", false)
+	format, _ := httputil.GetQueryParam(c, "format", false)
+	if format == "" {
+		format = "text"
+	}
+	return logStreamParams{
+		follow:     c.DefaultQuery("follow", "true") == "true",
+		tail:       tail,
+		since:      since,
+		timestamps: c.DefaultQuery("timestamps", "false") == "true",
+		format:     format,
+		batched:    c.DefaultQuery("batched", "false") == "true",
+	}
+}
+
+// serveLogStreamInternal is the shared scaffold for all three WS log endpoints (project, container, service).
+// It performs upgrade, builds the stream key, gets-or-creates the multiplexing hub, registers metrics,
+// and serves the client. The caller-supplied hubBuilder constructs the underlying *wsLogStream
+// when no hub already exists for streamKey.
+func (h *WebSocketHandler) serveLogStreamInternal(
+	c *gin.Context,
+	kind, resourceID string,
+	params logStreamParams,
+	hubBuilder func(streamKey string, onEmpty func(*wsLogStream)) *wsLogStream,
+) {
+	conn, err := h.wsUpgrader.Upgrade(c.Writer, c.Request, nil)
+	if err != nil {
+		return
+	}
+
+	streamKey := buildLogStreamKeyInternal(c.Param("id"), kind, resourceID, params.format, params.batched, params.follow, params.tail, params.since, params.timestamps)
+	stream := h.getOrCreateLogStreamInternal(streamKey, func(onEmpty func(*wsLogStream)) *wsLogStream {
+		return hubBuilder(streamKey, onEmpty)
+	})
+	connID := h.wsMetrics.RegisterConnection(buildWSConnectionInfoInternal(c, kind, resourceID))
+	// WebSocket connections use context.Background() because they are long-lived and should not
+	// be tied to the HTTP request context. Cleanup is handled via the hub's OnEmpty callback
+	// which triggers when all clients disconnect.
+	ws.ServeClientWithOnRemove(context.Background(), stream.hub, conn, func() {
+		h.wsMetrics.UnregisterConnection(connID)
+		h.releaseLogStreamInternal(streamKey, stream)
+	})
+}
+
+// broadcastLogStreamErrorInternal emits an error message to every client of a log stream.
+// resourceLabel is the human-readable noun used in slog/error text (e.g. "project log stream").
+// errorPrefix is the user-facing message prefix (e.g. "Failed to stream project logs: ").
+func broadcastLogStreamErrorInternal(resourceLabel, errorPrefix string, resourceID string, format string, err error, ls *wsLogStream) {
+	slog.Warn(resourceLabel+" failed", "resourceID", resourceID, "error", err)
+
+	if format == "json" {
+		msg := ws.LogMessage{
+			Seq:       ls.seq.Add(1),
+			Level:     "error",
+			Message:   errorPrefix + err.Error(),
+			Service:   "arcane",
+			Timestamp: ws.NowRFC3339(),
+		}
+		if b, marshalErr := json.Marshal(msg); marshalErr == nil {
+			ls.hub.Broadcast(b)
+		}
+		return
+	}
+
+	ls.hub.Broadcast([]byte(errorPrefix + err.Error()))
 }
 
 // ============================================================================
@@ -398,35 +459,9 @@ func (h *WebSocketHandler) ProjectLogs(c *gin.Context) {
 		return
 	}
 
-	follow := c.DefaultQuery("follow", "true") == "true"
-	tail, _ := httputil.GetQueryParam(c, "tail", false)
-	if tail == "" {
-		tail = "100"
-	}
-	since, _ := httputil.GetQueryParam(c, "since", false)
-	timestamps := c.DefaultQuery("timestamps", "false") == "true"
-	format, _ := httputil.GetQueryParam(c, "format", false)
-	if format == "" {
-		format = "text"
-	}
-	batched := c.DefaultQuery("batched", "false") == "true"
-
-	conn, err := h.wsUpgrader.Upgrade(c.Writer, c.Request, nil)
-	if err != nil {
-		return
-	}
-
-	streamKey := buildLogStreamKeyInternal(c.Param("id"), systemtypes.WSKindProjectLogs, projectID, format, batched, follow, tail, since, timestamps)
-	stream := h.getOrCreateLogStreamInternal(streamKey, func(onEmpty func(*wsLogStream)) *wsLogStream {
-		return h.startProjectLogHub(streamKey, projectID, format, batched, follow, tail, since, timestamps, onEmpty)
-	})
-	connID := h.wsMetrics.RegisterConnection(buildWSConnectionInfoInternal(c, systemtypes.WSKindProjectLogs, projectID))
-	// WebSocket connections use context.Background() because they are long-lived and should not
-	// be tied to the HTTP request context. Cleanup is handled via the hub's OnEmpty callback
-	// which triggers when all clients disconnect.
-	ws.ServeClientWithOnRemove(context.Background(), stream.hub, conn, func() {
-		h.wsMetrics.UnregisterConnection(connID)
-		h.releaseLogStreamInternal(streamKey, stream)
+	params := parseLogStreamParamsInternal(c)
+	h.serveLogStreamInternal(c, systemtypes.WSKindProjectLogs, projectID, params, func(streamKey string, onEmpty func(*wsLogStream)) *wsLogStream {
+		return h.startProjectLogHub(streamKey, projectID, params.format, params.batched, params.follow, params.tail, params.since, params.timestamps, onEmpty)
 	})
 }
 
@@ -488,23 +523,7 @@ func waitForLogStreamSubscriberInternal(ctx context.Context, firstSubscriber <-c
 }
 
 func (h *WebSocketHandler) broadcastProjectLogStreamErrorInternal(projectID, format string, err error, ls *wsLogStream) {
-	slog.Warn("project log stream failed", "projectID", projectID, "error", err)
-
-	if format == "json" {
-		msg := ws.LogMessage{
-			Seq:       ls.seq.Add(1),
-			Level:     "error",
-			Message:   "Failed to stream project logs: " + err.Error(),
-			Service:   "arcane",
-			Timestamp: ws.NowRFC3339(),
-		}
-		if b, marshalErr := json.Marshal(msg); marshalErr == nil {
-			ls.hub.Broadcast(b)
-		}
-		return
-	}
-
-	ls.hub.Broadcast([]byte("Failed to stream project logs: " + err.Error()))
+	broadcastLogStreamErrorInternal("project log stream", "Failed to stream project logs: ", projectID, format, err, ls)
 }
 
 func startProjectLogForwardersInternal(ctx context.Context, format string, batched bool, lines <-chan string, ls *wsLogStream) {
@@ -599,35 +618,9 @@ func (h *WebSocketHandler) ContainerLogs(c *gin.Context) {
 		return
 	}
 
-	follow := c.DefaultQuery("follow", "true") == "true"
-	tail, _ := httputil.GetQueryParam(c, "tail", false)
-	if tail == "" {
-		tail = "100"
-	}
-	since, _ := httputil.GetQueryParam(c, "since", false)
-	timestamps := c.DefaultQuery("timestamps", "false") == "true"
-	format, _ := httputil.GetQueryParam(c, "format", false)
-	if format == "" {
-		format = "text"
-	}
-	batched := c.DefaultQuery("batched", "false") == "true"
-
-	conn, err := h.wsUpgrader.Upgrade(c.Writer, c.Request, nil)
-	if err != nil {
-		return
-	}
-
-	streamKey := buildLogStreamKeyInternal(c.Param("id"), systemtypes.WSKindContainerLogs, containerID, format, batched, follow, tail, since, timestamps)
-	stream := h.getOrCreateLogStreamInternal(streamKey, func(onEmpty func(*wsLogStream)) *wsLogStream {
-		return h.startContainerLogHub(streamKey, containerID, format, batched, follow, tail, since, timestamps, onEmpty)
-	})
-	connID := h.wsMetrics.RegisterConnection(buildWSConnectionInfoInternal(c, systemtypes.WSKindContainerLogs, containerID))
-	// WebSocket connections use context.Background() because they are long-lived and should not
-	// be tied to the HTTP request context. Cleanup is handled via the hub's OnEmpty callback
-	// which triggers when all clients disconnect.
-	ws.ServeClientWithOnRemove(context.Background(), stream.hub, conn, func() {
-		h.wsMetrics.UnregisterConnection(connID)
-		h.releaseLogStreamInternal(streamKey, stream)
+	params := parseLogStreamParamsInternal(c)
+	h.serveLogStreamInternal(c, systemtypes.WSKindContainerLogs, containerID, params, func(streamKey string, onEmpty func(*wsLogStream)) *wsLogStream {
+		return h.startContainerLogHub(streamKey, containerID, params.format, params.batched, params.follow, params.tail, params.since, params.timestamps, onEmpty)
 	})
 }
 
@@ -695,23 +688,7 @@ func (h *WebSocketHandler) startContainerLogHub(key, containerID, format string,
 }
 
 func (h *WebSocketHandler) broadcastContainerLogStreamErrorInternal(containerID, format string, err error, ls *wsLogStream) {
-	slog.Warn("container log stream failed", "containerID", containerID, "error", err)
-
-	if format == "json" {
-		msg := ws.LogMessage{
-			Seq:       ls.seq.Add(1),
-			Level:     "error",
-			Message:   "Failed to stream container logs: " + err.Error(),
-			Service:   "arcane",
-			Timestamp: ws.NowRFC3339(),
-		}
-		if b, marshalErr := json.Marshal(msg); marshalErr == nil {
-			ls.hub.Broadcast(b)
-		}
-		return
-	}
-
-	ls.hub.Broadcast([]byte("Failed to stream container logs: " + err.Error()))
+	broadcastLogStreamErrorInternal("container log stream", "Failed to stream container logs: ", containerID, format, err, ls)
 }
 
 // ============================================================================
@@ -733,42 +710,15 @@ func (h *WebSocketHandler) broadcastContainerLogStreamErrorInternal(containerID,
 //	@Param			batched		query	bool	false	"Batch log messages"			default(false)
 //	@Router			/api/environments/{id}/ws/swarm/services/{serviceId}/logs [get]
 func (h *WebSocketHandler) ServiceLogs(c *gin.Context) {
-	environmentID := c.Param("id")
 	serviceID := c.Param("serviceId")
 	if strings.TrimSpace(serviceID) == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "Service ID is required"})
 		return
 	}
 
-	follow := c.DefaultQuery("follow", "true") == "true"
-	tail, _ := httputil.GetQueryParam(c, "tail", false)
-	if tail == "" {
-		tail = "100"
-	}
-	since, _ := httputil.GetQueryParam(c, "since", false)
-	timestamps := c.DefaultQuery("timestamps", "false") == "true"
-	format, _ := httputil.GetQueryParam(c, "format", false)
-	if format == "" {
-		format = "text"
-	}
-	batched := c.DefaultQuery("batched", "false") == "true"
-
-	conn, err := h.wsUpgrader.Upgrade(c.Writer, c.Request, nil)
-	if err != nil {
-		return
-	}
-
-	streamKey := buildLogStreamKeyInternal(environmentID, systemtypes.WSKindServiceLogs, serviceID, format, batched, follow, tail, since, timestamps)
-	connID := h.wsMetrics.RegisterConnection(buildWSConnectionInfoInternal(c, systemtypes.WSKindServiceLogs, serviceID))
-	stream := h.getOrCreateLogStreamInternal(streamKey, func(onEmpty func(*wsLogStream)) *wsLogStream {
-		return h.startServiceLogHub(streamKey, serviceID, format, batched, follow, tail, since, timestamps, onEmpty)
-	})
-	// WebSocket connections use context.Background() because they are long-lived and should not
-	// be tied to the HTTP request context. Cleanup is handled via the hub's OnEmpty callback
-	// which triggers when all clients disconnect.
-	ws.ServeClientWithOnRemove(context.Background(), stream.hub, conn, func() {
-		h.wsMetrics.UnregisterConnection(connID)
-		h.releaseLogStreamInternal(streamKey, stream)
+	params := parseLogStreamParamsInternal(c)
+	h.serveLogStreamInternal(c, systemtypes.WSKindServiceLogs, serviceID, params, func(streamKey string, onEmpty func(*wsLogStream)) *wsLogStream {
+		return h.startServiceLogHub(streamKey, serviceID, params.format, params.batched, params.follow, params.tail, params.since, params.timestamps, onEmpty)
 	})
 }
 
@@ -836,23 +786,7 @@ func (h *WebSocketHandler) startServiceLogHub(key, serviceID, format string, bat
 }
 
 func (h *WebSocketHandler) broadcastServiceLogStreamErrorInternal(serviceID, format string, err error, ls *wsLogStream) {
-	slog.Warn("service log stream failed", "serviceID", serviceID, "error", err)
-
-	if format == "json" {
-		msg := ws.LogMessage{
-			Seq:       ls.seq.Add(1),
-			Level:     "error",
-			Message:   "Failed to stream service logs: " + err.Error(),
-			Service:   "arcane",
-			Timestamp: ws.NowRFC3339(),
-		}
-		if b, marshalErr := json.Marshal(msg); marshalErr == nil {
-			ls.hub.Broadcast(b)
-		}
-		return
-	}
-
-	ls.hub.Broadcast([]byte("Failed to stream service logs: " + err.Error()))
+	broadcastLogStreamErrorInternal("service log stream", "Failed to stream service logs: ", serviceID, format, err, ls)
 }
 
 // ContainerStats streams container stats over WebSocket.
@@ -1314,10 +1248,10 @@ func (h *WebSocketHandler) getHostname() string {
 
 // getGPUInfo returns GPU statistics if monitoring is enabled.
 func (h *WebSocketHandler) getGPUInfo(ctx context.Context) ([]systemtypes.GPUStats, int) {
-	if !h.gpuMonitoringEnabled {
+	if h.gpuMonitor == nil || !h.gpuMonitor.Enabled() {
 		return nil, 0
 	}
-	gpuData, err := h.getGPUStats(ctx)
+	gpuData, err := h.gpuMonitor.Stats(ctx)
 	if err != nil {
 		return nil, 0
 	}
@@ -1377,47 +1311,10 @@ func (h *WebSocketHandler) storeCPUCacheValueInternal(value float64) {
 }
 
 func (h *WebSocketHandler) getCachedCgroupLimitsInternal() *docker.CgroupLimits {
-	h.cgroupCache.RLock()
-	value := h.cgroupCache.value
-	detected := h.cgroupCache.detected
-	fresh := time.Since(h.cgroupCache.timestamp) < cgroupCacheTTL
-	h.cgroupCache.RUnlock()
-	if fresh {
-		if detected {
-			return value
-		}
+	if h.cgroupCache == nil {
 		return nil
 	}
-
-	h.cgroupCache.Lock()
-	defer h.cgroupCache.Unlock()
-
-	if time.Since(h.cgroupCache.timestamp) < cgroupCacheTTL {
-		if h.cgroupCache.detected {
-			return h.cgroupCache.value
-		}
-		return nil
-	}
-
-	detect := h.cgroupLimitsDetector
-	if detect == nil {
-		detect = docker.DetectCgroupLimits
-	}
-
-	limits, err := detect()
-	h.cgroupCache.timestamp = time.Now()
-	if err != nil {
-		h.cgroupCache.value = nil
-		h.cgroupCache.detected = false
-	} else {
-		h.cgroupCache.value = limits
-		h.cgroupCache.detected = true
-	}
-	if !h.cgroupCache.detected {
-		return nil
-	}
-
-	return h.cgroupCache.value
+	return h.cgroupCache.Get()
 }
 
 // SystemStats streams system stats over WebSocket.
@@ -1551,498 +1448,4 @@ func (h *WebSocketHandler) getDiskUsagePath(ctx context.Context) string {
 	h.diskUsagePathCache.Unlock()
 
 	return path
-}
-
-// ============================================================================
-// GPU Monitoring
-// ============================================================================
-
-// getGPUStats collects and returns GPU statistics for all available GPUs
-func (h *WebSocketHandler) getGPUStats(ctx context.Context) ([]systemtypes.GPUStats, error) {
-	h.detectionMutex.Lock()
-	done := h.detectionDone
-	h.detectionMutex.Unlock()
-
-	if !done {
-		if err := h.detectGPUs(ctx); err != nil {
-			return nil, err
-		}
-	}
-
-	h.gpuDetectionCache.RLock()
-	if h.gpuDetectionCache.detected && time.Since(h.gpuDetectionCache.timestamp) < gpuCacheDuration {
-		gpuType := h.gpuDetectionCache.gpuType
-		h.gpuDetectionCache.RUnlock()
-
-		switch gpuType {
-		case "nvidia":
-			return h.getNvidiaStats(ctx)
-		case "amd":
-			return h.getAMDStats(ctx)
-		case "intel":
-			return h.getIntelStats(ctx)
-		}
-	}
-	h.gpuDetectionCache.RUnlock()
-
-	if err := h.detectGPUs(ctx); err != nil {
-		return nil, err
-	}
-
-	h.gpuDetectionCache.RLock()
-	gpuType := h.gpuDetectionCache.gpuType
-	h.gpuDetectionCache.RUnlock()
-
-	switch gpuType {
-	case "nvidia":
-		return h.getNvidiaStats(ctx)
-	case "amd":
-		return h.getAMDStats(ctx)
-	case "intel":
-		return h.getIntelStats(ctx)
-	default:
-		return nil, fmt.Errorf("no supported GPU found")
-	}
-}
-
-// detectGPUs detects available GPU management tools
-func (h *WebSocketHandler) detectGPUs(ctx context.Context) error {
-	h.detectionMutex.Lock()
-	defer h.detectionMutex.Unlock()
-
-	if h.gpuType != "" && h.gpuType != "auto" {
-		switch h.gpuType {
-		case "nvidia":
-			if path, err := exec.LookPath("nvidia-smi"); err == nil {
-				h.gpuDetectionCache.Lock()
-				h.gpuDetectionCache.detected = true
-				h.gpuDetectionCache.gpuType = "nvidia"
-				h.gpuDetectionCache.toolPath = path
-				h.gpuDetectionCache.timestamp = time.Now()
-				h.gpuDetectionCache.Unlock()
-				h.detectionDone = true
-				slog.InfoContext(ctx, "Using configured GPU type", "type", "nvidia")
-				return nil
-			}
-			return fmt.Errorf("nvidia-smi not found but GPU_TYPE set to nvidia")
-
-		case "amd":
-			if hasAMDGPUInternal() {
-				h.gpuDetectionCache.Lock()
-				h.gpuDetectionCache.detected = true
-				h.gpuDetectionCache.gpuType = "amd"
-				h.gpuDetectionCache.toolPath = amdGPUSysfsPath
-				h.gpuDetectionCache.timestamp = time.Now()
-				h.gpuDetectionCache.Unlock()
-				h.detectionDone = true
-				slog.InfoContext(ctx, "Using configured GPU type", "type", "amd")
-				return nil
-			}
-			return fmt.Errorf("AMD GPU not found in sysfs but GPU_TYPE set to amd")
-
-		case "intel":
-			if path, err := exec.LookPath("intel_gpu_top"); err == nil {
-				h.gpuDetectionCache.Lock()
-				h.gpuDetectionCache.detected = true
-				h.gpuDetectionCache.gpuType = "intel"
-				h.gpuDetectionCache.toolPath = path
-				h.gpuDetectionCache.timestamp = time.Now()
-				h.gpuDetectionCache.Unlock()
-				h.detectionDone = true
-				slog.InfoContext(ctx, "Using configured GPU type", "type", "intel")
-				return nil
-			}
-			// intel_gpu_top not in PATH — fall back to sysfs vendor detection so that
-			// the GPU still shows up in the dashboard (e.g. on ARM builds or when the
-			// package isn't installed).
-			if hasIntelGPUInternal() {
-				h.gpuDetectionCache.Lock()
-				h.gpuDetectionCache.detected = true
-				h.gpuDetectionCache.gpuType = "intel"
-				h.gpuDetectionCache.toolPath = ""
-				h.gpuDetectionCache.timestamp = time.Now()
-				h.gpuDetectionCache.Unlock()
-				h.detectionDone = true
-				slog.InfoContext(ctx, "Using configured GPU type via sysfs (intel_gpu_top not found)", "type", "intel")
-				return nil
-			}
-			return fmt.Errorf("intel_gpu_top not found and no Intel GPU detected in sysfs, but GPU_TYPE set to intel")
-
-		default:
-			slog.WarnContext(ctx, "Invalid GPU_TYPE specified, falling back to auto-detection", "gpu_type", h.gpuType)
-		}
-	}
-
-	if path, err := exec.LookPath("nvidia-smi"); err == nil {
-		h.gpuDetectionCache.Lock()
-		h.gpuDetectionCache.detected = true
-		h.gpuDetectionCache.gpuType = "nvidia"
-		h.gpuDetectionCache.toolPath = path
-		h.gpuDetectionCache.timestamp = time.Now()
-		h.gpuDetectionCache.Unlock()
-		h.detectionDone = true
-		slog.InfoContext(ctx, "NVIDIA GPU detected", "tool", "nvidia-smi", "path", path)
-		return nil
-	}
-
-	if hasAMDGPUInternal() {
-		h.gpuDetectionCache.Lock()
-		h.gpuDetectionCache.detected = true
-		h.gpuDetectionCache.gpuType = "amd"
-		h.gpuDetectionCache.toolPath = amdGPUSysfsPath
-		h.gpuDetectionCache.timestamp = time.Now()
-		h.gpuDetectionCache.Unlock()
-		h.detectionDone = true
-		slog.InfoContext(ctx, "AMD GPU detected", "method", "sysfs", "path", amdGPUSysfsPath)
-		return nil
-	}
-
-	if path, err := exec.LookPath("intel_gpu_top"); err == nil {
-		h.gpuDetectionCache.Lock()
-		h.gpuDetectionCache.detected = true
-		h.gpuDetectionCache.gpuType = "intel"
-		h.gpuDetectionCache.toolPath = path
-		h.gpuDetectionCache.timestamp = time.Now()
-		h.gpuDetectionCache.Unlock()
-		h.detectionDone = true
-		slog.InfoContext(ctx, "Intel GPU detected", "tool", "intel_gpu_top", "path", path)
-		return nil
-	}
-
-	// Last resort: detect Intel GPU via sysfs vendor ID so it shows up even when
-	// intel_gpu_top is absent (e.g. ARM builds, minimal containers).
-	if hasIntelGPUInternal() {
-		h.gpuDetectionCache.Lock()
-		h.gpuDetectionCache.detected = true
-		h.gpuDetectionCache.gpuType = "intel"
-		h.gpuDetectionCache.toolPath = ""
-		h.gpuDetectionCache.timestamp = time.Now()
-		h.gpuDetectionCache.Unlock()
-		h.detectionDone = true
-		slog.InfoContext(ctx, "Intel GPU detected", "method", "sysfs")
-		return nil
-	}
-
-	h.detectionDone = true
-	return fmt.Errorf("no supported GPU found")
-}
-
-// getNvidiaStats collects NVIDIA GPU statistics using nvidia-smi
-func (h *WebSocketHandler) getNvidiaStats(ctx context.Context) ([]systemtypes.GPUStats, error) {
-	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "nvidia-smi",
-		"--query-gpu=index,name,memory.used,memory.total",
-		"--format=csv,noheader,nounits")
-
-	output, err := cmd.Output()
-	if err != nil {
-		slog.WarnContext(ctx, "Failed to execute nvidia-smi", "error", err)
-		return nil, fmt.Errorf("nvidia-smi execution failed: %w", err)
-	}
-
-	reader := csv.NewReader(bytes.NewReader(output))
-	reader.TrimLeadingSpace = true
-
-	records, err := reader.ReadAll()
-	if err != nil {
-		slog.WarnContext(ctx, "Failed to parse nvidia-smi CSV output", "error", err)
-		return nil, fmt.Errorf("failed to parse nvidia-smi output: %w", err)
-	}
-
-	var stats []systemtypes.GPUStats
-	for _, record := range records {
-		if len(record) < 4 {
-			continue
-		}
-
-		index, err := strconv.Atoi(strings.TrimSpace(record[0]))
-		if err != nil {
-			slog.WarnContext(ctx, "Failed to parse GPU index", "value", record[0])
-			continue
-		}
-
-		name := strings.TrimSpace(record[1])
-
-		memUsed, err := strconv.ParseFloat(strings.TrimSpace(record[2]), 64)
-		if err != nil {
-			slog.WarnContext(ctx, "Failed to parse memory used", "value", record[2])
-			continue
-		}
-
-		memTotal, err := strconv.ParseFloat(strings.TrimSpace(record[3]), 64)
-		if err != nil {
-			slog.WarnContext(ctx, "Failed to parse memory total", "value", record[3])
-			continue
-		}
-
-		stats = append(stats, systemtypes.GPUStats{
-			Name:        name,
-			Index:       index,
-			MemoryUsed:  memUsed * 1024 * 1024,
-			MemoryTotal: memTotal * 1024 * 1024,
-		})
-	}
-
-	if len(stats) == 0 {
-		return nil, fmt.Errorf("no GPU data parsed from nvidia-smi")
-	}
-
-	slog.DebugContext(ctx, "Collected NVIDIA GPU stats", "gpu_count", len(stats))
-	return stats, nil
-}
-
-// getAMDStats collects AMD GPU statistics using sysfs
-func (h *WebSocketHandler) getAMDStats(ctx context.Context) ([]systemtypes.GPUStats, error) {
-	var stats []systemtypes.GPUStats
-
-	// Find AMD GPU cards by looking for mem_info_vram_total in /sys/class/drm/card*/device/
-	entries, err := os.ReadDir(amdGPUSysfsPath)
-	if err != nil {
-		slog.WarnContext(ctx, "Failed to read DRM sysfs directory", "error", err)
-		return nil, fmt.Errorf("failed to read sysfs: %w", err)
-	}
-
-	index := 0
-	for _, entry := range entries {
-		name := entry.Name()
-		// Only check card* entries (card0, card1, etc.) - skip renderD* and connector entries
-		if !strings.HasPrefix(name, "card") {
-			continue
-		}
-		// Skip connector entries like card0-DP-1, card0-HDMI-A-1
-		if strings.Contains(name, "-") {
-			continue
-		}
-
-		devicePath := fmt.Sprintf("%s/%s/device", amdGPUSysfsPath, name)
-
-		// Check if this is an AMD GPU by looking for VRAM info files
-		memTotalPath := fmt.Sprintf("%s/mem_info_vram_total", devicePath)
-		memUsedPath := fmt.Sprintf("%s/mem_info_vram_used", devicePath)
-
-		memTotalBytes, err := readSysfsValueInternal(memTotalPath)
-		if err != nil {
-			// Not an AMD GPU or doesn't have VRAM info
-			continue
-		}
-
-		memUsedBytes, err := readSysfsValueInternal(memUsedPath)
-		if err != nil {
-			slog.WarnContext(ctx, "Failed to read AMD GPU memory used", "card", name, "error", err)
-			continue
-		}
-
-		stats = append(stats, systemtypes.GPUStats{
-			Name:        fmt.Sprintf("AMD GPU %d", index),
-			Index:       index,
-			MemoryUsed:  float64(memUsedBytes),
-			MemoryTotal: float64(memTotalBytes),
-		})
-		index++
-	}
-
-	if len(stats) == 0 {
-		return nil, fmt.Errorf("no AMD GPU data found in sysfs")
-	}
-
-	slog.DebugContext(ctx, "Collected AMD GPU stats", "gpu_count", len(stats))
-	return stats, nil
-}
-
-// readSysfsValueInternal reads a numeric value from a sysfs file
-func readSysfsValueInternal(path string) (uint64, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return 0, err
-	}
-	return strconv.ParseUint(strings.TrimSpace(string(data)), 10, 64)
-}
-
-// hasAMDGPUInternal checks if an AMD GPU is present by looking for VRAM info in sysfs
-func hasAMDGPUInternal() bool {
-	entries, err := os.ReadDir(amdGPUSysfsPath)
-	if err != nil {
-		return false
-	}
-
-	for _, entry := range entries {
-		name := entry.Name()
-		// Only check card* entries (card0, card1, etc.) - skip card0-DP-1 style entries
-		if !strings.HasPrefix(name, "card") {
-			continue
-		}
-		// Skip connector entries like card0-DP-1, card0-HDMI-A-1
-		if strings.Contains(name, "-") {
-			continue
-		}
-
-		// Check if this card has AMD VRAM info
-		memTotalPath := fmt.Sprintf("%s/%s/device/mem_info_vram_total", amdGPUSysfsPath, name)
-		if _, err := os.Stat(memTotalPath); err == nil {
-			return true
-		}
-	}
-
-	return false
-}
-
-// intelGPUTopOutput is the subset of intel_gpu_top JSON we care about.
-// The memory block is only present on discrete GPUs (Intel Arc and later).
-type intelGPUTopOutput struct {
-	Memory *struct {
-		Unit  string `json:"unit"`
-		Local *struct {
-			Total float64 `json:"total"`
-			Free  float64 `json:"free"`
-		} `json:"local"`
-	} `json:"memory"`
-}
-
-// findIntelDRICards returns the /dev/dri/cardN paths for cards whose PCI vendor
-// is Intel (0x8086), as reported by the DRM sysfs.  This handles Proxmox and
-// similar setups where card0 is a VirtIO display adapter and the real GPU is
-// card1 (or higher).
-func findIntelDRICardsInternal() []string {
-	entries, err := os.ReadDir(amdGPUSysfsPath)
-	if err != nil {
-		return nil
-	}
-	var cards []string
-	for _, entry := range entries {
-		name := entry.Name()
-		if !strings.HasPrefix(name, "card") || strings.Contains(name, "-") {
-			continue
-		}
-		vendorPath := fmt.Sprintf("%s/%s/device/vendor", amdGPUSysfsPath, name)
-		data, err := os.ReadFile(vendorPath)
-		if err != nil {
-			continue
-		}
-		if strings.TrimSpace(string(data)) == "0x8086" {
-			cards = append(cards, fmt.Sprintf("/dev/dri/%s", name))
-		}
-	}
-	return cards
-}
-
-// hasIntelGPUInternal reports whether at least one Intel GPU is present via DRM sysfs.
-func hasIntelGPUInternal() bool {
-	return len(findIntelDRICardsInternal()) > 0
-}
-
-// getIntelStats collects Intel GPU statistics.
-//
-// For each Intel DRI card it runs `intel_gpu_top -d drm:<path>` to get per-GPU
-// stats.  This correctly handles multi-card hosts (e.g. Proxmox with a VirtIO
-// display adapter on card0 and an Arc GPU on card1) by targeting only cards
-// with vendor ID 0x8086 rather than relying on the tool's default device.
-//
-// When intel_gpu_top is not available (ARM builds, minimal containers) the
-// function falls back to sysfs-only enumeration so the GPU still appears in
-// the dashboard, albeit without memory statistics.
-func (h *WebSocketHandler) getIntelStats(ctx context.Context) ([]systemtypes.GPUStats, error) {
-	h.gpuDetectionCache.RLock()
-	toolPath := h.gpuDetectionCache.toolPath
-	h.gpuDetectionCache.RUnlock()
-
-	intelCards := findIntelDRICardsInternal()
-	if len(intelCards) == 0 {
-		return nil, fmt.Errorf("no Intel GPU found in sysfs")
-	}
-
-	var stats []systemtypes.GPUStats
-	for i, cardPath := range intelCards {
-		gpuName := h.intelGPUName(cardPath)
-		entry := systemtypes.GPUStats{
-			Name:  gpuName,
-			Index: i,
-		}
-
-		if toolPath != "" {
-			if mem, err := h.intelGPUTopMemory(ctx, toolPath, cardPath); err == nil {
-				entry.MemoryUsed = mem.used
-				entry.MemoryTotal = mem.total
-			} else {
-				slog.DebugContext(ctx, "intel_gpu_top memory query failed", "card", cardPath, "error", err)
-			}
-		}
-
-		stats = append(stats, entry)
-	}
-
-	slog.DebugContext(ctx, "Collected Intel GPU stats", "gpu_count", len(stats))
-	return stats, nil
-}
-
-type intelMemStats struct{ used, total float64 }
-
-// intelGPUTopMemory runs intel_gpu_top for a single card and returns memory stats.
-func (h *WebSocketHandler) intelGPUTopMemory(ctx context.Context, toolPath, cardPath string) (intelMemStats, error) {
-	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
-
-	// -d selects the specific DRI device, -J outputs JSON, -s sets the sample
-	// interval in milliseconds, -c 1 exits after one sample.
-	cmd := exec.CommandContext(ctx, toolPath, //nolint:gosec // toolPath is from exec.LookPath, cardPath from sysfs vendor check
-		"-d", fmt.Sprintf("drm:%s", cardPath),
-		"-J", "-s", "100", "-c", "1")
-	out, err := cmd.Output()
-	if err != nil {
-		return intelMemStats{}, fmt.Errorf("intel_gpu_top: %w", err)
-	}
-
-	var result intelGPUTopOutput
-	// intel_gpu_top may wrap the single record in an array or emit it bare.
-	data := bytes.TrimSpace(out)
-	if len(data) > 0 && data[0] == '[' {
-		var arr []intelGPUTopOutput
-		if err := json.Unmarshal(data, &arr); err != nil {
-			return intelMemStats{}, fmt.Errorf("parse intel_gpu_top array: %w", err)
-		}
-		if len(arr) == 0 {
-			return intelMemStats{}, fmt.Errorf("parse intel_gpu_top array: empty output")
-		}
-		result = arr[0]
-	} else {
-		if err := json.Unmarshal(data, &result); err != nil {
-			return intelMemStats{}, fmt.Errorf("parse intel_gpu_top object: %w", err)
-		}
-	}
-
-	if result.Memory == nil || result.Memory.Local == nil {
-		// Integrated GPU or older tool version — no discrete memory info.
-		return intelMemStats{}, fmt.Errorf("no local memory info in intel_gpu_top output")
-	}
-
-	unit := strings.ToLower(strings.TrimSpace(result.Memory.Unit))
-	var scale float64
-	switch unit {
-	case "mib":
-		scale = 1024 * 1024
-	case "gib":
-		scale = 1024 * 1024 * 1024
-	default:
-		slog.WarnContext(ctx, "Unknown intel_gpu_top memory unit, treating as bytes", "unit", unit)
-		scale = 1 // assume bytes
-	}
-
-	total := result.Memory.Local.Total * scale
-	used := (result.Memory.Local.Total - result.Memory.Local.Free) * scale
-	return intelMemStats{used: used, total: total}, nil
-}
-
-// intelGPUName returns a human-readable label for an Intel DRI card.
-// It prefers the DRM card's "label" sysfs attribute, then falls back to the
-// card device name (e.g. "Intel GPU (card1)").
-func (h *WebSocketHandler) intelGPUName(cardPath string) string {
-	cardName := strings.TrimPrefix(cardPath, "/dev/dri/")
-	labelPath := fmt.Sprintf("%s/%s/device/label", amdGPUSysfsPath, cardName)
-	if data, err := os.ReadFile(labelPath); err == nil {
-		if label := strings.TrimSpace(string(data)); label != "" {
-			return label
-		}
-	}
-	return fmt.Sprintf("Intel GPU (%s)", cardName)
 }

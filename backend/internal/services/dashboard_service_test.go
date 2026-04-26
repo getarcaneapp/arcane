@@ -100,7 +100,7 @@ func newDashboardTestVersionServiceInternal() *VersionService {
 
 func TestDashboardService_GetActionItems_IncludesExpiringAPIKeys(t *testing.T) {
 	db, settingsSvc := setupDashboardServiceTestDB(t)
-	svc := NewDashboardService(db, nil, nil, nil, settingsSvc, nil, nil, nil)
+	svc := NewDashboardService(db, nil, nil, nil, nil, settingsSvc, nil, nil, nil)
 
 	now := time.Now()
 	createDashboardTestAPIKey(t, db, models.ApiKey{
@@ -144,7 +144,7 @@ func TestDashboardService_GetActionItems_IncludesExpiringAPIKeys(t *testing.T) {
 
 func TestDashboardService_GetActionItems_DebugAllGoodReturnsNoItems(t *testing.T) {
 	db, settingsSvc := setupDashboardServiceTestDB(t)
-	svc := NewDashboardService(db, nil, nil, nil, settingsSvc, nil, nil, nil)
+	svc := NewDashboardService(db, nil, nil, nil, nil, settingsSvc, nil, nil, nil)
 
 	createDashboardTestAPIKey(t, db, models.ApiKey{
 		Name:      "expiring-soon",
@@ -234,7 +234,7 @@ func TestDashboardService_GetSnapshot_ReturnsDashboardSnapshot(t *testing.T) {
 		Status:    models.ProjectStatusStopped,
 	}).Error)
 	projectSvc := NewProjectService(db, settingsSvc, nil, &ImageService{db: db}, nil, nil, config.Load())
-	svc := NewDashboardService(db, dockerSvc, nil, projectSvc, settingsSvc, nil, nil, nil)
+	svc := NewDashboardService(db, dockerSvc, nil, projectSvc, nil, settingsSvc, nil, nil, nil)
 
 	snapshot, err := svc.GetSnapshot(context.Background(), DashboardActionItemsOptions{})
 	require.NoError(t, err)
@@ -284,7 +284,7 @@ func TestDashboardService_GetSnapshot_DebugAllGoodOnlyClearsActionItems(t *testi
 	createDashboardTestImageUpdateRecord(t, db, models.ImageUpdateRecord{ID: "sha256:image-b", HasUpdate: true})
 
 	dockerSvc := newDashboardTestDockerService(t, settingsSvc, containers, images)
-	svc := NewDashboardService(db, dockerSvc, nil, nil, settingsSvc, nil, nil, nil)
+	svc := NewDashboardService(db, dockerSvc, nil, nil, nil, settingsSvc, nil, nil, nil)
 
 	snapshot, err := svc.GetSnapshot(context.Background(), DashboardActionItemsOptions{DebugAllGood: true})
 	require.NoError(t, err)
@@ -381,7 +381,7 @@ func TestDashboardService_GetEnvironmentsOverview_ReturnsLocalAndRemoteSummaries
 
 	dockerSvc := newDashboardTestDockerService(t, settingsSvc, containers, images)
 	envSvc := NewEnvironmentService(db, remoteServer.Client(), nil, nil, settingsSvc, nil)
-	svc := NewDashboardService(db, dockerSvc, nil, nil, settingsSvc, nil, envSvc, newDashboardTestVersionServiceInternal())
+	svc := NewDashboardService(db, dockerSvc, nil, nil, nil, settingsSvc, nil, envSvc, newDashboardTestVersionServiceInternal())
 
 	overview, err := svc.GetEnvironmentsOverview(context.Background(), DashboardActionItemsOptions{})
 	require.NoError(t, err)
@@ -427,7 +427,7 @@ func TestDashboardService_GetEnvironmentsOverview_HandlesRemoteSnapshotFailure(t
 	})
 
 	envSvc := NewEnvironmentService(db, http.DefaultClient, nil, nil, settingsSvc, nil)
-	svc := NewDashboardService(db, nil, nil, nil, settingsSvc, nil, envSvc, newDashboardTestVersionServiceInternal())
+	svc := NewDashboardService(db, nil, nil, nil, nil, settingsSvc, nil, envSvc, newDashboardTestVersionServiceInternal())
 
 	overview, err := svc.GetEnvironmentsOverview(context.Background(), DashboardActionItemsOptions{})
 	require.NoError(t, err)
@@ -493,7 +493,7 @@ func TestDashboardService_GetEnvironmentsOverview_OmitsVersionInfoWhenFetchFails
 	})
 
 	envSvc := NewEnvironmentService(db, remoteServer.Client(), nil, nil, settingsSvc, nil)
-	svc := NewDashboardService(db, nil, nil, nil, settingsSvc, nil, envSvc, newDashboardTestVersionServiceInternal())
+	svc := NewDashboardService(db, nil, nil, nil, nil, settingsSvc, nil, envSvc, newDashboardTestVersionServiceInternal())
 
 	overview, err := svc.GetEnvironmentsOverview(context.Background(), DashboardActionItemsOptions{})
 	require.NoError(t, err)
@@ -554,7 +554,7 @@ func TestDashboardService_GetActionItems_CountsAffectedResources(t *testing.T) {
 
 	dockerSvc := newDashboardTestDockerService(t, settingsSvc, containers, images)
 	projectSvc := NewProjectService(db, settingsSvc, nil, &ImageService{db: db}, nil, nil, config.Load())
-	svc := NewDashboardService(db, dockerSvc, nil, projectSvc, settingsSvc, nil, nil, nil)
+	svc := NewDashboardService(db, dockerSvc, nil, projectSvc, nil, settingsSvc, nil, nil, nil)
 
 	actionItems, err := svc.GetActionItems(ctx, DashboardActionItemsOptions{})
 	require.NoError(t, err)

@@ -33,6 +33,7 @@
 		eo: 'Esperanto',
 		es: 'Español',
 		fr: 'Français',
+		hu: 'Magyar',
 		it: 'Italiano',
 		ja: '日本語',
 		ko: '한국어',

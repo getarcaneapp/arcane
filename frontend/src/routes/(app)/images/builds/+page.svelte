@@ -1098,7 +1098,7 @@
 										{m.build_args()}
 									</div>
 									{#if buildHistorySelected.buildArgs && Object.keys(buildHistorySelected.buildArgs).length > 0}
-										<pre class="mt-2 font-mono text-[11px] break-words whitespace-pre-wrap">
+										<pre class="mt-2 font-mono text-[11px] wrap-break-word whitespace-pre-wrap">
 												{formatBuildArgs(buildHistorySelected.buildArgs)}
 											</pre>
 									{:else}
@@ -1110,7 +1110,7 @@
 										{m.common_labels()}
 									</div>
 									{#if buildHistorySelected.labels && Object.keys(buildHistorySelected.labels).length > 0}
-										<pre class="mt-2 font-mono text-[11px] break-words whitespace-pre-wrap">
+										<pre class="mt-2 font-mono text-[11px] wrap-break-word whitespace-pre-wrap">
 											{formatKeyValueMap(buildHistorySelected.labels)}
 										</pre>
 									{:else}
@@ -1148,7 +1148,7 @@
 										{m.build_ulimits_label()}
 									</div>
 									{#if buildHistorySelected.ulimits && Object.keys(buildHistorySelected.ulimits).length > 0}
-										<pre class="mt-2 font-mono text-[11px] break-words whitespace-pre-wrap">
+										<pre class="mt-2 font-mono text-[11px] wrap-break-word whitespace-pre-wrap">
 											{formatKeyValueMap(buildHistorySelected.ulimits)}
 										</pre>
 									{:else}
@@ -1324,12 +1324,7 @@
 {/snippet}
 
 {#if isDesktop}
-	<ResourceDetailLayout
-		backUrl="/images"
-		backLabel={m.images_title()}
-		title={m.manual_build_workspace()}
-		subtitle={m.manual_build_workspace_subtitle()}
-	>
+	<ResourceDetailLayout title={m.manual_build_workspace()} subtitle={m.manual_build_workspace_subtitle()}>
 		<Tabs.Root bind:value={mainTab} class="flex h-[calc(100vh-12rem)] flex-col">
 			<Tabs.List class="border-border/60 bg-muted/60 mb-3 flex w-fit gap-2 rounded-lg border p-1">
 				<Tabs.Trigger
@@ -1391,14 +1386,7 @@
 		</Tabs.Root>
 	</ResourceDetailLayout>
 {:else}
-	<TabbedPageLayout
-		backUrl="/images"
-		backLabel={m.images_title()}
-		tabItems={mainTabItems}
-		selectedTab={mainTab}
-		onTabChange={onMainTabChange}
-		class="min-h-[calc(100vh-10rem)]"
-	>
+	<TabbedPageLayout tabItems={mainTabItems} selectedTab={mainTab} onTabChange={onMainTabChange} class="min-h-[calc(100vh-10rem)]">
 		{#snippet headerInfo()}
 			<div class="flex flex-col gap-1">
 				{#if mainTab === 'history'}
@@ -1421,8 +1409,6 @@
 			<div class="min-h-[60vh]">
 				{#if tab === 'build'}
 					<TabbedPageLayout
-						backUrl="/images"
-						backLabel={m.images_title()}
 						tabItems={buildMobileTabItems}
 						selectedTab={buildTab}
 						onTabChange={onBuildTabChange}

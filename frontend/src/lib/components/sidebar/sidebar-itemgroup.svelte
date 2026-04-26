@@ -43,6 +43,7 @@
 	}
 
 	let openStates = $state<Record<string, boolean>>({});
+	let hoveredGroup = $state<string | null>(null);
 
 	const enhancedItems = $derived(
 		items.map((item) => {
@@ -61,14 +62,11 @@
 		})
 	);
 
-	function getIsOpen(itemTitle: string, isActive: boolean): boolean {
-		if (sidebar.hoverExpansionEnabled) {
+	function getIsOpen(itemUrl: string, isActive: boolean): boolean {
+		if (openStates[itemUrl] === undefined) {
 			return isActive;
 		}
-		if (openStates[itemTitle] === undefined) {
-			return isActive;
-		}
-		return openStates[itemTitle];
+		return openStates[itemUrl];
 	}
 
 	const collapsed = $derived(sidebar.state === 'collapsed');
@@ -79,48 +77,53 @@
 <Sidebar.Group class="p-1.5">
 	<Sidebar.GroupLabel class="h-7 px-1.5">{label}</Sidebar.GroupLabel>
 	<Sidebar.Menu class="gap-0.5">
-		{#each enhancedItems as item (item.title)}
+		{#each enhancedItems as item (item.url)}
 			{#if (item.items?.length ?? 0) > 0}
 				{#if sidebar.state === 'collapsed' && !sidebar.hoverExpansionEnabled}
-					<!-- In collapsed mode without hover expansion, show parent and children as separate icon buttons -->
 					{#snippet tooltipContent()}
 						<SidebarItemTooltipContent title={item.title} shortcut={item.shortcut} includeTitle={true} />
 					{/snippet}
-					<Sidebar.MenuItem>
-						<Sidebar.MenuButton isActive={item.isActive} {tooltipContent}>
-							{#snippet child({ props })}
-								{@const Icon = item.icon}
-								<a href={item.url} {...props}>
-									{#if item.icon}
-										<Icon />
-									{/if}
-									<span>{item.title}</span>
-								</a>
-							{/snippet}
-						</Sidebar.MenuButton>
-					</Sidebar.MenuItem>
-					<!-- Separator before sub-items -->
-					<div class="flex justify-center px-2 py-1">
-						<Sidebar.Separator class="my-0 w-6" />
-					</div>
-					{#each item.items ?? [] as subItem (subItem.title)}
-						{#snippet subItemTooltipContent()}
-							<SidebarItemTooltipContent title={subItem.title} shortcut={subItem.shortcut} includeTitle={true} />
-						{/snippet}
+					{@const groupExpanded = hoveredGroup === item.url}
+					<div
+						class={['rounded-lg transition-colors duration-150', groupExpanded && 'bg-sidebar-accent/40 py-0.5']}
+						role="group"
+						onmouseenter={() => (hoveredGroup = item.url)}
+						onmouseleave={() => (hoveredGroup = null)}
+					>
 						<Sidebar.MenuItem>
-							<Sidebar.MenuButton isActive={subItem.isActive} tooltipContent={subItemTooltipContent}>
+							<Sidebar.MenuButton isActive={item.isActive} {tooltipContent}>
 								{#snippet child({ props })}
-									{@const SubIcon = subItem.icon}
-									<a href={subItem.url} {...props}>
-										{#if subItem.icon}
-											<SubIcon />
+									{@const Icon = item.icon}
+									<a href={item.url} {...props}>
+										{#if item.icon}
+											<Icon />
 										{/if}
-										<span>{subItem.title}</span>
+										<span>{item.title}</span>
 									</a>
 								{/snippet}
 							</Sidebar.MenuButton>
 						</Sidebar.MenuItem>
-					{/each}
+						{#if groupExpanded}
+							{#each item.items ?? [] as subItem (subItem.url)}
+								{#snippet subItemTooltipContent()}
+									<SidebarItemTooltipContent title={subItem.title} shortcut={subItem.shortcut} includeTitle={true} />
+								{/snippet}
+								<Sidebar.MenuItem>
+									<Sidebar.MenuButton isActive={subItem.isActive} tooltipContent={subItemTooltipContent}>
+										{#snippet child({ props })}
+											{@const SubIcon = subItem.icon}
+											<a href={subItem.url} {...props}>
+												{#if subItem.icon}
+													<SubIcon />
+												{/if}
+												<span>{subItem.title}</span>
+											</a>
+										{/snippet}
+									</Sidebar.MenuButton>
+								</Sidebar.MenuItem>
+							{/each}
+						{/if}
+					</div>
 				{:else}
 					{#snippet collapsibleSubMenu()}
 						<Collapsible.Content>
@@ -129,7 +132,7 @@
 									? 'hidden'
 									: undefined}
 							>
-								{#each item.items ?? [] as subItem (subItem.title)}
+								{#each item.items ?? [] as subItem (subItem.url)}
 									<Sidebar.MenuSubItem>
 										<Sidebar.MenuSubButton isActive={subItem.isActive} size="md">
 											{#snippet child({ props })}
@@ -151,11 +154,9 @@
 						{item}
 						showTooltip={collapsed || (shortcutsEnabled && !!item.shortcut?.length)}
 						{includeTitleInTooltip}
-						{getIsOpen}
+						getIsOpen={(itemUrl: string, isActive: boolean) => getIsOpen(itemUrl, isActive)}
 						onOpenChange={(open) => {
-							if (!sidebar.hoverExpansionEnabled) {
-								openStates[item.title] = open;
-							}
+							openStates[item.url] = open;
 						}}
 						content={collapsibleSubMenu}
 					/>

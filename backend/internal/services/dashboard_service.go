@@ -35,6 +35,7 @@ type DashboardService struct {
 	dockerService        *DockerClientService
 	containerService     *ContainerService
 	projectService       *ProjectService
+	imageService         *ImageService
 	settingsService      *SettingsService
 	vulnerabilityService *VulnerabilityService
 	environmentService   *EnvironmentService
@@ -50,6 +51,7 @@ func NewDashboardService(
 	dockerService *DockerClientService,
 	containerService *ContainerService,
 	projectService *ProjectService,
+	imageService *ImageService,
 	settingsService *SettingsService,
 	vulnerabilityService *VulnerabilityService,
 	environmentService *EnvironmentService,
@@ -60,6 +62,7 @@ func NewDashboardService(
 		dockerService:        dockerService,
 		containerService:     containerService,
 		projectService:       projectService,
+		imageService:         imageService,
 		settingsService:      settingsService,
 		vulnerabilityService: vulnerabilityService,
 		environmentService:   environmentService,
@@ -132,7 +135,12 @@ func (s *DashboardService) GetSnapshot(ctx context.Context, options DashboardAct
 	})
 	containerPage := limitDashboardItemsInternal(containerItems, dashboardSnapshotPreloadLimit)
 
-	projectIDByName := buildProjectIDMapInternal(ctx, s.db, filteredContainers)
+	var projectIDByName map[string]string
+	if s.imageService != nil {
+		projectIDByName = s.imageService.BuildProjectIDMap(ctx, filteredContainers)
+	} else {
+		projectIDByName = map[string]string{}
+	}
 	imageUsageMap := buildUsageMapInternal(filteredContainers, projectIDByName)
 	imageItems := mapDockerImagesToDTOs(dockerImages, imageUsageMap, nil, nil)
 	sort.Slice(imageItems, func(i, j int) bool {

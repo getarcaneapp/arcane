@@ -89,6 +89,7 @@ func initializeServices(ctx context.Context, db *database.DB, cfg *config.Config
 		svcs.Docker,
 		svcs.Container,
 		svcs.Project,
+		svcs.Image,
 		svcs.Settings,
 		svcs.Vulnerability,
 		svcs.Environment,

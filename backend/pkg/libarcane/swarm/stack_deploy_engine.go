@@ -19,6 +19,7 @@ import (
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/getarcaneapp/arcane/backend/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils"
 	swarmtypes "github.com/getarcaneapp/arcane/types/swarm"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/network"
@@ -925,8 +926,8 @@ func convertServiceSecretRefs(secrets []composegotypes.ServiceSecretConfig, secr
 		}
 		ref.File = &swarm.SecretReferenceFileTarget{
 			Name: target,
-			UID:  secret.UID,
-			GID:  secret.GID,
+			UID:  utils.StringOrDefault(secret.UID, "0"),
+			GID:  utils.StringOrDefault(secret.GID, "0"),
 			Mode: fileModeOrDefault(secret.Mode),
 		}
 		result = append(result, ref)
@@ -954,8 +955,8 @@ func convertServiceConfigRefs(configs []composegotypes.ServiceConfigObjConfig, c
 		}
 		ref.File = &swarm.ConfigReferenceFileTarget{
 			Name: target,
-			UID:  cfg.UID,
-			GID:  cfg.GID,
+			UID:  utils.StringOrDefault(cfg.UID, "0"),
+			GID:  utils.StringOrDefault(cfg.GID, "0"),
 			Mode: fileModeOrDefault(cfg.Mode),
 		}
 		result = append(result, ref)

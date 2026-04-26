@@ -16,7 +16,7 @@ require (
 	github.com/coreos/go-oidc/v3 v3.18.0
 	github.com/danielgtaylor/huma/v2 v2.37.3
 	github.com/depot/depot-go v0.5.2
-	github.com/docker/cli v29.4.0+incompatible
+	github.com/docker/cli v29.4.1+incompatible
 	github.com/docker/compose/v5 v5.1.3
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/getarcaneapp/arcane/cli v1.16.3
@@ -37,8 +37,8 @@ require (
 	github.com/lmittmann/tint v1.1.3
 	github.com/moby/buildkit v0.29.0
 	github.com/moby/go-archive v0.2.0
-	github.com/moby/moby/api v1.54.1
-	github.com/moby/moby/client v0.4.0
+	github.com/moby/moby/api v1.54.2
+	github.com/moby/moby/client v0.4.1
 	github.com/moby/patternmatcher v0.6.1
 	github.com/nicholas-fedor/shoutrrr v0.14.3
 	github.com/opencontainers/go-digest v1.0.0
@@ -105,7 +105,7 @@ require (
 	github.com/docker/buildx v0.33.0 // indirect
 	github.com/docker/docker v28.5.2+incompatible // indirect
 	github.com/docker/docker-credential-helpers v0.9.5 // indirect
-	github.com/docker/go-connections v0.6.0 // indirect
+	github.com/docker/go-connections v0.7.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/ebitengine/purego v0.10.0 // indirect

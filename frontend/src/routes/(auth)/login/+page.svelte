@@ -105,193 +105,110 @@
 	<div class="ambient__vignette"></div>
 </div>
 
-<div class="relative z-10 grid min-h-dvh grid-cols-1 lg:grid-cols-[1.05fr_minmax(420px,0.95fr)]">
-	<aside class="showcase relative hidden flex-col justify-between overflow-hidden p-10 lg:flex xl:p-14">
-		<div class="relative z-10 flex items-center gap-3">
-			<div class="bg-card/40 ring-border/40 inline-flex size-10 items-center justify-center rounded-xl border ring-1">
-				<img class="h-6 w-auto" src={logoUrl} alt="" />
+<div class="relative z-10 flex min-h-dvh justify-center lg:px-8">
+	<div class="grid min-h-dvh w-full max-w-screen-2xl grid-cols-1 lg:grid-cols-[1.05fr_minmax(420px,0.95fr)]">
+		<aside class="showcase relative hidden flex-col justify-between overflow-hidden p-10 lg:flex xl:p-14">
+			<div class="relative z-10 flex items-center gap-3">
+				<div class="bg-card/40 ring-border/40 inline-flex size-10 items-center justify-center rounded-xl border ring-1">
+					<img class="h-6 w-auto" src={logoUrl} alt="" />
+				</div>
+				<div class="flex flex-col leading-tight">
+					<span class="text-foreground/90 text-sm font-medium tracking-wide">{m.layout_title()}</span>
+					{#if data.versionInformation?.displayVersion}
+						<span class="text-muted-foreground/60 font-mono text-[10px] tracking-wider"
+							>{data.versionInformation.displayVersion}</span
+						>
+					{/if}
+				</div>
 			</div>
-			<div class="flex flex-col leading-tight">
-				<span class="text-foreground/90 text-sm font-medium tracking-wide">{m.layout_title()}</span>
-				{#if data.versionInformation?.displayVersion}
-					<span class="text-muted-foreground/60 font-mono text-[10px] tracking-wider"
-						>{data.versionInformation.displayVersion}</span
-					>
-				{/if}
-			</div>
-		</div>
 
-		<div class="relative z-10 max-w-xl">
-			<h2 class="text-foreground text-5xl leading-[1.05] font-semibold tracking-tight text-balance xl:text-6xl">
-				{m.auth_tagline_line1()}
-				<span class="to-foreground/70 bg-gradient-to-br from-[var(--primary)] via-[var(--primary)] bg-clip-text text-transparent"
-					>{m.auth_tagline_line2()}</span
+			<div class="relative z-10 max-w-xl">
+				<h2 class="text-foreground text-5xl leading-[1.05] font-semibold tracking-tight text-balance xl:text-6xl">
+					{m.auth_tagline_line1()}
+					<span
+						class="to-foreground/70 bg-gradient-to-br from-[var(--primary)] via-[var(--primary)] bg-clip-text text-transparent"
+						>{m.auth_tagline_line2()}</span
+					>
+				</h2>
+			</div>
+
+			<div class="relative z-10 h-8"></div>
+		</aside>
+
+		<section class="form-pane relative flex min-h-dvh flex-col items-center justify-center p-6 sm:p-10 lg:p-10 xl:p-14">
+			<div class="mb-8 flex w-full max-w-md justify-center lg:hidden">
+				<div
+					class="bg-card/80 ring-border/40 flex items-center justify-center rounded-2xl border p-5 shadow-[0_8px_32px_-8px_rgba(0,0,0,0.35)] ring-1"
 				>
-			</h2>
-		</div>
-
-		<div class="relative z-10 flex items-end justify-between gap-6">
-			<a
-				href="https://github.com/ofkm/arcane"
-				target="_blank"
-				rel="noopener noreferrer"
-				class="bg-card/50 ring-border/40 text-muted-foreground hover:text-foreground hover:bg-card/70 inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs shadow-sm ring-1 transition-colors"
-			>
-				<GithubIcon class="size-3.5" />
-				{m.common_view_on_github()}
-			</a>
-		</div>
-	</aside>
-
-	<section class="form-pane relative flex min-h-dvh flex-col items-center justify-center p-6 sm:p-10 lg:p-10 xl:p-14">
-		<div class="mb-8 flex w-full max-w-md justify-center lg:hidden">
-			<div
-				class="bg-card/80 ring-border/40 flex items-center justify-center rounded-2xl border p-5 shadow-[0_8px_32px_-8px_rgba(0,0,0,0.35)] ring-1"
-			>
-				<img class="h-16 w-auto" src={logoUrl} alt={m.layout_title()} />
-			</div>
-		</div>
-
-		<div class="login-card-wrap relative w-full sm:w-[26rem] sm:max-w-full">
-			<div class="bg-primary/70 mb-8 h-px w-10 shadow-[0_0_8px_var(--primary)]"></div>
-
-			<div class="mb-8 flex flex-col text-left">
-				<h1 class="text-3xl font-semibold tracking-tight sm:text-[2rem]">{m.auth_welcome_back_title()}</h1>
-				<p class="text-muted-foreground mt-2 text-sm">{m.auth_login_subtitle()}</p>
+					<img class="h-16 w-auto" src={logoUrl} alt={m.layout_title()} />
+				</div>
 			</div>
 
-			<div class="space-y-4">
-				{#if data.error}
-					<Alert.Root variant="destructive">
-						<AlertIcon class="size-4" />
-						<Alert.Title>{m.auth_login_problem_title()}</Alert.Title>
-						<Alert.Description>
-							{#if data.error === 'oidc_invalid_response'}
-								{m.auth_oidc_invalid_response()}
-							{:else if data.error === 'oidc_misconfigured'}
-								{m.auth_oidc_misconfigured()}
-							{:else if data.error === 'oidc_userinfo_failed'}
-								{m.auth_oidc_userinfo_failed()}
-							{:else if data.error === 'oidc_missing_sub'}
-								{m.auth_oidc_missing_sub()}
-							{:else if data.error === 'oidc_email_collision'}
-								{m.auth_oidc_email_collision()}
-							{:else if data.error === 'oidc_token_error'}
-								{m.auth_oidc_token_error()}
-							{:else if data.error === 'user_processing_failed'}
-								{m.auth_user_processing_failed()}
-							{:else if data.errorMessage}
-								{data.errorMessage}
-							{:else}
-								{m.auth_unexpected_error()}
-							{/if}
-						</Alert.Description>
-					</Alert.Root>
-				{/if}
+			<div class="login-card-wrap relative w-full sm:w-[26rem] sm:max-w-full">
+				<div class="bg-primary/70 mb-8 h-px w-10 shadow-[0_0_8px_var(--primary)]"></div>
 
-				{#if data.errorMessage && !data.error}
-					<Alert.Root variant="destructive">
-						<AlertIcon class="size-4" />
-						<Alert.Title>{m.auth_login_problem_title()}</Alert.Title>
-						<Alert.Description>{data.errorMessage}</Alert.Description>
-					</Alert.Root>
-				{/if}
+				<div class="mb-8 flex flex-col text-left">
+					<h1 class="text-3xl font-semibold tracking-tight sm:text-[2rem]">{m.auth_welcome_back_title()}</h1>
+					<p class="text-muted-foreground mt-2 text-sm">{m.auth_login_subtitle()}</p>
+				</div>
 
-				{#if error}
-					<Alert.Root variant="destructive">
-						<AlertIcon class="size-4" />
-						<Alert.Title>{m.auth_failed_title()}</Alert.Title>
-						<Alert.Description>{error}</Alert.Description>
-					</Alert.Root>
-				{/if}
-
-				{#if !showLocalLoginForm && !showOidcLoginButton}
-					<Alert.Root variant="destructive">
-						<AlertIcon class="size-4" />
-						<Alert.Title>{m.auth_no_login_methods_title()}</Alert.Title>
-						<Alert.Description>{m.auth_no_login_methods_description()}</Alert.Description>
-					</Alert.Root>
-				{/if}
-
-				{#if showOidcLoginButton && !showLocalLoginForm}
-					<ArcaneButton
-						hoverEffect="none"
-						action="oidc_login"
-						onclick={() => handleOidcLogin()}
-						loading={isOidcLoading}
-						disabled={isLocalLoading}
-						icon={null}
-						customLabel=""
-					>
-						{#if oidcProviderLogoUrl}
-							<img src={oidcProviderLogoUrl} alt="" class="size-4 object-contain" />
-						{:else}
-							<OpenIdIcon class="size-4" />
-						{/if}
-						{oidcButtonLabel}
-					</ArcaneButton>
-				{/if}
-
-				{#if showLocalLoginForm}
-					<form onsubmit={handleLogin} class="space-y-4">
-						<div class="space-y-2">
-							<Label for="username" class="text-xs">{m.common_username()}</Label>
-							<InputGroup.Root>
-								<InputGroup.Addon>
-									<UserIcon />
-								</InputGroup.Addon>
-								<InputGroup.Input
-									id="username"
-									name="username"
-									type="text"
-									autocomplete="username"
-									required
-									bind:value={username}
-									placeholder={m.auth_username_placeholder()}
-									disabled={isLocalLoading || isOidcLoading}
-								/>
-							</InputGroup.Root>
-						</div>
-						<div class="space-y-2">
-							<Label for="password" class="text-xs">{m.common_password()}</Label>
-							<InputGroup.Root>
-								<InputGroup.Addon>
-									<LockIcon />
-								</InputGroup.Addon>
-								<InputGroup.Input
-									id="password"
-									name="password"
-									type="password"
-									autocomplete="current-password"
-									required
-									bind:value={password}
-									placeholder={m.auth_password_placeholder()}
-									disabled={isLocalLoading || isOidcLoading}
-								/>
-							</InputGroup.Root>
-						</div>
-						<ArcaneButton type="submit" action="login" loading={isLocalLoading} disabled={isOidcLoading} hoverEffect="none" />
-					</form>
-
-					{#if showDivider}
-						<div class="relative my-4">
-							<div class="absolute inset-0 flex items-center">
-								<div class="border-border/60 w-full border-t"></div>
-							</div>
-							<div class="relative flex justify-center text-xs">
-								<span
-									class="bg-card/70 ring-border/40 text-muted-foreground rounded-full border px-3 py-1 shadow-sm ring-1 backdrop-blur-md"
-								>
-									{m.auth_or_continue()}
-								</span>
-							</div>
-						</div>
+				<div class="space-y-4">
+					{#if data.error}
+						<Alert.Root variant="destructive">
+							<AlertIcon class="size-4" />
+							<Alert.Title>{m.auth_login_problem_title()}</Alert.Title>
+							<Alert.Description>
+								{#if data.error === 'oidc_invalid_response'}
+									{m.auth_oidc_invalid_response()}
+								{:else if data.error === 'oidc_misconfigured'}
+									{m.auth_oidc_misconfigured()}
+								{:else if data.error === 'oidc_userinfo_failed'}
+									{m.auth_oidc_userinfo_failed()}
+								{:else if data.error === 'oidc_missing_sub'}
+									{m.auth_oidc_missing_sub()}
+								{:else if data.error === 'oidc_email_collision'}
+									{m.auth_oidc_email_collision()}
+								{:else if data.error === 'oidc_token_error'}
+									{m.auth_oidc_token_error()}
+								{:else if data.error === 'user_processing_failed'}
+									{m.auth_user_processing_failed()}
+								{:else if data.errorMessage}
+									{data.errorMessage}
+								{:else}
+									{m.auth_unexpected_error()}
+								{/if}
+							</Alert.Description>
+						</Alert.Root>
 					{/if}
 
-					{#if showOidcLoginButton && showDivider}
+					{#if data.errorMessage && !data.error}
+						<Alert.Root variant="destructive">
+							<AlertIcon class="size-4" />
+							<Alert.Title>{m.auth_login_problem_title()}</Alert.Title>
+							<Alert.Description>{data.errorMessage}</Alert.Description>
+						</Alert.Root>
+					{/if}
+
+					{#if error}
+						<Alert.Root variant="destructive">
+							<AlertIcon class="size-4" />
+							<Alert.Title>{m.auth_failed_title()}</Alert.Title>
+							<Alert.Description>{error}</Alert.Description>
+						</Alert.Root>
+					{/if}
+
+					{#if !showLocalLoginForm && !showOidcLoginButton}
+						<Alert.Root variant="destructive">
+							<AlertIcon class="size-4" />
+							<Alert.Title>{m.auth_no_login_methods_title()}</Alert.Title>
+							<Alert.Description>{m.auth_no_login_methods_description()}</Alert.Description>
+						</Alert.Root>
+					{/if}
+
+					{#if showOidcLoginButton && !showLocalLoginForm}
 						<ArcaneButton
-							action="oidc_login"
 							hoverEffect="none"
+							action="oidc_login"
 							onclick={() => handleOidcLogin()}
 							loading={isOidcLoading}
 							disabled={isLocalLoading}
@@ -306,27 +223,115 @@
 							{oidcButtonLabel}
 						</ArcaneButton>
 					{/if}
-				{/if}
-			</div>
 
-			<div class="mt-8 flex items-center justify-between gap-4 lg:hidden">
-				<a
-					href="https://github.com/ofkm/arcane"
-					target="_blank"
-					rel="noopener noreferrer"
-					class="bg-card/50 ring-border/40 text-muted-foreground hover:text-foreground hover:bg-card/70 inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs shadow-sm ring-1 transition-colors"
-				>
-					<GithubIcon class="size-3.5" />
-					{m.common_view_on_github()}
-				</a>
-				{#if data.versionInformation?.displayVersion}
-					<span class="text-muted-foreground/60 font-mono text-[11px] tracking-wider"
-						>{data.versionInformation.displayVersion}</span
+					{#if showLocalLoginForm}
+						<form onsubmit={handleLogin} class="space-y-4">
+							<div class="space-y-2">
+								<Label for="username" class="text-xs">{m.common_username()}</Label>
+								<InputGroup.Root>
+									<InputGroup.Addon>
+										<UserIcon />
+									</InputGroup.Addon>
+									<InputGroup.Input
+										id="username"
+										name="username"
+										type="text"
+										autocomplete="username"
+										required
+										bind:value={username}
+										placeholder={m.auth_username_placeholder()}
+										disabled={isLocalLoading || isOidcLoading}
+									/>
+								</InputGroup.Root>
+							</div>
+							<div class="space-y-2">
+								<Label for="password" class="text-xs">{m.common_password()}</Label>
+								<InputGroup.Root>
+									<InputGroup.Addon>
+										<LockIcon />
+									</InputGroup.Addon>
+									<InputGroup.Input
+										id="password"
+										name="password"
+										type="password"
+										autocomplete="current-password"
+										required
+										bind:value={password}
+										placeholder={m.auth_password_placeholder()}
+										disabled={isLocalLoading || isOidcLoading}
+									/>
+								</InputGroup.Root>
+							</div>
+							<ArcaneButton type="submit" action="login" loading={isLocalLoading} disabled={isOidcLoading} hoverEffect="none" />
+						</form>
+
+						{#if showDivider}
+							<div class="relative my-4">
+								<div class="absolute inset-0 flex items-center">
+									<div class="border-border/60 w-full border-t"></div>
+								</div>
+								<div class="relative flex justify-center text-xs">
+									<span
+										class="bg-card/70 ring-border/40 text-muted-foreground rounded-full border px-3 py-1 shadow-sm ring-1 backdrop-blur-md"
+									>
+										{m.auth_or_continue()}
+									</span>
+								</div>
+							</div>
+						{/if}
+
+						{#if showOidcLoginButton && showDivider}
+							<ArcaneButton
+								action="oidc_login"
+								hoverEffect="none"
+								onclick={() => handleOidcLogin()}
+								loading={isOidcLoading}
+								disabled={isLocalLoading}
+								icon={null}
+								customLabel=""
+							>
+								{#if oidcProviderLogoUrl}
+									<img src={oidcProviderLogoUrl} alt="" class="size-4 object-contain" />
+								{:else}
+									<OpenIdIcon class="size-4" />
+								{/if}
+								{oidcButtonLabel}
+							</ArcaneButton>
+						{/if}
+					{/if}
+				</div>
+
+				<div class="mt-8 flex items-center justify-between gap-4 lg:hidden">
+					<a
+						href="https://github.com/ofkm/arcane"
+						target="_blank"
+						rel="noopener noreferrer"
+						class="bg-card/50 ring-border/40 text-muted-foreground hover:text-foreground hover:bg-card/70 inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs shadow-sm ring-1 transition-colors"
 					>
-				{/if}
+						<GithubIcon class="size-3.5" />
+						{m.common_view_on_github()}
+					</a>
+					{#if data.versionInformation?.displayVersion}
+						<span class="text-muted-foreground/60 font-mono text-[11px] tracking-wider"
+							>{data.versionInformation.displayVersion}</span
+						>
+					{/if}
+				</div>
 			</div>
-		</div>
-	</section>
+		</section>
+	</div>
+
+	<div class="pointer-events-none absolute right-0 bottom-10 left-0 z-20 hidden justify-center lg:flex">
+		<a
+			href="https://github.com/ofkm/arcane"
+			target="_blank"
+			rel="noopener noreferrer"
+			class="bg-card/50 ring-border/40 text-muted-foreground hover:text-foreground hover:bg-card/70 pointer-events-auto inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs shadow-sm ring-1 transition-colors"
+		>
+			<GithubIcon class="size-3.5" />
+			{m.common_view_on_github()}
+		</a>
+	</div>
 </div>
 
 <style>
@@ -355,10 +360,10 @@
 
 	.ambient__shimmer {
 		position: absolute;
-		top: -400px;
-		left: -400px;
-		width: 3000px;
-		height: 3000px;
+		top: 50%;
+		left: 50%;
+		width: 300vmax;
+		height: 300vmax;
 		background: conic-gradient(
 			from 0deg,
 			transparent 0deg,
@@ -371,17 +376,17 @@
 		);
 		opacity: 0.4;
 		will-change: transform;
-		transform: translateZ(0) rotate(0deg);
+		transform: translate3d(-50%, -50%, 0) rotate(0deg);
 		transform-origin: center center;
 		animation: shimmerRotate 60s linear infinite;
 	}
 
 	@keyframes shimmerRotate {
 		from {
-			transform: translateZ(0) rotate(0deg);
+			transform: translate3d(-50%, -50%, 0) rotate(0deg);
 		}
 		to {
-			transform: translateZ(0) rotate(360deg);
+			transform: translate3d(-50%, -50%, 0) rotate(360deg);
 		}
 	}
 

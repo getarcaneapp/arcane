@@ -35,7 +35,7 @@ func PaginateAndSortDB(params QueryParams, query *gorm.DB, result any) (Response
 	limit := params.Limit
 	// limit = -1 means "show all" - skip pagination
 	if limit == -1 {
-		return paginateDBAll(query, result)
+		return paginateDBAll(query, result, params.SkipCount)
 	}
 	if limit <= 0 {
 		limit = 20
@@ -48,18 +48,31 @@ func PaginateAndSortDB(params QueryParams, query *gorm.DB, result any) (Response
 		page = (params.Start / limit) + 1
 	}
 
-	return paginateDB(page, limit, query, result)
+	return paginateDB(page, limit, query, result, params.SkipCount)
 }
 
-// paginateDBAll returns all results without pagination limits
-func paginateDBAll(query *gorm.DB, result any) (Response, error) {
+// paginateDBAll returns all results without pagination limits.
+// When skipCount is true the COUNT(*) is elided and TotalItems/TotalPages are returned as UnknownTotal.
+// Count runs before Find so it sees a clean session (Find sets Statement.Dest in GORM v2).
+func paginateDBAll(query *gorm.DB, result any, skipCount bool) (Response, error) {
 	var totalItems int64
-	if err := query.Count(&totalItems).Error; err != nil {
-		return Response{}, err
+	if !skipCount {
+		if err := query.Count(&totalItems).Error; err != nil {
+			return Response{}, err
+		}
 	}
 
 	if err := query.Find(result).Error; err != nil {
 		return Response{}, err
+	}
+
+	if skipCount {
+		return Response{
+			TotalPages:   UnknownTotal,
+			TotalItems:   UnknownTotal,
+			CurrentPage:  1,
+			ItemsPerPage: 0,
+		}, nil
 	}
 
 	return Response{
@@ -70,7 +83,10 @@ func paginateDBAll(query *gorm.DB, result any) (Response, error) {
 	}, nil
 }
 
-func paginateDB(page int, pageSize int, query *gorm.DB, result any) (Response, error) {
+// paginateDB applies offset/limit pagination. When skipCount is true the COUNT(*) is elided
+// and TotalItems/TotalPages are returned as UnknownTotal.
+// Count runs before Find so it sees a clean session (Find sets Statement.Dest in GORM v2).
+func paginateDB(page int, pageSize int, query *gorm.DB, result any, skipCount bool) (Response, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -78,12 +94,23 @@ func paginateDB(page int, pageSize int, query *gorm.DB, result any) (Response, e
 	offset := (page - 1) * pageSize
 
 	var totalItems int64
-	if err := query.Count(&totalItems).Error; err != nil {
-		return Response{}, err
+	if !skipCount {
+		if err := query.Count(&totalItems).Error; err != nil {
+			return Response{}, err
+		}
 	}
 
 	if err := query.Offset(offset).Limit(pageSize).Find(result).Error; err != nil {
 		return Response{}, err
+	}
+
+	if skipCount {
+		return Response{
+			TotalPages:   UnknownTotal,
+			TotalItems:   UnknownTotal,
+			CurrentPage:  page,
+			ItemsPerPage: pageSize,
+		}, nil
 	}
 
 	totalPages := (totalItems + int64(pageSize) - 1) / int64(pageSize)

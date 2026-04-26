@@ -349,6 +349,9 @@ func (s *SwarmService) CreateService(ctx context.Context, req swarmtypes.Service
 		optionsPayload = *req.Options
 	}
 
+	// Sanitize spec to avoid empty UID/GID in secret/config refs
+	sanitizeServiceSpecInternal(&spec)
+
 	resp, err := dockerClient.ServiceCreate(ctx, dockerclient.ServiceCreateOptions{
 		Spec:                spec,
 		EncodedRegistryAuth: optionsPayload.EncodedRegistryAuth,
@@ -387,6 +390,9 @@ func (s *SwarmService) UpdateService(ctx context.Context, serviceID string, req 
 	if req.Options != nil {
 		optionsPayload = *req.Options
 	}
+
+	// Sanitize spec to avoid empty UID/GID in secret/config refs
+	sanitizeServiceSpecInternal(&req.Spec)
 
 	resp, err := dockerClient.ServiceUpdate(ctx, serviceID, dockerclient.ServiceUpdateOptions{
 		Version:             swarm.Version{Index: versionIndex},
@@ -2380,4 +2386,32 @@ func compareIntInternal(a, b int) int {
 		return 1
 	}
 	return 0
+}
+
+func sanitizeServiceSpecInternal(spec *swarm.ServiceSpec) {
+	if spec == nil || spec.TaskTemplate.ContainerSpec == nil {
+		return
+	}
+
+	for _, ref := range spec.TaskTemplate.ContainerSpec.Secrets {
+		if ref != nil && ref.File != nil {
+			if strings.TrimSpace(ref.File.UID) == "" {
+				ref.File.UID = "0"
+			}
+			if strings.TrimSpace(ref.File.GID) == "" {
+				ref.File.GID = "0"
+			}
+		}
+	}
+
+	for _, ref := range spec.TaskTemplate.ContainerSpec.Configs {
+		if ref != nil && ref.File != nil {
+			if strings.TrimSpace(ref.File.UID) == "" {
+				ref.File.UID = "0"
+			}
+			if strings.TrimSpace(ref.File.GID) == "" {
+				ref.File.GID = "0"
+			}
+		}
+	}
 }
