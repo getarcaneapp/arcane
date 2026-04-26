@@ -194,6 +194,7 @@
 	"log_parsed_mode_tooltip": "在可用时以解析形式显示结构化日志。关闭此选项可查看原始日志文本。",
 	"common_logout": "登出",
 	"common_redeploy": "重新部署",
+	"common_redeploy_disabled_arcane_self": "由 Arcane 管理；使用 \"设置\">\"更新\"。",
 	"common_use_template": "使用模板",
 	"maintenance_title": "维护",
 	"scheduled_prune_title": "定时清理",
