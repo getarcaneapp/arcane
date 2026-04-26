@@ -873,10 +873,10 @@ func convertServiceMounts(volumes []composegotypes.ServiceVolumeConfig, stackNam
 	for _, vol := range volumes {
 		mountType := mapVolumeType(vol.Type)
 		source := vol.Source
-		// Named volumes must use the stack-scoped name so that services
-		// reference the volume pre-created by ensureSwarmVolumesInternal.
-		// Without this, Docker creates a plain local volume and silently
-		// ignores driver/driver_opts — the root cause of issue #2376.
+		// Driver-configured named volumes must use the stack-scoped name so
+		// services reference the volume pre-created by ensureSwarmVolumesInternal.
+		// Without this, Docker creates a plain local volume and silently ignores
+		// driver/driver_opts — the root cause of issue #2376.
 		if mountType == mount.TypeVolume && source != "" {
 			if volCfg, ok := projectVolumes[source]; ok && !bool(volCfg.External) && (volCfg.Driver != "" || len(volCfg.DriverOpts) > 0) {
 				source = resolveResourceName(stackName, source, volCfg.Name, volCfg.External)
