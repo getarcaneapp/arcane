@@ -194,6 +194,7 @@
 	"log_parsed_mode_tooltip": "Shows structured logs in parsed form when available. Turn it off to see the original raw line text.",
 	"common_logout": "Elsaluti",
 	"common_redeploy": "Redisponigi",
+	"common_redeploy_disabled_arcane_self": "Administrata de Arcane; uzu Agordoj > Ĝisdatigoj.",
 	"common_use_template": "Uzi ŝablonon",
 	"maintenance_title": "Bontenado",
 	"scheduled_prune_title": "Planita elpurigo",
