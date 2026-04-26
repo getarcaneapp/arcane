@@ -194,6 +194,7 @@
 	"log_parsed_mode_tooltip": "Zeigt strukturierte Protokolle in geparster Form an, sofern verfügbar. Schalten Sie es aus, um den ursprünglichen Rohtext zu sehen.",
 	"common_logout": "Abmelden",
 	"common_redeploy": "Neu deployen",
+	"common_redeploy_disabled_arcane_self": "Wird von Arcane verwaltet; verwenden Sie Einstellungen > Updates.",
 	"common_use_template": "Vorlage verwenden",
 	"maintenance_title": "Wartung",
 	"scheduled_prune_title": "Geplantes Prune",
