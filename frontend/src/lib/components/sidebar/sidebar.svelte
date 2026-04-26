@@ -1,5 +1,5 @@
 <script lang="ts" module>
-	import { navigationItems, getBuildAndDeploymentItems, getSwarmNavigationItems } from '$lib/config/navigation-config';
+	import { navigationItems, getManagementItems, getSwarmNavigationItems } from '$lib/config/navigation-config';
 </script>
 
 <script lang="ts">
@@ -54,18 +54,8 @@
 	const isAdmin = $derived(!!effectiveUser?.roles?.includes('admin'));
 	let envSwitcherOpen = $state(false);
 
-	// Filter out sub-items for settings on desktop since we have a dedicated settings sidebar
-	const desktopSettingsItems =
-		navigationItems.settingsItems?.map((item) => {
-			if (item.url === '/settings') {
-				const { items, ...rest } = item;
-				return rest;
-			}
-			return item;
-		}) ?? [];
-
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
-	const buildDeploymentItems = $derived(getBuildAndDeploymentItems(currentEnvId));
+	const managementItems = $derived(getManagementItems(currentEnvId));
 	const swarmItems = $derived(getSwarmNavigationItems(swarmEnabled));
 </script>
 
@@ -102,15 +92,13 @@
 		{/if}
 	</Sidebar.Header>
 	<Sidebar.Content class={!isCollapsed ? '-mt-2' : ''}>
-		<SidebarItemGroup label={m.sidebar_management()} items={navigationItems.managementItems} />
+		<SidebarItemGroup label={m.sidebar_management()} items={managementItems} />
 		<SidebarItemGroup label={m.sidebar_resources()} items={navigationItems.resourceItems} />
-		<SidebarItemGroup label={m.builds_and_deployments()} items={buildDeploymentItems} />
 		{#if swarmItems.length > 0}
 			<SidebarItemGroup label={m.swarm_title()} items={swarmItems} />
 		{/if}
-		<SidebarItemGroup label={m.security_title()} items={navigationItems.securityItems} />
 		{#if isAdmin}
-			<SidebarItemGroup label={m.sidebar_administration()} items={desktopSettingsItems} />
+			<SidebarItemGroup label={m.sidebar_administration()} items={navigationItems.settingsItems} />
 		{/if}
 	</Sidebar.Content>
 	<Sidebar.Footer>

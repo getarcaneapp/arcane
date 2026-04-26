@@ -760,6 +760,7 @@
 			pullStatusText = m.images_pulled_success();
 			toast.success(m.images_pulled_success());
 			await invalidateAll();
+			onActionComplete(itemState);
 
 			setTimeout(() => {
 				pullPopoverOpen = false;

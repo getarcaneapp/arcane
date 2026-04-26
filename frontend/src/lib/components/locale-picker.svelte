@@ -26,12 +26,14 @@
 	const queryClient = useQueryClient();
 
 	const locales: Record<string, string> = {
+		da: 'Dansk',
 		de: 'Deutsch',
 		el: 'Ελληνικά',
 		en: 'English',
 		eo: 'Esperanto',
 		es: 'Español',
 		fr: 'Français',
+		hu: 'Magyar',
 		it: 'Italiano',
 		ja: '日本語',
 		ko: '한국어',

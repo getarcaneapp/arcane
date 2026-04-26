@@ -139,7 +139,7 @@
 			</Card.Title>
 		</div>
 	</Card.Header>
-	<Card.Content class="space-y-6 p-4">
+	<Card.Content class="space-y-6 lg:p-6 lg:pt-0">
 		<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
 			<div>
 				<Label class="text-base">{m.security_trivy_image_label()}</Label>

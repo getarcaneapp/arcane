@@ -187,6 +187,8 @@ const (
 	imagePullModeAlways
 )
 
+var composePullProjectServicesInternal = projects.ComposePull
+
 func resolveServiceImagePullMode(svc composetypes.ServiceConfig) imagePullMode {
 	rawPolicy := strings.ToLower(strings.TrimSpace(svc.PullPolicy))
 	switch {
@@ -240,6 +242,20 @@ func buildProjectImagePullPlan(services composetypes.Services) map[string]imageP
 		}
 	}
 	return plan
+}
+
+// lookupProjectContainers returns containers matched to a project, trying the
+// normalized directory name first and falling back to the effective compose
+// project name (from COMPOSE_PROJECT_NAME) when it differs.
+func lookupProjectContainers(p models.Project, containersByProject map[string][]container.Summary) []container.Summary {
+	normName := normalizeComposeProjectName(p.Name)
+	if c := containersByProject[normName]; len(c) > 0 {
+		return c
+	}
+	if p.ComposeProjectName != nil && *p.ComposeProjectName != normName {
+		return containersByProject[*p.ComposeProjectName]
+	}
+	return nil
 }
 
 func normalizeComposeProjectName(name string) string {
@@ -433,8 +449,8 @@ func (s *ProjectService) loadComposeProjectForProjectInternal(ctx context.Contex
 		return nil, "", err
 	}
 
-	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
-	projectsDirectory, pdErr := projects.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
+	cfg := s.settingsService.GetSettingsOrDefaults(ctx)
+	projectsDirectory, pdErr := projects.GetProjectsDirectory(ctx, strings.TrimSpace(cfg.ProjectsDirectory.Value))
 	if pdErr != nil {
 		slog.WarnContext(ctx, "unable to determine projects directory; using default", "error", pdErr)
 		projectsDirectory = "/app/data/projects"
@@ -445,13 +461,90 @@ func (s *ProjectService) loadComposeProjectForProjectInternal(ctx context.Contex
 		slog.WarnContext(ctx, "failed to create path mapper, continuing without translation", "error", pmErr)
 	}
 
-	autoInjectEnv := s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false)
-	composeProject, loadErr := projects.LoadComposeProject(ctx, composeFileFullPath, normalizeComposeProjectName(proj.Name), projectsDirectory, autoInjectEnv, pathMapper)
+	composeProject, loadErr := projects.LoadComposeProject(ctx, composeFileFullPath, normalizeComposeProjectName(proj.Name), projectsDirectory, utils.BoolOrDefault(cfg.AutoInjectEnv.Value, false), pathMapper)
 	if loadErr != nil {
 		return nil, "", loadErr
 	}
 
 	return composeProject, composeFileFullPath, nil
+}
+
+func buildSelectedProjectImageRefsInternal(compProj *composetypes.Project, servicesToUpdate []string) []string {
+	if compProj == nil {
+		return nil
+	}
+
+	selected := normalizeBuildSelections(servicesToUpdate)
+	refs := make([]string, 0, len(compProj.Services))
+	seen := make(map[string]struct{}, len(compProj.Services))
+
+	for name, svc := range compProj.Services {
+		if !serviceSelected(selected, name) || svc.Build != nil {
+			continue
+		}
+
+		imageRef := strings.TrimSpace(svc.Image)
+		if imageRef == "" {
+			continue
+		}
+		if _, exists := seen[imageRef]; exists {
+			continue
+		}
+
+		seen[imageRef] = struct{}{}
+		refs = append(refs, imageRef)
+	}
+
+	return refs
+}
+
+func (s *ProjectService) reconcilePulledImageRefsInternal(ctx context.Context, imageRefs []string) {
+	if s.imageService == nil {
+		return
+	}
+
+	for _, imageRef := range imageRefs {
+		if err := s.imageService.ReconcilePulledImageUpdate(ctx, imageRef); err != nil {
+			slog.WarnContext(ctx, "failed to reconcile pulled image update state", "image", imageRef, "error", err)
+		}
+	}
+}
+
+func (s *ProjectService) composePullSelectedServicesInternal(ctx context.Context, compProj *composetypes.Project, servicesToUpdate []string) error {
+	if compProj == nil {
+		return nil
+	}
+
+	imageRefsToReconcile := buildSelectedProjectImageRefsInternal(compProj, servicesToUpdate)
+	if err := composePullProjectServicesInternal(ctx, compProj, servicesToUpdate); err != nil {
+		return err
+	}
+
+	s.reconcilePulledImageRefsInternal(ctx, imageRefsToReconcile)
+	return nil
+}
+
+func (s *ProjectService) pullAndReconcileImageInternal(
+	ctx context.Context,
+	imageRef string,
+	progressWriter io.Writer,
+	user models.User,
+	credentials []containerregistry.Credential,
+) error {
+	settings := s.settingsService.GetSettingsConfig()
+
+	pullCtx, pullCancel := timeouts.WithTimeout(ctx, settings.DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull)
+	defer pullCancel()
+
+	if err := s.imageService.PullImage(pullCtx, imageRef, progressWriter, user, credentials); err != nil {
+		if errors.Is(pullCtx.Err(), context.DeadlineExceeded) {
+			return fmt.Errorf("image pull timed out for %s (increase DOCKER_IMAGE_PULL_TIMEOUT or setting)", imageRef)
+		}
+		return fmt.Errorf("failed to pull image %s: %w", imageRef, err)
+	}
+
+	s.reconcilePulledImageRefsInternal(ctx, []string{imageRef})
+	return nil
 }
 
 func (s *ProjectService) UpdateProjectServices(ctx context.Context, projectID string, servicesToUpdate []string, user models.User) error {
@@ -472,7 +565,7 @@ func (s *ProjectService) UpdateProjectServices(ctx context.Context, projectID st
 	}
 
 	// 3. Pull images for specific services
-	if err := projects.ComposePull(ctx, compProj, servicesToUpdate); err != nil {
+	if err := s.composePullSelectedServicesInternal(ctx, compProj, servicesToUpdate); err != nil {
 		slog.WarnContext(ctx, "compose pull failed, continuing", "error", err)
 	}
 
@@ -736,10 +829,9 @@ func (s *ProjectService) GetProjectFileContent(ctx context.Context, projectID, r
 
 	composeFile, detectErr := s.resolveProjectComposeFileInternal(ctx, proj)
 	if detectErr == nil {
-		projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
-		projectsDirectory, _ := projects.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
-		autoInjectEnv := s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false)
-		envLoader := projects.NewEnvLoader(projectsDirectory, filepath.Dir(composeFile), autoInjectEnv)
+		cfg := s.settingsService.GetSettingsOrDefaults(ctx)
+		projectsDirectory, _ := projects.GetProjectsDirectory(ctx, strings.TrimSpace(cfg.ProjectsDirectory.Value))
+		envLoader := projects.NewEnvLoader(projectsDirectory, filepath.Dir(composeFile), utils.BoolOrDefault(cfg.AutoInjectEnv.Value, false))
 		envMap, _, _ := envLoader.LoadEnvironment(ctx)
 
 		includes, parseErr := projects.ParseIncludes(composeFile, envMap, true)
@@ -807,10 +899,9 @@ func (s *ProjectService) enrichWithIncludeFiles(ctx context.Context, composeFile
 	}
 
 	// Load environment variables so that include paths with ${VAR} references are expanded
-	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
-	projectsDirectory, _ := projects.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
-	autoInjectEnv := s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false)
-	envLoader := projects.NewEnvLoader(projectsDirectory, filepath.Dir(composeFile), autoInjectEnv)
+	cfg := s.settingsService.GetSettingsOrDefaults(ctx)
+	projectsDirectory, _ := projects.GetProjectsDirectory(ctx, strings.TrimSpace(cfg.ProjectsDirectory.Value))
+	envLoader := projects.NewEnvLoader(projectsDirectory, filepath.Dir(composeFile), utils.BoolOrDefault(cfg.AutoInjectEnv.Value, false))
 	envMap, _, _ := envLoader.LoadEnvironment(ctx)
 
 	includes, parseErr := projects.ParseIncludes(composeFile, envMap, false)
@@ -1091,16 +1182,15 @@ func (s *ProjectService) enrichWithGitOpsInfo(ctx context.Context, proj *models.
 }
 
 func (s *ProjectService) enrichWithComposeServiceConfigs(ctx context.Context, proj *models.Project, composeFile string, resp *project.Details) {
-	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
-	projectsDirectory, _ := projects.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
+	cfg := s.settingsService.GetSettingsOrDefaults(ctx)
+	projectsDirectory, _ := projects.GetProjectsDirectory(ctx, strings.TrimSpace(cfg.ProjectsDirectory.Value))
 
 	pathMapper, pmErr := s.getPathMapper(ctx)
 	if pmErr != nil {
 		slog.WarnContext(ctx, "failed to create path mapper, continuing without translation", "error", pmErr)
 	}
 
-	autoInjectEnv := s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false)
-	composeProj, loadErr := projects.LoadComposeProject(ctx, composeFile, normalizeComposeProjectName(proj.Name), projectsDirectory, autoInjectEnv, pathMapper)
+	composeProj, loadErr := projects.LoadComposeProject(ctx, composeFile, normalizeComposeProjectName(proj.Name), projectsDirectory, utils.BoolOrDefault(cfg.AutoInjectEnv.Value, false), pathMapper)
 	if loadErr != nil {
 		slog.WarnContext(ctx, "failed to load compose service configs", "path", composeFile, "error", loadErr)
 		return
@@ -1162,23 +1252,20 @@ func (s *ProjectService) upsertProjectForDir(ctx context.Context, dirName, dirPa
 		Where("path = ?", dirPath).
 		First(&existing).Error
 
-	filesystemProject := models.Project{
-		Name: dirName,
-		Path: dirPath,
-	}
-	serviceCount, serviceCountErr := s.countServicesFromCompose(ctx, filesystemProject)
+	serviceCount, composeProjectName, serviceCountErr := s.loadComposeMetadataForSyncInternal(ctx, dirPath, dirName)
 
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		// Create a minimal project entry
 		reason := "Project discovered from filesystem, status pending Docker service query"
 		proj := &models.Project{
-			Name:         dirName,
-			DirName:      new(dirName),
-			Path:         dirPath,
-			Status:       models.ProjectStatusUnknown,
-			StatusReason: new(reason),
-			ServiceCount: serviceCount,
-			RunningCount: 0,
+			Name:               dirName,
+			DirName:            new(dirName),
+			Path:               dirPath,
+			Status:             models.ProjectStatusUnknown,
+			StatusReason:       new(reason),
+			ServiceCount:       serviceCount,
+			RunningCount:       0,
+			ComposeProjectName: composeProjectName,
 		}
 		slog.InfoContext(ctx, "Discovered new project with unknown status",
 			"project", dirName,
@@ -1207,6 +1294,9 @@ func (s *ProjectService) upsertProjectForDir(ctx context.Context, dirName, dirPa
 		updates["service_count"] = serviceCount
 	} else if serviceCountErr != nil {
 		slog.WarnContext(ctx, "failed to refresh compose service count during project sync", "projectID", existing.ID, "path", dirPath, "error", serviceCountErr)
+	}
+	if serviceCountErr == nil && !utils.StringPtrEqual(existing.ComposeProjectName, composeProjectName) {
+		updates["compose_project_name"] = composeProjectName
 	}
 	if len(updates) == 0 {
 		return nil
@@ -1376,8 +1466,7 @@ func (s *ProjectService) GetProjectStatusCounts(ctx context.Context) (folderCoun
 
 	// 3. Calculate status for each project
 	for _, p := range projectsList {
-		normName := normalizeComposeProjectName(p.Name)
-		projectContainers := containersByProject[normName]
+		projectContainers := lookupProjectContainers(p, containersByProject)
 
 		// Convert to ProjectServiceInfo (minimal needed for calculateProjectStatus)
 		var services []ProjectServiceInfo
@@ -1639,21 +1728,8 @@ func (s *ProjectService) PullProjectImages(ctx context.Context, projectID string
 		images[img] = struct{}{}
 	}
 
-	settings := s.settingsService.GetSettingsConfig()
-
 	for img := range images {
-		err := func() error {
-			pullCtx, pullCancel := timeouts.WithTimeout(ctx, settings.DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull)
-			defer pullCancel()
-			if err := s.imageService.PullImage(pullCtx, img, progressWriter, user, credentials); err != nil {
-				if errors.Is(pullCtx.Err(), context.DeadlineExceeded) {
-					return fmt.Errorf("image pull timed out for %s (increase DOCKER_IMAGE_PULL_TIMEOUT or setting)", img)
-				}
-				return fmt.Errorf("failed to pull image %s: %w", img, err)
-			}
-			return nil
-		}()
-		if err != nil {
+		if err := s.pullAndReconcileImageInternal(ctx, img, progressWriter, user, credentials); err != nil {
 			return err
 		}
 	}
@@ -1696,8 +1772,6 @@ func (s *ProjectService) EnsureProjectImagesPresent(ctx context.Context, project
 }
 
 func (s *ProjectService) ensureImagesPresent(ctx context.Context, pullPlan map[string]imagePullMode, progressWriter io.Writer, credentials []containerregistry.Credential, user models.User) error {
-	settings := s.settingsService.GetSettingsConfig()
-
 	for img, mode := range pullPlan {
 		exists, ierr := s.imageService.ImageExistsLocally(ctx, img)
 		if ierr != nil && mode != imagePullModeAlways {
@@ -1722,18 +1796,7 @@ func (s *ProjectService) ensureImagesPresent(ctx context.Context, pullPlan map[s
 			continue
 		}
 
-		err := func() error {
-			pullCtx, pullCancel := timeouts.WithTimeout(ctx, settings.DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull)
-			defer pullCancel()
-			if err := s.imageService.PullImage(pullCtx, img, progressWriter, user, credentials); err != nil {
-				if errors.Is(pullCtx.Err(), context.DeadlineExceeded) {
-					return fmt.Errorf("image pull timed out for %s (increase DOCKER_IMAGE_PULL_TIMEOUT or setting)", img)
-				}
-				return fmt.Errorf("failed to pull image %s: %w", img, err)
-			}
-			return nil
-		}()
-		if err != nil {
+		if err := s.pullAndReconcileImageInternal(ctx, img, progressWriter, user, credentials); err != nil {
 			return err
 		}
 	}
@@ -1741,18 +1804,7 @@ func (s *ProjectService) ensureImagesPresent(ctx context.Context, pullPlan map[s
 }
 
 func (s *ProjectService) pullImageForService(ctx context.Context, imageRef string, progressWriter io.Writer, credentials []containerregistry.Credential) error {
-	settings := s.settingsService.GetSettingsConfig()
-	pullCtx, pullCancel := timeouts.WithTimeout(ctx, settings.DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull)
-	defer pullCancel()
-
-	if err := s.imageService.PullImage(pullCtx, imageRef, progressWriter, systemUser, credentials); err != nil {
-		if errors.Is(pullCtx.Err(), context.DeadlineExceeded) {
-			return fmt.Errorf("image pull timed out for %s (increase DOCKER_IMAGE_PULL_TIMEOUT or setting)", imageRef)
-		}
-		return err
-	}
-
-	return nil
+	return s.pullAndReconcileImageInternal(ctx, imageRef, progressWriter, systemUser, credentials)
 }
 
 func (s *ProjectService) prepareProjectImagesForDeploy(
@@ -2302,8 +2354,8 @@ func (s *ProjectService) RestartProject(ctx context.Context, projectID string, u
 	}
 
 	// Get configured projects directory from settings
-	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
-	projectsDirectory, pdErr := projects.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
+	cfg := s.settingsService.GetSettingsOrDefaults(ctx)
+	projectsDirectory, pdErr := projects.GetProjectsDirectory(ctx, strings.TrimSpace(cfg.ProjectsDirectory.Value))
 	if pdErr != nil {
 		slog.WarnContext(ctx, "unable to determine projects directory; using default", "error", pdErr)
 		projectsDirectory = "/app/data/projects"
@@ -2314,8 +2366,7 @@ func (s *ProjectService) RestartProject(ctx context.Context, projectID string, u
 		slog.WarnContext(ctx, "failed to create path mapper, continuing without translation", "error", pmErr)
 	}
 
-	autoInjectEnv := s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false)
-	compProj, _, lerr := projects.LoadComposeProjectFromDir(ctx, proj.Path, normalizeComposeProjectName(proj.Name), projectsDirectory, autoInjectEnv, pathMapper)
+	compProj, _, lerr := projects.LoadComposeProjectFromDir(ctx, proj.Path, normalizeComposeProjectName(proj.Name), projectsDirectory, utils.BoolOrDefault(cfg.AutoInjectEnv.Value, false), pathMapper)
 	if lerr != nil {
 		_ = s.updateProjectStatusInternal(ctx, projectID, models.ProjectStatusRunning)
 		return fmt.Errorf("failed to load compose project: %w", lerr)
@@ -3291,9 +3342,7 @@ func (s *ProjectService) mapProjectToDto(ctx context.Context, projectsDir string
 	resp.IconURL = meta.ProjectIconURL
 	resp.URLs = meta.ProjectURLS
 
-	// Find containers for this project
-	normName := normalizeComposeProjectName(p.Name)
-	projectContainers := containersByProject[normName]
+	projectContainers := lookupProjectContainers(p, containersByProject)
 
 	var services []ProjectServiceInfo
 	runningCount := 0
@@ -3420,6 +3469,49 @@ func (s *ProjectService) countServicesFromCompose(ctx context.Context, p models.
 	}
 
 	return len(proj.Services), nil
+}
+
+// loadComposeMetadataForSyncInternal loads the compose file once and returns
+// both the service count and the effective compose project name. This avoids
+// parsing the compose file twice during project sync (once for service count
+// and once for the project name).
+// The effective name is nil when it matches the normalized directory name.
+func (s *ProjectService) loadComposeMetadataForSyncInternal(ctx context.Context, dirPath, dirName string) (serviceCount int, composeProjectName *string, err error) {
+	cfg := s.settingsService.GetSettingsOrDefaults(ctx)
+	projectsDirectory, pErr := projects.GetProjectsDirectory(ctx, strings.TrimSpace(cfg.ProjectsDirectory.Value))
+	if pErr != nil {
+		return 0, nil, pErr
+	}
+
+	pathMapper, pmErr := s.getPathMapper(ctx)
+	if pmErr != nil {
+		slog.WarnContext(ctx, "failed to create path mapper, continuing without translation", "error", pmErr)
+	}
+
+	normName := normalizeComposeProjectName(dirName)
+	autoInjectEnv := utils.BoolOrDefault(cfg.AutoInjectEnv.Value, false)
+
+	// First, try loading without forcing a project name so compose-go can
+	// resolve COMPOSE_PROJECT_NAME from the .env file. If this fails (e.g.
+	// no .env and directory name is not a valid compose project name), fall
+	// back to the normalized directory name.
+	proj, _, err := projects.LoadComposeProjectFromDir(ctx, dirPath, "", projectsDirectory, autoInjectEnv, pathMapper)
+	if err != nil {
+		proj, _, err = projects.LoadComposeProjectFromDir(ctx, dirPath, normName, projectsDirectory, autoInjectEnv, pathMapper)
+		if err != nil {
+			return 0, nil, err
+		}
+	}
+
+	serviceCount = len(proj.Services)
+
+	// If compose-go resolved a different name (from COMPOSE_PROJECT_NAME),
+	// store it so we can match containers correctly.
+	if proj.Name != "" && proj.Name != normName {
+		composeProjectName = new(proj.Name)
+	}
+
+	return serviceCount, composeProjectName, nil
 }
 
 func (s *ProjectService) calculateProjectStatus(services []ProjectServiceInfo) models.ProjectStatus {

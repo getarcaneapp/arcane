@@ -23,7 +23,7 @@
 		};
 		showTooltip: boolean;
 		includeTitleInTooltip: boolean;
-		getIsOpen: (title: string, isActive: boolean) => boolean;
+		getIsOpen: (url: string, isActive: boolean) => boolean;
 		onOpenChange: (open: boolean) => void;
 		content?: Snippet;
 	} = $props();
@@ -33,7 +33,7 @@
 	<SidebarItemTooltipContent title={item.title} shortcut={item.shortcut} includeTitle={includeTitleInTooltip} />
 {/snippet}
 
-<Collapsible.Root open={getIsOpen(item.title, item.isActive)} {onOpenChange} class="group/collapsible">
+<Collapsible.Root open={getIsOpen(item.url, item.isActive)} {onOpenChange} class="group/collapsible">
 	<Sidebar.MenuItem class="flex-col">
 		{@const Icon = item.icon}
 		<Sidebar.MenuButton tooltipContent={showTooltip ? tooltipContent : undefined} isActive={item.isActive}>

@@ -19,6 +19,7 @@ import (
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/getarcaneapp/arcane/backend/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils"
 	swarmtypes "github.com/getarcaneapp/arcane/types/swarm"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/network"
@@ -51,12 +52,14 @@ type StackDeployOptions struct {
 	RegistryAuthForImage func(context.Context, string) (string, error)
 	Prune                bool
 	ResolveImage         string
+	WorkingDir           string
 }
 
 type StackRenderOptions struct {
 	Name           string
 	ComposeContent string
 	EnvContent     string
+	WorkingDir     string
 }
 
 type StackRenderResult struct {
@@ -95,7 +98,7 @@ func DeployStack(ctx context.Context, dockerClient *dockerclient.Client, opts St
 		return err
 	}
 
-	project, err := loadComposeProject(ctx, stackName, opts.ComposeContent, opts.EnvContent)
+	project, err := loadComposeProject(ctx, stackName, opts.ComposeContent, opts.EnvContent, opts.WorkingDir)
 	if err != nil {
 		return err
 	}
@@ -249,7 +252,7 @@ func RenderStackConfig(ctx context.Context, opts StackRenderOptions) (*StackRend
 		return nil, errors.New("stack name is required")
 	}
 
-	project, err := loadComposeProject(ctx, stackName, opts.ComposeContent, opts.EnvContent)
+	project, err := loadComposeProject(ctx, stackName, opts.ComposeContent, opts.EnvContent, opts.WorkingDir)
 	if err != nil {
 		return nil, err
 	}
@@ -273,7 +276,7 @@ func RenderStackConfig(ctx context.Context, opts StackRenderOptions) (*StackRend
 	}, nil
 }
 
-func loadComposeProject(ctx context.Context, projectName, composeContent, envContent string) (*composegotypes.Project, error) {
+func loadComposeProject(ctx context.Context, projectName, composeContent, envContent, providedWorkingDir string) (*composegotypes.Project, error) {
 	composeContent = strings.TrimSpace(composeContent)
 	if composeContent == "" {
 		return nil, errors.New("compose content is required")
@@ -284,9 +287,14 @@ func loadComposeProject(ctx context.Context, projectName, composeContent, envCon
 		return nil, fmt.Errorf("failed to parse env content: %w", err)
 	}
 
-	workingDir, err := os.Getwd()
-	if err != nil {
-		workingDir = "/tmp"
+	workingDir := strings.TrimSpace(providedWorkingDir)
+	if workingDir == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			workingDir = "/tmp"
+		} else {
+			workingDir = cwd
+		}
 	}
 	envMap["PWD"] = workingDir
 
@@ -682,6 +690,13 @@ func updateSwarmService(
 	}
 
 	if _, err := dockerClient.ServiceUpdate(ctx, existing.ID, opts); err != nil {
+		if strings.Contains(err.Error(), "service does not have a previous spec") {
+			opts.RegistryAuthFrom = ""
+			if _, retryErr := dockerClient.ServiceUpdate(ctx, existing.ID, opts); retryErr != nil {
+				return fmt.Errorf("failed to update swarm service %s: %w", spec.Name, retryErr)
+			}
+			return nil
+		}
 		return fmt.Errorf("failed to update swarm service %s: %w", spec.Name, err)
 	}
 	return nil
@@ -911,8 +926,8 @@ func convertServiceSecretRefs(secrets []composegotypes.ServiceSecretConfig, secr
 		}
 		ref.File = &swarm.SecretReferenceFileTarget{
 			Name: target,
-			UID:  secret.UID,
-			GID:  secret.GID,
+			UID:  utils.StringOrDefault(secret.UID, "0"),
+			GID:  utils.StringOrDefault(secret.GID, "0"),
 			Mode: fileModeOrDefault(secret.Mode),
 		}
 		result = append(result, ref)
@@ -940,8 +955,8 @@ func convertServiceConfigRefs(configs []composegotypes.ServiceConfigObjConfig, c
 		}
 		ref.File = &swarm.ConfigReferenceFileTarget{
 			Name: target,
-			UID:  cfg.UID,
-			GID:  cfg.GID,
+			UID:  utils.StringOrDefault(cfg.UID, "0"),
+			GID:  utils.StringOrDefault(cfg.GID, "0"),
 			Mode: fileModeOrDefault(cfg.Mode),
 		}
 		result = append(result, ref)

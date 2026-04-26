@@ -506,6 +506,21 @@ func (s *SettingsService) GetSettings(ctx context.Context) (*models.Settings, er
 	return settings, nil
 }
 
+// GetSettingsOrDefaults is a convenience for hot paths that need a snapshot but cannot
+// meaningfully recover from a settings load failure. It logs any error and guarantees a
+// non-nil *Settings (defaults: a zero-valued struct, which the SettingVariable helpers
+// like utils.BoolOrDefault treat as "use the caller's default").
+func (s *SettingsService) GetSettingsOrDefaults(ctx context.Context) *models.Settings {
+	cfg, err := s.GetSettings(ctx)
+	if err != nil {
+		slog.WarnContext(ctx, "failed to load settings, falling back to defaults", "error", err)
+	}
+	if cfg == nil {
+		return &models.Settings{}
+	}
+	return cfg
+}
+
 func (s *SettingsService) getEffectiveSettingsConfig(ctx context.Context) *models.Settings {
 	settings := s.GetSettingsConfig().Clone()
 	s.applyEnvOverrides(ctx, settings)

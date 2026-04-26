@@ -660,6 +660,63 @@ func TestBuildSyntheticImageUpdateRecordIDInternal_UsesUnambiguousSeparator(t *t
 	require.Equal(t, "ref::docker.io/library/nginx@sha256:abcdef", id)
 }
 
+func TestImageUpdateService_MarkImageRefUpToDateAfterPull_ClearsMatchingRecordsAndPersistsCurrentImage(t *testing.T) {
+	db := setupImageUpdateTestDB(t)
+	localDigest := digest.FromString("mark-up-to-date-local").String()
+	remoteDigest := digest.FromString("mark-up-to-date-remote").String()
+
+	server := newImageUpdateFallbackServer(t, "team/app:1.2.3", localDigest, remoteDigest)
+	defer server.Close()
+
+	serverURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+	imageRef := serverURL.Host + "/team/app:1.2.3"
+	repository := serverURL.Host + "/team/app"
+
+	now := time.Now().UTC().Add(-time.Hour)
+	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+		ID:             "sha256:old-full",
+		Repository:     repository,
+		Tag:            "1.2.3",
+		HasUpdate:      true,
+		UpdateType:     models.UpdateTypeDigest,
+		CurrentVersion: "1.2.3",
+		CheckTime:      now,
+	}).Error)
+	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+		ID:             "sha256:old-short",
+		Repository:     "team/app",
+		Tag:            "1.2.3",
+		HasUpdate:      true,
+		UpdateType:     models.UpdateTypeDigest,
+		CurrentVersion: "1.2.3",
+		CheckTime:      now.Add(time.Minute),
+	}).Error)
+
+	svc := NewImageUpdateService(db, nil, nil, &DockerClientService{client: newTestDockerClient(t, server)}, nil, nil)
+
+	require.NoError(t, svc.MarkImageRefUpToDateAfterPull(context.Background(), imageRef))
+
+	var fullRecord models.ImageUpdateRecord
+	require.NoError(t, db.WithContext(context.Background()).Where("id = ?", "sha256:old-full").First(&fullRecord).Error)
+	assert.False(t, fullRecord.HasUpdate)
+
+	var shortRecord models.ImageUpdateRecord
+	require.NoError(t, db.WithContext(context.Background()).Where("id = ?", "sha256:old-short").First(&shortRecord).Error)
+	assert.False(t, shortRecord.HasUpdate)
+
+	var currentRecord models.ImageUpdateRecord
+	require.NoError(t, db.WithContext(context.Background()).Where("id = ?", "sha256:local-image-id").First(&currentRecord).Error)
+	assert.False(t, currentRecord.HasUpdate)
+	assert.Equal(t, repository, currentRecord.Repository)
+	assert.Equal(t, "1.2.3", currentRecord.Tag)
+	assert.Equal(t, localDigest, stringPtrToString(currentRecord.CurrentDigest))
+	assert.Equal(t, localDigest, stringPtrToString(currentRecord.LatestDigest))
+	assert.Equal(t, "1.2.3", currentRecord.CurrentVersion)
+	require.NotNil(t, currentRecord.LatestVersion)
+	assert.Equal(t, "1.2.3", *currentRecord.LatestVersion)
+}
+
 // TestNotificationSentLogic tests the notification_sent flag behavior
 func TestImageUpdateService_NotificationSentLogic(t *testing.T) {
 	db := setupImageUpdateTestDB(t)

@@ -1,6 +1,6 @@
 import {
 	ApiKeyIcon,
-	ApperanceIcon,
+	AppearanceIcon,
 	UsersIcon,
 	LockIcon,
 	NotificationsIcon,
@@ -8,6 +8,7 @@ import {
 	ProjectsIcon,
 	EnvironmentsIcon,
 	CustomizeIcon,
+	RegistryIcon,
 	ContainersIcon,
 	ImagesIcon,
 	NetworksIcon,
@@ -23,7 +24,8 @@ import {
 	HammerIcon,
 	TemplateIcon,
 	GlobeIcon,
-	UpdateIcon
+	UpdateIcon,
+	VariableIcon
 } from '$lib/icons';
 import { m } from '$lib/paraglide/messages';
 import type { ShortcutKey } from '$lib/utils/keyboard-shortcut.utils';
@@ -39,9 +41,7 @@ export type NavigationItem = {
 export type NavigationSections = {
 	managementItems: NavigationItem[];
 	resourceItems: NavigationItem[];
-	deploymentItems: NavigationItem[];
 	swarmItems: NavigationItem[];
-	securityItems: NavigationItem[];
 	settingsItems: NavigationItem[];
 };
 
@@ -50,11 +50,31 @@ export const navigationItems: NavigationSections = {
 		{ title: m.dashboard_title(), url: '/dashboard', icon: DashboardIcon, shortcut: ['mod', '1'] },
 		{ title: m.projects_title(), url: '/projects', icon: ProjectsIcon, shortcut: ['mod', '2'] },
 		{ title: m.environments_title(), url: '/environments', icon: EnvironmentsIcon, shortcut: ['mod', '3'] },
-		{ title: m.customize_title(), url: '/customize', icon: CustomizeIcon, shortcut: ['mod', '4'] }
+		{
+			title: m.customize_title(),
+			url: '/customize',
+			icon: CustomizeIcon,
+			shortcut: ['mod', '4'],
+			items: [
+				{ title: m.templates_title(), url: '/customize/templates', icon: TemplateIcon },
+				{ title: m.registries_title(), url: '/customize/registries', icon: RegistryIcon },
+				{ title: m.variables_title(), url: '/customize/variables', icon: VariableIcon },
+				{ title: m.git_repositories_title(), url: '/customize/git-repositories', icon: GitBranchIcon }
+			]
+		}
 	],
 	resourceItems: [
 		{ title: m.containers_title(), url: '/containers', icon: ContainersIcon, shortcut: ['mod', '5'] },
-		{ title: m.images_title(), url: '/images', icon: ImagesIcon, shortcut: ['mod', '6'] },
+		{
+			title: m.images_title(),
+			url: '/images',
+			icon: ImagesIcon,
+			shortcut: ['mod', '6'],
+			items: [
+				{ title: m.builds(), url: '/images/builds', icon: HammerIcon },
+				{ title: m.vuln_title(), url: '/images/vulnerabilities', icon: ShieldAlertIcon }
+			]
+		},
 		{ title: m.images_updates(), url: '/updates', icon: UpdateIcon, shortcut: ['mod', 'u'] },
 		{
 			title: m.networks_title(),
@@ -68,7 +88,6 @@ export const navigationItems: NavigationSections = {
 		},
 		{ title: m.volumes_title(), url: '/volumes', icon: VolumesIcon, shortcut: ['mod', '8'] }
 	],
-	deploymentItems: [{ title: m.builds(), url: '/images/builds', icon: HammerIcon, shortcut: ['mod', 'b'] }],
 	swarmItems: [
 		{ title: 'Services', url: '/swarm/services', icon: DockIcon },
 		{ title: 'Nodes', url: '/swarm/nodes', icon: UsersIcon },
@@ -78,7 +97,6 @@ export const navigationItems: NavigationSections = {
 		{ title: 'Configs', url: '/swarm/configs', icon: TemplateIcon },
 		{ title: 'Secrets', url: '/swarm/secrets', icon: LockIcon }
 	],
-	securityItems: [{ title: m.vuln_title(), url: '/security', icon: ShieldAlertIcon, shortcut: ['mod', 's'] }],
 	settingsItems: [
 		{
 			title: m.events_title(),
@@ -93,8 +111,8 @@ export const navigationItems: NavigationSections = {
 			shortcut: ['mod', '0'],
 			items: [
 				{ title: m.api_key_page_title(), url: '/settings/api-keys', icon: ApiKeyIcon, shortcut: ['mod', 'shift', '1'] },
+				{ title: m.appearance_title(), url: '/settings/appearance', icon: AppearanceIcon, shortcut: ['mod', 'shift', '2'] },
 				{ title: m.webhook_page_title(), url: '/settings/webhooks', icon: GlobeIcon },
-				{ title: m.appearance_title(), url: '/settings/appearance', icon: ApperanceIcon, shortcut: ['mod', 'shift', '2'] },
 				{
 					title: m.authentication_title(),
 					url: '/settings/authentication',
@@ -114,6 +132,16 @@ export const navigationItems: NavigationSections = {
 		}
 	]
 };
+
+export function getSettingsSubpageUrlsInNavOrder(): string[] {
+	const entry = navigationItems.settingsItems.find((item) => item.url === '/settings');
+	return entry?.items?.map((item) => item.url) ?? [];
+}
+
+export function getCustomizeSubpageUrlsInNavOrder(): string[] {
+	const entry = navigationItems.managementItems.find((item) => item.url === '/customize');
+	return entry?.items?.map((item) => item.url) ?? [];
+}
 
 export const defaultMobilePinnedItems: NavigationItem[] = [
 	navigationItems.managementItems[0]!,
@@ -147,17 +175,9 @@ export function getAvailableMobileNavItems(options?: { swarmEnabled?: boolean })
 		flatItems.push(...navigationItems.resourceItems);
 	}
 
-	if (navigationItems.deploymentItems) {
-		flatItems.push(...navigationItems.deploymentItems);
-	}
-
 	const swarmItems = getSwarmNavigationItems(!!options?.swarmEnabled);
 	if (swarmItems.length > 0) {
 		flatItems.push(...swarmItems);
-	}
-
-	if (navigationItems.securityItems) {
-		flatItems.push(...navigationItems.securityItems);
 	}
 
 	if (navigationItems.settingsItems) {
@@ -180,14 +200,16 @@ export const defaultMobileNavigationSettings: MobileNavigationSettings = {
 	scrollToHide: true
 };
 
-export function getBuildAndDeploymentItems(environmentId: string): NavigationItem[] {
-	return [
-		...navigationItems.deploymentItems,
-		{
-			title: m.git_syncs_title(),
-			url: `/environments/${environmentId}/gitops`,
-			icon: GitBranchIcon,
-			shortcut: ['mod', 'g']
-		}
-	];
+export function getManagementItems(environmentId: string): NavigationItem[] {
+	const gitSyncsItem: NavigationItem = {
+		title: m.git_syncs_title(),
+		url: `/environments/${environmentId}/gitops`,
+		icon: GitBranchIcon,
+		shortcut: ['mod', 'g']
+	};
+
+	return navigationItems.managementItems.map((item) => {
+		if (item.url !== '/environments') return item;
+		return { ...item, items: [...(item.items ?? []), gitSyncsItem] };
+	});
 }

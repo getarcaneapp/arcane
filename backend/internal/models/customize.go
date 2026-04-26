@@ -15,7 +15,7 @@ type CustomizeItem struct {
 	TemplateValidation CustomizeVariable `key:"templateValidation" meta:"label=Template Validation;type=boolean;keywords=validation,check,verify,lint,syntax,schema;category=templates;description=Enable validation for template files"`
 
 	// Registries category
-	ContainerRegistries CustomizeVariable `key:"containerRegistries" meta:"label=Container Registries;type=array;keywords=registry,docker,images,hub,private,authentication,credentials;category=registries;description=Manage container registry connections" catmeta:"id=registries;title=Registries;icon=package;url=/customize/registries;description=Configure container registries and authentication"`
+	ContainerRegistries CustomizeVariable `key:"containerRegistries" meta:"label=Container Registries;type=array;keywords=registry,docker,images,hub,private,authentication,credentials;category=registries;description=Manage container registry connections" catmeta:"id=registries;title=Container Registries;icon=package;url=/customize/registries;description=Configure container registries and authentication"`
 	RegistryCredentials CustomizeVariable `key:"registryCredentials" meta:"label=Registry Credentials;type=secure;keywords=credentials,auth,username,password,token,login,security;category=registries;description=Configure authentication for container registries"`
 	RegistryMirrors     CustomizeVariable `key:"registryMirrors" meta:"label=Registry Mirrors;type=array;keywords=mirrors,proxy,cache,performance,cdn,regional;category=registries;description=Configure registry mirrors and proxies"`
 
@@ -24,7 +24,7 @@ type CustomizeItem struct {
 	SecretVariables   CustomizeVariable `key:"secretVariables" meta:"label=Secret Variables;type=secure;keywords=secrets,sensitive,secure,encrypted,password,api,key;category=variables;description=Manage sensitive and encrypted variables"`
 	VariableTemplates CustomizeVariable `key:"variableTemplates" meta:"label=Variable Templates;type=array;keywords=templates,reusable,preset,configuration,standard,common;category=variables;description=Create reusable variable configurations"`
 
-	// Git Repositories category
+	// Git repositories category
 	GitRepositories        CustomizeVariable `key:"gitRepositories" meta:"label=Git Repositories;type=array;keywords=git,repository,repositories,source,code,version,control,github,gitlab,bitbucket;category=git-repositories;description=Manage git repository connections for GitOps" catmeta:"id=git-repositories;title=Git Repositories;icon=git-branch;url=/customize/git-repositories;description=Configure git repositories for Git synchronization"`
 	GitRepositoryDefaults  CustomizeVariable `key:"gitRepositoryDefaults" meta:"label=Repository Defaults;type=object;keywords=defaults,settings,configuration,branch,auth,authentication;category=git-repositories;description=Set default settings for git repositories"`
 	GitRepositoryTemplates CustomizeVariable `key:"gitRepositoryTemplates" meta:"label=Repository Templates;type=array;keywords=templates,presets,common,reusable,standard;category=git-repositories;description=Create reusable repository configurations"`

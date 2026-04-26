@@ -13,7 +13,7 @@ export { default as NetworksIcon } from 'virtual:icons/fluent/virtual-network-16
 export { default as VolumesIcon } from 'virtual:icons/fluent/hard-drive-20-filled';
 export { default as EventsIcon } from 'virtual:icons/material-symbols/event-list';
 export { default as SettingsIcon } from 'virtual:icons/solar/settings-outline';
-export { default as ApperanceIcon } from 'virtual:icons/f7/paintbrush';
+export { default as AppearanceIcon } from 'virtual:icons/f7/paintbrush';
 export { default as DockerBrandIcon } from 'virtual:icons/cib/docker';
 export { default as SecurityIcon } from 'virtual:icons/ic/round-security';
 export { default as ApiKeyIcon } from 'virtual:icons/hugeicons/lock-key';

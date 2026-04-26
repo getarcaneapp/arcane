@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { navigationItems, getBuildAndDeploymentItems } from '$lib/config/navigation-config';
+	import { navigationItems, getManagementItems } from '$lib/config/navigation-config';
 	import type { NavigationItem } from '$lib/config/navigation-config';
 	import { cn } from '$lib/utils';
 	import { page } from '$app/state';
@@ -42,7 +42,7 @@
 	const currentPath = $derived(page.url.pathname);
 	const memoizedUser = $derived.by(() => user ?? storeUser);
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
-	const buildDeploymentItems = $derived(getBuildAndDeploymentItems(currentEnvId));
+	const managementItems = $derived(getManagementItems(currentEnvId));
 
 	let upgrading = $state(false);
 	let showConfirmDialog = $state(false);
@@ -151,23 +151,64 @@
 						{m.sidebar_management()}
 					</h4>
 					<div class="space-y-2">
-						{#each navigationItems.managementItems as item (item.url)}
-							{@const IconComponent = item.icon}
-							<a
-								href={item.url}
-								onclick={handleItemClick}
-								class={cn(
-									'flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition-all duration-200 ease-out',
-									'focus-visible:ring-muted-foreground/50 hover:scale-[1.01] focus-visible:ring-1 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent',
-									isActiveItem(item)
-										? 'bg-muted text-foreground hover:bg-muted/70 shadow-sm'
-										: 'text-foreground hover:bg-muted/50'
-								)}
-								aria-current={isActiveItem(item) ? 'page' : undefined}
-							>
-								<IconComponent size={20} />
-								<span>{item.title}</span>
-							</a>
+						{#each managementItems as item (item.url)}
+							{#if item.items}
+								{@const IconComponent = item.icon}
+								<div class="space-y-2">
+									<a
+										href={item.url}
+										onclick={handleItemClick}
+										class={cn(
+											'flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition-all duration-200 ease-out',
+											'focus-visible:ring-muted-foreground/50 hover:scale-[1.01] focus-visible:ring-1 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent',
+											isActiveItem(item)
+												? 'bg-muted text-foreground hover:bg-muted/70 shadow-sm'
+												: 'text-foreground hover:bg-muted/50'
+										)}
+										aria-current={isActiveItem(item) ? 'page' : undefined}
+									>
+										<IconComponent size={20} />
+										<span>{item.title}</span>
+									</a>
+									<div class="ml-6 space-y-1">
+										{#each item.items as subItem (subItem.url)}
+											{@const SubIconComponent = subItem.icon}
+											<a
+												href={subItem.url}
+												onclick={handleItemClick}
+												class={cn(
+													'flex items-center gap-3 rounded-xl px-4 py-2 text-sm transition-all duration-200 ease-out',
+													'focus-visible:ring-muted-foreground/50 hover:scale-[1.01] focus-visible:ring-1 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent',
+													isActiveItem(subItem)
+														? 'bg-muted/70 text-foreground shadow-sm'
+														: 'text-muted-foreground hover:text-foreground hover:bg-muted/40'
+												)}
+												aria-current={isActiveItem(subItem) ? 'page' : undefined}
+											>
+												<SubIconComponent size={16} />
+												<span>{subItem.title}</span>
+											</a>
+										{/each}
+									</div>
+								</div>
+							{:else}
+								{@const IconComponent = item.icon}
+								<a
+									href={item.url}
+									onclick={handleItemClick}
+									class={cn(
+										'flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition-all duration-200 ease-out',
+										'focus-visible:ring-muted-foreground/50 hover:scale-[1.01] focus-visible:ring-1 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent',
+										isActiveItem(item)
+											? 'bg-muted text-foreground hover:bg-muted/70 shadow-sm'
+											: 'text-foreground hover:bg-muted/50'
+									)}
+									aria-current={isActiveItem(item) ? 'page' : undefined}
+								>
+									<IconComponent size={20} />
+									<span>{item.title}</span>
+								</a>
+							{/if}
 						{/each}
 					</div>
 				</section>
@@ -239,65 +280,13 @@
 					</div>
 				</section>
 
-				<section>
-					<h4 class="text-muted-foreground/70 mb-4 px-3 text-[11px] font-bold tracking-widest uppercase">
-						{m.builds_and_deployments()}
-					</h4>
-					<div class="space-y-2">
-						{#each buildDeploymentItems as item (item.url)}
-							{@const IconComponent = item.icon}
-							<a
-								href={item.url}
-								onclick={handleItemClick}
-								class={cn(
-									'flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition-all duration-200 ease-out',
-									'focus-visible:ring-muted-foreground/50 hover:scale-[1.01] focus-visible:ring-1 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent',
-									isActiveItem(item)
-										? 'bg-muted text-foreground hover:bg-muted/70 shadow-sm'
-										: 'text-foreground hover:bg-muted/50'
-								)}
-								aria-current={isActiveItem(item) ? 'page' : undefined}
-							>
-								<IconComponent size={20} />
-								<span>{item.title}</span>
-							</a>
-						{/each}
-					</div>
-				</section>
-
-				<section>
-					<h4 class="text-muted-foreground/70 mb-4 px-3 text-[11px] font-bold tracking-widest uppercase">
-						{m.security_title()}
-					</h4>
-					<div class="space-y-2">
-						{#each navigationItems.securityItems as item (item.url)}
-							{@const IconComponent = item.icon}
-							<a
-								href={item.url}
-								onclick={handleItemClick}
-								class={cn(
-									'flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition-all duration-200 ease-out',
-									'focus-visible:ring-muted-foreground/50 hover:scale-[1.01] focus-visible:ring-1 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent',
-									isActiveItem(item)
-										? 'bg-muted text-foreground hover:bg-muted/70 shadow-sm'
-										: 'text-foreground hover:bg-muted/50'
-								)}
-								aria-current={isActiveItem(item) ? 'page' : undefined}
-							>
-								<IconComponent size={20} />
-								<span>{item.title}</span>
-							</a>
-						{/each}
-					</div>
-				</section>
-
 				{#if swarmItems.length > 0}
 					<section>
 						<h4 class="text-muted-foreground/70 mb-4 px-3 text-[11px] font-bold tracking-widest uppercase">
 							{m.swarm_title()}
 						</h4>
 						<div class="space-y-2">
-							{#each swarmItems as item}
+							{#each swarmItems as item (item.url)}
 								{@const IconComponent = item.icon}
 								<a
 									href={item.url}
