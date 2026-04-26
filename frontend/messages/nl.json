@@ -194,6 +194,7 @@
 	"log_parsed_mode_tooltip": "Toont gestructureerde logs in geparseerde vorm indien beschikbaar. Zet het uit om de originele ruwe tekst te zien.",
 	"common_logout": "Afmelden",
 	"common_redeploy": "Herimplementeren",
+	"common_redeploy_disabled_arcane_self": "Beheerd door Arcane; gebruik Instellingen > Updates.",
 	"common_use_template": "Sjabloon gebruiken",
 	"maintenance_title": "Onderhoud",
 	"scheduled_prune_title": "Geplande opschoning",
