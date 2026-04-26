@@ -194,6 +194,7 @@
 	"log_parsed_mode_tooltip": "가능한 경우 구조화된 로그를 구문 분석된 형태로 표시합니다. 원본 원시 줄 텍스트를 보려면 끄세요.",
 	"common_logout": "로그아웃",
 	"common_redeploy": "재배포",
+	"common_redeploy_disabled_arcane_self": "아케인에서 관리하며 설정 > 업데이트를 사용합니다.",
 	"common_use_template": "템플릿 사용",
 	"maintenance_title": "유지 관리",
 	"scheduled_prune_title": "예약된 정리(Prune)",
