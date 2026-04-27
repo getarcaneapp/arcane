@@ -851,7 +851,7 @@ func (s *SwarmService) DeployStack(ctx context.Context, environmentID string, re
 		workingDir = stackSourceDir
 	}
 
-	pm, _ := s.getPathMapper(ctx)
+	pm, _ := s.getPathMapperInternal(ctx)
 
 	if err := libswarm.DeployStack(ctx, dockerClient, libswarm.StackDeployOptions{
 		Name:             stackName,
@@ -1656,7 +1656,7 @@ func (s *SwarmService) RenderStackConfig(ctx context.Context, req swarmtypes.Sta
 		return nil, err
 	}
 
-	pm, _ := s.getPathMapper(ctx)
+	pm, _ := s.getPathMapperInternal(ctx)
 
 	result, err := libswarm.RenderStackConfig(ctx, libswarm.StackRenderOptions{
 		Name:           req.Name,
@@ -2139,6 +2139,10 @@ func (s *SwarmService) upsertStackSourceInternal(ctx context.Context, environmen
 			continue
 		}
 		fPath := filepath.Join(stackSourceDir, f.RelativePath)
+		// Prevent path traversal
+		if !appfs.IsSafeSubdirectory(stackSourceDir, fPath) {
+			return fmt.Errorf("invalid file path %q: must be inside stack directory", f.RelativePath)
+		}
 		if err := os.MkdirAll(filepath.Dir(fPath), common.DirPerm); err != nil {
 			return fmt.Errorf("failed to create directory for %s: %w", f.RelativePath, err)
 		}
@@ -2238,7 +2242,7 @@ func (s *SwarmService) resolveSwarmStackSourceEnvironmentDirInternal(ctx context
 	return rootDir, environmentDir, nil
 }
 
-func (s *SwarmService) getPathMapper(ctx context.Context) (*appfs.PathMapper, error) {
+func (s *SwarmService) getPathMapperInternal(ctx context.Context) (*appfs.PathMapper, error) {
 	configuredPath := s.settingsService.GetStringSetting(ctx, "swarmStackSourcesDirectory", defaultSwarmStackSourceRootDir)
 
 	var containerDir, hostDir string
