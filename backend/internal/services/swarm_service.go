@@ -1345,11 +1345,11 @@ func (s *SwarmService) GetStackSource(ctx context.Context, environmentID, stackN
 	}
 
 	var files []swarmtypes.SyncFile
-	err = filepath.Walk(stackSourceDir, func(path string, info os.FileInfo, err error) error {
+	err = filepath.WalkDir(stackSourceDir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if info.IsDir() {
+		if d.IsDir() {
 			return nil
 		}
 		rel, err := filepath.Rel(stackSourceDir, path)
@@ -1359,6 +1359,7 @@ func (s *SwarmService) GetStackSource(ctx context.Context, environmentID, stackN
 		if rel == swarmStackComposeFilename || rel == swarmStackEnvFilename {
 			return nil
 		}
+		// #nosec G122 - stackSourceDir is a private, app-managed directory
 		content, err := os.ReadFile(path)
 		if err != nil {
 			return err
