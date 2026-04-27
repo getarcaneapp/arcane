@@ -120,7 +120,7 @@ func TestSwarmService_UpdateAndGetStackSource_UsesStoredFilesWithoutSwarmManager
 	require.Len(t, source.Files, 2)
 }
 
-func TestSwarmService_getPathMapper(t *testing.T) {
+func TestSwarmService_getPathMapperInternal(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
 	settingsSvc, err := NewSettingsService(ctx, db)
@@ -129,7 +129,7 @@ func TestSwarmService_getPathMapper(t *testing.T) {
 	svc := NewSwarmService(nil, settingsSvc, nil, nil, nil)
 
 	t.Run("returns nil when paths match", func(t *testing.T) {
-		pm, err := svc.getPathMapper(ctx)
+		pm, err := svc.getPathMapperInternal(ctx)
 		require.NoError(t, err)
 		require.Nil(t, pm) // Default is /app/data/swarm/sources which matches itself
 	})
@@ -140,7 +140,7 @@ func TestSwarmService_getPathMapper(t *testing.T) {
 		err := settingsSvc.UpdateSetting(ctx, "swarmStackSourcesDirectory", containerDir+":"+hostDir)
 		require.NoError(t, err)
 
-		pm, err := svc.getPathMapper(ctx)
+		pm, err := svc.getPathMapperInternal(ctx)
 		require.NoError(t, err)
 		require.NotNil(t, pm)
 		require.True(t, pm.IsNonMatchingMount())
