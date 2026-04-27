@@ -612,10 +612,30 @@ func (s *GitOpsSyncService) performSwarmStackSyncInternal(ctx context.Context, s
 		envContent = *source.envContent
 	}
 
+	var syncFiles []projects.SyncFile
+	if sync.SyncDirectory {
+		_, files, err := s.walkAndParseSyncDirectory(ctx, sync, source.repoPath)
+		if err != nil {
+			return result, s.failSync(ctx, id, result, sync, actor, "Failed to walk directory", err.Error())
+		}
+		syncFiles = files
+	}
+
+	swarmFiles := make([]swarm.SyncFile, len(syncFiles))
+	syncedFiles := make([]string, 0, len(syncFiles))
+	for i, f := range syncFiles {
+		swarmFiles[i] = swarm.SyncFile{
+			RelativePath: f.RelativePath,
+			Content:      f.Content,
+		}
+		syncedFiles = append(syncedFiles, f.RelativePath)
+	}
+
 	req := swarm.StackDeployRequest{
 		Name:           sync.ProjectName,
 		ComposeContent: source.composeContent,
 		EnvContent:     envContent,
+		Files:          swarmFiles,
 		Prune:          true,
 		WorkingDir:     filepath.Dir(filepath.Join(source.repoPath, sync.ComposePath)),
 	}
@@ -624,7 +644,9 @@ func (s *GitOpsSyncService) performSwarmStackSyncInternal(ctx context.Context, s
 		return result, s.failSync(ctx, id, result, sync, actor, "Failed to deploy swarm stack", err.Error())
 	}
 
-	syncedFiles := []string{filepath.Base(sync.ComposePath)}
+	if len(syncedFiles) == 0 {
+		syncedFiles = []string{filepath.Base(sync.ComposePath)}
+	}
 	s.updateSyncStatusWithFiles(ctx, id, "success", "", source.commitHash, syncedFiles)
 	result.Success = true
 	result.Message = fmt.Sprintf("Successfully deployed swarm stack %s from %s", sync.ProjectName, sync.ComposePath)

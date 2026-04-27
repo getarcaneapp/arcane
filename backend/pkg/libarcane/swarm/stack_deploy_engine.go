@@ -53,6 +53,7 @@ type StackDeployOptions struct {
 	Prune                bool
 	ResolveImage         string
 	WorkingDir           string
+	PathMapper           *projects.PathMapper
 }
 
 type StackRenderOptions struct {
@@ -60,6 +61,7 @@ type StackRenderOptions struct {
 	ComposeContent string
 	EnvContent     string
 	WorkingDir     string
+	PathMapper     *projects.PathMapper
 }
 
 type StackRenderResult struct {
@@ -98,7 +100,7 @@ func DeployStack(ctx context.Context, dockerClient *dockerclient.Client, opts St
 		return err
 	}
 
-	project, err := loadComposeProject(ctx, stackName, opts.ComposeContent, opts.EnvContent, opts.WorkingDir)
+	project, err := loadComposeProject(ctx, stackName, opts.ComposeContent, opts.EnvContent, opts.WorkingDir, opts.PathMapper)
 	if err != nil {
 		return err
 	}
@@ -252,7 +254,7 @@ func RenderStackConfig(ctx context.Context, opts StackRenderOptions) (*StackRend
 		return nil, errors.New("stack name is required")
 	}
 
-	project, err := loadComposeProject(ctx, stackName, opts.ComposeContent, opts.EnvContent, opts.WorkingDir)
+	project, err := loadComposeProject(ctx, stackName, opts.ComposeContent, opts.EnvContent, opts.WorkingDir, opts.PathMapper)
 	if err != nil {
 		return nil, err
 	}
@@ -276,7 +278,7 @@ func RenderStackConfig(ctx context.Context, opts StackRenderOptions) (*StackRend
 	}, nil
 }
 
-func loadComposeProject(ctx context.Context, projectName, composeContent, envContent, providedWorkingDir string) (*composegotypes.Project, error) {
+func loadComposeProject(ctx context.Context, projectName, composeContent, envContent, providedWorkingDir string, pathMapper *projects.PathMapper) (*composegotypes.Project, error) {
 	composeContent = strings.TrimSpace(composeContent)
 	if composeContent == "" {
 		return nil, errors.New("compose content is required")
@@ -317,6 +319,17 @@ func loadComposeProject(ctx context.Context, projectName, composeContent, envCon
 	}
 
 	project = project.WithoutUnnecessaryResources()
+
+	// Resolve relative paths for bind mounts, secrets, and configs
+	projects.ResolveRelativeProjectPaths(project, workingDir)
+
+	// Translate container paths to host paths for Docker execution
+	if pathMapper != nil {
+		if err := pathMapper.TranslateVolumeSources(project); err != nil {
+			return nil, fmt.Errorf("failed to translate paths for docker host: %w", err)
+		}
+	}
+
 	return project, nil
 }
 

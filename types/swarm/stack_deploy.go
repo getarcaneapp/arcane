@@ -17,6 +17,11 @@ type StackDeployRequest struct {
 	// Required: false
 	EnvContent string `json:"envContent,omitempty"`
 
+	// Files is an optional list of additional files to sync (e.g. env_file, configs, secrets).
+	//
+	// Required: false
+	Files []SyncFile `json:"files,omitempty"`
+
 	// WithRegistryAuth sends registry auth details to Swarm agents.
 	//
 	// Required: false
@@ -36,6 +41,19 @@ type StackDeployRequest struct {
 	//
 	// Required: false
 	WorkingDir string `json:"workingDir,omitempty"`
+}
+
+// SyncFile represents a file to be synced to the target environment.
+type SyncFile struct {
+	// RelativePath is the path of the file relative to the stack's working directory.
+	//
+	// Required: true
+	RelativePath string `json:"relativePath"`
+
+	// Content is the file content.
+	//
+	// Required: true
+	Content []byte `json:"content"`
 }
 
 // StackDeployResponse represents the result of a stack deployment.

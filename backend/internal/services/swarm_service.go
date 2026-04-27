@@ -20,6 +20,7 @@ import (
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
+	dockerutil "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge"
 	libswarm "github.com/getarcaneapp/arcane/backend/pkg/libarcane/swarm"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
@@ -836,6 +837,22 @@ func (s *SwarmService) DeployStack(ctx context.Context, environmentID string, re
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
+	_, stackSourceDir, err := s.resolveSwarmStackSourceDirInternal(ctx, environmentID, stackName)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := s.upsertStackSourceInternal(ctx, environmentID, stackName, req.ComposeContent, req.EnvContent, req.Files); err != nil {
+		slog.WarnContext(ctx, "failed to persist swarm stack source", "environmentID", normalizeSwarmEnvironmentIDInternal(environmentID), "stackName", stackName, "error", err)
+	}
+
+	workingDir := req.WorkingDir
+	if workingDir == "" || len(req.Files) > 0 {
+		workingDir = stackSourceDir
+	}
+
+	pm, _ := s.getPathMapper(ctx)
+
 	if err := libswarm.DeployStack(ctx, dockerClient, libswarm.StackDeployOptions{
 		Name:             stackName,
 		ComposeContent:   req.ComposeContent,
@@ -849,13 +866,10 @@ func (s *SwarmService) DeployStack(ctx context.Context, environmentID string, re
 		},
 		Prune:        req.Prune,
 		ResolveImage: req.ResolveImage,
-		WorkingDir:   req.WorkingDir,
+		WorkingDir:   workingDir,
+		PathMapper:   pm,
 	}); err != nil {
 		return nil, err
-	}
-
-	if err := s.upsertStackSourceInternal(ctx, environmentID, stackName, req.ComposeContent, req.EnvContent); err != nil {
-		slog.WarnContext(ctx, "failed to persist swarm stack source", "environmentID", normalizeSwarmEnvironmentIDInternal(environmentID), "stackName", stackName, "error", err)
 	}
 
 	return &swarmtypes.StackDeployResponse{Name: stackName}, nil
@@ -1327,10 +1341,40 @@ func (s *SwarmService) GetStackSource(ctx context.Context, environmentID, stackN
 		return nil, fmt.Errorf("failed to read swarm stack env source: %w", err)
 	}
 
+	var files []swarmtypes.SyncFile
+	err = filepath.Walk(stackSourceDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(stackSourceDir, path)
+		if err != nil {
+			return err
+		}
+		if rel == swarmStackComposeFilename || rel == swarmStackEnvFilename {
+			return nil
+		}
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		files = append(files, swarmtypes.SyncFile{
+			RelativePath: rel,
+			Content:      content,
+		})
+		return nil
+	})
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("failed to read additional swarm stack source files: %w", err)
+	}
+
 	return &swarmtypes.StackSource{
 		Name:           stackName,
 		ComposeContent: string(composeContent),
 		EnvContent:     envContent,
+		Files:          files,
 	}, nil
 }
 
@@ -1343,7 +1387,7 @@ func (s *SwarmService) UpdateStackSource(ctx context.Context, environmentID, sta
 		return nil, errors.New("stack compose source is required")
 	}
 
-	if err := s.upsertStackSourceInternal(ctx, environmentID, stackName, req.ComposeContent, req.EnvContent); err != nil {
+	if err := s.upsertStackSourceInternal(ctx, environmentID, stackName, req.ComposeContent, req.EnvContent, req.Files); err != nil {
 		return nil, err
 	}
 
@@ -1351,6 +1395,7 @@ func (s *SwarmService) UpdateStackSource(ctx context.Context, environmentID, sta
 		Name:           stackName,
 		ComposeContent: req.ComposeContent,
 		EnvContent:     req.EnvContent,
+		Files:          req.Files,
 	}, nil
 }
 
@@ -1611,10 +1656,13 @@ func (s *SwarmService) RenderStackConfig(ctx context.Context, req swarmtypes.Sta
 		return nil, err
 	}
 
+	pm, _ := s.getPathMapper(ctx)
+
 	result, err := libswarm.RenderStackConfig(ctx, libswarm.StackRenderOptions{
 		Name:           req.Name,
 		ComposeContent: req.ComposeContent,
 		EnvContent:     req.EnvContent,
+		PathMapper:     pm,
 	})
 	if err != nil {
 		return nil, err
@@ -2055,7 +2103,7 @@ func decodeSecretSpecInternal(raw json.RawMessage) (swarm.SecretSpec, error) {
 	return spec, nil
 }
 
-func (s *SwarmService) upsertStackSourceInternal(ctx context.Context, environmentID, stackName, composeContent, envContent string) error {
+func (s *SwarmService) upsertStackSourceInternal(ctx context.Context, environmentID, stackName, composeContent, envContent string, files []swarmtypes.SyncFile) error {
 	stackName = strings.TrimSpace(stackName)
 	if stackName == "" {
 		return errors.New("stack name is required")
@@ -2075,15 +2123,28 @@ func (s *SwarmService) upsertStackSourceInternal(ctx context.Context, environmen
 	}
 
 	envPath := filepath.Join(stackSourceDir, swarmStackEnvFilename)
-	if envContent == "" {
+	if envContent != "" {
+		if err := os.WriteFile(envPath, []byte(envContent), common.FilePerm); err != nil {
+			return fmt.Errorf("failed to write swarm stack env source: %w", err)
+		}
+	} else {
 		if err := os.Remove(envPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("failed to clear swarm stack env source: %w", err)
 		}
-		return nil
 	}
 
-	if err := os.WriteFile(envPath, []byte(envContent), common.FilePerm); err != nil {
-		return fmt.Errorf("failed to write swarm stack env source: %w", err)
+	// Write additional files
+	for _, f := range files {
+		if f.RelativePath == swarmStackComposeFilename || f.RelativePath == swarmStackEnvFilename {
+			continue
+		}
+		fPath := filepath.Join(stackSourceDir, f.RelativePath)
+		if err := os.MkdirAll(filepath.Dir(fPath), common.DirPerm); err != nil {
+			return fmt.Errorf("failed to create directory for %s: %w", f.RelativePath, err)
+		}
+		if err := os.WriteFile(fPath, f.Content, common.FilePerm); err != nil {
+			return fmt.Errorf("failed to write %s: %w", f.RelativePath, err)
+		}
 	}
 
 	return nil
@@ -2175,6 +2236,55 @@ func (s *SwarmService) resolveSwarmStackSourceEnvironmentDirInternal(ctx context
 	}
 
 	return rootDir, environmentDir, nil
+}
+
+func (s *SwarmService) getPathMapper(ctx context.Context) (*appfs.PathMapper, error) {
+	configuredPath := s.settingsService.GetStringSetting(ctx, "swarmStackSourcesDirectory", defaultSwarmStackSourceRootDir)
+
+	var containerDir, hostDir string
+
+	// Handle mapping format: "container_path:host_path"
+	if parts := strings.SplitN(configuredPath, ":", 2); len(parts) == 2 {
+		if !appfs.IsWindowsDrivePath(configuredPath) && strings.HasPrefix(parts[0], "/") {
+			containerDir = parts[0]
+			hostDir = parts[1]
+		}
+	}
+
+	if containerDir == "" {
+		containerDir = configuredPath
+	}
+
+	// Resolve container directory to absolute path
+	containerDirResolved, err := appfs.GetProjectsDirectory(ctx, strings.TrimSpace(containerDir))
+	if err != nil {
+		slog.WarnContext(ctx, "unable to resolve container swarm sources directory, using default", "error", err)
+		containerDirResolved = defaultSwarmStackSourceRootDir
+	}
+
+	// If hostDir not obtained from mapping, attempt auto-discovery from Docker mounts
+	if hostDir == "" && s.dockerService != nil {
+		if dockerCli, derr := s.dockerService.GetClient(ctx); derr == nil {
+			absContainerDir, _ := filepath.Abs(containerDirResolved)
+			if discovery, aerr := dockerutil.GetHostPathForContainerPath(ctx, dockerCli, absContainerDir); aerr == nil && discovery != "" {
+				hostDir = discovery
+				slog.DebugContext(ctx, "Auto-discovered host path for swarm stack sources", "container", absContainerDir, "host", hostDir)
+			}
+		}
+	}
+
+	// Clean host directory
+	hostDirResolved := strings.TrimSpace(hostDir)
+	if hostDirResolved != "" {
+		hostDirResolved = filepath.Clean(hostDirResolved)
+	}
+
+	pm := appfs.NewPathMapper(containerDirResolved, hostDirResolved)
+	if !pm.IsNonMatchingMount() {
+		return nil, nil
+	}
+
+	return pm, nil
 }
 
 func (s *SwarmService) ensureSwarmManagerInternal(ctx context.Context) error {

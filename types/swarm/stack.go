@@ -135,6 +135,11 @@ type StackSource struct {
 	//
 	// Required: false
 	EnvContent string `json:"envContent,omitempty"`
+
+	// Files is an optional list of additional files synced with the stack.
+	//
+	// Required: false
+	Files []SyncFile `json:"files,omitempty"`
 }
 
 type StackSourceUpdateRequest struct {
@@ -147,4 +152,9 @@ type StackSourceUpdateRequest struct {
 	//
 	// Required: false
 	EnvContent string `json:"envContent,omitempty"`
+
+	// Files is an optional list of additional files to persist for the stack.
+	//
+	// Required: false
+	Files []SyncFile `json:"files,omitempty"`
 }
