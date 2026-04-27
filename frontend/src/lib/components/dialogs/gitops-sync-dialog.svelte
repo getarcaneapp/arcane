@@ -81,7 +81,8 @@
 		name: open && syncToEdit ? syncToEdit.name : '',
 		repositoryId: open && syncToEdit ? syncToEdit.repositoryId : '',
 		branch: open && syncToEdit ? syncToEdit.branch : 'main',
-		composePath: open && syncToEdit ? syncToEdit.composePath : 'docker-compose.yml',
+		composePath:
+			open && syncToEdit ? syncToEdit.composePath : selectedTargetType === 'swarm_stack' ? 'compose.yml' : 'docker-compose.yml',
 		syncDirectory: open && syncToEdit ? (syncToEdit.syncDirectory ?? false) : false,
 		maxSyncFiles: open && syncToEdit ? (syncToEdit.maxSyncFiles ?? 0) : (settingsQuery.data?.gitSyncMaxFiles ?? 0),
 		maxSyncTotalSizeMb:
@@ -126,6 +127,18 @@
 			if (!isEditMode) {
 				form.reset();
 			}
+		}
+	});
+
+	$effect(() => {
+		if (isEditMode || !open) return;
+
+		// If user hasn't changed it from a default, update it to the new target's default
+		const current = $inputs.composePath.value;
+		if (current === 'docker-compose.yml' && selectedTargetType === 'swarm_stack') {
+			$inputs.composePath.value = 'compose.yml';
+		} else if (current === 'compose.yml' && selectedTargetType === 'project') {
+			$inputs.composePath.value = 'docker-compose.yml';
 		}
 	});
 
@@ -274,7 +287,11 @@
 						<Label for="composePath">{m.git_sync_compose_path()}</Label>
 						<div class="flex gap-2">
 							<div class="flex-1">
-								<FormInput type="text" placeholder="docker-compose.yml" bind:input={$inputs.composePath} />
+								<FormInput
+									type="text"
+									placeholder={selectedTargetType === 'swarm_stack' ? 'compose.yml' : 'docker-compose.yml'}
+									bind:input={$inputs.composePath}
+								/>
 							</div>
 							<Button
 								type="button"
