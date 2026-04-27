@@ -851,7 +851,10 @@ func (s *SwarmService) DeployStack(ctx context.Context, environmentID string, re
 		workingDir = stackSourceDir
 	}
 
-	pm, _ := s.getPathMapperInternal(ctx)
+	pm, err := s.getPathMapperInternal(ctx)
+	if err != nil {
+		slog.WarnContext(ctx, "failed to initialize path mapper, deploying without path translation", "error", err)
+	}
 
 	if err := libswarm.DeployStack(ctx, dockerClient, libswarm.StackDeployOptions{
 		Name:             stackName,
@@ -1656,7 +1659,10 @@ func (s *SwarmService) RenderStackConfig(ctx context.Context, req swarmtypes.Sta
 		return nil, err
 	}
 
-	pm, _ := s.getPathMapperInternal(ctx)
+	pm, err := s.getPathMapperInternal(ctx)
+	if err != nil {
+		slog.WarnContext(ctx, "failed to initialize path mapper, deploying without path translation", "error", err)
+	}
 
 	result, err := libswarm.RenderStackConfig(ctx, libswarm.StackRenderOptions{
 		Name:           req.Name,
