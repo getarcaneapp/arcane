@@ -236,8 +236,7 @@ func TestResolveRelativeProjectPaths(t *testing.T) {
 	project, err := LoadComposeProject(context.Background(), composePath, "demo", dir, false, nil)
 	require.NoError(t, err)
 
-	err = ResolveRelativeProjectPaths(project)
-	require.NoError(t, err)
+	ResolveRelativeProjectPaths(project, dir)
 
 	service := project.Services["app"]
 	require.Len(t, service.Volumes, 1)
