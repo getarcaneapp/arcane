@@ -33,7 +33,11 @@ export default defineConfig({
 			name: 'chromium',
 			use: { ...devices['Desktop Chrome'], storageState: '.auth/login.json' },
 			dependencies: ['auth-setup', 'gitops-setup'],
-			testMatch: /spec\/.*\.spec\.ts/
+			testMatch: /spec\/(?!cli\.).*\.spec\.ts/
+		},
+		{
+			name: 'cli',
+			testMatch: /spec\/cli\.spec\.ts/
 		}
 	]
 });

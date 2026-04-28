@@ -9,6 +9,7 @@ services:
       - APP_ENV=test
       - ENCRYPTION_KEY=3JDIgolks2tJ9ymm1AdqzlYMWu0DUWyt
       - JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
+      - ADMIN_STATIC_API_KEY=${E2E_ADMIN_STATIC_API_KEY:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - arcane_data:/app/data

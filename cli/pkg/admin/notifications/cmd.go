@@ -91,13 +91,13 @@ var settingsGetCmd = &cobra.Command{
 		}
 		defer func() { _ = resp.Body.Close() }()
 
-		var result base.ApiResponse[[]notification.Response]
+		var result []notification.Response
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 			return fmt.Errorf("failed to parse response: %w", err)
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
+			resultBytes, err := json.MarshalIndent(result, "", "  ")
 			if err != nil {
 				return fmt.Errorf("failed to marshal JSON: %w", err)
 			}
@@ -106,8 +106,8 @@ var settingsGetCmd = &cobra.Command{
 		}
 
 		headers := []string{"ID", "PROVIDER", "ENABLED"}
-		rows := make([][]string, len(result.Data))
-		for i, setting := range result.Data {
+		rows := make([][]string, len(result))
+		for i, setting := range result {
 			rows[i] = []string{
 				fmt.Sprintf("%d", setting.ID),
 				string(setting.Provider),
@@ -116,7 +116,7 @@ var settingsGetCmd = &cobra.Command{
 		}
 
 		output.Table(headers, rows)
-		fmt.Printf("\nTotal: %d notification settings\n", len(result.Data))
+		fmt.Printf("\nTotal: %d notification settings\n", len(result))
 		return nil
 	},
 }

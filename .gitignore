@@ -35,6 +35,7 @@ vite.config.ts.timestamp-*
 tests/test-results/*
 tests/.report/*
 tests/.auth/
+tests/.bin/
 backend/.bin
 backend/build-errors.log
 frontend/bun.lock

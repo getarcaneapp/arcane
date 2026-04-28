@@ -284,7 +284,7 @@ jobs:
         run: just deps install tests
 
       - name: Run Playwright E2E tests
-        run: just test e2e
+        run: pnpm -C tests exec playwright test --project=chromium
         env:
           COMPOSE_FILE: ${{ matrix.database.compose_file }}
           BASE_URL: http://localhost:${{ matrix.database.port }}
@@ -294,6 +294,60 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: playwright-report-${{ matrix.database.name }}
+          path: tests/.report
+          include-hidden-files: true
+          retention-days: 15
+
+  cli-e2e-tests:
+    name: CLI E2E Tests (proxy)
+    if: ${{ github.head_ref != 'l10n_crowdin' }}
+    runs-on: depot-ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+      id-token: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 25
+          cache: pnpm
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: cli/go.mod
+          cache-dependency-path: cli/go.sum
+
+      - name: Set up Depot CLI
+        uses: depot/setup-action@v1
+
+      - name: Setup depot buildx driver
+        run: depot configure-docker
+
+      - name: Install Playwright test dependencies
+        run: pnpm -C tests install
+
+      - name: Run CLI E2E tests against socket proxy
+        run: pnpm -C tests exec playwright test --project=cli
+        env:
+          COMPOSE_FILE: setup/compose-proxy.yaml
+          BASE_URL: http://localhost:3002
+          E2E_ADMIN_STATIC_API_KEY: ${{ secrets.E2E_ADMIN_STATIC_API_KEY }}
+
+      - name: Upload Playwright HTML report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report-proxy-cli
           path: tests/.report
           include-hidden-files: true
           retention-days: 15
