@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -15,7 +16,8 @@ import (
 	ref "go.podman.io/image/v5/docker/reference"
 )
 
-const defaultRegistryHost = "index.docker.io"
+const defaultRegistryHost = "registry-1.docker.io"
+const dockerHubRateLimitRepository = "ratelimitpreview/test"
 
 // trustedAuthDelegations maps registry hosts to their trusted external auth realm hosts.
 // Some registries serve images under their own domain but delegate token auth to a
@@ -28,6 +30,15 @@ var trustedAuthDelegations = map[string]string{
 type Credentials struct {
 	Username string
 	Token    string
+}
+
+// RateLimitInfo contains pull quota information returned by registry headers.
+type RateLimitInfo struct {
+	Limit         *int   `json:"limit,omitempty"`
+	Remaining     *int   `json:"remaining,omitempty"`
+	Used          *int   `json:"used,omitempty"`
+	WindowSeconds *int   `json:"windowSeconds,omitempty"`
+	Source        string `json:"source,omitempty"`
 }
 
 type Reference struct {
@@ -120,6 +131,53 @@ func FetchDigest(ctx context.Context, registryHost, repository, tag string, cred
 	return FetchDigestWithHTTPClient(ctx, registryHost, repository, tag, credential, nil)
 }
 
+// FetchDockerHubRateLimit fetches Docker Hub pull rate limit information.
+func FetchDockerHubRateLimit(ctx context.Context, credential *Credentials) (*RateLimitInfo, error) {
+	return FetchDockerHubRateLimitWithHTTPClient(ctx, credential, nil)
+}
+
+// FetchDockerHubRateLimitWithHTTPClient fetches Docker Hub pull rate limit
+// information using the provided HTTP client.
+func FetchDockerHubRateLimitWithHTTPClient(ctx context.Context, credential *Credentials, httpClient *http.Client) (*RateLimitInfo, error) {
+	return FetchRegistryRateLimitWithHTTPClient(ctx, "docker.io", dockerHubRateLimitRepository, "latest", credential, httpClient)
+}
+
+// FetchRegistryRateLimitWithHTTPClient fetches pull rate limit information from
+// an OCI registry manifest response.
+func FetchRegistryRateLimitWithHTTPClient(ctx context.Context, registryHost, repository, tag string, credential *Credentials, httpClient *http.Client) (*RateLimitInfo, error) {
+	if httpClient == nil {
+		httpClient = NewRegistryHTTPClient()
+	}
+
+	requestCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	authHeader := ""
+	if credential != nil && strings.TrimSpace(credential.Username) != "" && strings.TrimSpace(credential.Token) != "" {
+		authHeader = basicAuthHeaderInternal(credential.Username, credential.Token)
+	}
+
+	resp, err := manifestRequestInternal(requestCtx, httpClient, registryHost, repository, tag, authHeader)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		challenge := resp.Header.Get("WWW-Authenticate")
+		if challenge == "" {
+			return nil, fmt.Errorf("manifest request failed with status: %d", resp.StatusCode)
+		}
+		return fetchRateLimitWithTokenAuthInternal(requestCtx, httpClient, registryHost, repository, tag, challenge, credential)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("manifest request failed with status: %d", resp.StatusCode)
+	}
+
+	return extractRateLimitFromHeadersInternal(resp.Header)
+}
+
 func FetchDigestWithHTTPClient(ctx context.Context, registryHost, repository, tag string, credential *Credentials, httpClient *http.Client) (string, error) {
 	if httpClient == nil {
 		httpClient = NewRegistryHTTPClient()
@@ -157,6 +215,33 @@ func FetchDigestWithHTTPClient(ctx context.Context, registryHost, repository, ta
 	}
 
 	return digest, nil
+}
+
+func fetchRateLimitWithTokenAuthInternal(ctx context.Context, httpClient *http.Client, registryHost, repository, tag, challenge string, credential *Credentials) (*RateLimitInfo, error) {
+	realm, service := parseWWWAuthInternal(challenge)
+	if realm == "" {
+		return nil, fmt.Errorf("no auth realm found")
+	}
+	if err := validateAuthRealmInternal(registryHost, realm); err != nil {
+		return nil, err
+	}
+
+	token, err := fetchRegistryTokenInternal(ctx, httpClient, realm, service, repository, credential)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := manifestRequestInternal(ctx, httpClient, registryHost, repository, tag, token)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("authenticated manifest request failed with status: %d", resp.StatusCode)
+	}
+
+	return extractRateLimitFromHeadersInternal(resp.Header)
 }
 
 func fetchWithTokenAuthInternal(ctx context.Context, httpClient *http.Client, registryHost, repository, tag, challenge string, credential *Credentials) (string, error) {
@@ -350,6 +435,88 @@ func extractDigestFromHeadersInternal(headers http.Header) string {
 	}
 
 	return ""
+}
+
+func extractRateLimitFromHeadersInternal(headers http.Header) (*RateLimitInfo, error) {
+	limit, limitWindow, limitErr := parseRateLimitHeaderInternal(headers.Get("RateLimit-Limit"))
+	if limitErr != nil {
+		return nil, fmt.Errorf("parse RateLimit-Limit: %w", limitErr)
+	}
+
+	remaining, remainingWindow, remainingErr := parseRateLimitHeaderInternal(headers.Get("RateLimit-Remaining"))
+	if remainingErr != nil {
+		return nil, fmt.Errorf("parse RateLimit-Remaining: %w", remainingErr)
+	}
+
+	if limit == nil && remaining == nil {
+		return nil, fmt.Errorf("rate limit headers not returned")
+	}
+
+	windowSeconds := limitWindow
+	if windowSeconds == nil {
+		windowSeconds = remainingWindow
+	}
+
+	var used *int
+	if limit != nil && remaining != nil {
+		value := *limit - *remaining
+		used = &value
+	}
+
+	return &RateLimitInfo{
+		Limit:         limit,
+		Remaining:     remaining,
+		Used:          used,
+		WindowSeconds: windowSeconds,
+		Source:        strings.TrimSpace(headers.Get("Docker-RateLimit-Source")),
+	}, nil
+}
+
+func parseRateLimitHeaderInternal(value string) (*int, *int, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil, nil, nil
+	}
+
+	if beforeComma, _, ok := strings.Cut(value, ","); ok {
+		value = strings.TrimSpace(beforeComma)
+	}
+
+	parts := strings.Split(value, ";")
+	quota, err := parsePositiveIntInternal(strings.TrimSpace(parts[0]))
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var window *int
+	for _, part := range parts[1:] {
+		key, raw, ok := strings.Cut(strings.TrimSpace(part), "=")
+		if !ok || strings.TrimSpace(key) != "w" {
+			continue
+		}
+
+		parsedWindow, parseErr := parsePositiveIntInternal(strings.TrimSpace(raw))
+		if parseErr != nil {
+			return nil, nil, fmt.Errorf("invalid window: %w", parseErr)
+		}
+		window = parsedWindow
+		break
+	}
+
+	return quota, window, nil
+}
+
+func parsePositiveIntInternal(value string) (*int, error) {
+	if value == "" {
+		return nil, fmt.Errorf("empty integer value")
+	}
+
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed < 0 {
+		return nil, fmt.Errorf("invalid integer value %q", value)
+	}
+
+	return &parsed, nil
 }
 
 func parseWWWAuthInternal(header string) (string, string) {

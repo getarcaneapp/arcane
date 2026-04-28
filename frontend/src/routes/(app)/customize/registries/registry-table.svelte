@@ -9,7 +9,7 @@
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
 	import { tryCatch } from '$lib/utils/try-catch';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
-	import type { ContainerRegistry } from '$lib/types/container-registry.type';
+	import type { ContainerRegistry, ContainerRegistryPullUsage } from '$lib/types/container-registry.type';
 	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
 	import { format } from 'date-fns';
@@ -21,11 +21,13 @@
 		registries = $bindable(),
 		selectedIds = $bindable(),
 		requestOptions = $bindable(),
+		pullUsageByRegistry = {},
 		onEditRegistry
 	}: {
 		registries: Paginated<ContainerRegistry>;
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
+		pullUsageByRegistry?: Record<string, ContainerRegistryPullUsage>;
 		onEditRegistry: (registry: ContainerRegistry) => void;
 	} = $props();
 
@@ -46,6 +48,15 @@
 		if (url.includes('gcr.io')) return m.registry_google_container_registry();
 		if (url.includes('quay.io')) return m.registry_quay_io();
 		return url;
+	}
+
+	function formatPullUsage(item: ContainerRegistry) {
+		const usage = pullUsageByRegistry[item.id];
+		if (!usage) return m.common_unavailable();
+		if (usage.remaining !== undefined && usage.limit !== undefined) {
+			return m.registries_pull_limit_value({ remaining: usage.remaining, limit: usage.limit });
+		}
+		return m.registries_observed_pulls_value({ count: usage.observedPulls });
 	}
 
 	async function handleDeleteSelected(ids: string[]) {
@@ -155,6 +166,12 @@
 			cell: StatusCell
 		},
 		{
+			id: 'pullUsage',
+			accessorFn: (row) => row.id,
+			title: m.registries_pull_usage(),
+			cell: PullUsageCell
+		},
+		{
 			accessorKey: 'createdAt',
 			title: m.common_created(),
 			sortable: true,
@@ -167,6 +184,7 @@
 		{ id: 'username', label: m.registries_username_key_label(), defaultVisible: true },
 		{ id: 'description', label: m.common_description(), defaultVisible: true },
 		{ id: 'enabled', label: m.common_status(), defaultVisible: true },
+		{ id: 'pullUsage', label: m.registries_pull_usage(), defaultVisible: true },
 		{ id: 'createdAt', label: m.common_created(), defaultVisible: true }
 	];
 
@@ -213,6 +231,10 @@
 	<StatusBadge variant={enabled ? 'green' : 'red'} text={enabled ? m.common_enabled() : m.common_disabled()} />
 {/snippet}
 
+{#snippet PullUsageCell({ item }: { item: ContainerRegistry })}
+	<span class="text-sm">{formatPullUsage(item)}</span>
+{/snippet}
+
 {#snippet CreatedCell({ value }: { value: unknown })}
 	<span class="text-sm">{value ? format(new Date(String(value)), 'PP p') : m.common_na()}</span>
 {/snippet}
@@ -247,6 +269,13 @@
 				icon: ExternalLinkIcon,
 				iconVariant: 'gray' as const,
 				show: (mobileFieldVisibility.description ?? true) && item.description !== undefined
+			},
+			{
+				label: m.registries_pull_usage(),
+				getValue: (item: ContainerRegistry) => formatPullUsage(item),
+				icon: RegistryIcon,
+				iconVariant: 'gray' as const,
+				show: mobileFieldVisibility.pullUsage ?? true
 			}
 		]}
 		rowActions={RowActions}

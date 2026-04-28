@@ -85,6 +85,10 @@ type TestContainerRegistryOutput struct {
 	Body base.ApiResponse[base.MessageResponse]
 }
 
+type GetContainerRegistryPullUsageOutput struct {
+	Body base.ApiResponse[containerregistry.PullUsageResponse]
+}
+
 type SyncContainerRegistriesInput struct {
 	Body containerregistry.SyncRequest
 }
@@ -142,6 +146,19 @@ func RegisterContainerRegistries(api huma.API, registryService *services.Contain
 			{"ApiKeyAuth": {}},
 		},
 	}, h.SyncRegistries)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "getContainerRegistryPullUsage",
+		Method:      "GET",
+		Path:        "/container-registries/pull-usage",
+		Summary:     "Get container registry pull usage",
+		Description: "Get configured registry pull usage and rate limit visibility",
+		Tags:        []string{"Container Registries"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.GetPullUsage)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "getContainerRegistry",
@@ -224,6 +241,25 @@ func (h *ContainerRegistryHandler) ListRegistries(ctx context.Context, input *Li
 				ItemsPerPage:    paginationResp.ItemsPerPage,
 				GrandTotalItems: paginationResp.GrandTotalItems,
 			},
+		},
+	}, nil
+}
+
+// GetPullUsage returns pull usage visibility for configured registries.
+func (h *ContainerRegistryHandler) GetPullUsage(ctx context.Context, input *struct{}) (*GetContainerRegistryPullUsageOutput, error) {
+	if h.registryService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	usage, err := h.registryService.GetRegistryPullUsage(ctx)
+	if err != nil {
+		return nil, huma.Error500InternalServerError((&common.RegistryRetrievalError{Err: err}).Error())
+	}
+
+	return &GetContainerRegistryPullUsageOutput{
+		Body: base.ApiResponse[containerregistry.PullUsageResponse]{
+			Success: true,
+			Data:    usage,
 		},
 	}, nil
 }

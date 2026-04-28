@@ -12,6 +12,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func serverURLFromRequestInternal(r *http.Request) string {
+	return "https://" + r.Host
+}
+
 func TestIsFallbackEligibleDaemonError(t *testing.T) {
 	eligible := []string{
 		"not found",
@@ -59,7 +63,7 @@ func TestFetchDigestWithHTTPClient_FallsBackToGetOnMethodNotAllowed(t *testing.T
 	var getCalls int
 	wantDigest := digest.FromString("method-not-allowed").String()
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodHead:
 			headCalls++
@@ -132,6 +136,141 @@ func TestFetchDigestWithHTTPClient_DoesNotFallbackToGetOnResourceErrors(t *testi
 			assert.Equal(t, 0, getCalls)
 		})
 	}
+}
+
+func TestFetchRegistryRateLimitWithHTTPClient_AnonymousTokenFlow(t *testing.T) {
+	var tokenCalls int
+	var manifestCalls int
+
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/token":
+			tokenCalls++
+			assert.Empty(t, r.Header.Get("Authorization"))
+			assert.Equal(t, "registry.example.com", r.URL.Query().Get("service"))
+			assert.Equal(t, "repository:team/app:pull", r.URL.Query().Get("scope"))
+			_, _ = w.Write([]byte(`{"token":"test-token"}`))
+		case r.Method == http.MethodHead && r.URL.Path == "/v2/team/app/manifests/latest":
+			manifestCalls++
+			if r.Header.Get("Authorization") != "Bearer test-token" {
+				w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Bearer realm="%s/token",service="registry.example.com"`, serverURLFromRequestInternal(r)))
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			w.Header().Set("RateLimit-Limit", "100;w=21600")
+			w.Header().Set("RateLimit-Remaining", "76;w=21600")
+			w.Header().Set("Docker-RateLimit-Source", "203.0.113.10")
+			w.WriteHeader(http.StatusOK)
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	info, err := FetchRegistryRateLimitWithHTTPClient(
+		context.Background(),
+		server.URL,
+		"team/app",
+		"latest",
+		nil,
+		server.Client(),
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, info.Limit)
+	require.NotNil(t, info.Remaining)
+	require.NotNil(t, info.Used)
+	require.NotNil(t, info.WindowSeconds)
+	assert.Equal(t, 100, *info.Limit)
+	assert.Equal(t, 76, *info.Remaining)
+	assert.Equal(t, 24, *info.Used)
+	assert.Equal(t, 21600, *info.WindowSeconds)
+	assert.Equal(t, "203.0.113.10", info.Source)
+	assert.Equal(t, 1, tokenCalls)
+	assert.Equal(t, 2, manifestCalls)
+}
+
+func TestFetchRegistryRateLimitWithHTTPClient_CredentialBackedTokenFlow(t *testing.T) {
+	var tokenAuth string
+	var initialManifestAuth string
+
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/token":
+			tokenAuth = r.Header.Get("Authorization")
+			_, _ = w.Write([]byte(`{"access_token":"credential-token"}`))
+		case r.Method == http.MethodHead && r.URL.Path == "/v2/team/app/manifests/latest":
+			if r.Header.Get("Authorization") != "Bearer credential-token" {
+				initialManifestAuth = r.Header.Get("Authorization")
+				w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Bearer realm="%s/token",service="registry.example.com"`, serverURLFromRequestInternal(r)))
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			w.Header().Set("RateLimit-Limit", "200;w=21600")
+			w.Header().Set("RateLimit-Remaining", "199;w=21600")
+			w.WriteHeader(http.StatusOK)
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	info, err := FetchRegistryRateLimitWithHTTPClient(
+		context.Background(),
+		server.URL,
+		"team/app",
+		"latest",
+		&Credentials{Username: "docker-user", Token: "docker-token"},
+		server.Client(),
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, info.Limit)
+	require.NotNil(t, info.Remaining)
+	assert.Equal(t, 200, *info.Limit)
+	assert.Equal(t, 199, *info.Remaining)
+	assert.Contains(t, initialManifestAuth, "Basic ")
+	assert.Contains(t, tokenAuth, "Basic ")
+}
+
+func TestFetchRegistryRateLimitWithHTTPClient_MissingHeaders(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	info, err := FetchRegistryRateLimitWithHTTPClient(context.Background(), server.URL, "team/app", "latest", nil, server.Client())
+
+	require.Error(t, err)
+	assert.Nil(t, info)
+	assert.Contains(t, err.Error(), "rate limit headers not returned")
+}
+
+func TestFetchRegistryRateLimitWithHTTPClient_MalformedHeader(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("RateLimit-Limit", "bad;w=21600")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	info, err := FetchRegistryRateLimitWithHTTPClient(context.Background(), server.URL, "team/app", "latest", nil, server.Client())
+
+	require.Error(t, err)
+	assert.Nil(t, info)
+	assert.Contains(t, err.Error(), "parse RateLimit-Limit")
+}
+
+func TestFetchRegistryRateLimitWithHTTPClient_NonOKResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer server.Close()
+
+	info, err := FetchRegistryRateLimitWithHTTPClient(context.Background(), server.URL, "team/app", "latest", nil, server.Client())
+
+	require.Error(t, err)
+	assert.Nil(t, info)
+	assert.Contains(t, err.Error(), "manifest request failed with status: 429")
 }
 
 func TestParseWWWAuthInternal_AllowsCommasInsideQuotedRealm(t *testing.T) {

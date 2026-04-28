@@ -1,5 +1,9 @@
 import BaseAPIService from './api-service';
-import type { ContainerRegistryCreateDto, ContainerRegistryUpdateDto } from '$lib/types/container-registry.type';
+import type {
+	ContainerRegistryCreateDto,
+	ContainerRegistryPullUsageResponse,
+	ContainerRegistryUpdateDto
+} from '$lib/types/container-registry.type';
 import type { ContainerRegistry } from '$lib/types/container-registry.type';
 import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
 import { transformPaginationParams } from '$lib/utils/params.util';
@@ -13,6 +17,10 @@ export default class ContainerRegistryService extends BaseAPIService {
 
 	async getRegistry(id: string): Promise<ContainerRegistry> {
 		return this.handleResponse(this.api.get(`/container-registries/${id}`));
+	}
+
+	async getPullUsage(): Promise<ContainerRegistryPullUsageResponse> {
+		return this.handleResponse(this.api.get('/container-registries/pull-usage'));
 	}
 
 	async createRegistry(registry: ContainerRegistryCreateDto): Promise<ContainerRegistry> {

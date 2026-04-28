@@ -1,7 +1,79 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 
 const route = '/customize/registries';
 const TOKEN = process.env.REGISTRY_TEST_TOKEN ?? 'e2e-token';
+const pullUsageRoute = /\/api\/container-registries\/pull-usage(?:\?|$)/;
+const registryListRoute = /\/api\/container-registries(?:\?|$)/;
+
+async function mockRegistryList(page: Page, registryId = 'dockerhub-registry') {
+	await page.context().route(registryListRoute, async (route) => {
+		if (route.request().method() !== 'GET') {
+			await route.fallback();
+			return;
+		}
+
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({
+				success: true,
+				data: [
+					{
+						id: registryId,
+						url: 'docker.io',
+						username: 'docker-user',
+						description: 'Docker Hub test registry',
+						insecure: false,
+						enabled: true,
+						registryType: 'generic',
+						createdAt: new Date().toISOString(),
+						updatedAt: new Date().toISOString()
+					}
+				],
+				pagination: {
+					totalPages: 1,
+					totalItems: 1,
+					currentPage: 1,
+					itemsPerPage: 20,
+					grandTotalItems: 1
+				}
+			})
+		});
+	});
+}
+
+async function mockRegistryPullUsage(
+	page: Page,
+	options: { registryId?: string; remaining?: number; limit?: number; observedPulls?: number }
+) {
+	const registryId = options.registryId ?? 'dockerhub-registry';
+	await page.context().route(pullUsageRoute, async (route) => {
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({
+				success: true,
+				data: {
+					registries: [
+						{
+							registryId,
+							provider: 'dockerhub',
+							registry: 'docker.io',
+							displayName: 'Docker Hub',
+							repository: 'ratelimitpreview/test',
+							...(options.limit === undefined ? {} : { limit: options.limit }),
+							...(options.remaining === undefined ? {} : { remaining: options.remaining }),
+							observedPulls: options.observedPulls ?? 0,
+							authMethod: 'credential',
+							authUsername: 'docker-user',
+							checkedAt: new Date().toISOString()
+						}
+					]
+				}
+			})
+		});
+	});
+}
 
 test.describe('Container Registries', () => {
 	test.beforeEach(async ({ page }) => {
@@ -40,6 +112,30 @@ test.describe('Container Registries', () => {
 		// Close dialog
 		await page.keyboard.press('Escape');
 		await expect(dialog).toBeHidden();
+	});
+
+	test('should display registry pull limit usage when headers are available', async ({ page }) => {
+		await mockRegistryList(page);
+		await mockRegistryPullUsage(page, { remaining: 76, limit: 100, observedPulls: 4 });
+		await page.goto(route);
+		await page.waitForLoadState('networkidle');
+
+		const table = page.getByRole('table');
+		await expect(table.getByText('Pull Usage')).toBeVisible();
+		await expect(table.getByText('76/100')).toBeVisible();
+	});
+
+	test('should display observed pull count when registry limit headers are unavailable', async ({
+		page
+	}) => {
+		await mockRegistryList(page);
+		await mockRegistryPullUsage(page, { observedPulls: 4 });
+		await page.goto(route);
+		await page.waitForLoadState('networkidle');
+
+		const table = page.getByRole('table');
+		await expect(table.getByText('Pull Usage')).toBeVisible();
+		await expect(table.getByText('4 pulls')).toBeVisible();
 	});
 
 	test('should create, test, edit, and delete a registry', async ({ page }) => {

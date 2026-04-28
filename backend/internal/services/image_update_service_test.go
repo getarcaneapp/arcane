@@ -516,7 +516,7 @@ func TestImageUpdateService_CheckImageUpdate_UsesRegistryFallback(t *testing.T) 
 				return client.DistributionInspectResult{}, errors.New("Error response from daemon: Not Found")
 			},
 		}, nil
-	})
+	}, nil)
 	registryService.distributionHTTPClient = server.Client()
 
 	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
@@ -556,7 +556,7 @@ func TestImageUpdateService_CheckMultipleImages_UsesRegistryFallback(t *testing.
 				return client.DistributionInspectResult{}, errors.New("Error response from daemon: <html><body><h1>403 Forbidden</h1> Request forbidden by administrative rules. </body></html>")
 			},
 		}, nil
-	})
+	}, nil)
 	registryService.distributionHTTPClient = server.Client()
 
 	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
@@ -597,7 +597,7 @@ func TestImageUpdateService_CheckMultipleImages_PersistsRefScopedErrorsWhenLocal
 				return client.DistributionInspectResult{}, errors.New("Error response from daemon: Not Found")
 			},
 		}, nil
-	})
+	}, nil)
 	registryService.distributionHTTPClient = server.Client()
 
 	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}

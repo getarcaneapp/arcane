@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -29,9 +30,11 @@ import (
 )
 
 const (
-	registryCacheTTL           = 30 * time.Minute
-	registryTypeGeneric string = "generic"
-	registryTypeECR     string = "ecr"
+	registryCacheTTL                  = 30 * time.Minute
+	registryTypeGeneric        string = "generic"
+	registryTypeECR            string = "ecr"
+	registryPullCountKeyPrefix        = "container_registry:pulls:"
+	registryRateLimitKeyPrefix        = "container_registry:rate_limits:"
 )
 
 type RegistryDaemonClient interface {
@@ -55,6 +58,11 @@ type resolvedRegistryCredential struct {
 	ServerAddress string
 }
 
+type registryRateLimitCacheEntryInternal struct {
+	RateLimit utilsdistribution.RateLimitInfo `json:"rateLimit"`
+	CheckedAt time.Time                       `json:"checkedAt"`
+}
+
 type ContainerRegistryService struct {
 	db                     *database.DB
 	dockerClient           registryDaemonGetter
@@ -62,14 +70,18 @@ type ContainerRegistryService struct {
 	cacheMu                sync.RWMutex
 	ecrRefreshGroup        singleflight.Group
 	distributionHTTPClient *http.Client
+	kvService              *KVService
 }
 
-func NewContainerRegistryService(db *database.DB, dockerClient registryDaemonGetter) *ContainerRegistryService {
+// NewContainerRegistryService creates a registry service. kvService may be nil
+// in tests that do not need pull tracking or rate-limit caching.
+func NewContainerRegistryService(db *database.DB, dockerClient registryDaemonGetter, kvService *KVService) *ContainerRegistryService {
 	return &ContainerRegistryService{
 		db:                     db,
 		dockerClient:           dockerClient,
 		distributionHTTPClient: utilsdistribution.NewRegistryHTTPClient(),
 		cache:                  make(map[string]*cache.Cache[string]),
+		kvService:              kvService,
 	}
 }
 
@@ -400,6 +412,232 @@ func (s *ContainerRegistryService) GetAllRegistryAuthConfigs(ctx context.Context
 	}
 
 	return authConfigs, nil
+}
+
+// RecordImagePull increments Arcane's observed successful pull counter for an image registry.
+func (s *ContainerRegistryService) RecordImagePull(ctx context.Context, imageRef string) error {
+	if s.kvService == nil {
+		return nil
+	}
+
+	registryHost, err := normalizePullRegistryHostInternal(imageRef)
+	if err != nil {
+		return err
+	}
+	if registryHost == "" {
+		return nil
+	}
+
+	if _, err := s.kvService.IncrementInt64(ctx, registryPullCountKeyInternal(registryHost), 1); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// GetRegistryPullUsage returns pull usage visibility for configured registries.
+func (s *ContainerRegistryService) GetRegistryPullUsage(ctx context.Context) (containerregistry.PullUsageResponse, error) {
+	registries, err := s.GetAllRegistries(ctx)
+	if err != nil {
+		return containerregistry.PullUsageResponse{}, err
+	}
+
+	results := make([]containerregistry.PullUsage, 0, len(registries))
+	for i := range registries {
+		results = append(results, s.buildRegistryPullUsageInternal(ctx, registries[i]))
+	}
+
+	return containerregistry.PullUsageResponse{Registries: results}, nil
+}
+
+func (s *ContainerRegistryService) buildRegistryPullUsageInternal(ctx context.Context, reg models.ContainerRegistry) containerregistry.PullUsage {
+	registryHost := utilsregistry.NormalizeRegistryForComparison(reg.URL)
+	usage := containerregistry.PullUsage{
+		RegistryID:    reg.ID,
+		Provider:      registryProviderInternal(registryHost, reg.RegistryType),
+		Registry:      registryHost,
+		DisplayName:   registryDisplayNameInternal(registryHost, reg.RegistryType),
+		ObservedPulls: s.getObservedPullsInternal(ctx, registryHost),
+		AuthMethod:    "unknown",
+		CheckedAt:     time.Now().UTC(),
+	}
+
+	if registryHost != "docker.io" || !reg.Enabled {
+		return usage
+	}
+
+	credential, authMethod, authUsername, err := s.dockerHubCredentialForRegistryInternal(reg)
+	usage.AuthMethod = authMethod
+	usage.AuthUsername = authUsername
+	usage.Repository = "ratelimitpreview/test"
+	if err != nil {
+		usage.Error = err.Error()
+		return usage
+	}
+
+	if cachedRateLimit, checkedAt, ok := s.getCachedRateLimitInternal(ctx, reg.ID); ok {
+		usage.Limit = cachedRateLimit.Limit
+		usage.Remaining = cachedRateLimit.Remaining
+		usage.Used = cachedRateLimit.Used
+		usage.WindowSeconds = cachedRateLimit.WindowSeconds
+		usage.Source = cachedRateLimit.Source
+		usage.CheckedAt = checkedAt
+		return usage
+	}
+
+	rateLimit, err := s.fetchDockerHubRateLimitInternal(ctx, credential)
+	usage.CheckedAt = time.Now().UTC()
+	if err != nil {
+		usage.Error = err.Error()
+		return usage
+	}
+
+	usage.Limit = rateLimit.Limit
+	usage.Remaining = rateLimit.Remaining
+	usage.Used = rateLimit.Used
+	usage.WindowSeconds = rateLimit.WindowSeconds
+	usage.Source = rateLimit.Source
+	s.setCachedRateLimitInternal(ctx, reg.ID, rateLimit, usage.CheckedAt)
+
+	return usage
+}
+
+func (s *ContainerRegistryService) getObservedPullsInternal(ctx context.Context, registryHost string) int64 {
+	if s.kvService == nil || registryHost == "" {
+		return 0
+	}
+
+	value, err := s.kvService.GetInt64(ctx, registryPullCountKeyInternal(registryHost), 0)
+	if err != nil {
+		slog.WarnContext(ctx, "failed to read registry pull count", "registry", registryHost, "error", err)
+		return 0
+	}
+
+	return value
+}
+
+func (s *ContainerRegistryService) dockerHubCredentialForRegistryInternal(reg models.ContainerRegistry) (*utilsdistribution.Credentials, string, string, error) {
+	if reg.RegistryType != registryTypeGeneric {
+		return nil, "anonymous", "", nil
+	}
+
+	username := strings.TrimSpace(reg.Username)
+	if username == "" || strings.TrimSpace(reg.Token) == "" {
+		return nil, "anonymous", "", nil
+	}
+
+	token, err := crypto.Decrypt(reg.Token)
+	if err != nil {
+		return nil, "credential", username, fmt.Errorf("failed to decrypt Docker Hub credential: %w", err)
+	}
+
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return nil, "anonymous", "", nil
+	}
+
+	return &utilsdistribution.Credentials{
+		Username: username,
+		Token:    token,
+	}, "credential", username, nil
+}
+
+func (s *ContainerRegistryService) fetchDockerHubRateLimitInternal(ctx context.Context, credential *utilsdistribution.Credentials) (*utilsdistribution.RateLimitInfo, error) {
+	if s.distributionHTTPClient == nil {
+		return utilsdistribution.FetchDockerHubRateLimit(ctx, credential)
+	}
+
+	return utilsdistribution.FetchDockerHubRateLimitWithHTTPClient(ctx, credential, s.distributionHTTPClient)
+}
+
+func (s *ContainerRegistryService) getCachedRateLimitInternal(ctx context.Context, registryID string) (*utilsdistribution.RateLimitInfo, time.Time, bool) {
+	if s.kvService == nil || registryID == "" {
+		return nil, time.Time{}, false
+	}
+
+	raw, ok, err := s.kvService.Get(ctx, registryRateLimitKeyInternal(registryID))
+	if err != nil {
+		slog.WarnContext(ctx, "failed to read registry rate limit cache", "registryID", registryID, "error", err)
+		return nil, time.Time{}, false
+	}
+	if !ok {
+		return nil, time.Time{}, false
+	}
+
+	var entry registryRateLimitCacheEntryInternal
+	if err := json.Unmarshal([]byte(raw), &entry); err != nil {
+		slog.WarnContext(ctx, "failed to parse registry rate limit cache", "registryID", registryID, "error", err)
+		return nil, time.Time{}, false
+	}
+	if time.Since(entry.CheckedAt) > registryCacheTTL {
+		return nil, time.Time{}, false
+	}
+
+	return &entry.RateLimit, entry.CheckedAt, true
+}
+
+func (s *ContainerRegistryService) setCachedRateLimitInternal(ctx context.Context, registryID string, rateLimit *utilsdistribution.RateLimitInfo, checkedAt time.Time) {
+	if s.kvService == nil || registryID == "" || rateLimit == nil {
+		return
+	}
+
+	payload, err := json.Marshal(registryRateLimitCacheEntryInternal{
+		RateLimit: *rateLimit,
+		CheckedAt: checkedAt,
+	})
+	if err != nil {
+		slog.WarnContext(ctx, "failed to encode registry rate limit cache", "registryID", registryID, "error", err)
+		return
+	}
+
+	if err := s.kvService.Set(ctx, registryRateLimitKeyInternal(registryID), string(payload)); err != nil {
+		slog.WarnContext(ctx, "failed to save registry rate limit cache", "registryID", registryID, "error", err)
+	}
+}
+
+func normalizePullRegistryHostInternal(imageRef string) (string, error) {
+	registryHost, err := utilsregistry.GetRegistryAddress(imageRef)
+	if err != nil {
+		return "", fmt.Errorf("parse image registry for %q: %w", imageRef, err)
+	}
+
+	return utilsregistry.NormalizeRegistryForComparison(registryHost), nil
+}
+
+func registryPullCountKeyInternal(registryHost string) string {
+	return registryPullCountKeyPrefix + utilsregistry.NormalizeRegistryForComparison(registryHost)
+}
+
+func registryRateLimitKeyInternal(registryID string) string {
+	return registryRateLimitKeyPrefix + strings.TrimSpace(registryID)
+}
+
+func registryProviderInternal(registryHost, registryType string) string {
+	if registryType == registryTypeECR {
+		return "ecr"
+	}
+	if registryHost == "docker.io" {
+		return "dockerhub"
+	}
+	return "generic"
+}
+
+func registryDisplayNameInternal(registryHost, registryType string) string {
+	if registryType == registryTypeECR {
+		return "Amazon ECR"
+	}
+	switch {
+	case registryHost == "" || registryHost == "docker.io":
+		return "Docker Hub"
+	case strings.Contains(registryHost, "ghcr.io"):
+		return "GitHub Container Registry"
+	case strings.Contains(registryHost, "gcr.io"):
+		return "Google Container Registry"
+	case strings.Contains(registryHost, "quay.io"):
+		return "Quay.io Registry"
+	default:
+		return registryHost
+	}
 }
 
 func (s *ContainerRegistryService) TestRegistry(ctx context.Context, registryURL, username, token string) error {
