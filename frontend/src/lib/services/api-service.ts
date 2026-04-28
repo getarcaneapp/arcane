@@ -1,4 +1,4 @@
-import ky, { HTTPError as KyHTTPError, TimeoutError, type Options as KyOptions, type SearchParamsOption } from 'ky';
+import ky, { HTTPError as KyHTTPError, NetworkError, TimeoutError, type Options as KyOptions, type SearchParamsOption } from 'ky';
 import { toast } from 'svelte-sonner';
 
 export interface APIRequestConfig {
@@ -114,6 +114,18 @@ async function parseResponseBody(response: Response, responseType: APIRequestCon
 	}
 }
 
+async function parseErrorResponseBody(error: KyHTTPError, responseType: APIRequestConfig['responseType'] = 'json'): Promise<any> {
+	if (error.data !== undefined) {
+		return error.data;
+	}
+
+	if (error.response.bodyUsed) {
+		return undefined;
+	}
+
+	return parseResponseBody(error.response.clone(), responseType);
+}
+
 function normalizeUrl(baseURL: string, url: string): string {
 	if (/^[a-z]+:\/\//i.test(url)) {
 		return url;
@@ -211,7 +223,7 @@ class APIClient {
 		} catch (error) {
 			if (error instanceof KyHTTPError) {
 				const errorResponse = error.response;
-				const parsed = await parseResponseBody(errorResponse.clone(), config.responseType);
+				const parsed = await parseErrorResponseBody(error, config.responseType);
 				const response: APIResponse = {
 					data: parsed,
 					headers: errorResponse.headers,
@@ -281,6 +293,15 @@ class APIClient {
 					cause: error,
 					config: requestConfig,
 					name: 'TimeoutError',
+					requestUrl
+				});
+			}
+
+			if (error instanceof NetworkError) {
+				throw new APIError(error.message, {
+					cause: error,
+					config: requestConfig,
+					name: 'NetworkError',
 					requestUrl
 				});
 			}

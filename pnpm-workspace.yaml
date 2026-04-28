@@ -3,22 +3,21 @@ packages:
   - tests
   - email-templates
 overrides:
-  devalue: ">=5.6.4"
+  devalue: '>=5.6.4'
   valibot: ^1.2.0
   validator: ^13.15.22
   cookie: ^0.7.0
   next: ^16.1.7
   undici: ^6.23.0
-  vite: ^8.0.0-beta.15
-  ajv: ">=8.18.0"
-  minimatch: ">=10.2.1"
-  socket.io-parser: ">=4.2.6"
-  kysely: ">=0.28.14"
-  effect: ">=3.20.0"
-  picomatch: ">=4.0.4"
-  brace-expansion: ">=5.0.5"
-  smol-toml: ">=1.6.1"
+  ajv: '>=8.18.0'
+  minimatch: '>=10.2.1'
+  socket.io-parser: '>=4.2.6'
+  kysely: '>=0.28.14'
+  effect: '>=3.20.0'
+  picomatch: '>=4.0.4'
+  brace-expansion: '>=5.0.5'
+  smol-toml: '>=1.6.1'
 allowBuilds:
-  "@tailwindcss/oxide": true
+  '@tailwindcss/oxide': true
   esbuild: true
   sharp: true
