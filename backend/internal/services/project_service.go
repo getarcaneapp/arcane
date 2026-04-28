@@ -2618,8 +2618,12 @@ func (s *ProjectService) validateComposeContentForUpdate(ctx context.Context, pr
 		Environment: composetypes.Mapping(fullEnvMap),
 	}
 
+	missingIncludeLoader := &missingIncludeStubResourceLoaderInternal{projectPath: projectPath}
+	defer missingIncludeLoader.cleanupInternal()
+
 	err = withTransientValidationEnvFile(projectPath, effectiveEnvContent, func() error {
 		_, loadErr := loader.LoadWithContext(ctx, cfg, func(opts *loader.Options) {
+			opts.ResourceLoaders = append([]loader.ResourceLoader{missingIncludeLoader}, opts.ResourceLoaders...)
 			if validationProjectName != "" {
 				opts.SetProjectName(validationProjectName, true)
 			}
@@ -2628,6 +2632,79 @@ func (s *ProjectService) validateComposeContentForUpdate(ctx context.Context, pr
 	})
 
 	return err
+}
+
+type missingIncludeStubResourceLoaderInternal struct {
+	projectPath string
+	tempDir     string
+	stubs       map[string]string
+}
+
+func (l *missingIncludeStubResourceLoaderInternal) Accept(path string) bool {
+	_, ok := l.resolveMissingIncludeInternal(path)
+	return ok
+}
+
+func (l *missingIncludeStubResourceLoaderInternal) Load(_ context.Context, path string) (string, error) {
+	validatedPath, ok := l.resolveMissingIncludeInternal(path)
+	if !ok {
+		return "", fmt.Errorf("include file is not eligible for validation stub: %s", path)
+	}
+
+	if l.stubs == nil {
+		l.stubs = make(map[string]string)
+	}
+	if stubPath, ok := l.stubs[validatedPath]; ok {
+		return stubPath, nil
+	}
+
+	if l.tempDir == "" {
+		tempDir, err := os.MkdirTemp("", "arcane-compose-include-*")
+		if err != nil {
+			return "", fmt.Errorf("create validation include temp dir: %w", err)
+		}
+		l.tempDir = tempDir
+	}
+
+	relPath, err := filepath.Rel(l.projectPath, validatedPath)
+	if err != nil || strings.HasPrefix(relPath, "..") || filepath.IsAbs(relPath) {
+		relPath = filepath.Base(validatedPath)
+	}
+	stubPath := filepath.Join(l.tempDir, relPath)
+	if err := os.MkdirAll(filepath.Dir(stubPath), 0o755); err != nil {
+		return "", fmt.Errorf("create validation include directory: %w", err)
+	}
+	if err := os.WriteFile(stubPath, []byte("services: {}\n"), 0o600); err != nil {
+		return "", fmt.Errorf("write validation include stub: %w", err)
+	}
+
+	l.stubs[validatedPath] = stubPath
+	return stubPath, nil
+}
+
+func (l *missingIncludeStubResourceLoaderInternal) Dir(path string) string {
+	return filepath.Dir(path)
+}
+
+func (l *missingIncludeStubResourceLoaderInternal) resolveMissingIncludeInternal(path string) (string, bool) {
+	validatedPath, err := projects.ValidateIncludePathForWrite(l.projectPath, path)
+	if err != nil {
+		return "", false
+	}
+
+	if _, err := os.Stat(validatedPath); err == nil {
+		return "", false
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", false
+	}
+
+	return validatedPath, true
+}
+
+func (l *missingIncludeStubResourceLoaderInternal) cleanupInternal() {
+	if l.tempDir != "" {
+		_ = os.RemoveAll(l.tempDir)
+	}
 }
 
 func buildComposeValidationEnvironment(projectsDirectory, projectPath string, effectiveEnvContent *string) (projects.EnvMap, error) {

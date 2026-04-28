@@ -1093,6 +1093,114 @@ func TestProjectService_UpdateProject_AllowsMissingEnvFileDuringComposeValidatio
 	require.NoError(t, statErr)
 }
 
+func TestProjectService_UpdateProject_AllowsMissingLocalIncludeDuringComposeValidation(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
+
+	dirName := "include-new"
+	projectPath := filepath.Join(projectsDir, dirName)
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-missing-include"},
+		Name:      "include-new",
+		DirName:   &dirName,
+		Path:      projectPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	compose := `include:
+  - metadata.yaml
+services:
+  app:
+    image: nginx:alpine
+`
+
+	updated, err := svc.UpdateProject(ctx, project.ID, nil, ptr(compose), nil, models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "tester",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, updated)
+
+	includePath := filepath.Join(projectPath, "metadata.yaml")
+	assert.NoFileExists(t, includePath)
+
+	details, err := svc.GetProjectDetails(ctx, project.ID)
+	require.NoError(t, err)
+	require.Len(t, details.IncludeFiles, 1)
+	assert.Equal(t, "metadata.yaml", details.IncludeFiles[0].RelativePath)
+
+	includeFile, err := svc.GetProjectFileContent(ctx, project.ID, "metadata.yaml")
+	require.NoError(t, err)
+	assert.Equal(t, "metadata.yaml", includeFile.RelativePath)
+	assert.Contains(t, includeFile.Content, "This file will be created when you save changes")
+
+	includeContent := "services: {}\n"
+	require.NoError(t, svc.UpdateProjectIncludeFile(ctx, project.ID, "metadata.yaml", includeContent, models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "tester",
+	}))
+
+	writtenContent, err := os.ReadFile(includePath)
+	require.NoError(t, err)
+	assert.Equal(t, includeContent, string(writtenContent))
+}
+
+func TestProjectService_UpdateProject_RejectsMissingExternalIncludeDuringComposeValidation(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
+
+	dirName := "include-external"
+	projectPath := filepath.Join(projectsDir, dirName)
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-external-include"},
+		Name:      "include-external",
+		DirName:   &dirName,
+		Path:      projectPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	compose := `include:
+  - ../metadata.yaml
+services:
+  app:
+    image: nginx:alpine
+`
+
+	updated, err := svc.UpdateProject(ctx, project.ID, nil, ptr(compose), nil, models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "tester",
+	})
+	require.Error(t, err)
+	assert.Nil(t, updated)
+	assert.Contains(t, err.Error(), "invalid compose file")
+	assert.NoFileExists(t, filepath.Join(projectsDir, "metadata.yaml"))
+	assert.NoFileExists(t, filepath.Join(projectPath, "compose.yaml"))
+}
+
 func TestProjectService_UpdateProject_UsesExistingEnvFileDuringComposeValidation(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
