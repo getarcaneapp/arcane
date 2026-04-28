@@ -12,9 +12,10 @@ export default class TemplateService extends BaseAPIService {
 		return response.data;
 	}
 
-	async getAllTemplates(): Promise<Template[]> {
-		const response = await this.api.get('/templates/all');
-		return response.data?.data ?? [];
+	async getAllTemplates(options?: SearchPaginationSortRequest): Promise<Paginated<Template>> {
+		const params = transformPaginationParams(options);
+		const response = await this.api.get('/templates/all', { params });
+		return response.data;
 	}
 
 	async getTemplateContent(id: string): Promise<TemplateContentData> {

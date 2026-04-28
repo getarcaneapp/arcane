@@ -6,13 +6,13 @@ export const load: PageLoad = async ({ parent }) => {
 	const { queryClient } = await parent();
 
 	try {
-		const notificationSettings = await queryClient.fetchQuery({
+		const notificationSettingsResult = await queryClient.fetchQuery({
 			queryKey: queryKeys.notifications.settings(),
 			queryFn: () => notificationService.getSettings()
 		});
 
 		return {
-			notificationSettings
+			notificationSettings: notificationSettingsResult.data ?? []
 		};
 	} catch (error) {
 		console.error('Failed to load notification settings:', error);

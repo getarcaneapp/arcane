@@ -7,7 +7,7 @@ export const load: PageLoad = async ({ url, parent }) => {
 
 	const templateId = url.searchParams.get('templateId');
 
-	const [allTemplates, defaultTemplates, selectedTemplate, globalVariables] = await Promise.all([
+	const [allTemplatesResult, defaultTemplates, selectedTemplate, globalVariables] = await Promise.all([
 		queryClient
 			.fetchQuery({
 				queryKey: queryKeys.templates.allTemplates(),
@@ -15,7 +15,7 @@ export const load: PageLoad = async ({ url, parent }) => {
 			})
 			.catch((err) => {
 				console.warn('Failed to load templates:', err);
-				return [];
+				return { data: [], pagination: { totalPages: 0, totalItems: 0, currentPage: 1, itemsPerPage: 100 } };
 			}),
 		queryClient
 			.fetchQuery({
@@ -47,6 +47,8 @@ export const load: PageLoad = async ({ url, parent }) => {
 				return [];
 			})
 	]);
+
+	const allTemplates = allTemplatesResult.data ?? [];
 
 	return {
 		composeTemplates: allTemplates,

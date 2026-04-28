@@ -108,6 +108,11 @@ type BatchImageUpdateRequest struct {
 }
 
 type CheckAllImagesRequest struct {
+	// Limit caps the number of images to check. Zero or negative means default (100).
+	//
+	// Required: false
+	Limit int `json:"limit,omitempty"`
+
 	// Credentials is a list of container registry credentials for authentication.
 	//
 	// Required: false

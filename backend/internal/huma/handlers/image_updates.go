@@ -203,7 +203,12 @@ func (h *ImageUpdateHandler) CheckMultipleImages(ctx context.Context, input *Che
 }
 
 func (h *ImageUpdateHandler) CheckAllImages(ctx context.Context, input *CheckAllImagesInput) (*CheckAllImagesOutput, error) {
-	results, err := h.imageUpdateService.CheckAllImages(ctx, 0, input.Body.Credentials)
+	limit := input.Body.Limit
+	if limit <= 0 {
+		limit = 100
+	}
+
+	results, err := h.imageUpdateService.CheckAllImages(ctx, limit, input.Body.Credentials)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.AllImageUpdateCheckError{Err: err}).Error())
 	}

@@ -64,9 +64,9 @@ export class ImageService extends BaseAPIService {
 		return this.handleResponse(this.api.post(`/environments/${envId}/image-updates/check/${imageId}`, {}));
 	}
 
-	async checkAllImages(): Promise<Record<string, ImageUpdateInfoDto>> {
+	async checkAllImages(limit?: number): Promise<Record<string, ImageUpdateInfoDto>> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.handleResponse(this.api.post(`/environments/${envId}/image-updates/check-all`, {}));
+		return this.handleResponse(this.api.post(`/environments/${envId}/image-updates/check-all`, { limit }));
 	}
 
 	async checkMultipleImages(imageRefs: string[]): Promise<Record<string, ImageUpdateInfoDto>> {

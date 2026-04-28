@@ -1,11 +1,14 @@
 import BaseAPIService from './api-service';
 import type { NotificationSettings, TestNotificationResponse, AppriseSettings } from '$lib/types/notification.type';
 import { environmentStore } from '$lib/stores/environment.store.svelte';
+import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
+import { transformPaginationParams } from '$lib/utils/params.util';
 
 export default class NotificationService extends BaseAPIService {
-	async getSettings(environmentId?: string): Promise<NotificationSettings[]> {
+	async getSettings(environmentId?: string, options?: SearchPaginationSortRequest): Promise<Paginated<NotificationSettings>> {
 		const envId = environmentId || (await environmentStore.getCurrentEnvironmentId());
-		const res = await this.api.get(`/environments/${envId}/notifications/settings`);
+		const params = transformPaginationParams(options);
+		const res = await this.api.get(`/environments/${envId}/notifications/settings`, { params });
 		return res.data;
 	}
 

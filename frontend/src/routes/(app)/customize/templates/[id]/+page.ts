@@ -16,7 +16,7 @@ export const load: PageLoad = async ({
 	const { queryClient } = await parent();
 
 	try {
-		const [templateData, allTemplates, globalVariables] = await Promise.all([
+		const [templateData, allTemplatesResult, globalVariables] = await Promise.all([
 			queryClient.fetchQuery({
 				queryKey: queryKeys.templates.content(params.id),
 				queryFn: () => templateService.getTemplateContent(params.id)
@@ -35,7 +35,7 @@ export const load: PageLoad = async ({
 
 		return {
 			templateData,
-			allTemplates,
+			allTemplates: allTemplatesResult.data ?? [],
 			globalVariables
 		};
 	} catch (err) {

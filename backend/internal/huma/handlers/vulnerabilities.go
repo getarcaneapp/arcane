@@ -307,6 +307,8 @@ func (h *VulnerabilityHandler) ScanImage(ctx context.Context, input *ScanImageIn
 	}, nil
 }
 
+const maxScanSummariesBatchSize = 500
+
 // GetScanSummaries retrieves scan summaries for a list of image IDs.
 func (h *VulnerabilityHandler) GetScanSummaries(ctx context.Context, input *GetScanSummariesInput) (*GetScanSummariesOutput, error) {
 	if h.vulnerabilityService == nil {
@@ -323,6 +325,10 @@ func (h *VulnerabilityHandler) GetScanSummaries(ctx context.Context, input *GetS
 				},
 			},
 		}, nil
+	}
+
+	if len(imageIDs) > maxScanSummariesBatchSize {
+		return nil, huma.Error400BadRequest((&common.BatchTooLargeError{Max: maxScanSummariesBatchSize}).Error())
 	}
 
 	summaries, err := h.vulnerabilityService.GetScanSummariesByImageIDs(ctx, imageIDs)

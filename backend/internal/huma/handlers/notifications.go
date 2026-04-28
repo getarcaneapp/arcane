@@ -23,10 +23,15 @@ type NotificationHandler struct {
 
 type GetAllNotificationSettingsInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
+	Search        string `query:"search" doc:"Search query"`
+	Sort          string `query:"sort" doc:"Sort field"`
+	Order         string `query:"order" default:"asc" doc:"Sort direction"`
+	Start         int    `query:"start" default:"0" doc:"Start offset"`
+	Limit         int    `query:"limit" default:"100" doc:"Items per page"`
 }
 
 type GetAllNotificationSettingsOutput struct {
-	Body []notification.Response
+	Body base.Paginated[notification.Response]
 }
 
 type GetNotificationSettingsInput struct {
@@ -244,7 +249,48 @@ func (h *NotificationHandler) GetAllNotificationSettings(ctx context.Context, in
 		}
 	}
 
-	return &GetAllNotificationSettingsOutput{Body: responses}, nil
+	// Apply in-memory pagination with a safe default limit.
+	limit := input.Limit
+	if limit <= 0 {
+		limit = 100
+	}
+	start := input.Start
+	if start < 0 {
+		start = 0
+	}
+
+	total := int64(len(responses))
+	end := start + limit
+	if start > len(responses) {
+		start = len(responses)
+	}
+	if end > len(responses) {
+		end = len(responses)
+	}
+	paginated := responses[start:end]
+
+	totalPages := total / int64(limit)
+	if total%int64(limit) > 0 {
+		totalPages++
+	}
+	currentPage := 1
+	if limit > 0 {
+		currentPage = start/limit + 1
+	}
+
+	return &GetAllNotificationSettingsOutput{
+		Body: base.Paginated[notification.Response]{
+			Success: true,
+			Data:    paginated,
+			Pagination: base.PaginationResponse{
+				TotalPages:      totalPages,
+				TotalItems:      total,
+				CurrentPage:     currentPage,
+				ItemsPerPage:    limit,
+				GrandTotalItems: total,
+			},
+		},
+	}, nil
 }
 
 func (h *NotificationHandler) GetNotificationSettings(ctx context.Context, input *GetNotificationSettingsInput) (*GetNotificationSettingsOutput, error) {

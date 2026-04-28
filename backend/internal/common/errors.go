@@ -1363,6 +1363,14 @@ func (e *GitOpsSyncMappingError) Error() string {
 	return "Failed to map GitOps sync"
 }
 
+type BatchTooLargeError struct {
+	Max int
+}
+
+func (e *BatchTooLargeError) Error() string {
+	return fmt.Sprintf("Batch size exceeds maximum of %d", e.Max)
+}
+
 type VulnerabilityScanError struct {
 	Err error
 }

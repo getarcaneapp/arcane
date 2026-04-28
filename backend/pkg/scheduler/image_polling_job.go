@@ -66,7 +66,7 @@ func (j *ImagePollingJob) Run(ctx context.Context) {
 		creds = nil
 	}
 
-	results, err := j.imageUpdateService.CheckAllImages(ctx, 0, creds)
+	results, err := j.imageUpdateService.CheckAllImages(ctx, 100, creds)
 	if err != nil {
 		slog.ErrorContext(ctx, "image scan failed", "err", err)
 		return

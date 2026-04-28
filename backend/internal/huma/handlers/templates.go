@@ -44,10 +44,16 @@ type ListTemplatesOutput struct {
 	Body TemplatePaginatedResponse
 }
 
-type GetAllTemplatesInput struct{}
+type GetAllTemplatesInput struct {
+	Search string `query:"search" doc:"Search query"`
+	Sort   string `query:"sort" doc:"Column to sort by"`
+	Order  string `query:"order" default:"asc" doc:"Sort direction"`
+	Start  int    `query:"start" default:"0" doc:"Start index"`
+	Limit  int    `query:"limit" default:"100" doc:"Items per page"`
+}
 
 type GetAllTemplatesOutput struct {
-	Body base.ApiResponse[[]template.Template]
+	Body TemplatePaginatedResponse
 }
 
 type GetTemplateInput struct {
@@ -420,26 +426,33 @@ func (h *TemplateHandler) ListTemplates(ctx context.Context, input *ListTemplate
 	}, nil
 }
 
-// GetAllTemplates returns all templates without pagination.
-func (h *TemplateHandler) GetAllTemplates(ctx context.Context, _ *GetAllTemplatesInput) (*GetAllTemplatesOutput, error) {
+// GetAllTemplates returns a paginated list of all templates.
+func (h *TemplateHandler) GetAllTemplates(ctx context.Context, input *GetAllTemplatesInput) (*GetAllTemplatesOutput, error) {
 	if h.templateService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	templates, err := h.templateService.GetAllTemplates(ctx)
+	params := buildPaginationParams(0, input.Start, input.Limit, input.Sort, input.Order, input.Search)
+	if params.Limit == 0 {
+		params.Limit = 100
+	}
+
+	templates, paginationResp, err := h.templateService.GetAllTemplatesPaginated(ctx, params)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.TemplateListError{Err: err}).Error())
 	}
 
-	out, mapErr := mapper.MapSlice[models.ComposeTemplate, template.Template](templates)
-	if mapErr != nil {
-		return nil, huma.Error500InternalServerError((&common.TemplateMappingError{Err: mapErr}).Error())
-	}
-
 	return &GetAllTemplatesOutput{
-		Body: base.ApiResponse[[]template.Template]{
+		Body: TemplatePaginatedResponse{
 			Success: true,
-			Data:    out,
+			Data:    templates,
+			Pagination: base.PaginationResponse{
+				TotalPages:      paginationResp.TotalPages,
+				TotalItems:      paginationResp.TotalItems,
+				CurrentPage:     paginationResp.CurrentPage,
+				ItemsPerPage:    paginationResp.ItemsPerPage,
+				GrandTotalItems: paginationResp.GrandTotalItems,
+			},
 		},
 	}, nil
 }

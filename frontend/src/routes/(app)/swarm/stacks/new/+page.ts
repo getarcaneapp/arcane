@@ -19,10 +19,10 @@ export const load: PageLoad = async ({ url }) => {
 			})
 		: Promise.resolve(null);
 
-	const [allTemplates, defaultTemplates, selectedTemplate, sourceStack, globalVariables] = await Promise.all([
+	const [allTemplatesResult, defaultTemplates, selectedTemplate, sourceStack, globalVariables] = await Promise.all([
 		templateService.getAllTemplates().catch((err) => {
 			console.warn('Failed to load templates:', err);
-			return [];
+			return { data: [], pagination: { totalPages: 0, totalItems: 0, currentPage: 1, itemsPerPage: 100 } };
 		}),
 		templateService.getDefaultTemplates().catch((err) => {
 			console.warn('Failed to load default templates:', err);
@@ -40,6 +40,8 @@ export const load: PageLoad = async ({ url }) => {
 			return [];
 		})
 	]);
+
+	const allTemplates = allTemplatesResult.data ?? [];
 
 	return {
 		composeTemplates: allTemplates,
