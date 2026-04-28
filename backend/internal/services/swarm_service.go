@@ -1359,7 +1359,7 @@ func (s *SwarmService) GetStackSource(ctx context.Context, environmentID, stackN
 		if rel == swarmStackComposeFilename || rel == swarmStackEnvFilename {
 			return nil
 		}
-		// #nosec G122 - stackSourceDir is a private, app-managed directory
+		// #nosec G304 - stackSourceDir is a private, app-managed directory; path is bounded by WalkDir
 		content, err := os.ReadFile(path)
 		if err != nil {
 			return err

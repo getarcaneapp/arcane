@@ -131,18 +131,6 @@
 	});
 
 	$effect(() => {
-		if (isEditMode || !open) return;
-
-		// If user hasn't changed it from a default, update it to the new target's default
-		const current = $inputs.composePath.value;
-		if (current === 'docker-compose.yml' && selectedTargetType === 'swarm_stack') {
-			$inputs.composePath.value = 'compose.yml';
-		} else if (current === 'compose.yml' && selectedTargetType === 'project') {
-			$inputs.composePath.value = 'docker-compose.yml';
-		}
-	});
-
-	$effect(() => {
 		if (!open || !syncToEdit || repositories.length === 0) return;
 		const repo = repositories.find((r) => r.id === syncToEdit.repositoryId);
 		if (repo) {
