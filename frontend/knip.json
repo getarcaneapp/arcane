@@ -3,16 +3,13 @@
 	"entry": [
 		"src/routes/**/*.{svelte,ts,js}",
 		"src/hooks.*.ts",
-		"src/service-worker.ts",
-		"svelte.config.js",
-		"vite.config.ts",
 		"src/lib/paraglide/messages/_index.js",
 		"src/lib/index.ts",
 		"src/lib/components/**/index.ts"
 	],
 	"project": ["src/**/*.{svelte,ts,js}"],
 	"ignore": ["src/lib/paraglide/server.js", "src/lib/paraglide/runtime.js", "src/lib/paraglide/registry.js"],
-	"ignoreDependencies": ["paneforge", "svelte-toolbelt", "isomorphic-dompurify", "tw-animate-css"],
+	"ignoreDependencies": ["@iconify/json", "paneforge", "svelte-toolbelt", "isomorphic-dompurify", "tw-animate-css"],
 	"ignoreExportsUsedInFile": {
 		"interface": true,
 		"type": true

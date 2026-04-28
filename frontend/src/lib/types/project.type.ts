@@ -1,14 +1,3 @@
-export interface NetworkSettings {
-	Networks: Record<
-		string,
-		{
-			IPAddress?: string;
-			Driver?: string;
-			[key: string]: any;
-		}
-	>;
-}
-
 export interface ServicePort {
 	mode?: string;
 	target: number;

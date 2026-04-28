@@ -2,6 +2,7 @@
 	import * as Card from '$lib/components/ui/card';
 	import { m } from '$lib/paraglide/messages';
 	import { SettingsIcon, TagIcon } from '$lib/icons';
+	import { KeyValueCard, KeyValueGrid } from '$lib/components/resource-detail';
 
 	interface Props {
 		envVars: string[];
@@ -30,33 +31,22 @@
 				</div>
 			</Card.Header>
 			<Card.Content class="p-4">
-				<div class="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3">
+				<KeyValueGrid>
 					{#each envVars as env, index (index)}
 						{#if env.includes('=')}
 							{@const [key, ...valueParts] = env.split('=')}
 							{@const value = valueParts.join('=')}
-							<Card.Root variant="subtle">
-								<Card.Content class="flex flex-col gap-2 p-4">
-									<div class="text-muted-foreground text-xs font-semibold tracking-wide break-all uppercase">
-										{key}
-									</div>
-									<div class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all">
-										{value}
-									</div>
-								</Card.Content>
-							</Card.Root>
+							<KeyValueCard label={key}>{value}</KeyValueCard>
 						{:else}
-							<Card.Root variant="subtle">
-								<Card.Content class="flex flex-col gap-2 p-4">
-									<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{m.common_name()}</div>
-									<div class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all">
-										{env}
-									</div>
-								</Card.Content>
-							</Card.Root>
+							<KeyValueCard
+								label={m.common_name()}
+								labelClass="text-muted-foreground text-xs font-semibold tracking-wide uppercase"
+							>
+								{env}
+							</KeyValueCard>
 						{/if}
 					{/each}
-				</div>
+				</KeyValueGrid>
 			</Card.Content>
 		</Card.Root>
 	{/if}
@@ -72,20 +62,11 @@
 				</div>
 			</Card.Header>
 			<Card.Content class="p-4">
-				<div class="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3">
+				<KeyValueGrid>
 					{#each Object.entries(labels) as [key, value] (key)}
-						<Card.Root variant="subtle">
-							<Card.Content class="flex flex-col gap-2 p-4">
-								<div class="text-muted-foreground text-xs font-semibold tracking-wide break-all uppercase">
-									{key}
-								</div>
-								<div class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all">
-									{value?.toString() || ''}
-								</div>
-							</Card.Content>
-						</Card.Root>
+						<KeyValueCard label={key}>{value?.toString() || ''}</KeyValueCard>
 					{/each}
-				</div>
+				</KeyValueGrid>
 			</Card.Content>
 		</Card.Root>
 	{/if}

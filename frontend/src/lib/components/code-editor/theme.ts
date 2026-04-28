@@ -84,8 +84,6 @@ export const arcaneDarkInit = (options?: Partial<CreateThemeOptions>) => {
 	});
 };
 
-export const arcaneDark = arcaneDarkInit();
-
 export const arcaneLightInit = (options?: Partial<CreateThemeOptions>) => {
 	const { theme = 'light', settings = {}, styles = [] } = options || {};
 

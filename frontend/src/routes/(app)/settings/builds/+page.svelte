@@ -3,7 +3,7 @@
 	import { z } from 'zod/v4';
 	import settingsStore from '$lib/stores/config-store';
 	import { SettingsPageLayout } from '$lib/layouts';
-	import { Label } from '$lib/components/ui/label';
+	import SettingsRow from '$lib/components/settings/settings-row.svelte';
 	import { CodeIcon } from '$lib/icons';
 	import TextInputWithLabel from '$lib/components/form/text-input-with-label.svelte';
 	import SelectWithLabel from '$lib/components/form/select-with-label.svelte';
@@ -95,21 +95,19 @@
 				<h3 class="text-lg font-medium">{m.build_settings_workspace_section_title()}</h3>
 				<div class="bg-card rounded-lg border shadow-sm">
 					<div class="space-y-6 p-6">
-						<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
-							<div>
-								<Label class="text-base">{m.build_settings_directory_label()}</Label>
-								<p class="text-muted-foreground mt-1 text-sm">{m.build_settings_directory_description()}</p>
-							</div>
-							<div class="max-w-xl">
-								<TextInputWithLabel
-									bind:value={$formInputs.buildsDirectory.value}
-									error={$formInputs.buildsDirectory.error}
-									label={m.build_settings_directory_label()}
-									placeholder={m.build_settings_directory_placeholder()}
-									helpText={m.build_settings_directory_help()}
-								/>
-							</div>
-						</div>
+						<SettingsRow
+							label={m.build_settings_directory_label()}
+							description={m.build_settings_directory_description()}
+							contentClass="max-w-xl"
+						>
+							<TextInputWithLabel
+								bind:value={$formInputs.buildsDirectory.value}
+								error={$formInputs.buildsDirectory.error}
+								label={m.build_settings_directory_label()}
+								placeholder={m.build_settings_directory_placeholder()}
+								helpText={m.build_settings_directory_help()}
+							/>
+						</SettingsRow>
 					</div>
 				</div>
 			</div>
@@ -118,43 +116,39 @@
 				<h3 class="text-lg font-medium">{m.build_settings_provider_section_title()}</h3>
 				<div class="bg-card rounded-lg border shadow-sm">
 					<div class="space-y-6 p-6">
-						<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
-							<div>
-								<Label class="text-base">{m.build_settings_default_provider_label()}</Label>
-								<p class="text-muted-foreground mt-1 text-sm">{m.build_settings_default_provider_description()}</p>
-							</div>
-							<div class="max-w-xs">
-								<SelectWithLabel
-									id="build-provider"
-									name="buildProvider"
-									bind:value={$formInputs.buildProvider.value}
-									error={$formInputs.buildProvider.error}
-									label={m.build_settings_provider_section_title()}
-									options={providerOptions}
-								/>
-								{#if !depotCredentialsPresent && !depotConfigured}
-									<p class="text-muted-foreground mt-2 text-xs">{m.build_settings_depot_enable_hint()}</p>
-								{/if}
-							</div>
-						</div>
+						<SettingsRow
+							label={m.build_settings_default_provider_label()}
+							description={m.build_settings_default_provider_description()}
+							contentClass="max-w-xs"
+						>
+							<SelectWithLabel
+								id="build-provider"
+								name="buildProvider"
+								bind:value={$formInputs.buildProvider.value}
+								error={$formInputs.buildProvider.error}
+								label={m.build_settings_provider_section_title()}
+								options={providerOptions}
+							/>
+							{#if !depotCredentialsPresent && !depotConfigured}
+								<p class="text-muted-foreground mt-2 text-xs">{m.build_settings_depot_enable_hint()}</p>
+							{/if}
+						</SettingsRow>
 
 						<div class="border-t pt-6">
-							<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
-								<div>
-									<Label class="text-base">{m.build_settings_timeout_label()}</Label>
-									<p class="text-muted-foreground mt-1 text-sm">{m.build_settings_timeout_description()}</p>
-								</div>
-								<div class="max-w-xs">
-									<TextInputWithLabel
-										bind:value={$formInputs.buildTimeout.value}
-										error={$formInputs.buildTimeout.error}
-										label={m.build_settings_timeout_label()}
-										placeholder={m.build_settings_timeout_placeholder()}
-										helpText={m.build_settings_timeout_help()}
-										type="number"
-									/>
-								</div>
-							</div>
+							<SettingsRow
+								label={m.build_settings_timeout_label()}
+								description={m.build_settings_timeout_description()}
+								contentClass="max-w-xs"
+							>
+								<TextInputWithLabel
+									bind:value={$formInputs.buildTimeout.value}
+									error={$formInputs.buildTimeout.error}
+									label={m.build_settings_timeout_label()}
+									placeholder={m.build_settings_timeout_placeholder()}
+									helpText={m.build_settings_timeout_help()}
+									type="number"
+								/>
+							</SettingsRow>
 						</div>
 					</div>
 				</div>
@@ -164,38 +158,34 @@
 				<h3 class="text-lg font-medium">{m.build_settings_depot_section_title()}</h3>
 				<div class="bg-card rounded-lg border shadow-sm">
 					<div class="space-y-6 p-6">
-						<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
-							<div>
-								<Label class="text-base">{m.build_settings_depot_project_id_label()}</Label>
-								<p class="text-muted-foreground mt-1 text-sm">{m.build_settings_depot_project_id_description()}</p>
-							</div>
-							<div class="max-w-xl">
-								<TextInputWithLabel
-									bind:value={$formInputs.depotProjectId.value}
-									error={$formInputs.depotProjectId.error}
-									label={m.build_settings_depot_project_id_label()}
-									placeholder={m.build_settings_depot_project_id_placeholder()}
-								/>
-							</div>
-						</div>
+						<SettingsRow
+							label={m.build_settings_depot_project_id_label()}
+							description={m.build_settings_depot_project_id_description()}
+							contentClass="max-w-xl"
+						>
+							<TextInputWithLabel
+								bind:value={$formInputs.depotProjectId.value}
+								error={$formInputs.depotProjectId.error}
+								label={m.build_settings_depot_project_id_label()}
+								placeholder={m.build_settings_depot_project_id_placeholder()}
+							/>
+						</SettingsRow>
 
 						<div class="border-t pt-6">
-							<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
-								<div>
-									<Label class="text-base">{m.build_settings_depot_token_label()}</Label>
-									<p class="text-muted-foreground mt-1 text-sm">{m.build_settings_depot_token_description()}</p>
-								</div>
-								<div class="max-w-xl">
-									<TextInputWithLabel
-										bind:value={$formInputs.depotToken.value}
-										error={$formInputs.depotToken.error}
-										label={m.build_settings_depot_token_label()}
-										placeholder={m.build_settings_depot_token_placeholder()}
-										type="password"
-										helpText={m.build_settings_depot_token_help()}
-									/>
-								</div>
-							</div>
+							<SettingsRow
+								label={m.build_settings_depot_token_label()}
+								description={m.build_settings_depot_token_description()}
+								contentClass="max-w-xl"
+							>
+								<TextInputWithLabel
+									bind:value={$formInputs.depotToken.value}
+									error={$formInputs.depotToken.error}
+									label={m.build_settings_depot_token_label()}
+									placeholder={m.build_settings_depot_token_placeholder()}
+									type="password"
+									helpText={m.build_settings_depot_token_help()}
+								/>
+							</SettingsRow>
 						</div>
 					</div>
 				</div>

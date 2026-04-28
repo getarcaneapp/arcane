@@ -12,6 +12,7 @@
 	import { z } from 'zod/v4';
 	import CodePanel from '../../../projects/components/CodePanel.svelte';
 	import EditableName from '../../../projects/components/EditableName.svelte';
+	import { ComposeEditorSplit } from '$lib/components/compose';
 
 	let { data } = $props();
 
@@ -144,8 +145,8 @@
 					</div>
 				</div>
 
-				<div class="flex min-h-0 flex-1 flex-col gap-4 lg:grid lg:grid-cols-5 lg:grid-rows-1 lg:items-stretch">
-					<div class="flex min-h-0 flex-1 flex-col lg:col-span-3">
+				<ComposeEditorSplit>
+					{#snippet compose()}
 						<CodePanel
 							title="compose.yaml"
 							language="yaml"
@@ -161,9 +162,9 @@
 								globalVariables: globalVariableMap
 							}}
 						/>
-					</div>
+					{/snippet}
 
-					<div class="flex min-h-0 flex-1 flex-col lg:col-span-2">
+					{#snippet env()}
 						<CodePanel
 							title=".env"
 							language="env"
@@ -179,8 +180,8 @@
 								globalVariables: globalVariableMap
 							}}
 						/>
-					</div>
-				</div>
+					{/snippet}
+				</ComposeEditorSplit>
 			</form>
 		</div>
 	</div>

@@ -165,7 +165,7 @@
 
 			{#if resolvedBadges.length > 0}
 				<div class="flex flex-wrap items-center gap-1">
-					{#each resolvedBadges as badge}
+					{#each resolvedBadges as badge (`${badge.variant}:${badge.text}`)}
 						<StatusBadge variant={badge.variant} text={badge.text} size="sm" />
 					{/each}
 				</div>
@@ -175,7 +175,7 @@
 			{#if visibleFields.length > 0}
 				{#if !compact}
 					<div class="flex flex-wrap gap-x-4 gap-y-2.5">
-						{#each visibleFields as field}
+						{#each visibleFields as field (field.label)}
 							{@const value = field.getValue(item)}
 							{#if value !== null && value !== undefined}
 								<div class="flex min-w-0 flex-1 basis-[140px] items-center gap-2.5">
@@ -213,7 +213,7 @@
 						{/each}
 					</div>
 				{:else}
-					{#each visibleFields as field}
+					{#each visibleFields as field (field.label)}
 						{@const value = field.getValue(item)}
 						{#if value !== null && value !== undefined}
 							<div class="flex items-baseline gap-2">

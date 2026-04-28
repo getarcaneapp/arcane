@@ -32,6 +32,7 @@
 	import CodePanel from '../../../projects/components/CodePanel.svelte';
 	import EditableName from '../../../projects/components/EditableName.svelte';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import { ComposeEditorSplit } from '$lib/components/compose';
 
 	let { data } = $props();
 
@@ -52,24 +53,30 @@
 		envContent: z.string().optional().default('')
 	});
 
-	const initialName = $derived(
-		data.sourceStackName
-			? data.sourceStackName
-			: data.selectedTemplate
-				? data.selectedTemplate.name.toLowerCase().replace(/[^a-z0-9-_]/g, '-')
-				: ''
-	);
+	function getInitialName() {
+		if (data.sourceStackName) {
+			return data.sourceStackName;
+		}
+		if (data.selectedTemplate) {
+			return data.selectedTemplate.name.toLowerCase().replace(/[^a-z0-9-_]/g, '-');
+		}
+		return '';
+	}
+
+	function getInitialFormData() {
+		return {
+			name: getInitialName(),
+			composeContent: data.defaultTemplate || '',
+			envContent: data.envTemplate || ''
+		};
+	}
+
+	const initialName = $derived(getInitialName());
 	const backHref = $derived(isEditMode ? `/swarm/stacks/${encodeURIComponent(initialName)}` : '/swarm/stacks');
 	const submitLabel = $derived(isEditMode ? m.common_save() : m.common_create_button({ resource: m.swarm_stack() }));
 	const submitLoadingLabel = $derived(isEditMode ? m.common_saving() : m.common_action_creating());
 
-	let formData = $derived({
-		name: initialName,
-		composeContent: data.defaultTemplate || '',
-		envContent: data.envTemplate || ''
-	});
-
-	let { inputs, ...form } = $derived(createForm<typeof formSchema>(formSchema, formData));
+	const { inputs, ...form } = createForm<typeof formSchema>(formSchema, getInitialFormData());
 
 	let dockerRunCommand = $state('');
 	let composeOpen = $state(true);
@@ -335,11 +342,11 @@
 					/>
 				</div>
 
-				<form
+				<ComposeEditorSplit
 					class="flex h-full min-h-0 flex-1 flex-col gap-4 px-2 sm:px-6 lg:grid lg:grid-cols-5 lg:grid-rows-1 lg:items-stretch"
 					onsubmit={preventDefault(handleSubmit)}
 				>
-					<div class="flex min-h-0 flex-1 flex-col lg:col-span-3">
+					{#snippet compose()}
 						<CodePanel
 							bind:open={composeOpen}
 							title="compose.yaml"
@@ -353,9 +360,9 @@
 								globalVariables: globalVariableMap
 							}}
 						/>
-					</div>
+					{/snippet}
 
-					<div class="flex min-h-0 flex-1 flex-col lg:col-span-2">
+					{#snippet env()}
 						<CodePanel
 							bind:open={envOpen}
 							title=".env"
@@ -369,8 +376,8 @@
 								globalVariables: globalVariableMap
 							}}
 						/>
-					</div>
-				</form>
+					{/snippet}
+				</ComposeEditorSplit>
 			</div>
 		</div>
 	</div>
@@ -399,7 +406,7 @@
 			<div class="space-y-2">
 				<Label class="text-muted-foreground text-xs">{m.compose_example_commands_label()}</Label>
 				<div class="space-y-1">
-					{#each exampleCommands as command}
+					{#each exampleCommands as command (command)}
 						<ArcaneButton
 							action="base"
 							tone="ghost"

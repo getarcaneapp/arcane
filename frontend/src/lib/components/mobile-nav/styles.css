@@ -44,8 +44,8 @@
 }
 
 /* Shared button/link styles */
-.mobile-nav-base :global(button),
-.mobile-nav-base :global(a) {
+.mobile-nav-base button,
+.mobile-nav-base a {
 	pointer-events: auto;
 	touch-action: manipulation; /* Allow taps and prevent interfering gestures */
 	position: relative;
@@ -65,8 +65,8 @@
 		border-color: var(--muted);
 	}
 
-	.mobile-nav-base :global(button),
-	.mobile-nav-base :global(a) {
+	.mobile-nav-base button,
+	.mobile-nav-base a {
 		cursor: pointer;
 	}
 }
@@ -78,14 +78,14 @@
 	}
 
 	/* Disable scale and complex animations for reduced motion */
-	.mobile-nav-base :global(button) {
+	.mobile-nav-base button {
 		transition: none;
 		transform: none !important;
 	}
 
-	.mobile-nav-base :global(button:hover),
-	.mobile-nav-base :global(button:focus-visible),
-	.mobile-nav-base :global(button:active) {
+	.mobile-nav-base button:hover,
+	.mobile-nav-base button:focus-visible,
+	.mobile-nav-base button:active {
 		transform: none !important;
 	}
 }

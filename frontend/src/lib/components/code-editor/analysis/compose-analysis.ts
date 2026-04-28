@@ -358,7 +358,7 @@ function buildOutline(doc: YamlDocLike): OutlineItem[] {
 	return outline;
 }
 
-export function findVariableReferenceAtPosition(
+function findVariableReferenceAtPosition(
 	source: string,
 	position: number
 ): { name: string; source: 'env' | 'global' | 'missing' } | null {

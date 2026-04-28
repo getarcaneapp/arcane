@@ -25,6 +25,7 @@
 	import CodePanel from '../components/CodePanel.svelte';
 	import EditableName from '../components/EditableName.svelte';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import { ComposeEditorSplit } from '$lib/components/compose';
 
 	let { data } = $props();
 
@@ -323,11 +324,8 @@
 					/>
 				</div>
 
-				<form
-					class="flex min-h-0 flex-1 flex-col gap-4 lg:grid lg:grid-cols-5 lg:grid-rows-1 lg:items-stretch"
-					onsubmit={preventDefault(handleSubmit)}
-				>
-					<div class="flex min-h-0 flex-1 flex-col lg:col-span-3">
+				<ComposeEditorSplit onsubmit={preventDefault(handleSubmit)}>
+					{#snippet compose()}
 						<CodePanel
 							bind:open={composeOpen}
 							title={m.compose_compose_file_title()}
@@ -343,9 +341,9 @@
 								globalVariables: globalVariableMap
 							}}
 						/>
-					</div>
+					{/snippet}
 
-					<div class="flex min-h-0 flex-1 flex-col lg:col-span-2">
+					{#snippet env()}
 						<CodePanel
 							bind:open={envOpen}
 							title={m.compose_env_title()}
@@ -361,8 +359,8 @@
 								globalVariables: globalVariableMap
 							}}
 						/>
-					</div>
-				</form>
+					{/snippet}
+				</ComposeEditorSplit>
 			</div>
 		</div>
 	</div>

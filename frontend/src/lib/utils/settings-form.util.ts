@@ -4,8 +4,6 @@ import { UseSettingsForm } from '$lib/hooks/use-settings-form.svelte';
 import { toast } from 'svelte-sonner';
 import type { Settings } from '$lib/types/settings.type';
 
-export type FormInput<T> = { value: T; error: string | null };
-export type FormInputs<T> = { [K in keyof T]: FormInput<T[K]> };
 type SettingsPayload = Partial<Settings> & Record<string, unknown>;
 
 export interface SettingsFormConfig<T extends z.ZodType<SettingsPayload, any>> {
