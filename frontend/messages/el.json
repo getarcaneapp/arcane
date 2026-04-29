@@ -922,6 +922,8 @@
 	"swarm_service_form_hostname_placeholder": "my-service",
 	"swarm_service_mode_replicated": "Αντιγραμμένο",
 	"swarm_service_mode_global": "Παγκόσμια",
+	"swarm_service_mode_replicated_job": "Επαναλαμβανόμενη εργασία",
+	"swarm_service_mode_global_job": "Παγκόσμια εργασία",
 	"swarm_service_replica_singular": "αντίγραφο",
 	"swarm_service_replica_plural": "αντίγραφα",
 	"swarm_service_env_var": "ENV_VAR",
