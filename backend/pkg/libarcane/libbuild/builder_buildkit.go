@@ -99,7 +99,7 @@ func normalizeEntitlementsInternal(entitlements []string, privileged bool) []str
 	return out
 }
 
-func (b *builder) buildSolveOptInternal(ctx context.Context, req imagetypes.BuildRequest) (buildkit.SolveOpt, <-chan error, func(), error) {
+func (b *builder) buildSolveOptInternal(ctx context.Context, req imagetypes.BuildRequest, providerName string) (buildkit.SolveOpt, <-chan error, func(), error) {
 	fsInput, err := prepareBuildFilesystemInputInternal(req)
 	if err != nil {
 		return buildkit.SolveOpt{}, nil, nil, err
@@ -157,7 +157,7 @@ func (b *builder) buildSolveOptInternal(ctx context.Context, req imagetypes.Buil
 
 	var loadErrCh chan error
 	exports := make([]buildkit.ExportEntry, 0, 2)
-	if req.Push {
+	if req.Push && providerName != "local" {
 		exports = append(exports, buildkit.ExportEntry{
 			Type: "image",
 			Attrs: map[string]string{
@@ -167,7 +167,20 @@ func (b *builder) buildSolveOptInternal(ctx context.Context, req imagetypes.Buil
 			},
 		})
 	}
-	if req.Load {
+
+	if providerName == "local" && (req.Load || req.Push) {
+		attrs := map[string]string{
+			"name":           strings.Join(req.Tags, ","),
+			"oci-mediatypes": "true",
+		}
+		if req.Push {
+			attrs["push"] = "true"
+		}
+		exports = append(exports, buildkit.ExportEntry{
+			Type:  "image",
+			Attrs: attrs,
+		})
+	} else if req.Load {
 		exportEntry, errCh, err := b.buildLoadExportInternal(ctx, req.Tags)
 		if err != nil {
 			cleanup()

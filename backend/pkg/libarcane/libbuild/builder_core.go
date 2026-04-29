@@ -110,7 +110,7 @@ func (b *builder) buildWithBuildkitSessionInternal(
 		}
 	}()
 
-	solveOpt, loadErrCh, cleanupSolveOpt, err := b.buildSolveOptInternal(ctx, req)
+	solveOpt, loadErrCh, cleanupSolveOpt, err := b.buildSolveOptInternal(ctx, req, providerName)
 	if err != nil {
 		buildErr = err
 		return nil, err
@@ -136,9 +136,10 @@ func (b *builder) buildWithBuildkitSessionInternal(
 	})
 
 	resp, err := session.Client.Solve(ctx, nil, solveOpt, statusCh)
-	buildErr = err
 
 	if err != nil {
+		err = wrapBuildkitSolveErrorInternal(err, providerName)
+		buildErr = err
 		writeProgressEventInternal(progressWriter, imagetypes.ProgressEvent{
 			Type:    "build",
 			Service: serviceName,
@@ -182,6 +183,18 @@ func (b *builder) buildWithBuildkitSessionInternal(
 		Tags:     req.Tags,
 		Digest:   digest,
 	}, nil
+}
+
+func wrapBuildkitSolveErrorInternal(err error, providerName string) error {
+	if err == nil {
+		return nil
+	}
+
+	if strings.Contains(err.Error(), `exporter "docker" could not be found`) {
+		return fmt.Errorf("BuildKit could not load the image with the docker exporter for provider %s; the builder does not expose that exporter: %w", providerName, err)
+	}
+
+	return err
 }
 
 func buildkitAuthConfigProviderInternal(defaultProvider authprovider.AuthConfigProvider, registryAuthProvider buildtypes.RegistryAuthProvider) authprovider.AuthConfigProvider {

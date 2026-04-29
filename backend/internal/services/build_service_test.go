@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -327,13 +328,78 @@ func TestBuildService_BuildImage_PreservesRemoteSourceInHistory(t *testing.T) {
 	assert.Equal(t, req.ContextDir, record.ContextDir)
 }
 
+func TestBuildService_BuildImage_FailureRecordsHistoryAndEvent(t *testing.T) {
+	db, err := setupBuildHistoryTestDB()
+	require.NoError(t, err)
+
+	buildErr := errors.New("BuildKit could not load the image with the docker exporter")
+	svc := &BuildService{
+		db:           db,
+		eventService: NewEventService(db, nil, nil),
+		builder: testBuildRecorder{
+			err: buildErr,
+		},
+	}
+	user := &models.User{
+		BaseModel: models.BaseModel{ID: "user-1"},
+		Username:  "tester",
+	}
+
+	req := image.BuildRequest{
+		ContextDir: "/builds/demo",
+		Dockerfile: "Dockerfile",
+		Tags:       []string{"arcane.local/demo:test"},
+		Provider:   "local",
+		Load:       true,
+	}
+
+	_, err = svc.BuildImage(context.Background(), "0", req, nil, "web", user)
+	require.ErrorIs(t, err, buildErr)
+
+	var record models.ImageBuild
+	require.NoError(t, db.WithContext(context.Background()).First(&record).Error)
+	assert.Equal(t, models.ImageBuildStatusFailed, record.Status)
+	require.NotNil(t, record.ErrorMessage)
+	assert.Contains(t, *record.ErrorMessage, "docker exporter")
+
+	var event models.Event
+	require.NoError(t, db.WithContext(context.Background()).First(&event, "type = ?", models.EventTypeImageError).Error)
+	assert.Equal(t, models.EventSeverityError, event.Severity)
+	require.NotNil(t, event.ResourceName)
+	assert.Equal(t, "arcane.local/demo:test", *event.ResourceName)
+	assert.Equal(t, "build", event.Metadata["action"])
+	assert.Equal(t, "local", event.Metadata["provider"])
+	assert.Equal(t, "/builds/demo", event.Metadata["contextDir"])
+	assert.Contains(t, event.Metadata["error"], "docker exporter")
+	require.NotEmpty(t, event.Metadata["buildRecordId"])
+	assert.Equal(t, record.ID, event.Metadata["buildRecordId"])
+}
+
+func TestSanitizeBuildContextForEventInternal_RedactsURLCredentials(t *testing.T) {
+	assert.Equal(
+		t,
+		"https://redacted@github.com/zeroZshadow/secretproject.git#main:app",
+		sanitizeBuildContextForEventInternal("https://myaccesstoken@github.com/zeroZshadow/secretproject.git#main:app"),
+	)
+	assert.Equal(
+		t,
+		"[unparseable URL]",
+		sanitizeBuildContextForEventInternal("https://user:pass@[bad-host/repo.git"),
+	)
+	assert.Equal(t, "/builds/demo", sanitizeBuildContextForEventInternal("/builds/demo"))
+}
+
 type testBuildRecorder struct {
 	onBuild func(image.BuildRequest)
+	err     error
 }
 
 func (b testBuildRecorder) BuildImage(_ context.Context, req image.BuildRequest, _ io.Writer, _ string) (*image.BuildResult, error) {
 	if b.onBuild != nil {
 		b.onBuild(req)
+	}
+	if b.err != nil {
+		return nil, b.err
 	}
 	return &image.BuildResult{Provider: "local"}, nil
 }
@@ -343,7 +409,7 @@ func setupBuildHistoryTestDB() (*database.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := db.AutoMigrate(&models.ImageBuild{}); err != nil {
+	if err := db.AutoMigrate(&models.ImageBuild{}, &models.Event{}); err != nil {
 		return nil, err
 	}
 	return &database.DB{DB: db}, nil

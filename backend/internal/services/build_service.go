@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,6 +30,7 @@ type BuildService struct {
 	dockerService   *DockerClientService
 	registryService *ContainerRegistryService
 	gitRepository   *GitRepositoryService
+	eventService    *EventService
 	builder         buildtypes.Builder
 	gitProbeFn      func(context.Context, string, buildgit.AuthConfig) error
 	gitCloneFn      func(context.Context, string, string, buildgit.AuthConfig) (string, error)
@@ -43,6 +45,7 @@ func NewBuildService(
 	dockerService *DockerClientService,
 	registryService *ContainerRegistryService,
 	gitRepository *GitRepositoryService,
+	eventService *EventService,
 ) *BuildService {
 	svc := &BuildService{
 		db:              db,
@@ -50,6 +53,7 @@ func NewBuildService(
 		dockerService:   dockerService,
 		registryService: registryService,
 		gitRepository:   gitRepository,
+		eventService:    eventService,
 	}
 	svc.builder = libbuild.NewBuilder(svc, dockerService, svc)
 
@@ -136,7 +140,7 @@ func (s *BuildService) BuildImage(ctx context.Context, environmentID string, req
 			outputPtr = &output
 		}
 
-		provider := req.Provider
+		provider := s.effectiveBuildProviderInternal(req.Provider)
 		var digest *string
 		if result != nil {
 			if result.Provider != "" {
@@ -151,15 +155,107 @@ func (s *BuildService) BuildImage(ctx context.Context, environmentID string, req
 		var errMsg *string
 		if err != nil {
 			status = models.ImageBuildStatusFailed
-			errMsg = new(err.Error())
+			errorText := err.Error()
+			errMsg = &errorText
 		}
 
-		if updateErr := s.completeBuildRecord(ctx, buildRecordID, status, outputPtr, logCapture.Truncated(), errMsg, digest, provider, completedAt, new(completedAt.Sub(startedAt).Milliseconds())); updateErr != nil {
+		durationMs := completedAt.Sub(startedAt).Milliseconds()
+		if updateErr := s.completeBuildRecord(ctx, buildRecordID, status, outputPtr, logCapture.Truncated(), errMsg, digest, provider, completedAt, &durationMs); updateErr != nil {
 			slog.WarnContext(ctx, "failed to update build history record", "error", updateErr)
 		}
 	}
 
+	if err != nil {
+		s.logBuildFailureEventInternal(ctx, environmentID, req, serviceName, buildRecordID, err, user)
+	}
+
 	return result, err
+}
+
+func (s *BuildService) logBuildFailureEventInternal(ctx context.Context, environmentID string, req imagetypes.BuildRequest, serviceName, buildRecordID string, err error, user *models.User) {
+	if s.eventService == nil || err == nil {
+		return
+	}
+
+	resourceName := firstNonEmptyStringInternal(req.Tags...)
+	if resourceName == "" {
+		resourceName = strings.TrimSpace(serviceName)
+	}
+	if resourceName == "" {
+		resourceName = sanitizeBuildContextForEventInternal(req.ContextDir)
+	}
+
+	userID := ""
+	username := ""
+	if user != nil {
+		userID = user.ID
+		username = user.Username
+	}
+
+	metadata := models.JSON{
+		"action":     "build",
+		"provider":   s.effectiveBuildProviderInternal(req.Provider),
+		"contextDir": sanitizeBuildContextForEventInternal(req.ContextDir),
+		"dockerfile": req.Dockerfile,
+		"tags":       append([]string(nil), req.Tags...),
+	}
+	if service := strings.TrimSpace(serviceName); service != "" {
+		metadata["serviceName"] = service
+	}
+	if buildRecordID != "" {
+		metadata["buildRecordId"] = buildRecordID
+	}
+
+	s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", resourceName, userID, username, environmentID, err, metadata)
+}
+
+func sanitizeBuildContextForEventInternal(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return ""
+	}
+
+	base, fragment, hasFragment := strings.Cut(trimmed, "#")
+	parsed, err := url.Parse(base)
+	if err != nil {
+		if strings.Contains(base, "@") {
+			return "[unparseable URL]"
+		}
+		return trimmed
+	}
+	if parsed.User == nil {
+		return trimmed
+	}
+
+	parsed.User = url.User("redacted")
+	sanitized := parsed.String()
+	if hasFragment {
+		sanitized += "#" + fragment
+	}
+	return sanitized
+}
+
+func (s *BuildService) effectiveBuildProviderInternal(provider string) string {
+	provider = strings.ToLower(strings.TrimSpace(provider))
+	if provider != "" {
+		return provider
+	}
+	if s.settings != nil {
+		provider = strings.ToLower(strings.TrimSpace(s.settings.GetSettingsConfig().BuildProvider.Value))
+	}
+	if provider == "" {
+		return "local"
+	}
+	return provider
+}
+
+func firstNonEmptyStringInternal(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }
 
 func (s *BuildService) resolveBuildRequestInternal(
