@@ -66,8 +66,9 @@
 		return '';
 	}
 
-	const stickyActionsClasses = 'sticky right-0 z-10 transition-colors';
-	const stickySelectClasses = 'w-0 pr-6!';
+	const stickyCellSurfaceClasses = 'bg-background/95';
+	const stickyActionsClasses = `sticky right-0 z-10 transition-colors ${stickyCellSurfaceClasses}`;
+	const stickySelectClasses = `w-0 pr-6! ${stickyCellSurfaceClasses}`;
 
 	function shouldIgnoreRowClick(event: MouseEvent): boolean {
 		const target = event.target as HTMLElement | null;

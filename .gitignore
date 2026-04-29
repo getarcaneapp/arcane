@@ -11,8 +11,9 @@ frontend/build
 build
 data/
 dist/
-arcane
-arcane-*
+/arcane
+/arcane-*
+.bin/
 
 # Claude
 CLAUDE.md
