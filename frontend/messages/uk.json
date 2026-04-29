@@ -922,6 +922,8 @@
 	"swarm_service_form_hostname_placeholder": "my-service",
 	"swarm_service_mode_replicated": "Реплікація",
 	"swarm_service_mode_global": "Глобальний",
+	"swarm_service_mode_replicated_job": "Реплікація завдання",
+	"swarm_service_mode_global_job": "Глобальна робота",
 	"swarm_service_replica_singular": "копія",
 	"swarm_service_replica_plural": "копії",
 	"swarm_service_env_var": "ENV_VAR",
