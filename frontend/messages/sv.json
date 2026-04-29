@@ -922,6 +922,8 @@
 	"swarm_service_form_hostname_placeholder": "min tjänst",
 	"swarm_service_mode_replicated": "Replikerad",
 	"swarm_service_mode_global": "Globalt",
+	"swarm_service_mode_replicated_job": "Replikerat jobb",
+	"swarm_service_mode_global_job": "Globalt jobb",
 	"swarm_service_replica_singular": "replik",
 	"swarm_service_replica_plural": "repliker",
 	"swarm_service_env_var": "ENV_VAR",
