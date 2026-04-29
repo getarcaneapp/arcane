@@ -922,6 +922,8 @@
 	"swarm_service_form_hostname_placeholder": "dịch vụ của tôi",
 	"swarm_service_mode_replicated": "Được sao chép",
 	"swarm_service_mode_global": "Toàn cầu",
+	"swarm_service_mode_replicated_job": "Công việc được nhân bản",
+	"swarm_service_mode_global_job": "Việc làm toàn cầu",
 	"swarm_service_replica_singular": "bản sao",
 	"swarm_service_replica_plural": "bản sao",
 	"swarm_service_env_var": "Biến môi trường",
