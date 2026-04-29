@@ -23,6 +23,9 @@ func registerJobs(appCtx context.Context, newScheduler *pkg_scheduler.JobSchedul
 		newScheduler.RegisterJob(environmentHealthJob)
 	}
 
+	dockerClientRefreshJob := pkg_scheduler.NewDockerClientRefreshJob(appServices.Docker, appServices.Settings)
+	newScheduler.RegisterJob(dockerClientRefreshJob)
+
 	analyticsJob := pkg_scheduler.NewAnalyticsJob(appServices.Settings, appServices.KV, nil, appConfig)
 	newScheduler.RegisterJob(analyticsJob)
 	// Send initial heartbeat on startup without blocking bootstrap.
@@ -55,6 +58,7 @@ func registerJobs(appCtx context.Context, newScheduler *pkg_scheduler.JobSchedul
 		newScheduler,
 		imagePollingJob,
 		autoUpdateJob,
+		dockerClientRefreshJob,
 		environmentHealthJob,
 		eventCleanupJob,
 		scheduledPruneJob,
@@ -72,6 +76,7 @@ func setupJobScheduleCallbacks(
 	newScheduler *pkg_scheduler.JobScheduler,
 	imagePollingJob *pkg_scheduler.ImagePollingJob,
 	autoUpdateJob *pkg_scheduler.AutoUpdateJob,
+	dockerClientRefreshJob *pkg_scheduler.DockerClientRefreshJob,
 	environmentHealthJob *pkg_scheduler.EnvironmentHealthJob,
 	eventCleanupJob *pkg_scheduler.EventCleanupJob,
 	scheduledPruneJob *pkg_scheduler.ScheduledPruneJob,
@@ -93,6 +98,7 @@ func setupJobScheduleCallbacks(
 				newScheduler,
 				imagePollingJob,
 				autoUpdateJob,
+				dockerClientRefreshJob,
 				environmentHealthJob,
 				eventCleanupJob,
 				scheduledPruneJob,
@@ -111,6 +117,7 @@ func handleJobScheduleChangeInternal(
 	newScheduler *pkg_scheduler.JobScheduler,
 	imagePollingJob *pkg_scheduler.ImagePollingJob,
 	autoUpdateJob *pkg_scheduler.AutoUpdateJob,
+	dockerClientRefreshJob *pkg_scheduler.DockerClientRefreshJob,
 	environmentHealthJob *pkg_scheduler.EnvironmentHealthJob,
 	eventCleanupJob *pkg_scheduler.EventCleanupJob,
 	scheduledPruneJob *pkg_scheduler.ScheduledPruneJob,
@@ -126,6 +133,10 @@ func handleJobScheduleChangeInternal(
 	case "autoUpdateInterval":
 		if err := newScheduler.RescheduleJob(ctx, autoUpdateJob); err != nil {
 			slog.WarnContext(ctx, "Failed to reschedule auto-update job", "error", err)
+		}
+	case "dockerClientRefreshInterval":
+		if err := newScheduler.RescheduleJob(ctx, dockerClientRefreshJob); err != nil {
+			slog.WarnContext(ctx, "Failed to reschedule docker-client-refresh job", "error", err)
 		}
 	case "environmentHealthInterval":
 		if appConfig.AgentMode {

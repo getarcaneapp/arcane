@@ -28,6 +28,8 @@ type DockerClientService struct {
 	config          *config.Config
 	settingsService *SettingsService
 	client          *client.Client
+	clientVersion   string
+	clientLastProbe time.Time
 	mu              sync.Mutex
 }
 
@@ -40,31 +42,46 @@ func NewDockerClientService(db *database.DB, cfg *config.Config, settingsService
 }
 
 func newDockerClientInternal(ctx context.Context, host string) (*client.Client, error) {
+	apiVersion, err := detectDockerAPIVersionInternal(ctx, host)
+	if err != nil {
+		return nil, err
+	}
+
+	configuredClient, err := newDockerClientWithAPIVersionInternal(host, apiVersion)
+	if err != nil {
+		return nil, err
+	}
+
+	return configuredClient, nil
+}
+
+func detectDockerAPIVersionInternal(ctx context.Context, host string) (string, error) {
 	probeClient, err := client.New(
 		client.WithHost(host),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create Docker probe client: %w", err)
+		return "", fmt.Errorf("failed to create Docker probe client: %w", err)
 	}
+	defer closeDockerClientInternal(probeClient, "failed to close probe Docker client")
 
 	ctx, cancel := context.WithTimeout(ctx, dockerClientNegotiationTimeout)
 	defer cancel()
 
 	pingResult, err := probeClient.Ping(ctx, client.PingOptions{})
 	if err != nil {
-		if closeErr := probeClient.Close(); closeErr != nil {
-			slog.Warn("failed to close probe Docker client after ping failure", "error", closeErr)
-		}
-		return nil, fmt.Errorf("failed to negotiate Docker API version: %w", err)
+		return "", fmt.Errorf("failed to negotiate Docker API version: %w", err)
 	}
 
 	apiVersion := strings.TrimSpace(pingResult.APIVersion)
 	if apiVersion == "" {
-		return probeClient, nil
+		slog.WarnContext(ctx, "Docker ping did not report an API version, using minimum supported client API version", "api_version", client.MinAPIVersion)
+		return client.MinAPIVersion, nil
 	}
 
-	_ = probeClient.Close()
+	return apiVersion, nil
+}
 
+func newDockerClientWithAPIVersionInternal(host string, apiVersion string) (*client.Client, error) {
 	configuredClient, err := client.New(
 		client.WithHost(host),
 		client.WithAPIVersion(apiVersion),
@@ -76,23 +93,86 @@ func newDockerClientInternal(ctx context.Context, host string) (*client.Client, 
 	return configuredClient, nil
 }
 
+func closeDockerClientInternal(cli *client.Client, message string) {
+	if cli == nil {
+		return
+	}
+
+	if err := cli.Close(); err != nil {
+		slog.Warn(message, "error", err)
+	}
+}
+
 // GetClient returns a singleton Docker client instance.
 // It initializes the client on the first call.
 func (s *DockerClientService) GetClient(ctx context.Context) (*client.Client, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	if s.client != nil {
-		return s.client, nil
+		cli := s.client
+		s.mu.Unlock()
+		return cli, nil
 	}
+	s.mu.Unlock()
 
 	cli, err := newDockerClientInternal(ctx, s.config.DockerHost)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Docker client: %w", err)
 	}
 
+	s.mu.Lock()
+	if s.client != nil {
+		existingClient := s.client
+		s.mu.Unlock()
+		closeDockerClientInternal(cli, "failed to close unused Docker client after concurrent initialization")
+		return existingClient, nil
+	}
+
 	s.client = cli
-	return s.client, nil
+	s.clientVersion = cli.ClientVersion()
+	s.clientLastProbe = time.Now()
+	s.mu.Unlock()
+
+	return cli, nil
+}
+
+// RefreshClient probes the Docker daemon and recreates the cached client when
+// the daemon's effective API version changed.
+func (s *DockerClientService) RefreshClient(ctx context.Context) error {
+	apiVersion, err := detectDockerAPIVersionInternal(ctx, s.config.DockerHost)
+	if err != nil {
+		return fmt.Errorf("failed to refresh Docker client: %w", err)
+	}
+
+	s.mu.Lock()
+	if s.client != nil && apiVersion == s.clientVersion {
+		s.clientLastProbe = time.Now()
+		s.mu.Unlock()
+		return nil
+	}
+	s.mu.Unlock()
+
+	cli, err := newDockerClientWithAPIVersionInternal(s.config.DockerHost, apiVersion)
+	if err != nil {
+		return fmt.Errorf("failed to refresh Docker client: %w", err)
+	}
+
+	s.mu.Lock()
+	if s.client != nil && apiVersion == s.clientVersion {
+		s.clientLastProbe = time.Now()
+		s.mu.Unlock()
+		closeDockerClientInternal(cli, "failed to close unused Docker client after concurrent refresh")
+		return nil
+	}
+
+	oldClient := s.client
+	s.client = cli
+	s.clientVersion = apiVersion
+	s.clientLastProbe = time.Now()
+	s.mu.Unlock()
+
+	closeDockerClientInternal(oldClient, "failed to close replaced Docker client")
+
+	return nil
 }
 
 // DockerHost returns the configured DOCKER_HOST value.

@@ -2,6 +2,7 @@ export type JobSchedules = {
 	environmentHealthInterval: string;
 	eventCleanupInterval: string;
 	autoUpdateInterval: string;
+	dockerClientRefreshInterval: string;
 	pollingInterval: string;
 	scheduledPruneInterval: string;
 	gitopsSyncInterval: string;
