@@ -922,6 +922,8 @@
 	"swarm_service_form_hostname_placeholder": "マイサービス",
 	"swarm_service_mode_replicated": "複製",
 	"swarm_service_mode_global": "グローバル",
+	"swarm_service_mode_replicated_job": "複製ジョブ",
+	"swarm_service_mode_global_job": "グローバル・ジョブ",
 	"swarm_service_replica_singular": "レプリカ",
 	"swarm_service_replica_plural": "レプリカ",
 	"swarm_service_env_var": "ENV_VAR",
