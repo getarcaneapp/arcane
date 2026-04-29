@@ -25,6 +25,7 @@ import (
 	dockerutil "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
 	libbuild "github.com/getarcaneapp/arcane/backend/pkg/libarcane/libbuild"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/timeouts"
+	libupdater "github.com/getarcaneapp/arcane/backend/pkg/libarcane/updater"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils"
@@ -153,15 +154,17 @@ func (s *ProjectService) getProjectRelativePathInternal(projectsDir, projectPath
 // Helpers
 
 type ProjectServiceInfo struct {
-	Name          string                      `json:"name"`
-	Image         string                      `json:"image"`
-	Status        string                      `json:"status"`
-	ContainerID   string                      `json:"container_id"`
-	ContainerName string                      `json:"container_name"`
-	Ports         []string                    `json:"ports"`
-	Health        *string                     `json:"health,omitempty"`
-	IconURL       string                      `json:"icon_url,omitempty"`
-	ServiceConfig *composetypes.ServiceConfig `json:"service_config,omitempty"`
+	Name             string                      `json:"name"`
+	Image            string                      `json:"image"`
+	Status           string                      `json:"status"`
+	ContainerID      string                      `json:"container_id"`
+	ContainerName    string                      `json:"container_name"`
+	Ports            []string                    `json:"ports"`
+	Health           *string                     `json:"health,omitempty"`
+	IconURL          string                      `json:"icon_url,omitempty"`
+	ServiceConfig    *composetypes.ServiceConfig `json:"service_config,omitempty"`
+	Labels           map[string]string           `json:"labels,omitempty"`
+	RedeployDisabled bool                        `json:"redeploy_disabled,omitempty"`
 }
 
 type ProjectBuildOptions struct {
@@ -673,6 +676,7 @@ func (s *ProjectService) GetProjectServices(ctx context.Context, projectID strin
 		slog.Error("compose ps error", "projectName", composeProject.Name, "error", err)
 		return nil, fmt.Errorf("failed to get compose services status: %w", err)
 	}
+	currentContainerID, currentContainerErr := dockerutil.GetCurrentContainerID()
 
 	have := map[string]bool{}
 	var services []ProjectServiceInfo
@@ -695,15 +699,17 @@ func (s *ProjectService) GetProjectServices(ctx context.Context, projectID strin
 		}
 
 		services = append(services, ProjectServiceInfo{
-			Name:          c.Service,
-			Image:         c.Image,
-			Status:        string(c.State),
-			ContainerID:   c.ID,
-			ContainerName: c.Name,
-			Ports:         formatPorts(c.Publishers),
-			Health:        health,
-			IconURL:       meta.ServiceIcons[c.Service],
-			ServiceConfig: svcConfig,
+			Name:             c.Service,
+			Image:            c.Image,
+			Status:           string(c.State),
+			ContainerID:      c.ID,
+			ContainerName:    c.Name,
+			Ports:            formatPorts(c.Publishers),
+			Health:           health,
+			IconURL:          meta.ServiceIcons[c.Service],
+			ServiceConfig:    svcConfig,
+			Labels:           c.Labels,
+			RedeployDisabled: libupdater.ShouldDisableArcaneServerRedeploy(c.Labels, c.ID, currentContainerID, currentContainerErr),
 		})
 		have[c.Service] = true
 	}
@@ -799,15 +805,19 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 		runtimeServices := make([]project.RuntimeService, len(services))
 		for i, svc := range services {
 			runtimeServices[i] = project.RuntimeService{
-				Name:          svc.Name,
-				Image:         svc.Image,
-				Status:        svc.Status,
-				ContainerID:   svc.ContainerID,
-				ContainerName: svc.ContainerName,
-				Ports:         svc.Ports,
-				Health:        svc.Health,
-				IconURL:       svc.IconURL,
-				ServiceConfig: svc.ServiceConfig,
+				Name:             svc.Name,
+				Image:            svc.Image,
+				Status:           svc.Status,
+				ContainerID:      svc.ContainerID,
+				ContainerName:    svc.ContainerName,
+				Ports:            svc.Ports,
+				Health:           svc.Health,
+				IconURL:          svc.IconURL,
+				ServiceConfig:    svc.ServiceConfig,
+				RedeployDisabled: svc.RedeployDisabled,
+			}
+			if svc.RedeployDisabled {
+				resp.RedeployDisabled = true
 			}
 		}
 		resp.RuntimeServices = runtimeServices
@@ -1693,6 +1703,14 @@ func (s *ProjectService) RedeployProject(ctx context.Context, projectID string, 
 		return err
 	}
 
+	disabled, err := s.projectRedeployDisabledInternal(ctx, *proj)
+	if err != nil {
+		return err
+	}
+	if disabled {
+		return &common.ArcaneSelfRedeployError{}
+	}
+
 	if err := s.PullProjectImages(ctx, projectID, io.Discard, user, nil); err != nil {
 		slog.WarnContext(ctx, "failed to pull project images", "error", err)
 	}
@@ -1703,6 +1721,31 @@ func (s *ProjectService) RedeployProject(ctx context.Context, projectID string, 
 	}
 
 	return s.DeployProject(ctx, projectID, user, nil)
+}
+
+func (s *ProjectService) projectRedeployDisabledInternal(ctx context.Context, proj models.Project) (bool, error) {
+	containers, err := projects.ListGlobalComposeContainers(ctx)
+	if err != nil {
+		slog.WarnContext(ctx, "could not list compose containers to check self-redeploy guard; skipping guard", "error", err)
+		return false, nil
+	}
+
+	containersByProject := make(map[string][]container.Summary)
+	for _, c := range containers {
+		projectName := c.Labels["com.docker.compose.project"]
+		if projectName != "" {
+			containersByProject[projectName] = append(containersByProject[projectName], c)
+		}
+	}
+
+	currentContainerID, currentContainerErr := dockerutil.GetCurrentContainerID()
+	for _, container := range lookupProjectContainers(proj, containersByProject) {
+		if libupdater.ShouldDisableArcaneServerRedeploy(container.Labels, container.ID, currentContainerID, currentContainerErr) {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
 
 func (s *ProjectService) PullProjectImages(ctx context.Context, projectID string, progressWriter io.Writer, user models.User, credentials []containerregistry.Credential) error {
@@ -2575,8 +2618,12 @@ func (s *ProjectService) validateComposeContentForUpdate(ctx context.Context, pr
 		Environment: composetypes.Mapping(fullEnvMap),
 	}
 
+	missingIncludeLoader := &missingIncludeStubResourceLoaderInternal{projectPath: projectPath}
+	defer missingIncludeLoader.cleanupInternal()
+
 	err = withTransientValidationEnvFile(projectPath, effectiveEnvContent, func() error {
 		_, loadErr := loader.LoadWithContext(ctx, cfg, func(opts *loader.Options) {
+			opts.ResourceLoaders = append([]loader.ResourceLoader{missingIncludeLoader}, opts.ResourceLoaders...)
 			if validationProjectName != "" {
 				opts.SetProjectName(validationProjectName, true)
 			}
@@ -2585,6 +2632,79 @@ func (s *ProjectService) validateComposeContentForUpdate(ctx context.Context, pr
 	})
 
 	return err
+}
+
+type missingIncludeStubResourceLoaderInternal struct {
+	projectPath string
+	tempDir     string
+	stubs       map[string]string
+}
+
+func (l *missingIncludeStubResourceLoaderInternal) Accept(path string) bool {
+	_, ok := l.resolveMissingIncludeInternal(path)
+	return ok
+}
+
+func (l *missingIncludeStubResourceLoaderInternal) Load(_ context.Context, path string) (string, error) {
+	validatedPath, ok := l.resolveMissingIncludeInternal(path)
+	if !ok {
+		return "", fmt.Errorf("include file is not eligible for validation stub: %s", path)
+	}
+
+	if l.stubs == nil {
+		l.stubs = make(map[string]string)
+	}
+	if stubPath, ok := l.stubs[validatedPath]; ok {
+		return stubPath, nil
+	}
+
+	if l.tempDir == "" {
+		tempDir, err := os.MkdirTemp("", "arcane-compose-include-*")
+		if err != nil {
+			return "", fmt.Errorf("create validation include temp dir: %w", err)
+		}
+		l.tempDir = tempDir
+	}
+
+	relPath, err := filepath.Rel(l.projectPath, validatedPath)
+	if err != nil || strings.HasPrefix(relPath, "..") || filepath.IsAbs(relPath) {
+		relPath = filepath.Base(validatedPath)
+	}
+	stubPath := filepath.Join(l.tempDir, relPath)
+	if err := os.MkdirAll(filepath.Dir(stubPath), 0o755); err != nil {
+		return "", fmt.Errorf("create validation include directory: %w", err)
+	}
+	if err := os.WriteFile(stubPath, []byte("services: {}\n"), 0o600); err != nil {
+		return "", fmt.Errorf("write validation include stub: %w", err)
+	}
+
+	l.stubs[validatedPath] = stubPath
+	return stubPath, nil
+}
+
+func (l *missingIncludeStubResourceLoaderInternal) Dir(path string) string {
+	return filepath.Dir(path)
+}
+
+func (l *missingIncludeStubResourceLoaderInternal) resolveMissingIncludeInternal(path string) (string, bool) {
+	validatedPath, err := projects.ValidateIncludePathForWrite(l.projectPath, path)
+	if err != nil {
+		return "", false
+	}
+
+	if _, err := os.Stat(validatedPath); err == nil {
+		return "", false
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", false
+	}
+
+	return validatedPath, true
+}
+
+func (l *missingIncludeStubResourceLoaderInternal) cleanupInternal() {
+	if l.tempDir != "" {
+		_ = os.RemoveAll(l.tempDir)
+	}
 }
 
 func buildComposeValidationEnvironment(projectsDirectory, projectPath string, effectiveEnvContent *string) (projects.EnvMap, error) {
@@ -3322,14 +3442,15 @@ func (s *ProjectService) fetchProjectStatusConcurrently(ctx context.Context, pro
 
 	// 3. Map to DTOs
 	results := make([]project.Details, len(projectsList))
+	currentContainerID, currentContainerErr := dockerutil.GetCurrentContainerID()
 	for i, p := range projectsList {
-		results[i] = s.mapProjectToDto(ctx, projectsDir, p, containersByProject)
+		results[i] = s.mapProjectToDto(ctx, projectsDir, p, containersByProject, currentContainerID, currentContainerErr)
 	}
 
 	return results
 }
 
-func (s *ProjectService) mapProjectToDto(ctx context.Context, projectsDir string, p models.Project, containersByProject map[string][]container.Summary) project.Details {
+func (s *ProjectService) mapProjectToDto(ctx context.Context, projectsDir string, p models.Project, containersByProject map[string][]container.Summary, currentContainerID string, currentContainerErr error) project.Details {
 	var resp project.Details
 	_ = mapper.MapStruct(p, &resp)
 
@@ -3368,14 +3489,21 @@ func (s *ProjectService) mapProjectToDto(ctx context.Context, projectsDir string
 			containerName = strings.TrimPrefix(c.Names[0], "/")
 		}
 
+		redeployDisabled := libupdater.ShouldDisableArcaneServerRedeploy(c.Labels, c.ID, currentContainerID, currentContainerErr)
+		if redeployDisabled {
+			resp.RedeployDisabled = true
+		}
+
 		services = append(services, ProjectServiceInfo{
-			Name:          svcName,
-			Image:         c.Image,
-			Status:        string(state),
-			ContainerID:   c.ID,
-			ContainerName: containerName,
-			Ports:         formatDockerPorts(c.Ports),
-			Health:        health,
+			Name:             svcName,
+			Image:            c.Image,
+			Status:           string(state),
+			ContainerID:      c.ID,
+			ContainerName:    containerName,
+			Ports:            formatDockerPorts(c.Ports),
+			Health:           health,
+			Labels:           c.Labels,
+			RedeployDisabled: redeployDisabled,
 		})
 
 		if state == "running" {
@@ -3387,14 +3515,15 @@ func (s *ProjectService) mapProjectToDto(ctx context.Context, projectsDir string
 	runtimeServices := make([]project.RuntimeService, len(services))
 	for k, s := range services {
 		runtimeServices[k] = project.RuntimeService{
-			Name:          s.Name,
-			Image:         s.Image,
-			Status:        s.Status,
-			ContainerID:   s.ContainerID,
-			ContainerName: s.ContainerName,
-			Ports:         s.Ports,
-			Health:        s.Health,
-			ServiceConfig: s.ServiceConfig,
+			Name:             s.Name,
+			Image:            s.Image,
+			Status:           s.Status,
+			ContainerID:      s.ContainerID,
+			ContainerName:    s.ContainerName,
+			Ports:            s.Ports,
+			Health:           s.Health,
+			ServiceConfig:    s.ServiceConfig,
+			RedeployDisabled: s.RedeployDisabled,
 		}
 	}
 	resp.RuntimeServices = runtimeServices

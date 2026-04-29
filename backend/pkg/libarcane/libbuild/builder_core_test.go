@@ -98,3 +98,12 @@ func TestBuildkitAuthConfigProvider_FallsBackToDefaultProvider(t *testing.T) {
 		assert.Equal(t, defaultCfg, cfg)
 	})
 }
+
+func TestWrapBuildkitSolveErrorInternal_LeavesGenericErrorsUnchanged(t *testing.T) {
+	err := errors.New("failed to solve: Dockerfile parse error on line 3")
+
+	wrapped := wrapBuildkitSolveErrorInternal(err, "local")
+
+	require.ErrorIs(t, wrapped, err)
+	assert.Equal(t, err.Error(), wrapped.Error())
+}

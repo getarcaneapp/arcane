@@ -6,6 +6,11 @@
 	import { format, formatDistanceToNow } from 'date-fns';
 	import { InfoIcon, ConnectionIcon } from '$lib/icons';
 	import { truncateImageDigest } from '$lib/utils/string.utils';
+	import {
+		getSwarmServiceModeLabel,
+		getSwarmServiceModeVariant,
+		isSwarmServiceModeScalable
+	} from '$lib/utils/swarm-service-mode.utils';
 
 	interface Props {
 		service: SwarmServiceInspect;
@@ -40,6 +45,7 @@
 	const nodes = $derived((service?.nodes as string[]) || []);
 	const versionIndex = $derived(service?.version?.index ?? service?.version?.Index ?? 0);
 	const updateStatus = $derived(service?.updateStatus as Record<string, any> | null | undefined);
+	const canScaleService = $derived(isSwarmServiceModeScalable(serviceMode));
 </script>
 
 <Card.Root>
@@ -76,11 +82,8 @@
 					{m.swarm_mode()} / {m.swarm_replicas()}
 				</div>
 				<div class="flex items-center gap-2">
-					<StatusBadge
-						variant={serviceMode === 'replicated' ? 'blue' : serviceMode === 'global' ? 'green' : 'gray'}
-						text={serviceMode}
-					/>
-					{#if serviceMode === 'replicated'}
+					<StatusBadge variant={getSwarmServiceModeVariant(serviceMode)} text={getSwarmServiceModeLabel(serviceMode)} />
+					{#if canScaleService}
 						<span class="text-foreground font-mono text-sm">
 							{desiredReplicas}
 							{m.swarm_replicas()}
@@ -159,7 +162,7 @@
 					</div>
 					{#if nodes.length > 0}
 						<div class="flex flex-wrap gap-1.5">
-							{#each nodes as node}
+							{#each nodes as node (node)}
 								<div class="flex items-center gap-1">
 									<ConnectionIcon class="text-muted-foreground size-3" />
 									<span class="text-foreground text-sm font-medium">{node}</span>

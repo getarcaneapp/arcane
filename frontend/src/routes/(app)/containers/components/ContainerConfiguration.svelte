@@ -3,6 +3,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import type { ContainerDetailsDto } from '$lib/types/container.type';
 	import { SettingsIcon, TagIcon } from '$lib/icons';
+	import { KeyValueCard, KeyValueGrid } from '$lib/components/resource-detail';
 
 	interface Props {
 		container: ContainerDetailsDto;
@@ -28,37 +29,23 @@
 			</Card.Header>
 			<Card.Content class="p-4">
 				{#if container.config?.env && container.config.env.length > 0}
-					<div class="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3">
+					<KeyValueGrid>
 						{#each container.config.env as env, index (index)}
 							{#if env.includes('=')}
 								{@const [key, ...valueParts] = env.split('=')}
 								{@const value = valueParts.join('=')}
-								<Card.Root variant="subtle">
-									<Card.Content class="flex flex-col gap-2 p-4">
-										<div class="text-muted-foreground text-xs font-semibold tracking-wide break-all uppercase">{key}</div>
-										<div
-											class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all"
-											title="Click to select"
-										>
-											{value}
-										</div>
-									</Card.Content>
-								</Card.Root>
+								<KeyValueCard label={key} valueTitle={m.common_click_to_select()}>{value}</KeyValueCard>
 							{:else}
-								<Card.Root variant="subtle">
-									<Card.Content class="flex flex-col gap-2 p-4">
-										<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">ENV_VAR</div>
-										<div
-											class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all"
-											title="Click to select"
-										>
-											{env}
-										</div>
-									</Card.Content>
-								</Card.Root>
+								<KeyValueCard
+									label={m.swarm_service_env_var()}
+									labelClass="text-muted-foreground text-xs font-semibold tracking-wide uppercase"
+									valueTitle={m.common_click_to_select()}
+								>
+									{env}
+								</KeyValueCard>
 							{/if}
 						{/each}
-					</div>
+					</KeyValueGrid>
 				{:else}
 					<div class="text-muted-foreground rounded-lg border border-dashed py-8 text-center">
 						<div class="text-sm">{m.containers_no_env_vars()}</div>
@@ -82,21 +69,11 @@
 			</Card.Header>
 			<Card.Content class="p-4">
 				{#if container.labels && Object.keys(container.labels).length > 0}
-					<div class="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3">
+					<KeyValueGrid>
 						{#each Object.entries(container.labels) as [key, value] (key)}
-							<Card.Root variant="subtle">
-								<Card.Content class="flex flex-col gap-2 p-4">
-									<div class="text-muted-foreground text-xs font-semibold tracking-wide break-all uppercase">{key}</div>
-									<div
-										class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all"
-										title="Click to select"
-									>
-										{value?.toString() || ''}
-									</div>
-								</Card.Content>
-							</Card.Root>
+							<KeyValueCard label={key} valueTitle={m.common_click_to_select()}>{value?.toString() || ''}</KeyValueCard>
 						{/each}
-					</div>
+					</KeyValueGrid>
 				{:else}
 					<div class="text-muted-foreground rounded-lg border border-dashed py-8 text-center">
 						<div class="text-sm">{m.containers_no_labels_defined()}</div>

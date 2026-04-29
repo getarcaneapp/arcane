@@ -26,17 +26,15 @@ export { default as ArrowDownIcon } from 'virtual:icons/ic/baseline-keyboard-arr
 export { default as ArrowUpIcon } from 'virtual:icons/ic/baseline-keyboard-arrow-up';
 export { default as ArrowLeftIcon } from 'virtual:icons/ic/baseline-keyboard-arrow-left';
 export { default as ArrowRightIcon } from 'virtual:icons/ic/baseline-keyboard-arrow-right';
-export { default as DoubleArrowDownIcon } from 'virtual:icons/ic/baseline-keyboard-double-arrow-down';
-export { default as DoubleArrowUpIcon } from 'virtual:icons/ic/baseline-keyboard-double-arrow-up';
 export { default as DoubleArrowLeftIcon } from 'virtual:icons/ic/baseline-keyboard-double-arrow-left';
 export { default as DoubleArrowRightIcon } from 'virtual:icons/ic/baseline-keyboard-double-arrow-right';
 export { default as ArrowsUpDownIcon } from 'virtual:icons/flowbite/chevron-sort-outline';
 export { default as EyeOffIcon } from 'virtual:icons/fluent/eye-hide-20-filled';
 export { default as EyeOnIcon } from 'virtual:icons/fluent/eye-20-filled';
 export { default as FolderXIcon } from 'virtual:icons/solar/folder-error-linear';
-export { default as ViewOptionsIcon } from 'virtual:icons/tabler/filter-2-cog';
 export { default as ResetIcon } from 'virtual:icons/fluent/arrow-reset-32-filled';
 export { default as CheckIcon } from 'virtual:icons/material-symbols/fitbit-check-small';
+/** @lintignore Knip misses this Svelte component import. */
 export { default as FilterIcon } from 'virtual:icons/fluent/filter-32-filled';
 export { default as LoadingSpinnerIcon } from 'virtual:icons/svg-spinners/ring-resize';
 export { default as AddIcon } from 'virtual:icons/ic/outline-add-circle';
@@ -74,7 +72,6 @@ export { default as CircleArrowUpIcon } from 'virtual:icons/solar/round-alt-arro
 export { default as BoxIcon } from 'virtual:icons/solar/box-minimalistic-linear';
 export { default as StartIcon } from 'virtual:icons/solar/play-linear';
 export { default as StopIcon } from 'virtual:icons/solar/stop-bold';
-export { default as SmartphoneIcon } from 'virtual:icons/solar/smartphone-linear';
 export { default as MonitorSpeakerIcon } from 'virtual:icons/lucide/monitor-speaker';
 export { default as DockIcon } from 'virtual:icons/lucide/dock';
 export { default as EditIcon } from 'virtual:icons/solar/pen-linear';
@@ -100,11 +97,10 @@ export { default as LocalFolderComputerIcon } from 'virtual:icons/streamline/loc
 export { default as MinusIcon } from 'virtual:icons/solar/minus-circle-linear';
 export { default as SendEmailIcon } from 'virtual:icons/solar/plain-2-linear';
 export { default as VolumeUnusedIcon } from 'virtual:icons/clarity/hard-disk-solid-alerted';
-export { default as VolumeUsedIcon } from 'virtual:icons/clarity/hard-disk-solid-badged';
 export { default as OpenIdIcon } from 'virtual:icons/simple-icons/openid';
+/** @lintignore Knip misses this Svelte component import. */
 export { default as LoginIcon } from 'virtual:icons/solar/login-3-linear';
 export { default as GitBranchIcon } from 'virtual:icons/tabler/git-branch';
-export { default as AutomationIcon } from 'virtual:icons/tabler/automation';
 export { default as JobsIcon } from 'virtual:icons/solar/alarm-linear';
 export { default as UploadIcon } from 'virtual:icons/solar/upload-minimalistic-linear';
 export { default as RedeployIcon } from 'virtual:icons/solar/refresh-circle-linear';

@@ -3,7 +3,7 @@
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import { InfoIcon } from '$lib/icons';
 	import { toast } from 'svelte-sonner';
-	import type { ContainerRegistry } from '$lib/types/container-registry.type';
+	import type { ContainerRegistry, ContainerRegistryPullUsage } from '$lib/types/container-registry.type';
 	import type { ContainerRegistryCreateDto, ContainerRegistryUpdateDto } from '$lib/types/container-registry.type';
 	import ContainerRegistryFormSheet from '$lib/components/sheets/container-registry-sheet.svelte';
 	import RegistryTable from './registry-table.svelte';
@@ -11,8 +11,10 @@
 	import { tryCatch } from '$lib/utils/try-catch';
 	import { m } from '$lib/paraglide/messages';
 	import { containerRegistryService } from '$lib/services/container-registry-service';
+	import { queryKeys } from '$lib/query/query-keys';
 	import { untrack } from 'svelte';
-	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
+	import { ResourcePageLayout, type ActionButton } from '$lib/layouts/index.js';
+	import { createQuery } from '@tanstack/svelte-query';
 
 	let { data } = $props();
 
@@ -22,6 +24,15 @@
 	let isInfoDialogOpen = $state(false);
 	let registryToEdit = $state<ContainerRegistry | null>(null);
 	let requestOptions = $state(untrack(() => data.registryRequestOptions));
+	const pullUsageQuery = createQuery(() => ({
+		queryKey: queryKeys.containerRegistries.pullUsage(),
+		queryFn: () => containerRegistryService.getPullUsage(),
+		initialData: data.pullUsage ?? undefined
+	}));
+	const pullUsageByRegistry = $derived.by<Record<string, ContainerRegistryPullUsage>>(() => {
+		const entries = pullUsageQuery.data?.registries ?? [];
+		return Object.fromEntries(entries.map((usage) => [usage.registryId, usage]));
+	});
 
 	let isLoading = $state({
 		create: false,
@@ -37,6 +48,7 @@
 			setLoadingState: (value) => (isLoading.refresh = value),
 			onSuccess: async (newRegistries) => {
 				registries = newRegistries;
+				await pullUsageQuery.refetch();
 				toast.success(m.registries_refreshed());
 			}
 		});
@@ -69,7 +81,7 @@
 				toast.success(m.common_create_success({ resource: m.resource_registry() }));
 			}
 
-			registries = await containerRegistryService.getRegistries(requestOptions);
+			[registries] = await Promise.all([containerRegistryService.getRegistries(requestOptions), pullUsageQuery.refetch()]);
 			isRegistryDialogOpen = false;
 		} catch (error) {
 			console.error('Error saving registry:', error);
@@ -105,7 +117,13 @@
 
 <ResourcePageLayout title={m.registries_title()} subtitle={m.registries_subtitle()} {actionButtons}>
 	{#snippet mainContent()}
-		<RegistryTable bind:registries bind:selectedIds bind:requestOptions onEditRegistry={openEditRegistryDialog} />
+		<RegistryTable
+			bind:registries
+			bind:selectedIds
+			bind:requestOptions
+			{pullUsageByRegistry}
+			onEditRegistry={openEditRegistryDialog}
+		/>
 	{/snippet}
 
 	{#snippet additionalContent()}

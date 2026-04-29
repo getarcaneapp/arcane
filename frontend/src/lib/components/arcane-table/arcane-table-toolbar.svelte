@@ -209,6 +209,7 @@
 						onclick={() => bulkAction.onClick(selectedIds!)}
 						disabled={bulkAction.disabled || bulkAction.loading}
 						loading={bulkAction.loading}
+						title={bulkAction.disabled ? bulkAction.disabledReason : undefined}
 						class="h-9"
 					/>
 				{/each}

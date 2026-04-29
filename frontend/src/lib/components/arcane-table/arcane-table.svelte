@@ -674,7 +674,7 @@
 			</div>
 		{/if}
 
-		<div class="hidden h-full min-h-0 flex-1 overflow-auto md:block">
+		<div class="[isolation:isolate] hidden h-full min-h-0 flex-1 overflow-auto md:block">
 			<ArcaneTableDesktopView
 				{table}
 				{selectedIds}
@@ -694,7 +694,7 @@
 			/>
 		</div>
 
-		<div class="block flex-1 overflow-auto md:hidden">
+		<div class="[isolation:isolate] block flex-1 overflow-auto md:hidden">
 			<div class="divide-border/40 divide-y">
 				<ArcaneTableMobileView
 					{table}
@@ -735,7 +735,7 @@
 			</div>
 		{/if}
 
-		<div class="hidden h-full min-h-0 flex-1 overflow-auto md:block">
+		<div class="bg-background/80 [isolation:isolate] hidden h-full min-h-0 flex-1 overflow-auto md:block">
 			<ArcaneTableDesktopView
 				{table}
 				{selectedIds}
@@ -754,7 +754,7 @@
 			/>
 		</div>
 
-		<div class="block flex-1 overflow-auto md:hidden">
+		<div class="bg-background/80 [isolation:isolate] block flex-1 overflow-auto md:hidden">
 			<ArcaneTableMobileView
 				{table}
 				{mobileCard}

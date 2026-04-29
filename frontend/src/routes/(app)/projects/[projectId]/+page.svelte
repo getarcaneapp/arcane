@@ -713,6 +713,7 @@
 					itemState={project.status}
 					{hasBuildDirective}
 					desktopVariant="adaptive"
+					disableRedeploy={!!project.redeployDisabled}
 					bind:startLoading={isLoading.deploying}
 					bind:stopLoading={isLoading.stopping}
 					bind:restartLoading={isLoading.restarting}

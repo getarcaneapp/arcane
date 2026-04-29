@@ -22,6 +22,12 @@ export const load: PageLoad = async ({ parent }) => {
 		queryKey: queryKeys.containerRegistries.list(registryRequestOptions),
 		queryFn: () => containerRegistryService.getRegistries(registryRequestOptions)
 	});
+	const pullUsage = await queryClient
+		.fetchQuery({
+			queryKey: queryKeys.containerRegistries.pullUsage(),
+			queryFn: () => containerRegistryService.getPullUsage()
+		})
+		.catch(() => null);
 
-	return { registries, registryRequestOptions };
+	return { registries, registryRequestOptions, pullUsage };
 };

@@ -130,19 +130,6 @@ export interface AppriseFormValues {
 	containerUpdateTag: string;
 }
 
-// Union type for all provider form values
-export type ProviderFormValues =
-	| DiscordFormValues
-	| EmailFormValues
-	| TelegramFormValues
-	| SignalFormValues
-	| SlackFormValues
-	| NtfyFormValues
-	| PushoverFormValues
-	| GotifyFormValues
-	| MatrixFormValues
-	| GenericFormValues;
-
 // Map provider keys to their form value types
 export type ProviderFormValuesMap = {
 	discord: DiscordFormValues;
@@ -156,15 +143,6 @@ export type ProviderFormValuesMap = {
 	matrix: MatrixFormValues;
 	generic: GenericFormValues;
 };
-
-// Provider state with current values and saved baseline
-export interface ProviderState<T> {
-	current: T;
-	baseline: T;
-	hasChanges: boolean;
-	isValid: boolean;
-	errors: Partial<Record<keyof T, string>>;
-}
 
 type ProviderConfig = Record<string, unknown>;
 type ProviderEvents = Partial<

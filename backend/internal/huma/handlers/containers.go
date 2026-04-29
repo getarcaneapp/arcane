@@ -581,12 +581,10 @@ func (h *ContainerHandler) GetContainer(ctx context.Context, input *GetContainer
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	containerInspect, err := h.containerService.GetContainerByID(ctx, input.ContainerID)
+	details, err := h.containerService.GetContainerDetails(ctx, input.ContainerID)
 	if err != nil {
 		return nil, huma.Error404NotFound((&common.ContainerRetrievalError{Err: err}).Error())
 	}
-
-	details := containertypes.NewDetails(containerInspect)
 
 	return &GetContainerOutput{
 		Body: ContainerDetailsResponse{
@@ -678,10 +676,8 @@ func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *Contain
 	}
 
 	// Fetch full container details to return (consistent with other endpoints)
-	containerInspect, inspectErr := h.containerService.GetContainerByID(ctx, newContainerID)
+	details, inspectErr := h.containerService.GetContainerDetails(ctx, newContainerID)
 	if inspectErr == nil {
-		details := containertypes.NewDetails(containerInspect)
-
 		return &GetContainerOutput{
 			Body: ContainerDetailsResponse{
 				Success: true,

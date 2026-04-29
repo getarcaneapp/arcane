@@ -71,7 +71,7 @@ func initializeServices(ctx context.Context, db *database.DB, cfg *config.Config
 	svcs.ApiKey = services.NewApiKeyService(db, svcs.User)
 	svcs.ContainerRegistry = services.NewContainerRegistryService(db, func(ctx context.Context) (services.RegistryDaemonClient, error) {
 		return dockerClient.GetClient(ctx)
-	})
+	}, svcs.KV)
 	svcs.Environment = services.NewEnvironmentService(db, httpClient, svcs.Docker, svcs.Event, svcs.Settings, svcs.ApiKey)
 	svcs.Version = services.NewVersionService(httpClient, cfg.UpdateCheckDisabled, config.Version, config.Revision, svcs.ContainerRegistry, svcs.Docker)
 	svcs.Notification = services.NewNotificationService(db, cfg, svcs.Environment)
@@ -80,7 +80,7 @@ func initializeServices(ctx context.Context, db *database.DB, cfg *config.Config
 	svcs.ImageUpdate = services.NewImageUpdateService(db, svcs.Settings, svcs.ContainerRegistry, svcs.Docker, svcs.Event, svcs.Notification)
 	svcs.Image = services.NewImageService(db, svcs.Docker, svcs.ContainerRegistry, svcs.ImageUpdate, svcs.Vulnerability, svcs.Event)
 	svcs.GitRepository = services.NewGitRepositoryService(db, cfg.GitWorkDir, svcs.Event, svcs.Settings)
-	svcs.Build = services.NewBuildService(db, svcs.Settings, svcs.Docker, svcs.ContainerRegistry, svcs.GitRepository)
+	svcs.Build = services.NewBuildService(db, svcs.Settings, svcs.Docker, svcs.ContainerRegistry, svcs.GitRepository, svcs.Event)
 	svcs.BuildWorkspace = services.NewBuildWorkspaceService(svcs.Settings)
 	svcs.Project = services.NewProjectService(db, svcs.Settings, svcs.Event, svcs.Image, svcs.Docker, svcs.Build, cfg)
 	svcs.Container = services.NewContainerService(db, svcs.Event, svcs.Docker, svcs.Image, svcs.Settings, svcs.Project)

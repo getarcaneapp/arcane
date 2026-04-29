@@ -3,7 +3,7 @@ import type { Completion } from '@codemirror/autocomplete';
 import { browser } from '$app/environment';
 import type { SchemaDoc, SchemaStatus } from './types';
 
-export const DOCKER_COMPOSE_SCHEMA_URL =
+const DOCKER_COMPOSE_SCHEMA_URL =
 	'https://raw.githubusercontent.com/compose-spec/compose-go/refs/heads/main/schema/compose-spec.json';
 
 const SCHEMA_CACHE_KEY = 'arcane.compose.schema.v1';

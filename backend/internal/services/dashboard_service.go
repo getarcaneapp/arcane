@@ -10,8 +10,10 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
+	dockerutils "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/timeouts"
+	libupdater "github.com/getarcaneapp/arcane/backend/pkg/libarcane/updater"
 	"github.com/getarcaneapp/arcane/types/base"
 	containertypes "github.com/getarcaneapp/arcane/types/container"
 	dashboardtypes "github.com/getarcaneapp/arcane/types/dashboard"
@@ -106,11 +108,14 @@ func (s *DashboardService) GetSnapshot(ctx context.Context, options DashboardAct
 
 	filteredContainers := filterInternalContainers(dockerContainers, false)
 	containerItems := make([]containertypes.Summary, 0, len(filteredContainers))
+	currentContainerID, currentContainerErr := dockerutils.GetCurrentContainerID()
 	if s.containerService != nil {
-		containerItems = s.containerService.buildContainerSummaries(filteredContainers, nil)
+		containerItems = s.containerService.buildContainerSummaries(filteredContainers, nil, currentContainerID, currentContainerErr)
 	} else {
 		for _, container := range filteredContainers {
-			containerItems = append(containerItems, containertypes.NewSummary(container))
+			summary := containertypes.NewSummary(container)
+			summary.RedeployDisabled = libupdater.ShouldDisableArcaneServerRedeploy(summary.Labels, summary.ID, currentContainerID, currentContainerErr)
+			containerItems = append(containerItems, summary)
 		}
 	}
 

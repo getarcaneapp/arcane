@@ -14,6 +14,7 @@
 	import { createForm } from '$lib/utils/form.utils';
 	import { tryCatch } from '$lib/utils/try-catch';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
+	import { ComposeEditorSplit } from '$lib/components/compose';
 	import { z } from 'zod/v4';
 	import {
 		TrashIcon,
@@ -301,79 +302,87 @@
 
 	{#if !template.isRemote}
 		<!-- Edit layout: compose editor + env editor side by side -->
-		<div class="flex min-h-0 flex-1 flex-col gap-6 lg:grid lg:grid-cols-5 lg:grid-rows-1 lg:items-stretch">
-			<Card.Root class="flex min-h-0 min-w-0 flex-1 flex-col lg:col-span-3">
-				<Card.Header icon={CodeIcon} class="shrink-0">
-					<div class="flex flex-col space-y-1.5">
-						<Card.Title>
-							<h2>{m.templates_compose_template_label()}</h2>
-						</Card.Title>
-						<Card.Description>{m.templates_service_definitions()}</Card.Description>
-					</div>
-				</Card.Header>
-				<Card.Content class="flex min-h-0 min-w-0 flex-1 flex-col p-0">
-					<div class="min-h-0 min-w-0 flex-1 rounded-b-xl">
-						<CodeEditor
-							bind:value={$inputs.composeContent.value}
-							language="yaml"
-							readOnly={saving}
-							fontSize="13px"
-							bind:hasErrors={composeHasErrors}
-							bind:validationReady={composeValidationReady}
-							fileId="templates:custom:{template.id}:compose"
-							originalValue={originalCompose}
-							enableDiff={true}
-							editorContext={{
-								envContent: $inputs.envContent.value,
-								composeContents: [$inputs.composeContent.value],
-								globalVariables: globalVariableMap
-							}}
-						/>
-					</div>
-				</Card.Content>
-				{#if $inputs.composeContent.error}
-					<Card.Footer class="pt-0">
-						<p class="text-destructive text-xs font-medium">{$inputs.composeContent.error}</p>
-					</Card.Footer>
-				{/if}
-			</Card.Root>
+		<ComposeEditorSplit
+			class="flex min-h-0 flex-1 flex-col gap-6 lg:grid lg:grid-cols-5 lg:grid-rows-1 lg:items-stretch"
+			composeClass="contents"
+			envClass="contents"
+		>
+			{#snippet compose()}
+				<Card.Root class="flex min-h-0 min-w-0 flex-1 flex-col lg:col-span-3">
+					<Card.Header icon={CodeIcon} class="shrink-0">
+						<div class="flex flex-col space-y-1.5">
+							<Card.Title>
+								<h2>{m.templates_compose_template_label()}</h2>
+							</Card.Title>
+							<Card.Description>{m.templates_service_definitions()}</Card.Description>
+						</div>
+					</Card.Header>
+					<Card.Content class="flex min-h-0 min-w-0 flex-1 flex-col p-0">
+						<div class="min-h-0 min-w-0 flex-1 rounded-b-xl">
+							<CodeEditor
+								bind:value={$inputs.composeContent.value}
+								language="yaml"
+								readOnly={saving}
+								fontSize="13px"
+								bind:hasErrors={composeHasErrors}
+								bind:validationReady={composeValidationReady}
+								fileId="templates:custom:{template.id}:compose"
+								originalValue={originalCompose}
+								enableDiff={true}
+								editorContext={{
+									envContent: $inputs.envContent.value,
+									composeContents: [$inputs.composeContent.value],
+									globalVariables: globalVariableMap
+								}}
+							/>
+						</div>
+					</Card.Content>
+					{#if $inputs.composeContent.error}
+						<Card.Footer class="pt-0">
+							<p class="text-destructive text-xs font-medium">{$inputs.composeContent.error}</p>
+						</Card.Footer>
+					{/if}
+				</Card.Root>
+			{/snippet}
 
-			<Card.Root class="flex min-h-0 min-w-0 flex-1 flex-col lg:col-span-2">
-				<Card.Header icon={VariableIcon} class="shrink-0">
-					<div class="flex flex-col space-y-1.5">
-						<Card.Title>
-							<h2>{m.templates_env_template_label()}</h2>
-						</Card.Title>
-						<Card.Description>{m.templates_default_config_values()}</Card.Description>
-					</div>
-				</Card.Header>
-				<Card.Content class="flex min-h-0 min-w-0 flex-1 flex-col p-0">
-					<div class="min-h-0 min-w-0 flex-1 rounded-b-xl">
-						<CodeEditor
-							bind:value={$inputs.envContent.value}
-							language="env"
-							readOnly={saving}
-							fontSize="13px"
-							bind:hasErrors={envHasErrors}
-							bind:validationReady={envValidationReady}
-							fileId="templates:custom:{template.id}:env"
-							originalValue={originalEnv}
-							enableDiff={true}
-							editorContext={{
-								envContent: $inputs.envContent.value,
-								composeContents: [$inputs.composeContent.value],
-								globalVariables: globalVariableMap
-							}}
-						/>
-					</div>
-				</Card.Content>
-				{#if $inputs.envContent.error}
-					<Card.Footer class="pt-0">
-						<p class="text-destructive text-xs font-medium">{$inputs.envContent.error}</p>
-					</Card.Footer>
-				{/if}
-			</Card.Root>
-		</div>
+			{#snippet env()}
+				<Card.Root class="flex min-h-0 min-w-0 flex-1 flex-col lg:col-span-2">
+					<Card.Header icon={VariableIcon} class="shrink-0">
+						<div class="flex flex-col space-y-1.5">
+							<Card.Title>
+								<h2>{m.templates_env_template_label()}</h2>
+							</Card.Title>
+							<Card.Description>{m.templates_default_config_values()}</Card.Description>
+						</div>
+					</Card.Header>
+					<Card.Content class="flex min-h-0 min-w-0 flex-1 flex-col p-0">
+						<div class="min-h-0 min-w-0 flex-1 rounded-b-xl">
+							<CodeEditor
+								bind:value={$inputs.envContent.value}
+								language="env"
+								readOnly={saving}
+								fontSize="13px"
+								bind:hasErrors={envHasErrors}
+								bind:validationReady={envValidationReady}
+								fileId="templates:custom:{template.id}:env"
+								originalValue={originalEnv}
+								enableDiff={true}
+								editorContext={{
+									envContent: $inputs.envContent.value,
+									composeContents: [$inputs.composeContent.value],
+									globalVariables: globalVariableMap
+								}}
+							/>
+						</div>
+					</Card.Content>
+					{#if $inputs.envContent.error}
+						<Card.Footer class="pt-0">
+							<p class="text-destructive text-xs font-medium">{$inputs.envContent.error}</p>
+						</Card.Footer>
+					{/if}
+				</Card.Root>
+			{/snippet}
+		</ComposeEditorSplit>
 	{:else}
 		<!-- Read-only view for remote templates -->
 		<div class="grid flex-shrink-0 gap-4 sm:grid-cols-2">

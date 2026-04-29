@@ -75,7 +75,7 @@ export interface SwarmServiceSummary {
 	id: string;
 	name: string;
 	image: string;
-	mode: string;
+	mode: SwarmServiceModeName;
 	replicas: number;
 	runningReplicas: number;
 	ports: SwarmServicePort[];
@@ -86,6 +86,24 @@ export interface SwarmServiceSummary {
 	nodes: string[];
 	networks: string[];
 	mounts: SwarmServiceMount[];
+}
+
+export type SwarmServiceModeName = 'replicated' | 'global' | 'replicated-job' | 'global-job' | 'unknown';
+
+export interface SwarmReplicatedMode {
+	Replicas?: number;
+}
+
+export interface SwarmReplicatedJobMode {
+	MaxConcurrent?: number;
+	TotalCompletions?: number;
+}
+
+export interface SwarmServiceModeSpec {
+	Replicated?: SwarmReplicatedMode;
+	Global?: Record<string, never>;
+	ReplicatedJob?: SwarmReplicatedJobMode;
+	GlobalJob?: Record<string, never>;
 }
 
 export interface ServiceNetworkIPAMConfig {

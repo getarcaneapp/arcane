@@ -6,8 +6,8 @@
     "test": "playwright test"
   },
   "devDependencies": {
-    "@playwright/test": "^1.58.2",
-    "@types/node": "^25.5.0",
-    "oxfmt": "^0.46.0"
+    "@playwright/test": "^1.59.1",
+    "@types/node": "^25.6.0",
+    "oxfmt": "^0.47.0"
   }
 }

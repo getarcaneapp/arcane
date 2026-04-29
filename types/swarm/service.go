@@ -70,7 +70,7 @@ type ServiceSummary struct {
 	// Required: true
 	Image string `json:"image"`
 
-	// Mode is the service mode (replicated or global).
+	// Mode is the service mode (replicated, global, replicated-job, or global-job).
 	//
 	// Required: true
 	Mode string `json:"mode"`
@@ -317,13 +317,29 @@ func NewServiceSummary(service swarm.Service, nodeNames []string, networkNameByI
 	mode := "unknown"
 	replicas := uint64(0)
 	runningReplicas := uint64(0)
-	if spec.Mode.Replicated != nil {
+	switch {
+	case spec.Mode.Replicated != nil:
 		mode = "replicated"
 		if spec.Mode.Replicated.Replicas != nil {
 			replicas = *spec.Mode.Replicated.Replicas
 		}
-	} else if spec.Mode.Global != nil {
+	case spec.Mode.Global != nil:
 		mode = "global"
+		if service.ServiceStatus != nil {
+			replicas = service.ServiceStatus.DesiredTasks
+		}
+	case spec.Mode.ReplicatedJob != nil:
+		mode = "replicated-job"
+		switch {
+		case spec.Mode.ReplicatedJob.TotalCompletions != nil:
+			replicas = *spec.Mode.ReplicatedJob.TotalCompletions
+		case spec.Mode.ReplicatedJob.MaxConcurrent != nil:
+			replicas = *spec.Mode.ReplicatedJob.MaxConcurrent
+		default:
+			replicas = 1
+		}
+	case spec.Mode.GlobalJob != nil:
+		mode = "global-job"
 		if service.ServiceStatus != nil {
 			replicas = service.ServiceStatus.DesiredTasks
 		}

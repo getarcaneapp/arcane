@@ -6,6 +6,7 @@ import (
 	"io"
 
 	"github.com/getarcaneapp/arcane/cli/internal/client"
+	"github.com/getarcaneapp/arcane/cli/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/internal/logger"
 	"github.com/getarcaneapp/arcane/cli/internal/output"
 	clitypes "github.com/getarcaneapp/arcane/cli/internal/types"
@@ -49,6 +50,15 @@ var VersionCmd = &cobra.Command{
 		}
 
 		logger.GetLogger().Debugf("Parsed version data: %+v", result)
+
+		if cmdutil.JSONOutputEnabled(cmd) {
+			resultBytes, err := json.MarshalIndent(result, "", "  ")
+			if err != nil {
+				return fmt.Errorf("failed to marshal JSON: %w", err)
+			}
+			fmt.Println(string(resultBytes))
+			return nil
+		}
 
 		output.Header("Arcane Environment Details: \n")
 

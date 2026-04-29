@@ -40,3 +40,25 @@ export interface ContainerRegistry {
 	createdAt?: string;
 	updatedAt?: string;
 }
+
+export interface ContainerRegistryPullUsageResponse {
+	registries: ContainerRegistryPullUsage[];
+}
+
+export interface ContainerRegistryPullUsage {
+	registryId: string;
+	provider: string;
+	registry: string;
+	displayName: string;
+	repository?: string;
+	limit?: number;
+	remaining?: number;
+	used?: number;
+	windowSeconds?: number;
+	observedPulls: number;
+	authMethod: 'anonymous' | 'credential' | 'unknown';
+	authUsername?: string;
+	source?: string;
+	checkedAt: string;
+	error?: string;
+}

@@ -186,7 +186,7 @@ func reconcileStackServices(
 		if service.Name == "" {
 			service.Name = key
 		}
-		spec, err := buildServiceSpec(service, stackName, stackLabels, networkNameByKey, configMetaByKey, secretMetaByKey)
+		spec, err := buildServiceSpec(service, stackName, stackLabels, networkNameByKey, configMetaByKey, secretMetaByKey, project.Volumes)
 		if err != nil {
 			return nil, err
 		}
@@ -573,6 +573,7 @@ func buildServiceSpec(
 	networkNameByKey map[string]string,
 	configMetaByKey map[string]resourceMeta,
 	secretMetaByKey map[string]resourceMeta,
+	projectVolumes composegotypes.Volumes,
 ) (swarm.ServiceSpec, error) {
 	serviceName := stackScopedName(stackName, service.Name)
 	serviceLabels := mergeLabels(nil, stackLabels)
@@ -605,7 +606,7 @@ func buildServiceSpec(
 				TTY:             service.Tty,
 				OpenStdin:       service.StdinOpen,
 				Labels:          mergeLabels(service.Labels, stackLabels),
-				Mounts:          convertServiceMounts(service.Volumes),
+				Mounts:          convertServiceMounts(service.Volumes, stackName, projectVolumes),
 				Secrets:         convertServiceSecretRefs(service.Secrets, secretMetaByKey),
 				Configs:         convertServiceConfigRefs(service.Configs, configMetaByKey),
 			},
@@ -865,16 +866,26 @@ func buildServiceNetworks(service composegotypes.ServiceConfig, networkNameByKey
 	return attachments
 }
 
-func convertServiceMounts(volumes []composegotypes.ServiceVolumeConfig) []mount.Mount {
+func convertServiceMounts(volumes []composegotypes.ServiceVolumeConfig, stackName string, projectVolumes composegotypes.Volumes) []mount.Mount {
 	if len(volumes) == 0 {
 		return nil
 	}
 	result := make([]mount.Mount, 0, len(volumes))
 	for _, vol := range volumes {
 		mountType := mapVolumeType(vol.Type)
+		source := vol.Source
+		// Driver-configured named volumes must use the stack-scoped name so
+		// services reference the volume pre-created by ensureSwarmVolumesInternal.
+		// Without this, Docker creates a plain local volume and silently ignores
+		// driver/driver_opts — the root cause of issue #2376.
+		if mountType == mount.TypeVolume && source != "" {
+			if volCfg, ok := projectVolumes[source]; ok && !bool(volCfg.External) && (volCfg.Driver != "" || len(volCfg.DriverOpts) > 0) {
+				source = resolveResourceName(stackName, source, volCfg.Name, volCfg.External)
+			}
+		}
 		entry := mount.Mount{
 			Type:        mountType,
-			Source:      vol.Source,
+			Source:      source,
 			Target:      vol.Target,
 			ReadOnly:    vol.ReadOnly,
 			Consistency: mount.Consistency(vol.Consistency),

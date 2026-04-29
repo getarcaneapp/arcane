@@ -11,8 +11,9 @@ frontend/build
 build
 data/
 dist/
-arcane
-arcane-*
+/arcane
+/arcane-*
+.bin/
 
 # Claude
 CLAUDE.md
@@ -35,6 +36,7 @@ vite.config.ts.timestamp-*
 tests/test-results/*
 tests/.report/*
 tests/.auth/
+tests/.bin/
 backend/.bin
 backend/build-errors.log
 frontend/bun.lock

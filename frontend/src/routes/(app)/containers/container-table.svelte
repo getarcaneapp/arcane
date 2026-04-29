@@ -646,14 +646,21 @@
 					</DropdownMenu.Item>
 				{/if}
 
-				<DropdownMenu.Item onclick={() => handleRedeployContainer(item)} disabled={status === 'redeploying' || isAnyLoading}>
-					{#if status === 'redeploying'}
-						<Spinner class="size-4" />
-					{:else}
-						<RedeployIcon class="size-4" />
-					{/if}
-					{m.common_redeploy()}
-				</DropdownMenu.Item>
+				{#if item.redeployDisabled}
+					<DropdownMenu.Item disabled title={m.common_redeploy_disabled_arcane_self()}>
+						<RedeployIcon class="size-4 opacity-50" />
+						{m.common_redeploy()}
+					</DropdownMenu.Item>
+				{:else}
+					<DropdownMenu.Item onclick={() => handleRedeployContainer(item)} disabled={status === 'redeploying' || isAnyLoading}>
+						{#if status === 'redeploying'}
+							<Spinner class="size-4" />
+						{:else}
+							<RedeployIcon class="size-4" />
+						{/if}
+						{m.common_redeploy()}
+					</DropdownMenu.Item>
+				{/if}
 
 				<DropdownMenu.Separator />
 

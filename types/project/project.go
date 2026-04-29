@@ -141,6 +141,11 @@ type RuntimeService struct {
 	//
 	// Required: false
 	ServiceConfig *composetypes.ServiceConfig `json:"serviceConfig,omitempty"`
+
+	// RedeployDisabled indicates whether redeploy actions are disabled for this runtime service.
+	//
+	// Required: false
+	RedeployDisabled bool `json:"redeployDisabled,omitempty"`
 }
 
 // UpdateInfo contains aggregated image update status for a project.
@@ -372,6 +377,11 @@ type Details struct {
 	//
 	// Required: false
 	HasBuildDirective bool `json:"hasBuildDirective,omitempty"`
+
+	// RedeployDisabled indicates whether redeploy actions are disabled for this project.
+	//
+	// Required: false
+	RedeployDisabled bool `json:"redeployDisabled,omitempty"`
 
 	// GitOpsManagedBy is the ID of the GitOps sync managing this project (if any).
 	//

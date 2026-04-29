@@ -9,16 +9,16 @@ ENV PATH="$PNPM_HOME:$PATH"
 ENV CI=true
 WORKDIR /build
 
-COPY pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+COPY frontend/package.json ./frontend/package.json
 
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm fetch
 
-COPY package.json ./
 COPY frontend ./frontend
 
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
-    pnpm install -r --offline
+    pnpm install -r --offline --frozen-lockfile
 
 ENV BUILD_PATH=dist
 ENV NODE_OPTIONS="--max-old-space-size=4096"

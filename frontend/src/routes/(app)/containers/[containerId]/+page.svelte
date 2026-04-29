@@ -295,6 +295,7 @@
 				type="container"
 				itemState={container.state?.running ? 'running' : 'stopped'}
 				desktopVariant="adaptive"
+				disableRedeploy={!!container.redeployDisabled}
 			/>
 		{/snippet}
 

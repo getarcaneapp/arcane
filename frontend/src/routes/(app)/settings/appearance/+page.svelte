@@ -11,6 +11,7 @@
 	import { createSettingsForm } from '$lib/utils/settings-form.util';
 	import { Separator } from '$lib/components/ui/separator';
 	import { Label } from '$lib/components/ui/label';
+	import SettingsRow from '$lib/components/settings/settings-row.svelte';
 	import LocalePicker from '$lib/components/locale-picker.svelte';
 	import AccentColorPicker from '$lib/components/accent-color/accent-color-picker.svelte';
 	import ApplicationThemePicker from '$lib/components/application-theme/application-theme-picker.svelte';
@@ -147,124 +148,98 @@
 				<div class="bg-card rounded-lg border shadow-sm">
 					<div class="space-y-6 p-6">
 						<!-- Application Theme -->
-						<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
-							<div>
-								<Label class="text-base">{m.application_theme()}</Label>
-								<p class="text-muted-foreground mt-1 text-sm">{m.application_theme_description()}</p>
-							</div>
-							<div>
-								<ApplicationThemePicker
-									bind:selectedTheme={$formInputs.applicationTheme.value}
-									accentColor={$formInputs.accentColor.value}
-									disabled={isReadOnly}
-								/>
-							</div>
-						</div>
+						<SettingsRow label={m.application_theme()} description={m.application_theme_description()}>
+							<ApplicationThemePicker
+								bind:selectedTheme={$formInputs.applicationTheme.value}
+								accentColor={$formInputs.accentColor.value}
+								disabled={isReadOnly}
+							/>
+						</SettingsRow>
 
 						<Separator />
 
 						<!-- Accent Color -->
-						<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
-							<div>
-								<Label class="text-base">{m.accent_color()}</Label>
-								<p class="text-muted-foreground mt-1 text-sm">{m.accent_color_description()}</p>
-							</div>
-							<div>
-								<AccentColorPicker
-									previousColor={currentSettings.accentColor}
-									bind:selectedColor={$formInputs.accentColor.value}
-									disabled={isReadOnly}
-								/>
-							</div>
-						</div>
+						<SettingsRow label={m.accent_color()} description={m.accent_color_description()}>
+							<AccentColorPicker
+								previousColor={currentSettings.accentColor}
+								bind:selectedColor={$formInputs.accentColor.value}
+								disabled={isReadOnly}
+							/>
+						</SettingsRow>
 
 						<!-- User Avatars -->
-						<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
-							<div>
-								<Label class="text-base">{m.general_user_avatars_heading()}</Label>
-								<p class="text-muted-foreground mt-1 text-sm">{m.general_user_avatars_description()}</p>
-							</div>
-							<div class="flex items-center gap-2">
-								<Switch
-									id="enableGravatar"
-									bind:checked={$formInputs.enableGravatar.value}
-									disabled={isReadOnly}
-									onCheckedChange={(checked) => {
-										$formInputs.enableGravatar.value = checked;
-									}}
-								/>
-								<Label for="enableGravatar" class="font-normal">
-									{m.general_enable_gravatar_label()}
-								</Label>
-							</div>
-						</div>
+						<SettingsRow
+							label={m.general_user_avatars_heading()}
+							description={m.general_user_avatars_description()}
+							contentClass="flex items-center gap-2"
+						>
+							<Switch
+								id="enableGravatar"
+								bind:checked={$formInputs.enableGravatar.value}
+								disabled={isReadOnly}
+								onCheckedChange={(checked) => {
+									$formInputs.enableGravatar.value = checked;
+								}}
+							/>
+							<Label for="enableGravatar" class="font-normal">
+								{m.general_enable_gravatar_label()}
+							</Label>
+						</SettingsRow>
 
 						<Separator />
 
 						<!-- Language -->
-						<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
-							<div>
-								<Label class="text-base">{m.language()}</Label>
-								<p class="text-muted-foreground mt-1 text-sm">
-									{m.appearance_language_current_user_description()}
-								</p>
-							</div>
-							<div class="flex items-center gap-2">
-								<LocalePicker
-									inline={true}
-									id="appearanceLocalePicker"
-									class="border-border/30 text-foreground h-9 w-32 text-sm font-medium"
-								/>
-							</div>
-						</div>
+						<SettingsRow
+							label={m.language()}
+							description={m.appearance_language_current_user_description()}
+							contentClass="flex items-center gap-2"
+						>
+							<LocalePicker
+								inline={true}
+								id="appearanceLocalePicker"
+								class="border-border/30 text-foreground h-9 w-32 text-sm font-medium"
+							/>
+						</SettingsRow>
 
 						<Separator />
 
 						<!-- Theme -->
-						<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
-							<div>
-								<Label class="text-base">{m.common_toggle_theme()}</Label>
-								<p class="text-muted-foreground mt-1 text-sm">
-									{m.appearance_theme_current_user_description()}
-								</p>
-							</div>
-							<div class="flex items-center gap-2">
-								<ArcaneButton action="base" tone="outline" class="h-9 min-w-40 justify-start gap-2" onclick={toggleMode}>
-									{#if isDarkMode}
-										<SunIcon class="size-4" />
-									{:else}
-										<MoonIcon class="size-4" />
-									{/if}
-									<span>{isDarkMode ? m.sidebar_dark_mode() : m.sidebar_light_mode()}</span>
-								</ArcaneButton>
-							</div>
-						</div>
+						<SettingsRow
+							label={m.common_toggle_theme()}
+							description={m.appearance_theme_current_user_description()}
+							contentClass="flex items-center gap-2"
+						>
+							<ArcaneButton action="base" tone="outline" class="h-9 min-w-40 justify-start gap-2" onclick={toggleMode}>
+								{#if isDarkMode}
+									<SunIcon class="size-4" />
+								{:else}
+									<MoonIcon class="size-4" />
+								{/if}
+								<span>{isDarkMode ? m.sidebar_dark_mode() : m.sidebar_light_mode()}</span>
+							</ArcaneButton>
+						</SettingsRow>
 
 						<Separator />
 
 						<!-- OLED Mode -->
-						<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
-							<div>
-								<Label class="text-base">{m.oled_mode()}</Label>
-								<p class="text-muted-foreground mt-1 text-sm">{m.oled_mode_description()}</p>
+						<SettingsRow label={m.oled_mode()} description={m.oled_mode_description()} contentClass="flex items-center gap-2">
+							{#snippet helpText()}
 								{#if !isDefaultApplicationTheme}
 									<p class="text-muted-foreground/70 mt-1 text-xs italic">{m.oled_mode_requires_default_theme()}</p>
 								{:else if !isDarkMode}
 									<p class="text-muted-foreground/70 mt-1 text-xs italic">{m.oled_mode_requires_dark()}</p>
 								{/if}
-							</div>
-							<div class="flex items-center gap-2">
-								<Switch
-									id="oledMode"
-									checked={$formInputs.oledMode.value}
-									disabled={isReadOnly || !isDefaultApplicationTheme}
-									onCheckedChange={handleOledModeChange}
-								/>
-								<Label for="oledMode" class="font-normal">
-									{$formInputs.oledMode.value ? m.oled_mode_enabled() : m.oled_mode_disabled()}
-								</Label>
-							</div>
-						</div>
+							{/snippet}
+							<Switch
+								id="oledMode"
+								checked={$formInputs.oledMode.value}
+								disabled={isReadOnly || !isDefaultApplicationTheme}
+								onCheckedChange={handleOledModeChange}
+							/>
+							<Label for="oledMode" class="font-normal">
+								{$formInputs.oledMode.value ? m.oled_mode_enabled() : m.oled_mode_disabled()}
+							</Label>
+						</SettingsRow>
 					</div>
 				</div>
 			</div>
@@ -274,55 +249,51 @@
 				<h3 class="text-lg font-medium">{m.navigation_desktop_sidebar_title()}</h3>
 				<div class="bg-card rounded-lg border shadow-sm">
 					<div class="space-y-6 p-6">
-						<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
-							<div>
-								<Label class="text-base">{m.navigation_sidebar_hover_expansion_label()}</Label>
-								<p class="text-muted-foreground mt-1 text-sm">{m.navigation_sidebar_hover_expansion_description()}</p>
-							</div>
-							<div class="flex items-center gap-2">
-								<Switch
-									id="sidebarHoverExpansion"
-									checked={$formInputs.sidebarHoverExpansion.value}
-									disabled={isReadOnly}
-									onCheckedChange={(checked) => {
-										$formInputs.sidebarHoverExpansion.value = checked;
-										if (sidebar) {
-											sidebar.setHoverExpansion(checked);
-										}
-									}}
-								/>
-								<Label for="sidebarHoverExpansion" class="font-normal">
-									{$formInputs.sidebarHoverExpansion.value
-										? m.navigation_sidebar_hover_expansion_enabled()
-										: m.navigation_sidebar_hover_expansion_disabled()}
-								</Label>
-							</div>
-						</div>
+						<SettingsRow
+							label={m.navigation_sidebar_hover_expansion_label()}
+							description={m.navigation_sidebar_hover_expansion_description()}
+							contentClass="flex items-center gap-2"
+						>
+							<Switch
+								id="sidebarHoverExpansion"
+								checked={$formInputs.sidebarHoverExpansion.value}
+								disabled={isReadOnly}
+								onCheckedChange={(checked) => {
+									$formInputs.sidebarHoverExpansion.value = checked;
+									if (sidebar) {
+										sidebar.setHoverExpansion(checked);
+									}
+								}}
+							/>
+							<Label for="sidebarHoverExpansion" class="font-normal">
+								{$formInputs.sidebarHoverExpansion.value
+									? m.navigation_sidebar_hover_expansion_enabled()
+									: m.navigation_sidebar_hover_expansion_disabled()}
+							</Label>
+						</SettingsRow>
 
 						<Separator />
 
 						<!-- Keyboard Shortcuts -->
-						<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
-							<div>
-								<Label class="text-base">{m.navigation_keyboard_shortcuts_label()}</Label>
-								<p class="text-muted-foreground mt-1 text-sm">{m.navigation_keyboard_shortcuts_description()}</p>
-							</div>
-							<div class="flex items-center gap-2">
-								<Switch
-									id="keyboardShortcutsEnabled"
-									checked={$formInputs.keyboardShortcutsEnabled.value}
-									disabled={isReadOnly}
-									onCheckedChange={(checked) => {
-										$formInputs.keyboardShortcutsEnabled.value = checked;
-									}}
-								/>
-								<Label for="keyboardShortcutsEnabled" class="font-normal">
-									{$formInputs.keyboardShortcutsEnabled.value
-										? m.navigation_keyboard_shortcuts_enabled()
-										: m.navigation_keyboard_shortcuts_disabled()}
-								</Label>
-							</div>
-						</div>
+						<SettingsRow
+							label={m.navigation_keyboard_shortcuts_label()}
+							description={m.navigation_keyboard_shortcuts_description()}
+							contentClass="flex items-center gap-2"
+						>
+							<Switch
+								id="keyboardShortcutsEnabled"
+								checked={$formInputs.keyboardShortcutsEnabled.value}
+								disabled={isReadOnly}
+								onCheckedChange={(checked) => {
+									$formInputs.keyboardShortcutsEnabled.value = checked;
+								}}
+							/>
+							<Label for="keyboardShortcutsEnabled" class="font-normal">
+								{$formInputs.keyboardShortcutsEnabled.value
+									? m.navigation_keyboard_shortcuts_enabled()
+									: m.navigation_keyboard_shortcuts_disabled()}
+							</Label>
+						</SettingsRow>
 					</div>
 				</div>
 			</div>
@@ -333,66 +304,58 @@
 				<div class="bg-card rounded-lg border shadow-sm">
 					<div class="space-y-6 p-6">
 						<!-- Navigation Mode -->
-						<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
-							<div>
-								<Label class="text-base">{m.navigation_mode_label()}</Label>
-								<p class="text-muted-foreground mt-1 text-sm">{m.navigation_mode_description()}</p>
-							</div>
-							<div class="space-y-3">
-								<SwitchWithLabel
-									id="mode-scope-toggle"
-									checked={modeIsLocal}
-									label={modeIsLocal ? m.this_device() : m.server_default()}
-									onCheckedChange={handleModeScopeChange}
-									disabled={isReadOnly && !modeIsLocal}
-								/>
+						<SettingsRow label={m.navigation_mode_label()} description={m.navigation_mode_description()} contentClass="space-y-3">
+							<SwitchWithLabel
+								id="mode-scope-toggle"
+								checked={modeIsLocal}
+								label={modeIsLocal ? m.this_device() : m.server_default()}
+								onCheckedChange={handleModeScopeChange}
+								disabled={isReadOnly && !modeIsLocal}
+							/>
 
-								<div class="grid grid-cols-2 gap-2">
-									<ArcaneButton
-										action="base"
-										tone={modeDisplayValue === 'floating' ? 'outline-primary' : 'outline'}
-										class="h-12 w-full"
-										onclick={() => handleModeSelect('floating')}
-										icon={MonitorSpeakerIcon}
-										customLabel={m.navigation_mode_floating()}
-									/>
-									<ArcaneButton
-										action="base"
-										tone={modeDisplayValue === 'docked' ? 'outline-primary' : 'outline'}
-										class="h-12 w-full"
-										onclick={() => handleModeSelect('docked')}
-										icon={DockIcon}
-										customLabel={m.navigation_mode_docked()}
-									/>
-								</div>
+							<div class="grid grid-cols-2 gap-2">
+								<ArcaneButton
+									action="base"
+									tone={modeDisplayValue === 'floating' ? 'outline-primary' : 'outline'}
+									class="h-12 w-full"
+									onclick={() => handleModeSelect('floating')}
+									icon={MonitorSpeakerIcon}
+									customLabel={m.navigation_mode_floating()}
+								/>
+								<ArcaneButton
+									action="base"
+									tone={modeDisplayValue === 'docked' ? 'outline-primary' : 'outline'}
+									class="h-12 w-full"
+									onclick={() => handleModeSelect('docked')}
+									icon={DockIcon}
+									customLabel={m.navigation_mode_docked()}
+								/>
 							</div>
-						</div>
+						</SettingsRow>
 
 						<Separator />
 
 						<!-- Show Labels -->
-						<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
-							<div>
-								<Label class="text-base">{m.navigation_show_labels_label()}</Label>
-								<p class="text-muted-foreground mt-1 text-sm">{m.navigation_show_labels_description()}</p>
-							</div>
-							<div class="space-y-3">
-								<SwitchWithLabel
-									id="labels-scope-toggle"
-									checked={labelsIsLocal}
-									label={labelsIsLocal ? m.this_device() : m.server_default()}
-									onCheckedChange={handleLabelsScopeChange}
-									disabled={isReadOnly && !labelsIsLocal}
-								/>
+						<SettingsRow
+							label={m.navigation_show_labels_label()}
+							description={m.navigation_show_labels_description()}
+							contentClass="space-y-3"
+						>
+							<SwitchWithLabel
+								id="labels-scope-toggle"
+								checked={labelsIsLocal}
+								label={labelsIsLocal ? m.this_device() : m.server_default()}
+								onCheckedChange={handleLabelsScopeChange}
+								disabled={isReadOnly && !labelsIsLocal}
+							/>
 
-								<div class="flex items-center gap-3">
-									<Switch id="mobileNavigationShowLabels" checked={labelsDisplayValue} onCheckedChange={handleLabelsChange} />
-									<span class="text-sm font-medium">
-										{labelsDisplayValue ? m.on() : m.off()}
-									</span>
-								</div>
+							<div class="flex items-center gap-3">
+								<Switch id="mobileNavigationShowLabels" checked={labelsDisplayValue} onCheckedChange={handleLabelsChange} />
+								<span class="text-sm font-medium">
+									{labelsDisplayValue ? m.on() : m.off()}
+								</span>
 							</div>
-						</div>
+						</SettingsRow>
 					</div>
 				</div>
 			</div>

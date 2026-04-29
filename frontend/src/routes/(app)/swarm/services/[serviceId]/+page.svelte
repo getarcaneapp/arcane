@@ -21,7 +21,8 @@
 		ServiceVirtualIP,
 		SwarmServiceInspect,
 		SwarmServiceMount,
-		SwarmServicePort
+		SwarmServicePort,
+		SwarmServiceModeSpec
 	} from '$lib/types/swarm.type';
 	import ServiceEditorDialog from '../service-editor-dialog.svelte';
 	import ServiceOverview from '../components/ServiceOverview.svelte';
@@ -44,6 +45,12 @@
 		RedeployIcon,
 		TrashIcon
 	} from '$lib/icons';
+	import {
+		getSwarmServiceModeFromSpec,
+		getSwarmServiceModeLabel,
+		getSwarmServiceModeVariant,
+		isSwarmServiceModeScalable
+	} from '$lib/utils/swarm-service-mode.utils';
 
 	let { data } = $props();
 	let service = $derived(data?.service as SwarmServiceInspect);
@@ -71,10 +78,7 @@
 	type ServiceSpecShape = {
 		Name?: string;
 		Labels?: Record<string, string>;
-		Mode?: {
-			Replicated?: { Replicas?: number };
-			Global?: unknown;
-		};
+		Mode?: SwarmServiceModeSpec;
 		TaskTemplate?: {
 			ContainerSpec?: ServiceContainerSpecShape;
 			Networks?: RawServiceNetworkAttachment[];
@@ -87,14 +91,15 @@
 	const serviceName = $derived(spec?.Name || '');
 	const serviceImage = $derived(containerSpec?.Image || '');
 
-	const serviceMode = $derived.by(() => {
-		if (spec?.Mode?.Replicated) return 'replicated';
-		if (spec?.Mode?.Global !== undefined) return 'global';
-		return 'unknown';
-	});
+	const serviceMode = $derived(getSwarmServiceModeFromSpec(spec?.Mode));
+	const canScaleService = $derived(isSwarmServiceModeScalable(serviceMode));
 
 	const desiredReplicas = $derived.by(() => {
 		if (serviceMode === 'global') return 0;
+		if (serviceMode === 'global-job') return 0;
+		if (serviceMode === 'replicated-job') {
+			return spec?.Mode?.ReplicatedJob?.TotalCompletions ?? spec?.Mode?.ReplicatedJob?.MaxConcurrent ?? 1;
+		}
 		return spec?.Mode?.Replicated?.Replicas ?? 1;
 	});
 	const scaleReplicas = $derived.by(() => {
@@ -264,7 +269,7 @@
 	}
 
 	async function handleScale() {
-		if (!service?.id || serviceMode !== 'replicated') return;
+		if (!service?.id || !canScaleService) return;
 		const replicas = Math.max(0, Number(scaleReplicas) || 0);
 		handleApiResultWithCallbacks({
 			result: await tryCatch(swarmService.scaleService(service.id, { replicas })),
@@ -288,11 +293,8 @@
 				<h1 class="max-w-[300px] truncate text-lg font-semibold" title={serviceName}>
 					{serviceName}
 				</h1>
-				<StatusBadge
-					variant={serviceMode === 'replicated' ? 'blue' : serviceMode === 'global' ? 'green' : 'gray'}
-					text={serviceMode}
-				/>
-				{#if serviceMode === 'replicated'}
+				<StatusBadge variant={getSwarmServiceModeVariant(serviceMode)} text={getSwarmServiceModeLabel(serviceMode)} />
+				{#if canScaleService}
 					<span class="text-muted-foreground font-mono text-sm">
 						{desiredReplicas}
 						{m.swarm_replicas()}
@@ -303,7 +305,7 @@
 
 		{#snippet headerActions()}
 			<div class="flex items-center gap-2">
-				{#if serviceMode === 'replicated'}
+				{#if canScaleService}
 					<div class="flex items-center gap-2">
 						<Input
 							type="number"

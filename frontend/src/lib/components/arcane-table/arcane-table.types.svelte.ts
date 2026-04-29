@@ -124,6 +124,7 @@ export type BulkAction = {
 	action: 'start' | 'stop' | 'restart' | 'remove' | 'deploy' | 'redeploy' | 'up' | 'down';
 	onClick: (ids: string[]) => void;
 	disabled?: boolean;
+	disabledReason?: string;
 	loading?: boolean;
 	icon?: any;
 };

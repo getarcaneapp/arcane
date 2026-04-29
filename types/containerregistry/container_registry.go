@@ -60,6 +60,90 @@ type ContainerRegistry struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
+type PullUsageResponse struct {
+	// Registries contains pull usage visibility by configured registry.
+	//
+	// Required: true
+	Registries []PullUsage `json:"registries"`
+}
+
+type PullUsage struct {
+	// RegistryID is the configured registry row ID.
+	//
+	// Required: true
+	RegistryID string `json:"registryId"`
+
+	// Provider is the registry provider identifier when known.
+	//
+	// Required: true
+	Provider string `json:"provider"`
+
+	// Registry is the normalized registry host.
+	//
+	// Required: true
+	Registry string `json:"registry"`
+
+	// DisplayName is the human-readable registry name.
+	//
+	// Required: true
+	DisplayName string `json:"displayName"`
+
+	// Repository is the repository used for an optional rate limit probe.
+	//
+	// Required: false
+	Repository string `json:"repository,omitempty"`
+
+	// Limit is the pull limit for the current window.
+	//
+	// Required: false
+	Limit *int `json:"limit,omitempty"`
+
+	// Remaining is the remaining pulls for the current window.
+	//
+	// Required: false
+	Remaining *int `json:"remaining,omitempty"`
+
+	// Used is the number of pulls used in the current window.
+	//
+	// Required: false
+	Used *int `json:"used,omitempty"`
+
+	// WindowSeconds is the current rate limit window duration in seconds.
+	//
+	// Required: false
+	WindowSeconds *int `json:"windowSeconds,omitempty"`
+
+	// ObservedPulls is the number of successful pulls Arcane has initiated for this registry.
+	//
+	// Required: true
+	ObservedPulls int64 `json:"observedPulls"`
+
+	// AuthMethod is the authentication method used for probing.
+	//
+	// Required: true
+	AuthMethod string `json:"authMethod"`
+
+	// AuthUsername is the username used when probing with credentials.
+	//
+	// Required: false
+	AuthUsername string `json:"authUsername,omitempty"`
+
+	// Source is the registry-reported source for the rate limit bucket.
+	//
+	// Required: false
+	Source string `json:"source,omitempty"`
+
+	// CheckedAt is the time when usage was computed.
+	//
+	// Required: true
+	CheckedAt time.Time `json:"checkedAt"`
+
+	// Error contains a recoverable probe or counter error.
+	//
+	// Required: false
+	Error string `json:"error,omitempty"`
+}
+
 type Sync struct {
 	// ID of the container registry.
 	//

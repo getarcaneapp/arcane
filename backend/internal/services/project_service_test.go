@@ -17,6 +17,7 @@ import (
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
+	libupdater "github.com/getarcaneapp/arcane/backend/pkg/libarcane/updater"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/pkg/projects"
 	buildtypes "github.com/getarcaneapp/arcane/types/builds"
@@ -1092,6 +1093,114 @@ func TestProjectService_UpdateProject_AllowsMissingEnvFileDuringComposeValidatio
 	require.NoError(t, statErr)
 }
 
+func TestProjectService_UpdateProject_AllowsMissingLocalIncludeDuringComposeValidation(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
+
+	dirName := "include-new"
+	projectPath := filepath.Join(projectsDir, dirName)
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-missing-include"},
+		Name:      "include-new",
+		DirName:   &dirName,
+		Path:      projectPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	compose := `include:
+  - metadata.yaml
+services:
+  app:
+    image: nginx:alpine
+`
+
+	updated, err := svc.UpdateProject(ctx, project.ID, nil, ptr(compose), nil, models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "tester",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, updated)
+
+	includePath := filepath.Join(projectPath, "metadata.yaml")
+	assert.NoFileExists(t, includePath)
+
+	details, err := svc.GetProjectDetails(ctx, project.ID)
+	require.NoError(t, err)
+	require.Len(t, details.IncludeFiles, 1)
+	assert.Equal(t, "metadata.yaml", details.IncludeFiles[0].RelativePath)
+
+	includeFile, err := svc.GetProjectFileContent(ctx, project.ID, "metadata.yaml")
+	require.NoError(t, err)
+	assert.Equal(t, "metadata.yaml", includeFile.RelativePath)
+	assert.Contains(t, includeFile.Content, "This file will be created when you save changes")
+
+	includeContent := "services: {}\n"
+	require.NoError(t, svc.UpdateProjectIncludeFile(ctx, project.ID, "metadata.yaml", includeContent, models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "tester",
+	}))
+
+	writtenContent, err := os.ReadFile(includePath)
+	require.NoError(t, err)
+	assert.Equal(t, includeContent, string(writtenContent))
+}
+
+func TestProjectService_UpdateProject_RejectsMissingExternalIncludeDuringComposeValidation(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
+
+	dirName := "include-external"
+	projectPath := filepath.Join(projectsDir, dirName)
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-external-include"},
+		Name:      "include-external",
+		DirName:   &dirName,
+		Path:      projectPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	compose := `include:
+  - ../metadata.yaml
+services:
+  app:
+    image: nginx:alpine
+`
+
+	updated, err := svc.UpdateProject(ctx, project.ID, nil, ptr(compose), nil, models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "tester",
+	})
+	require.Error(t, err)
+	assert.Nil(t, updated)
+	assert.Contains(t, err.Error(), "invalid compose file")
+	assert.NoFileExists(t, filepath.Join(projectsDir, "metadata.yaml"))
+	assert.NoFileExists(t, filepath.Join(projectPath, "compose.yaml"))
+}
+
 func TestProjectService_UpdateProject_UsesExistingEnvFileDuringComposeValidation(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
@@ -1975,6 +2084,98 @@ func TestProjectService_ListProjects_FiltersByUpdateStatus(t *testing.T) {
 				names = append(names, item.Name)
 			}
 			assert.Equal(t, tt.expected, names)
+		})
+	}
+}
+
+func TestProjectService_MapProjectToDto_SetsRedeployDisabledFromRuntimeServices(t *testing.T) {
+	projectPath := filepath.Join(t.TempDir(), "arcane")
+	now := time.Now()
+	proj := models.Project{
+		Name:         "arcane",
+		Path:         projectPath,
+		ServiceCount: 1,
+		BaseModel: models.BaseModel{
+			ID:        "project-arcane",
+			CreatedAt: now,
+			UpdatedAt: &now,
+		},
+	}
+
+	tests := []struct {
+		name               string
+		containerID        string
+		currentContainerID string
+		currentErr         error
+		labels             map[string]string
+		wantProject        bool
+		wantService        bool
+	}{
+		{
+			name:               "current Arcane server container disables project redeploy",
+			containerID:        "arcane1234567890",
+			currentContainerID: "arcane1234567890",
+			labels: map[string]string{
+				"com.docker.compose.project": "arcane",
+				"com.docker.compose.service": "server",
+				libupdater.LabelArcane:       "true",
+			},
+			wantProject: true,
+			wantService: true,
+		},
+		{
+			name:        "Arcane server container fails closed when current container is unavailable",
+			containerID: "arcane1234567890",
+			currentErr:  errors.New("not running in docker"),
+			labels: map[string]string{
+				"com.docker.compose.project": "arcane",
+				"com.docker.compose.service": "server",
+				libupdater.LabelArcane:       "true",
+			},
+			wantProject: true,
+			wantService: true,
+		},
+		{
+			name:               "Arcane agent container stays redeployable",
+			containerID:        "agent1234567890",
+			currentContainerID: "agent1234567890",
+			labels: map[string]string{
+				"com.docker.compose.project": "arcane",
+				"com.docker.compose.service": "agent",
+				libupdater.LabelArcane:       "true",
+				libupdater.LabelArcaneAgent:  "true",
+			},
+		},
+		{
+			name:               "non Arcane container stays redeployable",
+			containerID:        "regular1234567890",
+			currentContainerID: "regular1234567890",
+			labels: map[string]string{
+				"com.docker.compose.project": "arcane",
+				"com.docker.compose.service": "postgres",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			service := &ProjectService{}
+			details := service.mapProjectToDto(context.Background(), filepath.Dir(projectPath), proj, map[string][]container.Summary{
+				"arcane": {
+					{
+						ID:     tt.containerID,
+						Image:  "ghcr.io/getarcaneapp/arcane:latest",
+						State:  "running",
+						Status: "Up",
+						Names:  []string{"/arcane-server"},
+						Labels: tt.labels,
+					},
+				},
+			}, tt.currentContainerID, tt.currentErr)
+
+			require.Equal(t, tt.wantProject, details.RedeployDisabled)
+			require.Len(t, details.RuntimeServices, 1)
+			require.Equal(t, tt.wantService, details.RuntimeServices[0].RedeployDisabled)
 		})
 	}
 }

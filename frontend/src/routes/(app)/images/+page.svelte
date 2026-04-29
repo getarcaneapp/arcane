@@ -14,7 +14,7 @@
 	import type { ImageUsageCounts } from '$lib/types/image.type';
 	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
-	import { CloseIcon, VolumesIcon, LocalFolderComputerIcon, CodeIcon } from '$lib/icons';
+	import { CloseIcon, VolumesIcon, LocalFolderComputerIcon } from '$lib/icons';
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
 	import PruneModeCard from '$lib/components/prune/prune-mode-card.svelte';
 

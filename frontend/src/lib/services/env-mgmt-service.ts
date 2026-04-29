@@ -1,5 +1,5 @@
 import BaseAPIService from './api-service';
-import type { Environment } from '$lib/types/environment.type';
+import type { DeploymentSnippets, Environment } from '$lib/types/environment.type';
 import type { CreateEnvironmentDTO, UpdateEnvironmentDTO } from '$lib/types/environment.type';
 import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
 import type { AppVersionInformation } from '$lib/types/application-configuration';
@@ -40,9 +40,9 @@ export default class EnvironmentManagementService extends BaseAPIService {
 		await this.api.post(`/environments/${environmentId}/sync`);
 	}
 
-	async getDeploymentSnippets(environmentId: string): Promise<{ dockerRun: string; dockerCompose: string }> {
+	async getDeploymentSnippets(environmentId: string): Promise<DeploymentSnippets> {
 		const res = await this.api.get(`/environments/${environmentId}/deployment`);
-		return res.data.data as { dockerRun: string; dockerCompose: string };
+		return res.data.data as DeploymentSnippets;
 	}
 
 	async getVersion(environmentId: string): Promise<AppVersionInformation> {

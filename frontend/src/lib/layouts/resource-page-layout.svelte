@@ -44,7 +44,7 @@
 </script>
 
 <div class={cn('space-y-6 pt-3 md:space-y-10 md:pt-5', className)}>
-	<header class="flex items-center justify-between gap-4">
+	<header class="relative flex items-center justify-between gap-4">
 		<div class="flex min-w-0 flex-1 items-center gap-3 sm:gap-4">
 			{#if Icon}
 				<div
@@ -62,8 +62,11 @@
 		</div>
 
 		{#if statCards && statCards.length > 0}
-			<div class="hidden shrink items-center justify-center md:flex">
-				<div class="border-border/50 bg-muted/30 relative overflow-hidden rounded-xl border backdrop-blur-sm">
+			<div
+				class="pointer-events-none absolute top-1/2 left-1/2 z-10 hidden -translate-x-1/2 -translate-y-1/2 items-center justify-center transition-[margin-left] duration-200 ease-out md:flex"
+				style="margin-left: calc(var(--sidebar-gap-width, 0px) / -2);"
+			>
+				<div class="border-border/50 bg-muted/30 pointer-events-auto relative overflow-hidden rounded-xl border backdrop-blur-sm">
 					<div class="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 px-4 py-2">
 						{#each statCards as card, i (card.title ?? i)}
 							<StatCard
