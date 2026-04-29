@@ -269,6 +269,7 @@ var expectedSettingOverrideKeys = []string{
 	"depotToken",
 	"diskUsagePath",
 	"dockerApiTimeout",
+	"dockerClientRefreshInterval",
 	"dockerHost",
 	"dockerImagePullTimeout",
 	"enableGravatar",

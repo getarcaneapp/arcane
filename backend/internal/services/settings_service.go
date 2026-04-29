@@ -104,6 +104,7 @@ func DefaultSettingsConfig() *models.Settings {
 		AutoUpdateExcludedContainers:    models.SettingVariable{Value: ""},
 		PollingEnabled:                  models.SettingVariable{Value: "true"},
 		PollingInterval:                 models.SettingVariable{Value: "0 0 * * * *"},
+		DockerClientRefreshInterval:     models.SettingVariable{Value: "*/30 * * * * *"},
 		EventCleanupInterval:            models.SettingVariable{Value: "0 0 */6 * * *"},
 		AutoInjectEnv:                   models.SettingVariable{Value: "false"},
 		PruneMode:                       models.SettingVariable{Value: "dangling"}, //nolint:staticcheck // Legacy prune setting is still seeded for migration compatibility.

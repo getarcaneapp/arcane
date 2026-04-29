@@ -12,6 +12,7 @@ export type Settings = {
 	autoUpdateExcludedContainers?: string;
 	pollingEnabled: boolean;
 	pollingInterval: number;
+	dockerClientRefreshInterval?: string;
 	environmentHealthInterval: number;
 	defaultDeployPullPolicy: 'missing' | 'always' | 'never';
 	scheduledPruneEnabled?: boolean;

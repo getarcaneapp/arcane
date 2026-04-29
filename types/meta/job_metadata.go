@@ -37,6 +37,17 @@ var jobMetadataRegistry = map[string]JobMetadata{
 		CanRunManually: true,
 		Prerequisites:  []JobPrerequisiteMetadata{},
 	},
+	"docker-client-refresh": {
+		ID:             "docker-client-refresh",
+		Name:           "Docker Client Refresh",
+		Description:    "Refreshes the cached Docker client API version after daemon restarts or upgrades",
+		Category:       "monitoring",
+		SettingsKey:    "dockerClientRefreshInterval",
+		ManagerOnly:    false,
+		IsContinuous:   false,
+		CanRunManually: true,
+		Prerequisites:  []JobPrerequisiteMetadata{},
+	},
 	"event-cleanup": {
 		ID:             "event-cleanup",
 		Name:           "Event Cleanup",
