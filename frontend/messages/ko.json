@@ -922,6 +922,8 @@
 	"swarm_service_form_hostname_placeholder": "내 서비스",
 	"swarm_service_mode_replicated": "복제",
 	"swarm_service_mode_global": "글로벌",
+	"swarm_service_mode_replicated_job": "복제된 작업",
+	"swarm_service_mode_global_job": "글로벌 채용",
 	"swarm_service_replica_singular": "복제본",
 	"swarm_service_replica_plural": "복제본",
 	"swarm_service_env_var": "ENV_VAR",
