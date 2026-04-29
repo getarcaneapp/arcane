@@ -922,6 +922,8 @@
 	"swarm_service_form_hostname_placeholder": "mijn-service",
 	"swarm_service_mode_replicated": "Gerepliceerd",
 	"swarm_service_mode_global": "Wereldwijd",
+	"swarm_service_mode_replicated_job": "Gerepliceerde taak",
+	"swarm_service_mode_global_job": "Wereldwijde baan",
 	"swarm_service_replica_singular": "replica",
 	"swarm_service_replica_plural": "replica's",
 	"swarm_service_env_var": "ENV_VAR",
