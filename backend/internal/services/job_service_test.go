@@ -22,6 +22,19 @@ func TestJobService_GetJobSchedules_DefaultGitOpsInterval(t *testing.T) {
 	require.Equal(t, "0 */1 * * * *", cfg.GitopsSyncInterval)
 }
 
+func TestJobService_GetJobSchedules_DefaultDockerClientRefreshInterval(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+
+	settingsSvc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	jobSvc := NewJobService(db, settingsSvc, &config.Config{})
+	cfg := jobSvc.GetJobSchedules(ctx)
+
+	require.Equal(t, "*/30 * * * * *", cfg.DockerClientRefreshInterval)
+}
+
 func TestJobService_ListJobs_AnalyticsHeartbeatIsManagedInternally(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
@@ -56,6 +69,25 @@ func TestJobService_ListJobs_IncludesDisabledAutoHealJob(t *testing.T) {
 	autoHealJob := findJobStatusByIDInternal(t, jobs.Jobs, "auto-heal")
 	require.False(t, autoHealJob.Enabled)
 	require.Equal(t, "autoHealInterval", autoHealJob.SettingsKey)
+}
+
+func TestJobService_ListJobs_IncludesDockerClientRefreshJob(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+
+	settingsSvc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	jobSvc := NewJobService(db, settingsSvc, &config.Config{})
+	jobs, err := jobSvc.ListJobs(ctx)
+	require.NoError(t, err)
+
+	refreshJob := findJobStatusByIDInternal(t, jobs.Jobs, "docker-client-refresh")
+	require.True(t, refreshJob.Enabled)
+	require.True(t, refreshJob.CanRunManually)
+	require.Equal(t, "monitoring", refreshJob.Category)
+	require.Equal(t, "dockerClientRefreshInterval", refreshJob.SettingsKey)
+	require.Equal(t, "*/30 * * * * *", refreshJob.Schedule)
 }
 
 func findJobStatusByIDInternal(t *testing.T, jobs []jobschedule.JobStatus, id string) jobschedule.JobStatus {
