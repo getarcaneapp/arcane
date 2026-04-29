@@ -15,6 +15,7 @@
 	import { tryCatch } from '$lib/utils/try-catch';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
 	import { goto } from '$app/navigation';
+	import { getSwarmServiceModeLabel, getSwarmServiceModeVariant } from '$lib/utils/swarm-service-mode.utils';
 
 	let {
 		services = $bindable(),
@@ -50,9 +51,11 @@
 		return name;
 	}
 
-	function modeVariant(mode: string): 'green' | 'blue' | 'amber' | 'gray' {
+	function modeIconVariant(mode: string): 'emerald' | 'blue' | 'amber' | 'purple' | 'gray' {
 		if (mode === 'replicated') return 'blue';
-		if (mode === 'global') return 'green';
+		if (mode === 'global') return 'emerald';
+		if (mode === 'replicated-job') return 'amber';
+		if (mode === 'global-job') return 'purple';
 		return 'gray';
 	}
 
@@ -126,7 +129,7 @@
 {/snippet}
 
 {#snippet ModeCell({ value }: { value: unknown })}
-	<StatusBadge text={String(value ?? m.common_unknown())} variant={modeVariant(String(value ?? ''))} />
+	<StatusBadge text={getSwarmServiceModeLabel(String(value ?? ''))} variant={getSwarmServiceModeVariant(String(value ?? ''))} />
 {/snippet}
 
 {#snippet StackCell({ value }: { value: unknown })}
@@ -146,7 +149,7 @@
 		<span class="text-muted-foreground text-sm">{m.common_na()}</span>
 	{:else}
 		<div class="flex flex-col gap-0.5">
-			{#each items.slice(0, MAX_OVERFLOW_ITEMS) as item}
+			{#each items.slice(0, MAX_OVERFLOW_ITEMS) as item (item)}
 				<span class="max-w-45 truncate font-mono text-sm">{item}</span>
 			{/each}
 			{#if items.length > MAX_OVERFLOW_ITEMS}
@@ -181,13 +184,15 @@
 		{item}
 		icon={() => ({
 			component: DockIcon,
-			variant: item.mode === 'global' ? 'emerald' : 'blue'
+			variant: modeIconVariant(item.mode)
 		})}
 		title={(item: SwarmServiceSummary) => getShortName(item.name, item.stackName)}
 		subtitle={(item: SwarmServiceSummary) => ((mobileFieldVisibility.stackName ?? true) ? (item.stackName ?? null) : null)}
 		badges={[
 			(item: SwarmServiceSummary) =>
-				(mobileFieldVisibility.mode ?? true) ? { variant: modeVariant(item.mode), text: item.mode } : null
+				(mobileFieldVisibility.mode ?? true)
+					? { variant: getSwarmServiceModeVariant(item.mode), text: getSwarmServiceModeLabel(item.mode) }
+					: null
 		]}
 		fields={[
 			{

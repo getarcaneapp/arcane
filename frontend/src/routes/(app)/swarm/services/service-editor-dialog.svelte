@@ -9,6 +9,7 @@
 	import * as Accordion from '$lib/components/ui/accordion/index.js';
 	import FormInput from '$lib/components/form/form-input.svelte';
 	import { untrack } from 'svelte';
+	import { getSwarmServiceModeLabel } from '$lib/utils/swarm-service-mode.utils';
 
 	type ServiceEditorPayload = {
 		spec: Record<string, unknown>;
@@ -31,7 +32,7 @@
 		error: string;
 	};
 
-	type ServiceEditorMode = 'replicated' | 'global';
+	type ServiceEditorMode = 'replicated' | 'global' | 'replicated-job' | 'global-job';
 
 	type ServicePortDraft = {
 		target: string;
@@ -74,6 +75,11 @@
 				Replicas?: number;
 			};
 			Global?: Record<string, unknown>;
+			ReplicatedJob?: {
+				MaxConcurrent?: number;
+				TotalCompletions?: number;
+			};
+			GlobalJob?: Record<string, unknown>;
 		};
 		TaskTemplate?: {
 			ContainerSpec?: {
@@ -156,6 +162,10 @@
 		return value === 'udp' ? 'udp' : 'tcp';
 	}
 
+	function isJobMode(mode: ServiceEditorMode): boolean {
+		return mode === 'replicated-job' || mode === 'global-job';
+	}
+
 	function parseInitialSpec(specText: string): SwarmServiceSpecRaw | null {
 		if (!specText.trim()) return null;
 
@@ -172,7 +182,10 @@
 		if (!spec) return createEmptyFormState();
 
 		const containerSpec = spec.TaskTemplate?.ContainerSpec;
-		const mode: ServiceEditorMode = spec.Mode?.Global ? 'global' : 'replicated';
+		let mode: ServiceEditorMode = 'replicated';
+		if (spec.Mode?.Global) mode = 'global';
+		if (spec.Mode?.ReplicatedJob) mode = 'replicated-job';
+		if (spec.Mode?.GlobalJob) mode = 'global-job';
 
 		return {
 			name: createTextField(spec.Name ?? ''),
@@ -275,10 +288,16 @@
 		const containerSpec = ensureRecord(taskTemplate, 'ContainerSpec');
 		containerSpec.Image = form.image.value.trim();
 
-		spec.Mode =
-			form.mode === 'replicated'
-				? { Replicated: { Replicas: Math.max(0, parseInt(form.replicas.value, 10) || 1) } }
-				: { Global: {} };
+		const baseMode = asRecord(form.baseSpec.Mode);
+		if (form.mode === 'replicated') {
+			spec.Mode = { Replicated: { Replicas: Math.max(0, parseInt(form.replicas.value, 10) || 1) } };
+		} else if (form.mode === 'global') {
+			spec.Mode = { Global: {} };
+		} else if (form.mode === 'replicated-job') {
+			spec.Mode = { ReplicatedJob: structuredClone(asRecord(baseMode?.ReplicatedJob) ?? {}) };
+		} else {
+			spec.Mode = { GlobalJob: structuredClone(asRecord(baseMode?.GlobalJob) ?? {}) };
+		}
 
 		// Add optional container config
 		const commandParts = form.command.value.trim().split(' ').filter(Boolean);
@@ -372,11 +391,9 @@
 			<div class="grid grid-cols-2 gap-4">
 				<FormInput label={m.swarm_mode()}>
 					{#snippet children()}
-						<Select.Root type="single" bind:value={form.mode} disabled={isLoading}>
+						<Select.Root type="single" bind:value={form.mode} disabled={isLoading || isJobMode(form.mode)}>
 							<Select.Trigger class="w-full">
-								<span class="capitalize"
-									>{form.mode === 'replicated' ? m.swarm_service_mode_replicated() : m.swarm_service_mode_global()}</span
-								>
+								<span>{getSwarmServiceModeLabel(form.mode)}</span>
 							</Select.Trigger>
 							<Select.Content>
 								<Select.Item value="replicated" label={m.swarm_service_mode_replicated()}

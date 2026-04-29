@@ -1141,13 +1141,9 @@ func (s *SwarmService) ScaleService(ctx context.Context, serviceID string, repli
 	}
 	service := serviceResult.Service
 
-	if service.Spec.Mode.Global != nil {
-		return nil, errors.New("cannot scale global service")
+	if err := applySwarmServiceScaleInternal(&service.Spec.Mode, replicas); err != nil {
+		return nil, err
 	}
-	if service.Spec.Mode.Replicated == nil {
-		service.Spec.Mode.Replicated = &swarm.ReplicatedService{}
-	}
-	service.Spec.Mode.Replicated.Replicas = &replicas
 
 	updateResult, err := dockerClient.ServiceUpdate(ctx, serviceID, dockerclient.ServiceUpdateOptions{
 		Version: service.Version,
@@ -1158,6 +1154,19 @@ func (s *SwarmService) ScaleService(ctx context.Context, serviceID string, repli
 	}
 
 	return &swarmtypes.ServiceUpdateResponse{Warnings: updateResult.Warnings}, nil
+}
+
+func applySwarmServiceScaleInternal(mode *swarm.ServiceMode, replicas uint64) error {
+	switch {
+	case mode.Replicated != nil:
+		mode.Replicated.Replicas = &replicas
+	case mode.ReplicatedJob != nil:
+		mode.ReplicatedJob.TotalCompletions = &replicas
+	default:
+		return fmt.Errorf("scale can only be used with replicated or replicated-job mode: %w", cerrdefs.ErrInvalidArgument)
+	}
+
+	return nil
 }
 
 func (s *SwarmService) UpdateNode(ctx context.Context, nodeID string, req swarmtypes.NodeUpdateRequest) error {

@@ -922,6 +922,8 @@
 	"swarm_service_form_hostname_placeholder": "my-service",
 	"swarm_service_mode_replicated": "Replicated",
 	"swarm_service_mode_global": "Global",
+	"swarm_service_mode_replicated_job": "Replicated Job",
+	"swarm_service_mode_global_job": "Global Job",
 	"swarm_service_replica_singular": "replica",
 	"swarm_service_replica_plural": "replicas",
 	"swarm_service_env_var": "ENV_VAR",
