@@ -680,8 +680,11 @@ func (s *ImageUpdateService) MarkImageRefUpToDateAfterPull(ctx context.Context, 
 		if hasLookup {
 			repositories := repositoryCandidatesSliceInternal(lookup.repositoryCandidates)
 			if len(repositories) > 0 {
+				// Only clear synthetic ref:: records, not real sha256 image ID records.
+				// Clearing sha256 records would incorrectly mark containers that are still
+				// running the old image as up-to-date (see: #2453).
 				if err := tx.Model(&models.ImageUpdateRecord{}).
-					Where("tag = ? AND repository IN ?", lookup.tag, repositories).
+					Where("id LIKE 'ref::%' AND tag = ? AND repository IN ?", lookup.tag, repositories).
 					Update("has_update", false).Error; err != nil {
 					return fmt.Errorf("clear stale image updates: %w", err)
 				}

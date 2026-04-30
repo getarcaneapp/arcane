@@ -674,6 +674,8 @@ func TestImageUpdateService_MarkImageRefUpToDateAfterPull_ClearsMatchingRecordsA
 	repository := serverURL.Host + "/team/app"
 
 	now := time.Now().UTC().Add(-time.Hour)
+
+	// Real sha256 records for OTHER containers running the old image — must not be cleared.
 	require.NoError(t, db.Create(&models.ImageUpdateRecord{
 		ID:             "sha256:old-full",
 		Repository:     repository,
@@ -693,18 +695,37 @@ func TestImageUpdateService_MarkImageRefUpToDateAfterPull_ClearsMatchingRecordsA
 		CheckTime:      now.Add(time.Minute),
 	}).Error)
 
+	// Synthetic ref:: record — must be cleared when new image is pulled.
+	syntheticID := "ref::" + repository + "@1.2.3"
+	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+		ID:             syntheticID,
+		Repository:     repository,
+		Tag:            "1.2.3",
+		HasUpdate:      true,
+		UpdateType:     models.UpdateTypeDigest,
+		CurrentVersion: "1.2.3",
+		CheckTime:      now,
+	}).Error)
+
 	svc := NewImageUpdateService(db, nil, nil, &DockerClientService{client: newTestDockerClient(t, server)}, nil, nil)
 
 	require.NoError(t, svc.MarkImageRefUpToDateAfterPull(context.Background(), imageRef))
 
+	// Sha256 records for old images that other containers are still running must stay HasUpdate=true.
 	var fullRecord models.ImageUpdateRecord
 	require.NoError(t, db.WithContext(context.Background()).Where("id = ?", "sha256:old-full").First(&fullRecord).Error)
-	assert.False(t, fullRecord.HasUpdate)
+	assert.True(t, fullRecord.HasUpdate, "sha256 record for old image still in use must not be cleared")
 
 	var shortRecord models.ImageUpdateRecord
 	require.NoError(t, db.WithContext(context.Background()).Where("id = ?", "sha256:old-short").First(&shortRecord).Error)
-	assert.False(t, shortRecord.HasUpdate)
+	assert.True(t, shortRecord.HasUpdate, "sha256 record for old image still in use must not be cleared")
 
+	// Synthetic ref:: record must be cleared since a fresh image was pulled.
+	var synthRecord models.ImageUpdateRecord
+	require.NoError(t, db.WithContext(context.Background()).Where("id = ?", syntheticID).First(&synthRecord).Error)
+	assert.False(t, synthRecord.HasUpdate, "synthetic ref:: record must be cleared after pull")
+
+	// The newly pulled image record must be saved as up-to-date.
 	var currentRecord models.ImageUpdateRecord
 	require.NoError(t, db.WithContext(context.Background()).Where("id = ?", "sha256:local-image-id").First(&currentRecord).Error)
 	assert.False(t, currentRecord.HasUpdate)
