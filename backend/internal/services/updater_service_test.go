@@ -2,8 +2,11 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"net/netip"
 	"strings"
 	"testing"
@@ -15,6 +18,7 @@ import (
 	glsqlite "github.com/glebarez/sqlite"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
+	dockerclient "github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -913,39 +917,31 @@ func TestUpdaterService_CollectUsedImages_SkipsExcludedContainers(t *testing.T) 
 	require.NoError(t, err)
 	require.NoError(t, settings.UpdateSetting(ctx, "autoUpdateExcludedContainers", "excluded-container"))
 
+	// Serve a fake Docker daemon that returns two containers: one excluded, one not.
+	fakeContainers := []container.Summary{
+		{ID: "c1", Names: []string{"/excluded-container"}, Image: "nginx:latest"},
+		{ID: "c2", Names: []string{"/active-container"}, Image: "redis:7"},
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/containers/json") {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(fakeContainers)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+
+	dcli, err := dockerclient.NewClientWithOpts(
+		dockerclient.WithHost("tcp://"+srv.Listener.Addr().String()),
+		dockerclient.WithVersion("1.46"),
+	)
+	require.NoError(t, err)
+
 	svc := &UpdaterService{settingsService: settings}
 	out := map[string]struct{}{}
 
-	containers := []container.Summary{
-		{
-			ID:    "c1",
-			Names: []string{"/excluded-container"},
-			Image: "nginx:latest",
-		},
-		{
-			ID:    "c2",
-			Names: []string{"/active-container"},
-			Image: "redis:7",
-		},
-	}
-
-	for _, c := range containers {
-		excludedContainers := svc.buildExcludedContainerSetInternal(ctx)
-		isExcluded := false
-		for _, name := range c.Names {
-			if excludedContainers[strings.TrimPrefix(name, "/")] {
-				isExcluded = true
-				break
-			}
-		}
-		if isExcluded {
-			continue
-		}
-		if libupdater.IsUpdateDisabled(c.Labels) {
-			continue
-		}
-		out[svc.normalizeRef(c.Image)] = struct{}{}
-	}
+	require.NoError(t, svc.collectUsedImagesFromContainersInternal(ctx, dcli, out))
 
 	assert.NotContains(t, out, svc.normalizeRef("nginx:latest"), "excluded container image must not be collected")
 	assert.Contains(t, out, svc.normalizeRef("redis:7"), "non-excluded container image must be collected")
