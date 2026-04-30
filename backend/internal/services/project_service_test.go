@@ -533,7 +533,7 @@ func TestBuildProjectImagePullPlan(t *testing.T) {
 	assert.Equal(t, imagePullModeNever, plan["nginx:latest"])
 }
 
-func TestProjectService_PullProjectImages_ClearsUpdateRecordsForPulledNonBuildRefs(t *testing.T) {
+func TestProjectService_PullProjectImages_UpdatesCurrentImageRecordAfterPull(t *testing.T) {
 	ctx := context.Background()
 	db := setupProjectTestDB(t)
 
@@ -608,18 +608,22 @@ func TestProjectService_PullProjectImages_ClearsUpdateRecordsForPulledNonBuildRe
 
 	require.NoError(t, svc.PullProjectImages(ctx, projectRecord.ID, io.Discard, systemUser, nil))
 
+	// sha256:old-* records represent update records for OTHER containers still running
+	// the old image. Pulling the image for one container must not mark them as up-to-date
+	// (#2453: updating one container was incorrectly removing others from the update list).
 	var fullRecord models.ImageUpdateRecord
 	require.NoError(t, db.WithContext(ctx).Where("id = ?", "sha256:old-full").First(&fullRecord).Error)
-	assert.False(t, fullRecord.HasUpdate)
+	assert.True(t, fullRecord.HasUpdate)
 
 	var shortRecord models.ImageUpdateRecord
 	require.NoError(t, db.WithContext(ctx).Where("id = ?", "sha256:old-short").First(&shortRecord).Error)
-	assert.False(t, shortRecord.HasUpdate)
+	assert.True(t, shortRecord.HasUpdate)
 
 	var buildRecord models.ImageUpdateRecord
 	require.NoError(t, db.WithContext(ctx).Where("id = ?", "sha256:build-only").First(&buildRecord).Error)
 	assert.True(t, buildRecord.HasUpdate)
 
+	// The newly pulled image itself is correctly marked as up-to-date.
 	var currentRecord models.ImageUpdateRecord
 	require.NoError(t, db.WithContext(ctx).Where("id = ?", imageID).First(&currentRecord).Error)
 	assert.False(t, currentRecord.HasUpdate)
@@ -629,7 +633,7 @@ func TestProjectService_PullProjectImages_ClearsUpdateRecordsForPulledNonBuildRe
 	assert.Equal(t, imageDigest, stringPtrToString(currentRecord.LatestDigest))
 }
 
-func TestProjectService_EnsureImagesPresent_ClearsUpdateRecordsAfterPull(t *testing.T) {
+func TestProjectService_EnsureImagesPresent_UpdatesCurrentImageRecordAfterPull(t *testing.T) {
 	ctx := context.Background()
 	db := setupProjectTestDB(t)
 
@@ -669,9 +673,11 @@ func TestProjectService_EnsureImagesPresent_ClearsUpdateRecordsAfterPull(t *test
 		imageRef: imagePullModeAlways,
 	}, io.Discard, nil, systemUser))
 
+	// sha256:old-api may still be in use by another container — pulling for one container
+	// must not clear it (fixes #2453).
 	var oldRecord models.ImageUpdateRecord
 	require.NoError(t, db.WithContext(ctx).Where("id = ?", "sha256:old-api").First(&oldRecord).Error)
-	assert.False(t, oldRecord.HasUpdate)
+	assert.True(t, oldRecord.HasUpdate)
 
 	var currentRecord models.ImageUpdateRecord
 	require.NoError(t, db.WithContext(ctx).Where("id = ?", imageID).First(&currentRecord).Error)
@@ -679,7 +685,7 @@ func TestProjectService_EnsureImagesPresent_ClearsUpdateRecordsAfterPull(t *test
 	assert.Equal(t, imageDigest, stringPtrToString(currentRecord.LatestDigest))
 }
 
-func TestProjectService_PullImageForService_ClearsUpdateRecordsAfterPull(t *testing.T) {
+func TestProjectService_PullImageForService_UpdatesCurrentImageRecordAfterPull(t *testing.T) {
 	ctx := context.Background()
 	db := setupProjectTestDB(t)
 
@@ -717,9 +723,10 @@ func TestProjectService_PullImageForService_ClearsUpdateRecordsAfterPull(t *test
 
 	require.NoError(t, svc.pullImageForService(ctx, imageRef, io.Discard, nil))
 
+	// sha256:old-worker may still be in use by another container — must not be cleared (fixes #2453).
 	var oldRecord models.ImageUpdateRecord
 	require.NoError(t, db.WithContext(ctx).Where("id = ?", "sha256:old-worker").First(&oldRecord).Error)
-	assert.False(t, oldRecord.HasUpdate)
+	assert.True(t, oldRecord.HasUpdate)
 
 	var currentRecord models.ImageUpdateRecord
 	require.NoError(t, db.WithContext(ctx).Where("id = ?", imageID).First(&currentRecord).Error)
@@ -801,9 +808,10 @@ func TestProjectService_ComposePullSelectedServicesInternal_ReconcilesOnlyOnSucc
 
 	require.NoError(t, svc.composePullSelectedServicesInternal(ctx, projectDef, []string{"app"}))
 
+	// sha256:selected-old may still be used by another container — must not be cleared (fixes #2453).
 	var selectedRecord models.ImageUpdateRecord
 	require.NoError(t, db.WithContext(ctx).Where("id = ?", "sha256:selected-old").First(&selectedRecord).Error)
-	assert.False(t, selectedRecord.HasUpdate)
+	assert.True(t, selectedRecord.HasUpdate)
 
 	var sidecarRecord models.ImageUpdateRecord
 	require.NoError(t, db.WithContext(ctx).Where("id = ?", "sha256:sidecar-old").First(&sidecarRecord).Error)
