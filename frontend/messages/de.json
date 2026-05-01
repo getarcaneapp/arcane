@@ -631,7 +631,7 @@
 	"container_compose_view_project": "Projekt anzeigen",
 	"compose_editor_editing_info": "Bearbeitung von {file} für das Projekt {project}",
 	"compose_editor_viewing_info": "Anzeige von {file} für das Projekt {project}",
-	"tabs_compose": "Komponieren Sie",
+	"tabs_compose": "Verfassen",
 	"tabs_inspect": "Überprüfen Sie",
 	"tabs_environment": "Umgebung",
 	"tabs_volumes": "Volumes",
