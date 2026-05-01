@@ -24,7 +24,6 @@
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import { toast } from 'svelte-sonner';
 	import { tryCatch } from '$lib/utils/try-catch';
-	import { cn } from '$lib/utils';
 	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '$lib/utils/api.util';
 	import { goto } from '$app/navigation';
 	import userStore from '$lib/stores/user-store';
@@ -267,12 +266,12 @@
 
 {#snippet LabelsCell({ item }: { item: SwarmNodeSummary })}
 	<div class="flex flex-wrap items-center gap-1.5">
-		{#each Object.entries(item.systemLabels ?? {}) as [key, value]}
+		{#each Object.entries(item.systemLabels ?? {}) as [key, value] (key)}
 			<div class="group relative overflow-hidden rounded-[var(--radius)]">
 				<StatusBadge text={`${key}${value ? `=${value}` : ''}`} variant="gray" minWidth="none" class="max-w-[200px] truncate" />
 			</div>
 		{/each}
-		{#each Object.entries(item.labels ?? {}) as [key, value]}
+		{#each Object.entries(item.labels ?? {}) as [key, value] (key)}
 			<div class="group relative overflow-hidden rounded-[var(--radius)]">
 				<StatusBadge text={`${key}${value ? `=${value}` : ''}`} variant="blue" minWidth="none" class="max-w-[200px] truncate" />
 				{#if isAdmin}

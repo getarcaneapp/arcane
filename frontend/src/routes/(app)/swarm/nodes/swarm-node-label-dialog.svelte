@@ -26,25 +26,33 @@
 		isSubmitting = true;
 		try {
 			await onAdd(key.trim(), value.trim());
-			open = false;
-			key = '';
-			value = '';
+			handleCancel();
 		} catch (err) {
-			toast.error('Failed to add label: ' + extractApiErrorMessage(err));
+			toast.error(m.common_update_failed({ name: m.common_labels() }) + ': ' + extractApiErrorMessage(err));
 		} finally {
 			isSubmitting = false;
 		}
 	}
+
+	function handleCancel() {
+		open = false;
+		key = '';
+		value = '';
+	}
 </script>
 
-<ResponsiveDialog.Root bind:open title="Add Node Label" description="Add a new custom label to the swarm node.">
+<ResponsiveDialog.Root
+	bind:open
+	title={m.swarm_service_form_add_label()}
+	description={m.common_labels_description({ resource: m.swarm_node() })}
+>
 	<form onsubmit={handleSubmit} class="space-y-4 px-6 py-4">
 		<div class="space-y-2">
 			<Label for="label-key" class={isReservedPrefix ? 'text-red-500' : ''}>Key</Label>
 			<Input
 				id="label-key"
 				bind:value={key}
-				placeholder="e.g. storage"
+				placeholder={m.swarm_service_form_key_placeholder()}
 				required
 				class={isReservedPrefix ? 'border-red-500 focus-visible:ring-red-500' : ''}
 			/>
@@ -56,23 +64,17 @@
 		</div>
 		<div class="space-y-2">
 			<Label for="label-value">Value</Label>
-			<Input id="label-value" bind:value placeholder="e.g. ssd" />
+			<Input id="label-value" bind:value placeholder={m.swarm_service_form_value_placeholder()} />
 		</div>
 		<button type="submit" class="hidden"></button>
 	</form>
 
 	{#snippet footer()}
 		<div class="flex w-full flex-col gap-2 px-6 pb-6 sm:flex-row sm:justify-end">
+			<ArcaneButton action="base" tone="outline" customLabel={m.common_cancel()} onclick={handleCancel} disabled={isSubmitting} />
 			<ArcaneButton
 				action="base"
-				tone="outline"
-				customLabel={m.common_cancel()}
-				onclick={() => (open = false)}
-				disabled={isSubmitting}
-			/>
-			<ArcaneButton
-				action="base"
-				customLabel={m.common_add_button({ resource: 'Label' })}
+				customLabel={m.common_add_button({ resource: m.common_labels() })}
 				onclick={handleSubmit}
 				loading={isSubmitting}
 				disabled={!key.trim() || isReservedPrefix || isSubmitting}
