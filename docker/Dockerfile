@@ -107,7 +107,8 @@ ENV NVIDIA_VISIBLE_DEVICES=all \
 
 WORKDIR /app
 
-USER root
+# elevate to root to create data dir, then drop back to non-root
+USER 0:0
 RUN mkdir -p /app/data /builds \
   && chown -R 65532:65532 /app /builds
 USER 65532:65532
