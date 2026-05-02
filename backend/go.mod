@@ -20,7 +20,7 @@ require (
 	github.com/docker/compose/v5 v5.1.3
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/getarcaneapp/arcane/cli v1.16.3
-	github.com/getarcaneapp/arcane/types v1.17.4
+	github.com/getarcaneapp/arcane/types v1.18.1
 	github.com/gin-contrib/cors v1.7.7
 	github.com/gin-gonic/gin v1.12.0
 	github.com/glebarez/sqlite v1.11.0
@@ -45,7 +45,7 @@ require (
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/orandin/slog-gorm v1.4.0
 	github.com/robfig/cron/v3 v3.0.1
-	github.com/samber/slog-gin v1.21.0
+	github.com/samber/slog-gin v1.21.1
 	github.com/shirou/gopsutil/v4 v4.26.3
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
