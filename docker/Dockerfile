@@ -65,20 +65,35 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     -o /build/arcane \
     ./cmd/main.go
 
-# Stage 3: Production Image
-FROM debian:trixie-slim AS runner
+# Stage 3a: Runtime deps (apt-enabled)
+FROM debian:trixie-slim AS runner-deps
 ARG TARGETARCH
-ARG VERSION
-ARG REVISION
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl tzdata tar gzip \
-    vainfo clinfo libdrm2 libsystemd0 \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates curl tzdata tar gzip \
+        vainfo clinfo libdrm2 libsystemd0 \
     && if [ "$TARGETARCH" = "amd64" ]; then \
         apt-get install -y --no-install-recommends intel-gpu-tools; \
     fi \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
+# Stage 3b: Hardened Production Image (no apt)
+ARG HARDENED_BASE_IMAGE=debian:trixie-slim
+FROM ${HARDENED_BASE_IMAGE} AS runner-hardened
 
+ARG TARGETARCH
+ARG VERSION
+ARG REVISION
+
+# Copy runtime deps from runner-deps instead of apt-get
+COPY --from=runner-deps /etc/ssl/certs/ /etc/ssl/certs/
+COPY --from=runner-deps /usr/share/zoneinfo/ /usr/share/zoneinfo/
+COPY --from=runner-deps /usr/bin/ /usr/bin/
+COPY --from=runner-deps /usr/lib/ /usr/lib/
+COPY --from=runner-deps /lib/ /lib/
+COPY --from=runner-deps /lib64/ /lib64/
+
+# keep the same env/settings as existing runner
 ENV GIN_MODE=release
 ENV PORT=3552
 ENV ENVIRONMENT=production
@@ -89,13 +104,10 @@ ENV NVIDIA_VISIBLE_DEVICES=all \
     ONEAPI_DEVICE_SELECTOR=level_zero:*,opencl:* \
     LD_LIBRARY_PATH=/usr/local/nvidia/lib:/usr/local/nvidia/lib64:/opt/rocm/lib:/opt/intel/oneapi/lib:/opt/intel/oneapi/lib/intel64:/usr/lib/x86_64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib64:/usr/lib:/lib64:/lib
 
-
 WORKDIR /app
 RUN mkdir -p /app/data /builds
 COPY --from=backend-builder /build/arcane .
 EXPOSE 3552
 VOLUME ["/app/data"]
-
 LABEL com.getarcaneapp.arcane="true"
-
 CMD ["./arcane"]
