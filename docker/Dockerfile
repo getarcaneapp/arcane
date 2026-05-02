@@ -1,5 +1,6 @@
 # syntax=docker/dockerfile:1
 ARG BUILD_TAGS=""
+ARG HARDENED_BASE_IMAGE=dhi.io/debian-base:trixie
 
 # Stage 1: Build Frontend
 FROM --platform=$BUILDPLATFORM node:25-trixie-slim AS frontend-builder
@@ -78,7 +79,6 @@ RUN apt-get update \
     fi \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 # Stage 3b: Hardened Production Image (no apt)
-ARG HARDENED_BASE_IMAGE=debian:trixie-slim
 FROM ${HARDENED_BASE_IMAGE} AS runner-hardened
 
 ARG TARGETARCH
