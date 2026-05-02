@@ -1,7 +1,10 @@
 # syntax=docker/dockerfile:1
+# Allow swapping bbetween hardened and non-hardened images
+ARG FRONTEND_BASE_IMAGE=dhi.io/node:25-trixie-slim
+ARG BACKEND_BASE_IMAGE=dhi.io/golang:1.26-trixie
 
 # Stage 1: Frontend Development with optimized caching
-FROM --platform=$BUILDPLATFORM node:25-trixie-slim AS frontend-dev
+FROM --platform=$BUILDPLATFORM ${FRONTEND_BASE_IMAGE} AS frontend-dev
 
 RUN npm install -g --force corepack && corepack enable pnpm
 
@@ -34,9 +37,11 @@ EXPOSE 3000
 CMD ["pnpm", "-C", "frontend", "dev", "--host", "0.0.0.0"]
 
 # Stage 2: Backend Development with optimized caching
-FROM --platform=$BUILDPLATFORM golang:1.26-trixie AS backend-dev
+FROM --platform=$BUILDPLATFORM ${BACKEND_BASE_IMAGE} AS backend-dev
 
 # Install development tools in a single layer
+# Swap to root for hardened image
+USER 0:0
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
