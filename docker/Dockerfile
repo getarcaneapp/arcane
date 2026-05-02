@@ -104,10 +104,13 @@ ENV NVIDIA_VISIBLE_DEVICES=all \
     ONEAPI_DEVICE_SELECTOR=level_zero:*,opencl:* \
     LD_LIBRARY_PATH=/usr/local/nvidia/lib:/usr/local/nvidia/lib64:/opt/rocm/lib:/opt/intel/oneapi/lib:/opt/intel/oneapi/lib/intel64:/usr/lib/x86_64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib64:/usr/lib:/lib64:/lib
 
+
 WORKDIR /app
 RUN mkdir -p /app/data /builds
 COPY --from=backend-builder /build/arcane .
 EXPOSE 3552
 VOLUME ["/app/data"]
+
 LABEL com.getarcaneapp.arcane="true"
+
 CMD ["./arcane"]
