@@ -1,6 +1,6 @@
 {
 	"$schema": "https://inlang.com/schema/inlang-message-format",
-	"_comment_layout": "=== LAYOUT & UI ===",
+	"_comment_layout": "=== 레이아웃 & UI ===",
 	"layout_title": "Arcane",
 	"accent_color": "강조 색상",
 	"accent_color_description": "Arcane의 외관을 꾸밀 강조 색상을 선택하세요",
