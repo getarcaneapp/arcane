@@ -39,9 +39,8 @@ CMD ["pnpm", "-C", "frontend", "dev", "--host", "0.0.0.0"]
 # Stage 2: Backend Development with optimized caching
 FROM --platform=$BUILDPLATFORM ${BACKEND_BASE_IMAGE} AS backend-dev
 
-# Install development tools in a single layer
-# Swap to root for hardened image
-USER 0:0
+# Install development tools in a dedicated image
+FROM debian:trixie-slim as dev-tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
@@ -49,6 +48,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tzdata && \
     rm -rf /var/lib/apt/lists/* && \
     go install github.com/air-verse/air@latest
+
+FROM BACKEND_BASE_IMAGE as backend-dev
+COPY --from=dev-tools /usr/bin/git /usr/bin/git
+COPY --from=dev-tools /usr/bin/curl /usr/bin/curl
+COPY --from=dev-tools /usr/share/zoneinfo /usr/share/zoneinfo
+COPY --from=dev-tools /etc/ssl/certs /etc/ssl/certs
 
 ENV GIN_MODE=debug \
     PORT=3552 \
