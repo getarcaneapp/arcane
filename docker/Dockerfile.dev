@@ -37,23 +37,30 @@ EXPOSE 3000
 CMD ["pnpm", "-C", "frontend", "dev", "--host", "0.0.0.0"]
 
 # Stage 2: Backend Development with optimized caching
-FROM --platform=$BUILDPLATFORM ${BACKEND_BASE_IMAGE} AS backend-dev
-
-# Install development tools in a dedicated image
-FROM debian:trixie-slim as dev-tools
+# 2a - Debian stage for apt-get tools
+FROM debian:trixie-slim AS dev-tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
     git \
     tzdata && \
-    rm -rf /var/lib/apt/lists/* && \
-    go install github.com/air-verse/air@latest
+    rm -rf /var/lib/apt/lists/*
 
-FROM golang:1.26-trixie as backend-tools
+# 2b - Go stage to install air
+FROM golang:1.26-trixie AS backend-tools
+RUN go install github.com/air-verse/air@latest
 COPY --from=dev-tools /usr/bin/git /usr/bin/git
 COPY --from=dev-tools /usr/bin/curl /usr/bin/curl
 COPY --from=dev-tools /usr/share/zoneinfo /usr/share/zoneinfo
 COPY --from=dev-tools /etc/ssl/certs /etc/ssl/certs
+
+# 2c - Actual dev runtime stage
+FROM --platform=$BUILDPLATFORM ${BACKEND_BASE_IMAGE} AS backend-dev
+COPY --from=backend-tools /go/bin/air /usr/local/bin/air
+COPY --from=backend-tools /usr/bin/git /usr/bin/git
+COPY --from=backend-tools /usr/bin/curl /usr/bin/curl
+COPY --from=backend-tools /usr/share/zoneinfo /usr/share/zoneinfo
+COPY --from=backend-tools /etc/ssl/certs /etc/ssl/certs
 
 ENV GIN_MODE=debug \
     PORT=3552 \
