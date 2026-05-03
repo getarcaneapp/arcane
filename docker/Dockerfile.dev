@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # Allow swapping bbetween hardened and non-hardened images
-ARG FRONTEND_BASE_IMAGE=dhi.io/node:25-trixie-slim
+ARG FRONTEND_BASE_IMAGE=dhi.io/node:25
 ARG BACKEND_BASE_IMAGE=dhi.io/golang:1.26
 
 # Stage 1: Frontend Development with optimized caching
