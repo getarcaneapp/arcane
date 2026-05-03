@@ -78,6 +78,13 @@ COPY cli/ ./cli/
 # Copy backend Go module files for dependency caching
 COPY backend/go.mod backend/go.sum ./backend/
 
+# DHI golang image does not precreate the sumdb directory tree.
+# Create it so go mod verify can write sumdb state.
+USER 0:0
+RUN mkdir -p /go/pkg/sumdb/sum.golang.org /go/pkg/mod /root/.cache/go-build \
+ && chown -R 65532:65532 /go/pkg /root/.cache || true
+USER 65532:65532
+
 # Download dependencies with cache mounts
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
