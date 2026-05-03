@@ -49,7 +49,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     rm -rf /var/lib/apt/lists/* && \
     go install github.com/air-verse/air@latest
 
-FROM BACKEND_BASE_IMAGE as backend-dev
+FROM golang:1.26-trixie as backend-dev
 COPY --from=dev-tools /usr/bin/git /usr/bin/git
 COPY --from=dev-tools /usr/bin/curl /usr/bin/curl
 COPY --from=dev-tools /usr/share/zoneinfo /usr/share/zoneinfo
