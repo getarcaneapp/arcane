@@ -1,10 +1,7 @@
 # syntax=docker/dockerfile:1
-# Allow swapping bbetween hardened and non-hardened images
-ARG FRONTEND_BASE_IMAGE=dhi.io/node:25
-ARG BACKEND_BASE_IMAGE=dhi.io/golang:1.26
 
 # Stage 1: Frontend Development with optimized caching
-FROM --platform=$BUILDPLATFORM ${FRONTEND_BASE_IMAGE} AS frontend-dev
+FROM --platform=$BUILDPLATFORM node:25-trixie-slim AS frontend-dev
 
 RUN npm install -g --force corepack && corepack enable pnpm
 
@@ -37,30 +34,16 @@ EXPOSE 3000
 CMD ["pnpm", "-C", "frontend", "dev", "--host", "0.0.0.0"]
 
 # Stage 2: Backend Development with optimized caching
-# 2a - Debian stage for apt-get tools
-FROM debian:trixie-slim AS dev-tools
+FROM --platform=$BUILDPLATFORM golang:1.26-trixie AS backend-dev
+
+# Install development tools in a single layer
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
     git \
     tzdata && \
-    rm -rf /var/lib/apt/lists/*
-
-# 2b - Go stage to install air
-FROM golang:1.26-trixie AS backend-tools
-RUN go install github.com/air-verse/air@latest
-COPY --from=dev-tools /usr/bin/git /usr/bin/git
-COPY --from=dev-tools /usr/bin/curl /usr/bin/curl
-COPY --from=dev-tools /usr/share/zoneinfo /usr/share/zoneinfo
-COPY --from=dev-tools /etc/ssl/certs /etc/ssl/certs
-
-# 2c - Actual dev runtime stage
-FROM --platform=$BUILDPLATFORM ${BACKEND_BASE_IMAGE} AS backend-dev
-COPY --from=backend-tools /go/bin/air /usr/local/bin/air
-COPY --from=backend-tools /usr/bin/git /usr/bin/git
-COPY --from=backend-tools /usr/bin/curl /usr/bin/curl
-COPY --from=backend-tools /usr/share/zoneinfo /usr/share/zoneinfo
-COPY --from=backend-tools /etc/ssl/certs /etc/ssl/certs
+    rm -rf /var/lib/apt/lists/* && \
+    go install github.com/air-verse/air@latest
 
 ENV GIN_MODE=debug \
     PORT=3552 \
@@ -77,16 +60,6 @@ COPY cli/ ./cli/
 
 # Copy backend Go module files for dependency caching
 COPY backend/go.mod backend/go.sum ./backend/
-
-# pre-create directories since DHI runs as non-root and cannot do it later
-# Create it so go mod verify can write sumdb state.
-USER 0:0
-RUN mkdir -p /go/pkg/sumdb/sum.golang.org /go/pkg/mod /root/.cache/go-build \
- && chown -R 65532:65532 /go/pkg /root/.cache || true
-RUN mkdir -p /app/data /app/.bin /builds && \
-    chown -R 65532:65532 /app /builds && \
-    chmod 755 /app/data /app/.bin
-USER 65532:65532
 
 # Download dependencies with cache mounts
 RUN --mount=type=cache,target=/go/pkg/mod \
