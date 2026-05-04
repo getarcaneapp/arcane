@@ -11,6 +11,7 @@
 	import { ResourcePageLayout, type ActionButton } from '$lib/layouts/index.js';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { simpleRefresh } from '$lib/utils/refresh.util';
+	import { DownloadIcon } from '$lib/icons';
 
 	let { data } = $props();
 
@@ -100,6 +101,18 @@
 						action: 'create' as const,
 						label: m.common_add_button({ resource: m.resource_environment_cap() }),
 						onclick: () => (showEnvironmentSheet = true)
+					}
+				]
+			: []),
+		...(currentUserIsAdmin && data.settings?.edgeMTLSManagerCAAvailable
+			? [
+					{
+						id: 'download-edge-ca',
+						action: 'save' as const,
+						label: m.environments_download_edge_ca(),
+						href: '/api/edge-mtls/ca',
+						rel: 'external',
+						icon: DownloadIcon
 					}
 				]
 			: []),

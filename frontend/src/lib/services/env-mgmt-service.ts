@@ -1,6 +1,5 @@
 import BaseAPIService from './api-service';
-import type { DeploymentSnippets, Environment } from '$lib/types/environment.type';
-import type { CreateEnvironmentDTO, UpdateEnvironmentDTO } from '$lib/types/environment.type';
+import type { CreateEnvironmentDTO, DeploymentSnippets, Environment, UpdateEnvironmentDTO } from '$lib/types/environment.type';
 import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
 import type { AppVersionInformation } from '$lib/types/application-configuration';
 import { transformPaginationParams } from '$lib/utils/params.util';

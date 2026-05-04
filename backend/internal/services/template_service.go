@@ -1118,7 +1118,9 @@ func (s *TemplateService) UpdateGlobalVariables(ctx context.Context, vars []env.
 	var builder strings.Builder
 	builder.WriteString("# Global Environment Variables\n")
 	builder.WriteString("# These variables are available to all projects\n")
-	builder.WriteString("# Last updated: " + time.Now().Format(time.RFC3339) + "\n\n")
+	builder.WriteString("# Last updated: ")
+	builder.WriteString(time.Now().Format(time.RFC3339))
+	builder.WriteString("\n\n")
 
 	for _, v := range vars {
 		if strings.TrimSpace(v.Key) == "" {

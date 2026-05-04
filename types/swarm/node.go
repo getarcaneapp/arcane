@@ -68,10 +68,15 @@ type NodeSummary struct {
 	// Required: false
 	Reachability string `json:"reachability,omitempty"`
 
-	// Labels contains node labels.
+	// Labels contains user-defined node labels from the node spec.
 	//
 	// Required: false
 	Labels map[string]string `json:"labels,omitempty"`
+
+	// SystemLabels contains read-only engine labels.
+	//
+	// Required: false
+	SystemLabels map[string]string `json:"systemLabels,omitempty"`
 
 	// EngineVersion is the Docker engine version.
 	//
@@ -162,6 +167,7 @@ func NewNodeSummary(node swarm.Node) NodeSummary {
 		ManagerStatus: managerStatus,
 		Reachability:  reachability,
 		Labels:        node.Spec.Labels,
+		SystemLabels:  node.Description.Engine.Labels,
 		EngineVersion: node.Description.Engine.EngineVersion,
 		Platform:      platform,
 		CreatedAt:     node.CreatedAt,

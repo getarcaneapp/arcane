@@ -2,7 +2,17 @@
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import type { ColumnSpec, MobileFieldVisibility } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
-	import { UsersIcon, EnvironmentsIcon, EllipsisIcon, InspectIcon, TrashIcon, EdgeConnectionIcon } from '$lib/icons';
+	import {
+		UsersIcon,
+		EnvironmentsIcon,
+		EllipsisIcon,
+		InspectIcon,
+		TrashIcon,
+		EdgeConnectionIcon,
+		AddIcon,
+		CloseIcon,
+		TagIcon
+	} from '$lib/icons';
 	import { m } from '$lib/paraglide/messages';
 	import { swarmService } from '$lib/services/swarm-service';
 	import type { SwarmNodeAgentDeployment, SwarmNodeSummary } from '$lib/types/swarm.type';
@@ -19,6 +29,7 @@
 	import userStore from '$lib/stores/user-store';
 	import { fromStore } from 'svelte/store';
 	import SwarmNodeAgentDialog from './swarm-node-agent-dialog.svelte';
+	import SwarmNodeLabelDialog from './swarm-node-label-dialog.svelte';
 	import { getSwarmNodeAgentActionLabel, getSwarmNodeAgentLabel, getSwarmNodeAgentVariant } from './agent-status';
 
 	let {
@@ -37,6 +48,8 @@
 	let agentDeploymentError = $state('');
 	let agentDeployment = $state<SwarmNodeAgentDeployment | null>(null);
 	let isAgentDeploymentLoading = $state(false);
+	let isAddLabelDialogOpen = $state(false);
+	let nodeToLabel = $state<SwarmNodeSummary | null>(null);
 
 	function statusVariant(state: string): 'green' | 'red' | 'amber' | 'gray' {
 		if (state === 'ready') return 'green';
@@ -116,7 +129,7 @@
 	}
 
 	async function mutateNode(action: () => Promise<void>, successMessage: string, failureMessage: string) {
-		handleApiResultWithCallbacks({
+		await handleApiResultWithCallbacks({
 			result: await tryCatch(action()),
 			message: failureMessage,
 			setLoadingState: (v) => (isLoading = v),
@@ -127,24 +140,24 @@
 		});
 	}
 
-	function setAvailability(node: SwarmNodeSummary, availability: 'active' | 'pause' | 'drain') {
-		mutateNode(
+	async function setAvailability(node: SwarmNodeSummary, availability: 'active' | 'pause' | 'drain') {
+		await mutateNode(
 			() => swarmService.updateNode(node.id, { availability }),
-			m.swarm_node_availability_update_success({ name: node.hostname, availability }),
+			m.common_update_success({ resource: m.swarm_node() }),
 			m.swarm_node_update_failed({ name: node.hostname })
 		);
 	}
 
-	function promoteNode(node: SwarmNodeSummary) {
-		mutateNode(
+	async function promoteNode(node: SwarmNodeSummary) {
+		await mutateNode(
 			() => swarmService.promoteNode(node.id),
 			m.swarm_node_promote_success({ name: node.hostname }),
 			m.swarm_node_promote_failed({ name: node.hostname })
 		);
 	}
 
-	function demoteNode(node: SwarmNodeSummary) {
-		mutateNode(
+	async function demoteNode(node: SwarmNodeSummary) {
+		await mutateNode(
 			() => swarmService.demoteNode(node.id),
 			m.swarm_node_demote_success({ name: node.hostname }),
 			m.swarm_node_demote_failed({ name: node.hostname })
@@ -169,12 +182,48 @@
 		});
 	}
 
+	function openAddLabelDialog(node: SwarmNodeSummary) {
+		nodeToLabel = node;
+		isAddLabelDialogOpen = true;
+	}
+
+	async function addLabel(key: string, value: string) {
+		if (!nodeToLabel) return;
+		const labels = { ...(nodeToLabel.labels ?? {}), [key]: value };
+		await mutateNode(
+			() => swarmService.updateNode(nodeToLabel!.id, { labels }),
+			m.common_update_success({ resource: m.swarm_node() }),
+			m.swarm_node_update_failed({ name: nodeToLabel.hostname })
+		);
+	}
+
+	function removeLabel(node: SwarmNodeSummary, key: string) {
+		openConfirmDialog({
+			title: m.common_remove_title({ resource: `label "${key}"` }),
+			message: m.common_remove_confirm({ resource: `label "${key}"` }),
+			confirm: {
+				label: m.common_remove(),
+				destructive: true,
+				action: async () => {
+					const labels = { ...(node.labels ?? {}) };
+					delete labels[key];
+					await mutateNode(
+						() => swarmService.updateNode(node.id, { labels }),
+						m.common_update_success({ resource: m.swarm_node() }),
+						m.swarm_node_update_failed({ name: node.hostname })
+					);
+				}
+			}
+		});
+	}
+
 	const columns = [
 		{ accessorKey: 'id', title: m.common_id(), hidden: true },
 		{ accessorKey: 'hostname', title: m.swarm_hostname(), sortable: true },
 		{ accessorKey: 'role', title: m.common_role(), sortable: true, cell: RoleCell },
 		{ accessorKey: 'status', title: m.common_status(), sortable: true, cell: StatusCell },
 		{ accessorKey: 'availability', title: m.swarm_availability(), sortable: true, cell: AvailabilityCell },
+		{ accessorKey: 'labels', title: m.common_labels(), cell: LabelsCell },
 		{
 			id: 'agent',
 			title: m.swarm_node_agent_column(),
@@ -188,6 +237,7 @@
 		{ id: 'role', label: m.common_role(), defaultVisible: true },
 		{ id: 'status', label: m.common_status(), defaultVisible: true },
 		{ id: 'availability', label: m.swarm_availability(), defaultVisible: true },
+		{ id: 'labels', label: m.common_labels(), defaultVisible: true },
 		{ id: 'agent', label: m.swarm_node_agent_column(), defaultVisible: true },
 		{ id: 'engineVersion', label: m.swarm_engine_version(), defaultVisible: false }
 	];
@@ -212,6 +262,41 @@
 		text={getSwarmNodeAgentLabel(String(value ?? 'none') as SwarmNodeSummary['agent']['state'])}
 		variant={getSwarmNodeAgentVariant(String(value ?? 'none') as SwarmNodeSummary['agent']['state'])}
 	/>
+{/snippet}
+
+{#snippet LabelsCell({ item }: { item: SwarmNodeSummary })}
+	<div class="flex flex-wrap items-center gap-1.5">
+		{#each Object.entries(item.systemLabels ?? {}) as [key, value] (key)}
+			<div class="group relative overflow-hidden rounded-[var(--radius)]">
+				<StatusBadge text={`${key}${value ? `=${value}` : ''}`} variant="gray" minWidth="none" class="max-w-[200px] truncate" />
+			</div>
+		{/each}
+		{#each Object.entries(item.labels ?? {}) as [key, value] (key)}
+			<div class="group relative overflow-hidden rounded-[var(--radius)]">
+				<StatusBadge text={`${key}${value ? `=${value}` : ''}`} variant="blue" minWidth="none" class="max-w-[200px] truncate" />
+				{#if isAdmin}
+					<button
+						class="absolute inset-0 flex cursor-pointer items-center justify-end rounded-[var(--radius)] bg-blue-500/10 pr-1 opacity-0 backdrop-blur-[1px] transition-opacity group-hover:opacity-100 dark:bg-blue-400/20"
+						onclick={() => removeLabel(item, key)}
+						title={m.common_remove()}
+					>
+						<div class="scale-90 rounded-full bg-red-500 p-0.5 shadow-lg transition-transform group-hover:scale-100">
+							<CloseIcon class="size-3 text-white" />
+						</div>
+					</button>
+				{/if}
+			</div>
+		{/each}
+		{#if isAdmin}
+			<button
+				class="border-border hover:border-primary hover:text-primary inline-flex items-center gap-1 rounded border border-dashed px-2 py-0.5 text-[11px] font-medium transition-colors"
+				onclick={() => openAddLabelDialog(item)}
+			>
+				<AddIcon class="size-3" />
+				{m.common_add_button({ resource: 'Label' })}
+			</button>
+		{/if}
+	</div>
 {/snippet}
 
 {#snippet NodeMobileCardSnippet({
@@ -254,6 +339,14 @@
 				icon: EnvironmentsIcon,
 				iconVariant: 'gray' as const,
 				show: mobileFieldVisibility.availability ?? true
+			},
+			{
+				label: m.common_labels(),
+				getValue: (item: SwarmNodeSummary) =>
+					`${Object.keys(item.labels ?? {}).length + Object.keys(item.systemLabels ?? {}).length} labels`,
+				icon: TagIcon,
+				iconVariant: 'gray' as const,
+				show: mobileFieldVisibility.labels ?? true
 			},
 			{
 				label: m.swarm_node_agent_column(),
@@ -338,3 +431,5 @@
 	onRefresh={refreshAgentDeployment}
 	onRegenerate={regenerateAgentDeployment}
 />
+
+<SwarmNodeLabelDialog bind:open={isAddLabelDialogOpen} onAdd={addLabel} />

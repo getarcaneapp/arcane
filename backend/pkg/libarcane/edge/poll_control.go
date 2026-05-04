@@ -266,6 +266,12 @@ func (s *TunnelServer) pollStatusInternal(envID string) TunnelPollResponse {
 func (s *TunnelServer) HandlePoll(c *gin.Context) {
 	ctx := c.Request.Context()
 
+	if err := s.requireClientCertificateInternal(c.Request); err != nil {
+		slog.WarnContext(ctx, "Rejected edge poll request without required client certificate", "error", err)
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
 	if _, err := decodeTunnelPollRequestInternal(c); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid poll payload"})
 		return
@@ -285,6 +291,11 @@ func (s *TunnelServer) HandlePoll(c *gin.Context) {
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to resolve agent token for edge poll", "error", err)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid agent token"})
+		return
+	}
+	if err := s.requireCertificateIdentityInternal(c.Request.TLS, envID); err != nil {
+		slog.WarnContext(ctx, "Rejected edge poll request with mismatched client certificate", "environment_id", envID, "error", err)
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
 	}
 

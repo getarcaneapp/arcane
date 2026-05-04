@@ -62,6 +62,20 @@ func shouldLogRequest(c *gin.Context) bool {
 	return true
 }
 
+func requestLoggerMiddlewareInternal() gin.HandlerFunc {
+	loggerMiddleware := sloggin.NewWithConfig(slog.Default(), sloggin.Config{
+		Filters: []sloggin.Filter{shouldLogRequest},
+	})
+
+	return func(c *gin.Context) {
+		if edge.IsInternalTunnelRequest(c.Request.Context()) {
+			c.Next()
+			return
+		}
+		loggerMiddleware(c)
+	}
+}
+
 func createAuthValidator(appServices *Services) middleware.AuthValidator {
 	return func(ctx context.Context, c *gin.Context) bool {
 		// Check for API key authentication
@@ -104,9 +118,7 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services)
 	router := gin.New()
 	router.Use(gin.Recovery())
 
-	router.Use(sloggin.NewWithConfig(slog.Default(), sloggin.Config{
-		Filters: []sloggin.Filter{shouldLogRequest},
-	}))
+	router.Use(requestLoggerMiddlewareInternal()) //nolint:contextcheck
 
 	authMiddleware := middleware.NewAuthMiddleware(appServices.Auth, cfg).
 		WithApiKeyValidator(appServices.ApiKey).
@@ -128,12 +140,13 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services)
 	// Register public webhook trigger endpoint before auth middleware (token in URL is the sole auth)
 	handlers.RegisterWebhookTrigger(apiGroup, appServices.Webhook) //nolint:contextcheck
 
-	apiGroup.Use(middleware.NewEnvProxyMiddlewareWithParam(
+	envProxyMiddleware := middleware.NewEnvProxyMiddlewareWithParam(
 		types.LOCAL_DOCKER_ENVIRONMENT_ID,
 		"id",
 		envResolver,
 		createAuthValidator(appServices),
-	))
+	)
+	apiGroup.Use(envProxyMiddleware)
 
 	humaServices := &huma.Services{
 		User:              appServices.User,

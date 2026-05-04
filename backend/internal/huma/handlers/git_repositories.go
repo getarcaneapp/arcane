@@ -273,6 +273,10 @@ func (h *GitRepositoryHandler) CreateRepository(ctx context.Context, input *Crea
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
+	}
+
 	actor := models.User{}
 	if currentUser, exists := humamw.GetCurrentUserFromContext(ctx); exists && currentUser != nil {
 		actor = *currentUser
@@ -328,6 +332,10 @@ func (h *GitRepositoryHandler) UpdateRepository(ctx context.Context, input *Upda
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
+	}
+
 	actor := models.User{}
 	if currentUser, exists := humamw.GetCurrentUserFromContext(ctx); exists && currentUser != nil {
 		actor = *currentUser
@@ -358,6 +366,10 @@ func (h *GitRepositoryHandler) DeleteRepository(ctx context.Context, input *Dele
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
+	}
+
 	actor := models.User{}
 	if currentUser, exists := humamw.GetCurrentUserFromContext(ctx); exists && currentUser != nil {
 		actor = *currentUser
@@ -382,6 +394,10 @@ func (h *GitRepositoryHandler) DeleteRepository(ctx context.Context, input *Dele
 func (h *GitRepositoryHandler) TestRepository(ctx context.Context, input *TestGitRepositoryInput) (*TestGitRepositoryOutput, error) {
 	if h.repoService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if err := checkAdmin(ctx); err != nil {
+		return nil, err
 	}
 
 	actor := models.User{}

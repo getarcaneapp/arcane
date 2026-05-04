@@ -7,7 +7,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -30,17 +29,25 @@ type stallingTunnelService struct {
 }
 
 type blockingRegistrationConn struct {
-	closeCount atomic.Int32
-	closedCh   chan struct{}
+	closeCount       atomic.Int32
+	closedCh         chan struct{}
+	receiveStarted   chan struct{}
+	receiveStartOnce sync.Once
 }
 
 func newBlockingRegistrationConn() *blockingRegistrationConn {
-	return &blockingRegistrationConn{closedCh: make(chan struct{})}
+	return &blockingRegistrationConn{
+		closedCh:       make(chan struct{}),
+		receiveStarted: make(chan struct{}),
+	}
 }
 
 func (c *blockingRegistrationConn) Send(*TunnelMessage) error { return nil }
 
 func (c *blockingRegistrationConn) Receive() (*TunnelMessage, error) {
+	c.receiveStartOnce.Do(func() {
+		close(c.receiveStarted)
+	})
 	<-c.closedCh
 	return nil, io.EOF
 }
@@ -102,7 +109,7 @@ func TestTunnelClient_GRPC_EndToEnd(t *testing.T) {
 	defer stopManager()
 
 	localHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/local/health" {
+		if r.URL.Path != "/api/health" {
 			w.WriteHeader(http.StatusNotFound)
 			_, _ = w.Write([]byte("not found"))
 			return
@@ -134,7 +141,7 @@ func TestTunnelClient_GRPC_EndToEnd(t *testing.T) {
 	proxyCtx, proxyCancel := context.WithTimeout(ctx, 5*time.Second)
 	defer proxyCancel()
 
-	status, headers, body, err := ProxyRequest(proxyCtx, tunnel, http.MethodGet, "/local/health", "", map[string]string{"Accept": "text/plain"}, nil)
+	status, headers, body, err := ProxyRequest(proxyCtx, tunnel, http.MethodGet, "/api/health", "", map[string]string{"Accept": "text/plain"}, nil)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, status)
 	assert.Equal(t, "text/plain", headers["Content-Type"])
@@ -195,6 +202,30 @@ func TestStartTunnelClientWithErrors_GRPCValidation(t *testing.T) {
 		}, http.NotFoundHandler())
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "AGENT_TOKEN is required")
+	})
+
+	t.Run("mtls requires https manager url", func(t *testing.T) {
+		_, err := StartTunnelClientWithErrors(ctx, &Config{
+			EdgeAgent:     true,
+			EdgeTransport: EdgeTransportGRPC,
+			ManagerApiUrl: "http://manager.example.com/api",
+			AgentToken:    "token",
+			EdgeMTLSMode:  EdgeMTLSModeRequired,
+		}, http.NotFoundHandler())
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "MANAGER_API_URL to use https")
+	})
+
+	t.Run("required mtls auto-enrollment failure surfaces", func(t *testing.T) {
+		_, err := StartTunnelClientWithErrors(ctx, &Config{
+			EdgeAgent:     true,
+			EdgeTransport: EdgeTransportGRPC,
+			ManagerApiUrl: "https://127.0.0.1:1/api",
+			AgentToken:    "token",
+			EdgeMTLSMode:  EdgeMTLSModeRequired,
+		}, http.NotFoundHandler())
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "edge mTLS enrollment request failed")
 	})
 }
 
@@ -264,7 +295,7 @@ func TestTunnelClient_connectAndServeGRPC_TimesOutWithoutRegisterResponse(t *tes
 
 	err := client.connectAndServeGRPC(ctx)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "timed out waiting for gRPC tunnel registration response")
+	assert.Contains(t, err.Error(), "timed out waiting for tunnel registration response")
 	assert.EqualValues(t, 1, service.connectCount.Load())
 	assert.True(t, client.conn == nil || client.conn.IsClosed())
 }
@@ -284,6 +315,55 @@ func TestTunnelClient_awaitGRPCRegistrationInternal_ClosesConnOnContextDone(t *t
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 	assert.True(t, conn.IsClosed())
 	assert.EqualValues(t, 1, conn.closeCount.Load())
+}
+
+func TestTunnelClient_awaitGRPCRegistrationInternal_ClosesAttemptConnWhenClientConnChanges(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	firstConn := newBlockingRegistrationConn()
+	secondConn := newBlockingRegistrationConn()
+	t.Cleanup(func() {
+		_ = firstConn.Close()
+		_ = secondConn.Close()
+	})
+
+	client := &TunnelClient{
+		conn:                    firstConn,
+		grpcRegistrationTimeout: time.Second,
+	}
+
+	type registrationResult struct {
+		msg *TunnelMessage
+		err error
+	}
+	resultCh := make(chan registrationResult, 1)
+	go func() {
+		msg, err := client.awaitGRPCRegistrationInternal(ctx)
+		resultCh <- registrationResult{msg: msg, err: err}
+	}()
+
+	select {
+	case <-firstConn.receiveStarted:
+	case <-time.After(time.Second):
+		t.Fatal("registration receive did not start")
+	}
+
+	client.conn = secondConn
+	cancel()
+
+	select {
+	case result := <-resultCh:
+		require.Nil(t, result.msg)
+		require.ErrorIs(t, result.err, context.Canceled)
+	case <-time.After(time.Second):
+		t.Fatal("registration did not exit after cancellation")
+	}
+
+	assert.True(t, firstConn.IsClosed())
+	assert.EqualValues(t, 1, firstConn.closeCount.Load())
+	assert.False(t, secondConn.IsClosed())
+	assert.EqualValues(t, 0, secondConn.closeCount.Load())
 }
 
 func TestTunnelClient_GRPC_WebSocketProxyEndToEnd(t *testing.T) {
@@ -312,18 +392,33 @@ func TestTunnelClient_GRPC_WebSocketProxyEndToEnd(t *testing.T) {
 
 	headerTokenCh := make(chan string, 1)
 	queryCh := make(chan string, 1)
+	pathCh := make(chan string, 1)
 	receivedMsgCh := make(chan string, 1)
+	upgradeErrCh := make(chan string, 1)
 
 	localWSServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/local/ws" {
-			w.WriteHeader(http.StatusNotFound)
-			return
+		select {
+		case pathCh <- r.URL.Path:
+		default:
+		}
+		select {
+		case headerTokenCh <- r.Header.Get(HeaderAPIKey):
+		default:
+		}
+		select {
+		case queryCh <- r.URL.RawQuery:
+		default:
 		}
 
-		headerTokenCh <- r.Header.Get(HeaderAPIKey)
-		queryCh <- r.URL.RawQuery
-
-		upgrader := websocket.Upgrader{}
+		upgrader := websocket.Upgrader{
+			CheckOrigin: func(*http.Request) bool { return true },
+			Error: func(_ http.ResponseWriter, _ *http.Request, status int, reason error) {
+				select {
+				case upgradeErrCh <- reason.Error():
+				default:
+				}
+			},
+		}
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
 			return
@@ -335,7 +430,10 @@ func TestTunnelClient_GRPC_WebSocketProxyEndToEnd(t *testing.T) {
 			if err != nil {
 				return
 			}
-			receivedMsgCh <- string(data)
+			select {
+			case receivedMsgCh <- string(data):
+			default:
+			}
 			if err := conn.WriteMessage(mt, append([]byte("local echo: "), data...)); err != nil {
 				return
 			}
@@ -343,16 +441,16 @@ func TestTunnelClient_GRPC_WebSocketProxyEndToEnd(t *testing.T) {
 	}))
 	defer localWSServer.Close()
 
-	parsedLocalURL, err := url.Parse(localWSServer.URL)
+	localHost, localPort, err := net.SplitHostPort(localWSServer.Listener.Addr().String())
 	require.NoError(t, err)
-	_, localPort, err := net.SplitHostPort(parsedLocalURL.Host)
-	require.NoError(t, err)
+	localHost = strings.Trim(localHost, "[]")
 
 	cfg := &Config{
 		EdgeTransport:         EdgeTransportGRPC,
 		ManagerApiUrl:         managerURL,
 		AgentToken:            "valid-token",
 		EdgeReconnectInterval: 1,
+		Listen:                localHost,
 		Port:                  localPort,
 	}
 
@@ -373,7 +471,7 @@ func TestTunnelClient_GRPC_WebSocketProxyEndToEnd(t *testing.T) {
 			c.AbortWithStatus(http.StatusServiceUnavailable)
 			return
 		}
-		ProxyWebSocketRequest(c, tunnel, "/local/ws")
+		ProxyWebSocketRequest(c, tunnel, "/api/environments/0/ws/system/stats")
 	})
 
 	proxyServer := httptest.NewServer(router)
@@ -390,9 +488,21 @@ func TestTunnelClient_GRPC_WebSocketProxyEndToEnd(t *testing.T) {
 	require.NoError(t, proxyConn.WriteMessage(websocket.TextMessage, []byte("hello-grpc-ws")))
 
 	msgType, payload, err := proxyConn.ReadMessage()
+	select {
+	case upgradeErr := <-upgradeErrCh:
+		t.Fatalf("local websocket upgrade failed: %s", upgradeErr)
+	default:
+	}
 	require.NoError(t, err)
 	assert.Equal(t, websocket.TextMessage, msgType)
 	assert.Equal(t, "local echo: hello-grpc-ws", string(payload))
+
+	select {
+	case got := <-pathCh:
+		assert.Equal(t, "/api/environments/0/ws/system/stats", got)
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for forwarded websocket path")
+	}
 
 	select {
 	case got := <-headerTokenCh:
