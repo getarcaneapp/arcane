@@ -88,11 +88,12 @@ func BuildManagerServerTLSConfig(cfg *Config) (*tls.Config, error) {
 	}
 
 	// ClientAuth is intentionally VerifyClientCertIfGiven even when
-	// EdgeMTLSMode is "required". Enforcement of "required" mode is done
-	// per-request at the application layer (see TunnelServer.requireClientCertificate*
-	// in server.go) so that the mTLS enrollment endpoint, which agents must
-	// reach before they own a client certificate, remains accessible. If the
-	// handshake were set to RequireAndVerifyClientCert, bootstrap would fail.
+	// EdgeMTLSMode is "required". Enforcement of certificate identity is done
+	// per-request at the application layer so that the mTLS enrollment endpoint,
+	// which agents must reach before they own a client certificate, remains
+	// accessible. In proxy-terminated deployments the TLS state is not visible
+	// here; identity is enforced by the upstream proxy.
+	// If the handshake were set to RequireAndVerifyClientCert, bootstrap would fail.
 	// TODO: reload ClientCAs when CA rotation support is added.
 	return &tls.Config{
 		MinVersion: tls.VersionTLS12,
@@ -465,11 +466,14 @@ func ValidateManagerMTLSConfig(cfg *Config) error {
 	}
 
 	if strings.TrimSpace(cfg.EdgeMTLSCAFile) == "" {
-		return fmt.Errorf("EDGE_MTLS_MODE=%s requires EDGE_MTLS_CA_FILE on the manager", mode)
+		return nil
 	}
 
-	_, err := BuildManagerServerTLSConfig(cfg)
-	return err
+	_, err := loadCertPoolInternal(cfg.EdgeMTLSCAFile)
+	if err != nil {
+		return fmt.Errorf("failed to load edge mTLS CA file: %w", err)
+	}
+	return nil
 }
 
 func loadCertPoolInternal(caFile string) (*x509.CertPool, error) {
@@ -582,15 +586,17 @@ func setAgentMTLSAssetPathsInternal(cfg *Config, assetsDir string) {
 }
 
 func requestSecurityModeInternal(req *http.Request) string {
-	if req == nil || req.TLS == nil {
-		return "token"
-	}
-
-	if hasVerifiedPeerCertificateInternal(req.TLS) {
+	if hasVerifiedEdgeMTLSRequestInternal(req) {
 		return "mtls"
 	}
-
 	return "token"
+}
+
+func hasVerifiedEdgeMTLSRequestInternal(req *http.Request) bool {
+	if req == nil {
+		return false
+	}
+	return req.TLS != nil && hasVerifiedPeerCertificateInternal(req.TLS)
 }
 
 func grpcContextSecurityModeInternal(pctx peer.Peer) string {

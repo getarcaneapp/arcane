@@ -170,6 +170,55 @@ func TestTunnelServer_HandleConnect(t *testing.T) {
 	reg.Unregister("env-connected")
 }
 
+func TestTunnelServer_HandleConnect_AcceptsTokenAfterProxyTerminatedMTLS(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	server := NewTunnelServer(func(ctx context.Context, token string) (string, error) {
+		if token == "valid-token" {
+			return "env-proxy-mtls", nil
+		}
+		return "", errors.New("invalid token")
+	}, nil)
+	server.SetConfig(&Config{
+		EdgeMTLSMode: EdgeMTLSModeRequired,
+		AppURL:       "https://manager.example.com",
+	})
+
+	router := gin.New()
+	router.GET("/connect", server.HandleConnect)
+
+	ts := httptest.NewServer(router)
+	defer ts.Close()
+
+	url := "ws" + strings.TrimPrefix(ts.URL, "http") + "/connect"
+	headers := http.Header{}
+	headers.Set(HeaderAgentToken, "valid-token")
+
+	conn, resp, err := websocket.DefaultDialer.Dial(url, headers)
+	require.NoError(t, err)
+	if resp != nil {
+		defer func() { _ = resp.Body.Close() }()
+	}
+	defer func() { _ = conn.Close() }()
+	require.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
+
+	err = conn.WriteJSON(&TunnelMessage{
+		Type:          MessageTypeRegister,
+		AgentToken:    "valid-token",
+		AgentInstance: "agent-proxy-mtls",
+	})
+	require.NoError(t, err)
+
+	var registerResp TunnelMessage
+	err = conn.ReadJSON(&registerResp)
+	require.NoError(t, err)
+	require.Equal(t, MessageTypeRegisterResponse, registerResp.Type)
+	require.True(t, registerResp.Accepted)
+	require.Equal(t, "token", registerResp.SecurityMode)
+
+	GetRegistry().Unregister("env-proxy-mtls")
+}
+
 func TestTunnelServer_HandleConnect_InvalidToken(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

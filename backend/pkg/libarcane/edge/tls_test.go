@@ -281,6 +281,10 @@ func TestTunnelServerRequireCertificateIdentityInternal_RejectsWrongEnvironmentU
 }
 
 func TestValidateManagerMTLSConfig_DoesNotRequireArcaneTLSTermination(t *testing.T) {
+	require.NoError(t, ValidateManagerMTLSConfig(&Config{
+		EdgeMTLSMode: EdgeMTLSModeRequired,
+	}))
+
 	assetsDir := t.TempDir()
 	caPath, _, _, err := ensureManagerCAInternal(context.Background(), assetsDir)
 	require.NoError(t, err)
@@ -315,7 +319,7 @@ func TestValidateManagerMTLSConfig_RejectsMissingOrMalformedCAFile(t *testing.T)
 	})
 }
 
-func TestTunnelServerRequiredMTLS_RejectsRequestWithoutTLSState(t *testing.T) {
+func TestTunnelServerRequiredMTLS_AllowsHTTPRequestsWithoutVisibleTLSState(t *testing.T) {
 	server := NewTunnelServer(nil, nil)
 	server.SetConfig(&Config{
 		EdgeMTLSMode: EdgeMTLSModeRequired,
@@ -323,30 +327,80 @@ func TestTunnelServerRequiredMTLS_RejectsRequestWithoutTLSState(t *testing.T) {
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/tunnel/connect", nil)
-	require.ErrorContains(t, server.requireClientCertificateInternal(req), "verified client certificate required")
-	require.NoError(t, server.requireCertificateIdentityInternal(nil, "env-a"))
+	require.NoError(t, server.requireRequestCertificateIdentityInternal(req, "env-a"))
 }
 
-func TestTunnelServerRequiredMTLS_RejectsGRPCContextsWithoutVerifiedPeerCertificate(t *testing.T) {
+func TestTunnelServerRequiredMTLS_DetectsOnlyDirectTLSForRequestSecurityMode(t *testing.T) {
+	server := NewTunnelServer(nil, nil)
+	server.SetConfig(&Config{
+		EdgeMTLSMode: EdgeMTLSModeRequired,
+		AppURL:       "https://manager.example.com",
+	})
+
+	cert := &x509.Certificate{}
+	req := httptest.NewRequest(http.MethodGet, "/api/tunnel/connect", nil)
+	req.TLS = &tls.ConnectionState{
+		PeerCertificates: []*x509.Certificate{cert},
+		VerifiedChains:   [][]*x509.Certificate{{cert}},
+	}
+	require.Equal(t, "mtls", requestSecurityModeInternal(req))
+
+	req = httptest.NewRequest(http.MethodGet, "/api/tunnel/connect", nil)
+	req.Header.Set("X-SSL-Client-Verify", "SUCCESS")
+	require.Equal(t, "token", requestSecurityModeInternal(req))
+	require.NoError(t, server.requireRequestCertificateIdentityInternal(req, "env-a"))
+}
+
+func TestTunnelServerRequiredMTLS_IgnoresProxyVerificationHeaders(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+	}{
+		{name: "empty", value: ""},
+		{name: "success", value: "SUCCESS"},
+		{name: "true", value: "true"},
+		{name: "none", value: "NONE"},
+		{name: "failed", value: "FAILED"},
+		{name: "unknown", value: "probably"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/api/tunnel/connect", nil)
+			req.Header.Set("X-SSL-Client-Verify", tt.value)
+
+			require.Equal(t, "token", requestSecurityModeInternal(req))
+		})
+	}
+}
+
+func TestTunnelServerRequiredMTLS_AllowsGRPCContextsWithoutVisibleTLSState(t *testing.T) {
 	server := NewTunnelServer(nil, nil)
 	server.SetConfig(&Config{EdgeMTLSMode: EdgeMTLSModeRequired})
 
 	t.Run("missing peer", func(t *testing.T) {
-		require.ErrorContains(t, server.requireClientCertificateFromContextInternal(context.Background()), "verified client certificate required")
+		require.NoError(t, server.requireCertificateIdentityFromContextInternal(context.Background(), "env-a"))
 	})
 
 	t.Run("non tls peer", func(t *testing.T) {
 		ctx := peer.NewContext(context.Background(), &peer.Peer{AuthInfo: testAuthInfo{}})
-		require.ErrorContains(t, server.requireClientCertificateFromContextInternal(ctx), "verified client certificate required")
+		require.NoError(t, server.requireCertificateIdentityFromContextInternal(ctx, "env-a"))
 	})
 
-	t.Run("verified tls peer", func(t *testing.T) {
-		cert := &x509.Certificate{}
+	t.Run("verified tls peer checks identity", func(t *testing.T) {
+		uriSAN, err := url.Parse("spiffe://manager.example.com/edge/env-a")
+		require.NoError(t, err)
+		cert := &x509.Certificate{URIs: []*url.URL{uriSAN}}
 		ctx := peer.NewContext(context.Background(), &peer.Peer{AuthInfo: credentials.TLSInfo{State: tls.ConnectionState{
 			PeerCertificates: []*x509.Certificate{cert},
 			VerifiedChains:   [][]*x509.Certificate{{cert}},
 		}}})
-		require.NoError(t, server.requireClientCertificateFromContextInternal(ctx))
+		server.SetConfig(&Config{
+			EdgeMTLSMode: EdgeMTLSModeRequired,
+			AppURL:       "https://manager.example.com",
+		})
+		require.NoError(t, server.requireCertificateIdentityFromContextInternal(ctx, "env-a"))
+		require.Error(t, server.requireCertificateIdentityFromContextInternal(ctx, "env-b"))
 	})
 }
 

@@ -136,12 +136,6 @@ func (s *TunnelServer) HandleConnect(c *gin.Context) {
 	ctx := c.Request.Context()
 	callbackCtx := context.WithoutCancel(ctx)
 
-	if err := s.requireClientCertificateInternal(c.Request); err != nil {
-		slog.WarnContext(ctx, "Rejected websocket edge tunnel without required client certificate", "error", err)
-		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
-		return
-	}
-
 	// Upgrade to WebSocket.
 	conn, err := tunnelUpgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
@@ -165,9 +159,9 @@ func (s *TunnelServer) HandleConnect(c *gin.Context) {
 	token := tokenFromHeadersInternal(c.Request)
 	if token == "" {
 		// Header auth can be unavailable after the WebSocket upgrade path, so
-		// the register message remains a fallback token source. Treat it only
-		// as an auth claim; mTLS identity is verified separately below against
-		// the environment resolved from this token.
+		// the register message remains a fallback environment lookup claim.
+		// In proxy-terminated mTLS deployments, the client certificate is the
+		// auth credential and is consumed before the request reaches Arcane.
 		token = strings.TrimSpace(firstMsg.AgentToken)
 	}
 	if token == "" {
@@ -184,7 +178,7 @@ func (s *TunnelServer) HandleConnect(c *gin.Context) {
 		_ = tunnelConn.Close()
 		return
 	}
-	if err := s.requireCertificateIdentityInternal(c.Request.TLS, envID); err != nil {
+	if err := s.requireRequestCertificateIdentityInternal(c.Request, envID); err != nil {
 		slog.WarnContext(ctx, "Rejected websocket edge tunnel with mismatched client certificate", "environment_id", envID, "error", err)
 		_ = tunnelConn.Send(&TunnelMessage{Type: MessageTypeRegisterResponse, Accepted: false, Error: "client certificate does not match environment"})
 		_ = tunnelConn.Close()
@@ -272,6 +266,8 @@ func (s *TunnelServer) HandleMTLSEnroll(c *gin.Context) {
 	}
 	if assets.Reenrolled {
 		slog.WarnContext(ctx, "Edge mTLS certificate assets re-enrolled", "environment_id", envID, "remote_addr", c.ClientIP(), "cert_issued", assets.CertIssued)
+	} else {
+		slog.InfoContext(ctx, "Edge mTLS certificate assets enrolled", "environment_id", envID, "remote_addr", c.ClientIP(), "cert_issued", assets.CertIssued)
 	}
 
 	if s.enrollmentCallback != nil {
@@ -589,10 +585,6 @@ func (s *TunnelServer) authStreamInterceptorInternal(ctx context.Context) grpc.S
 			return handler(srv, ss)
 		}
 
-		if err := s.requireClientCertificateFromContextInternal(ss.Context()); err != nil {
-			return status.Error(codes.Unauthenticated, err.Error())
-		}
-
 		token := tokenFromMetadata(ss.Context())
 		envID, err := s.resolveEnvironment(ss.Context(), token)
 		if err != nil {
@@ -668,35 +660,18 @@ func resolvedEnvironmentIDFromContextInternal(ctx context.Context) (string, bool
 	return envID, true
 }
 
-func (s *TunnelServer) requireClientCertificateInternal(req *http.Request) error {
-	if NormalizeEdgeMTLSMode(s.edgeMTLSModeInternal()) != EdgeMTLSModeRequired {
-		return nil
-	}
-	if req != nil && req.TLS != nil && hasVerifiedPeerCertificateInternal(req.TLS) {
-		return nil
-	}
-	return errors.New("verified client certificate required")
-}
-
-func (s *TunnelServer) requireClientCertificateFromContextInternal(ctx context.Context) error {
-	if NormalizeEdgeMTLSMode(s.edgeMTLSModeInternal()) != EdgeMTLSModeRequired {
-		return nil
-	}
-
-	p, ok := peer.FromContext(ctx)
-	if ok {
-		if tlsInfo, ok := p.AuthInfo.(credentials.TLSInfo); ok && hasVerifiedPeerCertificateInternal(&tlsInfo.State) {
-			return nil
-		}
-	}
-	return errors.New("verified client certificate required")
-}
-
 func (s *TunnelServer) requireCertificateIdentityInternal(state *tls.ConnectionState, envID string) error {
 	if NormalizeEdgeMTLSMode(s.edgeMTLSModeInternal()) == EdgeMTLSModeDisabled {
 		return nil
 	}
 	return verifiedPeerCertificateEnvironmentIDMatchesInternal(state, envID, edgeMTLSTrustDomainInternal(s.cfg))
+}
+
+func (s *TunnelServer) requireRequestCertificateIdentityInternal(req *http.Request, envID string) error {
+	if req == nil || req.TLS == nil || !hasVerifiedPeerCertificateInternal(req.TLS) {
+		return nil
+	}
+	return s.requireCertificateIdentityInternal(req.TLS, envID)
 }
 
 func (s *TunnelServer) requireCertificateIdentityFromContextInternal(ctx context.Context, envID string) error {

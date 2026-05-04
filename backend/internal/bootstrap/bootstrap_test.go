@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 
 	"github.com/getarcaneapp/arcane/backend/internal/config"
@@ -159,6 +158,5 @@ func TestPrepareServerTLSInternal_AllowsExternalMTLSTermination(t *testing.T) {
 	assert.Equal(t, "required", edgeCfg.EdgeMTLSMode)
 	require.FileExists(t, edgeCfg.EdgeMTLSCAFile)
 	require.FileExists(t, assetsDir+"/ca.crt")
-	_, statErr := os.Stat(assetsDir + "/ca.key")
-	require.NoError(t, statErr)
+	require.FileExists(t, assetsDir+"/ca.key")
 }
