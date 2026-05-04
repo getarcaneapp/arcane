@@ -22,7 +22,13 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	libcrypto "github.com/getarcaneapp/arcane/backend/pkg/libarcane/crypto"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/peer"
 )
+
+type testAuthInfo struct{}
+
+func (testAuthInfo) AuthType() string { return "test" }
 
 func TestMain(m *testing.M) {
 	libcrypto.InitEncryption(&libcrypto.Config{
@@ -272,6 +278,76 @@ func TestTunnelServerRequireCertificateIdentityInternal_RejectsWrongEnvironmentU
 
 	require.NoError(t, server.requireCertificateIdentityInternal(state, "env-a"))
 	require.Error(t, server.requireCertificateIdentityInternal(state, "env-b"))
+}
+
+func TestValidateManagerMTLSConfig_DoesNotRequireArcaneTLSTermination(t *testing.T) {
+	assetsDir := t.TempDir()
+	caPath, _, _, err := ensureManagerCAInternal(context.Background(), assetsDir)
+	require.NoError(t, err)
+
+	err = ValidateManagerMTLSConfig(&Config{
+		EdgeMTLSMode:   EdgeMTLSModeRequired,
+		EdgeMTLSCAFile: caPath,
+	})
+	require.NoError(t, err)
+}
+
+func TestValidateManagerMTLSConfig_RejectsMissingOrMalformedCAFile(t *testing.T) {
+	t.Run("missing file", func(t *testing.T) {
+		err := ValidateManagerMTLSConfig(&Config{
+			EdgeMTLSMode:   EdgeMTLSModeRequired,
+			EdgeMTLSCAFile: filepath.Join(t.TempDir(), "missing-ca.crt"),
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to load edge mTLS CA file")
+	})
+
+	t.Run("malformed file", func(t *testing.T) {
+		caPath := filepath.Join(t.TempDir(), "ca.crt")
+		require.NoError(t, os.WriteFile(caPath, []byte("not a pem"), 0o600))
+
+		err := ValidateManagerMTLSConfig(&Config{
+			EdgeMTLSMode:   EdgeMTLSModeRequired,
+			EdgeMTLSCAFile: caPath,
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to load edge mTLS CA file")
+	})
+}
+
+func TestTunnelServerRequiredMTLS_RejectsRequestWithoutTLSState(t *testing.T) {
+	server := NewTunnelServer(nil, nil)
+	server.SetConfig(&Config{
+		EdgeMTLSMode: EdgeMTLSModeRequired,
+		AppURL:       "https://manager.example.com",
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/tunnel/connect", nil)
+	require.ErrorContains(t, server.requireClientCertificateInternal(req), "verified client certificate required")
+	require.NoError(t, server.requireCertificateIdentityInternal(nil, "env-a"))
+}
+
+func TestTunnelServerRequiredMTLS_RejectsGRPCContextsWithoutVerifiedPeerCertificate(t *testing.T) {
+	server := NewTunnelServer(nil, nil)
+	server.SetConfig(&Config{EdgeMTLSMode: EdgeMTLSModeRequired})
+
+	t.Run("missing peer", func(t *testing.T) {
+		require.ErrorContains(t, server.requireClientCertificateFromContextInternal(context.Background()), "verified client certificate required")
+	})
+
+	t.Run("non tls peer", func(t *testing.T) {
+		ctx := peer.NewContext(context.Background(), &peer.Peer{AuthInfo: testAuthInfo{}})
+		require.ErrorContains(t, server.requireClientCertificateFromContextInternal(ctx), "verified client certificate required")
+	})
+
+	t.Run("verified tls peer", func(t *testing.T) {
+		cert := &x509.Certificate{}
+		ctx := peer.NewContext(context.Background(), &peer.Peer{AuthInfo: credentials.TLSInfo{State: tls.ConnectionState{
+			PeerCertificates: []*x509.Certificate{cert},
+			VerifiedChains:   [][]*x509.Certificate{{cert}},
+		}}})
+		require.NoError(t, server.requireClientCertificateFromContextInternal(ctx))
+	})
 }
 
 func TestAgentMTLSAssetsNeedEnrollmentInternal_RenewsExpiredCertificate(t *testing.T) {

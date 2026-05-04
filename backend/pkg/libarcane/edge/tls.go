@@ -454,7 +454,7 @@ func ValidateAgentMTLSConfig(cfg *Config) error {
 
 // ValidateManagerMTLSConfig validates the manager-side mTLS configuration used
 // by edge tunnel endpoints.
-func ValidateManagerMTLSConfig(cfg *Config, managerTLSEnabled bool) error {
+func ValidateManagerMTLSConfig(cfg *Config) error {
 	if cfg == nil {
 		return nil
 	}
@@ -462,9 +462,6 @@ func ValidateManagerMTLSConfig(cfg *Config, managerTLSEnabled bool) error {
 	mode := NormalizeEdgeMTLSMode(cfg.EdgeMTLSMode)
 	if mode == EdgeMTLSModeDisabled {
 		return nil
-	}
-	if !managerTLSEnabled {
-		return fmt.Errorf("EDGE_MTLS_MODE requires TLS_ENABLED=true on the manager")
 	}
 
 	if strings.TrimSpace(cfg.EdgeMTLSCAFile) == "" {

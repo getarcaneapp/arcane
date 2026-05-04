@@ -92,7 +92,8 @@ const (
 	EdgeMTLSModeDisabled = "disabled"
 	// EdgeMTLSModeOptional enables edge tunnel mTLS when certificates are configured.
 	EdgeMTLSModeOptional = "optional"
-	// EdgeMTLSModeRequired requires a verified client certificate on edge tunnel endpoints.
+	// EdgeMTLSModeRequired requires a verified client certificate on edge tunnel endpoints
+	// when Arcane terminates TLS; external TLS terminators must enforce mTLS before proxying.
 	EdgeMTLSModeRequired = "required"
 )
 

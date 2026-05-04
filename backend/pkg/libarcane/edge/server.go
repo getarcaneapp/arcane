@@ -672,7 +672,7 @@ func (s *TunnelServer) requireClientCertificateInternal(req *http.Request) error
 	if NormalizeEdgeMTLSMode(s.edgeMTLSModeInternal()) != EdgeMTLSModeRequired {
 		return nil
 	}
-	if hasVerifiedPeerCertificateInternal(req.TLS) {
+	if req != nil && req.TLS != nil && hasVerifiedPeerCertificateInternal(req.TLS) {
 		return nil
 	}
 	return errors.New("verified client certificate required")
@@ -684,11 +684,10 @@ func (s *TunnelServer) requireClientCertificateFromContextInternal(ctx context.C
 	}
 
 	p, ok := peer.FromContext(ctx)
-	if !ok {
-		return errors.New("verified client certificate required")
-	}
-	if tlsInfo, ok := p.AuthInfo.(credentials.TLSInfo); ok && hasVerifiedPeerCertificateInternal(&tlsInfo.State) {
-		return nil
+	if ok {
+		if tlsInfo, ok := p.AuthInfo.(credentials.TLSInfo); ok && hasVerifiedPeerCertificateInternal(&tlsInfo.State) {
+			return nil
+		}
 	}
 	return errors.New("verified client certificate required")
 }
