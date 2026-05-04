@@ -364,7 +364,7 @@
 	"_comment_auth": "=== AUTHENTICATION ===",
     "auth_welcome_back_title": "환영합니다",
     "auth_login_subtitle": "컨테이너를 관리하려면 로그인하세요.",
-    "auth_tagline_line1": "모던한 도커 관리,",
+    "auth_tagline_line1": "모던한 도커 관리, ",
     "auth_tagline_line2": "모두를 위한 디자인.",
     "auth_login_problem_title": "로그인 문제",
     "auth_failed_title": "인증 실패",
