@@ -51,6 +51,7 @@ export type Settings = {
 	oledMode: boolean;
 	autoInjectEnv: boolean;
 	backupVolumeName?: string;
+	edgeMTLSManagerCAAvailable?: boolean;
 
 	authLocalEnabled: boolean;
 	authSessionTimeout: number;

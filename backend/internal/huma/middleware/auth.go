@@ -29,6 +29,8 @@ const (
 	ContextKeyCurrentUser ContextKey = "currentUser"
 	// ContextKeyUserIsAdmin is the context key for whether the user is an admin.
 	ContextKeyUserIsAdmin ContextKey = "userIsAdmin"
+	// ContextKeyRemoteAddr is the context key for the request remote address.
+	ContextKeyRemoteAddr ContextKey = "remoteAddr"
 )
 
 // GetUserIDFromContext retrieves the user ID from the context.
@@ -47,6 +49,12 @@ func GetCurrentUserFromContext(ctx context.Context) (*models.User, bool) {
 func IsAdminFromContext(ctx context.Context) bool {
 	isAdmin, ok := ctx.Value(ContextKeyUserIsAdmin).(bool)
 	return ok && isAdmin
+}
+
+// GetRemoteAddrFromContext retrieves the request remote address from context.
+func GetRemoteAddrFromContext(ctx context.Context) string {
+	remoteAddr, _ := ctx.Value(ContextKeyRemoteAddr).(string)
+	return remoteAddr
 }
 
 // securityRequirements holds parsed security requirements from an operation.
@@ -191,6 +199,7 @@ func createEnvironmentSudoUser(env *models.Environment) *models.User {
 // enforces security requirements defined on operations.
 func NewAuthBridge(api huma.API, authService *services.AuthService, apiKeyService *services.ApiKeyService, envTokenResolver environmentAccessTokenResolver, cfg *config.Config) func(ctx huma.Context, next func(huma.Context)) {
 	return func(ctx huma.Context, next func(huma.Context)) {
+		ctx = huma.WithContext(ctx, context.WithValue(ctx.Context(), ContextKeyRemoteAddr, ctx.RemoteAddr()))
 		if authService == nil {
 			next(ctx)
 			return

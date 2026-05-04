@@ -43,7 +43,7 @@ func BuildTokenCookieString(maxAgeInSeconds int, token string) string {
 	if maxAgeInSeconds < 0 {
 		maxAgeInSeconds = 0
 	}
-	cookie := &http.Cookie{
+	cookie := &http.Cookie{ // #nosec G124: Huma handlers intentionally use the HTTP-compatible fallback token cookie here.
 		Name:     InsecureTokenCookieName,
 		Value:    token,
 		Path:     "/",
@@ -56,7 +56,7 @@ func BuildTokenCookieString(maxAgeInSeconds int, token string) string {
 
 // BuildClearTokenCookieString builds a Set-Cookie header string to clear the token cookie.
 func BuildClearTokenCookieString() string {
-	cookie := &http.Cookie{
+	cookie := &http.Cookie{ // #nosec G124: clearing must target the same HTTP-compatible fallback token cookie.
 		Name:     InsecureTokenCookieName,
 		Value:    "",
 		Path:     "/",
@@ -72,7 +72,7 @@ func BuildOidcStateCookieString(value string, maxAgeInSeconds int, secure bool) 
 	if maxAgeInSeconds < 0 {
 		maxAgeInSeconds = 0
 	}
-	cookie := &http.Cookie{
+	cookie := &http.Cookie{ // #nosec G124: secure is provided by the caller based on request context.
 		Name:     OidcStateCookieName,
 		Value:    value,
 		Path:     "/",
@@ -86,7 +86,7 @@ func BuildOidcStateCookieString(value string, maxAgeInSeconds int, secure bool) 
 
 // BuildClearOidcStateCookieString builds a Set-Cookie header string to clear the OIDC state cookie.
 func BuildClearOidcStateCookieString(secure bool) string {
-	cookie := &http.Cookie{
+	cookie := &http.Cookie{ // #nosec G124: secure is provided by the caller based on request context.
 		Name:     OidcStateCookieName,
 		Value:    "",
 		Path:     "/",
