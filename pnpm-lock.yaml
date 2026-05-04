@@ -171,8 +171,8 @@ importers:
         specifier: ^4.2.4
         version: 4.2.4(vite@8.0.10(@types/node@25.6.0)(esbuild@0.28.0)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))
       '@tanstack/svelte-query-devtools':
-        specifier: ^6.1.24
-        version: 6.1.24(@tanstack/svelte-query@6.1.26(svelte@5.55.5))(svelte@5.55.5)
+        specifier: ^6.1.28
+        version: 6.1.28(@tanstack/svelte-query@6.1.26(svelte@5.55.5))(svelte@5.55.5)
       '@types/node':
         specifier: ^25.6.0
         version: 25.6.0
@@ -1992,13 +1992,13 @@ packages:
   '@tanstack/query-core@5.100.7':
     resolution: {integrity: sha512-5R7i6ENJLhVeeJrrUz7jKBXUXv/BJrxf9FQJSkR13bPrb3zOcE8A0Z0PxYCcsKPOsiIlTibrBL/zZbtUO1TFyQ==}
 
-  '@tanstack/query-devtools@5.100.5':
-    resolution: {integrity: sha512-SuCkVCqqliRYJvm+LEL2U/TcFv92zTnHj6OGrJFHp1v/RsiwamI+ZDgQzbeUrLsJb8/Nj/52aIw0NyDMcVHl4A==}
+  '@tanstack/query-devtools@5.100.9':
+    resolution: {integrity: sha512-gqiptrTIhbK2PuCaPRHmWXfJG1NGYVFpAr0HqogEqiSBNB5xDz6fmesQt7w4WgMOqOQPnPHJ3ZDMuhDaXvNO8g==}
 
-  '@tanstack/svelte-query-devtools@6.1.24':
-    resolution: {integrity: sha512-Isx1UVSiU7WQMAnIM5DGFmG+6R3AQzPZ1R7ofI0o282ehwQv6aZVaX25lh1a6bayPCjkIn2QeCErX/062H9xIg==}
+  '@tanstack/svelte-query-devtools@6.1.28':
+    resolution: {integrity: sha512-C92E0MBsGh6wEUri4bfoeSLFCoDAxazMopBcZEfBKSUElkWXtX6c9FdK/S8awNYtipH+Raq/Npn6LAoOHg0RTQ==}
     peerDependencies:
-      '@tanstack/svelte-query': ^6.1.24
+      '@tanstack/svelte-query': ^6.1.28
       svelte: ^5.25.0
 
   '@tanstack/svelte-query@6.1.26':
@@ -4866,11 +4866,11 @@ snapshots:
 
   '@tanstack/query-core@5.100.7': {}
 
-  '@tanstack/query-devtools@5.100.5': {}
+  '@tanstack/query-devtools@5.100.9': {}
 
-  '@tanstack/svelte-query-devtools@6.1.24(@tanstack/svelte-query@6.1.26(svelte@5.55.5))(svelte@5.55.5)':
+  '@tanstack/svelte-query-devtools@6.1.28(@tanstack/svelte-query@6.1.26(svelte@5.55.5))(svelte@5.55.5)':
     dependencies:
-      '@tanstack/query-devtools': 5.100.5
+      '@tanstack/query-devtools': 5.100.9
       '@tanstack/svelte-query': 6.1.26(svelte@5.55.5)
       esm-env: 1.2.2
       svelte: 5.55.5
