@@ -252,6 +252,7 @@ export interface SwarmNodeSummary {
 	managerStatus?: string | null;
 	reachability?: string | null;
 	labels?: Record<string, string> | null;
+	systemLabels?: Record<string, string> | null;
 	engineVersion?: string | null;
 	platform?: string | null;
 	createdAt: string;

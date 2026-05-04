@@ -25,6 +25,7 @@ export default defineConfig({
 		target: 'es2022'
 	},
 	server: {
+		allowedHosts: ['arcane-frontend-dev'],
 		host: process.env['HOST'],
 		proxy: {
 			'/api': {
