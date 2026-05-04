@@ -18,7 +18,7 @@ require (
 	github.com/depot/depot-go v0.5.2
 	github.com/docker/cli v29.4.2+incompatible
 	github.com/docker/compose/v5 v5.1.3
-	github.com/fsnotify/fsnotify v1.9.0
+	github.com/fsnotify/fsnotify v1.10.1
 	github.com/getarcaneapp/arcane/cli v1.16.3
 	github.com/getarcaneapp/arcane/types v1.18.1
 	github.com/gin-contrib/cors v1.7.7
