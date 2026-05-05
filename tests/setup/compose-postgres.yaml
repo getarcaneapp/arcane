@@ -15,7 +15,6 @@ services:
 
   arcane:
     image: arcane:playwright-tests
-    user: "0:0"
     ports:
       - '3001:3552'
     environment:
