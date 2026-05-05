@@ -23,8 +23,9 @@ const dockerHubRateLimitRepository = "ratelimitpreview/test"
 // Some registries serve images under their own domain but delegate token auth to a
 // separate host (e.g. lscr.io delegates to ghcr.io).
 var trustedAuthDelegations = map[string]string{
-	"docker.io": "auth.docker.io",
-	"lscr.io":   "ghcr.io",
+	"docker.io":           "auth.docker.io",
+	"lscr.io":             "ghcr.io",
+	"registry.gitlab.com": "gitlab.com",
 }
 
 type Credentials struct {

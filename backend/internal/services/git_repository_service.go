@@ -182,6 +182,10 @@ func (s *GitRepositoryService) UpdateRepository(ctx context.Context, id string, 
 		return nil, err
 	}
 
+	if err := validateGitRepositoryCredentialChangeInternal(repository, req); err != nil {
+		return nil, err
+	}
+
 	updates := make(map[string]any)
 
 	if req.Name != nil {
@@ -250,6 +254,42 @@ func (s *GitRepositoryService) UpdateRepository(ctx context.Context, id string, 
 	}
 
 	return s.GetRepositoryByID(ctx, id)
+}
+
+func validateGitRepositoryCredentialChangeInternal(repository *models.GitRepository, req models.UpdateGitRepositoryRequest) error {
+	if repository == nil || req.URL == nil || *req.URL == repository.URL {
+		return nil
+	}
+
+	missingFields := make([]string, 0, 2)
+	missingCredentialLabels := make([]string, 0, 2)
+
+	if repository.Token != "" && req.Token == nil {
+		missingFields = append(missingFields, "token")
+		missingCredentialLabels = append(missingCredentialLabels, "token")
+	}
+
+	if repository.SSHKey != "" && req.SSHKey == nil {
+		missingFields = append(missingFields, "sshKey")
+		missingCredentialLabels = append(missingCredentialLabels, "SSH key")
+	}
+
+	if len(missingFields) == 0 {
+		return nil
+	}
+
+	if len(missingFields) == 1 {
+		field := missingFields[0]
+		return &models.ValidationError{Field: field, Message: fmt.Sprintf("Changing repository URL requires re-supplying or clearing the %s", missingCredentialLabels[0])}
+	}
+
+	return models.NewValidationError(
+		fmt.Sprintf(
+			"Changing repository URL requires re-supplying or clearing all stored credentials: %s",
+			strings.Join(missingCredentialLabels, " and "),
+		),
+		map[string]any{"fields": missingFields},
+	)
 }
 
 func (s *GitRepositoryService) DeleteRepository(ctx context.Context, id string, actor models.User) error {

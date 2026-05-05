@@ -72,7 +72,7 @@ func newProjectImagePullServer(t *testing.T, inspectByRef map[string]dockertypes
 			}
 
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = io.WriteString(w, `{"status":"Pulled"}`+"\n")
+			_, _ = io.WriteString(w, fmt.Sprintf(`{"status":"Pulled","id":%q}`+"\n", fullRef))
 			return
 		case strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json"):
 			path := r.URL.Path

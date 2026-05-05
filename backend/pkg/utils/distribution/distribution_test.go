@@ -334,6 +334,11 @@ func TestValidateAuthRealmInternal(t *testing.T) {
 			realm:        "https://ghcr.io/token",
 		},
 		{
+			name:         "registry.gitlab.com delegates auth to gitlab.com",
+			registryHost: "registry.gitlab.com",
+			realm:        "https://gitlab.com/jwt/auth",
+		},
+		{
 			name:         "non https realm rejected",
 			registryHost: "registry.example.com",
 			realm:        "http://registry.example.com/token",

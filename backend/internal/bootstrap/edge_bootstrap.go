@@ -7,6 +7,7 @@ import (
 	"log/slog"
 
 	"github.com/getarcaneapp/arcane/backend/internal/config"
+	"github.com/getarcaneapp/arcane/backend/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge"
@@ -82,16 +83,107 @@ func registerEdgeTunnelRoutes(
 	}
 
 	server := edge.NewTunnelServer(resolver, statusCallback)
+	server.SetConfig(&edge.Config{
+		EdgeMTLSMode:       cfg.EdgeMTLSMode,
+		EdgeMTLSCAFile:     cfg.EdgeMTLSCAFile,
+		EdgeMTLSCertFile:   cfg.EdgeMTLSCertFile,
+		EdgeMTLSKeyFile:    cfg.EdgeMTLSKeyFile,
+		EdgeMTLSServerName: cfg.EdgeMTLSServerName,
+		EdgeMTLSAssetsDir:  cfg.EdgeMTLSAssetsDir,
+		AppURL:             cfg.GetAppURL(),
+		ManagerApiUrl:      cfg.ManagerApiUrl,
+	})
+	server.SetEnvironmentNameResolver(func(ctx context.Context, envID string) (string, error) {
+		env, err := appServices.Environment.GetEnvironmentByID(ctx, envID)
+		if err != nil {
+			return "", err
+		}
+		if env == nil {
+			return "", nil
+		}
+		return env.Name, nil
+	})
 	server.SetEventCallback(eventCallback)
+	server.SetEnrollmentCallback(func(ctx context.Context, envID, remoteAddr string, certIssued bool, caGenerated bool, reenrolled bool) {
+		if appServices.Event == nil {
+			return
+		}
+		envName := ""
+		if env, err := appServices.Environment.GetEnvironmentByID(ctx, envID); err == nil && env != nil {
+			envName = env.Name
+		}
+		resourceType := "environment"
+		envIDCopy := envID
+		envNameCopy := envName
+		_, _ = appServices.Event.CreateEvent(ctx, services.CreateEventRequest{
+			Type:          models.EventTypeEnvironmentMTLSEnroll,
+			Severity:      edgeMTLSEnrollmentSeverityInternal(reenrolled),
+			Title:         "Edge mTLS enrollment",
+			Description:   fmt.Sprintf("Edge agent completed mTLS enrollment from %s", remoteAddr),
+			ResourceType:  &resourceType,
+			ResourceID:    &envIDCopy,
+			ResourceName:  &envNameCopy,
+			EnvironmentID: &envIDCopy,
+			Metadata:      models.JSON{"remoteAddr": remoteAddr, "reenrollment": reenrolled},
+		})
+		createEdgeMTLSIssueEventsInternal(ctx, appServices.Event, envIDCopy, envNameCopy, remoteAddr, certIssued, caGenerated, reenrolled)
+	})
 	go server.StartCleanupLoop(ctx)
 	apiGroup.POST("/tunnel/poll", server.HandlePoll)
-	apiGroup.GET("/tunnel/connect", server.HandleConnect)
+	// Rate-limit agent mTLS enrollment per-IP. Enrollment is authenticated
+	// only by the agent token, so we cap bursts to mitigate brute-force or
+	// token-abuse attempts without impacting normal agent lifecycles.
+	apiGroup.POST("/tunnel/mtls/enroll", middleware.PerIPRateLimit(10, 3), middleware.PerAgentTokenRateLimit(10, 3), server.HandleMTLSEnroll)
+	apiGroup.GET("/tunnel/connect", middleware.PerIPRateLimit(60, 30), middleware.PerAgentTokenRateLimit(10, 3), server.HandleConnect)
 	slog.InfoContext(ctx, "Configured edge tunnel server",
 		"poll_enabled", true,
 		"grpc_enabled", !cfg.AgentMode,
 		"websocket_enabled", true,
 	)
 	return server
+}
+
+func createEdgeMTLSIssueEventsInternal(ctx context.Context, eventService *services.EventService, envID string, envName string, remoteAddr string, certIssued bool, caGenerated bool, reenrolled bool) {
+	if eventService == nil {
+		return
+	}
+	if caGenerated {
+		_, _ = eventService.CreateEvent(ctx, services.CreateEventRequest{
+			Type:        models.EventTypeEnvironmentMTLSCAGenerated,
+			Severity:    models.EventSeverityInfo,
+			Title:       "Edge mTLS CA generated",
+			Description: "Arcane generated a new edge mTLS certificate authority",
+			Metadata:    models.JSON{"remoteAddr": remoteAddr, "kind": "ca"},
+		})
+	}
+	if certIssued {
+		resourceType := "environment"
+		_, _ = eventService.CreateEvent(ctx, services.CreateEventRequest{
+			Type:          models.EventTypeEnvironmentMTLSCertIssued,
+			Severity:      edgeMTLSCertIssuedSeverityInternal(reenrolled),
+			Title:         "Edge mTLS certificate issued",
+			Description:   fmt.Sprintf("Arcane issued an edge mTLS client certificate for environment '%s'", envName),
+			ResourceType:  &resourceType,
+			ResourceID:    &envID,
+			ResourceName:  &envName,
+			EnvironmentID: &envID,
+			Metadata:      models.JSON{"remoteAddr": remoteAddr, "kind": "client", "reenrollment": reenrolled},
+		})
+	}
+}
+
+func edgeMTLSEnrollmentSeverityInternal(reenrolled bool) models.EventSeverity {
+	if reenrolled {
+		return models.EventSeverityWarning
+	}
+	return models.EventSeverityInfo
+}
+
+func edgeMTLSCertIssuedSeverityInternal(reenrolled bool) models.EventSeverity {
+	if reenrolled {
+		return models.EventSeverityWarning
+	}
+	return models.EventSeverityInfo
 }
 
 func optionalStringPtr(value string) *string {
