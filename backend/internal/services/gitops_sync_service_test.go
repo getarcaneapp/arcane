@@ -11,6 +11,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
+	git "github.com/getarcaneapp/arcane/backend/pkg/gitutil"
 	"github.com/getarcaneapp/arcane/backend/pkg/projects"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -33,6 +34,14 @@ func setupGitOpsSyncDirectoryTestService(t *testing.T) (*GitOpsSyncService, *dat
 	projectService := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
 
 	return NewGitOpsSyncService(db, nil, projectService, nil, nil, settingsService), db, projectsDir
+}
+
+func writeFileInternal(t *testing.T, rootDir, relativePath string, content []byte) {
+	t.Helper()
+
+	targetPath := filepath.Join(rootDir, relativePath)
+	require.NoError(t, os.MkdirAll(filepath.Dir(targetPath), 0o755))
+	require.NoError(t, os.WriteFile(targetPath, content, 0o644))
 }
 
 func TestGitOpsSyncService_SyncProjectDirectory_CreatesProjectPreservingRepoLayout(t *testing.T) {
@@ -190,6 +199,144 @@ services:
 	featureBytes, err := os.ReadFile(filepath.Join(updatedProject.Path, "nested", "feature.yaml"))
 	require.NoError(t, err)
 	assert.Contains(t, string(featureBytes), "worker:")
+}
+
+func TestGitOpsSyncService_DirectorySync_RealWalkWithNestedConfig(t *testing.T) {
+	ctx := context.Background()
+	svc, db, _ := setupGitOpsSyncDirectoryTestService(t)
+	svc.repoService = &GitRepositoryService{gitClient: git.NewClient("")}
+
+	repoPath := t.TempDir()
+	writeFileInternal(t, repoPath, "traefik (nl10)/docker-compose.yml", []byte(`services:
+  traefik:
+    image: traefik:v3.4
+    volumes:
+      - ./letsencrypt:/letsencrypt
+      - ./logs:/var/log/traefik
+      - ./config/dynamic_config.yml:/etc/traefik/dynamic_config.yml:ro
+`))
+	writeFileInternal(t, repoPath, "traefik (nl10)/config/dynamic_config.yml", []byte(`http:
+  routers:
+    dashboard:
+      rule: Host(`+"`"+`traefik.example.com`+"`"+`)
+`))
+
+	sync := &models.GitOpsSync{
+		BaseModel:     models.BaseModel{ID: "sync-directory-real-walk"},
+		Name:          "traefik-sync",
+		EnvironmentID: "0",
+		RepositoryID:  "repo-1",
+		ComposePath:   "traefik (nl10)/docker-compose.yml",
+		ProjectName:   "traefik (nl10)",
+		SyncDirectory: true,
+	}
+	require.NoError(t, db.Create(sync).Error)
+
+	composeContent, syncFiles, err := svc.walkAndParseSyncDirectory(ctx, sync, repoPath)
+	require.NoError(t, err)
+	assert.Contains(t, composeContent, "./config/dynamic_config.yml")
+
+	project, syncedFiles, created, changed, err := svc.syncProjectDirectoryInternal(ctx, sync, syncFiles, models.User{})
+	require.NoError(t, err)
+	require.NotNil(t, project)
+	require.True(t, created)
+	require.True(t, changed)
+	require.ElementsMatch(t, []string{"docker-compose.yml", "config/dynamic_config.yml"}, syncedFiles)
+
+	composePath, detectErr := projects.DetectComposeFile(project.Path)
+	require.NoError(t, detectErr)
+	assert.Equal(t, filepath.Join(project.Path, "docker-compose.yml"), composePath)
+
+	composeInfo, err := os.Stat(filepath.Join(project.Path, "docker-compose.yml"))
+	require.NoError(t, err)
+	assert.False(t, composeInfo.IsDir())
+
+	configPath := filepath.Join(project.Path, "config", "dynamic_config.yml")
+	configInfo, err := os.Stat(configPath)
+	require.NoError(t, err)
+	assert.False(t, configInfo.IsDir())
+
+	configBytes, err := os.ReadFile(configPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(configBytes), "dashboard:")
+}
+
+func TestGitOpsSyncService_DirectorySync_OverwritesExistingDirectoryAtFilePath(t *testing.T) {
+	ctx := context.Background()
+	svc, db, projectsDir := setupGitOpsSyncDirectoryTestService(t)
+	svc.repoService = &GitRepositoryService{gitClient: git.NewClient("")}
+
+	repoPath := t.TempDir()
+	writeFileInternal(t, repoPath, "traefik (nl10)/docker-compose.yml", []byte(`services:
+  traefik:
+    image: traefik:v3.4
+    volumes:
+      - ./letsencrypt:/letsencrypt
+      - ./logs:/var/log/traefik
+      - ./config/dynamic_config.yml:/etc/traefik/dynamic_config.yml:ro
+`))
+	writeFileInternal(t, repoPath, "traefik (nl10)/config/dynamic_config.yml", []byte(`http:
+  routers:
+    dashboard:
+      rule: Host(`+"`"+`traefik.example.com`+"`"+`)
+`))
+
+	projectPath := filepath.Join(projectsDir, "traefik-project")
+	require.NoError(t, os.MkdirAll(filepath.Join(projectPath, "config", "dynamic_config.yml"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(projectPath, "letsencrypt"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(projectPath, "logs"), 0o755))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-directory-docker-dir-conflict"},
+		Name:      "traefik-project",
+		DirName:   ptr("traefik-project"),
+		Path:      projectPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	sync := &models.GitOpsSync{
+		BaseModel:     models.BaseModel{ID: "sync-directory-docker-dir-conflict"},
+		Name:          "traefik-sync",
+		EnvironmentID: "0",
+		RepositoryID:  "repo-1",
+		ComposePath:   "traefik (nl10)/docker-compose.yml",
+		ProjectName:   "traefik-project",
+		ProjectID:     &project.ID,
+		SyncDirectory: true,
+	}
+	require.NoError(t, db.Create(sync).Error)
+
+	_, syncFiles, err := svc.walkAndParseSyncDirectory(ctx, sync, repoPath)
+	require.NoError(t, err)
+
+	updatedProject, syncedFiles, created, changed, err := svc.syncProjectDirectoryInternal(ctx, sync, syncFiles, models.User{})
+	require.NoError(t, err)
+	require.NotNil(t, updatedProject)
+	require.False(t, created)
+	require.True(t, changed)
+	require.ElementsMatch(t, []string{"docker-compose.yml", "config/dynamic_config.yml"}, syncedFiles)
+
+	configPath := filepath.Join(updatedProject.Path, "config", "dynamic_config.yml")
+	configInfo, err := os.Stat(configPath)
+	require.NoError(t, err)
+	assert.False(t, configInfo.IsDir())
+
+	configBytes, err := os.ReadFile(configPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(configBytes), "dashboard:")
+
+	composeInfo, err := os.Stat(filepath.Join(updatedProject.Path, "docker-compose.yml"))
+	require.NoError(t, err)
+	assert.False(t, composeInfo.IsDir())
+
+	dockerArtifactInfo, err := os.Stat(filepath.Join(updatedProject.Path, "letsencrypt"))
+	require.NoError(t, err)
+	assert.True(t, dockerArtifactInfo.IsDir())
+
+	dockerArtifactInfo, err = os.Stat(filepath.Join(updatedProject.Path, "logs"))
+	require.NoError(t, err)
+	assert.True(t, dockerArtifactInfo.IsDir())
 }
 
 func TestGitOpsSyncService_CreateDirectorySyncProjectInternal_RollsBackProjectOnUpdateFailure(t *testing.T) {
