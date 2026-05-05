@@ -16,6 +16,8 @@ const (
 	defaultBuildsDirectory  = "/builds"
 	defaultDatabaseURL      = "file:data/arcane.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(2500)&_txlock=immediate"
 	defaultDockerSocketPath = "/var/run/docker.sock"
+	defaultRuntimeUID       = 65532
+	defaultRuntimeGID       = 65532
 	mountInfoPath           = "/proc/self/mountinfo"
 )
 
@@ -70,6 +72,16 @@ func loadRuntimeIdentityRequestInternal(getenv func(string) string) (runtimeIden
 	pgid := strings.TrimSpace(getenv("PGID"))
 
 	if puid == "" && pgid == "" {
+		if strings.EqualFold(strings.TrimSpace(getenv("ARCANE_DEFAULT_NONROOT")), "true") {
+			return runtimeIdentityRequest{
+				Enabled:       true,
+				UID:           defaultRuntimeUID,
+				GID:           defaultRuntimeGID,
+				CredentialUID: uint32(defaultRuntimeUID),
+				CredentialGID: uint32(defaultRuntimeGID),
+			}, "", nil
+		}
+
 		return runtimeIdentityRequest{}, "", nil
 	}
 

@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 ARG BUILD_TAGS=""
-ARG HARDENED_BASE_IMAGE=dhi.io/debian-base:trixie
+ARG ARCANE_RUNTIME_BASE_IMAGE=ghcr.io/getarcaneapp/base:trixie
 
 # Stage 1: Build Frontend
 FROM --platform=$BUILDPLATFORM node:25-trixie-slim AS frontend-builder
@@ -66,37 +66,18 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     -o /build/arcane \
     ./cmd/main.go
 
-# Stage 3a: Runtime deps (apt-enabled)
-FROM debian:trixie-slim AS runner-deps
-ARG TARGETARCH
-
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        ca-certificates curl tzdata tar gzip \
-        vainfo clinfo libdrm2 libsystemd0 \
-    && if [ "$TARGETARCH" = "amd64" ]; then \
-        apt-get install -y --no-install-recommends intel-gpu-tools; \
-    fi \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
-# Stage 3b: Hardened Production Image (no apt)
-FROM ${HARDENED_BASE_IMAGE} AS runner-hardened
+# Stage 3: Hardened Production Image
+FROM ${ARCANE_RUNTIME_BASE_IMAGE} AS runner-hardened
 
 ARG TARGETARCH
 ARG VERSION
 ARG REVISION
 
-# Copy runtime deps from runner-deps instead of apt-get
-COPY --from=runner-deps /etc/ssl/certs/ /etc/ssl/certs/
-COPY --from=runner-deps /usr/share/zoneinfo/ /usr/share/zoneinfo/
-COPY --from=runner-deps /usr/bin/ /usr/bin/
-COPY --from=runner-deps /usr/lib/ /usr/lib/
-COPY --from=runner-deps /lib/ /lib/
-COPY --from=runner-deps /lib64/ /lib64/
-
 # keep the same env/settings as existing runner
 ENV GIN_MODE=release
 ENV PORT=3552
 ENV ENVIRONMENT=production
+ENV ARCANE_DEFAULT_NONROOT=true
 ENV NVIDIA_VISIBLE_DEVICES=all \
     NVIDIA_DRIVER_CAPABILITIES=compute,utility \
     ROCR_VISIBLE_DEVICES=all \
@@ -107,11 +88,9 @@ ENV NVIDIA_VISIBLE_DEVICES=all \
 
 WORKDIR /app
 
-# elevate to root to create data dir, then drop back to non-root
 USER 0:0
 RUN mkdir -p /app/data /builds \
   && chown -R 65532:65532 /app /builds
-USER 65532:65532
 COPY --from=backend-builder /build/arcane .
 EXPOSE 3552
 VOLUME ["/app/data"]

@@ -17,6 +17,22 @@ func TestLoadRuntimeIdentityRequest(t *testing.T) {
 		require.False(t, req.Enabled)
 	})
 
+	t.Run("enabled with default non-root image flag", func(t *testing.T) {
+		req, warning, err := loadRuntimeIdentityRequestInternal(func(key string) string {
+			if key == "ARCANE_DEFAULT_NONROOT" {
+				return "true"
+			}
+			return ""
+		})
+		require.NoError(t, err)
+		require.Empty(t, warning)
+		require.True(t, req.Enabled)
+		require.Equal(t, defaultRuntimeUID, req.UID)
+		require.Equal(t, defaultRuntimeGID, req.GID)
+		require.Equal(t, uint32(defaultRuntimeUID), req.CredentialUID)
+		require.Equal(t, uint32(defaultRuntimeGID), req.CredentialGID)
+	})
+
 	t.Run("warning when partial config", func(t *testing.T) {
 		req, warning, err := loadRuntimeIdentityRequestInternal(func(key string) string {
 			if key == "PUID" {
