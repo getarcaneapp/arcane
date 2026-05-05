@@ -2640,6 +2640,7 @@
     "settings_default_deploy_pull_policy_description": "프로젝트 배포 시 적용할 기본 이미지 Pull 정책입니다.",
     "authentication_title": "인증",
     "authentication_description": "인증 제공업체, 비밀번호 정책 및 세션 동작을 설정합니다.",
+    
     "webhook_page_title": "웹훅 (Webhooks)",
     "webhook_page_description": "외부 시스템에서 컨테이너, 프로젝트, 환경 업데이트 및 GitOps 작업을 트리거할 수 있도록 인바운드 웹훅을 관리합니다.",
     "webhook_create_button": "웹훅 생성",
