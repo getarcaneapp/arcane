@@ -32,7 +32,7 @@ services:
 
   arcane:
     image: arcane:playwright-tests
-    user: root
+    user: "0:0"
     ports:
       - '3002:3552'
     environment:
