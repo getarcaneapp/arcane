@@ -21,6 +21,8 @@ services:
     environment:
       - ENVIRONMENT=testing
       - APP_ENV=test
+      - PUID=65532
+      - PGID=65532
       - DATABASE_URL=postgres://arcane:arcane_test_password@postgres:5432/arcane_test?sslmode=disable
       - ENCRYPTION_KEY=3JDIgolks2tJ9ymm1AdqzlYMWu0DUWyt
       - JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
