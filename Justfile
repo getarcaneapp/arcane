@@ -16,6 +16,45 @@ _dev-backend:
     cd backend && air
 
 [group('dev')]
+_dev-agent:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    if [ -z "${AGENT_TOKEN:-}" ]; then
+        echo "AGENT_TOKEN is required. Run: AGENT_TOKEN=<edge-environment-token> just dev agent"
+        exit 1
+    fi
+
+    port="${PORT:-3553}"
+    app_url="${APP_URL:-http://localhost:${port}}"
+    manager_api_url="${MANAGER_API_URL:-https://localhost:3552}"
+    edge_mtls_assets_dir="${EDGE_MTLS_ASSETS_DIR:-./.tmp/edge-test-agent/edge-mtls-agent}"
+    edge_mtls_ca_file="${EDGE_MTLS_CA_FILE:-./backend/local-manager.crt}"
+    database_url="${DATABASE_URL:-file:./.tmp/edge-test-agent/arcane.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(2500)&_txlock=immediate}"
+    projects_directory="${PROJECTS_DIRECTORY:-./.tmp/edge-test-agent/projects}"
+    git_work_dir="${GIT_WORK_DIR:-./.tmp/edge-test-agent/git}"
+    jwt_secret="${JWT_SECRET:-local-edge-test-jwt-secret-please-change}"
+    encryption_key="${ENCRYPTION_KEY:-local-edge-test-encryption-key-32}"
+
+    mkdir -p "${projects_directory}" "${git_work_dir}" "${edge_mtls_assets_dir}"
+
+    PORT="${port}" \
+    APP_URL="${app_url}" \
+    EDGE_AGENT=true \
+    EDGE_TRANSPORT=poll \
+    EDGE_MTLS_MODE=required \
+    EDGE_MTLS_ASSETS_DIR="${edge_mtls_assets_dir}" \
+    EDGE_MTLS_CA_FILE="${edge_mtls_ca_file}" \
+    AGENT_TOKEN="${AGENT_TOKEN}" \
+    MANAGER_API_URL="${manager_api_url}" \
+    DATABASE_URL="${database_url}" \
+    PROJECTS_DIRECTORY="${projects_directory}" \
+    GIT_WORK_DIR="${git_work_dir}" \
+    JWT_SECRET="${jwt_secret}" \
+    ENCRYPTION_KEY="${encryption_key}" \
+    go run ./backend/cmd
+
+[group('dev')]
 _dev-all:
     #!/usr/bin/env bash
     trap 'kill 0' EXIT
@@ -32,10 +71,52 @@ _dev-docker:
 _dev-logs:
     ./scripts/development/dev.sh logs
 
-# Run development servers. Valid targets: "frontend", "backend", "all", "docker", "logs".
+# Run development servers. Valid targets: "frontend", "backend", "agent", "all", "docker", "logs".
 [group('dev')]
 dev target="docker":
     @just "_dev-{{ target }}"
+
+# Generate a self-signed TLS cert + key for the local manager (used by the
+# backend HTTPS listener on :3552 and pinned as EDGE_MTLS_CA_FILE by the
+# local edge agent). Writes to backend/local-manager.{crt,key} with SANs for
+# localhost + 127.0.0.1. Both files are gitignored via *.crt / *.key.
+#
+# Usage:
+#   just dev-tls                  # generate if missing
+
+# just dev-tls force=true       # overwrite existing files
+[group('dev')]
+dev-tls force="false":
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    cert_path="./backend/local-manager.crt"
+    key_path="./backend/local-manager.key"
+
+    if [ "{{ force }}" != "true" ] && [ -f "${cert_path}" ] && [ -f "${key_path}" ]; then
+        echo "Cert already exists at ${cert_path}; pass force=true to regenerate."
+        exit 0
+    fi
+
+    go run ./cli generate tls \
+        --out-dir ./backend \
+        --cert-name "$(basename "${cert_path}")" \
+        --key-name "$(basename "${key_path}")" \
+        --common-name arcane-local-manager \
+        --host localhost \
+        --host arcane-local \
+        --host 127.0.0.1 \
+        --host ::1
+
+    echo ""
+    echo "Generated self-signed TLS cert:"
+    echo "  cert: ${cert_path}"
+    echo "  key:  ${key_path}"
+    echo ""
+    echo "Run the backend with HTTPS enabled:"
+    echo "  TLS_ENABLED=true TLS_CERT_FILE=${cert_path} TLS_KEY_FILE=${key_path} just dev backend"
+    echo ""
+    echo "The local edge agent recipe already pins this cert via EDGE_MTLS_CA_FILE."
 
 # --- Deploy ---
 # Deploy a local swarm worker plus a locally built Arcane edge agent into DinD.

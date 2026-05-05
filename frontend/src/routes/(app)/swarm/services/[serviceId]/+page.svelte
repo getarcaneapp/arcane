@@ -212,6 +212,7 @@
 
 	async function handleUpdate(payload: { spec: Record<string, unknown>; options?: Record<string, unknown> }) {
 		if (!service?.id) return;
+		isLoading.update = true;
 		handleApiResultWithCallbacks({
 			result: await tryCatch(swarmService.updateService(service.id, { version: editVersion, ...payload })),
 			message: m.common_update_failed({ resource: `${m.swarm_service()} "${serviceName}"` }),
@@ -232,6 +233,7 @@
 				label: m.swarm_service_rollback(),
 				destructive: false,
 				action: async () => {
+					isLoading.rollback = true;
 					handleApiResultWithCallbacks({
 						result: await tryCatch(swarmService.rollbackService(service.id)),
 						message: m.swarm_service_rollback_failed({ name: serviceName }),
@@ -254,6 +256,7 @@
 				label: m.common_delete(),
 				destructive: true,
 				action: async () => {
+					isLoading.remove = true;
 					handleApiResultWithCallbacks({
 						result: await tryCatch(swarmService.removeService(service.id)),
 						message: m.common_delete_failed({ resource: `${m.swarm_service()} "${serviceName}"` }),
@@ -271,6 +274,7 @@
 	async function handleScale() {
 		if (!service?.id || !canScaleService) return;
 		const replicas = Math.max(0, Number(scaleReplicas) || 0);
+		isLoading.scale = true;
 		handleApiResultWithCallbacks({
 			result: await tryCatch(swarmService.scaleService(service.id, { replicas })),
 			message: m.common_update_failed({ resource: `${m.swarm_service()} "${serviceName}"` }),

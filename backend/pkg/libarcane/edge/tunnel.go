@@ -42,6 +42,22 @@ const (
 	MessageTypeRegisterResponse TunnelMessageType = "register_response"
 	// MessageTypeEvent carries an event emitted by an agent to the manager.
 	MessageTypeEvent TunnelMessageType = "event"
+	// MessageTypeCommandRequest sends a typed edge command from manager to agent.
+	MessageTypeCommandRequest TunnelMessageType = "command_request"
+	// MessageTypeCommandAck acknowledges a command was accepted by the agent.
+	MessageTypeCommandAck TunnelMessageType = "command_ack"
+	// MessageTypeCommandOutput carries chunked command output from agent to manager.
+	MessageTypeCommandOutput TunnelMessageType = "command_output"
+	// MessageTypeCommandComplete indicates final command completion.
+	MessageTypeCommandComplete TunnelMessageType = "command_complete"
+	// MessageTypeFileChunk carries chunked request or response payload data.
+	MessageTypeFileChunk TunnelMessageType = "file_chunk"
+	// MessageTypeStreamOpen opens a command-backed stream.
+	MessageTypeStreamOpen TunnelMessageType = "stream_open"
+	// MessageTypeStreamClose closes a command-backed stream.
+	MessageTypeStreamClose TunnelMessageType = "stream_close"
+	// MessageTypeCancelRequest requests cancellation of an in-flight command.
+	MessageTypeCancelRequest TunnelMessageType = "cancel_request"
 )
 
 // TunnelMessage represents a transport-agnostic edge tunnel message.
@@ -60,6 +76,18 @@ type TunnelMessage struct {
 	EnvironmentID string            `json:"environment_id,omitempty"`  // Manager-resolved environment ID
 	Error         string            `json:"error,omitempty"`           // Error field for register response
 	Event         *TunnelEvent      `json:"event,omitempty"`           // Agent event payload
+	Command       string            `json:"command,omitempty"`         // Typed command name
+	SessionID     string            `json:"session_id,omitempty"`      // Manager-issued session identifier
+	ResumeSession string            `json:"resume_session,omitempty"`  // Previous session being resumed
+	AgentInstance string            `json:"agent_instance,omitempty"`  // Stable agent runtime identity
+	Capabilities  []string          `json:"capabilities,omitempty"`    // Agent advertised capabilities
+	SecurityMode  string            `json:"security_mode,omitempty"`   // token, mtls, etc.
+	DrainPrevious bool              `json:"drain_previous,omitempty"`  // Replace previous session
+	TimeoutMillis int64             `json:"timeout_millis,omitempty"`  // Command timeout
+	Sequence      int64             `json:"sequence,omitempty"`        // Chunk sequence number
+	Streaming     bool              `json:"streaming,omitempty"`       // Response used chunked output
+	Metadata      map[string]string `json:"metadata,omitempty"`        // Correlation and audit metadata
+	EOF           bool              `json:"eof,omitempty"`             // Final chunk indicator
 }
 
 // TunnelEvent is an event payload sent from an agent to the manager.

@@ -18,6 +18,13 @@ func TestNormalizeEdgeTransport(t *testing.T) {
 	assert.Equal(t, EdgeTransportAuto, NormalizeEdgeTransport("auto"))
 }
 
+func TestNormalizeEdgeMTLSMode(t *testing.T) {
+	assert.Equal(t, EdgeMTLSModeDisabled, NormalizeEdgeMTLSMode(""))
+	assert.Equal(t, EdgeMTLSModeOptional, NormalizeEdgeMTLSMode("optional"))
+	assert.Equal(t, EdgeMTLSModeRequired, NormalizeEdgeMTLSMode("REQUIRED"))
+	assert.Equal(t, EdgeMTLSModeDisabled, NormalizeEdgeMTLSMode("invalid"))
+}
+
 func TestUseGRPCEdgeTransport(t *testing.T) {
 	assert.False(t, UseGRPCEdgeTransport(nil))
 	assert.True(t, UseGRPCEdgeTransport(&Config{EdgeTransport: "grpc"}))
@@ -72,7 +79,7 @@ func TestGetActiveTunnelTransport(t *testing.T) {
 		conn := createTestConn(t)
 		defer func() { _ = conn.Close() }()
 
-		tunnel := NewAgentTunnel(envID, conn)
+		tunnel := newWebSocketAgentTunnel(envID, conn)
 		GetRegistry().Register(envID, tunnel)
 
 		transport, ok := GetActiveTunnelTransport(envID)
@@ -121,6 +128,10 @@ func TestGetTunnelRuntimeState(t *testing.T) {
 		defer GetRegistry().Unregister(envID)
 
 		tunnel := NewAgentTunnelWithConn(envID, NewGRPCManagerTunnelConn(nil))
+		tunnel.SessionID = "session-1"
+		tunnel.AgentInstance = "agent-1"
+		tunnel.SecurityMode = "mtls"
+		tunnel.Capabilities = []string{"container.list"}
 		GetRegistry().Register(envID, tunnel)
 
 		state, ok := GetTunnelRuntimeState(envID)
@@ -129,6 +140,10 @@ func TestGetTunnelRuntimeState(t *testing.T) {
 			assert.Equal(t, EdgeTransportGRPC, state.Transport)
 			assert.NotNil(t, state.ConnectedAt)
 			assert.NotNil(t, state.LastHeartbeat)
+			assert.Equal(t, "session-1", state.SessionID)
+			assert.Equal(t, "agent-1", state.AgentInstance)
+			assert.Equal(t, "mtls", state.SecurityMode)
+			assert.Equal(t, []string{"container.list"}, state.Capabilities)
 		}
 	})
 

@@ -965,6 +965,9 @@ func (s *UpdaterService) collectUsedImagesFromContainersInternal(ctx context.Con
 	if dcli == nil {
 		return nil
 	}
+
+	excludedContainers := s.buildExcludedContainerSetInternal(ctx)
+
 	listResult, err := dcli.ContainerList(ctx, client.ContainerListOptions{All: false})
 	if err != nil {
 		return err
@@ -975,6 +978,20 @@ func (s *UpdaterService) collectUsedImagesFromContainersInternal(ctx context.Con
 		if libupdater.IsUpdateDisabled(c.Labels) {
 			slog.DebugContext(ctx, "collectUsedImagesFromContainersInternal: container opted out by labels", "containerId", c.ID)
 			continue
+		}
+
+		if len(excludedContainers) > 0 {
+			isExcluded := false
+			for _, name := range c.Names {
+				if excludedContainers[strings.TrimPrefix(name, "/")] {
+					isExcluded = true
+					break
+				}
+			}
+			if isExcluded {
+				slog.DebugContext(ctx, "collectUsedImagesFromContainersInternal: skipping excluded container", "containerId", c.ID, "names", c.Names)
+				continue
+			}
 		}
 
 		imageRef := strings.TrimSpace(c.Image)
@@ -998,6 +1015,22 @@ func (s *UpdaterService) collectUsedImagesFromContainersInternal(ctx context.Con
 		}
 	}
 	return nil
+}
+
+// buildExcludedContainerSetInternal returns the set of container names from the
+// autoUpdateExcludedContainers setting. An empty map means no exclusions.
+func (s *UpdaterService) buildExcludedContainerSetInternal(ctx context.Context) map[string]bool {
+	raw := s.settingsService.GetStringSetting(ctx, "autoUpdateExcludedContainers", "")
+	if raw == "" {
+		return nil
+	}
+	excluded := make(map[string]bool)
+	for p := range strings.SplitSeq(raw, ",") {
+		if name := strings.TrimSpace(p); name != "" {
+			excluded[name] = true
+		}
+	}
+	return excluded
 }
 
 func isImageIDLikeReferenceInternal(ref string) bool {
@@ -1232,15 +1265,7 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 	list := listResult.Items
 	slog.DebugContext(ctx, "restartContainersUsingOldIDs: scanning containers for matching images", "containers", len(list), "oldIDMatches", len(oldIDToNewRef), "oldRefMatches", len(oldRefToNewRef))
 
-	// Parse excluded containers settings
-	excludedSetting := s.settingsService.GetStringSetting(ctx, "autoUpdateExcludedContainers", "")
-	excludedContainers := make(map[string]bool)
-	if excludedSetting != "" {
-		parts := strings.SplitSeq(excludedSetting, ",")
-		for p := range parts {
-			excludedContainers[strings.TrimSpace(p)] = true
-		}
-	}
+	excludedContainers := s.buildExcludedContainerSetInternal(ctx)
 
 	// Detect the Docker socket proxy container (if DOCKER_HOST is TCP) so we
 	// can skip it during auto-update. Updating it would sever Arcane's own

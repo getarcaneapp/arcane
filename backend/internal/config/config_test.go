@@ -238,8 +238,10 @@ func TestConfig_DockerSecretsFileSupport(t *testing.T) {
 func TestConfig_OptionsToLower(t *testing.T) {
 	origLogLevel := os.Getenv("LOG_LEVEL")
 	origEdgeTransport := os.Getenv("EDGE_TRANSPORT")
+	origEdgeMTLSMode := os.Getenv("EDGE_MTLS_MODE")
 	defer restoreEnv("LOG_LEVEL", origLogLevel)
 	defer restoreEnv("EDGE_TRANSPORT", origEdgeTransport)
+	defer restoreEnv("EDGE_MTLS_MODE", origEdgeMTLSMode)
 
 	t.Run("LogLevel is converted to lowercase", func(t *testing.T) {
 		setEnv(t, "LOG_LEVEL", "DEBUG")
@@ -267,6 +269,20 @@ func TestConfig_OptionsToLower(t *testing.T) {
 
 		cfg := Load()
 		assert.Equal(t, "auto", cfg.EdgeTransport)
+	})
+
+	t.Run("EdgeMTLSMode is converted to lowercase", func(t *testing.T) {
+		setEnv(t, "EDGE_MTLS_MODE", "REQUIRED")
+
+		cfg := Load()
+		assert.Equal(t, "required", cfg.EdgeMTLSMode)
+	})
+
+	t.Run("EdgeMTLSMode defaults to disabled", func(t *testing.T) {
+		unsetEnv(t, "EDGE_MTLS_MODE")
+
+		cfg := Load()
+		assert.Equal(t, "disabled", cfg.EdgeMTLSMode)
 	})
 }
 
