@@ -1,8 +1,8 @@
 // Package logger provides logging configuration and access for the CLI.
 //
-// This package wraps logrus to provide consistent logging across the CLI.
-// It supports configurable log levels and JSON output format for machine
-// parsing.
+// This package wraps charmbracelet/log to provide consistent logging across
+// the CLI. It supports configurable log levels and JSON output format for
+// machine parsing.
 //
 // # Setup
 //
@@ -22,38 +22,33 @@ package logger
 import (
 	"os"
 
-	"github.com/sirupsen/logrus"
+	charmlog "github.com/charmbracelet/log"
 )
 
 // Setup configures the global logger with the specified level and format.
-// Valid log levels are: debug, info, warn, error, fatal, panic.
+// Valid log levels are: debug, info, warn, error, fatal.
 // If an invalid level is provided, it defaults to info.
 // When jsonFormat is true, logs are output as JSON for machine parsing.
 func Setup(level string, jsonFormat bool) {
-	// Set the log level
-	lvl, err := logrus.ParseLevel(level)
+	lvl, err := charmlog.ParseLevel(level)
 	if err != nil {
-		lvl = logrus.InfoLevel
+		lvl = charmlog.InfoLevel
 	}
-	logrus.SetLevel(lvl)
 
-	// Set the output to stdout
-	logrus.SetOutput(os.Stdout)
+	log := charmlog.Default()
+	log.SetLevel(lvl)
+	log.SetOutput(os.Stdout)
+	log.SetReportTimestamp(true)
 
-	// Set the formatter
 	if jsonFormat {
-		logrus.SetFormatter(&logrus.JSONFormatter{})
+		log.SetFormatter(charmlog.JSONFormatter)
 	} else {
-		logrus.SetFormatter(&logrus.TextFormatter{
-			FullTimestamp: true,
-		})
+		log.SetFormatter(charmlog.TextFormatter)
 	}
 }
 
 // GetLogger returns the global logger instance.
 // The logger should be configured via Setup before use.
-// This returns the logrus standard logger which can be used for
-// Debug, Info, Warn, Error, Fatal, and Panic level logging.
-func GetLogger() *logrus.Logger {
-	return logrus.StandardLogger()
+func GetLogger() *charmlog.Logger {
+	return charmlog.Default()
 }

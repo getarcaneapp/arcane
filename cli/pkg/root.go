@@ -14,7 +14,7 @@
 //
 // The following flags are available on all commands:
 //
-//	--log-level string   Log level (debug, info, warn, error, fatal, panic) (default "info")
+//	--log-level string   Log level (debug, info, warn, error, fatal) (default "info")
 //	--json               Output in JSON format
 //	-v, --version        Print version information
 //
@@ -36,13 +36,11 @@ import (
 	"fmt"
 	"os"
 	"runtime"
-	"sort"
 	"strings"
 	"time"
 
 	"charm.land/lipgloss/v2"
-	"charm.land/lipgloss/v2/compat"
-	"charm.land/lipgloss/v2/table"
+	"github.com/charmbracelet/fang"
 	"github.com/fatih/color"
 	"github.com/getarcaneapp/arcane/cli/internal/config"
 	"github.com/getarcaneapp/arcane/cli/internal/logger"
@@ -73,7 +71,6 @@ import (
 	"github.com/getarcaneapp/arcane/cli/pkg/version"
 	"github.com/getarcaneapp/arcane/cli/pkg/volumes"
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 )
 
 var (
@@ -87,36 +84,6 @@ var (
 	noColorOutput  bool
 	requestTimeout time.Duration
 	globalJSON     bool
-)
-
-var (
-	helpPurple = compat.AdaptiveColor{
-		Light: lipgloss.Color("#6d28d9"),
-		Dark:  lipgloss.Color("#a78bfa"),
-	}
-	helpTextPrimary = compat.AdaptiveColor{
-		Light: lipgloss.Color("#1f2937"),
-		Dark:  lipgloss.Color("#e5e7eb"),
-	}
-	helpTextMuted = compat.AdaptiveColor{
-		Light: lipgloss.Color("#64748b"),
-		Dark:  lipgloss.Color("#cbd5e1"),
-	}
-
-	helpTitleStyle    = lipgloss.NewStyle().Bold(true).Foreground(helpPurple).Padding(0, 1)
-	helpSubtitleStyle = lipgloss.NewStyle().Foreground(helpTextMuted).PaddingLeft(1)
-	helpVersionStyle  = lipgloss.NewStyle().Foreground(helpTextMuted).PaddingLeft(1)
-	helpSectionStyle  = lipgloss.NewStyle().Bold(true).Foreground(helpPurple).Padding(0, 1)
-
-	helpCmdHeader = lipgloss.NewStyle().Bold(true).Foreground(helpPurple).Align(lipgloss.Center).Padding(0, 2)
-	helpCmdCell   = lipgloss.NewStyle().Padding(0, 2)
-	helpCmdOdd    = helpCmdCell.Foreground(helpTextPrimary)
-	helpCmdEven   = helpCmdCell.Foreground(helpTextMuted)
-	helpCmdBorder = lipgloss.NewStyle().Foreground(helpPurple)
-
-	helpTableWrap   = lipgloss.NewStyle().Padding(0, 1)
-	helpBodyStyle   = lipgloss.NewStyle().Foreground(helpTextPrimary).PaddingLeft(2)
-	helpFooterStyle = lipgloss.NewStyle().Foreground(helpTextMuted).Padding(1, 1, 0, 1)
 )
 
 var rootCmd = &cobra.Command{
@@ -197,7 +164,13 @@ var rootCmd = &cobra.Command{
 }
 
 func Execute() {
-	if err := rootCmd.ExecuteContext(context.Background()); err != nil {
+	if err := fang.Execute(
+		context.Background(),
+		rootCmd,
+		fang.WithColorSchemeFunc(arcaneFangColorSchemeInternal),
+		fang.WithVersion(config.Version),
+		fang.WithCommit(config.Revision),
+	); err != nil {
 		os.Exit(1)
 	}
 }
@@ -208,12 +181,65 @@ func RootCommand() *cobra.Command {
 	return rootCmd
 }
 
-func init() {
-	rootCmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
-		renderCommandHelp(cmd)
-	})
+func arcaneFangColorSchemeInternal(c lipgloss.LightDarkFunc) fang.ColorScheme {
+	scheme := fang.DefaultColorScheme(c)
+	scheme.Base = c(lipgloss.Color("#1f2937"), lipgloss.Color("#e5e7eb"))
+	scheme.Title = c(lipgloss.Color("#6d28d9"), lipgloss.Color("#a78bfa"))
+	scheme.Description = scheme.Base
+	scheme.Codeblock = c(lipgloss.Color("#f5f3ff"), lipgloss.Color("#241b35"))
+	scheme.Program = scheme.Title
+	scheme.Command = c(lipgloss.Color("#7c3aed"), lipgloss.Color("#c4b5fd"))
+	scheme.DimmedArgument = c(lipgloss.Color("#64748b"), lipgloss.Color("#94a3b8"))
+	scheme.Comment = c(lipgloss.Color("#64748b"), lipgloss.Color("#cbd5e1"))
+	scheme.Flag = scheme.Title
+	scheme.FlagDefault = c(lipgloss.Color("#64748b"), lipgloss.Color("#cbd5e1"))
+	scheme.Argument = scheme.Base
+	scheme.Help = scheme.Base
+	scheme.Dash = scheme.Base
+	return scheme
+}
 
-	rootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "info", "Log level (debug, info, warn, error, fatal, panic)")
+func instrumentCommandTreeInternal(cmd *cobra.Command) {
+	for _, child := range cmd.Commands() {
+		instrumentCommandTreeInternal(child)
+	}
+
+	if cmd.RunE == nil && cmd.Run == nil {
+		return
+	}
+
+	if cmd.Annotations == nil {
+		cmd.Annotations = make(map[string]string)
+	}
+	if cmd.Annotations["arcane:logging-wrapped"] == "true" {
+		return
+	}
+	cmd.Annotations["arcane:logging-wrapped"] = "true"
+
+	action := strings.TrimSpace(cmd.Short)
+	if action == "" {
+		action = "Running command"
+	}
+
+	if cmd.RunE != nil {
+		originalRunE := cmd.RunE
+		cmd.RunE = func(command *cobra.Command, args []string) error {
+			logger.GetLogger().Debug(action, "command", command.CommandPath(), "arg_count", len(args))
+			return originalRunE(command, args)
+		}
+	}
+
+	if cmd.Run != nil {
+		originalRun := cmd.Run
+		cmd.Run = func(command *cobra.Command, args []string) {
+			logger.GetLogger().Debug(action, "command", command.CommandPath(), "arg_count", len(args))
+			originalRun(command, args)
+		}
+	}
+}
+
+func init() {
+	rootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "info", "Log level (debug, info, warn, error, fatal)")
 	rootCmd.PersistentFlags().StringVarP(&configPath, "config", "c", "", "Path to config file (default ~/.config/arcanecli.yml)")
 	rootCmd.PersistentFlags().StringVar(&outputMode, "output", "text", "Output mode (text, json)")
 	rootCmd.PersistentFlags().StringVar(&envOverride, "env", "", "Override default environment ID for this invocation")
@@ -247,181 +273,6 @@ func init() {
 	rootCmd.AddCommand(selfupdate.Cmd)
 	rootCmd.AddCommand(admin.AdminCmd)
 	rootCmd.AddCommand(gitops.GitopsCmd)
-}
 
-func renderCommandHelp(cmd *cobra.Command) {
-	title := cmd.CommandPath()
-	if cmd == rootCmd {
-		title = "Arcane CLI"
-	}
-	lipgloss.Println(helpTitleStyle.Render(title))
-
-	summary := strings.TrimSpace(cmd.Long)
-	if summary == "" {
-		summary = strings.TrimSpace(cmd.Short)
-	}
-	if summary != "" {
-		lipgloss.Println(helpSubtitleStyle.Render(summary))
-	}
-
-	if cmd == rootCmd {
-		lipgloss.Println(helpVersionStyle.Render(fmt.Sprintf("Version %s (%s)", config.Version, config.Revision)))
-	}
-	lipgloss.Println()
-
-	usageLine := cmd.UseLine()
-	if usageLine != "" {
-		lipgloss.Println(helpSectionStyle.Render("Usage"))
-		lipgloss.Println(helpBodyStyle.Render(usageLine))
-		lipgloss.Println()
-	}
-
-	if len(cmd.Aliases) > 0 {
-		lipgloss.Println(helpSectionStyle.Render("Aliases"))
-		lipgloss.Println(helpBodyStyle.Render(strings.Join(cmd.Aliases, ", ")))
-		lipgloss.Println()
-	}
-
-	commandRows := collectCommandRows(cmd)
-	if len(commandRows) > 0 {
-		lipgloss.Println(helpSectionStyle.Render("Commands"))
-		renderHelpTable([]string{"COMMAND", "DESCRIPTION"}, commandRows)
-		lipgloss.Println()
-	}
-
-	localFlagRows := collectHelpFlagRowsInternal(cmd)
-	if len(localFlagRows) > 0 {
-		lipgloss.Println(helpSectionStyle.Render("Flags"))
-		renderHelpTable([]string{"FLAG", "TYPE", "DEFAULT", "DESCRIPTION"}, localFlagRows)
-		lipgloss.Println()
-	}
-
-	globalFlagRows := collectGlobalHelpFlagRowsInternal(cmd)
-	if len(globalFlagRows) > 0 {
-		lipgloss.Println(helpSectionStyle.Render("Global Flags"))
-		renderHelpTable([]string{"FLAG", "TYPE", "DEFAULT", "DESCRIPTION"}, globalFlagRows)
-		lipgloss.Println()
-	}
-
-	examples := strings.TrimSpace(cmd.Example)
-	if examples != "" {
-		lipgloss.Println(helpSectionStyle.Render("Examples"))
-		for line := range strings.SplitSeq(examples, "\n") {
-			trimmed := strings.TrimSpace(line)
-			if trimmed == "" {
-				lipgloss.Println()
-				continue
-			}
-			lipgloss.Println(helpBodyStyle.Render(trimmed))
-		}
-		lipgloss.Println()
-	}
-
-	if cmd.HasAvailableSubCommands() {
-		lipgloss.Println(helpFooterStyle.Render(fmt.Sprintf("Run '%s [command] --help' for command-specific help.", cmd.CommandPath())))
-	}
-}
-
-func collectCommandRows(cmd *cobra.Command) [][]string {
-	rows := make([][]string, 0, len(cmd.Commands()))
-	for _, sub := range cmd.Commands() {
-		if !sub.IsAvailableCommand() || sub.Hidden || sub.IsAdditionalHelpTopicCommand() {
-			continue
-		}
-		rows = append(rows, []string{sub.Name(), sub.Short})
-	}
-
-	sort.Slice(rows, func(i, j int) bool {
-		return rows[i][0] < rows[j][0]
-	})
-
-	return rows
-}
-
-func collectHelpFlagRowsInternal(cmd *cobra.Command) [][]string {
-	if cmd == nil {
-		return nil
-	}
-	if cmd == rootCmd {
-		return collectFlagRowsExcludingInternal(cmd.LocalFlags(), cmd.PersistentFlags())
-	}
-	return collectFlagRows(cmd.NonInheritedFlags())
-}
-
-func collectGlobalHelpFlagRowsInternal(cmd *cobra.Command) [][]string {
-	if cmd == nil {
-		return nil
-	}
-	if cmd == rootCmd || cmd.Runnable() {
-		return collectFlagRows(rootCmd.PersistentFlags())
-	}
-	return nil
-}
-
-func collectFlagRows(flags *pflag.FlagSet) [][]string {
-	return collectFlagRowsExcludingInternal(flags, nil)
-}
-
-func collectFlagRowsExcludingInternal(flags, exclude *pflag.FlagSet) [][]string {
-	if flags == nil {
-		return nil
-	}
-
-	rows := make([][]string, 0)
-	flags.VisitAll(func(f *pflag.Flag) {
-		if f == nil || f.Hidden || f.Name == "help" {
-			return
-		}
-		if exclude != nil && exclude.Lookup(f.Name) != nil {
-			return
-		}
-
-		name := "--" + f.Name
-		if f.Shorthand != "" && f.ShorthandDeprecated == "" {
-			name = fmt.Sprintf("-%s, --%s", f.Shorthand, f.Name)
-		}
-
-		defaultValue := strings.TrimSpace(f.DefValue)
-		if defaultValue == "" {
-			defaultValue = "—"
-		}
-
-		flagType := "value"
-		if f.Value != nil {
-			if t := strings.TrimSpace(f.Value.Type()); t != "" {
-				flagType = t
-			}
-		}
-
-		rows = append(rows, []string{name, flagType, defaultValue, f.Usage})
-	})
-
-	sort.Slice(rows, func(i, j int) bool {
-		return rows[i][0] < rows[j][0]
-	})
-
-	return rows
-}
-
-func renderHelpTable(headers []string, rows [][]string) {
-	t := table.New().
-		Border(lipgloss.NormalBorder()).
-		BorderStyle(helpCmdBorder).
-		StyleFunc(func(row, col int) lipgloss.Style {
-			switch {
-			case row == table.HeaderRow:
-				return helpCmdHeader
-			case row%2 == 0:
-				return helpCmdEven
-			default:
-				return helpCmdOdd
-			}
-		}).
-		Headers(headers...)
-
-	if len(rows) > 0 {
-		t = t.Rows(rows...)
-	}
-
-	lipgloss.Println(helpTableWrap.Render(fmt.Sprint(t)))
+	instrumentCommandTreeInternal(rootCmd)
 }

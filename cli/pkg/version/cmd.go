@@ -27,21 +27,21 @@ var VersionCmd = &cobra.Command{
 			return err
 		}
 
-		logger.GetLogger().Debug("Sending request to ", clitypes.Endpoints.VersionEndpoint)
+		logger.GetLogger().Debug("Sending request", "endpoint", clitypes.Endpoints.VersionEndpoint)
 		resp, err := c.Get(cmd.Context(), clitypes.Endpoints.VersionEndpoint)
 		if err != nil {
 			return fmt.Errorf("failed to get version: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
 
-		logger.GetLogger().Debugf("Response status: %s", resp.Status)
+		logger.GetLogger().Debug("Response received", "status", resp.Status)
 
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return fmt.Errorf("failed to read response: %w", err)
 		}
 
-		logger.GetLogger().Debugf("Raw response: %s", string(body))
+		logger.GetLogger().Debug("Raw response", "body", string(body))
 
 		var result version.Info
 
@@ -49,7 +49,7 @@ var VersionCmd = &cobra.Command{
 			return fmt.Errorf("failed to parse response: %w", err)
 		}
 
-		logger.GetLogger().Debugf("Parsed version data: %+v", result)
+		logger.GetLogger().Debug("Parsed version data", "result", result)
 
 		if cmdutil.JSONOutputEnabled(cmd) {
 			resultBytes, err := json.MarshalIndent(result, "", "  ")

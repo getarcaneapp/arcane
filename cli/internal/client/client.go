@@ -36,6 +36,7 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/cli/internal/config"
+	"github.com/getarcaneapp/arcane/cli/internal/logger"
 	"github.com/getarcaneapp/arcane/cli/internal/runstate"
 	"github.com/getarcaneapp/arcane/cli/internal/types"
 	"github.com/getarcaneapp/arcane/types/auth"
@@ -266,10 +267,14 @@ func (c *Client) Request(ctx context.Context, method, path string, body any) (*h
 			c.applyAuth(req)
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("Accept", "application/json")
+			start := time.Now()
+			logger.GetLogger().Debug("Sending request", "method", method, "url", fullURL, "env_id", c.envID, "streaming_body", true)
 			resp, err := c.httpClient.Do(req) //nolint:gosec // intentional request to configured Arcane server URL
 			if err != nil {
+				logger.GetLogger().Debug("Request failed", "method", method, "url", fullURL, "env_id", c.envID, "duration", time.Since(start).String(), "error", err)
 				return nil, fmt.Errorf("request failed: %w", err)
 			}
+			logger.GetLogger().Debug("Response received", "method", method, "url", fullURL, "env_id", c.envID, "status", resp.Status, "duration", time.Since(start).String())
 			return resp, nil
 		default:
 			jsonBody, err := json.Marshal(body)
@@ -305,10 +310,14 @@ func (c *Client) RequestRaw(ctx context.Context, method, path string, body io.Re
 		req.Header.Set(k, v)
 	}
 
+	start := time.Now()
+	logger.GetLogger().Debug("Sending raw request", "method", method, "url", fullURL, "env_id", c.envID)
 	resp, err := c.httpClient.Do(req) //nolint:gosec // intentional request to configured Arcane server URL
 	if err != nil {
+		logger.GetLogger().Debug("Raw request failed", "method", method, "url", fullURL, "env_id", c.envID, "duration", time.Since(start).String(), "error", err)
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
+	logger.GetLogger().Debug("Raw response received", "method", method, "url", fullURL, "env_id", c.envID, "status", resp.Status, "duration", time.Since(start).String())
 
 	return resp, nil
 }
@@ -351,9 +360,13 @@ func (c *Client) doRequest(ctx context.Context, method, fullURL string, bodyByte
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Accept", "application/json")
 
+		start := time.Now()
+		logger.GetLogger().Debug("Sending request", "method", method, "url", fullURL, "env_id", c.envID, "attempt", attempt, "max_attempts", attempts, "body_bytes", len(bodyBytes))
 		resp, err := c.httpClient.Do(req) //nolint:gosec // intentional request to configured Arcane server URL
 		if err != nil {
+			logger.GetLogger().Debug("Request failed", "method", method, "url", fullURL, "env_id", c.envID, "attempt", attempt, "duration", time.Since(start).String(), "error", err)
 			if attempt < attempts && c.shouldRetry(method, 0, err) {
+				logger.GetLogger().Debug("Retrying request after transport error", "method", method, "url", fullURL, "env_id", c.envID, "attempt", attempt, "max_attempts", attempts)
 				if backoffErr := c.waitRetry(ctx, attempt); backoffErr != nil {
 					return nil, backoffErr
 				}
@@ -361,8 +374,10 @@ func (c *Client) doRequest(ctx context.Context, method, fullURL string, bodyByte
 			}
 			return nil, fmt.Errorf("request failed: %w", err)
 		}
+		logger.GetLogger().Debug("Response received", "method", method, "url", fullURL, "env_id", c.envID, "attempt", attempt, "status", resp.Status, "duration", time.Since(start).String())
 
 		if resp.StatusCode == http.StatusUnauthorized && allowRefresh && c.jwtToken != "" && c.refreshToken != "" {
+			logger.GetLogger().Debug("Refreshing access token after unauthorized response", "method", method, "url", fullURL, "env_id", c.envID, "attempt", attempt)
 			_ = resp.Body.Close()
 			if err := c.refreshAccessToken(ctx); err != nil {
 				return nil, err
@@ -372,6 +387,7 @@ func (c *Client) doRequest(ctx context.Context, method, fullURL string, bodyByte
 		}
 
 		if attempt < attempts && c.shouldRetry(method, resp.StatusCode, nil) {
+			logger.GetLogger().Debug("Retrying request after retryable status", "method", method, "url", fullURL, "env_id", c.envID, "attempt", attempt, "max_attempts", attempts, "status", resp.Status)
 			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxErrorBody))
 			_ = resp.Body.Close()
 			if backoffErr := c.waitRetry(ctx, attempt); backoffErr != nil {
@@ -463,6 +479,7 @@ func (c *Client) refreshAccessToken(ctx context.Context) error {
 		return fmt.Errorf("invalid base URL")
 	}
 	refreshURL := c.baseURLParsed.ResolveReference(&url.URL{Path: types.Endpoints.AuthRefresh()}).String()
+	logger.GetLogger().Debug("Sending token refresh request", "url", refreshURL)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, refreshURL, bytes.NewReader(bodyBytes))
 	if err != nil {
@@ -471,11 +488,14 @@ func (c *Client) refreshAccessToken(ctx context.Context) error {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 
+	start := time.Now()
 	resp, err := c.httpClient.Do(req) //nolint:gosec // intentional request to configured Arcane server URL
 	if err != nil {
+		logger.GetLogger().Debug("Token refresh request failed", "url", refreshURL, "duration", time.Since(start).String(), "error", err)
 		return fmt.Errorf("token refresh failed: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
+	logger.GetLogger().Debug("Token refresh response received", "url", refreshURL, "status", resp.Status, "duration", time.Since(start).String())
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -501,6 +521,7 @@ func (c *Client) refreshAccessToken(ctx context.Context) error {
 
 	c.jwtToken = result.Data.Token
 	c.refreshToken = newRefresh
+	logger.GetLogger().Debug("Access token refreshed successfully")
 
 	cfg, err := config.Load()
 	if err != nil {
