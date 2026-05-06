@@ -2150,7 +2150,7 @@
 	"notifications_ntfy_title": "Ntfy",
 	"notifications_pushover_title": "Pushover",
 	"notifications_gotify_title": "Gotify",
-	"notifications_matrix_title": "Matrix",
+	"notifications_matrix_title": "Matrice",
 	"notifications_discord_description": "Send notifications to Discord when container updates are detected",
 	"notifications_discord_enabled_label": "Enable Discord Notifications",
 	"notifications_discord_webhook_id_label": "Id Webhook",
