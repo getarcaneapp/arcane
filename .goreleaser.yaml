@@ -206,6 +206,9 @@ checksum:
     - glob: dist/arcane-cli_darwin_arm64_v8.0/arcane-cli
       name_template: arcane-cli_darwin_arm64
 
+nightly:
+  version_template: "0.0.0-next.{{ .ShortCommit }}"
+
 nfpms:
   - id: arcane-cli
     if: '{{ ne (index .Env "BUILD_NEXT") "true" }}'

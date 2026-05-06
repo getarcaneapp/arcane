@@ -84,7 +84,7 @@ jobs:
         with:
           distribution: goreleaser-pro
           version: "~> 2"
-          args: release --clean --skip=announce,validate,homebrew
+          args: release --clean --nightly --skip=announce,validate,homebrew
         env:
           GITHUB_TOKEN: ${{ secrets.ARCANE_BOT_TOKEN }}
           COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
