@@ -242,8 +242,10 @@ publishers:
     cmd: >-
       curl --fail-with-body
       -u "{{ .Env.NEXUS_USERNAME }}:{{ .Env.NEXUS_PASSWORD }}"
-      --upload-file "{{ .ArtifactName }}"
-      'https://pkgs.getarcane.app/repository/debian/stable/{{- if eq .Arch "amd64" -}}amd64{{- else if eq .Arch "arm64" -}}arm64{{- else if eq .Arch "386" -}}i386{{- else if and (eq .Arch "arm") (eq .Arm "7") -}}armhf{{- else -}}{{ .Arch }}{{- end -}}/{{ .ArtifactName }}'
+      -X POST
+      -H "Content-Type: multipart/form-data"
+      --data-binary "@{{ .ArtifactName }}"
+      'https://pkgs.getarcane.app/repository/debian/'
 
   - name: nexus-yum
     if: '{{ eq .ArtifactExt ".rpm" }}'
