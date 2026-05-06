@@ -26,6 +26,7 @@
 		class: className,
 		children,
 		align = 'inline-start',
+		role = 'group',
 		...restProps
 	}: HTMLAttributes<HTMLDivElement> & {
 		align?: InputGroupAddonAlign;
@@ -34,6 +35,7 @@
 
 <div
 	data-slot="input-group-addon"
+	{role}
 	data-align={align}
 	class={cn(inputGroupAddonVariants({ align }), className)}
 	onclick={(e) => {

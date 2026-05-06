@@ -228,8 +228,8 @@
 						<form id="login-form" name="login" action="" method="post" onsubmit={handleLogin} class="space-y-4" autocomplete="on">
 							<div class="space-y-2">
 								<Label for="username" class="text-xs">{m.common_username()}</Label>
-								<InputGroup.Root>
-									<InputGroup.Addon>
+								<InputGroup.Root role={undefined}>
+									<InputGroup.Addon role={undefined}>
 										<UserIcon />
 									</InputGroup.Addon>
 									<InputGroup.Input
@@ -247,8 +247,8 @@
 							</div>
 							<div class="space-y-2">
 								<Label for="password" class="text-xs">{m.common_password()}</Label>
-								<InputGroup.Root>
-									<InputGroup.Addon>
+								<InputGroup.Root role={undefined}>
+									<InputGroup.Addon role={undefined}>
 										<LockIcon />
 									</InputGroup.Addon>
 									<InputGroup.Input
