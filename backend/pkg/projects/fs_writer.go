@@ -259,6 +259,15 @@ func WriteSyncedDirectory(projectsRoot, projectPath string, files []SyncFile) ([
 			return nil, fmt.Errorf("failed to create directory for %s: %w", file.RelativePath, err)
 		}
 
+		info, err := os.Stat(targetPathClean)
+		if err == nil && info.IsDir() {
+			if err := os.RemoveAll(targetPathClean); err != nil {
+				return nil, fmt.Errorf("failed to replace directory at %s: %w", file.RelativePath, err)
+			}
+		} else if err != nil && !os.IsNotExist(err) {
+			return nil, fmt.Errorf("failed to inspect target path for %s: %w", file.RelativePath, err)
+		}
+
 		// Write the file
 		if err := os.WriteFile(targetPathClean, file.Content, pkgutils.FilePerm); err != nil {
 			return nil, fmt.Errorf("failed to write file %s: %w", file.RelativePath, err)

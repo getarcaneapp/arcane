@@ -258,6 +258,41 @@ func IsBinaryProjectFileContent(content []byte) bool {
 	return slices.Contains(content[:checkSize], 0)
 }
 
+func syncedProjectFileMatchesInternal(projectPath string, file SyncFile) (bool, error) {
+	existingPath := filepath.Join(projectPath, file.RelativePath)
+	info, err := os.Stat(existingPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	if info.IsDir() {
+		return false, nil
+	}
+
+	existingContent, err := os.ReadFile(existingPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+
+	return bytes.Equal(existingContent, file.Content), nil
+}
+
+func pathExistsInternal(path string) (bool, error) {
+	_, err := os.Stat(path)
+	if err == nil {
+		return true, nil
+	}
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	return false, err
+}
+
 func DirectorySyncContentsChanged(projectPath string, syncFiles []SyncFile, oldSyncedFiles []string, composeFileName string) (bool, error) {
 	if info, err := os.Stat(projectPath); err != nil {
 		if os.IsNotExist(err) {
@@ -271,14 +306,11 @@ func DirectorySyncContentsChanged(projectPath string, syncFiles []SyncFile, oldS
 	newFileSet := make(map[string]struct{}, len(syncFiles))
 	for _, file := range syncFiles {
 		newFileSet[file.RelativePath] = struct{}{}
-		existingContent, err := os.ReadFile(filepath.Join(projectPath, file.RelativePath))
+		matches, err := syncedProjectFileMatchesInternal(projectPath, file)
 		if err != nil {
-			if os.IsNotExist(err) {
-				return true, nil
-			}
 			return false, err
 		}
-		if !bytes.Equal(existingContent, file.Content) {
+		if !matches {
 			return true, nil
 		}
 	}
@@ -287,10 +319,12 @@ func DirectorySyncContentsChanged(projectPath string, syncFiles []SyncFile, oldS
 		if _, exists := newFileSet[oldFile]; exists {
 			continue
 		}
-		if _, err := os.Stat(filepath.Join(projectPath, oldFile)); err == nil {
-			return true, nil
-		} else if !os.IsNotExist(err) {
+		exists, err := pathExistsInternal(filepath.Join(projectPath, oldFile))
+		if err != nil {
 			return false, err
+		}
+		if exists {
+			return true, nil
 		}
 	}
 
@@ -301,10 +335,12 @@ func DirectorySyncContentsChanged(projectPath string, syncFiles []SyncFile, oldS
 		if _, exists := newFileSet[candidate]; exists {
 			continue
 		}
-		if _, err := os.Stat(filepath.Join(projectPath, candidate)); err == nil {
-			return true, nil
-		} else if !os.IsNotExist(err) {
+		exists, err := pathExistsInternal(filepath.Join(projectPath, candidate))
+		if err != nil {
 			return false, err
+		}
+		if exists {
+			return true, nil
 		}
 	}
 
