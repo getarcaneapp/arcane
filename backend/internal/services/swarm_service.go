@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"net/netip"
@@ -1345,31 +1346,33 @@ func (s *SwarmService) GetStackSource(ctx context.Context, environmentID, stackN
 	}
 
 	var files []swarmtypes.SyncFile
-	err = filepath.WalkDir(stackSourceDir, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
+	root, err := os.OpenRoot(stackSourceDir)
+	if err == nil {
+		defer func() { _ = root.Close() }()
+		err = fs.WalkDir(root.FS(), ".", func(path string, d fs.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			if path == "." || d.IsDir() {
+				return nil
+			}
+			if d.Type()&os.ModeSymlink != 0 {
+				return nil
+			}
+			if path == swarmStackComposeFilename || path == swarmStackEnvFilename {
+				return nil
+			}
+			content, err := root.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			files = append(files, swarmtypes.SyncFile{
+				RelativePath: path,
+				Content:      content,
+			})
 			return nil
-		}
-		rel, err := filepath.Rel(stackSourceDir, path)
-		if err != nil {
-			return err
-		}
-		if rel == swarmStackComposeFilename || rel == swarmStackEnvFilename {
-			return nil
-		}
-		// #nosec G304 - stackSourceDir is a private, app-managed directory; path is bounded by WalkDir
-		content, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		files = append(files, swarmtypes.SyncFile{
-			RelativePath: rel,
-			Content:      content,
 		})
-		return nil
-	})
+	}
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, fmt.Errorf("failed to read additional swarm stack source files: %w", err)
 	}
