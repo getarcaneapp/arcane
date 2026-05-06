@@ -210,7 +210,7 @@
 	"prune_build_cache_label": "Construir caché",
 	"scheduled_prune_containers_label": "Limpiar contenedores",
 	"scheduled_prune_containers_description": "Elija si desea omitir, podar contenedores detenidos o podar contenedores más antiguos que un umbral.",
-	"scheduled_prune_images_label": "Prune Images",
+	"scheduled_prune_images_label": "Podar imágenes",
 	"scheduled_prune_images_description": "Elija si desea eliminar las imágenes colgantes, todas las imágenes no utilizadas o sólo las imágenes antiguas no utilizadas.",
 	"scheduled_prune_volumes_label": "Limpiar volúmenes",
 	"scheduled_prune_volumes_description": "Elija si desea eliminar sólo los volúmenes anónimos o todos los volúmenes no utilizados.",
