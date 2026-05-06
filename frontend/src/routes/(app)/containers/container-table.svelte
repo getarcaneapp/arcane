@@ -563,7 +563,7 @@
 							<div class="mt-1">
 								<ImageUpdateItem
 									updateInfo={item.updateInfo}
-									imageId={item.id}
+									imageId={item.imageId}
 									repo={imageRef.repo}
 									tag={imageRef.tag}
 									onUpdateContainer={() => handleUpdateContainer(item)}

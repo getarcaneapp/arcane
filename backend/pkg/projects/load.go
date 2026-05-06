@@ -239,7 +239,7 @@ func loadComposeProjectInternal(
 	project = project.WithoutUnnecessaryResources()
 
 	// Resolve relative paths for bind mounts, secrets, and configs
-	resolveRelativeProjectPaths(project, workdir)
+	ResolveRelativeProjectPaths(project, workdir)
 
 	// Translate container paths to host paths for Docker execution
 	if pathMapper != nil {
@@ -296,7 +296,7 @@ func LoadComposeProjectFromDir(ctx context.Context, dir, projectName, projectsDi
 	return proj, composeFile, nil
 }
 
-func resolveRelativeProjectPaths(project *composetypes.Project, workdir string) {
+func ResolveRelativeProjectPaths(project *composetypes.Project, workdir string) {
 	if project == nil || workdir == "" {
 		return
 	}

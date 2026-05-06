@@ -102,6 +102,56 @@ func TestSwarmService_UpdateAndGetStackSource_UsesStoredFilesWithoutSwarmManager
 	require.NoError(t, err)
 	require.Equal(t, updated.ComposeContent, source.ComposeContent)
 	require.Equal(t, updated.EnvContent, source.EnvContent)
+
+	// Test with additional files
+	updated, err = svc.UpdateStackSource(ctx, "0", "demo-stack", swarmtypes.StackSourceUpdateRequest{
+		ComposeContent: "services:\n  web:\n    image: nginx:alpine\n",
+		Files: []swarmtypes.SyncFile{
+			{RelativePath: "config/nginx.conf", Content: []byte("worker_processes 1;")},
+			{RelativePath: "scripts/setup.sh", Content: []byte("#!/bin/sh")},
+		},
+	})
+	require.NoError(t, err)
+	require.FileExists(t, filepath.Join(rootDir, "0", "demo-stack", "config", "nginx.conf"))
+	require.FileExists(t, filepath.Join(rootDir, "0", "demo-stack", "scripts", "setup.sh"))
+
+	source, err = svc.GetStackSource(ctx, "0", "demo-stack")
+	require.NoError(t, err)
+	require.Len(t, source.Files, 2)
+}
+
+func TestSwarmService_getPathMapperInternal(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	settingsSvc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	svc := NewSwarmService(nil, settingsSvc, nil, nil, nil)
+
+	t.Run("returns nil when paths match", func(t *testing.T) {
+		pm, err := svc.getPathMapperInternal(ctx)
+		require.NoError(t, err)
+		require.Nil(t, pm) // Default is /app/data/swarm/sources which matches itself
+	})
+
+	t.Run("returns mapper when mapping configured", func(t *testing.T) {
+		containerDir := filepath.Join(t.TempDir(), "container")
+		hostDir := "/host/path"
+		err := settingsSvc.UpdateSetting(ctx, "swarmStackSourcesDirectory", containerDir+":"+hostDir)
+		require.NoError(t, err)
+
+		pm, err := svc.getPathMapperInternal(ctx)
+		require.NoError(t, err)
+		require.NotNil(t, pm)
+		require.True(t, pm.IsNonMatchingMount())
+
+		testFile := filepath.Join(containerDir, "0/stack/compose.yaml")
+		expected := filepath.Join(hostDir, "0/stack/compose.yaml")
+
+		translated, err := pm.ContainerToHost(testFile)
+		require.NoError(t, err)
+		require.Equal(t, filepath.ToSlash(expected), filepath.ToSlash(translated))
+	})
 }
 
 func TestSwarmService_ScaleService_HandlesServiceModesInternal(t *testing.T) {

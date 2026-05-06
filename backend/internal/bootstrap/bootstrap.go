@@ -400,7 +400,7 @@ func prepareServerTLSInternal(ctx context.Context, cfg *config.Config) (bool, st
 	}
 
 	if edge.NormalizeEdgeMTLSMode(cfg.EdgeMTLSMode) != edge.EdgeMTLSModeDisabled {
-		if err := edge.ValidateManagerMTLSConfig(edgeCfg, useTLS); err != nil {
+		if err := edge.ValidateManagerMTLSConfig(edgeCfg); err != nil {
 			return false, "", "", nil, err
 		}
 	}

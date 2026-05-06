@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/getarcaneapp/arcane/backend/internal/config"
+	libcrypto "github.com/getarcaneapp/arcane/backend/pkg/libarcane/crypto"
 	tunnelpb "github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge/proto/tunnel/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -132,4 +133,30 @@ func TestPrepareServerTLSInternal_AgentModeSkipsManagerMTLSValidation(t *testing
 	assert.Empty(t, tlsKeyFile)
 	require.NotNil(t, edgeCfg)
 	assert.Equal(t, "required", edgeCfg.EdgeMTLSMode)
+}
+
+func TestPrepareServerTLSInternal_AllowsExternalMTLSTermination(t *testing.T) {
+	libcrypto.InitEncryption(&libcrypto.Config{
+		EncryptionKey: "test-encryption-key-for-edge-mtls-32bytes-min",
+		Environment:   "test",
+	})
+
+	assetsDir := t.TempDir()
+	cfg := &config.Config{
+		TLSEnabled:        false,
+		EdgeMTLSMode:      "required",
+		EdgeMTLSAssetsDir: assetsDir,
+		EncryptionKey:     "test-encryption-key-for-edge-mtls-32bytes-min",
+	}
+
+	useTLS, tlsCertFile, tlsKeyFile, edgeCfg, err := prepareServerTLSInternal(context.Background(), cfg)
+	require.NoError(t, err)
+	assert.False(t, useTLS)
+	assert.Empty(t, tlsCertFile)
+	assert.Empty(t, tlsKeyFile)
+	require.NotNil(t, edgeCfg)
+	assert.Equal(t, "required", edgeCfg.EdgeMTLSMode)
+	require.FileExists(t, edgeCfg.EdgeMTLSCAFile)
+	require.FileExists(t, assetsDir+"/ca.crt")
+	require.FileExists(t, assetsDir+"/ca.key")
 }

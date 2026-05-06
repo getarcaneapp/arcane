@@ -75,6 +75,34 @@ func TestTunnelServer_HandlePoll(t *testing.T) {
 	assert.Equal(t, EdgeTransportGRPC, resp.ActiveTransport)
 }
 
+func TestTunnelServer_HandlePoll_AcceptsTokenAfterProxyTerminatedMTLS(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	server := NewTunnelServerWithRegistry(NewTunnelRegistry(), func(ctx context.Context, token string) (string, error) {
+		if token != "valid-token" {
+			return "", errors.New("invalid token")
+		}
+		return "env-proxy-mtls", nil
+	}, nil)
+	server.SetConfig(&Config{
+		EdgeMTLSMode: EdgeMTLSModeRequired,
+		AppURL:       "https://manager.example.com",
+	})
+
+	router := gin.New()
+	router.POST("/api/tunnel/poll", server.HandlePoll)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/tunnel/poll", bytes.NewBufferString(`{"transport":"poll"}`))
+	req.Header.Set(HeaderAgentToken, "valid-token")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var resp TunnelPollResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	assert.Equal(t, TunnelStatusIdle, resp.Status)
+}
+
 func TestPollRuntimeRegistryGetExpiresStaleState(t *testing.T) {
 	r := NewPollRuntimeRegistry()
 	now := time.Now()
