@@ -32,10 +32,15 @@
 	const selectedLabel = $derived(options.find((o) => o.value === value)?.label ?? placeholder);
 </script>
 
-<div class="grid gap-2">
-	<Label for={id} class="text-sm leading-none font-medium">
-		{label}
-	</Label>
+<div class="space-y-2">
+	<div>
+		<Label for={id} class="text-sm font-medium">
+			{label}
+		</Label>
+		{#if description}
+			<p class="text-muted-foreground mt-0.5 text-xs">{description}</p>
+		{/if}
+	</div>
 
 	<Select.Root type="single" bind:value {name} {disabled} onValueChange={(v) => onValueChange?.(v)}>
 		<Select.Trigger class="w-full {error ? 'border-destructive' : ''}" {id}>
@@ -73,9 +78,6 @@
 	</Select.Root>
 
 	{#if error}
-		<p class="text-destructive text-[0.8rem] font-medium">{error}</p>
-	{/if}
-	{#if description}
-		<p class="text-muted-foreground text-[0.8rem]">{description}</p>
+		<p class="text-destructive text-xs font-medium">{error}</p>
 	{/if}
 </div>

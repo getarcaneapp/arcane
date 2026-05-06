@@ -121,7 +121,7 @@
 					<CustomizeIcon class="size-4 sm:size-5" />
 				</div>
 				<div class="min-w-0">
-					<h1 class="text-3xl font-bold tracking-tight">{m.customize_title()}</h1>
+					<h1 class="text-3xl font-semibold tracking-tight">{m.customize_title()}</h1>
 					<p class="text-muted-foreground mt-1 text-sm sm:text-base">{m.customize_subtitle()}</p>
 				</div>
 			</div>

@@ -248,7 +248,7 @@
 					containerClass="size-9 bg-transparent ring-0"
 				/>
 				<div class="min-w-0 flex-1">
-					<h1 class="text-xl font-bold break-words sm:text-2xl">{template.name}</h1>
+					<h1 class="text-xl font-semibold break-words sm:text-2xl">{template.name}</h1>
 					{#if template.description}
 						<p class="text-muted-foreground mt-1.5 text-sm break-words sm:text-base">{template.description}</p>
 					{/if}
@@ -394,7 +394,7 @@
 					<div class="min-w-0 flex-1">
 						<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{m.compose_services()}</div>
 						<div class="mt-1">
-							<div class="text-2xl font-bold">{services?.length ?? 0}</div>
+							<div class="text-2xl font-semibold">{services?.length ?? 0}</div>
 						</div>
 					</div>
 				</Card.Content>
@@ -410,7 +410,7 @@
 							{m.common_environment_variables()}
 						</div>
 						<div class="mt-1 flex flex-wrap items-baseline gap-2">
-							<div class="text-2xl font-bold">{envVars?.length ?? 0}</div>
+							<div class="text-2xl font-semibold">{envVars?.length ?? 0}</div>
 							{#if envVars?.length}
 								<div class="text-muted-foreground text-sm">{m.templates_configurable_settings()}</div>
 							{/if}

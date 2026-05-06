@@ -30,7 +30,7 @@
 	<div class={cn('flex items-center gap-1.5 px-1', className)}>
 		<Icon class={cn('size-3.5 opacity-80', iconColor)} />
 		<div class="flex items-baseline gap-1">
-			<span class="text-sm leading-none font-bold tabular-nums">
+			<span class="text-sm leading-none font-semibold tabular-nums">
 				{value}
 			</span>
 			<span class="text-muted-foreground text-[10px] leading-none font-medium tracking-wider whitespace-nowrap uppercase">
@@ -56,7 +56,7 @@
 				<p class="text-muted-foreground text-sm font-medium tracking-wide">
 					{title}
 				</p>
-				<h3 class="text-3xl font-bold tracking-tight tabular-nums">
+				<h3 class="text-3xl font-semibold tracking-tight tabular-nums">
 					{value}
 				</h3>
 				{#if subtitle}

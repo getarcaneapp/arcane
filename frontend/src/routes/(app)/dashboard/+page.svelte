@@ -445,7 +445,7 @@
 					<div class="relative flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
 						<div class="space-y-1.5">
 							<p class="text-muted-foreground text-[11px] font-semibold tracking-[0.14em] uppercase">{m.dashboard_title()}</p>
-							<h1 class="text-2xl font-bold tracking-tight sm:text-3xl">{currentEnvironmentName}</h1>
+							<h1 class="text-2xl font-semibold tracking-tight sm:text-3xl">{currentEnvironmentName}</h1>
 						</div>
 
 						<QuickActions

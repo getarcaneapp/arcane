@@ -87,13 +87,10 @@
 				onOpenChange?.(open);
 			}}
 		>
-			<Select.Trigger
-				{id}
-				class="text-foreground bg-popover/90 bubble bubble-pill bubble-shadow h-9 w-32 rounded-2xl border text-sm font-medium backdrop-blur-md"
-			>
+			<Select.Trigger {id} class="h-9 w-32 text-sm font-medium">
 				<span class="truncate">{locales[currentLocale]}</span>
 			</Select.Trigger>
-			<Select.Content class="bg-card/60 bubble-shadow max-w-70 min-w-40 rounded-xl backdrop-blur-sm">
+			<Select.Content class="max-w-70 min-w-40">
 				{#each Object.entries(locales) as [value, label] (value)}
 					<Select.Item class="text-sm" {value}>{label}</Select.Item>
 				{/each}
@@ -115,14 +112,10 @@
 						onOpenChange?.(open);
 					}}
 				>
-					<Select.Trigger
-						{id}
-						class="bg-popover/90 bubble bubble-pill bubble-shadow h-9 w-full justify-between rounded-2xl border backdrop-blur-md"
-						aria-label={m.common_select_locale()}
-					>
+					<Select.Trigger {id} class="w-full" aria-label={m.common_select_locale()}>
 						<span class="truncate">{locales[currentLocale]}</span>
 					</Select.Trigger>
-					<Select.Content class="bg-card/60 bubble-shadow rounded-xl backdrop-blur-sm">
+					<Select.Content>
 						{#each Object.entries(locales) as [value, label] (value)}
 							<Select.Item {value}>{label}</Select.Item>
 						{/each}

@@ -147,7 +147,7 @@
 		<div class="scrollbar-hide flex-1 overflow-y-auto px-6">
 			<div class="space-y-8">
 				<section>
-					<h4 class="text-muted-foreground/70 mb-4 px-3 text-[11px] font-bold tracking-widest uppercase">
+					<h4 class="text-muted-foreground/70 mb-4 px-3 text-[11px] font-semibold tracking-widest uppercase">
 						{m.sidebar_management()}
 					</h4>
 					<div class="space-y-2">
@@ -214,7 +214,7 @@
 				</section>
 
 				<section>
-					<h4 class="text-muted-foreground/70 mb-4 px-3 text-[11px] font-bold tracking-widest uppercase">
+					<h4 class="text-muted-foreground/70 mb-4 px-3 text-[11px] font-semibold tracking-widest uppercase">
 						{m.sidebar_resources()}
 					</h4>
 					<div class="space-y-2">
@@ -282,7 +282,7 @@
 
 				{#if swarmItems.length > 0}
 					<section>
-						<h4 class="text-muted-foreground/70 mb-4 px-3 text-[11px] font-bold tracking-widest uppercase">
+						<h4 class="text-muted-foreground/70 mb-4 px-3 text-[11px] font-semibold tracking-widest uppercase">
 							{m.swarm_title()}
 						</h4>
 						<div class="space-y-2">
@@ -311,7 +311,7 @@
 				{#if isAdmin}
 					{#if navigationItems.settingsItems}
 						<section>
-							<h4 class="text-muted-foreground/70 mb-4 px-3 text-[11px] font-bold tracking-widest uppercase">
+							<h4 class="text-muted-foreground/70 mb-4 px-3 text-[11px] font-semibold tracking-widest uppercase">
 								{m.sidebar_administration()}
 							</h4>
 							<div class="space-y-2">

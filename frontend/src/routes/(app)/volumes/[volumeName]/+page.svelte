@@ -85,7 +85,7 @@
 	<TabbedPageLayout backUrl="/volumes" backLabel={m.volumes_title()} {tabItems} {selectedTab} {onTabChange}>
 		{#snippet headerInfo()}
 			<div class="flex flex-col gap-1">
-				<h1 class="text-2xl font-bold tracking-tight break-all sm:text-3xl">{volume.name}</h1>
+				<h1 class="text-2xl font-semibold tracking-tight break-all sm:text-3xl">{volume.name}</h1>
 				<div class="flex flex-wrap items-center gap-2 pt-1">
 					{#if volume.inUse}
 						<StatusBadge variant="green" text={m.common_in_use()} />

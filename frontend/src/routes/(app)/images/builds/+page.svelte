@@ -1390,10 +1390,10 @@
 		{#snippet headerInfo()}
 			<div class="flex flex-col gap-1">
 				{#if mainTab === 'history'}
-					<h1 class="text-2xl font-bold tracking-tight">{m.builds()}</h1>
+					<h1 class="text-2xl font-semibold tracking-tight">{m.builds()}</h1>
 					<p class="text-muted-foreground text-sm">{m.build_output()}</p>
 				{:else}
-					<h1 class="text-2xl font-bold tracking-tight">{m.manual_build_workspace()}</h1>
+					<h1 class="text-2xl font-semibold tracking-tight">{m.manual_build_workspace()}</h1>
 					<p class="text-muted-foreground text-sm">{m.manual_build_workspace_subtitle()}</p>
 				{/if}
 			</div>

@@ -150,21 +150,21 @@
 			<div class="rounded-lg border p-3">
 				<div class="text-muted-foreground mb-1 text-[10px] tracking-tight uppercase">{m.common_cpus()}</div>
 				<div class="flex items-center gap-2">
-					<Badge variant="outline" class="text-sm font-bold">{info.NCPU ?? 0}</Badge>
+					<Badge variant="outline" class="text-sm font-semibold">{info.NCPU ?? 0}</Badge>
 					<span class="text-muted-foreground text-[10px]">cores</span>
 				</div>
 			</div>
 			<div class="rounded-lg border p-3">
 				<div class="text-muted-foreground mb-1 text-[10px] tracking-tight uppercase">{m.docker_info_memory_label()}</div>
-				<Badge variant="outline" class="text-sm font-bold">{info.MemTotal ? bytes.format(info.MemTotal) : '-'}</Badge>
+				<Badge variant="outline" class="text-sm font-semibold">{info.MemTotal ? bytes.format(info.MemTotal) : '-'}</Badge>
 			</div>
 			<div class="rounded-lg border p-3">
 				<div class="text-muted-foreground mb-1 text-[10px] tracking-tight uppercase">{m.docker_info_goroutines()}</div>
-				<Badge variant="outline" class="text-sm font-bold">{info.NGoroutines ?? 0}</Badge>
+				<Badge variant="outline" class="text-sm font-semibold">{info.NGoroutines ?? 0}</Badge>
 			</div>
 			<div class="rounded-lg border p-3">
 				<div class="text-muted-foreground mb-1 text-[10px] tracking-tight uppercase">{m.docker_info_file_descriptors()}</div>
-				<Badge variant="outline" class="text-sm font-bold">{info.NFd ?? 0}</Badge>
+				<Badge variant="outline" class="text-sm font-semibold">{info.NFd ?? 0}</Badge>
 			</div>
 		</div>
 	</div>
@@ -297,7 +297,7 @@
 	}}
 	<div class="rounded-lg border p-3 {colors[color].bg}">
 		<div class="text-muted-foreground mb-1 text-[10px] tracking-tight uppercase">{label}</div>
-		<Badge variant="outline" class="{colors[color].badge} rounded-md text-base font-bold tabular-nums">
+		<Badge variant="outline" class="{colors[color].badge} rounded-md text-base font-semibold tabular-nums">
 			{value}
 		</Badge>
 	</div>

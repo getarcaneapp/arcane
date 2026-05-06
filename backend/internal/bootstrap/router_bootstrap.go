@@ -36,7 +36,6 @@ var loggerSkipPatterns = []string{
 	"GET /img",
 	"GET /api/fonts/sans",
 	"GET /api/fonts/mono",
-	"GET /api/fonts/serif",
 	"GET /api/health",
 	"HEAD /api/health",
 }
