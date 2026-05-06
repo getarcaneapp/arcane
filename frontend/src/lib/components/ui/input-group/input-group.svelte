@@ -7,7 +7,6 @@
 
 <div
 	data-slot="input-group"
-	role="group"
 	class={cn(
 		'group/input-group bg-input/80 relative flex w-full items-center overflow-hidden rounded-lg border shadow-xs backdrop-blur-sm transition-all outline-none',
 		'h-9 has-[>textarea]:h-auto',

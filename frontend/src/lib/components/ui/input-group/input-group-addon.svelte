@@ -33,7 +33,6 @@
 </script>
 
 <div
-	role="group"
 	data-slot="input-group-addon"
 	data-align={align}
 	class={cn(inputGroupAddonVariants({ align }), className)}
