@@ -1,13 +1,15 @@
 <script lang="ts">
-	import { ProjectsIcon, StartIcon, StopIcon } from '$lib/icons';
+	import { BoxIcon, ProjectsIcon, StartIcon, StopIcon } from '$lib/icons';
 	import { toast } from 'svelte-sonner';
 	import ProjectsTable from './projects-table.svelte';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import { m } from '$lib/paraglide/messages';
 	import { projectService } from '$lib/services/project-service';
 	import { imageService } from '$lib/services/image-service';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { queryKeys } from '$lib/query/query-keys';
+	import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import type { ProjectStatusCounts } from '$lib/types/project.type';
 	import { untrack } from 'svelte';
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
@@ -15,14 +17,30 @@
 
 	let { data } = $props();
 
-	let projects = $state(untrack(() => data.projects));
-	let projectRequestOptions = $state(untrack(() => data.projectRequestOptions));
+	function withArchivedFilter(options: SearchPaginationSortRequest, show: boolean): SearchPaginationSortRequest {
+		const filters = { ...(options.filters ?? {}) };
+		if (show) {
+			filters.archived = 'true';
+		} else {
+			delete filters.archived;
+		}
+
+		return {
+			...options,
+			filters: Object.keys(filters).length > 0 ? filters : undefined
+		};
+	}
+
+	let baseProjectRequestOptions = $state(untrack(() => withArchivedFilter(data.projectRequestOptions, data.showArchived)));
 	let selectedIds = $state<string[]>([]);
 	const envId = $derived(environmentStore.selected?.id || '0');
+	const showArchived = $derived(page.url.searchParams.get('archived') === 'true');
+	const projectRequestOptions = $derived(withArchivedFilter(baseProjectRequestOptions, showArchived));
 	const countsFallback: ProjectStatusCounts = {
 		runningProjects: 0,
 		stoppedProjects: 0,
-		totalProjects: 0
+		totalProjects: 0,
+		archivedProjects: 0
 	};
 
 	const projectsQuery = createQuery(() => ({
@@ -31,6 +49,7 @@
 		initialData: data.projects,
 		refetchOnMount: false
 	}));
+	let projects = $derived(projectsQuery.data ?? untrack(() => data.projects));
 
 	const projectStatusCountsQuery = createQuery(() => ({
 		queryKey: queryKeys.projects.statusCounts(envId),
@@ -96,16 +115,11 @@
 		}
 	}));
 
-	$effect(() => {
-		if (projectsQuery.data) {
-			projects = projectsQuery.data;
-		}
-	});
-
 	const projectStatusCounts = $derived(projectStatusCountsQuery.data ?? countsFallback);
 	const totalCompose = $derived(projectStatusCounts.totalProjects);
 	const runningCompose = $derived(projectStatusCounts.runningProjects);
 	const stoppedCompose = $derived(projectStatusCounts.stoppedProjects);
+	const archivedCompose = $derived(projectStatusCounts.archivedProjects);
 	let isManualRefreshing = $state(false);
 	const isProjectsQueryRefreshing = $derived(projectsQuery.isFetching && !projectsQuery.isPending);
 	const isStatusCountsQueryRefreshing = $derived(projectStatusCountsQuery.isFetching && !projectStatusCountsQuery.isPending);
@@ -124,6 +138,16 @@
 		} finally {
 			isManualRefreshing = false;
 		}
+	}
+
+	async function toggleArchived(next: boolean) {
+		const url = new URL(page.url);
+		if (next) {
+			url.searchParams.set('archived', 'true');
+		} else {
+			url.searchParams.delete('archived');
+		}
+		await goto(`${url.pathname}${url.search}`, { keepFocus: true, replaceState: true, noScroll: true });
 	}
 
 	const actionButtons: ActionButton[] = $derived([
@@ -169,6 +193,12 @@
 			value: stoppedCompose,
 			icon: StopIcon,
 			iconColor: 'text-red-500'
+		},
+		{
+			title: m.projects_archived_count(),
+			value: archivedCompose,
+			icon: BoxIcon,
+			iconColor: 'text-muted-foreground'
 		}
 	]);
 </script>
@@ -176,11 +206,13 @@
 <ResourcePageLayout title={m.projects_title()} subtitle={m.compose_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
 		<ProjectsTable
-			bind:projects
+			{projects}
 			bind:selectedIds
-			bind:requestOptions={projectRequestOptions}
+			requestOptions={projectRequestOptions}
+			{showArchived}
+			onToggleArchived={toggleArchived}
 			onRefreshData={async (options) => {
-				projectRequestOptions = options;
+				baseProjectRequestOptions = withArchivedFilter(options, showArchived);
 				await Promise.all([projectsQuery.refetch(), projectStatusCountsQuery.refetch()]);
 			}}
 		/>

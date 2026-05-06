@@ -13,6 +13,7 @@ type BulkLoadingState = {
 	up: boolean;
 	down: boolean;
 	redeploy: boolean;
+	archive: boolean;
 };
 
 type ActionDeps = {
@@ -24,7 +25,7 @@ type ActionDeps = {
 	getEnvId: () => string | undefined;
 };
 
-type ProjectActionKind = 'start' | 'stop' | 'restart' | 'redeploy';
+type ProjectActionKind = 'start' | 'stop' | 'restart' | 'redeploy' | 'archive' | 'unarchive';
 
 type ProjectActionConfig = {
 	status: ActionStatus;
@@ -61,6 +62,7 @@ type ProjectActions = {
 	handleBulkUp: (ids: string[]) => Promise<void>;
 	handleBulkDown: (ids: string[]) => Promise<void>;
 	handleBulkRedeploy: (ids: string[]) => Promise<void>;
+	handleBulkArchive: (ids: string[]) => Promise<void>;
 };
 
 const projectActionConfigs: Record<ProjectActionKind, ProjectActionConfig> = {
@@ -87,6 +89,18 @@ const projectActionConfigs: Record<ProjectActionKind, ProjectActionConfig> = {
 		run: (id) => projectService.redeployProject(id),
 		success: () => m.compose_pull_success(),
 		failure: () => m.compose_pull_failed()
+	},
+	archive: {
+		status: 'archiving',
+		run: (id) => projectService.archiveProject(id),
+		success: () => m.compose_archive_success(),
+		failure: () => m.compose_archive_failed()
+	},
+	unarchive: {
+		status: 'unarchiving',
+		run: (id) => projectService.unarchiveProject(id),
+		success: () => m.compose_unarchive_success(),
+		failure: () => m.compose_unarchive_failed()
 	}
 };
 
@@ -255,12 +269,26 @@ export function createProjectActions({
 		});
 	}
 
+	async function handleBulkArchive(ids: string[]): Promise<void> {
+		await runBulkAction(ids, {
+			title: (count) => m.projects_bulk_archive_confirm_title({ count }),
+			message: (count) => m.projects_bulk_archive_confirm_message({ count }),
+			label: m.projects_archive(),
+			loadingKey: 'archive',
+			run: (id) => projectService.archiveProject(id),
+			success: (count) => m.projects_bulk_archive_success({ count }),
+			partial: (success, total, failed) => m.projects_bulk_archive_partial({ success, total, failed }),
+			failure: () => m.compose_archive_failed()
+		});
+	}
+
 	return {
 		performProjectAction,
 		handleDestroyProject,
 		handleSyncFromGit,
 		handleBulkUp,
 		handleBulkDown,
-		handleBulkRedeploy
+		handleBulkRedeploy,
+		handleBulkArchive
 	};
 }

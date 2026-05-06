@@ -1106,6 +1106,9 @@ func (s *UpdaterService) collectUsedImagesFromProjects(ctx context.Context, out 
 func activeComposeProjectNameSetInternal(projects []models.Project) map[string]struct{} {
 	active := make(map[string]struct{})
 	for _, p := range projects {
+		if p.IsArchived {
+			continue
+		}
 		// consider running and partially running projects
 		if p.Status != models.ProjectStatusRunning && p.Status != models.ProjectStatusPartiallyRunning {
 			continue

@@ -790,6 +790,34 @@ func (e *ProjectRestartError) Error() string {
 	return fmt.Sprintf("Failed to restart project: %v", e.Err)
 }
 
+type ProjectArchiveError struct {
+	Err error
+}
+
+func (e *ProjectArchiveError) Error() string {
+	return fmt.Sprintf("Failed to archive project: %v", e.Err)
+}
+
+type ProjectUnarchiveError struct {
+	Err error
+}
+
+func (e *ProjectUnarchiveError) Error() string {
+	return fmt.Sprintf("Failed to unarchive project: %v", e.Err)
+}
+
+type ProjectMustBeStoppedError struct{}
+
+func (e *ProjectMustBeStoppedError) Error() string {
+	return "project must be stopped before archiving"
+}
+
+type ProjectArchivedError struct{}
+
+func (e *ProjectArchivedError) Error() string {
+	return "project is archived and must be unarchived before this action"
+}
+
 type ProjectStatusCountsError struct {
 	Err error
 }

@@ -5,7 +5,7 @@
 	import * as Card from '$lib/components/ui/card';
 	import * as Alert from '$lib/components/ui/alert/index.js';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { ArrowLeftIcon, ProjectsIcon, LayersIcon, SettingsIcon, FileTextIcon, AlertIcon, GlobeIcon } from '$lib/icons';
+	import { ArrowLeftIcon, BoxIcon, ProjectsIcon, LayersIcon, SettingsIcon, FileTextIcon, AlertIcon, GlobeIcon } from '$lib/icons';
 	import { type TabItem } from '$lib/components/tab-bar/index.js';
 	import TabbedPageLayout from '$lib/layouts/tabbed-page-layout.svelte';
 	import ActionButtons from '$lib/components/action-buttons.svelte';
@@ -56,7 +56,8 @@
 		destroying: false,
 		pulling: false,
 		saving: false,
-		syncing: false
+		syncing: false,
+		archiving: false
 	});
 
 	const envId = $derived(environmentStore.selected?.id || '0');
@@ -132,11 +133,24 @@
 	let isGitOpsManaged = $derived(!!project?.gitOpsManagedBy);
 	let hasBuildDirective = $derived(!!project?.hasBuildDirective);
 	let canEditName = $derived(
-		!isGitOpsManaged && !isLoading.saving && project?.status !== 'running' && project?.status !== 'partially running'
+		!project?.isArchived &&
+			!isGitOpsManaged &&
+			!isLoading.saving &&
+			project?.status !== 'running' &&
+			project?.status !== 'partially running'
 	);
-	let canEditCompose = $derived(!isGitOpsManaged);
-	let canEditEnv = true;
+	let canEditCompose = $derived(!project?.isArchived && !isGitOpsManaged);
+	let canEditEnv = $derived(!project?.isArchived);
 	let composeFileName = $derived(project?.composeFileName || 'compose.yaml');
+	let archiveRequiresStopped = $derived(
+		!!project &&
+			!project.isArchived &&
+			(Number(project.runningCount) > 0 ||
+				project.status === 'running' ||
+				project.status === 'partially running' ||
+				project.status === 'deploying' ||
+				project.status === 'restarting')
+	);
 
 	let autoScrollStackLogs = $state(true);
 
@@ -188,7 +202,7 @@
 			)
 	);
 
-	let canSave = $derived(hasChanges && !hasAnyErrors);
+	let canSave = $derived(!project?.isArchived && hasChanges && !hasAnyErrors);
 
 	const tabItems = $derived<TabItem[]>([
 		{
@@ -355,6 +369,10 @@
 
 	async function handleSaveChanges() {
 		if (!project || !hasChanges) return;
+		if (project.isArchived) {
+			toast.error(m.projects_archive_edit_blocked());
+			return;
+		}
 		if (hasAnyErrors) {
 			toast.error(m.templates_validation_error());
 			return;
@@ -409,10 +427,42 @@
 	}
 
 	function saveNameIfChanged() {
+		if (project?.isArchived) return;
 		if ($inputs.name.value === serverName) return;
 		const validated = form.validate();
 		if (!validated) return;
 		handleSaveChanges();
+	}
+
+	async function handleArchiveToggle() {
+		if (!project) return;
+		const archiving = !project.isArchived;
+		if (archiving && archiveRequiresStopped) {
+			toast.error(m.projects_archive_requires_stopped());
+			return;
+		}
+
+		isLoading.archiving = true;
+		try {
+			const result = await tryCatch(
+				archiving ? projectService.archiveProject(project.id) : projectService.unarchiveProject(project.id)
+			);
+			await handleApiResultWithCallbacks({
+				result,
+				message: archiving ? m.compose_archive_failed() : m.compose_unarchive_failed(),
+				onSuccess: async () => {
+					toast.success(archiving ? m.compose_archive_success() : m.compose_unarchive_success());
+					await refreshProjectDetails();
+					const currentEnvId = envId ?? (await environmentStore.getCurrentEnvironmentId());
+					await Promise.all([
+						queryClient.invalidateQueries({ queryKey: ['projects', currentEnvId] }),
+						queryClient.invalidateQueries({ queryKey: queryKeys.projects.statusCounts(currentEnvId) })
+					]);
+				}
+			});
+		} finally {
+			isLoading.archiving = false;
+		}
 	}
 
 	function persistPrefs() {
@@ -632,10 +682,14 @@
 								tooltip={showTooltip ? project.statusReason : undefined}
 							/>
 						{/if}
+						{#if project.isArchived}
+							<StatusBadge variant="gray" text={m.projects_archived_badge()} />
+						{/if}
 						<ProjectUpdateItem
 							updateInfo={project.updateInfo}
 							onCheck={handleCheckProjectUpdates}
 							checking={checkProjectUpdatesMutation.isPending}
+							disabled={!!project.isArchived}
 						/>
 						{#if project.urls && project.urls.length > 0}
 							<div class="flex min-w-0 flex-wrap items-center gap-2">
@@ -706,6 +760,28 @@
 						class="xl:hidden"
 					/>
 				{/if}
+				<ArcaneButton
+					action="base"
+					icon={BoxIcon}
+					loading={isLoading.archiving}
+					onclick={handleArchiveToggle}
+					disabled={archiveRequiresStopped}
+					title={archiveRequiresStopped ? m.projects_archive_requires_stopped() : undefined}
+					customLabel={project.isArchived ? m.projects_unarchive() : m.projects_archive()}
+					class="hidden xl:inline-flex"
+				/>
+				<ArcaneButton
+					action="base"
+					icon={BoxIcon}
+					size="icon"
+					showLabel={false}
+					loading={isLoading.archiving}
+					onclick={handleArchiveToggle}
+					disabled={archiveRequiresStopped}
+					title={archiveRequiresStopped ? m.projects_archive_requires_stopped() : undefined}
+					customLabel={project.isArchived ? m.projects_unarchive() : m.projects_archive()}
+					class="xl:hidden"
+				/>
 				<ActionButtons
 					id={project.id}
 					name={project.name}

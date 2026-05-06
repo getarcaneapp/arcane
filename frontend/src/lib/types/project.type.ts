@@ -81,6 +81,8 @@ export interface Project {
 	statusReason?: string;
 	updatedAt: string;
 	createdAt: string;
+	isArchived?: boolean;
+	archivedAt?: string;
 	gitOpsManagedBy?: string;
 	lastSyncCommit?: string;
 	gitRepositoryURL?: string;
@@ -100,4 +102,5 @@ export interface ProjectStatusCounts {
 	runningProjects: number;
 	stoppedProjects: number;
 	totalProjects: number;
+	archivedProjects: number;
 }

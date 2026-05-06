@@ -3,7 +3,7 @@
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import { EditIcon, StartIcon, RestartIcon, StopIcon, TrashIcon, RedeployIcon, EllipsisIcon } from '$lib/icons';
+	import { BoxIcon, EditIcon, StartIcon, RestartIcon, StopIcon, TrashIcon, RedeployIcon, EllipsisIcon } from '$lib/icons';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
@@ -23,6 +23,8 @@
 	import type { ActionStatus } from './projects-table.helpers';
 	import { createProjectActions } from './projects-table.actions';
 	import ProjectUpdateItem from '$lib/components/project-update-item.svelte';
+	import { Label } from '$lib/components/ui/label';
+	import { Switch } from '$lib/components/ui/switch/index.js';
 	import {
 		getProjectUpdateStatus,
 		getProjectUpdateText,
@@ -35,12 +37,16 @@
 		selectedIds = $bindable(),
 		requestOptions = $bindable(),
 		withoutFilters = false,
+		showArchived = false,
+		onToggleArchived,
 		onRefreshData
 	}: {
 		projects: Paginated<Project>;
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
 		withoutFilters?: boolean;
+		showArchived?: boolean;
+		onToggleArchived?: (checked: boolean) => void | Promise<void>;
 		onRefreshData?: (options: SearchPaginationSortRequest) => Promise<void>;
 	} = $props();
 
@@ -50,7 +56,8 @@
 	let isBulkLoading = $state({
 		up: false,
 		down: false,
-		redeploy: false
+		redeploy: false,
+		archive: false
 	});
 
 	async function refreshProjects(options: SearchPaginationSortRequest = requestOptions) {
@@ -101,23 +108,38 @@
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 	const envId = $derived(environmentStore.selected?.id);
 
-	const { performProjectAction, handleDestroyProject, handleSyncFromGit, handleBulkUp, handleBulkDown, handleBulkRedeploy } =
-		createProjectActions({
-			getRequestOptions: () => requestOptions,
-			refreshProjects,
-			setSelectedIds: (next) => {
-				selectedIds = next;
-			},
-			actionStatus,
-			isBulkLoading,
-			getEnvId: () => envId
-		});
+	const {
+		performProjectAction,
+		handleDestroyProject,
+		handleSyncFromGit,
+		handleBulkUp,
+		handleBulkDown,
+		handleBulkRedeploy,
+		handleBulkArchive
+	} = createProjectActions({
+		getRequestOptions: () => requestOptions,
+		refreshProjects,
+		setSelectedIds: (next) => {
+			selectedIds = next;
+		},
+		actionStatus,
+		isBulkLoading,
+		getEnvId: () => envId
+	});
 
 	const isAnyLoading = $derived(
 		Object.values(actionStatus).some((status) => status !== '') || Object.values(isBulkLoading).some((loading) => loading)
 	);
 	const selectedProjects = $derived.by(() => (projects?.data ?? []).filter((project) => selectedIds?.includes(project.id)));
 	const hasRedeployDisabledSelection = $derived.by(() => selectedProjects.some((project) => project.redeployDisabled));
+	const hasArchivedSelection = $derived.by(() => selectedProjects.some((project) => project.isArchived));
+	const isProjectArchiveBlocked = (project: Project) =>
+		Number(project.runningCount) > 0 ||
+		project.status === 'running' ||
+		project.status === 'partially running' ||
+		project.status === 'deploying' ||
+		project.status === 'restarting';
+	const hasRunningSelection = $derived.by(() => selectedProjects.some((project) => isProjectArchiveBlocked(project)));
 
 	const columns = [
 		{ accessorKey: 'id', title: m.common_id(), hidden: true },
@@ -153,7 +175,8 @@
 			action: 'up',
 			onClick: handleBulkUp,
 			loading: isBulkLoading.up,
-			disabled: isAnyLoading,
+			disabled: isAnyLoading || hasArchivedSelection,
+			disabledReason: hasArchivedSelection ? m.projects_archived_badge() : undefined,
 			icon: StartIcon
 		},
 		{
@@ -162,7 +185,8 @@
 			action: 'down',
 			onClick: handleBulkDown,
 			loading: isBulkLoading.down,
-			disabled: isAnyLoading,
+			disabled: isAnyLoading || hasArchivedSelection,
+			disabledReason: hasArchivedSelection ? m.projects_archived_badge() : undefined,
 			icon: StopIcon
 		},
 		{
@@ -171,9 +195,27 @@
 			action: 'redeploy',
 			onClick: handleBulkRedeploy,
 			loading: isBulkLoading.redeploy,
-			disabled: isAnyLoading || hasRedeployDisabledSelection,
-			disabledReason: hasRedeployDisabledSelection ? m.common_redeploy_disabled_arcane_self() : undefined,
+			disabled: isAnyLoading || hasRedeployDisabledSelection || hasArchivedSelection,
+			disabledReason: hasArchivedSelection
+				? m.projects_archived_badge()
+				: hasRedeployDisabledSelection
+					? m.common_redeploy_disabled_arcane_self()
+					: undefined,
 			icon: RedeployIcon
+		},
+		{
+			id: 'archive',
+			label: m.projects_bulk_archive({ count: selectedIds?.length ?? 0 }),
+			action: 'base',
+			onClick: handleBulkArchive,
+			loading: isBulkLoading.archive,
+			disabled: isAnyLoading || hasArchivedSelection || hasRunningSelection,
+			disabledReason: hasRunningSelection
+				? m.projects_archive_requires_stopped()
+				: hasArchivedSelection
+					? m.projects_archived_badge()
+					: undefined,
+			icon: BoxIcon
 		}
 	]);
 </script>
@@ -182,6 +224,9 @@
 	<div class="flex items-center gap-2">
 		<IconImage src={item.iconUrl} alt={item.name} fallback={FolderOpenIcon} class="size-8" containerClass="size-10" />
 		<a class="font-medium hover:underline" href="/projects/{item.id}">{item.name}</a>
+		{#if item.isArchived}
+			<span class="bg-muted text-muted-foreground rounded px-1.5 py-0.5 text-xs font-medium">{m.projects_archived_badge()}</span>
+		{/if}
 	</div>
 {/snippet}
 
@@ -224,6 +269,7 @@
 		updateInfo={item.updateInfo}
 		onCheck={() => handleCheckProjectUpdates(item)}
 		checking={!!checkingProjectIds[item.id]}
+		disabled={!!item.isArchived}
 		class="mr-2"
 	/>
 {/snippet}
@@ -256,6 +302,13 @@
 							variant: getStatusVariant(item.status),
 							text: capitalizeFirstLetter(item.status),
 							tooltip: getStatusTooltip(item)
+						}
+					: null,
+			(item: Project) =>
+				item.isArchived
+					? {
+							variant: 'gray' as const,
+							text: m.projects_archived_badge()
 						}
 					: null,
 			(item: Project) =>
@@ -345,7 +398,8 @@
 				{#if item.status !== 'running'}
 					<DropdownMenu.Item
 						onclick={() => performProjectAction('start', item.id)}
-						disabled={status === 'starting' || isAnyLoading}
+						disabled={item.isArchived || status === 'starting' || isAnyLoading}
+						title={item.isArchived ? m.projects_archived_badge() : undefined}
 					>
 						{#if status === 'starting'}
 							<Spinner class="size-4" />
@@ -357,7 +411,8 @@
 				{:else}
 					<DropdownMenu.Item
 						onclick={() => performProjectAction('stop', item.id)}
-						disabled={status === 'stopping' || isAnyLoading}
+						disabled={item.isArchived || status === 'stopping' || isAnyLoading}
+						title={item.isArchived ? m.projects_archived_badge() : undefined}
 					>
 						{#if status === 'stopping'}
 							<Spinner class="size-4" />
@@ -369,7 +424,8 @@
 
 					<DropdownMenu.Item
 						onclick={() => performProjectAction('restart', item.id)}
-						disabled={status === 'restarting' || isAnyLoading}
+						disabled={item.isArchived || status === 'restarting' || isAnyLoading}
+						title={item.isArchived ? m.projects_archived_badge() : undefined}
 					>
 						{#if status === 'restarting'}
 							<Spinner class="size-4" />
@@ -388,7 +444,8 @@
 				{:else}
 					<DropdownMenu.Item
 						onclick={() => performProjectAction('redeploy', item.id)}
-						disabled={status === 'redeploying' || isAnyLoading}
+						disabled={item.isArchived || status === 'redeploying' || isAnyLoading}
+						title={item.isArchived ? m.projects_archived_badge() : undefined}
 					>
 						{#if status === 'redeploying'}
 							<Spinner class="size-4" />
@@ -400,6 +457,33 @@
 				{/if}
 
 				<DropdownMenu.Separator />
+
+				{#if item.isArchived}
+					<DropdownMenu.Item
+						onclick={() => performProjectAction('unarchive', item.id)}
+						disabled={status === 'unarchiving' || isAnyLoading}
+					>
+						{#if status === 'unarchiving'}
+							<Spinner class="size-4" />
+						{:else}
+							<BoxIcon class="size-4" />
+						{/if}
+						{m.projects_unarchive()}
+					</DropdownMenu.Item>
+				{:else}
+					<DropdownMenu.Item
+						onclick={() => performProjectAction('archive', item.id)}
+						disabled={isProjectArchiveBlocked(item) || status === 'archiving' || isAnyLoading}
+						title={isProjectArchiveBlocked(item) ? m.projects_archive_requires_stopped() : undefined}
+					>
+						{#if status === 'archiving'}
+							<Spinner class="size-4" />
+						{:else}
+							<BoxIcon class="size-4" />
+						{/if}
+						{m.projects_archive()}
+					</DropdownMenu.Item>
+				{/if}
 
 				<DropdownMenu.Item
 					variant="destructive"
@@ -418,6 +502,21 @@
 	</DropdownMenu.Root>
 {/snippet}
 
+{#snippet ArchivedToolbarAction()}
+	<div class="flex items-center gap-2 px-1">
+		<Switch
+			id="projects-show-archived"
+			checked={showArchived}
+			onCheckedChange={(checked) => {
+				void onToggleArchived?.(checked === true);
+			}}
+		/>
+		<Label for="projects-show-archived" class="text-muted-foreground mb-0 text-sm font-medium">
+			{m.projects_show_archived()}
+		</Label>
+	</div>
+{/snippet}
+
 <ArcaneTable
 	persistKey="arcane-project-table"
 	items={projects}
@@ -433,6 +532,7 @@
 	{columns}
 	{mobileFields}
 	{bulkActions}
+	customToolbarActions={ArchivedToolbarAction}
 	rowActions={RowActions}
 	mobileCard={ProjectMobileCardSnippet}
 />

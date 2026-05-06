@@ -205,11 +205,27 @@ async function destroyProjectByNameViaUI(page: Page, projectName: string) {
 	});
 }
 
+async function destroyProjectByIdViaAPI(page: Page, projectId: string) {
+	if (!projectId || page.isClosed()) {
+		return;
+	}
+
+	await page.request
+		.delete(`/api/environments/0/projects/${encodeURIComponent(projectId)}/destroy`, {
+			data: {
+				removeVolumes: false,
+				removeFiles: true
+			}
+		})
+		.catch(() => undefined);
+}
+
 let realProjects: Project[] = [];
 let projectCounts: ProjectStatusCounts = {
 	runningProjects: 0,
 	stoppedProjects: 0,
-	totalProjects: 0
+	totalProjects: 0,
+	archivedProjects: 0
 };
 
 test.beforeEach(async ({ page }) => {
@@ -245,6 +261,11 @@ test.describe('Projects Page', () => {
 				exact: true
 			})
 		).toBeVisible();
+		await expect(
+			page.getByText(`${projectCounts.archivedProjects} Archived Projects`, {
+				exact: true
+			})
+		).toBeVisible();
 	});
 
 	test('should display projects list', async ({ page }) => {
@@ -274,7 +295,50 @@ test.describe('Projects Page', () => {
 			(await upItem.count()) > 0 || (await downItem.count()) > 0 || (await restartItem.count()) > 0;
 		expect(hasStateAction).toBe(true);
 		await expect(menu.getByRole('menuitem', { name: 'Pull & Redeploy' })).toBeVisible();
+		await expect(menu.getByRole('menuitem', { name: 'Archive' })).toBeVisible();
 		await expect(menu.getByRole('menuitem', { name: 'Destroy' })).toBeVisible();
+	});
+
+	test('should archive and unarchive a stopped project from the projects page', async ({
+		page
+	}) => {
+		const projectName = `test-project-archive-${Date.now()}`;
+		let projectId = '';
+
+		try {
+			projectId = await createProjectViaUI(page, projectName);
+
+			await page.getByRole('button', { name: 'Archive', exact: true }).click();
+			await expect(page.getByText('Project archived successfully.')).toBeVisible({
+				timeout: 10000
+			});
+
+			await page.goto(ROUTES.page);
+			await page.waitForLoadState('networkidle');
+			await expect(page.locator('tbody tr').filter({ hasText: projectName })).toHaveCount(0);
+
+			await page.getByLabel('Show archived').check();
+			await expect(page).toHaveURL(/archived=true/);
+			const row = page.locator('tbody tr').filter({ hasText: projectName }).first();
+			await expect(row).toBeVisible();
+			await expect(row.getByText('Archived', { exact: true })).toBeVisible();
+
+			const menu = await openDropdownMenu(page, row.getByRole('button', { name: 'Open menu' }));
+			await menu.getByRole('menuitem', { name: 'Unarchive', exact: true }).click();
+			await expect(page.getByText('Project unarchived successfully.')).toBeVisible({
+				timeout: 10000
+			});
+			await expect(row).toHaveCount(0, { timeout: 10000 });
+		} finally {
+			if (projectId) {
+				await page.request
+					.post(`/api/environments/0/projects/${projectId}/unarchive`)
+					.catch(() => undefined);
+				await destroyProjectByIdViaAPI(page, projectId);
+			} else {
+				await destroyProjectByNameViaUI(page, projectName);
+			}
+		}
 	});
 
 	test('should navigate to project details when project name is clicked', async ({ page }) => {
