@@ -5,7 +5,7 @@ import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 import Icons from 'unplugin-icons/vite';
 
-const devBackendURL = process.env['DEV_BACKEND_URL'] || 'https://localhost:3552';
+const devBackendURL = process.env['DEV_BACKEND_URL'] || 'http://localhost:3552';
 const parsedDevBackendURL = new URL(devBackendURL);
 
 function parseBooleanEnv(value: string | undefined): boolean | undefined {

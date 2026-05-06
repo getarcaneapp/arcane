@@ -748,6 +748,10 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 			return nil, false, false, false, false, false, nil, fmt.Errorf("invalid cron expression for %s: %w", key, err)
 		}
 
+		if key == "accentColor" && value != "" && value != "default" && !settings.SafeAccentColor.MatchString(value) {
+			return nil, false, false, false, false, false, nil, fmt.Errorf("invalid accentColor value")
+		}
+
 		var valueToSave string
 		var err error
 

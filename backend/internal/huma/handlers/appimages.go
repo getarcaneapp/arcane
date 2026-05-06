@@ -28,9 +28,10 @@ type GetPWAIconInput struct {
 }
 
 type GetAppImageOutput struct {
-	ContentType  string `header:"Content-Type"`
-	CacheControl string `header:"Cache-Control"`
-	Body         []byte
+	ContentType         string `header:"Content-Type"`
+	CacheControl        string `header:"Cache-Control"`
+	XContentTypeOptions string `header:"X-Content-Type-Options"`
+	Body                []byte
 }
 
 var allowedPWAIconFilenames = map[string]struct{}{
@@ -178,8 +179,9 @@ func (h *AppImagesHandler) getImageWithColor(name string, colorOverride string) 
 	}
 
 	return &GetAppImageOutput{
-		ContentType:  mimeType,
-		CacheControl: cacheControl,
-		Body:         imageData,
+		ContentType:         mimeType,
+		CacheControl:        cacheControl,
+		XContentTypeOptions: "nosniff",
+		Body:                imageData,
 	}, nil
 }
