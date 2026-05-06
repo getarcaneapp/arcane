@@ -1,5 +1,7 @@
 package models
 
+import "time"
+
 type ProjectStatus string
 
 const (
@@ -22,6 +24,8 @@ type Project struct {
 	RunningCount       int           `json:"running_count" sortable:"true"`
 	GitOpsManagedBy    *string       `json:"gitops_managed_by,omitempty" gorm:"column:gitops_managed_by"`
 	ComposeProjectName *string       `json:"compose_project_name,omitempty" gorm:"column:compose_project_name"`
+	IsArchived         bool          `json:"is_archived" gorm:"column:is_archived;default:false;index"`
+	ArchivedAt         *time.Time    `json:"archived_at,omitempty" gorm:"column:archived_at"`
 
 	BaseModel
 }

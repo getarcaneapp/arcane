@@ -35,56 +35,46 @@
 
 	let { provider, values = $bindable(), disabled = false, isTesting = false, onTest }: Props = $props();
 
-	const providerMeta: Record<NotificationProviderKey, { title: string; description: string; enabledLabel: string }> = {
+	const providerMeta: Record<NotificationProviderKey, { title: string; description: string }> = {
 		discord: {
-			title: 'Discord',
-			description: m.notifications_discord_description(),
-			enabledLabel: m.notifications_discord_enabled_label()
+			title: m.notifications_discord_title(),
+			description: m.notifications_discord_description()
 		},
 		email: {
-			title: 'Email',
-			description: m.notifications_email_description(),
-			enabledLabel: m.notifications_email_enabled_label()
+			title: m.notifications_email_title(),
+			description: m.notifications_email_description()
 		},
 		telegram: {
-			title: 'Telegram',
-			description: 'Send notifications via Telegram bot',
-			enabledLabel: 'Enable Telegram Notifications'
+			title: m.notifications_telegram_title(),
+			description: m.notifications_telegram_description()
 		},
 		signal: {
 			title: m.notifications_signal_title(),
-			description: m.notifications_signal_description(),
-			enabledLabel: m.notifications_signal_enabled_label()
+			description: m.notifications_signal_description()
 		},
 		slack: {
 			title: m.notifications_slack_title(),
-			description: m.notifications_slack_description(),
-			enabledLabel: m.notifications_slack_enabled_label()
+			description: m.notifications_slack_description()
 		},
 		ntfy: {
-			title: 'Ntfy',
-			description: m.notifications_ntfy_description(),
-			enabledLabel: m.notifications_ntfy_enabled_label()
+			title: m.notifications_ntfy_title(),
+			description: m.notifications_ntfy_description()
 		},
 		pushover: {
-			title: 'Pushover',
-			description: m.notifications_pushover_description(),
-			enabledLabel: m.notifications_pushover_enabled_label()
+			title: m.notifications_pushover_title(),
+			description: m.notifications_pushover_description()
 		},
 		gotify: {
-			title: 'Gotify',
-			description: m.notifications_gotify_description(),
-			enabledLabel: m.notifications_gotify_enabled_label()
+			title: m.notifications_gotify_title(),
+			description: m.notifications_gotify_description()
 		},
 		matrix: {
-			title: 'Matrix',
-			description: m.notifications_matrix_description(),
-			enabledLabel: m.notifications_matrix_enabled_label()
+			title: m.notifications_matrix_title(),
+			description: m.notifications_matrix_description()
 		},
 		generic: {
 			title: m.notifications_generic_title(),
-			description: m.notifications_generic_description(),
-			enabledLabel: m.notifications_generic_enabled_label()
+			description: m.notifications_generic_description()
 		}
 	};
 
@@ -1096,7 +1086,6 @@
 	id={provider}
 	title={selectedMeta.title}
 	description={selectedMeta.description}
-	enabledLabel={selectedMeta.enabledLabel}
 	bind:enabled={values.enabled}
 	{disabled}
 >

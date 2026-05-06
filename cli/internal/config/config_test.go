@@ -58,6 +58,7 @@ func TestSaveAndLoadRoundTripPaginationCompatibility(t *testing.T) {
 
 	cfg := DefaultConfig()
 	cfg.APIKey = "k_test"
+	cfg.CLIUpdateChannel = "next"
 	cfg.SetDefaultLimit(42)
 	cfg.SetResourceLimit("images", 17)
 	cfg.SetResourceLimit("Containers", 9)
@@ -80,6 +81,9 @@ func TestSaveAndLoadRoundTripPaginationCompatibility(t *testing.T) {
 	if !strings.Contains(text, "resource_limits:") {
 		t.Fatalf("expected saved YAML to include legacy resource_limits key:\n%s", text)
 	}
+	if !strings.Contains(text, "cli_update_channel: next") {
+		t.Fatalf("expected saved YAML to include cli_update_channel key:\n%s", text)
+	}
 
 	info, err := os.Stat(path)
 	if err != nil {
@@ -101,6 +105,9 @@ func TestSaveAndLoadRoundTripPaginationCompatibility(t *testing.T) {
 	}
 	if got := loaded.LimitFor("containers"); got != 9 {
 		t.Fatalf("containers limit=%d, want 9", got)
+	}
+	if loaded.CLIUpdateChannel != "next" {
+		t.Fatalf("CLIUpdateChannel=%q, want next", loaded.CLIUpdateChannel)
 	}
 }
 

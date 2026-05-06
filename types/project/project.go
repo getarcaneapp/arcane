@@ -254,6 +254,16 @@ type CreateReponse struct {
 	// Required: false
 	GitOpsManagedBy *string `json:"gitOpsManagedBy,omitempty"`
 
+	// IsArchived indicates whether the project is hidden from the default project list.
+	//
+	// Required: true
+	IsArchived bool `json:"isArchived"`
+
+	// ArchivedAt is the date and time when the project was archived.
+	//
+	// Required: false
+	ArchivedAt *time.Time `json:"archivedAt,omitempty"`
+
 	// CreatedAt is the date and time when the project was created.
 	//
 	// Required: true
@@ -348,6 +358,16 @@ type Details struct {
 	// Required: true
 	RunningCount int `json:"runningCount"`
 
+	// IsArchived indicates whether the project is hidden from the default project list.
+	//
+	// Required: true
+	IsArchived bool `json:"isArchived"`
+
+	// ArchivedAt is the date and time when the project was archived.
+	//
+	// Required: false
+	ArchivedAt *time.Time `json:"archivedAt,omitempty"`
+
 	// CreatedAt is the date and time when the project was created.
 	//
 	// Required: true
@@ -428,6 +448,11 @@ type StatusCounts struct {
 	//
 	// Required: true
 	TotalProjects int `json:"totalProjects"`
+
+	// ArchivedProjects is the number of archived projects.
+	//
+	// Required: true
+	ArchivedProjects int `json:"archivedProjects"`
 }
 
 // ImagePullRequest is used to pull images for a project.

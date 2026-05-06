@@ -120,7 +120,6 @@ func TestSetupAPIForSpec_PublicRoutesOverrideSecurity(t *testing.T) {
 		{path: "/app-version", method: "GET"},
 		{path: "/fonts/sans", method: "GET"},
 		{path: "/fonts/mono", method: "GET"},
-		{path: "/fonts/serif", method: "GET"},
 	}
 
 	for _, testCase := range testCases {

@@ -13,9 +13,10 @@
 		class?: string;
 		onCheck?: () => void | Promise<void>;
 		checking?: boolean;
+		disabled?: boolean;
 	}
 
-	let { updateInfo, class: className = '', onCheck, checking = false }: Props = $props();
+	let { updateInfo, class: className = '', onCheck, checking = false, disabled = false }: Props = $props();
 	let isOpen = $state(false);
 
 	const status = $derived(getProjectUpdateStatus(updateInfo));
@@ -26,7 +27,7 @@
 	const errorMessage = $derived(updateInfo?.errorMessage?.trim() || '');
 	const imageRefs = $derived(updateInfo?.imageRefs ?? []);
 	const updatedImageRefs = $derived(updateInfo?.updatedImageRefs ?? []);
-	const canCheck = $derived(!!onCheck && imageRefs.length > 0);
+	const canCheck = $derived(!!onCheck && !disabled && imageRefs.length > 0);
 	const directCheckFromTrigger = $derived(canCheck && (status === 'unknown' || status === 'error'));
 
 	const summaryText = $derived.by(() => {
@@ -109,7 +110,7 @@
 	async function handleCheckClick(event?: MouseEvent) {
 		event?.preventDefault();
 		event?.stopPropagation();
-		if (!canCheck || checking) {
+		if (!canCheck || checking || disabled) {
 			return;
 		}
 

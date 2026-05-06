@@ -140,7 +140,7 @@
 
 		<div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
 			<div class="min-w-0 flex-1 space-y-2">
-				<h1 class="text-2xl font-bold tracking-tight break-all sm:text-3xl">{title}</h1>
+				<h1 class="text-2xl font-semibold tracking-tight break-all sm:text-3xl">{title}</h1>
 				{#if subtitle}
 					<p class="text-muted-foreground text-sm">{subtitle}</p>
 				{/if}

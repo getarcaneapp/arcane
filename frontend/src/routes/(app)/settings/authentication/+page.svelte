@@ -3,22 +3,22 @@
 	import { z } from 'zod/v4';
 	import { getContext } from 'svelte';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
 	import { Switch } from '$lib/components/ui/switch/index.js';
-	import { Separator } from '$lib/components/ui/separator';
+	import TextInputWithLabel from '$lib/components/form/text-input-with-label.svelte';
 	import { toast } from 'svelte-sonner';
 	import type { PageData } from './$types';
 	import type { Settings } from '$lib/types/settings.type';
 	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
 	import { m } from '$lib/paraglide/messages';
-	import { LockIcon, InfoIcon } from '$lib/icons';
+	import { LockIcon, InfoIcon, ArrowDownIcon } from '$lib/icons';
 	import settingsStore from '$lib/stores/config-store';
 	import { SettingsPageLayout } from '$lib/layouts';
 	import { CopyButton } from '$lib/components/ui/copy-button';
 	import { createSettingsForm } from '$lib/utils/settings-form.util';
 	import * as Alert from '$lib/components/ui/alert';
+	import * as Collapsible from '$lib/components/ui/collapsible';
 	import SettingsRow from '$lib/components/settings/settings-row.svelte';
+	import { cn } from '$lib/utils';
 
 	let { data }: { data: PageData } = $props();
 	const currentSettings = $derived<Settings>($settingsStore || data.settings!);
@@ -60,6 +60,7 @@
 		});
 
 	let showMergeAccountsAlert = $state(false);
+	let oidcConfigOpen = $state(false);
 
 	const formDefaults = $derived({
 		authLocalEnabled: currentSettings.authLocalEnabled,
@@ -234,7 +235,7 @@
 	{#snippet mainContent()}
 		<fieldset disabled={isReadOnly} class="relative space-y-8">
 			<div class="space-y-4">
-				<h3 class="text-lg font-medium">{m.security_authentication_heading()}</h3>
+				<h3 class="text-base font-semibold">{m.security_authentication_heading()}</h3>
 
 				{#if isAutoLoginEnabled}
 					<Alert.Root variant="default" class="border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950">
@@ -245,30 +246,17 @@
 						</Alert.Description>
 					</Alert.Root>
 				{:else}
-					<div class="bg-card rounded-lg border shadow-sm">
-						<div class="space-y-6 p-6">
-							<SettingsRow
-								label={m.security_local_auth_label()}
-								description={m.security_local_auth_description()}
-								contentClass="flex items-center gap-2"
-							>
-								<Switch
-									id="localAuthSwitch"
-									bind:checked={$formInputs.authLocalEnabled.value}
-									onCheckedChange={handleLocalSwitchChange}
-								/>
-								<Label for="localAuthSwitch" class="font-normal">
-									{$formInputs.authLocalEnabled.value ? m.common_enabled() : m.common_disabled()}
-								</Label>
-							</SettingsRow>
+					<div class="divide-border/40 divide-y [&>*]:py-5 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
+						<SettingsRow label={m.security_local_auth_label()} description={m.security_local_auth_description()} layout="inline">
+							<Switch
+								id="localAuthSwitch"
+								bind:checked={$formInputs.authLocalEnabled.value}
+								onCheckedChange={handleLocalSwitchChange}
+							/>
+						</SettingsRow>
 
-							<Separator />
-
-							<SettingsRow
-								label={m.security_oidc_auth_label()}
-								description={m.security_oidc_auth_description()}
-								contentClass="space-y-4"
-							>
+						<Collapsible.Root bind:open={oidcConfigOpen}>
+							<SettingsRow label={m.security_oidc_auth_label()} description={m.security_oidc_auth_description()} layout="inline">
 								{#snippet labelExtra()}
 									{#if isOidcEnvForced}
 										<div class="mt-2">
@@ -295,203 +283,151 @@
 										</div>
 									{/if}
 								{/snippet}
-								<div class="flex items-center gap-2">
+								<div class="flex flex-col items-end gap-2">
 									<Switch
 										id="oidcEnabledSwitch"
 										disabled={isOidcEnvForced}
 										bind:checked={$formInputs.oidcEnabled.value}
 										onCheckedChange={handleOidcEnabledChange}
 									/>
-									<Label for="oidcEnabledSwitch" class="font-normal">
-										{m.security_oidc_enabled_label()}
-									</Label>
+									{#if showOidcDetails}
+										<Collapsible.Trigger
+											class="text-muted-foreground hover:text-foreground hover:bg-muted/50 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-colors"
+										>
+											<span>{oidcConfigOpen ? m.common_hide() : m.common_show()} {m.common_configuration()}</span>
+											<ArrowDownIcon class={cn('size-3.5 transition-transform', oidcConfigOpen && 'rotate-180')} />
+										</Collapsible.Trigger>
+									{/if}
 								</div>
+							</SettingsRow>
 
-								{#if showOidcDetails}
-									<div class="space-y-4 pt-2">
-										<div class="space-y-2">
-											<Label for="oidcClientId" class="text-sm font-medium">{m.oidc_client_id_label()}</Label>
-											<Input
+							{#if showOidcDetails}
+								<Collapsible.Content class="mt-4">
+									<div class="border-border/60 space-y-5 border-l-2 pl-5">
+										<div class="grid gap-5 sm:grid-cols-2">
+											<TextInputWithLabel
 												id="oidcClientId"
-												type="text"
+												label={m.oidc_client_id_label()}
 												placeholder={m.oidc_client_id_placeholder()}
 												disabled={isOidcEnvForced}
 												bind:value={$formInputs.oidcClientId.value}
-												class="font-mono text-sm"
+												error={$formInputs.oidcClientId.error}
 											/>
-											{#if $formInputs.oidcClientId.error}
-												<p class="text-destructive text-[0.8rem] font-medium">{$formInputs.oidcClientId.error}</p>
-											{/if}
-										</div>
-
-										<div class="space-y-2">
-											<Label for="oidcClientSecret" class="text-sm font-medium">{m.oidc_client_secret_label()}</Label>
-											<Input
+											<TextInputWithLabel
 												id="oidcClientSecret"
 												type="password"
+												label={m.oidc_client_secret_label()}
 												placeholder={m.oidc_client_secret_placeholder()}
 												disabled={isOidcEnvForced}
 												bind:value={$formInputs.oidcClientSecret.value}
-												class="font-mono text-sm"
+												error={$formInputs.oidcClientSecret.error}
+												helpText={m.security_oidc_client_secret_help()}
 											/>
-											<p class="text-muted-foreground text-xs">{m.security_oidc_client_secret_help()}</p>
-											{#if $formInputs.oidcClientSecret.error}
-												<p class="text-destructive text-[0.8rem] font-medium">{$formInputs.oidcClientSecret.error}</p>
-											{/if}
 										</div>
 
-										<div class="space-y-2">
-											<Label for="oidcIssuerUrl" class="text-sm font-medium">{m.oidc_issuer_url_label()}</Label>
-											<Input
-												id="oidcIssuerUrl"
-												type="text"
-												placeholder={m.oidc_issuer_url_placeholder()}
-												disabled={isOidcEnvForced}
-												bind:value={$formInputs.oidcIssuerUrl.value}
-												class="font-mono text-sm"
-											/>
-											<p class="text-muted-foreground text-xs">{m.oidc_issuer_url_description()}</p>
-											{#if $formInputs.oidcIssuerUrl.error}
-												<p class="text-destructive text-[0.8rem] font-medium">{$formInputs.oidcIssuerUrl.error}</p>
-											{/if}
-										</div>
+										<TextInputWithLabel
+											id="oidcIssuerUrl"
+											label={m.oidc_issuer_url_label()}
+											description={m.oidc_issuer_url_description()}
+											placeholder={m.oidc_issuer_url_placeholder()}
+											disabled={isOidcEnvForced}
+											bind:value={$formInputs.oidcIssuerUrl.value}
+											error={$formInputs.oidcIssuerUrl.error}
+										/>
 
-										<div class="space-y-2">
-											<Label for="oidcProviderName" class="text-sm font-medium">{m.oidc_provider_name_label()}</Label>
-											<Input
+										<div class="grid gap-5 sm:grid-cols-2">
+											<TextInputWithLabel
 												id="oidcProviderName"
-												type="text"
+												label={m.oidc_provider_name_label()}
+												description={m.oidc_provider_name_description()}
 												placeholder={m.oidc_provider_name_placeholder()}
 												disabled={isOidcEnvForced}
 												bind:value={$formInputs.oidcProviderName.value}
-												class="font-mono text-sm"
+												error={$formInputs.oidcProviderName.error}
 											/>
-											<p class="text-muted-foreground text-xs">{m.oidc_provider_name_description()}</p>
-											{#if $formInputs.oidcProviderName.error}
-												<p class="text-destructive text-[0.8rem] font-medium">{$formInputs.oidcProviderName.error}</p>
-											{/if}
-										</div>
-
-										<div class="space-y-2">
-											<Label for="oidcProviderLogoUrl" class="text-sm font-medium">{m.oidc_provider_logo_url_label()}</Label>
-											<Input
+											<TextInputWithLabel
 												id="oidcProviderLogoUrl"
-												type="text"
+												label={m.oidc_provider_logo_url_label()}
+												description={m.oidc_provider_logo_url_description()}
 												placeholder={m.oidc_provider_logo_url_placeholder()}
 												disabled={isOidcEnvForced}
 												bind:value={$formInputs.oidcProviderLogoUrl.value}
-												class="font-mono text-sm"
+												error={$formInputs.oidcProviderLogoUrl.error}
 											/>
-											<p class="text-muted-foreground text-xs">{m.oidc_provider_logo_url_description()}</p>
-											{#if $formInputs.oidcProviderLogoUrl.error}
-												<p class="text-destructive text-[0.8rem] font-medium">{$formInputs.oidcProviderLogoUrl.error}</p>
-											{/if}
 										</div>
 
-										<div class="space-y-2">
-											<Label for="oidcScopes" class="text-sm font-medium">{m.oidc_scopes_label()}</Label>
-											<Input
-												id="oidcScopes"
-												type="text"
-												placeholder={m.oidc_scopes_placeholder()}
-												disabled={isOidcEnvForced}
-												bind:value={$formInputs.oidcScopes.value}
-												class="font-mono text-sm"
-											/>
-											{#if $formInputs.oidcScopes.error}
-												<p class="text-destructive text-[0.8rem] font-medium">{$formInputs.oidcScopes.error}</p>
-											{/if}
-										</div>
+										<TextInputWithLabel
+											id="oidcScopes"
+											label={m.oidc_scopes_label()}
+											placeholder={m.oidc_scopes_placeholder()}
+											disabled={isOidcEnvForced}
+											bind:value={$formInputs.oidcScopes.value}
+											error={$formInputs.oidcScopes.error}
+										/>
 
-										<div class="border-t pt-4">
-											<h4 class="text-sm font-semibold">{m.oidc_admin_role_mapping_title()}</h4>
-											<p class="text-muted-foreground mb-3 text-xs">{m.oidc_admin_role_mapping_description()}</p>
-											<div class="grid gap-3 sm:grid-cols-2">
-												<div class="space-y-2">
-													<Label for="oidcAdminClaim" class="text-sm font-medium">{m.oidc_admin_claim_label()}</Label>
-													<Input
-														id="oidcAdminClaim"
-														type="text"
-														placeholder={m.oidc_admin_claim_placeholder()}
-														disabled={isOidcEnvForced}
-														bind:value={$formInputs.oidcAdminClaim.value}
-														class="font-mono text-sm"
-													/>
-													{#if $formInputs.oidcAdminClaim.error}
-														<p class="text-destructive text-[0.8rem] font-medium">{$formInputs.oidcAdminClaim.error}</p>
-													{/if}
-												</div>
-												<div class="space-y-2">
-													<Label for="oidcAdminValue" class="text-sm font-medium">{m.oidc_admin_value_label()}</Label>
-													<Input
-														id="oidcAdminValue"
-														type="text"
-														placeholder={m.oidc_admin_value_placeholder()}
-														disabled={isOidcEnvForced}
-														bind:value={$formInputs.oidcAdminValue.value}
-														class="font-mono text-sm"
-													/>
-													<p class="text-muted-foreground text-[11px]">{m.oidc_admin_value_help()}</p>
-													{#if $formInputs.oidcAdminValue.error}
-														<p class="text-destructive text-[0.8rem] font-medium">{$formInputs.oidcAdminValue.error}</p>
-													{/if}
-												</div>
+										<div class="space-y-3 pt-2">
+											<div>
+												<h4 class="text-sm font-semibold">{m.oidc_admin_role_mapping_title()}</h4>
+												<p class="text-muted-foreground mt-0.5 text-xs">{m.oidc_admin_role_mapping_description()}</p>
+											</div>
+											<div class="grid gap-5 sm:grid-cols-2">
+												<TextInputWithLabel
+													id="oidcAdminClaim"
+													label={m.oidc_admin_claim_label()}
+													placeholder={m.oidc_admin_claim_placeholder()}
+													disabled={isOidcEnvForced}
+													bind:value={$formInputs.oidcAdminClaim.value}
+													error={$formInputs.oidcAdminClaim.error}
+												/>
+												<TextInputWithLabel
+													id="oidcAdminValue"
+													label={m.oidc_admin_value_label()}
+													placeholder={m.oidc_admin_value_placeholder()}
+													disabled={isOidcEnvForced}
+													bind:value={$formInputs.oidcAdminValue.value}
+													error={$formInputs.oidcAdminValue.error}
+													helpText={m.oidc_admin_value_help()}
+												/>
 											</div>
 										</div>
 
-										<div class="border-t pt-4">
-											<div class="flex items-center gap-2">
+										<div class="divide-border/40 divide-y pt-2 [&>*]:py-5 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
+											<SettingsRow
+												label={m.security_oidc_merge_accounts_label()}
+												description={m.security_oidc_merge_accounts_description()}
+												layout="inline"
+											>
 												<Switch
 													id="oidcMergeAccountsSwitch"
 													disabled={isOidcEnvForced}
 													bind:checked={$formInputs.oidcMergeAccounts.value}
 													onCheckedChange={handleMergeAccountsChange}
 												/>
-												<div class="grid gap-1.5 leading-none">
-													<Label for="oidcMergeAccountsSwitch" class="font-normal">
-														{m.security_oidc_merge_accounts_label()}
-													</Label>
-													<p class="text-muted-foreground text-xs">
-														{m.security_oidc_merge_accounts_description()}
-													</p>
-												</div>
-											</div>
-										</div>
+											</SettingsRow>
 
-										<div class="border-t pt-4">
-											<div class="flex items-center gap-2">
+											<SettingsRow
+												label={m.oidc_skip_tls_verify_label()}
+												description={m.oidc_skip_tls_verify_description()}
+												layout="inline"
+											>
 												<Switch
 													id="oidcSkipTlsVerifySwitch"
 													disabled={isOidcEnvForced}
 													bind:checked={$formInputs.oidcSkipTlsVerify.value}
 												/>
-												<div class="grid gap-1.5 leading-none">
-													<Label for="oidcSkipTlsVerifySwitch" class="font-normal">
-														{m.oidc_skip_tls_verify_label()}
-													</Label>
-													<p class="text-muted-foreground text-xs">
-														{m.oidc_skip_tls_verify_description()}
-													</p>
-												</div>
-											</div>
-										</div>
+											</SettingsRow>
 
-										<div class="border-t pt-4">
-											<div class="flex items-center gap-2">
+											<SettingsRow
+												label={m.oidc_auto_redirect_label()}
+												description={m.oidc_auto_redirect_description()}
+												layout="inline"
+											>
 												<Switch
 													id="oidcAutoRedirectSwitch"
 													disabled={isOidcEnvForced}
 													bind:checked={$formInputs.oidcAutoRedirectToProvider.value}
 												/>
-												<div class="grid gap-1.5 leading-none">
-													<Label for="oidcAutoRedirectSwitch" class="font-normal">
-														{m.oidc_auto_redirect_label()}
-													</Label>
-													<p class="text-muted-foreground text-xs">
-														{m.oidc_auto_redirect_description()}
-													</p>
-												</div>
-											</div>
+											</SettingsRow>
 										</div>
 
 										<div class="bg-muted/30 rounded-lg border p-4">
@@ -506,90 +442,77 @@
 											</div>
 										</div>
 									</div>
-								{/if}
-							</SettingsRow>
-						</div>
+								</Collapsible.Content>
+							{/if}
+						</Collapsible.Root>
 					</div>
 				{/if}
 			</div>
 
 			<div class="space-y-4">
-				<h3 class="text-lg font-medium">{m.security_session_heading()}</h3>
-				<div class="bg-card rounded-lg border shadow-sm">
-					<div class="space-y-6 p-6">
-						<SettingsRow
-							label={m.security_session_timeout_label()}
-							description={m.security_session_timeout_description()}
-							contentClass="max-w-xs"
-						>
-							<Input
-								id="authSessionTimeout"
-								type="number"
-								bind:value={$formInputs.authSessionTimeout.value}
-								aria-label={m.security_session_timeout_label()}
-							/>
-							{#if $formInputs.authSessionTimeout.error}
-								<p class="text-destructive mt-2 text-sm">{$formInputs.authSessionTimeout.error}</p>
-							{/if}
-						</SettingsRow>
-					</div>
+				<h3 class="text-base font-semibold">{m.security_session_heading()}</h3>
+				<div class="max-w-xs">
+					<TextInputWithLabel
+						id="authSessionTimeout"
+						type="number"
+						label={m.security_session_timeout_label()}
+						description={m.security_session_timeout_description()}
+						bind:value={$formInputs.authSessionTimeout.value}
+						error={$formInputs.authSessionTimeout.error}
+					/>
 				</div>
 			</div>
 
 			<div class="space-y-4">
-				<h3 class="text-lg font-medium">{m.security_password_policy_label()}</h3>
-				<div class="bg-card rounded-lg border shadow-sm">
-					<div class="space-y-6 p-6">
-						<SettingsRow label={m.security_password_policy_label()} description={m.security_password_policy_description()}>
-							<div class="grid grid-cols-1 gap-2 sm:grid-cols-3 sm:gap-3" role="group" aria-labelledby="passwordPolicyLabel">
-								<ArcaneTooltip.Root>
-									<ArcaneTooltip.Trigger>
-										<ArcaneButton
-											action="base"
-											tone={$formInputs.authPasswordPolicy.value === 'basic' ? 'outline-primary' : 'outline'}
-											class="h-12 w-full text-xs sm:text-sm"
-											onclick={() => ($formInputs.authPasswordPolicy.value = 'basic')}
-											customLabel={m.common_basic()}
-										/>
-									</ArcaneTooltip.Trigger>
-									<ArcaneTooltip.Content side="top">
-										{m.security_password_policy_basic_tooltip()}
-									</ArcaneTooltip.Content>
-								</ArcaneTooltip.Root>
+				<h3 class="text-base font-semibold">{m.security_password_policy_label()}</h3>
+				<SettingsRow label={m.security_password_policy_label()} description={m.security_password_policy_description()}>
+					<div class="grid grid-cols-1 gap-2 sm:grid-cols-3 sm:gap-3" role="group" aria-labelledby="passwordPolicyLabel">
+						<ArcaneTooltip.Root>
+							<ArcaneTooltip.Trigger>
+								<ArcaneButton
+									action="base"
+									tone={$formInputs.authPasswordPolicy.value === 'basic' ? 'outline-primary' : 'outline'}
+									class="h-12 w-full text-xs sm:text-sm"
+									onclick={() => ($formInputs.authPasswordPolicy.value = 'basic')}
+									customLabel={m.common_basic()}
+								/>
+							</ArcaneTooltip.Trigger>
+							<ArcaneTooltip.Content side="top">
+								{m.security_password_policy_basic_tooltip()}
+							</ArcaneTooltip.Content>
+						</ArcaneTooltip.Root>
 
-								<ArcaneTooltip.Root>
-									<ArcaneTooltip.Trigger>
-										<ArcaneButton
-											action="base"
-											tone={$formInputs.authPasswordPolicy.value === 'standard' ? 'outline-primary' : 'outline'}
-											class="h-12 w-full text-xs sm:text-sm"
-											onclick={() => ($formInputs.authPasswordPolicy.value = 'standard')}
-											customLabel={m.security_password_policy_standard()}
-										/>
-									</ArcaneTooltip.Trigger>
-									<ArcaneTooltip.Content side="top">
-										{m.security_password_policy_standard_tooltip()}
-									</ArcaneTooltip.Content>
-								</ArcaneTooltip.Root>
+						<ArcaneTooltip.Root>
+							<ArcaneTooltip.Trigger>
+								<ArcaneButton
+									action="base"
+									tone={$formInputs.authPasswordPolicy.value === 'standard' ? 'outline-primary' : 'outline'}
+									class="h-12 w-full text-xs sm:text-sm"
+									onclick={() => ($formInputs.authPasswordPolicy.value = 'standard')}
+									customLabel={m.security_password_policy_standard()}
+								/>
+							</ArcaneTooltip.Trigger>
+							<ArcaneTooltip.Content side="top">
+								{m.security_password_policy_standard_tooltip()}
+							</ArcaneTooltip.Content>
+						</ArcaneTooltip.Root>
 
-								<ArcaneTooltip.Root>
-									<ArcaneTooltip.Trigger>
-										<ArcaneButton
-											action="base"
-											tone={$formInputs.authPasswordPolicy.value === 'strong' ? 'outline-primary' : 'outline'}
-											class="h-12 w-full text-xs sm:text-sm"
-											onclick={() => ($formInputs.authPasswordPolicy.value = 'strong')}
-											customLabel={m.security_password_policy_strong()}
-										/>
-									</ArcaneTooltip.Trigger>
-									<ArcaneTooltip.Content side="top">
-										{m.security_password_policy_strong_tooltip()}
-									</ArcaneTooltip.Content>
-								</ArcaneTooltip.Root>
-							</div>
-						</SettingsRow>
+						<ArcaneTooltip.Root>
+							<ArcaneTooltip.Trigger>
+								<ArcaneButton
+									action="base"
+									tone={$formInputs.authPasswordPolicy.value === 'strong' ? 'outline-primary' : 'outline'}
+									class="h-12 w-full text-xs sm:text-sm"
+									onclick={() => ($formInputs.authPasswordPolicy.value = 'strong')}
+									customLabel={m.security_password_policy_strong()}
+								/>
+							</ArcaneTooltip.Trigger>
+							<ArcaneTooltip.Content side="top">
+								{m.security_password_policy_strong_tooltip()}
+							</ArcaneTooltip.Content>
+						</ArcaneTooltip.Root>
 					</div>
-				</div>
+				</SettingsRow>
 			</div>
 		</fieldset>
 	{/snippet}

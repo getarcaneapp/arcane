@@ -769,6 +769,8 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 
 	resp.CreatedAt = proj.CreatedAt.Format(time.RFC3339)
 	resp.UpdatedAt = proj.UpdatedAt.Format(time.RFC3339)
+	resp.IsArchived = proj.IsArchived
+	resp.ArchivedAt = proj.ArchivedAt
 	resp.ComposeContent = composeContent
 	resp.EnvContent = effectiveEnvContent
 	resp.HasBuildDirective = false
@@ -1442,27 +1444,35 @@ func (s *ProjectService) incrementStatusCounts(status models.ProjectStatus, runn
 	}
 }
 
-func (s *ProjectService) GetProjectStatusCounts(ctx context.Context) (folderCount, runningProjects, stoppedProjects, totalProjects int, err error) {
+func (s *ProjectService) GetProjectStatusCounts(ctx context.Context) (folderCount, runningProjects, stoppedProjects, totalProjects, archivedProjects int, err error) {
 	folderCount, _ = s.countProjectFolders(ctx)
 
 	var projectsList []models.Project
 	if err := s.db.WithContext(ctx).Find(&projectsList).Error; err != nil {
-		return folderCount, 0, 0, 0, fmt.Errorf("failed to list projects: %w", err)
+		return folderCount, 0, 0, 0, 0, fmt.Errorf("failed to list projects: %w", err)
 	}
 
 	totalProjects = len(projectsList)
 	runningProjects = 0
 	stoppedProjects = 0
+	activeProjects := make([]models.Project, 0, len(projectsList))
+	for _, p := range projectsList {
+		if p.IsArchived {
+			archivedProjects++
+			continue
+		}
+		activeProjects = append(activeProjects, p)
+	}
 
 	// 1. Fetch all compose containers
 	containers, err := projects.ListGlobalComposeContainers(ctx)
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to list global compose containers for counts", "error", err)
 		// Fallback to DB status
-		for _, p := range projectsList {
+		for _, p := range activeProjects {
 			s.incrementStatusCounts(p.Status, &runningProjects, &stoppedProjects)
 		}
-		return folderCount, runningProjects, stoppedProjects, totalProjects, nil
+		return folderCount, runningProjects, stoppedProjects, totalProjects, archivedProjects, nil
 	}
 
 	// 2. Group by project
@@ -1475,7 +1485,7 @@ func (s *ProjectService) GetProjectStatusCounts(ctx context.Context) (folderCoun
 	}
 
 	// 3. Calculate status for each project
-	for _, p := range projectsList {
+	for _, p := range activeProjects {
 		projectContainers := lookupProjectContainers(p, containersByProject)
 
 		// Convert to ProjectServiceInfo (minimal needed for calculateProjectStatus)
@@ -1496,17 +1506,100 @@ func (s *ProjectService) GetProjectStatusCounts(ctx context.Context) (folderCoun
 		s.incrementStatusCounts(status, &runningProjects, &stoppedProjects)
 	}
 
-	return folderCount, runningProjects, stoppedProjects, totalProjects, nil
+	return folderCount, runningProjects, stoppedProjects, totalProjects, archivedProjects, nil
 }
 
 // End Helpers
 
 // Project Actions
 
+func ensureProjectMutableInternal(proj *models.Project) error {
+	if proj != nil && proj.IsArchived {
+		return &common.ProjectArchivedError{}
+	}
+	return nil
+}
+
+func isProjectArchiveBlockedInternal(proj *models.Project) bool {
+	if proj == nil {
+		return false
+	}
+	if proj.RunningCount > 0 {
+		return true
+	}
+	switch proj.Status {
+	case models.ProjectStatusRunning, models.ProjectStatusPartiallyRunning, models.ProjectStatusDeploying, models.ProjectStatusRestarting:
+		return true
+	case models.ProjectStatusStopped, models.ProjectStatusUnknown, models.ProjectStatusStopping:
+		return false
+	default:
+		return false
+	}
+}
+
+func (s *ProjectService) ArchiveProject(ctx context.Context, projectID string, user models.User) error {
+	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
+	if err != nil {
+		return err
+	}
+	if proj.IsArchived {
+		return nil
+	}
+	if isProjectArchiveBlockedInternal(proj) {
+		return &common.ProjectMustBeStoppedError{}
+	}
+
+	now := time.Now()
+	if err := s.db.WithContext(ctx).Model(&models.Project{}).Where("id = ?", projectID).Updates(map[string]any{
+		"is_archived": true,
+		"archived_at": now,
+	}).Error; err != nil {
+		return fmt.Errorf("failed to archive project: %w", err)
+	}
+
+	metadata := models.JSON{"action": "archived", "projectID": projectID, "projectName": proj.Name}
+	if s.eventService != nil {
+		if logErr := s.eventService.LogProjectEvent(ctx, models.EventTypeProjectUpdate, projectID, proj.Name, user.ID, user.Username, "0", metadata); logErr != nil {
+			slog.ErrorContext(ctx, "could not log project archive action", "error", logErr)
+		}
+	}
+
+	return nil
+}
+
+func (s *ProjectService) UnarchiveProject(ctx context.Context, projectID string, user models.User) error {
+	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
+	if err != nil {
+		return err
+	}
+	if !proj.IsArchived {
+		return nil
+	}
+
+	if err := s.db.WithContext(ctx).Model(&models.Project{}).Where("id = ?", projectID).Updates(map[string]any{
+		"is_archived": false,
+		"archived_at": gorm.Expr("NULL"),
+	}).Error; err != nil {
+		return fmt.Errorf("failed to unarchive project: %w", err)
+	}
+
+	metadata := models.JSON{"action": "unarchived", "projectID": projectID, "projectName": proj.Name}
+	if s.eventService != nil {
+		if logErr := s.eventService.LogProjectEvent(ctx, models.EventTypeProjectUpdate, projectID, proj.Name, user.ID, user.Username, "0", metadata); logErr != nil {
+			slog.ErrorContext(ctx, "could not log project unarchive action", "error", logErr)
+		}
+	}
+
+	return nil
+}
+
 func (s *ProjectService) DeployProject(ctx context.Context, projectID string, user models.User, options *project.DeployOptions) error {
 	projectFromDb, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
 		return fmt.Errorf("failed to get project: %w", err)
+	}
+	if err := ensureProjectMutableInternal(projectFromDb); err != nil {
+		return err
 	}
 
 	resolvedPullPolicy := ""
@@ -1572,6 +1665,9 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 func (s *ProjectService) DownProject(ctx context.Context, projectID string, user models.User) error {
 	projectFromDb, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
+		return err
+	}
+	if err := ensureProjectMutableInternal(projectFromDb); err != nil {
 		return err
 	}
 
@@ -1702,6 +1798,9 @@ func (s *ProjectService) RedeployProject(ctx context.Context, projectID string, 
 	if err != nil {
 		return err
 	}
+	if err := ensureProjectMutableInternal(proj); err != nil {
+		return err
+	}
 
 	disabled, err := s.projectRedeployDisabledInternal(ctx, *proj)
 	if err != nil {
@@ -1753,6 +1852,9 @@ func (s *ProjectService) PullProjectImages(ctx context.Context, projectID string
 	if err != nil {
 		return err
 	}
+	if err := ensureProjectMutableInternal(proj); err != nil {
+		return err
+	}
 
 	compProj, _, lerr := s.loadComposeProjectForProjectInternal(ctx, proj)
 	if lerr != nil {
@@ -1784,6 +1886,9 @@ func (s *ProjectService) BuildProjectServices(ctx context.Context, projectID str
 	if err != nil {
 		return err
 	}
+	if err := ensureProjectMutableInternal(projectFromDb); err != nil {
+		return err
+	}
 
 	project, _, derr := s.loadComposeProjectForProjectInternal(ctx, projectFromDb)
 	if derr != nil {
@@ -1801,6 +1906,9 @@ func (s *ProjectService) BuildProjectServices(ctx context.Context, projectID str
 func (s *ProjectService) EnsureProjectImagesPresent(ctx context.Context, projectID string, progressWriter io.Writer, user models.User, credentials []containerregistry.Credential) error {
 	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
+		return err
+	}
+	if err := ensureProjectMutableInternal(proj); err != nil {
 		return err
 	}
 
@@ -2391,6 +2499,9 @@ func (s *ProjectService) RestartProject(ctx context.Context, projectID string, u
 	if err != nil {
 		return err
 	}
+	if err := ensureProjectMutableInternal(proj); err != nil {
+		return err
+	}
 
 	if err := s.updateProjectStatusInternal(ctx, projectID, models.ProjectStatusRestarting); err != nil {
 		return fmt.Errorf("failed to update project status to restarting: %w", err)
@@ -2435,6 +2546,9 @@ func (s *ProjectService) RestartProject(ctx context.Context, projectID string, u
 func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, name *string, composeContent, envContent *string, user models.User) (*models.Project, error) {
 	proj, projectsDirectory, err := s.getProjectForUpdate(ctx, projectID)
 	if err != nil {
+		return nil, err
+	}
+	if err := ensureProjectMutableInternal(&proj); err != nil {
 		return nil, err
 	}
 
@@ -2483,6 +2597,9 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 func (s *ProjectService) ApplyGitSyncProjectFiles(ctx context.Context, projectID string, composeContent string, gitEnvContent *string, user models.User) (*models.Project, error) {
 	proj, projectsDirectory, err := s.getProjectForUpdate(ctx, projectID)
 	if err != nil {
+		return nil, err
+	}
+	if err := ensureProjectMutableInternal(&proj); err != nil {
 		return nil, err
 	}
 
@@ -3082,6 +3199,9 @@ func (s *ProjectService) UpdateProjectIncludeFile(ctx context.Context, projectID
 	if err != nil {
 		return err
 	}
+	if err := ensureProjectMutableInternal(proj); err != nil {
+		return err
+	}
 
 	// Normalize and persist project path to ensure include writes occur under projects root
 	if err := s.ensureProjectPathUnderRoot(ctx, proj, true); err != nil {
@@ -3204,10 +3324,13 @@ func (s *ProjectService) ListProjects(ctx context.Context, params pagination.Que
 	query := s.db.WithContext(ctx).Model(&models.Project{})
 	statusFilter := ""
 	updatesFilter := ""
+	archivedFilter := ""
 	if params.Filters != nil {
 		statusFilter = strings.TrimSpace(params.Filters["status"])
 		updatesFilter = strings.TrimSpace(params.Filters["updates"])
+		archivedFilter = strings.TrimSpace(params.Filters["archived"])
 	}
+	query = applyProjectArchivedDBFilterInternal(query, archivedFilter)
 	if statusFilter != "" || updatesFilter != "" {
 		return s.listProjectsWithDerivedFiltersInternal(ctx, params, query)
 	}
@@ -3239,6 +3362,17 @@ func (s *ProjectService) ListProjects(ctx context.Context, params pagination.Que
 		"result_count", len(result))
 
 	return result, paginationResp, nil
+}
+
+func applyProjectArchivedDBFilterInternal(query *gorm.DB, filterValue string) *gorm.DB {
+	switch strings.ToLower(strings.TrimSpace(filterValue)) {
+	case "true":
+		return query.Where("is_archived = ?", true)
+	case "all":
+		return query
+	default:
+		return query.Where("is_archived = ?", false)
+	}
 }
 
 func (s *ProjectService) listProjectsWithDerivedFiltersInternal(
@@ -3351,6 +3485,7 @@ func (s *ProjectService) buildProjectDerivedPaginationConfigInternal() paginatio
 		FilterAccessors: []pagination.FilterAccessor[project.Details]{
 			s.buildProjectStatusFilterAccessorInternal(),
 			s.buildProjectUpdatesFilterAccessorInternal(),
+			s.buildProjectArchivedFilterAccessorInternal(),
 		},
 	}
 }
@@ -3369,6 +3504,22 @@ func (s *ProjectService) buildProjectUpdatesFilterAccessorInternal() pagination.
 		Key: "updates",
 		Fn: func(p project.Details, filterValue string) bool {
 			return strings.EqualFold(strings.TrimSpace(getProjectUpdateStatusInternal(p.UpdateInfo)), strings.TrimSpace(filterValue))
+		},
+	}
+}
+
+func (s *ProjectService) buildProjectArchivedFilterAccessorInternal() pagination.FilterAccessor[project.Details] {
+	return pagination.FilterAccessor[project.Details]{
+		Key: "archived",
+		Fn: func(p project.Details, filterValue string) bool {
+			switch strings.ToLower(strings.TrimSpace(filterValue)) {
+			case "true":
+				return p.IsArchived
+			case "all":
+				return true
+			default:
+				return !p.IsArchived
+			}
 		},
 	}
 }
@@ -3394,7 +3545,7 @@ func (s *ProjectService) countProjectsByUpdateStatusInternal(ctx context.Context
 			Start: 0,
 			Limit: 0,
 		},
-	}, s.db.WithContext(ctx).Model(&models.Project{}))
+	}, s.db.WithContext(ctx).Model(&models.Project{}).Where("is_archived = ?", false))
 	if err != nil {
 		return 0, err
 	}
@@ -3456,6 +3607,8 @@ func (s *ProjectService) mapProjectToDto(ctx context.Context, projectsDir string
 
 	resp.CreatedAt = p.CreatedAt.Format(time.RFC3339)
 	resp.UpdatedAt = p.UpdatedAt.Format(time.RFC3339)
+	resp.IsArchived = p.IsArchived
+	resp.ArchivedAt = p.ArchivedAt
 	resp.DirName = utils.DerefString(p.DirName)
 	resp.RelativePath = s.getProjectRelativePathInternal(projectsDir, p.Path)
 	resp.GitOpsManagedBy = p.GitOpsManagedBy

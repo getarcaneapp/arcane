@@ -21,15 +21,11 @@ func NewFontService(embeddedFS embed.FS) *FontService {
 }
 
 func (s *FontService) GetSansFont() ([]byte, string, error) {
-	return s.GetFont("Geist/geist.woff2")
+	return s.GetFont("Mona/MonaSans.woff2")
 }
 
 func (s *FontService) GetMonoFont() ([]byte, string, error) {
-	return s.GetFont("Geist/geist-mono.woff2")
-}
-
-func (s *FontService) GetSerifFont() ([]byte, string, error) {
-	return s.GetFont("Calistoga/Calistoga-Regular.woff2")
+	return s.GetFont("Mona/MonaSansMono.woff2")
 }
 
 func (s *FontService) GetFont(fontPath string) ([]byte, string, error) {

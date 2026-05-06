@@ -110,7 +110,7 @@
 
 		<div class="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
 			<div>
-				<h1 class="text-xl font-bold wrap-break-word sm:text-2xl">{m.templates_defaults_title()}</h1>
+				<h1 class="text-xl font-semibold wrap-break-word sm:text-2xl">{m.templates_defaults_title()}</h1>
 				<p class="text-muted-foreground mt-1.5 text-sm wrap-break-word sm:text-base">
 					{m.templates_defaults_description()}
 				</p>

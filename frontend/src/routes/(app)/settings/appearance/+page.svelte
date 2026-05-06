@@ -9,8 +9,6 @@
 	import { Switch } from '$lib/components/ui/switch/index.js';
 	import { useSidebar } from '$lib/components/ui/sidebar/context.svelte.js';
 	import { createSettingsForm } from '$lib/utils/settings-form.util';
-	import { Separator } from '$lib/components/ui/separator';
-	import { Label } from '$lib/components/ui/label';
 	import SettingsRow from '$lib/components/settings/settings-row.svelte';
 	import LocalePicker from '$lib/components/locale-picker.svelte';
 	import AccentColorPicker from '$lib/components/accent-color/accent-color-picker.svelte';
@@ -19,8 +17,8 @@
 	import { APPLICATION_THEME_VALUES, applyApplicationTheme } from '$lib/utils/application-theme-util';
 	import { applyOledMode } from '$lib/utils/oled-mode-util';
 	import { AppearanceIcon, MonitorSpeakerIcon, DockIcon, MoonIcon, SunIcon } from '$lib/icons';
-	import SwitchWithLabel from '$lib/components/form/labeled-switch.svelte';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
+	import { cn } from '$lib/utils';
 
 	let { data } = $props();
 	const currentSettings = $derived($settingsStore || data.settings!);
@@ -86,27 +84,23 @@
 
 	// Navigation Mode state
 	const modeIsLocal = $derived(persistedState.mode !== undefined);
-	const modeDisplayValue = $derived(modeIsLocal ? persistedState.mode : $formInputs.mobileNavigationMode.value);
+	const modeSegment = $derived<'default' | 'floating' | 'docked'>(
+		modeIsLocal ? (persistedState.mode as 'floating' | 'docked') : 'default'
+	);
 
-	function handleModeSelect(mode: 'floating' | 'docked') {
-		if (modeIsLocal) {
-			setLocalOverride('mode', mode);
-		} else {
-			$formInputs.mobileNavigationMode.value = mode;
-		}
-	}
-
-	function handleModeScopeChange(isLocal: boolean) {
-		if (isLocal) {
-			setLocalOverride('mode', $formInputs.mobileNavigationMode.value);
-		} else {
+	function handleModeSegmentSelect(segment: 'default' | 'floating' | 'docked') {
+		if (segment === 'default') {
 			clearLocalOverride('mode');
+		} else {
+			setLocalOverride('mode', segment);
 		}
 	}
 
 	// Show Labels state
 	const labelsIsLocal = $derived(persistedState.showLabels !== undefined);
-	const labelsDisplayValue = $derived(labelsIsLocal ? persistedState.showLabels : $formInputs.mobileNavigationShowLabels.value);
+	const labelsSegment = $derived<'default' | 'on' | 'off'>(
+		labelsIsLocal ? (persistedState.showLabels ? 'on' : 'off') : 'default'
+	);
 	const isDarkMode = $derived(mode.current === 'dark');
 	const isDefaultApplicationTheme = $derived($formInputs.applicationTheme.value === 'default');
 
@@ -116,19 +110,11 @@
 		applyOledMode(checked);
 	}
 
-	function handleLabelsChange(checked: boolean) {
-		if (labelsIsLocal) {
-			setLocalOverride('showLabels', checked);
-		} else {
-			$formInputs.mobileNavigationShowLabels.value = checked;
-		}
-	}
-
-	function handleLabelsScopeChange(isLocal: boolean) {
-		if (isLocal) {
-			setLocalOverride('showLabels', $formInputs.mobileNavigationShowLabels.value);
-		} else {
+	function handleLabelsSegmentSelect(segment: 'default' | 'on' | 'off') {
+		if (segment === 'default') {
 			clearLocalOverride('showLabels');
+		} else {
+			setLocalOverride('showLabels', segment === 'on');
 		}
 	}
 </script>
@@ -144,219 +130,221 @@
 		<div class="space-y-8">
 			<!-- Appearance Section -->
 			<div class="space-y-4">
-				<h3 class="text-lg font-medium">{m.appearance_title()}</h3>
-				<div class="bg-card rounded-lg border shadow-sm">
-					<div class="space-y-6 p-6">
-						<!-- Application Theme -->
-						<SettingsRow label={m.application_theme()} description={m.application_theme_description()}>
-							<ApplicationThemePicker
-								bind:selectedTheme={$formInputs.applicationTheme.value}
-								accentColor={$formInputs.accentColor.value}
-								disabled={isReadOnly}
-							/>
-						</SettingsRow>
+				<h3 class="text-base font-semibold">{m.appearance_title()}</h3>
+				<div class="divide-border/40 divide-y [&>*]:py-5 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
+					<!-- Application Theme -->
+					<SettingsRow label={m.application_theme()} description={m.application_theme_description()}>
+						<ApplicationThemePicker
+							bind:selectedTheme={$formInputs.applicationTheme.value}
+							accentColor={$formInputs.accentColor.value}
+							disabled={isReadOnly}
+						/>
+					</SettingsRow>
 
-						<Separator />
+					<!-- Accent Color -->
+					<SettingsRow label={m.accent_color()} description={m.accent_color_description()}>
+						<AccentColorPicker
+							previousColor={currentSettings.accentColor}
+							bind:selectedColor={$formInputs.accentColor.value}
+							disabled={isReadOnly}
+						/>
+					</SettingsRow>
 
-						<!-- Accent Color -->
-						<SettingsRow label={m.accent_color()} description={m.accent_color_description()}>
-							<AccentColorPicker
-								previousColor={currentSettings.accentColor}
-								bind:selectedColor={$formInputs.accentColor.value}
-								disabled={isReadOnly}
-							/>
-						</SettingsRow>
+					<!-- User Avatars -->
+					<SettingsRow
+						label={m.general_user_avatars_heading()}
+						description={m.general_user_avatars_description()}
+						layout="inline"
+					>
+						<Switch
+							id="enableGravatar"
+							bind:checked={$formInputs.enableGravatar.value}
+							disabled={isReadOnly}
+							onCheckedChange={(checked) => {
+								$formInputs.enableGravatar.value = checked;
+							}}
+						/>
+					</SettingsRow>
 
-						<!-- User Avatars -->
-						<SettingsRow
-							label={m.general_user_avatars_heading()}
-							description={m.general_user_avatars_description()}
-							contentClass="flex items-center gap-2"
-						>
-							<Switch
-								id="enableGravatar"
-								bind:checked={$formInputs.enableGravatar.value}
-								disabled={isReadOnly}
-								onCheckedChange={(checked) => {
-									$formInputs.enableGravatar.value = checked;
-								}}
-							/>
-							<Label for="enableGravatar" class="font-normal">
-								{m.general_enable_gravatar_label()}
-							</Label>
-						</SettingsRow>
+					<!-- Language -->
+					<SettingsRow label={m.language()} description={m.appearance_language_current_user_description()} layout="inline">
+						<LocalePicker
+							inline={true}
+							id="appearanceLocalePicker"
+							class="border-border/30 text-foreground h-9 w-32 text-sm font-medium"
+						/>
+					</SettingsRow>
 
-						<Separator />
+					<!-- Theme -->
+					<SettingsRow
+						label={m.common_toggle_theme()}
+						description={m.appearance_theme_current_user_description()}
+						layout="inline"
+					>
+						<ArcaneButton action="base" tone="outline" class="h-9 min-w-40 justify-start gap-2" onclick={toggleMode}>
+							{#if isDarkMode}
+								<SunIcon class="size-4" />
+							{:else}
+								<MoonIcon class="size-4" />
+							{/if}
+							<span>{isDarkMode ? m.sidebar_dark_mode() : m.sidebar_light_mode()}</span>
+						</ArcaneButton>
+					</SettingsRow>
 
-						<!-- Language -->
-						<SettingsRow
-							label={m.language()}
-							description={m.appearance_language_current_user_description()}
-							contentClass="flex items-center gap-2"
-						>
-							<LocalePicker
-								inline={true}
-								id="appearanceLocalePicker"
-								class="border-border/30 text-foreground h-9 w-32 text-sm font-medium"
-							/>
-						</SettingsRow>
-
-						<Separator />
-
-						<!-- Theme -->
-						<SettingsRow
-							label={m.common_toggle_theme()}
-							description={m.appearance_theme_current_user_description()}
-							contentClass="flex items-center gap-2"
-						>
-							<ArcaneButton action="base" tone="outline" class="h-9 min-w-40 justify-start gap-2" onclick={toggleMode}>
-								{#if isDarkMode}
-									<SunIcon class="size-4" />
-								{:else}
-									<MoonIcon class="size-4" />
-								{/if}
-								<span>{isDarkMode ? m.sidebar_dark_mode() : m.sidebar_light_mode()}</span>
-							</ArcaneButton>
-						</SettingsRow>
-
-						<Separator />
-
-						<!-- OLED Mode -->
-						<SettingsRow label={m.oled_mode()} description={m.oled_mode_description()} contentClass="flex items-center gap-2">
-							{#snippet helpText()}
-								{#if !isDefaultApplicationTheme}
-									<p class="text-muted-foreground/70 mt-1 text-xs italic">{m.oled_mode_requires_default_theme()}</p>
-								{:else if !isDarkMode}
-									<p class="text-muted-foreground/70 mt-1 text-xs italic">{m.oled_mode_requires_dark()}</p>
-								{/if}
-							{/snippet}
-							<Switch
-								id="oledMode"
-								checked={$formInputs.oledMode.value}
-								disabled={isReadOnly || !isDefaultApplicationTheme}
-								onCheckedChange={handleOledModeChange}
-							/>
-							<Label for="oledMode" class="font-normal">
-								{$formInputs.oledMode.value ? m.oled_mode_enabled() : m.oled_mode_disabled()}
-							</Label>
-						</SettingsRow>
-					</div>
+					<!-- OLED Mode -->
+					<SettingsRow label={m.oled_mode()} description={m.oled_mode_description()} layout="inline">
+						{#snippet helpText()}
+							{#if !isDefaultApplicationTheme}
+								<p class="text-muted-foreground/70 mt-1 text-xs italic">{m.oled_mode_requires_default_theme()}</p>
+							{:else if !isDarkMode}
+								<p class="text-muted-foreground/70 mt-1 text-xs italic">{m.oled_mode_requires_dark()}</p>
+							{/if}
+						{/snippet}
+						<Switch
+							id="oledMode"
+							checked={$formInputs.oledMode.value}
+							disabled={isReadOnly || !isDefaultApplicationTheme}
+							onCheckedChange={handleOledModeChange}
+						/>
+					</SettingsRow>
 				</div>
 			</div>
 
 			<!-- Desktop Sidebar Section -->
 			<div class="space-y-4">
-				<h3 class="text-lg font-medium">{m.navigation_desktop_sidebar_title()}</h3>
-				<div class="bg-card rounded-lg border shadow-sm">
-					<div class="space-y-6 p-6">
-						<SettingsRow
-							label={m.navigation_sidebar_hover_expansion_label()}
-							description={m.navigation_sidebar_hover_expansion_description()}
-							contentClass="flex items-center gap-2"
-						>
-							<Switch
-								id="sidebarHoverExpansion"
-								checked={$formInputs.sidebarHoverExpansion.value}
-								disabled={isReadOnly}
-								onCheckedChange={(checked) => {
-									$formInputs.sidebarHoverExpansion.value = checked;
-									if (sidebar) {
-										sidebar.setHoverExpansion(checked);
-									}
-								}}
-							/>
-							<Label for="sidebarHoverExpansion" class="font-normal">
-								{$formInputs.sidebarHoverExpansion.value
-									? m.navigation_sidebar_hover_expansion_enabled()
-									: m.navigation_sidebar_hover_expansion_disabled()}
-							</Label>
-						</SettingsRow>
+				<h3 class="text-base font-semibold">{m.navigation_desktop_sidebar_title()}</h3>
+				<div class="divide-border/40 divide-y [&>*]:py-5 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
+					<SettingsRow
+						label={m.navigation_sidebar_hover_expansion_label()}
+						description={m.navigation_sidebar_hover_expansion_description()}
+						layout="inline"
+					>
+						<Switch
+							id="sidebarHoverExpansion"
+							checked={$formInputs.sidebarHoverExpansion.value}
+							disabled={isReadOnly}
+							onCheckedChange={(checked) => {
+								$formInputs.sidebarHoverExpansion.value = checked;
+								if (sidebar) {
+									sidebar.setHoverExpansion(checked);
+								}
+							}}
+						/>
+					</SettingsRow>
 
-						<Separator />
-
-						<!-- Keyboard Shortcuts -->
-						<SettingsRow
-							label={m.navigation_keyboard_shortcuts_label()}
-							description={m.navigation_keyboard_shortcuts_description()}
-							contentClass="flex items-center gap-2"
-						>
-							<Switch
-								id="keyboardShortcutsEnabled"
-								checked={$formInputs.keyboardShortcutsEnabled.value}
-								disabled={isReadOnly}
-								onCheckedChange={(checked) => {
-									$formInputs.keyboardShortcutsEnabled.value = checked;
-								}}
-							/>
-							<Label for="keyboardShortcutsEnabled" class="font-normal">
-								{$formInputs.keyboardShortcutsEnabled.value
-									? m.navigation_keyboard_shortcuts_enabled()
-									: m.navigation_keyboard_shortcuts_disabled()}
-							</Label>
-						</SettingsRow>
-					</div>
+					<!-- Keyboard Shortcuts -->
+					<SettingsRow
+						label={m.navigation_keyboard_shortcuts_label()}
+						description={m.navigation_keyboard_shortcuts_description()}
+						layout="inline"
+					>
+						<Switch
+							id="keyboardShortcutsEnabled"
+							checked={$formInputs.keyboardShortcutsEnabled.value}
+							disabled={isReadOnly}
+							onCheckedChange={(checked) => {
+								$formInputs.keyboardShortcutsEnabled.value = checked;
+							}}
+						/>
+					</SettingsRow>
 				</div>
 			</div>
 
 			<!-- Mobile Appearance Section -->
 			<div class="space-y-4">
-				<h3 class="text-lg font-medium">{m.navigation_mobile_appearance_title()}</h3>
-				<div class="bg-card rounded-lg border shadow-sm">
-					<div class="space-y-6 p-6">
-						<!-- Navigation Mode -->
-						<SettingsRow label={m.navigation_mode_label()} description={m.navigation_mode_description()} contentClass="space-y-3">
-							<SwitchWithLabel
-								id="mode-scope-toggle"
-								checked={modeIsLocal}
-								label={modeIsLocal ? m.this_device() : m.server_default()}
-								onCheckedChange={handleModeScopeChange}
-								disabled={isReadOnly && !modeIsLocal}
-							/>
+				<h3 class="text-base font-semibold">{m.navigation_mobile_appearance_title()}</h3>
+				<div class="divide-border/40 divide-y [&>*]:py-5 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
+					<!-- Navigation Mode -->
+					<SettingsRow label={m.navigation_mode_label()} description={m.navigation_mode_description()}>
+						<div class="bg-muted/40 inline-flex rounded-lg p-0.5">
+							<button
+								type="button"
+								disabled={isReadOnly && modeSegment !== 'default'}
+								onclick={() => handleModeSegmentSelect('default')}
+								class={cn(
+									'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+									modeSegment === 'default'
+										? 'bg-background text-foreground shadow-sm'
+										: 'text-muted-foreground hover:text-foreground'
+								)}
+							>
+								{m.server_default()}
+							</button>
+							<button
+								type="button"
+								disabled={isReadOnly && modeSegment === 'default'}
+								onclick={() => handleModeSegmentSelect('floating')}
+								class={cn(
+									'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+									modeSegment === 'floating'
+										? 'bg-background text-foreground shadow-sm'
+										: 'text-muted-foreground hover:text-foreground'
+								)}
+							>
+								<MonitorSpeakerIcon class="size-3.5" />
+								{m.navigation_mode_floating()}
+							</button>
+							<button
+								type="button"
+								disabled={isReadOnly && modeSegment === 'default'}
+								onclick={() => handleModeSegmentSelect('docked')}
+								class={cn(
+									'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+									modeSegment === 'docked'
+										? 'bg-background text-foreground shadow-sm'
+										: 'text-muted-foreground hover:text-foreground'
+								)}
+							>
+								<DockIcon class="size-3.5" />
+								{m.navigation_mode_docked()}
+							</button>
+						</div>
+					</SettingsRow>
 
-							<div class="grid grid-cols-2 gap-2">
-								<ArcaneButton
-									action="base"
-									tone={modeDisplayValue === 'floating' ? 'outline-primary' : 'outline'}
-									class="h-12 w-full"
-									onclick={() => handleModeSelect('floating')}
-									icon={MonitorSpeakerIcon}
-									customLabel={m.navigation_mode_floating()}
-								/>
-								<ArcaneButton
-									action="base"
-									tone={modeDisplayValue === 'docked' ? 'outline-primary' : 'outline'}
-									class="h-12 w-full"
-									onclick={() => handleModeSelect('docked')}
-									icon={DockIcon}
-									customLabel={m.navigation_mode_docked()}
-								/>
-							</div>
-						</SettingsRow>
-
-						<Separator />
-
-						<!-- Show Labels -->
-						<SettingsRow
-							label={m.navigation_show_labels_label()}
-							description={m.navigation_show_labels_description()}
-							contentClass="space-y-3"
-						>
-							<SwitchWithLabel
-								id="labels-scope-toggle"
-								checked={labelsIsLocal}
-								label={labelsIsLocal ? m.this_device() : m.server_default()}
-								onCheckedChange={handleLabelsScopeChange}
-								disabled={isReadOnly && !labelsIsLocal}
-							/>
-
-							<div class="flex items-center gap-3">
-								<Switch id="mobileNavigationShowLabels" checked={labelsDisplayValue} onCheckedChange={handleLabelsChange} />
-								<span class="text-sm font-medium">
-									{labelsDisplayValue ? m.on() : m.off()}
-								</span>
-							</div>
-						</SettingsRow>
-					</div>
+					<!-- Show Labels -->
+					<SettingsRow label={m.navigation_show_labels_label()} description={m.navigation_show_labels_description()}>
+						<div class="bg-muted/40 inline-flex rounded-lg p-0.5">
+							<button
+								type="button"
+								disabled={isReadOnly && labelsSegment !== 'default'}
+								onclick={() => handleLabelsSegmentSelect('default')}
+								class={cn(
+									'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+									labelsSegment === 'default'
+										? 'bg-background text-foreground shadow-sm'
+										: 'text-muted-foreground hover:text-foreground'
+								)}
+							>
+								{m.server_default()}
+							</button>
+							<button
+								type="button"
+								disabled={isReadOnly && labelsSegment === 'default'}
+								onclick={() => handleLabelsSegmentSelect('on')}
+								class={cn(
+									'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+									labelsSegment === 'on'
+										? 'bg-background text-foreground shadow-sm'
+										: 'text-muted-foreground hover:text-foreground'
+								)}
+							>
+								{m.on()}
+							</button>
+							<button
+								type="button"
+								disabled={isReadOnly && labelsSegment === 'default'}
+								onclick={() => handleLabelsSegmentSelect('off')}
+								class={cn(
+									'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+									labelsSegment === 'off'
+										? 'bg-background text-foreground shadow-sm'
+										: 'text-muted-foreground hover:text-foreground'
+								)}
+							>
+								{m.off()}
+							</button>
+						</div>
+					</SettingsRow>
 				</div>
 			</div>
 		</div>

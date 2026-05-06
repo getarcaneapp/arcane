@@ -6,7 +6,10 @@
 	import { ActionButtonGroup, type ActionButton } from '$lib/components/action-button-group/index.js';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
+	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
+	import { Switch } from '$lib/components/ui/switch/index.js';
 	import { CopyButton } from '$lib/components/ui/copy-button';
+	import { cn } from '$lib/utils';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
 	import { toast } from 'svelte-sonner';
@@ -125,15 +128,6 @@
 				icon: ResetIcon
 			});
 		}
-
-		actions.push({
-			id: 'refresh',
-			action: 'refresh',
-			label: m.common_refresh(),
-			onclick: refreshEnvironment,
-			disabled: isRefreshing,
-			loading: isRefreshing
-		});
 
 		return actions;
 	});
@@ -539,12 +533,41 @@
 		/>
 
 		<div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-			<div class="flex-1">
-				<h1 class="text-xl font-bold wrap-break-word sm:text-2xl">{environment.name}</h1>
-				<p class="text-muted-foreground mt-1.5 text-sm wrap-break-word sm:text-base">{m.environments_page_subtitle()}</p>
+			<div class="flex flex-1 items-start gap-4">
+				<div class="min-w-0 flex-1">
+					<h1 class="text-xl font-semibold wrap-break-word sm:text-2xl">{environment.name}</h1>
+					<p class="text-muted-foreground mt-1.5 text-sm wrap-break-word sm:text-base">{m.environments_page_subtitle()}</p>
+				</div>
+
+				<!-- Enable/Disable indicator -->
+				<div class="border-border/60 bg-card/40 flex shrink-0 items-center gap-2.5 rounded-lg border px-3 py-1.5">
+					<div class="flex items-center gap-2">
+						<div
+							class={cn(
+								'size-2 rounded-full transition-colors',
+								$formInputs.enabled.value ? 'bg-emerald-500 shadow-[0_0_8px_var(--color-emerald-500)]' : 'bg-muted-foreground/40'
+							)}
+						></div>
+						<span class="text-sm font-medium">
+							{$formInputs.enabled.value ? m.common_enabled() : m.common_disabled()}
+						</span>
+					</div>
+					{#if environment.id === '0'}
+						<ArcaneTooltip.Root>
+							<ArcaneTooltip.Trigger>
+								<Switch id="env-enabled-header" disabled={true} bind:checked={$formInputs.enabled.value} />
+							</ArcaneTooltip.Trigger>
+							<ArcaneTooltip.Content>
+								<p>{m.environments_local_setting_disabled()}</p>
+							</ArcaneTooltip.Content>
+						</ArcaneTooltip.Root>
+					{:else}
+						<Switch id="env-enabled-header" bind:checked={$formInputs.enabled.value} />
+					{/if}
+				</div>
 			</div>
 
-			<div class="flex min-w-0 flex-1 flex-col items-start gap-3 sm:items-end">
+			<div class="flex min-w-0 flex-col items-start gap-3 sm:items-end">
 				<div class="hidden flex-wrap items-center gap-2 self-start sm:flex sm:self-end">
 					{#if settingsForm.hasChanges}
 						<span class="text-xs text-orange-600 dark:text-orange-400">{m.environments_unsaved_changes()}</span>
@@ -570,11 +593,15 @@
 						customLabel={m.common_save()}
 						loadingLabel={m.common_saving()}
 					/>
+
+					<ArcaneButton action="refresh" onclick={refreshEnvironment} disabled={isRefreshing} loading={isRefreshing} />
 				</div>
 			</div>
 		</div>
 
-		<ActionButtonGroup buttons={headerActions} class="justify-end" />
+		{#if headerActions.length > 0}
+			<ActionButtonGroup buttons={headerActions} class="justify-end" />
+		{/if}
 
 		{#if environment.enabled && settings && isCurrentlyStandby}
 			<div

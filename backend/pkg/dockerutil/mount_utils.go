@@ -45,7 +45,7 @@ func GetHostPathForContainerPath(ctx context.Context, dockerCli *client.Client, 
 		}
 	}
 
-	if bestMatch != nil && bestMatch.Type == mounttypes.TypeBind {
+	if bestMatch != nil && (bestMatch.Type == mounttypes.TypeBind || bestMatch.Type == mounttypes.TypeVolume) {
 		// Calculate the relative path from mount destination to target path
 		rel := strings.TrimPrefix(containerPath, bestMatch.Destination)
 		rel = strings.TrimPrefix(rel, "/") // Ensure no double slash

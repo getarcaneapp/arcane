@@ -225,11 +225,11 @@
 					{/if}
 
 					{#if showLocalLoginForm}
-						<form onsubmit={handleLogin} class="space-y-4">
+						<form id="login-form" name="login" action="" method="post" onsubmit={handleLogin} class="space-y-4" autocomplete="on">
 							<div class="space-y-2">
 								<Label for="username" class="text-xs">{m.common_username()}</Label>
-								<InputGroup.Root>
-									<InputGroup.Addon>
+								<InputGroup.Root role={undefined}>
+									<InputGroup.Addon role={undefined}>
 										<UserIcon />
 									</InputGroup.Addon>
 									<InputGroup.Input
@@ -237,6 +237,7 @@
 										name="username"
 										type="text"
 										autocomplete="username"
+										aria-label={m.common_username()}
 										required
 										bind:value={username}
 										placeholder={m.auth_username_placeholder()}
@@ -246,8 +247,8 @@
 							</div>
 							<div class="space-y-2">
 								<Label for="password" class="text-xs">{m.common_password()}</Label>
-								<InputGroup.Root>
-									<InputGroup.Addon>
+								<InputGroup.Root role={undefined}>
+									<InputGroup.Addon role={undefined}>
 										<LockIcon />
 									</InputGroup.Addon>
 									<InputGroup.Input
@@ -255,6 +256,7 @@
 										name="password"
 										type="password"
 										autocomplete="current-password"
+										aria-label={m.common_password()}
 										required
 										bind:value={password}
 										placeholder={m.auth_password_placeholder()}

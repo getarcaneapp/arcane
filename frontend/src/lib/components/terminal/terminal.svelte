@@ -85,7 +85,7 @@
 			cursorBlink: true,
 			cursorStyle: 'underline',
 			fontSize: 14,
-			fontFamily: 'Geist Mono, monospace',
+			fontFamily: 'Mona Sans Mono, monospace',
 			theme: mode.current === 'dark' ? darkTheme : lightTheme
 		});
 

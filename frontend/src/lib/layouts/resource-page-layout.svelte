@@ -54,7 +54,7 @@
 				</div>
 			{/if}
 			<div class="min-w-0">
-				<h1 class="text-2xl font-bold tracking-tight sm:text-3xl">{title}</h1>
+				<h1 class="text-2xl font-semibold tracking-tight sm:text-3xl">{title}</h1>
 				{#if subtitle}
 					<p class="text-muted-foreground mt-1 text-sm">{subtitle}</p>
 				{/if}

@@ -12,14 +12,15 @@ ARG BUILD_TIME="unknown"
 WORKDIR /build
 
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates tzdata curl jq \
-&& apt-get clean && rm -rf /var/lib/apt/lists/*
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 COPY go.work ./
 COPY types ./types
 COPY cli ./cli
 COPY backend/go.mod backend/go.sum ./backend/
 WORKDIR /build/backend
-RUN --mount=type=cache,target=/go/pkg/mod go mod download
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
 
 COPY backend ./
 COPY .arcane.json ../arcane.json

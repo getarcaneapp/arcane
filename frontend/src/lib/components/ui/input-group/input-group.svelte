@@ -2,12 +2,12 @@
 	import { cn } from '$lib/utils.js';
 	import type { HTMLAttributes } from 'svelte/elements';
 
-	let { class: className, children, ...props }: HTMLAttributes<HTMLDivElement> = $props();
+	let { class: className, children, role = 'group', ...props }: HTMLAttributes<HTMLDivElement> = $props();
 </script>
 
 <div
 	data-slot="input-group"
-	role="group"
+	{role}
 	class={cn(
 		'group/input-group bg-input/80 relative flex w-full items-center overflow-hidden rounded-lg border shadow-xs backdrop-blur-sm transition-all outline-none',
 		'h-9 has-[>textarea]:h-auto',

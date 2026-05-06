@@ -3,7 +3,6 @@
 	import * as Card from '$lib/components/ui/card/index.js';
 	import Label from '$lib/components/ui/label/label.svelte';
 	import { Input } from '$lib/components/ui/input/index.js';
-	import { Switch } from '$lib/components/ui/switch/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
@@ -204,25 +203,6 @@
 				/>
 			</div>
 			<p class="text-muted-foreground mt-1.5 text-xs">{m.environments_api_url_help()}</p>
-		</div>
-
-		<div class="flex items-center justify-between rounded-lg border p-4">
-			<div class="space-y-0.5">
-				<Label for="env-enabled" class="text-sm font-medium">{m.common_enabled()}</Label>
-				<div class="text-muted-foreground text-xs">{m.environments_enable_disable_description()}</div>
-			</div>
-			{#if environment.id === '0'}
-				<ArcaneTooltip.Root>
-					<ArcaneTooltip.Trigger>
-						<Switch id="env-enabled" disabled={true} bind:checked={$formInputs.enabled.value} />
-					</ArcaneTooltip.Trigger>
-					<ArcaneTooltip.Content>
-						<p>{m.environments_local_setting_disabled()}</p>
-					</ArcaneTooltip.Content>
-				</ArcaneTooltip.Root>
-			{:else}
-				<Switch id="env-enabled" bind:checked={$formInputs.enabled.value} />
-			{/if}
 		</div>
 
 		<div class="grid grid-cols-2 gap-4 rounded-lg border p-4">

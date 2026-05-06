@@ -4,25 +4,19 @@
 @variant dark (&:where(.dark, .dark *));
 
 @font-face {
-	font-family: 'Geist';
+	font-family: 'Mona Sans';
 	src: url('/api/fonts/sans') format('woff2');
-	font-weight: 100 900;
+	font-weight: 200 900;
 	font-display: swap;
 	font-style: normal;
 }
 
 @font-face {
-	font-family: 'Geist Mono';
+	font-family: 'Mona Sans Mono';
 	src: url('/api/fonts/mono') format('woff2');
-	font-weight: 100 900;
+	font-weight: 200 900;
 	font-display: swap;
 	font-style: normal;
-}
-
-@font-face {
-	font-family: Calistoga;
-	font-display: swap;
-	src: url('/api/fonts/serif') format('woff2');
 }
 
 @layer base {
@@ -652,9 +646,8 @@
 	--color-sidebar-ring: var(--sidebar-ring);
 	--color-surface: var(--surface);
 
-	--font-sans: 'Geist', system-ui, sans-serif;
-	--font-mono: 'Geist Mono', monospace;
-	--font-serif: Calistoga;
+	--font-sans: 'Mona Sans', system-ui, sans-serif;
+	--font-mono: 'Mona Sans Mono', monospace;
 }
 
 @layer base {
