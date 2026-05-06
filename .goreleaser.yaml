@@ -397,6 +397,8 @@ blobs:
         name_template: arcane-cli_darwin_arm64
       - glob: dist/arcane-cli_darwin_arm64_v8.0/arcane-cli_darwin_arm64.sigstore.json
         name_template: arcane-cli_darwin_arm64.sigstore.json
+      - glob: dist/arcane_next-static-*_checksums.txt
+        name_template: arcane-cli_checksums.txt
     include_meta: false
     disable: '{{ if not (index .Env "BUILD_NEXT") }}true{{ end }}'
 

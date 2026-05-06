@@ -35,8 +35,10 @@ import (
 
 // Version and build information - set via ldflags at build time
 var (
-	Version  = "dev"
-	Revision = "unknown"
+	Version          = "dev"
+	Revision         = "unknown"
+	CLIStableBaseURL = "https://github.com/getarcaneapp/arcane/releases/download"
+	CLINextBaseURL   = "https://bucket.getarcane.app/bin/cli-next"
 )
 
 const (
@@ -259,6 +261,9 @@ func Save(c *types.Config) error {
 	}
 	if cfg.LogLevel != "" {
 		v.Set("log_level", cfg.LogLevel)
+	}
+	if cfg.CLIUpdateChannel != "" {
+		v.Set("cli_update_channel", cfg.CLIUpdateChannel)
 	}
 
 	// Canonical pagination structure.

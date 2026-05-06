@@ -65,6 +65,7 @@ import (
 	"github.com/getarcaneapp/arcane/cli/pkg/projects"
 	"github.com/getarcaneapp/arcane/cli/pkg/registries"
 	"github.com/getarcaneapp/arcane/cli/pkg/repos"
+	"github.com/getarcaneapp/arcane/cli/pkg/selfupdate"
 	"github.com/getarcaneapp/arcane/cli/pkg/settings"
 	"github.com/getarcaneapp/arcane/cli/pkg/system"
 	"github.com/getarcaneapp/arcane/cli/pkg/templates"
@@ -243,6 +244,7 @@ func init() {
 	rootCmd.AddCommand(jobs.JobsCmd)
 	rootCmd.AddCommand(system.SystemCmd)
 	rootCmd.AddCommand(updater.UpdaterCmd)
+	rootCmd.AddCommand(selfupdate.Cmd)
 	rootCmd.AddCommand(admin.AdminCmd)
 	rootCmd.AddCommand(gitops.GitopsCmd)
 }
@@ -287,17 +289,17 @@ func renderCommandHelp(cmd *cobra.Command) {
 		lipgloss.Println()
 	}
 
-	localFlagRows := collectFlagRows(cmd.NonInheritedFlags())
+	localFlagRows := collectHelpFlagRowsInternal(cmd)
 	if len(localFlagRows) > 0 {
 		lipgloss.Println(helpSectionStyle.Render("Flags"))
 		renderHelpTable([]string{"FLAG", "TYPE", "DEFAULT", "DESCRIPTION"}, localFlagRows)
 		lipgloss.Println()
 	}
 
-	inheritedFlagRows := collectFlagRows(cmd.InheritedFlags())
-	if len(inheritedFlagRows) > 0 {
+	globalFlagRows := collectGlobalHelpFlagRowsInternal(cmd)
+	if len(globalFlagRows) > 0 {
 		lipgloss.Println(helpSectionStyle.Render("Global Flags"))
-		renderHelpTable([]string{"FLAG", "TYPE", "DEFAULT", "DESCRIPTION"}, inheritedFlagRows)
+		renderHelpTable([]string{"FLAG", "TYPE", "DEFAULT", "DESCRIPTION"}, globalFlagRows)
 		lipgloss.Println()
 	}
 
@@ -336,14 +338,41 @@ func collectCommandRows(cmd *cobra.Command) [][]string {
 	return rows
 }
 
+func collectHelpFlagRowsInternal(cmd *cobra.Command) [][]string {
+	if cmd == nil {
+		return nil
+	}
+	if cmd == rootCmd {
+		return collectFlagRowsExcludingInternal(cmd.LocalFlags(), cmd.PersistentFlags())
+	}
+	return collectFlagRows(cmd.NonInheritedFlags())
+}
+
+func collectGlobalHelpFlagRowsInternal(cmd *cobra.Command) [][]string {
+	if cmd == nil {
+		return nil
+	}
+	if cmd == rootCmd || cmd.Runnable() {
+		return collectFlagRows(rootCmd.PersistentFlags())
+	}
+	return nil
+}
+
 func collectFlagRows(flags *pflag.FlagSet) [][]string {
+	return collectFlagRowsExcludingInternal(flags, nil)
+}
+
+func collectFlagRowsExcludingInternal(flags, exclude *pflag.FlagSet) [][]string {
 	if flags == nil {
 		return nil
 	}
 
 	rows := make([][]string, 0)
 	flags.VisitAll(func(f *pflag.Flag) {
-		if f == nil || f.Hidden {
+		if f == nil || f.Hidden || f.Name == "help" {
+			return
+		}
+		if exclude != nil && exclude.Lookup(f.Name) != nil {
 			return
 		}
 

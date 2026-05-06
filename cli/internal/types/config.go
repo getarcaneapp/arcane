@@ -90,6 +90,8 @@ type Config struct {
 	DefaultEnvironment string `yaml:"default_environment,omitempty" mapstructure:"default_environment"`
 	// LogLevel is the logging level (debug, info, warn, error, fatal, panic)
 	LogLevel string `yaml:"log_level,omitempty" mapstructure:"log_level"`
+	// CLIUpdateChannel controls which channel self-update uses (stable or next).
+	CLIUpdateChannel string `yaml:"cli_update_channel,omitempty" mapstructure:"cli_update_channel"`
 	// Pagination contains global and per-resource pagination configuration.
 	Pagination PaginationConfig `yaml:"pagination,omitempty" mapstructure:"pagination"`
 	// DefaultLimit is a legacy global default list limit for paginated resources.
