@@ -2150,7 +2150,7 @@
 	"notifications_ntfy_title": "Ntfy",
 	"notifications_pushover_title": "Pushover",
 	"notifications_gotify_title": "Gotify",
-	"notifications_matrix_title": "Matrix",
+	"notifications_matrix_title": "Μήτρα",
 	"notifications_discord_description": "Αποστολή ειδοποιήσεων στο Discord όταν ανιχνεύονται ενημερώσεις container",
 	"notifications_discord_enabled_label": "Ενεργοποίηση Ειδοποιήσεων Discord",
 	"notifications_discord_webhook_id_label": "Id Webhook",
