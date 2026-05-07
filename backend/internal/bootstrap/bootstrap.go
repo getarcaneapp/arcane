@@ -75,7 +75,7 @@ func Bootstrap(ctx context.Context) error {
 
 	cronLocation := cfg.GetLocation()
 	scheduler := scheduler.NewJobScheduler(appCtx, cronLocation)
-	appServices.JobSchedule.SetScheduler(scheduler)
+	appServices.JobSchedule.SetScheduler(appCtx, scheduler)
 	registerJobs(appCtx, scheduler, appServices, cfg)
 
 	router, tunnelServer := setupRouter(appCtx, cfg, appServices)

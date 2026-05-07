@@ -1,4 +1,4 @@
-# Contributing to Arcane
+  # Contributing to Arcane
 
 Thanks for helping make Arcane better! We've built a modern, streamlined development experience that gets you up and running in minutes.
 

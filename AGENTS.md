@@ -4,6 +4,10 @@
 
 Arcane is a modern Docker management UI with a **Go backend** (Huma v2 API), **SvelteKit frontend** (Svelte 5), and an optional headless agent. Three Go modules unified via `go.work`: `backend/`, `cli/`, `types/`.
 
+### Domain docs
+
+Single-context domain docs live at `CONTEXT.md`;
+
 ## Development Environment
 
 ```bash
@@ -29,6 +33,7 @@ internal/
 ```
 
 **Key patterns:**
+
 - Handlers are thin: extract user from context, call service, return response
 - Services receive dependencies via constructor injection (see [bootstrap.go](backend/internal/bootstrap/bootstrap.go))
 - Use `slog` for structured logging with context
@@ -38,7 +43,7 @@ internal/
 
 ```
 routes/(app)/         # Main app pages (dashboard, containers, images, etc.)
-routes/(auth)/        # Auth pages  
+routes/(auth)/        # Auth pages
 lib/components/       # Reusable Svelte components (shadcn-svelte based)
 lib/services/         # API service classes extending BaseAPIService
 lib/stores/           # Svelte stores (*.store.svelte files use runes)
@@ -119,7 +124,9 @@ Backend tests use in-memory SQLite and testify. See [auth_service_test.go](backe
 ## Anti-Patterns to Avoid
 
 ### Anti-Pattern 1: Business Logic in Handlers
+
 **Bad**: Handler contains business logic
+
 ```go
 func (h *ContainerHandler) RestartContainer(ctx context.Context, input *RestartInput) (*RestartOutput, error) {
     container, err := h.dockerClient.ContainerInspect(ctx, input.ID)
@@ -131,6 +138,7 @@ func (h *ContainerHandler) RestartContainer(ctx context.Context, input *RestartI
 ```
 
 **Good**: Handler calls service
+
 ```go
 func (h *ContainerHandler) RestartContainer(ctx context.Context, input *RestartInput) (*RestartOutput, error) {
     err := h.containerService.Restart(ctx, input.EnvironmentID, input.ID)
@@ -142,7 +150,9 @@ func (h *ContainerHandler) RestartContainer(ctx context.Context, input *RestartI
 ```
 
 ### Anti-Pattern 2: Svelte 4 Syntax
+
 **Bad**: Using deprecated Svelte 4 patterns
+
 ```svelte
 <script>
   export let name;
@@ -152,6 +162,7 @@ func (h *ContainerHandler) RestartContainer(ctx context.Context, input *RestartI
 ```
 
 **Good**: Using Svelte 5 runes
+
 ```svelte
 <script lang="ts">
   let { name }: { name: string } = $props();
@@ -161,7 +172,9 @@ func (h *ContainerHandler) RestartContainer(ctx context.Context, input *RestartI
 ```
 
 ### Anti-Pattern 3: Missing Multi-Environment Support
+
 **Bad**: Hardcoded API path without environment
+
 ```typescript
 async getContainers() {
     return this.api.get('/containers');
@@ -169,6 +182,7 @@ async getContainers() {
 ```
 
 **Good**: Include environment ID in path
+
 ```typescript
 async getContainers() {
     const envId = await environmentStore.getCurrentEnvironmentId();
@@ -177,7 +191,9 @@ async getContainers() {
 ```
 
 ### Anti-Pattern 4: Missing BaseModel
+
 **Bad**: Model without standard fields
+
 ```go
 type Stack struct {
     ID   string `json:"id"`
@@ -186,6 +202,7 @@ type Stack struct {
 ```
 
 **Good**: Model with BaseModel
+
 ```go
 type Stack struct {
     models.BaseModel
@@ -196,19 +213,22 @@ func (Stack) TableName() string { return "stacks" }
 ```
 
 ### Anti-Pattern 5: Using TypeScript `any`
+
 **Bad**: Untyped data
+
 ```typescript
 function processContainer(data: any) {
-    return data.name;
+  return data.name;
 }
 ```
 
 **Good**: Properly typed
+
 ```typescript
-import type { Container } from '$lib/types';
+import type { Container } from "$lib/types";
 
 function processContainer(data: Container): string {
-    return data.name;
+  return data.name;
 }
 ```
 
@@ -231,7 +251,8 @@ this.api.get(`/environments/${envId}/containers`);
 ```
 
 **Key patterns:**
-- Environment ID `"0"` = local Docker connection  
+
+- Environment ID `"0"` = local Docker connection
 - Remote environments connect via agents (standard or edge)
 - `environmentStore.ready` is a Promise — await before accessing environment-specific data
 - When environment changes, resource detail pages redirect to list pages (resources don't exist across environments)
@@ -319,10 +340,12 @@ Use `models.JSON` for arbitrary JSON fields and `models.StringSlice` for string 
 Edge agents connect to a central Arcane manager via WebSocket tunnel, allowing management of Docker hosts behind NAT/firewalls.
 
 **Architecture:**
+
 - Manager: Receives tunnel connections, proxies HTTP requests over WebSocket
 - Agent: Connects outbound to manager, executes requests locally
 
 **Configuration** (agent side):
+
 ```bash
 ARCANE_EDGE_AGENT=true
 ARCANE_MANAGER_API_URL=https://manager.example.com
@@ -330,11 +353,13 @@ ARCANE_AGENT_TOKEN=<api-key>
 ```
 
 **Message types** (see [tunnel.go](backend/pkg/libarcane/edge/tunnel.go)):
+
 - `request` / `response`: HTTP request/response proxying
 - `heartbeat` / `heartbeat_ack`: Connection keepalive
 - `ws_start` / `ws_data` / `ws_close`: WebSocket streaming (logs, stats)
 
 **When implementing agent features:**
+
 - Check `cfg.AgentMode` to skip manager-only logic (e.g., environment health checks)
 - Agent auto-pairs with manager on startup if token is configured
 - Edge connections are stateless — each request is independent
@@ -362,6 +387,7 @@ When working with Arcane:
 ❌ **Don't skip BaseModel**: All database models must embed `models.BaseModel` for UUID and timestamps.
 
 ❌ **Don't ignore existing patterns**: Before writing new code, search for similar functionality:
+
 ```bash
 # Find existing patterns
 git grep "func.*Service" backend/internal/services/
@@ -404,22 +430,27 @@ If any of these fail, **do not submit the PR**. Fix the issues first.
 
 ```markdown
 ## Summary
+
 [One paragraph explaining what this PR does and why]
 
 ## Related Issue
+
 Fixes #[issue number]
 
 ## Changes
+
 - [Specific change 1 with rationale]
 - [Specific change 2 with rationale]
 
 ## Testing
+
 - [ ] Dev environment starts successfully
 - [ ] Backend tests pass: `cd backend && go test ./...`
 - [ ] Frontend type checks pass: `just lint frontend`
 - [ ] Manually tested: [describe how]
 
 ## AI Tool Used
+
 AI Tool: [e.g., Claude Code, GitHub Copilot, Cursor]
 Assistance Level: [Significant/Moderate/Minor]
 ```

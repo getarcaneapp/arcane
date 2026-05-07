@@ -6,6 +6,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/types/jobschedule"
+	schedulertypes "github.com/getarcaneapp/arcane/types/scheduler"
 	"github.com/stretchr/testify/require"
 )
 
@@ -90,6 +91,74 @@ func TestJobService_ListJobs_IncludesDockerClientRefreshJob(t *testing.T) {
 	require.Equal(t, "*/30 * * * * *", refreshJob.Schedule)
 }
 
+func TestJobService_UpdateJobSchedules_ReschedulesChangedJob(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+
+	settingsSvc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	jobSvc := NewJobService(db, settingsSvc, &config.Config{})
+	scheduler := newFakeJobSchedulerInternal("image-polling", "auto-update")
+	jobSvc.SetScheduler(ctx, scheduler)
+
+	nextPollingInterval := "0 */10 * * * *"
+	_, err = jobSvc.UpdateJobSchedules(ctx, jobschedule.Update{
+		PollingInterval: &nextPollingInterval,
+	})
+	require.NoError(t, err)
+
+	require.Equal(t, []string{"image-polling"}, scheduler.rescheduled)
+}
+
+func TestJobService_UpdateJobSchedules_UsesLifecycleContextForReschedule(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+
+	settingsSvc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	type lifecycleContextKey struct{}
+	lifecycleCtx := context.WithValue(context.Background(), lifecycleContextKey{}, true)
+	requestCtx, cancelRequest := context.WithCancel(context.Background())
+
+	jobSvc := NewJobService(db, settingsSvc, &config.Config{})
+	scheduler := newFakeJobSchedulerInternal("image-polling")
+	jobSvc.SetScheduler(lifecycleCtx, scheduler)
+
+	nextPollingInterval := "0 */10 * * * *"
+	_, err = jobSvc.UpdateJobSchedules(requestCtx, jobschedule.Update{
+		PollingInterval: &nextPollingInterval,
+	})
+	require.NoError(t, err)
+
+	cancelRequest()
+
+	require.Len(t, scheduler.rescheduleContexts, 1)
+	require.NoError(t, scheduler.rescheduleContexts[0].Err())
+	require.Equal(t, true, scheduler.rescheduleContexts[0].Value(lifecycleContextKey{}))
+}
+
+func TestJobService_UpdateJobSchedules_SkipsManagerOnlyJobsInAgentMode(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+
+	settingsSvc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	jobSvc := NewJobService(db, settingsSvc, &config.Config{AgentMode: true})
+	scheduler := newFakeJobSchedulerInternal("environment-health")
+	jobSvc.SetScheduler(ctx, scheduler)
+
+	nextHealthInterval := "0 */5 * * * *"
+	_, err = jobSvc.UpdateJobSchedules(ctx, jobschedule.Update{
+		EnvironmentHealthInterval: &nextHealthInterval,
+	})
+	require.NoError(t, err)
+
+	require.Empty(t, scheduler.rescheduled)
+}
+
 func findJobStatusByIDInternal(t *testing.T, jobs []jobschedule.JobStatus, id string) jobschedule.JobStatus {
 	t.Helper()
 
@@ -102,3 +171,45 @@ func findJobStatusByIDInternal(t *testing.T, jobs []jobschedule.JobStatus, id st
 	t.Fatalf("job %q not found", id)
 	return jobschedule.JobStatus{}
 }
+
+type fakeJobSchedulerInternal struct {
+	jobs               map[string]schedulertypes.Job
+	rescheduled        []string
+	rescheduleContexts []context.Context
+}
+
+func newFakeJobSchedulerInternal(jobIDs ...string) *fakeJobSchedulerInternal {
+	jobs := make(map[string]schedulertypes.Job, len(jobIDs))
+	for _, jobID := range jobIDs {
+		jobs[jobID] = fakeJobInternal{name: jobID}
+	}
+
+	return &fakeJobSchedulerInternal{
+		jobs: jobs,
+	}
+}
+
+func (s *fakeJobSchedulerInternal) GetJob(jobID string) (schedulertypes.Job, bool) {
+	job, ok := s.jobs[jobID]
+	return job, ok
+}
+
+func (s *fakeJobSchedulerInternal) RescheduleJob(ctx context.Context, job schedulertypes.Job) error {
+	s.rescheduled = append(s.rescheduled, job.Name())
+	s.rescheduleContexts = append(s.rescheduleContexts, ctx)
+	return nil
+}
+
+type fakeJobInternal struct {
+	name string
+}
+
+func (j fakeJobInternal) Name() string {
+	return j.name
+}
+
+func (j fakeJobInternal) Schedule(context.Context) string {
+	return "0 0 0 * * *"
+}
+
+func (j fakeJobInternal) Run(context.Context) {}
