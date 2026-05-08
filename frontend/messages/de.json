@@ -698,6 +698,7 @@
 	"images_remove_selected_title": "{count} Image(s) entfernen",
 	"images_remove_selected_message": "Möchtest du die ausgewählten Image(s) wirklich entfernen? Diese Aktion kann nicht rückgängig gemacht werden.",
 	"images_remove_message": "Möchtest du dieses Image wirklich entfernen? Diese Aktion kann nicht rückgängig gemacht werden.",
+	"images_remove_force_label": "Entfernen erzwingen",
 	"images_pull_no_tag": "Image kann ohne Repository-Tag nicht gepullt werden",
 	"images_untagged": "Ohne Tag",
 	"images_repository": "Repository",
