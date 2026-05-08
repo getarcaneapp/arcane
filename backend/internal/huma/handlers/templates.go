@@ -868,21 +868,12 @@ func (h *TemplateHandler) getGlobalVariablesForRemoteEnvironmentInternal(ctx con
 		return nil, huma.Error500InternalServerError("environment service not available")
 	}
 
-	respBody, statusCode, err := h.environmentService.ProxyRequest(ctx, input.EnvironmentID, http.MethodGet, "/api/environments/0/templates/variables", nil)
+	response, err := proxyRemoteJSONInternal[base.ApiResponse[[]env.Variable]](ctx, h.environmentService, input.EnvironmentID, http.MethodGet, "/api/environments/0/templates/variables", nil)
 	if err != nil {
-		return nil, huma.Error502BadGateway("failed to proxy request to environment: " + err.Error())
+		return nil, err
 	}
 
-	if statusCode != http.StatusOK {
-		return nil, huma.NewError(statusCode, "remote environment returned error: "+string(respBody), nil)
-	}
-
-	var response base.ApiResponse[[]env.Variable]
-	if err := json.Unmarshal(respBody, &response); err != nil {
-		return nil, huma.Error500InternalServerError("failed to parse remote response: " + err.Error())
-	}
-
-	return &GetGlobalVariablesOutput{Body: response}, nil
+	return &GetGlobalVariablesOutput{Body: *response}, nil
 }
 
 // UpdateGlobalVariables updates global template variables.
@@ -914,24 +905,10 @@ func (h *TemplateHandler) updateGlobalVariablesForRemoteEnvironmentInternal(ctx 
 		return nil, huma.Error500InternalServerError("environment service not available")
 	}
 
-	body, err := json.Marshal(input.Body)
+	response, err := proxyRemoteJSONInternal[base.ApiResponse[base.MessageResponse]](ctx, h.environmentService, input.EnvironmentID, http.MethodPut, "/api/environments/0/templates/variables", input.Body)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("failed to marshal request body: " + err.Error())
+		return nil, err
 	}
 
-	respBody, statusCode, err := h.environmentService.ProxyRequest(ctx, input.EnvironmentID, http.MethodPut, "/api/environments/0/templates/variables", body)
-	if err != nil {
-		return nil, huma.Error502BadGateway("failed to proxy request to environment: " + err.Error())
-	}
-
-	if statusCode != http.StatusOK {
-		return nil, huma.NewError(statusCode, "remote environment returned error: "+string(respBody), nil)
-	}
-
-	var response base.ApiResponse[base.MessageResponse]
-	if err := json.Unmarshal(respBody, &response); err != nil {
-		return nil, huma.Error500InternalServerError("failed to parse remote response: " + err.Error())
-	}
-
-	return &UpdateGlobalVariablesOutput{Body: response}, nil
+	return &UpdateGlobalVariablesOutput{Body: *response}, nil
 }

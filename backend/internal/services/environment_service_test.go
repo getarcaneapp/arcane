@@ -24,6 +24,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
+	"github.com/getarcaneapp/arcane/types/gitops"
 )
 
 func setupEnvironmentServiceTestDB(t *testing.T) *database.DB {
@@ -255,6 +256,48 @@ func TestEnvironmentService_SyncRegistriesToEnvironment_IncludesECRFields(t *tes
 	createTestEnvironment(t, db, "env-1", server.URL, new("token-1"))
 
 	err := svc.SyncRegistriesToEnvironment(ctx, "env-1")
+	require.NoError(t, err)
+}
+
+func TestEnvironmentService_SyncRepositoriesToEnvironment_UsesAgentHeaders(t *testing.T) {
+	ctx := context.Background()
+	db := setupEnvironmentServiceTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.GitRepository{}))
+	svc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
+
+	description := "test repo"
+	createTestGitRepository(t, db, models.GitRepository{
+		BaseModel:   models.BaseModel{ID: "repo-1", CreatedAt: time.Now()},
+		Name:        "repo-1",
+		URL:         "https://github.com/getarcaneapp/arcane.git",
+		AuthType:    "http",
+		Username:    "arcane",
+		Token:       encryptSecretForTest(t, "repo-token"),
+		Enabled:     true,
+		Description: &description,
+	})
+
+	accessToken := "token-1"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, http.MethodPost, r.Method)
+		require.Equal(t, "/api/git-repositories/sync", r.URL.Path)
+		require.Equal(t, accessToken, r.Header.Get("X-API-Key"))
+		require.Equal(t, accessToken, r.Header.Get("X-Arcane-Agent-Token"))
+
+		var syncReq gitops.RepositorySyncRequest
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&syncReq))
+		require.Len(t, syncReq.Repositories, 1)
+		require.Equal(t, "repo-token", syncReq.Repositories[0].Token)
+		require.Equal(t, "arcane", syncReq.Repositories[0].Username)
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"data":{"message":"ok"}}`))
+	}))
+	defer server.Close()
+
+	createTestEnvironment(t, db, "env-1", server.URL, &accessToken)
+
+	err := svc.SyncRepositoriesToEnvironment(ctx, "env-1")
 	require.NoError(t, err)
 }
 

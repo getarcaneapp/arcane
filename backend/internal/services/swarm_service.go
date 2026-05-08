@@ -643,20 +643,12 @@ func (s *SwarmService) fetchSwarmNodeIdentityViaEdgeInternal(ctx context.Context
 	reqCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	body, statusCode, err := s.environmentService.ProxyRequest(reqCtx, environmentID, http.MethodGet, "/api/swarm/node-identity", nil)
-	if err != nil {
-		return nil, err
-	}
-	if statusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status code: %d", statusCode)
-	}
-
 	var parsed struct {
 		Success bool              `json:"success"`
 		Data    SwarmNodeIdentity `json:"data"`
 	}
-	if err := json.Unmarshal(body, &parsed); err != nil {
-		return nil, fmt.Errorf("failed to decode swarm node identity response: %w", err)
+	if err := s.environmentService.ProxyJSONRequest(reqCtx, environmentID, http.MethodGet, "/api/swarm/node-identity", nil, &parsed); err != nil {
+		return nil, err
 	}
 	if !parsed.Success {
 		return nil, fmt.Errorf("swarm node identity probe failed")

@@ -18,6 +18,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/pkg/remenv"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils/mapper"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 	"github.com/getarcaneapp/arcane/types/environment"
@@ -34,6 +35,7 @@ type EnvironmentService struct {
 	eventService    *EventService
 	settingsService *SettingsService
 	apiKeyService   *ApiKeyService
+	remoteClient    *remenv.Client
 	tokenCacheMu    sync.RWMutex
 	tokenCache      map[string]edgeTokenCacheEntry
 	tokenByEnvID    map[string]string
@@ -62,8 +64,12 @@ func NewEnvironmentService(db *database.DB, httpClient *http.Client, dockerServi
 		eventService:    eventService,
 		settingsService: settingsService,
 		apiKeyService:   apiKeyService,
-		tokenCache:      make(map[string]edgeTokenCacheEntry),
-		tokenByEnvID:    make(map[string]string),
+		remoteClient: remenv.NewClient(httpClient, remenv.TunnelTransportFuncs{
+			EnsureAvailableFunc: ensureRemoteEnvironmentTunnelAvailableInternal,
+			DoFunc:              doRemoteEnvironmentTunnelRequestInternal,
+		}),
+		tokenCache:   make(map[string]edgeTokenCacheEntry),
+		tokenByEnvID: make(map[string]string),
 	}
 }
 
@@ -1124,20 +1130,184 @@ func buildMTLSDeploymentSnippetInternal(managerURL string, apiKey string, genera
 	}
 }
 
+type remoteEnvironmentTargetInternal struct {
+	ID          string
+	Name        string
+	IsEdge      bool
+	AccessToken *string
+	TargetURL   string
+}
+
+func (s *EnvironmentService) resolveRemoteEnvironmentTargetInternal(ctx context.Context, envID string) (*remoteEnvironmentTargetInternal, error) {
+	environment, err := s.GetEnvironmentByID(ctx, envID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get environment: %w", err)
+	}
+
+	if envID == "0" {
+		return nil, fmt.Errorf("cannot proxy request to local environment")
+	}
+
+	return &remoteEnvironmentTargetInternal{
+		ID:          environment.ID,
+		Name:        environment.Name,
+		IsEdge:      environment.IsEdge,
+		AccessToken: environment.AccessToken,
+		TargetURL:   strings.TrimRight(environment.ApiUrl, "/"),
+	}, nil
+}
+
+func (s *EnvironmentService) getProxyRequestContextInternal(ctx context.Context) (context.Context, context.CancelFunc) {
+	if s != nil && s.settingsService != nil {
+		settings := s.settingsService.GetSettingsConfig()
+		return timeouts.WithTimeout(ctx, settings.ProxyRequestTimeout.AsInt(), timeouts.DefaultProxyRequest)
+	}
+
+	return context.WithTimeout(ctx, timeouts.DefaultProxyRequest) //nolint:gosec // helper intentionally returns the cancel func to callers.
+}
+
+func (s *EnvironmentService) buildRemoteRequestInternal(
+	target *remoteEnvironmentTargetInternal,
+	method string,
+	path string,
+	body []byte,
+	headers map[string]string,
+) (remenv.Request, error) {
+	if target == nil {
+		return remenv.Request{}, fmt.Errorf("remote environment target is required")
+	}
+
+	requestHeaders := make(map[string]string, len(headers)+2)
+	for key, value := range headers {
+		requestHeaders[key] = value
+	}
+	if len(body) > 0 && method != http.MethodGet && requestHeaders["Content-Type"] == "" {
+		requestHeaders["Content-Type"] = "application/json"
+	}
+	remenv.ApplyAgentTokenHeaderMap(requestHeaders, target.AccessToken)
+
+	return remenv.Request{
+		EnvironmentID: target.ID,
+		IsEdge:        target.IsEdge,
+		Method:        method,
+		URL:           target.TargetURL + path,
+		Path:          path,
+		Headers:       requestHeaders,
+		Body:          body,
+	}, nil
+}
+
+func (s *EnvironmentService) ExecuteRemoteRequest(ctx context.Context, envID string, method string, path string, body []byte) (*remenv.Response, error) {
+	target, err := s.resolveRemoteEnvironmentTargetInternal(ctx, envID)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.executeRemoteRequestForTargetInternal(ctx, target, method, path, body)
+}
+
+func (s *EnvironmentService) executeRemoteRequestForTargetInternal(
+	ctx context.Context,
+	target *remoteEnvironmentTargetInternal,
+	method string,
+	path string,
+	body []byte,
+) (*remenv.Response, error) {
+	request, err := s.buildRemoteRequestInternal(target, method, path, body, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := s.remoteClient.Do(ctx, request)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request to environment %s: %w", target.Name, err)
+	}
+
+	return resp, nil
+}
+
+func (s *EnvironmentService) ProxyJSONRequest(ctx context.Context, envID string, method string, path string, body []byte, out any) error {
+	proxyCtx, cancel := s.getProxyRequestContextInternal(ctx)
+	defer cancel()
+
+	target, err := s.resolveRemoteEnvironmentTargetInternal(proxyCtx, envID)
+	if err != nil {
+		return err
+	}
+
+	return s.proxyJSONRequestForTargetInternal(proxyCtx, target, method, path, body, out)
+}
+
+func (s *EnvironmentService) proxyJSONRequestForTargetInternal(
+	ctx context.Context,
+	target *remoteEnvironmentTargetInternal,
+	method string,
+	path string,
+	body []byte,
+	out any,
+) error {
+	resp, err := s.executeRemoteRequestForTargetInternal(ctx, target, method, path, body)
+	if err != nil {
+		return err
+	}
+	if err := resp.RequireSuccess(); err != nil {
+		return err
+	}
+	if err := resp.DecodeJSON(out); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func ensureRemoteEnvironmentTunnelAvailableInternal(ctx context.Context, envID string) error {
+	if edge.HasActiveTunnel(envID) {
+		return nil
+	}
+
+	if _, ok := edge.RequestTunnelAndWait(ctx, envID, edge.DefaultTunnelDemandTTL, edge.DefaultTunnelAcquireTimeout()); ok {
+		return nil
+	}
+
+	return fmt.Errorf("edge agent is not connected")
+}
+
+func doRemoteEnvironmentTunnelRequestInternal(
+	ctx context.Context,
+	envID string,
+	method string,
+	path string,
+	headers map[string]string,
+	body []byte,
+) (*remenv.Response, error) {
+	tunnel, ok := edge.GetRegistry().Get(envID)
+	if !ok {
+		return nil, fmt.Errorf("no active tunnel for environment %s", envID)
+	}
+	if tunnel.Conn.IsClosed() {
+		return nil, fmt.Errorf("tunnel for environment %s is closed", envID)
+	}
+
+	statusCode, respHeaders, respBody, err := edge.ProxyRequest(ctx, tunnel, method, path, "", headers, body)
+	if err != nil {
+		return nil, fmt.Errorf("tunnel request failed: %w", err)
+	}
+
+	return &remenv.Response{
+		StatusCode: statusCode,
+		Body:       respBody,
+		Headers:    respHeaders,
+	}, nil
+}
+
 // SyncRegistriesToEnvironment syncs all registries from this manager to a remote environment
 func (s *EnvironmentService) SyncRegistriesToEnvironment(ctx context.Context, environmentID string) error {
-	// Get the environment
-	environment, err := s.GetEnvironmentByID(ctx, environmentID)
+	target, err := s.resolveRemoteEnvironmentTargetInternal(ctx, environmentID)
 	if err != nil {
-		return fmt.Errorf("failed to get environment: %w", err)
+		return err
 	}
 
-	// Don't sync to local environment (ID "0")
-	if environmentID == "0" {
-		return fmt.Errorf("cannot sync registries to local environment")
-	}
-
-	slog.InfoContext(ctx, "Starting registry sync to environment", "environmentID", environmentID, "environmentName", environment.Name, "apiUrl", environment.ApiUrl)
+	slog.InfoContext(ctx, "Starting registry sync to environment", "environmentID", environmentID, "environmentName", target.Name, "apiUrl", target.TargetURL)
 
 	// Get all registries from this manager
 	var registries []models.ContainerRegistry
@@ -1201,37 +1371,10 @@ func (s *EnvironmentService) SyncRegistriesToEnvironment(ctx context.Context, en
 		return fmt.Errorf("failed to marshal sync request: %w", err)
 	}
 
-	// Send the sync request to the remote environment
 	reqCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	// Build headers
-	headers := map[string]string{
-		"Content-Type": "application/json",
-	}
-	if environment.AccessToken != nil && *environment.AccessToken != "" {
-		headers["X-Arcane-Agent-Token"] = *environment.AccessToken
-		headers["X-API-Key"] = *environment.AccessToken
-		slog.DebugContext(ctx, "Set auth headers for sync request")
-	} else {
-		slog.WarnContext(ctx, "No access token available for environment sync", "environmentID", environmentID)
-	}
-
-	targetURL := strings.TrimRight(environment.ApiUrl, "/") + "/api/container-registries/sync"
-	apiPath := "/api/container-registries/sync"
-
-	slog.InfoContext(ctx, "Sending sync request to agent", "url", targetURL, "registryCount", len(syncItems), "isEdge", environment.IsEdge)
-
-	// Use edge-aware client that routes through tunnel for edge environments
-	resp, err := edge.DoEdgeAwareRequest(reqCtx, environmentID, environment.IsEdge, http.MethodPost, targetURL, apiPath, headers, reqBody)
-	if err != nil {
-		return fmt.Errorf("failed to send sync request: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		slog.ErrorContext(ctx, "Sync request failed", "statusCode", resp.StatusCode, "response", string(resp.Body))
-		return fmt.Errorf("sync request failed with status %d: %s", resp.StatusCode, string(resp.Body))
-	}
+	slog.InfoContext(ctx, "Sending sync request to agent", "url", target.TargetURL+"/api/container-registries/sync", "registryCount", len(syncItems), "isEdge", target.IsEdge)
 
 	var result struct {
 		Success bool `json:"success"`
@@ -1239,33 +1382,27 @@ func (s *EnvironmentService) SyncRegistriesToEnvironment(ctx context.Context, en
 			Message string `json:"message"`
 		} `json:"data"`
 	}
-	if err := json.Unmarshal(resp.Body, &result); err != nil {
-		return fmt.Errorf("failed to decode sync response: %w", err)
+	if err := s.proxyJSONRequestForTargetInternal(reqCtx, target, http.MethodPost, "/api/container-registries/sync", reqBody, &result); err != nil {
+		return fmt.Errorf("failed to send sync request: %w", err)
 	}
 
 	if !result.Success {
 		return fmt.Errorf("sync failed: %s", result.Data.Message)
 	}
 
-	slog.InfoContext(ctx, "Successfully synced registries to environment", "environmentID", environmentID, "environmentName", environment.Name)
+	slog.InfoContext(ctx, "Successfully synced registries to environment", "environmentID", environmentID, "environmentName", target.Name)
 
 	return nil
 }
 
 // SyncRepositoriesToEnvironment syncs all git repositories from this manager to a remote environment
 func (s *EnvironmentService) SyncRepositoriesToEnvironment(ctx context.Context, environmentID string) error {
-	// Get the environment
-	environment, err := s.GetEnvironmentByID(ctx, environmentID)
+	target, err := s.resolveRemoteEnvironmentTargetInternal(ctx, environmentID)
 	if err != nil {
-		return fmt.Errorf("failed to get environment: %w", err)
+		return err
 	}
 
-	// Don't sync to local environment (ID "0")
-	if environmentID == "0" {
-		return fmt.Errorf("cannot sync repositories to local environment")
-	}
-
-	slog.InfoContext(ctx, "Starting git repository sync to environment", "environmentID", environmentID, "environmentName", environment.Name, "apiUrl", environment.ApiUrl)
+	slog.InfoContext(ctx, "Starting git repository sync to environment", "environmentID", environmentID, "environmentName", target.Name, "apiUrl", target.TargetURL)
 
 	// Get all git repositories from this manager
 	var repositories []models.GitRepository
@@ -1326,37 +1463,10 @@ func (s *EnvironmentService) SyncRepositoriesToEnvironment(ctx context.Context, 
 		return fmt.Errorf("failed to marshal sync request: %w", err)
 	}
 
-	// Send the sync request to the remote environment
 	reqCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	// Build headers
-	headers := map[string]string{
-		"Content-Type": "application/json",
-	}
-	if environment.AccessToken != nil && *environment.AccessToken != "" {
-		headers["X-Arcane-Agent-Token"] = *environment.AccessToken
-		headers["X-API-Key"] = *environment.AccessToken
-		slog.DebugContext(ctx, "Set auth headers for git repository sync request")
-	} else {
-		slog.WarnContext(ctx, "No access token available for environment git repository sync", "environmentID", environmentID)
-	}
-
-	targetURL := strings.TrimRight(environment.ApiUrl, "/") + "/api/git-repositories/sync"
-	apiPath := "/api/git-repositories/sync"
-
-	slog.InfoContext(ctx, "Sending git repository sync request to agent", "url", targetURL, "repositoryCount", len(syncItems), "isEdge", environment.IsEdge)
-
-	// Use edge-aware client that routes through tunnel for edge environments
-	resp, err := edge.DoEdgeAwareRequest(reqCtx, environmentID, environment.IsEdge, http.MethodPost, targetURL, apiPath, headers, reqBody)
-	if err != nil {
-		return fmt.Errorf("failed to send sync request: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		slog.ErrorContext(ctx, "Git repository sync request failed", "statusCode", resp.StatusCode, "response", string(resp.Body))
-		return fmt.Errorf("sync request failed with status %d: %s", resp.StatusCode, string(resp.Body))
-	}
+	slog.InfoContext(ctx, "Sending git repository sync request to agent", "url", target.TargetURL+"/api/git-repositories/sync", "repositoryCount", len(syncItems), "isEdge", target.IsEdge)
 
 	var result struct {
 		Success bool `json:"success"`
@@ -1364,51 +1474,27 @@ func (s *EnvironmentService) SyncRepositoriesToEnvironment(ctx context.Context, 
 			Message string `json:"message"`
 		} `json:"data"`
 	}
-	if err := json.Unmarshal(resp.Body, &result); err != nil {
-		return fmt.Errorf("failed to decode sync response: %w", err)
+	if err := s.proxyJSONRequestForTargetInternal(reqCtx, target, http.MethodPost, "/api/git-repositories/sync", reqBody, &result); err != nil {
+		return fmt.Errorf("failed to send sync request: %w", err)
 	}
 
 	if !result.Success {
 		return fmt.Errorf("sync failed: %s", result.Data.Message)
 	}
 
-	slog.InfoContext(ctx, "Successfully synced git repositories to environment", "environmentID", environmentID, "environmentName", environment.Name)
+	slog.InfoContext(ctx, "Successfully synced git repositories to environment", "environmentID", environmentID, "environmentName", target.Name)
 
 	return nil
 }
 
 // ProxyRequest sends a request to a remote environment's API.
 func (s *EnvironmentService) ProxyRequest(ctx context.Context, envID string, method string, path string, body []byte) ([]byte, int, error) {
-	environment, err := s.GetEnvironmentByID(ctx, envID)
-	if err != nil {
-		return nil, 0, fmt.Errorf("failed to get environment: %w", err)
-	}
-
-	if envID == "0" {
-		return nil, 0, fmt.Errorf("cannot proxy request to local environment")
-	}
-
-	targetURL := strings.TrimRight(environment.ApiUrl, "/") + path
-
-	settings := s.settingsService.GetSettingsConfig()
-	proxyCtx, cancel := timeouts.WithTimeout(ctx, settings.ProxyRequestTimeout.AsInt(), timeouts.DefaultProxyRequest)
+	proxyCtx, cancel := s.getProxyRequestContextInternal(ctx)
 	defer cancel()
 
-	// Build headers
-	headers := make(map[string]string)
-	if method != http.MethodGet && len(body) > 0 {
-		headers["Content-Type"] = "application/json"
-	}
-
-	// Use appropriate auth header
-	if environment.AccessToken != nil && *environment.AccessToken != "" {
-		headers["X-Arcane-Agent-Token"] = *environment.AccessToken
-		headers["X-API-Key"] = *environment.AccessToken
-	}
-	// Use edge-aware client that routes through tunnel for edge environments
-	resp, err := edge.DoEdgeAwareRequest(proxyCtx, envID, environment.IsEdge, method, targetURL, path, headers, body)
+	resp, err := s.ExecuteRemoteRequest(proxyCtx, envID, method, path, body)
 	if err != nil {
-		return nil, 0, fmt.Errorf("failed to send request: %w", err)
+		return nil, 0, err
 	}
 
 	return resp.Body, resp.StatusCode, nil

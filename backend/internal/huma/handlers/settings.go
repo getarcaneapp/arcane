@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -237,18 +236,11 @@ func (h *SettingsHandler) GetPublicSettings(ctx context.Context, input *GetPubli
 		if h.environmentService == nil {
 			return nil, huma.Error500InternalServerError("environment service not available")
 		}
-		respBody, statusCode, err := h.environmentService.ProxyRequest(ctx, input.EnvironmentID, http.MethodGet, "/api/environments/0/settings/public", nil)
+		settingsDto, err := proxyRemoteJSONInternal[[]settings.PublicSetting](ctx, h.environmentService, input.EnvironmentID, http.MethodGet, "/api/environments/0/settings/public", nil)
 		if err != nil {
-			return nil, huma.Error502BadGateway("failed to proxy request to environment: " + err.Error())
+			return nil, err
 		}
-		if statusCode != http.StatusOK {
-			return nil, huma.NewError(statusCode, "environment returned error: "+string(respBody), nil)
-		}
-		var settingsDto []settings.PublicSetting
-		if err := json.Unmarshal(respBody, &settingsDto); err != nil {
-			return nil, huma.Error500InternalServerError("failed to decode environment response: " + err.Error())
-		}
-		return &GetPublicSettingsOutput{Body: settingsDto}, nil
+		return &GetPublicSettingsOutput{Body: *settingsDto}, nil
 	}
 
 	settingsList := h.settingsService.ListSettings(models.SettingVisibilityPublic)
@@ -273,18 +265,11 @@ func (h *SettingsHandler) GetSettings(ctx context.Context, input *GetSettingsInp
 		if h.environmentService == nil {
 			return nil, huma.Error500InternalServerError("environment service not available")
 		}
-		respBody, statusCode, err := h.environmentService.ProxyRequest(ctx, input.EnvironmentID, http.MethodGet, "/api/environments/0/settings", nil)
+		settingsDto, err := proxyRemoteJSONInternal[[]settings.PublicSetting](ctx, h.environmentService, input.EnvironmentID, http.MethodGet, "/api/environments/0/settings", nil)
 		if err != nil {
-			return nil, huma.Error502BadGateway("failed to proxy request to environment: " + err.Error())
+			return nil, err
 		}
-		if statusCode != http.StatusOK {
-			return nil, huma.NewError(statusCode, "environment returned error: "+string(respBody), nil)
-		}
-		var settingsDto []settings.PublicSetting
-		if err := json.Unmarshal(respBody, &settingsDto); err != nil {
-			return nil, huma.Error500InternalServerError("failed to decode environment response: " + err.Error())
-		}
-		return &GetSettingsOutput{Body: settingsDto}, nil
+		return &GetSettingsOutput{Body: *settingsDto}, nil
 	}
 
 	visibility := models.SettingVisibilityNonAdmin
@@ -358,25 +343,12 @@ func (h *SettingsHandler) updateSettingsForRemoteEnvironment(ctx context.Context
 		return nil, huma.Error403Forbidden((&common.AuthSettingsUpdateError{}).Error())
 	}
 
-	body, err := json.Marshal(input.Body)
+	apiResp, err := proxyRemoteJSONInternal[base.ApiResponse[[]settings.SettingDto]](ctx, h.environmentService, input.EnvironmentID, http.MethodPut, "/api/environments/0/settings", input.Body)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("failed to marshal request body: " + err.Error())
+		return nil, err
 	}
 
-	respBody, statusCode, err := h.environmentService.ProxyRequest(ctx, input.EnvironmentID, http.MethodPut, "/api/environments/0/settings", body)
-	if err != nil {
-		return nil, huma.Error502BadGateway("failed to proxy request to environment: " + err.Error())
-	}
-	if statusCode != http.StatusOK {
-		return nil, huma.NewError(statusCode, "environment returned error: "+string(respBody), nil)
-	}
-
-	var apiResp base.ApiResponse[[]settings.SettingDto]
-	if err := json.Unmarshal(respBody, &apiResp); err != nil {
-		return nil, huma.Error500InternalServerError("failed to decode environment response: " + err.Error())
-	}
-
-	return &UpdateSettingsOutput{Body: apiResp}, nil
+	return &UpdateSettingsOutput{Body: *apiResp}, nil
 }
 
 func (h *SettingsHandler) updateSettingsForLocalEnvironment(ctx context.Context, input settings.Update) (*UpdateSettingsOutput, error) {

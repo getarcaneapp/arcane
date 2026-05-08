@@ -133,13 +133,13 @@ func syncTimeoutSettingsToAgentsInternal(ctx context.Context, appServices *Servi
 	slog.InfoContext(ctx, "Syncing environment settings to remote environments", "count", len(envs), "keys", keys)
 
 	for _, env := range envs {
-		_, statusCode, err := appServices.Environment.ProxyRequest(ctx, env.ID, http.MethodPut, "/api/environments/0/settings", body)
+		resp, err := appServices.Environment.ExecuteRemoteRequest(ctx, env.ID, http.MethodPut, "/api/environments/0/settings", body)
 		if err != nil {
 			slog.WarnContext(ctx, "Failed to sync timeout settings to environment", "environmentID", env.ID, "environmentName", env.Name, "error", err)
 			continue
 		}
-		if statusCode != http.StatusOK {
-			slog.WarnContext(ctx, "Environment returned non-OK status for timeout sync", "environmentID", env.ID, "environmentName", env.Name, "statusCode", statusCode)
+		if err := resp.RequireSuccess(); err != nil {
+			slog.WarnContext(ctx, "Environment returned non-OK status for timeout sync", "environmentID", env.ID, "environmentName", env.Name, "statusCode", resp.StatusCode, "response", string(resp.Body))
 			continue
 		}
 		slog.DebugContext(ctx, "Successfully synced timeout settings to environment", "environmentID", env.ID, "environmentName", env.Name)
