@@ -698,6 +698,7 @@
 	"images_remove_selected_title": "{count}개 이미지 제거",
 	"images_remove_selected_message": "선택한 이미지를 제거하시겠습니까? 이 작업은 취소할 수 없습니다.",
 	"images_remove_message": "이 이미지를 제거하시겠습니까? 이 작업은 취소할 수 없습니다.",
+	"images_remove_force_label": "강제 제거",
 	"images_pull_no_tag": "리포지토리 태그 없이 이미지를 가져올 수 없습니다",
 	"images_untagged": "태그 없음(Untagged)",
 	"images_repository": "리포지토리",
