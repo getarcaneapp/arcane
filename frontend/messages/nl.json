@@ -698,6 +698,7 @@
 	"images_remove_selected_title": "Verwijder {count} Afbeelding(en)",
 	"images_remove_selected_message": "Weet u zeker dat u de geselecteerde afbeelding(en) wilt verwijderen? Deze actie kan niet ongedaan worden gemaakt.",
 	"images_remove_message": "Weet je zeker dat je deze afbeelding wilt verwijderen? Deze actie kan niet ongedaan worden gemaakt.",
+	"images_remove_force_label": "Forceer verwijderen",
 	"images_pull_no_tag": "Kan geen afbeelding verwijderen zonder repository tag",
 	"images_untagged": "Niet-getagd",
 	"images_repository": "Bewaarplaats",
