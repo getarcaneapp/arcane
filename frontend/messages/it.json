@@ -698,6 +698,7 @@
 	"images_remove_selected_title": "Rimuovi {count} immagine(i)",
 	"images_remove_selected_message": "Sei sicuro di volere eliminare le immagini selezionate? Questa azione non potrà essere annullata.",
 	"images_remove_message": "Sei sicuro di volere eliminare questa immagine? Questa azione non potrà essere annullata.",
+	"images_remove_force_label": "Rimuovere con forza",
 	"images_pull_no_tag": "Impossibile scaricare l'immagine senza il tag del repository",
 	"images_untagged": "Senza tag",
 	"images_repository": "Repository",
