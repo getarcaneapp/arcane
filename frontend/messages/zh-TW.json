@@ -698,6 +698,7 @@
 	"images_remove_selected_title": "移除 {count} 個映像檔",
 	"images_remove_selected_message": "確定要移除選擇的映像檔？本操作無法撤銷。",
 	"images_remove_message": "確定要移除這個映像檔？本操作無法撤銷。",
+	"images_remove_force_label": "強制移除",
 	"images_pull_no_tag": "無法拉取沒有儲存庫標籤的映像檔",
 	"images_untagged": "無標籤",
 	"images_repository": "儲存庫",
