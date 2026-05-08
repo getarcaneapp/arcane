@@ -698,6 +698,7 @@
 	"images_remove_selected_title": "Xóa {count} Image(s)",
 	"images_remove_selected_message": "Bạn có chắc chắn muốn xóa các Image đã chọn? Thao tác này không thể hoàn tác.",
 	"images_remove_message": "Bạn có chắc chắn muốn xóa Image này? Thao tác này không thể hoàn tác.",
+	"images_remove_force_label": "Buộc gỡ bỏ",
 	"images_pull_no_tag": "Không thể pull Image nếu không có repository tag",
 	"images_untagged": "Chưa gắn tag",
 	"images_repository": "Repository",
