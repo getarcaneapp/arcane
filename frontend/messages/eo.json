@@ -698,6 +698,7 @@
 	"images_remove_selected_title": "Forigi {count} prakopio(j)n",
 	"images_remove_selected_message": "Ĉu vi certas, ke vi volas forigi la elektita(j)n prakopio(j)n? Tiu ago ne estas malfarebla.",
 	"images_remove_message": "Ĉu vi certas, ke vi volas forigi ĉi tiun prakopion? Tiu ago ne estas malfarebla.",
+	"images_remove_force_label": "Deviga forigo",
 	"images_pull_no_tag": "Ne eblas elŝuti prakopion sen deponeja etikedo",
 	"images_untagged": "Neetikeditaj",
 	"images_repository": "Deponejo",
