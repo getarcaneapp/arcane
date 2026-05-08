@@ -698,6 +698,7 @@
 	"images_remove_selected_title": "移除了{count}个镜像",
 	"images_remove_selected_message": "您确定要删除选定的镜像吗？此操作不可撤销。",
 	"images_remove_message": "您确定要移除此镜像吗？此操作不可撤销。",
+	"images_remove_force_label": "强制移除",
 	"images_pull_no_tag": "无法拉取没有仓库标签的镜像",
 	"images_untagged": "无标签",
 	"images_repository": "资源库",
