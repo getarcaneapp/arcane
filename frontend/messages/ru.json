@@ -698,6 +698,7 @@
 	"images_remove_selected_title": "Удалить изображение(я) {count}",
 	"images_remove_selected_message": "Вы уверены, что хотите удалить выбранное изображение(я)? Это действие нельзя отменить.",
 	"images_remove_message": "Вы уверены, что хотите удалить это изображение? Это действие нельзя отменить.",
+	"images_remove_force_label": "Принудительное удаление",
 	"images_pull_no_tag": "Не удается получить изображение без тега репозитория",
 	"images_untagged": "Без тега",
 	"images_repository": "Репозиторий",
