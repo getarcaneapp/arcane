@@ -282,20 +282,6 @@ func injectServiceConfiguration(project *composetypes.Project, injectionVars Env
 	}
 }
 
-func LoadComposeProjectFromDir(ctx context.Context, dir, projectName, projectsDirectory string, autoInjectEnv bool, pathMapper *PathMapper) (*composetypes.Project, string, error) {
-	composeFile, err := DetectComposeFile(dir)
-	if err != nil {
-		return nil, "", err
-	}
-
-	proj, err := LoadComposeProject(ctx, composeFile, projectName, projectsDirectory, autoInjectEnv, pathMapper)
-	if err != nil {
-		return nil, "", err
-	}
-
-	return proj, composeFile, nil
-}
-
 func ResolveRelativeProjectPaths(project *composetypes.Project, workdir string) {
 	if project == nil || workdir == "" {
 		return

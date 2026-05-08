@@ -1016,6 +1016,60 @@ func TestProjectService_UpdateProject_RenameFailsWhenProjectRunning(t *testing.T
 	assert.Equal(t, "Foo", *fromDB.DirName)
 }
 
+func TestProjectService_UpdateProject_RollsBackFilesystemWhenDBSaveFailsAfterRename(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
+
+	originalDirName := "Foo"
+	originalPath := filepath.Join(projectsDir, originalDirName)
+	require.NoError(t, os.MkdirAll(originalPath, 0o755))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-rollback"},
+		Name:      "Foo",
+		DirName:   &originalDirName,
+		Path:      originalPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	callbackName := "test:fail_project_update_after_rename"
+	require.NoError(t, db.Callback().Update().Before("gorm:update").Register(callbackName, func(tx *gorm.DB) {
+		if tx.Statement != nil && tx.Statement.Table == "projects" {
+			tx.AddError(errors.New("forced project update failure"))
+		}
+	}))
+	defer func() {
+		db.Callback().Update().Remove(callbackName)
+	}()
+
+	_, err = svc.UpdateProject(ctx, project.ID, new("bar"), nil, nil, models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "tester",
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to update project")
+
+	assert.DirExists(t, originalPath)
+	assert.NoDirExists(t, filepath.Join(projectsDir, "bar"))
+
+	var fromDB models.Project
+	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	assert.Equal(t, "Foo", fromDB.Name)
+	assert.Equal(t, originalPath, fromDB.Path)
+	require.NotNil(t, fromDB.DirName)
+	assert.Equal(t, "Foo", *fromDB.DirName)
+}
+
 func TestProjectService_UpdateProject_ValidatesComposeUsingExistingProjectName(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
@@ -1393,6 +1447,77 @@ func TestProjectService_UpdateProject_UsesGlobalEnvDuringComposeValidation(t *te
 	assert.Equal(t, compose, string(composeBytes))
 }
 
+func TestProjectService_CreateProject_InvalidComposeDoesNotPersistProject(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
+
+	created, err := svc.CreateProject(ctx, "broken-project", "services:\n  app:\n    image: nginx:alpine\n    environment:\n      - REQUIRED=${UNTERMINATED\n", nil, models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "tester",
+	})
+	require.Error(t, err)
+	assert.Nil(t, created)
+
+	var count int64
+	require.NoError(t, db.Model(&models.Project{}).Count(&count).Error)
+	assert.Zero(t, count)
+
+	entries, readErr := os.ReadDir(projectsDir)
+	require.NoError(t, readErr)
+	assert.Empty(t, entries)
+}
+
+func TestProjectService_DestroyProject_RemoveFilesFalsePreservesDirectory(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
+
+	originalComposeDown := composeDownProjectInternal
+	t.Cleanup(func() { composeDownProjectInternal = originalComposeDown })
+	composeDownProjectInternal = func(context.Context, *composetypes.Project, bool) error {
+		return nil
+	}
+
+	projectPath := createComposeProjectDir(t, projectsDir, "keep-files")
+	dirName := "keep-files"
+	projectRecord := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-keep-files"},
+		Name:      "keep-files",
+		DirName:   &dirName,
+		Path:      projectPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(projectRecord).Error)
+
+	err = svc.DestroyProject(ctx, projectRecord.ID, false, false, models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "tester",
+	})
+	require.NoError(t, err)
+	assert.DirExists(t, projectPath)
+
+	var count int64
+	require.NoError(t, db.Model(&models.Project{}).Where("id = ?", projectRecord.ID).Count(&count).Error)
+	assert.Zero(t, count)
+}
+
 func TestProjectService_UpdateProject_DoesNotResolveHostEnvThroughGlobalEnvDuringComposeValidation(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
@@ -1583,6 +1708,64 @@ func TestProjectService_ApplyGitSyncProjectFiles_MigratesDirectEnvIntoProjectOve
 	assert.Contains(t, string(effectiveBytes), "REMOTE_ONLY=1\n")
 }
 
+func TestProjectService_ApplyGitSyncProjectFiles_RollsBackFilesystemWhenDBSaveFails(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
+
+	dirName := "git-sync-db-rollback"
+	projectPath := filepath.Join(projectsDir, dirName)
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("services:\n  app:\n    image: nginx:1\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, ".env"), []byte("TOKEN=local\n"), 0o600))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-git-sync-db-rollback"},
+		Name:      dirName,
+		DirName:   &dirName,
+		Path:      projectPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	callbackName := "test:fail_project_git_sync_update"
+	require.NoError(t, db.Callback().Update().Before("gorm:update").Register(callbackName, func(tx *gorm.DB) {
+		if tx.Statement != nil && tx.Statement.Table == "projects" {
+			tx.AddError(errors.New("forced project update failure"))
+		}
+	}))
+	defer func() {
+		db.Callback().Update().Remove(callbackName)
+	}()
+
+	gitEnv := "TOKEN=git\nREMOTE_ONLY=1\n"
+	updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:2\n", &gitEnv, models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "tester",
+	})
+	require.Error(t, err)
+	require.Nil(t, updated)
+	assert.Contains(t, err.Error(), "failed to update project")
+
+	composeBytes, readErr := os.ReadFile(filepath.Join(projectPath, "compose.yaml"))
+	require.NoError(t, readErr)
+	assert.Contains(t, string(composeBytes), "nginx:1")
+
+	envBytes, readErr := os.ReadFile(filepath.Join(projectPath, ".env"))
+	require.NoError(t, readErr)
+	assert.Equal(t, "TOKEN=local\n", string(envBytes))
+	assert.NoFileExists(t, filepath.Join(projectPath, ".env.git"))
+	assert.NoFileExists(t, filepath.Join(projectPath, "project.env"))
+}
+
 func TestProjectService_ApplyGitSyncProjectFiles_NormalizesStaleCopiedGitOverrides(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
@@ -1771,19 +1954,8 @@ func TestProjectService_ApplyGitSyncProjectFiles_UsesGlobalEnvDuringComposeValid
 	assert.Equal(t, compose, string(composeBytes))
 }
 
-func TestProjectService_PersistGitSyncEnvFiles_UsesPreparedState(t *testing.T) {
-	db := setupProjectTestDB(t)
-	ctx := context.Background()
-
+func TestProjectFilesystem_StageGitSync_UsesPreparedState(t *testing.T) {
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
-
-	settingsService, err := NewSettingsService(ctx, db)
-	require.NoError(t, err)
-
-	eventService := NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
-
 	dirName := "git-sync-prepared-state"
 	projectPath := filepath.Join(projectsDir, dirName)
 	require.NoError(t, os.MkdirAll(projectPath, 0o755))
@@ -1792,13 +1964,17 @@ func TestProjectService_PersistGitSyncEnvFiles_UsesPreparedState(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(projectPath, ".env.git"), []byte("BASE=git\nTOKEN=git\n"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "project.env"), []byte("TOKEN=local\n"), 0o600))
 
-	update, err := svc.prepareGitSyncEnvUpdateInternal(projectPath, new("BASE=git-updated\nTOKEN=git\nREMOTE=1\n"))
+	fs := projects.NewProjectFilesystem(projects.ProjectFilesystemConfig{ProjectsRoot: projectsDir})
+	staged, err := fs.StageGitSync(projects.ProjectWorkspace{
+		Name:    dirName,
+		DirName: dirName,
+		Path:    projectPath,
+	}, "services:\n  app:\n    image: nginx:alpine\n", new("BASE=git-updated\nTOKEN=git\nREMOTE=1\n"))
 	require.NoError(t, err)
-	require.NotNil(t, update.effectiveContent)
 
 	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "project.env"), []byte("TOKEN=unexpected\n"), 0o600))
 
-	require.NoError(t, svc.persistGitSyncEnvFilesInternal(projectPath, projectsDir, update))
+	require.NoError(t, fs.Promote(staged))
 
 	overrideBytes, readErr := os.ReadFile(filepath.Join(projectPath, "project.env"))
 	require.NoError(t, readErr)

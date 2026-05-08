@@ -257,7 +257,7 @@ func (fw *Watcher) addExistingDirectoriesRecursiveInternal(path string, ancestor
 			return nil
 		}
 
-		if err := fw.watcher.Add(path); err != nil {
+		if err := fw.addWatchInternal(path); err != nil {
 			slog.Warn("Failed to add directory to watcher",
 				"path", path,
 				"error", err)
@@ -281,6 +281,52 @@ func (fw *Watcher) addExistingDirectoriesRecursiveInternal(path string, ancestor
 		if err := fw.addExistingDirectoriesRecursiveInternal(childPath, ancestors); err != nil {
 			return err
 		}
+	}
+
+	return nil
+}
+
+func (fw *Watcher) addWatchInternal(path string) error {
+	cleanPath := filepath.Clean(path)
+	resolvedPath := ""
+
+	if fw.followSymlinks {
+		info, err := os.Lstat(path)
+		if err != nil {
+			slog.Warn("Failed to inspect symlinked directory for resolved watch",
+				"path", path,
+				"error", err)
+		} else if info.Mode()&os.ModeSymlink != 0 {
+			resolvedPath, err = filepath.EvalSymlinks(path)
+			if err != nil {
+				slog.Warn("Failed to resolve symlinked directory for resolved watch",
+					"path", path,
+					"error", err)
+			} else {
+				resolvedPath = filepath.Clean(resolvedPath)
+				if resolvedPath == cleanPath {
+					resolvedPath = ""
+				} else if err := fw.watcher.Add(resolvedPath); err != nil {
+					slog.Warn("Failed to add resolved symlink target to watcher",
+						"path", path,
+						"resolvedPath", resolvedPath,
+						"error", err)
+					resolvedPath = ""
+				}
+			}
+		}
+	}
+
+	if err := fw.watcher.Add(path); err != nil {
+		if resolvedPath != "" {
+			if removeErr := fw.watcher.Remove(resolvedPath); removeErr != nil {
+				slog.Warn("Failed to roll back resolved symlink target watch",
+					"path", path,
+					"resolvedPath", resolvedPath,
+					"error", removeErr)
+			}
+		}
+		return err
 	}
 
 	return nil

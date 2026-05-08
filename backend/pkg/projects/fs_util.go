@@ -538,7 +538,3 @@ func IsSafeSubdirectory(baseDir, subdir string) bool {
 	// The path must not escape the base directory
 	return !strings.HasPrefix(rel, "..") && !filepath.IsAbs(rel)
 }
-
-func SaveOrUpdateProjectFiles(projectsRoot, projectPath, composeContent string, envContent *string) error {
-	return WriteProjectFiles(projectsRoot, projectPath, composeContent, envContent)
-}

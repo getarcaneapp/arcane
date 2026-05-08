@@ -64,7 +64,10 @@ func NewProjectService(db *database.DB, settingsService *SettingsService, eventS
 }
 
 func (s *ProjectService) getPathMapper(ctx context.Context) (*projects.PathMapper, error) {
-	configuredPath := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
+	configuredPath := "/app/data/projects"
+	if s.settingsService != nil {
+		configuredPath = s.settingsService.GetStringSetting(ctx, "projectsDirectory", configuredPath)
+	}
 
 	var containerDir, hostDir string
 
@@ -114,13 +117,86 @@ func (s *ProjectService) getPathMapper(ctx context.Context) (*projects.PathMappe
 }
 
 func (s *ProjectService) getProjectsDirectoryInternal(ctx context.Context) (string, error) {
-	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
+	projectsDirSetting := "/app/data/projects"
+	if s.settingsService != nil {
+		projectsDirSetting = s.settingsService.GetStringSetting(ctx, "projectsDirectory", projectsDirSetting)
+	}
 	projectsDir, err := projects.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
 	if err != nil {
 		return "", err
 	}
 
 	return filepath.Clean(projectsDir), nil
+}
+
+func (s *ProjectService) buildProjectFilesystemInternal(ctx context.Context, allowDefault bool) (*projects.ProjectFilesystem, error) {
+	projectsDirectorySetting := "/app/data/projects"
+	autoInjectEnv := false
+	if s.settingsService != nil {
+		cfg := s.settingsService.GetSettingsOrDefaults(ctx)
+		projectsDirectorySetting = cfg.ProjectsDirectory.Value
+		autoInjectEnv = utils.BoolOrDefault(cfg.AutoInjectEnv.Value, false)
+	}
+
+	projectsDirectory, err := projects.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirectorySetting))
+	if err != nil {
+		if !allowDefault {
+			return nil, fmt.Errorf("failed to get projects directory: %w", err)
+		}
+		slog.WarnContext(ctx, "unable to determine projects directory; using default", "error", err)
+		projectsDirectory = "/app/data/projects"
+	}
+
+	pathMapper, pmErr := s.getPathMapper(ctx)
+	if pmErr != nil {
+		slog.WarnContext(ctx, "failed to create path mapper, continuing without translation", "error", pmErr)
+	}
+
+	return projects.NewProjectFilesystem(projects.ProjectFilesystemConfig{
+		ProjectsRoot:  projectsDirectory,
+		AutoInjectEnv: autoInjectEnv,
+		PathMapper:    pathMapper,
+	}), nil
+}
+
+func (s *ProjectService) resolveProjectComposeFileHintInternal(ctx context.Context, proj *models.Project) (string, error) {
+	if proj == nil || proj.GitOpsManagedBy == nil || strings.TrimSpace(*proj.GitOpsManagedBy) == "" {
+		return "", nil
+	}
+
+	var sync models.GitOpsSync
+	if err := s.db.WithContext(ctx).
+		Select("compose_path").
+		Where("id = ?", *proj.GitOpsManagedBy).
+		First(&sync).Error; err == nil {
+		composeFileName := strings.TrimSpace(filepath.Base(sync.ComposePath))
+		if composeFileName != "" && composeFileName != "." {
+			return composeFileName, nil
+		}
+		return "", nil
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return "", fmt.Errorf("failed to resolve GitOps compose path for project %s: %w", proj.ID, err)
+	}
+
+	return "", nil
+}
+
+func (s *ProjectService) buildProjectWorkspaceInternal(ctx context.Context, proj *models.Project) (projects.ProjectWorkspace, error) {
+	if proj == nil {
+		return projects.ProjectWorkspace{}, fmt.Errorf("project is nil")
+	}
+
+	composeFileName, err := s.resolveProjectComposeFileHintInternal(ctx, proj)
+	if err != nil {
+		return projects.ProjectWorkspace{}, err
+	}
+
+	return projects.ProjectWorkspace{
+		Name:            proj.Name,
+		DirName:         utils.DerefString(proj.DirName),
+		Path:            proj.Path,
+		ComposeFileName: composeFileName,
+	}, nil
 }
 
 func (s *ProjectService) GetProjectRelativePath(ctx context.Context, projectPath string) string {
@@ -190,7 +266,10 @@ const (
 	imagePullModeAlways
 )
 
-var composePullProjectServicesInternal = projects.ComposePull
+var (
+	composeDownProjectInternal         = projects.ComposeDown
+	composePullProjectServicesInternal = projects.ComposePull
+)
 
 func resolveServiceImagePullMode(svc composetypes.ServiceConfig) imagePullMode {
 	rawPolicy := strings.ToLower(strings.TrimSpace(svc.PullPolicy))
@@ -416,29 +495,17 @@ func (s *ProjectService) resolveProjectComposeFileInternal(ctx context.Context, 
 		return "", fmt.Errorf("project is nil")
 	}
 
-	if proj.GitOpsManagedBy != nil && strings.TrimSpace(*proj.GitOpsManagedBy) != "" {
-		var sync models.GitOpsSync
-		if err := s.db.WithContext(ctx).
-			Select("compose_path").
-			Where("id = ?", *proj.GitOpsManagedBy).
-			First(&sync).Error; err == nil {
-			composeFileName := strings.TrimSpace(filepath.Base(sync.ComposePath))
-			if composeFileName != "" && composeFileName != "." {
-				candidate := filepath.Join(proj.Path, composeFileName)
-				if info, statErr := os.Stat(candidate); statErr == nil {
-					if !info.IsDir() {
-						return candidate, nil
-					}
-				} else if !os.IsNotExist(statErr) {
-					return "", fmt.Errorf("failed to inspect GitOps compose file %s: %w", candidate, statErr)
-				}
-			}
-		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return "", fmt.Errorf("failed to resolve GitOps compose path for project %s: %w", proj.ID, err)
-		}
+	fs, err := s.buildProjectFilesystemInternal(ctx, true)
+	if err != nil {
+		return "", err
 	}
 
-	composeFile, err := projects.DetectComposeFile(proj.Path)
+	workspace, err := s.buildProjectWorkspaceInternal(ctx, proj)
+	if err != nil {
+		return "", err
+	}
+
+	composeFile, err := fs.ResolveComposeFile(workspace)
 	if err != nil {
 		return "", &common.ProjectComposeFileNotFoundError{Err: err}
 	}
@@ -447,29 +514,17 @@ func (s *ProjectService) resolveProjectComposeFileInternal(ctx context.Context, 
 }
 
 func (s *ProjectService) loadComposeProjectForProjectInternal(ctx context.Context, proj *models.Project) (*composetypes.Project, string, error) {
-	composeFileFullPath, err := s.resolveProjectComposeFileInternal(ctx, proj)
+	fs, err := s.buildProjectFilesystemInternal(ctx, true)
 	if err != nil {
 		return nil, "", err
 	}
 
-	cfg := s.settingsService.GetSettingsOrDefaults(ctx)
-	projectsDirectory, pdErr := projects.GetProjectsDirectory(ctx, strings.TrimSpace(cfg.ProjectsDirectory.Value))
-	if pdErr != nil {
-		slog.WarnContext(ctx, "unable to determine projects directory; using default", "error", pdErr)
-		projectsDirectory = "/app/data/projects"
+	workspace, err := s.buildProjectWorkspaceInternal(ctx, proj)
+	if err != nil {
+		return nil, "", err
 	}
 
-	pathMapper, pmErr := s.getPathMapper(ctx)
-	if pmErr != nil {
-		slog.WarnContext(ctx, "failed to create path mapper, continuing without translation", "error", pmErr)
-	}
-
-	composeProject, loadErr := projects.LoadComposeProject(ctx, composeFileFullPath, normalizeComposeProjectName(proj.Name), projectsDirectory, utils.BoolOrDefault(cfg.AutoInjectEnv.Value, false), pathMapper)
-	if loadErr != nil {
-		return nil, "", loadErr
-	}
-
-	return composeProject, composeFileFullPath, nil
+	return fs.LoadComposeProject(ctx, workspace)
 }
 
 func buildSelectedProjectImageRefsInternal(compProj *composetypes.Project, servicesToUpdate []string) []string {
@@ -1022,25 +1077,17 @@ func (s *ProjectService) enrichProjectsWithUpdateInfoInternal(
 }
 
 func (s *ProjectService) getProjectImageRefsFromComposeInternal(ctx context.Context, proj models.Project) ([]string, error) {
-	projectsDir, err := s.getProjectsDirectoryInternal(ctx)
+	fs, err := s.buildProjectFilesystemInternal(ctx, false)
 	if err != nil {
 		return nil, err
 	}
 
-	pathMapper, pmErr := s.getPathMapper(ctx)
-	if pmErr != nil {
-		slog.WarnContext(ctx, "failed to create path mapper while resolving project image refs", "projectID", proj.ID, "projectName", proj.Name, "error", pmErr)
+	workspace, err := s.buildProjectWorkspaceInternal(ctx, &proj)
+	if err != nil {
+		return nil, err
 	}
 
-	autoInjectEnv := s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false)
-	composeProject, _, loadErr := projects.LoadComposeProjectFromDir(
-		ctx,
-		proj.Path,
-		normalizeComposeProjectName(proj.Name),
-		projectsDir,
-		autoInjectEnv,
-		pathMapper,
-	)
+	composeProject, _, loadErr := fs.LoadComposeProject(ctx, workspace)
 	if loadErr != nil {
 		return nil, fmt.Errorf("load compose project: %w", loadErr)
 	}
@@ -1681,7 +1728,7 @@ func (s *ProjectService) DownProject(ctx context.Context, projectID string, user
 		return fmt.Errorf("failed to update project status to stopping: %w", err)
 	}
 
-	if err := projects.ComposeDown(ctx, proj, false); err != nil {
+	if err := composeDownProjectInternal(ctx, proj, false); err != nil {
 		_ = s.updateProjectStatusInternal(ctx, projectID, models.ProjectStatusRunning)
 		return fmt.Errorf("failed to bring down project: %w", err)
 	}
@@ -1699,39 +1746,49 @@ func (s *ProjectService) DownProject(ctx context.Context, projectID string, user
 }
 
 func (s *ProjectService) CreateProject(ctx context.Context, name, composeContent string, envContent *string, user models.User) (*models.Project, error) {
-	sanitized := projects.SanitizeProjectName(name)
-
-	projectsDirectory, err := projects.GetProjectsDirectory(ctx, s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects"))
+	fs, err := s.buildProjectFilesystemInternal(ctx, false)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get projects directory: %w", err)
+		return nil, err
 	}
 
-	basePath := filepath.Join(projectsDirectory, sanitized)
-	projectPath, folderName, err := projects.CreateUniqueDir(projectsDirectory, basePath, name, common.DirPerm)
+	workspace, err := fs.CreateWorkspace(name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create project directory: %w", err)
 	}
 
+	staged, err := fs.StageCreate(workspace, composeContent, envContent)
+	if err != nil {
+		_ = os.RemoveAll(workspace.Path)
+		return nil, fmt.Errorf("failed to save project files: %w", err)
+	}
+
+	if err := s.validateComposeContentForUpdate(ctx, fs.Config.ProjectsRoot, staged.Stage.Path, staged.Target.Name, composeContent, envContent); err != nil {
+		_ = os.RemoveAll(staged.Stage.Path)
+		_ = os.RemoveAll(workspace.Path)
+		return nil, fmt.Errorf("invalid compose file: %w", err)
+	}
+
+	if err := fs.Promote(staged); err != nil {
+		_ = os.RemoveAll(staged.Stage.Path)
+		_ = os.RemoveAll(workspace.Path)
+		return nil, fmt.Errorf("failed to save project files: %w", err)
+	}
+
 	proj := &models.Project{
-		Name:         name,
-		DirName:      &folderName,
-		Path:         projectPath,
+		Name:         staged.Target.Name,
+		DirName:      &staged.Target.DirName,
+		Path:         staged.Target.Path,
 		Status:       models.ProjectStatusStopped,
 		ServiceCount: 0,
 		RunningCount: 0,
 	}
 
 	if err := s.db.WithContext(ctx).Create(proj).Error; err != nil {
+		_ = os.RemoveAll(staged.Target.Path)
 		return nil, fmt.Errorf("failed to create project: %w", err)
 	}
 
-	if err := projects.SaveOrUpdateProjectFiles(projectsDirectory, projectPath, composeContent, envContent); err != nil {
-		// Best-effort cleanup to restore pre-transaction behavior.
-		_ = s.db.WithContext(ctx).Delete(proj).Error
-		return nil, fmt.Errorf("failed to save project files: %w", err)
-	}
-
-	metadata := models.JSON{"action": "create", "projectID": proj.ID, "projectName": name, "path": projectPath}
+	metadata := models.JSON{"action": "create", "projectID": proj.ID, "projectName": proj.Name, "path": proj.Path}
 	if logErr := s.eventService.LogProjectEvent(ctx, models.EventTypeProjectCreate, proj.ID, name, user.ID, user.Username, "0", metadata); logErr != nil {
 		slog.ErrorContext(ctx, "could not log project creation", "error", logErr)
 	}
@@ -1762,7 +1819,7 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, r
 
 	if removeVolumes {
 		if compProj, _, lerr := s.loadComposeProjectForProjectInternal(ctx, proj); lerr == nil {
-			if derr := projects.ComposeDown(ctx, compProj, true); derr != nil {
+			if derr := composeDownProjectInternal(ctx, compProj, true); derr != nil {
 				slog.WarnContext(ctx, "failed to remove volumes", "error", derr)
 			}
 		} else {
@@ -1771,8 +1828,17 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, r
 	}
 
 	if removeFiles {
+		fs, fsErr := s.buildProjectFilesystemInternal(ctx, true)
+		if fsErr != nil {
+			return fsErr
+		}
+		workspace, wsErr := s.buildProjectWorkspaceInternal(ctx, proj)
+		if wsErr != nil {
+			return wsErr
+		}
+
 		slog.DebugContext(ctx, "Removing project files", "path", proj.Path)
-		if err := os.RemoveAll(proj.Path); err != nil {
+		if err := fs.RemoveWorkspace(workspace); err != nil {
 			slog.ErrorContext(ctx, "Failed to remove project files", "path", proj.Path, "error", err)
 			return fmt.Errorf("failed to remove project files: %w", err)
 		}
@@ -2507,20 +2573,19 @@ func (s *ProjectService) RestartProject(ctx context.Context, projectID string, u
 		return fmt.Errorf("failed to update project status to restarting: %w", err)
 	}
 
-	// Get configured projects directory from settings
-	cfg := s.settingsService.GetSettingsOrDefaults(ctx)
-	projectsDirectory, pdErr := projects.GetProjectsDirectory(ctx, strings.TrimSpace(cfg.ProjectsDirectory.Value))
-	if pdErr != nil {
-		slog.WarnContext(ctx, "unable to determine projects directory; using default", "error", pdErr)
-		projectsDirectory = "/app/data/projects"
+	fs, err := s.buildProjectFilesystemInternal(ctx, true)
+	if err != nil {
+		_ = s.updateProjectStatusInternal(ctx, projectID, models.ProjectStatusRunning)
+		return err
 	}
 
-	pathMapper, pmErr := s.getPathMapper(ctx)
-	if pmErr != nil {
-		slog.WarnContext(ctx, "failed to create path mapper, continuing without translation", "error", pmErr)
+	workspace, err := s.buildProjectWorkspaceInternal(ctx, proj)
+	if err != nil {
+		_ = s.updateProjectStatusInternal(ctx, projectID, models.ProjectStatusRunning)
+		return err
 	}
 
-	compProj, _, lerr := projects.LoadComposeProjectFromDir(ctx, proj.Path, normalizeComposeProjectName(proj.Name), projectsDirectory, utils.BoolOrDefault(cfg.AutoInjectEnv.Value, false), pathMapper)
+	compProj, _, lerr := fs.LoadComposeProject(ctx, workspace)
 	if lerr != nil {
 		_ = s.updateProjectStatusInternal(ctx, projectID, models.ProjectStatusRunning)
 		return fmt.Errorf("failed to load compose project: %w", lerr)
@@ -2544,28 +2609,54 @@ func (s *ProjectService) RestartProject(ctx context.Context, projectID string, u
 }
 
 func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, name *string, composeContent, envContent *string, user models.User) (*models.Project, error) {
-	proj, projectsDirectory, err := s.getProjectForUpdate(ctx, projectID)
+	proj, fs, workspace, err := s.getProjectForUpdate(ctx, projectID)
 	if err != nil {
 		return nil, err
 	}
 	if err := ensureProjectMutableInternal(&proj); err != nil {
 		return nil, err
 	}
+	if isProjectRenameRequestedInternal(proj.Name, name) && proj.Status != models.ProjectStatusStopped {
+		return nil, fmt.Errorf("project must be stopped before renaming (current status: %s)", proj.Status)
+	}
 
-	if err := s.withProjectRenameRollback(ctx, &proj, func() error {
-		if err := s.applyProjectRenameIfNeeded(&proj, name, projectsDirectory); err != nil {
-			return err
-		}
-		if err := s.persistUpdatedProjectFiles(ctx, &proj, projectsDirectory, composeContent, envContent); err != nil {
-			return err
-		}
-		if err := s.db.WithContext(ctx).Save(&proj).Error; err != nil {
-			return fmt.Errorf("failed to update project: %w", err)
-		}
-		return nil
-	}); err != nil {
+	staged, err := fs.StageUpdate(workspace, name, composeContent, envContent)
+	if err != nil {
 		return nil, err
 	}
+	if composeContent != nil {
+		effectiveEnvContent, envErr := s.resolveEffectiveEnvContentForUpdateInternal(staged.Stage.Path, envContent)
+		if envErr != nil {
+			_ = os.RemoveAll(staged.Stage.Path)
+			return nil, fmt.Errorf("failed to resolve project env state: %w", envErr)
+		}
+		if err := s.validateComposeContentForUpdate(ctx, fs.Config.ProjectsRoot, staged.Stage.Path, staged.Target.Name, *composeContent, effectiveEnvContent); err != nil {
+			_ = os.RemoveAll(staged.Stage.Path)
+			return nil, fmt.Errorf("invalid compose file: %w", err)
+		}
+	}
+	promoteRollback, err := preparePromotedProjectRollbackInternal(fs, staged)
+	if err != nil {
+		_ = os.RemoveAll(staged.Stage.Path)
+		return nil, err
+	}
+	if err := fs.Promote(staged); err != nil {
+		promoteRollback.cleanup()
+		_ = os.RemoveAll(staged.Stage.Path)
+		return nil, err
+	}
+
+	proj.Name = staged.Target.Name
+	proj.DirName = &staged.Target.DirName
+	proj.Path = staged.Target.Path
+
+	if err := s.db.WithContext(ctx).Save(&proj).Error; err != nil {
+		if rollbackErr := promoteRollback.rollback(); rollbackErr != nil {
+			return nil, fmt.Errorf("failed to update project: %w; filesystem rollback failed: %w", err, rollbackErr)
+		}
+		return nil, fmt.Errorf("failed to update project: %w", err)
+	}
+	promoteRollback.cleanup()
 
 	// When compose content changes, recalculate service counts and status so the
 	// overview doesn't show stale values (e.g. ghost services after removal).
@@ -2595,7 +2686,7 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 }
 
 func (s *ProjectService) ApplyGitSyncProjectFiles(ctx context.Context, projectID string, composeContent string, gitEnvContent *string, user models.User) (*models.Project, error) {
-	proj, projectsDirectory, err := s.getProjectForUpdate(ctx, projectID)
+	proj, fs, workspace, err := s.getProjectForUpdate(ctx, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -2603,24 +2694,36 @@ func (s *ProjectService) ApplyGitSyncProjectFiles(ctx context.Context, projectID
 		return nil, err
 	}
 
-	envUpdate, err := s.prepareGitSyncEnvUpdateInternal(proj.Path, gitEnvContent)
+	staged, err := fs.StageGitSync(workspace, composeContent, gitEnvContent)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve git env state: %w", err)
 	}
-
-	if err := s.validateComposeContentForUpdate(ctx, projectsDirectory, proj.Path, proj.Name, composeContent, envUpdate.effectiveContent); err != nil {
+	effectiveEnvContent, envErr := s.resolveEffectiveEnvContentForUpdateInternal(staged.Stage.Path, nil)
+	if envErr != nil {
+		_ = os.RemoveAll(staged.Stage.Path)
+		return nil, fmt.Errorf("failed to resolve git env state: %w", envErr)
+	}
+	if err := s.validateComposeContentForUpdate(ctx, fs.Config.ProjectsRoot, staged.Stage.Path, staged.Target.Name, composeContent, effectiveEnvContent); err != nil {
+		_ = os.RemoveAll(staged.Stage.Path)
 		return nil, fmt.Errorf("invalid compose file: %w", err)
 	}
-
-	if err := projects.WriteComposeFile(projectsDirectory, proj.Path, composeContent); err != nil {
-		return nil, fmt.Errorf("failed to save compose file: %w", err)
+	promoteRollback, err := preparePromotedProjectRollbackInternal(fs, staged)
+	if err != nil {
+		_ = os.RemoveAll(staged.Stage.Path)
+		return nil, err
 	}
-	if err := s.persistGitSyncEnvFilesInternal(proj.Path, projectsDirectory, envUpdate); err != nil {
+	if err := fs.Promote(staged); err != nil {
+		promoteRollback.cleanup()
+		_ = os.RemoveAll(staged.Stage.Path)
 		return nil, fmt.Errorf("failed to sync git env files: %w", err)
 	}
 	if err := s.db.WithContext(ctx).Save(&proj).Error; err != nil {
+		if rollbackErr := promoteRollback.rollback(); rollbackErr != nil {
+			return nil, fmt.Errorf("failed to update project: %w; filesystem rollback failed: %w", err, rollbackErr)
+		}
 		return nil, fmt.Errorf("failed to update project: %w", err)
 	}
+	promoteRollback.cleanup()
 
 	// Recalculate service counts and status after compose file sync
 	if err := s.updateProjectStatusandCountsInternal(ctx, proj.ID, proj.Status); err != nil {
@@ -2644,73 +2747,144 @@ func (s *ProjectService) ApplyGitSyncProjectFiles(ctx context.Context, projectID
 	return &proj, nil
 }
 
-func (s *ProjectService) getProjectForUpdate(ctx context.Context, projectID string) (models.Project, string, error) {
+func (s *ProjectService) getProjectForUpdate(ctx context.Context, projectID string) (models.Project, *projects.ProjectFilesystem, projects.ProjectWorkspace, error) {
 	var proj models.Project
 	if err := s.db.WithContext(ctx).First(&proj, "id = ?", projectID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return models.Project{}, "", fmt.Errorf("project not found")
+			return models.Project{}, nil, projects.ProjectWorkspace{}, fmt.Errorf("project not found")
 		}
-		return models.Project{}, "", fmt.Errorf("failed to get project: %w", err)
+		return models.Project{}, nil, projects.ProjectWorkspace{}, fmt.Errorf("failed to get project: %w", err)
 	}
 
-	projectsDirectory, err := projects.GetProjectsDirectory(ctx, s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects"))
+	fs, err := s.buildProjectFilesystemInternal(ctx, false)
 	if err != nil {
-		return models.Project{}, "", fmt.Errorf("failed to get projects directory: %w", err)
+		return models.Project{}, nil, projects.ProjectWorkspace{}, err
 	}
 
-	if err := s.ensureProjectPathUnderRoot(ctx, &proj, false); err != nil {
-		return models.Project{}, "", err
+	workspace, err := s.buildProjectWorkspaceInternal(ctx, &proj)
+	if err != nil {
+		return models.Project{}, nil, projects.ProjectWorkspace{}, err
+	}
+	workspace, err = fs.ResolveExisting(workspace)
+	if err != nil {
+		return models.Project{}, nil, projects.ProjectWorkspace{}, err
+	}
+	proj.Path = workspace.Path
+	if workspace.DirName != "" {
+		proj.DirName = &workspace.DirName
 	}
 
-	return proj, projectsDirectory, nil
+	return proj, fs, workspace, nil
 }
 
-func (s *ProjectService) withProjectRenameRollback(ctx context.Context, proj *models.Project, run func() error) error {
-	originalPath := proj.Path
-	originalDirName := proj.DirName
-
-	if err := run(); err != nil {
-		if proj.Path != originalPath {
-			if renameErr := os.Rename(proj.Path, originalPath); renameErr != nil {
-				slog.WarnContext(ctx, "failed to rollback project directory rename", "from", proj.Path, "to", originalPath, "error", renameErr)
-				return err
-			}
-			proj.Path = originalPath
-			proj.DirName = originalDirName
-		}
-		return err
+func isProjectRenameRequestedInternal(currentName string, nextName *string) bool {
+	if nextName == nil {
+		return false
 	}
 
+	resolved := strings.TrimSpace(*nextName)
+	if resolved == "" {
+		return false
+	}
+
+	return resolved != currentName
+}
+
+type promotedProjectRollbackInternal struct {
+	backupPath string
+	livePath   string
+	targetPath string
+}
+
+func preparePromotedProjectRollbackInternal(fs *projects.ProjectFilesystem, staged *projects.StagedProjectWorkspace) (*promotedProjectRollbackInternal, error) {
+	rollback := &promotedProjectRollbackInternal{}
+	if fs == nil || staged == nil {
+		return rollback, nil
+	}
+
+	livePath, targetPath, err := resolvePromotedProjectRollbackPathsInternal(staged)
+	if err != nil {
+		return nil, err
+	}
+	info, err := os.Stat(livePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return rollback, nil
+		}
+		return nil, fmt.Errorf("inspect project directory for database rollback: %w", err)
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("project rollback source is not a directory: %s", livePath)
+	}
+
+	backupPath, err := os.MkdirTemp(fs.Config.ProjectsRoot, ".arcane-project-db-rollback-*")
+	if err != nil {
+		return nil, fmt.Errorf("create project database rollback directory: %w", err)
+	}
+	if err := os.Chmod(backupPath, info.Mode().Perm()); err != nil {
+		_ = os.RemoveAll(backupPath)
+		return nil, fmt.Errorf("set project database rollback directory permissions: %w", err)
+	}
+	if err := projects.CopyDirectoryContents(livePath, backupPath); err != nil {
+		_ = os.RemoveAll(backupPath)
+		return nil, fmt.Errorf("snapshot project directory for database rollback: %w", err)
+	}
+
+	rollback.backupPath = backupPath
+	rollback.livePath = livePath
+	rollback.targetPath = targetPath
+	return rollback, nil
+}
+
+func resolvePromotedProjectRollbackPathsInternal(staged *projects.StagedProjectWorkspace) (string, string, error) {
+	currentPath := filepath.Clean(staged.Current.Path)
+	targetPath := filepath.Clean(staged.Target.Path)
+	if currentPath != targetPath {
+		return currentPath, targetPath, nil
+	}
+
+	info, err := os.Lstat(currentPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return currentPath, targetPath, nil
+		}
+		return "", "", fmt.Errorf("inspect project directory for database rollback: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		return currentPath, targetPath, nil
+	}
+
+	resolvedPath, err := filepath.EvalSymlinks(currentPath)
+	if err != nil {
+		return "", "", fmt.Errorf("resolve project directory symlink for database rollback: %w", err)
+	}
+	resolvedPath = filepath.Clean(resolvedPath)
+	return resolvedPath, resolvedPath, nil
+}
+
+func (r *promotedProjectRollbackInternal) rollback() error {
+	if r == nil || r.backupPath == "" {
+		return nil
+	}
+	if r.targetPath != "" {
+		_ = os.RemoveAll(r.targetPath)
+	}
+	if r.livePath != "" && r.livePath != r.targetPath {
+		_ = os.RemoveAll(r.livePath)
+	}
+	if err := os.Rename(r.backupPath, r.livePath); err != nil {
+		return fmt.Errorf("restore project directory after database failure: %w", err)
+	}
+	r.backupPath = ""
 	return nil
 }
 
-func (s *ProjectService) persistUpdatedProjectFiles(ctx context.Context, proj *models.Project, projectsDirectory string, composeContent, envContent *string) error {
-	switch {
-	case composeContent != nil:
-		effectiveEnvContent, err := s.resolveEffectiveEnvContentForUpdateInternal(proj.Path, envContent)
-		if err != nil {
-			return fmt.Errorf("invalid compose file: %w", err)
-		}
-		if err := s.validateComposeContentForUpdate(ctx, projectsDirectory, proj.Path, proj.Name, *composeContent, effectiveEnvContent); err != nil {
-			return fmt.Errorf("invalid compose file: %w", err)
-		}
-		if err := projects.WriteComposeFile(projectsDirectory, proj.Path, *composeContent); err != nil {
-			return fmt.Errorf("failed to save project files: %w", err)
-		}
-		if envContent != nil {
-			if err := s.persistEffectiveEnvContentInternal(proj.Path, projectsDirectory, *envContent); err != nil {
-				return fmt.Errorf("failed to save project files: %w", err)
-			}
-		} else if err := s.ensureEffectiveEnvFileInternal(proj.Path, projectsDirectory); err != nil {
-			return fmt.Errorf("failed to save project files: %w", err)
-		}
-	case envContent != nil:
-		if err := s.persistEffectiveEnvContentInternal(proj.Path, projectsDirectory, *envContent); err != nil {
-			return err
-		}
+func (r *promotedProjectRollbackInternal) cleanup() {
+	if r == nil || r.backupPath == "" {
+		return
 	}
-
-	return nil
+	_ = os.RemoveAll(r.backupPath)
+	r.backupPath = ""
 }
 
 func (s *ProjectService) validateComposeContentForUpdate(ctx context.Context, projectsDirectory, projectPath, projectName, composeContent string, effectiveEnvContent *string) (err error) {
@@ -2969,231 +3143,6 @@ func (s *ProjectService) resolveStoredEffectiveEnvContentInternal(state projects
 	return state.DirectContent, nil
 }
 
-func (s *ProjectService) persistEffectiveEnvContentInternal(projectPath, projectsDirectory, envContent string) error {
-	state, err := projects.ReadProjectEnvState(projectPath)
-	if err != nil {
-		return fmt.Errorf("read project env state: %w", err)
-	}
-
-	if !state.HasGitSource {
-		if state.HasOverride {
-			if err := projects.RemoveProjectFile(projectsDirectory, projectPath, projects.OverrideEnvFileName); err != nil {
-				return err
-			}
-		}
-		return projects.WriteEnvFile(projectsDirectory, projectPath, envContent)
-	}
-
-	overrideContent, err := projects.BuildOverrideEnvContent(state.GitContent, envContent)
-	if err != nil {
-		return fmt.Errorf("build override env content: %w", err)
-	}
-
-	effectiveContent, err := projects.BuildEffectiveEnvContent(state.GitContent, overrideContent)
-	if err != nil {
-		return fmt.Errorf("build effective env content: %w", err)
-	}
-
-	if err := projects.WriteEnvFile(projectsDirectory, projectPath, effectiveContent); err != nil {
-		return err
-	}
-
-	if strings.TrimSpace(overrideContent) == "" {
-		if err := projects.RemoveProjectFile(projectsDirectory, projectPath, projects.OverrideEnvFileName); err != nil {
-			return err
-		}
-	} else if err := projects.WriteProjectFile(projectsDirectory, projectPath, projects.OverrideEnvFileName, overrideContent); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (s *ProjectService) ensureEffectiveEnvFileInternal(projectPath, projectsDirectory string) error {
-	state, err := projects.ReadProjectEnvState(projectPath)
-	if err != nil {
-		return fmt.Errorf("read project env state: %w", err)
-	}
-
-	if !state.HasGitSource {
-		if state.HasOverride {
-			if err := projects.RemoveProjectFile(projectsDirectory, projectPath, projects.OverrideEnvFileName); err != nil {
-				return err
-			}
-			effectiveContent, err := s.resolveStoredEffectiveEnvContentInternal(state)
-			if err != nil {
-				return err
-			}
-			return projects.WriteEnvFile(projectsDirectory, projectPath, effectiveContent)
-		}
-		return projects.EnsureEnvFile(projectsDirectory, projectPath)
-	}
-
-	effectiveContent, err := projects.BuildEffectiveEnvContent(state.GitContent, state.OverrideContent)
-	if err != nil {
-		return fmt.Errorf("build effective env content: %w", err)
-	}
-
-	return projects.WriteEnvFile(projectsDirectory, projectPath, effectiveContent)
-}
-
-type gitSyncEnvUpdateInternal struct {
-	state            projects.ProjectEnvState
-	gitEnvContent    *string
-	overrideContent  string
-	effectiveContent *string
-}
-
-func (s *ProjectService) prepareGitSyncEnvUpdateInternal(projectPath string, gitEnvContent *string) (gitSyncEnvUpdateInternal, error) {
-	state, err := projects.ReadProjectEnvState(projectPath)
-	if err != nil {
-		return gitSyncEnvUpdateInternal{}, fmt.Errorf("read project env state: %w", err)
-	}
-
-	update := gitSyncEnvUpdateInternal{
-		state:         state,
-		gitEnvContent: gitEnvContent,
-	}
-
-	if gitEnvContent == nil {
-		effectiveContent, err := s.resolveStoredEffectiveEnvContentInternal(state)
-		if err != nil {
-			return gitSyncEnvUpdateInternal{}, err
-		}
-		if effectiveContent == "" && !state.HasEffective && !state.HasGitSource && !state.HasOverride {
-			return update, nil
-		}
-		update.effectiveContent = &effectiveContent
-		return update, nil
-	}
-
-	overrideContent, err := s.resolveOverrideContentForGitSyncInternal(state, *gitEnvContent)
-	if err != nil {
-		return gitSyncEnvUpdateInternal{}, err
-	}
-	update.overrideContent = overrideContent
-
-	effectiveContent, err := projects.BuildEffectiveEnvContent(*gitEnvContent, overrideContent)
-	if err != nil {
-		return gitSyncEnvUpdateInternal{}, fmt.Errorf("build effective env content: %w", err)
-	}
-	update.effectiveContent = &effectiveContent
-
-	return update, nil
-}
-
-func (s *ProjectService) resolveOverrideContentForGitSyncInternal(state projects.ProjectEnvState, gitEnvContent string) (string, error) {
-	switch {
-	case state.HasGitSource:
-		overrideContent, err := projects.BuildOverrideEnvContent(state.GitContent, state.OverrideContent)
-		if err != nil {
-			return "", fmt.Errorf("build override env content: %w", err)
-		}
-		return overrideContent, nil
-	case state.HasOverride:
-		effectiveContent, err := s.resolveStoredEffectiveEnvContentInternal(state)
-		if err != nil {
-			return "", err
-		}
-		overrideContent, err := projects.BuildOverrideEnvContent(gitEnvContent, effectiveContent)
-		if err != nil {
-			return "", fmt.Errorf("build override env content: %w", err)
-		}
-		return overrideContent, nil
-	case strings.TrimSpace(state.DirectContent) != "":
-		overrideContent, err := projects.BuildAdditiveOverrideEnvContent(gitEnvContent, state.DirectContent)
-		if err != nil {
-			return "", fmt.Errorf("build override env content: %w", err)
-		}
-		return overrideContent, nil
-	default:
-		return "", nil
-	}
-}
-
-func (s *ProjectService) persistGitSyncEnvFilesInternal(projectPath, projectsDirectory string, update gitSyncEnvUpdateInternal) error {
-	if update.gitEnvContent == nil {
-		if update.state.HasGitSource {
-			if err := projects.RemoveProjectFile(projectsDirectory, projectPath, projects.GitSourceEnvFileName); err != nil {
-				return err
-			}
-		}
-		if update.state.HasOverride {
-			if err := projects.RemoveProjectFile(projectsDirectory, projectPath, projects.OverrideEnvFileName); err != nil {
-				return err
-			}
-		}
-		if update.effectiveContent != nil || update.state.HasEffective || update.state.HasGitSource || update.state.HasOverride {
-			effectiveContent := ""
-			if update.effectiveContent != nil {
-				effectiveContent = *update.effectiveContent
-			}
-			return projects.WriteEnvFile(projectsDirectory, projectPath, effectiveContent)
-		}
-		return projects.EnsureEnvFile(projectsDirectory, projectPath)
-	}
-
-	if update.effectiveContent == nil {
-		return fmt.Errorf("missing effective env content for git sync update")
-	}
-
-	if err := projects.WriteEnvFile(projectsDirectory, projectPath, *update.effectiveContent); err != nil {
-		return err
-	}
-	if err := projects.WriteProjectFile(projectsDirectory, projectPath, projects.GitSourceEnvFileName, *update.gitEnvContent); err != nil {
-		return err
-	}
-	if strings.TrimSpace(update.overrideContent) == "" {
-		if err := projects.RemoveProjectFile(projectsDirectory, projectPath, projects.OverrideEnvFileName); err != nil {
-			return err
-		}
-	} else if err := projects.WriteProjectFile(projectsDirectory, projectPath, projects.OverrideEnvFileName, update.overrideContent); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (s *ProjectService) applyProjectRenameIfNeeded(proj *models.Project, name *string, projectsDirectory string) error {
-	if name == nil {
-		return nil
-	}
-
-	newName := strings.TrimSpace(*name)
-	if newName == "" || proj.Name == newName {
-		return nil
-	}
-
-	if proj.Status != models.ProjectStatusStopped {
-		return fmt.Errorf("project must be stopped before renaming (current status: %s)", proj.Status)
-	}
-
-	newDirName := projects.SanitizeProjectName(newName)
-	if newDirName == "" || strings.Trim(newDirName, "_") == "" {
-		return fmt.Errorf("invalid project name: results in empty directory name")
-	}
-
-	currentPath := filepath.Clean(proj.Path)
-	targetPath := filepath.Clean(filepath.Join(projectsDirectory, newDirName))
-	if currentPath != targetPath {
-		if _, statErr := os.Stat(targetPath); statErr == nil {
-			return fmt.Errorf("project directory already exists: %s", targetPath)
-		} else if !os.IsNotExist(statErr) {
-			return fmt.Errorf("failed to check project directory rename target: %w", statErr)
-		}
-
-		if err := os.Rename(currentPath, targetPath); err != nil {
-			return fmt.Errorf("failed to rename project directory: %w", err)
-		}
-
-		proj.Path = targetPath
-	}
-
-	proj.DirName = &newDirName
-	proj.Name = newName
-	return nil
-}
-
 func (s *ProjectService) UpdateProjectIncludeFile(ctx context.Context, projectID, relativePath, content string, user models.User) error {
 	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
@@ -3235,32 +3184,27 @@ func (s *ProjectService) UpdateProjectIncludeFile(ctx context.Context, projectID
 // If not, it normalizes the path to `<projectsRoot>/<dirName or sanitized project name>`. When persist=true, it saves
 // the updated project path to the database.
 func (s *ProjectService) ensureProjectPathUnderRoot(ctx context.Context, proj *models.Project, persist bool) error {
-	projectsDirectory, err := projects.GetProjectsDirectory(ctx, s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects"))
+	fs, err := s.buildProjectFilesystemInternal(ctx, false)
 	if err != nil {
-		return fmt.Errorf("failed to get projects directory: %w", err)
+		return err
 	}
-
-	rootAbs, _ := filepath.Abs(projectsDirectory)
-	rootAbs = filepath.Clean(rootAbs)
-
-	projPathAbs := proj.Path
-	if abs, aerr := filepath.Abs(proj.Path); aerr == nil {
-		projPathAbs = filepath.Clean(abs)
+	workspace, err := s.buildProjectWorkspaceInternal(ctx, proj)
+	if err != nil {
+		return err
 	}
-
-	if projects.IsSafeSubdirectory(rootAbs, projPathAbs) {
+	normalized, err := fs.ResolveExisting(workspace)
+	if err != nil {
+		return err
+	}
+	if normalized.Path == proj.Path {
 		return nil
 	}
 
-	// Attempt to repair using known directory name or sanitized project name
-	dirName := utils.DerefString(proj.DirName)
-	if strings.TrimSpace(dirName) == "" {
-		dirName = projects.SanitizeProjectName(proj.Name)
+	slog.WarnContext(ctx, "Normalizing project path to projects root", "projectID", proj.ID, "oldPath", proj.Path, "newPath", normalized.Path, "root", fs.Config.ProjectsRoot)
+	proj.Path = normalized.Path
+	if normalized.DirName != "" {
+		proj.DirName = &normalized.DirName
 	}
-	candidate := filepath.Join(projectsDirectory, dirName)
-
-	slog.WarnContext(ctx, "Normalizing project path to projects root", "projectID", proj.ID, "oldPath", proj.Path, "newPath", candidate, "root", projectsDirectory)
-	proj.Path = filepath.Clean(candidate)
 
 	if persist {
 		if saveErr := s.db.WithContext(ctx).Save(proj).Error; saveErr != nil {
@@ -3722,18 +3666,22 @@ func (s *ProjectService) mapProjectToDto(ctx context.Context, projectsDir string
 }
 
 func (s *ProjectService) getProjectMetadataForProject(ctx context.Context, p models.Project) projects.ArcaneComposeMetadata {
-	composeFile, err := s.resolveProjectComposeFileInternal(ctx, &p)
+	fs, err := s.buildProjectFilesystemInternal(ctx, true)
 	if err != nil {
 		return projects.ArcaneComposeMetadata{ServiceIcons: map[string]string{}}
 	}
 
-	projectsDirectory, projectsDirErr := s.getProjectsDirectoryInternal(ctx)
-	if projectsDirErr != nil {
-		slog.WarnContext(ctx, "failed to resolve projects directory for Arcane compose metadata", "path", composeFile, "error", projectsDirErr)
+	workspace, err := s.buildProjectWorkspaceInternal(ctx, &p)
+	if err != nil {
+		return projects.ArcaneComposeMetadata{ServiceIcons: map[string]string{}}
 	}
-	autoInjectEnv := s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false)
 
-	meta, err := projects.ParseArcaneComposeMetadata(ctx, composeFile, projectsDirectory, autoInjectEnv)
+	composeFile, err := fs.ResolveComposeFile(workspace)
+	if err != nil {
+		return projects.ArcaneComposeMetadata{ServiceIcons: map[string]string{}}
+	}
+
+	meta, err := projects.ParseArcaneComposeMetadata(ctx, composeFile, fs.Config.ProjectsRoot, fs.Config.AutoInjectEnv)
 	if err != nil {
 		slog.WarnContext(ctx, "failed to parse Arcane compose metadata", "path", composeFile, "error", err)
 		return projects.ArcaneComposeMetadata{ServiceIcons: map[string]string{}}
@@ -3759,41 +3707,16 @@ func (s *ProjectService) countServicesFromCompose(ctx context.Context, p models.
 // and once for the project name).
 // The effective name is nil when it matches the normalized directory name.
 func (s *ProjectService) loadComposeMetadataForSyncInternal(ctx context.Context, dirPath, dirName string) (serviceCount int, composeProjectName *string, err error) {
-	cfg := s.settingsService.GetSettingsOrDefaults(ctx)
-	projectsDirectory, pErr := projects.GetProjectsDirectory(ctx, strings.TrimSpace(cfg.ProjectsDirectory.Value))
-	if pErr != nil {
-		return 0, nil, pErr
-	}
-
-	pathMapper, pmErr := s.getPathMapper(ctx)
-	if pmErr != nil {
-		slog.WarnContext(ctx, "failed to create path mapper, continuing without translation", "error", pmErr)
-	}
-
-	normName := normalizeComposeProjectName(dirName)
-	autoInjectEnv := utils.BoolOrDefault(cfg.AutoInjectEnv.Value, false)
-
-	// First, try loading without forcing a project name so compose-go can
-	// resolve COMPOSE_PROJECT_NAME from the .env file. If this fails (e.g.
-	// no .env and directory name is not a valid compose project name), fall
-	// back to the normalized directory name.
-	proj, _, err := projects.LoadComposeProjectFromDir(ctx, dirPath, "", projectsDirectory, autoInjectEnv, pathMapper)
+	fs, err := s.buildProjectFilesystemInternal(ctx, false)
 	if err != nil {
-		proj, _, err = projects.LoadComposeProjectFromDir(ctx, dirPath, normName, projectsDirectory, autoInjectEnv, pathMapper)
-		if err != nil {
-			return 0, nil, err
-		}
+		return 0, nil, err
 	}
 
-	serviceCount = len(proj.Services)
-
-	// If compose-go resolved a different name (from COMPOSE_PROJECT_NAME),
-	// store it so we can match containers correctly.
-	if proj.Name != "" && proj.Name != normName {
-		composeProjectName = new(proj.Name)
-	}
-
-	return serviceCount, composeProjectName, nil
+	return fs.LoadComposeMetadata(ctx, projects.ProjectWorkspace{
+		Name:    dirName,
+		DirName: dirName,
+		Path:    dirPath,
+	})
 }
 
 func (s *ProjectService) calculateProjectStatus(services []ProjectServiceInfo) models.ProjectStatus {

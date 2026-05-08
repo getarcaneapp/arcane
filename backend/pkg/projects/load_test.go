@@ -109,9 +109,12 @@ func TestLoadComposeProjectFromDir_SupportsPodmanComposeNames(t *testing.T) {
 			expectedPath := filepath.Join(dir, tc.fileName)
 			require.NoError(t, os.WriteFile(expectedPath, []byte(composeContent), 0o600))
 
-			project, composePath, err := LoadComposeProjectFromDir(
+			composePath, err := DetectComposeFile(dir)
+			require.NoError(t, err)
+
+			project, err := LoadComposeProject(
 				context.Background(),
-				dir,
+				composePath,
 				"podman-project",
 				filepath.Dir(dir),
 				false,
@@ -134,9 +137,12 @@ func TestLoadComposeProjectFromDir_SupportsCustomComposeNames(t *testing.T) {
 	expectedPath := filepath.Join(dir, "radarr.yaml")
 	require.NoError(t, os.WriteFile(expectedPath, []byte("services:\n  app:\n    image: nginx:alpine\n"), 0o600))
 
-	project, composePath, err := LoadComposeProjectFromDir(
+	composePath, err := DetectComposeFile(dir)
+	require.NoError(t, err)
+
+	project, err := LoadComposeProject(
 		context.Background(),
-		dir,
+		composePath,
 		"radarr",
 		filepath.Dir(dir),
 		false,
@@ -156,7 +162,10 @@ func TestLoadComposeProjectFromDir_EmptyProjectsDirectoryDoesNotCreateParentGlob
 	require.NoError(t, os.MkdirAll(projectDir, 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte("services:\n  app:\n    image: nginx:alpine\n"), 0o600))
 
-	project, composePath, err := LoadComposeProjectFromDir(context.Background(), projectDir, "nested-services", "", false, nil)
+	composePath, err := DetectComposeFile(projectDir)
+	require.NoError(t, err)
+
+	project, err := LoadComposeProject(context.Background(), composePath, "nested-services", "", false, nil)
 	require.NoError(t, err)
 	require.NotNil(t, project)
 
