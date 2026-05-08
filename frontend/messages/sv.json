@@ -698,6 +698,7 @@
 	"images_remove_selected_title": "Remove {count} Image(s)",
 	"images_remove_selected_message": "Are you sure you want to remove the selected image(s)? This action cannot be undone.",
 	"images_remove_message": "Are you sure you want to remove this image? This action cannot be undone.",
+	"images_remove_force_label": "Tvinga bort",
 	"images_pull_no_tag": "Cannot pull image without repository tag",
 	"images_untagged": "Untagged",
 	"images_repository": "Repository",
