@@ -698,6 +698,7 @@
 	"images_remove_selected_title": "Eliminar Imágenes {count}",
 	"images_remove_selected_message": "¿Está seguro que desea eliminar las imágenes seleccionadas? Esta acción no se puede deshacer.",
 	"images_remove_message": "¿Está seguro que desea eliminar esta imagen? Esta acción no se puede deshacer.",
+	"images_remove_force_label": "Forzar eliminación",
 	"images_pull_no_tag": "No se puede extraer imagen sin etiqueta de repositorio",
 	"images_untagged": "Sin etiquetar",
 	"images_repository": "Repositorio",
