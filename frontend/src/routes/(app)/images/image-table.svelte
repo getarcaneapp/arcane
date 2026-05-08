@@ -79,16 +79,24 @@
 		openConfirmDialog({
 			title: m.images_remove_selected_title({ count: ids.length }),
 			message: m.images_remove_selected_message({ count: ids.length }),
+			checkboxes: [
+				{
+					id: 'force',
+					label: m.images_remove_force_label(),
+					initialState: false
+				}
+			],
 			confirm: {
 				label: m.common_remove(),
 				destructive: true,
-				action: async () => {
+				action: async (checkboxStates) => {
+					const force = !!checkboxStates.force;
 					isLoading.removing = true;
 					let successCount = 0;
 					let failureCount = 0;
 
 					for (const id of ids) {
-						const result = await tryCatch(imageService.deleteImage(id));
+						const result = await tryCatch(imageService.deleteImage(id, { force }));
 						handleApiResultWithCallbacks({
 							result,
 							message: m.images_remove_failed(),
@@ -123,13 +131,21 @@
 		openConfirmDialog({
 			title: m.common_remove_title({ resource: m.resource_image() }),
 			message: m.images_remove_message(),
+			checkboxes: [
+				{
+					id: 'force',
+					label: m.images_remove_force_label(),
+					initialState: false
+				}
+			],
 			confirm: {
 				label: m.common_remove(),
 				destructive: true,
-				action: async () => {
+				action: async (checkboxStates) => {
+					const force = !!checkboxStates.force;
 					isLoading.removing = true;
 
-					const result = await tryCatch(imageService.deleteImage(id));
+					const result = await tryCatch(imageService.deleteImage(id, { force }));
 					handleApiResultWithCallbacks({
 						result,
 						message: m.images_remove_failed(),
