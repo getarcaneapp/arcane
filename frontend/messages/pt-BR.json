@@ -698,6 +698,7 @@
 	"images_remove_selected_title": "Remover {count} imagem(ns)",
 	"images_remove_selected_message": "Tem certeza de que deseja remover a(s) imagem(ns) selecionada(s)? Esta ação não pode ser desfeita.",
 	"images_remove_message": "Tem certeza que deseja remover esta imagem? Esta ação não pode ser desfeita.",
+	"images_remove_force_label": "Forçar a remoção",
 	"images_pull_no_tag": "Não é possível baixar imagem sem tag",
 	"images_untagged": "Sem marcação",
 	"images_repository": "Repositório",
