@@ -173,6 +173,8 @@ type Services struct {
 	Webhook           *services.WebhookService
 	Vulnerability     *services.VulnerabilityService
 	Dashboard         *services.DashboardService
+	Device            *services.DeviceService
+	Pairing           *services.PairingService
 	Config            *config.Config
 }
 
@@ -346,6 +348,8 @@ func registerHandlers(api huma.API, svc *Services) {
 	var webhookSvc *services.WebhookService
 	var vulnerabilitySvc *services.VulnerabilityService
 	var dashboardSvc *services.DashboardService
+	var deviceSvc *services.DeviceService
+	var pairingSvc *services.PairingService
 	var cfg *config.Config
 
 	if svc != nil {
@@ -385,6 +389,8 @@ func registerHandlers(api huma.API, svc *Services) {
 		webhookSvc = svc.Webhook
 		vulnerabilitySvc = svc.Vulnerability
 		dashboardSvc = svc.Dashboard
+		deviceSvc = svc.Device
+		pairingSvc = svc.Pairing
 		cfg = svc.Config
 	}
 	handlers.RegisterHealth(api)
@@ -419,4 +425,5 @@ func registerHandlers(api huma.API, svc *Services) {
 	handlers.RegisterWebhooks(api, webhookSvc)
 	handlers.RegisterVulnerability(api, vulnerabilitySvc)
 	handlers.RegisterDashboard(api, dashboardSvc)
+	handlers.RegisterDevices(api, deviceSvc, pairingSvc, cfg)
 }

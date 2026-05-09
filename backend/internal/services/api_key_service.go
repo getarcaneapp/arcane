@@ -31,9 +31,30 @@ const (
 	apiKeyLastUsedWriteWindow = 5 * time.Minute
 
 	managedByAdminBootstrap = "admin_account_default_api_key"
+	managedByMobileDevice   = "mobile_device"
 	defaultAdminUsername    = "arcane"
 	defaultAdminAPIKeyName  = "Static Admin API Key"
 )
+
+// CreateDeviceApiKeyInput is the input for ApiKeyService.CreateDeviceApiKeyTx.
+type CreateDeviceApiKeyInput struct {
+	UserID string
+	Name   string
+}
+
+// CreateDeviceApiKeyResult is what CreateDeviceApiKeyTx returns: the raw key
+// the client must store, and the ID of the persisted ApiKey row.
+type CreateDeviceApiKeyResult struct {
+	RawKey   string
+	ApiKeyID string
+}
+
+// IsDeviceManagedApiKey reports whether the given ApiKey is owned by a
+// mobile device pairing. Used by the API keys list to filter these out
+// (devices live under /devices instead).
+func IsDeviceManagedApiKey(ak models.ApiKey) bool {
+	return ak.ManagedBy != nil && *ak.ManagedBy == managedByMobileDevice
+}
 
 var defaultAdminAPIKeyDescription = func() *string {
 	return new("Environment-managed static API key for the built-in admin account")
@@ -305,6 +326,42 @@ func (s *ApiKeyService) ReconcileDefaultAdminAPIKey(ctx context.Context, rawKey 
 	})
 }
 
+// CreateDeviceApiKeyTx creates an ApiKey row marked as owned by a mobile
+// device pairing, using the supplied gorm.DB (intended to be a transaction).
+// Returns the raw key the client should store and the new row's ID.
+func (s *ApiKeyService) CreateDeviceApiKeyTx(tx *gorm.DB, in CreateDeviceApiKeyInput) (CreateDeviceApiKeyResult, error) {
+	if strings.TrimSpace(in.UserID) == "" {
+		return CreateDeviceApiKeyResult{}, fmt.Errorf("device api key requires a user id")
+	}
+
+	rawKey, err := s.generateApiKey()
+	if err != nil {
+		return CreateDeviceApiKeyResult{}, err
+	}
+	keyPrefix, err := parseAPIKeyPrefixInternal(rawKey)
+	if err != nil {
+		return CreateDeviceApiKeyResult{}, err
+	}
+	keyHash, err := s.hashApiKey(rawKey)
+	if err != nil {
+		return CreateDeviceApiKeyResult{}, fmt.Errorf("failed to hash device api key: %w", err)
+	}
+
+	managedBy := managedByMobileDevice
+	userID := in.UserID
+	ak := &models.ApiKey{
+		Name:      in.Name,
+		KeyHash:   keyHash,
+		KeyPrefix: keyPrefix,
+		ManagedBy: &managedBy,
+		UserID:    &userID,
+	}
+	if err := tx.Create(ak).Error; err != nil {
+		return CreateDeviceApiKeyResult{}, fmt.Errorf("failed to create device api key: %w", err)
+	}
+	return CreateDeviceApiKeyResult{RawKey: rawKey, ApiKeyID: ak.ID}, nil
+}
+
 func (s *ApiKeyService) CreateEnvironmentApiKey(ctx context.Context, environmentID string, userID string) (*apikey.ApiKeyCreatedDto, error) {
 	rawKey, err := s.generateApiKey()
 	if err != nil {
@@ -466,6 +523,33 @@ func (s *ApiKeyService) ValidateApiKey(ctx context.Context, rawKey string) (*mod
 	}
 
 	return nil, ErrApiKeyInvalid
+}
+
+// LookupApiKeyIDByRawKey returns the database ID of the ApiKey row matching
+// the supplied raw key, or ErrApiKeyInvalid. Used by the mobile gRPC auth
+// path to resolve the api_key → device link without re-deriving from the
+// raw key elsewhere.
+func (s *ApiKeyService) LookupApiKeyIDByRawKey(ctx context.Context, rawKey string) (string, error) {
+	keyPrefix, err := parseAPIKeyPrefixInternal(rawKey)
+	if err != nil {
+		return "", err
+	}
+
+	var apiKeys []models.ApiKey
+	if err := s.db.WithContext(ctx).Where("key_prefix = ?", keyPrefix).Find(&apiKeys).Error; err != nil {
+		return "", fmt.Errorf("failed to find API keys: %w", err)
+	}
+
+	rawKey = normalizeAPIKeyInputInternal(rawKey)
+	for _, ak := range apiKeys {
+		if err := s.validateApiKeyHash(ak.KeyHash, rawKey); err == nil {
+			if ak.ExpiresAt != nil && ak.ExpiresAt.Before(time.Now()) {
+				return "", ErrApiKeyExpired
+			}
+			return ak.ID, nil
+		}
+	}
+	return "", ErrApiKeyInvalid
 }
 
 func (s *ApiKeyService) GetEnvironmentByApiKey(ctx context.Context, rawKey string) (*string, error) {

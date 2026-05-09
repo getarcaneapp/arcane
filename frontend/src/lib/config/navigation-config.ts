@@ -25,7 +25,8 @@ import {
 	TemplateIcon,
 	GlobeIcon,
 	UpdateIcon,
-	VariableIcon
+	VariableIcon,
+	SmartphoneIcon
 } from '$lib/icons';
 import { m } from '$lib/paraglide/messages';
 import type { ShortcutKey } from '$lib/utils/keyboard-shortcut.utils';
@@ -42,6 +43,7 @@ export type NavigationSections = {
 	managementItems: NavigationItem[];
 	resourceItems: NavigationItem[];
 	swarmItems: NavigationItem[];
+	accountItems: NavigationItem[];
 	settingsItems: NavigationItem[];
 };
 
@@ -97,6 +99,7 @@ export const navigationItems: NavigationSections = {
 		{ title: 'Configs', url: '/swarm/configs', icon: TemplateIcon },
 		{ title: 'Secrets', url: '/swarm/secrets', icon: LockIcon }
 	],
+	accountItems: [{ title: 'Mobile Devices', url: '/devices', icon: SmartphoneIcon }],
 	settingsItems: [
 		{
 			title: m.events_title(),
@@ -178,6 +181,10 @@ export function getAvailableMobileNavItems(options?: { swarmEnabled?: boolean })
 	const swarmItems = getSwarmNavigationItems(!!options?.swarmEnabled);
 	if (swarmItems.length > 0) {
 		flatItems.push(...swarmItems);
+	}
+
+	if (navigationItems.accountItems) {
+		flatItems.push(...navigationItems.accountItems);
 	}
 
 	if (navigationItems.settingsItems) {

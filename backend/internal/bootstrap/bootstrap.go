@@ -16,11 +16,13 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/moby/moby/client"
 
+	mobilegrpc "github.com/getarcaneapp/arcane/backend/internal/api/grpc"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	libcrypto "github.com/getarcaneapp/arcane/backend/pkg/libarcane/crypto"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge"
 	tunnelpb "github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge/proto/tunnel/v1"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/mobile"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/startup"
 	"github.com/getarcaneapp/arcane/backend/pkg/scheduler"
 	httputils "github.com/getarcaneapp/arcane/backend/pkg/utils/httpx"
@@ -88,7 +90,9 @@ func Bootstrap(ctx context.Context) error {
 
 	startEdgeTunnelClientIfConfigured(appCtx, cfg, router)
 
-	err = runServices(appCtx, cfg, router, tunnelServer, scheduler)
+	mobileServer := mobilegrpc.BuildMobileServer(cfg, appServices)
+
+	err = runServices(appCtx, cfg, router, tunnelServer, mobileServer, scheduler)
 	if err != nil {
 		return fmt.Errorf("failed to run services: %w", err)
 	}
@@ -310,7 +314,7 @@ func handleAgentBootstrapPairing(ctx context.Context, cfg *config.Config, httpCl
 	}
 }
 
-func runServices(appCtx context.Context, cfg *config.Config, router http.Handler, tunnelServer *edge.TunnelServer, schedulers ...interface{ Run(context.Context) error }) error {
+func runServices(appCtx context.Context, cfg *config.Config, router http.Handler, tunnelServer *edge.TunnelServer, mobileServer *mobile.MobileServer, schedulers ...interface{ Run(context.Context) error }) error {
 	for _, s := range schedulers {
 		scheduler := s
 		go func() {
@@ -333,7 +337,7 @@ func runServices(appCtx context.Context, cfg *config.Config, router http.Handler
 		tunnelServer.SetConfig(edgeCfg)
 	}
 
-	httpHandler, grpcServer := configureTunnelServerInternal(appCtx, cfg, router, tunnelServer, listenAddr)
+	httpHandler, grpcServer := configureSharedGRPCServerInternal(appCtx, cfg, router, tunnelServer, mobileServer, listenAddr)
 	httpHandler, protocols := configureHTTPProtocolsInternal(useTLS, httpHandler)
 
 	srv, err := newHTTPServerInternal(listenAddr, httpHandler, protocols, useTLS, edgeCfg)
@@ -414,25 +418,47 @@ func prepareServerTLSInternal(ctx context.Context, cfg *config.Config) (bool, st
 	return useTLS, tlsCertFile, tlsKeyFile, edgeCfg, nil
 }
 
-func configureTunnelServerInternal(appCtx context.Context, cfg *config.Config, router http.Handler, tunnelServer *edge.TunnelServer, listenAddr string) (http.Handler, *grpc.Server) {
+// configureSharedGRPCServerInternal sets up a single *grpc.Server that hosts
+// both the edge tunnel service (when running as manager) and the mobile
+// services (PairingService + MobileService). gRPC's own dispatcher routes
+// each method by its /<package>.<Service>/<Method> path; the auth interceptor
+// in pkg/libarcane/mobile is selective by FullMethod so /tunnel.v1.* is
+// passed through untouched.
+func configureSharedGRPCServerInternal(appCtx context.Context, cfg *config.Config, router http.Handler, tunnelServer *edge.TunnelServer, mobileServer *mobile.MobileServer, listenAddr string) (http.Handler, *grpc.Server) {
 	httpHandler := router
-	var grpcServer *grpc.Server
 
-	if !cfg.AgentMode && tunnelServer != nil {
-		grpcServer = grpc.NewServer(tunnelServer.GRPCServerOptions(appCtx)...)
-		tunnelpb.RegisterTunnelServiceServer(grpcServer, tunnelServer)
-
-		httpHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if isTunnelGRPCRequestInternal(r) {
-				grpcReq := normalizeTunnelGRPCRequestPathInternal(r)
-				grpcServer.ServeHTTP(w, grpcReq)
-				return
-			}
-			router.ServeHTTP(w, r)
-		})
-		slog.InfoContext(appCtx, "Using shared HTTP/gRPC listener for edge tunnel", "addr", listenAddr)
+	if cfg.AgentMode {
+		return httpHandler, nil
 	}
 
+	options := []grpc.ServerOption{}
+	if tunnelServer != nil {
+		options = append(options, tunnelServer.GRPCServerOptions(appCtx)...)
+	}
+	if mobileServer != nil {
+		options = append(options, mobileServer.GRPCServerOptions(appCtx)...)
+	}
+	if len(options) == 0 {
+		return httpHandler, nil
+	}
+
+	grpcServer := grpc.NewServer(options...)
+	if tunnelServer != nil {
+		tunnelpb.RegisterTunnelServiceServer(grpcServer, tunnelServer)
+	}
+	if mobileServer != nil {
+		mobileServer.Register(grpcServer)
+	}
+
+	httpHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isGRPCRequestInternal(r) {
+			grpcReq := normalizeTunnelGRPCRequestPathInternal(r)
+			grpcServer.ServeHTTP(w, grpcReq)
+			return
+		}
+		router.ServeHTTP(w, r)
+	})
+	slog.InfoContext(appCtx, "Using shared HTTP/gRPC listener", "addr", listenAddr, "tunnel", tunnelServer != nil, "mobile", mobileServer != nil)
 	return httpHandler, grpcServer
 }
 
@@ -525,7 +551,7 @@ func normalizeTunnelGRPCRequestPathInternal(r *http.Request) *http.Request {
 	return clone
 }
 
-func isTunnelGRPCRequestInternal(r *http.Request) bool {
+func isGRPCRequestInternal(r *http.Request) bool {
 	if r == nil || r.URL == nil {
 		return false
 	}

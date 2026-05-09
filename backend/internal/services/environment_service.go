@@ -1,6 +1,7 @@
 package services
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -24,6 +25,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/environment"
 	"github.com/getarcaneapp/arcane/types/gitops"
 	"github.com/google/uuid"
+	"github.com/gorilla/websocket"
 	"github.com/moby/moby/client"
 	"gorm.io/gorm"
 )
@@ -1204,6 +1206,148 @@ func (s *EnvironmentService) ExecuteRemoteRequest(ctx context.Context, envID str
 	}
 
 	return s.executeRemoteRequestForTargetInternal(ctx, target, method, path, body)
+}
+
+// StreamRemoteWebSocket dials the remote environment's WebSocket endpoint at
+// `path` and forwards every received text/binary frame to onChunk. The agent
+// access token is applied as the X-API-Key header. Used by mobile gRPC
+// streaming RPCs that source data from agent WebSocket endpoints (system
+// stats, container logs, container stats — see ws_handler.go on the agent).
+//
+// Currently only supports direct (non-edge) remote envs. Edge-tunneled envs
+// would need the existing tunnel WS proxy refactored to run outside gin.
+func (s *EnvironmentService) StreamRemoteWebSocket(
+	ctx context.Context,
+	envID, path string,
+	onChunk func([]byte) error,
+) error {
+	target, err := s.resolveRemoteEnvironmentTargetInternal(ctx, envID)
+	if err != nil {
+		return err
+	}
+	if target.IsEdge {
+		return fmt.Errorf("WebSocket streaming for edge-tunneled environments is not yet supported")
+	}
+
+	wsURL := edge.HTTPToWebSocketURL(target.TargetURL) + path
+	headers := http.Header{}
+	remenv.ApplyAgentTokenHeaders(headers, target.AccessToken)
+
+	dialer := websocket.Dialer{
+		HandshakeTimeout: 10 * time.Second,
+	}
+	conn, _, err := dialer.DialContext(ctx, wsURL, headers)
+	if err != nil {
+		return fmt.Errorf("failed to dial WebSocket on environment %s: %w", target.Name, err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	// Reader loop. Cancel handling via a side goroutine that closes the conn
+	// on ctx done — DefaultRead has no native context support.
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = conn.Close()
+		case <-done:
+		}
+	}()
+
+	for {
+		_, msg, err := conn.ReadMessage()
+		if err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			if websocket.IsCloseError(err,
+				websocket.CloseNormalClosure,
+				websocket.CloseGoingAway,
+				websocket.CloseNoStatusReceived) {
+				return nil
+			}
+			return err
+		}
+		if sendErr := onChunk(append([]byte{}, msg...)); sendErr != nil {
+			return sendErr
+		}
+	}
+}
+
+// StreamRemoteRequest sends a request to a remote environment and forwards
+// the response body chunk-by-chunk to onChunk. For direct (non-edge) envs
+// this is real HTTP streaming; for edge-tunneled envs the body is buffered
+// by the tunnel protocol and delivered as a single chunk.
+//
+// Used by mobile gRPC streaming RPCs (logs, stats, pull progress).
+func (s *EnvironmentService) StreamRemoteRequest(
+	ctx context.Context,
+	envID, method, path string,
+	body []byte,
+	onChunk func([]byte) error,
+) error {
+	target, err := s.resolveRemoteEnvironmentTargetInternal(ctx, envID)
+	if err != nil {
+		return err
+	}
+
+	if target.IsEdge {
+		// Edge tunnel buffers; deliver the buffered body as one chunk.
+		resp, err := s.executeRemoteRequestForTargetInternal(ctx, target, method, path, body)
+		if err != nil {
+			return err
+		}
+		if err := resp.RequireSuccess(); err != nil {
+			return err
+		}
+		return onChunk(resp.Body)
+	}
+
+	// Direct HTTP — stream chunks as they arrive.
+	req, err := s.buildRemoteRequestInternal(target, method, path, body, nil)
+	if err != nil {
+		return err
+	}
+	var bodyReader io.Reader
+	if len(req.Body) > 0 {
+		bodyReader = bytes.NewReader(req.Body)
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, req.Method, req.URL, bodyReader)
+	if err != nil {
+		return fmt.Errorf("failed to build stream request: %w", err)
+	}
+	for k, v := range req.Headers {
+		httpReq.Header.Set(k, v)
+	}
+	resp, err := s.httpClient.Do(httpReq) //nolint:gosec // intentional request to configured remote environment URL
+	if err != nil {
+		return fmt.Errorf("failed to dial remote environment %s: %w", target.Name, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode >= http.StatusBadRequest {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("remote environment returned %d: %s", resp.StatusCode, string(respBody))
+	}
+	buf := make([]byte, 4096)
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+		n, readErr := resp.Body.Read(buf)
+		if n > 0 {
+			if sendErr := onChunk(append([]byte{}, buf[:n]...)); sendErr != nil {
+				return sendErr
+			}
+		}
+		if readErr != nil {
+			if errors.Is(readErr, io.EOF) {
+				return nil
+			}
+			return readErr
+		}
+	}
 }
 
 func (s *EnvironmentService) executeRemoteRequestForTargetInternal(

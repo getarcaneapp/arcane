@@ -97,6 +97,7 @@
 		{#if swarmItems.length > 0}
 			<SidebarItemGroup label={m.swarm_title()} items={swarmItems} />
 		{/if}
+		<SidebarItemGroup label={m.sidebar_account()} items={navigationItems.accountItems} />
 		{#if isAdmin}
 			<SidebarItemGroup label={m.sidebar_administration()} items={navigationItems.settingsItems} />
 		{/if}

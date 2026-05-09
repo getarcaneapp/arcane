@@ -11,45 +11,11 @@ import (
 	"github.com/getarcaneapp/arcane/backend/resources"
 )
 
-type Services struct {
-	AppImages         *services.ApplicationImagesService
-	User              *services.UserService
-	Project           *services.ProjectService
-	Environment       *services.EnvironmentService
-	Settings          *services.SettingsService
-	KV                *services.KVService
-	JobSchedule       *services.JobService
-	SettingsSearch    *services.SettingsSearchService
-	CustomizeSearch   *services.CustomizeSearchService
-	Container         *services.ContainerService
-	Image             *services.ImageService
-	Build             *services.BuildService
-	BuildWorkspace    *services.BuildWorkspaceService
-	Volume            *services.VolumeService
-	Network           *services.NetworkService
-	Port              *services.PortService
-	Swarm             *services.SwarmService
-	ImageUpdate       *services.ImageUpdateService
-	Auth              *services.AuthService
-	Oidc              *services.OidcService
-	Docker            *services.DockerClientService
-	Template          *services.TemplateService
-	ContainerRegistry *services.ContainerRegistryService
-	System            *services.SystemService
-	SystemUpgrade     *services.SystemUpgradeService
-	Updater           *services.UpdaterService
-	Event             *services.EventService
-	Version           *services.VersionService
-	Notification      *services.NotificationService
-	Apprise           *services.AppriseService //nolint:staticcheck // Apprise still functional, deprecated in favor of Shoutrrr
-	ApiKey            *services.ApiKeyService
-	GitRepository     *services.GitRepositoryService
-	GitOpsSync        *services.GitOpsSyncService
-	Webhook           *services.WebhookService
-	Font              *services.FontService
-	Vulnerability     *services.VulnerabilityService
-	Dashboard         *services.DashboardService
-}
+// Services is the local bootstrap alias for the canonical aggregator type
+// (services.Registry). Existing bootstrap-internal callers that take
+// *Services keep compiling unchanged; packages outside bootstrap (e.g.
+// internal/api/grpc) depend on services.Registry directly.
+type Services = services.Registry
 
 func initializeServices(ctx context.Context, db *database.DB, cfg *config.Config, httpClient *http.Client) (svcs *Services, dockerSrvice *services.DockerClientService, err error) {
 	svcs = &Services{}
@@ -107,6 +73,8 @@ func initializeServices(ctx context.Context, db *database.DB, cfg *config.Config
 	svcs.Updater = services.NewUpdaterService(db, svcs.Settings, svcs.Docker, svcs.Project, svcs.ImageUpdate, svcs.ContainerRegistry, svcs.Event, svcs.Image, svcs.Notification, svcs.SystemUpgrade)
 	svcs.GitOpsSync = services.NewGitOpsSyncService(db, svcs.GitRepository, svcs.Project, svcs.Swarm, svcs.Event, svcs.Settings)
 	svcs.Webhook = services.NewWebhookService(db, svcs.Container, svcs.Updater, svcs.Project, svcs.GitOpsSync, svcs.Event)
+	svcs.Device = services.NewDeviceService(db)
+	svcs.Pairing = services.NewPairingService(db, svcs.ApiKey, svcs.Device, svcs.User)
 
 	return svcs, dockerClient, nil
 }

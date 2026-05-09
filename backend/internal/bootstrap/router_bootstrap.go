@@ -184,6 +184,8 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services)
 		Webhook:           appServices.Webhook,
 		Vulnerability:     appServices.Vulnerability,
 		Dashboard:         appServices.Dashboard,
+		Device:            appServices.Device,
+		Pairing:           appServices.Pairing,
 		Config:            cfg,
 	}
 

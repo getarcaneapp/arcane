@@ -71,35 +71,35 @@ func TestIsTunnelGRPCRequestInternal(t *testing.T) {
 	t.Run("detects by grpc content-type", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/any/path", nil)
 		req.Header.Set("Content-Type", "application/grpc")
-		assert.True(t, isTunnelGRPCRequestInternal(req))
+		assert.True(t, isGRPCRequestInternal(req))
 	})
 
 	t.Run("detects by grpc-web content-type", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/any/path", nil)
 		req.Header.Set("Content-Type", "application/grpc-web+proto")
-		assert.True(t, isTunnelGRPCRequestInternal(req))
+		assert.True(t, isGRPCRequestInternal(req))
 	})
 
 	t.Run("detects by method path without grpc content-type", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, fullMethodPath, nil)
-		assert.True(t, isTunnelGRPCRequestInternal(req))
+		assert.True(t, isGRPCRequestInternal(req))
 	})
 
 	t.Run("detects by legacy tunnel path", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/api/tunnel/connect", nil)
-		assert.True(t, isTunnelGRPCRequestInternal(req))
+		assert.True(t, isGRPCRequestInternal(req))
 	})
 
 	t.Run("does not match regular api requests", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/api/environments/pair", nil)
 		req.Header.Set("Content-Type", "application/json")
-		assert.False(t, isTunnelGRPCRequestInternal(req))
+		assert.False(t, isGRPCRequestInternal(req))
 	})
 
 	t.Run("requires post", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, fullMethodPath, nil)
 		req.Header.Set("Content-Type", "application/grpc")
-		assert.False(t, isTunnelGRPCRequestInternal(req))
+		assert.False(t, isGRPCRequestInternal(req))
 	})
 
 	t.Run("does not match http2 post with te trailers and json content-type", func(t *testing.T) {
@@ -107,7 +107,7 @@ func TestIsTunnelGRPCRequestInternal(t *testing.T) {
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Te", "trailers")
 		req.ProtoMajor = 2
-		assert.False(t, isTunnelGRPCRequestInternal(req))
+		assert.False(t, isGRPCRequestInternal(req))
 	})
 
 	t.Run("does not match http2 post with te trailers and form content-type", func(t *testing.T) {
@@ -115,7 +115,7 @@ func TestIsTunnelGRPCRequestInternal(t *testing.T) {
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		req.Header.Set("Te", "trailers")
 		req.ProtoMajor = 2
-		assert.False(t, isTunnelGRPCRequestInternal(req))
+		assert.False(t, isGRPCRequestInternal(req))
 	})
 }
 

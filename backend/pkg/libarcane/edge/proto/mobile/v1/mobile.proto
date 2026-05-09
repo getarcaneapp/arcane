@@ -1,0 +1,559 @@
+syntax = "proto3";
+
+package mobile.v1;
+
+option go_package = "github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge/proto/mobile/v1;mobilepb";
+
+// PairingService is the unauthenticated pairing handshake. Mobile calls
+// RedeemCode exactly once with a code obtained from the web UI; on success
+// it receives a long-lived device token. All other mobile RPCs are on
+// MobileService and require the device token in `x-api-key` metadata.
+service PairingService {
+  rpc RedeemCode(RedeemCodeRequest) returns (RedeemCodeResponse);
+}
+
+// MobileService is the authenticated post-pairing API.
+//
+// Conventions:
+//   * Every multi-environment RPC carries `environment_id`. "0" means the
+//     local Docker environment.
+//   * Inspection / details responses use `bytes details_json` carrying the
+//     same JSON shape as the REST endpoint so existing Swift Codable types
+//     decode them unchanged. Lists/summaries/native types are fully typed.
+//   * Mutating actions return ActionResult unless they need richer output.
+service MobileService {
+  // ---------- Pairing-related ----------
+  rpc GetCurrentDevice(GetCurrentDeviceRequest) returns (GetCurrentDeviceResponse);
+  rpc RevokeCurrentDevice(RevokeCurrentDeviceRequest) returns (RevokeCurrentDeviceResponse);
+
+  // ---------- Server / system ----------
+  rpc GetServerInfo(GetServerInfoRequest) returns (GetServerInfoResponse);
+  rpc GetDockerInfo(GetDockerInfoRequest) returns (GetDockerInfoResponse);
+  rpc GetAppVersion(GetAppVersionRequest) returns (GetAppVersionResponse);
+
+  // ---------- Containers ----------
+  rpc ListContainers(ListContainersRequest) returns (ListContainersResponse);
+  rpc InspectContainer(InspectContainerRequest) returns (InspectContainerResponse);
+  rpc StartContainer(ContainerActionRequest) returns (ActionResult);
+  rpc StopContainer(ContainerActionRequest) returns (ActionResult);
+  rpc RestartContainer(ContainerActionRequest) returns (ActionResult);
+  rpc RedeployContainer(ContainerActionRequest) returns (ActionResult);
+  rpc DeleteContainer(DeleteContainerRequest) returns (ActionResult);
+  rpc PruneContainers(PruneContainersRequest) returns (PruneResult);
+
+  // ---------- Volumes ----------
+  rpc ListVolumes(ListVolumesRequest) returns (ListVolumesResponse);
+  rpc GetVolumeSizes(GetVolumeSizesRequest) returns (GetVolumeSizesResponse);
+  rpc CreateVolume(CreateVolumeRequest) returns (CreateVolumeResponse);
+  rpc DeleteVolume(DeleteVolumeRequest) returns (ActionResult);
+  rpc PruneVolumes(PruneVolumesRequest) returns (PruneResult);
+
+  // ---------- Networks ----------
+  rpc ListNetworks(ListNetworksRequest) returns (ListNetworksResponse);
+  rpc CreateNetwork(CreateNetworkRequest) returns (CreateNetworkResponse);
+  rpc DeleteNetwork(DeleteNetworkRequest) returns (ActionResult);
+  rpc PruneNetworks(PruneNetworksRequest) returns (PruneResult);
+
+  // ---------- Container extras ----------
+  rpc PauseContainer(ContainerActionRequest) returns (ActionResult);
+  rpc UnpauseContainer(ContainerActionRequest) returns (ActionResult);
+  rpc KillContainer(ContainerActionRequest) returns (ActionResult);
+  rpc RenameContainer(RenameContainerRequest) returns (ActionResult);
+
+  // ---------- Images ----------
+  rpc ListImages(EnvIDOnlyRequest) returns (JSONResponse);
+  rpc InspectImage(EnvIDAndIDRequest) returns (JSONResponse);
+  rpc DeleteImage(EnvIDAndIDRequest) returns (ActionResult);
+  rpc PruneImages(EnvIDOnlyRequest) returns (PruneResult);
+
+  // ---------- Image updates ----------
+  rpc GetImageUpdateSummary(EnvIDOnlyRequest) returns (JSONResponse);
+  rpc GetImageUpdatesByRefs(GetImageUpdatesByRefsRequest) returns (JSONResponse);
+  rpc CheckImageUpdates(EnvIDAndQueryRequest) returns (JSONResponse);
+  rpc CheckAllImageUpdates(EnvIDOnlyRequest) returns (ActionResult);
+  rpc CheckImageUpdate(EnvIDAndIDRequest) returns (JSONResponse);
+
+  // ---------- Vulnerabilities ----------
+  rpc GetVulnerabilityScannerStatus(EnvIDOnlyRequest) returns (JSONResponse);
+  rpc GetImageVulnerabilitySummary(EnvIDAndIDRequest) returns (JSONResponse);
+  rpc ListImageVulnerabilities(EnvIDAndIDAndQueryRequest) returns (JSONResponse);
+  rpc ScanImageVulnerabilities(EnvIDAndIDRequest) returns (JSONResponse);
+  rpc GetAllVulnerabilitiesSummary(EnvIDOnlyRequest) returns (JSONResponse);
+  rpc GetVulnerabilityImageOptions(EnvIDAndQueryRequest) returns (JSONResponse);
+  rpc ListAllVulnerabilities(EnvIDAndQueryRequest) returns (JSONResponse);
+  rpc IgnoreVulnerability(EnvIDAndJSONBodyRequest) returns (JSONResponse);
+  rpc DeleteVulnerabilityIgnore(EnvIDAndIDRequest) returns (ActionResult);
+
+  // ---------- Projects (read + mutations) ----------
+  rpc ListProjects(ListProjectsRequest) returns (ListProjectsResponse);
+  rpc GetProject(GetProjectRequest) returns (GetProjectResponse);
+  rpc CreateProject(EnvIDAndJSONBodyRequest) returns (JSONResponse);
+  rpc UpdateProject(EnvIDAndIDAndJSONBodyRequest) returns (JSONResponse);
+  rpc DeleteProject(EnvIDAndIDRequest) returns (ActionResult);
+  rpc StartProject(EnvIDAndIDRequest) returns (ActionResult);
+  rpc StopProject(EnvIDAndIDRequest) returns (ActionResult);
+  rpc DestroyProject(EnvIDAndIDRequest) returns (ActionResult);
+
+  // ---------- Environments ----------
+  rpc ListEnvironments(EmptyRequest) returns (JSONResponse);
+  rpc CreateEnvironment(JSONBodyRequest) returns (JSONResponse);
+  rpc TestEnvironment(EnvIDOnlyRequest) returns (JSONResponse);
+
+  // ---------- Settings ----------
+  rpc GetSettings(EnvIDOnlyRequest) returns (JSONResponse);
+  rpc UpdateSettings(EnvIDAndJSONBodyRequest) returns (JSONResponse);
+  rpc GetOidcStatus(EmptyRequest) returns (JSONResponse);
+
+  // ---------- Notifications ----------
+  rpc GetNotificationSettings(EnvIDOnlyRequest) returns (JSONResponse);
+  rpc SaveNotificationProvider(EnvIDAndJSONBodyRequest) returns (JSONResponse);
+  rpc DeleteNotificationProvider(EnvIDAndIDRequest) returns (ActionResult);
+  rpc TestNotificationProvider(EnvIDAndIDAndJSONBodyRequest) returns (ActionResult);
+  rpc GetApprise(EnvIDOnlyRequest) returns (JSONResponse);
+  rpc UpdateApprise(EnvIDAndJSONBodyRequest) returns (JSONResponse);
+  rpc TestApprise(EnvIDAndJSONBodyRequest) returns (ActionResult);
+
+  // ---------- Webhooks ----------
+  rpc ListWebhooks(EnvIDOnlyRequest) returns (JSONResponse);
+  rpc CreateWebhook(EnvIDAndJSONBodyRequest) returns (JSONResponse);
+  rpc UpdateWebhook(EnvIDAndIDAndJSONBodyRequest) returns (JSONResponse);
+  rpc DeleteWebhook(EnvIDAndIDRequest) returns (ActionResult);
+
+  // ---------- Users (global) ----------
+  rpc ListUsers(EmptyRequest) returns (JSONResponse);
+  rpc CreateUser(JSONBodyRequest) returns (JSONResponse);
+  rpc UpdateUser(IDAndJSONBodyRequest) returns (JSONResponse);
+  rpc DeleteUser(IDOnlyRequest) returns (ActionResult);
+
+  // ---------- API keys (global) ----------
+  rpc ListApiKeys(EmptyRequest) returns (JSONResponse);
+  rpc CreateApiKey(JSONBodyRequest) returns (JSONResponse);
+  rpc DeleteApiKey(IDOnlyRequest) returns (ActionResult);
+
+  // ---------- Container registries (global) ----------
+  rpc ListContainerRegistries(EmptyRequest) returns (JSONResponse);
+  rpc CreateContainerRegistry(JSONBodyRequest) returns (JSONResponse);
+  rpc UpdateContainerRegistry(IDAndJSONBodyRequest) returns (JSONResponse);
+  rpc DeleteContainerRegistry(IDOnlyRequest) returns (ActionResult);
+
+  // ---------- Templates (global) ----------
+  rpc ListTemplates(EmptyRequest) returns (JSONResponse);
+  rpc GetTemplateContent(IDOnlyRequest) returns (JSONResponse);
+  rpc ListTemplateRegistries(EmptyRequest) returns (JSONResponse);
+  rpc CreateTemplateRegistry(JSONBodyRequest) returns (JSONResponse);
+  rpc UpdateTemplateRegistry(IDAndJSONBodyRequest) returns (JSONResponse);
+  rpc DeleteTemplateRegistry(IDOnlyRequest) returns (ActionResult);
+
+  // ---------- System ----------
+  rpc PruneSystem(EnvIDAndJSONBodyRequest) returns (JSONResponse);
+
+  // ---------- Streaming ----------
+  rpc StreamContainerLogs(StreamContainerLogsRequest) returns (stream StreamFrame);
+  rpc StreamContainerStats(EnvIDAndIDRequest) returns (stream StreamFrame);
+  rpc StreamProjectLogs(StreamProjectLogsRequest) returns (stream StreamFrame);
+  rpc StreamSystemStats(StreamSystemStatsRequest) returns (stream StreamFrame);
+  rpc StreamPullImage(PullImageRequest) returns (stream StreamFrame);
+  rpc ContainerTerminal(stream TerminalClientFrame) returns (stream TerminalServerFrame);
+}
+
+// ===================================================================
+// Generic request/response wrappers
+//
+// These let us add many RPCs without each one needing a bespoke message
+// type. Most REST endpoints only need {envID, id, body, query} for input
+// and JSON bytes for output — these wrappers cover that.
+// ===================================================================
+
+message EmptyRequest {}
+
+message JSONResponse {
+  bytes payload = 1;
+}
+
+message JSONBodyRequest {
+  bytes body = 1;
+}
+
+message IDOnlyRequest {
+  string id = 1;
+}
+
+message IDAndJSONBodyRequest {
+  string id = 1;
+  bytes body = 2;
+}
+
+message EnvIDOnlyRequest {
+  string environment_id = 1;
+}
+
+message EnvIDAndIDRequest {
+  string environment_id = 1;
+  string id = 2;
+}
+
+message EnvIDAndQueryRequest {
+  string environment_id = 1;
+  // Raw query string without leading "?".
+  string query = 2;
+}
+
+message EnvIDAndJSONBodyRequest {
+  string environment_id = 1;
+  bytes body = 2;
+}
+
+message EnvIDAndIDAndQueryRequest {
+  string environment_id = 1;
+  string id = 2;
+  string query = 3;
+}
+
+message EnvIDAndIDAndJSONBodyRequest {
+  string environment_id = 1;
+  string id = 2;
+  bytes body = 3;
+}
+
+// ===================================================================
+// Container extras
+// ===================================================================
+
+message RenameContainerRequest {
+  string environment_id = 1;
+  string id = 2;
+  string new_name = 3;
+}
+
+message GetImageUpdatesByRefsRequest {
+  string environment_id = 1;
+  repeated string refs = 2;
+}
+
+// ===================================================================
+// Streaming
+// ===================================================================
+
+// StreamFrame is the unit of a server-streamed body. The first frame is
+// optionally a Header (carrying response status/headers if the underlying
+// transport had them); subsequent frames are Data; the stream terminates
+// with End (carrying an optional error string).
+message StreamFrame {
+  oneof payload {
+    StreamHeader header = 1;
+    bytes data = 2;
+    StreamEnd end = 3;
+  }
+}
+
+message StreamHeader {
+  int32 status = 1;
+  map<string, string> headers = 2;
+}
+
+message StreamEnd {
+  string error = 1;
+}
+
+message StreamContainerLogsRequest {
+  string environment_id = 1;
+  string id = 2;
+  bool follow = 3;
+  string tail = 4;
+  bool timestamps = 5;
+  bool stdout = 6;
+  bool stderr = 7;
+  string since = 8;
+  string until = 9;
+}
+
+message StreamProjectLogsRequest {
+  string environment_id = 1;
+  string id = 2;
+  bool follow = 3;
+  string tail = 4;
+  bool timestamps = 5;
+}
+
+message StreamSystemStatsRequest {
+  string environment_id = 1;
+  // Sample interval in milliseconds. 0 means server default.
+  int32 interval_ms = 2;
+}
+
+message PullImageRequest {
+  string environment_id = 1;
+  string ref = 2;
+  bytes auth_credentials_json = 3;
+}
+
+// ---------- Terminal (bidi) ----------
+
+message TerminalClientFrame {
+  oneof payload {
+    TerminalStart start = 1;
+    bytes input = 2;
+    TerminalResize resize = 3;
+    TerminalClose close = 4;
+  }
+}
+
+message TerminalServerFrame {
+  oneof payload {
+    TerminalReady ready = 1;
+    bytes output = 2;
+    TerminalClose close = 3;
+  }
+}
+
+message TerminalStart {
+  string environment_id = 1;
+  string container_id = 2;
+  string shell = 3;
+  uint32 cols = 4;
+  uint32 rows = 5;
+}
+
+message TerminalReady {}
+
+message TerminalResize {
+  uint32 cols = 1;
+  uint32 rows = 2;
+}
+
+message TerminalClose {
+  string reason = 1;
+}
+
+// ===================================================================
+// Pairing
+// ===================================================================
+
+message RedeemCodeRequest {
+  string code = 1;
+  string device_id = 2;
+  string device_name = 3;
+  string app_version = 4;
+  string os_version = 5;
+  string device_model = 6;
+}
+
+message RedeemCodeResponse {
+  string device_token = 1;
+  Device device = 2;
+  string server_url = 3;
+  string username = 4;
+}
+
+message Device {
+  string id = 1;
+  string name = 2;
+  string device_id = 3;
+  string app_version = 4;
+  string os_version = 5;
+  string device_model = 6;
+  int64 paired_at_unix_ms = 7;
+  int64 last_seen_at_unix_ms = 8;
+}
+
+message GetCurrentDeviceRequest {}
+message GetCurrentDeviceResponse { Device device = 1; }
+message RevokeCurrentDeviceRequest {}
+message RevokeCurrentDeviceResponse {}
+
+// ===================================================================
+// Server / system
+// ===================================================================
+
+message GetServerInfoRequest {}
+message GetServerInfoResponse {
+  string server_version = 1;
+  string server_revision = 2;
+  string docker_version = 3;
+  string docker_api_version = 4;
+  string os = 5;
+  string arch = 6;
+  int32 environment_count = 7;
+}
+
+message GetDockerInfoRequest {
+  string environment_id = 1;
+}
+message GetDockerInfoResponse {
+  // JSON-encoded Docker `Info` payload, same shape as
+  // GET /environments/{id}/system/docker/info.
+  bytes info_json = 1;
+}
+
+message GetAppVersionRequest {}
+message GetAppVersionResponse {
+  // JSON-encoded version.Info, same as GET /app-version.
+  bytes info_json = 1;
+}
+
+// ===================================================================
+// Common
+// ===================================================================
+
+// ActionResult is returned by simple mutating RPCs (start/stop/etc.) where
+// the success boolean + an optional message is all the caller needs.
+message ActionResult {
+  bool success = 1;
+  string message = 2;
+}
+
+// PruneResult mirrors the REST prune response.
+message PruneResult {
+  // JSON-encoded backend response — Docker prune payloads vary per resource
+  // and the iOS app already decodes them with typed Codable structs.
+  bytes report_json = 1;
+}
+
+// ===================================================================
+// Containers
+// ===================================================================
+
+message ListContainersRequest {
+  string environment_id = 1;
+  bool include_all = 2;
+  bool include_internal = 3;
+  string search = 4;
+  int32 limit = 5;
+  int32 offset = 6;
+  // Optional: when "project", group by compose project. Mirrors the REST
+  // groupBy query parameter.
+  string group_by = 7;
+}
+
+message ListContainersResponse {
+  // JSON-encoded array of containertypes.Summary — same shape as REST
+  // GET /environments/{id}/containers, so existing Swift Codable types
+  // (libarcane-swift ContainerSummary) decode it unchanged.
+  bytes containers_json = 1;
+  ContainerCounts counts = 2;
+  int64 total = 3;
+}
+
+message ContainerCounts {
+  int32 running = 1;
+  int32 stopped = 2;
+  int32 paused = 3;
+  int32 total = 4;
+}
+
+message InspectContainerRequest {
+  string environment_id = 1;
+  string id = 2;
+}
+message InspectContainerResponse {
+  // JSON-encoded containertypes.Details — same shape as GET /containers/{id}.
+  bytes details_json = 1;
+}
+
+message ContainerActionRequest {
+  string environment_id = 1;
+  string id = 2;
+}
+
+message DeleteContainerRequest {
+  string environment_id = 1;
+  string id = 2;
+  bool force = 3;
+  bool remove_volumes = 4;
+}
+
+message PruneContainersRequest {
+  string environment_id = 1;
+}
+
+// ===================================================================
+// Volumes
+// ===================================================================
+
+message ListVolumesRequest {
+  string environment_id = 1;
+}
+message ListVolumesResponse {
+  // JSON-encoded list of Docker VolumeSummary objects. Lots of nested driver
+  // metadata; iOS already has Codable types for it.
+  bytes volumes_json = 1;
+}
+
+message GetVolumeSizesRequest {
+  string environment_id = 1;
+}
+message GetVolumeSizesResponse {
+  repeated VolumeSize sizes = 1;
+}
+message VolumeSize {
+  string name = 1;
+  int64 size_bytes = 2;
+  int64 ref_count = 3;
+}
+
+message CreateVolumeRequest {
+  string environment_id = 1;
+  // JSON-encoded create payload (driver, opts, labels, etc.). Mirrors the
+  // REST body shape.
+  bytes spec_json = 2;
+}
+message CreateVolumeResponse {
+  bytes volume_json = 1;
+}
+
+message DeleteVolumeRequest {
+  string environment_id = 1;
+  string name = 2;
+  bool force = 3;
+}
+
+message PruneVolumesRequest {
+  string environment_id = 1;
+}
+
+// ===================================================================
+// Networks
+// ===================================================================
+
+message ListNetworksRequest {
+  string environment_id = 1;
+}
+message ListNetworksResponse {
+  bytes networks_json = 1;
+}
+
+message CreateNetworkRequest {
+  string environment_id = 1;
+  bytes spec_json = 2;
+}
+message CreateNetworkResponse {
+  bytes network_json = 1;
+}
+
+message DeleteNetworkRequest {
+  string environment_id = 1;
+  string id = 2;
+}
+
+message PruneNetworksRequest {
+  string environment_id = 1;
+}
+
+// ===================================================================
+// Projects (read)
+// ===================================================================
+
+message ListProjectsRequest {
+  string environment_id = 1;
+}
+message ListProjectsResponse {
+  bytes projects_json = 1;
+}
+
+message GetProjectRequest {
+  string environment_id = 1;
+  string id = 2;
+}
+message GetProjectResponse {
+  bytes project_json = 1;
+}
