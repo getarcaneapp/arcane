@@ -53,7 +53,7 @@
     "@tanstack/svelte-query-devtools": "^6.1.28",
     "@types/node": "^25.6.0",
     "@typescript/native-preview": "7.0.0-dev.20260504.1",
-    "bits-ui": "^2.18.0",
+    "bits-ui": "^2.18.1",
     "clsx": "^2.1.1",
     "formsnap": "^2.0.1",
     "isomorphic-dompurify": "^3.10.0",
