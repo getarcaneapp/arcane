@@ -389,8 +389,18 @@ func fetchLatestGitHubReleaseInternal(ctx context.Context) (string, error) {
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 
+	client := &http.Client{Timeout: cliUpdateHTTPTimeout}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to fetch latest GitHub release: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("failed to fetch latest GitHub release: HTTP %s", resp.Status)
+	}
+
 	var latest githubLatestRelease
-	if err := doJSONInternal(req, &latest); err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&latest); err != nil {
 		return "", fmt.Errorf("failed to fetch latest GitHub release: %w", err)
 	}
 	return strings.TrimSpace(latest.TagName), nil
@@ -631,22 +641,6 @@ func verboseCLIUpdateInternal(format string, args ...any) {
 		return
 	}
 	fmt.Fprintf(os.Stderr, "self-update: "+format+"\n", args...)
-}
-
-func doJSONInternal(req *http.Request, out any) error {
-	client := &http.Client{Timeout: cliUpdateHTTPTimeout}
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("HTTP %s", resp.Status)
-	}
-	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
-		return err
-	}
-	return nil
 }
 
 func sha256FileInternal(path string) (string, error) {

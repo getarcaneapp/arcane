@@ -24,8 +24,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/startup"
 	"github.com/getarcaneapp/arcane/backend/pkg/scheduler"
 	httputils "github.com/getarcaneapp/arcane/backend/pkg/utils/httpx"
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
 	"google.golang.org/grpc"
 )
 
@@ -439,7 +437,7 @@ func configureHTTPProtocolsInternal(useTLS bool, handler http.Handler) (http.Han
 	}
 
 	protocols.SetUnencryptedHTTP2(true)
-	return h2c.NewHandler(handler, &http2.Server{}), &protocols
+	return handler, &protocols
 }
 
 func newHTTPServerInternal(listenAddr string, handler http.Handler, protocols *http.Protocols, useTLS bool, edgeCfg *edge.Config) (*http.Server, error) {

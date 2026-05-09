@@ -119,6 +119,30 @@ func TestIsTunnelGRPCRequestInternal(t *testing.T) {
 	})
 }
 
+func TestConfigureHTTPProtocolsInternal(t *testing.T) {
+	handler := http.NewServeMux()
+
+	t.Run("tls enables http1 and http2", func(t *testing.T) {
+		configuredHandler, protocols := configureHTTPProtocolsInternal(true, handler)
+
+		assert.Same(t, handler, configuredHandler)
+		require.NotNil(t, protocols)
+		assert.True(t, protocols.HTTP1())
+		assert.True(t, protocols.HTTP2())
+		assert.False(t, protocols.UnencryptedHTTP2())
+	})
+
+	t.Run("plain enables http1 and unencrypted http2", func(t *testing.T) {
+		configuredHandler, protocols := configureHTTPProtocolsInternal(false, handler)
+
+		assert.Same(t, handler, configuredHandler)
+		require.NotNil(t, protocols)
+		assert.True(t, protocols.HTTP1())
+		assert.False(t, protocols.HTTP2())
+		assert.True(t, protocols.UnencryptedHTTP2())
+	})
+}
+
 func TestPrepareServerTLSInternal_AgentModeSkipsManagerMTLSValidation(t *testing.T) {
 	cfg := &config.Config{
 		AgentMode:     true,
