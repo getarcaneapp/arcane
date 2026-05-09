@@ -14,4 +14,5 @@ export interface AppVersionInformation {
 	updateAvailable?: boolean;
 	releaseUrl?: string;
 	releaseNotes?: string;
+	releasedAt?: string;
 }

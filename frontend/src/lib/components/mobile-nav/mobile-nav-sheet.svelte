@@ -8,12 +8,10 @@
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import MobileUserCard from './mobile-user-card.svelte';
 	import * as Drawer from '$lib/components/ui/drawer/index.js';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { queryKeys } from '$lib/query/query-keys';
 	import systemUpgradeService from '$lib/services/api/system-upgrade-service';
-	import UpgradeConfirmationDialog from '$lib/components/dialogs/upgrade-confirmation-dialog.svelte';
+	import UpdateCenterDialog from '$lib/components/dialogs/update-center-dialog.svelte';
 	import { toast } from 'svelte-sonner';
-	import { DownloadIcon } from '$lib/icons';
 	import { extractApiErrorMessage } from '$lib/utils/api.util';
 	import type { AppVersionInformation } from '$lib/types/application-configuration';
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
@@ -66,7 +64,6 @@
 	);
 	const shouldShowUpgrade = $derived((canUpgrade && isAdmin) || debug);
 
-	// Determine update type and display text
 	const updateType = $derived.by(() => {
 		if (!versionInformation) return 'none';
 		if (versionInformation.isSemverVersion) return 'semver';
@@ -74,36 +71,13 @@
 		return 'none';
 	});
 
-	const updateDisplayText = $derived.by(() => {
+	const versionChip = $derived.by(() => {
 		if (!versionInformation) return '';
-		if (updateType === 'semver') {
-			return versionInformation.newestVersion ?? '';
-		}
-		if (updateType === 'digest' && versionInformation.newestDigest) {
-			// Show shortened digest for non-semver tags
-			const digest = versionInformation.newestDigest;
-			return digest.length > 12 ? digest.substring(0, 12) : digest;
-		}
+		if (updateType === 'semver') return versionInformation.newestVersion ?? '';
+		if (updateType === 'digest') return versionInformation.currentTag ?? '';
 		return '';
 	});
 
-	const upgradeButtonText = $derived.by(() => {
-		if (upgrading) return m.upgrade_in_progress();
-		if (checkingUpgrade) return m.upgrade_checking();
-		if (updateType === 'digest') {
-			const tag = versionInformation?.currentTag ?? m.common_image();
-			return m.upgrade_update_tag({ tag });
-		}
-		// For semver updates, use newestVersion or fallback to updateDisplayText
-		const version = versionInformation?.newestVersion || updateDisplayText;
-		if (version) {
-			return m.upgrade_to_version({ version });
-		}
-		// Fallback if no version info is available (shouldn't happen in prod, but safe fallback)
-		return m.upgrade_now();
-	});
-
-	// Show banner for both semver and digest-based updates
 	const shouldShowBanner = $derived(versionInformation?.updateAvailable || debug);
 	const triggerUpgradeMutation = createMutation(() => ({
 		mutationFn: () => systemUpgradeService.triggerUpgrade(),
@@ -383,34 +357,39 @@
 					<p class="font-medium">
 						Arcane {versionInformation.displayVersion ?? versionInformation.currentVersion}
 					</p>
-					{#if shouldShowBanner}
-						<p class="text-primary/80 mt-1 font-medium">Update available</p>
-					{/if}
 				</div>
-				{#if shouldShowUpgrade}
-					<div class="mt-3">
-						<ArcaneButton
-							action="update"
-							size="sm"
-							class="h-9 w-full gap-2 rounded-xl shadow-sm transition-colors"
-							onclick={handleUpgradeClick}
-							disabled={upgrading || checkingUpgrade}
-							customLabel={upgradeButtonText}
-							icon={DownloadIcon}
-						/>
-					</div>
+				{#if shouldShowBanner}
+					<button
+						type="button"
+						onclick={handleUpgradeClick}
+						disabled={upgrading || checkingUpgrade}
+						class="group hover:bg-muted/50 focus-visible:ring-primary/40 mt-3 flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left transition-colors focus-visible:ring-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+					>
+						<span class="relative flex size-2 shrink-0 items-center justify-center">
+							<span class="absolute inline-flex size-2 animate-ping rounded-full bg-blue-500 opacity-60"></span>
+							<span class="relative inline-flex size-1.5 rounded-full bg-blue-500"></span>
+						</span>
+						<span class="text-foreground flex-1 text-sm font-medium">
+							{m.sidebar_update_available()}
+						</span>
+						{#if versionChip}
+							<span class="bg-muted text-muted-foreground rounded-md px-1.5 py-0.5 font-mono text-[11px]">
+								{versionChip}
+							</span>
+						{/if}
+					</button>
 				{/if}
 			{/if}
 		</div>
 	</Drawer.Content>
 </Drawer.Root>
 
-<UpgradeConfirmationDialog
+<UpdateCenterDialog
 	bind:open={showConfirmDialog}
 	bind:upgrading
-	version={versionInformation?.newestVersion ?? ''}
-	expectedVersion={versionInformation?.newestVersion}
-	expectedDigest={versionInformation?.newestDigest}
+	{versionInformation}
+	canInstall={shouldShowUpgrade}
+	{debug}
 	onConfirm={handleConfirmUpgrade}
 />
 

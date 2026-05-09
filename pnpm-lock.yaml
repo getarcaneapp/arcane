@@ -133,6 +133,9 @@ importers:
       ky:
         specifier: ^2.0.2
         version: 2.0.2
+      marked:
+        specifier: ^18.0.3
+        version: 18.0.3
       prettier:
         specifier: ^3.8.3
         version: 3.8.3
@@ -2443,6 +2446,11 @@ packages:
   marked@15.0.12:
     resolution: {integrity: sha512-8dD6FusOQSrpv9Z1rdNMdlSgQOIP880DHqnohobOmYLElGEqAL/JvxvuxZO16r4HtjTlfPRDC1hbvxC9dPN2nA==}
     engines: {node: '>= 18'}
+    hasBin: true
+
+  marked@18.0.3:
+    resolution: {integrity: sha512-7VT90JOkDeaRWpfjOReRGPEKn0ecdARBkDGL+tT1wZY0efPPqkUxLUSmzy/C7TIylQYJC9STISEsCHrqb/7VIA==}
+    engines: {node: '>= 20'}
     hasBin: true
 
   mdn-data@2.27.1:
@@ -5061,6 +5069,8 @@ snapshots:
       '@jridgewell/sourcemap-codec': 1.5.5
 
   marked@15.0.12: {}
+
+  marked@18.0.3: {}
 
   mdn-data@2.27.1: {}
 

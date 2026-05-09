@@ -17,21 +17,14 @@
 	import { m } from '$lib/paraglide/messages';
 	import { environmentManagementService } from '$lib/services/env-mgmt-service';
 	import environmentUpgradeService from '$lib/services/api/environment-upgrade-service';
-	import UpgradeConfirmationDialog from '$lib/components/dialogs/upgrade-confirmation-dialog.svelte';
+	import UpdateCenterDialog from '$lib/components/dialogs/update-center-dialog.svelte';
+	import EnvironmentUpgradeMenuItem from './environment-upgrade-menu-item.svelte';
+	import type { AppVersionInformation } from '$lib/types/application-configuration';
+	import userStore from '$lib/stores/user-store';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { capitalizeFirstLetter } from '$lib/utils/string.utils';
 	import { getEnvironmentStatusVariant, isEnvironmentOnline, resolveEnvironmentStatus } from '$lib/utils/environment-status';
-	import {
-		EyeOnIcon,
-		TrashIcon,
-		EnvironmentsIcon,
-		InspectIcon,
-		UpdateIcon,
-		StatsIcon,
-		EyeOffIcon,
-		TestIcon,
-		EllipsisIcon
-	} from '$lib/icons';
+	import { EyeOnIcon, TrashIcon, EnvironmentsIcon, InspectIcon, StatsIcon, EyeOffIcon, TestIcon, EllipsisIcon } from '$lib/icons';
 
 	let {
 		environments = $bindable(),
@@ -47,6 +40,14 @@
 	let upgradingEnvironmentId = $state<string | null>(null);
 	let showUpgradeDialog = $state(false);
 	let selectedEnvironmentForUpgrade = $state<Environment | null>(null);
+	let selectedVersionInfoForUpgrade = $state<AppVersionInformation | null>(null);
+
+	let currentUser = $state<{ roles?: string[] } | null>(null);
+	$effect(() => {
+		const unsub = userStore.subscribe((u) => (currentUser = u));
+		return unsub;
+	});
+	const isAdmin = $derived(!!currentUser?.roles?.includes('admin'));
 
 	async function handleDeleteSelected(ids: string[]) {
 		if (!ids?.length) return;
@@ -139,8 +140,9 @@
 		isLoading.testing = false;
 	}
 
-	async function handleUpgradeClick(environment: Environment) {
+	function handleUpgradeSelected(environment: Environment, versionInfo: AppVersionInformation) {
 		selectedEnvironmentForUpgrade = environment;
+		selectedVersionInfoForUpgrade = versionInfo;
 		showUpgradeDialog = true;
 	}
 
@@ -148,29 +150,28 @@
 		if (!selectedEnvironmentForUpgrade) return;
 
 		const envId = selectedEnvironmentForUpgrade.id;
-		const envName = selectedEnvironmentForUpgrade.name;
-
-		isLoading.upgrading = true;
 		upgradingEnvironmentId = envId;
-		showUpgradeDialog = false;
 
 		try {
 			const result = await environmentUpgradeService.triggerEnvironmentUpgrade(envId);
-
-			if (result.success) {
-				toast.success(m.upgrade_success());
-				toast.info(`Environment "${envName}" is upgrading and will restart shortly.`);
-			} else {
-				toast.error(result.error || m.upgrade_failed({ error: 'Unknown error' }));
+			if (!result.success) {
+				throw new Error(result.error || m.upgrade_failed({ error: 'Unknown error' }));
 			}
+			toast.success(m.upgrade_success());
 		} catch (error: any) {
 			const errorMessage = extractApiErrorMessage(error);
 			const wrappedPrefix = m.upgrade_failed({ error: '' });
 			toast.error(errorMessage.startsWith(wrappedPrefix) ? errorMessage : m.upgrade_failed({ error: errorMessage }));
-		} finally {
-			isLoading.upgrading = false;
+			throw error;
+		}
+	}
+
+	function setUpgradeDialogOpen(next: boolean) {
+		showUpgradeDialog = next;
+		if (!next) {
 			upgradingEnvironmentId = null;
 			selectedEnvironmentForUpgrade = null;
+			selectedVersionInfoForUpgrade = null;
 		}
 	}
 
@@ -423,15 +424,13 @@
 				{#if item.id !== '0'}
 					<DropdownMenu.Separator />
 
-					{#if isEnvironmentOnline(item)}
-						<DropdownMenu.Item
-							onclick={() => handleUpgradeClick(item)}
-							disabled={isLoading.upgrading || upgradingEnvironmentId === item.id}
-						>
-							<UpdateIcon class="size-4" />
-							{upgradingEnvironmentId === item.id ? m.upgrade_in_progress() : m.upgrade_to_version({ version: 'Latest' })}
-						</DropdownMenu.Item>
-					{/if}
+					<EnvironmentUpgradeMenuItem
+						environment={item}
+						isOnline={isEnvironmentOnline(item)}
+						disabled={isLoading.upgrading}
+						isUpgradingThis={upgradingEnvironmentId === item.id}
+						onSelect={handleUpgradeSelected}
+					/>
 
 					<DropdownMenu.Item onclick={() => handleToggleEnabled(item)} disabled={isLoading.toggling}>
 						{#if item.enabled}
@@ -477,10 +476,11 @@
 	mobileCard={EnvironmentMobileCardSnippet}
 />
 
-<UpgradeConfirmationDialog
-	bind:open={showUpgradeDialog}
-	version="Latest"
+<UpdateCenterDialog
+	bind:open={() => showUpgradeDialog, setUpgradeDialogOpen}
 	onConfirm={handleConfirmUpgrade}
+	versionInformation={selectedVersionInfoForUpgrade ?? undefined}
+	canInstall={isAdmin}
 	environmentName={selectedEnvironmentForUpgrade?.name}
 	environmentId={selectedEnvironmentForUpgrade?.id}
 	bind:upgrading={isLoading.upgrading}
