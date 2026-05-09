@@ -503,7 +503,7 @@ func (s *SettingsService) isEnvOverrideActiveInternal(key string) bool {
 }
 
 func (s *SettingsService) GetSettings(ctx context.Context) (*models.Settings, error) {
-	settings := s.getEffectiveSettingsConfig(ctx)
+	settings := s.getEffectiveSettingsConfigInternal(ctx)
 	return settings, nil
 }
 
@@ -522,7 +522,7 @@ func (s *SettingsService) GetSettingsOrDefaults(ctx context.Context) *models.Set
 	return cfg
 }
 
-func (s *SettingsService) getEffectiveSettingsConfig(ctx context.Context) *models.Settings {
+func (s *SettingsService) getEffectiveSettingsConfigInternal(ctx context.Context) *models.Settings {
 	settings := s.GetSettingsConfig().Clone()
 	s.applyEnvOverrides(ctx, settings)
 	return settings
@@ -656,7 +656,6 @@ func (s *SettingsService) updateSettingValueNoRefreshInternal(ctx context.Contex
 func (s *SettingsService) UpdateSettings(ctx context.Context, updates settings.Update) ([]models.SettingVariable, error) {
 	defaultCfg := s.getDefaultSettings()
 	cfg := s.GetSettingsConfig().Clone()
-	s.applyEnvOverrides(ctx, cfg)
 
 	valuesToUpdate, changedPolling, changedAutoUpdate, changedScheduledPrune, changedVulnerabilityScan, changedAutoHeal, changedTimeouts, err := s.prepareUpdateValues(updates, cfg, defaultCfg)
 	if err != nil {
@@ -1080,7 +1079,7 @@ func (s *SettingsService) setupInstanceID(ctx context.Context) error {
 }
 
 func (s *SettingsService) GetBoolSetting(ctx context.Context, key string, defaultValue bool) bool {
-	cfg := s.getEffectiveSettingsConfig(ctx)
+	cfg := s.getEffectiveSettingsConfigInternal(ctx)
 	val, _, _, err := cfg.FieldByKey(key)
 	if err != nil || val == "" {
 		return defaultValue
@@ -1093,7 +1092,7 @@ func (s *SettingsService) GetBoolSetting(ctx context.Context, key string, defaul
 }
 
 func (s *SettingsService) GetIntSetting(ctx context.Context, key string, defaultValue int) int {
-	cfg := s.getEffectiveSettingsConfig(ctx)
+	cfg := s.getEffectiveSettingsConfigInternal(ctx)
 	val, _, _, err := cfg.FieldByKey(key)
 	if err != nil || val == "" {
 		return defaultValue
@@ -1106,7 +1105,7 @@ func (s *SettingsService) GetIntSetting(ctx context.Context, key string, default
 }
 
 func (s *SettingsService) GetStringSetting(ctx context.Context, key, defaultValue string) string {
-	cfg := s.getEffectiveSettingsConfig(ctx)
+	cfg := s.getEffectiveSettingsConfigInternal(ctx)
 	val, _, _, err := cfg.FieldByKey(key)
 	if err != nil || val == "" {
 		return defaultValue
