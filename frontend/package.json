@@ -48,7 +48,7 @@
     "@inlang/paraglide-js": "2.16.1",
     "@internationalized/date": "^3.12.1",
     "@prettier/plugin-oxc": "^0.1.4",
-    "@sveltejs/vite-plugin-svelte": "^7.0.0",
+    "@sveltejs/vite-plugin-svelte": "^7.1.2",
     "@tailwindcss/vite": "^4.2.4",
     "@tanstack/svelte-query-devtools": "^6.1.28",
     "@types/node": "^25.6.0",
