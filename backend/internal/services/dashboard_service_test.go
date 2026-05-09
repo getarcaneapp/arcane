@@ -520,6 +520,18 @@ func TestDashboardService_GetActionItems_CountsAffectedResources(t *testing.T) {
 			Status:  "Up 2 hours",
 			Labels:  map[string]string{},
 		},
+		{
+			ID:      "compose-updated",
+			Names:   []string{"/compose-app"},
+			Image:   "repo/compose:latest",
+			ImageID: "sha256:image-compose",
+			Created: 1700000001,
+			State:   "running",
+			Status:  "Up 2 hours",
+			Labels: map[string]string{
+				"com.docker.compose.project": "compose-demo",
+			},
+		},
 	}
 	images := []dockerimage.Summary{
 		{ID: "sha256:image-a", RepoTags: []string{"repo/app:latest"}, Created: 1710000000, Size: 100},
@@ -535,6 +547,12 @@ func TestDashboardService_GetActionItems_CountsAffectedResources(t *testing.T) {
 	createDashboardTestImageUpdateRecord(t, db, models.ImageUpdateRecord{
 		ID:         "sha256:image-unused",
 		Repository: "docker.io/repo/unused",
+		Tag:        "latest",
+		HasUpdate:  true,
+	})
+	createDashboardTestImageUpdateRecord(t, db, models.ImageUpdateRecord{
+		ID:         "sha256:image-compose",
+		Repository: "docker.io/repo/compose",
 		Tag:        "latest",
 		HasUpdate:  true,
 	})

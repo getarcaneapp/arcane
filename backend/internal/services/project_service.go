@@ -3420,8 +3420,269 @@ func (s *ProjectService) filterProjectsWithDerivedFiltersInternal(
 
 	items := s.fetchProjectStatusConcurrently(ctx, projectsArray)
 	s.enrichProjectsWithUpdateInfoInternal(ctx, projectsArray, items)
+	items = s.appendDiscoveredComposeProjectUpdatesInternal(ctx, params, projectsArray, items)
 
 	return pagination.SearchOrderAndPaginate(items, params, s.buildProjectDerivedPaginationConfigInternal()), nil
+}
+
+func (s *ProjectService) appendDiscoveredComposeProjectUpdatesInternal(
+	ctx context.Context,
+	params pagination.QueryParams,
+	projectsArray []models.Project,
+	items []project.Details,
+) []project.Details {
+	if !shouldIncludeDiscoveredComposeProjectUpdatesInternal(params) {
+		return items
+	}
+
+	composeContainers, err := projects.ListGlobalComposeContainers(ctx)
+	if err != nil {
+		slog.WarnContext(ctx, "failed to list compose containers for project update rows", "error", err)
+		return items
+	}
+
+	knownProjectNames := s.buildKnownComposeProjectNameSetInternal(ctx, projectsArray)
+	discovered := buildDiscoveredComposeProjectUpdateRowsInternal(ctx, composeContainers, knownProjectNames, s.imageService)
+	if len(discovered) == 0 {
+		return items
+	}
+
+	return append(items, discovered...)
+}
+
+func shouldIncludeDiscoveredComposeProjectUpdatesInternal(params pagination.QueryParams) bool {
+	if params.Filters == nil {
+		return false
+	}
+
+	return strings.EqualFold(strings.TrimSpace(params.Filters["updates"]), "has_update")
+}
+
+func (s *ProjectService) buildKnownComposeProjectNameSetInternal(ctx context.Context, projectsArray []models.Project) map[string]struct{} {
+	known := make(map[string]struct{}, len(projectsArray)*2)
+	for _, proj := range projectsArray {
+		addKnownComposeProjectNameInternal(known, proj.Name)
+		if proj.ComposeProjectName != nil {
+			addKnownComposeProjectNameInternal(known, *proj.ComposeProjectName)
+		}
+	}
+
+	if s.db == nil {
+		return known
+	}
+
+	var allProjects []models.Project
+	if err := s.db.WithContext(ctx).Select("name", "compose_project_name").Find(&allProjects).Error; err != nil {
+		slog.WarnContext(ctx, "failed to load known project names for compose update discovery", "error", err)
+		return known
+	}
+
+	for _, proj := range allProjects {
+		addKnownComposeProjectNameInternal(known, proj.Name)
+		if proj.ComposeProjectName != nil {
+			addKnownComposeProjectNameInternal(known, *proj.ComposeProjectName)
+		}
+	}
+
+	return known
+}
+
+func addKnownComposeProjectNameInternal(known map[string]struct{}, name string) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return
+	}
+
+	known[name] = struct{}{}
+	if normalized := normalizeComposeProjectName(name); normalized != "" {
+		known[normalized] = struct{}{}
+	}
+}
+
+func buildDiscoveredComposeProjectUpdateRowsInternal(
+	ctx context.Context,
+	composeContainers []container.Summary,
+	knownProjectNames map[string]struct{},
+	imageService *ImageService,
+) []project.Details {
+	containersByProject := make(map[string][]container.Summary)
+	for _, c := range composeContainers {
+		projectName := strings.TrimSpace(c.Labels["com.docker.compose.project"])
+		if projectName == "" {
+			continue
+		}
+		if _, exists := knownProjectNames[projectName]; exists {
+			continue
+		}
+		if normalized := normalizeComposeProjectName(projectName); normalized != "" {
+			if _, exists := knownProjectNames[normalized]; exists {
+				continue
+			}
+		}
+
+		containersByProject[projectName] = append(containersByProject[projectName], c)
+	}
+
+	if len(containersByProject) == 0 {
+		return nil
+	}
+
+	updateInfoByRef := getRuntimeContainerUpdateInfoByRefInternal(ctx, composeContainers, imageService)
+	rows := make([]project.Details, 0, len(containersByProject))
+	for projectName, projectContainers := range containersByProject {
+		runtimeServices := buildDiscoveredRuntimeServicesInternal(projectContainers)
+		imageRefs := buildProjectImageRefsFromRuntimeServicesInternal(runtimeServices)
+		updateInfo := buildProjectUpdateInfoSummaryInternal(imageRefs, updateInfoByRef)
+		if updateInfo == nil || !updateInfo.HasUpdate {
+			continue
+		}
+
+		runningCount := 0
+		for _, runtimeService := range runtimeServices {
+			if runtimeService.Status == "running" {
+				runningCount++
+			}
+		}
+
+		lastCheckedAt := ""
+		if updateInfo.LastCheckedAt != nil {
+			lastCheckedAt = updateInfo.LastCheckedAt.Format(time.RFC3339)
+		}
+
+		rows = append(rows, project.Details{
+			ID:              "compose:" + projectName,
+			Name:            projectName,
+			Path:            "",
+			Status:          resolveDiscoveredProjectStatusInternal(len(runtimeServices), runningCount),
+			ServiceCount:    len(runtimeServices),
+			RunningCount:    runningCount,
+			IsDiscovered:    true,
+			CreatedAt:       lastCheckedAt,
+			UpdatedAt:       lastCheckedAt,
+			RuntimeServices: runtimeServices,
+			UpdateInfo:      updateInfo,
+		})
+	}
+
+	return rows
+}
+
+func getRuntimeContainerUpdateInfoByRefInternal(
+	ctx context.Context,
+	composeContainers []container.Summary,
+	imageService *ImageService,
+) map[string]*imagetypes.UpdateInfo {
+	if imageService == nil || len(composeContainers) == 0 {
+		return nil
+	}
+
+	imageRefs := make([]string, 0, len(composeContainers))
+	imageIDsByRef := make(map[string][]string, len(composeContainers))
+	seenRefs := make(map[string]struct{}, len(composeContainers))
+	for _, c := range composeContainers {
+		imageRef := strings.TrimSpace(c.Image)
+		if imageRef == "" {
+			continue
+		}
+		if _, exists := seenRefs[imageRef]; !exists {
+			seenRefs[imageRef] = struct{}{}
+			imageRefs = append(imageRefs, imageRef)
+		}
+		if imageID := strings.TrimSpace(c.ImageID); imageID != "" {
+			imageIDsByRef[imageRef] = append(imageIDsByRef[imageRef], imageID)
+		}
+	}
+
+	updateInfoByRef := make(map[string]*imagetypes.UpdateInfo, len(imageRefs))
+	if len(imageRefs) > 0 {
+		if refResults, err := imageService.GetUpdateInfoByImageRefs(ctx, imageRefs); err == nil {
+			maps.Copy(updateInfoByRef, refResults)
+		} else {
+			slog.WarnContext(ctx, "failed to fetch compose project update info by image ref", "error", err)
+		}
+	}
+
+	missingImageIDs := make([]string, 0)
+	for _, imageRef := range imageRefs {
+		if updateInfoByRef[imageRef] != nil {
+			continue
+		}
+		missingImageIDs = append(missingImageIDs, imageIDsByRef[imageRef]...)
+	}
+
+	if len(missingImageIDs) == 0 {
+		return updateInfoByRef
+	}
+
+	updateInfoByID, err := imageService.GetUpdateInfoByImageIDs(ctx, missingImageIDs)
+	if err != nil {
+		slog.WarnContext(ctx, "failed to fetch compose project update info by image id", "error", err)
+		return updateInfoByRef
+	}
+
+	for imageRef, imageIDs := range imageIDsByRef {
+		if updateInfoByRef[imageRef] != nil {
+			continue
+		}
+		for _, imageID := range imageIDs {
+			if info := updateInfoByID[imageID]; info != nil {
+				updateInfoByRef[imageRef] = info
+				break
+			}
+		}
+	}
+
+	return updateInfoByRef
+}
+
+func buildDiscoveredRuntimeServicesInternal(containers []container.Summary) []project.RuntimeService {
+	runtimeServices := make([]project.RuntimeService, 0, len(containers))
+	seenServices := make(map[string]struct{}, len(containers))
+	for _, c := range containers {
+		imageRef := strings.TrimSpace(c.Image)
+		if imageRef == "" {
+			continue
+		}
+
+		serviceName := strings.TrimSpace(c.Labels["com.docker.compose.service"])
+		if serviceName == "" {
+			serviceName = c.ID
+		}
+		key := serviceName + "\x00" + imageRef
+		if _, exists := seenServices[key]; exists {
+			continue
+		}
+		seenServices[key] = struct{}{}
+
+		containerName := ""
+		if len(c.Names) > 0 {
+			containerName = strings.TrimPrefix(c.Names[0], "/")
+		}
+
+		runtimeServices = append(runtimeServices, project.RuntimeService{
+			Name:          serviceName,
+			Image:         imageRef,
+			Status:        string(c.State),
+			ContainerID:   c.ID,
+			ContainerName: containerName,
+			Ports:         formatDockerPorts(c.Ports),
+		})
+	}
+
+	return runtimeServices
+}
+
+func resolveDiscoveredProjectStatusInternal(serviceCount int, runningCount int) string {
+	switch {
+	case serviceCount == 0:
+		return string(models.ProjectStatusUnknown)
+	case runningCount >= serviceCount:
+		return string(models.ProjectStatusRunning)
+	case runningCount > 0:
+		return string(models.ProjectStatusPartiallyRunning)
+	default:
+		return string(models.ProjectStatusStopped)
+	}
 }
 
 func (s *ProjectService) buildProjectDerivedPaginationConfigInternal() pagination.Config[project.Details] {

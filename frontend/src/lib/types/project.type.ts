@@ -82,6 +82,7 @@ export interface Project {
 	updatedAt: string;
 	createdAt: string;
 	isArchived?: boolean;
+	isDiscovered?: boolean;
 	archivedAt?: string;
 	gitOpsManagedBy?: string;
 	lastSyncCommit?: string;

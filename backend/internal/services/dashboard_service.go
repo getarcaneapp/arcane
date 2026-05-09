@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/internal/database"
@@ -641,7 +642,8 @@ func (s *DashboardService) getPendingResourceUpdatesCountInternal(ctx context.Co
 	}
 
 	filteredContainers := filterInternalContainers(containers, false)
-	containerCount, err := s.getPendingContainerUpdatesCountForImageIDsInternal(ctx, collectImageIDs(filteredContainers))
+	standaloneContainers := filterStandaloneDockerContainersInternal(filteredContainers)
+	containerCount, err := s.getPendingContainerUpdatesCountForImageIDsInternal(ctx, collectImageIDs(standaloneContainers))
 	if err != nil {
 		return 0, err
 	}
@@ -652,6 +654,17 @@ func (s *DashboardService) getPendingResourceUpdatesCountInternal(ctx context.Co
 	}
 
 	return containerCount + projectCount, nil
+}
+
+func filterStandaloneDockerContainersInternal(containers []dockercontainer.Summary) []dockercontainer.Summary {
+	filtered := make([]dockercontainer.Summary, 0, len(containers))
+	for _, c := range containers {
+		if strings.TrimSpace(c.Labels["com.docker.compose.project"]) != "" {
+			continue
+		}
+		filtered = append(filtered, c)
+	}
+	return filtered
 }
 
 func (s *DashboardService) getPendingContainerUpdatesCountForImageIDsInternal(ctx context.Context, imageIDs []string) (int, error) {

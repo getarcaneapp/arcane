@@ -2097,6 +2097,107 @@ func TestProjectService_ListProjects_FiltersByUpdateStatus(t *testing.T) {
 	}
 }
 
+func TestBuildDiscoveredComposeProjectUpdateRowsInternal(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+	imageService := &ImageService{db: db}
+	now := time.Now().UTC()
+
+	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+		ID:             "sha256:media-image",
+		Repository:     "docker.io/library/nginx",
+		Tag:            "latest",
+		HasUpdate:      true,
+		UpdateType:     models.UpdateTypeDigest,
+		CurrentVersion: "latest",
+		CheckTime:      now,
+	}).Error)
+	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+		ID:             "sha256:known-image",
+		Repository:     "docker.io/library/redis",
+		Tag:            "7",
+		HasUpdate:      true,
+		UpdateType:     models.UpdateTypeDigest,
+		CurrentVersion: "7",
+		CheckTime:      now,
+	}).Error)
+
+	rows := buildDiscoveredComposeProjectUpdateRowsInternal(ctx, []container.Summary{
+		{
+			ID:      "media-web",
+			Names:   []string{"/media-web-1"},
+			Image:   "nginx:latest",
+			ImageID: "sha256:media-image",
+			State:   "running",
+			Labels: map[string]string{
+				"com.docker.compose.project": "media",
+				"com.docker.compose.service": "web",
+			},
+		},
+		{
+			ID:      "known-cache",
+			Image:   "redis:7",
+			ImageID: "sha256:known-image",
+			State:   "running",
+			Labels: map[string]string{
+				"com.docker.compose.project": "known",
+				"com.docker.compose.service": "cache",
+			},
+		},
+		{
+			ID:      "plain-container",
+			Image:   "busybox:latest",
+			ImageID: "sha256:plain-image",
+			State:   "running",
+			Labels:  map[string]string{},
+		},
+	}, map[string]struct{}{"known": {}}, imageService)
+
+	require.Len(t, rows, 1)
+	row := rows[0]
+	assert.Equal(t, "compose:media", row.ID)
+	assert.Equal(t, "media", row.Name)
+	assert.True(t, row.IsDiscovered)
+	assert.Equal(t, string(models.ProjectStatusRunning), row.Status)
+	require.NotNil(t, row.UpdateInfo)
+	assert.True(t, row.UpdateInfo.HasUpdate)
+	assert.Equal(t, []string{"nginx:latest"}, row.UpdateInfo.UpdatedImageRefs)
+	require.Len(t, row.RuntimeServices, 1)
+	assert.Equal(t, "web", row.RuntimeServices[0].Name)
+}
+
+func TestBuildDiscoveredComposeProjectUpdateRowsInternal_FallsBackToImageID(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+	imageService := &ImageService{db: db}
+
+	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+		ID:             "sha256:media-image",
+		Repository:     "registry.example.test/custom/media",
+		Tag:            "latest",
+		HasUpdate:      true,
+		UpdateType:     models.UpdateTypeDigest,
+		CurrentVersion: "latest",
+		CheckTime:      time.Now().UTC(),
+	}).Error)
+
+	rows := buildDiscoveredComposeProjectUpdateRowsInternal(ctx, []container.Summary{
+		{
+			ID:      "media-web",
+			Image:   "nginx:latest",
+			ImageID: "sha256:media-image",
+			State:   "running",
+			Labels: map[string]string{
+				"com.docker.compose.project": "media",
+				"com.docker.compose.service": "web",
+			},
+		},
+	}, map[string]struct{}{}, imageService)
+
+	require.Len(t, rows, 1)
+	assert.Equal(t, []string{"nginx:latest"}, rows[0].UpdateInfo.UpdatedImageRefs)
+}
+
 func TestProjectService_ListProjects_FiltersArchivedProjects(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := context.Background()

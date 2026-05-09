@@ -363,6 +363,11 @@ type Details struct {
 	// Required: true
 	IsArchived bool `json:"isArchived"`
 
+	// IsDiscovered indicates whether this row was derived from runtime Compose labels instead of an Arcane project record.
+	//
+	// Required: false
+	IsDiscovered bool `json:"isDiscovered,omitempty"`
+
 	// ArchivedAt is the date and time when the project was archived.
 	//
 	// Required: false

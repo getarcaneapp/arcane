@@ -12,6 +12,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	containertypes "github.com/getarcaneapp/arcane/types/container"
+	imagetypes "github.com/getarcaneapp/arcane/types/image"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
 	"github.com/stretchr/testify/require"
@@ -82,14 +83,15 @@ func TestGroupContainersByProjectUsesNoProjectBucket(t *testing.T) {
 
 func TestBuildContainerFilterAccessors_FiltersStandaloneContainers(t *testing.T) {
 	service := &ContainerService{}
+	updateInfo := &imagetypes.UpdateInfo{HasUpdate: true}
 	items := []containertypes.Summary{
-		{ID: "standalone", Labels: map[string]string{}},
-		{ID: "compose", Labels: map[string]string{"com.docker.compose.project": "alpha"}},
+		{ID: "standalone", Labels: map[string]string{}, UpdateInfo: updateInfo},
+		{ID: "compose", Labels: map[string]string{"com.docker.compose.project": "alpha"}, UpdateInfo: updateInfo},
 	}
 
 	result := pagination.SearchOrderAndPaginate(
 		items,
-		pagination.QueryParams{Filters: map[string]string{"standalone": "true"}},
+		pagination.QueryParams{Filters: map[string]string{"standalone": "true", "updates": "has_update"}},
 		pagination.Config[containertypes.Summary]{FilterAccessors: service.buildContainerFilterAccessors()},
 	)
 
