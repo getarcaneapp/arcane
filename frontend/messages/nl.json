@@ -2132,7 +2132,7 @@
 	"services": "Voorzieningen",
 	"_comment_missing_translations": "=== BEDRUKTE TRANSLATIES ===",
 	"cancel": "annuleren",
-	"duplicate": "Duplicate",
+	"duplicate": "Dupliceer",
 	"registries_remove_message": "Weet u zeker dat u register {url} wilt verwijderen?",
 	"registries_delete_failed": "Kan register {url} niet verwijderen",
 	"templates_loaded_success": "Sjabloon \"{name}\" succesvol geladen",
