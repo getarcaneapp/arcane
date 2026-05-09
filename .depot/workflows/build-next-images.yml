@@ -1,4 +1,4 @@
-name: Build Next Images
+name: Build Next Versions of Arcane and CLI
 
 on:
   push:
@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   build-next-images:
-    runs-on: depot-ubuntu-24.04-8
+    runs-on: depot-ubuntu-24.04-32
 
     env:
       MANAGER_IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/arcane
@@ -29,9 +29,9 @@ jobs:
           fetch-depth: 0
 
       - name: Setup PNPM
-        uses: pnpm/action-setup@v5
+        uses: pnpm/action-setup@v6
         with:
-          run_install: false
+          run_install: true
 
       - name: Setup Just
         uses: taiki-e/install-action@just
@@ -52,7 +52,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y gettext-base
 
       - name: Install cosign
-        uses: sigstore/cosign-installer@v4.1.1
+        uses: sigstore/cosign-installer@v4.1.2
 
       - name: Set up Depot CLI
         uses: depot/setup-action@v1

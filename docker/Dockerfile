@@ -12,12 +12,12 @@ WORKDIR /build
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY frontend/package.json ./frontend/package.json
 
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
+RUN --mount=type=cache,id=arcane-pnpm-v2,target=/pnpm/store,sharing=locked \
     pnpm fetch
 
 COPY frontend ./frontend
 
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
+RUN --mount=type=cache,id=arcane-pnpm-v2,target=/pnpm/store,sharing=locked \
     pnpm install -r --offline --frozen-lockfile
 
 ENV BUILD_PATH=dist
