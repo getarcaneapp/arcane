@@ -51,7 +51,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y gettext-base
 
       - name: Install cosign
-        uses: sigstore/cosign-installer@v4.1.1
+        uses: sigstore/cosign-installer@v4.1.2
 
       - name: Set up Depot CLI
         uses: depot/setup-action@v1
