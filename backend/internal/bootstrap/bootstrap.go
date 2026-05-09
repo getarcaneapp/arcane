@@ -29,10 +29,18 @@ import (
 
 func Bootstrap(ctx context.Context) error {
 	_ = godotenv.Load()
-	if err := startup.ApplyRequestedRuntimeIdentity(ctx); err != nil {
+	cfg := config.Load()
+	runtimeIdentityCfg := &startup.RuntimeIdentityConfig{
+		PUID:         cfg.PUID,
+		PGID:         cfg.PGID,
+		DockerHost:   cfg.DockerHost,
+		DockerConfig: cfg.DockerConfig,
+		DatabaseURL:  cfg.DatabaseURL,
+	}
+	if err := startup.ApplyRequestedRuntimeIdentity(ctx, runtimeIdentityCfg); err != nil {
 		return fmt.Errorf("apply runtime identity: %w", err)
 	}
-	cfg := config.Load()
+	cfg.DockerConfig = runtimeIdentityCfg.DockerConfig
 
 	SetupGinLogger(cfg)
 	ConfigureGormLogger(cfg)

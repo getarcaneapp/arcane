@@ -15,6 +15,7 @@ const (
 	defaultDataDirectory    = "/app/data"
 	defaultBuildsDirectory  = "/builds"
 	defaultDatabaseURL      = "file:data/arcane.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(2500)&_txlock=immediate"
+	defaultDockerConfigDir  = "/app/data/.docker"
 	defaultDockerSocketPath = "/var/run/docker.sock"
 	mountInfoPath           = "/proc/self/mountinfo"
 )
@@ -25,12 +26,27 @@ type runtimeIdentityRequest struct {
 	GID           int
 	CredentialUID uint32
 	CredentialGID uint32
+	DockerHost    string
+}
+
+// RuntimeIdentityConfig contains the config-backed environment values used to
+// switch the process runtime identity before the application initializes.
+type RuntimeIdentityConfig struct {
+	PUID         string
+	PGID         string
+	DockerHost   string
+	DockerConfig string
+	DatabaseURL  string
 }
 
 // ApplyRequestedRuntimeIdentity switches the current process to the configured
 // runtime UID/GID before the rest of the app initializes.
-func ApplyRequestedRuntimeIdentity(ctx context.Context) error {
-	req, warning, err := loadRuntimeIdentityRequestInternal(os.Getenv)
+func ApplyRequestedRuntimeIdentity(ctx context.Context, cfg *RuntimeIdentityConfig) error {
+	if cfg == nil {
+		cfg = &RuntimeIdentityConfig{}
+	}
+
+	req, warning, err := loadRuntimeIdentityRequestInternal(cfg)
 	if warning != "" {
 		fmt.Fprintf(os.Stderr, "Runtime identity warning: %s\n", warning)
 	}
@@ -44,18 +60,28 @@ func ApplyRequestedRuntimeIdentity(ctx context.Context) error {
 	// Avoid re-execing forever when the requested runtime identity is already active,
 	// including explicit root requests such as PUID=0/PGID=0.
 	if os.Geteuid() == runtimeUID && os.Getegid() == runtimeGID {
-		return ensureSQLiteFilesExistInternal(os.Getenv("DATABASE_URL"))
+		if err := ensureRuntimeDockerConfigInternal(cfg, os.Setenv, runtimeUID, runtimeGID); err != nil {
+			return err
+		}
+		return ensureSQLiteFilesExistInternal(cfg.DatabaseURL)
 	}
 
 	if os.Geteuid() != 0 {
 		fmt.Fprintf(os.Stderr, "Runtime identity warning: process is not root (euid=%d), cannot switch to PUID=%d PGID=%d; continuing as current user\n",
 			os.Geteuid(), runtimeUID, runtimeGID)
-		return ensureSQLiteFilesExistInternal(os.Getenv("DATABASE_URL"))
+		if err := ensureRuntimeDockerConfigInternal(cfg, os.Setenv, runtimeUID, runtimeGID); err != nil {
+			return err
+		}
+		return ensureSQLiteFilesExistInternal(cfg.DatabaseURL)
 	}
 
 	mountpoints, err := loadMountpointsInternal(mountInfoPath)
 	if err != nil {
 		return fmt.Errorf("load mountpoints: %w", err)
+	}
+
+	if err := ensureRuntimeDockerConfigInternal(cfg, os.Setenv, runtimeUID, runtimeGID); err != nil {
+		return err
 	}
 
 	if err := prepareWritablePathsInternal(runtimeUID, runtimeGID, mountpoints); err != nil {
@@ -65,9 +91,13 @@ func ApplyRequestedRuntimeIdentity(ctx context.Context) error {
 	return reexecWithRuntimeIdentityInternal(ctx, req)
 }
 
-func loadRuntimeIdentityRequestInternal(getenv func(string) string) (runtimeIdentityRequest, string, error) {
-	puid := strings.TrimSpace(getenv("PUID"))
-	pgid := strings.TrimSpace(getenv("PGID"))
+func loadRuntimeIdentityRequestInternal(cfg *RuntimeIdentityConfig) (runtimeIdentityRequest, string, error) {
+	if cfg == nil {
+		cfg = &RuntimeIdentityConfig{}
+	}
+
+	puid := strings.TrimSpace(cfg.PUID)
+	pgid := strings.TrimSpace(cfg.PGID)
 
 	if puid == "" && pgid == "" {
 		return runtimeIdentityRequest{}, "", nil
@@ -93,11 +123,68 @@ func loadRuntimeIdentityRequestInternal(getenv func(string) string) (runtimeIden
 		GID:           gid,
 		CredentialUID: credentialUID,
 		CredentialGID: credentialGID,
+		DockerHost:    cfg.DockerHost,
 	}, "", nil
 }
 
-func runtimeIdentitySupplementaryGroupsInternal(getenv func(string) string, resolveSocketGroup func(string) (uint32, bool)) []uint32 {
-	socketPath, ok := dockerSocketPathInternal(getenv("DOCKER_HOST"))
+func runtimeDockerConfigDirInternal(cfg *RuntimeIdentityConfig) string {
+	if cfg == nil {
+		cfg = &RuntimeIdentityConfig{}
+	}
+
+	configDir := strings.TrimSpace(cfg.DockerConfig)
+	if configDir != "" {
+		return configDir
+	}
+
+	return defaultDockerConfigDir
+}
+
+func ensureRuntimeDockerConfigInternal(cfg *RuntimeIdentityConfig, setenv func(string, string) error, uid int, gid int) error {
+	configDir, err := configureRuntimeDockerConfigEnvInternal(cfg, setenv, uid, gid)
+	if err != nil {
+		return err
+	}
+	if configDir == "" {
+		return nil
+	}
+
+	if err := os.MkdirAll(configDir, pkgutils.DirPerm); err != nil {
+		return fmt.Errorf("create docker config directory: %w", err)
+	}
+
+	if configDir == defaultDockerConfigDir && os.Geteuid() == 0 {
+		if err := os.Chown(configDir, uid, gid); err != nil {
+			return fmt.Errorf("chown docker config directory: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func configureRuntimeDockerConfigEnvInternal(cfg *RuntimeIdentityConfig, setenv func(string, string) error, uid int, gid int) (string, error) {
+	if cfg == nil {
+		cfg = &RuntimeIdentityConfig{}
+	}
+
+	if uid == 0 && gid == 0 {
+		// Both UID and GID are root; Docker uses /root/.docker by default.
+		return "", nil
+	}
+
+	configDir := runtimeDockerConfigDirInternal(cfg)
+	if strings.TrimSpace(cfg.DockerConfig) == "" {
+		cfg.DockerConfig = configDir
+		if err := setenv("DOCKER_CONFIG", configDir); err != nil {
+			return "", fmt.Errorf("set DOCKER_CONFIG: %w", err)
+		}
+	}
+
+	return configDir, nil
+}
+
+func runtimeIdentitySupplementaryGroupsInternal(dockerHost string, resolveSocketGroup func(string) (uint32, bool)) []uint32 {
+	socketPath, ok := dockerSocketPathInternal(dockerHost)
 	if !ok {
 		return nil
 	}
