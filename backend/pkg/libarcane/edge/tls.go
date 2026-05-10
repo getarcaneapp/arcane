@@ -339,6 +339,7 @@ func enrollAgentMTLSAssetsInternal(ctx context.Context, cfg *Config, assetsDir, 
 	}
 	req.Header.Set(HeaderAgentToken, cfg.AgentToken)
 	req.Header.Set(HeaderAPIKey, cfg.AgentToken)
+	req.Header.Set(HeaderAuthorization, "Bearer "+cfg.AgentToken)
 
 	resp, err := httpClient.Do(req) //nolint:gosec // intentional request to configured manager endpoint
 	if err != nil {

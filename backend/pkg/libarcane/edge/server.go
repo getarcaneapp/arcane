@@ -12,6 +12,7 @@ import (
 	"time"
 
 	tunnelpb "github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge/proto/tunnel/v1"
+	"github.com/getarcaneapp/arcane/backend/pkg/remenv"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
@@ -299,7 +300,7 @@ func (s *TunnelServer) Connect(stream grpc.BidiStreamingServer[tunnelpb.AgentMes
 	if !ok || envID == "" {
 		token := strings.TrimSpace(register.GetAgentToken())
 		if token == "" {
-			token = tokenFromMetadata(ctx)
+			token = tokenFromMetadataInternal(ctx)
 		}
 
 		var resolveErr error
@@ -361,7 +362,7 @@ func (s *TunnelServer) resolveEnvironment(ctx context.Context, token string) (st
 	return s.resolver(ctx, token)
 }
 
-func tokenFromMetadata(ctx context.Context) string {
+func tokenFromMetadataInternal(ctx context.Context) string {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return ""
@@ -378,19 +379,36 @@ func tokenFromMetadata(ctx context.Context) string {
 			}
 		}
 	}
-	return ""
-}
-
-func tokenFromHeadersInternal(req *http.Request) string {
-	if req == nil {
-		return ""
-	}
-	for _, header := range []string{HeaderAgentToken, HeaderAPIKey} {
-		if token := strings.TrimSpace(req.Header.Get(header)); token != "" {
+	for _, value := range md.Get(strings.ToLower(HeaderAuthorization)) {
+		if token := remenv.ExtractBearerToken(value); token != "" {
 			return token
 		}
 	}
 	return ""
+}
+
+func tokenFromHeadersInternal(req *http.Request) string {
+	token, _ := tokenFromHeadersWithSourceInternal(req)
+	return token
+}
+
+// tokenFromHeadersWithSourceInternal returns the agent token along with the
+// canonical header name that supplied it. Falls back from X-Arcane-Agent-Token
+// to X-API-Key to "Authorization: Bearer <token>" so deployments behind
+// reverse proxies that strip custom X- headers can still authenticate.
+func tokenFromHeadersWithSourceInternal(req *http.Request) (string, string) {
+	if req == nil {
+		return "", ""
+	}
+	for _, header := range []string{HeaderAgentToken, HeaderAPIKey} {
+		if token := strings.TrimSpace(req.Header.Get(header)); token != "" {
+			return token, header
+		}
+	}
+	if token := remenv.ExtractBearerToken(req.Header.Get(HeaderAuthorization)); token != "" {
+		return token, HeaderAuthorization
+	}
+	return "", ""
 }
 
 func (s *TunnelServer) manageConnectedTunnel(ctx context.Context, callbackCtx context.Context, tunnel *AgentTunnel) {
@@ -585,7 +603,7 @@ func (s *TunnelServer) authStreamInterceptorInternal(ctx context.Context) grpc.S
 			return handler(srv, ss)
 		}
 
-		token := tokenFromMetadata(ss.Context())
+		token := tokenFromMetadataInternal(ss.Context())
 		envID, err := s.resolveEnvironment(ss.Context(), token)
 		if err != nil {
 			return status.Error(codes.Unauthenticated, "invalid agent token")

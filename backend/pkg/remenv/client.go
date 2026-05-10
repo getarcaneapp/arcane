@@ -12,9 +12,36 @@ import (
 )
 
 const (
-	HeaderAPIKey     = "X-API-Key"            // #nosec G101: header name, not a credential
-	HeaderAgentToken = "X-Arcane-Agent-Token" // #nosec G101: header name, not a credential
+	HeaderAPIKey        = "X-API-Key"            // #nosec G101: header name, not a credential
+	HeaderAgentToken    = "X-Arcane-Agent-Token" // #nosec G101: header name, not a credential
+	HeaderAuthorization = "Authorization"
+	bearerScheme        = "Bearer "
 )
+
+// ExtractBearerToken returns the token portion of an "Authorization: Bearer <token>"
+// header value. It is case-insensitive on the scheme and trims surrounding whitespace.
+// Returns an empty string if the header is empty or does not use the Bearer scheme.
+func ExtractBearerToken(headerValue string) string {
+	headerValue = strings.TrimSpace(headerValue)
+	if headerValue == "" {
+		return ""
+	}
+	if len(headerValue) < len(bearerScheme) || !strings.EqualFold(headerValue[:len(bearerScheme)], bearerScheme) {
+		return ""
+	}
+	return strings.TrimSpace(headerValue[len(bearerScheme):])
+}
+
+// RedactedTokenFingerprint returns a short, redacted identifier for a token
+// suitable for debug logs. It is intentionally not reversible and never
+// reveals the full secret.
+func RedactedTokenFingerprint(token string) string {
+	token = strings.TrimSpace(token)
+	if len(token) <= 10 {
+		return "***"
+	}
+	return token[:6] + "..." + token[len(token)-4:]
+}
 
 type Request struct {
 	EnvironmentID string
@@ -222,6 +249,14 @@ func (e *DecodeError) Unwrap() error {
 	return e.Err
 }
 
+// ApplyAgentTokenHeaders sets the agent token in both X- header forms on the
+// given http.Header. It deliberately does NOT set the Authorization header:
+// these helpers are used by the manager when proxying user requests through
+// to remote environments, and the Authorization header in that case carries
+// the calling user's bearer or session token. Direct agent->manager call
+// sites (poll, websocket dial, grpc dial, mTLS enroll) set
+// `Authorization: Bearer <token>` themselves so the token survives reverse
+// proxies that strip non-standard X- headers.
 func ApplyAgentTokenHeaders(headers http.Header, accessToken *string) {
 	if headers == nil || accessToken == nil || strings.TrimSpace(*accessToken) == "" {
 		return
@@ -231,6 +266,8 @@ func ApplyAgentTokenHeaders(headers http.Header, accessToken *string) {
 	headers.Set(HeaderAPIKey, *accessToken)
 }
 
+// ApplyAgentTokenHeaderMap mirrors ApplyAgentTokenHeaders for map-based
+// header carriers. Same rationale: do not write Authorization here.
 func ApplyAgentTokenHeaderMap(headers map[string]string, accessToken *string) {
 	if headers == nil || accessToken == nil || strings.TrimSpace(*accessToken) == "" {
 		return

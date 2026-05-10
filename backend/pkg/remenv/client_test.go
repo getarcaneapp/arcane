@@ -27,6 +27,13 @@ func TestApplyAgentTokenHeaders(t *testing.T) {
 	require.Equal(t, token, headerMap[HeaderAgentToken])
 }
 
+func TestRedactedTokenFingerprint(t *testing.T) {
+	require.Equal(t, "***", RedactedTokenFingerprint(""))
+	require.Equal(t, "***", RedactedTokenFingerprint("short"))
+	require.Equal(t, "***", RedactedTokenFingerprint("1234567890"))
+	require.Equal(t, "123456...cdef", RedactedTokenFingerprint(" 1234567890abcdef "))
+}
+
 func TestClientDo_DirectHTTPSuccess(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, http.MethodPost, r.Method)

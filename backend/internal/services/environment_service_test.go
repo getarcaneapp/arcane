@@ -604,6 +604,67 @@ func TestEnvironmentService_EnsureSwarmNodeAgentEnvironment_CreatesHiddenChildAn
 	require.Len(t, apiKeysAfterReuse, 1)
 }
 
+// TestEnvironmentService_EnsureSwarmNodeAgentEnvironment_TokenResolvesEndToEnd
+// pins the agent token round-trip: the token returned from the swarm node
+// agent provisioning flow must resolve back to the same environment via
+// ResolveEdgeEnvironmentByToken, and rotation must invalidate the previous
+// token while making the new one resolvable. This is the end-to-end gap that
+// would have caught the v1.18.1 "invalid agent token" bug if any silent
+// transformation (trim, encode, hash) were ever introduced between the
+// command-generation path and the poll-validation path.
+func TestEnvironmentService_EnsureSwarmNodeAgentEnvironment_TokenResolvesEndToEnd(t *testing.T) {
+	ctx := context.Background()
+	db := setupEnvironmentServiceTestDB(t)
+	userService := NewUserService(db)
+	apiKeyService := NewApiKeyService(db, userService)
+	svc := NewEnvironmentService(db, nil, nil, nil, nil, apiKeyService)
+	user := createTestEnvironmentServiceUser(t, ctx, userService, "swarm-resolve-admin")
+
+	createdEnv, createdToken, err := svc.EnsureSwarmNodeAgentEnvironment(
+		ctx,
+		"manager-env-resolve",
+		"node-resolve-1234567890",
+		"resolve-host",
+		user.ID,
+		user.Username,
+		false,
+	)
+	require.NoError(t, err)
+	require.NotEmpty(t, createdToken)
+
+	resolvedID, err := svc.ResolveEdgeEnvironmentByToken(ctx, createdToken)
+	require.NoError(t, err)
+	require.Equal(t, createdEnv.ID, resolvedID)
+
+	// Whitespace normalization on the wire (e.g. a proxy adding a trailing
+	// newline) must still resolve.
+	resolvedID, err = svc.ResolveEdgeEnvironmentByToken(ctx, "  "+createdToken+"\n")
+	require.NoError(t, err)
+	require.Equal(t, createdEnv.ID, resolvedID)
+
+	// Rotate the token: the new token must resolve and the old token must not.
+	rotatedEnv, rotatedToken, err := svc.EnsureSwarmNodeAgentEnvironment(
+		ctx,
+		"manager-env-resolve",
+		"node-resolve-1234567890",
+		"resolve-host",
+		user.ID,
+		user.Username,
+		true,
+	)
+	require.NoError(t, err)
+	require.Equal(t, createdEnv.ID, rotatedEnv.ID)
+	require.NotEqual(t, createdToken, rotatedToken)
+
+	resolvedID, err = svc.ResolveEdgeEnvironmentByToken(ctx, rotatedToken)
+	require.NoError(t, err)
+	require.Equal(t, createdEnv.ID, resolvedID)
+
+	_, err = svc.ResolveEdgeEnvironmentByToken(ctx, createdToken)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid agent token")
+}
+
 func TestEnvironmentService_ListMethods_ExcludeHiddenEnvironments(t *testing.T) {
 	ctx := context.Background()
 	db := setupEnvironmentServiceTestDB(t)

@@ -34,6 +34,7 @@ func (c *TunnelClient) connectAndServeWebSocket(ctx context.Context) error {
 	headers := http.Header{}
 	headers.Set(HeaderAgentToken, c.cfg.AgentToken)
 	headers.Set(HeaderAPIKey, c.cfg.AgentToken)
+	headers.Set(HeaderAuthorization, "Bearer "+c.cfg.AgentToken)
 
 	slog.DebugContext(ctx, "Dialing manager for websocket edge tunnel", "url", managerWSURL)
 

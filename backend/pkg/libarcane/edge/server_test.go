@@ -526,7 +526,7 @@ func TestTokenFromMetadata(t *testing.T) {
 			strings.ToLower(HeaderAPIKey), "api-token",
 		))
 
-		assert.Equal(t, "agent-token", tokenFromMetadata(ctx))
+		assert.Equal(t, "agent-token", tokenFromMetadataInternal(ctx))
 	})
 
 	t.Run("falls back to api key", func(t *testing.T) {
@@ -534,11 +534,11 @@ func TestTokenFromMetadata(t *testing.T) {
 			strings.ToLower(HeaderAPIKey), "api-token",
 		))
 
-		assert.Equal(t, "api-token", tokenFromMetadata(ctx))
+		assert.Equal(t, "api-token", tokenFromMetadataInternal(ctx))
 	})
 
 	t.Run("returns empty when metadata missing", func(t *testing.T) {
-		assert.Equal(t, "", tokenFromMetadata(context.Background()))
+		assert.Equal(t, "", tokenFromMetadataInternal(context.Background()))
 	})
 }
 

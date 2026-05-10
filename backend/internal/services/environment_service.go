@@ -90,6 +90,7 @@ func (s *EnvironmentService) ResolveEdgeEnvironmentByToken(ctx context.Context, 
 		Where("access_token = ?", token).
 		First(&env).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
+			s.logEdgeTokenResolveMissInternal(ctx, token)
 			return "", errors.New("invalid agent token")
 		}
 		return "", fmt.Errorf("failed to resolve edge environment by token: %w", err)
@@ -97,6 +98,42 @@ func (s *EnvironmentService) ResolveEdgeEnvironmentByToken(ctx context.Context, 
 
 	s.cacheEnvironmentTokenInternal(env.ID, token, time.Now())
 	return env.ID, nil
+}
+
+// logEdgeTokenResolveMissInternal emits a debug log diagnosing why an agent
+// token failed to resolve to an edge environment. Counts existing edge
+// environments (by access_token presence) so operators can distinguish
+// "no edge envs configured" from "token does not match any configured env".
+// Token contents are never logged in full — only length and a short
+// fingerprint that cannot be reversed.
+func (s *EnvironmentService) logEdgeTokenResolveMissInternal(ctx context.Context, token string) {
+	if s == nil || s.db == nil {
+		return
+	}
+	if !slog.Default().Enabled(ctx, slog.LevelDebug) {
+		return
+	}
+
+	var totalEdgeEnvs int64
+	var edgeEnvsWithToken int64
+	totalEdgeEnvsErr := s.db.WithContext(ctx).Model(&models.Environment{}).Where("is_edge = ?", true).Count(&totalEdgeEnvs).Error
+	edgeEnvsWithTokenErr := s.db.WithContext(ctx).Model(&models.Environment{}).
+		Where("is_edge = ?", true).
+		Where("access_token IS NOT NULL AND access_token != ?", "").
+		Count(&edgeEnvsWithToken).Error
+
+	args := []any{
+		"token_length", len(token),
+		"token_fingerprint", remenv.RedactedTokenFingerprint(token),
+	}
+	if totalEdgeEnvsErr == nil {
+		args = append(args, "edge_envs_total", totalEdgeEnvs)
+	}
+	if edgeEnvsWithTokenErr == nil {
+		args = append(args, "edge_envs_with_access_token", edgeEnvsWithToken)
+	}
+
+	slog.DebugContext(ctx, "Edge agent token did not match any environment", args...)
 }
 
 func (s *EnvironmentService) getCachedEnvironmentIDForTokenInternal(token string, now time.Time) (string, bool) {
@@ -772,7 +809,12 @@ func (s *EnvironmentService) createEnvironmentEvent(ctx context.Context, envID, 
 }
 
 func (s *EnvironmentService) RegenerateEnvironmentApiKey(ctx context.Context, envID string, newApiKeyID string, encryptedKey string, userID, username string, envName string) error {
-	// Update environment with new API key and set to pending status
+	// Trim once at the boundary so the value persisted, the value cached,
+	// and the value returned by callers (which already TrimSpace before
+	// returning) all stay byte-identical. Any divergence here would surface
+	// as a 401 "invalid agent token" because lookup is direct equality.
+	encryptedKey = strings.TrimSpace(encryptedKey)
+
 	updates := map[string]any{
 		"api_key_id":   newApiKeyID,
 		"access_token": encryptedKey,

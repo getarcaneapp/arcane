@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/getarcaneapp/arcane/backend/pkg/remenv"
 	"github.com/gin-gonic/gin"
 )
 
@@ -274,19 +275,27 @@ func (s *TunnelServer) HandlePoll(c *gin.Context) {
 	// In proxy-terminated mTLS deployments, the client certificate is consumed
 	// by the TLS terminator before this request reaches Arcane. The token is
 	// still needed as the poll protocol's environment lookup claim.
-	token := c.GetHeader(HeaderAgentToken)
-	if token == "" {
-		token = c.GetHeader(HeaderAPIKey)
-	}
+	token, source := tokenFromHeadersWithSourceInternal(c.Request)
 	if token == "" {
 		slog.WarnContext(ctx, "Edge poll request without token")
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "agent token required"})
 		return
 	}
+	if source != HeaderAgentToken {
+		slog.DebugContext(ctx, "Edge poll request authenticated via fallback header",
+			"source_header", source,
+			"token_length", len(token),
+		)
+	}
 
 	envID, err := s.resolveEnvironment(ctx, token)
 	if err != nil {
-		slog.WarnContext(ctx, "Failed to resolve agent token for edge poll", "error", err)
+		slog.WarnContext(ctx, "Failed to resolve agent token for edge poll",
+			"error", err,
+			"source_header", source,
+			"token_length", len(token),
+			"token_fingerprint", remenv.RedactedTokenFingerprint(token),
+		)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid agent token"})
 		return
 	}
