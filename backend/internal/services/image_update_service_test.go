@@ -18,8 +18,10 @@ import (
 	glsqlite "github.com/glebarez/sqlite"
 	dockertypescontainer "github.com/moby/moby/api/types/container"
 	dockertypesimage "github.com/moby/moby/api/types/image"
+	dockerregistry "github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
 	digest "github.com/opencontainers/go-digest"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	ref "go.podman.io/image/v5/docker/reference"
@@ -578,6 +580,60 @@ func TestImageUpdateService_CheckMultipleImages_UsesRegistryFallback(t *testing.
 	var saved models.ImageUpdateRecord
 	require.NoError(t, db.WithContext(context.Background()).Where("id = ?", "sha256:local-image-id").First(&saved).Error)
 	assert.Equal(t, remoteDigest, stringPtrToString(saved.LatestDigest))
+}
+
+func TestImageUpdateService_CheckMultipleImages_UsesDockerHubCredentialsOnFirstAttempt(t *testing.T) {
+	_, db := setupImageServiceAuthTest(t)
+	require.NoError(t, db.AutoMigrate(&models.ImageUpdateRecord{}, &models.Event{}))
+	createTestPullRegistry(t, db, "https://index.docker.io/v1/", "docker-user", "docker-token")
+
+	localDigest := digest.FromString("batchlocal-rate-limit").String()
+	remoteDigest := digest.FromString("batchremote-rate-limit").String()
+
+	server := newImageUpdateFallbackServer(t, "library/registry:3", localDigest, remoteDigest)
+	defer server.Close()
+
+	var calls int
+	registryService := NewContainerRegistryService(db, func(context.Context) (RegistryDaemonClient, error) {
+		return &fakeRegistryDaemonClient{
+			distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+				calls++
+				assert.Equal(t, "docker.io/library/registry:3", imageRef)
+
+				authCfg := decodeRegistryAuth(t, options.EncodedRegistryAuth)
+				assert.Equal(t, "docker-user", authCfg.Username)
+				assert.Equal(t, "docker-token", authCfg.Password)
+				assert.Equal(t, "https://index.docker.io/v1/", authCfg.ServerAddress)
+
+				return client.DistributionInspectResult{
+					DistributionInspect: dockerregistry.DistributionInspect{
+						Descriptor: ocispec.Descriptor{
+							Digest: digest.Digest(remoteDigest),
+						},
+					},
+				}, nil
+			},
+		}, nil
+	}, nil)
+
+	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
+	eventService := NewEventService(db, nil, nil)
+	svc := NewImageUpdateService(db, nil, registryService, dockerService, eventService, nil)
+
+	results, err := svc.CheckMultipleImages(context.Background(), []string{"docker.io/library/registry:3"}, nil)
+	require.NoError(t, err)
+	require.Contains(t, results, "docker.io/library/registry:3")
+
+	result := results["docker.io/library/registry:3"]
+	require.NotNil(t, result)
+	assert.True(t, result.HasUpdate)
+	assert.Equal(t, 1, calls)
+	assert.Equal(t, localDigest, result.CurrentDigest)
+	assert.Equal(t, remoteDigest, result.LatestDigest)
+	assert.Equal(t, "credential", result.AuthMethod)
+	assert.Equal(t, "docker-user", result.AuthUsername)
+	assert.Equal(t, "docker.io", result.AuthRegistry)
+	assert.True(t, result.UsedCredential)
 }
 
 func TestImageUpdateService_CheckMultipleImages_PersistsRefScopedErrorsWhenLocalImageMissing(t *testing.T) {

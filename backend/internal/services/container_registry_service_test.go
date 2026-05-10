@@ -531,7 +531,7 @@ func TestContainerRegistryService_InspectImageDigest_AnonymousSuccess(t *testing
 	assert.Equal(t, "registry.example.com:5443", result.AuthRegistry)
 }
 
-func TestContainerRegistryService_InspectImageDigest_RetriesWithStoredCredentials(t *testing.T) {
+func TestContainerRegistryService_InspectImageDigest_UsesStoredDockerHubCredentialsOnFirstAttempt(t *testing.T) {
 	_, db := setupImageServiceAuthTest(t)
 	createTestPullRegistry(t, db, "https://index.docker.io/v1/", "docker-user", "docker-token")
 	wantDigest := digest.FromString("stored-credentials").String()
@@ -542,10 +542,6 @@ func TestContainerRegistryService_InspectImageDigest_RetriesWithStoredCredential
 			distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
 				calls++
 				assert.Equal(t, "docker.io/library/nginx:latest", imageRef)
-				if calls == 1 {
-					assert.Empty(t, options.EncodedRegistryAuth)
-					return client.DistributionInspectResult{}, errors.New("unauthorized: authentication required")
-				}
 
 				authCfg := decodeRegistryAuth(t, options.EncodedRegistryAuth)
 				assert.Equal(t, "docker-user", authCfg.Username)
@@ -565,7 +561,44 @@ func TestContainerRegistryService_InspectImageDigest_RetriesWithStoredCredential
 
 	result, err := svc.inspectImageDigestInternal(context.Background(), "registry-1.docker.io/library/nginx:latest", nil)
 	require.NoError(t, err)
-	assert.Equal(t, 2, calls)
+	assert.Equal(t, 1, calls)
+	assert.Equal(t, wantDigest, result.Digest)
+	assert.Equal(t, "credential", result.AuthMethod)
+	assert.Equal(t, "docker-user", result.AuthUsername)
+	assert.True(t, result.UsedCredential)
+}
+
+func TestContainerRegistryService_InspectImageDigest_UsesStoredDockerHubCredentialsForRegistryImage(t *testing.T) {
+	_, db := setupImageServiceAuthTest(t)
+	createTestPullRegistry(t, db, "https://index.docker.io/v1/", "docker-user", "docker-token")
+	wantDigest := digest.FromString("stored-credentials-rate-limit").String()
+
+	var calls int
+	svc := NewContainerRegistryService(db, func(context.Context) (RegistryDaemonClient, error) {
+		return &fakeRegistryDaemonClient{
+			distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+				calls++
+				assert.Equal(t, "docker.io/library/registry:3", imageRef)
+
+				authCfg := decodeRegistryAuth(t, options.EncodedRegistryAuth)
+				assert.Equal(t, "docker-user", authCfg.Username)
+				assert.Equal(t, "docker-token", authCfg.Password)
+				assert.Equal(t, "https://index.docker.io/v1/", authCfg.ServerAddress)
+
+				return client.DistributionInspectResult{
+					DistributionInspect: dockerregistry.DistributionInspect{
+						Descriptor: ocispec.Descriptor{
+							Digest: digest.Digest(wantDigest),
+						},
+					},
+				}, nil
+			},
+		}, nil
+	}, nil)
+
+	result, err := svc.inspectImageDigestInternal(context.Background(), "docker.io/library/registry:3", nil)
+	require.NoError(t, err)
+	assert.Equal(t, 1, calls)
 	assert.Equal(t, wantDigest, result.Digest)
 	assert.Equal(t, "credential", result.AuthMethod)
 	assert.Equal(t, "docker-user", result.AuthUsername)
