@@ -84,8 +84,8 @@
 	const activeFilterCount = $derived(table.getState().columnFilters.length);
 </script>
 
-<div class={cn('flex items-center justify-between gap-2 px-3 py-2.5', className)}>
-	<div class="flex min-w-0 flex-1 items-center gap-2 md:flex-none">
+<div class={cn('flex flex-wrap items-center gap-2 px-3 py-2.5', className)}>
+	<div class="order-1 flex min-w-0 flex-1 items-center gap-2 md:flex-none">
 		<div class="relative min-w-0 flex-1 md:w-64 md:flex-none">
 			<SearchIcon class="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
 			<Input
@@ -196,9 +196,9 @@
 		{/if}
 	</div>
 
-	<div class="flex shrink-0 items-center gap-2">
+	<div class="contents md:order-2 md:ml-auto md:flex md:shrink-0 md:items-center md:gap-2">
 		{#if hasSelection && hasBulkActions}
-			<div class="flex items-center gap-1.5">
+			<div class="order-2 flex shrink-0 items-center gap-1.5">
 				{#each bulkActions as bulkAction (bulkAction.id)}
 					{@const actionType = bulkAction.action === 'up' ? 'start' : bulkAction.action === 'down' ? 'stop' : bulkAction.action}
 					<ArcaneButton
@@ -217,13 +217,15 @@
 		{/if}
 
 		{#if customToolbarActions}
-			{@render customToolbarActions()}
+			<div class="order-4 flex w-full items-center justify-end md:order-none md:w-auto md:shrink-0">
+				{@render customToolbarActions()}
+			</div>
 		{/if}
 
-		<div class="hidden md:block">
+		<div class="order-3 hidden shrink-0 md:order-none md:block">
 			<DataTableViewOptions {table} {customViewOptions} />
 		</div>
-		<div class="md:hidden">
+		<div class="order-3 shrink-0 md:hidden">
 			{#if mobileFields.length > 0 && onToggleMobileField}
 				<DataTableViewOptions fields={mobileFields} onToggleField={onToggleMobileField} {customViewOptions} />
 			{:else}

@@ -503,7 +503,9 @@
 {/snippet}
 
 {#snippet ArchivedToolbarAction()}
-	<div class="flex items-center gap-2 px-1">
+	<div
+		class="bg-muted/30 border-border/60 flex min-h-9 w-full items-center gap-2 rounded-md border px-2.5 py-1.5 md:w-auto md:border-0 md:bg-transparent md:px-1 md:py-0"
+	>
 		<Switch
 			id="projects-show-archived"
 			checked={showArchived}
@@ -511,7 +513,7 @@
 				void onToggleArchived?.(checked === true);
 			}}
 		/>
-		<Label for="projects-show-archived" class="text-muted-foreground mb-0 text-sm font-medium">
+		<Label for="projects-show-archived" class="text-muted-foreground mb-0 min-w-0 text-sm font-medium">
 			{m.projects_show_archived()}
 		</Label>
 	</div>
