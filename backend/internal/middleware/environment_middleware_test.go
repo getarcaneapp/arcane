@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge"
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -19,7 +19,7 @@ func newTestEnvironmentMiddleware() *EnvironmentMiddleware {
 			_ = ctx
 			return "edge://oracle-1", nil, true, nil
 		},
-		authValidator: func(ctx context.Context, c *gin.Context) bool {
+		authValidator: func(ctx context.Context, c echo.Context) bool {
 			_ = ctx
 			_ = c
 			return true
@@ -29,18 +29,25 @@ func newTestEnvironmentMiddleware() *EnvironmentMiddleware {
 	}
 }
 
-func TestEnvironmentMiddleware_ReturnsBadGatewayForEdgeResourcesWithoutTunnel(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
-	middleware := newTestEnvironmentMiddleware()
-	router := gin.New()
+func attachMiddleware(router *echo.Echo, mw *EnvironmentMiddleware) *echo.Group {
 	api := router.Group("/api")
-	api.Use(middleware.Handle)
+	api.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			return mw.Handle(c, next)
+		}
+	})
+	return api
+}
+
+func TestEnvironmentMiddleware_ReturnsBadGatewayForEdgeResourcesWithoutTunnel(t *testing.T) {
+	middleware := newTestEnvironmentMiddleware()
+	router := echo.New()
+	api := attachMiddleware(router, middleware)
 
 	localHandlerHit := false
-	api.GET("/environments/:id/containers", func(c *gin.Context) {
+	api.GET("/environments/:id/containers", func(c echo.Context) error {
 		localHandlerHit = true
-		c.JSON(http.StatusOK, gin.H{"success": true})
+		return c.JSON(http.StatusOK, map[string]any{"success": true})
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/environments/env-edge/containers", nil)
@@ -54,17 +61,14 @@ func TestEnvironmentMiddleware_ReturnsBadGatewayForEdgeResourcesWithoutTunnel(t 
 }
 
 func TestEnvironmentMiddleware_ProxiesDashboardResourcesForRemoteEnvironments(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	middleware := newTestEnvironmentMiddleware()
-	router := gin.New()
-	api := router.Group("/api")
-	api.Use(middleware.Handle)
+	router := echo.New()
+	api := attachMiddleware(router, middleware)
 
 	localHandlerHit := false
-	api.GET("/environments/:id/dashboard", func(c *gin.Context) {
+	api.GET("/environments/:id/dashboard", func(c echo.Context) error {
 		localHandlerHit = true
-		c.JSON(http.StatusOK, gin.H{"success": true})
+		return c.JSON(http.StatusOK, map[string]any{"success": true})
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/environments/env-edge/dashboard", nil)
@@ -78,17 +82,14 @@ func TestEnvironmentMiddleware_ProxiesDashboardResourcesForRemoteEnvironments(t 
 }
 
 func TestEnvironmentMiddleware_KeepsEdgeManagementEndpointsLocal(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	middleware := newTestEnvironmentMiddleware()
-	router := gin.New()
-	api := router.Group("/api")
-	api.Use(middleware.Handle)
+	router := echo.New()
+	api := attachMiddleware(router, middleware)
 
 	localHandlerHit := false
-	api.GET("/environments/:id/settings", func(c *gin.Context) {
+	api.GET("/environments/:id/settings", func(c echo.Context) error {
 		localHandlerHit = true
-		c.JSON(http.StatusOK, gin.H{"success": true})
+		return c.JSON(http.StatusOK, map[string]any{"success": true})
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/environments/env-edge/settings", nil)
@@ -102,17 +103,14 @@ func TestEnvironmentMiddleware_KeepsEdgeManagementEndpointsLocal(t *testing.T) {
 }
 
 func TestEnvironmentMiddleware_KeepsEdgeMTLSDownloadEndpointsLocal(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	middleware := newTestEnvironmentMiddleware()
-	router := gin.New()
-	api := router.Group("/api")
-	api.Use(middleware.Handle)
+	router := echo.New()
+	api := attachMiddleware(router, middleware)
 
 	localHandlerHit := false
-	api.GET("/environments/:id/deployment/mtls/bundle", func(c *gin.Context) {
+	api.GET("/environments/:id/deployment/mtls/bundle", func(c echo.Context) error {
 		localHandlerHit = true
-		c.JSON(http.StatusOK, gin.H{"success": true})
+		return c.JSON(http.StatusOK, map[string]any{"success": true})
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/environments/env-edge/deployment/mtls/bundle", nil)
@@ -126,17 +124,14 @@ func TestEnvironmentMiddleware_KeepsEdgeMTLSDownloadEndpointsLocal(t *testing.T)
 }
 
 func TestEnvironmentMiddleware_KeepsNotificationEndpointsLocal(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	middleware := newTestEnvironmentMiddleware()
-	router := gin.New()
-	api := router.Group("/api")
-	api.Use(middleware.Handle)
+	router := echo.New()
+	api := attachMiddleware(router, middleware)
 
 	localHandlerHit := false
-	api.GET("/environments/:id/notifications/settings", func(c *gin.Context) {
+	api.GET("/environments/:id/notifications/settings", func(c echo.Context) error {
 		localHandlerHit = true
-		c.JSON(http.StatusOK, gin.H{"success": true})
+		return c.JSON(http.StatusOK, map[string]any{"success": true})
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/environments/env-edge/notifications/settings", nil)
@@ -150,28 +145,26 @@ func TestEnvironmentMiddleware_KeepsNotificationEndpointsLocal(t *testing.T) {
 }
 
 func TestEnvironmentMiddleware_ProxyWebSocketRejectsEdgeTargetsWithoutTunnel(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	middleware := newTestEnvironmentMiddleware()
+	e := echo.New()
 	recorder := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(recorder)
-	c.Request = httptest.NewRequest(http.MethodGet, "/api/environments/env-edge/ws/system/stats", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/environments/env-edge/ws/system/stats", nil)
+	c := e.NewContext(req, recorder)
 
-	middleware.proxyWebSocket(c, "edge://oracle-1/api/environments/0/ws/system/stats", nil, "env-edge")
+	_ = middleware.proxyWebSocket(c, "edge://oracle-1/api/environments/0/ws/system/stats", nil, "env-edge")
 
 	assert.Equal(t, http.StatusBadGateway, recorder.Code)
 	assert.Contains(t, recorder.Body.String(), "Edge agent is not connected")
 }
 
 func TestEnvironmentMiddleware_ProxyHTTPRejectsEdgeTargetsWithoutTunnel(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	middleware := newTestEnvironmentMiddleware()
+	e := echo.New()
 	recorder := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(recorder)
-	c.Request = httptest.NewRequest(http.MethodGet, "/api/environments/env-edge/containers", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/environments/env-edge/containers", nil)
+	c := e.NewContext(req, recorder)
 
-	middleware.proxyHTTP(c, "edge://oracle-1/api/environments/0/containers", nil)
+	_ = middleware.proxyHTTP(c, "edge://oracle-1/api/environments/0/containers", nil)
 
 	assert.Equal(t, http.StatusBadGateway, recorder.Code)
 	assert.Contains(t, recorder.Body.String(), "Edge agent is not connected")
@@ -224,13 +217,13 @@ func TestIsWebSocketUpgrade(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			e := echo.New()
 			recorder := httptest.NewRecorder()
-			c, _ := gin.CreateTestContext(recorder)
 			req := httptest.NewRequest(http.MethodGet, "/api/environments/env-1/containers", nil)
 			for k, v := range tt.headers {
 				req.Header.Set(k, v)
 			}
-			c.Request = req
+			c := e.NewContext(req, recorder)
 
 			result := middleware.isWebSocketUpgrade(c)
 			assert.Equal(t, tt.expected, result, "headers: %v", tt.headers)

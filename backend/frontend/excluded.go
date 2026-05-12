@@ -2,8 +2,9 @@
 
 package frontend
 
-import "github.com/gin-gonic/gin"
+import "github.com/labstack/echo/v4"
 
-func RegisterFrontend(router *gin.Engine) error {
+func RegisterFrontend(e *echo.Echo) error {
+	_ = e
 	return ErrFrontendNotIncluded
 }

@@ -6,17 +6,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/time/rate"
 )
 
 func TestPerIPRateLimit_AllowsUnderBurstAndBlocksOver(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	router := gin.New()
-	router.POST("/t", PerIPRateLimit(60, 2), func(c *gin.Context) {
-		c.Status(http.StatusOK)
-	})
+	router := echo.New()
+	router.POST("/t", func(c echo.Context) error {
+		return c.NoContent(http.StatusOK)
+	}, PerIPRateLimit(60, 2))
 
 	doReq := func() int {
 		req := httptest.NewRequest(http.MethodPost, "/t", nil)
@@ -26,18 +25,16 @@ func TestPerIPRateLimit_AllowsUnderBurstAndBlocksOver(t *testing.T) {
 		return rec.Code
 	}
 
-	// Burst of 2 must succeed, the third immediate request must be throttled.
 	require.Equal(t, http.StatusOK, doReq())
 	require.Equal(t, http.StatusOK, doReq())
 	require.Equal(t, http.StatusTooManyRequests, doReq())
 }
 
 func TestPerIPRateLimit_TracksDistinctClients(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	router := gin.New()
-	router.POST("/t", PerIPRateLimit(60, 1), func(c *gin.Context) {
-		c.Status(http.StatusOK)
-	})
+	router := echo.New()
+	router.POST("/t", func(c echo.Context) error {
+		return c.NoContent(http.StatusOK)
+	}, PerIPRateLimit(60, 1))
 
 	doReqFrom := func(addr string) int {
 		req := httptest.NewRequest(http.MethodPost, "/t", nil)
@@ -49,16 +46,14 @@ func TestPerIPRateLimit_TracksDistinctClients(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, doReqFrom("192.0.2.10:1000"))
 	require.Equal(t, http.StatusTooManyRequests, doReqFrom("192.0.2.10:1000"))
-	// Distinct client must not be affected by the first client's throttling.
 	require.Equal(t, http.StatusOK, doReqFrom("192.0.2.11:1000"))
 }
 
 func TestStackedAgentEnrollmentRateLimits_KeepIPBackPressure(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	router := gin.New()
-	router.POST("/t", PerIPRateLimit(60, 1), PerAgentTokenRateLimit(60, 10), func(c *gin.Context) {
-		c.Status(http.StatusOK)
-	})
+	router := echo.New()
+	router.POST("/t", func(c echo.Context) error {
+		return c.NoContent(http.StatusOK)
+	}, PerIPRateLimit(60, 1), PerAgentTokenRateLimit(60, 10))
 
 	doReq := func(token string) int {
 		req := httptest.NewRequest(http.MethodPost, "/t", nil)

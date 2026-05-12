@@ -42,7 +42,7 @@ func Bootstrap(ctx context.Context) error {
 	}
 	cfg.DockerConfig = runtimeIdentityCfg.DockerConfig
 
-	SetupGinLogger(cfg)
+	SetupSlogLogger(cfg)
 	ConfigureGormLogger(cfg)
 	slog.InfoContext(ctx, "Arcane is starting", "version", config.Version)
 

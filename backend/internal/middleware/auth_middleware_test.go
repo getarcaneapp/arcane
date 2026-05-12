@@ -8,7 +8,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/require"
 )
 
@@ -26,10 +26,8 @@ func (r testEnvironmentTokenResolver) ResolveEnvironmentByAccessToken(_ context.
 var ErrInvalidEnvironmentAccessTokenForTest = context.Canceled
 
 func TestAuthMiddleware_ManagerAuthAcceptsEnvironmentAccessTokenViaAPIKey(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	token := "env-access-token"
-	router := gin.New()
+	router := echo.New()
 	router.Use(
 		NewAuthMiddleware(nil, &config.Config{}).
 			WithEnvironmentAccessTokenResolver(testEnvironmentTokenResolver{
@@ -41,17 +39,17 @@ func TestAuthMiddleware_ManagerAuthAcceptsEnvironmentAccessTokenViaAPIKey(t *tes
 			}).
 			Add(),
 	)
-	router.GET("/secure", func(c *gin.Context) {
-		currentUser, exists := c.Get("currentUser")
-		require.True(t, exists)
+	router.GET("/secure", func(c echo.Context) error {
+		currentUser := c.Get("currentUser")
+		require.NotNil(t, currentUser)
 
 		user, ok := currentUser.(*models.User)
 		require.True(t, ok)
 		require.Equal(t, "environment:env-self", user.ID)
 		require.Equal(t, "Self Target", user.Username)
-		require.Equal(t, "environment_access_token", c.GetString("authMethod"))
+		require.Equal(t, "environment_access_token", c.Get("authMethod"))
 
-		c.JSON(http.StatusOK, gin.H{"userId": user.ID})
+		return c.JSON(http.StatusOK, map[string]any{"userId": user.ID})
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/secure", nil)
