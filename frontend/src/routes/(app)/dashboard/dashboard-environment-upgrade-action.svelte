@@ -2,7 +2,7 @@
 	import { toast } from 'svelte-sonner';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import UpgradeConfirmationDialog from '$lib/components/dialogs/upgrade-confirmation-dialog.svelte';
+	import UpdateCenterDialog from '$lib/components/dialogs/update-center-dialog.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { queryKeys } from '$lib/query/query-keys';
 	import environmentUpgradeService from '$lib/services/api/environment-upgrade-service';
@@ -76,11 +76,6 @@
 
 	const shouldShowUpgrade = $derived((versionInfo.updateAvailable && isAdmin && canUpgrade) || (debug && isAdmin));
 
-	const confirmVersion = $derived.by(() => {
-		const value = versionInfo.newestVersion || updateDisplayText || '';
-		return value.startsWith('v') ? value.slice(1) : value;
-	});
-
 	const upgradeButtonText = $derived.by(() => {
 		if (upgrading) return m.upgrade_in_progress();
 		if (checkingUpgrade) return m.upgrade_checking();
@@ -104,33 +99,25 @@
 				await systemUpgradeService.triggerUpgrade();
 				toast.success(m.upgrade_success());
 			} catch (error) {
-				upgrading = false;
 				const errorMessage = extractApiErrorMessage(error);
 				toast.error(m.upgrade_failed({ error: errorMessage }));
+				throw error;
 			}
 			return;
 		}
 
-		open = false;
-
 		try {
 			const result = await environmentUpgradeService.triggerEnvironmentUpgrade(environment.id);
-
 			if (!result.success) {
 				throw new Error(result.error || result.message || m.common_unknown());
 			}
-
 			toast.success(m.upgrade_success());
 			await onRefreshRequested?.();
 		} catch (error) {
-			upgrading = false;
 			const errorMessage = extractApiErrorMessage(error);
 			const wrappedPrefix = m.upgrade_failed({ error: '' });
 			toast.error(errorMessage.startsWith(wrappedPrefix) ? errorMessage : m.upgrade_failed({ error: errorMessage }));
-		} finally {
-			if (!isLocalEnvironment) {
-				upgrading = false;
-			}
+			throw error;
 		}
 	}
 </script>
@@ -148,12 +135,11 @@
 {/if}
 
 {#if render !== 'trigger'}
-	<UpgradeConfirmationDialog
+	<UpdateCenterDialog
 		bind:open
 		bind:upgrading
-		version={confirmVersion}
-		expectedVersion={versionInfo.newestVersion}
-		expectedDigest={versionInfo.newestDigest}
+		versionInformation={versionInfo}
+		canInstall={shouldShowUpgrade}
 		environmentName={isLocalEnvironment ? undefined : environment.name}
 		environmentId={environment.id}
 		onConfirm={handleConfirmUpgradeInternal}

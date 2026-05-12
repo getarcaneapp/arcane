@@ -1,5 +1,13 @@
 import type { Row, Column, FilterFn, ColumnFiltersState, VisibilityState } from '@tanstack/table-core';
 import type { Snippet } from 'svelte';
+import type { Component } from 'svelte';
+
+export interface FilterOption {
+	value: string | boolean;
+	label: string;
+	icon?: Component;
+	dotClass?: string;
+}
 
 export type FieldSpec = {
 	id: string;
@@ -26,6 +34,7 @@ export type ColumnSpec<T> = {
 	header?: Snippet<[{ column: Column<T>; title: string; class?: string }]>;
 	class?: string;
 	filterFn?: FilterFn<T>;
+	filterOptions?: FilterOption[];
 	width?: ColumnWidth;
 	align?: ColumnAlign;
 	truncate?: boolean;
@@ -121,7 +130,7 @@ export function buildMobileVisibility(fields: FieldSpec[], persisted?: string[])
 export type BulkAction = {
 	id: string;
 	label: string;
-	action: 'start' | 'stop' | 'restart' | 'remove' | 'deploy' | 'redeploy' | 'up' | 'down';
+	action: 'base' | 'start' | 'stop' | 'restart' | 'remove' | 'deploy' | 'redeploy' | 'up' | 'down';
 	onClick: (ids: string[]) => void;
 	disabled?: boolean;
 	disabledReason?: string;

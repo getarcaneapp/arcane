@@ -345,9 +345,13 @@ func TestNewClient(t *testing.T) {
 	})
 }
 
-func writeFile(t *testing.T, dir, name string, content []byte) {
+func writeFileInternal(t *testing.T, dir, name string, content []byte) {
 	t.Helper()
-	if err := os.WriteFile(filepath.Join(dir, name), content, 0644); err != nil {
+	targetPath := filepath.Join(dir, name)
+	if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
+		t.Fatalf("failed to create parent directories for %s: %v", name, err)
+	}
+	if err := os.WriteFile(targetPath, content, 0644); err != nil {
 		t.Fatalf("failed to write file %s: %v", name, err)
 	}
 }
@@ -358,9 +362,9 @@ func minimalCompose() []byte {
 
 func TestWalkDirectory_BasicWalk(t *testing.T) {
 	tmpDir := t.TempDir()
-	writeFile(t, tmpDir, "compose.yaml", minimalCompose())
-	writeFile(t, tmpDir, "file1.txt", []byte("hello world"))
-	writeFile(t, tmpDir, "file2.txt", []byte("another file"))
+	writeFileInternal(t, tmpDir, "compose.yaml", minimalCompose())
+	writeFileInternal(t, tmpDir, "file1.txt", []byte("hello world"))
+	writeFileInternal(t, tmpDir, "file2.txt", []byte("another file"))
 
 	client := NewClient("")
 	result, err := client.WalkDirectory(context.Background(), tmpDir, "compose.yaml", 0, 0, 0)
@@ -377,11 +381,11 @@ func TestWalkDirectory_BasicWalk(t *testing.T) {
 
 func TestWalkDirectory_MaxFilesLimit(t *testing.T) {
 	tmpDir := t.TempDir()
-	writeFile(t, tmpDir, "compose.yaml", minimalCompose())
-	writeFile(t, tmpDir, "a.txt", []byte("a"))
-	writeFile(t, tmpDir, "b.txt", []byte("b"))
-	writeFile(t, tmpDir, "c.txt", []byte("c"))
-	writeFile(t, tmpDir, "d.txt", []byte("d"))
+	writeFileInternal(t, tmpDir, "compose.yaml", minimalCompose())
+	writeFileInternal(t, tmpDir, "a.txt", []byte("a"))
+	writeFileInternal(t, tmpDir, "b.txt", []byte("b"))
+	writeFileInternal(t, tmpDir, "c.txt", []byte("c"))
+	writeFileInternal(t, tmpDir, "d.txt", []byte("d"))
 
 	client := NewClient("")
 	_, err := client.WalkDirectory(context.Background(), tmpDir, "compose.yaml", 3, 0, 0)
@@ -395,11 +399,11 @@ func TestWalkDirectory_MaxFilesLimit(t *testing.T) {
 
 func TestWalkDirectory_MaxFilesUnlimited(t *testing.T) {
 	tmpDir := t.TempDir()
-	writeFile(t, tmpDir, "compose.yaml", minimalCompose())
-	writeFile(t, tmpDir, "a.txt", []byte("a"))
-	writeFile(t, tmpDir, "b.txt", []byte("b"))
-	writeFile(t, tmpDir, "c.txt", []byte("c"))
-	writeFile(t, tmpDir, "d.txt", []byte("d"))
+	writeFileInternal(t, tmpDir, "compose.yaml", minimalCompose())
+	writeFileInternal(t, tmpDir, "a.txt", []byte("a"))
+	writeFileInternal(t, tmpDir, "b.txt", []byte("b"))
+	writeFileInternal(t, tmpDir, "c.txt", []byte("c"))
+	writeFileInternal(t, tmpDir, "d.txt", []byte("d"))
 
 	client := NewClient("")
 	result, err := client.WalkDirectory(context.Background(), tmpDir, "compose.yaml", 0, 0, 0)
@@ -413,9 +417,9 @@ func TestWalkDirectory_MaxFilesUnlimited(t *testing.T) {
 
 func TestWalkDirectory_MaxTotalSizeLimit(t *testing.T) {
 	tmpDir := t.TempDir()
-	writeFile(t, tmpDir, "compose.yaml", minimalCompose())
-	writeFile(t, tmpDir, "big1.txt", []byte(strings.Repeat("x", 40)))
-	writeFile(t, tmpDir, "big2.txt", []byte(strings.Repeat("y", 40)))
+	writeFileInternal(t, tmpDir, "compose.yaml", minimalCompose())
+	writeFileInternal(t, tmpDir, "big1.txt", []byte(strings.Repeat("x", 40)))
+	writeFileInternal(t, tmpDir, "big2.txt", []byte(strings.Repeat("y", 40)))
 
 	client := NewClient("")
 	_, err := client.WalkDirectory(context.Background(), tmpDir, "compose.yaml", 0, 50, 0)
@@ -429,9 +433,9 @@ func TestWalkDirectory_MaxTotalSizeLimit(t *testing.T) {
 
 func TestWalkDirectory_MaxTotalSizeUnlimited(t *testing.T) {
 	tmpDir := t.TempDir()
-	writeFile(t, tmpDir, "compose.yaml", minimalCompose())
-	writeFile(t, tmpDir, "big1.txt", []byte(strings.Repeat("x", 500)))
-	writeFile(t, tmpDir, "big2.txt", []byte(strings.Repeat("y", 500)))
+	writeFileInternal(t, tmpDir, "compose.yaml", minimalCompose())
+	writeFileInternal(t, tmpDir, "big1.txt", []byte(strings.Repeat("x", 500)))
+	writeFileInternal(t, tmpDir, "big2.txt", []byte(strings.Repeat("y", 500)))
 
 	client := NewClient("")
 	result, err := client.WalkDirectory(context.Background(), tmpDir, "compose.yaml", 0, 0, 0)
@@ -445,10 +449,10 @@ func TestWalkDirectory_MaxTotalSizeUnlimited(t *testing.T) {
 
 func TestWalkDirectory_MaxBinarySizeSkips(t *testing.T) {
 	tmpDir := t.TempDir()
-	writeFile(t, tmpDir, "compose.yaml", minimalCompose())
+	writeFileInternal(t, tmpDir, "compose.yaml", minimalCompose())
 	// Binary content: null bytes cause isBinaryContent to return true
 	binaryContent := []byte{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13}
-	writeFile(t, tmpDir, "data.bin", binaryContent)
+	writeFileInternal(t, tmpDir, "data.bin", binaryContent)
 
 	client := NewClient("")
 	result, err := client.WalkDirectory(context.Background(), tmpDir, "compose.yaml", 0, 0, 5)
@@ -462,9 +466,9 @@ func TestWalkDirectory_MaxBinarySizeSkips(t *testing.T) {
 
 func TestWalkDirectory_MaxBinarySizeUnlimited(t *testing.T) {
 	tmpDir := t.TempDir()
-	writeFile(t, tmpDir, "compose.yaml", minimalCompose())
+	writeFileInternal(t, tmpDir, "compose.yaml", minimalCompose())
 	binaryContent := []byte{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13}
-	writeFile(t, tmpDir, "data.bin", binaryContent)
+	writeFileInternal(t, tmpDir, "data.bin", binaryContent)
 
 	client := NewClient("")
 	result, err := client.WalkDirectory(context.Background(), tmpDir, "compose.yaml", 0, 0, 0)
@@ -481,8 +485,8 @@ func TestWalkDirectory_MaxBinarySizeUnlimited(t *testing.T) {
 
 func TestWalkDirectory_LargeTextFileNotSkippedByBinaryLimit(t *testing.T) {
 	tmpDir := t.TempDir()
-	writeFile(t, tmpDir, "compose.yaml", minimalCompose())
-	writeFile(t, tmpDir, "notes.txt", []byte(strings.Repeat("plain text\n", 32)))
+	writeFileInternal(t, tmpDir, "compose.yaml", minimalCompose())
+	writeFileInternal(t, tmpDir, "notes.txt", []byte(strings.Repeat("plain text\n", 32)))
 
 	client := NewClient("")
 	result, err := client.WalkDirectory(context.Background(), tmpDir, "compose.yaml", 0, 0, 16)
@@ -494,6 +498,108 @@ func TestWalkDirectory_LargeTextFileNotSkippedByBinaryLimit(t *testing.T) {
 	}
 	if result.TotalFiles != 2 {
 		t.Errorf("expected 2 files (compose + text), got %d", result.TotalFiles)
+	}
+}
+
+func TestWalkDirectory_ComposeInSubdirectory(t *testing.T) {
+	tmpDir := t.TempDir()
+	writeFileInternal(t, tmpDir, "subdir/docker-compose.yml", minimalCompose())
+	writeFileInternal(t, tmpDir, "subdir/dynamic_config.yml", []byte("http:\n  routers: {}\n"))
+
+	client := NewClient("")
+	result, err := client.WalkDirectory(context.Background(), tmpDir, "subdir/docker-compose.yml", 0, 0, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	paths := make([]string, 0, len(result.Files))
+	for _, file := range result.Files {
+		paths = append(paths, file.RelativePath)
+	}
+
+	expected := []string{"docker-compose.yml", "dynamic_config.yml"}
+	if len(paths) != len(expected) {
+		t.Fatalf("expected %d files, got %d (%v)", len(expected), len(paths), paths)
+	}
+	for _, want := range expected {
+		found := false
+		for _, got := range paths {
+			if got == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("expected walked paths to include %q, got %v", want, paths)
+		}
+	}
+}
+
+func TestWalkDirectory_NestedSiblingFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	writeFileInternal(t, tmpDir, "subdir/docker-compose.yml", minimalCompose())
+	writeFileInternal(t, tmpDir, "subdir/config/dynamic_config.yml", []byte("tls:\n  certificates: []\n"))
+
+	client := NewClient("")
+	result, err := client.WalkDirectory(context.Background(), tmpDir, "subdir/docker-compose.yml", 0, 0, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	paths := make([]string, 0, len(result.Files))
+	for _, file := range result.Files {
+		paths = append(paths, file.RelativePath)
+	}
+
+	expected := []string{"docker-compose.yml", "config/dynamic_config.yml"}
+	if len(paths) != len(expected) {
+		t.Fatalf("expected %d files, got %d (%v)", len(expected), len(paths), paths)
+	}
+	for _, want := range expected {
+		found := false
+		for _, got := range paths {
+			if got == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("expected walked paths to include %q, got %v", want, paths)
+		}
+	}
+}
+
+func TestWalkDirectory_SpecialCharsInPath(t *testing.T) {
+	tmpDir := t.TempDir()
+	writeFileInternal(t, tmpDir, "traefik (nl10)/docker-compose.yml", minimalCompose())
+	writeFileInternal(t, tmpDir, "traefik (nl10)/config/dynamic_config.yml", []byte("http:\n  middlewares: {}\n"))
+
+	client := NewClient("")
+	result, err := client.WalkDirectory(context.Background(), tmpDir, "traefik (nl10)/docker-compose.yml", 0, 0, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	paths := make([]string, 0, len(result.Files))
+	for _, file := range result.Files {
+		paths = append(paths, file.RelativePath)
+	}
+
+	expected := []string{"docker-compose.yml", "config/dynamic_config.yml"}
+	if len(paths) != len(expected) {
+		t.Fatalf("expected %d files, got %d (%v)", len(expected), len(paths), paths)
+	}
+	for _, want := range expected {
+		found := false
+		for _, got := range paths {
+			if got == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("expected walked paths to include %q, got %v", want, paths)
+		}
 	}
 }
 

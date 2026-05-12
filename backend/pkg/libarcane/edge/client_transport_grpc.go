@@ -65,6 +65,7 @@ func (c *TunnelClient) connectAndServeGRPC(ctx context.Context) error {
 	streamCtx, streamCancel := context.WithCancel(metadata.NewOutgoingContext(ctx, metadata.Pairs(
 		strings.ToLower(HeaderAgentToken), c.cfg.AgentToken,
 		strings.ToLower(HeaderAPIKey), c.cfg.AgentToken,
+		strings.ToLower(HeaderAuthorization), "Bearer "+c.cfg.AgentToken,
 	)))
 	defer streamCancel()
 

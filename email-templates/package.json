@@ -10,16 +10,15 @@
   },
   "dependencies": {
     "react": "^19.2.5",
-    "react-dom": "^19.2.5",
-    "react-email": "6.0.1",
+    "react-dom": "^19.2.6",
+    "react-email": "6.1.1",
     "tailwind-merge": "^3.5.0"
   },
   "devDependencies": {
-    "@react-email/preview-server": "5.2.10",
-    "@types/node": "^25.6.0",
+    "@types/node": "^25.6.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
-    "oxfmt": "^0.47.0",
+    "oxfmt": "^0.48.0",
     "tsx": "^4.21.0"
   }
 }

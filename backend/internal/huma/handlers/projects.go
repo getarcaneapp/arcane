@@ -43,6 +43,7 @@ type ListProjectsInput struct {
 	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
 	Status        string `query:"status" doc:"Filter by status (comma-separated: running,stopped,partially running)"`
 	Updates       string `query:"updates" doc:"Filter by update status (has_update, up_to_date, error, unknown)"`
+	Archived      string `query:"archived" doc:"Archived filter: 'true' (only archived), 'all' (include archived). Default excludes archived."`
 }
 
 type ListProjectsOutput struct {
@@ -149,6 +150,24 @@ type RestartProjectInput struct {
 }
 
 type RestartProjectOutput struct {
+	Body base.ApiResponse[base.MessageResponse]
+}
+
+type ArchiveProjectInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	ProjectID     string `path:"projectId" doc:"Project ID"`
+}
+
+type ArchiveProjectOutput struct {
+	Body base.ApiResponse[base.MessageResponse]
+}
+
+type UnarchiveProjectInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	ProjectID     string `path:"projectId" doc:"Project ID"`
+}
+
+type UnarchiveProjectOutput struct {
 	Body base.ApiResponse[base.MessageResponse]
 }
 
@@ -344,6 +363,32 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService) {
 	}, h.RestartProject)
 
 	huma.Register(api, huma.Operation{
+		OperationID: "archive-project",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/projects/{projectId}/archive",
+		Summary:     "Archive a project",
+		Description: "Archive a stopped Docker Compose project",
+		Tags:        []string{"Projects"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.ArchiveProject)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "unarchive-project",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/projects/{projectId}/unarchive",
+		Summary:     "Unarchive a project",
+		Description: "Unarchive a Docker Compose project",
+		Tags:        []string{"Projects"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.UnarchiveProject)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "pull-project-images",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/projects/{projectId}/pull",
@@ -382,6 +427,9 @@ func (h *ProjectHandler) ListProjects(ctx context.Context, input *ListProjectsIn
 	}
 	if input.Updates != "" {
 		filters["updates"] = input.Updates
+	}
+	if input.Archived != "" {
+		filters["archived"] = input.Archived
 	}
 
 	params := pagination.QueryParams{
@@ -432,7 +480,7 @@ func (h *ProjectHandler) GetProjectStatusCounts(ctx context.Context, input *GetP
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	_, running, stopped, total, err := h.projectService.GetProjectStatusCounts(ctx)
+	_, running, stopped, total, archived, err := h.projectService.GetProjectStatusCounts(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.ProjectStatusCountsError{Err: err}).Error())
 	}
@@ -441,9 +489,10 @@ func (h *ProjectHandler) GetProjectStatusCounts(ctx context.Context, input *GetP
 		Body: base.ApiResponse[project.StatusCounts]{
 			Success: true,
 			Data: project.StatusCounts{
-				RunningProjects: int(running),
-				StoppedProjects: int(stopped),
-				TotalProjects:   int(total),
+				RunningProjects:  int(running),
+				StoppedProjects:  int(stopped),
+				TotalProjects:    int(total),
+				ArchivedProjects: int(archived),
 			},
 		},
 	}, nil
@@ -507,6 +556,10 @@ func (h *ProjectHandler) DownProject(ctx context.Context, input *DownProjectInpu
 	}
 
 	if err := h.projectService.DownProject(ctx, input.ProjectID, *user); err != nil {
+		var archivedErr *common.ProjectArchivedError
+		if errors.As(err, &archivedErr) {
+			return nil, huma.Error400BadRequest((&common.ProjectDownError{Err: err}).Error())
+		}
 		return nil, huma.Error500InternalServerError((&common.ProjectDownError{Err: err}).Error())
 	}
 
@@ -547,6 +600,8 @@ func (h *ProjectHandler) CreateProject(ctx context.Context, input *CreateProject
 	response.DirName = utils.DerefString(proj.DirName)
 	response.RelativePath = h.projectService.GetProjectRelativePath(ctx, proj.Path)
 	response.GitOpsManagedBy = proj.GitOpsManagedBy
+	response.IsArchived = proj.IsArchived
+	response.ArchivedAt = proj.ArchivedAt
 
 	return &CreateProjectOutput{
 		Body: base.ApiResponse[project.CreateReponse]{
@@ -632,6 +687,10 @@ func (h *ProjectHandler) RedeployProject(ctx context.Context, input *RedeployPro
 	}
 
 	if err := h.projectService.RedeployProject(ctx, input.ProjectID, *user); err != nil {
+		var archivedErr *common.ProjectArchivedError
+		if errors.As(err, &archivedErr) {
+			return nil, huma.Error400BadRequest(err.Error())
+		}
 		return nil, huma.Error400BadRequest((&common.ProjectRedeploymentError{Err: err}).Error())
 	}
 
@@ -764,6 +823,10 @@ func (h *ProjectHandler) RestartProject(ctx context.Context, input *RestartProje
 	}
 
 	if err := h.projectService.RestartProject(ctx, input.ProjectID, *user); err != nil {
+		var archivedErr *common.ProjectArchivedError
+		if errors.As(err, &archivedErr) {
+			return nil, huma.Error400BadRequest(err.Error())
+		}
 		return nil, huma.Error400BadRequest((&common.ProjectRestartError{Err: err}).Error())
 	}
 
@@ -773,6 +836,62 @@ func (h *ProjectHandler) RestartProject(ctx context.Context, input *RestartProje
 			Data: base.MessageResponse{
 				Message: "Project restarted successfully",
 			},
+		},
+	}, nil
+}
+
+func (h *ProjectHandler) ArchiveProject(ctx context.Context, input *ArchiveProjectInput) (*ArchiveProjectOutput, error) {
+	if h.projectService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if input.ProjectID == "" {
+		return nil, huma.Error400BadRequest((&common.ProjectIDRequiredError{}).Error())
+	}
+
+	user, exists := humamw.GetCurrentUserFromContext(ctx)
+	if !exists {
+		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	}
+
+	if err := h.projectService.ArchiveProject(ctx, input.ProjectID, *user); err != nil {
+		var mustStopErr *common.ProjectMustBeStoppedError
+		if errors.As(err, &mustStopErr) {
+			return nil, huma.Error400BadRequest(err.Error())
+		}
+		return nil, huma.Error500InternalServerError((&common.ProjectArchiveError{Err: err}).Error())
+	}
+
+	return &ArchiveProjectOutput{
+		Body: base.ApiResponse[base.MessageResponse]{
+			Success: true,
+			Data:    base.MessageResponse{Message: "Project archived successfully"},
+		},
+	}, nil
+}
+
+func (h *ProjectHandler) UnarchiveProject(ctx context.Context, input *UnarchiveProjectInput) (*UnarchiveProjectOutput, error) {
+	if h.projectService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if input.ProjectID == "" {
+		return nil, huma.Error400BadRequest((&common.ProjectIDRequiredError{}).Error())
+	}
+
+	user, exists := humamw.GetCurrentUserFromContext(ctx)
+	if !exists {
+		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	}
+
+	if err := h.projectService.UnarchiveProject(ctx, input.ProjectID, *user); err != nil {
+		return nil, huma.Error500InternalServerError((&common.ProjectUnarchiveError{Err: err}).Error())
+	}
+
+	return &UnarchiveProjectOutput{
+		Body: base.ApiResponse[base.MessageResponse]{
+			Success: true,
+			Data:    base.MessageResponse{Message: "Project unarchived successfully"},
 		},
 	}, nil
 }

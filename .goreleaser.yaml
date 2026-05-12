@@ -145,6 +145,21 @@ upx:
     lzma: true
     brute: true
 
+notarize:
+  macos:
+    - enabled: '{{ isEnvSet "MACOS_SIGN_P12" }}'
+      ids:
+        - arcane-cli
+      sign:
+        certificate: "{{ .Env.MACOS_SIGN_P12 }}"
+        password: "{{ .Env.MACOS_SIGN_PASSWORD }}"
+      notarize:
+        issuer_id: "{{ .Env.MACOS_NOTARY_ISSUER_ID }}"
+        key_id: "{{ .Env.MACOS_NOTARY_KEY_ID }}"
+        key: "{{ .Env.MACOS_NOTARY_KEY }}"
+        wait: true
+        timeout: 20m
+
 binary_signs:
   - id: cosign-binaries
     cmd: cosign
@@ -176,9 +191,27 @@ signs:
       - --yes
     output: true
 
+checksum:
+  extra_files:
+    - glob: dist/arcane-cli_linux_amd64_v1/arcane-cli
+      name_template: arcane-cli_linux_amd64
+    - glob: dist/arcane-cli_linux_arm64_v8.0/arcane-cli
+      name_template: arcane-cli_linux_arm64
+    - glob: dist/arcane-cli_linux_386_sse2/arcane-cli
+      name_template: arcane-cli_linux_386
+    - glob: dist/arcane-cli_linux_arm_7/arcane-cli
+      name_template: arcane-cli_linux_armv7
+    - glob: dist/arcane-cli_darwin_amd64_v1/arcane-cli
+      name_template: arcane-cli_darwin_amd64
+    - glob: dist/arcane-cli_darwin_arm64_v8.0/arcane-cli
+      name_template: arcane-cli_darwin_arm64
+
+nightly:
+  version_template: "0.0.0-next.{{ .ShortCommit }}"
+
 nfpms:
   - id: arcane-cli
-    package_name: arcane-cli
+    package_name: '{{ if eq (index .Env "BUILD_NEXT") "true" }}arcane-cli-next{{ else }}arcane-cli{{ end }}'
     file_name_template: "{{ .ConventionalFileName }}"
     ids:
       - arcane-cli
@@ -197,9 +230,32 @@ nfpms:
     bindir: /usr/bin
     contents:
       - src: ./cli/README.md
-        dst: /usr/share/doc/arcane-cli/README.md
+        dst: '/usr/share/doc/{{ if eq (index .Env "BUILD_NEXT") "true" }}arcane-cli-next{{ else }}arcane-cli{{ end }}/README.md'
       - src: ./LICENSE
-        dst: /usr/share/doc/arcane-cli/LICENSE
+        dst: '/usr/share/doc/{{ if eq (index .Env "BUILD_NEXT") "true" }}arcane-cli-next{{ else }}arcane-cli{{ end }}/LICENSE'
+
+publishers:
+  - name: nexus-debian
+    if: '{{ eq .ArtifactExt ".deb" }}'
+    disable: '{{ if not (and (index .Env "NEXUS_USERNAME") (index .Env "NEXUS_PASSWORD")) }}true{{ end }}'
+    dir: "{{ dir .ArtifactPath }}"
+    cmd: >-
+      curl --fail-with-body
+      -u "{{ .Env.NEXUS_USERNAME }}:{{ .Env.NEXUS_PASSWORD }}"
+      -X POST
+      -H "Content-Type: multipart/form-data"
+      --data-binary "@{{ .ArtifactName }}"
+      'https://pkgs.getarcane.app/repository/debian/'
+
+  - name: nexus-yum
+    if: '{{ eq .ArtifactExt ".rpm" }}'
+    disable: '{{ if not (and (index .Env "NEXUS_USERNAME") (index .Env "NEXUS_PASSWORD")) }}true{{ end }}'
+    dir: "{{ dir .ArtifactPath }}"
+    cmd: >-
+      curl --fail-with-body
+      -u "{{ .Env.NEXUS_USERNAME }}:{{ .Env.NEXUS_PASSWORD }}"
+      --upload-file "{{ .ArtifactName }}"
+      'https://pkgs.getarcane.app/repository/yum/{{- if eq .Arch "amd64" -}}x86_64{{- else if eq .Arch "arm64" -}}aarch64{{- else if eq .Arch "386" -}}i386{{- else if and (eq .Arch "arm") (eq .Arm "7") -}}armhfp{{- else -}}{{ .Arch }}{{- end -}}/{{ .ArtifactName }}'
 
 homebrew_casks:
   - name: arcane-cli
@@ -217,12 +273,6 @@ homebrew_casks:
         - zsh
         - fish
         - pwsh
-    hooks:
-      post:
-        install: |
-          if OS.mac?
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/arcane-cli"]
-          end
     description: "Arcane CLI - Modern Docker Management, Designed for Everyone."
     homepage: "https://getarcane.app"
     skip_upload: '{{ if eq (index .Env "BUILD_NEXT") "true" }}true{{ end }}'
@@ -240,7 +290,7 @@ dockers_v2:
       - "ghcr.io/getarcaneapp/arcane"
     tags:
       - "next-static"
-      - "{{.Tag}}"
+      - "{{ .Version }}"
     platforms:
       - linux/amd64
       - linux/arm64
@@ -267,7 +317,7 @@ dockers_v2:
       - "ghcr.io/getarcaneapp/arcane-headless"
     tags:
       - "next-static"
-      - "{{.Tag}}"
+      - "{{ .Version }}"
     platforms:
       - linux/amd64
       - linux/arm64
@@ -294,7 +344,7 @@ dockers_v2:
       - "ghcr.io/getarcaneapp/arcane"
     tags:
       - "next-distroless"
-      - "{{.Tag}}-distroless"
+      - "{{ .Version }}-distroless"
     platforms:
       - linux/amd64
       - linux/arm64
@@ -321,7 +371,7 @@ dockers_v2:
       - "ghcr.io/getarcaneapp/arcane-headless"
     tags:
       - "next-distroless"
-      - "{{.Tag}}-distroless"
+      - "{{ .Version }}-distroless"
     platforms:
       - linux/amd64
       - linux/arm64
@@ -388,6 +438,8 @@ blobs:
         name_template: arcane-cli_darwin_arm64
       - glob: dist/arcane-cli_darwin_arm64_v8.0/arcane-cli_darwin_arm64.sigstore.json
         name_template: arcane-cli_darwin_arm64.sigstore.json
+      - glob: dist/arcane_*_checksums.txt
+        name_template: arcane-cli_checksums.txt
     include_meta: false
     disable: '{{ if not (index .Env "BUILD_NEXT") }}true{{ end }}'
 
@@ -423,7 +475,7 @@ blobs:
         name_template: arcane-agent_darwin_amd64.sigstore.json
       - glob: dist/arcane-agent_darwin_arm64_v8.0/arcane-agent_darwin_arm64.sigstore.json
         name_template: arcane-agent_darwin_arm64.sigstore.json
-      - glob: dist/arcane_next-static-*_checksums.txt.sigstore.json
+      - glob: dist/arcane_*_checksums.txt.sigstore.json
         name_template: arcane_checksums.sigstore.json
     include_meta: false
     disable: '{{ if not (index .Env "BUILD_NEXT") }}true{{ end }}'

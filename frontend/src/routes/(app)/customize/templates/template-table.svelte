@@ -14,6 +14,7 @@
 	import type { Template } from '$lib/types/template.type';
 	import type { ColumnSpec, MobileFieldVisibility } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
+	import { templateTypeFilters } from '$lib/components/arcane-table/data';
 	import { templateService } from '$lib/services/template-service';
 	import { truncateString } from '$lib/utils/string.utils';
 	import { PersistedState } from 'runed';
@@ -103,6 +104,7 @@
 			accessorFn: (row) => row.isRemote,
 			title: m.common_type(),
 			sortable: true,
+			filterOptions: templateTypeFilters,
 			cell: TypeCell
 		},
 		{
@@ -199,7 +201,7 @@
 {#snippet TagsCell({ item }: { item: Template })}
 	{#if item.metadata?.tags && item.metadata.tags.length > 0}
 		<div class="flex flex-wrap gap-1">
-			{#each item.metadata.tags.slice(0, 2) as tag}
+			{#each item.metadata.tags.slice(0, 2) as tag (tag)}
 				<Badge variant="outline" class="text-xs">{tag}</Badge>
 			{/each}
 			{#if item.metadata.tags.length > 2}
@@ -250,7 +252,7 @@
 							{m.common_tags()}
 						</div>
 						<div class="mt-1 flex flex-wrap gap-1">
-							{#each item.metadata.tags.slice(0, 3) as tag}
+							{#each item.metadata.tags.slice(0, 3) as tag (tag)}
 								<Badge variant="outline" class="text-xs">{tag}</Badge>
 							{/each}
 							{#if item.metadata.tags.length > 3}

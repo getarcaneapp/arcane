@@ -6,9 +6,10 @@ import { throwPageLoadError } from '$lib/utils/page-load-error.util';
 import type { PageLoad } from './$types';
 import { environmentStore } from '$lib/stores/environment.store.svelte';
 
-export const load: PageLoad = async ({ parent }) => {
+export const load: PageLoad = async ({ parent, url }) => {
 	const { queryClient } = await parent();
 	const envId = await environmentStore.getCurrentEnvironmentId();
+	const showArchived = url.searchParams.get('archived') === 'true';
 
 	const projectRequestOptions = resolveInitialTableRequest('arcane-project-table', {
 		pagination: {
@@ -20,6 +21,13 @@ export const load: PageLoad = async ({ parent }) => {
 			direction: 'asc'
 		}
 	} satisfies SearchPaginationSortRequest);
+	const filters = { ...(projectRequestOptions.filters ?? {}) };
+	if (showArchived) {
+		filters.archived = 'true';
+	} else {
+		delete filters.archived;
+	}
+	projectRequestOptions.filters = Object.keys(filters).length ? filters : undefined;
 
 	let projects;
 	let projectStatusCounts;
@@ -38,5 +46,5 @@ export const load: PageLoad = async ({ parent }) => {
 		throwPageLoadError(err, 'Failed to load projects');
 	}
 
-	return { projects, projectRequestOptions, projectStatusCounts };
+	return { projects, projectRequestOptions, projectStatusCounts, showArchived };
 };

@@ -24,6 +24,7 @@ type Watcher struct {
 	debounce       time.Duration
 	stopCh         chan struct{}
 	stoppedCh      chan struct{}
+	watchAliases   map[string]string
 	mu             sync.Mutex
 	started        bool
 	stopped        bool
@@ -61,6 +62,7 @@ func NewWatcher(watchPath string, opts WatcherOptions) (*Watcher, error) {
 		debounce:       opts.Debounce,
 		stopCh:         make(chan struct{}),
 		stoppedCh:      make(chan struct{}),
+		watchAliases:   make(map[string]string),
 	}, nil
 }
 
@@ -201,9 +203,10 @@ func (fw *Watcher) fireDebounceInternal(ctx context.Context, debouncePending *bo
 // shouldHandleEventInternal's job.
 func (fw *Watcher) handleEventInternal(ctx context.Context, event fsnotify.Event) {
 	if event.Has(fsnotify.Create) {
+		logicalName := fw.logicalPathForWatchEventInternal(event.Name)
 		if fw.isWatchableDirectory(event.Name) {
-			if fw.shouldWatchDir(event.Name) {
-				if err := fw.addExistingDirectories(event.Name); err != nil {
+			if fw.shouldWatchDir(logicalName) {
+				if err := fw.addExistingDirectoriesRecursiveInternal(event.Name, logicalName, map[string]struct{}{}); err != nil {
 					slog.WarnContext(ctx, "Failed to add new directory to watcher",
 						"path", event.Name,
 						"error", err)
@@ -233,10 +236,10 @@ func (fw *Watcher) shouldHandleEventInternal(event fsnotify.Event) bool {
 }
 
 func (fw *Watcher) addExistingDirectories(root string) error {
-	return fw.addExistingDirectoriesRecursiveInternal(root, map[string]struct{}{})
+	return fw.addExistingDirectoriesRecursiveInternal(root, root, map[string]struct{}{})
 }
 
-func (fw *Watcher) addExistingDirectoriesRecursiveInternal(path string, ancestors map[string]struct{}) error {
+func (fw *Watcher) addExistingDirectoriesRecursiveInternal(path string, logicalPath string, ancestors map[string]struct{}) error {
 	identity, err := projects.ResolveDirectoryIdentityInternal(path)
 	if err != nil {
 		return err
@@ -249,7 +252,7 @@ func (fw *Watcher) addExistingDirectoriesRecursiveInternal(path string, ancestor
 	defer delete(ancestors, identity)
 
 	if path != fw.watchedPath {
-		depth := fw.dirDepth(path)
+		depth := fw.dirDepth(logicalPath)
 		if depth < 0 {
 			return nil
 		}
@@ -257,9 +260,11 @@ func (fw *Watcher) addExistingDirectoriesRecursiveInternal(path string, ancestor
 			return nil
 		}
 
-		if err := fw.watcher.Add(path); err != nil {
+		watchPath := fw.resolveWatchPathInternal(path)
+		fw.watchAliases[watchPath] = filepath.Clean(logicalPath)
+		if err := fw.watcher.Add(watchPath); err != nil {
 			slog.Warn("Failed to add directory to watcher",
-				"path", path,
+				"path", watchPath,
 				"error", err)
 		}
 
@@ -278,12 +283,55 @@ func (fw *Watcher) addExistingDirectoriesRecursiveInternal(path string, ancestor
 		if !projects.IsProjectDirectoryEntry(entry, childPath, fw.followSymlinks) {
 			continue
 		}
-		if err := fw.addExistingDirectoriesRecursiveInternal(childPath, ancestors); err != nil {
+		childLogicalPath := filepath.Join(logicalPath, entry.Name())
+		if err := fw.addExistingDirectoriesRecursiveInternal(childPath, childLogicalPath, ancestors); err != nil {
 			return err
 		}
 	}
 
 	return nil
+}
+
+func (fw *Watcher) resolveWatchPathInternal(path string) string {
+	if !fw.followSymlinks {
+		return path
+	}
+
+	resolvedPath, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return path
+	}
+
+	return resolvedPath
+}
+
+func (fw *Watcher) logicalPathForWatchEventInternal(path string) string {
+	cleanPath := filepath.Clean(path)
+	bestWatchPath := ""
+	bestLogicalPath := ""
+
+	for watchPath, logicalPath := range fw.watchAliases {
+		cleanWatchPath := filepath.Clean(watchPath)
+		if cleanPath != cleanWatchPath && !strings.HasPrefix(cleanPath, cleanWatchPath+string(os.PathSeparator)) {
+			continue
+		}
+		if len(cleanWatchPath) <= len(bestWatchPath) {
+			continue
+		}
+		bestWatchPath = cleanWatchPath
+		bestLogicalPath = logicalPath
+	}
+
+	if bestWatchPath == "" {
+		return cleanPath
+	}
+
+	rel, err := filepath.Rel(bestWatchPath, cleanPath)
+	if err != nil || rel == "." {
+		return filepath.Clean(bestLogicalPath)
+	}
+
+	return filepath.Join(bestLogicalPath, rel)
 }
 
 func (fw *Watcher) dirDepth(path string) int {

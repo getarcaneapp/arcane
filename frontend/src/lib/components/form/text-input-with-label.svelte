@@ -47,10 +47,15 @@
 	}
 </script>
 
-<div class="grid gap-2">
-	<Label for={id} class="text-sm leading-none font-medium">
-		{label}{#if required}<span class="text-destructive ml-0.5">*</span>{/if}
-	</Label>
+<div class="space-y-2">
+	<div>
+		<Label for={id} class="text-sm font-medium">
+			{label}{#if required}<span class="text-destructive ml-0.5">*</span>{/if}
+		</Label>
+		{#if description}
+			<p class="text-muted-foreground mt-0.5 text-xs">{description}</p>
+		{/if}
+	</div>
 
 	<Input
 		{id}
@@ -66,12 +71,9 @@
 	/>
 
 	{#if error}
-		<p class="text-destructive text-[0.8rem] font-medium">{error}</p>
-	{/if}
-	{#if description}
-		<p class="text-muted-foreground text-[0.8rem]">{description}</p>
+		<p class="text-destructive text-xs font-medium">{error}</p>
 	{/if}
 	{#if helpText || reserveHelpTextSpace}
-		<p class="text-muted-foreground min-h-[1rem] text-[0.7rem]">{helpText}</p>
+		<p class="text-muted-foreground min-h-[1rem] text-xs">{helpText}</p>
 	{/if}
 </div>

@@ -158,9 +158,19 @@ export class ProjectService extends BaseAPIService {
 		return this.handleResponse(this.api.put(`/environments/${envId}/projects/${projectId}/includes`, payload));
 	}
 
-	async restartProject(projectId: string): Promise<Project> {
+	async restartProject(projectId: string): Promise<void> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.handleResponse(this.api.post(`/environments/${envId}/projects/${projectId}/restart`));
+		await this.handleResponse(this.api.post(`/environments/${envId}/projects/${projectId}/restart`));
+	}
+
+	async archiveProject(projectId: string): Promise<void> {
+		const envId = await environmentStore.getCurrentEnvironmentId();
+		await this.handleResponse(this.api.post(`/environments/${envId}/projects/${projectId}/archive`));
+	}
+
+	async unarchiveProject(projectId: string): Promise<void> {
+		const envId = await environmentStore.getCurrentEnvironmentId();
+		await this.handleResponse(this.api.post(`/environments/${envId}/projects/${projectId}/unarchive`));
 	}
 
 	async redeployProject(projectName: string): Promise<Project> {

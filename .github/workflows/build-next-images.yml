@@ -51,7 +51,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y gettext-base
 
       - name: Install cosign
-        uses: sigstore/cosign-installer@v4.1.1
+        uses: sigstore/cosign-installer@v4.1.2
 
       - name: Set up Depot CLI
         uses: depot/setup-action@v1
@@ -80,7 +80,7 @@ jobs:
         with:
           distribution: goreleaser-pro
           version: "~> 2"
-          args: release --clean --skip=announce,validate,nfpm,homebrew
+          args: release --clean --nightly --skip=announce,validate,homebrew
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
@@ -96,6 +96,8 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
 
       - name: Manager image metadata
         id: manager-meta
@@ -135,8 +137,7 @@ jobs:
           provenance: true
 
       - name: Sign manager image
-        run: cosign sign --yes --key env://COSIGN_PRIVATE_KEY "${MANAGER_IMAGE_NAME}@${{
-          steps.manager-build.outputs.digest }}"
+        run: cosign sign --yes --key env://COSIGN_PRIVATE_KEY "${MANAGER_IMAGE_NAME}@${{ steps.manager-build.outputs.digest }}"
         env:
           COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
@@ -180,8 +181,7 @@ jobs:
           provenance: true
 
       - name: Sign agent image
-        run: cosign sign --yes --key env://COSIGN_PRIVATE_KEY "${AGENT_IMAGE_NAME}@${{ steps.agent-build.outputs.digest
-          }}"
+        run: cosign sign --yes --key env://COSIGN_PRIVATE_KEY "${AGENT_IMAGE_NAME}@${{ steps.agent-build.outputs.digest }}"
         env:
           COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}

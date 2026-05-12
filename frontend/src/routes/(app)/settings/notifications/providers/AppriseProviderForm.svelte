@@ -53,7 +53,6 @@
 	id="apprise"
 	title={m.notifications_apprise_title()}
 	description={m.notifications_apprise_description()}
-	enabledLabel={m.notifications_apprise_enabled_label()}
 	bind:enabled={values.enabled}
 	{disabled}
 >

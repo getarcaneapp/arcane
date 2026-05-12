@@ -48,6 +48,7 @@ var configShowCmd = &cobra.Command{
 		fmt.Printf("Refresh Token:       %s\n", maskAPIKey(cfg.RefreshToken))
 		fmt.Printf("Default Environment: %s\n", maskIfEmpty(cfg.DefaultEnvironment, "0 (local)"))
 		fmt.Printf("Log Level:           %s\n", maskIfEmpty(cfg.LogLevel, "info (default)"))
+		fmt.Printf("CLI Update Channel:  %s\n", maskIfEmpty(cfg.CLIUpdateChannel, "(auto)"))
 		globalLimit := cfg.Pagination.Default.Limit
 		if globalLimit <= 0 {
 			globalLimit = cfg.DefaultLimit
@@ -437,6 +438,14 @@ func applyConfigSetArg(cfg *clitypes.Config, key, value string) (bool, error) {
 	case "log-level", "loglevel", "log_level":
 		cfg.LogLevel = value
 		fmt.Printf("Set log_level = %s\n", value)
+		return true, nil
+	case "cli-update-channel", "cli_update_channel", "cli-channel", "channel":
+		channel := strings.ToLower(strings.TrimSpace(value))
+		if channel != "stable" && channel != "next" {
+			return false, fmt.Errorf("invalid cli update channel %q (expected stable or next)", value)
+		}
+		cfg.CLIUpdateChannel = channel
+		fmt.Printf("Set cli_update_channel = %s\n", channel)
 		return true, nil
 	case "default-limit", "default_limit", "pagination.default.limit":
 		limit, err := parseLimitValue(normalized, value)

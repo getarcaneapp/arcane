@@ -48,6 +48,48 @@ func TestWatcher_StartWatchesExistingSymlinkDirectoriesWhenEnabled(t *testing.T)
 	}
 }
 
+func TestWatcher_StartWatchesNewDirectoriesInsideSymlinkDirectoriesWhenEnabled(t *testing.T) {
+	root := t.TempDir()
+	targetRoot := t.TempDir()
+	targetPath := filepath.Join(targetRoot, "real-project")
+	require.NoError(t, os.MkdirAll(targetPath, 0o755))
+
+	linkPath := filepath.Join(root, "linked-project")
+	require.NoError(t, os.Symlink(targetPath, linkPath))
+
+	changeCh := make(chan struct{}, 1)
+	ctx := t.Context()
+
+	watcher, err := NewWatcher(root, WatcherOptions{
+		Debounce:          25 * time.Millisecond,
+		MaxDepth:          2,
+		FollowSymlinkDirs: true,
+		OnChange: func(context.Context) {
+			select {
+			case changeCh <- struct{}{}:
+			default:
+			}
+		},
+	})
+	require.NoError(t, err)
+	require.NoError(t, watcher.Start(ctx))
+	defer func() {
+		require.NoError(t, watcher.Stop())
+	}()
+
+	nestedPath := filepath.Join(targetPath, "nested-project")
+	require.NoError(t, os.MkdirAll(nestedPath, 0o755))
+	time.Sleep(100 * time.Millisecond)
+
+	require.NoError(t, os.WriteFile(filepath.Join(nestedPath, "compose.yaml"), []byte("services: {}\n"), 0o644))
+
+	select {
+	case <-changeCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected compose file in new symlinked directory to trigger watcher callback")
+	}
+}
+
 func TestWatcher_StartIgnoresNonProjectFileWritesInsideProjectDir(t *testing.T) {
 	root := t.TempDir()
 	projectDir := filepath.Join(root, "demo")

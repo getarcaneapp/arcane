@@ -16,15 +16,12 @@ COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY frontend/package.json ./frontend/package.json
 
 # Fetch dependencies with cache mount
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
-    pnpm fetch
+RUN --mount=type=cache,id=arcane-pnpm-v2,target=/pnpm/store,sharing=locked \
+    pnpm fetch && \
+    pnpm install -r --offline --frozen-lockfile
 
 # Copy frontend source
 COPY frontend ./frontend
-
-# Install from the store (offline)
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
-    pnpm install -r --offline --frozen-lockfile
 
 ENV NODE_ENV=development \
     PORT=3000

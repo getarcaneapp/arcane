@@ -66,7 +66,6 @@
 			<Label for="label-value">Value</Label>
 			<Input id="label-value" bind:value placeholder={m.swarm_service_form_value_placeholder()} />
 		</div>
-		<button type="submit" class="hidden"></button>
 	</form>
 
 	{#snippet footer()}

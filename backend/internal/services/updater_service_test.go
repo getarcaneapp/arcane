@@ -657,6 +657,7 @@ func TestActiveComposeProjectNameSetInternal(t *testing.T) {
 		{Name: "My-App", Status: models.ProjectStatusRunning},
 		{Name: "skip-me", Status: models.ProjectStatusStopped},
 		{Name: "another_app", Status: models.ProjectStatusPartiallyRunning},
+		{Name: "archived-app", Status: models.ProjectStatusRunning, IsArchived: true},
 		{Name: "", Status: models.ProjectStatusRunning},
 	}
 
@@ -666,6 +667,7 @@ func TestActiveComposeProjectNameSetInternal(t *testing.T) {
 	assert.Contains(t, got, "my-app")
 	assert.Contains(t, got, "another_app")
 	assert.NotContains(t, got, "skip-me")
+	assert.NotContains(t, got, "archived-app")
 }
 
 func TestCollectUsedImagesFromComposeContainersInternal(t *testing.T) {

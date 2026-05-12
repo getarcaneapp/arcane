@@ -27,7 +27,7 @@
 </script>
 
 <Dialog.Root bind:open={$confirmDialogStore.open}>
-	<Dialog.Content class="w-full max-w-md sm:max-w-lg">
+	<Dialog.Content class="z-[60] w-full max-w-md sm:max-w-lg" overlayClass="z-[60]">
 		<Dialog.Header class="space-y-3">
 			<Dialog.Title class="flex items-start gap-3 text-lg leading-tight font-semibold">
 				<AlertIcon class="text-destructive mt-0.5 size-5 shrink-0" />

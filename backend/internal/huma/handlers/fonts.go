@@ -32,7 +32,7 @@ func RegisterFonts(api huma.API, fontService *services.FontService) {
 		Method:      http.MethodGet,
 		Path:        "/fonts/sans",
 		Summary:     "Get sans-serif font",
-		Description: "Get the application sans-serif font (Geist)",
+		Description: "Get the application sans-serif font (Mona Sans)",
 		Tags:        []string{"Fonts"},
 		Security:    []map[string][]string{}, // Public endpoint
 	}, h.GetSansFont)
@@ -42,20 +42,10 @@ func RegisterFonts(api huma.API, fontService *services.FontService) {
 		Method:      http.MethodGet,
 		Path:        "/fonts/mono",
 		Summary:     "Get monospace font",
-		Description: "Get the application monospace font (Geist Mono)",
+		Description: "Get the application monospace font (Mona Sans Mono)",
 		Tags:        []string{"Fonts"},
 		Security:    []map[string][]string{}, // Public endpoint
 	}, h.GetMonoFont)
-
-	huma.Register(api, huma.Operation{
-		OperationID: "get-serif-font",
-		Method:      http.MethodGet,
-		Path:        "/fonts/serif",
-		Summary:     "Get serif font",
-		Description: "Get the application serif font (Calistoga)",
-		Tags:        []string{"Fonts"},
-		Security:    []map[string][]string{}, // Public endpoint
-	}, h.GetSerifFont)
 }
 
 // GetSansFont returns the sans-serif font.
@@ -79,20 +69,6 @@ func (h *FontsHandler) GetMonoFont(ctx context.Context, input *struct{}) (*GetFo
 	}
 
 	data, mimeType, err := h.fontService.GetMonoFont()
-	if err != nil {
-		return nil, huma.Error404NotFound("font not found")
-	}
-
-	return h.createFontResponse(data, mimeType), nil
-}
-
-// GetSerifFont returns the serif font.
-func (h *FontsHandler) GetSerifFont(ctx context.Context, input *struct{}) (*GetFontOutput, error) {
-	if h.fontService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
-	data, mimeType, err := h.fontService.GetSerifFont()
 	if err != nil {
 		return nil, huma.Error404NotFound("font not found")
 	}

@@ -29,9 +29,15 @@ const (
 	defaultRequestTimeout = 15 * time.Second
 )
 
+type latestRelease struct {
+	TagName     string
+	Body        string
+	PublishedAt string
+}
+
 type VersionService struct {
 	httpClient               *http.Client
-	cache                    *cache.Cache[string]
+	cache                    *cache.Cache[latestRelease]
 	disabled                 bool
 	version                  string
 	revision                 string
@@ -45,7 +51,7 @@ func NewVersionService(httpClient *http.Client, disabled bool, version string, r
 	}
 	return &VersionService{
 		httpClient:               httpClient,
-		cache:                    cache.New[string](versionTTL),
+		cache:                    cache.New[latestRelease](versionTTL),
 		disabled:                 disabled,
 		version:                  version,
 		revision:                 revision,
@@ -54,45 +60,56 @@ func NewVersionService(httpClient *http.Client, disabled bool, version string, r
 	}
 }
 
-func (s *VersionService) GetLatestVersion(ctx context.Context) (string, error) {
-	version, err := s.cache.GetOrFetch(ctx, func(ctx context.Context) (string, error) {
+func (s *VersionService) getLatestReleaseInternal(ctx context.Context) (latestRelease, error) {
+	rel, err := s.cache.GetOrFetch(ctx, func(ctx context.Context) (latestRelease, error) {
 		reqCtx, cancel := context.WithTimeout(ctx, defaultRequestTimeout)
 		defer cancel()
 
 		req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, versionCheckURL, nil)
 		if err != nil {
-			return "", fmt.Errorf("create GitHub request: %w", err)
+			return latestRelease{}, fmt.Errorf("create GitHub request: %w", err)
 		}
 
 		resp, err := s.httpClient.Do(req) //nolint:gosec // intentional request to fixed GitHub releases API endpoint
 		if err != nil {
-			return "", fmt.Errorf("get latest release: %w", err)
+			return latestRelease{}, fmt.Errorf("get latest release: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusOK {
-			return "", fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
+			return latestRelease{}, fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
 		}
 
 		var payload struct {
-			TagName string `json:"tag_name"`
+			TagName     string `json:"tag_name"`
+			Body        string `json:"body"`
+			PublishedAt string `json:"published_at"`
 		}
 		if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-			return "", fmt.Errorf("decode payload: %w", err)
+			return latestRelease{}, fmt.Errorf("decode payload: %w", err)
 		}
 		if payload.TagName == "" {
-			return "", fmt.Errorf("GitHub API returned empty tag name")
+			return latestRelease{}, fmt.Errorf("GitHub API returned empty tag name")
 		}
 
-		return payload.TagName, nil
+		return latestRelease{
+			TagName:     payload.TagName,
+			Body:        payload.Body,
+			PublishedAt: payload.PublishedAt,
+		}, nil
 	})
 
 	if staleErr, ok := errors.AsType[*cache.ErrStale](err); ok {
-		slog.Warn("Failed to fetch latest version, returning stale cache", "error", staleErr.Err)
-		return version, nil
+		slog.Warn("Failed to fetch latest release, returning stale cache", "error", staleErr.Err)
+		return rel, nil
 	}
 
-	return version, err
+	return rel, err
+}
+
+func (s *VersionService) GetLatestVersion(ctx context.Context) (string, error) {
+	rel, err := s.getLatestReleaseInternal(ctx)
+	return rel.TagName, err
 }
 
 func (s *VersionService) IsNewer(latest, current string) bool {
@@ -228,13 +245,15 @@ func (s *VersionService) GetAppVersionInfo(ctx context.Context) *version.Info {
 
 	// For semver versions, check GitHub releases
 	if isSemver {
-		latest, err := s.GetLatestVersion(ctx)
+		rel, err := s.getLatestReleaseInternal(ctx)
 		var staleErr *cache.ErrStale
 		if err == nil || errors.As(err, &staleErr) {
-			if latest != "" {
-				info.NewestVersion = latest
-				info.UpdateAvailable = s.IsNewer(latest, ver)
-				info.ReleaseURL = s.ReleaseURL(latest)
+			if rel.TagName != "" {
+				info.NewestVersion = rel.TagName
+				info.UpdateAvailable = s.IsNewer(rel.TagName, ver)
+				info.ReleaseURL = s.ReleaseURL(rel.TagName)
+				info.ReleaseNotes = rel.Body
+				info.ReleasedAt = rel.PublishedAt
 			}
 		}
 		return info
@@ -245,6 +264,18 @@ func (s *VersionService) GetAppVersionInfo(ctx context.Context) *version.Info {
 		updateAvailable, latestDigest := s.checkDigestBasedUpdate(ctx, currentTag, currentDigest, currentImageRef)
 		info.UpdateAvailable = updateAvailable
 		info.NewestDigest = latestDigest
+	}
+
+	// Best-effort: pull release notes for non-semver track too, so the modal can preview
+	// the latest tagged release even when the running build is digest-tracking.
+	if !isSemver {
+		if rel, err := s.getLatestReleaseInternal(ctx); err == nil && rel.TagName != "" {
+			info.ReleaseNotes = rel.Body
+			info.ReleasedAt = rel.PublishedAt
+			if info.ReleaseURL == "" {
+				info.ReleaseURL = s.ReleaseURL(rel.TagName)
+			}
+		}
 	}
 
 	return info

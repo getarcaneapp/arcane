@@ -10,4 +10,5 @@ export interface ProjectStatusCounts {
 	runningProjects: number;
 	stoppedProjects: number;
 	totalProjects: number;
+	archivedProjects: number;
 }

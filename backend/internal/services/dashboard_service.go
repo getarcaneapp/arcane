@@ -2,10 +2,11 @@ package services
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/internal/database"
@@ -505,23 +506,16 @@ func (s *DashboardService) getSnapshotForEnvironmentInternal(
 		return s.GetSnapshot(reqCtx, options)
 	}
 
-	respBody, statusCode, err := s.environmentService.ProxyRequest(
+	var response base.ApiResponse[dashboardtypes.Snapshot]
+	if err := s.environmentService.ProxyJSONRequest(
 		reqCtx,
 		env.ID,
-		"GET",
+		http.MethodGet,
 		buildEnvironmentDashboardProxyPathInternal(options),
 		nil,
-	)
-	if err != nil {
+		&response,
+	); err != nil {
 		return nil, fmt.Errorf("failed to proxy dashboard snapshot: %w", err)
-	}
-	if statusCode < 200 || statusCode >= 300 {
-		return nil, fmt.Errorf("unexpected dashboard status code: %d", statusCode)
-	}
-
-	var response base.ApiResponse[dashboardtypes.Snapshot]
-	if err := json.Unmarshal(respBody, &response); err != nil {
-		return nil, fmt.Errorf("failed to decode dashboard snapshot: %w", err)
 	}
 	if !response.Success {
 		return nil, fmt.Errorf("dashboard snapshot request was not successful")
@@ -557,25 +551,16 @@ func (s *DashboardService) getVersionInfoForEnvironmentInternal(
 		return nil
 	}
 
-	respBody, statusCode, err := s.environmentService.ProxyRequest(
+	var versionInfo versiontypes.Info
+	if err := s.environmentService.ProxyJSONRequest(
 		reqCtx,
 		env.ID,
-		"GET",
+		http.MethodGet,
 		"/api/app-version",
 		nil,
-	)
-	if err != nil {
+		&versionInfo,
+	); err != nil {
 		slog.DebugContext(reqCtx, "Failed to fetch environment version info for dashboard", "environment_id", env.ID, "error", err)
-		return nil
-	}
-	if statusCode < 200 || statusCode >= 300 {
-		slog.DebugContext(reqCtx, "Unexpected environment version status code for dashboard", "environment_id", env.ID, "status_code", statusCode)
-		return nil
-	}
-
-	var versionInfo versiontypes.Info
-	if err := json.Unmarshal(respBody, &versionInfo); err != nil {
-		slog.DebugContext(reqCtx, "Failed to decode environment version info for dashboard", "environment_id", env.ID, "error", err)
 		return nil
 	}
 
@@ -657,7 +642,8 @@ func (s *DashboardService) getPendingResourceUpdatesCountInternal(ctx context.Co
 	}
 
 	filteredContainers := filterInternalContainers(containers, false)
-	containerCount, err := s.getPendingContainerUpdatesCountForImageIDsInternal(ctx, collectImageIDs(filteredContainers))
+	standaloneContainers := filterStandaloneDockerContainersInternal(filteredContainers)
+	containerCount, err := s.getPendingContainerUpdatesCountForImageIDsInternal(ctx, collectImageIDs(standaloneContainers))
 	if err != nil {
 		return 0, err
 	}
@@ -668,6 +654,17 @@ func (s *DashboardService) getPendingResourceUpdatesCountInternal(ctx context.Co
 	}
 
 	return containerCount + projectCount, nil
+}
+
+func filterStandaloneDockerContainersInternal(containers []dockercontainer.Summary) []dockercontainer.Summary {
+	filtered := make([]dockercontainer.Summary, 0, len(containers))
+	for _, c := range containers {
+		if strings.TrimSpace(c.Labels["com.docker.compose.project"]) != "" {
+			continue
+		}
+		filtered = append(filtered, c)
+	}
+	return filtered
 }
 
 func (s *DashboardService) getPendingContainerUpdatesCountForImageIDsInternal(ctx context.Context, imageIDs []string) (int, error) {

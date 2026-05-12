@@ -220,3 +220,25 @@ services:
 	require.Equal(t, project.WorkingDir, includedService.CustomLabels[api.WorkingDirLabel])
 	require.Equal(t, expectedConfigFiles, includedService.CustomLabels[api.ConfigFilesLabel])
 }
+
+func TestResolveRelativeProjectPaths(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	composePath := filepath.Join(dir, "compose.yaml")
+	require.NoError(t, os.WriteFile(composePath, []byte(`services:
+  app:
+    image: nginx:alpine
+    volumes:
+      - ./config.conf:/etc/app/config.conf
+`), 0o600))
+
+	project, err := LoadComposeProject(context.Background(), composePath, "demo", dir, false, nil)
+	require.NoError(t, err)
+
+	ResolveRelativeProjectPaths(project, dir)
+
+	service := project.Services["app"]
+	require.Len(t, service.Volumes, 1)
+	assert.Equal(t, filepath.Join(dir, "config.conf"), service.Volumes[0].Source)
+}

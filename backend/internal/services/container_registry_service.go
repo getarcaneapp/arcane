@@ -766,6 +766,13 @@ func (s *ContainerRegistryService) inspectImageDigestViaDaemonInternal(ctx conte
 		return nil, err
 	}
 
+	if isDockerHubRegistryInternal(registryHost) {
+		credentials, credErr := s.getMatchingRegistryCredentialsInternal(ctx, registryHost, externalCreds)
+		if credErr == nil && len(credentials) > 0 {
+			return s.inspectImageDigestWithCredentialsInternal(ctx, dockerClient, normalizedRef, registryHost, credentials, nil)
+		}
+	}
+
 	inspectResult, err := dockerClient.DistributionInspect(ctx, normalizedRef, client.DistributionInspectOptions{})
 	if err == nil {
 		digest, normalizeErr := imagedigest.Normalize(inspectResult.Descriptor.Digest.String())
@@ -789,7 +796,11 @@ func (s *ContainerRegistryService) inspectImageDigestViaDaemonInternal(ctx conte
 			fmt.Errorf("distribution inspect: anonymous access unauthorized; credential lookup failed: %w", errors.Join(err, credErr))
 	}
 
-	lastErr := err
+	return s.inspectImageDigestWithCredentialsInternal(ctx, dockerClient, normalizedRef, registryHost, credentials, err)
+}
+
+func (s *ContainerRegistryService) inspectImageDigestWithCredentialsInternal(ctx context.Context, dockerClient RegistryDaemonClient, normalizedRef, registryHost string, credentials []resolvedRegistryCredential, previousErr error) (*registryDigestResult, error) {
+	lastErr := previousErr
 	var lastCred resolvedRegistryCredential
 	for _, credential := range credentials {
 		lastCred = credential
@@ -798,7 +809,7 @@ func (s *ContainerRegistryService) inspectImageDigestViaDaemonInternal(ctx conte
 			return nil, fmt.Errorf("encode registry auth header for %s: %w", registryHost, encodeErr)
 		}
 
-		inspectResult, err = dockerClient.DistributionInspect(ctx, normalizedRef, client.DistributionInspectOptions{
+		inspectResult, err := dockerClient.DistributionInspect(ctx, normalizedRef, client.DistributionInspectOptions{
 			EncodedRegistryAuth: authHeader,
 		})
 		if err == nil {
@@ -830,6 +841,9 @@ func (s *ContainerRegistryService) inspectImageDigestViaDaemonInternal(ctx conte
 		partial.AuthMethod = "credential"
 		partial.AuthUsername = lastCred.Username
 		partial.UsedCredential = true
+	}
+	if lastErr == nil {
+		return partial, fmt.Errorf("distribution inspect failed for %s: no credentials available", normalizedRef)
 	}
 	return partial, fmt.Errorf("distribution inspect failed for %s: %w", normalizedRef, lastErr)
 }
@@ -1213,6 +1227,8 @@ func isUnauthorizedRegistryErrorInternal(err error) bool {
 		"no basic auth credentials",
 		"access denied",
 		"incorrect username or password",
+		"toomanyrequests",
+		"unauthenticated pull rate limit",
 		"status: 401",
 		"status 401",
 		"status: 403",
@@ -1226,6 +1242,10 @@ func isUnauthorizedRegistryErrorInternal(err error) bool {
 	}
 
 	return false
+}
+
+func isDockerHubRegistryInternal(registryHost string) bool {
+	return utilsregistry.NormalizeRegistryForComparison(registryHost) == "docker.io"
 }
 
 func isDistributionFallbackEligibleInternal(err error) bool {

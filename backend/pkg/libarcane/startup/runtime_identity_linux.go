@@ -18,7 +18,7 @@ func reexecWithRuntimeIdentityInternal(ctx context.Context, req runtimeIdentityR
 		return fmt.Errorf("resolve executable: %w", err)
 	}
 
-	groups := runtimeIdentitySupplementaryGroupsInternal(os.Getenv, resolveSocketGroupInternal)
+	groups := runtimeIdentitySupplementaryGroupsInternal(req.DockerHost, resolveSocketGroupInternal)
 
 	cmd := exec.CommandContext(ctx, executable, os.Args[1:]...) //nolint:gosec // re-executing our own binary with the same args under a different UID/GID
 	cmd.Env = os.Environ()

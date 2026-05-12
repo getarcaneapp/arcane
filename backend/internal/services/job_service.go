@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sort"
 	"time"
 
@@ -18,24 +19,24 @@ import (
 
 type JobRunner interface {
 	GetJob(jobID string) (schedulertypes.Job, bool)
+	RescheduleJob(ctx context.Context, job schedulertypes.Job) error
 }
 
 // JobService manages configuration for background job schedules.
 //
 // Intervals are persisted in the existing settings table as individual keys.
-// After updates, the SettingsService cache is reloaded and a callback can be
-// triggered so the running scheduler can reschedule active jobs.
+// After updates, the SettingsService cache is reloaded and active jobs are
+// rescheduled through the configured scheduler.
 //
 // NOTE: This is intentionally separate from SettingsService to keep the API
 // surface job-focused and to centralize schedule validation/rescheduling.
 type JobService struct {
-	db        *database.DB
-	settings  *SettingsService
-	cfg       *config.Config
-	scheduler JobRunner
-	location  *time.Location // Timezone for cron schedule calculations
-
-	OnJobSchedulesChanged func(ctx context.Context, changedKeys []string)
+	db           *database.DB
+	settings     *SettingsService
+	cfg          *config.Config
+	scheduler    JobRunner
+	lifecycleCtx context.Context
+	location     *time.Location // Timezone for cron schedule calculations
 }
 
 func NewJobService(db *database.DB, settings *SettingsService, cfg *config.Config) *JobService {
@@ -47,7 +48,11 @@ func NewJobService(db *database.DB, settings *SettingsService, cfg *config.Confi
 	}
 }
 
-func (s *JobService) SetScheduler(scheduler JobRunner) {
+func (s *JobService) SetScheduler(ctx context.Context, scheduler JobRunner) { //nolint:contextcheck // scheduler jobs must capture the app lifecycle context, not request contexts
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	s.lifecycleCtx = ctx
 	s.scheduler = scheduler
 }
 
@@ -135,12 +140,60 @@ func (s *JobService) UpdateJobSchedules(ctx context.Context, updates jobschedule
 			return jobschedule.Config{}, fmt.Errorf("failed to reload settings after job schedule update: %w", err)
 		}
 
-		if s.OnJobSchedulesChanged != nil {
-			s.OnJobSchedulesChanged(ctx, changedKeys)
-		}
+		s.RescheduleJobsForSettingKeys(ctx, changedKeys)
 	}
 
 	return s.GetJobSchedules(ctx), nil
+}
+
+func (s *JobService) RescheduleJobsForSettingKeys(ctx context.Context, changedKeys []string) {
+	if s == nil || s.scheduler == nil || len(changedKeys) == 0 {
+		return
+	}
+
+	changed := make(map[string]struct{}, len(changedKeys))
+	for _, key := range changedKeys {
+		changed[key] = struct{}{}
+	}
+
+	for jobID, jobMeta := range meta.GetAllJobMetadata() {
+		if !jobMetadataAffectedBySettingInternal(jobMeta, changed) {
+			continue
+		}
+		if s.cfg != nil && s.cfg.AgentMode && jobMeta.ManagerOnly {
+			slog.DebugContext(ctx, "Skipping manager-only job reschedule in agent mode", "job", jobID)
+			continue
+		}
+
+		job, ok := s.scheduler.GetJob(jobID)
+		if !ok {
+			slog.DebugContext(ctx, "Skipping reschedule for unregistered job", "job", jobID)
+			continue
+		}
+
+		slog.DebugContext(ctx, "Processing job setting change", "job", jobID, "settingsKey", jobMeta.SettingsKey, "enabledKey", jobMeta.EnabledKey)
+		rescheduleCtx := ctx //nolint:contextcheck // fallback only; lifecycle context is preferred so cron jobs outlive HTTP requests
+		if s.lifecycleCtx != nil {
+			rescheduleCtx = s.lifecycleCtx
+		}
+		if err := s.scheduler.RescheduleJob(rescheduleCtx, job); err != nil {
+			slog.WarnContext(ctx, "Failed to reschedule job", "job", jobID, "error", err)
+		}
+	}
+}
+
+func jobMetadataAffectedBySettingInternal(jobMeta meta.JobMetadata, changed map[string]struct{}) bool {
+	if jobMeta.SettingsKey != "" {
+		if _, ok := changed[jobMeta.SettingsKey]; ok {
+			return true
+		}
+	}
+	if jobMeta.EnabledKey != "" {
+		if _, ok := changed[jobMeta.EnabledKey]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *JobService) ListJobs(ctx context.Context) (*jobschedule.JobListResponse, error) {

@@ -33,6 +33,13 @@ func TestGenerate_EnvConfigIncludesTaggedFields(t *testing.T) {
 	assert.True(t, encryptionKey.SupportsFile)
 	assert.Contains(t, encryptionKey.Options, "file")
 
+	dockerConfig, ok := entries["DOCKER_CONFIG"]
+	require.True(t, ok)
+	assert.Equal(t, "DockerConfig", dockerConfig.Field)
+	assert.Equal(t, "string", dockerConfig.Type)
+	assert.Empty(t, dockerConfig.DefaultValue)
+	assert.Equal(t, "config.Config", dockerConfig.Source)
+
 	buildableUsername, ok := entries["AUTO_LOGIN_USERNAME"]
 	require.True(t, ok)
 	assert.True(t, buildableUsername.Conditional)
@@ -63,6 +70,12 @@ func TestGenerate_SettingEnvOverridesMatchModelMetadata(t *testing.T) {
 	require.True(t, ok)
 	assert.True(t, oidcSecret.Sensitive)
 	assert.Equal(t, "OIDC_CLIENT_SECRET", oidcSecret.Env)
+
+	oidcMobileRedirectURIs, ok := entries["oidcMobileRedirectUris"]
+	require.True(t, ok)
+	assert.Equal(t, "OIDC_MOBILE_REDIRECT_URIS", oidcMobileRedirectURIs.Env)
+	assert.Equal(t, "arcane-mobile://oidc-callback", oidcMobileRedirectURIs.DefaultValue)
+	assert.Equal(t, "authentication", oidcMobileRedirectURIs.Category)
 
 	legacyOIDC, ok := entries["authOidcConfig"]
 	require.True(t, ok)
@@ -198,6 +211,7 @@ var expectedEnvConfigVars = []string{
 	"DATABASE_URL",
 	"DIR_PERM",
 	"DOCKER_API_TIMEOUT",
+	"DOCKER_CONFIG",
 	"DOCKER_HOST",
 	"DOCKER_IMAGE_PULL_TIMEOUT",
 	"EDGE_AGENT",
@@ -230,15 +244,18 @@ var expectedEnvConfigVars = []string{
 	"OIDC_CLIENT_SECRET",
 	"OIDC_ENABLED",
 	"OIDC_ISSUER_URL",
+	"OIDC_MOBILE_REDIRECT_URIS",
 	"OIDC_PROVIDER_LOGO_URL",
 	"OIDC_PROVIDER_NAME",
 	"OIDC_SCOPES",
 	"OIDC_SKIP_TLS_VERIFY",
+	"PGID",
 	"PORT",
 	"PROJECTS_DIRECTORY",
 	"PROJECT_SCAN_MAX_DEPTH",
 	"PROJECT_SCAN_SKIP_DIRS",
 	"PROXY_REQUEST_TIMEOUT",
+	"PUID",
 	"REGISTRY_TIMEOUT",
 	"TLS_CERT_FILE",
 	"TLS_ENABLED",
@@ -303,6 +320,7 @@ var expectedSettingOverrideKeys = []string{
 	"oidcIssuerUrl",
 	"oidcJwksEndpoint",
 	"oidcMergeAccounts",
+	"oidcMobileRedirectUris",
 	"oidcProviderLogoUrl",
 	"oidcProviderName",
 	"oidcScopes",

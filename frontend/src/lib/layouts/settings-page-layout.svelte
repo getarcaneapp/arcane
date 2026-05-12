@@ -2,7 +2,6 @@
 	import type { Snippet } from 'svelte';
 	import { UiConfigDisabledTag } from '$lib/components/badges/index.js';
 	import StatCard from '$lib/components/stat-card.svelte';
-	import HeaderCard from '$lib/components/header-card.svelte';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { getContext } from 'svelte';
@@ -49,7 +48,7 @@
 </script>
 
 <div class={cn('px-2 py-4 pb-5 sm:px-6 sm:py-6 sm:pb-10 lg:px-8', className)}>
-	<HeaderCard>
+	<div class="border-border/50 border-b pb-4 sm:pb-6">
 		<div class="flex items-center justify-between gap-4">
 			<div class="flex flex-1 items-center gap-3 sm:gap-4">
 				{#if Icon}
@@ -60,7 +59,7 @@
 					</div>
 				{/if}
 				<div class="min-w-0">
-					<h1 class="text-xl font-bold tracking-tight sm:text-3xl">{title}</h1>
+					<h1 class="text-xl font-semibold tracking-tight sm:text-3xl">{title}</h1>
 					{#if description}
 						<p class="text-muted-foreground mt-1 hidden text-sm sm:block sm:text-base">{@html description}</p>
 					{/if}
@@ -188,7 +187,7 @@
 				{/if}
 			</div>
 		</div>
-	</HeaderCard>
+	</div>
 
 	<div class="mt-6 sm:mt-8">
 		{@render mainContent()}

@@ -71,6 +71,16 @@ type Info struct {
 	//
 	// Required: false
 	ReleaseURL string `json:"releaseUrl,omitempty"`
+
+	// ReleaseNotes is the markdown body of the latest GitHub release.
+	//
+	// Required: false
+	ReleaseNotes string `json:"releaseNotes,omitempty"`
+
+	// ReleasedAt is the ISO-8601 timestamp the latest release was published.
+	//
+	// Required: false
+	ReleasedAt string `json:"releasedAt,omitempty"`
 }
 
 // Check contains simplified version check information.

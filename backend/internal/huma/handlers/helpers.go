@@ -2,10 +2,14 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 
 	"github.com/danielgtaylor/huma/v2"
 	humamw "github.com/getarcaneapp/arcane/backend/internal/huma/middleware"
+	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/pkg/remenv"
 )
 
 // checkAdmin checks if the current user is an admin and returns a 403 error if not.
@@ -47,4 +51,55 @@ func buildPaginationParams(page, start, limit int, sortCol, sortDir, search stri
 		Filters: make(map[string]string),
 	}
 	return params
+}
+
+func proxyRemoteJSONInternal[T any](
+	ctx context.Context,
+	environmentService *services.EnvironmentService,
+	environmentID string,
+	method string,
+	path string,
+	requestBody any,
+) (*T, error) {
+	body, err := marshalRemoteRequestBodyInternal(requestBody)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("failed to marshal request body: " + err.Error())
+	}
+
+	var output T
+	if err := environmentService.ProxyJSONRequest(ctx, environmentID, method, path, body, &output); err != nil {
+		return nil, translateRemoteProxyErrorInternal(err)
+	}
+
+	return &output, nil
+}
+
+func marshalRemoteRequestBodyInternal(requestBody any) ([]byte, error) {
+	switch value := requestBody.(type) {
+	case nil:
+		return nil, nil
+	case []byte:
+		return value, nil
+	default:
+		return json.Marshal(value)
+	}
+}
+
+func translateRemoteProxyErrorInternal(err error) error {
+	var transportErr *remenv.TransportError
+	if errors.As(err, &transportErr) {
+		return huma.Error502BadGateway("failed to proxy request to environment: " + transportErr.Error())
+	}
+
+	var statusErr *remenv.StatusError
+	if errors.As(err, &statusErr) {
+		return huma.NewError(statusErr.StatusCode, "environment returned error: "+string(statusErr.Body), nil)
+	}
+
+	var decodeErr *remenv.DecodeError
+	if errors.As(err, &decodeErr) {
+		return huma.Error500InternalServerError("failed to decode environment response: " + decodeErr.Error())
+	}
+
+	return huma.Error500InternalServerError("failed to proxy request to environment: " + err.Error())
 }

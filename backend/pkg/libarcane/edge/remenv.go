@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/getarcaneapp/arcane/backend/pkg/remenv"
 	"github.com/gin-gonic/gin"
 )
 
@@ -46,10 +47,7 @@ func SetAuthHeader(req *http.Request, c *gin.Context) {
 }
 
 func SetAgentToken(req *http.Request, accessToken *string) {
-	if accessToken != nil && *accessToken != "" {
-		req.Header.Set(HeaderAgentToken, *accessToken)
-		req.Header.Set(HeaderAPIKey, *accessToken)
-	}
+	remenv.ApplyAgentTokenHeaders(req.Header, accessToken)
 }
 
 // BuildWebSocketHeaders constructs a header set for proxying WebSocket requests
@@ -77,10 +75,7 @@ func BuildWebSocketHeaders(c *gin.Context, accessToken *string) http.Header {
 	}
 
 	// Set agent token for remote environment authentication
-	if accessToken != nil && *accessToken != "" {
-		headers.Set(HeaderAgentToken, *accessToken)
-		headers.Set(HeaderAPIKey, *accessToken)
-	}
+	remenv.ApplyAgentTokenHeaders(headers, accessToken)
 
 	return headers
 }

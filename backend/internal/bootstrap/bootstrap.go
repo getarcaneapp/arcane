@@ -24,17 +24,23 @@ import (
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/startup"
 	"github.com/getarcaneapp/arcane/backend/pkg/scheduler"
 	httputils "github.com/getarcaneapp/arcane/backend/pkg/utils/httpx"
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
 	"google.golang.org/grpc"
 )
 
 func Bootstrap(ctx context.Context) error {
 	_ = godotenv.Load()
-	if err := startup.ApplyRequestedRuntimeIdentity(ctx); err != nil {
+	cfg := config.Load()
+	runtimeIdentityCfg := &startup.RuntimeIdentityConfig{
+		PUID:         cfg.PUID,
+		PGID:         cfg.PGID,
+		DockerHost:   cfg.DockerHost,
+		DockerConfig: cfg.DockerConfig,
+		DatabaseURL:  cfg.DatabaseURL,
+	}
+	if err := startup.ApplyRequestedRuntimeIdentity(ctx, runtimeIdentityCfg); err != nil {
 		return fmt.Errorf("apply runtime identity: %w", err)
 	}
-	cfg := config.Load()
+	cfg.DockerConfig = runtimeIdentityCfg.DockerConfig
 
 	SetupGinLogger(cfg)
 	ConfigureGormLogger(cfg)
@@ -75,7 +81,7 @@ func Bootstrap(ctx context.Context) error {
 
 	cronLocation := cfg.GetLocation()
 	scheduler := scheduler.NewJobScheduler(appCtx, cronLocation)
-	appServices.JobSchedule.SetScheduler(scheduler)
+	appServices.JobSchedule.SetScheduler(appCtx, scheduler)
 	registerJobs(appCtx, scheduler, appServices, cfg)
 
 	router, tunnelServer := setupRouter(appCtx, cfg, appServices)
@@ -439,7 +445,7 @@ func configureHTTPProtocolsInternal(useTLS bool, handler http.Handler) (http.Han
 	}
 
 	protocols.SetUnencryptedHTTP2(true)
-	return h2c.NewHandler(handler, &http2.Server{}), &protocols
+	return handler, &protocols
 }
 
 func newHTTPServerInternal(listenAddr string, handler http.Handler, protocols *http.Protocols, useTLS bool, edgeCfg *edge.Config) (*http.Server, error) {

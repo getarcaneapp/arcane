@@ -199,12 +199,20 @@
 		openConfirmDialog({
 			title: m.common_remove_title({ resource: m.resource_image() }),
 			message: m.images_remove_message(),
+			checkboxes: [
+				{
+					id: 'force',
+					label: m.images_remove_force_label(),
+					initialState: false
+				}
+			],
 			confirm: {
 				label: m.common_delete(),
 				destructive: true,
-				action: async () => {
+				action: async (checkboxStates) => {
+					const force = !!checkboxStates.force;
 					await handleApiResultWithCallbacks({
-						result: await tryCatch(imageService.deleteImage(id)),
+						result: await tryCatch(imageService.deleteImage(id, { force })),
 						message: m.images_remove_failed(),
 						setLoadingState: (value) => (isLoading.removing = value),
 						onSuccess: async () => {

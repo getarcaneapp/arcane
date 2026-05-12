@@ -223,7 +223,16 @@ func (h *OidcHandler) GetOidcAuthUrl(ctx context.Context, input *GetOidcAuthUrlI
 		appUrl = h.config.AppUrl
 	}
 	origin := httputils.GetClientBaseURL(input.Origin, input.XForwardedHost, input.XForwardedProto, input.Host, appUrl)
-	authUrl, stateCookieValue, err := h.oidcService.GenerateAuthURL(ctx, input.Body.RedirectUri, origin)
+
+	mobileRedirectURI := input.Body.MobileRedirectUri
+	if mobileRedirectURI != "" {
+		if err := h.oidcService.ValidateMobileRedirectURI(ctx, mobileRedirectURI); err != nil {
+			slog.WarnContext(ctx, "OIDC auth URL: rejected mobile redirect URI", "uri", mobileRedirectURI, "error", err)
+			return nil, huma.Error400BadRequest(err.Error())
+		}
+	}
+
+	authUrl, stateCookieValue, err := h.oidcService.GenerateAuthURL(ctx, input.Body.RedirectUri, origin, mobileRedirectURI)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.OidcAuthUrlGenerationError{Err: err}).Error())
 	}
@@ -256,8 +265,16 @@ func (h *OidcHandler) HandleOidcCallback(ctx context.Context, input *HandleOidcC
 	}
 	origin := httputils.GetClientBaseURL(input.Origin, input.XForwardedHost, input.XForwardedProto, input.Host, appUrl)
 
+	mobileRedirectURI := input.Body.MobileRedirectUri
+	if mobileRedirectURI != "" {
+		if err := h.oidcService.ValidateMobileRedirectURI(ctx, mobileRedirectURI); err != nil {
+			slog.WarnContext(ctx, "OIDC callback: rejected mobile redirect URI", "uri", mobileRedirectURI, "error", err)
+			return nil, huma.Error400BadRequest(err.Error())
+		}
+	}
+
 	// Process OIDC callback
-	userInfo, tokenResp, err := h.oidcService.HandleCallback(ctx, input.Body.Code, input.Body.State, input.OidcStateCookie, origin)
+	userInfo, tokenResp, err := h.oidcService.HandleCallback(ctx, input.Body.Code, input.Body.State, input.OidcStateCookie, origin, mobileRedirectURI)
 	if err != nil {
 		slog.WarnContext(ctx, "OIDC callback failed", "error", err, "origin", origin, "state_present", input.Body.State != "", "code_present", input.Body.Code != "")
 		return nil, huma.Error400BadRequest((&common.OidcCallbackError{Err: err}).Error())
@@ -269,16 +286,19 @@ func (h *OidcHandler) HandleOidcCallback(ctx context.Context, input *HandleOidcC
 		return nil, huma.Error500InternalServerError((&common.AuthFailedError{Err: err}).Error())
 	}
 
-	// Calculate cookie max age
-	maxAge := max(int(time.Until(tokenPair.ExpiresAt).Seconds()), 0)
-	maxAge += 60 // Add 60 seconds buffer for clock skew
-
-	// Build cookies: session token + clear state cookie
-	tokenCookie := cookie.BuildTokenCookieString(maxAge, tokenPair.AccessToken)
+	// Build cookies: clear the state cookie always; only set the session
+	// token cookie for browser flows (mobile clients use Bearer tokens from
+	// the JSON body and never consume the cookie).
 	clearStateCookie := cookie.BuildClearOidcStateCookieString(false)
+	setCookies := []string{clearStateCookie}
+	if mobileRedirectURI == "" {
+		maxAge := max(int(time.Until(tokenPair.ExpiresAt).Seconds()), 0)
+		maxAge += 60 // Add 60 seconds buffer for clock skew
+		setCookies = append(setCookies, cookie.BuildTokenCookieString(maxAge, tokenPair.AccessToken))
+	}
 
 	return &HandleOidcCallbackOutput{
-		SetCookie: []string{tokenCookie, clearStateCookie},
+		SetCookie: setCookies,
 		Body: auth.OidcCallbackResponse{
 			Success:      true,
 			Token:        tokenPair.AccessToken,

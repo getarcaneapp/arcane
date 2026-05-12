@@ -144,7 +144,6 @@ type ArcaneApiEndpoints struct {
 	AppImagesProfileEndpoint string
 	FontsMonoEndpoint        string
 	FontsSansEndpoint        string
-	FontsSerifEndpoint       string
 
 	// Customization
 	CustomizeCategoriesEndpoint string
@@ -308,7 +307,6 @@ var Endpoints = ArcaneApiEndpoints{ //nolint:gosec // static endpoint paths; aut
 	AppImagesProfileEndpoint: "/api/app-images/profile",
 	FontsMonoEndpoint:        "/api/fonts/mono",
 	FontsSansEndpoint:        "/api/fonts/sans",
-	FontsSerifEndpoint:       "/api/fonts/serif",
 
 	// Customization
 	CustomizeCategoriesEndpoint: "/api/customize/categories",

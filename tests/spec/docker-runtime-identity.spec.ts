@@ -40,6 +40,10 @@ function dockerPort(container: string) {
 	return mapping.split(':').at(-1)?.trim() || '';
 }
 
+function dockerLogs(container: string) {
+	return docker(['logs', container]);
+}
+
 function dockerFileStat(volumePath: string, filePath: string) {
 	return docker([
 		'run',
@@ -240,6 +244,14 @@ test.describe.serial('Docker runtime identity', () => {
 			const processStatuses = arcaneProcessStatuses(containerName);
 			expect(processStatuses.some((status) => status.startsWith('1:0:0:0:'))).toBe(true);
 			expect(processStatuses.some((status) => /^(?!1:)\d+:1:1001:1001:/.test(status))).toBe(true);
+
+			const dockerConfigStat = dockerExecAsUser(
+				containerName,
+				'1001:1001',
+				"stat -c '%u:%g' /app/data/.docker"
+			);
+			expect(dockerConfigStat).toBe('1001:1001');
+			expect(dockerLogs(containerName)).not.toContain('/root/.docker/config.json');
 		} finally {
 			cleanupContainer(containerName);
 			cleanupDir(dataDir);

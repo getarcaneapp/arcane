@@ -11,15 +11,9 @@ import {
 	StartIcon,
 	StopIcon
 } from '$lib/icons';
+import type { FilterOption } from './arcane-table.types.svelte';
 
-export interface FilterOption {
-	value: string | boolean;
-	label: string;
-	icon?: any;
-	dotClass?: string;
-}
-
-export const usageFilters = [
+export const usageFilters: FilterOption[] = [
 	{
 		value: true,
 		label: m.common_in_use(),
@@ -32,7 +26,7 @@ export const usageFilters = [
 	}
 ];
 
-export const imageUpdateFilters = [
+export const imageUpdateFilters: FilterOption[] = [
 	{
 		value: 'has_update',
 		label: m.images_has_updates(),
@@ -55,7 +49,7 @@ export const imageUpdateFilters = [
 	}
 ];
 
-export const severityFilters = [
+export const severityFilters: FilterOption[] = [
 	{
 		value: 'info',
 		label: m.events_info(),
@@ -78,7 +72,7 @@ export const severityFilters = [
 	}
 ];
 
-export const vulnerabilitySeverityFilters = [
+export const vulnerabilitySeverityFilters: FilterOption[] = [
 	{
 		value: 'CRITICAL',
 		label: m.vuln_severity_critical(),
@@ -106,7 +100,7 @@ export const vulnerabilitySeverityFilters = [
 	}
 ];
 
-export const templateTypeFilters = [
+export const templateTypeFilters: FilterOption[] = [
 	{
 		value: 'false',
 		label: m.templates_local(),
@@ -119,7 +113,7 @@ export const templateTypeFilters = [
 	}
 ];
 
-export const projectStatusFilters = [
+export const projectStatusFilters: FilterOption[] = [
 	{
 		value: 'running',
 		label: m.common_running(),

@@ -202,7 +202,7 @@
 				<div class="lg:col-span-2">
 					<div class="space-y-3">
 						<div class="flex min-h-[44px] items-start justify-between">
-							<span class="text-foreground text-base font-bold">{m.dashboard_meter_cpu()}</span>
+							<span class="text-foreground text-base font-semibold">{m.dashboard_meter_cpu()}</span>
 							<div class="text-right">
 								<div class="text-muted-foreground text-sm font-semibold">
 									{cpuUsagePercent.toFixed(2)}%
@@ -236,7 +236,7 @@
 				<div class="lg:col-span-2">
 					<div class="space-y-3">
 						<div class="flex min-h-[44px] items-start justify-between">
-							<span class="text-foreground text-base font-bold">{m.dashboard_meter_memory()}</span>
+							<span class="text-foreground text-base font-semibold">{m.dashboard_meter_memory()}</span>
 							<div class="text-right">
 								<div class="text-muted-foreground text-sm font-semibold">
 									{memoryUsagePercent.toFixed(1)}%
@@ -281,7 +281,7 @@
 							<div class="text-muted-foreground mb-2 text-xs font-semibold tracking-wide uppercase">
 								{m.containers_process_count()}
 							</div>
-							<div class="text-foreground text-2xl font-bold">{stats.pids_stats.current}</div>
+							<div class="text-foreground text-2xl font-semibold">{stats.pids_stats.current}</div>
 							{#if stats.pids_stats.limit && stats.pids_stats.limit < Number.MAX_SAFE_INTEGER}
 								<div class="text-muted-foreground mt-1 text-xs">
 									{m.common_limit()}: {stats.pids_stats.limit}
@@ -302,7 +302,7 @@
 								<div class="text-muted-foreground text-xs font-medium">
 									{m.containers_network_received()}
 								</div>
-								<div class="text-foreground text-sm font-bold">
+								<div class="text-foreground text-sm font-semibold">
 									{bytes.format(totalNetworkRx)}
 								</div>
 								<div class="text-muted-foreground text-xs">
@@ -314,7 +314,7 @@
 								<div class="text-muted-foreground text-xs font-medium">
 									{m.containers_network_transmitted()}
 								</div>
-								<div class="text-foreground text-sm font-bold">
+								<div class="text-foreground text-sm font-semibold">
 									{bytes.format(totalNetworkTx)}
 								</div>
 								<div class="text-muted-foreground text-xs">
@@ -338,7 +338,7 @@
 									<div class="text-muted-foreground text-xs font-medium">
 										{m.containers_block_io_read()}
 									</div>
-									<div class="text-foreground text-sm font-bold">
+									<div class="text-foreground text-sm font-semibold">
 										{bytes.format(blockIoRead)}
 									</div>
 								</div>
@@ -346,7 +346,7 @@
 									<div class="text-muted-foreground text-xs font-medium">
 										{m.containers_block_io_write()}
 									</div>
-									<div class="text-foreground text-sm font-bold">
+									<div class="text-foreground text-sm font-semibold">
 										{bytes.format(blockIoWrite)}
 									</div>
 								</div>

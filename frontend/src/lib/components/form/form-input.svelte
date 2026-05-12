@@ -67,7 +67,7 @@
 			<p class="text-muted-foreground mt-1 text-xs">{helpText}</p>
 		{/if}
 		{#if warningText}
-			<p class="text-destructive mt-1 text-xs font-bold">{warningText}</p>
+			<p class="text-destructive mt-1 text-xs font-semibold">{warningText}</p>
 		{/if}
 	</div>
 </div>

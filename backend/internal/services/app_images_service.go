@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/getarcaneapp/arcane/backend/pkg/utils/image"
+	"github.com/getarcaneapp/arcane/types/settings"
 )
 
 type ApplicationImagesService struct {
@@ -70,36 +71,30 @@ func (s *ApplicationImagesService) GetImageWithColor(name string, colorOverride 
 
 	// Apply dynamic color replacement for logo SVGs
 	if (name == "logo" || name == "logo-full") && mimeType == "image/svg+xml" {
-		data = s.applyAccentColorToSVG(data, colorOverride)
+		data = s.applyAccentColorToSVGInternal(data, colorOverride)
 	}
 
 	return data, mimeType, nil
 }
 
-func (s *ApplicationImagesService) applyAccentColorToSVG(svgData []byte, colorOverride string) []byte {
-	var accentColor string
-
-	// Use color override if provided, otherwise get from settings
-	if colorOverride != "" {
+func (s *ApplicationImagesService) applyAccentColorToSVGInternal(svgData []byte, colorOverride string) []byte {
+	accentColor := ""
+	if settings.SafeAccentColor.MatchString(colorOverride) {
 		accentColor = colorOverride
-	} else {
-		cfg := s.settingsService.GetSettingsConfig()
-		if cfg != nil {
-			accentColor = cfg.AccentColor.Value
+	} else if s.settingsService != nil {
+		if cfg := s.settingsService.GetSettingsConfig(); cfg != nil {
+			stored := cfg.AccentColor.Value
+			if stored != "" && stored != "default" && settings.SafeAccentColor.MatchString(stored) {
+				accentColor = stored
+			}
 		}
 	}
-
-	if accentColor == "" || accentColor == "default" {
-		accentColor = "oklch(0.606 0.25 292.717)" // Default purple
+	if accentColor == "" {
+		accentColor = settings.DefaultAccentColor
 	}
 
-	// Replace the hardcoded purple color with the accent color
-	// The SVG uses .st0{fill:#6d28d9} which we'll replace (case-insensitive)
 	svgStr := string(svgData)
-
-	// Replace hex color in style tag (handle both cases)
-	svgStr = strings.ReplaceAll(svgStr, "fill:#6D28D9", fmt.Sprintf("fill:%s", accentColor))
-	svgStr = strings.ReplaceAll(svgStr, "fill:#6d28d9", fmt.Sprintf("fill:%s", accentColor))
-
+	svgStr = strings.ReplaceAll(svgStr, "fill:#6D28D9", "fill:"+accentColor)
+	svgStr = strings.ReplaceAll(svgStr, "fill:#6d28d9", "fill:"+accentColor)
 	return []byte(svgStr)
 }

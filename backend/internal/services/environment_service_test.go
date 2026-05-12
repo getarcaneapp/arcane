@@ -24,6 +24,9 @@ import (
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
+	"github.com/getarcaneapp/arcane/types/environment"
+	"github.com/getarcaneapp/arcane/types/gitops"
+	"github.com/gorilla/websocket"
 )
 
 func setupEnvironmentServiceTestDB(t *testing.T) *database.DB {
@@ -255,6 +258,48 @@ func TestEnvironmentService_SyncRegistriesToEnvironment_IncludesECRFields(t *tes
 	createTestEnvironment(t, db, "env-1", server.URL, new("token-1"))
 
 	err := svc.SyncRegistriesToEnvironment(ctx, "env-1")
+	require.NoError(t, err)
+}
+
+func TestEnvironmentService_SyncRepositoriesToEnvironment_UsesAgentHeaders(t *testing.T) {
+	ctx := context.Background()
+	db := setupEnvironmentServiceTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.GitRepository{}))
+	svc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
+
+	description := "test repo"
+	createTestGitRepository(t, db, models.GitRepository{
+		BaseModel:   models.BaseModel{ID: "repo-1", CreatedAt: time.Now()},
+		Name:        "repo-1",
+		URL:         "https://github.com/getarcaneapp/arcane.git",
+		AuthType:    "http",
+		Username:    "arcane",
+		Token:       encryptSecretForTest(t, "repo-token"),
+		Enabled:     true,
+		Description: &description,
+	})
+
+	accessToken := "token-1"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, http.MethodPost, r.Method)
+		require.Equal(t, "/api/git-repositories/sync", r.URL.Path)
+		require.Equal(t, accessToken, r.Header.Get("X-API-Key"))
+		require.Equal(t, accessToken, r.Header.Get("X-Arcane-Agent-Token"))
+
+		var syncReq gitops.RepositorySyncRequest
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&syncReq))
+		require.Len(t, syncReq.Repositories, 1)
+		require.Equal(t, "repo-token", syncReq.Repositories[0].Token)
+		require.Equal(t, "arcane", syncReq.Repositories[0].Username)
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"data":{"message":"ok"}}`))
+	}))
+	defer server.Close()
+
+	createTestEnvironment(t, db, "env-1", server.URL, &accessToken)
+
+	err := svc.SyncRepositoriesToEnvironment(ctx, "env-1")
 	require.NoError(t, err)
 }
 
@@ -561,6 +606,67 @@ func TestEnvironmentService_EnsureSwarmNodeAgentEnvironment_CreatesHiddenChildAn
 	require.Len(t, apiKeysAfterReuse, 1)
 }
 
+// TestEnvironmentService_EnsureSwarmNodeAgentEnvironment_TokenResolvesEndToEnd
+// pins the agent token round-trip: the token returned from the swarm node
+// agent provisioning flow must resolve back to the same environment via
+// ResolveEdgeEnvironmentByToken, and rotation must invalidate the previous
+// token while making the new one resolvable. This is the end-to-end gap that
+// would have caught the v1.18.1 "invalid agent token" bug if any silent
+// transformation (trim, encode, hash) were ever introduced between the
+// command-generation path and the poll-validation path.
+func TestEnvironmentService_EnsureSwarmNodeAgentEnvironment_TokenResolvesEndToEnd(t *testing.T) {
+	ctx := context.Background()
+	db := setupEnvironmentServiceTestDB(t)
+	userService := NewUserService(db)
+	apiKeyService := NewApiKeyService(db, userService)
+	svc := NewEnvironmentService(db, nil, nil, nil, nil, apiKeyService)
+	user := createTestEnvironmentServiceUser(t, ctx, userService, "swarm-resolve-admin")
+
+	createdEnv, createdToken, err := svc.EnsureSwarmNodeAgentEnvironment(
+		ctx,
+		"manager-env-resolve",
+		"node-resolve-1234567890",
+		"resolve-host",
+		user.ID,
+		user.Username,
+		false,
+	)
+	require.NoError(t, err)
+	require.NotEmpty(t, createdToken)
+
+	resolvedID, err := svc.ResolveEdgeEnvironmentByToken(ctx, createdToken)
+	require.NoError(t, err)
+	require.Equal(t, createdEnv.ID, resolvedID)
+
+	// Whitespace normalization on the wire (e.g. a proxy adding a trailing
+	// newline) must still resolve.
+	resolvedID, err = svc.ResolveEdgeEnvironmentByToken(ctx, "  "+createdToken+"\n")
+	require.NoError(t, err)
+	require.Equal(t, createdEnv.ID, resolvedID)
+
+	// Rotate the token: the new token must resolve and the old token must not.
+	rotatedEnv, rotatedToken, err := svc.EnsureSwarmNodeAgentEnvironment(
+		ctx,
+		"manager-env-resolve",
+		"node-resolve-1234567890",
+		"resolve-host",
+		user.ID,
+		user.Username,
+		true,
+	)
+	require.NoError(t, err)
+	require.Equal(t, createdEnv.ID, rotatedEnv.ID)
+	require.NotEqual(t, createdToken, rotatedToken)
+
+	resolvedID, err = svc.ResolveEdgeEnvironmentByToken(ctx, rotatedToken)
+	require.NoError(t, err)
+	require.Equal(t, createdEnv.ID, resolvedID)
+
+	_, err = svc.ResolveEdgeEnvironmentByToken(ctx, createdToken)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid agent token")
+}
+
 func TestEnvironmentService_ListMethods_ExcludeHiddenEnvironments(t *testing.T) {
 	ctx := context.Background()
 	db := setupEnvironmentServiceTestDB(t)
@@ -594,6 +700,128 @@ func TestEnvironmentService_ListMethods_ExcludeHiddenEnvironments(t *testing.T) 
 	require.NoError(t, err)
 	require.Len(t, remoteEnvironments, 1)
 	require.Equal(t, "env-visible", remoteEnvironments[0].ID)
+}
+
+func TestEnvironmentService_ListEnvironmentsPaginated_FiltersByRuntimeType(t *testing.T) {
+	ctx := context.Background()
+	db := setupEnvironmentServiceTestDB(t)
+	svc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
+
+	now := time.Now()
+	envs := []models.Environment{
+		{
+			BaseModel: models.BaseModel{ID: "0", CreatedAt: now, UpdatedAt: &now},
+			Name:      "Local",
+			ApiUrl:    "http://localhost:3552",
+			Status:    string(models.EnvironmentStatusOnline),
+			Enabled:   true,
+		},
+		{
+			BaseModel: models.BaseModel{ID: "env-edge", CreatedAt: now, UpdatedAt: &now},
+			Name:      "Edge",
+			ApiUrl:    "edge://agent",
+			Status:    string(models.EnvironmentStatusOffline),
+			Enabled:   true,
+			IsEdge:    true,
+		},
+		{
+			BaseModel: models.BaseModel{ID: "env-grpc", CreatedAt: now, UpdatedAt: &now},
+			Name:      "gRPC",
+			ApiUrl:    "edge://grpc",
+			Status:    string(models.EnvironmentStatusOffline),
+			Enabled:   true,
+			IsEdge:    true,
+		},
+		{
+			BaseModel: models.BaseModel{ID: "env-websocket", CreatedAt: now, UpdatedAt: &now},
+			Name:      "WebSocket",
+			ApiUrl:    "edge://websocket",
+			Status:    string(models.EnvironmentStatusOffline),
+			Enabled:   true,
+			IsEdge:    true,
+		},
+		{
+			BaseModel: models.BaseModel{ID: "env-polling", CreatedAt: now, UpdatedAt: &now},
+			Name:      "Polling",
+			ApiUrl:    "edge://polling",
+			Status:    string(models.EnvironmentStatusOffline),
+			Enabled:   true,
+			IsEdge:    true,
+		},
+	}
+	require.NoError(t, db.WithContext(ctx).Create(&envs).Error)
+
+	edge.GetRegistry().Unregister("env-grpc")
+	edge.GetRegistry().Unregister("env-websocket")
+	edge.GetRegistry().Unregister("env-polling")
+	t.Cleanup(func() {
+		edge.GetRegistry().Unregister("env-grpc")
+		edge.GetRegistry().Unregister("env-websocket")
+		edge.GetRegistry().Unregister("env-polling")
+	})
+
+	grpcTunnel := edge.NewAgentTunnelWithConn("env-grpc", edge.NewGRPCManagerTunnelConn(nil))
+	edge.GetRegistry().Register("env-grpc", grpcTunnel)
+
+	websocketTunnel, closeWebSocketTunnel := newTestWebSocketTunnelInternal(t, "env-websocket")
+	defer closeWebSocketTunnel()
+	edge.GetRegistry().Register("env-websocket", websocketTunnel)
+
+	edge.GetPollRuntimeRegistry().Update("env-polling", edge.DefaultTunnelPollInterval, time.Now())
+
+	tests := []struct {
+		name       string
+		typeFilter string
+		wantIDs    []string
+	}{
+		{name: "http", typeFilter: "http", wantIDs: []string{"0"}},
+		{name: "edge", typeFilter: "edge", wantIDs: []string{"env-edge"}},
+		{name: "grpc", typeFilter: "grpc", wantIDs: []string{"env-grpc"}},
+		{name: "websocket", typeFilter: "websocket", wantIDs: []string{"env-websocket"}},
+		{name: "polling", typeFilter: "polling", wantIDs: []string{"env-polling"}},
+		{name: "multiple", typeFilter: "http,polling", wantIDs: []string{"0", "env-polling"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			listedEnvironments, _, err := svc.ListEnvironmentsPaginated(ctx, pagination.QueryParams{
+				PaginationParams: pagination.PaginationParams{Start: 0, Limit: 20},
+				Filters:          map[string]string{"type": tt.typeFilter},
+			})
+			require.NoError(t, err)
+			require.ElementsMatch(t, tt.wantIDs, environmentIDsInternal(listedEnvironments))
+		})
+	}
+}
+
+func environmentIDsInternal(environments []environment.Environment) []string {
+	ids := make([]string, 0, len(environments))
+	for _, env := range environments {
+		ids = append(ids, env.ID)
+	}
+	return ids
+}
+
+func newTestWebSocketTunnelInternal(t *testing.T, envID string) (*edge.AgentTunnel, func()) {
+	t.Helper()
+
+	connCh := make(chan *websocket.Conn, 1)
+	upgrader := websocket.Upgrader{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		require.NoError(t, err)
+		connCh <- conn
+	}))
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+	clientConn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	require.NoError(t, err)
+
+	serverConn := <-connCh
+	return edge.NewAgentTunnelWithConn(envID, edge.NewTunnelConn(serverConn)), func() {
+		_ = clientConn.Close()
+		server.Close()
+	}
 }
 
 func TestEnvironmentService_GenerateEdgeDeploymentSnippets_WithAutoGeneratedMTLS(t *testing.T) {

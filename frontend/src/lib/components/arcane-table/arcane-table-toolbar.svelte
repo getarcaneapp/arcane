@@ -7,7 +7,6 @@
 		usageFilters,
 		severityFilters,
 		vulnerabilitySeverityFilters,
-		templateTypeFilters,
 		projectStatusFilters
 	} from './data.js';
 	import { debounced } from '$lib/utils/utils.js';
@@ -16,7 +15,7 @@
 	import type { Snippet } from 'svelte';
 	import { cn } from '$lib/utils';
 	import { ResetIcon, SearchIcon, FilterIcon } from '$lib/icons';
-	import type { BulkAction } from './arcane-table.types.svelte';
+	import type { BulkAction, FilterOption } from './arcane-table.types.svelte';
 	import * as Popover from '$lib/components/ui/popover/index.js';
 
 	let {
@@ -64,6 +63,9 @@
 		table.getAllColumns().some((col) => col.id === 'serviceCount') ? table.getColumn('serviceCount') : undefined
 	);
 	const typeColumn = $derived(table.getAllColumns().some((col) => col.id === 'type') ? table.getColumn('type') : undefined);
+	const typeColumnFilterOptions = $derived(
+		(typeColumn?.columnDef.meta as { filterOptions?: FilterOption[] } | undefined)?.filterOptions ?? []
+	);
 
 	const debouncedSetGlobal = debounced((v: string) => table.setGlobalFilter(v), 300);
 	const imageNameFilterOptionsFormatted = $derived(imageNameFilterOptions.map((name) => ({ label: name, value: name })));
@@ -73,7 +75,7 @@
 	// Check if any filter columns exist
 	const hasFilterColumns = $derived(
 		!withoutFilters &&
-			(!!(typeColumn && !severityColumn && !vulnSeverityColumn) ||
+			(!!(typeColumn && typeColumnFilterOptions.length > 0 && !severityColumn && !vulnSeverityColumn) ||
 				!!usageColumn ||
 				!!updatesColumn ||
 				!!severityColumn ||
@@ -84,8 +86,8 @@
 	const activeFilterCount = $derived(table.getState().columnFilters.length);
 </script>
 
-<div class={cn('flex items-center justify-between gap-2 px-3 py-2.5', className)}>
-	<div class="flex min-w-0 flex-1 items-center gap-2 md:flex-none">
+<div class={cn('flex flex-wrap items-center gap-2 px-3 py-2.5', className)}>
+	<div class="order-1 flex min-w-0 flex-1 items-center gap-2 md:flex-none">
 		<div class="relative min-w-0 flex-1 md:w-64 md:flex-none">
 			<SearchIcon class="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
 			<Input
@@ -102,8 +104,8 @@
 
 		{#if hasFilterColumns}
 			<div class="hidden items-center gap-1.5 md:flex">
-				{#if typeColumn && !severityColumn && !vulnSeverityColumn}
-					<DataTableFacetedFilter column={typeColumn} title={m.common_type()} options={templateTypeFilters} />
+				{#if typeColumn && typeColumnFilterOptions.length > 0 && !severityColumn && !vulnSeverityColumn}
+					<DataTableFacetedFilter column={typeColumn} title={m.common_type()} options={typeColumnFilterOptions} />
 				{/if}
 				{#if usageColumn}
 					<DataTableFacetedFilter column={usageColumn} title={m.common_usage()} options={usageFilters} />
@@ -146,8 +148,8 @@
 					</Popover.Trigger>
 					<Popover.Content align="end" class="w-56 p-2">
 						<div class="flex flex-col gap-1.5">
-							{#if typeColumn && !severityColumn && !vulnSeverityColumn}
-								<DataTableFacetedFilter column={typeColumn} title={m.common_type()} options={templateTypeFilters} />
+							{#if typeColumn && typeColumnFilterOptions.length > 0 && !severityColumn && !vulnSeverityColumn}
+								<DataTableFacetedFilter column={typeColumn} title={m.common_type()} options={typeColumnFilterOptions} />
 							{/if}
 							{#if usageColumn}
 								<DataTableFacetedFilter column={usageColumn} title={m.common_usage()} options={usageFilters} />
@@ -196,9 +198,9 @@
 		{/if}
 	</div>
 
-	<div class="flex shrink-0 items-center gap-2">
+	<div class="contents md:order-2 md:ml-auto md:flex md:shrink-0 md:items-center md:gap-2">
 		{#if hasSelection && hasBulkActions}
-			<div class="flex items-center gap-1.5">
+			<div class="order-2 flex shrink-0 items-center gap-1.5">
 				{#each bulkActions as bulkAction (bulkAction.id)}
 					{@const actionType = bulkAction.action === 'up' ? 'start' : bulkAction.action === 'down' ? 'stop' : bulkAction.action}
 					<ArcaneButton
@@ -217,13 +219,15 @@
 		{/if}
 
 		{#if customToolbarActions}
-			{@render customToolbarActions()}
+			<div class="order-4 flex w-full items-center justify-end md:order-none md:w-auto md:shrink-0">
+				{@render customToolbarActions()}
+			</div>
 		{/if}
 
-		<div class="hidden md:block">
+		<div class="order-3 hidden shrink-0 md:order-none md:block">
 			<DataTableViewOptions {table} {customViewOptions} />
 		</div>
-		<div class="md:hidden">
+		<div class="order-3 shrink-0 md:hidden">
 			{#if mobileFields.length > 0 && onToggleMobileField}
 				<DataTableViewOptions fields={mobileFields} onToggleField={onToggleMobileField} {customViewOptions} />
 			{:else}

@@ -769,6 +769,8 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 
 	resp.CreatedAt = proj.CreatedAt.Format(time.RFC3339)
 	resp.UpdatedAt = proj.UpdatedAt.Format(time.RFC3339)
+	resp.IsArchived = proj.IsArchived
+	resp.ArchivedAt = proj.ArchivedAt
 	resp.ComposeContent = composeContent
 	resp.EnvContent = effectiveEnvContent
 	resp.HasBuildDirective = false
@@ -1442,27 +1444,35 @@ func (s *ProjectService) incrementStatusCounts(status models.ProjectStatus, runn
 	}
 }
 
-func (s *ProjectService) GetProjectStatusCounts(ctx context.Context) (folderCount, runningProjects, stoppedProjects, totalProjects int, err error) {
+func (s *ProjectService) GetProjectStatusCounts(ctx context.Context) (folderCount, runningProjects, stoppedProjects, totalProjects, archivedProjects int, err error) {
 	folderCount, _ = s.countProjectFolders(ctx)
 
 	var projectsList []models.Project
 	if err := s.db.WithContext(ctx).Find(&projectsList).Error; err != nil {
-		return folderCount, 0, 0, 0, fmt.Errorf("failed to list projects: %w", err)
+		return folderCount, 0, 0, 0, 0, fmt.Errorf("failed to list projects: %w", err)
 	}
 
 	totalProjects = len(projectsList)
 	runningProjects = 0
 	stoppedProjects = 0
+	activeProjects := make([]models.Project, 0, len(projectsList))
+	for _, p := range projectsList {
+		if p.IsArchived {
+			archivedProjects++
+			continue
+		}
+		activeProjects = append(activeProjects, p)
+	}
 
 	// 1. Fetch all compose containers
 	containers, err := projects.ListGlobalComposeContainers(ctx)
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to list global compose containers for counts", "error", err)
 		// Fallback to DB status
-		for _, p := range projectsList {
+		for _, p := range activeProjects {
 			s.incrementStatusCounts(p.Status, &runningProjects, &stoppedProjects)
 		}
-		return folderCount, runningProjects, stoppedProjects, totalProjects, nil
+		return folderCount, runningProjects, stoppedProjects, totalProjects, archivedProjects, nil
 	}
 
 	// 2. Group by project
@@ -1475,7 +1485,7 @@ func (s *ProjectService) GetProjectStatusCounts(ctx context.Context) (folderCoun
 	}
 
 	// 3. Calculate status for each project
-	for _, p := range projectsList {
+	for _, p := range activeProjects {
 		projectContainers := lookupProjectContainers(p, containersByProject)
 
 		// Convert to ProjectServiceInfo (minimal needed for calculateProjectStatus)
@@ -1496,17 +1506,100 @@ func (s *ProjectService) GetProjectStatusCounts(ctx context.Context) (folderCoun
 		s.incrementStatusCounts(status, &runningProjects, &stoppedProjects)
 	}
 
-	return folderCount, runningProjects, stoppedProjects, totalProjects, nil
+	return folderCount, runningProjects, stoppedProjects, totalProjects, archivedProjects, nil
 }
 
 // End Helpers
 
 // Project Actions
 
+func ensureProjectMutableInternal(proj *models.Project) error {
+	if proj != nil && proj.IsArchived {
+		return &common.ProjectArchivedError{}
+	}
+	return nil
+}
+
+func isProjectArchiveBlockedInternal(proj *models.Project) bool {
+	if proj == nil {
+		return false
+	}
+	if proj.RunningCount > 0 {
+		return true
+	}
+	switch proj.Status {
+	case models.ProjectStatusRunning, models.ProjectStatusPartiallyRunning, models.ProjectStatusDeploying, models.ProjectStatusRestarting:
+		return true
+	case models.ProjectStatusStopped, models.ProjectStatusUnknown, models.ProjectStatusStopping:
+		return false
+	default:
+		return false
+	}
+}
+
+func (s *ProjectService) ArchiveProject(ctx context.Context, projectID string, user models.User) error {
+	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
+	if err != nil {
+		return err
+	}
+	if proj.IsArchived {
+		return nil
+	}
+	if isProjectArchiveBlockedInternal(proj) {
+		return &common.ProjectMustBeStoppedError{}
+	}
+
+	now := time.Now()
+	if err := s.db.WithContext(ctx).Model(&models.Project{}).Where("id = ?", projectID).Updates(map[string]any{
+		"is_archived": true,
+		"archived_at": now,
+	}).Error; err != nil {
+		return fmt.Errorf("failed to archive project: %w", err)
+	}
+
+	metadata := models.JSON{"action": "archived", "projectID": projectID, "projectName": proj.Name}
+	if s.eventService != nil {
+		if logErr := s.eventService.LogProjectEvent(ctx, models.EventTypeProjectUpdate, projectID, proj.Name, user.ID, user.Username, "0", metadata); logErr != nil {
+			slog.ErrorContext(ctx, "could not log project archive action", "error", logErr)
+		}
+	}
+
+	return nil
+}
+
+func (s *ProjectService) UnarchiveProject(ctx context.Context, projectID string, user models.User) error {
+	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
+	if err != nil {
+		return err
+	}
+	if !proj.IsArchived {
+		return nil
+	}
+
+	if err := s.db.WithContext(ctx).Model(&models.Project{}).Where("id = ?", projectID).Updates(map[string]any{
+		"is_archived": false,
+		"archived_at": gorm.Expr("NULL"),
+	}).Error; err != nil {
+		return fmt.Errorf("failed to unarchive project: %w", err)
+	}
+
+	metadata := models.JSON{"action": "unarchived", "projectID": projectID, "projectName": proj.Name}
+	if s.eventService != nil {
+		if logErr := s.eventService.LogProjectEvent(ctx, models.EventTypeProjectUpdate, projectID, proj.Name, user.ID, user.Username, "0", metadata); logErr != nil {
+			slog.ErrorContext(ctx, "could not log project unarchive action", "error", logErr)
+		}
+	}
+
+	return nil
+}
+
 func (s *ProjectService) DeployProject(ctx context.Context, projectID string, user models.User, options *project.DeployOptions) error {
 	projectFromDb, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
 		return fmt.Errorf("failed to get project: %w", err)
+	}
+	if err := ensureProjectMutableInternal(projectFromDb); err != nil {
+		return err
 	}
 
 	resolvedPullPolicy := ""
@@ -1572,6 +1665,9 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 func (s *ProjectService) DownProject(ctx context.Context, projectID string, user models.User) error {
 	projectFromDb, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
+		return err
+	}
+	if err := ensureProjectMutableInternal(projectFromDb); err != nil {
 		return err
 	}
 
@@ -1702,6 +1798,9 @@ func (s *ProjectService) RedeployProject(ctx context.Context, projectID string, 
 	if err != nil {
 		return err
 	}
+	if err := ensureProjectMutableInternal(proj); err != nil {
+		return err
+	}
 
 	disabled, err := s.projectRedeployDisabledInternal(ctx, *proj)
 	if err != nil {
@@ -1753,6 +1852,9 @@ func (s *ProjectService) PullProjectImages(ctx context.Context, projectID string
 	if err != nil {
 		return err
 	}
+	if err := ensureProjectMutableInternal(proj); err != nil {
+		return err
+	}
 
 	compProj, _, lerr := s.loadComposeProjectForProjectInternal(ctx, proj)
 	if lerr != nil {
@@ -1784,6 +1886,9 @@ func (s *ProjectService) BuildProjectServices(ctx context.Context, projectID str
 	if err != nil {
 		return err
 	}
+	if err := ensureProjectMutableInternal(projectFromDb); err != nil {
+		return err
+	}
 
 	project, _, derr := s.loadComposeProjectForProjectInternal(ctx, projectFromDb)
 	if derr != nil {
@@ -1801,6 +1906,9 @@ func (s *ProjectService) BuildProjectServices(ctx context.Context, projectID str
 func (s *ProjectService) EnsureProjectImagesPresent(ctx context.Context, projectID string, progressWriter io.Writer, user models.User, credentials []containerregistry.Credential) error {
 	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
+		return err
+	}
+	if err := ensureProjectMutableInternal(proj); err != nil {
 		return err
 	}
 
@@ -2391,6 +2499,9 @@ func (s *ProjectService) RestartProject(ctx context.Context, projectID string, u
 	if err != nil {
 		return err
 	}
+	if err := ensureProjectMutableInternal(proj); err != nil {
+		return err
+	}
 
 	if err := s.updateProjectStatusInternal(ctx, projectID, models.ProjectStatusRestarting); err != nil {
 		return fmt.Errorf("failed to update project status to restarting: %w", err)
@@ -2435,6 +2546,9 @@ func (s *ProjectService) RestartProject(ctx context.Context, projectID string, u
 func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, name *string, composeContent, envContent *string, user models.User) (*models.Project, error) {
 	proj, projectsDirectory, err := s.getProjectForUpdate(ctx, projectID)
 	if err != nil {
+		return nil, err
+	}
+	if err := ensureProjectMutableInternal(&proj); err != nil {
 		return nil, err
 	}
 
@@ -2483,6 +2597,9 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 func (s *ProjectService) ApplyGitSyncProjectFiles(ctx context.Context, projectID string, composeContent string, gitEnvContent *string, user models.User) (*models.Project, error) {
 	proj, projectsDirectory, err := s.getProjectForUpdate(ctx, projectID)
 	if err != nil {
+		return nil, err
+	}
+	if err := ensureProjectMutableInternal(&proj); err != nil {
 		return nil, err
 	}
 
@@ -3082,6 +3199,9 @@ func (s *ProjectService) UpdateProjectIncludeFile(ctx context.Context, projectID
 	if err != nil {
 		return err
 	}
+	if err := ensureProjectMutableInternal(proj); err != nil {
+		return err
+	}
 
 	// Normalize and persist project path to ensure include writes occur under projects root
 	if err := s.ensureProjectPathUnderRoot(ctx, proj, true); err != nil {
@@ -3204,10 +3324,13 @@ func (s *ProjectService) ListProjects(ctx context.Context, params pagination.Que
 	query := s.db.WithContext(ctx).Model(&models.Project{})
 	statusFilter := ""
 	updatesFilter := ""
+	archivedFilter := ""
 	if params.Filters != nil {
 		statusFilter = strings.TrimSpace(params.Filters["status"])
 		updatesFilter = strings.TrimSpace(params.Filters["updates"])
+		archivedFilter = strings.TrimSpace(params.Filters["archived"])
 	}
+	query = applyProjectArchivedDBFilterInternal(query, archivedFilter)
 	if statusFilter != "" || updatesFilter != "" {
 		return s.listProjectsWithDerivedFiltersInternal(ctx, params, query)
 	}
@@ -3239,6 +3362,17 @@ func (s *ProjectService) ListProjects(ctx context.Context, params pagination.Que
 		"result_count", len(result))
 
 	return result, paginationResp, nil
+}
+
+func applyProjectArchivedDBFilterInternal(query *gorm.DB, filterValue string) *gorm.DB {
+	switch strings.ToLower(strings.TrimSpace(filterValue)) {
+	case "true":
+		return query.Where("is_archived = ?", true)
+	case "all":
+		return query
+	default:
+		return query.Where("is_archived = ?", false)
+	}
 }
 
 func (s *ProjectService) listProjectsWithDerivedFiltersInternal(
@@ -3286,8 +3420,269 @@ func (s *ProjectService) filterProjectsWithDerivedFiltersInternal(
 
 	items := s.fetchProjectStatusConcurrently(ctx, projectsArray)
 	s.enrichProjectsWithUpdateInfoInternal(ctx, projectsArray, items)
+	items = s.appendDiscoveredComposeProjectUpdatesInternal(ctx, params, projectsArray, items)
 
 	return pagination.SearchOrderAndPaginate(items, params, s.buildProjectDerivedPaginationConfigInternal()), nil
+}
+
+func (s *ProjectService) appendDiscoveredComposeProjectUpdatesInternal(
+	ctx context.Context,
+	params pagination.QueryParams,
+	projectsArray []models.Project,
+	items []project.Details,
+) []project.Details {
+	if !shouldIncludeDiscoveredComposeProjectUpdatesInternal(params) {
+		return items
+	}
+
+	composeContainers, err := projects.ListGlobalComposeContainers(ctx)
+	if err != nil {
+		slog.WarnContext(ctx, "failed to list compose containers for project update rows", "error", err)
+		return items
+	}
+
+	knownProjectNames := s.buildKnownComposeProjectNameSetInternal(ctx, projectsArray)
+	discovered := buildDiscoveredComposeProjectUpdateRowsInternal(ctx, composeContainers, knownProjectNames, s.imageService)
+	if len(discovered) == 0 {
+		return items
+	}
+
+	return append(items, discovered...)
+}
+
+func shouldIncludeDiscoveredComposeProjectUpdatesInternal(params pagination.QueryParams) bool {
+	if params.Filters == nil {
+		return false
+	}
+
+	return strings.EqualFold(strings.TrimSpace(params.Filters["updates"]), "has_update")
+}
+
+func (s *ProjectService) buildKnownComposeProjectNameSetInternal(ctx context.Context, projectsArray []models.Project) map[string]struct{} {
+	known := make(map[string]struct{}, len(projectsArray)*2)
+	for _, proj := range projectsArray {
+		addKnownComposeProjectNameInternal(known, proj.Name)
+		if proj.ComposeProjectName != nil {
+			addKnownComposeProjectNameInternal(known, *proj.ComposeProjectName)
+		}
+	}
+
+	if s.db == nil {
+		return known
+	}
+
+	var allProjects []models.Project
+	if err := s.db.WithContext(ctx).Select("name", "compose_project_name").Find(&allProjects).Error; err != nil {
+		slog.WarnContext(ctx, "failed to load known project names for compose update discovery", "error", err)
+		return known
+	}
+
+	for _, proj := range allProjects {
+		addKnownComposeProjectNameInternal(known, proj.Name)
+		if proj.ComposeProjectName != nil {
+			addKnownComposeProjectNameInternal(known, *proj.ComposeProjectName)
+		}
+	}
+
+	return known
+}
+
+func addKnownComposeProjectNameInternal(known map[string]struct{}, name string) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return
+	}
+
+	known[name] = struct{}{}
+	if normalized := normalizeComposeProjectName(name); normalized != "" {
+		known[normalized] = struct{}{}
+	}
+}
+
+func buildDiscoveredComposeProjectUpdateRowsInternal(
+	ctx context.Context,
+	composeContainers []container.Summary,
+	knownProjectNames map[string]struct{},
+	imageService *ImageService,
+) []project.Details {
+	containersByProject := make(map[string][]container.Summary)
+	for _, c := range composeContainers {
+		projectName := strings.TrimSpace(c.Labels["com.docker.compose.project"])
+		if projectName == "" {
+			continue
+		}
+		if _, exists := knownProjectNames[projectName]; exists {
+			continue
+		}
+		if normalized := normalizeComposeProjectName(projectName); normalized != "" {
+			if _, exists := knownProjectNames[normalized]; exists {
+				continue
+			}
+		}
+
+		containersByProject[projectName] = append(containersByProject[projectName], c)
+	}
+
+	if len(containersByProject) == 0 {
+		return nil
+	}
+
+	updateInfoByRef := getRuntimeContainerUpdateInfoByRefInternal(ctx, composeContainers, imageService)
+	rows := make([]project.Details, 0, len(containersByProject))
+	for projectName, projectContainers := range containersByProject {
+		runtimeServices := buildDiscoveredRuntimeServicesInternal(projectContainers)
+		imageRefs := buildProjectImageRefsFromRuntimeServicesInternal(runtimeServices)
+		updateInfo := buildProjectUpdateInfoSummaryInternal(imageRefs, updateInfoByRef)
+		if updateInfo == nil || !updateInfo.HasUpdate {
+			continue
+		}
+
+		runningCount := 0
+		for _, runtimeService := range runtimeServices {
+			if runtimeService.Status == "running" {
+				runningCount++
+			}
+		}
+
+		lastCheckedAt := ""
+		if updateInfo.LastCheckedAt != nil {
+			lastCheckedAt = updateInfo.LastCheckedAt.Format(time.RFC3339)
+		}
+
+		rows = append(rows, project.Details{
+			ID:              "compose:" + projectName,
+			Name:            projectName,
+			Path:            "",
+			Status:          resolveDiscoveredProjectStatusInternal(len(runtimeServices), runningCount),
+			ServiceCount:    len(runtimeServices),
+			RunningCount:    runningCount,
+			IsDiscovered:    true,
+			CreatedAt:       lastCheckedAt,
+			UpdatedAt:       lastCheckedAt,
+			RuntimeServices: runtimeServices,
+			UpdateInfo:      updateInfo,
+		})
+	}
+
+	return rows
+}
+
+func getRuntimeContainerUpdateInfoByRefInternal(
+	ctx context.Context,
+	composeContainers []container.Summary,
+	imageService *ImageService,
+) map[string]*imagetypes.UpdateInfo {
+	if imageService == nil || len(composeContainers) == 0 {
+		return nil
+	}
+
+	imageRefs := make([]string, 0, len(composeContainers))
+	imageIDsByRef := make(map[string][]string, len(composeContainers))
+	seenRefs := make(map[string]struct{}, len(composeContainers))
+	for _, c := range composeContainers {
+		imageRef := strings.TrimSpace(c.Image)
+		if imageRef == "" {
+			continue
+		}
+		if _, exists := seenRefs[imageRef]; !exists {
+			seenRefs[imageRef] = struct{}{}
+			imageRefs = append(imageRefs, imageRef)
+		}
+		if imageID := strings.TrimSpace(c.ImageID); imageID != "" {
+			imageIDsByRef[imageRef] = append(imageIDsByRef[imageRef], imageID)
+		}
+	}
+
+	updateInfoByRef := make(map[string]*imagetypes.UpdateInfo, len(imageRefs))
+	if len(imageRefs) > 0 {
+		if refResults, err := imageService.GetUpdateInfoByImageRefs(ctx, imageRefs); err == nil {
+			maps.Copy(updateInfoByRef, refResults)
+		} else {
+			slog.WarnContext(ctx, "failed to fetch compose project update info by image ref", "error", err)
+		}
+	}
+
+	missingImageIDs := make([]string, 0)
+	for _, imageRef := range imageRefs {
+		if updateInfoByRef[imageRef] != nil {
+			continue
+		}
+		missingImageIDs = append(missingImageIDs, imageIDsByRef[imageRef]...)
+	}
+
+	if len(missingImageIDs) == 0 {
+		return updateInfoByRef
+	}
+
+	updateInfoByID, err := imageService.GetUpdateInfoByImageIDs(ctx, missingImageIDs)
+	if err != nil {
+		slog.WarnContext(ctx, "failed to fetch compose project update info by image id", "error", err)
+		return updateInfoByRef
+	}
+
+	for imageRef, imageIDs := range imageIDsByRef {
+		if updateInfoByRef[imageRef] != nil {
+			continue
+		}
+		for _, imageID := range imageIDs {
+			if info := updateInfoByID[imageID]; info != nil {
+				updateInfoByRef[imageRef] = info
+				break
+			}
+		}
+	}
+
+	return updateInfoByRef
+}
+
+func buildDiscoveredRuntimeServicesInternal(containers []container.Summary) []project.RuntimeService {
+	runtimeServices := make([]project.RuntimeService, 0, len(containers))
+	seenServices := make(map[string]struct{}, len(containers))
+	for _, c := range containers {
+		imageRef := strings.TrimSpace(c.Image)
+		if imageRef == "" {
+			continue
+		}
+
+		serviceName := strings.TrimSpace(c.Labels["com.docker.compose.service"])
+		if serviceName == "" {
+			serviceName = c.ID
+		}
+		key := serviceName + "\x00" + imageRef
+		if _, exists := seenServices[key]; exists {
+			continue
+		}
+		seenServices[key] = struct{}{}
+
+		containerName := ""
+		if len(c.Names) > 0 {
+			containerName = strings.TrimPrefix(c.Names[0], "/")
+		}
+
+		runtimeServices = append(runtimeServices, project.RuntimeService{
+			Name:          serviceName,
+			Image:         imageRef,
+			Status:        string(c.State),
+			ContainerID:   c.ID,
+			ContainerName: containerName,
+			Ports:         formatDockerPorts(c.Ports),
+		})
+	}
+
+	return runtimeServices
+}
+
+func resolveDiscoveredProjectStatusInternal(serviceCount int, runningCount int) string {
+	switch {
+	case serviceCount == 0:
+		return string(models.ProjectStatusUnknown)
+	case runningCount >= serviceCount:
+		return string(models.ProjectStatusRunning)
+	case runningCount > 0:
+		return string(models.ProjectStatusPartiallyRunning)
+	default:
+		return string(models.ProjectStatusStopped)
+	}
 }
 
 func (s *ProjectService) buildProjectDerivedPaginationConfigInternal() pagination.Config[project.Details] {
@@ -3351,6 +3746,7 @@ func (s *ProjectService) buildProjectDerivedPaginationConfigInternal() paginatio
 		FilterAccessors: []pagination.FilterAccessor[project.Details]{
 			s.buildProjectStatusFilterAccessorInternal(),
 			s.buildProjectUpdatesFilterAccessorInternal(),
+			s.buildProjectArchivedFilterAccessorInternal(),
 		},
 	}
 }
@@ -3369,6 +3765,22 @@ func (s *ProjectService) buildProjectUpdatesFilterAccessorInternal() pagination.
 		Key: "updates",
 		Fn: func(p project.Details, filterValue string) bool {
 			return strings.EqualFold(strings.TrimSpace(getProjectUpdateStatusInternal(p.UpdateInfo)), strings.TrimSpace(filterValue))
+		},
+	}
+}
+
+func (s *ProjectService) buildProjectArchivedFilterAccessorInternal() pagination.FilterAccessor[project.Details] {
+	return pagination.FilterAccessor[project.Details]{
+		Key: "archived",
+		Fn: func(p project.Details, filterValue string) bool {
+			switch strings.ToLower(strings.TrimSpace(filterValue)) {
+			case "true":
+				return p.IsArchived
+			case "all":
+				return true
+			default:
+				return !p.IsArchived
+			}
 		},
 	}
 }
@@ -3394,7 +3806,7 @@ func (s *ProjectService) countProjectsByUpdateStatusInternal(ctx context.Context
 			Start: 0,
 			Limit: 0,
 		},
-	}, s.db.WithContext(ctx).Model(&models.Project{}))
+	}, s.db.WithContext(ctx).Model(&models.Project{}).Where("is_archived = ?", false))
 	if err != nil {
 		return 0, err
 	}
@@ -3456,6 +3868,8 @@ func (s *ProjectService) mapProjectToDto(ctx context.Context, projectsDir string
 
 	resp.CreatedAt = p.CreatedAt.Format(time.RFC3339)
 	resp.UpdatedAt = p.UpdatedAt.Format(time.RFC3339)
+	resp.IsArchived = p.IsArchived
+	resp.ArchivedAt = p.ArchivedAt
 	resp.DirName = utils.DerefString(p.DirName)
 	resp.RelativePath = s.getProjectRelativePathInternal(projectsDir, p.Path)
 	resp.GitOpsManagedBy = p.GitOpsManagedBy

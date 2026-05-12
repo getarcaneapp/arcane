@@ -3088,6 +3088,13 @@ func (s *NotificationService) sendGotifyPruneNotification(ctx context.Context, e
 	if err := s.unmarshalConfigInternal(config, &gotifyConfig); err != nil {
 		return err
 	}
+	if gotifyConfig.Token != "" {
+		if decrypted, err := crypto.Decrypt(gotifyConfig.Token); err == nil {
+			gotifyConfig.Token = decrypted
+		} else {
+			slog.Warn("Failed to decrypt Gotify token, using raw value (may be unencrypted legacy value)", "error", err)
+		}
+	}
 
 	message := notifications.BuildPruneReportNotificationMessage(notifications.MessageFormatPlain, environmentName, result)
 
@@ -3295,6 +3302,13 @@ func (s *NotificationService) sendGotifyAutoHealNotification(ctx context.Context
 	var gotifyConfig models.GotifyConfig
 	if err := s.unmarshalConfigInternal(config, &gotifyConfig); err != nil {
 		return err
+	}
+	if gotifyConfig.Token != "" {
+		if decrypted, err := crypto.Decrypt(gotifyConfig.Token); err == nil {
+			gotifyConfig.Token = decrypted
+		} else {
+			slog.Warn("Failed to decrypt Gotify token, using raw value (may be unencrypted legacy value)", "error", err)
+		}
 	}
 	if gotifyConfig.Title == "" {
 		gotifyConfig.Title = notifications.BuildEmailSubject(environmentName, "Auto Heal")

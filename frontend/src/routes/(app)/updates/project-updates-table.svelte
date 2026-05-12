@@ -107,9 +107,13 @@
 </script>
 
 {#snippet NameCell({ item }: { item: ProjectUpdateRow })}
-	<a class="font-medium hover:underline" href={`/projects/${item.projectId}`}>
-		{item.name}
-	</a>
+	{#if item.project.isDiscovered}
+		<span class="font-medium">{item.name}</span>
+	{:else}
+		<a class="font-medium hover:underline" href={`/projects/${item.projectId}`}>
+			{item.name}
+		</a>
+	{/if}
 {/snippet}
 
 {#snippet ImageCell({ item }: { item: ProjectUpdateRow })}
@@ -156,6 +160,7 @@
 			}
 		]}
 		onclick={(item: ProjectUpdateRow) => {
+			if (item.project.isDiscovered) return;
 			window.location.href = `/projects/${item.projectId}`;
 		}}
 	/>

@@ -48,7 +48,7 @@ export const arcaneDarkInit = (options?: Partial<CreateThemeOptions>) => {
 		gutterActiveForeground: '#c9d1d9',
 		gutterBorder: 'transparent',
 
-		fontFamily: '"Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", "Courier New", monospace',
+		fontFamily: '"Mona Sans Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", "Courier New", monospace',
 		fontSize: '13px'
 	};
 
@@ -104,7 +104,7 @@ export const arcaneLightInit = (options?: Partial<CreateThemeOptions>) => {
 		gutterActiveForeground: '#24292f',
 		gutterBorder: 'transparent',
 
-		fontFamily: '"Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", "Courier New", monospace',
+		fontFamily: '"Mona Sans Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", "Courier New", monospace',
 		fontSize: '13px'
 	};
 

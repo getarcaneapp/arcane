@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -118,18 +117,11 @@ func (h *JobSchedulesHandler) ListJobs(ctx context.Context, input *ListJobsInput
 		if h.environmentService == nil {
 			return nil, huma.Error500InternalServerError("environment service not available")
 		}
-		respBody, statusCode, err := h.environmentService.ProxyRequest(ctx, input.ID, http.MethodGet, "/api/environments/0/jobs", nil)
+		jobs, err := proxyRemoteJSONInternal[jobschedule.JobListResponse](ctx, h.environmentService, input.ID, http.MethodGet, "/api/environments/0/jobs", nil)
 		if err != nil {
-			return nil, huma.Error502BadGateway("failed to proxy request to environment: " + err.Error())
+			return nil, err
 		}
-		if statusCode != http.StatusOK {
-			return nil, huma.NewError(statusCode, "environment returned error: "+string(respBody), nil)
-		}
-		var jobs jobschedule.JobListResponse
-		if err := json.Unmarshal(respBody, &jobs); err != nil {
-			return nil, huma.Error500InternalServerError("failed to decode environment response: " + err.Error())
-		}
-		return &GetJobsOutput{Body: jobs}, nil
+		return &GetJobsOutput{Body: *jobs}, nil
 	}
 
 	jobs, err := h.jobService.ListJobs(ctx)
@@ -149,18 +141,11 @@ func (h *JobSchedulesHandler) RunJob(ctx context.Context, input *RunJobInput) (*
 		if h.environmentService == nil {
 			return nil, huma.Error500InternalServerError("environment service not available")
 		}
-		respBody, statusCode, err := h.environmentService.ProxyRequest(ctx, input.ID, http.MethodPost, "/api/environments/0/jobs/"+input.JobID+"/run", nil)
+		runResp, err := proxyRemoteJSONInternal[jobschedule.JobRunResponse](ctx, h.environmentService, input.ID, http.MethodPost, "/api/environments/0/jobs/"+input.JobID+"/run", nil)
 		if err != nil {
-			return nil, huma.Error502BadGateway("failed to proxy request to environment: " + err.Error())
+			return nil, err
 		}
-		if statusCode != http.StatusOK {
-			return nil, huma.NewError(statusCode, "environment returned error: "+string(respBody), nil)
-		}
-		var runResp jobschedule.JobRunResponse
-		if err := json.Unmarshal(respBody, &runResp); err != nil {
-			return nil, huma.Error500InternalServerError("failed to decode environment response: " + err.Error())
-		}
-		return &RunJobOutput{Body: runResp}, nil
+		return &RunJobOutput{Body: *runResp}, nil
 	}
 
 	err := h.jobService.RunJobNowInline(ctx, input.JobID)
@@ -185,18 +170,11 @@ func (h *JobSchedulesHandler) Get(ctx context.Context, input *GetJobSchedulesInp
 		if h.environmentService == nil {
 			return nil, huma.Error500InternalServerError("environment service not available")
 		}
-		respBody, statusCode, err := h.environmentService.ProxyRequest(ctx, input.ID, http.MethodGet, "/api/environments/0/job-schedules", nil)
+		cfg, err := proxyRemoteJSONInternal[jobschedule.Config](ctx, h.environmentService, input.ID, http.MethodGet, "/api/environments/0/job-schedules", nil)
 		if err != nil {
-			return nil, huma.Error502BadGateway("failed to proxy request to environment: " + err.Error())
+			return nil, err
 		}
-		if statusCode != http.StatusOK {
-			return nil, huma.NewError(statusCode, "environment returned error: "+string(respBody), nil)
-		}
-		var cfg jobschedule.Config
-		if err := json.Unmarshal(respBody, &cfg); err != nil {
-			return nil, huma.Error500InternalServerError("failed to decode environment response: " + err.Error())
-		}
-		return &GetJobSchedulesOutput{Body: cfg}, nil
+		return &GetJobSchedulesOutput{Body: *cfg}, nil
 	}
 
 	cfg := h.jobService.GetJobSchedules(ctx)
@@ -213,25 +191,12 @@ func (h *JobSchedulesHandler) Update(ctx context.Context, input *UpdateJobSchedu
 			return nil, huma.Error500InternalServerError("environment service not available")
 		}
 
-		body, err := json.Marshal(input.Body)
+		apiResp, err := proxyRemoteJSONInternal[base.ApiResponse[jobschedule.Config]](ctx, h.environmentService, input.ID, http.MethodPut, "/api/environments/0/job-schedules", input.Body)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("failed to marshal request body: " + err.Error())
+			return nil, err
 		}
 
-		respBody, statusCode, err := h.environmentService.ProxyRequest(ctx, input.ID, http.MethodPut, "/api/environments/0/job-schedules", body)
-		if err != nil {
-			return nil, huma.Error502BadGateway("failed to proxy request to environment: " + err.Error())
-		}
-		if statusCode != http.StatusOK {
-			return nil, huma.NewError(statusCode, "environment returned error: "+string(respBody), nil)
-		}
-
-		var apiResp base.ApiResponse[jobschedule.Config]
-		if err := json.Unmarshal(respBody, &apiResp); err != nil {
-			return nil, huma.Error500InternalServerError("failed to decode environment response: " + err.Error())
-		}
-
-		return &UpdateJobSchedulesOutput{Body: apiResp}, nil
+		return &UpdateJobSchedulesOutput{Body: *apiResp}, nil
 	}
 
 	cfg, err := h.jobService.UpdateJobSchedules(ctx, input.Body)

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
+	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	libupdater "github.com/getarcaneapp/arcane/backend/pkg/libarcane/updater"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
@@ -2094,6 +2095,235 @@ func TestProjectService_ListProjects_FiltersByUpdateStatus(t *testing.T) {
 			assert.Equal(t, tt.expected, names)
 		})
 	}
+}
+
+func TestBuildDiscoveredComposeProjectUpdateRowsInternal(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+	imageService := &ImageService{db: db}
+	now := time.Now().UTC()
+
+	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+		ID:             "sha256:media-image",
+		Repository:     "docker.io/library/nginx",
+		Tag:            "latest",
+		HasUpdate:      true,
+		UpdateType:     models.UpdateTypeDigest,
+		CurrentVersion: "latest",
+		CheckTime:      now,
+	}).Error)
+	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+		ID:             "sha256:known-image",
+		Repository:     "docker.io/library/redis",
+		Tag:            "7",
+		HasUpdate:      true,
+		UpdateType:     models.UpdateTypeDigest,
+		CurrentVersion: "7",
+		CheckTime:      now,
+	}).Error)
+
+	rows := buildDiscoveredComposeProjectUpdateRowsInternal(ctx, []container.Summary{
+		{
+			ID:      "media-web",
+			Names:   []string{"/media-web-1"},
+			Image:   "nginx:latest",
+			ImageID: "sha256:media-image",
+			State:   "running",
+			Labels: map[string]string{
+				"com.docker.compose.project": "media",
+				"com.docker.compose.service": "web",
+			},
+		},
+		{
+			ID:      "known-cache",
+			Image:   "redis:7",
+			ImageID: "sha256:known-image",
+			State:   "running",
+			Labels: map[string]string{
+				"com.docker.compose.project": "known",
+				"com.docker.compose.service": "cache",
+			},
+		},
+		{
+			ID:      "plain-container",
+			Image:   "busybox:latest",
+			ImageID: "sha256:plain-image",
+			State:   "running",
+			Labels:  map[string]string{},
+		},
+	}, map[string]struct{}{"known": {}}, imageService)
+
+	require.Len(t, rows, 1)
+	row := rows[0]
+	assert.Equal(t, "compose:media", row.ID)
+	assert.Equal(t, "media", row.Name)
+	assert.True(t, row.IsDiscovered)
+	assert.Equal(t, string(models.ProjectStatusRunning), row.Status)
+	require.NotNil(t, row.UpdateInfo)
+	assert.True(t, row.UpdateInfo.HasUpdate)
+	assert.Equal(t, []string{"nginx:latest"}, row.UpdateInfo.UpdatedImageRefs)
+	require.Len(t, row.RuntimeServices, 1)
+	assert.Equal(t, "web", row.RuntimeServices[0].Name)
+}
+
+func TestBuildDiscoveredComposeProjectUpdateRowsInternal_FallsBackToImageID(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+	imageService := &ImageService{db: db}
+
+	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+		ID:             "sha256:media-image",
+		Repository:     "registry.example.test/custom/media",
+		Tag:            "latest",
+		HasUpdate:      true,
+		UpdateType:     models.UpdateTypeDigest,
+		CurrentVersion: "latest",
+		CheckTime:      time.Now().UTC(),
+	}).Error)
+
+	rows := buildDiscoveredComposeProjectUpdateRowsInternal(ctx, []container.Summary{
+		{
+			ID:      "media-web",
+			Image:   "nginx:latest",
+			ImageID: "sha256:media-image",
+			State:   "running",
+			Labels: map[string]string{
+				"com.docker.compose.project": "media",
+				"com.docker.compose.service": "web",
+			},
+		},
+	}, map[string]struct{}{}, imageService)
+
+	require.Len(t, rows, 1)
+	assert.Equal(t, []string{"nginx:latest"}, rows[0].UpdateInfo.UpdatedImageRefs)
+}
+
+func TestProjectService_ListProjects_FiltersArchivedProjects(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	projectsRoot := t.TempDir()
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+
+	activePath := createComposeProjectDir(t, projectsRoot, "active-demo")
+	archivedPath := createComposeProjectDir(t, projectsRoot, "archived-demo")
+	archivedAt := time.Now().UTC()
+
+	require.NoError(t, db.Create(&models.Project{
+		BaseModel: models.BaseModel{ID: "project-active"},
+		Name:      "active-demo",
+		DirName:   ptr("active-demo"),
+		Path:      activePath,
+		Status:    models.ProjectStatusStopped,
+	}).Error)
+	require.NoError(t, db.Create(&models.Project{
+		BaseModel:  models.BaseModel{ID: "project-archived"},
+		Name:       "archived-demo",
+		DirName:    ptr("archived-demo"),
+		Path:       archivedPath,
+		Status:     models.ProjectStatusStopped,
+		IsArchived: true,
+		ArchivedAt: &archivedAt,
+	}).Error)
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
+
+	items, page, err := svc.ListProjects(ctx, pagination.QueryParams{
+		PaginationParams: pagination.PaginationParams{Limit: -1},
+		SortParams:       pagination.SortParams{Sort: "name", Order: pagination.SortAsc},
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 1, page.TotalItems)
+	require.Len(t, items, 1)
+	assert.Equal(t, "active-demo", items[0].Name)
+
+	items, page, err = svc.ListProjects(ctx, pagination.QueryParams{
+		Filters:          map[string]string{"archived": "true"},
+		PaginationParams: pagination.PaginationParams{Limit: -1},
+		SortParams:       pagination.SortParams{Sort: "name", Order: pagination.SortAsc},
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 1, page.TotalItems)
+	require.Len(t, items, 1)
+	assert.Equal(t, "archived-demo", items[0].Name)
+	assert.True(t, items[0].IsArchived)
+
+	items, page, err = svc.ListProjects(ctx, pagination.QueryParams{
+		Filters:          map[string]string{"archived": "all"},
+		PaginationParams: pagination.PaginationParams{Limit: -1},
+		SortParams:       pagination.SortParams{Sort: "name", Order: pagination.SortAsc},
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 2, page.TotalItems)
+	require.Len(t, items, 2)
+	assert.Equal(t, []string{"active-demo", "archived-demo"}, []string{items[0].Name, items[1].Name})
+}
+
+func TestProjectService_ArchiveProject_RequiresStoppedProject(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsRoot := t.TempDir()
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+
+	projectPath := createComposeProjectDir(t, projectsRoot, "running-demo")
+	require.NoError(t, db.Create(&models.Project{
+		BaseModel:    models.BaseModel{ID: "project-running"},
+		Name:         "running-demo",
+		DirName:      ptr("running-demo"),
+		Path:         projectPath,
+		Status:       models.ProjectStatusRunning,
+		RunningCount: 1,
+	}).Error)
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
+	err = svc.ArchiveProject(ctx, "project-running", models.User{BaseModel: models.BaseModel{ID: "user-1"}, Username: "tester"})
+	require.Error(t, err)
+	var stoppedErr *common.ProjectMustBeStoppedError
+	assert.ErrorAs(t, err, &stoppedErr)
+
+	var stored models.Project
+	require.NoError(t, db.First(&stored, "id = ?", "project-running").Error)
+	assert.False(t, stored.IsArchived)
+	assert.Nil(t, stored.ArchivedAt)
+}
+
+func TestProjectService_ArchiveProject_TogglesArchiveFlag(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsRoot := t.TempDir()
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+
+	projectPath := createComposeProjectDir(t, projectsRoot, "stopped-demo")
+	require.NoError(t, db.Create(&models.Project{
+		BaseModel: models.BaseModel{ID: "project-stopped"},
+		Name:      "stopped-demo",
+		DirName:   ptr("stopped-demo"),
+		Path:      projectPath,
+		Status:    models.ProjectStatusStopped,
+	}).Error)
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
+	user := models.User{BaseModel: models.BaseModel{ID: "user-1"}, Username: "tester"}
+
+	require.NoError(t, svc.ArchiveProject(ctx, "project-stopped", user))
+	var stored models.Project
+	require.NoError(t, db.First(&stored, "id = ?", "project-stopped").Error)
+	assert.True(t, stored.IsArchived)
+	assert.NotNil(t, stored.ArchivedAt)
+
+	require.NoError(t, svc.UnarchiveProject(ctx, "project-stopped", user))
+	var unarchived models.Project
+	require.NoError(t, db.First(&unarchived, "id = ?", "project-stopped").Error)
+	assert.False(t, unarchived.IsArchived)
+	assert.Nil(t, unarchived.ArchivedAt)
 }
 
 func TestProjectService_MapProjectToDto_SetsRedeployDisabledFromRuntimeServices(t *testing.T) {
