@@ -168,6 +168,7 @@ func DefaultSettingsConfig() *models.Settings {
 		OidcMergeAccounts:          models.SettingVariable{Value: "false"},
 		OidcProviderName:           models.SettingVariable{Value: ""},
 		OidcProviderLogoUrl:        models.SettingVariable{Value: ""},
+		OidcMobileRedirectUris:     models.SettingVariable{Value: "arcane-mobile://oidc-callback"},
 		MobileNavigationMode:       models.SettingVariable{Value: "floating"},
 		MobileNavigationShowLabels: models.SettingVariable{Value: "true"},
 		SidebarHoverExpansion:      models.SettingVariable{Value: "true"},

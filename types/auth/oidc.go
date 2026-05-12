@@ -127,6 +127,14 @@ type OidcAuthUrlRequest struct {
 	//
 	// Required: true
 	RedirectUri string `json:"redirectUri"`
+
+	// MobileRedirectUri is the OAuth redirect URI for native mobile clients
+	// (e.g., "arcane-mobile://oidc-callback"). When provided, it must match an
+	// entry in the server's configured mobile redirect allowlist and is used
+	// as the OAuth redirect_uri sent to the OIDC provider.
+	//
+	// Required: false
+	MobileRedirectUri string `json:"mobileRedirectUri,omitempty"`
 }
 
 // OidcAuthUrlResponse contains the generated OIDC authorization URL.
@@ -191,6 +199,13 @@ type OidcCallbackRequest struct {
 	//
 	// Required: true
 	State string `json:"state"`
+
+	// MobileRedirectUri must match the value sent with the original
+	// OidcAuthUrlRequest. OAuth requires the redirect_uri to be identical
+	// across the auth code request and the token exchange.
+	//
+	// Required: false
+	MobileRedirectUri string `json:"mobileRedirectUri,omitempty"`
 }
 
 // OidcCallbackResponse contains the response from OIDC callback processing.

@@ -101,7 +101,7 @@ func initializeServices(ctx context.Context, db *database.DB, cfg *config.Config
 	svcs.Swarm = services.NewSwarmService(svcs.Docker, svcs.Settings, svcs.KV, svcs.ContainerRegistry, svcs.Environment)
 	svcs.Template = services.NewTemplateService(ctx, db, httpClient, svcs.Settings)
 	svcs.Auth = services.NewAuthService(svcs.User, svcs.Settings, svcs.Event, cfg.JWTSecret, cfg)
-	svcs.Oidc = services.NewOidcService(svcs.Auth, cfg, httpClient)
+	svcs.Oidc = services.NewOidcService(svcs.Auth, svcs.Settings, cfg, httpClient)
 	svcs.System = services.NewSystemService(db, svcs.Docker, svcs.Container, svcs.Image, svcs.Volume, svcs.Network, svcs.Settings)
 	svcs.SystemUpgrade = services.NewSystemUpgradeService(svcs.Docker, svcs.Version, svcs.Event, svcs.Settings)
 	svcs.Updater = services.NewUpdaterService(db, svcs.Settings, svcs.Docker, svcs.Project, svcs.ImageUpdate, svcs.ContainerRegistry, svcs.Event, svcs.Image, svcs.Notification, svcs.SystemUpgrade)

@@ -71,6 +71,12 @@ func TestGenerate_SettingEnvOverridesMatchModelMetadata(t *testing.T) {
 	assert.True(t, oidcSecret.Sensitive)
 	assert.Equal(t, "OIDC_CLIENT_SECRET", oidcSecret.Env)
 
+	oidcMobileRedirectURIs, ok := entries["oidcMobileRedirectUris"]
+	require.True(t, ok)
+	assert.Equal(t, "OIDC_MOBILE_REDIRECT_URIS", oidcMobileRedirectURIs.Env)
+	assert.Equal(t, "arcane-mobile://oidc-callback", oidcMobileRedirectURIs.DefaultValue)
+	assert.Equal(t, "authentication", oidcMobileRedirectURIs.Category)
+
 	legacyOIDC, ok := entries["authOidcConfig"]
 	require.True(t, ok)
 	assert.True(t, legacyOIDC.Deprecated)
@@ -238,6 +244,7 @@ var expectedEnvConfigVars = []string{
 	"OIDC_CLIENT_SECRET",
 	"OIDC_ENABLED",
 	"OIDC_ISSUER_URL",
+	"OIDC_MOBILE_REDIRECT_URIS",
 	"OIDC_PROVIDER_LOGO_URL",
 	"OIDC_PROVIDER_NAME",
 	"OIDC_SCOPES",
@@ -313,6 +320,7 @@ var expectedSettingOverrideKeys = []string{
 	"oidcIssuerUrl",
 	"oidcJwksEndpoint",
 	"oidcMergeAccounts",
+	"oidcMobileRedirectUris",
 	"oidcProviderLogoUrl",
 	"oidcProviderName",
 	"oidcScopes",

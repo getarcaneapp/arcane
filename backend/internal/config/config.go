@@ -53,6 +53,7 @@ type Config struct {
 	OidcAutoRedirectToProvider bool   `env:"OIDC_AUTO_REDIRECT_TO_PROVIDER" default:"false"`
 	OidcProviderName           string `env:"OIDC_PROVIDER_NAME" default:""`
 	OidcProviderLogoUrl        string `env:"OIDC_PROVIDER_LOGO_URL" default:""`
+	OidcMobileRedirectUris     string `env:"OIDC_MOBILE_REDIRECT_URIS" default:"arcane-mobile://oidc-callback"`
 
 	PUID                    string `env:"PUID" default:""`
 	PGID                    string `env:"PGID" default:""`
