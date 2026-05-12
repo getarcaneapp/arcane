@@ -38,6 +38,7 @@ type ListTemplatesInput struct {
 	Order  string `query:"order" default:"asc" doc:"Sort direction"`
 	Start  int    `query:"start" default:"0" doc:"Start index"`
 	Limit  int    `query:"limit" default:"20" doc:"Items per page"`
+	Type   string `query:"type" doc:"Filter by template type (comma-separated: false,true)"`
 }
 
 type ListTemplatesOutput struct {
@@ -398,6 +399,9 @@ func (h *TemplateHandler) ListTemplates(ctx context.Context, input *ListTemplate
 	params := buildPaginationParams(0, input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	if params.Limit == 0 {
 		params.Limit = 20
+	}
+	if input.Type != "" {
+		params.Filters["type"] = input.Type
 	}
 
 	templates, paginationResp, err := h.templateService.GetAllTemplatesPaginated(ctx, params)

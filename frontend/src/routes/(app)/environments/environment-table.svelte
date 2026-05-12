@@ -12,6 +12,7 @@
 	import { extractApiErrorMessage } from '$lib/utils/api.util';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '$lib/components/arcane-table';
+	import type { FilterOption } from '$lib/components/arcane-table/arcane-table.types.svelte';
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
 	import type { Environment } from '$lib/types/environment.type';
 	import { m } from '$lib/paraglide/messages';
@@ -48,6 +49,22 @@
 		return unsub;
 	});
 	const isAdmin = $derived(!!currentUser?.roles?.includes('admin'));
+
+	const environmentTypeFilters: FilterOption[] = [
+		{ value: 'http', label: m.environments_edge_http_label(), icon: EnvironmentsIcon },
+		{ value: 'edge', label: m.environments_edge_label(), icon: EnvironmentsIcon },
+		{ value: 'websocket', label: m.environments_edge_websocket_label(), icon: EnvironmentsIcon },
+		{ value: 'grpc', label: m.environments_edge_grpc_label(), icon: EnvironmentsIcon },
+		{ value: 'polling', label: m.environments_edge_polling_label(), icon: EnvironmentsIcon }
+	];
+
+	function getEnvironmentTypeLabel(item: Environment): string {
+		if (!item.isEdge) return m.environments_edge_http_label();
+		if (item.lastPollAt) return m.environments_edge_polling_label();
+		if (!item.connected || !item.edgeTransport) return m.environments_edge_label();
+		if (item.edgeTransport === 'websocket') return m.environments_edge_websocket_label();
+		return m.environments_edge_grpc_label();
+	}
 
 	async function handleDeleteSelected(ids: string[]) {
 		if (!ids?.length) return;
@@ -218,6 +235,7 @@
 			id: 'type',
 			title: m.common_type(),
 			accessorFn: (row) => row,
+			filterOptions: environmentTypeFilters,
 			cell: TypeCell
 		},
 		{
@@ -298,15 +316,7 @@
 
 {#snippet TypeCell({ value }: { value: unknown })}
 	{@const env = value as Environment}
-	{@const typeLabel = !env.isEdge
-		? 'HTTP'
-		: env.lastPollAt
-			? m.environments_edge_polling_label()
-			: !env.connected || !env.edgeTransport
-				? 'Edge'
-				: env.edgeTransport === 'websocket'
-					? 'WebSocket'
-					: 'gRPC'}
+	{@const typeLabel = getEnvironmentTypeLabel(env)}
 	{@const typeVariant = !env.isEdge
 		? 'gray'
 		: env.lastPollAt
@@ -353,16 +363,7 @@
 			},
 			{
 				label: m.common_type(),
-				getValue: (item: Environment) =>
-					!item.isEdge
-						? 'HTTP'
-						: item.lastPollAt
-							? m.environments_edge_polling_label()
-							: !item.connected || !item.edgeTransport
-								? 'Edge'
-								: item.edgeTransport === 'websocket'
-									? 'WebSocket'
-									: 'gRPC',
+				getValue: (item: Environment) => getEnvironmentTypeLabel(item),
 				icon: StatsIcon,
 				iconVariant: 'gray' as const,
 				show: mobileFieldVisibility.type ?? true

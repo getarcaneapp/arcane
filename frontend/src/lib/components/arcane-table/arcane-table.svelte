@@ -320,6 +320,7 @@
 				...(accessorFn ? { accessorFn } : {}),
 				meta: {
 					title: spec.title,
+					filterOptions: spec.filterOptions,
 					width: spec.width,
 					align: spec.align,
 					truncate: spec.truncate

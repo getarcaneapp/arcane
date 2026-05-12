@@ -20,7 +20,9 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
+	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	httputils "github.com/getarcaneapp/arcane/backend/pkg/utils/httpx"
+	tmpl "github.com/getarcaneapp/arcane/types/template"
 )
 
 func setupTemplateServiceTestDB(t *testing.T) *database.DB {
@@ -288,6 +290,81 @@ services:
 	require.NotNil(t, stored.Metadata)
 	require.NotNil(t, stored.Metadata.IconURL)
 	require.Equal(t, "https://cdn.example/download.png", *stored.Metadata.IconURL)
+}
+
+func TestGetAllTemplatesPaginated_FiltersByType(t *testing.T) {
+	tempDir := t.TempDir()
+	setTestWorkingDir(t, tempDir)
+
+	now := time.Now()
+	db := setupTemplateServiceTestDB(t)
+	localTemplates := []models.ComposeTemplate{
+		{
+			BaseModel:   models.BaseModel{ID: "local-one", CreatedAt: now, UpdatedAt: &now},
+			Name:        "Local One",
+			Description: "Local template",
+			Content:     "services: {}",
+			IsCustom:    true,
+			IsRemote:    false,
+		},
+		{
+			BaseModel:   models.BaseModel{ID: "local-two", CreatedAt: now, UpdatedAt: &now},
+			Name:        "Local Two",
+			Description: "Local template",
+			Content:     "services: {}",
+			IsCustom:    true,
+			IsRemote:    false,
+		},
+	}
+	require.NoError(t, db.WithContext(context.Background()).Create(&localTemplates).Error)
+
+	service := &TemplateService{
+		db:                db,
+		httpClient:        http.DefaultClient,
+		registryFetchMeta: make(map[string]*registryFetchMeta),
+		remoteCache: remoteCache{
+			templates: []models.ComposeTemplate{
+				{
+					BaseModel:   models.BaseModel{ID: "remote-one", CreatedAt: now, UpdatedAt: &now},
+					Name:        "Remote One",
+					Description: "Remote template",
+					Content:     "services: {}",
+					IsRemote:    true,
+					RegistryID:  stringPtr("registry-one"),
+				},
+			},
+			lastFetch: now,
+		},
+	}
+
+	tests := []struct {
+		name       string
+		typeFilter string
+		wantIDs    []string
+	}{
+		{name: "local", typeFilter: "false", wantIDs: []string{"local-one", "local-two"}},
+		{name: "remote", typeFilter: "true", wantIDs: []string{"remote-one"}},
+		{name: "both", typeFilter: "false,true", wantIDs: []string{"local-one", "local-two", "remote-one"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			templates, _, err := service.GetAllTemplatesPaginated(context.Background(), pagination.QueryParams{
+				PaginationParams: pagination.PaginationParams{Start: 0, Limit: 20},
+				Filters:          map[string]string{"type": tt.typeFilter},
+			})
+			require.NoError(t, err)
+			require.ElementsMatch(t, tt.wantIDs, templateIDsInternal(templates))
+		})
+	}
+}
+
+func templateIDsInternal(templates []tmpl.Template) []string {
+	ids := make([]string, 0, len(templates))
+	for _, template := range templates {
+		ids = append(ids, template.ID)
+	}
+	return ids
 }
 
 func TestFetchRaw_BlocksUnsafeRemoteURL(t *testing.T) {

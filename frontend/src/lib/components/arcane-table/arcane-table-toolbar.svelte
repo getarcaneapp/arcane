@@ -7,7 +7,6 @@
 		usageFilters,
 		severityFilters,
 		vulnerabilitySeverityFilters,
-		templateTypeFilters,
 		projectStatusFilters
 	} from './data.js';
 	import { debounced } from '$lib/utils/utils.js';
@@ -16,7 +15,7 @@
 	import type { Snippet } from 'svelte';
 	import { cn } from '$lib/utils';
 	import { ResetIcon, SearchIcon, FilterIcon } from '$lib/icons';
-	import type { BulkAction } from './arcane-table.types.svelte';
+	import type { BulkAction, FilterOption } from './arcane-table.types.svelte';
 	import * as Popover from '$lib/components/ui/popover/index.js';
 
 	let {
@@ -64,6 +63,9 @@
 		table.getAllColumns().some((col) => col.id === 'serviceCount') ? table.getColumn('serviceCount') : undefined
 	);
 	const typeColumn = $derived(table.getAllColumns().some((col) => col.id === 'type') ? table.getColumn('type') : undefined);
+	const typeColumnFilterOptions = $derived(
+		(typeColumn?.columnDef.meta as { filterOptions?: FilterOption[] } | undefined)?.filterOptions ?? []
+	);
 
 	const debouncedSetGlobal = debounced((v: string) => table.setGlobalFilter(v), 300);
 	const imageNameFilterOptionsFormatted = $derived(imageNameFilterOptions.map((name) => ({ label: name, value: name })));
@@ -73,7 +75,7 @@
 	// Check if any filter columns exist
 	const hasFilterColumns = $derived(
 		!withoutFilters &&
-			(!!(typeColumn && !severityColumn && !vulnSeverityColumn) ||
+			(!!(typeColumn && typeColumnFilterOptions.length > 0 && !severityColumn && !vulnSeverityColumn) ||
 				!!usageColumn ||
 				!!updatesColumn ||
 				!!severityColumn ||
@@ -102,8 +104,8 @@
 
 		{#if hasFilterColumns}
 			<div class="hidden items-center gap-1.5 md:flex">
-				{#if typeColumn && !severityColumn && !vulnSeverityColumn}
-					<DataTableFacetedFilter column={typeColumn} title={m.common_type()} options={templateTypeFilters} />
+				{#if typeColumn && typeColumnFilterOptions.length > 0 && !severityColumn && !vulnSeverityColumn}
+					<DataTableFacetedFilter column={typeColumn} title={m.common_type()} options={typeColumnFilterOptions} />
 				{/if}
 				{#if usageColumn}
 					<DataTableFacetedFilter column={usageColumn} title={m.common_usage()} options={usageFilters} />
@@ -146,8 +148,8 @@
 					</Popover.Trigger>
 					<Popover.Content align="end" class="w-56 p-2">
 						<div class="flex flex-col gap-1.5">
-							{#if typeColumn && !severityColumn && !vulnSeverityColumn}
-								<DataTableFacetedFilter column={typeColumn} title={m.common_type()} options={templateTypeFilters} />
+							{#if typeColumn && typeColumnFilterOptions.length > 0 && !severityColumn && !vulnSeverityColumn}
+								<DataTableFacetedFilter column={typeColumn} title={m.common_type()} options={typeColumnFilterOptions} />
 							{/if}
 							{#if usageColumn}
 								<DataTableFacetedFilter column={usageColumn} title={m.common_usage()} options={usageFilters} />

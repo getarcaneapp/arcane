@@ -455,6 +455,10 @@ func (s *EnvironmentService) GetEnvironmentByID(ctx context.Context, id string) 
 }
 
 func (s *EnvironmentService) ListEnvironmentsPaginated(ctx context.Context, params pagination.QueryParams) ([]environment.Environment, pagination.Response, error) {
+	if strings.TrimSpace(params.Filters["type"]) != "" {
+		return s.listEnvironmentsPaginatedWithRuntimeFiltersInternal(ctx, params)
+	}
+
 	var envs []models.Environment
 	q := s.db.WithContext(ctx).Model(&models.Environment{}).Where("hidden = ?", false)
 
@@ -480,6 +484,124 @@ func (s *EnvironmentService) ListEnvironmentsPaginated(ctx context.Context, para
 	}
 
 	return out, paginationResp, nil
+}
+
+func (s *EnvironmentService) listEnvironmentsPaginatedWithRuntimeFiltersInternal(ctx context.Context, params pagination.QueryParams) ([]environment.Environment, pagination.Response, error) {
+	var envs []models.Environment
+	if err := s.db.WithContext(ctx).
+		Model(&models.Environment{}).
+		Where("hidden = ?", false).
+		Find(&envs).Error; err != nil {
+		return nil, pagination.Response{}, fmt.Errorf("failed to list environments: %w", err)
+	}
+
+	items, mapErr := mapper.MapSlice[models.Environment, environment.Environment](envs)
+	if mapErr != nil {
+		return nil, pagination.Response{}, fmt.Errorf("failed to map environments: %w", mapErr)
+	}
+
+	for i := range items {
+		ApplyEnvironmentRuntimeState(&items[i])
+	}
+
+	config := pagination.Config[environment.Environment]{
+		SearchAccessors: []pagination.SearchAccessor[environment.Environment]{
+			func(env environment.Environment) (string, error) { return env.Name, nil },
+			func(env environment.Environment) (string, error) { return env.ApiUrl, nil },
+		},
+		SortBindings: []pagination.SortBinding[environment.Environment]{
+			{
+				Key: "id",
+				Fn: func(a, b environment.Environment) int {
+					return strings.Compare(strings.ToLower(a.ID), strings.ToLower(b.ID))
+				},
+			},
+			{
+				Key: "name",
+				Fn: func(a, b environment.Environment) int {
+					return strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
+				},
+			},
+			{
+				Key: "status",
+				Fn: func(a, b environment.Environment) int {
+					return strings.Compare(strings.ToLower(a.Status), strings.ToLower(b.Status))
+				},
+			},
+			{
+				Key: "enabled",
+				Fn: func(a, b environment.Environment) int {
+					if a.Enabled == b.Enabled {
+						return 0
+					}
+					if a.Enabled {
+						return 1
+					}
+					return -1
+				},
+			},
+			{
+				Key: "apiUrl",
+				Fn: func(a, b environment.Environment) int {
+					return strings.Compare(strings.ToLower(a.ApiUrl), strings.ToLower(b.ApiUrl))
+				},
+			},
+		},
+		FilterAccessors: []pagination.FilterAccessor[environment.Environment]{
+			{
+				Key: "status",
+				Fn: func(item environment.Environment, filterValue string) bool {
+					return strings.EqualFold(item.Status, strings.TrimSpace(filterValue))
+				},
+			},
+			{
+				Key: "enabled",
+				Fn: func(item environment.Environment, filterValue string) bool {
+					switch strings.ToLower(strings.TrimSpace(filterValue)) {
+					case "true", "1":
+						return item.Enabled
+					case "false", "0":
+						return !item.Enabled
+					default:
+						return true
+					}
+				},
+			},
+			{
+				Key: "type",
+				Fn:  environmentTypeMatchesInternal,
+			},
+		},
+	}
+
+	result := pagination.SearchOrderAndPaginate(items, params, config)
+	paginationResp := pagination.BuildResponseFromFilterResult(result, params)
+
+	return result.Items, paginationResp, nil
+}
+
+func environmentTypeMatchesInternal(env environment.Environment, filterValue string) bool {
+	return environmentTypeKeyInternal(env) == strings.ToLower(strings.TrimSpace(filterValue))
+}
+
+func environmentTypeKeyInternal(env environment.Environment) string {
+	if !env.IsEdge {
+		return "http"
+	}
+	if env.LastPollAt != nil {
+		return "polling"
+	}
+	if env.Connected == nil || !*env.Connected || env.EdgeTransport == nil || strings.TrimSpace(*env.EdgeTransport) == "" {
+		return "edge"
+	}
+	switch strings.ToLower(strings.TrimSpace(*env.EdgeTransport)) {
+	case edge.EdgeTransportWebSocket:
+		return "websocket"
+	case edge.EdgeTransportGRPC:
+		return "grpc"
+	default:
+		return "edge"
+	}
 }
 
 func (s *EnvironmentService) ListVisibleEnvironments(ctx context.Context) ([]environment.Environment, error) {

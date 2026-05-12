@@ -57,6 +57,7 @@ type ListEnvironmentsInput struct {
 	Order  string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
 	Start  int    `query:"start" default:"0" doc:"Start index for pagination"`
 	Limit  int    `query:"limit" default:"20" doc:"Items per page"`
+	Type   string `query:"type" doc:"Filter by environment type (comma-separated: http,edge,websocket,grpc,polling)"`
 }
 
 type ListEnvironmentsOutput struct {
@@ -422,6 +423,10 @@ func (h *EnvironmentHandler) ListEnvironments(ctx context.Context, input *ListEn
 			Start: input.Start,
 			Limit: input.Limit,
 		},
+		Filters: map[string]string{},
+	}
+	if input.Type != "" {
+		params.Filters["type"] = input.Type
 	}
 
 	envs, paginationResp, err := h.environmentService.ListEnvironmentsPaginated(ctx, params)
