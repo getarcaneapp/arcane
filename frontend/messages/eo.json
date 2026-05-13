@@ -837,6 +837,7 @@
 	"networks_topology_hint": "Click a node to open its details.",
 	"networks_topology_legend_networks": "Networks",
 	"networks_topology_legend_containers": "Containers",
+	"networks_topology_default_networks": "Nedefinitaj retoj",
 	"networks_total": "Ĉiuj retoj",
 	"networks_delete_selected_title": "Forigi {count} reto(j)n",
 	"networks_delete_selected_message": "Ĉu vi certas, ke vi volas forigi {count} elektita(j)n reto(j)n? Tiu ago ne estas malfarebla.",
