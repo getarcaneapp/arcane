@@ -837,6 +837,7 @@
 	"networks_topology_hint": "Klik op een knooppunt om de details te openen.",
 	"networks_topology_legend_networks": "Netwerken",
 	"networks_topology_legend_containers": "Containers",
+	"networks_topology_default_networks": "Standaardnetwerken",
 	"networks_total": "Totaal aantal netwerken",
 	"networks_delete_selected_title": "{count} netwerk(en) verwijderen",
 	"networks_delete_selected_message": "Weet u zeker dat u {count} geselecteerde netwerk(en) wilt verwijderen? Deze actie kan niet ongedaan worden gemaakt.",
