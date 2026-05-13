@@ -837,6 +837,7 @@
 	"networks_topology_hint": "Klicken Sie auf einen Knoten, um dessen Details zu öffnen.",
 	"networks_topology_legend_networks": "Netzwerke",
 	"networks_topology_legend_containers": "Container",
+	"networks_topology_default_networks": "Standard-Netzwerke",
 	"networks_total": "Netzwerke gesamt",
 	"networks_delete_selected_title": "{count} Netzwerk(e) löschen",
 	"networks_delete_selected_message": "Möchtest du wirklich {count} ausgewählte Netzwerk(e) löschen? Diese Aktion kann nicht rückgängig gemacht werden.",
