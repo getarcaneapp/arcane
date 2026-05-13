@@ -837,6 +837,7 @@
 	"networks_topology_hint": "点击节点以查看其详细信息。",
 	"networks_topology_legend_networks": "网络",
 	"networks_topology_legend_containers": "容器",
+	"networks_topology_default_networks": "默认网络",
 	"networks_total": "网络总数",
 	"networks_delete_selected_title": "删了{count}个网络",
 	"networks_delete_selected_message": "您确定要删除{count}个网络吗？此操作不可撤销。",
