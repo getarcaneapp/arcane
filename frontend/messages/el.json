@@ -837,6 +837,7 @@
 	"networks_topology_hint": "Κάντε κλικ σε έναν κόμβο για να ανοίξετε τις λεπτομέρειές του.",
 	"networks_topology_legend_networks": "Δίκτυα",
 	"networks_topology_legend_containers": "Δοχεία",
+	"networks_topology_default_networks": "Προεπιλεγμένα δίκτυα",
 	"networks_total": "Total Networks",
 	"networks_delete_selected_title": "Delete {count} network(s)",
 	"networks_delete_selected_message": "Are you sure you want to delete {count} selected network(s)? This action cannot be undone.",
