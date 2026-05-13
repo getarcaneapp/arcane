@@ -837,6 +837,7 @@
 	"networks_topology_hint": "Нажмите на узел, чтобы открыть его подробную информацию.",
 	"networks_topology_legend_networks": "Сети",
 	"networks_topology_legend_containers": "Контейнеры",
+	"networks_topology_default_networks": "Сети по умолчанию",
 	"networks_total": "Всего сетей",
 	"networks_delete_selected_title": "Удалить {count} сеть(ей)",
 	"networks_delete_selected_message": "Вы уверены, что хотите удалить {count} сеть (сети)? Это действие нельзя отменить.",
