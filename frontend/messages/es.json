@@ -837,6 +837,7 @@
 	"networks_topology_hint": "Haga clic en un nodo para abrir sus detalles.",
 	"networks_topology_legend_networks": "Redes",
 	"networks_topology_legend_containers": "Contenedores",
+	"networks_topology_default_networks": "Redes por defecto",
 	"networks_total": "Redes totales",
 	"networks_delete_selected_title": "Eliminar red(es) de {count}",
 	"networks_delete_selected_message": "¿Está seguro de que desea eliminar {count} red(es) seleccionadas? Esta acción no se puede deshacer.",
