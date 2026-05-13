@@ -3,12 +3,12 @@
 package bootstrap
 
 import (
-	"github.com/getarcaneapp/arcane/backend/internal/api"
-	"github.com/gin-gonic/gin"
+	"github.com/getarcaneapp/arcane/backend/api"
+	"github.com/labstack/echo/v4"
 )
 
 func init() {
-	registerBuildableRoutes = append(registerBuildableRoutes, func(apiGroup *gin.RouterGroup, svc *Services) {
+	registerBuildableRoutes = append(registerBuildableRoutes, func(apiGroup *echo.Group, svc *Services) {
 		api.SetupBuildablesRoutes(apiGroup, svc.Auth)
 	})
 }

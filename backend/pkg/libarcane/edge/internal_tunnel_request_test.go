@@ -6,15 +6,13 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/gin-gonic/gin"
-	sloggin "github.com/samber/slog-gin"
+	"github.com/labstack/echo/v4"
+	slogecho "github.com/samber/slog-echo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestTunnelClient_InternalRequestSkipsSlogGin(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
+func TestTunnelClient_InternalRequestSkipsSlogEcho(t *testing.T) {
 	tests := []struct {
 		name string
 		run  func(t *testing.T, client *TunnelClient)
@@ -64,19 +62,20 @@ func TestTunnelClient_InternalRequestSkipsSlogGin(t *testing.T) {
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
 			var sawInternalTunnelRequest bool
-			loggerMiddleware := sloggin.NewWithConfig(slog.Default(), sloggin.Config{})
+			loggerMiddleware := slogecho.New(slog.Default())
 
-			router := gin.New()
-			router.Use(func(c *gin.Context) {
-				if IsInternalTunnelRequest(c.Request.Context()) {
-					sawInternalTunnelRequest = true
-					c.Next()
-					return
+			router := echo.New()
+			router.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+				return func(c echo.Context) error {
+					if IsInternalTunnelRequest(c.Request().Context()) {
+						sawInternalTunnelRequest = true
+						return next(c)
+					}
+					return loggerMiddleware(next)(c)
 				}
-				loggerMiddleware(c)
 			})
-			router.GET("/local/api", func(c *gin.Context) {
-				c.String(http.StatusOK, "local response")
+			router.GET("/local/api", func(c echo.Context) error {
+				return c.String(http.StatusOK, "local response")
 			})
 
 			client := NewTunnelClient(&Config{}, router)

@@ -16,7 +16,8 @@ import (
 )
 
 // timeFilterHandler wraps a slog.Handler and removes redundant time attributes
-// from grouped attributes (like request.time and response.time from slog-gin)
+// from grouped attributes (like request.time and response.time emitted by HTTP
+// request loggers such as slog-echo).
 type timeFilterHandler struct {
 	handler slog.Handler
 }
@@ -116,7 +117,7 @@ func (h *attrFilterHandler) WithGroup(name string) slog.Handler {
 	return &attrFilterHandler{handler: h.handler.WithGroup(name), dropKeys: h.dropKeys}
 }
 
-func SetupGinLogger(cfg *config.Config) {
+func SetupSlogLogger(cfg *config.Config) {
 	var lvl slog.Level
 	switch strings.ToLower(cfg.LogLevel) {
 	case "debug":
@@ -142,7 +143,7 @@ func SetupGinLogger(cfg *config.Config) {
 		})
 	}
 
-	// Wrap with timeFilterHandler to remove redundant time attributes from slog-gin
+	// Wrap with timeFilterHandler to remove redundant time attributes from slog-echo
 	h = &timeFilterHandler{handler: h}
 
 	slog.SetDefault(slog.New(h))

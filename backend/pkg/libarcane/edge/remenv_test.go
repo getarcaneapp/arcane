@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/require"
 )
 
@@ -88,12 +88,12 @@ func TestCopyRequestHeaders_SkipsExpectedHeaders(t *testing.T) {
 }
 
 func TestSetAuthHeader_ForwardsAPIKeyAndAuthorization(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	e := echo.New()
 	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodGet, "http://example.com", nil)
-	c.Request.Header.Set(HeaderAPIKey, "api-token")
-	c.Request.Header.Set(HeaderAuthorization, "Bearer auth")
+	req0 := httptest.NewRequest(http.MethodGet, "http://example.com", nil)
+	req0.Header.Set(HeaderAPIKey, "api-token")
+	req0.Header.Set(HeaderAuthorization, "Bearer auth")
+	c := e.NewContext(req0, w)
 
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://remote", nil)
 	require.NoError(t, err)
@@ -104,11 +104,11 @@ func TestSetAuthHeader_ForwardsAPIKeyAndAuthorization(t *testing.T) {
 }
 
 func TestSetAuthHeader_UsesCookieTokenWhenNoAuthorization(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	e := echo.New()
 	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodGet, "http://example.com", nil)
-	c.Request.AddCookie(&http.Cookie{Name: "token", Value: "cookie-token"})
+	req0 := httptest.NewRequest(http.MethodGet, "http://example.com", nil)
+	req0.AddCookie(&http.Cookie{Name: "token", Value: "cookie-token"})
+	c := e.NewContext(req0, w)
 
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://remote", nil)
 	require.NoError(t, err)
@@ -191,13 +191,13 @@ func TestGetSkipHeaders_ContainsExpectedEntries(t *testing.T) {
 }
 
 func TestBuildWebSocketHeaders_UsesAuthorizationHeaderAndAddsAgentToken(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	e := echo.New()
 	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodGet, "http://example.com", nil)
-	c.Request.Header.Set(HeaderAPIKey, "api-key")
-	c.Request.Header.Set(HeaderAuthorization, "Bearer auth")
-	c.Request.Header.Set(HeaderCookie, "session=abc")
+	req := httptest.NewRequest(http.MethodGet, "http://example.com", nil)
+	req.Header.Set(HeaderAPIKey, "api-key")
+	req.Header.Set(HeaderAuthorization, "Bearer auth")
+	req.Header.Set(HeaderCookie, "session=abc")
+	c := e.NewContext(req, w)
 
 	agent := "agent-token"
 	headers := BuildWebSocketHeaders(c, &agent)
@@ -209,22 +209,22 @@ func TestBuildWebSocketHeaders_UsesAuthorizationHeaderAndAddsAgentToken(t *testi
 }
 
 func TestBuildWebSocketHeaders_UsesCookieTokenAsBearer(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	e := echo.New()
 	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodGet, "http://example.com", nil)
-	c.Request.AddCookie(&http.Cookie{Name: "token", Value: "cookie-token"})
+	req := httptest.NewRequest(http.MethodGet, "http://example.com", nil)
+	req.AddCookie(&http.Cookie{Name: "token", Value: "cookie-token"})
+	c := e.NewContext(req, w)
 
 	headers := BuildWebSocketHeaders(c, nil)
 	require.Equal(t, "Bearer cookie-token", headers.Get(HeaderAuthorization))
 }
 
 func TestBuildWebSocketHeaders_ForwardsCookieHeaderWhenNoAuthPresent(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	e := echo.New()
 	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodGet, "http://example.com", nil)
-	c.Request.Header.Set(HeaderCookie, "session=abc")
+	req := httptest.NewRequest(http.MethodGet, "http://example.com", nil)
+	req.Header.Set(HeaderCookie, "session=abc")
+	c := e.NewContext(req, w)
 
 	headers := BuildWebSocketHeaders(c, nil)
 	require.Equal(t, "session=abc", headers.Get(HeaderCookie))

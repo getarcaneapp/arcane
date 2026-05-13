@@ -5,9 +5,9 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
+	"github.com/labstack/echo/v4"
 )
 
 var wsUpgraderForProxy = websocket.Upgrader{
@@ -19,14 +19,14 @@ var wsUpgraderForProxy = websocket.Upgrader{
 
 // ProxyWebSocketRequest proxies a WebSocket upgrade through an edge tunnel.
 // This handles logs, stats, and other streaming endpoints.
-func ProxyWebSocketRequest(c *gin.Context, tunnel *AgentTunnel, targetPath string) {
-	ctx := c.Request.Context()
+func ProxyWebSocketRequest(c echo.Context, tunnel *AgentTunnel, targetPath string) error {
+	req := c.Request()
+	ctx := req.Context()
 
-	// Upgrade the client connection to WebSocket
-	clientWS, err := wsUpgraderForProxy.Upgrade(c.Writer, c.Request, nil)
+	clientWS, err := wsUpgraderForProxy.Upgrade(c.Response().Writer, req, nil)
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to upgrade WebSocket for edge proxy", "error", err)
-		return
+		return nil
 	}
 	defer func() { _ = clientWS.Close() }()
 
@@ -44,16 +44,16 @@ func ProxyWebSocketRequest(c *gin.Context, tunnel *AgentTunnel, targetPath strin
 	})
 	defer tunnel.Pending.Delete(streamID)
 
-	headers := buildWebSocketHeaders(c.Request)
+	headers := buildWebSocketHeaders(req)
 	if err := DefaultCommandClient.OpenStream(streamCtx, tunnel, &CommandRequest{
 		ID:      streamID,
 		Method:  http.MethodGet,
 		Path:    targetPath,
-		Query:   c.Request.URL.RawQuery,
+		Query:   req.URL.RawQuery,
 		Headers: headers,
 	}); err != nil {
 		slog.ErrorContext(ctx, "Failed to send WebSocket start to agent", "error", err)
-		return
+		return nil
 	}
 
 	slog.DebugContext(ctx, "Started WebSocket stream through edge tunnel",
@@ -66,6 +66,7 @@ func ProxyWebSocketRequest(c *gin.Context, tunnel *AgentTunnel, targetPath strin
 	go forwardClientToAgent(ctx, streamCtx, clientWS, tunnel, streamID, clientDoneCh)
 
 	forwardAgentToClient(ctx, streamCtx, clientWS, agentDataCh, streamID, clientDoneCh)
+	return nil
 }
 
 func buildWebSocketHeaders(req *http.Request) map[string]string {

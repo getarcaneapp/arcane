@@ -8,8 +8,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -45,9 +45,6 @@ func TestIsBrowserSecurityHeader(t *testing.T) {
 }
 
 func TestProxyHTTPRequest_StripsBrowserHeaders(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
-	// Track what headers the agent receives
 	var receivedHeaders map[string]string
 
 	server, tunnel := setupMockAgentServer(t, func(msg *TunnelMessage) *TunnelMessage {
@@ -63,27 +60,26 @@ func TestProxyHTTPRequest_StripsBrowserHeaders(t *testing.T) {
 	defer server.Close()
 	defer func() { _ = tunnel.Close() }()
 
+	e := echo.New()
 	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPost, "/test", bytes.NewBufferString(`{"name":"test"}`))
+	req := httptest.NewRequest(http.MethodPost, "/test", bytes.NewBufferString(`{"name":"test"}`))
 
-	// Set headers that browsers add
-	c.Request.Header.Set("Origin", "http://192.168.1.42:30258")
-	c.Request.Header.Set("Referer", "http://192.168.1.42:30258/projects/new")
-	c.Request.Header.Set("Cookie", "token=some-jwt-token")
-	c.Request.Header.Set("Sec-Fetch-Mode", "cors")
-	c.Request.Header.Set("Sec-Fetch-Site", "same-origin")
-	c.Request.Header.Set("Sec-Fetch-Dest", "empty")
-	c.Request.Header.Set("Access-Control-Request-Method", "POST")
-	c.Request.Header.Set("Access-Control-Request-Headers", "Content-Type")
+	req.Header.Set("Origin", "http://192.168.1.42:30258")
+	req.Header.Set("Referer", "http://192.168.1.42:30258/projects/new")
+	req.Header.Set("Cookie", "token=some-jwt-token")
+	req.Header.Set("Sec-Fetch-Mode", "cors")
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	req.Header.Set("Sec-Fetch-Dest", "empty")
+	req.Header.Set("Access-Control-Request-Method", "POST")
+	req.Header.Set("Access-Control-Request-Headers", "Content-Type")
 
-	// Set headers that SHOULD be forwarded
-	c.Request.Header.Set("Content-Type", "application/json")
-	c.Request.Header.Set("X-Arcane-Agent-Token", "agent-tok-123")
-	c.Request.Header.Set("X-API-Key", "agent-tok-123")
-	c.Request.Header.Set("Authorization", "Bearer jwt-token")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Arcane-Agent-Token", "agent-tok-123")
+	req.Header.Set("X-API-Key", "agent-tok-123")
+	req.Header.Set("Authorization", "Bearer jwt-token")
+	c := e.NewContext(req, w)
 
-	ProxyHTTPRequest(c, tunnel, "/api/environments/0/projects")
+	_ = ProxyHTTPRequest(c, tunnel, "/api/environments/0/projects")
 
 	assert.Equal(t, http.StatusOK, w.Code)
 
@@ -105,8 +101,6 @@ func TestProxyHTTPRequest_StripsBrowserHeaders(t *testing.T) {
 }
 
 func TestProxyHTTPRequest_ForwardsBodyCorrectly(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	var receivedBody []byte
 	var receivedMethod string
 
@@ -126,13 +120,14 @@ func TestProxyHTTPRequest_ForwardsBodyCorrectly(t *testing.T) {
 
 	requestBody := `{"name":"My Project"}`
 
+	e := echo.New()
 	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPost, "/api/environments/abc/projects", bytes.NewBufferString(requestBody))
-	c.Request.Header.Set("Content-Type", "application/json")
-	c.Request.Header.Set("X-Arcane-Agent-Token", "tok")
+	req := httptest.NewRequest(http.MethodPost, "/api/environments/abc/projects", bytes.NewBufferString(requestBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Arcane-Agent-Token", "tok")
+	c := e.NewContext(req, w)
 
-	ProxyHTTPRequest(c, tunnel, "/api/environments/0/projects")
+	_ = ProxyHTTPRequest(c, tunnel, "/api/environments/0/projects")
 
 	assert.Equal(t, http.StatusCreated, w.Code)
 	assert.Equal(t, http.MethodPost, receivedMethod)
@@ -234,11 +229,10 @@ func TestHandleRequest_NoBrowserHeadersInTunnelMessage(t *testing.T) {
 func TestProxyHTTPRequest_EndToEnd_BrowserOriginStripped(t *testing.T) {
 	// Full end-to-end test: browser sends POST with Origin header via edge tunnel.
 	// The agent should NOT receive the Origin header.
-	gin.SetMode(gin.TestMode)
 
-	// This handler simulates what the agent's Gin handler would do.
+	// This handler simulates what the agent's handler would do.
 	// In a real scenario, if Origin is present and doesn't match allowed origins,
-	// gin-contrib/cors would return 403 before this handler runs.
+	// CORS middleware would return 403 before this handler runs.
 	agentHandlerCalled := false
 	agentHandler := func(msg *TunnelMessage) *TunnelMessage {
 		agentHandlerCalled = true
@@ -264,17 +258,17 @@ func TestProxyHTTPRequest_EndToEnd_BrowserOriginStripped(t *testing.T) {
 	defer server.Close()
 	defer func() { _ = tunnel.Close() }()
 
+	e := echo.New()
 	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-
 	body := `{"name":"New Project"}`
-	c.Request = httptest.NewRequest(http.MethodPost, "/api/environments/env-123/projects", bytes.NewBufferString(body))
-	c.Request.Header.Set("Origin", "http://192.168.1.42:30258")
-	c.Request.Header.Set("Referer", "http://192.168.1.42:30258/projects/new")
-	c.Request.Header.Set("Content-Type", "application/json")
-	c.Request.Header.Set("X-Arcane-Agent-Token", "agent-tok")
+	req := httptest.NewRequest(http.MethodPost, "/api/environments/env-123/projects", bytes.NewBufferString(body))
+	req.Header.Set("Origin", "http://192.168.1.42:30258")
+	req.Header.Set("Referer", "http://192.168.1.42:30258/projects/new")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Arcane-Agent-Token", "agent-tok")
+	c := e.NewContext(req, w)
 
-	ProxyHTTPRequest(c, tunnel, "/api/environments/0/projects")
+	_ = ProxyHTTPRequest(c, tunnel, "/api/environments/0/projects")
 
 	assert.True(t, agentHandlerCalled, "Agent handler should have been called")
 	assert.Equal(t, http.StatusCreated, w.Code, "Request should succeed because Origin was stripped")
@@ -282,8 +276,6 @@ func TestProxyHTTPRequest_EndToEnd_BrowserOriginStripped(t *testing.T) {
 }
 
 func TestProxyHTTPRequest_BodyPreservation_WebSocket(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	// Test that a POST body survives WebSocket JSON serialization round-trip
 	var receivedBody string
 
@@ -345,12 +337,13 @@ func TestProxyHTTPRequest_BodyPreservation_WebSocket(t *testing.T) {
 
 	requestBody := `{"name":"My Project","description":"A test project with special chars: <>&\""}`
 
+	e := echo.New()
 	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPost, "/test", bytes.NewBufferString(requestBody))
-	c.Request.Header.Set("Content-Type", "application/json")
+	req := httptest.NewRequest(http.MethodPost, "/test", bytes.NewBufferString(requestBody))
+	req.Header.Set("Content-Type", "application/json")
+	c := e.NewContext(req, w)
 
-	ProxyHTTPRequest(c, tunnel, "/api/environments/0/projects")
+	_ = ProxyHTTPRequest(c, tunnel, "/api/environments/0/projects")
 
 	assert.Equal(t, http.StatusCreated, w.Code)
 	assert.Equal(t, requestBody, receivedBody, "Request body should survive WebSocket JSON serialization round-trip")

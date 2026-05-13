@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
@@ -25,8 +25,6 @@ import (
 )
 
 func TestTunnelServer_HandleConnect(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	resolver := func(ctx context.Context, token string) (string, error) {
 		if token == "valid-token" {
 			return "env-connected", nil
@@ -46,7 +44,7 @@ func TestTunnelServer_HandleConnect(t *testing.T) {
 
 	server := NewTunnelServer(resolver, callback)
 
-	router := gin.New()
+	router := echo.New()
 	router.GET("/connect", server.HandleConnect)
 
 	ts := httptest.NewServer(router)
@@ -171,8 +169,6 @@ func TestTunnelServer_HandleConnect(t *testing.T) {
 }
 
 func TestTunnelServer_HandleConnect_AcceptsTokenAfterProxyTerminatedMTLS(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	server := NewTunnelServer(func(ctx context.Context, token string) (string, error) {
 		if token == "valid-token" {
 			return "env-proxy-mtls", nil
@@ -184,7 +180,7 @@ func TestTunnelServer_HandleConnect_AcceptsTokenAfterProxyTerminatedMTLS(t *test
 		AppURL:       "https://manager.example.com",
 	})
 
-	router := gin.New()
+	router := echo.New()
 	router.GET("/connect", server.HandleConnect)
 
 	ts := httptest.NewServer(router)
@@ -220,14 +216,12 @@ func TestTunnelServer_HandleConnect_AcceptsTokenAfterProxyTerminatedMTLS(t *test
 }
 
 func TestTunnelServer_HandleConnect_InvalidToken(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	resolver := func(ctx context.Context, token string) (string, error) {
 		return "", errors.New("invalid")
 	}
 
 	server := NewTunnelServer(resolver, nil)
-	router := gin.New()
+	router := echo.New()
 	router.GET("/connect", server.HandleConnect)
 
 	ts := httptest.NewServer(router)
@@ -257,8 +251,6 @@ func TestTunnelServer_HandleConnect_InvalidToken(t *testing.T) {
 }
 
 func TestTunnelServer_HandleConnect_PrefersHeaderTokenOverRegisterMessage(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	var resolvedToken string
 	resolver := func(ctx context.Context, token string) (string, error) {
 		resolvedToken = token
@@ -269,7 +261,7 @@ func TestTunnelServer_HandleConnect_PrefersHeaderTokenOverRegisterMessage(t *tes
 	}
 
 	server := NewTunnelServer(resolver, nil)
-	router := gin.New()
+	router := echo.New()
 	router.GET("/connect", server.HandleConnect)
 
 	ts := httptest.NewServer(router)
@@ -302,7 +294,7 @@ func TestTunnelServer_HandleConnect_PrefersHeaderTokenOverRegisterMessage(t *tes
 
 func TestTunnelServer_HandleConnect_NoToken(t *testing.T) {
 	server := NewTunnelServer(nil, nil)
-	router := gin.New()
+	router := echo.New()
 	router.GET("/connect", server.HandleConnect)
 
 	ts := httptest.NewServer(router)
@@ -330,8 +322,7 @@ func TestTunnelServer_HandleConnect_NoToken(t *testing.T) {
 }
 
 func TestTunnelConnectRouteRegistration(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	router := gin.New()
+	router := echo.New()
 	group := router.Group("/api")
 
 	server := NewTunnelServer(nil, nil)
@@ -347,8 +338,6 @@ func TestTunnelConnectRouteRegistration(t *testing.T) {
 }
 
 func TestTunnelServer_HandleMTLSEnroll(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	server := NewTunnelServer(func(ctx context.Context, token string) (string, error) {
 		if token != "valid-token" {
 			return "", errors.New("invalid token")
@@ -364,7 +353,7 @@ func TestTunnelServer_HandleMTLSEnroll(t *testing.T) {
 		EdgeMTLSAssetsDir: t.TempDir(),
 	})
 
-	router := gin.New()
+	router := echo.New()
 	router.POST("/enroll", server.HandleMTLSEnroll)
 
 	req := httptest.NewRequest(http.MethodPost, "/enroll", nil)
@@ -393,8 +382,6 @@ func TestTunnelServer_HandleMTLSEnroll(t *testing.T) {
 }
 
 func TestTunnelServer_HandleMTLSEnroll_ServesCachedAssetsDuringCooldown(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	server := NewTunnelServer(func(ctx context.Context, token string) (string, error) {
 		if token != "valid-token" {
 			return "", errors.New("invalid token")
@@ -406,7 +393,7 @@ func TestTunnelServer_HandleMTLSEnroll_ServesCachedAssetsDuringCooldown(t *testi
 		EdgeMTLSAssetsDir: t.TempDir(),
 	})
 
-	router := gin.New()
+	router := echo.New()
 	router.POST("/enroll", server.HandleMTLSEnroll)
 
 	req := httptest.NewRequest(http.MethodPost, "/enroll", nil)
@@ -431,8 +418,6 @@ func TestTunnelServer_HandleMTLSEnroll_ServesCachedAssetsDuringCooldown(t *testi
 }
 
 func TestTunnelServer_HandleMTLSEnroll_AllowsRepeatAfterCooldownAndMarksReenrollment(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	cfg := &Config{
 		EdgeMTLSMode:      EdgeMTLSModeRequired,
 		EdgeMTLSAssetsDir: t.TempDir(),
@@ -451,7 +436,7 @@ func TestTunnelServer_HandleMTLSEnroll_AllowsRepeatAfterCooldownAndMarksReenroll
 		reenrolled <- wasReenrolled
 	})
 
-	router := gin.New()
+	router := echo.New()
 	router.POST("/enroll", server.HandleMTLSEnroll)
 
 	req := httptest.NewRequest(http.MethodPost, "/enroll", nil)

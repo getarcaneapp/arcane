@@ -11,7 +11,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge"
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v4"
 )
 
 // registerEdgeTunnelRoutes configures the manager-side edge tunnel server.
@@ -20,7 +20,7 @@ import (
 func registerEdgeTunnelRoutes(
 	ctx context.Context,
 	cfg *config.Config,
-	apiGroup *gin.RouterGroup,
+	apiGroup *echo.Group,
 	appServices *Services,
 ) *edge.TunnelServer {
 	// Resolver that validates API key and returns the environment ID
@@ -133,8 +133,8 @@ func registerEdgeTunnelRoutes(
 	// Rate-limit agent mTLS enrollment per-IP. Enrollment is authenticated
 	// only by the agent token, so we cap bursts to mitigate brute-force or
 	// token-abuse attempts without impacting normal agent lifecycles.
-	apiGroup.POST("/tunnel/mtls/enroll", middleware.PerIPRateLimit(10, 3), middleware.PerAgentTokenRateLimit(10, 3), server.HandleMTLSEnroll)
-	apiGroup.GET("/tunnel/connect", middleware.PerIPRateLimit(60, 30), middleware.PerAgentTokenRateLimit(10, 3), server.HandleConnect)
+	apiGroup.POST("/tunnel/mtls/enroll", server.HandleMTLSEnroll, middleware.PerIPRateLimit(10, 3), middleware.PerAgentTokenRateLimit(10, 3))
+	apiGroup.GET("/tunnel/connect", server.HandleConnect, middleware.PerIPRateLimit(60, 30), middleware.PerAgentTokenRateLimit(10, 3))
 	slog.InfoContext(ctx, "Configured edge tunnel server",
 		"poll_enabled", true,
 		"grpc_enabled", !cfg.AgentMode,

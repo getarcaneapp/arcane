@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -28,8 +28,6 @@ func TestTunnelDemandRegistryDesiredStatus(t *testing.T) {
 }
 
 func TestTunnelServer_HandlePoll(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	registry := NewTunnelRegistry()
 	server := NewTunnelServerWithRegistry(registry, func(ctx context.Context, token string) (string, error) {
 		if token != "valid-token" {
@@ -38,7 +36,7 @@ func TestTunnelServer_HandlePoll(t *testing.T) {
 		return "env-poll-1", nil
 	}, nil)
 
-	router := gin.New()
+	router := echo.New()
 	router.POST("/api/tunnel/poll", server.HandlePoll)
 
 	TouchTunnelDemand("env-poll-1", time.Minute)
@@ -82,8 +80,6 @@ func TestTunnelServer_HandlePoll(t *testing.T) {
 // access policies) that strip non-standard X- headers; without it, agents
 // behind such proxies log "invalid agent token" indefinitely.
 func TestTunnelServer_HandlePoll_AcceptsTokenFromAllSupportedHeaders(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	cases := []struct {
 		name        string
 		setHeader   func(req *http.Request)
@@ -160,7 +156,7 @@ func TestTunnelServer_HandlePoll_AcceptsTokenFromAllSupportedHeaders(t *testing.
 				return "env-headers", nil
 			}, nil)
 
-			router := gin.New()
+			router := echo.New()
 			router.POST("/api/tunnel/poll", server.HandlePoll)
 
 			req := httptest.NewRequest(http.MethodPost, "/api/tunnel/poll", bytes.NewBufferString(`{"transport":"poll"}`))
@@ -177,8 +173,6 @@ func TestTunnelServer_HandlePoll_AcceptsTokenFromAllSupportedHeaders(t *testing.
 }
 
 func TestTunnelServer_HandlePoll_AcceptsTokenAfterProxyTerminatedMTLS(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	server := NewTunnelServerWithRegistry(NewTunnelRegistry(), func(ctx context.Context, token string) (string, error) {
 		if token != "valid-token" {
 			return "", errors.New("invalid token")
@@ -190,7 +184,7 @@ func TestTunnelServer_HandlePoll_AcceptsTokenAfterProxyTerminatedMTLS(t *testing
 		AppURL:       "https://manager.example.com",
 	})
 
-	router := gin.New()
+	router := echo.New()
 	router.POST("/api/tunnel/poll", server.HandlePoll)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/tunnel/poll", bytes.NewBufferString(`{"transport":"poll"}`))
