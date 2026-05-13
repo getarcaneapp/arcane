@@ -837,6 +837,7 @@
 	"networks_topology_hint": "Fare clic su un nodo per aprirne i dettagli.",
 	"networks_topology_legend_networks": "Reti",
 	"networks_topology_legend_containers": "Contenitori",
+	"networks_topology_default_networks": "Reti predefinite",
 	"networks_total": "Reti totali",
 	"networks_delete_selected_title": "Elimina {count} rete/i",
 	"networks_delete_selected_message": "Are you sure you want to delete {count} selected network(s)? This action cannot be undone.",
