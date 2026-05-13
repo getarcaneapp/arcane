@@ -15,7 +15,7 @@
 	import { UseClipboard } from '$lib/hooks/use-clipboard.svelte';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { queryKeys } from '$lib/query/query-keys';
-	import type { FileContentResponse, FileEntry } from '$lib/types/file-browser.type';
+	import type { FileEntry } from '$lib/types/file-browser.type';
 	import type { FileProvider } from '$lib/components/file-browser';
 	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
 
@@ -71,11 +71,22 @@
 			? queryKeys.buildWorkspace.content(envId, editorFile.path)
 			: (['build-workspace', envId, 'content', 'none'] as const),
 		queryFn: () => provider.getContent(editorFile!.path),
-		enabled: !!editorFile && editorOpen,
-		onSuccess: (data: FileContentResponse) => {
+		enabled: !!editorFile && editorOpen
+	}));
+
+	let lastSeededPath: string | null = null;
+
+	$effect(() => {
+		if (!editorFile || !editorOpen) {
+			lastSeededPath = null;
+			return;
+		}
+		const data = editorContentQuery.data;
+		if (data && editorFile.path !== lastSeededPath) {
+			lastSeededPath = editorFile.path;
 			editorContent = b64DecodeUnicode(data.content);
 		}
-	}));
+	});
 
 	const editorLoading = $derived(editorContentQuery.isPending || editorContentQuery.isFetching);
 	const editorError = $derived.by(() => {
