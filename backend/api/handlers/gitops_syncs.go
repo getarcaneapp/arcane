@@ -18,6 +18,20 @@ type GitOpsSyncHandler struct {
 	syncService *services.GitOpsSyncService
 }
 
+// validateGitOpsSyncTargetTypeInternal ensures the targetType is one of the allowed
+// values and requires admin privileges for the swarm_stack target. Empty string is
+// treated as the default ("project") and is allowed for non-admins.
+func validateGitOpsSyncTargetTypeInternal(ctx context.Context, targetType string) error {
+	switch targetType {
+	case "", "project":
+		return nil
+	case "swarm_stack":
+		return checkAdminInternal(ctx)
+	default:
+		return huma.Error400BadRequest("invalid targetType: must be \"project\" or \"swarm_stack\"")
+	}
+}
+
 // ============================================================================
 // Input/Output Types
 // ============================================================================
@@ -290,6 +304,10 @@ func (h *GitOpsSyncHandler) CreateSync(ctx context.Context, input *CreateGitOpsS
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
+	if err := validateGitOpsSyncTargetTypeInternal(ctx, input.Body.TargetType); err != nil {
+		return nil, err
+	}
+
 	actor := models.User{}
 	if currentUser, exists := humamw.GetCurrentUserFromContext(ctx); exists && currentUser != nil {
 		actor = *currentUser
@@ -375,6 +393,23 @@ func (h *GitOpsSyncHandler) UpdateSync(ctx context.Context, input *UpdateGitOpsS
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
+	if input.Body.TargetType != nil {
+		if err := validateGitOpsSyncTargetTypeInternal(ctx, *input.Body.TargetType); err != nil {
+			return nil, err
+		}
+	}
+
+	existing, err := h.syncService.GetSyncByID(ctx, input.EnvironmentID, input.SyncID)
+	if err != nil {
+		apiErr := models.ToAPIError(err)
+		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.GitOpsSyncRetrievalError{Err: err}).Error())
+	}
+	if existing.TargetType == "swarm_stack" {
+		if err := checkAdminInternal(ctx); err != nil {
+			return nil, err
+		}
+	}
+
 	actor := models.User{}
 	if currentUser, exists := humamw.GetCurrentUserFromContext(ctx); exists && currentUser != nil {
 		actor = *currentUser
@@ -408,6 +443,17 @@ func (h *GitOpsSyncHandler) DeleteSync(ctx context.Context, input *DeleteGitOpsS
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
+	existing, err := h.syncService.GetSyncByID(ctx, input.EnvironmentID, input.SyncID)
+	if err != nil {
+		apiErr := models.ToAPIError(err)
+		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.GitOpsSyncRetrievalError{Err: err}).Error())
+	}
+	if existing.TargetType == "swarm_stack" {
+		if err := checkAdminInternal(ctx); err != nil {
+			return nil, err
+		}
+	}
+
 	actor := models.User{}
 	if currentUser, exists := humamw.GetCurrentUserFromContext(ctx); exists && currentUser != nil {
 		actor = *currentUser
@@ -435,6 +481,17 @@ func (h *GitOpsSyncHandler) PerformSync(ctx context.Context, input *PerformSyncI
 	}
 	if h.syncService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	existing, err := h.syncService.GetSyncByID(ctx, input.EnvironmentID, input.SyncID)
+	if err != nil {
+		apiErr := models.ToAPIError(err)
+		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.GitOpsSyncRetrievalError{Err: err}).Error())
+	}
+	if existing.TargetType == "swarm_stack" {
+		if err := checkAdminInternal(ctx); err != nil {
+			return nil, err
+		}
 	}
 
 	actor := models.User{}
