@@ -837,6 +837,7 @@
 	"networks_topology_hint": "按一下節點以開啟其詳細資訊。",
 	"networks_topology_legend_networks": "網路",
 	"networks_topology_legend_containers": "容器",
+	"networks_topology_default_networks": "預設網路",
 	"networks_total": "網路總數",
 	"networks_delete_selected_title": "刪除 {count} 個網路",
 	"networks_delete_selected_message": "確定要移除 {count} 個選擇的網路？本操作無法撤銷。",
