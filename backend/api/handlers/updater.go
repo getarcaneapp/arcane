@@ -115,6 +115,9 @@ func RegisterUpdater(api huma.API, updaterService *services.UpdaterService) {
 
 // RunUpdater applies pending container updates.
 func (h *UpdaterHandler) RunUpdater(ctx context.Context, input *RunUpdaterInput) (*RunUpdaterOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.updaterService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -179,6 +182,9 @@ func (h *UpdaterHandler) GetUpdaterHistory(ctx context.Context, input *GetUpdate
 
 // UpdateContainer updates a single container by pulling the latest image and applying the appropriate update flow.
 func (h *UpdaterHandler) UpdateContainer(ctx context.Context, input *UpdateContainerInput) (*UpdateContainerOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.updaterService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}

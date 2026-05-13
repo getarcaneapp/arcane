@@ -26,6 +26,8 @@
 	import ContainerStatsSync from './components/container-stats-sync.svelte';
 	import ContainerStatsCell from './components/container-stats-cell.svelte';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import userStore from '$lib/stores/user-store';
+	import { fromStore } from 'svelte/store';
 	import IconImage from '$lib/components/icon-image.svelte';
 	import { getArcaneIconUrlFromLabels } from '$lib/utils/arcane-labels';
 	import { createContainerActions } from './container-table.actions';
@@ -146,6 +148,9 @@
 	const isAnyLoading = $derived(
 		Object.values(actionStatus).some((status) => status !== '') || Object.values(isBulkLoading).some((loading) => loading)
 	);
+
+	const storeUser = fromStore(userStore);
+	const isAdmin = $derived(!!storeUser.current?.roles?.includes('admin'));
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 	let customSettings = $state<Record<string, unknown>>({});
@@ -401,7 +406,7 @@
 					icon={StopIcon}
 				/>
 			{/if}
-			{#if !status && item.updateInfo?.hasUpdate}
+			{#if !status && item.updateInfo?.hasUpdate && isAdmin}
 				<ArcaneButton
 					action="base"
 					tone="ghost"
@@ -424,7 +429,7 @@
 		imageId={item.imageId}
 		repo={imageRef.repo}
 		tag={imageRef.tag}
-		onUpdateContainer={() => handleUpdateContainer(item)}
+		onUpdateContainer={isAdmin ? () => handleUpdateContainer(item) : undefined}
 		debugHasUpdate={false}
 	/>
 {/snippet}
@@ -566,7 +571,7 @@
 									imageId={item.imageId}
 									repo={imageRef.repo}
 									tag={imageRef.tag}
-									onUpdateContainer={() => handleUpdateContainer(item)}
+									onUpdateContainer={isAdmin ? () => handleUpdateContainer(item) : undefined}
 									debugHasUpdate={false}
 								/>
 							</div>
@@ -598,7 +603,7 @@
 
 				<DropdownMenu.Separator />
 
-				{#if item.updateInfo?.hasUpdate}
+				{#if item.updateInfo?.hasUpdate && isAdmin}
 					<DropdownMenu.Item onclick={() => handleUpdateContainer(item)} disabled={status === 'updating' || isAnyLoading}>
 						{#if status === 'updating'}
 							<Spinner class="size-4" />
