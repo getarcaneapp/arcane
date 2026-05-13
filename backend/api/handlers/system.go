@@ -160,6 +160,7 @@ func RegisterSystem(api huma.API, dockerService *services.DockerClientService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.PruneAll)
 
 	huma.Register(api, huma.Operation{
@@ -173,6 +174,7 @@ func RegisterSystem(api huma.API, dockerService *services.DockerClientService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.StartAllContainers)
 
 	huma.Register(api, huma.Operation{
@@ -186,6 +188,7 @@ func RegisterSystem(api huma.API, dockerService *services.DockerClientService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.StartAllStoppedContainers)
 
 	huma.Register(api, huma.Operation{
@@ -199,6 +202,7 @@ func RegisterSystem(api huma.API, dockerService *services.DockerClientService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.StopAllContainers)
 
 	huma.Register(api, huma.Operation{
@@ -225,6 +229,7 @@ func RegisterSystem(api huma.API, dockerService *services.DockerClientService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.CheckUpgradeAvailable)
 
 	huma.Register(api, huma.Operation{
@@ -239,6 +244,7 @@ func RegisterSystem(api huma.API, dockerService *services.DockerClientService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.TriggerUpgrade)
 }
 

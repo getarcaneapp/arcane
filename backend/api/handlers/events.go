@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/danielgtaylor/huma/v2"
+	humamw "github.com/getarcaneapp/arcane/backend/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/types/base"
@@ -95,6 +96,7 @@ func RegisterEvents(api huma.API, eventService *services.EventService, apiKeySvc
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.ListEvents)
 
 	huma.Register(api, huma.Operation{
@@ -108,6 +110,7 @@ func RegisterEvents(api huma.API, eventService *services.EventService, apiKeySvc
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.CreateEvent)
 
 	huma.Register(api, huma.Operation{
@@ -121,6 +124,7 @@ func RegisterEvents(api huma.API, eventService *services.EventService, apiKeySvc
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.DeleteEvent)
 
 	huma.Register(api, huma.Operation{
@@ -134,6 +138,7 @@ func RegisterEvents(api huma.API, eventService *services.EventService, apiKeySvc
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.GetEventsByEnvironment)
 }
 

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -236,6 +237,11 @@ func (s *TemplateService) GetAllTemplatesPaginated(ctx context.Context, params p
 }
 
 var ErrTemplateNotFound = errors.New("template not found")
+
+// envKeyPattern is the POSIX env-name shape used to validate global variable
+// keys before they are persisted to .env.global. Keys that do not match are
+// rejected with a common.InvalidEnvKeyError.
+var envKeyPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 func (s *TemplateService) GetTemplate(ctx context.Context, id string) (*models.ComposeTemplate, error) {
 	if err := s.syncFilesystemTemplatesInternal(ctx); err != nil {
@@ -1128,6 +1134,9 @@ func (s *TemplateService) UpdateGlobalVariables(ctx context.Context, vars []env.
 		}
 
 		key := strings.TrimSpace(v.Key)
+		if !envKeyPattern.MatchString(key) {
+			return &common.InvalidEnvKeyError{Key: v.Key}
+		}
 		value := strings.TrimSpace(v.Value)
 
 		if strings.ContainsAny(value, " \t\n\r#") {

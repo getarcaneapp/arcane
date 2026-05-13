@@ -90,6 +90,7 @@ func RegisterApiKeys(api huma.API, apiKeyService *services.ApiKeyService) {
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.ListApiKeys)
 
 	huma.Register(api, huma.Operation{
@@ -103,6 +104,7 @@ func RegisterApiKeys(api huma.API, apiKeyService *services.ApiKeyService) {
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.CreateApiKey)
 
 	huma.Register(api, huma.Operation{
@@ -116,6 +118,7 @@ func RegisterApiKeys(api huma.API, apiKeyService *services.ApiKeyService) {
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.GetApiKey)
 
 	huma.Register(api, huma.Operation{
@@ -129,6 +132,7 @@ func RegisterApiKeys(api huma.API, apiKeyService *services.ApiKeyService) {
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.UpdateApiKey)
 
 	huma.Register(api, huma.Operation{
@@ -142,6 +146,7 @@ func RegisterApiKeys(api huma.API, apiKeyService *services.ApiKeyService) {
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.DeleteApiKey)
 }
 

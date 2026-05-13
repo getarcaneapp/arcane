@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
+	humamw "github.com/getarcaneapp/arcane/backend/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
@@ -190,6 +191,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.FetchRegistry)
 
 	huma.Register(api, huma.Operation{
@@ -331,6 +333,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.CreateRegistry)
 
 	huma.Register(api, huma.Operation{
@@ -344,6 +347,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.UpdateRegistry)
 
 	huma.Register(api, huma.Operation{
@@ -357,6 +361,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.DeleteRegistry)
 
 	huma.Register(api, huma.Operation{
@@ -370,6 +375,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.GetGlobalVariables)
 
 	huma.Register(api, huma.Operation{
@@ -383,6 +389,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.UpdateGlobalVariables)
 }
 
@@ -729,6 +736,9 @@ func (h *TemplateHandler) GetRegistries(ctx context.Context, _ *GetTemplateRegis
 
 // CreateRegistry creates a new template registry.
 func (h *TemplateHandler) CreateRegistry(ctx context.Context, input *CreateTemplateRegistryInput) (*CreateTemplateRegistryOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.templateService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -758,6 +768,9 @@ func (h *TemplateHandler) CreateRegistry(ctx context.Context, input *CreateTempl
 
 // UpdateRegistry updates a template registry.
 func (h *TemplateHandler) UpdateRegistry(ctx context.Context, input *UpdateTemplateRegistryInput) (*UpdateTemplateRegistryOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.templateService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -791,6 +804,9 @@ func (h *TemplateHandler) UpdateRegistry(ctx context.Context, input *UpdateTempl
 
 // DeleteRegistry deletes a template registry.
 func (h *TemplateHandler) DeleteRegistry(ctx context.Context, input *DeleteTemplateRegistryInput) (*DeleteTemplateRegistryOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.templateService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -818,6 +834,9 @@ func (h *TemplateHandler) DeleteRegistry(ctx context.Context, input *DeleteTempl
 
 // FetchRegistry fetches templates from a remote registry URL.
 func (h *TemplateHandler) FetchRegistry(ctx context.Context, input *FetchTemplateRegistryInput) (*FetchTemplateRegistryOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.templateService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -846,6 +865,9 @@ func (h *TemplateHandler) FetchRegistry(ctx context.Context, input *FetchTemplat
 
 // GetGlobalVariables returns global template variables.
 func (h *TemplateHandler) GetGlobalVariables(ctx context.Context, input *GetGlobalVariablesInput) (*GetGlobalVariablesOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.templateService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -882,6 +904,9 @@ func (h *TemplateHandler) getGlobalVariablesForRemoteEnvironmentInternal(ctx con
 
 // UpdateGlobalVariables updates global template variables.
 func (h *TemplateHandler) UpdateGlobalVariables(ctx context.Context, input *UpdateGlobalVariablesInput) (*UpdateGlobalVariablesOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.templateService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -891,6 +916,9 @@ func (h *TemplateHandler) UpdateGlobalVariables(ctx context.Context, input *Upda
 	}
 
 	if err := h.templateService.UpdateGlobalVariables(ctx, input.Body.Variables); err != nil {
+		if common.IsInvalidEnvKeyError(err) {
+			return nil, huma.Error400BadRequest(err.Error())
+		}
 		return nil, huma.Error500InternalServerError((&common.GlobalVariablesUpdateError{Err: err}).Error())
 	}
 

@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
+	humamw "github.com/getarcaneapp/arcane/backend/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
@@ -71,6 +72,7 @@ func RegisterUpdater(api huma.API, updaterService *services.UpdaterService) {
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.RunUpdater)
 
 	huma.Register(api, huma.Operation{
@@ -110,6 +112,7 @@ func RegisterUpdater(api huma.API, updaterService *services.UpdaterService) {
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.UpdateContainer)
 }
 

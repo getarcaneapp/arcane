@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
+	humamw "github.com/getarcaneapp/arcane/backend/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
@@ -96,6 +97,7 @@ func RegisterUsers(api huma.API, userService *services.UserService, authService 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.ListUsers)
 
 	huma.Register(api, huma.Operation{
@@ -109,6 +111,7 @@ func RegisterUsers(api huma.API, userService *services.UserService, authService 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.CreateUser)
 
 	huma.Register(api, huma.Operation{
@@ -122,6 +125,7 @@ func RegisterUsers(api huma.API, userService *services.UserService, authService 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.GetUser)
 
 	huma.Register(api, huma.Operation{
@@ -135,6 +139,7 @@ func RegisterUsers(api huma.API, userService *services.UserService, authService 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.UpdateUser)
 
 	huma.Register(api, huma.Operation{
@@ -148,6 +153,7 @@ func RegisterUsers(api huma.API, userService *services.UserService, authService 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.DeleteUser)
 }
 

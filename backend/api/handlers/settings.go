@@ -152,6 +152,7 @@ func RegisterSettings(api huma.API, settingsService *services.SettingsService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.UpdateSettings)
 
 	// Top-level settings endpoints (not environment-scoped)
@@ -166,6 +167,7 @@ func RegisterSettings(api huma.API, settingsService *services.SettingsService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.Search)
 
 	huma.Register(api, huma.Operation{
@@ -179,6 +181,7 @@ func RegisterSettings(api huma.API, settingsService *services.SettingsService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.GetCategories)
 }
 

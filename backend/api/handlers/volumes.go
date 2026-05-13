@@ -350,6 +350,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.CreateVolume)
 
 	huma.Register(api, huma.Operation{
@@ -363,6 +364,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.RemoveVolume)
 
 	huma.Register(api, huma.Operation{
@@ -376,6 +378,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.PruneVolumes)
 
 	huma.Register(api, huma.Operation{
@@ -469,6 +472,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 				},
 			},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.UploadFile)
 
 	huma.Register(api, huma.Operation{
@@ -481,6 +485,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.CreateDirectory)
 
 	huma.Register(api, huma.Operation{
@@ -493,6 +498,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.DeleteFile)
 
 	// --- Volume Backup Endpoints ---
@@ -519,6 +525,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.CreateBackup)
 
 	huma.Register(api, huma.Operation{
@@ -531,6 +538,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.RestoreBackup)
 
 	huma.Register(api, huma.Operation{
@@ -543,6 +551,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.RestoreBackupFiles)
 
 	huma.Register(api, huma.Operation{
@@ -555,6 +564,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.DeleteBackup)
 
 	huma.Register(api, huma.Operation{
@@ -620,6 +630,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 				},
 			},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.UploadAndRestore)
 }
 
@@ -703,6 +714,9 @@ func (h *VolumeHandler) GetVolume(ctx context.Context, input *GetVolumeInput) (*
 
 // CreateVolume creates a new Docker volume.
 func (h *VolumeHandler) CreateVolume(ctx context.Context, input *CreateVolumeInput) (*CreateVolumeOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.volumeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -734,6 +748,9 @@ func (h *VolumeHandler) CreateVolume(ctx context.Context, input *CreateVolumeInp
 
 // RemoveVolume removes a Docker volume.
 func (h *VolumeHandler) RemoveVolume(ctx context.Context, input *RemoveVolumeInput) (*RemoveVolumeOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.volumeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -759,6 +776,9 @@ func (h *VolumeHandler) RemoveVolume(ctx context.Context, input *RemoveVolumeInp
 
 // PruneVolumes removes all unused Docker volumes.
 func (h *VolumeHandler) PruneVolumes(ctx context.Context, input *PruneVolumesInput) (*PruneVolumesOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.volumeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -914,6 +934,9 @@ func (h *VolumeHandler) DownloadFile(ctx context.Context, input *DownloadFileInp
 }
 
 func (h *VolumeHandler) UploadFile(ctx context.Context, input *UploadFileInput) (*base.ApiResponse[base.MessageResponse], error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.volumeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -941,6 +964,9 @@ func (h *VolumeHandler) UploadFile(ctx context.Context, input *UploadFileInput) 
 }
 
 func (h *VolumeHandler) CreateDirectory(ctx context.Context, input *CreateDirectoryInput) (*base.ApiResponse[base.MessageResponse], error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.volumeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -956,6 +982,9 @@ func (h *VolumeHandler) CreateDirectory(ctx context.Context, input *CreateDirect
 }
 
 func (h *VolumeHandler) DeleteFile(ctx context.Context, input *DeleteFileInput) (*base.ApiResponse[base.MessageResponse], error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.volumeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -1024,6 +1053,9 @@ func (h *VolumeHandler) ListBackups(ctx context.Context, input *ListBackupsInput
 }
 
 func (h *VolumeHandler) CreateBackup(ctx context.Context, input *CreateBackupInput) (*CreateBackupOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.volumeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -1045,6 +1077,9 @@ func (h *VolumeHandler) CreateBackup(ctx context.Context, input *CreateBackupInp
 }
 
 func (h *VolumeHandler) RestoreBackup(ctx context.Context, input *RestoreBackupInput) (*RestoreBackupOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.volumeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -1066,6 +1101,9 @@ func (h *VolumeHandler) RestoreBackup(ctx context.Context, input *RestoreBackupI
 }
 
 func (h *VolumeHandler) RestoreBackupFiles(ctx context.Context, input *RestoreBackupFilesInput) (*RestoreBackupFilesOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.volumeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -1132,6 +1170,9 @@ func (h *VolumeHandler) ListBackupFiles(ctx context.Context, input *ListBackupFi
 }
 
 func (h *VolumeHandler) DeleteBackup(ctx context.Context, input *DeleteBackupInput) (*DeleteBackupOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.volumeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -1173,6 +1214,9 @@ func (h *VolumeHandler) DownloadBackup(ctx context.Context, input *DownloadBacku
 }
 
 func (h *VolumeHandler) UploadAndRestore(ctx context.Context, input *UploadAndRestoreInput) (*UploadAndRestoreOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.volumeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}

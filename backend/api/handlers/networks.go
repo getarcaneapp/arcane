@@ -163,6 +163,7 @@ func RegisterNetworks(api huma.API, networkSvc *services.NetworkService, dockerS
 		Summary:     "Create network",
 		Tags:        []string{"Networks"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.CreateNetwork)
 
 	huma.Register(api, huma.Operation{
@@ -190,6 +191,7 @@ func RegisterNetworks(api huma.API, networkSvc *services.NetworkService, dockerS
 		Summary:     "Delete network",
 		Tags:        []string{"Networks"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.DeleteNetwork)
 
 	huma.Register(api, huma.Operation{
@@ -199,6 +201,7 @@ func RegisterNetworks(api huma.API, networkSvc *services.NetworkService, dockerS
 		Summary:     "Prune networks",
 		Tags:        []string{"Networks"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.PruneNetworks)
 }
 
@@ -263,6 +266,9 @@ func (h *NetworkHandler) GetNetworkCounts(ctx context.Context, input *GetNetwork
 }
 
 func (h *NetworkHandler) CreateNetwork(ctx context.Context, input *CreateNetworkInput) (*CreateNetworkOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	user, exists := humamw.GetCurrentUserFromContext(ctx)
 	if !exists {
 		return nil, huma.Error401Unauthorized("not authenticated")
@@ -392,6 +398,9 @@ func (h *NetworkHandler) GetNetworkTopology(ctx context.Context, input *GetNetwo
 }
 
 func (h *NetworkHandler) DeleteNetwork(ctx context.Context, input *DeleteNetworkInput) (*DeleteNetworkOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	user, exists := humamw.GetCurrentUserFromContext(ctx)
 	if !exists {
 		return nil, huma.Error401Unauthorized("not authenticated")
@@ -410,6 +419,9 @@ func (h *NetworkHandler) DeleteNetwork(ctx context.Context, input *DeleteNetwork
 }
 
 func (h *NetworkHandler) PruneNetworks(ctx context.Context, input *PruneNetworksInput) (*PruneNetworksOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	report, err := h.networkService.PruneNetworks(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.NetworkPruneError{Err: err}).Error())

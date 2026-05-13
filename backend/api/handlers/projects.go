@@ -243,6 +243,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService) {
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.DeployProject)
 
 	huma.Register(api, huma.Operation{
@@ -256,6 +257,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService) {
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.DownProject)
 
 	huma.Register(api, huma.Operation{
@@ -269,6 +271,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService) {
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.CreateProject)
 
 	huma.Register(api, huma.Operation{
@@ -308,6 +311,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService) {
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.RedeployProject)
 
 	huma.Register(api, huma.Operation{
@@ -321,6 +325,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService) {
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.DestroyProject)
 
 	huma.Register(api, huma.Operation{
@@ -334,6 +339,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService) {
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.UpdateProject)
 
 	huma.Register(api, huma.Operation{
@@ -347,6 +353,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService) {
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.UpdateProjectInclude)
 
 	huma.Register(api, huma.Operation{
@@ -360,6 +367,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService) {
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.RestartProject)
 
 	huma.Register(api, huma.Operation{
@@ -373,6 +381,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService) {
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.ArchiveProject)
 
 	huma.Register(api, huma.Operation{
@@ -386,6 +395,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService) {
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.UnarchiveProject)
 
 	huma.Register(api, huma.Operation{
@@ -399,6 +409,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService) {
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.PullProjectImages)
 
 	huma.Register(api, huma.Operation{
@@ -412,6 +423,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService) {
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.BuildProjectImages)
 }
 
@@ -500,6 +512,9 @@ func (h *ProjectHandler) GetProjectStatusCounts(ctx context.Context, input *GetP
 
 // DeployProject deploys a Docker Compose project.
 func (h *ProjectHandler) DeployProject(ctx context.Context, input *DeployProjectInput) (*huma.StreamResponse, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.projectService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -546,6 +561,9 @@ func (h *ProjectHandler) DeployProject(ctx context.Context, input *DeployProject
 
 // DownProject brings down a Docker Compose project.
 func (h *ProjectHandler) DownProject(ctx context.Context, input *DownProjectInput) (*DownProjectOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.projectService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -575,6 +593,9 @@ func (h *ProjectHandler) DownProject(ctx context.Context, input *DownProjectInpu
 
 // CreateProject creates a new Docker Compose project.
 func (h *ProjectHandler) CreateProject(ctx context.Context, input *CreateProjectInput) (*CreateProjectOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.projectService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -673,6 +694,9 @@ func (h *ProjectHandler) GetProjectFile(ctx context.Context, input *GetProjectFi
 
 // RedeployProject redeploys a Docker Compose project.
 func (h *ProjectHandler) RedeployProject(ctx context.Context, input *RedeployProjectInput) (*RedeployProjectOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.projectService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -706,6 +730,9 @@ func (h *ProjectHandler) RedeployProject(ctx context.Context, input *RedeployPro
 
 // DestroyProject destroys a Docker Compose project.
 func (h *ProjectHandler) DestroyProject(ctx context.Context, input *DestroyProjectInput) (*DestroyProjectOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.projectService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -745,6 +772,9 @@ func (h *ProjectHandler) DestroyProject(ctx context.Context, input *DestroyProje
 
 // UpdateProject updates a Docker Compose project.
 func (h *ProjectHandler) UpdateProject(ctx context.Context, input *UpdateProjectInput) (*UpdateProjectOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.projectService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -777,6 +807,9 @@ func (h *ProjectHandler) UpdateProject(ctx context.Context, input *UpdateProject
 
 // UpdateProjectInclude updates an include file within a project.
 func (h *ProjectHandler) UpdateProjectInclude(ctx context.Context, input *UpdateProjectIncludeInput) (*UpdateProjectIncludeOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.projectService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -809,6 +842,9 @@ func (h *ProjectHandler) UpdateProjectInclude(ctx context.Context, input *Update
 
 // RestartProject restarts all containers in a project.
 func (h *ProjectHandler) RestartProject(ctx context.Context, input *RestartProjectInput) (*RestartProjectOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.projectService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -841,6 +877,9 @@ func (h *ProjectHandler) RestartProject(ctx context.Context, input *RestartProje
 }
 
 func (h *ProjectHandler) ArchiveProject(ctx context.Context, input *ArchiveProjectInput) (*ArchiveProjectOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.projectService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -871,6 +910,9 @@ func (h *ProjectHandler) ArchiveProject(ctx context.Context, input *ArchiveProje
 }
 
 func (h *ProjectHandler) UnarchiveProject(ctx context.Context, input *UnarchiveProjectInput) (*UnarchiveProjectOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.projectService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -898,6 +940,9 @@ func (h *ProjectHandler) UnarchiveProject(ctx context.Context, input *UnarchiveP
 
 // PullProjectImages pulls all images for a project with streaming progress.
 func (h *ProjectHandler) PullProjectImages(ctx context.Context, input *PullProjectImagesInput) (*huma.StreamResponse, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.projectService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -943,6 +988,9 @@ func (h *ProjectHandler) PullProjectImages(ctx context.Context, input *PullProje
 
 // BuildProjectImages builds compose services with build directives.
 func (h *ProjectHandler) BuildProjectImages(ctx context.Context, input *BuildProjectInput) (*huma.StreamResponse, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.projectService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}

@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
+	humamw "github.com/getarcaneapp/arcane/backend/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/types/base"
 	"github.com/getarcaneapp/arcane/types/jobschedule"
@@ -74,6 +75,7 @@ func RegisterJobSchedules(api huma.API, jobSvc *services.JobService, envSvc *ser
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.Update)
 
 	huma.Register(api, huma.Operation{
@@ -100,6 +102,7 @@ func RegisterJobSchedules(api huma.API, jobSvc *services.JobService, envSvc *ser
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.RunJob)
 }
 
@@ -133,6 +136,9 @@ func (h *JobSchedulesHandler) ListJobs(ctx context.Context, input *ListJobsInput
 }
 
 func (h *JobSchedulesHandler) RunJob(ctx context.Context, input *RunJobInput) (*RunJobOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.jobService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -182,6 +188,9 @@ func (h *JobSchedulesHandler) Get(ctx context.Context, input *GetJobSchedulesInp
 }
 
 func (h *JobSchedulesHandler) Update(ctx context.Context, input *UpdateJobSchedulesInput) (*UpdateJobSchedulesOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.jobService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}

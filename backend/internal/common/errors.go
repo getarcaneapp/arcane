@@ -1165,6 +1165,18 @@ func (e *GlobalVariablesUpdateError) Error() string {
 	return fmt.Sprintf("Failed to update global variables: %v", e.Err)
 }
 
+type InvalidEnvKeyError struct {
+	Key string
+}
+
+func (e *InvalidEnvKeyError) Error() string {
+	return fmt.Sprintf("Invalid env key %q (must match [A-Za-z_][A-Za-z0-9_]*)", e.Key)
+}
+
+func IsInvalidEnvKeyError(err error) bool {
+	return isErrorTypeInternal[*InvalidEnvKeyError](err)
+}
+
 type UpdaterRunError struct {
 	Err error
 }

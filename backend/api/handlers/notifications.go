@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
+	humamw "github.com/getarcaneapp/arcane/backend/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
@@ -140,6 +141,7 @@ func RegisterNotifications(api huma.API, notificationSvc *services.NotificationS
 		Summary:     "Get all notification settings",
 		Tags:        []string{"Notifications"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.GetAllNotificationSettings)
 
 	huma.Register(api, huma.Operation{
@@ -149,6 +151,7 @@ func RegisterNotifications(api huma.API, notificationSvc *services.NotificationS
 		Summary:     "Get notification settings by provider",
 		Tags:        []string{"Notifications"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.GetNotificationSettings)
 
 	huma.Register(api, huma.Operation{
@@ -158,6 +161,7 @@ func RegisterNotifications(api huma.API, notificationSvc *services.NotificationS
 		Summary:     "Create or update notification settings",
 		Tags:        []string{"Notifications"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.CreateOrUpdateNotificationSettings)
 
 	huma.Register(api, huma.Operation{
@@ -167,6 +171,7 @@ func RegisterNotifications(api huma.API, notificationSvc *services.NotificationS
 		Summary:     "Delete notification settings",
 		Tags:        []string{"Notifications"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.DeleteNotificationSettings)
 
 	huma.Register(api, huma.Operation{
@@ -176,6 +181,7 @@ func RegisterNotifications(api huma.API, notificationSvc *services.NotificationS
 		Summary:     "Test notification",
 		Tags:        []string{"Notifications"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.TestNotification)
 
 	huma.Register(api, huma.Operation{
@@ -185,6 +191,7 @@ func RegisterNotifications(api huma.API, notificationSvc *services.NotificationS
 		Summary:     "Get Apprise settings",
 		Tags:        []string{"Notifications"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.GetAppriseSettings)
 
 	huma.Register(api, huma.Operation{
@@ -194,6 +201,7 @@ func RegisterNotifications(api huma.API, notificationSvc *services.NotificationS
 		Summary:     "Create or update Apprise settings",
 		Tags:        []string{"Notifications"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.CreateOrUpdateAppriseSettings)
 
 	huma.Register(api, huma.Operation{
@@ -203,6 +211,7 @@ func RegisterNotifications(api huma.API, notificationSvc *services.NotificationS
 		Summary:     "Test Apprise notification",
 		Tags:        []string{"Notifications"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.TestAppriseNotification)
 
 	huma.Register(api, huma.Operation{

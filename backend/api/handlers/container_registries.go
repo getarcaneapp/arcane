@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
+	humamw "github.com/getarcaneapp/arcane/backend/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
@@ -132,6 +133,7 @@ func RegisterContainerRegistries(api huma.API, registryService *services.Contain
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.CreateRegistry)
 
 	huma.Register(api, huma.Operation{
@@ -145,6 +147,7 @@ func RegisterContainerRegistries(api huma.API, registryService *services.Contain
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.SyncRegistries)
 
 	huma.Register(api, huma.Operation{
@@ -184,6 +187,7 @@ func RegisterContainerRegistries(api huma.API, registryService *services.Contain
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.UpdateRegistry)
 
 	huma.Register(api, huma.Operation{
@@ -197,6 +201,7 @@ func RegisterContainerRegistries(api huma.API, registryService *services.Contain
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.DeleteRegistry)
 
 	huma.Register(api, huma.Operation{
@@ -210,6 +215,7 @@ func RegisterContainerRegistries(api huma.API, registryService *services.Contain
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.TestRegistry)
 }
 

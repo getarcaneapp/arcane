@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
+	humamiddleware "github.com/getarcaneapp/arcane/backend/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
@@ -20,6 +21,12 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
+
+// adminTestContextInternal returns a context with the admin flag set, suitable for
+// unit-testing handlers that call checkAdminInternal directly.
+func adminTestContextInternal() context.Context {
+	return context.WithValue(context.Background(), humamiddleware.ContextKeyUserIsAdmin, true)
+}
 
 func setupRemoteHandlerEnvironmentServiceInternal(t *testing.T, server *httptest.Server) *services.EnvironmentService {
 	t.Helper()
@@ -135,7 +142,7 @@ func TestTemplateHandler_GetGlobalVariables_RemoteSuccess(t *testing.T) {
 		environmentService: setupRemoteHandlerEnvironmentServiceInternal(t, server),
 	}
 
-	output, err := handler.GetGlobalVariables(context.Background(), &GetGlobalVariablesInput{EnvironmentID: "env-remote"})
+	output, err := handler.GetGlobalVariables(adminTestContextInternal(), &GetGlobalVariablesInput{EnvironmentID: "env-remote"})
 	require.NoError(t, err)
 	require.Equal(t, expected, output.Body)
 }

@@ -231,6 +231,7 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.CreateEnvironment)
 
 	huma.Register(api, huma.Operation{
@@ -257,6 +258,7 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.UpdateEnvironment)
 
 	huma.Register(api, huma.Operation{
@@ -270,6 +272,7 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.DeleteEnvironment)
 
 	huma.Register(api, huma.Operation{
@@ -283,6 +286,7 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.TestConnection)
 
 	huma.Register(api, huma.Operation{
@@ -309,6 +313,7 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.PairAgent)
 
 	huma.Register(api, huma.Operation{
@@ -322,6 +327,7 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.SyncEnvironment)
 
 	huma.Register(api, huma.Operation{
@@ -346,6 +352,7 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.GetDeploymentSnippets)
 
 	huma.Register(api, huma.Operation{
@@ -359,6 +366,7 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.DownloadEnvironmentMTLSBundle)
 
 	huma.Register(api, huma.Operation{
@@ -372,6 +380,7 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.DownloadEnvironmentMTLSFile)
 
 	huma.Register(api, huma.Operation{
@@ -398,6 +407,7 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.DownloadEdgeMTLSCA)
 }
 

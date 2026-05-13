@@ -7,6 +7,7 @@ import (
 	"path"
 
 	"github.com/danielgtaylor/huma/v2"
+	humamw "github.com/getarcaneapp/arcane/backend/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/types/base"
@@ -77,6 +78,7 @@ func RegisterBuildWorkspaces(api huma.API, workspaceService *services.BuildWorks
 				},
 			},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.UploadFile)
 
 	huma.Register(api, huma.Operation{
@@ -87,6 +89,7 @@ func RegisterBuildWorkspaces(api huma.API, workspaceService *services.BuildWorks
 		Description: "Create a directory under the builds workspace root",
 		Tags:        []string{"Builds"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.CreateDirectory)
 
 	huma.Register(api, huma.Operation{
@@ -97,6 +100,7 @@ func RegisterBuildWorkspaces(api huma.API, workspaceService *services.BuildWorks
 		Description: "Delete a file or directory under the builds workspace root",
 		Tags:        []string{"Builds"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.DeleteFile)
 }
 
@@ -194,6 +198,9 @@ func (h *BuildWorkspaceHandler) DownloadFile(ctx context.Context, input *Downloa
 }
 
 func (h *BuildWorkspaceHandler) UploadFile(ctx context.Context, input *UploadBuildFileInput) (*base.ApiResponse[base.MessageResponse], error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.service == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -220,6 +227,9 @@ func (h *BuildWorkspaceHandler) UploadFile(ctx context.Context, input *UploadBui
 }
 
 func (h *BuildWorkspaceHandler) CreateDirectory(ctx context.Context, input *CreateBuildDirectoryInput) (*base.ApiResponse[base.MessageResponse], error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.service == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -233,6 +243,9 @@ func (h *BuildWorkspaceHandler) CreateDirectory(ctx context.Context, input *Crea
 }
 
 func (h *BuildWorkspaceHandler) DeleteFile(ctx context.Context, input *DeleteBuildFileInput) (*base.ApiResponse[base.MessageResponse], error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.service == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}

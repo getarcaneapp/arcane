@@ -208,6 +208,7 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.RemoveImage)
 
 	huma.Register(api, huma.Operation{
@@ -221,6 +222,7 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.PullImage)
 
 	huma.Register(api, huma.Operation{
@@ -234,6 +236,7 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.BuildImage)
 
 	huma.Register(api, huma.Operation{
@@ -273,6 +276,7 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.PruneImages)
 
 	huma.Register(api, huma.Operation{
@@ -303,6 +307,7 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 				},
 			},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.UploadImage)
 }
 
@@ -384,6 +389,9 @@ func (h *ImageHandler) GetImage(ctx context.Context, input *GetImageInput) (*Get
 
 // RemoveImage removes a Docker image.
 func (h *ImageHandler) RemoveImage(ctx context.Context, input *RemoveImageInput) (*RemoveImageOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.imageService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -409,6 +417,9 @@ func (h *ImageHandler) RemoveImage(ctx context.Context, input *RemoveImageInput)
 
 // PullImage pulls a Docker image with streaming progress.
 func (h *ImageHandler) PullImage(ctx context.Context, input *PullImageInput) (*huma.StreamResponse, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.imageService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -445,6 +456,9 @@ func (h *ImageHandler) PullImage(ctx context.Context, input *PullImageInput) (*h
 
 // BuildImage builds a Docker image with streaming progress.
 func (h *ImageHandler) BuildImage(ctx context.Context, input *BuildImageInput) (*huma.StreamResponse, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.buildService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -548,6 +562,9 @@ func (h *ImageHandler) GetImageBuild(ctx context.Context, input *GetImageBuildIn
 
 // PruneImages removes unused Docker images.
 func (h *ImageHandler) PruneImages(ctx context.Context, input *PruneImagesInput) (*PruneImagesOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.imageService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -670,6 +687,9 @@ func (h *ImageHandler) GetImageUsageCounts(ctx context.Context, input *GetImageU
 
 // UploadImage uploads a Docker image from a tar archive.
 func (h *ImageHandler) UploadImage(ctx context.Context, input *UploadImageInput) (*UploadImageOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.imageService == nil || h.settingsService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}

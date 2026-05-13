@@ -168,6 +168,7 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Summary:     "Create container",
 		Tags:        []string{"Containers"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.CreateContainer)
 
 	huma.Register(api, huma.Operation{
@@ -186,6 +187,7 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Summary:     "Start container",
 		Tags:        []string{"Containers"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.StartContainer)
 
 	huma.Register(api, huma.Operation{
@@ -195,6 +197,7 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Summary:     "Stop container",
 		Tags:        []string{"Containers"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.StopContainer)
 
 	huma.Register(api, huma.Operation{
@@ -204,6 +207,7 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Summary:     "Restart container",
 		Tags:        []string{"Containers"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.RestartContainer)
 
 	huma.Register(api, huma.Operation{
@@ -214,6 +218,7 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Description: "Pull latest image and recreate container",
 		Tags:        []string{"Containers"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.RedeployContainer)
 
 	huma.Register(api, huma.Operation{
@@ -223,6 +228,7 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Summary:     "Delete container",
 		Tags:        []string{"Containers"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.DeleteContainer)
 
 	huma.Register(api, huma.Operation{
@@ -233,6 +239,7 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Description: "Enable or disable auto-update for a specific container",
 		Tags:        []string{"Containers", "Updater"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.SetAutoUpdate)
 }
 
@@ -529,6 +536,9 @@ func buildNetworkingConfig(body containertypes.Create) *network.NetworkingConfig
 }
 
 func (h *ContainerHandler) CreateContainer(ctx context.Context, input *CreateContainerInput) (*CreateContainerOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.containerService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -595,6 +605,9 @@ func (h *ContainerHandler) GetContainer(ctx context.Context, input *GetContainer
 }
 
 func (h *ContainerHandler) StartContainer(ctx context.Context, input *ContainerActionInput) (*ContainerActionOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.containerService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -617,6 +630,9 @@ func (h *ContainerHandler) StartContainer(ctx context.Context, input *ContainerA
 }
 
 func (h *ContainerHandler) StopContainer(ctx context.Context, input *ContainerActionInput) (*ContainerActionOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.containerService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -639,6 +655,9 @@ func (h *ContainerHandler) StopContainer(ctx context.Context, input *ContainerAc
 }
 
 func (h *ContainerHandler) RestartContainer(ctx context.Context, input *ContainerActionInput) (*ContainerActionOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.containerService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -661,6 +680,9 @@ func (h *ContainerHandler) RestartContainer(ctx context.Context, input *Containe
 }
 
 func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *ContainerActionInput) (*GetContainerOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.containerService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -699,6 +721,9 @@ func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *Contain
 }
 
 func (h *ContainerHandler) DeleteContainer(ctx context.Context, input *DeleteContainerInput) (*DeleteContainerOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.containerService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -721,6 +746,9 @@ func (h *ContainerHandler) DeleteContainer(ctx context.Context, input *DeleteCon
 }
 
 func (h *ContainerHandler) SetAutoUpdate(ctx context.Context, input *SetAutoUpdateInput) (*SetAutoUpdateOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.settingsService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}

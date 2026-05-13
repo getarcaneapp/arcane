@@ -137,6 +137,7 @@ func RegisterVulnerability(api huma.API, vulnerabilityService *services.Vulnerab
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.ScanImage)
 
 	huma.Register(api, huma.Operation{
@@ -254,6 +255,7 @@ func RegisterVulnerability(api huma.API, vulnerabilityService *services.Vulnerab
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.IgnoreVulnerability)
 
 	huma.Register(api, huma.Operation{
@@ -267,6 +269,7 @@ func RegisterVulnerability(api huma.API, vulnerabilityService *services.Vulnerab
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.UnignoreVulnerability)
 
 	huma.Register(api, huma.Operation{
@@ -285,6 +288,9 @@ func RegisterVulnerability(api huma.API, vulnerabilityService *services.Vulnerab
 
 // ScanImage initiates a vulnerability scan for an image.
 func (h *VulnerabilityHandler) ScanImage(ctx context.Context, input *ScanImageInput) (*ScanImageOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.vulnerabilityService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -542,6 +548,9 @@ type IgnoreVulnerabilityOutput struct {
 
 // IgnoreVulnerability creates an ignore record for a vulnerability.
 func (h *VulnerabilityHandler) IgnoreVulnerability(ctx context.Context, input *IgnoreVulnerabilityInput) (*IgnoreVulnerabilityOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.vulnerabilityService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -591,6 +600,9 @@ type UnignoreVulnerabilityOutput struct {
 
 // UnignoreVulnerability removes an ignore record for a vulnerability.
 func (h *VulnerabilityHandler) UnignoreVulnerability(ctx context.Context, input *UnignoreVulnerabilityInput) (*UnignoreVulnerabilityOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.vulnerabilityService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}

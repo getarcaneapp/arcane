@@ -141,6 +141,7 @@ func RegisterGitRepositories(api huma.API, repoService *services.GitRepositorySe
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.CreateRepository)
 
 	huma.Register(api, huma.Operation{
@@ -167,6 +168,7 @@ func RegisterGitRepositories(api huma.API, repoService *services.GitRepositorySe
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.UpdateRepository)
 
 	huma.Register(api, huma.Operation{
@@ -180,6 +182,7 @@ func RegisterGitRepositories(api huma.API, repoService *services.GitRepositorySe
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.DeleteRepository)
 
 	huma.Register(api, huma.Operation{
@@ -193,6 +196,7 @@ func RegisterGitRepositories(api huma.API, repoService *services.GitRepositorySe
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.TestRepository)
 
 	huma.Register(api, huma.Operation{
@@ -232,6 +236,7 @@ func RegisterGitRepositories(api huma.API, repoService *services.GitRepositorySe
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.SyncRepositories)
 }
 
