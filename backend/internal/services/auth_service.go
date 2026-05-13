@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils/jwtclaims"
@@ -39,8 +40,9 @@ type AuthSettings struct {
 	Oidc             *models.OidcConfig `json:"oidc,omitempty"`
 }
 
-type UserClaims struct {
+type userClaims struct {
 	jwt.RegisteredClaims
+	SessionID   string   `json:"sid,omitempty"`
 	UserID      string   `json:"user_id"`
 	Username    string   `json:"username"`
 	Email       string   `json:"email,omitempty"`
@@ -49,20 +51,29 @@ type UserClaims struct {
 	AppVersion  string   `json:"app_version,omitempty"`
 }
 
+type refreshClaims struct {
+	jwt.RegisteredClaims
+	UserID     string `json:"user_id"`
+	SessionID  string `json:"sid,omitempty"`
+	AppVersion string `json:"app_version,omitempty"`
+}
+
 type AuthService struct {
 	userService     *UserService
 	settingsService *SettingsService
 	eventService    *EventService
+	sessionService  *SessionService
 	jwtSecret       []byte
 	refreshExpiry   time.Duration
 	config          *config.Config
 }
 
-func NewAuthService(userService *UserService, settingsService *SettingsService, eventService *EventService, jwtSecret string, cfg *config.Config) *AuthService {
+func NewAuthService(userService *UserService, settingsService *SettingsService, eventService *EventService, sessionService *SessionService, jwtSecret string, cfg *config.Config) *AuthService {
 	return &AuthService{
 		userService:     userService,
 		settingsService: settingsService,
 		eventService:    eventService,
+		sessionService:  sessionService,
 		jwtSecret:       jwtclaims.CheckOrGenerateJwtSecret(jwtSecret),
 		refreshExpiry:   cfg.JWTRefreshExpiry,
 		config:          cfg,
@@ -194,7 +205,7 @@ func (s *AuthService) GetOidcConfig(ctx context.Context) (*models.OidcConfig, er
 	return authSettings.Oidc, nil
 }
 
-func (s *AuthService) Login(ctx context.Context, username, password string) (*models.User, *TokenPair, error) {
+func (s *AuthService) Login(ctx context.Context, username, password string, meta auth.SessionMeta) (*models.User, *TokenPair, error) {
 	localEnabled, err := s.IsLocalAuthEnabled(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -238,7 +249,7 @@ func (s *AuthService) Login(ctx context.Context, username, password string) (*mo
 		return nil
 	})
 
-	tokenPair, err := s.generateTokenPair(ctx, user)
+	tokenPair, err := s.createSessionAndTokensInternal(ctx, user, meta)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -258,7 +269,7 @@ func (s *AuthService) Login(ctx context.Context, username, password string) (*mo
 	return user, tokenPair, nil
 }
 
-func (s *AuthService) OidcLogin(ctx context.Context, userInfo auth.OidcUserInfo, tokenResp *auth.OidcTokenResponse) (*models.User, *TokenPair, error) {
+func (s *AuthService) OidcLogin(ctx context.Context, userInfo auth.OidcUserInfo, tokenResp *auth.OidcTokenResponse, meta auth.SessionMeta) (*models.User, *TokenPair, error) {
 	if userInfo.Subject == "" {
 		return nil, nil, errors.New("missing OIDC subject identifier")
 	}
@@ -268,7 +279,7 @@ func (s *AuthService) OidcLogin(ctx context.Context, userInfo auth.OidcUserInfo,
 		return nil, nil, err
 	}
 
-	tokenPair, err := s.generateTokenPair(ctx, user)
+	tokenPair, err := s.createSessionAndTokensInternal(ctx, user, meta)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -562,8 +573,8 @@ func (s *AuthService) persistOidcTokens(user *models.User, tokenResp *auth.OidcT
 	}
 }
 
-func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string) (*TokenPair, error) {
-	token, err := jwt.ParseWithClaims(refreshToken, &jwt.RegisteredClaims{},
+func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string, meta auth.SessionMeta) (*TokenPair, error) {
+	token, err := jwt.ParseWithClaims(refreshToken, &refreshClaims{},
 		func(t *jwt.Token) (any, error) {
 			if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 				return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
@@ -578,35 +589,59 @@ func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string) (*T
 		return nil, ErrInvalidToken
 	}
 
-	claims, ok := token.Claims.(*jwt.RegisteredClaims)
+	claims, ok := token.Claims.(*refreshClaims)
 	if !ok {
-		return nil, errors.New("invalid token claims")
+		return nil, &common.InvalidTokenClaimsError{}
 	}
 
 	if claims.Subject != "refresh" {
-		return nil, errors.New("not a refresh token")
+		return nil, &common.RefreshTokenSubjectError{}
 	}
 
-	userId := claims.ID
-	if userId == "" {
-		return nil, errors.New("missing user ID in token")
+	if claims.AppVersion != "" && claims.AppVersion != config.Version {
+		slog.InfoContext(ctx, "Refresh token version mismatch detected", "tokenVersion", claims.AppVersion, "currentVersion", config.Version)
+		return nil, ErrTokenVersionMismatch
 	}
 
-	user, err := s.userService.GetUserByID(ctx, userId)
+	if claims.UserID == "" {
+		return nil, &common.MissingTokenUserIDError{}
+	}
+	if claims.ID == "" {
+		return nil, &common.MissingRefreshTokenIDError{}
+	}
+	if claims.SessionID == "" {
+		return nil, &common.MissingTokenSessionIDError{}
+	}
+	if s.sessionService == nil {
+		return nil, &common.SessionServiceUnavailableError{}
+	}
+
+	session, err := s.sessionService.GetSessionByID(ctx, claims.SessionID)
+	if err != nil {
+		return nil, err
+	}
+	if session.UserID != claims.UserID {
+		return nil, ErrInvalidToken
+	}
+	if err := validateSessionActiveInternal(session); err != nil {
+		return nil, err
+	}
+
+	rotatedSession, refreshJTI, err := s.sessionService.RotateRefreshToken(ctx, claims.SessionID, claims.ID, meta)
 	if err != nil {
 		return nil, err
 	}
 
-	tokenPair, err := s.generateTokenPair(ctx, user)
+	user, err := s.userService.GetUserByID(ctx, claims.UserID)
 	if err != nil {
 		return nil, err
 	}
 
-	return tokenPair, nil
+	return s.buildTokenPairInternal(ctx, user, rotatedSession, refreshJTI)
 }
 
-func (s *AuthService) VerifyToken(ctx context.Context, accessToken string) (*models.User, error) {
-	token, err := jwt.ParseWithClaims(accessToken, &UserClaims{},
+func (s *AuthService) VerifyToken(ctx context.Context, accessToken string) (*models.User, string, error) {
+	token, err := jwt.ParseWithClaims(accessToken, &userClaims{},
 		func(t *jwt.Token) (any, error) {
 			if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 				return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
@@ -615,31 +650,37 @@ func (s *AuthService) VerifyToken(ctx context.Context, accessToken string) (*mod
 		})
 	if err != nil {
 		if strings.Contains(err.Error(), "token is expired") {
-			return nil, ErrExpiredToken
+			return nil, "", ErrExpiredToken
 		}
-		return nil, ErrInvalidToken
+		return nil, "", ErrInvalidToken
 	}
 
 	if !token.Valid {
-		return nil, ErrInvalidToken
+		return nil, "", ErrInvalidToken
 	}
 
-	claims, ok := token.Claims.(*UserClaims)
+	claims, ok := token.Claims.(*userClaims)
 	if !ok {
-		return nil, errors.New("invalid token claims")
+		return nil, "", &common.InvalidTokenClaimsError{}
 	}
 
 	if claims.Subject != "access" {
-		return nil, errors.New("not an access token")
+		return nil, "", &common.AccessTokenSubjectError{}
 	}
 
 	if claims.ID == "" {
-		return nil, errors.New("missing user ID in token")
+		return nil, "", &common.MissingTokenUserIDError{}
 	}
 
 	if claims.AppVersion != "" && claims.AppVersion != config.Version {
 		slog.InfoContext(ctx, "Token version mismatch detected", "tokenVersion", claims.AppVersion, "currentVersion", config.Version, "user", claims.Username)
-		return nil, ErrTokenVersionMismatch
+		return nil, "", ErrTokenVersionMismatch
+	}
+	if claims.SessionID == "" {
+		return nil, "", &common.MissingTokenSessionIDError{}
+	}
+	if s.sessionService == nil {
+		return nil, "", &common.SessionServiceUnavailableError{}
 	}
 
 	// Verify user exists in DB
@@ -648,15 +689,30 @@ func (s *AuthService) VerifyToken(ctx context.Context, accessToken string) (*mod
 	dbUser, err := s.userService.GetUserByID(ctx, claims.ID)
 	if err != nil {
 		if errors.Is(err, ErrUserNotFound) {
-			return nil, ErrInvalidToken
+			return nil, "", ErrInvalidToken
 		}
-		return nil, err
+		return nil, "", err
 	}
 
-	return dbUser, nil
+	session, err := s.sessionService.GetSessionByID(ctx, claims.SessionID)
+	if err != nil {
+		return nil, "", err
+	}
+	if session.UserID != dbUser.ID {
+		return nil, "", ErrInvalidToken
+	}
+	if err := validateSessionActiveInternal(session); err != nil {
+		return nil, "", err
+	}
+
+	return dbUser, session.ID, nil
 }
 
 func (s *AuthService) ChangePassword(ctx context.Context, userID, currentPassword, newPassword string) error {
+	if s.sessionService == nil {
+		return &common.SessionServiceUnavailableError{}
+	}
+
 	user, err := s.userService.GetUserByID(ctx, userID)
 	if err != nil {
 		return err
@@ -675,23 +731,44 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID, currentPasswor
 
 	user.PasswordHash = hashedPassword
 	user.RequiresPasswordChange = false
-	_, err = s.userService.UpdateUser(ctx, user)
-	return err
+	if _, err = s.userService.UpdateUser(ctx, user); err != nil {
+		return err
+	}
+	return s.sessionService.RevokeAllUserSessions(ctx, userID)
 }
 
-func (s *AuthService) generateTokenPair(ctx context.Context, user *models.User) (*TokenPair, error) {
+func (s *AuthService) RevokeSession(ctx context.Context, sessionID string) error {
+	if s.sessionService == nil {
+		return nil
+	}
+	return s.sessionService.RevokeSession(ctx, sessionID)
+}
+
+func (s *AuthService) createSessionAndTokensInternal(ctx context.Context, user *models.User, meta auth.SessionMeta) (*TokenPair, error) {
+	if s.sessionService == nil {
+		return nil, &common.SessionServiceUnavailableError{}
+	}
+	refreshExpiry := time.Now().Add(s.refreshExpiry)
+	session, refreshJTI, err := s.sessionService.CreateSession(ctx, user.ID, refreshExpiry, meta)
+	if err != nil {
+		return nil, err
+	}
+	return s.buildTokenPairInternal(ctx, user, session, refreshJTI)
+}
+
+func (s *AuthService) buildTokenPairInternal(ctx context.Context, user *models.User, session *models.UserSession, refreshJTI string) (*TokenPair, error) {
 	sessionTimeout, _ := s.GetSessionTimeout(ctx)
 
 	accessTokenExpiry := time.Now().Add(time.Duration(sessionTimeout) * time.Minute)
-	slog.WarnContext(ctx, "accessTokenExpiry", "expiry", accessTokenExpiry)
 
-	userClaims := UserClaims{
+	userClaims := userClaims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			ID:        user.ID,
 			Subject:   "access",
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			ExpiresAt: jwt.NewNumericDate(accessTokenExpiry),
 		},
+		SessionID:  session.ID,
 		UserID:     user.ID,
 		Username:   user.Username,
 		Roles:      []string(user.Roles),
@@ -713,11 +790,16 @@ func (s *AuthService) generateTokenPair(ctx context.Context, user *models.User) 
 		return nil, err
 	}
 
-	refreshToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
-		ID:        user.ID,
-		Subject:   "refresh",
-		IssuedAt:  jwt.NewNumericDate(time.Now()),
-		ExpiresAt: jwt.NewNumericDate(time.Now().Add(s.refreshExpiry)),
+	refreshToken := jwt.NewWithClaims(jwt.SigningMethodHS256, refreshClaims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			ID:        refreshJTI,
+			Subject:   "refresh",
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			ExpiresAt: jwt.NewNumericDate(session.ExpiresAt),
+		},
+		UserID:     user.ID,
+		SessionID:  session.ID,
+		AppVersion: config.Version,
 	})
 
 	refreshTokenString, err := refreshToken.SignedString(s.jwtSecret)
@@ -730,6 +812,19 @@ func (s *AuthService) generateTokenPair(ctx context.Context, user *models.User) 
 		RefreshToken: refreshTokenString,
 		ExpiresAt:    accessTokenExpiry,
 	}, nil
+}
+
+func validateSessionActiveInternal(session *models.UserSession) error {
+	if session == nil {
+		return ErrInvalidToken
+	}
+	if session.RevokedAt != nil {
+		return &common.SessionRevokedError{}
+	}
+	if time.Now().After(session.ExpiresAt) {
+		return ErrExpiredToken
+	}
+	return nil
 }
 
 func generateUsernameFromEmail(email, subject string) string {

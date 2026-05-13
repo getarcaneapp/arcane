@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -27,7 +28,8 @@ type AuthHandler struct {
 // These wrap the types from the types package for Huma's input/output handling.
 
 type LoginInput struct {
-	Body auth.Login
+	UserAgent string `header:"User-Agent"`
+	Body      auth.Login
 }
 
 type LoginOutput struct {
@@ -41,7 +43,8 @@ type LogoutOutput struct {
 }
 
 type RefreshTokenInput struct {
-	Body auth.Refresh
+	UserAgent string `header:"User-Agent"`
+	Body      auth.Refresh
 }
 
 type RefreshTokenOutput struct {
@@ -140,7 +143,7 @@ func (h *AuthHandler) Login(ctx context.Context, input *LoginInput) (*LoginOutpu
 		return nil, huma.Error400BadRequest((&common.LocalAuthDisabledError{}).Error())
 	}
 
-	userModel, tokenPair, err := h.authService.Login(ctx, input.Body.Username, input.Body.Password)
+	userModel, tokenPair, err := h.authService.Login(ctx, input.Body.Username, input.Body.Password, sessionMetaFromContextInternal(ctx, input.UserAgent))
 	if err != nil {
 		switch {
 		case errors.Is(err, services.ErrInvalidCredentials):
@@ -177,6 +180,11 @@ func (h *AuthHandler) Login(ctx context.Context, input *LoginInput) (*LoginOutpu
 // Logout clears the authentication session.
 func (h *AuthHandler) Logout(ctx context.Context, input *struct{}) (*LogoutOutput, error) {
 	if h.authService != nil {
+		if sessionID, exists := humamw.GetCurrentSessionIDFromContext(ctx); exists {
+			if err := h.authService.RevokeSession(ctx, sessionID); err != nil {
+				slog.ErrorContext(ctx, "Failed to revoke session on logout; clearing cookie anyway", "sessionID", sessionID, "error", err)
+			}
+		}
 		if userModel, exists := humamw.GetCurrentUserFromContext(ctx); exists {
 			h.authService.LogLogout(ctx, userModel)
 		}
@@ -228,10 +236,10 @@ func (h *AuthHandler) RefreshToken(ctx context.Context, input *RefreshTokenInput
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	tokenPair, err := h.authService.RefreshToken(ctx, input.Body.RefreshToken)
+	tokenPair, err := h.authService.RefreshToken(ctx, input.Body.RefreshToken, sessionMetaFromContextInternal(ctx, input.UserAgent))
 	if err != nil {
 		switch {
-		case errors.Is(err, services.ErrInvalidToken), errors.Is(err, services.ErrExpiredToken):
+		case errors.Is(err, services.ErrInvalidToken), errors.Is(err, services.ErrExpiredToken), common.IsTokenValidationError(err), common.IsSessionRevokedError(err), errors.Is(err, services.ErrTokenVersionMismatch):
 			return nil, huma.Error401Unauthorized((&common.InvalidTokenError{}).Error())
 		default:
 			return nil, huma.Error500InternalServerError((&common.TokenRefreshError{Err: err}).Error())
@@ -252,6 +260,13 @@ func (h *AuthHandler) RefreshToken(ctx context.Context, input *RefreshTokenInput
 			},
 		},
 	}, nil
+}
+
+func sessionMetaFromContextInternal(ctx context.Context, userAgent string) auth.SessionMeta {
+	return auth.SessionMeta{
+		UserAgent: userAgent,
+		IPAddress: humamw.GetRemoteAddrFromContext(ctx),
+	}
 }
 
 // ChangePassword changes the current user's password.

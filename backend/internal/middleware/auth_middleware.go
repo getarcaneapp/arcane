@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
@@ -160,13 +161,13 @@ func (m *AuthMiddleware) managerAuth(ctx context.Context, c echo.Context, next e
 		})
 	}
 
-	user, err := m.authService.VerifyToken(ctx, token)
+	user, sessionID, err := m.authService.VerifyToken(ctx, token)
 	if err != nil {
-		if errors.Is(err, services.ErrTokenVersionMismatch) {
+		if errors.Is(err, services.ErrTokenVersionMismatch) || common.IsSessionRevokedError(err) || common.IsTokenValidationError(err) {
 			cookie.ClearTokenCookie(c.Response().Writer, req)
 			return c.JSON(http.StatusUnauthorized, models.APIError{
 				Code:    models.APIErrorCodeUnauthorized,
-				Message: "Application has been updated. Please log in again.",
+				Message: "Session expired. Please log in again.",
 			})
 		}
 
@@ -189,6 +190,7 @@ func (m *AuthMiddleware) managerAuth(ctx context.Context, c echo.Context, next e
 
 	c.Set("userID", user.ID)
 	c.Set("currentUser", user)
+	c.Set("currentSessionID", sessionID)
 	c.Set("userIsAdmin", isAdmin)
 	return next(c)
 }

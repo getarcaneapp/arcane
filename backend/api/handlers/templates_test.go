@@ -123,7 +123,7 @@ func newTemplateFetchTestRouter(t *testing.T, httpClient *http.Client) *echo.Ech
 
 	db, err := gorm.Open(glsqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&models.User{}))
+	require.NoError(t, db.AutoMigrate(&models.User{}, &models.UserSession{}))
 
 	databaseDB := &database.DB{DB: db}
 	userService := services.NewUserService(databaseDB)
@@ -133,8 +133,15 @@ func newTemplateFetchTestRouter(t *testing.T, httpClient *http.Client) *echo.Ech
 		Roles:     models.StringSlice{"admin"},
 	})
 	require.NoError(t, err)
+	require.NoError(t, db.Create(&models.UserSession{
+		BaseModel:        models.BaseModel{ID: "session-1"},
+		UserID:           "user-1",
+		RefreshTokenHash: "template-test-refresh-hash",
+		LastUsedAt:       time.Now(),
+		ExpiresAt:        time.Now().Add(time.Hour),
+	}).Error)
 
-	authService := services.NewAuthService(userService, nil, nil, "test-secret", &config.Config{})
+	authService := services.NewAuthService(userService, nil, nil, services.NewSessionService(databaseDB), "test-secret", &config.Config{})
 	templateService := services.NewTemplateService(context.Background(), nil, httpClient, nil)
 
 	router := echo.New()
@@ -168,17 +175,16 @@ func newTemplateFetchTestRouter(t *testing.T, httpClient *http.Client) *echo.Ech
 func makeTemplateFetchToken(t *testing.T, secret string, userID, username string) string {
 	t.Helper()
 
-	claims := services.UserClaims{
-		RegisteredClaims: jwt.RegisteredClaims{
-			ID:        userID,
-			Subject:   "access",
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(5 * time.Minute)),
-		},
-		UserID:     userID,
-		Username:   username,
-		Roles:      []string{"admin"},
-		AppVersion: config.Version,
+	claims := jwt.MapClaims{
+		"jti":         userID,
+		"sub":         "access",
+		"iat":         jwt.NewNumericDate(time.Now()).Unix(),
+		"exp":         jwt.NewNumericDate(time.Now().Add(5 * time.Minute)).Unix(),
+		"user_id":     userID,
+		"sid":         "session-1",
+		"username":    username,
+		"roles":       []string{"admin"},
+		"app_version": config.Version,
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)

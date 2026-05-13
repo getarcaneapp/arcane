@@ -63,7 +63,10 @@ func registerAutoLoginRoutes(apiGroup *echo.Group, authService *services.AuthSer
 			return c.JSON(http.StatusInternalServerError, base.ErrorResponse{Error: "auto-login password not configured"})
 		}
 
-		userModel, tokenPair, err := authService.Login(c.Request().Context(), autoLoginConfig.Username, password)
+		userModel, tokenPair, err := authService.Login(c.Request().Context(), autoLoginConfig.Username, password, auth.SessionMeta{
+			UserAgent: c.Request().UserAgent(),
+			IPAddress: c.RealIP(),
+		})
 		if err != nil {
 			switch {
 			case errors.Is(err, services.ErrInvalidCredentials):

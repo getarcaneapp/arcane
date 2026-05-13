@@ -107,7 +107,7 @@ func createAuthValidatorInternal(appServices *Services) middleware.AuthValidator
 			return false
 		}
 
-		user, err := appServices.Auth.VerifyToken(ctx, token)
+		user, _, err := appServices.Auth.VerifyToken(ctx, token)
 		return err == nil && user != nil
 	}
 }

@@ -30,6 +30,7 @@ type Services struct {
 	Port              *services.PortService
 	Swarm             *services.SwarmService
 	ImageUpdate       *services.ImageUpdateService
+	Session           *services.SessionService
 	Auth              *services.AuthService
 	Oidc              *services.OidcService
 	Docker            *services.DockerClientService
@@ -68,6 +69,7 @@ func initializeServices(ctx context.Context, db *database.DB, cfg *config.Config
 	dockerClient := services.NewDockerClientService(db, cfg, svcs.Settings)
 	svcs.Docker = dockerClient
 	svcs.User = services.NewUserService(db)
+	svcs.Session = services.NewSessionService(db)
 	svcs.ApiKey = services.NewApiKeyService(db, svcs.User)
 	svcs.ContainerRegistry = services.NewContainerRegistryService(db, func(ctx context.Context) (services.RegistryDaemonClient, error) {
 		return dockerClient.GetClient(ctx)
@@ -100,7 +102,7 @@ func initializeServices(ctx context.Context, db *database.DB, cfg *config.Config
 	svcs.Port = services.NewPortService(svcs.Docker)
 	svcs.Swarm = services.NewSwarmService(svcs.Docker, svcs.Settings, svcs.KV, svcs.ContainerRegistry, svcs.Environment)
 	svcs.Template = services.NewTemplateService(ctx, db, httpClient, svcs.Settings)
-	svcs.Auth = services.NewAuthService(svcs.User, svcs.Settings, svcs.Event, cfg.JWTSecret, cfg)
+	svcs.Auth = services.NewAuthService(svcs.User, svcs.Settings, svcs.Event, svcs.Session, cfg.JWTSecret, cfg)
 	svcs.Oidc = services.NewOidcService(svcs.Auth, svcs.Settings, cfg, httpClient)
 	svcs.System = services.NewSystemService(db, svcs.Docker, svcs.Container, svcs.Image, svcs.Volume, svcs.Network, svcs.Settings)
 	svcs.SystemUpgrade = services.NewSystemUpgradeService(svcs.Docker, svcs.Version, svcs.Event, svcs.Settings)

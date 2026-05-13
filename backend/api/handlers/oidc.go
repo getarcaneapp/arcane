@@ -32,6 +32,7 @@ type OidcHeaders struct {
 	XForwardedHost  string `header:"X-Forwarded-Host"`
 	XForwardedProto string `header:"X-Forwarded-Proto"`
 	Host            string `header:"Host"`
+	UserAgent       string `header:"User-Agent"`
 }
 
 type GetOidcStatusInput struct{}
@@ -76,7 +77,8 @@ type InitiateDeviceAuthOutput struct {
 }
 
 type ExchangeDeviceTokenInput struct {
-	Body auth.OidcDeviceTokenRequest
+	UserAgent string `header:"User-Agent"`
+	Body      auth.OidcDeviceTokenRequest
 }
 
 type ExchangeDeviceTokenOutput struct {
@@ -281,7 +283,7 @@ func (h *OidcHandler) HandleOidcCallback(ctx context.Context, input *HandleOidcC
 	}
 
 	// Complete login
-	userModel, tokenPair, err := h.authService.OidcLogin(ctx, *userInfo, tokenResp)
+	userModel, tokenPair, err := h.authService.OidcLogin(ctx, *userInfo, tokenResp, sessionMetaFromContextInternal(ctx, input.UserAgent))
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.AuthFailedError{Err: err}).Error())
 	}
@@ -369,7 +371,7 @@ func (h *OidcHandler) ExchangeDeviceToken(ctx context.Context, input *ExchangeDe
 		}
 	}
 
-	userModel, tokenPair, err := h.authService.OidcLogin(ctx, *userInfo, tokenResp)
+	userModel, tokenPair, err := h.authService.OidcLogin(ctx, *userInfo, tokenResp, sessionMetaFromContextInternal(ctx, input.UserAgent))
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.AuthFailedError{Err: err}).Error())
 	}

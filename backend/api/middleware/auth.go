@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
@@ -22,6 +23,8 @@ const (
 	ContextKeyUserID ContextKey = "userID"
 	// ContextKeyCurrentUser is the context key for the authenticated user model.
 	ContextKeyCurrentUser ContextKey = "currentUser"
+	// ContextKeyCurrentSessionID is the context key for the authenticated session ID.
+	ContextKeyCurrentSessionID ContextKey = "currentSessionID"
 	// ContextKeyUserIsAdmin is the context key for whether the user is an admin.
 	ContextKeyUserIsAdmin ContextKey = "userIsAdmin"
 	// ContextKeyRemoteAddr is the context key for the request remote address.
@@ -38,6 +41,12 @@ func GetUserIDFromContext(ctx context.Context) (string, bool) {
 func GetCurrentUserFromContext(ctx context.Context) (*models.User, bool) {
 	u, ok := ctx.Value(ContextKeyCurrentUser).(*models.User)
 	return u, ok
+}
+
+// GetCurrentSessionIDFromContext retrieves the current session ID from the context.
+func GetCurrentSessionIDFromContext(ctx context.Context) (string, bool) {
+	sessionID, ok := ctx.Value(ContextKeyCurrentSessionID).(string)
+	return sessionID, ok
 }
 
 // IsAdminFromContext checks if the current user is an admin.
@@ -105,16 +114,16 @@ func parseSecurityRequirementsInternal(api huma.API, ctx operationProvider) secu
 // authenticated user on success, or the underlying error from VerifyToken so
 // the caller can distinguish a missing/invalid token from a token-version
 // mismatch (which requires clearing the stale cookie).
-func tryBearerAuthInternal(ctx huma.Context, authService *services.AuthService) (*models.User, error) {
+func tryBearerAuthInternal(ctx huma.Context, authService *services.AuthService) (*models.User, string, error) {
 	token := extractBearerTokenInternal(ctx)
 	if token == "" {
-		return nil, nil
+		return nil, "", nil
 	}
-	user, err := authService.VerifyToken(ctx.Context(), token)
+	user, sessionID, err := authService.VerifyToken(ctx.Context(), token)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	return user, nil
+	return user, sessionID, nil
 }
 
 // tryApiKeyAuthInternal checks if API key authentication should be allowed through.
@@ -246,16 +255,11 @@ func NewAuthBridge(api huma.API, authService *services.AuthService, apiKeyServic
 		}
 
 		if reqs.bearerAuth {
-			user, err := tryBearerAuthInternal(ctx, authService)
-			if err == nil && user != nil {
-				newCtx := setUserInContextInternal(ctx.Context(), user)
-				ctx = huma.WithContext(ctx, newCtx)
-				next(ctx)
-				return
-			}
-			if errors.Is(err, services.ErrTokenVersionMismatch) {
-				ctx.AppendHeader("Set-Cookie", cookie.BuildClearTokenCookieStringFor(ctx.TLS() != nil))
-				_ = huma.WriteErr(api, ctx, http.StatusUnauthorized, "Application has been updated. Please log in again.")
+			nextCtx, handled := handleBearerAuthInternal(api, ctx, authService)
+			if handled {
+				if nextCtx != nil {
+					next(nextCtx)
+				}
 				return
 			}
 		}
@@ -263,6 +267,21 @@ func NewAuthBridge(api huma.API, authService *services.AuthService, apiKeyServic
 		// Write unauthorized response directly
 		_ = huma.WriteErr(api, ctx, http.StatusUnauthorized, "Unauthorized: valid authentication required")
 	}
+}
+
+func handleBearerAuthInternal(api huma.API, ctx huma.Context, authService *services.AuthService) (huma.Context, bool) {
+	user, sessionID, err := tryBearerAuthInternal(ctx, authService)
+	if err == nil && user != nil {
+		newCtx := setUserInContextInternal(ctx.Context(), user)
+		newCtx = context.WithValue(newCtx, ContextKeyCurrentSessionID, sessionID)
+		return huma.WithContext(ctx, newCtx), true
+	}
+	if errors.Is(err, services.ErrTokenVersionMismatch) || common.IsSessionRevokedError(err) || common.IsTokenValidationError(err) {
+		ctx.AppendHeader("Set-Cookie", cookie.BuildClearTokenCookieStringFor(ctx.TLS() != nil))
+		_ = huma.WriteErr(api, ctx, http.StatusUnauthorized, "Session expired. Please log in again.")
+		return nil, true
+	}
+	return nil, false
 }
 
 // extractBearerTokenInternal extracts the JWT token from Authorization header or cookie.

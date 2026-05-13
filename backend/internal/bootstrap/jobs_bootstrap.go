@@ -34,6 +34,9 @@ func registerJobs(appCtx context.Context, newScheduler *pkg_scheduler.JobSchedul
 	eventCleanupJob := pkg_scheduler.NewEventCleanupJob(appServices.Event, appServices.Settings)
 	newScheduler.RegisterJob(eventCleanupJob)
 
+	expiredSessionsCleanupJob := pkg_scheduler.NewExpiredSessionsCleanupJob(appServices.Session, appServices.Settings)
+	newScheduler.RegisterJob(expiredSessionsCleanupJob)
+
 	scheduledPruneJob := pkg_scheduler.NewScheduledPruneJob(appServices.System, appServices.Settings, appServices.Notification)
 	newScheduler.RegisterJob(scheduledPruneJob)
 
