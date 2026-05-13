@@ -837,6 +837,7 @@
 	"networks_topology_hint": "Clique em um nó para abrir seus detalhes.",
 	"networks_topology_legend_networks": "Redes",
 	"networks_topology_legend_containers": "Containers",
+	"networks_topology_default_networks": "Redes padrão",
 	"networks_total": "Total de redes",
 	"networks_delete_selected_title": "Apagar {count} rede(s)",
 	"networks_delete_selected_message": "Deseja mesmo apagar {count} rede(s) selecionada(s)? Esta ação não pode ser desfeita.",
