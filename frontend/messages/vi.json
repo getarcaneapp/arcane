@@ -837,6 +837,7 @@
 	"networks_topology_hint": "Nhấp vào một nút để mở chi tiết của nó.",
 	"networks_topology_legend_networks": "Mạng lưới",
 	"networks_topology_legend_containers": "Thùng chứa",
+	"networks_topology_default_networks": "Mạng mặc định",
 	"networks_total": "Tổng số Networks",
 	"networks_delete_selected_title": "Xóa {count} network(s)",
 	"networks_delete_selected_message": "Bạn có chắc chắn muốn xóa {count} Network đã chọn? Thao tác này không thể hoàn tác.",
