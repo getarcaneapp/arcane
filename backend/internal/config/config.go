@@ -82,6 +82,8 @@ type Config struct {
 	EdgeMTLSServerName      string `env:"EDGE_MTLS_SERVER_NAME" default:""`
 	EdgeMTLSAssetsDir       string `env:"EDGE_MTLS_ASSETS_DIR" default:""`
 
+	TrustedProxies string `env:"TRUSTED_PROXIES" default:""`
+
 	FilePerm   os.FileMode `env:"FILE_PERM" default:"0644"`
 	DirPerm    os.FileMode `env:"DIR_PERM" default:"0755"`
 	GitWorkDir string      `env:"GIT_WORK_DIR" default:"data/git"`

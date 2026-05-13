@@ -3,6 +3,7 @@ package bootstrap
 import (
 	"context"
 	"log/slog"
+	"net"
 	"path"
 	"strings"
 
@@ -117,6 +118,30 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services)
 	e.HideBanner = true
 	e.HidePort = true
 
+	if cfg.TrustedProxies == "" {
+		e.IPExtractor = echo.ExtractIPDirect()
+	} else {
+		var opts []echo.TrustOption
+		for _, cidr := range strings.Split(cfg.TrustedProxies, ",") {
+			cidr = strings.TrimSpace(cidr)
+			if cidr == "" {
+				continue
+			}
+			_, ipnet, err := net.ParseCIDR(cidr)
+			if err != nil {
+				slog.Warn("invalid TRUSTED_PROXIES CIDR, ignoring", "cidr", cidr, "error", err)
+				continue
+			}
+			opts = append(opts, echo.TrustIPRange(ipnet))
+		}
+		if len(opts) == 0 {
+			slog.Warn("TRUSTED_PROXIES set but no valid CIDRs found; falling back to direct IP extraction")
+			e.IPExtractor = echo.ExtractIPDirect()
+		} else {
+			e.IPExtractor = echo.ExtractIPFromXFFHeader(opts...)
+		}
+	}
+
 	e.Use(echomiddleware.Recover())
 	e.Use(requestLoggerMiddlewareInternal()) //nolint:contextcheck
 
@@ -126,6 +151,18 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services)
 	e.Use(middleware.NewCORSMiddleware(cfg).Add())
 
 	apiGroup := e.Group("/api")
+
+	apiGroup.Use(middleware.PerIPRateLimitForPaths(
+		[]string{
+			"/api/auth/login",
+			"/api/auth/refresh",
+			"/api/oidc/callback",
+		}, 5, 5,
+	))
+	apiGroup.Use(middleware.PerIPRateLimitForPaths(
+		[]string{"/api/webhooks/trigger/:token"}, 60, 10,
+	))
+
 	tunnelRegistry := edge.NewTunnelRegistry()
 	edge.SetDefaultRegistry(tunnelRegistry)
 	envResolver := func(ctx context.Context, id string) (string, *string, bool, error) {

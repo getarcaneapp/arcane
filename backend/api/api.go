@@ -394,7 +394,7 @@ func registerHandlers(api huma.API, svc *Services) {
 	handlers.RegisterAppImages(api, appImagesSvc)
 	handlers.RegisterFonts(api, fontSvc)
 	handlers.RegisterProjects(api, projectSvc)
-	handlers.RegisterUsers(api, userSvc)
+	handlers.RegisterUsers(api, userSvc, authSvc)
 	handlers.RegisterVersion(api, versionSvc)
 	handlers.RegisterEvents(api, eventSvc, apiKeySvc)
 	handlers.RegisterOidc(api, authSvc, oidcSvc, cfg)

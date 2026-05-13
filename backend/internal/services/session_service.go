@@ -152,15 +152,20 @@ func hashRefreshJTIInternal(jti string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func (s *SessionService) RevokeAllUserSessions(ctx context.Context, userID string) error {
+// RevokeAllUserSessionsExcept revokes every active session for userID, leaving
+// exceptSessionID active. Pass "" to revoke all sessions.
+func (s *SessionService) RevokeAllUserSessionsExcept(ctx context.Context, userID, exceptSessionID string) error {
 	if strings.TrimSpace(userID) == "" {
 		return ErrInvalidToken
 	}
 
 	now := time.Now()
-	if err := s.db.WithContext(ctx).Model(&models.UserSession{}).
-		Where("user_id = ? AND revoked_at IS NULL", userID).
-		Updates(map[string]any{"revoked_at": now, "updated_at": now}).Error; err != nil {
+	query := s.db.WithContext(ctx).Model(&models.UserSession{}).
+		Where("user_id = ? AND revoked_at IS NULL", userID)
+	if strings.TrimSpace(exceptSessionID) != "" {
+		query = query.Where("id <> ?", exceptSessionID)
+	}
+	if err := query.Updates(map[string]any{"revoked_at": now, "updated_at": now}).Error; err != nil {
 		return fmt.Errorf("failed to revoke user sessions: %w", err)
 	}
 	return nil

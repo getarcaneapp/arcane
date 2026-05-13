@@ -15,6 +15,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils/cache"
 	"github.com/getarcaneapp/arcane/types/auth"
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -37,12 +38,14 @@ func newTestAuthService(secret string) *AuthService {
 			jwtSecret:     b,
 			refreshExpiry: 24 * time.Hour,
 			config:        &config.Config{},
+			tokenCache:    cache.NewTTL[verifiedTokenEntry](15 * time.Second),
 		}
 	}
 	return &AuthService{
 		jwtSecret:     []byte(secret),
 		refreshExpiry: 24 * time.Hour,
 		config:        &config.Config{},
+		tokenCache:    cache.NewTTL[verifiedTokenEntry](15 * time.Second),
 	}
 }
 
@@ -485,7 +488,7 @@ func TestChangePassword_RevokesAllSessions(t *testing.T) {
 	sessionA, _ := createTestSession(t, db, user.ID, time.Now().Add(time.Hour))
 	sessionB, _ := createTestSession(t, db, user.ID, time.Now().Add(time.Hour))
 
-	require.NoError(t, s.ChangePassword(context.Background(), user.ID, "old-password", "new-password"))
+	require.NoError(t, s.ChangePassword(context.Background(), user.ID, "old-password", "new-password", ""))
 
 	sessionA, err = s.sessionService.GetSessionByID(context.Background(), sessionA.ID)
 	require.NoError(t, err)
@@ -493,6 +496,37 @@ func TestChangePassword_RevokesAllSessions(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, sessionA.RevokedAt)
 	require.NotNil(t, sessionB.RevokedAt)
+}
+
+func TestChangePassword_KeepsCurrentSessionAlive(t *testing.T) {
+	db := setupAuthServiceTestDB(t)
+	userSvc := NewUserService(db)
+	s := newTestAuthService("")
+	s.userService = userSvc
+	s.sessionService = NewSessionService(db)
+
+	passwordHash, err := userSvc.hashPassword("old-password")
+	require.NoError(t, err)
+	user := &models.User{
+		BaseModel:    models.BaseModel{ID: "u-keep"},
+		Username:     "keep-user",
+		PasswordHash: passwordHash,
+		Roles:        models.StringSlice{"user"},
+	}
+	_, err = userSvc.CreateUser(context.Background(), user)
+	require.NoError(t, err)
+
+	current, _ := createTestSession(t, db, user.ID, time.Now().Add(time.Hour))
+	other, _ := createTestSession(t, db, user.ID, time.Now().Add(time.Hour))
+
+	require.NoError(t, s.ChangePassword(context.Background(), user.ID, "old-password", "new-password", current.ID))
+
+	current, err = s.sessionService.GetSessionByID(context.Background(), current.ID)
+	require.NoError(t, err)
+	other, err = s.sessionService.GetSessionByID(context.Background(), other.ID)
+	require.NoError(t, err)
+	require.Nil(t, current.RevokedAt, "current session should remain active")
+	require.NotNil(t, other.RevokedAt, "other sessions should be revoked")
 }
 
 func TestRefreshToken_RejectsNonHMACAlg(t *testing.T) {

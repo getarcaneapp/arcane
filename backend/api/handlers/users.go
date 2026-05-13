@@ -18,6 +18,7 @@ import (
 // UserHandler handles user management endpoints.
 type UserHandler struct {
 	userService *services.UserService
+	authService *services.AuthService
 }
 
 // ============================================================================
@@ -81,8 +82,8 @@ type DeleteUserOutput struct {
 // ============================================================================
 
 // RegisterUsers registers all user management endpoints.
-func RegisterUsers(api huma.API, userService *services.UserService) {
-	h := &UserHandler{userService: userService}
+func RegisterUsers(api huma.API, userService *services.UserService, authService *services.AuthService) {
+	h := &UserHandler{userService: userService, authService: authService}
 
 	huma.Register(api, huma.Operation{
 		OperationID: "listUsers",
@@ -327,6 +328,10 @@ func (h *UserHandler) UpdateUser(ctx context.Context, input *UpdateUserInput) (*
 		return nil, huma.Error500InternalServerError((&common.UserUpdateError{Err: err}).Error())
 	}
 
+	if h.authService != nil {
+		h.authService.InvalidateUserTokenCache(updatedUser.ID)
+	}
+
 	out, err := h.userService.ToUserResponseDto(ctx, *updatedUser)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.UserMappingError{Err: err}).Error())
@@ -358,6 +363,10 @@ func (h *UserHandler) DeleteUser(ctx context.Context, input *DeleteUserInput) (*
 			return nil, huma.Error404NotFound((&common.UserNotFoundError{}).Error())
 		}
 		return nil, huma.Error500InternalServerError((&common.UserDeletionError{Err: err}).Error())
+	}
+
+	if h.authService != nil {
+		h.authService.InvalidateUserTokenCache(input.UserID)
 	}
 
 	return &DeleteUserOutput{

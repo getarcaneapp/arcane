@@ -165,6 +165,31 @@ func agentTokenRateLimitKeyInternal(token string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// PerIPRateLimitForPaths returns an Echo middleware that applies a per-IP
+// rate limit only when c.Path() (the registered route pattern) is in paths.
+// Each path gets its own independent token bucket, so traffic on one path
+// does not deplete the budget for another (e.g. a login burst will not
+// block a concurrent token refresh).
+func PerIPRateLimitForPaths(paths []string, perMinute int, burst int) echo.MiddlewareFunc {
+	limiters := make(map[string]echo.MiddlewareFunc, len(paths))
+	for _, p := range paths {
+		limiters[p] = PerIPRateLimit(perMinute, burst)
+	}
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		gatedByPath := make(map[string]echo.HandlerFunc, len(limiters))
+		for p, rl := range limiters {
+			gatedByPath[p] = rl(next)
+		}
+		return func(c echo.Context) error {
+			gated, ok := gatedByPath[c.Path()]
+			if !ok {
+				return next(c)
+			}
+			return gated(c)
+		}
+	}
+}
+
 func clientIPForRateLimitInternal(c echo.Context) string {
 	if ip := strings.TrimSpace(c.RealIP()); ip != "" {
 		return ip

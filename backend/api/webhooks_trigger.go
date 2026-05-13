@@ -10,10 +10,7 @@ import (
 
 // RegisterWebhookTrigger registers the public (unauthenticated) trigger endpoint.
 // The token in the URL is the sole authentication mechanism.
-//
-// Security note: tokens appear in server access logs and browser history. Ensure access
-// logs are appropriately protected, and consider rate-limiting this endpoint at the
-// reverse-proxy level.
+// Rate-limited via PerIPRateLimitForPaths in router_bootstrap.go.
 func RegisterWebhookTrigger(g *echo.Group, webhookService *services.WebhookService) {
 	g.POST("/webhooks/trigger/:token", func(c echo.Context) error {
 		if webhookService == nil {

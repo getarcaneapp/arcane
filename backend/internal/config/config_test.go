@@ -503,6 +503,29 @@ func TestSetFieldValueInternal_DurationUsesFieldTagDefault(t *testing.T) {
 	assert.Equal(t, 2*time.Hour, cfg.SessionTimeout)
 }
 
+func TestConfig_TrustedProxies(t *testing.T) {
+	orig := os.Getenv("TRUSTED_PROXIES")
+	defer restoreEnv("TRUSTED_PROXIES", orig)
+
+	t.Run("Default empty", func(t *testing.T) {
+		unsetEnv(t, "TRUSTED_PROXIES")
+		cfg := Load()
+		assert.Equal(t, "", cfg.TrustedProxies)
+	})
+
+	t.Run("Single CIDR", func(t *testing.T) {
+		setEnv(t, "TRUSTED_PROXIES", "10.0.0.0/8")
+		cfg := Load()
+		assert.Equal(t, "10.0.0.0/8", cfg.TrustedProxies)
+	})
+
+	t.Run("Multiple CIDRs", func(t *testing.T) {
+		setEnv(t, "TRUSTED_PROXIES", "10.0.0.0/8,192.168.0.0/16,172.16.0.0/12")
+		cfg := Load()
+		assert.Equal(t, "10.0.0.0/8,192.168.0.0/16,172.16.0.0/12", cfg.TrustedProxies)
+	})
+}
+
 func restoreEnv(key, value string) {
 	if value == "" {
 		_ = os.Unsetenv(key)

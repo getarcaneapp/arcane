@@ -211,46 +211,25 @@ func NewAuthBridge(api huma.API, authService *services.AuthService, apiKeyServic
 			return
 		}
 
-		// Check agent authentication first (if in agent mode)
-		if cfg != nil && cfg.AgentMode {
-			if user, ok := tryAgentAuthInternal(ctx, cfg); ok {
-				newCtx := setUserInContextInternal(ctx.Context(), user)
-				ctx = huma.WithContext(ctx, newCtx)
-				next(ctx)
-				return
-			}
+		if newCtx, ok := tryAgentAuthCtxInternal(ctx, cfg); ok {
+			next(newCtx)
+			return
 		}
 
 		reqs := parseSecurityRequirementsInternal(api, ctx)
 		if !reqs.isRequired {
-			next(ctx)
+			next(opportunisticBearerAuthInternal(ctx, authService))
 			return
 		}
 
-		// If API key header is present and API key auth is allowed, prioritize it.
-		// If validation fails, do NOT fall back to Bearer auth.
 		if reqs.apiKeyAuth && ctx.Header(pkgutils.HeaderApiKey) != "" {
-			if user, ok := tryApiKeyAuthInternal(ctx, apiKeyService); ok {
-				newCtx := setUserInContextInternal(ctx.Context(), user)
-				ctx = huma.WithContext(ctx, newCtx)
-				next(ctx)
-				return
-			}
-			if user, ok := tryEnvironmentAccessTokenAuthInternal(ctx, envTokenResolver, ctx.Header(pkgutils.HeaderApiKey)); ok {
-				newCtx := setUserInContextInternal(ctx.Context(), user)
-				ctx = huma.WithContext(ctx, newCtx)
-				next(ctx)
-				return
-			}
-			// API key was present but invalid. Fail immediately.
-			_ = huma.WriteErr(api, ctx, http.StatusUnauthorized, "Unauthorized: invalid API key")
+			handleApiKeyAuthInternal(api, ctx, apiKeyService, envTokenResolver, next)
 			return
 		}
 
 		if user, ok := tryEnvironmentAccessTokenAuthInternal(ctx, envTokenResolver, ctx.Header(pkgutils.HeaderAgentToken)); ok {
 			newCtx := setUserInContextInternal(ctx.Context(), user)
-			ctx = huma.WithContext(ctx, newCtx)
-			next(ctx)
+			next(huma.WithContext(ctx, newCtx))
 			return
 		}
 
@@ -264,9 +243,51 @@ func NewAuthBridge(api huma.API, authService *services.AuthService, apiKeyServic
 			}
 		}
 
-		// Write unauthorized response directly
 		_ = huma.WriteErr(api, ctx, http.StatusUnauthorized, "Unauthorized: valid authentication required")
 	}
+}
+
+func tryAgentAuthCtxInternal(ctx huma.Context, cfg *config.Config) (huma.Context, bool) {
+	if cfg == nil || !cfg.AgentMode {
+		return ctx, false
+	}
+	user, ok := tryAgentAuthInternal(ctx, cfg)
+	if !ok {
+		return ctx, false
+	}
+	return huma.WithContext(ctx, setUserInContextInternal(ctx.Context(), user)), true
+}
+
+// opportunisticBearerAuthInternal populates the user/session context if a valid
+// bearer token is present, but never fails the request. Used for public routes
+// (e.g. logout) that still need to know who the caller is when a token exists.
+func opportunisticBearerAuthInternal(ctx huma.Context, authService *services.AuthService) huma.Context {
+	if extractBearerTokenInternal(ctx) == "" {
+		return ctx
+	}
+	user, sessionID, err := tryBearerAuthInternal(ctx, authService)
+	if err != nil || user == nil {
+		return ctx
+	}
+	newCtx := setUserInContextInternal(ctx.Context(), user)
+	newCtx = context.WithValue(newCtx, ContextKeyCurrentSessionID, sessionID)
+	return huma.WithContext(ctx, newCtx)
+}
+
+// handleApiKeyAuthInternal handles the API-key-present branch. If validation
+// fails, it writes 401 directly — Bearer is not attempted as fallback.
+func handleApiKeyAuthInternal(api huma.API, ctx huma.Context, apiKeyService *services.ApiKeyService, envTokenResolver environmentAccessTokenResolver, next func(huma.Context)) {
+	if user, ok := tryApiKeyAuthInternal(ctx, apiKeyService); ok {
+		newCtx := setUserInContextInternal(ctx.Context(), user)
+		next(huma.WithContext(ctx, newCtx))
+		return
+	}
+	if user, ok := tryEnvironmentAccessTokenAuthInternal(ctx, envTokenResolver, ctx.Header(pkgutils.HeaderApiKey)); ok {
+		newCtx := setUserInContextInternal(ctx.Context(), user)
+		next(huma.WithContext(ctx, newCtx))
+		return
+	}
+	_ = huma.WriteErr(api, ctx, http.StatusUnauthorized, "Unauthorized: invalid API key")
 }
 
 func handleBearerAuthInternal(api huma.API, ctx huma.Context, authService *services.AuthService) (huma.Context, bool) {

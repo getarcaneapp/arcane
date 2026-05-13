@@ -2,6 +2,8 @@ package services
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -11,6 +13,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils/cache"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils/jwtclaims"
 	"github.com/getarcaneapp/arcane/types/auth"
 	"github.com/golang-jwt/jwt/v5"
@@ -58,6 +61,11 @@ type refreshClaims struct {
 	AppVersion string `json:"app_version,omitempty"`
 }
 
+type verifiedTokenEntry struct {
+	User      models.User
+	SessionID string
+}
+
 type AuthService struct {
 	userService     *UserService
 	settingsService *SettingsService
@@ -66,6 +74,11 @@ type AuthService struct {
 	jwtSecret       []byte
 	refreshExpiry   time.Duration
 	config          *config.Config
+	// tokenCache is a per-process in-memory cache. In horizontally-scaled
+	// deployments, RevokeSession / ChangePassword / InvalidateUserTokenCache
+	// only purge the local instance; peers continue to accept the token until
+	// their own TTL expires. The TTL is kept short to bound this window.
+	tokenCache *cache.TTL[verifiedTokenEntry]
 }
 
 func NewAuthService(userService *UserService, settingsService *SettingsService, eventService *EventService, sessionService *SessionService, jwtSecret string, cfg *config.Config) *AuthService {
@@ -77,6 +90,7 @@ func NewAuthService(userService *UserService, settingsService *SettingsService, 
 		jwtSecret:       jwtclaims.CheckOrGenerateJwtSecret(jwtSecret),
 		refreshExpiry:   cfg.JWTRefreshExpiry,
 		config:          cfg,
+		tokenCache:      cache.NewTTL[verifiedTokenEntry](15 * time.Second),
 	}
 }
 
@@ -683,6 +697,12 @@ func (s *AuthService) VerifyToken(ctx context.Context, accessToken string) (*mod
 		return nil, "", &common.SessionServiceUnavailableError{}
 	}
 
+	tokenHash := hashTokenInternal(accessToken)
+	if cached, ok := s.tokenCache.Get(tokenHash); ok {
+		u := cached.User
+		return &u, cached.SessionID, nil
+	}
+
 	// Verify user exists in DB
 	// This ensures that if the database is wiped or user is deleted, the token becomes invalid
 	// even if the JWT signature is still valid (e.g. same JWT_SECRET).
@@ -705,10 +725,17 @@ func (s *AuthService) VerifyToken(ctx context.Context, accessToken string) (*mod
 		return nil, "", err
 	}
 
+	s.tokenCache.Put(tokenHash, verifiedTokenEntry{User: *dbUser, SessionID: session.ID})
+
 	return dbUser, session.ID, nil
 }
 
-func (s *AuthService) ChangePassword(ctx context.Context, userID, currentPassword, newPassword string) error {
+func hashTokenInternal(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
+}
+
+func (s *AuthService) ChangePassword(ctx context.Context, userID, currentPassword, newPassword, currentSessionID string) error {
 	if s.sessionService == nil {
 		return &common.SessionServiceUnavailableError{}
 	}
@@ -734,13 +761,29 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID, currentPasswor
 	if _, err = s.userService.UpdateUser(ctx, user); err != nil {
 		return err
 	}
-	return s.sessionService.RevokeAllUserSessions(ctx, userID)
+	s.tokenCache.DeleteFunc(func(_ string, e verifiedTokenEntry) bool {
+		return e.User.ID == userID && e.SessionID != currentSessionID
+	})
+	return s.sessionService.RevokeAllUserSessionsExcept(ctx, userID, currentSessionID)
+}
+
+// InvalidateUserTokenCache purges all cached token verifications for a user.
+// Call this after admin-initiated role changes, account disable, or user
+// deletion so stale verifications cannot grant access for the cache TTL.
+func (s *AuthService) InvalidateUserTokenCache(userID string) {
+	if s.tokenCache == nil || strings.TrimSpace(userID) == "" {
+		return
+	}
+	s.tokenCache.DeleteFunc(func(_ string, e verifiedTokenEntry) bool {
+		return e.User.ID == userID
+	})
 }
 
 func (s *AuthService) RevokeSession(ctx context.Context, sessionID string) error {
 	if s.sessionService == nil {
 		return nil
 	}
+	s.tokenCache.DeleteFunc(func(_ string, e verifiedTokenEntry) bool { return e.SessionID == sessionID })
 	return s.sessionService.RevokeSession(ctx, sessionID)
 }
 

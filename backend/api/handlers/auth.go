@@ -284,7 +284,8 @@ func (h *AuthHandler) ChangePassword(ctx context.Context, input *ChangePasswordI
 		return nil, huma.Error400BadRequest((&common.PasswordRequiredError{}).Error())
 	}
 
-	err := h.authService.ChangePassword(ctx, userModel.ID, input.Body.CurrentPassword, input.Body.NewPassword)
+	currentSessionID, _ := humamw.GetCurrentSessionIDFromContext(ctx)
+	err := h.authService.ChangePassword(ctx, userModel.ID, input.Body.CurrentPassword, input.Body.NewPassword, currentSessionID)
 	if err != nil {
 		switch {
 		case errors.Is(err, services.ErrInvalidCredentials):
