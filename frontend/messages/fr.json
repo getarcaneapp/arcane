@@ -837,6 +837,7 @@
 	"networks_topology_hint": "Cliquez sur un nœud pour ouvrir ses détails.",
 	"networks_topology_legend_networks": "Réseaux",
 	"networks_topology_legend_containers": "Conteneurs",
+	"networks_topology_default_networks": "Réseaux par défaut",
 	"networks_total": "Total Networks",
 	"networks_delete_selected_title": "Delete {count} network(s)",
 	"networks_delete_selected_message": "Are you sure you want to delete {count} selected network(s)? This action cannot be undone.",
