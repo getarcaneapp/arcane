@@ -2453,7 +2453,7 @@
 	"update_center_later": "Más tarde",
 	"update_center_released_at": "Publicado en {date}",
 	"update_center_installing": "Instalación de {version}",
-	"update_center_step_pull": "Tirar nueva imagen",
+	"update_center_step_pull": "Extraer nueva imagen",
 	"update_center_step_restart": "Reiniciar el servicio",
 	"update_center_step_verify": "Verificar la nueva versión",
 	"update_center_step_reload": "Recargar página",
