@@ -63,6 +63,12 @@ func (m *AuthMiddleware) WithAdminNotRequired() *AuthMiddleware {
 	return &clone
 }
 
+func (m *AuthMiddleware) WithAdminRequired() *AuthMiddleware {
+	clone := *m
+	clone.options.AdminRequired = true
+	return &clone
+}
+
 func (m *AuthMiddleware) Add() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {

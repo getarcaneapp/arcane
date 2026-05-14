@@ -21,6 +21,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils/mapper"
 	"github.com/getarcaneapp/arcane/types/gitops"
+	projecttypes "github.com/getarcaneapp/arcane/types/project"
 	"github.com/getarcaneapp/arcane/types/swarm"
 	"gorm.io/gorm"
 )
@@ -672,7 +673,7 @@ func (s *GitOpsSyncService) performSwarmStackSyncInternal(ctx context.Context, s
 // redeployIfRunningAfterSync redeploys a project only when it is already
 // running and the latest sync actually changed managed content.
 func (s *GitOpsSyncService) redeployIfRunningAfterSync(ctx context.Context, project *models.Project, actor models.User, syncMode string) {
-	details, err := s.projectService.GetProjectDetails(ctx, project.ID)
+	details, err := s.projectService.GetProjectDetails(ctx, project.ID, projecttypes.AllDetails())
 	if err != nil {
 		return
 	}
@@ -990,7 +991,7 @@ func (s *GitOpsSyncService) updateProjectForSyncInternal(ctx context.Context, sy
 
 	// If content changed and project is running, redeploy
 	if contentChanged {
-		details, err := s.projectService.GetProjectDetails(ctx, project.ID)
+		details, err := s.projectService.GetProjectDetails(ctx, project.ID, projecttypes.AllDetails())
 		if err == nil && (details.Status == string(models.ProjectStatusRunning) || details.Status == string(models.ProjectStatusPartiallyRunning)) {
 			slog.InfoContext(ctx, "Redeploying project due to content change from Git sync", "projectName", project.Name, "projectId", project.ID)
 			if err := s.projectService.RedeployProject(ctx, project.ID, actor); err != nil {

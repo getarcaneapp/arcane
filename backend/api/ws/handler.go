@@ -174,8 +174,9 @@ type WebSocketHandler struct {
 		ready       chan struct{}
 		running     bool
 	}
-	cgroupCache *system.CgroupCache
-	gpuMonitor  *system.GPUMonitor
+	containerStatsHubs sync.Map
+	cgroupCache        *system.CgroupCache
+	gpuMonitor         *system.GPUMonitor
 
 	diskUsagePathCache struct {
 		sync.RWMutex
@@ -815,27 +816,65 @@ func (h *WebSocketHandler) ContainerStats(c echo.Context) error {
 	}
 
 	connID := h.wsMetrics.RegisterConnection(buildWSConnectionInfoInternal(c, systemtypes.WSKindContainerStats, containerID))
-	hub := h.startContainerStatsHub(containerID, func() {
+	hub := h.getOrCreateContainerStatsHubInternal(containerID)
+	onRemove := func() {
 		h.wsMetrics.UnregisterConnection(connID)
-	})
+	}
 	// WebSocket connections use context.Background() because they are long-lived and should not
-	// be tied to the HTTP request context. Cleanup is handled via the hub's OnEmpty callback
-	// which triggers when all clients disconnect.
-	wshub.ServeClient(context.Background(), hub, conn)
+	// be tied to the HTTP request context. Cleanup is handled by the shared hub when it idles.
+	wshub.ServeClientWithOnRemove(context.Background(), hub, conn, onRemove)
 	return nil
 }
 
-func (h *WebSocketHandler) startContainerStatsHub(containerID string, onEmptyHook func()) *wshub.Hub {
-	hub := wshub.NewHub(64)
+func (h *WebSocketHandler) getOrCreateContainerStatsHubInternal(containerID string) *wshub.Hub {
+	if existing, ok := h.containerStatsHubs.Load(containerID); ok {
+		return existing.(*wshub.Hub)
+	}
 
+	hub := wshub.NewHub(64)
+	actual, loaded := h.containerStatsHubs.LoadOrStore(containerID, hub)
+	if loaded {
+		return actual.(*wshub.Hub)
+	}
+
+	h.runContainerStatsHubInternal(containerID, hub)
+	return hub
+}
+
+func (h *WebSocketHandler) runContainerStatsHubInternal(containerID string, hub *wshub.Hub) {
 	ctx, cancel := context.WithCancel(context.Background()) //nolint:gosec // cancel is intentionally retained and invoked by the hub OnEmpty callback.
+	var cleanupTimer *time.Timer
+	var cleanupTimerMu sync.Mutex
 
 	hub.SetOnEmpty(func() {
-		if onEmptyHook != nil {
-			onEmptyHook()
+		cleanupTimerMu.Lock()
+		if cleanupTimer != nil {
+			cleanupTimer.Stop()
 		}
-		slog.Debug("client disconnected, cleaning up container stats hub", "containerID", containerID)
-		cancel()
+		var timer *time.Timer
+		timer = time.AfterFunc(5*time.Second, func() {
+			cleanupTimerMu.Lock()
+			defer cleanupTimerMu.Unlock()
+			if cleanupTimer != timer {
+				return
+			}
+			if existing, ok := h.containerStatsHubs.Load(containerID); ok && existing == hub {
+				h.containerStatsHubs.Delete(containerID)
+			}
+			slog.Debug("container stats hub idle, cleaning up upstream stream", "containerID", containerID)
+			cleanupTimer = nil
+			cancel()
+		})
+		cleanupTimer = timer
+		cleanupTimerMu.Unlock()
+	})
+	hub.SetOnActive(func() {
+		cleanupTimerMu.Lock()
+		if cleanupTimer != nil {
+			cleanupTimer.Stop()
+			cleanupTimer = nil
+		}
+		cleanupTimerMu.Unlock()
 	})
 
 	go hub.Run(ctx)
@@ -861,8 +900,6 @@ func (h *WebSocketHandler) startContainerStatsHub(containerID string, onEmptyHoo
 			}
 		}
 	}()
-
-	return hub
 }
 
 // ContainerExec provides interactive terminal access to a container.

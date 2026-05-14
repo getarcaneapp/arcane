@@ -66,7 +66,7 @@ func initializeServices(ctx context.Context, db *database.DB, cfg *config.Config
 	svcs.CustomizeSearch = services.NewCustomizeSearchService()
 	svcs.AppImages = services.NewApplicationImagesService(resources.FS, svcs.Settings)
 	svcs.Font = services.NewFontService(resources.FS)
-	dockerClient := services.NewDockerClientService(db, cfg, svcs.Settings)
+	dockerClient := services.NewDockerClientService(ctx, db, cfg, svcs.Settings)
 	svcs.Docker = dockerClient
 	svcs.User = services.NewUserService(db)
 	svcs.Session = services.NewSessionService(db)

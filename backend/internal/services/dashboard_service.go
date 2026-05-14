@@ -13,7 +13,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	dockerutils "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/timeouts"
 	libupdater "github.com/getarcaneapp/arcane/backend/pkg/libarcane/updater"
 	"github.com/getarcaneapp/arcane/types/base"
 	containertypes "github.com/getarcaneapp/arcane/types/container"
@@ -22,8 +21,6 @@ import (
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
 	versiontypes "github.com/getarcaneapp/arcane/types/version"
 	dockercontainer "github.com/moby/moby/api/types/container"
-	dockerimage "github.com/moby/moby/api/types/image"
-	"github.com/moby/moby/client"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -78,34 +75,12 @@ func (s *DashboardService) GetSnapshot(ctx context.Context, options DashboardAct
 		return nil, fmt.Errorf("docker service not available")
 	}
 
-	var (
-		dockerContainers []dockercontainer.Summary
-		dockerImages     []dockerimage.Summary
-	)
-
-	g, groupCtx := errgroup.WithContext(ctx)
-
-	g.Go(func() error {
-		containers, err := s.listDashboardContainersInternal(groupCtx)
-		if err != nil {
-			return fmt.Errorf("failed to load dashboard containers: %w", err)
-		}
-		dockerContainers = containers
-		return nil
-	})
-
-	g.Go(func() error {
-		images, err := s.listDashboardImagesInternal(groupCtx)
-		if err != nil {
-			return fmt.Errorf("failed to load dashboard images: %w", err)
-		}
-		dockerImages = images
-		return nil
-	})
-
-	if err := g.Wait(); err != nil {
+	dockerSnapshot, err := s.dockerService.GetSnapshot(ctx, localEnvironmentID)
+	if err != nil {
 		return nil, err
 	}
+	dockerContainers := dockerSnapshot.Containers
+	dockerImages := dockerSnapshot.Images
 
 	filteredContainers := filterInternalContainers(dockerContainers, false)
 	containerItems := make([]containertypes.Summary, 0, len(filteredContainers))
@@ -329,7 +304,7 @@ func (s *DashboardService) buildActionItemsForSnapshotInternal(
 	ctx context.Context,
 	options DashboardActionItemsOptions,
 	containers []dockercontainer.Summary,
-	_ []dockerimage.Summary,
+	_ any,
 ) (*dashboardtypes.ActionItems, error) {
 	if options.DebugAllGood {
 		return &dashboardtypes.ActionItems{Items: []dashboardtypes.ActionItem{}}, nil
@@ -720,56 +695,6 @@ func (s *DashboardService) getExpiringAPIKeysCountInternal(ctx context.Context) 
 	}
 
 	return int(count), nil
-}
-
-func (s *DashboardService) listDashboardContainersInternal(ctx context.Context) ([]dockercontainer.Summary, error) {
-	if s.dockerService == nil {
-		return nil, fmt.Errorf("docker service not available")
-	}
-
-	dockerClient, err := s.dockerService.GetClient(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
-	}
-
-	apiCtx, cancel := timeouts.WithTimeout(ctx, s.getDockerAPITimeoutSecondsInternal(ctx), timeouts.DefaultDockerAPI)
-	defer cancel()
-
-	containerList, err := dockerClient.ContainerList(apiCtx, client.ContainerListOptions{All: true})
-	if err != nil {
-		return nil, fmt.Errorf("failed to list Docker containers: %w", err)
-	}
-
-	return containerList.Items, nil
-}
-
-func (s *DashboardService) listDashboardImagesInternal(ctx context.Context) ([]dockerimage.Summary, error) {
-	if s.dockerService == nil {
-		return nil, fmt.Errorf("docker service not available")
-	}
-
-	dockerClient, err := s.dockerService.GetClient(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
-	}
-
-	apiCtx, cancel := timeouts.WithTimeout(ctx, s.getDockerAPITimeoutSecondsInternal(ctx), timeouts.DefaultDockerAPI)
-	defer cancel()
-
-	imageList, err := dockerClient.ImageList(apiCtx, client.ImageListOptions{All: true})
-	if err != nil {
-		return nil, fmt.Errorf("failed to list Docker images: %w", err)
-	}
-
-	return imageList.Items, nil
-}
-
-func (s *DashboardService) getDockerAPITimeoutSecondsInternal(ctx context.Context) int {
-	if s.settingsService == nil {
-		return 0
-	}
-
-	return s.settingsService.GetIntSetting(ctx, "dockerApiTimeout", 0)
 }
 
 func buildDashboardPaginationResponseInternal(totalItems int, limit int) base.PaginationResponse {

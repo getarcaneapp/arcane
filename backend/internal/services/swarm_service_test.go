@@ -78,11 +78,11 @@ func TestSwarmService_FetchSwarmNodeIdentityViaEdgeInternal_UsesEnvironmentAcces
 func TestSwarmService_UpdateAndGetStackSource_UsesStoredFilesWithoutSwarmManager(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
-	settingsSvc, err := NewSettingsService(ctx, db)
-	require.NoError(t, err)
-
 	rootDir := t.TempDir()
 	t.Setenv("SWARM_STACK_SOURCES_DIRECTORY", rootDir)
+
+	settingsSvc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
 
 	svc := NewSwarmService(nil, settingsSvc, nil, nil, nil)
 

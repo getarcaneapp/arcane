@@ -288,6 +288,58 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService) {
 	}, h.GetProject)
 
 	huma.Register(api, huma.Operation{
+		OperationID: "get-project-compose",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/projects/{projectId}/compose",
+		Summary:     "Get project compose details",
+		Description: "Get compose content, includes, and service configs for a project",
+		Tags:        []string{"Projects"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.GetProjectCompose)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-project-files",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/projects/{projectId}/files",
+		Summary:     "Get project files",
+		Description: "Get directory files for a project",
+		Tags:        []string{"Projects"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.GetProjectFiles)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-project-runtime",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/projects/{projectId}/runtime",
+		Summary:     "Get project runtime",
+		Description: "Get runtime service state for a project",
+		Tags:        []string{"Projects"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.GetProjectRuntime)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-project-updates",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/projects/{projectId}/updates",
+		Summary:     "Get project updates",
+		Description: "Get image update summary for a project",
+		Tags:        []string{"Projects"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.GetProjectUpdates)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "get-project-file",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/projects/{projectId}/file",
@@ -642,7 +694,7 @@ func (h *ProjectHandler) GetProject(ctx context.Context, input *GetProjectInput)
 		return nil, huma.Error400BadRequest((&common.ProjectIDRequiredError{}).Error())
 	}
 
-	details, err := h.projectService.GetProjectDetails(ctx, input.ProjectID)
+	details, err := h.projectService.GetProjectDetails(ctx, input.ProjectID, project.DetailsOptions{})
 	if err != nil {
 		return nil, huma.Error404NotFound((&common.ProjectDetailsError{Err: err}).Error())
 	}
@@ -653,6 +705,55 @@ func (h *ProjectHandler) GetProject(ctx context.Context, input *GetProjectInput)
 			Data:    details,
 		},
 	}, nil
+}
+
+func (h *ProjectHandler) getProjectDetailsWithOptionsInternal(ctx context.Context, input *GetProjectInput, opts project.DetailsOptions) (*GetProjectOutput, error) {
+	if h.projectService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+	if input.ProjectID == "" {
+		return nil, huma.Error400BadRequest((&common.ProjectIDRequiredError{}).Error())
+	}
+
+	details, err := h.projectService.GetProjectDetails(ctx, input.ProjectID, opts)
+	if err != nil {
+		return nil, huma.Error404NotFound((&common.ProjectDetailsError{Err: err}).Error())
+	}
+
+	return &GetProjectOutput{
+		Body: base.ApiResponse[project.Details]{
+			Success: true,
+			Data:    details,
+		},
+	}, nil
+}
+
+func (h *ProjectHandler) GetProjectCompose(ctx context.Context, input *GetProjectInput) (*GetProjectOutput, error) {
+	return h.getProjectDetailsWithOptionsInternal(ctx, input, project.DetailsOptions{
+		IncludeComposeContent: true,
+		IncludeEnvState:       true,
+		IncludeIncludeFiles:   true,
+		IncludeServiceConfigs: true,
+	})
+}
+
+func (h *ProjectHandler) GetProjectFiles(ctx context.Context, input *GetProjectInput) (*GetProjectOutput, error) {
+	return h.getProjectDetailsWithOptionsInternal(ctx, input, project.DetailsOptions{
+		IncludeDirectoryFiles: true,
+	})
+}
+
+func (h *ProjectHandler) GetProjectRuntime(ctx context.Context, input *GetProjectInput) (*GetProjectOutput, error) {
+	return h.getProjectDetailsWithOptionsInternal(ctx, input, project.DetailsOptions{
+		IncludeRuntimeServices: true,
+	})
+}
+
+func (h *ProjectHandler) GetProjectUpdates(ctx context.Context, input *GetProjectInput) (*GetProjectOutput, error) {
+	return h.getProjectDetailsWithOptionsInternal(ctx, input, project.DetailsOptions{
+		IncludeServiceConfigs: true,
+		IncludeUpdateInfo:     true,
+	})
 }
 
 func (h *ProjectHandler) GetProjectFile(ctx context.Context, input *GetProjectFileInput) (*GetProjectFileOutput, error) {
@@ -792,7 +893,7 @@ func (h *ProjectHandler) UpdateProject(ctx context.Context, input *UpdateProject
 		return nil, huma.Error400BadRequest((&common.ProjectUpdateError{Err: err}).Error())
 	}
 
-	details, err := h.projectService.GetProjectDetails(ctx, input.ProjectID)
+	details, err := h.projectService.GetProjectDetails(ctx, input.ProjectID, project.AllDetails())
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.ProjectDetailsError{Err: err}).Error())
 	}
@@ -827,7 +928,7 @@ func (h *ProjectHandler) UpdateProjectInclude(ctx context.Context, input *Update
 		return nil, huma.Error400BadRequest((&common.ProjectUpdateError{Err: err}).Error())
 	}
 
-	details, err := h.projectService.GetProjectDetails(ctx, input.ProjectID)
+	details, err := h.projectService.GetProjectDetails(ctx, input.ProjectID, project.AllDetails())
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.ProjectDetailsError{Err: err}).Error())
 	}

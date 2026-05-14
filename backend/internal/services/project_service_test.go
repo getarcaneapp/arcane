@@ -23,6 +23,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/pkg/projects"
 	buildtypes "github.com/getarcaneapp/arcane/types/builds"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
+	projecttypes "github.com/getarcaneapp/arcane/types/project"
 	glsqlite "github.com/glebarez/sqlite"
 	"github.com/moby/moby/api/types/container"
 	dockertypesimage "github.com/moby/moby/api/types/image"
@@ -1145,7 +1146,7 @@ services:
 	includePath := filepath.Join(projectPath, "metadata.yaml")
 	assert.NoFileExists(t, includePath)
 
-	details, err := svc.GetProjectDetails(ctx, project.ID)
+	details, err := svc.GetProjectDetails(ctx, project.ID, projecttypes.AllDetails())
 	require.NoError(t, err)
 	require.Len(t, details.IncludeFiles, 1)
 	assert.Equal(t, "metadata.yaml", details.IncludeFiles[0].RelativePath)
@@ -1839,7 +1840,7 @@ func TestProjectService_GetProjectDetails_ReturnsEffectiveEnvContent(t *testing.
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	details, err := svc.GetProjectDetails(ctx, project.ID)
+	details, err := svc.GetProjectDetails(ctx, project.ID, projecttypes.AllDetails())
 	require.NoError(t, err)
 	assert.Equal(t, "BASE=git\nTOKEN=secret\n", details.EnvContent)
 }
@@ -1971,7 +1972,7 @@ func TestProjectService_GetProjectDetails_IncludesUpdateInfo(t *testing.T) {
 		CheckTime:      time.Now().UTC(),
 	}).Error)
 
-	details, err := svc.GetProjectDetails(ctx, projectRecord.ID)
+	details, err := svc.GetProjectDetails(ctx, projectRecord.ID, projecttypes.AllDetails())
 	require.NoError(t, err)
 	require.NotNil(t, details.UpdateInfo)
 	assert.Equal(t, "has_update", details.UpdateInfo.Status)
@@ -3304,7 +3305,7 @@ func TestProjectService_GetProjectDetails_UsesGitOpsCustomComposeFilename(t *tes
 	assert.Equal(t, composeContent, composeFromContent)
 	assert.Equal(t, "TZ=UTC\n", envFromContent)
 
-	details, err := svc.GetProjectDetails(ctx, syncProjectID)
+	details, err := svc.GetProjectDetails(ctx, syncProjectID, projecttypes.AllDetails())
 	require.NoError(t, err)
 	assert.Equal(t, "radarr.yaml", details.ComposeFileName)
 	assert.Equal(t, composeContent, details.ComposeContent)

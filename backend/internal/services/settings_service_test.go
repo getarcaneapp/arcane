@@ -231,160 +231,123 @@ func TestSettingsService_PruneUnknownSettings_RemovesStaleKeys(t *testing.T) {
 func TestSettingsService_GetSettings_EnvOverride_OidcMergeAccounts(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
+	t.Setenv("OIDC_MERGE_ACCOUNTS", "true")
 
 	svc, err := NewSettingsService(ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, svc.EnsureDefaultSettings(ctx))
 
-	// Default in DB is false
-	settings1, err := svc.GetSettings(ctx)
+	settings, err := svc.GetSettings(ctx)
 	require.NoError(t, err)
-	require.False(t, settings1.OidcMergeAccounts.IsTrue())
-
-	// Env override should take precedence
-	t.Setenv("OIDC_MERGE_ACCOUNTS", "true")
-	settings2, err := svc.GetSettings(ctx)
-	require.NoError(t, err)
-	require.True(t, settings2.OidcMergeAccounts.IsTrue())
+	require.True(t, settings.OidcMergeAccounts.IsTrue())
 }
 
 func TestSettingsService_GetSettings_EnvOverride_TrivyScanTimeout(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
+	t.Setenv("TRIVY_SCAN_TIMEOUT", "1800")
 
 	svc, err := NewSettingsService(ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, svc.EnsureDefaultSettings(ctx))
 
-	settings1, err := svc.GetSettings(ctx)
+	settings, err := svc.GetSettings(ctx)
 	require.NoError(t, err)
-	require.Equal(t, 900, settings1.TrivyScanTimeout.AsInt())
-
-	t.Setenv("TRIVY_SCAN_TIMEOUT", "1800")
-	settings2, err := svc.GetSettings(ctx)
-	require.NoError(t, err)
-	require.Equal(t, 1800, settings2.TrivyScanTimeout.AsInt())
+	require.Equal(t, 1800, settings.TrivyScanTimeout.AsInt())
 }
 
 func TestSettingsService_GetSettings_EnvOverride_TrivyResourceLimits(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
+	t.Setenv("TRIVY_RESOURCE_LIMITS_ENABLED", "false")
+	t.Setenv("TRIVY_CPU_LIMIT", "2.5")
+	t.Setenv("TRIVY_MEMORY_LIMIT_MB", "2048")
 
 	svc, err := NewSettingsService(ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, svc.EnsureDefaultSettings(ctx))
 
-	settings1, err := svc.GetSettings(ctx)
+	settings, err := svc.GetSettings(ctx)
 	require.NoError(t, err)
-	require.True(t, settings1.TrivyResourceLimitsEnabled.IsTrue())
-	require.Equal(t, "1", settings1.TrivyCpuLimit.Value)
-	require.Equal(t, 0, settings1.TrivyMemoryLimitMb.AsInt())
-
-	t.Setenv("TRIVY_RESOURCE_LIMITS_ENABLED", "false")
-	t.Setenv("TRIVY_CPU_LIMIT", "2.5")
-	t.Setenv("TRIVY_MEMORY_LIMIT_MB", "2048")
-
-	settings2, err := svc.GetSettings(ctx)
-	require.NoError(t, err)
-	require.False(t, settings2.TrivyResourceLimitsEnabled.IsTrue())
-	require.Equal(t, "2.5", settings2.TrivyCpuLimit.Value)
-	require.Equal(t, 2048, settings2.TrivyMemoryLimitMb.AsInt())
+	require.False(t, settings.TrivyResourceLimitsEnabled.IsTrue())
+	require.Equal(t, "2.5", settings.TrivyCpuLimit.Value)
+	require.Equal(t, 2048, settings.TrivyMemoryLimitMb.AsInt())
 }
 
 func TestSettingsService_GetSettings_EnvOverride_TrivyNetwork(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
+	t.Setenv("TRIVY_NETWORK", "arcane-external")
 
 	svc, err := NewSettingsService(ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, svc.EnsureDefaultSettings(ctx))
 
-	settings1, err := svc.GetSettings(ctx)
+	settings, err := svc.GetSettings(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "", settings1.TrivyNetwork.Value)
-
-	t.Setenv("TRIVY_NETWORK", "arcane-external")
-	settings2, err := svc.GetSettings(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "arcane-external", settings2.TrivyNetwork.Value)
+	require.Equal(t, "arcane-external", settings.TrivyNetwork.Value)
 }
 
 func TestSettingsService_GetSettings_EnvOverride_FollowProjectSymlinks(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
+	t.Setenv("FOLLOW_PROJECT_SYMLINKS", "true")
 
 	svc, err := NewSettingsService(ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, svc.EnsureDefaultSettings(ctx))
 
-	settings1, err := svc.GetSettings(ctx)
+	settings, err := svc.GetSettings(ctx)
 	require.NoError(t, err)
-	require.False(t, settings1.FollowProjectSymlinks.IsTrue())
-
-	t.Setenv("FOLLOW_PROJECT_SYMLINKS", "true")
-	settings2, err := svc.GetSettings(ctx)
-	require.NoError(t, err)
-	require.True(t, settings2.FollowProjectSymlinks.IsTrue())
+	require.True(t, settings.FollowProjectSymlinks.IsTrue())
 }
 
 func TestSettingsService_GetSettings_EnvOverride_TrivyRuntimeSecurity(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
+	t.Setenv("TRIVY_SECURITY_OPTS", "label=disable,\nlabel=type:container_runtime_t")
+	t.Setenv("TRIVY_PRIVILEGED", "true")
 
 	svc, err := NewSettingsService(ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, svc.EnsureDefaultSettings(ctx))
 
-	settings1, err := svc.GetSettings(ctx)
+	settings, err := svc.GetSettings(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "", settings1.TrivySecurityOpts.Value)
-	require.False(t, settings1.TrivyPrivileged.IsTrue())
-
-	t.Setenv("TRIVY_SECURITY_OPTS", "label=disable,\nlabel=type:container_runtime_t")
-	t.Setenv("TRIVY_PRIVILEGED", "true")
-
-	settings2, err := svc.GetSettings(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "label=disable,\nlabel=type:container_runtime_t", settings2.TrivySecurityOpts.Value)
-	require.True(t, settings2.TrivyPrivileged.IsTrue())
+	require.Equal(t, "label=disable,\nlabel=type:container_runtime_t", settings.TrivySecurityOpts.Value)
+	require.True(t, settings.TrivyPrivileged.IsTrue())
 }
 
 func TestSettingsService_GetStringSetting_EnvOverride_SwarmStackSourcesDirectory(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
+	t.Setenv("SWARM_STACK_SOURCES_DIRECTORY", "/mnt/swarm-from-env")
 
 	svc, err := NewSettingsService(ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, svc.UpdateSetting(ctx, "swarmStackSourcesDirectory", "/tmp/swarm-from-db"))
 
-	require.Equal(t, "/tmp/swarm-from-db", svc.GetStringSetting(ctx, "swarmStackSourcesDirectory", "/fallback"))
-
-	t.Setenv("SWARM_STACK_SOURCES_DIRECTORY", "/mnt/swarm-from-env")
-
 	require.Equal(t, "/mnt/swarm-from-env", svc.GetStringSetting(ctx, "swarmStackSourcesDirectory", "/fallback"))
-	require.Equal(t, "/tmp/swarm-from-db", svc.GetSettingsConfig().SwarmStackSourcesDirectory.Value)
+	require.Equal(t, "/mnt/swarm-from-env", svc.GetSettingsConfig().SwarmStackSourcesDirectory.Value)
 }
 
 func TestSettingsService_isEnvOverrideActiveInternal(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
+
 	svc, err := NewSettingsService(ctx, db)
 	require.NoError(t, err)
-
-	// Not set => not forced
 	require.False(t, svc.isEnvOverrideActiveInternal("oidcEnabled"))
 
-	// Explicit false still counts as active env override
 	t.Setenv("OIDC_ENABLED", "false")
-	require.True(t, svc.isEnvOverrideActiveInternal("oidcEnabled"))
+	svcWithOverride, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.True(t, svcWithOverride.isEnvOverrideActiveInternal("oidcEnabled"))
 
-	// Empty value should not be treated as active (matches applyEnvOverrides behavior)
-	t.Setenv("OIDC_ENABLED", "")
-	require.False(t, svc.isEnvOverrideActiveInternal("oidcEnabled"))
-
-	// Non-envOverride keys should never be forced via this helper
 	t.Setenv("AUTH_SESSION_TIMEOUT", "120")
-	require.False(t, svc.isEnvOverrideActiveInternal("authSessionTimeout"))
+	svcWithNonOverrideEnv, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.False(t, svcWithNonOverrideEnv.isEnvOverrideActiveInternal("authSessionTimeout"))
 }
 
 func TestSettingsService_GetSetHelpers(t *testing.T) {
@@ -608,11 +571,12 @@ func TestSettingsService_LoadDatabaseSettings_UIConfigurationDisabled_Env(t *tes
 func TestSettingsService_PersistEnvSettingsIfMissing_DoesNotOverrideForcedTrivyImage(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
+	t.Setenv("TRIVY_IMAGE", "ghcr.io/aquasecurity/trivy:latest")
+
 	svc, err := NewSettingsService(ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, svc.EnsureDefaultSettings(ctx))
 
-	t.Setenv("TRIVY_IMAGE", "ghcr.io/aquasecurity/trivy:latest")
 	require.NoError(t, svc.PersistEnvSettingsIfMissing(ctx))
 
 	var sv models.SettingVariable

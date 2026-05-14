@@ -10,26 +10,26 @@ var (
 	OidcStateCookieName     = "oidc_state"
 )
 
-func isSecure(r *http.Request) bool {
+func isSecureInternal(r *http.Request) bool {
 	return r.TLS != nil
 }
 
-func tokenCookieName(r *http.Request) string {
-	if isSecure(r) {
+func tokenCookieNameInternal(r *http.Request) string {
+	if isSecureInternal(r) {
 		return TokenCookieName
 	}
 	return InsecureTokenCookieName
 }
 
 func ClearTokenCookie(w http.ResponseWriter, r *http.Request) {
-	name := tokenCookieName(r)
+	name := tokenCookieNameInternal(r)
 	http.SetCookie(w, &http.Cookie{ // #nosec G124: Secure mirrors the request's TLS state so the clear directive matches whichever cookie variant (__Host-token vs. token) was originally set.
 		Name:     name,
 		Value:    "",
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
-		Secure:   isSecure(r),
+		Secure:   isSecureInternal(r),
 		SameSite: http.SameSiteLaxMode,
 	})
 }

@@ -61,6 +61,7 @@ func newDashboardHandlerTestDockerService(
 	t.Cleanup(server.Close)
 
 	return services.NewDockerClientService(
+		context.Background(),
 		nil,
 		&config.Config{DockerHost: server.URL},
 		settingsSvc,

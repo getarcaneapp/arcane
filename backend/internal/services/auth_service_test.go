@@ -567,6 +567,7 @@ func TestGetOidcConfigurationStatus(t *testing.T) {
 
 	// Explicit env override to false should still be treated as forced
 	t.Setenv("OIDC_ENABLED", "false")
+	s.settingsService.envOverrides = resolveSettingsEnvOverridesInternal()
 	s.config.OidcEnabled = false
 	status, err = s.GetOidcConfigurationStatus(context.Background())
 	if err != nil {
@@ -578,6 +579,7 @@ func TestGetOidcConfigurationStatus(t *testing.T) {
 
 	// Enabled but missing fields
 	t.Setenv("OIDC_ENABLED", "true")
+	s.settingsService.envOverrides = resolveSettingsEnvOverridesInternal()
 	s.config.OidcEnabled = true
 	status, err = s.GetOidcConfigurationStatus(context.Background())
 	if err != nil {

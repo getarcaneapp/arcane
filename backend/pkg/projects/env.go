@@ -2,6 +2,8 @@ package projects
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -11,8 +13,11 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/compose-spec/compose-go/v2/dotenv"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils/cache"
 )
 
 const (
@@ -50,6 +55,20 @@ type EnvLoader struct {
 	autoInjectEnv bool
 }
 
+type envFileCacheEntry struct {
+	path   string
+	mtime  time.Time
+	exists bool
+	values EnvMap
+}
+
+var (
+	processEnvOnce      sync.Once
+	processEnvSnapshot  EnvMap
+	globalEnvFileCache  = cache.NewKeyed[string, envFileCacheEntry]()
+	projectEnvFileCache = cache.NewKeyed[string, envFileCacheEntry]()
+)
+
 func NewEnvLoader(projectsDir, workdir string, autoInjectEnv bool) *EnvLoader {
 	return &EnvLoader{
 		projectsDir:   projectsDir,
@@ -63,7 +82,7 @@ func NewEnvLoader(projectsDir, workdir string, autoInjectEnv bool) *EnvLoader {
 // 2. Global .env.global file (from projects directory)
 // 3. Project-specific .env file (from workdir)
 func (l *EnvLoader) LoadEnvironment(ctx context.Context) (envMap EnvMap, injectionVars EnvMap, err error) {
-	envMap = l.loadProcessEnv()
+	envMap = cloneEnvMapInternal(loadProcessEnvSnapshotInternal())
 	injectionVars = make(EnvMap)
 
 	if strings.TrimSpace(l.projectsDir) != "" {
@@ -75,45 +94,38 @@ func (l *EnvLoader) LoadEnvironment(ctx context.Context) (envMap EnvMap, injecti
 
 	projectEnvPath := filepath.Join(l.workdir, EffectiveEnvFileName)
 	if err := l.loadAndMergeProjectEnv(ctx, projectEnvPath, envMap, injectionVars); err != nil {
-		slog.WarnContext(ctx, "Failed to load project env", "path", projectEnvPath, "error", err)
+		if errors.Is(err, os.ErrNotExist) {
+			slog.DebugContext(ctx, "Project .env file does not exist", "path", projectEnvPath)
+		} else {
+			slog.WarnContext(ctx, "Failed to load project env", "path", projectEnvPath, "error", err)
+		}
 	}
 
 	return envMap, injectionVars, nil
 }
 
-func (l *EnvLoader) loadProcessEnv() EnvMap {
-	envMap := make(EnvMap)
-	for _, kv := range os.Environ() {
-		if k, v, ok := strings.Cut(kv, "="); ok {
-			envMap[k] = v
+func loadProcessEnvSnapshotInternal() EnvMap {
+	processEnvOnce.Do(func() {
+		processEnvSnapshot = make(EnvMap)
+		for _, kv := range os.Environ() {
+			if k, v, ok := strings.Cut(kv, "="); ok {
+				processEnvSnapshot[k] = v
+			}
 		}
-	}
-	return envMap
+	})
+	return processEnvSnapshot
 }
 
 func (l *EnvLoader) loadAndMergeGlobalEnv(ctx context.Context, path string, envMap, injectionVars EnvMap) error {
-	slog.DebugContext(ctx, "Checking for global env file", "path", path)
-
-	info, err := os.Stat(path)
+	entry, err := loadCachedEnvFileInternal(ctx, globalEnvFileCache, path, path, envMap)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			slog.DebugContext(ctx, "Global env file does not exist", "path", path)
-		} else {
-			slog.DebugContext(ctx, "Global env file not accessible", "path", path, "error", err)
-		}
 		return err
 	}
-
-	if info.IsDir() {
-		return fmt.Errorf("path is a directory: %s", path)
+	if !entry.exists {
+		return os.ErrNotExist
 	}
 
-	globalEnv, err := ParseProjectEnvFile(path, envMap)
-	if err != nil {
-		return fmt.Errorf("parse env file: %w", err)
-	}
-
-	for k, v := range globalEnv {
+	for k, v := range entry.values {
 		if _, exists := envMap[k]; !exists {
 			envMap[k] = v
 		}
@@ -125,28 +137,16 @@ func (l *EnvLoader) loadAndMergeGlobalEnv(ctx context.Context, path string, envM
 }
 
 func (l *EnvLoader) loadAndMergeProjectEnv(ctx context.Context, path string, envMap, injectionVars EnvMap) error {
-	slog.DebugContext(ctx, "Checking for project .env file", "path", path)
-
-	info, err := os.Stat(path)
+	key := strings.Join([]string{path, l.projectsDir, fmt.Sprint(l.autoInjectEnv), envContextFingerprintInternal(envMap)}, "\x00")
+	entry, err := loadCachedEnvFileInternal(ctx, projectEnvFileCache, key, path, envMap)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			slog.DebugContext(ctx, "Project .env file does not exist", "path", path)
-		} else {
-			slog.DebugContext(ctx, "Project .env file not accessible", "path", path, "error", err)
-		}
 		return err
 	}
-
-	if info.IsDir() {
-		return fmt.Errorf("path is a directory: %s", path)
+	if !entry.exists {
+		return os.ErrNotExist
 	}
 
-	projectEnv, err := ParseProjectEnvFile(path, envMap)
-	if err != nil {
-		return fmt.Errorf("parse env file: %w", err)
-	}
-
-	for k, v := range projectEnv {
+	for k, v := range entry.values {
 		envMap[k] = v
 		if l.autoInjectEnv {
 			injectionVars[k] = v
@@ -157,6 +157,77 @@ func (l *EnvLoader) loadAndMergeProjectEnv(ctx context.Context, path string, env
 	return nil
 }
 
+func loadCachedEnvFileInternal(ctx context.Context, envCache *cache.KeyedCache[string, envFileCacheEntry], key, path string, contextEnv EnvMap) (envFileCacheEntry, error) {
+	return envCache.GetOrFetch(ctx, key, validEnvFileCacheEntryInternal, func(context.Context) (envFileCacheEntry, error) {
+		entry := envFileCacheEntry{path: path}
+		info, err := os.Stat(path)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return entry, nil
+			}
+			return entry, err
+		}
+		if info.IsDir() {
+			return entry, fmt.Errorf("path is a directory: %s", path)
+		}
+
+		parsed, err := parseProjectEnvFileExistingInternal(path, contextEnv)
+		if err != nil {
+			return entry, fmt.Errorf("parse env file: %w", err)
+		}
+		entry.exists = true
+		entry.mtime = info.ModTime()
+		entry.values = parsed
+		return entry, nil
+	})
+}
+
+func envContextFingerprintInternal(envMap EnvMap) string {
+	if len(envMap) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(envMap))
+	for key := range envMap {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	var b strings.Builder
+	for _, key := range keys {
+		b.WriteString(key)
+		b.WriteByte('=')
+		b.WriteString(envMap[key])
+		b.WriteByte('\n')
+	}
+	sum := sha256.Sum256([]byte(b.String()))
+	return hex.EncodeToString(sum[:])
+}
+
+func validEnvFileCacheEntryInternal(entry envFileCacheEntry) bool {
+	info, err := os.Stat(entry.path)
+	if err != nil {
+		return !entry.exists && errors.Is(err, os.ErrNotExist)
+	}
+	if info.IsDir() {
+		return false
+	}
+	return entry.exists && info.ModTime().Equal(entry.mtime)
+}
+
+func cloneEnvMapInternal(src EnvMap) EnvMap {
+	dst := make(EnvMap, len(src))
+	maps.Copy(dst, src)
+	return dst
+}
+
+func parseProjectEnvFileExistingInternal(path string, contextEnv EnvMap) (EnvMap, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open file: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+	return parseEnvWithContext(f, contextEnv)
+}
+
 // ParseProjectEnvFile parses a project .env file with variable expansion using the provided
 // context map (e.g. process env). Returns nil without error when the file does not exist.
 // Only the specified file is read — global env files are intentionally not loaded here.
@@ -164,12 +235,7 @@ func ParseProjectEnvFile(path string, contextEnv EnvMap) (EnvMap, error) {
 	if _, err := os.Stat(path); err != nil {
 		return nil, nil //nolint:nilerr // missing .env is not an error
 	}
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("open file: %w", err)
-	}
-	defer func() { _ = f.Close() }()
-	return parseEnvWithContext(f, contextEnv)
+	return parseProjectEnvFileExistingInternal(path, contextEnv)
 }
 
 // ParseProjectEnvContent parses project .env content from a string with variable expansion.

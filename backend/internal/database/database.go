@@ -115,8 +115,13 @@ func Initialize(ctx context.Context, databaseURL string, options MigrationOption
 	}
 
 	// Set connection pool settings
-	sqlDB.SetMaxIdleConns(5)
-	sqlDB.SetMaxOpenConns(20)
+	if db.Name() == "postgres" {
+		sqlDB.SetMaxIdleConns(15)
+		sqlDB.SetMaxOpenConns(50)
+	} else {
+		sqlDB.SetMaxIdleConns(5)
+		sqlDB.SetMaxOpenConns(20)
+	}
 	sqlDB.SetConnMaxLifetime(5 * time.Minute)
 	sqlDB.SetConnMaxIdleTime(3 * time.Minute)
 

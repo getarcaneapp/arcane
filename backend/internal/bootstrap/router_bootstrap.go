@@ -4,6 +4,8 @@ import (
 	"context"
 	"log/slog"
 	"net"
+	"net/http"
+	"net/http/pprof"
 	"path"
 	"strings"
 
@@ -151,6 +153,16 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services)
 	e.Use(middleware.NewCORSMiddleware(cfg).Add())
 
 	apiGroup := e.Group("/api")
+	apiGroup.Use(echomiddleware.GzipWithConfig(echomiddleware.GzipConfig{
+		Level: 5,
+		Skipper: func(c echo.Context) bool {
+			if strings.EqualFold(c.Request().Header.Get(echo.HeaderUpgrade), "websocket") {
+				return true
+			}
+			path := c.Request().URL.Path
+			return strings.Contains(path, "/ws/") || strings.Contains(path, "/logs") || strings.Contains(path, "/terminal")
+		},
+	}))
 
 	apiGroup.Use(middleware.PerIPRateLimitForPaths(
 		[]string{
@@ -232,6 +244,7 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services)
 	}
 
 	api.RegisterDiagnosticsRoutes(apiGroup, authMiddleware, ws.DefaultWebSocketMetrics()) //nolint:contextcheck
+	registerPprofRoutesInternal(apiGroup, authMiddleware)                                 //nolint:contextcheck
 
 	// Remaining echo handlers (WebSocket/streaming)
 	ws.NewWebSocketHandler(apiGroup, appServices.Project, appServices.Container, appServices.Swarm, appServices.System, authMiddleware, cfg) //nolint:contextcheck
@@ -254,4 +267,16 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services)
 	}
 
 	return e, tunnelServer
+}
+
+func registerPprofRoutesInternal(apiGroup *echo.Group, authMiddleware *middleware.AuthMiddleware) {
+	pprofGroup := apiGroup.Group("/debug/pprof", authMiddleware.WithAdminRequired().Add())
+	pprofGroup.GET("", echo.WrapHandler(http.HandlerFunc(pprof.Index)))
+	pprofGroup.GET("/", echo.WrapHandler(http.HandlerFunc(pprof.Index)))
+	pprofGroup.GET("/cmdline", echo.WrapHandler(http.HandlerFunc(pprof.Cmdline)))
+	pprofGroup.GET("/profile", echo.WrapHandler(http.HandlerFunc(pprof.Profile)))
+	pprofGroup.POST("/symbol", echo.WrapHandler(http.HandlerFunc(pprof.Symbol)))
+	pprofGroup.GET("/symbol", echo.WrapHandler(http.HandlerFunc(pprof.Symbol)))
+	pprofGroup.GET("/trace", echo.WrapHandler(http.HandlerFunc(pprof.Trace)))
+	pprofGroup.GET("/:name", echo.WrapHandler(http.HandlerFunc(pprof.Index)))
 }

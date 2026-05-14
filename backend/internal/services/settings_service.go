@@ -30,8 +30,9 @@ import (
 )
 
 type SettingsService struct {
-	db     *database.DB
-	config atomic.Pointer[models.Settings]
+	db           *database.DB
+	config       atomic.Pointer[models.Settings]
+	envOverrides []settingsEnvOverride
 
 	OnImagePollingSettingsChanged      func(ctx context.Context)
 	OnAutoUpdateSettingsChanged        func(ctx context.Context)
@@ -42,9 +43,20 @@ type SettingsService struct {
 	OnTimeoutSettingsChanged           func(ctx context.Context, timeoutSettings []libarcane.SettingUpdate)
 }
 
+type settingsEnvOverride struct {
+	fieldIndex int
+	key        string
+	envVarName string
+	value      string
+}
+
 func NewSettingsService(ctx context.Context, db *database.DB) (*SettingsService, error) {
 	svc := &SettingsService{
 		db: db,
+	}
+	svc.envOverrides = resolveSettingsEnvOverridesInternal()
+	if len(svc.envOverrides) > 0 {
+		slog.InfoContext(ctx, "settings env overrides loaded", "count", len(svc.envOverrides))
 	}
 
 	err := svc.LoadDatabaseSettings(ctx)
@@ -449,8 +461,17 @@ func (s *SettingsService) loadDatabaseConfigFromEnv(ctx context.Context, db *dat
 }
 
 func (s *SettingsService) applyEnvOverrides(ctx context.Context, dest *models.Settings) {
-	rt := reflect.ValueOf(dest).Elem().Type()
+	_ = ctx
 	rv := reflect.ValueOf(dest).Elem()
+
+	for _, override := range s.envOverrides {
+		rv.Field(override.fieldIndex).FieldByName("Value").SetString(override.value)
+	}
+}
+
+func resolveSettingsEnvOverridesInternal() []settingsEnvOverride {
+	rt := reflect.TypeFor[models.Settings]()
+	overrides := make([]settingsEnvOverride, 0)
 
 	for i := range rt.NumField() {
 		field := rt.Field(i)
@@ -468,37 +489,27 @@ func (s *SettingsService) applyEnvOverrides(ctx context.Context, dest *models.Se
 			continue
 		}
 
-		// Check if environment variable is set
 		envVarName := utils.CamelCaseToScreamingSnakeCase(key)
 		if val, ok := os.LookupEnv(envVarName); ok && val != "" {
-			slog.DebugContext(ctx, "applyEnvOverrides: applying env override", "key", key, "env", envVarName)
-			rv.Field(i).FieldByName("Value").SetString(utils.TrimQuotes(val))
+			overrides = append(overrides, settingsEnvOverride{
+				fieldIndex: i,
+				key:        key,
+				envVarName: envVarName,
+				value:      utils.TrimQuotes(val),
+			})
 		}
 	}
+
+	return overrides
 }
 
 // isEnvOverrideActiveInternal returns true when the given setting key has an envOverride tag
 // and its corresponding environment variable is currently set to a non-empty value.
 func (s *SettingsService) isEnvOverrideActiveInternal(key string) bool {
-	rt := reflect.TypeFor[models.Settings]()
-	for field := range rt.Fields() {
-		tagValue := field.Tag.Get("key")
-		if tagValue == "" {
-			continue
+	for _, override := range s.envOverrides {
+		if override.key == key {
+			return true
 		}
-
-		tagParts := strings.Split(tagValue, ",")
-		if len(tagParts) == 0 || tagParts[0] != key {
-			continue
-		}
-
-		if !slices.Contains(tagParts[1:], "envOverride") {
-			return false
-		}
-
-		envVarName := utils.CamelCaseToScreamingSnakeCase(key)
-		val, ok := os.LookupEnv(envVarName)
-		return ok && val != ""
 	}
 
 	return false

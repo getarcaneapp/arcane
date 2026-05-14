@@ -13,6 +13,7 @@ type Hub struct {
 	unregister chan *Client
 	broadcast  chan []byte
 	onFirst    func()
+	onActive   func()
 	onEmpty    func()
 }
 
@@ -31,6 +32,12 @@ func (h *Hub) SetOnFirstClient(fn func()) {
 	h.mu.Unlock()
 }
 
+func (h *Hub) SetOnActive(fn func()) {
+	h.mu.Lock()
+	h.onActive = fn
+	h.mu.Unlock()
+}
+
 func (h *Hub) SetOnEmpty(fn func()) {
 	h.mu.Lock()
 	h.onEmpty = fn
@@ -45,14 +52,20 @@ func (h *Hub) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case c := <-h.register:
-			var onFirst func()
+			var onFirst, onActive func()
 			h.mu.Lock()
 			h.clients[c] = struct{}{}
-			if len(h.clients) == 1 && h.onFirst != nil {
-				onFirst = h.onFirst
-				h.onFirst = nil
+			if len(h.clients) == 1 {
+				onActive = h.onActive
+				if h.onFirst != nil {
+					onFirst = h.onFirst
+					h.onFirst = nil
+				}
 			}
 			h.mu.Unlock()
+			if onActive != nil {
+				onActive()
+			}
 			if onFirst != nil {
 				onFirst()
 			}
