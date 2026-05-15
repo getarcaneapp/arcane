@@ -976,34 +976,24 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 	}
 	s.enrichWithGitOpsInfo(ctx, proj, &resp)
 
-	// Get runtime services and update status/counts
-	if opts.IncludeRuntimeServices {
-		services, serr := s.GetProjectServices(ctx, projectID)
-		if serr == nil && services != nil {
-			resp.ServiceCount = len(services)
-			_, runningCount := s.getServiceCounts(services)
-			resp.RunningCount = runningCount
-			resp.Status = string(s.calculateProjectStatus(services))
+	// Refresh runtime status/counts even when callers do not request the full
+	// runtime service array. DB values are only a fallback when Docker lookup
+	// or compose loading fails.
+	services, serr := s.GetProjectServices(ctx, projectID)
+	if serr == nil && services != nil {
+		resp.ServiceCount = len(services)
+		_, runningCount := s.getServiceCounts(services)
+		resp.RunningCount = runningCount
+		resp.Status = string(s.calculateProjectStatus(services))
 
-			runtimeServices := make([]project.RuntimeService, len(services))
-			for i, svc := range services {
-				runtimeServices[i] = project.RuntimeService{
-					Name:             svc.Name,
-					Image:            svc.Image,
-					Status:           svc.Status,
-					ContainerID:      svc.ContainerID,
-					ContainerName:    svc.ContainerName,
-					Ports:            svc.Ports,
-					Health:           svc.Health,
-					IconURL:          svc.IconURL,
-					ServiceConfig:    svc.ServiceConfig,
-					RedeployDisabled: svc.RedeployDisabled,
-				}
+		if opts.IncludeRuntimeServices {
+			resp.RuntimeServices = buildProjectRuntimeServicesInternal(services)
+			for _, svc := range services {
 				if svc.RedeployDisabled {
 					resp.RedeployDisabled = true
+					break
 				}
 			}
-			resp.RuntimeServices = runtimeServices
 		}
 	}
 
@@ -1012,6 +1002,25 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 	}
 
 	return resp, nil
+}
+
+func buildProjectRuntimeServicesInternal(services []ProjectServiceInfo) []project.RuntimeService {
+	runtimeServices := make([]project.RuntimeService, len(services))
+	for i, svc := range services {
+		runtimeServices[i] = project.RuntimeService{
+			Name:             svc.Name,
+			Image:            svc.Image,
+			Status:           svc.Status,
+			ContainerID:      svc.ContainerID,
+			ContainerName:    svc.ContainerName,
+			Ports:            svc.Ports,
+			Health:           svc.Health,
+			IconURL:          svc.IconURL,
+			ServiceConfig:    svc.ServiceConfig,
+			RedeployDisabled: svc.RedeployDisabled,
+		}
+	}
+	return runtimeServices
 }
 
 func (s *ProjectService) GetProjectFileContent(ctx context.Context, projectID, relativePath string) (project.IncludeFile, error) {
