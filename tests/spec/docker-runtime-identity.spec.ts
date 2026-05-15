@@ -31,6 +31,15 @@ function dockerExecAsUser(container: string, user: string, command: string) {
 	return docker(['exec', '-u', user, container, 'sh', '-lc', command]);
 }
 
+type ProcessStatus = {
+	gid: string;
+	groups: string;
+	name: string;
+	pid: string;
+	ppid: string;
+	uid: string;
+};
+
 function dockerStatus(container: string) {
 	return docker(['inspect', '-f', '{{.State.Status}}', container]);
 }
@@ -132,28 +141,44 @@ async function waitForFile(container: string, filePath: string) {
 		.toBe('present');
 }
 
+function parseStatusBlock(status: string): ProcessStatus {
+	const fields = new Map<string, string>();
+
+	for (const line of status.split('\n')) {
+		const [key, ...valueParts] = line.split(':');
+		if (!key || valueParts.length === 0) continue;
+		fields.set(key, valueParts.join(':').trim());
+	}
+
+	return {
+		gid: fields.get('Gid') ?? '',
+		groups: fields.get('Groups') ?? '',
+		name: fields.get('Name') ?? '',
+		pid: fields.get('Pid') ?? '',
+		ppid: fields.get('PPid') ?? '',
+		uid: fields.get('Uid') ?? ''
+	};
+}
+
 function pidOneStatus(container: string) {
-	return dockerExec(container, "grep -E '^(Uid|Gid|Groups):' /proc/1/status");
+	return parseStatusBlock(dockerExec(container, 'cat /proc/1/status'));
 }
 
 function arcaneProcessStatuses(container: string) {
-	return dockerExec(
+	const output = dockerExec(
 		container,
 		[
 			'for f in /proc/[0-9]*/status; do',
-			'  name=$(awk \'/^Name:/ {print $2}\' "$f");',
-			'  [ "$name" = "arcane" ] || continue;',
-			'  pid=$(awk \'/^Pid:/ {print $2}\' "$f");',
-			'  ppid=$(awk \'/^PPid:/ {print $2}\' "$f");',
-			'  uid=$(awk \'/^Uid:/ {print $2}\' "$f");',
-			'  gid=$(awk \'/^Gid:/ {print $2}\' "$f");',
-			'  groups=$(awk \'/^Groups:/ {for (i = 2; i <= NF; i++) printf("%s%s", $i, (i < NF ? "," : ""));}\' "$f");',
-			'  echo "$pid:$ppid:$uid:$gid:$groups";',
+			'  printf "%s\\n" "---ARCANE-PROCESS-STATUS---";',
+			'  cat "$f";',
 			'done'
 		].join(' ')
-	)
-		.split('\n')
-		.filter(Boolean);
+	);
+
+	return output
+		.split('---ARCANE-PROCESS-STATUS---')
+		.map((block) => parseStatusBlock(block))
+		.filter((status) => status.name === 'arcane');
 }
 
 function defaultRunArgs(name: string, dataDir: string) {
@@ -194,8 +219,8 @@ test.describe.serial('Docker runtime identity', () => {
 			await waitForFile(containerName, '/app/data/arcane.db');
 
 			const status = pidOneStatus(containerName);
-			expect(status).toContain('Uid:\t0\t0\t0\t0');
-			expect(status).toContain('Gid:\t0\t0\t0\t0');
+			expect(status.uid).toBe('0\t0\t0\t0');
+			expect(status.gid).toBe('0\t0\t0\t0');
 		} finally {
 			cleanupContainer(containerName);
 			cleanupDir(dataDir);
@@ -242,8 +267,20 @@ test.describe.serial('Docker runtime identity', () => {
 			expect(projectsStat).toBe(baselineProjectsStat);
 
 			const processStatuses = arcaneProcessStatuses(containerName);
-			expect(processStatuses.some((status) => status.startsWith('1:0:0:0:'))).toBe(true);
-			expect(processStatuses.some((status) => /^(?!1:)\d+:1:1001:1001:/.test(status))).toBe(true);
+			expect(
+				processStatuses.some(
+					(status) => status.pid === '1' && status.ppid === '0' && status.uid.startsWith('0\t')
+				)
+			).toBe(true);
+			expect(
+				processStatuses.some(
+					(status) =>
+						status.pid !== '1' &&
+						status.ppid === '1' &&
+						status.uid.startsWith('1001\t') &&
+						status.gid.startsWith('1001\t')
+				)
+			).toBe(true);
 
 			const dockerConfigStat = dockerExecAsUser(
 				containerName,
@@ -323,8 +360,20 @@ test.describe.serial('Docker runtime identity', () => {
 			expect(dbStat).toBe('1001:1001');
 
 			const processStatuses = arcaneProcessStatuses(containerName);
-			expect(processStatuses.some((status) => status.startsWith('1:0:0:0:'))).toBe(true);
-			expect(processStatuses.some((status) => /^(?!1:)\d+:1:1001:1001:/.test(status))).toBe(true);
+			expect(
+				processStatuses.some(
+					(status) => status.pid === '1' && status.ppid === '0' && status.uid.startsWith('0\t')
+				)
+			).toBe(true);
+			expect(
+				processStatuses.some(
+					(status) =>
+						status.pid !== '1' &&
+						status.ppid === '1' &&
+						status.uid.startsWith('1001\t') &&
+						status.gid.startsWith('1001\t')
+				)
+			).toBe(true);
 		} finally {
 			cleanupContainer(containerName);
 			cleanupContainer(proxyName);
