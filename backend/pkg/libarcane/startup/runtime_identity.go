@@ -34,11 +34,12 @@ type runtimeIdentityRequest struct {
 // RuntimeIdentityConfig contains the config-backed environment values used to
 // switch the process runtime identity before the application initializes.
 type RuntimeIdentityConfig struct {
-	PUID         string
-	PGID         string
-	DockerHost   string
-	DockerConfig string
-	DatabaseURL  string
+	PUID           string
+	PGID           string
+	DockerHost     string
+	DockerConfig   string
+	DatabaseURL    string
+	DefaultNonRoot string
 }
 
 // ApplyRequestedRuntimeIdentity switches the current process to the configured
@@ -102,7 +103,7 @@ func loadRuntimeIdentityRequestInternal(cfg *RuntimeIdentityConfig) (runtimeIden
 	pgid := strings.TrimSpace(cfg.PGID)
 
 	if puid == "" && pgid == "" {
-		if strings.EqualFold(strings.TrimSpace(getenv("ARCANE_DEFAULT_NONROOT")), "true") {
+		if strings.EqualFold(strings.TrimSpace(cfg.DefaultNonRoot), "true") {
 			return runtimeIdentityRequest{
 				Enabled:       true,
 				UID:           defaultRuntimeUID,

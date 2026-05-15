@@ -19,12 +19,7 @@ func TestLoadRuntimeIdentityRequest(t *testing.T) {
 	})
 
 	t.Run("enabled with default non-root image flag", func(t *testing.T) {
-		req, warning, err := loadRuntimeIdentityRequestInternal(func(key string) string {
-			if key == "ARCANE_DEFAULT_NONROOT" {
-				return "true"
-			}
-			return ""
-		})
+		req, warning, err := loadRuntimeIdentityRequestInternal(&RuntimeIdentityConfig{DefaultNonRoot: "true"})
 		require.NoError(t, err)
 		require.Empty(t, warning)
 		require.True(t, req.Enabled)

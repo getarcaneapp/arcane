@@ -31,11 +31,12 @@ func Bootstrap(ctx context.Context) error {
 	_ = godotenv.Load()
 	cfg := config.Load()
 	runtimeIdentityCfg := &startup.RuntimeIdentityConfig{
-		PUID:         cfg.PUID,
-		PGID:         cfg.PGID,
-		DockerHost:   cfg.DockerHost,
-		DockerConfig: cfg.DockerConfig,
-		DatabaseURL:  cfg.DatabaseURL,
+		PUID:           cfg.PUID,
+		PGID:           cfg.PGID,
+		DockerHost:     cfg.DockerHost,
+		DockerConfig:   cfg.DockerConfig,
+		DatabaseURL:    cfg.DatabaseURL,
+		DefaultNonRoot: os.Getenv("ARCANE_DEFAULT_NONROOT"),
 	}
 	if err := startup.ApplyRequestedRuntimeIdentity(ctx, runtimeIdentityCfg); err != nil {
 		return fmt.Errorf("apply runtime identity: %w", err)
