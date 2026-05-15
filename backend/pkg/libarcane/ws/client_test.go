@@ -39,7 +39,7 @@ func TestServeClient_ReceivesBroadcast(t *testing.T) {
 			return
 		}
 		close(serverReady)
-		ServeClient(ctx, h, conn)
+		ServeClientWithOnRemove(ctx, h, conn, nil)
 	}))
 	defer server.Close()
 
@@ -79,7 +79,7 @@ func TestServeClient_ClientDisconnect(t *testing.T) {
 		if err != nil {
 			return
 		}
-		ServeClient(ctx, h, conn)
+		ServeClientWithOnRemove(ctx, h, conn, nil)
 	}))
 	defer server.Close()
 
@@ -116,7 +116,7 @@ func TestServeClient_ContextCancellation(t *testing.T) {
 		if err != nil {
 			return
 		}
-		ServeClient(clientCtx, h, conn)
+		ServeClientWithOnRemove(clientCtx, h, conn, nil)
 	}))
 	defer server.Close()
 
@@ -215,7 +215,7 @@ func TestServeClient_MultipleMessages(t *testing.T) {
 			return
 		}
 		close(serverReady)
-		ServeClient(ctx, h, conn)
+		ServeClientWithOnRemove(ctx, h, conn, nil)
 	}))
 	defer server.Close()
 

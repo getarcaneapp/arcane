@@ -29,7 +29,7 @@ func TestBroadcastContainerLogStreamErrorInternal_JSON(t *testing.T) {
 	clientConn, serverConn, cleanup := newTestWSPairInternal(t)
 	t.Cleanup(cleanup)
 
-	wshub.ServeClient(ctx, hub, serverConn)
+	wshub.ServeClientWithOnRemove(ctx, hub, serverConn, nil)
 
 	stream := &wsLogStream{
 		hub:    hub,
@@ -59,7 +59,7 @@ func TestBroadcastContainerLogStreamErrorInternal_Text(t *testing.T) {
 	clientConn, serverConn, cleanup := newTestWSPairInternal(t)
 	t.Cleanup(cleanup)
 
-	wshub.ServeClient(ctx, hub, serverConn)
+	wshub.ServeClientWithOnRemove(ctx, hub, serverConn, nil)
 
 	stream := &wsLogStream{
 		hub:    hub,

@@ -91,7 +91,7 @@ func BenchmarkCPU_PageReloadSimulation(b *testing.B) {
 		hub.SetOnEmpty(func() { cancel() })
 		go hub.Run(ctx)
 		startStatsHubPipeline(ctx, hub)
-		ServeClient(ctx, hub, conn)
+		ServeClientWithOnRemove(ctx, hub, conn, nil)
 	}))
 	defer server.Close()
 
@@ -184,7 +184,7 @@ func BenchmarkCPU_ContainerLogReloadSimulation(b *testing.B) {
 
 		go ForwardLogJSONBatched(ctx, hub, msgs, 50, 400*time.Millisecond)
 
-		ServeClient(ctx, hub, conn)
+		ServeClientWithOnRemove(ctx, hub, conn, nil)
 	}))
 	defer server.Close()
 
@@ -240,7 +240,7 @@ func BenchmarkCPU_GoroutineScaling(b *testing.B) {
 				hub.SetOnEmpty(func() { cancel() })
 				go hub.Run(ctx)
 				startStatsHubPipeline(ctx, hub)
-				ServeClient(ctx, hub, conn)
+				ServeClientWithOnRemove(ctx, hub, conn, nil)
 			}))
 			defer server.Close()
 
@@ -305,7 +305,7 @@ func BenchmarkCPU_SustainedStreaming(b *testing.B) {
 		hub.SetOnEmpty(func() { cancel() })
 		go hub.Run(ctx)
 		startStatsHubPipeline(ctx, hub)
-		ServeClient(ctx, hub, conn)
+		ServeClientWithOnRemove(ctx, hub, conn, nil)
 	}))
 	defer server.Close()
 	url := "ws" + strings.TrimPrefix(server.URL, "http")
@@ -349,7 +349,7 @@ func TestCPU_GoroutineCountReport(t *testing.T) {
 		hub.SetOnEmpty(func() { cancel() })
 		go hub.Run(ctx)
 		startStatsHubPipeline(ctx, hub)
-		ServeClient(ctx, hub, conn)
+		ServeClientWithOnRemove(ctx, hub, conn, nil)
 	}))
 	defer server.Close()
 	url := "ws" + strings.TrimPrefix(server.URL, "http")

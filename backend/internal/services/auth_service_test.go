@@ -341,6 +341,59 @@ func TestRefreshToken_Valid(t *testing.T) {
 	require.NotEmpty(t, tokenPair.RefreshToken)
 }
 
+// A refresh token minted under an older config.Version must still refresh successfully
+// and the newly issued tokens must carry the current config.Version. This is what keeps
+// users logged in across backend releases — see plans/how-can-we-make-compiled-quilt.md.
+func TestRefreshToken_VersionMismatchRotates(t *testing.T) {
+	db := setupAuthServiceTestDB(t)
+	userSvc := NewUserService(db)
+	settingsSvc, err := NewSettingsService(context.Background(), db)
+	require.NoError(t, err)
+	s := newTestAuthService("")
+	s.userService = userSvc
+	s.settingsService = settingsSvc
+	s.sessionService = NewSessionService(db)
+
+	user := &models.User{
+		BaseModel: models.BaseModel{ID: "u-versionmismatch"},
+		Username:  "versionmismatch-user",
+		Roles:     models.StringSlice{"user"},
+	}
+	_, err = userSvc.CreateUser(context.Background(), user)
+	require.NoError(t, err)
+
+	exp := time.Now().Add(5 * time.Minute)
+	session, refreshJTI := createTestSession(t, db, user.ID, exp)
+
+	oldVersion := config.Version
+	t.Cleanup(func() { config.Version = oldVersion })
+	config.Version = "1.0.0"
+	token := makeRefreshToken(t, s.jwtSecret, "refresh", refreshJTI, exp, user.ID, session.ID)
+	config.Version = "2.0.0"
+
+	tokenPair, err := s.RefreshToken(context.Background(), token, auth.SessionMeta{})
+	require.NoError(t, err)
+	require.NotNil(t, tokenPair)
+	require.NotEmpty(t, tokenPair.AccessToken)
+	require.NotEmpty(t, tokenPair.RefreshToken)
+
+	parsedAccess, err := jwt.ParseWithClaims(tokenPair.AccessToken, &userClaims{}, func(*jwt.Token) (any, error) {
+		return s.jwtSecret, nil
+	})
+	require.NoError(t, err)
+	accessClaims, ok := parsedAccess.Claims.(*userClaims)
+	require.True(t, ok)
+	require.Equal(t, "2.0.0", accessClaims.AppVersion)
+
+	parsedRefresh, err := jwt.ParseWithClaims(tokenPair.RefreshToken, &refreshClaims{}, func(*jwt.Token) (any, error) {
+		return s.jwtSecret, nil
+	})
+	require.NoError(t, err)
+	rClaims, ok := parsedRefresh.Claims.(*refreshClaims)
+	require.True(t, ok)
+	require.Equal(t, "2.0.0", rClaims.AppVersion)
+}
+
 func TestVerifyToken_RejectsRevokedSession(t *testing.T) {
 	db := setupAuthServiceTestDB(t)
 	userSvc := NewUserService(db)

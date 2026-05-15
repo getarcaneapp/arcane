@@ -613,8 +613,7 @@ func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string, met
 	}
 
 	if claims.AppVersion != "" && claims.AppVersion != config.Version {
-		slog.InfoContext(ctx, "Refresh token version mismatch detected", "tokenVersion", claims.AppVersion, "currentVersion", config.Version)
-		return nil, ErrTokenVersionMismatch
+		slog.InfoContext(ctx, "Refresh token version mismatch — rotating to current version", "tokenVersion", claims.AppVersion, "currentVersion", config.Version)
 	}
 
 	if claims.UserID == "" {

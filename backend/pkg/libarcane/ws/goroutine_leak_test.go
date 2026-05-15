@@ -137,7 +137,7 @@ func TestLeak_ServeClientFullLifecycle(t *testing.T) {
 		if err != nil {
 			return
 		}
-		ServeClient(ctx, h, conn)
+		ServeClientWithOnRemove(ctx, h, conn, nil)
 	}))
 	defer server.Close()
 
@@ -193,7 +193,7 @@ func TestLeak_OnEmptyCallbackCancelsContext(t *testing.T) {
 		if err != nil {
 			return
 		}
-		ServeClient(ctx, h, conn)
+		ServeClientWithOnRemove(ctx, h, conn, nil)
 	}))
 	defer server.Close()
 
@@ -235,7 +235,7 @@ func TestLeak_RepeatedConnectDisconnect(t *testing.T) {
 		hub := NewHub(64)
 		hub.SetOnEmpty(func() { cancel() })
 		go hub.Run(ctx)
-		ServeClient(ctx, hub, conn)
+		ServeClientWithOnRemove(ctx, hub, conn, nil)
 	}))
 	defer server.Close()
 
@@ -313,7 +313,7 @@ func TestLeak_HubWithForwardLinesLifecycle(t *testing.T) {
 
 		go ForwardLines(ctx, hub, lines) //nolint:contextcheck // intentional: context must outlive the HTTP request
 
-		ServeClient(ctx, hub, conn) //nolint:contextcheck // intentional: context must outlive the HTTP request
+		ServeClientWithOnRemove(ctx, hub, conn, nil) //nolint:contextcheck // intentional: context must outlive the HTTP request
 	}))
 	defer server.Close()
 
@@ -393,7 +393,7 @@ func TestLeak_HubWithForwardLogJSONBatchedLifecycle(t *testing.T) {
 
 		go ForwardLogJSONBatched(ctx, hub, msgs, 50, 400*time.Millisecond) //nolint:contextcheck // intentional: context must outlive the HTTP request
 
-		ServeClient(ctx, hub, conn) //nolint:contextcheck // intentional: context must outlive the HTTP request
+		ServeClientWithOnRemove(ctx, hub, conn, nil) //nolint:contextcheck // intentional: context must outlive the HTTP request
 	}))
 	defer server.Close()
 
@@ -423,7 +423,7 @@ func TestLeak_HubWithForwardLogJSONBatchedLifecycle(t *testing.T) {
 }
 
 // startStatsHubForTest starts Hub.Run plus stats producer and JSON broadcaster;
-// caller must call ServeClient(ctx, hub, conn). Used by container-stats leak tests.
+// caller must call ServeClientWithOnRemove(ctx, hub, conn, nil). Used by container-stats leak tests.
 func startStatsHubForTest(ctx context.Context, hub *Hub) {
 	statsChan := make(chan any, 64)
 	go func() {
@@ -513,9 +513,9 @@ func TestLeak_ContainerStatsHubPattern(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		hub := NewHub(64)
 		hub.SetOnEmpty(func() { cancel() })
-		go hub.Run(ctx)                //nolint:contextcheck // intentional: context must outlive the HTTP request
-		startStatsHubForTest(ctx, hub) //nolint:contextcheck // intentional: context must outlive the HTTP request
-		ServeClient(ctx, hub, conn)    //nolint:contextcheck // intentional: context must outlive the HTTP request
+		go hub.Run(ctx)                              //nolint:contextcheck // intentional: context must outlive the HTTP request
+		startStatsHubForTest(ctx, hub)               //nolint:contextcheck // intentional: context must outlive the HTTP request
+		ServeClientWithOnRemove(ctx, hub, conn, nil) //nolint:contextcheck // intentional: context must outlive the HTTP request
 	}))
 	defer server.Close()
 
@@ -553,7 +553,7 @@ func TestLeak_RepeatedStatsHubCycles(t *testing.T) {
 		hub.SetOnEmpty(func() { cancel() })
 		go hub.Run(ctx)
 		startStatsHubRepeatedTest(ctx, hub)
-		ServeClient(ctx, hub, conn)
+		ServeClientWithOnRemove(ctx, hub, conn, nil)
 	}))
 	defer server.Close()
 
@@ -610,7 +610,7 @@ func TestLeak_MultipleClientsOnSameHub(t *testing.T) {
 		if err != nil {
 			return
 		}
-		ServeClient(ctx, h, conn)
+		ServeClientWithOnRemove(ctx, h, conn, nil)
 	}))
 	defer server.Close()
 
