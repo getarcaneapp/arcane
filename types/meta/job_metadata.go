@@ -59,6 +59,17 @@ var jobMetadataRegistry = map[string]JobMetadata{
 		CanRunManually: true,
 		Prerequisites:  []JobPrerequisiteMetadata{},
 	},
+	"expired-sessions-cleanup": {
+		ID:             "expired-sessions-cleanup",
+		Name:           "Expired Sessions Cleanup",
+		Description:    "Removes expired and old revoked user sessions from the database",
+		Category:       "maintenance",
+		SettingsKey:    "expiredSessionsCleanupInterval",
+		ManagerOnly:    false,
+		IsContinuous:   false,
+		CanRunManually: true,
+		Prerequisites:  []JobPrerequisiteMetadata{},
+	},
 	"analytics-heartbeat": {
 		ID:             "analytics-heartbeat",
 		Name:           "Analytics Heartbeat",

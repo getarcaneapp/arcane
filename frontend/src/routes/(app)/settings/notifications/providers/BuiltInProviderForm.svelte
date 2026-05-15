@@ -111,6 +111,7 @@
 				fromAddress: z.string(),
 				toAddresses: z.string(),
 				tlsMode: z.enum(['none', 'starttls', 'ssl']),
+				authMode: z.enum(['auto', 'plain', 'login', 'crammd5']),
 				eventImageUpdate: z.boolean(),
 				eventContainerUpdate: z.boolean(),
 				eventVulnerabilityFound: z.boolean(),
@@ -498,6 +499,20 @@
 					{ value: 'none', label: 'None' },
 					{ value: 'starttls', label: 'StartTLS' },
 					{ value: 'ssl', label: 'SSL/TLS' }
+				]
+			},
+			{
+				kind: 'select',
+				key: 'authMode',
+				id: 'email-auth-mode',
+				label: m.notifications_email_auth_mode_label(),
+				placeholder: m.notifications_email_auth_mode_placeholder(),
+				description: m.notifications_email_auth_mode_description(),
+				options: [
+					{ value: 'auto', label: m.notifications_email_auth_mode_option_auto() },
+					{ value: 'plain', label: 'PLAIN' },
+					{ value: 'login', label: 'LOGIN' },
+					{ value: 'crammd5', label: 'CRAM-MD5' }
 				]
 			}
 		],

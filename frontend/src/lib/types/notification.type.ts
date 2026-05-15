@@ -10,6 +10,7 @@ export type NotificationProvider =
 	| 'matrix'
 	| 'generic';
 export type EmailTLSMode = 'none' | 'starttls' | 'ssl';
+export type EmailAuthMode = 'auto' | 'plain' | 'login' | 'crammd5';
 
 export interface NotificationSettings {
 	provider: NotificationProvider;

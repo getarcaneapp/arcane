@@ -13,8 +13,8 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge"
 	wsutil "github.com/getarcaneapp/arcane/backend/pkg/libarcane/ws"
-	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"github.com/labstack/echo/v4"
 )
 
 const (
@@ -52,7 +52,7 @@ type EnvResolver func(ctx context.Context, id string) (string, *string, bool, er
 
 // AuthValidator validates authentication for a request.
 // Returns true if the request is authenticated, false otherwise.
-type AuthValidator func(ctx context.Context, c *gin.Context) bool
+type AuthValidator func(ctx context.Context, c echo.Context) bool
 
 // EnvironmentMiddleware proxies requests for remote environments to their respective agents.
 type EnvironmentMiddleware struct {
@@ -65,12 +65,7 @@ type EnvironmentMiddleware struct {
 }
 
 // NewEnvProxyMiddlewareWithParam creates middleware that proxies requests to remote environments.
-// - localID: the ID representing the local environment (requests to this ID are not proxied)
-// - paramName: the URL parameter name containing the environment ID (e.g., "id")
-// - resolver: function to resolve environment ID to connection details
-// - envService: environment service for additional lookups
-// - authValidator: function to validate authentication before proxying (required for security)
-func NewEnvProxyMiddlewareWithParam(localID, paramName string, resolver EnvResolver, authValidator AuthValidator) gin.HandlerFunc {
+func NewEnvProxyMiddlewareWithParam(localID, paramName string, resolver EnvResolver, authValidator AuthValidator) echo.MiddlewareFunc {
 	return NewEnvProxyMiddlewareWithParamAndRegistry(localID, paramName, resolver, authValidator, edge.GetRegistry())
 }
 
@@ -81,7 +76,7 @@ func NewEnvProxyMiddlewareWithParamAndRegistry(
 	resolver EnvResolver,
 	authValidator AuthValidator,
 	registry *edge.TunnelRegistry,
-) gin.HandlerFunc {
+) echo.MiddlewareFunc {
 	if registry == nil {
 		registry = edge.NewTunnelRegistry()
 	}
@@ -94,135 +89,113 @@ func NewEnvProxyMiddlewareWithParamAndRegistry(
 		httpClient:    &http.Client{Timeout: proxyTimeout},
 		registry:      registry,
 	}
-	return m.Handle
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			return m.Handle(c, next)
+		}
+	}
 }
 
 // Handle is the main middleware handler.
-func (m *EnvironmentMiddleware) Handle(c *gin.Context) {
+func (m *EnvironmentMiddleware) Handle(c echo.Context, next echo.HandlerFunc) error {
 	envID := m.extractEnvironmentID(c)
 
-	// Local environment or no environment - continue to next handler
 	if envID == "" || envID == m.localID {
-		c.Next()
-		return
+		return next(c)
 	}
 
-	// Only proxy requests with additional path segments after the environment ID
-	// Examples: /api/environments/{id}/containers, /api/environments/{id}/projects
-	// Not proxied: /api/environments/{id} (management operations)
 	if !m.hasResourcePath(c, envID) {
-		c.Next()
-		return
+		return next(c)
 	}
 
 	// SECURITY: Validate authentication BEFORE proxying to remote environments.
-	// The proxy attaches the agent token to forwarded requests, which grants full access
-	// on the remote agent. Without this check, unauthenticated users could access
-	// remote environment resources.
-	if m.authValidator != nil && !m.authValidator(c.Request.Context(), c) {
-		c.JSON(http.StatusUnauthorized, gin.H{
+	if m.authValidator != nil && !m.authValidator(c.Request().Context(), c) {
+		return c.JSON(http.StatusUnauthorized, map[string]any{
 			"success": false,
-			"data":    gin.H{"error": errUnauthorized},
+			"data":    map[string]any{"error": errUnauthorized},
 		})
-		c.Abort()
-		return
 	}
 
-	// Resolve remote environment
-	apiURL, accessToken, enabled, err := m.resolver(c.Request.Context(), envID)
+	apiURL, accessToken, enabled, err := m.resolver(c.Request().Context(), envID)
 	if err != nil || apiURL == "" {
-		c.JSON(http.StatusNotFound, gin.H{
+		return c.JSON(http.StatusNotFound, map[string]any{
 			"success": false,
-			"data":    gin.H{"error": errEnvironmentNotFound},
+			"data":    map[string]any{"error": errEnvironmentNotFound},
 		})
-		c.Abort()
-		return
 	}
 
 	if !enabled {
-		c.JSON(http.StatusBadRequest, gin.H{
+		return c.JSON(http.StatusBadRequest, map[string]any{
 			"success": false,
-			"data":    gin.H{"error": errEnvironmentDisabled},
+			"data":    map[string]any{"error": errEnvironmentDisabled},
 		})
-		c.Abort()
-		return
 	}
 
 	isEdgeEnvironment := isEdgeEnvironmentURLInternal(apiURL)
 
-	if m.proxyActiveEdgeTunnelInternal(c, envID, accessToken) {
-		return
+	if handled, err := m.proxyActiveEdgeTunnelInternal(c, envID, accessToken); handled {
+		return err
 	}
 
 	if isEdgeEnvironment {
-		if m.proxyRecoveredEdgeTunnelInternal(c, envID, accessToken) {
-			return
+		if handled, err := m.proxyRecoveredEdgeTunnelInternal(c, envID, accessToken); handled {
+			return err
 		}
 
-		slog.WarnContext(c.Request.Context(), "No active edge tunnel for environment", "environment_id", envID)
-		m.abortEdgeTunnelUnavailable(c)
-		return
+		slog.WarnContext(c.Request().Context(), "No active edge tunnel for environment", "environment_id", envID)
+		return m.abortEdgeTunnelUnavailable(c)
 	}
 
 	target := m.buildTargetURL(c, envID, apiURL)
 
 	if m.isWebSocketUpgrade(c) {
-		m.proxyWebSocket(c, target, accessToken, envID)
-	} else {
-		m.proxyHTTP(c, target, accessToken)
+		return m.proxyWebSocket(c, target, accessToken, envID)
 	}
+	return m.proxyHTTP(c, target, accessToken)
 }
 
-func (m *EnvironmentMiddleware) proxyActiveEdgeTunnelInternal(c *gin.Context, envID string, accessToken *string) bool {
+func (m *EnvironmentMiddleware) proxyActiveEdgeTunnelInternal(c echo.Context, envID string, accessToken *string) (bool, error) {
 	tunnel, ok := m.getActiveEdgeTunnelInternal(envID)
 	if !ok {
-		return false
+		return false, nil
 	}
 
-	slog.DebugContext(c.Request.Context(), "Routing request through edge tunnel", "environment_id", envID, "path", c.Request.URL.Path)
+	slog.DebugContext(c.Request().Context(), "Routing request through edge tunnel", "environment_id", envID, "path", c.Request().URL.Path)
 	m.setProxyContextHeadersInternal(c, accessToken)
-	m.proxyThroughTunnelInternal(c, tunnel, envID)
-	return true
+	return true, m.proxyThroughTunnelInternal(c, tunnel, envID)
 }
 
-func (m *EnvironmentMiddleware) proxyRecoveredEdgeTunnelInternal(c *gin.Context, envID string, accessToken *string) bool {
+func (m *EnvironmentMiddleware) proxyRecoveredEdgeTunnelInternal(c echo.Context, envID string, accessToken *string) (bool, error) {
 	edge.TouchTunnelDemand(envID, edge.DefaultTunnelDemandTTL)
 
-	tunnel, ok := m.waitForActiveEdgeTunnelInternal(c.Request.Context(), envID, edge.DefaultTunnelAcquireTimeout())
+	tunnel, ok := m.waitForActiveEdgeTunnelInternal(c.Request().Context(), envID, edge.DefaultTunnelAcquireTimeout())
 	if !ok {
-		return false
+		return false, nil
 	}
 
-	slog.InfoContext(c.Request.Context(), "Recovered edge tunnel during request", "environment_id", envID)
+	slog.InfoContext(c.Request().Context(), "Recovered edge tunnel during request", "environment_id", envID)
 	m.setProxyContextHeadersInternal(c, accessToken)
-	m.proxyThroughTunnelInternal(c, tunnel, envID)
-	return true
+	return true, m.proxyThroughTunnelInternal(c, tunnel, envID)
 }
 
-func (m *EnvironmentMiddleware) setProxyContextHeadersInternal(c *gin.Context, accessToken *string) {
-	// ProxyHTTPRequest and ProxyWebSocketRequest copy headers from c.Request.Header,
-	// so setting these here ensures the agent receives proper authentication.
+func (m *EnvironmentMiddleware) setProxyContextHeadersInternal(c echo.Context, accessToken *string) {
 	if accessToken != nil && *accessToken != "" {
-		c.Request.Header.Set(edge.HeaderAgentToken, *accessToken)
-		c.Request.Header.Set(edge.HeaderAPIKey, *accessToken)
+		c.Request().Header.Set(edge.HeaderAgentToken, *accessToken)
+		c.Request().Header.Set(edge.HeaderAPIKey, *accessToken)
 	}
 }
 
-func (m *EnvironmentMiddleware) proxyThroughTunnelInternal(c *gin.Context, tunnel *edge.AgentTunnel, envID string) {
+func (m *EnvironmentMiddleware) proxyThroughTunnelInternal(c echo.Context, tunnel *edge.AgentTunnel, envID string) error {
 	proxyPath := m.buildProxyPath(c, envID)
 	if m.isWebSocketUpgrade(c) {
-		edge.ProxyWebSocketRequest(c, tunnel, proxyPath)
-	} else {
-		edge.ProxyHTTPRequest(c, tunnel, proxyPath)
+		return edge.ProxyWebSocketRequest(c, tunnel, proxyPath)
 	}
-	c.Abort()
+	return edge.ProxyHTTPRequest(c, tunnel, proxyPath)
 }
 
 // hasResourcePath reports whether the request targets a proxiable resource path.
-// Returns true for paths like /api/environments/{id}/containers (should be proxied).
-// Returns false for /api/environments/{id} exactly or any management endpoint.
-func (m *EnvironmentMiddleware) hasResourcePath(c *gin.Context, envID string) bool {
-	suffix, ok := strings.CutPrefix(c.Request.URL.Path, apiEnvironmentsPrefix+envID)
+func (m *EnvironmentMiddleware) hasResourcePath(c echo.Context, envID string) bool {
+	suffix, ok := strings.CutPrefix(c.Request().URL.Path, apiEnvironmentsPrefix+envID)
 	if !ok || len(suffix) <= 1 || suffix[0] != '/' {
 		return false
 	}
@@ -243,21 +216,17 @@ func isManagementPathInternal(suffix string) bool {
 }
 
 // extractEnvironmentID gets the environment ID from the request.
-// Only processes paths containing "/environments/" to avoid conflicts with other routes.
-func (m *EnvironmentMiddleware) extractEnvironmentID(c *gin.Context) string {
-	requestPath := c.Request.URL.Path
+func (m *EnvironmentMiddleware) extractEnvironmentID(c echo.Context) string {
+	requestPath := c.Request().URL.Path
 
-	// Skip non-environment routes (e.g., /api-keys/{id})
 	if !strings.Contains(requestPath, environmentsPathMarker) {
 		return ""
 	}
 
-	// Try path parameter first
 	if envID := c.Param(m.paramName); envID != "" {
 		return envID
 	}
 
-	// Fall back to parsing the URL path
 	if _, rest, ok := strings.Cut(requestPath, environmentsPathMarker); ok {
 		if envID, _, _ := strings.Cut(rest, "/"); envID != "" {
 			return envID
@@ -277,29 +246,24 @@ func (m *EnvironmentMiddleware) buildResourceSuffix(requestPath, envID string) s
 }
 
 // buildTargetURL constructs the full proxy target URL for a remote environment.
-func (m *EnvironmentMiddleware) buildTargetURL(c *gin.Context, envID, apiURL string) string {
-	suffix := m.buildResourceSuffix(c.Request.URL.Path, envID)
+func (m *EnvironmentMiddleware) buildTargetURL(c echo.Context, envID, apiURL string) string {
+	req := c.Request()
+	suffix := m.buildResourceSuffix(req.URL.Path, envID)
 	target := strings.TrimRight(apiURL, "/") + path.Join(apiEnvironmentsPrefix, m.localID) + suffix
-	if qs := c.Request.URL.RawQuery; qs != "" {
+	if qs := req.URL.RawQuery; qs != "" {
 		target += "?" + qs
 	}
 	return target
 }
 
 // buildProxyPath constructs the path sent through the edge tunnel.
-// Includes the /api/environments/{localID} prefix so the agent can route it properly.
-func (m *EnvironmentMiddleware) buildProxyPath(c *gin.Context, envID string) string {
-	return path.Join(apiEnvironmentsPrefix, m.localID) + m.buildResourceSuffix(c.Request.URL.Path, envID)
+func (m *EnvironmentMiddleware) buildProxyPath(c echo.Context, envID string) string {
+	return path.Join(apiEnvironmentsPrefix, m.localID) + m.buildResourceSuffix(c.Request().URL.Path, envID)
 }
 
 // isWebSocketUpgrade checks if this is a WebSocket upgrade request.
-// A valid WebSocket handshake requires ALL of: Upgrade: websocket header,
-// Connection: upgrade header, and Sec-WebSocket-Key header. Checking them
-// individually causes false positives when a reverse proxy (e.g. nginx with
-// proxy_set_header Upgrade/Connection) forwards partial headers on normal
-// HTTP requests, resulting in 426 Upgrade Required errors. See #1216.
-func (m *EnvironmentMiddleware) isWebSocketUpgrade(c *gin.Context) bool {
-	return websocket.IsWebSocketUpgrade(c.Request)
+func (m *EnvironmentMiddleware) isWebSocketUpgrade(c echo.Context) bool {
+	return websocket.IsWebSocketUpgrade(c.Request())
 }
 
 func isEdgeEnvironmentURLInternal(apiURL string) bool {
@@ -346,98 +310,89 @@ func (m *EnvironmentMiddleware) waitForActiveEdgeTunnelInternal(ctx context.Cont
 	}
 }
 
-func (m *EnvironmentMiddleware) abortEdgeTunnelUnavailable(c *gin.Context) {
-	c.JSON(http.StatusBadGateway, gin.H{
+func (m *EnvironmentMiddleware) abortEdgeTunnelUnavailable(c echo.Context) error {
+	return c.JSON(http.StatusBadGateway, map[string]any{
 		"success": false,
-		"data": gin.H{
+		"data": map[string]any{
 			"error": "Edge agent is not connected",
 		},
 	})
-	c.Abort()
 }
 
 // proxyWebSocket handles WebSocket proxy requests.
-func (m *EnvironmentMiddleware) proxyWebSocket(c *gin.Context, target string, accessToken *string, envID string) {
+func (m *EnvironmentMiddleware) proxyWebSocket(c echo.Context, target string, accessToken *string, envID string) error {
 	if isEdgeEnvironmentURLInternal(target) {
-		slog.WarnContext(c.Request.Context(), "Refusing direct websocket proxy to edge environment without active tunnel", "environment_id", envID, "target", target)
-		m.abortEdgeTunnelUnavailable(c)
-		return
+		slog.WarnContext(c.Request().Context(), "Refusing direct websocket proxy to edge environment without active tunnel", "environment_id", envID, "target", target)
+		return m.abortEdgeTunnelUnavailable(c)
 	}
 
 	wsTarget := edge.HTTPToWebSocketURL(target)
 	headers := edge.BuildWebSocketHeaders(c, accessToken)
 
-	if err := wsutil.ProxyHTTP(c.Writer, c.Request, wsTarget, headers); err != nil {
+	if err := wsutil.ProxyHTTP(c.Response().Writer, c.Request(), wsTarget, headers); err != nil {
 		slog.Error("websocket proxy failed", "err", err)
 	}
-	c.Abort()
+	return nil
 }
 
 // proxyHTTP handles standard HTTP proxy requests.
-func (m *EnvironmentMiddleware) proxyHTTP(c *gin.Context, target string, accessToken *string) {
+func (m *EnvironmentMiddleware) proxyHTTP(c echo.Context, target string, accessToken *string) error {
 	if isEdgeEnvironmentURLInternal(target) {
-		slog.WarnContext(c.Request.Context(), "Refusing direct HTTP proxy to edge environment without active tunnel", "target", target)
-		m.abortEdgeTunnelUnavailable(c)
-		return
+		slog.WarnContext(c.Request().Context(), "Refusing direct HTTP proxy to edge environment without active tunnel", "target", target)
+		return m.abortEdgeTunnelUnavailable(c)
 	}
 
 	req, err := m.createProxyRequest(c, target, accessToken)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
+		return c.JSON(http.StatusInternalServerError, map[string]any{
 			"success": false,
-			"data":    gin.H{"error": errFailedCreateProxyRequest},
+			"data":    map[string]any{"error": errFailedCreateProxyRequest},
 		})
-		c.Abort()
-		return
 	}
 
 	resp, err := m.httpClient.Do(req) //nolint:gosec // intentional proxy request to resolved remote environment URL
 	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{
+		return c.JSON(http.StatusBadGateway, map[string]any{
 			"success": false,
-			"data":    gin.H{"error": fmt.Sprintf("%s %v", errProxyRequestFailedPrefix, err)},
+			"data":    map[string]any{"error": fmt.Sprintf("%s %v", errProxyRequestFailedPrefix, err)},
 		})
-		c.Abort()
-		return
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	m.writeProxyResponse(c, resp)
-	c.Abort()
+	return nil
 }
 
 // createProxyRequest builds the HTTP request to forward to the remote environment.
-func (m *EnvironmentMiddleware) createProxyRequest(c *gin.Context, target string, accessToken *string) (*http.Request, error) {
+func (m *EnvironmentMiddleware) createProxyRequest(c echo.Context, target string, accessToken *string) (*http.Request, error) {
+	srcReq := c.Request()
 	var bodyBytes []byte
-	if c.Request.Body != nil {
+	if srcReq.Body != nil {
 		var err error
-		bodyBytes, err = io.ReadAll(c.Request.Body)
-		_ = c.Request.Body.Close()
+		bodyBytes, err = io.ReadAll(srcReq.Body)
+		_ = srcReq.Body.Close()
 		if err != nil {
 			return nil, fmt.Errorf("failed to read request body: %w", err)
 		}
 	}
 
-	slog.DebugContext(c.Request.Context(), "Creating proxy request", "method", c.Request.Method, "target", target, "contentLength", c.Request.ContentLength, "contentType", c.GetHeader("Content-Type"), "bodyLength", len(bodyBytes), "body", string(bodyBytes))
+	slog.DebugContext(srcReq.Context(), "Creating proxy request", "method", srcReq.Method, "target", target, "contentLength", srcReq.ContentLength, "contentType", srcReq.Header.Get("Content-Type"), "bodyLength", len(bodyBytes), "body", string(bodyBytes))
 
-	// bytes.NewReader is preferred over bytes.NewBuffer: it implements io.ReadSeeker
-	// and avoids the internal grow-buffer logic that NewBuffer carries.
 	var body io.Reader
 	if len(bodyBytes) > 0 {
 		body = bytes.NewReader(bodyBytes)
 	}
-	req, err := http.NewRequestWithContext(c.Request.Context(), c.Request.Method, target, body)
+	req, err := http.NewRequestWithContext(srcReq.Context(), srcReq.Method, target, body)
 	if err != nil {
 		return nil, err
 	}
 
 	skip := edge.GetSkipHeaders()
-	edge.CopyRequestHeaders(c.Request.Header, req.Header, skip)
+	edge.CopyRequestHeaders(srcReq.Header, req.Header, skip)
 	edge.SetAuthHeader(req, c)
 	edge.SetAgentToken(req, accessToken)
-	edge.SetForwardedHeaders(req, c.ClientIP(), c.Request.Host)
+	edge.SetForwardedHeaders(req, c.RealIP(), srcReq.Host)
 
-	// Set Content-Length based on actual body size
 	if len(bodyBytes) > 0 {
 		req.ContentLength = int64(len(bodyBytes))
 	}
@@ -446,16 +401,13 @@ func (m *EnvironmentMiddleware) createProxyRequest(c *gin.Context, target string
 }
 
 // writeProxyResponse copies the proxy response back to the client.
-func (m *EnvironmentMiddleware) writeProxyResponse(c *gin.Context, resp *http.Response) {
+func (m *EnvironmentMiddleware) writeProxyResponse(c echo.Context, resp *http.Response) {
+	w := c.Response().Writer
 	hopByHop := edge.BuildHopByHopHeaders(resp.Header)
-	edge.CopyResponseHeaders(resp.Header, c.Writer.Header(), hopByHop)
+	edge.CopyResponseHeaders(resp.Header, w.Header(), hopByHop)
 
-	c.Status(resp.StatusCode)
-	if c.Request.Method != http.MethodHead {
-		// Ensure headers are sent before streaming the body.
-		// This is critical for streaming responses (e.g., JSON line streams) where
-		// clients expect incremental updates.
-		c.Writer.WriteHeaderNow()
-		edge.CopyBodyWithFlush(c.Writer, resp.Body)
+	w.WriteHeader(resp.StatusCode)
+	if c.Request().Method != http.MethodHead {
+		edge.CopyBodyWithFlush(w, resp.Body)
 	}
 }

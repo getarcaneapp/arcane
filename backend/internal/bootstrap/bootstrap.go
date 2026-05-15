@@ -43,7 +43,7 @@ func Bootstrap(ctx context.Context) error {
 	}
 	cfg.DockerConfig = runtimeIdentityCfg.DockerConfig
 
-	SetupGinLogger(cfg)
+	SetupSlogLogger(cfg)
 	ConfigureGormLogger(cfg)
 	slog.InfoContext(ctx, "Arcane is starting", "version", config.Version)
 
@@ -69,6 +69,7 @@ func Bootstrap(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to initialize services: %w", err)
 	}
+	defer dockerClientService.Close()
 	defer func(ctx context.Context) {
 		baseCtx := context.WithoutCancel(ctx)
 		shutdownCtx, shutdownCancel := context.WithTimeout(baseCtx, 10*time.Second)
@@ -160,6 +161,9 @@ func initializeStartupState(appCtx context.Context, cfg *config.Config, appServi
 	if err := appServices.Environment.EnsureLocalEnvironment(appCtx, cfg.AppUrl); err != nil {
 		slog.WarnContext(appCtx, "Failed to ensure local environment", "error", err)
 	}
+	if appServices.Project != nil {
+		go appServices.Project.BackfillProjectImageRefs(appCtx)
+	}
 
 	if !cfg.AgentMode {
 		if err := appServices.Environment.ReconcileEdgeStatusesOnStartup(appCtx); err != nil {
@@ -185,6 +189,7 @@ func initializeStartupState(appCtx context.Context, cfg *config.Config, appServi
 		slog.InfoContext(ctx, "Docker API versions detected", "client_api_version", dockerClient.ClientVersion(), "server_api_version", version.APIVersion, "effective_api_version", effectiveAPIVersion)
 		return nil
 	})
+	go dockerClientService.WatchEvents(appCtx)
 	if appServices.Swarm != nil {
 		if err := appServices.Swarm.SyncSwarmEnabledState(appCtx); err != nil {
 			slog.WarnContext(appCtx, "Failed to persist swarm enabled state", "error", err)

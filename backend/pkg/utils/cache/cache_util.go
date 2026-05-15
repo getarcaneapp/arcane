@@ -2,6 +2,7 @@ package cache
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -26,13 +27,78 @@ type Cache[T any] struct {
 	sf singleflight.Group
 }
 
+type KeyedCache[K comparable, T any] struct {
+	mu      sync.RWMutex
+	entries map[K]T
+	sf      singleflight.Group
+}
+
 func New[T any](ttl time.Duration) *Cache[T] {
 	return &Cache[T]{ttl: ttl}
 }
 
+func NewKeyed[K comparable, T any]() *KeyedCache[K, T] {
+	return &KeyedCache[K, T]{
+		entries: make(map[K]T),
+	}
+}
+
+func (c *KeyedCache[K, T]) GetOrFetch(
+	ctx context.Context,
+	key K,
+	valid func(cached T) bool,
+	fetch func(ctx context.Context) (T, error),
+) (T, error) {
+	c.mu.RLock()
+	cached, ok := c.entries[key]
+	c.mu.RUnlock()
+	if ok && (valid == nil || valid(cached)) {
+		return cached, nil
+	}
+
+	res, err, _ := c.sf.Do(fmt.Sprint(key), func() (any, error) {
+		c.mu.RLock()
+		cached, ok := c.entries[key]
+		c.mu.RUnlock()
+		if ok && (valid == nil || valid(cached)) {
+			return cached, nil
+		}
+
+		v, err := fetch(ctx)
+		if err != nil {
+			var zero T
+			return zero, err
+		}
+
+		c.mu.Lock()
+		c.entries[key] = v
+		c.mu.Unlock()
+		return v, nil
+	})
+	if err != nil {
+		var zero T
+		return zero, err
+	}
+
+	v, _ := res.(T)
+	return v, nil
+}
+
+func (c *KeyedCache[K, T]) Invalidate(key K) {
+	c.mu.Lock()
+	delete(c.entries, key)
+	c.mu.Unlock()
+}
+
+func (c *KeyedCache[K, T]) InvalidateAll() {
+	c.mu.Lock()
+	c.entries = make(map[K]T)
+	c.mu.Unlock()
+}
+
 func (c *Cache[T]) GetOrFetch(ctx context.Context, fetch func(ctx context.Context) (T, error)) (T, error) {
 	c.mu.RLock()
-	if c.set && time.Now().Before(c.exp) {
+	if c.set && (c.ttl <= 0 || time.Now().Before(c.exp)) {
 		v := c.val
 		c.mu.RUnlock()
 		return v, nil
@@ -51,7 +117,9 @@ func (c *Cache[T]) GetOrFetch(ctx context.Context, fetch func(ctx context.Contex
 		c.mu.Lock()
 		c.val = v
 		c.set = true
-		c.exp = time.Now().Add(c.ttl)
+		if c.ttl > 0 {
+			c.exp = time.Now().Add(c.ttl)
+		}
 		c.mu.Unlock()
 		return v, nil
 	})
@@ -65,4 +133,13 @@ func (c *Cache[T]) GetOrFetch(ctx context.Context, fetch func(ctx context.Contex
 
 	v, _ := res.(T)
 	return v, nil
+}
+
+func (c *Cache[T]) Invalidate() {
+	c.mu.Lock()
+	c.set = false
+	var zero T
+	c.val = zero
+	c.exp = time.Time{}
+	c.mu.Unlock()
 }

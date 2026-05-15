@@ -22,6 +22,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	httputils "github.com/getarcaneapp/arcane/backend/pkg/utils/httpx"
+	envtypes "github.com/getarcaneapp/arcane/types/env"
 	tmpl "github.com/getarcaneapp/arcane/types/template"
 )
 
@@ -406,4 +407,26 @@ services:
 	require.NotNil(t, stored.Metadata)
 	require.NotNil(t, stored.Metadata.IconURL)
 	require.Equal(t, "https://cdn.example/local.png", *stored.Metadata.IconURL)
+}
+
+func TestUpdateGlobalVariables_RejectsNewlineInjectionKey(t *testing.T) {
+	projectsDir := t.TempDir()
+
+	db, err := gorm.Open(glsqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&models.SettingVariable{}))
+	dbWrap := &database.DB{DB: db}
+	settingsSvc, err := NewSettingsService(context.Background(), dbWrap)
+	require.NoError(t, err)
+	require.NoError(t, settingsSvc.UpdateSetting(context.Background(), "projectsDirectory", projectsDir))
+
+	service := &TemplateService{db: dbWrap, settingsService: settingsSvc}
+
+	err = service.UpdateGlobalVariables(context.Background(), []envtypes.Variable{
+		{Key: "BENIGN\nINJECTED", Value: "x"},
+	})
+	require.True(t, common.IsInvalidEnvKeyError(err), "expected InvalidEnvKeyError, got %v", err)
+
+	_, statErr := os.Stat(filepath.Join(projectsDir, ".env.global"))
+	require.True(t, os.IsNotExist(statErr), ".env.global must not be written on validation failure")
 }

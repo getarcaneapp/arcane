@@ -1,6 +1,9 @@
 package common
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
 
 type AuthSettingsCheckError struct {
 	Err error
@@ -58,12 +61,78 @@ func (e *InvalidTokenError) Error() string {
 	return "Invalid or expired refresh token"
 }
 
+type InvalidTokenClaimsError struct{}
+
+func (e *InvalidTokenClaimsError) Error() string {
+	return "Invalid token claims"
+}
+
+type AccessTokenSubjectError struct{}
+
+func (e *AccessTokenSubjectError) Error() string {
+	return "Not an access token"
+}
+
+type RefreshTokenSubjectError struct{}
+
+func (e *RefreshTokenSubjectError) Error() string {
+	return "Not a refresh token"
+}
+
+type MissingTokenUserIDError struct{}
+
+func (e *MissingTokenUserIDError) Error() string {
+	return "Missing user ID in token"
+}
+
+type MissingRefreshTokenIDError struct{}
+
+func (e *MissingRefreshTokenIDError) Error() string {
+	return "Missing refresh token ID"
+}
+
+type MissingTokenSessionIDError struct{}
+
+func (e *MissingTokenSessionIDError) Error() string {
+	return "Missing session ID in token"
+}
+
+type SessionServiceUnavailableError struct{}
+
+func (e *SessionServiceUnavailableError) Error() string {
+	return "Session service is not configured"
+}
+
+func IsTokenValidationError(err error) bool {
+	return isErrorTypeInternal[*InvalidTokenClaimsError](err) ||
+		isErrorTypeInternal[*AccessTokenSubjectError](err) ||
+		isErrorTypeInternal[*RefreshTokenSubjectError](err) ||
+		isErrorTypeInternal[*MissingTokenUserIDError](err) ||
+		isErrorTypeInternal[*MissingRefreshTokenIDError](err) ||
+		isErrorTypeInternal[*MissingTokenSessionIDError](err)
+}
+
 type TokenRefreshError struct {
 	Err error
 }
 
 func (e *TokenRefreshError) Error() string {
 	return "Failed to refresh token"
+}
+
+type SessionRevokedError struct{}
+
+func (e *SessionRevokedError) Error() string {
+	return "Session has been revoked"
+}
+
+func IsSessionRevokedError(err error) bool {
+	return isErrorTypeInternal[*SessionRevokedError](err)
+}
+
+func isErrorTypeInternal[T error](err error) bool {
+	var target T
+	return errors.As(err, &target)
 }
 
 type PasswordRequiredError struct{}
@@ -1094,6 +1163,18 @@ type GlobalVariablesUpdateError struct {
 
 func (e *GlobalVariablesUpdateError) Error() string {
 	return fmt.Sprintf("Failed to update global variables: %v", e.Err)
+}
+
+type InvalidEnvKeyError struct {
+	Key string
+}
+
+func (e *InvalidEnvKeyError) Error() string {
+	return fmt.Sprintf("Invalid env key %q (must match [A-Za-z_][A-Za-z0-9_]*)", e.Key)
+}
+
+func IsInvalidEnvKeyError(err error) bool {
+	return isErrorTypeInternal[*InvalidEnvKeyError](err)
 }
 
 type UpdaterRunError struct {

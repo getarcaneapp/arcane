@@ -58,13 +58,15 @@ var getCmd = &cobra.Command{
 		output.Header("Job Schedules")
 		output.KeyValue("Environment health interval", cfg.EnvironmentHealthInterval)
 		output.KeyValue("Event cleanup interval", cfg.EventCleanupInterval)
+		output.KeyValue("Expired sessions cleanup interval", cfg.ExpiredSessionsCleanupInterval)
 		return nil
 	},
 }
 
 var (
-	environmentHealthInterval string
-	eventCleanupInterval      string
+	environmentHealthInterval      string
+	eventCleanupInterval           string
+	expiredSessionsCleanupInterval string
 )
 
 var updateCmd = &cobra.Command{
@@ -84,8 +86,11 @@ var updateCmd = &cobra.Command{
 		if cmd.Flags().Changed("event-cleanup-interval") {
 			req.EventCleanupInterval = &eventCleanupInterval
 		}
+		if cmd.Flags().Changed("expired-sessions-cleanup-interval") {
+			req.ExpiredSessionsCleanupInterval = &expiredSessionsCleanupInterval
+		}
 
-		if req.EnvironmentHealthInterval == nil && req.EventCleanupInterval == nil {
+		if req.EnvironmentHealthInterval == nil && req.EventCleanupInterval == nil && req.ExpiredSessionsCleanupInterval == nil {
 			return fmt.Errorf("no updates provided (set at least one interval flag)")
 		}
 
@@ -112,6 +117,7 @@ var updateCmd = &cobra.Command{
 		output.Success("Job schedules updated")
 		output.KeyValue("Environment health interval", result.Data.EnvironmentHealthInterval)
 		output.KeyValue("Event cleanup interval", result.Data.EventCleanupInterval)
+		output.KeyValue("Expired sessions cleanup interval", result.Data.ExpiredSessionsCleanupInterval)
 		return nil
 	},
 }
@@ -125,4 +131,5 @@ func init() {
 
 	updateCmd.Flags().StringVar(&environmentHealthInterval, "environment-health-interval", "", "Environment health job interval (cron expression)")
 	updateCmd.Flags().StringVar(&eventCleanupInterval, "event-cleanup-interval", "", "Event cleanup job interval (cron expression)")
+	updateCmd.Flags().StringVar(&expiredSessionsCleanupInterval, "expired-sessions-cleanup-interval", "", "Expired sessions cleanup job interval (cron expression)")
 }

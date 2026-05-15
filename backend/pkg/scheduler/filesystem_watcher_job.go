@@ -152,6 +152,14 @@ func (j *FilesystemWatcherJob) handleFilesystemChange(ctx context.Context) {
 	}
 }
 
+func (j *FilesystemWatcherJob) handleProjectFilePathsChangedInternal(ctx context.Context, paths []string) {
+	if len(paths) == 0 || j.projectService == nil {
+		return
+	}
+	j.handleFilesystemChange(ctx)
+	j.projectService.HandleProjectFilesChanged(ctx, paths)
+}
+
 func (j *FilesystemWatcherJob) handleTemplatesChange(ctx context.Context) {
 	slog.InfoContext(ctx, "Template directory change detected, syncing templates")
 	if j.templateService == nil {
@@ -228,8 +236,8 @@ func (j *FilesystemWatcherJob) logRecursiveProjectsWatchLimitWarningInternal(ctx
 
 func (j *FilesystemWatcherJob) projectWatcherOptionsInternal(followProjectSymlinks bool) fswatch.WatcherOptions {
 	return fswatch.WatcherOptions{
-		Debounce:          3 * time.Second, // Wait 3 seconds after last change before syncing
-		OnChange:          j.handleFilesystemChange,
+		Debounce:          500 * time.Millisecond,
+		OnChangePaths:     j.handleProjectFilePathsChangedInternal,
 		MaxDepth:          j.projectScanDepth,
 		FollowSymlinkDirs: followProjectSymlinks,
 	}

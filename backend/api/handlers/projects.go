@@ -1,0 +1,1143 @@
+package handlers
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"time"
+
+	"github.com/danielgtaylor/huma/v2"
+	humamw "github.com/getarcaneapp/arcane/backend/api/middleware"
+	"github.com/getarcaneapp/arcane/backend/internal/common"
+	"github.com/getarcaneapp/arcane/backend/internal/services"
+	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
+	projects "github.com/getarcaneapp/arcane/backend/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils/mapper"
+	"github.com/getarcaneapp/arcane/types/base"
+	"github.com/getarcaneapp/arcane/types/project"
+)
+
+// ProjectHandler provides Huma-based project management endpoints.
+type ProjectHandler struct {
+	projectService *services.ProjectService
+}
+
+// --- Huma Input/Output Wrappers ---
+
+// ProjectPaginatedResponse is the paginated response for projects.
+type ProjectPaginatedResponse struct {
+	Success    bool                    `json:"success"`
+	Data       []project.Details       `json:"data"`
+	Pagination base.PaginationResponse `json:"pagination"`
+}
+
+type ListProjectsInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	Search        string `query:"search" doc:"Search query"`
+	Sort          string `query:"sort" doc:"Column to sort by"`
+	Order         string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
+	Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
+	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
+	Status        string `query:"status" doc:"Filter by status (comma-separated: running,stopped,partially running)"`
+	Updates       string `query:"updates" doc:"Filter by update status (has_update, up_to_date, error, unknown)"`
+	Archived      string `query:"archived" doc:"Archived filter: 'true' (only archived), 'all' (include archived). Default excludes archived."`
+}
+
+type ListProjectsOutput struct {
+	Body ProjectPaginatedResponse
+}
+
+type GetProjectStatusCountsInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+}
+
+type GetProjectStatusCountsOutput struct {
+	Body base.ApiResponse[project.StatusCounts]
+}
+
+type DeployProjectInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	ProjectID     string `path:"projectId" doc:"Project ID"`
+	Body          *project.DeployOptions
+}
+
+type DeployProjectOutput struct {
+	Body base.ApiResponse[base.MessageResponse]
+}
+
+type DownProjectInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	ProjectID     string `path:"projectId" doc:"Project ID"`
+}
+
+type DownProjectOutput struct {
+	Body base.ApiResponse[base.MessageResponse]
+}
+
+type CreateProjectInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	Body          project.CreateProject
+}
+
+type CreateProjectOutput struct {
+	Body base.ApiResponse[project.CreateReponse]
+}
+
+type GetProjectInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	ProjectID     string `path:"projectId" doc:"Project ID"`
+}
+
+type GetProjectOutput struct {
+	Body base.ApiResponse[project.Details]
+}
+
+type GetProjectFileInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	ProjectID     string `path:"projectId" doc:"Project ID"`
+	RelativePath  string `query:"relativePath" doc:"Path to the file relative to the project"`
+}
+
+type GetProjectFileOutput struct {
+	Body base.ApiResponse[project.IncludeFile]
+}
+
+type RedeployProjectInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	ProjectID     string `path:"projectId" doc:"Project ID"`
+}
+
+type RedeployProjectOutput struct {
+	Body base.ApiResponse[base.MessageResponse]
+}
+
+type DestroyProjectInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	ProjectID     string `path:"projectId" doc:"Project ID"`
+	Body          *project.Destroy
+}
+
+type DestroyProjectOutput struct {
+	Body base.ApiResponse[base.MessageResponse]
+}
+
+type UpdateProjectInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	ProjectID     string `path:"projectId" doc:"Project ID"`
+	Body          project.UpdateProject
+}
+
+type UpdateProjectOutput struct {
+	Body base.ApiResponse[project.Details]
+}
+
+type UpdateProjectIncludeInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	ProjectID     string `path:"projectId" doc:"Project ID"`
+	Body          project.UpdateIncludeFile
+}
+
+type UpdateProjectIncludeOutput struct {
+	Body base.ApiResponse[project.Details]
+}
+
+type RestartProjectInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	ProjectID     string `path:"projectId" doc:"Project ID"`
+}
+
+type RestartProjectOutput struct {
+	Body base.ApiResponse[base.MessageResponse]
+}
+
+type ArchiveProjectInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	ProjectID     string `path:"projectId" doc:"Project ID"`
+}
+
+type ArchiveProjectOutput struct {
+	Body base.ApiResponse[base.MessageResponse]
+}
+
+type UnarchiveProjectInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	ProjectID     string `path:"projectId" doc:"Project ID"`
+}
+
+type UnarchiveProjectOutput struct {
+	Body base.ApiResponse[base.MessageResponse]
+}
+
+type PullProjectImagesInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	ProjectID     string `path:"projectId" doc:"Project ID"`
+}
+
+type BuildProjectInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	ProjectID     string `path:"projectId" doc:"Project ID"`
+	Body          *struct {
+		Services []string `json:"services,omitempty" doc:"Service names to build"`
+		Provider string   `json:"provider,omitempty" doc:"Build provider override"`
+		Push     *bool    `json:"push,omitempty" doc:"Push images"`
+		Load     *bool    `json:"load,omitempty" doc:"Load images into Docker"`
+	}
+}
+
+// PullProgressEvent represents a Docker pull progress event
+type PullProgressEvent struct {
+	Status         string `json:"status,omitempty"`
+	ID             string `json:"id,omitempty"`
+	Progress       string `json:"progress,omitempty"`
+	ProgressDetail struct {
+		Current int64 `json:"current,omitempty"`
+		Total   int64 `json:"total,omitempty"`
+	} `json:"progressDetail"`
+	Error string `json:"error,omitempty"`
+}
+
+// RegisterProjects registers project management routes using Huma.
+// Note: WebSocket and streaming endpoints remain as Gin handlers.
+func RegisterProjects(api huma.API, projectService *services.ProjectService) {
+	h := &ProjectHandler{
+		projectService: projectService,
+	}
+
+	huma.Register(api, huma.Operation{
+		OperationID: "list-projects",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/projects",
+		Summary:     "List projects",
+		Description: "Get a paginated list of Docker Compose projects",
+		Tags:        []string{"Projects"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.ListProjects)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-project-status-counts",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/projects/counts",
+		Summary:     "Get project status counts",
+		Description: "Get counts of running, stopped, and total projects",
+		Tags:        []string{"Projects"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.GetProjectStatusCounts)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "deploy-project",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/projects/{projectId}/up",
+		Summary:     "Deploy a project",
+		Description: "Deploy a Docker Compose project (docker-compose up)",
+		Tags:        []string{"Projects"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+		Middlewares: humamw.RequireAdmin(api),
+	}, h.DeployProject)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "down-project",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/projects/{projectId}/down",
+		Summary:     "Bring down a project",
+		Description: "Bring down a Docker Compose project (docker-compose down)",
+		Tags:        []string{"Projects"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+		Middlewares: humamw.RequireAdmin(api),
+	}, h.DownProject)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "create-project",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/projects",
+		Summary:     "Create a project",
+		Description: "Create a new Docker Compose project",
+		Tags:        []string{"Projects"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+		Middlewares: humamw.RequireAdmin(api),
+	}, h.CreateProject)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-project",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/projects/{projectId}",
+		Summary:     "Get a project",
+		Description: "Get a Docker Compose project by ID",
+		Tags:        []string{"Projects"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.GetProject)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-project-compose",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/projects/{projectId}/compose",
+		Summary:     "Get project compose details",
+		Description: "Get compose content, includes, and service configs for a project",
+		Tags:        []string{"Projects"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.GetProjectCompose)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-project-files",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/projects/{projectId}/files",
+		Summary:     "Get project files",
+		Description: "Get directory files for a project",
+		Tags:        []string{"Projects"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.GetProjectFiles)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-project-runtime",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/projects/{projectId}/runtime",
+		Summary:     "Get project runtime",
+		Description: "Get runtime service state for a project",
+		Tags:        []string{"Projects"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.GetProjectRuntime)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-project-updates",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/projects/{projectId}/updates",
+		Summary:     "Get project updates",
+		Description: "Get image update summary for a project",
+		Tags:        []string{"Projects"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.GetProjectUpdates)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-project-file",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/projects/{projectId}/file",
+		Summary:     "Get a project file",
+		Description: "Get the contents of a single project-related file by relative path",
+		Tags:        []string{"Projects"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.GetProjectFile)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "redeploy-project",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/projects/{projectId}/redeploy",
+		Summary:     "Redeploy a project",
+		Description: "Redeploy a Docker Compose project (down + up)",
+		Tags:        []string{"Projects"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+		Middlewares: humamw.RequireAdmin(api),
+	}, h.RedeployProject)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "destroy-project",
+		Method:      http.MethodDelete,
+		Path:        "/environments/{id}/projects/{projectId}/destroy",
+		Summary:     "Destroy a project",
+		Description: "Destroy a Docker Compose project and optionally remove files/volumes",
+		Tags:        []string{"Projects"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+		Middlewares: humamw.RequireAdmin(api),
+	}, h.DestroyProject)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "update-project",
+		Method:      http.MethodPut,
+		Path:        "/environments/{id}/projects/{projectId}",
+		Summary:     "Update a project",
+		Description: "Update a Docker Compose project configuration",
+		Tags:        []string{"Projects"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+		Middlewares: humamw.RequireAdmin(api),
+	}, h.UpdateProject)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "update-project-include",
+		Method:      http.MethodPut,
+		Path:        "/environments/{id}/projects/{projectId}/includes",
+		Summary:     "Update project include file",
+		Description: "Update an include file within a Docker Compose project",
+		Tags:        []string{"Projects"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+		Middlewares: humamw.RequireAdmin(api),
+	}, h.UpdateProjectInclude)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "restart-project",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/projects/{projectId}/restart",
+		Summary:     "Restart a project",
+		Description: "Restart all containers in a Docker Compose project",
+		Tags:        []string{"Projects"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+		Middlewares: humamw.RequireAdmin(api),
+	}, h.RestartProject)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "archive-project",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/projects/{projectId}/archive",
+		Summary:     "Archive a project",
+		Description: "Archive a stopped Docker Compose project",
+		Tags:        []string{"Projects"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+		Middlewares: humamw.RequireAdmin(api),
+	}, h.ArchiveProject)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "unarchive-project",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/projects/{projectId}/unarchive",
+		Summary:     "Unarchive a project",
+		Description: "Unarchive a Docker Compose project",
+		Tags:        []string{"Projects"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+		Middlewares: humamw.RequireAdmin(api),
+	}, h.UnarchiveProject)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "pull-project-images",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/projects/{projectId}/pull",
+		Summary:     "Pull project images",
+		Description: "Pull all images for a Docker Compose project with streaming progress output",
+		Tags:        []string{"Projects"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+		Middlewares: humamw.RequireAdmin(api),
+	}, h.PullProjectImages)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "build-project-images",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/projects/{projectId}/build",
+		Summary:     "Build project images",
+		Description: "Build Docker Compose services with build directives using BuildKit",
+		Tags:        []string{"Projects"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+		Middlewares: humamw.RequireAdmin(api),
+	}, h.BuildProjectImages)
+}
+
+// ListProjects returns a paginated list of projects.
+func (h *ProjectHandler) ListProjects(ctx context.Context, input *ListProjectsInput) (*ListProjectsOutput, error) {
+	if h.projectService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	filters := map[string]string{}
+	if input.Status != "" {
+		filters["status"] = input.Status
+	}
+	if input.Updates != "" {
+		filters["updates"] = input.Updates
+	}
+	if input.Archived != "" {
+		filters["archived"] = input.Archived
+	}
+
+	params := pagination.QueryParams{
+		SearchQuery: pagination.SearchQuery{
+			Search: input.Search,
+		},
+		SortParams: pagination.SortParams{
+			Sort:  input.Sort,
+			Order: pagination.SortOrder(input.Order),
+		},
+		PaginationParams: pagination.PaginationParams{
+			Start: input.Start,
+			Limit: input.Limit,
+		},
+		Filters: filters,
+	}
+
+	projects, paginationResp, err := h.projectService.ListProjects(ctx, params)
+	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return nil, huma.Error500InternalServerError("Request was canceled")
+		}
+		return nil, huma.Error500InternalServerError((&common.ProjectListError{Err: err}).Error())
+	}
+
+	if projects == nil {
+		projects = []project.Details{}
+	}
+
+	return &ListProjectsOutput{
+		Body: ProjectPaginatedResponse{
+			Success: true,
+			Data:    projects,
+			Pagination: base.PaginationResponse{
+				TotalPages:      paginationResp.TotalPages,
+				TotalItems:      paginationResp.TotalItems,
+				CurrentPage:     paginationResp.CurrentPage,
+				ItemsPerPage:    paginationResp.ItemsPerPage,
+				GrandTotalItems: paginationResp.GrandTotalItems,
+			},
+		},
+	}, nil
+}
+
+// GetProjectStatusCounts returns counts of projects by status.
+func (h *ProjectHandler) GetProjectStatusCounts(ctx context.Context, input *GetProjectStatusCountsInput) (*GetProjectStatusCountsOutput, error) {
+	if h.projectService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	_, running, stopped, total, archived, err := h.projectService.GetProjectStatusCounts(ctx)
+	if err != nil {
+		return nil, huma.Error500InternalServerError((&common.ProjectStatusCountsError{Err: err}).Error())
+	}
+
+	return &GetProjectStatusCountsOutput{
+		Body: base.ApiResponse[project.StatusCounts]{
+			Success: true,
+			Data: project.StatusCounts{
+				RunningProjects:  int(running),
+				StoppedProjects:  int(stopped),
+				TotalProjects:    int(total),
+				ArchivedProjects: int(archived),
+			},
+		},
+	}, nil
+}
+
+// DeployProject deploys a Docker Compose project.
+func (h *ProjectHandler) DeployProject(ctx context.Context, input *DeployProjectInput) (*huma.StreamResponse, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
+	if h.projectService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if input.ProjectID == "" {
+		return nil, huma.Error400BadRequest((&common.ProjectIDRequiredError{}).Error())
+	}
+
+	user, exists := humamw.GetCurrentUserFromContext(ctx)
+	if !exists {
+		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	}
+
+	return &huma.StreamResponse{
+		Body: func(humaCtx huma.Context) { //nolint:contextcheck // context is obtained from humaCtx.Context()
+			humaCtx.SetHeader("Content-Type", "application/x-json-stream")
+			humaCtx.SetHeader("Cache-Control", "no-cache")
+			humaCtx.SetHeader("Connection", "keep-alive")
+			humaCtx.SetHeader("X-Accel-Buffering", "no")
+
+			writer := humaCtx.BodyWriter()
+
+			_, _ = writer.Write([]byte(`{"type":"deploy","phase":"begin"}` + "\n"))
+			if f, ok := writer.(http.Flusher); ok {
+				f.Flush()
+			}
+
+			deployCtx := context.WithValue(humaCtx.Context(), projects.ProgressWriterKey{}, writer)
+			if err := h.projectService.DeployProject(deployCtx, input.ProjectID, *user, input.Body); err != nil {
+				_, _ = fmt.Fprintf(writer, `{"error":%q}`+"\n", err.Error())
+				if f, ok := writer.(http.Flusher); ok {
+					f.Flush()
+				}
+				return
+			}
+
+			_, _ = writer.Write([]byte(`{"type":"deploy","phase":"complete"}` + "\n"))
+			if f, ok := writer.(http.Flusher); ok {
+				f.Flush()
+			}
+		},
+	}, nil
+}
+
+// DownProject brings down a Docker Compose project.
+func (h *ProjectHandler) DownProject(ctx context.Context, input *DownProjectInput) (*DownProjectOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
+	if h.projectService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	user, exists := humamw.GetCurrentUserFromContext(ctx)
+	if !exists {
+		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	}
+
+	if err := h.projectService.DownProject(ctx, input.ProjectID, *user); err != nil {
+		var archivedErr *common.ProjectArchivedError
+		if errors.As(err, &archivedErr) {
+			return nil, huma.Error400BadRequest((&common.ProjectDownError{Err: err}).Error())
+		}
+		return nil, huma.Error500InternalServerError((&common.ProjectDownError{Err: err}).Error())
+	}
+
+	return &DownProjectOutput{
+		Body: base.ApiResponse[base.MessageResponse]{
+			Success: true,
+			Data: base.MessageResponse{
+				Message: "Project brought down successfully",
+			},
+		},
+	}, nil
+}
+
+// CreateProject creates a new Docker Compose project.
+func (h *ProjectHandler) CreateProject(ctx context.Context, input *CreateProjectInput) (*CreateProjectOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
+	if h.projectService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	user, exists := humamw.GetCurrentUserFromContext(ctx)
+	if !exists {
+		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	}
+
+	proj, err := h.projectService.CreateProject(ctx, input.Body.Name, input.Body.ComposeContent, input.Body.EnvContent, *user)
+	if err != nil {
+		return nil, huma.Error500InternalServerError((&common.ProjectCreationError{Err: err}).Error())
+	}
+
+	var response project.CreateReponse
+	if err := mapper.MapStruct(proj, &response); err != nil {
+		return nil, huma.Error500InternalServerError("failed to map response")
+	}
+	response.Status = string(proj.Status)
+	response.StatusReason = proj.StatusReason
+	response.CreatedAt = proj.CreatedAt.Format(time.RFC3339)
+	response.UpdatedAt = proj.UpdatedAt.Format(time.RFC3339)
+	response.DirName = utils.DerefString(proj.DirName)
+	response.RelativePath = h.projectService.GetProjectRelativePath(ctx, proj.Path)
+	response.GitOpsManagedBy = proj.GitOpsManagedBy
+	response.IsArchived = proj.IsArchived
+	response.ArchivedAt = proj.ArchivedAt
+
+	return &CreateProjectOutput{
+		Body: base.ApiResponse[project.CreateReponse]{
+			Success: true,
+			Data:    response,
+		},
+	}, nil
+}
+
+// GetProject returns a project by ID.
+func (h *ProjectHandler) GetProject(ctx context.Context, input *GetProjectInput) (*GetProjectOutput, error) {
+	if h.projectService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if input.ProjectID == "" {
+		return nil, huma.Error400BadRequest((&common.ProjectIDRequiredError{}).Error())
+	}
+
+	details, err := h.projectService.GetProjectDetails(ctx, input.ProjectID, project.DetailsOptions{})
+	if err != nil {
+		return nil, huma.Error404NotFound((&common.ProjectDetailsError{Err: err}).Error())
+	}
+
+	return &GetProjectOutput{
+		Body: base.ApiResponse[project.Details]{
+			Success: true,
+			Data:    details,
+		},
+	}, nil
+}
+
+func (h *ProjectHandler) getProjectDetailsWithOptionsInternal(ctx context.Context, input *GetProjectInput, opts project.DetailsOptions) (*GetProjectOutput, error) {
+	if h.projectService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+	if input.ProjectID == "" {
+		return nil, huma.Error400BadRequest((&common.ProjectIDRequiredError{}).Error())
+	}
+
+	details, err := h.projectService.GetProjectDetails(ctx, input.ProjectID, opts)
+	if err != nil {
+		return nil, huma.Error404NotFound((&common.ProjectDetailsError{Err: err}).Error())
+	}
+
+	return &GetProjectOutput{
+		Body: base.ApiResponse[project.Details]{
+			Success: true,
+			Data:    details,
+		},
+	}, nil
+}
+
+func (h *ProjectHandler) GetProjectCompose(ctx context.Context, input *GetProjectInput) (*GetProjectOutput, error) {
+	return h.getProjectDetailsWithOptionsInternal(ctx, input, project.DetailsOptions{
+		IncludeComposeContent: true,
+		IncludeEnvState:       true,
+		IncludeIncludeFiles:   true,
+		IncludeServiceConfigs: true,
+	})
+}
+
+func (h *ProjectHandler) GetProjectFiles(ctx context.Context, input *GetProjectInput) (*GetProjectOutput, error) {
+	return h.getProjectDetailsWithOptionsInternal(ctx, input, project.DetailsOptions{
+		IncludeDirectoryFiles: true,
+	})
+}
+
+func (h *ProjectHandler) GetProjectRuntime(ctx context.Context, input *GetProjectInput) (*GetProjectOutput, error) {
+	return h.getProjectDetailsWithOptionsInternal(ctx, input, project.DetailsOptions{
+		IncludeRuntimeServices: true,
+	})
+}
+
+func (h *ProjectHandler) GetProjectUpdates(ctx context.Context, input *GetProjectInput) (*GetProjectOutput, error) {
+	return h.getProjectDetailsWithOptionsInternal(ctx, input, project.DetailsOptions{
+		IncludeServiceConfigs: true,
+		IncludeUpdateInfo:     true,
+	})
+}
+
+func (h *ProjectHandler) GetProjectFile(ctx context.Context, input *GetProjectFileInput) (*GetProjectFileOutput, error) {
+	if h.projectService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+	if input.ProjectID == "" {
+		return nil, huma.Error400BadRequest((&common.ProjectIDRequiredError{}).Error())
+	}
+	if input.RelativePath == "" {
+		return nil, huma.Error400BadRequest("relativePath is required")
+	}
+
+	file, err := h.projectService.GetProjectFileContent(ctx, input.ProjectID, input.RelativePath)
+	if err != nil {
+		var badRequestErr *common.ProjectFileBadRequestError
+		var forbiddenErr *common.ProjectFileForbiddenError
+		var notFoundErr *common.ProjectFileNotFoundError
+
+		switch {
+		case errors.As(err, &badRequestErr):
+			return nil, huma.Error400BadRequest(err.Error())
+		case errors.As(err, &forbiddenErr):
+			return nil, huma.Error403Forbidden(err.Error())
+		case errors.As(err, &notFoundErr):
+			return nil, huma.Error404NotFound("project file not found")
+		default:
+			return nil, huma.Error500InternalServerError("internal error")
+		}
+	}
+
+	return &GetProjectFileOutput{
+		Body: base.ApiResponse[project.IncludeFile]{
+			Success: true,
+			Data:    file,
+		},
+	}, nil
+}
+
+// RedeployProject redeploys a Docker Compose project.
+func (h *ProjectHandler) RedeployProject(ctx context.Context, input *RedeployProjectInput) (*RedeployProjectOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
+	if h.projectService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if input.ProjectID == "" {
+		return nil, huma.Error400BadRequest((&common.ProjectIDRequiredError{}).Error())
+	}
+
+	user, exists := humamw.GetCurrentUserFromContext(ctx)
+	if !exists {
+		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	}
+
+	if err := h.projectService.RedeployProject(ctx, input.ProjectID, *user); err != nil {
+		var archivedErr *common.ProjectArchivedError
+		if errors.As(err, &archivedErr) {
+			return nil, huma.Error400BadRequest(err.Error())
+		}
+		return nil, huma.Error400BadRequest((&common.ProjectRedeploymentError{Err: err}).Error())
+	}
+
+	return &RedeployProjectOutput{
+		Body: base.ApiResponse[base.MessageResponse]{
+			Success: true,
+			Data: base.MessageResponse{
+				Message: "Project redeployed successfully",
+			},
+		},
+	}, nil
+}
+
+// DestroyProject destroys a Docker Compose project.
+func (h *ProjectHandler) DestroyProject(ctx context.Context, input *DestroyProjectInput) (*DestroyProjectOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
+	if h.projectService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	user, exists := humamw.GetCurrentUserFromContext(ctx)
+	if !exists {
+		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	}
+
+	removeFiles := false
+	removeVolumes := false
+	if input.Body != nil {
+		removeFiles = input.Body.RemoveFiles
+		removeVolumes = input.Body.RemoveVolumes
+		slog.DebugContext(ctx, "DestroyProject handler received body",
+			"removeFiles", removeFiles,
+			"removeVolumes", removeVolumes,
+			"projectID", input.ProjectID)
+	} else {
+		slog.DebugContext(ctx, "DestroyProject handler received nil body",
+			"projectID", input.ProjectID)
+	}
+
+	if err := h.projectService.DestroyProject(ctx, input.ProjectID, removeFiles, removeVolumes, *user); err != nil {
+		return nil, huma.Error500InternalServerError((&common.ProjectDestroyError{Err: err}).Error())
+	}
+
+	return &DestroyProjectOutput{
+		Body: base.ApiResponse[base.MessageResponse]{
+			Success: true,
+			Data: base.MessageResponse{
+				Message: "Project destroyed successfully",
+			},
+		},
+	}, nil
+}
+
+// UpdateProject updates a Docker Compose project.
+func (h *ProjectHandler) UpdateProject(ctx context.Context, input *UpdateProjectInput) (*UpdateProjectOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
+	if h.projectService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if input.ProjectID == "" {
+		return nil, huma.Error400BadRequest((&common.ProjectIDRequiredError{}).Error())
+	}
+
+	user, exists := humamw.GetCurrentUserFromContext(ctx)
+	if !exists {
+		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	}
+
+	if _, err := h.projectService.UpdateProject(ctx, input.ProjectID, input.Body.Name, input.Body.ComposeContent, input.Body.EnvContent, *user); err != nil {
+		return nil, huma.Error400BadRequest((&common.ProjectUpdateError{Err: err}).Error())
+	}
+
+	details, err := h.projectService.GetProjectDetails(ctx, input.ProjectID, project.AllDetails())
+	if err != nil {
+		return nil, huma.Error500InternalServerError((&common.ProjectDetailsError{Err: err}).Error())
+	}
+
+	return &UpdateProjectOutput{
+		Body: base.ApiResponse[project.Details]{
+			Success: true,
+			Data:    details,
+		},
+	}, nil
+}
+
+// UpdateProjectInclude updates an include file within a project.
+func (h *ProjectHandler) UpdateProjectInclude(ctx context.Context, input *UpdateProjectIncludeInput) (*UpdateProjectIncludeOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
+	if h.projectService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if input.ProjectID == "" {
+		return nil, huma.Error400BadRequest((&common.ProjectIDRequiredError{}).Error())
+	}
+
+	user, exists := humamw.GetCurrentUserFromContext(ctx)
+	if !exists {
+		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	}
+
+	if err := h.projectService.UpdateProjectIncludeFile(ctx, input.ProjectID, input.Body.RelativePath, input.Body.Content, *user); err != nil {
+		return nil, huma.Error400BadRequest((&common.ProjectUpdateError{Err: err}).Error())
+	}
+
+	details, err := h.projectService.GetProjectDetails(ctx, input.ProjectID, project.AllDetails())
+	if err != nil {
+		return nil, huma.Error500InternalServerError((&common.ProjectDetailsError{Err: err}).Error())
+	}
+
+	return &UpdateProjectIncludeOutput{
+		Body: base.ApiResponse[project.Details]{
+			Success: true,
+			Data:    details,
+		},
+	}, nil
+}
+
+// RestartProject restarts all containers in a project.
+func (h *ProjectHandler) RestartProject(ctx context.Context, input *RestartProjectInput) (*RestartProjectOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
+	if h.projectService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if input.ProjectID == "" {
+		return nil, huma.Error400BadRequest((&common.ProjectIDRequiredError{}).Error())
+	}
+
+	user, exists := humamw.GetCurrentUserFromContext(ctx)
+	if !exists {
+		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	}
+
+	if err := h.projectService.RestartProject(ctx, input.ProjectID, *user); err != nil {
+		var archivedErr *common.ProjectArchivedError
+		if errors.As(err, &archivedErr) {
+			return nil, huma.Error400BadRequest(err.Error())
+		}
+		return nil, huma.Error400BadRequest((&common.ProjectRestartError{Err: err}).Error())
+	}
+
+	return &RestartProjectOutput{
+		Body: base.ApiResponse[base.MessageResponse]{
+			Success: true,
+			Data: base.MessageResponse{
+				Message: "Project restarted successfully",
+			},
+		},
+	}, nil
+}
+
+func (h *ProjectHandler) ArchiveProject(ctx context.Context, input *ArchiveProjectInput) (*ArchiveProjectOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
+	if h.projectService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if input.ProjectID == "" {
+		return nil, huma.Error400BadRequest((&common.ProjectIDRequiredError{}).Error())
+	}
+
+	user, exists := humamw.GetCurrentUserFromContext(ctx)
+	if !exists {
+		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	}
+
+	if err := h.projectService.ArchiveProject(ctx, input.ProjectID, *user); err != nil {
+		var mustStopErr *common.ProjectMustBeStoppedError
+		if errors.As(err, &mustStopErr) {
+			return nil, huma.Error400BadRequest(err.Error())
+		}
+		return nil, huma.Error500InternalServerError((&common.ProjectArchiveError{Err: err}).Error())
+	}
+
+	return &ArchiveProjectOutput{
+		Body: base.ApiResponse[base.MessageResponse]{
+			Success: true,
+			Data:    base.MessageResponse{Message: "Project archived successfully"},
+		},
+	}, nil
+}
+
+func (h *ProjectHandler) UnarchiveProject(ctx context.Context, input *UnarchiveProjectInput) (*UnarchiveProjectOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
+	if h.projectService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if input.ProjectID == "" {
+		return nil, huma.Error400BadRequest((&common.ProjectIDRequiredError{}).Error())
+	}
+
+	user, exists := humamw.GetCurrentUserFromContext(ctx)
+	if !exists {
+		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	}
+
+	if err := h.projectService.UnarchiveProject(ctx, input.ProjectID, *user); err != nil {
+		return nil, huma.Error500InternalServerError((&common.ProjectUnarchiveError{Err: err}).Error())
+	}
+
+	return &UnarchiveProjectOutput{
+		Body: base.ApiResponse[base.MessageResponse]{
+			Success: true,
+			Data:    base.MessageResponse{Message: "Project unarchived successfully"},
+		},
+	}, nil
+}
+
+// PullProjectImages pulls all images for a project with streaming progress.
+func (h *ProjectHandler) PullProjectImages(ctx context.Context, input *PullProjectImagesInput) (*huma.StreamResponse, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
+	if h.projectService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if input.ProjectID == "" {
+		return nil, huma.Error400BadRequest((&common.ProjectIDRequiredError{}).Error())
+	}
+
+	user, exists := humamw.GetCurrentUserFromContext(ctx)
+	if !exists {
+		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	}
+
+	return &huma.StreamResponse{
+		Body: func(humaCtx huma.Context) { //nolint:contextcheck // context is obtained from humaCtx.Context()
+			humaCtx.SetHeader("Content-Type", "application/x-json-stream")
+			humaCtx.SetHeader("Cache-Control", "no-cache")
+			humaCtx.SetHeader("Connection", "keep-alive")
+			humaCtx.SetHeader("X-Accel-Buffering", "no")
+
+			writer := humaCtx.BodyWriter()
+
+			_, _ = writer.Write([]byte(`{"status":"starting project image pull"}` + "\n"))
+			if f, ok := writer.(http.Flusher); ok {
+				f.Flush()
+			}
+
+			if err := h.projectService.PullProjectImages(humaCtx.Context(), input.ProjectID, writer, *user, nil); err != nil {
+				_, _ = fmt.Fprintf(writer, `{"error":%q}`+"\n", err.Error())
+				if f, ok := writer.(http.Flusher); ok {
+					f.Flush()
+				}
+				return
+			}
+
+			_, _ = writer.Write([]byte(`{"status":"complete"}` + "\n"))
+			if f, ok := writer.(http.Flusher); ok {
+				f.Flush()
+			}
+		},
+	}, nil
+}
+
+// BuildProjectImages builds compose services with build directives.
+func (h *ProjectHandler) BuildProjectImages(ctx context.Context, input *BuildProjectInput) (*huma.StreamResponse, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
+	if h.projectService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if input.ProjectID == "" {
+		return nil, huma.Error400BadRequest((&common.ProjectIDRequiredError{}).Error())
+	}
+
+	user, exists := humamw.GetCurrentUserFromContext(ctx)
+	if !exists {
+		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	}
+
+	options := services.ProjectBuildOptions{}
+	if input.Body != nil {
+		options.Services = input.Body.Services
+		options.Provider = input.Body.Provider
+		options.Push = input.Body.Push
+		options.Load = input.Body.Load
+	}
+
+	return &huma.StreamResponse{
+		Body: func(humaCtx huma.Context) { //nolint:contextcheck // context is obtained from humaCtx.Context()
+			humaCtx.SetHeader("Content-Type", "application/x-json-stream")
+			humaCtx.SetHeader("Cache-Control", "no-cache")
+			humaCtx.SetHeader("Connection", "keep-alive")
+			humaCtx.SetHeader("X-Accel-Buffering", "no")
+
+			writer := humaCtx.BodyWriter()
+			_, _ = writer.Write([]byte(`{"type":"build","phase":"begin"}` + "\n"))
+			if f, ok := writer.(http.Flusher); ok {
+				f.Flush()
+			}
+
+			if err := h.projectService.BuildProjectServices(humaCtx.Context(), input.ProjectID, options, writer, user); err != nil {
+				_, _ = fmt.Fprintf(writer, `{"error":%q}`+"\n", err.Error())
+				if f, ok := writer.(http.Flusher); ok {
+					f.Flush()
+				}
+				return
+			}
+
+			_, _ = writer.Write([]byte(`{"type":"build","phase":"complete"}` + "\n"))
+			if f, ok := writer.(http.Flusher); ok {
+				f.Flush()
+			}
+		},
+	}, nil
+}

@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
+	composeapi "github.com/docker/compose/v5/pkg/api"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	libupdater "github.com/getarcaneapp/arcane/backend/pkg/libarcane/updater"
@@ -23,6 +25,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/pkg/projects"
 	buildtypes "github.com/getarcaneapp/arcane/types/builds"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
+	projecttypes "github.com/getarcaneapp/arcane/types/project"
 	glsqlite "github.com/glebarez/sqlite"
 	"github.com/moby/moby/api/types/container"
 	dockertypesimage "github.com/moby/moby/api/types/image"
@@ -1145,7 +1148,7 @@ services:
 	includePath := filepath.Join(projectPath, "metadata.yaml")
 	assert.NoFileExists(t, includePath)
 
-	details, err := svc.GetProjectDetails(ctx, project.ID)
+	details, err := svc.GetProjectDetails(ctx, project.ID, projecttypes.AllDetails())
 	require.NoError(t, err)
 	require.Len(t, details.IncludeFiles, 1)
 	assert.Equal(t, "metadata.yaml", details.IncludeFiles[0].RelativePath)
@@ -1839,7 +1842,7 @@ func TestProjectService_GetProjectDetails_ReturnsEffectiveEnvContent(t *testing.
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	details, err := svc.GetProjectDetails(ctx, project.ID)
+	details, err := svc.GetProjectDetails(ctx, project.ID, projecttypes.AllDetails())
 	require.NoError(t, err)
 	assert.Equal(t, "BASE=git\nTOKEN=secret\n", details.EnvContent)
 }
@@ -1971,7 +1974,7 @@ func TestProjectService_GetProjectDetails_IncludesUpdateInfo(t *testing.T) {
 		CheckTime:      time.Now().UTC(),
 	}).Error)
 
-	details, err := svc.GetProjectDetails(ctx, projectRecord.ID)
+	details, err := svc.GetProjectDetails(ctx, projectRecord.ID, projecttypes.AllDetails())
 	require.NoError(t, err)
 	require.NotNil(t, details.UpdateInfo)
 	assert.Equal(t, "has_update", details.UpdateInfo.Status)
@@ -1981,6 +1984,133 @@ func TestProjectService_GetProjectDetails_IncludesUpdateInfo(t *testing.T) {
 	assert.Equal(t, 1, details.UpdateInfo.ImagesWithUpdates)
 	assert.Equal(t, []string{"nginx:latest"}, details.UpdateInfo.ImageRefs)
 	assert.Equal(t, []string{"nginx:latest"}, details.UpdateInfo.UpdatedImageRefs)
+}
+
+func TestProjectService_GetProjectDetails_RefreshesRuntimeStatusWithoutRuntimeServices(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
+
+	projectPath := createComposeProjectDir(t, projectsDir, "projectA")
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("services:\n  server:\n    image: nginx:alpine\n  worker:\n    image: busybox:latest\n"), 0o644))
+
+	server := newProjectRuntimeDockerServerInternal(t, []container.Summary{
+		{
+			ID:     "server-container",
+			Names:  []string{"/projecta-server-1"},
+			Image:  "nginx:alpine",
+			State:  container.StateRunning,
+			Status: "Up 30 seconds (healthy)",
+			Ports: []container.PortSummary{
+				{
+					IP:          netip.MustParseAddr("0.0.0.0"),
+					PrivatePort: 80,
+					PublicPort:  8080,
+					Type:        "tcp",
+				},
+			},
+			Labels: map[string]string{
+				composeapi.ProjectLabel:    "projecta",
+				composeapi.ServiceLabel:    "server",
+				composeapi.ConfigHashLabel: "server-hash",
+				composeapi.WorkingDirLabel: "/host/path/projects/projectA",
+			},
+		},
+		{
+			ID:     "worker-container",
+			Names:  []string{"/projecta-worker-1"},
+			Image:  "busybox:latest",
+			State:  container.StateRunning,
+			Status: "Up 30 seconds",
+			Labels: map[string]string{
+				composeapi.ProjectLabel:    "projecta",
+				composeapi.ServiceLabel:    "worker",
+				composeapi.ConfigHashLabel: "worker-hash",
+				composeapi.WorkingDirLabel: "/host/path/projects/projectA",
+			},
+		},
+	})
+	t.Setenv("DOCKER_HOST", dockerHostFromProjectRuntimeServerURLInternal(t, server.URL))
+
+	projectRecord := &models.Project{
+		BaseModel:    models.BaseModel{ID: "proj-runtime-refresh"},
+		Name:         "projectA",
+		DirName:      ptr("projectA"),
+		Path:         projectPath,
+		Status:       models.ProjectStatusStopped,
+		ServiceCount: 2,
+		RunningCount: 0,
+	}
+	require.NoError(t, db.Create(projectRecord).Error)
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
+
+	details, err := svc.GetProjectDetails(ctx, projectRecord.ID, projecttypes.DetailsOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, string(models.ProjectStatusRunning), details.Status)
+	assert.Equal(t, 2, details.ServiceCount)
+	assert.Equal(t, 2, details.RunningCount)
+	assert.Empty(t, details.RuntimeServices)
+}
+
+func TestProjectService_GetProjectDetails_PopulatesRuntimeServicesFromComposePs(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
+
+	projectPath := createComposeProjectDir(t, projectsDir, "projectA")
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("services:\n  server:\n    image: nginx:alpine\n"), 0o644))
+
+	server := newProjectRuntimeDockerServerInternal(t, []container.Summary{
+		{
+			ID:     "server-container",
+			Names:  []string{"/projecta-server-1"},
+			Image:  "nginx:alpine",
+			State:  container.StateRunning,
+			Status: "Up 30 seconds",
+			Labels: map[string]string{
+				composeapi.ProjectLabel:    "projecta",
+				composeapi.ServiceLabel:    "server",
+				composeapi.ConfigHashLabel: "server-hash",
+				composeapi.WorkingDirLabel: "/host/path/projects/projectA",
+			},
+		},
+	})
+	t.Setenv("DOCKER_HOST", dockerHostFromProjectRuntimeServerURLInternal(t, server.URL))
+
+	projectRecord := &models.Project{
+		BaseModel:    models.BaseModel{ID: "proj-runtime-services"},
+		Name:         "projectA",
+		DirName:      ptr("projectA"),
+		Path:         projectPath,
+		Status:       models.ProjectStatusStopped,
+		ServiceCount: 1,
+		RunningCount: 0,
+	}
+	require.NoError(t, db.Create(projectRecord).Error)
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
+
+	details, err := svc.GetProjectDetails(ctx, projectRecord.ID, projecttypes.DetailsOptions{IncludeRuntimeServices: true})
+	require.NoError(t, err)
+	require.Len(t, details.RuntimeServices, 1)
+	assert.Equal(t, string(models.ProjectStatusRunning), details.Status)
+	assert.Equal(t, "server", details.RuntimeServices[0].Name)
+	assert.Equal(t, "running", details.RuntimeServices[0].Status)
+	assert.Equal(t, "server-container", details.RuntimeServices[0].ContainerID)
+	assert.Equal(t, "projecta-server-1", details.RuntimeServices[0].ContainerName)
 }
 
 func TestProjectService_ListProjects_FiltersByUpdateStatus(t *testing.T) {
@@ -3304,7 +3434,7 @@ func TestProjectService_GetProjectDetails_UsesGitOpsCustomComposeFilename(t *tes
 	assert.Equal(t, composeContent, composeFromContent)
 	assert.Equal(t, "TZ=UTC\n", envFromContent)
 
-	details, err := svc.GetProjectDetails(ctx, syncProjectID)
+	details, err := svc.GetProjectDetails(ctx, syncProjectID, projecttypes.AllDetails())
 	require.NoError(t, err)
 	assert.Equal(t, "radarr.yaml", details.ComposeFileName)
 	assert.Equal(t, composeContent, details.ComposeContent)
@@ -3368,6 +3498,56 @@ func createComposeProjectDir(t *testing.T, root, name string) string {
 	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("services:\n  app:\n    image: nginx:alpine\n"), 0o644))
 
 	return projectPath
+}
+
+func newProjectRuntimeDockerServerInternal(t *testing.T, containers []container.Summary) *httptest.Server {
+	t.Helper()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/_ping"):
+			_, _ = io.WriteString(w, "OK")
+		case strings.HasSuffix(r.URL.Path, "/version"):
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"ApiVersion":    "1.41",
+				"MinAPIVersion": "1.24",
+				"Version":       "24.0.0",
+			})
+		case strings.HasSuffix(r.URL.Path, "/containers/json"):
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(containers)
+		case strings.Contains(r.URL.Path, "/containers/") && strings.HasSuffix(r.URL.Path, "/json"):
+			containerID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path[strings.LastIndex(r.URL.Path, "/containers/"):], "/containers/"), "/json")
+			for _, c := range containers {
+				if c.ID != containerID {
+					continue
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(container.InspectResponse{
+					ID: c.ID,
+					State: &container.State{
+						Status:  c.State,
+						Running: c.State == container.StateRunning,
+					},
+				})
+				return
+			}
+			http.NotFound(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+	return server
+}
+
+func dockerHostFromProjectRuntimeServerURLInternal(t *testing.T, serverURL string) string {
+	t.Helper()
+
+	parsed, err := url.Parse(serverURL)
+	require.NoError(t, err)
+	return "tcp://" + parsed.Host
 }
 
 //go:fix inline

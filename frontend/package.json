@@ -1,7 +1,7 @@
 {
   "name": "arcane-frontend",
   "private": true,
-  "version": "1.19.0",
+  "version": "1.19.1",
   "type": "module",
   "scripts": {
     "dev": "vite dev --port 3000 --host",
@@ -40,7 +40,7 @@
     "prettier": "^3.8.3",
     "prettier-plugin-svelte": "^3.5.1",
     "prettier-plugin-tailwindcss": "^0.8.0",
-    "svelte": "^5.55.5",
+    "svelte": "^5.55.7",
     "svelte-codemirror-editor": "^2.1.0",
     "yaml": "^2.8.3"
   },

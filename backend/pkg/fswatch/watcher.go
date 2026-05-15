@@ -21,10 +21,12 @@ type Watcher struct {
 	maxDepth       int
 	followSymlinks bool
 	onChange       func(ctx context.Context)
+	onChangePaths  func(ctx context.Context, paths []string)
 	debounce       time.Duration
 	stopCh         chan struct{}
 	stoppedCh      chan struct{}
 	watchAliases   map[string]string
+	pendingPaths   map[string]struct{}
 	mu             sync.Mutex
 	started        bool
 	stopped        bool
@@ -35,6 +37,7 @@ type Watcher struct {
 type WatcherOptions struct {
 	Debounce          time.Duration
 	OnChange          func(ctx context.Context)
+	OnChangePaths     func(ctx context.Context, paths []string)
 	MaxDepth          int
 	FollowSymlinkDirs bool
 }
@@ -59,10 +62,12 @@ func NewWatcher(watchPath string, opts WatcherOptions) (*Watcher, error) {
 		maxDepth:       opts.MaxDepth,
 		followSymlinks: opts.FollowSymlinkDirs,
 		onChange:       opts.OnChange,
+		onChangePaths:  opts.OnChangePaths,
 		debounce:       opts.Debounce,
 		stopCh:         make(chan struct{}),
 		stoppedCh:      make(chan struct{}),
 		watchAliases:   make(map[string]string),
+		pendingPaths:   make(map[string]struct{}),
 	}, nil
 }
 
@@ -167,6 +172,7 @@ func (fw *Watcher) processEventInternal(ctx context.Context, event fsnotify.Even
 	if !fw.shouldHandleEventInternal(event) {
 		return false
 	}
+	fw.recordPendingPathInternal(event.Name)
 	if !debounceTimer.Stop() {
 		select {
 		case <-debounceTimer.C:
@@ -193,7 +199,34 @@ func (fw *Watcher) fireDebounceInternal(ctx context.Context, debouncePending *bo
 	if fw.onChange != nil {
 		go fw.onChange(ctx)
 	}
+	if fw.onChangePaths != nil {
+		paths := fw.drainPendingPathsInternal()
+		if len(paths) > 0 {
+			go fw.onChangePaths(ctx, paths)
+		}
+	}
 	return false
+}
+
+func (fw *Watcher) recordPendingPathInternal(path string) {
+	if path == "" {
+		return
+	}
+	fw.mu.Lock()
+	fw.pendingPaths[filepath.Clean(path)] = struct{}{}
+	fw.mu.Unlock()
+}
+
+func (fw *Watcher) drainPendingPathsInternal() []string {
+	fw.mu.Lock()
+	defer fw.mu.Unlock()
+
+	paths := make([]string, 0, len(fw.pendingPaths))
+	for path := range fw.pendingPaths {
+		paths = append(paths, path)
+		delete(fw.pendingPaths, path)
+	}
+	return paths
 }
 
 // handleEventInternal keeps the underlying fsnotify subscriptions in sync with

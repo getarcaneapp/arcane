@@ -55,6 +55,15 @@ const (
 	EmailTLSModeSSL      EmailTLSMode = "ssl"
 )
 
+type EmailAuthMode string
+
+const (
+	EmailAuthModeAuto    EmailAuthMode = "auto"
+	EmailAuthModePlain   EmailAuthMode = "plain"
+	EmailAuthModeLogin   EmailAuthMode = "login"
+	EmailAuthModeCRAMMD5 EmailAuthMode = "crammd5"
+)
+
 type NotificationSettings struct {
 	ID        uint                 `json:"id" gorm:"primaryKey"`
 	Provider  NotificationProvider `json:"provider" gorm:"not null;index;type:varchar(50)"`
@@ -100,6 +109,7 @@ type EmailConfig struct {
 	FromAddress  string                         `json:"fromAddress"`
 	ToAddresses  []string                       `json:"toAddresses"`
 	TLSMode      EmailTLSMode                   `json:"tlsMode"`
+	AuthMode     EmailAuthMode                  `json:"authMode,omitempty"`
 	Events       map[NotificationEventType]bool `json:"events,omitempty"`
 }
 

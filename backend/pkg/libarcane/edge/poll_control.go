@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/pkg/remenv"
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v4"
 )
 
 const (
@@ -219,15 +219,16 @@ func (r *PollRuntimeRegistry) Get(envID string, now time.Time) (PollRuntimeState
 	return state, true
 }
 
-func decodeTunnelPollRequestInternal(c *gin.Context) (*TunnelPollRequest, error) {
-	if c == nil || c.Request == nil || c.Request.Body == nil {
+func decodeTunnelPollRequestInternal(c echo.Context) (*TunnelPollRequest, error) {
+	if c == nil || c.Request() == nil || c.Request().Body == nil {
 		return &TunnelPollRequest{}, nil
 	}
 
-	defer func() { _ = c.Request.Body.Close() }()
+	req := c.Request()
+	defer func() { _ = req.Body.Close() }()
 
-	var req TunnelPollRequest
-	if err := json.NewDecoder(c.Request.Body).Decode(&req); err != nil {
+	var pollReq TunnelPollRequest
+	if err := json.NewDecoder(req.Body).Decode(&pollReq); err != nil {
 		if errors.Is(err, http.ErrBodyReadAfterClose) {
 			return &TunnelPollRequest{}, nil
 		}
@@ -237,7 +238,7 @@ func decodeTunnelPollRequestInternal(c *gin.Context) (*TunnelPollRequest, error)
 		return nil, err
 	}
 
-	return &req, nil
+	return &pollReq, nil
 }
 
 func (s *TunnelServer) pollStatusInternal(envID string) TunnelPollResponse {
@@ -264,22 +265,21 @@ func (s *TunnelServer) pollStatusInternal(envID string) TunnelPollResponse {
 }
 
 // HandlePoll is the HTTP control-plane endpoint used by poll-mode agents.
-func (s *TunnelServer) HandlePoll(c *gin.Context) {
-	ctx := c.Request.Context()
+func (s *TunnelServer) HandlePoll(c echo.Context) error {
+	req := c.Request()
+	ctx := req.Context()
 
 	if _, err := decodeTunnelPollRequestInternal(c); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid poll payload"})
-		return
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "invalid poll payload"})
 	}
 
 	// In proxy-terminated mTLS deployments, the client certificate is consumed
 	// by the TLS terminator before this request reaches Arcane. The token is
 	// still needed as the poll protocol's environment lookup claim.
-	token, source := tokenFromHeadersWithSourceInternal(c.Request)
+	token, source := tokenFromHeadersWithSourceInternal(req)
 	if token == "" {
 		slog.WarnContext(ctx, "Edge poll request without token")
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "agent token required"})
-		return
+		return c.JSON(http.StatusUnauthorized, map[string]any{"error": "agent token required"})
 	}
 	if source != HeaderAgentToken {
 		slog.DebugContext(ctx, "Edge poll request authenticated via fallback header",
@@ -296,13 +296,11 @@ func (s *TunnelServer) HandlePoll(c *gin.Context) {
 			"token_length", len(token),
 			"token_fingerprint", remenv.RedactedTokenFingerprint(token),
 		)
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid agent token"})
-		return
+		return c.JSON(http.StatusUnauthorized, map[string]any{"error": "invalid agent token"})
 	}
-	if err := s.requireRequestCertificateIdentityInternal(c.Request, envID); err != nil {
+	if err := s.requireRequestCertificateIdentityInternal(req, envID); err != nil {
 		slog.WarnContext(ctx, "Rejected edge poll request with mismatched client certificate", "environment_id", envID, "error", err)
-		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
-		return
+		return c.JSON(http.StatusUnauthorized, map[string]any{"error": err.Error()})
 	}
 
 	pollInterval := DefaultTunnelPollInterval
@@ -310,5 +308,5 @@ func (s *TunnelServer) HandlePoll(c *gin.Context) {
 
 	resp := s.pollStatusInternal(envID)
 	resp.PollIntervalSeconds = int(pollInterval / time.Second)
-	c.JSON(http.StatusOK, resp)
+	return c.JSON(http.StatusOK, resp)
 }

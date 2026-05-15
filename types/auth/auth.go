@@ -23,6 +23,12 @@ type PasswordChange struct {
 	NewPassword     string `json:"newPassword" minLength:"8" doc:"New password for the user"`
 }
 
+// SessionMeta captures request metadata associated with an authenticated session.
+type SessionMeta struct {
+	UserAgent string
+	IPAddress string
+}
+
 // LoginResponse represents the successful login response data.
 type LoginResponse struct {
 	Token        string    `json:"token" doc:"JWT access token"`

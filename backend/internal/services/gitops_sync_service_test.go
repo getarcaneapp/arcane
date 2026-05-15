@@ -621,6 +621,9 @@ func TestGitOpsSyncService_GetEffectiveSyncLimits(t *testing.T) {
 		t.Setenv("GIT_SYNC_MAX_FILES", "10000")
 		t.Setenv("GIT_SYNC_MAX_TOTAL_SIZE_MB", "1024")
 		t.Setenv("GIT_SYNC_MAX_BINARY_SIZE_MB", "12")
+		settingsSvcEnv, svcErr := NewSettingsService(ctx, db)
+		require.NoError(t, svcErr)
+		svcEnv := &GitOpsSyncService{settingsService: settingsSvcEnv}
 
 		sync := &models.GitOpsSync{
 			MaxSyncFiles:      500,
@@ -628,7 +631,7 @@ func TestGitOpsSyncService_GetEffectiveSyncLimits(t *testing.T) {
 			MaxSyncBinarySize: 10 * 1024 * 1024,
 		}
 
-		maxFiles, maxTotalSize, maxBinarySize := svc.getEffectiveSyncLimits(ctx, sync)
+		maxFiles, maxTotalSize, maxBinarySize := svcEnv.getEffectiveSyncLimits(ctx, sync)
 
 		require.Equal(t, 10000, maxFiles)
 		require.Equal(t, int64(1024*1024*1024), maxTotalSize)
@@ -639,6 +642,9 @@ func TestGitOpsSyncService_GetEffectiveSyncLimits(t *testing.T) {
 		t.Setenv("GIT_SYNC_MAX_FILES", "0")
 		t.Setenv("GIT_SYNC_MAX_TOTAL_SIZE_MB", "0")
 		t.Setenv("GIT_SYNC_MAX_BINARY_SIZE_MB", "0")
+		settingsSvcEnv, svcErr := NewSettingsService(ctx, db)
+		require.NoError(t, svcErr)
+		svcEnv := &GitOpsSyncService{settingsService: settingsSvcEnv}
 
 		sync := &models.GitOpsSync{
 			MaxSyncFiles:      75,
@@ -646,7 +652,7 @@ func TestGitOpsSyncService_GetEffectiveSyncLimits(t *testing.T) {
 			MaxSyncBinarySize: 2 * 1024 * 1024,
 		}
 
-		maxFiles, maxTotalSize, maxBinarySize := svc.getEffectiveSyncLimits(ctx, sync)
+		maxFiles, maxTotalSize, maxBinarySize := svcEnv.getEffectiveSyncLimits(ctx, sync)
 
 		require.Equal(t, 0, maxFiles)
 		require.Equal(t, int64(0), maxTotalSize)

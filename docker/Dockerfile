@@ -72,7 +72,10 @@ ARG TARGETARCH
 ARG VERSION
 ARG REVISION
 
-# keep the same env/settings as existing runner
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl tzdata tar gzip libdrm2 \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
 ENV GIN_MODE=release
 ENV PORT=3552
 ENV ENVIRONMENT=production

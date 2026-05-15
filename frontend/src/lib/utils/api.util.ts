@@ -1,4 +1,5 @@
 import type { Result } from './try-catch';
+import { APIError } from '$lib/services/api-service';
 import { toast } from 'svelte-sonner';
 
 function extractServerMessage(data: any): string | undefined {
@@ -67,9 +68,12 @@ export async function handleApiResultWithCallbacks<T>({
 		setLoadingState(true);
 
 		if (result.error) {
-			const dockerMsg = extractDockerErrorMessage(result.error);
 			console.error(`API Error: ${message}:`, result.error);
-			toast.error(message, { description: dockerMsg });
+			// 403s are surfaced by the global "Access denied" toast in the API
+			// service interceptor; skip the per-action toast to avoid double-toasting.
+			if (!(result.error instanceof APIError) || result.error.status !== 403) {
+				toast.error(message, { description: extractDockerErrorMessage(result.error) });
+			}
 			await Promise.resolve(onError(result.error));
 		} else {
 			await Promise.resolve(onSuccess(result.data as T));

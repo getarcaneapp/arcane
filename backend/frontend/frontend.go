@@ -4,6 +4,7 @@ package frontend
 
 import (
 	"embed"
+	"errors"
 	"fmt"
 	"io/fs"
 	"net/http"
@@ -11,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v4"
 )
 
 //go:embed all:dist
@@ -19,7 +20,10 @@ var frontendFS embed.FS
 
 const indexHtmlFileConstant = "index.html"
 
-func RegisterFrontend(router *gin.Engine) error {
+// RegisterFrontend mounts the embedded SPA on the Echo instance and configures
+// a custom HTTP error handler that intercepts 404s to serve the SPA index
+// (preserving SvelteKit client-side routing) while keeping /api/* 404s as JSON.
+func RegisterFrontend(e *echo.Echo) error {
 	distFS, err := fs.Sub(frontendFS, "dist")
 	if err != nil {
 		return fmt.Errorf("failed to create sub FS: %w", err)
@@ -28,11 +32,20 @@ func RegisterFrontend(router *gin.Engine) error {
 	cacheMaxAge := time.Hour * 24
 	fileServer := NewFileServerWithCaching(http.FS(distFS), int(cacheMaxAge.Seconds()))
 
-	router.NoRoute(func(c *gin.Context) {
-		path := c.Request.URL.Path
+	defaultErrorHandler := e.HTTPErrorHandler
+	e.HTTPErrorHandler = func(handlerErr error, c echo.Context) {
+		var he *echo.HTTPError
+		isNotFound := errors.As(handlerErr, &he) && he.Code == http.StatusNotFound
+		if !isNotFound {
+			defaultErrorHandler(handlerErr, c)
+			return
+		}
+
+		req := c.Request()
+		path := req.URL.Path
 
 		if strings.HasPrefix(path, "/api/") {
-			c.JSON(http.StatusNotFound, gin.H{
+			_ = c.JSON(http.StatusNotFound, map[string]any{
 				"success": false,
 				"error":   fmt.Sprintf("API endpoint not found: %s", path),
 			})
@@ -44,12 +57,12 @@ func RegisterFrontend(router *gin.Engine) error {
 			requestedPath = indexHtmlFileConstant
 		}
 
-		if _, err := fs.Stat(distFS, requestedPath); os.IsNotExist(err) {
-			c.Request.URL.Path = "/"
+		if _, statErr := fs.Stat(distFS, requestedPath); os.IsNotExist(statErr) {
+			req.URL.Path = "/"
 		}
 
-		fileServer.ServeHTTP(c.Writer, c.Request)
-	})
+		fileServer.ServeHTTP(c.Response().Writer, req)
+	}
 
 	return nil
 }

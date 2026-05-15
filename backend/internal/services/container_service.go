@@ -23,11 +23,13 @@ import (
 	libupdater "github.com/getarcaneapp/arcane/backend/pkg/libarcane/updater"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils/cache"
 	containertypes "github.com/getarcaneapp/arcane/types/container"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/events"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 )
@@ -40,6 +42,7 @@ type ContainerService struct {
 	settingsService *SettingsService
 	projectService  *ProjectService
 	statsHistory    containerstats.Store
+	updateInfoCache *cache.KeyedCache[string, *imagetypes.UpdateInfo]
 }
 
 const (
@@ -55,14 +58,30 @@ type ContainerListResult struct {
 }
 
 func NewContainerService(db *database.DB, eventService *EventService, dockerService *DockerClientService, imageService *ImageService, settingsService *SettingsService, projectService *ProjectService) *ContainerService {
-	return &ContainerService{
+	svc := &ContainerService{
 		db:              db,
 		eventService:    eventService,
 		dockerService:   dockerService,
 		imageService:    imageService,
 		settingsService: settingsService,
 		projectService:  projectService,
+		updateInfoCache: cache.NewKeyed[string, *imagetypes.UpdateInfo](),
 	}
+	svc.subscribeUpdateInfoCacheInvalidationInternal()
+	return svc
+}
+
+func (s *ContainerService) subscribeUpdateInfoCacheInvalidationInternal() {
+	if s.dockerService == nil || s.updateInfoCache == nil || s.dockerService.EventBus() == nil {
+		return
+	}
+	ch := make(chan events.Message, 16)
+	s.dockerService.EventBus().Subscribe(events.ImageEventType, ch)
+	go func() {
+		for range ch {
+			s.updateInfoCache.InvalidateAll()
+		}
+	}()
 }
 
 func buildCleanNetworkingConfigInternal(containerInspect container.InspectResponse, apiVersion string) *network.NetworkingConfig {
@@ -926,16 +945,25 @@ func (s *ContainerService) ListContainersPaginated(
 	includeInternal bool,
 	groupBy string,
 ) (ContainerListResult, error) {
-	dockerClient, err := s.dockerService.GetClient(ctx)
-	if err != nil {
-		return ContainerListResult{}, fmt.Errorf("failed to connect to Docker: %w", err)
-	}
+	var dockerContainers []container.Summary
+	if includeAll {
+		var err error
+		dockerContainers, err = s.dockerService.listContainersInternal(ctx)
+		if err != nil {
+			return ContainerListResult{}, err
+		}
+	} else {
+		dockerClient, err := s.dockerService.GetClient(ctx)
+		if err != nil {
+			return ContainerListResult{}, fmt.Errorf("failed to connect to Docker: %w", err)
+		}
 
-	containerList, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: includeAll})
-	if err != nil {
-		return ContainerListResult{}, fmt.Errorf("failed to list Docker containers: %w", err)
+		containerList, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: false})
+		if err != nil {
+			return ContainerListResult{}, fmt.Errorf("failed to list Docker containers: %w", err)
+		}
+		dockerContainers = containerList.Items
 	}
-	dockerContainers := containerList.Items
 
 	dockerContainers = filterInternalContainers(dockerContainers, includeInternal)
 	imageIDs := collectImageIDs(dockerContainers)
@@ -1124,13 +1152,32 @@ func (s *ContainerService) getUpdateInfoMap(ctx context.Context, imageIDs []stri
 		return make(map[string]*imagetypes.UpdateInfo)
 	}
 
-	updateInfoMap, err := s.imageService.GetUpdateInfoByImageIDs(ctx, imageIDs)
-	if err != nil {
-		// Log error but continue - update info is optional
-		slog.WarnContext(ctx, "Failed to fetch image update info for containers", "error", err)
-		return make(map[string]*imagetypes.UpdateInfo)
+	if s.updateInfoCache == nil {
+		updateInfoMap, err := s.imageService.GetUpdateInfoByImageIDs(ctx, imageIDs)
+		if err != nil {
+			slog.WarnContext(ctx, "Failed to fetch image update info for containers", "error", err)
+			return make(map[string]*imagetypes.UpdateInfo)
+		}
+		return updateInfoMap
 	}
 
+	updateInfoMap := make(map[string]*imagetypes.UpdateInfo, len(imageIDs))
+	for _, imageID := range imageIDs {
+		info, err := s.updateInfoCache.GetOrFetch(ctx, imageID, nil, func(fetchCtx context.Context) (*imagetypes.UpdateInfo, error) {
+			infos, fetchErr := s.imageService.GetUpdateInfoByImageIDs(fetchCtx, []string{imageID})
+			if fetchErr != nil {
+				return nil, fetchErr
+			}
+			return infos[imageID], nil
+		})
+		if err != nil {
+			slog.WarnContext(ctx, "Failed to fetch image update info for container image", "imageID", imageID, "error", err)
+			continue
+		}
+		if info != nil {
+			updateInfoMap[imageID] = info
+		}
+	}
 	return updateInfoMap
 }
 

@@ -1,11 +1,15 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
+	import { ArcaneButton } from '$lib/components/arcane-button';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
+	import { EyeOnIcon } from '$lib/icons';
 	import { m } from '$lib/paraglide/messages';
 	import type { NetworkTopologyDto, TopologyEdgeDto, TopologyNodeDto } from '$lib/types/network.type';
 	import { cn } from '$lib/utils';
 	import { mode } from 'mode-watcher';
+	import { PersistedState } from 'runed';
 	import { onMount } from 'svelte';
 	import {
 		Background,
@@ -57,8 +61,32 @@
 		text: string;
 	};
 
-	const networkNodes = $derived(topology.nodes.filter((node) => node.type === 'network'));
-	const containerNodes = $derived(topology.nodes.filter((node) => node.type === 'container'));
+	const visibleDefaults = new PersistedState<Record<string, boolean>>('arcane-topology-default-networks', {});
+
+	const presentDefaults = $derived(
+		topology.nodes
+			.filter((node) => node.type === 'network' && node.metadata.isDefault)
+			.sort((left, right) => left.name.localeCompare(right.name))
+	);
+	const visibleDefaultsCount = $derived(presentDefaults.filter((node) => visibleDefaults.current[node.id] !== false).length);
+
+	const visibleNetworkIds = $derived(
+		new Set(
+			topology.nodes
+				.filter((node) => node.type === 'network' && (!node.metadata.isDefault || visibleDefaults.current[node.id] !== false))
+				.map((node) => node.id)
+		)
+	);
+	const visibleEdges = $derived(topology.edges.filter((edge) => visibleNetworkIds.has(edge.source)));
+	const visibleContainerIds = $derived(new Set(visibleEdges.map((edge) => edge.target)));
+	const allEdgeTargets = $derived(new Set(topology.edges.map((edge) => edge.target)));
+
+	const networkNodes = $derived(topology.nodes.filter((node) => node.type === 'network' && visibleNetworkIds.has(node.id)));
+	const containerNodes = $derived(
+		topology.nodes.filter(
+			(node) => node.type === 'container' && (visibleContainerIds.has(node.id) || !allEdgeTargets.has(node.id))
+		)
+	);
 	const isDarkMode = $derived(mode.current === 'dark');
 
 	const canvasTheme = $derived(
@@ -336,8 +364,8 @@
 	const diagramNodes = $derived.by<Node<DiagramNodeData>[]>(() => {
 		const networksById = Object.fromEntries(networkNodes.map((node) => [node.id, node]));
 		const sourceOrder = Object.fromEntries(networkNodes.map((node, index) => [node.id, index]));
-		const connectionsByContainer = containerConnections(topology.edges, networksById, sourceOrder);
-		const layout = buildDiagramLayout(networkNodes, topology.edges, containerNodes);
+		const connectionsByContainer = containerConnections(visibleEdges, networksById, sourceOrder);
+		const layout = buildDiagramLayout(networkNodes, visibleEdges, containerNodes);
 
 		const graphNodes: Node<DiagramNodeData>[] = [];
 
@@ -410,7 +438,7 @@
 	});
 
 	const diagramEdges = $derived.by<Edge[]>(() =>
-		topology.edges.map((edge) => ({
+		visibleEdges.map((edge) => ({
 			id: edge.id,
 			source: edge.source,
 			target: edge.target,
@@ -446,6 +474,37 @@
 		<StatusBadge text={m.networks_topology_legend_networks()} variant="violet" minWidth="none" />
 		<StatusBadge text={m.networks_topology_legend_containers()} variant="emerald" minWidth="none" />
 		<p class="text-muted-foreground text-sm">{m.networks_topology_hint()}</p>
+		{#if presentDefaults.length > 0}
+			<div class="ml-auto">
+				<DropdownMenu.Root>
+					<DropdownMenu.Trigger>
+						{#snippet child({ props })}
+							<ArcaneButton
+								{...props}
+								action="base"
+								tone="ghost"
+								icon={EyeOnIcon}
+								customLabel={`${m.networks_topology_default_networks()} (${visibleDefaultsCount}/${presentDefaults.length})`}
+								class="border-input hover:bg-card/60 border hover:text-inherit"
+							/>
+						{/snippet}
+					</DropdownMenu.Trigger>
+					<DropdownMenu.Content align="end">
+						<DropdownMenu.Label>{m.networks_topology_default_networks()}</DropdownMenu.Label>
+						<DropdownMenu.Separator />
+						{#each presentDefaults as node (node.id)}
+							<DropdownMenu.CheckboxItem
+								checked={visibleDefaults.current[node.id] !== false}
+								onCheckedChange={(checked) =>
+									(visibleDefaults.current = { ...visibleDefaults.current, [node.id]: checked === true })}
+							>
+								{node.name}
+							</DropdownMenu.CheckboxItem>
+						{/each}
+					</DropdownMenu.Content>
+				</DropdownMenu.Root>
+			</div>
+		{/if}
 	</div>
 
 	{#if topology.nodes.length === 0}

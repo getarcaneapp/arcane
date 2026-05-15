@@ -3,17 +3,20 @@ package bootstrap
 import (
 	"context"
 	"log/slog"
+	"net"
+	"net/http"
+	"net/http/pprof"
 	"path"
 	"strings"
 
-	"github.com/gin-gonic/gin"
-	sloggin "github.com/samber/slog-gin"
+	"github.com/labstack/echo/v4"
+	echomiddleware "github.com/labstack/echo/v4/middleware"
+	slogecho "github.com/samber/slog-echo"
 
+	"github.com/getarcaneapp/arcane/backend/api"
+	"github.com/getarcaneapp/arcane/backend/api/ws"
 	"github.com/getarcaneapp/arcane/backend/frontend"
-	"github.com/getarcaneapp/arcane/backend/internal/api"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
-	"github.com/getarcaneapp/arcane/backend/internal/huma"
-	"github.com/getarcaneapp/arcane/backend/internal/huma/handlers"
 	"github.com/getarcaneapp/arcane/backend/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils/cookie"
@@ -21,8 +24,8 @@ import (
 )
 
 var (
-	registerPlaywrightRoutes []func(apiGroup *gin.RouterGroup, services *Services)
-	registerBuildableRoutes  []func(apiGroup *gin.RouterGroup, services *Services)
+	registerPlaywrightRoutes []func(apiGroup *echo.Group, services *Services)
+	registerBuildableRoutes  []func(apiGroup *echo.Group, services *Services)
 )
 
 var loggerSkipPatterns = []string{
@@ -40,8 +43,8 @@ var loggerSkipPatterns = []string{
 	"HEAD /api/health",
 }
 
-func shouldLogRequest(c *gin.Context) bool {
-	mp := c.Request.Method + " " + c.Request.URL.Path
+func shouldLogRequestInternal(c echo.Context) bool {
+	mp := c.Request().Method + " " + c.Request().URL.Path
 	for _, pat := range loggerSkipPatterns {
 		if pat == mp {
 			return false
@@ -61,24 +64,28 @@ func shouldLogRequest(c *gin.Context) bool {
 	return true
 }
 
-func requestLoggerMiddlewareInternal() gin.HandlerFunc {
-	loggerMiddleware := sloggin.NewWithConfig(slog.Default(), sloggin.Config{
-		Filters: []sloggin.Filter{shouldLogRequest},
+// requestLoggerMiddlewareInternal wraps slog-echo and filters out internal
+// edge tunnel requests plus high-volume endpoints (health, WS, static).
+func requestLoggerMiddlewareInternal() echo.MiddlewareFunc {
+	loggerMiddleware := slogecho.NewWithConfig(slog.Default(), slogecho.Config{
+		Filters: []slogecho.Filter{shouldLogRequestInternal},
 	})
 
-	return func(c *gin.Context) {
-		if edge.IsInternalTunnelRequest(c.Request.Context()) {
-			c.Next()
-			return
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			if edge.IsInternalTunnelRequest(c.Request().Context()) {
+				return next(c)
+			}
+			return loggerMiddleware(next)(c)
 		}
-		loggerMiddleware(c)
 	}
 }
 
-func createAuthValidator(appServices *Services) middleware.AuthValidator {
-	return func(ctx context.Context, c *gin.Context) bool {
+func createAuthValidatorInternal(appServices *Services) middleware.AuthValidator {
+	return func(ctx context.Context, c echo.Context) bool {
+		req := c.Request()
 		// Check for API key authentication
-		if apiKey := c.GetHeader("X-API-Key"); apiKey != "" {
+		if apiKey := req.Header.Get("X-API-Key"); apiKey != "" {
 			// User-owned API key
 			if user, err := appServices.ApiKey.ValidateApiKey(ctx, apiKey); err == nil && user != nil {
 				return true
@@ -93,9 +100,9 @@ func createAuthValidator(appServices *Services) middleware.AuthValidator {
 
 		// Check for Bearer token authentication
 		token := ""
-		if auth := c.GetHeader("Authorization"); strings.HasPrefix(auth, "Bearer ") {
+		if auth := req.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
 			token = strings.TrimPrefix(auth, "Bearer ")
-		} else if cookieToken, err := cookie.GetTokenCookie(c); err == nil && cookieToken != "" {
+		} else if cookieToken, err := cookie.GetTokenCookie(req); err == nil && cookieToken != "" {
 			token = cookieToken
 		}
 
@@ -103,29 +110,71 @@ func createAuthValidator(appServices *Services) middleware.AuthValidator {
 			return false
 		}
 
-		user, err := appServices.Auth.VerifyToken(ctx, token)
+		user, _, err := appServices.Auth.VerifyToken(ctx, token)
 		return err == nil && user != nil
 	}
 }
 
-func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services) (*gin.Engine, *edge.TunnelServer) {
-	if cfg.Environment == "production" {
-		gin.SetMode(gin.ReleaseMode)
-	} else {
-		gin.SetMode(gin.DebugMode)
-	}
-	router := gin.New()
-	router.Use(gin.Recovery())
+func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services) (*echo.Echo, *edge.TunnelServer) {
+	e := echo.New()
+	e.HideBanner = true
+	e.HidePort = true
 
-	router.Use(requestLoggerMiddlewareInternal()) //nolint:contextcheck
+	if cfg.TrustedProxies == "" {
+		e.IPExtractor = echo.ExtractIPDirect()
+	} else {
+		var opts []echo.TrustOption
+		for _, cidr := range strings.Split(cfg.TrustedProxies, ",") {
+			cidr = strings.TrimSpace(cidr)
+			if cidr == "" {
+				continue
+			}
+			_, ipnet, err := net.ParseCIDR(cidr)
+			if err != nil {
+				slog.Warn("invalid TRUSTED_PROXIES CIDR, ignoring", "cidr", cidr, "error", err)
+				continue
+			}
+			opts = append(opts, echo.TrustIPRange(ipnet))
+		}
+		if len(opts) == 0 {
+			slog.Warn("TRUSTED_PROXIES set but no valid CIDRs found; falling back to direct IP extraction")
+			e.IPExtractor = echo.ExtractIPDirect()
+		} else {
+			e.IPExtractor = echo.ExtractIPFromXFFHeader(opts...)
+		}
+	}
+
+	e.Use(echomiddleware.Recover())
+	e.Use(requestLoggerMiddlewareInternal()) //nolint:contextcheck
 
 	authMiddleware := middleware.NewAuthMiddleware(appServices.Auth, cfg).
 		WithApiKeyValidator(appServices.ApiKey).
 		WithEnvironmentAccessTokenResolver(appServices.Environment)
-	corsMiddleware := middleware.NewCORSMiddleware(cfg).Add()
-	router.Use(corsMiddleware)
+	e.Use(middleware.NewCORSMiddleware(cfg).Add())
 
-	apiGroup := router.Group("/api")
+	apiGroup := e.Group("/api")
+	apiGroup.Use(echomiddleware.GzipWithConfig(echomiddleware.GzipConfig{
+		Level: 5,
+		Skipper: func(c echo.Context) bool {
+			if strings.EqualFold(c.Request().Header.Get(echo.HeaderUpgrade), "websocket") {
+				return true
+			}
+			path := c.Request().URL.Path
+			return strings.Contains(path, "/ws/") || strings.Contains(path, "/logs") || strings.Contains(path, "/terminal")
+		},
+	}))
+
+	apiGroup.Use(middleware.PerIPRateLimitForPaths(
+		[]string{
+			"/api/auth/login",
+			"/api/auth/refresh",
+			"/api/oidc/callback",
+		}, 5, 5,
+	))
+	apiGroup.Use(middleware.PerIPRateLimitForPaths(
+		[]string{"/api/webhooks/trigger/:token"}, 60, 10,
+	))
+
 	tunnelRegistry := edge.NewTunnelRegistry()
 	edge.SetDefaultRegistry(tunnelRegistry)
 	envResolver := func(ctx context.Context, id string) (string, *string, bool, error) {
@@ -137,17 +186,18 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services)
 	}
 
 	// Register public webhook trigger endpoint before auth middleware (token in URL is the sole auth)
-	handlers.RegisterWebhookTrigger(apiGroup, appServices.Webhook) //nolint:contextcheck
+	api.RegisterWebhookTrigger(apiGroup, appServices.Webhook) //nolint:contextcheck
 
+	//nolint:contextcheck // Echo middleware reads context from echo.Context.Request().Context(), not a parameter.
 	envProxyMiddleware := middleware.NewEnvProxyMiddlewareWithParam(
 		types.LOCAL_DOCKER_ENVIRONMENT_ID,
 		"id",
 		envResolver,
-		createAuthValidator(appServices),
+		createAuthValidatorInternal(appServices),
 	)
 	apiGroup.Use(envProxyMiddleware)
 
-	humaServices := &huma.Services{
+	humaServices := &api.Services{
 		User:              appServices.User,
 		Auth:              appServices.Auth,
 		Oidc:              appServices.Oidc,
@@ -187,16 +237,17 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services)
 		Config:            cfg,
 	}
 
-	_ = huma.SetupAPI(router, apiGroup, cfg, humaServices)
+	_ = api.SetupAPI(e, apiGroup, cfg, humaServices)
 
 	for _, register := range registerBuildableRoutes {
 		register(apiGroup, appServices)
 	}
 
-	api.RegisterDiagnosticsRoutes(apiGroup, authMiddleware, api.DefaultWebSocketMetrics()) //nolint:contextcheck
+	api.RegisterDiagnosticsRoutes(apiGroup, authMiddleware, ws.DefaultWebSocketMetrics()) //nolint:contextcheck
+	registerPprofRoutesInternal(apiGroup, authMiddleware)                                 //nolint:contextcheck
 
-	// Remaining Gin handlers (WebSocket/streaming)
-	api.NewWebSocketHandler(apiGroup, appServices.Project, appServices.Container, appServices.Swarm, appServices.System, authMiddleware, cfg) //nolint:contextcheck
+	// Remaining echo handlers (WebSocket/streaming)
+	ws.NewWebSocketHandler(apiGroup, appServices.Project, appServices.Container, appServices.Swarm, appServices.System, authMiddleware, cfg) //nolint:contextcheck
 
 	// Register edge tunnel endpoint for manager to accept agent connections
 	// This is only registered when NOT in agent mode (i.e., running as manager)
@@ -211,9 +262,21 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services)
 		}
 	}
 
-	if err := frontend.RegisterFrontend(router); err != nil {
-		_, _ = gin.DefaultErrorWriter.Write([]byte("Failed to register frontend: " + err.Error() + "\n"))
+	if err := frontend.RegisterFrontend(e); err != nil {
+		slog.Error("Failed to register frontend", "error", err)
 	}
 
-	return router, tunnelServer
+	return e, tunnelServer
+}
+
+func registerPprofRoutesInternal(apiGroup *echo.Group, authMiddleware *middleware.AuthMiddleware) {
+	pprofGroup := apiGroup.Group("/debug/pprof", authMiddleware.WithAdminRequired().Add())
+	pprofGroup.GET("", echo.WrapHandler(http.HandlerFunc(pprof.Index)))
+	pprofGroup.GET("/", echo.WrapHandler(http.HandlerFunc(pprof.Index)))
+	pprofGroup.GET("/cmdline", echo.WrapHandler(http.HandlerFunc(pprof.Cmdline)))
+	pprofGroup.GET("/profile", echo.WrapHandler(http.HandlerFunc(pprof.Profile)))
+	pprofGroup.POST("/symbol", echo.WrapHandler(http.HandlerFunc(pprof.Symbol)))
+	pprofGroup.GET("/symbol", echo.WrapHandler(http.HandlerFunc(pprof.Symbol)))
+	pprofGroup.GET("/trace", echo.WrapHandler(http.HandlerFunc(pprof.Trace)))
+	pprofGroup.GET("/:name", echo.WrapHandler(http.HandlerFunc(pprof.Index)))
 }

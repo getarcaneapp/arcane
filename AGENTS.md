@@ -2,7 +2,7 @@
 
 > **All AI agents must conform to [AI_POLICY.md](./AI_POLICY.md)**
 
-Arcane is a modern Docker management UI with a **Go backend** (Huma v2 API), **SvelteKit frontend** (Svelte 5), and an optional headless agent. Three Go modules unified via `go.work`: `backend/`, `cli/`, `types/`.
+Arcane is a modern Docker management UI with a **Go backend** (Echo router with Huma v2 typed API), **SvelteKit frontend** (Svelte 5), an optional headless agent, and a Cobra CLI. Three Go modules are unified via `go.work`: `backend/`, `cli/`, `types/`.
 
 ### Domain docs
 
@@ -23,21 +23,62 @@ Single-context domain docs live at `CONTEXT.md`;
 ### Backend (`backend/`)
 
 ```
+cmd/                  # backend entrypoint
+api/                  # HTTP API surface
+├── api.go            # Huma v2 setup mounted on Echo via humaecho
+├── handlers/         # Huma handlers — thin wrappers that call services
+├── middleware/       # Huma-specific auth bridge
+└── ws/               # Echo WebSocket handlers
+frontend/             # embedded SvelteKit build registration
 internal/
-├── bootstrap/        # App initialization & DI wiring — START HERE for understanding how services connect
-├── huma/handlers/    # HTTP handlers (Huma v2) — thin wrappers that call services
-├── services/         # Business logic — *_service.go files contain all domain logic
-├── models/           # GORM database models (include BaseModel for UUID, timestamps)
+├── bootstrap/        # App initialization, DI wiring, Echo router setup — START HERE
 ├── config/           # Environment configuration
-└── middleware/       # Auth, logging, rate limiting
+├── database/         # GORM connection and migrations
+├── middleware/       # Echo middleware: auth, CORS, env proxy, rate limiting
+├── models/           # GORM database models (include BaseModel for UUID, timestamps)
+└── services/         # Business logic — *_service.go files contain domain logic
+pkg/
+├── libarcane/        # Core reusable backend/domain libraries
+├── projects/         # Compose project parsing and filesystem helpers
+├── scheduler/        # Cron-backed background jobs
+├── pagination/       # Search/filter/sort/pagination helpers
+└── utils/            # Shared helper utilities
+resources/            # migrations, images, fonts, email templates
 ```
 
 **Key patterns:**
 
-- Handlers are thin: extract user from context, call service, return response
+- Echo is the HTTP router. Do not add Gin code or Gin middleware.
+- Huma v2 is still the typed REST/OpenAPI layer, mounted on Echo in `backend/api/api.go` with `humaecho.NewWithGroup`.
+- Handlers are thin: extract typed input and auth context, call a service, return a typed response.
 - Services receive dependencies via constructor injection (see [bootstrap.go](backend/internal/bootstrap/bootstrap.go))
+- Router wiring and cross-cutting Echo middleware live in [router_bootstrap.go](backend/internal/bootstrap/router_bootstrap.go)
+- Direct Echo routes are reserved for behavior that does not fit Huma cleanly, such as WebSockets, streaming/diagnostics, webhook trigger routes, Playwright-only routes, buildable auth routes, and the embedded frontend.
 - Use `slog` for structured logging with context
 - Error wrapping: `fmt.Errorf("context: %w", err)`
+
+### API Layer (`backend/api/`)
+
+```
+api.go               # Huma config, schema naming, auth bridge, handler registration
+handlers/*.go        # Resource handlers registered with huma.Register
+middleware/auth.go   # Bridge from Huma middleware to auth services
+ws/handler.go        # Echo WebSocket endpoints under /api/environments/:id/ws
+diagnostics.go       # Direct Echo diagnostic routes
+webhooks_trigger.go  # Public Echo webhook trigger route
+```
+
+Huma handlers use typed input/output structs with struct tags for validation:
+
+```go
+type ListContainersInput struct {
+    EnvironmentID string `path:"id" doc:"Environment ID"`
+    Search        string `query:"search" doc:"Search query"`
+    Limit         int    `query:"limit" default:"20" doc:"Limit"`
+}
+```
+
+Register new typed API handlers from `backend/api/handlers/` through `registerHandlers` in [api.go](backend/api/api.go). Use Echo groups only when the endpoint needs raw `echo.Context`, WebSockets, streaming, or custom middleware behavior that Huma cannot model.
 
 ### Frontend (`frontend/src/`)
 
@@ -48,11 +89,16 @@ lib/components/       # Reusable Svelte components (shadcn-svelte based)
 lib/services/         # API service classes extending BaseAPIService
 lib/stores/           # Svelte stores (*.store.svelte files use runes)
 lib/types/            # TypeScript types
+../messages/en.json   # Source i18n messages; Crowdin handles other locales
 ```
 
 ### Shared Types (`types/`)
 
 Domain types shared between backend and CLI. Each domain has its own package (e.g., `types/container/`, `types/image/`).
+
+### CLI (`cli/`)
+
+The CLI is a Cobra application. Commands live under `cli/pkg/<domain>/`, shared command helpers live under `cli/internal/`, and public API shapes should come from `types/` instead of duplicating structs.
 
 ## Critical Patterns
 
@@ -92,9 +138,9 @@ export class ContainerService extends BaseAPIService {
 export const containerService = new ContainerService();
 ```
 
-### Huma Handler Pattern
+### Echo + Huma Handler Pattern
 
-Handlers use typed input/output structs with struct tags for validation:
+Use Huma for normal REST endpoints. Define typed input/output structs, then register the operation with `huma.Register` in the relevant `backend/api/handlers/*.go` file:
 
 ```go
 type ListContainersInput struct {
@@ -104,7 +150,7 @@ type ListContainersInput struct {
 }
 ```
 
-Register handlers in [backend/internal/huma/handlers/](backend/internal/huma/handlers/).
+Echo middleware and router setup belong in [router_bootstrap.go](backend/internal/bootstrap/router_bootstrap.go) or `backend/internal/middleware/`. Huma authentication behavior belongs in `backend/api/middleware/`.
 
 ## Testing
 
@@ -147,6 +193,26 @@ func (h *ContainerHandler) RestartContainer(ctx context.Context, input *RestartI
     }
     return &RestartOutput{Success: true}, nil
 }
+```
+
+### Anti-Pattern 1b: Reintroducing Gin
+
+**Bad**: Adding a parallel Gin router or Gin middleware
+
+```go
+r := gin.Default()
+r.GET("/api/containers", handler)
+```
+
+**Good**: Mount REST endpoints through Huma on the existing Echo router, or use an Echo group for raw streaming/WebSocket cases
+
+```go
+huma.Register(api, huma.Operation{
+    OperationID: "list-containers",
+    Method:      http.MethodGet,
+    Path:        "/environments/{id}/containers",
+    Tags:        []string{"Containers"},
+}, h.ListContainers)
 ```
 
 ### Anti-Pattern 2: Svelte 4 Syntax
@@ -230,6 +296,20 @@ import type { Container } from "$lib/types";
 function processContainer(data: Container): string {
   return data.name;
 }
+```
+
+### Anti-Pattern 6: Raw Frontend Strings
+
+**Bad**: User-facing text hardcoded in components
+
+```svelte
+<Button>Save changes</Button>
+```
+
+**Good**: Add the source string to `frontend/messages/en.json` and call the generated Paraglide message
+
+```svelte
+<Button>{m.common_save_changes()}</Button>
 ```
 
 ## Container Registry Integration

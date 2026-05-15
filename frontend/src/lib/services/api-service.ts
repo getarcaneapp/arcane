@@ -279,6 +279,11 @@ class APIClient {
 					}
 				}
 
+				if (errorResponse.status === 403 && typeof window !== 'undefined') {
+					const reason = extractServerMessage(parsed) ?? 'You do not have permission to perform this action.';
+					toast.error('Access denied', { description: reason });
+				}
+
 				throw new APIError(extractServerMessage(parsed, true) ?? error.message, {
 					cause: error,
 					config: requestConfig,

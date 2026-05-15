@@ -1,0 +1,401 @@
+package handlers
+
+import (
+	"context"
+	"log/slog"
+	"net/http"
+	"time"
+
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/getarcaneapp/arcane/backend/internal/common"
+	"github.com/getarcaneapp/arcane/backend/internal/config"
+	"github.com/getarcaneapp/arcane/backend/internal/services"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils/cookie"
+	httputils "github.com/getarcaneapp/arcane/backend/pkg/utils/httpx"
+	"github.com/getarcaneapp/arcane/types/auth"
+	"github.com/getarcaneapp/arcane/types/user"
+)
+
+// OidcHandler handles OIDC authentication endpoints.
+type OidcHandler struct {
+	authService *services.AuthService
+	oidcService *services.OidcService
+	config      *config.Config
+}
+
+// ============================================================================
+// Input/Output Types
+// ============================================================================
+
+type OidcHeaders struct {
+	Origin          string `header:"Origin"`
+	XForwardedHost  string `header:"X-Forwarded-Host"`
+	XForwardedProto string `header:"X-Forwarded-Proto"`
+	Host            string `header:"Host"`
+	UserAgent       string `header:"User-Agent"`
+}
+
+type GetOidcStatusInput struct{}
+
+type GetOidcStatusOutput struct {
+	Body auth.OidcStatusInfo
+}
+
+type GetOidcAuthUrlInput struct {
+	OidcHeaders
+	Body auth.OidcAuthUrlRequest
+}
+
+type GetOidcAuthUrlOutput struct {
+	SetCookie string `header:"Set-Cookie" doc:"OIDC state cookie"`
+	Body      auth.OidcAuthUrlResponse
+}
+
+type HandleOidcCallbackInput struct {
+	OidcHeaders
+	OidcStateCookie string `cookie:"oidc_state" doc:"OIDC state cookie from auth URL request"`
+	Body            auth.OidcCallbackRequest
+}
+
+type HandleOidcCallbackOutput struct {
+	SetCookie []string `header:"Set-Cookie" doc:"Session and clear state cookies"`
+	Body      auth.OidcCallbackResponse
+}
+
+type GetOidcConfigInput struct {
+	OidcHeaders
+}
+
+type GetOidcConfigOutput struct {
+	Body auth.OidcConfigResponse
+}
+
+type InitiateDeviceAuthInput struct{}
+
+type InitiateDeviceAuthOutput struct {
+	Body auth.OidcDeviceAuthResponse
+}
+
+type ExchangeDeviceTokenInput struct {
+	UserAgent string `header:"User-Agent"`
+	Body      auth.OidcDeviceTokenRequest
+}
+
+type ExchangeDeviceTokenOutput struct {
+	SetCookie []string `header:"Set-Cookie" doc:"Session token cookie"`
+	Body      auth.OidcDeviceTokenResponse
+}
+
+// ============================================================================
+// Registration
+// ============================================================================
+
+// RegisterOidc registers all OIDC authentication endpoints using Huma.
+func RegisterOidc(api huma.API, authService *services.AuthService, oidcService *services.OidcService, cfg *config.Config) {
+	h := &OidcHandler{authService: authService, oidcService: oidcService, config: cfg}
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-oidc-status",
+		Method:      http.MethodGet,
+		Path:        "/oidc/status",
+		Summary:     "Get OIDC status",
+		Description: "Get the current OIDC configuration status",
+		Tags:        []string{"OIDC"},
+		Security:    []map[string][]string{},
+	}, h.GetOidcStatus)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-oidc-config",
+		Method:      http.MethodGet,
+		Path:        "/oidc/config",
+		Summary:     "Get OIDC config",
+		Description: "Get the OIDC client configuration",
+		Tags:        []string{"OIDC"},
+		Security:    []map[string][]string{},
+	}, h.GetOidcConfig)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-oidc-auth-url",
+		Method:      http.MethodPost,
+		Path:        "/oidc/url",
+		Summary:     "Get OIDC auth URL",
+		Description: "Generate an OIDC authorization URL for login",
+		Tags:        []string{"OIDC"},
+		Security:    []map[string][]string{},
+	}, h.GetOidcAuthUrl)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "handle-oidc-callback",
+		Method:      http.MethodPost,
+		Path:        "/oidc/callback",
+		Summary:     "Handle OIDC callback",
+		Description: "Process the OIDC callback and complete authentication",
+		Tags:        []string{"OIDC"},
+		Security:    []map[string][]string{},
+	}, h.HandleOidcCallback)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "initiate-oidc-device-auth",
+		Method:      http.MethodPost,
+		Path:        "/oidc/device/code",
+		Summary:     "Initiate OIDC device authorization",
+		Description: "Start the device authorization flow for CLI authentication",
+		Tags:        []string{"OIDC"},
+		Security:    []map[string][]string{},
+	}, h.InitiateDeviceAuth)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "exchange-oidc-device-token",
+		Method:      http.MethodPost,
+		Path:        "/oidc/device/token",
+		Summary:     "Exchange device code for tokens",
+		Description: "Exchange a device code for authentication tokens",
+		Tags:        []string{"OIDC"},
+		Security:    []map[string][]string{},
+	}, h.ExchangeDeviceToken)
+}
+
+// ============================================================================
+// Handler Methods
+// ============================================================================
+
+// GetOidcStatus returns the OIDC configuration status.
+func (h *OidcHandler) GetOidcStatus(ctx context.Context, _ *GetOidcStatusInput) (*GetOidcStatusOutput, error) {
+	if h.authService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	status, err := h.authService.GetOidcConfigurationStatus(ctx)
+	if err != nil {
+		return nil, huma.Error500InternalServerError((&common.OidcStatusError{Err: err}).Error())
+	}
+
+	return &GetOidcStatusOutput{
+		Body: *status,
+	}, nil
+}
+
+// GetOidcConfig returns the OIDC client configuration.
+func (h *OidcHandler) GetOidcConfig(ctx context.Context, input *GetOidcConfigInput) (*GetOidcConfigOutput, error) {
+	if h.authService == nil || h.oidcService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	config, err := h.authService.GetOidcConfig(ctx)
+	if err != nil {
+		return nil, huma.Error500InternalServerError((&common.OidcConfigError{}).Error())
+	}
+
+	appUrl := ""
+	if h.config != nil {
+		appUrl = h.config.AppUrl
+	}
+	origin := httputils.GetClientBaseURL(input.Origin, input.XForwardedHost, input.XForwardedProto, input.Host, appUrl)
+
+	return &GetOidcConfigOutput{
+		Body: auth.OidcConfigResponse{
+			ClientID:                    config.ClientID,
+			RedirectUri:                 h.oidcService.GetOidcRedirectURL(origin),
+			IssuerUrl:                   config.IssuerURL,
+			AuthorizationEndpoint:       config.AuthorizationEndpoint,
+			TokenEndpoint:               config.TokenEndpoint,
+			UserinfoEndpoint:            config.UserinfoEndpoint,
+			DeviceAuthorizationEndpoint: config.DeviceAuthorizationEndpoint,
+			Scopes:                      config.Scopes,
+		},
+	}, nil
+}
+
+// GetOidcAuthUrl generates an OIDC authorization URL and sets the state cookie.
+func (h *OidcHandler) GetOidcAuthUrl(ctx context.Context, input *GetOidcAuthUrlInput) (*GetOidcAuthUrlOutput, error) {
+	if h.authService == nil || h.oidcService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	enabled, err := h.authService.IsOidcEnabled(ctx)
+	if err != nil {
+		return nil, huma.Error500InternalServerError((&common.OidcStatusCheckError{}).Error())
+	}
+	if !enabled {
+		return nil, huma.Error400BadRequest((&common.OidcDisabledError{}).Error())
+	}
+
+	appUrl := ""
+	if h.config != nil {
+		appUrl = h.config.AppUrl
+	}
+	origin := httputils.GetClientBaseURL(input.Origin, input.XForwardedHost, input.XForwardedProto, input.Host, appUrl)
+
+	mobileRedirectURI := input.Body.MobileRedirectUri
+	if mobileRedirectURI != "" {
+		if err := h.oidcService.ValidateMobileRedirectURI(ctx, mobileRedirectURI); err != nil {
+			slog.WarnContext(ctx, "OIDC auth URL: rejected mobile redirect URI", "uri", mobileRedirectURI, "error", err)
+			return nil, huma.Error400BadRequest(err.Error())
+		}
+	}
+
+	authUrl, stateCookieValue, err := h.oidcService.GenerateAuthURL(ctx, input.Body.RedirectUri, origin, mobileRedirectURI)
+	if err != nil {
+		return nil, huma.Error500InternalServerError((&common.OidcAuthUrlGenerationError{Err: err}).Error())
+	}
+
+	// Build state cookie (600 seconds = 10 minutes)
+	stateCookie := cookie.BuildOidcStateCookieString(stateCookieValue, 600, false)
+
+	return &GetOidcAuthUrlOutput{
+		SetCookie: stateCookie,
+		Body: auth.OidcAuthUrlResponse{
+			AuthUrl: authUrl,
+		},
+	}, nil
+}
+
+// HandleOidcCallback processes the OIDC callback and completes authentication.
+func (h *OidcHandler) HandleOidcCallback(ctx context.Context, input *HandleOidcCallbackInput) (*HandleOidcCallbackOutput, error) {
+	if h.authService == nil || h.oidcService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	// Validate state cookie
+	if input.OidcStateCookie == "" {
+		return nil, huma.Error400BadRequest((&common.OidcStateCookieError{}).Error())
+	}
+
+	appUrl := ""
+	if h.config != nil {
+		appUrl = h.config.AppUrl
+	}
+	origin := httputils.GetClientBaseURL(input.Origin, input.XForwardedHost, input.XForwardedProto, input.Host, appUrl)
+
+	mobileRedirectURI := input.Body.MobileRedirectUri
+	if mobileRedirectURI != "" {
+		if err := h.oidcService.ValidateMobileRedirectURI(ctx, mobileRedirectURI); err != nil {
+			slog.WarnContext(ctx, "OIDC callback: rejected mobile redirect URI", "uri", mobileRedirectURI, "error", err)
+			return nil, huma.Error400BadRequest(err.Error())
+		}
+	}
+
+	// Process OIDC callback
+	userInfo, tokenResp, err := h.oidcService.HandleCallback(ctx, input.Body.Code, input.Body.State, input.OidcStateCookie, origin, mobileRedirectURI)
+	if err != nil {
+		slog.WarnContext(ctx, "OIDC callback failed", "error", err, "origin", origin, "state_present", input.Body.State != "", "code_present", input.Body.Code != "")
+		return nil, huma.Error400BadRequest((&common.OidcCallbackError{Err: err}).Error())
+	}
+
+	// Complete login
+	userModel, tokenPair, err := h.authService.OidcLogin(ctx, *userInfo, tokenResp, sessionMetaFromContextInternal(ctx, input.UserAgent))
+	if err != nil {
+		return nil, huma.Error500InternalServerError((&common.AuthFailedError{Err: err}).Error())
+	}
+
+	// Build cookies: clear the state cookie always; only set the session
+	// token cookie for browser flows (mobile clients use Bearer tokens from
+	// the JSON body and never consume the cookie).
+	clearStateCookie := cookie.BuildClearOidcStateCookieString(false)
+	setCookies := []string{clearStateCookie}
+	if mobileRedirectURI == "" {
+		maxAge := max(int(time.Until(tokenPair.ExpiresAt).Seconds()), 0)
+		maxAge += 60 // Add 60 seconds buffer for clock skew
+		setCookies = append(setCookies, cookie.BuildTokenCookieString(maxAge, tokenPair.AccessToken))
+	}
+
+	return &HandleOidcCallbackOutput{
+		SetCookie: setCookies,
+		Body: auth.OidcCallbackResponse{
+			Success:      true,
+			Token:        tokenPair.AccessToken,
+			RefreshToken: tokenPair.RefreshToken,
+			ExpiresAt:    tokenPair.ExpiresAt,
+			User: user.User{
+				ID:            userModel.ID,
+				Username:      userModel.Username,
+				DisplayName:   userModel.DisplayName,
+				Email:         userModel.Email,
+				Roles:         userModel.Roles,
+				OidcSubjectId: userModel.OidcSubjectId,
+			},
+		},
+	}, nil
+}
+
+// InitiateDeviceAuth initiates the OIDC device authorization flow.
+func (h *OidcHandler) InitiateDeviceAuth(ctx context.Context, _ *InitiateDeviceAuthInput) (*InitiateDeviceAuthOutput, error) {
+	if h.authService == nil || h.oidcService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	enabled, err := h.authService.IsOidcEnabled(ctx)
+	if err != nil {
+		return nil, huma.Error500InternalServerError((&common.OidcStatusCheckError{}).Error())
+	}
+	if !enabled {
+		return nil, huma.Error400BadRequest((&common.OidcDisabledError{}).Error())
+	}
+
+	response, err := h.oidcService.InitiateDeviceAuth(ctx)
+	if err != nil {
+		slog.WarnContext(ctx, "Device authorization initiation failed", "error", err)
+		return nil, huma.Error500InternalServerError((&common.OidcAuthUrlGenerationError{Err: err}).Error())
+	}
+
+	return &InitiateDeviceAuthOutput{
+		Body: *response,
+	}, nil
+}
+
+// ExchangeDeviceToken exchanges a device code for authentication tokens.
+func (h *OidcHandler) ExchangeDeviceToken(ctx context.Context, input *ExchangeDeviceTokenInput) (*ExchangeDeviceTokenOutput, error) {
+	if h.authService == nil || h.oidcService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if input.Body.DeviceCode == "" {
+		return nil, huma.Error400BadRequest("device code is required")
+	}
+
+	userInfo, tokenResp, err := h.oidcService.ExchangeDeviceToken(ctx, input.Body.DeviceCode)
+	if err != nil {
+		errMsg := err.Error()
+		switch errMsg {
+		case "authorization_pending":
+			return nil, huma.Error400BadRequest("authorization_pending")
+		case "slow_down":
+			return nil, huma.Error400BadRequest("slow_down")
+		case "expired_token":
+			return nil, huma.Error400BadRequest("expired_token")
+		case "access_denied":
+			return nil, huma.Error403Forbidden("access_denied")
+		default:
+			slog.WarnContext(ctx, "Device token exchange failed", "error", err)
+			return nil, huma.Error400BadRequest((&common.OidcCallbackError{Err: err}).Error())
+		}
+	}
+
+	userModel, tokenPair, err := h.authService.OidcLogin(ctx, *userInfo, tokenResp, sessionMetaFromContextInternal(ctx, input.UserAgent))
+	if err != nil {
+		return nil, huma.Error500InternalServerError((&common.AuthFailedError{Err: err}).Error())
+	}
+
+	maxAge := max(int(time.Until(tokenPair.ExpiresAt).Seconds()), 0)
+	maxAge += 60
+
+	tokenCookie := cookie.BuildTokenCookieString(maxAge, tokenPair.AccessToken)
+
+	return &ExchangeDeviceTokenOutput{
+		SetCookie: []string{tokenCookie},
+		Body: auth.OidcDeviceTokenResponse{
+			Success:      true,
+			Token:        tokenPair.AccessToken,
+			RefreshToken: tokenPair.RefreshToken,
+			ExpiresAt:    tokenPair.ExpiresAt,
+			User: user.User{
+				ID:            userModel.ID,
+				Username:      userModel.Username,
+				DisplayName:   userModel.DisplayName,
+				Email:         userModel.Email,
+				Roles:         userModel.Roles,
+				OidcSubjectId: userModel.OidcSubjectId,
+			},
+		},
+	}, nil
+}

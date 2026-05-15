@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/getarcaneapp/arcane/backend/internal/huma"
+	"github.com/getarcaneapp/arcane/backend/api"
 	"github.com/spf13/cobra"
 )
 
@@ -18,19 +18,19 @@ var openapiCmd = &cobra.Command{
 		outputFile, _ := cmd.Flags().GetString("output")
 
 		// Create Huma API for spec generation (no services needed)
-		api := huma.SetupAPIForSpec()
+		humaAPI := api.SetupAPIForSpec()
 
 		// Generate output
 		var output []byte
 		var err error
 
 		if format == "json" {
-			output, err = api.OpenAPI().MarshalJSON()
+			output, err = humaAPI.OpenAPI().MarshalJSON()
 		} else {
 			if downgrade {
-				output, err = api.OpenAPI().DowngradeYAML()
+				output, err = humaAPI.OpenAPI().DowngradeYAML()
 			} else {
-				output, err = api.OpenAPI().YAML()
+				output, err = humaAPI.OpenAPI().YAML()
 			}
 		}
 

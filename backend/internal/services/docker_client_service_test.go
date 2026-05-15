@@ -197,7 +197,7 @@ func TestCountImageUsage_NoImages(t *testing.T) {
 }
 
 func newDockerClientServiceForTestInternal(host string) *DockerClientService {
-	return NewDockerClientService(nil, &config.Config{DockerHost: host}, nil)
+	return NewDockerClientService(context.Background(), nil, &config.Config{DockerHost: host}, nil)
 }
 
 func newDockerPingTestServerInternal(t *testing.T, apiVersion string) *httptest.Server {

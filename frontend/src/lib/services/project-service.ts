@@ -104,11 +104,27 @@ export class ProjectService extends BaseAPIService {
 	}
 
 	async getProjectForEnvironment(environmentId: string, projectId: string): Promise<Project> {
-		const response = await this.handleResponse<{ project?: Project; success?: boolean }>(
-			this.api.get(`/environments/${environmentId}/projects/${projectId}`)
-		);
+		const basePath = `/environments/${environmentId}/projects/${projectId}`;
+		const [summary, compose, files, runtime, updates] = await Promise.all([
+			this.getProjectSection(basePath),
+			this.getProjectSection(`${basePath}/compose`),
+			this.getProjectSection(`${basePath}/files`),
+			this.getProjectSection(`${basePath}/runtime`),
+			this.getProjectSection(`${basePath}/updates`)
+		]);
 
-		return response.project ? response.project : (response as Project);
+		return {
+			...summary,
+			...compose,
+			...files,
+			...runtime,
+			updateInfo: updates.updateInfo ?? compose.updateInfo ?? summary.updateInfo
+		};
+	}
+
+	private async getProjectSection(path: string): Promise<Project> {
+		const response = await this.handleResponse<{ project?: Project; success?: boolean } | Project>(this.api.get(path));
+		return 'project' in response && response.project ? response.project : (response as Project);
 	}
 
 	async getProjectFile(projectId: string, relativePath: string): Promise<IncludeFile> {

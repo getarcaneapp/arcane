@@ -14,8 +14,8 @@ import (
 	"time"
 
 	tunnelpb "github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge/proto/tunnel/v1"
-	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/net/http2"
@@ -463,15 +463,13 @@ func TestTunnelClient_GRPC_WebSocketProxyEndToEnd(t *testing.T) {
 		return ok && tunnel != nil && !tunnel.Conn.IsClosed()
 	}, 5*time.Second, 20*time.Millisecond)
 
-	gin.SetMode(gin.TestMode)
-	router := gin.New()
-	router.GET("/proxy-ws", func(c *gin.Context) {
+	router := echo.New()
+	router.GET("/proxy-ws", func(c echo.Context) error {
 		tunnel, ok := GetRegistry().Get(envID)
 		if !ok || tunnel == nil {
-			c.AbortWithStatus(http.StatusServiceUnavailable)
-			return
+			return c.NoContent(http.StatusServiceUnavailable)
 		}
-		ProxyWebSocketRequest(c, tunnel, "/api/environments/0/ws/system/stats")
+		return ProxyWebSocketRequest(c, tunnel, "/api/environments/0/ws/system/stats")
 	})
 
 	proxyServer := httptest.NewServer(router)

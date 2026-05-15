@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v4"
 	"golang.org/x/time/rate"
 )
 
@@ -107,11 +107,9 @@ func (l *ipRateLimiter) evictOldestEntriesInternal(count int, protectedKey strin
 	}
 }
 
-// PerIPRateLimit returns a Gin middleware that limits requests per client IP
-// to the given rate and burst. It responds with 429 when the limit is
-// exceeded. It is intended for public unauthenticated or weakly-authenticated
-// endpoints such as agent mTLS enrollment.
-func PerIPRateLimit(perMinute int, burst int) gin.HandlerFunc {
+// PerIPRateLimit returns an Echo middleware that limits requests per client IP
+// to the given rate and burst. It responds with 429 when the limit is exceeded.
+func PerIPRateLimit(perMinute int, burst int) echo.MiddlewareFunc {
 	if perMinute <= 0 {
 		perMinute = 10
 	}
@@ -120,24 +118,21 @@ func PerIPRateLimit(perMinute int, burst int) gin.HandlerFunc {
 	}
 	limiter := newIPRateLimiterInternal(rate.Every(time.Minute/time.Duration(perMinute)), burst)
 
-	return func(c *gin.Context) {
-		key := clientIPForRateLimitInternal(c)
-		if !limiter.allow(key) {
-			c.Header("Retry-After", "60")
-			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": "rate limit exceeded"})
-			return
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			key := clientIPForRateLimitInternal(c)
+			if !limiter.allow(key) {
+				c.Response().Header().Set("Retry-After", "60")
+				return c.JSON(http.StatusTooManyRequests, map[string]any{"error": "rate limit exceeded"})
+			}
+			return next(c)
 		}
-		c.Next()
 	}
 }
 
-// PerAgentTokenRateLimit returns a Gin middleware that limits requests per
-// edge agent token to the given rate and burst. Requests without a token pass
-// through so endpoint authentication can return the canonical auth error.
-// This is a token-scoped limiter only; enrollment and tunnel routes must also
-// stack PerIPRateLimit before it to provide IP-level back-pressure when tokens
-// are missing, invalid, rotated, or stolen.
-func PerAgentTokenRateLimit(perMinute int, burst int) gin.HandlerFunc {
+// PerAgentTokenRateLimit returns an Echo middleware that limits requests per
+// edge agent token to the given rate and burst.
+func PerAgentTokenRateLimit(perMinute int, burst int) echo.MiddlewareFunc {
 	if perMinute <= 0 {
 		perMinute = 10
 	}
@@ -146,21 +141,22 @@ func PerAgentTokenRateLimit(perMinute int, burst int) gin.HandlerFunc {
 	}
 	limiter := newIPRateLimiterInternal(rate.Every(time.Minute/time.Duration(perMinute)), burst)
 
-	return func(c *gin.Context) {
-		key := strings.TrimSpace(c.GetHeader("X-Arcane-Agent-Token"))
-		if key == "" {
-			key = strings.TrimSpace(c.GetHeader("X-API-Key"))
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			req := c.Request()
+			key := strings.TrimSpace(req.Header.Get("X-Arcane-Agent-Token"))
+			if key == "" {
+				key = strings.TrimSpace(req.Header.Get("X-API-Key"))
+			}
+			if key == "" {
+				return next(c)
+			}
+			if !limiter.allow(agentTokenRateLimitKeyInternal(key)) {
+				c.Response().Header().Set("Retry-After", "60")
+				return c.JSON(http.StatusTooManyRequests, map[string]any{"error": "rate limit exceeded"})
+			}
+			return next(c)
 		}
-		if key == "" {
-			c.Next()
-			return
-		}
-		if !limiter.allow(agentTokenRateLimitKeyInternal(key)) {
-			c.Header("Retry-After", "60")
-			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": "rate limit exceeded"})
-			return
-		}
-		c.Next()
 	}
 }
 
@@ -169,14 +165,38 @@ func agentTokenRateLimitKeyInternal(token string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func clientIPForRateLimitInternal(c *gin.Context) string {
-	// Prefer the Gin-resolved client IP, which respects trusted proxy config.
-	if ip := strings.TrimSpace(c.ClientIP()); ip != "" {
+// PerIPRateLimitForPaths returns an Echo middleware that applies a per-IP
+// rate limit only when c.Path() (the registered route pattern) is in paths.
+// Each path gets its own independent token bucket, so traffic on one path
+// does not deplete the budget for another (e.g. a login burst will not
+// block a concurrent token refresh).
+func PerIPRateLimitForPaths(paths []string, perMinute int, burst int) echo.MiddlewareFunc {
+	limiters := make(map[string]echo.MiddlewareFunc, len(paths))
+	for _, p := range paths {
+		limiters[p] = PerIPRateLimit(perMinute, burst)
+	}
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		gatedByPath := make(map[string]echo.HandlerFunc, len(limiters))
+		for p, rl := range limiters {
+			gatedByPath[p] = rl(next)
+		}
+		return func(c echo.Context) error {
+			gated, ok := gatedByPath[c.Path()]
+			if !ok {
+				return next(c)
+			}
+			return gated(c)
+		}
+	}
+}
+
+func clientIPForRateLimitInternal(c echo.Context) string {
+	if ip := strings.TrimSpace(c.RealIP()); ip != "" {
 		return ip
 	}
-	host, _, err := net.SplitHostPort(c.Request.RemoteAddr)
+	host, _, err := net.SplitHostPort(c.Request().RemoteAddr)
 	if err != nil {
-		return c.Request.RemoteAddr
+		return c.Request().RemoteAddr
 	}
 	return host
 }

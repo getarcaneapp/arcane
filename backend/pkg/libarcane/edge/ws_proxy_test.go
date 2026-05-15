@@ -8,15 +8,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestProxyWebSocketRequest(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	// Custom Mock Agent Server
 	agentServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		upgrader := websocket.Upgrader{}
@@ -93,12 +91,12 @@ func TestProxyWebSocketRequest(t *testing.T) {
 	}()
 
 	// Setup Manager
-	ginRouter := gin.New()
-	ginRouter.GET("/proxy-ws", func(c *gin.Context) {
-		ProxyWebSocketRequest(c, tunnel, "/api/environments/0/ws/system/stats")
+	router := echo.New()
+	router.GET("/proxy-ws", func(c echo.Context) error {
+		return ProxyWebSocketRequest(c, tunnel, "/api/environments/0/ws/system/stats")
 	})
 
-	proxyServer := httptest.NewServer(ginRouter)
+	proxyServer := httptest.NewServer(router)
 	defer proxyServer.Close()
 
 	// Client Connect
@@ -129,8 +127,6 @@ func TestProxyWebSocketRequest(t *testing.T) {
 }
 
 func TestProxyWebSocketRequest_ClientClose(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	// Setup simple agent that just reads
 	agentServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		upgrader := websocket.Upgrader{}
@@ -162,11 +158,11 @@ func TestProxyWebSocketRequest_ClientClose(t *testing.T) {
 		}
 	}()
 
-	ginRouter := gin.New()
-	ginRouter.GET("/proxy-ws", func(c *gin.Context) {
-		ProxyWebSocketRequest(c, tunnel, "/api/environments/0/ws/system/stats")
+	router := echo.New()
+	router.GET("/proxy-ws", func(c echo.Context) error {
+		return ProxyWebSocketRequest(c, tunnel, "/api/environments/0/ws/system/stats")
 	})
-	proxyServer := httptest.NewServer(ginRouter)
+	proxyServer := httptest.NewServer(router)
 	defer proxyServer.Close()
 
 	proxyURL := "ws" + strings.TrimPrefix(proxyServer.URL, "http") + "/proxy-ws"
@@ -264,8 +260,6 @@ func TestSendWebSocketClose(t *testing.T) {
 }
 
 func TestHandleAgentMessage_StreamDataPreservesTextFrame(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	serverConnCh := make(chan *websocket.Conn, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		upgrader := websocket.Upgrader{}

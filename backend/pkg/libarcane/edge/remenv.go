@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/getarcaneapp/arcane/backend/pkg/remenv"
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v4"
 )
 
 const (
@@ -32,17 +32,17 @@ func CopyRequestHeaders(from http.Header, to http.Header, skip map[string]struct
 	}
 }
 
-func SetAuthHeader(req *http.Request, c *gin.Context) {
+func SetAuthHeader(req *http.Request, c echo.Context) {
 	// Forward API key header if present
-	if apiKey := c.GetHeader(HeaderAPIKey); apiKey != "" {
+	if apiKey := c.Request().Header.Get(HeaderAPIKey); apiKey != "" {
 		req.Header.Set(HeaderAPIKey, apiKey)
 	}
 
 	// Forward Authorization header or cookie token
-	if auth := c.GetHeader(HeaderAuthorization); auth != "" {
+	if auth := c.Request().Header.Get(HeaderAuthorization); auth != "" {
 		req.Header.Set(HeaderAuthorization, auth)
-	} else if cookieToken, err := c.Cookie("token"); err == nil && cookieToken != "" {
-		req.Header.Set(HeaderAuthorization, "Bearer "+cookieToken)
+	} else if ck, err := c.Cookie("token"); err == nil && ck != nil && ck.Value != "" {
+		req.Header.Set(HeaderAuthorization, "Bearer "+ck.Value)
 	}
 }
 
@@ -52,24 +52,25 @@ func SetAgentToken(req *http.Request, accessToken *string) {
 
 // BuildWebSocketHeaders constructs a header set for proxying WebSocket requests
 // to a remote environment, forwarding authentication in the same way as HTTP proxying.
-func BuildWebSocketHeaders(c *gin.Context, accessToken *string) http.Header {
+func BuildWebSocketHeaders(c echo.Context, accessToken *string) http.Header {
 	headers := http.Header{}
+	req := c.Request()
 
 	// Forward API key if present
-	if apiKey := c.GetHeader(HeaderAPIKey); apiKey != "" {
+	if apiKey := req.Header.Get(HeaderAPIKey); apiKey != "" {
 		headers.Set(HeaderAPIKey, apiKey)
 	}
 
 	// Forward authorization (header or cookie)
-	if auth := c.GetHeader(HeaderAuthorization); auth != "" {
+	if auth := req.Header.Get(HeaderAuthorization); auth != "" {
 		headers.Set(HeaderAuthorization, auth)
-	} else if token, err := c.Cookie("token"); err == nil && token != "" {
-		headers.Set(HeaderAuthorization, "Bearer "+token)
+	} else if ck, err := c.Cookie("token"); err == nil && ck != nil && ck.Value != "" {
+		headers.Set(HeaderAuthorization, "Bearer "+ck.Value)
 	}
 
 	// Forward cookies if no other auth is present
 	if headers.Get(HeaderAuthorization) == "" && headers.Get(HeaderAPIKey) == "" {
-		if cookies := c.Request.Header.Get(HeaderCookie); cookies != "" {
+		if cookies := req.Header.Get(HeaderCookie); cookies != "" {
 			headers.Set(HeaderCookie, cookies)
 		}
 	}

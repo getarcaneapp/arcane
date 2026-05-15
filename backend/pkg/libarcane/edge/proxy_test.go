@@ -13,8 +13,8 @@ import (
 	"time"
 
 	tunnelpb "github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge/proto/tunnel/v1"
-	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -100,8 +100,6 @@ func TestProxyRequest(t *testing.T) {
 }
 
 func TestProxyHTTPRequest(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	server, tunnel := setupMockAgentServer(t, func(msg *TunnelMessage) *TunnelMessage {
 		return &TunnelMessage{
 			ID:      msg.ID,
@@ -114,13 +112,13 @@ func TestProxyHTTPRequest(t *testing.T) {
 	defer server.Close()
 	defer func() { _ = tunnel.Close() }()
 
-	// Mock Gin context
+	e := echo.New()
 	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPost, "/test", bytes.NewBufferString("request body"))
-	c.Request.Header.Set("X-Custom", "header")
+	req := httptest.NewRequest(http.MethodPost, "/test", bytes.NewBufferString("request body"))
+	req.Header.Set("X-Custom", "header")
+	c := e.NewContext(req, w)
 
-	ProxyHTTPRequest(c, tunnel, "/api/environments/0/projects")
+	_ = ProxyHTTPRequest(c, tunnel, "/api/environments/0/projects")
 
 	assert.Equal(t, http.StatusCreated, w.Code)
 	assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
@@ -128,8 +126,6 @@ func TestProxyHTTPRequest(t *testing.T) {
 }
 
 func TestProxyHTTPRequest_GRPCTunnel(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 
 	envID := "env-grpc-proxy-http-1"
@@ -229,13 +225,14 @@ func TestProxyHTTPRequest_GRPCTunnel(t *testing.T) {
 		return ok && tunnel != nil && !tunnel.Conn.IsClosed()
 	}, time.Second, 10*time.Millisecond)
 
+	e := echo.New()
 	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPost, "/test?from=test", bytes.NewBufferString("request body"))
-	c.Request.Header.Set("X-Custom", "header")
-	c.Request.Header.Set("Connection", "keep-alive")
+	req := httptest.NewRequest(http.MethodPost, "/test?from=test", bytes.NewBufferString("request body"))
+	req.Header.Set("X-Custom", "header")
+	req.Header.Set("Connection", "keep-alive")
+	c := e.NewContext(req, w)
 
-	ProxyHTTPRequest(c, tunnel, "/api/environments/0/projects")
+	_ = ProxyHTTPRequest(c, tunnel, "/api/environments/0/projects")
 
 	assert.Equal(t, http.StatusCreated, w.Code)
 	assert.Equal(t, "application/json", w.Header().Get("Content-Type"))

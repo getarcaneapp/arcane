@@ -16,6 +16,8 @@
 	} from '$lib/services/container-service';
 	import { ContainersIcon, UpdateIcon } from '$lib/icons';
 	import { getContainerDisplayName } from '../containers/container-table.helpers';
+	import userStore from '$lib/stores/user-store';
+	import { fromStore } from 'svelte/store';
 
 	type ContainerUpdateRow = {
 		id: string;
@@ -40,6 +42,9 @@
 	let selectedIds = $state<string[]>([]);
 	let mobileFieldVisibility = $state<MobileFieldVisibility>({});
 	let updatingContainerIds = $state<Record<string, boolean>>({});
+
+	const storeUser = fromStore(userStore);
+	const isAdmin = $derived(!!storeUser.current?.roles?.includes('admin'));
 
 	function formatUpdateValue(updateInfo: ImageUpdateInfoDto | undefined, mode: 'current' | 'latest') {
 		if (!updateInfo) return '-';
@@ -159,15 +164,17 @@
 {/snippet}
 
 {#snippet ActionsCell({ item }: { item: ContainerUpdateRow })}
-	<ArcaneButton
-		action="update"
-		size="sm"
-		customLabel={m.containers_update_container()}
-		onclick={() => handleUpdateContainer(item.container)}
-		loading={!!updatingContainerIds[item.containerId]}
-		disabled={!!updatingContainerIds[item.containerId]}
-		icon={UpdateIcon}
-	/>
+	{#if isAdmin}
+		<ArcaneButton
+			action="update"
+			size="sm"
+			customLabel={m.containers_update_container()}
+			onclick={() => handleUpdateContainer(item.container)}
+			loading={!!updatingContainerIds[item.containerId]}
+			disabled={!!updatingContainerIds[item.containerId]}
+			icon={UpdateIcon}
+		/>
+	{/if}
 {/snippet}
 
 {#snippet ContainerUpdatesMobileCard({ item }: { item: ContainerUpdateRow })}

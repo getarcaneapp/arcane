@@ -45,6 +45,10 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     ./cmd/main.go
 
 FROM ${ARCANE_RUNTIME_BASE_IMAGE} AS agent
+ARG TARGETARCH
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl tzdata tar gzip libdrm2 \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 USER 0:0

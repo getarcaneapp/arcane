@@ -202,6 +202,28 @@ type UpdateInfo struct {
 	LastCheckedAt *time.Time `json:"lastCheckedAt,omitempty"`
 }
 
+type DetailsOptions struct {
+	IncludeComposeContent  bool
+	IncludeEnvState        bool
+	IncludeIncludeFiles    bool
+	IncludeServiceConfigs  bool
+	IncludeDirectoryFiles  bool
+	IncludeRuntimeServices bool
+	IncludeUpdateInfo      bool
+}
+
+func AllDetails() DetailsOptions {
+	return DetailsOptions{
+		IncludeComposeContent:  true,
+		IncludeEnvState:        true,
+		IncludeIncludeFiles:    true,
+		IncludeServiceConfigs:  true,
+		IncludeDirectoryFiles:  true,
+		IncludeRuntimeServices: true,
+		IncludeUpdateInfo:      true,
+	}
+}
+
 // CreateReponse is the response when a project is created.
 type CreateReponse struct {
 	// ID is the unique identifier of the project.

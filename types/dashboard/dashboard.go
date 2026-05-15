@@ -6,6 +6,10 @@ import (
 	environmenttypes "github.com/getarcaneapp/arcane/types/environment"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
 	versiontypes "github.com/getarcaneapp/arcane/types/version"
+	dockercontainer "github.com/moby/moby/api/types/container"
+	dockerimage "github.com/moby/moby/api/types/image"
+	dockernetwork "github.com/moby/moby/api/types/network"
+	"github.com/moby/moby/client"
 )
 
 type ActionItemKind string
@@ -49,6 +53,13 @@ type ActionItems struct {
 }
 
 type SnapshotSettings struct{}
+
+type DockerSnapshot struct {
+	Containers []dockercontainer.Summary `json:"containers"`
+	Images     []dockerimage.Summary     `json:"images"`
+	Networks   []dockernetwork.Summary   `json:"networks"`
+	Volumes    *client.VolumeListResult  `json:"volumes"`
+}
 
 type SnapshotContainers struct {
 	// Data is the first dashboard page of container summaries.

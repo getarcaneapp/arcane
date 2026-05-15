@@ -1,4 +1,4 @@
-import type { NotificationSettings, AppriseSettings, EmailTLSMode } from './notification.type';
+import type { NotificationSettings, AppriseSettings, EmailTLSMode, EmailAuthMode } from './notification.type';
 
 // Provider keys - this is the source of truth for all providers (alphabetically sorted)
 export const NOTIFICATION_PROVIDER_KEYS = [
@@ -41,6 +41,7 @@ export interface EmailFormValues extends BaseProviderFormValues {
 	fromAddress: string;
 	toAddresses: string;
 	tlsMode: EmailTLSMode;
+	authMode: EmailAuthMode;
 }
 
 export interface TelegramFormValues extends BaseProviderFormValues {
@@ -226,6 +227,7 @@ export function emailSettingsToFormValues(settings?: NotificationSettings): Emai
 		fromAddress: getString(cfg, 'fromAddress'),
 		toAddresses: getStringArray(cfg, 'toAddresses').join(', '),
 		tlsMode: getString(cfg, 'tlsMode', 'starttls') as EmailTLSMode,
+		authMode: getString(cfg, 'authMode', 'auto') as EmailAuthMode,
 		...eventFlagsToFormValues(events)
 	};
 }
@@ -322,6 +324,7 @@ export function emailFormValuesToSettings(values: EmailFormValues): Notification
 				.map((addr) => addr.trim())
 				.filter((addr) => addr.length > 0),
 			tlsMode: values.tlsMode,
+			authMode: values.authMode,
 			events: {
 				image_update: values.eventImageUpdate,
 				container_update: values.eventContainerUpdate,

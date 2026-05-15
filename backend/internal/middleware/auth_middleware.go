@@ -7,19 +7,13 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	pkgutils "github.com/getarcaneapp/arcane/backend/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils/cookie"
-	"github.com/gin-gonic/gin"
-)
-
-const (
-	headerAgentBootstrap = "X-Arcane-Agent-Bootstrap"
-	headerAgentToken     = "X-Arcane-Agent-Token" // #nosec G101: header name, not a credential
-	headerApiKey         = "X-API-Key"            // #nosec G101: header name, not a credential
-	agentPairingPrefix   = "/api/environments/0/agent/pair"
+	"github.com/labstack/echo/v4"
 )
 
 type AuthOptions struct {
@@ -69,150 +63,142 @@ func (m *AuthMiddleware) WithAdminNotRequired() *AuthMiddleware {
 	return &clone
 }
 
-func (m *AuthMiddleware) Add() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		reqCtx := c.Request.Context()
-		if m.cfg != nil && m.cfg.AgentMode {
-			m.agentAuth(reqCtx, c)
-			return
+func (m *AuthMiddleware) WithAdminRequired() *AuthMiddleware {
+	clone := *m
+	clone.options.AdminRequired = true
+	return &clone
+}
+
+func (m *AuthMiddleware) Add() echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			reqCtx := c.Request().Context()
+			if m.cfg != nil && m.cfg.AgentMode {
+				return m.agentAuth(reqCtx, c, next)
+			}
+			return m.managerAuth(reqCtx, c, next)
 		}
-		m.managerAuth(reqCtx, c)
 	}
 }
 
-func (m *AuthMiddleware) agentAuth(ctx context.Context, c *gin.Context) {
-	if isPreflight(c) {
-		c.Next()
-		return
+func (m *AuthMiddleware) agentAuth(ctx context.Context, c echo.Context, next echo.HandlerFunc) error {
+	if isPreflightInternal(c) {
+		return next(c)
 	}
 
-	if strings.HasPrefix(c.Request.URL.Path, agentPairingPrefix) &&
+	req := c.Request()
+	if strings.HasPrefix(req.URL.Path, pkgutils.AgentPairingPrefix) &&
 		m.cfg.AgentToken != "" &&
-		c.GetHeader(headerAgentBootstrap) == m.cfg.AgentToken {
-		slog.InfoContext(ctx, "Agent auth: bootstrap pairing accepted", "path", c.Request.URL.Path, "method", c.Request.Method)
-		agentSudo(c)
-		return
+		req.Header.Get(pkgutils.HeaderAgentBootstrap) == m.cfg.AgentToken {
+		slog.InfoContext(ctx, "Agent auth: bootstrap pairing accepted", "path", req.URL.Path, "method", req.Method)
+		agentSudoInternal(c)
+		return next(c)
 	}
 
-	if tok := c.GetHeader(headerAgentToken); tok != "" && m.cfg.AgentToken != "" && tok == m.cfg.AgentToken {
-		agentSudo(c)
-		return
+	if tok := req.Header.Get(pkgutils.HeaderAgentToken); tok != "" && m.cfg.AgentToken != "" && tok == m.cfg.AgentToken {
+		agentSudoInternal(c)
+		return next(c)
 	}
 
 	// Check for API key as agent token
-	if tok := c.GetHeader(headerApiKey); tok != "" && m.cfg.AgentToken != "" && tok == m.cfg.AgentToken {
-		agentSudo(c)
-		return
+	if tok := req.Header.Get(pkgutils.HeaderApiKey); tok != "" && m.cfg.AgentToken != "" && tok == m.cfg.AgentToken {
+		agentSudoInternal(c)
+		return next(c)
 	}
 
 	slog.WarnContext(ctx, "Agent auth forbidden",
-		"path", c.Request.URL.Path,
-		"method", c.Request.Method,
-		"has_agent_token_hdr", c.GetHeader(headerAgentToken) != "",
+		"path", req.URL.Path,
+		"method", req.Method,
+		"has_agent_token_hdr", req.Header.Get(pkgutils.HeaderAgentToken) != "",
 		"agent_token_config_set", m.cfg.AgentToken != "",
 	)
-	c.JSON(http.StatusForbidden, models.APIError{
+	return c.JSON(http.StatusForbidden, models.APIError{
 		Code:    "FORBIDDEN",
 		Message: "Invalid or missing agent token",
 	})
-	c.Abort()
 }
 
-func (m *AuthMiddleware) managerAuth(ctx context.Context, c *gin.Context) {
-	if agentToken := c.GetHeader(headerAgentToken); agentToken != "" {
+func (m *AuthMiddleware) managerAuth(ctx context.Context, c echo.Context, next echo.HandlerFunc) error {
+	req := c.Request()
+	if agentToken := req.Header.Get(pkgutils.HeaderAgentToken); agentToken != "" {
 		if env, ok := m.resolveEnvironmentAccessToken(ctx, agentToken); ok {
-			environmentSudo(c, env)
-			return
+			environmentSudoInternal(c, env)
+			return next(c)
 		}
 	}
 
 	// First, check for API key in X-API-Key header
-	if apiKey := c.GetHeader(headerApiKey); apiKey != "" {
+	if apiKey := req.Header.Get(pkgutils.HeaderApiKey); apiKey != "" {
 		if m.apiKeyValidator != nil {
 			user, err := m.apiKeyValidator.ValidateApiKey(ctx, apiKey)
 			if err == nil && user != nil {
 				isAdmin := pkgutils.UserHasRole(user.Roles, "admin")
 				if m.options.AdminRequired && !isAdmin {
-					c.JSON(http.StatusForbidden, models.APIError{
+					return c.JSON(http.StatusForbidden, models.APIError{
 						Code:    "FORBIDDEN",
 						Message: "You don't have permission to access this resource",
 					})
-					c.Abort()
-					return
 				}
 				c.Set("userID", user.ID)
 				c.Set("currentUser", user)
 				c.Set("userIsAdmin", isAdmin)
 				c.Set("authMethod", "api_key")
-				c.Next()
-				return
+				return next(c)
 			}
 		}
 		if env, ok := m.resolveEnvironmentAccessToken(ctx, apiKey); ok {
-			environmentSudo(c, env)
-			return
+			environmentSudoInternal(c, env)
+			return next(c)
 		}
-		// If API key validation fails, return unauthorized
-		c.JSON(http.StatusUnauthorized, models.APIError{
+		return c.JSON(http.StatusUnauthorized, models.APIError{
 			Code:    models.APIErrorCodeUnauthorized,
 			Message: "Invalid or expired API key",
 		})
-		c.Abort()
-		return
 	}
 
-	token := extractBearerOrCookieToken(c)
+	token := extractBearerOrCookieTokenInternal(c)
 	if token == "" {
 		if m.options.SuccessOptional {
-			c.Next()
-			return
+			return next(c)
 		}
-		c.JSON(http.StatusUnauthorized, models.APIError{
+		return c.JSON(http.StatusUnauthorized, models.APIError{
 			Code:    models.APIErrorCodeUnauthorized,
 			Message: "Authentication required",
 		})
-		c.Abort()
-		return
 	}
 
-	user, err := m.authService.VerifyToken(ctx, token)
+	user, sessionID, err := m.authService.VerifyToken(ctx, token)
 	if err != nil {
-		if errors.Is(err, services.ErrTokenVersionMismatch) {
-			cookie.ClearTokenCookie(c)
-			c.JSON(http.StatusUnauthorized, models.APIError{
+		if errors.Is(err, services.ErrTokenVersionMismatch) || common.IsSessionRevokedError(err) || common.IsTokenValidationError(err) {
+			cookie.ClearTokenCookie(c.Response().Writer, req)
+			return c.JSON(http.StatusUnauthorized, models.APIError{
 				Code:    models.APIErrorCodeUnauthorized,
-				Message: "Application has been updated. Please log in again.",
+				Message: "Session expired. Please log in again.",
 			})
-			c.Abort()
-			return
 		}
 
 		if m.options.SuccessOptional {
-			c.Next()
-			return
+			return next(c)
 		}
-		c.JSON(http.StatusUnauthorized, models.APIError{
+		return c.JSON(http.StatusUnauthorized, models.APIError{
 			Code:    models.APIErrorCodeUnauthorized,
 			Message: "Invalid or expired token",
 		})
-		c.Abort()
-		return
 	}
 
 	isAdmin := pkgutils.UserHasRole(user.Roles, "admin")
 	if m.options.AdminRequired && !isAdmin {
-		c.JSON(http.StatusForbidden, models.APIError{
+		return c.JSON(http.StatusForbidden, models.APIError{
 			Code:    "FORBIDDEN",
 			Message: "You don't have permission to access this resource",
 		})
-		c.Abort()
-		return
 	}
 
 	c.Set("userID", user.ID)
 	c.Set("currentUser", user)
+	c.Set("currentSessionID", sessionID)
 	c.Set("userIsAdmin", isAdmin)
-	c.Next()
+	return next(c)
 }
 
 func (m *AuthMiddleware) resolveEnvironmentAccessToken(ctx context.Context, token string) (*models.Environment, bool) {
@@ -228,11 +214,11 @@ func (m *AuthMiddleware) resolveEnvironmentAccessToken(ctx context.Context, toke
 	return env, true
 }
 
-func isPreflight(c *gin.Context) bool {
-	return c.Request.Method == http.MethodOptions
+func isPreflightInternal(c echo.Context) bool {
+	return c.Request().Method == http.MethodOptions
 }
 
-func agentSudo(c *gin.Context) {
+func agentSudoInternal(c echo.Context) {
 	agentUser := &models.User{
 		BaseModel: models.BaseModel{ID: "agent"},
 		Email:     new("agent@getarcane.app"),
@@ -243,10 +229,9 @@ func agentSudo(c *gin.Context) {
 	c.Set("currentUser", agentUser)
 	c.Set("userIsAdmin", true)
 	c.Set("authMethod", "agent_token")
-	c.Next()
 }
 
-func environmentSudo(c *gin.Context, env *models.Environment) {
+func environmentSudoInternal(c echo.Context, env *models.Environment) {
 	envUser := &models.User{
 		BaseModel: models.BaseModel{ID: "environment:" + env.ID},
 		Username:  env.Name,
@@ -256,15 +241,15 @@ func environmentSudo(c *gin.Context, env *models.Environment) {
 	c.Set("currentUser", envUser)
 	c.Set("userIsAdmin", true)
 	c.Set("authMethod", "environment_access_token")
-	c.Next()
 }
 
-func extractBearerOrCookieToken(c *gin.Context) string {
-	authHeader := c.GetHeader("Authorization")
+func extractBearerOrCookieTokenInternal(c echo.Context) string {
+	req := c.Request()
+	authHeader := req.Header.Get("Authorization")
 	if after, ok := strings.CutPrefix(authHeader, "Bearer "); ok {
 		return after
 	}
-	if tok, err := cookie.GetTokenCookie(c); err == nil && tok != "" {
+	if tok, err := cookie.GetTokenCookie(req); err == nil && tok != "" {
 		return tok
 	}
 	return ""

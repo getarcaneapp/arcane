@@ -156,17 +156,18 @@
 	let buildTab = $state('workspace');
 	let rightPanelTab = $state<'config' | 'output'>('config');
 	let showAdvanced = $state(false);
-	let buildHistoryItems = $state<Paginated<ImageBuildRecord>>({
+	const EMPTY_BUILD_HISTORY: Paginated<ImageBuildRecord> = {
 		data: [],
 		pagination: { totalPages: 1, totalItems: 0, currentPage: 1, itemsPerPage: 20 }
-	});
+	};
+
 	let buildHistoryRequestOptions = $state<SearchPaginationSortRequest>({
 		pagination: { page: 1, limit: 20 },
 		sort: { column: 'createdAt', direction: 'desc' }
 	});
 	let buildHistorySelectedIds = $state<string[]>([]);
 	let buildHistoryMobileFieldVisibility = $state<Record<string, boolean>>({});
-	let buildHistorySelected = $state<ImageBuildRecord | null>(null);
+	let buildHistorySelectedOptimistic = $state<ImageBuildRecord | null>(null);
 	let buildHistorySelectedId = $state<string | null>(null);
 	let buildHistoryDetailsOpen = $state(false);
 
@@ -175,42 +176,44 @@
 
 	const buildHistoryQuery = createQuery(() => ({
 		queryKey: queryKeys.images.buildsList(selectedEnvId, buildHistoryRequestOptions),
-		queryFn: () => imageService.getImageBuilds(buildHistoryRequestOptions),
-		onSuccess: (data: Paginated<ImageBuildRecord>) => {
-			buildHistoryItems = data;
-		},
-		onError: (err: unknown) => {
-			const anyErr = err as any;
-			const message = anyErr?.message ? String(anyErr.message) : m.common_error();
-			if (message && message !== buildHistoryQueryLastError) {
-				buildHistoryQueryLastError = message;
-				toast.error(message);
-			}
-		}
+		queryFn: () => imageService.getImageBuilds(buildHistoryRequestOptions)
 	}));
 
-	let buildHistoryQueryLastError = $state<string | null>(null);
+	const buildHistoryItems = $derived<Paginated<ImageBuildRecord>>(buildHistoryQuery.data ?? EMPTY_BUILD_HISTORY);
+
+	let buildHistoryQueryLastError: string | null = null;
+
+	$effect(() => {
+		const err = buildHistoryQuery.error as any;
+		if (!err) return;
+		const message = err?.message ? String(err.message) : m.common_error();
+		if (message && message !== buildHistoryQueryLastError) {
+			buildHistoryQueryLastError = message;
+			toast.error(message);
+		}
+	});
 
 	const buildHistoryDetailQuery = createQuery(() => ({
 		queryKey: buildHistorySelectedId
 			? queryKeys.images.buildRecord(selectedEnvId, buildHistorySelectedId)
 			: (['images', selectedEnvId, 'builds', 'none'] as const),
 		queryFn: () => imageService.getImageBuild(buildHistorySelectedId!),
-		enabled: !!buildHistorySelectedId && buildHistoryDetailsOpen,
-		onSuccess: (data: ImageBuildRecord) => {
-			buildHistorySelected = data;
-		},
-		onError: (err: unknown) => {
-			const anyErr = err as any;
-			const message = anyErr?.message ? String(anyErr.message) : m.common_error();
-			if (message && message !== buildHistoryDetailLastError) {
-				buildHistoryDetailLastError = message;
-				toast.error(message);
-			}
-		}
+		enabled: !!buildHistorySelectedId && buildHistoryDetailsOpen
 	}));
 
-	let buildHistoryDetailLastError = $state<string | null>(null);
+	const buildHistorySelected = $derived<ImageBuildRecord | null>(buildHistoryDetailQuery.data ?? buildHistorySelectedOptimistic);
+
+	let buildHistoryDetailLastError: string | null = null;
+
+	$effect(() => {
+		const err = buildHistoryDetailQuery.error as any;
+		if (!err) return;
+		const message = err?.message ? String(err.message) : m.common_error();
+		if (message && message !== buildHistoryDetailLastError) {
+			buildHistoryDetailLastError = message;
+			toast.error(message);
+		}
+	});
 	const buildHistoryDetailsLoading = $derived(buildHistoryDetailQuery.isPending || buildHistoryDetailQuery.isFetching);
 
 	type ImageBuildRequest = {
@@ -711,12 +714,12 @@
 	async function loadBuildHistory(options: SearchPaginationSortRequest = buildHistoryRequestOptions) {
 		buildHistoryRequestOptions = options;
 		const result = await buildHistoryQuery.refetch();
-		return result.data ?? buildHistoryItems;
+		return result.data ?? buildHistoryQuery.data ?? EMPTY_BUILD_HISTORY;
 	}
 
 	function openBuildDetails(build: ImageBuildRecord) {
 		buildHistorySelectedId = build.id;
-		buildHistorySelected = build;
+		buildHistorySelectedOptimistic = build;
 		buildHistoryDetailsOpen = true;
 	}
 

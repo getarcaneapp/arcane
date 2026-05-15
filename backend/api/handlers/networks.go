@@ -1,0 +1,441 @@
+package handlers
+
+import (
+	"bytes"
+	"context"
+	"net"
+	"net/http"
+	"sort"
+	"strings"
+
+	"github.com/danielgtaylor/huma/v2"
+	humamw "github.com/getarcaneapp/arcane/backend/api/middleware"
+	"github.com/getarcaneapp/arcane/backend/internal/common"
+	"github.com/getarcaneapp/arcane/backend/internal/services"
+	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils/mapper"
+	"github.com/getarcaneapp/arcane/types/base"
+	networktypes "github.com/getarcaneapp/arcane/types/network"
+	dockernetwork "github.com/moby/moby/api/types/network"
+)
+
+type NetworkHandler struct {
+	networkService *services.NetworkService
+	dockerService  *services.DockerClientService
+}
+
+type NetworkPaginatedResponse struct {
+	Success    bool                     `json:"success"`
+	Data       []networktypes.Summary   `json:"data"`
+	Counts     networktypes.UsageCounts `json:"counts"`
+	Pagination base.PaginationResponse  `json:"pagination"`
+}
+
+type ListNetworksInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	Search        string `query:"search" doc:"Search query"`
+	Sort          string `query:"sort" doc:"Column to sort by"`
+	Order         string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
+	Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
+	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
+	InUse         string `query:"inUse" doc:"Filter by in-use status (true/false)"`
+}
+
+type ListNetworksOutput struct {
+	Body NetworkPaginatedResponse
+}
+
+type GetNetworkCountsInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+}
+
+type NetworkCountsApiResponse struct {
+	Success bool                     `json:"success"`
+	Data    networktypes.UsageCounts `json:"data"`
+}
+
+type GetNetworkCountsOutput struct {
+	Body NetworkCountsApiResponse
+}
+
+type NetworkCreatedApiResponse struct {
+	Success bool                        `json:"success"`
+	Data    networktypes.CreateResponse `json:"data"`
+}
+
+type CreateNetworkInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	Body          networktypes.CreateRequest
+}
+
+type CreateNetworkOutput struct {
+	Body NetworkCreatedApiResponse
+}
+
+// NetworkInspectApiResponse is a dedicated response type
+type NetworkInspectApiResponse struct {
+	Success bool                 `json:"success"`
+	Data    networktypes.Inspect `json:"data"`
+}
+
+type GetNetworkInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	NetworkID     string `path:"networkId" doc:"Network ID"`
+	Sort          string `query:"sort" default:"name"`
+	Order         string `query:"order" default:"asc"`
+}
+
+type GetNetworkOutput struct {
+	Body NetworkInspectApiResponse
+}
+
+type NetworkTopologyApiResponse struct {
+	Success bool                  `json:"success"`
+	Data    networktypes.Topology `json:"data"`
+}
+
+type GetNetworkTopologyInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+}
+
+type GetNetworkTopologyOutput struct {
+	Body NetworkTopologyApiResponse
+}
+
+// NetworkMessageApiResponse is a dedicated response type
+type NetworkMessageApiResponse struct {
+	Success bool                 `json:"success"`
+	Data    base.MessageResponse `json:"data"`
+}
+
+type DeleteNetworkInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	NetworkID     string `path:"networkId" doc:"Network ID"`
+}
+
+type DeleteNetworkOutput struct {
+	Body NetworkMessageApiResponse
+}
+
+type PruneNetworksInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+}
+
+// NetworkPruneResponse is a dedicated response type
+type NetworkPruneResponse struct {
+	Success bool                     `json:"success"`
+	Data    networktypes.PruneReport `json:"data"`
+}
+
+type PruneNetworksOutput struct {
+	Body NetworkPruneResponse
+}
+
+// RegisterNetworks registers network endpoints.
+func RegisterNetworks(api huma.API, networkSvc *services.NetworkService, dockerSvc *services.DockerClientService) {
+	h := &NetworkHandler{
+		networkService: networkSvc,
+		dockerService:  dockerSvc,
+	}
+
+	huma.Register(api, huma.Operation{
+		OperationID: "list-networks",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/networks",
+		Summary:     "List networks",
+		Tags:        []string{"Networks"},
+		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+	}, h.ListNetworks)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "network-counts",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/networks/counts",
+		Summary:     "Network counts",
+		Tags:        []string{"Networks"},
+		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+	}, h.GetNetworkCounts)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "create-network",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/networks",
+		Summary:     "Create network",
+		Tags:        []string{"Networks"},
+		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Middlewares: humamw.RequireAdmin(api),
+	}, h.CreateNetwork)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-network-topology",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/networks/topology",
+		Summary:     "Get network topology",
+		Tags:        []string{"Networks"},
+		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+	}, h.GetNetworkTopology)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-network",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/networks/{networkId}",
+		Summary:     "Get network",
+		Tags:        []string{"Networks"},
+		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+	}, h.GetNetwork)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "delete-network",
+		Method:      http.MethodDelete,
+		Path:        "/environments/{id}/networks/{networkId}",
+		Summary:     "Delete network",
+		Tags:        []string{"Networks"},
+		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Middlewares: humamw.RequireAdmin(api),
+	}, h.DeleteNetwork)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "prune-networks",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/networks/prune",
+		Summary:     "Prune networks",
+		Tags:        []string{"Networks"},
+		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Middlewares: humamw.RequireAdmin(api),
+	}, h.PruneNetworks)
+}
+
+func (h *NetworkHandler) ListNetworks(ctx context.Context, input *ListNetworksInput) (*ListNetworksOutput, error) {
+	filters := make(map[string]string)
+	if input.InUse != "" {
+		filters["inUse"] = input.InUse
+	}
+
+	params := pagination.QueryParams{
+		SearchQuery: pagination.SearchQuery{
+			Search: strings.TrimSpace(input.Search),
+		},
+		SortParams: pagination.SortParams{
+			Sort:  strings.TrimSpace(input.Sort),
+			Order: pagination.SortOrder(input.Order),
+		},
+		PaginationParams: pagination.PaginationParams{
+			Start: input.Start,
+			Limit: input.Limit,
+		},
+		Filters: filters,
+	}
+
+	networks, paginationResp, counts, err := h.networkService.ListNetworksPaginated(ctx, params)
+	if err != nil {
+		return nil, huma.Error500InternalServerError((&common.NetworkListError{Err: err}).Error())
+	}
+
+	return &ListNetworksOutput{
+		Body: NetworkPaginatedResponse{
+			Success: true,
+			Data:    networks,
+			Counts:  counts,
+			Pagination: base.PaginationResponse{
+				TotalPages:      paginationResp.TotalPages,
+				TotalItems:      paginationResp.TotalItems,
+				CurrentPage:     paginationResp.CurrentPage,
+				ItemsPerPage:    paginationResp.ItemsPerPage,
+				GrandTotalItems: paginationResp.GrandTotalItems,
+			},
+		},
+	}, nil
+}
+
+func (h *NetworkHandler) GetNetworkCounts(ctx context.Context, input *GetNetworkCountsInput) (*GetNetworkCountsOutput, error) {
+	_, inuse, unused, total, err := h.dockerService.GetAllNetworks(ctx)
+	if err != nil {
+		return nil, huma.Error500InternalServerError((&common.NetworkUsageCountsError{Err: err}).Error())
+	}
+
+	return &GetNetworkCountsOutput{
+		Body: NetworkCountsApiResponse{
+			Success: true,
+			Data: networktypes.UsageCounts{
+				Inuse:  inuse,
+				Unused: unused,
+				Total:  total,
+			},
+		},
+	}, nil
+}
+
+func (h *NetworkHandler) CreateNetwork(ctx context.Context, input *CreateNetworkInput) (*CreateNetworkOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
+	user, exists := humamw.GetCurrentUserFromContext(ctx)
+	if !exists {
+		return nil, huma.Error401Unauthorized("not authenticated")
+	}
+
+	// Convert to Docker SDK options
+	dockerOptions := input.Body.Options.ToDockerCreateOptions()
+
+	response, err := h.networkService.CreateNetwork(ctx, input.Body.Name, dockerOptions, *user)
+	if err != nil {
+		return nil, huma.Error500InternalServerError((&common.NetworkCreationError{Err: err}).Error())
+	}
+
+	out, err := mapper.MapOne[dockernetwork.CreateResponse, networktypes.CreateResponse](*response)
+	if err != nil {
+		return nil, huma.Error500InternalServerError((&common.NetworkMappingError{Err: err}).Error())
+	}
+
+	return &CreateNetworkOutput{
+		Body: NetworkCreatedApiResponse{
+			Success: true,
+			Data:    out,
+		},
+	}, nil
+}
+
+func (h *NetworkHandler) GetNetwork(ctx context.Context, input *GetNetworkInput) (*GetNetworkOutput, error) {
+	networkInspect, err := h.networkService.GetNetworkByID(ctx, input.NetworkID)
+	if err != nil {
+		return nil, huma.Error404NotFound((&common.NetworkNotFoundError{Err: err}).Error())
+	}
+
+	out, err := mapper.MapOne[dockernetwork.Inspect, networktypes.Inspect](*networkInspect)
+	if err != nil {
+		return nil, huma.Error500InternalServerError((&common.NetworkMappingError{Err: err}).Error())
+	}
+
+	// Ensure ID is mapped correctly
+	if out.ID == "" {
+		out.ID = networkInspect.ID
+	}
+
+	// Populate ContainersList
+	out.ContainersList = make([]networktypes.ContainerEndpoint, 0, len(out.Containers))
+	for id, container := range out.Containers {
+		ipv4Address := ""
+		if container.IPv4Address.IsValid() {
+			ipv4Address = container.IPv4Address.String()
+		}
+		ipv6Address := ""
+		if container.IPv6Address.IsValid() {
+			ipv6Address = container.IPv6Address.String()
+		}
+		out.ContainersList = append(out.ContainersList, networktypes.ContainerEndpoint{
+			ID:          id,
+			Name:        container.Name,
+			EndpointID:  container.EndpointID,
+			IPv4Address: ipv4Address,
+			IPv6Address: ipv6Address,
+			MacAddress:  container.MacAddress.String(),
+		})
+	}
+
+	// Sort ContainersList
+	sort.Slice(out.ContainersList, func(i, j int) bool {
+		a, b := out.ContainersList[i], out.ContainersList[j]
+
+		if input.Sort == "ip" {
+			valA := a.IPv4Address
+			if valA == "" {
+				valA = a.IPv6Address
+			}
+			valB := b.IPv4Address
+			if valB == "" {
+				valB = b.IPv6Address
+			}
+
+			// Parse IPs for proper numeric comparison
+			ipA, _, _ := strings.Cut(valA, "/")
+			ipB, _, _ := strings.Cut(valB, "/")
+
+			parsedA := net.ParseIP(ipA)
+			parsedB := net.ParseIP(ipB)
+
+			if parsedA == nil || parsedB == nil {
+				// Fallback to string comparison if parsing fails
+				if input.Order == "desc" {
+					return valA > valB
+				}
+				return valA < valB
+			}
+
+			cmp := bytes.Compare(parsedA, parsedB)
+			if input.Order == "desc" {
+				return cmp > 0
+			}
+			return cmp < 0
+		}
+
+		// Default to Name
+		if input.Order == "desc" {
+			return strings.ToLower(a.Name) > strings.ToLower(b.Name)
+		}
+		return strings.ToLower(a.Name) < strings.ToLower(b.Name)
+	})
+
+	return &GetNetworkOutput{
+		Body: NetworkInspectApiResponse{
+			Success: true,
+			Data:    out,
+		},
+	}, nil
+}
+
+func (h *NetworkHandler) GetNetworkTopology(ctx context.Context, input *GetNetworkTopologyInput) (*GetNetworkTopologyOutput, error) {
+	topology, err := h.networkService.GetNetworkTopology(ctx)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("failed to build network topology")
+	}
+
+	return &GetNetworkTopologyOutput{
+		Body: NetworkTopologyApiResponse{
+			Success: true,
+			Data:    *topology,
+		},
+	}, nil
+}
+
+func (h *NetworkHandler) DeleteNetwork(ctx context.Context, input *DeleteNetworkInput) (*DeleteNetworkOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
+	user, exists := humamw.GetCurrentUserFromContext(ctx)
+	if !exists {
+		return nil, huma.Error401Unauthorized("not authenticated")
+	}
+
+	if err := h.networkService.RemoveNetwork(ctx, input.NetworkID, *user); err != nil {
+		return nil, huma.Error500InternalServerError((&common.NetworkRemovalError{Err: err}).Error())
+	}
+
+	return &DeleteNetworkOutput{
+		Body: NetworkMessageApiResponse{
+			Success: true,
+			Data:    base.MessageResponse{Message: "Network removed successfully"},
+		},
+	}, nil
+}
+
+func (h *NetworkHandler) PruneNetworks(ctx context.Context, input *PruneNetworksInput) (*PruneNetworksOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
+	report, err := h.networkService.PruneNetworks(ctx)
+	if err != nil {
+		return nil, huma.Error500InternalServerError((&common.NetworkPruneError{Err: err}).Error())
+	}
+
+	out, err := mapper.MapOne[dockernetwork.PruneReport, networktypes.PruneReport](*report)
+	if err != nil {
+		return nil, huma.Error500InternalServerError((&common.NetworkMappingError{Err: err}).Error())
+	}
+
+	return &PruneNetworksOutput{
+		Body: NetworkPruneResponse{
+			Success: true,
+			Data:    out,
+		},
+	}, nil
+}

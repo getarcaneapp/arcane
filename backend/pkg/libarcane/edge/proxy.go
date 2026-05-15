@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v4"
 )
 
 const (
@@ -166,34 +166,27 @@ func (s *grpcResponseState) handleCommandComplete(incoming *TunnelMessage) (bool
 	return true, incoming.Status, stripInternalTunnelHeaders(s.respHeaders), s.respBody.Bytes(), nil
 }
 
-// ProxyHTTPRequest is a helper that proxies a gin context through a tunnel
-func ProxyHTTPRequest(c *gin.Context, tunnel *AgentTunnel, targetPath string) {
-	ctx := c.Request.Context()
+// ProxyHTTPRequest is a helper that proxies an echo context through a tunnel
+func ProxyHTTPRequest(c echo.Context, tunnel *AgentTunnel, targetPath string) error {
+	req := c.Request()
+	ctx := req.Context()
 
-	// Set a reasonable timeout
 	proxyCtx, cancel := context.WithTimeout(ctx, DefaultProxyTimeout)
 	defer cancel()
 
-	// Read request body
 	var body []byte
-	if c.Request.Body != nil {
+	if req.Body != nil {
 		var err error
-		body, err = io.ReadAll(c.Request.Body)
+		body, err = io.ReadAll(req.Body)
 		if err != nil {
 			slog.ErrorContext(ctx, "Failed to read request body for tunnel proxy", "error", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read request body"})
-			return
+			return c.JSON(http.StatusInternalServerError, map[string]any{"error": "failed to read request body"})
 		}
-		// Restore body for potential retry
-		c.Request.Body = io.NopCloser(bytes.NewReader(body))
+		req.Body = io.NopCloser(bytes.NewReader(body))
 	}
 
-	// Build headers map, stripping hop-by-hop and browser-security headers.
-	// Browser-security headers (Origin, Referer, Cookie, etc.) must not be forwarded
-	// because gin-contrib/cors on the agent side will reject requests whose Origin
-	// doesn't match the agent's allowed origins, causing a 403 Forbidden.
 	headers := make(map[string]string)
-	for k, v := range c.Request.Header {
+	for k, v := range req.Header {
 		if len(v) > 0 {
 			if isHopByHopHeader(k) || isBrowserSecurityHeader(k) {
 				continue
@@ -204,37 +197,32 @@ func ProxyHTTPRequest(c *gin.Context, tunnel *AgentTunnel, targetPath string) {
 
 	slog.DebugContext(ctx, "Proxying request through edge tunnel",
 		"environment_id", tunnel.EnvironmentID,
-		"method", c.Request.Method,
+		"method", req.Method,
 		"path", targetPath,
 		"bodyLength", len(body),
 	)
 
-	status, respHeaders, respBody, err := ProxyRequest(proxyCtx, tunnel, c.Request.Method, targetPath, c.Request.URL.RawQuery, headers, body)
+	status, respHeaders, respBody, err := ProxyRequest(proxyCtx, tunnel, req.Method, targetPath, req.URL.RawQuery, headers, body)
 	if err != nil {
 		slog.ErrorContext(ctx, "Edge tunnel proxy failed",
 			"environment_id", tunnel.EnvironmentID,
 			"error", err,
 		)
 
-		// Check if it's a context timeout/cancel
 		if proxyCtx.Err() != nil {
-			c.JSON(http.StatusGatewayTimeout, gin.H{"error": "request timed out"})
-			return
+			return c.JSON(http.StatusGatewayTimeout, map[string]any{"error": "request timed out"})
 		}
 
-		c.JSON(http.StatusBadGateway, gin.H{"error": "failed to proxy request through tunnel"})
-		return
+		return c.JSON(http.StatusBadGateway, map[string]any{"error": "failed to proxy request through tunnel"})
 	}
 
-	// Copy response headers
 	for k, v := range respHeaders {
 		if !isHopByHopHeader(k) {
-			c.Header(k, v)
+			c.Response().Header().Set(k, v)
 		}
 	}
 
-	// Write response
-	c.Data(status, respHeaders["Content-Type"], respBody)
+	return c.Blob(status, respHeaders["Content-Type"], respBody)
 }
 
 // isHopByHopHeader returns true if the header should not be forwarded
@@ -254,9 +242,9 @@ func isHopByHopHeader(header string) bool {
 
 // isBrowserSecurityHeader returns true for headers that are browser-enforced
 // security headers. These must NOT be forwarded through the edge tunnel because
-// gin-contrib/cors will reject requests whose Origin does not match the agent's
-// allowed origins, returning 403. The agent authenticates via X-Arcane-Agent-Token
-// instead of browser cookies/origin checks.
+// the agent's CORS middleware will reject requests whose Origin does not match
+// its allowed origins, returning 403. The agent authenticates via
+// X-Arcane-Agent-Token instead of browser cookies/origin checks.
 func isBrowserSecurityHeader(header string) bool {
 	browserHeaders := map[string]bool{
 		"Origin":                         true,

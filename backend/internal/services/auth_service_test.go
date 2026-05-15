@@ -11,9 +11,11 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils/cache"
 	"github.com/getarcaneapp/arcane/types/auth"
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -22,7 +24,7 @@ func setupAuthServiceTestDB(t *testing.T) *database.DB {
 	t.Helper()
 	db, err := gorm.Open(glsqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&models.SettingVariable{}, &models.User{}))
+	require.NoError(t, db.AutoMigrate(&models.SettingVariable{}, &models.User{}, &models.UserSession{}))
 	return &database.DB{DB: db}
 }
 
@@ -36,24 +38,31 @@ func newTestAuthService(secret string) *AuthService {
 			jwtSecret:     b,
 			refreshExpiry: 24 * time.Hour,
 			config:        &config.Config{},
+			tokenCache:    cache.NewTTL[verifiedTokenEntry](15 * time.Second),
 		}
 	}
 	return &AuthService{
 		jwtSecret:     []byte(secret),
 		refreshExpiry: 24 * time.Hour,
 		config:        &config.Config{},
+		tokenCache:    cache.NewTTL[verifiedTokenEntry](15 * time.Second),
 	}
 }
 
-func makeAccessToken(t *testing.T, secret []byte, subject string, id string, username string, roles []string, email, displayName string, exp time.Time) string {
+func makeAccessToken(t *testing.T, secret []byte, subject string, id string, username string, roles []string, email, displayName string, exp time.Time, sessionIDs ...string) string {
 	t.Helper()
-	claims := UserClaims{
+	sessionID := ""
+	if len(sessionIDs) > 0 {
+		sessionID = sessionIDs[0]
+	}
+	claims := userClaims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			ID:        id,
 			Subject:   subject,
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			ExpiresAt: jwt.NewNumericDate(exp),
 		},
+		SessionID:   sessionID,
 		UserID:      id,
 		Username:    username,
 		Roles:       roles,
@@ -69,11 +78,62 @@ func makeAccessToken(t *testing.T, secret []byte, subject string, id string, use
 	return signed
 }
 
+func makeRefreshToken(t *testing.T, secret []byte, subject string, id string, exp time.Time, userIDAndSessionID ...string) string {
+	t.Helper()
+	userID := id
+	sessionID := ""
+	if len(userIDAndSessionID) > 0 {
+		userID = userIDAndSessionID[0]
+	}
+	if len(userIDAndSessionID) > 1 {
+		sessionID = userIDAndSessionID[1]
+	}
+	claims := refreshClaims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			ID:        id,
+			Subject:   subject,
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			ExpiresAt: jwt.NewNumericDate(exp),
+		},
+		UserID:     userID,
+		SessionID:  sessionID,
+		AppVersion: config.Version,
+	}
+	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	signed, err := tok.SignedString(secret)
+	if err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+	return signed
+}
+
+func createTestSession(t *testing.T, db *database.DB, userID string, expiresAt time.Time) (*models.UserSession, string) {
+	t.Helper()
+	sessionSvc := NewSessionService(db)
+	session, refreshJTI, err := sessionSvc.CreateSession(context.Background(), userID, expiresAt, auth.SessionMeta{
+		UserAgent: "test-agent",
+		IPAddress: "127.0.0.1",
+	})
+	require.NoError(t, err)
+	return session, refreshJTI
+}
+
+func makeUnsignedToken(t *testing.T, claims jwt.Claims) string {
+	t.Helper()
+	tok := jwt.NewWithClaims(jwt.SigningMethodNone, claims)
+	signed, err := tok.SignedString(jwt.UnsafeAllowNoneSignatureType)
+	if err != nil {
+		t.Fatalf("sign none: %v", err)
+	}
+	return signed
+}
+
 func TestVerifyToken_ValidClaims(t *testing.T) {
 	db := setupAuthServiceTestDB(t)
 	userSvc := NewUserService(db)
 	s := newTestAuthService("")
 	s.userService = userSvc
+	s.sessionService = NewSessionService(db)
 
 	// Create user in DB
 	user := &models.User{
@@ -87,9 +147,10 @@ func TestVerifyToken_ValidClaims(t *testing.T) {
 	require.NoError(t, err)
 
 	exp := time.Now().Add(5 * time.Minute)
-	token := makeAccessToken(t, s.jwtSecret, "access", "u123", "alice", []string{"user", "admin"}, "a@example.com", "Alice", exp)
+	session, _ := createTestSession(t, db, "u123", exp)
+	token := makeAccessToken(t, s.jwtSecret, "access", "u123", "alice", []string{"user", "admin"}, "a@example.com", "Alice", exp, session.ID)
 
-	verifiedUser, err := s.VerifyToken(context.Background(), token)
+	verifiedUser, _, err := s.VerifyToken(context.Background(), token)
 	if err != nil {
 		t.Fatalf("VerifyToken error: %v", err)
 	}
@@ -110,11 +171,34 @@ func TestVerifyToken_ValidClaims(t *testing.T) {
 	}
 }
 
+func TestVerifyToken_RejectsNonHMACAlg(t *testing.T) {
+	s := newTestAuthService("")
+	exp := time.Now().Add(5 * time.Minute)
+	token := makeUnsignedToken(t, userClaims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			ID:        "u1",
+			Subject:   "access",
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			ExpiresAt: jwt.NewNumericDate(exp),
+		},
+		UserID:     "u1",
+		Username:   "bob",
+		Roles:      []string{"user"},
+		AppVersion: config.Version,
+	})
+
+	_, _, err := s.VerifyToken(context.Background(), token)
+	if !errors.Is(err, ErrInvalidToken) {
+		t.Errorf("want ErrInvalidToken, got %v", err)
+	}
+}
+
 func TestVerifyToken_Expired(t *testing.T) {
 	db := setupAuthServiceTestDB(t)
 	userSvc := NewUserService(db)
 	s := newTestAuthService("")
 	s.userService = userSvc
+	s.sessionService = NewSessionService(db)
 
 	// Create user in DB
 	user := &models.User{
@@ -128,7 +212,7 @@ func TestVerifyToken_Expired(t *testing.T) {
 	exp := time.Now().Add(-1 * time.Minute)
 	token := makeAccessToken(t, s.jwtSecret, "access", "u1", "bob", []string{"user"}, "", "", exp)
 
-	_, err = s.VerifyToken(context.Background(), token)
+	_, _, err = s.VerifyToken(context.Background(), token)
 	if !errors.Is(err, ErrExpiredToken) {
 		t.Errorf("want ErrExpiredToken, got %v", err)
 	}
@@ -139,10 +223,8 @@ func TestVerifyToken_InvalidSubject(t *testing.T) {
 	exp := time.Now().Add(5 * time.Minute)
 	token := makeAccessToken(t, s.jwtSecret, "refresh", "u1", "bob", []string{"user"}, "", "", exp)
 
-	_, err := s.VerifyToken(context.Background(), token)
-	if err == nil || err.Error() != "not an access token" {
-		t.Errorf("want 'not an access token', got %v", err)
-	}
+	_, _, err := s.VerifyToken(context.Background(), token)
+	require.ErrorAs(t, err, new(*common.AccessTokenSubjectError))
 }
 
 func TestVerifyToken_InvalidSignature(t *testing.T) {
@@ -154,7 +236,7 @@ func TestVerifyToken_InvalidSignature(t *testing.T) {
 	}
 	token := makeAccessToken(t, otherSecret, "access", "u1", "bob", []string{"user"}, "", "", exp)
 
-	_, err := s.VerifyToken(context.Background(), token)
+	_, _, err := s.VerifyToken(context.Background(), token)
 	if !errors.Is(err, ErrInvalidToken) {
 		t.Errorf("want ErrInvalidToken, got %v", err)
 	}
@@ -165,10 +247,8 @@ func TestVerifyToken_MissingUserID(t *testing.T) {
 	exp := time.Now().Add(5 * time.Minute)
 	token := makeAccessToken(t, s.jwtSecret, "access", "", "bob", []string{"user"}, "", "", exp)
 
-	_, err := s.VerifyToken(context.Background(), token)
-	if err == nil || err.Error() != "missing user ID in token" {
-		t.Errorf("want 'missing user ID in token', got %v", err)
-	}
+	_, _, err := s.VerifyToken(context.Background(), token)
+	require.ErrorAs(t, err, new(*common.MissingTokenUserIDError))
 }
 
 func TestGenerateUsernameFromEmail(t *testing.T) {
@@ -224,12 +304,298 @@ func TestVerifyToken_VersionMismatch(t *testing.T) {
 	token := makeAccessToken(t, s.jwtSecret, "access", "u1", "bob", []string{"user"}, "", "", exp)
 	config.Version = "2.0.0"
 
-	_, err := s.VerifyToken(context.Background(), token)
+	_, _, err := s.VerifyToken(context.Background(), token)
 	if !errors.Is(err, ErrTokenVersionMismatch) {
 		t.Errorf("want ErrTokenVersionMismatch, got %v", err)
 	}
 
 	config.Version = oldVersion
+}
+
+func TestRefreshToken_Valid(t *testing.T) {
+	db := setupAuthServiceTestDB(t)
+	userSvc := NewUserService(db)
+	settingsSvc, err := NewSettingsService(context.Background(), db)
+	require.NoError(t, err)
+	s := newTestAuthService("")
+	s.userService = userSvc
+	s.settingsService = settingsSvc
+	s.sessionService = NewSessionService(db)
+
+	user := &models.User{
+		BaseModel: models.BaseModel{ID: "u-refresh"},
+		Username:  "refresh-user",
+		Roles:     models.StringSlice{"user"},
+	}
+	_, err = userSvc.CreateUser(context.Background(), user)
+	require.NoError(t, err)
+
+	exp := time.Now().Add(5 * time.Minute)
+	session, refreshJTI := createTestSession(t, db, "u-refresh", exp)
+	token := makeRefreshToken(t, s.jwtSecret, "refresh", refreshJTI, exp, "u-refresh", session.ID)
+
+	tokenPair, err := s.RefreshToken(context.Background(), token, auth.SessionMeta{})
+	require.NoError(t, err)
+	require.NotNil(t, tokenPair)
+	require.NotEmpty(t, tokenPair.AccessToken)
+	require.NotEmpty(t, tokenPair.RefreshToken)
+}
+
+// A refresh token minted under an older config.Version must still refresh successfully
+// and the newly issued tokens must carry the current config.Version. This is what keeps
+// users logged in across backend releases — see plans/how-can-we-make-compiled-quilt.md.
+func TestRefreshToken_VersionMismatchRotates(t *testing.T) {
+	db := setupAuthServiceTestDB(t)
+	userSvc := NewUserService(db)
+	settingsSvc, err := NewSettingsService(context.Background(), db)
+	require.NoError(t, err)
+	s := newTestAuthService("")
+	s.userService = userSvc
+	s.settingsService = settingsSvc
+	s.sessionService = NewSessionService(db)
+
+	user := &models.User{
+		BaseModel: models.BaseModel{ID: "u-versionmismatch"},
+		Username:  "versionmismatch-user",
+		Roles:     models.StringSlice{"user"},
+	}
+	_, err = userSvc.CreateUser(context.Background(), user)
+	require.NoError(t, err)
+
+	exp := time.Now().Add(5 * time.Minute)
+	session, refreshJTI := createTestSession(t, db, user.ID, exp)
+
+	oldVersion := config.Version
+	t.Cleanup(func() { config.Version = oldVersion })
+	config.Version = "1.0.0"
+	token := makeRefreshToken(t, s.jwtSecret, "refresh", refreshJTI, exp, user.ID, session.ID)
+	config.Version = "2.0.0"
+
+	tokenPair, err := s.RefreshToken(context.Background(), token, auth.SessionMeta{})
+	require.NoError(t, err)
+	require.NotNil(t, tokenPair)
+	require.NotEmpty(t, tokenPair.AccessToken)
+	require.NotEmpty(t, tokenPair.RefreshToken)
+
+	parsedAccess, err := jwt.ParseWithClaims(tokenPair.AccessToken, &userClaims{}, func(*jwt.Token) (any, error) {
+		return s.jwtSecret, nil
+	})
+	require.NoError(t, err)
+	accessClaims, ok := parsedAccess.Claims.(*userClaims)
+	require.True(t, ok)
+	require.Equal(t, "2.0.0", accessClaims.AppVersion)
+
+	parsedRefresh, err := jwt.ParseWithClaims(tokenPair.RefreshToken, &refreshClaims{}, func(*jwt.Token) (any, error) {
+		return s.jwtSecret, nil
+	})
+	require.NoError(t, err)
+	rClaims, ok := parsedRefresh.Claims.(*refreshClaims)
+	require.True(t, ok)
+	require.Equal(t, "2.0.0", rClaims.AppVersion)
+}
+
+func TestVerifyToken_RejectsRevokedSession(t *testing.T) {
+	db := setupAuthServiceTestDB(t)
+	userSvc := NewUserService(db)
+	s := newTestAuthService("")
+	s.userService = userSvc
+	s.sessionService = NewSessionService(db)
+
+	user := &models.User{
+		BaseModel: models.BaseModel{ID: "u-revoked"},
+		Username:  "revoked-user",
+		Roles:     models.StringSlice{"user"},
+	}
+	_, err := userSvc.CreateUser(context.Background(), user)
+	require.NoError(t, err)
+
+	exp := time.Now().Add(5 * time.Minute)
+	session, _ := createTestSession(t, db, user.ID, exp)
+	require.NoError(t, s.RevokeSession(context.Background(), session.ID))
+	token := makeAccessToken(t, s.jwtSecret, "access", user.ID, user.Username, []string{"user"}, "", "", exp, session.ID)
+
+	_, _, err = s.VerifyToken(context.Background(), token)
+	require.True(t, common.IsSessionRevokedError(err))
+}
+
+func TestVerifyToken_RejectsMissingSessionID(t *testing.T) {
+	db := setupAuthServiceTestDB(t)
+	userSvc := NewUserService(db)
+	s := newTestAuthService("")
+	s.userService = userSvc
+	s.sessionService = NewSessionService(db)
+
+	user := &models.User{
+		BaseModel: models.BaseModel{ID: "u-no-sid"},
+		Username:  "no-sid-user",
+		Roles:     models.StringSlice{"user"},
+	}
+	_, err := userSvc.CreateUser(context.Background(), user)
+	require.NoError(t, err)
+
+	token := makeAccessToken(t, s.jwtSecret, "access", user.ID, user.Username, []string{"user"}, "", "", time.Now().Add(5*time.Minute))
+
+	_, _, err = s.VerifyToken(context.Background(), token)
+	require.ErrorAs(t, err, new(*common.MissingTokenSessionIDError))
+}
+
+func TestRevokeSessionThenVerifyTokenFails(t *testing.T) {
+	db := setupAuthServiceTestDB(t)
+	userSvc := NewUserService(db)
+	s := newTestAuthService("")
+	s.userService = userSvc
+	s.sessionService = NewSessionService(db)
+
+	user := &models.User{
+		BaseModel: models.BaseModel{ID: "u-logout"},
+		Username:  "logout-user",
+		Roles:     models.StringSlice{"user"},
+	}
+	_, err := userSvc.CreateUser(context.Background(), user)
+	require.NoError(t, err)
+
+	exp := time.Now().Add(5 * time.Minute)
+	session, _ := createTestSession(t, db, user.ID, exp)
+	token := makeAccessToken(t, s.jwtSecret, "access", user.ID, user.Username, []string{"user"}, "", "", exp, session.ID)
+	require.NoError(t, s.RevokeSession(context.Background(), session.ID))
+
+	_, _, err = s.VerifyToken(context.Background(), token)
+	require.True(t, common.IsSessionRevokedError(err))
+}
+
+func TestRefreshToken_RotatesJTI(t *testing.T) {
+	db := setupAuthServiceTestDB(t)
+	userSvc := NewUserService(db)
+	settingsSvc, err := NewSettingsService(context.Background(), db)
+	require.NoError(t, err)
+	s := newTestAuthService("")
+	s.userService = userSvc
+	s.settingsService = settingsSvc
+	s.sessionService = NewSessionService(db)
+
+	user := &models.User{
+		BaseModel: models.BaseModel{ID: "u-rotate"},
+		Username:  "rotate-user",
+		Roles:     models.StringSlice{"user"},
+	}
+	_, err = userSvc.CreateUser(context.Background(), user)
+	require.NoError(t, err)
+
+	exp := time.Now().Add(5 * time.Minute)
+	session, refreshJTI := createTestSession(t, db, user.ID, exp)
+	token := makeRefreshToken(t, s.jwtSecret, "refresh", refreshJTI, exp, user.ID, session.ID)
+
+	tokenPair, err := s.RefreshToken(context.Background(), token, auth.SessionMeta{})
+	require.NoError(t, err)
+	require.NotEmpty(t, tokenPair.RefreshToken)
+
+	_, err = s.RefreshToken(context.Background(), token, auth.SessionMeta{})
+	require.ErrorIs(t, err, ErrInvalidToken)
+}
+
+func TestRefreshToken_RejectsRevokedSession(t *testing.T) {
+	db := setupAuthServiceTestDB(t)
+	userSvc := NewUserService(db)
+	settingsSvc, err := NewSettingsService(context.Background(), db)
+	require.NoError(t, err)
+	s := newTestAuthService("")
+	s.userService = userSvc
+	s.settingsService = settingsSvc
+	s.sessionService = NewSessionService(db)
+
+	user := &models.User{
+		BaseModel: models.BaseModel{ID: "u-refresh-revoked"},
+		Username:  "refresh-revoked-user",
+		Roles:     models.StringSlice{"user"},
+	}
+	_, err = userSvc.CreateUser(context.Background(), user)
+	require.NoError(t, err)
+
+	exp := time.Now().Add(5 * time.Minute)
+	session, refreshJTI := createTestSession(t, db, user.ID, exp)
+	require.NoError(t, s.RevokeSession(context.Background(), session.ID))
+	token := makeRefreshToken(t, s.jwtSecret, "refresh", refreshJTI, exp, user.ID, session.ID)
+
+	_, err = s.RefreshToken(context.Background(), token, auth.SessionMeta{})
+	require.True(t, common.IsSessionRevokedError(err))
+}
+
+func TestChangePassword_RevokesAllSessions(t *testing.T) {
+	db := setupAuthServiceTestDB(t)
+	userSvc := NewUserService(db)
+	s := newTestAuthService("")
+	s.userService = userSvc
+	s.sessionService = NewSessionService(db)
+
+	passwordHash, err := userSvc.hashPassword("old-password")
+	require.NoError(t, err)
+	user := &models.User{
+		BaseModel:    models.BaseModel{ID: "u-password"},
+		Username:     "password-user",
+		PasswordHash: passwordHash,
+		Roles:        models.StringSlice{"user"},
+	}
+	_, err = userSvc.CreateUser(context.Background(), user)
+	require.NoError(t, err)
+
+	sessionA, _ := createTestSession(t, db, user.ID, time.Now().Add(time.Hour))
+	sessionB, _ := createTestSession(t, db, user.ID, time.Now().Add(time.Hour))
+
+	require.NoError(t, s.ChangePassword(context.Background(), user.ID, "old-password", "new-password", ""))
+
+	sessionA, err = s.sessionService.GetSessionByID(context.Background(), sessionA.ID)
+	require.NoError(t, err)
+	sessionB, err = s.sessionService.GetSessionByID(context.Background(), sessionB.ID)
+	require.NoError(t, err)
+	require.NotNil(t, sessionA.RevokedAt)
+	require.NotNil(t, sessionB.RevokedAt)
+}
+
+func TestChangePassword_KeepsCurrentSessionAlive(t *testing.T) {
+	db := setupAuthServiceTestDB(t)
+	userSvc := NewUserService(db)
+	s := newTestAuthService("")
+	s.userService = userSvc
+	s.sessionService = NewSessionService(db)
+
+	passwordHash, err := userSvc.hashPassword("old-password")
+	require.NoError(t, err)
+	user := &models.User{
+		BaseModel:    models.BaseModel{ID: "u-keep"},
+		Username:     "keep-user",
+		PasswordHash: passwordHash,
+		Roles:        models.StringSlice{"user"},
+	}
+	_, err = userSvc.CreateUser(context.Background(), user)
+	require.NoError(t, err)
+
+	current, _ := createTestSession(t, db, user.ID, time.Now().Add(time.Hour))
+	other, _ := createTestSession(t, db, user.ID, time.Now().Add(time.Hour))
+
+	require.NoError(t, s.ChangePassword(context.Background(), user.ID, "old-password", "new-password", current.ID))
+
+	current, err = s.sessionService.GetSessionByID(context.Background(), current.ID)
+	require.NoError(t, err)
+	other, err = s.sessionService.GetSessionByID(context.Background(), other.ID)
+	require.NoError(t, err)
+	require.Nil(t, current.RevokedAt, "current session should remain active")
+	require.NotNil(t, other.RevokedAt, "other sessions should be revoked")
+}
+
+func TestRefreshToken_RejectsNonHMACAlg(t *testing.T) {
+	s := newTestAuthService("")
+	exp := time.Now().Add(5 * time.Minute)
+	token := makeUnsignedToken(t, jwt.RegisteredClaims{
+		ID:        "u1",
+		Subject:   "refresh",
+		IssuedAt:  jwt.NewNumericDate(time.Now()),
+		ExpiresAt: jwt.NewNumericDate(exp),
+	})
+
+	_, err := s.RefreshToken(context.Background(), token, auth.SessionMeta{})
+	if !errors.Is(err, ErrInvalidToken) {
+		t.Errorf("want ErrInvalidToken, got %v", err)
+	}
 }
 
 func TestGetOidcConfigurationStatus(t *testing.T) {
@@ -254,6 +620,7 @@ func TestGetOidcConfigurationStatus(t *testing.T) {
 
 	// Explicit env override to false should still be treated as forced
 	t.Setenv("OIDC_ENABLED", "false")
+	s.settingsService.envOverrides = resolveSettingsEnvOverridesInternal()
 	s.config.OidcEnabled = false
 	status, err = s.GetOidcConfigurationStatus(context.Background())
 	if err != nil {
@@ -265,6 +632,7 @@ func TestGetOidcConfigurationStatus(t *testing.T) {
 
 	// Enabled but missing fields
 	t.Setenv("OIDC_ENABLED", "true")
+	s.settingsService.envOverrides = resolveSettingsEnvOverridesInternal()
 	s.config.OidcEnabled = true
 	status, err = s.GetOidcConfigurationStatus(context.Background())
 	if err != nil {

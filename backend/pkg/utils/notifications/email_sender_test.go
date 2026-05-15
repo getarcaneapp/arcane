@@ -8,6 +8,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -31,71 +32,20 @@ const smtpTestConnTimeout = 2 * time.Second
 type smtpTestServer struct {
 	listener           net.Listener
 	tlsConfig          *tls.Config
+	clientTLSConfig    *tls.Config
 	supportStartTLS    bool
+	authMechanisms     []string
 	done               chan error
 	mu                 sync.Mutex
 	commands           []string
+	authMechanismUsed  string
 	authBeforeTLS      bool
 	authAfterTLS       bool
 	startTLSNegotiated bool
 }
 
-func TestBuildSMTPURLInternal(t *testing.T) {
-	tests := []struct {
-		name    string
-		config  models.EmailConfig
-		wantURL string
-	}{
-		{
-			name: "Basic SMTP no auth, no TLS",
-			config: models.EmailConfig{
-				SMTPHost:    "smtp.example.com",
-				SMTPPort:    25,
-				FromAddress: "from@example.com",
-				ToAddresses: []string{"to@example.com"},
-				TLSMode:     models.EmailTLSModeNone,
-			},
-			wantURL: "smtp://smtp.example.com:25/?auth=None&clienthost=localhost&encryption=None&fromaddress=from%40example.com&timeout=10s&toaddresses=to%40example.com&usehtml=Yes&usestarttls=No",
-		},
-		{
-			name: "SMTP with auth and starttls",
-			config: models.EmailConfig{
-				SMTPHost:     "smtp.example.com",
-				SMTPPort:     587,
-				SMTPUsername: "user",
-				SMTPPassword: "password",
-				FromAddress:  "from@example.com",
-				ToAddresses:  []string{"to1@example.com", "to2@example.com"},
-				TLSMode:      models.EmailTLSModeStartTLS,
-			},
-			wantURL: "smtp://user:password@smtp.example.com:587/?auth=Plain&clienthost=localhost&encryption=Auto&fromaddress=from%40example.com&requirestarttls=Yes&timeout=10s&toaddresses=to1%40example.com%2Cto2%40example.com&usehtml=Yes&usestarttls=Yes",
-		},
-		{
-			name: "SMTP with SSL/TLS and special characters in credentials",
-			config: models.EmailConfig{
-				SMTPHost:     "smtp.example.com",
-				SMTPPort:     465,
-				SMTPUsername: "user@example.com",
-				SMTPPassword: "pass/word!",
-				FromAddress:  "from@example.com",
-				ToAddresses:  []string{"to@example.com"},
-				TLSMode:      models.EmailTLSModeSSL,
-			},
-			wantURL: "smtp://user%40example.com:pass%2Fword%21@smtp.example.com:465/?auth=Plain&clienthost=localhost&encryption=ImplicitTLS&fromaddress=from%40example.com&timeout=10s&toaddresses=to%40example.com&usehtml=Yes&usestarttls=No",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			gotURL, err := buildSMTPURLInternal(tt.config, smtpBuildOptions{})
-			require.NoError(t, err)
-			assert.Equal(t, tt.wantURL, gotURL)
-		})
-	}
-}
-
 func TestSendEmailStartTLSRequiresTLSBeforeAuth(t *testing.T) {
-	server := newSMTPTestServerInternal(t, true)
+	server := newSMTPTestServerInternal(t, true, []string{"PLAIN"})
 	defer server.Close()
 
 	config := models.EmailConfig{
@@ -113,7 +63,7 @@ func TestSendEmailStartTLSRequiresTLSBeforeAuth(t *testing.T) {
 		config,
 		"Arcane STARTTLS Test",
 		"<p>Test</p>",
-		smtpBuildOptions{skipTLSVerify: true},
+		smtpBuildOptions{tlsConfig: server.ClientTLSConfig()},
 	)
 	require.NoError(t, err)
 	require.NoError(t, server.Wait())
@@ -124,8 +74,8 @@ func TestSendEmailStartTLSRequiresTLSBeforeAuth(t *testing.T) {
 	assertCommandOrderInternal(t, server.Commands(), "EHLO", "STARTTLS", "EHLO", "AUTH", "MAIL", "RCPT", "DATA", "QUIT")
 }
 
-func TestSendEmailStartTLSFailsBeforePlainAuthFallback(t *testing.T) {
-	server := newSMTPTestServerInternal(t, false)
+func TestSendEmailStartTLSFailsWhenServerDoesNotSupportIt(t *testing.T) {
+	server := newSMTPTestServerInternal(t, false, []string{"PLAIN"})
 	defer server.Close()
 
 	config := models.EmailConfig{
@@ -140,7 +90,7 @@ func TestSendEmailStartTLSFailsBeforePlainAuthFallback(t *testing.T) {
 
 	err := SendEmail(context.Background(), config, "Arcane STARTTLS Test", "<p>Test</p>")
 	require.Error(t, err)
-	assert.ErrorContains(t, err, "error enabling StartTLS")
+	assert.Contains(t, err.Error(), "STARTTLS")
 	assert.NotContains(t, err.Error(), "unencrypted connection")
 	require.NoError(t, server.Wait())
 
@@ -149,10 +99,40 @@ func TestSendEmailStartTLSFailsBeforePlainAuthFallback(t *testing.T) {
 	assert.False(t, server.AuthAfterTLS(), "did not expect AUTH after failed STARTTLS setup")
 }
 
-func newSMTPTestServerInternal(t *testing.T, supportStartTLS bool) *smtpTestServer {
+func TestSendEmailAuthLoginAgainstExchangeStyleServer(t *testing.T) {
+	server := newSMTPTestServerInternal(t, true, []string{"LOGIN"})
+	defer server.Close()
+
+	config := models.EmailConfig{
+		SMTPHost:     smtpTestHost,
+		SMTPPort:     server.Port(),
+		SMTPUsername: "user",
+		SMTPPassword: "password",
+		FromAddress:  "from@example.com",
+		ToAddresses:  []string{"to@example.com"},
+		TLSMode:      models.EmailTLSModeStartTLS,
+		AuthMode:     models.EmailAuthModeLogin,
+	}
+
+	err := sendEmailInternal(
+		context.Background(),
+		config,
+		"Arcane AUTH LOGIN Test",
+		"<p>Test</p>",
+		smtpBuildOptions{tlsConfig: server.ClientTLSConfig()},
+	)
+	require.NoError(t, err)
+	require.NoError(t, server.Wait())
+
+	assert.True(t, server.StartTLSNegotiated(), "expected STARTTLS to be negotiated")
+	assert.Equal(t, "LOGIN", server.AuthMechanismUsed(), "expected AUTH LOGIN to be used")
+	assertCommandOrderInternal(t, server.Commands(), "EHLO", "STARTTLS", "EHLO", "AUTH", "MAIL", "RCPT", "DATA", "QUIT")
+}
+
+func newSMTPTestServerInternal(t *testing.T, supportStartTLS bool, authMechanisms []string) *smtpTestServer {
 	t.Helper()
 
-	serverCert := generateServerCertificateInternal(t, smtpTestHost)
+	serverCert, certPool := generateServerCertificateInternal(t, smtpTestHost)
 
 	listener, err := net.Listen("tcp4", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -160,7 +140,9 @@ func newSMTPTestServerInternal(t *testing.T, supportStartTLS bool) *smtpTestServ
 	server := &smtpTestServer{
 		listener:        listener,
 		tlsConfig:       &tls.Config{Certificates: []tls.Certificate{serverCert}, MinVersion: tls.VersionTLS12},
+		clientTLSConfig: &tls.Config{RootCAs: certPool, ServerName: smtpTestHost, MinVersion: tls.VersionTLS12},
 		supportStartTLS: supportStartTLS,
+		authMechanisms:  authMechanisms,
 		done:            make(chan error, 1),
 	}
 
@@ -183,6 +165,10 @@ func (s *smtpTestServer) Port() int {
 
 func (s *smtpTestServer) Close() {
 	_ = s.listener.Close()
+}
+
+func (s *smtpTestServer) ClientTLSConfig() *tls.Config {
+	return s.clientTLSConfig.Clone()
 }
 
 func (s *smtpTestServer) Wait() error {
@@ -224,6 +210,31 @@ func (s *smtpTestServer) StartTLSNegotiated() bool {
 	return s.startTLSNegotiated
 }
 
+func (s *smtpTestServer) AuthMechanismUsed() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.authMechanismUsed
+}
+
+func (s *smtpTestServer) ehloLinesInternal() []string {
+	lines := []string{"arcane smtp test server"}
+	if s.supportStartTLS {
+		lines = append(lines, "STARTTLS")
+	}
+	if len(s.authMechanisms) > 0 {
+		lines = append(lines, "AUTH "+strings.Join(s.authMechanisms, " "))
+	}
+	return lines
+}
+
+func (s *smtpTestServer) ehloLinesAfterTLSInternal() []string {
+	lines := []string{"arcane smtp test server"}
+	if len(s.authMechanisms) > 0 {
+		lines = append(lines, "AUTH "+strings.Join(s.authMechanisms, " "))
+	}
+	return lines
+}
+
 func (s *smtpTestServer) handleConnection(conn net.Conn) error {
 	defer func() { _ = conn.Close() }()
 	_ = conn.SetDeadline(time.Now().Add(smtpTestConnTimeout))
@@ -245,27 +256,19 @@ func (s *smtpTestServer) handleConnection(conn net.Conn) error {
 			return err
 		}
 
-		verb, _, _ := strings.Cut(line, " ")
+		verb, rest, _ := strings.Cut(line, " ")
 		verb = strings.ToUpper(strings.TrimSpace(verb))
 		s.recordCommand(verb, tlsActive)
 
 		switch verb {
 		case "EHLO", "HELO":
-			if s.supportStartTLS && !tlsActive {
-				if err := writeSMTPMultiLineResponseInternal(writer, 250, []string{
-					"arcane smtp test server",
-					"STARTTLS",
-					"AUTH PLAIN",
-				}); err != nil {
-					return err
-				}
-				continue
+			var lines []string
+			if tlsActive {
+				lines = s.ehloLinesAfterTLSInternal()
+			} else {
+				lines = s.ehloLinesInternal()
 			}
-
-			if err := writeSMTPMultiLineResponseInternal(writer, 250, []string{
-				"arcane smtp test server",
-				"AUTH PLAIN",
-			}); err != nil {
+			if err := writeSMTPMultiLineResponseInternal(writer, 250, lines); err != nil {
 				return err
 			}
 		case "STARTTLS":
@@ -292,7 +295,14 @@ func (s *smtpTestServer) handleConnection(conn net.Conn) error {
 			tlsActive = true
 			s.markStartTLSNegotiated()
 		case "AUTH":
-			if err := writeSMTPResponseInternal(writer, 235, false, "2.7.0 Authentication successful"); err != nil {
+			mechanism, _, _ := strings.Cut(strings.TrimSpace(rest), " ")
+			mechanism = strings.ToUpper(mechanism)
+			s.recordAuthMechanismInternal(mechanism)
+			if err := s.handleAuthInternal(reader, writer, mechanism); err != nil {
+				return err
+			}
+		case "NOOP", "RSET":
+			if err := writeSMTPResponseInternal(writer, 250, false, "2.0.0 OK"); err != nil {
 				return err
 			}
 		case "MAIL":
@@ -332,6 +342,25 @@ func (s *smtpTestServer) handleConnection(conn net.Conn) error {
 	}
 }
 
+func (s *smtpTestServer) handleAuthInternal(reader *textproto.Reader, writer *textproto.Writer, mechanism string) error {
+	switch mechanism {
+	case "LOGIN":
+		if err := writeSMTPResponseInternal(writer, 334, false, base64.StdEncoding.EncodeToString([]byte("Username:"))); err != nil {
+			return err
+		}
+		if _, err := reader.ReadLine(); err != nil {
+			return err
+		}
+		if err := writeSMTPResponseInternal(writer, 334, false, base64.StdEncoding.EncodeToString([]byte("Password:"))); err != nil {
+			return err
+		}
+		if _, err := reader.ReadLine(); err != nil {
+			return err
+		}
+	}
+	return writeSMTPResponseInternal(writer, 235, false, "2.7.0 Authentication successful")
+}
+
 func (s *smtpTestServer) recordCommand(command string, tlsActive bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -344,6 +373,12 @@ func (s *smtpTestServer) recordCommand(command string, tlsActive bool) {
 			s.authBeforeTLS = true
 		}
 	}
+}
+
+func (s *smtpTestServer) recordAuthMechanismInternal(mechanism string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.authMechanismUsed = mechanism
 }
 
 func (s *smtpTestServer) markStartTLSNegotiated() {
@@ -389,7 +424,7 @@ func assertCommandOrderInternal(t *testing.T, commands []string, expected ...str
 	}
 }
 
-func generateServerCertificateInternal(t *testing.T, host string) tls.Certificate {
+func generateServerCertificateInternal(t *testing.T, host string) (tls.Certificate, *x509.CertPool) {
 	t.Helper()
 
 	caKey, err := rsa.GenerateKey(rand.Reader, 2048)
@@ -405,7 +440,7 @@ func generateServerCertificateInternal(t *testing.T, host string) tls.Certificat
 		IsCA:                  true,
 	}
 
-	_, err = x509.CreateCertificate(rand.Reader, caTemplate, caTemplate, &caKey.PublicKey, caKey)
+	caDER, err := x509.CreateCertificate(rand.Reader, caTemplate, caTemplate, &caKey.PublicKey, caKey)
 	require.NoError(t, err)
 
 	serverKey, err := rsa.GenerateKey(rand.Reader, 2048)
@@ -429,7 +464,10 @@ func generateServerCertificateInternal(t *testing.T, host string) tls.Certificat
 	serverCert, err := tls.X509KeyPair(certPEM, keyPEM)
 	require.NoError(t, err)
 
-	return serverCert
+	certPool := x509.NewCertPool()
+	require.True(t, certPool.AppendCertsFromPEM(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caDER})))
+
+	return serverCert, certPool
 }
 
 func mustSerialNumberInternal(t *testing.T) *big.Int {

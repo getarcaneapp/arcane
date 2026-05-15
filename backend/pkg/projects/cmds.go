@@ -252,7 +252,7 @@ func ComposePs(ctx context.Context, proj *types.Project, services []string, all 
 	}
 	defer func() { _ = c.Close() }()
 
-	return c.svc.Ps(ctx, proj.Name, api.PsOptions{All: all})
+	return c.svc.Ps(ctx, proj.Name, api.PsOptions{All: all, Services: services})
 }
 
 func ComposeDown(ctx context.Context, proj *types.Project, removeVolumes bool) error {
