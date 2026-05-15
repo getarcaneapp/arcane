@@ -1,4 +1,4 @@
-import { execSync } from 'child_process';
+import { execFileSync, execSync } from 'child_process';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -6,12 +6,48 @@ import { fileURLToPath } from 'node:url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+function ensureProjectsDirIsContainerWritable(projectsDir: string) {
+	fs.mkdirSync(projectsDir, { recursive: true });
+
+	try {
+		fs.accessSync(projectsDir, fs.constants.R_OK | fs.constants.W_OK | fs.constants.X_OK);
+		fs.chmodSync(projectsDir, 0o777);
+		return;
+	} catch (error) {
+		console.warn(
+			'Projects directory is not writable by the test runner, fixing permissions:',
+			error
+		);
+	}
+
+	execFileSync(
+		'docker',
+		[
+			'run',
+			'--rm',
+			'-v',
+			`${projectsDir}:/projects`,
+			'alpine',
+			'sh',
+			'-c',
+			'chmod -R 777 /projects'
+		],
+		{ stdio: 'inherit' }
+	);
+}
+
 async function globalSetup() {
 	console.log('\nStarting global setup...');
 
 	const composeFile = process.env.COMPOSE_FILE
 		? path.resolve(__dirname, '..', process.env.COMPOSE_FILE)
 		: path.resolve(__dirname, 'compose.yaml');
+
+	// This directory is bind-mounted into Arcane at /app/data/projects. Create it
+	// before `docker compose up` so Docker does not create it as root, and make it
+	// writable for the hardened non-root runtime user (65532).
+	const projectsDir = path.resolve(__dirname, 'projects');
+	ensureProjectsDirIsContainerWritable(projectsDir);
 
 	try {
 		console.log('Building and starting Docker containers...');
@@ -44,12 +80,6 @@ async function globalSetup() {
 
 	if (attempts === maxAttempts) {
 		throw new Error(`Server at ${baseURL} did not become ready in time.`);
-	}
-
-	// 3. Ensure the projects directory exists
-	const projectsDir = path.resolve(__dirname, 'projects');
-	if (!fs.existsSync(projectsDir)) {
-		fs.mkdirSync(projectsDir, { recursive: true });
 	}
 
 	console.log('Global setup complete.\n');
