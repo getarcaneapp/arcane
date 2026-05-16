@@ -39,7 +39,7 @@ type RuntimeIdentityConfig struct {
 	DockerHost     string
 	DockerConfig   string
 	DatabaseURL    string
-	DefaultNonRoot string
+	DefaultNonRoot bool
 }
 
 // ApplyRequestedRuntimeIdentity switches the current process to the configured
@@ -103,7 +103,7 @@ func loadRuntimeIdentityRequestInternal(cfg *RuntimeIdentityConfig) (runtimeIden
 	pgid := strings.TrimSpace(cfg.PGID)
 
 	if puid == "" && pgid == "" {
-		if strings.EqualFold(strings.TrimSpace(cfg.DefaultNonRoot), "true") {
+		if cfg.DefaultNonRoot {
 			return runtimeIdentityRequest{
 				Enabled:       true,
 				UID:           defaultRuntimeUID,

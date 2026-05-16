@@ -57,6 +57,7 @@ type Config struct {
 
 	PUID                    string `env:"PUID" default:""`
 	PGID                    string `env:"PGID" default:""`
+	DefaultNonRoot          bool   `env:"ARCANE_DEFAULT_NONROOT" default:"false"`
 	DockerHost              string `env:"DOCKER_HOST" default:"unix:///var/run/docker.sock"`
 	DockerConfig            string `env:"DOCKER_CONFIG" default:""`
 	ProjectsDirectory       string `env:"PROJECTS_DIRECTORY" default:"/app/data/projects"`

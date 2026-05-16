@@ -36,7 +36,7 @@ func Bootstrap(ctx context.Context) error {
 		DockerHost:     cfg.DockerHost,
 		DockerConfig:   cfg.DockerConfig,
 		DatabaseURL:    cfg.DatabaseURL,
-		DefaultNonRoot: os.Getenv("ARCANE_DEFAULT_NONROOT"),
+		DefaultNonRoot: cfg.DefaultNonRoot,
 	}
 	if err := startup.ApplyRequestedRuntimeIdentity(ctx, runtimeIdentityCfg); err != nil {
 		return fmt.Errorf("apply runtime identity: %w", err)
