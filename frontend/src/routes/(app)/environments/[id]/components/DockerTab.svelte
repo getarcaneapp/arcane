@@ -7,8 +7,9 @@
 	import PruneModeCard from '$lib/components/prune/prune-mode-card.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { DockerBrandIcon } from '$lib/icons';
+	import type { DockerTabProps } from './tab-props';
 
-	let { formInputs, shellSelectValue, handleShellSelectChange, shellOptions } = $props();
+	let { formInputs, shellSelectValue, handleShellSelectChange, shellOptions }: DockerTabProps = $props();
 
 	const deployPullPolicyOptions = [
 		{ value: 'missing', label: 'Missing', description: m.deploy_pull_policy_missing() },

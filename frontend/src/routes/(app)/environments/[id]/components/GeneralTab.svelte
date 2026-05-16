@@ -5,8 +5,9 @@
 	import TextInputWithLabel from '$lib/components/form/text-input-with-label.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { SettingsIcon } from '$lib/icons';
+	import type { GeneralTabProps } from './tab-props';
 
-	let { formInputs } = $props();
+	let { formInputs }: GeneralTabProps = $props();
 </script>
 
 <Card.Root class="flex flex-col">

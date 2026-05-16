@@ -65,7 +65,7 @@
 			.reduce((acc, item) => acc + item.value, 0);
 	});
 
-	const memoryCacheBytes = $derived(stats?.memory_stats?.stats?.file ?? stats?.memory_stats?.stats?.cache ?? 0);
+	const memoryCacheBytes = $derived(stats?.memory_stats?.stats?.file ?? stats?.memory_stats?.stats?.['cache'] ?? 0);
 	const memoryActiveBytes = $derived(stats?.memory_stats?.stats?.active_anon || 0);
 	const memoryInactiveBytes = $derived(stats?.memory_stats?.stats?.inactive_anon || 0);
 </script>

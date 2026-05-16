@@ -68,9 +68,9 @@
 
 	function mapVulnerabilityRequest(options: SearchPaginationSortRequest): SearchPaginationSortRequest {
 		const filters = { ...(options.filters ?? {}) };
-		if (filters.vulnSeverity) {
-			filters.severity = filters.vulnSeverity;
-			delete filters.vulnSeverity;
+		if (filters['vulnSeverity']) {
+			filters['severity'] = filters['vulnSeverity'];
+			delete filters['vulnSeverity'];
 		}
 
 		const sort = options.sort?.column === 'vulnSeverity' ? { ...options.sort, column: 'severity' } : options.sort;

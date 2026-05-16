@@ -48,7 +48,7 @@
 
 		openConfirmDialog({
 			title: m.users_delete_selected_title({ count: selectedIds.length }),
-			message: m.users_delete_selected_message({ count: selectedIds.length }),
+			message: m.users_delete_selected_message({ count: selectedIds.length, users: selectedIds.length }),
 			confirm: {
 				label: m.common_delete(),
 				destructive: true,
@@ -177,10 +177,10 @@
 		{item}
 		icon={{ component: UserIcon, variant: 'blue' }}
 		title={(item: User) => item.username}
-		subtitle={(item: User) => ((mobileFieldVisibility.email ?? true) && item.email ? item.email : null)}
+		subtitle={(item: User) => ((mobileFieldVisibility['email'] ?? true) && item.email ? item.email : null)}
 		badges={[
 			(item: User) =>
-				(mobileFieldVisibility.roles ?? true)
+				(mobileFieldVisibility['roles'] ?? true)
 					? {
 							variant: getRoleBadgeVariant(item.roles) === 'red' ? 'red' : 'green',
 							text: getRoleText(item.roles)
@@ -193,7 +193,7 @@
 				getValue: (item: User) => item.displayName,
 				icon: UserIcon,
 				iconVariant: 'gray' as const,
-				show: (mobileFieldVisibility.displayName ?? true) && !!item.displayName
+				show: (mobileFieldVisibility['displayName'] ?? true) && !!item.displayName
 			}
 		]}
 		rowActions={RowActions}

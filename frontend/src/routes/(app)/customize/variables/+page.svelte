@@ -10,7 +10,7 @@
 	import type { Variable } from '$lib/types/variable.type';
 	import { untrack } from 'svelte';
 	import { m } from '$lib/paraglide/messages';
-	import { AddIcon, SearchIcon, CloseIcon, AlertIcon, VariableIcon, CopyIcon } from '$lib/icons';
+	import { SearchIcon, CloseIcon, AlertIcon, VariableIcon } from '$lib/icons';
 
 	let { data } = $props();
 	let envVars = $state<Variable[]>(untrack(() => [...data.variables]));
@@ -54,33 +54,6 @@
 		envVars = envVars.filter((_, i) => i !== index);
 	}
 
-	function duplicateEnvVar(index: number) {
-		const varToDuplicate = envVars[index];
-		let baseKey = varToDuplicate.key;
-		let counter = 1;
-
-		// Check if key already ends with _# pattern
-		const match = baseKey.match(/^(.+)_(\d+)$/);
-		if (match) {
-			baseKey = match[1];
-			counter = parseInt(match[2], 10) + 1;
-		}
-
-		let newKey = `${baseKey}_${counter}`;
-
-		// Find next available number
-		while (envVars.some((v) => v.key === newKey)) {
-			counter++;
-			newKey = `${baseKey}_${counter}`;
-		}
-
-		const newVar = {
-			key: newKey,
-			value: varToDuplicate.value
-		};
-		envVars = [...envVars.slice(0, index + 1), newVar, ...envVars.slice(index + 1)];
-	}
-
 	async function onSubmit() {
 		isLoading = true;
 
@@ -118,7 +91,7 @@
 		searchQuery = '';
 	}
 
-	function handleKeyDown(event: KeyboardEvent, index: number) {
+	function handleKeyDown(event: KeyboardEvent) {
 		if (event.key === 'Enter') {
 			event.preventDefault();
 			addEnvVar();
@@ -233,7 +206,7 @@
 													bind:value={envVar.key}
 													disabled={isLoading}
 													class="font-mono text-sm"
-													onkeydown={(e) => handleKeyDown(e, actualIndex)}
+													onkeydown={(e) => handleKeyDown(e)}
 													oninput={(e) => {
 														const target = e.target as HTMLInputElement;
 														const cursorPos = target.selectionStart || 0;
@@ -257,7 +230,7 @@
 													bind:value={envVar.value}
 													disabled={isLoading}
 													class="font-mono text-sm"
-													onkeydown={(e) => handleKeyDown(e, actualIndex)}
+													onkeydown={(e) => handleKeyDown(e)}
 												/>
 												<InputGroup.Addon align="inline-end">
 													<CopyButton text={envVar.value} variant="ghost" tabindex={-1} />

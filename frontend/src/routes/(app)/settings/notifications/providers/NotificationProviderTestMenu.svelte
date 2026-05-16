@@ -1,13 +1,15 @@
+<script module lang="ts">
+	export interface NotificationProviderTestOption {
+		label: string;
+		testType?: string;
+	}
+</script>
+
 <script lang="ts">
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { m } from '$lib/paraglide/messages';
 	import { ArrowDownIcon, SendEmailIcon } from '$lib/icons';
-
-	export interface NotificationProviderTestOption {
-		label: string;
-		testType?: string;
-	}
 
 	interface Props {
 		disabled?: boolean;

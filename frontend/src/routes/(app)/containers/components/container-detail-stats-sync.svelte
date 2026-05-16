@@ -17,6 +17,9 @@
 		hasInitialStatsLoaded?: boolean;
 	} = $props();
 
+	void stats;
+	void hasInitialStatsLoaded;
+
 	let statsWebSocket: ReconnectingWebSocket<ContainerStatsType> | null = null;
 	let isConnecting = false;
 

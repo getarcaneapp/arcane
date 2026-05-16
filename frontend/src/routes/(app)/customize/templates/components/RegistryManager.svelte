@@ -7,7 +7,7 @@
 	import { Snippet } from '$lib/components/ui/snippet';
 	import { m } from '$lib/paraglide/messages';
 	import type { TemplateRegistry } from '$lib/types/template.type';
-	import { TrashIcon, RegistryIcon, CommunityIcon, RefreshIcon, ExternalLinkIcon, AddIcon, AlertTriangleIcon } from '$lib/icons';
+	import { RegistryIcon, CommunityIcon, ExternalLinkIcon, AlertTriangleIcon } from '$lib/icons';
 
 	let {
 		registries,

@@ -30,7 +30,7 @@
 
 	function isBindBackedVolume(mount: SwarmServiceMount): boolean {
 		const opts = mount.volumeOptions;
-		return opts?.type === 'none' && opts?.o === 'bind';
+		return opts?.['type'] === 'none' && opts?.['o'] === 'bind';
 	}
 
 	function getMountLabel(type: string): string {
@@ -122,12 +122,12 @@
 										</Card.Root>
 									{/if}
 
-									{#if bindBacked && mount.volumeOptions?.device}
+									{#if bindBacked && mount.volumeOptions?.['device']}
 										<Card.Root variant="outlined">
 											<Card.Content class="flex flex-col p-3">
 												<div class="text-muted-foreground mb-2 text-xs font-semibold">{m.dashboard_meter_gpu_device()}:</div>
 												<div class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all">
-													{mount.volumeOptions.device}
+													{mount.volumeOptions['device']}
 												</div>
 											</Card.Content>
 										</Card.Root>

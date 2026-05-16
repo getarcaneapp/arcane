@@ -199,10 +199,10 @@
 			variant: getIconVariant(item.severity)
 		})}
 		title={(item: Event) => item.title}
-		subtitle={(item: Event) => ((mobileFieldVisibility.timestamp ?? true) ? formatTimestamp(item.timestamp) : null)}
+		subtitle={(item: Event) => ((mobileFieldVisibility['timestamp'] ?? true) ? formatTimestamp(item.timestamp) : null)}
 		badges={[
 			(item: Event) =>
-				(mobileFieldVisibility.severity ?? true)
+				(mobileFieldVisibility['severity'] ?? true)
 					? {
 							variant: getSeverityBadgeVariant(item.severity),
 							text: item.severity
@@ -215,7 +215,7 @@
 				getValue: (item: Event) => item.type,
 				icon: TagIcon,
 				iconVariant: 'gray' as const,
-				show: mobileFieldVisibility.type ?? true
+				show: mobileFieldVisibility['type'] ?? true
 			},
 			{
 				label: m.events_col_resource(),
@@ -227,7 +227,7 @@
 				},
 				icon: EnvironmentsIcon,
 				iconVariant: 'gray' as const,
-				show: (mobileFieldVisibility.resource ?? true) && (!!item.resourceType || !!item.resourceName)
+				show: (mobileFieldVisibility['resource'] ?? true) && (!!item.resourceType || !!item.resourceName)
 			},
 			{
 				label: m.events_environment_label(),
@@ -237,14 +237,14 @@
 				},
 				icon: EnvironmentsIcon,
 				iconVariant: 'gray' as const,
-				show: (mobileFieldVisibility.environment ?? true) && !!item.environmentId
+				show: (mobileFieldVisibility['environment'] ?? true) && !!item.environmentId
 			},
 			{
 				label: m.common_user(),
 				getValue: (item: Event) => item.username,
 				icon: UserIcon,
 				iconVariant: 'gray' as const,
-				show: (mobileFieldVisibility.username ?? true) && !!item.username
+				show: (mobileFieldVisibility['username'] ?? true) && !!item.username
 			}
 		]}
 		rowActions={RowActions}

@@ -40,7 +40,7 @@
 	});
 	let customSettings = $state<Record<string, unknown>>({});
 	let showInternal = $derived.by(() => {
-		return (customSettings.showInternalVolumes as boolean) ?? false;
+		return (customSettings['showInternalVolumes'] as boolean) ?? false;
 	});
 
 	async function refreshVolumes(options: SearchPaginationSortRequest = requestOptions) {
@@ -57,7 +57,7 @@
 	}
 
 	function setShowInternal(value: boolean) {
-		const currentSetting = (customSettings.showInternalVolumes as boolean) ?? false;
+		const currentSetting = (customSettings['showInternalVolumes'] as boolean) ?? false;
 		const currentRequest = requestOptions?.includeInternal ?? false;
 		if (value === currentSetting && value === currentRequest) return;
 
@@ -209,7 +209,7 @@
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 
 	onMount(() => {
-		const persistedInternal = (customSettings.showInternalVolumes as boolean) ?? false;
+		const persistedInternal = (customSettings['showInternalVolumes'] as boolean) ?? false;
 		const currentInternal = requestOptions?.includeInternal ?? false;
 		if (persistedInternal !== currentInternal) {
 			setShowInternal(persistedInternal);
@@ -271,10 +271,10 @@
 			variant: item.inUse ? 'emerald' : 'amber'
 		})}
 		title={(item) => item.name}
-		subtitle={(item) => ((mobileFieldVisibility.id ?? true) ? item.id : null)}
+		subtitle={(item) => ((mobileFieldVisibility['id'] ?? true) ? item.id : null)}
 		badges={[
 			(item) =>
-				(mobileFieldVisibility.inUse ?? true)
+				(mobileFieldVisibility['inUse'] ?? true)
 					? item.inUse
 						? { variant: 'green' as const, text: m.common_in_use() }
 						: { variant: 'amber' as const, text: m.common_unused() }
@@ -286,10 +286,10 @@
 				getValue: (item: VolumeSummaryDto) => item.driver,
 				icon: VolumesIcon,
 				iconVariant: 'gray' as const,
-				show: mobileFieldVisibility.driver ?? true
+				show: mobileFieldVisibility['driver'] ?? true
 			}
 		]}
-		footer={(mobileFieldVisibility.createdAt ?? true)
+		footer={(mobileFieldVisibility['createdAt'] ?? true)
 			? {
 					label: m.common_created(),
 					getValue: (item) => format(new Date(String(item.createdAt)), 'PP p'),
@@ -354,7 +354,7 @@
 />
 
 {#snippet CustomViewOptions()}
-	<DropdownMenu.CheckboxItem bind:checked={() => showInternal, (v) => setShowInternal(!!v)}>
+	<DropdownMenu.CheckboxItem checked={showInternal} onCheckedChange={(v) => setShowInternal(!!v)}>
 		{`${m.common_show()} ${m.internal()} ${m.volumes_title()}`}
 	</DropdownMenu.CheckboxItem>
 {/snippet}

@@ -74,19 +74,6 @@
 	let upgradeDialogOpenById = $state<Record<string, boolean>>({});
 	let upgradeDialogUpgradingById = $state<Record<string, boolean>>({});
 
-	function getUpgradeOpen(id: string): boolean {
-		return upgradeDialogOpenById[id] ?? false;
-	}
-	function setUpgradeOpen(id: string, value: boolean): void {
-		upgradeDialogOpenById[id] = value;
-	}
-	function getUpgradeUpgrading(id: string): boolean {
-		return upgradeDialogUpgradingById[id] ?? false;
-	}
-	function setUpgradeUpgrading(id: string, value: boolean): void {
-		upgradeDialogUpgradingById[id] = value;
-	}
-
 	const storeUser = fromStore(userStore);
 	const availableEnvironments = $derived(environmentStore.available);
 	const currentEnvironmentId = $derived(environmentStore.selected?.id ?? null);
@@ -795,10 +782,8 @@
 																	debug={debugUpgrade}
 																	onRefreshRequested={refreshOverview}
 																	render="trigger"
-																	bind:open={() => getUpgradeOpen(environment.id), (v) => setUpgradeOpen(environment.id, v)}
-																	bind:upgrading={
-																		() => getUpgradeUpgrading(environment.id), (v) => setUpgradeUpgrading(environment.id, v)
-																	}
+																	bind:open={upgradeDialogOpenById[environment.id]}
+																	bind:upgrading={upgradeDialogUpgradingById[environment.id]}
 																/>
 															</ArcaneTooltip.Content>
 														</ArcaneTooltip.Root>
@@ -818,10 +803,8 @@
 														debug={debugUpgrade}
 														onRefreshRequested={refreshOverview}
 														render="dialog"
-														bind:open={() => getUpgradeOpen(environment.id), (v) => setUpgradeOpen(environment.id, v)}
-														bind:upgrading={
-															() => getUpgradeUpgrading(environment.id), (v) => setUpgradeUpgrading(environment.id, v)
-														}
+														bind:open={upgradeDialogOpenById[environment.id]}
+														bind:upgrading={upgradeDialogUpgradingById[environment.id]}
 													/>
 												{/if}
 											{/if}

@@ -13,16 +13,7 @@
 	import { navigationItems, getManagementItems, type NavigationItem } from '$lib/config/navigation-config';
 	import { isEditableTarget, matchesShortcutEvent } from '$lib/utils/keyboard-shortcut.utils';
 	import { cn } from '$lib/utils';
-	import type { Snippet } from 'svelte';
-	import type { LayoutData } from './$types';
-
-	let {
-		data,
-		children
-	}: {
-		data: LayoutData;
-		children: Snippet;
-	} = $props();
+	let { data, children }: LayoutProps = $props();
 
 	const versionInformation = $derived(data.versionInformation);
 	const user = $derived(data.user);
@@ -78,6 +69,7 @@
 		event.preventDefault();
 		goto(match.url);
 	}
+	$effect(() => void handleNavigationShortcut);
 
 	function flattenNavigationItems(items: NavigationItem[]): NavigationItem[] {
 		return items.flatMap((item) => [item, ...(item.items ? flattenNavigationItems(item.items) : [])]);

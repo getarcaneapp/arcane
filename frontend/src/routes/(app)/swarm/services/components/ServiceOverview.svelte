@@ -175,28 +175,28 @@
 				</Card.Content>
 			</Card.Root>
 
-			{#if updateStatus?.State}
+			{#if updateStatus?.['State']}
 				<Card.Root variant="subtle" class="sm:col-span-2">
 					<Card.Content class="flex flex-col gap-2 p-4">
 						<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{m.common_status()}</div>
 						<div class="flex items-center gap-2">
 							<StatusBadge
-								variant={updateStatus.State === 'completed'
+								variant={updateStatus['State'] === 'completed'
 									? 'green'
-									: updateStatus.State === 'updating'
+									: updateStatus['State'] === 'updating'
 										? 'amber'
-										: updateStatus.State === 'paused'
+										: updateStatus['State'] === 'paused'
 											? 'amber'
 											: 'red'}
-								text={updateStatus.State}
+								text={updateStatus['State']}
 							/>
-							{#if updateStatus.Message}
-								<span class="text-muted-foreground text-sm">{updateStatus.Message}</span>
+							{#if updateStatus['Message']}
+								<span class="text-muted-foreground text-sm">{updateStatus['Message']}</span>
 							{/if}
 						</div>
-						{#if updateStatus.CompletedAt}
+						{#if updateStatus['CompletedAt']}
 							<div class="text-muted-foreground text-xs">
-								{formatRelative(updateStatus.CompletedAt)}
+								{formatRelative(updateStatus['CompletedAt'])}
 							</div>
 						{/if}
 					</Card.Content>

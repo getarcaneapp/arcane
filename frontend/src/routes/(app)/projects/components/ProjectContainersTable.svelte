@@ -27,7 +27,6 @@
 		RefreshIcon,
 		TrashIcon,
 		EllipsisIcon,
-		ContainersIcon,
 		HealthIcon,
 		InspectIcon,
 		FolderXIcon,
@@ -147,8 +146,8 @@
 				label: m.common_remove(),
 				destructive: true,
 				action: async (checkboxStates) => {
-					const force = !!checkboxStates.force;
-					const volumes = !!checkboxStates.volumes;
+					const force = !!checkboxStates['force'];
+					const volumes = !!checkboxStates['volumes'];
 					actionStatus[id] = 'removing';
 
 					handleApiResultWithCallbacks({
@@ -356,11 +355,11 @@
 	{:else if item.ports && item.ports.length > 0}
 		{@const parsedPorts = item.ports.map((p) => {
 			const [numsPart, proto] = p.split('/');
-			const nums = numsPart.split(':');
+			const nums = (numsPart ?? '').split(':');
 			if (nums.length === 2) {
-				return { publicPort: parseInt(nums[0]), privatePort: parseInt(nums[1]), type: proto || 'tcp' };
+				return { publicPort: parseInt(nums[0] ?? ''), privatePort: parseInt(nums[1] ?? ''), type: proto || 'tcp' };
 			}
-			return { privatePort: parseInt(nums[0]), type: proto || 'tcp' };
+			return { privatePort: parseInt(nums[0] ?? ''), type: proto || 'tcp' };
 		})}
 		<PortBadge ports={parsedPorts} />
 	{:else}
@@ -390,14 +389,14 @@
 		title={(item) => item.containerName || item.name}
 		badges={[
 			(item) =>
-				(mobileFieldVisibility.status ?? true)
+				(mobileFieldVisibility['status'] ?? true)
 					? {
 							variant: item.status === 'running' ? 'green' : item.status === 'exited' ? 'red' : 'amber',
 							text: capitalizeFirstLetter(item.status)
 						}
 					: null,
 			(item) =>
-				(mobileFieldVisibility.health ?? true) && item.health
+				(mobileFieldVisibility['health'] ?? true) && item.health
 					? { variant: getHealthColor(item.health), text: capitalizeFirstLetter(item.health) }
 					: null
 		]}
@@ -405,7 +404,7 @@
 			{
 				label: m.common_image(),
 				getValue: (item: ServiceWithId) => item.image,
-				show: mobileFieldVisibility.image ?? true
+				show: mobileFieldVisibility['image'] ?? true
 			}
 		]}
 		rowActions={showActionsColumn ? MobileRowActions : undefined}

@@ -71,16 +71,16 @@
 	}
 
 	// Provider form references for validation
-	let emailFormRef: BuiltInProviderForm;
-	let discordFormRef: BuiltInProviderForm;
-	let telegramFormRef: BuiltInProviderForm;
-	let signalFormRef: BuiltInProviderForm;
-	let slackFormRef: BuiltInProviderForm;
-	let ntfyFormRef: BuiltInProviderForm;
-	let pushoverFormRef: BuiltInProviderForm;
-	let gotifyFormRef: BuiltInProviderForm;
-	let matrixFormRef: BuiltInProviderForm;
-	let genericFormRef: BuiltInProviderForm;
+	let emailFormRef: ReturnType<typeof BuiltInProviderForm>;
+	let discordFormRef: ReturnType<typeof BuiltInProviderForm>;
+	let telegramFormRef: ReturnType<typeof BuiltInProviderForm>;
+	let signalFormRef: ReturnType<typeof BuiltInProviderForm>;
+	let slackFormRef: ReturnType<typeof BuiltInProviderForm>;
+	let ntfyFormRef: ReturnType<typeof BuiltInProviderForm>;
+	let pushoverFormRef: ReturnType<typeof BuiltInProviderForm>;
+	let gotifyFormRef: ReturnType<typeof BuiltInProviderForm>;
+	let matrixFormRef: ReturnType<typeof BuiltInProviderForm>;
+	let genericFormRef: ReturnType<typeof BuiltInProviderForm>;
 
 	// Saved settings from server (used to detect if settings exist)
 	let savedSettings = $state<Record<NotificationProviderKey, NotificationSettings | null>>({

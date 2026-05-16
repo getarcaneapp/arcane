@@ -38,10 +38,10 @@
 		return format(parsed, 'PP p');
 	}
 
-	function summarizeImageRefs(imageRefs: string[]) {
+	function summarizeImageRefs(imageRefs: string[]): string {
 		if (imageRefs.length === 0) return '-';
-		if (imageRefs.length === 1) return imageRefs[0];
-		return `${imageRefs[0]} +${imageRefs.length - 1} more`;
+		if (imageRefs.length === 1) return imageRefs[0] ?? '-';
+		return `${imageRefs[0] ?? ''} +${imageRefs.length - 1} more`;
 	}
 
 	function resolveProjectValue(project: Project, mode: 'current' | 'latest') {
@@ -51,7 +51,8 @@
 			return m.images_has_updates();
 		}
 
-		const info = updateInfoByRef[updatedRefs[0]];
+		const firstRef = updatedRefs[0];
+		const info = firstRef ? updateInfoByRef[firstRef] : undefined;
 		if (!info) return '-';
 
 		const digest = mode === 'current' ? info.currentDigest : info.latestDigest;
@@ -66,7 +67,8 @@
 	function resolveCheckedAt(project: Project) {
 		const updatedRefs = project.updateInfo?.updatedImageRefs ?? [];
 		if (updatedRefs.length === 1) {
-			return updateInfoByRef[updatedRefs[0]]?.checkTime ?? project.updateInfo?.lastCheckedAt ?? '';
+			const firstRef = updatedRefs[0];
+			return (firstRef ? updateInfoByRef[firstRef]?.checkTime : undefined) ?? project.updateInfo?.lastCheckedAt ?? '';
 		}
 		return project.updateInfo?.lastCheckedAt ?? '';
 	}

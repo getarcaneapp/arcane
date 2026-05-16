@@ -129,7 +129,7 @@
 		collapsedGroupsState = new PersistedState<Record<string, boolean>>('template-groups-collapsed', {});
 	});
 
-	let groupByRegistry = $derived((customSettings.groupByRegistry as boolean) ?? false);
+	let groupByRegistry = $derived((customSettings['groupByRegistry'] as boolean) ?? false);
 
 	function toggleGroup(groupName: string) {
 		if (!collapsedGroupsState) return;
@@ -227,10 +227,10 @@
 			alt: item.name
 		})}
 		title={(item) => item.name}
-		subtitle={(item) => ((mobileFieldVisibility.description ?? true) ? item.description : null)}
+		subtitle={(item) => ((mobileFieldVisibility['description'] ?? true) ? item.description : null)}
 		badges={[
 			(item) =>
-				(mobileFieldVisibility.type ?? true)
+				(mobileFieldVisibility['type'] ?? true)
 					? {
 							variant: item.isRemote ? 'green' : 'blue',
 							text: item.isRemote ? m.templates_remote() : m.templates_local()
@@ -242,7 +242,7 @@
 		onclick={(item: Template) => goto(`/customize/templates/${item.id}`)}
 	>
 		{#snippet children()}
-			{#if (mobileFieldVisibility.tags ?? true) && item.metadata?.tags && item.metadata.tags.length > 0}
+			{#if (mobileFieldVisibility['tags'] ?? true) && item.metadata?.tags && item.metadata.tags.length > 0}
 				<div class="flex items-start gap-2.5 border-t pt-3">
 					<div class="flex size-7 shrink-0 items-center justify-center rounded-lg bg-purple-500/10">
 						<TagIcon class="size-3.5 text-purple-500" />
@@ -340,7 +340,8 @@
 
 {#snippet CustomViewOptions()}
 	<DropdownMenu.CheckboxItem
-		bind:checked={() => groupByRegistry, (v) => (customSettings = { ...customSettings, groupByRegistry: !!v })}
+		checked={groupByRegistry}
+		onCheckedChange={(v) => (customSettings = { ...customSettings, groupByRegistry: !!v })}
 	>
 		{m.templates_group_by_registry()}
 	</DropdownMenu.CheckboxItem>

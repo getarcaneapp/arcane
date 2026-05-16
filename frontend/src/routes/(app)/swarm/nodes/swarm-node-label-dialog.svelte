@@ -28,7 +28,7 @@
 			await onAdd(key.trim(), value.trim());
 			handleCancel();
 		} catch (err) {
-			toast.error(m.common_update_failed({ name: m.common_labels() }) + ': ' + extractApiErrorMessage(err));
+			toast.error(m.common_update_failed({ resource: m.common_labels() }) + ': ' + extractApiErrorMessage(err));
 		} finally {
 			isSubmitting = false;
 		}

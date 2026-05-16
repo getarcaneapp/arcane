@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { TabBar, type TabItem } from '$lib/components/tab-bar';
 	import CodeEditor from '$lib/components/code-editor/editor.svelte';
 	import * as Card from '$lib/components/ui/card';
@@ -121,7 +120,7 @@
 
 	$effect(() => {
 		const validTabs = tabItems.map((item) => item.value as StackTab);
-		if (validTabs.length > 0 && !validTabs.includes(selectedTab)) {
+		if (validTabs.length > 0 && !validTabs.includes(selectedTab) && validTabs[0]) {
 			selectedTab = validTabs[0];
 		}
 	});

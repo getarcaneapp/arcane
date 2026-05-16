@@ -124,7 +124,7 @@
 		});
 	}
 
-	async function handlePerformSync(id: string, name: string) {
+	async function handlePerformSync(id: string, _name: string) {
 		isLoading.syncing = true;
 		const result = await tryCatch(gitOpsSyncService.performSync(environmentId, id));
 		handleApiResultWithCallbacks({
@@ -279,20 +279,12 @@
 	<span class="text-sm">{value ? format(new Date(value), 'PP p') : m.common_never()}</span>
 {/snippet}
 
-{#snippet SyncMobileCardSnippet({
-	item,
-	mobileFieldVisibility,
-	row
-}: {
-	item: GitOpsSync;
-	mobileFieldVisibility: FieldVisibility;
-	row: Row<GitOpsSync>;
-})}
+{#snippet SyncMobileCardSnippet({ item, mobileFieldVisibility }: { item: GitOpsSync; mobileFieldVisibility: FieldVisibility })}
 	<UniversalMobileCard
 		{item}
 		icon={{ component: RefreshCwIcon, variant: 'purple' as const }}
 		title={(item) => item.name}
-		subtitle={(item) => ((mobileFieldVisibility.id ?? false) ? item.id : item.branch)}
+		subtitle={(item) => ((mobileFieldVisibility['id'] ?? false) ? item.id : item.branch)}
 		badges={[{ variant: 'purple' as const, text: m.resource_sync_cap() }]}
 		fields={[
 			{
@@ -300,21 +292,21 @@
 				getValue: (item: GitOpsSync) => item.branch,
 				icon: GitBranchIcon,
 				iconVariant: 'gray' as const,
-				show: mobileFieldVisibility.branch ?? true
+				show: mobileFieldVisibility['branch'] ?? true
 			},
 			{
 				label: m.git_sync_compose_path(),
 				getValue: (item: GitOpsSync) => item.composePath,
 				icon: FolderIcon,
 				iconVariant: 'gray' as const,
-				show: mobileFieldVisibility.composePath ?? true
+				show: mobileFieldVisibility['composePath'] ?? true
 			}
 		]}
 		rowActions={RowActions}
 	/>
 {/snippet}
 
-{#snippet RowActions({ item, row }: { item: GitOpsSync; row?: Row<GitOpsSync> })}
+{#snippet RowActions({ item }: { item: GitOpsSync })}
 	<DropdownMenu.Root>
 		<DropdownMenu.Trigger>
 			{#snippet child({ props })}

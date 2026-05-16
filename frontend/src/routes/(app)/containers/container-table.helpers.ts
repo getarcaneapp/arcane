@@ -20,8 +20,9 @@ export function parseImageRef(imageRef: string): { repo: string; tag: string } {
 }
 
 export function getContainerDisplayName(container: ContainerSummaryDto): string {
-	if (container.names && container.names.length > 0) {
-		return container.names[0].replace(/^\//, '');
+	const first = container.names?.[0];
+	if (first) {
+		return first.replace(/^\//, '');
 	}
 	return container.id.substring(0, 12);
 }

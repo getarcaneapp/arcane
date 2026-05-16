@@ -15,8 +15,9 @@
 	import { JobsIcon } from '$lib/icons';
 	import type { JobStatus, JobPrerequisite } from '$lib/types/job-schedule.type';
 	import type { ContainerSummaryDto } from '$lib/types/container.type';
+	import type { JobsTabProps } from './tab-props';
 
-	let { formInputs, environmentId } = $props();
+	let { formInputs, environmentId }: JobsTabProps = $props();
 
 	let refreshSignal = $state(0);
 
@@ -65,7 +66,7 @@
 		);
 	});
 
-	function resolveSettingsUrl(job: JobStatus, prereq: JobPrerequisite): string | undefined {
+	function resolveSettingsUrl(_job: JobStatus, prereq: JobPrerequisite): string | undefined {
 		if (!prereq.settingsUrl) return undefined;
 		if (!environmentId) return prereq.settingsUrl;
 
@@ -311,7 +312,7 @@
 																		{/if}
 																	{:catch error}
 																		<div class="text-destructive p-2 text-sm">
-																			{error.message || 'Failed to load containers'}
+																			{(error instanceof Error ? error.message : '') || 'Failed to load containers'}
 																		</div>
 																	{/await}
 																</div>
@@ -404,7 +405,7 @@
 																		{/if}
 																	{:catch error}
 																		<div class="text-destructive p-2 text-sm">
-																			{error.message || 'Failed to load containers'}
+																			{(error instanceof Error ? error.message : '') || 'Failed to load containers'}
 																		</div>
 																	{/await}
 																</div>
@@ -422,7 +423,7 @@
 				{/if}
 			{:catch error}
 				<div class="border-destructive/50 bg-destructive/10 text-destructive rounded-lg border p-4">
-					{error.message || error}
+					{(error instanceof Error ? error.message : '') || String(error)}
 				</div>
 			{/await}
 		</Card.Content>

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { ArrowLeftIcon, TerminalIcon, CopyIcon, InfoIcon, TemplateIcon, AddIcon, GitBranchIcon } from '$lib/icons';
+	import { ArrowLeftIcon, TerminalIcon, CopyIcon, TemplateIcon, AddIcon, GitBranchIcon } from '$lib/icons';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { goto, invalidateAll } from '$app/navigation';

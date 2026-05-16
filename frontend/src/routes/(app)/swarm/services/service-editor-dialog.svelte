@@ -126,6 +126,7 @@
 		isLoading,
 		onSubmit
 	}: ServiceEditorDialogProps = $props();
+	void open;
 
 	function asRecord(value: unknown): Record<string, unknown> | undefined {
 		return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
@@ -206,7 +207,7 @@
 			envVars:
 				containerSpec?.Env?.map((envEntry) => {
 					const [key, ...valueParts] = envEntry.split('=');
-					return { key, value: valueParts.join('=') };
+					return { key: key ?? '', value: valueParts.join('=') };
 				}) ?? [],
 			mounts:
 				containerSpec?.Mounts?.map((mount) => ({
@@ -282,36 +283,36 @@
 		}
 
 		const spec = structuredClone(form.baseSpec ?? {});
-		spec.Name = form.name.value.trim();
+		spec['Name'] = form.name.value.trim();
 
 		const taskTemplate = ensureRecord(spec, 'TaskTemplate');
 		const containerSpec = ensureRecord(taskTemplate, 'ContainerSpec');
-		containerSpec.Image = form.image.value.trim();
+		containerSpec['Image'] = form.image.value.trim();
 
-		const baseMode = asRecord(form.baseSpec.Mode);
+		const baseMode = asRecord(form.baseSpec['Mode']);
 		if (form.mode === 'replicated') {
-			spec.Mode = { Replicated: { Replicas: Math.max(0, parseInt(form.replicas.value, 10) || 1) } };
+			spec['Mode'] = { Replicated: { Replicas: Math.max(0, parseInt(form.replicas.value, 10) || 1) } };
 		} else if (form.mode === 'global') {
-			spec.Mode = { Global: {} };
+			spec['Mode'] = { Global: {} };
 		} else if (form.mode === 'replicated-job') {
-			spec.Mode = { ReplicatedJob: structuredClone(asRecord(baseMode?.ReplicatedJob) ?? {}) };
+			spec['Mode'] = { ReplicatedJob: structuredClone(asRecord(baseMode?.['ReplicatedJob']) ?? {}) };
 		} else {
-			spec.Mode = { GlobalJob: structuredClone(asRecord(baseMode?.GlobalJob) ?? {}) };
+			spec['Mode'] = { GlobalJob: structuredClone(asRecord(baseMode?.['GlobalJob']) ?? {}) };
 		}
 
 		// Add optional container config
 		const commandParts = form.command.value.trim().split(' ').filter(Boolean);
 		if (commandParts.length > 0) {
-			containerSpec.Command = commandParts;
+			containerSpec['Command'] = commandParts;
 		} else {
-			delete containerSpec.Command;
+			delete containerSpec['Command'];
 		}
 
 		const argParts = form.args.value.trim().split(' ').filter(Boolean);
 		if (argParts.length > 0) {
-			containerSpec.Args = argParts;
+			containerSpec['Args'] = argParts;
 		} else {
-			delete containerSpec.Args;
+			delete containerSpec['Args'];
 		}
 
 		assignOptional(containerSpec, 'Dir', form.workingDir.value);
@@ -321,21 +322,21 @@
 		// Add environment variables
 		const filteredEnvVars = form.envVars.filter((entry) => entry.key.trim());
 		if (filteredEnvVars.length > 0) {
-			containerSpec.Env = filteredEnvVars.map((entry) => `${entry.key}=${entry.value}`);
+			containerSpec['Env'] = filteredEnvVars.map((entry) => `${entry.key}=${entry.value}`);
 		} else {
-			delete containerSpec.Env;
+			delete containerSpec['Env'];
 		}
 
 		// Add mounts
 		const filteredMounts = form.mounts.filter((mount) => mount.source.trim() && mount.target.trim());
 		if (filteredMounts.length > 0) {
-			containerSpec.Mounts = filteredMounts.map((mount) => ({
+			containerSpec['Mounts'] = filteredMounts.map((mount) => ({
 				Type: mount.type,
 				Source: mount.source,
 				Target: mount.target
 			}));
 		} else {
-			delete containerSpec.Mounts;
+			delete containerSpec['Mounts'];
 		}
 
 		// Add labels
@@ -345,24 +346,24 @@
 			filteredLabels.forEach((label) => {
 				nextLabels[label.key] = label.value;
 			});
-			spec.Labels = nextLabels;
+			spec['Labels'] = nextLabels;
 		} else {
-			delete spec.Labels;
+			delete spec['Labels'];
 		}
 
 		// Add ports
 		const filteredPorts = form.ports.filter((port) => port.target.trim());
 		if (filteredPorts.length > 0) {
 			const endpointSpec = ensureRecord(spec, 'EndpointSpec');
-			endpointSpec.Ports = filteredPorts.map((port) => ({
+			endpointSpec['Ports'] = filteredPorts.map((port) => ({
 				TargetPort: parseInt(port.target, 10),
 				PublishedPort: port.published ? parseInt(port.published, 10) : undefined,
 				Protocol: port.protocol
 			}));
 		} else {
-			const endpointSpec = asRecord(spec.EndpointSpec);
+			const endpointSpec = asRecord(spec['EndpointSpec']);
 			if (endpointSpec) {
-				delete endpointSpec.Ports;
+				delete endpointSpec['Ports'];
 			}
 		}
 

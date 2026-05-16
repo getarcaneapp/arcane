@@ -1,7 +1,5 @@
 <script lang="ts">
-	import * as Card from '$lib/components/ui/card/index.js';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
-	import { InfoIcon } from '$lib/icons';
 	import { toast } from 'svelte-sonner';
 	import type { ContainerRegistry, ContainerRegistryPullUsage } from '$lib/types/container-registry.type';
 	import type { ContainerRegistryCreateDto, ContainerRegistryUpdateDto } from '$lib/types/container-registry.type';

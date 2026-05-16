@@ -285,7 +285,7 @@
 			<Dialog.Content>
 				<Dialog.Header>
 					<Dialog.Title>{m.images_prune_confirm_title()}</Dialog.Title>
-					<Dialog.Description>{m.images_prune_confirm_description()}</Dialog.Description>
+					<Dialog.Description>{m.images_prune_confirm_description({ mode: imagePruneMode })}</Dialog.Description>
 				</Dialog.Header>
 				<div class="py-4">
 					<PruneModeCard

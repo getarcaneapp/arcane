@@ -53,6 +53,8 @@
 	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { format } from 'date-fns';
 
+	let {}: PageProps = $props();
+
 	const buildsRoot = $derived((($settingsStore?.buildsDirectory ?? '/builds') as string).trim() || '/builds');
 	const buildsRootLabel = $derived.by(() => {
 		const raw = buildsRoot.trim();

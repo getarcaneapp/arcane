@@ -14,7 +14,7 @@
 	} = $props();
 
 	let isStreaming = $state(false);
-	let viewer = $state<LogViewer>();
+	let viewer = $state<ReturnType<typeof LogViewer>>();
 	let tailLines = $state(100);
 	let autoStartLogs = $state(false);
 	let hasAutoStarted = $state(false);

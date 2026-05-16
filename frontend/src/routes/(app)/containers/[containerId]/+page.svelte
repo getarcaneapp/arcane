@@ -152,7 +152,7 @@
 	const rootComposeFilename = $derived.by(() => {
 		const cf = composeInfo?.configFiles;
 		if (!cf) return 'compose.yml';
-		const first = cf.split(',')[0].trim();
+		const first = cf.split(',')[0]?.trim() ?? '';
 		return first.split('/').pop() || 'compose.yml';
 	});
 
@@ -165,7 +165,7 @@
 	const hasServiceInContent = (content: string, serviceName: string): boolean => {
 		try {
 			const parsed = parseYaml(content) as Record<string, unknown> | null;
-			return !!(parsed?.services && (parsed.services as Record<string, unknown>)[serviceName]);
+			return !!(parsed?.['services'] && (parsed['services'] as Record<string, unknown>)[serviceName]);
 		} catch {
 			return false;
 		}

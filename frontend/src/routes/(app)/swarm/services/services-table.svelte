@@ -187,10 +187,10 @@
 			variant: modeIconVariant(item.mode)
 		})}
 		title={(item: SwarmServiceSummary) => getShortName(item.name, item.stackName)}
-		subtitle={(item: SwarmServiceSummary) => ((mobileFieldVisibility.stackName ?? true) ? (item.stackName ?? null) : null)}
+		subtitle={(item: SwarmServiceSummary) => ((mobileFieldVisibility['stackName'] ?? true) ? (item.stackName ?? null) : null)}
 		badges={[
 			(item: SwarmServiceSummary) =>
-				(mobileFieldVisibility.mode ?? true)
+				(mobileFieldVisibility['mode'] ?? true)
 					? { variant: getSwarmServiceModeVariant(item.mode), text: getSwarmServiceModeLabel(item.mode) }
 					: null
 		]}
@@ -200,7 +200,7 @@
 				getValue: (item: SwarmServiceSummary) => `${item.runningReplicas} / ${item.replicas}`,
 				icon: GlobeIcon,
 				iconVariant: 'gray' as const,
-				show: mobileFieldVisibility.replicas ?? true
+				show: mobileFieldVisibility['replicas'] ?? true
 			},
 			{
 				label: m.swarm_nodes_column(),
@@ -210,21 +210,21 @@
 						: m.common_na(),
 				icon: NetworksIcon,
 				iconVariant: 'gray' as const,
-				show: mobileFieldVisibility.nodes ?? true
+				show: mobileFieldVisibility['nodes'] ?? true
 			},
 			{
 				label: m.swarm_networks(),
 				getValue: (item: SwarmServiceSummary) => (item.networks?.length ? item.networks.join(', ') : m.common_na()),
 				icon: NetworksIcon,
 				iconVariant: 'gray' as const,
-				show: mobileFieldVisibility.networks ?? false
+				show: mobileFieldVisibility['networks'] ?? false
 			},
 			{
 				label: m.common_ports(),
 				getValue: (item: SwarmServiceSummary) => formatPortsList(item.ports).join(', ') || m.common_na(),
 				icon: GlobeIcon,
 				iconVariant: 'gray' as const,
-				show: mobileFieldVisibility.ports ?? false
+				show: mobileFieldVisibility['ports'] ?? false
 			}
 		]}
 		rowActions={RowActions}

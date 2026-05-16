@@ -104,7 +104,8 @@
 	}
 
 	function regenerateAgentDeployment() {
-		if (!selectedNode) return;
+		const node = selectedNode;
+		if (!node) return;
 
 		openConfirmDialog({
 			title: m.environments_regenerate_dialog_title(),
@@ -114,7 +115,7 @@
 				destructive: true,
 				action: async () => {
 					try {
-						await loadAgentDeployment(selectedNode, true);
+						await loadAgentDeployment(node, true);
 						toast.success(m.environments_regenerate_key_success());
 					} catch {
 						toast.error(m.environments_regenerate_key_failed());
@@ -313,12 +314,12 @@
 			variant: item.role === 'manager' ? 'purple' : 'blue'
 		})}
 		title={(item: SwarmNodeSummary) => item.hostname}
-		subtitle={(item: SwarmNodeSummary) => ((mobileFieldVisibility.engineVersion ?? false) ? (item.engineVersion ?? '') : null)}
+		subtitle={(item: SwarmNodeSummary) => ((mobileFieldVisibility['engineVersion'] ?? false) ? (item.engineVersion ?? '') : null)}
 		badges={[
 			(item: SwarmNodeSummary) =>
-				(mobileFieldVisibility.status ?? true) ? { variant: statusVariant(item.status), text: item.status } : null,
+				(mobileFieldVisibility['status'] ?? true) ? { variant: statusVariant(item.status), text: item.status } : null,
 			(item: SwarmNodeSummary) =>
-				(mobileFieldVisibility.agent ?? true)
+				(mobileFieldVisibility['agent'] ?? true)
 					? {
 							variant: getSwarmNodeAgentVariant(item.agent?.state),
 							text: getSwarmNodeAgentLabel(item.agent?.state)
@@ -331,14 +332,14 @@
 				getValue: (item: SwarmNodeSummary) => capitalizeFirstLetter(item.role),
 				icon: EnvironmentsIcon,
 				iconVariant: 'gray' as const,
-				show: mobileFieldVisibility.role ?? true
+				show: mobileFieldVisibility['role'] ?? true
 			},
 			{
 				label: m.swarm_availability(),
 				getValue: (item: SwarmNodeSummary) => capitalizeFirstLetter(item.availability),
 				icon: EnvironmentsIcon,
 				iconVariant: 'gray' as const,
-				show: mobileFieldVisibility.availability ?? true
+				show: mobileFieldVisibility['availability'] ?? true
 			},
 			{
 				label: m.common_labels(),
@@ -346,14 +347,14 @@
 					`${Object.keys(item.labels ?? {}).length + Object.keys(item.systemLabels ?? {}).length} labels`,
 				icon: TagIcon,
 				iconVariant: 'gray' as const,
-				show: mobileFieldVisibility.labels ?? true
+				show: mobileFieldVisibility['labels'] ?? true
 			},
 			{
 				label: m.swarm_node_agent_column(),
 				getValue: (item: SwarmNodeSummary) => getSwarmNodeAgentLabel(item.agent?.state),
 				icon: EdgeConnectionIcon,
 				iconVariant: 'gray' as const,
-				show: mobileFieldVisibility.agent ?? true
+				show: mobileFieldVisibility['agent'] ?? true
 			}
 		]}
 		rowActions={RowActions}

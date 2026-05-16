@@ -90,7 +90,7 @@
 				label: m.common_remove(),
 				destructive: true,
 				action: async (checkboxStates) => {
-					const force = !!checkboxStates.force;
+					const force = !!checkboxStates['force'];
 					isLoading.removing = true;
 					let successCount = 0;
 					let failureCount = 0;
@@ -142,7 +142,7 @@
 				label: m.common_remove(),
 				destructive: true,
 				action: async (checkboxStates) => {
-					const force = !!checkboxStates.force;
+					const force = !!checkboxStates['force'];
 					isLoading.removing = true;
 
 					const result = await tryCatch(imageService.deleteImage(id, { force }));
@@ -221,8 +221,9 @@
 
 	async function handleUpdateInfoChanged(imageId: string, newUpdateInfo: ImageUpdateInfoDto) {
 		const imageIndex = images.data.findIndex((img) => img.id === imageId);
-		if (imageIndex !== -1) {
-			images.data[imageIndex].updateInfo = newUpdateInfo;
+		const image = imageIndex !== -1 ? images.data[imageIndex] : undefined;
+		if (image) {
+			image.updateInfo = newUpdateInfo;
 			images = { ...images, data: [...images.data] };
 		}
 		await onImageUpdated?.();
@@ -230,8 +231,9 @@
 
 	async function handleVulnerabilityScanChanged(imageId: string, newScanSummary: VulnerabilityScanSummary) {
 		const imageIndex = images.data.findIndex((img) => img.id === imageId);
-		if (imageIndex !== -1) {
-			images.data[imageIndex].vulnerabilityScan = newScanSummary;
+		const image = imageIndex !== -1 ? images.data[imageIndex] : undefined;
+		if (image) {
+			image.vulnerabilityScan = newScanSummary;
 			images = { ...images, data: [...images.data] };
 		}
 		if (newScanSummary.status === 'completed' || newScanSummary.status === 'failed') {
@@ -598,11 +600,9 @@
 {/snippet}
 
 {#snippet ImageMobileCardSnippet({
-	row,
 	item,
 	mobileFieldVisibility
 }: {
-	row: any;
 	item: ImageSummaryDto;
 	mobileFieldVisibility: MobileFieldVisibility;
 })}
@@ -616,16 +616,16 @@
 			if (item.repo && item.repo !== '<none>') return item.repo;
 			return m.images_untagged();
 		}}
-		subtitle={(item) => ((mobileFieldVisibility.id ?? false) ? item.id : null)}
+		subtitle={(item) => ((mobileFieldVisibility['id'] ?? false) ? item.id : null)}
 		badges={[
 			(item: ImageSummaryDto) =>
-				(mobileFieldVisibility.inUse ?? true)
+				(mobileFieldVisibility['inUse'] ?? true)
 					? item.inUse
 						? { variant: 'green' as const, text: m.common_in_use() }
 						: { variant: 'amber' as const, text: m.common_unused() }
 					: null,
 			(item: ImageSummaryDto) => {
-				if (!(mobileFieldVisibility.updates ?? false)) return null;
+				if (!(mobileFieldVisibility['updates'] ?? false)) return null;
 				if (item.updateInfo?.hasUpdate) return { variant: 'blue' as const, text: m.images_has_updates() };
 				if (item.updateInfo?.error) return { variant: 'red' as const, text: m.common_error() };
 				if (item.updateInfo) return { variant: 'green' as const, text: m.images_no_updates() };
@@ -638,7 +638,7 @@
 				getValue: (item: ImageSummaryDto) => bytes.format(Number(item.size ?? 0)),
 				icon: VolumesIcon,
 				iconVariant: 'blue' as const,
-				show: mobileFieldVisibility.size ?? true
+				show: mobileFieldVisibility['size'] ?? true
 			},
 			{
 				label: m.common_tags(),
@@ -650,17 +650,17 @@
 				},
 				icon: ImagesIcon,
 				iconVariant: 'purple' as const,
-				show: mobileFieldVisibility.repoTags ?? true
+				show: mobileFieldVisibility['repoTags'] ?? true
 			},
 			{
 				label: m.images_used_by(),
 				getValue: (item: ImageSummaryDto) => item.usedBy?.map((usage) => usage.name).join(', ') || '—',
 				icon: ImagesIcon,
 				iconVariant: 'purple' as const,
-				show: mobileFieldVisibility.usedBy ?? false
+				show: mobileFieldVisibility['usedBy'] ?? false
 			}
 		]}
-		footer={(mobileFieldVisibility.created ?? true)
+		footer={(mobileFieldVisibility['created'] ?? true)
 			? {
 					label: m.common_created(),
 					getValue: (item) => format(new Date(Number(item.created || 0) * 1000), 'PP p'),

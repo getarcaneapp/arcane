@@ -985,7 +985,7 @@
 													<div
 														class="text-destructive flex h-full min-h-0 items-center justify-center rounded-lg border px-4 text-sm"
 													>
-														{error.message}
+														{error instanceof Error ? error.message : String(error)}
 													</div>
 												{/await}
 											{/if}
@@ -996,7 +996,7 @@
 													<div class="text-muted-foreground flex h-full min-h-0 items-center justify-center rounded-lg border">
 														{m.common_loading()}
 													</div>
-												{:then _loadedFile}
+												{:then}
 													<CodePanel
 														bind:open={includeFilesPanelStates[includeFile.relativePath]}
 														title={includeFile.relativePath}
@@ -1013,7 +1013,7 @@
 													<div
 														class="text-destructive flex h-full min-h-0 items-center justify-center rounded-lg border px-4 text-sm"
 													>
-														{error.message}
+														{error instanceof Error ? error.message : String(error)}
 													</div>
 												{/await}
 											{/if}
@@ -1144,7 +1144,7 @@
 														<div
 															class="text-destructive flex h-full min-h-0 items-center justify-center rounded-lg border px-4 text-sm"
 														>
-															{error.message}
+															{error instanceof Error ? error.message : String(error)}
 														</div>
 													{/await}
 												{/if}
@@ -1155,7 +1155,7 @@
 														<div class="text-muted-foreground flex h-full min-h-0 items-center justify-center rounded-lg border">
 															{m.common_loading()}
 														</div>
-													{:then _loadedFile}
+													{:then}
 														<CodePanel
 															bind:open={includeFilesPanelStates[includeFile.relativePath]}
 															title={includeFile.relativePath}
@@ -1172,7 +1172,7 @@
 														<div
 															class="text-destructive flex h-full min-h-0 items-center justify-center rounded-lg border px-4 text-sm"
 														>
-															{error.message}
+															{error instanceof Error ? error.message : String(error)}
 														</div>
 													{/await}
 												{/if}
@@ -1208,7 +1208,7 @@
 											<div class="text-muted-foreground flex h-full min-h-0 items-center justify-center rounded-lg border">
 												{m.common_loading()}
 											</div>
-										{:then _loadedFile}
+										{:then}
 											<CodePanel
 												bind:open={includeFilesPanelStates[includeFile.relativePath]}
 												title={includeFile.relativePath}
@@ -1225,7 +1225,7 @@
 											<div
 												class="text-destructive flex h-full min-h-0 items-center justify-center rounded-lg border px-4 text-sm"
 											>
-												{error.message}
+												{error instanceof Error ? error.message : String(error)}
 											</div>
 										{/await}
 									{/if}

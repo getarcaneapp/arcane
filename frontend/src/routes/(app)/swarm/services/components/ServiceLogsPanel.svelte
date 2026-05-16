@@ -12,7 +12,7 @@
 	} = $props();
 
 	let isStreaming = $state(false);
-	let viewer = $state<LogViewer>();
+	let viewer = $state<ReturnType<typeof LogViewer>>();
 	let autoScroll = $state(true);
 	let autoStartLogs = $state(false);
 	let showParsedJson = $state(false);
@@ -23,10 +23,6 @@
 
 	function handleStop() {
 		viewer?.stopLogStream();
-	}
-
-	function handleClear() {
-		viewer?.clearLogs();
 	}
 
 	async function handleRefresh() {
@@ -72,7 +68,6 @@
 				disabled={!serviceId}
 				onStart={handleStart}
 				onStop={handleStop}
-				onClear={handleClear}
 				onRefresh={handleRefresh}
 			/>
 		</div>
@@ -90,7 +85,6 @@
 				height="calc(100vh - 320px)"
 				onStart={handleStreamStart}
 				onStop={handleStreamStop}
-				onClear={handleClear}
 			/>
 		</div>
 	</Card.Content>

@@ -58,7 +58,7 @@
 	const effectiveAutoHeight = $derived(autoHeight || isMobile.current);
 </script>
 
-<Card.Root class="flex {effectiveAutoHeight ? '' : 'flex-1'} min-h-0 flex-col overflow-hidden">
+<Card.Root class="flex {effectiveAutoHeight ? '' : 'flex-1'} min-h-0 flex-col overflow-hidden" data-open={open}>
 	<Card.Header icon={CodeIcon} class="flex-shrink-0 items-center">
 		<Card.Title>
 			<h2>{title}</h2>

@@ -136,7 +136,7 @@
 				loading: isRefreshing,
 				disabled: isRefreshing
 			}
-		].filter((b): b is ActionButton => b !== null)
+		].filter((b) => b !== null) as ActionButton[]
 	);
 
 	const statCards: StatCardConfig[] = $derived([

@@ -6,7 +6,6 @@
 	import { Switch } from '$lib/components/ui/switch/index.js';
 	import TextInputWithLabel from '$lib/components/form/text-input-with-label.svelte';
 	import { toast } from 'svelte-sonner';
-	import type { PageData } from './$types';
 	import type { Settings } from '$lib/types/settings.type';
 	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
 	import { m } from '$lib/paraglide/messages';
@@ -20,7 +19,7 @@
 	import SettingsRow from '$lib/components/settings/settings-row.svelte';
 	import { cn } from '$lib/utils';
 
-	let { data }: { data: PageData } = $props();
+	let { data }: PageProps = $props();
 	const currentSettings = $derived<Settings>($settingsStore || data.settings!);
 	const isReadOnly = $derived.by(() => $settingsStore.uiConfigDisabled);
 	const isAutoLoginEnabled = $derived(settingsStore.autoLoginEnabled.isEnabled());

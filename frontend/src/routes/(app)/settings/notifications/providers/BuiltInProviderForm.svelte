@@ -1,25 +1,11 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages';
 	import { z } from 'zod/v4';
-	import type {
-		NotificationProviderKey,
-		ProviderFormValuesMap,
-		DiscordFormValues,
-		EmailFormValues,
-		TelegramFormValues,
-		SignalFormValues,
-		SlackFormValues,
-		NtfyFormValues,
-		PushoverFormValues,
-		GotifyFormValues,
-		MatrixFormValues,
-		GenericFormValues
-	} from '$lib/types/notification-providers';
+	import type { NotificationProviderKey, ProviderFormValuesMap } from '$lib/types/notification-providers';
 	import ProviderFormWrapper from './ProviderFormWrapper.svelte';
 	import EventSubscriptions from './EventSubscriptions.svelte';
 	import DynamicProviderFormBuilder from './DynamicProviderFormBuilder.svelte';
-	import NotificationProviderTestMenu from './NotificationProviderTestMenu.svelte';
-	import type { NotificationProviderTestOption } from './NotificationProviderTestMenu.svelte';
+	import NotificationProviderTestMenu, { type NotificationProviderTestOption } from './NotificationProviderTestMenu.svelte';
 	import { mapZodFieldErrors } from './provider-form-validation';
 	import type { ProviderFormSchema } from './provider-form-schema';
 

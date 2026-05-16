@@ -210,7 +210,7 @@
 				label: m.common_delete(),
 				destructive: true,
 				action: async (checkboxStates) => {
-					const force = !!checkboxStates.force;
+					const force = !!checkboxStates['force'];
 					await handleApiResultWithCallbacks({
 						result: await tryCatch(imageService.deleteImage(id, { force })),
 						message: m.images_remove_failed(),
