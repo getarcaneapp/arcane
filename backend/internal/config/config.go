@@ -55,8 +55,9 @@ type Config struct {
 	OidcProviderLogoUrl        string `env:"OIDC_PROVIDER_LOGO_URL" default:""`
 	OidcMobileRedirectUris     string `env:"OIDC_MOBILE_REDIRECT_URIS" default:"arcane-mobile://oidc-callback"`
 
-	PUID                    string `env:"PUID" default:""`
-	PGID                    string `env:"PGID" default:""`
+	PUID string `env:"PUID" default:""`
+	PGID string `env:"PGID" default:""`
+	// Enable the official images to drop from root to the default non-root runtime user when PUID/PGID are not set.
 	DefaultNonRoot          bool   `env:"ARCANE_DEFAULT_NONROOT" default:"false"`
 	DockerHost              string `env:"DOCKER_HOST" default:"unix:///var/run/docker.sock"`
 	DockerConfig            string `env:"DOCKER_CONFIG" default:""`
