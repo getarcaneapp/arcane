@@ -207,8 +207,8 @@ importers:
         specifier: ^0.37.1
         version: 0.37.1(@sveltejs/kit@2.58.0(@sveltejs/vite-plugin-svelte@7.1.2(svelte@5.55.7)(vite@8.0.10(@types/node@25.6.2)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.8.3)))(svelte@5.55.7)(typescript@6.0.3)(vite@8.0.10(@types/node@25.6.2)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.8.3)))(svelte@5.55.7)(zod@4.4.2)
       svelte-check-rs:
-        specifier: ^0.9.7
-        version: 0.9.7(@typescript/native-preview@7.0.0-dev.20260504.1)
+        specifier: ^0.9.8
+        version: 0.9.8(@typescript/native-preview@7.0.0-dev.20260504.1)
       svelte-sonner:
         specifier: ^1.1.1
         version: 1.1.1(svelte@5.55.7)
@@ -371,6 +371,9 @@ packages:
 
   '@codemirror/view@6.42.1':
     resolution: {integrity: sha512-ToN3oFc0nsxNUYVF5P0ztLgbC4UPPjPtA9aKYhkOKQaZASpOUo6ISXyQLP66ctVwlDc+j6Jv0uK5IFALkiXztg==}
+
+  '@codemirror/view@6.43.0':
+    resolution: {integrity: sha512-V7ZCLQO3Jus9hzh2jVCCPW3mO4IBMr43O37PqSUYautJSnnJF41YlgLw21x0fLJTYvJ+Vkm6Gp+qKGH9pltgXA==}
 
   '@csstools/color-helpers@6.0.2':
     resolution: {integrity: sha512-LMGQLS9EuADloEFkcTBR3BwV/CGHV7zyDxVRtVDTwdI2Ca4it0CCVTT9wCkxSgokjE5Ho41hEPgb8OEUwoXr6Q==}
@@ -1467,28 +1470,28 @@ packages:
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
 
-  '@svelte-check-rs/darwin-arm64@0.9.7':
-    resolution: {integrity: sha512-8yPfMkneK7afJWEe+ihAvShaWplJ/WJb8UnGZJSwZ5IOz+heiROJdhYq5usgv8dX4OEF4ExJ0HosYNHfVY5T2A==}
+  '@svelte-check-rs/darwin-arm64@0.9.8':
+    resolution: {integrity: sha512-Gfq4xGqX9EWhJ2fIthS/hZkxlqESLSUtDFJlqs2X+ntx1vJVjMxjOEA9py5mmMabABCuzgei/KTyj5poERc5Rw==}
     cpu: [arm64]
     os: [darwin]
 
-  '@svelte-check-rs/darwin-x64@0.9.7':
-    resolution: {integrity: sha512-JXK307xSrqhfjzCefPRio3wxRl+hJep4kRTdA5aJAdOhlzCg2lEBF24mC5fo1LX9Uz1PjNfSy6MZePzVnRl7+g==}
+  '@svelte-check-rs/darwin-x64@0.9.8':
+    resolution: {integrity: sha512-HPR6UtmZDvZsOJbVyNDm0QceJXxhPLsS2N7sZzejVbWwiJZ+vZ+G5SvhltDRcRXl6JMqPZ0aZFr4YCAZWXL5vA==}
     cpu: [x64]
     os: [darwin]
 
-  '@svelte-check-rs/linux-arm64@0.9.7':
-    resolution: {integrity: sha512-XM52mnkVhaKa8qehWtASGAX74ex8EjMmmBKSWw3eU4OiowFmt4VFp7LvTpphNnuCNLZJEDq/sNY0IhkvatTZFw==}
+  '@svelte-check-rs/linux-arm64@0.9.8':
+    resolution: {integrity: sha512-aqvDADmU6nY5gIO39fxs+psWRtl2bbuVvZzFaBorQaAZFoLnpqjHl5U9HVEKDRWpRoE+5tMM3nGcZdZVvBtwhQ==}
     cpu: [arm64]
     os: [linux]
 
-  '@svelte-check-rs/linux-x64@0.9.7':
-    resolution: {integrity: sha512-qjpYrVALOBU6segt1FiGqjZzRKUFRL9Tl+nvYZ60Hz45F3uzbtyCymOR62bOf680Te6xqkzHsLVIz+bGjNX+Sw==}
+  '@svelte-check-rs/linux-x64@0.9.8':
+    resolution: {integrity: sha512-762RqzoGv2T99XWIGT7vgOYByTHGJbzq6836Vi1MqjQdC/rwTseLvnmUfuUnHKNYd6TW2HaL3ANTOKiBsrlfVQ==}
     cpu: [x64]
     os: [linux]
 
-  '@svelte-check-rs/win32-x64@0.9.7':
-    resolution: {integrity: sha512-m+A9v3Bna3TY9aFbZz0Bq7hJ6ifoOzfoaDDSbyVxWFvv3xuMOwDSpQHq49PlJLPEBd4xDRCUixHfuo4SGz8C6w==}
+  '@svelte-check-rs/win32-x64@0.9.8':
+    resolution: {integrity: sha512-dhRVcjkHCHEaljhVM5HTPz3KyA6lECBdaw0CHYWVJ5Nz5TJINdXbSHnNHA166F0mhZZpNK6zxvOzA4ELOXC2fQ==}
     cpu: [x64]
     os: [win32]
 
@@ -2878,8 +2881,8 @@ packages:
     resolution: {integrity: sha512-uV+TFRZdXsqXTL2pRvujROjdZQ4RAlBUS5BTh9IGm+jTqQntYThciG/qu57Gs69yjnVUSqdxF9YLmSnpupBW9A==}
     engines: {node: '>=14.0.0'}
 
-  svelte-check-rs@0.9.7:
-    resolution: {integrity: sha512-70Iihg8/5JICDYVEcWp4NtLz5cXGgHXUQf66xy4H//CelAtvkjK9+ptfrYNeOLrTzrrkawRelOzsBWpNS0TPLQ==}
+  svelte-check-rs@0.9.8:
+    resolution: {integrity: sha512-10wULxExbSaEPJoPqEzMFocasXLTcvprHlOS7zTCojS/6lOkBEbmRM8/4r92KRugQxJNKNgIoDqsusgVxYxkBw==}
     hasBin: true
     peerDependencies:
       '@typescript/native-preview': '>=7.0.0-dev.0'
@@ -3345,14 +3348,14 @@ snapshots:
     dependencies:
       '@codemirror/language': 6.12.3
       '@codemirror/state': 6.6.0
-      '@codemirror/view': 6.42.1
+      '@codemirror/view': 6.43.0
       '@lezer/common': 1.5.2
 
   '@codemirror/commands@6.10.3':
     dependencies:
       '@codemirror/language': 6.12.3
       '@codemirror/state': 6.6.0
-      '@codemirror/view': 6.42.1
+      '@codemirror/view': 6.43.0
       '@lezer/common': 1.5.2
 
   '@codemirror/lang-yaml@6.1.3':
@@ -3387,7 +3390,7 @@ snapshots:
   '@codemirror/lint@6.9.6':
     dependencies:
       '@codemirror/state': 6.6.0
-      '@codemirror/view': 6.42.1
+      '@codemirror/view': 6.43.0
       crelt: 1.0.6
 
   '@codemirror/merge@6.12.1':
@@ -3401,7 +3404,7 @@ snapshots:
   '@codemirror/search@6.7.0':
     dependencies:
       '@codemirror/state': 6.6.0
-      '@codemirror/view': 6.42.1
+      '@codemirror/view': 6.43.0
       crelt: 1.0.6
 
   '@codemirror/state@6.6.0':
@@ -3409,6 +3412,13 @@ snapshots:
       '@marijn/find-cluster-break': 1.0.2
 
   '@codemirror/view@6.42.1':
+    dependencies:
+      '@codemirror/state': 6.6.0
+      crelt: 1.0.6
+      style-mod: 4.1.3
+      w3c-keyname: 2.2.8
+
+  '@codemirror/view@6.43.0':
     dependencies:
       '@codemirror/state': 6.6.0
       crelt: 1.0.6
@@ -4105,19 +4115,19 @@ snapshots:
 
   '@standard-schema/spec@1.1.0': {}
 
-  '@svelte-check-rs/darwin-arm64@0.9.7':
+  '@svelte-check-rs/darwin-arm64@0.9.8':
     optional: true
 
-  '@svelte-check-rs/darwin-x64@0.9.7':
+  '@svelte-check-rs/darwin-x64@0.9.8':
     optional: true
 
-  '@svelte-check-rs/linux-arm64@0.9.7':
+  '@svelte-check-rs/linux-arm64@0.9.8':
     optional: true
 
-  '@svelte-check-rs/linux-x64@0.9.7':
+  '@svelte-check-rs/linux-x64@0.9.8':
     optional: true
 
-  '@svelte-check-rs/win32-x64@0.9.7':
+  '@svelte-check-rs/win32-x64@0.9.8':
     optional: true
 
   '@svelte-put/shortcut@4.1.0(svelte@5.55.7)':
@@ -4510,7 +4520,7 @@ snapshots:
       '@codemirror/lint': 6.9.6
       '@codemirror/search': 6.7.0
       '@codemirror/state': 6.6.0
-      '@codemirror/view': 6.42.1
+      '@codemirror/view': 6.43.0
 
   colorette@2.0.20: {}
 
@@ -5547,15 +5557,15 @@ snapshots:
   superstruct@2.0.2:
     optional: true
 
-  svelte-check-rs@0.9.7(@typescript/native-preview@7.0.0-dev.20260504.1):
+  svelte-check-rs@0.9.8(@typescript/native-preview@7.0.0-dev.20260504.1):
     dependencies:
       '@typescript/native-preview': 7.0.0-dev.20260504.1
     optionalDependencies:
-      '@svelte-check-rs/darwin-arm64': 0.9.7
-      '@svelte-check-rs/darwin-x64': 0.9.7
-      '@svelte-check-rs/linux-arm64': 0.9.7
-      '@svelte-check-rs/linux-x64': 0.9.7
-      '@svelte-check-rs/win32-x64': 0.9.7
+      '@svelte-check-rs/darwin-arm64': 0.9.8
+      '@svelte-check-rs/darwin-x64': 0.9.8
+      '@svelte-check-rs/linux-arm64': 0.9.8
+      '@svelte-check-rs/linux-x64': 0.9.8
+      '@svelte-check-rs/win32-x64': 0.9.8
 
   svelte-codemirror-editor@2.1.0(codemirror@6.0.2)(svelte@5.55.7):
     dependencies:
