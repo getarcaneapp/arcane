@@ -391,7 +391,7 @@
 
 	function handleShellSelectChange(value: string) {
 		if (value !== 'custom') {
-			formInputs.defaultShell.value = value;
+			$formInputs.defaultShell.value = value;
 		}
 	}
 
@@ -470,7 +470,7 @@
 		if (isTestingConnection) return;
 		try {
 			isTestingConnection = true;
-			const customUrl = formInputs.apiUrl.value !== environment.apiUrl ? formInputs.apiUrl.value : undefined;
+			const customUrl = $formInputs.apiUrl.value !== environment.apiUrl ? $formInputs.apiUrl.value : undefined;
 			const result = await environmentManagementService.testConnection(environment.id, customUrl);
 
 			const nextStatus = result.status as EnvironmentStatus;

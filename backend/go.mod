@@ -15,7 +15,7 @@ require (
 	github.com/compose-spec/compose-go/v2 v2.10.2
 	github.com/containerd/errdefs v1.0.0
 	github.com/coreos/go-oidc/v3 v3.18.0
-	github.com/danielgtaylor/huma/v2 v2.37.3
+	github.com/danielgtaylor/huma/v2 v2.38.0
 	github.com/depot/depot-go v0.5.2
 	github.com/docker/cli v29.4.3+incompatible
 	github.com/docker/compose/v5 v5.1.3
