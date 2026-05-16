@@ -28,6 +28,10 @@ A headless Arcane process running near a Docker host. It accepts manager request
 
 An agent that connects outbound to the Arcane Manager over the edge transport so Docker hosts behind NAT or firewalls can be managed.
 
+### Direct Agent
+
+An agent that runs as a passive HTTP server on TCP 3553. The manager initiates all connections; the agent never dials out. Suited to one-way network paths (e.g. SSH forward tunnels, restricted-outbound hosts).
+
 ### Project
 
 An Arcane-managed Docker Compose project stored under the configured projects directory. Projects have compose files, optional env files, persisted metadata, deployment state, and related Docker resources.

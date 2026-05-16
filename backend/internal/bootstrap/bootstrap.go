@@ -209,11 +209,16 @@ func initializeStartupState(appCtx context.Context, cfg *config.Config, appServi
 	)
 	startup.CleanupUnknownSettings(appCtx, appServices.Settings)
 
-	// Handle agent auto-pairing with API key.
-	if cfg.AgentMode && cfg.AgentToken != "" && cfg.ManagerApiUrl != "" {
+	// Auto-pair only applies in Edge mode (where the agent's outbound tunnel is the
+	// only path to the manager). Direct mode is passive — the manager dials the agent's
+	// HTTP server on TCP 3553, and the manager-side health-check promotes the env to
+	// Online once reachability is confirmed.
+	if cfg.AgentMode && cfg.EdgeAgent && cfg.AgentToken != "" && cfg.ManagerApiUrl != "" {
 		if err := handleAgentBootstrapPairing(appCtx, cfg, httpClient); err != nil {
 			slog.WarnContext(appCtx, "Failed to auto-pair agent with manager", "error", err)
 		}
+	} else if cfg.AgentMode && !cfg.EdgeAgent {
+		slog.InfoContext(appCtx, "Direct mode active: agent operates as a passive HTTP server; no outbound connection to manager required")
 	}
 }
 
