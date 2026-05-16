@@ -122,20 +122,29 @@ Press `Ctrl/Cmd+Shift+B` to run the default build task (Start Environment).
 
 ### Justfile Shortcuts
 
-We provide a `Justfile` for common workflows. Run `just --list` to see everything.
+We provide a categorized `Justfile` for common workflows. Run `just --list` to see every category and target.
 
 ```bash
-# Dev environment
+# Development
 just dev docker
+just dev logs
+
+# Build
+just build single frontend
+just build single backend
 
 # Tests
 just test all
+just test backend
 
-# Linting
+# Quality checks
 just lint frontend
-
-# Formatting
 just format frontend
+just format all --check
+
+# Dependencies and Go modules
+just deps install all
+just gomod tidy all
 ```
 
 ### Environment Management
