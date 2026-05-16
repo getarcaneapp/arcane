@@ -6,6 +6,7 @@ import (
 
 	composegotypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/moby/moby/api/types/mount"
+	"github.com/moby/moby/api/types/swarm"
 	"github.com/stretchr/testify/require"
 )
 
@@ -48,4 +49,30 @@ func TestConvertServiceMountsScopesOnlyConfiguredNamedVolumes(t *testing.T) {
 	require.Equal(t, "stack_driver", mounts[1].Source)
 	require.Equal(t, "stack_custom", mounts[2].Source)
 	require.Equal(t, "external", mounts[3].Source)
+}
+
+func TestApplyDeployConfigConvertsCPUFractionToNanoCPUs(t *testing.T) {
+	spec := &swarm.ServiceSpec{}
+	deploy := &composegotypes.DeployConfig{
+		Resources: composegotypes.Resources{
+			Limits: &composegotypes.Resource{
+				NanoCPUs:    0.5,
+				MemoryBytes: 536870912,
+			},
+			Reservations: &composegotypes.Resource{
+				NanoCPUs:    0.25,
+				MemoryBytes: 268435456,
+			},
+		},
+	}
+
+	applyDeployConfig(spec, deploy, nil)
+
+	require.NotNil(t, spec.TaskTemplate.Resources)
+	require.NotNil(t, spec.TaskTemplate.Resources.Limits)
+	require.Equal(t, int64(500_000_000), spec.TaskTemplate.Resources.Limits.NanoCPUs)
+	require.Equal(t, int64(536870912), spec.TaskTemplate.Resources.Limits.MemoryBytes)
+	require.NotNil(t, spec.TaskTemplate.Resources.Reservations)
+	require.Equal(t, int64(250_000_000), spec.TaskTemplate.Resources.Reservations.NanoCPUs)
+	require.Equal(t, int64(268435456), spec.TaskTemplate.Resources.Reservations.MemoryBytes)
 }

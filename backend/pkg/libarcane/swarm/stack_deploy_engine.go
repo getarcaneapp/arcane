@@ -771,14 +771,14 @@ func applyDeployConfig(spec *swarm.ServiceSpec, deploy *composegotypes.DeployCon
 	}
 	if deploy.Resources.Limits != nil {
 		spec.TaskTemplate.Resources.Limits = &swarm.Limit{
-			NanoCPUs:    int64(deploy.Resources.Limits.NanoCPUs),
+			NanoCPUs:    int64(deploy.Resources.Limits.NanoCPUs * 1e9),
 			MemoryBytes: int64(deploy.Resources.Limits.MemoryBytes),
 			Pids:        deploy.Resources.Limits.Pids,
 		}
 	}
 	if deploy.Resources.Reservations != nil {
 		spec.TaskTemplate.Resources.Reservations = &swarm.Resources{
-			NanoCPUs:    int64(deploy.Resources.Reservations.NanoCPUs),
+			NanoCPUs:    int64(deploy.Resources.Reservations.NanoCPUs * 1e9),
 			MemoryBytes: int64(deploy.Resources.Reservations.MemoryBytes),
 		}
 	}
