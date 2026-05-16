@@ -10,6 +10,9 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
         curl \
+        gzip \
+        libdrm2 \
+        tar \
         tzdata \
     && mkdir -p /runtime-root \
     && copy_path() { \
@@ -23,10 +26,10 @@ RUN apt-get update \
         path="$1"; \
         if [ -e "${path}" ]; then \
             mkdir -p "/runtime-root$(dirname "${path}")"; \
-            cp -aL "${path}" "/runtime-root${path}"; \
+            cp -a "${path}" "/runtime-root${path}"; \
         fi; \
     } \
-    && runtime_bins="/usr/bin/curl" \
+    && runtime_bins="/usr/bin/curl /usr/bin/tar /usr/bin/gzip" \
     && for bin in ${runtime_bins}; do \
         copy_path "${bin}"; \
         ldd "${bin}" \
@@ -34,6 +37,12 @@ RUN apt-get update \
             | sort -u \
             | while read -r lib; do copy_path "${lib}"; done; \
     done \
+    && dpkg-query -L libdrm2 \
+        | while read -r path; do \
+            if [ -f "${path}" ] || [ -L "${path}" ]; then \
+                copy_path "${path}"; \
+            fi; \
+        done \
     && copy_tree /etc/ssl/certs \
     && copy_tree /usr/share/ca-certificates \
     && copy_tree /usr/share/zoneinfo \
