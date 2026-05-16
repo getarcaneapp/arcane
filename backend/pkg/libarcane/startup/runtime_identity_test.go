@@ -19,7 +19,10 @@ func TestLoadRuntimeIdentityRequest(t *testing.T) {
 	})
 
 	t.Run("enabled with default non-root image flag", func(t *testing.T) {
-		req, warning, err := loadRuntimeIdentityRequestInternal(&RuntimeIdentityConfig{DefaultNonRoot: "true"})
+		req, warning, err := loadRuntimeIdentityRequestInternal(&RuntimeIdentityConfig{
+			DefaultNonRoot: "true",
+			DockerHost:     "unix:///tmp/docker.sock",
+		})
 		require.NoError(t, err)
 		require.Empty(t, warning)
 		require.True(t, req.Enabled)
@@ -27,6 +30,7 @@ func TestLoadRuntimeIdentityRequest(t *testing.T) {
 		require.Equal(t, defaultRuntimeGID, req.GID)
 		require.Equal(t, uint32(defaultRuntimeUID), req.CredentialUID)
 		require.Equal(t, uint32(defaultRuntimeGID), req.CredentialGID)
+		require.Equal(t, "unix:///tmp/docker.sock", req.DockerHost)
 	})
 
 	t.Run("warning when partial config", func(t *testing.T) {

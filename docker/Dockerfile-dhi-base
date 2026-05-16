@@ -5,36 +5,18 @@ ARG DHI_BASE_IMAGE=dhi.io/debian-base:trixie
 # Runtime deps are assembled in an apt-enabled stage, then copied into the
 # DHI base so downstream Arcane builds do not need dhi.io credentials.
 FROM debian:trixie-slim AS runtime-deps
-ARG TARGETARCH
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
-        clinfo \
         curl \
-        gzip \
-        libdrm2 \
-        libsystemd0 \
-        tar \
         tzdata \
-        vainfo \
-    && if [ "${TARGETARCH}" = "amd64" ]; then \
-        apt-get install -y --no-install-recommends intel-gpu-tools; \
-    fi \
     && mkdir -p /runtime-root \
     && copy_path() { \
         path="$1"; \
         if [ -e "${path}" ]; then \
             mkdir -p "/runtime-root$(dirname "${path}")"; \
             cp -aL "${path}" "/runtime-root${path}"; \
-        fi; \
-    } \
-    && copy_resolved_path() { \
-        path="$1"; \
-        if [ -e "${path}" ]; then \
-            resolved_path="$(readlink -f "${path}")"; \
-            mkdir -p "/runtime-root$(dirname "${resolved_path}")"; \
-            cp -aL "${path}" "/runtime-root${resolved_path}"; \
         fi; \
     } \
     && copy_tree() { \
@@ -44,16 +26,13 @@ RUN apt-get update \
             cp -aL "${path}" "/runtime-root${path}"; \
         fi; \
     } \
-    && runtime_bins="/usr/bin/curl /usr/bin/tar /usr/bin/gzip /usr/bin/vainfo /usr/bin/clinfo" \
-    && if [ "${TARGETARCH}" = "amd64" ]; then \
-        runtime_bins="${runtime_bins} $(find /usr/bin -maxdepth 1 -type f -name 'intel_*' | sort)"; \
-    fi \
+    && runtime_bins="/usr/bin/curl" \
     && for bin in ${runtime_bins}; do \
         copy_path "${bin}"; \
         ldd "${bin}" \
             | awk '/=> \// { print $3 } /^\// { print $1 }' \
             | sort -u \
-            | while read -r lib; do copy_resolved_path "${lib}"; done; \
+            | while read -r lib; do copy_path "${lib}"; done; \
     done \
     && copy_tree /etc/ssl/certs \
     && copy_tree /usr/share/ca-certificates \

@@ -110,6 +110,7 @@ func loadRuntimeIdentityRequestInternal(cfg *RuntimeIdentityConfig) (runtimeIden
 				GID:           defaultRuntimeGID,
 				CredentialUID: uint32(defaultRuntimeUID),
 				CredentialGID: uint32(defaultRuntimeGID),
+				DockerHost:    cfg.DockerHost,
 			}, "", nil
 		}
 
