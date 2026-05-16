@@ -1,4 +1,4 @@
-package distribution
+package imageupdate
 
 import (
 	"context"
@@ -58,7 +58,7 @@ func TestIsFallbackEligibleDaemonError(t *testing.T) {
 	assert.False(t, IsFallbackEligibleDaemonError(nil))
 }
 
-func TestFetchDigestWithHTTPClient_FallsBackToGetOnMethodNotAllowed(t *testing.T) {
+func TestFetchDigest_FallsBackToGetOnMethodNotAllowed(t *testing.T) {
 	var headCalls int
 	var getCalls int
 	wantDigest := digest.FromString("method-not-allowed").String()
@@ -78,7 +78,7 @@ func TestFetchDigestWithHTTPClient_FallsBackToGetOnMethodNotAllowed(t *testing.T
 	}))
 	defer server.Close()
 
-	digest, err := FetchDigestWithHTTPClient(
+	digest, err := FetchDigest(
 		context.Background(),
 		server.URL,
 		"team/app",
@@ -92,7 +92,7 @@ func TestFetchDigestWithHTTPClient_FallsBackToGetOnMethodNotAllowed(t *testing.T
 	assert.Equal(t, 1, getCalls)
 }
 
-func TestFetchDigestWithHTTPClient_DoesNotFallbackToGetOnResourceErrors(t *testing.T) {
+func TestFetchDigest_DoesNotFallbackToGetOnResourceErrors(t *testing.T) {
 	testCases := []struct {
 		name   string
 		status int
@@ -121,7 +121,7 @@ func TestFetchDigestWithHTTPClient_DoesNotFallbackToGetOnResourceErrors(t *testi
 			}))
 			defer server.Close()
 
-			digest, err := FetchDigestWithHTTPClient(
+			digest, err := FetchDigest(
 				context.Background(),
 				server.URL,
 				"team/app",
@@ -138,7 +138,7 @@ func TestFetchDigestWithHTTPClient_DoesNotFallbackToGetOnResourceErrors(t *testi
 	}
 }
 
-func TestFetchRegistryRateLimitWithHTTPClient_AnonymousTokenFlow(t *testing.T) {
+func TestFetchRegistryRateLimit_AnonymousTokenFlow(t *testing.T) {
 	var tokenCalls int
 	var manifestCalls int
 
@@ -167,7 +167,7 @@ func TestFetchRegistryRateLimitWithHTTPClient_AnonymousTokenFlow(t *testing.T) {
 	}))
 	defer server.Close()
 
-	info, err := FetchRegistryRateLimitWithHTTPClient(
+	info, err := FetchRegistryRateLimit(
 		context.Background(),
 		server.URL,
 		"team/app",
@@ -190,7 +190,7 @@ func TestFetchRegistryRateLimitWithHTTPClient_AnonymousTokenFlow(t *testing.T) {
 	assert.Equal(t, 2, manifestCalls)
 }
 
-func TestFetchRegistryRateLimitWithHTTPClient_CredentialBackedTokenFlow(t *testing.T) {
+func TestFetchRegistryRateLimit_CredentialBackedTokenFlow(t *testing.T) {
 	var tokenAuth string
 	var initialManifestAuth string
 
@@ -215,7 +215,7 @@ func TestFetchRegistryRateLimitWithHTTPClient_CredentialBackedTokenFlow(t *testi
 	}))
 	defer server.Close()
 
-	info, err := FetchRegistryRateLimitWithHTTPClient(
+	info, err := FetchRegistryRateLimit(
 		context.Background(),
 		server.URL,
 		"team/app",
@@ -233,40 +233,40 @@ func TestFetchRegistryRateLimitWithHTTPClient_CredentialBackedTokenFlow(t *testi
 	assert.Contains(t, tokenAuth, "Basic ")
 }
 
-func TestFetchRegistryRateLimitWithHTTPClient_MissingHeaders(t *testing.T) {
+func TestFetchRegistryRateLimit_MissingHeaders(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
 
-	info, err := FetchRegistryRateLimitWithHTTPClient(context.Background(), server.URL, "team/app", "latest", nil, server.Client())
+	info, err := FetchRegistryRateLimit(context.Background(), server.URL, "team/app", "latest", nil, server.Client())
 
 	require.Error(t, err)
 	assert.Nil(t, info)
 	assert.Contains(t, err.Error(), "rate limit headers not returned")
 }
 
-func TestFetchRegistryRateLimitWithHTTPClient_MalformedHeader(t *testing.T) {
+func TestFetchRegistryRateLimit_MalformedHeader(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("RateLimit-Limit", "bad;w=21600")
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
 
-	info, err := FetchRegistryRateLimitWithHTTPClient(context.Background(), server.URL, "team/app", "latest", nil, server.Client())
+	info, err := FetchRegistryRateLimit(context.Background(), server.URL, "team/app", "latest", nil, server.Client())
 
 	require.Error(t, err)
 	assert.Nil(t, info)
 	assert.Contains(t, err.Error(), "parse RateLimit-Limit")
 }
 
-func TestFetchRegistryRateLimitWithHTTPClient_NonOKResponse(t *testing.T) {
+func TestFetchRegistryRateLimit_NonOKResponse(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusTooManyRequests)
 	}))
 	defer server.Close()
 
-	info, err := FetchRegistryRateLimitWithHTTPClient(context.Background(), server.URL, "team/app", "latest", nil, server.Client())
+	info, err := FetchRegistryRateLimit(context.Background(), server.URL, "team/app", "latest", nil, server.Client())
 
 	require.Error(t, err)
 	assert.Nil(t, info)
@@ -279,14 +279,14 @@ func TestParseWWWAuthInternal_AllowsCommasInsideQuotedRealm(t *testing.T) {
 	assert.Equal(t, "registry.example.com", service)
 }
 
-func TestFetchDigestWithHTTPClient_RejectsUntrustedTokenRealm(t *testing.T) {
+func TestFetchDigest_RejectsUntrustedTokenRealm(t *testing.T) {
 	registry := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("WWW-Authenticate", `Bearer realm="https://169.254.169.254/token",service="registry.example.com"`)
 		w.WriteHeader(http.StatusUnauthorized)
 	}))
 	defer registry.Close()
 
-	digest, err := FetchDigestWithHTTPClient(
+	digest, err := FetchDigest(
 		context.Background(),
 		registry.URL,
 		"team/app",

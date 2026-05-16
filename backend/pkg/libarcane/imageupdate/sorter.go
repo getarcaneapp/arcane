@@ -1,4 +1,4 @@
-package updater
+package imageupdate
 
 import (
 	"context"
@@ -50,7 +50,7 @@ func NewContainerSorter(containers []ContainerWithDeps) *ContainerSorter {
 func (s *ContainerSorter) Sort() ([]ContainerWithDeps, error) {
 	for _, c := range s.containers {
 		if !s.visited[c.Name] {
-			if err := s.visit(c); err != nil {
+			if err := s.visitInternal(c); err != nil {
 				return nil, err
 			}
 		}
@@ -70,7 +70,7 @@ func (s *ContainerSorter) SortReverse() ([]ContainerWithDeps, error) {
 	return sorted, nil
 }
 
-func (s *ContainerSorter) visit(c ContainerWithDeps) error {
+func (s *ContainerSorter) visitInternal(c ContainerWithDeps) error {
 	if s.marked[c.Name] {
 		return fmt.Errorf("circular dependency detected: %s", c.Name)
 	}
@@ -82,10 +82,10 @@ func (s *ContainerSorter) visit(c ContainerWithDeps) error {
 	defer delete(s.marked, c.Name)
 
 	// Visit all dependencies first
-	allDeps := s.getAllDependencies(c)
+	allDeps := s.getAllDependenciesInternal(c)
 	for _, depName := range allDeps {
 		if idx, ok := s.nameToIndex[depName]; ok {
-			if err := s.visit(s.containers[idx]); err != nil {
+			if err := s.visitInternal(s.containers[idx]); err != nil {
 				return err
 			}
 		}
@@ -96,7 +96,7 @@ func (s *ContainerSorter) visit(c ContainerWithDeps) error {
 	return nil
 }
 
-func (s *ContainerSorter) getAllDependencies(c ContainerWithDeps) []string {
+func (s *ContainerSorter) getAllDependenciesInternal(c ContainerWithDeps) []string {
 	seen := make(map[string]struct{})
 	var deps []string
 

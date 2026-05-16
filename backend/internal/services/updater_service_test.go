@@ -24,7 +24,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	libupdater "github.com/getarcaneapp/arcane/backend/pkg/libarcane/updater"
+	libupdater "github.com/getarcaneapp/arcane/backend/pkg/libarcane/imageupdate"
 )
 
 // mockSystemUpgradeService is a simple mock implementation for testing
@@ -401,7 +401,6 @@ func TestIsImageIDLikeReference(t *testing.T) {
 }
 
 func TestCollectUsedImagesFromContainers_FastPathSkipsInspectLikeRefs(t *testing.T) {
-	svc := &UpdaterService{}
 	out := map[string]struct{}{}
 
 	// Simulate fast-path behavior expectations without Docker client dependency.
@@ -409,17 +408,19 @@ func TestCollectUsedImagesFromContainers_FastPathSkipsInspectLikeRefs(t *testing
 		{Image: "nginx:latest"},
 		{Image: "sha256:abcdef"},
 		{Image: "redis:7"},
+		{Image: "Bad/Image:latest"},
 	}
 
 	for _, c := range containers {
 		if c.Image != "" && !isImageIDLikeReferenceInternal(c.Image) {
-			out[svc.normalizeRef(c.Image)] = struct{}{}
+			addNormalizedImageUpdateRefInternal(context.Background(), out, c.Image, "test skip invalid image reference")
 		}
 	}
 
-	assert.Contains(t, out, svc.normalizeRef("nginx:latest"))
-	assert.Contains(t, out, svc.normalizeRef("redis:7"))
-	assert.NotContains(t, out, svc.normalizeRef("sha256:abcdef"))
+	assert.Contains(t, out, normalizeImageUpdateRefInternal("nginx:latest"))
+	assert.Contains(t, out, normalizeImageUpdateRefInternal("redis:7"))
+	assert.NotContains(t, out, normalizeImageUpdateRefInternal("sha256:abcdef"))
+	assert.NotContains(t, out, "")
 }
 
 func mustHardwareAddr(t *testing.T, value string) network.HardwareAddr {
@@ -703,20 +704,27 @@ func TestCollectUsedImagesFromComposeContainersInternal(t *testing.T) {
 				"com.docker.compose.project": "myapp",
 			},
 		},
+		{
+			Image: "Bad/Image:latest",
+			Labels: map[string]string{
+				"com.docker.compose.project": "myapp",
+			},
+		},
 	}
 
-	svc.collectUsedImagesFromComposeContainersInternal(composeContainers, activeProjects, out)
+	svc.collectUsedImagesFromComposeContainersInternal(context.Background(), composeContainers, activeProjects, out)
 
-	assert.Contains(t, out, svc.normalizeRef("nginx:latest"))
-	assert.NotContains(t, out, svc.normalizeRef("redis:7"))
-	assert.NotContains(t, out, svc.normalizeRef("postgres:16"))
-	assert.NotContains(t, out, svc.normalizeRef("sha256:abcdef"))
+	assert.Contains(t, out, normalizeImageUpdateRefInternal("nginx:latest"))
+	assert.NotContains(t, out, normalizeImageUpdateRefInternal("redis:7"))
+	assert.NotContains(t, out, normalizeImageUpdateRefInternal("postgres:16"))
+	assert.NotContains(t, out, normalizeImageUpdateRefInternal("sha256:abcdef"))
+	assert.NotContains(t, out, "")
 }
 
 func TestResolveContainerImageMatchInternal(t *testing.T) {
 	svc := &UpdaterService{}
 	updatedNorm := map[string]string{
-		svc.normalizeRef("nginx:latest"): "nginx:latest",
+		normalizeImageUpdateRefInternal("nginx:latest"): "nginx:latest",
 	}
 	oldIDToNewRef := map[string]string{
 		"sha256:img1": "redis:7",
@@ -725,6 +733,7 @@ func TestResolveContainerImageMatchInternal(t *testing.T) {
 	tests := []struct {
 		name        string
 		container   container.Summary
+		updatedNorm map[string]string
 		wantRef     string
 		wantMatchID string
 	}{
@@ -744,7 +753,7 @@ func TestResolveContainerImageMatchInternal(t *testing.T) {
 				Image:   "docker.io/library/nginx:latest",
 			},
 			wantRef:     "nginx:latest",
-			wantMatchID: svc.normalizeRef("nginx:latest"),
+			wantMatchID: normalizeImageUpdateRefInternal("nginx:latest"),
 		},
 		{
 			name: "image id-like summary value cannot be tag matched",
@@ -755,11 +764,25 @@ func TestResolveContainerImageMatchInternal(t *testing.T) {
 			wantRef:     "",
 			wantMatchID: "",
 		},
+		{
+			name: "invalid image reference does not match empty normalized key",
+			container: container.Summary{
+				ImageID: "sha256:unknown",
+				Image:   "Bad/Image:latest",
+			},
+			updatedNorm: map[string]string{"": "wrong:latest"},
+			wantRef:     "",
+			wantMatchID: "",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotRef, gotMatch := svc.resolveContainerImageMatchInternal(tt.container, oldIDToNewRef, updatedNorm)
+			localUpdatedNorm := updatedNorm
+			if tt.updatedNorm != nil {
+				localUpdatedNorm = tt.updatedNorm
+			}
+			gotRef, gotMatch := svc.resolveContainerImageMatchInternal(tt.container, oldIDToNewRef, localUpdatedNorm)
 			assert.Equal(t, tt.wantRef, gotRef)
 			assert.Equal(t, tt.wantMatchID, gotMatch)
 		})
@@ -945,6 +968,6 @@ func TestUpdaterService_CollectUsedImages_SkipsExcludedContainers(t *testing.T) 
 
 	require.NoError(t, svc.collectUsedImagesFromContainersInternal(ctx, dcli, out))
 
-	assert.NotContains(t, out, svc.normalizeRef("nginx:latest"), "excluded container image must not be collected")
-	assert.Contains(t, out, svc.normalizeRef("redis:7"), "non-excluded container image must be collected")
+	assert.NotContains(t, out, normalizeImageUpdateRefInternal("nginx:latest"), "excluded container image must not be collected")
+	assert.Contains(t, out, normalizeImageUpdateRefInternal("redis:7"), "non-excluded container image must be collected")
 }

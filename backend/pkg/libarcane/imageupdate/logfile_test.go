@@ -1,4 +1,4 @@
-package updater
+package imageupdate
 
 import (
 	"bytes"
@@ -57,7 +57,7 @@ func TestMessageOnlyHandler_Handle(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf bytes.Buffer
-			handler := newMessageOnlyHandler(&buf, slog.LevelDebug)
+			handler := newMessageOnlyHandlerInternal(&buf, slog.LevelDebug)
 
 			record := slog.NewRecord(time.Now(), tt.level, tt.message, 0)
 			for _, attr := range tt.attrs {
@@ -113,7 +113,7 @@ func TestMessageOnlyHandler_Enabled(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf bytes.Buffer
-			handler := newMessageOnlyHandler(&buf, tt.minLevel)
+			handler := newMessageOnlyHandlerInternal(&buf, tt.minLevel)
 
 			if got := handler.Enabled(context.Background(), tt.level); got != tt.want {
 				t.Errorf("Enabled() = %v, want %v", got, tt.want)
@@ -124,7 +124,7 @@ func TestMessageOnlyHandler_Enabled(t *testing.T) {
 
 func TestMessageOnlyHandler_WithAttrs(t *testing.T) {
 	var buf bytes.Buffer
-	handler := newMessageOnlyHandler(&buf, slog.LevelInfo)
+	handler := newMessageOnlyHandlerInternal(&buf, slog.LevelInfo)
 
 	attrs := []slog.Attr{
 		slog.String("key1", "value1"),
@@ -155,7 +155,7 @@ func TestMessageOnlyHandler_WithAttrs(t *testing.T) {
 
 func TestMessageOnlyHandler_WithGroup(t *testing.T) {
 	var buf bytes.Buffer
-	handler := newMessageOnlyHandler(&buf, slog.LevelInfo)
+	handler := newMessageOnlyHandlerInternal(&buf, slog.LevelInfo)
 
 	newHandler := handler.WithGroup("testgroup")
 	if newHandler == nil {
@@ -220,9 +220,9 @@ func TestFormatSlogValue(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := formatSlogValue(tt.value)
+			got := formatSlogValueInternal(tt.value)
 			if got != tt.want {
-				t.Errorf("formatSlogValue() = %v, want %v", got, tt.want)
+				t.Errorf("formatSlogValueInternal() = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -232,34 +232,34 @@ func TestFormatSlogValue_Time(t *testing.T) {
 	now := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
 	value := slog.TimeValue(now)
 
-	got := formatSlogValue(value)
+	got := formatSlogValueInternal(value)
 
 	// Should be quoted and contain the date
 	if !strings.HasPrefix(got, "\"") || !strings.HasSuffix(got, "\"") {
-		t.Errorf("formatSlogValue(time) should be quoted, got %q", got)
+		t.Errorf("formatSlogValueInternal(time) should be quoted, got %q", got)
 	}
 	if !strings.Contains(got, "2024") {
-		t.Errorf("formatSlogValue(time) should contain year, got %q", got)
+		t.Errorf("formatSlogValueInternal(time) should contain year, got %q", got)
 	}
 }
 
 func TestFormatSlogValue_Duration(t *testing.T) {
 	value := slog.DurationValue(5 * time.Second)
-	got := formatSlogValue(value)
+	got := formatSlogValueInternal(value)
 
 	// Should be quoted and contain duration string
 	if !strings.HasPrefix(got, "\"") || !strings.HasSuffix(got, "\"") {
-		t.Errorf("formatSlogValue(duration) should be quoted, got %q", got)
+		t.Errorf("formatSlogValueInternal(duration) should be quoted, got %q", got)
 	}
 	if !strings.Contains(got, "5s") {
-		t.Errorf("formatSlogValue(duration) should contain duration, got %q", got)
+		t.Errorf("formatSlogValueInternal(duration) should contain duration, got %q", got)
 	}
 }
 
 func TestMultiHandler_Enabled(t *testing.T) {
 	var buf1, buf2 bytes.Buffer
-	handler1 := newMessageOnlyHandler(&buf1, slog.LevelInfo)
-	handler2 := newMessageOnlyHandler(&buf2, slog.LevelWarn)
+	handler1 := newMessageOnlyHandlerInternal(&buf1, slog.LevelInfo)
+	handler2 := newMessageOnlyHandlerInternal(&buf2, slog.LevelWarn)
 
 	multi := slog.NewMultiHandler(handler1, handler2)
 
@@ -301,8 +301,8 @@ func TestMultiHandler_Enabled(t *testing.T) {
 
 func TestMultiHandler_Handle(t *testing.T) {
 	var buf1, buf2 bytes.Buffer
-	handler1 := newMessageOnlyHandler(&buf1, slog.LevelInfo)
-	handler2 := newMessageOnlyHandler(&buf2, slog.LevelInfo)
+	handler1 := newMessageOnlyHandlerInternal(&buf1, slog.LevelInfo)
+	handler2 := newMessageOnlyHandlerInternal(&buf2, slog.LevelInfo)
 
 	multi := slog.NewMultiHandler(handler1, handler2)
 
@@ -322,8 +322,8 @@ func TestMultiHandler_Handle(t *testing.T) {
 
 func TestMultiHandler_WithAttrs(t *testing.T) {
 	var buf1, buf2 bytes.Buffer
-	handler1 := newMessageOnlyHandler(&buf1, slog.LevelInfo)
-	handler2 := newMessageOnlyHandler(&buf2, slog.LevelInfo)
+	handler1 := newMessageOnlyHandlerInternal(&buf1, slog.LevelInfo)
+	handler2 := newMessageOnlyHandlerInternal(&buf2, slog.LevelInfo)
 
 	multi := slog.NewMultiHandler(handler1, handler2)
 
@@ -344,8 +344,8 @@ func TestMultiHandler_WithAttrs(t *testing.T) {
 
 func TestMultiHandler_WithGroup(t *testing.T) {
 	var buf1, buf2 bytes.Buffer
-	handler1 := newMessageOnlyHandler(&buf1, slog.LevelInfo)
-	handler2 := newMessageOnlyHandler(&buf2, slog.LevelInfo)
+	handler1 := newMessageOnlyHandlerInternal(&buf1, slog.LevelInfo)
+	handler2 := newMessageOnlyHandlerInternal(&buf2, slog.LevelInfo)
 
 	multi := slog.NewMultiHandler(handler1, handler2)
 
@@ -366,20 +366,20 @@ func TestMultiHandler_WithGroup(t *testing.T) {
 
 func TestNewMessageOnlyHandler(t *testing.T) {
 	var buf bytes.Buffer
-	handler := newMessageOnlyHandler(&buf, slog.LevelInfo)
+	handler := newMessageOnlyHandlerInternal(&buf, slog.LevelInfo)
 
 	if handler.minLevel != slog.LevelInfo {
-		t.Errorf("newMessageOnlyHandler() minLevel = %v, want %v", handler.minLevel, slog.LevelInfo)
+		t.Errorf("newMessageOnlyHandlerInternal() minLevel = %v, want %v", handler.minLevel, slog.LevelInfo)
 	}
 
 	if handler.mu == nil {
-		t.Error("newMessageOnlyHandler() did not initialize mutex")
+		t.Error("newMessageOnlyHandlerInternal() did not initialize mutex")
 	}
 }
 
 func TestMessageOnlyHandler_MultipleMessages(t *testing.T) {
 	var buf bytes.Buffer
-	handler := newMessageOnlyHandler(&buf, slog.LevelInfo)
+	handler := newMessageOnlyHandlerInternal(&buf, slog.LevelInfo)
 
 	messages := []string{
 		"First message",
