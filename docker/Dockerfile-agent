@@ -49,7 +49,8 @@ ARG TARGETARCH
 
 WORKDIR /app
 USER 0:0
-RUN mkdir -p /app/data
+RUN mkdir -p /app/data \
+    && chown -R 65532:65532 /app
 
 COPY --from=agent-builder /out/arcane-agent ./arcane-agent
 
@@ -66,7 +67,8 @@ ENV NVIDIA_VISIBLE_DEVICES=all \
 ENV ENVIRONMENT=production \
     AGENT_MODE=true \
     GIN_MODE=release \
-    PORT=3553
+    PORT=3553 \
+    ARCANE_DEFAULT_NONROOT=true
 
 EXPOSE 3553
 VOLUME ["/app/data"]
