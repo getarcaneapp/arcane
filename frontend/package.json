@@ -51,7 +51,7 @@
     "@prettier/plugin-oxc": "^0.1.4",
     "@sveltejs/vite-plugin-svelte": "^7.1.2",
     "@tailwindcss/vite": "^4.3.0",
-    "@tanstack/svelte-query-devtools": "^6.1.28",
+    "@tanstack/svelte-query-devtools": "^6.1.29",
     "@types/node": "^25.6.2",
     "@typescript/native-preview": "7.0.0-dev.20260504.1",
     "bits-ui": "^2.18.1",
