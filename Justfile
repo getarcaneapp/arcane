@@ -436,6 +436,19 @@ gomod action="tidy" target="all":
 proto-backend:
     cd {{ edge_proto_dir }} && go run github.com/bufbuild/buf/cmd/buf@v1.65.0 generate
 
+# Generate the app-version to schema-version migration manifest.
+[group('codegen')]
+migration-manifest version="" output="backend/resources/migration_versions.json":
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    args=(--repo-root "." --output "{{ output }}")
+    if [ -n "{{ version }}" ]; then
+        args+=(--include-version "{{ version }}")
+    fi
+
+    go run ./backend/cmd/migrator/main.go generate-manifest "${args[@]}"
+
 # Generate the docs config schema JSON.
 [group('docs')]
 _docs-config output="" source_root=".":
@@ -919,6 +932,11 @@ release *args:
         jq --arg new_version "$NEW_VERSION" '.version = $new_version' frontend/package.json > frontend/package_tmp.json && mv frontend/package_tmp.json frontend/package.json
         git add frontend/package.json
 
+        # Generate migration version manifest
+        echo "Generating migration version manifest..."
+        just migration-manifest "$NEW_VERSION"
+        git add backend/resources/migration_versions.json
+
         # Generate changelog
         echo "Generating changelog..."
         git cliff $CLIFF_VERBOSE --github-token=$(gh auth token) --prepend CHANGELOG.md --tag "v$NEW_VERSION" --unreleased
@@ -1339,6 +1357,11 @@ _utils-hotfix:
     jq --arg new_version "$NEW_VERSION" '.version = $new_version' frontend/package.json > frontend/package_tmp.json && mv frontend/package_tmp.json frontend/package.json
     git add frontend/package.json
 
+    # Generate migration version manifest
+    echo -e "${BLUE}Generating migration version manifest...${NC}"
+    just migration-manifest "$NEW_VERSION"
+    git add backend/resources/migration_versions.json
+
     # Generate changelog for ONLY the fixes in this release branch
     echo -e "${BLUE}Generating changelog for hotfix...${NC}"
 
@@ -1416,11 +1439,11 @@ _utils-hotfix:
     # Update version in frontend/package.json
     jq --arg new_version "$NEW_VERSION" '.version = $new_version' frontend/package.json > frontend/package_tmp.json && mv frontend/package_tmp.json frontend/package.json
 
-    # Copy the updated CHANGELOG.md from the release branch
-    git checkout "${RELEASE_BRANCH}" -- CHANGELOG.md
+    # Copy the updated CHANGELOG.md and migration manifest from the release branch
+    git checkout "${RELEASE_BRANCH}" -- CHANGELOG.md backend/resources/migration_versions.json
 
     # Commit the version updates to main
-    git add .arcane.json frontend/package.json CHANGELOG.md
+    git add .arcane.json frontend/package.json CHANGELOG.md backend/resources/migration_versions.json
     git commit -m "chore: bump version to ${NEW_VERSION} after hotfix release"
     git push origin main
 

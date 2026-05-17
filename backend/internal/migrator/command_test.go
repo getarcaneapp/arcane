@@ -28,4 +28,5 @@ func TestCommandIncludesStatusAndDowngrade(t *testing.T) {
 
 	assert.Contains(t, commandNames, "status")
 	assert.Contains(t, commandNames, "downgrade")
+	assert.Contains(t, commandNames, "generate-manifest")
 }

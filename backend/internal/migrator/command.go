@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"strings"
 
 	"github.com/joho/godotenv"
@@ -32,6 +33,7 @@ func NewCommand(out io.Writer) *cobra.Command {
 
 	rootCmd.AddCommand(newStatusCommand(out))
 	rootCmd.AddCommand(newDowngradeCommand(out))
+	rootCmd.AddCommand(newGenerateManifestCommand(out))
 	return rootCmd
 }
 
@@ -120,6 +122,44 @@ func newDowngradeCommand(out io.Writer) *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&targetAppVersion, "target", "", "Target Arcane app version, for example v1.18.0")
+	return cmd
+}
+
+func newGenerateManifestCommand(out io.Writer) *cobra.Command {
+	var repoRoot string
+	var outputPath string
+	var includeVersion string
+
+	cmd := &cobra.Command{
+		Use:   "generate-manifest",
+		Short: "Generate the app-version to schema-version migration manifest",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			versions, err := database.GenerateAppMigrationVersionsFromGit(cmd.Context(), repoRoot, includeVersion)
+			if err != nil {
+				return err
+			}
+
+			manifestBytes, err := database.MarshalAppMigrationVersionManifest(versions)
+			if err != nil {
+				return err
+			}
+
+			if outputPath == "-" {
+				_, err = out.Write(manifestBytes)
+				return err
+			}
+
+			if err := os.WriteFile(outputPath, manifestBytes, 0o644); err != nil {
+				return fmt.Errorf("failed to write migration manifest: %w", err)
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&repoRoot, "repo-root", ".", "Repository root containing .git and backend/resources/migrations")
+	cmd.Flags().StringVar(&outputPath, "output", "backend/resources/migration_versions.json", "Output manifest path, or - for stdout")
+	cmd.Flags().StringVar(&includeVersion, "include-version", "", "Include this app version using the working tree's current highest migration")
 	return cmd
 }
 

@@ -2,6 +2,8 @@ package database
 
 import (
 	"context"
+	"encoding/json"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -245,6 +247,24 @@ func TestResolveAppMigrationVersion_Unknown(t *testing.T) {
 	assert.ErrorContains(t, err, "no migration target is known")
 }
 
+func TestMigrationVersionManifestIsGenerated(t *testing.T) {
+	ctx := context.Background()
+	repoRoot := findRepoRootInternal(t)
+
+	generatedVersions, err := GenerateAppMigrationVersionsFromGit(ctx, repoRoot, "")
+	require.NoError(t, err)
+
+	currentVersion := currentArcaneVersionInternal(t, repoRoot)
+	if !appMigrationVersionsContainInternal(generatedVersions, currentVersion) {
+		generatedVersions, err = GenerateAppMigrationVersionsFromGit(ctx, repoRoot, currentVersion)
+		require.NoError(t, err)
+	}
+
+	committedVersions, err := ListAppMigrationVersions()
+	require.NoError(t, err)
+	assert.Equal(t, generatedVersions, committedVersions, "run `just migration-manifest` to regenerate backend/resources/migration_versions.json")
+}
+
 func TestGetMigrationStatus(t *testing.T) {
 	ctx := context.Background()
 	dsn := "file:" + filepath.Join(t.TempDir(), "arcane-status.db")
@@ -290,4 +310,52 @@ func assertSQLiteIndexMissingInternal(t *testing.T, db *DB, indexName string) {
 	).Scan(&count).Error
 	require.NoError(t, err)
 	assert.Zero(t, count, "expected index %s to be removed", indexName)
+}
+
+func findRepoRootInternal(t *testing.T) string {
+	t.Helper()
+
+	wd, err := os.Getwd()
+	require.NoError(t, err)
+
+	for {
+		if fileExistsInternal(filepath.Join(wd, ".git")) && fileExistsInternal(filepath.Join(wd, ".arcane.json")) {
+			return wd
+		}
+
+		parent := filepath.Dir(wd)
+		if parent == wd {
+			t.Skip("repository root with .git was not found")
+		}
+		wd = parent
+	}
+}
+
+func currentArcaneVersionInternal(t *testing.T, repoRoot string) string {
+	t.Helper()
+
+	configBytes, err := os.ReadFile(filepath.Join(repoRoot, ".arcane.json"))
+	require.NoError(t, err)
+
+	var arcaneConfig struct {
+		Version string `json:"version"`
+	}
+	require.NoError(t, json.Unmarshal(configBytes, &arcaneConfig))
+	require.NotEmpty(t, arcaneConfig.Version)
+	return arcaneConfig.Version
+}
+
+func appMigrationVersionsContainInternal(versions []AppMigrationVersion, appVersion string) bool {
+	normalizedVersion := normalizeAppVersionInternal(appVersion)
+	for _, version := range versions {
+		if normalizeAppVersionInternal(version.AppVersion) == normalizedVersion {
+			return true
+		}
+	}
+	return false
+}
+
+func fileExistsInternal(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
