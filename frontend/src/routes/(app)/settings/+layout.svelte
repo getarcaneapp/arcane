@@ -10,11 +10,7 @@
 	import { cn } from '$lib/utils';
 	import MobileFloatingFormActions from '$lib/components/form/mobile-floating-form-actions.svelte';
 
-	interface Props {
-		children: import('svelte').Snippet;
-	}
-
-	let { children }: Props = $props();
+	let { children }: LayoutProps = $props();
 
 	let isSubPage = $derived(page.url.pathname !== '/settings');
 	let currentPageName = $derived(page.url.pathname.split('/').pop() || 'settings');

@@ -102,21 +102,22 @@
 			variant: 'purple'
 		})}
 		title={(item: SwarmStackSummary) => item.name}
-		subtitle={(item: SwarmStackSummary) => ((mobileFieldVisibility.createdAt ?? true) ? formatTimestamp(item.createdAt) : null)}
+		subtitle={(item: SwarmStackSummary) =>
+			(mobileFieldVisibility['createdAt'] ?? true) ? formatTimestamp(item.createdAt) : null}
 		fields={[
 			{
 				label: m.services(),
 				getValue: (item: SwarmStackSummary) => String(item.services),
 				icon: LayersIcon,
 				iconVariant: 'gray' as const,
-				show: mobileFieldVisibility.services ?? true
+				show: mobileFieldVisibility['services'] ?? true
 			},
 			{
 				label: m.common_updated(),
 				getValue: (item: SwarmStackSummary) => formatTimestamp(item.updatedAt),
 				icon: LayersIcon,
 				iconVariant: 'gray' as const,
-				show: mobileFieldVisibility.updatedAt ?? false
+				show: mobileFieldVisibility['updatedAt'] ?? false
 			}
 		]}
 		rowActions={RowActions}

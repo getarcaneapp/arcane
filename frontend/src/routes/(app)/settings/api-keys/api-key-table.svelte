@@ -214,7 +214,7 @@
 		{item}
 		icon={{ component: ApiKeyIcon, variant: 'blue' }}
 		title={(item: ApiKey) => item.name}
-		subtitle={(item: ApiKey) => ((mobileFieldVisibility.keyPrefix ?? true) ? `${item.keyPrefix}...` : null)}
+		subtitle={(item: ApiKey) => ((mobileFieldVisibility['keyPrefix'] ?? true) ? `${item.keyPrefix}...` : null)}
 		badges={[
 			(item: ApiKey) => ({
 				variant: getStatusVariant(item),
@@ -227,21 +227,21 @@
 				getValue: (item: ApiKey) => item.description || '-',
 				icon: ApiKeyIcon,
 				iconVariant: 'gray' as const,
-				show: mobileFieldVisibility.description ?? true
+				show: mobileFieldVisibility['description'] ?? true
 			},
 			{
 				label: m.api_key_expires_at(),
 				getValue: (item: ApiKey) => (item.expiresAt ? formatDate(item.expiresAt) : m.api_key_expires_never()),
 				icon: ApiKeyIcon,
 				iconVariant: 'gray' as const,
-				show: mobileFieldVisibility.expiresAt ?? true
+				show: mobileFieldVisibility['expiresAt'] ?? true
 			},
 			{
 				label: m.api_key_last_used(),
 				getValue: (item: ApiKey) => formatDate(item.lastUsedAt),
 				icon: ApiKeyIcon,
 				iconVariant: 'gray' as const,
-				show: mobileFieldVisibility.lastUsedAt ?? true
+				show: mobileFieldVisibility['lastUsedAt'] ?? true
 			}
 		]}
 		rowActions={RowActions}

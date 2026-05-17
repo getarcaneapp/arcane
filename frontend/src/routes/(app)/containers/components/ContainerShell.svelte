@@ -19,14 +19,12 @@
 	let reconnectKey = $state(0);
 	let lastContainerId = $state<string | undefined>(undefined);
 	let lastShellForUrl = $state<string | undefined>(undefined);
-	let hasShellOverride = $state(false);
 	let lastDefaultShell = $state<string | undefined>(undefined);
 
 	$effect(() => {
 		const defaultShell = $settingsStore.defaultShell;
 		if (defaultShell !== lastDefaultShell) {
 			lastDefaultShell = defaultShell;
-			hasShellOverride = false;
 			const fallbackShell = defaultShell || '/bin/sh';
 			if (selectedShell !== fallbackShell) {
 				selectedShell = fallbackShell;
@@ -59,8 +57,6 @@
 	}
 
 	function handleShellChange(shell: string) {
-		const defaultShell = $settingsStore.defaultShell || '/bin/sh';
-		hasShellOverride = shell !== defaultShell;
 		selectedShell = shell;
 	}
 

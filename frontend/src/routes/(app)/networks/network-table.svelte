@@ -130,7 +130,6 @@
 	}
 
 	const isAnyLoading = $derived(Object.values(isLoading).some((l) => l));
-	const hasNetworks = $derived(networks?.data?.length > 0);
 
 	function getDriverVariant(driver: string): 'blue' | 'purple' | 'red' | 'orange' | 'gray' {
 		const variantMap: Record<string, 'blue' | 'purple' | 'red' | 'orange' | 'gray'> = {
@@ -210,11 +209,9 @@
 {/snippet}
 
 {#snippet NetworkMobileCardSnippet({
-	row,
 	item,
 	mobileFieldVisibility
 }: {
-	row: any;
 	item: NetworkSummaryDto;
 	mobileFieldVisibility: FieldVisibility;
 })}
@@ -225,10 +222,10 @@
 			variant: item.inUse ? 'emerald' : 'amber'
 		})}
 		title={(item: NetworkSummaryDto) => item.name}
-		subtitle={(item: NetworkSummaryDto) => ((mobileFieldVisibility.id ?? true) ? item.id : null)}
+		subtitle={(item: NetworkSummaryDto) => ((mobileFieldVisibility['id'] ?? true) ? item.id : null)}
 		badges={[
 			(item: NetworkSummaryDto) =>
-				(mobileFieldVisibility.inUse ?? true)
+				(mobileFieldVisibility['inUse'] ?? true)
 					? (item.isDefault ?? false) || DEFAULT_NETWORK_NAMES.has(item.name)
 						? { variant: 'gray', text: m.networks_predefined() }
 						: item.inUse
@@ -244,7 +241,7 @@
 				iconVariant: 'gray' as const,
 				type: 'badge' as const,
 				badgeVariant: getDriverVariant(item.driver),
-				show: mobileFieldVisibility.driver ?? true
+				show: mobileFieldVisibility['driver'] ?? true
 			},
 			{
 				label: m.common_scope(),
@@ -253,7 +250,7 @@
 				iconVariant: 'gray' as const,
 				type: 'badge' as const,
 				badgeVariant: item.scope === 'local' ? ('green' as const) : ('amber' as const),
-				show: mobileFieldVisibility.scope ?? true
+				show: mobileFieldVisibility['scope'] ?? true
 			}
 		]}
 		rowActions={RowActions}

@@ -10,7 +10,6 @@
 
 	let { data } = $props();
 
-	const currentSettings = $derived($settingsStore || data.settings!);
 	const isReadOnly = $derived.by(() => $settingsStore?.uiConfigDisabled);
 
 	const formSchema = z.object({

@@ -183,14 +183,13 @@
 		}
 	}
 
-	function setUpgradeDialogOpen(next: boolean) {
-		showUpgradeDialog = next;
-		if (!next) {
+	$effect(() => {
+		if (!showUpgradeDialog) {
 			upgradingEnvironmentId = null;
 			selectedEnvironmentForUpgrade = null;
 			selectedVersionInfoForUpgrade = null;
 		}
-	}
+	});
 
 	async function handleToggleEnabled(environment: Environment) {
 		const newEnabled = !environment.enabled;
@@ -348,7 +347,7 @@
 		{item}
 		icon={{ component: StatsIcon, variant: 'emerald' }}
 		title={(item: Environment) => item.name || item.id}
-		subtitle={(item: Environment) => ((mobileFieldVisibility.id ?? true) ? item.id : null)}
+		subtitle={(item: Environment) => ((mobileFieldVisibility['id'] ?? true) ? item.id : null)}
 		badges={[
 			{ variant: 'green', text: m.sidebar_environment_label() },
 			...(environmentStore.selected?.id === item.id ? [{ variant: 'blue' as const, text: m.common_current() }] : [])
@@ -359,21 +358,21 @@
 				getValue: (item: Environment) => capitalizeFirstLetter(resolveEnvironmentStatus(item)),
 				icon: StatsIcon,
 				iconVariant: 'gray' as const,
-				show: mobileFieldVisibility.status ?? true
+				show: mobileFieldVisibility['status'] ?? true
 			},
 			{
 				label: m.common_type(),
 				getValue: (item: Environment) => getEnvironmentTypeLabel(item),
 				icon: StatsIcon,
 				iconVariant: 'gray' as const,
-				show: mobileFieldVisibility.type ?? true
+				show: mobileFieldVisibility['type'] ?? true
 			},
 			{
 				label: m.environments_api_url(),
 				getValue: (item: Environment) => item.apiUrl,
 				icon: StatsIcon,
 				iconVariant: 'gray' as const,
-				show: (mobileFieldVisibility.apiUrl ?? true) && !!item.apiUrl
+				show: (mobileFieldVisibility['apiUrl'] ?? true) && !!item.apiUrl
 			}
 		]}
 		rowActions={RowActions}
@@ -478,7 +477,7 @@
 />
 
 <UpdateCenterDialog
-	bind:open={() => showUpgradeDialog, setUpgradeDialogOpen}
+	bind:open={showUpgradeDialog}
 	onConfirm={handleConfirmUpgrade}
 	versionInformation={selectedVersionInfoForUpgrade ?? undefined}
 	canInstall={isAdmin}

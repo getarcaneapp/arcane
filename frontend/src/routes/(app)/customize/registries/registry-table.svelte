@@ -250,7 +250,7 @@
 		{item}
 		icon={{ component: RegistryIcon, variant: 'purple' as const }}
 		title={(item) => item.url}
-		subtitle={(item) => ((mobileFieldVisibility.id ?? true) ? item.id : null)}
+		subtitle={(item) => ((mobileFieldVisibility['id'] ?? true) ? item.id : null)}
 		badges={[{ variant: 'purple' as const, text: m.common_registry() }]}
 		fields={[
 			{
@@ -260,7 +260,7 @@
 				icon: UserIcon,
 				iconVariant: 'gray' as const,
 				show:
-					(mobileFieldVisibility.username ?? true) &&
+					(mobileFieldVisibility['username'] ?? true) &&
 					(item.registryType === 'ecr' ? !!item.awsAccessKeyId : item.username !== undefined)
 			},
 			{
@@ -268,14 +268,14 @@
 				getValue: (item: ContainerRegistry) => item.description,
 				icon: ExternalLinkIcon,
 				iconVariant: 'gray' as const,
-				show: (mobileFieldVisibility.description ?? true) && item.description !== undefined
+				show: (mobileFieldVisibility['description'] ?? true) && item.description !== undefined
 			},
 			{
 				label: m.registries_pull_usage(),
 				getValue: (item: ContainerRegistry) => formatPullUsage(item),
 				icon: RegistryIcon,
 				iconVariant: 'gray' as const,
-				show: mobileFieldVisibility.pullUsage ?? true
+				show: mobileFieldVisibility['pullUsage'] ?? true
 			}
 		]}
 		rowActions={RowActions}

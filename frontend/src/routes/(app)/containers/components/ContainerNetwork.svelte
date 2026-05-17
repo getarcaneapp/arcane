@@ -5,16 +5,6 @@
 	import type { ContainerDetailsDto } from '$lib/types/container.type';
 	import { NetworksIcon } from '$lib/icons';
 
-	interface NetworkConfig {
-		IPAddress?: string;
-		IPPrefixLen?: number;
-		Gateway?: string;
-		MacAddress?: string;
-		Aliases?: string[];
-		Links?: string[];
-		[key: string]: any;
-	}
-
 	interface Props {
 		container: ContainerDetailsDto;
 	}

@@ -22,7 +22,6 @@
 	import DashboardContainerTable from './dash-container-table.svelte';
 	import DashboardImageTable from './dash-image-table.svelte';
 	import DashboardAllEnvironmentsView from './dashboard-all-environments-view.svelte';
-	import type { PageData } from './$types';
 	import { m } from '$lib/paraglide/messages';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { systemService } from '$lib/services/system-service';
@@ -45,7 +44,7 @@
 		CheckIcon
 	} from '$lib/icons';
 
-	let { data }: { data: PageData } = $props();
+	let { data }: PageProps = $props();
 	const emptyDashboard: DashboardSnapshot = {
 		containers: {
 			data: [],
@@ -656,9 +655,7 @@
 					</div>
 				</section>
 
-				{#if dockerInfoDialogOpen}
-					<DockerInfoDialog bind:open={dockerInfoDialogOpen} {dockerInfo} {dockerInfoPromise} errorMessage={dockerInfoError} />
-				{/if}
+				<DockerInfoDialog bind:open={dockerInfoDialogOpen} {dockerInfo} {dockerInfoPromise} errorMessage={dockerInfoError} />
 
 				<PruneConfirmationDialog
 					bind:open={isPruneDialogOpen}

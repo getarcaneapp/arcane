@@ -13,6 +13,8 @@
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
 
+	let {}: PageProps = $props();
+
 	let error = $state('');
 	const queryClient = useQueryClient();
 

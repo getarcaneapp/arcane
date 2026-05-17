@@ -126,8 +126,8 @@ export function createContainerActions({
 				label: m.common_remove(),
 				destructive: true,
 				action: async (checkboxStates) => {
-					const force = !!checkboxStates.force;
-					const volumes = !!checkboxStates.volumes;
+					const force = !!checkboxStates['force'];
+					const volumes = !!checkboxStates['volumes'];
 					actionStatus[id] = 'removing';
 					handleApiResultWithCallbacks({
 						result: await tryCatch(containerService.deleteContainer(id, { force, volumes })),
@@ -304,8 +304,8 @@ export function createContainerActions({
 				label: m.common_remove(),
 				destructive: true,
 				action: async (checkboxStates) => {
-					const force = !!checkboxStates.force;
-					const volumes = !!checkboxStates.volumes;
+					const force = !!checkboxStates['force'];
+					const volumes = !!checkboxStates['volumes'];
 					isBulkLoading.remove = true;
 
 					const results = await Promise.allSettled(ids.map((id) => containerService.deleteContainer(id, { force, volumes })));

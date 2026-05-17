@@ -34,7 +34,7 @@
 							{#if env.includes('=')}
 								{@const [key, ...valueParts] = env.split('=')}
 								{@const value = valueParts.join('=')}
-								<KeyValueCard label={key} valueTitle={m.common_click_to_select()}>{value}</KeyValueCard>
+								<KeyValueCard label={key ?? ''} valueTitle={m.common_click_to_select()}>{value}</KeyValueCard>
 							{:else}
 								<KeyValueCard
 									label={m.swarm_service_env_var()}

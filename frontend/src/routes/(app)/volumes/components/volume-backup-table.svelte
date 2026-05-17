@@ -50,7 +50,6 @@
 		sort: { column: 'createdAt', direction: 'desc' }
 	});
 
-	let loading = $state(true);
 	let creating = $state(false);
 	let restoringFiles = $state(false);
 	let showRestoreFiles = $state(false);
@@ -66,7 +65,6 @@
 	});
 
 	async function loadData(options: SearchPaginationSortRequest): Promise<VolumeBackupListResponse> {
-		loading = true;
 		try {
 			const result = await volumeBackupService.listBackups(volumeName, options);
 			backupsPaginated = result;
@@ -75,8 +73,6 @@
 		} catch (e: any) {
 			toast.error(e.message || 'Failed to load backups');
 			return backupsPaginated;
-		} finally {
-			loading = false;
 		}
 	}
 
@@ -298,7 +294,7 @@
 				getValue: (item) => formatBytes(item.size),
 				icon: InfoIcon,
 				iconVariant: 'gray',
-				show: mobileFieldVisibility.size ?? true
+				show: mobileFieldVisibility['size'] ?? true
 			}
 		]}
 		footer={{

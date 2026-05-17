@@ -14,7 +14,7 @@
 	import { ComposeEditorSplit } from '$lib/components/compose';
 	import { untrack } from 'svelte';
 	import type { Template } from '$lib/types/template.type';
-	import { ArrowLeftIcon, CodeIcon, VariableIcon, SaveIcon } from '$lib/icons';
+	import { ArrowLeftIcon, CodeIcon, VariableIcon } from '$lib/icons';
 
 	let { data } = $props();
 

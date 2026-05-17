@@ -10,6 +10,7 @@
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { m } from '$lib/paraglide/messages';
 	import { EnvironmentsIcon, TestIcon } from '$lib/icons';
+	import type { DetailsTabProps } from './tab-props';
 
 	let {
 		environment,
@@ -20,7 +21,7 @@
 		versionInformation,
 		isTestingConnection,
 		testConnection
-	} = $props();
+	}: DetailsTabProps = $props();
 
 	let transportBadge = $derived.by((): { text: string; variant: 'blue' | 'purple' | 'gray' } => {
 		if (!environment.isEdge) {

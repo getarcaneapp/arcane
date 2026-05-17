@@ -1,6 +1,5 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
-	import type { PageData } from './$types';
 	import {
 		AlertIcon,
 		VolumesIcon,
@@ -29,7 +28,7 @@
 	import { networkService } from '$lib/services/network-service';
 	import { ResourceDetailLayout, type DetailAction } from '$lib/layouts';
 
-	let { data }: { data: PageData } = $props();
+	let { data }: PageProps = $props();
 	let errorMessage = $state('');
 
 	let isRemoving = $state(false);

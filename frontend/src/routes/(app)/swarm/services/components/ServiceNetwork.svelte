@@ -181,8 +181,8 @@
 															{#if info.configNetwork.scope}
 																<StatusBadge text={info.configNetwork.scope} variant="gray" size="sm" minWidth="none" />
 															{/if}
-															{#if info.configNetwork.options?.parent}
-																<span class="text-muted-foreground text-xs">{info.configNetwork.options.parent}</span>
+															{#if info.configNetwork.options?.['parent']}
+																<span class="text-muted-foreground text-xs">{info.configNetwork.options['parent']}</span>
 															{/if}
 														</div>
 													</div>

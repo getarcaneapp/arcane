@@ -58,7 +58,6 @@
 	let userSelectedTab = $state<string>('overview');
 	let userScaleReplicas = $state<number | null>(null);
 	let userScaleReplicasServiceId = $state<string | null>(null);
-	let isRefreshing = $state(false);
 	let isLoading = $state({ update: false, rollback: false, remove: false, scale: false });
 
 	// Editor state
@@ -153,11 +152,11 @@
 	const hostname = $derived(containerSpec?.Hostname || '');
 
 	const endpointPorts = $derived<SwarmServicePort[]>(
-		((service?.endpoint?.Ports as RawSwarmServicePort[] | undefined) ?? []).map(normalizePort)
+		((service?.endpoint?.['Ports'] as RawSwarmServicePort[] | undefined) ?? []).map(normalizePort)
 	);
 	const specNetworks = $derived<ServiceNetworkAttachment[]>((spec?.TaskTemplate?.Networks ?? []).map(normalizeNetworkAttachment));
 	const virtualIPs = $derived<ServiceVirtualIP[]>(
-		((service?.endpoint?.VirtualIPs as RawServiceVirtualIP[] | undefined) ?? []).map(normalizeVirtualIP)
+		((service?.endpoint?.['VirtualIPs'] as RawServiceVirtualIP[] | undefined) ?? []).map(normalizeVirtualIP)
 	);
 	const networkDetails = $derived<Record<string, ServiceNetworkDetail>>(service?.networkDetails ?? {});
 
@@ -195,11 +194,7 @@
 	}
 
 	async function refreshData() {
-		isRefreshing = true;
 		await invalidateAll();
-		setTimeout(() => {
-			isRefreshing = false;
-		}, 500);
 	}
 
 	// Editor
@@ -340,7 +335,7 @@
 			</div>
 		{/snippet}
 
-		{#snippet tabContent(activeTab)}
+		{#snippet tabContent(_activeTab)}
 			<Tabs.Content value="overview" class="h-full">
 				<ServiceOverview {service} {serviceName} {serviceImage} {serviceMode} {desiredReplicas} {labels} />
 			</Tabs.Content>

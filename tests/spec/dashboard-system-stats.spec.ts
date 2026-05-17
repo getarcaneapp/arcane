@@ -182,10 +182,7 @@ test.describe('Dashboard system stats websocket', () => {
 			countMatchingRequests(requestPaths, /\/api\/environments\/[^/]+\/system\/docker\/info$/)
 		).toBe(0);
 
-		await page
-			.getByRole('button', { name: /^Inspect$/ })
-			.first()
-			.click();
+		await page.getByRole('button', { name: 'Inspect' }).first().click();
 		await expect(page.getByRole('dialog')).toBeVisible();
 		await expect
 			.poll(() =>
@@ -196,10 +193,7 @@ test.describe('Dashboard system stats websocket', () => {
 		await page.getByRole('button', { name: /^Close$/ }).click();
 		await expect(page.getByRole('dialog')).not.toBeVisible();
 
-		await page
-			.getByRole('button', { name: /^Inspect$/ })
-			.first()
-			.click();
+		await page.getByRole('button', { name: 'Inspect' }).first().click();
 		await page.waitForTimeout(300);
 
 		expect(

@@ -117,13 +117,13 @@
 			variant: item.isPublished ? 'blue' : 'gray'
 		})}
 		title={(item: PortMappingDto) => mappingTitle(item)}
-		subtitle={(item: PortMappingDto) => ((mobileFieldVisibility.containerName ?? true) ? item.containerName : null)}
+		subtitle={(item: PortMappingDto) => ((mobileFieldVisibility['containerName'] ?? true) ? item.containerName : null)}
 		badges={[
 			(item: PortMappingDto) =>
-				(mobileFieldVisibility.isPublished ?? true)
+				(mobileFieldVisibility['isPublished'] ?? true)
 					? {
-							variant: item.isPublished ? 'sky' : 'gray',
-							text: item.isPublished ? m.ports_published_label() : m.ports_exposed_label()
+							variant: item.isPublished ? 'blue' : 'gray',
+							text: String(item.isPublished ? m.ports_published_label() : m.ports_exposed_label())
 						}
 					: null
 		]}
@@ -133,7 +133,7 @@
 				getValue: (item: PortMappingDto) => String(item.containerPort),
 				icon: HashIcon,
 				iconVariant: 'gray' as const,
-				show: mobileFieldVisibility.containerPort ?? true
+				show: mobileFieldVisibility['containerPort'] ?? true
 			},
 			{
 				label: m.common_type(),
@@ -142,21 +142,21 @@
 				iconVariant: 'gray' as const,
 				type: 'badge' as const,
 				badgeVariant: 'gray' as const,
-				show: mobileFieldVisibility.protocol ?? true
+				show: mobileFieldVisibility['protocol'] ?? true
 			},
 			{
 				label: m.ports_host_ip(),
 				getValue: (item: PortMappingDto) => formatHostIp(item),
 				icon: GlobeIcon,
 				iconVariant: 'gray' as const,
-				show: mobileFieldVisibility.hostIp ?? true
+				show: mobileFieldVisibility['hostIp'] ?? true
 			},
 			{
 				label: m.ports_container_name(),
 				getValue: (item: PortMappingDto) => item.containerName,
 				icon: ContainersIcon,
 				iconVariant: 'gray' as const,
-				show: mobileFieldVisibility.containerName ?? true
+				show: mobileFieldVisibility['containerName'] ?? true
 			}
 		]}
 		onclick={() => void goto(`/containers/${item.containerId}`)}

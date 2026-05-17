@@ -13,7 +13,7 @@ export type FormInput<T> = {
 	error: string | null;
 };
 
-type FormInputs<T> = {
+export type FormInputs<T> = {
 	[K in keyof T]: FormInput<T[K]>;
 };
 

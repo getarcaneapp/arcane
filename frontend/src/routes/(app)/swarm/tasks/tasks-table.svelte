@@ -76,10 +76,10 @@
 			variant: iconVariant(item.currentState)
 		})}
 		title={(item: SwarmTaskSummary) => item.name}
-		subtitle={(item: SwarmTaskSummary) => ((mobileFieldVisibility.serviceName ?? true) ? item.serviceName : null)}
+		subtitle={(item: SwarmTaskSummary) => ((mobileFieldVisibility['serviceName'] ?? true) ? item.serviceName : null)}
 		badges={[
 			(item: SwarmTaskSummary) =>
-				(mobileFieldVisibility.currentState ?? true)
+				(mobileFieldVisibility['currentState'] ?? true)
 					? { variant: stateVariant(item.currentState), text: item.currentState }
 					: null
 		]}
@@ -89,14 +89,14 @@
 				getValue: (item: SwarmTaskSummary) => item.nodeName,
 				icon: ConnectionIcon,
 				iconVariant: 'gray' as const,
-				show: mobileFieldVisibility.nodeName ?? true
+				show: mobileFieldVisibility['nodeName'] ?? true
 			},
 			{
 				label: m.swarm_desired_state(),
 				getValue: (item: SwarmTaskSummary) => item.desiredState,
 				icon: ConnectionIcon,
 				iconVariant: 'gray' as const,
-				show: mobileFieldVisibility.desiredState ?? false
+				show: mobileFieldVisibility['desiredState'] ?? false
 			}
 		]}
 	/>

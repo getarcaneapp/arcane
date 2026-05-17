@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { z } from 'zod/v4';
 	import * as Tabs from '$lib/components/ui/tabs/index.js';
 	import { TabBar, type TabItem } from '$lib/components/tab-bar';
 	import { ActionButtonGroup, type ActionButton } from '$lib/components/action-button-group/index.js';
@@ -26,6 +25,7 @@
 	import GeneralTab from './components/GeneralTab.svelte';
 	import DockerTab from './components/DockerTab.svelte';
 	import JobsTab from './components/JobsTab.svelte';
+	import { environmentFormSchema, type EnvironmentFormValues } from './components/environment-form-schema';
 	import TrivySecuritySettings from '$lib/components/settings/trivy-security-settings.svelte';
 	import {
 		ArrowLeftIcon,
@@ -203,53 +203,7 @@
 		activeTab = value;
 	}
 
-	// Form schema combining environment info and settings
-	const formSchema = z.object({
-		// Environment basic info
-		name: z.string().min(1),
-		enabled: z.boolean(),
-		apiUrl: z.string(),
-		// Settings
-		pollingEnabled: z.boolean(),
-		autoUpdate: z.boolean(),
-		autoInjectEnv: z.boolean(),
-		followProjectSymlinks: z.boolean(),
-		defaultDeployPullPolicy: z.enum(['missing', 'always', 'never']),
-		defaultShell: z.string(),
-		projectsDirectory: z.string(),
-		swarmStackSourcesDirectory: z.string(),
-		diskUsagePath: z.string(),
-		maxImageUploadSize: z.coerce.number(),
-		gitSyncMaxFiles: z.coerce.number().int().nonnegative(),
-		gitSyncMaxTotalSizeMb: z.coerce.number().int().nonnegative(),
-		gitSyncMaxBinarySizeMb: z.coerce.number().int().nonnegative(),
-		baseServerUrl: z.string(),
-		scheduledPruneEnabled: z.boolean(),
-		pruneContainerMode: z.enum(['none', 'stopped', 'olderThan']),
-		pruneContainerUntil: z.string(),
-		pruneImageMode: z.enum(['none', 'dangling', 'all', 'olderThan']),
-		pruneImageUntil: z.string(),
-		pruneVolumeMode: z.enum(['none', 'anonymous', 'all']),
-		pruneNetworkMode: z.enum(['none', 'unused', 'olderThan']),
-		pruneNetworkUntil: z.string(),
-		pruneBuildCacheMode: z.enum(['none', 'unused', 'all', 'olderThan']),
-		pruneBuildCacheUntil: z.string(),
-		vulnerabilityScanEnabled: z.boolean(),
-		trivyImage: z.string(),
-		trivyNetwork: z.string(),
-		trivySecurityOpts: z.string(),
-		trivyPrivileged: z.boolean(),
-		trivyPreserveCacheOnVolumePrune: z.boolean(),
-		trivyResourceLimitsEnabled: z.boolean(),
-		trivyCpuLimit: z.coerce.number().int(m.security_session_timeout_integer()).nonnegative(),
-		trivyMemoryLimitMb: z.coerce.number().int().nonnegative(),
-		trivyConcurrentScanContainers: z.coerce.number().int().min(1, m.security_trivy_concurrent_scan_containers_min()),
-		autoUpdateExcludedContainers: z.string().optional(),
-		autoHealEnabled: z.boolean(),
-		autoHealExcludedContainers: z.string(),
-		autoHealMaxRestarts: z.coerce.number().int().min(1),
-		autoHealRestartWindow: z.coerce.number().int().min(1)
-	});
+	const formSchema = environmentFormSchema;
 
 	// Build current settings object from environment and settings data
 	const currentSettings = $derived({
@@ -298,7 +252,7 @@
 	});
 
 	// Custom save handler for environment-specific settings
-	async function saveEnvironmentSettings(formData: z.infer<typeof formSchema>) {
+	async function saveEnvironmentSettings(formData: EnvironmentFormValues) {
 		// Update environment basic info
 		await environmentManagementService.update(environment.id, {
 			name: formData.name,
@@ -365,7 +319,7 @@
 		}
 	}
 
-	let { formInputs, settingsForm, resetForm, onSubmit, registerOnMount } = $derived(
+	let { formInputs, settingsForm, resetForm, onSubmit } = $derived(
 		createSettingsForm({
 			schema: formSchema,
 			currentSettings,

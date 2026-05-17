@@ -12,6 +12,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { containerService } from '$lib/services/container-service';
 	import { goto } from '$app/navigation';
+	import { untrack } from 'svelte';
 	import { IsMobile } from '$lib/hooks';
 	import { ContainersIcon, ArrowRightIcon } from '$lib/icons';
 	import IconImage from '$lib/components/icon-image.svelte';
@@ -63,28 +64,29 @@
 	}
 
 	function updateRequestLimit(limit: number) {
+		const currentOptions = untrack(() => requestOptions);
+		if (currentOptions.pagination?.limit === limit) return;
+
 		requestOptions = {
-			...requestOptions,
+			...currentOptions,
 			pagination: {
-				page: requestOptions.pagination?.page ?? 1,
+				page: currentOptions.pagination?.page ?? 1,
 				limit
 			}
 		};
 	}
 
-	function handleLayoutChange(height: number) {
-		lastMeasuredHeight = height;
-		const nextLimit = calculateLimitForHeight(height);
+	$effect(() => {
+		const nextLimit = calculateLimitForHeight(lastMeasuredHeight);
 		displayLimit = nextLimit;
 		updateRequestLimit(nextLimit);
-	}
+	});
 
 	async function refreshContainers(options: SearchPaginationSortRequest) {
 		requestOptions = options;
 		const result = await containerService.getContainers(options);
 		containers = result;
 		displayLimit = result.pagination?.itemsPerPage ?? displayLimit;
-		handleLayoutChange(lastMeasuredHeight);
 		return result;
 	}
 
@@ -97,12 +99,8 @@
 </script>
 
 {#snippet NameCell({ item }: { item: ContainerSummaryDto })}
-	{@const displayName =
-		item.names && item.names.length > 0
-			? item.names[0].startsWith('/')
-				? item.names[0].substring(1)
-				: item.names[0]
-			: item.id.substring(0, 12)}
+	{@const firstName = item.names?.[0] ?? ''}
+	{@const displayName = firstName ? (firstName.startsWith('/') ? firstName.substring(1) : firstName) : item.id.substring(0, 12)}
 	{@const iconUrl = getArcaneIconUrlFromLabels(item.labels)}
 	<div class="flex items-center gap-2">
 		<IconImage src={iconUrl} alt={displayName} fallback={ContainersIcon} class="size-4" containerClass="size-7" />
@@ -114,7 +112,7 @@
 	<StatusBadge variant={getStatusVariant(item.state)} text={capitalizeFirstLetter(item.state)} />
 {/snippet}
 
-{#snippet DashContainerMobileCard({ row, item }: { row: any; item: ContainerSummaryDto })}
+{#snippet DashContainerMobileCard({ item }: { item: ContainerSummaryDto })}
 	<UniversalMobileCard
 		{item}
 		icon={(item) => {
@@ -128,8 +126,9 @@
 			};
 		}}
 		title={(item) => {
-			if (item.names && item.names.length > 0) {
-				return item.names[0].startsWith('/') ? item.names[0].substring(1) : item.names[0];
+			const first = item.names?.[0];
+			if (first) {
+				return first.startsWith('/') ? first.substring(1) : first;
 			}
 			return item.id.substring(0, 12);
 		}}
@@ -151,10 +150,7 @@
 	/>
 {/snippet}
 
-<div
-	class="flex flex-col lg:h-full lg:min-h-0"
-	bind:clientHeight={() => lastMeasuredHeight, (value) => handleLayoutChange(value)}
->
+<div class="flex flex-col lg:h-full lg:min-h-0" bind:clientHeight={lastMeasuredHeight}>
 	<Card.Root class="flex flex-col lg:h-full lg:min-h-0">
 		<Card.Header icon={ContainersIcon} class="shrink-0">
 			<div class="flex flex-1 items-center justify-between">

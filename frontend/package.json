@@ -1,7 +1,7 @@
 {
   "name": "arcane-frontend",
   "private": true,
-  "version": "1.19.2",
+  "version": "1.19.3",
   "type": "module",
   "scripts": {
     "dev": "vite dev --port 3000 --host",
@@ -62,7 +62,7 @@
     "mode-watcher": "^1.1.0",
     "paneforge": "^1.0.2",
     "runed": "^0.37.1",
-    "svelte-check-rs": "^0.9.7",
+    "svelte-check-rs": "^0.9.11",
     "svelte-sonner": "^1.1.1",
     "svelte-toolbelt": "^0.10.6",
     "sveltekit-superforms": "^2.30.1",

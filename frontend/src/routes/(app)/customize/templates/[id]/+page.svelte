@@ -17,7 +17,6 @@
 	import { ComposeEditorSplit } from '$lib/components/compose';
 	import { z } from 'zod/v4';
 	import {
-		TrashIcon,
 		ArrowLeftIcon,
 		ProjectsIcon,
 		CodeIcon,

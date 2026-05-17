@@ -28,6 +28,8 @@
 	import { getSettingsSubpageUrlsInNavOrder } from '$lib/config/navigation-config';
 	import HeaderCard from '$lib/components/header-card.svelte';
 
+	let {}: PageProps = $props();
+
 	let searchQuery = $state('');
 	let showSearchResults = $state(false);
 	let searchResults = $state<SettingsCategory[]>([]);
@@ -58,7 +60,7 @@
 		}
 	});
 
-	async function performSearch(query: string, immediate = false) {
+	async function performSearch(query: string) {
 		const trimmedQuery = query.trim();
 
 		if (!trimmedQuery) {
@@ -90,7 +92,7 @@
 	}
 
 	const debouncedSearch = debounced((query: string) => {
-		void performSearch(query, false);
+		void performSearch(query);
 	}, 300);
 
 	function navigateToCategory(categoryUrl: string) {
@@ -157,7 +159,7 @@
 					}}
 					onkeydown={(e) => {
 						if (e.key === 'Enter') {
-							performSearch((e.currentTarget as HTMLInputElement).value, true);
+							performSearch((e.currentTarget as HTMLInputElement).value);
 						}
 					}}
 				/>

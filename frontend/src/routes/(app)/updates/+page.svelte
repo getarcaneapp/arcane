@@ -66,16 +66,6 @@
 		)
 	);
 	const envId = $derived(environmentStore.selected?.id || '0');
-	const containers = $derived(
-		(containerSnapshot?.envId === envId ? containerSnapshot.value : null) ??
-			containersQuery.data ??
-			(envId === data.envId ? initialContainers : emptyContainers)
-	);
-	const projects = $derived(
-		(projectSnapshot?.envId === envId ? projectSnapshot.value : null) ??
-			projectsQuery.data ??
-			(envId === data.envId ? initialProjects : emptyProjects)
-	);
 
 	const containersQuery = createQuery(() => ({
 		queryKey: queryKeys.containers.list(envId, ensureStandaloneContainerUpdatesFilter(containerRequestOptions)),
@@ -91,6 +81,17 @@
 		initialData: envId === data.envId ? data.projects : undefined,
 		refetchOnMount: false
 	}));
+
+	const containers = $derived(
+		(containerSnapshot?.envId === envId ? containerSnapshot.value : null) ??
+			containersQuery.data ??
+			(envId === data.envId ? initialContainers : emptyContainers)
+	);
+	const projects = $derived(
+		(projectSnapshot?.envId === envId ? projectSnapshot.value : null) ??
+			projectsQuery.data ??
+			(envId === data.envId ? initialProjects : emptyProjects)
+	);
 
 	const projectUpdatedImageRefs = $derived.by(() => {
 		const refs = new Set<string>();
@@ -217,7 +218,7 @@
 				<Tabs.Content value="containers" class="mt-4">
 					{#key `${envId}-containers`}
 						<ContainerUpdatesTable
-							bind:containers={() => containers, (value) => (containerSnapshot = { envId, value })}
+							{containers}
 							bind:requestOptions={containerRequestOptions}
 							onRefreshData={async (options) => {
 								containerRequestOptions = ensureStandaloneContainerUpdatesFilter(options);
@@ -232,7 +233,7 @@
 				<Tabs.Content value="projects" class="mt-4">
 					{#key `${envId}-projects`}
 						<ProjectUpdatesTable
-							bind:projects={() => projects, (value) => (projectSnapshot = { envId, value })}
+							{projects}
 							bind:requestOptions={projectRequestOptions}
 							updateInfoByRef={projectUpdateDetailsQuery.data}
 							onRefreshData={async (options) => {

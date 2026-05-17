@@ -23,9 +23,9 @@ export const load: PageLoad = async ({ parent, url }) => {
 	} satisfies SearchPaginationSortRequest);
 	const filters = { ...(projectRequestOptions.filters ?? {}) };
 	if (showArchived) {
-		filters.archived = 'true';
+		filters['archived'] = 'true';
 	} else {
-		delete filters.archived;
+		delete filters['archived'];
 	}
 	projectRequestOptions.filters = Object.keys(filters).length ? filters : undefined;
 

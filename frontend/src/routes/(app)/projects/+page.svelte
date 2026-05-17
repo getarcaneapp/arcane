@@ -20,9 +20,9 @@
 	function withArchivedFilter(options: SearchPaginationSortRequest, show: boolean): SearchPaginationSortRequest {
 		const filters = { ...(options.filters ?? {}) };
 		if (show) {
-			filters.archived = 'true';
+			filters['archived'] = 'true';
 		} else {
-			delete filters.archived;
+			delete filters['archived'];
 		}
 
 		return {

@@ -2,11 +2,9 @@
 	import { page } from '$app/state';
 	import { m } from '$lib/paraglide/messages';
 
-	import type { Snippet } from 'svelte';
+	let { children }: LayoutProps = $props();
 
-	let { children }: { children: Snippet } = $props();
-
-	const projectName = $derived(page.data.project.name);
+	const projectName = $derived(page.data['project'].name);
 	const pageTitle = $derived(`${m.layout_title()} | ${m.projects_title()} | ${projectName}`);
 </script>
 

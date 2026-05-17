@@ -18,6 +18,8 @@
 	import { formatDistanceToNow } from 'date-fns';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 
+	let {}: PageProps = $props();
+
 	const storeUser = fromStore(userStore);
 	const isAdmin = $derived(!!storeUser.current?.roles?.includes('admin'));
 
@@ -33,10 +35,8 @@
 		delete: false
 	});
 
-	const selectedSecret = $derived(secrets.find((secret) => secret.id === selectedSecretId) ?? null);
-
 	function getSpecName(spec: Record<string, unknown> | null | undefined, fallback: string): string {
-		const name = spec && typeof spec === 'object' ? (spec as Record<string, unknown>).Name : undefined;
+		const name = spec && typeof spec === 'object' ? (spec as Record<string, unknown>)['Name'] : undefined;
 		return typeof name === 'string' && name.trim() ? name : fallback.slice(0, 12);
 	}
 
@@ -67,8 +67,8 @@
 	function selectSecret(secret: SwarmSecretSummary) {
 		selectedSecretId = secret.id;
 		const spec = (secret.spec ?? {}) as Record<string, unknown>;
-		editName = typeof spec.Name === 'string' ? spec.Name : '';
-		editData = typeof spec.Data === 'string' ? decodeBase64ToText(spec.Data) : '';
+		editName = typeof spec['Name'] === 'string' ? spec['Name'] : '';
+		editData = typeof spec['Data'] === 'string' ? decodeBase64ToText(spec['Data']) : '';
 	}
 
 	function clearSelectedSecret() {

@@ -3,7 +3,6 @@
 	import * as Alert from '$lib/components/ui/alert/index.js';
 	import * as InputGroup from '$lib/components/ui/input-group/index.js';
 	import { AlertIcon, LockIcon, UserIcon, GithubIcon, OpenIdIcon } from '$lib/icons';
-	import type { PageData } from './$types';
 	import { goto } from '$app/navigation';
 	import userStore from '$lib/stores/user-store';
 	import { m } from '$lib/paraglide/messages';
@@ -14,7 +13,7 @@
 	import { onMount } from 'svelte';
 	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
 
-	let { data }: { data: PageData } = $props();
+	let { data }: PageProps = $props();
 
 	let error = $state<string | null>(null);
 	let username = $state('');

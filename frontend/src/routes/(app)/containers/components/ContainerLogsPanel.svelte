@@ -35,7 +35,7 @@
 	} = $props();
 
 	let isStreaming = $state(false);
-	let viewer = $state<LogViewer>();
+	let viewer = $state<ReturnType<typeof LogViewer>>();
 	let autoStartLogs = $state(false);
 	let hasAutoStarted = $state(false);
 	let showParsedJson = $state(false);
@@ -48,10 +48,6 @@
 	const cpuUsagePercent = $derived(calculateCPUPercent(stats));
 	const memoryUsageBytes = $derived(calculateMemoryUsage(stats));
 	const memoryLimitBytes = $derived(stats?.memory_stats?.limit || 0);
-	const memoryUsagePercent = $derived.by(() => {
-		if (!memoryLimitBytes) return 0;
-		return Math.min(Math.max((memoryUsageBytes / memoryLimitBytes) * 100, 0), 100);
-	});
 	const cpuValue = $derived(isRunning ? `${cpuUsagePercent.toFixed(1)}%` : m.common_na());
 	const cpuDetail = $derived.by(() => {
 		if (!isRunning) return m.common_na();
@@ -64,11 +60,11 @@
 			? `${onlineCpus} ${onlineCpus === 1 ? m.containers_stats_cpu_unit_singular() : m.common_cpus()}`
 			: m.common_na();
 	});
-	const memoryValue = $derived(isRunning ? bytes.format(memoryUsageBytes, { unitSeparator: ' ' }) : m.common_na());
+	const memoryValue = $derived(isRunning ? (bytes.format(memoryUsageBytes, { unitSeparator: ' ' }) ?? '') : m.common_na());
 	const memoryDetail = $derived.by(() => {
 		if (!isRunning) return m.common_na();
 		if (!memoryLimitBytes) return m.common_na();
-		return bytes.format(memoryLimitBytes, { unitSeparator: ' ' });
+		return bytes.format(memoryLimitBytes, { unitSeparator: ' ' }) ?? '';
 	});
 
 	function resetHistory() {

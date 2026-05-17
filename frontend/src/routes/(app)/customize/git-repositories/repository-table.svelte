@@ -225,7 +225,7 @@
 		{item}
 		icon={{ component: GitBranchIcon, variant: 'blue' as const }}
 		title={(item) => item.name}
-		subtitle={(item) => ((mobileFieldVisibility.id ?? false) ? item.id : item.url)}
+		subtitle={(item) => ((mobileFieldVisibility['id'] ?? false) ? item.id : item.url)}
 		badges={[{ variant: 'blue' as const, text: m.resource_repository_cap() }]}
 		fields={[
 			{
@@ -233,14 +233,14 @@
 				getValue: (item: GitRepository) => item.url,
 				icon: LinkIcon,
 				iconVariant: 'gray' as const,
-				show: mobileFieldVisibility.url ?? true
+				show: mobileFieldVisibility['url'] ?? true
 			},
 			{
 				label: m.git_repository_auth_type(),
 				getValue: (item: GitRepository) => item.authType,
 				icon: KeyIcon,
 				iconVariant: 'gray' as const,
-				show: mobileFieldVisibility.authType ?? true
+				show: mobileFieldVisibility['authType'] ?? true
 			}
 		]}
 		rowActions={RowActions}

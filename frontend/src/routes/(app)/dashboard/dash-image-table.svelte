@@ -11,6 +11,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { imageService } from '$lib/services/image-service';
 	import { goto } from '$app/navigation';
+	import { untrack } from 'svelte';
 	import { IsMobile } from '$lib/hooks';
 	import { ImagesIcon, ArrowRightIcon } from '$lib/icons';
 
@@ -61,28 +62,29 @@
 	}
 
 	function updateRequestLimit(limit: number) {
+		const currentOptions = untrack(() => requestOptions);
+		if (currentOptions.pagination?.limit === limit) return;
+
 		requestOptions = {
-			...requestOptions,
+			...currentOptions,
 			pagination: {
-				page: requestOptions.pagination?.page ?? 1,
+				page: currentOptions.pagination?.page ?? 1,
 				limit
 			}
 		};
 	}
 
-	function handleLayoutChange(height: number) {
-		lastMeasuredHeight = height;
-		const nextLimit = calculateLimitForHeight(height);
+	$effect(() => {
+		const nextLimit = calculateLimitForHeight(lastMeasuredHeight);
 		displayLimit = nextLimit;
 		updateRequestLimit(nextLimit);
-	}
+	});
 
 	async function refreshImages(options: SearchPaginationSortRequest) {
 		requestOptions = options;
 		const result = await imageService.getImages(options);
 		images = result;
 		displayLimit = result.pagination?.itemsPerPage ?? displayLimit;
-		handleLayoutChange(lastMeasuredHeight);
 		return result;
 	}
 
@@ -128,7 +130,7 @@
 	{bytes.format(item.size)}
 {/snippet}
 
-{#snippet DashImageMobileCard({ row, item }: { row: any; item: ImageSummaryDto })}
+{#snippet DashImageMobileCard({ item }: { item: ImageSummaryDto })}
 	<UniversalMobileCard
 		{item}
 		icon={(item: ImageSummaryDto) => ({
@@ -156,10 +158,7 @@
 	/>
 {/snippet}
 
-<div
-	class="flex flex-col lg:h-full lg:min-h-0"
-	bind:clientHeight={() => lastMeasuredHeight, (value) => handleLayoutChange(value)}
->
+<div class="flex flex-col lg:h-full lg:min-h-0" bind:clientHeight={lastMeasuredHeight}>
 	<Card.Root class="flex flex-col lg:h-full lg:min-h-0">
 		<Card.Header icon={ImagesIcon} class="shrink-0">
 			<div class="flex flex-1 items-center justify-between">

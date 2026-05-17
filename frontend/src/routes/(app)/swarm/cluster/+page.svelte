@@ -25,6 +25,8 @@
 	import { fromStore } from 'svelte/store';
 	import { toast } from 'svelte-sonner';
 
+	let {}: PageProps = $props();
+
 	const storeUser = fromStore(userStore);
 	const isAdmin = $derived(!!storeUser.current?.roles?.includes('admin'));
 

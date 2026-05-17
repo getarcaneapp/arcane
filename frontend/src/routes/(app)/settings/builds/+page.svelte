@@ -40,8 +40,8 @@
 		getCurrentSettings: getFormDefaults,
 		onSave: async (payload) => {
 			const updated = { ...payload } as Record<string, unknown>;
-			if (!updated.depotToken) {
-				delete updated.depotToken;
+			if (!updated['depotToken']) {
+				delete updated['depotToken'];
 			}
 			await settingsService.updateSettings(updated);
 		},

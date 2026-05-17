@@ -110,7 +110,7 @@
 	}
 
 	function setShowInternal(value: boolean) {
-		const currentSetting = (customSettings.showInternalContainers as boolean) ?? false;
+		const currentSetting = (customSettings['showInternalContainers'] as boolean) ?? false;
 		const currentRequest = requestOptions?.includeInternal ?? false;
 		if (value === currentSetting && value === currentRequest) return;
 
@@ -155,10 +155,10 @@
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 	let customSettings = $state<Record<string, unknown>>({});
 	let showInternal = $derived.by(() => {
-		return (customSettings.showInternalContainers as boolean) ?? false;
+		return (customSettings['showInternalContainers'] as boolean) ?? false;
 	});
 	let hideExposedPorts = $derived.by(() => {
-		return (customSettings.hideExposedPorts as boolean) ?? false;
+		return (customSettings['hideExposedPorts'] as boolean) ?? false;
 	});
 	let collapsedGroupsState = $state<PersistedState<Record<string, boolean>> | null>(null);
 	let collapsedGroups = $derived(collapsedGroupsState?.current ?? {});
@@ -171,8 +171,8 @@
 	);
 
 	const shouldConnect = $derived.by(() => {
-		const cpuVisible = columnVisibility.cpuUsage !== false;
-		const memoryVisible = columnVisibility.memoryUsage !== false;
+		const cpuVisible = columnVisibility['cpuUsage'] !== false;
+		const memoryVisible = columnVisibility['memoryUsage'] !== false;
 		const statsVisible = cpuVisible || memoryVisible;
 
 		if (!statsVisible) {
@@ -188,13 +188,13 @@
 	onMount(() => {
 		collapsedGroupsState = new PersistedState<Record<string, boolean>>('container-groups-collapsed', {});
 
-		const persistedInternal = (customSettings.showInternalContainers as boolean) ?? false;
+		const persistedInternal = (customSettings['showInternalContainers'] as boolean) ?? false;
 		const currentInternal = requestOptions?.includeInternal ?? false;
 		if (persistedInternal !== currentInternal) {
 			setShowInternal(persistedInternal);
 		}
 
-		const persistedGroupByProject = (customSettings.groupByProject as boolean) ?? false;
+		const persistedGroupByProject = (customSettings['groupByProject'] as boolean) ?? false;
 		if (persistedGroupByProject !== groupByProject) {
 			groupByProject = persistedGroupByProject;
 		}
@@ -473,10 +473,10 @@
 			};
 		}}
 		title={(item) => getContainerDisplayName(item)}
-		subtitle={(item) => ((mobileFieldVisibility.id ?? true) ? (item.id.length > 12 ? item.id : null) : null)}
+		subtitle={(item) => ((mobileFieldVisibility['id'] ?? true) ? (item.id.length > 12 ? item.id : null) : null)}
 		badges={[
 			(item) =>
-				(mobileFieldVisibility.state ?? true)
+				(mobileFieldVisibility['state'] ?? true)
 					? {
 							variant: getStateBadgeVariant(item.state),
 							text: capitalizeFirstLetter(item.state)
@@ -489,14 +489,14 @@
 				getValue: (item: ContainerSummaryDto) => item.image,
 				icon: ImagesIcon,
 				iconVariant: 'blue' as const,
-				show: mobileFieldVisibility.image ?? true
+				show: mobileFieldVisibility['image'] ?? true
 			},
 			{
 				label: m.common_status(),
 				getValue: (item: ContainerSummaryDto) => item.status,
 				icon: ClockIcon,
 				iconVariant: 'purple' as const,
-				show: (mobileFieldVisibility.status ?? true) && item.status !== undefined
+				show: (mobileFieldVisibility['status'] ?? true) && item.status !== undefined
 			},
 			{
 				label: m.containers_ip_address(),
@@ -504,7 +504,7 @@
 				icon: NetworksIcon,
 				iconVariant: 'sky' as const,
 				type: 'mono' as const,
-				show: mobileFieldVisibility.ipAddress ?? false
+				show: mobileFieldVisibility['ipAddress'] ?? false
 			},
 			{
 				label: m.containers_cpu_usage(),
@@ -516,7 +516,7 @@
 				},
 				icon: ClockIcon,
 				iconVariant: 'orange' as const,
-				show: mobileFieldVisibility.cpuUsage ?? false
+				show: mobileFieldVisibility['cpuUsage'] ?? false
 			},
 			{
 				label: m.containers_memory_usage(),
@@ -528,10 +528,10 @@
 				},
 				icon: ClockIcon,
 				iconVariant: 'purple' as const,
-				show: mobileFieldVisibility.memoryUsage ?? false
+				show: mobileFieldVisibility['memoryUsage'] ?? false
 			}
 		]}
-		footer={(mobileFieldVisibility.created ?? true)
+		footer={(mobileFieldVisibility['created'] ?? true)
 			? {
 					label: m.common_created(),
 					getValue: (item) => format(new Date(item.created * 1000), 'PP p'),
@@ -541,9 +541,9 @@
 		rowActions={RowActions}
 		onclick={(item: ContainerSummaryDto) => goto(`/containers/${item.id}`)}
 	>
-		{#if ((mobileFieldVisibility.ports ?? true) && item.ports && item.ports.length > 0) || (mobileFieldVisibility.updates ?? true)}
+		{#if ((mobileFieldVisibility['ports'] ?? true) && item.ports && item.ports.length > 0) || (mobileFieldVisibility['updates'] ?? true)}
 			<div class="flex flex-row gap-4 border-t pt-3">
-				{#if (mobileFieldVisibility.ports ?? true) && item.ports && item.ports.length > 0}
+				{#if (mobileFieldVisibility['ports'] ?? true) && item.ports && item.ports.length > 0}
 					<div class="flex min-w-0 flex-1 items-start gap-2.5">
 						<div class="flex size-7 shrink-0 items-center justify-center rounded-lg bg-sky-500/10">
 							<NetworksIcon class="size-3.5 text-sky-500" />
@@ -558,7 +558,7 @@
 						</div>
 					</div>
 				{/if}
-				{#if mobileFieldVisibility.updates ?? true}
+				{#if mobileFieldVisibility['updates'] ?? true}
 					{@const imageRef = parseImageRef(item.image)}
 					<div class="flex min-w-0 flex-1 items-start gap-2.5">
 						<div class="flex min-w-0 flex-col">
@@ -710,19 +710,17 @@
 />
 
 {#snippet CustomViewOptions()}
-	<DropdownMenu.CheckboxItem bind:checked={() => groupByProject, (v) => setGroupByProject(!!v)}>
+	<DropdownMenu.CheckboxItem checked={groupByProject} onCheckedChange={(v) => setGroupByProject(!!v)}>
 		{m.containers_group_by_project()}
 	</DropdownMenu.CheckboxItem>
-	<DropdownMenu.CheckboxItem bind:checked={() => showInternal, (v) => setShowInternal(!!v)}>
+	<DropdownMenu.CheckboxItem checked={showInternal} onCheckedChange={(v) => setShowInternal(!!v)}>
 		{`${m.common_show()} ${m.internal()} ${m.containers_title()}`}
 	</DropdownMenu.CheckboxItem>
 	<DropdownMenu.CheckboxItem
-		bind:checked={
-			() => hideExposedPorts,
-			(v) => {
-				customSettings = { ...customSettings, hideExposedPorts: !!v };
-			}
-		}
+		checked={hideExposedPorts}
+		onCheckedChange={(v) => {
+			customSettings = { ...customSettings, hideExposedPorts: !!v };
+		}}
 	>
 		{m.containers_hide_unexposed_ports()}
 	</DropdownMenu.CheckboxItem>

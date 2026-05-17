@@ -36,7 +36,7 @@
 						{#if env.includes('=')}
 							{@const [key, ...valueParts] = env.split('=')}
 							{@const value = valueParts.join('=')}
-							<KeyValueCard label={key}>{value}</KeyValueCard>
+							<KeyValueCard label={key ?? ''}>{value}</KeyValueCard>
 						{:else}
 							<KeyValueCard
 								label={m.common_name()}
