@@ -1489,8 +1489,7 @@ func (s *ProjectService) SyncProjectsFromFileSystem(ctx context.Context) error {
 		if os.IsNotExist(discoveryErr) {
 			return nil
 		}
-		slog.WarnContext(ctx, "failed to discover projects directory contents", "dir", projectsDir, "error", discoveryErr)
-		return nil
+		return &common.ProjectDiscoveryError{Dir: projectsDir, Err: discoveryErr}
 	}
 
 	seen := map[string]struct{}{}
