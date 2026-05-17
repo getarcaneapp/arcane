@@ -47,7 +47,7 @@ type UpdaterService struct {
 }
 
 type selfUpgradeService interface {
-	TriggerUpgradeViaCLIForContainer(ctx context.Context, user models.User, containerID string) error
+	TriggerUpgradeViaCLI(ctx context.Context, user models.User, containerID string) error
 }
 
 // NewUpdaterService constructs an UpdaterService with the dependencies needed
@@ -1617,7 +1617,7 @@ func (s *UpdaterService) triggerSelfUpdateViaCLIInternal(ctx context.Context, so
 		"container", containerName,
 		"instanceType", instanceType)
 
-	if err := s.upgradeService.TriggerUpgradeViaCLIForContainer(ctx, systemUser, containerID); err != nil {
+	if err := s.upgradeService.TriggerUpgradeViaCLI(ctx, systemUser, containerID); err != nil {
 		wrappedErr := fmt.Errorf("CLI upgrade failed: %w", err)
 		slog.WarnContext(ctx, source+": CLI upgrade failed",
 			"containerId", containerID,

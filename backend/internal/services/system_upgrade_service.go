@@ -71,23 +71,17 @@ func (s *SystemUpgradeService) CanUpgrade(ctx context.Context) (bool, error) {
 		return false, err
 	}
 
-	if err := s.checkManualUpdateRequirement(ctx); err != nil {
+	if err := s.checkManualUpdateRequirementInternal(ctx); err != nil {
 		return false, err
 	}
 
 	return true, nil
 }
 
-// TriggerUpgradeViaCLI spawns the upgrade CLI command in a separate container
-// This avoids self-termination issues by running the upgrade from outside
-func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user models.User) error {
-	return s.TriggerUpgradeViaCLIForContainer(ctx, user, "")
-}
-
-// TriggerUpgradeViaCLIForContainer spawns the upgrade CLI command targeting a
+// TriggerUpgradeViaCLI spawns the upgrade CLI command targeting a
 // specific Arcane container. An empty container ID keeps the legacy self-targeting behavior.
-func (s *SystemUpgradeService) TriggerUpgradeViaCLIForContainer(ctx context.Context, user models.User, containerID string) error {
-	if err := s.checkManualUpdateRequirement(ctx); err != nil {
+func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user models.User, containerID string) error {
+	if err := s.checkManualUpdateRequirementInternal(ctx); err != nil {
 		return err
 	}
 
@@ -232,7 +226,7 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLIForContainer(ctx context.Cont
 	return nil
 }
 
-func (s *SystemUpgradeService) checkManualUpdateRequirement(ctx context.Context) error {
+func (s *SystemUpgradeService) checkManualUpdateRequirementInternal(ctx context.Context) error {
 	if s.versionService == nil {
 		return nil
 	}

@@ -33,24 +33,13 @@ type mockSystemUpgradeService struct {
 	triggerError        error
 	capturedUser        *models.User
 	capturedContainerID string
-	canUpgrade          bool
 }
 
-func (m *mockSystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user models.User) error {
-	m.triggerCalled = true
-	m.capturedUser = &user
-	return m.triggerError
-}
-
-func (m *mockSystemUpgradeService) TriggerUpgradeViaCLIForContainer(ctx context.Context, user models.User, containerID string) error {
+func (m *mockSystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user models.User, containerID string) error {
 	m.triggerCalled = true
 	m.capturedUser = &user
 	m.capturedContainerID = containerID
 	return m.triggerError
-}
-
-func (m *mockSystemUpgradeService) CanUpgrade(ctx context.Context) (bool, error) {
-	return m.canUpgrade, nil
 }
 
 // TestUpdaterService_ArcaneLabel_TriggersCLIUpgrade verifies that when the
@@ -74,7 +63,7 @@ func TestUpdaterService_ArcaneLabel_TriggersCLIUpgrade(t *testing.T) {
 	// Simulate the logic from restartContainersUsingOldIDs:
 	// When upgradeService is not nil and isArcane is true, CLI should be called
 	if isArcane {
-		_ = mockUpgrade.TriggerUpgradeViaCLI(ctx, systemUser)
+		_ = mockUpgrade.TriggerUpgradeViaCLI(ctx, systemUser, "")
 	}
 
 	// Verify CLI upgrade was called
@@ -118,7 +107,7 @@ func TestUpdaterService_NonArcaneLabel_DoesNotTriggerCLI(t *testing.T) {
 
 	// Simulate the logic from restartContainersUsingOldIDs
 	if isArcane {
-		_ = mockUpgrade.TriggerUpgradeViaCLI(ctx, systemUser)
+		_ = mockUpgrade.TriggerUpgradeViaCLI(ctx, systemUser, "")
 	}
 
 	// Verify CLI upgrade was NOT called
@@ -162,7 +151,7 @@ func TestUpdaterService_ArcaneLabelWithError_PropagatesError(t *testing.T) {
 	// Call the upgrade method
 	var err error
 	if isArcane {
-		err = mockUpgrade.TriggerUpgradeViaCLI(ctx, systemUser)
+		err = mockUpgrade.TriggerUpgradeViaCLI(ctx, systemUser, "")
 	}
 
 	// Verify error is propagated
@@ -269,7 +258,7 @@ func TestUpdaterService_CLICalledWithSystemUser(t *testing.T) {
 	assert.True(t, isArcane)
 
 	if isArcane {
-		_ = mockUpgrade.TriggerUpgradeViaCLI(ctx, systemUser)
+		_ = mockUpgrade.TriggerUpgradeViaCLI(ctx, systemUser, "")
 	}
 
 	// Verify systemUser was passed
@@ -293,7 +282,7 @@ func TestUpdaterService_UpgradeServiceNotNilCheck(t *testing.T) {
 
 	// This is the actual logic from restartContainersUsingOldIDs
 	if isArcane {
-		_ = mockUpgrade.TriggerUpgradeViaCLI(ctx, systemUser)
+		_ = mockUpgrade.TriggerUpgradeViaCLI(ctx, systemUser, "")
 	}
 
 	assert.True(t, mockUpgrade.triggerCalled, "Should call CLI upgrade when service is not nil")

@@ -199,7 +199,7 @@ func TestSystemUpgradeService_CheckManualUpdateRequirementBlocksFromManifest(t *
 	}), "v1.20.0")
 	s := NewSystemUpgradeService(nil, versionService, nil, nil)
 
-	err := s.checkManualUpdateRequirement(ctx)
+	err := s.checkManualUpdateRequirementInternal(ctx)
 
 	require.ErrorIs(t, err, ErrManualUpdateRequired)
 	require.ErrorContains(t, err, "v1.20 manual step")
