@@ -79,6 +79,36 @@ builds:
       - -trimpath
     mod_timestamp: "{{ .CommitTimestamp }}"
 
+  - id: arcane-migrator
+    main: ./cmd/migrator/main.go
+    dir: backend
+    binary: arcane-migrator
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+      - "386"
+      - arm
+    goarm:
+      - "7"
+    goamd64:
+      - v1
+    go386:
+      - sse2
+    ldflags:
+      - -w -s
+      - -buildid={{ .Version }}
+      - -X github.com/getarcaneapp/arcane/backend/internal/config.Version={{ .Version }}
+      - -X github.com/getarcaneapp/arcane/backend/internal/config.Revision={{ .ShortCommit }}
+      - -X github.com/getarcaneapp/arcane/backend/internal/config.BuildTime={{ .Date }}
+    flags:
+      - -trimpath
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
   - id: arcane-cli
     main: .
     dir: cli
@@ -119,6 +149,7 @@ archives:
     ids:
       - arcane
       - arcane-agent
+      - arcane-migrator
     formats:
       - binary
     name_template: "{{ .Binary }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}"
@@ -128,6 +159,7 @@ upx:
     ids:
       - arcane
       - arcane-agent
+      - arcane-migrator
       - arcane-cli
     goos:
       - linux
@@ -166,6 +198,7 @@ binary_signs:
     ids:
       - arcane
       - arcane-agent
+      - arcane-migrator
       - arcane-cli
     signature: '${artifact}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}{{ with .Mips }}_{{ . }}{{ end }}{{ if not (eq .Amd64 "v1") }}{{ .Amd64 }}{{ end }}.sigstore.json'
     stdin: "{{ .Env.COSIGN_PASSWORD }}"
@@ -285,6 +318,7 @@ dockers_v2:
   - id: arcane-next
     ids:
       - arcane
+      - arcane-migrator
     dockerfile: docker/next-builds/Dockerfile-static
     images:
       - "ghcr.io/getarcaneapp/arcane"
@@ -339,6 +373,7 @@ dockers_v2:
   - id: arcane-next-distroless
     ids:
       - arcane
+      - arcane-migrator
     dockerfile: docker/next-builds/Dockerfile-next-distroless
     images:
       - "ghcr.io/getarcaneapp/arcane"

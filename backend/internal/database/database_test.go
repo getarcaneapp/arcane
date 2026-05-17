@@ -29,29 +29,25 @@ func TestGetEmbeddedMigrationVersions_ProvidersMatch(t *testing.T) {
 	assert.Equal(t, sqliteVersions[len(sqliteVersions)-1], highest)
 }
 
-func TestMigrateDatabase_BlocksDowngradeWithoutFlag(t *testing.T) {
+func TestMigrateDatabase_BlocksStartupDowngrade(t *testing.T) {
 	dbDir := t.TempDir()
 	driver := newSQLiteMigrationDriverInternal(t, dbDir, "arcane-test.db")
 	require.NoError(t, migrateDatabase(driver, "sqlite", MigrationOptions{}))
 	targetVersion := downgradeTargetVersionInternal(t)
 
-	err := migrateDatabaseToVersionInternal(newSQLiteMigrationDriverInternal(t, dbDir, "arcane-test.db"), "sqlite", MigrationOptions{}, targetVersion)
+	err := migrateDatabaseUpToVersionInternal(newSQLiteMigrationDriverInternal(t, dbDir, "arcane-test.db"), "sqlite", MigrationOptions{AllowDowngrade: true}, targetVersion)
 	require.Error(t, err)
-	assert.ErrorContains(t, err, "ALLOW_DOWNGRADE=true")
+	assert.ErrorContains(t, err, "run arcane-migrator")
 	assert.ErrorContains(t, err, "newer than this Arcane binary supports")
 }
 
-func TestMigrateDatabase_DowngradesWhenAllowed(t *testing.T) {
+func TestMigrateDatabase_DowngradesToExplicitVersion(t *testing.T) {
 	dbDir := t.TempDir()
 	driver := newSQLiteMigrationDriverInternal(t, dbDir, "arcane-test.db")
 	require.NoError(t, migrateDatabase(driver, "sqlite", MigrationOptions{}))
 	targetVersion := downgradeTargetVersionInternal(t)
-	highestVersion, err := getHighestEmbeddedMigrationVersionInternal("sqlite")
-	require.NoError(t, err)
-	sourceDriver, err := newEmbeddedMigrationSourceInternal("sqlite")
-	require.NoError(t, err)
 
-	require.NoError(t, migrateDatabaseFromSourceInternal(newSQLiteMigrationDriverInternal(t, dbDir, "arcane-test.db"), "sqlite", highestVersion, targetVersion, "iofs", "test embedded migrate source", sourceDriver))
+	require.NoError(t, migrateDatabaseToVersionInternal(newSQLiteMigrationDriverInternal(t, dbDir, "arcane-test.db"), "sqlite", targetVersion))
 
 	instance, checkSourceDriver, err := newEmbeddedMigrateInstanceInternal(newSQLiteMigrationDriverInternal(t, dbDir, "arcane-test.db"), "sqlite")
 	require.NoError(t, err)
@@ -62,7 +58,7 @@ func TestMigrateDatabase_DowngradesWhenAllowed(t *testing.T) {
 	assert.False(t, currentDirty)
 }
 
-func TestMigrateDatabase_DowngradesDirtyStateWhenAllowed(t *testing.T) {
+func TestMigrateDatabase_DowngradeRejectsDirtyState(t *testing.T) {
 	dbDir := t.TempDir()
 	driver := newSQLiteMigrationDriverInternal(t, dbDir, "arcane-test.db")
 	require.NoError(t, migrateDatabase(driver, "sqlite", MigrationOptions{}))
@@ -72,18 +68,10 @@ func TestMigrateDatabase_DowngradesDirtyStateWhenAllowed(t *testing.T) {
 	highestVersionInt, err := safeUintToIntInternal(highestVersion)
 	require.NoError(t, err)
 	require.NoError(t, newSQLiteMigrationDriverInternal(t, dbDir, "arcane-test.db").SetVersion(highestVersionInt, true))
-	sourceDriver, err := newEmbeddedMigrationSourceInternal("sqlite")
-	require.NoError(t, err)
 
-	require.NoError(t, migrateDatabaseFromSourceInternal(newSQLiteMigrationDriverInternal(t, dbDir, "arcane-test.db"), "sqlite", highestVersion, targetVersion, "iofs", "test embedded migrate source", sourceDriver))
-
-	instance, checkSourceDriver, err := newEmbeddedMigrateInstanceInternal(newSQLiteMigrationDriverInternal(t, dbDir, "arcane-test.db"), "sqlite")
-	require.NoError(t, err)
-	defer closeMigrateSourceInternal(checkSourceDriver, "test embedded migrate source")
-	currentVersion, dirty, versionErr := instance.Version()
-	require.NoError(t, versionErr)
-	assert.Equal(t, targetVersion, currentVersion)
-	assert.False(t, dirty)
+	err = migrateDatabaseToVersionInternal(newSQLiteMigrationDriverInternal(t, dbDir, "arcane-test.db"), "sqlite", targetVersion)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "dirty")
 }
 
 func TestMigrateDatabase_DirtyCurrentVersionRequiresResolution(t *testing.T) {
@@ -96,12 +84,12 @@ func TestMigrateDatabase_DirtyCurrentVersionRequiresResolution(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, newSQLiteMigrationDriverInternal(t, dbDir, "arcane-test.db").SetVersion(highestVersionInt, true))
 
-	err = migrateDatabaseToVersionInternal(newSQLiteMigrationDriverInternal(t, dbDir, "arcane-test.db"), "sqlite", MigrationOptions{}, highestVersion)
+	err = migrateDatabaseUpToVersionInternal(newSQLiteMigrationDriverInternal(t, dbDir, "arcane-test.db"), "sqlite", MigrationOptions{}, highestVersion)
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "is dirty")
 	assert.ErrorContains(t, err, "ALLOW_DOWNGRADE=true")
 
-	require.NoError(t, migrateDatabaseToVersionInternal(newSQLiteMigrationDriverInternal(t, dbDir, "arcane-test.db"), "sqlite", MigrationOptions{AllowDowngrade: true}, highestVersion))
+	require.NoError(t, migrateDatabaseUpToVersionInternal(newSQLiteMigrationDriverInternal(t, dbDir, "arcane-test.db"), "sqlite", MigrationOptions{AllowDowngrade: true}, highestVersion))
 
 	instance, sourceDriver, err := newEmbeddedMigrateInstanceInternal(newSQLiteMigrationDriverInternal(t, dbDir, "arcane-test.db"), "sqlite")
 	require.NoError(t, err)
@@ -119,21 +107,19 @@ func TestMigrateDatabase_DirtyOlderVersionRequiresResolution(t *testing.T) {
 	targetVersion := downgradeTargetVersionInternal(t)
 	highestVersion, err := getHighestEmbeddedMigrationVersionInternal("sqlite")
 	require.NoError(t, err)
-	sourceDriver, err := newEmbeddedMigrationSourceInternal("sqlite")
-	require.NoError(t, err)
 
-	require.NoError(t, migrateDatabaseFromSourceInternal(newSQLiteMigrationDriverInternal(t, dbDir, "arcane-test.db"), "sqlite", highestVersion, targetVersion, "iofs", "test embedded migrate source", sourceDriver))
+	require.NoError(t, migrateDatabaseToVersionInternal(newSQLiteMigrationDriverInternal(t, dbDir, "arcane-test.db"), "sqlite", targetVersion))
 
 	targetVersionInt, err := safeUintToIntInternal(targetVersion)
 	require.NoError(t, err)
 	require.NoError(t, newSQLiteMigrationDriverInternal(t, dbDir, "arcane-test.db").SetVersion(targetVersionInt, true))
 
-	err = migrateDatabaseToVersionInternal(newSQLiteMigrationDriverInternal(t, dbDir, "arcane-test.db"), "sqlite", MigrationOptions{}, highestVersion)
+	err = migrateDatabaseUpToVersionInternal(newSQLiteMigrationDriverInternal(t, dbDir, "arcane-test.db"), "sqlite", MigrationOptions{}, highestVersion)
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "interrupted forward migration")
 	assert.ErrorContains(t, err, "ALLOW_DOWNGRADE=true")
 
-	require.NoError(t, migrateDatabaseToVersionInternal(newSQLiteMigrationDriverInternal(t, dbDir, "arcane-test.db"), "sqlite", MigrationOptions{AllowDowngrade: true}, highestVersion))
+	require.NoError(t, migrateDatabaseUpToVersionInternal(newSQLiteMigrationDriverInternal(t, dbDir, "arcane-test.db"), "sqlite", MigrationOptions{AllowDowngrade: true}, highestVersion))
 
 	instance, sourceDriver, err := newEmbeddedMigrateInstanceInternal(newSQLiteMigrationDriverInternal(t, dbDir, "arcane-test.db"), "sqlite")
 	require.NoError(t, err)
@@ -243,10 +229,39 @@ func TestInitialize_CreatesQueryPerformanceIndexes(t *testing.T) {
 	}
 }
 
-func TestMigrationOptions_GitHubRefUsesBuildRevision(t *testing.T) {
-	assert.Equal(t, "abc123def456", githubRefForRevisionInternal(MigrationOptions{}, "abc123def456"))
-	assert.Equal(t, "custom-ref", githubRefForRevisionInternal(MigrationOptions{githubRef: "custom-ref"}, "abc123def456"))
-	assert.Equal(t, migrationRepositoryRefFallback, githubRefForRevisionInternal(MigrationOptions{}, "unknown"))
+func TestResolveAppMigrationVersion(t *testing.T) {
+	version, err := ResolveAppMigrationVersion("v1.18.0")
+	require.NoError(t, err)
+	assert.Equal(t, uint(47), version)
+
+	version, err = ResolveAppMigrationVersion("1.19.2")
+	require.NoError(t, err)
+	assert.Equal(t, uint(52), version)
+}
+
+func TestResolveAppMigrationVersion_Unknown(t *testing.T) {
+	_, err := ResolveAppMigrationVersion("v0.0.0")
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "no migration target is known")
+}
+
+func TestGetMigrationStatus(t *testing.T) {
+	ctx := context.Background()
+	dsn := "file:" + filepath.Join(t.TempDir(), "arcane-status.db")
+	db, err := Initialize(ctx, dsn, MigrationOptions{})
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	status, err := GetMigrationStatus(ctx, dsn)
+	require.NoError(t, err)
+
+	highest, err := getHighestEmbeddedMigrationVersionInternal("sqlite")
+	require.NoError(t, err)
+	assert.Equal(t, "sqlite", status.Provider)
+	assert.True(t, status.HasVersion)
+	assert.False(t, status.Dirty)
+	assert.Equal(t, highest, status.CurrentVersion)
+	assert.Equal(t, highest, status.LatestVersion)
 }
 
 func assertSQLiteIndexExistsInternal(t *testing.T, db *DB, indexName string) {

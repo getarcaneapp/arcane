@@ -8,6 +8,7 @@ RUN apk add --no-cache ca-certificates tzdata curl
 RUN mkdir -p /app/data
 
 COPY linux/${TARGETARCH}/${TARGETVARIANT}/arcane ./arcane
+COPY linux/${TARGETARCH}/${TARGETVARIANT}/arcane-migrator ./arcane-migrator
 
 ENV ENVIRONMENT=production
 ENV GIN_MODE=release

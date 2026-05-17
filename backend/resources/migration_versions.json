@@ -1,0 +1,212 @@
+{
+  "versions": [
+    {
+      "appVersion": "1.0.0",
+      "migrationVersion": 12
+    },
+    {
+      "appVersion": "1.0.1",
+      "migrationVersion": 12
+    },
+    {
+      "appVersion": "1.0.2",
+      "migrationVersion": 12
+    },
+    {
+      "appVersion": "1.1.0",
+      "migrationVersion": 12
+    },
+    {
+      "appVersion": "1.2.0",
+      "migrationVersion": 15
+    },
+    {
+      "appVersion": "1.2.1",
+      "migrationVersion": 15
+    },
+    {
+      "appVersion": "1.2.2",
+      "migrationVersion": 15
+    },
+    {
+      "appVersion": "1.3.0",
+      "migrationVersion": 16
+    },
+    {
+      "appVersion": "1.4.0",
+      "migrationVersion": 17
+    },
+    {
+      "appVersion": "1.5.0",
+      "migrationVersion": 17
+    },
+    {
+      "appVersion": "1.5.1",
+      "migrationVersion": 17
+    },
+    {
+      "appVersion": "1.5.2",
+      "migrationVersion": 17
+    },
+    {
+      "appVersion": "1.6.0",
+      "migrationVersion": 18
+    },
+    {
+      "appVersion": "1.7.0",
+      "migrationVersion": 21
+    },
+    {
+      "appVersion": "1.7.1",
+      "migrationVersion": 21
+    },
+    {
+      "appVersion": "1.7.2",
+      "migrationVersion": 21
+    },
+    {
+      "appVersion": "1.8.0",
+      "migrationVersion": 22
+    },
+    {
+      "appVersion": "1.8.1",
+      "migrationVersion": 22
+    },
+    {
+      "appVersion": "1.9.0",
+      "migrationVersion": 23
+    },
+    {
+      "appVersion": "1.10.0",
+      "migrationVersion": 23
+    },
+    {
+      "appVersion": "1.10.1",
+      "migrationVersion": 23
+    },
+    {
+      "appVersion": "1.11.0",
+      "migrationVersion": 27
+    },
+    {
+      "appVersion": "1.11.1",
+      "migrationVersion": 27
+    },
+    {
+      "appVersion": "1.11.2",
+      "migrationVersion": 27
+    },
+    {
+      "appVersion": "1.11.3",
+      "migrationVersion": 27
+    },
+    {
+      "appVersion": "1.12.0",
+      "migrationVersion": 28
+    },
+    {
+      "appVersion": "1.12.1",
+      "migrationVersion": 28
+    },
+    {
+      "appVersion": "1.12.2",
+      "migrationVersion": 28
+    },
+    {
+      "appVersion": "1.13.0",
+      "migrationVersion": 30
+    },
+    {
+      "appVersion": "1.13.1",
+      "migrationVersion": 30
+    },
+    {
+      "appVersion": "1.13.2",
+      "migrationVersion": 30
+    },
+    {
+      "appVersion": "1.14.0",
+      "migrationVersion": 32
+    },
+    {
+      "appVersion": "1.14.1",
+      "migrationVersion": 32
+    },
+    {
+      "appVersion": "1.15.0",
+      "migrationVersion": 34
+    },
+    {
+      "appVersion": "1.15.1",
+      "migrationVersion": 34
+    },
+    {
+      "appVersion": "1.15.2",
+      "migrationVersion": 36
+    },
+    {
+      "appVersion": "1.15.3",
+      "migrationVersion": 36
+    },
+    {
+      "appVersion": "1.16.0",
+      "migrationVersion": 37
+    },
+    {
+      "appVersion": "1.16.1",
+      "migrationVersion": 37
+    },
+    {
+      "appVersion": "1.16.2",
+      "migrationVersion": 38
+    },
+    {
+      "appVersion": "1.16.3",
+      "migrationVersion": 38
+    },
+    {
+      "appVersion": "1.16.4",
+      "migrationVersion": 38
+    },
+    {
+      "appVersion": "1.17.0",
+      "migrationVersion": 45
+    },
+    {
+      "appVersion": "1.17.1",
+      "migrationVersion": 45
+    },
+    {
+      "appVersion": "1.17.2",
+      "migrationVersion": 45
+    },
+    {
+      "appVersion": "1.17.3",
+      "migrationVersion": 45
+    },
+    {
+      "appVersion": "1.17.4",
+      "migrationVersion": 45
+    },
+    {
+      "appVersion": "1.18.0",
+      "migrationVersion": 47
+    },
+    {
+      "appVersion": "1.18.1",
+      "migrationVersion": 47
+    },
+    {
+      "appVersion": "1.19.0",
+      "migrationVersion": 50
+    },
+    {
+      "appVersion": "1.19.1",
+      "migrationVersion": 51
+    },
+    {
+      "appVersion": "1.19.2",
+      "migrationVersion": 52
+    }
+  ]
+}

@@ -19,13 +19,11 @@ import (
 	postgresMigrate "github.com/golang-migrate/migrate/v4/database/postgres"
 	sqliteMigrate "github.com/golang-migrate/migrate/v4/database/sqlite3"
 	"github.com/golang-migrate/migrate/v4/source"
-	_ "github.com/golang-migrate/migrate/v4/source/github"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
-	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/resources"
 )
 
@@ -35,36 +33,20 @@ type DB struct {
 
 type MigrationOptions struct {
 	AllowDowngrade bool
-	githubRef      string
 }
 
-const (
-	migrationRepositoryOwner       = "getarcaneapp"
-	migrationRepositoryName        = "arcane"
-	migrationRepositoryPath        = "backend/resources/migrations"
-	migrationRepositoryRefFallback = "main"
-)
+type MigrationStatus struct {
+	Provider       string
+	CurrentVersion uint
+	LatestVersion  uint
+	HasVersion     bool
+	Dirty          bool
+}
 
 var customGormLogger logger.Interface
 
 func SetGormLogger(l logger.Interface) {
 	customGormLogger = l
-}
-
-func (o MigrationOptions) githubRefInternal() string {
-	return githubRefForRevisionInternal(o, config.Revision)
-}
-
-func githubRefForRevisionInternal(options MigrationOptions, revision string) string {
-	if ref := strings.TrimSpace(options.githubRef); ref != "" {
-		return ref
-	}
-
-	if ref := strings.TrimSpace(revision); ref != "" && ref != "unknown" {
-		return ref
-	}
-
-	return migrationRepositoryRefFallback
 }
 
 func Initialize(ctx context.Context, databaseURL string, options MigrationOptions) (*DB, error) {
@@ -77,33 +59,12 @@ func Initialize(ctx context.Context, databaseURL string, options MigrationOption
 		return nil, err
 	}
 
-	// Get underlying sql.DB for migrations
 	sqlDB, err := db.DB.DB()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get sql.DB: %w", err)
 	}
 
-	// Determine database provider for migrations
-	var dbProvider string
-	switch {
-	case strings.HasPrefix(databaseURL, "file:"):
-		dbProvider = "sqlite"
-	case strings.HasPrefix(databaseURL, "postgres"):
-		dbProvider = "postgres"
-	default:
-		return nil, fmt.Errorf("unsupported database type in URL: %s", databaseURL)
-	}
-
-	// Choose the correct driver for migrations
-	var driver database.Driver
-	switch dbProvider {
-	case "sqlite":
-		driver, err = sqliteMigrate.WithInstance(sqlDB, &sqliteMigrate.Config{})
-	case "postgres":
-		driver, err = postgresMigrate.WithInstance(sqlDB, &postgresMigrate.Config{})
-	default:
-		return nil, fmt.Errorf("unsupported database provider: %s", dbProvider)
-	}
+	driver, dbProvider, err := newMigrationDriverInternal(db, databaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create migration driver: %w", err)
 	}
@@ -126,6 +87,60 @@ func Initialize(ctx context.Context, databaseURL string, options MigrationOption
 	sqlDB.SetConnMaxIdleTime(3 * time.Minute)
 
 	return db, nil
+}
+
+func Migrate(ctx context.Context, databaseURL string, options MigrationOptions) error {
+	db, driver, dbProvider, err := openMigrationDatabaseInternal(ctx, databaseURL)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if closeErr := db.Close(); closeErr != nil {
+			slog.Warn("Failed to close database after migration", "error", closeErr)
+		}
+	}()
+
+	return migrateDatabase(driver, dbProvider, options)
+}
+
+func MigrateToVersion(ctx context.Context, databaseURL string, targetVersion uint) error {
+	if targetVersion == 0 {
+		return fmt.Errorf("target migration version must be greater than zero")
+	}
+
+	db, driver, dbProvider, err := openMigrationDatabaseInternal(ctx, databaseURL)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if closeErr := db.Close(); closeErr != nil {
+			slog.Warn("Failed to close database after migration", "error", closeErr)
+		}
+	}()
+
+	return migrateDatabaseToVersionInternal(driver, dbProvider, targetVersion)
+}
+
+func GetMigrationStatus(ctx context.Context, databaseURL string) (*MigrationStatus, error) {
+	db, driver, dbProvider, err := openMigrationDatabaseInternal(ctx, databaseURL)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if closeErr := db.Close(); closeErr != nil {
+			slog.Warn("Failed to close database after reading migration status", "error", closeErr)
+		}
+	}()
+
+	return getMigrationStatusInternal(driver, dbProvider)
+}
+
+func LatestMigrationVersion(dbProvider string) (uint, error) {
+	return getHighestEmbeddedMigrationVersionInternal(dbProvider)
+}
+
+func EmbeddedMigrationVersions(dbProvider string) ([]uint, error) {
+	return getEmbeddedMigrationVersionsInternal(dbProvider)
 }
 
 func connectDatabase(ctx context.Context, databaseURL string) (*DB, error) {
@@ -179,16 +194,76 @@ func connectDatabase(ctx context.Context, databaseURL string) (*DB, error) {
 	return nil, err
 }
 
+func openMigrationDatabaseInternal(ctx context.Context, databaseURL string) (*DB, database.Driver, string, error) {
+	db, err := connectDatabase(ctx, databaseURL)
+	if err != nil {
+		return nil, nil, "", fmt.Errorf("failed to connect to database: %w", err)
+	}
+
+	if err := ctx.Err(); err != nil {
+		_ = db.Close()
+		return nil, nil, "", err
+	}
+
+	driver, dbProvider, err := newMigrationDriverInternal(db, databaseURL)
+	if err != nil {
+		_ = db.Close()
+		return nil, nil, "", fmt.Errorf("failed to create migration driver: %w", err)
+	}
+
+	return db, driver, dbProvider, nil
+}
+
+func newMigrationDriverInternal(db *DB, databaseURL string) (database.Driver, string, error) {
+	sqlDB, err := db.DB.DB()
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to get sql.DB: %w", err)
+	}
+
+	dbProvider, err := detectDatabaseProviderInternal(databaseURL)
+	if err != nil {
+		return nil, "", err
+	}
+
+	switch dbProvider {
+	case "sqlite":
+		driver, err := sqliteMigrate.WithInstance(sqlDB, &sqliteMigrate.Config{})
+		if err != nil {
+			return nil, "", err
+		}
+		return driver, dbProvider, nil
+	case "postgres":
+		driver, err := postgresMigrate.WithInstance(sqlDB, &postgresMigrate.Config{})
+		if err != nil {
+			return nil, "", err
+		}
+		return driver, dbProvider, nil
+	default:
+		return nil, "", fmt.Errorf("unsupported database provider: %s", dbProvider)
+	}
+}
+
+func detectDatabaseProviderInternal(databaseURL string) (string, error) {
+	switch {
+	case strings.HasPrefix(databaseURL, "file:"):
+		return "sqlite", nil
+	case strings.HasPrefix(databaseURL, "postgres"):
+		return "postgres", nil
+	default:
+		return "", fmt.Errorf("unsupported database type in URL: %s", databaseURL)
+	}
+}
+
 func migrateDatabase(driver database.Driver, dbProvider string, options MigrationOptions) error {
 	requiredVersion, err := getHighestEmbeddedMigrationVersionInternal(dbProvider)
 	if err != nil {
 		return fmt.Errorf("failed to determine target migration version for %s: %w", dbProvider, err)
 	}
 
-	return migrateDatabaseToVersionInternal(driver, dbProvider, options, requiredVersion)
+	return migrateDatabaseUpToVersionInternal(driver, dbProvider, options, requiredVersion)
 }
 
-func migrateDatabaseToVersionInternal(driver database.Driver, dbProvider string, options MigrationOptions, requiredVersion uint) error {
+func migrateDatabaseUpToVersionInternal(driver database.Driver, dbProvider string, options MigrationOptions, requiredVersion uint) error {
 	embeddedMigrate, embeddedSource, err := newEmbeddedMigrateInstanceInternal(driver, dbProvider)
 	if err != nil {
 		return fmt.Errorf("failed to create embedded migration instance: %w", err)
@@ -239,18 +314,10 @@ func migrateDatabaseToVersionInternal(driver database.Driver, dbProvider string,
 	}
 
 	if hasVersion && currentVersion > requiredVersion {
-		if !options.AllowDowngrade {
-			return fmt.Errorf("database schema version %d is newer than this Arcane binary supports (target %d for %s); downgrade requires ALLOW_DOWNGRADE=true and a database backup before startup", currentVersion, requiredVersion, dbProvider)
-		}
-
-		if err := migrateDatabaseFromGitHubInternal(driver, dbProvider, currentVersion, requiredVersion, options.githubRefInternal()); err != nil {
-			return err
-		}
-
-		return nil
+		return fmt.Errorf("database schema version %d is newer than this Arcane binary supports (target %d for %s); run arcane-migrator from a newer Arcane image to downgrade before starting this version", currentVersion, requiredVersion, dbProvider)
 	}
 
-	upErr := embeddedMigrate.Up()
+	upErr := embeddedMigrate.Migrate(requiredVersion)
 	if upErr != nil && !errors.Is(upErr, migrate.ErrNoChange) {
 		return fmt.Errorf("failed to apply embedded migrations for %s: %w", dbProvider, upErr)
 	}
@@ -264,49 +331,62 @@ func migrateDatabaseToVersionInternal(driver database.Driver, dbProvider string,
 	return nil
 }
 
-func migrateDatabaseFromGitHubInternal(driver database.Driver, dbProvider string, currentVersion, requiredVersion uint, githubRef string) error {
-	slog.Warn("Database downgrade detected",
-		"provider", dbProvider,
-		"currentVersion", currentVersion,
-		"requiredVersion", requiredVersion,
-		"source", buildGitHubMigrationSourceURLInternal(dbProvider, githubRef),
-	)
-
-	githubSource, err := newGitHubMigrationSourceInternal(dbProvider, githubRef)
+func migrateDatabaseToVersionInternal(driver database.Driver, dbProvider string, requiredVersion uint) error {
+	embeddedMigrate, embeddedSource, err := newEmbeddedMigrateInstanceInternal(driver, dbProvider)
 	if err != nil {
-		return fmt.Errorf("failed to create GitHub migration source for %s downgrade: %w; hint: ensure outbound GitHub access is available and set GITHUB_TOKEN if the GitHub API is rate-limited", dbProvider, err)
+		return fmt.Errorf("failed to create embedded migration instance: %w", err)
+	}
+	defer closeMigrateSourceInternal(embeddedSource, "embedded migrate source")
+
+	currentVersion, dirty, hasVersion, err := currentMigrationStateInternal(embeddedMigrate)
+	if err != nil {
+		return err
 	}
 
-	return migrateDatabaseFromSourceInternal(driver, dbProvider, currentVersion, requiredVersion, "github", "github migrate source", githubSource)
+	logMigrationStateInternal(dbProvider, currentVersion, requiredVersion, dirty, hasVersion)
+
+	if dirty {
+		return fmt.Errorf("database schema version %d is dirty; resolve the dirty migration state before running arcane-migrator", currentVersion)
+	}
+
+	err = embeddedMigrate.Migrate(requiredVersion)
+	if err != nil && !errors.Is(err, migrate.ErrNoChange) {
+		return fmt.Errorf("failed to migrate database from version %d to %d for %s: %w", currentVersion, requiredVersion, dbProvider, err)
+	}
+
+	if errors.Is(err, migrate.ErrNoChange) {
+		logUpToDateStateInternal(embeddedMigrate, dbProvider)
+		return nil
+	}
+
+	slog.Info("Database migration completed successfully", "provider", dbProvider, "fromVersion", currentVersion, "toVersion", requiredVersion)
+	return nil
 }
 
-func migrateDatabaseFromSourceInternal(driver database.Driver, dbProvider string, currentVersion, requiredVersion uint, sourceName, sourceLabel string, sourceDriver source.Driver) error {
-	if sourceDriver == nil {
-		return fmt.Errorf("failed to create %s migration source for provider %s: source driver is nil", sourceName, dbProvider)
-	}
-	defer closeMigrateSourceInternal(sourceDriver, sourceLabel)
-
-	migrationInstance, err := migrate.NewWithInstance(sourceName, sourceDriver, "arcane", driver)
+func getMigrationStatusInternal(driver database.Driver, dbProvider string) (*MigrationStatus, error) {
+	latestVersion, err := getHighestEmbeddedMigrationVersionInternal(dbProvider)
 	if err != nil {
-		return fmt.Errorf("failed to create %s migration instance for provider %s: %w", sourceName, dbProvider, err)
+		return nil, fmt.Errorf("failed to determine latest embedded migration version for %s: %w", dbProvider, err)
 	}
 
-	forceVersion, err := safeUintToIntInternal(currentVersion)
+	embeddedMigrate, embeddedSource, err := newEmbeddedMigrateInstanceInternal(driver, dbProvider)
 	if err != nil {
-		return fmt.Errorf("failed to convert current migration version %d for downgrade: %w", currentVersion, err)
+		return nil, fmt.Errorf("failed to create embedded migration instance: %w", err)
+	}
+	defer closeMigrateSourceInternal(embeddedSource, "embedded migrate source")
+
+	currentVersion, dirty, hasVersion, err := currentMigrationStateInternal(embeddedMigrate)
+	if err != nil {
+		return nil, err
 	}
 
-	if err := migrationInstance.Force(forceVersion); err != nil {
-		return fmt.Errorf("failed to normalize migration state before downgrade from %d to %d for %s: %w", currentVersion, requiredVersion, dbProvider, err)
-	}
-
-	err = migrationInstance.Migrate(requiredVersion)
-	if err != nil && !errors.Is(err, migrate.ErrNoChange) {
-		return fmt.Errorf("failed to downgrade database from version %d to %d for %s: %w", currentVersion, requiredVersion, dbProvider, err)
-	}
-
-	slog.Info("Database downgrade completed successfully", "provider", dbProvider, "fromVersion", currentVersion, "toVersion", requiredVersion)
-	return nil
+	return &MigrationStatus{
+		Provider:       dbProvider,
+		CurrentVersion: currentVersion,
+		LatestVersion:  latestVersion,
+		HasVersion:     hasVersion,
+		Dirty:          dirty,
+	}, nil
 }
 
 func newEmbeddedMigrationSourceInternal(dbProvider string) (source.Driver, error) {
@@ -333,19 +413,6 @@ func newEmbeddedMigrateInstanceInternal(driver database.Driver, dbProvider strin
 	}
 
 	return m, sourceDriver, nil
-}
-
-func newGitHubMigrationSourceInternal(dbProvider string, githubRef string) (source.Driver, error) {
-	sourceDriver, err := source.Open(buildGitHubMigrationSourceURLInternal(dbProvider, githubRef))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create GitHub migration source for provider %s: %w", dbProvider, err)
-	}
-
-	return sourceDriver, nil
-}
-
-func buildGitHubMigrationSourceURLInternal(dbProvider, githubRef string) string {
-	return fmt.Sprintf("github://%s/%s/%s/%s#%s", migrationRepositoryOwner, migrationRepositoryName, migrationRepositoryPath, dbProvider, githubRef)
 }
 
 func safeUintToIntInternal(value uint) (int, error) {
