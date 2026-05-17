@@ -35,7 +35,7 @@ require (
 	github.com/joho/godotenv v1.5.1
 	github.com/labstack/echo/v4 v4.15.2
 	github.com/lmittmann/tint v1.1.3
-	github.com/moby/buildkit v0.29.0
+	github.com/moby/buildkit v0.30.0
 	github.com/moby/go-archive v0.2.0
 	github.com/moby/moby/api v1.54.2
 	github.com/moby/moby/client v0.4.1
