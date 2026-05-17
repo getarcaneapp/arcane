@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	backoff "github.com/cenkalti/backoff/v5"
 	"golang.org/x/sync/singleflight"
 
 	cerrdefs "github.com/containerd/errdefs"
@@ -733,28 +734,73 @@ func (s *ContainerRegistryService) inspectImageDigestInternal(ctx context.Contex
 		return nil, err
 	}
 
-	result, err := s.inspectImageDigestViaDaemonInternal(ctx, parts.NormalizedRef, parts.RegistryHost, externalCreds)
-	if err == nil {
-		return result, nil
-	}
-	if !isDistributionFallbackEligibleInternal(err) {
-		return result, err
+	var lastResult *registryDigestResult
+	var lastErr error
+	fallbackWarningLogged := false
+
+	bo := backoff.NewExponentialBackOff()
+	bo.InitialInterval = 500 * time.Millisecond
+	bo.MaxInterval = 10 * time.Second
+	bo.RandomizationFactor = 0.3
+
+	_, retryErr := backoff.Retry(ctx, func() (*registryDigestResult, error) {
+		result, err := s.inspectImageDigestViaDaemonInternal(ctx, parts.NormalizedRef, parts.RegistryHost, externalCreds)
+		if err == nil {
+			lastResult = result
+			return result, nil
+		}
+
+		if isRateLimitErrorInternal(err) {
+			lastResult = result
+			lastErr = err
+			slog.DebugContext(ctx, "rate limited by registry, will retry",
+				"registry", parts.RegistryHost,
+				"imageRef", parts.NormalizedRef)
+			return nil, err
+		}
+
+		if !isDistributionFallbackEligibleInternal(err) {
+			lastResult = result
+			lastErr = err
+			return nil, backoff.Permanent(err)
+		}
+
+		if !fallbackWarningLogged {
+			fallbackWarningLogged = true
+			slog.WarnContext(ctx, "distribution inspect unavailable, falling back to direct registry digest lookup",
+				"imageRef", parts.NormalizedRef,
+				"registry", parts.RegistryHost,
+				"error", err.Error())
+		}
+
+		fallbackResult, fallbackErr := s.inspectImageDigestViaRegistryInternal(ctx, parts.RegistryHost, parts.Repository, parts.Tag, externalCreds)
+		if fallbackErr == nil {
+			lastResult = fallbackResult
+			return fallbackResult, nil
+		}
+
+		if isRateLimitErrorInternal(fallbackErr) {
+			lastResult = fallbackResult
+			lastErr = fallbackErr
+			slog.DebugContext(ctx, "rate limited by registry on fallback, will retry",
+				"registry", parts.RegistryHost,
+				"imageRef", parts.NormalizedRef)
+			return nil, fallbackErr
+		}
+
+		lastResult = fallbackResult
+		lastErr = fmt.Errorf("daemon digest lookup failed; registry fallback failed: %w", errors.Join(err, fallbackErr))
+		return nil, backoff.Permanent(lastErr)
+	}, backoff.WithBackOff(bo), backoff.WithMaxTries(5))
+
+	if retryErr != nil {
+		if errors.Is(retryErr, context.Canceled) || errors.Is(retryErr, context.DeadlineExceeded) {
+			return lastResult, retryErr
+		}
+		return lastResult, lastErr
 	}
 
-	slog.WarnContext(ctx, "distribution inspect unavailable, falling back to direct registry digest lookup",
-		"imageRef", parts.NormalizedRef,
-		"registry", parts.RegistryHost,
-		"error", err.Error())
-
-	fallbackResult, fallbackErr := s.inspectImageDigestViaRegistryInternal(ctx, parts.RegistryHost, parts.Repository, parts.Tag, externalCreds)
-	if fallbackErr == nil {
-		return fallbackResult, nil
-	}
-
-	return fallbackResult, fmt.Errorf(
-		"daemon digest lookup failed; registry fallback failed: %w",
-		errors.Join(err, fallbackErr),
-	)
+	return lastResult, nil
 }
 
 func (s *ContainerRegistryService) inspectImageDigestViaDaemonInternal(ctx context.Context, normalizedRef, registryHost string, externalCreds []containerregistry.Credential) (*registryDigestResult, error) {
@@ -1220,8 +1266,6 @@ func isUnauthorizedRegistryErrorInternal(err error) bool {
 		"no basic auth credentials",
 		"access denied",
 		"incorrect username or password",
-		"toomanyrequests",
-		"unauthenticated pull rate limit",
 		"status: 401",
 		"status 401",
 		"status: 403",
@@ -1234,6 +1278,27 @@ func isUnauthorizedRegistryErrorInternal(err error) bool {
 		}
 	}
 
+	return false
+}
+
+func isRateLimitErrorInternal(err error) bool {
+	if err == nil {
+		return false
+	}
+	errLower := strings.ToLower(err.Error())
+	indicators := []string{
+		"toomanyrequests",
+		"rate limit",
+		"too many requests",
+		"status: 429",
+		"status 429",
+		"retry-after",
+	}
+	for _, indicator := range indicators {
+		if strings.Contains(errLower, indicator) {
+			return true
+		}
+	}
 	return false
 }
 
