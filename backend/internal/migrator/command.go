@@ -42,12 +42,7 @@ func newStatusCommand(out io.Writer) *cobra.Command {
 		Use:   "status",
 		Short: "Show the current Arcane database migration status",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := loadConfig(cmd.Context())
-			if err != nil {
-				return err
-			}
-
-			status, err := database.GetMigrationStatus(cmd.Context(), cfg.DatabaseURL)
+			status, err := loadMigrationStatus(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -75,16 +70,15 @@ func newDowngradeCommand(out io.Writer) *cobra.Command {
 				return fmt.Errorf("--target is required")
 			}
 
-			cfg, err := loadConfig(cmd.Context())
-			if err != nil {
-				return err
-			}
-
 			targetMigrationVersion, err := database.ResolveAppMigrationVersion(targetAppVersion)
 			if err != nil {
 				return err
 			}
 
+			cfg, err := loadConfig(cmd.Context())
+			if err != nil {
+				return err
+			}
 			status, err := database.GetMigrationStatus(cmd.Context(), cfg.DatabaseURL)
 			if err != nil {
 				return err
@@ -123,6 +117,14 @@ func newDowngradeCommand(out io.Writer) *cobra.Command {
 
 	cmd.Flags().StringVar(&targetAppVersion, "target", "", "Target Arcane app version, for example v1.18.0")
 	return cmd
+}
+
+func loadMigrationStatus(ctx context.Context) (*database.MigrationStatus, error) {
+	cfg, err := loadConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return database.GetMigrationStatus(ctx, cfg.DatabaseURL)
 }
 
 func newGenerateManifestCommand(out io.Writer) *cobra.Command {

@@ -5,16 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
-	"slices"
 	"strconv"
 	"strings"
 )
-
-var releaseTagPatternInternal = regexp.MustCompile(`^v([0-9]+)\.([0-9]+)\.([0-9]+)$`)
 
 func GenerateAppMigrationVersionsFromGit(ctx context.Context, repoRoot string, includeVersion string) ([]AppMigrationVersion, error) {
 	repoRoot = strings.TrimSpace(repoRoot)
@@ -22,14 +17,15 @@ func GenerateAppMigrationVersionsFromGit(ctx context.Context, repoRoot string, i
 		repoRoot = "."
 	}
 
-	tagsOutput, err := runGitInternal(ctx, repoRoot, "tag", "--list", "v*")
+	tagsOutput, err := runGitInternal(ctx, repoRoot, "tag", "--list", "v*", "--sort=v:refname")
 	if err != nil {
 		return nil, err
 	}
 
-	versionsByAppVersion := make(map[string]uint)
+	versions := make([]AppMigrationVersion, 0)
 	for _, tag := range strings.Fields(tagsOutput) {
-		if !releaseTagPatternInternal.MatchString(tag) {
+		appVersion := normalizeAppVersionInternal(tag)
+		if !isReleaseVersionInternal(appVersion) {
 			continue
 		}
 
@@ -41,7 +37,10 @@ func GenerateAppMigrationVersionsFromGit(ctx context.Context, repoRoot string, i
 			continue
 		}
 
-		versionsByAppVersion[normalizeAppVersionInternal(tag)] = migrationVersion
+		versions = append(versions, AppMigrationVersion{
+			AppVersion:       appVersion,
+			MigrationVersion: migrationVersion,
+		})
 	}
 
 	includeVersion = normalizeAppVersionInternal(includeVersion)
@@ -50,21 +49,12 @@ func GenerateAppMigrationVersionsFromGit(ctx context.Context, repoRoot string, i
 		if err != nil {
 			return nil, err
 		}
-		versionsByAppVersion[includeVersion] = migrationVersion
-	}
 
-	versions := make([]AppMigrationVersion, 0, len(versionsByAppVersion))
-	for appVersion, migrationVersion := range versionsByAppVersion {
-		versions = append(versions, AppMigrationVersion{
-			AppVersion:       appVersion,
+		versions = upsertAppMigrationVersionInternal(versions, AppMigrationVersion{
+			AppVersion:       includeVersion,
 			MigrationVersion: migrationVersion,
 		})
 	}
-
-	slices.SortFunc(versions, func(a, b AppMigrationVersion) int {
-		return compareAppVersionsInternal(a.AppVersion, b.AppVersion)
-	})
-
 	return versions, nil
 }
 
@@ -103,17 +93,9 @@ func highestMigrationVersionForGitRefInternal(ctx context.Context, repoRoot, ref
 
 func highestWorkingTreeMigrationVersionInternal(repoRoot string) (uint, error) {
 	migrationDir := filepath.Join(repoRoot, "backend", "resources", "migrations", "sqlite")
-	entries, err := os.ReadDir(migrationDir)
+	paths, err := filepath.Glob(filepath.Join(migrationDir, "*.up.sql"))
 	if err != nil {
-		return 0, fmt.Errorf("failed to read working tree migrations from %s: %w", migrationDir, err)
-	}
-
-	paths := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		paths = append(paths, entry.Name())
+		return 0, fmt.Errorf("failed to list working tree migrations from %s: %w", migrationDir, err)
 	}
 
 	version := highestMigrationVersionFromPathsInternal(paths)
@@ -145,36 +127,25 @@ func highestMigrationVersionFromPathsInternal(paths []string) uint {
 	return highest
 }
 
-func compareAppVersionsInternal(a, b string) int {
-	aParts := appVersionPartsInternal(a)
-	bParts := appVersionPartsInternal(b)
-
-	for i := range aParts {
-		if aParts[i] < bParts[i] {
-			return -1
-		}
-		if aParts[i] > bParts[i] {
-			return 1
+func isReleaseVersionInternal(version string) bool {
+	parts := strings.Split(version, ".")
+	if len(parts) != 3 {
+		return false
+	}
+	for _, part := range parts {
+		if _, err := strconv.Atoi(part); err != nil {
+			return false
 		}
 	}
-
-	return 0
+	return true
 }
 
-func appVersionPartsInternal(version string) [3]int {
-	matches := releaseTagPatternInternal.FindStringSubmatch("v" + normalizeAppVersionInternal(version))
-	if len(matches) != 4 {
-		return [3]int{}
-	}
-
-	var parts [3]int
-	for i := range parts {
-		part, err := strconv.Atoi(matches[i+1])
-		if err != nil {
-			return [3]int{}
+func upsertAppMigrationVersionInternal(versions []AppMigrationVersion, version AppMigrationVersion) []AppMigrationVersion {
+	for i := range versions {
+		if versions[i].AppVersion == version.AppVersion {
+			versions[i] = version
+			return versions
 		}
-		parts[i] = part
 	}
-
-	return parts
+	return append(versions, version)
 }

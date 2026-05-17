@@ -89,20 +89,6 @@ func Initialize(ctx context.Context, databaseURL string, options MigrationOption
 	return db, nil
 }
 
-func Migrate(ctx context.Context, databaseURL string, options MigrationOptions) error {
-	db, driver, dbProvider, err := openMigrationDatabaseInternal(ctx, databaseURL)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if closeErr := db.Close(); closeErr != nil {
-			slog.Warn("Failed to close database after migration", "error", closeErr)
-		}
-	}()
-
-	return migrateDatabase(driver, dbProvider, options)
-}
-
 func MigrateToVersion(ctx context.Context, databaseURL string, targetVersion uint) error {
 	if targetVersion == 0 {
 		return fmt.Errorf("target migration version must be greater than zero")
@@ -133,14 +119,6 @@ func GetMigrationStatus(ctx context.Context, databaseURL string) (*MigrationStat
 	}()
 
 	return getMigrationStatusInternal(driver, dbProvider)
-}
-
-func LatestMigrationVersion(dbProvider string) (uint, error) {
-	return getHighestEmbeddedMigrationVersionInternal(dbProvider)
-}
-
-func EmbeddedMigrationVersions(dbProvider string) ([]uint, error) {
-	return getEmbeddedMigrationVersionsInternal(dbProvider)
 }
 
 func connectDatabase(ctx context.Context, databaseURL string) (*DB, error) {
