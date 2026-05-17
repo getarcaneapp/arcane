@@ -67,7 +67,7 @@ func (s *SystemUpgradeService) CanUpgrade(ctx context.Context) (bool, error) {
 		return false, err
 	}
 
-	if err := s.checkBreakingChangeRequirementInternal(ctx); err != nil {
+	if err := s.checkAutomaticUpdateTargetInternal(ctx); err != nil {
 		return false, err
 	}
 
@@ -77,10 +77,6 @@ func (s *SystemUpgradeService) CanUpgrade(ctx context.Context) (bool, error) {
 // TriggerUpgradeViaCLI spawns the upgrade CLI command targeting a
 // specific Arcane container. An empty container ID keeps the legacy self-targeting behavior.
 func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user models.User, containerID string) error {
-	if err := s.checkBreakingChangeRequirementInternal(ctx); err != nil {
-		return err
-	}
-
 	if !s.upgrading.CompareAndSwap(false, true) {
 		return &common.UpgradeInProgressError{Err: errors.New("upgrade already in progress")}
 	}
@@ -105,6 +101,10 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 		logContainerID = targetContainerID
 	}
 	containerName := strings.TrimPrefix(targetContainer.Name, "/")
+	targetImage, err := s.resolveAutomaticUpdateTargetImageInternal(ctx, targetContainer)
+	if err != nil {
+		return err
+	}
 
 	// Determine binary path based on container type (agent vs main)
 	binaryPath := "/app/arcane"
@@ -119,6 +119,9 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 		"containerName": containerName,
 		"method":        "cli",
 	}
+	if targetImage != "" {
+		metadata["targetImage"] = targetImage
+	}
 	if err := s.eventService.LogUserEvent(ctx, models.EventTypeSystemUpgrade, user.ID, user.Username, metadata); err != nil {
 		slog.Warn("Failed to log upgrade event", "error", err)
 	}
@@ -132,7 +135,7 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 	}
 	slog.Debug("Using upgrader image", "image", ArcaneUpgraderImage)
 
-	slog.Info("Spawning upgrade CLI command", "containerName", containerName, "upgraderImage", ArcaneUpgraderImage)
+	slog.Info("Spawning upgrade CLI command", "containerName", containerName, "upgraderImage", ArcaneUpgraderImage, "targetImage", targetImage)
 
 	// Spawn the upgrade command in a detached container
 	// This will run independently of the current container
@@ -174,9 +177,13 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 	}
 
 	// Create the upgrader container config
+	cmd := []string{binaryPath, "upgrade", "--container", containerName}
+	if targetImage != "" {
+		cmd = append(cmd, "--image", targetImage)
+	}
 	config := &containertypes.Config{
 		Image: ArcaneUpgraderImage,
-		Cmd:   []string{binaryPath, "upgrade", "--container", containerName},
+		Cmd:   cmd,
 		Labels: map[string]string{
 			"com.getarcaneapp.arcane.upgrader": "true",
 			"com.getarcaneapp.arcane":          "true",
@@ -222,12 +229,12 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 	return nil
 }
 
-func (s *SystemUpgradeService) checkBreakingChangeRequirementInternal(ctx context.Context) error {
+func (s *SystemUpgradeService) checkAutomaticUpdateTargetInternal(ctx context.Context) error {
 	if s.versionService == nil {
 		return nil
 	}
 
-	required, message := s.versionService.BreakingChangeRequirement(ctx, "", "")
+	_, required, message := s.versionService.AutomaticUpdateTargetRelease(ctx, "", "")
 	if !required {
 		return nil
 	}
@@ -236,6 +243,28 @@ func (s *SystemUpgradeService) checkBreakingChangeRequirementInternal(ctx contex
 	}
 
 	return &common.BreakingChangeRequiredError{Err: errors.New(message)}
+}
+
+func (s *SystemUpgradeService) resolveAutomaticUpdateTargetImageInternal(ctx context.Context, targetContainer containertypes.InspectResponse) (string, error) {
+	if s.versionService == nil {
+		return "", nil
+	}
+
+	target, required, message := s.versionService.AutomaticUpdateTargetRelease(ctx, "", "")
+	if required {
+		if strings.TrimSpace(message) == "" {
+			message = "breaking change requires manual update"
+		}
+		return "", &common.BreakingChangeRequiredError{Err: errors.New(message)}
+	}
+	if strings.TrimSpace(target.TagName) == "" {
+		return "", nil
+	}
+	if targetContainer.Config == nil || strings.TrimSpace(targetContainer.Config.Image) == "" {
+		return "", fmt.Errorf("determine target image: container image is unavailable")
+	}
+
+	return dockerutils.ReplaceImageTag(targetContainer.Config.Image, target.TagName), nil
 }
 
 func determineUpgradeBinaryPathInternal(labels map[string]string) string {

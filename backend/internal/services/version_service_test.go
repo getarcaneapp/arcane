@@ -186,7 +186,53 @@ func TestVersionService_BreakingChangeRequirement_UsesStaleManifestOnRefreshFail
 	assert.Equal(t, "v1.20 manual step", message)
 }
 
+func TestVersionService_AutomaticUpdateTargetRelease_UsesLatestReleaseBeforeBreakingChange(t *testing.T) {
+	ctx := context.Background()
+	svc := newTestVersionServiceWithReleases(t, "v1.18.0", arcaneManifestHandler(t, http.StatusOK, arcaneManifest{
+		BreakingChanges: []breakingChange{
+			{Version: "v1.20.0", Message: "v1.20 manual step"},
+		},
+	}), "v1.22.0", []latestRelease{
+		{TagName: "v1.22.0"},
+		{TagName: "v1.21.0", Body: "safe release"},
+		{TagName: "v1.20.0", Body: "breaking release"},
+		{TagName: "v1.19.3", Body: "safe release"},
+		{TagName: "v1.19.2"},
+	})
+
+	target, required, message := svc.AutomaticUpdateTargetRelease(ctx, "v1.18.0", "v1.22.0")
+
+	require.False(t, required)
+	require.Empty(t, message)
+	require.Equal(t, "v1.19.3", target.TagName)
+	require.Equal(t, "safe release", target.Body)
+}
+
+func TestVersionService_AutomaticUpdateTargetRelease_BlocksWhenNoSafeReleaseBeforeBreakingChange(t *testing.T) {
+	ctx := context.Background()
+	svc := newTestVersionServiceWithReleases(t, "v1.19.3", arcaneManifestHandler(t, http.StatusOK, arcaneManifest{
+		BreakingChanges: []breakingChange{
+			{Version: "v1.20.0", Message: "v1.20 manual step"},
+		},
+	}), "v1.22.0", []latestRelease{
+		{TagName: "v1.22.0"},
+		{TagName: "v1.20.0"},
+	})
+
+	target, required, message := svc.AutomaticUpdateTargetRelease(ctx, "v1.19.3", "v1.22.0")
+
+	require.True(t, required)
+	require.Equal(t, "v1.20 manual step", message)
+	require.Empty(t, target.TagName)
+}
+
 func newTestVersionService(t *testing.T, currentVersion string, arcaneManifestHandler http.HandlerFunc, latestVersion string) *VersionService {
+	return newTestVersionServiceWithReleases(t, currentVersion, arcaneManifestHandler, latestVersion, []latestRelease{
+		{TagName: latestVersion},
+	})
+}
+
+func newTestVersionServiceWithReleases(t *testing.T, currentVersion string, arcaneManifestHandler http.HandlerFunc, latestVersion string, releases []latestRelease) *VersionService {
 	t.Helper()
 
 	mux := http.NewServeMux()
@@ -197,6 +243,18 @@ func newTestVersionService(t *testing.T, currentVersion string, arcaneManifestHa
 			"tag_name": latestVersion,
 		}))
 	})
+	mux.HandleFunc("/releases", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		payload := make([]map[string]any, 0, len(releases))
+		for _, release := range releases {
+			payload = append(payload, map[string]any{
+				"tag_name":     release.TagName,
+				"body":         release.Body,
+				"published_at": release.PublishedAt,
+			})
+		}
+		require.NoError(t, json.NewEncoder(w).Encode(payload))
+	})
 
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
@@ -204,6 +262,7 @@ func newTestVersionService(t *testing.T, currentVersion string, arcaneManifestHa
 	svc := NewVersionService(server.Client(), false, currentVersion, "test", nil, nil)
 	svc.latestReleaseURL = server.URL + "/latest"
 	svc.arcaneManifestURL = server.URL + "/.arcane.json"
+	svc.releasesURL = server.URL + "/releases"
 	return svc
 }
 

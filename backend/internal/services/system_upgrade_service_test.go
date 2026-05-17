@@ -193,7 +193,7 @@ func TestDetermineUpgradeBinaryPath(t *testing.T) {
 	}
 }
 
-func TestSystemUpgradeService_CheckBreakingChangeRequirementBlocksFromManifest(t *testing.T) {
+func TestSystemUpgradeService_CheckAutomaticUpdateTargetBlocksWhenNoSafeTarget(t *testing.T) {
 	ctx := context.Background()
 	versionService := newTestVersionService(t, "v1.19.2", arcaneManifestHandler(t, http.StatusOK, arcaneManifest{
 		BreakingChanges: []breakingChange{
@@ -202,7 +202,7 @@ func TestSystemUpgradeService_CheckBreakingChangeRequirementBlocksFromManifest(t
 	}), "v1.20.0")
 	s := NewSystemUpgradeService(nil, versionService, nil, nil)
 
-	err := s.checkBreakingChangeRequirementInternal(ctx)
+	err := s.checkAutomaticUpdateTargetInternal(ctx)
 
 	require.True(t, common.IsBreakingChangeRequiredError(err))
 	require.ErrorContains(t, err, "v1.20 manual step")

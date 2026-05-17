@@ -26,6 +26,7 @@ import (
 const (
 	versionTTL                     = 3 * time.Hour
 	versionCheckURL                = "https://api.github.com/repos/getarcaneapp/arcane/releases/latest"
+	versionReleasesURL             = "https://api.github.com/repos/getarcaneapp/arcane/releases?per_page=100"
 	arcaneManifestURL              = "https://raw.githubusercontent.com/getarcaneapp/arcane/main/.arcane.json"
 	defaultRequestTimeout          = 15 * time.Second
 	breakingChangesUnavailableText = "Automatic update is blocked because Arcane could not verify the remote breaking changes manifest. Try again later, or review the release notes and update Arcane manually."
@@ -52,8 +53,10 @@ type latestRelease struct {
 type VersionService struct {
 	httpClient               *http.Client
 	cache                    *cache.Cache[latestRelease]
+	releasesCache            *cache.Cache[[]latestRelease]
 	breakingChangesCache     *cache.Cache[arcaneManifest]
 	latestReleaseURL         string
+	releasesURL              string
 	arcaneManifestURL        string
 	disabled                 bool
 	version                  string
@@ -69,8 +72,10 @@ func NewVersionService(httpClient *http.Client, disabled bool, version string, r
 	return &VersionService{
 		httpClient:               httpClient,
 		cache:                    cache.New[latestRelease](versionTTL),
+		releasesCache:            cache.New[[]latestRelease](versionTTL),
 		breakingChangesCache:     cache.New[arcaneManifest](versionTTL),
 		latestReleaseURL:         versionCheckURL,
+		releasesURL:              versionReleasesURL,
 		arcaneManifestURL:        arcaneManifestURL,
 		disabled:                 disabled,
 		version:                  version,
@@ -125,6 +130,60 @@ func (s *VersionService) getLatestReleaseInternal(ctx context.Context) (latestRe
 	}
 
 	return rel, err
+}
+
+func (s *VersionService) getReleasesInternal(ctx context.Context) ([]latestRelease, error) {
+	releases, err := s.releasesCache.GetOrFetch(ctx, func(ctx context.Context) ([]latestRelease, error) {
+		reqCtx, cancel := context.WithTimeout(ctx, defaultRequestTimeout)
+		defer cancel()
+
+		req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, s.releasesURL, nil)
+		if err != nil {
+			return nil, fmt.Errorf("create GitHub releases request: %w", err)
+		}
+
+		resp, err := s.httpClient.Do(req) //nolint:gosec // intentional request to configured GitHub releases API endpoint
+		if err != nil {
+			return nil, fmt.Errorf("get GitHub releases: %w", err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("GitHub releases API returned status %d", resp.StatusCode)
+		}
+
+		var payload []struct {
+			TagName     string `json:"tag_name"`
+			Body        string `json:"body"`
+			PublishedAt string `json:"published_at"`
+			Draft       bool   `json:"draft"`
+			Prerelease  bool   `json:"prerelease"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+			return nil, fmt.Errorf("decode GitHub releases payload: %w", err)
+		}
+
+		releases := make([]latestRelease, 0, len(payload))
+		for _, item := range payload {
+			if item.TagName == "" || item.Draft || item.Prerelease {
+				continue
+			}
+			releases = append(releases, latestRelease{
+				TagName:     item.TagName,
+				Body:        item.Body,
+				PublishedAt: item.PublishedAt,
+			})
+		}
+
+		return releases, nil
+	})
+
+	if staleErr, ok := errors.AsType[*cache.ErrStale](err); ok {
+		slog.Warn("Failed to fetch releases, returning stale cache", "error", staleErr.Err)
+		return releases, nil
+	}
+
+	return releases, err
 }
 
 func (s *VersionService) getArcaneManifestInternal(ctx context.Context) (arcaneManifest, error) {
@@ -261,6 +320,58 @@ func (s *VersionService) BreakingChangeRequirement(ctx context.Context, currentV
 	return false, ""
 }
 
+// AutomaticUpdateTargetRelease returns the release Arcane can install automatically.
+// If the latest release crosses a breaking change, this resolves the newest
+// release below that breaking-change boundary instead.
+func (s *VersionService) AutomaticUpdateTargetRelease(ctx context.Context, currentVersion string, latestVersion string) (latestRelease, bool, string) {
+	if currentVersion == "" {
+		currentVersion = s.version
+	}
+
+	current, currentOK := s.normalizeComparableVersionInternal(currentVersion)
+	if !currentOK {
+		return latestRelease{TagName: latestVersion}, false, ""
+	}
+
+	manifest, err := s.getArcaneManifestInternal(ctx)
+	if err != nil {
+		slog.DebugContext(ctx, "Failed to determine automatic update target from manifest", "error", err)
+		return latestRelease{}, true, breakingChangesUnavailableText
+	}
+
+	nextBreakingChange, hasFutureBreakingChange := s.nextBreakingChangeInternal(current, manifest.BreakingChanges)
+	if !hasFutureBreakingChange {
+		return latestRelease{TagName: latestVersion}, false, ""
+	}
+
+	if latestVersion == "" && s.disabled {
+		return latestRelease{}, true, breakingChangeMessageInternal(nextBreakingChange)
+	}
+	if latestVersion == "" {
+		latest, err := s.GetLatestVersion(ctx)
+		if err != nil {
+			slog.DebugContext(ctx, "Failed to determine latest version for automatic update target", "error", err)
+			return latestRelease{}, true, breakingChangeMessageInternal(nextBreakingChange)
+		}
+		latestVersion = latest
+	}
+
+	if required, _ := s.BreakingChangeRequirement(ctx, current, latestVersion); !required {
+		return latestRelease{TagName: latestVersion}, false, ""
+	}
+
+	target, found, err := s.latestAutomaticReleaseBeforeBreakingChangeInternal(ctx, current, nextBreakingChange)
+	if err != nil {
+		slog.DebugContext(ctx, "Failed to determine safe automatic update target", "error", err)
+		return latestRelease{}, true, breakingChangeMessageInternal(nextBreakingChange)
+	}
+	if found {
+		return target, false, ""
+	}
+
+	return latestRelease{}, true, breakingChangeMessageInternal(nextBreakingChange)
+}
+
 func (s *VersionService) nextBreakingChangeInternal(current string, changes []breakingChange) (breakingChange, bool) {
 	var selected breakingChange
 	var selectedVersion string
@@ -279,6 +390,38 @@ func (s *VersionService) nextBreakingChangeInternal(current string, changes []br
 	}
 
 	return selected, found
+}
+
+func (s *VersionService) latestAutomaticReleaseBeforeBreakingChangeInternal(ctx context.Context, current string, change breakingChange) (latestRelease, bool, error) {
+	changeVersion, ok := s.normalizeComparableVersionInternal(change.Version)
+	if !ok {
+		return latestRelease{}, false, nil
+	}
+
+	releases, err := s.getReleasesInternal(ctx)
+	if err != nil {
+		return latestRelease{}, false, err
+	}
+
+	var selected latestRelease
+	var selectedVersion string
+	found := false
+	for _, release := range releases {
+		releaseVersion, ok := s.normalizeComparableVersionInternal(release.TagName)
+		if !ok {
+			continue
+		}
+		if semver.Compare(releaseVersion, current) <= 0 || semver.Compare(releaseVersion, changeVersion) >= 0 {
+			continue
+		}
+		if !found || semver.Compare(releaseVersion, selectedVersion) > 0 {
+			selected = release
+			selectedVersion = releaseVersion
+			found = true
+		}
+	}
+
+	return selected, found, nil
 }
 
 func (s *VersionService) crossedBreakingChangeInternal(current string, target string, changes []breakingChange) (breakingChange, bool) {
@@ -357,7 +500,13 @@ func (s *VersionService) GetVersionInformation(ctx context.Context, currentVersi
 		check.UpdateAvailable = s.IsNewer(latest, cur)
 		check.ReleaseURL = s.ReleaseURL(latest)
 		if check.UpdateAvailable {
-			check.BreakingChangeRequired, check.BreakingChangeMessage = s.BreakingChangeRequirement(ctx, cur, latest)
+			target, breakingChangeRequired, message := s.AutomaticUpdateTargetRelease(ctx, cur, latest)
+			check.BreakingChangeRequired = breakingChangeRequired
+			check.BreakingChangeMessage = message
+			if !breakingChangeRequired && target.TagName != "" && target.TagName != latest {
+				check.NewestVersion = target.TagName
+				check.ReleaseURL = s.ReleaseURL(target.TagName)
+			}
 		}
 	}
 
@@ -427,7 +576,15 @@ func (s *VersionService) GetAppVersionInfo(ctx context.Context) *version.Info {
 				info.ReleaseNotes = rel.Body
 				info.ReleasedAt = rel.PublishedAt
 				if info.UpdateAvailable {
-					info.BreakingChangeRequired, info.BreakingChangeMessage = s.BreakingChangeRequirement(ctx, ver, rel.TagName)
+					target, breakingChangeRequired, message := s.AutomaticUpdateTargetRelease(ctx, ver, rel.TagName)
+					info.BreakingChangeRequired = breakingChangeRequired
+					info.BreakingChangeMessage = message
+					if !breakingChangeRequired && target.TagName != "" && target.TagName != rel.TagName {
+						info.NewestVersion = target.TagName
+						info.ReleaseURL = s.ReleaseURL(target.TagName)
+						info.ReleaseNotes = target.Body
+						info.ReleasedAt = target.PublishedAt
+					}
 				}
 			}
 		}
