@@ -23,6 +23,8 @@ func TestResolveEdgeCommandName(t *testing.T) {
 		{name: "container start", method: "POST", path: "/api/environments/0/containers/abc/start", command: "container.start", shouldHit: true},
 		{name: "volume browse download", method: "GET", path: "/api/environments/0/volumes/data/browse/download", command: "volume.browse.download", shouldHit: true},
 		{name: "project logs stream", method: "GET", path: "/api/environments/0/ws/projects/p1/logs", stream: true, command: "project.logs.stream", shouldHit: true},
+		{name: "project updates", method: "GET", path: "/api/environments/0/projects/p1/updates", command: "project.updates", shouldHit: true},
+		{name: "project archive", method: "POST", path: "/api/environments/0/projects/p1/archive", command: "project.archive", shouldHit: true},
 		{name: "health", method: "HEAD", path: "/api/environments/0/system/health", command: "system.health", shouldHit: true},
 		{name: "unknown", method: "PATCH", path: "/api/environments/0/containers", shouldHit: false},
 	}
