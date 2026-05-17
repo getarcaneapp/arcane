@@ -131,7 +131,9 @@ export const load = async () => {
 			newestVersion: info.newestVersion,
 			newestDigest: info.newestDigest,
 			updateAvailable: info.updateAvailable,
-			releaseUrl: info.releaseUrl
+			releaseUrl: info.releaseUrl,
+			releaseNotes: info.releaseNotes,
+			releasedAt: info.releasedAt
 		};
 	} catch {}
 
