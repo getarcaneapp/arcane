@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	dockerutils "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
@@ -21,12 +22,7 @@ import (
 )
 
 var (
-	ErrNotRunningInDocker   = errors.New("arcane is not running in a Docker container")
-	ErrContainerNotFound    = errors.New("could not find Arcane container")
-	ErrUpgradeInProgress    = errors.New("an upgrade is already in progress")
-	ErrDockerSocketAccess   = errors.New("docker socket is not accessible")
-	ErrManualUpdateRequired = errors.New("manual update required")
-	ArcaneUpgraderImage     = "ghcr.io/getarcaneapp/arcane:latest"
+	ArcaneUpgraderImage = "ghcr.io/getarcaneapp/arcane:latest"
 )
 
 type SystemUpgradeService struct {
@@ -56,13 +52,13 @@ func (s *SystemUpgradeService) CanUpgrade(ctx context.Context) (bool, error) {
 	// Check if running in Docker
 	containerId, err := s.getCurrentContainerID()
 	if err != nil {
-		return false, ErrNotRunningInDocker
+		return false, err
 	}
 
 	// Verify we can access Docker
 	_, err = s.dockerService.GetClient(ctx)
 	if err != nil {
-		return false, ErrDockerSocketAccess
+		return false, &common.DockerSocketAccessError{Err: err}
 	}
 
 	// Verify we can find our container
@@ -86,7 +82,7 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 	}
 
 	if !s.upgrading.CompareAndSwap(false, true) {
-		return ErrUpgradeInProgress
+		return &common.UpgradeInProgressError{Err: errors.New("upgrade already in progress")}
 	}
 	defer s.upgrading.Store(false)
 
@@ -236,10 +232,10 @@ func (s *SystemUpgradeService) checkManualUpdateRequirementInternal(ctx context.
 		return nil
 	}
 	if strings.TrimSpace(message) == "" {
-		message = ErrManualUpdateRequired.Error()
+		message = "manual update required"
 	}
 
-	return fmt.Errorf("%w: %s", ErrManualUpdateRequired, message)
+	return &common.ManualUpdateRequiredError{Err: errors.New(message)}
 }
 
 func determineUpgradeBinaryPathInternal(labels map[string]string) string {
@@ -254,7 +250,7 @@ func determineUpgradeBinaryPathInternal(labels map[string]string) string {
 func (s *SystemUpgradeService) getCurrentContainerID() (string, error) {
 	id, err := dockerutils.GetCurrentContainerID()
 	if err != nil {
-		return "", ErrNotRunningInDocker
+		return "", &common.NotRunningInDockerError{Err: err}
 	}
 	return id, nil
 }
@@ -310,5 +306,5 @@ func (s *SystemUpgradeService) findArcaneContainer(ctx context.Context, containe
 		}
 	}
 
-	return containertypes.InspectResponse{}, ErrContainerNotFound
+	return containertypes.InspectResponse{}, &common.ContainerNotFoundError{Err: errors.New("container not found")}
 }

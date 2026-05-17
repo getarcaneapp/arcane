@@ -2,9 +2,11 @@ package services
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"testing"
 
+	"github.com/getarcaneapp/arcane/backend/internal/common"
 	libupdater "github.com/getarcaneapp/arcane/backend/pkg/libarcane/imageupdate"
 	"github.com/stretchr/testify/require"
 )
@@ -37,18 +39,18 @@ func TestSystemUpgradeService_Initialization(t *testing.T) {
 // TestSystemUpgradeService_ErrorVariables tests that error variables are properly defined
 func TestSystemUpgradeService_ErrorVariables(t *testing.T) {
 	// Test that all expected errors exist and are not nil
-	require.Error(t, ErrNotRunningInDocker)
-	require.Error(t, ErrContainerNotFound)
-	require.Error(t, ErrUpgradeInProgress)
-	require.Error(t, ErrDockerSocketAccess)
-	require.Error(t, ErrManualUpdateRequired)
+	require.Error(t, &common.NotRunningInDockerError{Err: errors.New("test")})
+	require.Error(t, &common.ContainerNotFoundError{Err: errors.New("test")})
+	require.Error(t, &common.UpgradeInProgressError{Err: errors.New("test")})
+	require.Error(t, &common.DockerSocketAccessError{Err: errors.New("test")})
+	require.Error(t, &common.ManualUpdateRequiredError{Err: errors.New("test")})
 
 	// Test error messages
-	require.Equal(t, "arcane is not running in a Docker container", ErrNotRunningInDocker.Error())
-	require.Equal(t, "could not find Arcane container", ErrContainerNotFound.Error())
-	require.Equal(t, "an upgrade is already in progress", ErrUpgradeInProgress.Error())
-	require.Equal(t, "docker socket is not accessible", ErrDockerSocketAccess.Error())
-	require.Equal(t, "manual update required", ErrManualUpdateRequired.Error())
+	require.Equal(t, "arcane is not running in a Docker container: test", (&common.NotRunningInDockerError{Err: errors.New("test")}).Error())
+	require.Equal(t, "could not find Arcane container: test", (&common.ContainerNotFoundError{Err: errors.New("test")}).Error())
+	require.Equal(t, "an upgrade is already in progress: test", (&common.UpgradeInProgressError{Err: errors.New("test")}).Error())
+	require.Equal(t, "docker socket is not accessible: test", (&common.DockerSocketAccessError{Err: errors.New("test")}).Error())
+	require.Equal(t, "manual update required: test", (&common.ManualUpdateRequiredError{Err: errors.New("test")}).Error())
 }
 
 // TestSystemUpgradeService_UpgradingFlag_ConcurrentAccess tests upgrading flag
@@ -120,12 +122,14 @@ func TestSystemUpgradeService_ConcurrentUpgradeAttempts(t *testing.T) {
 // TestSystemUpgradeService_UpgradeInProgressError tests the upgrade in progress sentinel error
 func TestSystemUpgradeService_UpgradeInProgressError(t *testing.T) {
 	// This tests the specific error that the handler checks for
-	// The handler uses: if errors.Is(err, services.ErrUpgradeInProgress)
+	// The handler uses: if common.IsUpgradeInProgressError(err)
 
-	require.Equal(t, "an upgrade is already in progress", ErrUpgradeInProgress.Error())
+	err := &common.UpgradeInProgressError{Err: errors.New("test")}
+	require.Equal(t, "an upgrade is already in progress: test", err.Error())
 
 	// Test that the error is not nil
-	require.Error(t, ErrUpgradeInProgress)
+	require.Error(t, err)
+	require.True(t, common.IsUpgradeInProgressError(err))
 }
 
 // TestSystemUpgradeService_AtomicOperations tests atomic.Bool operations
@@ -201,6 +205,6 @@ func TestSystemUpgradeService_CheckManualUpdateRequirementBlocksFromManifest(t *
 
 	err := s.checkManualUpdateRequirementInternal(ctx)
 
-	require.ErrorIs(t, err, ErrManualUpdateRequired)
+	require.True(t, common.IsManualUpdateRequiredError(err))
 	require.ErrorContains(t, err, "v1.20 manual step")
 }

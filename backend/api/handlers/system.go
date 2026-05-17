@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -505,12 +504,12 @@ func (h *SystemHandler) CheckUpgradeAvailable(ctx context.Context, input *CheckU
 	canUpgrade, err := h.upgradeService.CanUpgrade(ctx)
 	if err != nil {
 		slog.Debug("System upgrade check failed", "error", err)
-		if errors.Is(err, services.ErrManualUpdateRequired) {
+		if common.IsManualUpdateRequiredError(err) {
 			return &CheckUpgradeOutput{
 				Body: UpgradeCheckResultData{
 					CanUpgrade: false,
 					Error:      false,
-					Message:    strings.TrimPrefix(err.Error(), services.ErrManualUpdateRequired.Error()+": "),
+					Message:    strings.TrimPrefix(err.Error(), "manual update required: "),
 				},
 			}, nil
 		}
@@ -553,11 +552,11 @@ func (h *SystemHandler) TriggerUpgrade(ctx context.Context, input *TriggerUpgrad
 	if err != nil {
 		slog.Error("System upgrade failed", "error", err, "user", user.Username)
 
-		if errors.Is(err, services.ErrUpgradeInProgress) {
+		if common.IsUpgradeInProgressError(err) {
 			return nil, huma.Error409Conflict((&common.UpgradeTriggerError{Err: err}).Error())
 		}
-		if errors.Is(err, services.ErrManualUpdateRequired) {
-			return nil, huma.Error409Conflict(strings.TrimPrefix(err.Error(), services.ErrManualUpdateRequired.Error()+": "))
+		if common.IsManualUpdateRequiredError(err) {
+			return nil, huma.Error409Conflict(strings.TrimPrefix(err.Error(), "manual update required: "))
 		}
 
 		return nil, huma.Error500InternalServerError((&common.UpgradeTriggerError{Err: err}).Error())

@@ -1593,3 +1593,51 @@ type SwarmInspectError struct {
 func (e *SwarmInspectError) Error() string {
 	return fmt.Sprintf("Failed to inspect swarm: %v", e.Err)
 }
+
+type NotRunningInDockerError struct {
+	Err error
+}
+
+func (e *NotRunningInDockerError) Error() string {
+	return fmt.Sprintf("arcane is not running in a Docker container: %v", e.Err)
+}
+
+type ContainerNotFoundError struct {
+	Err error
+}
+
+func (e *ContainerNotFoundError) Error() string {
+	return fmt.Sprintf("could not find Arcane container: %v", e.Err)
+}
+
+type UpgradeInProgressError struct {
+	Err error
+}
+
+func (e *UpgradeInProgressError) Error() string {
+	return fmt.Sprintf("an upgrade is already in progress: %v", e.Err)
+}
+
+func IsUpgradeInProgressError(err error) bool {
+	return isErrorTypeInternal[*UpgradeInProgressError](err)
+}
+
+type DockerSocketAccessError struct {
+	Err error
+}
+
+func (e *DockerSocketAccessError) Error() string {
+	return fmt.Sprintf("docker socket is not accessible: %v", e.Err)
+}
+
+type ManualUpdateRequiredError struct {
+	Err error
+}
+
+func (e *ManualUpdateRequiredError) Error() string {
+	return fmt.Sprintf("manual update required: %v", e.Err)
+}
+
+func IsManualUpdateRequiredError(err error) bool {
+	return isErrorTypeInternal[*ManualUpdateRequiredError](err)
+}
