@@ -2,15 +2,21 @@ package bootstrap
 
 import (
 	"context"
+	"crypto/tls"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
+	"time"
 
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	libcrypto "github.com/getarcaneapp/arcane/backend/pkg/libarcane/crypto"
 	tunnelpb "github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge/proto/tunnel/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/net/http2"
 )
 
 func TestNormalizeTunnelGRPCRequestPathInternal(t *testing.T) {
@@ -141,6 +147,65 @@ func TestConfigureHTTPProtocolsInternal(t *testing.T) {
 		assert.False(t, protocols.HTTP2())
 		assert.True(t, protocols.UnencryptedHTTP2())
 	})
+}
+
+func TestHTTP2APIResponsesDoNotUseAPIGzipInternal(t *testing.T) {
+	router, _ := setupRouter(context.Background(), &config.Config{
+		AppUrl:      "http://localhost:3552",
+		Environment: config.AppEnvironmentTest,
+	}, &Services{})
+	handler, protocols := configureHTTPProtocolsInternal(false, router)
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	server := &http.Server{
+		Handler:           handler,
+		Protocols:         protocols,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- server.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		require.NoError(t, server.Shutdown(context.Background()))
+		require.ErrorIs(t, <-errCh, http.ErrServerClosed)
+	})
+
+	transport := &http2.Transport{
+		AllowHTTP:          true,
+		DisableCompression: true,
+		DialTLSContext: func(ctx context.Context, network, addr string, _ *tls.Config) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, network, addr)
+		},
+	}
+	client := &http.Client{Transport: transport}
+
+	for _, path := range []string{"/api/health", "/api/openapi.json"} {
+		t.Run(path, func(t *testing.T) {
+			req, err := http.NewRequest(http.MethodGet, "http://"+listener.Addr().String()+path, nil)
+			require.NoError(t, err)
+			req.Header.Set("Accept-Encoding", "gzip")
+
+			resp, err := client.Do(req)
+			require.NoError(t, err)
+			defer func() { _ = resp.Body.Close() }()
+
+			body, err := io.ReadAll(resp.Body)
+			require.NoError(t, err)
+
+			require.Equal(t, "HTTP/2.0", resp.Proto)
+			require.Equal(t, http.StatusOK, resp.StatusCode)
+			require.Empty(t, resp.Header.Get("Content-Encoding"))
+
+			if contentLength := resp.Header.Get("Content-Length"); contentLength != "" {
+				parsedLength, parseErr := strconv.Atoi(contentLength)
+				require.NoError(t, parseErr)
+				require.Equal(t, len(body), parsedLength)
+			}
+		})
+	}
 }
 
 func TestPrepareServerTLSInternal_AgentModeSkipsManagerMTLSValidation(t *testing.T) {

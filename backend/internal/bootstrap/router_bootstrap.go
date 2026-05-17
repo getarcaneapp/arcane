@@ -153,16 +153,6 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services)
 	e.Use(middleware.NewCORSMiddleware(cfg).Add())
 
 	apiGroup := e.Group("/api")
-	apiGroup.Use(echomiddleware.GzipWithConfig(echomiddleware.GzipConfig{
-		Level: 5,
-		Skipper: func(c echo.Context) bool {
-			if strings.EqualFold(c.Request().Header.Get(echo.HeaderUpgrade), "websocket") {
-				return true
-			}
-			path := c.Request().URL.Path
-			return strings.Contains(path, "/ws/") || strings.Contains(path, "/logs") || strings.Contains(path, "/terminal")
-		},
-	}))
 
 	apiGroup.Use(middleware.PerIPRateLimitForPaths(
 		[]string{
