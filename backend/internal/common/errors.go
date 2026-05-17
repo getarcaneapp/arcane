@@ -827,6 +827,19 @@ func (e *ProjectComposeFileNotFoundError) Error() string {
 	return fmt.Sprintf("Project compose file not found: %v", e.Err)
 }
 
+type ProjectDiscoveryError struct {
+	Dir string
+	Err error
+}
+
+func (e *ProjectDiscoveryError) Error() string {
+	return fmt.Sprintf("Failed to discover projects in %q: %v", e.Dir, e.Err)
+}
+
+func (e *ProjectDiscoveryError) Unwrap() error {
+	return e.Err
+}
+
 type ProjectRedeploymentError struct {
 	Err error
 }

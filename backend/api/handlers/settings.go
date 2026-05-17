@@ -3,7 +3,9 @@ package handlers
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 
@@ -355,6 +357,21 @@ func (h *SettingsHandler) updateSettingsForRemoteEnvironment(ctx context.Context
 }
 
 func (h *SettingsHandler) updateSettingsForLocalEnvironment(ctx context.Context, input settings.Update) (*UpdateSettingsOutput, error) {
+	if input.ProjectsDirectory != nil && *input.ProjectsDirectory != "" {
+		currentDir := h.settingsService.GetSettingsConfig().ProjectsDirectory.Value
+		if *input.ProjectsDirectory != currentDir {
+			resolved, err := projects.GetProjectsDirectory(ctx, strings.TrimSpace(*input.ProjectsDirectory))
+			if err != nil {
+				return nil, huma.Error400BadRequest(fmt.Sprintf("cannot use projects directory %q: %v", *input.ProjectsDirectory, err))
+			}
+			f, err := os.Open(resolved)
+			if err != nil {
+				return nil, huma.Error400BadRequest(fmt.Sprintf("cannot read projects directory %q: %v", resolved, err))
+			}
+			f.Close()
+		}
+	}
+
 	updatedSettings, err := h.settingsService.UpdateSettings(ctx, input)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.SettingsUpdateError{Err: err}).Error())
