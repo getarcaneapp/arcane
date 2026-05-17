@@ -1379,6 +1379,8 @@
 	"general_title": "Chung",
 	"general_projects_directory_label": "Thư mục Projects",
 	"general_projects_directory_help": "Thư mục chứa các tệp Docker Compose (thư mục này nằm bên trong container). PHẢI là đường dẫn tuyệt đối!",
+	"general_templates_directory_label": "Thư mục mẫu",
+	"general_templates_directory_help": "Thư mục nơi hệ thống phát hiện các thư mục mẫu Compose cục bộ. Không được trùng lặp với Thư mục Dự án. Hỗ trợ định dạng gắn kết container:host tương tự.",
 	"general_follow_project_symlinks_label": "Theo dõi các liên kết tượng trưng của Dự án",
 	"general_follow_project_symlinks_help": "Xử lý các thư mục con được liên kết tượng trưng bên trong thư mục projects như các dự án Docker Compose.",
 	"general_base_url_label": "Base Server URL",
