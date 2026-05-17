@@ -12,6 +12,7 @@ export const environmentFormSchema = z.object({
 	defaultDeployPullPolicy: z.enum(['missing', 'always', 'never']),
 	defaultShell: z.string(),
 	projectsDirectory: z.string(),
+	templatesDirectory: z.string(),
 	swarmStackSourcesDirectory: z.string(),
 	diskUsagePath: z.string(),
 	maxImageUploadSize: z.coerce.number(),

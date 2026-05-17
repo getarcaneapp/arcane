@@ -130,15 +130,15 @@ func HasComposeRootKeysInFile(path string) (bool, error) {
 	return hasServices || hasInclude, nil
 }
 
-func GetTemplatesDirectory(ctx context.Context) (string, error) {
-	templatesDir := filepath.Join("data", "templates")
-	if _, err := os.Stat(templatesDir); os.IsNotExist(err) {
-		if err := os.MkdirAll(templatesDir, pkgutils.DirPerm); err != nil {
+func GetTemplatesDirectory(ctx context.Context, templatesDir string) (string, error) {
+	resolved := ResolveConfiguredContainerDirectory(templatesDir, "/app/data/templates")
+	if _, err := os.Stat(resolved); os.IsNotExist(err) {
+		if err := os.MkdirAll(resolved, pkgutils.DirPerm); err != nil {
 			return "", err
 		}
-		slog.InfoContext(ctx, "Created templates directory", "path", templatesDir)
+		slog.InfoContext(ctx, "Created templates directory", "path", resolved)
 	}
-	return templatesDir, nil
+	return resolved, nil
 }
 
 func ReadProjectDirectoryFiles(projectPath string, shownFiles map[string]bool, maxDepth int, skipDirectories string) ([]project.IncludeFile, error) {

@@ -257,10 +257,14 @@ services:
 
 	client, lookupIP, baseURL := makePublicTestClient(t, server)
 
+	settingsSvc := minimalSettingsServiceForTest(t)
+	require.NoError(t, settingsSvc.UpdateSetting(context.Background(), "templatesDirectory", filepath.Join(tempDir, "templates")))
+
 	service := &TemplateService{
 		db:                setupTemplateServiceTestDB(t),
 		httpClient:        client,
 		lookupIP:          lookupIP,
+		settingsService:   settingsSvc,
 		registryFetchMeta: make(map[string]*registryFetchMeta),
 	}
 
@@ -383,9 +387,9 @@ func TestFetchRaw_BlocksUnsafeRemoteURL(t *testing.T) {
 
 func TestSyncFilesystemTemplatesInternal_PopulatesIconURL(t *testing.T) {
 	tempDir := t.TempDir()
-	setTestWorkingDir(t, tempDir)
 
-	templateDir := filepath.Join(tempDir, "data", "templates", "example")
+	templatesRoot := filepath.Join(tempDir, "templates")
+	templateDir := filepath.Join(templatesRoot, "example")
 	require.NoError(t, os.MkdirAll(templateDir, 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(templateDir, "compose.yaml"), []byte(`x-arcane:
   icon: https://cdn.example/local.png
@@ -394,9 +398,13 @@ services:
     image: nginx:alpine
 `), 0o644))
 
+	settingsSvc := minimalSettingsServiceForTest(t)
+	require.NoError(t, settingsSvc.UpdateSetting(context.Background(), "templatesDirectory", templatesRoot))
+
 	service := &TemplateService{
 		db:                setupTemplateServiceTestDB(t),
 		httpClient:        http.DefaultClient,
+		settingsService:   settingsSvc,
 		registryFetchMeta: make(map[string]*registryFetchMeta),
 	}
 
@@ -407,6 +415,88 @@ services:
 	require.NotNil(t, stored.Metadata)
 	require.NotNil(t, stored.Metadata.IconURL)
 	require.Equal(t, "https://cdn.example/local.png", *stored.Metadata.IconURL)
+}
+
+func TestGetTemplate_ForceRefreshesRemoteCacheOnMiss(t *testing.T) {
+	tempDir := t.TempDir()
+	setTestWorkingDir(t, tempDir)
+
+	var registryHits atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/registry.json" {
+			http.NotFound(w, r)
+			return
+		}
+		registryHits.Add(1)
+		_, _ = w.Write([]byte(`{
+  "name": "Demo Registry",
+  "description": "Test",
+  "version": "1.0.0",
+  "author": "Arcane",
+  "templates": [
+    {
+      "id": "affine",
+      "name": "AFFiNE",
+      "description": "",
+      "version": "1.0.0",
+      "author": "Arcane",
+      "compose_url": "",
+      "env_url": "",
+      "documentation_url": "",
+      "tags": []
+    }
+  ]
+}`))
+	}))
+	defer server.Close()
+
+	client, lookupIP, baseURL := makePublicTestClient(t, server)
+	db := setupTemplateServiceTestDB(t)
+
+	registry := &models.TemplateRegistry{
+		BaseModel: models.BaseModel{ID: "reg-1"},
+		Name:      "Demo",
+		URL:       baseURL + "/registry.json",
+		Enabled:   true,
+	}
+	require.NoError(t, db.WithContext(context.Background()).Create(registry).Error)
+
+	settingsSvc := minimalSettingsServiceForTest(t)
+	// Point templates+projects directories at tempDir so sync calls don't try to
+	// touch the real /app filesystem during tests.
+	require.NoError(t, settingsSvc.UpdateSetting(context.Background(), "templatesDirectory", filepath.Join(tempDir, "templates")))
+	require.NoError(t, settingsSvc.UpdateSetting(context.Background(), "projectsDirectory", filepath.Join(tempDir, "projects")))
+
+	service := &TemplateService{
+		db:                db,
+		httpClient:        client,
+		lookupIP:          lookupIP,
+		settingsService:   settingsSvc,
+		registryFetchMeta: make(map[string]*registryFetchMeta),
+	}
+
+	// Cache starts empty; GetTemplate for a remote ID should force a refresh and find the template.
+	got, err := service.GetTemplate(context.Background(), "remote:reg-1:affine")
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	require.True(t, got.IsRemote)
+	require.Equal(t, "AFFiNE", got.Name)
+	require.GreaterOrEqual(t, registryHits.Load(), int32(1), "registry should be fetched at least once")
+
+	// Unknown remote ID still surfaces a clear error after the forced refresh.
+	_, err = service.GetTemplate(context.Background(), "remote:reg-1:does-not-exist")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "not found")
+}
+
+func minimalSettingsServiceForTest(t *testing.T) *SettingsService {
+	t.Helper()
+	db, err := gorm.Open(glsqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&models.SettingVariable{}))
+	svc, err := NewSettingsService(context.Background(), &database.DB{DB: db})
+	require.NoError(t, err)
+	return svc
 }
 
 func TestUpdateGlobalVariables_RejectsNewlineInjectionKey(t *testing.T) {

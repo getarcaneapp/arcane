@@ -1046,6 +1046,10 @@ func (e *TemplateNotFoundError) Error() string {
 	return "Template not found"
 }
 
+func IsTemplateNotFoundError(err error) bool {
+	return isErrorTypeInternal[*TemplateNotFoundError](err)
+}
+
 type TemplateRetrievalError struct {
 	Err error
 }

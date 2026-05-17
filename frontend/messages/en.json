@@ -1379,6 +1379,8 @@
 	"general_title": "General",
 	"general_projects_directory_label": "Projects Directory",
 	"general_projects_directory_help": "Directory where Docker Compose files are stored (this is inside the container). MUST be an absolute path!",
+	"general_templates_directory_label": "Templates Directory",
+	"general_templates_directory_help": "Directory where local compose template folders are discovered. Must not overlap with the Projects Directory. Supports the same container:host bind-mount format.",
 	"general_follow_project_symlinks_label": "Follow Project Symlinks",
 	"general_follow_project_symlinks_help": "Treat symlinked child directories inside the projects directory as Docker Compose projects.",
 	"general_base_url_label": "Base Server URL",
