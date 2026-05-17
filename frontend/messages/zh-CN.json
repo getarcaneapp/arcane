@@ -1379,6 +1379,8 @@
 	"general_title": "基本设置",
 	"general_projects_directory_label": "项目目录",
 	"general_projects_directory_help": "存储 Docker Compose 文件的目录（这是容器内部的路径），必须是绝对路径",
+	"general_templates_directory_label": "模板目录",
+	"general_templates_directory_help": "发现本地撰写模板文件夹的目录。不得与项目目录重叠。支持相同的容器：主机绑定-挂载格式。",
 	"general_follow_project_symlinks_label": "跟踪项目符号链接",
 	"general_follow_project_symlinks_help": "将项目目录内的符号链接子目录视为 Docker Compose 项目。",
 	"general_base_url_label": "基础服务器URL",
