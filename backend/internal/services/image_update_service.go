@@ -13,6 +13,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/crypto"
 	imageupdatecore "github.com/getarcaneapp/arcane/backend/pkg/libarcane/imageupdate"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/ratelimit"
 	registry "github.com/getarcaneapp/arcane/backend/pkg/libarcane/registryauth"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 	"github.com/getarcaneapp/arcane/types/imageupdate"
@@ -30,6 +31,7 @@ type ImageUpdateService struct {
 	dockerService       *DockerClientService
 	eventService        *EventService
 	notificationService *NotificationService
+	registryLimiter     *ratelimit.RegistryRateLimiter
 }
 
 type ImageParts struct {
@@ -54,6 +56,7 @@ func NewImageUpdateService(db *database.DB, settingsService *SettingsService, re
 		dockerService:       dockerService,
 		eventService:        eventService,
 		notificationService: notificationService,
+		registryLimiter:     ratelimit.NewRegistryRateLimiter(),
 	}
 }
 
@@ -904,6 +907,17 @@ func (s *ImageUpdateService) CheckMultipleImages(ctx context.Context, imageRefs 
 
 	for _, img := range images {
 		g.Go(func() error {
+			registry := img.parts.Registry
+
+			if err := s.registryLimiter.Acquire(groupCtx, registry); err != nil {
+				slog.DebugContext(groupCtx, "skipping image check: registry limiter acquire failed",
+					"imageRef", img.canonicalRef,
+					"registry", registry,
+					"error", err.Error())
+				return err
+			}
+			defer s.registryLimiter.Release(registry)
+
 			res, snapshot := s.checkSingleImageInBatchInternal(groupCtx, resolvedCreds, img.parts)
 
 			mu.Lock()
@@ -921,6 +935,7 @@ func (s *ImageUpdateService) CheckMultipleImages(ctx context.Context, imageRefs 
 
 	if err := g.Wait(); err != nil {
 		slog.ErrorContext(ctx, "Batch check error", "error", err)
+		return results, err
 	}
 
 	successCount, errorCount := countBatchResultOutcomesInternal(imageRefs, results)

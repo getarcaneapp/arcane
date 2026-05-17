@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -3425,6 +3426,47 @@ func TestProjectService_SyncProjectsFromFileSystem_RemovesDeletedNestedProject(t
 	items, err = svc.ListAllProjects(ctx)
 	require.NoError(t, err)
 	assert.Empty(t, items)
+}
+
+func TestProjectService_SyncProjectsFromFileSystem_PreservesDBRecordsWhenDirectoryUnreadable(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission-denied behavior is not portable to Windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("test requires a non-root UID to trigger permission-denied on ReadDir")
+	}
+
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsRoot := t.TempDir()
+	createComposeProjectDir(t, projectsRoot, "project1")
+
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
+	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
+
+	before, err := svc.ListAllProjects(ctx)
+	require.NoError(t, err)
+	require.Len(t, before, 1)
+
+	unreadable := t.TempDir()
+	require.NoError(t, os.Chmod(unreadable, 0))
+	t.Cleanup(func() { _ = os.Chmod(unreadable, 0o700) })
+
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", unreadable))
+
+	syncErr := svc.SyncProjectsFromFileSystem(ctx)
+	require.Error(t, syncErr, "sync should propagate the permission-denied error")
+
+	after, err := svc.ListAllProjects(ctx)
+	require.NoError(t, err)
+	assert.Len(t, after, 1, "DB records must not be wiped when discovery fails")
+	assert.Equal(t, before[0].Path, after[0].Path)
 }
 
 func TestProjectService_SyncProjectsFromFileSystem_AllowsDuplicateLeafDirectoriesInDifferentParents(t *testing.T) {

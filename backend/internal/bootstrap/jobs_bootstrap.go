@@ -84,6 +84,13 @@ func setupSettingsCallbacks(lifecycleCtx context.Context, appServices *Services,
 			}
 		}
 	}
+	appServices.Settings.OnTemplatesDirectoryChanged = func(_ context.Context) {
+		if fsWatcherJob != nil {
+			if err := fsWatcherJob.RestartTemplatesWatcher(lifecycleCtx); err != nil {
+				slog.WarnContext(lifecycleCtx, "Failed to restart templates filesystem watcher", "error", err)
+			}
+		}
+	}
 	appServices.Settings.OnScheduledPruneSettingsChanged = func(_ context.Context) {
 		if err := newScheduler.RescheduleJob(lifecycleCtx, scheduledPruneJob); err != nil {
 			slog.WarnContext(lifecycleCtx, "Failed to reschedule scheduled-prune job", "error", err)
