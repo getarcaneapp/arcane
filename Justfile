@@ -447,7 +447,7 @@ migration-manifest version="" output="backend/resources/migration_versions.json"
         args+=(--include-version "{{ version }}")
     fi
 
-    go run ./backend/cmd/migrator/main.go generate-manifest "${args[@]}"
+    go run -tags exclude_frontend ./backend/cmd migrate generate-manifest "${args[@]}"
 
 # Generate the docs config schema JSON.
 [group('docs')]

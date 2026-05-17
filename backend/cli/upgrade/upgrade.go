@@ -157,7 +157,7 @@ func findArcaneContainer(ctx context.Context, dockerClient *client.Client) (cont
 		}
 
 		// Legacy label (pre-migration): com.getarcaneapp.arcane.server=true
-		// NOTE: older agent images also used this label, so we must additionally exclude AGENT_MODE=true.
+		// NOTE: older agent images also used this label, so we must additionally exclude agent modes.
 		if isLegacyServerLabel(labels) {
 			slog.Info("Found Arcane container by legacy label", "id", c.ID[:12], "image", c.Image, "names", c.Names)
 			return inspect, nil
@@ -197,9 +197,9 @@ func isAgentContainer(inspect container.InspectResponse) bool {
 			}
 		}
 	}
-	// Legacy agent detection: AGENT_MODE=true in env
+	// Legacy agent detection: AGENT_MODE=true or EDGE_AGENT=true in env
 	for _, env := range inspect.Config.Env {
-		if strings.EqualFold(env, "AGENT_MODE=true") {
+		if strings.EqualFold(env, "AGENT_MODE=true") || strings.EqualFold(env, "EDGE_AGENT=true") {
 			return true
 		}
 	}
@@ -419,16 +419,12 @@ func upgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 		return fmt.Errorf("stop old container: %w", err)
 	}
 
-	if shouldRunMigratorForContainerInternal(oldContainer) {
-		fmt.Println("PROGRESS:73:Running database migrator")
-		slog.Info("Running database migrator before starting new container", "image", newImage)
-		if err := runMigratorContainerInternal(ctx, dockerClient, oldContainer, newImage, hostConfig, networkConfig, apiVersion); err != nil {
-			_, _ = dockerClient.ContainerStart(ctx, oldContainer.ID, client.ContainerStartOptions{})
-			_, _ = dockerClient.ContainerRename(ctx, oldContainer.ID, client.ContainerRenameOptions{NewName: originalName})
-			return fmt.Errorf("run database migrator: %w", err)
-		}
-	} else {
-		slog.Info("Skipping database migrator for non-server Arcane target", "container", originalName)
+	fmt.Println("PROGRESS:73:Running database migrator")
+	slog.Info("Running database migrator before starting new container", "image", newImage)
+	if err := runMigratorContainerInternal(ctx, dockerClient, oldContainer, newImage, hostConfig, networkConfig, apiVersion); err != nil {
+		_, _ = dockerClient.ContainerStart(ctx, oldContainer.ID, client.ContainerStartOptions{})
+		_, _ = dockerClient.ContainerRename(ctx, oldContainer.ID, client.ContainerRenameOptions{NewName: originalName})
+		return fmt.Errorf("run database migrator: %w", err)
 	}
 
 	fmt.Println("PROGRESS:75:Creating new container")
@@ -472,14 +468,6 @@ func upgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 	return nil
 }
 
-func shouldRunMigratorForContainerInternal(cont container.InspectResponse) bool {
-	if cont.Config == nil {
-		return false
-	}
-
-	return !isAgentContainer(cont)
-}
-
 func runMigratorContainerInternal(
 	ctx context.Context,
 	dockerClient *client.Client,
@@ -495,8 +483,8 @@ func runMigratorContainerInternal(
 
 	migratorConfig := *oldContainer.Config
 	migratorConfig.Image = image
-	migratorConfig.Entrypoint = []string{"/app/arcane-migrator"}
-	migratorConfig.Cmd = []string{"up"}
+	migratorConfig.Entrypoint = []string{migrationBinaryPathForContainerInternal(oldContainer)}
+	migratorConfig.Cmd = []string{"migrate", "up"}
 	migratorConfig.ExposedPorts = nil
 	migratorConfig.Healthcheck = nil
 
@@ -550,6 +538,14 @@ func runMigratorContainerInternal(
 
 	slog.Info("Database migrator completed successfully", "container", migratorName)
 	return nil
+}
+
+func migrationBinaryPathForContainerInternal(cont container.InspectResponse) string {
+	if isAgentContainer(cont) {
+		return "/app/arcane-agent"
+	}
+
+	return "/app/arcane"
 }
 
 // looksLikeContainerID checks if a string looks like a Docker container ID

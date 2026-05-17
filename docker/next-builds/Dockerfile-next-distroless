@@ -6,7 +6,6 @@ ARG TARGETVARIANT
 WORKDIR /app
 
 COPY linux/${TARGETARCH}/${TARGETVARIANT}/arcane ./arcane
-COPY linux/${TARGETARCH}/${TARGETVARIANT}/arcane-migrator ./arcane-migrator
 
 ENV ENVIRONMENT=production
 ENV GIN_MODE=release

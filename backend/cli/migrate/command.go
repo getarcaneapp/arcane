@@ -1,4 +1,4 @@
-package migrator
+package migrate
 
 import (
 	"context"
@@ -17,25 +17,40 @@ import (
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/startup"
 )
 
-func NewCommand(out io.Writer) *cobra.Command {
-	if out == nil {
-		out = io.Discard
-	}
+var MigrateCmd = &cobra.Command{
+	Use:           "migrate",
+	Short:         "Manage Arcane database schema migrations",
+	Version:       config.Version,
+	SilenceUsage:  true,
+	SilenceErrors: true,
+}
 
-	rootCmd := &cobra.Command{
-		Use:           "arcane-migrator",
+func init() {
+	configureCommand(MigrateCmd, os.Stdout)
+}
+
+func newCommand(out io.Writer) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:           "migrate",
 		Short:         "Manage Arcane database schema migrations",
 		Version:       config.Version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	rootCmd.SetOut(out)
+	configureCommand(cmd, out)
+	return cmd
+}
 
-	rootCmd.AddCommand(newStatusCommand(out))
-	rootCmd.AddCommand(newUpCommand(out))
-	rootCmd.AddCommand(newDownCommand(out))
-	rootCmd.AddCommand(newGenerateManifestCommand(out))
-	return rootCmd
+func configureCommand(cmd *cobra.Command, out io.Writer) {
+	if out == nil {
+		out = io.Discard
+	}
+
+	cmd.SetOut(out)
+	cmd.AddCommand(newStatusCommand(out))
+	cmd.AddCommand(newUpCommand(out))
+	cmd.AddCommand(newDownCommand(out))
+	cmd.AddCommand(newGenerateManifestCommand(out))
 }
 
 func newStatusCommand(out io.Writer) *cobra.Command {
@@ -105,7 +120,7 @@ func newDownCommand(out io.Writer) *cobra.Command {
 				return fmt.Errorf("database schema version %d is dirty; resolve the dirty migration state before downgrading", status.CurrentVersion)
 			}
 			if targetMigrationVersion > status.LatestVersion {
-				return fmt.Errorf("target Arcane version %s requires schema version %d, but this migrator only includes migrations through %d", targetAppVersion, targetMigrationVersion, status.LatestVersion)
+				return fmt.Errorf("target Arcane version %s requires schema version %d, but this Arcane binary only includes migrations through %d", targetAppVersion, targetMigrationVersion, status.LatestVersion)
 			}
 			if !status.HasVersion {
 				return fmt.Errorf("database has no migration version; start Arcane once to initialize the schema before downgrading")

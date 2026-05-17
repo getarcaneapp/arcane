@@ -290,7 +290,7 @@ func migrateDatabaseUpToVersionInternal(driver database.Driver, dbProvider strin
 	}
 
 	if hasVersion && currentVersion > requiredVersion {
-		return fmt.Errorf("database schema version %d is newer than this Arcane migrator supports (target %d for %s); run a newer migrator or explicitly migrate down first", currentVersion, requiredVersion, dbProvider)
+		return fmt.Errorf("database schema version %d is newer than this Arcane version supports (target %d for %s); run a newer Arcane image or explicitly migrate down first", currentVersion, requiredVersion, dbProvider)
 	}
 
 	upErr := embeddedMigrate.Migrate(requiredVersion)
@@ -313,13 +313,13 @@ func validateMigrationSchemaInternal(driver database.Driver, dbProvider string) 
 		return err
 	}
 	if status.Dirty {
-		return fmt.Errorf("database schema version %d is dirty; run arcane-migrator after resolving the failed migration", status.CurrentVersion)
+		return fmt.Errorf("database schema version %d is dirty; run arcane migrate after resolving the failed migration", status.CurrentVersion)
 	}
 	if !status.HasVersion {
-		return fmt.Errorf("database has not been migrated; run arcane-migrator up before starting Arcane")
+		return fmt.Errorf("database has not been migrated; run arcane migrate up before starting Arcane")
 	}
 	if status.CurrentVersion < status.LatestVersion {
-		return fmt.Errorf("database schema version %d is behind required version %d; run arcane-migrator up before starting Arcane", status.CurrentVersion, status.LatestVersion)
+		return fmt.Errorf("database schema version %d is behind required version %d; run arcane migrate up before starting Arcane", status.CurrentVersion, status.LatestVersion)
 	}
 	if status.CurrentVersion > status.LatestVersion {
 		return fmt.Errorf("database schema version %d is newer than this Arcane version supports (required %d); run a compatible Arcane image or migrate down explicitly", status.CurrentVersion, status.LatestVersion)
@@ -342,7 +342,7 @@ func migrateDatabaseToVersionInternal(driver database.Driver, dbProvider string,
 	logMigrationStateInternal(dbProvider, currentVersion, requiredVersion, dirty, hasVersion)
 
 	if dirty {
-		return fmt.Errorf("database schema version %d is dirty; resolve the dirty migration state before running arcane-migrator", currentVersion)
+		return fmt.Errorf("database schema version %d is dirty; resolve the dirty migration state before running arcane migrate", currentVersion)
 	}
 
 	err = embeddedMigrate.Migrate(requiredVersion)

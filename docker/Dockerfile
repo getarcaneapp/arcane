@@ -62,14 +62,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     -ldflags "-w -s -X github.com/getarcaneapp/arcane/backend/internal/config.Version=${VERSION} -X github.com/getarcaneapp/arcane/backend/internal/config.Revision=${REVISION} -X github.com/getarcaneapp/arcane/backend/internal/config.BuildTime=${BUILD_TIME}" \
     -trimpath \
     -o /build/arcane \
-    ./cmd/main.go && \
-    CGO_ENABLED=0 GOOS=linux \
-    go build \
-    -tags "${BUILD_TAGS}" \
-    -ldflags "-w -s -X github.com/getarcaneapp/arcane/backend/internal/config.Version=${VERSION} -X github.com/getarcaneapp/arcane/backend/internal/config.Revision=${REVISION} -X github.com/getarcaneapp/arcane/backend/internal/config.BuildTime=${BUILD_TIME}" \
-    -trimpath \
-    -o /build/arcane-migrator \
-    ./cmd/migrator/main.go
+    ./cmd/main.go
 
 # Stage 3: Production Image
 FROM debian:trixie-slim AS runner
@@ -95,7 +88,6 @@ ENV NVIDIA_VISIBLE_DEVICES=all \
 WORKDIR /app
 RUN mkdir -p /app/data /builds
 COPY --from=backend-builder /build/arcane .
-COPY --from=backend-builder /build/arcane-migrator .
 EXPOSE 3552
 VOLUME ["/app/data"]
 

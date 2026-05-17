@@ -41,14 +41,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     -ldflags "-w -s -X github.com/getarcaneapp/arcane/backend/internal/config.Version=${VERSION} -X github.com/getarcaneapp/arcane/backend/internal/config.Revision=${REVISION} -X github.com/getarcaneapp/arcane/backend/internal/config.BuildTime=${BUILD_TIME}" \
     -trimpath \
     -o /out/arcane-agent \
-    ./cmd/main.go && \
-    CGO_ENABLED=0 GOOS=linux \
-    go build \
-    -tags "${BUILD_TAGS}" \
-    -ldflags "-w -s -X github.com/getarcaneapp/arcane/backend/internal/config.Version=${VERSION} -X github.com/getarcaneapp/arcane/backend/internal/config.Revision=${REVISION} -X github.com/getarcaneapp/arcane/backend/internal/config.BuildTime=${BUILD_TIME}" \
-    -trimpath \
-    -o /out/arcane-migrator \
-    ./cmd/migrator/main.go
+    ./cmd/main.go
 
 FROM debian:trixie-slim AS agent
 ARG TARGETARCH
@@ -60,7 +53,6 @@ WORKDIR /app
 RUN mkdir -p /app/data
 
 COPY --from=agent-builder /out/arcane-agent ./arcane-agent
-COPY --from=agent-builder /out/arcane-migrator ./arcane-migrator
 
 ARG VERSION="dev"
 ARG REVISION="unknown"

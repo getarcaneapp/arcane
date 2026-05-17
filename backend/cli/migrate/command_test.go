@@ -1,4 +1,4 @@
-package migrator
+package migrate
 
 import (
 	"bytes"
@@ -10,7 +10,7 @@ import (
 
 func TestDownRequiresTarget(t *testing.T) {
 	var out bytes.Buffer
-	cmd := NewCommand(&out)
+	cmd := newCommand(&out)
 	cmd.SetArgs([]string{"down"})
 
 	err := cmd.Execute()
@@ -19,7 +19,8 @@ func TestDownRequiresTarget(t *testing.T) {
 }
 
 func TestCommandIncludesMigrationCommands(t *testing.T) {
-	cmd := NewCommand(nil)
+	cmd := newCommand(nil)
+	assert.Equal(t, "migrate", cmd.Name())
 
 	commandNames := make(map[string]struct{})
 	for _, child := range cmd.Commands() {

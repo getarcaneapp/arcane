@@ -39,7 +39,7 @@ func TestMigrateDatabase_BlocksStartupDowngrade(t *testing.T) {
 
 	err := migrateDatabaseUpToVersionInternal(newSQLiteMigrationDriverInternal(t, dbDir, "arcane-test.db"), "sqlite", targetVersion)
 	require.Error(t, err)
-	assert.ErrorContains(t, err, "newer than this Arcane migrator supports")
+	assert.ErrorContains(t, err, "newer than this Arcane version supports")
 }
 
 func TestMigrateDatabase_DowngradesToExplicitVersion(t *testing.T) {
@@ -147,7 +147,7 @@ func TestInitialize_RequiresMigratedSchema(t *testing.T) {
 	db, err := Initialize(ctx, dsn)
 	require.Error(t, err)
 	assert.Nil(t, db)
-	assert.ErrorContains(t, err, "run arcane-migrator up")
+	assert.ErrorContains(t, err, "run arcane migrate up")
 }
 
 func TestInitialize_AllowsMigratedSchema(t *testing.T) {
