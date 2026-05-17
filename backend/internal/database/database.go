@@ -31,10 +31,6 @@ type DB struct {
 	*gorm.DB
 }
 
-type MigrationOptions struct {
-	AllowDowngrade bool
-}
-
 type MigrationStatus struct {
 	Provider       string
 	CurrentVersion uint
@@ -49,7 +45,7 @@ func SetGormLogger(l logger.Interface) {
 	customGormLogger = l
 }
 
-func Initialize(ctx context.Context, databaseURL string, options MigrationOptions) (*DB, error) {
+func Initialize(ctx context.Context, databaseURL string) (*DB, error) {
 	db, err := connectDatabase(ctx, databaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
@@ -69,24 +65,27 @@ func Initialize(ctx context.Context, databaseURL string, options MigrationOption
 		return nil, fmt.Errorf("failed to create migration driver: %w", err)
 	}
 
-	// Run migrations
-	if err := migrateDatabase(driver, dbProvider, options); err != nil {
-		slog.Error("Failed to run migrations", "error", err)
-		return nil, fmt.Errorf("failed to run migrations: %w", err)
+	if err := validateMigrationSchemaInternal(driver, dbProvider); err != nil {
+		return nil, fmt.Errorf("database schema is not ready: %w", err)
 	}
 
-	// Set connection pool settings
-	if db.Name() == "postgres" {
-		sqlDB.SetMaxIdleConns(15)
-		sqlDB.SetMaxOpenConns(50)
-	} else {
-		sqlDB.SetMaxIdleConns(5)
-		sqlDB.SetMaxOpenConns(20)
-	}
-	sqlDB.SetConnMaxLifetime(5 * time.Minute)
-	sqlDB.SetConnMaxIdleTime(3 * time.Minute)
+	configureConnectionPoolInternal(db, sqlDB)
 
 	return db, nil
+}
+
+func MigrateUp(ctx context.Context, databaseURL string) error {
+	db, driver, dbProvider, err := openMigrationDatabaseInternal(ctx, databaseURL)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if closeErr := db.Close(); closeErr != nil {
+			slog.Warn("Failed to close database after migration", "error", closeErr)
+		}
+	}()
+
+	return migrateDatabaseUpInternal(driver, dbProvider)
 }
 
 func MigrateToVersion(ctx context.Context, databaseURL string, targetVersion uint) error {
@@ -119,6 +118,37 @@ func GetMigrationStatus(ctx context.Context, databaseURL string) (*MigrationStat
 	}()
 
 	return getMigrationStatusInternal(driver, dbProvider)
+}
+
+func ValidateMigrationSchema(ctx context.Context, databaseURL string) error {
+	db, driver, dbProvider, err := openMigrationDatabaseInternal(ctx, databaseURL)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if closeErr := db.Close(); closeErr != nil {
+			slog.Warn("Failed to close database after schema validation", "error", closeErr)
+		}
+	}()
+
+	return validateMigrationSchemaInternal(driver, dbProvider)
+}
+
+func configureConnectionPoolInternal(db *DB, sqlDB interface {
+	SetMaxIdleConns(int)
+	SetMaxOpenConns(int)
+	SetConnMaxLifetime(time.Duration)
+	SetConnMaxIdleTime(time.Duration)
+}) {
+	if db.Name() == "postgres" {
+		sqlDB.SetMaxIdleConns(15)
+		sqlDB.SetMaxOpenConns(50)
+	} else {
+		sqlDB.SetMaxIdleConns(5)
+		sqlDB.SetMaxOpenConns(20)
+	}
+	sqlDB.SetConnMaxLifetime(5 * time.Minute)
+	sqlDB.SetConnMaxIdleTime(3 * time.Minute)
 }
 
 func connectDatabase(ctx context.Context, databaseURL string) (*DB, error) {
@@ -232,16 +262,16 @@ func detectDatabaseProviderInternal(databaseURL string) (string, error) {
 	}
 }
 
-func migrateDatabase(driver database.Driver, dbProvider string, options MigrationOptions) error {
+func migrateDatabaseUpInternal(driver database.Driver, dbProvider string) error {
 	requiredVersion, err := getHighestEmbeddedMigrationVersionInternal(dbProvider)
 	if err != nil {
 		return fmt.Errorf("failed to determine target migration version for %s: %w", dbProvider, err)
 	}
 
-	return migrateDatabaseUpToVersionInternal(driver, dbProvider, options, requiredVersion)
+	return migrateDatabaseUpToVersionInternal(driver, dbProvider, requiredVersion)
 }
 
-func migrateDatabaseUpToVersionInternal(driver database.Driver, dbProvider string, options MigrationOptions, requiredVersion uint) error {
+func migrateDatabaseUpToVersionInternal(driver database.Driver, dbProvider string, requiredVersion uint) error {
 	embeddedMigrate, embeddedSource, err := newEmbeddedMigrateInstanceInternal(driver, dbProvider)
 	if err != nil {
 		return fmt.Errorf("failed to create embedded migration instance: %w", err)
@@ -255,44 +285,12 @@ func migrateDatabaseUpToVersionInternal(driver database.Driver, dbProvider strin
 
 	logMigrationStateInternal(dbProvider, currentVersion, requiredVersion, dirty, hasVersion)
 
-	if hasVersion && dirty && currentVersion < requiredVersion {
-		if !options.AllowDowngrade {
-			return fmt.Errorf("database schema version %d is dirty (interrupted forward migration); resolve it manually or set ALLOW_DOWNGRADE=true to clear the dirty flag and re-apply the migration", currentVersion)
-		}
-
-		forceVersion, forceErr := safeUintToIntInternal(currentVersion)
-		if forceErr != nil {
-			return fmt.Errorf("failed to convert current migration version %d while clearing dirty state: %w", currentVersion, forceErr)
-		}
-
-		if err := embeddedMigrate.Force(forceVersion); err != nil {
-			return fmt.Errorf("failed to clear dirty migration state for version %d: %w", currentVersion, err)
-		}
-
-		slog.Warn("Cleared dirty migration state before re-applying forward migration", "provider", dbProvider, "version", currentVersion)
-	}
-
-	if hasVersion && dirty && currentVersion == requiredVersion {
-		if !options.AllowDowngrade {
-			return fmt.Errorf("database schema version %d is dirty; resolve it manually or set ALLOW_DOWNGRADE=true to clear the dirty flag after verifying the database state", currentVersion)
-		}
-
-		forceVersion, forceErr := safeUintToIntInternal(currentVersion)
-		if forceErr != nil {
-			return fmt.Errorf("failed to convert current migration version %d while clearing dirty state: %w", currentVersion, forceErr)
-		}
-
-		if err := embeddedMigrate.Force(forceVersion); err != nil {
-			return fmt.Errorf("failed to clear dirty migration state for version %d: %w", currentVersion, err)
-		}
-
-		slog.Warn("Cleared dirty migration state at current version because ALLOW_DOWNGRADE=true", "provider", dbProvider, "version", currentVersion)
-		logUpToDateStateInternal(embeddedMigrate, dbProvider)
-		return nil
+	if dirty {
+		return fmt.Errorf("database schema version %d is dirty; resolve the failed migration before retrying", currentVersion)
 	}
 
 	if hasVersion && currentVersion > requiredVersion {
-		return fmt.Errorf("database schema version %d is newer than this Arcane binary supports (target %d for %s); run arcane-migrator from a newer Arcane image to downgrade before starting this version", currentVersion, requiredVersion, dbProvider)
+		return fmt.Errorf("database schema version %d is newer than this Arcane migrator supports (target %d for %s); run a newer migrator or explicitly migrate down first", currentVersion, requiredVersion, dbProvider)
 	}
 
 	upErr := embeddedMigrate.Migrate(requiredVersion)
@@ -306,6 +304,26 @@ func migrateDatabaseUpToVersionInternal(driver database.Driver, dbProvider strin
 	}
 
 	slog.Info("Database migrations completed successfully", "provider", dbProvider, "targetVersion", requiredVersion)
+	return nil
+}
+
+func validateMigrationSchemaInternal(driver database.Driver, dbProvider string) error {
+	status, err := getMigrationStatusInternal(driver, dbProvider)
+	if err != nil {
+		return err
+	}
+	if status.Dirty {
+		return fmt.Errorf("database schema version %d is dirty; run arcane-migrator after resolving the failed migration", status.CurrentVersion)
+	}
+	if !status.HasVersion {
+		return fmt.Errorf("database has not been migrated; run arcane-migrator up before starting Arcane")
+	}
+	if status.CurrentVersion < status.LatestVersion {
+		return fmt.Errorf("database schema version %d is behind required version %d; run arcane-migrator up before starting Arcane", status.CurrentVersion, status.LatestVersion)
+	}
+	if status.CurrentVersion > status.LatestVersion {
+		return fmt.Errorf("database schema version %d is newer than this Arcane version supports (required %d); run a compatible Arcane image or migrate down explicitly", status.CurrentVersion, status.LatestVersion)
+	}
 	return nil
 }
 

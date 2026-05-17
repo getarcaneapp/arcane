@@ -346,6 +346,7 @@ dockers_v2:
   - id: arcane-agent-next
     ids:
       - arcane-agent
+      - arcane-migrator
     dockerfile: docker/next-builds/Dockerfile-agent-static
     images:
       - "ghcr.io/getarcaneapp/arcane-headless"
@@ -401,6 +402,7 @@ dockers_v2:
   - id: arcane-agent-next-distroless
     ids:
       - arcane-agent
+      - arcane-migrator
     dockerfile: docker/next-builds/Dockerfile-agent-distroless
     images:
       - "ghcr.io/getarcaneapp/arcane-headless"

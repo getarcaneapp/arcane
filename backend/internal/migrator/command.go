@@ -32,7 +32,8 @@ func NewCommand(out io.Writer) *cobra.Command {
 	rootCmd.SetOut(out)
 
 	rootCmd.AddCommand(newStatusCommand(out))
-	rootCmd.AddCommand(newDowngradeCommand(out))
+	rootCmd.AddCommand(newUpCommand(out))
+	rootCmd.AddCommand(newDownCommand(out))
 	rootCmd.AddCommand(newGenerateManifestCommand(out))
 	return rootCmd
 }
@@ -58,16 +59,33 @@ func newStatusCommand(out io.Writer) *cobra.Command {
 	}
 }
 
-func newDowngradeCommand(out io.Writer) *cobra.Command {
-	var targetAppVersion string
-
-	cmd := &cobra.Command{
-		Use:   "downgrade --target <version>",
-		Short: "Downgrade the Arcane database schema for a target Arcane version",
+func newUpCommand(out io.Writer) *cobra.Command {
+	return &cobra.Command{
+		Use:   "up",
+		Short: "Apply pending Arcane database migrations",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			targetAppVersion = strings.TrimSpace(targetAppVersion)
+			cfg, err := loadConfig(cmd.Context())
+			if err != nil {
+				return err
+			}
+			if err := database.MigrateUp(cmd.Context(), cfg.DatabaseURL); err != nil {
+				return err
+			}
+			fmt.Fprintln(out, "Database migrations applied successfully")
+			return nil
+		},
+	}
+}
+
+func newDownCommand(out io.Writer) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "down <target-version>",
+		Short: "Downgrade the Arcane database schema for a target Arcane version",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			targetAppVersion := strings.TrimSpace(args[0])
 			if targetAppVersion == "" {
-				return fmt.Errorf("--target is required")
+				return fmt.Errorf("target version is required")
 			}
 
 			targetMigrationVersion, err := database.ResolveAppMigrationVersion(targetAppVersion)
@@ -115,7 +133,6 @@ func newDowngradeCommand(out io.Writer) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&targetAppVersion, "target", "", "Target Arcane app version, for example v1.18.0")
 	return cmd
 }
 

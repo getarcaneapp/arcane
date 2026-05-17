@@ -1,7 +1,27 @@
 services:
-  arcane-edge-agent:
+  arcane-migrator:
     image: ghcr.io/getarcaneapp/arcane-headless:latest
+    restart: "no"
+    entrypoint: /app/arcane-migrator
+    # To downgrade:
+    # 1. Stop the edge agent and back up the agent-data volume.
+    # 2. Set ARCANE_VERSION to the target version, for example v1.18.0.
+    # 3. Comment out the `up` command and uncomment the `down` command.
+    # 4. Run: docker compose run --rm arcane-migrator
+    command:
+      - up
+    # command:
+    #   - down
+    #   - ${ARCANE_VERSION:-v1.18.0}
+    volumes:
+      - agent-data:/app/data
+
+  arcane-edge-agent:
+    image: ghcr.io/getarcaneapp/arcane-headless:${ARCANE_VERSION:-latest}
     container_name: arcane-edge-agent
+    depends_on:
+      arcane-migrator:
+        condition: service_completed_successfully
     # No ports exposed - agent connects outbound to manager tunnel transport
     environment:
       - EDGE_AGENT=true

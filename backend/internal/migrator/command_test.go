@@ -8,17 +8,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestDowngradeRequiresTarget(t *testing.T) {
+func TestDownRequiresTarget(t *testing.T) {
 	var out bytes.Buffer
 	cmd := NewCommand(&out)
-	cmd.SetArgs([]string{"downgrade"})
+	cmd.SetArgs([]string{"down"})
 
 	err := cmd.Execute()
 	require.Error(t, err)
-	assert.ErrorContains(t, err, "--target is required")
+	assert.ErrorContains(t, err, "accepts 1 arg")
 }
 
-func TestCommandIncludesStatusAndDowngrade(t *testing.T) {
+func TestCommandIncludesMigrationCommands(t *testing.T) {
 	cmd := NewCommand(nil)
 
 	commandNames := make(map[string]struct{})
@@ -27,6 +27,7 @@ func TestCommandIncludesStatusAndDowngrade(t *testing.T) {
 	}
 
 	assert.Contains(t, commandNames, "status")
-	assert.Contains(t, commandNames, "downgrade")
+	assert.Contains(t, commandNames, "up")
+	assert.Contains(t, commandNames, "down")
 	assert.Contains(t, commandNames, "generate-manifest")
 }

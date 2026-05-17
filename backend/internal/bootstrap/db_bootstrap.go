@@ -9,8 +9,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 )
 
-func initializeDBAndMigrate(ctx context.Context, cfg *config.Config) (*database.DB, error) {
-	db, err := database.Initialize(ctx, cfg.DatabaseURL, database.MigrationOptions{})
+func initializeDB(ctx context.Context, cfg *config.Config) (*database.DB, error) {
+	db, err := database.Initialize(ctx, cfg.DatabaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize database: %w", err)
 	}
