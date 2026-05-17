@@ -419,6 +419,18 @@ func upgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 		return fmt.Errorf("stop old container: %w", err)
 	}
 
+	if shouldRunMigratorForContainerInternal(oldContainer) {
+		fmt.Println("PROGRESS:73:Running database migrator")
+		slog.Info("Running database migrator before starting new container", "image", newImage)
+		if err := runMigratorContainerInternal(ctx, dockerClient, oldContainer, newImage, hostConfig, networkConfig, apiVersion); err != nil {
+			_, _ = dockerClient.ContainerStart(ctx, oldContainer.ID, client.ContainerStartOptions{})
+			_, _ = dockerClient.ContainerRename(ctx, oldContainer.ID, client.ContainerRenameOptions{NewName: originalName})
+			return fmt.Errorf("run database migrator: %w", err)
+		}
+	} else {
+		slog.Info("Skipping database migrator for non-server Arcane target", "container", originalName)
+	}
+
 	fmt.Println("PROGRESS:75:Creating new container")
 	slog.Info("Creating new container", "name", originalName)
 	resp, err := libarcane.ContainerCreateWithCompatibilityForAPIVersion(ctx, dockerClient, client.ContainerCreateOptions{
@@ -457,6 +469,86 @@ func upgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 
 	fmt.Println("PROGRESS:95:Upgrade complete")
 
+	return nil
+}
+
+func shouldRunMigratorForContainerInternal(cont container.InspectResponse) bool {
+	if cont.Config == nil {
+		return false
+	}
+
+	return !isAgentContainer(cont)
+}
+
+func runMigratorContainerInternal(
+	ctx context.Context,
+	dockerClient *client.Client,
+	oldContainer container.InspectResponse,
+	image string,
+	baseHostConfig *container.HostConfig,
+	networkConfig *network.NetworkingConfig,
+	apiVersion string,
+) error {
+	if oldContainer.Config == nil {
+		return fmt.Errorf("container config is unavailable")
+	}
+
+	migratorConfig := *oldContainer.Config
+	migratorConfig.Image = image
+	migratorConfig.Entrypoint = []string{"/app/arcane-migrator"}
+	migratorConfig.Cmd = []string{"up"}
+	migratorConfig.ExposedPorts = nil
+	migratorConfig.Healthcheck = nil
+
+	migratorHostConfig := &container.HostConfig{}
+	if baseHostConfig != nil {
+		copiedHostConfig := *baseHostConfig
+		migratorHostConfig = &copiedHostConfig
+	}
+	migratorHostConfig.AutoRemove = false
+	migratorHostConfig.PortBindings = nil
+	migratorHostConfig.PublishAllPorts = false
+	migratorHostConfig.RestartPolicy = container.RestartPolicy{Name: "no"}
+
+	migratorName := fmt.Sprintf("%s-migrator-%d", strings.TrimPrefix(oldContainer.Name, "/"), time.Now().UnixNano())
+	resp, err := libarcane.ContainerCreateWithCompatibilityForAPIVersion(ctx, dockerClient, client.ContainerCreateOptions{
+		Config:           &migratorConfig,
+		HostConfig:       migratorHostConfig,
+		NetworkingConfig: networkConfig,
+		Name:             migratorName,
+	}, apiVersion)
+	if err != nil {
+		return fmt.Errorf("create migrator container: %w", err)
+	}
+
+	removeMigrator := true
+	defer func() {
+		if removeMigrator {
+			if _, err := dockerClient.ContainerRemove(ctx, resp.ID, client.ContainerRemoveOptions{Force: true}); err != nil {
+				slog.Warn("Failed to remove migrator container", "id", resp.ID[:12], "error", err)
+			}
+		}
+	}()
+
+	if _, err := dockerClient.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{}); err != nil {
+		return fmt.Errorf("start migrator container: %w", err)
+	}
+
+	waitResult := dockerClient.ContainerWait(ctx, resp.ID, client.ContainerWaitOptions{Condition: container.WaitConditionNotRunning})
+	select {
+	case err := <-waitResult.Error:
+		if err != nil {
+			return fmt.Errorf("wait for migrator container: %w", err)
+		}
+	case status := <-waitResult.Result:
+		if status.StatusCode != 0 {
+			return fmt.Errorf("migrator container exited with status %d", status.StatusCode)
+		}
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+
+	slog.Info("Database migrator completed successfully", "container", migratorName)
 	return nil
 }
 
