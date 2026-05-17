@@ -1039,16 +1039,16 @@ func (s *ProjectService) GetProjectFileContent(ctx context.Context, projectID, r
 		envLoader := projects.NewEnvLoader(projectsDirectory, filepath.Dir(composeFile), utils.BoolOrDefault(cfg.AutoInjectEnv.Value, false))
 		envMap, _, _ := envLoader.LoadEnvironment(ctx)
 
-		includes, parseErr := projects.ParseIncludes(composeFile, envMap, true)
+		includes, parseErr := projects.ParseIncludes(composeFile, envMap, false)
 		if parseErr == nil {
 			for _, inc := range includes {
-				if inc.RelativePath == relativePath {
-					return project.IncludeFile{
-						Path:         inc.Path,
-						RelativePath: inc.RelativePath,
-						Content:      inc.Content,
-					}, nil
+				if inc.RelativePath != relativePath {
+					continue
 				}
+				if !projects.IsSafeSubdirectory(proj.Path, inc.Path) {
+					return project.IncludeFile{}, &common.ProjectFileForbiddenError{Err: fmt.Errorf("file path is outside project directory")}
+				}
+				return readProjectIncludeFileContentInternal(proj.Path, inc)
 			}
 		}
 	}
@@ -1094,6 +1094,60 @@ func (s *ProjectService) GetProjectFileContent(ctx context.Context, projectID, r
 	return project.IncludeFile{
 		Path:         absFilePath,
 		RelativePath: relativePath,
+		Content:      string(content),
+	}, nil
+}
+
+func readProjectIncludeFileContentInternal(projectPath string, inc projects.IncludeFile) (project.IncludeFile, error) {
+	validatedPath, err := projects.ValidateIncludePathForWrite(projectPath, inc.Path)
+	if err != nil {
+		return project.IncludeFile{}, &common.ProjectFileForbiddenError{Err: fmt.Errorf("file path is outside project directory")}
+	}
+
+	resolvedProjectPath, err := filepath.EvalSymlinks(projectPath)
+	if err != nil {
+		return project.IncludeFile{}, fmt.Errorf("failed to resolve project path: %w", err)
+	}
+	resolvedPath, err := filepath.EvalSymlinks(validatedPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return project.IncludeFile{
+				Path:         validatedPath,
+				RelativePath: inc.RelativePath,
+				Content:      "# This file will be created when you save changes\nservices:\n",
+			}, nil
+		}
+		return project.IncludeFile{}, fmt.Errorf("failed to resolve include file: %w", err)
+	}
+	if !projects.IsSafeSubdirectory(resolvedProjectPath, resolvedPath) {
+		return project.IncludeFile{}, &common.ProjectFileForbiddenError{Err: fmt.Errorf("file path is outside project directory")}
+	}
+
+	info, err := os.Stat(resolvedPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return project.IncludeFile{}, &common.ProjectFileNotFoundError{}
+		}
+		return project.IncludeFile{}, fmt.Errorf("failed to stat include file: %w", err)
+	}
+	if info.IsDir() {
+		return project.IncludeFile{}, &common.ProjectFileBadRequestError{Err: fmt.Errorf("path refers to a directory")}
+	}
+
+	content, err := os.ReadFile(resolvedPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return project.IncludeFile{}, &common.ProjectFileNotFoundError{}
+		}
+		return project.IncludeFile{}, fmt.Errorf("failed to read include file: %w", err)
+	}
+	if projects.IsBinaryProjectFileContent(content) {
+		return project.IncludeFile{}, &common.ProjectFileBadRequestError{Err: fmt.Errorf("binary files are not supported")}
+	}
+
+	return project.IncludeFile{
+		Path:         resolvedPath,
+		RelativePath: inc.RelativePath,
 		Content:      string(content),
 	}, nil
 }
@@ -1920,6 +1974,12 @@ func (s *ProjectService) CreateProject(ctx context.Context, name, composeContent
 
 	if err := s.db.WithContext(ctx).Create(proj).Error; err != nil {
 		return nil, fmt.Errorf("failed to create project: %w", err)
+	}
+
+	if err := s.validateComposeContentForUpdate(ctx, projectsDirectory, projectPath, name, composeContent, envContent); err != nil {
+		_ = s.db.WithContext(ctx).Delete(proj).Error
+		_ = os.RemoveAll(projectPath)
+		return nil, fmt.Errorf("invalid compose file: %w", err)
 	}
 
 	if err := projects.SaveOrUpdateProjectFiles(projectsDirectory, projectPath, composeContent, envContent); err != nil {
@@ -2926,6 +2986,10 @@ func (s *ProjectService) validateComposeContentForUpdate(ctx context.Context, pr
 		return envErr
 	}
 
+	if err := validateComposeIncludePathsForProjectInternal(projectPath, composeContent, fullEnvMap); err != nil {
+		return err
+	}
+
 	validationProjectName := normalizeComposeProjectName(projectName)
 	cfg := composetypes.ConfigDetails{
 		Version:    api.ComposeVersion,
@@ -2950,6 +3014,19 @@ func (s *ProjectService) validateComposeContentForUpdate(ctx context.Context, pr
 	})
 
 	return err
+}
+
+func validateComposeIncludePathsForProjectInternal(projectPath, composeContent string, envMap projects.EnvMap) error {
+	includes, err := projects.ParseIncludesFromContent(filepath.Join(projectPath, "compose.yaml"), []byte(composeContent), envMap, false)
+	if err != nil {
+		return err
+	}
+	for _, inc := range includes {
+		if _, err := projects.ValidateIncludePathForWrite(projectPath, inc.Path); err != nil {
+			return fmt.Errorf("include path %q is outside project directory: %w", inc.RelativePath, err)
+		}
+	}
+	return nil
 }
 
 type missingIncludeStubResourceLoaderInternal struct {
