@@ -1,4 +1,4 @@
-package registry
+package registryauth
 
 const (
 	DefaultRegistry       = "registry-1.docker.io"

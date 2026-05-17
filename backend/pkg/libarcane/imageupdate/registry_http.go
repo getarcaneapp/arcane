@@ -1,4 +1,4 @@
-package distribution
+package imageupdate
 
 import (
 	"context"
@@ -12,12 +12,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/pkg/utils/imagedigest"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/registryauth"
 	ref "go.podman.io/image/v5/docker/reference"
 )
 
 const defaultRegistryHost = "registry-1.docker.io"
-const dockerHubRateLimitRepository = "ratelimitpreview/test"
 
 // trustedAuthDelegations maps registry hosts to their trusted external auth realm hosts.
 // Some registries serve images under their own domain but delegate token auth to a
@@ -50,13 +49,14 @@ type Reference struct {
 }
 
 func NormalizeReference(imageRef string) (*Reference, error) {
-	named, err := ref.ParseNormalizedNamed(strings.TrimSpace(imageRef))
-	if err != nil {
-		return nil, fmt.Errorf("invalid image reference %q: %w", imageRef, err)
+	trimmed := strings.TrimSpace(imageRef)
+	if before, _, ok := strings.Cut(trimmed, "@"); ok {
+		trimmed = before
 	}
 
-	if _, ok := named.(ref.Digested); ok {
-		return nil, fmt.Errorf("digest-pinned references are not supported for distribution inspect: %q", imageRef)
+	named, err := ref.ParseNormalizedNamed(trimmed)
+	if err != nil {
+		return nil, fmt.Errorf("invalid image reference %q: %w", imageRef, err)
 	}
 
 	registryHost := normalizeRegistryForComparisonInternal(ref.Domain(named))
@@ -128,24 +128,9 @@ func IsFallbackEligibleDaemonError(err error) bool {
 	return false
 }
 
-func FetchDigest(ctx context.Context, registryHost, repository, tag string, credential *Credentials) (string, error) {
-	return FetchDigestWithHTTPClient(ctx, registryHost, repository, tag, credential, nil)
-}
-
-// FetchDockerHubRateLimit fetches Docker Hub pull rate limit information.
-func FetchDockerHubRateLimit(ctx context.Context, credential *Credentials) (*RateLimitInfo, error) {
-	return FetchDockerHubRateLimitWithHTTPClient(ctx, credential, nil)
-}
-
-// FetchDockerHubRateLimitWithHTTPClient fetches Docker Hub pull rate limit
-// information using the provided HTTP client.
-func FetchDockerHubRateLimitWithHTTPClient(ctx context.Context, credential *Credentials, httpClient *http.Client) (*RateLimitInfo, error) {
-	return FetchRegistryRateLimitWithHTTPClient(ctx, "docker.io", dockerHubRateLimitRepository, "latest", credential, httpClient)
-}
-
-// FetchRegistryRateLimitWithHTTPClient fetches pull rate limit information from
-// an OCI registry manifest response.
-func FetchRegistryRateLimitWithHTTPClient(ctx context.Context, registryHost, repository, tag string, credential *Credentials, httpClient *http.Client) (*RateLimitInfo, error) {
+// FetchRegistryRateLimit fetches pull rate limit information from an OCI
+// registry manifest response.
+func FetchRegistryRateLimit(ctx context.Context, registryHost, repository, tag string, credential *Credentials, httpClient *http.Client) (*RateLimitInfo, error) {
 	if httpClient == nil {
 		httpClient = NewRegistryHTTPClient()
 	}
@@ -179,7 +164,7 @@ func FetchRegistryRateLimitWithHTTPClient(ctx context.Context, registryHost, rep
 	return extractRateLimitFromHeadersInternal(resp.Header)
 }
 
-func FetchDigestWithHTTPClient(ctx context.Context, registryHost, repository, tag string, credential *Credentials, httpClient *http.Client) (string, error) {
+func FetchDigest(ctx context.Context, registryHost, repository, tag string, credential *Credentials, httpClient *http.Client) (string, error) {
 	if httpClient == nil {
 		httpClient = NewRegistryHTTPClient()
 	}
@@ -426,12 +411,12 @@ func basicAuthHeaderInternal(username, token string) string {
 }
 
 func extractDigestFromHeadersInternal(headers http.Header) string {
-	if normalized, err := imagedigest.Normalize(headers.Get("Docker-Content-Digest")); err == nil {
+	if normalized, err := NormalizeDigest(headers.Get("Docker-Content-Digest")); err == nil {
 		return normalized
 	}
 
 	etag := strings.Trim(headers.Get("ETag"), `"`)
-	if normalized, err := imagedigest.Normalize(etag); err == nil {
+	if normalized, err := NormalizeDigest(etag); err == nil {
 		return normalized
 	}
 
@@ -634,19 +619,5 @@ func normalizeAuthRealmHostInternal(raw string) string {
 }
 
 func normalizeRegistryForComparisonInternal(raw string) string {
-	value := strings.TrimSpace(strings.ToLower(raw))
-	value = strings.TrimPrefix(value, "https://")
-	value = strings.TrimPrefix(value, "http://")
-	value = strings.TrimSuffix(value, "/")
-
-	if slash := strings.Index(value, "/"); slash != -1 {
-		value = value[:slash]
-	}
-
-	switch value {
-	case "docker.io", "registry-1.docker.io", "index.docker.io":
-		return "docker.io"
-	default:
-		return value
-	}
+	return registryauth.NormalizeRegistryForComparison(raw)
 }

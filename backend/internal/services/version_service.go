@@ -14,7 +14,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	docker "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
-	libupdater "github.com/getarcaneapp/arcane/backend/pkg/libarcane/updater"
+	libupdater "github.com/getarcaneapp/arcane/backend/pkg/libarcane/imageupdate"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils/cache"
 	"github.com/getarcaneapp/arcane/types/version"
 	containertypes "github.com/moby/moby/api/types/container"

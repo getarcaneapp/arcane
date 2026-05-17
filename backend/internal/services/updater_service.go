@@ -22,9 +22,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
-	libupdater "github.com/getarcaneapp/arcane/backend/pkg/libarcane/updater"
+	libupdater "github.com/getarcaneapp/arcane/backend/pkg/libarcane/imageupdate"
 	projectspkg "github.com/getarcaneapp/arcane/backend/pkg/projects"
-	arcRegistry "github.com/getarcaneapp/arcane/backend/pkg/utils/registry"
 	"github.com/getarcaneapp/arcane/types/updater"
 )
 
@@ -129,7 +128,11 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*update
 			continue
 		}
 		oldRef := fmt.Sprintf("%s:%s", r.Repository, r.Tag)
-		oldNorm := s.normalizeRef(oldRef)
+		oldNorm := normalizeImageUpdateRefInternal(oldRef)
+		if oldNorm == "" {
+			slog.DebugContext(ctx, "ApplyPending: skipping invalid pending image reference", "imageRef", oldRef)
+			continue
+		}
 
 		if _, ok := usedImages[oldNorm]; !ok {
 			continue
@@ -199,7 +202,7 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*update
 
 		// Digest pre-check: if registry supports it and digests match, avoid pulling entirely.
 		// This also prevents unnecessary restarts when the update record is stale.
-		normNew := s.normalizeRef(p.newRef)
+		normNew := normalizeImageUpdateRefInternal(p.newRef)
 		check := digestChecker.CheckImageNeedsUpdate(ctx, normNew)
 		skipPull := false
 
@@ -492,7 +495,7 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 		return out, nil
 	}
 
-	normalizedRef := s.normalizeRef(imageRef)
+	normalizedRef := normalizeImageUpdateRefInternal(imageRef)
 	repo, tag := s.parseRepoAndTag(normalizedRef)
 
 	if repo == "" || tag == "" {
@@ -923,34 +926,29 @@ func buildUpdaterRecreateNetworkingConfigInternal(networkMode container.NetworkM
 	return &network.NetworkingConfig{EndpointsConfig: sanitizedEndpointsConfig}
 }
 
-// normalizeRef returns a canonical "registry/repository:tag" without digest.
-// Examples:
-// - "redis:latest" -> "docker.io/library/redis:latest"
-// - "nginx@sha256:..." -> "docker.io/library/nginx:latest" (if no tag was present, defaults to latest)
-func (s *UpdaterService) normalizeRef(ref string) string {
-	ref = s.stripDigest(ref)
+func normalizeImageUpdateRefInternal(imageRef string) string {
+	parts, err := libupdater.NormalizeReference(imageRef)
+	if err != nil {
+		return ""
+	}
+	return parts.NormalizedRef
+}
 
-	// Split tag
-	tag := "latest"
-	if i := strings.LastIndex(ref, ":"); i != -1 && strings.LastIndex(ref, "/") < i {
-		tag = ref[i+1:]
-		ref = ref[:i]
+func addNormalizedImageUpdateRefInternal(ctx context.Context, out map[string]struct{}, imageRef, logMessage string, attrs ...any) bool {
+	normalizedRef := normalizeImageUpdateRefInternal(imageRef)
+	if normalizedRef != "" {
+		out[normalizedRef] = struct{}{}
+		return true
 	}
 
-	parts := strings.Split(ref, "/")
-	domain := ""
-	switch {
-	case len(parts) > 0 && (strings.Contains(parts[0], ".") || strings.Contains(parts[0], ":") || parts[0] == "localhost"):
-		domain = arcRegistry.NormalizeRegistryForComparison(parts[0])
-		parts = parts[1:]
-	default:
-		domain = "docker.io"
+	args := slices.Clone(attrs)
+	args = append(args, "imageRef", imageRef)
+	if ctx != nil {
+		slog.DebugContext(ctx, logMessage, args...)
+	} else {
+		slog.Debug(logMessage, args...)
 	}
-	repo := strings.Join(parts, "/")
-	if domain == "docker.io" && !strings.Contains(repo, "/") {
-		repo = "library/" + repo
-	}
-	return strings.ToLower(domain + "/" + repo + ":" + tag)
+	return false
 }
 
 func (s *UpdaterService) stripDigest(ref string) string {
@@ -996,7 +994,7 @@ func (s *UpdaterService) collectUsedImagesFromContainersInternal(ctx context.Con
 
 		imageRef := strings.TrimSpace(c.Image)
 		if imageRef != "" && !isImageIDLikeReferenceInternal(imageRef) {
-			out[s.normalizeRef(imageRef)] = struct{}{}
+			addNormalizedImageUpdateRefInternal(ctx, out, imageRef, "collectUsedImagesFromContainersInternal: skipping invalid image reference", "containerId", c.ID)
 			continue
 		}
 
@@ -1099,7 +1097,7 @@ func (s *UpdaterService) collectUsedImagesFromProjects(ctx context.Context, out 
 		return err
 	}
 
-	s.collectUsedImagesFromComposeContainersInternal(composeContainers, activeProjectNames, out)
+	s.collectUsedImagesFromComposeContainersInternal(ctx, composeContainers, activeProjectNames, out)
 	return nil
 }
 
@@ -1128,7 +1126,7 @@ func activeComposeProjectNameSetInternal(projects []models.Project) map[string]s
 	return active
 }
 
-func (s *UpdaterService) collectUsedImagesFromComposeContainersInternal(composeContainers []container.Summary, activeProjectNames map[string]struct{}, out map[string]struct{}) {
+func (s *UpdaterService) collectUsedImagesFromComposeContainersInternal(ctx context.Context, composeContainers []container.Summary, activeProjectNames map[string]struct{}, out map[string]struct{}) {
 	for _, c := range composeContainers {
 		projectName := strings.TrimSpace(c.Labels["com.docker.compose.project"])
 		if projectName == "" {
@@ -1145,7 +1143,7 @@ func (s *UpdaterService) collectUsedImagesFromComposeContainersInternal(composeC
 		if imageRef == "" || isImageIDLikeReferenceInternal(imageRef) {
 			continue
 		}
-		out[s.normalizeRef(imageRef)] = struct{}{}
+		addNormalizedImageUpdateRefInternal(ctx, out, imageRef, "collectUsedImagesFromComposeContainersInternal: skipping invalid image reference", "containerId", c.ID)
 	}
 }
 
@@ -1160,7 +1158,7 @@ func (s *UpdaterService) getNormalizedTagsForContainer(ctx context.Context, dcli
 				if tag == "<none>:<none>" || tag == "" {
 					continue
 				}
-				seen[s.normalizeRef(tag)] = struct{}{}
+				addNormalizedImageUpdateRefInternal(ctx, seen, tag, "getNormalizedTagsForContainer: skipping invalid repo tag", "imageId", inspect.Image)
 			}
 		} else {
 			slog.DebugContext(ctx, "getNormalizedTagsForContainer: image inspect failed", "imageId", inspect.Image, "err", err)
@@ -1168,7 +1166,7 @@ func (s *UpdaterService) getNormalizedTagsForContainer(ctx context.Context, dcli
 	}
 
 	if inspect.Config != nil && inspect.Config.Image != "" {
-		seen[s.normalizeRef(inspect.Config.Image)] = struct{}{}
+		addNormalizedImageUpdateRefInternal(ctx, seen, inspect.Config.Image, "getNormalizedTagsForContainer: skipping invalid config image reference", "imageId", inspect.Image)
 	}
 
 	out := make([]string, 0, len(seen))
@@ -1280,7 +1278,11 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 
 	updatedNorm := map[string]string{}
 	for oldRef, nr := range oldRefToNewRef {
-		updatedNorm[s.normalizeRef(oldRef)] = nr
+		if normalizedRef := normalizeImageUpdateRefInternal(oldRef); normalizedRef != "" {
+			updatedNorm[normalizedRef] = nr
+		} else {
+			slog.DebugContext(ctx, "restartContainersUsingOldIDs: skipping invalid old image reference", "imageRef", oldRef)
+		}
 	}
 
 	plansByName := map[string]*restartPlan{}
@@ -1497,7 +1499,7 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 			ResourceType: "container",
 			Status:       "checked",
 			OldImages:    map[string]string{"main": p.match},
-			NewImages:    map[string]string{"main": s.normalizeRef(p.newRef)},
+			NewImages:    map[string]string{"main": normalizeImageUpdateRefInternal(p.newRef)},
 		}
 
 		if p.newRef == "" {
@@ -1549,7 +1551,7 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 						res.UpdateApplied = true
 						// Send notification
 						if s.notificationService != nil {
-							if notifErr := s.notificationService.SendContainerUpdateNotification(ctx, name, p.newRef, p.match, s.normalizeRef(p.newRef)); notifErr != nil {
+							if notifErr := s.notificationService.SendContainerUpdateNotification(ctx, name, p.newRef, p.match, normalizeImageUpdateRefInternal(p.newRef)); notifErr != nil {
 								slog.WarnContext(ctx, "Failed to send container update notification", "containerId", p.cnt.ID, "containerName", name, "imageRef", p.newRef, "error", notifErr.Error())
 							}
 						}
@@ -1578,7 +1580,7 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 
 				// Send notification after successful container update
 				if s.notificationService != nil {
-					if notifErr := s.notificationService.SendContainerUpdateNotification(ctx, name, p.newRef, p.match, s.normalizeRef(p.newRef)); notifErr != nil {
+					if notifErr := s.notificationService.SendContainerUpdateNotification(ctx, name, p.newRef, p.match, normalizeImageUpdateRefInternal(p.newRef)); notifErr != nil {
 						slog.WarnContext(ctx, "Failed to send container update notification", "containerId", p.cnt.ID, "containerName", name, "imageRef", p.newRef, "error", notifErr.Error())
 					}
 				}
@@ -1787,7 +1789,10 @@ func (s *UpdaterService) resolveContainerImageMatchInternal(c container.Summary,
 		return "", ""
 	}
 
-	norm := s.normalizeRef(imageRef)
+	norm := normalizeImageUpdateRefInternal(imageRef)
+	if norm == "" {
+		return "", ""
+	}
 	if nr, ok := updatedNorm[norm]; ok {
 		return nr, norm
 	}

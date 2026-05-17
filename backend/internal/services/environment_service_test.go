@@ -406,6 +406,57 @@ func TestEnvironmentService_UpdateEnvironmentConnectionState(t *testing.T) {
 	require.Equal(t, *lastSeen, *env.LastSeen)
 }
 
+func TestEnvironmentService_UpdateEnvironmentStatusInternal_PromotesPendingDirectEnv(t *testing.T) {
+	ctx := context.Background()
+	db := setupEnvironmentServiceTestDB(t)
+	svc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
+
+	createTestEnvironmentWithState(t, db, "direct-pending", "http://agent:3553", string(models.EnvironmentStatusPending), false, nil)
+
+	require.NoError(t, svc.updateEnvironmentStatusInternal(ctx, "direct-pending", string(models.EnvironmentStatusOnline)))
+
+	var env models.Environment
+	require.NoError(t, db.WithContext(ctx).Where("id = ?", "direct-pending").First(&env).Error)
+	require.Equal(t, string(models.EnvironmentStatusOnline), env.Status)
+	require.NotNil(t, env.LastSeen)
+}
+
+func TestEnvironmentService_UpdateEnvironmentStatusInternal_DoesNotDemotePendingDirectEnvOnFailedTick(t *testing.T) {
+	ctx := context.Background()
+	db := setupEnvironmentServiceTestDB(t)
+	svc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
+
+	createTestEnvironmentWithState(t, db, "direct-pending", "http://agent:3553", string(models.EnvironmentStatusPending), false, nil)
+
+	// A transient health-check failure before pairing completes must NOT flip a
+	// pending Direct env to offline/error — the env should stay pending so a later
+	// successful tick can still promote it to online.
+	require.NoError(t, svc.updateEnvironmentStatusInternal(ctx, "direct-pending", string(models.EnvironmentStatusOffline)))
+	require.NoError(t, svc.updateEnvironmentStatusInternal(ctx, "direct-pending", string(models.EnvironmentStatusError)))
+
+	var env models.Environment
+	require.NoError(t, db.WithContext(ctx).Where("id = ?", "direct-pending").First(&env).Error)
+	require.Equal(t, string(models.EnvironmentStatusPending), env.Status)
+	require.Nil(t, env.LastSeen)
+}
+
+func TestEnvironmentService_UpdateEnvironmentStatusInternal_LeavesPendingEdgeEnvAlone(t *testing.T) {
+	ctx := context.Background()
+	db := setupEnvironmentServiceTestDB(t)
+	svc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
+
+	createTestEnvironmentWithState(t, db, "edge-pending", "edge://agent", string(models.EnvironmentStatusPending), true, nil)
+
+	// Edge envs in pending must complete pairing via the agent's outbound tunnel;
+	// a manager-side reachability tick must NOT promote them.
+	require.NoError(t, svc.updateEnvironmentStatusInternal(ctx, "edge-pending", string(models.EnvironmentStatusOnline)))
+
+	var env models.Environment
+	require.NoError(t, db.WithContext(ctx).Where("id = ?", "edge-pending").First(&env).Error)
+	require.Equal(t, string(models.EnvironmentStatusPending), env.Status)
+	require.Nil(t, env.LastSeen)
+}
+
 func TestEnvironmentService_ResolveEdgeEnvironmentByToken_CachesAndInvalidatesOnUpdate(t *testing.T) {
 	ctx := context.Background()
 	db := setupEnvironmentServiceTestDB(t)

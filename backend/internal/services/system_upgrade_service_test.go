@@ -3,7 +3,7 @@ package services
 import (
 	"testing"
 
-	libupdater "github.com/getarcaneapp/arcane/backend/pkg/libarcane/updater"
+	libupdater "github.com/getarcaneapp/arcane/backend/pkg/libarcane/imageupdate"
 	"github.com/stretchr/testify/require"
 )
 

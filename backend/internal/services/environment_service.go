@@ -824,15 +824,22 @@ func (s *EnvironmentService) testLocalDockerConnection(ctx context.Context, id s
 }
 
 func (s *EnvironmentService) updateEnvironmentStatusInternal(ctx context.Context, id, status string) error {
-	// Don't update status for pending environments - they're waiting for agent pairing
 	var currentEnv models.Environment
-	if err := s.db.WithContext(ctx).Select("status").Where("id = ?", id).First(&currentEnv).Error; err != nil {
+	if err := s.db.WithContext(ctx).Select("status", "is_edge").Where("id = ?", id).First(&currentEnv).Error; err != nil {
 		return fmt.Errorf("failed to check environment status: %w", err)
 	}
 
 	if currentEnv.Status == string(models.EnvironmentStatusPending) {
-		slog.DebugContext(ctx, "skipping status update for pending environment", "environment_id", id)
-		return nil
+		// Edge envs must complete pairing via the agent's outbound tunnel — manager
+		// can't dial them directly, so a manager-side reachability check means nothing.
+		// Direct envs are reachable from the manager, so a successful health check IS
+		// the pairing signal. Don't promote on offline/error ticks though, or a transient
+		// blip during initial setup would flip the env out of pending.
+		if currentEnv.IsEdge || status != string(models.EnvironmentStatusOnline) {
+			slog.DebugContext(ctx, "skipping status update for pending environment", "environment_id", id)
+			return nil
+		}
+		slog.InfoContext(ctx, "promoted pending direct environment to online via reachability check", "environment_id", id)
 	}
 
 	now := time.Now()

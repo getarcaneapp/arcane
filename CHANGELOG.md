@@ -1,3 +1,41 @@
+## v1.19.2
+
+### Bug fixes
+
+* remove intel-gpu-tools from docker images since its has no effect currently([fea78a5](https://github.com/getarcaneapp/arcane/commit/fea78a5bba23e81a836d17c51b2e155c903a23d2) by @kmendell)
+* allow hiding default networks on typology view ([#2594](https://github.com/getarcaneapp/arcane/pull/2594) by @kmendell)
+* refresh project detail runtime status ([#2602](https://github.com/getarcaneapp/arcane/pull/2602) by @kmendell)
+* allow LOGIN email authentication type ([#2603](https://github.com/getarcaneapp/arcane/pull/2603) by @kmendell)
+* keep session across backend version bumps ([#2607](https://github.com/getarcaneapp/arcane/pull/2607) by @kmendell)
+* missing store prefix on test connection form([5f1645f](https://github.com/getarcaneapp/arcane/commit/5f1645f9c35dac0d457b31c15b72b7bf343e02a5) by @kmendell)
+* swarm engine not respecting cpu limits ([#2617](https://github.com/getarcaneapp/arcane/pull/2617) by @kmendell)
+* only perform auto pairing on edge edgent not direct ([#2622](https://github.com/getarcaneapp/arcane/pull/2622) by @kmendell)
+* container cache leak from docker subscription ([#2624](https://github.com/getarcaneapp/arcane/pull/2624) by @kmendell)
+
+### Performance improvements
+
+* increase loading times of project list view ([#2596](https://github.com/getarcaneapp/arcane/pull/2596) by @kmendell)
+
+### Dependencies
+
+* bump to go 1.26.3([8e819fe](https://github.com/getarcaneapp/arcane/commit/8e819fef67f5c55fab057e1d8a1599c9d95f322c) by @kmendell)
+* bump all go deps([6817e70](https://github.com/getarcaneapp/arcane/commit/6817e7094481bbde83ea696717c6ed268c82557d) by @kmendell)
+* bump the npm_and_yarn group across 1 directory with 2 updates ([#2600](https://github.com/getarcaneapp/arcane/pull/2600) by @dependabot[bot])
+* bump svelte from 5.55.5 to 5.55.7 in the npm_and_yarn group across 1 directory ([#2601](https://github.com/getarcaneapp/arcane/pull/2601) by @dependabot[bot])
+* bump github.com/danielgtaylor/huma/v2 from 2.37.3 to 2.38.0 in /backend ([#2612](https://github.com/getarcaneapp/arcane/pull/2612) by @dependabot[bot])
+* bump github.com/docker/cli from 29.4.3+incompatible to 29.5.0+incompatible in /backend ([#2613](https://github.com/getarcaneapp/arcane/pull/2613) by @dependabot[bot])
+* bump google.golang.org/grpc from 1.81.0 to 1.81.1 in /backend ([#2610](https://github.com/getarcaneapp/arcane/pull/2610) by @dependabot[bot])
+* bump prettier-plugin-svelte from 3.5.1 to 3.5.2 ([#2618](https://github.com/getarcaneapp/arcane/pull/2618) by @dependabot[bot])
+
+### Other
+
+* create admin role middleware for each endpoint ([#2593](https://github.com/getarcaneapp/arcane/pull/2593) by @kmendell)
+* consolidate digest and image updater logic ([#2623](https://github.com/getarcaneapp/arcane/pull/2623) by @kmendell)
+
+
+
+**Full Changelog**: https://github.com/getarcaneapp/arcane/compare/v1.19.1...v1.19.2
+
 ## v1.19.1
 
 ### Bug fixes
