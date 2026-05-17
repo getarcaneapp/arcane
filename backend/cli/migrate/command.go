@@ -68,8 +68,7 @@ func newStatusCommand(out io.Writer) *cobra.Command {
 				return err
 			}
 
-			printStatus(out, status, knownVersions)
-			return nil
+			return printStatus(out, status, knownVersions)
 		},
 	}
 }
@@ -86,8 +85,8 @@ func newUpCommand(out io.Writer) *cobra.Command {
 			if err := database.MigrateUp(cmd.Context(), cfg.DatabaseURL); err != nil {
 				return err
 			}
-			fmt.Fprintln(out, "Database migrations applied successfully")
-			return nil
+			_, err = fmt.Fprintln(out, "Database migrations applied successfully")
+			return err
 		},
 	}
 }
@@ -129,8 +128,8 @@ func newDownCommand(out io.Writer) *cobra.Command {
 				return fmt.Errorf("database schema version %d is older than target Arcane version %s schema version %d", status.CurrentVersion, targetAppVersion, targetMigrationVersion)
 			}
 			if status.CurrentVersion == targetMigrationVersion {
-				fmt.Fprintf(out, "Database schema is already at version %d for Arcane %s\n", targetMigrationVersion, targetAppVersion)
-				return nil
+				_, err = fmt.Fprintf(out, "Database schema is already at version %d for Arcane %s\n", targetMigrationVersion, targetAppVersion)
+				return err
 			}
 
 			slog.Warn("Downgrading Arcane database schema",
@@ -143,8 +142,8 @@ func newDownCommand(out io.Writer) *cobra.Command {
 				return err
 			}
 
-			fmt.Fprintf(out, "Database schema downgraded from version %d to %d for Arcane %s\n", status.CurrentVersion, targetMigrationVersion, targetAppVersion)
-			return nil
+			_, err = fmt.Fprintf(out, "Database schema downgraded from version %d to %d for Arcane %s\n", status.CurrentVersion, targetMigrationVersion, targetAppVersion)
+			return err
 		},
 	}
 
@@ -218,17 +217,32 @@ func loadConfig(ctx context.Context) (*config.Config, error) {
 	return cfg, nil
 }
 
-func printStatus(out io.Writer, status *database.MigrationStatus, knownVersions []database.AppMigrationVersion) {
-	fmt.Fprintf(out, "Provider: %s\n", status.Provider)
+func printStatus(out io.Writer, status *database.MigrationStatus, knownVersions []database.AppMigrationVersion) error {
+	if _, err := fmt.Fprintf(out, "Provider: %s\n", status.Provider); err != nil {
+		return err
+	}
 	if status.HasVersion {
-		fmt.Fprintf(out, "Current schema version: %d\n", status.CurrentVersion)
+		if _, err := fmt.Fprintf(out, "Current schema version: %d\n", status.CurrentVersion); err != nil {
+			return err
+		}
 	} else {
-		fmt.Fprintln(out, "Current schema version: none")
+		if _, err := fmt.Fprintln(out, "Current schema version: none"); err != nil {
+			return err
+		}
 	}
-	fmt.Fprintf(out, "Latest embedded schema version: %d\n", status.LatestVersion)
-	fmt.Fprintf(out, "Dirty: %t\n", status.Dirty)
-	fmt.Fprintln(out, "Known app-version targets:")
+	if _, err := fmt.Fprintf(out, "Latest embedded schema version: %d\n", status.LatestVersion); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(out, "Dirty: %t\n", status.Dirty); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(out, "Known app-version targets:"); err != nil {
+		return err
+	}
 	for _, version := range knownVersions {
-		fmt.Fprintf(out, "  %s -> schema %d\n", version.AppVersion, version.MigrationVersion)
+		if _, err := fmt.Fprintf(out, "  %s -> schema %d\n", version.AppVersion, version.MigrationVersion); err != nil {
+			return err
+		}
 	}
+	return nil
 }
