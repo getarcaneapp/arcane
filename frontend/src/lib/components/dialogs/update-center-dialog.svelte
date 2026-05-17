@@ -40,6 +40,9 @@
 	const expectedVersion = $derived(versionInformation?.newestVersion);
 	const expectedDigest = $derived(versionInformation?.newestDigest);
 	const isSemver = $derived(!!versionInformation?.isSemverVersion);
+	const manualUpdateRequired = $derived(!!versionInformation?.manualUpdateRequired);
+	const manualUpdateMessage = $derived(versionInformation?.manualUpdateMessage?.trim() ?? '');
+	const canAutoInstall = $derived(canInstall && !manualUpdateRequired);
 
 	const debugReleaseEnabled = $derived(open && debug && !versionInformation?.releaseNotes);
 	const debugReleaseQuery = createQuery(() => ({
@@ -98,6 +101,18 @@
 		if (!raw) return '';
 		try {
 			const html = marked.parse(raw, { async: false }) as string;
+			return DOMPurify.sanitize(html, {
+				ADD_ATTR: ['target', 'rel']
+			});
+		} catch {
+			return '';
+		}
+	});
+
+	const manualUpdateMessageHtml = $derived.by(() => {
+		if (!manualUpdateMessage) return '';
+		try {
+			const html = marked.parseInline(manualUpdateMessage, { async: false }) as string;
 			return DOMPurify.sanitize(html, {
 				ADD_ATTR: ['target', 'rel']
 			});
@@ -665,15 +680,29 @@
 				</ScrollArea.Root>
 			</div>
 
-			<div class="border-border/60 bg-muted/30 border-t px-6 py-3">
-				<p class="text-muted-foreground text-xs leading-relaxed">
-					{m.update_center_summary()}
-				</p>
-			</div>
+			{#if manualUpdateRequired}
+				<div class="border-t border-amber-500/30 bg-amber-500/10 px-6 py-3" aria-live="polite">
+					{#if manualUpdateMessageHtml}
+						<p class="manual-update-message text-sm leading-relaxed font-medium text-amber-800 dark:text-amber-300">
+							{@html manualUpdateMessageHtml}
+						</p>
+					{:else}
+						<p class="text-sm leading-relaxed font-medium text-amber-800 dark:text-amber-300">
+							{manualUpdateMessage}
+						</p>
+					{/if}
+				</div>
+			{:else}
+				<div class="border-border/60 bg-muted/30 border-t px-6 py-3">
+					<p class="text-muted-foreground text-xs leading-relaxed">
+						{m.update_center_summary()}
+					</p>
+				</div>
+			{/if}
 
 			<Dialog.Footer class="border-border/60 border-t px-6 py-4">
 				<ArcaneButton action="cancel" customLabel={m.update_center_later()} onclick={() => (open = false)} />
-				{#if canInstall}
+				{#if canAutoInstall}
 					<ArcaneButton action="update" customLabel={installLabel} onclick={handleConfirm} />
 				{/if}
 			</Dialog.Footer>
@@ -764,5 +793,13 @@
 	}
 	.release-notes :global(strong) {
 		font-weight: 600;
+	}
+	.manual-update-message :global(a) {
+		color: inherit;
+		text-decoration: underline;
+		text-underline-offset: 2px;
+	}
+	.manual-update-message :global(a:hover) {
+		opacity: 0.85;
 	}
 </style>

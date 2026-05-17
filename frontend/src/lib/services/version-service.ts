@@ -25,7 +25,11 @@ async function getVersionInformation(): Promise<AppVersionInformation> {
 			newestVersion?: string;
 			newestDigest?: string;
 			updateAvailable?: boolean;
+			manualUpdateRequired?: boolean;
+			manualUpdateMessage?: string;
 			releaseUrl?: string;
+			releaseNotes?: string;
+			releasedAt?: string;
 		};
 
 		return {
@@ -42,7 +46,11 @@ async function getVersionInformation(): Promise<AppVersionInformation> {
 			newestVersion: data.newestVersion,
 			newestDigest: data.newestDigest,
 			updateAvailable: data.updateAvailable || false,
-			releaseUrl: data.releaseUrl
+			manualUpdateRequired: data.manualUpdateRequired,
+			manualUpdateMessage: data.manualUpdateMessage,
+			releaseUrl: data.releaseUrl,
+			releaseNotes: data.releaseNotes,
+			releasedAt: data.releasedAt
 		};
 	} catch (error) {
 		// Fallback to basic version info if app-version endpoint fails

@@ -8,6 +8,7 @@
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import MobileUserCard from './mobile-user-card.svelte';
 	import * as Drawer from '$lib/components/ui/drawer/index.js';
+	import { fromStore } from 'svelte/store';
 	import { queryKeys } from '$lib/query/query-keys';
 	import systemUpgradeService from '$lib/services/api/system-upgrade-service';
 	import UpdateCenterDialog from '$lib/components/dialogs/update-center-dialog.svelte';
@@ -30,23 +31,19 @@
 		debug?: boolean;
 	} = $props();
 
-	let storeUser: any = $state(null);
-
-	$effect(() => {
-		const unsub = userStore.subscribe((u) => (storeUser = u));
-		return unsub;
-	});
+	const storeUser = fromStore(userStore);
 
 	const currentPath = $derived(page.url.pathname);
-	const memoizedUser = $derived.by(() => user ?? storeUser);
+	const memoizedUser = $derived.by(() => user ?? storeUser.current);
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
 	const managementItems = $derived(getManagementItems(currentEnvId));
 
 	let upgrading = $state(false);
 	let showConfirmDialog = $state(false);
 	const isAdmin = $derived(!!user?.roles?.includes('admin'));
+	const manualUpdateRequired = $derived(!!versionInformation?.manualUpdateRequired);
 
-	const shouldCheckUpgrade = $derived(!!(versionInformation?.updateAvailable && isAdmin && !debug));
+	const shouldCheckUpgrade = $derived(!!(versionInformation?.updateAvailable && isAdmin && !debug && !manualUpdateRequired));
 	const upgradeAvailabilityQuery = createQuery(() => ({
 		queryKey: queryKeys.system.upgradeAvailable('mobile-nav'),
 		queryFn: () => systemUpgradeService.checkUpgradeAvailable(),
@@ -63,6 +60,7 @@
 		!!(shouldCheckUpgrade && (upgradeAvailabilityQuery.isPending || upgradeAvailabilityQuery.isFetching))
 	);
 	const shouldShowUpgrade = $derived((canUpgrade && isAdmin) || debug);
+	const canInstallFromDialog = $derived(debug ? shouldShowUpgrade : shouldShowUpgrade && !manualUpdateRequired);
 
 	const updateType = $derived.by(() => {
 		if (!versionInformation) return 'none';
@@ -388,7 +386,7 @@
 	bind:open={showConfirmDialog}
 	bind:upgrading
 	{versionInformation}
-	canInstall={shouldShowUpgrade}
+	canInstall={canInstallFromDialog}
 	{debug}
 	onConfirm={handleConfirmUpgrade}
 />

@@ -21,11 +21,12 @@ import (
 )
 
 var (
-	ErrNotRunningInDocker = errors.New("arcane is not running in a Docker container")
-	ErrContainerNotFound  = errors.New("could not find Arcane container")
-	ErrUpgradeInProgress  = errors.New("an upgrade is already in progress")
-	ErrDockerSocketAccess = errors.New("docker socket is not accessible")
-	ArcaneUpgraderImage   = "ghcr.io/getarcaneapp/arcane:latest"
+	ErrNotRunningInDocker   = errors.New("arcane is not running in a Docker container")
+	ErrContainerNotFound    = errors.New("could not find Arcane container")
+	ErrUpgradeInProgress    = errors.New("an upgrade is already in progress")
+	ErrDockerSocketAccess   = errors.New("docker socket is not accessible")
+	ErrManualUpdateRequired = errors.New("manual update required")
+	ArcaneUpgraderImage     = "ghcr.io/getarcaneapp/arcane:latest"
 )
 
 type SystemUpgradeService struct {
@@ -70,40 +71,61 @@ func (s *SystemUpgradeService) CanUpgrade(ctx context.Context) (bool, error) {
 		return false, err
 	}
 
+	if err := s.checkManualUpdateRequirement(ctx); err != nil {
+		return false, err
+	}
+
 	return true, nil
 }
 
 // TriggerUpgradeViaCLI spawns the upgrade CLI command in a separate container
 // This avoids self-termination issues by running the upgrade from outside
 func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user models.User) error {
+	return s.TriggerUpgradeViaCLIForContainer(ctx, user, "")
+}
+
+// TriggerUpgradeViaCLIForContainer spawns the upgrade CLI command targeting a
+// specific Arcane container. An empty container ID keeps the legacy self-targeting behavior.
+func (s *SystemUpgradeService) TriggerUpgradeViaCLIForContainer(ctx context.Context, user models.User, containerID string) error {
+	if err := s.checkManualUpdateRequirement(ctx); err != nil {
+		return err
+	}
+
 	if !s.upgrading.CompareAndSwap(false, true) {
 		return ErrUpgradeInProgress
 	}
 	defer s.upgrading.Store(false)
 
-	// Get current container name
-	containerId, err := s.getCurrentContainerID()
-	if err != nil {
-		return fmt.Errorf("get current container: %w", err)
+	targetContainerID := strings.TrimSpace(containerID)
+	if targetContainerID == "" {
+		var err error
+		targetContainerID, err = s.getCurrentContainerID()
+		if err != nil {
+			return fmt.Errorf("get current container: %w", err)
+		}
 	}
 
-	currentContainer, err := s.findArcaneContainer(ctx, containerId)
+	targetContainer, err := s.findArcaneContainer(ctx, targetContainerID)
 	if err != nil {
 		return fmt.Errorf("inspect container: %w", err)
 	}
 
-	containerName := strings.TrimPrefix(currentContainer.Name, "/")
+	logContainerID := targetContainer.ID
+	if logContainerID == "" {
+		logContainerID = targetContainerID
+	}
+	containerName := strings.TrimPrefix(targetContainer.Name, "/")
 
 	// Determine binary path based on container type (agent vs main)
 	binaryPath := "/app/arcane"
-	if currentContainer.Config != nil {
-		binaryPath = determineUpgradeBinaryPathInternal(currentContainer.Config.Labels)
+	if targetContainer.Config != nil {
+		binaryPath = determineUpgradeBinaryPathInternal(targetContainer.Config.Labels)
 	}
 
 	// Log upgrade event
 	metadata := models.JSON{
 		"action":        "system_upgrade_cli",
-		"containerId":   containerId,
+		"containerId":   logContainerID,
 		"containerName": containerName,
 		"method":        "cli",
 	}
@@ -113,8 +135,8 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 
 	// Use the same image reference as the currently running Arcane container for the upgrader.
 	// This avoids mismatches where a newer/older upgrader CLI expects different behavior.
-	if currentContainer.Config != nil {
-		if img := strings.TrimSpace(currentContainer.Config.Image); img != "" {
+	if targetContainer.Config != nil {
+		if img := strings.TrimSpace(targetContainer.Config.Image); img != "" {
 			ArcaneUpgraderImage = img
 		}
 	}
@@ -154,7 +176,7 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 	slog.Info("Upgrader image pulled successfully", "image", ArcaneUpgraderImage)
 
 	// Try to get the /app/data mount from current container so upgrade logs persist.
-	appDataMount := dockerutils.MountForDestination(currentContainer.Mounts, "/app/data", "/app/data")
+	appDataMount := dockerutils.MountForDestination(targetContainer.Mounts, "/app/data", "/app/data")
 	if appDataMount == nil {
 		slog.Warn("Could not detect /app/data mount; upgrader logs may not persist")
 	} else {
@@ -208,6 +230,22 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 	slog.Info("Upgrade container started", "upgraderId", resp.ID[:12], "upgraderName", containerName)
 
 	return nil
+}
+
+func (s *SystemUpgradeService) checkManualUpdateRequirement(ctx context.Context) error {
+	if s.versionService == nil {
+		return nil
+	}
+
+	required, message := s.versionService.ManualUpdateRequirement(ctx, "", "")
+	if !required {
+		return nil
+	}
+	if strings.TrimSpace(message) == "" {
+		message = ErrManualUpdateRequired.Error()
+	}
+
+	return fmt.Errorf("%w: %s", ErrManualUpdateRequired, message)
 }
 
 func determineUpgradeBinaryPathInternal(labels map[string]string) string {

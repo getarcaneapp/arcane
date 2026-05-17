@@ -24,10 +24,22 @@ import (
 )
 
 const (
-	versionTTL            = 3 * time.Hour
-	versionCheckURL       = "https://api.github.com/repos/getarcaneapp/arcane/releases/latest"
-	defaultRequestTimeout = 15 * time.Second
+	versionTTL                   = 3 * time.Hour
+	versionCheckURL              = "https://api.github.com/repos/getarcaneapp/arcane/releases/latest"
+	manualUpdatesManifestURL     = "https://raw.githubusercontent.com/getarcaneapp/arcane/main/backend/resources/manual_updates.json"
+	defaultRequestTimeout        = 15 * time.Second
+	manualUpdatesUnavailableText = "Automatic update is blocked because Arcane could not verify the remote manual update manifest. Try again later, or review the release notes and update Arcane manually."
 )
+
+type manualUpdateBoundary struct {
+	Version string `json:"version"`
+	Message string `json:"message,omitempty"`
+}
+
+type manualUpdateManifest struct {
+	SchemaVersion          int                    `json:"schemaVersion"`
+	ManualUpdateBoundaries []manualUpdateBoundary `json:"manualUpdateBoundaries"`
+}
 
 type latestRelease struct {
 	TagName     string
@@ -38,6 +50,9 @@ type latestRelease struct {
 type VersionService struct {
 	httpClient               *http.Client
 	cache                    *cache.Cache[latestRelease]
+	manualUpdatesCache       *cache.Cache[manualUpdateManifest]
+	latestReleaseURL         string
+	manualUpdatesURL         string
 	disabled                 bool
 	version                  string
 	revision                 string
@@ -52,6 +67,9 @@ func NewVersionService(httpClient *http.Client, disabled bool, version string, r
 	return &VersionService{
 		httpClient:               httpClient,
 		cache:                    cache.New[latestRelease](versionTTL),
+		manualUpdatesCache:       cache.New[manualUpdateManifest](versionTTL),
+		latestReleaseURL:         versionCheckURL,
+		manualUpdatesURL:         manualUpdatesManifestURL,
 		disabled:                 disabled,
 		version:                  version,
 		revision:                 revision,
@@ -65,12 +83,12 @@ func (s *VersionService) getLatestReleaseInternal(ctx context.Context) (latestRe
 		reqCtx, cancel := context.WithTimeout(ctx, defaultRequestTimeout)
 		defer cancel()
 
-		req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, versionCheckURL, nil)
+		req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, s.latestReleaseURL, nil)
 		if err != nil {
 			return latestRelease{}, fmt.Errorf("create GitHub request: %w", err)
 		}
 
-		resp, err := s.httpClient.Do(req) //nolint:gosec // intentional request to fixed GitHub releases API endpoint
+		resp, err := s.httpClient.Do(req) //nolint:gosec // intentional request to configured GitHub releases API endpoint
 		if err != nil {
 			return latestRelease{}, fmt.Errorf("get latest release: %w", err)
 		}
@@ -105,6 +123,45 @@ func (s *VersionService) getLatestReleaseInternal(ctx context.Context) (latestRe
 	}
 
 	return rel, err
+}
+
+func (s *VersionService) getManualUpdateManifestInternal(ctx context.Context) (manualUpdateManifest, error) {
+	manifest, err := s.manualUpdatesCache.GetOrFetch(ctx, func(ctx context.Context) (manualUpdateManifest, error) {
+		reqCtx, cancel := context.WithTimeout(ctx, defaultRequestTimeout)
+		defer cancel()
+
+		req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, s.manualUpdatesURL, nil)
+		if err != nil {
+			return manualUpdateManifest{}, fmt.Errorf("create manual updates manifest request: %w", err)
+		}
+
+		resp, err := s.httpClient.Do(req) //nolint:gosec // production URL is fixed; tests inject a local manifest URL
+		if err != nil {
+			return manualUpdateManifest{}, fmt.Errorf("get manual updates manifest: %w", err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+
+		if resp.StatusCode != http.StatusOK {
+			return manualUpdateManifest{}, fmt.Errorf("manual updates manifest returned status %d", resp.StatusCode)
+		}
+
+		var payload manualUpdateManifest
+		if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+			return manualUpdateManifest{}, fmt.Errorf("decode manual updates manifest: %w", err)
+		}
+		if payload.SchemaVersion != 1 {
+			return manualUpdateManifest{}, fmt.Errorf("unsupported manual updates manifest schema version %d", payload.SchemaVersion)
+		}
+
+		return payload, nil
+	})
+
+	if staleErr, ok := errors.AsType[*cache.ErrStale](err); ok {
+		slog.Warn("Failed to fetch manual updates manifest, returning stale cache", "error", staleErr.Err)
+		return manifest, nil
+	}
+
+	return manifest, err
 }
 
 func (s *VersionService) GetLatestVersion(ctx context.Context) (string, error) {
@@ -158,6 +215,119 @@ func (s *VersionService) ReleaseURL(version string) string {
 	return "https://github.com/getarcaneapp/arcane/releases/tag/" + v
 }
 
+// ManualUpdateRequirement reports whether the current-to-target app upgrade
+// crosses a release boundary that cannot be handled by the self-updater.
+func (s *VersionService) ManualUpdateRequirement(ctx context.Context, currentVersion string, targetVersion string) (bool, string) {
+	if currentVersion == "" {
+		currentVersion = s.version
+	}
+
+	current, currentOK := s.normalizeComparableVersionInternal(currentVersion)
+	if !currentOK {
+		return false, ""
+	}
+
+	manifest, err := s.getManualUpdateManifestInternal(ctx)
+	if err != nil {
+		slog.DebugContext(ctx, "Failed to determine manual update requirement from manifest", "error", err)
+		return true, manualUpdatesUnavailableText
+	}
+
+	nextBoundary, hasFutureBoundary := s.nextManualUpdateBoundaryInternal(current, manifest.ManualUpdateBoundaries)
+	if !hasFutureBoundary {
+		return false, ""
+	}
+
+	if targetVersion == "" && s.disabled {
+		return true, manualUpdateBoundaryMessageInternal(nextBoundary)
+	}
+	if targetVersion == "" {
+		latest, err := s.GetLatestVersion(ctx)
+		if err != nil {
+			slog.DebugContext(ctx, "Failed to determine latest version for manual update requirement", "error", err)
+			return true, manualUpdateBoundaryMessageInternal(nextBoundary)
+		}
+		targetVersion = latest
+	}
+
+	target, targetOK := s.normalizeComparableVersionInternal(targetVersion)
+	if !targetOK {
+		return false, ""
+	}
+
+	if boundary, crossed := s.crossedManualUpdateBoundaryInternal(current, target, manifest.ManualUpdateBoundaries); crossed {
+		return true, manualUpdateBoundaryMessageInternal(boundary)
+	}
+
+	return false, ""
+}
+
+func (s *VersionService) nextManualUpdateBoundaryInternal(current string, boundaries []manualUpdateBoundary) (manualUpdateBoundary, bool) {
+	var selected manualUpdateBoundary
+	var selectedVersion string
+	found := false
+
+	for _, boundary := range boundaries {
+		boundaryVersion, ok := s.normalizeComparableVersionInternal(boundary.Version)
+		if !ok || semver.Compare(current, boundaryVersion) >= 0 {
+			continue
+		}
+		if !found || semver.Compare(boundaryVersion, selectedVersion) < 0 {
+			selected = boundary
+			selectedVersion = boundaryVersion
+			found = true
+		}
+	}
+
+	return selected, found
+}
+
+func (s *VersionService) crossedManualUpdateBoundaryInternal(current string, target string, boundaries []manualUpdateBoundary) (manualUpdateBoundary, bool) {
+	var selected manualUpdateBoundary
+	var selectedVersion string
+	found := false
+
+	for _, boundary := range boundaries {
+		boundaryVersion, ok := s.normalizeComparableVersionInternal(boundary.Version)
+		if !ok {
+			continue
+		}
+		if semver.Compare(current, boundaryVersion) < 0 && semver.Compare(target, boundaryVersion) >= 0 {
+			if !found || semver.Compare(boundaryVersion, selectedVersion) < 0 {
+				selected = boundary
+				selectedVersion = boundaryVersion
+				found = true
+			}
+		}
+	}
+
+	return selected, found
+}
+
+func manualUpdateBoundaryMessageInternal(boundary manualUpdateBoundary) string {
+	message := strings.TrimSpace(boundary.Message)
+	if message != "" {
+		return message
+	}
+
+	return fmt.Sprintf("This update crosses the %s manual migration boundary and cannot be installed automatically. Review the release notes and update Arcane manually.", boundary.Version)
+}
+
+func (s *VersionService) normalizeComparableVersionInternal(ver string) (string, bool) {
+	ver = strings.TrimSpace(ver)
+	if ver == "" {
+		return "", false
+	}
+
+	withoutPrefix := strings.TrimPrefix(ver, "v")
+	if withoutPrefix == "" || withoutPrefix[0] < '0' || withoutPrefix[0] > '9' {
+		return "", false
+	}
+
+	normalized := s.normalizeVersion(ver)
+	return normalized, semver.IsValid(normalized)
+}
+
 func (s *VersionService) GetVersionInformation(ctx context.Context, currentVersion string) (*version.Check, error) {
 	if currentVersion == "" {
 		currentVersion = s.version
@@ -187,6 +357,9 @@ func (s *VersionService) GetVersionInformation(ctx context.Context, currentVersi
 		check.NewestVersion = latest
 		check.UpdateAvailable = s.IsNewer(latest, cur)
 		check.ReleaseURL = s.ReleaseURL(latest)
+		if check.UpdateAvailable {
+			check.ManualUpdateRequired, check.ManualUpdateMessage = s.ManualUpdateRequirement(ctx, cur, latest)
+		}
 	}
 
 	return check, nil
@@ -254,6 +427,9 @@ func (s *VersionService) GetAppVersionInfo(ctx context.Context) *version.Info {
 				info.ReleaseURL = s.ReleaseURL(rel.TagName)
 				info.ReleaseNotes = rel.Body
 				info.ReleasedAt = rel.PublishedAt
+				if info.UpdateAvailable {
+					info.ManualUpdateRequired, info.ManualUpdateMessage = s.ManualUpdateRequirement(ctx, ver, rel.TagName)
+				}
 			}
 		}
 		return info

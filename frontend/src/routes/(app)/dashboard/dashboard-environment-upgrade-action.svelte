@@ -32,8 +32,9 @@
 		upgrading?: boolean;
 	} = $props();
 
-	const shouldCheckUpgrade = $derived(!!(versionInfo.updateAvailable && isAdmin && !debug));
 	const isLocalEnvironment = $derived(environment.id === '0');
+	const manualUpdateRequired = $derived(!!versionInfo.manualUpdateRequired);
+	const shouldCheckUpgrade = $derived(!!(versionInfo.updateAvailable && isAdmin && !debug && !manualUpdateRequired));
 
 	const upgradeAvailabilityQuery = createQuery(() => ({
 		queryKey: queryKeys.system.environmentUpgradeAvailable(environment.id),
@@ -74,7 +75,10 @@
 		return '';
 	});
 
-	const shouldShowUpgrade = $derived((versionInfo.updateAvailable && isAdmin && canUpgrade) || (debug && isAdmin));
+	const shouldShowUpgrade = $derived(
+		(versionInfo.updateAvailable && isAdmin && (canUpgrade || manualUpdateRequired)) || (debug && isAdmin)
+	);
+	const canInstallFromDialog = $derived(debug ? shouldShowUpgrade : shouldShowUpgrade && !manualUpdateRequired);
 
 	const upgradeButtonText = $derived.by(() => {
 		if (upgrading) return m.upgrade_in_progress();
@@ -139,9 +143,10 @@
 		bind:open
 		bind:upgrading
 		versionInformation={versionInfo}
-		canInstall={shouldShowUpgrade}
+		canInstall={canInstallFromDialog}
 		environmentName={isLocalEnvironment ? undefined : environment.name}
 		environmentId={environment.id}
+		{debug}
 		onConfirm={handleConfirmUpgradeInternal}
 	/>
 {/if}

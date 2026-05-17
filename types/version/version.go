@@ -67,6 +67,16 @@ type Info struct {
 	// Required: true
 	UpdateAvailable bool `json:"updateAvailable"`
 
+	// ManualUpdateRequired indicates if this update must be installed manually.
+	//
+	// Required: false
+	ManualUpdateRequired bool `json:"manualUpdateRequired,omitempty"`
+
+	// ManualUpdateMessage explains why automatic update is disabled.
+	//
+	// Required: false
+	ManualUpdateMessage string `json:"manualUpdateMessage,omitempty"`
+
 	// ReleaseURL is the URL to the release page.
 	//
 	// Required: false
@@ -99,6 +109,16 @@ type Check struct {
 	//
 	// Required: true
 	UpdateAvailable bool `json:"updateAvailable"`
+
+	// ManualUpdateRequired indicates if this update must be installed manually.
+	//
+	// Required: false
+	ManualUpdateRequired bool `json:"manualUpdateRequired,omitempty"`
+
+	// ManualUpdateMessage explains why automatic update is disabled.
+	//
+	// Required: false
+	ManualUpdateMessage string `json:"manualUpdateMessage,omitempty"`
 
 	// ReleaseURL is the URL to the release page.
 	//

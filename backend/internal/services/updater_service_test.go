@@ -29,15 +29,23 @@ import (
 
 // mockSystemUpgradeService is a simple mock implementation for testing
 type mockSystemUpgradeService struct {
-	triggerCalled bool
-	triggerError  error
-	capturedUser  *models.User
-	canUpgrade    bool
+	triggerCalled       bool
+	triggerError        error
+	capturedUser        *models.User
+	capturedContainerID string
+	canUpgrade          bool
 }
 
 func (m *mockSystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user models.User) error {
 	m.triggerCalled = true
 	m.capturedUser = &user
+	return m.triggerError
+}
+
+func (m *mockSystemUpgradeService) TriggerUpgradeViaCLIForContainer(ctx context.Context, user models.User, containerID string) error {
+	m.triggerCalled = true
+	m.capturedUser = &user
+	m.capturedContainerID = containerID
 	return m.triggerError
 }
 
@@ -88,6 +96,7 @@ func TestUpdaterService_ArcaneAgentLabel_TriggersCLIUpgrade(t *testing.T) {
 	assert.True(t, mockUpgrade.triggerCalled, "TriggerUpgradeViaCLI should have been called for Arcane agent container")
 	assert.NotNil(t, mockUpgrade.capturedUser)
 	assert.Equal(t, systemUser.ID, mockUpgrade.capturedUser.ID)
+	assert.Equal(t, "container-1", mockUpgrade.capturedContainerID)
 }
 
 // TestUpdaterService_NonArcaneLabel_DoesNotTriggerCLI verifies that containers without

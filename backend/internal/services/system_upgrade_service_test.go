@@ -1,6 +1,8 @@
 package services
 
 import (
+	"context"
+	"net/http"
 	"testing"
 
 	libupdater "github.com/getarcaneapp/arcane/backend/pkg/libarcane/imageupdate"
@@ -39,12 +41,14 @@ func TestSystemUpgradeService_ErrorVariables(t *testing.T) {
 	require.Error(t, ErrContainerNotFound)
 	require.Error(t, ErrUpgradeInProgress)
 	require.Error(t, ErrDockerSocketAccess)
+	require.Error(t, ErrManualUpdateRequired)
 
 	// Test error messages
 	require.Equal(t, "arcane is not running in a Docker container", ErrNotRunningInDocker.Error())
 	require.Equal(t, "could not find Arcane container", ErrContainerNotFound.Error())
 	require.Equal(t, "an upgrade is already in progress", ErrUpgradeInProgress.Error())
 	require.Equal(t, "docker socket is not accessible", ErrDockerSocketAccess.Error())
+	require.Equal(t, "manual update required", ErrManualUpdateRequired.Error())
 }
 
 // TestSystemUpgradeService_UpgradingFlag_ConcurrentAccess tests upgrading flag
@@ -183,4 +187,20 @@ func TestDetermineUpgradeBinaryPath(t *testing.T) {
 			require.Equal(t, tt.want, determineUpgradeBinaryPathInternal(tt.labels))
 		})
 	}
+}
+
+func TestSystemUpgradeService_CheckManualUpdateRequirementBlocksFromManifest(t *testing.T) {
+	ctx := context.Background()
+	versionService := newTestVersionService(t, "v1.19.2", manualUpdateManifestHandler(t, http.StatusOK, manualUpdateManifest{
+		SchemaVersion: 1,
+		ManualUpdateBoundaries: []manualUpdateBoundary{
+			{Version: "v1.20.0", Message: "v1.20 manual step"},
+		},
+	}), "v1.20.0")
+	s := NewSystemUpgradeService(nil, versionService, nil, nil)
+
+	err := s.checkManualUpdateRequirement(ctx)
+
+	require.ErrorIs(t, err, ErrManualUpdateRequired)
+	require.ErrorContains(t, err, "v1.20 manual step")
 }

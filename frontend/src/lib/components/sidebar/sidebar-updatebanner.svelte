@@ -31,8 +31,9 @@
 	let upgrading = $state(false);
 	let showConfirmDialog = $state(false);
 	const isAdmin = $derived(!!user?.roles?.includes('admin'));
+	const manualUpdateRequired = $derived(!!versionInformation?.manualUpdateRequired);
 
-	const shouldCheckUpgrade = $derived(!!(versionInformation?.updateAvailable && isAdmin && !debug));
+	const shouldCheckUpgrade = $derived(!!(versionInformation?.updateAvailable && isAdmin && !debug && !manualUpdateRequired));
 	const upgradeAvailabilityQuery = createQuery(() => ({
 		queryKey: queryKeys.system.upgradeAvailable('sidebar'),
 		queryFn: () => systemUpgradeService.checkUpgradeAvailable(),
@@ -49,6 +50,7 @@
 		!!(shouldCheckUpgrade && (upgradeAvailabilityQuery.isPending || upgradeAvailabilityQuery.isFetching))
 	);
 	const shouldShowUpgrade = $derived((canUpgrade && isAdmin) || debug);
+	const canInstallFromDialog = $derived(debug ? shouldShowUpgrade : shouldShowUpgrade && !manualUpdateRequired);
 
 	const updateType = $derived.by(() => {
 		if (!versionInformation) return 'none';
@@ -95,7 +97,7 @@
 	bind:open={showConfirmDialog}
 	bind:upgrading
 	{versionInformation}
-	canInstall={shouldShowUpgrade}
+	canInstall={canInstallFromDialog}
 	{debug}
 	onConfirm={handleConfirmUpgrade}
 />

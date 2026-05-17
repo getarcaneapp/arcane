@@ -131,7 +131,11 @@ export const load = async () => {
 			newestVersion: info.newestVersion,
 			newestDigest: info.newestDigest,
 			updateAvailable: info.updateAvailable,
-			releaseUrl: info.releaseUrl
+			manualUpdateRequired: info.manualUpdateRequired,
+			manualUpdateMessage: info.manualUpdateMessage,
+			releaseUrl: info.releaseUrl,
+			releaseNotes: info.releaseNotes,
+			releasedAt: info.releasedAt
 		};
 	} catch {}
 
