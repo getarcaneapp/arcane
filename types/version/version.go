@@ -67,15 +67,15 @@ type Info struct {
 	// Required: true
 	UpdateAvailable bool `json:"updateAvailable"`
 
-	// ManualUpdateRequired indicates if this update must be installed manually.
+	// BreakingChangeRequired indicates if this update must be installed manually due to breaking changes.
 	//
 	// Required: false
-	ManualUpdateRequired bool `json:"manualUpdateRequired,omitempty"`
+	BreakingChangeRequired bool `json:"breakingChangeRequired,omitempty"`
 
-	// ManualUpdateMessage explains why automatic update is disabled.
+	// BreakingChangeMessage explains why automatic update is disabled.
 	//
 	// Required: false
-	ManualUpdateMessage string `json:"manualUpdateMessage,omitempty"`
+	BreakingChangeMessage string `json:"breakingChangeMessage,omitempty"`
 
 	// ReleaseURL is the URL to the release page.
 	//
@@ -110,15 +110,15 @@ type Check struct {
 	// Required: true
 	UpdateAvailable bool `json:"updateAvailable"`
 
-	// ManualUpdateRequired indicates if this update must be installed manually.
+	// BreakingChangeRequired indicates if this update must be installed manually due to breaking changes.
 	//
 	// Required: false
-	ManualUpdateRequired bool `json:"manualUpdateRequired,omitempty"`
+	BreakingChangeRequired bool `json:"breakingChangeRequired,omitempty"`
 
-	// ManualUpdateMessage explains why automatic update is disabled.
+	// BreakingChangeMessage explains why automatic update is disabled.
 	//
 	// Required: false
-	ManualUpdateMessage string `json:"manualUpdateMessage,omitempty"`
+	BreakingChangeMessage string `json:"breakingChangeMessage,omitempty"`
 
 	// ReleaseURL is the URL to the release page.
 	//

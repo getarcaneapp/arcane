@@ -504,12 +504,12 @@ func (h *SystemHandler) CheckUpgradeAvailable(ctx context.Context, input *CheckU
 	canUpgrade, err := h.upgradeService.CanUpgrade(ctx)
 	if err != nil {
 		slog.Debug("System upgrade check failed", "error", err)
-		if common.IsManualUpdateRequiredError(err) {
+		if common.IsBreakingChangeRequiredError(err) {
 			return &CheckUpgradeOutput{
 				Body: UpgradeCheckResultData{
 					CanUpgrade: false,
 					Error:      false,
-					Message:    strings.TrimPrefix(err.Error(), "manual update required: "),
+					Message:    strings.TrimPrefix(err.Error(), "breaking change requires manual update: "),
 				},
 			}, nil
 		}
@@ -555,8 +555,8 @@ func (h *SystemHandler) TriggerUpgrade(ctx context.Context, input *TriggerUpgrad
 		if common.IsUpgradeInProgressError(err) {
 			return nil, huma.Error409Conflict((&common.UpgradeTriggerError{Err: err}).Error())
 		}
-		if common.IsManualUpdateRequiredError(err) {
-			return nil, huma.Error409Conflict(strings.TrimPrefix(err.Error(), "manual update required: "))
+		if common.IsBreakingChangeRequiredError(err) {
+			return nil, huma.Error409Conflict(strings.TrimPrefix(err.Error(), "breaking change requires manual update: "))
 		}
 
 		return nil, huma.Error500InternalServerError((&common.UpgradeTriggerError{Err: err}).Error())

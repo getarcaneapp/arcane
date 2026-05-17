@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestVersionService_ManualUpdateRequirement(t *testing.T) {
+func TestVersionService_BreakingChangeRequirement(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
@@ -57,14 +57,13 @@ func TestVersionService_ManualUpdateRequirement(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			svc := newTestVersionService(t, "v1.19.2", manualUpdateManifestHandler(t, http.StatusOK, manualUpdateManifest{
-				SchemaVersion: 1,
-				ManualUpdateBoundaries: []manualUpdateBoundary{
+			svc := newTestVersionService(t, "v1.19.2", arcaneManifestHandler(t, http.StatusOK, arcaneManifest{
+				BreakingChanges: []breakingChange{
 					{Version: "v1.20.0", Message: "v1.20 manual step"},
 				},
 			}), "v1.21.0")
 
-			required, message := svc.ManualUpdateRequirement(ctx, tt.current, tt.target)
+			required, message := svc.BreakingChangeRequirement(ctx, tt.current, tt.target)
 
 			assert.Equal(t, tt.want, required)
 			if tt.want {
@@ -76,92 +75,88 @@ func TestVersionService_ManualUpdateRequirement(t *testing.T) {
 	}
 }
 
-func TestVersionService_ManualUpdateRequirement_MultipleBoundaries(t *testing.T) {
+func TestVersionService_BreakingChangeRequirement_MultipleBoundaries(t *testing.T) {
 	ctx := context.Background()
-	svc := newTestVersionService(t, "v1.19.2", manualUpdateManifestHandler(t, http.StatusOK, manualUpdateManifest{
-		SchemaVersion: 1,
-		ManualUpdateBoundaries: []manualUpdateBoundary{
+	svc := newTestVersionService(t, "v1.19.2", arcaneManifestHandler(t, http.StatusOK, arcaneManifest{
+		BreakingChanges: []breakingChange{
 			{Version: "v2.0.0", Message: "v2 manual step"},
 			{Version: "v1.20.0", Message: "v1.20 manual step"},
 		},
 	}), "v2.1.0")
 
-	required, message := svc.ManualUpdateRequirement(ctx, "v1.19.2", "v2.1.0")
+	required, message := svc.BreakingChangeRequirement(ctx, "v1.19.2", "v2.1.0")
 
 	assert.True(t, required)
 	assert.Equal(t, "v1.20 manual step", message)
 }
 
-func TestVersionService_ManualUpdateRequirement_EmptyManifestAllowsAutomaticUpdate(t *testing.T) {
+func TestVersionService_BreakingChangeRequirement_EmptyManifestAllowsAutomaticUpdate(t *testing.T) {
 	ctx := context.Background()
-	svc := newTestVersionService(t, "v1.19.2", manualUpdateManifestHandler(t, http.StatusOK, manualUpdateManifest{
-		SchemaVersion:          1,
-		ManualUpdateBoundaries: []manualUpdateBoundary{},
+	svc := newTestVersionService(t, "v1.19.2", arcaneManifestHandler(t, http.StatusOK, arcaneManifest{
+		BreakingChanges: []breakingChange{},
 	}), "v1.20.0")
 
-	required, message := svc.ManualUpdateRequirement(ctx, "v1.19.2", "v1.20.0")
+	required, message := svc.BreakingChangeRequirement(ctx, "v1.19.2", "v1.20.0")
 
 	assert.False(t, required)
 	assert.Empty(t, message)
 }
 
-func TestVersionService_ManualUpdateRequirement_FetchesLatestWhenTargetMissing(t *testing.T) {
+func TestVersionService_BreakingChangeRequirement_FetchesLatestWhenTargetMissing(t *testing.T) {
 	ctx := context.Background()
-	svc := newTestVersionService(t, "v1.19.2", manualUpdateManifestHandler(t, http.StatusOK, manualUpdateManifest{
-		SchemaVersion: 1,
-		ManualUpdateBoundaries: []manualUpdateBoundary{
+	svc := newTestVersionService(t, "v1.19.2", arcaneManifestHandler(t, http.StatusOK, arcaneManifest{
+		BreakingChanges: []breakingChange{
 			{Version: "v1.20.0", Message: "v1.20 manual step"},
 		},
 	}), "v1.20.0")
 
-	required, message := svc.ManualUpdateRequirement(ctx, "v1.19.2", "")
+	required, message := svc.BreakingChangeRequirement(ctx, "v1.19.2", "")
 
 	assert.True(t, required)
 	assert.Equal(t, "v1.20 manual step", message)
 }
 
-func TestVersionService_ManualUpdateRequirement_FailsClosedWhenTargetMissingAndUpdateChecksDisabled(t *testing.T) {
+func TestVersionService_BreakingChangeRequirement_FailsClosedWhenTargetMissingAndUpdateChecksDisabled(t *testing.T) {
 	ctx := context.Background()
-	svc := newTestVersionService(t, "v1.19.2", manualUpdateManifestHandler(t, http.StatusOK, manualUpdateManifest{
-		SchemaVersion: 1,
-		ManualUpdateBoundaries: []manualUpdateBoundary{
+	svc := newTestVersionService(t, "v1.19.2", arcaneManifestHandler(t, http.StatusOK, arcaneManifest{
+		BreakingChanges: []breakingChange{
 			{Version: "v1.20.0", Message: "v1.20 manual step"},
 		},
 	}), "v1.20.0")
 	svc.disabled = true
 
-	required, message := svc.ManualUpdateRequirement(ctx, "v1.19.2", "")
+	required, message := svc.BreakingChangeRequirement(ctx, "v1.19.2", "")
 
 	assert.True(t, required)
 	assert.Equal(t, "v1.20 manual step", message)
 }
 
-func TestVersionService_ManualUpdateRequirement_FailsClosedWhenManifestUnavailable(t *testing.T) {
+func TestVersionService_BreakingChangeRequirement_FailsClosedWhenManifestUnavailable(t *testing.T) {
 	ctx := context.Background()
 	svc := newTestVersionService(t, "v1.19.2", func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unavailable", http.StatusInternalServerError)
 	}, "v1.20.0")
 
-	required, message := svc.ManualUpdateRequirement(ctx, "v1.19.2", "v1.20.0")
+	required, message := svc.BreakingChangeRequirement(ctx, "v1.19.2", "v1.20.0")
 
 	assert.True(t, required)
-	assert.Contains(t, message, "could not verify the remote manual update manifest")
+	assert.Contains(t, message, "could not verify the remote breaking changes manifest")
 }
 
-func TestVersionService_ManualUpdateRequirement_FailsClosedWhenManifestInvalid(t *testing.T) {
+func TestVersionService_BreakingChangeRequirement_FailsClosedWhenManifestInvalid(t *testing.T) {
 	ctx := context.Background()
 	svc := newTestVersionService(t, "v1.19.2", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"schemaVersion":2,"manualUpdateBoundaries":[]}`))
+		_, _ = w.Write([]byte(`{"breakingChanges":{}}`))
 	}, "v1.20.0")
 
-	required, message := svc.ManualUpdateRequirement(ctx, "v1.19.2", "v1.20.0")
+	required, message := svc.BreakingChangeRequirement(ctx, "v1.19.2", "v1.20.0")
 
 	assert.True(t, required)
-	assert.Contains(t, message, "could not verify the remote manual update manifest")
+	assert.Contains(t, message, "could not verify the remote breaking changes manifest")
 }
 
-func TestVersionService_ManualUpdateRequirement_UsesStaleManifestOnRefreshFailure(t *testing.T) {
+func TestVersionService_BreakingChangeRequirement_UsesStaleManifestOnRefreshFailure(t *testing.T) {
 	ctx := context.Background()
 	var failRefresh atomic.Bool
 
@@ -170,33 +165,32 @@ func TestVersionService_ManualUpdateRequirement_UsesStaleManifestOnRefreshFailur
 			http.Error(w, "unavailable", http.StatusInternalServerError)
 			return
 		}
-		manualUpdateManifestHandler(t, http.StatusOK, manualUpdateManifest{
-			SchemaVersion: 1,
-			ManualUpdateBoundaries: []manualUpdateBoundary{
+		arcaneManifestHandler(t, http.StatusOK, arcaneManifest{
+			BreakingChanges: []breakingChange{
 				{Version: "v1.20.0", Message: "v1.20 manual step"},
 			},
 		})(w, r)
 	}, "v1.21.0")
-	svc.manualUpdatesCache = cache.New[manualUpdateManifest](time.Nanosecond)
+	svc.breakingChangesCache = cache.New[arcaneManifest](time.Nanosecond)
 
-	required, message := svc.ManualUpdateRequirement(ctx, "v1.19.2", "v1.20.0")
+	required, message := svc.BreakingChangeRequirement(ctx, "v1.19.2", "v1.20.0")
 	require.True(t, required)
 	require.Equal(t, "v1.20 manual step", message)
 
 	failRefresh.Store(true)
 	time.Sleep(2 * time.Millisecond)
 
-	required, message = svc.ManualUpdateRequirement(ctx, "v1.19.2", "v1.21.0")
+	required, message = svc.BreakingChangeRequirement(ctx, "v1.19.2", "v1.21.0")
 
 	assert.True(t, required)
 	assert.Equal(t, "v1.20 manual step", message)
 }
 
-func newTestVersionService(t *testing.T, currentVersion string, manualUpdatesHandler http.HandlerFunc, latestVersion string) *VersionService {
+func newTestVersionService(t *testing.T, currentVersion string, arcaneManifestHandler http.HandlerFunc, latestVersion string) *VersionService {
 	t.Helper()
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/manual_updates.json", manualUpdatesHandler)
+	mux.HandleFunc("/.arcane.json", arcaneManifestHandler)
 	mux.HandleFunc("/latest", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		require.NoError(t, json.NewEncoder(w).Encode(map[string]string{
@@ -209,11 +203,11 @@ func newTestVersionService(t *testing.T, currentVersion string, manualUpdatesHan
 
 	svc := NewVersionService(server.Client(), false, currentVersion, "test", nil, nil)
 	svc.latestReleaseURL = server.URL + "/latest"
-	svc.manualUpdatesURL = server.URL + "/manual_updates.json"
+	svc.arcaneManifestURL = server.URL + "/.arcane.json"
 	return svc
 }
 
-func manualUpdateManifestHandler(t *testing.T, statusCode int, manifest manualUpdateManifest) http.HandlerFunc {
+func arcaneManifestHandler(t *testing.T, statusCode int, manifest arcaneManifest) http.HandlerFunc {
 	t.Helper()
 
 	return func(w http.ResponseWriter, r *http.Request) {

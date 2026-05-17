@@ -24,21 +24,23 @@ import (
 )
 
 const (
-	versionTTL                   = 3 * time.Hour
-	versionCheckURL              = "https://api.github.com/repos/getarcaneapp/arcane/releases/latest"
-	manualUpdatesManifestURL     = "https://raw.githubusercontent.com/getarcaneapp/arcane/main/backend/resources/manual_updates.json"
-	defaultRequestTimeout        = 15 * time.Second
-	manualUpdatesUnavailableText = "Automatic update is blocked because Arcane could not verify the remote manual update manifest. Try again later, or review the release notes and update Arcane manually."
+	versionTTL                     = 3 * time.Hour
+	versionCheckURL                = "https://api.github.com/repos/getarcaneapp/arcane/releases/latest"
+	arcaneManifestURL              = "https://raw.githubusercontent.com/getarcaneapp/arcane/main/.arcane.json"
+	defaultRequestTimeout          = 15 * time.Second
+	breakingChangesUnavailableText = "Automatic update is blocked because Arcane could not verify the remote breaking changes manifest. Try again later, or review the release notes and update Arcane manually."
 )
 
-type manualUpdateBoundary struct {
+type breakingChange struct {
 	Version string `json:"version"`
 	Message string `json:"message,omitempty"`
 }
 
-type manualUpdateManifest struct {
-	SchemaVersion          int                    `json:"schemaVersion"`
-	ManualUpdateBoundaries []manualUpdateBoundary `json:"manualUpdateBoundaries"`
+type arcaneManifest struct {
+	Version         string           `json:"version,omitempty"`
+	Revision        string           `json:"revision,omitempty"`
+	BuildTime       string           `json:"buildTime,omitempty"`
+	BreakingChanges []breakingChange `json:"breakingChanges,omitempty"`
 }
 
 type latestRelease struct {
@@ -50,9 +52,9 @@ type latestRelease struct {
 type VersionService struct {
 	httpClient               *http.Client
 	cache                    *cache.Cache[latestRelease]
-	manualUpdatesCache       *cache.Cache[manualUpdateManifest]
+	breakingChangesCache     *cache.Cache[arcaneManifest]
 	latestReleaseURL         string
-	manualUpdatesURL         string
+	arcaneManifestURL        string
 	disabled                 bool
 	version                  string
 	revision                 string
@@ -67,9 +69,9 @@ func NewVersionService(httpClient *http.Client, disabled bool, version string, r
 	return &VersionService{
 		httpClient:               httpClient,
 		cache:                    cache.New[latestRelease](versionTTL),
-		manualUpdatesCache:       cache.New[manualUpdateManifest](versionTTL),
+		breakingChangesCache:     cache.New[arcaneManifest](versionTTL),
 		latestReleaseURL:         versionCheckURL,
-		manualUpdatesURL:         manualUpdatesManifestURL,
+		arcaneManifestURL:        arcaneManifestURL,
 		disabled:                 disabled,
 		version:                  version,
 		revision:                 revision,
@@ -125,39 +127,36 @@ func (s *VersionService) getLatestReleaseInternal(ctx context.Context) (latestRe
 	return rel, err
 }
 
-func (s *VersionService) getManualUpdateManifestInternal(ctx context.Context) (manualUpdateManifest, error) {
-	manifest, err := s.manualUpdatesCache.GetOrFetch(ctx, func(ctx context.Context) (manualUpdateManifest, error) {
+func (s *VersionService) getArcaneManifestInternal(ctx context.Context) (arcaneManifest, error) {
+	manifest, err := s.breakingChangesCache.GetOrFetch(ctx, func(ctx context.Context) (arcaneManifest, error) {
 		reqCtx, cancel := context.WithTimeout(ctx, defaultRequestTimeout)
 		defer cancel()
 
-		req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, s.manualUpdatesURL, nil)
+		req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, s.arcaneManifestURL, nil)
 		if err != nil {
-			return manualUpdateManifest{}, fmt.Errorf("create manual updates manifest request: %w", err)
+			return arcaneManifest{}, fmt.Errorf("create arcane manifest request: %w", err)
 		}
 
 		resp, err := s.httpClient.Do(req) //nolint:gosec // production URL is fixed; tests inject a local manifest URL
 		if err != nil {
-			return manualUpdateManifest{}, fmt.Errorf("get manual updates manifest: %w", err)
+			return arcaneManifest{}, fmt.Errorf("get arcane manifest: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusOK {
-			return manualUpdateManifest{}, fmt.Errorf("manual updates manifest returned status %d", resp.StatusCode)
+			return arcaneManifest{}, fmt.Errorf("arcane manifest returned status %d", resp.StatusCode)
 		}
 
-		var payload manualUpdateManifest
+		var payload arcaneManifest
 		if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-			return manualUpdateManifest{}, fmt.Errorf("decode manual updates manifest: %w", err)
-		}
-		if payload.SchemaVersion != 1 {
-			return manualUpdateManifest{}, fmt.Errorf("unsupported manual updates manifest schema version %d", payload.SchemaVersion)
+			return arcaneManifest{}, fmt.Errorf("decode arcane manifest: %w", err)
 		}
 
 		return payload, nil
 	})
 
 	if staleErr, ok := errors.AsType[*cache.ErrStale](err); ok {
-		slog.Warn("Failed to fetch manual updates manifest, returning stale cache", "error", staleErr.Err)
+		slog.Warn("Failed to fetch arcane manifest, returning stale cache", "error", staleErr.Err)
 		return manifest, nil
 	}
 
@@ -215,9 +214,9 @@ func (s *VersionService) ReleaseURL(version string) string {
 	return "https://github.com/getarcaneapp/arcane/releases/tag/" + v
 }
 
-// ManualUpdateRequirement reports whether the current-to-target app upgrade
-// crosses a release boundary that cannot be handled by the self-updater.
-func (s *VersionService) ManualUpdateRequirement(ctx context.Context, currentVersion string, targetVersion string) (bool, string) {
+// BreakingChangeRequirement reports whether the current-to-target app upgrade
+// crosses a breaking change that cannot be handled by the self-updater.
+func (s *VersionService) BreakingChangeRequirement(ctx context.Context, currentVersion string, targetVersion string) (bool, string) {
 	if currentVersion == "" {
 		currentVersion = s.version
 	}
@@ -227,25 +226,25 @@ func (s *VersionService) ManualUpdateRequirement(ctx context.Context, currentVer
 		return false, ""
 	}
 
-	manifest, err := s.getManualUpdateManifestInternal(ctx)
+	manifest, err := s.getArcaneManifestInternal(ctx)
 	if err != nil {
-		slog.DebugContext(ctx, "Failed to determine manual update requirement from manifest", "error", err)
-		return true, manualUpdatesUnavailableText
+		slog.DebugContext(ctx, "Failed to determine breaking change requirement from manifest", "error", err)
+		return true, breakingChangesUnavailableText
 	}
 
-	nextBoundary, hasFutureBoundary := s.nextManualUpdateBoundaryInternal(current, manifest.ManualUpdateBoundaries)
-	if !hasFutureBoundary {
+	nextBreakingChange, hasFutureBreakingChange := s.nextBreakingChangeInternal(current, manifest.BreakingChanges)
+	if !hasFutureBreakingChange {
 		return false, ""
 	}
 
 	if targetVersion == "" && s.disabled {
-		return true, manualUpdateBoundaryMessageInternal(nextBoundary)
+		return true, breakingChangeMessageInternal(nextBreakingChange)
 	}
 	if targetVersion == "" {
 		latest, err := s.GetLatestVersion(ctx)
 		if err != nil {
-			slog.DebugContext(ctx, "Failed to determine latest version for manual update requirement", "error", err)
-			return true, manualUpdateBoundaryMessageInternal(nextBoundary)
+			slog.DebugContext(ctx, "Failed to determine latest version for breaking change requirement", "error", err)
+			return true, breakingChangeMessageInternal(nextBreakingChange)
 		}
 		targetVersion = latest
 	}
@@ -255,26 +254,26 @@ func (s *VersionService) ManualUpdateRequirement(ctx context.Context, currentVer
 		return false, ""
 	}
 
-	if boundary, crossed := s.crossedManualUpdateBoundaryInternal(current, target, manifest.ManualUpdateBoundaries); crossed {
-		return true, manualUpdateBoundaryMessageInternal(boundary)
+	if change, crossed := s.crossedBreakingChangeInternal(current, target, manifest.BreakingChanges); crossed {
+		return true, breakingChangeMessageInternal(change)
 	}
 
 	return false, ""
 }
 
-func (s *VersionService) nextManualUpdateBoundaryInternal(current string, boundaries []manualUpdateBoundary) (manualUpdateBoundary, bool) {
-	var selected manualUpdateBoundary
+func (s *VersionService) nextBreakingChangeInternal(current string, changes []breakingChange) (breakingChange, bool) {
+	var selected breakingChange
 	var selectedVersion string
 	found := false
 
-	for _, boundary := range boundaries {
-		boundaryVersion, ok := s.normalizeComparableVersionInternal(boundary.Version)
-		if !ok || semver.Compare(current, boundaryVersion) >= 0 {
+	for _, change := range changes {
+		changeVersion, ok := s.normalizeComparableVersionInternal(change.Version)
+		if !ok || semver.Compare(current, changeVersion) >= 0 {
 			continue
 		}
-		if !found || semver.Compare(boundaryVersion, selectedVersion) < 0 {
-			selected = boundary
-			selectedVersion = boundaryVersion
+		if !found || semver.Compare(changeVersion, selectedVersion) < 0 {
+			selected = change
+			selectedVersion = changeVersion
 			found = true
 		}
 	}
@@ -282,20 +281,20 @@ func (s *VersionService) nextManualUpdateBoundaryInternal(current string, bounda
 	return selected, found
 }
 
-func (s *VersionService) crossedManualUpdateBoundaryInternal(current string, target string, boundaries []manualUpdateBoundary) (manualUpdateBoundary, bool) {
-	var selected manualUpdateBoundary
+func (s *VersionService) crossedBreakingChangeInternal(current string, target string, changes []breakingChange) (breakingChange, bool) {
+	var selected breakingChange
 	var selectedVersion string
 	found := false
 
-	for _, boundary := range boundaries {
-		boundaryVersion, ok := s.normalizeComparableVersionInternal(boundary.Version)
+	for _, change := range changes {
+		changeVersion, ok := s.normalizeComparableVersionInternal(change.Version)
 		if !ok {
 			continue
 		}
-		if semver.Compare(current, boundaryVersion) < 0 && semver.Compare(target, boundaryVersion) >= 0 {
-			if !found || semver.Compare(boundaryVersion, selectedVersion) < 0 {
-				selected = boundary
-				selectedVersion = boundaryVersion
+		if semver.Compare(current, changeVersion) < 0 && semver.Compare(target, changeVersion) >= 0 {
+			if !found || semver.Compare(changeVersion, selectedVersion) < 0 {
+				selected = change
+				selectedVersion = changeVersion
 				found = true
 			}
 		}
@@ -304,13 +303,13 @@ func (s *VersionService) crossedManualUpdateBoundaryInternal(current string, tar
 	return selected, found
 }
 
-func manualUpdateBoundaryMessageInternal(boundary manualUpdateBoundary) string {
-	message := strings.TrimSpace(boundary.Message)
+func breakingChangeMessageInternal(change breakingChange) string {
+	message := strings.TrimSpace(change.Message)
 	if message != "" {
 		return message
 	}
 
-	return fmt.Sprintf("This update crosses the %s manual migration boundary and cannot be installed automatically. Review the release notes and update Arcane manually.", boundary.Version)
+	return fmt.Sprintf("This update crosses the %s breaking change boundary and cannot be installed automatically. Review the release notes and update Arcane manually.", change.Version)
 }
 
 func (s *VersionService) normalizeComparableVersionInternal(ver string) (string, bool) {
@@ -358,7 +357,7 @@ func (s *VersionService) GetVersionInformation(ctx context.Context, currentVersi
 		check.UpdateAvailable = s.IsNewer(latest, cur)
 		check.ReleaseURL = s.ReleaseURL(latest)
 		if check.UpdateAvailable {
-			check.ManualUpdateRequired, check.ManualUpdateMessage = s.ManualUpdateRequirement(ctx, cur, latest)
+			check.BreakingChangeRequired, check.BreakingChangeMessage = s.BreakingChangeRequirement(ctx, cur, latest)
 		}
 	}
 
@@ -428,7 +427,7 @@ func (s *VersionService) GetAppVersionInfo(ctx context.Context) *version.Info {
 				info.ReleaseNotes = rel.Body
 				info.ReleasedAt = rel.PublishedAt
 				if info.UpdateAvailable {
-					info.ManualUpdateRequired, info.ManualUpdateMessage = s.ManualUpdateRequirement(ctx, ver, rel.TagName)
+					info.BreakingChangeRequired, info.BreakingChangeMessage = s.BreakingChangeRequirement(ctx, ver, rel.TagName)
 				}
 			}
 		}

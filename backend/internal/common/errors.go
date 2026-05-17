@@ -1630,14 +1630,14 @@ func (e *DockerSocketAccessError) Error() string {
 	return fmt.Sprintf("docker socket is not accessible: %v", e.Err)
 }
 
-type ManualUpdateRequiredError struct {
+type BreakingChangeRequiredError struct {
 	Err error
 }
 
-func (e *ManualUpdateRequiredError) Error() string {
-	return fmt.Sprintf("manual update required: %v", e.Err)
+func (e *BreakingChangeRequiredError) Error() string {
+	return fmt.Sprintf("breaking change requires manual update: %v", e.Err)
 }
 
-func IsManualUpdateRequiredError(err error) bool {
-	return isErrorTypeInternal[*ManualUpdateRequiredError](err)
+func IsBreakingChangeRequiredError(err error) bool {
+	return isErrorTypeInternal[*BreakingChangeRequiredError](err)
 }

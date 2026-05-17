@@ -40,9 +40,9 @@
 	const expectedVersion = $derived(versionInformation?.newestVersion);
 	const expectedDigest = $derived(versionInformation?.newestDigest);
 	const isSemver = $derived(!!versionInformation?.isSemverVersion);
-	const manualUpdateRequired = $derived(!!versionInformation?.manualUpdateRequired);
-	const manualUpdateMessage = $derived(versionInformation?.manualUpdateMessage?.trim() ?? '');
-	const canAutoInstall = $derived(canInstall && !manualUpdateRequired);
+	const breakingChangeRequired = $derived(!!versionInformation?.breakingChangeRequired);
+	const breakingChangeMessage = $derived(versionInformation?.breakingChangeMessage?.trim() ?? '');
+	const canAutoInstall = $derived(canInstall && !breakingChangeRequired);
 
 	const debugReleaseEnabled = $derived(open && debug && !versionInformation?.releaseNotes);
 	const debugReleaseQuery = createQuery(() => ({
@@ -109,10 +109,10 @@
 		}
 	});
 
-	const manualUpdateMessageHtml = $derived.by(() => {
-		if (!manualUpdateMessage) return '';
+	const breakingChangeMessageHtml = $derived.by(() => {
+		if (!breakingChangeMessage) return '';
 		try {
-			const html = marked.parseInline(manualUpdateMessage, { async: false }) as string;
+			const html = marked.parseInline(breakingChangeMessage, { async: false }) as string;
 			return DOMPurify.sanitize(html, {
 				ADD_ATTR: ['target', 'rel']
 			});
@@ -680,15 +680,15 @@
 				</ScrollArea.Root>
 			</div>
 
-			{#if manualUpdateRequired}
+			{#if breakingChangeRequired}
 				<div class="border-t border-amber-500/30 bg-amber-500/10 px-6 py-3" aria-live="polite">
-					{#if manualUpdateMessageHtml}
-						<p class="manual-update-message text-sm leading-relaxed font-medium text-amber-800 dark:text-amber-300">
-							{@html manualUpdateMessageHtml}
+					{#if breakingChangeMessageHtml}
+						<p class="breaking-change-message text-sm leading-relaxed font-medium text-amber-800 dark:text-amber-300">
+							{@html breakingChangeMessageHtml}
 						</p>
 					{:else}
 						<p class="text-sm leading-relaxed font-medium text-amber-800 dark:text-amber-300">
-							{manualUpdateMessage}
+							{breakingChangeMessage}
 						</p>
 					{/if}
 				</div>
@@ -794,12 +794,12 @@
 	.release-notes :global(strong) {
 		font-weight: 600;
 	}
-	.manual-update-message :global(a) {
+	.breaking-change-message :global(a) {
 		color: inherit;
 		text-decoration: underline;
 		text-underline-offset: 2px;
 	}
-	.manual-update-message :global(a:hover) {
+	.breaking-change-message :global(a:hover) {
 		opacity: 0.85;
 	}
 </style>

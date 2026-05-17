@@ -67,7 +67,7 @@ func (s *SystemUpgradeService) CanUpgrade(ctx context.Context) (bool, error) {
 		return false, err
 	}
 
-	if err := s.checkManualUpdateRequirementInternal(ctx); err != nil {
+	if err := s.checkBreakingChangeRequirementInternal(ctx); err != nil {
 		return false, err
 	}
 
@@ -77,7 +77,7 @@ func (s *SystemUpgradeService) CanUpgrade(ctx context.Context) (bool, error) {
 // TriggerUpgradeViaCLI spawns the upgrade CLI command targeting a
 // specific Arcane container. An empty container ID keeps the legacy self-targeting behavior.
 func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user models.User, containerID string) error {
-	if err := s.checkManualUpdateRequirementInternal(ctx); err != nil {
+	if err := s.checkBreakingChangeRequirementInternal(ctx); err != nil {
 		return err
 	}
 
@@ -222,20 +222,20 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 	return nil
 }
 
-func (s *SystemUpgradeService) checkManualUpdateRequirementInternal(ctx context.Context) error {
+func (s *SystemUpgradeService) checkBreakingChangeRequirementInternal(ctx context.Context) error {
 	if s.versionService == nil {
 		return nil
 	}
 
-	required, message := s.versionService.ManualUpdateRequirement(ctx, "", "")
+	required, message := s.versionService.BreakingChangeRequirement(ctx, "", "")
 	if !required {
 		return nil
 	}
 	if strings.TrimSpace(message) == "" {
-		message = "manual update required"
+		message = "breaking change requires manual update"
 	}
 
-	return &common.ManualUpdateRequiredError{Err: errors.New(message)}
+	return &common.BreakingChangeRequiredError{Err: errors.New(message)}
 }
 
 func determineUpgradeBinaryPathInternal(labels map[string]string) string {

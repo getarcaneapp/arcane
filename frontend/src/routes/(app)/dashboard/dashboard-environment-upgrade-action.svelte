@@ -33,8 +33,8 @@
 	} = $props();
 
 	const isLocalEnvironment = $derived(environment.id === '0');
-	const manualUpdateRequired = $derived(!!versionInfo.manualUpdateRequired);
-	const shouldCheckUpgrade = $derived(!!(versionInfo.updateAvailable && isAdmin && !debug && !manualUpdateRequired));
+	const breakingChangeRequired = $derived(!!versionInfo.breakingChangeRequired);
+	const shouldCheckUpgrade = $derived(!!(versionInfo.updateAvailable && isAdmin && !debug && !breakingChangeRequired));
 
 	const upgradeAvailabilityQuery = createQuery(() => ({
 		queryKey: queryKeys.system.environmentUpgradeAvailable(environment.id),
@@ -76,9 +76,9 @@
 	});
 
 	const shouldShowUpgrade = $derived(
-		(versionInfo.updateAvailable && isAdmin && (canUpgrade || manualUpdateRequired)) || (debug && isAdmin)
+		(versionInfo.updateAvailable && isAdmin && (canUpgrade || breakingChangeRequired)) || (debug && isAdmin)
 	);
-	const canInstallFromDialog = $derived(debug ? shouldShowUpgrade : shouldShowUpgrade && !manualUpdateRequired);
+	const canInstallFromDialog = $derived(debug ? shouldShowUpgrade : shouldShowUpgrade && !breakingChangeRequired);
 
 	const upgradeButtonText = $derived.by(() => {
 		if (upgrading) return m.upgrade_in_progress();

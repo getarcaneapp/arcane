@@ -1,5 +1,6 @@
 {
   "version": "1.19.3",
   "revision": "e2b528fd82392dca30e76c4a1004ae9ed1939907",
-  "buildTime": "2026-05-17T16:19:02Z"
+  "buildTime": "2026-05-17T16:19:02Z",
+  "breakingChanges": []
 }

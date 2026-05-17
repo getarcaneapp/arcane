@@ -12,8 +12,8 @@ export interface AppVersionInformation {
 	newestVersion?: string;
 	newestDigest?: string;
 	updateAvailable?: boolean;
-	manualUpdateRequired?: boolean;
-	manualUpdateMessage?: string;
+	breakingChangeRequired?: boolean;
+	breakingChangeMessage?: string;
 	releaseUrl?: string;
 	releaseNotes?: string;
 	releasedAt?: string;

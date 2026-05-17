@@ -25,8 +25,8 @@ async function getVersionInformation(): Promise<AppVersionInformation> {
 			newestVersion?: string;
 			newestDigest?: string;
 			updateAvailable?: boolean;
-			manualUpdateRequired?: boolean;
-			manualUpdateMessage?: string;
+			breakingChangeRequired?: boolean;
+			breakingChangeMessage?: string;
 			releaseUrl?: string;
 			releaseNotes?: string;
 			releasedAt?: string;
@@ -46,8 +46,8 @@ async function getVersionInformation(): Promise<AppVersionInformation> {
 			newestVersion: data.newestVersion,
 			newestDigest: data.newestDigest,
 			updateAvailable: data.updateAvailable || false,
-			manualUpdateRequired: data.manualUpdateRequired,
-			manualUpdateMessage: data.manualUpdateMessage,
+			breakingChangeRequired: data.breakingChangeRequired,
+			breakingChangeMessage: data.breakingChangeMessage,
 			releaseUrl: data.releaseUrl,
 			releaseNotes: data.releaseNotes,
 			releasedAt: data.releasedAt

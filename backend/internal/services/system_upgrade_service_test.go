@@ -43,14 +43,14 @@ func TestSystemUpgradeService_ErrorVariables(t *testing.T) {
 	require.Error(t, &common.ContainerNotFoundError{Err: errors.New("test")})
 	require.Error(t, &common.UpgradeInProgressError{Err: errors.New("test")})
 	require.Error(t, &common.DockerSocketAccessError{Err: errors.New("test")})
-	require.Error(t, &common.ManualUpdateRequiredError{Err: errors.New("test")})
+	require.Error(t, &common.BreakingChangeRequiredError{Err: errors.New("test")})
 
 	// Test error messages
 	require.Equal(t, "arcane is not running in a Docker container: test", (&common.NotRunningInDockerError{Err: errors.New("test")}).Error())
 	require.Equal(t, "could not find Arcane container: test", (&common.ContainerNotFoundError{Err: errors.New("test")}).Error())
 	require.Equal(t, "an upgrade is already in progress: test", (&common.UpgradeInProgressError{Err: errors.New("test")}).Error())
 	require.Equal(t, "docker socket is not accessible: test", (&common.DockerSocketAccessError{Err: errors.New("test")}).Error())
-	require.Equal(t, "manual update required: test", (&common.ManualUpdateRequiredError{Err: errors.New("test")}).Error())
+	require.Equal(t, "breaking change requires manual update: test", (&common.BreakingChangeRequiredError{Err: errors.New("test")}).Error())
 }
 
 // TestSystemUpgradeService_UpgradingFlag_ConcurrentAccess tests upgrading flag
@@ -193,18 +193,17 @@ func TestDetermineUpgradeBinaryPath(t *testing.T) {
 	}
 }
 
-func TestSystemUpgradeService_CheckManualUpdateRequirementBlocksFromManifest(t *testing.T) {
+func TestSystemUpgradeService_CheckBreakingChangeRequirementBlocksFromManifest(t *testing.T) {
 	ctx := context.Background()
-	versionService := newTestVersionService(t, "v1.19.2", manualUpdateManifestHandler(t, http.StatusOK, manualUpdateManifest{
-		SchemaVersion: 1,
-		ManualUpdateBoundaries: []manualUpdateBoundary{
+	versionService := newTestVersionService(t, "v1.19.2", arcaneManifestHandler(t, http.StatusOK, arcaneManifest{
+		BreakingChanges: []breakingChange{
 			{Version: "v1.20.0", Message: "v1.20 manual step"},
 		},
 	}), "v1.20.0")
 	s := NewSystemUpgradeService(nil, versionService, nil, nil)
 
-	err := s.checkManualUpdateRequirementInternal(ctx)
+	err := s.checkBreakingChangeRequirementInternal(ctx)
 
-	require.True(t, common.IsManualUpdateRequiredError(err))
+	require.True(t, common.IsBreakingChangeRequiredError(err))
 	require.ErrorContains(t, err, "v1.20 manual step")
 }

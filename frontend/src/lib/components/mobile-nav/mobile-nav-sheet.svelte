@@ -41,9 +41,9 @@
 	let upgrading = $state(false);
 	let showConfirmDialog = $state(false);
 	const isAdmin = $derived(!!user?.roles?.includes('admin'));
-	const manualUpdateRequired = $derived(!!versionInformation?.manualUpdateRequired);
+	const breakingChangeRequired = $derived(!!versionInformation?.breakingChangeRequired);
 
-	const shouldCheckUpgrade = $derived(!!(versionInformation?.updateAvailable && isAdmin && !debug && !manualUpdateRequired));
+	const shouldCheckUpgrade = $derived(!!(versionInformation?.updateAvailable && isAdmin && !debug && !breakingChangeRequired));
 	const upgradeAvailabilityQuery = createQuery(() => ({
 		queryKey: queryKeys.system.upgradeAvailable('mobile-nav'),
 		queryFn: () => systemUpgradeService.checkUpgradeAvailable(),
@@ -60,7 +60,7 @@
 		!!(shouldCheckUpgrade && (upgradeAvailabilityQuery.isPending || upgradeAvailabilityQuery.isFetching))
 	);
 	const shouldShowUpgrade = $derived((canUpgrade && isAdmin) || debug);
-	const canInstallFromDialog = $derived(debug ? shouldShowUpgrade : shouldShowUpgrade && !manualUpdateRequired);
+	const canInstallFromDialog = $derived(debug ? shouldShowUpgrade : shouldShowUpgrade && !breakingChangeRequired);
 
 	const updateType = $derived.by(() => {
 		if (!versionInformation) return 'none';

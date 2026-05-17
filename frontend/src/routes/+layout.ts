@@ -131,8 +131,8 @@ export const load = async () => {
 			newestVersion: info.newestVersion,
 			newestDigest: info.newestDigest,
 			updateAvailable: info.updateAvailable,
-			manualUpdateRequired: info.manualUpdateRequired,
-			manualUpdateMessage: info.manualUpdateMessage,
+			breakingChangeRequired: info.breakingChangeRequired,
+			breakingChangeMessage: info.breakingChangeMessage,
 			releaseUrl: info.releaseUrl,
 			releaseNotes: info.releaseNotes,
 			releasedAt: info.releasedAt
