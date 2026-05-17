@@ -1,3 +1,13 @@
+## v1.19.3
+
+### Bug fixes
+
+* remove gzip middleware from agent endpoints ([#2627](https://github.com/getarcaneapp/arcane/pull/2627) by @kmendell)
+
+
+
+**Full Changelog**: https://github.com/getarcaneapp/arcane/compare/v1.19.2...v1.19.3
+
 ## v1.19.2
 
 ### Bug fixes

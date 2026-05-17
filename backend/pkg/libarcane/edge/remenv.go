@@ -164,7 +164,7 @@ func GetSkipHeaders() map[string]struct{} {
 	return map[string]struct{}{
 		"Host": {}, "Connection": {}, "Keep-Alive": {}, "Proxy-Authenticate": {},
 		"Proxy-Authorization": {}, "Te": {}, "Trailer": {}, "Transfer-Encoding": {},
-		"Upgrade": {}, "Content-Length": {}, "Origin": {}, "Referer": {},
+		"Upgrade": {}, "Content-Length": {}, "Accept-Encoding": {}, "Origin": {}, "Referer": {},
 		"Access-Control-Request-Method": {}, "Access-Control-Request-Headers": {}, "Cookie": {},
 	}
 }

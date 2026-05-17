@@ -185,6 +185,7 @@ func TestGetSkipHeaders_ContainsExpectedEntries(t *testing.T) {
 	require.Contains(t, skip, "Transfer-Encoding")
 	require.Contains(t, skip, "Upgrade")
 	require.Contains(t, skip, "Content-Length")
+	require.Contains(t, skip, "Accept-Encoding")
 	require.Contains(t, skip, "Cookie")
 	require.Contains(t, skip, "Origin")
 	require.Contains(t, skip, "Referer")
