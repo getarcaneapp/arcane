@@ -1,4 +1,4 @@
-package updater
+package imageupdate
 
 import (
 	"context"
@@ -6,11 +6,8 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/backend/pkg/utils/imagedigest"
 	"github.com/moby/moby/client"
-	ref "go.podman.io/image/v5/docker/reference"
-
-	"github.com/getarcaneapp/arcane/backend/pkg/utils/registry"
+	digest "github.com/opencontainers/go-digest"
 )
 
 type remoteDigestResolver interface {
@@ -40,6 +37,29 @@ type CheckResult struct {
 	CheckedViaAPI bool // True if we checked via registry API, false if we had to pull
 }
 
+func NormalizeDigest(value string) (string, error) {
+	parsed, err := digest.Parse(strings.TrimSpace(value))
+	if err != nil {
+		return "", fmt.Errorf("invalid OCI digest %q: %w", value, err)
+	}
+
+	return parsed.String(), nil
+}
+
+func DigestFromReferenceSuffix(ref string) (string, bool) {
+	_, digestValue, ok := strings.Cut(strings.TrimSpace(ref), "@")
+	if !ok {
+		return "", false
+	}
+
+	normalized, err := NormalizeDigest(digestValue)
+	if err != nil {
+		return "", false
+	}
+
+	return normalized, true
+}
+
 // CheckImageNeedsUpdate checks if an image has a newer version available without pulling
 // Returns true if the remote digest differs from the local digest
 func (c *DigestChecker) CheckImageNeedsUpdate(ctx context.Context, imageRef string) CheckResult {
@@ -47,10 +67,10 @@ func (c *DigestChecker) CheckImageNeedsUpdate(ctx context.Context, imageRef stri
 
 	slog.DebugContext(ctx, "CheckImageNeedsUpdate: checking image",
 		"imageRef", imageRef,
-		"normalizedRef", normalizeRef(imageRef))
+		"normalizedRef", normalizedReferenceStringInternal(imageRef))
 
 	// Get local digest
-	localDigest, err := c.getLocalDigest(ctx, imageRef)
+	localDigest, err := c.getLocalDigestInternal(ctx, imageRef)
 	if err != nil {
 		slog.DebugContext(ctx, "CheckImageNeedsUpdate: failed to get local digest",
 			"imageRef", imageRef,
@@ -91,8 +111,8 @@ func (c *DigestChecker) CheckImageNeedsUpdate(ctx context.Context, imageRef stri
 	return result
 }
 
-// getLocalDigest retrieves the digest of a locally stored image
-func (c *DigestChecker) getLocalDigest(ctx context.Context, imageRef string) (string, error) {
+// getLocalDigestInternal retrieves the digest of a locally stored image
+func (c *DigestChecker) getLocalDigestInternal(ctx context.Context, imageRef string) (string, error) {
 	inspect, err := c.dcli.ImageInspect(ctx, imageRef)
 	if err != nil {
 		return "", fmt.Errorf("image not found locally: %w", err)
@@ -100,7 +120,7 @@ func (c *DigestChecker) getLocalDigest(ctx context.Context, imageRef string) (st
 
 	// Try to get digest from RepoDigests
 	for _, rd := range inspect.RepoDigests {
-		if normalized, ok := imagedigest.FromReferenceSuffix(rd); ok {
+		if normalized, ok := DigestFromReferenceSuffix(rd); ok {
 			return normalized, nil
 		}
 	}
@@ -141,11 +161,11 @@ func (c *DigestChecker) GetImageIDsForRef(ctx context.Context, ref string) ([]st
 	}
 	images := imageList.Items
 
-	normalizedRef := normalizeRef(ref)
+	normalizedRef := normalizedReferenceStringInternal(ref)
 	var ids []string
 	for _, img := range images {
 		for _, tag := range img.RepoTags {
-			if normalizeRef(tag) == normalizedRef {
+			if normalizedReferenceStringInternal(tag) == normalizedRef {
 				ids = append(ids, img.ID)
 				break
 			}
@@ -155,53 +175,10 @@ func (c *DigestChecker) GetImageIDsForRef(ctx context.Context, ref string) ([]st
 	return ids, nil
 }
 
-// parseImageRef splits an image reference into registry, repository, and tag
-func parseImageRef(imageRef string) (registryHost, repository, tag string) {
-	named, err := ref.ParseNormalizedNamed(imageRef)
-	if err == nil {
-		registryHost = registry.NormalizeRegistryForComparison(ref.Domain(named))
-		repository = ref.Path(named)
-		tag = "latest"
-		if tagged, ok := named.(ref.NamedTagged); ok {
-			tag = tagged.Tag()
-		}
-		return registryHost, repository, tag
+func normalizedReferenceStringInternal(imageRef string) string {
+	parts, err := NormalizeReference(imageRef)
+	if err != nil {
+		return ""
 	}
-
-	// Fallback for unexpected parser failures.
-	registryHost = registry.ExtractRegistryHost(imageRef)
-	if i := strings.Index(imageRef, "@"); i != -1 {
-		imageRef = imageRef[:i]
-	}
-
-	tag = "latest"
-	if i := strings.LastIndex(imageRef, ":"); i != -1 && strings.LastIndex(imageRef, "/") < i {
-		tag = imageRef[i+1:]
-		imageRef = imageRef[:i]
-	}
-
-	parts := strings.Split(imageRef, "/")
-	if len(parts) > 0 && (strings.Contains(parts[0], ".") || strings.Contains(parts[0], ":") || parts[0] == "localhost") {
-		repository = strings.Join(parts[1:], "/")
-	} else {
-		repository = imageRef
-		if registryHost == "docker.io" && !strings.Contains(repository, "/") {
-			repository = "library/" + repository
-		}
-	}
-
-	return registry.NormalizeRegistryForComparison(registryHost), repository, tag
-}
-
-// normalizeRef normalizes an image reference for comparison
-func normalizeRef(ref string) string {
-	// Strip digest
-	if i := strings.Index(ref, "@"); i != -1 {
-		ref = ref[:i]
-	}
-
-	// Parse and reconstruct
-	reg, repo, tag := parseImageRef(ref)
-
-	return strings.ToLower(reg + "/" + repo + ":" + tag)
+	return parts.NormalizedRef
 }

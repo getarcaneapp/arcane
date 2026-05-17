@@ -20,7 +20,7 @@ import (
 	composeapi "github.com/docker/compose/v5/pkg/api"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
-	libupdater "github.com/getarcaneapp/arcane/backend/pkg/libarcane/updater"
+	libupdater "github.com/getarcaneapp/arcane/backend/pkg/libarcane/imageupdate"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/pkg/projects"
 	buildtypes "github.com/getarcaneapp/arcane/types/builds"

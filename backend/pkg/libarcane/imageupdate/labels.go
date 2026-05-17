@@ -1,4 +1,4 @@
-package updater
+package imageupdate
 
 import "strings"
 

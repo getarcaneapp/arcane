@@ -415,9 +415,13 @@ s.db.WithContext(ctx).
 
 Use `models.JSON` for arbitrary JSON fields and `models.StringSlice` for string arrays — both implement `driver.Valuer` and `sql.Scanner`.
 
-## Edge Agent Mode
+## Agent Modes
 
-Edge agents connect to a central Arcane manager via WebSocket tunnel, allowing management of Docker hosts behind NAT/firewalls.
+Arcane supports two agent modes with different connection directions.
+
+### Edge mode
+
+Edge agents connect outbound to a central manager via WebSocket or gRPC tunnel, allowing management of Docker hosts behind NAT/firewalls. The agent dials the manager; the manager never dials the agent.
 
 **Architecture:**
 
@@ -438,10 +442,23 @@ ARCANE_AGENT_TOKEN=<api-key>
 - `heartbeat` / `heartbeat_ack`: Connection keepalive
 - `ws_start` / `ws_data` / `ws_close`: WebSocket streaming (logs, stats)
 
+### Direct mode
+
+Direct agents are passive: the agent runs an HTTP server on TCP 3553 and the manager initiates every request. Requires inbound TCP 3553 on the agent host, but no outbound path back to the manager. Suits one-way network setups (SSH forward tunnels, restricted-outbound hosts).
+
+**Configuration** (agent side):
+
+```bash
+ARCANE_AGENT_MODE=true
+ARCANE_AGENT_TOKEN=<api-key>
+```
+
+`ARCANE_MANAGER_API_URL` is **not** used in Direct mode — the agent never dials out. Pairing completes when the manager's periodic health-check (every 2 min by default) reaches the agent.
+
 **When implementing agent features:**
 
 - Check `cfg.AgentMode` to skip manager-only logic (e.g., environment health checks)
-- Agent auto-pairs with manager on startup if token is configured
+- Edge agents auto-pair on startup; Direct agents are paired by the manager's reachability check
 - Edge connections are stateless — each request is independent
 
 ## AI-Assisted Contributions

@@ -1,4 +1,4 @@
-package updater
+package imageupdate
 
 import (
 	"context"
@@ -21,7 +21,7 @@ type messageOnlyHandler struct {
 	groups   []string
 }
 
-func newMessageOnlyHandler(w io.Writer, minLevel slog.Level) *messageOnlyHandler {
+func newMessageOnlyHandlerInternal(w io.Writer, minLevel slog.Level) *messageOnlyHandler {
 	return &messageOnlyHandler{mu: &sync.Mutex{}, w: w, minLevel: minLevel}
 }
 
@@ -44,7 +44,7 @@ func (h *messageOnlyHandler) Handle(_ context.Context, r slog.Record) error {
 		if len(h.groups) > 0 {
 			key = strings.Join(h.groups, ".") + "." + key
 		}
-		line += " " + key + "=" + formatSlogValue(a.Value)
+		line += " " + key + "=" + formatSlogValueInternal(a.Value)
 	}
 
 	for _, a := range h.attrs {
@@ -96,7 +96,7 @@ func (h *messageOnlyHandler) WithGroup(name string) slog.Handler {
 	}
 }
 
-func formatSlogValue(v slog.Value) string {
+func formatSlogValueInternal(v slog.Value) string {
 	switch v.Kind() {
 	case slog.KindAny:
 		return strconv.Quote(fmt.Sprint(v.Any()))
@@ -121,7 +121,7 @@ func formatSlogValue(v slog.Value) string {
 		// Groups are typically flattened earlier in Handle(), but handle defensively.
 		return strconv.Quote(fmt.Sprint(v.Group()))
 	case slog.KindLogValuer:
-		return formatSlogValue(v.Resolve())
+		return formatSlogValueInternal(v.Resolve())
 	default:
 		return strconv.Quote(fmt.Sprint(v.Any()))
 	}
@@ -156,7 +156,7 @@ func SetupMessageOnlyLogFile(dataDir string, filePrefix string, minLevel slog.Le
 		Level:     minLevel,
 		AddSource: true,
 	})
-	fileHandler := newMessageOnlyHandler(logFile, minLevel)
+	fileHandler := newMessageOnlyHandlerInternal(logFile, minLevel)
 
 	slog.SetDefault(slog.New(slog.NewMultiHandler(stdoutHandler, fileHandler)))
 

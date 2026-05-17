@@ -13,7 +13,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	dockerutils "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
-	libupdater "github.com/getarcaneapp/arcane/backend/pkg/libarcane/updater"
+	libupdater "github.com/getarcaneapp/arcane/backend/pkg/libarcane/imageupdate"
 	"github.com/getarcaneapp/arcane/types/base"
 	containertypes "github.com/getarcaneapp/arcane/types/container"
 	dashboardtypes "github.com/getarcaneapp/arcane/types/dashboard"
