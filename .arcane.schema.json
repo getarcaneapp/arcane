@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/getarcaneapp/arcane/main/.arcane.schema.json",
+  "title": "Arcane Release Manifest",
+  "description": "Build metadata and breaking-change boundaries used by Arcane release tooling and update checks.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "revision", "buildTime", "breakingChanges"],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Optional JSON Schema reference for editor validation."
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Current Arcane release version."
+    },
+    "revision": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Git revision used to build this release."
+    },
+    "buildTime": {
+      "type": "string",
+      "format": "date-time",
+      "description": "UTC timestamp for when this release was built."
+    },
+    "breakingChanges": {
+      "type": "array",
+      "description": "Versions that require a manual update when crossed from an older release.",
+      "default": [],
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["version"],
+        "properties": {
+          "version": {
+            "type": "string",
+            "pattern": "^v?[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$",
+            "description": "The release version where the breaking change starts."
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Optional user-facing markdown explaining the manual update requirement."
+          }
+        }
+      }
+    }
+  }
+}
