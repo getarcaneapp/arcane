@@ -37,6 +37,7 @@ type SettingsService struct {
 	OnImagePollingSettingsChanged      func(ctx context.Context)
 	OnAutoUpdateSettingsChanged        func(ctx context.Context)
 	OnProjectsDirectoryChanged         func(ctx context.Context)
+	OnTemplatesDirectoryChanged        func(ctx context.Context)
 	OnScheduledPruneSettingsChanged    func(ctx context.Context)
 	OnVulnerabilityScanSettingsChanged func(ctx context.Context)
 	OnAutoHealSettingsChanged          func(ctx context.Context)
@@ -108,6 +109,7 @@ func (s *SettingsService) getDefaultSettings() *models.Settings {
 func DefaultSettingsConfig() *models.Settings {
 	return &models.Settings{
 		ProjectsDirectory:               models.SettingVariable{Value: "/app/data/projects"},
+		TemplatesDirectory:              models.SettingVariable{Value: "/app/data/templates"},
 		FollowProjectSymlinks:           models.SettingVariable{Value: "false"},
 		SwarmStackSourcesDirectory:      models.SettingVariable{Value: "/app/data/swarm/sources"},
 		DiskUsagePath:                   models.SettingVariable{Value: "/app/data/projects"},
@@ -708,6 +710,11 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates settings.U
 		return sv.Key == "projectsDirectory" || sv.Key == "followProjectSymlinks"
 	}) && s.OnProjectsDirectoryChanged != nil {
 		s.OnProjectsDirectoryChanged(ctx)
+	}
+	if slices.ContainsFunc(valuesToUpdate, func(sv models.SettingVariable) bool {
+		return sv.Key == "templatesDirectory"
+	}) && s.OnTemplatesDirectoryChanged != nil {
+		s.OnTemplatesDirectoryChanged(ctx)
 	}
 	if len(changedTimeouts) > 0 && s.OnTimeoutSettingsChanged != nil {
 		s.OnTimeoutSettingsChanged(ctx, changedTimeouts)

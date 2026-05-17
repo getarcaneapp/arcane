@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/url"
 
 	"github.com/danielgtaylor/huma/v2"
 	humamw "github.com/getarcaneapp/arcane/backend/api/middleware"
@@ -465,9 +466,17 @@ func (h *TemplateHandler) GetTemplate(ctx context.Context, input *GetTemplateInp
 		return nil, huma.Error400BadRequest((&common.TemplateIDRequiredError{}).Error())
 	}
 
-	tmpl, err := h.templateService.GetTemplate(ctx, input.ID)
+	// Path parameter arrives URL-encoded (e.g. "remote%3Areg%3Aslug" for remote IDs that
+	// contain ':' separators). Chi/Huma do not auto-decode, so decode here before
+	// matching against cached / stored template IDs.
+	id, decodeErr := url.PathUnescape(input.ID)
+	if decodeErr != nil {
+		return nil, huma.Error400BadRequest((&common.TemplateIDRequiredError{}).Error())
+	}
+
+	tmpl, err := h.templateService.GetTemplate(ctx, id)
 	if err != nil {
-		if err.Error() == "template not found" {
+		if common.IsTemplateNotFoundError(err) {
 			return nil, huma.Error404NotFound((&common.TemplateNotFoundError{}).Error())
 		}
 		return nil, huma.Error500InternalServerError((&common.TemplateRetrievalError{Err: err}).Error())
@@ -496,8 +505,16 @@ func (h *TemplateHandler) GetTemplateContent(ctx context.Context, input *GetTemp
 		return nil, huma.Error400BadRequest((&common.TemplateIDRequiredError{}).Error())
 	}
 
-	contentData, err := h.templateService.GetTemplateContentWithParsedData(ctx, input.ID)
+	id, decodeErr := url.PathUnescape(input.ID)
+	if decodeErr != nil {
+		return nil, huma.Error400BadRequest((&common.TemplateIDRequiredError{}).Error())
+	}
+
+	contentData, err := h.templateService.GetTemplateContentWithParsedData(ctx, id)
 	if err != nil {
+		if common.IsTemplateNotFoundError(err) {
+			return nil, huma.Error404NotFound((&common.TemplateNotFoundError{}).Error())
+		}
 		return nil, huma.Error500InternalServerError((&common.TemplateContentError{Err: err}).Error())
 	}
 
@@ -553,6 +570,11 @@ func (h *TemplateHandler) UpdateTemplate(ctx context.Context, input *UpdateTempl
 		return nil, huma.Error400BadRequest((&common.TemplateIDRequiredError{}).Error())
 	}
 
+	id, decodeErr := url.PathUnescape(input.ID)
+	if decodeErr != nil {
+		return nil, huma.Error400BadRequest((&common.TemplateIDRequiredError{}).Error())
+	}
+
 	updates := &models.ComposeTemplate{
 		Name:        input.Body.Name,
 		Description: input.Body.Description,
@@ -564,14 +586,14 @@ func (h *TemplateHandler) UpdateTemplate(ctx context.Context, input *UpdateTempl
 		updates.EnvContent = nil
 	}
 
-	if err := h.templateService.UpdateTemplate(ctx, input.ID, updates); err != nil {
-		if err.Error() == "template not found" {
+	if err := h.templateService.UpdateTemplate(ctx, id, updates); err != nil {
+		if common.IsTemplateNotFoundError(err) {
 			return nil, huma.Error404NotFound((&common.TemplateNotFoundError{}).Error())
 		}
 		return nil, huma.Error500InternalServerError((&common.TemplateUpdateError{Err: err}).Error())
 	}
 
-	updated, err := h.templateService.GetTemplate(ctx, input.ID)
+	updated, err := h.templateService.GetTemplate(ctx, id)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.TemplateRetrievalError{Err: err}).Error())
 	}
@@ -599,8 +621,13 @@ func (h *TemplateHandler) DeleteTemplate(ctx context.Context, input *DeleteTempl
 		return nil, huma.Error400BadRequest((&common.TemplateIDRequiredError{}).Error())
 	}
 
-	if err := h.templateService.DeleteTemplate(ctx, input.ID); err != nil {
-		if err.Error() == "template not found" {
+	id, decodeErr := url.PathUnescape(input.ID)
+	if decodeErr != nil {
+		return nil, huma.Error400BadRequest((&common.TemplateIDRequiredError{}).Error())
+	}
+
+	if err := h.templateService.DeleteTemplate(ctx, id); err != nil {
+		if common.IsTemplateNotFoundError(err) {
 			return nil, huma.Error404NotFound((&common.TemplateNotFoundError{}).Error())
 		}
 		return nil, huma.Error500InternalServerError((&common.TemplateDeletionError{Err: err}).Error())
@@ -626,9 +653,17 @@ func (h *TemplateHandler) DownloadTemplate(ctx context.Context, input *DownloadT
 		return nil, huma.Error400BadRequest((&common.TemplateIDRequiredError{}).Error())
 	}
 
-	tmpl, err := h.templateService.GetTemplate(ctx, input.ID)
+	id, decodeErr := url.PathUnescape(input.ID)
+	if decodeErr != nil {
+		return nil, huma.Error400BadRequest((&common.TemplateIDRequiredError{}).Error())
+	}
+
+	tmpl, err := h.templateService.GetTemplate(ctx, id)
 	if err != nil {
-		return nil, huma.Error404NotFound((&common.TemplateNotFoundError{}).Error())
+		if common.IsTemplateNotFoundError(err) {
+			return nil, huma.Error404NotFound((&common.TemplateNotFoundError{}).Error())
+		}
+		return nil, huma.Error500InternalServerError((&common.TemplateDownloadError{Err: err}).Error())
 	}
 	if !tmpl.IsRemote {
 		return nil, huma.Error400BadRequest((&common.TemplateAlreadyLocalError{}).Error())

@@ -82,10 +82,6 @@ func NewTemplateService(ctx context.Context, db *database.DB, httpClient *http.C
 		httpClient = http.DefaultClient
 	}
 
-	if err := projects.EnsureDefaultTemplates(ctx); err != nil {
-		slog.WarnContext(ctx, "failed to ensure default templates", "error", err)
-	}
-
 	service := &TemplateService{
 		db:                db,
 		httpClient:        httpClient,
@@ -96,20 +92,44 @@ func NewTemplateService(ctx context.Context, db *database.DB, httpClient *http.C
 		registryErrors:    make(map[string]string),
 	}
 	service.safeHTTPClient = service.newSafeHTTPClientInternal()
+
+	if err := projects.EnsureDefaultTemplates(ctx, service.configuredTemplatesDirSettingInternal(ctx)); err != nil {
+		slog.WarnContext(ctx, "failed to ensure default templates", "error", err)
+	}
+
 	return service
+}
+
+// configuredTemplatesDirSettingInternal returns the raw user-configured templates
+// directory string (from the settingsService), without resolving it to an absolute
+// path. Use this when calling helpers like projects.GetTemplatesDirectory that
+// perform their own resolution.
+func (s *TemplateService) configuredTemplatesDirSettingInternal(ctx context.Context) string {
+	if s.settingsService == nil {
+		return ""
+	}
+	return s.settingsService.GetStringSetting(ctx, "templatesDirectory", "/app/data/templates")
+}
+
+// getTemplatesDirectoryInternal resolves the effective templates directory by
+// applying the same resolution rules used elsewhere for the projects directory.
+func (s *TemplateService) getTemplatesDirectoryInternal(ctx context.Context) (string, error) {
+	return projects.GetTemplatesDirectory(ctx, strings.TrimSpace(s.configuredTemplatesDirSettingInternal(ctx)))
 }
 
 func (s *TemplateService) ensureRemoteTemplatesLoaded(ctx context.Context) error {
 	s.remoteMu.Lock()
 
-	// If cache is valid, return
-	if s.remoteCache.templates != nil && time.Since(s.remoteCache.lastFetch) < remoteCacheDuration {
+	// If cache has entries and is fresh, return.
+	// An empty slice is treated as "no cache" so callers always trigger a blocking
+	// refresh — otherwise a single failed/empty refresh would poison the cache.
+	if len(s.remoteCache.templates) > 0 && time.Since(s.remoteCache.lastFetch) < remoteCacheDuration {
 		s.remoteMu.Unlock()
 		return nil
 	}
 
-	// If we have cache (even stale) and are not already refreshing, trigger background refresh
-	if s.remoteCache.templates != nil {
+	// If we have a non-empty stale cache and nobody is refreshing, trigger background refresh.
+	if len(s.remoteCache.templates) > 0 {
 		if !s.remoteCache.refreshing {
 			s.remoteCache.refreshing = true
 			s.remoteMu.Unlock()
@@ -236,8 +256,6 @@ func (s *TemplateService) GetAllTemplatesPaginated(ctx context.Context, params p
 	return result.Items, paginationResp, nil
 }
 
-var ErrTemplateNotFound = errors.New("template not found")
-
 // envKeyPattern is the POSIX env-name shape used to validate global variable
 // keys before they are persisted to .env.global. Keys that do not match are
 // rejected with a common.InvalidEnvKeyError.
@@ -256,19 +274,48 @@ func (s *TemplateService) GetTemplate(ctx context.Context, id string) (*models.C
 	}
 
 	if err := s.ensureRemoteTemplatesLoaded(ctx); err != nil {
-		return nil, fmt.Errorf("template not found (failed to load remote templates): %w", err)
+		return nil, fmt.Errorf("template %q lookup failed: registry refresh error: %w", id, err)
 	}
-	s.remoteMu.RLock()
-	copied := cloneRemoteTemplates(s.remoteCache.templates)
-	s.remoteMu.RUnlock()
 
-	for _, remoteTemplate := range copied {
-		if remoteTemplate.ID == id {
-			return new(remoteTemplate), nil
+	if found := s.lookupRemoteFromCacheInternal(id); found != nil {
+		return found, nil
+	}
+
+	// Remote IDs (remote:registry:slug) deserve a synchronous force-refresh on miss
+	// before we return "not found" — the cache may be stale or the previous refresh
+	// silently returned empty.
+	if strings.HasPrefix(id, remoteIDPrefix+":") {
+		slog.InfoContext(ctx, "remote template not in cache, forcing registry refresh", "templateID", id, "cacheSize", s.remoteCacheSizeInternal())
+		if _, refreshErr := s.refreshRemoteTemplates(ctx); refreshErr != nil {
+			return nil, fmt.Errorf("template %q not found and registry refresh failed: %w", id, refreshErr)
+		}
+		if found := s.lookupRemoteFromCacheInternal(id); found != nil {
+			return found, nil
+		}
+		return nil, &common.TemplateNotFoundError{
+			Err: fmt.Errorf("template %q not found in any registered registry (cache size=%d after refresh)", id, s.remoteCacheSizeInternal()),
 		}
 	}
 
-	return nil, ErrTemplateNotFound
+	return nil, &common.TemplateNotFoundError{}
+}
+
+func (s *TemplateService) lookupRemoteFromCacheInternal(id string) *models.ComposeTemplate {
+	s.remoteMu.RLock()
+	defer s.remoteMu.RUnlock()
+	for i := range s.remoteCache.templates {
+		if s.remoteCache.templates[i].ID == id {
+			cloned := cloneRemoteTemplates(s.remoteCache.templates[i : i+1])
+			return &cloned[0]
+		}
+	}
+	return nil
+}
+
+func (s *TemplateService) remoteCacheSizeInternal() int {
+	s.remoteMu.RLock()
+	defer s.remoteMu.RUnlock()
+	return len(s.remoteCache.templates)
 }
 
 func (s *TemplateService) CreateTemplate(ctx context.Context, template *models.ComposeTemplate) error {
@@ -291,7 +338,7 @@ func (s *TemplateService) UpdateTemplate(ctx context.Context, id string, updates
 		var existing models.ComposeTemplate
 		if err := tx.Where("id = ?", id).First(&existing).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return fmt.Errorf("template not found")
+				return &common.TemplateNotFoundError{}
 			}
 			return fmt.Errorf("failed to find template: %w", err)
 		}
@@ -319,7 +366,7 @@ func (s *TemplateService) DeleteTemplate(ctx context.Context, id string) error {
 		var existing models.ComposeTemplate
 		if err := tx.Where("id = ?", id).First(&existing).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return fmt.Errorf("template not found")
+				return &common.TemplateNotFoundError{}
 			}
 			return fmt.Errorf("failed to find template: %w", err)
 		}
@@ -328,15 +375,14 @@ func (s *TemplateService) DeleteTemplate(ctx context.Context, id string) error {
 			return fmt.Errorf("cannot delete remote template directly")
 		}
 
-		baseDir, err := projects.GetTemplatesDirectory(ctx)
+		baseDir, err := s.getTemplatesDirectoryInternal(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to get templates directory: %w", err)
 		} else {
 			templatePath := filepath.Join(baseDir, existing.Name)
 
 			if stat, err := os.Stat(templatePath); err == nil && stat.IsDir() {
-				composeFile := filepath.Join(templatePath, "compose.yaml")
-				if _, err := os.Stat(composeFile); err == nil {
+				if _, err := projects.DetectComposeFile(templatePath); err == nil {
 					if err := os.RemoveAll(templatePath); err != nil {
 						return fmt.Errorf("failed to delete template directory: %w", err)
 					}
@@ -707,8 +753,15 @@ func (s *TemplateService) convertRemoteToLocal(remote tmpl.RemoteTemplate, regis
 }
 
 func (s *TemplateService) FetchTemplateContent(ctx context.Context, template *models.ComposeTemplate) (string, string, error) {
-	if !template.IsRemote || template.Metadata == nil || template.Metadata.RemoteURL == nil {
-		return template.Content, "", fmt.Errorf("not a remote template or missing remote URL")
+	if !template.IsRemote {
+		envContent := ""
+		if template.EnvContent != nil {
+			envContent = *template.EnvContent
+		}
+		return template.Content, envContent, nil
+	}
+	if template.Metadata == nil || template.Metadata.RemoteURL == nil || strings.TrimSpace(*template.Metadata.RemoteURL) == "" {
+		return "", "", fmt.Errorf("remote template %q is missing compose_url in registry metadata", template.ID)
 	}
 
 	return s.fetchRemoteTemplateFiles(ctx, template)
@@ -809,7 +862,7 @@ func (s *TemplateService) DownloadTemplate(ctx context.Context, remoteTemplate *
 
 	base := s.templateBaseFromRemote(remoteTemplate)
 
-	dir, composePath, envPath, err := projects.EnsureTemplateDir(ctx, base)
+	dir, composePath, envPath, err := projects.EnsureTemplateDir(ctx, s.configuredTemplatesDirSettingInternal(ctx), base)
 	if err != nil {
 		return nil, err
 	}
@@ -958,12 +1011,17 @@ func (s *TemplateService) upsertFilesystemTemplate(ctx context.Context, name, de
 
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var existing models.ComposeTemplate
+		// Match on description (which encodes the absolute compose path) OR name (folder name).
+		// Matching on name as a fallback keeps a single row across templates-directory
+		// reconfigurations or compose-filename renames within the same folder, but
+		// only for templates previously imported from disk.
 		q := tx.
-			Where("is_remote = ? AND registry_id IS NULL AND description = ?", false, desc).
+			Where("is_remote = ? AND registry_id IS NULL AND (description = ? OR (name = ? AND description LIKE ?))", false, desc, name, "Imported from %").
 			First(&existing)
 
 		if q.Error == nil {
 			existing.Name = name
+			existing.Description = desc
 			existing.Content = compose
 			existing.EnvContent = envPtr
 			existing.IsCustom = true
@@ -1014,7 +1072,7 @@ func (s *TemplateService) syncFilesystemTemplatesInternal(ctx context.Context) e
 		return nil
 	}
 
-	dir, err := projects.GetTemplatesDirectory(ctx)
+	dir, err := s.getTemplatesDirectoryInternal(ctx)
 	if err != nil {
 		return fmt.Errorf("ensure templates dir: %w", err)
 	}

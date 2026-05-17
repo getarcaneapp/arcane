@@ -2,6 +2,7 @@ package projects
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -16,6 +17,8 @@ import (
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
 )
+
+var errComposeFileNotFoundInternal = errors.New("no compose file found")
 
 var ProjectFileCandidates = []string{
 	"compose.yaml",
@@ -133,7 +136,7 @@ func DetectComposeFile(dir string) (string, error) {
 	case len(customCandidates) > 1:
 		return "", fmt.Errorf("multiple custom compose files found in %q", dir)
 	default:
-		return "", fmt.Errorf("no compose file found in %q", dir)
+		return "", fmt.Errorf("%w in %q", errComposeFileNotFoundInternal, dir)
 	}
 }
 

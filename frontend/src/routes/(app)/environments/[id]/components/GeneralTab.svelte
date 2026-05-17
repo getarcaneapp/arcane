@@ -32,6 +32,15 @@
 			</div>
 			<div class="space-y-2">
 				<TextInputWithLabel
+					id="templates-directory"
+					label={m.general_templates_directory_label()}
+					bind:value={$formInputs.templatesDirectory.value}
+					error={$formInputs.templatesDirectory.error}
+					helpText={m.general_templates_directory_help()}
+				/>
+			</div>
+			<div class="space-y-2">
+				<TextInputWithLabel
 					id="disk-usage-path"
 					label={m.disk_usage_settings()}
 					bind:value={$formInputs.diskUsagePath.value}

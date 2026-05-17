@@ -70,6 +70,7 @@ func (s SettingVariable) AsDurationSeconds() time.Duration {
 type Settings struct {
 	// General category
 	ProjectsDirectory          SettingVariable `key:"projectsDirectory,envOverride" meta:"label=Projects Directory;type=text;keywords=projects,directory,path,folder,location,storage,files,compose,docker-compose;category=internal;description=Configure where project files are stored"`
+	TemplatesDirectory         SettingVariable `key:"templatesDirectory,envOverride" meta:"label=Templates Directory;type=text;keywords=templates,directory,path,folder,location,storage,compose,docker-compose;category=internal;description=Configure where local compose template folders are discovered"`
 	FollowProjectSymlinks      SettingVariable `key:"followProjectSymlinks,envOverride" meta:"label=Follow Project Symlinks;type=boolean;keywords=projects,symlink,symlinks,symbolic links,compose,directory,discovery;category=general;description=Treat symlinked child directories inside the projects directory as Docker Compose projects"`
 	SwarmStackSourcesDirectory SettingVariable `key:"swarmStackSourcesDirectory,envOverride" meta:"label=Swarm Stack Sources Directory;type=text;keywords=swarm,stacks,stack,source,sources,directory,path,folder,location,storage,compose,env;category=internal;description=Configure where swarm stack source files are stored"`
 	DiskUsagePath              SettingVariable `key:"diskUsagePath" meta:"label=Disk Usage Path;type=text;keywords=disk,usage,path,storage,folder,files;category=general;description=Path used for disk usage calculations"`
