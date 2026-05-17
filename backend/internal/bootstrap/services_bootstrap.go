@@ -85,7 +85,7 @@ func initializeServices(ctx context.Context, db *database.DB, cfg *config.Config
 	svcs.Build = services.NewBuildService(db, svcs.Settings, svcs.Docker, svcs.ContainerRegistry, svcs.GitRepository, svcs.Event)
 	svcs.BuildWorkspace = services.NewBuildWorkspaceService(svcs.Settings)
 	svcs.Project = services.NewProjectService(db, svcs.Settings, svcs.Event, svcs.Image, svcs.Docker, svcs.Build, cfg)
-	svcs.Container = services.NewContainerService(db, svcs.Event, svcs.Docker, svcs.Image, svcs.Settings, svcs.Project)
+	svcs.Container = services.NewContainerService(ctx, db, svcs.Event, svcs.Docker, svcs.Image, svcs.Settings, svcs.Project)
 	svcs.Dashboard = services.NewDashboardService(
 		db,
 		svcs.Docker,

@@ -57,7 +57,7 @@ type ContainerListResult struct {
 	Counts     containertypes.StatusCounts
 }
 
-func NewContainerService(db *database.DB, eventService *EventService, dockerService *DockerClientService, imageService *ImageService, settingsService *SettingsService, projectService *ProjectService) *ContainerService {
+func NewContainerService(ctx context.Context, db *database.DB, eventService *EventService, dockerService *DockerClientService, imageService *ImageService, settingsService *SettingsService, projectService *ProjectService) *ContainerService {
 	svc := &ContainerService{
 		db:              db,
 		eventService:    eventService,
@@ -67,19 +67,28 @@ func NewContainerService(db *database.DB, eventService *EventService, dockerServ
 		projectService:  projectService,
 		updateInfoCache: cache.NewKeyed[string, *imagetypes.UpdateInfo](),
 	}
-	svc.subscribeUpdateInfoCacheInvalidationInternal()
+	svc.subscribeUpdateInfoCacheInvalidationInternal(ctx)
 	return svc
 }
 
-func (s *ContainerService) subscribeUpdateInfoCacheInvalidationInternal() {
+func (s *ContainerService) subscribeUpdateInfoCacheInvalidationInternal(ctx context.Context) {
 	if s.dockerService == nil || s.updateInfoCache == nil || s.dockerService.EventBus() == nil {
 		return
 	}
 	ch := make(chan events.Message, 16)
-	s.dockerService.EventBus().Subscribe(events.ImageEventType, ch)
+	unsubscribe := s.dockerService.EventBus().Subscribe(events.ImageEventType, ch)
 	go func() {
-		for range ch {
-			s.updateInfoCache.InvalidateAll()
+		defer unsubscribe()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case _, ok := <-ch:
+				if !ok {
+					return
+				}
+				s.updateInfoCache.InvalidateAll()
+			}
 		}
 	}()
 }
