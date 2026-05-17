@@ -655,9 +655,7 @@
 					</div>
 				</section>
 
-				{#if dockerInfoDialogOpen}
-					<DockerInfoDialog bind:open={dockerInfoDialogOpen} {dockerInfo} {dockerInfoPromise} errorMessage={dockerInfoError} />
-				{/if}
+				<DockerInfoDialog bind:open={dockerInfoDialogOpen} {dockerInfo} {dockerInfoPromise} errorMessage={dockerInfoError} />
 
 				<PruneConfirmationDialog
 					bind:open={isPruneDialogOpen}

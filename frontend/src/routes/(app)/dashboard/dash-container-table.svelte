@@ -12,6 +12,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { containerService } from '$lib/services/container-service';
 	import { goto } from '$app/navigation';
+	import { untrack } from 'svelte';
 	import { IsMobile } from '$lib/hooks';
 	import { ContainersIcon, ArrowRightIcon } from '$lib/icons';
 	import IconImage from '$lib/components/icon-image.svelte';
@@ -63,10 +64,13 @@
 	}
 
 	function updateRequestLimit(limit: number) {
+		const currentOptions = untrack(() => requestOptions);
+		if (currentOptions.pagination?.limit === limit) return;
+
 		requestOptions = {
-			...requestOptions,
+			...currentOptions,
 			pagination: {
-				page: requestOptions.pagination?.page ?? 1,
+				page: currentOptions.pagination?.page ?? 1,
 				limit
 			}
 		};
