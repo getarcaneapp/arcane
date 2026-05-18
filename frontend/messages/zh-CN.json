@@ -2445,7 +2445,7 @@
 	"upgrade_checking": "正在检查...",
 	"upgrade_reload_auto": "页面将在{countdown}秒后刷新",
 	"upgrade_reload_now": "立即重新加载",
-	"upgrade_remote_description": "您正在升级{targetDescription}至v{version}。",
+	"upgrade_remote_description": "您即将把 {targetDescription} 升级到 {version}。",
 	"update_center_remote_title": "更新 {target}",
 	"update_center_tag_label": "标签",
 	"update_center_current_label": "当前版本",
