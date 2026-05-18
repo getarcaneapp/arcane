@@ -1,3 +1,23 @@
+## v1.19.4
+
+### Bug fixes
+
+* block unsafe compose include file reads ([#2630](https://github.com/getarcaneapp/arcane/pull/2630) by @kmendell)
+* add missing gRPC/ws tunnel commands ([#2636](https://github.com/getarcaneapp/arcane/pull/2636) by @kmendell)
+* unable to use templates due to 'not found' error ([#2634](https://github.com/getarcaneapp/arcane/pull/2634) by @kmendell)
+* retry rate limited update checks ([#2639](https://github.com/getarcaneapp/arcane/pull/2639) by @kmendell)
+* prevent projects from disappearing when projects folder is unreadable ([#2641](https://github.com/getarcaneapp/arcane/pull/2641) by @kmendell)
+* release notes not populated for manager instance ([#2643](https://github.com/getarcaneapp/arcane/pull/2643) by @kmendell)
+
+### Other
+
+* publish manager and agent image tags ([#2645](https://github.com/getarcaneapp/arcane/pull/2645) by @kmendell)
+* use trivy-db mirrors from arcane-tools ([#2646](https://github.com/getarcaneapp/arcane/pull/2646) by @kmendell)
+
+
+
+**Full Changelog**: https://github.com/getarcaneapp/arcane/compare/v1.19.3...v1.19.4
+
 ## v1.19.3
 
 ### Bug fixes
