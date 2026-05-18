@@ -23,6 +23,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils"
+	httputils "github.com/getarcaneapp/arcane/backend/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils/mapper"
 	"github.com/getarcaneapp/arcane/types/base"
 	"github.com/getarcaneapp/arcane/types/environment"
@@ -1127,8 +1128,15 @@ func (h *EnvironmentHandler) GetEnvironmentVersion(ctx context.Context, input *G
 		}
 	} else {
 		// Direct HTTP request for non-edge environments
-		url := strings.TrimRight(env.ApiUrl, "/") + "/api/app-version"
-		req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, url, nil)
+		validatedURL, validateErr := httputils.ValidateOutboundHTTPURL(env.ApiUrl)
+		if validateErr != nil {
+			return nil, huma.Error400BadRequest("Invalid environment API URL")
+		}
+		validatedURL.RawQuery = ""
+		validatedURL.Fragment = ""
+		validatedURL.Path = strings.TrimRight(validatedURL.Path, "/") + "/api/app-version"
+
+		req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, validatedURL.String(), nil)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("Failed to create request")
 		}

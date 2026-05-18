@@ -230,3 +230,15 @@ func TestIsWebSocketUpgrade(t *testing.T) {
 		})
 	}
 }
+
+func TestEnvironmentMiddleware_CreateProxyRequest_RejectsInvalidProxyTarget(t *testing.T) {
+	middleware := newTestEnvironmentMiddleware()
+	e := echo.New()
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/environments/env-edge/containers", nil)
+	c := e.NewContext(req, recorder)
+
+	_, err := middleware.createProxyRequest(c, "ftp://example.com/containers", nil)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "Invalid proxy target URL")
+}

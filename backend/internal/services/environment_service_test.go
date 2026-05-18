@@ -928,3 +928,37 @@ func TestEnvironmentService_GenerateEdgeDeploymentSnippets_ReturnsBasicSnippetsW
 	require.Contains(t, snippets.DockerRun, "EDGE_TRANSPORT=poll")
 	require.Contains(t, snippets.DockerCompose, "MANAGER_API_URL=https://manager.example.com")
 }
+
+func TestEnvironmentService_PairAgentWithBootstrap_RejectsInvalidURL(t *testing.T) {
+	svc := NewEnvironmentService(nil, nil, nil, nil, nil, nil)
+
+	_, err := svc.PairAgentWithBootstrap(context.Background(), "ftp://example.com", "bootstrap-token")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid agent API URL")
+}
+
+func TestEnvironmentService_TestConnection_RejectsInvalidCustomURL(t *testing.T) {
+	ctx := context.Background()
+	db := setupEnvironmentServiceTestDB(t)
+	svc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
+
+	createTestEnvironment(t, db, "env-1", "http://example.com", nil)
+	customURL := "ftp://example.com"
+
+	status, err := svc.TestConnection(ctx, "env-1", &customURL)
+	require.Error(t, err)
+	require.Equal(t, "offline", status)
+	require.Contains(t, err.Error(), "invalid environment API URL")
+}
+
+func TestEnvironmentService_ExecuteRemoteRequest_RejectsInvalidEnvironmentURL(t *testing.T) {
+	ctx := context.Background()
+	db := setupEnvironmentServiceTestDB(t)
+	svc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
+
+	createTestEnvironment(t, db, "env-invalid-url", "http://user:pass@example.com", nil)
+
+	_, err := svc.ExecuteRemoteRequest(ctx, "env-invalid-url", http.MethodGet, "/api/health", nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid environment API URL")
+}

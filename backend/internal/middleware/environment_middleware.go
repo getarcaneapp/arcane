@@ -3,6 +3,7 @@ package middleware
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -11,8 +12,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge"
 	wsutil "github.com/getarcaneapp/arcane/backend/pkg/libarcane/ws"
+	httputils "github.com/getarcaneapp/arcane/backend/pkg/utils/httpx"
 	"github.com/gorilla/websocket"
 	"github.com/labstack/echo/v4"
 )
@@ -20,12 +23,6 @@ import (
 const (
 	apiEnvironmentsPrefix  = "/api/environments/"
 	environmentsPathMarker = "/environments/"
-
-	errEnvironmentNotFound      = "Environment not found"
-	errEnvironmentDisabled      = "Environment is disabled"
-	errFailedCreateProxyRequest = "Failed to create proxy request"
-	errProxyRequestFailedPrefix = "Proxy request failed:"
-	errUnauthorized             = "Authentication required to access remote environments"
 
 	// proxyTimeout is intentionally generous because some proxied operations
 	// (e.g., image pulls with progress streaming) can take multiple minutes.
@@ -112,7 +109,7 @@ func (m *EnvironmentMiddleware) Handle(c echo.Context, next echo.HandlerFunc) er
 	if m.authValidator != nil && !m.authValidator(c.Request().Context(), c) {
 		return c.JSON(http.StatusUnauthorized, map[string]any{
 			"success": false,
-			"data":    map[string]any{"error": errUnauthorized},
+			"data":    map[string]any{"error": (&common.EnvironmentUnauthorizedError{}).Error()},
 		})
 	}
 
@@ -120,14 +117,14 @@ func (m *EnvironmentMiddleware) Handle(c echo.Context, next echo.HandlerFunc) er
 	if err != nil || apiURL == "" {
 		return c.JSON(http.StatusNotFound, map[string]any{
 			"success": false,
-			"data":    map[string]any{"error": errEnvironmentNotFound},
+			"data":    map[string]any{"error": (&common.EnvironmentNotFoundError{}).Error()},
 		})
 	}
 
 	if !enabled {
 		return c.JSON(http.StatusBadRequest, map[string]any{
 			"success": false,
-			"data":    map[string]any{"error": errEnvironmentDisabled},
+			"data":    map[string]any{"error": (&common.EnvironmentDisabledError{}).Error()},
 		})
 	}
 
@@ -314,7 +311,7 @@ func (m *EnvironmentMiddleware) abortEdgeTunnelUnavailable(c echo.Context) error
 	return c.JSON(http.StatusBadGateway, map[string]any{
 		"success": false,
 		"data": map[string]any{
-			"error": "Edge agent is not connected",
+			"error": (&common.EdgeAgentNotConnectedError{}).Error(),
 		},
 	})
 }
@@ -344,9 +341,14 @@ func (m *EnvironmentMiddleware) proxyHTTP(c echo.Context, target string, accessT
 
 	req, err := m.createProxyRequest(c, target, accessToken)
 	if err != nil {
+		errMessage := (&common.EnvironmentProxyRequestCreationError{Err: err}).Error()
+		var invalidTargetErr *common.EnvironmentInvalidProxyTargetError
+		if errors.As(err, &invalidTargetErr) {
+			errMessage = invalidTargetErr.Error()
+		}
 		return c.JSON(http.StatusInternalServerError, map[string]any{
 			"success": false,
-			"data":    map[string]any{"error": errFailedCreateProxyRequest},
+			"data":    map[string]any{"error": errMessage},
 		})
 	}
 
@@ -354,7 +356,7 @@ func (m *EnvironmentMiddleware) proxyHTTP(c echo.Context, target string, accessT
 	if err != nil {
 		return c.JSON(http.StatusBadGateway, map[string]any{
 			"success": false,
-			"data":    map[string]any{"error": fmt.Sprintf("%s %v", errProxyRequestFailedPrefix, err)},
+			"data":    map[string]any{"error": (&common.EnvironmentProxyRequestFailedError{Err: err}).Error()},
 		})
 	}
 	defer func() { _ = resp.Body.Close() }()
@@ -366,6 +368,11 @@ func (m *EnvironmentMiddleware) proxyHTTP(c echo.Context, target string, accessT
 // createProxyRequest builds the HTTP request to forward to the remote environment.
 func (m *EnvironmentMiddleware) createProxyRequest(c echo.Context, target string, accessToken *string) (*http.Request, error) {
 	srcReq := c.Request()
+	validatedTarget, err := httputils.ValidateOutboundHTTPURL(target)
+	if err != nil {
+		return nil, &common.EnvironmentInvalidProxyTargetError{Err: err}
+	}
+
 	var bodyBytes []byte
 	if srcReq.Body != nil {
 		var err error
@@ -378,14 +385,23 @@ func (m *EnvironmentMiddleware) createProxyRequest(c echo.Context, target string
 
 	slog.DebugContext(srcReq.Context(), "Creating proxy request", "method", srcReq.Method, "target", target, "contentLength", srcReq.ContentLength, "contentType", srcReq.Header.Get("Content-Type"), "bodyLength", len(bodyBytes), "body", string(bodyBytes))
 
-	var body io.Reader
+	var requestBody io.ReadCloser
+	var getBody func() (io.ReadCloser, error)
 	if len(bodyBytes) > 0 {
-		body = bytes.NewReader(bodyBytes)
+		requestBody = io.NopCloser(bytes.NewReader(bodyBytes))
+		getBody = func() (io.ReadCloser, error) {
+			return io.NopCloser(bytes.NewReader(bodyBytes)), nil
+		}
 	}
-	req, err := http.NewRequestWithContext(srcReq.Context(), srcReq.Method, target, body)
-	if err != nil {
-		return nil, err
-	}
+	requestURL := *validatedTarget
+	req := (&http.Request{
+		Method:  srcReq.Method,
+		URL:     &requestURL,
+		Host:    requestURL.Host,
+		Header:  make(http.Header),
+		Body:    requestBody,
+		GetBody: getBody,
+	}).WithContext(srcReq.Context())
 
 	skip := edge.GetSkipHeaders()
 	edge.CopyRequestHeaders(srcReq.Header, req.Header, skip)
