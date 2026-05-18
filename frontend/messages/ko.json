@@ -2445,7 +2445,7 @@
 	"upgrade_checking": "확인 중...",
 	"upgrade_reload_auto": "{countdown}초 후 페이지가 자동으로 새로고침됩니다.",
 	"upgrade_reload_now": "지금 새로고침",
-	"upgrade_remote_description": "{targetDescription}을(를) v{version}으로 업그레이드하려고 합니다.",
+	"upgrade_remote_description": "{targetDescription} 을 {version} 으로 업그레이드하려고 합니다.",
 	"update_center_remote_title": "업데이트 {target}",
 	"update_center_tag_label": "태그",
 	"update_center_current_label": "현재",
