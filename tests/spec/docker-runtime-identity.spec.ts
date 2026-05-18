@@ -203,13 +203,15 @@ function defaultRunArgs(name: string, dataDir: string) {
 test.describe.serial('Docker runtime identity', () => {
 	test.setTimeout(240_000);
 
-	test('keeps default root runtime behavior when PUID and PGID are unset', async () => {
+	test('supports disabling default non-root runtime when PUID and PGID are unset', async () => {
 		const containerName = uniqueName('arcane-default');
 		const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'arcane-default-'));
 
 		try {
 			dockerRunContainer([
 				...defaultRunArgs(containerName, dataDir),
+				'-e',
+				'ARCANE_DEFAULT_NONROOT=false',
 				'-v',
 				'/var/run/docker.sock:/var/run/docker.sock',
 				IMAGE
@@ -293,6 +295,68 @@ test.describe.serial('Docker runtime identity', () => {
 			cleanupContainer(containerName);
 			cleanupDir(dataDir);
 			cleanupDir(projectsDir);
+		}
+	});
+
+	test('default non-root runtime prepares mounted writable roots', async () => {
+		const containerName = uniqueName('arcane-default-nonroot');
+		const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'arcane-default-nonroot-data-'));
+		const projectsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'arcane-default-nonroot-projects-'));
+		const buildsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'arcane-default-nonroot-builds-'));
+
+		try {
+			dockerRunContainer([
+				...defaultRunArgs(containerName, dataDir),
+				'-e',
+				'ARCANE_DEFAULT_NONROOT=true',
+				'-v',
+				'/var/run/docker.sock:/var/run/docker.sock',
+				'-v',
+				`${projectsDir}:/app/data/projects`,
+				'-v',
+				`${buildsDir}:/builds`,
+				IMAGE
+			]);
+
+			await waitForHealth(containerName);
+			await waitForFile(containerName, '/app/data/arcane.db');
+
+			const processStatuses = arcaneProcessStatuses(containerName);
+			expect(
+				processStatuses.some(
+					(status) =>
+						status.pid !== '1' &&
+						status.ppid === '1' &&
+						status.uid.startsWith('65532\t') &&
+						status.gid.startsWith('65532\t')
+				)
+			).toBe(true);
+
+			const dataStat = dockerExecAsUser(
+				containerName,
+				'65532:65532',
+				"stat -c '%u:%g' /app/data/arcane.db"
+			);
+			expect(dataStat).toBe('65532:65532');
+
+			const projectWrite = dockerExecAsUser(
+				containerName,
+				'65532:65532',
+				"touch /app/data/projects/runtime-write && stat -c '%u:%g' /app/data/projects/runtime-write"
+			);
+			expect(projectWrite).toBe('65532:65532');
+
+			const buildsWrite = dockerExecAsUser(
+				containerName,
+				'65532:65532',
+				"touch /builds/runtime-write && stat -c '%u:%g' /builds/runtime-write"
+			);
+			expect(buildsWrite).toBe('65532:65532');
+		} finally {
+			cleanupContainer(containerName);
+			cleanupDir(dataDir);
+			cleanupDir(projectsDir);
+			cleanupDir(buildsDir);
 		}
 	});
 

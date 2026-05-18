@@ -259,6 +259,9 @@ func prepareWritablePathsInternal(uid int, gid int, mountpoints map[string]struc
 	for _, entry := range entries {
 		entryPath := filepath.Join(defaultDataDirectory, entry.Name())
 		if _, mounted := mountpoints[entryPath]; mounted {
+			if err := os.Lchown(entryPath, uid, gid); err != nil {
+				return fmt.Errorf("chown mounted %s: %w", entryPath, err)
+			}
 			continue
 		}
 		if err := chownRecursiveInternal(entryPath, uid, gid, mountpoints); err != nil {
@@ -267,6 +270,9 @@ func prepareWritablePathsInternal(uid int, gid int, mountpoints map[string]struc
 	}
 
 	if _, mounted := mountpoints[defaultBuildsDirectory]; mounted {
+		if err := os.Lchown(defaultBuildsDirectory, uid, gid); err != nil {
+			return fmt.Errorf("chown mounted builds directory: %w", err)
+		}
 		return nil
 	}
 
