@@ -2445,7 +2445,7 @@
 	"upgrade_checking": "Controleren...",
 	"upgrade_reload_auto": "Pagina wordt automatisch herladen in {countdown} seconden",
 	"upgrade_reload_now": "Nu herladen",
-	"upgrade_remote_description": "U staat op het punt {targetDescription} te upgraden naar v{version}.",
+	"upgrade_remote_description": "Je staat op het punt om {targetDescription} te upgraden naar {version}.",
 	"update_center_remote_title": "Update {target}",
 	"update_center_tag_label": "Label",
 	"update_center_current_label": "Huidige",
