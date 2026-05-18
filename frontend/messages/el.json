@@ -2445,7 +2445,7 @@
 	"upgrade_checking": "Έλεγχος...",
 	"upgrade_reload_auto": "Η σελίδα θα φορτώσει ξανά αυτόματα σε {countdown} δευτερόλεπτα",
 	"upgrade_reload_now": "Επαναφόρτωση Τώρα",
-	"upgrade_remote_description": "Πρόκειται να αναβαθμίσετε το {targetDescription} στο v{version}.",
+	"upgrade_remote_description": "Πρόκειται να αναβαθμίσετε το {targetDescription} σε {version}.",
 	"update_center_remote_title": "Ενημέρωση {target}",
 	"update_center_tag_label": "Ετικέτα",
 	"update_center_current_label": "Τρέχον",
