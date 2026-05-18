@@ -37,6 +37,12 @@ type Update struct {
 	// Required: false
 	ProjectsDirectory *string `json:"projectsDirectory,omitempty"`
 
+	// TemplatesDirectory is the directory path where local compose template folders are discovered.
+	// Must be an absolute path.
+	//
+	// Required: false
+	TemplatesDirectory *string `json:"templatesDirectory,omitempty"`
+
 	// FollowProjectSymlinks controls whether symlinked child directories in the projects directory are discovered as projects.
 	//
 	// Required: false

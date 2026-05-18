@@ -2,6 +2,7 @@ package projects
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,12 +13,13 @@ import (
 )
 
 func ReadFolderComposeTemplate(baseDir, folder string) (string, *string, string, bool, error) {
-	composePath := filepath.Join(baseDir, folder, "compose.yaml")
-	if _, err := os.Stat(composePath); err != nil {
-		if os.IsNotExist(err) {
+	folderPath := filepath.Join(baseDir, folder)
+	composePath, err := DetectComposeFile(folderPath)
+	if err != nil {
+		if errors.Is(err, errComposeFileNotFoundInternal) {
 			return "", nil, "", false, nil
 		}
-		return "", nil, "", false, fmt.Errorf("stat compose: %w", err)
+		return "", nil, "", false, fmt.Errorf("detect compose file: %w", err)
 	}
 
 	b, err := os.ReadFile(composePath)
@@ -27,14 +29,15 @@ func ReadFolderComposeTemplate(baseDir, folder string) (string, *string, string,
 
 	var envPtr *string
 	for _, envName := range []string{".env.example", ".env"} {
-		envPath := filepath.Join(baseDir, folder, envName)
-		if eb, err := os.ReadFile(envPath); err == nil {
-			envPtr = new(string(eb))
+		envPath := filepath.Join(folderPath, envName)
+		if eb, rerr := os.ReadFile(envPath); rerr == nil {
+			s := string(eb)
+			envPtr = &s
 			break
 		}
 	}
 
-	desc := fmt.Sprintf("Imported from %s/%s/compose.yaml", baseDir, folder)
+	desc := fmt.Sprintf("Imported from %s", composePath)
 	return string(b), envPtr, desc, true, nil
 }
 
@@ -50,8 +53,8 @@ func Slugify(in string) string {
 	return strings.Trim(in, "-")
 }
 
-func EnsureTemplateDir(ctx context.Context, base string) (dir, composePath, envPath string, err error) {
-	baseDir, derr := GetTemplatesDirectory(ctx)
+func EnsureTemplateDir(ctx context.Context, templatesDir, base string) (dir, composePath, envPath string, err error) {
+	baseDir, derr := GetTemplatesDirectory(ctx, templatesDir)
 	if derr != nil {
 		return "", "", "", fmt.Errorf("ensure templates dir: %w", derr)
 	}
@@ -84,8 +87,8 @@ func WriteTemplateFiles(composePath, envPath, composeContent, envContent string)
 	return &envContent, nil
 }
 
-func EnsureDefaultTemplates(ctx context.Context) error {
-	templatesDir, err := GetTemplatesDirectory(ctx)
+func EnsureDefaultTemplates(ctx context.Context, configuredTemplatesDir string) error {
+	templatesDir, err := GetTemplatesDirectory(ctx, configuredTemplatesDir)
 	if err != nil {
 		return fmt.Errorf("get templates directory: %w", err)
 	}

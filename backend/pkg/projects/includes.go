@@ -22,10 +22,12 @@ func expandEnvVarsInternal(s string, envMap EnvMap) string {
 }
 
 // Security Model for Include Files:
-// - READ: Docker Compose allows include files from anywhere (parent dirs, absolute paths, etc.)
-//         We allow reading from any path to maintain compatibility with standard Docker Compose behavior
-// - WRITE/DELETE: Restricted to files within the project directory only for security
-//         This prevents malicious users from modifying files outside the project scope
+// - READ: Docker Compose's spec allows include files from anywhere (parent dirs,
+//   absolute paths). ParseIncludes does NOT enforce containment; it returns whatever
+//   the compose file points at. Callers must validate containment and symlinks before
+//   reading include content or returning inc.Content to users.
+// - WRITE/DELETE: Restricted to files within the project directory only for security.
+//   Always go through ValidateIncludePathForWrite or WriteIncludeFile.
 
 type IncludeFile struct {
 	Path         string `json:"path"`
@@ -41,6 +43,11 @@ func ParseIncludes(composeFilePath string, envMap EnvMap, includeContent bool) (
 		return nil, fmt.Errorf("failed to read compose file: %w", err)
 	}
 
+	return ParseIncludesFromContent(composeFilePath, content, envMap, includeContent)
+}
+
+// ParseIncludesFromContent extracts include directives from compose content using composeFilePath as the base path.
+func ParseIncludesFromContent(composeFilePath string, content []byte, envMap EnvMap, includeContent bool) ([]IncludeFile, error) {
 	var composeData map[string]any
 	if err := yaml.Unmarshal(content, &composeData); err != nil {
 		return nil, fmt.Errorf("failed to parse compose file: %w", err)
@@ -58,33 +65,77 @@ func ParseIncludes(composeFilePath string, envMap EnvMap, includeContent bool) (
 	switch v := includes.(type) {
 	case []any:
 		for _, item := range v {
-			if include, err := parseIncludeItemInternal(item, composeDir, envMap, includeContent); err == nil {
-				includeFiles = append(includeFiles, include)
+			incs, err := parseIncludeItemInternal(item, composeDir, envMap, includeContent)
+			if err != nil {
+				return nil, err
 			}
+			includeFiles = append(includeFiles, incs...)
 		}
 	case string:
-		if include, err := parseIncludeItemInternal(v, composeDir, envMap, includeContent); err == nil {
-			includeFiles = append(includeFiles, include)
+		incs, err := parseIncludeItemInternal(v, composeDir, envMap, includeContent)
+		if err != nil {
+			return nil, err
 		}
+		includeFiles = append(includeFiles, incs...)
+	case nil:
+		// `include:` key present but null (e.g. `include: ~`) — treat as empty.
+		return []IncludeFile{}, nil
+	default:
+		return nil, fmt.Errorf("invalid include type")
 	}
 
 	return includeFiles, nil
 }
 
-func parseIncludeItemInternal(item any, baseDir string, envMap EnvMap, includeContent bool) (IncludeFile, error) {
-	var includePath string
-
-	switch v := item.(type) {
-	case string:
-		includePath = v
-	case map[string]any:
-		if path, ok := v["path"].(string); ok {
-			includePath = path
-		}
-	default:
-		return IncludeFile{}, fmt.Errorf("invalid include item type")
+func parseIncludeItemInternal(item any, baseDir string, envMap EnvMap, includeContent bool) ([]IncludeFile, error) {
+	includePaths, err := extractIncludePathsInternal(item)
+	if err != nil {
+		return nil, err
 	}
 
+	results := make([]IncludeFile, 0, len(includePaths))
+	for _, includePath := range includePaths {
+		inc, err := resolveIncludeFileInternal(includePath, baseDir, envMap, includeContent)
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, inc)
+	}
+	return results, nil
+}
+
+func extractIncludePathsInternal(item any) ([]string, error) {
+	switch v := item.(type) {
+	case string:
+		return []string{v}, nil
+	case map[string]any:
+		return extractIncludePathsFromMapInternal(v)
+	default:
+		return nil, fmt.Errorf("invalid include item type")
+	}
+}
+
+func extractIncludePathsFromMapInternal(v map[string]any) ([]string, error) {
+	switch p := v["path"].(type) {
+	case string:
+		return []string{p}, nil
+	case []any:
+		// Docker Compose allows `path: [./base.yaml, ./override.yaml]` for multi-file overrides.
+		paths := make([]string, 0, len(p))
+		for _, entry := range p {
+			s, ok := entry.(string)
+			if !ok {
+				return nil, fmt.Errorf("invalid include path entry: expected string, got %T", entry)
+			}
+			paths = append(paths, s)
+		}
+		return paths, nil
+	default:
+		return nil, fmt.Errorf("invalid include path type: %T", v["path"])
+	}
+}
+
+func resolveIncludeFileInternal(includePath, baseDir string, envMap EnvMap, includeContent bool) (IncludeFile, error) {
 	if includePath == "" {
 		return IncludeFile{}, fmt.Errorf("empty include path")
 	}
@@ -100,19 +151,9 @@ func parseIncludeItemInternal(item any, baseDir string, envMap EnvMap, includeCo
 	}
 	fullPath = filepath.Clean(fullPath)
 
-	var content string
-	if includeContent {
-		fileContent, err := os.ReadFile(fullPath)
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				// File doesn't exist yet - return empty content so it can be created
-				content = "# This file will be created when you save changes\nservices:\n"
-			} else {
-				return IncludeFile{}, fmt.Errorf("failed to read include file %s: %w", includePath, err)
-			}
-		} else {
-			content = string(fileContent)
-		}
+	content, err := readIncludeContentInternal(fullPath, includePath, includeContent)
+	if err != nil {
+		return IncludeFile{}, err
 	}
 
 	relativePath := includePath
@@ -131,6 +172,21 @@ func parseIncludeItemInternal(item any, baseDir string, envMap EnvMap, includeCo
 		RelativePath: relativePath,
 		Content:      content,
 	}, nil
+}
+
+func readIncludeContentInternal(fullPath, includePath string, includeContent bool) (string, error) {
+	if !includeContent {
+		return "", nil
+	}
+	fileContent, err := os.ReadFile(fullPath)
+	if err == nil {
+		return string(fileContent), nil
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		// File doesn't exist yet - return empty content so it can be created
+		return "# This file will be created when you save changes\nservices:\n", nil
+	}
+	return "", fmt.Errorf("failed to read include file %s: %w", includePath, err)
 }
 
 // ValidateIncludePathForWrite ensures the include path is safe for write operations

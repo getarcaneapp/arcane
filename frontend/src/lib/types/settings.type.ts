@@ -4,6 +4,7 @@ export type ApplicationTheme = 'default' | 'graphite' | 'ocean' | 'amber' | 'git
 
 export type Settings = {
 	projectsDirectory: string;
+	templatesDirectory: string;
 	followProjectSymlinks: boolean;
 	swarmStackSourcesDirectory: string;
 	diskUsagePath: string;

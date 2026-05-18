@@ -1,6 +1,6 @@
 services:
   arcane-agent:
-    image: ghcr.io/getarcaneapp/arcane-headless:latest
+    image: ghcr.io/getarcaneapp/agent:latest
     container_name: arcane-agent
     ports:
       - "3553:3553"

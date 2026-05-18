@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -1211,6 +1212,215 @@ services:
 	assert.Contains(t, err.Error(), "invalid compose file")
 	assert.NoFileExists(t, filepath.Join(projectsDir, "metadata.yaml"))
 	assert.NoFileExists(t, filepath.Join(projectPath, "compose.yaml"))
+}
+
+func TestProjectService_CreateProject_RejectsExternalInclude(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
+	require.NoError(t, os.WriteFile(filepath.Join(projectsDir, "metadata.yaml"), []byte("services: {}\n"), 0o644))
+
+	compose := `include:
+  - ../metadata.yaml
+services:
+  app:
+    image: nginx:alpine
+`
+
+	project, err := svc.CreateProject(ctx, "evil", compose, nil, models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "tester",
+	})
+	require.Error(t, err)
+	assert.Nil(t, project)
+	assert.Contains(t, err.Error(), "invalid compose file")
+	assert.NoDirExists(t, filepath.Join(projectsDir, "evil"))
+	assert.FileExists(t, filepath.Join(projectsDir, "metadata.yaml"))
+
+	var count int64
+	require.NoError(t, db.Model(&models.Project{}).Where("name = ?", "evil").Count(&count).Error)
+	assert.Zero(t, count)
+}
+
+func TestProjectService_CreateProject_RejectsArrayPathInclude(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
+	require.NoError(t, os.WriteFile(filepath.Join(projectsDir, "metadata.yaml"), []byte("services: {}\n"), 0o644))
+
+	compose := `include:
+  - path:
+      - ./local.yaml
+      - ../metadata.yaml
+services:
+  app:
+    image: nginx:alpine
+`
+
+	project, err := svc.CreateProject(ctx, "evil-array", compose, nil, models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "tester",
+	})
+	require.Error(t, err)
+	assert.Nil(t, project)
+	assert.Contains(t, err.Error(), "invalid compose file")
+	assert.NoDirExists(t, filepath.Join(projectsDir, "evil-array"))
+	assert.FileExists(t, filepath.Join(projectsDir, "metadata.yaml"))
+
+	var count int64
+	require.NoError(t, db.Model(&models.Project{}).Where("name = ?", "evil-array").Count(&count).Error)
+	assert.Zero(t, count)
+}
+
+func TestProjectService_GetProjectFileContent_RejectsExternalInclude(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
+
+	dirName := "include-read"
+	projectPath := filepath.Join(projectsDir, dirName)
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectsDir, "metadata.yaml"), []byte("services: {}\n"), 0o644))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-external-include-read"},
+		Name:      "include-read",
+		DirName:   &dirName,
+		Path:      projectPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	compose := `include:
+  - ../metadata.yaml
+services:
+  app:
+    image: nginx:alpine
+`
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte(compose), 0o644))
+
+	includeFile, err := svc.GetProjectFileContent(ctx, project.ID, "../metadata.yaml")
+	require.Error(t, err)
+	assert.Empty(t, includeFile)
+
+	var forbiddenErr *common.ProjectFileForbiddenError
+	assert.ErrorAs(t, err, &forbiddenErr)
+}
+
+func TestProjectService_GetProjectFileContent_RejectsSymlinkInclude(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
+
+	dirName := "include-symlink"
+	projectPath := filepath.Join(projectsDir, dirName)
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
+
+	outsidePath := filepath.Join(t.TempDir(), "outside.yaml")
+	require.NoError(t, os.WriteFile(outsidePath, []byte("services: {}\n"), 0o644))
+	require.NoError(t, os.Symlink(outsidePath, filepath.Join(projectPath, "evil-link")))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-symlink-include-read"},
+		Name:      "include-symlink",
+		DirName:   &dirName,
+		Path:      projectPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	compose := `include:
+  - ./evil-link
+services:
+  app:
+    image: nginx:alpine
+`
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte(compose), 0o644))
+
+	includeFile, err := svc.GetProjectFileContent(ctx, project.ID, "evil-link")
+	require.Error(t, err)
+	assert.Empty(t, includeFile)
+
+	var forbiddenErr *common.ProjectFileForbiddenError
+	assert.ErrorAs(t, err, &forbiddenErr)
+}
+
+func TestProjectService_GetProjectFileContent_RejectsIntermediateSymlinkInclude(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
+
+	dirName := "include-intermediate-symlink"
+	projectPath := filepath.Join(projectsDir, dirName)
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
+
+	outsideDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(outsideDir, "secret.yaml"), []byte("services: {}\n"), 0o644))
+	require.NoError(t, os.Symlink(outsideDir, filepath.Join(projectPath, "subdir")))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-intermediate-symlink-include-read"},
+		Name:      "include-intermediate-symlink",
+		DirName:   &dirName,
+		Path:      projectPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	compose := `include:
+  - ./subdir/secret.yaml
+services:
+  app:
+    image: nginx:alpine
+`
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte(compose), 0o644))
+
+	includeFile, err := svc.GetProjectFileContent(ctx, project.ID, "subdir/secret.yaml")
+	require.Error(t, err)
+	assert.Empty(t, includeFile)
+
+	var forbiddenErr *common.ProjectFileForbiddenError
+	assert.ErrorAs(t, err, &forbiddenErr)
 }
 
 func TestProjectService_UpdateProject_UsesExistingEnvFileDuringComposeValidation(t *testing.T) {
@@ -3216,6 +3426,47 @@ func TestProjectService_SyncProjectsFromFileSystem_RemovesDeletedNestedProject(t
 	items, err = svc.ListAllProjects(ctx)
 	require.NoError(t, err)
 	assert.Empty(t, items)
+}
+
+func TestProjectService_SyncProjectsFromFileSystem_PreservesDBRecordsWhenDirectoryUnreadable(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission-denied behavior is not portable to Windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("test requires a non-root UID to trigger permission-denied on ReadDir")
+	}
+
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsRoot := t.TempDir()
+	createComposeProjectDir(t, projectsRoot, "project1")
+
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
+	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
+
+	before, err := svc.ListAllProjects(ctx)
+	require.NoError(t, err)
+	require.Len(t, before, 1)
+
+	unreadable := t.TempDir()
+	require.NoError(t, os.Chmod(unreadable, 0))
+	t.Cleanup(func() { _ = os.Chmod(unreadable, 0o700) })
+
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", unreadable))
+
+	syncErr := svc.SyncProjectsFromFileSystem(ctx)
+	require.Error(t, syncErr, "sync should propagate the permission-denied error")
+
+	after, err := svc.ListAllProjects(ctx)
+	require.NoError(t, err)
+	assert.Len(t, after, 1, "DB records must not be wiped when discovery fails")
+	assert.Equal(t, before[0].Path, after[0].Path)
 }
 
 func TestProjectService_SyncProjectsFromFileSystem_AllowsDuplicateLeafDirectoriesInDifferentParents(t *testing.T) {

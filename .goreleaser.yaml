@@ -288,6 +288,7 @@ dockers_v2:
     dockerfile: docker/next-builds/Dockerfile-static
     images:
       - "ghcr.io/getarcaneapp/arcane"
+      - "ghcr.io/getarcaneapp/manager"
     tags:
       - "next-static"
       - "{{ .Version }}"
@@ -315,6 +316,7 @@ dockers_v2:
     dockerfile: docker/next-builds/Dockerfile-agent-static
     images:
       - "ghcr.io/getarcaneapp/arcane-headless"
+      - "ghcr.io/getarcaneapp/agent"
     tags:
       - "next-static"
       - "{{ .Version }}"
@@ -342,6 +344,7 @@ dockers_v2:
     dockerfile: docker/next-builds/Dockerfile-next-distroless
     images:
       - "ghcr.io/getarcaneapp/arcane"
+      - "ghcr.io/getarcaneapp/manager"
     tags:
       - "next-distroless"
       - "{{ .Version }}-distroless"
@@ -369,6 +372,7 @@ dockers_v2:
     dockerfile: docker/next-builds/Dockerfile-agent-distroless
     images:
       - "ghcr.io/getarcaneapp/arcane-headless"
+      - "ghcr.io/getarcaneapp/agent"
     tags:
       - "next-distroless"
       - "{{ .Version }}-distroless"

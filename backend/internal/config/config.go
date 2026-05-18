@@ -62,6 +62,7 @@ type Config struct {
 	DockerHost              string `env:"DOCKER_HOST" default:"unix:///var/run/docker.sock"`
 	DockerConfig            string `env:"DOCKER_CONFIG" default:""`
 	ProjectsDirectory       string `env:"PROJECTS_DIRECTORY" default:"/app/data/projects"`
+	TemplatesDirectory      string `env:"TEMPLATES_DIRECTORY" default:"/app/data/templates"`
 	ProjectScanMaxDepth     int    `env:"PROJECT_SCAN_MAX_DEPTH" default:"3"`
 	ProjectScanSkipDirs     string `env:"PROJECT_SCAN_SKIP_DIRS" default:".git,node_modules,vendor,.venv,venv,__pycache__,.cache,dist,build,target,.next,.nuxt,.svelte-kit"`
 	LogJson                 bool   `env:"LOG_JSON" default:"false"`

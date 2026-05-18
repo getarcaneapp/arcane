@@ -39,6 +39,32 @@ func TestParseIncludes_NormalizesRelativePaths(t *testing.T) {
 	}
 }
 
+func TestParseIncludes_ExpandsArrayPathForm(t *testing.T) {
+	t.Parallel()
+
+	projectDir := t.TempDir()
+	composePath := filepath.Join(projectDir, "compose.yaml")
+
+	requireNoError := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	}
+
+	requireNoError(os.WriteFile(composePath, []byte("include:\n  - path:\n      - ./base.yaml\n      - ./override.yaml\n"), 0o600))
+
+	includes, err := ParseIncludes(composePath, nil, false)
+	requireNoError(err)
+
+	if len(includes) != 2 {
+		t.Fatalf("expected 2 includes, got %d", len(includes))
+	}
+	if includes[0].RelativePath != "base.yaml" || includes[1].RelativePath != "override.yaml" {
+		t.Fatalf("unexpected relative paths: %q, %q", includes[0].RelativePath, includes[1].RelativePath)
+	}
+}
+
 func TestWriteIncludeFilePermissions(t *testing.T) {
 	// Save original perms
 	origFilePerm := pkgutils.FilePerm
