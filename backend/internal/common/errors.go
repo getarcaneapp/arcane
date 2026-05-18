@@ -371,6 +371,50 @@ func (e *EnvironmentNotFoundError) Error() string {
 	return "Environment not found"
 }
 
+type EnvironmentDisabledError struct{}
+
+func (e *EnvironmentDisabledError) Error() string {
+	return "Environment is disabled"
+}
+
+type EnvironmentUnauthorizedError struct{}
+
+func (e *EnvironmentUnauthorizedError) Error() string {
+	return "Authentication required to access remote environments"
+}
+
+type EnvironmentInvalidProxyTargetError struct {
+	Err error
+}
+
+func (e *EnvironmentInvalidProxyTargetError) Error() string {
+	return fmt.Sprintf("Invalid proxy target URL: %v", e.Err)
+}
+
+func (e *EnvironmentInvalidProxyTargetError) Unwrap() error { return e.Err }
+
+type EnvironmentProxyRequestCreationError struct {
+	Err error
+}
+
+func (e *EnvironmentProxyRequestCreationError) Error() string {
+	return fmt.Sprintf("Failed to create proxy request: %v", e.Err)
+}
+
+type EnvironmentProxyRequestFailedError struct {
+	Err error
+}
+
+func (e *EnvironmentProxyRequestFailedError) Error() string {
+	return fmt.Sprintf("Proxy request failed: %v", e.Err)
+}
+
+type EdgeAgentNotConnectedError struct{}
+
+func (e *EdgeAgentNotConnectedError) Error() string {
+	return "Edge agent is not connected"
+}
+
 type AgentTokenPersistenceError struct {
 	Err error
 }

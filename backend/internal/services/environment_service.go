@@ -19,6 +19,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/pkg/remenv"
+	httputils "github.com/getarcaneapp/arcane/backend/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils/mapper"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 	"github.com/getarcaneapp/arcane/types/environment"
@@ -743,10 +744,17 @@ func (s *EnvironmentService) TestConnection(ctx context.Context, id string, cust
 		apiUrl = *customApiUrl
 	}
 
+	healthURL, err := buildEnvironmentEndpointURLInternal(apiUrl, "/api/health")
+	if err != nil {
+		if customApiUrl == nil {
+			_ = s.updateEnvironmentStatusInternal(ctx, id, string(models.EnvironmentStatusOffline))
+		}
+		return "offline", fmt.Errorf("invalid environment API URL: %w", err)
+	}
+
 	reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	url := strings.TrimRight(apiUrl, "/") + "/api/health"
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, healthURL, nil)
 	if err != nil {
 		if customApiUrl == nil {
 			_ = s.updateEnvironmentStatusInternal(ctx, id, string(models.EnvironmentStatusOffline))
@@ -965,9 +973,14 @@ func (s *EnvironmentService) RegenerateEnvironmentApiKey(ctx context.Context, en
 
 // Deprecated - Use the Api Key flow
 func (s *EnvironmentService) PairAgentWithBootstrap(ctx context.Context, apiUrl, bootstrapToken string) (string, error) {
+	pairURL, err := buildEnvironmentEndpointURLInternal(apiUrl, "/api/environments/0/agent/pair")
+	if err != nil {
+		return "", fmt.Errorf("invalid agent API URL: %w", err)
+	}
+
 	reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, strings.TrimRight(apiUrl, "/")+"/api/environments/0/agent/pair", nil)
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, pairURL, nil)
 	if err != nil {
 		return "", fmt.Errorf("create request: %w", err)
 	}
@@ -1319,13 +1332,43 @@ func (s *EnvironmentService) resolveRemoteEnvironmentTargetInternal(ctx context.
 		return nil, fmt.Errorf("cannot proxy request to local environment")
 	}
 
+	targetURL := strings.TrimRight(environment.ApiUrl, "/")
+	if !environment.IsEdge {
+		validatedTargetURL, err := normalizeEnvironmentBaseURLInternal(environment.ApiUrl)
+		if err != nil {
+			return nil, fmt.Errorf("invalid environment API URL: %w", err)
+		}
+		targetURL = validatedTargetURL
+	}
+
 	return &remoteEnvironmentTargetInternal{
 		ID:          environment.ID,
 		Name:        environment.Name,
 		IsEdge:      environment.IsEdge,
 		AccessToken: environment.AccessToken,
-		TargetURL:   strings.TrimRight(environment.ApiUrl, "/"),
+		TargetURL:   targetURL,
 	}, nil
+}
+
+func normalizeEnvironmentBaseURLInternal(apiURL string) (string, error) {
+	parsed, err := httputils.ValidateOutboundHTTPURL(apiURL)
+	if err != nil {
+		return "", err
+	}
+
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	parsed.Path = strings.TrimRight(parsed.Path, "/")
+	return parsed.String(), nil
+}
+
+func buildEnvironmentEndpointURLInternal(apiURL, endpointPath string) (string, error) {
+	baseURL, err := normalizeEnvironmentBaseURLInternal(apiURL)
+	if err != nil {
+		return "", err
+	}
+
+	return strings.TrimRight(baseURL, "/") + endpointPath, nil
 }
 
 func (s *EnvironmentService) getProxyRequestContextInternal(ctx context.Context) (context.Context, context.CancelFunc) {
