@@ -2445,7 +2445,7 @@
 	"upgrade_checking": "Checking...",
 	"upgrade_reload_auto": "Page will reload automatically in {countdown} seconds",
 	"upgrade_reload_now": "Reload Now",
-	"upgrade_remote_description": "You are about to upgrade {targetDescription} to v{version}.",
+	"upgrade_remote_description": "Vi baldaŭ ĝisdatigos {targetDescription} al {version}.",
 	"update_center_remote_title": "Ĝisdatigo {target}",
 	"update_center_tag_label": "Etikedo",
 	"update_center_current_label": "Nuna",
