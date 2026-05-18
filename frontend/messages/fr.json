@@ -2445,7 +2445,7 @@
 	"upgrade_checking": "Vérification...",
 	"upgrade_reload_auto": "La page se rechargera automatiquement dans {countdown} secondes",
 	"upgrade_reload_now": "Recharger maintenant",
-	"upgrade_remote_description": "Vous êtes sur le point de mettre à niveau {targetDescription} vers{version}.",
+	"upgrade_remote_description": "Vous êtes sur le point de passer de {targetDescription} à {version}.",
 	"update_center_remote_title": "Mise à jour {target}",
 	"update_center_tag_label": "Étiquette",
 	"update_center_current_label": "Actuel",
