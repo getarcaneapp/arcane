@@ -2445,7 +2445,7 @@
 	"upgrade_checking": "正在檢查...",
 	"upgrade_reload_auto": "頁面將會在 {countdown} 後自動重新整理",
 	"upgrade_reload_now": "立即重新整理",
-	"upgrade_remote_description": "您即將從 {targetDescription} 升級到 v{version}。",
+	"upgrade_remote_description": "您即將升級 {targetDescription} 至 {version}。",
 	"update_center_remote_title": "更新 {target}",
 	"update_center_tag_label": "標籤",
 	"update_center_current_label": "當前",
