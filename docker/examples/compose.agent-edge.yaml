@@ -1,6 +1,6 @@
 services:
   arcane-edge-agent:
-    image: ghcr.io/getarcaneapp/arcane-headless:latest
+    image: ghcr.io/getarcaneapp/agent:latest
     container_name: arcane-edge-agent
     # No ports exposed - agent connects outbound to manager tunnel transport
     environment:

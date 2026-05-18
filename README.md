@@ -1,12 +1,3 @@
-> [!IMPORTANT]
-> All Arcane repos have moved to the [@getarcaneapp](https://github.com/getarcaneapp) org on GitHub.
->
-> This means the images used for Arcane for all future releases (past 1.7.2) will use the following repositories:
->
-> Arcane: `ghcr.io/getarcaneapp/arcane`
->
-> Arcane Agent: `ghcr.io/getarcaneapp/arcane-headless`
-
 <div align="center">
 
   <img src=".github/assets/img/PNG-3.png" alt="Arcane Logo" width="500" />
