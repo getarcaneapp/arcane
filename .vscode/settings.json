@@ -12,6 +12,5 @@
   "tasks.statusbar.default.hide": true,
   "tasks.statusbar.limit": 8,
   "github.copilot.chat.summarizeAgentConversationHistory.enabled": false,
-  "snyk.advanced.organization": "a7adead1-b200-490f-91c5-8fa0e410d62c",
   "snyk.advanced.autoSelectOrganization": true
 }

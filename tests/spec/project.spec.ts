@@ -818,61 +818,19 @@ test.describe('New Compose Project Page', () => {
 
 	test('should destroy the project and remove files from disk', async ({ page }) => {
 		const projectName = `test-destroy-${Date.now()}`;
+		let projectId = '';
 
-		// 1. Create the project first
-		await page.getByRole('button', { name: 'My New Project' }).click();
-		await page.getByRole('textbox', { name: 'My New Project' }).fill(projectName);
-		await page.getByRole('textbox', { name: 'My New Project' }).press('Enter');
+		try {
+			projectId = await createProjectViaUI(page, projectName);
+			await destroyCurrentProjectViaUI(page);
+			projectId = '';
 
-		const composeEditor = page.locator('.cm-editor:visible').first();
-		await expect(composeEditor).toBeVisible();
-		await setCodeMirrorValue(page, composeEditor, TEST_COMPOSE_YAML);
-		await expect
-			.poll(async () => (await getCodeMirrorValue(composeEditor)).trimEnd(), {
-				message: 'Expected compose editor to contain the exact test compose fixture before creation'
-			})
-			.toBe(TEST_COMPOSE_YAML.trimEnd());
-
-		const createButton = page
-			.locator('button[data-slot="arcane-button"]')
-			.filter({ hasText: 'Create Project' });
-		const createResponsePromise = page.waitForResponse(
-			(response) =>
-				response.request().method() === 'POST' &&
-				/\/api\/environments\/[^/]+\/projects$/.test(getPathname(response.url()))
-		);
-		await createButton.click();
-		await expectProjectCreateResponse(createResponsePromise);
-
-		await page.waitForURL(/\/projects\/.+/, { timeout: 10000 });
-		await expect(page.getByRole('button', { name: projectName })).toBeVisible();
-
-		// 2. Destroy the project
-		const destroyButton = page.getByRole('button', {
-			name: 'Destroy',
-			exact: true
-		});
-		await expect(destroyButton).toBeVisible();
-		await destroyButton.click();
-
-		// 3. Handle the confirmation dialog
-		const dialog = page.getByRole('dialog');
-		await expect(dialog).toBeVisible();
-
-		// Check "Remove project files"
-		const removeFilesCheckbox = dialog.getByLabel(/Remove project files/i);
-		await removeFilesCheckbox.check();
-
-		// Click "Destroy" in the dialog
-		const confirmDestroyButton = dialog.getByRole('button', {
-			name: 'Destroy',
-			exact: true
-		});
-		await confirmDestroyButton.click();
-
-		// 4. Verify redirection and project removal
-		await page.waitForURL(ROUTES.page, { timeout: 10000 });
-		await expect(page.getByRole('link', { name: projectName })).not.toBeVisible();
+			await expect(page.getByRole('link', { name: projectName })).not.toBeVisible();
+		} finally {
+			if (projectId) {
+				await destroyProjectByIdViaAPI(page, projectId);
+			}
+		}
 	});
 });
 
