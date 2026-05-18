@@ -2445,7 +2445,7 @@
 	"upgrade_checking": "Verificando...",
 	"upgrade_reload_auto": "A página será recarregada automaticamente em {countdown} segundo(s)",
 	"upgrade_reload_now": "Recarregar agora",
-	"upgrade_remote_description": "Você está prestes a atualizar {targetDescription} para a versão {version}.",
+	"upgrade_remote_description": "Você está prestes a atualizar {targetDescription} para {version}.",
 	"update_center_remote_title": "Atualizar {target}",
 	"update_center_tag_label": "Marcador",
 	"update_center_current_label": "Atual",
