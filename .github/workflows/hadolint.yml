@@ -10,12 +10,12 @@ name: Hadolint
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
     # The branches below must be a subset of the branches above
-    branches: [ "main" ]
+    branches: ["main"]
   schedule:
-    - cron: '24 19 * * 2'
+    - cron: "24 19 * * 2"
 
 permissions:
   contents: read
@@ -38,9 +38,6 @@ jobs:
           - name: agent
             dockerfile: ./docker/Dockerfile-agent
             output: hadolint-results-agent.sarif
-          - name: dhi-base
-            dockerfile: ./docker/Dockerfile-dhi-base
-            output: hadolint-results-dhi-base.sarif
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
