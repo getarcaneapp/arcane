@@ -2445,7 +2445,7 @@
 	"upgrade_checking": "Đang kiểm tra...",
 	"upgrade_reload_auto": "Trang sẽ tự động tải lại sau {countdown} giây",
 	"upgrade_reload_now": "Tải lại ngay",
-	"upgrade_remote_description": "Bạn chuẩn bị nâng cấp {targetDescription} lên v{version}.",
+	"upgrade_remote_description": "Bạn sắp nâng cấp từ {targetDescription} lên {version}.",
 	"update_center_remote_title": "Cập nhật {target}",
 	"update_center_tag_label": "Thẻ",
 	"update_center_current_label": "Hiện tại",
