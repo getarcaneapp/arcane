@@ -34,9 +34,6 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-var ErrSwarmNotEnabled = errors.New("swarm mode is not enabled")
-var ErrSwarmManagerRequired = errors.New("swarm manager access required")
-
 const swarmNodeIdentityProbeConcurrency = 5
 const KVKeySwarmEnabled = "swarm.enabled"
 const defaultSwarmListenAddr = "0.0.0.0:2377"
@@ -1744,10 +1741,10 @@ func (s *SwarmService) CreateConfig(ctx context.Context, req swarmtypes.ConfigCr
 	return s.GetConfig(ctx, createResult.ID)
 }
 
-func (s *SwarmService) UpdateConfig(ctx context.Context, configID string, req swarmtypes.ConfigUpdateRequest) (*swarmtypes.ConfigSummary, error) {
+func (s *SwarmService) UpdateConfig(ctx context.Context, configID string, req swarmtypes.ConfigUpdateRequest) error {
 	_ = configID
 	_ = req
-	return nil, errors.New("swarm configs are immutable; create a new config and update services to use it")
+	return &common.SwarmConfigImmutableError{}
 }
 
 func (s *SwarmService) RemoveConfig(ctx context.Context, configID string) error {
@@ -1830,10 +1827,10 @@ func (s *SwarmService) CreateSecret(ctx context.Context, req swarmtypes.SecretCr
 	return s.GetSecret(ctx, createResult.ID)
 }
 
-func (s *SwarmService) UpdateSecret(ctx context.Context, secretID string, req swarmtypes.SecretUpdateRequest) (*swarmtypes.SecretSummary, error) {
+func (s *SwarmService) UpdateSecret(ctx context.Context, secretID string, req swarmtypes.SecretUpdateRequest) error {
 	_ = secretID
 	_ = req
-	return nil, errors.New("swarm secrets are immutable; create a new secret and update services to use it")
+	return &common.SwarmSecretImmutableError{}
 }
 
 func (s *SwarmService) RemoveSecret(ctx context.Context, secretID string) error {
@@ -2300,10 +2297,10 @@ func (s *SwarmService) ensureSwarmManagerInternal(ctx context.Context) error {
 	}
 
 	if info.Swarm.LocalNodeState != swarm.LocalNodeStateActive {
-		return ErrSwarmNotEnabled
+		return &common.SwarmNotEnabledError{}
 	}
 	if !info.Swarm.ControlAvailable {
-		return ErrSwarmManagerRequired
+		return &common.SwarmManagerRequiredError{}
 	}
 
 	return nil
@@ -2316,7 +2313,7 @@ func (s *SwarmService) ensureSwarmActiveInternal(ctx context.Context) error {
 	}
 
 	if info.Swarm.LocalNodeState != swarm.LocalNodeStateActive {
-		return ErrSwarmNotEnabled
+		return &common.SwarmNotEnabledError{}
 	}
 
 	return nil

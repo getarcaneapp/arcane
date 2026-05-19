@@ -324,3 +324,86 @@ func TestUnescapeMountInfoPath(t *testing.T) {
 		})
 	}
 }
+
+func TestChownRecursiveInternalSkipsProjects(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Setup directory structure:
+	// tempDir/
+	//   database/
+	//   projects/ (this is the protected projects directory)
+	//     demo/
+	//       keep.txt (should not be touched)
+	projectsDir := filepath.Join(tempDir, "projects")
+	demoDir := filepath.Join(projectsDir, "demo")
+	keepFile := filepath.Join(demoDir, "keep.txt")
+	databaseDir := filepath.Join(tempDir, "database")
+
+	require.NoError(t, os.MkdirAll(demoDir, 0755))
+	require.NoError(t, os.WriteFile(keepFile, []byte("keep"), 0644))
+	require.NoError(t, os.MkdirAll(databaseDir, 0755))
+
+	// Track visited paths using mocked lchownFn
+	visited := make(map[string]bool)
+	oldLchownFn := lchownFn
+	lchownFn = func(path string, uid int, gid int) error {
+		visited[filepath.Clean(path)] = true
+		return nil
+	}
+	t.Cleanup(func() {
+		lchownFn = oldLchownFn
+	})
+
+	mountpoints := make(map[string]struct{})
+	err := chownRecursiveInternal(tempDir, 1000, 1000, mountpoints, filepath.Clean(projectsDir))
+	require.NoError(t, err)
+
+	cleanedTempDir := filepath.Clean(tempDir)
+	cleanedDatabaseDir := filepath.Clean(databaseDir)
+	cleanedProjectsDir := filepath.Clean(projectsDir)
+	cleanedDemoDir := filepath.Clean(demoDir)
+	cleanedKeepFile := filepath.Clean(keepFile)
+
+	// Assert base directories / other directories under the path were visited
+	require.True(t, visited[cleanedTempDir], "temp root dir must be visited")
+	require.True(t, visited[cleanedDatabaseDir], "non-protected database dir must be visited")
+
+	// Assert projects directory itself was visited (top level chown)
+	require.True(t, visited[cleanedProjectsDir], "protected projects dir must be visited at top-level")
+
+	// Assert contents inside elements of projects directory were NOT visited
+	require.False(t, visited[cleanedDemoDir], "subdir inside projects dir must NOT be visited")
+	require.False(t, visited[cleanedKeepFile], "file inside projects dir must NOT be visited")
+}
+
+func TestPrepareWritablePathsInternalChownsTopLevelProjectsShallowly(t *testing.T) {
+	tempDir := t.TempDir()
+	dataDir := filepath.Join(tempDir, "data")
+	buildsDir := filepath.Join(tempDir, "builds")
+	projectsDir := filepath.Join(dataDir, "projects")
+	demoDir := filepath.Join(projectsDir, "demo")
+	keepFile := filepath.Join(demoDir, "keep.txt")
+	databaseDir := filepath.Join(dataDir, "database")
+
+	require.NoError(t, os.MkdirAll(demoDir, 0755))
+	require.NoError(t, os.WriteFile(keepFile, []byte("keep"), 0644))
+	require.NoError(t, os.MkdirAll(databaseDir, 0755))
+
+	visited := make(map[string]bool)
+	oldLchownFn := lchownFn
+	lchownFn = func(path string, uid int, gid int) error {
+		visited[filepath.Clean(path)] = true
+		return nil
+	}
+	t.Cleanup(func() {
+		lchownFn = oldLchownFn
+	})
+
+	err := prepareWritablePathsWithRootsInternal(os.Getuid(), os.Getgid(), map[string]struct{}{}, filepath.Clean(projectsDir), dataDir, buildsDir)
+	require.NoError(t, err)
+
+	require.True(t, visited[filepath.Clean(projectsDir)], "top-level projects dir must be chowned")
+	require.True(t, visited[filepath.Clean(databaseDir)], "non-protected data child must be chowned")
+	require.False(t, visited[filepath.Clean(demoDir)], "subdir inside projects dir must NOT be chowned")
+	require.False(t, visited[filepath.Clean(keepFile)], "file inside projects dir must NOT be chowned")
+}

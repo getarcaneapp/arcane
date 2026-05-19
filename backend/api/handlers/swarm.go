@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"maps"
 	"net/http"
@@ -443,7 +442,7 @@ type UpdateSwarmConfigInput struct {
 }
 
 type UpdateSwarmConfigOutput struct {
-	Body base.ApiResponse[swarmtypes.ConfigSummary]
+	Status int `status:"204"`
 }
 
 type DeleteSwarmConfigInput struct {
@@ -488,7 +487,7 @@ type UpdateSwarmSecretInput struct {
 }
 
 type UpdateSwarmSecretOutput struct {
-	Body base.ApiResponse[swarmtypes.SecretSummary]
+	Status int `status:"204"`
 }
 
 type DeleteSwarmSecretInput struct {
@@ -1741,15 +1740,16 @@ func (h *SwarmHandler) CreateConfig(ctx context.Context, input *CreateSwarmConfi
 	return &CreateSwarmConfigOutput{Body: base.ApiResponse[swarmtypes.ConfigSummary]{Success: true, Data: *cfg}}, nil
 }
 
-// UpdateConfig updates an existing swarm config.
+// UpdateConfig rejects updates to an existing swarm config.
 //
-// It requires admin privileges, delegates the update to the swarm service, and
-// records an audit event containing the config ID and updated name.
+// It requires admin privileges and delegates the update request to the swarm
+// service. Docker swarm configs are immutable, so the current service behavior
+// returns a mapped validation error instead of a replacement config.
 //
 // ctx carries request-scoped cancellation, auth, and audit context.
 // input identifies the config to update and contains the replacement specification.
 //
-// Returns the updated config summary.
+// Returns no content if a future service implementation completes the update.
 // Returns an authorization error for non-admin callers or mapped HTTP errors
 // when the update fails.
 func (h *SwarmHandler) UpdateConfig(ctx context.Context, input *UpdateSwarmConfigInput) (*UpdateSwarmConfigOutput, error) {
@@ -1760,14 +1760,10 @@ func (h *SwarmHandler) UpdateConfig(ctx context.Context, input *UpdateSwarmConfi
 		return nil, err
 	}
 
-	cfg, err := h.swarmService.UpdateConfig(ctx, input.ConfigID, input.Body)
-	if err != nil {
+	if err := h.swarmService.UpdateConfig(ctx, input.ConfigID, input.Body); err != nil {
 		return nil, mapSwarmServiceError(err, "Failed to update swarm config")
 	}
-
-	h.auditSwarmMutation(ctx, input.EnvironmentID, "config.update", "swarm_config", input.ConfigID, cfg.Spec.Name, map[string]any{"configId": input.ConfigID, "name": cfg.Spec.Name})
-
-	return &UpdateSwarmConfigOutput{Body: base.ApiResponse[swarmtypes.ConfigSummary]{Success: true, Data: *cfg}}, nil
+	return &UpdateSwarmConfigOutput{}, nil
 }
 
 // DeleteConfig removes a swarm config.
@@ -1883,15 +1879,16 @@ func (h *SwarmHandler) CreateSecret(ctx context.Context, input *CreateSwarmSecre
 	return &CreateSwarmSecretOutput{Body: base.ApiResponse[swarmtypes.SecretSummary]{Success: true, Data: *secret}}, nil
 }
 
-// UpdateSecret updates an existing swarm secret.
+// UpdateSecret rejects updates to an existing swarm secret.
 //
-// It requires admin privileges, delegates the update to the swarm service, and
-// records an audit event containing the secret ID and updated name.
+// It requires admin privileges and delegates the update request to the swarm
+// service. Docker swarm secrets are immutable, so the current service behavior
+// returns a mapped validation error instead of a replacement secret.
 //
 // ctx carries request-scoped cancellation, auth, and audit context.
 // input identifies the secret to update and contains the replacement specification.
 //
-// Returns the updated secret summary.
+// Returns no content if a future service implementation completes the update.
 // Returns an authorization error for non-admin callers or mapped HTTP errors
 // when the update fails.
 func (h *SwarmHandler) UpdateSecret(ctx context.Context, input *UpdateSwarmSecretInput) (*UpdateSwarmSecretOutput, error) {
@@ -1902,14 +1899,10 @@ func (h *SwarmHandler) UpdateSecret(ctx context.Context, input *UpdateSwarmSecre
 		return nil, err
 	}
 
-	secret, err := h.swarmService.UpdateSecret(ctx, input.SecretID, input.Body)
-	if err != nil {
+	if err := h.swarmService.UpdateSecret(ctx, input.SecretID, input.Body); err != nil {
 		return nil, mapSwarmServiceError(err, "Failed to update swarm secret")
 	}
-
-	h.auditSwarmMutation(ctx, input.EnvironmentID, "secret.update", "swarm_secret", input.SecretID, secret.Spec.Name, map[string]any{"secretId": input.SecretID, "name": secret.Spec.Name})
-
-	return &UpdateSwarmSecretOutput{Body: base.ApiResponse[swarmtypes.SecretSummary]{Success: true, Data: *secret}}, nil
+	return &UpdateSwarmSecretOutput{}, nil
 }
 
 // DeleteSecret removes a swarm secret.
@@ -2071,11 +2064,17 @@ func buildSwarmQueryParams(search, sort, order string, start, limit int) paginat
 //
 // Returns an HTTP-shaped error suitable for returning from a Huma handler.
 func mapSwarmServiceError(err error, fallback string) error {
-	if errors.Is(err, services.ErrSwarmNotEnabled) {
+	if err == nil {
+		return nil
+	}
+	if common.IsSwarmNotEnabledError(err) {
 		return huma.Error409Conflict((&common.SwarmNotEnabledError{}).Error())
 	}
-	if errors.Is(err, services.ErrSwarmManagerRequired) {
+	if common.IsSwarmManagerRequiredError(err) {
 		return huma.Error403Forbidden((&common.SwarmManagerRequiredError{}).Error())
+	}
+	if common.IsSwarmConfigImmutableError(err) || common.IsSwarmSecretImmutableError(err) {
+		return huma.Error400BadRequest(err.Error())
 	}
 	if errdefs.IsNotFound(err) {
 		return huma.Error404NotFound(err.Error())

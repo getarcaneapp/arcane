@@ -1567,6 +1567,34 @@ func (e *SwarmManagerRequiredError) Error() string {
 	return "Swarm manager access required"
 }
 
+func IsSwarmNotEnabledError(err error) bool {
+	return isErrorTypeInternal[*SwarmNotEnabledError](err)
+}
+
+func IsSwarmManagerRequiredError(err error) bool {
+	return isErrorTypeInternal[*SwarmManagerRequiredError](err)
+}
+
+type SwarmConfigImmutableError struct{}
+
+func (e *SwarmConfigImmutableError) Error() string {
+	return "Swarm configs are immutable; create a new config and update services to use it"
+}
+
+type SwarmSecretImmutableError struct{}
+
+func (e *SwarmSecretImmutableError) Error() string {
+	return "Swarm secrets are immutable; create a new secret and update services to use it"
+}
+
+func IsSwarmConfigImmutableError(err error) bool {
+	return isErrorTypeInternal[*SwarmConfigImmutableError](err)
+}
+
+func IsSwarmSecretImmutableError(err error) bool {
+	return isErrorTypeInternal[*SwarmSecretImmutableError](err)
+}
+
 type SwarmServiceListError struct {
 	Err error
 }
