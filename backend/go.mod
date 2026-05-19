@@ -23,7 +23,7 @@ require (
 	github.com/getarcaneapp/arcane/cli v1.19.1
 	github.com/getarcaneapp/arcane/types v1.19.1
 	github.com/glebarez/sqlite v1.11.0
-	github.com/go-git/go-git/v5 v5.19.0
+	github.com/go-git/go-git/v5 v5.19.1
 	github.com/goccy/go-yaml v1.19.2
 	github.com/gofrs/flock v0.13.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
