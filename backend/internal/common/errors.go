@@ -1654,3 +1654,25 @@ type SwarmInspectError struct {
 func (e *SwarmInspectError) Error() string {
 	return fmt.Sprintf("Failed to inspect swarm: %v", e.Err)
 }
+
+type BuildKitImageExporterError struct {
+	ProviderName string
+	Err          error
+}
+
+func (e *BuildKitImageExporterError) Error() string {
+	return fmt.Sprintf("depot and remote BuildKit providers require the image exporter for provider %s: %v", e.ProviderName, e.Err)
+}
+
+func (e *BuildKitImageExporterError) Unwrap() error { return e.Err }
+
+type BuildKitDockerExporterError struct {
+	ProviderName string
+	Err          error
+}
+
+func (e *BuildKitDockerExporterError) Error() string {
+	return fmt.Sprintf("the Docker Engine embedded BuildKit requires the docker image-store exporter (used for load) for provider %s: %v", e.ProviderName, e.Err)
+}
+
+func (e *BuildKitDockerExporterError) Unwrap() error { return e.Err }
