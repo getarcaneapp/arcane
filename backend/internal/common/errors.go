@@ -1070,6 +1070,34 @@ func (e *UpgradeTriggerError) Error() string {
 	return fmt.Sprintf("Failed to initiate upgrade: %v", e.Err)
 }
 
+type NotRunningInDockerError struct{}
+
+func (e *NotRunningInDockerError) Error() string {
+	return "arcane is not running in a Docker container"
+}
+
+type ArcaneContainerNotFoundError struct{}
+
+func (e *ArcaneContainerNotFoundError) Error() string {
+	return "could not find Arcane container"
+}
+
+type UpgradeInProgressError struct{}
+
+func (e *UpgradeInProgressError) Error() string {
+	return "an upgrade is already in progress"
+}
+
+func IsUpgradeInProgressError(err error) bool {
+	return isErrorTypeInternal[*UpgradeInProgressError](err)
+}
+
+type DockerSocketAccessError struct{}
+
+func (e *DockerSocketAccessError) Error() string {
+	return "docker socket is not accessible"
+}
+
 type TemplateListError struct {
 	Err error
 }

@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -544,7 +543,7 @@ func (h *SystemHandler) TriggerUpgrade(ctx context.Context, input *TriggerUpgrad
 	if err != nil {
 		slog.Error("System upgrade failed", "error", err, "user", user.Username)
 
-		if errors.Is(err, services.ErrUpgradeInProgress) {
+		if common.IsUpgradeInProgressError(err) {
 			return nil, huma.Error409Conflict((&common.UpgradeTriggerError{Err: err}).Error())
 		}
 

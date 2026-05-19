@@ -1,9 +1,15 @@
 package services
 
 import (
+	"context"
+	"errors"
 	"testing"
 
+	"github.com/getarcaneapp/arcane/backend/internal/common"
 	libupdater "github.com/getarcaneapp/arcane/backend/pkg/libarcane/imageupdate"
+	containertypes "github.com/moby/moby/api/types/container"
+	mounttypes "github.com/moby/moby/api/types/mount"
+	networktypes "github.com/moby/moby/api/types/network"
 	"github.com/stretchr/testify/require"
 )
 
@@ -35,16 +41,16 @@ func TestSystemUpgradeService_Initialization(t *testing.T) {
 // TestSystemUpgradeService_ErrorVariables tests that error variables are properly defined
 func TestSystemUpgradeService_ErrorVariables(t *testing.T) {
 	// Test that all expected errors exist and are not nil
-	require.Error(t, ErrNotRunningInDocker)
-	require.Error(t, ErrContainerNotFound)
-	require.Error(t, ErrUpgradeInProgress)
-	require.Error(t, ErrDockerSocketAccess)
+	require.Error(t, &common.NotRunningInDockerError{})
+	require.Error(t, &common.ArcaneContainerNotFoundError{})
+	require.Error(t, &common.UpgradeInProgressError{})
+	require.Error(t, &common.DockerSocketAccessError{})
 
 	// Test error messages
-	require.Equal(t, "arcane is not running in a Docker container", ErrNotRunningInDocker.Error())
-	require.Equal(t, "could not find Arcane container", ErrContainerNotFound.Error())
-	require.Equal(t, "an upgrade is already in progress", ErrUpgradeInProgress.Error())
-	require.Equal(t, "docker socket is not accessible", ErrDockerSocketAccess.Error())
+	require.Equal(t, "arcane is not running in a Docker container", (&common.NotRunningInDockerError{}).Error())
+	require.Equal(t, "could not find Arcane container", (&common.ArcaneContainerNotFoundError{}).Error())
+	require.Equal(t, "an upgrade is already in progress", (&common.UpgradeInProgressError{}).Error())
+	require.Equal(t, "docker socket is not accessible", (&common.DockerSocketAccessError{}).Error())
 }
 
 // TestSystemUpgradeService_UpgradingFlag_ConcurrentAccess tests upgrading flag
@@ -116,12 +122,12 @@ func TestSystemUpgradeService_ConcurrentUpgradeAttempts(t *testing.T) {
 // TestSystemUpgradeService_UpgradeInProgressError tests the upgrade in progress sentinel error
 func TestSystemUpgradeService_UpgradeInProgressError(t *testing.T) {
 	// This tests the specific error that the handler checks for
-	// The handler uses: if errors.Is(err, services.ErrUpgradeInProgress)
+	// The handler uses common.IsUpgradeInProgressError for conflict detection.
 
-	require.Equal(t, "an upgrade is already in progress", ErrUpgradeInProgress.Error())
+	err := &common.UpgradeInProgressError{}
+	require.Equal(t, "an upgrade is already in progress", err.Error())
 
-	// Test that the error is not nil
-	require.Error(t, ErrUpgradeInProgress)
+	require.True(t, common.IsUpgradeInProgressError(err))
 }
 
 // TestSystemUpgradeService_AtomicOperations tests atomic.Bool operations
@@ -183,4 +189,85 @@ func TestDetermineUpgradeBinaryPath(t *testing.T) {
 			require.Equal(t, tt.want, determineUpgradeBinaryPathInternal(tt.labels))
 		})
 	}
+}
+
+func TestResolveSystemUpgraderRuntimeOptionsInternal_TCPDockerHost(t *testing.T) {
+	currentContainer := &containertypes.InspectResponse{
+		HostConfig: &containertypes.HostConfig{NetworkMode: "bridge"},
+		NetworkSettings: &containertypes.NetworkSettings{
+			Networks: map[string]*networktypes.EndpointSettings{
+				"bridge":      {},
+				"arcane-test": {},
+			},
+		},
+	}
+
+	options, err := resolveSystemUpgraderRuntimeOptionsInternal(
+		context.Background(),
+		"tcp://docker-socket-proxy:2375",
+		currentContainer,
+		nil,
+		func() bool { return true },
+	)
+	require.NoError(t, err)
+	require.Equal(t, []string{"DOCKER_HOST=tcp://docker-socket-proxy:2375"}, options.ContainerEnv)
+	require.Empty(t, options.Mounts)
+	require.Equal(t, containertypes.NetworkMode("arcane-test"), options.NetworkMode)
+}
+
+func TestResolveSystemUpgraderRuntimeOptionsInternal_UnixDockerHost(t *testing.T) {
+	options, err := resolveSystemUpgraderRuntimeOptionsInternal(
+		context.Background(),
+		"unix:///var/run/docker.sock",
+		nil,
+		func(context.Context, string) (string, error) {
+			return "/host/run/docker.sock", nil
+		},
+		func() bool { return true },
+	)
+	require.NoError(t, err)
+	require.Equal(t, []string{"DOCKER_HOST=unix:///var/run/docker.sock"}, options.ContainerEnv)
+	require.Equal(t, containertypes.NetworkMode(""), options.NetworkMode)
+	require.Equal(t, []mounttypes.Mount{
+		{
+			Type:   mounttypes.TypeBind,
+			Source: "/host/run/docker.sock",
+			Target: "/var/run/docker.sock",
+		},
+	}, options.Mounts)
+}
+
+func TestResolveSystemUpgraderRuntimeOptionsInternal_DefaultDockerHost(t *testing.T) {
+	options, err := resolveSystemUpgraderRuntimeOptionsInternal(
+		context.Background(),
+		"",
+		nil,
+		func(context.Context, string) (string, error) {
+			return "/var/run/docker.sock", nil
+		},
+		func() bool { return true },
+	)
+	require.NoError(t, err)
+	require.Nil(t, options.ContainerEnv)
+	require.Equal(t, []mounttypes.Mount{
+		{
+			Type:   mounttypes.TypeBind,
+			Source: "/var/run/docker.sock",
+			Target: "/var/run/docker.sock",
+		},
+	}, options.Mounts)
+}
+
+func TestResolveSystemUpgraderRuntimeOptionsInternal_UnixDockerHostResolutionError(t *testing.T) {
+	_, err := resolveSystemUpgraderRuntimeOptionsInternal(
+		context.Background(),
+		"unix:///var/run/docker.sock",
+		nil,
+		func(context.Context, string) (string, error) {
+			return "", errors.New("inspect failed")
+		},
+		func() bool { return true },
+	)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "resolve unix socket source")
 }

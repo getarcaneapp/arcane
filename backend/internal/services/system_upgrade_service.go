@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	dockerutils "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
@@ -20,13 +21,7 @@ import (
 	"github.com/moby/moby/client"
 )
 
-var (
-	ErrNotRunningInDocker = errors.New("arcane is not running in a Docker container")
-	ErrContainerNotFound  = errors.New("could not find Arcane container")
-	ErrUpgradeInProgress  = errors.New("an upgrade is already in progress")
-	ErrDockerSocketAccess = errors.New("docker socket is not accessible")
-	ArcaneUpgraderImage   = "ghcr.io/getarcaneapp/arcane:latest"
-)
+var ArcaneUpgraderImage = "ghcr.io/getarcaneapp/arcane:latest"
 
 type SystemUpgradeService struct {
 	upgrading       atomic.Bool
@@ -34,6 +29,12 @@ type SystemUpgradeService struct {
 	versionService  *VersionService
 	eventService    *EventService
 	settingsService *SettingsService
+}
+
+type upgraderRuntimeOptionsInternal struct {
+	ContainerEnv []string
+	Mounts       []mounttypes.Mount
+	NetworkMode  containertypes.NetworkMode
 }
 
 func NewSystemUpgradeService(
@@ -53,19 +54,19 @@ func NewSystemUpgradeService(
 // CanUpgrade checks if self-upgrade is possible
 func (s *SystemUpgradeService) CanUpgrade(ctx context.Context) (bool, error) {
 	// Check if running in Docker
-	containerId, err := s.getCurrentContainerID()
+	containerId, err := s.getCurrentContainerIDInternal()
 	if err != nil {
-		return false, ErrNotRunningInDocker
+		return false, err
 	}
 
 	// Verify we can access Docker
 	_, err = s.dockerService.GetClient(ctx)
 	if err != nil {
-		return false, ErrDockerSocketAccess
+		return false, &common.DockerSocketAccessError{}
 	}
 
 	// Verify we can find our container
-	_, err = s.findArcaneContainer(ctx, containerId)
+	_, err = s.findArcaneContainerInternal(ctx, containerId)
 	if err != nil {
 		return false, err
 	}
@@ -77,17 +78,17 @@ func (s *SystemUpgradeService) CanUpgrade(ctx context.Context) (bool, error) {
 // This avoids self-termination issues by running the upgrade from outside
 func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user models.User) error {
 	if !s.upgrading.CompareAndSwap(false, true) {
-		return ErrUpgradeInProgress
+		return &common.UpgradeInProgressError{}
 	}
 	defer s.upgrading.Store(false)
 
 	// Get current container name
-	containerId, err := s.getCurrentContainerID()
+	containerId, err := s.getCurrentContainerIDInternal()
 	if err != nil {
 		return fmt.Errorf("get current container: %w", err)
 	}
 
-	currentContainer, err := s.findArcaneContainer(ctx, containerId)
+	currentContainer, err := s.findArcaneContainerInternal(ctx, containerId)
 	if err != nil {
 		return fmt.Errorf("inspect container: %w", err)
 	}
@@ -162,18 +163,33 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 	}
 
 	// Create the upgrader container config
+	runtimeOptions, err := resolveSystemUpgraderRuntimeOptionsInternal(
+		ctx,
+		s.dockerService.DockerHost(),
+		&currentContainer,
+		func(ctx context.Context, containerPath string) (string, error) {
+			return dockerutils.GetHostPathForContainerPath(ctx, dockerClient, containerPath)
+		},
+		func() bool {
+			_, err := dockerutils.GetCurrentContainerID()
+			return err == nil
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("resolve upgrader docker runtime: %w", err)
+	}
+
 	config := &containertypes.Config{
 		Image: ArcaneUpgraderImage,
 		Cmd:   []string{binaryPath, "upgrade", "--container", containerName},
+		Env:   runtimeOptions.ContainerEnv,
 		Labels: map[string]string{
 			"com.getarcaneapp.arcane.upgrader": "true",
 			"com.getarcaneapp.arcane":          "true",
 		},
 	}
 
-	mounts := []mounttypes.Mount{
-		{Type: mounttypes.TypeBind, Source: "/var/run/docker.sock", Target: "/var/run/docker.sock"},
-	}
+	mounts := append([]mounttypes.Mount{}, runtimeOptions.Mounts...)
 	if appDataMount != nil {
 		mounts = append(mounts, *appDataMount)
 	}
@@ -184,8 +200,9 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 	}
 
 	hostConfig := &containertypes.HostConfig{
-		AutoRemove: !keepUpgraderContainer, // default: clean up after completion
-		Mounts:     mounts,
+		AutoRemove:  !keepUpgraderContainer, // default: clean up after completion
+		Mounts:      mounts,
+		NetworkMode: runtimeOptions.NetworkMode,
 	}
 
 	containerName = fmt.Sprintf("%s-upgrader-%d", containerName, time.Now().Unix())
@@ -218,17 +235,57 @@ func determineUpgradeBinaryPathInternal(labels map[string]string) string {
 	return "/app/arcane"
 }
 
+func resolveSystemUpgraderRuntimeOptionsInternal(
+	ctx context.Context,
+	dockerHost string,
+	currentContainer *containertypes.InspectResponse,
+	discoverHostPath func(context.Context, string) (string, error),
+	isRunningInDocker func() bool,
+) (upgraderRuntimeOptionsInternal, error) {
+	options := upgraderRuntimeOptionsInternal{
+		ContainerEnv: buildTrivyDockerHostEnvInternal(dockerHost),
+	}
+
+	scheme, socketPath, err := parseTrivyDockerHostInternal(dockerHost)
+	if err != nil {
+		return upgraderRuntimeOptionsInternal{}, fmt.Errorf("resolve docker host %q: %w", dockerHost, err)
+	}
+
+	if scheme != "unix" {
+		options.NetworkMode = containertypes.NetworkMode(selectTrivyAutoNetworkModeInternal(currentContainer))
+		return options, nil
+	}
+
+	socketSource, err := resolveTrivyUnixSocketSourceInternal(
+		ctx,
+		socketPath,
+		discoverHostPath,
+		isRunningInDocker,
+	)
+	if err != nil {
+		return upgraderRuntimeOptionsInternal{}, fmt.Errorf("resolve unix socket source: %w", err)
+	}
+
+	options.Mounts = append(options.Mounts, mounttypes.Mount{
+		Type:   mounttypes.TypeBind,
+		Source: socketSource,
+		Target: socketPath,
+	})
+
+	return options, nil
+}
+
 // getCurrentContainerID detects if we're running in Docker and returns container ID
-func (s *SystemUpgradeService) getCurrentContainerID() (string, error) {
+func (s *SystemUpgradeService) getCurrentContainerIDInternal() (string, error) {
 	id, err := dockerutils.GetCurrentContainerID()
 	if err != nil {
-		return "", ErrNotRunningInDocker
+		return "", &common.NotRunningInDockerError{}
 	}
 	return id, nil
 }
 
 // findArcaneContainer finds the container using the ID
-func (s *SystemUpgradeService) findArcaneContainer(ctx context.Context, containerId string) (containertypes.InspectResponse, error) {
+func (s *SystemUpgradeService) findArcaneContainerInternal(ctx context.Context, containerId string) (containertypes.InspectResponse, error) {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return containertypes.InspectResponse{}, err
@@ -278,5 +335,5 @@ func (s *SystemUpgradeService) findArcaneContainer(ctx context.Context, containe
 		}
 	}
 
-	return containertypes.InspectResponse{}, ErrContainerNotFound
+	return containertypes.InspectResponse{}, &common.ArcaneContainerNotFoundError{}
 }
