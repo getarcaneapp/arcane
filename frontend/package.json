@@ -24,7 +24,7 @@
     "@codemirror/view": "^6.42.1",
     "@lezer/highlight": "^1.2.3",
     "@sveltejs/adapter-static": "^3.0.10",
-    "@sveltejs/kit": "^2.58.0",
+    "@sveltejs/kit": "^2.60.1",
     "@tanstack/svelte-query": "^6.1.28",
     "@tanstack/table-core": "^8.21.3",
     "@uiw/codemirror-themes": "^4.25.9",
