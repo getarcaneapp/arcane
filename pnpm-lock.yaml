@@ -69,8 +69,8 @@ importers:
   frontend:
     dependencies:
       '@codemirror/autocomplete':
-        specifier: ^6.20.1
-        version: 6.20.1
+        specifier: ^6.20.2
+        version: 6.20.2
       '@codemirror/lang-yaml':
         specifier: ^6.1.3
         version: 6.1.3
@@ -336,9 +336,6 @@ packages:
   '@bramus/specificity@2.4.2':
     resolution: {integrity: sha512-ctxtJ/eA+t+6q2++vj5j7FYX3nRu311q1wfYH3xjlLOsczhlhxAg2FWNUXhpGvAw3BWo1xBcvOV6/YLc2r5FJw==}
     hasBin: true
-
-  '@codemirror/autocomplete@6.20.1':
-    resolution: {integrity: sha512-1cvg3Vz1dSSToCNlJfRA2WSI4ht3K+WplO0UMOgmUYPivCyy2oueZY6Lx7M9wThm7SDUBViRmuT+OG/i8+ON9A==}
 
   '@codemirror/autocomplete@6.20.2':
     resolution: {integrity: sha512-G5FPkgIiLjOgZMjqVjvuKQ1rGPtHogLldJr33eFJdVLtmwY+giGrlv/ewljLz6b9BSQLkjxuwBc6g6omDM+YxQ==}
@@ -3337,13 +3334,6 @@ snapshots:
     dependencies:
       css-tree: 3.2.1
 
-  '@codemirror/autocomplete@6.20.1':
-    dependencies:
-      '@codemirror/language': 6.12.3
-      '@codemirror/state': 6.6.0
-      '@codemirror/view': 6.42.1
-      '@lezer/common': 1.5.2
-
   '@codemirror/autocomplete@6.20.2':
     dependencies:
       '@codemirror/language': 6.12.3
@@ -3360,7 +3350,7 @@ snapshots:
 
   '@codemirror/lang-yaml@6.1.3':
     dependencies:
-      '@codemirror/autocomplete': 6.20.1
+      '@codemirror/autocomplete': 6.20.2
       '@codemirror/language': 6.12.3
       '@codemirror/state': 6.6.0
       '@lezer/common': 1.5.2
