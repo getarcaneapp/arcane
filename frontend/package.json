@@ -46,7 +46,7 @@
   },
   "devDependencies": {
     "@iconify/json": "^2.2.470",
-    "@inlang/paraglide-js": "2.16.1",
+    "@inlang/paraglide-js": "2.18.1",
     "@internationalized/date": "^3.12.1",
     "@prettier/plugin-oxc": "^0.1.4",
     "@sveltejs/vite-plugin-svelte": "^7.1.2",
