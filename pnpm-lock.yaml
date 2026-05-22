@@ -44,8 +44,8 @@ importers:
         specifier: ^19.2.6
         version: 19.2.6(react@19.2.6)
       react-email:
-        specifier: 6.1.1
-        version: 6.1.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+        specifier: 6.3.0
+        version: 6.3.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       tailwind-merge:
         specifier: ^3.6.0
         version: 3.6.0
@@ -2530,8 +2530,8 @@ packages:
     peerDependencies:
       react: ^19.2.6
 
-  react-email@6.1.1:
-    resolution: {integrity: sha512-5wITcaKhYPsW8IAx4d2zRCtKq0JJydxlH4qCfy1bltreRDIAbfJUdlW6gCiLMsFJN/QvC4r5adlIaqvJgRgXMw==}
+  react-email@6.3.0:
+    resolution: {integrity: sha512-IIwl63lWo91104T8zlwFhBQvFQgfIc/NCruacE4uI1e8hkzpxKwk0d6abMzTK1qniQDK7STbn5YB+Tkhsnjz9Q==}
     engines: {node: '>=20.0.0'}
     hasBin: true
     peerDependencies:
@@ -3135,7 +3135,7 @@ snapshots:
     dependencies:
       '@babel/code-frame': 7.29.0
       '@babel/generator': 7.29.1
-      '@babel/parser': 7.27.0
+      '@babel/parser': 7.29.3
       '@babel/template': 7.28.6
       '@babel/types': 7.29.0
       debug: 4.4.3
@@ -5026,7 +5026,7 @@ snapshots:
       react: 19.2.6
       scheduler: 0.27.0
 
-  react-email@6.1.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6):
+  react-email@6.3.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6):
     dependencies:
       '@babel/parser': 7.27.0
       '@babel/traverse': 7.27.0
