@@ -66,7 +66,7 @@
     "svelte-sonner": "^1.1.1",
     "svelte-toolbelt": "^0.10.6",
     "sveltekit-superforms": "^2.30.1",
-    "tailwind-merge": "^3.5.0",
+    "tailwind-merge": "^3.6.0",
     "tailwind-variants": "^3.2.2",
     "tailwindcss": "^4.3.0",
     "tsx": "^4.21.0",
