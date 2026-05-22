@@ -175,8 +175,8 @@ importers:
         specifier: ^4.3.0
         version: 4.3.0(vite@8.0.10(@types/node@25.6.2)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.8.3))
       '@tanstack/svelte-query-devtools':
-        specifier: ^6.1.29
-        version: 6.1.29(@tanstack/svelte-query@6.1.28(svelte@5.55.9))(svelte@5.55.9)
+        specifier: ^6.1.30
+        version: 6.1.30(@tanstack/svelte-query@6.1.28(svelte@5.55.9))(svelte@5.55.9)
       '@types/node':
         specifier: ^25.6.2
         version: 25.6.2
@@ -1639,13 +1639,13 @@ packages:
   '@tanstack/query-core@5.100.9':
     resolution: {integrity: sha512-SJSFw1S8+kQ0+knv/XGfrbocWoAlT7vDKsSImtLx3ZPQmEcR46hkDjLSvynSy25N8Ms4tIEini1FuBd5k7IscQ==}
 
-  '@tanstack/query-devtools@5.100.10':
-    resolution: {integrity: sha512-3DmJf25hDPus5IpVvp6ujXv6bKV2zPzI9vpbAmpJigsL/H6DPvPjmf7/Q9yVKEke//8fgeQ45abjgnLuyYxAiw==}
+  '@tanstack/query-devtools@5.100.11':
+    resolution: {integrity: sha512-47rVBDuGMW/A4ekt3YQdz+q0JSIwktwGnWCYyQUvSs2/g/Oa+6Fi2/IQk4/Y4vf6u1uwI7hOogHslgMC8f3X/Q==}
 
-  '@tanstack/svelte-query-devtools@6.1.29':
-    resolution: {integrity: sha512-0BY1xGbc//DKVlvk8xKZrW4nBeAQb9VTeoo97KdVL23Kkr+IMpvPZnK8fQ5lqIvfLA+NhfwViSYgJZfrB0rhLQ==}
+  '@tanstack/svelte-query-devtools@6.1.30':
+    resolution: {integrity: sha512-LB3slyi68YcxV83uHyfLsJP4gsI2mMNWGgm0e0GB/4gjNBh5/Y/PufzwpcfKPJ+RuS74ahVeb1POvsz0Uz6l1Q==}
     peerDependencies:
-      '@tanstack/svelte-query': ^6.1.29
+      '@tanstack/svelte-query': ^6.1.30
       svelte: ^5.25.0
 
   '@tanstack/svelte-query@6.1.28':
@@ -4240,11 +4240,11 @@ snapshots:
 
   '@tanstack/query-core@5.100.9': {}
 
-  '@tanstack/query-devtools@5.100.10': {}
+  '@tanstack/query-devtools@5.100.11': {}
 
-  '@tanstack/svelte-query-devtools@6.1.29(@tanstack/svelte-query@6.1.28(svelte@5.55.9))(svelte@5.55.9)':
+  '@tanstack/svelte-query-devtools@6.1.30(@tanstack/svelte-query@6.1.28(svelte@5.55.9))(svelte@5.55.9)':
     dependencies:
-      '@tanstack/query-devtools': 5.100.10
+      '@tanstack/query-devtools': 5.100.11
       '@tanstack/svelte-query': 6.1.28(svelte@5.55.9)
       esm-env: 1.2.2
       svelte: 5.55.9
