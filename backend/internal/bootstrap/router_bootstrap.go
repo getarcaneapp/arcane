@@ -120,32 +120,23 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services)
 	e.HideBanner = true
 	e.HidePort = true
 
-	if cfg.TrustedProxies == "" {
+	trustedProxyNets := parseTrustedProxyCIDRsInternal(cfg.TrustedProxies)
+	if cfg.TrustedProxies != "" && len(trustedProxyNets) == 0 {
+		slog.Warn("TRUSTED_PROXIES set but no valid CIDRs found; falling back to direct IP extraction")
+	}
+	if len(trustedProxyNets) == 0 {
 		e.IPExtractor = echo.ExtractIPDirect()
 	} else {
-		var opts []echo.TrustOption
-		for _, cidr := range strings.Split(cfg.TrustedProxies, ",") {
-			cidr = strings.TrimSpace(cidr)
-			if cidr == "" {
-				continue
-			}
-			_, ipnet, err := net.ParseCIDR(cidr)
-			if err != nil {
-				slog.Warn("invalid TRUSTED_PROXIES CIDR, ignoring", "cidr", cidr, "error", err)
-				continue
-			}
+		opts := make([]echo.TrustOption, 0, len(trustedProxyNets))
+		for _, ipnet := range trustedProxyNets {
 			opts = append(opts, echo.TrustIPRange(ipnet))
 		}
-		if len(opts) == 0 {
-			slog.Warn("TRUSTED_PROXIES set but no valid CIDRs found; falling back to direct IP extraction")
-			e.IPExtractor = echo.ExtractIPDirect()
-		} else {
-			e.IPExtractor = echo.ExtractIPFromXFFHeader(opts...)
-		}
+		e.IPExtractor = echo.ExtractIPFromXFFHeader(opts...)
 	}
 
 	e.Use(echomiddleware.Recover())
-	e.Use(requestLoggerMiddlewareInternal()) //nolint:contextcheck
+	e.Use(requestLoggerMiddlewareInternal())                       //nolint:contextcheck
+	e.Use(secureCookieContextMiddlewareInternal(trustedProxyNets)) //nolint:contextcheck
 
 	authMiddleware := middleware.NewAuthMiddleware(appServices.Auth, cfg).
 		WithApiKeyValidator(appServices.ApiKey).
@@ -257,6 +248,71 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services)
 	}
 
 	return e, tunnelServer
+}
+
+// parseTrustedProxyCIDRsInternal parses TRUSTED_PROXIES into a list of
+// validated networks. Invalid entries are logged and skipped.
+func parseTrustedProxyCIDRsInternal(raw string) []*net.IPNet {
+	if raw == "" {
+		return nil
+	}
+	var nets []*net.IPNet
+	for _, cidr := range strings.Split(raw, ",") {
+		cidr = strings.TrimSpace(cidr)
+		if cidr == "" {
+			continue
+		}
+		_, ipnet, err := net.ParseCIDR(cidr)
+		if err != nil {
+			slog.Warn("invalid TRUSTED_PROXIES CIDR, ignoring", "cidr", cidr, "error", err)
+			continue
+		}
+		nets = append(nets, ipnet)
+	}
+	return nets
+}
+
+// secureCookieContextMiddlewareInternal records whether the request should be
+// treated as HTTPS for cookie-emitting handlers. X-Forwarded-Proto is honored
+// ONLY when the direct TCP peer is in TRUSTED_PROXIES — an untrusted client
+// setting the header directly cannot trick the server into issuing Secure /
+// __Host- cookies over plain HTTP.
+func secureCookieContextMiddlewareInternal(trustedProxyNets []*net.IPNet) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			req := c.Request()
+			secure := req.TLS != nil
+			if !secure && len(trustedProxyNets) > 0 &&
+				strings.EqualFold(req.Header.Get("X-Forwarded-Proto"), "https") &&
+				remoteAddrInTrustedProxiesInternal(req.RemoteAddr, trustedProxyNets) {
+				secure = true
+			}
+			if secure {
+				c.SetRequest(req.WithContext(cookie.WithSecureCookieContext(req.Context(), true)))
+			}
+			return next(c)
+		}
+	}
+}
+
+// remoteAddrInTrustedProxiesInternal reports whether the direct TCP peer
+// address of the request falls within any of the configured trusted-proxy
+// networks. Unparseable remote addresses are treated as untrusted.
+func remoteAddrInTrustedProxiesInternal(remoteAddr string, nets []*net.IPNet) bool {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		host = remoteAddr
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	for _, n := range nets {
+		if n.Contains(ip) {
+			return true
+		}
+	}
+	return false
 }
 
 func registerPprofRoutesInternal(apiGroup *echo.Group, authMiddleware *middleware.AuthMiddleware) {

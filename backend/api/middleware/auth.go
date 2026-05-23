@@ -298,7 +298,9 @@ func handleBearerAuthInternal(api huma.API, ctx huma.Context, authService *servi
 		return huma.WithContext(ctx, newCtx), true
 	}
 	if errors.Is(err, services.ErrTokenVersionMismatch) || common.IsSessionRevokedError(err) || common.IsTokenValidationError(err) {
-		ctx.AppendHeader("Set-Cookie", cookie.BuildClearTokenCookieStringFor(ctx.TLS() != nil))
+		for _, cookieHeader := range cookie.BuildClearTokenCookieStringsFor(cookie.SecureCookieFromContext(ctx.Context())) {
+			ctx.AppendHeader("Set-Cookie", cookieHeader)
+		}
 		_ = huma.WriteErr(api, ctx, http.StatusUnauthorized, "Session expired. Please log in again.")
 		return nil, true
 	}

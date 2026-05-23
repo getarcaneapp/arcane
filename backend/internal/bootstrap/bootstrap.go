@@ -465,6 +465,12 @@ func newHTTPServerInternal(listenAddr string, handler http.Handler, protocols *h
 		Handler:           handler,
 		Protocols:         protocols,
 		ReadHeaderTimeout: 5 * time.Second,
+		// IdleTimeout closes idle keep-alive connections so upstream pools
+		// (e.g. Caddy) don't accumulate stale entries. ReadTimeout and
+		// WriteTimeout are intentionally unset — WebSocket upgrades and
+		// streaming endpoints (deploy/pull/build progress) need long-lived
+		// connections.
+		IdleTimeout: 120 * time.Second,
 	}
 	if !useTLS {
 		return srv, nil

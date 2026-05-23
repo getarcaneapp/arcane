@@ -33,12 +33,12 @@ type LoginInput struct {
 }
 
 type LoginOutput struct {
-	SetCookie string `header:"Set-Cookie" doc:"Session cookie"`
+	SetCookie []string `header:"Set-Cookie" doc:"Session cookie"`
 	Body      base.ApiResponse[auth.LoginResponse]
 }
 
 type LogoutOutput struct {
-	SetCookie string `header:"Set-Cookie" doc:"Cleared session cookie"`
+	SetCookie []string `header:"Set-Cookie" doc:"Cleared session cookie"`
 	Body      base.ApiResponse[base.MessageResponse]
 }
 
@@ -48,7 +48,7 @@ type RefreshTokenInput struct {
 }
 
 type RefreshTokenOutput struct {
-	SetCookie string `header:"Set-Cookie" doc:"Updated session cookie"`
+	SetCookie []string `header:"Set-Cookie" doc:"Updated session cookie"`
 	Body      base.ApiResponse[auth.TokenRefreshResponse]
 }
 
@@ -164,7 +164,7 @@ func (h *AuthHandler) Login(ctx context.Context, input *LoginInput) (*LoginOutpu
 	maxAge += 60
 
 	return &LoginOutput{
-		SetCookie: cookie.BuildTokenCookieString(maxAge, tokenPair.AccessToken),
+		SetCookie: []string{cookie.BuildTokenCookieStringFor(maxAge, tokenPair.AccessToken, cookie.SecureCookieFromContext(ctx))},
 		Body: base.ApiResponse[auth.LoginResponse]{
 			Success: true,
 			Data: auth.LoginResponse{
@@ -191,7 +191,7 @@ func (h *AuthHandler) Logout(ctx context.Context, input *struct{}) (*LogoutOutpu
 	}
 
 	return &LogoutOutput{
-		SetCookie: cookie.BuildClearTokenCookieString(),
+		SetCookie: cookie.BuildClearTokenCookieStringsFor(cookie.SecureCookieFromContext(ctx)),
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data: base.MessageResponse{
@@ -250,7 +250,7 @@ func (h *AuthHandler) RefreshToken(ctx context.Context, input *RefreshTokenInput
 	maxAge += 60
 
 	return &RefreshTokenOutput{
-		SetCookie: cookie.BuildTokenCookieString(maxAge, tokenPair.AccessToken),
+		SetCookie: []string{cookie.BuildTokenCookieStringFor(maxAge, tokenPair.AccessToken, cookie.SecureCookieFromContext(ctx))},
 		Body: base.ApiResponse[auth.TokenRefreshResponse]{
 			Success: true,
 			Data: auth.TokenRefreshResponse{

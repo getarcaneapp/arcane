@@ -1,6 +1,7 @@
 package cookie
 
 import (
+	"context"
 	"net/http"
 )
 
@@ -10,28 +11,37 @@ var (
 	OidcStateCookieName     = "oidc_state"
 )
 
-func isSecureInternal(r *http.Request) bool {
-	return r.TLS != nil
+type secureCookieContextKey struct{}
+
+// WithSecureCookieContext records the router's trusted secure-cookie decision.
+func WithSecureCookieContext(ctx context.Context, secure bool) context.Context {
+	return context.WithValue(ctx, secureCookieContextKey{}, secure)
 }
 
-func tokenCookieNameInternal(r *http.Request) string {
-	if isSecureInternal(r) {
-		return TokenCookieName
+// SecureCookieFromContext returns the secure-cookie decision that router
+// middleware derived from TLS or trusted proxy headers.
+func SecureCookieFromContext(ctx context.Context) bool {
+	secure, _ := ctx.Value(secureCookieContextKey{}).(bool)
+	return secure
+}
+
+// SecureCookieFromRequest returns true when the request was made over TLS or
+// router middleware marked it as forwarded from HTTPS by a trusted proxy.
+func SecureCookieFromRequest(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
 	}
-	return InsecureTokenCookieName
+	return SecureCookieFromContext(r.Context())
+}
+
+func isSecureInternal(r *http.Request) bool {
+	return SecureCookieFromRequest(r)
 }
 
 func ClearTokenCookie(w http.ResponseWriter, r *http.Request) {
-	name := tokenCookieNameInternal(r)
-	http.SetCookie(w, &http.Cookie{ // #nosec G124: Secure mirrors the request's TLS state so the clear directive matches whichever cookie variant (__Host-token vs. token) was originally set.
-		Name:     name,
-		Value:    "",
-		Path:     "/",
-		MaxAge:   -1,
-		HttpOnly: true,
-		Secure:   isSecureInternal(r),
-		SameSite: http.SameSiteLaxMode,
-	})
+	for _, cookieHeader := range BuildClearTokenCookieStringsFor(isSecureInternal(r)) {
+		w.Header().Add("Set-Cookie", cookieHeader)
+	}
 }
 
 func GetTokenCookie(r *http.Request) (string, error) {
@@ -45,46 +55,43 @@ func GetTokenCookie(r *http.Request) (string, error) {
 	return c.Value, nil
 }
 
-// BuildTokenCookieString builds a Set-Cookie header string for Huma handlers.
-// Uses the insecure cookie name since we can't detect TLS from context.
-// For secure contexts, the middleware should handle the __Host- prefix.
-func BuildTokenCookieString(maxAgeInSeconds int, token string) string {
+// BuildTokenCookieStringFor builds a Set-Cookie header string matching the
+// current request security context. Callers must pass the trusted secure flag
+// from SecureCookieFromContext / SecureCookieFromRequest so the cookie name
+// (__Host-token vs. token) round-trips correctly behind HTTPS reverse proxies.
+func BuildTokenCookieStringFor(maxAgeInSeconds int, token string, secure bool) string {
 	if maxAgeInSeconds < 0 {
 		maxAgeInSeconds = 0
 	}
-	cookie := &http.Cookie{ // #nosec G124: Huma handlers intentionally use the HTTP-compatible fallback token cookie here.
-		Name:     InsecureTokenCookieName,
+	cookieName := InsecureTokenCookieName
+	if secure {
+		cookieName = TokenCookieName
+	}
+	cookie := &http.Cookie{ // #nosec G124: Secure mirrors the trusted request context so the cookie can round-trip through HTTPS reverse proxies.
+		Name:     cookieName,
 		Value:    token,
 		Path:     "/",
 		MaxAge:   maxAgeInSeconds,
 		HttpOnly: true,
+		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,
 	}
 	return cookie.String()
 }
 
-// BuildClearTokenCookieString builds a Set-Cookie header string to clear the token cookie.
-func BuildClearTokenCookieString() string {
-	cookie := &http.Cookie{ // #nosec G124: clearing must target the same HTTP-compatible fallback token cookie.
-		Name:     InsecureTokenCookieName,
-		Value:    "",
-		Path:     "/",
-		MaxAge:   -1,
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-	}
-	return cookie.String()
-}
-
-// BuildClearTokenCookieStringFor builds a Set-Cookie header string to clear the
-// token cookie variant matching the connection's TLS state — `__Host-token` for
-// TLS, `token` otherwise — mirroring ClearTokenCookie for callers that have no
-// http.ResponseWriter (e.g. Huma middleware).
-func BuildClearTokenCookieStringFor(secure bool) string {
-	name := InsecureTokenCookieName
+// BuildClearTokenCookieStringsFor builds Set-Cookie header strings to clear
+// token cookies matching the current request security context. Secure contexts
+// also clear the HTTP fallback cookie so stale sessions from older releases are
+// flushed instead of being re-presented forever.
+func BuildClearTokenCookieStringsFor(secure bool) []string {
+	headers := []string{buildClearTokenCookieStringInternal(InsecureTokenCookieName, false)}
 	if secure {
-		name = TokenCookieName
+		headers = append(headers, buildClearTokenCookieStringInternal(TokenCookieName, true))
 	}
+	return headers
+}
+
+func buildClearTokenCookieStringInternal(name string, secure bool) string {
 	cookie := &http.Cookie{ // #nosec G124: Secure mirrors the caller-provided TLS state so the clear directive matches whichever cookie variant (__Host-token vs. token) was originally set.
 		Name:     name,
 		Value:    "",

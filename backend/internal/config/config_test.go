@@ -503,6 +503,38 @@ func TestSetFieldValueInternal_DurationUsesFieldTagDefault(t *testing.T) {
 	assert.Equal(t, 2*time.Hour, cfg.SessionTimeout)
 }
 
+func TestConfig_ApplyProxyDefaults(t *testing.T) {
+	t.Run("loopback ipv4 auto-trusts", func(t *testing.T) {
+		cfg := &Config{Listen: "127.0.0.1"}
+		applyProxyDefaults(cfg)
+		assert.Equal(t, "127.0.0.0/8,::1/128", cfg.TrustedProxies)
+	})
+
+	t.Run("loopback ipv6 auto-trusts", func(t *testing.T) {
+		cfg := &Config{Listen: "::1"}
+		applyProxyDefaults(cfg)
+		assert.Equal(t, "127.0.0.0/8,::1/128", cfg.TrustedProxies)
+	})
+
+	t.Run("explicit value preserved", func(t *testing.T) {
+		cfg := &Config{Listen: "127.0.0.1", TrustedProxies: "10.0.0.0/8"}
+		applyProxyDefaults(cfg)
+		assert.Equal(t, "10.0.0.0/8", cfg.TrustedProxies)
+	})
+
+	t.Run("empty listen is no-op", func(t *testing.T) {
+		cfg := &Config{Listen: ""}
+		applyProxyDefaults(cfg)
+		assert.Equal(t, "", cfg.TrustedProxies)
+	})
+
+	t.Run("public bind is no-op", func(t *testing.T) {
+		cfg := &Config{Listen: "0.0.0.0"}
+		applyProxyDefaults(cfg)
+		assert.Equal(t, "", cfg.TrustedProxies)
+	})
+}
+
 func TestConfig_TrustedProxies(t *testing.T) {
 	orig := os.Getenv("TRUSTED_PROXIES")
 	defer restoreEnv("TRUSTED_PROXIES", orig)

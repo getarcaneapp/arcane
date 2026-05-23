@@ -111,6 +111,7 @@ func Load() *Config {
 	loadFromEnv(cfg)
 	applyOptions(cfg)
 	applyAgentModeDefaults(cfg)
+	applyProxyDefaults(cfg)
 
 	// Set global file permissions
 	common.FilePerm = cfg.FilePerm
@@ -125,6 +126,32 @@ func applyAgentModeDefaults(cfg *Config) {
 	if cfg.EdgeAgent {
 		cfg.AgentMode = true
 	}
+}
+
+// applyProxyDefaults auto-trusts loopback proxies when LISTEN binds to a
+// loopback address. This is the canonical convenience-script setup
+// (LISTEN=127.0.0.1 + local reverse proxy like Caddy/Nginx/Traefik); auto-
+// detecting it lets X-Forwarded-* headers work without operators having to
+// discover TRUSTED_PROXIES.
+func applyProxyDefaults(cfg *Config) {
+	if cfg.TrustedProxies != "" {
+		return
+	}
+	host := strings.Trim(strings.TrimSpace(cfg.Listen), "[]")
+	if host == "" {
+		return
+	}
+	// Require an explicit loopback IP literal. Hostnames like "localhost" are
+	// intentionally not auto-trusted: /etc/hosts can map them to non-loopback
+	// addresses, in which case auto-trusting would silently trust external
+	// X-Forwarded-* headers. Operators using a hostname must set
+	// TRUSTED_PROXIES explicitly.
+	ip := net.ParseIP(host)
+	if ip == nil || !ip.IsLoopback() {
+		return
+	}
+	cfg.TrustedProxies = "127.0.0.0/8,::1/128"
+	slog.Info("LISTEN bound to loopback; trusting loopback proxies for X-Forwarded headers", "listen", cfg.Listen, "trusted_proxies", cfg.TrustedProxies)
 }
 
 // loadFromEnv uses reflection to load configuration from environment variables.

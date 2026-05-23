@@ -89,7 +89,7 @@ func registerAutoLoginRoutes(apiGroup *echo.Group, authService *services.AuthSer
 		}
 		maxAge += 60
 
-		c.Response().Header().Set("Set-Cookie", cookie.BuildTokenCookieString(maxAge, tokenPair.AccessToken))
+		c.Response().Header().Set("Set-Cookie", cookie.BuildTokenCookieStringFor(maxAge, tokenPair.AccessToken, cookie.SecureCookieFromRequest(c.Request())))
 		return c.JSON(http.StatusOK, base.ApiResponse[auth.LoginResponse]{
 			Success: true,
 			Data: auth.LoginResponse{
