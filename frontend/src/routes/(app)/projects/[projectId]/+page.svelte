@@ -29,7 +29,6 @@
 	import ProjectsLogsPanel from '../components/ProjectLogsPanel.svelte';
 	import ResizableSplit from '$lib/components/resizable-split.svelte';
 	import SwitchWithLabel from '$lib/components/form/labeled-switch.svelte';
-	import { IsTablet } from '$lib/hooks/is-tablet.svelte.js';
 	import { untrack } from 'svelte';
 	import { projectService } from '$lib/services/project-service';
 	import { imageService } from '$lib/services/image-service';
@@ -44,7 +43,6 @@
 	let { data } = $props();
 	let projectId = $derived(data.projectId);
 	const queryClient = useQueryClient();
-	const isTablet = new IsTablet();
 
 	let isLoading = $state({
 		deploying: false,
@@ -875,10 +873,22 @@
 
 					<div class="min-h-0 flex-1">
 						{#if layoutMode === 'tree'}
-							{#if isTablet.current}
-								<div class="flex h-full min-h-0 flex-col gap-4">
+							<ResizableSplit
+								class="h-full min-h-0 lg:gap-2"
+								firstClass="flex min-h-0 flex-col"
+								secondClass="flex min-h-0 flex-col"
+								bind:size={treePaneWidth}
+								minSize={minTreePaneWidth}
+								minSecondSize={minEditorPaneWidth}
+								defaultRatio={0.3}
+								stackBelow={1024}
+								ariaLabel={m.compose_editor_resize_files_panel()}
+								persistKey={`arcane.compose.split:${project.id}:tree`}
+								onResizeEnd={persistPrefs}
+							>
+								{#snippet first()}
 									<Card.Root class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-										<Card.Header icon={FileTextIcon} class="flex-shrink-0 items-center">
+										<Card.Header icon={FileTextIcon} class="shrink-0 items-center">
 											<Card.Title>
 												<h2>{m.project_files()}</h2>
 											</Card.Title>
@@ -933,8 +943,10 @@
 											</TreeView.Root>
 										</Card.Content>
 									</Card.Root>
+								{/snippet}
 
-									<div class="flex min-h-0 flex-1 flex-col">
+								{#snippet second()}
+									<div class="flex h-full min-h-0 flex-1 flex-col">
 										{#if selectedFile === 'compose'}
 											<CodePanel
 												bind:open={composeOpen}
@@ -1019,168 +1031,8 @@
 											{/if}
 										{/if}
 									</div>
-								</div>
-							{:else}
-								<ResizableSplit
-									class="h-full min-h-0 lg:gap-2"
-									firstClass="flex min-h-0 flex-col"
-									secondClass="flex min-h-0 flex-col"
-									bind:size={treePaneWidth}
-									minSize={minTreePaneWidth}
-									minSecondSize={minEditorPaneWidth}
-									defaultRatio={0.3}
-									ariaLabel="Resize project files panel"
-									persistKey={`arcane.compose.split:${project.id}:tree`}
-									onResizeEnd={persistPrefs}
-								>
-									{#snippet first()}
-										<Card.Root class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-											<Card.Header icon={FileTextIcon} class="shrink-0 items-center">
-												<Card.Title>
-													<h2>{m.project_files()}</h2>
-												</Card.Title>
-											</Card.Header>
-											<Card.Content class="min-h-0 flex-1 overflow-auto p-2">
-												<TreeView.Root class="min-w-max p-2 whitespace-nowrap">
-													<TreeView.File
-														name={composeFileName}
-														onclick={selectComposeFile}
-														class={selectedFile === 'compose' ? 'bg-accent' : ''}
-													>
-														{#snippet icon()}
-															<FileTextIcon class="size-4 text-blue-500" />
-														{/snippet}
-													</TreeView.File>
-
-													<TreeView.File name=".env" onclick={selectEnvFile} class={selectedFile === 'env' ? 'bg-accent' : ''}>
-														{#snippet icon()}
-															<FileTextIcon class="size-4 text-green-500" />
-														{/snippet}
-													</TreeView.File>
-
-													{#if project?.includeFiles && project.includeFiles.length > 0}
-														<TreeView.Folder name={m.project_includes()}>
-															{#each project.includeFiles as includeFile (includeFile.relativePath)}
-																<TreeView.File
-																	name={includeFile.relativePath}
-																	onclick={() => selectIncludeFile(includeFile.relativePath)}
-																	class={selectedFile === includeFile.relativePath ? 'bg-accent' : ''}
-																>
-																	{#snippet icon()}
-																		<FileTextIcon class="size-4 text-amber-500" />
-																	{/snippet}
-																</TreeView.File>
-															{/each}
-														</TreeView.Folder>
-													{/if}
-
-													{#if project?.directoryFiles && project.directoryFiles.length > 0}
-														{#each project.directoryFiles as dirFile (dirFile.relativePath)}
-															<TreeView.File
-																name={dirFile.relativePath}
-																onclick={() => selectDirectoryFile(dirFile.relativePath)}
-																class={selectedFile === `dir:${dirFile.relativePath}` ? 'bg-accent' : ''}
-															>
-																{#snippet icon()}
-																	<FileTextIcon class="text-muted-foreground size-4" />
-																{/snippet}
-															</TreeView.File>
-														{/each}
-													{/if}
-												</TreeView.Root>
-											</Card.Content>
-										</Card.Root>
-									{/snippet}
-
-									{#snippet second()}
-										<div class="flex h-full min-h-0 flex-1 flex-col">
-											{#if selectedFile === 'compose'}
-												<CodePanel
-													bind:open={composeOpen}
-													title={composeFileName}
-													language="yaml"
-													bind:value={$inputs.composeContent.value}
-													error={$inputs.composeContent.error ?? undefined}
-													readOnly={!canEditCompose}
-													bind:hasErrors={composeHasErrors}
-													bind:validationReady={composeValidationReady}
-													fileId={`project:${projectId}:compose`}
-													originalValue={serverComposeContent}
-													enableDiff={true}
-													editorContext={codeEditorContext}
-												/>
-											{:else if selectedFile === 'env'}
-												<CodePanel
-													bind:open={envOpen}
-													title=".env"
-													language="env"
-													bind:value={$inputs.envContent.value}
-													error={$inputs.envContent.error ?? undefined}
-													readOnly={!canEditEnv}
-													bind:hasErrors={envHasErrors}
-													bind:validationReady={envValidationReady}
-													fileId={`project:${projectId}:env`}
-													originalValue={serverEnvContent}
-													enableDiff={true}
-													editorContext={codeEditorContext}
-												/>
-											{:else if selectedFile.startsWith('dir:')}
-												{@const dirRelPath = selectedFile.slice(4)}
-												{@const dirFile = project?.directoryFiles?.find((f) => f.relativePath === dirRelPath)}
-												{#if dirFile}
-													{#await getProjectFileResource('directory', dirRelPath)}
-														<div class="text-muted-foreground flex h-full min-h-0 items-center justify-center rounded-lg border">
-															{m.common_loading()}
-														</div>
-													{:then loadedFile}
-														<CodePanel
-															open={true}
-															title={loadedFile.relativePath}
-															language="yaml"
-															value={loadedFile.content ?? ''}
-															readOnly={true}
-														/>
-													{:catch error}
-														<div
-															class="text-destructive flex h-full min-h-0 items-center justify-center rounded-lg border px-4 text-sm"
-														>
-															{error instanceof Error ? error.message : String(error)}
-														</div>
-													{/await}
-												{/if}
-											{:else}
-												{@const includeFile = project?.includeFiles?.find((f) => f.relativePath === selectedFile)}
-												{#if includeFile}
-													{#await getProjectFileResource('include', includeFile.relativePath)}
-														<div class="text-muted-foreground flex h-full min-h-0 items-center justify-center rounded-lg border">
-															{m.common_loading()}
-														</div>
-													{:then}
-														<CodePanel
-															bind:open={includeFilesPanelStates[includeFile.relativePath]}
-															title={includeFile.relativePath}
-															language="yaml"
-															bind:value={includeFilesState[includeFile.relativePath]}
-															bind:hasErrors={includeFilesHasErrors[includeFile.relativePath]}
-															bind:validationReady={includeFilesValidationReady[includeFile.relativePath]}
-															fileId={`project:${projectId}:include:${includeFile.relativePath}`}
-															originalValue={serverIncludeFiles[includeFile.relativePath] ?? ''}
-															enableDiff={true}
-															editorContext={codeEditorContext}
-														/>
-													{:catch error}
-														<div
-															class="text-destructive flex h-full min-h-0 items-center justify-center rounded-lg border px-4 text-sm"
-														>
-															{error instanceof Error ? error.message : String(error)}
-														</div>
-													{/await}
-												{/if}
-											{/if}
-										</div>
-									{/snippet}
-								</ResizableSplit>
-							{/if}
+								{/snippet}
+							</ResizableSplit>
 						{:else}
 							<div class="flex h-full min-h-0 flex-col gap-4">
 								{#if project?.includeFiles && project.includeFiles.length > 0}
@@ -1229,37 +1081,6 @@
 											</div>
 										{/await}
 									{/if}
-								{:else if isTablet.current}
-									<div class="flex min-h-0 flex-1 flex-col gap-4">
-										<CodePanel
-											bind:open={composeOpen}
-											title={composeFileName}
-											language="yaml"
-											bind:value={$inputs.composeContent.value}
-											error={$inputs.composeContent.error ?? undefined}
-											readOnly={!canEditCompose}
-											bind:hasErrors={composeHasErrors}
-											bind:validationReady={composeValidationReady}
-											fileId={`project:${projectId}:compose`}
-											originalValue={serverComposeContent}
-											enableDiff={true}
-											editorContext={codeEditorContext}
-										/>
-										<CodePanel
-											bind:open={envOpen}
-											title=".env"
-											language="env"
-											bind:value={$inputs.envContent.value}
-											error={$inputs.envContent.error ?? undefined}
-											readOnly={!canEditEnv}
-											bind:hasErrors={envHasErrors}
-											bind:validationReady={envValidationReady}
-											fileId={`project:${projectId}:env`}
-											originalValue={serverEnvContent}
-											enableDiff={true}
-											editorContext={codeEditorContext}
-										/>
-									</div>
 								{:else}
 									<ResizableSplit
 										class="min-h-0 flex-1 lg:gap-2"
@@ -1269,7 +1090,8 @@
 										minSize={minComposePaneWidth}
 										minSecondSize={minEnvPaneWidth}
 										defaultRatio={0.6}
-										ariaLabel="Resize compose and env editors"
+										stackBelow={1024}
+										ariaLabel={m.compose_editor_resize_compose_env()}
 										persistKey={`arcane.compose.split:${project.id}:classic`}
 										onResizeEnd={persistPrefs}
 									>
