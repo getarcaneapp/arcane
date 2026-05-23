@@ -44,8 +44,8 @@ importers:
         specifier: ^19.2.6
         version: 19.2.6(react@19.2.6)
       react-email:
-        specifier: 6.1.1
-        version: 6.1.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+        specifier: 6.2.0
+        version: 6.2.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       tailwind-merge:
         specifier: ^3.6.0
         version: 3.6.0
@@ -2531,8 +2531,8 @@ packages:
     peerDependencies:
       react: ^19.2.6
 
-  react-email@6.1.1:
-    resolution: {integrity: sha512-5wITcaKhYPsW8IAx4d2zRCtKq0JJydxlH4qCfy1bltreRDIAbfJUdlW6gCiLMsFJN/QvC4r5adlIaqvJgRgXMw==}
+  react-email@6.2.0:
+    resolution: {integrity: sha512-EYSN+/ooD/CXBEVNH6DR75ceLBn3SWK6rJWs0OOfUhaHtEA/r4+/9qadFa3/7Y1/JxFelv3TohF07M//o+GxUg==}
     engines: {node: '>=20.0.0'}
     hasBin: true
     peerDependencies:
@@ -2617,8 +2617,8 @@ packages:
   selderee@0.11.0:
     resolution: {integrity: sha512-5TF+l7p4+OsnP8BCCvSyZiSPc4x4//p5uPwK8TCnVPJYRmU2aYKMpOXvw8zM5a5JvuuCGN1jmsMwuU2W02ukfA==}
 
-  semver@7.8.0:
-    resolution: {integrity: sha512-AcM7dV/5ul4EekoQ29Agm5vri8JNqRyj39o0qpX6vDF2GZrtutZl5RwgD1XnZjiTAfncsJhMI48QQH3sN87YNA==}
+  semver@7.8.1:
+    resolution: {integrity: sha512-rkVq3IXh+4FDGch+KwzX3aV9W3kO54GyEgpvBzSyctDA6Xtd7RJQV1xmXbeQp5v7+VzLOfVqiutSE6GICgPFvg==}
     engines: {node: '>=10'}
     hasBin: true
 
@@ -3020,8 +3020,8 @@ packages:
     resolution: {integrity: sha512-42AtmgqjV+X1VpdOfyTGOYRi0/zsoLqtXQckTmqTeybT+BDIbM/Guxo7x3pE2vtpr1ok6xRqM9OpBe+Jyoqyww==}
     engines: {node: '>=18'}
 
-  ws@8.20.1:
-    resolution: {integrity: sha512-It4dO0K5v//JtTXuPkfEOaI3uUN87iYPnqo/ZzqCoG3g8uhA66QUMs/SrM0YK7/NAu+r4LMh/9dq2A7k+rHs+w==}
+  ws@8.21.0:
+    resolution: {integrity: sha512-Vsp28b7DRcimFQvrqu2Wek3z1iYxDCWqHYB8Qsnk/S4RfaCQzPGPyBNuVjJV3cd6UiKtUtp6sNM77gWvzcCH+g==}
     engines: {node: '>=10.0.0'}
     peerDependencies:
       bufferutil: ^4.0.1
@@ -3136,7 +3136,7 @@ snapshots:
     dependencies:
       '@babel/code-frame': 7.29.0
       '@babel/generator': 7.29.1
-      '@babel/parser': 7.27.0
+      '@babel/parser': 7.29.3
       '@babel/template': 7.28.6
       '@babel/types': 7.29.0
       debug: 4.4.3
@@ -4260,7 +4260,7 @@ snapshots:
       dot-prop: 10.1.0
       env-paths: 3.0.0
       json-schema-typed: 8.0.2
-      semver: 7.8.0
+      semver: 7.8.1
       uint8array-extras: 1.5.0
 
   confbox@0.1.8: {}
@@ -4417,7 +4417,7 @@ snapshots:
       cors: 2.8.6
       debug: 4.4.3
       engine.io-parser: 5.2.3
-      ws: 8.20.1
+      ws: 8.21.0
     transitivePeerDependencies:
       - bufferutil
       - supports-color
@@ -5027,7 +5027,7 @@ snapshots:
       react: 19.2.6
       scheduler: 0.27.0
 
-  react-email@6.1.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6):
+  react-email@6.2.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6):
     dependencies:
       '@babel/parser': 7.27.0
       '@babel/traverse': 7.27.0
@@ -5143,7 +5143,7 @@ snapshots:
     dependencies:
       parseley: 0.12.1
 
-  semver@7.8.0: {}
+  semver@7.8.1: {}
 
   set-cookie-parser@3.1.0: {}
 
@@ -5172,7 +5172,7 @@ snapshots:
   socket.io-adapter@2.5.7:
     dependencies:
       debug: 4.4.3
-      ws: 8.20.1
+      ws: 8.21.0
     transitivePeerDependencies:
       - bufferutil
       - supports-color
@@ -5524,7 +5524,7 @@ snapshots:
       string-width: 7.2.0
       strip-ansi: 7.2.0
 
-  ws@8.20.1: {}
+  ws@8.21.0: {}
 
   xml-name-validator@5.0.0: {}
 
