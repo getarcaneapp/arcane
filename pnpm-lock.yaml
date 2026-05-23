@@ -108,8 +108,8 @@ importers:
         specifier: ^8.21.3
         version: 8.21.3
       '@uiw/codemirror-themes':
-        specifier: ^4.25.9
-        version: 4.25.9(@codemirror/language@6.12.3)(@codemirror/state@6.6.0)(@codemirror/view@6.43.0)
+        specifier: ^4.25.10
+        version: 4.25.10(@codemirror/language@6.12.3)(@codemirror/state@6.6.0)(@codemirror/view@6.43.0)
       '@xterm/addon-fit':
         specifier: ^0.11.0
         version: 0.11.0
@@ -1602,8 +1602,8 @@ packages:
     engines: {node: '>=16.20.0'}
     hasBin: true
 
-  '@uiw/codemirror-themes@4.25.9':
-    resolution: {integrity: sha512-DAHKb/L9ELwjY4nCf/MP/mIllHOn4GQe7RR4x8AMJuNeh9nGRRoo1uPxrxMmUL/bKqe6kDmDbIZ2AlhlqyIJuw==}
+  '@uiw/codemirror-themes@4.25.10':
+    resolution: {integrity: sha512-Fqiz1HIuDlDftcL+/O53V333UOH6MqQ84VbiQB5egn6u+uDwAqACp1FrdAoi4wgpR3b3TGW4Gr0wIYcrJSSz1A==}
     peerDependencies:
       '@codemirror/language': '>=6.0.0'
       '@codemirror/state': '>=6.0.0'
@@ -4079,7 +4079,7 @@ snapshots:
       '@typescript/native-preview-win32-arm64': 7.0.0-dev.20260521.1
       '@typescript/native-preview-win32-x64': 7.0.0-dev.20260521.1
 
-  '@uiw/codemirror-themes@4.25.9(@codemirror/language@6.12.3)(@codemirror/state@6.6.0)(@codemirror/view@6.43.0)':
+  '@uiw/codemirror-themes@4.25.10(@codemirror/language@6.12.3)(@codemirror/state@6.6.0)(@codemirror/view@6.43.0)':
     dependencies:
       '@codemirror/language': 6.12.3
       '@codemirror/state': 6.6.0
