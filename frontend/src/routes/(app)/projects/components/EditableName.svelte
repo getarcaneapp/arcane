@@ -97,7 +97,9 @@
 		<h1 class="m-0 w-full">
 			<button
 				type="button"
-				class="hover:bg-muted/50 focus:ring-ring min-h-[32px] w-full rounded bg-transparent px-1 py-1 text-center text-base font-semibold transition-colors focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+				class="hover:bg-muted/50 focus:ring-ring min-h-[32px] w-full rounded bg-transparent px-1 py-1 text-center text-base font-semibold transition-colors focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 {error
+					? 'border border-destructive'
+					: ''}"
 				title={canEdit ? `${value || placeholder} (tap to edit)` : value || placeholder}
 				onclick={beginEdit}
 				disabled={!canEdit}
@@ -126,9 +128,11 @@
 			<h1 class="m-0 max-w-[360px]">
 				<button
 					type="button"
-					class="w-full truncate bg-transparent px-0 py-0 text-left text-lg leading-none font-semibold {!value && placeholder
-						? 'text-muted-foreground'
-						: ''}"
+					class={cn(
+						'w-full truncate bg-transparent px-0 py-0 text-left text-lg leading-none font-semibold',
+						!value && placeholder && 'text-muted-foreground',
+						error && 'rounded border border-destructive px-1'
+					)}
 					title={value || placeholder}
 					onclick={beginEdit}
 					disabled={!canEdit}
@@ -163,6 +167,6 @@
 	{/if}
 </div>
 
-{#if isEditing && error}
+{#if error}
 	<p class="text-destructive mt-1 text-xs">{error}</p>
 {/if}
