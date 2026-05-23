@@ -75,14 +75,22 @@
 		refetchOnMount: false
 	}));
 
-	const formSchema = z.object({
-		name: z
-			.string()
-			.min(1, m.compose_project_name_required())
-			.regex(/^[a-z0-9_-]+$/i, m.compose_project_name_invalid_with_underscores()),
-		composeContent: z.string().min(1, m.compose_compose_content_required()),
-		envContent: z.string().optional().default('')
-	});
+	const formSchema = z
+		.object({
+			name: z.string().min(1, m.compose_project_name_required()),
+			composeContent: z.string().min(1, m.compose_compose_content_required()),
+			envContent: z.string().optional().default('')
+		})
+		.superRefine((data, ctx) => {
+			const currentServerName = project?.name ?? '';
+			if (data.name !== currentServerName && !/^[a-z0-9_-]+$/i.test(data.name)) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					path: ['name'],
+					message: m.compose_project_name_invalid_with_underscores()
+				});
+			}
+		});
 
 	const initialFormData = untrack(() => ({
 		name: data.editorState.originalName,
