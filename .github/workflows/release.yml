@@ -100,7 +100,7 @@ jobs:
 
       - name: Build and push manager image
         id: manager-build
-        uses: depot/build-push-action@v1
+        uses: depot/build-push-action@v1.17.0
         with:
           context: .
           file: docker/Dockerfile
@@ -148,7 +148,7 @@ jobs:
 
       - name: Build and push agent image
         id: agent-build
-        uses: depot/build-push-action@v1
+        uses: depot/build-push-action@v1.17.0
         with:
           context: .
           file: docker/Dockerfile-agent
