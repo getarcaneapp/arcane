@@ -8,7 +8,7 @@ replace (
 )
 
 require (
-	github.com/aws/aws-sdk-go-v2/config v1.32.17
+	github.com/aws/aws-sdk-go-v2/config v1.32.18
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.17
 	github.com/aws/aws-sdk-go-v2/service/ecr v1.57.2
 	github.com/cenkalti/backoff/v5 v5.0.3
