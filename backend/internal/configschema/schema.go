@@ -91,40 +91,11 @@ type overrideDocRule struct {
 }
 
 var overrideDocRules = map[string]overrideDocRule{
-	"authOidcConfig": {
-		deprecated: true,
-		note:       "Deprecated legacy JSON OIDC configuration. Prefer the discrete OIDC_* environment variables.",
-	},
 	"autoUpdateInterval": {
 		requires: "AUTO_UPDATE=true to have effect at runtime.",
 	},
 	"scheduledPruneInterval": {
 		requires: "SCHEDULED_PRUNE_ENABLED=true to have effect at runtime.",
-	},
-	"scheduledPruneContainers": {
-		deprecated: true,
-		requires:   "SCHEDULED_PRUNE_ENABLED=true to have effect at runtime.",
-		note:       "Legacy boolean prune flag retained for migration compatibility. Prefer PRUNE_CONTAINER_MODE.",
-	},
-	"scheduledPruneImages": {
-		deprecated: true,
-		requires:   "SCHEDULED_PRUNE_ENABLED=true to have effect at runtime.",
-		note:       "Legacy boolean prune flag retained for migration compatibility. Prefer PRUNE_IMAGE_MODE.",
-	},
-	"scheduledPruneVolumes": {
-		deprecated: true,
-		requires:   "SCHEDULED_PRUNE_ENABLED=true to have effect at runtime.",
-		note:       "Legacy boolean prune flag retained for migration compatibility. Prefer PRUNE_VOLUME_MODE.",
-	},
-	"scheduledPruneNetworks": {
-		deprecated: true,
-		requires:   "SCHEDULED_PRUNE_ENABLED=true to have effect at runtime.",
-		note:       "Legacy boolean prune flag retained for migration compatibility. Prefer PRUNE_NETWORK_MODE.",
-	},
-	"scheduledPruneBuildCache": {
-		deprecated: true,
-		requires:   "SCHEDULED_PRUNE_ENABLED=true to have effect at runtime.",
-		note:       "Legacy boolean prune flag retained for migration compatibility. Prefer PRUNE_BUILD_CACHE_MODE.",
 	},
 	"pruneContainerMode": {
 		requires: "SCHEDULED_PRUNE_ENABLED=true to have effect at runtime.",
@@ -152,10 +123,6 @@ var overrideDocRules = map[string]overrideDocRule{
 	},
 	"pruneBuildCacheUntil": {
 		requires: "SCHEDULED_PRUNE_ENABLED=true and PRUNE_BUILD_CACHE_MODE=olderThan to have effect at runtime.",
-	},
-	"dockerPruneMode": {
-		deprecated: true,
-		note:       "Legacy prune mode retained for migration compatibility. Prefer the granular scheduled prune mode settings.",
 	},
 	"vulnerabilityScanInterval": {
 		requires: "VULNERABILITY_SCAN_ENABLED=true to have effect at runtime.",

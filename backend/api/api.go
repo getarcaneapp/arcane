@@ -164,7 +164,6 @@ type Services struct {
 	Port              *services.PortService
 	Swarm             *services.SwarmService
 	Notification      *services.NotificationService
-	Apprise           *services.AppriseService //nolint:staticcheck // Apprise still functional, deprecated in favor of Shoutrrr
 	Updater           *services.UpdaterService
 	CustomizeSearch   *services.CustomizeSearchService
 	System            *services.SystemService
@@ -337,7 +336,6 @@ func registerHandlers(api huma.API, svc *Services) {
 	var portSvc *services.PortService
 	var swarmSvc *services.SwarmService
 	var notificationSvc *services.NotificationService
-	var appriseSvc *services.AppriseService //nolint:staticcheck // Apprise still functional, deprecated in favor of Shoutrrr
 	var updaterSvc *services.UpdaterService
 	var customizeSearchSvc *services.CustomizeSearchService
 	var systemSvc *services.SystemService
@@ -376,7 +374,6 @@ func registerHandlers(api huma.API, svc *Services) {
 		portSvc = svc.Port
 		swarmSvc = svc.Swarm
 		notificationSvc = svc.Notification
-		appriseSvc = svc.Apprise
 		updaterSvc = svc.Updater
 		customizeSearchSvc = svc.CustomizeSearch
 		systemSvc = svc.System
@@ -411,7 +408,7 @@ func registerHandlers(api huma.API, svc *Services) {
 	handlers.RegisterPorts(api, portSvc)
 	handlers.RegisterNetworks(api, networkSvc, dockerSvc)
 	handlers.RegisterSwarm(api, swarmSvc, environmentSvc, eventSvc, cfg)
-	handlers.RegisterNotifications(api, notificationSvc, appriseSvc, cfg)
+	handlers.RegisterNotifications(api, notificationSvc, cfg)
 	handlers.RegisterUpdater(api, updaterSvc)
 	handlers.RegisterCustomize(api, customizeSearchSvc)
 	handlers.RegisterSystem(api, dockerSvc, systemSvc, systemUpgradeSvc, cfg)

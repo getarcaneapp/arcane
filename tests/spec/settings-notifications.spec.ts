@@ -65,19 +65,6 @@ test.describe('Notification settings', () => {
 			await route.continue();
 		});
 
-		await page.route('**/api/environments/*/notifications/apprise', async (route) => {
-			if (route.request().method() === 'GET') {
-				await route.fulfill({
-					status: 404,
-					contentType: 'application/json',
-					body: JSON.stringify({ error: 'not configured' })
-				});
-				return;
-			}
-
-			await route.continue();
-		});
-
 		// Stub the specific test endpoint
 		await page.route(`**/api/environments/*/notifications/test/${provider}**`, async (route) => {
 			testEndpointCalled = true;
@@ -90,7 +77,6 @@ test.describe('Notification settings', () => {
 
 		await page.goto('/settings/notifications');
 		await page.waitForLoadState('networkidle');
-		await expect(page.getByRole('tab', { name: 'Built-in Notifications' })).toBeVisible();
 		await expect(page.getByRole('tab', { name: 'Email' })).toBeVisible();
 
 		return {

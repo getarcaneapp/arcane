@@ -715,9 +715,6 @@ func ensureManagerCAInternal(ctx context.Context, assetsDir string) (string, str
 	caCertPath := filepath.Join(assetsDir, generatedMTLSCACertFileName)
 	caKeyPath := filepath.Join(assetsDir, generatedMTLSCAKeyFileName)
 	if generatedCAReadyInternal(caCertPath, caKeyPath) {
-		if err := migratePlainCAKeyInternal(caKeyPath); err != nil {
-			return "", "", false, err
-		}
 		return caCertPath, caKeyPath, false, nil
 	}
 	_ = os.Remove(caCertPath)
@@ -761,25 +758,6 @@ func generatedCAReadyInternal(caCertPath string, caKeyPath string) bool {
 		return false
 	}
 	return true
-}
-
-func migratePlainCAKeyInternal(caKeyPath string) error {
-	if isCAKeyEncryptedOnDiskInternal(caKeyPath) {
-		return nil
-	}
-	keyPEM, err := os.ReadFile(caKeyPath)
-	if err != nil {
-		return fmt.Errorf("failed to read legacy plain edge mTLS CA key for migration: %w", err)
-	}
-	block, _ := pem.Decode(keyPEM)
-	if block == nil {
-		return fmt.Errorf("failed to decode legacy plain edge mTLS CA key for migration")
-	}
-	if err := writeCAKeyFileInternal(caKeyPath, block.Bytes); err != nil {
-		return fmt.Errorf("failed to migrate edge mTLS CA key to encrypted format: %w", err)
-	}
-	slog.Info("migrated edge mTLS CA key to encrypted format", "path", caKeyPath)
-	return nil
 }
 
 func ensureClientCertificateInternal(ctx context.Context, assetsDir string, envID string, envName string, appURL string) (string, string, bool, error) {
@@ -1231,9 +1209,7 @@ const caKeyEncryptedPrefix = "ARCANE-ENC-V1:"
 var caKeyEncryptInternal = libcrypto.Encrypt
 
 // writeCAKeyFileInternal writes the edge CA private key to disk using envelope
-// encryption via libcrypto. The on-disk format is self-describing so
-// readCAKeyPEMInternal can transparently handle encrypted files and legacy
-// plaintext files.
+// encryption via libcrypto.
 func writeCAKeyFileInternal(path string, derBytes []byte) error {
 	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: derBytes})
 	if pemBytes == nil {
@@ -1252,36 +1228,22 @@ func writeCAKeyFileInternal(path string, derBytes []byte) error {
 }
 
 // readCAKeyPEMInternal returns the plain PEM bytes of the edge CA private key,
-// accepting either the legacy plain PEM file or a libcrypto-envelope-encrypted
-// file written by writeCAKeyFileInternal.
+// reading a libcrypto-envelope-encrypted file written by writeCAKeyFileInternal.
 func readCAKeyPEMInternal(path string) ([]byte, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read CA private key %s: %w", path, err)
 	}
 	trimmed := strings.TrimSpace(string(raw))
-	if strings.HasPrefix(trimmed, caKeyEncryptedPrefix) {
-		ciphertext := strings.TrimPrefix(trimmed, caKeyEncryptedPrefix)
-		plaintext, err := libcrypto.Decrypt(ciphertext)
-		if err != nil {
-			return nil, fmt.Errorf("failed to decrypt CA private key %s: %w", path, err)
-		}
-		return []byte(plaintext), nil
+	if !strings.HasPrefix(trimmed, caKeyEncryptedPrefix) {
+		return nil, fmt.Errorf("CA private key %s is not in the expected encrypted envelope format", path)
 	}
-	return raw, nil
-}
-
-// isCAKeyEncryptedOnDiskInternal reports whether the given CA key file is
-// stored in the libcrypto envelope format.
-func isCAKeyEncryptedOnDiskInternal(path string) bool {
-	f, err := os.Open(path)
+	ciphertext := strings.TrimPrefix(trimmed, caKeyEncryptedPrefix)
+	plaintext, err := libcrypto.Decrypt(ciphertext)
 	if err != nil {
-		return false
+		return nil, fmt.Errorf("failed to decrypt CA private key %s: %w", path, err)
 	}
-	defer func() { _ = f.Close() }()
-	head := make([]byte, len(caKeyEncryptedPrefix))
-	n, _ := io.ReadFull(f, head)
-	return n == len(caKeyEncryptedPrefix) && string(head) == caKeyEncryptedPrefix
+	return []byte(plaintext), nil
 }
 
 // writeFileAtomicInternal writes data to path via a temp file + rename.
