@@ -6,16 +6,20 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	interp "github.com/compose-spec/compose-go/v2/interpolation"
 	"github.com/compose-spec/compose-go/v2/loader"
 	"github.com/compose-spec/compose-go/v2/template"
+	"github.com/compose-spec/compose-go/v2/tree"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
+	units "github.com/docker/go-units"
 )
 
 var errComposeFileNotFoundInternal = errors.New("no compose file found")
@@ -153,6 +157,64 @@ func LoadComposeProjectLenient(ctx context.Context, composeFile, projectName, pr
 	return loadComposeProjectInternal(ctx, composeFile, projectName, projectsDirectory, autoInjectEnv, pathMapper, nil, nil, true)
 }
 
+// wrapTypeCastMappingLenientInternal prepares the interp type-cast mapping for lenient
+// loading: every existing cast falls back to "0" when it fails (so the lenient
+// placeholder for an undefined variable doesn't abort interpolation), and casts
+// are added for typed struct fields that compose-go would otherwise decode at
+// the mapstructure stage (NanoCPUs, UnitBytes under deploy.resources). Without
+// the added casts, the placeholder string reaches mapstructure and fails to
+// parse — handling it at interp time lets us hand mapstructure a typed value
+// it accepts directly.
+func wrapTypeCastMappingLenientInternal(mapping map[tree.Path]interp.Cast) map[tree.Path]interp.Cast {
+	wrapped := make(map[tree.Path]interp.Cast, len(mapping)+4)
+	for path, original := range mapping {
+		wrapped[path] = wrapCastWithLenientFallbackInternal(original)
+	}
+	addIfAbsent := func(path tree.Path, cast interp.Cast) {
+		if _, exists := wrapped[path]; exists {
+			return
+		}
+		wrapped[path] = wrapCastWithLenientFallbackInternal(cast)
+	}
+	for _, section := range []string{"limits", "reservations"} {
+		addIfAbsent(tree.NewPath("services", tree.PathMatchAll, "deploy", "resources", section, "cpus"), lenientCastFloatInternal)
+		addIfAbsent(tree.NewPath("services", tree.PathMatchAll, "deploy", "resources", section, "memory"), lenientCastSizeInternal)
+	}
+	return wrapped
+}
+
+func wrapCastWithLenientFallbackInternal(original interp.Cast) interp.Cast {
+	return func(value string) (interface{}, error) {
+		result, err := original(value)
+		if err == nil {
+			return result, nil
+		}
+		if fallback, fallbackErr := original("0"); fallbackErr == nil {
+			return fallback, nil
+		}
+		return result, err
+	}
+}
+
+func lenientCastFloatInternal(value string) (interface{}, error) {
+	return strconv.ParseFloat(value, 64)
+}
+
+func lenientCastSizeInternal(value string) (interface{}, error) {
+	n, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		b, parseErr := units.RAMInBytes(value)
+		if parseErr != nil {
+			return nil, parseErr
+		}
+		n = b
+	}
+	if n > math.MaxInt || n < math.MinInt {
+		return nil, fmt.Errorf("size %d out of range for platform int", n)
+	}
+	return int(n), nil
+}
+
 func loadComposeProjectInternal(
 	ctx context.Context,
 	composeFile string,
@@ -210,13 +272,15 @@ func loadComposeProjectInternal(
 			opts.SetProjectName(projectName, true)
 		}
 		if lenient {
+			opts.SkipValidation = true
+			opts.SkipConsistencyCheck = true
 			if opts.Interpolate == nil {
 				slog.WarnContext(ctx, "compose loader did not initialize Interpolate options; lenient variable substitution will not apply", "compose_file", composeFile)
 			} else {
 				realLookup := opts.Interpolate.LookupValue
 				opts.Interpolate = &interp.Options{
 					Substitute:      template.Substitute,
-					TypeCastMapping: opts.Interpolate.TypeCastMapping,
+					TypeCastMapping: wrapTypeCastMappingLenientInternal(opts.Interpolate.TypeCastMapping),
 					LookupValue: func(key string) (string, bool) {
 						if val, ok := realLookup(key); ok {
 							return val, true

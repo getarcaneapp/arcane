@@ -188,6 +188,32 @@ func TestLoadComposeProjectLenient_ToleratesUndefinedVariables(t *testing.T) {
 	assert.Len(t, project.Services, 1)
 }
 
+func TestLoadComposeProjectLenient_ToleratesUndefinedTypedFieldVariables(t *testing.T) {
+	t.Parallel()
+
+	// Same chicken-and-egg problem for typed fields: deploy.resources.limits.cpus
+	// is parsed as a float and memory as a size. With no .env the strict loader
+	// fails with `strconv.ParseFloat: parsing "": invalid syntax` and
+	// `invalid size: ''`. Lenient mode must succeed so the GitOps sync can
+	// create the project and let the user supply real values afterward.
+	dir := t.TempDir()
+	composePath := filepath.Join(dir, "compose.yaml")
+	require.NoError(t, os.WriteFile(composePath, []byte(`services:
+  chrony:
+    image: ${DOCKER_IMAGE}
+    deploy:
+      resources:
+        limits:
+          cpus: ${CPU}
+          memory: ${MEMORY}
+`), 0o600))
+
+	project, err := LoadComposeProjectLenient(context.Background(), composePath, "demo", dir, false, nil)
+	require.NoError(t, err)
+	require.NotNil(t, project)
+	assert.Len(t, project.Services, 1)
+}
+
 func TestLoadComposeProject_UsesProjectLevelComposeLabelsForIncludedServices(t *testing.T) {
 	t.Parallel()
 

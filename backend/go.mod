@@ -19,6 +19,7 @@ require (
 	github.com/depot/depot-go v0.5.2
 	github.com/docker/cli v29.5.2+incompatible
 	github.com/docker/compose/v5 v5.1.4
+	github.com/docker/go-units v0.5.0
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/getarcaneapp/arcane/cli v1.19.1
 	github.com/getarcaneapp/arcane/types v1.19.4
@@ -104,7 +105,6 @@ require (
 	github.com/docker/docker v28.5.2+incompatible // indirect
 	github.com/docker/docker-credential-helpers v0.9.7 // indirect
 	github.com/docker/go-connections v0.7.0 // indirect
-	github.com/docker/go-units v0.5.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/ebitengine/purego v0.10.0 // indirect
 	github.com/eclipse/paho.golang v0.23.0 // indirect
