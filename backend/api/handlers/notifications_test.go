@@ -23,7 +23,7 @@ func setupNotificationHandlerTestService(t *testing.T) (*database.DB, *services.
 
 	db, err := gorm.Open(glsqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&models.NotificationSettings{}, &models.SettingVariable{}, &models.NotificationLog{}, &models.Environment{}, &models.AppriseSettings{}))
+	require.NoError(t, db.AutoMigrate(&models.NotificationSettings{}, &models.SettingVariable{}, &models.NotificationLog{}, &models.Environment{}))
 
 	databaseDB := &database.DB{DB: db}
 	envSvc := services.NewEnvironmentService(databaseDB, nil, nil, nil, nil, nil)
