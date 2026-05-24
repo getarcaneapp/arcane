@@ -1070,6 +1070,34 @@ func (e *UpgradeTriggerError) Error() string {
 	return fmt.Sprintf("Failed to initiate upgrade: %v", e.Err)
 }
 
+type NotRunningInDockerError struct{}
+
+func (e *NotRunningInDockerError) Error() string {
+	return "arcane is not running in a Docker container"
+}
+
+type ArcaneContainerNotFoundError struct{}
+
+func (e *ArcaneContainerNotFoundError) Error() string {
+	return "could not find Arcane container"
+}
+
+type UpgradeInProgressError struct{}
+
+func (e *UpgradeInProgressError) Error() string {
+	return "an upgrade is already in progress"
+}
+
+func IsUpgradeInProgressError(err error) bool {
+	return isErrorTypeInternal[*UpgradeInProgressError](err)
+}
+
+type DockerSocketAccessError struct{}
+
+func (e *DockerSocketAccessError) Error() string {
+	return "docker socket is not accessible"
+}
+
 type TemplateListError struct {
 	Err error
 }
@@ -1567,6 +1595,34 @@ func (e *SwarmManagerRequiredError) Error() string {
 	return "Swarm manager access required"
 }
 
+func IsSwarmNotEnabledError(err error) bool {
+	return isErrorTypeInternal[*SwarmNotEnabledError](err)
+}
+
+func IsSwarmManagerRequiredError(err error) bool {
+	return isErrorTypeInternal[*SwarmManagerRequiredError](err)
+}
+
+type SwarmConfigImmutableError struct{}
+
+func (e *SwarmConfigImmutableError) Error() string {
+	return "Swarm configs are immutable; create a new config and update services to use it"
+}
+
+type SwarmSecretImmutableError struct{}
+
+func (e *SwarmSecretImmutableError) Error() string {
+	return "Swarm secrets are immutable; create a new secret and update services to use it"
+}
+
+func IsSwarmConfigImmutableError(err error) bool {
+	return isErrorTypeInternal[*SwarmConfigImmutableError](err)
+}
+
+func IsSwarmSecretImmutableError(err error) bool {
+	return isErrorTypeInternal[*SwarmSecretImmutableError](err)
+}
+
 type SwarmServiceListError struct {
 	Err error
 }
@@ -1654,3 +1710,25 @@ type SwarmInspectError struct {
 func (e *SwarmInspectError) Error() string {
 	return fmt.Sprintf("Failed to inspect swarm: %v", e.Err)
 }
+
+type BuildKitImageExporterError struct {
+	ProviderName string
+	Err          error
+}
+
+func (e *BuildKitImageExporterError) Error() string {
+	return fmt.Sprintf("depot and remote BuildKit providers require the image exporter for provider %s: %v", e.ProviderName, e.Err)
+}
+
+func (e *BuildKitImageExporterError) Unwrap() error { return e.Err }
+
+type BuildKitDockerExporterError struct {
+	ProviderName string
+	Err          error
+}
+
+func (e *BuildKitDockerExporterError) Error() string {
+	return fmt.Sprintf("the Docker Engine embedded BuildKit requires the docker image-store exporter (used for load) for provider %s: %v", e.ProviderName, e.Err)
+}
+
+func (e *BuildKitDockerExporterError) Unwrap() error { return e.Err }

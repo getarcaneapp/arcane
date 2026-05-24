@@ -1,36 +1,97 @@
 version: 2
 updates:
-  - package-ecosystem: 'npm'
-    directory: '/'
+  - package-ecosystem: "npm"
+    directories:
+      - "/"
+    patterns: ["*"]
+    cooldown:
+      default-days: 2
     schedule:
-      interval: 'weekly'
+      interval: "weekly"
+      day: "wednesday"
+      time: "17:00"
+      timezone: "America/Chicago"
+    labels:
+      - "dependencies"
+    open-pull-requests-limit: 99
+    pull-request-branch-name:
+      separator: "-"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
 
-  - package-ecosystem: 'gomod'
-    directory: '/backend'
+  - package-ecosystem: "gomod"
+    directory: "/"
+    patterns: ["*"]
+    cooldown:
+      default-days: 2
     schedule:
-      interval: 'weekly'
+      interval: "weekly"
+      day: "wednesday"
+      time: "17:00"
+      timezone: "America/Chicago"
+    labels:
+      - "dependencies"
+    open-pull-requests-limit: 99
+    pull-request-branch-name:
+      separator: "-"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
 
-  - package-ecosystem: 'gomod'
-    directory: '/cli'
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    patterns: ["*"]
+    cooldown:
+      default-days: 2
     schedule:
-      interval: 'weekly'
+      interval: "weekly"
+      day: "wednesday"
+      time: "17:00"
+      timezone: "America/Chicago"
+    labels:
+      - "dependencies"
+    open-pull-requests-limit: 99
+    pull-request-branch-name:
+      separator: "-"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
 
-  - package-ecosystem: 'gomod'
-    directory: '/types'
+  - package-ecosystem: "docker"
+    directory: "/docker"
+    patterns: ["*"]
+    cooldown:
+      default-days: 2
     schedule:
-      interval: 'weekly'
+      interval: "weekly"
+      day: "wednesday"
+      time: "17:00"
+      timezone: "America/Chicago"
+    labels:
+      - "dependencies"
+    open-pull-requests-limit: 99
+    pull-request-branch-name:
+      separator: "-"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
 
-  - package-ecosystem: 'github-actions'
-    directory: '/'
+  - package-ecosystem: "devcontainers"
+    directory: "/"
+    patterns: ["*"]
+    cooldown:
+      default-days: 2
     schedule:
-      interval: 'weekly'
-
-  - package-ecosystem: 'docker'
-    directory: '/docker'
-    schedule:
-      interval: 'weekly'
-
-  - package-ecosystem: 'devcontainers'
-    directory: '/'
-    schedule:
-      interval: 'weekly'
+      interval: "weekly"
+      day: "wednesday"
+      time: "17:00"
+      timezone: "America/Chicago"
+    labels:
+      - "dependencies"
+    open-pull-requests-limit: 99
+    pull-request-branch-name:
+      separator: "-"
+    commit-message:
+      prefix: "chore"
+      include: "scope"

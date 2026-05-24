@@ -48,7 +48,7 @@ func TestBuildSolveOptInternal_StagesInlineDockerfile(t *testing.T) {
 	assert.Equal(t, "hello\n", string(appContents))
 }
 
-func TestBuildSolveOptInternal_LocalLoadUsesImageExporter(t *testing.T) {
+func TestBuildSolveOptInternal_LocalLoadUsesMobyExporter(t *testing.T) {
 	contextDir := createBuildkitTestContext(t)
 	b := &builder{}
 
@@ -63,13 +63,13 @@ func TestBuildSolveOptInternal_LocalLoadUsesImageExporter(t *testing.T) {
 
 	require.Nil(t, loadErrCh)
 	require.Len(t, solveOpt.Exports, 1)
-	assert.Equal(t, "image", solveOpt.Exports[0].Type)
+	assert.Equal(t, "moby", solveOpt.Exports[0].Type)
 	assert.Equal(t, "arcane.local/app:test", solveOpt.Exports[0].Attrs["name"])
 	assert.NotContains(t, solveOpt.Exports[0].Attrs, "push")
 	assert.Nil(t, solveOpt.Exports[0].Output)
 }
 
-func TestBuildSolveOptInternal_LocalPushAndLoadUsesSingleImageExporter(t *testing.T) {
+func TestBuildSolveOptInternal_LocalPushAndLoadUsesSingleMobyExporter(t *testing.T) {
 	contextDir := createBuildkitTestContext(t)
 	b := &builder{}
 
@@ -85,9 +85,9 @@ func TestBuildSolveOptInternal_LocalPushAndLoadUsesSingleImageExporter(t *testin
 
 	require.Nil(t, loadErrCh)
 	require.Len(t, solveOpt.Exports, 1)
-	assert.Equal(t, "image", solveOpt.Exports[0].Type)
+	assert.Equal(t, "moby", solveOpt.Exports[0].Type)
 	assert.Equal(t, "registry.example.com/app:test", solveOpt.Exports[0].Attrs["name"])
-	assert.Equal(t, "true", solveOpt.Exports[0].Attrs["push"])
+	assert.NotContains(t, solveOpt.Exports[0].Attrs, "push")
 }
 
 func TestBuildSolveOptInternal_NonLocalLoadKeepsDockerExporter(t *testing.T) {

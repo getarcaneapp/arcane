@@ -169,16 +169,9 @@ func (b *builder) buildSolveOptInternal(ctx context.Context, req imagetypes.Buil
 	}
 
 	if providerName == "local" && (req.Load || req.Push) {
-		attrs := map[string]string{
-			"name":           strings.Join(req.Tags, ","),
-			"oci-mediatypes": "true",
-		}
-		if req.Push {
-			attrs["push"] = "true"
-		}
 		exports = append(exports, buildkit.ExportEntry{
-			Type:  "image",
-			Attrs: attrs,
+			Type:  "moby",
+			Attrs: map[string]string{"name": strings.Join(req.Tags, ",")},
 		})
 	} else if req.Load {
 		exportEntry, errCh, err := b.buildLoadExportInternal(ctx, req.Tags)

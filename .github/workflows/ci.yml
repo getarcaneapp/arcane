@@ -104,7 +104,7 @@ jobs:
           cache-dependency-path: ${{ matrix.module.name }}/go.sum
 
       - name: Run Golangci-lint
-        uses: golangci/golangci-lint-action@v9
+        uses: golangci/golangci-lint-action@v9.2.0
         with:
           version: latest
           args: ${{ matrix.module.args }}

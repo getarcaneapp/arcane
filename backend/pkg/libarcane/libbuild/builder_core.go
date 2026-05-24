@@ -11,6 +11,7 @@ import (
 
 	"github.com/docker/cli/cli/config"
 	configtypes "github.com/docker/cli/cli/config/types"
+	"github.com/getarcaneapp/arcane/backend/internal/common"
 	utilsregistry "github.com/getarcaneapp/arcane/backend/pkg/libarcane/registryauth"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/timeouts"
 	buildtypes "github.com/getarcaneapp/arcane/types/builds"
@@ -164,6 +165,39 @@ func (b *builder) buildWithBuildkitSessionInternal(
 		}
 	}
 
+	if providerName == "local" && req.Push {
+		if b.dockerClientProvider == nil {
+			missingClientErr := errors.New("docker service not available")
+			buildErr = missingClientErr
+			writeProgressEventInternal(progressWriter, imagetypes.ProgressEvent{
+				Type:    "build",
+				Service: serviceName,
+				Error:   missingClientErr.Error(),
+			})
+			return nil, missingClientErr
+		}
+
+		dockerClient, dockerClientErr := b.dockerClientProvider.GetClient(ctx)
+		if dockerClientErr != nil {
+			buildErr = dockerClientErr
+			writeProgressEventInternal(progressWriter, imagetypes.ProgressEvent{
+				Type:    "build",
+				Service: serviceName,
+				Error:   dockerClientErr.Error(),
+			})
+			return nil, dockerClientErr
+		}
+		if pushErr := b.pushDockerImagesInternal(ctx, dockerClient, req.Tags, progressWriter, serviceName); pushErr != nil {
+			buildErr = pushErr
+			writeProgressEventInternal(progressWriter, imagetypes.ProgressEvent{
+				Type:    "build",
+				Service: serviceName,
+				Error:   pushErr.Error(),
+			})
+			return nil, pushErr
+		}
+	}
+
 	writeProgressEventInternal(progressWriter, imagetypes.ProgressEvent{
 		Type:    "build",
 		Phase:   "complete",
@@ -191,7 +225,11 @@ func wrapBuildkitSolveErrorInternal(err error, providerName string) error {
 	}
 
 	if strings.Contains(err.Error(), `exporter "docker" could not be found`) {
-		return fmt.Errorf("BuildKit could not load the image with the docker exporter for provider %s; the builder does not expose that exporter: %w", providerName, err)
+		return &common.BuildKitDockerExporterError{ProviderName: providerName, Err: err}
+	}
+
+	if strings.Contains(err.Error(), `exporter "image" could not be found`) {
+		return &common.BuildKitImageExporterError{ProviderName: providerName, Err: err}
 	}
 
 	return err

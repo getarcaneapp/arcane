@@ -107,3 +107,21 @@ func TestWrapBuildkitSolveErrorInternal_LeavesGenericErrorsUnchanged(t *testing.
 	require.ErrorIs(t, wrapped, err)
 	assert.Equal(t, err.Error(), wrapped.Error())
 }
+
+func TestWrapBuildkitSolveErrorInternal_WrapsDockerAndImageExporterErrors(t *testing.T) {
+	t.Run("docker exporter", func(t *testing.T) {
+		rawErr := errors.New(`failed to solve: exporter "docker" could not be found`)
+		wrapped := wrapBuildkitSolveErrorInternal(rawErr, "local")
+
+		require.ErrorIs(t, wrapped, rawErr)
+		assert.Contains(t, wrapped.Error(), "the Docker Engine embedded BuildKit requires the docker image-store exporter")
+	})
+
+	t.Run("image exporter", func(t *testing.T) {
+		rawErr := errors.New(`failed to solve: exporter "image" could not be found`)
+		wrapped := wrapBuildkitSolveErrorInternal(rawErr, "depot")
+
+		require.ErrorIs(t, wrapped, rawErr)
+		assert.Contains(t, wrapped.Error(), "depot and remote BuildKit providers require the image exporter")
+	})
+}

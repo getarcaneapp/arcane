@@ -22,6 +22,8 @@ const (
 	mountInfoPath           = "/proc/self/mountinfo"
 )
 
+var lchownFn = os.Lchown
+
 type runtimeIdentityRequest struct {
 	Enabled       bool
 	UID           int
@@ -34,12 +36,13 @@ type runtimeIdentityRequest struct {
 // RuntimeIdentityConfig contains the config-backed environment values used to
 // switch the process runtime identity before the application initializes.
 type RuntimeIdentityConfig struct {
-	PUID           string
-	PGID           string
-	DockerHost     string
-	DockerConfig   string
-	DatabaseURL    string
-	DefaultNonRoot bool
+	PUID              string
+	PGID              string
+	DockerHost        string
+	DockerConfig      string
+	DatabaseURL       string
+	DefaultNonRoot    bool
+	ProjectsDirectory string
 }
 
 // ApplyRequestedRuntimeIdentity switches the current process to the configured
@@ -47,6 +50,11 @@ type RuntimeIdentityConfig struct {
 func ApplyRequestedRuntimeIdentity(ctx context.Context, cfg *RuntimeIdentityConfig) error {
 	if cfg == nil {
 		cfg = &RuntimeIdentityConfig{}
+	}
+
+	projectsDir := ""
+	if strings.TrimSpace(cfg.ProjectsDirectory) != "" {
+		projectsDir = filepath.Clean(strings.TrimSpace(cfg.ProjectsDirectory))
 	}
 
 	req, warning, err := loadRuntimeIdentityRequestInternal(cfg)
@@ -87,7 +95,7 @@ func ApplyRequestedRuntimeIdentity(ctx context.Context, cfg *RuntimeIdentityConf
 		return err
 	}
 
-	if err := prepareWritablePathsInternal(runtimeUID, runtimeGID, mountpoints); err != nil {
+	if err := prepareWritablePathsInternal(runtimeUID, runtimeGID, mountpoints, projectsDir); err != nil {
 		return err
 	}
 
@@ -242,48 +250,58 @@ func dockerSocketPathInternal(raw string) (string, bool) {
 	return filepath.Clean(socketPath), true
 }
 
-func prepareWritablePathsInternal(uid int, gid int, mountpoints map[string]struct{}) error {
-	if err := os.MkdirAll(defaultDataDirectory, pkgutils.DirPerm); err != nil {
+func prepareWritablePathsInternal(uid int, gid int, mountpoints map[string]struct{}, projectsDir string) error {
+	return prepareWritablePathsWithRootsInternal(uid, gid, mountpoints, projectsDir, defaultDataDirectory, defaultBuildsDirectory)
+}
+
+func prepareWritablePathsWithRootsInternal(uid int, gid int, mountpoints map[string]struct{}, projectsDir string, dataDirectory string, buildsDirectory string) error {
+	if err := os.MkdirAll(dataDirectory, pkgutils.DirPerm); err != nil {
 		return fmt.Errorf("create data directory: %w", err)
 	}
 
-	if err := os.Chown(defaultDataDirectory, uid, gid); err != nil {
+	if err := os.Chown(dataDirectory, uid, gid); err != nil {
 		return fmt.Errorf("chown data directory: %w", err)
 	}
 
-	entries, err := os.ReadDir(defaultDataDirectory)
+	entries, err := os.ReadDir(dataDirectory)
 	if err != nil {
 		return fmt.Errorf("read data directory: %w", err)
 	}
 
 	for _, entry := range entries {
-		entryPath := filepath.Join(defaultDataDirectory, entry.Name())
+		entryPath := filepath.Join(dataDirectory, entry.Name())
 		if _, mounted := mountpoints[entryPath]; mounted {
 			if err := os.Lchown(entryPath, uid, gid); err != nil {
 				return fmt.Errorf("chown mounted %s: %w", entryPath, err)
 			}
 			continue
 		}
-		if err := chownRecursiveInternal(entryPath, uid, gid, mountpoints); err != nil {
+		if projectsDir != "" && filepath.Clean(entryPath) == projectsDir {
+			if err := lchownFn(entryPath, uid, gid); err != nil {
+				return fmt.Errorf("chown %s: %w", entryPath, err)
+			}
+			continue
+		}
+		if err := chownRecursiveInternal(entryPath, uid, gid, mountpoints, projectsDir); err != nil {
 			return fmt.Errorf("chown %s: %w", entryPath, err)
 		}
 	}
 
-	if _, mounted := mountpoints[defaultBuildsDirectory]; mounted {
-		if err := os.Lchown(defaultBuildsDirectory, uid, gid); err != nil {
+	if _, mounted := mountpoints[buildsDirectory]; mounted {
+		if err := os.Lchown(buildsDirectory, uid, gid); err != nil {
 			return fmt.Errorf("chown mounted builds directory: %w", err)
 		}
 		return nil
 	}
 
-	if _, err := os.Stat(defaultBuildsDirectory); err != nil {
+	if _, err := os.Stat(buildsDirectory); err != nil {
 		if os.IsNotExist(err) {
 			return nil
 		}
 		return fmt.Errorf("stat builds directory: %w", err)
 	}
 
-	if err := chownRecursiveInternal(defaultBuildsDirectory, uid, gid, mountpoints); err != nil {
+	if err := chownRecursiveInternal(buildsDirectory, uid, gid, mountpoints, projectsDir); err != nil {
 		return fmt.Errorf("chown builds directory: %w", err)
 	}
 
@@ -352,7 +370,7 @@ func sqliteDatabasePathInternal(databaseURL string) (string, bool, error) {
 	return filepath.Clean(pathPart), true, nil
 }
 
-func chownRecursiveInternal(path string, uid int, gid int, mountpoints map[string]struct{}) error {
+func chownRecursiveInternal(path string, uid int, gid int, mountpoints map[string]struct{}, projectsDir string) error {
 	return filepath.Walk(path, func(currentPath string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -363,8 +381,14 @@ func chownRecursiveInternal(path string, uid int, gid int, mountpoints map[strin
 				return filepath.SkipDir
 			}
 		}
+		if projectsDir != "" && filepath.Clean(currentPath) == projectsDir {
+			if err := lchownFn(currentPath, uid, gid); err != nil {
+				return err
+			}
+			return filepath.SkipDir
+		}
 		//nolint:gosec // currentPath comes from fixed container paths under /app/data or /builds
-		return os.Lchown(currentPath, uid, gid)
+		return lchownFn(currentPath, uid, gid)
 	})
 }
 

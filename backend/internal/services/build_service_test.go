@@ -1,6 +1,7 @@
 package services
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -8,6 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	buildgit "github.com/getarcaneapp/arcane/backend/pkg/gitutil"
@@ -375,6 +377,66 @@ func TestBuildService_BuildImage_FailureRecordsHistoryAndEvent(t *testing.T) {
 	assert.Equal(t, record.ID, event.Metadata["buildRecordId"])
 }
 
+func TestBuildService_BuildImage_FailureExporterErrorsAppearInOutputHistoryAndEvent(t *testing.T) {
+	db, err := setupBuildHistoryTestDB()
+	require.NoError(t, err)
+
+	buildErr := &common.BuildKitImageExporterError{
+		ProviderName: "depot",
+		Err:          errors.New(`failed to solve: failed to solve: exporter "image" could not be found`),
+	}
+	progress := &bytes.Buffer{}
+
+	svc := &BuildService{
+		db:           db,
+		eventService: NewEventService(db, nil, nil),
+		builder: testBuildRecorder{
+			err: buildErr,
+			onProgress: func(_ image.BuildRequest, w io.Writer) {
+				_, _ = w.Write([]byte(buildErr.Error()))
+			},
+		},
+	}
+
+	user := &models.User{
+		BaseModel: models.BaseModel{ID: "user-2"},
+		Username:  "registry-test",
+	}
+
+	req := image.BuildRequest{
+		ContextDir: "/builds/demo",
+		Dockerfile: "Dockerfile",
+		Tags:       []string{"ghcr.io/getarcaneapp/arcane:test"},
+		Provider:   "depot",
+		Load:       true,
+	}
+
+	_, err = svc.BuildImage(context.Background(), "0", req, progress, "web", user)
+	require.ErrorIs(t, err, buildErr)
+
+	var record models.ImageBuild
+	require.NoError(t, db.WithContext(context.Background()).First(&record).Error)
+	assert.Equal(t, models.ImageBuildStatusFailed, record.Status)
+	require.NotNil(t, record.Output)
+	assert.Contains(t, *record.Output, buildErr.Error())
+	require.NotNil(t, record.ErrorMessage)
+	assert.Contains(t, *record.ErrorMessage, "exporter \"image\"")
+
+	var event models.Event
+	require.NoError(t, db.WithContext(context.Background()).First(&event, "type = ?", models.EventTypeImageError).Error)
+	assert.Equal(t, models.EventSeverityError, event.Severity)
+	require.NotNil(t, event.ResourceName)
+	assert.Equal(t, "ghcr.io/getarcaneapp/arcane:test", *event.ResourceName)
+	assert.Equal(t, "build", event.Metadata["action"])
+	assert.Equal(t, "depot", event.Metadata["provider"])
+	assert.Equal(t, "/builds/demo", event.Metadata["contextDir"])
+	assert.Equal(t, buildErr.Error(), event.Metadata["error"])
+	assert.Equal(t, buildErr.Error(), progress.String())
+	assert.Equal(t, buildErr.Error(), *record.ErrorMessage)
+	assert.NotEmpty(t, event.Metadata["buildRecordId"])
+	assert.Equal(t, record.ID, event.Metadata["buildRecordId"])
+}
+
 func TestSanitizeBuildContextForEventInternal_RedactsURLCredentials(t *testing.T) {
 	assert.Equal(
 		t,
@@ -390,15 +452,19 @@ func TestSanitizeBuildContextForEventInternal_RedactsURLCredentials(t *testing.T
 }
 
 type testBuildRecorder struct {
-	onBuild func(image.BuildRequest)
-	err     error
+	onBuild    func(image.BuildRequest)
+	onProgress func(image.BuildRequest, io.Writer)
+	err        error
 }
 
-func (b testBuildRecorder) BuildImage(_ context.Context, req image.BuildRequest, _ io.Writer, _ string) (*image.BuildResult, error) {
+func (b testBuildRecorder) BuildImage(_ context.Context, req image.BuildRequest, writer io.Writer, _ string) (*image.BuildResult, error) {
 	if b.onBuild != nil {
 		b.onBuild(req)
 	}
 	if b.err != nil {
+		if b.onProgress != nil {
+			b.onProgress(req, writer)
+		}
 		return nil, b.err
 	}
 	return &image.BuildResult{Provider: "local"}, nil

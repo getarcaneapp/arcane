@@ -4,6 +4,7 @@
 	import CodeEditor from '$lib/components/code-editor/editor.svelte';
 	import { CodeIcon, FileTextIcon, SearchIcon, ArrowsUpDownIcon } from '$lib/icons';
 	import { IsMobile } from '$lib/hooks/is-mobile.svelte.js';
+	import { m } from '$lib/paraglide/messages';
 	import type { CodeLanguage, DiagnosticSummary, EditorContext } from '$lib/components/code-editor/analysis/types';
 
 	let {
@@ -70,7 +71,7 @@
 				size="icon"
 				showLabel={false}
 				icon={FileTextIcon}
-				customLabel="Toggle outline"
+				customLabel={m.compose_editor_toggle_outline()}
 				onclick={() => (outlineOpen = !outlineOpen)}
 			/>
 			{#if enableDiff && originalValue !== undefined}
@@ -80,7 +81,7 @@
 					size="icon"
 					showLabel={false}
 					icon={ArrowsUpDownIcon}
-					customLabel="Toggle diff"
+					customLabel={m.compose_editor_toggle_diff()}
 					onclick={() => (diffOpen = !diffOpen)}
 				/>
 			{/if}
@@ -90,19 +91,19 @@
 				size="icon"
 				showLabel={false}
 				icon={SearchIcon}
-				customLabel="Command palette"
+				customLabel={m.compose_editor_command_palette()}
 				onclick={() => (commandPaletteOpen = true)}
 			/>
 		</Card.Action>
 	</Card.Header>
 	<Card.Content class="relative z-0 flex min-h-0 {effectiveAutoHeight ? '' : 'flex-1'} flex-col overflow-visible p-0">
 		<div class="{effectiveAutoHeight ? '' : 'relative flex-1'} min-h-0 w-full min-w-0">
-			{#if effectiveAutoHeight}
+			<div class={effectiveAutoHeight ? '' : 'absolute inset-0'}>
 				<CodeEditor
 					bind:value
 					{language}
 					fontSize="13px"
-					autoHeight={true}
+					autoHeight={effectiveAutoHeight}
 					{readOnly}
 					bind:hasErrors
 					bind:validationReady
@@ -115,26 +116,7 @@
 					bind:diffOpen
 					bind:commandPaletteOpen
 				/>
-			{:else}
-				<div class="absolute inset-0">
-					<CodeEditor
-						bind:value
-						{language}
-						fontSize="13px"
-						{readOnly}
-						bind:hasErrors
-						bind:validationReady
-						bind:diagnosticSummary
-						{fileId}
-						{originalValue}
-						{enableDiff}
-						{editorContext}
-						bind:outlineOpen
-						bind:diffOpen
-						bind:commandPaletteOpen
-					/>
-				</div>
-			{/if}
+			</div>
 		</div>
 		{#if error}
 			<p class="text-destructive px-4 py-2 text-xs">{error}</p>
