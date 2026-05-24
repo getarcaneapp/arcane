@@ -38,15 +38,14 @@
 		return isNaN(d.getTime()) ? null : d;
 	}
 
-	// Normalize log entry casing (backend now emits lowercase; tolerate older PascalCase).
 	function normalizeLog(entries: ContainerHealthLogEntry[] | undefined) {
 		if (!entries) return [];
 		return entries
 			.map((e) => ({
-				start: parseDockerDate(e.start ?? e.Start),
-				end: parseDockerDate(e.end ?? e.End),
-				exitCode: (e.exitCode ?? e.ExitCode ?? 0) as number,
-				output: (e.output ?? e.Output ?? '') as string
+				start: parseDockerDate(e.start),
+				end: parseDockerDate(e.end),
+				exitCode: (e.exitCode ?? 0) as number,
+				output: (e.output ?? '') as string
 			}))
 			.filter((e) => e.start || e.end);
 	}

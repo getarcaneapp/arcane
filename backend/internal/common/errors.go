@@ -423,14 +423,6 @@ func (e *AgentTokenPersistenceError) Error() string {
 	return "Failed to persist agent token"
 }
 
-type AgentPairingError struct {
-	Err error
-}
-
-func (e *AgentPairingError) Error() string {
-	return fmt.Sprintf("Agent pairing failed: %v", e.Err)
-}
-
 type EnvironmentCreationError struct {
 	Err error
 }
@@ -731,28 +723,6 @@ type NotificationTestError struct {
 
 func (e *NotificationTestError) Error() string {
 	return fmt.Sprintf("Failed to send test notification: %v", e.Err)
-}
-
-type AppriseSettingsNotFoundError struct{}
-
-func (e *AppriseSettingsNotFoundError) Error() string {
-	return "Apprise settings not found"
-}
-
-type AppriseSettingsUpdateError struct {
-	Err error
-}
-
-func (e *AppriseSettingsUpdateError) Error() string {
-	return fmt.Sprintf("Failed to update Apprise settings: %v", e.Err)
-}
-
-type AppriseTestError struct {
-	Err error
-}
-
-func (e *AppriseTestError) Error() string {
-	return fmt.Sprintf("Failed to send Apprise test notification: %v", e.Err)
 }
 
 type OidcStatusError struct {

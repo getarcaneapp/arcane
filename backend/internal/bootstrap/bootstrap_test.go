@@ -43,24 +43,6 @@ func TestNormalizeTunnelGRPCRequestPathInternal(t *testing.T) {
 		assert.Equal(t, fullMethodPath, normalized.RequestURI)
 	})
 
-	t.Run("legacy api tunnel path maps to grpc method", func(t *testing.T) {
-		req := httptest.NewRequest("POST", "/api/tunnel/connect", nil)
-		normalized := normalizeTunnelGRPCRequestPathInternal(req)
-
-		assert.NotSame(t, req, normalized)
-		assert.Equal(t, fullMethodPath, normalized.URL.Path)
-		assert.Equal(t, fullMethodPath, normalized.RequestURI)
-	})
-
-	t.Run("prefixed legacy api tunnel path maps to grpc method", func(t *testing.T) {
-		req := httptest.NewRequest("POST", "/edge/proxy/api/tunnel/connect", nil)
-		normalized := normalizeTunnelGRPCRequestPathInternal(req)
-
-		assert.NotSame(t, req, normalized)
-		assert.Equal(t, fullMethodPath, normalized.URL.Path)
-		assert.Equal(t, fullMethodPath, normalized.RequestURI)
-	})
-
 	t.Run("nested proxy prefix is removed up to method path", func(t *testing.T) {
 		req := httptest.NewRequest("POST", "/edge/proxy/api"+fullMethodPath, nil)
 		normalized := normalizeTunnelGRPCRequestPathInternal(req)
@@ -88,11 +70,6 @@ func TestIsTunnelGRPCRequestInternal(t *testing.T) {
 
 	t.Run("detects by method path without grpc content-type", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, fullMethodPath, nil)
-		assert.True(t, isTunnelGRPCRequestInternal(req))
-	})
-
-	t.Run("detects by legacy tunnel path", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodPost, "/api/tunnel/connect", nil)
 		assert.True(t, isTunnelGRPCRequestInternal(req))
 	})
 

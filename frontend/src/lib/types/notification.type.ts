@@ -18,14 +18,6 @@ export interface NotificationSettings {
 	config?: Record<string, any>;
 }
 
-export interface AppriseSettings {
-	id?: number;
-	apiUrl: string;
-	enabled: boolean;
-	imageUpdateTag: string;
-	containerUpdateTag: string;
-}
-
 export interface TestNotificationResponse {
 	success: boolean;
 	message?: string;

@@ -2,9 +2,7 @@ package scheduler
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
-	"strconv"
 
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/types/system"
@@ -39,21 +37,6 @@ func (j *ScheduledPruneJob) Schedule(ctx context.Context) string {
 	schedule := j.settingsService.GetStringSetting(ctx, "scheduledPruneInterval", "0 0 0 * * *")
 	if schedule == "" {
 		schedule = "0 0 0 * * *"
-	}
-
-	// Handle legacy straight int if it somehow didn't get migrated
-	if i, err := strconv.Atoi(schedule); err == nil {
-		if i <= 0 {
-			i = 1440
-		}
-		switch {
-		case i%1440 == 0:
-			schedule = fmt.Sprintf("0 0 0 */%d * *", i/1440)
-		case i%60 == 0:
-			schedule = fmt.Sprintf("0 0 */%d * * *", i/60)
-		default:
-			schedule = fmt.Sprintf("0 */%d * * * *", i)
-		}
 	}
 
 	parser := cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)

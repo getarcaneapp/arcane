@@ -133,18 +133,7 @@ func initializeStartupState(appCtx context.Context, cfg *config.Config, appServi
 		AgentMode:     cfg.AgentMode,
 	})
 	startup.InitializeDefaultSettings(appCtx, runtimeCfg, appServices.Settings)
-	startup.MigrateSchedulerCronValues(
-		appCtx,
-		appServices.Settings.GetStringSetting,
-		appServices.Settings.UpdateSetting,
-		appServices.Settings.LoadDatabaseSettings,
-	)
 	if appServices.GitOpsSync != nil {
-		startup.MigrateGitOpsSyncIntervals(
-			appCtx,
-			appServices.GitOpsSync.ListSyncIntervalsRaw,
-			appServices.GitOpsSync.UpdateSyncIntervalMinutes,
-		)
 		if err := appServices.GitOpsSync.ReconcileDirectorySyncProjectsOnStartup(appCtx); err != nil {
 			slog.WarnContext(appCtx, "Failed to reconcile directory GitOps projects on startup", "error", err)
 		}
@@ -205,8 +194,6 @@ func initializeStartupState(appCtx context.Context, cfg *config.Config, appServi
 			startup.InitializeAutoLogin(ctx, runtimeCfg)
 			return nil
 		},
-		appServices.Settings.MigrateOidcConfigToFields,
-		appServices.Notification.MigrateDiscordWebhookUrlToFields,
 	)
 	startup.CleanupUnknownSettings(appCtx, appServices.Settings)
 
@@ -514,16 +501,6 @@ func normalizeTunnelGRPCRequestPathInternal(r *http.Request) *http.Request {
 	}
 
 	connectMethodPath := tunnelpb.TunnelService_Connect_FullMethodName
-	legacyAPIPath := "/api/tunnel/connect"
-	if strings.HasSuffix(r.URL.Path, legacyAPIPath) {
-		clone := r.Clone(r.Context())
-		cloneURL := *clone.URL
-		cloneURL.Path = connectMethodPath
-		clone.URL = &cloneURL
-		clone.RequestURI = connectMethodPath
-		return clone
-	}
-
 	idx := strings.Index(r.URL.Path, connectMethodPath)
 	if idx <= 0 {
 		return r
@@ -553,7 +530,7 @@ func isTunnelGRPCRequestInternal(r *http.Request) bool {
 
 	path := r.URL.Path
 	fullMethodPath := tunnelpb.TunnelService_Connect_FullMethodName
-	if path == fullMethodPath || strings.HasSuffix(path, fullMethodPath) || strings.HasSuffix(path, "/api/tunnel/connect") {
+	if path == fullMethodPath || strings.HasSuffix(path, fullMethodPath) {
 		return true
 	}
 
