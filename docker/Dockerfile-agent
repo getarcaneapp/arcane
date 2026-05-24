@@ -67,8 +67,7 @@ ENV NVIDIA_VISIBLE_DEVICES=all \
 ENV ENVIRONMENT=production \
     AGENT_MODE=true \
     GIN_MODE=release \
-    PORT=3553 \
-    ARCANE_DEFAULT_NONROOT=true
+    PORT=3553
 
 EXPOSE 3553
 VOLUME ["/app/data"]

@@ -203,15 +203,13 @@ function defaultRunArgs(name: string, dataDir: string) {
 test.describe.serial('Docker runtime identity', () => {
 	test.setTimeout(240_000);
 
-	test('supports disabling default non-root runtime when PUID and PGID are unset', async () => {
+	test('uses the default non-root runtime when PUID and PGID are unset', async () => {
 		const containerName = uniqueName('arcane-default');
 		const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'arcane-default-'));
 
 		try {
 			dockerRunContainer([
 				...defaultRunArgs(containerName, dataDir),
-				'-e',
-				'ARCANE_DEFAULT_NONROOT=false',
 				'-v',
 				'/var/run/docker.sock:/var/run/docker.sock',
 				IMAGE
@@ -223,6 +221,17 @@ test.describe.serial('Docker runtime identity', () => {
 			const status = pidOneStatus(containerName);
 			expect(status.uid).toBe('0\t0\t0\t0');
 			expect(status.gid).toBe('0\t0\t0\t0');
+
+			const processStatuses = arcaneProcessStatuses(containerName);
+			expect(
+				processStatuses.some(
+					(status) =>
+						status.pid !== '1' &&
+						status.ppid === '1' &&
+						status.uid.startsWith('65532\t') &&
+						status.gid.startsWith('65532\t')
+				)
+			).toBe(true);
 		} finally {
 			cleanupContainer(containerName);
 			cleanupDir(dataDir);
@@ -307,8 +316,6 @@ test.describe.serial('Docker runtime identity', () => {
 		try {
 			dockerRunContainer([
 				...defaultRunArgs(containerName, dataDir),
-				'-e',
-				'ARCANE_DEFAULT_NONROOT=true',
 				'-v',
 				'/var/run/docker.sock:/var/run/docker.sock',
 				'-v',

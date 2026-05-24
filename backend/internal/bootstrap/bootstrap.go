@@ -36,7 +36,6 @@ func Bootstrap(ctx context.Context) error {
 		DockerHost:        cfg.DockerHost,
 		DockerConfig:      cfg.DockerConfig,
 		DatabaseURL:       cfg.DatabaseURL,
-		DefaultNonRoot:    cfg.DefaultNonRoot,
 		ProjectsDirectory: cfg.ProjectsDirectory,
 	}
 	if err := startup.ApplyRequestedRuntimeIdentity(ctx, runtimeIdentityCfg); err != nil {
