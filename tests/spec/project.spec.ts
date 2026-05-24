@@ -1,4 +1,4 @@
-import { test, expect, type Locator, type Page } from '@playwright/test';
+import { test, expect, type Locator, type Page, type Response } from '@playwright/test';
 import { fetchProjectCountsWithRetry, fetchProjectsWithRetry } from '../utils/fetch.util';
 import { Project, ProjectStatusCounts } from 'types/project.type';
 import { TEST_COMPOSE_YAML, TEST_ENV_FILE } from '../setup/project.data';
@@ -25,7 +25,7 @@ async function setCodeMirrorValue(page: Page, editor: Locator, text: string) {
 	await expect(content).toBeVisible();
 	await content.click({ position: { x: 10, y: 10 } });
 	await content.press('ControlOrMeta+A');
-	await page.keyboard.type(text, { delay: 0 });
+	await page.keyboard.insertText(text);
 }
 
 async function getCodeMirrorValue(editor: Locator) {
@@ -122,8 +122,20 @@ function getProjectIdFromPageUrl(url: string): string {
 	return url.split('/projects/')[1]?.split(/[?#]/)[0] ?? '';
 }
 
+async function expectProjectCreateResponse(responsePromise: Promise<Response>) {
+	const response = await responsePromise;
+	if (response.ok()) {
+		return response;
+	}
+
+	const body = await response.text().catch(() => '<unreadable response body>');
+	throw new Error(
+		`Create project request failed with ${response.status()} ${response.statusText()}: ${body}`
+	);
+}
+
 async function createProjectViaUI(page: Page, projectName: string) {
-	const containerName = `test-redis-container-${Date.now()}`;
+	const containerName = `test-nginx-container-${Date.now()}`;
 	const envFile = TEST_ENV_FILE.replace(/CONTAINER_NAME=.*/m, `CONTAINER_NAME=${containerName}`);
 
 	await page.goto(ROUTES.newProject);
@@ -141,12 +153,23 @@ async function createProjectViaUI(page: Page, projectName: string) {
 
 	await setCodeMirrorValue(page, composeEditor, TEST_COMPOSE_YAML);
 	await setCodeMirrorValue(page, envEditor, envFile);
+	await expect
+		.poll(async () => (await getCodeMirrorValue(composeEditor)).trimEnd(), {
+			message: 'Expected compose editor to contain the exact test compose fixture before creation'
+		})
+		.toBe(TEST_COMPOSE_YAML.trimEnd());
 
 	const createButton = page
 		.getByRole('button', { name: 'Create Project' })
 		.locator('[data-slot="arcane-button"]');
 	await expect(createButton).toBeEnabled();
+	const createResponsePromise = page.waitForResponse(
+		(response) =>
+			response.request().method() === 'POST' &&
+			/\/api\/environments\/[^/]+\/projects$/.test(getPathname(response.url()))
+	);
 	await createButton.click();
+	await expectProjectCreateResponse(createResponsePromise);
 
 	await page.waitForURL(/\/projects\/(?!new$).+/, { timeout: 10000 });
 	await expect(page.getByRole('button', { name: projectName })).toBeVisible();
@@ -544,7 +567,7 @@ test.describe('New Compose Project Page', () => {
 
 	test('should create a new project successfully', async ({ page }) => {
 		const projectName = `test-project-${Date.now()}`;
-		const containerName = `test-redis-container-${Date.now()}`;
+		const containerName = `test-nginx-container-${Date.now()}`;
 		const envFile = TEST_ENV_FILE.replace(/CONTAINER_NAME=.*/m, `CONTAINER_NAME=${containerName}`);
 		let createdProjectId: string | null = null;
 		let projectPullRequestCount = 0;
@@ -556,12 +579,17 @@ test.describe('New Compose Project Page', () => {
 		const composeEditor = page.locator('.cm-editor:visible').first();
 		await expect(composeEditor).toBeVisible();
 		await setCodeMirrorValue(page, composeEditor, TEST_COMPOSE_YAML);
-		await expect(composeEditor).toContainText(/redis/i);
+		await expect(composeEditor).toContainText(/nginx/i);
+		await expect
+			.poll(async () => (await getCodeMirrorValue(composeEditor)).trimEnd(), {
+				message: 'Expected compose editor to contain the exact test compose fixture before creation'
+			})
+			.toBe(TEST_COMPOSE_YAML.trimEnd());
 
 		const envEditor = page.locator('.cm-editor:visible').nth(1);
 		await expect(envEditor).toBeVisible();
 		await setCodeMirrorValue(page, envEditor, envFile);
-		await expect(envEditor).toContainText(/redis/i);
+		await expect(envEditor).toContainText(/nginx/i);
 
 		await page.route('/api/environments/*/projects', async (route) => {
 			if (route.request().method() === 'POST') {
@@ -570,7 +598,7 @@ test.describe('New Compose Project Page', () => {
 
 				try {
 					const parsed = JSON.parse(responseBody);
-					createdProjectId = parsed.id;
+					createdProjectId = parsed.data?.id ?? parsed.id;
 				} catch {
 					// Keep existing createdProjectId value if parsing fails
 				}
@@ -588,7 +616,13 @@ test.describe('New Compose Project Page', () => {
 		const createButton = page
 			.getByRole('button', { name: 'Create Project' })
 			.locator('[data-slot="arcane-button"]');
+		const createResponsePromise = page.waitForResponse(
+			(response) =>
+				response.request().method() === 'POST' &&
+				/\/api\/environments\/[^/]+\/projects$/.test(getPathname(response.url()))
+		);
 		await createButton.click();
+		await expectProjectCreateResponse(createResponsePromise);
 
 		await page.waitForURL(/\/projects\/.+/, { timeout: 10000 });
 
@@ -604,7 +638,7 @@ test.describe('New Compose Project Page', () => {
 		await page.waitForLoadState('networkidle');
 
 		const serviceTable = page.getByRole('table');
-		const serviceNameWhenStopped = serviceTable.getByText('redis', {
+		const serviceNameWhenStopped = serviceTable.getByText('nginx', {
 			exact: true
 		});
 		const emptyServicesState = page.getByText(/No services found for this project/i);
@@ -630,7 +664,7 @@ test.describe('New Compose Project Page', () => {
 		await page.waitForLoadState('networkidle');
 
 		expect(projectPullRequestCount).toBe(0);
-		await expect(page.getByText('Running', { exact: true })).toBeVisible({
+		await expect(page.getByText('Running', { exact: true }).first()).toBeVisible({
 			timeout: 20000
 		});
 		await expect(page.getByRole('button', { name: 'Down', exact: true })).toBeVisible();
@@ -784,50 +818,19 @@ test.describe('New Compose Project Page', () => {
 
 	test('should destroy the project and remove files from disk', async ({ page }) => {
 		const projectName = `test-destroy-${Date.now()}`;
+		let projectId = '';
 
-		// 1. Create the project first
-		await page.getByRole('button', { name: 'My New Project' }).click();
-		await page.getByRole('textbox', { name: 'My New Project' }).fill(projectName);
-		await page.getByRole('textbox', { name: 'My New Project' }).press('Enter');
+		try {
+			projectId = await createProjectViaUI(page, projectName);
+			await destroyCurrentProjectViaUI(page);
+			projectId = '';
 
-		const composeEditor = page.locator('.cm-editor:visible').first();
-		await expect(composeEditor).toBeVisible();
-		await setCodeMirrorValue(page, composeEditor, TEST_COMPOSE_YAML);
-
-		const createButton = page
-			.locator('button[data-slot="arcane-button"]')
-			.filter({ hasText: 'Create Project' });
-		await createButton.click();
-
-		await page.waitForURL(/\/projects\/.+/, { timeout: 10000 });
-		await expect(page.getByRole('button', { name: projectName })).toBeVisible();
-
-		// 2. Destroy the project
-		const destroyButton = page.getByRole('button', {
-			name: 'Destroy',
-			exact: true
-		});
-		await expect(destroyButton).toBeVisible();
-		await destroyButton.click();
-
-		// 3. Handle the confirmation dialog
-		const dialog = page.getByRole('dialog');
-		await expect(dialog).toBeVisible();
-
-		// Check "Remove project files"
-		const removeFilesCheckbox = dialog.getByLabel(/Remove project files/i);
-		await removeFilesCheckbox.check();
-
-		// Click "Destroy" in the dialog
-		const confirmDestroyButton = dialog.getByRole('button', {
-			name: 'Destroy',
-			exact: true
-		});
-		await confirmDestroyButton.click();
-
-		// 4. Verify redirection and project removal
-		await page.waitForURL(ROUTES.page, { timeout: 10000 });
-		await expect(page.getByRole('link', { name: projectName })).not.toBeVisible();
+			await expect(page.getByRole('link', { name: projectName })).not.toBeVisible();
+		} finally {
+			if (projectId) {
+				await destroyProjectByIdViaAPI(page, projectId);
+			}
+		}
 	});
 });
 
