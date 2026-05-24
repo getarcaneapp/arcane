@@ -26,16 +26,6 @@ func TestGitOpsSyncJobSchedule_UsesConfiguredCron(t *testing.T) {
 	require.Equal(t, "0 */7 * * * *", got)
 }
 
-func TestGitOpsSyncJobSchedule_LegacyIntegerMinutes(t *testing.T) {
-	ctx := context.Background()
-	_, settingsSvc, _ := setupAnalyticsStateServicesInternal(t)
-	require.NoError(t, settingsSvc.SetStringSetting(ctx, "gitopsSyncInterval", "120"))
-	job := NewGitOpsSyncJob(nil, settingsSvc)
-
-	got := job.Schedule(ctx)
-	require.Equal(t, "0 0 */2 * * *", got)
-}
-
 func TestGitOpsSyncJobSchedule_InvalidCronFallsBackToDefault(t *testing.T) {
 	ctx := context.Background()
 	_, settingsSvc, _ := setupAnalyticsStateServicesInternal(t)

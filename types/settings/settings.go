@@ -94,13 +94,6 @@ type Update struct {
 	// Required: false
 	EnvironmentHealthInterval *string `json:"environmentHealthInterval,omitempty"`
 
-	// PruneMode is the Docker prune mode ("all" or "dangling").
-	//
-	// Deprecated: Use the granular prune mode settings instead.
-	//
-	// Required: false
-	PruneMode *string `json:"dockerPruneMode,omitempty" binding:"omitempty,oneof=all dangling"`
-
 	// DefaultDeployPullPolicy is the default image pull policy used for project deploys.
 	//
 	// Required: false
@@ -115,41 +108,6 @@ type Update struct {
 	//
 	// Required: false
 	ScheduledPruneInterval *string `json:"scheduledPruneInterval,omitempty"`
-
-	// ScheduledPruneContainers indicates if stopped containers should be pruned.
-	//
-	// Deprecated: Use pruneContainerMode instead.
-	//
-	// Required: false
-	ScheduledPruneContainers *string `json:"scheduledPruneContainers,omitempty"`
-
-	// ScheduledPruneImages indicates if unused images should be pruned.
-	//
-	// Deprecated: Use pruneImageMode instead.
-	//
-	// Required: false
-	ScheduledPruneImages *string `json:"scheduledPruneImages,omitempty"`
-
-	// ScheduledPruneVolumes indicates if unused volumes should be pruned.
-	//
-	// Deprecated: Use pruneVolumeMode instead.
-	//
-	// Required: false
-	ScheduledPruneVolumes *string `json:"scheduledPruneVolumes,omitempty"`
-
-	// ScheduledPruneNetworks indicates if unused networks should be pruned.
-	//
-	// Deprecated: Use pruneNetworkMode instead.
-	//
-	// Required: false
-	ScheduledPruneNetworks *string `json:"scheduledPruneNetworks,omitempty"`
-
-	// ScheduledPruneBuildCache indicates if build cache should be pruned.
-	//
-	// Deprecated: Use pruneBuildCacheMode instead.
-	//
-	// Required: false
-	ScheduledPruneBuildCache *string `json:"scheduledPruneBuildCache,omitempty"`
 
 	// PruneContainerMode controls how containers are pruned during scheduled prune.
 	//
@@ -333,11 +291,6 @@ type Update struct {
 	//
 	// Required: false
 	TrivyConcurrentScanContainers *string `json:"trivyConcurrentScanContainers,omitempty"`
-
-	// AuthOidcConfig is deprecated and will be removed in a future release.
-	//
-	// Required: false
-	AuthOidcConfig *string `json:"authOidcConfig,omitempty"`
 
 	// OidcClientId is the OIDC client identifier.
 	//

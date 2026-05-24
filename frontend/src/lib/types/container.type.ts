@@ -140,14 +140,9 @@ export interface ContainerStatusCounts {
 
 export interface ContainerHealthLogEntry {
 	start?: string;
-	// Legacy PascalCase, kept for backwards-compat with older payloads.
-	Start?: string;
 	end?: string;
-	End?: string;
 	exitCode?: number;
-	ExitCode?: number;
 	output?: string;
-	Output?: string;
 }
 
 export interface ContainerHealthDto {

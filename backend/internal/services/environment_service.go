@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -969,64 +968,6 @@ func (s *EnvironmentService) RegenerateEnvironmentApiKey(ctx context.Context, en
 	go s.createEnvironmentEvent(context.WithoutCancel(ctx), envID, envName, models.EventTypeEnvironmentApiKeyRegenerated, "API Key Regenerated", "Environment API key was regenerated and status set to pending", models.EventSeverityInfo, new(userID), new(username))
 
 	return nil
-}
-
-// Deprecated - Use the Api Key flow
-func (s *EnvironmentService) PairAgentWithBootstrap(ctx context.Context, apiUrl, bootstrapToken string) (string, error) {
-	pairURL, err := buildEnvironmentEndpointURLInternal(apiUrl, "/api/environments/0/agent/pair")
-	if err != nil {
-		return "", fmt.Errorf("invalid agent API URL: %w", err)
-	}
-
-	reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, pairURL, nil)
-	if err != nil {
-		return "", fmt.Errorf("create request: %w", err)
-	}
-	req.Header.Set("X-Arcane-Agent-Bootstrap", bootstrapToken)
-
-	resp, err := s.httpClient.Do(req) //nolint:gosec // intentional request to configured remote environment API URL
-	if err != nil {
-		return "", fmt.Errorf("request failed: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(body))
-	}
-
-	var parsed struct {
-		Success bool `json:"success"`
-		Data    struct {
-			Token string `json:"token"`
-		} `json:"data"`
-		Message string `json:"message"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
-		return "", fmt.Errorf("decode response: %w", err)
-	}
-	if !parsed.Success || parsed.Data.Token == "" {
-		return "", fmt.Errorf("pairing unsuccessful")
-	}
-
-	return parsed.Data.Token, nil
-}
-
-func (s *EnvironmentService) PairAndPersistAgentToken(ctx context.Context, environmentID, apiUrl, bootstrapToken string) (string, error) {
-	token, err := s.PairAgentWithBootstrap(ctx, apiUrl, bootstrapToken)
-	if err != nil {
-		return "", err
-	}
-	if err := s.db.WithContext(ctx).
-		Model(&models.Environment{}).
-		Where("id = ?", environmentID).
-		Update("access_token", token).Error; err != nil {
-		return "", fmt.Errorf("failed to persist agent token: %w", err)
-	}
-	s.syncEnvironmentTokenCacheInternal(environmentID, token)
-	return token, nil
 }
 
 func (s *EnvironmentService) GetDB() *database.DB {
