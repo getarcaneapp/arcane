@@ -235,22 +235,11 @@
 
 		update();
 
-		if ('addEventListener' in mqlXl) {
-			mqlXl.addEventListener('change', update);
-			mqlLg.addEventListener('change', update);
-			return () => {
-				mqlXl.removeEventListener('change', update);
-				mqlLg.removeEventListener('change', update);
-			};
-		}
-
-		// @ts-expect-error legacy MediaQueryList API
-		mqlXl.addListener(update);
-		mqlLg.addListener(update);
+		mqlXl.addEventListener('change', update);
+		mqlLg.addEventListener('change', update);
 		return () => {
-			// @ts-expect-error legacy MediaQueryList API
-			mqlXl.removeListener(update);
-			mqlLg.removeListener(update);
+			mqlXl.removeEventListener('change', update);
+			mqlLg.removeEventListener('change', update);
 		};
 	});
 

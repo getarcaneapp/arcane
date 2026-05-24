@@ -399,7 +399,7 @@ func (h *SettingsHandler) updateSettingsForLocalEnvironment(ctx context.Context,
 func hasAuthSettingsUpdateInternal(req settings.Update) bool {
 	return req.AuthLocalEnabled != nil || req.OidcEnabled != nil ||
 		req.AuthSessionTimeout != nil || req.AuthPasswordPolicy != nil ||
-		req.AuthOidcConfig != nil || req.OidcClientId != nil ||
+		req.OidcClientId != nil ||
 		req.OidcClientSecret != nil || req.OidcIssuerUrl != nil ||
 		req.OidcScopes != nil || req.OidcAdminClaim != nil ||
 		req.OidcAdminValue != nil || req.OidcMergeAccounts != nil ||
