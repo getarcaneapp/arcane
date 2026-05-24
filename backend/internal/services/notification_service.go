@@ -14,8 +14,6 @@ import (
 	"text/template"
 	"time"
 
-	"gorm.io/gorm"
-
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
@@ -66,7 +64,6 @@ type NotificationService struct {
 	db             *database.DB
 	config         *config.Config
 	environmentSvc *EnvironmentService
-	appriseService *AppriseService
 	httpClient     *http.Client
 }
 
@@ -93,7 +90,6 @@ func NewNotificationService(db *database.DB, cfg *config.Config, environmentSvc 
 		db:             db,
 		config:         cfg,
 		environmentSvc: environmentSvc,
-		appriseService: NewAppriseService(db, cfg),
 		httpClient:     &http.Client{Timeout: 15 * time.Second},
 	}
 }
@@ -325,11 +321,6 @@ func (s *NotificationService) SendImageUpdateNotification(ctx context.Context, i
 }
 
 func (s *NotificationService) sendImageUpdateNotificationForTargetInternal(ctx context.Context, target NotificationTarget, imageRef string, updateInfo *imageupdate.Response, eventType models.NotificationEventType) error {
-	// Send to Apprise if enabled (don't block on error)
-	if appriseErr := s.appriseService.SendImageUpdateNotification(ctx, target.EnvironmentName, imageRef, updateInfo); appriseErr != nil {
-		slog.WarnContext(ctx, "Failed to send Apprise notification", "error", appriseErr)
-	}
-
 	settings, err := s.GetAllSettings(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get notification settings: %w", err)
@@ -445,11 +436,6 @@ func (s *NotificationService) SendContainerUpdateNotification(ctx context.Contex
 }
 
 func (s *NotificationService) sendContainerUpdateNotificationForTargetInternal(ctx context.Context, target NotificationTarget, containerName, imageRef, oldDigest, newDigest string) error {
-	// Send to Apprise if enabled (don't block on error)
-	if appriseErr := s.appriseService.SendContainerUpdateNotification(ctx, target.EnvironmentName, containerName, imageRef, oldDigest, newDigest); appriseErr != nil {
-		slog.WarnContext(ctx, "Failed to send Apprise notification", "error", appriseErr)
-	}
-
 	settings, err := s.GetAllSettings(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get notification settings: %w", err)
@@ -633,11 +619,11 @@ func (s *NotificationService) sendDiscordNotification(ctx context.Context, envir
 
 	// Decrypt token if encrypted
 	if discordConfig.Token != "" {
-		if decrypted, err := crypto.Decrypt(discordConfig.Token); err == nil {
-			discordConfig.Token = decrypted
-		} else {
-			slog.Warn("Failed to decrypt Discord token, using raw value (may be unencrypted legacy value)", "error", err)
+		decrypted, err := crypto.Decrypt(discordConfig.Token)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt notification credential: %w", err)
 		}
+		discordConfig.Token = decrypted
 	}
 
 	message := notifications.BuildImageUpdateNotificationMessage(
@@ -673,11 +659,11 @@ func (s *NotificationService) sendTelegramNotification(ctx context.Context, envi
 
 	// Decrypt bot token if encrypted
 	if telegramConfig.BotToken != "" {
-		if decrypted, err := crypto.Decrypt(telegramConfig.BotToken); err == nil {
-			telegramConfig.BotToken = decrypted
-		} else {
-			slog.Warn("Failed to decrypt Telegram bot token, using raw value (may be unencrypted legacy value)", "error", err)
+		decrypted, err := crypto.Decrypt(telegramConfig.BotToken)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt notification credential: %w", err)
 		}
+		telegramConfig.BotToken = decrypted
 	}
 
 	message := notifications.BuildImageUpdateNotificationMessage(
@@ -726,11 +712,11 @@ func (s *NotificationService) sendEmailNotification(ctx context.Context, environ
 	}
 
 	if emailConfig.SMTPPassword != "" {
-		if decrypted, err := crypto.Decrypt(emailConfig.SMTPPassword); err == nil {
-			emailConfig.SMTPPassword = decrypted
-		} else {
-			slog.Warn("Failed to decrypt email SMTP password, using raw value (may be unencrypted legacy value)", "error", err)
+		decrypted, err := crypto.Decrypt(emailConfig.SMTPPassword)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt notification credential: %w", err)
 		}
+		emailConfig.SMTPPassword = decrypted
 	}
 
 	htmlBody, _, err := s.renderEmailTemplate(environmentName, imageRef, updateInfo)
@@ -810,11 +796,11 @@ func (s *NotificationService) sendDiscordContainerUpdateNotification(ctx context
 
 	// Decrypt token if encrypted
 	if discordConfig.Token != "" {
-		if decrypted, err := crypto.Decrypt(discordConfig.Token); err == nil {
-			discordConfig.Token = decrypted
-		} else {
-			slog.Warn("Failed to decrypt Discord token, using raw value (may be unencrypted legacy value)", "error", err)
+		decrypted, err := crypto.Decrypt(discordConfig.Token)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt notification credential: %w", err)
 		}
+		discordConfig.Token = decrypted
 	}
 
 	message := notifications.BuildContainerUpdateNotificationMessage(
@@ -852,11 +838,11 @@ func (s *NotificationService) sendTelegramContainerUpdateNotification(ctx contex
 
 	// Decrypt bot token if encrypted
 	if telegramConfig.BotToken != "" {
-		if decrypted, err := crypto.Decrypt(telegramConfig.BotToken); err == nil {
-			telegramConfig.BotToken = decrypted
-		} else {
-			slog.Warn("Failed to decrypt Telegram bot token, using raw value (may be unencrypted legacy value)", "error", err)
+		decrypted, err := crypto.Decrypt(telegramConfig.BotToken)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt notification credential: %w", err)
 		}
+		telegramConfig.BotToken = decrypted
 	}
 
 	message := notifications.BuildContainerUpdateNotificationMessage(
@@ -907,11 +893,11 @@ func (s *NotificationService) sendEmailContainerUpdateNotification(ctx context.C
 	}
 
 	if emailConfig.SMTPPassword != "" {
-		if decrypted, err := crypto.Decrypt(emailConfig.SMTPPassword); err == nil {
-			emailConfig.SMTPPassword = decrypted
-		} else {
-			slog.Warn("Failed to decrypt email SMTP password, using raw value (may be unencrypted legacy value)", "error", err)
+		decrypted, err := crypto.Decrypt(emailConfig.SMTPPassword)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt notification credential: %w", err)
 		}
+		emailConfig.SMTPPassword = decrypted
 	}
 
 	htmlBody, _, err := s.renderContainerUpdateEmailTemplate(environmentName, containerName, imageRef, oldDigest, newDigest)
@@ -1220,9 +1206,11 @@ func (s *NotificationService) sendTestEmail(ctx context.Context, environmentName
 	}
 
 	if emailConfig.SMTPPassword != "" {
-		if decrypted, err := crypto.Decrypt(emailConfig.SMTPPassword); err == nil {
-			emailConfig.SMTPPassword = decrypted
+		decrypted, err := crypto.Decrypt(emailConfig.SMTPPassword)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt notification credential: %w", err)
 		}
+		emailConfig.SMTPPassword = decrypted
 	}
 
 	htmlBody, _, err := s.renderTestEmailTemplate(environmentName)
@@ -1335,11 +1323,6 @@ func (s *NotificationService) sendBatchImageUpdateNotificationForTargetInternal(
 		return nil
 	}
 
-	// Send to Apprise if enabled
-	if appriseErr := s.appriseService.SendBatchImageUpdateNotification(ctx, target.EnvironmentName, updatesWithChanges); appriseErr != nil {
-		slog.WarnContext(ctx, "Failed to send Apprise notification", "error", appriseErr)
-	}
-
 	settings, err := s.GetAllSettings(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get notification settings: %w", err)
@@ -1420,8 +1403,12 @@ func (s *NotificationService) sendBatchDiscordNotification(ctx context.Context, 
 		return fmt.Errorf("failed to unmarshal discord config: %w", err)
 	}
 
-	// Decrypt token if encrypted
-	if decrypted, err := crypto.Decrypt(discordConfig.Token); err == nil {
+	// Decrypt token
+	if discordConfig.Token != "" {
+		decrypted, err := crypto.Decrypt(discordConfig.Token)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt notification credential: %w", err)
+		}
 		discordConfig.Token = decrypted
 	}
 
@@ -1448,8 +1435,12 @@ func (s *NotificationService) sendBatchTelegramNotification(ctx context.Context,
 		return fmt.Errorf("failed to unmarshal telegram config: %w", err)
 	}
 
-	// Decrypt bot token if encrypted
-	if decrypted, err := crypto.Decrypt(telegramConfig.BotToken); err == nil {
+	// Decrypt bot token
+	if telegramConfig.BotToken != "" {
+		decrypted, err := crypto.Decrypt(telegramConfig.BotToken)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt notification credential: %w", err)
+		}
 		telegramConfig.BotToken = decrypted
 	}
 
@@ -1498,11 +1489,11 @@ func (s *NotificationService) sendBatchEmailNotification(ctx context.Context, en
 	}
 
 	if emailConfig.SMTPPassword != "" {
-		if decrypted, err := crypto.Decrypt(emailConfig.SMTPPassword); err == nil {
-			emailConfig.SMTPPassword = decrypted
-		} else {
-			slog.Warn("Failed to decrypt email SMTP password, using raw value (may be unencrypted legacy value)", "error", err)
+		decrypted, err := crypto.Decrypt(emailConfig.SMTPPassword)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt notification credential: %w", err)
 		}
+		emailConfig.SMTPPassword = decrypted
 	}
 
 	htmlBody, _, err := s.renderBatchEmailTemplate(environmentName, updates)
@@ -1610,18 +1601,18 @@ func (s *NotificationService) sendSignalNotification(ctx context.Context, enviro
 
 	// Decrypt sensitive fields if encrypted
 	if signalConfig.Password != "" {
-		if decrypted, err := crypto.Decrypt(signalConfig.Password); err == nil {
-			signalConfig.Password = decrypted
-		} else {
-			slog.Warn("Failed to decrypt Signal password, using raw value (may be unencrypted legacy value)", "error", err)
+		decrypted, err := crypto.Decrypt(signalConfig.Password)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt notification credential: %w", err)
 		}
+		signalConfig.Password = decrypted
 	}
 	if signalConfig.Token != "" {
-		if decrypted, err := crypto.Decrypt(signalConfig.Token); err == nil {
-			signalConfig.Token = decrypted
-		} else {
-			slog.Warn("Failed to decrypt Signal token, using raw value (may be unencrypted legacy value)", "error", err)
+		decrypted, err := crypto.Decrypt(signalConfig.Token)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt notification credential: %w", err)
 		}
+		signalConfig.Token = decrypted
 	}
 
 	message := notifications.BuildImageUpdateNotificationMessage(
@@ -1673,18 +1664,18 @@ func (s *NotificationService) sendSignalContainerUpdateNotification(ctx context.
 
 	// Decrypt sensitive fields if encrypted
 	if signalConfig.Password != "" {
-		if decrypted, err := crypto.Decrypt(signalConfig.Password); err == nil {
-			signalConfig.Password = decrypted
-		} else {
-			slog.Warn("Failed to decrypt Signal password, using raw value (may be unencrypted legacy value)", "error", err)
+		decrypted, err := crypto.Decrypt(signalConfig.Password)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt notification credential: %w", err)
 		}
+		signalConfig.Password = decrypted
 	}
 	if signalConfig.Token != "" {
-		if decrypted, err := crypto.Decrypt(signalConfig.Token); err == nil {
-			signalConfig.Token = decrypted
-		} else {
-			slog.Warn("Failed to decrypt Signal token, using raw value (may be unencrypted legacy value)", "error", err)
+		decrypted, err := crypto.Decrypt(signalConfig.Token)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt notification credential: %w", err)
 		}
+		signalConfig.Token = decrypted
 	}
 
 	message := notifications.BuildContainerUpdateNotificationMessage(
@@ -1725,14 +1716,18 @@ func (s *NotificationService) sendBatchSignalNotification(ctx context.Context, e
 
 	// Decrypt sensitive fields if encrypted
 	if signalConfig.Password != "" {
-		if decrypted, err := crypto.Decrypt(signalConfig.Password); err == nil {
-			signalConfig.Password = decrypted
+		decrypted, err := crypto.Decrypt(signalConfig.Password)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt notification credential: %w", err)
 		}
+		signalConfig.Password = decrypted
 	}
 	if signalConfig.Token != "" {
-		if decrypted, err := crypto.Decrypt(signalConfig.Token); err == nil {
-			signalConfig.Token = decrypted
+		decrypted, err := crypto.Decrypt(signalConfig.Token)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt notification credential: %w", err)
 		}
+		signalConfig.Token = decrypted
 	}
 
 	message := notifications.BuildBatchImageUpdateNotificationMessage(
@@ -1764,11 +1759,11 @@ func (s *NotificationService) sendSlackNotification(ctx context.Context, environ
 
 	// Decrypt token if encrypted
 	if slackConfig.Token != "" {
-		if decrypted, err := crypto.Decrypt(slackConfig.Token); err == nil {
-			slackConfig.Token = decrypted
-		} else {
-			slog.Warn("Failed to decrypt Slack token, using raw value (may be unencrypted legacy value)", "error", err)
+		decrypted, err := crypto.Decrypt(slackConfig.Token)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt notification credential: %w", err)
 		}
+		slackConfig.Token = decrypted
 	}
 
 	message := notifications.BuildImageUpdateNotificationMessage(
@@ -1801,11 +1796,11 @@ func (s *NotificationService) sendSlackContainerUpdateNotification(ctx context.C
 
 	// Decrypt token if encrypted
 	if slackConfig.Token != "" {
-		if decrypted, err := crypto.Decrypt(slackConfig.Token); err == nil {
-			slackConfig.Token = decrypted
-		} else {
-			slog.Warn("Failed to decrypt Slack token, using raw value (may be unencrypted legacy value)", "error", err)
+		decrypted, err := crypto.Decrypt(slackConfig.Token)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt notification credential: %w", err)
 		}
+		slackConfig.Token = decrypted
 	}
 
 	message := notifications.BuildContainerUpdateNotificationMessage(
@@ -1834,8 +1829,12 @@ func (s *NotificationService) sendBatchSlackNotification(ctx context.Context, en
 		return fmt.Errorf("failed to unmarshal slack config: %w", err)
 	}
 
-	// Decrypt token if encrypted
-	if decrypted, err := crypto.Decrypt(slackConfig.Token); err == nil {
+	// Decrypt token
+	if slackConfig.Token != "" {
+		decrypted, err := crypto.Decrypt(slackConfig.Token)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt notification credential: %w", err)
+		}
 		slackConfig.Token = decrypted
 	}
 
@@ -1868,11 +1867,11 @@ func (s *NotificationService) sendNtfyNotification(ctx context.Context, environm
 
 	// Decrypt password if encrypted
 	if ntfyConfig.Password != "" {
-		if decrypted, err := crypto.Decrypt(ntfyConfig.Password); err == nil {
-			ntfyConfig.Password = decrypted
-		} else {
-			slog.Warn("Failed to decrypt Ntfy password, using raw value (may be unencrypted legacy value)", "error", err)
+		decrypted, err := crypto.Decrypt(ntfyConfig.Password)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt notification credential: %w", err)
 		}
+		ntfyConfig.Password = decrypted
 	}
 
 	message := notifications.BuildImageUpdateNotificationMessage(
@@ -1905,11 +1904,11 @@ func (s *NotificationService) sendNtfyContainerUpdateNotification(ctx context.Co
 
 	// Decrypt password if encrypted
 	if ntfyConfig.Password != "" {
-		if decrypted, err := crypto.Decrypt(ntfyConfig.Password); err == nil {
-			ntfyConfig.Password = decrypted
-		} else {
-			slog.Warn("Failed to decrypt Ntfy password, using raw value (may be unencrypted legacy value)", "error", err)
+		decrypted, err := crypto.Decrypt(ntfyConfig.Password)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt notification credential: %w", err)
 		}
+		ntfyConfig.Password = decrypted
 	}
 
 	message := notifications.BuildContainerUpdateNotificationMessage(
@@ -1940,9 +1939,11 @@ func (s *NotificationService) sendBatchNtfyNotification(ctx context.Context, env
 
 	// Decrypt password if encrypted
 	if ntfyConfig.Password != "" {
-		if decrypted, err := crypto.Decrypt(ntfyConfig.Password); err == nil {
-			ntfyConfig.Password = decrypted
+		decrypted, err := crypto.Decrypt(ntfyConfig.Password)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt notification credential: %w", err)
 		}
+		ntfyConfig.Password = decrypted
 	}
 
 	message := notifications.BuildBatchImageUpdateNotificationMessage(
@@ -1976,11 +1977,11 @@ func (s *NotificationService) sendPushoverNotification(ctx context.Context, envi
 	}
 
 	if pushoverConfig.Token != "" {
-		if decrypted, err := crypto.Decrypt(pushoverConfig.Token); err == nil {
-			pushoverConfig.Token = decrypted
-		} else {
-			slog.Warn("Failed to decrypt Pushover token, using raw value (may be unencrypted legacy value)", "error", err)
+		decrypted, err := crypto.Decrypt(pushoverConfig.Token)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt notification credential: %w", err)
 		}
+		pushoverConfig.Token = decrypted
 	}
 
 	message := notifications.BuildImageUpdateNotificationMessage(
@@ -2015,11 +2016,11 @@ func (s *NotificationService) sendPushoverContainerUpdateNotification(ctx contex
 	}
 
 	if pushoverConfig.Token != "" {
-		if decrypted, err := crypto.Decrypt(pushoverConfig.Token); err == nil {
-			pushoverConfig.Token = decrypted
-		} else {
-			slog.Warn("Failed to decrypt Pushover token, using raw value (may be unencrypted legacy value)", "error", err)
+		decrypted, err := crypto.Decrypt(pushoverConfig.Token)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt notification credential: %w", err)
 		}
+		pushoverConfig.Token = decrypted
 	}
 
 	message := notifications.BuildContainerUpdateNotificationMessage(
@@ -2049,9 +2050,11 @@ func (s *NotificationService) sendBatchPushoverNotification(ctx context.Context,
 	}
 
 	if pushoverConfig.Token != "" {
-		if decrypted, err := crypto.Decrypt(pushoverConfig.Token); err == nil {
-			pushoverConfig.Token = decrypted
+		decrypted, err := crypto.Decrypt(pushoverConfig.Token)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt notification credential: %w", err)
 		}
+		pushoverConfig.Token = decrypted
 	}
 
 	message := notifications.BuildBatchImageUpdateNotificationMessage(
@@ -2193,11 +2196,11 @@ func (s *NotificationService) sendEmailVulnerabilityNotification(ctx context.Con
 		}
 	}
 	if emailConfig.SMTPPassword != "" {
-		if decrypted, err := crypto.Decrypt(emailConfig.SMTPPassword); err == nil {
-			emailConfig.SMTPPassword = decrypted
-		} else {
-			slog.Warn("Failed to decrypt email SMTP password, using raw value (may be unencrypted legacy value)", "error", err)
+		decrypted, err := crypto.Decrypt(emailConfig.SMTPPassword)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt notification credential: %w", err)
 		}
+		emailConfig.SMTPPassword = decrypted
 	}
 	htmlBody, _, err := s.renderVulnerabilitySummaryEmailTemplate(environmentName, payload)
 	if err != nil {
@@ -2223,11 +2226,11 @@ func (s *NotificationService) sendDiscordVulnerabilityNotification(ctx context.C
 		return fmt.Errorf("discord webhook ID or token not configured")
 	}
 	if discordConfig.Token != "" {
-		if decrypted, err := crypto.Decrypt(discordConfig.Token); err == nil {
-			discordConfig.Token = decrypted
-		} else {
-			slog.Warn("Failed to decrypt Discord token, using raw value (may be unencrypted legacy value)", "error", err)
+		decrypted, err := crypto.Decrypt(discordConfig.Token)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt notification credential: %w", err)
 		}
+		discordConfig.Token = decrypted
 	}
 	message := notifications.BuildVulnerabilitySummaryNotificationMessage(
 		notifications.MessageFormatMarkdown,
@@ -2260,11 +2263,11 @@ func (s *NotificationService) sendTelegramVulnerabilityNotification(ctx context.
 		return fmt.Errorf("no telegram chat IDs configured")
 	}
 	if telegramConfig.BotToken != "" {
-		if decrypted, err := crypto.Decrypt(telegramConfig.BotToken); err == nil {
-			telegramConfig.BotToken = decrypted
-		} else {
-			slog.Warn("Failed to decrypt Telegram bot token, using raw value (may be unencrypted legacy value)", "error", err)
+		decrypted, err := crypto.Decrypt(telegramConfig.BotToken)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt notification credential: %w", err)
 		}
+		telegramConfig.BotToken = decrypted
 	}
 	if telegramConfig.ParseMode == "" {
 		telegramConfig.ParseMode = "HTML"
@@ -2297,14 +2300,18 @@ func (s *NotificationService) sendSignalVulnerabilityNotification(ctx context.Co
 		return fmt.Errorf("signal not fully configured")
 	}
 	if signalConfig.Password != "" {
-		if decrypted, err := crypto.Decrypt(signalConfig.Password); err == nil {
-			signalConfig.Password = decrypted
+		decrypted, err := crypto.Decrypt(signalConfig.Password)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt notification credential: %w", err)
 		}
+		signalConfig.Password = decrypted
 	}
 	if signalConfig.Token != "" {
-		if decrypted, err := crypto.Decrypt(signalConfig.Token); err == nil {
-			signalConfig.Token = decrypted
+		decrypted, err := crypto.Decrypt(signalConfig.Token)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt notification credential: %w", err)
 		}
+		signalConfig.Token = decrypted
 	}
 	message := notifications.BuildVulnerabilitySummaryNotificationMessage(
 		notifications.MessageFormatPlain,
@@ -2334,11 +2341,11 @@ func (s *NotificationService) sendSlackVulnerabilityNotification(ctx context.Con
 		return fmt.Errorf("slack token not configured")
 	}
 	if slackConfig.Token != "" {
-		if decrypted, err := crypto.Decrypt(slackConfig.Token); err == nil {
-			slackConfig.Token = decrypted
-		} else {
-			slog.Warn("Failed to decrypt Slack token, using raw value (may be unencrypted legacy value)", "error", err)
+		decrypted, err := crypto.Decrypt(slackConfig.Token)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt notification credential: %w", err)
 		}
+		slackConfig.Token = decrypted
 	}
 	message := notifications.BuildVulnerabilitySummaryNotificationMessage(
 		notifications.MessageFormatSlack,
@@ -2368,9 +2375,11 @@ func (s *NotificationService) sendNtfyVulnerabilityNotification(ctx context.Cont
 		return fmt.Errorf("ntfy topic is required")
 	}
 	if ntfyConfig.Password != "" {
-		if decrypted, err := crypto.Decrypt(ntfyConfig.Password); err == nil {
-			ntfyConfig.Password = decrypted
+		decrypted, err := crypto.Decrypt(ntfyConfig.Password)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt notification credential: %w", err)
 		}
+		ntfyConfig.Password = decrypted
 	}
 	message := notifications.BuildVulnerabilitySummaryNotificationMessage(
 		notifications.MessageFormatPlain,
@@ -2400,9 +2409,11 @@ func (s *NotificationService) sendPushoverVulnerabilityNotification(ctx context.
 		return fmt.Errorf("pushover token or user not configured")
 	}
 	if pushoverConfig.Token != "" {
-		if decrypted, err := crypto.Decrypt(pushoverConfig.Token); err == nil {
-			pushoverConfig.Token = decrypted
+		decrypted, err := crypto.Decrypt(pushoverConfig.Token)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt notification credential: %w", err)
 		}
+		pushoverConfig.Token = decrypted
 	}
 	message := notifications.BuildVulnerabilitySummaryNotificationMessage(
 		notifications.MessageFormatPlain,
@@ -2432,9 +2443,11 @@ func (s *NotificationService) sendGotifyVulnerabilityNotification(ctx context.Co
 		return fmt.Errorf("failed to unmarshal Gotify config: %w", err)
 	}
 	if gotifyConfig.Token != "" {
-		if decrypted, err := crypto.Decrypt(gotifyConfig.Token); err == nil {
-			gotifyConfig.Token = decrypted
+		decrypted, err := crypto.Decrypt(gotifyConfig.Token)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt notification credential: %w", err)
 		}
+		gotifyConfig.Token = decrypted
 	}
 	message := notifications.BuildVulnerabilitySummaryNotificationMessage(
 		notifications.MessageFormatPlain,
@@ -2464,9 +2477,11 @@ func (s *NotificationService) sendMatrixVulnerabilityNotification(ctx context.Co
 		return fmt.Errorf("failed to unmarshal Matrix config: %w", err)
 	}
 	if matrixConfig.Password != "" {
-		if decrypted, err := crypto.Decrypt(matrixConfig.Password); err == nil {
-			matrixConfig.Password = decrypted
+		decrypted, err := crypto.Decrypt(matrixConfig.Password)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt notification credential: %w", err)
 		}
+		matrixConfig.Password = decrypted
 	}
 	message := notifications.BuildVulnerabilitySummaryNotificationMessage(
 		notifications.MessageFormatPlain,
@@ -2550,11 +2565,11 @@ func (s *NotificationService) sendGotifyNotification(ctx context.Context, enviro
 	}
 
 	if gotifyConfig.Token != "" {
-		if decrypted, err := crypto.Decrypt(gotifyConfig.Token); err == nil {
-			gotifyConfig.Token = decrypted
-		} else {
-			slog.Warn("Failed to decrypt Gotify token, using raw value (may be unencrypted legacy value)", "error", err)
+		decrypted, err := crypto.Decrypt(gotifyConfig.Token)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt notification credential: %w", err)
 		}
+		gotifyConfig.Token = decrypted
 	}
 
 	message := notifications.BuildImageUpdateNotificationMessage(
@@ -2582,11 +2597,11 @@ func (s *NotificationService) sendGotifyContainerUpdateNotification(ctx context.
 	}
 
 	if gotifyConfig.Token != "" {
-		if decrypted, err := crypto.Decrypt(gotifyConfig.Token); err == nil {
-			gotifyConfig.Token = decrypted
-		} else {
-			slog.Warn("Failed to decrypt Gotify token, using raw value (may be unencrypted legacy value)", "error", err)
+		decrypted, err := crypto.Decrypt(gotifyConfig.Token)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt notification credential: %w", err)
 		}
+		gotifyConfig.Token = decrypted
 	}
 
 	message := notifications.BuildContainerUpdateNotificationMessage(
@@ -2616,9 +2631,11 @@ func (s *NotificationService) sendBatchGotifyNotification(ctx context.Context, e
 	}
 
 	if gotifyConfig.Token != "" {
-		if decrypted, err := crypto.Decrypt(gotifyConfig.Token); err == nil {
-			gotifyConfig.Token = decrypted
+		decrypted, err := crypto.Decrypt(gotifyConfig.Token)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt notification credential: %w", err)
 		}
+		gotifyConfig.Token = decrypted
 	}
 
 	message := notifications.BuildBatchImageUpdateNotificationMessage(
@@ -2645,9 +2662,11 @@ func (s *NotificationService) sendMatrixNotification(ctx context.Context, enviro
 	}
 
 	if matrixConfig.Password != "" {
-		if decrypted, err := crypto.Decrypt(matrixConfig.Password); err == nil {
-			matrixConfig.Password = decrypted
+		decrypted, err := crypto.Decrypt(matrixConfig.Password)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt notification credential: %w", err)
 		}
+		matrixConfig.Password = decrypted
 	}
 
 	message := notifications.BuildImageUpdateNotificationMessage(
@@ -2675,9 +2694,11 @@ func (s *NotificationService) sendMatrixContainerUpdateNotification(ctx context.
 	}
 
 	if matrixConfig.Password != "" {
-		if decrypted, err := crypto.Decrypt(matrixConfig.Password); err == nil {
-			matrixConfig.Password = decrypted
+		decrypted, err := crypto.Decrypt(matrixConfig.Password)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt notification credential: %w", err)
 		}
+		matrixConfig.Password = decrypted
 	}
 
 	message := notifications.BuildContainerUpdateNotificationMessage(
@@ -2707,9 +2728,11 @@ func (s *NotificationService) sendBatchMatrixNotification(ctx context.Context, e
 	}
 
 	if matrixConfig.Password != "" {
-		if decrypted, err := crypto.Decrypt(matrixConfig.Password); err == nil {
-			matrixConfig.Password = decrypted
+		decrypted, err := crypto.Decrypt(matrixConfig.Password)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt notification credential: %w", err)
 		}
+		matrixConfig.Password = decrypted
 	}
 
 	message := notifications.BuildBatchImageUpdateNotificationMessage(
@@ -2722,103 +2745,6 @@ func (s *NotificationService) sendBatchMatrixNotification(ctx context.Context, e
 		return fmt.Errorf("failed to send batch Matrix notification: %w", err)
 	}
 
-	return nil
-}
-
-// MigrateDiscordWebhookUrlToFields migrates legacy Discord webhookUrl to separate webhookId and token fields.
-// This should be called during bootstrap to ensure existing Discord configurations are preserved.
-func (s *NotificationService) MigrateDiscordWebhookUrlToFields(ctx context.Context) error {
-	var setting models.NotificationSettings
-	err := s.db.WithContext(ctx).Where("provider = ?", models.NotificationProviderDiscord).First(&setting).Error
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			// No Discord config exists, nothing to migrate
-			return nil
-		}
-		return fmt.Errorf("failed to query Discord settings: %w", err)
-	}
-
-	var discordConfig models.DiscordConfig
-	configBytes, err := json.Marshal(setting.Config)
-	if err != nil {
-		return fmt.Errorf("failed to marshal Discord config: %w", err)
-	}
-	if err := json.Unmarshal(configBytes, &discordConfig); err != nil {
-		slog.WarnContext(ctx, "Failed to parse Discord config for migration", "error", err)
-		return nil
-	}
-
-	// Check if already migrated (has webhookId and token)
-	if discordConfig.WebhookID != "" && discordConfig.Token != "" {
-		slog.DebugContext(ctx, "Discord config already migrated, skipping")
-		return nil
-	}
-
-	// Check for legacy webhookUrl field
-	var legacyConfig struct {
-		WebhookUrl string                                `json:"webhookUrl"`
-		Username   string                                `json:"username,omitempty"`
-		AvatarURL  string                                `json:"avatarUrl,omitempty"`
-		Events     map[models.NotificationEventType]bool `json:"events,omitempty"`
-	}
-	if err := json.Unmarshal(configBytes, &legacyConfig); err != nil {
-		slog.WarnContext(ctx, "Failed to parse legacy Discord config structure", "error", err)
-		return nil
-	}
-
-	if legacyConfig.WebhookUrl == "" {
-		slog.DebugContext(ctx, "No legacy webhookUrl to migrate")
-		return nil
-	}
-
-	// Parse webhook URL: https://discord.com/api/webhooks/{id}/{token}
-	parts := strings.Split(legacyConfig.WebhookUrl, "/webhooks/")
-	if len(parts) != 2 {
-		slog.WarnContext(ctx, "Invalid Discord webhook URL format, skipping migration", "url", legacyConfig.WebhookUrl)
-		return nil
-	}
-
-	webhookParts := strings.Split(parts[1], "/")
-	if len(webhookParts) != 2 {
-		slog.WarnContext(ctx, "Invalid Discord webhook URL format, skipping migration", "url", legacyConfig.WebhookUrl)
-		return nil
-	}
-
-	webhookID := webhookParts[0]
-	token := webhookParts[1]
-
-	slog.InfoContext(ctx, "Migrating legacy Discord webhookUrl to webhookId and token")
-
-	// Encrypt token before storing
-	encryptedToken, err := crypto.Encrypt(token)
-	if err != nil {
-		return fmt.Errorf("failed to encrypt Discord token: %w", err)
-	}
-
-	// Update with new structure
-	newConfig := models.DiscordConfig{
-		WebhookID: webhookID,
-		Token:     encryptedToken,
-		Username:  legacyConfig.Username,
-		AvatarURL: legacyConfig.AvatarURL,
-		Events:    legacyConfig.Events,
-	}
-
-	var configMap models.JSON
-	newConfigBytes, err := json.Marshal(newConfig)
-	if err != nil {
-		return fmt.Errorf("failed to marshal new Discord config: %w", err)
-	}
-	if err = json.Unmarshal(newConfigBytes, &configMap); err != nil {
-		return fmt.Errorf("failed to unmarshal new Discord config to JSON: %w", err)
-	}
-
-	setting.Config = configMap
-	if err = s.db.WithContext(ctx).Save(&setting).Error; err != nil {
-		return fmt.Errorf("failed to save migrated Discord config: %w", err)
-	}
-
-	slog.InfoContext(ctx, "Successfully migrated Discord config")
 	return nil
 }
 
@@ -2956,7 +2882,9 @@ func (s *NotificationService) sendDiscordPruneNotification(ctx context.Context, 
 		return fmt.Errorf("discord webhook ID or token not configured")
 	}
 
-	s.decryptDiscordTokenInternal(&discordConfig)
+	if err := s.decryptDiscordTokenInternal(&discordConfig); err != nil {
+		return err
+	}
 
 	message := notifications.BuildPruneReportNotificationMessage(notifications.MessageFormatMarkdown, environmentName, result)
 
@@ -2977,7 +2905,9 @@ func (s *NotificationService) sendTelegramPruneNotification(ctx context.Context,
 		return fmt.Errorf("telegram bot token or chat IDs not configured")
 	}
 
-	s.decryptTelegramTokenInternal(&telegramConfig)
+	if err := s.decryptTelegramTokenInternal(&telegramConfig); err != nil {
+		return err
+	}
 
 	message := notifications.BuildPruneReportNotificationMessage(notifications.MessageFormatHTML, environmentName, result)
 
@@ -3002,7 +2932,9 @@ func (s *NotificationService) sendEmailPruneNotification(ctx context.Context, en
 		return err
 	}
 
-	s.decryptEmailPasswordInternal(&emailConfig)
+	if err := s.decryptEmailPasswordInternal(&emailConfig); err != nil {
+		return err
+	}
 
 	htmlBody, _, err := s.renderPruneReportEmailTemplate(environmentName, result)
 	if err != nil {
@@ -3089,11 +3021,11 @@ func (s *NotificationService) sendGotifyPruneNotification(ctx context.Context, e
 		return err
 	}
 	if gotifyConfig.Token != "" {
-		if decrypted, err := crypto.Decrypt(gotifyConfig.Token); err == nil {
-			gotifyConfig.Token = decrypted
-		} else {
-			slog.Warn("Failed to decrypt Gotify token, using raw value (may be unencrypted legacy value)", "error", err)
+		decrypted, err := crypto.Decrypt(gotifyConfig.Token)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt notification credential: %w", err)
 		}
+		gotifyConfig.Token = decrypted
 	}
 
 	message := notifications.BuildPruneReportNotificationMessage(notifications.MessageFormatPlain, environmentName, result)
@@ -3220,7 +3152,9 @@ func (s *NotificationService) sendDiscordAutoHealNotification(ctx context.Contex
 	if discordConfig.WebhookID == "" || discordConfig.Token == "" {
 		return fmt.Errorf("discord webhook ID or token not configured")
 	}
-	s.decryptDiscordTokenInternal(&discordConfig)
+	if err := s.decryptDiscordTokenInternal(&discordConfig); err != nil {
+		return err
+	}
 	message := notifications.BuildAutoHealNotificationMessage(notifications.MessageFormatMarkdown, environmentName, containerName)
 	return notifications.SendDiscord(ctx, discordConfig, message)
 }
@@ -3233,7 +3167,9 @@ func (s *NotificationService) sendEmailAutoHealNotification(ctx context.Context,
 	if err := s.validateEmailConfigInternal(&emailConfig); err != nil {
 		return err
 	}
-	s.decryptEmailPasswordInternal(&emailConfig)
+	if err := s.decryptEmailPasswordInternal(&emailConfig); err != nil {
+		return err
+	}
 	subject := notifications.BuildEmailSubject(environmentName, fmt.Sprintf("Auto Heal: Container '%s' Restarted", containerName))
 	body := fmt.Sprintf(
 		"<p><strong>Environment:</strong> %s</p><p><strong>Container:</strong> %s</p><p>Automatically restarted because it was unhealthy.</p>",
@@ -3251,7 +3187,9 @@ func (s *NotificationService) sendTelegramAutoHealNotification(ctx context.Conte
 	if telegramConfig.BotToken == "" || len(telegramConfig.ChatIDs) == 0 {
 		return fmt.Errorf("telegram bot token or chat IDs not configured")
 	}
-	s.decryptTelegramTokenInternal(&telegramConfig)
+	if err := s.decryptTelegramTokenInternal(&telegramConfig); err != nil {
+		return err
+	}
 	if telegramConfig.ParseMode == "" {
 		telegramConfig.ParseMode = "HTML"
 	}
@@ -3304,11 +3242,11 @@ func (s *NotificationService) sendGotifyAutoHealNotification(ctx context.Context
 		return err
 	}
 	if gotifyConfig.Token != "" {
-		if decrypted, err := crypto.Decrypt(gotifyConfig.Token); err == nil {
-			gotifyConfig.Token = decrypted
-		} else {
-			slog.Warn("Failed to decrypt Gotify token, using raw value (may be unencrypted legacy value)", "error", err)
+		decrypted, err := crypto.Decrypt(gotifyConfig.Token)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt notification credential: %w", err)
 		}
+		gotifyConfig.Token = decrypted
 	}
 	if gotifyConfig.Title == "" {
 		gotifyConfig.Title = notifications.BuildEmailSubject(environmentName, "Auto Heal")
@@ -3358,28 +3296,37 @@ func (s *NotificationService) validateEmailConfigInternal(config *models.EmailCo
 	return nil
 }
 
-func (s *NotificationService) decryptDiscordTokenInternal(config *models.DiscordConfig) {
+func (s *NotificationService) decryptDiscordTokenInternal(config *models.DiscordConfig) error {
 	if config.Token != "" {
-		if decrypted, err := crypto.Decrypt(config.Token); err == nil {
-			config.Token = decrypted
+		decrypted, err := crypto.Decrypt(config.Token)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt notification credential: %w", err)
 		}
+		config.Token = decrypted
 	}
+	return nil
 }
 
-func (s *NotificationService) decryptTelegramTokenInternal(config *models.TelegramConfig) {
+func (s *NotificationService) decryptTelegramTokenInternal(config *models.TelegramConfig) error {
 	if config.BotToken != "" {
-		if decrypted, err := crypto.Decrypt(config.BotToken); err == nil {
-			config.BotToken = decrypted
+		decrypted, err := crypto.Decrypt(config.BotToken)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt notification credential: %w", err)
 		}
+		config.BotToken = decrypted
 	}
+	return nil
 }
 
-func (s *NotificationService) decryptEmailPasswordInternal(config *models.EmailConfig) {
+func (s *NotificationService) decryptEmailPasswordInternal(config *models.EmailConfig) error {
 	if config.SMTPPassword != "" {
-		if decrypted, err := crypto.Decrypt(config.SMTPPassword); err == nil {
-			config.SMTPPassword = decrypted
+		decrypted, err := crypto.Decrypt(config.SMTPPassword)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt notification credential: %w", err)
 		}
+		config.SMTPPassword = decrypted
 	}
+	return nil
 }
 
 func (s *NotificationService) renderTemplatesInternal(name string, data any) (string, string, error) {

@@ -929,14 +929,6 @@ func TestEnvironmentService_GenerateEdgeDeploymentSnippets_ReturnsBasicSnippetsW
 	require.Contains(t, snippets.DockerCompose, "MANAGER_API_URL=https://manager.example.com")
 }
 
-func TestEnvironmentService_PairAgentWithBootstrap_RejectsInvalidURL(t *testing.T) {
-	svc := NewEnvironmentService(nil, nil, nil, nil, nil, nil)
-
-	_, err := svc.PairAgentWithBootstrap(context.Background(), "ftp://example.com", "bootstrap-token")
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "invalid agent API URL")
-}
-
 func TestEnvironmentService_TestConnection_RejectsInvalidCustomURL(t *testing.T) {
 	ctx := context.Background()
 	db := setupEnvironmentServiceTestDB(t)

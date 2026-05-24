@@ -63,8 +63,8 @@ type ListImageVulnerabilitiesInput struct {
 	Order         string `query:"order" doc:"Sort order"`
 	Start         int    `query:"start" doc:"Start offset"`
 	Limit         int    `query:"limit" doc:"Limit"`
-	Page          int    `query:"page" doc:"Page number"`
-	Severity      string `query:"severity" doc:"Comma-separated severity filter"`
+
+	Severity string `query:"severity" doc:"Comma-separated severity filter"`
 }
 
 type ListImageVulnerabilitiesOutput struct {
@@ -86,9 +86,9 @@ type ListAllVulnerabilitiesInput struct {
 	Order         string `query:"order" doc:"Sort order"`
 	Start         int    `query:"start" doc:"Start offset"`
 	Limit         int    `query:"limit" doc:"Limit"`
-	Page          int    `query:"page" doc:"Page number"`
-	Severity      string `query:"severity" doc:"Comma-separated severity filter"`
-	ImageName     string `query:"imageName" doc:"Filter by image/repo name (substring)"`
+
+	Severity  string `query:"severity" doc:"Comma-separated severity filter"`
+	ImageName string `query:"imageName" doc:"Filter by image/repo name (substring)"`
 }
 
 type ListAllVulnerabilitiesOutput struct {
@@ -398,7 +398,7 @@ func (h *VulnerabilityHandler) ListImageVulnerabilities(ctx context.Context, inp
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	params := buildPaginationParamsInternal(input.Page, input.Start, input.Limit, input.Sort, input.Order, input.Search)
+	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	if params.Limit == 0 {
 		params.Limit = 20
 	}
@@ -459,7 +459,7 @@ func (h *VulnerabilityHandler) ListAllVulnerabilities(ctx context.Context, input
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	params := buildPaginationParamsInternal(input.Page, input.Start, input.Limit, input.Sort, input.Order, input.Search)
+	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	if params.Limit == 0 {
 		params.Limit = 20
 	}
@@ -628,7 +628,6 @@ type ListIgnoredVulnerabilitiesInput struct {
 	Order         string `query:"order" doc:"Sort order"`
 	Start         int    `query:"start" doc:"Start offset"`
 	Limit         int    `query:"limit" doc:"Limit"`
-	Page          int    `query:"page" doc:"Page number"`
 }
 
 type ListIgnoredVulnerabilitiesOutput struct {
@@ -641,7 +640,7 @@ func (h *VulnerabilityHandler) ListIgnoredVulnerabilities(ctx context.Context, i
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	params := buildPaginationParamsInternal(input.Page, input.Start, input.Limit, input.Sort, input.Order, input.Search)
+	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	if params.Limit == 0 {
 		params.Limit = 20
 	}
