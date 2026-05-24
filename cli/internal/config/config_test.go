@@ -53,7 +53,7 @@ func TestLoadReturnsDefaultsWhenFileMissing(t *testing.T) {
 	}
 }
 
-func TestSaveAndLoadRoundTripPaginationCompatibility(t *testing.T) {
+func TestSaveAndLoadRoundTripPagination(t *testing.T) {
 	path := setTempConfigPath(t)
 
 	cfg := DefaultConfig()
@@ -75,12 +75,6 @@ func TestSaveAndLoadRoundTripPaginationCompatibility(t *testing.T) {
 	if !strings.Contains(text, "pagination:") {
 		t.Fatalf("expected saved YAML to include pagination block:\n%s", text)
 	}
-	if !strings.Contains(text, "default_limit: 42") {
-		t.Fatalf("expected saved YAML to include legacy default_limit key:\n%s", text)
-	}
-	if !strings.Contains(text, "resource_limits:") {
-		t.Fatalf("expected saved YAML to include legacy resource_limits key:\n%s", text)
-	}
 	if !strings.Contains(text, "cli_update_channel: next") {
 		t.Fatalf("expected saved YAML to include cli_update_channel key:\n%s", text)
 	}
@@ -97,8 +91,8 @@ func TestSaveAndLoadRoundTripPaginationCompatibility(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() failed: %v", err)
 	}
-	if loaded.Pagination.Default.Limit != 42 || loaded.DefaultLimit != 42 {
-		t.Fatalf("default limit mismatch: pagination=%d legacy=%d", loaded.Pagination.Default.Limit, loaded.DefaultLimit)
+	if loaded.Pagination.Default.Limit != 42 {
+		t.Fatalf("default limit mismatch: pagination=%d, want 42", loaded.Pagination.Default.Limit)
 	}
 	if got := loaded.LimitFor("images"); got != 17 {
 		t.Fatalf("images limit=%d, want 17", got)
@@ -108,39 +102,6 @@ func TestSaveAndLoadRoundTripPaginationCompatibility(t *testing.T) {
 	}
 	if loaded.CLIUpdateChannel != "next" {
 		t.Fatalf("CLIUpdateChannel=%q, want next", loaded.CLIUpdateChannel)
-	}
-}
-
-func TestLoadLegacyPaginationKeys(t *testing.T) {
-	path := setTempConfigPath(t)
-	content := `
-server_url: https://arcane.example
-default_environment: "7"
-log_level: warn
-default_limit: 25
-resource_limits:
-  image: 31
-  Volumes: 5
-`
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("failed to write config fixture: %v", err)
-	}
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("Load() failed: %v", err)
-	}
-	if cfg.ServerURL != "https://arcane.example" {
-		t.Fatalf("ServerURL=%q, want %q", cfg.ServerURL, "https://arcane.example")
-	}
-	if cfg.Pagination.Default.Limit != 25 || cfg.DefaultLimit != 25 {
-		t.Fatalf("default limit mismatch: pagination=%d legacy=%d", cfg.Pagination.Default.Limit, cfg.DefaultLimit)
-	}
-	if got := cfg.LimitFor("images"); got != 31 {
-		t.Fatalf("images limit=%d, want 31", got)
-	}
-	if got := cfg.LimitFor("volumes"); got != 5 {
-		t.Fatalf("volumes limit=%d, want 5", got)
 	}
 }
 
@@ -210,8 +171,6 @@ func TestInitDefaultFileCreatesTemplate(t *testing.T) {
 		"default_environment:",
 		"log_level:",
 		"pagination:",
-		"default_limit:",
-		"resource_limits:",
 	}
 	for _, key := range requiredKeys {
 		if !strings.Contains(text, key) {
@@ -230,9 +189,6 @@ func TestInitDefaultFileCreatesTemplate(t *testing.T) {
 	}
 	if cfg.Pagination.Default.Limit != defaultPaginationInitLimit {
 		t.Fatalf("Pagination.Default.Limit=%d, want %d", cfg.Pagination.Default.Limit, defaultPaginationInitLimit)
-	}
-	if cfg.DefaultLimit != defaultPaginationInitLimit {
-		t.Fatalf("DefaultLimit=%d, want %d", cfg.DefaultLimit, defaultPaginationInitLimit)
 	}
 	for _, resource := range []string{"containers", "images", "volumes", "networks", "projects", "environments", "registries", "templates", "users", "events", "apikeys"} {
 		if got := cfg.LimitFor(resource); got != defaultPaginationInitLimit {
