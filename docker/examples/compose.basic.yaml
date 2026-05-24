@@ -7,11 +7,12 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - arcane-data:/app/data
-      - /host/path/to/projects:/app/data/projects
+      - /host/path/to/projects:/host/path/to/projects
       - /host/path/to/builds:/builds
     environment:
       - ENCRYPTION_KEY=replace_me_with_a_random_32_char_value
       - JWT_SECRET=replace_me_with_a_random_32_char_value
+      - PROJECTS_DIRECTORY=/host/path/to/projects
       # Optional: run Arcane as a specific host UID/GID instead of the default runtime user.
       # When using the mounted Docker socket, Arcane will map the socket group automatically.
       # - PUID=1000
@@ -25,8 +26,10 @@ services:
     healthcheck:
       test:
         [
-          "CMD-SHELL",
-          "curl -fsS http://localhost:3552/api/health >/dev/null || exit 1",
+          "CMD",
+          "curl",
+          "-fsS",
+          "http://localhost:3552/api/health",
         ]
       interval: 10s
       timeout: 3s
