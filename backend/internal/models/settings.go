@@ -73,7 +73,7 @@ type Settings struct {
 	SwarmStackSourcesDirectory SettingVariable `key:"swarmStackSourcesDirectory,envOverride" meta:"label=Swarm Stack Sources Directory;type=text;keywords=swarm,stacks,stack,source,sources,directory,path,folder,location,storage,compose,env;category=internal;description=Configure where swarm stack source files are stored"`
 	DiskUsagePath              SettingVariable `key:"diskUsagePath" meta:"label=Disk Usage Path;type=text;keywords=disk,usage,path,storage,folder,files;category=general;description=Path used for disk usage calculations"`
 	BaseServerURL              SettingVariable `key:"baseServerUrl" meta:"label=Base Server URL;type=text;keywords=base,url,server,domain,host,endpoint,address,link;category=general;description=Set the base URL for the application"`
-	EnableGravatar             SettingVariable `key:"enableGravatar" meta:"label=Enable Gravatar;type=boolean;keywords=gravatar,avatar,profile,picture,image,user,photo;category=general;description=Enable Gravatar profile pictures for users"`
+	EnableGravatar             SettingVariable `key:"enableGravatar,authrequired" meta:"label=Enable Gravatar;type=boolean;keywords=gravatar,avatar,profile,picture,image,user,photo;category=general;description=Enable Gravatar profile pictures for users"`
 	DefaultShell               SettingVariable `key:"defaultShell" meta:"label=Default Shell;type=text;keywords=shell,default,shellpath,path,login;category=general;description=Default shell to use for commands"`
 	EnvironmentHealthInterval  SettingVariable `key:"environmentHealthInterval" meta:"label=Environment Health Check Interval;type=cron;keywords=environment,health,check,interval,frequency,heartbeat,status,monitoring,uptime,jobs,schedule;description=How often to check environment connectivity (cron expression)" catmeta:"id=jobschedule;title=Job Schedule;icon=jobs;url=/settings/jobs;description=Configure how often Arcane background jobs run"`
 	ApplicationTheme           SettingVariable `key:"applicationTheme,public,local" meta:"label=Application Theme;type=select;keywords=theme,appearance,style,visual,palette,background,interface,ui;category=appearance;description=Choose the overall visual theme for the application"`
@@ -146,8 +146,7 @@ type Settings struct {
 	OidcJwksEndpoint                SettingVariable `key:"oidcJwksEndpoint,envOverride" meta:"label=OIDC JWKS Endpoint;type=text;keywords=oidc,jwks,keys,endpoint,oauth,openid;category=authentication;description=Override OIDC JWKS endpoint"`
 	OidcDeviceAuthorizationEndpoint SettingVariable `key:"oidcDeviceAuthorizationEndpoint,envOverride" meta:"label=OIDC Device Authorization Endpoint;type=text;keywords=oidc,device,authorization,endpoint,oauth,openid,cli;category=authentication;description=Override OIDC device authorization endpoint for CLI authentication"`
 	OidcScopes                      SettingVariable `key:"oidcScopes,authrequired,envOverride" meta:"label=OIDC Scopes;type=text;keywords=oidc,scopes,oauth,openid,permissions;category=authentication;description=OIDC scopes to request"`
-	OidcAdminClaim                  SettingVariable `key:"oidcAdminClaim,authrequired,envOverride" meta:"label=OIDC Admin Claim;type=text;keywords=oidc,admin,claim,role,group;category=authentication;description=Claim name for admin role mapping"`
-	OidcAdminValue                  SettingVariable `key:"oidcAdminValue,authrequired,envOverride" meta:"label=OIDC Admin Value;type=text;keywords=oidc,admin,value,role,group;category=authentication;description=Claim value that grants admin access"`
+	OidcGroupsClaim                 SettingVariable `key:"oidcGroupsClaim,authrequired,envOverride" meta:"label=OIDC Groups Claim;type=text;keywords=oidc,groups,claim,role,mapping,rbac;category=authentication;description=Claim name to read group memberships from for role mapping (default: groups)"`
 	OidcSkipTlsVerify               SettingVariable `key:"oidcSkipTlsVerify,authrequired,envOverride" meta:"label=OIDC Skip TLS Verify;type=boolean;keywords=oidc,tls,verify,skip,insecure;category=authentication;description=Skip TLS verification for OIDC provider"`
 	OidcAutoRedirectToProvider      SettingVariable `key:"oidcAutoRedirectToProvider,public,envOverride" meta:"label=OIDC Auto Redirect;type=boolean;keywords=oidc,auto,redirect,automatic,login,provider,sso;category=authentication;description=Automatically redirect to OIDC provider on login page"`
 	OidcMergeAccounts               SettingVariable `key:"oidcMergeAccounts,authrequired,envOverride" meta:"label=OIDC Account Merging;type=boolean;keywords=oidc,merge,link,accounts,email,match,existing,users,combine;category=authentication;description=Allow OIDC logins to merge with existing accounts by email"`
@@ -370,13 +369,10 @@ type OidcConfig struct {
 	JwksURI                     string `json:"jwksUri,omitempty"`
 	DeviceAuthorizationEndpoint string `json:"deviceAuthorizationEndpoint,omitempty"`
 
-	// Admin mapping: evaluate this claim to grant admin.
-	// Examples:
-	// - adminClaim: "admin", adminValue: "true"        (boolean or string "true")
-	// - adminClaim: "roles", adminValue: "admin"       (array membership)
-	// - adminClaim: "realm_access.roles", adminValue: "admin" (Keycloak)
-	AdminClaim string `json:"adminClaim,omitempty"`
-	AdminValue string `json:"adminValue,omitempty"`
+	// GroupsClaim is the claim path Arcane reads group memberships from on
+	// every OIDC login. Matched against oidc_role_mappings to produce role
+	// assignments. Default: "groups".
+	GroupsClaim string `json:"groupsClaim,omitempty"`
 
 	SkipTlsVerify bool `json:"skipTlsVerify"`
 }

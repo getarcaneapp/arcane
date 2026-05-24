@@ -9,19 +9,20 @@
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
 	import { m } from '$lib/paraglide/messages';
 	import { swarmService } from '$lib/services/swarm-service';
-	import userStore from '$lib/stores/user-store';
+	import { hasPermission } from '$lib/utils/permissions.util';
+	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import type { SwarmConfigSummary } from '$lib/types/swarm.type';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
 	import { tryCatch } from '$lib/utils/try-catch';
-	import { fromStore } from 'svelte/store';
 	import { toast } from 'svelte-sonner';
 	import { formatDistanceToNow } from 'date-fns';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
+	import IfPermitted from '$lib/components/if-permitted.svelte';
 
 	let {}: PageProps = $props();
 
-	const storeUser = fromStore(userStore);
-	const isAdmin = $derived(!!storeUser.current?.roles?.includes('admin'));
+	const currentEnvId = $derived(environmentStore.selected?.id);
+	const canManageConfigs = $derived(hasPermission('swarm:configs', currentEnvId));
 
 	let configs = $state<SwarmConfigSummary[]>([]);
 	let selectedConfigId = $state('');
@@ -195,13 +196,15 @@
 						placeholder={m.swarm_configs_data_placeholder()}
 						class="font-mono text-xs"
 					/>
-					<ArcaneButton
-						action="create"
-						customLabel={m.swarm_configs_create_button()}
-						onclick={createConfig}
-						disabled={!isAdmin || isLoading.create}
-						loading={isLoading.create}
-					/>
+					<IfPermitted perm="swarm:configs">
+						<ArcaneButton
+							action="create"
+							customLabel={m.swarm_configs_create_button()}
+							onclick={createConfig}
+							disabled={!canManageConfigs || isLoading.create}
+							loading={isLoading.create}
+						/>
+					</IfPermitted>
 				</Card.Content>
 			</Card.Root>
 
@@ -252,7 +255,7 @@
 													customLabel={m.swarm_configs_delete_button()}
 													icon={TrashIcon}
 													onclick={() => removeConfig(config)}
-													disabled={!isAdmin || isLoading.delete}
+													disabled={!canManageConfigs || isLoading.delete}
 													loading={isLoading.delete}
 												/>
 											</div>

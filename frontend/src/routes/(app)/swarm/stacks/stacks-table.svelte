@@ -15,6 +15,7 @@
 	import { tryCatch } from '$lib/utils/try-catch';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
 	import { goto } from '$app/navigation';
+	import IfPermitted from '$lib/components/if-permitted.svelte';
 
 	let {
 		stacks = $bindable(),
@@ -141,10 +142,12 @@
 					{m.common_inspect()}
 				</DropdownMenu.Item>
 				<DropdownMenu.Separator />
-				<DropdownMenu.Item variant="destructive" onclick={() => handleDelete(item)} disabled={isLoading}>
-					<TrashIcon class="size-4" />
-					{m.common_delete()}
-				</DropdownMenu.Item>
+				<IfPermitted perm="swarm:stacks">
+					<DropdownMenu.Item variant="destructive" onclick={() => handleDelete(item)} disabled={isLoading}>
+						<TrashIcon class="size-4" />
+						{m.common_delete()}
+					</DropdownMenu.Item>
+				</IfPermitted>
 			</DropdownMenu.Group>
 		</DropdownMenu.Content>
 	</DropdownMenu.Root>

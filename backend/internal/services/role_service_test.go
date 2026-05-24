@@ -1,0 +1,104 @@
+package services
+
+import (
+	"context"
+	"slices"
+	"testing"
+
+	"github.com/getarcaneapp/arcane/backend/internal/common"
+	"github.com/getarcaneapp/arcane/backend/internal/models"
+	"github.com/getarcaneapp/arcane/backend/pkg/authz"
+	"github.com/stretchr/testify/require"
+)
+
+func TestBackfillPermsForKeyDeduplicatesGlobalAndEnvironmentPermissions(t *testing.T) {
+	ctx := context.Background()
+	userSvc, roleSvc := setupUserAndRoleServices(t)
+	admin := createTestUser(t, userSvc, "admin", "admin")
+	grantGlobalAdmin(t, roleSvc, admin.ID)
+	user := createTestUser(t, userSvc, "api-key-owner", "api-key-owner")
+	envID := "env-1"
+	createTestEnvironment(t, roleSvc.db, envID, "http://localhost:3552", nil)
+
+	require.NoError(t, roleSvc.SetUserAssignments(ctx, user.ID, []models.UserRoleAssignment{
+		{RoleID: authz.BuiltInRoleViewer, EnvironmentID: nil},
+		{RoleID: authz.BuiltInRoleEditor, EnvironmentID: &envID},
+	}))
+
+	perms, err := roleSvc.backfillPermsForKeyInternal(ctx, roleSvc.db.WithContext(ctx), models.ApiKey{
+		UserID:        &user.ID,
+		EnvironmentID: &envID,
+	})
+	require.NoError(t, err)
+	require.Contains(t, perms, authz.PermContainersList)
+	require.Equal(t, 1, countPermissionInternal(perms, authz.PermContainersList))
+}
+
+func countPermissionInternal(perms []string, permission string) int {
+	return len(slices.DeleteFunc(slices.Clone(perms), func(p string) bool {
+		return p != permission
+	}))
+}
+
+func TestValidatePermissionsAgainstCallerRejectsEscalation(t *testing.T) {
+	_, roleSvc := setupUserAndRoleServices(t)
+
+	caller := authz.NewPermissionSet()
+	caller.AddGlobal(authz.PermRolesRead, authz.PermRolesList)
+
+	err := roleSvc.ValidatePermissionsAgainstCaller(caller, []string{
+		authz.PermRolesRead,
+		authz.PermUsersDelete,
+	})
+	require.Error(t, err)
+	require.True(t, common.IsRolePermissionEscalationError(err))
+
+	require.NoError(t, roleSvc.ValidatePermissionsAgainstCaller(caller, []string{authz.PermRolesRead}))
+	require.NoError(t, roleSvc.ValidatePermissionsAgainstCaller(authz.SudoPermissionSet(), []string{authz.PermUsersDelete}))
+}
+
+func TestValidatePermissionsAgainstCallerRejectsEnvOnlyGrantForGlobalRole(t *testing.T) {
+	_, roleSvc := setupUserAndRoleServices(t)
+
+	caller := authz.NewPermissionSet()
+	caller.AddEnv("env-1", authz.PermContainersStart)
+
+	err := roleSvc.ValidatePermissionsAgainstCaller(caller, []string{authz.PermContainersStart})
+	require.Error(t, err)
+	require.True(t, common.IsRolePermissionEscalationError(err))
+}
+
+func TestValidatePermissionsAgainstCallerRejectsUnknownPermissionBeforeEscalation(t *testing.T) {
+	_, roleSvc := setupUserAndRoleServices(t)
+
+	// A sudo caller would otherwise short-circuit past the escalation loop;
+	// unknown perms must still surface as UnknownPermissionError (→ 400),
+	// not as an opaque escalation 403 or a silent pass.
+	err := roleSvc.ValidatePermissionsAgainstCaller(authz.SudoPermissionSet(), []string{"containrs:start"})
+	require.Error(t, err)
+	require.True(t, common.IsUnknownPermissionError(err))
+	require.False(t, common.IsRolePermissionEscalationError(err))
+}
+
+func TestBackfillLegacyRoleAssignmentsIsNoOpWhenColumnAbsent(t *testing.T) {
+	ctx := context.Background()
+	_, roleSvc := setupUserAndRoleServices(t)
+	// setupUserAndRoleServices runs migrations through to current, so
+	// users.roles never exists in the fresh test schema.
+	require.False(t, roleSvc.db.Migrator().HasColumn("users", "roles"))
+	require.NoError(t, roleSvc.BackfillLegacyRoleAssignments(ctx))
+	// Idempotent — second call is also fine.
+	require.NoError(t, roleSvc.BackfillLegacyRoleAssignments(ctx))
+}
+
+func TestSetUserAssignmentsRejectsUnknownRole(t *testing.T) {
+	ctx := context.Background()
+	userSvc, roleSvc := setupUserAndRoleServices(t)
+	user := createTestUser(t, userSvc, "victim", "victim")
+
+	err := roleSvc.SetUserAssignments(ctx, user.ID, []models.UserRoleAssignment{
+		{RoleID: "role_does_not_exist"},
+	})
+	require.Error(t, err)
+	require.True(t, common.IsInvalidRoleAssignmentError(err))
+}

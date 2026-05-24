@@ -47,6 +47,7 @@
 	import type { IncludeFile } from '$lib/types/project.type';
 	import { projectService } from '$lib/services/project-service';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import { hasPermission } from '$lib/utils/permissions.util';
 	let { data } = $props();
 	let container = $derived(data?.container as ContainerDetailsDto);
 	let stats = $state(null as ContainerStatsType | null);
@@ -140,8 +141,11 @@
 	);
 	const showNetworkTab = $derived(hasNetworks || hasPorts);
 	const hasMounts = $derived(!!(container?.mounts && container.mounts.length > 0));
+	const currentEnvId = $derived(environmentStore.selected?.id);
+	const canViewLogs = $derived(hasPermission('containers:logs', currentEnvId));
+	const canExecShell = $derived(hasPermission('containers:exec', currentEnvId));
 	const showStats = $derived(!!container?.state?.running);
-	const showShell = $derived(!!container?.state?.running);
+	const showShell = $derived(!!container?.state?.running && canExecShell);
 	const hasHealthcheck = $derived(
 		!!(container?.config?.healthcheck?.test && container.config.healthcheck.test.length > 0) || !!container?.state?.health
 	);
@@ -213,7 +217,7 @@
 	const tabItems = $derived<TabItem[]>([
 		{ value: 'overview', label: m.common_overview(), icon: ContainersIcon },
 		...(showStats ? [{ value: 'stats', label: m.containers_nav_metrics(), icon: StatsIcon }] : []),
-		{ value: 'logs', label: m.containers_nav_logs(), icon: FileTextIcon },
+		...(canViewLogs ? [{ value: 'logs', label: m.containers_nav_logs(), icon: FileTextIcon }] : []),
 		...(showShell ? [{ value: 'shell', label: m.common_shell(), icon: TerminalIcon }] : []),
 		...(hasHealthcheck ? [{ value: 'healthcheck', label: m.containers_nav_healthcheck(), icon: HealthIcon }] : []),
 		...(showConfiguration ? [{ value: 'config', label: m.common_configuration(), icon: SettingsIcon }] : []),

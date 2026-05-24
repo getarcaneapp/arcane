@@ -173,6 +173,7 @@ type Services struct {
 	Webhook           *services.WebhookService
 	Vulnerability     *services.VulnerabilityService
 	Dashboard         *services.DashboardService
+	Role              *services.RoleService
 	Config            *config.Config
 }
 
@@ -223,7 +224,7 @@ func SetupAPI(e *echo.Echo, apiGroup *echo.Group, cfg *config.Config, svc *Servi
 	api := humaecho.NewWithGroup(e, apiGroup, humaConfig)
 
 	// Add authentication middleware
-	api.UseMiddleware(middleware.NewAuthBridge(api, svc.Auth, svc.ApiKey, svc.Environment, cfg))
+	api.UseMiddleware(middleware.NewAuthBridge(api, svc.Auth, svc.ApiKey, svc.Role, svc.Environment, cfg))
 
 	// Register all Huma handlers
 	registerHandlers(api, svc)
@@ -345,6 +346,7 @@ func registerHandlers(api huma.API, svc *Services) {
 	var webhookSvc *services.WebhookService
 	var vulnerabilitySvc *services.VulnerabilityService
 	var dashboardSvc *services.DashboardService
+	var roleSvc *services.RoleService
 	var cfg *config.Config
 
 	if svc != nil {
@@ -383,18 +385,20 @@ func registerHandlers(api huma.API, svc *Services) {
 		webhookSvc = svc.Webhook
 		vulnerabilitySvc = svc.Vulnerability
 		dashboardSvc = svc.Dashboard
+		roleSvc = svc.Role
 		cfg = svc.Config
 	}
 	handlers.RegisterHealth(api)
 	handlers.RegisterAuth(api, userSvc, authSvc, oidcSvc)
 	handlers.RegisterApiKeys(api, apiKeySvc)
+	handlers.RegisterRoles(api, roleSvc)
 	handlers.RegisterAppImages(api, appImagesSvc)
 	handlers.RegisterFonts(api, fontSvc)
 	handlers.RegisterProjects(api, projectSvc)
 	handlers.RegisterUsers(api, userSvc, authSvc)
 	handlers.RegisterVersion(api, versionSvc)
 	handlers.RegisterEvents(api, eventSvc, apiKeySvc)
-	handlers.RegisterOidc(api, authSvc, oidcSvc, cfg)
+	handlers.RegisterOidc(api, authSvc, oidcSvc, roleSvc, userSvc, cfg)
 	handlers.RegisterEnvironments(api, environmentSvc, settingsSvc, apiKeySvc, eventSvc, cfg)
 	handlers.RegisterContainerRegistries(api, containerRegistrySvc, environmentSvc)
 	handlers.RegisterTemplates(api, templateSvc, environmentSvc)

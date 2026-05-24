@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { navigationItems, getManagementItems } from '$lib/config/navigation-config';
+	import { navigationItems, getManagementItems, filterByPermissions } from '$lib/config/navigation-config';
 	import type { NavigationItem } from '$lib/config/navigation-config';
 	import { cn } from '$lib/utils';
 	import { page } from '$app/state';
@@ -13,6 +13,7 @@
 	import UpdateCenterDialog from '$lib/components/dialogs/update-center-dialog.svelte';
 	import { toast } from 'svelte-sonner';
 	import { extractApiErrorMessage } from '$lib/utils/api.util';
+	import { hasPermission } from '$lib/utils/permissions.util';
 	import type { AppVersionInformation } from '$lib/types/application-configuration';
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
 
@@ -40,13 +41,16 @@
 	const currentPath = $derived(page.url.pathname);
 	const memoizedUser = $derived.by(() => user ?? storeUser);
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
-	const managementItems = $derived(getManagementItems(currentEnvId));
+	const managementItemsRaw = $derived(getManagementItems(currentEnvId));
+	const managementItems = $derived(filterByPermissions(managementItemsRaw, memoizedUser ?? null, currentEnvId));
+	const resourceItems = $derived(filterByPermissions(navigationItems.resourceItems, memoizedUser ?? null, currentEnvId));
+	const settingsItems = $derived(filterByPermissions(navigationItems.settingsItems, memoizedUser ?? null, currentEnvId));
 
 	let upgrading = $state(false);
 	let showConfirmDialog = $state(false);
-	const isAdmin = $derived(!!user?.roles?.includes('admin'));
+	const canInstallUpdates = $derived(hasPermission('environments:update'));
 
-	const shouldCheckUpgrade = $derived(!!(versionInformation?.updateAvailable && isAdmin && !debug));
+	const shouldCheckUpgrade = $derived(!!(versionInformation?.updateAvailable && canInstallUpdates && !debug));
 	const upgradeAvailabilityQuery = createQuery(() => ({
 		queryKey: queryKeys.system.upgradeAvailable('mobile-nav'),
 		queryFn: () => systemUpgradeService.checkUpgradeAvailable(),
@@ -62,7 +66,7 @@
 	const checkingUpgrade = $derived(
 		!!(shouldCheckUpgrade && (upgradeAvailabilityQuery.isPending || upgradeAvailabilityQuery.isFetching))
 	);
-	const shouldShowUpgrade = $derived((canUpgrade && isAdmin) || debug);
+	const shouldShowUpgrade = $derived((canUpgrade && canInstallUpdates) || debug);
 
 	const updateType = $derived.by(() => {
 		if (!versionInformation) return 'none';
@@ -192,7 +196,7 @@
 						{m.sidebar_resources()}
 					</h4>
 					<div class="space-y-2">
-						{#each navigationItems.resourceItems as item (item.url)}
+						{#each resourceItems as item (item.url)}
 							{#if item.items}
 								{@const IconComponent = item.icon}
 								<div class="space-y-2">
@@ -282,53 +286,16 @@
 					</section>
 				{/if}
 
-				{#if isAdmin}
-					{#if navigationItems.settingsItems}
-						<section>
-							<h4 class="text-muted-foreground/70 mb-4 px-3 text-[11px] font-semibold tracking-widest uppercase">
-								{m.sidebar_administration()}
-							</h4>
-							<div class="space-y-2">
-								{#each navigationItems.settingsItems as item (item.url)}
-									{#if item.items}
-										{@const IconComponent = item.icon}
-										<div class="space-y-2">
-											<a
-												href={item.url}
-												onclick={handleItemClick}
-												class={cn(
-													'flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition-all duration-200 ease-out',
-													isActiveItem(item)
-														? 'bg-muted text-foreground hover:bg-muted/70 shadow-sm'
-														: 'text-foreground hover:bg-muted/50'
-												)}
-											>
-												<IconComponent size={20} />
-												<span>{item.title}</span>
-											</a>
-											<div class="ml-6 space-y-1">
-												{#each item.items as subItem (subItem.url)}
-													{@const SubIconComponent = subItem.icon}
-													<a
-														href={subItem.url}
-														onclick={handleItemClick}
-														class={cn(
-															'flex items-center gap-3 rounded-xl px-4 py-2 text-sm transition-all duration-200 ease-out',
-															'focus-visible:ring-muted-foreground/50 hover:scale-[1.01] focus-visible:ring-1 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent',
-															isActiveItem(subItem)
-																? 'bg-muted/70 text-foreground shadow-sm'
-																: 'text-muted-foreground hover:text-foreground hover:bg-muted/40'
-														)}
-														aria-current={isActiveItem(subItem) ? 'page' : undefined}
-													>
-														<SubIconComponent size={16} />
-														<span>{subItem.title}</span>
-													</a>
-												{/each}
-											</div>
-										</div>
-									{:else}
-										{@const IconComponent = item.icon}
+				{#if settingsItems.length > 0}
+					<section>
+						<h4 class="text-muted-foreground/70 mb-4 px-3 text-[11px] font-semibold tracking-widest uppercase">
+							{m.sidebar_administration()}
+						</h4>
+						<div class="space-y-2">
+							{#each settingsItems as item (item.url)}
+								{#if item.items}
+									{@const IconComponent = item.icon}
+									<div class="space-y-2">
 										<a
 											href={item.url}
 											onclick={handleItemClick}
@@ -342,11 +309,46 @@
 											<IconComponent size={20} />
 											<span>{item.title}</span>
 										</a>
-									{/if}
-								{/each}
-							</div>
-						</section>
-					{/if}
+										<div class="ml-6 space-y-1">
+											{#each item.items as subItem (subItem.url)}
+												{@const SubIconComponent = subItem.icon}
+												<a
+													href={subItem.url}
+													onclick={handleItemClick}
+													class={cn(
+														'flex items-center gap-3 rounded-xl px-4 py-2 text-sm transition-all duration-200 ease-out',
+														'focus-visible:ring-muted-foreground/50 hover:scale-[1.01] focus-visible:ring-1 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent',
+														isActiveItem(subItem)
+															? 'bg-muted/70 text-foreground shadow-sm'
+															: 'text-muted-foreground hover:text-foreground hover:bg-muted/40'
+													)}
+													aria-current={isActiveItem(subItem) ? 'page' : undefined}
+												>
+													<SubIconComponent size={16} />
+													<span>{subItem.title}</span>
+												</a>
+											{/each}
+										</div>
+									</div>
+								{:else}
+									{@const IconComponent = item.icon}
+									<a
+										href={item.url}
+										onclick={handleItemClick}
+										class={cn(
+											'flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition-all duration-200 ease-out',
+											isActiveItem(item)
+												? 'bg-muted text-foreground hover:bg-muted/70 shadow-sm'
+												: 'text-foreground hover:bg-muted/50'
+										)}
+									>
+										<IconComponent size={20} />
+										<span>{item.title}</span>
+									</a>
+								{/if}
+							{/each}
+						</div>
+					</section>
 				{/if}
 			</div>
 		</div>

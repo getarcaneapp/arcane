@@ -6,8 +6,10 @@ import (
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
+	humamw "github.com/getarcaneapp/arcane/backend/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
+	"github.com/getarcaneapp/arcane/backend/pkg/authz"
 	"github.com/getarcaneapp/arcane/types/base"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
 	"github.com/getarcaneapp/arcane/types/imageupdate"
@@ -85,6 +87,7 @@ func RegisterImageUpdates(api huma.API, imageUpdateSvc *services.ImageUpdateServ
 		Summary:     "Check image update by reference",
 		Tags:        []string{"Image Updates"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Middlewares: humamw.RequirePermission(api, authz.PermImageUpdatesCheck),
 	}, h.CheckImageUpdate)
 
 	huma.Register(api, huma.Operation{
@@ -94,6 +97,7 @@ func RegisterImageUpdates(api huma.API, imageUpdateSvc *services.ImageUpdateServ
 		Summary:     "Check image update by ID",
 		Tags:        []string{"Image Updates"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Middlewares: humamw.RequirePermission(api, authz.PermImageUpdatesCheck),
 	}, h.CheckImageUpdateByID)
 
 	huma.Register(api, huma.Operation{
@@ -103,6 +107,7 @@ func RegisterImageUpdates(api huma.API, imageUpdateSvc *services.ImageUpdateServ
 		Summary:     "Check image update by ID (POST)",
 		Tags:        []string{"Image Updates"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Middlewares: humamw.RequirePermission(api, authz.PermImageUpdatesCheck),
 	}, h.CheckImageUpdateByID)
 
 	huma.Register(api, huma.Operation{
@@ -112,6 +117,7 @@ func RegisterImageUpdates(api huma.API, imageUpdateSvc *services.ImageUpdateServ
 		Summary:     "Check multiple images",
 		Tags:        []string{"Image Updates"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Middlewares: humamw.RequirePermission(api, authz.PermImageUpdatesCheck),
 	}, h.CheckMultipleImages)
 
 	huma.Register(api, huma.Operation{
@@ -121,6 +127,7 @@ func RegisterImageUpdates(api huma.API, imageUpdateSvc *services.ImageUpdateServ
 		Summary:     "Check all images",
 		Tags:        []string{"Image Updates"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Middlewares: humamw.RequirePermission(api, authz.PermImageUpdatesCheck),
 	}, h.CheckAllImages)
 
 	huma.Register(api, huma.Operation{
@@ -130,6 +137,7 @@ func RegisterImageUpdates(api huma.API, imageUpdateSvc *services.ImageUpdateServ
 		Summary:     "Get persisted update info for image references",
 		Tags:        []string{"Image Updates"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Middlewares: humamw.RequirePermission(api, authz.PermImageUpdatesRead),
 	}, h.GetUpdateInfoByRefs)
 
 	huma.Register(api, huma.Operation{
@@ -139,6 +147,7 @@ func RegisterImageUpdates(api huma.API, imageUpdateSvc *services.ImageUpdateServ
 		Summary:     "Get update summary",
 		Tags:        []string{"Image Updates"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Middlewares: humamw.RequirePermission(api, authz.PermImageUpdatesRead),
 	}, h.GetUpdateSummary)
 }
 

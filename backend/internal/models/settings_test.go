@@ -20,8 +20,7 @@ func TestSettings_ToSettingVariableSlice_Visibility(t *testing.T) {
 		OidcClientId:               SettingVariable{Value: "client-id"},
 		OidcIssuerUrl:              SettingVariable{Value: "https://issuer.example"},
 		OidcScopes:                 SettingVariable{Value: "openid email profile"},
-		OidcAdminClaim:             SettingVariable{Value: "groups"},
-		OidcAdminValue:             SettingVariable{Value: "_arcane_admins"},
+		OidcGroupsClaim:            SettingVariable{Value: "groups"},
 		OidcSkipTlsVerify:          SettingVariable{Value: "false"},
 		OidcMergeAccounts:          SettingVariable{Value: "true"},
 		MobileNavigationMode:       SettingVariable{Value: "floating"},
@@ -48,13 +47,12 @@ func TestSettings_ToSettingVariableSlice_Visibility(t *testing.T) {
 	require.Contains(t, nonAdminKeys, "oidcClientId")
 	require.Contains(t, nonAdminKeys, "oidcIssuerUrl")
 	require.Contains(t, nonAdminKeys, "oidcScopes")
-	require.Contains(t, nonAdminKeys, "oidcAdminClaim")
-	require.Contains(t, nonAdminKeys, "oidcAdminValue")
+	require.Contains(t, nonAdminKeys, "oidcGroupsClaim")
 	require.Contains(t, nonAdminKeys, "oidcSkipTlsVerify")
 	require.Contains(t, nonAdminKeys, "oidcMergeAccounts")
 	require.Contains(t, nonAdminKeys, "mobileNavigationMode")
 	require.Contains(t, nonAdminKeys, "keyboardShortcutsEnabled")
-	require.NotContains(t, nonAdminKeys, "enableGravatar")
+	require.Contains(t, nonAdminKeys, "enableGravatar")
 	require.NotContains(t, nonAdminKeys, "baseServerUrl")
 	require.NotContains(t, nonAdminKeys, "defaultShell")
 	require.NotContains(t, nonAdminKeys, "oidcClientSecret")

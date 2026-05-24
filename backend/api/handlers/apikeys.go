@@ -9,6 +9,7 @@ import (
 	humamw "github.com/getarcaneapp/arcane/backend/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
+	"github.com/getarcaneapp/arcane/backend/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	"github.com/getarcaneapp/arcane/types/apikey"
 	"github.com/getarcaneapp/arcane/types/base"
@@ -90,7 +91,7 @@ func RegisterApiKeys(api huma.API, apiKeyService *services.ApiKeyService) {
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermApiKeysList),
 	}, h.ListApiKeys)
 
 	huma.Register(api, huma.Operation{
@@ -104,7 +105,7 @@ func RegisterApiKeys(api huma.API, apiKeyService *services.ApiKeyService) {
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermApiKeysCreate),
 	}, h.CreateApiKey)
 
 	huma.Register(api, huma.Operation{
@@ -118,7 +119,7 @@ func RegisterApiKeys(api huma.API, apiKeyService *services.ApiKeyService) {
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermApiKeysRead),
 	}, h.GetApiKey)
 
 	huma.Register(api, huma.Operation{
@@ -132,7 +133,7 @@ func RegisterApiKeys(api huma.API, apiKeyService *services.ApiKeyService) {
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermApiKeysUpdate),
 	}, h.UpdateApiKey)
 
 	huma.Register(api, huma.Operation{
@@ -146,7 +147,7 @@ func RegisterApiKeys(api huma.API, apiKeyService *services.ApiKeyService) {
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermApiKeysDelete),
 	}, h.DeleteApiKey)
 }
 
@@ -154,11 +155,6 @@ func RegisterApiKeys(api huma.API, apiKeyService *services.ApiKeyService) {
 func (h *ApiKeyHandler) ListApiKeys(ctx context.Context, input *ListApiKeysInput) (*ListApiKeysOutput, error) {
 	if h.apiKeyService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
-	}
-
-	// Check admin access
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
 	}
 
 	params := pagination.QueryParams{
@@ -206,13 +202,11 @@ func (h *ApiKeyHandler) CreateApiKey(ctx context.Context, input *CreateApiKeyInp
 		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
 	}
 
-	// Check admin access
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
-
 	apiKey, err := h.apiKeyService.CreateApiKey(ctx, user.ID, input.Body)
 	if err != nil {
+		if errors.Is(err, services.ErrApiKeyPermissionEscalation) {
+			return nil, huma.Error403Forbidden(err.Error())
+		}
 		return nil, huma.Error500InternalServerError((&common.ApiKeyCreationError{Err: err}).Error())
 	}
 
@@ -228,11 +222,6 @@ func (h *ApiKeyHandler) CreateApiKey(ctx context.Context, input *CreateApiKeyInp
 func (h *ApiKeyHandler) GetApiKey(ctx context.Context, input *GetApiKeyInput) (*GetApiKeyOutput, error) {
 	if h.apiKeyService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
-	}
-
-	// Check admin access
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
 	}
 
 	apiKey, err := h.apiKeyService.GetApiKey(ctx, input.ID)
@@ -254,18 +243,21 @@ func (h *ApiKeyHandler) UpdateApiKey(ctx context.Context, input *UpdateApiKeyInp
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	// Check admin access
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
+	user, exists := humamw.GetCurrentUserFromContext(ctx)
+	if !exists {
+		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
 	}
 
-	apiKey, err := h.apiKeyService.UpdateApiKey(ctx, input.ID, input.Body)
+	apiKey, err := h.apiKeyService.UpdateApiKey(ctx, user.ID, input.ID, input.Body)
 	if err != nil {
 		if errors.Is(err, services.ErrApiKeyNotFound) {
 			return nil, huma.Error404NotFound((&common.ApiKeyNotFoundError{}).Error())
 		}
 		if errors.Is(err, services.ErrApiKeyProtected) {
 			return nil, huma.Error403Forbidden("static API keys cannot be updated")
+		}
+		if errors.Is(err, services.ErrApiKeyPermissionEscalation) {
+			return nil, huma.Error403Forbidden(err.Error())
 		}
 		return nil, huma.Error500InternalServerError((&common.ApiKeyUpdateError{Err: err}).Error())
 	}
@@ -282,11 +274,6 @@ func (h *ApiKeyHandler) UpdateApiKey(ctx context.Context, input *UpdateApiKeyInp
 func (h *ApiKeyHandler) DeleteApiKey(ctx context.Context, input *DeleteApiKeyInput) (*DeleteApiKeyOutput, error) {
 	if h.apiKeyService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
-	}
-
-	// Check admin access
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
 	}
 
 	if err := h.apiKeyService.DeleteApiKey(ctx, input.ID); err != nil {

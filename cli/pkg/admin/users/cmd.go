@@ -28,14 +28,12 @@ var (
 	userCreatePassword    string
 	userCreateDisplayName string
 	userCreateEmail       string
-	userCreateRoles       []string
 )
 
 var (
 	userUpdateUsername    string
 	userUpdateDisplayName string
 	userUpdateEmail       string
-	userUpdateRoles       []string
 )
 
 // UsersCmd is the parent command for user operations
@@ -43,6 +41,52 @@ var UsersCmd = &cobra.Command{
 	Use:     "users",
 	Aliases: []string{"user", "usr"},
 	Short:   "Manage users",
+	Long: "Manage users. Role assignments are managed separately via " +
+		"`arcane admin roles assign` — the legacy `--role` flag has been " +
+		"removed alongside the binary admin/user model.",
+}
+
+// summarizeRoleAssignments turns a user's role-assignment list into a short
+// human label for the list table — e.g. "Admin (global)", "Editor on 2 envs",
+// or "Admin (global) + 1 more". Returns "—" when the user holds none.
+func summarizeRoleAssignments(assignments []user.RoleAssignmentSummary) string {
+	if len(assignments) == 0 {
+		return "—"
+	}
+	type bucket struct {
+		envScoped int
+		hasGlobal bool
+	}
+	buckets := map[string]*bucket{}
+	order := []string{}
+	for _, a := range assignments {
+		b, ok := buckets[a.RoleID]
+		if !ok {
+			b = &bucket{}
+			buckets[a.RoleID] = b
+			order = append(order, a.RoleID)
+		}
+		if a.EnvironmentID == nil {
+			b.hasGlobal = true
+		} else {
+			b.envScoped++
+		}
+	}
+	parts := make([]string, 0, len(order))
+	for _, roleID := range order {
+		b := buckets[roleID]
+		switch {
+		case b.hasGlobal && b.envScoped == 0:
+			parts = append(parts, fmt.Sprintf("%s (global)", roleID))
+		case b.hasGlobal && b.envScoped > 0:
+			parts = append(parts, fmt.Sprintf("%s (global +%d envs)", roleID, b.envScoped))
+		case b.envScoped == 1:
+			parts = append(parts, fmt.Sprintf("%s on 1 env", roleID))
+		default:
+			parts = append(parts, fmt.Sprintf("%s on %d envs", roleID, b.envScoped))
+		}
+	}
+	return strings.Join(parts, ", ")
 }
 
 var listCmd = &cobra.Command{
@@ -82,7 +126,7 @@ var listCmd = &cobra.Command{
 			return nil
 		}
 
-		headers := []string{"ID", "USERNAME", "DISPLAY NAME", "EMAIL", "ROLES"}
+		headers := []string{"ID", "USERNAME", "DISPLAY NAME", "EMAIL", "ROLE ASSIGNMENTS"}
 		rows := make([][]string, len(result.Data))
 		for i, usr := range result.Data {
 			displayName := ""
@@ -93,13 +137,12 @@ var listCmd = &cobra.Command{
 			if usr.Email != nil {
 				email = *usr.Email
 			}
-			roles := strings.Join(usr.Roles, ", ")
 			rows[i] = []string{
 				usr.ID,
 				usr.Username,
 				displayName,
 				email,
-				roles,
+				summarizeRoleAssignments(usr.RoleAssignments),
 			}
 		}
 
@@ -110,8 +153,11 @@ var listCmd = &cobra.Command{
 }
 
 var createCmd = &cobra.Command{
-	Use:          "create",
-	Short:        "Create a new user",
+	Use:   "create",
+	Short: "Create a new user",
+	Long: "Create a new user. The user is created without any role " +
+		"assignments — grant them via `arcane admin roles assign <userId>` " +
+		"after creation.",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c, err := client.NewFromConfig()
@@ -138,9 +184,6 @@ var createCmd = &cobra.Command{
 		}
 		if cmd.Flags().Changed("email") {
 			req.Email = &userCreateEmail
-		}
-		if cmd.Flags().Changed("role") {
-			req.Roles = userCreateRoles
 		}
 
 		resp, err := c.Post(cmd.Context(), types.Endpoints.Users(), req)
@@ -169,7 +212,7 @@ var createCmd = &cobra.Command{
 		output.Success("User %s created successfully", result.Data.Username)
 		output.KeyValue("ID", result.Data.ID)
 		output.KeyValue("Username", result.Data.Username)
-		output.KeyValue("Roles", strings.Join(result.Data.Roles, ", "))
+		output.Info("No roles assigned. Use `arcane admin roles assign %s --role <roleId>` to grant access.", result.Data.ID)
 		return nil
 	},
 }
@@ -214,15 +257,26 @@ var getCmd = &cobra.Command{
 		if result.Data.Email != nil {
 			output.KeyValue("Email", *result.Data.Email)
 		}
-		output.KeyValue("Roles", strings.Join(result.Data.Roles, ", "))
 		output.KeyValue("Created", result.Data.CreatedAt)
+		output.KeyValue("Role Assignments", summarizeRoleAssignments(result.Data.RoleAssignments))
+		if len(result.Data.RoleAssignments) > 0 {
+			rows := make([][]string, len(result.Data.RoleAssignments))
+			for i, a := range result.Data.RoleAssignments {
+				env := "global"
+				if a.EnvironmentID != nil {
+					env = *a.EnvironmentID
+				}
+				rows[i] = []string{a.RoleID, env, a.Source}
+			}
+			output.Table([]string{"ROLE", "SCOPE", "SOURCE"}, rows)
+		}
 		return nil
 	},
 }
 
 var updateCmd = &cobra.Command{
 	Use:          "update <user-id>",
-	Short:        "Update user",
+	Short:        "Update user profile (role assignments managed separately)",
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -240,9 +294,6 @@ var updateCmd = &cobra.Command{
 		}
 		if cmd.Flags().Changed("email") {
 			req.Email = &userUpdateEmail
-		}
-		if cmd.Flags().Changed("role") {
-			req.Roles = userUpdateRoles
 		}
 
 		resp, err := c.Put(cmd.Context(), types.Endpoints.User(args[0]), req)
@@ -321,7 +372,6 @@ func init() {
 	createCmd.Flags().StringVar(&userCreatePassword, "password", "", "Password (if omitted, will prompt securely)")
 	createCmd.Flags().StringVar(&userCreateDisplayName, "display-name", "", "Display name")
 	createCmd.Flags().StringVar(&userCreateEmail, "email", "", "Email address")
-	createCmd.Flags().StringArrayVar(&userCreateRoles, "role", nil, "User role")
 	createCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	_ = createCmd.MarkFlagRequired("username")
 
@@ -330,7 +380,6 @@ func init() {
 	updateCmd.Flags().StringVar(&userUpdateUsername, "username", "", "New username")
 	updateCmd.Flags().StringVar(&userUpdateDisplayName, "display-name", "", "Display name")
 	updateCmd.Flags().StringVar(&userUpdateEmail, "email", "", "Email address")
-	updateCmd.Flags().StringArrayVar(&userUpdateRoles, "role", nil, "User role")
 	updateCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 
 	deleteCmd.Flags().BoolVarP(&forceFlag, "force", "f", false, "Force deletion without confirmation")
