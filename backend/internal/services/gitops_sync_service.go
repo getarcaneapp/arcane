@@ -1132,6 +1132,9 @@ func (s *GitOpsSyncService) stageDirectorySyncInternal(ctx context.Context, sync
 			_ = os.RemoveAll(stagePath)
 			return nil, fmt.Errorf("failed to stage current project files: %w", err)
 		}
+	} else if err := s.seedStageEnvFromCandidateDirInternal(ctx, sync, projectsDir, stagePath); err != nil {
+		_ = os.RemoveAll(stagePath)
+		return nil, err
 	}
 
 	syncedFiles := make([]string, len(syncFiles))
@@ -1183,6 +1186,88 @@ func (s *GitOpsSyncService) stageDirectorySyncInternal(ctx context.Context, sync
 		serviceCount:    serviceCount,
 		contentsChanged: contentsChanged,
 	}, nil
+}
+
+// seedStageEnvFromCandidateDirInternal copies env files from a pre-existing project
+// directory at the conventional path (projectsDir/<sanitized-sync-name>/) into the
+// staging directory before initial-sync validation. This lets users pre-seed
+// ${VAR} substitutions via a server-side .env when the compose file in git
+// expects values that the git repo intentionally does not provide. Only env
+// files are touched — other files would conflict with what WriteSyncedDirectory
+// is about to lay down from git.
+func (s *GitOpsSyncService) seedStageEnvFromCandidateDirInternal(ctx context.Context, sync *models.GitOpsSync, projectsDir, stagePath string) error {
+	candidatePath := filepath.Join(projectsDir, projects.SanitizeProjectName(sync.ProjectName))
+	info, err := os.Stat(candidatePath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("inspect pre-existing project directory %s: %w", candidatePath, err)
+	}
+	if !info.IsDir() {
+		return nil
+	}
+
+	readOptional := func(name string) (string, bool, error) {
+		content, readErr := os.ReadFile(filepath.Join(candidatePath, name))
+		if readErr == nil {
+			return string(content), true, nil
+		}
+		if errors.Is(readErr, os.ErrNotExist) {
+			return "", false, nil
+		}
+		return "", false, fmt.Errorf("read %s from %s: %w", name, candidatePath, readErr)
+	}
+
+	effective, hasEffective, err := readOptional(projects.EffectiveEnvFileName)
+	if err != nil {
+		return err
+	}
+	gitSource, hasGit, err := readOptional(projects.GitSourceEnvFileName)
+	if err != nil {
+		return err
+	}
+	override, hasOverride, err := readOptional(projects.OverrideEnvFileName)
+	if err != nil {
+		return err
+	}
+	if !hasEffective && !hasGit && !hasOverride {
+		return nil
+	}
+
+	if hasGit {
+		if err := projects.WriteProjectFile(projectsDir, stagePath, projects.GitSourceEnvFileName, gitSource); err != nil {
+			return fmt.Errorf("seed stage .env.git: %w", err)
+		}
+	}
+	if hasOverride {
+		if err := projects.WriteProjectFile(projectsDir, stagePath, projects.OverrideEnvFileName, override); err != nil {
+			return fmt.Errorf("seed stage project.env: %w", err)
+		}
+	}
+
+	switch {
+	case hasEffective:
+		if err := projects.WriteEnvFile(projectsDir, stagePath, effective); err != nil {
+			return fmt.Errorf("seed stage .env: %w", err)
+		}
+	case hasGit || hasOverride:
+		merged, mergeErr := projects.BuildEffectiveEnvContent(gitSource, override)
+		if mergeErr != nil {
+			return fmt.Errorf("build effective env from pre-existing project: %w", mergeErr)
+		}
+		if err := projects.WriteEnvFile(projectsDir, stagePath, merged); err != nil {
+			return fmt.Errorf("seed stage .env: %w", err)
+		}
+	}
+
+	slog.DebugContext(ctx, "Seeded GitOps stage with pre-existing project env files",
+		"candidatePath", candidatePath,
+		"hasEffective", hasEffective,
+		"hasGit", hasGit,
+		"hasOverride", hasOverride,
+	)
+	return nil
 }
 
 func (s *GitOpsSyncService) lookupProjectByIDInternal(ctx context.Context, projectID string) (*models.Project, bool, error) {
