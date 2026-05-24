@@ -10,12 +10,12 @@ name: Hadolint
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
     # The branches below must be a subset of the branches above
-    branches: [ "main" ]
+    branches: ["main"]
   schedule:
-    - cron: '24 19 * * 2'
+    - cron: "24 19 * * 2"
 
 permissions:
   contents: read
@@ -28,6 +28,16 @@ jobs:
       contents: read # for actions/checkout to fetch code
       security-events: write # for github/codeql-action/upload-sarif to upload SARIF results
       actions: read # only required for a private repository by github/codeql-action/upload-sarif to get the Action run status
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: manager
+            dockerfile: ./docker/Dockerfile
+            output: hadolint-results-manager.sarif
+          - name: agent
+            dockerfile: ./docker/Dockerfile-agent
+            output: hadolint-results-agent.sarif
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -35,13 +45,14 @@ jobs:
       - name: Run hadolint
         uses: hadolint/hadolint-action@2332a7b74a6de0dda2e2221d575162eba76ba5e5
         with:
-          dockerfile: ./docker/Dockerfile
+          dockerfile: ${{ matrix.dockerfile }}
           format: sarif
-          output-file: hadolint-results.sarif
+          output-file: ${{ matrix.output }}
           no-fail: true
 
       - name: Upload analysis results to GitHub
         uses: github/codeql-action/upload-sarif@v4.36.1
         with:
-          sarif_file: hadolint-results.sarif
+          sarif_file: ${{ matrix.output }}
+          category: hadolint-${{ matrix.name }}
           wait-for-processing: true

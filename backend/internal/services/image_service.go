@@ -570,11 +570,6 @@ func (s *ImageService) GetUpdateInfoByImageRefs(ctx context.Context, imageRefs [
 }
 
 func (s *ImageService) ListImagesPaginated(ctx context.Context, params pagination.QueryParams) ([]imagetypes.Summary, pagination.Response, error) {
-	dockerClient, err := s.dockerService.GetClient(ctx)
-	if err != nil {
-		return nil, pagination.Response{}, fmt.Errorf("failed to connect to Docker: %w", err)
-	}
-
 	var (
 		dockerImages  []image.Summary
 		containers    []container.Summary
@@ -586,22 +581,22 @@ func (s *ImageService) ListImagesPaginated(ctx context.Context, params paginatio
 	// Fetch Docker images
 	g.Go(func() error {
 		var err error
-		imageList, err := dockerClient.ImageList(groupCtx, client.ImageListOptions{})
+		imageList, err := s.dockerService.listImagesInternal(groupCtx)
 		if err != nil {
 			return fmt.Errorf("failed to list Docker images: %w", err)
 		}
-		dockerImages = imageList.Items
+		dockerImages = imageList
 		return nil
 	})
 
 	// Fetch containers to determine usage
 	g.Go(func() error {
 		var err error
-		containerList, err := dockerClient.ContainerList(groupCtx, client.ContainerListOptions{All: true})
+		containerList, err := s.dockerService.listContainersInternal(groupCtx)
 		if err != nil {
 			return fmt.Errorf("failed to list containers: %w", err)
 		}
-		containers = containerList.Items
+		containers = containerList
 		return nil
 	})
 
@@ -744,18 +739,13 @@ func convertLabels(labels map[string]string) map[string]any {
 }
 
 func (s *ImageService) GetTotalImageSize(ctx context.Context) (int64, error) {
-	dockerClient, err := s.dockerService.GetClient(ctx)
-	if err != nil {
-		return 0, fmt.Errorf("failed to connect to Docker: %w", err)
-	}
-
-	imageList, err := dockerClient.ImageList(ctx, client.ImageListOptions{})
+	images, err := s.dockerService.listImagesInternal(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("failed to list images: %w", err)
 	}
 
 	var total int64
-	for _, img := range imageList.Items {
+	for _, img := range images {
 		total += img.Size
 	}
 

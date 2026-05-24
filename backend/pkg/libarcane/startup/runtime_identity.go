@@ -17,6 +17,8 @@ const (
 	defaultDatabaseURL      = "file:data/arcane.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(2500)&_txlock=immediate"
 	defaultDockerConfigDir  = "/app/data/.docker"
 	defaultDockerSocketPath = "/var/run/docker.sock"
+	defaultRuntimeUID       = 65532
+	defaultRuntimeGID       = 65532
 	mountInfoPath           = "/proc/self/mountinfo"
 )
 
@@ -65,8 +67,7 @@ func ApplyRequestedRuntimeIdentity(ctx context.Context, cfg *RuntimeIdentityConf
 	runtimeUID := req.UID
 	runtimeGID := req.GID
 
-	// Avoid re-execing forever when the requested runtime identity is already active,
-	// including explicit root requests such as PUID=0/PGID=0.
+	// Avoid re-execing forever when the requested runtime identity is already active.
 	if os.Geteuid() == runtimeUID && os.Getegid() == runtimeGID {
 		if err := ensureRuntimeDockerConfigInternal(cfg, os.Setenv, runtimeUID, runtimeGID); err != nil {
 			return err
@@ -108,11 +109,11 @@ func loadRuntimeIdentityRequestInternal(cfg *RuntimeIdentityConfig) (runtimeIden
 	pgid := strings.TrimSpace(cfg.PGID)
 
 	if puid == "" && pgid == "" {
-		return runtimeIdentityRequest{}, "", nil
+		return defaultRuntimeIdentityRequestInternal(cfg.DockerHost), "", nil
 	}
 
 	if puid == "" || pgid == "" {
-		return runtimeIdentityRequest{}, "PUID and PGID must both be set to enable non-root mode; continuing with default runtime user", nil
+		return defaultRuntimeIdentityRequestInternal(cfg.DockerHost), "PUID and PGID must both be set to override the default non-root runtime user; continuing with the default non-root runtime user", nil
 	}
 
 	uid, credentialUID, err := parseRuntimeIdentityValueInternal(puid, "PUID")
@@ -133,6 +134,17 @@ func loadRuntimeIdentityRequestInternal(cfg *RuntimeIdentityConfig) (runtimeIden
 		CredentialGID: credentialGID,
 		DockerHost:    cfg.DockerHost,
 	}, "", nil
+}
+
+func defaultRuntimeIdentityRequestInternal(dockerHost string) runtimeIdentityRequest {
+	return runtimeIdentityRequest{
+		Enabled:       true,
+		UID:           defaultRuntimeUID,
+		GID:           defaultRuntimeGID,
+		CredentialUID: uint32(defaultRuntimeUID),
+		CredentialGID: uint32(defaultRuntimeGID),
+		DockerHost:    dockerHost,
+	}
 }
 
 func runtimeDockerConfigDirInternal(cfg *RuntimeIdentityConfig) string {
@@ -257,6 +269,9 @@ func prepareWritablePathsWithRootsInternal(uid int, gid int, mountpoints map[str
 	for _, entry := range entries {
 		entryPath := filepath.Join(dataDirectory, entry.Name())
 		if _, mounted := mountpoints[entryPath]; mounted {
+			if err := os.Lchown(entryPath, uid, gid); err != nil {
+				return fmt.Errorf("chown mounted %s: %w", entryPath, err)
+			}
 			continue
 		}
 		if projectsDir != "" && filepath.Clean(entryPath) == projectsDir {
@@ -271,6 +286,9 @@ func prepareWritablePathsWithRootsInternal(uid int, gid int, mountpoints map[str
 	}
 
 	if _, mounted := mountpoints[buildsDirectory]; mounted {
+		if err := os.Lchown(buildsDirectory, uid, gid); err != nil {
+			return fmt.Errorf("chown mounted builds directory: %w", err)
+		}
 		return nil
 	}
 
