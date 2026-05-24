@@ -250,7 +250,7 @@ func (h *GitRepositoryHandler) ListRepositories(ctx context.Context, input *List
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	params := buildPaginationParamsInternal(0, input.Start, input.Limit, input.Sort, input.Order, input.Search)
+	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 
 	repositories, paginationResp, err := h.repoService.GetRepositoriesPaginated(ctx, params)
 	if err != nil {

@@ -77,13 +77,6 @@ func TestGenerate_SettingEnvOverridesMatchModelMetadata(t *testing.T) {
 	assert.Equal(t, "arcane-mobile://oidc-callback", oidcMobileRedirectURIs.DefaultValue)
 	assert.Equal(t, "authentication", oidcMobileRedirectURIs.Category)
 
-	legacyOIDC, ok := entries["authOidcConfig"]
-	require.True(t, ok)
-	assert.True(t, legacyOIDC.Deprecated)
-	assert.NotEmpty(t, legacyOIDC.Note)
-	assert.Contains(t, legacyOIDC.Requires, "AGENT_MODE=true")
-	assert.Empty(t, legacyOIDC.DefaultValue)
-
 	trivyImage, ok := entries["trivyImage"]
 	require.True(t, ok)
 	assert.Contains(t, trivyImage.Requires, "UI_CONFIGURATION_DISABLED=true")
@@ -272,7 +265,6 @@ var expectedSettingOverrideKeys = []string{
 	"accentColor",
 	"applicationTheme",
 	"authLocalEnabled",
-	"authOidcConfig",
 	"authPasswordPolicy",
 	"authSessionTimeout",
 	"autoHealEnabled",
@@ -345,13 +337,8 @@ var expectedSettingOverrideKeys = []string{
 	"pruneNetworkUntil",
 	"pruneVolumeMode",
 	"registryTimeout",
-	"scheduledPruneBuildCache",
-	"scheduledPruneContainers",
 	"scheduledPruneEnabled",
-	"scheduledPruneImages",
 	"scheduledPruneInterval",
-	"scheduledPruneNetworks",
-	"scheduledPruneVolumes",
 	"sidebarHoverExpansion",
 	"swarmStackSourcesDirectory",
 	"templatesDirectory",

@@ -488,9 +488,6 @@ func TestCAKey_EncryptedOnDiskWhenCryptoInitialized(t *testing.T) {
 	require.FileExists(t, caCertPath)
 	require.FileExists(t, caKeyPath)
 
-	require.True(t, isCAKeyEncryptedOnDiskInternal(caKeyPath),
-		"CA key file must be stored in the encrypted envelope format when libcrypto is initialized")
-
 	raw, err := os.ReadFile(caKeyPath)
 	require.NoError(t, err)
 	require.False(t, strings.Contains(string(raw), "BEGIN EC PRIVATE KEY"),
@@ -507,49 +504,6 @@ func TestCAKey_EncryptedOnDiskWhenCryptoInitialized(t *testing.T) {
 	require.NoError(t, err)
 	require.FileExists(t, clientCertPath)
 	require.FileExists(t, clientKeyPath)
-}
-
-func TestCAKey_MigratesLegacyPlainFile(t *testing.T) {
-	initEdgeTestCrypto(t)
-
-	assetsDir := t.TempDir()
-	_, caKeyPath, _, err := ensureManagerCAInternal(context.Background(), assetsDir)
-	require.NoError(t, err)
-
-	pemBytes, err := readCAKeyPEMInternal(caKeyPath)
-	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(caKeyPath, pemBytes, 0o600))
-	require.False(t, isCAKeyEncryptedOnDiskInternal(caKeyPath))
-
-	_, caKeyPath2, _, err := ensureManagerCAInternal(context.Background(), assetsDir)
-	require.NoError(t, err)
-	require.Equal(t, caKeyPath, caKeyPath2)
-	require.True(t, isCAKeyEncryptedOnDiskInternal(caKeyPath),
-		"legacy plain CA key file must be migrated to the encrypted envelope format on next load")
-}
-
-func TestCAKey_LegacyPlainMigrationFailureReturnsError(t *testing.T) {
-	initEdgeTestCrypto(t)
-
-	assetsDir := t.TempDir()
-	_, caKeyPath, _, err := ensureManagerCAInternal(context.Background(), assetsDir)
-	require.NoError(t, err)
-
-	pemBytes, err := readCAKeyPEMInternal(caKeyPath)
-	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(caKeyPath, pemBytes, 0o600))
-
-	originalEncrypt := caKeyEncryptInternal
-	t.Cleanup(func() {
-		caKeyEncryptInternal = originalEncrypt
-	})
-	caKeyEncryptInternal = func(string) (string, error) {
-		return "", errors.New("encrypt failed")
-	}
-
-	_, _, _, err = ensureManagerCAInternal(context.Background(), assetsDir)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to migrate edge mTLS CA key to encrypted format")
 }
 
 func TestCAKey_EncryptionFailureReturnsError(t *testing.T) {

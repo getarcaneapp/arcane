@@ -190,13 +190,6 @@ const readOnlyJsonSmokeCommands: JsonSmokeCommand[] = [
 		expectation: expectPaginated
 	},
 	{
-		name: 'admin notifications apprise get',
-		args: ['admin', 'notifications', 'apprise', 'get', '--json'],
-		expectation: (value) => {
-			expect(value).toEqual(expect.objectContaining({ enabled: expect.any(Boolean) }));
-		}
-	},
-	{
 		name: 'admin notifications settings get',
 		args: ['admin', 'notifications', 'settings', 'get', '--json'],
 		expectation: (value) => {

@@ -229,7 +229,7 @@ func (h *ContainerRegistryHandler) ListRegistries(ctx context.Context, input *Li
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	params := buildPaginationParamsInternal(0, input.Start, input.Limit, input.Sort, input.Order, input.Search)
+	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 
 	registries, paginationResp, err := h.registryService.GetRegistriesPaginated(ctx, params)
 	if err != nil {

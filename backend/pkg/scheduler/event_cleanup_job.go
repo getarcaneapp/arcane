@@ -2,9 +2,7 @@ package scheduler
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
-	"strconv"
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/internal/services"
@@ -33,18 +31,6 @@ func (j *EventCleanupJob) Schedule(ctx context.Context) string {
 	if s == "" {
 		return "0 0 */6 * * *"
 	}
-
-	// Handle legacy straight int if it somehow didn't get migrated
-	if i, err := strconv.Atoi(s); err == nil {
-		if i <= 0 {
-			i = 360
-		}
-		if i%60 == 0 {
-			return fmt.Sprintf("0 0 */%d * * *", i/60)
-		}
-		return fmt.Sprintf("0 */%d * * * *", i)
-	}
-
 	return s
 }
 

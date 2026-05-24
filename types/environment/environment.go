@@ -23,11 +23,6 @@ type Create struct {
 	// Required: false
 	AccessToken *string `json:"accessToken,omitempty"` //nolint:gosec // API schema requires accessToken field name
 
-	// BootstrapToken for initial setup of the environment.
-	//
-	// Required: false
-	BootstrapToken *string `json:"bootstrapToken,omitempty"`
-
 	// UseApiKey indicates if an API key should be generated for pairing.
 	//
 	// Required: false
@@ -59,11 +54,6 @@ type Update struct {
 	//
 	// Required: false
 	AccessToken *string `json:"accessToken,omitempty"` //nolint:gosec // API schema requires accessToken field name
-
-	// BootstrapToken for initial setup of the environment.
-	//
-	// Required: false
-	BootstrapToken *string `json:"bootstrapToken,omitempty"`
 
 	// RegenerateApiKey indicates whether to regenerate the API key.
 	//

@@ -1,5 +1,4 @@
 <script lang="ts">
-	import * as Alert from '$lib/components/ui/alert';
 	import * as Tabs from '$lib/components/ui/tabs';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
@@ -21,7 +20,6 @@
 		type GotifyFormValues,
 		type MatrixFormValues,
 		type GenericFormValues,
-		type AppriseFormValues,
 		type NotificationProviderKey,
 		NOTIFICATION_PROVIDER_KEYS,
 		discordSettingsToFormValues,
@@ -34,7 +32,6 @@
 		gotifySettingsToFormValues,
 		matrixSettingsToFormValues,
 		genericSettingsToFormValues,
-		appriseSettingsToFormValues,
 		discordFormValuesToSettings,
 		emailFormValuesToSettings,
 		telegramFormValuesToSettings,
@@ -44,11 +41,10 @@
 		pushoverFormValuesToSettings,
 		gotifyFormValuesToSettings,
 		matrixFormValuesToSettings,
-		genericFormValuesToSettings,
-		appriseFormValuesToSettings
+		genericFormValuesToSettings
 	} from '$lib/types/notification-providers';
 	import { NotificationsIcon } from '$lib/icons';
-	import { BuiltInProviderForm, AppriseProviderForm } from './providers';
+	import { BuiltInProviderForm } from './providers';
 
 	let { data } = $props();
 
@@ -57,7 +53,6 @@
 	let isTesting = $state(false);
 	let showUnsavedDialog = $state(false);
 	let pendingTestAction: (() => Promise<void>) | null = $state(null);
-	let notificationsTab = $state<'built-in' | 'apprise'>('built-in');
 	let providerTab = $state<NotificationProviderKey>('email');
 
 	const isReadOnly = $derived.by(() => $settingsStore.uiConfigDisabled);
@@ -107,7 +102,6 @@
 	let gotifyValues = $state<GotifyFormValues>(gotifySettingsToFormValues());
 	let matrixValues = $state<MatrixFormValues>(matrixSettingsToFormValues());
 	let genericValues = $state<GenericFormValues>(genericSettingsToFormValues());
-	let appriseValues = $state<AppriseFormValues>(appriseSettingsToFormValues());
 
 	// Baseline values - what was last saved (for change detection)
 	let emailBaseline = $state<EmailFormValues>(emailSettingsToFormValues());
@@ -120,7 +114,6 @@
 	let gotifyBaseline = $state<GotifyFormValues>(gotifySettingsToFormValues());
 	let matrixBaseline = $state<MatrixFormValues>(matrixSettingsToFormValues());
 	let genericBaseline = $state<GenericFormValues>(genericSettingsToFormValues());
-	let appriseBaseline = $state<AppriseFormValues>(appriseSettingsToFormValues());
 
 	// Change detection
 	const emailHasChanges = $derived(JSON.stringify(emailValues) !== JSON.stringify(emailBaseline));
@@ -133,7 +126,6 @@
 	const gotifyHasChanges = $derived(JSON.stringify(gotifyValues) !== JSON.stringify(gotifyBaseline));
 	const matrixHasChanges = $derived(JSON.stringify(matrixValues) !== JSON.stringify(matrixBaseline));
 	const genericHasChanges = $derived(JSON.stringify(genericValues) !== JSON.stringify(genericBaseline));
-	const appriseHasChanges = $derived(JSON.stringify(appriseValues) !== JSON.stringify(appriseBaseline));
 	const hasChanges = $derived(
 		emailHasChanges ||
 			discordHasChanges ||
@@ -144,8 +136,7 @@
 			pushoverHasChanges ||
 			gotifyHasChanges ||
 			matrixHasChanges ||
-			genericHasChanges ||
-			appriseHasChanges
+			genericHasChanges
 	);
 
 	// Sync with settings form context
@@ -196,15 +187,6 @@
 
 		genericValues = genericSettingsToFormValues(savedSettings.generic ?? undefined);
 		genericBaseline = { ...genericValues };
-
-		// Load Apprise settings
-		try {
-			const settings = await notificationService.getAppriseSettings();
-			appriseValues = appriseSettingsToFormValues(settings);
-			appriseBaseline = { ...appriseValues };
-		} catch {
-			// Apprise not configured yet, keep defaults
-		}
 	});
 
 	async function onSubmit() {
@@ -373,18 +355,6 @@
 				}
 			}
 
-			// Save Apprise settings if changed
-			if (appriseHasChanges) {
-				try {
-					const settings = appriseFormValuesToSettings(appriseValues);
-					await notificationService.updateAppriseSettings(settings);
-					appriseBaseline = { ...appriseValues };
-				} catch (error: any) {
-					const errorMsg = error?.response?.data?.error || error.message || m.common_unknown();
-					errors.push(m.notifications_saved_failed({ provider: 'Apprise', error: errorMsg }));
-				}
-			}
-
 			if (errors.length === 0) {
 				toast.success(m.general_settings_saved());
 			} else {
@@ -409,7 +379,6 @@
 		gotifyValues = { ...gotifyBaseline };
 		matrixValues = { ...matrixBaseline };
 		genericValues = { ...genericBaseline };
-		appriseValues = { ...appriseBaseline };
 	}
 
 	async function testNotification(provider: NotificationProviderKey, testType: string = 'simple') {
@@ -426,28 +395,6 @@
 		try {
 			await notificationService.testNotification(provider, testType);
 			toast.success(m.notifications_test_success({ provider: provider.charAt(0).toUpperCase() + provider.slice(1) }));
-		} catch (error: any) {
-			const errorMsg = error?.response?.data?.error || error.message || m.common_unknown();
-			toast.error(m.notifications_test_failed({ error: errorMsg }));
-		} finally {
-			isTesting = false;
-		}
-	}
-
-	async function testAppriseNotification(testType: string = 'simple') {
-		if (hasChanges) {
-			pendingTestAction = () => executeAppriseTest(testType);
-			showUnsavedDialog = true;
-			return;
-		}
-		await executeAppriseTest(testType);
-	}
-
-	async function executeAppriseTest(testType: string = 'simple') {
-		isTesting = true;
-		try {
-			await notificationService.testAppriseNotification(testType);
-			toast.success(m.notifications_test_success({ provider: 'Apprise' }));
 		} catch (error: any) {
 			const errorMsg = error?.response?.data?.error || error.message || m.common_unknown();
 			toast.error(m.notifications_test_failed({ error: errorMsg }));
@@ -475,146 +422,123 @@
 >
 	{#snippet mainContent()}
 		<fieldset disabled={isReadOnly} class="relative w-full min-w-0">
-			<Tabs.Root bind:value={notificationsTab}>
-				<Tabs.List class="inline-flex w-auto">
-					<Tabs.Trigger value="built-in">{m.notifications_tab_built_in()}</Tabs.Trigger>
-					<Tabs.Trigger value="apprise">{m.notifications_tab_apprise()}</Tabs.Trigger>
+			<Tabs.Root bind:value={providerTab} class="flex min-h-0 w-full min-w-0 flex-col">
+				<Tabs.List class="scrollbar-hide flex w-full max-w-full justify-start gap-4 overflow-x-auto">
+					{#each NOTIFICATION_PROVIDER_KEYS as provider (provider)}
+						<Tabs.Trigger value={provider} class="shrink-0">
+							{provider.charAt(0).toUpperCase() + provider.slice(1)}
+						</Tabs.Trigger>
+					{/each}
 				</Tabs.List>
 
-				<Tabs.Content value="built-in" class="mt-4 sm:mt-6">
-					<div class="space-y-8">
-						<Tabs.Root bind:value={providerTab} class="flex min-h-0 w-full min-w-0 flex-col">
-							<Tabs.List class="scrollbar-hide flex w-full max-w-full justify-start gap-4 overflow-x-auto">
-								{#each NOTIFICATION_PROVIDER_KEYS as provider (provider)}
-									<Tabs.Trigger value={provider} class="shrink-0">
-										{provider.charAt(0).toUpperCase() + provider.slice(1)}
-									</Tabs.Trigger>
-								{/each}
-							</Tabs.List>
-
-							<Tabs.Content value="email" class="mt-4 space-y-4">
-								<BuiltInProviderForm
-									bind:this={emailFormRef}
-									provider="email"
-									bind:values={emailValues}
-									disabled={isReadOnly}
-									{isTesting}
-									onTest={(testType) => testNotification('email', testType)}
-								/>
-							</Tabs.Content>
-
-							<Tabs.Content value="discord" class="mt-4 space-y-4">
-								<BuiltInProviderForm
-									bind:this={discordFormRef}
-									provider="discord"
-									bind:values={discordValues}
-									disabled={isReadOnly}
-									{isTesting}
-									onTest={(testType) => testNotification('discord', testType)}
-								/>
-							</Tabs.Content>
-
-							<Tabs.Content value="telegram" class="mt-4 space-y-4">
-								<BuiltInProviderForm
-									bind:this={telegramFormRef}
-									provider="telegram"
-									bind:values={telegramValues}
-									disabled={isReadOnly}
-									{isTesting}
-									onTest={(testType) => testNotification('telegram', testType)}
-								/>
-							</Tabs.Content>
-
-							<Tabs.Content value="signal" class="mt-4 space-y-4">
-								<BuiltInProviderForm
-									bind:this={signalFormRef}
-									provider="signal"
-									bind:values={signalValues}
-									disabled={isReadOnly}
-									{isTesting}
-									onTest={(testType) => testNotification('signal', testType)}
-								/>
-							</Tabs.Content>
-
-							<Tabs.Content value="slack" class="mt-4 space-y-4">
-								<BuiltInProviderForm
-									bind:this={slackFormRef}
-									provider="slack"
-									bind:values={slackValues}
-									disabled={isReadOnly}
-									{isTesting}
-									onTest={(testType) => testNotification('slack', testType)}
-								/>
-							</Tabs.Content>
-
-							<Tabs.Content value="ntfy" class="mt-4 space-y-4">
-								<BuiltInProviderForm
-									bind:this={ntfyFormRef}
-									provider="ntfy"
-									bind:values={ntfyValues}
-									disabled={isReadOnly}
-									{isTesting}
-									onTest={(testType) => testNotification('ntfy', testType)}
-								/>
-							</Tabs.Content>
-
-							<Tabs.Content value="pushover" class="mt-4 space-y-4">
-								<BuiltInProviderForm
-									bind:this={pushoverFormRef}
-									provider="pushover"
-									bind:values={pushoverValues}
-									disabled={isReadOnly}
-									{isTesting}
-									onTest={(testType) => testNotification('pushover', testType)}
-								/>
-							</Tabs.Content>
-
-							<Tabs.Content value="gotify" class="mt-4 space-y-4">
-								<BuiltInProviderForm
-									bind:this={gotifyFormRef}
-									provider="gotify"
-									bind:values={gotifyValues}
-									disabled={isReadOnly}
-									{isTesting}
-									onTest={(testType) => testNotification('gotify', testType)}
-								/>
-							</Tabs.Content>
-
-							<Tabs.Content value="matrix" class="mt-4 space-y-4">
-								<BuiltInProviderForm
-									bind:this={matrixFormRef}
-									provider="matrix"
-									bind:values={matrixValues}
-									disabled={isReadOnly}
-									{isTesting}
-									onTest={(testType) => testNotification('matrix', testType)}
-								/>
-							</Tabs.Content>
-
-							<Tabs.Content value="generic" class="mt-4 space-y-4">
-								<BuiltInProviderForm
-									bind:this={genericFormRef}
-									provider="generic"
-									bind:values={genericValues}
-									disabled={isReadOnly}
-									{isTesting}
-									onTest={(testType) => testNotification('generic', testType)}
-								/>
-							</Tabs.Content>
-						</Tabs.Root>
-					</div>
+				<Tabs.Content value="email" class="mt-4 space-y-4">
+					<BuiltInProviderForm
+						bind:this={emailFormRef}
+						provider="email"
+						bind:values={emailValues}
+						disabled={isReadOnly}
+						{isTesting}
+						onTest={(testType) => testNotification('email', testType)}
+					/>
 				</Tabs.Content>
 
-				<Tabs.Content value="apprise" class="mt-4 space-y-4 sm:mt-6 sm:space-y-6">
-					<Alert.Root variant="default" class="border-yellow-500/50 bg-yellow-500/10 text-yellow-600 dark:text-yellow-400">
-						<Alert.Title>Deprecated</Alert.Title>
-						<Alert.Description>
-							Apprise support is deprecated and will be removed in a future release. Please migrate to the built-in notification
-							providers.
-						</Alert.Description>
-					</Alert.Root>
+				<Tabs.Content value="discord" class="mt-4 space-y-4">
+					<BuiltInProviderForm
+						bind:this={discordFormRef}
+						provider="discord"
+						bind:values={discordValues}
+						disabled={isReadOnly}
+						{isTesting}
+						onTest={(testType) => testNotification('discord', testType)}
+					/>
+				</Tabs.Content>
 
-					<AppriseProviderForm bind:values={appriseValues} disabled={isReadOnly} {isTesting} onTest={testAppriseNotification} />
+				<Tabs.Content value="telegram" class="mt-4 space-y-4">
+					<BuiltInProviderForm
+						bind:this={telegramFormRef}
+						provider="telegram"
+						bind:values={telegramValues}
+						disabled={isReadOnly}
+						{isTesting}
+						onTest={(testType) => testNotification('telegram', testType)}
+					/>
+				</Tabs.Content>
+
+				<Tabs.Content value="signal" class="mt-4 space-y-4">
+					<BuiltInProviderForm
+						bind:this={signalFormRef}
+						provider="signal"
+						bind:values={signalValues}
+						disabled={isReadOnly}
+						{isTesting}
+						onTest={(testType) => testNotification('signal', testType)}
+					/>
+				</Tabs.Content>
+
+				<Tabs.Content value="slack" class="mt-4 space-y-4">
+					<BuiltInProviderForm
+						bind:this={slackFormRef}
+						provider="slack"
+						bind:values={slackValues}
+						disabled={isReadOnly}
+						{isTesting}
+						onTest={(testType) => testNotification('slack', testType)}
+					/>
+				</Tabs.Content>
+
+				<Tabs.Content value="ntfy" class="mt-4 space-y-4">
+					<BuiltInProviderForm
+						bind:this={ntfyFormRef}
+						provider="ntfy"
+						bind:values={ntfyValues}
+						disabled={isReadOnly}
+						{isTesting}
+						onTest={(testType) => testNotification('ntfy', testType)}
+					/>
+				</Tabs.Content>
+
+				<Tabs.Content value="pushover" class="mt-4 space-y-4">
+					<BuiltInProviderForm
+						bind:this={pushoverFormRef}
+						provider="pushover"
+						bind:values={pushoverValues}
+						disabled={isReadOnly}
+						{isTesting}
+						onTest={(testType) => testNotification('pushover', testType)}
+					/>
+				</Tabs.Content>
+
+				<Tabs.Content value="gotify" class="mt-4 space-y-4">
+					<BuiltInProviderForm
+						bind:this={gotifyFormRef}
+						provider="gotify"
+						bind:values={gotifyValues}
+						disabled={isReadOnly}
+						{isTesting}
+						onTest={(testType) => testNotification('gotify', testType)}
+					/>
+				</Tabs.Content>
+
+				<Tabs.Content value="matrix" class="mt-4 space-y-4">
+					<BuiltInProviderForm
+						bind:this={matrixFormRef}
+						provider="matrix"
+						bind:values={matrixValues}
+						disabled={isReadOnly}
+						{isTesting}
+						onTest={(testType) => testNotification('matrix', testType)}
+					/>
+				</Tabs.Content>
+
+				<Tabs.Content value="generic" class="mt-4 space-y-4">
+					<BuiltInProviderForm
+						bind:this={genericFormRef}
+						provider="generic"
+						bind:values={genericValues}
+						disabled={isReadOnly}
+						{isTesting}
+						onTest={(testType) => testNotification('generic', testType)}
+					/>
 				</Tabs.Content>
 			</Tabs.Root>
 		</fieldset>

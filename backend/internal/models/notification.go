@@ -209,17 +209,3 @@ type GenericConfig struct {
 	// checked (existing behaviour).
 	SuccessBodyContains string `json:"successBodyContains,omitempty"`
 }
-
-type AppriseSettings struct {
-	ID                 uint      `json:"id" gorm:"primaryKey"`
-	APIURL             string    `json:"apiUrl" gorm:"not null"`
-	Enabled            bool      `json:"enabled" gorm:"default:false"`
-	ImageUpdateTag     string    `json:"imageUpdateTag" gorm:"type:varchar(255)"`
-	ContainerUpdateTag string    `json:"containerUpdateTag" gorm:"type:varchar(255)"`
-	CreatedAt          time.Time `json:"createdAt"`
-	UpdatedAt          time.Time `json:"updatedAt"`
-}
-
-func (AppriseSettings) TableName() string {
-	return "apprise_settings"
-}
