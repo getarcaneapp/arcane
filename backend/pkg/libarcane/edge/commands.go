@@ -144,9 +144,6 @@ var commandRoutes = []commandRoute{
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/notifications/settings", CommandName: "notification.settings.upsert"},
 	{Method: http.MethodDelete, PathPattern: "/api/environments/{id}/notifications/settings/{provider}", CommandName: "notification.settings.delete"},
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/notifications/test/{provider}", CommandName: "notification.test"},
-	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/notifications/apprise", CommandName: "notification.apprise.get"},
-	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/notifications/apprise", CommandName: "notification.apprise.upsert"},
-	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/notifications/apprise/test", CommandName: "notification.apprise.test"},
 
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/dashboard", CommandName: "dashboard.snapshot"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/dashboard/action-items", CommandName: "dashboard.action_items"},

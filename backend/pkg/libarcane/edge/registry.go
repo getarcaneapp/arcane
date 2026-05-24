@@ -122,9 +122,8 @@ func (r *TunnelRegistry) RegisterSession(tunnel *AgentTunnel, staleAfter time.Du
 
 		existingStale := staleAfter > 0 && time.Since(existing.GetLastHeartbeat()) > staleAfter
 		sameAgentInstance := existing.AgentInstance != "" && tunnel.AgentInstance != "" && existing.AgentInstance == tunnel.AgentInstance
-		legacyReplace := existing.AgentInstance == "" || tunnel.AgentInstance == ""
 
-		if existing.Conn == nil || existing.Conn.IsClosed() || existingStale || sameAgentInstance || legacyReplace {
+		if existing.Conn == nil || existing.Conn.IsClosed() || existingStale || sameAgentInstance {
 			if sameAgentInstance {
 				drainPrevious = true
 			}
