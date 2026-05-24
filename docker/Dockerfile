@@ -1,5 +1,6 @@
 # syntax=docker/dockerfile:1
 ARG BUILD_TAGS=""
+ARG ARCANE_RUNTIME_BASE_IMAGE=ghcr.io/getarcaneapp/base:trixie
 
 # Stage 1: Build Frontend
 FROM --platform=$BUILDPLATFORM node:25-trixie-slim AS frontend-builder
@@ -64,15 +65,12 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     -o /build/arcane \
     ./cmd/main.go
 
-# Stage 3: Production Image
-FROM debian:trixie-slim AS runner
+# Stage 3: Hardened Production Image
+FROM ${ARCANE_RUNTIME_BASE_IMAGE} AS runner-hardened
+
 ARG TARGETARCH
 ARG VERSION
 ARG REVISION
-
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl tzdata tar gzip libdrm2 \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 ENV GIN_MODE=release
 ENV PORT=3552
@@ -86,7 +84,10 @@ ENV NVIDIA_VISIBLE_DEVICES=all \
 
 
 WORKDIR /app
-RUN mkdir -p /app/data /builds
+
+USER 0:0
+RUN mkdir -p /app/data /builds \
+  && chown -R 65532:65532 /app /builds
 COPY --from=backend-builder /build/arcane .
 EXPOSE 3552
 VOLUME ["/app/data"]
