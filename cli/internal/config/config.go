@@ -68,35 +68,8 @@ func normalizeConfig(cfg *types.Config) *types.Config {
 		return DefaultConfig()
 	}
 
-	if normalized.Pagination.Default.Limit <= 0 && normalized.DefaultLimit > 0 {
-		normalized.Pagination.Default.Limit = normalized.DefaultLimit
-	}
-	if normalized.DefaultLimit <= 0 && normalized.Pagination.Default.Limit > 0 {
-		normalized.DefaultLimit = normalized.Pagination.Default.Limit
-	}
-
 	if normalized.Pagination.Resources == nil {
 		normalized.Pagination.Resources = make(map[string]types.PaginationResourceConfig)
-	}
-	if normalized.ResourceLimits == nil {
-		normalized.ResourceLimits = make(map[string]int)
-	}
-
-	for resource, limit := range normalized.ResourceLimits {
-		resource = types.NormalizePaginatedResource(resource)
-		if resource == "" || limit <= 0 {
-			continue
-		}
-		if _, exists := normalized.Pagination.Resources[resource]; !exists {
-			normalized.Pagination.Resources[resource] = types.PaginationResourceConfig{Limit: limit}
-		}
-	}
-	for resource, cfg := range normalized.Pagination.Resources {
-		resource = types.NormalizePaginatedResource(resource)
-		if resource == "" || cfg.Limit <= 0 {
-			continue
-		}
-		normalized.ResourceLimits[resource] = cfg.Limit
 	}
 
 	return normalized
@@ -278,24 +251,6 @@ func Save(c *types.Config) error {
 		v.Set(fmt.Sprintf("pagination.resources.%s.limit", resource), rc.Limit)
 	}
 
-	// Legacy keys retained for backward compatibility.
-	if cfg.DefaultLimit > 0 {
-		v.Set("default_limit", cfg.DefaultLimit)
-	}
-	if len(cfg.ResourceLimits) > 0 {
-		legacy := make(map[string]int)
-		for resource, limit := range cfg.ResourceLimits {
-			resource = types.NormalizePaginatedResource(resource)
-			if resource == "" || limit <= 0 {
-				continue
-			}
-			legacy[resource] = limit
-		}
-		if len(legacy) > 0 {
-			v.Set("resource_limits", legacy)
-		}
-	}
-
 	if err := v.WriteConfigAs(path); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
@@ -352,13 +307,6 @@ func InitDefaultFile() (bool, error) {
 	for _, resource := range types.KnownPaginatedResources {
 		v.Set(fmt.Sprintf("pagination.resources.%s.limit", resource), defaultPaginationInitLimit)
 	}
-
-	v.Set("default_limit", defaultPaginationInitLimit)
-	legacy := make(map[string]int, len(types.KnownPaginatedResources))
-	for _, resource := range types.KnownPaginatedResources {
-		legacy[resource] = defaultPaginationInitLimit
-	}
-	v.Set("resource_limits", legacy)
 
 	if err := v.WriteConfigAs(path); err != nil {
 		return false, fmt.Errorf("failed to write config file: %w", err)

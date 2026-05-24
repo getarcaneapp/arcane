@@ -208,7 +208,6 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services)
 		Port:              appServices.Port,
 		Swarm:             appServices.Swarm,
 		Notification:      appServices.Notification,
-		Apprise:           appServices.Apprise,
 		Updater:           appServices.Updater,
 		CustomizeSearch:   appServices.CustomizeSearch,
 		System:            appServices.System,

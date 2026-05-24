@@ -1,4 +1,4 @@
-import type { NotificationSettings, AppriseSettings, EmailTLSMode, EmailAuthMode } from './notification.type';
+import type { NotificationSettings, EmailTLSMode, EmailAuthMode } from './notification.type';
 
 // Provider keys - this is the source of truth for all providers (alphabetically sorted)
 export const NOTIFICATION_PROVIDER_KEYS = [
@@ -122,13 +122,6 @@ export interface GenericFormValues extends BaseProviderFormValues {
 	titleKey: string;
 	messageKey: string;
 	customHeaders: string;
-}
-
-export interface AppriseFormValues {
-	enabled: boolean;
-	apiUrl: string;
-	imageUpdateTag: string;
-	containerUpdateTag: string;
 }
 
 // Map provider keys to their form value types
@@ -276,15 +269,6 @@ export function slackSettingsToFormValues(settings?: NotificationSettings): Slac
 		channel: getString(cfg, 'channel'),
 		threadTs: getString(cfg, 'threadTs'),
 		...eventFlagsToFormValues(events)
-	};
-}
-
-export function appriseSettingsToFormValues(settings?: AppriseSettings): AppriseFormValues {
-	return {
-		enabled: settings?.enabled ?? false,
-		apiUrl: settings?.apiUrl || '',
-		imageUpdateTag: settings?.imageUpdateTag || '',
-		containerUpdateTag: settings?.containerUpdateTag || ''
 	};
 }
 
@@ -632,14 +616,5 @@ export function genericFormValuesToSettings(values: GenericFormValues): Notifica
 				auto_heal: values.eventAutoHeal
 			}
 		}
-	};
-}
-
-export function appriseFormValuesToSettings(values: AppriseFormValues): AppriseSettings {
-	return {
-		enabled: values.enabled,
-		apiUrl: values.apiUrl,
-		imageUpdateTag: values.imageUpdateTag,
-		containerUpdateTag: values.containerUpdateTag
 	};
 }

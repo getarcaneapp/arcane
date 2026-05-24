@@ -94,10 +94,6 @@ type Config struct {
 	CLIUpdateChannel string `yaml:"cli_update_channel,omitempty" mapstructure:"cli_update_channel"`
 	// Pagination contains global and per-resource pagination configuration.
 	Pagination PaginationConfig `yaml:"pagination,omitempty" mapstructure:"pagination"`
-	// DefaultLimit is a legacy global default list limit for paginated resources.
-	DefaultLimit int `yaml:"default_limit,omitempty" mapstructure:"default_limit"`
-	// ResourceLimits is a legacy map of per-resource list limits.
-	ResourceLimits map[string]int `yaml:"resource_limits,omitempty" mapstructure:"resource_limits"`
 }
 
 // HasAuth returns true if either an API key or JWT token is configured.
@@ -140,10 +136,6 @@ func (c *Config) Clone() *Config {
 		return nil
 	}
 	out := *c
-	if c.ResourceLimits != nil {
-		out.ResourceLimits = make(map[string]int, len(c.ResourceLimits))
-		maps.Copy(out.ResourceLimits, c.ResourceLimits)
-	}
 	if c.Pagination.Resources != nil {
 		out.Pagination.Resources = make(map[string]PaginationResourceConfig, len(c.Pagination.Resources))
 		maps.Copy(out.Pagination.Resources, c.Pagination.Resources)
@@ -151,7 +143,7 @@ func (c *Config) Clone() *Config {
 	return &out
 }
 
-// LimitFor returns the configured limit for a resource, falling back to DefaultLimit.
+// LimitFor returns the configured limit for a resource, falling back to the global default.
 func (c *Config) LimitFor(resource string) int {
 	if c == nil {
 		return 0
@@ -165,16 +157,6 @@ func (c *Config) LimitFor(resource string) int {
 	if c.Pagination.Default.Limit > 0 {
 		return c.Pagination.Default.Limit
 	}
-
-	// Backward-compatibility with legacy keys.
-	if resource != "" && c.ResourceLimits != nil {
-		if v, ok := c.ResourceLimits[resource]; ok && v > 0 {
-			return v
-		}
-	}
-	if c.DefaultLimit > 0 {
-		return c.DefaultLimit
-	}
 	return 0
 }
 
@@ -184,8 +166,6 @@ func (c *Config) SetDefaultLimit(limit int) {
 		return
 	}
 	c.Pagination.Default.Limit = limit
-	// Keep legacy field in sync for compatibility.
-	c.DefaultLimit = limit
 }
 
 // SetResourceLimit configures per-resource pagination defaults.
@@ -200,15 +180,9 @@ func (c *Config) SetResourceLimit(resource string, limit int) {
 	if c.Pagination.Resources == nil {
 		c.Pagination.Resources = make(map[string]PaginationResourceConfig)
 	}
-	if c.ResourceLimits == nil {
-		c.ResourceLimits = make(map[string]int)
-	}
 	if limit <= 0 {
 		delete(c.Pagination.Resources, resource)
-		delete(c.ResourceLimits, resource)
 		return
 	}
 	c.Pagination.Resources[resource] = PaginationResourceConfig{Limit: limit}
-	// Keep legacy field in sync for compatibility.
-	c.ResourceLimits[resource] = limit
 }

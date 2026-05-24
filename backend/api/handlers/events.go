@@ -156,7 +156,7 @@ func (h *EventHandler) ListEvents(ctx context.Context, input *ListEventsInput) (
 		return nil, err
 	}
 
-	params := buildPaginationParamsInternal(0, input.Start, input.Limit, input.Sort, input.Order, input.Search)
+	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 
 	if input.Severity != "" {
 		params.Filters["severity"] = input.Severity
@@ -199,7 +199,7 @@ func (h *EventHandler) GetEventsByEnvironment(ctx context.Context, input *GetEve
 		return nil, huma.Error400BadRequest((&common.EnvironmentIDRequiredError{}).Error())
 	}
 
-	params := buildPaginationParamsInternal(0, input.Start, input.Limit, input.Sort, input.Order, input.Search)
+	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 
 	if input.Severity != "" {
 		params.Filters["severity"] = input.Severity

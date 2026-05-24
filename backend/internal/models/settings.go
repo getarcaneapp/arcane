@@ -1,7 +1,6 @@
 package models
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -13,8 +12,7 @@ import (
 )
 
 const (
-	redactionMask     = "XXXXXXXXXX"
-	keyAuthOidcConfig = "authOidcConfig"
+	redactionMask = "XXXXXXXXXX"
 )
 
 type SettingVariable struct {
@@ -92,22 +90,10 @@ type Settings struct {
 	EventCleanupInterval           SettingVariable `key:"eventCleanupInterval" meta:"label=Event Cleanup Interval;type=cron;keywords=events,cleanup,retention,interval,frequency,schedule,history,logs,jobs;description=How often to delete old events (cron expression)"`
 	ExpiredSessionsCleanupInterval SettingVariable `key:"expiredSessionsCleanupInterval" meta:"label=Expired Sessions Cleanup Interval;type=cron;keywords=sessions,cleanup,retention,expired,revoked,interval,frequency,schedule,auth,jobs;description=How often to delete expired and old revoked sessions (cron expression)"`
 	AutoInjectEnv                  SettingVariable `key:"autoInjectEnv" meta:"label=Auto Inject Env Variables;type=boolean;keywords=auto,inject,env,environment,variables,interpolation;category=internal;description=Automatically inject project .env variables into all containers (default: false)"`
-	// Deprecated: Use the granular prune mode settings instead.
-	PruneMode               SettingVariable `key:"dockerPruneMode,internal,deprecated" meta:"label=Legacy Docker Prune Action;type=select;keywords=prune,cleanup,clean,remove,delete,unused,dangling,space,disk,legacy;category=internal;description=Legacy prune mode retained for compatibility and migration"`
-	DefaultDeployPullPolicy SettingVariable `key:"defaultDeployPullPolicy" meta:"label=Default Deploy Pull Policy;type=select;keywords=deploy,pull,policy,compose,up,missing,always;category=internal;description=Default image pull policy when deploying projects"`
-	ScheduledPruneEnabled   SettingVariable `key:"scheduledPruneEnabled" meta:"label=Scheduled Prune Enabled;type=boolean;keywords=prune,cleanup,maintenance,schedule,automatic;category=internal;description=Enable scheduled pruning of unused Docker resources"`
-	ScheduledPruneInterval  SettingVariable `key:"scheduledPruneInterval" meta:"label=Scheduled Prune Interval;type=cron;keywords=prune,cleanup,interval,minutes,schedule;category=internal;description=How often to run scheduled prunes (cron expression)"`
-	GitopsSyncInterval      SettingVariable `key:"gitopsSyncInterval" meta:"label=GitOps Sync Interval;type=cron;keywords=gitops,sync,interval,frequency,schedule,repository;category=internal;description=How often to run GitOps synchronization checks (cron expression)"`
-	// Deprecated: Use pruneContainerMode instead.
-	ScheduledPruneContainers SettingVariable `key:"scheduledPruneContainers,deprecated" meta:"label=Legacy Scheduled Prune Containers;type=boolean;keywords=prune,containers,cleanup,maintenance,legacy;category=internal;description=Legacy boolean container prune flag retained for migration compatibility"`
-	// Deprecated: Use pruneImageMode instead.
-	ScheduledPruneImages SettingVariable `key:"scheduledPruneImages,deprecated" meta:"label=Legacy Scheduled Prune Images;type=boolean;keywords=prune,images,cleanup,maintenance,legacy;category=internal;description=Legacy boolean image prune flag retained for migration compatibility"`
-	// Deprecated: Use pruneVolumeMode instead.
-	ScheduledPruneVolumes SettingVariable `key:"scheduledPruneVolumes,deprecated" meta:"label=Legacy Scheduled Prune Volumes;type=boolean;keywords=prune,volumes,cleanup,maintenance,legacy;category=internal;description=Legacy boolean volume prune flag retained for migration compatibility"`
-	// Deprecated: Use pruneNetworkMode instead.
-	ScheduledPruneNetworks SettingVariable `key:"scheduledPruneNetworks,deprecated" meta:"label=Legacy Scheduled Prune Networks;type=boolean;keywords=prune,networks,cleanup,maintenance,legacy;category=internal;description=Legacy boolean network prune flag retained for migration compatibility"`
-	// Deprecated: Use pruneBuildCacheMode instead.
-	ScheduledPruneBuildCache       SettingVariable `key:"scheduledPruneBuildCache,deprecated" meta:"label=Legacy Scheduled Prune Build Cache;type=boolean;keywords=prune,build cache,cleanup,maintenance,legacy;category=internal;description=Legacy boolean build cache prune flag retained for migration compatibility"`
+	DefaultDeployPullPolicy        SettingVariable `key:"defaultDeployPullPolicy" meta:"label=Default Deploy Pull Policy;type=select;keywords=deploy,pull,policy,compose,up,missing,always;category=internal;description=Default image pull policy when deploying projects"`
+	ScheduledPruneEnabled          SettingVariable `key:"scheduledPruneEnabled" meta:"label=Scheduled Prune Enabled;type=boolean;keywords=prune,cleanup,maintenance,schedule,automatic;category=internal;description=Enable scheduled pruning of unused Docker resources"`
+	ScheduledPruneInterval         SettingVariable `key:"scheduledPruneInterval" meta:"label=Scheduled Prune Interval;type=cron;keywords=prune,cleanup,interval,minutes,schedule;category=internal;description=How often to run scheduled prunes (cron expression)"`
+	GitopsSyncInterval             SettingVariable `key:"gitopsSyncInterval" meta:"label=GitOps Sync Interval;type=cron;keywords=gitops,sync,interval,frequency,schedule,repository;category=internal;description=How often to run GitOps synchronization checks (cron expression)"`
 	PruneContainerMode             SettingVariable `key:"pruneContainerMode" meta:"label=Prune Containers;type=select;keywords=prune,containers,cleanup,maintenance,mode,older,stopped;category=internal;description=Select how containers should be pruned when the scheduled prune job runs"`
 	PruneContainerUntil            SettingVariable `key:"pruneContainerUntil" meta:"label=Container Age Filter;type=text;keywords=prune,containers,cleanup,maintenance,until,older,duration;category=internal;description=Duration threshold for scheduled container prune when mode is olderThan"`
 	PruneImageMode                 SettingVariable `key:"pruneImageMode" meta:"label=Prune Images;type=select;keywords=prune,images,cleanup,maintenance,mode,dangling,all,older;category=internal;description=Select how images should be pruned when the scheduled prune job runs"`
@@ -151,7 +137,6 @@ type Settings struct {
 	TrivyConcurrentScanContainers   SettingVariable `key:"trivyConcurrentScanContainers,envOverride" meta:"label=Trivy Concurrent Scan Containers;type=number;keywords=trivy,concurrent,scan,containers,parallel,workers,limit,security;category=security;description=Maximum number of concurrent Trivy scan containers for manual and scheduled scans. Minimum 1"`
 	TrivyConfig                     SettingVariable `key:"trivyConfig" meta:"label=Trivy Config (YAML);type=textarea;keywords=trivy,config,yaml,configuration,scanner,settings;category=security;description=Trivy configuration file content in YAML format"`
 	TrivyIgnore                     SettingVariable `key:"trivyIgnore" meta:"label=.trivyignore;type=textarea;keywords=trivy,ignore,ignorefile,vulnerabilities,exceptions,exclusions;category=security;description=Trivy ignore file content - one vulnerability ID per line"`
-	AuthOidcConfig                  SettingVariable `key:"authOidcConfig,sensitive,deprecated" meta:"label=OIDC Config;type=text;keywords=oidc,config,client,id,issuer,secret,oauth;category=authentication;description=OIDC provider configuration (deprecated - use individual fields)"`
 	OidcEnabled                     SettingVariable `key:"oidcEnabled,public,envOverride" meta:"label=OIDC Authentication;type=boolean;keywords=oidc,openid,connect,sso,oauth,external,provider,federation;category=authentication;description=Enable OpenID Connect (OIDC) authentication"`
 	OidcClientId                    SettingVariable `key:"oidcClientId,authrequired,envOverride" meta:"label=OIDC Client ID;type=text;keywords=oidc,client,id,oauth,openid;category=authentication;description=OIDC provider client ID"`
 	OidcClientSecret                SettingVariable `key:"oidcClientSecret,sensitive,envOverride" meta:"label=OIDC Client Secret;type=password;keywords=oidc,client,secret,oauth,openid;category=authentication;description=OIDC provider client secret"`
@@ -269,7 +254,7 @@ func (s *Settings) ToSettingVariableSlice(visibility SettingVisibility, redactSe
 		}
 
 		value := cfgValue.Field(field.index).FieldByName("Value").String()
-		value = redactSettingValue(field.key, value, field.attrs, redactSensitiveValues)
+		value = redactSettingValue(value, field.attrs, redactSensitiveValues)
 
 		settingVariable := SettingVariable{
 			Key:   field.key,
@@ -340,21 +325,9 @@ func (s *Settings) UpdateField(key string, value string, noSensitive bool) error
 }
 
 // helper keeps redaction logic in one place; behavior unchanged
-func redactSettingValue(key, value, attrs string, redact bool) string {
+func redactSettingValue(value, attrs string, redact bool) string {
 	if value == "" || !redact || !strings.Contains(attrs, "sensitive") {
 		return value
-	}
-
-	if key == keyAuthOidcConfig {
-		var cfg OidcConfig
-		if err := json.Unmarshal([]byte(value), &cfg); err == nil {
-			cfg.ClientSecret = ""
-			if redacted, err := cfg.MarshalDocument(); err == nil {
-				return string(redacted)
-			}
-			return redactionMask
-		}
-		return redactionMask
 	}
 
 	return redactionMask
@@ -407,35 +380,4 @@ type OidcConfig struct {
 	AdminValue string `json:"adminValue,omitempty"`
 
 	SkipTlsVerify bool `json:"skipTlsVerify"`
-}
-
-// MarshalDocument preserves the legacy json.Marshal(OidcConfig) document shape,
-// including omitempty behavior for optional string fields, while avoiding gosec
-// false positives on the clientSecret field.
-func (c OidcConfig) MarshalDocument() ([]byte, error) {
-	doc := map[string]any{
-		"clientId":      c.ClientID,
-		"clientSecret":  c.ClientSecret,
-		"issuerUrl":     c.IssuerURL,
-		"scopes":        c.Scopes,
-		"skipTlsVerify": c.SkipTlsVerify,
-	}
-
-	addOptionalStringFieldInternal(doc, "authorizationEndpoint", c.AuthorizationEndpoint)
-	addOptionalStringFieldInternal(doc, "tokenEndpoint", c.TokenEndpoint)
-	addOptionalStringFieldInternal(doc, "userinfoEndpoint", c.UserinfoEndpoint)
-	addOptionalStringFieldInternal(doc, "jwksUri", c.JwksURI)
-	addOptionalStringFieldInternal(doc, "deviceAuthorizationEndpoint", c.DeviceAuthorizationEndpoint)
-	addOptionalStringFieldInternal(doc, "adminClaim", c.AdminClaim)
-	addOptionalStringFieldInternal(doc, "adminValue", c.AdminValue)
-
-	return json.Marshal(doc)
-}
-
-func addOptionalStringFieldInternal(doc map[string]any, key, value string) {
-	if value == "" {
-		return
-	}
-
-	doc[key] = value
 }
