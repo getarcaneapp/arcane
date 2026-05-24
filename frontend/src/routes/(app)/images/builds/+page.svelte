@@ -431,17 +431,8 @@
 
 		update();
 
-		if ('addEventListener' in mq) {
-			mq.addEventListener('change', update);
-			return () => mq.removeEventListener('change', update);
-		}
-
-		// @ts-expect-error legacy MediaQueryList API
-		mq.addListener(update);
-		return () => {
-			// @ts-expect-error legacy MediaQueryList API
-			mq.removeListener(update);
-		};
+		mq.addEventListener('change', update);
+		return () => mq.removeEventListener('change', update);
 	});
 
 	$effect(() => {
