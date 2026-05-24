@@ -49,11 +49,7 @@ var configShowCmd = &cobra.Command{
 		fmt.Printf("Default Environment: %s\n", maskIfEmpty(cfg.DefaultEnvironment, "0 (local)"))
 		fmt.Printf("Log Level:           %s\n", maskIfEmpty(cfg.LogLevel, "info (default)"))
 		fmt.Printf("CLI Update Channel:  %s\n", maskIfEmpty(cfg.CLIUpdateChannel, "(auto)"))
-		globalLimit := cfg.Pagination.Default.Limit
-		if globalLimit <= 0 {
-			globalLimit = cfg.DefaultLimit
-		}
-		fmt.Printf("Pagination Default:  %s\n", maskIfEmpty(intToString(globalLimit), "(not set)"))
+		fmt.Printf("Pagination Default:  %s\n", maskIfEmpty(intToString(cfg.Pagination.Default.Limit), "(not set)"))
 
 		fmt.Println("\nPagination Resources:")
 		printed := 0

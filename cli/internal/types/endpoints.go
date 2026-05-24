@@ -106,8 +106,6 @@ type ArcaneApiEndpoints struct {
 	SettingsPublicEndpoint string
 
 	// Notifications
-	NotificationsAppriseEndpoint         string
-	NotificationsAppriseTestEndpoint     string
 	NotificationsSettingsEndpoint        string
 	NotificationSettingsProviderEndpoint string
 	NotificationsTestProviderEndpoint    string
@@ -269,8 +267,6 @@ var Endpoints = ArcaneApiEndpoints{ //nolint:gosec // static endpoint paths; aut
 	SettingsPublicEndpoint: "/api/environments/%s/settings/public",
 
 	// Notifications
-	NotificationsAppriseEndpoint:         "/api/environments/%s/notifications/apprise",
-	NotificationsAppriseTestEndpoint:     "/api/environments/%s/notifications/apprise/test",
 	NotificationsSettingsEndpoint:        "/api/environments/%s/notifications/settings",
 	NotificationSettingsProviderEndpoint: "/api/environments/%s/notifications/settings/%s",
 	NotificationsTestProviderEndpoint:    "/api/environments/%s/notifications/test/%s",
@@ -580,14 +576,6 @@ func (e ArcaneApiEndpoints) SettingsPublic(envID string) string {
 }
 
 // Notification endpoints
-func (e ArcaneApiEndpoints) NotificationsApprise(envID string) string {
-	return fmt.Sprintf(e.NotificationsAppriseEndpoint, envID)
-}
-
-func (e ArcaneApiEndpoints) NotificationsAppriseTest(envID string) string {
-	return fmt.Sprintf(e.NotificationsAppriseTestEndpoint, envID)
-}
-
 func (e ArcaneApiEndpoints) NotificationsSettings(envID string) string {
 	return fmt.Sprintf(e.NotificationsSettingsEndpoint, envID)
 }

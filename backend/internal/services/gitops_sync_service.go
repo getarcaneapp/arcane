@@ -15,7 +15,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/startup"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils"
@@ -145,42 +144,6 @@ func (s *GitOpsSyncService) getEffectiveSyncLimits(ctx context.Context, sync *mo
 
 func (s *GitOpsSyncService) gitSyncLimitEnvOverrideActiveInternal(key string) bool {
 	return s.settingsService != nil && s.settingsService.isEnvOverrideActiveInternal(key)
-}
-
-func (s *GitOpsSyncService) ListSyncIntervalsRaw(ctx context.Context) ([]startup.IntervalMigrationItem, error) {
-	rows, err := s.db.WithContext(ctx).Raw("SELECT id, sync_interval FROM gitops_syncs").Rows()
-	if err != nil {
-		return nil, fmt.Errorf("failed to load git sync intervals: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-
-	items := make([]startup.IntervalMigrationItem, 0)
-	for rows.Next() {
-		var id string
-		var raw any
-		if err := rows.Scan(&id, &raw); err != nil {
-			return nil, fmt.Errorf("failed to scan git sync interval: %w", err)
-		}
-		items = append(items, startup.IntervalMigrationItem{
-			ID:       id,
-			RawValue: strings.TrimSpace(fmt.Sprint(raw)),
-		})
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("failed to read git sync intervals: %w", err)
-	}
-
-	return items, nil
-}
-
-func (s *GitOpsSyncService) UpdateSyncIntervalMinutes(ctx context.Context, id string, minutes int) error {
-	if minutes <= 0 {
-		return fmt.Errorf("sync interval must be positive")
-	}
-	return s.db.WithContext(ctx).
-		Model(&models.GitOpsSync{}).
-		Where("id = ?", id).
-		Update("sync_interval", minutes).Error
 }
 
 func (s *GitOpsSyncService) GetSyncsPaginated(ctx context.Context, environmentID string, params pagination.QueryParams) ([]gitops.GitOpsSync, pagination.Response, gitops.SyncCounts, error) {

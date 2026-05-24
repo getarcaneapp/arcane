@@ -550,15 +550,7 @@ func (h *EnvironmentHandler) createEnvironmentWithApiKey(ctx context.Context, en
 }
 
 func (h *EnvironmentHandler) createEnvironmentLegacy(ctx context.Context, env *models.Environment, user *models.User, body environment.Create) (*CreateEnvironmentOutput, error) {
-	// Legacy pairing flows
-	if (body.AccessToken == nil || *body.AccessToken == "") && body.BootstrapToken != nil && *body.BootstrapToken != "" {
-		token, err := h.environmentService.PairAgentWithBootstrap(ctx, body.ApiUrl, *body.BootstrapToken)
-		if err != nil {
-			slog.ErrorContext(ctx, "Failed to pair with agent", "apiUrl", body.ApiUrl, "error", err.Error())
-			return nil, huma.Error502BadGateway((&common.AgentPairingError{Err: err}).Error())
-		}
-		env.AccessToken = &token
-	} else if body.AccessToken != nil && *body.AccessToken != "" {
+	if body.AccessToken != nil && *body.AccessToken != "" {
 		env.AccessToken = body.AccessToken
 	}
 
@@ -891,32 +883,17 @@ func (h *EnvironmentHandler) buildUpdateMap(req *environment.Update, isLocalEnv 
 }
 
 func (h *EnvironmentHandler) handleEnvironmentPairing(ctx context.Context, environmentID string, req *environment.Update, updates map[string]any, isLocalEnv bool) (bool, error) {
-	pairingSucceeded := false
-
+	_ = ctx
+	_ = environmentID
 	if isLocalEnv {
-		return pairingSucceeded, nil
+		return false, nil
 	}
 
-	if req.AccessToken == nil && req.BootstrapToken != nil && *req.BootstrapToken != "" {
-		current, err := h.environmentService.GetEnvironmentByID(ctx, environmentID)
-		if err != nil || current == nil {
-			return false, huma.Error404NotFound("Environment not found")
-		}
-
-		apiUrl := current.ApiUrl
-		if req.ApiUrl != nil && *req.ApiUrl != "" {
-			apiUrl = *req.ApiUrl
-		}
-
-		if _, err := h.environmentService.PairAndPersistAgentToken(ctx, environmentID, apiUrl, *req.BootstrapToken); err != nil {
-			return false, huma.Error502BadGateway("Agent pairing failed: " + err.Error())
-		}
-		pairingSucceeded = true
-	} else if req.AccessToken != nil {
+	if req.AccessToken != nil {
 		updates["access_token"] = *req.AccessToken
 	}
 
-	return pairingSucceeded, nil
+	return false, nil
 }
 
 func (h *EnvironmentHandler) triggerPostUpdateTasks(ctx context.Context, environmentID string, updated *models.Environment, pairingSucceeded bool, req *environment.Update) { //nolint:contextcheck // intentionally spawns background tasks
