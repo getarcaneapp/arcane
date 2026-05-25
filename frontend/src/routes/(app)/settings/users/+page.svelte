@@ -10,6 +10,8 @@
 	import type { CreateUser } from '$lib/types/user.type';
 	import { m } from '$lib/paraglide/messages';
 	import { userService } from '$lib/services/user-service';
+	import { roleService } from '$lib/services/role-service';
+	import userStore from '$lib/stores/user-store';
 	import { untrack } from 'svelte';
 	import { SettingsPageLayout, type SettingsActionButton } from '$lib/layouts/index.js';
 
@@ -25,6 +27,16 @@
 	});
 
 	let userToEdit = $state<User | null>(null);
+
+	// Role assignment is admin-only on the server. Non-admins editing users can
+	// still update profile fields but must not call the assignments endpoint.
+	const isAdmin = $derived(userStore.isGlobalAdmin());
+
+	// availableRoleAssignments for the edit form — strip the source field, the
+	// editor only needs (roleId, environmentId) tuples.
+	const editingAssignments = $derived(
+		userToEdit?.roleAssignments?.map((a) => ({ roleId: a.roleId, environmentId: a.environmentId })) ?? []
+	);
 
 	let isLoading = $state({
 		creating: false,
@@ -47,7 +59,10 @@
 		isEditMode,
 		userId
 	}: {
-		user: Partial<User> & { password?: string };
+		user: Omit<Partial<User>, 'roleAssignments'> & {
+			password?: string;
+			roleAssignments?: { roleId: string; environmentId?: string }[];
+		};
 		isEditMode: boolean;
 		userId?: string;
 	}) {
@@ -57,12 +72,18 @@
 		try {
 			if (isEditMode && userId) {
 				const safeUsername = userToEdit?.username || m.common_unknown();
-				const result = await tryCatch(userService.update(userId, user));
+				// Split: profile fields go to PUT /users/{id}; role assignments
+				// go to PUT /users/{id}/role-assignments (separate endpoint).
+				const { roleAssignments, ...profile } = user;
+				const result = await tryCatch(userService.update(userId, profile));
 				handleApiResultWithCallbacks({
 					result,
 					message: m.common_update_failed({ resource: `${m.resource_user()} "${safeUsername}"` }),
 					setLoadingState: (value) => (isLoading[loading] = value),
 					onSuccess: async () => {
+						if (isAdmin && roleAssignments) {
+							await roleService.setUserAssignments(userId, { assignments: roleAssignments });
+						}
 						toast.success(m.common_update_success({ resource: `${m.resource_user()} "${safeUsername}"` }));
 						users = await userService.getUsers(requestOptions);
 						isDialogOpen.edit = false;
@@ -82,8 +103,7 @@
 					username: user.username!,
 					displayName: user.displayName,
 					email: user.email,
-					password: user.password!,
-					roles: user.roles ?? ['user']
+					password: user.password!
 				};
 
 				const result = await tryCatch(userService.create(createUser));
@@ -91,7 +111,10 @@
 					result,
 					message: m.common_create_failed({ resource: `${m.resource_user()} "${safeUsername}"` }),
 					setLoadingState: (value) => (isLoading[loading] = value),
-					onSuccess: async () => {
+					onSuccess: async (created) => {
+						if (isAdmin && user.roleAssignments && created?.id) {
+							await roleService.setUserAssignments(created.id, { assignments: user.roleAssignments });
+						}
 						toast.success(m.common_create_success({ resource: `${m.resource_user()} "${safeUsername}"` }));
 						users = await userService.getUsers(requestOptions);
 						isDialogOpen.create = false;
@@ -127,6 +150,7 @@
 			bind:users
 			bind:selectedIds
 			bind:requestOptions
+			roles={data.roles}
 			onUsersChanged={async () => {
 				users = await userService.getUsers(requestOptions);
 			}}
@@ -135,11 +159,22 @@
 	{/snippet}
 
 	{#snippet additionalContent()}
-		<UserFormSheet bind:open={isDialogOpen.create} userToEdit={null} onSubmit={handleUserSubmit} isLoading={isLoading.creating} />
+		<UserFormSheet
+			bind:open={isDialogOpen.create}
+			userToEdit={null}
+			roles={data.roles}
+			environments={data.environments}
+			availableRoleAssignments={[]}
+			onSubmit={handleUserSubmit}
+			isLoading={isLoading.creating}
+		/>
 
 		<UserFormSheet
 			bind:open={isDialogOpen.edit}
 			{userToEdit}
+			roles={data.roles}
+			environments={data.environments}
+			availableRoleAssignments={editingAssignments}
 			onSubmit={handleUserSubmit}
 			isLoading={isLoading.editing}
 			allowUsernameEdit={true}

@@ -47,13 +47,17 @@ type Config struct {
 	OidcClientSecret           string `env:"OIDC_CLIENT_SECRET" default:"" options:"file"`
 	OidcIssuerURL              string `env:"OIDC_ISSUER_URL" default:""`
 	OidcScopes                 string `env:"OIDC_SCOPES" default:"openid email profile"`
-	OidcAdminClaim             string `env:"OIDC_ADMIN_CLAIM" default:""`
-	OidcAdminValue             string `env:"OIDC_ADMIN_VALUE" default:""`
+	OidcGroupsClaim            string `env:"OIDC_GROUPS_CLAIM" default:"groups"`
 	OidcSkipTlsVerify          bool   `env:"OIDC_SKIP_TLS_VERIFY" default:"false"`
 	OidcAutoRedirectToProvider bool   `env:"OIDC_AUTO_REDIRECT_TO_PROVIDER" default:"false"`
 	OidcProviderName           string `env:"OIDC_PROVIDER_NAME" default:""`
 	OidcProviderLogoUrl        string `env:"OIDC_PROVIDER_LOGO_URL" default:""`
 	OidcMobileRedirectUris     string `env:"OIDC_MOBILE_REDIRECT_URIS" default:"arcane-mobile://oidc-callback"`
+	// OidcRoleMappings declaratively defines OIDC group→role mappings as a
+	// JSON array of role.OidcRoleMappingSpec. Reconciled into source='env'
+	// rows on every boot; rows are read-only at runtime. Supports *_FILE for
+	// Docker secrets. Leave empty to manage mappings purely via the UI/API.
+	OidcRoleMappings string `env:"OIDC_ROLE_MAPPINGS" default:"" options:"file"`
 
 	PUID                    string `env:"PUID" default:""`
 	PGID                    string `env:"PGID" default:""`

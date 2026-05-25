@@ -15,7 +15,7 @@
 	let {
 		environment,
 		versionInfo,
-		isAdmin,
+		canUpgrade: canUpgradePermission,
 		debug = false,
 		onRefreshRequested,
 		render = 'both',
@@ -24,7 +24,7 @@
 	}: {
 		environment: Environment;
 		versionInfo: AppVersionInformation;
-		isAdmin: boolean;
+		canUpgrade: boolean;
 		debug?: boolean;
 		onRefreshRequested?: () => void | Promise<void>;
 		render?: 'both' | 'trigger' | 'dialog';
@@ -32,7 +32,7 @@
 		upgrading?: boolean;
 	} = $props();
 
-	const shouldCheckUpgrade = $derived(!!(versionInfo.updateAvailable && isAdmin && !debug));
+	const shouldCheckUpgrade = $derived(!!(versionInfo.updateAvailable && canUpgradePermission && !debug));
 	const isLocalEnvironment = $derived(environment.id === '0');
 
 	const upgradeAvailabilityQuery = createQuery(() => ({
@@ -45,7 +45,7 @@
 		staleTime: 0
 	}));
 
-	const canUpgrade = $derived.by(() => {
+	const upgradeIsAvailable = $derived.by(() => {
 		if (debug) return true;
 		const result = upgradeAvailabilityQuery.data;
 		return !!result?.canUpgrade && !result?.error;
@@ -74,7 +74,9 @@
 		return '';
 	});
 
-	const shouldShowUpgrade = $derived((versionInfo.updateAvailable && isAdmin && canUpgrade) || (debug && isAdmin));
+	const shouldShowUpgrade = $derived(
+		(versionInfo.updateAvailable && canUpgradePermission && upgradeIsAvailable) || (debug && canUpgradePermission)
+	);
 
 	const upgradeButtonText = $derived.by(() => {
 		if (upgrading) return m.upgrade_in_progress();

@@ -25,6 +25,8 @@
 	import { imageService } from '$lib/services/image-service';
 	import { vulnerabilityService } from '$lib/services/vulnerability-service';
 	import { isLikelyStaleFailedSummary, isVulnerabilityScanInProgress } from '$lib/utils/vulnerability-scan.util';
+	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import { hasPermission } from '$lib/utils/permissions.util';
 
 	import {
 		DownloadIcon,
@@ -57,6 +59,11 @@
 		removing: false,
 		checking: false
 	});
+
+	const currentEnvId = $derived(environmentStore.selected?.id || '0');
+	const canDeleteImage = $derived(hasPermission('images:delete', currentEnvId));
+	const canPullImage = $derived(hasPermission('images:pull', currentEnvId));
+	const canScanImage = $derived(hasPermission('vulnerabilities:scan', currentEnvId));
 
 	let isPullingInline = $state<Record<string, boolean>>({});
 	let isScanningInline = $state<Record<string, boolean>>({});
@@ -413,7 +420,7 @@
 			action: 'remove',
 			onClick: handleDeleteSelected,
 			loading: isLoading.removing,
-			disabled: isLoading.removing,
+			disabled: !canDeleteImage || isLoading.removing,
 			icon: TrashIcon
 		}
 	]);
@@ -689,39 +696,47 @@
 					{m.common_inspect()}
 				</DropdownMenu.Item>
 
-				<DropdownMenu.Separator />
+				{#if canPullImage || canScanImage}
+					<DropdownMenu.Separator />
+				{/if}
 
-				<DropdownMenu.Item
-					onclick={() => handleInlineImagePull(item.id, item.repoTags?.[0] || '')}
-					disabled={isPullingInline[item.id] || !item.repoTags?.[0]}
-				>
-					{#if isPullingInline[item.id]}
-						<Spinner class="size-4" />
-					{:else}
-						<DownloadIcon class="size-4" />
-					{/if}
-					{m.images_pull()}
-				</DropdownMenu.Item>
+				{#if canPullImage}
+					<DropdownMenu.Item
+						onclick={() => handleInlineImagePull(item.id, item.repoTags?.[0] || '')}
+						disabled={isPullingInline[item.id] || !item.repoTags?.[0]}
+					>
+						{#if isPullingInline[item.id]}
+							<Spinner class="size-4" />
+						{:else}
+							<DownloadIcon class="size-4" />
+						{/if}
+						{m.images_pull()}
+					</DropdownMenu.Item>
+				{/if}
 
-				<DropdownMenu.Item onclick={() => handleInlineVulnerabilityScan(item.id)} disabled={isScanningInline[item.id]}>
-					{#if isScanningInline[item.id]}
-						<Spinner class="size-4" />
-					{:else}
-						<ScanIcon class="size-4" />
-					{/if}
-					{m.vuln_scan()}
-				</DropdownMenu.Item>
+				{#if canScanImage}
+					<DropdownMenu.Item onclick={() => handleInlineVulnerabilityScan(item.id)} disabled={isScanningInline[item.id]}>
+						{#if isScanningInline[item.id]}
+							<Spinner class="size-4" />
+						{:else}
+							<ScanIcon class="size-4" />
+						{/if}
+						{m.vuln_scan()}
+					</DropdownMenu.Item>
+				{/if}
 
-				<DropdownMenu.Separator />
+				{#if canDeleteImage}
+					<DropdownMenu.Separator />
 
-				<DropdownMenu.Item variant="destructive" onclick={() => deleteImage(item.id)} disabled={isLoading.removing}>
-					{#if isLoading.removing}
-						<Spinner class="size-4" />
-					{:else}
-						<TrashIcon class="size-4" />
-					{/if}
-					{m.common_remove()}
-				</DropdownMenu.Item>
+					<DropdownMenu.Item variant="destructive" onclick={() => deleteImage(item.id)} disabled={isLoading.removing}>
+						{#if isLoading.removing}
+							<Spinner class="size-4" />
+						{:else}
+							<TrashIcon class="size-4" />
+						{/if}
+						{m.common_remove()}
+					</DropdownMenu.Item>
+				{/if}
 			</DropdownMenu.Group>
 		</DropdownMenu.Content>
 	</DropdownMenu.Root>

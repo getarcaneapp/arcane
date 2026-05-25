@@ -18,8 +18,68 @@
 	import * as Collapsible from '$lib/components/ui/collapsible';
 	import SettingsRow from '$lib/components/settings/settings-row.svelte';
 	import { cn } from '$lib/utils';
+	import OidcMappingTable from './oidc-mapping-table.svelte';
+	import OidcMappingFormSheet from '$lib/components/sheets/oidc-mapping-form-sheet.svelte';
+	import type { OidcRoleMapping, CreateOidcRoleMapping, UpdateOidcRoleMapping } from '$lib/types/role.type';
+	import { oidcMappingService } from '$lib/services/oidc-mapping-service';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
+	import { tryCatch } from '$lib/utils/try-catch';
+	import { untrack } from 'svelte';
+	import IfPermitted from '$lib/components/if-permitted.svelte';
 
 	let { data }: PageProps = $props();
+
+	// OIDC role mappings — co-located with the OIDC settings so admins
+	// configure the groups claim and the mappings that read it in one place.
+	let oidcMappings = $state<OidcRoleMapping[]>(untrack(() => data.oidcMappings ?? []));
+	let mappingSheetOpen = $state(false);
+	let editingMapping = $state<OidcRoleMapping | null>(null);
+	let mappingSaving = $state(false);
+
+	async function refreshMappings() {
+		oidcMappings = await oidcMappingService.list();
+	}
+
+	function openCreateMapping() {
+		editingMapping = null;
+		mappingSheetOpen = true;
+	}
+
+	function openEditMapping(mapping: OidcRoleMapping) {
+		editingMapping = mapping;
+		mappingSheetOpen = true;
+	}
+
+	async function submitMapping(formData: { claimValue: string; roleId: string; environmentId?: string }) {
+		mappingSaving = true;
+		const payload: CreateOidcRoleMapping | UpdateOidcRoleMapping = formData;
+
+		if (editingMapping) {
+			const id = editingMapping.id;
+			handleApiResultWithCallbacks({
+				result: await tryCatch(oidcMappingService.update(id, payload)),
+				message: m.common_update_failed({ resource: m.resource_oidc_mapping() }),
+				setLoadingState: (v) => (mappingSaving = v),
+				onSuccess: async () => {
+					toast.success(m.common_update_success({ resource: m.resource_oidc_mapping_cap() }));
+					await refreshMappings();
+					mappingSheetOpen = false;
+					editingMapping = null;
+				}
+			});
+		} else {
+			handleApiResultWithCallbacks({
+				result: await tryCatch(oidcMappingService.create(payload)),
+				message: m.common_create_failed({ resource: m.resource_oidc_mapping() }),
+				setLoadingState: (v) => (mappingSaving = v),
+				onSuccess: async () => {
+					toast.success(m.common_create_success({ resource: m.resource_oidc_mapping_cap() }));
+					await refreshMappings();
+					mappingSheetOpen = false;
+				}
+			});
+		}
+	}
 	const currentSettings = $derived<Settings>($settingsStore || data.settings!);
 	const isReadOnly = $derived.by(() => $settingsStore.uiConfigDisabled);
 	const isAutoLoginEnabled = $derived(settingsStore.autoLoginEnabled.isEnabled());
@@ -41,8 +101,7 @@
 			oidcClientSecret: z.string(),
 			oidcIssuerUrl: z.string(),
 			oidcScopes: z.string(),
-			oidcAdminClaim: z.string(),
-			oidcAdminValue: z.string(),
+			oidcGroupsClaim: z.string(),
 			oidcProviderName: z.string(),
 			oidcProviderLogoUrl: z.string()
 		})
@@ -73,8 +132,7 @@
 		oidcClientSecret: '',
 		oidcIssuerUrl: currentSettings.oidcIssuerUrl,
 		oidcScopes: currentSettings.oidcScopes,
-		oidcAdminClaim: currentSettings.oidcAdminClaim,
-		oidcAdminValue: currentSettings.oidcAdminValue,
+		oidcGroupsClaim: currentSettings.oidcGroupsClaim,
 		oidcProviderName: currentSettings.oidcProviderName,
 		oidcProviderLogoUrl: currentSettings.oidcProviderLogoUrl
 	});
@@ -95,8 +153,7 @@
 				oidcClientSecret: '',
 				oidcIssuerUrl: ($settingsStore || data.settings!).oidcIssuerUrl,
 				oidcScopes: ($settingsStore || data.settings!).oidcScopes,
-				oidcAdminClaim: ($settingsStore || data.settings!).oidcAdminClaim,
-				oidcAdminValue: ($settingsStore || data.settings!).oidcAdminValue,
+				oidcGroupsClaim: ($settingsStore || data.settings!).oidcGroupsClaim,
 				oidcProviderName: ($settingsStore || data.settings!).oidcProviderName,
 				oidcProviderLogoUrl: ($settingsStore || data.settings!).oidcProviderLogoUrl
 			}),
@@ -115,8 +172,7 @@
 			$formInputs.oidcClientId.value !== currentSettings.oidcClientId ||
 			$formInputs.oidcIssuerUrl.value !== currentSettings.oidcIssuerUrl ||
 			$formInputs.oidcScopes.value !== currentSettings.oidcScopes ||
-			$formInputs.oidcAdminClaim.value !== currentSettings.oidcAdminClaim ||
-			$formInputs.oidcAdminValue.value !== currentSettings.oidcAdminValue ||
+			$formInputs.oidcGroupsClaim.value !== currentSettings.oidcGroupsClaim ||
 			$formInputs.oidcProviderName.value !== currentSettings.oidcProviderName ||
 			$formInputs.oidcProviderLogoUrl.value !== currentSettings.oidcProviderLogoUrl ||
 			$formInputs.oidcClientSecret.value !== ''
@@ -159,8 +215,7 @@
 				oidcClientId: formData.oidcClientId,
 				oidcIssuerUrl: formData.oidcIssuerUrl,
 				oidcScopes: formData.oidcScopes,
-				oidcAdminClaim: formData.oidcAdminClaim,
-				oidcAdminValue: formData.oidcAdminValue,
+				oidcGroupsClaim: formData.oidcGroupsClaim,
 				oidcProviderName: formData.oidcProviderName,
 				oidcProviderLogoUrl: formData.oidcProviderLogoUrl,
 				...(formData.oidcClientSecret && { oidcClientSecret: formData.oidcClientSecret })
@@ -364,31 +419,15 @@
 											error={$formInputs.oidcScopes.error}
 										/>
 
-										<div class="space-y-3 pt-2">
-											<div>
-												<h4 class="text-sm font-semibold">{m.oidc_admin_role_mapping_title()}</h4>
-												<p class="text-muted-foreground mt-0.5 text-xs">{m.oidc_admin_role_mapping_description()}</p>
-											</div>
-											<div class="grid gap-5 sm:grid-cols-2">
-												<TextInputWithLabel
-													id="oidcAdminClaim"
-													label={m.oidc_admin_claim_label()}
-													placeholder={m.oidc_admin_claim_placeholder()}
-													disabled={isOidcEnvForced}
-													bind:value={$formInputs.oidcAdminClaim.value}
-													error={$formInputs.oidcAdminClaim.error}
-												/>
-												<TextInputWithLabel
-													id="oidcAdminValue"
-													label={m.oidc_admin_value_label()}
-													placeholder={m.oidc_admin_value_placeholder()}
-													disabled={isOidcEnvForced}
-													bind:value={$formInputs.oidcAdminValue.value}
-													error={$formInputs.oidcAdminValue.error}
-													helpText={m.oidc_admin_value_help()}
-												/>
-											</div>
-										</div>
+										<TextInputWithLabel
+											id="oidcGroupsClaim"
+											label={m.oidc_groups_claim_label()}
+											placeholder={m.oidc_groups_claim_placeholder()}
+											disabled={isOidcEnvForced}
+											bind:value={$formInputs.oidcGroupsClaim.value}
+											error={$formInputs.oidcGroupsClaim.error}
+											helpText={m.oidc_groups_claim_help()}
+										/>
 
 										<div class="divide-border/40 divide-y pt-2 [&>*]:py-5 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
 											<SettingsRow
@@ -445,6 +484,37 @@
 							{/if}
 						</Collapsible.Root>
 					</div>
+
+					<IfPermitted adminOnly>
+						<div class="border-border/40 space-y-4 border-t pt-6">
+							<div class="flex items-start justify-between gap-4">
+								<div>
+									<h4 class="text-sm font-semibold">{m.oidc_role_mappings_title()}</h4>
+									<p class="text-muted-foreground mt-0.5 text-xs">{m.oidc_role_mappings_description()}</p>
+								</div>
+								<ArcaneButton
+									action="create"
+									tone="outline"
+									size="sm"
+									onclick={openCreateMapping}
+									customLabel={m.common_create_button({ resource: m.resource_oidc_mapping_cap() })}
+								/>
+							</div>
+							{#if oidcMappings.length > 0}
+								<OidcMappingTable
+									mappings={oidcMappings}
+									roles={data.roles}
+									environments={data.environments}
+									onRefresh={refreshMappings}
+									onEdit={openEditMapping}
+								/>
+							{:else}
+								<div class="border-border/40 bg-muted/20 rounded-lg border border-dashed p-6 text-center">
+									<p class="text-muted-foreground text-sm">{m.oidc_mappings_empty_body()}</p>
+								</div>
+							{/if}
+						</div>
+					</IfPermitted>
 				{/if}
 			</div>
 
@@ -530,5 +600,14 @@
 				</AlertDialog.Footer>
 			</AlertDialog.Content>
 		</AlertDialog.Root>
+
+		<OidcMappingFormSheet
+			bind:open={mappingSheetOpen}
+			mappingToEdit={editingMapping}
+			isLoading={mappingSaving}
+			roles={data.roles}
+			environments={data.environments}
+			onSubmit={submitMapping}
+		/>
 	{/snippet}
 </SettingsPageLayout>

@@ -21,10 +21,16 @@
 	import { ResourceDetailLayout, type DetailAction } from '$lib/layouts';
 	import VulnerabilityScanPanel from '$lib/components/vulnerability/vulnerability-scan-panel.svelte';
 	import type { VulnerabilityScanResult } from '$lib/types/vulnerability.type';
+	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import { hasPermission } from '$lib/utils/permissions.util';
 	import { VolumesIcon, ClockIcon, TagIcon, LayersIcon, CpuIcon, InfoIcon, SettingsIcon, HashIcon } from '$lib/icons';
 
 	let { data } = $props();
 	let { image } = $derived(data);
+
+	const currentEnvId = $derived(environmentStore.selected?.id || '0');
+	const canDeleteImage = $derived(hasPermission('images:delete', currentEnvId));
+	const canScanImage = $derived(hasPermission('vulnerabilities:scan', currentEnvId));
 
 	let isLoading = $state({
 		pulling: false,
@@ -225,24 +231,30 @@
 		});
 	}
 
-	const actions: DetailAction[] = $derived([
-		{
-			id: 'scan',
-			action: 'base',
-			label: m.vuln_scan(),
-			loading: isLoading.scanning,
-			disabled: isLoading.scanning,
-			onclick: handleScanImage
-		},
-		{
-			id: 'remove',
-			action: 'remove',
-			label: m.common_remove(),
-			loading: isLoading.removing,
-			disabled: isLoading.removing,
-			onclick: () => handleImageRemove(image.id)
+	const actions: DetailAction[] = $derived.by(() => {
+		const list: DetailAction[] = [];
+		if (canScanImage) {
+			list.push({
+				id: 'scan',
+				action: 'base',
+				label: m.vuln_scan(),
+				loading: isLoading.scanning,
+				disabled: isLoading.scanning,
+				onclick: handleScanImage
+			});
 		}
-	]);
+		if (canDeleteImage) {
+			list.push({
+				id: 'remove',
+				action: 'remove',
+				label: m.common_remove(),
+				loading: isLoading.removing,
+				disabled: isLoading.removing,
+				onclick: () => handleImageRemove(image.id)
+			});
+		}
+		return list;
+	});
 </script>
 
 <ResourceDetailLayout

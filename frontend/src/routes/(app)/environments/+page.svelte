@@ -11,6 +11,7 @@
 	import { ResourcePageLayout, type ActionButton } from '$lib/layouts/index.js';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { simpleRefresh } from '$lib/utils/refresh.util';
+	import { hasPermission } from '$lib/utils/permissions.util';
 	import { DownloadIcon } from '$lib/icons';
 
 	let { data } = $props();
@@ -30,7 +31,8 @@
 		);
 	}
 
-	const currentUserIsAdmin = $derived(!!data.user?.roles?.includes('admin'));
+	const canCreateEnvironment = $derived(hasPermission('environments:create'));
+	const canDeleteEnvironment = $derived(hasPermission('environments:delete'));
 
 	async function handleBulkDelete() {
 		if (selectedIds.length === 0) return;
@@ -82,7 +84,7 @@
 	}
 
 	const actionButtons: ActionButton[] = $derived([
-		...(selectedIds.length > 0 && currentUserIsAdmin
+		...(selectedIds.length > 0 && canDeleteEnvironment
 			? [
 					{
 						id: 'remove-selected',
@@ -94,7 +96,7 @@
 					}
 				]
 			: []),
-		...(currentUserIsAdmin
+		...(canCreateEnvironment
 			? [
 					{
 						id: 'create',
@@ -104,7 +106,7 @@
 					}
 				]
 			: []),
-		...(currentUserIsAdmin && data.settings?.edgeMTLSManagerCAAvailable
+		...(canCreateEnvironment && data.settings?.edgeMTLSManagerCAAvailable
 			? [
 					{
 						id: 'download-edge-ca',

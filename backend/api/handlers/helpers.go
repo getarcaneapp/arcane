@@ -6,19 +6,10 @@ import (
 	"errors"
 
 	"github.com/danielgtaylor/huma/v2"
-	humamw "github.com/getarcaneapp/arcane/backend/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/pkg/remenv"
 )
-
-// checkAdminInternal checks if the current user is an admin and returns a 403 error if not.
-func checkAdminInternal(ctx context.Context) error {
-	if !humamw.IsAdminFromContext(ctx) {
-		return huma.Error403Forbidden("admin access required")
-	}
-	return nil
-}
 
 // buildPaginationParamsInternal converts query parameters to pagination.QueryParams.
 // A limit of -1 means "show all items" (no pagination).

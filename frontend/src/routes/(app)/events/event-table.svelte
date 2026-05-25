@@ -17,6 +17,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { eventService } from '$lib/services/event-service';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import IfPermitted from '$lib/components/if-permitted.svelte';
 	import { TrashIcon, InfoIcon, NotificationsIcon, TagIcon, EnvironmentsIcon, UserIcon, EllipsisIcon } from '$lib/icons';
 
 	let {
@@ -268,16 +269,18 @@
 					{m.common_view_details()}
 				</DropdownMenu.Item>
 
-				<DropdownMenu.Separator />
+				<IfPermitted perm="events:read">
+					<DropdownMenu.Separator />
 
-				<DropdownMenu.Item
-					variant="destructive"
-					onclick={() => handleDeleteEvent(item.id, item.title)}
-					disabled={isLoading.removing}
-				>
-					<TrashIcon class="size-4" />
-					{m.common_delete()}
-				</DropdownMenu.Item>
+					<DropdownMenu.Item
+						variant="destructive"
+						onclick={() => handleDeleteEvent(item.id, item.title)}
+						disabled={isLoading.removing}
+					>
+						<TrashIcon class="size-4" />
+						{m.common_delete()}
+					</DropdownMenu.Item>
+				</IfPermitted>
 			</DropdownMenu.Group>
 		</DropdownMenu.Content>
 	</DropdownMenu.Root>

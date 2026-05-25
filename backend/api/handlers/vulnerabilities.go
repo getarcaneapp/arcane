@@ -8,6 +8,7 @@ import (
 	humamw "github.com/getarcaneapp/arcane/backend/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
+	"github.com/getarcaneapp/arcane/backend/pkg/authz"
 	"github.com/getarcaneapp/arcane/types/base"
 	"github.com/getarcaneapp/arcane/types/vulnerability"
 )
@@ -137,7 +138,7 @@ func RegisterVulnerability(api huma.API, vulnerabilityService *services.Vulnerab
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermVulnsScan),
 	}, h.ScanImage)
 
 	huma.Register(api, huma.Operation{
@@ -151,6 +152,7 @@ func RegisterVulnerability(api huma.API, vulnerabilityService *services.Vulnerab
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequirePermission(api, authz.PermVulnsRead),
 	}, h.GetScanResult)
 
 	huma.Register(api, huma.Operation{
@@ -164,6 +166,7 @@ func RegisterVulnerability(api huma.API, vulnerabilityService *services.Vulnerab
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequirePermission(api, authz.PermVulnsRead),
 	}, h.GetScanSummary)
 
 	huma.Register(api, huma.Operation{
@@ -177,6 +180,7 @@ func RegisterVulnerability(api huma.API, vulnerabilityService *services.Vulnerab
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequirePermission(api, authz.PermVulnsRead),
 	}, h.GetScanSummaries)
 
 	huma.Register(api, huma.Operation{
@@ -190,6 +194,7 @@ func RegisterVulnerability(api huma.API, vulnerabilityService *services.Vulnerab
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequirePermission(api, authz.PermVulnsRead),
 	}, h.ListImageVulnerabilities)
 
 	huma.Register(api, huma.Operation{
@@ -203,6 +208,7 @@ func RegisterVulnerability(api huma.API, vulnerabilityService *services.Vulnerab
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequirePermission(api, authz.PermVulnsRead),
 	}, h.GetScannerStatus)
 
 	huma.Register(api, huma.Operation{
@@ -216,6 +222,7 @@ func RegisterVulnerability(api huma.API, vulnerabilityService *services.Vulnerab
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequirePermission(api, authz.PermVulnsRead),
 	}, h.GetEnvironmentSummary)
 
 	huma.Register(api, huma.Operation{
@@ -229,6 +236,7 @@ func RegisterVulnerability(api huma.API, vulnerabilityService *services.Vulnerab
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequirePermission(api, authz.PermVulnsRead),
 	}, h.ListAllVulnerabilities)
 
 	huma.Register(api, huma.Operation{
@@ -242,6 +250,7 @@ func RegisterVulnerability(api huma.API, vulnerabilityService *services.Vulnerab
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequirePermission(api, authz.PermVulnsRead),
 	}, h.ListAllVulnerabilityImageOptions)
 
 	huma.Register(api, huma.Operation{
@@ -255,7 +264,7 @@ func RegisterVulnerability(api huma.API, vulnerabilityService *services.Vulnerab
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermVulnsManage),
 	}, h.IgnoreVulnerability)
 
 	huma.Register(api, huma.Operation{
@@ -269,7 +278,7 @@ func RegisterVulnerability(api huma.API, vulnerabilityService *services.Vulnerab
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermVulnsManage),
 	}, h.UnignoreVulnerability)
 
 	huma.Register(api, huma.Operation{
@@ -283,14 +292,12 @@ func RegisterVulnerability(api huma.API, vulnerabilityService *services.Vulnerab
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequirePermission(api, authz.PermVulnsRead),
 	}, h.ListIgnoredVulnerabilities)
 }
 
 // ScanImage initiates a vulnerability scan for an image.
 func (h *VulnerabilityHandler) ScanImage(ctx context.Context, input *ScanImageInput) (*ScanImageOutput, error) {
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
 	if h.vulnerabilityService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -548,9 +555,6 @@ type IgnoreVulnerabilityOutput struct {
 
 // IgnoreVulnerability creates an ignore record for a vulnerability.
 func (h *VulnerabilityHandler) IgnoreVulnerability(ctx context.Context, input *IgnoreVulnerabilityInput) (*IgnoreVulnerabilityOutput, error) {
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
 	if h.vulnerabilityService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -600,9 +604,6 @@ type UnignoreVulnerabilityOutput struct {
 
 // UnignoreVulnerability removes an ignore record for a vulnerability.
 func (h *VulnerabilityHandler) UnignoreVulnerability(ctx context.Context, input *UnignoreVulnerabilityInput) (*UnignoreVulnerabilityOutput, error) {
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
 	if h.vulnerabilityService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
