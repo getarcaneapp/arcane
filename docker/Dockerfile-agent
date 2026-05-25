@@ -44,15 +44,15 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     -o /out/arcane-agent \
     ./cmd/main.go
 
+RUN mkdir -p /out/rootfs/app/data
+
 FROM ${ARCANE_RUNTIME_BASE_IMAGE} AS agent
 ARG TARGETARCH
 
 WORKDIR /app
-USER 0:0
-RUN mkdir -p /app/data \
-    && chown -R 65532:65532 /app
 
-COPY --from=agent-builder /out/arcane-agent ./arcane-agent
+COPY --from=agent-builder --chown=65532:65532 /out/rootfs/app/ /app/
+COPY --from=agent-builder --chown=65532:65532 /out/arcane-agent ./arcane-agent
 
 ARG VERSION="dev"
 ARG REVISION="unknown"

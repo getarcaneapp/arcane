@@ -953,15 +953,17 @@ func (s *VolumeService) takeHelperIDInternal(volumeName string) string {
 	return helper.id
 }
 
-func (s *VolumeService) CleanupOrphanedVolumeHelpers(ctx context.Context) error {
+func (s *VolumeService) CleanupOrphanedVolumeHelpers(ctx context.Context) (int, error) {
+	slog.DebugContext(ctx, "volume service: cleanup orphaned volume helper containers")
+
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get docker client for orphan helper cleanup: %w", err)
+		return 0, fmt.Errorf("failed to get docker client for orphan helper cleanup: %w", err)
 	}
 
 	containers, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
 	if err != nil {
-		return fmt.Errorf("failed to list containers for orphan helper cleanup: %w", err)
+		return 0, fmt.Errorf("failed to list containers for orphan helper cleanup: %w", err)
 	}
 
 	removedCount := 0
@@ -971,15 +973,19 @@ func (s *VolumeService) CleanupOrphanedVolumeHelpers(ctx context.Context) error 
 		}
 
 		if _, err := dockerClient.ContainerRemove(ctx, c.ID, volumeHelperRemoveOptionsInternal()); err != nil {
-			slog.WarnContext(ctx, "failed to remove orphaned volume helper container", "container_id", c.ID, "error", err.Error())
+			slog.WarnContext(ctx,
+				"volume service: failed to remove orphaned volume helper container",
+				"container_id", c.ID,
+				"container_names", c.Names,
+				"error", err.Error(),
+			)
 			continue
 		}
 
 		removedCount++
 	}
 
-	slog.InfoContext(ctx, "volume service: orphan helper cleanup completed", "removed_count", removedCount)
-	return nil
+	return removedCount, nil
 }
 
 func (s *VolumeService) removeHelperEntry(volumeName string) {
