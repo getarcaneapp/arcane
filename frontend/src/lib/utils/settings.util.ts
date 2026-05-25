@@ -31,8 +31,7 @@ const LOCAL_SETTING_KEYS = new Set([
 	'oidcClientSecret',
 	'oidcIssuerUrl',
 	'oidcScopes',
-	'oidcAdminClaim',
-	'oidcAdminValue',
+	'oidcGroupsClaim',
 	'oidcProviderName',
 	'oidcProviderLogoUrl',
 	'edgeMTLSManagerCAAvailable'

@@ -7,6 +7,7 @@ import (
 	humamw "github.com/getarcaneapp/arcane/backend/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
+	"github.com/getarcaneapp/arcane/backend/pkg/authz"
 	"github.com/getarcaneapp/arcane/types/base"
 	"github.com/getarcaneapp/arcane/types/event"
 )
@@ -96,7 +97,7 @@ func RegisterEvents(api huma.API, eventService *services.EventService, apiKeySvc
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermEventsRead),
 	}, h.ListEvents)
 
 	huma.Register(api, huma.Operation{
@@ -110,7 +111,10 @@ func RegisterEvents(api huma.API, eventService *services.EventService, apiKeySvc
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		// TODO: introduce a dedicated PermEventsCreate (and PermEventsDelete)
+		// permission. Today the events taxonomy only exposes PermEventsRead,
+		// so admin-level write actions reuse the read permission.
+		Middlewares: humamw.RequirePermission(api, authz.PermEventsRead),
 	}, h.CreateEvent)
 
 	huma.Register(api, huma.Operation{
@@ -124,7 +128,10 @@ func RegisterEvents(api huma.API, eventService *services.EventService, apiKeySvc
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		// TODO: introduce a dedicated PermEventsDelete permission. Today the
+		// events taxonomy only exposes PermEventsRead, so admin-level write
+		// actions reuse the read permission.
+		Middlewares: humamw.RequirePermission(api, authz.PermEventsRead),
 	}, h.DeleteEvent)
 
 	huma.Register(api, huma.Operation{
@@ -138,7 +145,7 @@ func RegisterEvents(api huma.API, eventService *services.EventService, apiKeySvc
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermEventsRead),
 	}, h.GetEventsByEnvironment)
 }
 
@@ -150,10 +157,6 @@ func RegisterEvents(api huma.API, eventService *services.EventService, apiKeySvc
 func (h *EventHandler) ListEvents(ctx context.Context, input *ListEventsInput) (*ListEventsOutput, error) {
 	if h.eventService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
-	}
-
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
 	}
 
 	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
@@ -189,10 +192,6 @@ func (h *EventHandler) ListEvents(ctx context.Context, input *ListEventsInput) (
 func (h *EventHandler) GetEventsByEnvironment(ctx context.Context, input *GetEventsByEnvironmentInput) (*GetEventsByEnvironmentOutput, error) {
 	if h.eventService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
-	}
-
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
 	}
 
 	if input.EnvironmentID == "" {
@@ -244,10 +243,6 @@ func (h *EventHandler) CreateEvent(ctx context.Context, input *CreateEventInput)
 		}
 	}
 
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
-
 	evt, err := h.eventService.CreateEventFromDto(ctx, input.Body)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.EventCreationError{Err: err}).Error())
@@ -265,10 +260,6 @@ func (h *EventHandler) CreateEvent(ctx context.Context, input *CreateEventInput)
 func (h *EventHandler) DeleteEvent(ctx context.Context, input *DeleteEventInput) (*DeleteEventOutput, error) {
 	if h.eventService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
-	}
-
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
 	}
 
 	if input.EventID == "" {

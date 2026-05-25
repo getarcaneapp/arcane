@@ -156,10 +156,58 @@ _build-image-manager tag="ghcr.io/getarcaneapp/arcane:development" flag='':
 _build-image-agent tag="ghcr.io/getarcaneapp/arcane-headless:development" flag='':
     docker buildx build {{ if flag == "--push" { "--push" } else { "" } }} --platform linux/arm64,linux/amd64,linux/arm/v7 -f 'docker/Dockerfile-agent' --build-arg ENABLED_FEATURES="{{ env('ENABLED_FEATURES', env('BUILD_FEATURES', '')) }}" -t "{{ tag }}" .
 
-# Build targets. Valid: "single frontend", "single backend", "single all", "image manager [tag] [--push]", "image agent [tag] [--push]"
+# Build + push both manager and agent multi-arch images for a beta release.
+#
+# Tag pattern:    ghcr.io/getarcaneapp/{manager,agent}:<release>-beta
+# Version flag:   <release>.0.0-beta (compiled into the binary via -ldflags),
+#                 unless an explicit version is supplied as the second arg.
+#
+# Examples:
+#   just build v2                          tags :v2-beta, VERSION=v2.0.0-beta
+# just build v2 v2.0.0-beta.2            tags :v2-beta, VERSION=v2.0.0-beta.2
 [group('build')]
-build buildtype type tag="" flag="":
-    @if [ "{{ buildtype }}" = "single" ]; then just _build-{{ type }}; elif [ "{{ buildtype }}" = "image" ]; then just _build-image-{{ type }} "{{ if tag != "" { tag } else if type == "manager" { "arcane:latest" } else { "arcane-agent:latest" } }}" "{{ flag }}"; fi
+_build-release release version="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    if [ -z "{{ release }}" ]; then
+        echo "Release shortcut is required, e.g. 'just build v2'" >&2
+        exit 1
+    fi
+
+    image_tag="{{ release }}-beta"
+    version="{{ if version != "" { version } else { release + ".0.0-beta" } }}"
+
+    echo "==> Building manager image ghcr.io/getarcaneapp/manager:${image_tag} (VERSION=${version})"
+    docker buildx build \
+        --tag "ghcr.io/getarcaneapp/manager:${image_tag}" \
+        --push \
+        --platform linux/amd64,linux/arm64 \
+        --build-arg VERSION="${version}" \
+        -f docker/Dockerfile .
+
+    echo "==> Building agent image ghcr.io/getarcaneapp/agent:${image_tag} (VERSION=${version})"
+    docker buildx build \
+        --tag "ghcr.io/getarcaneapp/agent:${image_tag}" \
+        --push \
+        --platform linux/amd64,linux/arm64 \
+        --build-arg VERSION="${version}" \
+        -f docker/Dockerfile-agent .
+
+    echo ""
+    echo "✓ Pushed manager + agent images tagged :${image_tag} (VERSION=${version})"
+
+# Build targets:
+#   just build single {frontend|backend|all}
+#   just build image {manager|agent} [tag] [--push]
+# just build <release> [version]            e.g. just build v2 -> push manager+agent :v2-beta with VERSION=v2.0.0-beta
+[group('build')]
+build buildtype type="" tag="" flag="":
+    @if [ "{{ buildtype }}" = "single" ]; then just _build-{{ type }}; \
+    elif [ "{{ buildtype }}" = "image" ]; then just _build-image-{{ type }} "{{ if tag != "" { tag } else if type == "manager" { "arcane:latest" } else { "arcane-agent:latest" } }}" "{{ flag }}"; \
+    elif echo "{{ buildtype }}" | grep -qE '^v[0-9]'; then just _build-release "{{ buildtype }}" "{{ type }}"; \
+    else echo "Unknown build target: {{ buildtype }}. Try: just build single|image|<release>" >&2; exit 1; \
+    fi
 
 # -----------------------------------------------------------------------------
 # Test
@@ -434,7 +482,7 @@ gomod action="tidy" target="all":
 # Generate edge tunnel protobuf/gRPC code.
 [group('codegen')]
 proto-backend:
-    cd {{ edge_proto_dir }} && go run github.com/bufbuild/buf/cmd/buf@v1.65.0 generate
+    cd {{ edge_proto_dir }} && go run github.com/bufbuild/buf/cmd/buf@latest generate
 
 # Generate the docs config schema JSON.
 [group('docs')]

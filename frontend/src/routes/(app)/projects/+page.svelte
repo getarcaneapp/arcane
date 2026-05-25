@@ -8,6 +8,7 @@
 	import { projectService } from '$lib/services/project-service';
 	import { imageService } from '$lib/services/image-service';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import { hasPermission } from '$lib/utils/permissions.util';
 	import { queryKeys } from '$lib/query/query-keys';
 	import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import type { ProjectStatusCounts } from '$lib/types/project.type';
@@ -150,30 +151,39 @@
 		await goto(`${url.pathname}${url.search}`, { keepFocus: true, replaceState: true, noScroll: true });
 	}
 
-	const actionButtons: ActionButton[] = $derived([
-		{
-			id: 'create',
-			action: 'create',
-			label: m.compose_create_project(),
-			onclick: () => goto('/projects/new')
-		},
-		{
-			id: 'check-updates',
-			action: 'update',
-			label: m.compose_update_projects(),
-			onclick: handleCheckForUpdates,
-			loading: checkUpdatesMutation.isPending,
-			disabled: checkUpdatesMutation.isPending
-		},
-		{
+	const canCreateProject = $derived(hasPermission('projects:create', envId));
+	const canDeployProject = $derived(hasPermission('projects:deploy', envId));
+
+	const actionButtons: ActionButton[] = $derived.by(() => {
+		const buttons: ActionButton[] = [];
+		if (canCreateProject) {
+			buttons.push({
+				id: 'create',
+				action: 'create',
+				label: m.compose_create_project(),
+				onclick: () => goto('/projects/new')
+			});
+		}
+		if (canDeployProject) {
+			buttons.push({
+				id: 'check-updates',
+				action: 'update',
+				label: m.compose_update_projects(),
+				onclick: handleCheckForUpdates,
+				loading: checkUpdatesMutation.isPending,
+				disabled: checkUpdatesMutation.isPending
+			});
+		}
+		buttons.push({
 			id: 'refresh',
 			action: 'restart',
 			label: m.common_refresh(),
 			onclick: refreshCompose,
 			loading: isManualRefreshing,
 			disabled: isRefreshBlocked
-		}
-	]);
+		});
+		return buttons;
+	});
 
 	const statCards: StatCardConfig[] = $derived([
 		{

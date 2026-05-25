@@ -67,7 +67,6 @@ func createTestEnvironmentServiceUser(t *testing.T, ctx context.Context, userSer
 	user := &models.User{
 		BaseModel: models.BaseModel{ID: id},
 		Username:  fmt.Sprintf("user-%s", id),
-		Roles:     models.StringSlice{"admin"},
 	}
 
 	created, err := userService.CreateUser(ctx, user)

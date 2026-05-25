@@ -21,7 +21,7 @@
 	import UpdateCenterDialog from '$lib/components/dialogs/update-center-dialog.svelte';
 	import EnvironmentUpgradeMenuItem from './environment-upgrade-menu-item.svelte';
 	import type { AppVersionInformation } from '$lib/types/application-configuration';
-	import userStore from '$lib/stores/user-store';
+	import { hasPermission } from '$lib/utils/permissions.util';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { capitalizeFirstLetter } from '$lib/utils/string.utils';
 	import { getEnvironmentStatusVariant, isEnvironmentOnline, resolveEnvironmentStatus } from '$lib/utils/environment-status';
@@ -43,12 +43,7 @@
 	let selectedEnvironmentForUpgrade = $state<Environment | null>(null);
 	let selectedVersionInfoForUpgrade = $state<AppVersionInformation | null>(null);
 
-	let currentUser = $state<{ roles?: string[] } | null>(null);
-	$effect(() => {
-		const unsub = userStore.subscribe((u) => (currentUser = u));
-		return unsub;
-	});
-	const isAdmin = $derived(!!currentUser?.roles?.includes('admin'));
+	const canInstallUpdates = $derived(hasPermission('environments:update'));
 
 	const environmentTypeFilters: FilterOption[] = [
 		{ value: 'http', label: m.environments_edge_http_label(), icon: EnvironmentsIcon },
@@ -480,7 +475,7 @@
 	bind:open={showUpgradeDialog}
 	onConfirm={handleConfirmUpgrade}
 	versionInformation={selectedVersionInfoForUpgrade ?? undefined}
-	canInstall={isAdmin}
+	canInstall={canInstallUpdates}
 	environmentName={selectedEnvironmentForUpgrade?.name}
 	environmentId={selectedEnvironmentForUpgrade?.id}
 	bind:upgrading={isLoading.upgrading}

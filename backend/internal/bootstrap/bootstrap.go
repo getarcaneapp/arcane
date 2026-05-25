@@ -186,6 +186,7 @@ func initializeStartupState(appCtx context.Context, cfg *config.Config, appServi
 	}
 
 	startup.InitializeNonAgentFeatures(appCtx, runtimeCfg,
+		appServices.Role.EnsureBuiltInRoles,
 		appServices.User.CreateDefaultAdmin,
 		func(ctx context.Context) error {
 			return appServices.ApiKey.ReconcileDefaultAdminAPIKey(ctx, runtimeCfg.AdminStaticAPIKey)
@@ -197,6 +198,8 @@ func initializeStartupState(appCtx context.Context, cfg *config.Config, appServi
 	)
 	startup.CleanupUnknownSettings(appCtx, appServices.Settings)
 
+	runRoleStartupTasks(appCtx, appServices.Role, cfg, cfg.AgentMode)
+
 	// Auto-pair only applies in Edge mode (where the agent's outbound tunnel is the
 	// only path to the manager). Direct mode is passive — the manager dials the agent's
 	// HTTP server on TCP 3553, and the manager-side health-check promotes the env to
@@ -207,6 +210,35 @@ func initializeStartupState(appCtx context.Context, cfg *config.Config, appServi
 		}
 	} else if cfg.AgentMode && !cfg.EdgeAgent {
 		slog.InfoContext(appCtx, "Direct mode active: agent operates as a passive HTTP server; no outbound connection to manager required")
+	}
+}
+
+func runRoleStartupTasks(ctx context.Context, roleService *services.RoleService, cfg *config.Config, agentMode bool) {
+	if roleService == nil {
+		return
+	}
+	if err := roleService.EnsureBuiltInRoles(ctx); err != nil {
+		slog.ErrorContext(ctx, "Failed to reconcile built-in roles", "error", err)
+	}
+	// Backfill must run AFTER EnsureBuiltInRoles (it references the role IDs
+	// seeded there) and BEFORE BackfillApiKeyPermissions / AssertGlobalAdminExists
+	// (both consult the assignments table this populates).
+	if err := roleService.BackfillLegacyRoleAssignments(ctx); err != nil {
+		slog.ErrorContext(ctx, "Failed to backfill legacy users.roles into user_role_assignments", "error", err)
+	}
+	if err := roleService.BackfillApiKeyPermissions(ctx); err != nil {
+		slog.WarnContext(ctx, "Failed to backfill API key permissions", "error", err)
+	}
+	if cfg != nil {
+		if err := roleService.ReconcileEnvOidcMappings(ctx, cfg.OidcRoleMappings); err != nil {
+			slog.ErrorContext(ctx, "Failed to reconcile OIDC_ROLE_MAPPINGS", "error", err)
+		}
+	}
+	if agentMode {
+		return
+	}
+	if err := roleService.AssertGlobalAdminExists(ctx); err != nil {
+		slog.ErrorContext(ctx, "RBAC global admin guard failed", "error", err)
 	}
 }
 
@@ -501,6 +533,17 @@ func normalizeTunnelGRPCRequestPathInternal(r *http.Request) *http.Request {
 	}
 
 	connectMethodPath := tunnelpb.TunnelService_Connect_FullMethodName
+
+	const tunnelConnectPath = "/api/tunnel/connect"
+	if strings.HasSuffix(r.URL.Path, tunnelConnectPath) {
+		clone := r.Clone(r.Context())
+		cloneURL := *clone.URL
+		cloneURL.Path = connectMethodPath
+		clone.URL = &cloneURL
+		clone.RequestURI = connectMethodPath
+		return clone
+	}
+
 	idx := strings.Index(r.URL.Path, connectMethodPath)
 	if idx <= 0 {
 		return r

@@ -312,15 +312,11 @@ type Update struct {
 	// Required: false
 	OidcScopes *string `json:"oidcScopes,omitempty"`
 
-	// OidcAdminClaim is the OIDC claim name used to identify administrators.
+	// OidcGroupsClaim is the OIDC claim path read on every login to drive
+	// role assignment via oidc_role_mappings. Default: "groups".
 	//
 	// Required: false
-	OidcAdminClaim *string `json:"oidcAdminClaim,omitempty"`
-
-	// OidcAdminValue is the OIDC claim value that identifies administrators.
-	//
-	// Required: false
-	OidcAdminValue *string `json:"oidcAdminValue,omitempty"`
+	OidcGroupsClaim *string `json:"oidcGroupsClaim,omitempty"`
 
 	// OidcSkipTlsVerify indicates if TLS verification should be skipped for OIDC.
 	//

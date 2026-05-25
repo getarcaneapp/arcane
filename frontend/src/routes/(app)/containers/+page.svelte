@@ -8,8 +8,7 @@
 	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import userStore from '$lib/stores/user-store';
-	import { fromStore } from 'svelte/store';
+	import { hasPermission } from '$lib/utils/permissions.util';
 	import type { ContainerCreateRequest, ContainerStatusCounts } from '$lib/types/container.type';
 	import { createMutation } from '@tanstack/svelte-query';
 	import { BoxIcon } from '$lib/icons';
@@ -105,8 +104,7 @@
 
 	const containerStatusCounts = $derived(containers.counts ?? countsFallback);
 
-	const storeUser = fromStore(userStore);
-	const isAdmin = $derived(!!storeUser.current?.roles?.includes('admin'));
+	const canAutoUpdate = $derived(hasPermission('containers:autoupdate', envId));
 
 	const actionButtons: ActionButton[] = $derived(
 		[
@@ -118,7 +116,7 @@
 				loading: createContainerMutation.isPending,
 				disabled: createContainerMutation.isPending
 			},
-			isAdmin
+			canAutoUpdate
 				? {
 						id: 'check-updates',
 						action: 'update',

@@ -13,6 +13,7 @@
 	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type ActionButton } from '$lib/layouts/index.js';
 	import { createQuery } from '@tanstack/svelte-query';
+	import { hasPermission } from '$lib/utils/permissions.util';
 
 	let { data } = $props();
 
@@ -89,28 +90,35 @@
 		}
 	}
 
-	const actionButtons: ActionButton[] = [
-		{
-			id: 'info',
-			action: 'inspect',
-			label: m.registries_info_title(),
-			onclick: () => (isInfoDialogOpen = true)
-		},
-		{
-			id: 'create',
-			action: 'create',
-			label: m.common_add_button({ resource: m.resource_registry_cap() }),
-			onclick: openCreateRegistryDialog
-		},
-		{
+	const canCreateRegistry = $derived(hasPermission('registries:create'));
+
+	const actionButtons: ActionButton[] = $derived.by(() => {
+		const buttons: ActionButton[] = [
+			{
+				id: 'info',
+				action: 'inspect',
+				label: m.registries_info_title(),
+				onclick: () => (isInfoDialogOpen = true)
+			}
+		];
+		if (canCreateRegistry) {
+			buttons.push({
+				id: 'create',
+				action: 'create',
+				label: m.common_add_button({ resource: m.resource_registry_cap() }),
+				onclick: openCreateRegistryDialog
+			});
+		}
+		buttons.push({
 			id: 'refresh',
 			action: 'restart',
 			label: m.common_refresh(),
 			onclick: refreshRegistries,
 			loading: isLoading.refresh,
 			disabled: isLoading.refresh
-		}
-	];
+		});
+		return buttons;
+	});
 </script>
 
 <ResourcePageLayout title={m.registries_title()} subtitle={m.registries_subtitle()} {actionButtons}>
