@@ -8,6 +8,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
+	"github.com/getarcaneapp/arcane/backend/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils/mapper"
 	"github.com/getarcaneapp/arcane/types/base"
 	"github.com/getarcaneapp/arcane/types/gitops"
@@ -128,6 +129,7 @@ func RegisterGitRepositories(api huma.API, repoService *services.GitRepositorySe
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequirePermission(api, authz.PermGitReposList),
 	}, h.ListRepositories)
 
 	huma.Register(api, huma.Operation{
@@ -141,7 +143,7 @@ func RegisterGitRepositories(api huma.API, repoService *services.GitRepositorySe
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermGitReposCreate),
 	}, h.CreateRepository)
 
 	huma.Register(api, huma.Operation{
@@ -155,6 +157,7 @@ func RegisterGitRepositories(api huma.API, repoService *services.GitRepositorySe
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequirePermission(api, authz.PermGitReposRead),
 	}, h.GetRepository)
 
 	huma.Register(api, huma.Operation{
@@ -168,7 +171,7 @@ func RegisterGitRepositories(api huma.API, repoService *services.GitRepositorySe
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermGitReposUpdate),
 	}, h.UpdateRepository)
 
 	huma.Register(api, huma.Operation{
@@ -182,7 +185,7 @@ func RegisterGitRepositories(api huma.API, repoService *services.GitRepositorySe
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermGitReposDelete),
 	}, h.DeleteRepository)
 
 	huma.Register(api, huma.Operation{
@@ -196,7 +199,7 @@ func RegisterGitRepositories(api huma.API, repoService *services.GitRepositorySe
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermGitReposTest),
 	}, h.TestRepository)
 
 	huma.Register(api, huma.Operation{
@@ -210,6 +213,7 @@ func RegisterGitRepositories(api huma.API, repoService *services.GitRepositorySe
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequirePermission(api, authz.PermGitReposRead),
 	}, h.ListBranches)
 
 	huma.Register(api, huma.Operation{
@@ -223,6 +227,7 @@ func RegisterGitRepositories(api huma.API, repoService *services.GitRepositorySe
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequirePermission(api, authz.PermGitReposRead),
 	}, h.BrowseFiles)
 
 	huma.Register(api, huma.Operation{
@@ -236,7 +241,7 @@ func RegisterGitRepositories(api huma.API, repoService *services.GitRepositorySe
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermGitReposSync),
 	}, h.SyncRepositories)
 }
 
@@ -276,10 +281,6 @@ func (h *GitRepositoryHandler) ListRepositories(ctx context.Context, input *List
 func (h *GitRepositoryHandler) CreateRepository(ctx context.Context, input *CreateGitRepositoryInput) (*CreateGitRepositoryOutput, error) {
 	if h.repoService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
-	}
-
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
 	}
 
 	actor := models.User{}
@@ -337,10 +338,6 @@ func (h *GitRepositoryHandler) UpdateRepository(ctx context.Context, input *Upda
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
-
 	actor := models.User{}
 	if currentUser, exists := humamw.GetCurrentUserFromContext(ctx); exists && currentUser != nil {
 		actor = *currentUser
@@ -371,10 +368,6 @@ func (h *GitRepositoryHandler) DeleteRepository(ctx context.Context, input *Dele
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
-
 	actor := models.User{}
 	if currentUser, exists := humamw.GetCurrentUserFromContext(ctx); exists && currentUser != nil {
 		actor = *currentUser
@@ -399,10 +392,6 @@ func (h *GitRepositoryHandler) DeleteRepository(ctx context.Context, input *Dele
 func (h *GitRepositoryHandler) TestRepository(ctx context.Context, input *TestGitRepositoryInput) (*TestGitRepositoryOutput, error) {
 	if h.repoService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
-	}
-
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
 	}
 
 	actor := models.User{}
@@ -472,10 +461,6 @@ func (h *GitRepositoryHandler) BrowseFiles(ctx context.Context, input *BrowseFil
 func (h *GitRepositoryHandler) SyncRepositories(ctx context.Context, input *SyncGitRepositoriesInput) (*SyncGitRepositoriesOutput, error) {
 	if h.repoService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
-	}
-
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
 	}
 
 	if err := h.repoService.SyncRepositories(ctx, input.Body.Repositories); err != nil {

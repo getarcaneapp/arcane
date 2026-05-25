@@ -14,7 +14,7 @@
 	import { dashboardService } from '$lib/services/dashboard-service';
 	import { systemService } from '$lib/services/system-service';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import userStore from '$lib/stores/user-store';
+	import { hasAnyPermission, hasPermission } from '$lib/utils/permissions.util';
 	import type { SystemStats } from '$lib/types/system-stats.type';
 	import type {
 		DashboardActionItem,
@@ -31,7 +31,6 @@
 	import { getEnvironmentStatusVariant, isEnvironmentOnline, resolveEnvironmentStatus } from '$lib/utils/environment-status';
 	import { createStatsWebSocket, type ReconnectingWebSocket } from '$lib/utils/ws';
 	import bytes from '$lib/utils/bytes';
-	import { fromStore } from 'svelte/store';
 	import {
 		ContainersIcon,
 		CpuIcon,
@@ -75,10 +74,15 @@
 	let upgradeDialogOpenById = $state<Record<string, boolean>>({});
 	let upgradeDialogUpgradingById = $state<Record<string, boolean>>({});
 
-	const storeUser = fromStore(userStore);
 	const availableEnvironments = $derived(environmentStore.available);
 	const currentEnvironmentId = $derived(environmentStore.selected?.id ?? null);
-	const currentUserIsAdmin = $derived(!!storeUser.current?.roles?.includes('admin'));
+
+	function canPruneInEnvironment(envId: string): boolean {
+		return hasAnyPermission(['images:prune', 'volumes:prune', 'networks:prune'], envId);
+	}
+	function canUpgradeEnvironment(): boolean {
+		return hasPermission('environments:update');
+	}
 
 	function shouldLoadEnvironment(environment: Environment): boolean {
 		return environment.enabled && isEnvironmentOnline(environment);
@@ -481,14 +485,17 @@
 
 	function canPruneEnvironment(item: DashboardEnvironmentOverview): boolean {
 		return (
-			currentUserIsAdmin && item.environment.enabled && item.snapshotState === 'ready' && isEnvironmentOnline(item.environment)
+			canPruneInEnvironment(item.environment.id) &&
+			item.environment.enabled &&
+			item.snapshotState === 'ready' &&
+			isEnvironmentOnline(item.environment)
 		);
 	}
 
 	function getEnvironmentActionButtons(item: DashboardEnvironmentOverview, isCurrent: boolean): ActionButton[] {
 		const buttons: ActionButton[] = [];
 
-		if (currentUserIsAdmin) {
+		if (canPruneInEnvironment(item.environment.id)) {
 			buttons.push({
 				id: `${item.environment.id}-prune`,
 				action: 'prune',
@@ -779,7 +786,7 @@
 																<DashboardEnvironmentUpgradeAction
 																	{environment}
 																	versionInfo={vInfo}
-																	isAdmin={currentUserIsAdmin}
+																	canUpgrade={canUpgradeEnvironment()}
 																	debug={debugUpgrade}
 																	onRefreshRequested={refreshOverview}
 																	render="trigger"
@@ -800,7 +807,7 @@
 													<DashboardEnvironmentUpgradeAction
 														{environment}
 														versionInfo={vInfo}
-														isAdmin={currentUserIsAdmin}
+														canUpgrade={canUpgradeEnvironment()}
 														debug={debugUpgrade}
 														onRefreshRequested={refreshOverview}
 														render="dialog"

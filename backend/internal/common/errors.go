@@ -1702,3 +1702,119 @@ func (e *BuildKitDockerExporterError) Error() string {
 }
 
 func (e *BuildKitDockerExporterError) Unwrap() error { return e.Err }
+
+// ----- RBAC / role service errors -----
+
+type RoleNotFoundError struct{}
+
+func (e *RoleNotFoundError) Error() string {
+	return "Role not found"
+}
+
+func IsRoleNotFoundError(err error) bool {
+	return isErrorTypeInternal[*RoleNotFoundError](err)
+}
+
+type RoleBuiltInError struct{}
+
+func (e *RoleBuiltInError) Error() string {
+	return "Built-in role cannot be modified"
+}
+
+func IsRoleBuiltInError(err error) bool {
+	return isErrorTypeInternal[*RoleBuiltInError](err)
+}
+
+type RoleNameTakenError struct{}
+
+func (e *RoleNameTakenError) Error() string {
+	return "Role name already in use"
+}
+
+func IsRoleNameTakenError(err error) bool {
+	return isErrorTypeInternal[*RoleNameTakenError](err)
+}
+
+type UnknownPermissionError struct {
+	Perm string
+}
+
+func (e *UnknownPermissionError) Error() string {
+	return fmt.Sprintf("Unknown permission: %s", e.Perm)
+}
+
+func IsUnknownPermissionError(err error) bool {
+	return isErrorTypeInternal[*UnknownPermissionError](err)
+}
+
+// RolePermissionEscalationError is returned when a caller attempts to author a
+// role containing a permission they do not themselves hold at global scope.
+// Used by the CreateRole and UpdateRole handlers as defense-in-depth alongside
+// the RequireGlobalAdmin middleware.
+type RolePermissionEscalationError struct {
+	Perm string
+}
+
+func (e *RolePermissionEscalationError) Error() string {
+	return fmt.Sprintf("cannot grant a permission you do not hold: %s", e.Perm)
+}
+
+func IsRolePermissionEscalationError(err error) bool {
+	return isErrorTypeInternal[*RolePermissionEscalationError](err)
+}
+
+// InvalidRoleAssignmentError is returned when SetUserAssignments is called with
+// a RoleID or EnvironmentID that doesn't exist in the database. Surfaces as a
+// 400 Bad Request so callers see a descriptive message instead of an opaque
+// FK-violation 500 from the underlying tx.Create.
+type InvalidRoleAssignmentError struct {
+	RoleID        string
+	EnvironmentID string
+}
+
+func (e *InvalidRoleAssignmentError) Error() string {
+	if e.RoleID != "" {
+		return fmt.Sprintf("invalid role assignment: role %q does not exist", e.RoleID)
+	}
+	if e.EnvironmentID != "" {
+		return fmt.Sprintf("invalid role assignment: environment %q does not exist", e.EnvironmentID)
+	}
+	return "invalid role assignment"
+}
+
+func IsInvalidRoleAssignmentError(err error) bool {
+	return isErrorTypeInternal[*InvalidRoleAssignmentError](err)
+}
+
+type OidcMappingNotFoundError struct{}
+
+func (e *OidcMappingNotFoundError) Error() string {
+	return "OIDC role mapping not found"
+}
+
+func IsOidcMappingNotFoundError(err error) bool {
+	return isErrorTypeInternal[*OidcMappingNotFoundError](err)
+}
+
+// OidcMappingEnvManagedError is returned when an API caller attempts to mutate
+// an OIDC role mapping that was declared via OIDC_ROLE_MAPPINGS. Env-managed
+// rows can only be changed by editing the env var and restarting.
+type OidcMappingEnvManagedError struct{}
+
+func (e *OidcMappingEnvManagedError) Error() string {
+	return "OIDC role mapping is managed by OIDC_ROLE_MAPPINGS and cannot be edited at runtime"
+}
+
+func IsOidcMappingEnvManagedError(err error) bool {
+	return isErrorTypeInternal[*OidcMappingEnvManagedError](err)
+}
+
+type NoGlobalAdminRemainsError struct{}
+
+func (e *NoGlobalAdminRemainsError) Error() string {
+	return "At least one user must retain a global Admin role assignment"
+}
+
+func IsNoGlobalAdminRemainsError(err error) bool {
+	return isErrorTypeInternal[*NoGlobalAdminRemainsError](err)
+}

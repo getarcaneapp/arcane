@@ -24,8 +24,18 @@ type ArcaneApiEndpoints struct {
 	ApiKeyEndpoint  string
 
 	// Users
-	UsersEndpoint string
-	UserEndpoint  string
+	UsersEndpoint               string
+	UserEndpoint                string
+	UserRoleAssignmentsEndpoint string
+
+	// Roles (RBAC)
+	RolesEndpoint                     string
+	RoleEndpoint                      string
+	RolesAvailablePermissionsEndpoint string
+
+	// OIDC role mappings
+	OidcRoleMappingsEndpoint string
+	OidcRoleMappingEndpoint  string
 
 	// Environments
 	EnvironmentsEndpoint       string
@@ -185,8 +195,18 @@ var Endpoints = ArcaneApiEndpoints{ //nolint:gosec // static endpoint paths; aut
 	ApiKeyEndpoint:  "/api/api-keys/%s",
 
 	// Users
-	UsersEndpoint: "/api/users",
-	UserEndpoint:  "/api/users/%s",
+	UsersEndpoint:               "/api/users",
+	UserEndpoint:                "/api/users/%s",
+	UserRoleAssignmentsEndpoint: "/api/users/%s/role-assignments",
+
+	// Roles (RBAC)
+	RolesEndpoint:                     "/api/roles",
+	RoleEndpoint:                      "/api/roles/%s",
+	RolesAvailablePermissionsEndpoint: "/api/roles/available-permissions",
+
+	// OIDC role mappings
+	OidcRoleMappingsEndpoint: "/api/oidc/role-mappings",
+	OidcRoleMappingEndpoint:  "/api/oidc/role-mappings/%s",
 
 	// Environments
 	EnvironmentsEndpoint:       "/api/environments",
@@ -343,6 +363,22 @@ func (e ArcaneApiEndpoints) ApiKey(id string) string { return fmt.Sprintf(e.ApiK
 // User endpoints
 func (e ArcaneApiEndpoints) Users() string         { return e.UsersEndpoint }
 func (e ArcaneApiEndpoints) User(id string) string { return fmt.Sprintf(e.UserEndpoint, id) }
+func (e ArcaneApiEndpoints) UserRoleAssignments(userID string) string {
+	return fmt.Sprintf(e.UserRoleAssignmentsEndpoint, userID)
+}
+
+// Role (RBAC) endpoints
+func (e ArcaneApiEndpoints) Roles() string         { return e.RolesEndpoint }
+func (e ArcaneApiEndpoints) Role(id string) string { return fmt.Sprintf(e.RoleEndpoint, id) }
+func (e ArcaneApiEndpoints) RolesAvailablePermissions() string {
+	return e.RolesAvailablePermissionsEndpoint
+}
+
+// OIDC role mapping endpoints
+func (e ArcaneApiEndpoints) OidcRoleMappings() string { return e.OidcRoleMappingsEndpoint }
+func (e ArcaneApiEndpoints) OidcRoleMapping(id string) string {
+	return fmt.Sprintf(e.OidcRoleMappingEndpoint, id)
+}
 
 // Environment endpoints
 func (e ArcaneApiEndpoints) Environments() string { return e.EnvironmentsEndpoint }

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/getarcaneapp/arcane/backend/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	"github.com/getarcaneapp/arcane/types/apikey"
 )
@@ -32,11 +33,23 @@ func (ps *PlaywrightService) CreateTestApiKeys(ctx context.Context, count int) (
 		return nil, fmt.Errorf("failed to get arcane user: %w", err)
 	}
 
+	// Grant every recognized permission globally so the test key behaves like
+	// the legacy "admin-everywhere" credential the e2e suite expects. The
+	// owner is the `arcane` bootstrap user, who holds global Admin and
+	// therefore satisfies validateGrantsAgainstUserInternal.
+	allPerms := authz.AllPermissions()
+	grants := make([]apikey.PermissionGrant, len(allPerms))
+	for i, p := range allPerms {
+		grants[i] = apikey.PermissionGrant{Permission: p}
+	}
+
 	var createdKeys []*apikey.ApiKeyCreatedDto
 	for i := 0; i < count; i++ {
+		description := fmt.Sprintf("Test API key %d for Playwright tests", i+1)
 		req := apikey.CreateApiKey{
 			Name:        fmt.Sprintf("test-api-key-%d", i+1),
-			Description: new(fmt.Sprintf("Test API key %d for Playwright tests", i+1)),
+			Description: &description,
+			Permissions: grants,
 		}
 
 		apiKey, err := ps.apiKeyService.CreateApiKey(ctx, user.ID, req)

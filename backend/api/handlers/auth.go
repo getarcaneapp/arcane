@@ -12,7 +12,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils/cookie"
-	"github.com/getarcaneapp/arcane/backend/pkg/utils/mapper"
 	"github.com/getarcaneapp/arcane/types/auth"
 	"github.com/getarcaneapp/arcane/types/base"
 	"github.com/getarcaneapp/arcane/types/user"
@@ -155,9 +154,9 @@ func (h *AuthHandler) Login(ctx context.Context, input *LoginInput) (*LoginOutpu
 		}
 	}
 
-	var userResp user.User
-	if mapErr := mapper.MapStruct(userModel, &userResp); mapErr != nil {
-		return nil, huma.Error500InternalServerError((&common.UserMappingError{Err: mapErr}).Error())
+	userResp, err := h.userService.ToUserResponseDto(ctx, *userModel)
+	if err != nil {
+		return nil, huma.Error500InternalServerError((&common.UserMappingError{Err: err}).Error())
 	}
 
 	maxAge := max(int(time.Until(tokenPair.ExpiresAt).Seconds()), 0)
@@ -202,6 +201,8 @@ func (h *AuthHandler) Logout(ctx context.Context, input *struct{}) (*LogoutOutpu
 }
 
 // GetCurrentUser returns the currently authenticated user's information.
+// Uses ToUserResponseDto (not the generic struct mapper) so the RBAC fields
+// (RoleAssignments, PermissionsByEnv) are resolved via RoleService.
 func (h *AuthHandler) GetCurrentUser(ctx context.Context, input *struct{}) (*GetCurrentUserOutput, error) {
 	if h.userService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
@@ -217,9 +218,9 @@ func (h *AuthHandler) GetCurrentUser(ctx context.Context, input *struct{}) (*Get
 		return nil, huma.Error500InternalServerError((&common.UserRetrievalError{Err: err}).Error())
 	}
 
-	var out user.User
-	if mapErr := mapper.MapStruct(userModel, &out); mapErr != nil {
-		return nil, huma.Error500InternalServerError((&common.UserMappingError{Err: mapErr}).Error())
+	out, err := h.userService.ToUserResponseDto(ctx, *userModel)
+	if err != nil {
+		return nil, huma.Error500InternalServerError((&common.UserMappingError{Err: err}).Error())
 	}
 
 	return &GetCurrentUserOutput{

@@ -18,6 +18,8 @@
 	import { VolumeBrowser } from '$lib/components/file-browser';
 	import BackupList from '../components/volume-backup-table.svelte';
 	import settingsStore from '$lib/stores/config-store';
+	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import { hasPermission } from '$lib/utils/permissions.util';
 
 	let { data } = $props();
 	let volume = $state(untrack(() => data.volume));
@@ -25,6 +27,9 @@
 
 	const backupVolumeName = $derived.by(() => $settingsStore?.backupVolumeName || 'arcane-backups');
 	const isBackupVolume = $derived(volume?.name === backupVolumeName);
+
+	const currentEnvId = $derived(environmentStore.selected?.id || '0');
+	const canDeleteVolume = $derived(hasPermission('volumes:delete', currentEnvId));
 
 	let isLoading = $state({ remove: false });
 	const createdDate = $derived(volume.createdAt ? format(new Date(volume.createdAt), 'PP p') : m.common_unknown());
@@ -65,16 +70,20 @@
 		});
 	}
 
-	const actions: DetailAction[] = $derived([
-		{
-			id: 'remove',
-			action: 'remove',
-			label: m.common_remove(),
-			loading: isLoading.remove,
-			disabled: isLoading.remove || isBackupVolume,
-			onclick: () => handleRemoveVolumeConfirm(volume.name)
-		}
-	]);
+	const actions: DetailAction[] = $derived(
+		canDeleteVolume
+			? [
+					{
+						id: 'remove',
+						action: 'remove' as const,
+						label: m.common_remove(),
+						loading: isLoading.remove,
+						disabled: isLoading.remove || isBackupVolume,
+						onclick: () => handleRemoveVolumeConfirm(volume.name)
+					}
+				]
+			: []
+	);
 
 	function onTabChange(value: string) {
 		selectedTab = value;

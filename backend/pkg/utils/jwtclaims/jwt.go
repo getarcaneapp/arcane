@@ -161,36 +161,3 @@ func GetByPath(m map[string]any, path string) (any, bool) {
 	}
 	return cur, true
 }
-
-// EvalMatch checks if a claim matches any of the desired values
-func EvalMatch(v any, want []string) bool {
-	if len(want) == 0 {
-		if b, ok := v.(bool); ok {
-			return b
-		}
-		return false
-	}
-	wantSet := map[string]struct{}{}
-	for _, s := range want {
-		wantSet[strings.ToLower(s)] = struct{}{}
-	}
-	switch x := v.(type) {
-	case string:
-		_, ok := wantSet[strings.ToLower(x)]
-		return ok
-	case []any:
-		for _, it := range x {
-			if s, ok := it.(string); ok {
-				if _, ok2 := wantSet[strings.ToLower(s)]; ok2 {
-					return true
-				}
-			}
-		}
-		return false
-	case bool:
-		_, ok := wantSet[strings.ToLower(fmt.Sprintf("%v", x))]
-		return ok
-	default:
-		return false
-	}
-}

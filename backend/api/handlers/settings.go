@@ -15,6 +15,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
+	"github.com/getarcaneapp/arcane/backend/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils/mapper"
 	"github.com/getarcaneapp/arcane/types/base"
@@ -141,6 +142,7 @@ func RegisterSettings(api huma.API, settingsService *services.SettingsService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequirePermission(api, authz.PermSettingsRead),
 	}, h.GetSettings)
 
 	huma.Register(api, huma.Operation{
@@ -154,7 +156,7 @@ func RegisterSettings(api huma.API, settingsService *services.SettingsService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermSettingsWrite),
 	}, h.UpdateSettings)
 
 	// Top-level settings endpoints (not environment-scoped)
@@ -169,7 +171,7 @@ func RegisterSettings(api huma.API, settingsService *services.SettingsService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermSettingsRead),
 	}, h.Search)
 
 	huma.Register(api, huma.Operation{
@@ -183,7 +185,7 @@ func RegisterSettings(api huma.API, settingsService *services.SettingsService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermSettingsRead),
 	}, h.GetCategories)
 }
 
@@ -264,7 +266,8 @@ func (h *SettingsHandler) GetSettings(ctx context.Context, input *GetSettingsInp
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	isAdmin := humamw.IsAdminFromContext(ctx)
+	ps, _ := humamw.PermissionsFromContext(ctx)
+	isAdmin := ps.IsGlobalAdmin()
 
 	if input.EnvironmentID != "0" {
 		if h.environmentService == nil {
@@ -295,10 +298,6 @@ func (h *SettingsHandler) GetSettings(ctx context.Context, input *GetSettingsInp
 func (h *SettingsHandler) UpdateSettings(ctx context.Context, input *UpdateSettingsInput) (*UpdateSettingsOutput, error) {
 	if h.settingsService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
-	}
-
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
 	}
 
 	if err := h.validateSettingsUpdateInput(input.Body); err != nil {
@@ -401,20 +400,17 @@ func hasAuthSettingsUpdateInternal(req settings.Update) bool {
 		req.AuthSessionTimeout != nil || req.AuthPasswordPolicy != nil ||
 		req.OidcClientId != nil ||
 		req.OidcClientSecret != nil || req.OidcIssuerUrl != nil ||
-		req.OidcScopes != nil || req.OidcAdminClaim != nil ||
-		req.OidcAdminValue != nil || req.OidcMergeAccounts != nil ||
+		req.OidcScopes != nil ||
+		req.OidcMergeAccounts != nil ||
 		req.OidcSkipTlsVerify != nil || req.OidcAutoRedirectToProvider != nil ||
-		req.OidcProviderName != nil || req.OidcProviderLogoUrl != nil
+		req.OidcProviderName != nil || req.OidcProviderLogoUrl != nil ||
+		req.OidcGroupsClaim != nil
 }
 
 // Search searches settings by query.
 func (h *SettingsHandler) Search(ctx context.Context, input *SearchSettingsInput) (*SearchSettingsOutput, error) {
 	if h.settingsSearchService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
-	}
-
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
 	}
 
 	if strings.TrimSpace(input.Body.Query) == "" {
@@ -429,10 +425,6 @@ func (h *SettingsHandler) Search(ctx context.Context, input *SearchSettingsInput
 func (h *SettingsHandler) GetCategories(ctx context.Context, input *struct{}) (*GetCategoriesOutput, error) {
 	if h.settingsSearchService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
-	}
-
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
 	}
 
 	categories := h.settingsSearchService.GetSettingsCategories()
