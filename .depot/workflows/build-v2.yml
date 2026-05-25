@@ -86,7 +86,7 @@ jobs:
           tags: ${{ steps.manager-meta.outputs.tags }}
           labels: ${{ steps.manager-meta.outputs.labels }}
           build-args: |
-            VERSION=v2-beta
+            VERSION=v2.0.0-beta
             REVISION=${{ github.sha }}
           sbom: false
           provenance: true
@@ -130,7 +130,7 @@ jobs:
           tags: ${{ steps.agent-meta.outputs.tags }}
           labels: ${{ steps.agent-meta.outputs.labels }}
           build-args: |
-            VERSION=v2-beta
+            VERSION=v2.0.0-beta
             REVISION=${{ github.sha }}
           sbom: false
           provenance: true
