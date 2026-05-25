@@ -11,12 +11,12 @@ async function navigateToContainers(page: Page) {
 
 let containersData: Paginated<ContainerSummary> = { data: [], pagination: { totalItems: 0 } };
 
-test.beforeEach(async ({ page }) => {
-	await navigateToContainers(page);
-	containersData = await fetchContainersWithRetry(page);
-});
-
 test.describe('Containers Page', () => {
+	test.beforeEach(async ({ page }) => {
+		await navigateToContainers(page);
+		containersData = await fetchContainersWithRetry(page);
+	});
+
 	test('should display the containers page title and description', async ({ page }) => {
 		await navigateToContainers(page);
 		await expect(page.getByRole('heading', { name: 'Containers', level: 1 })).toBeVisible();
@@ -148,5 +148,80 @@ test.describe('Containers Page', () => {
 
 		await page.getByRole('button', { name: 'Cancel' }).click();
 		await expect(dialog).toBeHidden();
+	});
+});
+
+test.describe('Containers Page network IP addresses', () => {
+	test('should show every network IP address for a multi-network container', async ({
+		page,
+		context
+	}) => {
+		await page.addInitScript(() => {
+			localStorage.removeItem('arcane-container-table');
+		});
+
+		await context.route('**/api/environments/*/containers**', async (route) => {
+			if (route.request().method() !== 'GET') {
+				await route.continue();
+				return;
+			}
+
+			const url = new URL(route.request().url());
+			if (!/^\/api\/environments\/[^/]+\/containers$/.test(url.pathname)) {
+				await route.continue();
+				return;
+			}
+
+			await route.fulfill({
+				status: 200,
+				contentType: 'application/json',
+				body: JSON.stringify({
+					success: true,
+					data: [
+						{
+							id: 'wordpress-multi-network',
+							names: ['/wordpress'],
+							image: 'wordpress:latest',
+							imageId: 'sha256:wordpress',
+							command: 'apache2-foreground',
+							created: 1_700_000_000,
+							labels: {},
+							state: 'running',
+							status: 'Up 5 minutes',
+							ports: [],
+							hostConfig: { networkMode: 'default' },
+							networkSettings: {
+								networks: {
+									proxy: { ipAddress: '172.20.0.10' },
+									private: { ipAddress: '10.10.0.5' }
+								}
+							},
+							mounts: []
+						}
+					],
+					counts: {
+						runningContainers: 1,
+						stoppedContainers: 0,
+						totalContainers: 1
+					},
+					pagination: {
+						totalPages: 1,
+						totalItems: 1,
+						currentPage: 1,
+						itemsPerPage: 20,
+						grandTotalItems: 1
+					}
+				})
+			});
+		});
+
+		await navigateToContainers(page);
+
+		const row = page.locator('tbody tr').filter({
+			has: page.getByRole('link', { name: 'wordpress', exact: true })
+		});
+
+		await expect(row).toContainText('10.10.0.5');
+		await expect(row).toContainText('172.20.0.10');
 	});
 });

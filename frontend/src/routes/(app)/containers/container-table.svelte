@@ -34,7 +34,7 @@
 	import {
 		getActionStatusMessage,
 		getContainerDisplayName,
-		getContainerIpAddress,
+		getContainerIpAddresses,
 		getProjectName,
 		getStateBadgeVariant,
 		parseImageRef,
@@ -334,8 +334,28 @@
 <ContainerStatsSync {statsManager} envId={currentEnvId} targetIds={shouldConnect} />
 
 {#snippet IPAddressCell({ item }: { item: ContainerSummaryDto })}
-	{@const ip = getContainerIpAddress(item)}
-	<span class="font-mono text-sm">{ip ?? m.common_na()}</span>
+	{@const ipAddresses = getContainerIpAddresses(item)}
+	{#if ipAddresses.length > 0}
+		<div class="space-y-0.5">
+			{#each ipAddresses as ipAddress (ipAddress)}
+				<div class="font-mono text-sm leading-tight">{ipAddress}</div>
+			{/each}
+		</div>
+	{:else}
+		<span class="font-mono text-sm">{m.common_na()}</span>
+	{/if}
+{/snippet}
+
+{#snippet IPAddressesField(ipAddresses: string[])}
+	{#if ipAddresses.length > 0}
+		<span class="flex flex-col gap-0.5">
+			{#each ipAddresses as ipAddress (ipAddress)}
+				<span class="font-mono text-xs leading-tight">{ipAddress}</span>
+			{/each}
+		</span>
+	{:else}
+		<span class="font-mono text-xs">{m.common_na()}</span>
+	{/if}
 {/snippet}
 
 {#snippet CPUCell({ item }: { item: ContainerSummaryDto })}
@@ -500,10 +520,11 @@
 			},
 			{
 				label: m.containers_ip_address(),
-				getValue: (item: ContainerSummaryDto) => getContainerIpAddress(item) ?? m.common_na(),
+				getValue: (item: ContainerSummaryDto) => getContainerIpAddresses(item),
 				icon: NetworksIcon,
 				iconVariant: 'sky' as const,
-				type: 'mono' as const,
+				type: 'component' as const,
+				component: IPAddressesField,
 				show: mobileFieldVisibility['ipAddress'] ?? false
 			},
 			{

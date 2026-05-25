@@ -47,14 +47,21 @@ export function getStateBadgeVariant(state: string): StateBadgeVariant {
 	return 'amber';
 }
 
-export function getContainerIpAddress(container: ContainerSummaryDto): string | null {
+export function getContainerIpAddresses(container: ContainerSummaryDto): string[] {
 	const networks = container.networkSettings?.networks;
-	if (!networks) return null;
-	for (const networkName in networks) {
-		const network = networks[networkName];
-		if (network?.ipAddress) return network.ipAddress;
+	if (!networks) return [];
+
+	const seen = new Set<string>();
+	const ipAddresses: string[] = [];
+	for (const networkName of Object.keys(networks).sort((a, b) => a.localeCompare(b))) {
+		const ipAddress = networks[networkName]?.ipAddress?.trim();
+		if (!ipAddress || seen.has(ipAddress)) continue;
+
+		seen.add(ipAddress);
+		ipAddresses.push(ipAddress);
 	}
-	return null;
+
+	return ipAddresses;
 }
 
 export function getProjectName(container: ContainerSummaryDto): string {
