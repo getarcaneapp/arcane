@@ -335,13 +335,18 @@ test.describe('arcane-cli e2e', () => {
 			let created: CreatedApiKey | undefined;
 
 			try {
+				// API keys must carry at least one permission grant in the new
+				// RBAC model — the CLI flag mirrors the backend's minItems:1
+				// requirement. Pick a low-risk read-only perm for the e2e key.
 				created = await runCLIJSON<CreatedApiKey>(config.configPath, [
 					'admin',
 					'api-keys',
 					'create',
 					name,
 					'--description',
-					'Created by CLI e2e'
+					'Created by CLI e2e',
+					'--permission',
+					'apikeys:list'
 				]);
 				expect(created.id).toBeTruthy();
 				expect(created.key).toMatch(/^arc_/);

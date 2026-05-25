@@ -32,8 +32,15 @@
 	import { toast } from 'svelte-sonner';
 	import bytes from '$lib/utils/bytes';
 	import { format } from 'date-fns';
+	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import { hasPermission } from '$lib/utils/permissions.util';
+	import IfPermitted from '$lib/components/if-permitted.svelte';
 
 	let { provider, rootLabel, persistKey }: { provider: FileProvider; rootLabel?: string; persistKey?: string } = $props();
+
+	const currentEnvId = $derived(environmentStore.selected?.id || '0');
+	const canDeleteVolume = $derived(hasPermission('volumes:delete', currentEnvId));
+	const canBackupVolume = $derived(hasPermission('volumes:backup', currentEnvId));
 
 	let currentPath = $state('/');
 	let files = $state<FileEntry[]>([]);
@@ -167,22 +174,24 @@
 	<div class="flex items-center justify-between">
 		<FileBreadcrumb path={currentPath} {rootLabel} onNavigate={handleNavigate} />
 		<div class="flex gap-2">
-			<ArcaneButton
-				action="base"
-				tone="outline"
-				size="sm"
-				onclick={() => (showCreateFolder = true)}
-				icon={MoveToFolderIcon}
-				customLabel={m.volumes_browser_new_folder()}
-			/>
-			<ArcaneButton
-				action="base"
-				tone="outline"
-				size="sm"
-				onclick={() => (showUpload = true)}
-				icon={UploadIcon}
-				customLabel={m.volumes_browser_upload_files()}
-			/>
+			<IfPermitted perm="volumes:upload">
+				<ArcaneButton
+					action="base"
+					tone="outline"
+					size="sm"
+					onclick={() => (showCreateFolder = true)}
+					icon={MoveToFolderIcon}
+					customLabel={m.volumes_browser_new_folder()}
+				/>
+				<ArcaneButton
+					action="base"
+					tone="outline"
+					size="sm"
+					onclick={() => (showUpload = true)}
+					icon={UploadIcon}
+					customLabel={m.volumes_browser_upload_files()}
+				/>
+			</IfPermitted>
 		</div>
 	</div>
 
@@ -201,10 +210,10 @@
 			{persistKey}
 			onNavigate={handleNavigate}
 			onRefresh={() => loadFiles(currentPath)}
-			onDelete={(file) => provider.delete(file.path)}
+			onDelete={canDeleteVolume ? (file) => provider.delete(file.path) : undefined}
 			onDownload={(file) => provider.download(file.path)}
 			onPreview={(file) => (previewFile = file)}
-			onRestoreFromBackup={canRestoreFromBackup ? openRestoreFileDialog : undefined}
+			onRestoreFromBackup={canRestoreFromBackup && canBackupVolume ? openRestoreFileDialog : undefined}
 		/>
 	{/if}
 </div>
@@ -315,17 +324,19 @@
 				selectedBackupId = '';
 			}}
 		/>
-		<ArcaneButton
-			action="create"
-			customLabel="Restore file"
-			onclick={handleRestoreFile}
-			loading={restoringFile}
-			disabled={restoringFile ||
-				loadingBackups ||
-				checkingBackup ||
-				!selectedBackupId ||
-				!restoreTarget ||
-				(requiresBackupCheck && backupHasFile !== true)}
-		/>
+		{#if canBackupVolume}
+			<ArcaneButton
+				action="create"
+				customLabel="Restore file"
+				onclick={handleRestoreFile}
+				loading={restoringFile}
+				disabled={restoringFile ||
+					loadingBackups ||
+					checkingBackup ||
+					!selectedBackupId ||
+					!restoreTarget ||
+					(requiresBackupCheck && backupHasFile !== true)}
+			/>
+		{/if}
 	{/snippet}
 </ResponsiveDialog>

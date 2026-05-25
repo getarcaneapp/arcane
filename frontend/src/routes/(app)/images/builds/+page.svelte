@@ -12,6 +12,7 @@
 	import { ResourceDetailLayout } from '$lib/layouts/index.js';
 	import TabbedPageLayout from '$lib/layouts/tabbed-page-layout.svelte';
 	import { sanitizeLogText } from '$lib/utils/log-text';
+	import IfPermitted from '$lib/components/if-permitted.svelte';
 	import {
 		CodeIcon,
 		TerminalIcon,
@@ -1005,14 +1006,16 @@
 							{/if}
 							<span class="text-muted-foreground">{formatTimestamp(buildHistorySelected.createdAt)}</span>
 						</div>
-						<ArcaneButton
-							action="base"
-							tone="outline"
-							size="sm"
-							icon={RedeployIcon}
-							customLabel={m.build_rebuild()}
-							onclick={() => buildHistorySelected && applyBuildConfig(buildHistorySelected)}
-						/>
+						<IfPermitted perm="images:build">
+							<ArcaneButton
+								action="base"
+								tone="outline"
+								size="sm"
+								icon={RedeployIcon}
+								customLabel={m.build_rebuild()}
+								onclick={() => buildHistorySelected && applyBuildConfig(buildHistorySelected)}
+							/>
+						</IfPermitted>
 					</div>
 					{#if buildHistorySelected.errorMessage}
 						<div class="border-destructive/20 bg-destructive/10 text-destructive rounded-lg border p-3 text-sm">

@@ -259,7 +259,7 @@ func TestInitializeNonAgentFeatures(t *testing.T) {
 			return nil
 		}
 
-		InitializeNonAgentFeatures(ctx, cfg, createAdminFunc, reconcileDefaultAdminAPIKeyFunc, nil)
+		InitializeNonAgentFeatures(ctx, cfg, nil, createAdminFunc, reconcileDefaultAdminAPIKeyFunc, nil)
 
 		assert.False(t, createAdminCalled)
 		assert.False(t, reconcileDefaultAdminAPIKeyCalled)
@@ -284,7 +284,7 @@ func TestInitializeNonAgentFeatures(t *testing.T) {
 			return nil
 		}
 
-		InitializeNonAgentFeatures(ctx, cfg, createAdminFunc, reconcileDefaultAdminAPIKeyFunc, autoLoginInitFunc)
+		InitializeNonAgentFeatures(ctx, cfg, nil, createAdminFunc, reconcileDefaultAdminAPIKeyFunc, autoLoginInitFunc)
 
 		assert.True(t, createAdminCalled)
 		assert.True(t, reconcileDefaultAdminAPIKeyCalled)
@@ -303,6 +303,6 @@ func TestInitializeNonAgentFeatures(t *testing.T) {
 			return errors.New("admin creation failed")
 		}
 
-		InitializeNonAgentFeatures(ctx, cfg, createAdminFunc, reconcileDefaultAdminAPIKeyFunc, autoLoginInitFunc)
+		InitializeNonAgentFeatures(ctx, cfg, nil, createAdminFunc, reconcileDefaultAdminAPIKeyFunc, autoLoginInitFunc)
 	})
 }

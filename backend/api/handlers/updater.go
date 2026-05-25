@@ -9,6 +9,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
+	"github.com/getarcaneapp/arcane/backend/pkg/authz"
 	"github.com/getarcaneapp/arcane/types/base"
 	"github.com/getarcaneapp/arcane/types/updater"
 )
@@ -72,7 +73,7 @@ func RegisterUpdater(api huma.API, updaterService *services.UpdaterService) {
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermImageUpdatesCheck),
 	}, h.RunUpdater)
 
 	huma.Register(api, huma.Operation{
@@ -86,6 +87,7 @@ func RegisterUpdater(api huma.API, updaterService *services.UpdaterService) {
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequirePermission(api, authz.PermImageUpdatesRead),
 	}, h.GetUpdaterStatus)
 
 	huma.Register(api, huma.Operation{
@@ -99,6 +101,7 @@ func RegisterUpdater(api huma.API, updaterService *services.UpdaterService) {
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequirePermission(api, authz.PermImageUpdatesRead),
 	}, h.GetUpdaterHistory)
 
 	huma.Register(api, huma.Operation{
@@ -112,15 +115,12 @@ func RegisterUpdater(api huma.API, updaterService *services.UpdaterService) {
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermImageUpdatesCheck),
 	}, h.UpdateContainer)
 }
 
 // RunUpdater applies pending container updates.
 func (h *UpdaterHandler) RunUpdater(ctx context.Context, input *RunUpdaterInput) (*RunUpdaterOutput, error) {
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
 	if h.updaterService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -185,9 +185,6 @@ func (h *UpdaterHandler) GetUpdaterHistory(ctx context.Context, input *GetUpdate
 
 // UpdateContainer updates a single container by pulling the latest image and applying the appropriate update flow.
 func (h *UpdaterHandler) UpdateContainer(ctx context.Context, input *UpdateContainerInput) (*UpdateContainerOutput, error) {
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
 	if h.updaterService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}

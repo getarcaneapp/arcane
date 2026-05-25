@@ -1,5 +1,10 @@
 <script lang="ts" module>
-	import { navigationItems, getManagementItems, getSwarmNavigationItems } from '$lib/config/navigation-config';
+	import {
+		navigationItems,
+		getManagementItems,
+		getSwarmNavigationItems,
+		filterByPermissions
+	} from '$lib/config/navigation-config';
 </script>
 
 <script lang="ts">
@@ -51,12 +56,16 @@
 	const effectiveUser = $derived(user ?? storeUser.current);
 
 	const isCollapsed = $derived(sidebar.state === 'collapsed' && !(sidebar.hoverExpansionEnabled && sidebar.isHovered));
-	const isAdmin = $derived(!!effectiveUser?.roles?.includes('admin'));
 	let envSwitcherOpen = $state(false);
 
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
-	const managementItems = $derived(getManagementItems(currentEnvId));
-	const swarmItems = $derived(getSwarmNavigationItems(swarmEnabled));
+	const managementItemsRaw = $derived(getManagementItems(currentEnvId));
+	const swarmItemsRaw = $derived(getSwarmNavigationItems(swarmEnabled));
+
+	const managementItems = $derived(filterByPermissions(managementItemsRaw, effectiveUser ?? null, currentEnvId));
+	const resourceItems = $derived(filterByPermissions(navigationItems.resourceItems, effectiveUser ?? null, currentEnvId));
+	const swarmItems = $derived(filterByPermissions(swarmItemsRaw, effectiveUser ?? null, currentEnvId));
+	const settingsItems = $derived(filterByPermissions(navigationItems.settingsItems, effectiveUser ?? null, currentEnvId));
 </script>
 
 <VersionInfoDialog
@@ -66,7 +75,7 @@
 	debugMode={false}
 />
 
-<EnvironmentSwitcherDialog bind:open={envSwitcherOpen} {isAdmin} />
+<EnvironmentSwitcherDialog bind:open={envSwitcherOpen} />
 
 <Sidebar.Root {collapsible} {variant} {...restProps}>
 	<Sidebar.Header class={isCollapsed ? 'gap-0 p-1 pb-2' : ''}>
@@ -92,17 +101,21 @@
 		{/if}
 	</Sidebar.Header>
 	<Sidebar.Content class={!isCollapsed ? '-mt-2' : ''}>
-		<SidebarItemGroup label={m.sidebar_management()} items={managementItems} />
-		<SidebarItemGroup label={m.sidebar_resources()} items={navigationItems.resourceItems} />
+		{#if managementItems.length > 0}
+			<SidebarItemGroup label={m.sidebar_management()} items={managementItems} />
+		{/if}
+		{#if resourceItems.length > 0}
+			<SidebarItemGroup label={m.sidebar_resources()} items={resourceItems} />
+		{/if}
 		{#if swarmItems.length > 0}
 			<SidebarItemGroup label={m.swarm_title()} items={swarmItems} />
 		{/if}
-		{#if isAdmin}
-			<SidebarItemGroup label={m.sidebar_administration()} items={navigationItems.settingsItems} />
+		{#if settingsItems.length > 0}
+			<SidebarItemGroup label={m.sidebar_administration()} items={settingsItems} />
 		{/if}
 	</Sidebar.Content>
 	<Sidebar.Footer>
-		<SidebarUpdatebanner {isCollapsed} {versionInformation} user={effectiveUser} debug={false} />
+		<SidebarUpdatebanner {isCollapsed} {versionInformation} debug={false} />
 		{#if effectiveUser}
 			{#if isCollapsed}
 				<div class="px-0 pb-2">

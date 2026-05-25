@@ -67,6 +67,10 @@ test.describe('API Keys Page', () => {
 			await descInput.fill('E2E test API key');
 		}
 
+		// Select at least one permission (form requires min 1)
+		await createDialog.getByPlaceholder(/Filter permissions/i).fill('containers:list');
+		await createDialog.getByRole('checkbox', { name: 'Select all' }).check();
+
 		// Submit the form
 		await createDialog.getByRole('button', { name: /Create API Key/i }).click();
 
@@ -131,6 +135,11 @@ test.describe('API Keys Page', () => {
 
 		const apiKeyName = `delete-test-${Date.now()}`;
 		await createDialog.getByLabel(/Name/i).fill(apiKeyName);
+
+		// Select at least one permission (form requires min 1)
+		await createDialog.getByPlaceholder(/Filter permissions/i).fill('containers:list');
+		await createDialog.getByRole('checkbox', { name: 'Select all' }).check();
+
 		await createDialog.getByRole('button', { name: /Create API Key/i }).click();
 
 		// Wait for creation success and close reveal dialog

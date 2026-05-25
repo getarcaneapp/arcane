@@ -4,7 +4,6 @@
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 	import { useSidebar } from '$lib/components/ui/sidebar/index.js';
 	import type { AppVersionInformation } from '$lib/types/application-configuration';
-	import type { User } from '$lib/types/user.type';
 	import { m } from '$lib/paraglide/messages';
 	import { queryKeys } from '$lib/query/query-keys';
 	import systemUpgradeService from '$lib/services/api/system-upgrade-service';
@@ -13,26 +12,25 @@
 	import { DownloadIcon } from '$lib/icons';
 	import { extractApiErrorMessage } from '$lib/utils/api.util';
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
+	import { hasPermission } from '$lib/utils/permissions.util';
 
 	let {
 		isCollapsed,
 		versionInformation,
-		debug = false,
-		user
+		debug = false
 	}: {
 		isCollapsed: boolean;
 		versionInformation?: AppVersionInformation;
 		debug?: boolean;
-		user?: User | null;
 	} = $props();
 
 	const sidebar = useSidebar();
 
 	let upgrading = $state(false);
 	let showConfirmDialog = $state(false);
-	const isAdmin = $derived(!!user?.roles?.includes('admin'));
+	const canInstallUpdates = $derived(hasPermission('environments:update'));
 
-	const shouldCheckUpgrade = $derived(!!(versionInformation?.updateAvailable && isAdmin && !debug));
+	const shouldCheckUpgrade = $derived(!!(versionInformation?.updateAvailable && canInstallUpdates && !debug));
 	const upgradeAvailabilityQuery = createQuery(() => ({
 		queryKey: queryKeys.system.upgradeAvailable('sidebar'),
 		queryFn: () => systemUpgradeService.checkUpgradeAvailable(),
@@ -48,7 +46,7 @@
 	const checkingUpgrade = $derived(
 		!!(shouldCheckUpgrade && (upgradeAvailabilityQuery.isPending || upgradeAvailabilityQuery.isFetching))
 	);
-	const shouldShowUpgrade = $derived((canUpgrade && isAdmin) || debug);
+	const shouldShowUpgrade = $derived((canUpgrade && canInstallUpdates) || debug);
 
 	const updateType = $derived.by(() => {
 		if (!versionInformation) return 'none';
