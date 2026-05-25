@@ -56,7 +56,7 @@ func NewSettingsService(ctx context.Context, db *database.DB) (*SettingsService,
 	}
 	svc.envOverrides = resolveSettingsEnvOverridesInternal()
 	if len(svc.envOverrides) > 0 {
-		slog.InfoContext(ctx, "settings env overrides loaded", "count", len(svc.envOverrides))
+		slog.InfoContext(ctx, "Loaded Environment Settings Overrides", "count", len(svc.envOverrides))
 	}
 
 	err := svc.LoadDatabaseSettings(ctx)
