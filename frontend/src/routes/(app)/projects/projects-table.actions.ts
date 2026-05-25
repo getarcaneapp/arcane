@@ -3,9 +3,9 @@ import { m } from '$lib/paraglide/messages';
 import { deployOptionsStore } from '$lib/stores/deploy-options.store.svelte';
 import { gitOpsSyncService } from '$lib/services/gitops-sync-service';
 import { projectService } from '$lib/services/project-service';
-import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
-import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
-import { tryCatch } from '$lib/utils/try-catch';
+import type { SearchPaginationSortRequest } from '$lib/types/shared';
+import { handleApiResultWithCallbacks } from '$lib/utils/api';
+import { tryCatch } from '$lib/utils/api';
 import { toast } from 'svelte-sonner';
 import type { ActionStatus } from './projects-table.helpers';
 

@@ -3,9 +3,9 @@
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import { UniversalMobileCard, type ColumnSpec, type MobileFieldVisibility } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
-	import type { Project } from '$lib/types/project.type';
-	import type { ImageUpdateInfoDto } from '$lib/types/image.type';
+	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
+	import type { Project } from '$lib/types/swarm';
+	import type { ImageUpdateInfoDto } from '$lib/types/docker';
 	import { ProjectsIcon, ImagesIcon } from '$lib/icons';
 
 	type ProjectUpdateRow = {

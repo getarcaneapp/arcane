@@ -9,11 +9,11 @@
 	import * as Tabs from '$lib/components/ui/tabs';
 	import TemplatesBrowser from './components/TemplatesBrowser.svelte';
 	import RegistryManager from './components/RegistryManager.svelte';
-	import type { TemplateRegistry } from '$lib/types/template.type';
+	import type { TemplateRegistry } from '$lib/types/swarm';
 	import { untrack } from 'svelte';
-	import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
+	import type { SearchPaginationSortRequest } from '$lib/types/shared';
 	import { RegistryIcon, TemplateIcon, FolderOpenIcon } from '$lib/icons';
-	import { hasPermission } from '$lib/utils/permissions.util';
+	import { hasPermission } from '$lib/utils/auth';
 
 	let { data } = $props();
 

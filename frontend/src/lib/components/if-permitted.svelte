@@ -7,12 +7,12 @@
 	guard reactive to environment switches: when the user picks a different env,
 	this component re-evaluates and shows/hides its children without a remount.
 
-	Permission logic lives in `$lib/utils/permissions.util` — this component is
+	Permission logic lives in `$lib/utils/auth` — this component is
 	a thin presentational wrapper around `hasPermission`, `hasAnyPermission`,
 	and `isGlobalAdmin`.
 -->
 <script lang="ts">
-	import { hasPermission, hasAnyPermission, isGlobalAdmin } from '$lib/utils/permissions.util';
+	import { hasPermission, hasAnyPermission, isGlobalAdmin } from '$lib/utils/auth';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import type { Snippet } from 'svelte';
 

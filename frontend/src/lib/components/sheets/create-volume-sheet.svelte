@@ -3,9 +3,9 @@
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import FormInput from '$lib/components/form/form-input.svelte';
 	import * as Accordion from '$lib/components/ui/accordion/index.js';
-	import type { VolumeCreateRequest } from '$lib/types/volume.type';
+	import type { VolumeCreateRequest } from '$lib/types/docker';
 	import { z } from 'zod/v4';
-	import { createForm, preventDefault } from '$lib/utils/form.utils';
+	import { createForm, preventDefault } from '$lib/utils/settings';
 	import SelectWithLabel from '../form/select-with-label.svelte';
 	import { m } from '$lib/paraglide/messages';
 

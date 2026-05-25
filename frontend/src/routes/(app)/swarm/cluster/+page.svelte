@@ -12,7 +12,7 @@
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
 	import { m } from '$lib/paraglide/messages';
 	import { swarmService } from '$lib/services/swarm-service';
-	import { hasPermission } from '$lib/utils/permissions.util';
+	import { hasPermission } from '$lib/utils/auth';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import type {
 		SwarmInfo,
@@ -20,9 +20,9 @@
 		SwarmJoinRequest,
 		SwarmJoinTokensResponse,
 		SwarmUpdateRequest
-	} from '$lib/types/swarm.type';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
-	import { tryCatch } from '$lib/utils/try-catch';
+	} from '$lib/types/swarm';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api';
+	import { tryCatch } from '$lib/utils/api';
 	import { toast } from 'svelte-sonner';
 
 	let {}: PageProps = $props();

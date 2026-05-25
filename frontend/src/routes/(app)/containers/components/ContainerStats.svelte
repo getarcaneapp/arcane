@@ -3,8 +3,8 @@
 	import { Progress } from '$lib/components/ui/progress';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import { m } from '$lib/paraglide/messages';
-	import bytes from '$lib/utils/bytes';
-	import type { ContainerDetailsDto, ContainerStats as ContainerStatsType } from '$lib/types/container.type';
+	import { bytes } from '$lib/utils/formatting';
+	import type { ContainerDetailsDto, ContainerStats as ContainerStatsType } from '$lib/types/docker';
 	import { StatsIcon } from '$lib/icons';
 
 	interface Props {

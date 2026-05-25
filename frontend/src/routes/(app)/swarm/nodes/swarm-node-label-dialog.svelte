@@ -5,7 +5,7 @@
 	import { Label } from '$lib/components/ui/label';
 	import { m } from '$lib/paraglide/messages';
 	import { toast } from 'svelte-sonner';
-	import { extractApiErrorMessage } from '$lib/utils/api.util';
+	import { extractApiErrorMessage } from '$lib/utils/api';
 
 	type SwarmNodeLabelDialogProps = {
 		open: boolean;

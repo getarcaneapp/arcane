@@ -3,10 +3,10 @@
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import FormInput from '$lib/components/form/form-input.svelte';
 	import PermissionPicker from '$lib/components/role-editor/permission-picker.svelte';
-	import type { ApiKey } from '$lib/types/api-key.type';
-	import type { PermissionsManifest, ApiKeyPermissionGrant } from '$lib/types/role.type';
+	import type { ApiKey } from '$lib/types/auth';
+	import type { PermissionsManifest, ApiKeyPermissionGrant } from '$lib/types/auth';
 	import { z } from 'zod/v4';
-	import { createForm, preventDefault } from '$lib/utils/form.utils';
+	import { createForm, preventDefault } from '$lib/utils/settings';
 	import * as m from '$lib/paraglide/messages.js';
 
 	type ApiKeyFormProps = {

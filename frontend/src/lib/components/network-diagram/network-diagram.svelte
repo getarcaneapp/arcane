@@ -6,7 +6,7 @@
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import { EyeOnIcon } from '$lib/icons';
 	import { m } from '$lib/paraglide/messages';
-	import type { NetworkTopologyDto, TopologyEdgeDto, TopologyNodeDto } from '$lib/types/network.type';
+	import type { NetworkTopologyDto, TopologyEdgeDto, TopologyNodeDto } from '$lib/types/docker';
 	import { cn } from '$lib/utils';
 	import { mode } from 'mode-watcher';
 	import { PersistedState } from 'runed';

@@ -4,7 +4,7 @@
 	import { page } from '$app/state';
 	import { toast } from 'svelte-sonner';
 	import userStore from '$lib/stores/user-store';
-	import type { User } from '$lib/types/user.type';
+	import type { User } from '$lib/types/auth';
 	import { m } from '$lib/paraglide/messages';
 	import settingsStore from '$lib/stores/config-store';
 	import { settingsService } from '$lib/services/settings-service';

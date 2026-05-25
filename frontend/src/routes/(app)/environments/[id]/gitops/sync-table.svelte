@@ -5,17 +5,17 @@
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import { toast } from 'svelte-sonner';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
-	import { tryCatch } from '$lib/utils/try-catch';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
-	import type { GitOpsSync } from '$lib/types/gitops.type';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api';
+	import { tryCatch } from '$lib/utils/api';
+	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
+	import type { GitOpsSync } from '$lib/types/automation';
 	import type { Row } from '@tanstack/table-core';
 	import type { ColumnSpec, BulkAction } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
 	import { format } from 'date-fns';
 	import { m } from '$lib/paraglide/messages';
 	import { gitOpsSyncService } from '$lib/services/gitops-sync-service';
-	import { toGitCommitUrl } from '$lib/utils/git';
+	import { toGitCommitUrl } from '$lib/utils/navigation';
 	import {
 		EditIcon as PencilIcon,
 		StartIcon as PlayIcon,

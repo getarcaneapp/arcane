@@ -5,7 +5,7 @@
 	import { ScrollArea } from '$lib/components/ui/scroll-area/index.js';
 	import { gitRepositoryService } from '$lib/services/git-repository-service';
 	import { queryKeys } from '$lib/query/query-keys';
-	import type { FileTreeNode } from '$lib/types/gitops.type';
+	import type { FileTreeNode } from '$lib/types/automation';
 	import { FolderOpenIcon, FileTextIcon, ArrowRightIcon } from '$lib/icons';
 	import { m } from '$lib/paraglide/messages';
 	import { createQuery } from '@tanstack/svelte-query';

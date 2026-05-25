@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { toast } from 'svelte-sonner';
-	import type { ImageUpdateData } from '$lib/types/image.type';
+	import type { ImageUpdateData } from '$lib/types/docker';
 	import { m } from '$lib/paraglide/messages';
 	import { imageService } from '$lib/services/image-service';
 	import { queryKeys } from '$lib/query/query-keys';

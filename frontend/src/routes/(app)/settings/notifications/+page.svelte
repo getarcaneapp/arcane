@@ -8,7 +8,7 @@
 	import settingsStore from '$lib/stores/config-store';
 	import { m } from '$lib/paraglide/messages';
 	import { notificationService } from '$lib/services/notification-service';
-	import type { NotificationSettings } from '$lib/types/notification.type';
+	import type { NotificationSettings } from '$lib/types/notifications';
 	import {
 		type DiscordFormValues,
 		type EmailFormValues,
@@ -42,7 +42,7 @@
 		gotifyFormValuesToSettings,
 		matrixFormValuesToSettings,
 		genericFormValuesToSettings
-	} from '$lib/types/notification-providers';
+	} from '$lib/types/notifications';
 	import { NotificationsIcon } from '$lib/icons';
 	import { BuiltInProviderForm } from './providers';
 

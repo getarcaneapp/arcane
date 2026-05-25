@@ -3,10 +3,10 @@
 	import { goto } from '$app/navigation';
 	import { Badge } from '$lib/components/ui/badge';
 	import { format } from 'date-fns';
-	import bytes from '$lib/utils/bytes';
+	import { bytes } from '$lib/utils/formatting';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
-	import { tryCatch } from '$lib/utils/try-catch';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api';
+	import { tryCatch } from '$lib/utils/api';
 	import { toast } from 'svelte-sonner';
 	import { onDestroy } from 'svelte';
 	import { ArcaneButton } from '$lib/components/arcane-button';
@@ -17,12 +17,12 @@
 		startVulnerabilityScanPolling,
 		stabilizeFailedVulnerabilitySummary,
 		isVulnerabilityScanInProgress
-	} from '$lib/utils/vulnerability-scan.util';
+	} from '$lib/utils/docker';
 	import { ResourceDetailLayout, type DetailAction } from '$lib/layouts';
 	import VulnerabilityScanPanel from '$lib/components/vulnerability/vulnerability-scan-panel.svelte';
-	import type { VulnerabilityScanResult } from '$lib/types/vulnerability.type';
+	import type { VulnerabilityScanResult } from '$lib/types/environment';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { hasPermission } from '$lib/utils/permissions.util';
+	import { hasPermission } from '$lib/utils/auth';
 	import { VolumesIcon, ClockIcon, TagIcon, LayersIcon, CpuIcon, InfoIcon, SettingsIcon, HashIcon } from '$lib/icons';
 
 	let { data } = $props();

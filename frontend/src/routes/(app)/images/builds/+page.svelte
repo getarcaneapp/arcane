@@ -6,12 +6,12 @@
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { m } from '$lib/paraglide/messages';
 	import settingsStore from '$lib/stores/config-store';
-	import { createForm } from '$lib/utils/form.utils';
+	import { createForm } from '$lib/utils/settings';
 	import { toast } from 'svelte-sonner';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { ResourceDetailLayout } from '$lib/layouts/index.js';
 	import TabbedPageLayout from '$lib/layouts/tabbed-page-layout.svelte';
-	import { sanitizeLogText } from '$lib/utils/log-text';
+	import { sanitizeLogText } from '$lib/utils/formatting';
 	import IfPermitted from '$lib/components/if-permitted.svelte';
 	import {
 		CodeIcon,
@@ -40,7 +40,7 @@
 		getLayerStats,
 		isIndeterminatePhase,
 		getAggregateStatus
-	} from '$lib/utils/pull-progress';
+	} from '$lib/utils/docker';
 	import ResizableSplit from '$lib/components/resizable-split.svelte';
 	import BuildControls from './components/build-controls.svelte';
 	import BuildWorkspacePanel from './components/build-workspace-panel.svelte';
@@ -48,8 +48,8 @@
 	import BuildOutputPanel from './components/build-output-panel.svelte';
 	import type { BuildProviderOption } from './components/build-form.types';
 	import { imageService } from '$lib/services/image-service';
-	import type { ImageBuildRecord, ImageBuildStatus } from '$lib/types/image.type';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
+	import type { ImageBuildRecord, ImageBuildStatus } from '$lib/types/docker';
+	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
 	import { queryKeys } from '$lib/query/query-keys';
 	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { format } from 'date-fns';
