@@ -45,7 +45,8 @@ func Bootstrap(ctx context.Context) error {
 
 	SetupSlogLogger(cfg)
 	ConfigureGormLogger(cfg)
-	slog.InfoContext(ctx, "Arcane is starting", "version", config.Version)
+	slog.InfoContext(ctx, "Arcane is starting...", "version", config.Version)
+	slog.InfoContext(ctx, "Arcane Identity Configuration", "PUID", os.Getuid(), "PGID", os.Getgid())
 
 	appCtx, cancelApp := context.WithCancel(ctx)
 	defer cancelApp()
@@ -108,9 +109,7 @@ func newConfiguredHTTPClient(cfg *config.Config) *http.Client {
 
 func initializeStartupState(appCtx context.Context, cfg *config.Config, appServices *Services, dockerClientService *services.DockerClientService, httpClient *http.Client) {
 	if appServices.Volume != nil {
-		if err := appServices.Volume.CleanupOrphanedVolumeHelpers(appCtx); err != nil {
-			slog.WarnContext(appCtx, "Failed to cleanup orphaned volume helpers on startup", "error", err)
-		}
+		startup.CleanupOrphanedVolumeHelpers(appCtx, appServices.Volume.CleanupOrphanedVolumeHelpers)
 	}
 
 	runtimeCfg := &startup.RuntimeConfig{
