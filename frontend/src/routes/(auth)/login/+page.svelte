@@ -8,7 +8,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { authService } from '$lib/services/auth-service';
 	import { queryKeys } from '$lib/query/query-keys';
-	import { getApplicationLogo } from '$lib/utils/image.util';
+	import { getApplicationLogo } from '$lib/utils/docker';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { onMount } from 'svelte';
 	import { createMutation, useQueryClient } from '@tanstack/svelte-query';

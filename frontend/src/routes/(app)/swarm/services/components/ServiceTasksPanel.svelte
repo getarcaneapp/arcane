@@ -4,7 +4,7 @@
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { m } from '$lib/paraglide/messages';
 	import { swarmService } from '$lib/services/swarm-service';
-	import type { SwarmTaskSummary } from '$lib/types/swarm.type';
+	import type { SwarmTaskSummary } from '$lib/types/swarm';
 	import { JobsIcon, ConnectionIcon } from '$lib/icons';
 
 	let {

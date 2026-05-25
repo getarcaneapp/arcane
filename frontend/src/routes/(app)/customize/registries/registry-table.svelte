@@ -6,17 +6,17 @@
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import { toast } from 'svelte-sonner';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
-	import { tryCatch } from '$lib/utils/try-catch';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
-	import type { ContainerRegistry, ContainerRegistryPullUsage } from '$lib/types/container-registry.type';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api';
+	import { tryCatch } from '$lib/utils/api';
+	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
+	import type { ContainerRegistry, ContainerRegistryPullUsage } from '$lib/types/docker';
 	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
 	import { format } from 'date-fns';
 	import { m } from '$lib/paraglide/messages';
 	import { containerRegistryService } from '$lib/services/container-registry-service';
 	import { RegistryIcon, UserIcon, ExternalLinkIcon, EditIcon, TrashIcon, TestIcon, EllipsisIcon } from '$lib/icons';
-	import { hasPermission } from '$lib/utils/permissions.util';
+	import { hasPermission } from '$lib/utils/auth';
 	import IfPermitted from '$lib/components/if-permitted.svelte';
 
 	let {

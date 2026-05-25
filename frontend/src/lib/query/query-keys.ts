@@ -1,4 +1,4 @@
-import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
+import type { SearchPaginationSortRequest } from '$lib/types/shared';
 
 function stableSerialize(value: unknown): string {
 	if (value === null || value === undefined) return 'null';

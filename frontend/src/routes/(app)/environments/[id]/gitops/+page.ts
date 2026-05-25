@@ -1,8 +1,8 @@
 import { gitOpsSyncService } from '$lib/services/gitops-sync-service';
 import { environmentManagementService } from '$lib/services/env-mgmt-service';
 import { queryKeys } from '$lib/query/query-keys';
-import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
-import { resolveInitialTableRequest } from '$lib/utils/table-persistence.util';
+import type { SearchPaginationSortRequest } from '$lib/types/shared';
+import { resolveInitialTableRequest } from '$lib/utils/tables';
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async ({ params, parent }) => {

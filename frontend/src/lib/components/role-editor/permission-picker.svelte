@@ -3,7 +3,7 @@
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { Input } from '$lib/components/ui/input';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
-	import type { PermissionsManifest, PermissionResource, PermissionAction } from '$lib/types/role.type';
+	import type { PermissionsManifest, PermissionResource, PermissionAction } from '$lib/types/auth';
 	import { m } from '$lib/paraglide/messages';
 
 	type Props = {

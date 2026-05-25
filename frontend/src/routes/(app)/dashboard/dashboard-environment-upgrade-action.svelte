@@ -7,9 +7,9 @@
 	import { queryKeys } from '$lib/query/query-keys';
 	import environmentUpgradeService from '$lib/services/api/environment-upgrade-service';
 	import systemUpgradeService from '$lib/services/api/system-upgrade-service';
-	import type { AppVersionInformation } from '$lib/types/application-configuration';
-	import type { Environment } from '$lib/types/environment.type';
-	import { extractApiErrorMessage } from '$lib/utils/api.util';
+	import type { AppVersionInformation } from '$lib/types/settings';
+	import type { Environment } from '$lib/types/environment';
+	import { extractApiErrorMessage } from '$lib/utils/api';
 	import { DownloadIcon } from '$lib/icons';
 
 	let {

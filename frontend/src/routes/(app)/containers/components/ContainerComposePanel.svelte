@@ -2,7 +2,7 @@
 	import { ComposeEditorWrapper } from '$lib/components/compose';
 	import CodePanel from '../../projects/components/CodePanel.svelte';
 	import { projectService } from '$lib/services/project-service';
-	import type { Project, IncludeFile } from '$lib/types/project.type';
+	import type { Project, IncludeFile } from '$lib/types/swarm';
 
 	let {
 		project,

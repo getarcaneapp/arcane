@@ -1,6 +1,6 @@
 <script lang="ts">
-	import type { ProjectUpdateInfo } from '$lib/types/project.type';
-	import { getProjectUpdateStatus, getProjectUpdateText } from '$lib/utils/project-update.util';
+	import type { ProjectUpdateInfo } from '$lib/types/swarm';
+	import { getProjectUpdateStatus, getProjectUpdateText } from '$lib/utils/docker';
 	import { m } from '$lib/paraglide/messages';
 	import UpdateStatusPopover from '$lib/components/update-status-popover.svelte';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';

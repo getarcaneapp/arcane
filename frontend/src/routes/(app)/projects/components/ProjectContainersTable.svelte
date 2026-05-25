@@ -7,22 +7,22 @@
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { PortBadge } from '$lib/components/badges/index.js';
 	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
-	import { getStatusVariant } from '$lib/utils/status.utils';
-	import { capitalizeFirstLetter } from '$lib/utils/string.utils';
-	import type { RuntimeService } from '$lib/types/project.type';
+	import { getStatusVariant } from '$lib/utils/docker';
+	import { capitalizeFirstLetter } from '$lib/utils/formatting';
+	import type { RuntimeService } from '$lib/types/swarm';
 	import type { ColumnSpec, BulkAction } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
-	import { tryCatch } from '$lib/utils/try-catch';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api';
+	import { tryCatch } from '$lib/utils/api';
 	import { containerService } from '$lib/services/container-service';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { hasPermission } from '$lib/utils/permissions.util';
+	import { hasPermission } from '$lib/utils/auth';
 	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
 	import IconImage from '$lib/components/icon-image.svelte';
-	import { getArcaneIconUrlFromLabels } from '$lib/utils/arcane-labels';
+	import { getArcaneIconUrlFromLabels } from '$lib/utils/docker';
 	import {
 		StartIcon,
 		StopIcon,

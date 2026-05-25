@@ -6,9 +6,9 @@
 	import { UniversalMobileCard, type ColumnSpec, type MobileFieldVisibility } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
 	import { toast } from 'svelte-sonner';
-	import type { SearchPaginationSortRequest, Paginated } from '$lib/types/pagination.type';
-	import type { ContainerSummaryDto } from '$lib/types/container.type';
-	import type { ImageUpdateInfoDto } from '$lib/types/image.type';
+	import type { SearchPaginationSortRequest, Paginated } from '$lib/types/shared';
+	import type { ContainerSummaryDto } from '$lib/types/docker';
+	import type { ImageUpdateInfoDto } from '$lib/types/docker';
 	import {
 		containerService,
 		type ContainersPaginatedResponse,

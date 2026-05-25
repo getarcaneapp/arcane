@@ -6,10 +6,10 @@
 	import { toast } from 'svelte-sonner';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
-	import { tryCatch } from '$lib/utils/try-catch';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
-	import type { ApiKey } from '$lib/types/api-key.type';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api';
+	import { tryCatch } from '$lib/utils/api';
+	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
+	import type { ApiKey } from '$lib/types/auth';
 	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
 	import { apiKeyService } from '$lib/services/api-key-service';

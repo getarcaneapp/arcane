@@ -9,7 +9,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { MobileNavGestures } from './gestures.svelte';
 	import './styles.css';
-	import type { AppVersionInformation } from '$lib/types/application-configuration';
+	import type { AppVersionInformation } from '$lib/types/settings';
 
 	let {
 		navigationSettings,

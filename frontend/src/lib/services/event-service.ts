@@ -1,7 +1,7 @@
 import BaseAPIService from './api-service';
-import type { SearchPaginationSortRequest, Paginated } from '$lib/types/pagination.type';
-import type { Event } from '$lib/types/event.type';
-import { transformPaginationParams } from '$lib/utils/params.util';
+import type { SearchPaginationSortRequest, Paginated } from '$lib/types/shared';
+import type { Event } from '$lib/types/shared';
+import { transformPaginationParams } from '$lib/utils/tables';
 
 export default class EventService extends BaseAPIService {
 	async getEvents(options?: SearchPaginationSortRequest): Promise<Paginated<Event>> {

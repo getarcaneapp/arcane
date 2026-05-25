@@ -2,7 +2,7 @@
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
 	import { m } from '$lib/paraglide/messages';
-	import type { ContainerDetailsDto } from '$lib/types/container.type';
+	import type { ContainerDetailsDto } from '$lib/types/docker';
 	import { VolumesIcon, TerminalIcon } from '$lib/icons';
 
 	interface Props {

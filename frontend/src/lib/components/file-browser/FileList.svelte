@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { FileEntry } from '$lib/types/file-browser.type';
+	import type { FileEntry } from '$lib/types/shared';
 	import {
 		FolderOpenIcon,
 		FileTextIcon,
@@ -14,13 +14,13 @@
 	import { toast } from 'svelte-sonner';
 	import * as m from '$lib/paraglide/messages.js';
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
+	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
 	import { UniversalMobileCard, type ColumnSpec, type MobileFieldVisibility } from '$lib/components/arcane-table';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import { ArcaneButton } from '$lib/components/arcane-button';
-	import bytes from '$lib/utils/bytes';
+	import { bytes } from '$lib/utils/formatting';
 	import { format } from 'date-fns';
 
 	let {

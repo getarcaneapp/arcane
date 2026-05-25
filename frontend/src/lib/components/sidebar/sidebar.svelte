@@ -15,8 +15,8 @@
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
 	import { useSidebar } from '$lib/components/ui/sidebar/index.js';
 	import type { ComponentProps } from 'svelte';
-	import type { User } from '$lib/types/user.type';
-	import type { AppVersionInformation } from '$lib/types/application-configuration';
+	import type { User } from '$lib/types/auth';
+	import type { AppVersionInformation } from '$lib/types/settings';
 	import SidebarLogo from './sidebar-logo.svelte';
 	import SidebarUpdatebanner from './sidebar-updatebanner.svelte';
 	import SidebarPinButton from './sidebar-pin-button.svelte';

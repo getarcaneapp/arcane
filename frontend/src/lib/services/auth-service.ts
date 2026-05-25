@@ -1,9 +1,9 @@
 import { goto, invalidateAll } from '$app/navigation';
 import BaseAPIService from './api-service';
 import userStore from '$lib/stores/user-store';
-import type { User } from '$lib/types/user.type';
-import type { OidcStatusInfo } from '$lib/types/settings.type';
-import type { OidcUserInfo, LoginCredentials, LoginResponseData, AutoLoginConfig } from '$lib/types/auth.type';
+import type { User } from '$lib/types/auth';
+import type { OidcStatusInfo } from '$lib/types/settings';
+import type { OidcUserInfo, LoginCredentials, LoginResponseData, AutoLoginConfig } from '$lib/types/auth';
 
 const REFRESH_TOKEN_KEY = 'arcane_refresh_token';
 const TOKEN_EXPIRY_KEY = 'arcane_token_expiry';

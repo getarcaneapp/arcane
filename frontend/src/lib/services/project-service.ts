@@ -1,8 +1,8 @@
 import { m } from '$lib/paraglide/messages';
 import { environmentStore } from '$lib/stores/environment.store.svelte';
-import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
-import type { IncludeFile, Project, ProjectStatusCounts } from '$lib/types/project.type';
-import { transformPaginationParams } from '$lib/utils/params.util';
+import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
+import type { IncludeFile, Project, ProjectStatusCounts } from '$lib/types/swarm';
+import { transformPaginationParams } from '$lib/utils/tables';
 import BaseAPIService from './api-service';
 
 export type DeployProjectOptions = {

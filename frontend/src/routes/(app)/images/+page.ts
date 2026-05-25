@@ -1,9 +1,9 @@
 import { imageService } from '$lib/services/image-service';
 import { settingsService } from '$lib/services/settings-service';
 import { queryKeys } from '$lib/query/query-keys';
-import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
-import { resolveInitialTableRequest } from '$lib/utils/table-persistence.util';
-import { throwPageLoadError } from '$lib/utils/page-load-error.util';
+import type { SearchPaginationSortRequest } from '$lib/types/shared';
+import { resolveInitialTableRequest } from '$lib/utils/tables';
+import { throwPageLoadError } from '$lib/utils/api';
 import type { PageLoad } from './$types';
 import { environmentStore } from '$lib/stores/environment.store.svelte';
 

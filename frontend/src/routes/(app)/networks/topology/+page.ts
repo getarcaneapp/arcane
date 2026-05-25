@@ -1,6 +1,6 @@
 import { networkService } from '$lib/services/network-service';
 import { queryKeys } from '$lib/query/query-keys';
-import { throwPageLoadError } from '$lib/utils/page-load-error.util';
+import { throwPageLoadError } from '$lib/utils/api';
 import type { PageLoad } from './$types';
 import { environmentStore } from '$lib/stores/environment.store.svelte';
 

@@ -3,7 +3,7 @@
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { Switch } from '$lib/components/ui/switch';
 	import { m } from '$lib/paraglide/messages';
-	import type { ContainerDetailsDto } from '$lib/types/container.type';
+	import type { ContainerDetailsDto } from '$lib/types/docker';
 	import { format, formatDistanceToNow } from 'date-fns';
 	import { InfoIcon, StartIcon, StopIcon, NetworksIcon, VolumesIcon, HealthIcon } from '$lib/icons';
 	import { containerService } from '$lib/services/container-service';

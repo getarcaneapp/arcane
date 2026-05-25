@@ -5,15 +5,15 @@
 	import { LayersIcon, EllipsisIcon, InspectIcon, TrashIcon } from '$lib/icons';
 	import { m } from '$lib/paraglide/messages';
 	import { swarmService } from '$lib/services/swarm-service';
-	import type { SwarmStackSummary } from '$lib/types/swarm.type';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
+	import type { SwarmStackSummary } from '$lib/types/swarm';
+	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
 	import { formatDistanceToNow } from 'date-fns';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import { toast } from 'svelte-sonner';
-	import { tryCatch } from '$lib/utils/try-catch';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
+	import { tryCatch } from '$lib/utils/api';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api';
 	import { goto } from '$app/navigation';
 	import IfPermitted from '$lib/components/if-permitted.svelte';
 
