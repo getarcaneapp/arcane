@@ -16,6 +16,7 @@
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
 	import { goto } from '$app/navigation';
 	import { getSwarmServiceModeLabel, getSwarmServiceModeVariant } from '$lib/utils/swarm-service-mode.utils';
+	import IfPermitted from '$lib/components/if-permitted.svelte';
 
 	let {
 		services = $bindable(),
@@ -248,10 +249,12 @@
 					{m.common_inspect()}
 				</DropdownMenu.Item>
 				<DropdownMenu.Separator />
-				<DropdownMenu.Item variant="destructive" onclick={() => handleDelete(item)} disabled={isAnyLoading}>
-					<TrashIcon class="size-4" />
-					{m.common_delete()}
-				</DropdownMenu.Item>
+				<IfPermitted perm="swarm:services">
+					<DropdownMenu.Item variant="destructive" onclick={() => handleDelete(item)} disabled={isAnyLoading}>
+						<TrashIcon class="size-4" />
+						{m.common_delete()}
+					</DropdownMenu.Item>
+				</IfPermitted>
 			</DropdownMenu.Group>
 		</DropdownMenu.Content>
 	</DropdownMenu.Root>

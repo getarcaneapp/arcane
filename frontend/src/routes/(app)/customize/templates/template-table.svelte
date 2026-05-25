@@ -17,6 +17,8 @@
 	import { templateTypeFilters } from '$lib/components/arcane-table/data';
 	import { templateService } from '$lib/services/template-service';
 	import { truncateString } from '$lib/utils/string.utils';
+	import { hasPermission } from '$lib/utils/permissions.util';
+	import IfPermitted from '$lib/components/if-permitted.svelte';
 	import { PersistedState } from 'runed';
 	import { onMount } from 'svelte';
 	import IconImage from '$lib/components/icon-image.svelte';
@@ -44,6 +46,9 @@
 
 	let deletingId = $state<string | null>(null);
 	let downloadingId = $state<string | null>(null);
+
+	const canReadTemplate = $derived(hasPermission('templates:read'));
+	const canDeleteTemplate = $derived(hasPermission('templates:delete'));
 
 	async function handleDeleteTemplate(id: string, name: string) {
 		openConfirmDialog({
@@ -283,14 +288,18 @@
 					{m.common_view_details()}
 				</DropdownMenu.Item>
 
-				<DropdownMenu.Item onclick={() => goto(`/projects/new?templateId=${item.id}`)}>
-					<MoveToFolderIcon class="size-4" />
-					{m.compose_create_project()}
-				</DropdownMenu.Item>
+				<IfPermitted perm="projects:create">
+					<DropdownMenu.Item onclick={() => goto(`/projects/new?templateId=${item.id}`)}>
+						<MoveToFolderIcon class="size-4" />
+						{m.compose_create_project()}
+					</DropdownMenu.Item>
+				</IfPermitted>
 
-				<DropdownMenu.Separator />
+				{#if (item.isRemote && canReadTemplate) || (!item.isRemote && canDeleteTemplate)}
+					<DropdownMenu.Separator />
+				{/if}
 
-				{#if item.isRemote}
+				{#if item.isRemote && canReadTemplate}
 					<DropdownMenu.Item onclick={() => handleDownloadTemplate(item.id, item.name)} disabled={downloadingId === item.id}>
 						{#if downloadingId === item.id}
 							<Spinner class="size-4" />
@@ -299,7 +308,7 @@
 						{/if}
 						{m.templates_download()}
 					</DropdownMenu.Item>
-				{:else}
+				{:else if !item.isRemote && canDeleteTemplate}
 					<DropdownMenu.Item
 						variant="destructive"
 						onclick={() => handleDeleteTemplate(item.id, item.name)}

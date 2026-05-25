@@ -40,7 +40,7 @@
 		persistKey?: string;
 		onNavigate: (path: string) => void;
 		onRefresh: () => void;
-		onDelete: (file: FileEntry) => Promise<void>;
+		onDelete?: (file: FileEntry) => Promise<void>;
 		onDownload: (file: FileEntry) => Promise<void>;
 		onPreview: (file: FileEntry) => void;
 		onRestoreFromBackup?: (file: FileEntry) => void;
@@ -102,6 +102,7 @@
 	}
 
 	async function handleDelete(file: FileEntry) {
+		if (!onDelete) return;
 		openConfirmDialog({
 			title: m.common_remove_title({ resource: file.name }),
 			message: m.volumes_browser_delete_confirm({ name: file.name }),
@@ -225,10 +226,12 @@
 					{/if}
 					<DropdownMenu.Separator />
 				{/if}
-				<DropdownMenu.Item variant="destructive" onclick={() => handleDelete(item)}>
-					<TrashIcon class="size-4" />
-					{m.common_delete()}
-				</DropdownMenu.Item>
+				{#if onDelete}
+					<DropdownMenu.Item variant="destructive" onclick={() => handleDelete(item)}>
+						<TrashIcon class="size-4" />
+						{m.common_delete()}
+					</DropdownMenu.Item>
+				{/if}
 			</DropdownMenu.Group>
 		</DropdownMenu.Content>
 	</DropdownMenu.Root>

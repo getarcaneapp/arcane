@@ -10,7 +10,7 @@
 	import { getEffectiveNavigationSettings, navigationSettingsOverridesStore } from '$lib/utils/navigation.utils';
 	import { browser } from '$app/environment';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { navigationItems, getManagementItems, type NavigationItem } from '$lib/config/navigation-config';
+	import { navigationItems, getManagementItems, filterByPermissions, type NavigationItem } from '$lib/config/navigation-config';
 	import { isEditableTarget, matchesShortcutEvent } from '$lib/utils/keyboard-shortcut.utils';
 	import { cn } from '$lib/utils';
 	let { data, children }: LayoutProps = $props();
@@ -29,17 +29,16 @@
 		return getEffectiveNavigationSettings();
 	});
 	const navigationMode = $derived(navigationSettings.mode);
-	const isAdmin = $derived(!!user?.roles?.includes('admin'));
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
 	const managementItems = $derived(getManagementItems(currentEnvId));
-	const settingsShortcutItems = $derived.by(() => (isAdmin ? (navigationItems.settingsItems ?? []) : []));
+	const settingsShortcutItems = $derived(filterByPermissions(navigationItems.settingsItems, user ?? null, currentEnvId));
 	const shortcutItems = $derived.by(() => {
 		const items: NavigationItem[] = [...managementItems, ...navigationItems.resourceItems, ...settingsShortcutItems];
 		return flattenNavigationItems(items).filter((item) => item.shortcut?.length);
 	});
 
 	$effect(() => {
-		const redirectPath = getAuthRedirectPath(page.url.pathname, user);
+		const redirectPath = getAuthRedirectPath(page.url.pathname, user, currentEnvId);
 		if (redirectPath) {
 			goto(redirectPath);
 		}

@@ -5,7 +5,9 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
+	humamw "github.com/getarcaneapp/arcane/backend/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
+	"github.com/getarcaneapp/arcane/backend/pkg/authz"
 	"github.com/getarcaneapp/arcane/types/base"
 	dashboardtypes "github.com/getarcaneapp/arcane/types/dashboard"
 )
@@ -54,6 +56,7 @@ func RegisterDashboard(api huma.API, dashboardService *services.DashboardService
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequirePermission(api, authz.PermDashboardRead),
 	}, h.GetDashboard)
 
 	huma.Register(api, huma.Operation{
@@ -67,6 +70,7 @@ func RegisterDashboard(api huma.API, dashboardService *services.DashboardService
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequirePermission(api, authz.PermDashboardRead),
 	}, h.GetActionItems)
 
 	huma.Register(api, huma.Operation{
@@ -80,6 +84,7 @@ func RegisterDashboard(api huma.API, dashboardService *services.DashboardService
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequirePermission(api, authz.PermDashboardRead),
 	}, h.GetEnvironmentsOverview)
 }
 

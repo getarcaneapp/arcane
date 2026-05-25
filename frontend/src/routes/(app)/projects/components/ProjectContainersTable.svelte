@@ -18,6 +18,8 @@
 	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
 	import { tryCatch } from '$lib/utils/try-catch';
 	import { containerService } from '$lib/services/container-service';
+	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import { hasPermission } from '$lib/utils/permissions.util';
 	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
 	import IconImage from '$lib/components/icon-image.svelte';
 	import { getArcaneIconUrlFromLabels } from '$lib/utils/arcane-labels';
@@ -40,6 +42,12 @@
 	}
 
 	let { services = [], projectId, onRefresh }: Props = $props();
+
+	const currentEnvId = $derived(environmentStore.selected?.id || '0');
+	const canStartContainer = $derived(hasPermission('containers:start', currentEnvId));
+	const canStopContainer = $derived(hasPermission('containers:stop', currentEnvId));
+	const canRestartContainer = $derived(hasPermission('containers:restart', currentEnvId));
+	const canDeleteContainer = $derived(hasPermission('containers:delete', currentEnvId));
 
 	// Convert RuntimeService to a format compatible with ArcaneTable
 	type ServiceWithId = RuntimeService & { id: string };
@@ -270,7 +278,7 @@
 			action: 'start',
 			onClick: (ids) => handleBulkAction('start', ids),
 			loading: isBulkLoading.start,
-			disabled: isAnyLoading,
+			disabled: !canStartContainer || isAnyLoading,
 			icon: StartIcon
 		},
 		{
@@ -279,7 +287,7 @@
 			action: 'stop',
 			onClick: (ids) => handleBulkAction('stop', ids),
 			loading: isBulkLoading.stop,
-			disabled: isAnyLoading,
+			disabled: !canStopContainer || isAnyLoading,
 			icon: StopIcon
 		},
 		{
@@ -288,7 +296,7 @@
 			action: 'restart',
 			onClick: (ids) => handleBulkAction('restart', ids),
 			loading: isBulkLoading.restart,
-			disabled: isAnyLoading,
+			disabled: !canRestartContainer || isAnyLoading,
 			icon: RefreshIcon
 		},
 		{
@@ -297,7 +305,7 @@
 			action: 'remove',
 			onClick: (ids) => handleBulkAction('remove', ids),
 			loading: isBulkLoading.remove,
-			disabled: isAnyLoading,
+			disabled: !canDeleteContainer || isAnyLoading,
 			icon: TrashIcon
 		}
 	]);
@@ -441,19 +449,21 @@
 							<InspectIcon class="size-4" />
 							{m.common_inspect()}
 						</DropdownMenu.Item>
-						<DropdownMenu.Separator />
-						<DropdownMenu.Item
-							variant="destructive"
-							onclick={() => handleRemoveContainer(item.containerId!, item.containerName || item.name)}
-							disabled={actionStatus[item.id] === 'removing' || isAnyLoading}
-						>
-							{#if actionStatus[item.id] === 'removing'}
-								<Spinner class="size-4" />
-							{:else}
-								<TrashIcon class="size-4" />
-							{/if}
-							{m.common_remove()}
-						</DropdownMenu.Item>
+						{#if canDeleteContainer}
+							<DropdownMenu.Separator />
+							<DropdownMenu.Item
+								variant="destructive"
+								onclick={() => handleRemoveContainer(item.containerId!, item.containerName || item.name)}
+								disabled={actionStatus[item.id] === 'removing' || isAnyLoading}
+							>
+								{#if actionStatus[item.id] === 'removing'}
+									<Spinner class="size-4" />
+								{:else}
+									<TrashIcon class="size-4" />
+								{/if}
+								{m.common_remove()}
+							</DropdownMenu.Item>
+						{/if}
 					</DropdownMenu.Group>
 				</DropdownMenu.Content>
 			</DropdownMenu.Root>
@@ -499,44 +509,50 @@
 
 						<DropdownMenu.Separator />
 
-						<DropdownMenu.Item
-							onclick={() => performContainerAction('stop', item.containerId!)}
-							disabled={status === 'stopping' || isAnyLoading}
-						>
-							{#if status === 'stopping'}
-								<Spinner class="size-4" />
-							{:else}
-								<StopIcon class="size-4" />
-							{/if}
-							{m.common_stop()}
-						</DropdownMenu.Item>
+						{#if canStopContainer}
+							<DropdownMenu.Item
+								onclick={() => performContainerAction('stop', item.containerId!)}
+								disabled={status === 'stopping' || isAnyLoading}
+							>
+								{#if status === 'stopping'}
+									<Spinner class="size-4" />
+								{:else}
+									<StopIcon class="size-4" />
+								{/if}
+								{m.common_stop()}
+							</DropdownMenu.Item>
+						{/if}
 
-						<DropdownMenu.Item
-							onclick={() => performContainerAction('restart', item.containerId!)}
-							disabled={status === 'restarting' || isAnyLoading}
-						>
-							{#if status === 'restarting'}
-								<Spinner class="size-4" />
-							{:else}
-								<RefreshIcon class="size-4" />
-							{/if}
-							{m.common_restart()}
-						</DropdownMenu.Item>
+						{#if canRestartContainer}
+							<DropdownMenu.Item
+								onclick={() => performContainerAction('restart', item.containerId!)}
+								disabled={status === 'restarting' || isAnyLoading}
+							>
+								{#if status === 'restarting'}
+									<Spinner class="size-4" />
+								{:else}
+									<RefreshIcon class="size-4" />
+								{/if}
+								{m.common_restart()}
+							</DropdownMenu.Item>
+						{/if}
 
-						<DropdownMenu.Separator />
+						{#if canDeleteContainer}
+							<DropdownMenu.Separator />
 
-						<DropdownMenu.Item
-							variant="destructive"
-							onclick={() => handleRemoveContainer(item.containerId!, item.containerName || item.name)}
-							disabled={status === 'removing' || isAnyLoading}
-						>
-							{#if status === 'removing'}
-								<Spinner class="size-4" />
-							{:else}
-								<TrashIcon class="size-4" />
-							{/if}
-							{m.common_remove()}
-						</DropdownMenu.Item>
+							<DropdownMenu.Item
+								variant="destructive"
+								onclick={() => handleRemoveContainer(item.containerId!, item.containerName || item.name)}
+								disabled={status === 'removing' || isAnyLoading}
+							>
+								{#if status === 'removing'}
+									<Spinner class="size-4" />
+								{:else}
+									<TrashIcon class="size-4" />
+								{/if}
+								{m.common_remove()}
+							</DropdownMenu.Item>
+						{/if}
 					</DropdownMenu.Group>
 				</DropdownMenu.Content>
 			</DropdownMenu.Root>

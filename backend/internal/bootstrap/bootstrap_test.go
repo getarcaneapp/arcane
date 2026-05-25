@@ -51,6 +51,28 @@ func TestNormalizeTunnelGRPCRequestPathInternal(t *testing.T) {
 		assert.Equal(t, fullMethodPath, normalized.URL.Path)
 		assert.Equal(t, fullMethodPath, normalized.RequestURI)
 	})
+
+	t.Run("legacy /api/tunnel/connect is rewritten to gRPC method", func(t *testing.T) {
+		// Regression: PR #2722 removed this branch, breaking the edge agent's
+		// gRPC transport. The agent client uses /api/tunnel/connect as its
+		// gRPC method path so reverse proxies can route tunnel traffic with
+		// a stable URL instead of the proto-generated gRPC service name.
+		req := httptest.NewRequest("POST", "/api/tunnel/connect", nil)
+		normalized := normalizeTunnelGRPCRequestPathInternal(req)
+
+		assert.NotSame(t, req, normalized)
+		assert.Equal(t, fullMethodPath, normalized.URL.Path)
+		assert.Equal(t, fullMethodPath, normalized.RequestURI)
+	})
+
+	t.Run("nested proxy with legacy /api/tunnel/connect is rewritten", func(t *testing.T) {
+		req := httptest.NewRequest("POST", "/edge/proxy/api/tunnel/connect", nil)
+		normalized := normalizeTunnelGRPCRequestPathInternal(req)
+
+		assert.NotSame(t, req, normalized)
+		assert.Equal(t, fullMethodPath, normalized.URL.Path)
+		assert.Equal(t, fullMethodPath, normalized.RequestURI)
+	})
 }
 
 func TestIsTunnelGRPCRequestInternal(t *testing.T) {

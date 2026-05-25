@@ -4,6 +4,7 @@
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import { ShieldAlertIcon, CodeIcon, ImagesIcon, EyeOnIcon } from '$lib/icons';
 	import { ArcaneButton } from '$lib/components/arcane-button';
+	import IfPermitted from '$lib/components/if-permitted.svelte';
 
 	let {
 		ignoredVulnerabilities,
@@ -84,14 +85,16 @@
 						</div>
 					{/if}
 				</div>
-				<ArcaneButton
-					action="base"
-					size="sm"
-					icon={EyeOnIcon}
-					customLabel={m.vuln_unignore()}
-					onclick={() => onUnignore(item.id)}
-					disabled={isLoading}
-				/>
+				<IfPermitted perm="vulnerabilities:manage">
+					<ArcaneButton
+						action="base"
+						size="sm"
+						icon={EyeOnIcon}
+						customLabel={m.vuln_unignore()}
+						onclick={() => onUnignore(item.id)}
+						disabled={isLoading}
+					/>
+				</IfPermitted>
 			</div>
 		{/each}
 

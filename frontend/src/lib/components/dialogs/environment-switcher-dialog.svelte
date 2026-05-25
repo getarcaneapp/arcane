@@ -17,13 +17,13 @@
 	import { tick } from 'svelte';
 	import { EnvironmentsIcon, RemoteEnvironmentIcon, AddIcon, SearchIcon, CloseIcon, SettingsIcon } from '$lib/icons';
 	import { useQueryClient } from '@tanstack/svelte-query';
+	import IfPermitted from '$lib/components/if-permitted.svelte';
 
 	type Props = {
 		open: boolean;
-		isAdmin?: boolean;
 	};
 
-	let { open = $bindable(false), isAdmin = false }: Props = $props();
+	let { open = $bindable(false) }: Props = $props();
 	const queryClient = useQueryClient();
 
 	let searchQuery = $state('');
@@ -356,7 +356,7 @@
 
 	{#snippet footer()}
 		<div class="flex w-full items-center justify-between gap-2">
-			{#if isAdmin}
+			<IfPermitted perm="environments:create">
 				<ArcaneButton
 					action="base"
 					tone="outline"
@@ -367,9 +367,10 @@
 						goto('/environments');
 					}}
 				/>
-			{:else}
-				<div></div>
-			{/if}
+				{#snippet fallback()}
+					<div></div>
+				{/snippet}
+			</IfPermitted>
 			<ArcaneButton action="base" tone="outline" customLabel={m.common_close()} onclick={closeDialog} />
 		</div>
 	{/snippet}

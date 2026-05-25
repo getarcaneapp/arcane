@@ -71,8 +71,7 @@ export type Settings = {
 	oidcClientSecret?: string;
 	oidcIssuerUrl: string;
 	oidcScopes: string;
-	oidcAdminClaim: string;
-	oidcAdminValue: string;
+	oidcGroupsClaim: string;
 	oidcSkipTlsVerify: boolean;
 	oidcAutoRedirectToProvider: boolean;
 	oidcMergeAccounts: boolean;

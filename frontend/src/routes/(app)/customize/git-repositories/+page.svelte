@@ -9,6 +9,7 @@
 	import { gitRepositoryService } from '$lib/services/git-repository-service';
 	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type ActionButton } from '$lib/layouts/index.js';
+	import { hasPermission } from '$lib/utils/permissions.util';
 
 	let { data } = $props();
 
@@ -74,22 +75,28 @@
 		}
 	}
 
-	const actionButtons: ActionButton[] = [
-		{
-			id: 'create',
-			action: 'create',
-			label: m.common_add_button({ resource: m.resource_repository_cap() }),
-			onclick: openCreateRepositoryDialog
-		},
-		{
+	const canCreateRepository = $derived(hasPermission('git-repositories:create'));
+
+	const actionButtons: ActionButton[] = $derived.by(() => {
+		const buttons: ActionButton[] = [];
+		if (canCreateRepository) {
+			buttons.push({
+				id: 'create',
+				action: 'create',
+				label: m.common_add_button({ resource: m.resource_repository_cap() }),
+				onclick: openCreateRepositoryDialog
+			});
+		}
+		buttons.push({
 			id: 'refresh',
 			action: 'restart',
 			label: m.common_refresh(),
 			onclick: refreshRepositories,
 			loading: isLoading.refresh,
 			disabled: isLoading.refresh
-		}
-	];
+		});
+		return buttons;
+	});
 </script>
 
 <ResourcePageLayout title={m.git_repositories_title()} subtitle={m.git_repositories_subtitle()} {actionButtons}>
