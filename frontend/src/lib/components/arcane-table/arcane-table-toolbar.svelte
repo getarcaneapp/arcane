@@ -9,7 +9,7 @@
 		vulnerabilitySeverityFilters,
 		projectStatusFilters
 	} from './data.js';
-	import { debounced } from '$lib/utils/utils.js';
+	import { debounced } from '$lib/utils/ws';
 	import { ArcaneButton } from '$lib/components/arcane-button';
 	import { m } from '$lib/paraglide/messages';
 	import type { Snippet } from 'svelte';

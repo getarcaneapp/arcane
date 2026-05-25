@@ -1,6 +1,6 @@
 import BaseAPIService from './api-service';
 import { environmentStore } from '$lib/stores/environment.store.svelte';
-import type { FileEntry, FileContentResponse } from '$lib/types/file-browser.type';
+import type { FileEntry, FileContentResponse } from '$lib/types/shared';
 
 export class VolumeBrowserService extends BaseAPIService {
 	async listDirectory(volumeName: string, path: string = '/'): Promise<FileEntry[]> {

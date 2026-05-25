@@ -1,10 +1,10 @@
 import BaseAPIService from './api-service';
 import { environmentStore } from '$lib/stores/environment.store.svelte';
-import type { ImageSummaryDto, ImageUsageCounts, ImageUpdateInfoDto, ImageBuildRecord } from '$lib/types/image.type';
-import type { SearchPaginationSortRequest, Paginated } from '$lib/types/pagination.type';
-import type { AutoUpdateCheck, AutoUpdateResult } from '$lib/types/auto-update.type';
-import type { PruneImagesOptions } from '$lib/types/prune.type';
-import { transformPaginationParams } from '$lib/utils/params.util';
+import type { ImageSummaryDto, ImageUsageCounts, ImageUpdateInfoDto, ImageBuildRecord } from '$lib/types/docker';
+import type { SearchPaginationSortRequest, Paginated } from '$lib/types/shared';
+import type { AutoUpdateCheck, AutoUpdateResult } from '$lib/types/automation';
+import type { PruneImagesOptions } from '$lib/types/automation';
+import { transformPaginationParams } from '$lib/utils/tables';
 
 export class ImageService extends BaseAPIService {
 	private async resolveEnvironmentId(environmentId?: string): Promise<string> {

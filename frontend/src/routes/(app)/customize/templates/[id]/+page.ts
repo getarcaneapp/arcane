@@ -1,8 +1,8 @@
 import { templateService } from '$lib/services/template-service';
 import { queryKeys } from '$lib/query/query-keys';
 import { error } from '@sveltejs/kit';
-import type { Template, TemplateContentData } from '$lib/types/template.type';
-import type { Variable } from '$lib/types/variable.type';
+import type { Template, TemplateContentData } from '$lib/types/swarm';
+import type { Variable } from '$lib/types/shared';
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async ({

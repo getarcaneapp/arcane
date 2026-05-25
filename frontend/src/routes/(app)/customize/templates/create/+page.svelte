@@ -5,9 +5,9 @@
 	import { ArrowLeftIcon } from '$lib/icons';
 	import { m } from '$lib/paraglide/messages';
 	import { templateService } from '$lib/services/template-service';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
-	import { createForm, preventDefault } from '$lib/utils/form.utils';
-	import { tryCatch } from '$lib/utils/try-catch';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api';
+	import { createForm, preventDefault } from '$lib/utils/settings';
+	import { tryCatch } from '$lib/utils/api';
 	import { toast } from 'svelte-sonner';
 	import { z } from 'zod/v4';
 	import CodePanel from '../../../projects/components/CodePanel.svelte';

@@ -1,5 +1,5 @@
 import type { ColumnFiltersState } from '@tanstack/table-core';
-import type { FilterMap } from '$lib/types/pagination.type';
+import type { FilterMap } from '$lib/types/shared';
 import type { CompactTablePrefs } from './arcane-table.types.svelte';
 import { decodeFilters, decodeSort } from './arcane-table.types.svelte';
 

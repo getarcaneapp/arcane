@@ -4,14 +4,14 @@
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
-	import { preventDefault, createForm } from '$lib/utils/form.utils';
-	import { tryCatch } from '$lib/utils/try-catch';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
+	import { preventDefault, createForm } from '$lib/utils/settings';
+	import { tryCatch } from '$lib/utils/api';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api';
 	import { Textarea } from '$lib/components/ui/textarea/index.js';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
 	import TemplateSelectionDialog from '$lib/components/dialogs/template-selection-dialog.svelte';
-	import type { Template } from '$lib/types/template.type';
+	import type { Template } from '$lib/types/swarm';
 	import { z } from 'zod/v4';
 	import { arcaneButtonVariants, actionConfigs } from '$lib/components/arcane-button/variants';
 	import { m } from '$lib/paraglide/messages';

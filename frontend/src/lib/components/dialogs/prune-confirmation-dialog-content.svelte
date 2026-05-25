@@ -2,8 +2,8 @@
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import PruneModeCard from '$lib/components/prune/prune-mode-card.svelte';
 	import { m } from '$lib/paraglide/messages';
-	import type { SystemPruneRequest } from '$lib/types/prune.type';
-	import type { Settings } from '$lib/types/settings.type';
+	import type { SystemPruneRequest } from '$lib/types/automation';
+	import type { Settings } from '$lib/types/settings';
 
 	interface Props {
 		defaults?: Settings | null;

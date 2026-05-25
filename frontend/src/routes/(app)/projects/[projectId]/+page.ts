@@ -2,7 +2,7 @@ import { projectService } from '$lib/services/project-service';
 import { templateService } from '$lib/services/template-service';
 import { environmentStore } from '$lib/stores/environment.store.svelte';
 import { queryKeys } from '$lib/query/query-keys';
-import { throwPageLoadError } from '$lib/utils/page-load-error.util';
+import { throwPageLoadError } from '$lib/utils/api';
 import type { QueryClient } from '@tanstack/svelte-query';
 import type { PageLoad } from './$types';
 

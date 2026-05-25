@@ -5,7 +5,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { StartIcon, StopIcon, TrashIcon } from '$lib/icons';
 	import { cn } from '$lib/utils';
-	import { hasAnyPermission, hasPermission } from '$lib/utils/permissions.util';
+	import { hasAnyPermission, hasPermission } from '$lib/utils/auth';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 
 	type IsLoadingFlags = {

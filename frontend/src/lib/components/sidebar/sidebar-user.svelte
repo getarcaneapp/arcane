@@ -4,13 +4,13 @@
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { useSidebar } from '$lib/components/ui/sidebar/index.js';
-	import type { User } from '$lib/types/user.type';
+	import type { User } from '$lib/types/auth';
 	import { mode, toggleMode } from 'mode-watcher';
 	import { cn } from '$lib/utils';
 	import settingsStore from '$lib/stores/config-store';
 	import { m } from '$lib/paraglide/messages';
 	import LocalePicker from '$lib/components/locale-picker.svelte';
-	import { getDefaultProfilePicture } from '$lib/utils/image.util';
+	import { getDefaultProfilePicture } from '$lib/utils/docker';
 	import { SunIcon, MoonIcon } from '$lib/icons';
 
 	let { user, isCollapsed }: { user: User; isCollapsed: boolean } = $props();

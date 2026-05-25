@@ -9,7 +9,7 @@
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import type { Snippet } from 'svelte';
 	import { m } from '$lib/paraglide/messages';
-	import { sanitizeLogText } from '$lib/utils/log-text';
+	import { sanitizeLogText } from '$lib/utils/formatting';
 	import {
 		type LayerProgress,
 		type PullPhase,
@@ -19,7 +19,7 @@
 		isIndeterminatePhase,
 		getAggregatePullPhase,
 		getAggregateStatus
-	} from '$lib/utils/pull-progress';
+	} from '$lib/utils/docker';
 	import { DownloadIcon, BoxIcon, ArrowDownIcon, VerifiedCheckIcon, CloseIcon } from '$lib/icons';
 	import { IsMobile } from '$lib/hooks/is-mobile.svelte.js';
 

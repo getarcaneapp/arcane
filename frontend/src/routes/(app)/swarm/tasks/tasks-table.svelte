@@ -5,8 +5,8 @@
 	import { JobsIcon, ConnectionIcon } from '$lib/icons';
 	import { m } from '$lib/paraglide/messages';
 	import { swarmService } from '$lib/services/swarm-service';
-	import type { SwarmTaskSummary } from '$lib/types/swarm.type';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
+	import type { SwarmTaskSummary } from '$lib/types/swarm';
+	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 
 	let {

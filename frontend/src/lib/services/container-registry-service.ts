@@ -3,10 +3,10 @@ import type {
 	ContainerRegistryCreateDto,
 	ContainerRegistryPullUsageResponse,
 	ContainerRegistryUpdateDto
-} from '$lib/types/container-registry.type';
-import type { ContainerRegistry } from '$lib/types/container-registry.type';
-import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
-import { transformPaginationParams } from '$lib/utils/params.util';
+} from '$lib/types/docker';
+import type { ContainerRegistry } from '$lib/types/docker';
+import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
+import { transformPaginationParams } from '$lib/utils/tables';
 
 export default class ContainerRegistryService extends BaseAPIService {
 	async getRegistries(options?: SearchPaginationSortRequest): Promise<Paginated<ContainerRegistry>> {

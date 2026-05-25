@@ -1,11 +1,11 @@
 import { vulnerabilityService } from '$lib/services/vulnerability-service';
 import { environmentStore } from '$lib/stores/environment.store.svelte';
 import { queryKeys } from '$lib/query/query-keys';
-import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
-import { resolveInitialTableRequest } from '$lib/utils/table-persistence.util';
-import type { Paginated } from '$lib/types/pagination.type';
-import type { VulnerabilityWithImage } from '$lib/types/vulnerability.type';
-import { throwPageLoadError } from '$lib/utils/page-load-error.util';
+import type { SearchPaginationSortRequest } from '$lib/types/shared';
+import { resolveInitialTableRequest } from '$lib/utils/tables';
+import type { Paginated } from '$lib/types/shared';
+import type { VulnerabilityWithImage } from '$lib/types/environment';
+import { throwPageLoadError } from '$lib/utils/api';
 import type { PageLoad } from './$types';
 
 function mapVulnerabilityRequest(options: SearchPaginationSortRequest): SearchPaginationSortRequest {

@@ -28,9 +28,9 @@ import {
 	VariableIcon
 } from '$lib/icons';
 import { m } from '$lib/paraglide/messages';
-import type { ShortcutKey } from '$lib/utils/keyboard-shortcut.utils';
-import type { User } from '$lib/types/user.type';
-import { GLOBAL_SCOPE, SUDO_PERMISSION } from '$lib/types/role.type';
+import type { ShortcutKey } from '$lib/utils/navigation';
+import type { User } from '$lib/types/auth';
+import { GLOBAL_SCOPE, SUDO_PERMISSION } from '$lib/types/auth';
 
 export type NavigationItem = {
 	title: string;

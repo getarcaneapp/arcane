@@ -4,12 +4,12 @@
 	import { Input } from '$lib/components/ui/input/index.js';
 	import * as Select from '$lib/components/ui/select/index.js';
 	import { z } from 'zod/v4';
-	import { createForm, preventDefault } from '$lib/utils/form.utils';
+	import { createForm, preventDefault } from '$lib/utils/settings';
 	import { m } from '$lib/paraglide/messages';
 	import { AddIcon, TrashIcon } from '$lib/icons';
 	import * as Accordion from '$lib/components/ui/accordion/index.js';
 	import FormInput from '$lib/components/form/form-input.svelte';
-	import type { SwarmServiceCreateSpec } from '$lib/types/swarm.type';
+	import type { SwarmServiceCreateSpec } from '$lib/types/swarm';
 
 	type CreateServiceDialogProps = {
 		open: boolean;

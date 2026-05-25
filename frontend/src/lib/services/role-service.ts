@@ -1,7 +1,7 @@
 import BaseAPIService from './api-service';
-import type { Role, CreateRole, UpdateRole, RoleAssignment, SetUserAssignments, PermissionsManifest } from '$lib/types/role.type';
-import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
-import { transformPaginationParams } from '$lib/utils/params.util';
+import type { Role, CreateRole, UpdateRole, RoleAssignment, SetUserAssignments, PermissionsManifest } from '$lib/types/auth';
+import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
+import { transformPaginationParams } from '$lib/utils/tables';
 
 export default class RoleAPIService extends BaseAPIService {
 	async getRoles(options?: SearchPaginationSortRequest): Promise<Paginated<Role>> {

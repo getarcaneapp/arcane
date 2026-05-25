@@ -7,16 +7,16 @@
 	import DockerInfoDialog from '$lib/components/dialogs/docker-info-dialog.svelte';
 	import * as Card from '$lib/components/ui/card/index.js';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
-	import { tryCatch } from '$lib/utils/try-catch';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api';
+	import { tryCatch } from '$lib/utils/api';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import userStore from '$lib/stores/user-store';
 	import { createStatsWebSocket } from '$lib/utils/ws';
 	import type { ReconnectingWebSocket } from '$lib/utils/ws';
-	import type { User } from '$lib/types/user.type';
+	import type { User } from '$lib/types/auth';
 	import QuickActions from '$lib/components/quick-actions.svelte';
-	import type { SystemStats } from '$lib/types/system-stats.type';
+	import type { SystemStats } from '$lib/types/shared';
 	import DashboardActionCard from './dash-action-card.svelte';
 	import DashboardMetricTile from './dash-metric-tile.svelte';
 	import DashboardContainerTable from './dash-container-table.svelte';
@@ -25,10 +25,10 @@
 	import { m } from '$lib/paraglide/messages';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { systemService } from '$lib/services/system-service';
-	import bytes from '$lib/utils/bytes';
-	import type { DockerInfo } from '$lib/types/docker-info.type';
-	import type { DashboardSnapshot } from '$lib/types/dashboard.type';
-	import type { SystemPruneRequest, PruneType } from '$lib/types/prune.type';
+	import { bytes } from '$lib/utils/formatting';
+	import type { DockerInfo } from '$lib/types/docker';
+	import type { DashboardSnapshot } from '$lib/types/shared';
+	import type { SystemPruneRequest, PruneType } from '$lib/types/automation';
 	import {
 		CpuIcon,
 		MemoryStickIcon,

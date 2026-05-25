@@ -8,7 +8,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { ReconnectingWebSocket } from '$lib/utils/ws';
 	import { cn } from '$lib/utils';
-	import { ansiToHtml } from '$lib/utils/ansi';
+	import { ansiToHtml } from '$lib/utils/formatting';
 	import { onDestroy } from 'svelte';
 	import {
 		buildLogDisplayEntries,
