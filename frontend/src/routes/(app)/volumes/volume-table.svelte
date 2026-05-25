@@ -22,6 +22,8 @@
 	import settingsStore from '$lib/stores/config-store';
 	import { onMount } from 'svelte';
 	import { SvelteMap } from 'svelte/reactivity';
+	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import { hasPermission } from '$lib/utils/permissions.util';
 
 	let {
 		volumes = $bindable(),
@@ -38,6 +40,9 @@
 	let isLoading = $state({
 		removing: false
 	});
+
+	const currentEnvId = $derived(environmentStore.selected?.id || '0');
+	const canDeleteVolume = $derived(hasPermission('volumes:delete', currentEnvId));
 	let customSettings = $state<Record<string, unknown>>({});
 	let showInternal = $derived.by(() => {
 		return (customSettings['showInternalVolumes'] as boolean) ?? false;
@@ -201,7 +206,7 @@
 			action: 'remove',
 			onClick: () => handleDeleteSelected(deletableSelectedIds),
 			loading: isLoading.removing,
-			disabled: isLoading.removing || deletableSelectedIds.length === 0,
+			disabled: !canDeleteVolume || isLoading.removing || deletableSelectedIds.length === 0,
 			icon: TrashIcon
 		}
 	]);
@@ -318,16 +323,18 @@
 					{m.common_inspect()}
 				</DropdownMenu.Item>
 
-				<DropdownMenu.Separator />
+				{#if canDeleteVolume}
+					<DropdownMenu.Separator />
 
-				<DropdownMenu.Item
-					variant="destructive"
-					onclick={() => handleRemoveVolumeConfirm(item.name)}
-					disabled={item.inUse || isBackupVolume(item)}
-				>
-					<TrashIcon class="size-4" />
-					{m.common_remove()}
-				</DropdownMenu.Item>
+					<DropdownMenu.Item
+						variant="destructive"
+						onclick={() => handleRemoveVolumeConfirm(item.name)}
+						disabled={item.inUse || isBackupVolume(item)}
+					>
+						<TrashIcon class="size-4" />
+						{m.common_remove()}
+					</DropdownMenu.Item>
+				{/if}
 			</DropdownMenu.Group>
 		</DropdownMenu.Content>
 	</DropdownMenu.Root>

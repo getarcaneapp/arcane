@@ -19,6 +19,8 @@
 	import { sanitizeLogText } from '$lib/utils/log-text';
 	import { EllipsisIcon, DownloadIcon, HammerIcon } from '$lib/icons';
 	import { createMutation } from '@tanstack/svelte-query';
+	import { hasPermission } from '$lib/utils/permissions.util';
+	import { environmentStore } from '$lib/stores/environment.store.svelte';
 
 	type TargetType = 'container' | 'project';
 	type LoadingStates = {
@@ -190,6 +192,29 @@
 
 	const isRunning = $derived(itemState === 'running' || (type === 'project' && itemState === 'partially running'));
 	const projectHasBuildDirective = $derived(type === 'project' && hasBuildDirective);
+
+	// Per-action RBAC gating. Each button hides if the caller lacks the
+	// corresponding permission on the currently-selected environment. Project
+	// pull / build / redeploy all share the `projects:deploy` permission since
+	// they're stages of the deploy flow.
+	const currentEnvId = $derived(environmentStore.selected?.id);
+	const canStart = $derived(
+		type === 'container' ? hasPermission('containers:start', currentEnvId) : hasPermission('projects:deploy', currentEnvId)
+	);
+	const canStop = $derived(
+		type === 'container' ? hasPermission('containers:stop', currentEnvId) : hasPermission('projects:down', currentEnvId)
+	);
+	const canRestart = $derived(
+		type === 'container' ? hasPermission('containers:restart', currentEnvId) : hasPermission('projects:restart', currentEnvId)
+	);
+	const canRedeploy = $derived(
+		type === 'container' ? hasPermission('containers:redeploy', currentEnvId) : hasPermission('projects:deploy', currentEnvId)
+	);
+	const canRemove = $derived(
+		type === 'container' ? hasPermission('containers:delete', currentEnvId) : hasPermission('projects:delete', currentEnvId)
+	);
+	const canPull = $derived(type === 'project' && hasPermission('projects:deploy', currentEnvId));
+	const canBuild = $derived(type === 'project' && hasPermission('projects:deploy', currentEnvId));
 	const deployButtonLabel = $derived(projectHasBuildDirective ? m.compose_build_and_deploy() : m.common_up());
 	const depotAvailable = $derived.by(() => {
 		const projectId = ($settingsStore?.depotProjectId ?? '').trim();
@@ -819,24 +844,28 @@
 </script>
 
 {#snippet RedeployActionButton(size: 'default' | 'icon' = 'default', showLabel = true)}
-	{#if disableRedeploy}
-		<span class="inline-flex" title={m.common_redeploy_disabled_arcane_self()}>
-			<ArcaneButton action="redeploy" {size} {showLabel} disabled />
-		</span>
-	{:else}
-		<ArcaneButton action="redeploy" {size} {showLabel} onclick={() => confirmAction('redeploy')} loading={uiLoading.redeploy} />
+	{#if canRedeploy}
+		{#if disableRedeploy}
+			<span class="inline-flex" title={m.common_redeploy_disabled_arcane_self()}>
+				<ArcaneButton action="redeploy" {size} {showLabel} disabled />
+			</span>
+		{:else}
+			<ArcaneButton action="redeploy" {size} {showLabel} onclick={() => confirmAction('redeploy')} loading={uiLoading.redeploy} />
+		{/if}
 	{/if}
 {/snippet}
 
 {#snippet RedeployMenuItem()}
-	{#if disableRedeploy}
-		<DropdownMenu.Item disabled title={m.common_redeploy_disabled_arcane_self()}>
-			{m.common_redeploy()}
-		</DropdownMenu.Item>
-	{:else}
-		<DropdownMenu.Item onclick={() => confirmAction('redeploy')} disabled={uiLoading.redeploy}>
-			{m.common_redeploy()}
-		</DropdownMenu.Item>
+	{#if canRedeploy}
+		{#if disableRedeploy}
+			<DropdownMenu.Item disabled title={m.common_redeploy_disabled_arcane_self()}>
+				{m.common_redeploy()}
+			</DropdownMenu.Item>
+		{:else}
+			<DropdownMenu.Item onclick={() => confirmAction('redeploy')} disabled={uiLoading.redeploy}>
+				{m.common_redeploy()}
+			</DropdownMenu.Item>
+		{/if}
 	{/if}
 {/snippet}
 
@@ -845,7 +874,7 @@
 		<!-- On xl+ show labels; below xl use icon-only to avoid overflow in constrained headers (sidebar layouts) -->
 		{#if isLgUp}
 			<div class="flex items-center gap-2">
-				{#if !isRunning}
+				{#if !isRunning && canStart}
 					{#if type === 'container'}
 						<ArcaneButton
 							action="start"
@@ -881,37 +910,43 @@
 				{/if}
 
 				{#if isRunning}
-					<ArcaneButton
-						action="stop"
-						size={adaptiveIconOnly ? 'icon' : 'default'}
-						showLabel={!adaptiveIconOnly}
-						customLabel={type === 'project' ? m.common_down() : undefined}
-						onclick={() => handleStop()}
-						loading={uiLoading.stop}
-					/>
-					<ArcaneButton
-						action="restart"
-						size={adaptiveIconOnly ? 'icon' : 'default'}
-						showLabel={!adaptiveIconOnly}
-						onclick={() => handleRestart()}
-						loading={uiLoading.restart}
-					/>
+					{#if canStop}
+						<ArcaneButton
+							action="stop"
+							size={adaptiveIconOnly ? 'icon' : 'default'}
+							showLabel={!adaptiveIconOnly}
+							customLabel={type === 'project' ? m.common_down() : undefined}
+							onclick={() => handleStop()}
+							loading={uiLoading.stop}
+						/>
+					{/if}
+					{#if canRestart}
+						<ArcaneButton
+							action="restart"
+							size={adaptiveIconOnly ? 'icon' : 'default'}
+							showLabel={!adaptiveIconOnly}
+							onclick={() => handleRestart()}
+							loading={uiLoading.restart}
+						/>
+					{/if}
 				{/if}
 
 				{#if type === 'container'}
 					{@render RedeployActionButton(adaptiveIconOnly ? 'icon' : 'default', !adaptiveIconOnly)}
-					<ArcaneButton
-						action="remove"
-						size={adaptiveIconOnly ? 'icon' : 'default'}
-						showLabel={!adaptiveIconOnly}
-						onclick={() => confirmAction('remove')}
-						loading={uiLoading.remove}
-					/>
+					{#if canRemove}
+						<ArcaneButton
+							action="remove"
+							size={adaptiveIconOnly ? 'icon' : 'default'}
+							showLabel={!adaptiveIconOnly}
+							onclick={() => confirmAction('remove')}
+							loading={uiLoading.remove}
+						/>
+					{/if}
 				{:else}
 					{@render RedeployActionButton(adaptiveIconOnly ? 'icon' : 'default', !adaptiveIconOnly)}
 
 					{#if type === 'project'}
-						{#if projectHasBuildDirective}
+						{#if projectHasBuildDirective && canBuild}
 							<ProgressPopover
 								bind:open={buildPopoverOpen}
 								bind:progress={pullProgress}
@@ -936,24 +971,26 @@
 							</ProgressPopover>
 						{/if}
 
-						<ProgressPopover
-							bind:open={pullPopoverOpen}
-							bind:progress={pullProgress}
-							title={m.progress_pulling_images()}
-							statusText={pullStatusText}
-							error={pullError}
-							loading={projectPulling}
-							icon={DownloadIcon}
-							layers={layerProgress}
-						>
-							<ArcaneButton
-								action="pull"
-								size={adaptiveIconOnly ? 'icon' : 'default'}
-								showLabel={!adaptiveIconOnly}
-								onclick={() => handleProjectPull()}
+						{#if canPull}
+							<ProgressPopover
+								bind:open={pullPopoverOpen}
+								bind:progress={pullProgress}
+								title={m.progress_pulling_images()}
+								statusText={pullStatusText}
+								error={pullError}
 								loading={projectPulling}
-							/>
-						</ProgressPopover>
+								icon={DownloadIcon}
+								layers={layerProgress}
+							>
+								<ArcaneButton
+									action="pull"
+									size={adaptiveIconOnly ? 'icon' : 'default'}
+									showLabel={!adaptiveIconOnly}
+									onclick={() => handleProjectPull()}
+									loading={projectPulling}
+								/>
+							</ProgressPopover>
+						{/if}
 					{/if}
 
 					{#if onRefresh}
@@ -966,14 +1003,16 @@
 						/>
 					{/if}
 
-					<ArcaneButton
-						customLabel={type === 'project' ? m.compose_destroy() : m.common_remove()}
-						action="remove"
-						size={adaptiveIconOnly ? 'icon' : 'default'}
-						showLabel={!adaptiveIconOnly}
-						onclick={() => confirmAction('remove')}
-						loading={uiLoading.remove}
-					/>
+					{#if canRemove}
+						<ArcaneButton
+							customLabel={type === 'project' ? m.compose_destroy() : m.common_remove()}
+							action="remove"
+							size={adaptiveIconOnly ? 'icon' : 'default'}
+							showLabel={!adaptiveIconOnly}
+							onclick={() => confirmAction('remove')}
+							loading={uiLoading.remove}
+						/>
+					{/if}
 				{/if}
 			</div>
 		{:else}
@@ -989,7 +1028,7 @@
 						class="bg-popover/20 z-50 min-w-[180px] rounded-xl border p-1 shadow-lg backdrop-blur-md"
 					>
 						<DropdownMenu.Group>
-							{#if !isRunning}
+							{#if !isRunning && canStart}
 								{#if type === 'container'}
 									<DropdownMenu.Item onclick={handleStart} disabled={uiLoading.start}>
 										{m.common_start()}
@@ -1019,32 +1058,40 @@
 										</DropdownMenu.CheckboxItem>
 									{/if}
 								{/if}
-							{:else}
-								<DropdownMenu.Item onclick={handleStop} disabled={uiLoading.stop}>
-									{type === 'project' ? m.common_down() : m.common_stop()}
-								</DropdownMenu.Item>
-								<DropdownMenu.Item onclick={handleRestart} disabled={uiLoading.restart}>
-									{m.common_restart()}
-								</DropdownMenu.Item>
+							{:else if isRunning}
+								{#if canStop}
+									<DropdownMenu.Item onclick={handleStop} disabled={uiLoading.stop}>
+										{type === 'project' ? m.common_down() : m.common_stop()}
+									</DropdownMenu.Item>
+								{/if}
+								{#if canRestart}
+									<DropdownMenu.Item onclick={handleRestart} disabled={uiLoading.restart}>
+										{m.common_restart()}
+									</DropdownMenu.Item>
+								{/if}
 							{/if}
 
 							{#if type === 'container'}
 								{@render RedeployMenuItem()}
-								<DropdownMenu.Item onclick={() => confirmAction('remove')} disabled={uiLoading.remove}>
-									{m.common_remove()}
-								</DropdownMenu.Item>
+								{#if canRemove}
+									<DropdownMenu.Item onclick={() => confirmAction('remove')} disabled={uiLoading.remove}>
+										{m.common_remove()}
+									</DropdownMenu.Item>
+								{/if}
 							{:else}
 								{@render RedeployMenuItem()}
 
 								{#if type === 'project'}
-									{#if projectHasBuildDirective}
+									{#if projectHasBuildDirective && canBuild}
 										<DropdownMenu.Item onclick={handleProjectBuild} disabled={projectBuilding || uiLoading.building}>
 											{m.build()}
 										</DropdownMenu.Item>
 									{/if}
-									<DropdownMenu.Item onclick={handleProjectPull} disabled={projectPulling || uiLoading.pulling}>
-										{m.images_pull()}
-									</DropdownMenu.Item>
+									{#if canPull}
+										<DropdownMenu.Item onclick={handleProjectPull} disabled={projectPulling || uiLoading.pulling}>
+											{m.images_pull()}
+										</DropdownMenu.Item>
+									{/if}
 								{/if}
 
 								{#if onRefresh}
@@ -1053,9 +1100,11 @@
 									</DropdownMenu.Item>
 								{/if}
 
-								<DropdownMenu.Item onclick={() => confirmAction('remove')} disabled={uiLoading.remove}>
-									{type === 'project' ? m.compose_destroy() : m.common_remove()}
-								</DropdownMenu.Item>
+								{#if canRemove}
+									<DropdownMenu.Item onclick={() => confirmAction('remove')} disabled={uiLoading.remove}>
+										{type === 'project' ? m.compose_destroy() : m.common_remove()}
+									</DropdownMenu.Item>
+								{/if}
 							{/if}
 						</DropdownMenu.Group>
 					</DropdownMenu.Content>
@@ -1118,7 +1167,7 @@
 {:else}
 	<div>
 		<div class="hidden items-center gap-2 lg:flex">
-			{#if !isRunning}
+			{#if !isRunning && canStart}
 				{#if type === 'container'}
 					<ArcaneButton action="start" onclick={() => handleStart()} loading={uiLoading.start} />
 				{:else}
@@ -1142,23 +1191,29 @@
 			{/if}
 
 			{#if isRunning}
-				<ArcaneButton
-					action="stop"
-					customLabel={type === 'project' ? m.common_down() : undefined}
-					onclick={() => handleStop()}
-					loading={uiLoading.stop}
-				/>
-				<ArcaneButton action="restart" onclick={() => handleRestart()} loading={uiLoading.restart} />
+				{#if canStop}
+					<ArcaneButton
+						action="stop"
+						customLabel={type === 'project' ? m.common_down() : undefined}
+						onclick={() => handleStop()}
+						loading={uiLoading.stop}
+					/>
+				{/if}
+				{#if canRestart}
+					<ArcaneButton action="restart" onclick={() => handleRestart()} loading={uiLoading.restart} />
+				{/if}
 			{/if}
 
 			{#if type === 'container'}
 				{@render RedeployActionButton()}
-				<ArcaneButton action="remove" onclick={() => confirmAction('remove')} loading={uiLoading.remove} />
+				{#if canRemove}
+					<ArcaneButton action="remove" onclick={() => confirmAction('remove')} loading={uiLoading.remove} />
+				{/if}
 			{:else}
 				{@render RedeployActionButton()}
 
 				{#if type === 'project'}
-					{#if projectHasBuildDirective}
+					{#if projectHasBuildDirective && canBuild}
 						<ProgressPopover
 							bind:open={buildPopoverOpen}
 							bind:progress={pullProgress}
@@ -1177,30 +1232,34 @@
 						</ProgressPopover>
 					{/if}
 
-					<ProgressPopover
-						bind:open={pullPopoverOpen}
-						bind:progress={pullProgress}
-						title={m.progress_pulling_images()}
-						statusText={pullStatusText}
-						error={pullError}
-						loading={projectPulling}
-						icon={DownloadIcon}
-						layers={layerProgress}
-					>
-						<ArcaneButton action="pull" onclick={() => handleProjectPull()} loading={projectPulling} />
-					</ProgressPopover>
+					{#if canPull}
+						<ProgressPopover
+							bind:open={pullPopoverOpen}
+							bind:progress={pullProgress}
+							title={m.progress_pulling_images()}
+							statusText={pullStatusText}
+							error={pullError}
+							loading={projectPulling}
+							icon={DownloadIcon}
+							layers={layerProgress}
+						>
+							<ArcaneButton action="pull" onclick={() => handleProjectPull()} loading={projectPulling} />
+						</ProgressPopover>
+					{/if}
 				{/if}
 
 				{#if onRefresh}
 					<ArcaneButton action="refresh" onclick={() => handleRefresh()} loading={uiLoading.refresh} />
 				{/if}
 
-				<ArcaneButton
-					customLabel={type === 'project' ? m.compose_destroy() : m.common_remove()}
-					action="remove"
-					onclick={() => confirmAction('remove')}
-					loading={uiLoading.remove}
-				/>
+				{#if canRemove}
+					<ArcaneButton
+						customLabel={type === 'project' ? m.compose_destroy() : m.common_remove()}
+						action="remove"
+						onclick={() => confirmAction('remove')}
+						loading={uiLoading.remove}
+					/>
+				{/if}
 			{/if}
 		</div>
 
@@ -1216,7 +1275,7 @@
 					class="bg-popover/20 z-50 min-w-[180px] rounded-xl border p-1 shadow-lg backdrop-blur-md"
 				>
 					<DropdownMenu.Group>
-						{#if !isRunning}
+						{#if !isRunning && canStart}
 							{#if type === 'container'}
 								<DropdownMenu.Item onclick={handleStart} disabled={uiLoading.start}>
 									{m.common_start()}
@@ -1246,32 +1305,40 @@
 									</DropdownMenu.CheckboxItem>
 								{/if}
 							{/if}
-						{:else}
-							<DropdownMenu.Item onclick={handleStop} disabled={uiLoading.stop}>
-								{type === 'project' ? m.common_down() : m.common_stop()}
-							</DropdownMenu.Item>
-							<DropdownMenu.Item onclick={handleRestart} disabled={uiLoading.restart}>
-								{m.common_restart()}
-							</DropdownMenu.Item>
+						{:else if isRunning}
+							{#if canStop}
+								<DropdownMenu.Item onclick={handleStop} disabled={uiLoading.stop}>
+									{type === 'project' ? m.common_down() : m.common_stop()}
+								</DropdownMenu.Item>
+							{/if}
+							{#if canRestart}
+								<DropdownMenu.Item onclick={handleRestart} disabled={uiLoading.restart}>
+									{m.common_restart()}
+								</DropdownMenu.Item>
+							{/if}
 						{/if}
 
 						{#if type === 'container'}
 							{@render RedeployMenuItem()}
-							<DropdownMenu.Item onclick={() => confirmAction('remove')} disabled={uiLoading.remove}>
-								{m.common_remove()}
-							</DropdownMenu.Item>
+							{#if canRemove}
+								<DropdownMenu.Item onclick={() => confirmAction('remove')} disabled={uiLoading.remove}>
+									{m.common_remove()}
+								</DropdownMenu.Item>
+							{/if}
 						{:else}
 							{@render RedeployMenuItem()}
 
 							{#if type === 'project'}
-								{#if projectHasBuildDirective}
+								{#if projectHasBuildDirective && canBuild}
 									<DropdownMenu.Item onclick={handleProjectBuild} disabled={projectBuilding || uiLoading.building}>
 										{m.build()}
 									</DropdownMenu.Item>
 								{/if}
-								<DropdownMenu.Item onclick={handleProjectPull} disabled={projectPulling || uiLoading.pulling}>
-									{m.images_pull()}
-								</DropdownMenu.Item>
+								{#if canPull}
+									<DropdownMenu.Item onclick={handleProjectPull} disabled={projectPulling || uiLoading.pulling}>
+										{m.images_pull()}
+									</DropdownMenu.Item>
+								{/if}
 							{/if}
 
 							{#if onRefresh}
@@ -1280,9 +1347,11 @@
 								</DropdownMenu.Item>
 							{/if}
 
-							<DropdownMenu.Item onclick={() => confirmAction('remove')} disabled={uiLoading.remove}>
-								{type === 'project' ? m.compose_destroy() : m.common_remove()}
-							</DropdownMenu.Item>
+							{#if canRemove}
+								<DropdownMenu.Item onclick={() => confirmAction('remove')} disabled={uiLoading.remove}>
+									{type === 'project' ? m.compose_destroy() : m.common_remove()}
+								</DropdownMenu.Item>
+							{/if}
 						{/if}
 					</DropdownMenu.Group>
 				</DropdownMenu.Content>

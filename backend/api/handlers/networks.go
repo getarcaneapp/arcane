@@ -12,6 +12,7 @@ import (
 	humamw "github.com/getarcaneapp/arcane/backend/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
+	"github.com/getarcaneapp/arcane/backend/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils/mapper"
 	"github.com/getarcaneapp/arcane/types/base"
@@ -145,6 +146,7 @@ func RegisterNetworks(api huma.API, networkSvc *services.NetworkService, dockerS
 		Summary:     "List networks",
 		Tags:        []string{"Networks"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Middlewares: humamw.RequirePermission(api, authz.PermNetworksList),
 	}, h.ListNetworks)
 
 	huma.Register(api, huma.Operation{
@@ -154,6 +156,7 @@ func RegisterNetworks(api huma.API, networkSvc *services.NetworkService, dockerS
 		Summary:     "Network counts",
 		Tags:        []string{"Networks"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Middlewares: humamw.RequirePermission(api, authz.PermNetworksList),
 	}, h.GetNetworkCounts)
 
 	huma.Register(api, huma.Operation{
@@ -163,7 +166,7 @@ func RegisterNetworks(api huma.API, networkSvc *services.NetworkService, dockerS
 		Summary:     "Create network",
 		Tags:        []string{"Networks"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermNetworksCreate),
 	}, h.CreateNetwork)
 
 	huma.Register(api, huma.Operation{
@@ -173,6 +176,7 @@ func RegisterNetworks(api huma.API, networkSvc *services.NetworkService, dockerS
 		Summary:     "Get network topology",
 		Tags:        []string{"Networks"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Middlewares: humamw.RequirePermission(api, authz.PermNetworksRead),
 	}, h.GetNetworkTopology)
 
 	huma.Register(api, huma.Operation{
@@ -182,6 +186,7 @@ func RegisterNetworks(api huma.API, networkSvc *services.NetworkService, dockerS
 		Summary:     "Get network",
 		Tags:        []string{"Networks"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Middlewares: humamw.RequirePermission(api, authz.PermNetworksRead),
 	}, h.GetNetwork)
 
 	huma.Register(api, huma.Operation{
@@ -191,7 +196,7 @@ func RegisterNetworks(api huma.API, networkSvc *services.NetworkService, dockerS
 		Summary:     "Delete network",
 		Tags:        []string{"Networks"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermNetworksDelete),
 	}, h.DeleteNetwork)
 
 	huma.Register(api, huma.Operation{
@@ -201,7 +206,7 @@ func RegisterNetworks(api huma.API, networkSvc *services.NetworkService, dockerS
 		Summary:     "Prune networks",
 		Tags:        []string{"Networks"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermNetworksPrune),
 	}, h.PruneNetworks)
 }
 
@@ -266,9 +271,6 @@ func (h *NetworkHandler) GetNetworkCounts(ctx context.Context, input *GetNetwork
 }
 
 func (h *NetworkHandler) CreateNetwork(ctx context.Context, input *CreateNetworkInput) (*CreateNetworkOutput, error) {
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
 	user, exists := humamw.GetCurrentUserFromContext(ctx)
 	if !exists {
 		return nil, huma.Error401Unauthorized("not authenticated")
@@ -398,9 +400,6 @@ func (h *NetworkHandler) GetNetworkTopology(ctx context.Context, input *GetNetwo
 }
 
 func (h *NetworkHandler) DeleteNetwork(ctx context.Context, input *DeleteNetworkInput) (*DeleteNetworkOutput, error) {
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
 	user, exists := humamw.GetCurrentUserFromContext(ctx)
 	if !exists {
 		return nil, huma.Error401Unauthorized("not authenticated")
@@ -419,9 +418,6 @@ func (h *NetworkHandler) DeleteNetwork(ctx context.Context, input *DeleteNetwork
 }
 
 func (h *NetworkHandler) PruneNetworks(ctx context.Context, input *PruneNetworksInput) (*PruneNetworksOutput, error) {
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
 	report, err := h.networkService.PruneNetworks(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.NetworkPruneError{Err: err}).Error())

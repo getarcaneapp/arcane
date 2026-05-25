@@ -77,12 +77,19 @@ func TestDockerConnection(ctx context.Context, testFunc func(context.Context) er
 func InitializeNonAgentFeatures(
 	ctx context.Context,
 	cfg *RuntimeConfig,
+	ensureBuiltInRolesFunc func(context.Context) error,
 	createAdminFunc func(context.Context) error,
 	reconcileDefaultAdminAPIKeyFunc func(context.Context) error,
 	autoLoginInitFunc func(context.Context) error,
 ) {
 	if cfg.AgentMode {
 		return
+	}
+
+	if ensureBuiltInRolesFunc != nil {
+		if err := ensureBuiltInRolesFunc(ctx); err != nil {
+			slog.ErrorContext(ctx, "Failed to seed built-in roles before admin bootstrap", "error", err.Error())
+		}
 	}
 
 	if err := createAdminFunc(ctx); err != nil {

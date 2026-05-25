@@ -12,6 +12,8 @@
 	import type { SwarmServiceCreateSpec } from '$lib/types/swarm.type';
 	import SwarmServicesTable from './services-table.svelte';
 	import CreateServiceDialog from '$lib/components/dialogs/create-service-dialog.svelte';
+	import { hasPermission } from '$lib/utils/permissions.util';
+	import { environmentStore } from '$lib/stores/environment.store.svelte';
 
 	let { data } = $props();
 
@@ -39,6 +41,9 @@
 
 	const totalServices = $derived(services?.pagination?.totalItems ?? services?.data?.length ?? 0);
 
+	const currentEnvId = $derived(environmentStore.selected?.id);
+	const canCreateService = $derived(hasPermission('swarm:services', currentEnvId));
+
 	async function handleCreateService(spec: SwarmServiceCreateSpec) {
 		handleApiResultWithCallbacks({
 			result: await tryCatch(swarmService.createService({ spec })),
@@ -52,22 +57,26 @@
 		});
 	}
 
-	const actionButtons: ActionButton[] = $derived([
-		{
-			id: 'create',
-			action: 'create',
-			label: m.common_create_button({ resource: m.swarm_service() }),
-			onclick: () => (showCreateDialog = true)
-		},
-		{
+	const actionButtons: ActionButton[] = $derived.by(() => {
+		const buttons: ActionButton[] = [];
+		if (canCreateService) {
+			buttons.push({
+				id: 'create',
+				action: 'create',
+				label: m.common_create_button({ resource: m.swarm_service() }),
+				onclick: () => (showCreateDialog = true)
+			});
+		}
+		buttons.push({
 			id: 'refresh',
 			action: 'restart',
 			label: m.common_refresh(),
 			onclick: refresh,
 			loading: isLoading.refresh,
 			disabled: isLoading.refresh
-		}
-	]);
+		});
+		return buttons;
+	});
 
 	const statCards: StatCardConfig[] = $derived([
 		{
