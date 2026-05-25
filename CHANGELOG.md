@@ -1,3 +1,60 @@
+## v1.19.5
+
+### Bug fixes
+
+* improve environment proxy error handling ([#2649](https://github.com/getarcaneapp/arcane/pull/2649) by @kmendell)
+* align local BuildKit load/push exporter ([#2650](https://github.com/getarcaneapp/arcane/pull/2650) by @kmendell)
+* PUID and PGID being set on project subfolder on every startup ([#2656](https://github.com/getarcaneapp/arcane/pull/2656) by @kmendell)
+* system upgrade doesnt support non unix socket docker hosts ([#2651](https://github.com/getarcaneapp/arcane/pull/2651) by @kmendell)
+* resizing window discards edits in compose editors ([#2719](https://github.com/getarcaneapp/arcane/pull/2719) by @kmendell)
+* only validate project name if it has changed ([#2720](https://github.com/getarcaneapp/arcane/pull/2720) by @kmendell)
+* make Arcane reverse-proxy aware to resolve connection issues ([#2717](https://github.com/getarcaneapp/arcane/pull/2717) by @kmendell)
+* tolerate undefined typed env vars in GitOps sync ([#2721](https://github.com/getarcaneapp/arcane/pull/2721) by @kmendell)
+* show all container ip's in list view ([#2726](https://github.com/getarcaneapp/arcane/pull/2726) by @kmendell)
+
+### Dependencies
+
+* bump pnpm to v11.1.3([fb8f2f5](https://github.com/getarcaneapp/arcane/commit/fb8f2f5319109a8ded6ca96cd28a00d405b91325) by @kmendell)
+* bump devalue to 5.8.1([2ed772d](https://github.com/getarcaneapp/arcane/commit/2ed772d9b6d86aafaace373a4f8026c81c3a20ce) by @kmendell)
+* bump ws to 8.20.1([47c4f81](https://github.com/getarcaneapp/arcane/commit/47c4f81468866e655fb4aafbf6453c4c8bd1b532) by @kmendell)
+* bump github.com/go-git/go-git/v5 from 5.19.0 to 5.19.1 in /backend in the go_modules group across 1 directory ([#2654](https://github.com/getarcaneapp/arcane/pull/2654) by @dependabot[bot])
+* bump @sveltejs/kit from 2.58.0 to 2.60.1 in the npm_and_yarn group across 1 directory ([#2662](https://github.com/getarcaneapp/arcane/pull/2662) by @dependabot[bot])
+* bump github.com/containerd/containerd/v2 from 2.3.0 to 2.3.1 in /backend in the go_modules group across 1 directory ([#2663](https://github.com/getarcaneapp/arcane/pull/2663) by @dependabot[bot])
+* bump golang.org/x/crypto from 0.51.0 to 0.52.0 in /backend ([#2664](https://github.com/getarcaneapp/arcane/pull/2664) by @dependabot[bot])
+* bump github.com/docker/cli from 29.5.0+incompatible to 29.5.2+incompatible in /backend ([#2666](https://github.com/getarcaneapp/arcane/pull/2666) by @dependabot[bot])
+* bump github.com/compose-spec/compose-go/v2 from 2.10.2 to 2.11.0 in /backend ([#2665](https://github.com/getarcaneapp/arcane/pull/2665) by @dependabot[bot])
+* bump date-fns from 4.1.0 to 4.2.1 ([#2675](https://github.com/getarcaneapp/arcane/pull/2675) by @dependabot[bot])
+* bump github.com/docker/compose/v5 from 5.1.3 to 5.1.4 in /backend ([#2670](https://github.com/getarcaneapp/arcane/pull/2670) by @dependabot[bot])
+* bump go.podman.io/image/v5 from 5.39.2 to 5.40.0 in /backend ([#2667](https://github.com/getarcaneapp/arcane/pull/2667) by @dependabot[bot])
+* bump github.com/compose-spec/compose-go/v2 from 2.10.2 to 2.11.0 in /types ([#2668](https://github.com/getarcaneapp/arcane/pull/2668) by @dependabot[bot])
+* bump github.com/getarcaneapp/arcane/types from 1.19.1 to 1.19.4 in /cli ([#2669](https://github.com/getarcaneapp/arcane/pull/2669) by @dependabot[bot])
+* bump marked from 18.0.3 to 18.0.4 ([#2679](https://github.com/getarcaneapp/arcane/pull/2679) by @dependabot[bot])
+* bump svelte from 5.55.7 to 5.55.9 ([#2672](https://github.com/getarcaneapp/arcane/pull/2672) by @dependabot[bot])
+* bump @codemirror/autocomplete from 6.20.1 to 6.20.2 ([#2673](https://github.com/getarcaneapp/arcane/pull/2673) by @dependabot[bot])
+* bump @codemirror/legacy-modes from 6.5.2 to 6.5.3 ([#2671](https://github.com/getarcaneapp/arcane/pull/2671) by @dependabot[bot])
+* bump pnpm to v11.2.2([74f7ec4](https://github.com/getarcaneapp/arcane/commit/74f7ec42b52c66c3cd49233717c6951f48f6f21f) by @kmendell)
+* bump react and @types/react ([#2682](https://github.com/getarcaneapp/arcane/pull/2682) by @dependabot[bot])
+* bump frontend deps([7fe4f34](https://github.com/getarcaneapp/arcane/commit/7fe4f349eff1bf06f7a112db1b31216df1c5b99e) by @kmendell)
+* bump prettier-plugin-svelte from 3.5.2 to 4.0.1([a2fbf3e](https://github.com/getarcaneapp/arcane/commit/a2fbf3ef9497276f73b4b3c18989d8b2843beb2f) by @kmendell)
+* bump github.com/aws/aws-sdk-go-v2/credentials from 1.19.16 to 1.19.17 in /backend ([#2705](https://github.com/getarcaneapp/arcane/pull/2705) by @dependabot[bot])
+* bump golang.org/x/net from 0.54.0 to 0.55.0 in /backend ([#2696](https://github.com/getarcaneapp/arcane/pull/2696) by @dependabot[bot])
+* bump golang from 1.26-trixie to 1.26.3-trixie in /docker ([#2708](https://github.com/getarcaneapp/arcane/pull/2708) by @dependabot[bot])
+* bump github.com/aws/aws-sdk-go-v2/config from 1.32.17 to 1.32.18 in /backend ([#2700](https://github.com/getarcaneapp/arcane/pull/2700) by @dependabot[bot])
+* bump golangci/golangci-lint-action from 9 to 9.2.0 ([#2714](https://github.com/getarcaneapp/arcane/pull/2714) by @dependabot[bot])
+* bump github/codeql-action from 4 to 4.35.5 ([#2713](https://github.com/getarcaneapp/arcane/pull/2713) by @dependabot[bot])
+* bump @uiw/codemirror-themes from 4.25.9 to 4.25.10 ([#2712](https://github.com/getarcaneapp/arcane/pull/2712) by @dependabot[bot])
+* bump depot/build-push-action from 1 to 1.17.0 ([#2716](https://github.com/getarcaneapp/arcane/pull/2716) by @dependabot[bot])
+* bump docker/login-action from 4 to 4.1.0 ([#2715](https://github.com/getarcaneapp/arcane/pull/2715) by @dependabot[bot])
+* bump react-email from 6.1.1 to 6.2.0 ([#2711](https://github.com/getarcaneapp/arcane/pull/2711) by @dependabot[bot])
+
+### Other
+
+* run workflows on breaking branches([993d27f](https://github.com/getarcaneapp/arcane/commit/993d27f4a2228ed50fb8c3f749abd39a1ac0986d) by @kmendell)
+
+
+
+**Full Changelog**: https://github.com/getarcaneapp/arcane/compare/v1.19.4...v1.19.5
+
 ## v1.19.4
 
 ### Bug fixes
