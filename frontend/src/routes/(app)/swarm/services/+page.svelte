@@ -4,15 +4,15 @@
 	import { swarmService } from '$lib/services/swarm-service';
 	import { toast } from 'svelte-sonner';
 	import { untrack } from 'svelte';
-	import { tryCatch } from '$lib/utils/try-catch';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
+	import { tryCatch } from '$lib/utils/api';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
 	import { useEnvironmentRefresh } from '$lib/hooks/use-environment-refresh.svelte';
-	import { parallelRefresh } from '$lib/utils/refresh.util';
-	import type { SwarmServiceCreateSpec } from '$lib/types/swarm.type';
+	import { parallelRefresh } from '$lib/utils/api';
+	import type { SwarmServiceCreateSpec } from '$lib/types/swarm';
 	import SwarmServicesTable from './services-table.svelte';
 	import CreateServiceDialog from '$lib/components/dialogs/create-service-dialog.svelte';
-	import { hasPermission } from '$lib/utils/permissions.util';
+	import { hasPermission } from '$lib/utils/auth';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 
 	let { data } = $props();

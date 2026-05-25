@@ -3,7 +3,7 @@
 	import { NetworksIcon, ConnectionIcon } from '$lib/icons';
 	import { GitBranchIcon } from '$lib/icons';
 	import { toast } from 'svelte-sonner';
-	import type { NetworkCreateOptions, NetworkUsageCounts } from '$lib/types/network.type';
+	import type { NetworkCreateOptions, NetworkUsageCounts } from '$lib/types/docker';
 	import CreateNetworkSheet from '$lib/components/sheets/create-network-sheet.svelte';
 	import NetworkTable from './network-table.svelte';
 	import { m } from '$lib/paraglide/messages';

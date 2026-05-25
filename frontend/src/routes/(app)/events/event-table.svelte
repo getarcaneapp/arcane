@@ -6,11 +6,11 @@
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { Badge } from '$lib/components/ui/badge';
-	import { tryCatch } from '$lib/utils/try-catch';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
+	import { tryCatch } from '$lib/utils/api';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api';
 	import { formatDistanceToNow } from 'date-fns';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
-	import type { Event } from '$lib/types/event.type';
+	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
+	import type { Event } from '$lib/types/shared';
 	import type { ColumnSpec, MobileFieldVisibility } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
 	import EventDetailsDialog from '$lib/components/dialogs/event-details-dialog.svelte';

@@ -1,7 +1,7 @@
 import { volumeService } from '$lib/services/volume-service';
 import { queryKeys } from '$lib/query/query-keys';
-import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
-import { resolveInitialTableRequest } from '$lib/utils/table-persistence.util';
+import type { SearchPaginationSortRequest } from '$lib/types/shared';
+import { resolveInitialTableRequest } from '$lib/utils/tables';
 import type { PageLoad } from './$types';
 import { environmentStore } from '$lib/stores/environment.store.svelte';
 

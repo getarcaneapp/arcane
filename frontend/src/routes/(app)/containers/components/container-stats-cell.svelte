@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Progress } from '$lib/components/ui/progress/index.js';
 	import { m } from '$lib/paraglide/messages';
-	import bytes from '$lib/utils/bytes';
+	import { bytes } from '$lib/utils/formatting';
 
 	interface Props {
 		value?: number;

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import TemplateTable from '../template-table.svelte';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
-	import type { Template } from '$lib/types/template.type';
+	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
+	import type { Template } from '$lib/types/swarm';
 
 	let {
 		templates = $bindable(),

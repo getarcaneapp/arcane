@@ -1,5 +1,5 @@
 <script lang="ts" module>
-	import type { BackupEntry, FileEntry } from '$lib/types/file-browser.type';
+	import type { BackupEntry, FileEntry } from '$lib/types/shared';
 
 	export interface FileProvider {
 		list: (path: string) => Promise<FileEntry[]>;
@@ -30,10 +30,10 @@
 	import * as Alert from '$lib/components/ui/alert';
 	import { Label } from '$lib/components/ui/label';
 	import { toast } from 'svelte-sonner';
-	import bytes from '$lib/utils/bytes';
+	import { bytes } from '$lib/utils/formatting';
 	import { format } from 'date-fns';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { hasPermission } from '$lib/utils/permissions.util';
+	import { hasPermission } from '$lib/utils/auth';
 	import IfPermitted from '$lib/components/if-permitted.svelte';
 
 	let { provider, rootLabel, persistKey }: { provider: FileProvider; rootLabel?: string; persistKey?: string } = $props();

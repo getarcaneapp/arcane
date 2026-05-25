@@ -1,9 +1,9 @@
 import { openConfirmDialog } from '$lib/components/confirm-dialog';
 import { m } from '$lib/paraglide/messages';
 import { containerService, type ContainersPaginatedResponse } from '$lib/services/container-service';
-import type { ContainerSummaryDto } from '$lib/types/container.type';
-import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
-import { tryCatch } from '$lib/utils/try-catch';
+import type { ContainerSummaryDto } from '$lib/types/docker';
+import { handleApiResultWithCallbacks } from '$lib/utils/api';
+import { tryCatch } from '$lib/utils/api';
 import { toast } from 'svelte-sonner';
 import { getContainerDisplayName, type ActionStatus } from './container-table.helpers';
 

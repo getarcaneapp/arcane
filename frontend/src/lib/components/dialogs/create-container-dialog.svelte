@@ -8,9 +8,9 @@
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Textarea } from '$lib/components/ui/textarea/index.js';
-	import type { ContainerCreateRequest } from '$lib/types/container.type';
+	import type { ContainerCreateRequest } from '$lib/types/docker';
 	import { z } from 'zod/v4';
-	import { createForm, preventDefault } from '$lib/utils/form.utils';
+	import { createForm, preventDefault } from '$lib/utils/settings';
 	import SelectWithLabel from '../form/select-with-label.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import {

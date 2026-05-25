@@ -3,7 +3,7 @@
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { mode, toggleMode } from 'mode-watcher';
 	import { m } from '$lib/paraglide/messages';
-	import type { User } from '$lib/types/user.type';
+	import type { User } from '$lib/types/auth';
 	import LocalePicker from '$lib/components/locale-picker.svelte';
 	import EnvironmentSwitcherDialog from '$lib/components/dialogs/environment-switcher-dialog.svelte';
 	import settingsStore from '$lib/stores/config-store';

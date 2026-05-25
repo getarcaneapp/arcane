@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { FileEntry } from '$lib/types/file-browser.type';
+	import type { FileEntry } from '$lib/types/shared';
 	import { onMount } from 'svelte';
 	import * as Sheet from '$lib/components/ui/sheet';
 	import { LoadingSpinnerIcon } from '$lib/icons';

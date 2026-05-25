@@ -1,6 +1,6 @@
 import { imageService } from '$lib/services/image-service.js';
 import { environmentStore } from '$lib/stores/environment.store.svelte';
-import type { ImageDetailSummaryDto } from '$lib/types/image.type.js';
+import type { ImageDetailSummaryDto } from '$lib/types/docker.js';
 import { queryKeys } from '$lib/query/query-keys';
 import type { PageLoad } from './$types';
 import { error } from '@sveltejs/kit';

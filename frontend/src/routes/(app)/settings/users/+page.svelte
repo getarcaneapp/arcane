@@ -1,13 +1,13 @@
 <script lang="ts">
 	import { UsersIcon } from '$lib/icons';
 	import { toast } from 'svelte-sonner';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
-	import { tryCatch } from '$lib/utils/try-catch';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api';
+	import { tryCatch } from '$lib/utils/api';
 	import UserTable from './user-table.svelte';
 	import UserFormSheet from '$lib/components/sheets/user-form-sheet.svelte';
-	import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
-	import type { User } from '$lib/types/user.type';
-	import type { CreateUser } from '$lib/types/user.type';
+	import type { SearchPaginationSortRequest } from '$lib/types/shared';
+	import type { User } from '$lib/types/auth';
+	import type { CreateUser } from '$lib/types/auth';
 	import { m } from '$lib/paraglide/messages';
 	import { userService } from '$lib/services/user-service';
 	import { roleService } from '$lib/services/role-service';

@@ -8,10 +8,10 @@
 	import { projectService } from '$lib/services/project-service';
 	import { imageService } from '$lib/services/image-service';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { hasPermission } from '$lib/utils/permissions.util';
+	import { hasPermission } from '$lib/utils/auth';
 	import { queryKeys } from '$lib/query/query-keys';
-	import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
-	import type { ProjectStatusCounts } from '$lib/types/project.type';
+	import type { SearchPaginationSortRequest } from '$lib/types/shared';
+	import type { ProjectStatusCounts } from '$lib/types/swarm';
 	import { untrack } from 'svelte';
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';

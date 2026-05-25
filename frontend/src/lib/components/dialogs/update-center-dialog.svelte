@@ -9,7 +9,7 @@
 	import systemUpgradeService from '$lib/services/api/system-upgrade-service';
 	import { cn } from '$lib/utils';
 	import { ExternalLinkIcon, SuccessIcon } from '$lib/icons';
-	import type { AppVersionInformation } from '$lib/types/application-configuration';
+	import type { AppVersionInformation } from '$lib/types/settings';
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { marked } from 'marked';
 	import DOMPurify from 'isomorphic-dompurify';

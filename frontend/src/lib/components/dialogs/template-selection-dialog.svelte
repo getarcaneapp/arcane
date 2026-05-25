@@ -4,7 +4,7 @@
 	import { Card } from '$lib/components/ui/card/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { ScrollArea } from '$lib/components/ui/scroll-area/index.js';
-	import type { Template } from '$lib/types/template.type';
+	import type { Template } from '$lib/types/swarm';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import * as Select from '$lib/components/ui/select/index.js';
 	import * as Collapsible from '$lib/components/ui/collapsible/index.js';

@@ -3,14 +3,10 @@
 	import { m } from '$lib/paraglide/messages';
 	import { vulnerabilityService } from '$lib/services/vulnerability-service';
 	import { imageService } from '$lib/services/image-service';
-	import { parallelRefresh } from '$lib/utils/refresh.util';
+	import { parallelRefresh } from '$lib/utils/api';
 	import { useEnvironmentRefresh } from '$lib/hooks/use-environment-refresh.svelte';
-	import type {
-		EnvironmentVulnerabilitySummary,
-		VulnerabilityWithImage,
-		IgnoredVulnerability
-	} from '$lib/types/vulnerability.type';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
+	import type { EnvironmentVulnerabilitySummary, VulnerabilityWithImage, IgnoredVulnerability } from '$lib/types/environment';
+	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
 	import { untrack } from 'svelte';
 	import SecurityVulnerabilityTable from './security-vulnerability-table.svelte';
 	import IgnoredVulnerabilitiesTable from './ignored-vulnerabilities-table.svelte';
@@ -18,7 +14,7 @@
 	import { InspectIcon } from '$lib/icons';
 	import * as Tabs from '$lib/components/ui/tabs/index.js';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { hasPermission } from '$lib/utils/permissions.util';
+	import { hasPermission } from '$lib/utils/auth';
 
 	let { data } = $props();
 
