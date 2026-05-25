@@ -14,6 +14,7 @@
 	import { toast } from 'svelte-sonner';
 	import { UseClipboard } from '$lib/hooks/use-clipboard.svelte';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import { hasPermission } from '$lib/utils/permissions.util';
 	import { queryKeys } from '$lib/query/query-keys';
 	import type { FileEntry } from '$lib/types/file-browser.type';
 	import type { FileProvider } from '$lib/components/file-browser';
@@ -35,6 +36,7 @@
 
 	let currentPath = $state('/');
 	const envId = $derived(environmentStore.selected?.id || '0');
+	const canBuildImage = $derived(hasPermission('images:build', envId));
 	const queryClient = useQueryClient();
 
 	const filesQuery = createQuery(() => ({
@@ -218,15 +220,17 @@
 						<CopyIcon class="size-4" />
 						Copy current path
 					</DropdownMenu.Item>
-					<DropdownMenu.Separator />
-					<DropdownMenu.Item onclick={() => (showCreateFolder = true)}>
-						<MoveToFolderIcon class="size-4" />
-						{m.volumes_browser_new_folder()}
-					</DropdownMenu.Item>
-					<DropdownMenu.Item onclick={() => (showUpload = true)}>
-						<UploadIcon class="size-4" />
-						{m.volumes_browser_upload_files()}
-					</DropdownMenu.Item>
+					{#if canBuildImage}
+						<DropdownMenu.Separator />
+						<DropdownMenu.Item onclick={() => (showCreateFolder = true)}>
+							<MoveToFolderIcon class="size-4" />
+							{m.volumes_browser_new_folder()}
+						</DropdownMenu.Item>
+						<DropdownMenu.Item onclick={() => (showUpload = true)}>
+							<UploadIcon class="size-4" />
+							{m.volumes_browser_upload_files()}
+						</DropdownMenu.Item>
+					{/if}
 				</DropdownMenu.Content>
 			</DropdownMenu.Root>
 		</div>
@@ -249,10 +253,12 @@
 				minimal
 				onNavigate={handleNavigate}
 				onRefresh={() => filesQuery.refetch()}
-				onDelete={async (file) => {
-					await deleteMutation.mutateAsync(file.path);
-					await filesQuery.refetch();
-				}}
+				onDelete={canBuildImage
+					? async (file) => {
+							await deleteMutation.mutateAsync(file.path);
+							await filesQuery.refetch();
+						}
+					: undefined}
 				onDownload={async (file) => {
 					await downloadMutation.mutateAsync(file.path);
 				}}
@@ -306,13 +312,15 @@
 		</div>
 		<Dialog.Footer class="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
 			<ArcaneButton action="cancel" tone="outline" type="button" onclick={() => (editorOpen = false)} />
-			<ArcaneButton
-				action="save"
-				type="button"
-				onclick={handleSaveFile}
-				disabled={editorLoading || editorSaving || !!editorError}
-				loading={editorSaving}
-			/>
+			{#if canBuildImage}
+				<ArcaneButton
+					action="save"
+					type="button"
+					onclick={handleSaveFile}
+					disabled={editorLoading || editorSaving || !!editorError}
+					loading={editorSaving}
+				/>
+			{/if}
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>

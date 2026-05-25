@@ -26,8 +26,8 @@
 	import { tryCatch } from '$lib/utils/try-catch';
 	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '$lib/utils/api.util';
 	import { goto } from '$app/navigation';
-	import userStore from '$lib/stores/user-store';
-	import { fromStore } from 'svelte/store';
+	import { hasPermission } from '$lib/utils/permissions.util';
+	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import SwarmNodeAgentDialog from './swarm-node-agent-dialog.svelte';
 	import SwarmNodeLabelDialog from './swarm-node-label-dialog.svelte';
 	import { getSwarmNodeAgentActionLabel, getSwarmNodeAgentLabel, getSwarmNodeAgentVariant } from './agent-status';
@@ -40,8 +40,8 @@
 		requestOptions: SearchPaginationSortRequest;
 	} = $props();
 
-	const storeUser = fromStore(userStore);
-	const isAdmin = $derived(!!storeUser.current?.roles?.includes('admin'));
+	const currentEnvId = $derived(environmentStore.selected?.id);
+	const canManageNodes = $derived(hasPermission('swarm:nodes', currentEnvId));
 	let isLoading = $state(false);
 	let isAgentDialogOpen = $state(false);
 	let selectedNode = $state<SwarmNodeSummary | null>(null);
@@ -275,7 +275,7 @@
 		{#each Object.entries(item.labels ?? {}) as [key, value] (key)}
 			<div class="group relative overflow-hidden rounded-[var(--radius)]">
 				<StatusBadge text={`${key}${value ? `=${value}` : ''}`} variant="blue" minWidth="none" class="max-w-[200px] truncate" />
-				{#if isAdmin}
+				{#if canManageNodes}
 					<button
 						class="absolute inset-0 flex cursor-pointer items-center justify-end rounded-[var(--radius)] bg-blue-500/10 pr-1 opacity-0 backdrop-blur-[1px] transition-opacity group-hover:opacity-100 dark:bg-blue-400/20"
 						onclick={() => removeLabel(item, key)}
@@ -288,7 +288,7 @@
 				{/if}
 			</div>
 		{/each}
-		{#if isAdmin}
+		{#if canManageNodes}
 			<button
 				class="border-border hover:border-primary hover:text-primary inline-flex items-center gap-1 rounded border border-dashed px-2 py-0.5 text-[11px] font-medium transition-colors"
 				onclick={() => openAddLabelDialog(item)}
@@ -377,31 +377,31 @@
 					<InspectIcon class="size-4" />
 					{m.common_inspect()}
 				</DropdownMenu.Item>
-				<DropdownMenu.Item onclick={() => openAgentDialog(item)} disabled={!isAdmin}>
+				<DropdownMenu.Item onclick={() => openAgentDialog(item)} disabled={!canManageNodes}>
 					<EdgeConnectionIcon class="size-4" />
 					{getSwarmNodeAgentActionLabel(item.agent?.state)}
 				</DropdownMenu.Item>
 				<DropdownMenu.Separator />
-				<DropdownMenu.Item onclick={() => promoteNode(item)} disabled={!isAdmin || isLoading || item.role === 'manager'}>
+				<DropdownMenu.Item onclick={() => promoteNode(item)} disabled={!canManageNodes || isLoading || item.role === 'manager'}>
 					{m.swarm_node_promote()}
 				</DropdownMenu.Item>
-				<DropdownMenu.Item onclick={() => demoteNode(item)} disabled={!isAdmin || isLoading || item.role !== 'manager'}>
+				<DropdownMenu.Item onclick={() => demoteNode(item)} disabled={!canManageNodes || isLoading || item.role !== 'manager'}>
 					{m.swarm_node_demote()}
 				</DropdownMenu.Item>
 				<DropdownMenu.Item
 					onclick={() => setAvailability(item, 'drain')}
-					disabled={!isAdmin || isLoading || item.availability === 'drain'}
+					disabled={!canManageNodes || isLoading || item.availability === 'drain'}
 				>
 					{m.swarm_node_drain()}
 				</DropdownMenu.Item>
 				<DropdownMenu.Item
 					onclick={() => setAvailability(item, 'active')}
-					disabled={!isAdmin || isLoading || item.availability === 'active'}
+					disabled={!canManageNodes || isLoading || item.availability === 'active'}
 				>
 					{m.swarm_node_activate()}
 				</DropdownMenu.Item>
 				<DropdownMenu.Separator />
-				<DropdownMenu.Item variant="destructive" onclick={() => removeNode(item)} disabled={!isAdmin || isLoading}>
+				<DropdownMenu.Item variant="destructive" onclick={() => removeNode(item)} disabled={!canManageNodes || isLoading}>
 					<TrashIcon class="size-4" />
 					{m.common_delete()}
 				</DropdownMenu.Item>

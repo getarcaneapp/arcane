@@ -450,7 +450,6 @@
 						<QuickActions
 							class="w-full justify-start lg:w-auto lg:justify-end"
 							compact
-							user={data.user}
 							{stoppedContainers}
 							{runningContainers}
 							isLoading={{ starting: isLoading.starting, stopping: isLoading.stopping, pruning: isLoading.pruning }}

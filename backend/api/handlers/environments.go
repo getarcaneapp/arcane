@@ -20,6 +20,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
+	"github.com/getarcaneapp/arcane/backend/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils"
@@ -219,6 +220,7 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequirePermission(api, authz.PermEnvironmentsList),
 	}, h.ListEnvironments)
 
 	huma.Register(api, huma.Operation{
@@ -232,7 +234,7 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermEnvironmentsCreate),
 	}, h.CreateEnvironment)
 
 	huma.Register(api, huma.Operation{
@@ -246,6 +248,7 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequirePermission(api, authz.PermEnvironmentsRead),
 	}, h.GetEnvironment)
 
 	huma.Register(api, huma.Operation{
@@ -259,7 +262,7 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermEnvironmentsUpdate),
 	}, h.UpdateEnvironment)
 
 	huma.Register(api, huma.Operation{
@@ -273,7 +276,7 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermEnvironmentsDelete),
 	}, h.DeleteEnvironment)
 
 	huma.Register(api, huma.Operation{
@@ -287,7 +290,7 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermEnvironmentsRead),
 	}, h.TestConnection)
 
 	huma.Register(api, huma.Operation{
@@ -301,6 +304,7 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequirePermission(api, authz.PermEnvironmentsSync),
 	}, h.UpdateHeartbeat)
 
 	huma.Register(api, huma.Operation{
@@ -314,7 +318,7 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermEnvironmentsPair),
 	}, h.PairAgent)
 
 	huma.Register(api, huma.Operation{
@@ -328,7 +332,7 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermEnvironmentsSync),
 	}, h.SyncEnvironment)
 
 	huma.Register(api, huma.Operation{
@@ -353,7 +357,7 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermEnvironmentsRead),
 	}, h.GetDeploymentSnippets)
 
 	huma.Register(api, huma.Operation{
@@ -367,7 +371,7 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermEnvironmentsRead),
 	}, h.DownloadEnvironmentMTLSBundle)
 
 	huma.Register(api, huma.Operation{
@@ -381,7 +385,7 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermEnvironmentsRead),
 	}, h.DownloadEnvironmentMTLSFile)
 
 	huma.Register(api, huma.Operation{
@@ -395,6 +399,7 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequirePermission(api, authz.PermEnvironmentsRead),
 	}, h.GetEnvironmentVersion)
 
 	huma.Register(api, huma.Operation{
@@ -408,7 +413,7 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermEnvironmentsRead),
 	}, h.DownloadEdgeMTLSCA)
 }
 
@@ -467,10 +472,6 @@ func (h *EnvironmentHandler) ListEnvironments(ctx context.Context, input *ListEn
 func (h *EnvironmentHandler) CreateEnvironment(ctx context.Context, input *CreateEnvironmentInput) (*CreateEnvironmentOutput, error) {
 	if h.environmentService == nil || h.apiKeyService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
-	}
-
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
 	}
 
 	user, exists := humamw.GetCurrentUserFromContext(ctx)
@@ -616,10 +617,6 @@ func (h *EnvironmentHandler) UpdateEnvironment(ctx context.Context, input *Updat
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
-
 	isLocalEnv := input.ID == localDockerEnvironmentID
 	updates := h.buildUpdateMap(&input.Body, isLocalEnv)
 
@@ -713,10 +710,6 @@ func (h *EnvironmentHandler) DeleteEnvironment(ctx context.Context, input *Delet
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
-
 	if input.ID == localDockerEnvironmentID {
 		return nil, huma.Error400BadRequest((&common.LocalEnvironmentDeletionError{}).Error())
 	}
@@ -745,10 +738,6 @@ func (h *EnvironmentHandler) DeleteEnvironment(ctx context.Context, input *Delet
 func (h *EnvironmentHandler) TestConnection(ctx context.Context, input *TestConnectionInput) (*TestConnectionOutput, error) {
 	if h.environmentService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
-	}
-
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
 	}
 
 	var apiUrl *string
@@ -802,10 +791,6 @@ func (h *EnvironmentHandler) PairAgent(ctx context.Context, input *PairAgentInpu
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
-
 	if input.ID != localDockerEnvironmentID {
 		return nil, huma.Error404NotFound("Not found")
 	}
@@ -833,10 +818,6 @@ func (h *EnvironmentHandler) PairAgent(ctx context.Context, input *PairAgentInpu
 func (h *EnvironmentHandler) SyncEnvironment(ctx context.Context, input *SyncEnvironmentInput) (*SyncEnvironmentOutput, error) {
 	if h.environmentService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
-	}
-
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
 	}
 
 	// Sync registries
@@ -995,10 +976,6 @@ func (h *EnvironmentHandler) GetDeploymentSnippets(ctx context.Context, input *G
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
-
 	env, err := h.environmentService.GetEnvironmentByID(ctx, input.ID)
 	if err != nil {
 		return nil, huma.Error404NotFound("Environment not found")
@@ -1150,10 +1127,6 @@ func (h *EnvironmentHandler) GetEnvironmentVersion(ctx context.Context, input *G
 
 // DownloadEdgeMTLSCA downloads the Arcane-managed edge mTLS CA certificate.
 func (h *EnvironmentHandler) DownloadEdgeMTLSCA(ctx context.Context, _ *DownloadEdgeMTLSCAInput) (*huma.StreamResponse, error) {
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
-
 	caPath, err := generatedEdgeMTLSCAPathInternal(h.cfg)
 	if err != nil {
 		return nil, huma.Error404NotFound("Arcane-managed edge mTLS CA is not available")
@@ -1192,10 +1165,6 @@ func (h *EnvironmentHandler) DownloadEdgeMTLSCA(ctx context.Context, _ *Download
 }
 
 func (h *EnvironmentHandler) DownloadEnvironmentMTLSBundle(ctx context.Context, input *DownloadEnvironmentMTLSBundleInput) (*huma.StreamResponse, error) {
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
-
 	env, files, err := h.loadEnvironmentMTLSFiles(ctx, input.ID)
 	if err != nil {
 		return nil, err
@@ -1254,10 +1223,6 @@ func (h *EnvironmentHandler) DownloadEnvironmentMTLSBundle(ctx context.Context, 
 }
 
 func (h *EnvironmentHandler) DownloadEnvironmentMTLSFile(ctx context.Context, input *DownloadEnvironmentMTLSFileInput) (*huma.StreamResponse, error) {
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
-
 	env, file, err := h.loadEnvironmentMTLSFile(ctx, input.ID, input.FileName)
 	if err != nil {
 		return nil, err

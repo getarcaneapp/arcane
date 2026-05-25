@@ -8,6 +8,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
+	"github.com/getarcaneapp/arcane/backend/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils/mapper"
 	"github.com/getarcaneapp/arcane/types/base"
 	"github.com/getarcaneapp/arcane/types/gitops"
@@ -136,6 +137,7 @@ func RegisterGitOpsSyncs(api huma.API, syncService *services.GitOpsSyncService) 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequirePermission(api, authz.PermGitOpsList),
 	}, h.ListSyncs)
 
 	huma.Register(api, huma.Operation{
@@ -149,7 +151,7 @@ func RegisterGitOpsSyncs(api huma.API, syncService *services.GitOpsSyncService) 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermGitOpsCreate),
 	}, h.CreateSync)
 
 	huma.Register(api, huma.Operation{
@@ -163,7 +165,7 @@ func RegisterGitOpsSyncs(api huma.API, syncService *services.GitOpsSyncService) 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermGitOpsCreate),
 	}, h.ImportSyncs)
 
 	huma.Register(api, huma.Operation{
@@ -177,6 +179,7 @@ func RegisterGitOpsSyncs(api huma.API, syncService *services.GitOpsSyncService) 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequirePermission(api, authz.PermGitOpsRead),
 	}, h.GetSync)
 
 	huma.Register(api, huma.Operation{
@@ -190,7 +193,7 @@ func RegisterGitOpsSyncs(api huma.API, syncService *services.GitOpsSyncService) 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermGitOpsUpdate),
 	}, h.UpdateSync)
 
 	huma.Register(api, huma.Operation{
@@ -204,7 +207,7 @@ func RegisterGitOpsSyncs(api huma.API, syncService *services.GitOpsSyncService) 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermGitOpsDelete),
 	}, h.DeleteSync)
 
 	huma.Register(api, huma.Operation{
@@ -218,7 +221,7 @@ func RegisterGitOpsSyncs(api huma.API, syncService *services.GitOpsSyncService) 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermGitOpsSync),
 	}, h.PerformSync)
 
 	huma.Register(api, huma.Operation{
@@ -232,6 +235,7 @@ func RegisterGitOpsSyncs(api huma.API, syncService *services.GitOpsSyncService) 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequirePermission(api, authz.PermGitOpsRead),
 	}, h.GetStatus)
 
 	huma.Register(api, huma.Operation{
@@ -245,6 +249,7 @@ func RegisterGitOpsSyncs(api huma.API, syncService *services.GitOpsSyncService) 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequirePermission(api, authz.PermGitOpsRead),
 	}, h.BrowseFiles)
 }
 
@@ -283,9 +288,6 @@ func (h *GitOpsSyncHandler) ListSyncs(ctx context.Context, input *ListGitOpsSync
 
 // CreateSync creates a new GitOps sync.
 func (h *GitOpsSyncHandler) CreateSync(ctx context.Context, input *CreateGitOpsSyncInput) (*CreateGitOpsSyncOutput, error) {
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
 	if h.syncService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -316,9 +318,6 @@ func (h *GitOpsSyncHandler) CreateSync(ctx context.Context, input *CreateGitOpsS
 
 // ImportSyncs imports multiple GitOps syncs.
 func (h *GitOpsSyncHandler) ImportSyncs(ctx context.Context, input *ImportGitOpsSyncsInput) (*ImportGitOpsSyncsOutput, error) {
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
 	if h.syncService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -368,9 +367,6 @@ func (h *GitOpsSyncHandler) GetSync(ctx context.Context, input *GetGitOpsSyncInp
 
 // UpdateSync updates an existing GitOps sync.
 func (h *GitOpsSyncHandler) UpdateSync(ctx context.Context, input *UpdateGitOpsSyncInput) (*UpdateGitOpsSyncOutput, error) {
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
 	if h.syncService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -401,9 +397,6 @@ func (h *GitOpsSyncHandler) UpdateSync(ctx context.Context, input *UpdateGitOpsS
 
 // DeleteSync deletes a GitOps sync by ID.
 func (h *GitOpsSyncHandler) DeleteSync(ctx context.Context, input *DeleteGitOpsSyncInput) (*DeleteGitOpsSyncOutput, error) {
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
 	if h.syncService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -430,9 +423,6 @@ func (h *GitOpsSyncHandler) DeleteSync(ctx context.Context, input *DeleteGitOpsS
 
 // PerformSync manually triggers a sync operation.
 func (h *GitOpsSyncHandler) PerformSync(ctx context.Context, input *PerformSyncInput) (*PerformSyncOutput, error) {
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
 	if h.syncService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}

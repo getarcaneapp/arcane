@@ -15,6 +15,7 @@
 	import { apiKeyService } from '$lib/services/api-key-service';
 	import * as m from '$lib/paraglide/messages.js';
 	import { ApiKeyIcon, TrashIcon, EditIcon, EllipsisIcon } from '$lib/icons';
+	import IfPermitted from '$lib/components/if-permitted.svelte';
 
 	let {
 		apiKeys = $bindable(),
@@ -58,11 +59,19 @@
 		return apiKey.isStatic;
 	}
 
+	function isBootstrapApiKey(apiKey: ApiKey): boolean {
+		return apiKey.isBootstrap;
+	}
+
 	const selectedStaticApiKeyCount = $derived.by(
-		() => apiKeys.data.filter((apiKey) => selectedIds.includes(apiKey.id) && isStaticApiKey(apiKey)).length
+		() =>
+			apiKeys.data.filter((apiKey) => selectedIds.includes(apiKey.id) && (isStaticApiKey(apiKey) || isBootstrapApiKey(apiKey)))
+				.length
 	);
 	const selectedDeletableApiKeyIds = $derived.by(() =>
-		apiKeys.data.filter((apiKey) => selectedIds.includes(apiKey.id) && !isStaticApiKey(apiKey)).map((apiKey) => apiKey.id)
+		apiKeys.data
+			.filter((apiKey) => selectedIds.includes(apiKey.id) && !isStaticApiKey(apiKey) && !isBootstrapApiKey(apiKey))
+			.map((apiKey) => apiKey.id)
 	);
 
 	async function handleDeleteSelected() {
@@ -260,20 +269,24 @@
 		</DropdownMenu.Trigger>
 		<DropdownMenu.Content align="end">
 			<DropdownMenu.Group>
-				<DropdownMenu.Item onclick={() => onEditApiKey(item)} disabled={isStaticApiKey(item)}>
-					<EditIcon class="size-4" />
-					{m.common_edit()}
-				</DropdownMenu.Item>
+				<IfPermitted perm="apikeys:update">
+					<DropdownMenu.Item onclick={() => onEditApiKey(item)} disabled={isStaticApiKey(item) || isBootstrapApiKey(item)}>
+						<EditIcon class="size-4" />
+						{m.common_edit()}
+					</DropdownMenu.Item>
+				</IfPermitted>
 				<DropdownMenu.Separator />
 
-				<DropdownMenu.Item
-					variant="destructive"
-					onclick={() => handleDeleteApiKey(item.id, item.name)}
-					disabled={isStaticApiKey(item)}
-				>
-					<TrashIcon class="size-4" />
-					{m.common_delete()}
-				</DropdownMenu.Item>
+				<IfPermitted perm="apikeys:delete">
+					<DropdownMenu.Item
+						variant="destructive"
+						onclick={() => handleDeleteApiKey(item.id, item.name)}
+						disabled={isStaticApiKey(item) || isBootstrapApiKey(item)}
+					>
+						<TrashIcon class="size-4" />
+						{m.common_delete()}
+					</DropdownMenu.Item>
+				</IfPermitted>
 			</DropdownMenu.Group>
 		</DropdownMenu.Content>
 	</DropdownMenu.Root>

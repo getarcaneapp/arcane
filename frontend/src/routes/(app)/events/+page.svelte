@@ -10,6 +10,7 @@
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
 	import { EventsIcon } from '$lib/icons';
+	import { hasPermission } from '$lib/utils/permissions.util';
 
 	let { data } = $props();
 
@@ -85,8 +86,10 @@
 		});
 	}
 
+	const canManageEvents = $derived(hasPermission('events:read'));
+
 	const actionButtons: ActionButton[] = $derived([
-		...(selectedIds.length > 0
+		...(selectedIds.length > 0 && canManageEvents
 			? [
 					{
 						id: 'remove-selected',

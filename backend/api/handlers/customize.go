@@ -9,6 +9,7 @@ import (
 	humamw "github.com/getarcaneapp/arcane/backend/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
+	"github.com/getarcaneapp/arcane/backend/pkg/authz"
 	"github.com/getarcaneapp/arcane/types/category"
 	"github.com/getarcaneapp/arcane/types/search"
 )
@@ -51,6 +52,7 @@ func RegisterCustomize(api huma.API, customizeSearchService *services.CustomizeS
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequirePermission(api, authz.PermCustomizeManage),
 	}, h.Search)
 
 	huma.Register(api, huma.Operation{
@@ -64,6 +66,7 @@ func RegisterCustomize(api huma.API, customizeSearchService *services.CustomizeS
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequirePermission(api, authz.PermCustomizeManage),
 	}, h.GetCategories)
 }
 
@@ -79,7 +82,8 @@ func (h *CustomizeHandler) Search(ctx context.Context, input *SearchCustomizeInp
 
 	results := h.customizeSearchService.Search(input.Body.Query)
 
-	if !humamw.IsAdminFromContext(ctx) {
+	ps, _ := humamw.PermissionsFromContext(ctx)
+	if !ps.IsGlobalAdmin() {
 		filtered := []category.Category{}
 		for _, cat := range results.Results {
 			if cat.ID != "registries" && cat.ID != "variables" {
@@ -103,7 +107,8 @@ func (h *CustomizeHandler) GetCategories(ctx context.Context, input *GetCustomiz
 
 	categories := h.customizeSearchService.GetCustomizeCategories()
 
-	if !humamw.IsAdminFromContext(ctx) {
+	ps, _ := humamw.PermissionsFromContext(ctx)
+	if !ps.IsGlobalAdmin() {
 		filtered := []category.Category{}
 		for _, cat := range categories {
 			if cat.ID != "registries" && cat.ID != "variables" {

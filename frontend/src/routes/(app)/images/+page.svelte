@@ -10,6 +10,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { imageService } from '$lib/services/image-service';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import { hasPermission } from '$lib/utils/permissions.util';
 	import { queryKeys } from '$lib/query/query-keys';
 	import type { ImageUsageCounts } from '$lib/types/image.type';
 	import { untrack } from 'svelte';
@@ -148,36 +149,55 @@
 		await Promise.all([imagesQuery.refetch(), imageUsageCountsQuery.refetch()]);
 	}
 
-	const actionButtons: ActionButton[] = $derived([
-		{ id: 'pull', action: 'pull', label: m.images_pull_image(), onclick: () => (isPullDialogOpen = true) },
-		{ id: 'upload', action: 'create', label: m.images_upload_image(), onclick: () => (isUploadDialogOpen = true) },
-		{
-			id: 'check-updates',
-			action: 'inspect',
-			label: m.images_check_updates(),
-			loadingLabel: m.common_action_checking(),
-			onclick: handleTriggerBulkUpdateCheck,
-			loading: isChecking,
-			disabled: isChecking
-		},
-		{
+	const canPullImage = $derived(hasPermission('images:pull', envId));
+	const canUploadImage = $derived(hasPermission('images:upload', envId));
+	const canPruneImage = $derived(hasPermission('images:prune', envId));
+
+	const actionButtons: ActionButton[] = $derived.by(() => {
+		const buttons: ActionButton[] = [];
+		if (canPullImage) {
+			buttons.push({ id: 'pull', action: 'pull', label: m.images_pull_image(), onclick: () => (isPullDialogOpen = true) });
+		}
+		if (canUploadImage) {
+			buttons.push({
+				id: 'upload',
+				action: 'create',
+				label: m.images_upload_image(),
+				onclick: () => (isUploadDialogOpen = true)
+			});
+		}
+		if (canPullImage) {
+			buttons.push({
+				id: 'check-updates',
+				action: 'inspect',
+				label: m.images_check_updates(),
+				loadingLabel: m.common_action_checking(),
+				onclick: handleTriggerBulkUpdateCheck,
+				loading: isChecking,
+				disabled: isChecking
+			});
+		}
+		buttons.push({
 			id: 'refresh',
 			action: 'restart',
 			label: m.common_refresh(),
 			onclick: refresh,
 			loading: isRefreshing,
 			disabled: isRefreshing
-		},
-		{
-			id: 'prune',
-			action: 'remove',
-			label: m.images_prune_unused(),
-			loadingLabel: m.common_action_pruning(),
-			onclick: () => (isConfirmPruneDialogOpen = true),
-			loading: isPruning,
-			disabled: isPruning
+		});
+		if (canPruneImage) {
+			buttons.push({
+				id: 'prune',
+				action: 'remove',
+				label: m.images_prune_unused(),
+				loadingLabel: m.common_action_pruning(),
+				onclick: () => (isConfirmPruneDialogOpen = true),
+				loading: isPruning,
+				disabled: isPruning
+			});
 		}
-	]);
+		return buttons;
+	});
 
 	const statCards: StatCardConfig[] = $derived([
 		{

@@ -25,9 +25,14 @@
 	import CodePanel from '../components/CodePanel.svelte';
 	import EditableName from '../components/EditableName.svelte';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import { hasPermission } from '$lib/utils/permissions.util';
+	import IfPermitted from '$lib/components/if-permitted.svelte';
 	import { ComposeEditorSplit } from '$lib/components/compose';
 
 	let { data } = $props();
+
+	const currentEnvId = $derived(environmentStore.selected?.id || '0');
+	const canCreateProject = $derived(hasPermission('projects:create', currentEnvId));
 
 	let saving = $state(false);
 	let converting = $state(false);
@@ -216,7 +221,7 @@
 					>
 						<ArcaneTooltip.Trigger>
 							<span>
-								{#if !hasEditorErrors}
+								{#if !hasEditorErrors && canCreateProject}
 									<ArcaneButton
 										action="create"
 										tone="ghost"
@@ -282,25 +287,27 @@
 									<GitBranchIcon class="size-4" />
 									{m.git_from_git_repo()}
 								</DropdownMenu.Item>
-								<DropdownMenu.Separator />
-								<DropdownMenu.Item
-									class={dropdownItemClass}
-									disabled={!$inputs.name.value ||
-										!$inputs.composeContent.value ||
-										hasEditorErrors ||
-										saving ||
-										converting ||
-										creatingTemplate ||
-										isLoadingTemplateContent}
-									onclick={handleCreateTemplate}
-								>
-									{#if creatingTemplate}
-										<Spinner class="size-4" />
-									{:else}
-										<AddIcon class="size-4" />
-									{/if}
-									{m.templates_create_template()}
-								</DropdownMenu.Item>
+								<IfPermitted perm="templates:create">
+									<DropdownMenu.Separator />
+									<DropdownMenu.Item
+										class={dropdownItemClass}
+										disabled={!$inputs.name.value ||
+											!$inputs.composeContent.value ||
+											hasEditorErrors ||
+											saving ||
+											converting ||
+											creatingTemplate ||
+											isLoadingTemplateContent}
+										onclick={handleCreateTemplate}
+									>
+										{#if creatingTemplate}
+											<Spinner class="size-4" />
+										{:else}
+											<AddIcon class="size-4" />
+										{/if}
+										{m.templates_create_template()}
+									</DropdownMenu.Item>
+								</IfPermitted>
 							</DropdownMenu.Group>
 						</DropdownMenu.Content>
 					</DropdownMenu.Root>

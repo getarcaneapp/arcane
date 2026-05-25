@@ -12,6 +12,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
+	"github.com/getarcaneapp/arcane/backend/pkg/authz"
 	"github.com/getarcaneapp/arcane/types/base"
 	"github.com/getarcaneapp/arcane/types/notification"
 )
@@ -111,7 +112,7 @@ func RegisterNotifications(api huma.API, notificationSvc *services.NotificationS
 		Summary:     "Get all notification settings",
 		Tags:        []string{"Notifications"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermNotificationsManage),
 	}, h.GetAllNotificationSettings)
 
 	huma.Register(api, huma.Operation{
@@ -121,7 +122,7 @@ func RegisterNotifications(api huma.API, notificationSvc *services.NotificationS
 		Summary:     "Get notification settings by provider",
 		Tags:        []string{"Notifications"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermNotificationsManage),
 	}, h.GetNotificationSettings)
 
 	huma.Register(api, huma.Operation{
@@ -131,7 +132,7 @@ func RegisterNotifications(api huma.API, notificationSvc *services.NotificationS
 		Summary:     "Create or update notification settings",
 		Tags:        []string{"Notifications"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermNotificationsManage),
 	}, h.CreateOrUpdateNotificationSettings)
 
 	huma.Register(api, huma.Operation{
@@ -141,7 +142,7 @@ func RegisterNotifications(api huma.API, notificationSvc *services.NotificationS
 		Summary:     "Delete notification settings",
 		Tags:        []string{"Notifications"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermNotificationsManage),
 	}, h.DeleteNotificationSettings)
 
 	huma.Register(api, huma.Operation{
@@ -151,7 +152,7 @@ func RegisterNotifications(api huma.API, notificationSvc *services.NotificationS
 		Summary:     "Test notification",
 		Tags:        []string{"Notifications"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermNotificationsManage),
 	}, h.TestNotification)
 
 	huma.Register(api, huma.Operation{
@@ -161,6 +162,7 @@ func RegisterNotifications(api huma.API, notificationSvc *services.NotificationS
 		Summary:     "Dispatch notification from remote agent to manager",
 		Tags:        []string{"Notifications"},
 		Security:    []map[string][]string{{"ApiKeyAuth": {}}},
+		Middlewares: humamw.RequirePermission(api, authz.PermNotificationsManage),
 	}, h.DispatchNotification)
 }
 
@@ -172,9 +174,6 @@ func (h *NotificationHandler) rejectIfAgentModeInternal() error {
 }
 
 func (h *NotificationHandler) GetAllNotificationSettings(ctx context.Context, input *GetAllNotificationSettingsInput) (*GetAllNotificationSettingsOutput, error) {
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
 	if err := h.rejectIfAgentModeInternal(); err != nil {
 		return nil, err
 	}
@@ -197,9 +196,6 @@ func (h *NotificationHandler) GetAllNotificationSettings(ctx context.Context, in
 }
 
 func (h *NotificationHandler) GetNotificationSettings(ctx context.Context, input *GetNotificationSettingsInput) (*GetNotificationSettingsOutput, error) {
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
 	if err := h.rejectIfAgentModeInternal(); err != nil {
 		return nil, err
 	}
@@ -221,9 +217,6 @@ func (h *NotificationHandler) GetNotificationSettings(ctx context.Context, input
 }
 
 func (h *NotificationHandler) CreateOrUpdateNotificationSettings(ctx context.Context, input *CreateOrUpdateNotificationSettingsInput) (*CreateOrUpdateNotificationSettingsOutput, error) {
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
 	if err := h.rejectIfAgentModeInternal(); err != nil {
 		return nil, err
 	}
@@ -253,9 +246,6 @@ func (h *NotificationHandler) CreateOrUpdateNotificationSettings(ctx context.Con
 }
 
 func (h *NotificationHandler) DeleteNotificationSettings(ctx context.Context, input *DeleteNotificationSettingsInput) (*DeleteNotificationSettingsOutput, error) {
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
 	if err := h.rejectIfAgentModeInternal(); err != nil {
 		return nil, err
 	}
@@ -274,9 +264,6 @@ func (h *NotificationHandler) DeleteNotificationSettings(ctx context.Context, in
 }
 
 func (h *NotificationHandler) TestNotification(ctx context.Context, input *TestNotificationInput) (*TestNotificationOutput, error) {
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
 	if err := h.rejectIfAgentModeInternal(); err != nil {
 		return nil, err
 	}
