@@ -1,6 +1,6 @@
 import { PersistedState } from 'runed';
 import { m } from '$lib/paraglide/messages';
-import type { ContainerStats } from '$lib/types/docker';
+import type { ContainerStats, ContainerSummaryDto } from '$lib/types/docker';
 import type { Environment, EnvironmentStatus } from '$lib/types/environment';
 import type { SearchPaginationSortRequest } from '$lib/types/shared';
 import type { ProjectUpdateInfo } from '$lib/types/swarm';
@@ -41,6 +41,23 @@ export function calculateMemoryUsage(stats: ContainerStats | null): number {
 	const usage = stats.memory_stats.usage || 0;
 	const inactiveFile = stats.memory_stats.stats?.inactive_file || 0;
 	return Math.max(usage - inactiveFile, 0);
+}
+
+export function getContainerIpAddresses(container: ContainerSummaryDto): string[] {
+	const networks = container.networkSettings?.networks;
+	if (!networks) return [];
+
+	const seen = new Set<string>();
+	const ipAddresses: string[] = [];
+	for (const networkName of Object.keys(networks).sort((a, b) => a.localeCompare(b))) {
+		const ipAddress = networks[networkName]?.ipAddress?.trim();
+		if (!ipAddress || seen.has(ipAddress)) continue;
+
+		seen.add(ipAddress);
+		ipAddresses.push(ipAddress);
+	}
+
+	return ipAddresses;
 }
 
 // --- Swarm service mode helpers ---
