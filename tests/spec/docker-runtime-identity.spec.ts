@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 const IMAGE = process.env.ARCANE_RUNTIME_TEST_IMAGE || 'arcane:playwright-tests';
+const HELPER_IMAGE = process.env.ARCANE_RUNTIME_HELPER_IMAGE || 'alpine:latest';
 const HEALTH_PATH = '/api/health';
 
 function docker(args: string[], options?: { stdio?: 'pipe' | 'inherit' }) {
@@ -23,12 +24,40 @@ function dockerRunContainer(args: string[]) {
 	return docker(['run', '-d', ...args]);
 }
 
-function dockerExec(container: string, command: string) {
-	return docker(['exec', container, 'sh', '-lc', command]);
+function shellQuote(value: string) {
+	return `'${value.replaceAll("'", "'\"'\"'")}'`;
 }
 
-function dockerExecAsUser(container: string, user: string, command: string) {
-	return docker(['exec', '-u', user, container, 'sh', '-lc', command]);
+function dockerProbeContainer(container: string, command: string) {
+	return docker([
+		'run',
+		'--rm',
+		'--pid',
+		`container:${container}`,
+		'--volumes-from',
+		container,
+		HELPER_IMAGE,
+		'sh',
+		'-lc',
+		command
+	]);
+}
+
+function dockerProbeContainerAsUser(container: string, user: string, command: string) {
+	return docker([
+		'run',
+		'--rm',
+		'--pid',
+		`container:${container}`,
+		'--volumes-from',
+		container,
+		'-u',
+		user,
+		HELPER_IMAGE,
+		'sh',
+		'-lc',
+		command
+	]);
 }
 
 type ProcessStatus = {
@@ -59,11 +88,10 @@ function dockerFileStat(volumePath: string, filePath: string) {
 		'--rm',
 		'-v',
 		`${volumePath}:/mnt`,
-		'--entrypoint',
+		HELPER_IMAGE,
 		'sh',
-		IMAGE,
 		'-lc',
-		`stat -c '%u:%g' '${filePath}'`
+		`stat -c '%u:%g' ${shellQuote(filePath)}`
 	]);
 }
 
@@ -78,7 +106,7 @@ function cleanupContainer(name: string) {
 function cleanupDir(dir: string) {
 	try {
 		// Files may be owned by root inside the container, so use Docker to remove them.
-		docker(['run', '--rm', '-v', `${dir}:/mnt`, 'alpine:latest', 'rm', '-rf', '/mnt']);
+		docker(['run', '--rm', '-v', `${dir}:/mnt`, HELPER_IMAGE, 'rm', '-rf', '/mnt']);
 	} catch {
 		// ignore
 	}
@@ -128,7 +156,7 @@ async function waitForFile(container: string, filePath: string) {
 		.poll(
 			() => {
 				try {
-					return dockerExec(container, `test -f '${filePath}' && echo present`);
+					return dockerProbeContainer(container, `test -f ${shellQuote(filePath)} && echo present`);
 				} catch {
 					return 'missing';
 				}
@@ -161,11 +189,11 @@ function parseStatusBlock(status: string): ProcessStatus {
 }
 
 function pidOneStatus(container: string) {
-	return parseStatusBlock(dockerExec(container, 'cat /proc/1/status'));
+	return parseStatusBlock(dockerProbeContainer(container, 'cat /proc/1/status'));
 }
 
 function arcaneProcessStatuses(container: string) {
-	const output = dockerExec(
+	const output = dockerProbeContainer(
 		container,
 		[
 			'for f in /proc/[0-9]*/status; do',
@@ -264,14 +292,14 @@ test.describe.serial('Docker runtime identity', () => {
 			await waitForHealth(containerName);
 			await waitForFile(containerName, '/app/data/arcane.db');
 
-			const dbStat = dockerExecAsUser(
+			const dbStat = dockerProbeContainerAsUser(
 				containerName,
 				'1001:1001',
 				"stat -c '%u:%g' /app/data/arcane.db"
 			);
 			expect(dbStat).toBe('1001:1001');
 
-			const projectsStat = dockerExec(
+			const projectsStat = dockerProbeContainer(
 				containerName,
 				"stat -c '%u:%g' /app/data/projects/sentinel.txt"
 			);
@@ -293,7 +321,7 @@ test.describe.serial('Docker runtime identity', () => {
 				)
 			).toBe(true);
 
-			const dockerConfigStat = dockerExecAsUser(
+			const dockerConfigStat = dockerProbeContainerAsUser(
 				containerName,
 				'1001:1001',
 				"stat -c '%u:%g' /app/data/.docker"
@@ -339,21 +367,21 @@ test.describe.serial('Docker runtime identity', () => {
 				)
 			).toBe(true);
 
-			const dataStat = dockerExecAsUser(
+			const dataStat = dockerProbeContainerAsUser(
 				containerName,
 				'65532:65532',
 				"stat -c '%u:%g' /app/data/arcane.db"
 			);
 			expect(dataStat).toBe('65532:65532');
 
-			const projectWrite = dockerExecAsUser(
+			const projectWrite = dockerProbeContainerAsUser(
 				containerName,
 				'65532:65532',
 				"touch /app/data/projects/runtime-write && stat -c '%u:%g' /app/data/projects/runtime-write"
 			);
 			expect(projectWrite).toBe('65532:65532');
 
-			const buildsWrite = dockerExecAsUser(
+			const buildsWrite = dockerProbeContainerAsUser(
 				containerName,
 				'65532:65532',
 				"touch /builds/runtime-write && stat -c '%u:%g' /builds/runtime-write"
@@ -423,7 +451,7 @@ test.describe.serial('Docker runtime identity', () => {
 			await waitForHealth(containerName);
 			await waitForFile(containerName, '/app/data/arcane.db');
 
-			const dbStat = dockerExecAsUser(
+			const dbStat = dockerProbeContainerAsUser(
 				containerName,
 				'1001:1001',
 				"stat -c '%u:%g' /app/data/arcane.db"
