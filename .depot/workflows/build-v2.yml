@@ -28,6 +28,9 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Install envsubst
+        run: sudo apt-get update && sudo apt-get install -y gettext-base
+
       - name: Install cosign
         uses: sigstore/cosign-installer@v4.1.2
 
