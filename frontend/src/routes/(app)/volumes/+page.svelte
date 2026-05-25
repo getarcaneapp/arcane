@@ -2,12 +2,12 @@
 	import { VolumesIcon, VolumeUnusedIcon } from '$lib/icons';
 	import { toast } from 'svelte-sonner';
 	import CreateVolumeSheet from '$lib/components/sheets/create-volume-sheet.svelte';
-	import type { VolumeCreateRequest, VolumeUsageCounts } from '$lib/types/volume.type';
+	import type { VolumeCreateRequest, VolumeUsageCounts } from '$lib/types/docker';
 	import VolumeTable from './volume-table.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { volumeService } from '$lib/services/volume-service';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { hasPermission } from '$lib/utils/permissions.util';
+	import { hasPermission } from '$lib/utils/auth';
 	import { queryKeys } from '$lib/query/query-keys';
 	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';

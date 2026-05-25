@@ -8,12 +8,12 @@
 	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { hasPermission } from '$lib/utils/permissions.util';
-	import type { ContainerCreateRequest, ContainerStatusCounts } from '$lib/types/container.type';
+	import { hasPermission } from '$lib/utils/auth';
+	import type { ContainerCreateRequest, ContainerStatusCounts } from '$lib/types/docker';
 	import { createMutation } from '@tanstack/svelte-query';
 	import { BoxIcon } from '$lib/icons';
 	import { queryKeys } from '$lib/query/query-keys';
-	import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
+	import type { SearchPaginationSortRequest } from '$lib/types/shared';
 	import type { ContainerListRequestOptions } from '$lib/services/container-service';
 	import ContainerEnvironmentSync from './components/container-environment-sync.svelte';
 

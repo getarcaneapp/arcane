@@ -4,10 +4,10 @@
 	import * as Card from '$lib/components/ui/card/index.js';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
-	import { getStatusVariant } from '$lib/utils/status.utils';
-	import { capitalizeFirstLetter } from '$lib/utils/string.utils';
-	import type { SearchPaginationSortRequest, Paginated } from '$lib/types/pagination.type';
-	import type { ContainerSummaryDto } from '$lib/types/container.type';
+	import { getStatusVariant } from '$lib/utils/docker';
+	import { capitalizeFirstLetter } from '$lib/utils/formatting';
+	import type { SearchPaginationSortRequest, Paginated } from '$lib/types/shared';
+	import type { ContainerSummaryDto } from '$lib/types/docker';
 	import type { ColumnSpec } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
 	import { containerService } from '$lib/services/container-service';
@@ -16,7 +16,7 @@
 	import { IsMobile } from '$lib/hooks';
 	import { ContainersIcon, ArrowRightIcon } from '$lib/icons';
 	import IconImage from '$lib/components/icon-image.svelte';
-	import { getArcaneIconUrlFromLabels } from '$lib/utils/arcane-labels';
+	import { getArcaneIconUrlFromLabels } from '$lib/utils/docker';
 
 	let {
 		containers = $bindable(),

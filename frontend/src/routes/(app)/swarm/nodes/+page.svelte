@@ -6,7 +6,7 @@
 	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
 	import { useEnvironmentRefresh } from '$lib/hooks/use-environment-refresh.svelte';
-	import { parallelRefresh } from '$lib/utils/refresh.util';
+	import { parallelRefresh } from '$lib/utils/api';
 	import SwarmNodesTable from './nodes-table.svelte';
 
 	let { data } = $props();

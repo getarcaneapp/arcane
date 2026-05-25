@@ -1,10 +1,10 @@
 import { containerService, type ContainerListRequestOptions } from '$lib/services/container-service';
 import { projectService } from '$lib/services/project-service';
 import { queryKeys } from '$lib/query/query-keys';
-import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
-import { resolveInitialTableRequest } from '$lib/utils/table-persistence.util';
-import { throwPageLoadError } from '$lib/utils/page-load-error.util';
-import { ensureStandaloneContainerUpdatesFilter, ensureUpdatesFilter } from '$lib/utils/updates-filter.util';
+import type { SearchPaginationSortRequest } from '$lib/types/shared';
+import { resolveInitialTableRequest } from '$lib/utils/tables';
+import { throwPageLoadError } from '$lib/utils/api';
+import { ensureStandaloneContainerUpdatesFilter, ensureUpdatesFilter } from '$lib/utils/docker';
 import type { PageLoad } from './$types';
 import { environmentStore } from '$lib/stores/environment.store.svelte';
 

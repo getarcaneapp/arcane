@@ -10,7 +10,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { toast } from 'svelte-sonner';
 	import { networkService } from '$lib/services/network-service';
-	import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
+	import type { SearchPaginationSortRequest } from '$lib/types/shared';
 	import type { Readable } from 'svelte/store';
 
 	type TrivySecurityFormValues = {

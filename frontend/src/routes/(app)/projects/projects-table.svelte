@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { Project } from '$lib/types/project.type';
+	import type { Project } from '$lib/types/swarm';
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
@@ -8,9 +8,9 @@
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
-	import { getStatusVariant } from '$lib/utils/status.utils';
-	import { capitalizeFirstLetter } from '$lib/utils/string.utils';
+	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
+	import { getStatusVariant } from '$lib/utils/docker';
+	import { capitalizeFirstLetter } from '$lib/utils/formatting';
 	import { format } from 'date-fns';
 	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
@@ -19,7 +19,7 @@
 	import { projectService } from '$lib/services/project-service';
 	import { FolderOpenIcon, LayersIcon, CalendarIcon, ProjectsIcon, GitBranchIcon, RefreshIcon } from '$lib/icons';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { hasPermission } from '$lib/utils/permissions.util';
+	import { hasPermission } from '$lib/utils/auth';
 	import IfPermitted from '$lib/components/if-permitted.svelte';
 	import IconImage from '$lib/components/icon-image.svelte';
 	import type { ActionStatus } from './projects-table.helpers';
@@ -32,7 +32,7 @@
 		getProjectUpdateText,
 		getProjectUpdateTooltip,
 		getProjectUpdateVariant
-	} from '$lib/utils/project-update.util';
+	} from '$lib/utils/docker';
 
 	let {
 		projects = $bindable(),

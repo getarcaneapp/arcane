@@ -12,9 +12,9 @@
 	import systemUpgradeService from '$lib/services/api/system-upgrade-service';
 	import UpdateCenterDialog from '$lib/components/dialogs/update-center-dialog.svelte';
 	import { toast } from 'svelte-sonner';
-	import { extractApiErrorMessage } from '$lib/utils/api.util';
-	import { hasPermission } from '$lib/utils/permissions.util';
-	import type { AppVersionInformation } from '$lib/types/application-configuration';
+	import { extractApiErrorMessage } from '$lib/utils/api';
+	import { hasPermission } from '$lib/utils/auth';
+	import type { AppVersionInformation } from '$lib/types/settings';
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
 
 	let {

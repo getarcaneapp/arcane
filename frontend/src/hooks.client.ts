@@ -1,5 +1,5 @@
 import type { HandleClientError } from '@sveltejs/kit';
-import { extractApiErrorMessage } from '$lib/utils/api.util';
+import { extractApiErrorMessage } from '$lib/utils/api';
 
 export const handleError: HandleClientError = async ({ error, message, status }) => {
 	if (error && typeof error === 'object' && 'response' in error) {

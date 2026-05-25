@@ -4,7 +4,7 @@
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
 	import { ArrowRightIcon } from '$lib/icons';
 	import SidebarItemTooltipContent from './sidebar-item-tooltip-content.svelte';
-	import type { ShortcutKey } from '$lib/utils/keyboard-shortcut.utils';
+	import type { ShortcutKey } from '$lib/utils/navigation';
 
 	let {
 		item,

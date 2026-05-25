@@ -14,23 +14,23 @@
 	import { dashboardService } from '$lib/services/dashboard-service';
 	import { systemService } from '$lib/services/system-service';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { hasAnyPermission, hasPermission } from '$lib/utils/permissions.util';
-	import type { SystemStats } from '$lib/types/system-stats.type';
+	import { hasAnyPermission, hasPermission } from '$lib/utils/auth';
+	import type { SystemStats } from '$lib/types/shared';
 	import type {
 		DashboardActionItem,
 		DashboardEnvironmentCardState,
 		DashboardEnvironmentOverview,
 		DashboardOverviewSummary,
 		DashboardSnapshot
-	} from '$lib/types/dashboard.type';
-	import type { Environment } from '$lib/types/environment.type';
-	import type { PruneType, SystemPruneRequest } from '$lib/types/prune.type';
-	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '$lib/utils/api.util';
-	import { capitalizeFirstLetter } from '$lib/utils/string.utils';
-	import { tryCatch } from '$lib/utils/try-catch';
-	import { getEnvironmentStatusVariant, isEnvironmentOnline, resolveEnvironmentStatus } from '$lib/utils/environment-status';
+	} from '$lib/types/shared';
+	import type { Environment } from '$lib/types/environment';
+	import type { PruneType, SystemPruneRequest } from '$lib/types/automation';
+	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '$lib/utils/api';
+	import { capitalizeFirstLetter } from '$lib/utils/formatting';
+	import { tryCatch } from '$lib/utils/api';
+	import { getEnvironmentStatusVariant, isEnvironmentOnline, resolveEnvironmentStatus } from '$lib/utils/docker';
 	import { createStatsWebSocket, type ReconnectingWebSocket } from '$lib/utils/ws';
-	import bytes from '$lib/utils/bytes';
+	import { bytes } from '$lib/utils/formatting';
 	import {
 		ContainersIcon,
 		CpuIcon,
@@ -158,9 +158,7 @@
 		};
 	}
 
-	function mapOverviewSummary(
-		summary: import('$lib/types/dashboard.type').DashboardEnvironmentsSummary
-	): DashboardOverviewSummary {
+	function mapOverviewSummary(summary: import('$lib/types/shared').DashboardEnvironmentsSummary): DashboardOverviewSummary {
 		return {
 			totalEnvironments: summary.totalEnvironments,
 			reachableEnvironments: summary.onlineEnvironments + summary.standbyEnvironments,

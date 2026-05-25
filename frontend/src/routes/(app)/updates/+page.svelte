@@ -13,12 +13,12 @@
 	import { containerService, type ContainerListRequestOptions } from '$lib/services/container-service';
 	import { projectService } from '$lib/services/project-service';
 	import type { ContainersPaginatedResponse } from '$lib/services/container-service';
-	import type { ImageUpdateInfoDto } from '$lib/types/image.type';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
-	import type { Project } from '$lib/types/project.type';
+	import type { ImageUpdateInfoDto } from '$lib/types/docker';
+	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
+	import type { Project } from '$lib/types/swarm';
 	import { ContainersIcon, ProjectsIcon, UpdateIcon } from '$lib/icons';
 	import { toast } from 'svelte-sonner';
-	import { ensureStandaloneContainerUpdatesFilter, ensureUpdatesFilter } from '$lib/utils/updates-filter.util';
+	import { ensureStandaloneContainerUpdatesFilter, ensureUpdatesFilter } from '$lib/utils/docker';
 
 	let { data } = $props();
 

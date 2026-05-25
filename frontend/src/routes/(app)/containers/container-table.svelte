@@ -4,11 +4,11 @@
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { goto } from '$app/navigation';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
+	import type { SearchPaginationSortRequest } from '$lib/types/shared';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { format } from 'date-fns';
-	import { capitalizeFirstLetter, truncateImageDigest } from '$lib/utils/string.utils';
-	import type { ContainerSummaryDto } from '$lib/types/container.type';
+	import { capitalizeFirstLetter, truncateImageDigest } from '$lib/utils/formatting';
+	import type { ContainerSummaryDto } from '$lib/types/docker';
 	import type { ColumnSpec, BulkAction } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
 	import { PortBadge } from '$lib/components/badges/index.js';
@@ -26,9 +26,9 @@
 	import ContainerStatsSync from './components/container-stats-sync.svelte';
 	import ContainerStatsCell from './components/container-stats-cell.svelte';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { hasPermission } from '$lib/utils/permissions.util';
+	import { hasPermission } from '$lib/utils/auth';
 	import IconImage from '$lib/components/icon-image.svelte';
-	import { getArcaneIconUrlFromLabels } from '$lib/utils/arcane-labels';
+	import { getArcaneIconUrlFromLabels } from '$lib/utils/docker';
 	import { createContainerActions } from './container-table.actions';
 	import {
 		getActionStatusMessage,

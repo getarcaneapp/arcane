@@ -1,15 +1,15 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
-	import type { GitRepository, GitRepositoryCreateDto, GitRepositoryUpdateDto } from '$lib/types/gitops.type';
+	import type { GitRepository, GitRepositoryCreateDto, GitRepositoryUpdateDto } from '$lib/types/automation';
 	import GitRepositoryFormSheet from '$lib/components/sheets/git-repository-sheet.svelte';
 	import RepositoryTable from './repository-table.svelte';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
-	import { tryCatch } from '$lib/utils/try-catch';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api';
+	import { tryCatch } from '$lib/utils/api';
 	import { m } from '$lib/paraglide/messages';
 	import { gitRepositoryService } from '$lib/services/git-repository-service';
 	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type ActionButton } from '$lib/layouts/index.js';
-	import { hasPermission } from '$lib/utils/permissions.util';
+	import { hasPermission } from '$lib/utils/auth';
 
 	let { data } = $props();
 

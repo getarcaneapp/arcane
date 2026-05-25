@@ -5,9 +5,9 @@
 	import * as RadioGroup from '$lib/components/ui/radio-group/index.js';
 	import { mode } from 'mode-watcher';
 	import { m } from '$lib/paraglide/messages';
-	import { APPLICATION_THEME_OPTIONS, applyApplicationTheme, resolveApplicationTheme } from '$lib/utils/application-theme-util';
+	import { APPLICATION_THEME_OPTIONS, applyApplicationTheme, resolveApplicationTheme } from '$lib/utils/theme';
 	import type { CarouselAPI } from '$lib/components/ui/carousel/context.js';
-	import type { ApplicationTheme } from '$lib/types/settings.type';
+	import type { ApplicationTheme } from '$lib/types/settings';
 
 	let {
 		selectedTheme = $bindable(),

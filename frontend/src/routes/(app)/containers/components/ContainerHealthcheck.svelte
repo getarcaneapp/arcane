@@ -2,7 +2,7 @@
 	import * as Card from '$lib/components/ui/card';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { m } from '$lib/paraglide/messages';
-	import type { ContainerDetailsDto, ContainerHealthLogEntry, ContainerHealthcheckDto } from '$lib/types/container.type';
+	import type { ContainerDetailsDto, ContainerHealthLogEntry, ContainerHealthcheckDto } from '$lib/types/docker';
 	import { HealthIcon, SettingsIcon, FileTextIcon } from '$lib/icons';
 	import { format, formatDistanceToNow } from 'date-fns';
 

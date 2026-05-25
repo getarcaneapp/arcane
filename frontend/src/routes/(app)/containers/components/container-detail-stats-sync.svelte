@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { createContainerStatsWebSocket, type ReconnectingWebSocket } from '$lib/utils/ws';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import type { ContainerStats as ContainerStatsType } from '$lib/types/container.type';
+	import type { ContainerStats as ContainerStatsType } from '$lib/types/docker';
 	import { invalidateAll } from '$app/navigation';
 	import { onDestroy } from 'svelte';
 

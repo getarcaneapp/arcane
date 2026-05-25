@@ -3,8 +3,8 @@
 	import { openConfirmDialog } from './confirm-dialog';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
-	import { tryCatch } from '$lib/utils/try-catch';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
+	import { tryCatch } from '$lib/utils/api';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import DeploySplitButton from '$lib/components/deploy-split-button/deploy-split-button.svelte';
 	import ProgressPopover from '$lib/components/progress-popover.svelte';
@@ -14,12 +14,12 @@
 	import { deployOptionsStore } from '$lib/stores/deploy-options.store.svelte';
 	import { containerService, type ContainerDetailsResponse } from '$lib/services/container-service';
 	import { projectService, type DeployProjectOptions } from '$lib/services/project-service';
-	import type { Project } from '$lib/types/project.type';
-	import { isDownloadingLine, calculateOverallProgress, areAllLayersComplete } from '$lib/utils/pull-progress';
-	import { sanitizeLogText } from '$lib/utils/log-text';
+	import type { Project } from '$lib/types/swarm';
+	import { isDownloadingLine, calculateOverallProgress, areAllLayersComplete } from '$lib/utils/docker';
+	import { sanitizeLogText } from '$lib/utils/formatting';
 	import { EllipsisIcon, DownloadIcon, HammerIcon } from '$lib/icons';
 	import { createMutation } from '@tanstack/svelte-query';
-	import { hasPermission } from '$lib/utils/permissions.util';
+	import { hasPermission } from '$lib/utils/auth';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 
 	type TargetType = 'container' | 'project';

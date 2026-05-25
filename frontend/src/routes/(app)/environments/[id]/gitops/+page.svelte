@@ -6,11 +6,11 @@
 		GitOpsSyncCreateDto,
 		GitOpsSyncUpdateDto,
 		ImportGitOpsSyncRequest
-	} from '$lib/types/gitops.type';
+	} from '$lib/types/automation';
 	import GitOpsSyncFormSheet from '$lib/components/dialogs/gitops-sync-dialog.svelte';
 	import GitOpsImportDialog from '$lib/components/dialogs/gitops-import-dialog.svelte';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
-	import { tryCatch } from '$lib/utils/try-catch';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api';
+	import { tryCatch } from '$lib/utils/api';
 	import { m } from '$lib/paraglide/messages';
 	import { gitOpsSyncService } from '$lib/services/gitops-sync-service';
 	import { untrack } from 'svelte';

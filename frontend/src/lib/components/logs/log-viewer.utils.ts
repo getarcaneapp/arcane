@@ -1,4 +1,4 @@
-import { sanitizeLogText } from '$lib/utils/log-text';
+import { sanitizeLogText } from '$lib/utils/formatting';
 
 export interface LogViewerEntry {
 	id: number;

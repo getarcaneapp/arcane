@@ -8,15 +8,15 @@
 	import UrlInput from '$lib/components/form/url-input.svelte';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { CopyButton } from '$lib/components/ui/copy-button';
-	import type { CreateEnvironmentDTO, DeploymentSnippetFile } from '$lib/types/environment.type';
+	import type { CreateEnvironmentDTO, DeploymentSnippetFile } from '$lib/types/environment';
 	import { z } from 'zod/v4';
-	import { createForm, preventDefault } from '$lib/utils/form.utils';
+	import { createForm, preventDefault } from '$lib/utils/settings';
 	import { m } from '$lib/paraglide/messages';
 	import { environmentManagementService } from '$lib/services/env-mgmt-service';
 	import { queryKeys } from '$lib/query/query-keys';
 	import { RemoteEnvironmentIcon, EdgeConnectionIcon, DownloadIcon } from '$lib/icons';
 	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
-	import { downloadTextFile } from '$lib/utils/download-text-file';
+	import { downloadTextFile } from '$lib/utils/formatting';
 
 	type NewEnvironmentSheetProps = {
 		open: boolean;
