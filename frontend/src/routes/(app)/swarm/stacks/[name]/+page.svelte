@@ -9,15 +9,15 @@
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
 	import { m } from '$lib/paraglide/messages';
 	import { swarmService } from '$lib/services/swarm-service';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
-	import { tryCatch } from '$lib/utils/try-catch';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api';
+	import { tryCatch } from '$lib/utils/api';
 	import { onMount } from 'svelte';
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import SwarmServicesTable from '../../services/services-table.svelte';
 	import SwarmTasksTable from '../../tasks/tasks-table.svelte';
-	import type { SwarmStackSource } from '$lib/types/swarm.type';
+	import type { SwarmStackSource } from '$lib/types/swarm';
 
 	let { data } = $props();
 

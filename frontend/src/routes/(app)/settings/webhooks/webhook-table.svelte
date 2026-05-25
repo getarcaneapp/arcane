@@ -8,10 +8,10 @@
 	import { CopyButton } from '$lib/components/ui/copy-button';
 	import { toast } from 'svelte-sonner';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
-	import { tryCatch } from '$lib/utils/try-catch';
-	import type { Webhook } from '$lib/types/webhook.type';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api';
+	import { tryCatch } from '$lib/utils/api';
+	import type { Webhook } from '$lib/types/environment';
+	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
 	import { webhookService } from '$lib/services/webhook-service';
 	import { TrashIcon, EllipsisIcon, GlobeIcon } from '$lib/icons';
 	import * as m from '$lib/paraglide/messages.js';

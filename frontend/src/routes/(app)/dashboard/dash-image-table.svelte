@@ -3,9 +3,9 @@
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as Card from '$lib/components/ui/card/index.js';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
-	import type { SearchPaginationSortRequest, Paginated } from '$lib/types/pagination.type';
-	import type { ImageSummaryDto } from '$lib/types/image.type';
-	import bytes from '$lib/utils/bytes';
+	import type { SearchPaginationSortRequest, Paginated } from '$lib/types/shared';
+	import type { ImageSummaryDto } from '$lib/types/docker';
+	import { bytes } from '$lib/utils/formatting';
 	import type { ColumnSpec } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';

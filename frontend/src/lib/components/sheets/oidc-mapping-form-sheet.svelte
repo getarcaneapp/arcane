@@ -4,10 +4,10 @@
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import FormInput from '$lib/components/form/form-input.svelte';
 	import { Label } from '$lib/components/ui/label';
-	import type { OidcRoleMapping, Role } from '$lib/types/role.type';
-	import type { Environment } from '$lib/types/environment.type';
+	import type { OidcRoleMapping, Role } from '$lib/types/auth';
+	import type { Environment } from '$lib/types/environment';
 	import { z } from 'zod/v4';
-	import { createForm, preventDefault } from '$lib/utils/form.utils';
+	import { createForm, preventDefault } from '$lib/utils/settings';
 	import { m } from '$lib/paraglide/messages';
 
 	type Props = {

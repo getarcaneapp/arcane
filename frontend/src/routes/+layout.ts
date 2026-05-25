@@ -7,10 +7,10 @@ import versionService from '$lib/services/version-service';
 import settingsStore from '$lib/stores/config-store';
 import { environmentStore } from '$lib/stores/environment.store.svelte';
 import userStore from '$lib/stores/user-store';
-import { type AppVersionInformation } from '$lib/types/application-configuration';
-import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
+import { type AppVersionInformation } from '$lib/types/settings';
+import type { SearchPaginationSortRequest } from '$lib/types/shared';
 import { authService } from '$lib/services/auth-service';
-import { tryCatch } from '$lib/utils/try-catch';
+import { tryCatch } from '$lib/utils/api';
 import { QueryClient } from '@tanstack/svelte-query';
 import { queryKeys } from '$lib/query/query-keys';
 

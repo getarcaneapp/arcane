@@ -3,14 +3,10 @@
 	import { invalidateAll } from '$app/navigation';
 	import ActionButtons from '$lib/components/action-buttons.svelte';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
-	import bytes from '$lib/utils/bytes';
+	import { bytes } from '$lib/utils/formatting';
 	import { tick } from 'svelte';
 	import { page } from '$app/state';
-	import type {
-		ContainerDetailsDto,
-		ContainerNetworkSettings,
-		ContainerStats as ContainerStatsType
-	} from '$lib/types/container.type';
+	import type { ContainerDetailsDto, ContainerNetworkSettings, ContainerStats as ContainerStatsType } from '$lib/types/docker';
 	import { m } from '$lib/paraglide/messages';
 	import TabbedPageLayout from '$lib/layouts/tabbed-page-layout.svelte';
 	import { type TabItem } from '$lib/components/tab-bar/index.js';
@@ -27,8 +23,8 @@
 	import ContainerDetailStatsSync from '../components/container-detail-stats-sync.svelte';
 	import ContainerHealthcheck from '../components/ContainerHealthcheck.svelte';
 	import IconImage from '$lib/components/icon-image.svelte';
-	import { getArcaneIconUrlFromLabels } from '$lib/utils/arcane-labels';
-	import { calculateMemoryUsage } from '$lib/utils/container-stats.utils';
+	import { getArcaneIconUrlFromLabels } from '$lib/utils/docker';
+	import { calculateMemoryUsage } from '$lib/utils/docker';
 	import {
 		ArrowLeftIcon,
 		AlertIcon,
@@ -44,10 +40,10 @@
 		HealthIcon
 	} from '$lib/icons';
 	import { parse as parseYaml } from 'yaml';
-	import type { IncludeFile } from '$lib/types/project.type';
+	import type { IncludeFile } from '$lib/types/swarm';
 	import { projectService } from '$lib/services/project-service';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { hasPermission } from '$lib/utils/permissions.util';
+	import { hasPermission } from '$lib/utils/auth';
 	let { data } = $props();
 	let container = $derived(data?.container as ContainerDetailsDto);
 	let stats = $state(null as ContainerStatsType | null);

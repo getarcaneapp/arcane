@@ -4,7 +4,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { m } from '$lib/paraglide/messages';
-	import { preventDefault } from '$lib/utils/form.utils';
+	import { preventDefault } from '$lib/utils/settings';
 
 	let {
 		open = $bindable(false),

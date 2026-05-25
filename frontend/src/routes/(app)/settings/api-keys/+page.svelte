@@ -1,11 +1,11 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
-	import { tryCatch } from '$lib/utils/try-catch';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api';
+	import { tryCatch } from '$lib/utils/api';
 	import ApiKeyTable from './api-key-table.svelte';
 	import ApiKeyFormSheet from '$lib/components/sheets/api-key-form-sheet.svelte';
-	import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
-	import type { ApiKey, ApiKeyCreated, CreateApiKey } from '$lib/types/api-key.type';
+	import type { SearchPaginationSortRequest } from '$lib/types/shared';
+	import type { ApiKey, ApiKeyCreated, CreateApiKey } from '$lib/types/auth';
 	import { apiKeyService } from '$lib/services/api-key-service';
 	import { SettingsPageLayout, type SettingsActionButton } from '$lib/layouts/index.js';
 	import * as ResponsiveDialog from '$lib/components/ui/responsive-dialog/index.js';

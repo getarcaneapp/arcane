@@ -2,7 +2,7 @@
 	import { SvelteSet } from 'svelte/reactivity';
 	import { jobScheduleService } from '$lib/services/job-schedule-service';
 	import { containerService } from '$lib/services/container-service';
-	import { tryCatch } from '$lib/utils/try-catch';
+	import { tryCatch } from '$lib/utils/api';
 	import JobCard from '$lib/components/job-card/job-card.svelte';
 	import { Spinner } from '$lib/components/ui/spinner';
 	import { m } from '$lib/paraglide/messages';
@@ -13,8 +13,8 @@
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import * as ScrollArea from '$lib/components/ui/scroll-area';
 	import { JobsIcon } from '$lib/icons';
-	import type { JobStatus, JobPrerequisite } from '$lib/types/job-schedule.type';
-	import type { ContainerSummaryDto } from '$lib/types/container.type';
+	import type { JobStatus, JobPrerequisite } from '$lib/types/settings';
+	import type { ContainerSummaryDto } from '$lib/types/docker';
 	import type { JobsTabProps } from './tab-props';
 
 	let { formInputs, environmentId }: JobsTabProps = $props();

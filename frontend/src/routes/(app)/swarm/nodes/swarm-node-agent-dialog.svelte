@@ -7,7 +7,7 @@
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { AlertTriangleIcon, EdgeConnectionIcon } from '$lib/icons';
 	import { m } from '$lib/paraglide/messages';
-	import type { SwarmNodeAgentDeployment, SwarmNodeSummary } from '$lib/types/swarm.type';
+	import type { SwarmNodeAgentDeployment, SwarmNodeSummary } from '$lib/types/swarm';
 	import { getSwarmNodeAgentLabel, getSwarmNodeAgentVariant } from './agent-status';
 
 	type SwarmNodeAgentDialogProps = {

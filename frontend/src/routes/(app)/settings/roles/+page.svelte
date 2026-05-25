@@ -3,7 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { untrack } from 'svelte';
 	import RolesTable from './roles-table.svelte';
-	import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
+	import type { SearchPaginationSortRequest } from '$lib/types/shared';
 	import { m } from '$lib/paraglide/messages';
 	import { roleService } from '$lib/services/role-service';
 	import { SettingsPageLayout, type SettingsActionButton } from '$lib/layouts/index.js';

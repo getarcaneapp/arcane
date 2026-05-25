@@ -22,8 +22,8 @@
 	import { m } from '$lib/paraglide/messages';
 	import { UiConfigDisabledTag } from '$lib/components/badges/index.js';
 	import { settingsSearchService } from '$lib/services/settings-search';
-	import type { SettingsCategory } from '$lib/types/settings-search.type';
-	import { debounced } from '$lib/utils/utils';
+	import type { SettingsCategory } from '$lib/types/shared';
+	import { debounced } from '$lib/utils/ws';
 	import * as InputGroup from '$lib/components/ui/input-group/index.js';
 	import { getSettingsSubpageUrlsInNavOrder } from '$lib/config/navigation-config';
 	import HeaderCard from '$lib/components/header-card.svelte';

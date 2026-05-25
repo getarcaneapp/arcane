@@ -14,9 +14,9 @@
 	import { toast } from 'svelte-sonner';
 	import { UseClipboard } from '$lib/hooks/use-clipboard.svelte';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { hasPermission } from '$lib/utils/permissions.util';
+	import { hasPermission } from '$lib/utils/auth';
 	import { queryKeys } from '$lib/query/query-keys';
-	import type { FileEntry } from '$lib/types/file-browser.type';
+	import type { FileEntry } from '$lib/types/shared';
 	import type { FileProvider } from '$lib/components/file-browser';
 	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
 

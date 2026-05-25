@@ -22,8 +22,8 @@
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import { ArcaneButton } from '$lib/components/arcane-button';
 	import { goto } from '$app/navigation';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
-	import { tryCatch } from '$lib/utils/try-catch';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api';
+	import { tryCatch } from '$lib/utils/api';
 	import { m } from '$lib/paraglide/messages';
 	import { networkService } from '$lib/services/network-service';
 	import { ResourceDetailLayout, type DetailAction } from '$lib/layouts';

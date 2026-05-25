@@ -1,8 +1,8 @@
 import { PersistedState } from 'runed';
 import { goto, invalidateAll } from '$app/navigation';
 import { page } from '$app/state';
-import type { Environment } from '$lib/types/environment.type';
-import { isEnvironmentOnline } from '$lib/utils/environment-status';
+import type { Environment } from '$lib/types/environment';
+import { isEnvironmentOnline } from '$lib/utils/docker';
 
 export const LOCAL_DOCKER_ENVIRONMENT_ID = '0';
 

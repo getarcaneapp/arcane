@@ -1,6 +1,6 @@
 import { version as currentVersion } from '$app/environment';
 import { apiClient } from './api-service';
-import type { AppVersionInformation } from '$lib/types/application-configuration';
+import type { AppVersionInformation } from '$lib/types/settings';
 
 function getCurrentVersion() {
 	return currentVersion;

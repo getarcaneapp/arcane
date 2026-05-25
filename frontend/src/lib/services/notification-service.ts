@@ -1,5 +1,5 @@
 import BaseAPIService from './api-service';
-import type { NotificationSettings, TestNotificationResponse } from '$lib/types/notification.type';
+import type { NotificationSettings, TestNotificationResponse } from '$lib/types/notifications';
 import { environmentStore } from '$lib/stores/environment.store.svelte';
 
 export default class NotificationService extends BaseAPIService {

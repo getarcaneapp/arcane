@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { NetworkSummaryDto, NetworkUsageCounts } from '$lib/types/network.type';
+	import type { NetworkSummaryDto, NetworkUsageCounts } from '$lib/types/docker';
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
@@ -7,11 +7,11 @@
 	import { toast } from 'svelte-sonner';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
-	import { tryCatch } from '$lib/utils/try-catch';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api';
+	import { tryCatch } from '$lib/utils/api';
 	import { DEFAULT_NETWORK_NAMES } from '$lib/constants';
-	import type { SearchPaginationSortRequest, Paginated } from '$lib/types/pagination.type';
-	import { capitalizeFirstLetter } from '$lib/utils/string.utils';
+	import type { SearchPaginationSortRequest, Paginated } from '$lib/types/shared';
+	import { capitalizeFirstLetter } from '$lib/utils/formatting';
 	import type { ColumnSpec, BulkAction } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';

@@ -1,6 +1,6 @@
 import BaseAPIService from './api-service';
 import { environmentStore } from '$lib/stores/environment.store.svelte';
-import type { DashboardActionItems, DashboardEnvironmentsOverview, DashboardSnapshot } from '$lib/types/dashboard.type';
+import type { DashboardActionItems, DashboardEnvironmentsOverview, DashboardSnapshot } from '$lib/types/shared';
 
 interface GetDashboardActionItemsOptions {
 	debugAllGood?: boolean;

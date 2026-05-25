@@ -6,12 +6,12 @@
 	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
-	import { tryCatch } from '$lib/utils/try-catch';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api';
+	import { tryCatch } from '$lib/utils/api';
 	import { goto } from '$app/navigation';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
-	import type { Role } from '$lib/types/role.type';
-	import { BUILT_IN_ROLE_ADMIN, BUILT_IN_ROLE_EDITOR, BUILT_IN_ROLE_DEPLOYER, BUILT_IN_ROLE_VIEWER } from '$lib/types/role.type';
+	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
+	import type { Role } from '$lib/types/auth';
+	import { BUILT_IN_ROLE_ADMIN, BUILT_IN_ROLE_EDITOR, BUILT_IN_ROLE_DEPLOYER, BUILT_IN_ROLE_VIEWER } from '$lib/types/auth';
 	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';

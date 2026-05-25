@@ -6,9 +6,9 @@ import type {
 	ContainerSummaryGroupDto,
 	ContainerCreateRequest,
 	ContainerDetailsDto
-} from '$lib/types/container.type';
-import type { SearchPaginationSortRequest, Paginated } from '$lib/types/pagination.type';
-import { transformPaginationParams } from '$lib/utils/params.util';
+} from '$lib/types/docker';
+import type { SearchPaginationSortRequest, Paginated } from '$lib/types/shared';
+import { transformPaginationParams } from '$lib/utils/tables';
 
 export type ContainersPaginatedResponse = Paginated<ContainerSummaryDto, ContainerStatusCounts> & {
 	groups?: ContainerSummaryGroupDto[];

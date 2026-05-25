@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { volumeBackupService, type VolumeBackupListResponse } from '$lib/services/volume-backup-service';
 	import { volumeService } from '$lib/services/volume-service';
-	import type { BackupEntry } from '$lib/types/file-browser.type';
+	import type { BackupEntry } from '$lib/types/shared';
 	import { onMount } from 'svelte';
 	import {
 		LoadingSpinnerIcon,
@@ -19,10 +19,10 @@
 	import { ArcaneButton } from '$lib/components/arcane-button';
 	import { toast } from 'svelte-sonner';
 	import * as m from '$lib/paraglide/messages.js';
-	import bytes from '$lib/utils/bytes';
+	import { bytes } from '$lib/utils/formatting';
 	import { format } from 'date-fns';
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
+	import type { SearchPaginationSortRequest } from '$lib/types/shared';
 	import { UniversalMobileCard, type ColumnSpec, type MobileFieldVisibility } from '$lib/components/arcane-table';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
@@ -32,7 +32,7 @@
 	import * as Checkbox from '$lib/components/ui/checkbox';
 	import * as Alert from '$lib/components/ui/alert';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { hasPermission } from '$lib/utils/permissions.util';
+	import { hasPermission } from '$lib/utils/auth';
 	import IfPermitted from '$lib/components/if-permitted.svelte';
 
 	let { volumeName }: { volumeName: string } = $props();

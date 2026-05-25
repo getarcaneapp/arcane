@@ -1,9 +1,9 @@
 <script lang="ts">
-	import type { ContainerPorts } from '$lib/types/container.type';
+	import type { ContainerPorts } from '$lib/types/docker';
 	import { m } from '$lib/paraglide/messages';
 	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
 	import settingsStore from '$lib/stores/config-store';
-	import { toPortHref } from '$lib/utils/url';
+	import { toPortHref } from '$lib/utils/navigation';
 
 	let {
 		ports = [] as ContainerPorts[],

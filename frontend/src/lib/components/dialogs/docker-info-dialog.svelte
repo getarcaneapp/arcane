@@ -4,10 +4,10 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { CopyButton } from '$lib/components/ui/copy-button';
 	import { Spinner } from '$lib/components/ui/spinner';
-	import type { DockerInfo } from '$lib/types/docker-info.type';
+	import type { DockerInfo } from '$lib/types/docker';
 	import { m } from '$lib/paraglide/messages';
-	import bytes from '$lib/utils/bytes';
-	import { formatDateTimeShort } from '$lib/utils/locale.util';
+	import { bytes } from '$lib/utils/formatting';
+	import { formatDateTimeShort } from '$lib/utils/formatting';
 
 	interface Props {
 		open: boolean;

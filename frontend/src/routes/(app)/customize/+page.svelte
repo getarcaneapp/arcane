@@ -6,8 +6,8 @@
 	import { m } from '$lib/paraglide/messages';
 	import { UiConfigDisabledTag } from '$lib/components/badges/index.js';
 	import { customizeSearchService } from '$lib/services/customize-search';
-	import type { CustomizeCategory } from '$lib/types/customize-search.type';
-	import { debounced } from '$lib/utils/utils';
+	import type { CustomizeCategory } from '$lib/types/shared';
+	import { debounced } from '$lib/utils/ws';
 	import * as InputGroup from '$lib/components/ui/input-group/index.js';
 	import { getCustomizeSubpageUrlsInNavOrder } from '$lib/config/navigation-config';
 	import {

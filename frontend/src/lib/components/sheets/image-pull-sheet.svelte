@@ -5,7 +5,7 @@
 	import { Progress } from '$lib/components/ui/progress/index.js';
 	import * as Collapsible from '$lib/components/ui/collapsible/index.js';
 	import { z } from 'zod/v4';
-	import { createForm, preventDefault } from '$lib/utils/form.utils';
+	import { createForm, preventDefault } from '$lib/utils/settings';
 	import { toast } from 'svelte-sonner';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { m } from '$lib/paraglide/messages';
@@ -22,7 +22,7 @@
 		showImageLayersState,
 		isIndeterminatePhase,
 		getAggregateStatus
-	} from '$lib/utils/pull-progress';
+	} from '$lib/utils/docker';
 	import { ArrowDownIcon } from '$lib/icons';
 
 	type ImagePullFormProps = {

@@ -6,9 +6,9 @@
 	import * as Select from '$lib/components/ui/select/index.js';
 	import { Textarea } from '$lib/components/ui/textarea/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
-	import type { GitRepository, GitRepositoryCreateDto, GitRepositoryUpdateDto } from '$lib/types/gitops.type';
+	import type { GitRepository, GitRepositoryCreateDto, GitRepositoryUpdateDto } from '$lib/types/automation';
 	import { z } from 'zod/v4';
-	import { createForm, preventDefault } from '$lib/utils/form.utils';
+	import { createForm, preventDefault } from '$lib/utils/settings';
 	import { m } from '$lib/paraglide/messages';
 
 	type GitRepositoryFormProps = {
