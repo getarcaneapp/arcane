@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 ARG BUILD_TAGS=""
-ARG ARCANE_RUNTIME_BASE_IMAGE=ghcr.io/getarcaneapp/base:trixie
+ARG ARCANE_RUNTIME_BASE_IMAGE=ghcr.io/getarcaneapp/base:distroless
 
 # Stage 1: Build Frontend
 FROM --platform=$BUILDPLATFORM node:25-trixie-slim AS frontend-builder
@@ -65,6 +65,8 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     -o /build/arcane \
     ./cmd/main.go
 
+RUN mkdir -p /build/rootfs/app/data /build/rootfs/builds
+
 # Stage 3: Hardened Production Image
 FROM ${ARCANE_RUNTIME_BASE_IMAGE} AS runner-hardened
 
@@ -85,10 +87,11 @@ ENV NVIDIA_VISIBLE_DEVICES=all \
 
 WORKDIR /app
 
+# The container starts as "root", but arcane drops to the requetsed PUID and PGID after the runtime is initialized 
 USER 0:0
-RUN mkdir -p /app/data /builds \
-  && chown -R 65532:65532 /app /builds
-COPY --from=backend-builder /build/arcane .
+COPY --from=backend-builder --chown=65532:65532 /build/rootfs/app/ /app/
+COPY --from=backend-builder --chown=65532:65532 /build/rootfs/builds/ /builds/
+COPY --from=backend-builder --chown=65532:65532 /build/arcane .
 EXPOSE 3552
 VOLUME ["/app/data"]
 
