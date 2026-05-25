@@ -74,6 +74,22 @@ func TestDockerConnection(ctx context.Context, testFunc func(context.Context) er
 	}
 }
 
+func CleanupOrphanedVolumeHelpers(ctx context.Context, cleanupFunc func(context.Context) (int, error)) {
+	if cleanupFunc == nil {
+		return
+	}
+
+	slog.InfoContext(ctx, "Checking for orphaned volume helper containers from previous runs")
+
+	removedCount, err := cleanupFunc(ctx)
+	if err != nil {
+		slog.WarnContext(ctx, "Failed to clean up orphaned volume helper containers during startup", "error", err.Error())
+		return
+	}
+
+	slog.InfoContext(ctx, "Orphaned volume helper cleanup completed", "removed_count", removedCount)
+}
+
 func InitializeNonAgentFeatures(
 	ctx context.Context,
 	cfg *RuntimeConfig,
