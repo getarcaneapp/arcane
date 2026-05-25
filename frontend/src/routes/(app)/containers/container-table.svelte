@@ -28,12 +28,11 @@
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { hasPermission } from '$lib/utils/auth';
 	import IconImage from '$lib/components/icon-image.svelte';
-	import { getArcaneIconUrlFromLabels } from '$lib/utils/docker';
+	import { getArcaneIconUrlFromLabels, getContainerIpAddresses } from '$lib/utils/docker';
 	import { createContainerActions } from './container-table.actions';
 	import {
 		getActionStatusMessage,
 		getContainerDisplayName,
-		getContainerIpAddresses,
 		getProjectName,
 		getStateBadgeVariant,
 		parseImageRef,
