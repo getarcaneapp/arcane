@@ -3,16 +3,16 @@
 	import * as Separator from '$lib/components/ui/separator/index.js';
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 	import { useSidebar } from '$lib/components/ui/sidebar/index.js';
-	import type { AppVersionInformation } from '$lib/types/application-configuration';
+	import type { AppVersionInformation } from '$lib/types/settings';
 	import { m } from '$lib/paraglide/messages';
 	import { queryKeys } from '$lib/query/query-keys';
 	import systemUpgradeService from '$lib/services/api/system-upgrade-service';
 	import UpdateCenterDialog from '$lib/components/dialogs/update-center-dialog.svelte';
 	import { toast } from 'svelte-sonner';
 	import { DownloadIcon } from '$lib/icons';
-	import { extractApiErrorMessage } from '$lib/utils/api.util';
+	import { extractApiErrorMessage } from '$lib/utils/api';
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
-	import { hasPermission } from '$lib/utils/permissions.util';
+	import { hasPermission } from '$lib/utils/auth';
 
 	let {
 		isCollapsed,

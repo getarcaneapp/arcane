@@ -3,9 +3,9 @@
 	import * as Card from '$lib/components/ui/card';
 	import { toast } from 'svelte-sonner';
 	import CodeEditor from '$lib/components/code-editor/editor.svelte';
-	import { createForm } from '$lib/utils/form.utils';
-	import { tryCatch } from '$lib/utils/try-catch';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
+	import { createForm } from '$lib/utils/settings';
+	import { tryCatch } from '$lib/utils/api';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api';
 	import { m } from '$lib/paraglide/messages';
 	import { templateService } from '$lib/services/template-service';
 	import { z } from 'zod/v4';
@@ -13,7 +13,7 @@
 	import TemplateSelectionDialog from '$lib/components/dialogs/template-selection-dialog.svelte';
 	import { ComposeEditorSplit } from '$lib/components/compose';
 	import { untrack } from 'svelte';
-	import type { Template } from '$lib/types/template.type';
+	import type { Template } from '$lib/types/swarm';
 	import { ArrowLeftIcon, CodeIcon, VariableIcon } from '$lib/icons';
 
 	let { data } = $props();

@@ -1,7 +1,7 @@
-import type { User } from '$lib/types/user.type';
-import { GLOBAL_SCOPE, SUDO_PERMISSION, BUILT_IN_ROLE_ADMIN } from '$lib/types/role.type';
+import type { User } from '$lib/types/auth';
+import { GLOBAL_SCOPE, SUDO_PERMISSION, BUILT_IN_ROLE_ADMIN } from '$lib/types/auth';
 import { writable, get } from 'svelte/store';
-import { setLocale } from '$lib/utils/locale.util';
+import { setLocale } from '$lib/utils/formatting';
 
 const userStore = writable<User | null>(null);
 

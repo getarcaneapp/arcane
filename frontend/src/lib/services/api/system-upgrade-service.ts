@@ -1,5 +1,5 @@
 import { apiClient } from '../api-service';
-import type { AppVersionInformation } from '$lib/types/application-configuration';
+import type { AppVersionInformation } from '$lib/types/settings';
 
 export interface UpgradeCheckResponse {
 	canUpgrade: boolean;

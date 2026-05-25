@@ -7,11 +7,11 @@
 	import { CopyButton } from '$lib/components/ui/copy-button';
 	import { ResourcePageLayout, type ActionButton } from '$lib/layouts/index.js';
 	import { templateService } from '$lib/services/template-service.js';
-	import type { Variable } from '$lib/types/variable.type';
+	import type { Variable } from '$lib/types/shared';
 	import { untrack } from 'svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { SearchIcon, CloseIcon, AlertIcon, VariableIcon } from '$lib/icons';
-	import { hasPermission } from '$lib/utils/permissions.util';
+	import { hasPermission } from '$lib/utils/auth';
 
 	let { data } = $props();
 	let envVars = $state<Variable[]>(untrack(() => [...data.variables]));

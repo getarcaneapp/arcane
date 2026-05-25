@@ -2,7 +2,7 @@ import { dashboardService } from '$lib/services/dashboard-service';
 import { settingsService } from '$lib/services/settings-service';
 import { queryKeys } from '$lib/query/query-keys';
 import { environmentStore } from '$lib/stores/environment.store.svelte';
-import { throwPageLoadError } from '$lib/utils/page-load-error.util';
+import { throwPageLoadError } from '$lib/utils/api';
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async ({ parent, url }) => {

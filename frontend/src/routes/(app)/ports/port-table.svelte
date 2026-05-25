@@ -7,8 +7,8 @@
 	import { ContainersIcon, ConnectionIcon, GlobeIcon, HashIcon } from '$lib/icons';
 	import { m } from '$lib/paraglide/messages';
 	import { portService } from '$lib/services/port-service';
-	import type { SearchPaginationSortRequest, Paginated } from '$lib/types/pagination.type';
-	import type { PortMappingDto } from '$lib/types/port.type';
+	import type { SearchPaginationSortRequest, Paginated } from '$lib/types/shared';
+	import type { PortMappingDto } from '$lib/types/docker';
 
 	let {
 		ports,

@@ -4,10 +4,10 @@
 	import FormInput from '$lib/components/form/form-input.svelte';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import PermissionPicker from './permission-picker.svelte';
-	import type { Role, PermissionsManifest } from '$lib/types/role.type';
+	import type { Role, PermissionsManifest } from '$lib/types/auth';
 	import { CopyIcon } from '$lib/icons';
 	import { z } from 'zod/v4';
-	import { createForm, preventDefault } from '$lib/utils/form.utils';
+	import { createForm, preventDefault } from '$lib/utils/settings';
 	import { m } from '$lib/paraglide/messages';
 
 	type Props = {

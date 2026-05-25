@@ -9,9 +9,9 @@
 		ContainerRegistryCreateDto,
 		ContainerRegistryUpdateDto,
 		RegistryType
-	} from '$lib/types/container-registry.type';
+	} from '$lib/types/docker';
 	import { z } from 'zod/v4';
-	import { createForm, preventDefault } from '$lib/utils/form.utils';
+	import { createForm, preventDefault } from '$lib/utils/settings';
 	import { m } from '$lib/paraglide/messages';
 
 	type ContainerRegistryFormProps = {

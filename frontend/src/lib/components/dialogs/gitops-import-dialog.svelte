@@ -4,7 +4,7 @@
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Textarea } from '$lib/components/ui/textarea/index.js';
-	import type { ImportGitOpsSyncRequest } from '$lib/types/gitops.type';
+	import type { ImportGitOpsSyncRequest } from '$lib/types/automation';
 	import { m } from '$lib/paraglide/messages';
 
 	type GitOpsImportFormProps = {

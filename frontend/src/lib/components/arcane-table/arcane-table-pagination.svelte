@@ -5,7 +5,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { ArrowRightIcon, ArrowLeftIcon, DoubleArrowRightIcon, DoubleArrowLeftIcon } from '$lib/icons';
 	import { TABLE_PAGE_SIZE_ALL, TABLE_PAGE_SIZE_OPTIONS } from '$lib/constants/table-pagination';
-	import type { Paginated } from '$lib/types/pagination.type';
+	import type { Paginated } from '$lib/types/shared';
 
 	let {
 		items,

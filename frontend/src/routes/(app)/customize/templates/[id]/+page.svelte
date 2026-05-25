@@ -11,9 +11,9 @@
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import { createForm } from '$lib/utils/form.utils';
-	import { tryCatch } from '$lib/utils/try-catch';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
+	import { createForm } from '$lib/utils/settings';
+	import { tryCatch } from '$lib/utils/api';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api';
 	import { ComposeEditorSplit } from '$lib/components/compose';
 	import { z } from 'zod/v4';
 	import {

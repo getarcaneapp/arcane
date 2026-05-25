@@ -1,8 +1,8 @@
 import { settingsService } from '$lib/services/settings-service';
-import type { Settings } from '$lib/types/settings.type';
-import { applyAccentColor } from '$lib/utils/accent-color-util';
-import { applyApplicationTheme } from '$lib/utils/application-theme-util';
-import { applyOledMode } from '$lib/utils/oled-mode-util';
+import type { Settings } from '$lib/types/settings';
+import { applyAccentColor } from '$lib/utils/theme';
+import { applyApplicationTheme } from '$lib/utils/theme';
+import { applyOledMode } from '$lib/utils/theme';
 import { get, writable } from 'svelte/store';
 
 const settingsStore = writable<Settings>();

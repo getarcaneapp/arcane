@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages';
-	import type { IgnoredVulnerability } from '$lib/types/vulnerability.type';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
+	import type { IgnoredVulnerability } from '$lib/types/environment';
+	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
 	import { ShieldAlertIcon, CodeIcon, ImagesIcon, EyeOnIcon } from '$lib/icons';
 	import { ArcaneButton } from '$lib/components/arcane-button';
 	import IfPermitted from '$lib/components/if-permitted.svelte';

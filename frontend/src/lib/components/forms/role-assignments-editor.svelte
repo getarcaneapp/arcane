@@ -8,8 +8,8 @@
 		BUILT_IN_ROLE_EDITOR,
 		BUILT_IN_ROLE_DEPLOYER,
 		BUILT_IN_ROLE_VIEWER
-	} from '$lib/types/role.type';
-	import type { Environment } from '$lib/types/environment.type';
+	} from '$lib/types/auth';
+	import type { Environment } from '$lib/types/environment';
 	import { CloseIcon } from '$lib/icons';
 	import { m } from '$lib/paraglide/messages';
 

@@ -3,11 +3,11 @@
 	import { VolumesIcon, ClockIcon, TagIcon, LayersIcon, InfoIcon, GlobeIcon, ContainersIcon, BoxIcon } from '$lib/icons';
 	import { goto } from '$app/navigation';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
-	import { truncateString } from '$lib/utils/string.utils';
+	import { truncateString } from '$lib/utils/formatting';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog/';
 	import { toast } from 'svelte-sonner';
-	import { tryCatch } from '$lib/utils/try-catch';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
+	import { tryCatch } from '$lib/utils/api';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { format } from 'date-fns';
 	import { m } from '$lib/paraglide/messages';
@@ -19,7 +19,7 @@
 	import BackupList from '../components/volume-backup-table.svelte';
 	import settingsStore from '$lib/stores/config-store';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { hasPermission } from '$lib/utils/permissions.util';
+	import { hasPermission } from '$lib/utils/auth';
 
 	let { data } = $props();
 	let volume = $state(untrack(() => data.volume));

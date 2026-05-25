@@ -3,7 +3,7 @@
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { NetworksIcon, GlobeIcon } from '$lib/icons';
-	import type { ServiceNetworkAttachment, ServiceNetworkDetail, ServiceVirtualIP, SwarmServicePort } from '$lib/types/swarm.type';
+	import type { ServiceNetworkAttachment, ServiceNetworkDetail, ServiceVirtualIP, SwarmServicePort } from '$lib/types/swarm';
 
 	interface Props {
 		ports: SwarmServicePort[];

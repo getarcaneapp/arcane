@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages';
 	import { z } from 'zod/v4';
-	import type { NotificationProviderKey, ProviderFormValuesMap } from '$lib/types/notification-providers';
+	import type { NotificationProviderKey, ProviderFormValuesMap } from '$lib/types/notifications';
 	import ProviderFormWrapper from './ProviderFormWrapper.svelte';
 	import EventSubscriptions from './EventSubscriptions.svelte';
 	import DynamicProviderFormBuilder from './DynamicProviderFormBuilder.svelte';

@@ -2,10 +2,10 @@
 	import * as Alert from '$lib/components/ui/alert';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import userStore from '$lib/stores/user-store';
-	import { BUILT_IN_ROLE_VIEWER } from '$lib/types/role.type';
+	import { BUILT_IN_ROLE_VIEWER } from '$lib/types/auth';
 	import { CloseIcon } from '$lib/icons';
 	import { m } from '$lib/paraglide/messages';
-	import type { User } from '$lib/types/user.type';
+	import type { User } from '$lib/types/auth';
 
 	const STORAGE_KEY = 'rbac-migration-banner-dismissed';
 

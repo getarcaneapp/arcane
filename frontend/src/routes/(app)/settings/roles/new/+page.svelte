@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
 	import { goto } from '$app/navigation';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
-	import { tryCatch } from '$lib/utils/try-catch';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api';
+	import { tryCatch } from '$lib/utils/api';
 	import RoleEditor from '$lib/components/role-editor/role-editor.svelte';
-	import type { CreateRole } from '$lib/types/role.type';
+	import type { CreateRole } from '$lib/types/auth';
 	import { m } from '$lib/paraglide/messages';
 	import { roleService } from '$lib/services/role-service';
 	import { SettingsPageLayout } from '$lib/layouts/index.js';

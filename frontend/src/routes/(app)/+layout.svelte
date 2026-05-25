@@ -1,17 +1,17 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { goto, afterNavigate } from '$app/navigation';
-	import { getAuthRedirectPath } from '$lib/utils/redirect.util';
+	import { getAuthRedirectPath } from '$lib/utils/auth';
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
 	import AppSidebar from '$lib/components/sidebar/sidebar.svelte';
 	import MobileNav from '$lib/components/mobile-nav/mobile-nav.svelte';
 	import { IsMobile } from '$lib/hooks/is-mobile.svelte.js';
 	import { IsTablet } from '$lib/hooks/is-tablet.svelte.js';
-	import { getEffectiveNavigationSettings, navigationSettingsOverridesStore } from '$lib/utils/navigation.utils';
+	import { getEffectiveNavigationSettings, navigationSettingsOverridesStore } from '$lib/utils/navigation';
 	import { browser } from '$app/environment';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { navigationItems, getManagementItems, filterByPermissions, type NavigationItem } from '$lib/config/navigation-config';
-	import { isEditableTarget, matchesShortcutEvent } from '$lib/utils/keyboard-shortcut.utils';
+	import { isEditableTarget, matchesShortcutEvent } from '$lib/utils/navigation';
 	import { cn } from '$lib/utils';
 	let { data, children }: LayoutProps = $props();
 
