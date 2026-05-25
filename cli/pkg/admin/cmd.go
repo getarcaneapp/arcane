@@ -4,6 +4,8 @@ import (
 	"github.com/getarcaneapp/arcane/cli/pkg/admin/apikeys"
 	"github.com/getarcaneapp/arcane/cli/pkg/admin/events"
 	"github.com/getarcaneapp/arcane/cli/pkg/admin/notifications"
+	"github.com/getarcaneapp/arcane/cli/pkg/admin/oidcmappings"
+	"github.com/getarcaneapp/arcane/cli/pkg/admin/roles"
 	"github.com/getarcaneapp/arcane/cli/pkg/admin/users"
 	"github.com/spf13/cobra"
 )
@@ -17,6 +19,8 @@ var AdminCmd = &cobra.Command{
 
 func init() {
 	AdminCmd.AddCommand(users.UsersCmd)
+	AdminCmd.AddCommand(roles.RolesCmd)
+	AdminCmd.AddCommand(oidcmappings.OidcMappingsCmd)
 	AdminCmd.AddCommand(apikeys.ApiKeysCmd)
 	AdminCmd.AddCommand(events.EventsCmd)
 	AdminCmd.AddCommand(notifications.NotificationsCmd)

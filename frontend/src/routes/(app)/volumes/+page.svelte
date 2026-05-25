@@ -7,6 +7,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { volumeService } from '$lib/services/volume-service';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import { hasPermission } from '$lib/utils/permissions.util';
 	import { queryKeys } from '$lib/query/query-keys';
 	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
@@ -59,24 +60,30 @@
 	const isRefreshing = $derived(volumesQuery.isFetching && !volumesQuery.isPending);
 	const volumeUsageCounts = $derived(volumes.counts ?? countsFallback);
 
-	const actionButtons: ActionButton[] = $derived([
-		{
-			id: 'create',
-			action: 'create',
-			label: m.common_create_button({ resource: m.resource_volume_cap() }),
-			onclick: () => (isCreateDialogOpen = true),
-			loading: createVolumeMutation.isPending,
-			disabled: createVolumeMutation.isPending
-		},
-		{
+	const canCreateVolume = $derived(hasPermission('volumes:create', envId));
+
+	const actionButtons: ActionButton[] = $derived.by(() => {
+		const buttons: ActionButton[] = [];
+		if (canCreateVolume) {
+			buttons.push({
+				id: 'create',
+				action: 'create',
+				label: m.common_create_button({ resource: m.resource_volume_cap() }),
+				onclick: () => (isCreateDialogOpen = true),
+				loading: createVolumeMutation.isPending,
+				disabled: createVolumeMutation.isPending
+			});
+		}
+		buttons.push({
 			id: 'refresh',
 			action: 'restart',
 			label: m.common_refresh(),
 			onclick: refresh,
 			loading: isRefreshing,
 			disabled: isRefreshing
-		}
-	]);
+		});
+		return buttons;
+	});
 
 	const statCards: StatCardConfig[] = $derived([
 		{

@@ -41,6 +41,9 @@ var loggerSkipPatterns = []string{
 	"GET /api/fonts/mono",
 	"GET /api/health",
 	"HEAD /api/health",
+	// Static branding / PWA assets — browsers re-request these frequently
+	// and the logs add no signal.
+	"GET /api/app-images/*",
 }
 
 func shouldLogRequestInternal(c echo.Context) bool {
@@ -143,7 +146,8 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services)
 
 	authMiddleware := middleware.NewAuthMiddleware(appServices.Auth, cfg).
 		WithApiKeyValidator(appServices.ApiKey).
-		WithEnvironmentAccessTokenResolver(appServices.Environment)
+		WithEnvironmentAccessTokenResolver(appServices.Environment).
+		WithPermissionResolver(appServices.Role)
 	e.Use(middleware.NewCORSMiddleware(cfg).Add())
 
 	apiGroup := e.Group("/api")
@@ -217,6 +221,7 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services)
 		Webhook:           appServices.Webhook,
 		Vulnerability:     appServices.Vulnerability,
 		Dashboard:         appServices.Dashboard,
+		Role:              appServices.Role,
 		Config:            cfg,
 	}
 

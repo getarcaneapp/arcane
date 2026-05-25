@@ -7,6 +7,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/api/ws"
 	"github.com/getarcaneapp/arcane/backend/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/pkg/authz"
 	wshub "github.com/getarcaneapp/arcane/backend/pkg/libarcane/ws"
 	"github.com/labstack/echo/v4"
 )
@@ -23,8 +24,8 @@ func RegisterDiagnosticsRoutes(group *echo.Group, authMiddleware *middleware.Aut
 }
 
 func (h *DiagnosticsHandler) WebSocketDiagnostics(c echo.Context) error {
-	val := c.Get("userIsAdmin")
-	if admin, ok := val.(bool); !ok || !admin {
+	ps, _ := c.Get("userPermissions").(*authz.PermissionSet)
+	if !ps.IsGlobalAdmin() {
 		return c.JSON(http.StatusForbidden, map[string]any{"error": "Admin access required"})
 	}
 

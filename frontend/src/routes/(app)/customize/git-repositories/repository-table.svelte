@@ -23,6 +23,8 @@
 		ExternalLinkIcon as LinkIcon,
 		EllipsisIcon
 	} from '$lib/icons';
+	import { hasPermission } from '$lib/utils/permissions.util';
+	import IfPermitted from '$lib/components/if-permitted.svelte';
 
 	type FieldVisibility = Record<string, boolean>;
 
@@ -43,6 +45,8 @@
 		testing: false
 	});
 
+	const canDeleteRepository = $derived(hasPermission('git-repositories:delete'));
+
 	const bulkActions = $derived.by<BulkAction[]>(() => [
 		{
 			id: 'remove',
@@ -50,7 +54,7 @@
 			action: 'remove',
 			onClick: handleDeleteSelected,
 			loading: isLoading.removing,
-			disabled: isLoading.removing,
+			disabled: !canDeleteRepository || isLoading.removing,
 			icon: Trash2Icon
 		}
 	]);
@@ -259,26 +263,32 @@
 		</DropdownMenu.Trigger>
 		<DropdownMenu.Content align="end">
 			<DropdownMenu.Group>
-				<DropdownMenu.Item onclick={() => handleTest(item.id, item.name)} disabled={isLoading.testing}>
-					<TestTubeIcon class="size-4" />
-					{m.git_repository_test_connection()}
-				</DropdownMenu.Item>
+				<IfPermitted perm="git-repositories:test">
+					<DropdownMenu.Item onclick={() => handleTest(item.id, item.name)} disabled={isLoading.testing}>
+						<TestTubeIcon class="size-4" />
+						{m.git_repository_test_connection()}
+					</DropdownMenu.Item>
+				</IfPermitted>
 
-				<DropdownMenu.Item onclick={() => onEditRepository(item)}>
-					<PencilIcon class="size-4" />
-					{m.common_edit()}
-				</DropdownMenu.Item>
+				<IfPermitted perm="git-repositories:update">
+					<DropdownMenu.Item onclick={() => onEditRepository(item)}>
+						<PencilIcon class="size-4" />
+						{m.common_edit()}
+					</DropdownMenu.Item>
+				</IfPermitted>
 
-				<DropdownMenu.Separator />
+				{#if canDeleteRepository}
+					<DropdownMenu.Separator />
 
-				<DropdownMenu.Item
-					variant="destructive"
-					onclick={() => handleDeleteOne(item.id, item.name)}
-					disabled={isLoading.removing}
-				>
-					<Trash2Icon class="size-4" />
-					{m.common_remove()}
-				</DropdownMenu.Item>
+					<DropdownMenu.Item
+						variant="destructive"
+						onclick={() => handleDeleteOne(item.id, item.name)}
+						disabled={isLoading.removing}
+					>
+						<Trash2Icon class="size-4" />
+						{m.common_remove()}
+					</DropdownMenu.Item>
+				{/if}
 			</DropdownMenu.Group>
 		</DropdownMenu.Content>
 	</DropdownMenu.Root>

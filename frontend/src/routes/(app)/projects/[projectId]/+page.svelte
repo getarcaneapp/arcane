@@ -34,11 +34,13 @@
 	import { imageService } from '$lib/services/image-service';
 	import { gitOpsSyncService } from '$lib/services/gitops-sync-service';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import { hasPermission } from '$lib/utils/permissions.util';
 	import { queryKeys } from '$lib/query/query-keys';
 	import { RefreshIcon } from '$lib/icons';
 	import IconImage from '$lib/components/icon-image.svelte';
 	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import ProjectUpdateItem from '$lib/components/project-update-item.svelte';
+	import IfPermitted from '$lib/components/if-permitted.svelte';
 
 	let { data } = $props();
 	let projectId = $derived(data.projectId);
@@ -59,6 +61,10 @@
 	});
 
 	const envId = $derived(environmentStore.selected?.id || '0');
+	const canUpdateProject = $derived(hasPermission('projects:update', envId));
+	const canViewProjectLogs = $derived(hasPermission('projects:logs', envId));
+	// Project lifecycle permissions are evaluated per-button inside
+	// <ActionButtons/> directly; no need to derive them here.
 
 	let includeFilesState = $state<Record<string, string>>({});
 	let loadedIncludeFileContents = $state<Record<string, string>>({});
@@ -139,14 +145,15 @@
 	let isGitOpsManaged = $derived(!!project?.gitOpsManagedBy);
 	let hasBuildDirective = $derived(!!project?.hasBuildDirective);
 	let canEditName = $derived(
-		!project?.isArchived &&
+		canUpdateProject &&
+			!project?.isArchived &&
 			!isGitOpsManaged &&
 			!isLoading.saving &&
 			project?.status !== 'running' &&
 			project?.status !== 'partially running'
 	);
-	let canEditCompose = $derived(!project?.isArchived && !isGitOpsManaged);
-	let canEditEnv = $derived(!project?.isArchived);
+	let canEditCompose = $derived(canUpdateProject && !project?.isArchived && !isGitOpsManaged);
+	let canEditEnv = $derived(canUpdateProject && !project?.isArchived);
 	let composeFileName = $derived(project?.composeFileName || 'compose.yaml');
 	let archiveRequiresStopped = $derived(
 		!!project &&
@@ -208,7 +215,7 @@
 			)
 	);
 
-	let canSave = $derived(!project?.isArchived && hasChanges && !hasAnyErrors);
+	let canSave = $derived(canUpdateProject && !project?.isArchived && hasChanges && !hasAnyErrors);
 
 	const tabItems = $derived<TabItem[]>([
 		{
@@ -222,12 +229,16 @@
 			label: m.common_configuration(),
 			icon: SettingsIcon
 		},
-		{
-			value: 'logs',
-			label: m.compose_nav_logs(),
-			icon: FileTextIcon,
-			disabled: project?.status !== 'running'
-		}
+		...(canViewProjectLogs
+			? [
+					{
+						value: 'logs',
+						label: m.compose_nav_logs(),
+						icon: FileTextIcon,
+						disabled: project?.status !== 'running'
+					}
+				]
+			: [])
 	]);
 
 	let nameInputRef = $state<HTMLInputElement | null>(null);
@@ -744,7 +755,7 @@
 
 		{#snippet headerActions()}
 			<div class="flex items-center gap-2">
-				{#if hasChanges}
+				{#if hasChanges && canUpdateProject}
 					<ArcaneButton
 						action="save"
 						loading={isLoading.saving}
@@ -766,28 +777,30 @@
 						class="xl:hidden"
 					/>
 				{/if}
-				<ArcaneButton
-					action="base"
-					icon={BoxIcon}
-					loading={isLoading.archiving}
-					onclick={handleArchiveToggle}
-					disabled={archiveRequiresStopped}
-					title={archiveRequiresStopped ? m.projects_archive_requires_stopped() : undefined}
-					customLabel={project.isArchived ? m.projects_unarchive() : m.projects_archive()}
-					class="hidden xl:inline-flex"
-				/>
-				<ArcaneButton
-					action="base"
-					icon={BoxIcon}
-					size="icon"
-					showLabel={false}
-					loading={isLoading.archiving}
-					onclick={handleArchiveToggle}
-					disabled={archiveRequiresStopped}
-					title={archiveRequiresStopped ? m.projects_archive_requires_stopped() : undefined}
-					customLabel={project.isArchived ? m.projects_unarchive() : m.projects_archive()}
-					class="xl:hidden"
-				/>
+				<IfPermitted perm="projects:archive">
+					<ArcaneButton
+						action="base"
+						icon={BoxIcon}
+						loading={isLoading.archiving}
+						onclick={handleArchiveToggle}
+						disabled={archiveRequiresStopped}
+						title={archiveRequiresStopped ? m.projects_archive_requires_stopped() : undefined}
+						customLabel={project.isArchived ? m.projects_unarchive() : m.projects_archive()}
+						class="hidden xl:inline-flex"
+					/>
+					<ArcaneButton
+						action="base"
+						icon={BoxIcon}
+						size="icon"
+						showLabel={false}
+						loading={isLoading.archiving}
+						onclick={handleArchiveToggle}
+						disabled={archiveRequiresStopped}
+						title={archiveRequiresStopped ? m.projects_archive_requires_stopped() : undefined}
+						customLabel={project.isArchived ? m.projects_unarchive() : m.projects_archive()}
+						class="xl:hidden"
+					/>
+				</IfPermitted>
 				<ActionButtons
 					id={project.id}
 					name={project.name}
@@ -849,16 +862,18 @@
 										</div>
 									</Alert.Description>
 								</div>
-								<ArcaneButton
-									action="base"
-									tone="outline-primary"
-									loading={isLoading.syncing}
-									onclick={handleSyncFromGit}
-									icon={RefreshIcon}
-									customLabel={m.git_sync_from_git()}
-									loadingLabel={m.common_syncing()}
-									class="shrink-0"
-								/>
+								{#if canUpdateProject}
+									<ArcaneButton
+										action="base"
+										tone="outline-primary"
+										loading={isLoading.syncing}
+										onclick={handleSyncFromGit}
+										icon={RefreshIcon}
+										customLabel={m.git_sync_from_git()}
+										loadingLabel={m.common_syncing()}
+										class="shrink-0"
+									/>
+								{/if}
 							</div>
 						</Alert.Root>
 					{/if}

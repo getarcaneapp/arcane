@@ -17,6 +17,8 @@
 	import { toast } from 'svelte-sonner';
 	import { InspectIcon } from '$lib/icons';
 	import * as Tabs from '$lib/components/ui/tabs/index.js';
+	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import { hasPermission } from '$lib/utils/permissions.util';
 
 	let { data } = $props();
 
@@ -289,27 +291,34 @@
 		}
 	}
 
-	const actionButtons: ActionButton[] = $derived([
-		{
-			id: 'scan-all',
-			action: 'base',
-			label: isLoading.scanningAll
-				? `${m.security_scanning()} (${scanProgress.current}/${scanProgress.total})`
-				: m.security_scan_all(),
-			onclick: scanAllImages,
-			loading: isLoading.scanningAll,
-			disabled: isLoading.scanningAll || isLoading.refreshing,
-			icon: InspectIcon
-		},
-		{
+	const currentEnvId = $derived(environmentStore.selected?.id || '0');
+	const canScanVuln = $derived(hasPermission('vulnerabilities:scan', currentEnvId));
+
+	const actionButtons: ActionButton[] = $derived.by(() => {
+		const buttons: ActionButton[] = [];
+		if (canScanVuln) {
+			buttons.push({
+				id: 'scan-all',
+				action: 'base',
+				label: isLoading.scanningAll
+					? `${m.security_scanning()} (${scanProgress.current}/${scanProgress.total})`
+					: m.security_scan_all(),
+				onclick: scanAllImages,
+				loading: isLoading.scanningAll,
+				disabled: isLoading.scanningAll || isLoading.refreshing,
+				icon: InspectIcon
+			});
+		}
+		buttons.push({
 			id: 'refresh',
 			action: 'restart',
 			label: m.common_refresh(),
 			onclick: refreshAll,
 			loading: isLoading.refreshing,
 			disabled: isLoading.refreshing || isLoading.scanningAll
-		}
-	]);
+		});
+		return buttons;
+	});
 </script>
 
 <ResourcePageLayout title={m.security_title()} subtitle={m.security_subtitle()} {actionButtons}>

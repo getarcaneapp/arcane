@@ -31,8 +31,14 @@
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
 	import * as Checkbox from '$lib/components/ui/checkbox';
 	import * as Alert from '$lib/components/ui/alert';
+	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import { hasPermission } from '$lib/utils/permissions.util';
+	import IfPermitted from '$lib/components/if-permitted.svelte';
 
 	let { volumeName }: { volumeName: string } = $props();
+
+	const currentEnvId = $derived(environmentStore.selected?.id || '0');
+	const canBackupVolume = $derived(hasPermission('volumes:backup', currentEnvId));
 
 	let backupsPaginated = $state<VolumeBackupListResponse>({
 		data: [],
@@ -243,38 +249,44 @@
 		</DropdownMenu.Trigger>
 		<DropdownMenu.Content align="end">
 			<DropdownMenu.Group>
-				<DropdownMenu.Item onclick={() => handleRestore(item)}>
-					<RestartIcon class="size-4" />
-					Restore
-				</DropdownMenu.Item>
-				<DropdownMenu.Item onclick={() => openRestoreFilesDialog(item)}>
-					<FileTextIcon class="size-4" />
-					Restore files
-				</DropdownMenu.Item>
+				{#if canBackupVolume}
+					<DropdownMenu.Item onclick={() => handleRestore(item)}>
+						<RestartIcon class="size-4" />
+						Restore
+					</DropdownMenu.Item>
+					<DropdownMenu.Item onclick={() => openRestoreFilesDialog(item)}>
+						<FileTextIcon class="size-4" />
+						Restore files
+					</DropdownMenu.Item>
+				{/if}
 				<DropdownMenu.Item onclick={() => volumeBackupService.downloadBackup(item.id)}>
 					<DownloadIcon class="size-4" />
 					{m.templates_download()}
 				</DropdownMenu.Item>
-				<DropdownMenu.Separator />
-				<DropdownMenu.Item variant="destructive" onclick={() => handleDelete(item)}>
-					<TrashIcon class="size-4" />
-					{m.common_remove()}
-				</DropdownMenu.Item>
+				<IfPermitted perm="volumes:delete">
+					<DropdownMenu.Separator />
+					<DropdownMenu.Item variant="destructive" onclick={() => handleDelete(item)}>
+						<TrashIcon class="size-4" />
+						{m.common_remove()}
+					</DropdownMenu.Item>
+				</IfPermitted>
 			</DropdownMenu.Group>
 		</DropdownMenu.Content>
 	</DropdownMenu.Root>
 {/snippet}
 
 {#snippet ToolbarActions()}
-	<ArcaneButton
-		action="create"
-		customLabel={m.volumes_backup_create()}
-		loading={creating}
-		disabled={creating}
-		onclick={handleCreate}
-		size="sm"
-		icon={AddIcon}
-	/>
+	{#if canBackupVolume}
+		<ArcaneButton
+			action="create"
+			customLabel={m.volumes_backup_create()}
+			loading={creating}
+			disabled={creating}
+			onclick={handleCreate}
+			size="sm"
+			icon={AddIcon}
+		/>
+	{/if}
 {/snippet}
 
 {#snippet BackupMobileCardSnippet({
@@ -397,12 +409,14 @@
 				backupFilesSearch = '';
 			}}
 		/>
-		<ArcaneButton
-			action="create"
-			customLabel="Restore files"
-			onclick={handleRestoreFiles}
-			loading={restoringFiles}
-			disabled={restoringFiles || selectedPaths.length === 0}
-		/>
+		{#if canBackupVolume}
+			<ArcaneButton
+				action="create"
+				customLabel="Restore files"
+				onclick={handleRestoreFiles}
+				loading={restoringFiles}
+				disabled={restoringFiles || selectedPaths.length === 0}
+			/>
+		{/if}
 	{/snippet}
 </ResponsiveDialog>

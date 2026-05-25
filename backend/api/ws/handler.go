@@ -18,6 +18,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
+	"github.com/getarcaneapp/arcane/backend/pkg/authz"
 	docker "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/system"
 	wshub "github.com/getarcaneapp/arcane/backend/pkg/libarcane/ws"
@@ -338,12 +339,12 @@ func NewWebSocketHandler(
 		},
 	}
 	wsGroup := group.Group("/environments/:id/ws", authMiddleware.WithAdminNotRequired().Add())
-	wsGroup.GET("/projects/:projectId/logs", handler.ProjectLogs)
-	wsGroup.GET("/containers/:containerId/logs", handler.ContainerLogs)
-	wsGroup.GET("/containers/:containerId/stats", handler.ContainerStats)
-	wsGroup.GET("/containers/:containerId/terminal", handler.ContainerExec)
-	wsGroup.GET("/swarm/services/:serviceId/logs", handler.ServiceLogs)
-	wsGroup.GET("/system/stats", handler.SystemStats)
+	wsGroup.GET("/projects/:projectId/logs", handler.ProjectLogs, middleware.RequirePermission(authz.PermProjectsLogs))
+	wsGroup.GET("/containers/:containerId/logs", handler.ContainerLogs, middleware.RequirePermission(authz.PermContainersLogs))
+	wsGroup.GET("/containers/:containerId/stats", handler.ContainerStats, middleware.RequirePermission(authz.PermContainersRead))
+	wsGroup.GET("/containers/:containerId/terminal", handler.ContainerExec, middleware.RequirePermission(authz.PermContainersExec))
+	wsGroup.GET("/swarm/services/:serviceId/logs", handler.ServiceLogs, middleware.RequirePermission(authz.PermSwarmServicesLogs))
+	wsGroup.GET("/system/stats", handler.SystemStats, middleware.RequirePermission(authz.PermSystemRead))
 }
 
 // ============================================================================

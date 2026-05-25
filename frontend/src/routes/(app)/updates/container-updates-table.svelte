@@ -16,8 +16,7 @@
 	} from '$lib/services/container-service';
 	import { ContainersIcon, UpdateIcon } from '$lib/icons';
 	import { getContainerDisplayName } from '../containers/container-table.helpers';
-	import userStore from '$lib/stores/user-store';
-	import { fromStore } from 'svelte/store';
+	import IfPermitted from '$lib/components/if-permitted.svelte';
 
 	type ContainerUpdateRow = {
 		id: string;
@@ -42,9 +41,6 @@
 	let selectedIds = $state<string[]>([]);
 	let mobileFieldVisibility = $state<MobileFieldVisibility>({});
 	let updatingContainerIds = $state<Record<string, boolean>>({});
-
-	const storeUser = fromStore(userStore);
-	const isAdmin = $derived(!!storeUser.current?.roles?.includes('admin'));
 
 	function formatUpdateValue(updateInfo: ImageUpdateInfoDto | undefined, mode: 'current' | 'latest') {
 		if (!updateInfo) return '-';
@@ -164,7 +160,7 @@
 {/snippet}
 
 {#snippet ActionsCell({ item }: { item: ContainerUpdateRow })}
-	{#if isAdmin}
+	<IfPermitted perm="containers:autoupdate">
 		<ArcaneButton
 			action="update"
 			size="sm"
@@ -174,7 +170,7 @@
 			disabled={!!updatingContainerIds[item.containerId]}
 			icon={UpdateIcon}
 		/>
-	{/if}
+	</IfPermitted>
 {/snippet}
 
 {#snippet ContainerUpdatesMobileCard({ item }: { item: ContainerUpdateRow })}
