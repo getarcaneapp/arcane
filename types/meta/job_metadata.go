@@ -112,8 +112,8 @@ var jobMetadataRegistry = map[string]JobMetadata{
 	},
 	"image-polling": {
 		ID:             "image-polling",
-		Name:           "Image Polling",
-		Description:    "Checks container registries for new image versions",
+		Name:           "Update Checks",
+		Description:    "Checks container registries for newer image versions",
 		Category:       "updates",
 		SettingsKey:    "pollingInterval",
 		EnabledKey:     "pollingEnabled",

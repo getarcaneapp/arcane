@@ -104,6 +104,16 @@
 					<Switch id="auto-inject-env" bind:checked={$formInputs.autoInjectEnv.value} />
 				</div>
 			</div>
+
+			<div class="space-y-4 rounded-lg border p-4">
+				<div class="flex items-center justify-between">
+					<div class="space-y-0.5">
+						<Label for="polling-enabled" class="text-sm font-medium">{m.docker_enable_polling_label()}</Label>
+						<div class="text-muted-foreground text-xs">{m.docker_enable_polling_description()}</div>
+					</div>
+					<Switch id="polling-enabled" bind:checked={$formInputs.pollingEnabled.value} />
+				</div>
+			</div>
 		</div>
 
 		<div class="space-y-4 rounded-lg border p-4">
