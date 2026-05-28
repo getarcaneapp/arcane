@@ -59,6 +59,22 @@ type ChangePasswordOutput struct {
 	Body base.ApiResponse[base.MessageResponse]
 }
 
+type LogoutAllOtherSessionsOutput struct {
+	Body base.ApiResponse[base.MessageResponse]
+}
+
+type UpdateMyProfileInput struct {
+	Body struct {
+		DisplayName *string `json:"displayName,omitempty"`
+		Email       *string `json:"email,omitempty"`
+		Locale      *string `json:"locale,omitempty"`
+	}
+}
+
+type UpdateMyProfileOutput struct {
+	Body base.ApiResponse[user.User]
+}
+
 type GetCurrentUserOutput struct {
 	Body base.ApiResponse[user.User]
 }
@@ -126,6 +142,32 @@ func RegisterAuth(api huma.API, userService *services.UserService, authService *
 			{"ApiKeyAuth": {}},
 		},
 	}, h.ChangePassword)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "logout-all-other-sessions",
+		Method:      http.MethodPost,
+		Path:        "/auth/sessions/logout-all",
+		Summary:     "Logout all other sessions",
+		Description: "Revoke every session for the current user except the one making this request",
+		Tags:        []string{"Auth"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.LogoutAllOtherSessions)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "update-my-profile",
+		Method:      http.MethodPut,
+		Path:        "/auth/me/profile",
+		Summary:     "Update own profile",
+		Description: "Update the current user's display name and email. Forbidden for OIDC-managed accounts.",
+		Tags:        []string{"Auth"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.UpdateMyProfile)
 }
 
 // Login authenticates a user and returns tokens.
@@ -302,6 +344,88 @@ func (h *AuthHandler) ChangePassword(ctx context.Context, input *ChangePasswordI
 			Data: base.MessageResponse{
 				Message: "Password changed successfully",
 			},
+		},
+	}, nil
+}
+
+// LogoutAllOtherSessions revokes every active session for the current user
+// except the session making this request.
+func (h *AuthHandler) LogoutAllOtherSessions(ctx context.Context, input *struct{}) (*LogoutAllOtherSessionsOutput, error) {
+	if h.authService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	userModel, exists := humamw.GetCurrentUserFromContext(ctx)
+	if !exists {
+		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	}
+
+	currentSessionID, _ := humamw.GetCurrentSessionIDFromContext(ctx)
+	if err := h.authService.LogoutAllOtherSessions(ctx, userModel.ID, currentSessionID); err != nil {
+		return nil, huma.Error500InternalServerError("failed to revoke sessions: " + err.Error())
+	}
+
+	return &LogoutAllOtherSessionsOutput{
+		Body: base.ApiResponse[base.MessageResponse]{
+			Success: true,
+			Data: base.MessageResponse{
+				Message: "All other sessions signed out",
+			},
+		},
+	}, nil
+}
+
+// UpdateMyProfile lets the current user update their own displayName and email.
+// OIDC-managed accounts are read-only here.
+func (h *AuthHandler) UpdateMyProfile(ctx context.Context, input *UpdateMyProfileInput) (*UpdateMyProfileOutput, error) {
+	if h.userService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	currentUser, exists := humamw.GetCurrentUserFromContext(ctx)
+	if !exists {
+		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	}
+
+	isOidcUser := currentUser.OidcSubjectId != nil && *currentUser.OidcSubjectId != ""
+	touchesIdpFields := input.Body.DisplayName != nil || input.Body.Email != nil
+	if isOidcUser && touchesIdpFields {
+		return nil, huma.Error403Forbidden("display name and email are managed by your identity provider")
+	}
+
+	userModel, err := h.userService.GetUser(ctx, currentUser.ID)
+	if err != nil {
+		return nil, huma.Error500InternalServerError((&common.UserRetrievalError{Err: err}).Error())
+	}
+
+	if input.Body.DisplayName != nil {
+		userModel.DisplayName = input.Body.DisplayName
+	}
+	if input.Body.Email != nil {
+		normalized, err := normalizeOptionalEmailInternal(input.Body.Email)
+		if err != nil {
+			return nil, huma.Error400BadRequest(err.Error())
+		}
+		userModel.Email = normalized
+	}
+	if input.Body.Locale != nil {
+		userModel.Locale = input.Body.Locale
+	}
+
+	updated, err := h.userService.UpdateUser(ctx, userModel)
+	if err != nil {
+		return nil, huma.Error500InternalServerError((&common.UserUpdateError{Err: err}).Error())
+	}
+
+	out, err := h.userService.ToUserResponseDto(ctx, *updated)
+	if err != nil {
+		return nil, huma.Error500InternalServerError((&common.UserMappingError{Err: err}).Error())
+	}
+
+	return &UpdateMyProfileOutput{
+		Body: base.ApiResponse[user.User]{
+			Success: true,
+			Data:    out,
 		},
 	}, nil
 }
