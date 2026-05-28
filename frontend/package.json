@@ -22,6 +22,8 @@
     "@codemirror/merge": "^6.12.1",
     "@codemirror/state": "^6.6.0",
     "@codemirror/view": "^6.43.0",
+    "@fontsource-variable/geist-mono": "^5.2.8",
+    "@fontsource-variable/montserrat": "^5.2.8",
     "@lezer/highlight": "^1.2.3",
     "@sveltejs/adapter-static": "^3.0.10",
     "@sveltejs/kit": "^2.61.1",

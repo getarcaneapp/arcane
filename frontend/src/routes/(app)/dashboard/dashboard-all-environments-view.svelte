@@ -634,14 +634,14 @@
 	}
 </script>
 
-<div class="flex h-full min-h-0 flex-col gap-4 overflow-hidden pt-3 md:gap-5 md:pt-4">
+<div class="flex h-full min-h-0 flex-col gap-3 overflow-hidden pt-2 md:gap-4 md:pt-3">
 	<header
-		class="dark:border-surface/80 dark:bg-surface/10 shrink-0 rounded-xl border border-white/80 bg-white/10 p-4 shadow-sm backdrop-blur-sm sm:p-5"
+		class="dark:border-surface/80 dark:bg-surface/10 shrink-0 rounded-xl border border-white/80 bg-white/10 p-3 shadow-sm backdrop-blur-sm sm:p-4"
 	>
-		<div class="relative flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-			<div class="space-y-1.5">
+		<div class="relative flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+			<div class="space-y-1">
 				<p class="text-muted-foreground text-[11px] font-semibold tracking-[0.14em] uppercase">{m.dashboard_title()}</p>
-				<h1 class="text-2xl font-semibold tracking-tight sm:text-3xl">{heroGreeting}</h1>
+				<h1 class="text-xl font-semibold tracking-tight sm:text-2xl">{heroGreeting}</h1>
 			</div>
 
 			<ArcaneButton
@@ -655,64 +655,64 @@
 		</div>
 	</header>
 
-	<section class="shrink-0 space-y-3">
-		<h2 class="text-lg font-semibold tracking-tight">{m.common_overview()}</h2>
+	<section class="shrink-0 space-y-2">
+		<h2 class="text-base font-semibold tracking-tight">{m.common_overview()}</h2>
 
 		{#await environmentBoardStatePromise}
-			<div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+			<div class="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-4">
 				{#each [1, 2, 3, 4] as tile (tile)}
-					<div class="border-border/50 bg-background/50 rounded-xl border p-4">
+					<div class="border-border/50 bg-background/50 rounded-xl border p-3">
 						<Skeleton class="h-3 w-24" />
-						<Skeleton class="mt-3 h-9 w-16" />
-						<Skeleton class="mt-2 h-4 w-32" />
+						<Skeleton class="mt-2 h-7 w-16" />
+						<Skeleton class="mt-1.5 h-3.5 w-32" />
 					</div>
 				{/each}
 			</div>
 		{:then boardState}
 			{@const summary = boardState.summary}
-			<div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-				<div class="border-border/50 bg-background/50 rounded-xl border p-4">
+			<div class="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-4">
+				<div class="border-border/50 bg-background/50 rounded-xl border p-3">
 					<div class="text-muted-foreground flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase">
 						<EnvironmentsIcon class="size-3.5" />
 						<span>{m.environments_title()}</span>
 					</div>
-					<div class="mt-3 text-3xl font-semibold tracking-tight tabular-nums">{summary.totalEnvironments}</div>
-					<div class="text-muted-foreground mt-1 text-sm">{formatEnvironmentOverviewLabel(summary)}</div>
+					<div class="mt-2 text-2xl font-semibold tracking-tight tabular-nums">{summary.totalEnvironments}</div>
+					<div class="text-muted-foreground mt-0.5 text-xs">{formatEnvironmentOverviewLabel(summary)}</div>
 				</div>
 
-				<div class="border-border/50 bg-background/50 rounded-xl border p-4">
+				<div class="border-border/50 bg-background/50 rounded-xl border p-3">
 					<div class="text-muted-foreground flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase">
 						<ContainersIcon class="size-3.5" />
 						<span>{m.containers_title()}</span>
 					</div>
-					<div class="mt-3 text-3xl font-semibold tracking-tight tabular-nums">{summary.totalContainers}</div>
-					<div class="text-muted-foreground mt-1 text-sm">{formatContainerOverviewLabel(summary)}</div>
+					<div class="mt-2 text-2xl font-semibold tracking-tight tabular-nums">{summary.totalContainers}</div>
+					<div class="text-muted-foreground mt-0.5 text-xs">{formatContainerOverviewLabel(summary)}</div>
 				</div>
 
-				<div class="border-border/50 bg-background/50 rounded-xl border p-4">
+				<div class="border-border/50 bg-background/50 rounded-xl border p-3">
 					<div class="text-muted-foreground flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase">
 						<ImagesIcon class="size-3.5" />
 						<span>{m.images_title()}</span>
 					</div>
-					<div class="mt-3 text-3xl font-semibold tracking-tight tabular-nums">{summary.totalImages}</div>
-					<div class="text-muted-foreground mt-1 text-sm">{formatImageOverviewLabel(summary)}</div>
+					<div class="mt-2 text-2xl font-semibold tracking-tight tabular-nums">{summary.totalImages}</div>
+					<div class="text-muted-foreground mt-0.5 text-xs">{formatImageOverviewLabel(summary)}</div>
 				</div>
 
-				<div class="border-border/50 bg-background/50 rounded-xl border p-4">
+				<div class="border-border/50 bg-background/50 rounded-xl border p-3">
 					<div class="text-muted-foreground flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase">
 						<VolumesIcon class="size-3.5" />
 						<span>{m.dashboard_all_storage_title()}</span>
 					</div>
-					<div class="mt-3 text-3xl font-semibold tracking-tight tabular-nums">{bytes.format(summary.totalImageSize)}</div>
-					<div class="text-muted-foreground mt-1 text-sm">{formatStorageOverviewLabel(summary)}</div>
+					<div class="mt-2 text-2xl font-semibold tracking-tight tabular-nums">{bytes.format(summary.totalImageSize)}</div>
+					<div class="text-muted-foreground mt-0.5 text-xs">{formatStorageOverviewLabel(summary)}</div>
 				</div>
 			</div>
 		{/await}
 	</section>
 
 	<section class="flex min-h-0 flex-1 flex-col overflow-hidden">
-		<div class="mb-3 flex items-center justify-between gap-3">
-			<h2 class="text-lg font-semibold tracking-tight">{m.dashboard_all_environment_board_title()}</h2>
+		<div class="mb-2 flex items-center justify-between gap-3">
+			<h2 class="text-base font-semibold tracking-tight">{m.dashboard_all_environment_board_title()}</h2>
 		</div>
 
 		{#if environmentCards.length === 0}
