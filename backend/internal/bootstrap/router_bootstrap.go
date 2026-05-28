@@ -37,8 +37,6 @@ var loggerSkipPatterns = []string{
 	"GET /api/environments/*/ws/system/stats",
 	"GET /_app/*",
 	"GET /img",
-	"GET /api/fonts/sans",
-	"GET /api/fonts/mono",
 	"GET /api/health",
 	"HEAD /api/health",
 	// Static branding / PWA assets — browsers re-request these frequently
@@ -191,7 +189,6 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services)
 		Oidc:              appServices.Oidc,
 		ApiKey:            appServices.ApiKey,
 		AppImages:         appServices.AppImages,
-		Font:              appServices.Font,
 		Project:           appServices.Project,
 		Event:             appServices.Event,
 		Activity:          appServices.Activity,
