@@ -9,7 +9,7 @@ const ROUTES = {
 
 async function navigateToImages(page: Page) {
 	await page.goto(ROUTES.page);
-	await page.waitForLoadState('networkidle');
+	await page.waitForLoadState('load');
 }
 
 async function fetchAllImagesForUsage(page: Page): Promise<any[]> {
@@ -135,7 +135,7 @@ test.describe('Images Page', () => {
 		await firstRow.getByRole('button', { name: 'Open menu' }).click();
 		await page.getByRole('menuitem', { name: 'Pull' }).click();
 
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		await expect(
 			page.locator(`li[data-sonner-toast][data-type="success"] div[data-title]`)

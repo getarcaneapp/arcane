@@ -24,6 +24,7 @@
 	import { SvelteMap } from 'svelte/reactivity';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { hasPermission } from '$lib/utils/auth';
+	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 
 	let {
 		volumes = $bindable(),
@@ -114,8 +115,11 @@
 						result: await tryCatch(volumeService.deleteVolume(safeName)),
 						message: m.common_remove_failed({ resource: `${m.resource_volume()} "${safeName}"` }),
 						setLoadingState: (value) => (isLoading.removing = value),
-						onSuccess: async () => {
-							toast.success(m.common_remove_success({ resource: `${m.resource_volume()} "${safeName}"` }));
+						onSuccess: async (data) => {
+							toast.success(
+								m.common_remove_success({ resource: `${m.resource_volume()} "${safeName}"` }),
+								activityToastOptions(extractActivityId(data))
+							);
 							await refreshVolumes();
 						}
 					});

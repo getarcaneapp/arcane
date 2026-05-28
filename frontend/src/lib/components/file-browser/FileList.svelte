@@ -22,6 +22,7 @@
 	import { ArcaneButton } from '$lib/components/arcane-button';
 	import { bytes } from '$lib/utils/formatting';
 	import { format } from 'date-fns';
+	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 
 	let {
 		files,
@@ -40,7 +41,7 @@
 		persistKey?: string;
 		onNavigate: (path: string) => void;
 		onRefresh: () => void;
-		onDelete?: (file: FileEntry) => Promise<void>;
+		onDelete?: (file: FileEntry) => Promise<unknown>;
 		onDownload: (file: FileEntry) => Promise<void>;
 		onPreview: (file: FileEntry) => void;
 		onRestoreFromBackup?: (file: FileEntry) => void;
@@ -111,8 +112,8 @@
 				destructive: true,
 				action: async () => {
 					try {
-						await onDelete(file);
-						toast.success(m.common_delete_success({ resource: file.name }));
+						const result = await onDelete(file);
+						toast.success(m.common_delete_success({ resource: file.name }), activityToastOptions(extractActivityId(result)));
 						onRefresh();
 					} catch (e: any) {
 						toast.error(e.message || m.common_delete_failed({ resource: file.name }));

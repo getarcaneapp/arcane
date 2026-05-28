@@ -2,6 +2,12 @@ packages:
   - frontend
   - tests
   - email-templates
+
+packageExtensions:
+  svelte-codemirror-editor@2.1.0:
+    dependencies:
+      "@codemirror/search": ^6.7.0
+
 overrides:
   devalue: ">=5.8.1"
   valibot: ^1.2.0

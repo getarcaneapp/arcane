@@ -34,6 +34,7 @@
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { hasPermission } from '$lib/utils/auth';
 	import IfPermitted from '$lib/components/if-permitted.svelte';
+	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 
 	let { volumeName }: { volumeName: string } = $props();
 
@@ -85,8 +86,8 @@
 	async function handleCreate() {
 		creating = true;
 		try {
-			await volumeBackupService.createBackup(volumeName);
-			toast.success(m.common_success());
+			const result = await volumeBackupService.createBackup(volumeName);
+			toast.success(m.common_success(), activityToastOptions(extractActivityId(result)));
 			await loadData(requestOptions);
 		} catch (e: any) {
 			toast.error(e.message || m.common_failed());
@@ -104,8 +105,8 @@
 				destructive: true,
 				action: async () => {
 					try {
-						await volumeBackupService.deleteBackup(backup.id);
-						toast.success(m.common_delete_success({ resource: 'Backup' }));
+						const result = await volumeBackupService.deleteBackup(backup.id);
+						toast.success(m.common_delete_success({ resource: 'Backup' }), activityToastOptions(extractActivityId(result)));
 						await loadData(requestOptions);
 					} catch (e: any) {
 						toast.error(e.message || m.common_delete_failed({ resource: 'Backup' }));
@@ -173,8 +174,8 @@
 				destructive: !!usageWarning,
 				action: async () => {
 					try {
-						await volumeBackupService.restoreBackup(volumeName, backup.id);
-						toast.success(m.volumes_backup_restore_success());
+						const result = await volumeBackupService.restoreBackup(volumeName, backup.id);
+						toast.success(m.volumes_backup_restore_success(), activityToastOptions(extractActivityId(result)));
 						await loadData(requestOptions);
 					} catch (e: any) {
 						toast.error(e.message || m.common_failed());
@@ -190,8 +191,11 @@
 
 		restoringFiles = true;
 		try {
-			await volumeBackupService.restoreBackupFiles(volumeName, restoreTarget.id, selectedPaths);
-			toast.success(m.volumes_backup_restore_files_success({ count: selectedPaths.length }));
+			const result = await volumeBackupService.restoreBackupFiles(volumeName, restoreTarget.id, selectedPaths);
+			toast.success(
+				m.volumes_backup_restore_files_success({ count: selectedPaths.length }),
+				activityToastOptions(extractActivityId(result))
+			);
 			showRestoreFiles = false;
 		} catch (e: any) {
 			toast.error(e.message || m.common_failed());
@@ -378,7 +382,7 @@
 					<div class="text-muted-foreground flex items-center justify-center py-8 text-sm">No files found in this backup.</div>
 				{:else}
 					<div class="divide-border/40 divide-y">
-						{#each filteredBackupFiles as filePath}
+						{#each filteredBackupFiles as filePath (filePath)}
 							<div class="flex items-center gap-3 px-3 py-2">
 								<Checkbox.Root
 									checked={selectedPaths.includes(filePath)}

@@ -58,7 +58,11 @@ func ComposeRestart(ctx context.Context, proj *types.Project, services []string)
 		return err
 	}
 	defer func() { _ = c.Close() }()
-	return c.svc.Restart(restartCtx, proj.Name, api.RestartOptions{Services: services})
+
+	progressWriter, _ := ctx.Value(ProgressWriterKey{}).(io.Writer)
+	return runWithContainerPolling(restartCtx, c.svc, proj.Name, progressWriter, func() error {
+		return c.svc.Restart(restartCtx, proj.Name, api.RestartOptions{Services: services})
+	})
 }
 
 func ComposePull(ctx context.Context, proj *types.Project, services []string) error {
@@ -92,7 +96,6 @@ func ComposeStop(ctx context.Context, proj *types.Project, services []string) er
 	if len(services) == 0 {
 		return nil
 	}
-	// Detach from the HTTP request context. See #1209.
 	stopCtx, cancel := detachFromHTTPContextInternal(ctx)
 	defer cancel()
 
@@ -101,7 +104,11 @@ func ComposeStop(ctx context.Context, proj *types.Project, services []string) er
 		return err
 	}
 	defer func() { _ = c.Close() }()
-	return c.svc.Stop(stopCtx, proj.Name, api.StopOptions{Services: services})
+
+	progressWriter, _ := ctx.Value(ProgressWriterKey{}).(io.Writer)
+	return runWithContainerPolling(stopCtx, c.svc, proj.Name, progressWriter, func() error {
+		return c.svc.Stop(stopCtx, proj.Name, api.StopOptions{Services: services})
+	})
 }
 
 func ComposeUp(ctx context.Context, proj *types.Project, services []string, removeOrphans bool, forceRecreate bool) error {
@@ -245,6 +252,69 @@ func deployPhaseFromSummary(cs api.ContainerSummary) string {
 	}
 }
 
+func runWithContainerPolling(ctx context.Context, svc api.Compose, projectName string, progressWriter io.Writer, operation func() error) error {
+	if progressWriter == nil {
+		return operation()
+	}
+
+	pollCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	pollDone := make(chan struct{})
+	go func() {
+		defer close(pollDone)
+		pollContainerStatus(pollCtx, svc, projectName, progressWriter)
+	}()
+
+	err := operation()
+	cancel()
+	<-pollDone
+	return err
+}
+
+func pollContainerStatus(ctx context.Context, svc api.Compose, projectName string, progressWriter io.Writer) {
+	ticker := time.NewTicker(300 * time.Millisecond)
+	defer ticker.Stop()
+
+	lastState := map[string]string{}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			containers, err := svc.Ps(ctx, projectName, api.PsOptions{All: true})
+			if err != nil {
+				continue
+			}
+			for _, cs := range containers {
+				name := strings.TrimSpace(cs.Service)
+				if name == "" {
+					name = strings.TrimSpace(cs.Name)
+				}
+				if name == "" {
+					continue
+				}
+
+				state := string(cs.State)
+				sig := state + "|" + string(cs.Health) + "|" + strings.TrimSpace(cs.Status)
+				if lastState[name] == sig {
+					continue
+				}
+				lastState[name] = sig
+
+				writeJSONLine(progressWriter, map[string]any{
+					"type":    "container",
+					"service": name,
+					"state":   state,
+					"health":  string(cs.Health),
+					"status":  strings.TrimSpace(cs.Status),
+				})
+			}
+		}
+	}
+}
+
 func ComposePs(ctx context.Context, proj *types.Project, services []string, all bool) ([]api.ContainerSummary, error) {
 	c, err := NewClient(ctx)
 	if err != nil {
@@ -265,7 +335,10 @@ func ComposeDown(ctx context.Context, proj *types.Project, removeVolumes bool) e
 	}
 	defer func() { _ = c.Close() }()
 
-	return c.svc.Down(downCtx, proj.Name, api.DownOptions{RemoveOrphans: true, Volumes: removeVolumes})
+	progressWriter, _ := ctx.Value(ProgressWriterKey{}).(io.Writer)
+	return runWithContainerPolling(downCtx, c.svc, proj.Name, progressWriter, func() error {
+		return c.svc.Down(downCtx, proj.Name, api.DownOptions{RemoveOrphans: true, Volumes: removeVolumes})
+	})
 }
 
 func ComposeLogs(ctx context.Context, projectName string, out io.Writer, follow bool, tail string) error {
