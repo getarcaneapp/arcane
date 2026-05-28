@@ -481,6 +481,27 @@ func (s *ApiKeyService) ListApiKeys(ctx context.Context, params pagination.Query
 	return result, paginationResp, nil
 }
 
+// ListApiKeysByUser returns every non-static, non-bootstrap API key owned by
+// userID. Used by the self-service personal-keys flow.
+func (s *ApiKeyService) ListApiKeysByUser(ctx context.Context, userID string) ([]apikey.ApiKey, error) {
+	var apiKeys []models.ApiKey
+	if err := s.db.WithContext(ctx).
+		Where("user_id = ?", userID).
+		Order("created_at DESC").
+		Find(&apiKeys).Error; err != nil {
+		return nil, fmt.Errorf("failed to list user api keys: %w", err)
+	}
+
+	result := make([]apikey.ApiKey, 0, len(apiKeys))
+	for i := range apiKeys {
+		if isStaticAPIKeyInternal(apiKeys[i]) || isEnvironmentBootstrapKeyInternal(apiKeys[i]) {
+			continue
+		}
+		result = append(result, s.toAPIKeyDTOWithPermissionsInternal(ctx, &apiKeys[i]))
+	}
+	return result, nil
+}
+
 func (s *ApiKeyService) UpdateApiKey(ctx context.Context, callerUserID, id string, req apikey.UpdateApiKey) (*apikey.ApiKey, error) {
 	var ak models.ApiKey
 	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&ak).Error; err != nil {

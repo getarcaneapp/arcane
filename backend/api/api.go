@@ -143,7 +143,6 @@ type Services struct {
 	Oidc              *services.OidcService
 	ApiKey            *services.ApiKeyService
 	AppImages         *services.ApplicationImagesService
-	Font              *services.FontService
 	Project           *services.ProjectService
 	Event             *services.EventService
 	Activity          *services.ActivityService
@@ -317,7 +316,6 @@ func registerHandlers(api huma.API, svc *Services) {
 	var oidcSvc *services.OidcService
 	var apiKeySvc *services.ApiKeyService
 	var appImagesSvc *services.ApplicationImagesService
-	var fontSvc *services.FontService
 	var projectSvc *services.ProjectService
 	var eventSvc *services.EventService
 	var activitySvc *services.ActivityService
@@ -357,7 +355,6 @@ func registerHandlers(api huma.API, svc *Services) {
 		oidcSvc = svc.Oidc
 		apiKeySvc = svc.ApiKey
 		appImagesSvc = svc.AppImages
-		fontSvc = svc.Font
 		projectSvc = svc.Project
 		eventSvc = svc.Event
 		activitySvc = svc.Activity
@@ -396,7 +393,6 @@ func registerHandlers(api huma.API, svc *Services) {
 	handlers.RegisterApiKeys(api, apiKeySvc)
 	handlers.RegisterRoles(api, roleSvc)
 	handlers.RegisterAppImages(api, appImagesSvc)
-	handlers.RegisterFonts(api, fontSvc)
 	handlers.RegisterUsers(api, userSvc, authSvc)
 	handlers.RegisterProjects(api, projectSvc, activitySvc)
 	handlers.RegisterVersion(api, versionSvc)

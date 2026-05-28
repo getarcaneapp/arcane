@@ -150,8 +150,6 @@ type ArcaneApiEndpoints struct {
 	AppImagesFaviconEndpoint string
 	AppImagesLogoEndpoint    string
 	AppImagesProfileEndpoint string
-	FontsMonoEndpoint        string
-	FontsSansEndpoint        string
 
 	// Customization
 	CustomizeCategoriesEndpoint string
@@ -321,8 +319,6 @@ var Endpoints = ArcaneApiEndpoints{ //nolint:gosec // static endpoint paths; aut
 	AppImagesFaviconEndpoint: "/api/app-images/favicon",
 	AppImagesLogoEndpoint:    "/api/app-images/logo",
 	AppImagesProfileEndpoint: "/api/app-images/profile",
-	FontsMonoEndpoint:        "/api/fonts/mono",
-	FontsSansEndpoint:        "/api/fonts/sans",
 
 	// Customization
 	CustomizeCategoriesEndpoint: "/api/customize/categories",

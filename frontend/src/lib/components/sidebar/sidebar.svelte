@@ -24,9 +24,7 @@
 	import userStore from '$lib/stores/user-store';
 	import settingsStore from '$lib/stores/config-store';
 	import { m } from '$lib/paraglide/messages';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import VersionInfoDialog from '$lib/components/dialogs/version-info-dialog.svelte';
-	import { LogoutIcon } from '$lib/icons';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { fromStore } from 'svelte/store';
 
@@ -129,33 +127,9 @@
 	<Sidebar.Footer>
 		<SidebarUpdatebanner {isCollapsed} {versionInformation} debug={false} />
 		{#if effectiveUser}
-			{#if isCollapsed}
-				<div class="px-0 pb-2">
-					<div class="flex flex-col items-center gap-2">
-						<SidebarUser {isCollapsed} user={effectiveUser} />
-					</div>
-				</div>
-			{:else}
-				<div class="px-3 pb-2">
-					<div class="flex items-center gap-2">
-						<SidebarUser {isCollapsed} user={effectiveUser} />
-						{#if !autoLoginEnabled}
-							<form action="/logout" method="POST" class="ml-auto">
-								<ArcaneButton
-									action="base"
-									tone="ghost"
-									title={m.common_logout()}
-									type="submit"
-									class="text-muted-foreground hover:text-destructive hover:bg-destructive/10 h-9 w-9 rounded-xl p-0"
-									icon={LogoutIcon}
-									showLabel={false}
-									customLabel={m.common_logout()}
-								/>
-							</form>
-						{/if}
-					</div>
-				</div>
-			{/if}
+			<div class={isCollapsed ? 'px-0 pb-2' : 'px-3 pb-2'}>
+				<SidebarUser {isCollapsed} user={effectiveUser} {autoLoginEnabled} />
+			</div>
 		{/if}
 		<div class={`flex items-center justify-center ${isCollapsed ? 'px-1' : 'px-4'}`}>
 			<button
