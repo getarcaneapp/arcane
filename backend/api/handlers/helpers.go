@@ -11,6 +11,25 @@ import (
 	"github.com/getarcaneapp/arcane/backend/pkg/remenv"
 )
 
+// ActivityAppContext carries the app lifecycle context through handler registration.
+type ActivityAppContext struct {
+	ctx context.Context
+}
+
+// NewActivityAppContext wraps the app lifecycle context for handler constructors.
+func NewActivityAppContext(ctx context.Context) ActivityAppContext {
+	return ActivityAppContext{ctx: ctx}
+}
+
+// ContextInternal returns the wrapped app lifecycle context.
+func (c ActivityAppContext) ContextInternal() context.Context {
+	return c.contextInternal()
+}
+
+func (c ActivityAppContext) contextInternal() context.Context {
+	return c.ctx
+}
+
 // buildPaginationParamsInternal converts query parameters to pagination.QueryParams.
 // A limit of -1 means "show all items" (no pagination).
 func buildPaginationParamsInternal(start, limit int, sortCol, sortDir, search string) pagination.QueryParams {
