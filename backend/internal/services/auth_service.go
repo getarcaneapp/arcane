@@ -813,6 +813,18 @@ func (s *AuthService) RevokeSession(ctx context.Context, sessionID string) error
 	return s.sessionService.RevokeSession(ctx, sessionID)
 }
 
+// LogoutAllOtherSessions revokes every active session for userID except
+// currentSessionID, so the caller stays signed in on their current device.
+func (s *AuthService) LogoutAllOtherSessions(ctx context.Context, userID, currentSessionID string) error {
+	if s.sessionService == nil {
+		return nil
+	}
+	s.tokenCache.DeleteFunc(func(_ string, e verifiedTokenEntry) bool {
+		return e.User.ID == userID && e.SessionID != currentSessionID
+	})
+	return s.sessionService.RevokeAllUserSessionsExcept(ctx, userID, currentSessionID)
+}
+
 func (s *AuthService) createSessionAndTokensInternal(ctx context.Context, user *models.User, meta auth.SessionMeta) (*TokenPair, error) {
 	if s.sessionService == nil {
 		return nil, &common.SessionServiceUnavailableError{}
