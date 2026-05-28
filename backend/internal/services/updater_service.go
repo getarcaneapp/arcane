@@ -490,7 +490,7 @@ func (s *UpdaterService) completeAutoUpdateActivityInternal(ctx context.Context,
 		message = errText
 	}
 
-	if _, err := s.activityService.CompleteActivity(context.WithoutCancel(ctx), activityID, status, message, errMessage); err != nil {
+	if _, err := s.activityService.CompleteActivity(utils.ActivityRuntimeContext(ctx, nil), activityID, status, message, errMessage); err != nil {
 		slog.DebugContext(ctx, "failed to complete auto-update activity", "activityId", activityID, "error", err)
 	}
 }

@@ -91,7 +91,7 @@ func (s *SystemService) StartPruneAll(ctx context.Context, environmentID string,
 		return &system.PruneAllResult{Success: true, ActivityID: utils.StringPtrFromTrimmed(activityID)}
 	}
 
-	backgroundCtx := context.WithoutCancel(ctx)
+	backgroundCtx := utils.ActivityRuntimeContext(ctx, nil)
 
 	go func() {
 		defer s.finishSystemPruneInternal(environmentID)
@@ -282,7 +282,7 @@ func (s *SystemService) completeSystemPruneActivityInternal(ctx context.Context,
 		joined := strings.Join(result.Errors, "; ")
 		errMessage = &joined
 	}
-	if _, err := s.activityService.CompleteActivity(context.WithoutCancel(ctx), activityID, status, message, errMessage); err != nil {
+	if _, err := s.activityService.CompleteActivity(utils.ActivityRuntimeContext(ctx, nil), activityID, status, message, errMessage); err != nil {
 		slog.DebugContext(ctx, "failed to complete system prune activity", "activityId", activityID, "error", err)
 	}
 }
@@ -433,7 +433,7 @@ func (s *SystemService) completeSystemContainerActivityInternal(ctx context.Cont
 		errMessage = &message
 	}
 
-	if _, err := s.activityService.CompleteActivity(context.WithoutCancel(ctx), activityID, status, message, errMessage); err != nil {
+	if _, err := s.activityService.CompleteActivity(utils.ActivityRuntimeContext(ctx, nil), activityID, status, message, errMessage); err != nil {
 		slog.DebugContext(ctx, "failed to complete system container activity", "activityId", activityID, "error", err)
 	}
 }

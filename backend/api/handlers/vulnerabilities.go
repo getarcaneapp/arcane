@@ -9,6 +9,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils"
 	"github.com/getarcaneapp/arcane/types/base"
 	"github.com/getarcaneapp/arcane/types/vulnerability"
 )
@@ -16,6 +17,7 @@ import (
 // VulnerabilityHandler provides Huma-based vulnerability scanning endpoints.
 type VulnerabilityHandler struct {
 	vulnerabilityService *services.VulnerabilityService
+	appCtx               context.Context
 }
 
 // --- Huma Input/Output Types ---
@@ -122,9 +124,10 @@ type GetScannerStatusOutput struct {
 }
 
 // RegisterVulnerability registers vulnerability scanning routes using Huma.
-func RegisterVulnerability(api huma.API, vulnerabilityService *services.VulnerabilityService) {
+func RegisterVulnerability(api huma.API, vulnerabilityService *services.VulnerabilityService, appCtx ActivityAppContext) {
 	h := &VulnerabilityHandler{
 		vulnerabilityService: vulnerabilityService,
+		appCtx:               appCtx.contextInternal(),
 	}
 
 	huma.Register(api, huma.Operation{
@@ -307,7 +310,8 @@ func (h *VulnerabilityHandler) ScanImage(ctx context.Context, input *ScanImageIn
 		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
 	}
 
-	result, err := h.vulnerabilityService.ScanImage(ctx, input.EnvironmentID, input.ImageID, *user)
+	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	result, err := h.vulnerabilityService.ScanImage(runtimeCtx, input.EnvironmentID, input.ImageID, *user)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.VulnerabilityScanError{Err: err}).Error())
 	}
