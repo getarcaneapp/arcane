@@ -275,13 +275,14 @@ func (s *ActivityService) CompleteActivity(ctx context.Context, activityID strin
 			level = models.ActivityMessageLevelWarning
 		case models.ActivityStatusQueued, models.ActivityStatusRunning, models.ActivityStatusSuccess:
 		}
-		if _, err := s.AppendMessage(context.WithoutCancel(ctx), activityID, AppendActivityMessageRequest{
+		activityCtx := utils.ActivityRuntimeContext(ctx, nil)
+		if _, err := s.AppendMessage(activityCtx, activityID, AppendActivityMessageRequest{
 			Level:   level,
 			Message: finalMessage,
 		}); err != nil {
 			slog.DebugContext(ctx, "failed to append final activity message", "activityId", activityID, "error", err)
 		}
-		if err := s.db.WithContext(context.WithoutCancel(ctx)).First(&model, "id = ?", activityID).Error; err != nil {
+		if err := s.db.WithContext(activityCtx).First(&model, "id = ?", activityID).Error; err != nil {
 			slog.DebugContext(ctx, "failed to reload activity after appending message", "activityId", activityID, "error", err)
 		}
 	}

@@ -11,6 +11,8 @@ import (
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
+
+	"github.com/getarcaneapp/arcane/backend/pkg/utils"
 )
 
 // ProgressWriterKey can be set on a context to enable JSON-line progress updates.
@@ -45,6 +47,9 @@ const defaultComposeTimeout = 30 * time.Minute
 // timeouts and proxy deadline cancellations. A standalone timeout is applied
 // so the operation cannot run forever. See #1209.
 func detachFromHTTPContextInternal(parent context.Context) (context.Context, context.CancelFunc) {
+	if utils.IsAppLifecycleContext(parent) {
+		return context.WithTimeout(parent, defaultComposeTimeout)
+	}
 	ctx := context.WithoutCancel(parent)
 	return context.WithTimeout(ctx, defaultComposeTimeout)
 }

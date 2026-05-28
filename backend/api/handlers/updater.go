@@ -10,6 +10,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils"
 	"github.com/getarcaneapp/arcane/types/base"
 	"github.com/getarcaneapp/arcane/types/updater"
 )
@@ -17,6 +18,7 @@ import (
 // UpdaterHandler provides Huma-based updater management endpoints.
 type UpdaterHandler struct {
 	updaterService *services.UpdaterService
+	appCtx         context.Context
 }
 
 // --- Huma Input/Output Wrappers ---
@@ -57,9 +59,10 @@ type GetUpdaterHistoryOutput struct {
 }
 
 // RegisterUpdater registers updater management routes using Huma.
-func RegisterUpdater(api huma.API, updaterService *services.UpdaterService) {
+func RegisterUpdater(api huma.API, updaterService *services.UpdaterService, appCtx ActivityAppContext) {
 	h := &UpdaterHandler{
 		updaterService: updaterService,
+		appCtx:         appCtx.contextInternal(),
 	}
 
 	huma.Register(api, huma.Operation{
@@ -130,7 +133,8 @@ func (h *UpdaterHandler) RunUpdater(ctx context.Context, input *RunUpdaterInput)
 		dryRun = input.Body.DryRun
 	}
 
-	out, err := h.updaterService.ApplyPending(ctx, dryRun)
+	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	out, err := h.updaterService.ApplyPending(runtimeCtx, dryRun)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.UpdaterRunError{Err: err}).Error())
 	}
@@ -189,7 +193,8 @@ func (h *UpdaterHandler) UpdateContainer(ctx context.Context, input *UpdateConta
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	out, err := h.updaterService.UpdateSingleContainer(ctx, input.ContainerID)
+	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	out, err := h.updaterService.UpdateSingleContainer(runtimeCtx, input.ContainerID)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.UpdaterRunError{Err: err}).Error())
 	}
