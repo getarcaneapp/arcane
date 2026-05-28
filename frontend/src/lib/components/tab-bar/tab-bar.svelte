@@ -13,7 +13,7 @@
 	let { items, onValueChange, class: className }: Props = $props();
 </script>
 
-<Tabs.List class={cn('scrollbar-hide flex w-full justify-start gap-4 overflow-x-auto', className)}>
+<Tabs.List class={cn('scrollbar-hide inline-flex max-w-full justify-start gap-1 overflow-x-auto', className)}>
 	{#each items as item}
 		{@const IconComponent = item.icon}
 		<Tabs.Trigger
