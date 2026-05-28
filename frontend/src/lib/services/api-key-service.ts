@@ -25,6 +25,18 @@ export default class ApiKeyAPIService extends BaseAPIService {
 	async delete(id: string): Promise<void> {
 		return this.handleResponse(this.api.delete(`/api-keys/${id}`)) as Promise<void>;
 	}
+
+	async listMine(): Promise<ApiKey[]> {
+		return this.handleResponse(this.api.get('/auth/me/api-keys')) as Promise<ApiKey[]>;
+	}
+
+	async createMine(apiKey: CreateApiKey): Promise<ApiKeyCreated> {
+		return this.handleResponse(this.api.post('/auth/me/api-keys', apiKey)) as Promise<ApiKeyCreated>;
+	}
+
+	async deleteMine(id: string): Promise<void> {
+		return this.handleResponse(this.api.delete(`/auth/me/api-keys/${id}`)) as Promise<void>;
+	}
 }
 
 export const apiKeyService = new ApiKeyAPIService();
