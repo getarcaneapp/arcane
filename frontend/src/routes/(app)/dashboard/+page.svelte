@@ -429,7 +429,7 @@
 
 <Tabs.Root value={activeView} class="w-full">
 	<div class="pt-3 md:pt-4">
-		<TabBar items={viewTabs} value={activeView} onValueChange={handleViewChange} class="w-full" />
+		<TabBar items={viewTabs} value={activeView} onValueChange={handleViewChange} />
 	</div>
 
 	{#if activeView === 'all'}
