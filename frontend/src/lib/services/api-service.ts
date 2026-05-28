@@ -161,6 +161,66 @@ function getRequestPath(url: string, baseURL: string): string {
 }
 
 let tokenRefreshHandler: (() => Promise<string | null>) | null = null;
+const skipAuthPathsInternal = [
+	'/auth/login',
+	'/auth/logout',
+	'/auth/refresh',
+	'/auth/oidc',
+	'/auth/oidc/login',
+	'/auth/oidc/callback',
+	'/auth/auto-login',
+	'/auth/auto-login-config',
+	'/settings/public'
+];
+
+type UnauthorizedActionInternal = 'none' | 'redirect' | 'retry';
+
+function isAuthPagePathInternal(pathname: string): boolean {
+	return (
+		pathname.startsWith('/login') ||
+		pathname.startsWith('/logout') ||
+		pathname.startsWith('/oidc') ||
+		pathname.startsWith('/auth/oidc')
+	);
+}
+
+export async function handleUnauthorizedResponseInternal(
+	requestPath: string,
+	retry = false,
+	serverMsg?: string | null
+): Promise<UnauthorizedActionInternal> {
+	if (typeof window === 'undefined' || retry) {
+		return 'none';
+	}
+
+	const isVersionMismatch = serverMsg?.toLowerCase().includes('application has been updated');
+	const isAuthApi = skipAuthPathsInternal.some((path) => requestPath.startsWith(path));
+	const pathname = window.location.pathname || '/';
+	const isOnAuthPage = isAuthPagePathInternal(pathname);
+
+	if (!isAuthApi && !isOnAuthPage && tokenRefreshHandler) {
+		try {
+			await tokenRefreshHandler();
+			return 'retry';
+		} catch {
+			if (isVersionMismatch) {
+				toast.info('Application has been updated. Please log in again.');
+			}
+			const redirectTo = encodeURIComponent(pathname);
+			window.location.replace(`/login?redirect=${redirectTo}`);
+			return 'redirect';
+		}
+	}
+
+	if (!isAuthApi && !isOnAuthPage && isVersionMismatch) {
+		toast.info('Application has been updated. Please log in again.');
+		const redirectTo = encodeURIComponent(pathname);
+		window.location.replace(`/login?redirect=${redirectTo}`);
+		return 'redirect';
+	}
+
+	return 'none';
+}
 
 class APIClient {
 	defaults: { baseURL: string };
@@ -232,49 +292,18 @@ class APIClient {
 				};
 
 				if (errorResponse.status === 401 && typeof window !== 'undefined' && !config._retry) {
-					const serverMsg = extractServerMessage(parsed);
-					const isVersionMismatch = serverMsg?.toLowerCase().includes('application has been updated');
-					const reqUrl = getRequestPath(url, baseURL);
-					const skipAuthPaths = [
-						'/auth/login',
-						'/auth/logout',
-						'/auth/refresh',
-						'/auth/oidc',
-						'/auth/oidc/login',
-						'/auth/oidc/callback',
-						'/auth/auto-login',
-						'/auth/auto-login-config',
-						'/settings/public'
-					];
-					const isAuthApi = skipAuthPaths.some((path) => reqUrl.startsWith(path));
-					const pathname = window.location.pathname || '/';
-					const isOnAuthPage =
-						pathname.startsWith('/login') ||
-						pathname.startsWith('/logout') ||
-						pathname.startsWith('/oidc') ||
-						pathname.startsWith('/auth/oidc');
-
-					if (!isAuthApi && !isOnAuthPage && tokenRefreshHandler) {
-						try {
-							await tokenRefreshHandler();
-							return this.performRequest<T>(method, url, data, {
-								...config,
-								_retry: true
-							});
-						} catch {
-							if (isVersionMismatch) {
-								toast.info('Application has been updated. Please log in again.');
-							}
-							const redirectTo = encodeURIComponent(pathname);
-							window.location.replace(`/login?redirect=${redirectTo}`);
-							return new Promise(() => {});
-						}
+					const action = await handleUnauthorizedResponseInternal(
+						getRequestPath(url, baseURL),
+						!!config._retry,
+						extractServerMessage(parsed)
+					);
+					if (action === 'retry') {
+						return this.performRequest<T>(method, url, data, {
+							...config,
+							_retry: true
+						});
 					}
-
-					if (!isAuthApi && !isOnAuthPage && isVersionMismatch) {
-						toast.info('Application has been updated. Please log in again.');
-						const redirectTo = encodeURIComponent(pathname);
-						window.location.replace(`/login?redirect=${redirectTo}`);
+					if (action === 'redirect') {
 						return new Promise(() => {});
 					}
 				}

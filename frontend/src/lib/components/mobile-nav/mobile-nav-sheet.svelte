@@ -7,6 +7,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import MobileUserCard from './mobile-user-card.svelte';
+	import ActivityCenterTrigger from '$lib/components/activity/activity-center-trigger.svelte';
 	import * as Drawer from '$lib/components/ui/drawer/index.js';
 	import { queryKeys } from '$lib/query/query-keys';
 	import systemUpgradeService from '$lib/services/api/system-upgrade-service';
@@ -120,6 +121,7 @@
 			{#if memoizedUser}
 				<MobileUserCard user={memoizedUser} class="mb-6" />
 			{/if}
+			<ActivityCenterTrigger mobile class="mb-4" onOpen={handleItemClick} />
 		</div>
 
 		<div class="scrollbar-hide flex-1 overflow-y-auto px-6">
@@ -357,7 +359,8 @@
 			{#if versionInformation}
 				<div class="text-muted-foreground/60 text-center text-xs">
 					<p class="font-medium">
-						Arcane {versionInformation.displayVersion ?? versionInformation.currentVersion}
+						{m.layout_title()}
+						{versionInformation.displayVersion ?? versionInformation.currentVersion}
 					</p>
 				</div>
 				{#if shouldShowBanner}

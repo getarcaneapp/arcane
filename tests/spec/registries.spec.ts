@@ -78,7 +78,7 @@ async function mockRegistryPullUsage(
 test.describe('Container Registries', () => {
 	test.beforeEach(async ({ page }) => {
 		await page.goto(route);
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 	});
 
 	test('should display title and subtitle, and refresh', async ({ page }) => {
@@ -118,7 +118,7 @@ test.describe('Container Registries', () => {
 		await mockRegistryList(page);
 		await mockRegistryPullUsage(page, { remaining: 76, limit: 100, observedPulls: 4 });
 		await page.goto(route);
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		const table = page.getByRole('table');
 		await expect(table.getByText('Pull Usage')).toBeVisible();
@@ -131,7 +131,7 @@ test.describe('Container Registries', () => {
 		await mockRegistryList(page);
 		await mockRegistryPullUsage(page, { observedPulls: 4 });
 		await page.goto(route);
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		const table = page.getByRole('table');
 		await expect(table.getByText('Pull Usage')).toBeVisible();

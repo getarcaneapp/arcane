@@ -17,6 +17,7 @@ export interface AutoUpdateResult {
 	failed: number;
 	items: AutoUpdateResourceResult[];
 	duration: string;
+	activityId?: string;
 }
 
 export interface AutoUpdateResourceResult {

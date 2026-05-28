@@ -146,6 +146,17 @@ func shouldStartRedeployedContainerInternal(containerInfo container.InspectRespo
 	return shouldStart
 }
 
+func writeContainerProgressInternal(ctx context.Context, message string, progress int, phase string) {
+	progressWriter, _ := ctx.Value(projects.ProgressWriterKey{}).(io.Writer)
+	if progressWriter == nil {
+		return
+	}
+	payload := fmt.Sprintf(`{"type":"container","phase":%q,"status":%q,"progressDetail":{"current":%d,"total":100}}`+"\n", phase, message, progress)
+	if _, err := progressWriter.Write([]byte(payload)); err != nil {
+		slog.DebugContext(ctx, "failed to write container progress", "phase", phase, "error", err)
+	}
+}
+
 func (s *ContainerService) pullRedeployImageInternal(ctx context.Context, dockerClient *client.Client, imageName, containerID, containerName string, user models.User) error {
 	settings := s.settingsService.GetSettingsConfig()
 	pullCtx, pullCancel := timeouts.WithTimeout(ctx, settings.DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull)
@@ -519,12 +530,14 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 	}
 
 	if imageName != "" {
+		writeContainerProgressInternal(ctx, "Pulling latest container image", 20, "pull")
 		if err := s.pullRedeployImageInternal(ctx, dockerClient, imageName, containerID, containerName, user); err != nil {
 			return "", err
 		}
 	}
 
 	backupName := buildRedeployBackupNameInternal(containerName, containerID)
+	writeContainerProgressInternal(ctx, "Preparing existing container", 45, "prepare")
 	if err := s.prepareContainerForRedeployInternal(ctx, dockerClient, containerID, containerName, backupName, wasRunning, user); err != nil {
 		return "", err
 	}
@@ -536,6 +549,7 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 		newConfig.Hostname = ""
 	}
 
+	writeContainerProgressInternal(ctx, "Creating replacement container", 65, "create")
 	createResp, err := libarcane.ContainerCreateWithCompatibilityForAPIVersion(ctx, dockerClient, client.ContainerCreateOptions{
 		Config:           &newConfig,
 		HostConfig:       containerInfo.HostConfig,
@@ -553,6 +567,7 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 	}
 
 	if shouldStartRedeployedContainerInternal(containerInfo, wasRunning) {
+		writeContainerProgressInternal(ctx, "Starting replacement container", 80, "start")
 		_, err = dockerClient.ContainerStart(ctx, createResp.ID, client.ContainerStartOptions{})
 		if err != nil {
 			if _, removeErr := dockerClient.ContainerRemove(ctx, createResp.ID, client.ContainerRemoveOptions{Force: true}); removeErr != nil {
@@ -594,6 +609,7 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 		slog.WarnContext(ctx, "failed to log deploy event", "err", logErr)
 	}
 
+	writeContainerProgressInternal(ctx, "Container redeployed", 100, "complete")
 	return createResp.ID, nil
 }
 

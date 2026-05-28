@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	ref "github.com/distribution/reference"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	dockerutils "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
@@ -23,7 +24,6 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/client"
-	ref "go.podman.io/image/v5/docker/reference"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 )

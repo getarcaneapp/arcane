@@ -10,6 +10,7 @@
 	import { ArrowRightIcon, RefreshIcon, AlertIcon, VerifiedCheckIcon, ApiKeyIcon, CircleArrowUpIcon, BoxIcon } from '$lib/icons';
 	import { createQuery } from '@tanstack/svelte-query';
 	import UpdateStatusPopover from '$lib/components/update-status-popover.svelte';
+	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 
 	interface Props {
 		updateInfo?: ImageUpdateData;
@@ -140,11 +141,12 @@
 			const result = await imageUpdateQuery.refetch();
 			if (result.data) {
 				onUpdated?.(result.data);
+				const toastOptions = activityToastOptions(extractActivityId(result.data));
 
 				if (result.data.error) {
-					toast.error(result.data.error || m.images_update_check_failed());
+					toast.error(result.data.error || m.images_update_check_failed(), toastOptions);
 				} else {
-					toast.success(m.images_update_check_completed());
+					toast.success(m.images_update_check_completed(), toastOptions);
 				}
 				return;
 			}

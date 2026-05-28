@@ -23,10 +23,11 @@ import (
 
 // SystemHandler handles system management endpoints.
 type SystemHandler struct {
-	dockerService  *services.DockerClientService
-	systemService  *services.SystemService
-	upgradeService *services.SystemUpgradeService
-	cfg            *config.Config
+	dockerService   *services.DockerClientService
+	systemService   *services.SystemService
+	upgradeService  *services.SystemUpgradeService
+	activityService *services.ActivityService
+	cfg             *config.Config
 }
 
 // --- Input/Output Types ---
@@ -114,12 +115,13 @@ type TriggerUpgradeOutput struct {
 
 // RegisterSystem registers system management endpoints using Huma.
 // Note: WebSocket endpoints (stats) remain in the Gin handler.
-func RegisterSystem(api huma.API, dockerService *services.DockerClientService, systemService *services.SystemService, upgradeService *services.SystemUpgradeService, cfg *config.Config) {
+func RegisterSystem(api huma.API, dockerService *services.DockerClientService, systemService *services.SystemService, upgradeService *services.SystemUpgradeService, cfg *config.Config, activityService *services.ActivityService) {
 	h := &SystemHandler{
-		dockerService:  dockerService,
-		systemService:  systemService,
-		upgradeService: upgradeService,
-		cfg:            cfg,
+		dockerService:   dockerService,
+		systemService:   systemService,
+		upgradeService:  upgradeService,
+		activityService: activityService,
+		cfg:             cfg,
 	}
 
 	huma.Register(api, huma.Operation{
@@ -374,18 +376,9 @@ func (h *SystemHandler) PruneAll(ctx context.Context, input *PruneAllInput) (*Pr
 		"networks", input.Body.Networks,
 		"build_cache", input.Body.BuildCache)
 
-	result, err := h.systemService.PruneAll(ctx, input.Body)
-	if err != nil {
-		slog.ErrorContext(ctx, "System prune operation failed", "error", err)
-		return nil, huma.Error500InternalServerError((&common.SystemPruneError{Err: err}).Error())
-	}
+	result := h.systemService.StartPruneAll(ctx, input.EnvironmentID, input.Body)
 
-	slog.InfoContext(ctx, "System prune operation completed successfully",
-		"containers_pruned", len(result.ContainersPruned),
-		"images_deleted", len(result.ImagesDeleted),
-		"volumes_deleted", len(result.VolumesDeleted),
-		"networks_deleted", len(result.NetworksDeleted),
-		"space_reclaimed", result.SpaceReclaimed)
+	slog.InfoContext(ctx, "System prune background activity started", "activityId", result.ActivityID)
 
 	return &PruneAllOutput{
 		Body: base.ApiResponse[system.PruneAllResult]{
@@ -401,7 +394,7 @@ func (h *SystemHandler) StartAllContainers(ctx context.Context, input *StartAllC
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	result, err := h.systemService.StartAllContainers(ctx)
+	result, err := h.systemService.StartAllContainers(ctx, input.EnvironmentID)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.ContainerStartAllError{Err: err}).Error())
 	}
@@ -420,7 +413,7 @@ func (h *SystemHandler) StartAllStoppedContainers(ctx context.Context, input *St
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	result, err := h.systemService.StartAllStoppedContainers(ctx)
+	result, err := h.systemService.StartAllStoppedContainers(ctx, input.EnvironmentID)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.ContainerStartStoppedError{Err: err}).Error())
 	}
@@ -439,7 +432,7 @@ func (h *SystemHandler) StopAllContainers(ctx context.Context, input *StopAllCon
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	result, err := h.systemService.StopAllContainers(ctx)
+	result, err := h.systemService.StopAllContainers(ctx, input.EnvironmentID)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.ContainerStopAllError{Err: err}).Error())
 	}

@@ -3,13 +3,13 @@
 
 	export interface FileProvider {
 		list: (path: string) => Promise<FileEntry[]>;
-		mkdir: (path: string) => Promise<void>;
-		upload: (path: string, file: File) => Promise<void>;
-		delete: (path: string) => Promise<void>;
+		mkdir: (path: string) => Promise<unknown>;
+		upload: (path: string, file: File) => Promise<unknown>;
+		delete: (path: string) => Promise<unknown>;
 		download: (path: string) => Promise<void>;
 		getContent: (path: string) => Promise<{ content: string }>;
 		listBackups?: () => Promise<BackupEntry[]>;
-		restoreFromBackup?: (backupId: string, path: string) => Promise<void>;
+		restoreFromBackup?: (backupId: string, path: string) => Promise<unknown>;
 		backupHasPath?: (backupId: string, path: string) => Promise<boolean>;
 	}
 </script>
@@ -35,6 +35,7 @@
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { hasPermission } from '$lib/utils/auth';
 	import IfPermitted from '$lib/components/if-permitted.svelte';
+	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 
 	let { provider, rootLabel, persistKey }: { provider: FileProvider; rootLabel?: string; persistKey?: string } = $props();
 
@@ -120,8 +121,8 @@
 		if (!restoreTarget || !provider.restoreFromBackup || !selectedBackupId) return;
 		restoringFile = true;
 		try {
-			await provider.restoreFromBackup(selectedBackupId, restoreTarget.path);
-			toast.success(m.volumes_backup_file_restore_success());
+			const result = await provider.restoreFromBackup(selectedBackupId, restoreTarget.path);
+			toast.success(m.volumes_backup_file_restore_success(), activityToastOptions(extractActivityId(result)));
 			showRestoreFile = false;
 			// Refresh the file list to show the restored file
 			await loadFiles(currentPath);

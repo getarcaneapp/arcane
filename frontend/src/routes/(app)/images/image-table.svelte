@@ -27,6 +27,7 @@
 	import { isLikelyStaleFailedSummary, isVulnerabilityScanInProgress } from '$lib/utils/docker';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { hasPermission } from '$lib/utils/auth';
+	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 
 	import {
 		DownloadIcon,
@@ -157,8 +158,8 @@
 						result,
 						message: m.images_remove_failed(),
 						setLoadingState: () => {},
-						onSuccess: async () => {
-							toast.success(m.images_remove_success());
+						onSuccess: async (data) => {
+							toast.success(m.images_remove_success(), activityToastOptions(extractActivityId(data)));
 							await refreshImages();
 						}
 					});
@@ -181,8 +182,8 @@
 			result,
 			message: m.images_pull_failed(),
 			setLoadingState: () => {},
-			onSuccess: async () => {
-				toast.success(m.images_pull_success({ repoTag }));
+			onSuccess: async (data) => {
+				toast.success(m.images_pull_success({ repoTag }), activityToastOptions(extractActivityId(data)));
 				await refreshImages();
 			}
 		});
@@ -204,6 +205,7 @@
 					imageId: data.imageId,
 					scanTime: data.scanTime,
 					status: data.status,
+					activityId: data.activityId,
 					scanPhase: data.scanPhase,
 					summary: data.summary,
 					error: data.error
@@ -211,14 +213,15 @@
 				await handleVulnerabilityScanChanged(imageId, summary);
 
 				if (data.status === 'completed') {
-					toast.success(m.vuln_scan_completed());
+					toast.success(m.vuln_scan_completed(), activityToastOptions(data.activityId));
 					return;
 				}
 				if (data.status === 'failed') {
-					toast.error(data.error || m.vuln_scan_failed());
+					toast.error(data.error || m.vuln_scan_failed(), activityToastOptions(data.activityId));
 					return;
 				}
 
+				toast.info(m.vuln_scan_started(), activityToastOptions(data.activityId));
 				startBatchScanPolling();
 			}
 		});
@@ -439,7 +442,7 @@
 {#snippet TagCell({ item }: { item: ImageSummaryDto })}
 	{#if item.repoTags && item.repoTags.length > 0 && item.repoTags[0] !== '<none>:<none>'}
 		<div class="flex flex-wrap gap-1.5">
-			{#each item.repoTags.slice(0, 2) as repoTag}
+			{#each item.repoTags.slice(0, 2) as repoTag, tagIndex (`${repoTag}-${tagIndex}`)}
 				{@const tag = repoTag.split(':').pop() || repoTag}
 				<Badge variant="outline" class="font-mono text-xs">{tag}</Badge>
 			{/each}
@@ -477,7 +480,7 @@
 		{@const visibleUsage = hasOverflow ? item.usedBy.slice(0, maxVisible) : item.usedBy}
 		{@const overflowUsage = hasOverflow ? item.usedBy.slice(maxVisible) : []}
 		<div class="flex flex-wrap gap-1.5">
-			{#each visibleUsage as usage}
+			{#each visibleUsage as usage, usageIndex (`${usage.type}-${usage.id ?? usage.name}-${usageIndex}`)}
 				{#if usage.type === 'project'}
 					{#if usage.id}
 						<a class="inline-flex" href={`/projects/${encodeURIComponent(usage.id)}`}>
@@ -531,7 +534,7 @@
 						</Tooltip.Trigger>
 						<Tooltip.Content class="pointer-events-auto">
 							<div class="flex max-w-xs flex-wrap gap-1.5">
-								{#each overflowUsage as usage}
+								{#each overflowUsage as usage, usageIndex (`${usage.type}-${usage.id ?? usage.name}-${usageIndex}`)}
 									{#if usage.type === 'project'}
 										{#if usage.id}
 											<a class="inline-flex" href={`/projects/${encodeURIComponent(usage.id)}`}>

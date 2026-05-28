@@ -41,6 +41,7 @@
 	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import ProjectUpdateItem from '$lib/components/project-update-item.svelte';
 	import IfPermitted from '$lib/components/if-permitted.svelte';
+	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 
 	let { data } = $props();
 	let projectId = $derived(data.projectId);
@@ -345,10 +346,11 @@
 				.find((result) => !!result?.error?.trim())
 				?.error?.trim();
 			const hasErrors = !!firstError;
+			const toastOptions = activityToastOptions(extractActivityId(results));
 			if (hasErrors) {
-				toast.error(firstError || m.containers_check_updates_failed());
+				toast.error(firstError || m.containers_check_updates_failed(), toastOptions);
 			} else {
-				toast.success(m.images_update_check_completed());
+				toast.success(m.images_update_check_completed(), toastOptions);
 			}
 			await Promise.all([
 				refreshProjectDetails(),
@@ -438,7 +440,7 @@
 				};
 				rebaseEditorDraft(savedProject);
 				await syncProjectQueries(savedProject);
-				toast.success(m.common_update_success({ resource: m.project() }));
+				toast.success(m.common_update_success({ resource: m.project() }), activityToastOptions(extractActivityId(savedProject)));
 			}
 		});
 	}

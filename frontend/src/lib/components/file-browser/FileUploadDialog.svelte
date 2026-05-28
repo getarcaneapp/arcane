@@ -5,6 +5,7 @@
 	import { toast } from 'svelte-sonner';
 	import * as m from '$lib/paraglide/messages.js';
 	import { CloseIcon } from '$lib/icons';
+	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 
 	let {
 		open = $bindable(false),
@@ -13,7 +14,7 @@
 	}: {
 		open: boolean;
 		currentPath: string;
-		onUpload: (file: File) => Promise<void>;
+		onUpload: (file: File) => Promise<unknown>;
 	} = $props();
 
 	let files = $state<File[]>([]);
@@ -35,10 +36,11 @@
 		if (files.length === 0) return;
 		uploading = true;
 		try {
+			let lastResult: unknown;
 			for (const file of files) {
-				await onUploadAction(file);
+				lastResult = await onUploadAction(file);
 			}
-			toast.success(m.common_success());
+			toast.success(m.common_success(), activityToastOptions(extractActivityId(lastResult)));
 			open = false;
 			files = [];
 		} catch (e: any) {
