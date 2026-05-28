@@ -9,17 +9,18 @@ import (
 	"sync"
 	"time"
 
+	ref "github.com/distribution/reference"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/crypto"
 	imageupdatecore "github.com/getarcaneapp/arcane/backend/pkg/libarcane/imageupdate"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/ratelimit"
 	registry "github.com/getarcaneapp/arcane/backend/pkg/libarcane/registryauth"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 	"github.com/getarcaneapp/arcane/types/imageupdate"
 	"github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/client"
-	ref "go.podman.io/image/v5/docker/reference"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 )
@@ -32,6 +33,7 @@ type ImageUpdateService struct {
 	eventService        *EventService
 	notificationService *NotificationService
 	registryLimiter     *ratelimit.RegistryRateLimiter
+	activityService     *ActivityService
 }
 
 type ImageParts struct {
@@ -48,7 +50,7 @@ type localImageSnapshot struct {
 	AllDigests    []string
 }
 
-func NewImageUpdateService(db *database.DB, settingsService *SettingsService, registryService *ContainerRegistryService, dockerService *DockerClientService, eventService *EventService, notificationService *NotificationService) *ImageUpdateService {
+func NewImageUpdateService(db *database.DB, settingsService *SettingsService, registryService *ContainerRegistryService, dockerService *DockerClientService, eventService *EventService, notificationService *NotificationService, activityService *ActivityService) *ImageUpdateService {
 	return &ImageUpdateService{
 		db:                  db,
 		settingsService:     settingsService,
@@ -57,19 +59,87 @@ func NewImageUpdateService(db *database.DB, settingsService *SettingsService, re
 		eventService:        eventService,
 		notificationService: notificationService,
 		registryLimiter:     ratelimit.NewRegistryRateLimiter(),
+		activityService:     activityService,
+	}
+}
+
+func (s *ImageUpdateService) startImageUpdateActivityInternal(ctx context.Context, resourceName string, count int) string {
+	if s.activityService == nil {
+		return ""
+	}
+	resourceType := "image"
+	if count > 1 {
+		resourceType = "images"
+	}
+	activity, err := s.activityService.StartActivity(ctx, StartActivityRequest{
+		EnvironmentID: "0",
+		Type:          models.ActivityTypeImageUpdateCheck,
+		ResourceType:  &resourceType,
+		ResourceName:  utils.StringPtrFromTrimmed(resourceName),
+		Step:          "Checking image updates",
+		LatestMessage: "Image update check started",
+		Metadata: models.JSON{
+			"imageCount": count,
+		},
+	})
+	if err != nil {
+		slog.DebugContext(ctx, "failed to start image update activity", "error", err)
+		return ""
+	}
+	return activity.ID
+}
+
+func (s *ImageUpdateService) appendImageUpdateActivityMessageInternal(ctx context.Context, activityID string, level models.ActivityMessageLevel, message string, progress int, step string) {
+	if s.activityService == nil || activityID == "" || strings.TrimSpace(message) == "" {
+		return
+	}
+	if level == "" {
+		level = models.ActivityMessageLevelInfo
+	}
+	if _, err := s.activityService.AppendMessage(ctx, activityID, AppendActivityMessageRequest{
+		Level:    level,
+		Message:  message,
+		Progress: &progress,
+		Step:     step,
+	}); err != nil {
+		slog.DebugContext(ctx, "failed to append image update activity message", "activityId", activityID, "error", err)
+	}
+}
+
+func (s *ImageUpdateService) completeImageUpdateActivityInternal(ctx context.Context, activityID string, success bool, message string) {
+	if s.activityService == nil || activityID == "" {
+		return
+	}
+	status := models.ActivityStatusSuccess
+	var errMessage *string
+	if !success {
+		status = models.ActivityStatusFailed
+		errMessage = utils.StringPtrFromTrimmed(message)
+	}
+	if message == "" {
+		message = "Image update check completed"
+	}
+	step := "Image update check complete"
+	if _, err := s.activityService.CompleteActivity(context.WithoutCancel(ctx), activityID, status, message, errMessage, step); err != nil {
+		slog.DebugContext(ctx, "failed to complete image update activity", "activityId", activityID, "error", err)
 	}
 }
 
 func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef string) (*imageupdate.Response, error) {
 	startTime := time.Now()
+	activityID := s.startImageUpdateActivityInternal(ctx, imageRef, 1)
+	s.appendImageUpdateActivityMessageInternal(ctx, activityID, models.ActivityMessageLevelInfo, fmt.Sprintf("Checking %s", imageRef), 20, "Checking remote digest")
 
 	parts := s.parseImageReference(imageRef)
 	if parts == nil {
-		return &imageupdate.Response{
+		result := &imageupdate.Response{
 			Error:          "Invalid image reference format",
 			CheckTime:      time.Now(),
 			ResponseTimeMs: int(time.Since(startTime).Milliseconds()),
-		}, nil
+			ActivityID:     utils.StringPtrFromTrimmed(activityID),
+		}
+		s.completeImageUpdateActivityInternal(ctx, activityID, false, result.Error)
+		return result, nil
 	}
 
 	digestResult, snapshot, err := s.checkDigestUpdateWithSnapshotInternal(ctx, parts)
@@ -78,6 +148,7 @@ func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef stri
 			Error:          err.Error(),
 			CheckTime:      time.Now(),
 			ResponseTimeMs: int(time.Since(startTime).Milliseconds()),
+			ActivityID:     utils.StringPtrFromTrimmed(activityID),
 		}
 		metadata := models.JSON{
 			"action":    "check_update",
@@ -91,10 +162,12 @@ func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef stri
 		if saveErr := s.saveUpdateResultWithSnapshotInternal(ctx, imageRef, result, snapshot); saveErr != nil {
 			slog.WarnContext(ctx, "Failed to save update result", "imageRef", imageRef, "error", saveErr.Error())
 		}
+		s.completeImageUpdateActivityInternal(ctx, activityID, false, result.Error)
 		return result, err
 	}
 
 	digestResult.ResponseTimeMs = int(time.Since(startTime).Milliseconds())
+	digestResult.ActivityID = utils.StringPtrFromTrimmed(activityID)
 	metadata := models.JSON{
 		"action":         "check_update",
 		"imageRef":       imageRef,
@@ -118,6 +191,11 @@ func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef stri
 		}
 	}
 
+	finalMessage := "Image update check completed"
+	if digestResult.HasUpdate {
+		finalMessage = "Image update available"
+	}
+	s.completeImageUpdateActivityInternal(ctx, activityID, true, finalMessage)
 	return digestResult, nil
 }
 
@@ -503,6 +581,22 @@ func countBatchResultOutcomesInternal(imageRefs []string, results map[string]*im
 	}
 
 	return successCount, errorCount
+}
+
+// imageCheckResultMessageInternal derives an activity message level and text from
+// a per-image update check result: errors become ERROR, available updates become
+// SUCCESS, and up-to-date images stay INFO.
+func imageCheckResultMessageInternal(imageRef string, res *imageupdate.Response) (models.ActivityMessageLevel, string) {
+	if res == nil {
+		return models.ActivityMessageLevelError, fmt.Sprintf("%s: check failed", imageRef)
+	}
+	if err := strings.TrimSpace(res.Error); err != "" {
+		return models.ActivityMessageLevelError, fmt.Sprintf("%s: %s", imageRef, err)
+	}
+	if res.HasUpdate {
+		return models.ActivityMessageLevelSuccess, fmt.Sprintf("%s — update available", imageRef)
+	}
+	return models.ActivityMessageLevelInfo, fmt.Sprintf("%s — up to date", imageRef)
 }
 
 func extractRepoAndTagFromImage(dockerImage image.InspectResponse) (repo, tag string) {
@@ -892,16 +986,24 @@ func (s *ImageUpdateService) CheckMultipleImages(ctx context.Context, imageRefs 
 		return results, nil
 	}
 
+	activityID := s.startImageUpdateActivityInternal(ctx, fmt.Sprintf("%d images", len(imageRefs)), len(imageRefs))
+	s.appendImageUpdateActivityMessageInternal(ctx, activityID, models.ActivityMessageLevelInfo, fmt.Sprintf("Checking %d image references", len(imageRefs)), 5, "Preparing image update check")
 	slog.DebugContext(ctx, "Starting batch image update check", "imageCount", len(imageRefs), "externalCredCount", len(externalCreds))
 
 	regRepos, initialResults, images := s.parseAndGroupImagesInternal(imageRefs)
 	maps.Copy(results, initialResults)
+	for _, result := range initialResults {
+		if result != nil {
+			result.ActivityID = utils.StringPtrFromTrimmed(activityID)
+		}
+	}
 
 	resolvedCreds := s.resolveBatchCredentialsInternal(ctx, externalCreds)
 
 	slog.DebugContext(ctx, "Resolved batch registry credentials", "credentialCount", len(resolvedCreds), "registryCount", len(regRepos))
 
 	var mu sync.Mutex
+	completed := 0
 	g, groupCtx := errgroup.WithContext(ctx)
 	g.SetLimit(10) // Limit concurrency
 
@@ -919,12 +1021,20 @@ func (s *ImageUpdateService) CheckMultipleImages(ctx context.Context, imageRefs 
 			defer s.registryLimiter.Release(registry)
 
 			res, snapshot := s.checkSingleImageInBatchInternal(groupCtx, resolvedCreds, img.parts)
+			if res != nil {
+				res.ActivityID = utils.StringPtrFromTrimmed(activityID)
+			}
 
 			mu.Lock()
+			completed++
+			progress := 10 + int(float64(completed)/float64(len(images))*80)
 			for _, ref := range img.refs {
 				results[ref] = res
 			}
 			mu.Unlock()
+
+			level, message := imageCheckResultMessageInternal(img.canonicalRef, res)
+			s.appendImageUpdateActivityMessageInternal(groupCtx, activityID, level, message, progress, "Checking image")
 
 			if err := s.saveUpdateResultWithSnapshotInternal(groupCtx, img.canonicalRef, res, snapshot); err != nil {
 				slog.WarnContext(groupCtx, "Failed to save update result", "imageRef", img.canonicalRef, "error", err.Error())
@@ -939,64 +1049,68 @@ func (s *ImageUpdateService) CheckMultipleImages(ctx context.Context, imageRefs 
 	}
 
 	successCount, errorCount := countBatchResultOutcomesInternal(imageRefs, results)
+	finalSuccess := errorCount == 0
+	finalMessage := fmt.Sprintf("Image update check completed: %d checked, %d errors", successCount, errorCount)
+	s.completeImageUpdateActivityInternal(ctx, activityID, finalSuccess, finalMessage)
 	slog.InfoContext(ctx, "Batch image update check completed",
 		"totalImages", len(imageRefs),
 		"successCount", successCount,
 		"errorCount", errorCount,
 		"duration", time.Since(startBatch))
 
-	if s.notificationService != nil {
-		// Use a context with timeout for notifications
-		notifCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		defer cancel()
-
-		// Get only the updates that haven't been notified yet
-		unnotifiedUpdates, err := s.GetUnnotifiedUpdates(notifCtx)
-		switch {
-		case err != nil:
-			slog.WarnContext(ctx, "Failed to get unnotified updates", "error", err.Error())
-		case len(unnotifiedUpdates) > 0:
-			// Convert unnotified records to the format expected by notification service
-			updatesToNotify := make(map[string]*imageupdate.Response)
-			imageIDsToMark := make([]string, 0, len(unnotifiedUpdates))
-
-			for imageID, record := range unnotifiedUpdates {
-				// Construct image ref from repository and tag
-				imageRef := fmt.Sprintf("%s:%s", record.Repository, record.Tag)
-				updatesToNotify[imageRef] = &imageupdate.Response{
-					HasUpdate:      record.HasUpdate,
-					UpdateType:     record.UpdateType,
-					CurrentVersion: record.CurrentVersion,
-					LatestVersion:  stringPtrToString(record.LatestVersion),
-					CurrentDigest:  stringPtrToString(record.CurrentDigest),
-					LatestDigest:   stringPtrToString(record.LatestDigest),
-					CheckTime:      record.CheckTime,
-					ResponseTimeMs: record.ResponseTimeMs,
-					Error:          stringPtrToString(record.LastError),
-					AuthMethod:     stringPtrToString(record.AuthMethod),
-					AuthUsername:   stringPtrToString(record.AuthUsername),
-					AuthRegistry:   stringPtrToString(record.AuthRegistry),
-					UsedCredential: record.UsedCredential,
-				}
-				imageIDsToMark = append(imageIDsToMark, imageID)
-			}
-
-			slog.InfoContext(ctx, "Sending notifications for unnotified updates", "count", len(updatesToNotify))
-
-			if notifErr := s.notificationService.SendBatchImageUpdateNotification(notifCtx, updatesToNotify); notifErr != nil {
-				slog.WarnContext(ctx, "Failed to send batch update notification", "error", notifErr.Error())
-			} else {
-				// Mark the images as notified only if notification was successful
-				if markErr := s.MarkUpdatesAsNotified(notifCtx, imageIDsToMark); markErr != nil {
-					slog.WarnContext(ctx, "Failed to mark updates as notified", "error", markErr.Error())
-				}
-			}
-		default:
-			slog.DebugContext(ctx, "No new updates to notify")
-		}
-	}
+	s.sendBatchImageUpdateNotificationsInternal(ctx)
 
 	return results, nil
+}
+
+func (s *ImageUpdateService) sendBatchImageUpdateNotificationsInternal(ctx context.Context) {
+	if s.notificationService == nil {
+		return
+	}
+
+	notifCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	unnotifiedUpdates, err := s.GetUnnotifiedUpdates(notifCtx)
+	switch {
+	case err != nil:
+		slog.WarnContext(ctx, "Failed to get unnotified updates", "error", err.Error())
+	case len(unnotifiedUpdates) > 0:
+		updatesToNotify := make(map[string]*imageupdate.Response)
+		imageIDsToMark := make([]string, 0, len(unnotifiedUpdates))
+
+		for imageID, record := range unnotifiedUpdates {
+			imageRef := fmt.Sprintf("%s:%s", record.Repository, record.Tag)
+			updatesToNotify[imageRef] = &imageupdate.Response{
+				HasUpdate:      record.HasUpdate,
+				UpdateType:     record.UpdateType,
+				CurrentVersion: record.CurrentVersion,
+				LatestVersion:  stringPtrToString(record.LatestVersion),
+				CurrentDigest:  stringPtrToString(record.CurrentDigest),
+				LatestDigest:   stringPtrToString(record.LatestDigest),
+				CheckTime:      record.CheckTime,
+				ResponseTimeMs: record.ResponseTimeMs,
+				Error:          stringPtrToString(record.LastError),
+				AuthMethod:     stringPtrToString(record.AuthMethod),
+				AuthUsername:   stringPtrToString(record.AuthUsername),
+				AuthRegistry:   stringPtrToString(record.AuthRegistry),
+				UsedCredential: record.UsedCredential,
+			}
+			imageIDsToMark = append(imageIDsToMark, imageID)
+		}
+
+		slog.InfoContext(ctx, "Sending notifications for unnotified updates", "count", len(updatesToNotify))
+
+		if notifErr := s.notificationService.SendBatchImageUpdateNotification(notifCtx, updatesToNotify); notifErr != nil {
+			slog.WarnContext(ctx, "Failed to send batch update notification", "error", notifErr.Error())
+			return
+		}
+		if markErr := s.MarkUpdatesAsNotified(notifCtx, imageIDsToMark); markErr != nil {
+			slog.WarnContext(ctx, "Failed to mark updates as notified", "error", markErr.Error())
+		}
+	default:
+		slog.DebugContext(ctx, "No new updates to notify")
+	}
 }
 
 func (s *ImageUpdateService) CheckAllImages(ctx context.Context, limit int, externalCreds []containerregistry.Credential) (map[string]*imageupdate.Response, error) {

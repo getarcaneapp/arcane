@@ -71,6 +71,11 @@ type Response struct {
 	//
 	// Required: false
 	UsedCredential bool `json:"usedCredential,omitempty"`
+
+	// ActivityID is the background activity that tracked this check.
+	//
+	// Required: false
+	ActivityID *string `json:"activityId,omitempty"`
 }
 
 type Summary struct {

@@ -22,8 +22,10 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
+	activitylib "github.com/getarcaneapp/arcane/backend/pkg/libarcane/activity"
 	libupdater "github.com/getarcaneapp/arcane/backend/pkg/libarcane/imageupdate"
 	projectspkg "github.com/getarcaneapp/arcane/backend/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils"
 	"github.com/getarcaneapp/arcane/types/updater"
 )
 
@@ -40,6 +42,7 @@ type UpdaterService struct {
 	imageService        *ImageService
 	notificationService *NotificationService
 	upgradeService      selfUpgradeService
+	activityService     *ActivityService
 
 	statusMu           sync.RWMutex
 	updatingContainers map[string]bool
@@ -63,6 +66,7 @@ func NewUpdaterService(
 	imageSvc *ImageService,
 	notifications *NotificationService,
 	upgrade selfUpgradeService,
+	activityService *ActivityService,
 ) *UpdaterService {
 	return &UpdaterService{
 		db:                  db,
@@ -75,6 +79,7 @@ func NewUpdaterService(
 		imageService:        imageSvc,
 		notificationService: notifications,
 		upgradeService:      upgrade,
+		activityService:     activityService,
 		updatingContainers:  map[string]bool{},
 		updatingProjects:    map[string]bool{},
 	}
@@ -85,9 +90,17 @@ func NewUpdaterService(
 // actions without mutating containers or projects.
 //
 //nolint:gocognit
-func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*updater.Result, error) {
+func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (out *updater.Result, err error) {
 	start := time.Now()
-	out := &updater.Result{Items: []updater.ResourceResult{}}
+	out = &updater.Result{Items: []updater.ResourceResult{}}
+	activityID := s.startAutoUpdateActivityInternal(ctx, dryRun)
+	out.ActivityID = utils.StringPtrFromTrimmed(activityID)
+	defer func() {
+		if out != nil {
+			out.ActivityID = utils.StringPtrFromTrimmed(activityID)
+		}
+		s.completeAutoUpdateActivityInternal(ctx, activityID, out, err)
+	}()
 
 	var records []models.ImageUpdateRecord
 	if err := s.db.WithContext(ctx).Where("has_update = ?", true).Find(&records).Error; err != nil {
@@ -95,6 +108,7 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*update
 	}
 	// debug: how many pending records and dryRun flag
 	slog.DebugContext(ctx, "ApplyPending: found pending image update records", "records", len(records), "dryRun", dryRun)
+	s.appendAutoUpdateActivityMessageInternal(ctx, activityID, fmt.Sprintf("Found %d pending image update records", len(records)), "Planning updates", 10)
 
 	if len(records) == 0 {
 		out.Duration = time.Since(start).String()
@@ -148,6 +162,7 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*update
 	}
 
 	if len(plans) == 0 {
+		s.appendAutoUpdateActivityMessageInternal(ctx, activityID, "No active resources need updates", "Planning updates", 100)
 		out.Duration = time.Since(start).String()
 		return out, nil
 	}
@@ -174,6 +189,7 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*update
 
 	for i := range plans {
 		p := plans[i]
+		s.appendAutoUpdateActivityMessageInternal(ctx, activityID, fmt.Sprintf("Checking update for %s", p.oldRef), "Checking image", 20)
 		item := updater.ResourceResult{
 			ResourceID:   p.oldRef,
 			ResourceType: "image",
@@ -227,7 +243,10 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*update
 		}
 
 		if !skipPull {
-			if err := s.imageService.PullImage(ctx, p.newRef, io.Discard, systemUser, nil); err != nil {
+			progressWriter := activitylib.NewWriter(ctx, s.activityService, activityID, io.Discard, "Pulling updated images")
+			err := s.imageService.PullImage(ctx, p.newRef, progressWriter, systemUser, nil)
+			activitylib.FlushWriter(progressWriter)
+			if err != nil {
 				item.Status = "failed"
 				item.Error = err.Error()
 				out.Failed++
@@ -271,6 +290,7 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*update
 	}
 
 	if !dryRun && (len(oldIDToNewRef) > 0 || len(oldRefToNewRef) > 0) {
+		s.appendAutoUpdateActivityMessageInternal(ctx, activityID, "Restarting containers that use updated images", "Restarting containers", 75)
 		results, err := s.restartContainersUsingOldIDs(ctx, oldIDToNewRef, oldRefToNewRef)
 		if err != nil {
 			slog.Warn("container restarts had errors", "err", err)
@@ -321,6 +341,7 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*update
 	}
 
 	if !dryRun && len(oldIDSet) > 0 {
+		s.appendAutoUpdateActivityMessageInternal(ctx, activityID, "Pruning old image IDs", "Pruning images", 90)
 		ids := make([]string, 0, len(oldIDSet))
 		for id := range oldIDSet {
 			ids = append(ids, id)
@@ -387,13 +408,108 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (*update
 	return out, nil
 }
 
+func (s *UpdaterService) startAutoUpdateActivityInternal(ctx context.Context, dryRun bool) string {
+	if s.activityService == nil {
+		return ""
+	}
+	resourceType := "system"
+	resourceName := "Auto update"
+	activity, err := s.activityService.StartActivity(ctx, StartActivityRequest{
+		EnvironmentID: "0",
+		Type:          models.ActivityTypeAutoUpdate,
+		ResourceType:  &resourceType,
+		ResourceName:  &resourceName,
+		Step:          "Planning updates",
+		LatestMessage: "Auto-update run started",
+		Metadata:      models.JSON{"dryRun": dryRun},
+	})
+	if err != nil {
+		slog.DebugContext(ctx, "failed to start auto-update activity", "error", err)
+		return ""
+	}
+	return activity.ID
+}
+
+func (s *UpdaterService) startSingleContainerUpdateActivityInternal(ctx context.Context, containerID string) string {
+	if s.activityService == nil {
+		return ""
+	}
+	resourceType := "container"
+	resourceName := containerID
+	activity, err := s.activityService.StartActivity(ctx, StartActivityRequest{
+		EnvironmentID: "0",
+		Type:          models.ActivityTypeAutoUpdate,
+		ResourceType:  &resourceType,
+		ResourceID:    &containerID,
+		ResourceName:  &resourceName,
+		Step:          "Updating container",
+		LatestMessage: "Container update started",
+		Metadata:      models.JSON{"containerID": containerID},
+	})
+	if err != nil {
+		slog.DebugContext(ctx, "failed to start container update activity", "containerID", containerID, "error", err)
+		return ""
+	}
+	return activity.ID
+}
+
+func (s *UpdaterService) appendAutoUpdateActivityMessageInternal(ctx context.Context, activityID, message, step string, progress int) {
+	if s.activityService == nil || activityID == "" {
+		return
+	}
+	if step == "" {
+		step = message
+	}
+	if _, err := s.activityService.AppendMessage(ctx, activityID, AppendActivityMessageRequest{
+		Level:    models.ActivityMessageLevelInfo,
+		Message:  message,
+		Progress: &progress,
+		Step:     step,
+	}); err != nil {
+		slog.DebugContext(ctx, "failed to append auto-update activity message", "activityId", activityID, "error", err)
+	}
+}
+
+func (s *UpdaterService) completeAutoUpdateActivityInternal(ctx context.Context, activityID string, result *updater.Result, applyErr error) {
+	if s.activityService == nil || activityID == "" {
+		return
+	}
+
+	status := models.ActivityStatusSuccess
+	message := "Auto-update run completed"
+	var errMessage *string
+	if applyErr != nil {
+		status = models.ActivityStatusFailed
+		errText := applyErr.Error()
+		errMessage = &errText
+		message = errText
+	} else if result != nil && result.Failed > 0 {
+		status = models.ActivityStatusFailed
+		errText := fmt.Sprintf("%d update action(s) failed", result.Failed)
+		errMessage = &errText
+		message = errText
+	}
+
+	if _, err := s.activityService.CompleteActivity(context.WithoutCancel(ctx), activityID, status, message, errMessage); err != nil {
+		slog.DebugContext(ctx, "failed to complete auto-update activity", "activityId", activityID, "error", err)
+	}
+}
+
 // UpdateSingleContainer updates a single container by ID to the latest available image.
 // It pulls the new image, stops the container, removes it, and recreates it with the new image.
 //
 //nolint:gocognit // single-container update flow is intentionally linear with explicit early exits for failure reporting
-func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID string) (*updater.Result, error) {
+func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID string) (out *updater.Result, err error) {
 	start := time.Now()
-	out := &updater.Result{Items: []updater.ResourceResult{}}
+	out = &updater.Result{Items: []updater.ResourceResult{}}
+	activityID := s.startSingleContainerUpdateActivityInternal(ctx, containerID)
+	out.ActivityID = utils.StringPtrFromTrimmed(activityID)
+	defer func() {
+		if out != nil {
+			out.ActivityID = utils.StringPtrFromTrimmed(activityID)
+		}
+		s.completeAutoUpdateActivityInternal(ctx, activityID, out, err)
+	}()
 	slog.InfoContext(ctx, "UpdateSingleContainer: starting", "containerID", containerID)
 	dcli, err := s.dockerService.GetClient(ctx)
 	if err != nil {

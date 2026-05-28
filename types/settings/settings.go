@@ -94,6 +94,16 @@ type Update struct {
 	// Required: false
 	EnvironmentHealthInterval *string `json:"environmentHealthInterval,omitempty"`
 
+	// ActivityHistoryRetentionDays is the number of days of completed Activity Center history to retain.
+	//
+	// Required: false
+	ActivityHistoryRetentionDays *string `json:"activityHistoryRetentionDays,omitempty"`
+
+	// ActivityHistoryMaxEntries is the maximum completed Activity Center entries to retain per environment.
+	//
+	// Required: false
+	ActivityHistoryMaxEntries *string `json:"activityHistoryMaxEntries,omitempty"`
+
 	// DefaultDeployPullPolicy is the default image pull policy used for project deploys.
 	//
 	// Required: false

@@ -20,12 +20,12 @@ export class VolumeBackupService extends BaseAPIService {
 		return res.data;
 	}
 
-	async restoreBackup(volumeName: string, backupId: string): Promise<void> {
+	async restoreBackup(volumeName: string, backupId: string): Promise<any> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		return this.handleResponse(this.api.post(`/environments/${envId}/volumes/${volumeName}/backups/${backupId}/restore`));
 	}
 
-	async restoreBackupFiles(volumeName: string, backupId: string, paths: string[]): Promise<void> {
+	async restoreBackupFiles(volumeName: string, backupId: string, paths: string[]): Promise<any> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		return this.handleResponse(
 			this.api.post(`/environments/${envId}/volumes/${volumeName}/backups/${backupId}/restore-files`, {
@@ -48,7 +48,7 @@ export class VolumeBackupService extends BaseAPIService {
 		return res.data.data ?? [];
 	}
 
-	async deleteBackup(backupId: string): Promise<void> {
+	async deleteBackup(backupId: string): Promise<any> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		return this.handleResponse(this.api.delete(`/environments/${envId}/volumes/backups/${backupId}`));
 	}
@@ -68,7 +68,7 @@ export class VolumeBackupService extends BaseAPIService {
 		link.remove();
 	}
 
-	async uploadAndRestore(volumeName: string, file: File): Promise<void> {
+	async uploadAndRestore(volumeName: string, file: File): Promise<any> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		const formData = new FormData();
 		formData.append('file', file);

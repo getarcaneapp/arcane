@@ -146,6 +146,7 @@ type Services struct {
 	Font              *services.FontService
 	Project           *services.ProjectService
 	Event             *services.EventService
+	Activity          *services.ActivityService
 	Version           *services.VersionService
 	Environment       *services.EnvironmentService
 	Settings          *services.SettingsService
@@ -319,6 +320,7 @@ func registerHandlers(api huma.API, svc *Services) {
 	var fontSvc *services.FontService
 	var projectSvc *services.ProjectService
 	var eventSvc *services.EventService
+	var activitySvc *services.ActivityService
 	var versionSvc *services.VersionService
 	var environmentSvc *services.EnvironmentService
 	var settingsSvc *services.SettingsService
@@ -358,6 +360,7 @@ func registerHandlers(api huma.API, svc *Services) {
 		fontSvc = svc.Font
 		projectSvc = svc.Project
 		eventSvc = svc.Event
+		activitySvc = svc.Activity
 		versionSvc = svc.Version
 		environmentSvc = svc.Environment
 		settingsSvc = svc.Settings
@@ -394,28 +397,29 @@ func registerHandlers(api huma.API, svc *Services) {
 	handlers.RegisterRoles(api, roleSvc)
 	handlers.RegisterAppImages(api, appImagesSvc)
 	handlers.RegisterFonts(api, fontSvc)
-	handlers.RegisterProjects(api, projectSvc)
 	handlers.RegisterUsers(api, userSvc, authSvc)
+	handlers.RegisterProjects(api, projectSvc, activitySvc)
 	handlers.RegisterVersion(api, versionSvc)
 	handlers.RegisterEvents(api, eventSvc, apiKeySvc)
+	handlers.RegisterActivities(api, activitySvc, environmentSvc)
 	handlers.RegisterOidc(api, authSvc, oidcSvc, roleSvc, userSvc, cfg)
 	handlers.RegisterEnvironments(api, environmentSvc, settingsSvc, apiKeySvc, eventSvc, cfg)
 	handlers.RegisterContainerRegistries(api, containerRegistrySvc, environmentSvc)
 	handlers.RegisterTemplates(api, templateSvc, environmentSvc)
-	handlers.RegisterImages(api, dockerSvc, imageSvc, imageUpdateSvc, settingsSvc, buildSvc)
+	handlers.RegisterImages(api, dockerSvc, imageSvc, imageUpdateSvc, settingsSvc, buildSvc, activitySvc)
 	handlers.RegisterBuildWorkspaces(api, buildWorkspaceSvc)
 	handlers.RegisterImageUpdates(api, imageUpdateSvc, imageSvc)
 	handlers.RegisterSettings(api, settingsSvc, settingsSearchSvc, environmentSvc, cfg)
 	handlers.RegisterJobSchedules(api, jobScheduleSvc, environmentSvc)
-	handlers.RegisterVolumes(api, dockerSvc, volumeSvc)
-	handlers.RegisterContainers(api, containerSvc, dockerSvc, settingsSvc)
+	handlers.RegisterVolumes(api, dockerSvc, volumeSvc, activitySvc)
+	handlers.RegisterContainers(api, containerSvc, dockerSvc, settingsSvc, activitySvc)
 	handlers.RegisterPorts(api, portSvc)
-	handlers.RegisterNetworks(api, networkSvc, dockerSvc)
+	handlers.RegisterNetworks(api, networkSvc, dockerSvc, activitySvc)
 	handlers.RegisterSwarm(api, swarmSvc, environmentSvc, eventSvc, cfg)
 	handlers.RegisterNotifications(api, notificationSvc, cfg)
 	handlers.RegisterUpdater(api, updaterSvc)
 	handlers.RegisterCustomize(api, customizeSearchSvc)
-	handlers.RegisterSystem(api, dockerSvc, systemSvc, systemUpgradeSvc, cfg)
+	handlers.RegisterSystem(api, dockerSvc, systemSvc, systemUpgradeSvc, cfg, activitySvc)
 	handlers.RegisterGitRepositories(api, gitRepositorySvc)
 	handlers.RegisterGitOpsSyncs(api, gitOpsSyncSvc)
 	handlers.RegisterWebhooks(api, webhookSvc)

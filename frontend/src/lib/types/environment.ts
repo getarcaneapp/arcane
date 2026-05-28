@@ -158,6 +158,7 @@ export interface VulnerabilityScanResult {
 	imageName: string;
 	scanTime: string;
 	status: VulnerabilityScanStatus;
+	activityId?: string;
 	scanPhase?: 'creating_container' | 'scanning_image' | 'storing_results';
 	summary?: SeveritySummary;
 	vulnerabilities?: Vulnerability[];
@@ -170,6 +171,7 @@ export interface VulnerabilityScanSummary {
 	imageId: string;
 	scanTime: string;
 	status: VulnerabilityScanStatus;
+	activityId?: string;
 	scanPhase?: 'creating_container' | 'scanning_image' | 'storing_results';
 	summary?: SeveritySummary;
 	error?: string;

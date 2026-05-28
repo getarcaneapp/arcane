@@ -24,6 +24,8 @@ overrides:
   fast-uri: '>=3.1.2'
   ws: '>=8.20.1'
 
+packageExtensionsChecksum: sha256-Yj0m2AD9TZO/cWup5bCg2l8l7VHtLu5doy9Oybhgv+w=
+
 importers:
 
   .:
@@ -5246,6 +5248,7 @@ snapshots:
 
   svelte-codemirror-editor@2.1.0(codemirror@6.0.2)(svelte@5.56.1):
     dependencies:
+      '@codemirror/search': 6.7.0
       codemirror: 6.0.2
       svelte: 5.56.1
 

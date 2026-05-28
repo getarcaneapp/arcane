@@ -194,6 +194,7 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services)
 		Font:              appServices.Font,
 		Project:           appServices.Project,
 		Event:             appServices.Event,
+		Activity:          appServices.Activity,
 		Version:           appServices.Version,
 		Environment:       appServices.Environment,
 		Settings:          appServices.Settings,

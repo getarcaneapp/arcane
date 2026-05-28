@@ -29,6 +29,7 @@
 	import { capitalizeFirstLetter } from '$lib/utils/formatting';
 	import { tryCatch } from '$lib/utils/api';
 	import { getEnvironmentStatusVariant, isEnvironmentOnline, resolveEnvironmentStatus } from '$lib/utils/docker';
+	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 	import { createStatsWebSocket, type ReconnectingWebSocket } from '$lib/utils/ws';
 	import { bytes } from '$lib/utils/formatting';
 	import {
@@ -615,17 +616,17 @@
 			setLoadingState: (value) => {
 				pruningEnvironmentId = value ? environmentId : null;
 			},
-			onSuccess: async () => {
+			onSuccess: async (data) => {
 				isPruneDialogOpen = false;
 				pruneEnvironment = null;
+				const toastOptions = {
+					...(activityToastOptions(extractActivityId(data)) ?? {}),
+					description: targetEnvironment.environment.name
+				};
 				if (selectedTypes.length === 1) {
-					toast.success(m.dashboard_prune_success_one({ types: typesString }), {
-						description: targetEnvironment.environment.name
-					});
+					toast.success(m.dashboard_prune_success_one({ types: typesString }), toastOptions);
 				} else {
-					toast.success(m.dashboard_prune_success_many({ types: typesString }), {
-						description: targetEnvironment.environment.name
-					});
+					toast.success(m.dashboard_prune_success_many({ types: typesString }), toastOptions);
 				}
 				await refreshOverview();
 			}

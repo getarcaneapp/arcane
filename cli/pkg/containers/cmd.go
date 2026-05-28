@@ -281,7 +281,7 @@ var containersStartCmd = &cobra.Command{
 		}
 		defer func() { _ = resp.Body.Close() }()
 
-		var result base.ApiResponse[container.ActionResult]
+		var result base.ApiResponse[base.MessageResponse]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 			return fmt.Errorf("failed to parse response: %w", err)
 		}
@@ -323,7 +323,7 @@ var containersStopCmd = &cobra.Command{
 		}
 		defer func() { _ = resp.Body.Close() }()
 
-		var result base.ApiResponse[container.ActionResult]
+		var result base.ApiResponse[base.MessageResponse]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 			return fmt.Errorf("failed to parse response: %w", err)
 		}
@@ -365,7 +365,7 @@ var containersRestartCmd = &cobra.Command{
 		}
 		defer func() { _ = resp.Body.Close() }()
 
-		var result base.ApiResponse[container.ActionResult]
+		var result base.ApiResponse[base.MessageResponse]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 			return fmt.Errorf("failed to parse response: %w", err)
 		}

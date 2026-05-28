@@ -113,6 +113,11 @@ type Result struct {
 	//
 	// Required: true
 	Items []ResourceResult `json:"items"`
+
+	// ActivityID is the background activity that tracked this update operation.
+	//
+	// Required: false
+	ActivityID *string `json:"activityId,omitempty"`
 }
 
 // Status represents the current status of the updater.

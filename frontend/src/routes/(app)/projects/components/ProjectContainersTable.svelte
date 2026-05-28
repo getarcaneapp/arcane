@@ -23,6 +23,7 @@
 	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
 	import IconImage from '$lib/components/icon-image.svelte';
 	import { getArcaneIconUrlFromLabels } from '$lib/utils/docker';
+	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 	import {
 		StartIcon,
 		StopIcon,
@@ -130,8 +131,8 @@
 				setLoadingState: (value) => {
 					actionStatus[id] = value ? statusMap[action] : '';
 				},
-				async onSuccess() {
-					toast.success(messageMap[action].success);
+				async onSuccess(data) {
+					toast.success(messageMap[action].success, activityToastOptions(extractActivityId(data)));
 					await onRefresh?.();
 				}
 			});
@@ -164,8 +165,8 @@
 						setLoadingState: (value) => {
 							actionStatus[id] = value ? 'removing' : '';
 						},
-						async onSuccess() {
-							toast.success(m.containers_remove_success());
+						async onSuccess(data) {
+							toast.success(m.containers_remove_success(), activityToastOptions(extractActivityId(data)));
 							await onRefresh?.();
 						}
 					});

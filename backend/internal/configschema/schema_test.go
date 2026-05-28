@@ -263,6 +263,8 @@ var expectedEnvConfigVars = []string{
 
 var expectedSettingOverrideKeys = []string{
 	"accentColor",
+	"activityHistoryMaxEntries",
+	"activityHistoryRetentionDays",
 	"applicationTheme",
 	"authLocalEnabled",
 	"authPasswordPolicy",

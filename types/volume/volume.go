@@ -63,6 +63,11 @@ type Volume struct {
 	//
 	// Required: true
 	Containers []string `json:"containers"`
+
+	// ActivityID is the activity created by a mutating volume action.
+	//
+	// Required: false
+	ActivityID *string `json:"activityId,omitempty"`
 }
 
 // UsageCounts contains counts of volumes by usage status.
@@ -94,6 +99,11 @@ type PruneReport struct {
 	//
 	// Required: true
 	SpaceReclaimed uint64 `json:"spaceReclaimed"`
+
+	// ActivityID is the activity created by the prune action.
+	//
+	// Required: false
+	ActivityID *string `json:"activityId,omitempty"`
 }
 
 // Create is used to create a new volume.
