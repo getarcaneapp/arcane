@@ -6,6 +6,7 @@ import (
 	"time"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils"
 	"github.com/stretchr/testify/require"
 )
 
@@ -58,6 +59,16 @@ func TestDetachFromHTTPContextInternal(t *testing.T) {
 		deadline, ok := detached.Deadline()
 		require.True(t, ok)
 		require.InDelta(t, float64(defaultComposeTimeout), float64(time.Until(deadline)), float64(5*time.Second))
+	})
+
+	t.Run("app lifecycle context cancels detached work on shutdown", func(t *testing.T) {
+		appCtx, cancelApp := context.WithCancel(utils.WithAppLifecycleContext(context.Background()))
+		detached, detachedCancel := detachFromHTTPContextInternal(appCtx)
+		defer detachedCancel()
+
+		cancelApp()
+
+		require.ErrorIs(t, detached.Err(), context.Canceled)
 	})
 }
 

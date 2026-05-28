@@ -14,6 +14,7 @@ import (
 	slogecho "github.com/samber/slog-echo"
 
 	"github.com/getarcaneapp/arcane/backend/api"
+	"github.com/getarcaneapp/arcane/backend/api/handlers"
 	"github.com/getarcaneapp/arcane/backend/api/ws"
 	"github.com/getarcaneapp/arcane/backend/frontend"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
@@ -157,6 +158,7 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services)
 	apiGroup.Use(middleware.PerIPRateLimitForPaths(
 		[]string{"/api/webhooks/trigger/:token"}, 60, 10,
 	))
+	handlerAppCtx := handlers.NewActivityAppContext(ctx)
 
 	tunnelRegistry := edge.NewTunnelRegistry()
 	edge.SetDefaultRegistry(tunnelRegistry)
@@ -169,7 +171,7 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services)
 	}
 
 	// Register public webhook trigger endpoint before auth middleware (token in URL is the sole auth)
-	api.RegisterWebhookTrigger(apiGroup, appServices.Webhook) //nolint:contextcheck
+	api.RegisterWebhookTrigger(apiGroup, appServices.Webhook, handlerAppCtx) //nolint:contextcheck // app lifecycle context is intentionally wrapped for detached activity work.
 
 	//nolint:contextcheck // Echo middleware reads context from echo.Context.Request().Context(), not a parameter.
 	envProxyMiddleware := middleware.NewEnvProxyMiddlewareWithParam(
@@ -181,6 +183,7 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services)
 	apiGroup.Use(envProxyMiddleware)
 
 	humaServices := &api.Services{
+		AppContext:        ctx,
 		User:              appServices.User,
 		Auth:              appServices.Auth,
 		Oidc:              appServices.Oidc,
@@ -220,7 +223,7 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services)
 		Config:            cfg,
 	}
 
-	_ = api.SetupAPI(e, apiGroup, cfg, humaServices)
+	_ = api.SetupAPI(e, apiGroup, cfg, humaServices) //nolint:contextcheck // app lifecycle context is carried in humaServices for detached activity work.
 
 	for _, register := range registerBuildableRoutes {
 		register(apiGroup, appServices)

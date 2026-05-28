@@ -120,7 +120,7 @@ func (s *ImageUpdateService) completeImageUpdateActivityInternal(ctx context.Con
 		message = "Image update check completed"
 	}
 	step := "Image update check complete"
-	if _, err := s.activityService.CompleteActivity(context.WithoutCancel(ctx), activityID, status, message, errMessage, step); err != nil {
+	if _, err := s.activityService.CompleteActivity(utils.ActivityRuntimeContext(ctx, nil), activityID, status, message, errMessage, step); err != nil {
 		slog.DebugContext(ctx, "failed to complete image update activity", "activityId", activityID, "error", err)
 	}
 }
@@ -1045,6 +1045,7 @@ func (s *ImageUpdateService) CheckMultipleImages(ctx context.Context, imageRefs 
 
 	if err := g.Wait(); err != nil {
 		slog.ErrorContext(ctx, "Batch check error", "error", err)
+		s.completeImageUpdateActivityInternal(ctx, activityID, false, fmt.Sprintf("Image update check failed: %s", err.Error()))
 		return results, err
 	}
 
