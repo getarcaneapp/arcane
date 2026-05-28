@@ -619,7 +619,7 @@
 
 	<Tabs.Root bind:value={activeTab} class="w-full">
 		<div class="my-4">
-			<TabBar items={tabItems} value={activeTab} onValueChange={handleTabChange} class="w-full" />
+			<TabBar items={tabItems} value={activeTab} onValueChange={handleTabChange} />
 		</div>
 
 		<Tabs.Content value="details">
