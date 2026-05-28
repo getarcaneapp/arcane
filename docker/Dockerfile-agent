@@ -51,6 +51,7 @@ ARG TARGETARCH
 
 WORKDIR /app
 
+USER 0:0
 COPY --from=agent-builder --chown=65532:65532 /out/rootfs/app/ /app/
 COPY --from=agent-builder --chown=65532:65532 /out/arcane-agent ./arcane-agent
 
