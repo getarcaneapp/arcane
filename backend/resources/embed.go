@@ -4,5 +4,5 @@ import "embed"
 
 // Embedded file systems for the project
 
-//go:embed migrations images email-templates fonts
+//go:embed migrations images email-templates
 var FS embed.FS

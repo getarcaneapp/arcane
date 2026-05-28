@@ -52,7 +52,7 @@
 	const updateLocaleMutation = createMutation(() => ({
 		mutationFn: async (locale: Locale) => {
 			if ($userStore) {
-				await userService.update($userStore.id, { locale });
+				await userService.updateMyProfile({ locale });
 			}
 			await setLocale(locale);
 			return locale;
