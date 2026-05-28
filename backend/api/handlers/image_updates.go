@@ -10,6 +10,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils"
 	"github.com/getarcaneapp/arcane/types/base"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
 	"github.com/getarcaneapp/arcane/types/imageupdate"
@@ -18,6 +19,7 @@ import (
 type ImageUpdateHandler struct {
 	imageUpdateService *services.ImageUpdateService
 	imageService       *services.ImageService
+	appCtx             context.Context
 }
 
 type CheckImageUpdateInput struct {
@@ -74,10 +76,11 @@ type GetUpdateSummaryOutput struct {
 }
 
 // RegisterImageUpdates registers image update endpoints.
-func RegisterImageUpdates(api huma.API, imageUpdateSvc *services.ImageUpdateService, imageSvc *services.ImageService) {
+func RegisterImageUpdates(api huma.API, imageUpdateSvc *services.ImageUpdateService, imageSvc *services.ImageService, appCtx ActivityAppContext) {
 	h := &ImageUpdateHandler{
 		imageUpdateService: imageUpdateSvc,
 		imageService:       imageSvc,
+		appCtx:             appCtx.contextInternal(),
 	}
 
 	huma.Register(api, huma.Operation{
@@ -156,7 +159,8 @@ func (h *ImageUpdateHandler) CheckImageUpdate(ctx context.Context, input *CheckI
 		return nil, huma.Error400BadRequest((&common.ImageRefRequiredError{}).Error())
 	}
 
-	result, err := h.imageUpdateService.CheckImageUpdate(ctx, input.ImageRef)
+	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	result, err := h.imageUpdateService.CheckImageUpdate(runtimeCtx, input.ImageRef)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.ImageUpdateCheckError{Err: err}).Error())
 	}
@@ -174,7 +178,8 @@ func (h *ImageUpdateHandler) CheckImageUpdateByID(ctx context.Context, input *Ch
 		return nil, huma.Error400BadRequest((&common.ImageIDRequiredError{}).Error())
 	}
 
-	result, err := h.imageUpdateService.CheckImageUpdateByID(ctx, input.ImageID)
+	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	result, err := h.imageUpdateService.CheckImageUpdateByID(runtimeCtx, input.ImageID)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.ImageUpdateCheckError{Err: err}).Error())
 	}
@@ -198,7 +203,8 @@ func (h *ImageUpdateHandler) CheckMultipleImages(ctx context.Context, input *Che
 		}, nil
 	}
 
-	results, err := h.imageUpdateService.CheckMultipleImages(ctx, input.Body.ImageRefs, input.Body.Credentials)
+	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	results, err := h.imageUpdateService.CheckMultipleImages(runtimeCtx, input.Body.ImageRefs, input.Body.Credentials)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.BatchImageUpdateCheckError{Err: err}).Error())
 	}
@@ -212,7 +218,8 @@ func (h *ImageUpdateHandler) CheckMultipleImages(ctx context.Context, input *Che
 }
 
 func (h *ImageUpdateHandler) CheckAllImages(ctx context.Context, input *CheckAllImagesInput) (*CheckAllImagesOutput, error) {
-	results, err := h.imageUpdateService.CheckAllImages(ctx, 0, input.Body.Credentials)
+	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	results, err := h.imageUpdateService.CheckAllImages(runtimeCtx, 0, input.Body.Credentials)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.AllImageUpdateCheckError{Err: err}).Error())
 	}
