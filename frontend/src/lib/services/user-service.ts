@@ -33,6 +33,14 @@ export default class UserAPIService extends BaseAPIService {
 	async changePassword(data: { currentPassword: string; newPassword: string }): Promise<void> {
 		return this.handleResponse(this.api.post('/auth/password', data)) as Promise<void>;
 	}
+
+	async logoutAllOtherSessions(): Promise<void> {
+		return this.handleResponse(this.api.post('/auth/sessions/logout-all')) as Promise<void>;
+	}
+
+	async updateMyProfile(data: { displayName?: string; email?: string; locale?: string }): Promise<User> {
+		return this.handleResponse(this.api.put('/auth/me/profile', data)) as Promise<User>;
+	}
 }
 
 export const userService = new UserAPIService();

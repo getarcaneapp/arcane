@@ -47,7 +47,6 @@ type Services struct {
 	GitRepository     *services.GitRepositoryService
 	GitOpsSync        *services.GitOpsSyncService
 	Webhook           *services.WebhookService
-	Font              *services.FontService
 	Vulnerability     *services.VulnerabilityService
 	Dashboard         *services.DashboardService
 	Role              *services.RoleService
@@ -67,7 +66,6 @@ func initializeServices(ctx context.Context, db *database.DB, cfg *config.Config
 	svcs.SettingsSearch = services.NewSettingsSearchService()
 	svcs.CustomizeSearch = services.NewCustomizeSearchService()
 	svcs.AppImages = services.NewApplicationImagesService(resources.FS, svcs.Settings)
-	svcs.Font = services.NewFontService(resources.FS)
 	dockerClient := services.NewDockerClientService(ctx, db, cfg, svcs.Settings)
 	svcs.Docker = dockerClient
 	svcs.Role = services.NewRoleService(db)
