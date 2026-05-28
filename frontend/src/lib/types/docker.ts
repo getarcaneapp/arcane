@@ -341,6 +341,7 @@ export interface ImageUpdateInfoDto {
 	authUsername?: string;
 	authRegistry?: string;
 	usedCredential?: boolean;
+	activityId?: string;
 }
 
 export interface ImageUsageCounts {
@@ -623,6 +624,7 @@ export interface VolumeSummaryDto {
 	inUse: boolean;
 	usageData?: VolumeUsageData;
 	size: number;
+	activityId?: string;
 }
 
 export interface VolumeDetailDto extends VolumeSummaryDto {

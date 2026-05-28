@@ -976,14 +976,6 @@ func (e *DockerInfoError) Error() string {
 	return fmt.Sprintf("Failed to get Docker info: %v", e.Err)
 }
 
-type SystemPruneError struct {
-	Err error
-}
-
-func (e *SystemPruneError) Error() string {
-	return fmt.Sprintf("Failed to prune resources: %v", e.Err)
-}
-
 type ContainerStartAllError struct {
 	Err error
 }

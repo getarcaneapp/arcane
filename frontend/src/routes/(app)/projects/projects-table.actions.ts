@@ -6,6 +6,7 @@ import { projectService } from '$lib/services/project-service';
 import type { SearchPaginationSortRequest } from '$lib/types/shared';
 import { handleApiResultWithCallbacks } from '$lib/utils/api';
 import { tryCatch } from '$lib/utils/api';
+import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 import { toast } from 'svelte-sonner';
 import type { ActionStatus } from './projects-table.helpers';
 
@@ -123,8 +124,8 @@ export function createProjectActions({
 				setLoadingState: (value) => {
 					actionStatus[id] = value ? config.status : '';
 				},
-				onSuccess: async () => {
-					toast.success(config.success());
+				onSuccess: async (data) => {
+					toast.success(config.success(), activityToastOptions(extractActivityId(data)));
 					await refreshProjects();
 				}
 			});
@@ -164,8 +165,8 @@ export function createProjectActions({
 						setLoadingState: (value) => {
 							actionStatus[id] = value ? 'destroying' : '';
 						},
-						onSuccess: async () => {
-							toast.success(m.compose_destroy_success());
+						onSuccess: async (data) => {
+							toast.success(m.compose_destroy_success(), activityToastOptions(extractActivityId(data)));
 							await refreshProjects();
 						}
 					});

@@ -581,10 +581,6 @@ go.opentelemetry.io/otel/trace v1.43.0 h1:BkNrHpup+4k4w+ZZ86CZoHHEkohws8AY+WTX09
 go.opentelemetry.io/otel/trace v1.43.0/go.mod h1:/QJhyVBUUswCphDVxq+8mld+AvhXZLhe+8WVFxiFff0=
 go.opentelemetry.io/proto/otlp v1.10.0 h1:IQRWgT5srOCYfiWnpqUYz9CVmbO8bFmKcwYxpuCSL2g=
 go.opentelemetry.io/proto/otlp v1.10.0/go.mod h1:/CV4QoCR/S9yaPj8utp3lvQPoqMtxXdzn7ozvvozVqk=
-go.podman.io/image/v5 v5.40.0 h1:gNQvj343Eb4juCitUBkuDz1T82Zpp6nhgMEXzNfCges=
-go.podman.io/image/v5 v5.40.0/go.mod h1:qgXf1abXJ+2l01pL8+CljaMKryeo6ahaHO7H51ooKIc=
-go.podman.io/storage v1.63.0 h1:bj/pAWFhChbuBmejzno0iQLhU7FevGVXepRXm5pFGeA=
-go.podman.io/storage v1.63.0/go.mod h1:z4Z9K+7GhKjWL/Y1O17+4f8a1KGijVeC9hr3tymhSOs=
 go.uber.org/goleak v1.3.0 h1:2K3zAYmnTNqV73imy9J1T3WC+gmCePx2hEGkimedGto=
 go.uber.org/goleak v1.3.0/go.mod h1:CoHD4mav9JJNrW/WLlf7HGZPjdw8EucARQHekz1X6bE=
 go.uber.org/mock v0.6.0 h1:hyF9dfmbgIX5EfOdasqLsWD6xqpNZlXblLB/Dbnwv3Y=
