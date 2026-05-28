@@ -9,6 +9,7 @@
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api';
 	import { tryCatch } from '$lib/utils/api';
+	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import userStore from '$lib/stores/user-store';
@@ -365,8 +366,8 @@
 			result: await tryCatch(systemService.startAllStoppedContainers()),
 			message: m.dashboard_start_all_failed(),
 			setLoadingState: (value) => (isLoading.starting = value),
-			onSuccess: async () => {
-				toast.success(m.dashboard_start_all_success());
+			onSuccess: async (data) => {
+				toast.success(m.dashboard_start_all_success(), activityToastOptions(extractActivityId(data)));
 				await refreshData();
 			}
 		});
@@ -385,8 +386,8 @@
 						result: await tryCatch(systemService.stopAllContainers()),
 						message: m.dashboard_stop_all_failed(),
 						setLoadingState: (value) => (isLoading.stopping = value),
-						onSuccess: async () => {
-							toast.success(m.dashboard_stop_all_success());
+						onSuccess: async (data) => {
+							toast.success(m.dashboard_stop_all_success(), activityToastOptions(extractActivityId(data)));
 							await refreshData();
 						}
 					});
@@ -413,12 +414,12 @@
 			result: await tryCatch(systemService.pruneAll(pruneRequest)),
 			message: m.dashboard_prune_failed({ types: typesString }),
 			setLoadingState: (value) => (isLoading.pruning = value),
-			onSuccess: async () => {
+			onSuccess: async (data) => {
 				isPruneDialogOpen = false;
 				if (selectedTypes.length === 1) {
-					toast.success(m.dashboard_prune_success_one({ types: typesString }));
+					toast.success(m.dashboard_prune_success_one({ types: typesString }), activityToastOptions(extractActivityId(data)));
 				} else {
-					toast.success(m.dashboard_prune_success_many({ types: typesString }));
+					toast.success(m.dashboard_prune_success_many({ types: typesString }), activityToastOptions(extractActivityId(data)));
 				}
 				await refreshData();
 			}

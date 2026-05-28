@@ -70,9 +70,13 @@ func (j *ScheduledPruneJob) Run(ctx context.Context) {
 		"build_cache", req.BuildCache,
 	)
 
-	result, err := j.systemService.PruneAll(ctx, req)
+	result, started, err := j.systemService.PruneAll(ctx, "0", req)
 	if err != nil {
 		slog.ErrorContext(ctx, "scheduled prune run failed", "error", err)
+		return
+	}
+	if !started {
+		slog.InfoContext(ctx, "scheduled prune run skipped; prune already in progress", "activityId", result.ActivityID)
 		return
 	}
 

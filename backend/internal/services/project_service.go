@@ -721,6 +721,26 @@ func (s *ProjectService) pullAndReconcileImageInternal(
 	return nil
 }
 
+type projectProgressSuppressedContextKey struct{}
+
+func withProjectProgressSuppressedInternal(ctx context.Context) context.Context {
+	return context.WithValue(ctx, projectProgressSuppressedContextKey{}, true)
+}
+
+func writeProjectProgressInternal(ctx context.Context, message string, progress int, phase string) {
+	if suppressed, _ := ctx.Value(projectProgressSuppressedContextKey{}).(bool); suppressed {
+		return
+	}
+	progressWriter, _ := ctx.Value(projects.ProgressWriterKey{}).(io.Writer)
+	if progressWriter == nil {
+		return
+	}
+	payload := fmt.Sprintf(`{"type":"project","phase":%q,"status":%q,"progressDetail":{"current":%d,"total":100}}`+"\n", phase, message, progress)
+	if _, err := progressWriter.Write([]byte(payload)); err != nil {
+		slog.DebugContext(ctx, "failed to write project progress", "phase", phase, "error", err)
+	}
+}
+
 func (s *ProjectService) UpdateProjectServices(ctx context.Context, projectID string, servicesToUpdate []string, user models.User) error {
 	projectFromDb, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
@@ -739,16 +759,19 @@ func (s *ProjectService) UpdateProjectServices(ctx context.Context, projectID st
 	}
 
 	// 3. Pull images for specific services
+	writeProjectProgressInternal(ctx, "Pulling updated service images", 20, "pull")
 	if err := s.composePullSelectedServicesInternal(ctx, compProj, servicesToUpdate); err != nil {
 		slog.WarnContext(ctx, "compose pull failed, continuing", "error", err)
 	}
 
 	// 4. Stop specific services
+	writeProjectProgressInternal(ctx, "Stopping selected services", 45, "stop")
 	if err := projects.ComposeStop(ctx, compProj, servicesToUpdate); err != nil {
 		slog.WarnContext(ctx, "compose stop failed, continuing", "error", err)
 	}
 
 	// 5. Up specific services
+	writeProjectProgressInternal(ctx, "Starting selected services", 70, "up")
 	if err := projects.ComposeUp(ctx, compProj, servicesToUpdate, false, false); err != nil {
 		if statusErr := s.updateProjectStatusandCountsInternal(ctx, projectID, models.ProjectStatusStopped); statusErr != nil {
 			slog.ErrorContext(ctx, "UpdateProjectServices: failed to set stopped status after compose up failure", "projectID", projectID, "error", statusErr)
@@ -757,9 +780,11 @@ func (s *ProjectService) UpdateProjectServices(ctx context.Context, projectID st
 	}
 
 	// 6. Finalize status
+	writeProjectProgressInternal(ctx, "Refreshing project status", 90, "status")
 	if err := s.updateProjectStatusandCountsInternal(ctx, projectID, models.ProjectStatusRunning); err != nil {
 		return err
 	}
+	writeProjectProgressInternal(ctx, "Service update completed", 100, "complete")
 
 	metadata := models.JSON{
 		"action":      "update_services",
@@ -1939,6 +1964,7 @@ func (s *ProjectService) DownProject(ctx context.Context, projectID string, user
 		return fmt.Errorf("failed to update project status to stopping: %w", err)
 	}
 
+	writeProjectProgressInternal(ctx, "Stopping project services", 45, "down")
 	if err := projects.ComposeDown(ctx, proj, false); err != nil {
 		_ = s.updateProjectStatusInternal(ctx, projectID, models.ProjectStatusRunning)
 		return fmt.Errorf("failed to bring down project: %w", err)
@@ -1953,7 +1979,12 @@ func (s *ProjectService) DownProject(ctx context.Context, projectID string, user
 		slog.ErrorContext(ctx, "could not log project down action", "error", logErr)
 	}
 
-	return s.updateProjectStatusandCountsInternal(ctx, projectID, models.ProjectStatusStopped)
+	writeProjectProgressInternal(ctx, "Refreshing project status", 90, "status")
+	if err := s.updateProjectStatusandCountsInternal(ctx, projectID, models.ProjectStatusStopped); err != nil {
+		return err
+	}
+	writeProjectProgressInternal(ctx, "Project stopped", 100, "complete")
+	return nil
 }
 
 func (s *ProjectService) CreateProject(ctx context.Context, name, composeContent string, envContent *string, user models.User) (*models.Project, error) {
@@ -2021,11 +2052,13 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, r
 		"projectName", proj.Name,
 		"projectPath", proj.Path)
 
-	if err := s.DownProject(ctx, projectID, systemUser); err != nil {
+	writeProjectProgressInternal(ctx, "Stopping project before destroy", 25, "down")
+	if err := s.DownProject(withProjectProgressSuppressedInternal(ctx), projectID, systemUser); err != nil {
 		slog.WarnContext(ctx, "failed to bring down project", "error", err)
 	}
 
 	if removeVolumes {
+		writeProjectProgressInternal(ctx, "Removing project volumes", 55, "volumes")
 		if compProj, _, lerr := s.loadComposeProjectForProjectInternal(ctx, proj, nil); lerr == nil {
 			if derr := projects.ComposeDown(ctx, compProj, true); derr != nil {
 				slog.WarnContext(ctx, "failed to remove volumes", "error", derr)
@@ -2036,6 +2069,7 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, r
 	}
 
 	if removeFiles {
+		writeProjectProgressInternal(ctx, "Removing project files", 75, "files")
 		slog.DebugContext(ctx, "Removing project files", "path", proj.Path)
 		if err := os.RemoveAll(proj.Path); err != nil {
 			slog.ErrorContext(ctx, "Failed to remove project files", "path", proj.Path, "error", err)
@@ -2050,6 +2084,7 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, r
 		return fmt.Errorf("failed to delete project from database: %w", err)
 	}
 	s.invalidateComposeCacheInternal(projectID)
+	writeProjectProgressInternal(ctx, "Project destroyed", 100, "complete")
 
 	metadata := models.JSON{"action": "destroy", "projectID": projectID, "projectName": proj.Name, "removeFiles": removeFiles, "removeVolumes": removeVolumes}
 	if logErr := s.eventService.LogProjectEvent(ctx, models.EventTypeProjectDelete, projectID, proj.Name, user.ID, user.Username, "0", metadata); logErr != nil {
@@ -2076,13 +2111,25 @@ func (s *ProjectService) RedeployProject(ctx context.Context, projectID string, 
 		return &common.ArcaneSelfRedeployError{}
 	}
 
-	if err := s.PullProjectImages(ctx, projectID, io.Discard, user, nil); err != nil {
+	progressWriter, _ := ctx.Value(projects.ProgressWriterKey{}).(io.Writer)
+	if progressWriter == nil {
+		progressWriter = io.Discard
+	}
+	if _, writeErr := progressWriter.Write([]byte(`{"type":"deploy","phase":"pull","status":"pulling project images"}` + "\n")); writeErr != nil {
+		slog.DebugContext(ctx, "failed to write redeploy pull progress", "error", writeErr)
+	}
+
+	if err := s.PullProjectImages(ctx, projectID, progressWriter, user, nil); err != nil {
 		slog.WarnContext(ctx, "failed to pull project images", "error", err)
 	}
 
 	metadata := models.JSON{"action": "redeploy", "projectID": projectID, "projectName": proj.Name}
 	if logErr := s.eventService.LogProjectEvent(ctx, models.EventTypeProjectDeploy, projectID, proj.Name, user.ID, user.Username, "0", metadata); logErr != nil {
 		slog.ErrorContext(ctx, "could not log project redeploy action", "error", logErr)
+	}
+
+	if _, writeErr := progressWriter.Write([]byte(`{"type":"deploy","phase":"up","status":"starting project deployment"}` + "\n")); writeErr != nil {
+		slog.DebugContext(ctx, "failed to write redeploy deploy progress", "error", writeErr)
 	}
 
 	return s.DeployProject(ctx, projectID, user, options)
@@ -2792,6 +2839,7 @@ func (s *ProjectService) RestartProject(ctx context.Context, projectID string, u
 		return fmt.Errorf("failed to load compose project: %w", lerr)
 	}
 
+	writeProjectProgressInternal(ctx, "Restarting project services", 55, "restart")
 	if err := projects.ComposeRestart(ctx, compProj, nil); err != nil {
 		_ = s.updateProjectStatusInternal(ctx, projectID, models.ProjectStatusRunning)
 		return fmt.Errorf("failed to restart project: %w", err)
@@ -2806,7 +2854,12 @@ func (s *ProjectService) RestartProject(ctx context.Context, projectID string, u
 		slog.ErrorContext(ctx, "could not log project restart action", "error", logErr)
 	}
 
-	return s.updateProjectStatusandCountsInternal(ctx, projectID, models.ProjectStatusRunning)
+	writeProjectProgressInternal(ctx, "Refreshing project status", 90, "status")
+	if err := s.updateProjectStatusandCountsInternal(ctx, projectID, models.ProjectStatusRunning); err != nil {
+		return err
+	}
+	writeProjectProgressInternal(ctx, "Project restarted", 100, "complete")
+	return nil
 }
 
 func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, name *string, composeContent, envContent *string, user models.User) (*models.Project, error) {

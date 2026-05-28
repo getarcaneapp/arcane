@@ -293,13 +293,7 @@ func (fw *Watcher) addExistingDirectoriesRecursiveInternal(path string, logicalP
 			return nil
 		}
 
-		watchPath := fw.resolveWatchPathInternal(path)
-		fw.watchAliases[watchPath] = filepath.Clean(logicalPath)
-		if err := fw.watcher.Add(watchPath); err != nil {
-			slog.Warn("Failed to add directory to watcher",
-				"path", watchPath,
-				"error", err)
-		}
+		fw.addWatchPathInternal(path, logicalPath)
 
 		if fw.maxDepth > 0 && depth == fw.maxDepth {
 			return nil
@@ -323,19 +317,6 @@ func (fw *Watcher) addExistingDirectoriesRecursiveInternal(path string, logicalP
 	}
 
 	return nil
-}
-
-func (fw *Watcher) resolveWatchPathInternal(path string) string {
-	if !fw.followSymlinks {
-		return path
-	}
-
-	resolvedPath, err := filepath.EvalSymlinks(path)
-	if err != nil {
-		return path
-	}
-
-	return resolvedPath
 }
 
 func (fw *Watcher) logicalPathForWatchEventInternal(path string) string {
@@ -365,6 +346,26 @@ func (fw *Watcher) logicalPathForWatchEventInternal(path string) string {
 	}
 
 	return filepath.Join(bestLogicalPath, rel)
+}
+
+func (fw *Watcher) addWatchPathInternal(path string, logicalPath string) {
+	watchPaths := []string{path}
+	if fw.followSymlinks {
+		if info, err := os.Lstat(path); err == nil && info.Mode()&os.ModeSymlink != 0 {
+			if resolvedPath, resolveErr := filepath.EvalSymlinks(path); resolveErr == nil && resolvedPath != path {
+				watchPaths = append(watchPaths, resolvedPath)
+			}
+		}
+	}
+
+	for _, watchPath := range watchPaths {
+		fw.watchAliases[filepath.Clean(watchPath)] = filepath.Clean(logicalPath)
+		if err := fw.watcher.Add(watchPath); err != nil {
+			slog.Warn("Failed to add directory to watcher",
+				"path", watchPath,
+				"error", err)
+		}
+	}
 }
 
 func (fw *Watcher) dirDepth(path string) int {

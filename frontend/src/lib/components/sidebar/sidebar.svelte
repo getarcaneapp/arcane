@@ -20,6 +20,7 @@
 	import SidebarLogo from './sidebar-logo.svelte';
 	import SidebarUpdatebanner from './sidebar-updatebanner.svelte';
 	import SidebarPinButton from './sidebar-pin-button.svelte';
+	import ActivityCenterTrigger from '$lib/components/activity/activity-center-trigger.svelte';
 	import userStore from '$lib/stores/user-store';
 	import settingsStore from '$lib/stores/config-store';
 	import { m } from '$lib/paraglide/messages';
@@ -98,6 +99,17 @@
 			</div>
 		{:else}
 			<SidebarEnvSwitcher onOpenDialog={() => (envSwitcherOpen = true)} />
+		{/if}
+		{#if isCollapsed}
+			<div class="flex justify-center px-1 pt-1">
+				<ActivityCenterTrigger collapsed compact />
+			</div>
+		{:else}
+			<Sidebar.Menu class="pt-1">
+				<Sidebar.MenuItem>
+					<ActivityCenterTrigger compact />
+				</Sidebar.MenuItem>
+			</Sidebar.Menu>
 		{/if}
 	</Sidebar.Header>
 	<Sidebar.Content class={!isCollapsed ? '-mt-2' : ''}>

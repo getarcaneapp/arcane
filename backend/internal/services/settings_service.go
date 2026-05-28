@@ -120,6 +120,8 @@ func DefaultSettingsConfig() *models.Settings {
 		DockerClientRefreshInterval:     models.SettingVariable{Value: "*/30 * * * * *"},
 		EventCleanupInterval:            models.SettingVariable{Value: "0 0 */6 * * *"},
 		ExpiredSessionsCleanupInterval:  models.SettingVariable{Value: "0 0 0 * * *"},
+		ActivityHistoryRetentionDays:    models.SettingVariable{Value: "30"},
+		ActivityHistoryMaxEntries:       models.SettingVariable{Value: "1000"},
 		AutoInjectEnv:                   models.SettingVariable{Value: "false"},
 		DefaultDeployPullPolicy:         models.SettingVariable{Value: "missing"},
 		ScheduledPruneEnabled:           models.SettingVariable{Value: "false"},

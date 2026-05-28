@@ -295,4 +295,9 @@ type PruneAllResult struct {
 	//
 	// Required: false
 	Errors []string `json:"errors,omitempty"`
+
+	// ActivityID is the background activity that tracked this prune operation.
+	//
+	// Required: false
+	ActivityID *string `json:"activityId,omitempty"`
 }

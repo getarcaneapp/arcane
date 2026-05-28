@@ -17,6 +17,8 @@ export type Settings = {
 	pollingInterval: number;
 	dockerClientRefreshInterval?: string;
 	environmentHealthInterval: number;
+	activityHistoryRetentionDays: number;
+	activityHistoryMaxEntries: number;
 	defaultDeployPullPolicy: 'missing' | 'always' | 'never';
 	scheduledPruneEnabled?: boolean;
 	scheduledPruneInterval?: number;

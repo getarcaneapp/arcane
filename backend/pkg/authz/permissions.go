@@ -164,6 +164,9 @@ const (
 	PermVulnsManage = "vulnerabilities:manage"
 
 	PermBuildWorkspacesManage = "build-workspaces:manage"
+
+	PermActivitiesRead   = "activities:read"
+	PermActivitiesDelete = "activities:delete"
 )
 
 // orgLevelPermissions is derived from the authz permission catalog. Env-scoped
@@ -273,6 +276,7 @@ func BuiltInEditorPermissions() []string {
 		PermImageUpdatesRead, PermImageUpdatesCheck,
 		PermVulnsRead, PermVulnsScan, PermVulnsManage,
 		PermBuildWorkspacesManage,
+		PermActivitiesRead, PermActivitiesDelete,
 	}
 }
 
@@ -296,6 +300,7 @@ func BuiltInDeployerPermissions() []string {
 		PermSystemRead,
 		PermImageUpdatesRead, PermImageUpdatesCheck,
 		PermVulnsRead,
+		PermActivitiesRead,
 	}
 }
 
@@ -324,6 +329,7 @@ func BuiltInViewerPermissions() []string {
 		PermSystemRead,
 		PermImageUpdatesRead,
 		PermVulnsRead,
+		PermActivitiesRead,
 	}
 }
 
@@ -344,6 +350,7 @@ func BuiltInMonitorPermissions() []string {
 		PermSystemRead,
 		PermImageUpdatesRead,
 		PermVulnsRead,
+		PermActivitiesRead,
 	}
 }
 

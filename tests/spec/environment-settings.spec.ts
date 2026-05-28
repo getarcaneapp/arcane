@@ -4,14 +4,14 @@ const LOCAL_ENV_ID = '0';
 
 async function openEnvironment(page: Page, environmentId: string) {
 	await page.goto(`/environments/${environmentId}`);
-	await page.waitForLoadState('networkidle');
+	await page.waitForLoadState('load');
 	await expect(page.locator('#env-name')).toBeVisible();
 	await expect(page.getByRole('button', { name: 'Save', exact: true }).first()).toBeVisible();
 }
 
 async function createDirectEnvironmentViaUI(page: Page, environmentName: string) {
 	await page.goto('/environments');
-	await page.waitForLoadState('networkidle');
+	await page.waitForLoadState('load');
 
 	await page.getByRole('button', { name: 'Add Environment', exact: true }).click();
 	await expect(page.getByText('Create New Agent Environment')).toBeVisible();
@@ -27,7 +27,7 @@ async function createDirectEnvironmentViaUI(page: Page, environmentName: string)
 
 async function deleteEnvironmentViaUI(page: Page, environmentName: string) {
 	await page.goto('/environments');
-	await page.waitForLoadState('networkidle');
+	await page.waitForLoadState('load');
 
 	const envRow = page.locator('tr').filter({
 		has: page.getByRole('button', { name: environmentName, exact: true })

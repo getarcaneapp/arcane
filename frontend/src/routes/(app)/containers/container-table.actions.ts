@@ -4,6 +4,7 @@ import { containerService, type ContainersPaginatedResponse } from '$lib/service
 import type { ContainerSummaryDto } from '$lib/types/docker';
 import { handleApiResultWithCallbacks } from '$lib/utils/api';
 import { tryCatch } from '$lib/utils/api';
+import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 import { toast } from 'svelte-sonner';
 import { getContainerDisplayName, type ActionStatus } from './container-table.helpers';
 
@@ -94,8 +95,8 @@ export function createContainerActions({
 				setLoadingState: (value) => {
 					actionStatus[id] = value ? config.status : '';
 				},
-				async onSuccess() {
-					toast.success(config.success());
+				async onSuccess(data) {
+					toast.success(config.success(), activityToastOptions(extractActivityId(data)));
 					await reloadContainers();
 				}
 			});
@@ -135,8 +136,8 @@ export function createContainerActions({
 						setLoadingState: (value) => {
 							actionStatus[id] = value ? 'removing' : '';
 						},
-						async onSuccess() {
-							toast.success(m.containers_remove_success());
+						async onSuccess(data) {
+							toast.success(m.containers_remove_success(), activityToastOptions(extractActivityId(data)));
 							await reloadContainers();
 						}
 					});
@@ -157,19 +158,19 @@ export function createContainerActions({
 				action: async () => {
 					actionStatus[container.id] = 'updating';
 					try {
-						toast.info(m.containers_update_pulling_image());
-
 						const result = await containerService.updateContainer(container.id);
+						const toastOptions = activityToastOptions(extractActivityId(result));
 
 						if (result.failed > 0) {
 							const failedItem = result.items?.find((item: { status?: string; error?: string }) => item.status === 'failed');
 							toast.error(
-								m.containers_update_failed({ name: containerName }) + (failedItem?.error ? `: ${failedItem.error}` : '')
+								m.containers_update_failed({ name: containerName }) + (failedItem?.error ? `: ${failedItem.error}` : ''),
+								toastOptions
 							);
 						} else if (result.updated > 0) {
-							toast.success(m.containers_update_success({ name: containerName }));
+							toast.success(m.containers_update_success({ name: containerName }), toastOptions);
 						} else {
-							toast.info(m.image_update_up_to_date_title());
+							toast.info(m.image_update_up_to_date_title(), toastOptions);
 						}
 
 						await reloadContainers();
@@ -199,8 +200,8 @@ export function createContainerActions({
 						setLoadingState: (value) => {
 							actionStatus[container.id] = value ? 'redeploying' : '';
 						},
-						async onSuccess() {
-							toast.success(m.container_redeploy_success());
+						async onSuccess(data) {
+							toast.success(m.container_redeploy_success(), activityToastOptions(extractActivityId(data)));
 							await refreshContainers();
 						}
 					});

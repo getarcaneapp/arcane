@@ -37,7 +37,7 @@ export class VolumeBrowserService extends BaseAPIService {
 		link.remove();
 	}
 
-	async uploadFile(volumeName: string, path: string, file: File): Promise<void> {
+	async uploadFile(volumeName: string, path: string, file: File): Promise<any> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		const formData = new FormData();
 		formData.append('file', file);
@@ -48,7 +48,7 @@ export class VolumeBrowserService extends BaseAPIService {
 		);
 	}
 
-	async createDirectory(volumeName: string, path: string): Promise<void> {
+	async createDirectory(volumeName: string, path: string): Promise<any> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		return this.handleResponse(
 			this.api.post(`/environments/${envId}/volumes/${volumeName}/browse/mkdir`, null, {
@@ -57,7 +57,7 @@ export class VolumeBrowserService extends BaseAPIService {
 		);
 	}
 
-	async deleteFile(volumeName: string, path: string): Promise<void> {
+	async deleteFile(volumeName: string, path: string): Promise<any> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		return this.handleResponse(
 			this.api.delete(`/environments/${envId}/volumes/${volumeName}/browse`, {
