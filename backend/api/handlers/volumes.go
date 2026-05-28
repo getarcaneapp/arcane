@@ -27,6 +27,7 @@ type VolumeHandler struct {
 	volumeService   *services.VolumeService
 	dockerService   *services.DockerClientService
 	activityService *services.ActivityService
+	appCtx          context.Context
 }
 
 // --- Huma Input/Output Wrappers ---
@@ -299,11 +300,12 @@ type UploadAndRestoreOutput struct {
 }
 
 // RegisterVolumes registers volume management routes using Huma.
-func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, volumeService *services.VolumeService, activityService *services.ActivityService) {
+func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, volumeService *services.VolumeService, activityService *services.ActivityService, appCtx ActivityAppContext) {
 	h := &VolumeHandler{
 		volumeService:   volumeService,
 		dockerService:   dockerService,
 		activityService: activityService,
+		appCtx:          appCtx.contextInternal(),
 	}
 
 	huma.Register(api, huma.Operation{
@@ -749,7 +751,8 @@ func (h *VolumeHandler) CreateVolume(ctx context.Context, input *CreateVolumeInp
 	}
 
 	var response *volumetypes.Volume
-	activityID, err := activitylib.RunHandlerActivity(ctx, h.activityService, activitylib.HandlerOptions{
+	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
 		Type:           models.ActivityTypeResourceAction,
 		ResourceType:   "volume",
@@ -765,7 +768,7 @@ func (h *VolumeHandler) CreateVolume(ctx context.Context, input *CreateVolumeInp
 		},
 	}, func() error {
 		var createErr error
-		response, createErr = h.volumeService.CreateVolume(ctx, options, *user)
+		response, createErr = h.volumeService.CreateVolume(runtimeCtx, options, *user)
 		return createErr
 	})
 	if err != nil {
@@ -792,7 +795,8 @@ func (h *VolumeHandler) RemoveVolume(ctx context.Context, input *RemoveVolumeInp
 		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
 	}
 
-	activityID, err := activitylib.RunHandlerActivity(ctx, h.activityService, activitylib.HandlerOptions{
+	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
 		Type:           models.ActivityTypeResourceAction,
 		ResourceType:   "volume",
@@ -807,7 +811,7 @@ func (h *VolumeHandler) RemoveVolume(ctx context.Context, input *RemoveVolumeInp
 			"force":  input.Force,
 		},
 	}, func() error {
-		return h.volumeService.DeleteVolume(ctx, input.VolumeName, input.Force, *user)
+		return h.volumeService.DeleteVolume(runtimeCtx, input.VolumeName, input.Force, *user)
 	})
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.VolumeDeletionError{Err: err}).Error())
@@ -831,7 +835,8 @@ func (h *VolumeHandler) PruneVolumes(ctx context.Context, input *PruneVolumesInp
 	}
 
 	var report *volumetypes.PruneReport
-	activityID, err := activitylib.RunHandlerActivity(ctx, h.activityService, activitylib.HandlerOptions{
+	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
 		Type:           models.ActivityTypeResourceAction,
 		ResourceType:   "volume",
@@ -841,7 +846,7 @@ func (h *VolumeHandler) PruneVolumes(ctx context.Context, input *PruneVolumesInp
 		Metadata:       models.JSON{"action": "prune_volumes"},
 	}, func() error {
 		var pruneErr error
-		report, pruneErr = h.volumeService.PruneVolumes(ctx)
+		report, pruneErr = h.volumeService.PruneVolumes(runtimeCtx)
 		return pruneErr
 	})
 	if err != nil {
@@ -1011,7 +1016,8 @@ func (h *VolumeHandler) UploadFile(ctx context.Context, input *UploadFileInput) 
 	defer func() { _ = file.Close() }()
 
 	user, _ := humamw.GetCurrentUserFromContext(ctx)
-	activityID, err := activitylib.RunHandlerActivity(ctx, h.activityService, activitylib.HandlerOptions{
+	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
 		Type:           models.ActivityTypeResourceAction,
 		ResourceType:   "volume",
@@ -1027,7 +1033,7 @@ func (h *VolumeHandler) UploadFile(ctx context.Context, input *UploadFileInput) 
 			"filename": fileHeader.Filename,
 		},
 	}, func() error {
-		return h.volumeService.UploadFile(ctx, input.VolumeName, input.Path, file, fileHeader.Filename, user)
+		return h.volumeService.UploadFile(runtimeCtx, input.VolumeName, input.Path, file, fileHeader.Filename, user)
 	})
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
@@ -1043,7 +1049,8 @@ func (h *VolumeHandler) CreateDirectory(ctx context.Context, input *CreateDirect
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 	user, _ := humamw.GetCurrentUserFromContext(ctx)
-	activityID, err := activitylib.RunHandlerActivity(ctx, h.activityService, activitylib.HandlerOptions{
+	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
 		Type:           models.ActivityTypeResourceAction,
 		ResourceType:   "volume",
@@ -1058,7 +1065,7 @@ func (h *VolumeHandler) CreateDirectory(ctx context.Context, input *CreateDirect
 			"path":   input.Path,
 		},
 	}, func() error {
-		return h.volumeService.CreateDirectory(ctx, input.VolumeName, input.Path, user)
+		return h.volumeService.CreateDirectory(runtimeCtx, input.VolumeName, input.Path, user)
 	})
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
@@ -1074,7 +1081,8 @@ func (h *VolumeHandler) DeleteFile(ctx context.Context, input *DeleteFileInput) 
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 	user, _ := humamw.GetCurrentUserFromContext(ctx)
-	activityID, err := activitylib.RunHandlerActivity(ctx, h.activityService, activitylib.HandlerOptions{
+	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
 		Type:           models.ActivityTypeResourceAction,
 		ResourceType:   "volume",
@@ -1089,7 +1097,7 @@ func (h *VolumeHandler) DeleteFile(ctx context.Context, input *DeleteFileInput) 
 			"path":   input.Path,
 		},
 	}, func() error {
-		return h.volumeService.DeleteFile(ctx, input.VolumeName, input.Path, user)
+		return h.volumeService.DeleteFile(runtimeCtx, input.VolumeName, input.Path, user)
 	})
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
@@ -1163,7 +1171,8 @@ func (h *VolumeHandler) CreateBackup(ctx context.Context, input *CreateBackupInp
 	}
 
 	var backup *models.VolumeBackup
-	activityID, err := activitylib.RunHandlerActivity(ctx, h.activityService, activitylib.HandlerOptions{
+	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
 		Type:           models.ActivityTypeResourceAction,
 		ResourceType:   "volume",
@@ -1176,7 +1185,7 @@ func (h *VolumeHandler) CreateBackup(ctx context.Context, input *CreateBackupInp
 		Metadata:       models.JSON{"action": "create_volume_backup"},
 	}, func() error {
 		var backupErr error
-		backup, backupErr = h.volumeService.CreateBackup(ctx, input.VolumeName, *user)
+		backup, backupErr = h.volumeService.CreateBackup(runtimeCtx, input.VolumeName, *user)
 		return backupErr
 	})
 	if err != nil {
@@ -1200,7 +1209,8 @@ func (h *VolumeHandler) RestoreBackup(ctx context.Context, input *RestoreBackupI
 		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
 	}
 
-	activityID, err := activitylib.RunHandlerActivity(ctx, h.activityService, activitylib.HandlerOptions{
+	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
 		Type:           models.ActivityTypeResourceAction,
 		ResourceType:   "volume",
@@ -1215,7 +1225,7 @@ func (h *VolumeHandler) RestoreBackup(ctx context.Context, input *RestoreBackupI
 			"backupId": input.BackupID,
 		},
 	}, func() error {
-		return h.volumeService.RestoreBackup(ctx, input.VolumeName, input.BackupID, *user)
+		return h.volumeService.RestoreBackup(runtimeCtx, input.VolumeName, input.BackupID, *user)
 	})
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
@@ -1242,7 +1252,8 @@ func (h *VolumeHandler) RestoreBackupFiles(ctx context.Context, input *RestoreBa
 		return nil, huma.Error400BadRequest("paths are required")
 	}
 
-	activityID, err := activitylib.RunHandlerActivity(ctx, h.activityService, activitylib.HandlerOptions{
+	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
 		Type:           models.ActivityTypeResourceAction,
 		ResourceType:   "volume",
@@ -1258,7 +1269,7 @@ func (h *VolumeHandler) RestoreBackupFiles(ctx context.Context, input *RestoreBa
 			"paths":    input.Body.Paths,
 		},
 	}, func() error {
-		return h.volumeService.RestoreBackupFiles(ctx, input.VolumeName, input.BackupID, input.Body.Paths, *user)
+		return h.volumeService.RestoreBackupFiles(runtimeCtx, input.VolumeName, input.BackupID, input.Body.Paths, *user)
 	})
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
@@ -1317,7 +1328,8 @@ func (h *VolumeHandler) DeleteBackup(ctx context.Context, input *DeleteBackupInp
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 	user, _ := humamw.GetCurrentUserFromContext(ctx)
-	activityID, err := activitylib.RunHandlerActivity(ctx, h.activityService, activitylib.HandlerOptions{
+	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
 		Type:           models.ActivityTypeResourceAction,
 		ResourceType:   "volume_backup",
@@ -1332,7 +1344,7 @@ func (h *VolumeHandler) DeleteBackup(ctx context.Context, input *DeleteBackupInp
 			"backupId": input.BackupID,
 		},
 	}, func() error {
-		return h.volumeService.DeleteBackup(ctx, input.BackupID, user)
+		return h.volumeService.DeleteBackup(runtimeCtx, input.BackupID, user)
 	})
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
@@ -1390,7 +1402,8 @@ func (h *VolumeHandler) UploadAndRestore(ctx context.Context, input *UploadAndRe
 	}
 	defer func() { _ = file.Close() }()
 
-	activityID, err := activitylib.RunHandlerActivity(ctx, h.activityService, activitylib.HandlerOptions{
+	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
 		Type:           models.ActivityTypeResourceAction,
 		ResourceType:   "volume",
@@ -1405,7 +1418,7 @@ func (h *VolumeHandler) UploadAndRestore(ctx context.Context, input *UploadAndRe
 			"filename": fileHeader.Filename,
 		},
 	}, func() error {
-		return h.volumeService.UploadAndRestore(ctx, input.VolumeName, file, fileHeader.Filename, *user)
+		return h.volumeService.UploadAndRestore(runtimeCtx, input.VolumeName, file, fileHeader.Filename, *user)
 	})
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())

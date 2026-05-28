@@ -72,9 +72,8 @@ func NewWriter(ctx context.Context, activityService MessageAppender, activityID 
 
 func (w *Writer) Write(p []byte) (int, error) {
 	if w.writer != nil {
-		if _, err := w.writer.Write(p); err != nil {
-			return 0, err
-		}
+		// Keep activity capture alive when the client-side response stream disconnects.
+		_, _ = w.writer.Write(p)
 	}
 
 	w.mu.Lock()

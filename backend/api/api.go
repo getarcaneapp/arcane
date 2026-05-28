@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"reflect"
 	"strings"
@@ -138,6 +139,7 @@ func capitalizeFirst(s string) string {
 
 // Services holds all service dependencies needed by Huma handlers.
 type Services struct {
+	AppContext        context.Context
 	User              *services.UserService
 	Auth              *services.AuthService
 	Oidc              *services.OidcService
@@ -347,9 +349,11 @@ func registerHandlers(api huma.API, svc *Services) {
 	var vulnerabilitySvc *services.VulnerabilityService
 	var dashboardSvc *services.DashboardService
 	var roleSvc *services.RoleService
+	var appCtx context.Context
 	var cfg *config.Config
 
 	if svc != nil {
+		appCtx = svc.AppContext
 		userSvc = svc.User
 		authSvc = svc.Auth
 		oidcSvc = svc.Oidc
@@ -388,13 +392,14 @@ func registerHandlers(api huma.API, svc *Services) {
 		roleSvc = svc.Role
 		cfg = svc.Config
 	}
+	handlerAppCtx := handlers.NewActivityAppContext(appCtx)
 	handlers.RegisterHealth(api)
 	handlers.RegisterAuth(api, userSvc, authSvc, oidcSvc)
 	handlers.RegisterApiKeys(api, apiKeySvc)
 	handlers.RegisterRoles(api, roleSvc)
 	handlers.RegisterAppImages(api, appImagesSvc)
 	handlers.RegisterUsers(api, userSvc, authSvc)
-	handlers.RegisterProjects(api, projectSvc, activitySvc)
+	handlers.RegisterProjects(api, projectSvc, activitySvc, handlerAppCtx)
 	handlers.RegisterVersion(api, versionSvc)
 	handlers.RegisterEvents(api, eventSvc, apiKeySvc)
 	handlers.RegisterActivities(api, activitySvc, environmentSvc)
@@ -402,23 +407,23 @@ func registerHandlers(api huma.API, svc *Services) {
 	handlers.RegisterEnvironments(api, environmentSvc, settingsSvc, apiKeySvc, eventSvc, cfg)
 	handlers.RegisterContainerRegistries(api, containerRegistrySvc, environmentSvc)
 	handlers.RegisterTemplates(api, templateSvc, environmentSvc)
-	handlers.RegisterImages(api, dockerSvc, imageSvc, imageUpdateSvc, settingsSvc, buildSvc, activitySvc)
+	handlers.RegisterImages(api, dockerSvc, imageSvc, imageUpdateSvc, settingsSvc, buildSvc, activitySvc, handlerAppCtx)
 	handlers.RegisterBuildWorkspaces(api, buildWorkspaceSvc)
-	handlers.RegisterImageUpdates(api, imageUpdateSvc, imageSvc)
+	handlers.RegisterImageUpdates(api, imageUpdateSvc, imageSvc, handlerAppCtx)
 	handlers.RegisterSettings(api, settingsSvc, settingsSearchSvc, environmentSvc, cfg)
 	handlers.RegisterJobSchedules(api, jobScheduleSvc, environmentSvc)
-	handlers.RegisterVolumes(api, dockerSvc, volumeSvc, activitySvc)
-	handlers.RegisterContainers(api, containerSvc, dockerSvc, settingsSvc, activitySvc)
+	handlers.RegisterVolumes(api, dockerSvc, volumeSvc, activitySvc, handlerAppCtx)
+	handlers.RegisterContainers(api, containerSvc, dockerSvc, settingsSvc, activitySvc, handlerAppCtx)
 	handlers.RegisterPorts(api, portSvc)
-	handlers.RegisterNetworks(api, networkSvc, dockerSvc, activitySvc)
+	handlers.RegisterNetworks(api, networkSvc, dockerSvc, activitySvc, handlerAppCtx)
 	handlers.RegisterSwarm(api, swarmSvc, environmentSvc, eventSvc, cfg)
 	handlers.RegisterNotifications(api, notificationSvc, cfg)
-	handlers.RegisterUpdater(api, updaterSvc)
+	handlers.RegisterUpdater(api, updaterSvc, handlerAppCtx)
 	handlers.RegisterCustomize(api, customizeSearchSvc)
-	handlers.RegisterSystem(api, dockerSvc, systemSvc, systemUpgradeSvc, cfg, activitySvc)
+	handlers.RegisterSystem(api, dockerSvc, systemSvc, systemUpgradeSvc, cfg, activitySvc, handlerAppCtx)
 	handlers.RegisterGitRepositories(api, gitRepositorySvc)
 	handlers.RegisterGitOpsSyncs(api, gitOpsSyncSvc)
 	handlers.RegisterWebhooks(api, webhookSvc)
-	handlers.RegisterVulnerability(api, vulnerabilitySvc)
+	handlers.RegisterVulnerability(api, vulnerabilitySvc, handlerAppCtx)
 	handlers.RegisterDashboard(api, dashboardSvc)
 }
