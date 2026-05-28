@@ -25,7 +25,7 @@
     "@lezer/highlight": "^1.2.3",
     "@sveltejs/adapter-static": "^3.0.10",
     "@sveltejs/kit": "^2.61.1",
-    "@tanstack/svelte-query": "^6.1.30",
+    "@tanstack/svelte-query": "^6.1.33",
     "@tanstack/table-core": "^8.21.3",
     "@uiw/codemirror-themes": "^4.25.10",
     "@xterm/addon-fit": "^0.11.0",
