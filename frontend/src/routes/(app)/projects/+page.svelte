@@ -15,6 +15,7 @@
 	import { untrack } from 'svelte';
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
+	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 
 	let { data } = $props();
 
@@ -66,7 +67,7 @@
 			// map to narrow the redeploy to projects that actually have updates.
 			// This avoids hitting every project (and its registry) when nothing has
 			// changed, which is especially expensive on instances with many projects.
-			await imageService.checkAllImages();
+			const imageCheckResults = await imageService.checkAllImages();
 
 			const images = await imageService.getImagesForEnvironment(envId, { pagination: { page: 1, limit: 10000 } });
 			const projectIdsWithUpdates = new Set<string>();
@@ -80,7 +81,7 @@
 			}
 
 			if (projectIdsWithUpdates.size === 0) {
-				return { updated: 0 };
+				return { updated: 0, activityId: extractActivityId(imageCheckResults) };
 			}
 
 			const allProjects = await projectService.getProjectsForEnvironment(envId, { pagination: { page: 1, limit: 1000 } });
@@ -100,13 +101,14 @@
 				throw new Error(`${failed.length} project(s) failed to update (${succeeded} succeeded)`);
 			}
 
-			return { updated: results.length };
+			return { updated: results.length, activityId: extractActivityId(imageCheckResults) };
 		},
 		onSuccess: async (result) => {
+			const toastOptions = activityToastOptions(result.activityId);
 			if (result && result.updated === 0) {
-				toast.success(m.image_update_up_to_date_title());
+				toast.success(m.image_update_up_to_date_title(), toastOptions);
 			} else {
-				toast.success(m.compose_update_success());
+				toast.success(m.compose_update_success(), toastOptions);
 			}
 			await Promise.all([projectsQuery.refetch(), projectStatusCountsQuery.refetch()]);
 		},

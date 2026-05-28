@@ -28,6 +28,7 @@
 	import { hasPermission } from '$lib/utils/auth';
 	import IfPermitted from '$lib/components/if-permitted.svelte';
 	import { ComposeEditorSplit } from '$lib/components/compose';
+	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 
 	let { data } = $props();
 
@@ -96,7 +97,10 @@
 			message: m.common_create_failed({ resource: `${m.resource_project()} "${name}"` }),
 			setLoadingState: (value) => (saving = value),
 			onSuccess: async (project) => {
-				toast.success(m.common_create_success({ resource: `${m.resource_project()} "${name}"` }));
+				toast.success(
+					m.common_create_success({ resource: `${m.resource_project()} "${name}"` }),
+					activityToastOptions(extractActivityId(project))
+				);
 				goto(`/projects/${project.id}`, { invalidateAll: true });
 			}
 		});

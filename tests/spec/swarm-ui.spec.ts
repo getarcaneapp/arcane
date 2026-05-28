@@ -31,7 +31,7 @@ test.describe('Swarm UI', () => {
 		page
 	}) => {
 		await page.goto('/swarm/cluster');
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		await expect(page.getByRole('heading', { name: 'Cluster', level: 1 })).toBeVisible();
 
@@ -57,7 +57,7 @@ test.describe('Swarm UI', () => {
 	test('configs page renders name/data fields and empty state', async ({ page }) => {
 		await mockConfigs(page);
 		await page.goto('/swarm/configs');
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		await expect(page.getByRole('heading', { name: 'Configs', level: 1 })).toBeVisible();
 		await expect(
@@ -72,7 +72,7 @@ test.describe('Swarm UI', () => {
 	test('secrets page renders name/data fields and empty state', async ({ page }) => {
 		await mockSecrets(page);
 		await page.goto('/swarm/secrets');
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		await expect(page.getByRole('heading', { name: 'Secrets', level: 1 })).toBeVisible();
 		await expect(

@@ -31,7 +31,7 @@ func registerJobs(appCtx context.Context, newScheduler *pkg_scheduler.JobSchedul
 	// Send initial heartbeat on startup without blocking bootstrap.
 	go analyticsJob.Run(appCtx)
 
-	eventCleanupJob := pkg_scheduler.NewEventCleanupJob(appServices.Event, appServices.Settings)
+	eventCleanupJob := pkg_scheduler.NewEventCleanupJob(appServices.Event, appServices.Activity, appServices.Settings)
 	newScheduler.RegisterJob(eventCleanupJob)
 
 	expiredSessionsCleanupJob := pkg_scheduler.NewExpiredSessionsCleanupJob(appServices.Session, appServices.Settings)

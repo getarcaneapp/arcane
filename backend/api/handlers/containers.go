@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"io"
 	"maps"
 	"net/http"
 	"net/netip"
@@ -10,10 +11,14 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	humamw "github.com/getarcaneapp/arcane/backend/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
+	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
+	activitylib "github.com/getarcaneapp/arcane/backend/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils"
 	"github.com/getarcaneapp/arcane/types/base"
 	containertypes "github.com/getarcaneapp/arcane/types/container"
 	dockercontainer "github.com/moby/moby/api/types/container"
@@ -24,6 +29,7 @@ type ContainerHandler struct {
 	containerService *services.ContainerService
 	dockerService    *services.DockerClientService
 	settingsService  *services.SettingsService
+	activityService  *services.ActivityService
 }
 
 // Paginated response
@@ -136,11 +142,12 @@ type SetAutoUpdateOutput struct {
 	Body ContainerActionResponse
 }
 
-func RegisterContainers(api huma.API, containerSvc *services.ContainerService, dockerSvc *services.DockerClientService, settingsSvc *services.SettingsService) {
+func RegisterContainers(api huma.API, containerSvc *services.ContainerService, dockerSvc *services.DockerClientService, settingsSvc *services.SettingsService, activitySvc *services.ActivityService) {
 	h := &ContainerHandler{
 		containerService: containerSvc,
 		dockerService:    dockerSvc,
 		settingsService:  settingsSvc,
+		activityService:  activitySvc,
 	}
 
 	huma.Register(api, huma.Operation{
@@ -615,14 +622,17 @@ func (h *ContainerHandler) StartContainer(ctx context.Context, input *ContainerA
 		return nil, huma.Error401Unauthorized("not authenticated")
 	}
 
+	activityID := activitylib.StartHandlerActivityForUser(ctx, h.activityService, input.EnvironmentID, models.ActivityTypeContainerStart, "container", input.ContainerID, input.ContainerID, user, "Starting container", "Container start requested", models.JSON{"containerID": input.ContainerID})
 	if err := h.containerService.StartContainer(ctx, input.ContainerID, *user); err != nil {
+		activitylib.CompleteHandlerActivity(ctx, h.activityService, activityID, "Container started", err)
 		return nil, huma.Error500InternalServerError((&common.ContainerStartError{Err: err}).Error())
 	}
+	activitylib.CompleteHandlerActivity(ctx, h.activityService, activityID, "Container started", nil)
 
 	return &ContainerActionOutput{
 		Body: ContainerActionResponse{
 			Success: true,
-			Data:    base.MessageResponse{Message: "Container started successfully"},
+			Data:    base.MessageResponse{Message: "Container started successfully", ActivityID: utils.StringPtrFromTrimmed(activityID)},
 		},
 	}, nil
 }
@@ -637,14 +647,17 @@ func (h *ContainerHandler) StopContainer(ctx context.Context, input *ContainerAc
 		return nil, huma.Error401Unauthorized("not authenticated")
 	}
 
+	activityID := activitylib.StartHandlerActivityForUser(ctx, h.activityService, input.EnvironmentID, models.ActivityTypeContainerStop, "container", input.ContainerID, input.ContainerID, user, "Stopping container", "Container stop requested", models.JSON{"containerID": input.ContainerID})
 	if err := h.containerService.StopContainer(ctx, input.ContainerID, *user); err != nil {
+		activitylib.CompleteHandlerActivity(ctx, h.activityService, activityID, "Container stopped", err)
 		return nil, huma.Error500InternalServerError((&common.ContainerStopError{Err: err}).Error())
 	}
+	activitylib.CompleteHandlerActivity(ctx, h.activityService, activityID, "Container stopped", nil)
 
 	return &ContainerActionOutput{
 		Body: ContainerActionResponse{
 			Success: true,
-			Data:    base.MessageResponse{Message: "Container stopped successfully"},
+			Data:    base.MessageResponse{Message: "Container stopped successfully", ActivityID: utils.StringPtrFromTrimmed(activityID)},
 		},
 	}, nil
 }
@@ -659,14 +672,17 @@ func (h *ContainerHandler) RestartContainer(ctx context.Context, input *Containe
 		return nil, huma.Error401Unauthorized("not authenticated")
 	}
 
+	activityID := activitylib.StartHandlerActivityForUser(ctx, h.activityService, input.EnvironmentID, models.ActivityTypeContainerRestart, "container", input.ContainerID, input.ContainerID, user, "Restarting container", "Container restart requested", models.JSON{"containerID": input.ContainerID})
 	if err := h.containerService.RestartContainer(ctx, input.ContainerID, *user); err != nil {
+		activitylib.CompleteHandlerActivity(ctx, h.activityService, activityID, "Container restarted", err)
 		return nil, huma.Error500InternalServerError((&common.ContainerRestartError{Err: err}).Error())
 	}
+	activitylib.CompleteHandlerActivity(ctx, h.activityService, activityID, "Container restarted", nil)
 
 	return &ContainerActionOutput{
 		Body: ContainerActionResponse{
 			Success: true,
-			Data:    base.MessageResponse{Message: "Container restarted successfully"},
+			Data:    base.MessageResponse{Message: "Container restarted successfully", ActivityID: utils.StringPtrFromTrimmed(activityID)},
 		},
 	}, nil
 }
@@ -681,14 +697,23 @@ func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *Contain
 		return nil, huma.Error401Unauthorized("not authenticated")
 	}
 
-	newContainerID, err := h.containerService.RedeployContainer(ctx, input.ContainerID, *user)
+	activityID := activitylib.StartHandlerActivityForUser(ctx, h.activityService, input.EnvironmentID, models.ActivityTypeContainerRedeploy, "container", input.ContainerID, input.ContainerID, user, "Starting redeploy", "Container redeploy requested", models.JSON{"containerID": input.ContainerID})
+	activityWriter := activitylib.NewWriter(ctx, h.activityService, activityID, io.Discard, "Redeploying container")
+	redeployCtx := context.WithValue(ctx, projects.ProgressWriterKey{}, activityWriter)
+	newContainerID, err := h.containerService.RedeployContainer(redeployCtx, input.ContainerID, *user)
 	if err != nil {
+		activitylib.FlushWriter(activityWriter)
+		activitylib.CompleteHandlerActivity(ctx, h.activityService, activityID, "Container redeploy failed", err)
 		return nil, huma.Error500InternalServerError((&common.ContainerRedeployError{Err: err}).Error())
 	}
+	activitylib.FlushWriter(activityWriter)
+	activitylib.CompleteHandlerActivity(ctx, h.activityService, activityID, "Container redeployed", nil)
 
 	// Fetch full container details to return (consistent with other endpoints)
 	details, inspectErr := h.containerService.GetContainerDetails(ctx, newContainerID)
 	if inspectErr == nil {
+		details.ActivityID = utils.StringPtrFromTrimmed(activityID)
+
 		return &GetContainerOutput{
 			Body: ContainerDetailsResponse{
 				Success: true,
@@ -703,7 +728,8 @@ func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *Contain
 		Body: ContainerDetailsResponse{
 			Success: true,
 			Data: containertypes.Details{
-				ID: newContainerID,
+				ID:         newContainerID,
+				ActivityID: utils.StringPtrFromTrimmed(activityID),
 			},
 		},
 	}, nil
@@ -719,14 +745,17 @@ func (h *ContainerHandler) DeleteContainer(ctx context.Context, input *DeleteCon
 		return nil, huma.Error401Unauthorized("not authenticated")
 	}
 
+	activityID := activitylib.StartHandlerActivityForUser(ctx, h.activityService, input.EnvironmentID, models.ActivityTypeContainerDelete, "container", input.ContainerID, input.ContainerID, user, "Deleting container", "Container delete requested", models.JSON{"containerID": input.ContainerID, "force": input.Force, "removeVolumes": input.RemoveVolumes})
 	if err := h.containerService.DeleteContainer(ctx, input.ContainerID, input.Force, input.RemoveVolumes, *user); err != nil {
+		activitylib.CompleteHandlerActivity(ctx, h.activityService, activityID, "Container deleted", err)
 		return nil, huma.Error500InternalServerError((&common.ContainerDeleteError{Err: err}).Error())
 	}
+	activitylib.CompleteHandlerActivity(ctx, h.activityService, activityID, "Container deleted", nil)
 
 	return &DeleteContainerOutput{
 		Body: ContainerActionResponse{
 			Success: true,
-			Data:    base.MessageResponse{Message: "Container deleted successfully"},
+			Data:    base.MessageResponse{Message: "Container deleted successfully", ActivityID: utils.StringPtrFromTrimmed(activityID)},
 		},
 	}, nil
 }

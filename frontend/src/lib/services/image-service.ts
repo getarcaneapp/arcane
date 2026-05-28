@@ -49,9 +49,9 @@ export class ImageService extends BaseAPIService {
 		return this.handleResponse(this.api.post(`/environments/${envId}/images/pull`, { imageName, tag, auth }));
 	}
 
-	async deleteImage(imageId: string, options?: { force?: boolean; noprune?: boolean }): Promise<void> {
+	async deleteImage(imageId: string, options?: { force?: boolean; noprune?: boolean }): Promise<any> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
-		await this.handleResponse(this.api.delete(`/environments/${envId}/images/${imageId}`, { params: options }));
+		return this.handleResponse(this.api.delete(`/environments/${envId}/images/${imageId}`, { params: options }));
 	}
 
 	async pruneImages(options: PruneImagesOptions): Promise<any> {

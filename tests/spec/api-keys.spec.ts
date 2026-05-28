@@ -5,7 +5,7 @@ const API_KEYS_ROUTE = '/settings/api-keys';
 
 async function navigateToApiKeys(page: Page) {
 	await page.goto(API_KEYS_ROUTE);
-	await page.waitForLoadState('networkidle');
+	await page.waitForLoadState('load');
 }
 
 test.describe('API Keys Page', () => {

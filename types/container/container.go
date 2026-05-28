@@ -319,6 +319,11 @@ type ActionResult struct {
 	//
 	// Required: false
 	Errors []string `json:"errors,omitempty"`
+
+	// ActivityID is the background activity that tracked this action.
+	//
+	// Required: false
+	ActivityID *string `json:"activityId,omitempty"`
 }
 
 // Port represents a port binding for a container.
@@ -836,6 +841,11 @@ type Details struct {
 	//
 	// Required: false
 	RedeployDisabled bool `json:"redeployDisabled,omitempty"`
+
+	// ActivityID is the background activity that tracked the action returning these details.
+	//
+	// Required: false
+	ActivityID *string `json:"activityId,omitempty"`
 }
 
 // Created represents a newly created container.

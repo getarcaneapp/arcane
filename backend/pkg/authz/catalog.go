@@ -191,6 +191,10 @@ var permissionCatalog = []PermissionCatalogResource{
 	{"build-workspaces", "Build Workspaces", PermissionScopeEnv, []PermissionCatalogAction{
 		{"manage", PermBuildWorkspacesManage, "Manage", ""},
 	}},
+	{"activities", "Activities", PermissionScopeEnv, []PermissionCatalogAction{
+		{"read", PermActivitiesRead, "Read", ""},
+		{"delete", PermActivitiesDelete, "Clear history", ""},
+	}},
 }
 
 // PermissionCatalog returns a defensive copy of the full permission catalog.

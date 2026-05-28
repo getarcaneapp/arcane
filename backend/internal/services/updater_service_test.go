@@ -579,6 +579,24 @@ func setupUpdaterServiceTestDB(t *testing.T) *database.DB {
 	return &database.DB{DB: db}
 }
 
+func TestUpdaterService_AppendAutoUpdateActivityMessageUsesExplicitStepInternal(t *testing.T) {
+	ctx := context.Background()
+	db := setupActivityServiceTestDBInternal(t)
+	activityService := NewActivityService(db)
+	svc := &UpdaterService{activityService: activityService}
+	activityID := svc.startAutoUpdateActivityInternal(ctx, false)
+	require.NotEmpty(t, activityID)
+
+	svc.appendAutoUpdateActivityMessageInternal(ctx, activityID, "Found 5 pending image update records", "Planning updates", 10)
+
+	var activity models.Activity
+	require.NoError(t, db.WithContext(ctx).First(&activity, "id = ?", activityID).Error)
+	require.NotNil(t, activity.Progress)
+	assert.Equal(t, 10, *activity.Progress)
+	assert.Equal(t, "Found 5 pending image update records", activity.LatestMessage)
+	assert.Equal(t, "Planning updates", activity.Step)
+}
+
 func TestUpdaterService_ClearImageUpdateRecordByID_AvoidsRepoCanonicalMismatch(t *testing.T) {
 	ctx := context.Background()
 	db := setupUpdaterServiceTestDB(t)
