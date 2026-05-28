@@ -23,6 +23,7 @@ import (
 	tunnelpb "github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge/proto/tunnel/v1"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/startup"
 	"github.com/getarcaneapp/arcane/backend/pkg/scheduler"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils"
 	httputils "github.com/getarcaneapp/arcane/backend/pkg/utils/httpx"
 	"google.golang.org/grpc"
 )
@@ -49,6 +50,7 @@ func Bootstrap(ctx context.Context) error {
 	slog.InfoContext(ctx, "Arcane Identity Configuration", "PUID", os.Getuid(), "PGID", os.Getgid())
 
 	appCtx, cancelApp := context.WithCancel(ctx)
+	appCtx = utils.WithAppLifecycleContext(appCtx)
 	defer cancelApp()
 
 	db, err := initializeDBAndMigrate(appCtx, cfg)

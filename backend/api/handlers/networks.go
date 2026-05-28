@@ -27,6 +27,7 @@ type NetworkHandler struct {
 	networkService  *services.NetworkService
 	dockerService   *services.DockerClientService
 	activityService *services.ActivityService
+	appCtx          context.Context
 }
 
 type NetworkPaginatedResponse struct {
@@ -137,11 +138,12 @@ type PruneNetworksOutput struct {
 }
 
 // RegisterNetworks registers network endpoints.
-func RegisterNetworks(api huma.API, networkSvc *services.NetworkService, dockerSvc *services.DockerClientService, activitySvc *services.ActivityService) {
+func RegisterNetworks(api huma.API, networkSvc *services.NetworkService, dockerSvc *services.DockerClientService, activitySvc *services.ActivityService, appCtx ActivityAppContext) {
 	h := &NetworkHandler{
 		networkService:  networkSvc,
 		dockerService:   dockerSvc,
 		activityService: activitySvc,
+		appCtx:          appCtx.contextInternal(),
 	}
 
 	huma.Register(api, huma.Operation{
@@ -285,7 +287,8 @@ func (h *NetworkHandler) CreateNetwork(ctx context.Context, input *CreateNetwork
 	dockerOptions := input.Body.Options.ToDockerCreateOptions()
 
 	var response *dockernetwork.CreateResponse
-	activityID, err := activitylib.RunHandlerActivity(ctx, h.activityService, activitylib.HandlerOptions{
+	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
 		Type:           models.ActivityTypeResourceAction,
 		ResourceType:   "network",
@@ -301,7 +304,7 @@ func (h *NetworkHandler) CreateNetwork(ctx context.Context, input *CreateNetwork
 		},
 	}, func() error {
 		var createErr error
-		response, createErr = h.networkService.CreateNetwork(ctx, input.Body.Name, dockerOptions, *user)
+		response, createErr = h.networkService.CreateNetwork(runtimeCtx, input.Body.Name, dockerOptions, *user)
 		return createErr
 	})
 	if err != nil {
@@ -430,7 +433,8 @@ func (h *NetworkHandler) DeleteNetwork(ctx context.Context, input *DeleteNetwork
 		return nil, huma.Error401Unauthorized("not authenticated")
 	}
 
-	activityID, err := activitylib.RunHandlerActivity(ctx, h.activityService, activitylib.HandlerOptions{
+	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
 		Type:           models.ActivityTypeResourceAction,
 		ResourceType:   "network",
@@ -444,7 +448,7 @@ func (h *NetworkHandler) DeleteNetwork(ctx context.Context, input *DeleteNetwork
 			"action": "remove_network",
 		},
 	}, func() error {
-		return h.networkService.RemoveNetwork(ctx, input.NetworkID, *user)
+		return h.networkService.RemoveNetwork(runtimeCtx, input.NetworkID, *user)
 	})
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.NetworkRemovalError{Err: err}).Error())
@@ -460,7 +464,8 @@ func (h *NetworkHandler) DeleteNetwork(ctx context.Context, input *DeleteNetwork
 
 func (h *NetworkHandler) PruneNetworks(ctx context.Context, input *PruneNetworksInput) (*PruneNetworksOutput, error) {
 	var report *dockernetwork.PruneReport
-	activityID, err := activitylib.RunHandlerActivity(ctx, h.activityService, activitylib.HandlerOptions{
+	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
 		Type:           models.ActivityTypeResourceAction,
 		ResourceType:   "network",
@@ -470,7 +475,7 @@ func (h *NetworkHandler) PruneNetworks(ctx context.Context, input *PruneNetworks
 		Metadata:       models.JSON{"action": "prune_networks"},
 	}, func() error {
 		var pruneErr error
-		report, pruneErr = h.networkService.PruneNetworks(ctx)
+		report, pruneErr = h.networkService.PruneNetworks(runtimeCtx)
 		return pruneErr
 	})
 	if err != nil {

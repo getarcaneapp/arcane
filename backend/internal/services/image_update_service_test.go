@@ -582,6 +582,53 @@ func TestImageUpdateService_CheckMultipleImages_UsesRegistryFallback(t *testing.
 	assert.Equal(t, remoteDigest, stringPtrToString(saved.LatestDigest))
 }
 
+func TestImageUpdateService_CheckMultipleImagesCompletesActivityWhenRequestContextCanceledInternal(t *testing.T) {
+	db := setupImageUpdateTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.Activity{}, &models.ActivityMessage{}))
+
+	activityService := NewActivityService(db)
+	svc := NewImageUpdateService(db, nil, nil, nil, nil, nil, activityService)
+
+	for range 5 {
+		require.NoError(t, svc.registryLimiter.Acquire(context.Background(), "docker.io"))
+	}
+	defer func() {
+		for range 5 {
+			svc.registryLimiter.Release("docker.io")
+		}
+	}()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := svc.CheckMultipleImages(ctx, []string{"nginx:latest"}, nil)
+		errCh <- err
+	}()
+
+	var activity models.Activity
+	require.Eventually(t, func() bool {
+		return db.Where("type = ?", models.ActivityTypeImageUpdateCheck).First(&activity).Error == nil
+	}, time.Second, 10*time.Millisecond)
+
+	cancel()
+
+	select {
+	case err := <-errCh:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for image update check to return")
+	}
+
+	require.Eventually(t, func() bool {
+		if err := db.First(&activity, "id = ?", activity.ID).Error; err != nil {
+			return false
+		}
+		return activity.Status == models.ActivityStatusFailed
+	}, time.Second, 10*time.Millisecond)
+	assert.Equal(t, "Image update check complete", activity.Step)
+	assert.Contains(t, activity.LatestMessage, "Image update check failed")
+}
+
 func TestImageUpdateService_CheckMultipleImages_UsesDockerHubCredentialsOnFirstAttempt(t *testing.T) {
 	_, db := setupImageServiceAuthTest(t)
 	require.NoError(t, db.AutoMigrate(&models.ImageUpdateRecord{}, &models.Event{}))
