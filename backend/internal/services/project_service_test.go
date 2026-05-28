@@ -1,6 +1,7 @@
 package services
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -38,6 +39,17 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 )
+
+func TestWriteProjectProgressInternal_SuppressedContextSkipsProgress(t *testing.T) {
+	ctx := context.Background()
+	var buf bytes.Buffer
+	ctx = context.WithValue(ctx, projects.ProgressWriterKey{}, &buf)
+	ctx = withProjectProgressSuppressedInternal(ctx)
+
+	writeProjectProgressInternal(ctx, "Project stopped", 100, "complete")
+
+	require.Empty(t, buf.String())
+}
 
 type testBuildBuilder struct {
 	err error
@@ -565,7 +577,7 @@ func TestProjectService_PullProjectImages_UpdatesCurrentImageRecordAfterPull(t *
 
 	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
 	eventService := NewEventService(db, nil, nil)
-	imageUpdateService := NewImageUpdateService(db, nil, nil, dockerService, nil, nil)
+	imageUpdateService := NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
 	imageService := NewImageService(db, dockerService, nil, imageUpdateService, nil, eventService)
 	svc := NewProjectService(db, settingsService, nil, imageService, dockerService, nil, config.Load())
 
@@ -660,7 +672,7 @@ func TestProjectService_EnsureImagesPresent_UpdatesCurrentImageRecordAfterPull(t
 
 	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
 	eventService := NewEventService(db, nil, nil)
-	imageUpdateService := NewImageUpdateService(db, nil, nil, dockerService, nil, nil)
+	imageUpdateService := NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
 	imageService := NewImageService(db, dockerService, nil, imageUpdateService, nil, eventService)
 	svc := NewProjectService(db, settingsService, nil, imageService, dockerService, nil, config.Load())
 
@@ -712,7 +724,7 @@ func TestProjectService_PullImageForService_UpdatesCurrentImageRecordAfterPull(t
 
 	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
 	eventService := NewEventService(db, nil, nil)
-	imageUpdateService := NewImageUpdateService(db, nil, nil, dockerService, nil, nil)
+	imageUpdateService := NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
 	imageService := NewImageService(db, dockerService, nil, imageUpdateService, nil, eventService)
 	svc := NewProjectService(db, settingsService, nil, imageService, dockerService, nil, config.Load())
 
@@ -761,7 +773,7 @@ func TestProjectService_ComposePullSelectedServicesInternal_ReconcilesOnlyOnSucc
 
 	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
 	eventService := NewEventService(db, nil, nil)
-	imageUpdateService := NewImageUpdateService(db, nil, nil, dockerService, nil, nil)
+	imageUpdateService := NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
 	imageService := NewImageService(db, dockerService, nil, imageUpdateService, nil, eventService)
 	svc := NewProjectService(db, settingsService, nil, imageService, dockerService, nil, config.Load())
 
@@ -839,7 +851,7 @@ func TestProjectService_ComposePullSelectedServicesInternal_LeavesRecordsWhenPul
 	repository := "registry.example.com/team/app"
 
 	dockerService := &DockerClientService{}
-	imageUpdateService := NewImageUpdateService(db, nil, nil, dockerService, nil, nil)
+	imageUpdateService := NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
 	imageService := NewImageService(db, dockerService, nil, imageUpdateService, nil, NewEventService(db, nil, nil))
 	svc := NewProjectService(db, settingsService, nil, imageService, dockerService, nil, config.Load())
 

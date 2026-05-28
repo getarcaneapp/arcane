@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
+	ref "github.com/distribution/reference"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/registryauth"
-	ref "go.podman.io/image/v5/docker/reference"
 )
 
 const defaultRegistryHost = "registry-1.docker.io"

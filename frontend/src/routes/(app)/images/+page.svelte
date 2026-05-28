@@ -18,6 +18,7 @@
 	import { CloseIcon, VolumesIcon, LocalFolderComputerIcon } from '$lib/icons';
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
 	import PruneModeCard from '$lib/components/prune/prune-mode-card.svelte';
+	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 
 	let { data } = $props();
 
@@ -59,8 +60,8 @@
 				mode: imagePruneMode,
 				...(imagePruneMode === 'olderThan' ? { until: imagePruneUntil } : {})
 			}),
-		onSuccess: async () => {
-			toast.success(m.images_pruned_success());
+		onSuccess: async (data) => {
+			toast.success(m.images_pruned_success(), activityToastOptions(extractActivityId(data)));
 			await Promise.all([imagesQuery.refetch(), imageUsageCountsQuery.refetch()]);
 			isConfirmPruneDialogOpen = false;
 		},
@@ -72,8 +73,8 @@
 	const checkUpdatesMutation = createMutation(() => ({
 		mutationKey: ['images', 'check-updates', envId],
 		mutationFn: () => imageService.checkAllImages(),
-		onSuccess: async () => {
-			toast.success(m.images_update_check_completed());
+		onSuccess: async (data) => {
+			toast.success(m.images_update_check_completed(), activityToastOptions(extractActivityId(data)));
 			await imagesQuery.refetch();
 		},
 		onError: () => {

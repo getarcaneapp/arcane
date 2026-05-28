@@ -25,7 +25,8 @@ import {
 	TemplateIcon,
 	GlobeIcon,
 	UpdateIcon,
-	VariableIcon
+	VariableIcon,
+	ActivityIcon
 } from '$lib/icons';
 import { m } from '$lib/paraglide/messages';
 import type { ShortcutKey } from '$lib/utils/navigation';
@@ -257,6 +258,13 @@ export const navigationItems: NavigationSections = {
 					shortcut: ['mod', 'shift', '4'],
 					scope: 'env',
 					requiredPermission: 'notifications:manage'
+				},
+				{
+					title: m.activity_settings_title(),
+					url: '/settings/activity',
+					icon: ActivityIcon,
+					scope: 'env',
+					requiredPermission: 'settings:read'
 				},
 				{
 					title: m.builds(),

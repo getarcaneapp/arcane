@@ -16,6 +16,7 @@
 	import type { SearchPaginationSortRequest } from '$lib/types/shared';
 	import type { ContainerListRequestOptions } from '$lib/services/container-service';
 	import ContainerEnvironmentSync from './components/container-environment-sync.svelte';
+	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 
 	let { data } = $props();
 
@@ -55,8 +56,8 @@
 	const checkUpdatesMutation = createMutation(() => ({
 		mutationKey: queryKeys.containers.checkUpdates(envId),
 		mutationFn: () => imageService.runAutoUpdate(),
-		onSuccess: async () => {
-			toast.success(m.containers_check_updates_success());
+		onSuccess: async (data) => {
+			toast.success(m.containers_check_updates_success(), activityToastOptions(extractActivityId(data)));
 			await refreshContainers();
 		},
 		onError: () => {

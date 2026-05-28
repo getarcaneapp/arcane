@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	ref "github.com/distribution/reference"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/types/imageupdate"
@@ -24,7 +25,6 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	ref "go.podman.io/image/v5/docker/reference"
 	"gorm.io/gorm"
 )
 
@@ -523,7 +523,7 @@ func TestImageUpdateService_CheckImageUpdate_UsesRegistryFallback(t *testing.T) 
 
 	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
 	eventService := NewEventService(db, nil, nil)
-	svc := NewImageUpdateService(db, nil, registryService, dockerService, eventService, nil)
+	svc := NewImageUpdateService(db, nil, registryService, dockerService, eventService, nil, nil)
 
 	result, err := svc.CheckImageUpdate(context.Background(), imageRef)
 	require.NoError(t, err)
@@ -563,7 +563,7 @@ func TestImageUpdateService_CheckMultipleImages_UsesRegistryFallback(t *testing.
 
 	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
 	eventService := NewEventService(db, nil, nil)
-	svc := NewImageUpdateService(db, nil, registryService, dockerService, eventService, nil)
+	svc := NewImageUpdateService(db, nil, registryService, dockerService, eventService, nil, nil)
 
 	results, err := svc.CheckMultipleImages(context.Background(), []string{imageRef}, nil)
 	require.NoError(t, err)
@@ -618,7 +618,7 @@ func TestImageUpdateService_CheckMultipleImages_UsesDockerHubCredentialsOnFirstA
 
 	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
 	eventService := NewEventService(db, nil, nil)
-	svc := NewImageUpdateService(db, nil, registryService, dockerService, eventService, nil)
+	svc := NewImageUpdateService(db, nil, registryService, dockerService, eventService, nil, nil)
 
 	results, err := svc.CheckMultipleImages(context.Background(), []string{"docker.io/library/registry:3"}, nil)
 	require.NoError(t, err)
@@ -658,7 +658,7 @@ func TestImageUpdateService_CheckMultipleImages_PersistsRefScopedErrorsWhenLocal
 
 	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
 	eventService := NewEventService(db, nil, nil)
-	svc := NewImageUpdateService(db, nil, registryService, dockerService, eventService, nil)
+	svc := NewImageUpdateService(db, nil, registryService, dockerService, eventService, nil, nil)
 
 	results, err := svc.CheckMultipleImages(context.Background(), []string{imageRef}, nil)
 	require.NoError(t, err)
@@ -686,7 +686,7 @@ func TestImageUpdateService_SaveUpdateResultWithSnapshotInternal_PersistsRegistr
 	require.NoError(t, err)
 	imageRef := serverURL.Host + "/library/nginx:alpine"
 
-	svc := NewImageUpdateService(db, nil, nil, &DockerClientService{client: newTestDockerClient(t, server)}, nil, nil)
+	svc := NewImageUpdateService(db, nil, nil, &DockerClientService{client: newTestDockerClient(t, server)}, nil, nil, nil)
 	result := &imageupdate.Response{
 		HasUpdate:      true,
 		UpdateType:     "digest",
@@ -763,7 +763,7 @@ func TestImageUpdateService_MarkImageRefUpToDateAfterPull_ClearsMatchingRecordsA
 		CheckTime:      now,
 	}).Error)
 
-	svc := NewImageUpdateService(db, nil, nil, &DockerClientService{client: newTestDockerClient(t, server)}, nil, nil)
+	svc := NewImageUpdateService(db, nil, nil, &DockerClientService{client: newTestDockerClient(t, server)}, nil, nil, nil)
 
 	require.NoError(t, svc.MarkImageRefUpToDateAfterPull(context.Background(), imageRef))
 

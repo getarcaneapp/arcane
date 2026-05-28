@@ -15,7 +15,8 @@
 		CloseIcon,
 		JobsIcon,
 		CodeIcon,
-		GlobeIcon
+		GlobeIcon,
+		ActivityIcon
 	} from '$lib/icons';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { Card } from '$lib/components/ui/card';
@@ -49,7 +50,8 @@
 		apikey: ApiKeyIcon,
 		jobs: JobsIcon,
 		code: CodeIcon,
-		globe: GlobeIcon
+		globe: GlobeIcon,
+		activity: ActivityIcon
 	};
 
 	onMount(async () => {

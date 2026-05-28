@@ -13,6 +13,7 @@
 	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
+	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 
 	let { data } = $props();
 
@@ -33,8 +34,11 @@
 		mutationKey: ['networks', 'create', envId],
 		mutationFn: ({ name, options }: { name: string; options: NetworkCreateOptions }) =>
 			networkService.createNetwork(name, options),
-		onSuccess: async (_data, variables) => {
-			toast.success(m.common_create_success({ resource: `${m.resource_network()} "${variables.name}"` }));
+		onSuccess: async (data, variables) => {
+			toast.success(
+				m.common_create_success({ resource: `${m.resource_network()} "${variables.name}"` }),
+				activityToastOptions(extractActivityId(data))
+			);
 			await networksQuery.refetch();
 			isCreateDialogOpen = false;
 		},

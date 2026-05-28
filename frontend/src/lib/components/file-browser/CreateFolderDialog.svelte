@@ -5,6 +5,7 @@
 	import { Label } from '$lib/components/ui/label';
 	import { toast } from 'svelte-sonner';
 	import * as m from '$lib/paraglide/messages.js';
+	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 
 	let {
 		open = $bindable(false),
@@ -13,7 +14,7 @@
 	}: {
 		open: boolean;
 		currentPath: string;
-		onCreate: (folderName: string) => Promise<void>;
+		onCreate: (folderName: string) => Promise<unknown>;
 	} = $props();
 
 	let folderName = $state('');
@@ -25,8 +26,8 @@
 
 		loading = true;
 		try {
-			await onCreate(folderName);
-			toast.success(m.common_create_success({ resource: folderName }));
+			const result = await onCreate(folderName);
+			toast.success(m.common_create_success({ resource: folderName }), activityToastOptions(extractActivityId(result)));
 			open = false;
 			folderName = '';
 		} catch (e: any) {

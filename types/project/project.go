@@ -295,6 +295,11 @@ type CreateReponse struct {
 	//
 	// Required: true
 	UpdatedAt string `json:"updatedAt"`
+
+	// ActivityID is the activity created by the project action.
+	//
+	// Required: false
+	ActivityID *string `json:"activityId,omitempty"`
 }
 
 // Details contains detailed information about a project.
@@ -444,6 +449,11 @@ type Details struct {
 	//
 	// Required: false
 	GitRepositoryURL string `json:"gitRepositoryURL,omitempty"`
+
+	// ActivityID is the activity created by the project action.
+	//
+	// Required: false
+	ActivityID *string `json:"activityId,omitempty"`
 }
 
 // Destroy is used to destroy a project.
