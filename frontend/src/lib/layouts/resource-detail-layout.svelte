@@ -48,10 +48,10 @@
 		class="animate-in fade-in slide-in-from-top-2 fixed top-4 left-1/2 z-40 w-[calc(100%-2rem)] max-w-fit -translate-x-1/2 px-2 duration-200 sm:w-auto sm:px-0"
 	>
 		<div
-			class="bg-popover/95 supports-backdrop-filter:bg-popover/85 border-border/60 flex items-center gap-3 rounded-full border px-4 py-2 shadow-lg backdrop-blur-lg"
+			class="bg-popover/95 supports-backdrop-filter:bg-popover/85 border-border/60 bubble-shadow-lg flex items-center gap-3 rounded-lg border px-4 py-2 backdrop-blur-md"
 		>
 			{#if backUrl}
-				<ArcaneButton action="base" tone="ghost" href={backUrl} class="size-8 rounded-full p-0">
+				<ArcaneButton action="base" tone="ghost" href={backUrl} class="size-8 rounded-md p-0">
 					<ArrowLeftIcon class="size-4" />
 				</ArcaneButton>
 
@@ -140,7 +140,7 @@
 
 		<div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
 			<div class="min-w-0 flex-1 space-y-2">
-				<h1 class="text-2xl font-semibold tracking-tight break-all sm:text-3xl">{title}</h1>
+				<h1 class="text-xl font-semibold tracking-tight break-all sm:text-2xl">{title}</h1>
 				{#if subtitle}
 					<p class="text-muted-foreground text-sm">{subtitle}</p>
 				{/if}

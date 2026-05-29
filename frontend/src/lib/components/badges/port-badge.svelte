@@ -91,7 +91,7 @@
 			<ArcaneTooltip.Root interactive>
 				<ArcaneTooltip.Trigger>
 					<a
-						class="ring-offset-background focus-visible:ring-ring bg-background/70 inline-flex items-center gap-1 rounded-lg border border-sky-700/20 px-2 py-1 text-[11px] shadow-sm transition-colors hover:border-sky-700/40 hover:bg-sky-500/10 hover:shadow-md focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none dark:border-sky-400/40 dark:bg-sky-500/20 dark:text-sky-100 dark:hover:border-sky-300/60 dark:hover:bg-sky-500/30"
+						class="ring-offset-background focus-visible:ring-ring bg-background/70 inline-flex items-center gap-1 rounded-md border border-sky-700/20 px-2 py-1 text-[11px] transition-colors hover:border-sky-700/40 hover:bg-sky-500/10 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none dark:border-sky-400/40 dark:bg-sky-500/20 dark:text-sky-100 dark:hover:border-sky-300/60 dark:hover:bg-sky-500/30"
 						href={toPortHref(p.hostPort!, baseServerUrl)}
 						target="_blank"
 						rel="noopener noreferrer"
@@ -113,7 +113,7 @@
 			<ArcaneTooltip.Root>
 				<ArcaneTooltip.Trigger>
 					<span
-						class="bg-background/50 inline-flex items-center gap-1 rounded-lg border border-gray-600/30 px-2 py-1 text-[11px] text-gray-400 shadow-sm dark:border-slate-400/40 dark:bg-slate-500/20 dark:text-slate-200"
+						class="bg-background/50 inline-flex items-center gap-1 rounded-md border border-gray-600/30 px-2 py-1 text-[11px] text-gray-400 dark:border-slate-400/40 dark:bg-slate-500/20 dark:text-slate-200"
 					>
 						<span class="tabular-nums">{p.containerPort}</span>
 						{#if p.proto}
@@ -133,7 +133,7 @@
 				<ArcaneTooltip.Trigger>
 					<button
 						onclick={() => (expanded = !expanded)}
-						class="bg-muted hover:bg-muted/80 text-muted-foreground inline-flex cursor-pointer items-center rounded-lg border px-2 py-1 text-[11px] font-medium shadow-sm transition-colors"
+						class="bg-muted hover:bg-muted/80 text-muted-foreground inline-flex cursor-pointer items-center rounded-md border px-2 py-1 text-[11px] font-medium transition-colors"
 					>
 						{expanded ? '−' : `+${hiddenCount}`}
 					</button>

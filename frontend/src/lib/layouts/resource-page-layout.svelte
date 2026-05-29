@@ -47,9 +47,9 @@
 	}: Props = $props();
 </script>
 
-<div class={cn('space-y-6 pt-3 md:space-y-10 md:pt-5', className)}>
-	<header class="relative flex items-center justify-between gap-4">
-		<div class="flex min-w-0 flex-1 items-center gap-3 sm:gap-4">
+<div class={cn('space-y-5 pt-3 md:space-y-7 md:pt-5', className)}>
+	<header class="flex items-start justify-between gap-4">
+		<div class="flex min-w-0 flex-1 items-start gap-3 sm:gap-4">
 			{#if Icon}
 				<div
 					class="bg-primary/10 text-primary ring-primary/20 flex size-8 shrink-0 items-center justify-center rounded-lg ring-1 sm:size-10"
@@ -58,20 +58,12 @@
 				</div>
 			{/if}
 			<div class="min-w-0">
-				<h1 class="text-2xl font-semibold tracking-tight sm:text-3xl">{title}</h1>
+				<h1 class="text-xl font-semibold tracking-tight sm:text-2xl">{title}</h1>
 				{#if subtitle}
 					<p class="text-muted-foreground mt-1 text-sm">{subtitle}</p>
 				{/if}
-			</div>
-		</div>
-
-		{#if statCards && statCards.length > 0}
-			<div
-				class="pointer-events-none absolute top-1/2 left-1/2 z-10 hidden -translate-x-1/2 -translate-y-1/2 items-center justify-center transition-[margin-left] duration-200 ease-out md:flex"
-				style="margin-left: calc(var(--sidebar-gap-width, 0px) / -2);"
-			>
-				<div class="border-border/50 bg-muted/30 pointer-events-auto relative overflow-hidden rounded-xl border backdrop-blur-sm">
-					<div class="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 px-4 py-2">
+				{#if statCards && statCards.length > 0}
+					<div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
 						{#each statCards as card, i (card.title ?? i)}
 							<StatCard
 								variant="mini"
@@ -85,9 +77,9 @@
 							/>
 						{/each}
 					</div>
-				</div>
+				{/if}
 			</div>
-		{/if}
+		</div>
 
 		<ActionButtonGroup buttons={actionButtons} />
 	</header>
