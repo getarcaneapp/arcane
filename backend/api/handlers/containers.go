@@ -615,58 +615,64 @@ func (h *ContainerHandler) GetContainer(ctx context.Context, input *GetContainer
 }
 
 func (h *ContainerHandler) StartContainer(ctx context.Context, input *ContainerActionInput) (*ContainerActionOutput, error) {
-	if h.containerService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
-	user, exists := humamw.GetCurrentUserFromContext(ctx)
-	if !exists {
-		return nil, huma.Error401Unauthorized("not authenticated")
-	}
-
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	activityID, runtimeCtx := activitylib.StartHandlerActivityForUser(runtimeCtx, h.activityService, input.EnvironmentID, models.ActivityTypeContainerStart, "container", input.ContainerID, input.ContainerID, user, "Starting container", "Container start requested", models.JSON{"containerID": input.ContainerID})
-	if err := h.containerService.StartContainer(runtimeCtx, input.ContainerID, *user); err != nil {
-		activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Container started", err)
-		return nil, huma.Error500InternalServerError((&common.ContainerStartError{Err: err}).Error())
-	}
-	activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Container started", nil)
-
-	return &ContainerActionOutput{
-		Body: ContainerActionResponse{
-			Success: true,
-			Data:    base.MessageResponse{Message: "Container started successfully", ActivityID: utils.StringPtrFromTrimmed(activityID)},
+	return h.runContainerActionInternal(ctx, input, containerActionConfigInternal{
+		ActivityType:    models.ActivityTypeContainerStart,
+		Step:            "Starting container",
+		StartMessage:    "Container start requested",
+		CompleteMessage: "Container started",
+		SuccessMessage:  "Container started successfully",
+		Action: func(runtimeCtx context.Context, containerID string, user models.User) error {
+			return h.containerService.StartContainer(runtimeCtx, containerID, user)
 		},
-	}, nil
+		Error: func(err error) error {
+			return huma.Error500InternalServerError((&common.ContainerStartError{Err: err}).Error())
+		},
+	})
 }
 
 func (h *ContainerHandler) StopContainer(ctx context.Context, input *ContainerActionInput) (*ContainerActionOutput, error) {
-	if h.containerService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
-	user, exists := humamw.GetCurrentUserFromContext(ctx)
-	if !exists {
-		return nil, huma.Error401Unauthorized("not authenticated")
-	}
-
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	activityID, runtimeCtx := activitylib.StartHandlerActivityForUser(runtimeCtx, h.activityService, input.EnvironmentID, models.ActivityTypeContainerStop, "container", input.ContainerID, input.ContainerID, user, "Stopping container", "Container stop requested", models.JSON{"containerID": input.ContainerID})
-	if err := h.containerService.StopContainer(runtimeCtx, input.ContainerID, *user); err != nil {
-		activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Container stopped", err)
-		return nil, huma.Error500InternalServerError((&common.ContainerStopError{Err: err}).Error())
-	}
-	activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Container stopped", nil)
-
-	return &ContainerActionOutput{
-		Body: ContainerActionResponse{
-			Success: true,
-			Data:    base.MessageResponse{Message: "Container stopped successfully", ActivityID: utils.StringPtrFromTrimmed(activityID)},
+	return h.runContainerActionInternal(ctx, input, containerActionConfigInternal{
+		ActivityType:    models.ActivityTypeContainerStop,
+		Step:            "Stopping container",
+		StartMessage:    "Container stop requested",
+		CompleteMessage: "Container stopped",
+		SuccessMessage:  "Container stopped successfully",
+		Action: func(runtimeCtx context.Context, containerID string, user models.User) error {
+			return h.containerService.StopContainer(runtimeCtx, containerID, user)
 		},
-	}, nil
+		Error: func(err error) error {
+			return huma.Error500InternalServerError((&common.ContainerStopError{Err: err}).Error())
+		},
+	})
 }
 
 func (h *ContainerHandler) RestartContainer(ctx context.Context, input *ContainerActionInput) (*ContainerActionOutput, error) {
+	return h.runContainerActionInternal(ctx, input, containerActionConfigInternal{
+		ActivityType:    models.ActivityTypeContainerRestart,
+		Step:            "Restarting container",
+		StartMessage:    "Container restart requested",
+		CompleteMessage: "Container restarted",
+		SuccessMessage:  "Container restarted successfully",
+		Action: func(runtimeCtx context.Context, containerID string, user models.User) error {
+			return h.containerService.RestartContainer(runtimeCtx, containerID, user)
+		},
+		Error: func(err error) error {
+			return huma.Error500InternalServerError((&common.ContainerRestartError{Err: err}).Error())
+		},
+	})
+}
+
+type containerActionConfigInternal struct {
+	ActivityType    models.ActivityType
+	Step            string
+	StartMessage    string
+	CompleteMessage string
+	SuccessMessage  string
+	Action          func(context.Context, string, models.User) error
+	Error           func(error) error
+}
+
+func (h *ContainerHandler) runContainerActionInternal(ctx context.Context, input *ContainerActionInput, cfg containerActionConfigInternal) (*ContainerActionOutput, error) {
 	if h.containerService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -677,17 +683,17 @@ func (h *ContainerHandler) RestartContainer(ctx context.Context, input *Containe
 	}
 
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	activityID, runtimeCtx := activitylib.StartHandlerActivityForUser(runtimeCtx, h.activityService, input.EnvironmentID, models.ActivityTypeContainerRestart, "container", input.ContainerID, input.ContainerID, user, "Restarting container", "Container restart requested", models.JSON{"containerID": input.ContainerID})
-	if err := h.containerService.RestartContainer(runtimeCtx, input.ContainerID, *user); err != nil {
-		activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Container restarted", err)
-		return nil, huma.Error500InternalServerError((&common.ContainerRestartError{Err: err}).Error())
+	activityID, runtimeCtx := activitylib.StartHandlerActivityForUser(runtimeCtx, h.activityService, input.EnvironmentID, cfg.ActivityType, "container", input.ContainerID, input.ContainerID, user, cfg.Step, cfg.StartMessage, models.JSON{"containerID": input.ContainerID})
+	if err := cfg.Action(runtimeCtx, input.ContainerID, *user); err != nil {
+		activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, cfg.CompleteMessage, err)
+		return nil, cfg.Error(err)
 	}
-	activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Container restarted", nil)
+	activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, cfg.CompleteMessage, nil)
 
 	return &ContainerActionOutput{
 		Body: ContainerActionResponse{
 			Success: true,
-			Data:    base.MessageResponse{Message: "Container restarted successfully", ActivityID: utils.StringPtrFromTrimmed(activityID)},
+			Data:    base.MessageResponse{Message: cfg.SuccessMessage, ActivityID: utils.StringPtrFromTrimmed(activityID)},
 		},
 	}, nil
 }

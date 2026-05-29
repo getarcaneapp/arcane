@@ -196,38 +196,12 @@ var countsCmd = &cobra.Command{
 	Short:        "Get volume usage counts",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := client.NewFromConfig()
-		if err != nil {
-			return err
-		}
-
-		resp, err := c.Get(cmd.Context(), types.Endpoints.VolumesCounts(c.EnvID()))
-		if err != nil {
-			return fmt.Errorf("failed to get volume counts: %w", err)
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result base.ApiResponse[any]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
-		}
-
-		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
-		}
-
-		output.Header("Volume Usage Counts")
-		resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-		if err != nil {
-			return fmt.Errorf("failed to marshal volume counts: %w", err)
-		}
-		fmt.Println(string(resultBytes))
-		return nil
+		return runVolumeDataCommand(cmd, volumeDataCommandConfig{
+			endpoint:       types.Endpoints.VolumesCounts,
+			failureMessage: "failed to get volume counts",
+			header:         "Volume Usage Counts",
+			marshalMessage: "failed to marshal volume counts",
+		})
 	},
 }
 
@@ -285,39 +259,55 @@ var sizesCmd = &cobra.Command{
 	Short:        "Get volume sizes",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := client.NewFromConfig()
-		if err != nil {
-			return err
-		}
+		return runVolumeDataCommand(cmd, volumeDataCommandConfig{
+			endpoint:       types.Endpoints.VolumesSizes,
+			failureMessage: "failed to get volume sizes",
+			header:         "Volume Sizes",
+			marshalMessage: "failed to marshal volume sizes",
+		})
+	},
+}
 
-		resp, err := c.Get(cmd.Context(), types.Endpoints.VolumesSizes(c.EnvID()))
-		if err != nil {
-			return fmt.Errorf("failed to get volume sizes: %w", err)
-		}
-		defer func() { _ = resp.Body.Close() }()
+type volumeDataCommandConfig struct {
+	endpoint       func(string) string
+	failureMessage string
+	header         string
+	marshalMessage string
+}
 
-		var result base.ApiResponse[any]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
-		}
+func runVolumeDataCommand(cmd *cobra.Command, cfg volumeDataCommandConfig) error {
+	c, err := client.NewFromConfig()
+	if err != nil {
+		return err
+	}
 
+	resp, err := c.Get(cmd.Context(), cfg.endpoint(c.EnvID()))
+	if err != nil {
+		return fmt.Errorf("%s: %w", cfg.failureMessage, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	var result base.ApiResponse[any]
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
+	if err != nil {
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return fmt.Errorf("failed to marshal JSON: %w", err)
 		}
+		return fmt.Errorf("%s: %w", cfg.marshalMessage, err)
+	}
 
-		output.Header("Volume Sizes")
-		resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-		if err != nil {
-			return fmt.Errorf("failed to marshal volume sizes: %w", err)
-		}
+	if jsonOutput {
 		fmt.Println(string(resultBytes))
 		return nil
-	},
+	}
+
+	output.Header("%s", cfg.header)
+	fmt.Println(string(resultBytes))
+	return nil
 }
 
 var usageCmd = &cobra.Command{

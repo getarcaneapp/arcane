@@ -342,8 +342,7 @@ func (m *EnvironmentMiddleware) proxyHTTP(c echo.Context, target string, accessT
 	req, err := m.createProxyRequest(c, target, accessToken)
 	if err != nil {
 		errMessage := (&common.EnvironmentProxyRequestCreationError{Err: err}).Error()
-		var invalidTargetErr *common.EnvironmentInvalidProxyTargetError
-		if errors.As(err, &invalidTargetErr) {
+		if invalidTargetErr, ok := errors.AsType[*common.EnvironmentInvalidProxyTargetError](err); ok {
 			errMessage = invalidTargetErr.Error()
 		}
 		return c.JSON(http.StatusInternalServerError, map[string]any{

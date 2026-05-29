@@ -420,8 +420,7 @@ func (s *ActivityService) CancelActivity(ctx context.Context, environmentID, act
 		// terminal status, which reaches clients via the activity stream. Return
 		// the pre-cancel snapshot rather than reloading here: the worker has not
 		// finished unwinding yet, so a reload would still report "running".
-		dto := activityToDTOInternal(&model)
-		return &dto, nil
+		return new(activityToDTOInternal(&model)), nil
 	}
 
 	// Untracked work (e.g. after a process restart, or a queued activity with no
@@ -762,8 +761,7 @@ func copyPtrInternal[T any](value *T) *T {
 	if value == nil {
 		return nil
 	}
-	out := *value
-	return &out
+	return new(*value)
 }
 
 func clampProgressPtrInternal(value *int) *int {

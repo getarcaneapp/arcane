@@ -232,30 +232,51 @@ func (c *TunnelClient) connectAndServeManagedTunnelInternal(ctx context.Context)
 }
 
 func (c *TunnelClient) shouldFallbackToWebSocketInternal() bool {
-	if !c.shouldAttemptWebSocketTunnelInternal() {
-		return false
-	}
-	return c.managerWebSocketURLInternal() != ""
+	return c.shouldAttemptWebSocketTunnelInternal()
 }
 
 func (c *TunnelClient) shouldAttemptGRPCTunnelInternal() bool {
-	if c == nil {
-		return false
-	}
-	if UsePollEdgeTransport(c.cfg) {
-		return strings.TrimSpace(c.managerGRPCAddr) != ""
-	}
-	return UseGRPCEdgeTransport(c.cfg)
+	transports := c.managedTunnelTransportsInternal()
+	return transports.grpc
 }
 
 func (c *TunnelClient) shouldAttemptWebSocketTunnelInternal() bool {
-	if c == nil {
-		return false
+	transports := c.managedTunnelTransportsInternal()
+	return transports.websocket
+}
+
+type managedTunnelTransportsInternal struct {
+	grpc      bool
+	websocket bool
+}
+
+func (c *TunnelClient) managedTunnelTransportsInternal() managedTunnelTransportsInternal {
+	if c == nil || c.cfg == nil {
+		return managedTunnelTransportsInternal{}
 	}
-	if UsePollEdgeTransport(c.cfg) {
-		return c.managerWebSocketURLInternal() != ""
+
+	managerGRPCAvailable := strings.TrimSpace(c.managerGRPCAddr) != ""
+	managerWebSocketAvailable := c.managerWebSocketURLInternal() != ""
+	transport := NormalizeEdgeTransport(c.cfg.EdgeTransport)
+
+	switch transport {
+	case EdgeTransportPoll:
+		return managedTunnelTransportsInternal{
+			grpc:      managerGRPCAvailable,
+			websocket: managerWebSocketAvailable,
+		}
+	case EdgeTransportWebSocket:
+		return managedTunnelTransportsInternal{
+			websocket: managerWebSocketAvailable,
+		}
+	case EdgeTransportGRPC:
+		return managedTunnelTransportsInternal{
+			grpc:      managerGRPCAvailable,
+			websocket: strings.TrimSpace(c.cfg.EdgeTransport) == "" && managerWebSocketAvailable,
+		}
+	default:
+		return managedTunnelTransportsInternal{}
 	}
-	return UseWebSocketEdgeTransport(c.cfg)
 }
 
 func (c *TunnelClient) managerWebSocketURLInternal() string {

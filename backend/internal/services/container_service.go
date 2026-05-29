@@ -1,7 +1,6 @@
 package services
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -27,7 +26,6 @@ import (
 	containertypes "github.com/getarcaneapp/arcane/types/container"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
-	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/events"
 	"github.com/moby/moby/api/types/network"
@@ -365,8 +363,8 @@ func (s *ContainerService) tryRedeployViaComposeProjectInternal(ctx context.Cont
 		return "", false, nil
 	}
 	labels := containerInfo.Config.Labels
-	projectName := strings.TrimSpace(labels["com.docker.compose.project"])
-	serviceName := strings.TrimSpace(labels["com.docker.compose.service"])
+	projectName := dockerutils.ComposeProjectLabel(labels)
+	serviceName := dockerutils.ComposeServiceLabel(labels)
 	if projectName == "" || serviceName == "" {
 		return "", false, nil
 	}
@@ -870,97 +868,7 @@ func (s *ContainerService) StreamLogs(ctx context.Context, containerID string, l
 	defer func() { _ = logs.Close() }()
 
 	isTTY := containerInspect.Container.Config != nil && containerInspect.Container.Config.Tty
-	return s.streamContainerLogsInternal(ctx, logs, logsChan, follow, isTTY)
-}
-
-func (s *ContainerService) streamContainerLogsInternal(ctx context.Context, logs io.ReadCloser, logsChan chan<- string, follow bool, isTTY bool) error {
-	if isTTY {
-		return s.streamRawLogsInternal(ctx, logs, logsChan)
-	}
-	if follow {
-		return streamMultiplexedLogs(ctx, logs, logsChan)
-	}
-	return s.readAllLogs(ctx, logs, logsChan)
-}
-
-func (s *ContainerService) streamRawLogsInternal(ctx context.Context, logs io.Reader, logsChan chan<- string) error {
-	return s.readLogsFromReader(ctx, logs, logsChan, "")
-}
-
-// readLogsFromReader reads logs line by line from a reader
-func (s *ContainerService) readLogsFromReader(ctx context.Context, reader io.Reader, logsChan chan<- string, prefix string) error {
-	bufferedReader := bufio.NewReader(reader)
-
-	for {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-
-		line, err := bufferedReader.ReadString('\n')
-		if len(line) > 0 {
-			trimmed := strings.TrimRight(line, "\r\n")
-			if trimmed != "" {
-				if prefix != "" {
-					trimmed = prefix + trimmed
-				}
-
-				select {
-				case logsChan <- trimmed:
-				case <-ctx.Done():
-					return ctx.Err()
-				}
-			}
-		}
-
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				return nil
-			}
-			return err
-		}
-	}
-}
-
-func (s *ContainerService) readAllLogs(ctx context.Context, logs io.ReadCloser, logsChan chan<- string) error {
-	stdoutBuf := &strings.Builder{}
-	stderrBuf := &strings.Builder{}
-	stdCopyDone := make(chan struct{})
-	defer close(stdCopyDone)
-
-	go func() {
-		select {
-		case <-ctx.Done():
-			_ = logs.Close()
-		case <-stdCopyDone:
-		}
-	}()
-
-	_, err := stdcopy.StdCopy(stdoutBuf, stderrBuf, logs)
-	if err != nil && !errors.Is(err, io.EOF) {
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return ctxErr
-		}
-		return fmt.Errorf("failed to demultiplex logs: %w", err)
-	}
-	if ctxErr := ctx.Err(); ctxErr != nil {
-		return ctxErr
-	}
-
-	// Send stdout lines
-	if stdoutBuf.Len() > 0 {
-		if err := s.readLogsFromReader(ctx, strings.NewReader(stdoutBuf.String()), logsChan, ""); err != nil {
-			return err
-		}
-	}
-
-	// Send stderr lines with prefix
-	if stderrBuf.Len() > 0 {
-		if err := s.readLogsFromReader(ctx, strings.NewReader(stderrBuf.String()), logsChan, "[STDERR] "); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return dockerutils.StreamContainerLogs(ctx, logs, logsChan, follow, isTTY)
 }
 
 func (s *ContainerService) ListContainersPaginated(
@@ -1134,7 +1042,7 @@ func getContainerProjectNameInternal(container containertypes.Summary) string {
 		return containerNoProjectGroup
 	}
 
-	projectName := strings.TrimSpace(container.Labels["com.docker.compose.project"])
+	projectName := dockerutils.ComposeProjectLabel(container.Labels)
 	if projectName == "" {
 		return containerNoProjectGroup
 	}
@@ -1389,7 +1297,7 @@ func (s *ContainerService) buildContainerFilterAccessors() []pagination.FilterAc
 		{
 			Key: "standalone",
 			Fn: func(c containertypes.Summary, filterValue string) bool {
-				isStandalone := strings.TrimSpace(c.Labels["com.docker.compose.project"]) == ""
+				isStandalone := dockerutils.ComposeProjectLabel(c.Labels) == ""
 				switch filterValue {
 				case "true", "1":
 					return isStandalone

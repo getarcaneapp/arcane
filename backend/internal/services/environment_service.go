@@ -1176,17 +1176,15 @@ func (s *EnvironmentService) logGeneratedMTLSEventsInternal(ctx context.Context,
 		}
 	}
 	if assets.CertIssued {
-		resourceType := "environment"
 		envIDCopy := envID
-		envNameCopy := envName
 		if _, err := s.eventService.CreateEvent(ctx, CreateEventRequest{
 			Type:          models.EventTypeEnvironmentMTLSCertIssued,
 			Severity:      models.EventSeverityInfo,
 			Title:         "Edge mTLS certificate issued",
 			Description:   fmt.Sprintf("Arcane issued an edge mTLS client certificate for environment '%s'", envName),
-			ResourceType:  &resourceType,
+			ResourceType:  new("environment"),
 			ResourceID:    &envIDCopy,
-			ResourceName:  &envNameCopy,
+			ResourceName:  new(envName),
 			EnvironmentID: &envIDCopy,
 			Metadata:      models.JSON{"kind": "client"},
 		}); err != nil {
