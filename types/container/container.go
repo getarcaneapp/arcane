@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	containerregistry "github.com/getarcaneapp/arcane/types/containerregistry"
+	"github.com/getarcaneapp/arcane/types/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"

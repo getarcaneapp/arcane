@@ -91,7 +91,7 @@ func TestPerIPRateLimitForPaths_AppliesOnlyToConfiguredPaths(t *testing.T) {
 	require.Equal(t, http.StatusOK, doReq("/limited"))
 	require.Equal(t, http.StatusTooManyRequests, doReq("/limited"))
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		require.Equal(t, http.StatusOK, doReq("/unlimited"))
 	}
 }
