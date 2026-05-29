@@ -215,7 +215,7 @@ func TestEnsureAgentMTLSAssets_UsesDownloadedCAPathWhenPresent(t *testing.T) {
 
 func TestRemoveStaleEdgeMTLSLockInternal_PreservesLivePID(t *testing.T) {
 	lockPath := filepath.Join(t.TempDir(), ".ca.lock")
-	require.NoError(t, os.WriteFile(lockPath, []byte(fmt.Sprintf("%d %s\n", os.Getpid(), time.Now().UTC().Format(time.RFC3339Nano))), 0o600))
+	require.NoError(t, os.WriteFile(lockPath, fmt.Appendf(nil, "%d %s\n", os.Getpid(), time.Now().UTC().Format(time.RFC3339Nano)), 0o600))
 
 	require.False(t, removeStaleEdgeMTLSLockInternal(lockPath))
 	require.FileExists(t, lockPath)
@@ -224,7 +224,7 @@ func TestRemoveStaleEdgeMTLSLockInternal_PreservesLivePID(t *testing.T) {
 func TestRemoveStaleEdgeMTLSLockInternal_RemovesOldLockDespiteLivePID(t *testing.T) {
 	lockPath := filepath.Join(t.TempDir(), ".ca.lock")
 	oldTimestamp := time.Now().Add(-(2*managerCALockTimeout + time.Second)).UTC().Format(time.RFC3339Nano)
-	require.NoError(t, os.WriteFile(lockPath, []byte(fmt.Sprintf("%d %s\n", os.Getpid(), oldTimestamp)), 0o600))
+	require.NoError(t, os.WriteFile(lockPath, fmt.Appendf(nil, "%d %s\n", os.Getpid(), oldTimestamp), 0o600))
 
 	require.True(t, removeStaleEdgeMTLSLockInternal(lockPath))
 	require.NoFileExists(t, lockPath)

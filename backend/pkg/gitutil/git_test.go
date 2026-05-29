@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -522,13 +523,7 @@ func TestWalkDirectory_ComposeInSubdirectory(t *testing.T) {
 		t.Fatalf("expected %d files, got %d (%v)", len(expected), len(paths), paths)
 	}
 	for _, want := range expected {
-		found := false
-		for _, got := range paths {
-			if got == want {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(paths, want)
 		if !found {
 			t.Fatalf("expected walked paths to include %q, got %v", want, paths)
 		}
@@ -556,13 +551,7 @@ func TestWalkDirectory_NestedSiblingFile(t *testing.T) {
 		t.Fatalf("expected %d files, got %d (%v)", len(expected), len(paths), paths)
 	}
 	for _, want := range expected {
-		found := false
-		for _, got := range paths {
-			if got == want {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(paths, want)
 		if !found {
 			t.Fatalf("expected walked paths to include %q, got %v", want, paths)
 		}
@@ -590,13 +579,7 @@ func TestWalkDirectory_SpecialCharsInPath(t *testing.T) {
 		t.Fatalf("expected %d files, got %d (%v)", len(expected), len(paths), paths)
 	}
 	for _, want := range expected {
-		found := false
-		for _, got := range paths {
-			if got == want {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(paths, want)
 		if !found {
 			t.Fatalf("expected walked paths to include %q, got %v", want, paths)
 		}
