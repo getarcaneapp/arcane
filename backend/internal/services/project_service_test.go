@@ -31,7 +31,7 @@ import (
 	glsqlite "github.com/glebarez/sqlite"
 	"github.com/moby/moby/api/types/container"
 	dockertypesimage "github.com/moby/moby/api/types/image"
-	digest "github.com/opencontainers/go-digest"
+	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"strings"
 	"time"
@@ -297,8 +298,6 @@ func cloneHeaders(headers map[string]string) map[string]string {
 	}
 
 	out := make(map[string]string, len(headers))
-	for key, value := range headers {
-		out[key] = value
-	}
+	maps.Copy(out, headers)
 	return out
 }
