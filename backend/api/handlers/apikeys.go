@@ -238,29 +238,7 @@ func (h *ApiKeyHandler) ListApiKeys(ctx context.Context, input *ListApiKeysInput
 
 // CreateApiKey creates a new API key.
 func (h *ApiKeyHandler) CreateApiKey(ctx context.Context, input *CreateApiKeyInput) (*CreateApiKeyOutput, error) {
-	if h.apiKeyService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
-	user, exists := humamw.GetCurrentUserFromContext(ctx)
-	if !exists {
-		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
-	}
-
-	apiKey, err := h.apiKeyService.CreateApiKey(ctx, user.ID, input.Body)
-	if err != nil {
-		if errors.Is(err, services.ErrApiKeyPermissionEscalation) {
-			return nil, huma.Error403Forbidden(err.Error())
-		}
-		return nil, huma.Error500InternalServerError((&common.ApiKeyCreationError{Err: err}).Error())
-	}
-
-	return &CreateApiKeyOutput{
-		Body: base.ApiResponse[apikey.ApiKeyCreatedDto]{
-			Success: true,
-			Data:    *apiKey,
-		},
-	}, nil
+	return h.createCurrentUserApiKeyInternal(ctx, input)
 }
 
 // GetApiKey returns details of a specific API key.
@@ -367,6 +345,10 @@ func (h *ApiKeyHandler) ListMyApiKeys(ctx context.Context, input *struct{}) (*Li
 
 // CreateMyApiKey creates a new API key owned by the current user (self-service).
 func (h *ApiKeyHandler) CreateMyApiKey(ctx context.Context, input *CreateApiKeyInput) (*CreateApiKeyOutput, error) {
+	return h.createCurrentUserApiKeyInternal(ctx, input)
+}
+
+func (h *ApiKeyHandler) createCurrentUserApiKeyInternal(ctx context.Context, input *CreateApiKeyInput) (*CreateApiKeyOutput, error) {
 	if h.apiKeyService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}

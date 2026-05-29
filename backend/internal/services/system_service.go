@@ -233,13 +233,11 @@ func (s *SystemService) startSystemPruneActivityInternal(ctx context.Context, en
 	if s.activityService == nil {
 		return ""
 	}
-	resourceType := "system"
-	resourceName := "Docker resources"
 	activity, err := s.activityService.StartActivity(ctx, StartActivityRequest{
 		EnvironmentID: environmentID,
 		Type:          models.ActivityTypeSystemPrune,
-		ResourceType:  &resourceType,
-		ResourceName:  &resourceName,
+		ResourceType:  new("system"),
+		ResourceName:  new("Docker resources"),
 		Step:          "Preparing prune",
 		LatestMessage: "System prune started",
 		Metadata: models.JSON{
@@ -286,8 +284,7 @@ func (s *SystemService) completeSystemPruneActivityInternal(ctx context.Context,
 		} else {
 			status = models.ActivityStatusFailed
 			message = "System prune completed with errors"
-			joined := strings.Join(result.Errors, "; ")
-			errMessage = &joined
+			errMessage = new(strings.Join(result.Errors, "; "))
 		}
 	}
 	if _, err := s.activityService.CompleteActivity(utils.ActivityRuntimeContext(ctx, nil), activityID, status, message, errMessage); err != nil {
@@ -335,30 +332,35 @@ func (s *SystemService) performBatchContainerAction(ctx context.Context, contain
 }
 
 func (s *SystemService) StartAllContainers(ctx context.Context, environmentID string) (*containertypes.ActionResult, error) {
-	activityID := s.startSystemContainerActivityInternal(ctx, environmentID, models.ActivityTypeContainerStart, "All containers", "Starting all containers")
-	containers, _, _, _, err := s.dockerService.GetAllContainers(ctx)
-	if err != nil {
-		result := &containertypes.ActionResult{
-			Success:    false,
-			Errors:     []string{fmt.Sprintf("Failed to list containers: %v", err)},
-			ActivityID: utils.StringPtrFromTrimmed(activityID),
-		}
-		s.completeSystemContainerActivityInternal(ctx, activityID, "Starting all containers failed", result)
-		return result, err
-	}
-
-	result := s.performBatchContainerAction(ctx, containers, "start",
-		func(c container.Summary) bool { return c.State != "running" },
-		func(ctx context.Context, id string) error {
-			return s.containerService.StartContainer(ctx, id, systemUser)
-		})
-	result.ActivityID = utils.StringPtrFromTrimmed(activityID)
-	s.completeSystemContainerActivityInternal(ctx, activityID, "Started all containers", result)
-	return result, nil
+	return s.startMatchingContainersInternal(ctx, environmentID, startMatchingContainersOptionsInternal{
+		ResourceName:   "All containers",
+		StartMessage:   "Starting all containers",
+		FailureMessage: "Starting all containers failed",
+		SuccessMessage: "Started all containers",
+		ShouldStart:    func(c container.Summary) bool { return c.State != "running" },
+	})
 }
 
 func (s *SystemService) StartAllStoppedContainers(ctx context.Context, environmentID string) (*containertypes.ActionResult, error) {
-	activityID := s.startSystemContainerActivityInternal(ctx, environmentID, models.ActivityTypeContainerStart, "Stopped containers", "Starting stopped containers")
+	return s.startMatchingContainersInternal(ctx, environmentID, startMatchingContainersOptionsInternal{
+		ResourceName:   "Stopped containers",
+		StartMessage:   "Starting stopped containers",
+		FailureMessage: "Starting stopped containers failed",
+		SuccessMessage: "Started stopped containers",
+		ShouldStart:    func(c container.Summary) bool { return c.State == "exited" },
+	})
+}
+
+type startMatchingContainersOptionsInternal struct {
+	ResourceName   string
+	StartMessage   string
+	FailureMessage string
+	SuccessMessage string
+	ShouldStart    func(container.Summary) bool
+}
+
+func (s *SystemService) startMatchingContainersInternal(ctx context.Context, environmentID string, opts startMatchingContainersOptionsInternal) (*containertypes.ActionResult, error) {
+	activityID := s.startSystemContainerActivityInternal(ctx, environmentID, models.ActivityTypeContainerStart, opts.ResourceName, opts.StartMessage)
 	containers, _, _, _, err := s.dockerService.GetAllContainers(ctx)
 	if err != nil {
 		result := &containertypes.ActionResult{
@@ -366,17 +368,15 @@ func (s *SystemService) StartAllStoppedContainers(ctx context.Context, environme
 			Errors:     []string{fmt.Sprintf("Failed to list containers: %v", err)},
 			ActivityID: utils.StringPtrFromTrimmed(activityID),
 		}
-		s.completeSystemContainerActivityInternal(ctx, activityID, "Starting stopped containers failed", result)
+		s.completeSystemContainerActivityInternal(ctx, activityID, opts.FailureMessage, result)
 		return result, err
 	}
 
-	result := s.performBatchContainerAction(ctx, containers, "start",
-		func(c container.Summary) bool { return c.State == "exited" },
-		func(ctx context.Context, id string) error {
-			return s.containerService.StartContainer(ctx, id, systemUser)
-		})
+	result := s.performBatchContainerAction(ctx, containers, "start", opts.ShouldStart, func(ctx context.Context, id string) error {
+		return s.containerService.StartContainer(ctx, id, systemUser)
+	})
 	result.ActivityID = utils.StringPtrFromTrimmed(activityID)
-	s.completeSystemContainerActivityInternal(ctx, activityID, "Started stopped containers", result)
+	s.completeSystemContainerActivityInternal(ctx, activityID, opts.SuccessMessage, result)
 	return result, nil
 }
 
@@ -410,11 +410,10 @@ func (s *SystemService) startSystemContainerActivityInternal(ctx context.Context
 	if s.activityService == nil {
 		return ""
 	}
-	resourceType := "system"
 	activity, err := s.activityService.StartActivity(ctx, StartActivityRequest{
 		EnvironmentID: environmentID,
 		Type:          activityType,
-		ResourceType:  &resourceType,
+		ResourceType:  new("system"),
 		ResourceName:  &resourceName,
 		Step:          message,
 		LatestMessage: message,

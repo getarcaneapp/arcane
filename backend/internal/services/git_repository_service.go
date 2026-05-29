@@ -14,7 +14,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/pkg/utils/mapper"
 	"github.com/getarcaneapp/arcane/types/gitops"
 	"gorm.io/gorm"
 )
@@ -39,25 +38,14 @@ func (s *GitRepositoryService) GetRepositoriesPaginated(ctx context.Context, par
 	var repositories []models.GitRepository
 	q := s.db.WithContext(ctx).Model(&models.GitRepository{})
 
-	if term := strings.TrimSpace(params.Search); term != "" {
-		searchPattern := "%" + term + "%"
-		q = q.Where(
-			"name LIKE ? OR url LIKE ? OR COALESCE(description, '') LIKE ?",
-			searchPattern, searchPattern, searchPattern,
-		)
-	}
+	q = pagination.ApplyLikeSearch(q, params.Search, "name LIKE ? OR url LIKE ? OR COALESCE(description, '') LIKE ?")
 
 	q = pagination.ApplyBooleanFilter(q, "enabled", params.Filters["enabled"])
 	q = pagination.ApplyFilter(q, "auth_type", params.Filters["authType"])
 
-	paginationResp, err := pagination.PaginateAndSortDB(params, q, &repositories)
+	out, paginationResp, err := pagination.PaginateSortAndMapDB[models.GitRepository, gitops.GitRepository](params, q, &repositories)
 	if err != nil {
-		return nil, pagination.Response{}, fmt.Errorf("failed to paginate git repositories: %w", err)
-	}
-
-	out, mapErr := mapper.MapSlice[models.GitRepository, gitops.GitRepository](repositories)
-	if mapErr != nil {
-		return nil, pagination.Response{}, fmt.Errorf("failed to map repositories: %w", mapErr)
+		return nil, pagination.Response{}, fmt.Errorf("failed to list git repositories: %w", err)
 	}
 
 	return out, paginationResp, nil

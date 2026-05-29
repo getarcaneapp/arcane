@@ -1208,9 +1208,9 @@ func (s *ProjectService) enrichProjectUpdateInfoInternal(ctx context.Context, re
 		return
 	}
 
-	imageRefs := buildProjectImageRefsFromComposeConfigsInternal(resp.Services)
+	imageRefs := projects.ImageRefsFromComposeConfigs(resp.Services)
 	if len(imageRefs) == 0 {
-		imageRefs = buildProjectImageRefsFromRuntimeServicesInternal(resp.RuntimeServices)
+		imageRefs = projects.ImageRefsFromRuntimeServices(resp.RuntimeServices)
 	}
 
 	var updateInfoByRef map[string]*imagetypes.UpdateInfo
@@ -1329,54 +1329,7 @@ func (s *ProjectService) getProjectImageRefsFromComposeInternal(ctx context.Cont
 		return nil, fmt.Errorf("load compose project: %w", err)
 	}
 
-	return buildProjectImageRefsFromComposeServicesInternal(composeProject.Services), nil
-}
-
-func buildProjectImageRefsFromComposeServicesInternal(services composetypes.Services) []string {
-	serviceConfigs := make([]composetypes.ServiceConfig, 0, len(services))
-	for _, svc := range services {
-		serviceConfigs = append(serviceConfigs, svc)
-	}
-
-	return buildProjectImageRefsFromComposeConfigsInternal(serviceConfigs)
-}
-
-func buildProjectImageRefsFromComposeConfigsInternal(services []composetypes.ServiceConfig) []string {
-	refs := make([]string, 0, len(services))
-	seen := make(map[string]struct{}, len(services))
-
-	for _, svc := range services {
-		ref := strings.TrimSpace(svc.Image)
-		if ref == "" {
-			continue
-		}
-		if _, exists := seen[ref]; exists {
-			continue
-		}
-		seen[ref] = struct{}{}
-		refs = append(refs, ref)
-	}
-
-	return refs
-}
-
-func buildProjectImageRefsFromRuntimeServicesInternal(services []project.RuntimeService) []string {
-	refs := make([]string, 0, len(services))
-	seen := make(map[string]struct{}, len(services))
-
-	for _, svc := range services {
-		ref := strings.TrimSpace(svc.Image)
-		if ref == "" {
-			continue
-		}
-		if _, exists := seen[ref]; exists {
-			continue
-		}
-		seen[ref] = struct{}{}
-		refs = append(refs, ref)
-	}
-
-	return refs
+	return projects.ImageRefsFromComposeServices(composeProject.Services), nil
 }
 
 func buildProjectUpdateInfoSummaryInternal(
@@ -1412,13 +1365,11 @@ func buildProjectUpdateInfoSummaryInternal(
 		if strings.TrimSpace(info.Error) != "" {
 			summary.ErrorCount++
 			if summary.ErrorMessage == nil {
-				errMsg := strings.TrimSpace(info.Error)
-				summary.ErrorMessage = &errMsg
+				summary.ErrorMessage = new(strings.TrimSpace(info.Error))
 			}
 		}
 		if !info.CheckTime.IsZero() && (latestCheckTime == nil || info.CheckTime.After(*latestCheckTime)) {
-			checkTime := info.CheckTime
-			latestCheckTime = &checkTime
+			latestCheckTime = new(info.CheckTime)
 		}
 	}
 
@@ -1753,7 +1704,7 @@ func (s *ProjectService) GetProjectStatusCounts(ctx context.Context) (folderCoun
 	// 2. Group by project
 	containersByProject := make(map[string][]container.Summary)
 	for _, c := range containers {
-		projName := c.Labels["com.docker.compose.project"]
+		projName := dockerutil.ComposeProjectLabel(c.Labels)
 		if projName != "" {
 			containersByProject[projName] = append(containersByProject[projName], c)
 		}
@@ -2144,7 +2095,7 @@ func (s *ProjectService) projectRedeployDisabledInternal(ctx context.Context, pr
 
 	containersByProject := make(map[string][]container.Summary)
 	for _, c := range containers {
-		projectName := c.Labels["com.docker.compose.project"]
+		projectName := dockerutil.ComposeProjectLabel(c.Labels)
 		if projectName != "" {
 			containersByProject[projectName] = append(containersByProject[projectName], c)
 		}
@@ -2267,10 +2218,6 @@ func (s *ProjectService) ensureImagesPresent(ctx context.Context, pullPlan map[s
 	return nil
 }
 
-func (s *ProjectService) pullImageForService(ctx context.Context, imageRef string, progressWriter io.Writer, credentials []containerregistry.Credential) error {
-	return s.pullAndReconcileImageInternal(ctx, imageRef, progressWriter, systemUser, credentials)
-}
-
 func (s *ProjectService) prepareProjectImagesForDeploy(
 	ctx context.Context,
 	projectID string,
@@ -2357,7 +2304,7 @@ func (s *ProjectService) ensureDeployServiceImageReady(
 		return nil
 	}
 
-	if err := s.pullImageForService(ctx, imageName, progressWriter, credentials); err == nil {
+	if err := s.pullAndReconcileImageInternal(ctx, imageName, progressWriter, systemUser, credentials); err == nil {
 		return nil
 	} else if svc.Build != nil && decision.FallbackBuildOnPullFail {
 		slog.WarnContext(ctx, "image pull failed, falling back to build", "service", serviceName, "image", imageName, "error", err)
@@ -3846,7 +3793,7 @@ func buildDiscoveredComposeProjectUpdateRowsInternal(
 ) []project.Details {
 	containersByProject := make(map[string][]container.Summary)
 	for _, c := range composeContainers {
-		projectName := strings.TrimSpace(c.Labels["com.docker.compose.project"])
+		projectName := dockerutil.ComposeProjectLabel(c.Labels)
 		if projectName == "" {
 			continue
 		}
@@ -3870,7 +3817,7 @@ func buildDiscoveredComposeProjectUpdateRowsInternal(
 	rows := make([]project.Details, 0, len(containersByProject))
 	for projectName, projectContainers := range containersByProject {
 		runtimeServices := buildDiscoveredRuntimeServicesInternal(projectContainers)
-		imageRefs := buildProjectImageRefsFromRuntimeServicesInternal(runtimeServices)
+		imageRefs := projects.ImageRefsFromRuntimeServices(runtimeServices)
 		updateInfo := buildProjectUpdateInfoSummaryInternal(imageRefs, updateInfoByRef)
 		if updateInfo == nil || !updateInfo.HasUpdate {
 			continue
@@ -3983,7 +3930,7 @@ func buildDiscoveredRuntimeServicesInternal(containers []container.Summary) []pr
 			continue
 		}
 
-		serviceName := strings.TrimSpace(c.Labels["com.docker.compose.service"])
+		serviceName := dockerutil.ComposeServiceLabel(c.Labels)
 		if serviceName == "" {
 			serviceName = c.ID
 		}
@@ -3993,10 +3940,7 @@ func buildDiscoveredRuntimeServicesInternal(containers []container.Summary) []pr
 		}
 		seenServices[key] = struct{}{}
 
-		containerName := ""
-		if len(c.Names) > 0 {
-			containerName = strings.TrimPrefix(c.Names[0], "/")
-		}
+		containerName := dockerutil.ContainerNameFromNames(c.Names)
 
 		runtimeServices = append(runtimeServices, project.RuntimeService{
 			Name:          serviceName,
@@ -4185,7 +4129,7 @@ func (s *ProjectService) fetchProjectStatusConcurrently(ctx context.Context, pro
 	// 2. Group containers by project name
 	containersByProject := make(map[string][]container.Summary)
 	for _, c := range containers {
-		projName := c.Labels["com.docker.compose.project"]
+		projName := dockerutil.ComposeProjectLabel(c.Labels)
 		if projName != "" {
 			containersByProject[projName] = append(containersByProject[projName], c)
 		}
@@ -4222,7 +4166,7 @@ func (s *ProjectService) mapProjectToDto(ctx context.Context, projectsDir string
 	runningCount := 0
 
 	for _, c := range projectContainers {
-		svcName := c.Labels["com.docker.compose.service"]
+		svcName := dockerutil.ComposeServiceLabel(c.Labels)
 		state := c.State // "running", "exited", etc.
 
 		// Parse health from Status string if possible
@@ -4237,10 +4181,7 @@ func (s *ProjectService) mapProjectToDto(ctx context.Context, projectsDir string
 			health = new("starting")
 		}
 
-		containerName := ""
-		if len(c.Names) > 0 {
-			containerName = strings.TrimPrefix(c.Names[0], "/")
-		}
+		containerName := dockerutil.ContainerNameFromNames(c.Names)
 
 		redeployDisabled := libupdater.ShouldDisableArcaneServerRedeploy(c.Labels, c.ID, currentContainerID, currentContainerErr)
 		if redeployDisabled {

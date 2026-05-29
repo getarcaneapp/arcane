@@ -278,27 +278,11 @@ var upCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := client.NewFromConfig()
-		if err != nil {
-			return err
-		}
-
-		resolved, _, err := resolveProject(cmd.Context(), c, args[0], false)
-		if err != nil {
-			return err
-		}
-
-		resp, err := c.Post(cmd.Context(), types.Endpoints.ProjectUp(c.EnvID(), resolved.ID), nil)
-		if err != nil {
-			return fmt.Errorf("failed to start project: %w", err)
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to start project: %w", err)
-		}
-
-		output.Success("Project %s started successfully", resolved.Name)
-		return nil
+		return runProjectPostAction(cmd, args[0], projectPostActionConfig{
+			endpoint:       types.Endpoints.ProjectUp,
+			failureMessage: "failed to start project",
+			successMessage: "Project %s started successfully",
+		})
 	},
 }
 
@@ -308,27 +292,11 @@ var downCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := client.NewFromConfig()
-		if err != nil {
-			return err
-		}
-
-		resolved, _, err := resolveProject(cmd.Context(), c, args[0], false)
-		if err != nil {
-			return err
-		}
-
-		resp, err := c.Post(cmd.Context(), types.Endpoints.ProjectDown(c.EnvID(), resolved.ID), nil)
-		if err != nil {
-			return fmt.Errorf("failed to stop project: %w", err)
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to stop project: %w", err)
-		}
-
-		output.Success("Project %s stopped successfully", resolved.Name)
-		return nil
+		return runProjectPostAction(cmd, args[0], projectPostActionConfig{
+			endpoint:       types.Endpoints.ProjectDown,
+			failureMessage: "failed to stop project",
+			successMessage: "Project %s stopped successfully",
+		})
 	},
 }
 
@@ -338,27 +306,11 @@ var restartCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := client.NewFromConfig()
-		if err != nil {
-			return err
-		}
-
-		resolved, _, err := resolveProject(cmd.Context(), c, args[0], false)
-		if err != nil {
-			return err
-		}
-
-		resp, err := c.Post(cmd.Context(), types.Endpoints.ProjectRestart(c.EnvID(), resolved.ID), nil)
-		if err != nil {
-			return fmt.Errorf("failed to restart project: %w", err)
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to restart project: %w", err)
-		}
-
-		output.Success("Project %s restarted successfully", resolved.Name)
-		return nil
+		return runProjectPostAction(cmd, args[0], projectPostActionConfig{
+			endpoint:       types.Endpoints.ProjectRestart,
+			failureMessage: "failed to restart project",
+			successMessage: "Project %s restarted successfully",
+		})
 	},
 }
 
@@ -368,30 +320,12 @@ var redeployCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := client.NewFromConfig()
-		if err != nil {
-			return err
-		}
-
-		resolved, _, err := resolveProject(cmd.Context(), c, args[0], false)
-		if err != nil {
-			return err
-		}
-
-		// Redeploying can take a long time as it pulls images and restarts containers
-		c.SetTimeout(30 * time.Minute)
-
-		resp, err := c.Post(cmd.Context(), types.Endpoints.ProjectRedeploy(c.EnvID(), resolved.ID), nil)
-		if err != nil {
-			return fmt.Errorf("failed to redeploy project: %w", err)
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to redeploy project: %w", err)
-		}
-
-		output.Success("Project %s redeployed successfully", resolved.Name)
-		return nil
+		return runProjectPostAction(cmd, args[0], projectPostActionConfig{
+			endpoint:       types.Endpoints.ProjectRedeploy,
+			failureMessage: "failed to redeploy project",
+			successMessage: "Project %s redeployed successfully",
+			timeout:        30 * time.Minute,
+		})
 	},
 }
 
@@ -401,31 +335,48 @@ var pullCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := client.NewFromConfig()
-		if err != nil {
-			return err
-		}
-
-		resolved, _, err := resolveProject(cmd.Context(), c, args[0], false)
-		if err != nil {
-			return err
-		}
-
-		// Pulling images can take a long time
-		c.SetTimeout(30 * time.Minute)
-
-		resp, err := c.Post(cmd.Context(), types.Endpoints.ProjectPull(c.EnvID(), resolved.ID), nil)
-		if err != nil {
-			return fmt.Errorf("failed to pull images: %w", err)
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to pull images: %w", err)
-		}
-
-		output.Success("Images pulled successfully for project %s", resolved.Name)
-		return nil
+		return runProjectPostAction(cmd, args[0], projectPostActionConfig{
+			endpoint:       types.Endpoints.ProjectPull,
+			failureMessage: "failed to pull images",
+			successMessage: "Images pulled successfully for project %s",
+			timeout:        30 * time.Minute,
+		})
 	},
+}
+
+type projectPostActionConfig struct {
+	endpoint       func(string, string) string
+	failureMessage string
+	successMessage string
+	timeout        time.Duration
+}
+
+func runProjectPostAction(cmd *cobra.Command, projectRef string, cfg projectPostActionConfig) error {
+	c, err := client.NewFromConfig()
+	if err != nil {
+		return err
+	}
+
+	resolved, _, err := resolveProject(cmd.Context(), c, projectRef, false)
+	if err != nil {
+		return err
+	}
+
+	if cfg.timeout > 0 {
+		c.SetTimeout(cfg.timeout)
+	}
+
+	resp, err := c.Post(cmd.Context(), cfg.endpoint(c.EnvID(), resolved.ID), nil)
+	if err != nil {
+		return fmt.Errorf("%s: %w", cfg.failureMessage, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
+		return fmt.Errorf("%s: %w", cfg.failureMessage, err)
+	}
+
+	output.Success(cfg.successMessage, resolved.Name)
+	return nil
 }
 
 var createCmd = &cobra.Command{

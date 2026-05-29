@@ -8,6 +8,17 @@ import (
 	"strings"
 )
 
+type HeaderSetter interface {
+	SetHeader(key string, value string)
+}
+
+func SetJSONStreamHeaders(headers HeaderSetter) {
+	headers.SetHeader("Content-Type", "application/x-json-stream")
+	headers.SetHeader("Cache-Control", "no-cache")
+	headers.SetHeader("Connection", "keep-alive")
+	headers.SetHeader("X-Accel-Buffering", "no")
+}
+
 // ValidateWebSocketOrigin validates the Origin header for WebSocket connections
 // to prevent CSRF attacks. It checks:
 // 1. Same-origin requests (Origin matches Host)

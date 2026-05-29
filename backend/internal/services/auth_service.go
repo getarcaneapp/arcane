@@ -725,8 +725,7 @@ func (s *AuthService) VerifyToken(ctx context.Context, accessToken string) (*mod
 
 	tokenHash := hashTokenInternal(accessToken)
 	if cached, ok := s.tokenCache.Get(tokenHash); ok {
-		u := cached.User
-		return &u, cached.SessionID, nil
+		return new(cached.User), cached.SessionID, nil
 	}
 
 	// Verify user exists in DB
