@@ -1389,14 +1389,12 @@ func (s *GitOpsSyncService) findUniqueProjectDirectoryCandidateInternal(ctx cont
 }
 
 func (s *GitOpsSyncService) createRecoveredProjectFromDirectoryInternal(ctx context.Context, sync *models.GitOpsSync, projectPath string) (*models.Project, error) {
-	dirName := filepath.Base(projectPath)
-	reason := "Project recovered from existing GitOps-managed directory"
 	project := &models.Project{
 		Name:            sync.ProjectName,
-		DirName:         &dirName,
+		DirName:         new(filepath.Base(projectPath)),
 		Path:            projectPath,
 		Status:          models.ProjectStatusUnknown,
-		StatusReason:    &reason,
+		StatusReason:    new("Project recovered from existing GitOps-managed directory"),
 		ServiceCount:    0,
 		RunningCount:    0,
 		GitOpsManagedBy: &sync.ID,

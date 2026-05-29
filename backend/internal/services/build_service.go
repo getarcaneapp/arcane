@@ -155,12 +155,10 @@ func (s *BuildService) BuildImage(ctx context.Context, environmentID string, req
 		var errMsg *string
 		if err != nil {
 			status = models.ImageBuildStatusFailed
-			errorText := err.Error()
-			errMsg = &errorText
+			errMsg = new(err.Error())
 		}
 
-		durationMs := completedAt.Sub(startedAt).Milliseconds()
-		if updateErr := s.completeBuildRecord(ctx, buildRecordID, status, outputPtr, logCapture.Truncated(), errMsg, digest, provider, completedAt, &durationMs); updateErr != nil {
+		if updateErr := s.completeBuildRecord(ctx, buildRecordID, status, outputPtr, logCapture.Truncated(), errMsg, digest, provider, completedAt, new(completedAt.Sub(startedAt).Milliseconds())); updateErr != nil {
 			slog.WarnContext(ctx, "failed to update build history record", "error", updateErr)
 		}
 	}

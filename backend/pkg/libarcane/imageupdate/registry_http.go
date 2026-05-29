@@ -445,8 +445,7 @@ func extractRateLimitFromHeadersInternal(headers http.Header) (*RateLimitInfo, e
 
 	var used *int
 	if limit != nil && remaining != nil {
-		value := *limit - *remaining
-		used = &value
+		used = new(*limit - *remaining)
 	}
 
 	return &RateLimitInfo{

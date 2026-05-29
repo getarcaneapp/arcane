@@ -170,7 +170,7 @@ func loadFromEnv(cfg *Config) {
 		defaultValue := fieldType.Tag.Get("default")
 
 		// Get the environment value directly first
-		envValue := trimQuotes(os.Getenv(envTag))
+		envValue := pkgutils.TrimQuotes(os.Getenv(envTag))
 		if envValue == "" {
 			envValue = defaultValue
 		}
@@ -369,15 +369,6 @@ func setFieldValueInternal(field reflect.Value, fieldType reflect.StructField, v
 			field.Set(reflect.ValueOf(os.FileMode(i)))
 		}
 	}
-}
-
-func trimQuotes(s string) string {
-	if len(s) >= 2 {
-		if (s[0] == '"' && s[len(s)-1] == '"') || (s[0] == '\'' && s[len(s)-1] == '\'') {
-			return s[1 : len(s)-1]
-		}
-	}
-	return s
 }
 
 func (a AppEnvironment) IsProdEnvironment() bool {

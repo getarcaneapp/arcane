@@ -1387,10 +1387,8 @@ func (h *EnvironmentHandler) logMTLSAuditEvent(ctx context.Context, env *models.
 	user, _ := humamw.GetCurrentUserFromContext(ctx)
 	var userID, username *string
 	if user != nil {
-		uid := user.ID
-		uname := user.Username
-		userID = &uid
-		username = &uname
+		userID = new(user.ID)
+		username = new(user.Username)
 	}
 
 	if extra == nil {
@@ -1411,11 +1409,9 @@ func (h *EnvironmentHandler) logMTLSAuditEvent(ctx context.Context, env *models.
 	}
 	if env != nil {
 		envID := env.ID
-		envName := env.Name
-		resourceType := "environment"
-		req.ResourceType = &resourceType
+		req.ResourceType = new("environment")
 		req.ResourceID = &envID
-		req.ResourceName = &envName
+		req.ResourceName = new(env.Name)
 		req.EnvironmentID = &envID
 	}
 

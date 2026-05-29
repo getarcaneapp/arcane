@@ -23,7 +23,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils/cache"
-	"github.com/getarcaneapp/arcane/backend/pkg/utils/mapper"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 	dockerregistry "github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
@@ -99,25 +98,14 @@ func (s *ContainerRegistryService) GetRegistriesPaginated(ctx context.Context, p
 	var registries []models.ContainerRegistry
 	q := s.db.WithContext(ctx).Model(&models.ContainerRegistry{})
 
-	if term := strings.TrimSpace(params.Search); term != "" {
-		searchPattern := "%" + term + "%"
-		q = q.Where(
-			"url LIKE ? OR username LIKE ? OR COALESCE(description, '') LIKE ?",
-			searchPattern, searchPattern, searchPattern,
-		)
-	}
+	q = pagination.ApplyLikeSearch(q, params.Search, "url LIKE ? OR username LIKE ? OR COALESCE(description, '') LIKE ?")
 
 	q = pagination.ApplyBooleanFilter(q, "enabled", params.Filters["enabled"])
 	q = pagination.ApplyBooleanFilter(q, "insecure", params.Filters["insecure"])
 
-	paginationResp, err := pagination.PaginateAndSortDB(params, q, &registries)
+	out, paginationResp, err := pagination.PaginateSortAndMapDB[models.ContainerRegistry, containerregistry.ContainerRegistry](params, q, &registries)
 	if err != nil {
-		return nil, pagination.Response{}, fmt.Errorf("failed to paginate container registries: %w", err)
-	}
-
-	out, mapErr := mapper.MapSlice[models.ContainerRegistry, containerregistry.ContainerRegistry](registries)
-	if mapErr != nil {
-		return nil, pagination.Response{}, fmt.Errorf("failed to map registries: %w", mapErr)
+		return nil, pagination.Response{}, fmt.Errorf("failed to list container registries: %w", err)
 	}
 
 	return out, paginationResp, nil

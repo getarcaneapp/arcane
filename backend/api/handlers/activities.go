@@ -16,6 +16,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/types/activity"
 	"github.com/getarcaneapp/arcane/types/base"
 	"gorm.io/gorm"
@@ -227,10 +228,7 @@ func (h *ActivityHandler) StreamActivities(ctx context.Context, input *StreamAct
 
 	return &huma.StreamResponse{
 		Body: func(humaCtx huma.Context) { //nolint:contextcheck // streaming work must use humaCtx.Context()
-			humaCtx.SetHeader("Content-Type", "application/x-json-stream")
-			humaCtx.SetHeader("Cache-Control", "no-cache")
-			humaCtx.SetHeader("Connection", "keep-alive")
-			humaCtx.SetHeader("X-Accel-Buffering", "no")
+			httpx.SetJSONStreamHeaders(humaCtx)
 
 			writer := humaCtx.BodyWriter()
 			encoder := json.NewEncoder(writer)
