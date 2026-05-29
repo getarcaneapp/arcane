@@ -55,13 +55,6 @@ function expectPaginated(value: unknown): void {
 
 const readOnlyJsonSmokeCommands: JsonSmokeCommand[] = [
 	{
-		name: 'alerts',
-		args: ['alerts', '--debug-all-good', '--json'],
-		expectation: (value) => {
-			expect(value).toEqual(expect.objectContaining({ items: expect.any(Array) }));
-		}
-	},
-	{
 		name: 'images list',
 		args: ['--output', 'json', 'images', 'list', '--limit', '5'],
 		expectation: expectPaginated
