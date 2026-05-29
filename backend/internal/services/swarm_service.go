@@ -454,10 +454,10 @@ func (s *SwarmService) StreamServiceLogs(ctx context.Context, serviceID string, 
 	defer func() { _ = logs.Close() }()
 
 	if follow {
-		return streamMultiplexedLogs(ctx, logs, logsChan)
+		return dockerutil.StreamMultiplexedLogs(ctx, logs, logsChan)
 	}
 
-	return readAllLogs(logs, logsChan)
+	return dockerutil.ReadAllLogs(ctx, logs, logsChan)
 }
 
 func (s *SwarmService) ListNodesPaginated(ctx context.Context, environmentID string, params pagination.QueryParams) ([]swarmtypes.NodeSummary, pagination.Response, error) {

@@ -4,12 +4,10 @@ import (
 	"context"
 
 	"github.com/danielgtaylor/huma/v2"
-	humamw "github.com/getarcaneapp/arcane/backend/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/backend/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/pkg/utils/mapper"
 	"github.com/getarcaneapp/arcane/types/base"
 	"github.com/getarcaneapp/arcane/types/gitops"
 )
@@ -118,131 +116,15 @@ type SyncGitRepositoriesOutput struct {
 func RegisterGitRepositories(api huma.API, repoService *services.GitRepositoryService) {
 	h := &GitRepositoryHandler{repoService: repoService}
 
-	huma.Register(api, huma.Operation{
-		OperationID: "listGitRepositories",
-		Method:      "GET",
-		Path:        "/customize/git-repositories",
-		Summary:     "List git repositories",
-		Description: "Get a paginated list of git repositories",
-		Tags:        []string{"Customize"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
-		Middlewares: humamw.RequirePermission(api, authz.PermGitReposList),
-	}, h.ListRepositories)
-
-	huma.Register(api, huma.Operation{
-		OperationID: "createGitRepository",
-		Method:      "POST",
-		Path:        "/customize/git-repositories",
-		Summary:     "Create a git repository",
-		Description: "Create a new git repository configuration",
-		Tags:        []string{"Customize"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
-		Middlewares: humamw.RequirePermission(api, authz.PermGitReposCreate),
-	}, h.CreateRepository)
-
-	huma.Register(api, huma.Operation{
-		OperationID: "getGitRepository",
-		Method:      "GET",
-		Path:        "/customize/git-repositories/{id}",
-		Summary:     "Get a git repository",
-		Description: "Get a git repository by ID",
-		Tags:        []string{"Customize"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
-		Middlewares: humamw.RequirePermission(api, authz.PermGitReposRead),
-	}, h.GetRepository)
-
-	huma.Register(api, huma.Operation{
-		OperationID: "updateGitRepository",
-		Method:      "PUT",
-		Path:        "/customize/git-repositories/{id}",
-		Summary:     "Update a git repository",
-		Description: "Update an existing git repository configuration",
-		Tags:        []string{"Customize"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
-		Middlewares: humamw.RequirePermission(api, authz.PermGitReposUpdate),
-	}, h.UpdateRepository)
-
-	huma.Register(api, huma.Operation{
-		OperationID: "deleteGitRepository",
-		Method:      "DELETE",
-		Path:        "/customize/git-repositories/{id}",
-		Summary:     "Delete a git repository",
-		Description: "Delete a git repository configuration by ID",
-		Tags:        []string{"Customize"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
-		Middlewares: humamw.RequirePermission(api, authz.PermGitReposDelete),
-	}, h.DeleteRepository)
-
-	huma.Register(api, huma.Operation{
-		OperationID: "testGitRepository",
-		Method:      "POST",
-		Path:        "/customize/git-repositories/{id}/test",
-		Summary:     "Test a git repository",
-		Description: "Test connectivity and authentication to a git repository",
-		Tags:        []string{"Customize"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
-		Middlewares: humamw.RequirePermission(api, authz.PermGitReposTest),
-	}, h.TestRepository)
-
-	huma.Register(api, huma.Operation{
-		OperationID: "listGitRepositoryBranches",
-		Method:      "GET",
-		Path:        "/customize/git-repositories/{id}/branches",
-		Summary:     "List repository branches",
-		Description: "Get all branches from a git repository with default branch detection",
-		Tags:        []string{"Customize"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
-		Middlewares: humamw.RequirePermission(api, authz.PermGitReposRead),
-	}, h.ListBranches)
-
-	huma.Register(api, huma.Operation{
-		OperationID: "browseGitRepositoryFiles",
-		Method:      "GET",
-		Path:        "/customize/git-repositories/{id}/files",
-		Summary:     "Browse repository files",
-		Description: "Browse files and directories in a git repository",
-		Tags:        []string{"Customize"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
-		Middlewares: humamw.RequirePermission(api, authz.PermGitReposRead),
-	}, h.BrowseFiles)
-
-	huma.Register(api, huma.Operation{
-		OperationID: "syncGitRepositories",
-		Method:      "POST",
-		Path:        "/git-repositories/sync",
-		Summary:     "Sync git repositories",
-		Description: "Sync git repositories from a manager to this agent instance",
-		Tags:        []string{"Git Repositories"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
-		Middlewares: humamw.RequirePermission(api, authz.PermGitReposSync),
-	}, h.SyncRepositories)
+	registerCustomizeSecuredInternal(api, "listGitRepositories", "GET", "/customize/git-repositories", "List git repositories", "Get a paginated list of git repositories", authz.PermGitReposList, h.ListRepositories)
+	registerCustomizeSecuredInternal(api, "createGitRepository", "POST", "/customize/git-repositories", "Create a git repository", "Create a new git repository configuration", authz.PermGitReposCreate, h.CreateRepository)
+	registerCustomizeSecuredInternal(api, "getGitRepository", "GET", "/customize/git-repositories/{id}", "Get a git repository", "Get a git repository by ID", authz.PermGitReposRead, h.GetRepository)
+	registerCustomizeSecuredInternal(api, "updateGitRepository", "PUT", "/customize/git-repositories/{id}", "Update a git repository", "Update an existing git repository configuration", authz.PermGitReposUpdate, h.UpdateRepository)
+	registerCustomizeSecuredInternal(api, "deleteGitRepository", "DELETE", "/customize/git-repositories/{id}", "Delete a git repository", "Delete a git repository configuration by ID", authz.PermGitReposDelete, h.DeleteRepository)
+	registerCustomizeSecuredInternal(api, "testGitRepository", "POST", "/customize/git-repositories/{id}/test", "Test a git repository", "Test connectivity and authentication to a git repository", authz.PermGitReposTest, h.TestRepository)
+	registerCustomizeSecuredInternal(api, "listGitRepositoryBranches", "GET", "/customize/git-repositories/{id}/branches", "List repository branches", "Get all branches from a git repository with default branch detection", authz.PermGitReposRead, h.ListBranches)
+	registerCustomizeSecuredInternal(api, "browseGitRepositoryFiles", "GET", "/customize/git-repositories/{id}/files", "Browse repository files", "Browse files and directories in a git repository", authz.PermGitReposRead, h.BrowseFiles)
+	registerTaggedSecuredInternal(api, "syncGitRepositories", "POST", "/git-repositories/sync", "Sync git repositories", "Sync git repositories from a manager to this agent instance", "Git Repositories", authz.PermGitReposSync, h.SyncRepositories)
 }
 
 // ============================================================================
@@ -283,10 +165,7 @@ func (h *GitRepositoryHandler) CreateRepository(ctx context.Context, input *Crea
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	actor := models.User{}
-	if currentUser, exists := humamw.GetCurrentUserFromContext(ctx); exists && currentUser != nil {
-		actor = *currentUser
-	}
+	actor := currentActorInternal(ctx)
 
 	repo, err := h.repoService.CreateRepository(ctx, input.Body, actor)
 	if err != nil {
@@ -294,16 +173,15 @@ func (h *GitRepositoryHandler) CreateRepository(ctx context.Context, input *Crea
 		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.GitRepositoryCreationError{Err: err}).Error())
 	}
 
-	out, mapErr := mapper.MapOne[*models.GitRepository, gitops.GitRepository](repo)
+	body, mapErr := mapOneAPIResponseInternal[*models.GitRepository, gitops.GitRepository](repo, func(err error) string {
+		return (&common.GitRepositoryMappingError{Err: err}).Error()
+	})
 	if mapErr != nil {
-		return nil, huma.Error500InternalServerError((&common.GitRepositoryMappingError{Err: mapErr}).Error())
+		return nil, mapErr
 	}
 
 	return &CreateGitRepositoryOutput{
-		Body: base.ApiResponse[gitops.GitRepository]{
-			Success: true,
-			Data:    out,
-		},
+		Body: body,
 	}, nil
 }
 
@@ -319,16 +197,15 @@ func (h *GitRepositoryHandler) GetRepository(ctx context.Context, input *GetGitR
 		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.GitRepositoryRetrievalError{Err: err}).Error())
 	}
 
-	out, mapErr := mapper.MapOne[*models.GitRepository, gitops.GitRepository](repo)
+	body, mapErr := mapOneAPIResponseInternal[*models.GitRepository, gitops.GitRepository](repo, func(err error) string {
+		return (&common.GitRepositoryMappingError{Err: err}).Error()
+	})
 	if mapErr != nil {
-		return nil, huma.Error500InternalServerError((&common.GitRepositoryMappingError{Err: mapErr}).Error())
+		return nil, mapErr
 	}
 
 	return &GetGitRepositoryOutput{
-		Body: base.ApiResponse[gitops.GitRepository]{
-			Success: true,
-			Data:    out,
-		},
+		Body: body,
 	}, nil
 }
 
@@ -338,10 +215,7 @@ func (h *GitRepositoryHandler) UpdateRepository(ctx context.Context, input *Upda
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	actor := models.User{}
-	if currentUser, exists := humamw.GetCurrentUserFromContext(ctx); exists && currentUser != nil {
-		actor = *currentUser
-	}
+	actor := currentActorInternal(ctx)
 
 	repo, err := h.repoService.UpdateRepository(ctx, input.ID, input.Body, actor)
 	if err != nil {
@@ -349,16 +223,15 @@ func (h *GitRepositoryHandler) UpdateRepository(ctx context.Context, input *Upda
 		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.GitRepositoryUpdateError{Err: err}).Error())
 	}
 
-	out, mapErr := mapper.MapOne[*models.GitRepository, gitops.GitRepository](repo)
+	body, mapErr := mapOneAPIResponseInternal[*models.GitRepository, gitops.GitRepository](repo, func(err error) string {
+		return (&common.GitRepositoryMappingError{Err: err}).Error()
+	})
 	if mapErr != nil {
-		return nil, huma.Error500InternalServerError((&common.GitRepositoryMappingError{Err: mapErr}).Error())
+		return nil, mapErr
 	}
 
 	return &UpdateGitRepositoryOutput{
-		Body: base.ApiResponse[gitops.GitRepository]{
-			Success: true,
-			Data:    out,
-		},
+		Body: body,
 	}, nil
 }
 
@@ -368,10 +241,7 @@ func (h *GitRepositoryHandler) DeleteRepository(ctx context.Context, input *Dele
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	actor := models.User{}
-	if currentUser, exists := humamw.GetCurrentUserFromContext(ctx); exists && currentUser != nil {
-		actor = *currentUser
-	}
+	actor := currentActorInternal(ctx)
 
 	if err := h.repoService.DeleteRepository(ctx, input.ID, actor); err != nil {
 		apiErr := models.ToAPIError(err)
@@ -394,10 +264,7 @@ func (h *GitRepositoryHandler) TestRepository(ctx context.Context, input *TestGi
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	actor := models.User{}
-	if currentUser, exists := humamw.GetCurrentUserFromContext(ctx); exists && currentUser != nil {
-		actor = *currentUser
-	}
+	actor := currentActorInternal(ctx)
 
 	if err := h.repoService.TestConnection(ctx, input.ID, input.Branch, actor); err != nil {
 		return nil, huma.Error400BadRequest((&common.GitRepositoryTestError{Err: err}).Error())

@@ -112,7 +112,6 @@ func registerEdgeTunnelRoutes(
 		if env, err := appServices.Environment.GetEnvironmentByID(ctx, envID); err == nil && env != nil {
 			envName = env.Name
 		}
-		resourceType := "environment"
 		envIDCopy := envID
 		envNameCopy := envName
 		_, _ = appServices.Event.CreateEvent(ctx, services.CreateEventRequest{
@@ -120,7 +119,7 @@ func registerEdgeTunnelRoutes(
 			Severity:      edgeMTLSEnrollmentSeverityInternal(reenrolled),
 			Title:         "Edge mTLS enrollment",
 			Description:   fmt.Sprintf("Edge agent completed mTLS enrollment from %s", remoteAddr),
-			ResourceType:  &resourceType,
+			ResourceType:  new("environment"),
 			ResourceID:    &envIDCopy,
 			ResourceName:  &envNameCopy,
 			EnvironmentID: &envIDCopy,
@@ -157,13 +156,12 @@ func createEdgeMTLSIssueEventsInternal(ctx context.Context, eventService *servic
 		})
 	}
 	if certIssued {
-		resourceType := "environment"
 		_, _ = eventService.CreateEvent(ctx, services.CreateEventRequest{
 			Type:          models.EventTypeEnvironmentMTLSCertIssued,
 			Severity:      edgeMTLSCertIssuedSeverityInternal(reenrolled),
 			Title:         "Edge mTLS certificate issued",
 			Description:   fmt.Sprintf("Arcane issued an edge mTLS client certificate for environment '%s'", envName),
-			ResourceType:  &resourceType,
+			ResourceType:  new("environment"),
 			ResourceID:    &envID,
 			ResourceName:  &envName,
 			EnvironmentID: &envID,

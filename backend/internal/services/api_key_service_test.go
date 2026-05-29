@@ -219,9 +219,8 @@ func TestUpdateApiKeyRollsBackMetadataWhenPermissionUpdateFails(t *testing.T) {
 	created, err := service.CreateApiKey(ctx, admin.ID, apikey.CreateApiKey{Name: "original"})
 	require.NoError(t, err)
 
-	updatedName := "renamed"
 	updated, err := service.UpdateApiKey(ctx, admin.ID, created.ApiKey.ID, apikey.UpdateApiKey{
-		Name: &updatedName,
+		Name: new("renamed"),
 		Permissions: []apikey.PermissionGrant{
 			{Permission: authz.PermContainersList},
 			{Permission: authz.PermContainersList},

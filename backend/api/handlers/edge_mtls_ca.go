@@ -93,11 +93,9 @@ func readGeneratedEdgeMTLSCertificateInfoInternal(cfg *config.Config, envID stri
 	expiresAt := cert.NotAfter.UTC()
 	now := time.Now().UTC()
 	remaining := expiresAt.Sub(now)
-	daysRemaining := edgeMTLSCertificateDaysRemainingInternal(now, expiresAt)
-
 	info := &typesenvironment.EdgeMTLSCertificate{
 		ExpiresAt:     &expiresAt,
-		DaysRemaining: &daysRemaining,
+		DaysRemaining: new(edgeMTLSCertificateDaysRemainingInternal(now, expiresAt)),
 		Expired:       now.After(expiresAt),
 		ExpiringSoon:  now.Before(expiresAt) && remaining <= edgeMTLSCertificateExpiryWarningWindow,
 	}

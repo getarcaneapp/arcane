@@ -738,7 +738,7 @@ func TestProjectService_PullImageForService_UpdatesCurrentImageRecordAfterPull(t
 		CheckTime:      time.Now().UTC().Add(-time.Hour),
 	}).Error)
 
-	require.NoError(t, svc.pullImageForService(ctx, imageRef, io.Discard, nil))
+	require.NoError(t, svc.pullAndReconcileImageInternal(ctx, imageRef, io.Discard, systemUser, nil))
 
 	// sha256:old-worker may still be in use by another container — must not be cleared (fixes #2453).
 	var oldRecord models.ImageUpdateRecord
@@ -2561,8 +2561,6 @@ func TestProjectService_ListProjects_FiltersArchivedProjects(t *testing.T) {
 
 	activePath := createComposeProjectDir(t, projectsRoot, "active-demo")
 	archivedPath := createComposeProjectDir(t, projectsRoot, "archived-demo")
-	archivedAt := time.Now().UTC()
-
 	require.NoError(t, db.Create(&models.Project{
 		BaseModel: models.BaseModel{ID: "project-active"},
 		Name:      "active-demo",
@@ -2577,7 +2575,7 @@ func TestProjectService_ListProjects_FiltersArchivedProjects(t *testing.T) {
 		Path:       archivedPath,
 		Status:     models.ProjectStatusStopped,
 		IsArchived: true,
-		ArchivedAt: &archivedAt,
+		ArchivedAt: new(time.Now().UTC()),
 	}).Error)
 
 	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())

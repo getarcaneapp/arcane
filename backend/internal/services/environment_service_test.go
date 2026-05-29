@@ -266,7 +266,6 @@ func TestEnvironmentService_SyncRepositoriesToEnvironment_UsesAgentHeaders(t *te
 	require.NoError(t, db.AutoMigrate(&models.GitRepository{}))
 	svc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
 
-	description := "test repo"
 	createTestGitRepository(t, db, models.GitRepository{
 		BaseModel:   models.BaseModel{ID: "repo-1", CreatedAt: time.Now()},
 		Name:        "repo-1",
@@ -275,7 +274,7 @@ func TestEnvironmentService_SyncRepositoriesToEnvironment_UsesAgentHeaders(t *te
 		Username:    "arcane",
 		Token:       encryptSecretForTest(t, "repo-token"),
 		Enabled:     true,
-		Description: &description,
+		Description: new("test repo"),
 	})
 
 	accessToken := "token-1"
@@ -934,9 +933,7 @@ func TestEnvironmentService_TestConnection_RejectsInvalidCustomURL(t *testing.T)
 	svc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
 
 	createTestEnvironment(t, db, "env-1", "http://example.com", nil)
-	customURL := "ftp://example.com"
-
-	status, err := svc.TestConnection(ctx, "env-1", &customURL)
+	status, err := svc.TestConnection(ctx, "env-1", new("ftp://example.com"))
 	require.Error(t, err)
 	require.Equal(t, "offline", status)
 	require.Contains(t, err.Error(), "invalid environment API URL")

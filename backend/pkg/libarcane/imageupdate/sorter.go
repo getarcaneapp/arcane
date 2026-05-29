@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	dockerutil "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 )
@@ -127,7 +128,7 @@ func ExtractContainerDeps(ctx context.Context, dcli *client.Client, cnt containe
 	c := ContainerWithDeps{
 		Container: cnt,
 		Inspect:   inspect,
-		Name:      ExtractContainerName(cnt),
+		Name:      dockerutil.ContainerSummaryName(cnt),
 	}
 
 	// Extract Docker links
@@ -211,16 +212,4 @@ func hasMarkedDependencyInternal(markedForRestart map[string]bool, deps []string
 	}
 
 	return false
-}
-
-// ExtractContainerName extracts a clean container name from the summary
-func ExtractContainerName(cnt container.Summary) string {
-	if len(cnt.Names) > 0 {
-		n := cnt.Names[0]
-		if strings.HasPrefix(n, "/") {
-			return n[1:]
-		}
-		return n
-	}
-	return cnt.ID[:12]
 }
