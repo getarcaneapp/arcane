@@ -16,6 +16,14 @@ type MessageAppender interface {
 	AppendMessage(ctx context.Context, activityID string, req AppendMessageRequest) (*activitytypes.Message, error)
 }
 
+// Tracker is an optional interface a Service may implement to make activities
+// cancelable. Track derives a cancelable context bound to the activity ID and
+// registers it so the activity can later be cancelled via the activity service.
+// Implementers release the registration when the activity completes.
+type Tracker interface {
+	Track(ctx context.Context, activityID string) context.Context
+}
+
 type StartRequest struct {
 	EnvironmentID string
 	Type          models.ActivityType
