@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	backoff "github.com/cenkalti/backoff/v5"
+	"github.com/cenkalti/backoff/v5"
 	"golang.org/x/sync/singleflight"
 
 	cerrdefs "github.com/containerd/errdefs"

@@ -1165,7 +1165,7 @@ func (h *SwarmHandler) GetStack(ctx context.Context, input *GetSwarmStackInput) 
 	stack, err := h.swarmService.GetStack(ctx, input.EnvironmentID, input.Name)
 	if err != nil {
 		if errdefs.IsNotFound(err) {
-			return nil, huma.Error404NotFound(("Swarm stack not found"))
+			return nil, huma.Error404NotFound("Swarm stack not found")
 		}
 		return nil, mapSwarmServiceError(err, "Failed to inspect swarm stack")
 	}

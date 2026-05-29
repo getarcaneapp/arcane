@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/moby/moby/client"
-	digest "github.com/opencontainers/go-digest"
+	"github.com/opencontainers/go-digest"
 )
 
 type remoteDigestResolver interface {
