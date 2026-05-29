@@ -19,7 +19,7 @@ import (
 	"github.com/compose-spec/compose-go/v2/tree"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
-	units "github.com/docker/go-units"
+	"github.com/docker/go-units"
 )
 
 var errComposeFileNotFoundInternal = errors.New("no compose file found")
@@ -184,7 +184,7 @@ func wrapTypeCastMappingLenientInternal(mapping map[tree.Path]interp.Cast) map[t
 }
 
 func wrapCastWithLenientFallbackInternal(original interp.Cast) interp.Cast {
-	return func(value string) (interface{}, error) {
+	return func(value string) (any, error) {
 		result, err := original(value)
 		if err == nil {
 			return result, nil
@@ -196,11 +196,11 @@ func wrapCastWithLenientFallbackInternal(original interp.Cast) interp.Cast {
 	}
 }
 
-func lenientCastFloatInternal(value string) (interface{}, error) {
+func lenientCastFloatInternal(value string) (any, error) {
 	return strconv.ParseFloat(value, 64)
 }
 
-func lenientCastSizeInternal(value string) (interface{}, error) {
+func lenientCastSizeInternal(value string) (any, error) {
 	n, err := strconv.ParseInt(value, 10, 64)
 	if err != nil {
 		b, parseErr := units.RAMInBytes(value)

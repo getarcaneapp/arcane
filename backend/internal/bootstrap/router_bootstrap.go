@@ -265,7 +265,7 @@ func parseTrustedProxyCIDRsInternal(raw string) []*net.IPNet {
 		return nil
 	}
 	var nets []*net.IPNet
-	for _, cidr := range strings.Split(raw, ",") {
+	for cidr := range strings.SplitSeq(raw, ",") {
 		cidr = strings.TrimSpace(cidr)
 		if cidr == "" {
 			continue

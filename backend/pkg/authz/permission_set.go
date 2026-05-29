@@ -113,14 +113,14 @@ func EnvIDFromPath(path string) string {
 		return ""
 	}
 	rest := path[len("/environments/"):]
-	slash := strings.Index(rest, "/")
-	if slash == -1 {
+	before, _, ok := strings.Cut(rest, "/")
+	if !ok {
 		// Path is just /environments/<id> (no trailing segment) — this is
 		// not an env-scoped operation, it's the env detail endpoint itself,
 		// which is org-level.
 		return ""
 	}
-	id := rest[:slash]
+	id := before
 	if id == "" {
 		return ""
 	}
