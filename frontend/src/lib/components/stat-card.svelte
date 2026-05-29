@@ -38,7 +38,7 @@
 		<span class="text-sm leading-none font-semibold tabular-nums">
 			{value}
 		</span>
-		<span class="text-muted-foreground text-[10px] leading-none font-medium tracking-wider whitespace-nowrap uppercase">
+		<span class="text-muted-foreground text-[11px] leading-none font-medium tracking-[0.08em] whitespace-nowrap uppercase">
 			{title}
 		</span>
 	</div>
@@ -66,22 +66,17 @@
 {:else}
 	<div
 		class={cn(
-			'bg-card group relative overflow-hidden rounded-2xl border p-6 transition-all duration-300 hover:-translate-y-1 hover:shadow-lg',
+			'bg-card/60 backdrop-blur-md border-border/70 group relative overflow-hidden rounded-xl border p-4 transition-colors',
 			iconColor,
 			className
 		)}
-		style="--stat-hover-tint: currentColor;"
 	>
-		<div
-			class="pointer-events-none absolute inset-0 bg-linear-to-br from-(--stat-hover-tint)/5 via-transparent to-transparent opacity-0 transition-opacity duration-500 group-hover:opacity-100"
-		></div>
-
 		<div class="relative flex items-start justify-between">
 			<div class="space-y-2">
 				<p class="text-muted-foreground text-sm font-medium tracking-wide">
 					{title}
 				</p>
-				<h3 class="text-3xl font-semibold tracking-tight tabular-nums">
+				<h3 class="text-2xl font-semibold tracking-tight tabular-nums">
 					{value}
 				</h3>
 				{#if subtitle}
@@ -89,14 +84,8 @@
 				{/if}
 			</div>
 
-			<div
-				class={cn(
-					'flex size-10 items-center justify-center rounded-full transition-colors duration-300',
-					bgColor,
-					'group-hover:bg-(--stat-hover-tint)/10'
-				)}
-			>
-				<Icon class={cn('size-6 transition-transform duration-300 group-hover:scale-110', iconColor)} />
+			<div class={cn('flex size-9 items-center justify-center rounded-md transition-colors', bgColor)}>
+				<Icon class={cn('size-5', iconColor)} />
 			</div>
 		</div>
 	</div>
