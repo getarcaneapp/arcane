@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"net/http"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/internal/database"
@@ -445,9 +444,8 @@ func (s *DashboardService) buildEnvironmentOverviewInternal(
 	}
 
 	if snapshotErr != nil {
-		message := snapshotErr.Error()
 		overview.SnapshotState = dashboardtypes.EnvironmentSnapshotStateError
-		overview.SnapshotError = &message
+		overview.SnapshotError = new(snapshotErr.Error())
 		return overview
 	}
 
@@ -634,7 +632,7 @@ func (s *DashboardService) getPendingResourceUpdatesCountInternal(ctx context.Co
 func filterStandaloneDockerContainersInternal(containers []dockercontainer.Summary) []dockercontainer.Summary {
 	filtered := make([]dockercontainer.Summary, 0, len(containers))
 	for _, c := range containers {
-		if strings.TrimSpace(c.Labels["com.docker.compose.project"]) != "" {
+		if dockerutils.ComposeProjectLabel(c.Labels) != "" {
 			continue
 		}
 		filtered = append(filtered, c)

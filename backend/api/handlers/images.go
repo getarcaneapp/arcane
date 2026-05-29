@@ -17,6 +17,7 @@ import (
 	activitylib "github.com/getarcaneapp/arcane/backend/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/types/base"
 	"github.com/getarcaneapp/arcane/types/image"
 	"github.com/getarcaneapp/arcane/types/system"
@@ -446,10 +447,7 @@ func (h *ImageHandler) PullImage(ctx context.Context, input *PullImageInput) (*h
 
 	return &huma.StreamResponse{
 		Body: func(humaCtx huma.Context) { //nolint:contextcheck // context is obtained from humaCtx.Context()
-			humaCtx.SetHeader("Content-Type", "application/x-json-stream")
-			humaCtx.SetHeader("Cache-Control", "no-cache")
-			humaCtx.SetHeader("Connection", "keep-alive")
-			humaCtx.SetHeader("X-Accel-Buffering", "no")
+			httpx.SetJSONStreamHeaders(humaCtx)
 
 			runtimeCtx := utils.ActivityRuntimeContext(humaCtx.Context(), h.appCtx)
 			rawWriter := humaCtx.BodyWriter()
@@ -501,10 +499,7 @@ func (h *ImageHandler) BuildImage(ctx context.Context, input *BuildImageInput) (
 
 	return &huma.StreamResponse{
 		Body: func(humaCtx huma.Context) { //nolint:contextcheck // context is obtained from humaCtx.Context()
-			humaCtx.SetHeader("Content-Type", "application/x-json-stream")
-			humaCtx.SetHeader("Cache-Control", "no-cache")
-			humaCtx.SetHeader("Connection", "keep-alive")
-			humaCtx.SetHeader("X-Accel-Buffering", "no")
+			httpx.SetJSONStreamHeaders(humaCtx)
 
 			runtimeCtx := utils.ActivityRuntimeContext(humaCtx.Context(), h.appCtx)
 			rawWriter := humaCtx.BodyWriter()

@@ -31,22 +31,18 @@ func TestActivityServiceLifecycleInternal(t *testing.T) {
 	db := setupActivityServiceTestDBInternal(t)
 	service := NewActivityService(db)
 
-	resourceType := "image"
-	resourceID := "img-123"
-	resourceName := "nginx:latest"
 	progress := 5
-	displayName := "Arcane Admin"
 	startedBy := &models.User{
 		BaseModel:   models.BaseModel{ID: "user-1"},
 		Username:    "arcane",
-		DisplayName: &displayName,
+		DisplayName: new("Arcane Admin"),
 	}
 	created, err := service.StartActivity(ctx, StartActivityRequest{
 		EnvironmentID: "0",
 		Type:          models.ActivityTypeImagePull,
-		ResourceType:  &resourceType,
-		ResourceID:    &resourceID,
-		ResourceName:  &resourceName,
+		ResourceType:  new("image"),
+		ResourceID:    new("img-123"),
+		ResourceName:  new("nginx:latest"),
 		StartedBy:     startedBy,
 		Progress:      &progress,
 		Step:          "queued",

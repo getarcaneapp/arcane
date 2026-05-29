@@ -373,11 +373,9 @@ func phaseMessageInternal(typ, phase string, payload map[string]any) string {
 func phaseProgressInternal(phase string, rawDetail any) *int {
 	switch phase {
 	case "begin":
-		out := 5
-		return &out
+		return new(5)
 	case "complete":
-		out := 100
-		return &out
+		return new(100)
 	default:
 		return progressDetailPercentInternal(rawDetail)
 	}
@@ -407,8 +405,7 @@ func progressDetailPercentInternal(rawDetail any) *int {
 		progress = 100
 	}
 
-	out := int(progress)
-	return &out
+	return new(int(progress))
 }
 
 func containerEventMessageInternal(payload map[string]any) string {

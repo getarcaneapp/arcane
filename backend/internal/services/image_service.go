@@ -803,7 +803,7 @@ func (s *ImageService) BuildProjectIDMap(ctx context.Context, containers []conta
 		if c.Labels == nil {
 			continue
 		}
-		if projectName := c.Labels["com.docker.compose.project"]; projectName != "" {
+		if projectName := dockerutils.ComposeProjectLabel(c.Labels); projectName != "" {
 			projectNameSet[projectName] = struct{}{}
 		}
 	}
@@ -830,10 +830,7 @@ func buildUsageMapInternal(containers []container.Summary, projectIDByName map[s
 			continue
 		}
 
-		projectName := ""
-		if c.Labels != nil {
-			projectName = c.Labels["com.docker.compose.project"]
-		}
+		projectName := dockerutils.ComposeProjectLabel(c.Labels)
 
 		if projectName != "" {
 			projectID := projectIDByName[projectName]

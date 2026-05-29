@@ -39,8 +39,8 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/fang/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/charmbracelet/fang"
 	"github.com/fatih/color"
 	"github.com/getarcaneapp/arcane/cli/internal/config"
 	"github.com/getarcaneapp/arcane/cli/internal/logger"

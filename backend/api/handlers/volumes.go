@@ -1045,66 +1045,66 @@ func (h *VolumeHandler) UploadFile(ctx context.Context, input *UploadFileInput) 
 }
 
 func (h *VolumeHandler) CreateDirectory(ctx context.Context, input *CreateDirectoryInput) (*base.ApiResponse[base.MessageResponse], error) {
-	if h.volumeService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-	user, _ := humamw.GetCurrentUserFromContext(ctx)
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
-		EnvironmentID:  input.EnvironmentID,
-		Type:           models.ActivityTypeResourceAction,
-		ResourceType:   "volume",
-		ResourceID:     input.VolumeName,
-		ResourceName:   input.VolumeName,
-		User:           user,
+	return h.runVolumePathActivityInternal(ctx, input.EnvironmentID, input.VolumeName, input.Path, volumePathActivityConfigInternal{
 		Step:           "Creating directory",
 		Message:        "Creating directory in volume",
 		SuccessMessage: "Directory created successfully",
-		Metadata: models.JSON{
-			"action": "create_volume_directory",
-			"path":   input.Path,
+		MetadataAction: "create_volume_directory",
+		Action: func(runtimeCtx context.Context, volumeName, path string, user *models.User) error {
+			return h.volumeService.CreateDirectory(runtimeCtx, volumeName, path, user)
 		},
-	}, func(runtimeCtx context.Context) error {
-		return h.volumeService.CreateDirectory(runtimeCtx, input.VolumeName, input.Path, user)
 	})
-	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
-	}
-	return &base.ApiResponse[base.MessageResponse]{
-		Success: true,
-		Data:    base.MessageResponse{Message: "Directory created successfully", ActivityID: utils.StringPtrFromTrimmed(activityID)},
-	}, nil
 }
 
 func (h *VolumeHandler) DeleteFile(ctx context.Context, input *DeleteFileInput) (*base.ApiResponse[base.MessageResponse], error) {
+	return h.runVolumePathActivityInternal(ctx, input.EnvironmentID, input.VolumeName, input.Path, volumePathActivityConfigInternal{
+		Step:           "Deleting file",
+		Message:        "Deleting file or directory from volume",
+		SuccessMessage: "Deleted successfully",
+		MetadataAction: "delete_volume_file",
+		Action: func(runtimeCtx context.Context, volumeName, path string, user *models.User) error {
+			return h.volumeService.DeleteFile(runtimeCtx, volumeName, path, user)
+		},
+	})
+}
+
+type volumePathActivityConfigInternal struct {
+	Step           string
+	Message        string
+	SuccessMessage string
+	MetadataAction string
+	Action         func(context.Context, string, string, *models.User) error
+}
+
+func (h *VolumeHandler) runVolumePathActivityInternal(ctx context.Context, environmentID, volumeName, volumePath string, cfg volumePathActivityConfigInternal) (*base.ApiResponse[base.MessageResponse], error) {
 	if h.volumeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 	user, _ := humamw.GetCurrentUserFromContext(ctx)
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
-		EnvironmentID:  input.EnvironmentID,
+		EnvironmentID:  environmentID,
 		Type:           models.ActivityTypeResourceAction,
 		ResourceType:   "volume",
-		ResourceID:     input.VolumeName,
-		ResourceName:   input.VolumeName,
+		ResourceID:     volumeName,
+		ResourceName:   volumeName,
 		User:           user,
-		Step:           "Deleting file",
-		Message:        "Deleting file or directory from volume",
-		SuccessMessage: "Deleted successfully",
+		Step:           cfg.Step,
+		Message:        cfg.Message,
+		SuccessMessage: cfg.SuccessMessage,
 		Metadata: models.JSON{
-			"action": "delete_volume_file",
-			"path":   input.Path,
+			"action": cfg.MetadataAction,
+			"path":   volumePath,
 		},
 	}, func(runtimeCtx context.Context) error {
-		return h.volumeService.DeleteFile(runtimeCtx, input.VolumeName, input.Path, user)
+		return cfg.Action(runtimeCtx, volumeName, volumePath, user)
 	})
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 	return &base.ApiResponse[base.MessageResponse]{
 		Success: true,
-		Data:    base.MessageResponse{Message: "Deleted successfully", ActivityID: utils.StringPtrFromTrimmed(activityID)},
+		Data:    base.MessageResponse{Message: cfg.SuccessMessage, ActivityID: utils.StringPtrFromTrimmed(activityID)},
 	}, nil
 }
 

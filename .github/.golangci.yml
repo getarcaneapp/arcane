@@ -11,6 +11,7 @@ linters:
     - bodyclose
     - contextcheck
     - copyloopvar
+    - dupl
     - durationcheck
     - errcheck
     - errchkjson

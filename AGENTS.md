@@ -38,11 +38,16 @@ internal/
 ├── models/           # GORM database models (include BaseModel for UUID, timestamps)
 └── services/         # Business logic — *_service.go files contain domain logic
 pkg/
-├── libarcane/        # Core reusable backend/domain libraries
-├── projects/         # Compose project parsing and filesystem helpers
+├── authz/            # Permission taxonomy and authorization primitives
+├── dockerutil/       # Low-level Docker helpers (container names, compose labels, log streaming, mounts/volumes/networks)
+├── fswatch/          # Filesystem watcher that detects project file changes
+├── gitutil/          # Git client for GitOps (clone, branches, file tree, read)
+├── libarcane/        # Core reusable backend/domain libraries (compose deploy, edge, image update, build, swarm)
+├── pagination/       # Search/filter/sort/pagination helpers (DB and in-memory)
+├── projects/         # Compose project parsing, env, includes, discovery, filesystem helpers
+├── remenv/           # Remote-environment request/response transport client (agent/edge)
 ├── scheduler/        # Cron-backed background jobs
-├── pagination/       # Search/filter/sort/pagination helpers
-└── utils/            # Shared helper utilities
+└── utils/            # Shared helper utilities (strings, cache, ptr, httpx, mapper)
 resources/            # migrations, images, fonts, email templates
 ```
 
@@ -56,6 +61,14 @@ resources/            # migrations, images, fonts, email templates
 - Direct Echo routes are reserved for behavior that does not fit Huma cleanly, such as WebSockets, streaming/diagnostics, webhook trigger routes, Playwright-only routes, buildable auth routes, and the embedded frontend.
 - Use `slog` for structured logging with context
 - Error wrapping: `fmt.Errorf("context: %w", err)`
+
+**Reuse `pkg/` helpers — do not duplicate or wrap:** Before writing inline logic, check `pkg/` for an existing helper:
+
+- Docker primitives → `pkg/dockerutil`: container display names (`ContainerNameFromNames`, `ContainerSummaryName`), Compose labels (`ComposeProjectLabel`/`ComposeServiceLabel`, keyed by `ComposeProjectLabelKey`/`ComposeServiceLabelKey`), log streaming (`StreamContainerLogs`/`StreamMultiplexedLogs`/`ReadAllLogs`), and mount/volume/network/cgroup utilities.
+- Compose parsing → `pkg/projects`: image-ref extraction (`ImageRefsFromComposeServices`/`ImageRefsFromComposeConfigs`/`ImageRefsFromRuntimeServices`), plus compose load, env state, includes, and project discovery.
+- Listing endpoints → `pkg/pagination` (`SearchOrderAndPaginate`, `PaginateAndSortDB`); shared string/ptr/cache helpers → `pkg/utils`.
+
+Call middleware/library functions directly at the call site. Do not add thin pass-through helpers or stubs that only forward to a single underlying call.
 
 ### API Layer (`backend/api/`)
 
@@ -379,6 +392,18 @@ newScheduler.RegisterJob(myJob)
 
 **Note:** Cron uses 6 fields (with seconds): `"0 0 * * * *"` = every hour at :00:00
 
+## Image & Container Update Logic
+
+Update detection and application are split across layers — change behavior at the matching layer:
+
+- **`backend/pkg/libarcane/imageupdate/`** — comparison primitives: `digest.go` (DigestChecker: local vs remote digest), `registry_http.go` (registry digest / rate-limit queries, reference parsing), `labels.go` (Arcane/Compose label checks, self-redeploy guards), `sorter.go` (dependency-ordered container restart).
+- **`backend/internal/services/image_update_service.go`** — checks for updates and persists update records (`CheckImageUpdate`, `CheckMultipleImages`, `CheckAllImages`, `GetUpdateSummary`, `MarkImageRefUpToDateAfterPull`).
+- **`backend/internal/services/updater_service.go`** — applies updates to running containers (`ApplyPending`, `UpdateSingleContainer`), with status/history.
+- **`backend/api/handlers/image_updates.go`** — check/query API (`check-image-update`, `check-all-images`, `get-update-summary`); **`updater.go`** — apply API (`run-updater`, `update-container`, status/history).
+- **`backend/pkg/scheduler/`** — background drivers: `image_polling_job.go` (periodic checks), `auto_update_job.go` (auto-apply), `auto_heal_job.go` (restart unhealthy containers).
+
+Project image references are cached on the project row (`image_refs_json`, extracted via the `pkg/projects` `ImageRefsFrom*` helpers); per-project update summaries are assembled in `project_service.go`.
+
 ## Database Patterns (GORM)
 
 ### BaseModel
@@ -431,9 +456,9 @@ Edge agents connect outbound to a central manager via WebSocket or gRPC tunnel, 
 **Configuration** (agent side):
 
 ```bash
-ARCANE_EDGE_AGENT=true
-ARCANE_MANAGER_API_URL=https://manager.example.com
-ARCANE_AGENT_TOKEN=<api-key>
+EDGE_AGENT=true
+MANAGER_API_URL=https://manager.example.com
+AGENT_TOKEN=<api-key>
 ```
 
 **Message types** (see [tunnel.go](backend/pkg/libarcane/edge/tunnel.go)):
@@ -449,11 +474,11 @@ Direct agents are passive: the agent runs an HTTP server on TCP 3553 and the man
 **Configuration** (agent side):
 
 ```bash
-ARCANE_AGENT_MODE=true
-ARCANE_AGENT_TOKEN=<api-key>
+AGENT_MODE=true
+AGENT_TOKEN=<api-key>
 ```
 
-`ARCANE_MANAGER_API_URL` is **not** used in Direct mode — the agent never dials out. Pairing completes when the manager's periodic health-check (every 2 min by default) reaches the agent.
+`MANAGER_API_URL` is **not** used in Direct mode — the agent never dials out. Pairing completes when the manager's periodic health-check (every 2 min by default) reaches the agent.
 
 **When implementing agent features:**
 
