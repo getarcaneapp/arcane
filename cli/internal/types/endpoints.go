@@ -144,7 +144,7 @@ type ArcaneApiEndpoints struct {
 	TemplateFetchEndpoint       string
 
 	// Dashboard
-	DashboardActionItemsEndpoint string
+	DashboardEndpoint string
 
 	// Assets
 	AppImagesFaviconEndpoint string
@@ -313,7 +313,7 @@ var Endpoints = ArcaneApiEndpoints{ //nolint:gosec // static endpoint paths; aut
 	TemplateFetchEndpoint:       "/api/templates/fetch",
 
 	// Dashboard
-	DashboardActionItemsEndpoint: "/api/environments/%s/dashboard/action-items",
+	DashboardEndpoint: "/api/environments/%s/dashboard",
 
 	// Assets
 	AppImagesFaviconEndpoint: "/api/app-images/favicon",
@@ -657,8 +657,8 @@ func (e ArcaneApiEndpoints) TemplateDownload(id string) string {
 func (e ArcaneApiEndpoints) TemplateFetch() string { return e.TemplateFetchEndpoint }
 
 // Dashboard endpoints
-func (e ArcaneApiEndpoints) DashboardActionItems(envID string) string {
-	return fmt.Sprintf(e.DashboardActionItemsEndpoint, envID)
+func (e ArcaneApiEndpoints) Dashboard(envID string) string {
+	return fmt.Sprintf(e.DashboardEndpoint, envID)
 }
 
 // GitOps Sync endpoints

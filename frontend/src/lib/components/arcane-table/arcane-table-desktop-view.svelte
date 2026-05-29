@@ -214,7 +214,7 @@
 											<div class="flex items-center justify-end" data-row-select-ignore>
 												<div
 													class={cn(
-														'border-border/40 bg-background pointer-events-auto flex items-center gap-1 rounded-full border px-2 py-1 shadow-sm',
+														'border-border/40 bg-background pointer-events-auto flex items-center gap-1 rounded-md border px-2 py-1',
 														unstyled && 'border-transparent bg-transparent shadow-none'
 													)}
 												>

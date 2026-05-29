@@ -132,7 +132,7 @@
 	}
 </script>
 
-<div class="space-y-8 pb-5 md:space-y-10 md:pb-5">
+<div class="space-y-6 pb-5 md:space-y-8 md:pb-5">
 	<HeaderCard>
 		<div class="flex items-center justify-between gap-4">
 			<div class="flex min-w-64 flex-1 items-center gap-3 sm:gap-4">
@@ -190,7 +190,7 @@
 		<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 xl:grid-cols-3">
 			{#each settingsCategories as category (category.id)}
 				{@const Icon = getIconComponent(category.icon)}
-				<Card class="hover:border-primary/20 group cursor-pointer transition-all duration-200 hover:shadow-md">
+				<Card class="hover:border-primary/30 group cursor-pointer transition-colors duration-200">
 					<button onclick={() => navigateToCategory(category.url)} class="w-full p-4 text-left sm:p-6">
 						<div class="flex items-start justify-between gap-3">
 							<div class="flex min-w-0 flex-1 items-start gap-3 sm:gap-4">
@@ -233,7 +233,7 @@
 				<div class="space-y-4 sm:space-y-6">
 					{#each searchResults as result (result.id)}
 						{@const Icon = getIconComponent(result.icon)}
-						<div class="bg-background/40 rounded-lg border shadow-sm">
+						<div class="bg-background/40 rounded-lg border">
 							<div class="border-b p-4 sm:p-6">
 								<div class="flex items-center justify-between">
 									<div class="flex items-center gap-3">
