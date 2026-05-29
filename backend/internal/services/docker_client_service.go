@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	backoff "github.com/cenkalti/backoff/v5"
+	"github.com/cenkalti/backoff/v5"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	docker "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"

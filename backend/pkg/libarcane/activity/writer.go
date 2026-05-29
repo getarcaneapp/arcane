@@ -224,10 +224,7 @@ func (w *Writer) updateLayerProgressInternal(id, status string, rawDetail any) *
 		}
 	}
 
-	progress := int((weighted / float64(len(w.layers))) * 100)
-	if progress > 100 {
-		progress = 100
-	}
+	progress := min(int((weighted/float64(len(w.layers)))*100), 100)
 	if progress < 0 {
 		progress = 0
 	}

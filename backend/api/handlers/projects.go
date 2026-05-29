@@ -17,7 +17,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/pkg/authz"
 	activitylib "github.com/getarcaneapp/arcane/backend/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
-	projects "github.com/getarcaneapp/arcane/backend/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils/mapper"

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"strings"
 	"sync"
 	"time"
@@ -768,10 +769,7 @@ func clampProgressPtrInternal(value *int) *int {
 	if value == nil {
 		return nil
 	}
-	clamped := *value
-	if clamped < 0 {
-		clamped = 0
-	}
+	clamped := max(*value, 0)
 	if clamped > 100 {
 		clamped = 100
 	}
@@ -783,9 +781,7 @@ func cloneJSONInternal(input models.JSON) models.JSON {
 		return nil
 	}
 	out := make(models.JSON, len(input))
-	for key, value := range input {
-		out[key] = value
-	}
+	maps.Copy(out, input)
 	return out
 }
 
@@ -794,9 +790,7 @@ func jsonToMapInternal(input models.JSON) map[string]any {
 		return nil
 	}
 	out := make(map[string]any, len(input))
-	for key, value := range input {
-		out[key] = value
-	}
+	maps.Copy(out, input)
 	return out
 }
 
@@ -847,10 +841,7 @@ func deleteActivitiesByIDInternal(tx *gorm.DB, activityIDs []string) (int64, err
 
 	var totalDeleted int64
 	for i := 0; i < len(activityIDs); i += deleteActivitiesBatchSize {
-		end := i + deleteActivitiesBatchSize
-		if end > len(activityIDs) {
-			end = len(activityIDs)
-		}
+		end := min(i+deleteActivitiesBatchSize, len(activityIDs))
 		batch := activityIDs[i:end]
 
 		if err := tx.Where("activity_id IN ?", batch).Delete(&models.ActivityMessage{}).Error; err != nil {
