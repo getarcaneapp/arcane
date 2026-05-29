@@ -101,8 +101,7 @@ var createCmd = &cobra.Command{
 			RoleID:     createRoleID,
 		}
 		if cmd.Flags().Changed("environment") && createEnvironment != "" {
-			env := createEnvironment
-			req.EnvironmentID = &env
+			req.EnvironmentID = new(createEnvironment)
 		}
 
 		resp, err := c.Post(cmd.Context(), types.Endpoints.OidcRoleMappings(), req)
@@ -164,8 +163,7 @@ var updateCmd = &cobra.Command{
 				// Empty value flips an env-scoped mapping back to global.
 				req.EnvironmentID = nil
 			} else {
-				env := updateEnvironment
-				req.EnvironmentID = &env
+				req.EnvironmentID = new(updateEnvironment)
 			}
 		}
 

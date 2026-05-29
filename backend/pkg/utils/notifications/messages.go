@@ -185,12 +185,12 @@ func BuildPruneReportNotificationMessage(format MessageFormat, environmentName s
 	var message strings.Builder
 	fmt.Fprintf(&message, "%s\n\n", formatNotificationTitleInternal(format, "🧹 System Prune Report"))
 	fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Environment"), environmentName)
-	fmt.Fprintf(&message, "%s %s\n\n", formatNotificationLabelInternal(format, "Total Space Reclaimed"), formatBytesInternal(result.SpaceReclaimed))
+	fmt.Fprintf(&message, "%s %s\n\n", formatNotificationLabelInternal(format, "Total Space Reclaimed"), FormatBytes(result.SpaceReclaimed))
 	fmt.Fprintf(&message, "%s\n", formatNotificationLabelInternal(format, "Breakdown"))
-	fmt.Fprintf(&message, "- Containers: %s\n", formatBytesInternal(result.ContainerSpaceReclaimed))
-	fmt.Fprintf(&message, "- Images: %s\n", formatBytesInternal(result.ImageSpaceReclaimed))
-	fmt.Fprintf(&message, "- Volumes: %s\n", formatBytesInternal(result.VolumeSpaceReclaimed))
-	fmt.Fprintf(&message, "- Build Cache: %s\n", formatBytesInternal(result.BuildCacheSpaceReclaimed))
+	fmt.Fprintf(&message, "- Containers: %s\n", FormatBytes(result.ContainerSpaceReclaimed))
+	fmt.Fprintf(&message, "- Images: %s\n", FormatBytes(result.ImageSpaceReclaimed))
+	fmt.Fprintf(&message, "- Volumes: %s\n", FormatBytes(result.VolumeSpaceReclaimed))
+	fmt.Fprintf(&message, "- Build Cache: %s\n", FormatBytes(result.BuildCacheSpaceReclaimed))
 	return message.String()
 }
 
@@ -203,7 +203,7 @@ func BuildAutoHealNotificationMessage(format MessageFormat, environmentName, con
 	return message.String()
 }
 
-func formatBytesInternal(bytes uint64) string {
+func FormatBytes(bytes uint64) string {
 	const unit = 1024
 	if bytes < unit {
 		return fmt.Sprintf("%d B", bytes)

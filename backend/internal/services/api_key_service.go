@@ -449,8 +449,7 @@ func (s *ApiKeyService) GetApiKey(ctx context.Context, id string) (*apikey.ApiKe
 		}
 		return nil, fmt.Errorf("failed to get API key: %w", err)
 	}
-	dto := s.toAPIKeyDTOWithPermissionsInternal(ctx, &ak)
-	return &dto, nil
+	return new(s.toAPIKeyDTOWithPermissionsInternal(ctx, &ak)), nil
 }
 
 func (s *ApiKeyService) ListApiKeys(ctx context.Context, params pagination.QueryParams) ([]apikey.ApiKey, pagination.Response, error) {

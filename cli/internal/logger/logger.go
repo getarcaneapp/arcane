@@ -22,7 +22,7 @@ package logger
 import (
 	"os"
 
-	charmlog "github.com/charmbracelet/log"
+	charmlog "charm.land/log/v2"
 )
 
 // Setup configures the global logger with the specified level and format.

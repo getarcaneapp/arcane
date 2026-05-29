@@ -416,8 +416,7 @@ func parseAssignmentsInternal(tokens []string) []roletypes.UserAssignmentInput {
 		roleID, envID, hasEnv := strings.Cut(token, ":")
 		entry := roletypes.UserAssignmentInput{RoleID: roleID}
 		if hasEnv && envID != "" {
-			env := envID
-			entry.EnvironmentID = &env
+			entry.EnvironmentID = new(envID)
 		}
 		out = append(out, entry)
 	}

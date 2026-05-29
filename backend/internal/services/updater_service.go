@@ -21,6 +21,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
+	dockerutil "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
 	activitylib "github.com/getarcaneapp/arcane/backend/pkg/libarcane/activity"
 	libupdater "github.com/getarcaneapp/arcane/backend/pkg/libarcane/imageupdate"
@@ -413,13 +414,11 @@ func (s *UpdaterService) startAutoUpdateActivityInternal(ctx context.Context, dr
 	if s.activityService == nil {
 		return ""
 	}
-	resourceType := "system"
-	resourceName := "Auto update"
 	activity, err := s.activityService.StartActivity(ctx, StartActivityRequest{
 		EnvironmentID: "0",
 		Type:          models.ActivityTypeAutoUpdate,
-		ResourceType:  &resourceType,
-		ResourceName:  &resourceName,
+		ResourceType:  new("system"),
+		ResourceName:  new("Auto update"),
 		Step:          "Planning updates",
 		LatestMessage: "Auto-update run started",
 		Metadata:      models.JSON{"dryRun": dryRun},
@@ -435,14 +434,12 @@ func (s *UpdaterService) startSingleContainerUpdateActivityInternal(ctx context.
 	if s.activityService == nil {
 		return ""
 	}
-	resourceType := "container"
-	resourceName := containerID
 	activity, err := s.activityService.StartActivity(ctx, StartActivityRequest{
 		EnvironmentID: "0",
 		Type:          models.ActivityTypeAutoUpdate,
-		ResourceType:  &resourceType,
+		ResourceType:  new("container"),
 		ResourceID:    &containerID,
-		ResourceName:  &resourceName,
+		ResourceName:  new(containerID),
 		Step:          "Updating container",
 		LatestMessage: "Container update started",
 		Metadata:      models.JSON{"containerID": containerID},
@@ -541,7 +538,7 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 		return nil, fmt.Errorf("container not found: %s", containerID)
 	}
 
-	containerName := s.getContainerName(*targetContainer)
+	containerName := dockerutil.ContainerSummaryName(*targetContainer)
 	slog.InfoContext(ctx, "UpdateSingleContainer: found container", "containerID", containerID, "name", containerName, "image", targetContainer.Image)
 
 	// Inspect container to get full config (needed for label-based controls)
@@ -716,8 +713,8 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 	}
 
 	// Update the container
-	projectName := inspect.Config.Labels["com.docker.compose.project"]
-	serviceName := inspect.Config.Labels["com.docker.compose.service"]
+	projectName := dockerutil.ComposeProjectLabel(inspect.Config.Labels)
+	serviceName := dockerutil.ComposeServiceLabel(inspect.Config.Labels)
 
 	if projectName != "" && serviceName != "" {
 		slog.InfoContext(ctx, "UpdateSingleContainer: detected compose container, using project-based update", "containerID", containerID, "project", projectName, "service", serviceName)
@@ -886,7 +883,7 @@ func (s *UpdaterService) updateContainer(ctx context.Context, cnt container.Summ
 		return fmt.Errorf("docker connect: %w", err)
 	}
 
-	name := s.getContainerName(cnt)
+	name := dockerutil.ContainerSummaryName(cnt)
 	labels := inspect.Config.Labels
 	isArcane := libupdater.IsArcaneContainer(labels)
 
@@ -1251,7 +1248,7 @@ func activeComposeProjectNameSetInternal(projects []models.Project) map[string]s
 
 func (s *UpdaterService) collectUsedImagesFromComposeContainersInternal(ctx context.Context, composeContainers []container.Summary, activeProjectNames map[string]struct{}, out map[string]struct{}) {
 	for _, c := range composeContainers {
-		projectName := strings.TrimSpace(c.Labels["com.docker.compose.project"])
+		projectName := dockerutil.ComposeProjectLabel(c.Labels)
 		if projectName == "" {
 			continue
 		}
@@ -1298,17 +1295,6 @@ func (s *UpdaterService) getNormalizedTagsForContainer(ctx context.Context, dcli
 	}
 	slog.DebugContext(ctx, "getNormalizedTagsForContainer: normalized tags", "count", len(out))
 	return out
-}
-
-func (s *UpdaterService) getContainerName(cnt container.Summary) string {
-	if len(cnt.Names) > 0 {
-		n := cnt.Names[0]
-		if strings.HasPrefix(n, "/") {
-			return n[1:]
-		}
-		return n
-	}
-	return cnt.ID[:12]
 }
 
 func (s *UpdaterService) recordRun(ctx context.Context, item updater.ResourceResult) error {
@@ -1456,7 +1442,7 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 			c.Labels = map[string]string{}
 		}
 
-		name := s.getContainerName(c)
+		name := dockerutil.ContainerSummaryName(c)
 		containersWithDeps = append(containersWithDeps, libupdater.ContainerWithDeps{
 			Container: c,
 			Name:      name,
@@ -1555,8 +1541,8 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 		if p == nil || p.newRef == "" || p.inspect == nil || p.inspect.Config == nil {
 			continue
 		}
-		projectName := p.inspect.Config.Labels["com.docker.compose.project"]
-		serviceName := p.inspect.Config.Labels["com.docker.compose.service"]
+		projectName := dockerutil.ComposeProjectLabel(p.inspect.Config.Labels)
+		serviceName := dockerutil.ComposeServiceLabel(p.inspect.Config.Labels)
 		if projectName != "" && serviceName != "" {
 			projectID, ok := lookupComposeProjectIDInternal(projectName, projectNameToID)
 			if !ok {
@@ -1640,8 +1626,8 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 			endProjectStatus := s.beginProjectUpdateInternal(composeProjectNameFromLabelsInternal(labels))
 			defer endProjectStatus()
 
-			projectName := labels["com.docker.compose.project"]
-			serviceName := labels["com.docker.compose.service"]
+			projectName := dockerutil.ComposeProjectLabel(labels)
+			serviceName := dockerutil.ComposeServiceLabel(labels)
 			var proj *models.Project
 			if projectName != "" {
 				if projectID, ok := lookupComposeProjectIDInternal(projectName, projectNameToID); ok {
@@ -1801,8 +1787,8 @@ func (s *UpdaterService) lazyRegisterComposeProjectInternal(
 	if p.newRef == "" || p.inspect == nil || p.inspect.Config == nil {
 		return
 	}
-	projectName := p.inspect.Config.Labels["com.docker.compose.project"]
-	serviceName := p.inspect.Config.Labels["com.docker.compose.service"]
+	projectName := dockerutil.ComposeProjectLabel(p.inspect.Config.Labels)
+	serviceName := dockerutil.ComposeServiceLabel(p.inspect.Config.Labels)
 	if projectName == "" || serviceName == "" {
 		return
 	}
@@ -1865,7 +1851,7 @@ func composeProjectNameFromLabelsInternal(labels map[string]string) string {
 	if len(labels) == 0 {
 		return ""
 	}
-	return strings.TrimSpace(labels["com.docker.compose.project"])
+	return dockerutil.ComposeProjectLabel(labels)
 }
 
 func lookupComposeProjectIDInternal(projectName string, projectNameToID map[string]string) (string, bool) {

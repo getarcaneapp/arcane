@@ -575,7 +575,7 @@ func TestTunnelClient_connectAndServe_WebSocketConfigFallsBackToWebSocket(t *tes
 }
 
 func TestTunnelClient_connectAndServe_OpensGRPCWhenAvailable(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	envID := "env-auto-poll-grpc"
@@ -616,8 +616,14 @@ func TestTunnelClient_connectAndServe_OpensGRPCWhenAvailable(t *testing.T) {
 		return isGRPC
 	}, 3*time.Second, 20*time.Millisecond)
 
-	err := <-errCh
-	assert.ErrorIs(t, err, context.DeadlineExceeded)
+	cancel()
+
+	select {
+	case err := <-errCh:
+		assert.ErrorIs(t, err, context.Canceled)
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for gRPC tunnel shutdown")
+	}
 }
 
 func startTestGRPCTunnelServerOnAPIPathInternal(t *testing.T, ctx context.Context, tunnelServer *TunnelServer) (string, func()) {
