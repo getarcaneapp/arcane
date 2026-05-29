@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -29,7 +30,17 @@ type ActivityService struct {
 	subscribersMu sync.RWMutex
 	subscribers   map[int]*activitySubscriber
 	nextSubID     int
+
+	// running maps an active activity ID to the cancel function of its work
+	// context, so cancellation requests can interrupt in-flight work. Entries
+	// are added by Track and removed when the activity is completed.
+	runningMu sync.Mutex
+	running   map[string]context.CancelCauseFunc
 }
+
+// ErrActivityNotCancelable indicates the activity has already reached a terminal
+// state and can no longer be cancelled.
+var ErrActivityNotCancelable = errors.New("activity is not cancelable")
 
 type activitySubscriber struct {
 	environmentID string
@@ -45,6 +56,70 @@ func NewActivityService(db *database.DB) *ActivityService {
 	return &ActivityService{
 		db:          db,
 		subscribers: map[int]*activitySubscriber{},
+		running:     map[string]context.CancelCauseFunc{},
+	}
+}
+
+// Track derives a cancelable work context bound to activityID and registers its
+// cancel function so RequestCancel can interrupt the work. The registration is
+// released when the activity is completed (see CompleteActivity) or when the
+// returned context is otherwise no longer needed. Implements activitylib.Tracker.
+func (s *ActivityService) Track(ctx context.Context, activityID string) context.Context {
+	activityID = strings.TrimSpace(activityID)
+	if s == nil || activityID == "" {
+		return ctx
+	}
+
+	workCtx, cancel := context.WithCancelCause(ctx)
+	s.runningMu.Lock()
+	if s.running == nil {
+		s.running = map[string]context.CancelCauseFunc{}
+	}
+	if existing, ok := s.running[activityID]; ok {
+		// Replace any stale registration to avoid leaking the prior context.
+		existing(nil)
+	}
+	s.running[activityID] = cancel
+	s.runningMu.Unlock()
+	return workCtx
+}
+
+// RequestCancel cancels the work context registered for activityID, signalling
+// activitylib.ErrCanceled as the cause. It returns whether a running activity
+// was found in this process.
+func (s *ActivityService) RequestCancel(activityID string) bool {
+	activityID = strings.TrimSpace(activityID)
+	if s == nil || activityID == "" {
+		return false
+	}
+
+	s.runningMu.Lock()
+	cancel, ok := s.running[activityID]
+	s.runningMu.Unlock()
+	if !ok {
+		return false
+	}
+	cancel(activitylib.ErrCanceled)
+	return true
+}
+
+// releaseCancelInternal removes and cancels the registration for activityID.
+// Cancelling with a nil cause is a no-op if the context was already cancelled
+// (the first cause wins), so a prior ErrCanceled cause is preserved.
+func (s *ActivityService) releaseCancelInternal(activityID string) {
+	activityID = strings.TrimSpace(activityID)
+	if s == nil || activityID == "" {
+		return
+	}
+
+	s.runningMu.Lock()
+	cancel, ok := s.running[activityID]
+	if ok {
+		delete(s.running, activityID)
+	}
+	s.runningMu.Unlock()
+	if ok {
+		cancel(nil)
 	}
 }
 
@@ -247,6 +322,13 @@ func (s *ActivityService) CompleteActivity(ctx context.Context, activityID strin
 		return nil, fmt.Errorf("activity id is required")
 	}
 
+	// The activity is reaching a terminal state; release any cancel registration.
+	s.releaseCancelInternal(activityID)
+
+	// Detach from cancellation so the terminal write always lands — completion is
+	// often triggered precisely because the work context was cancelled.
+	ctx = context.WithoutCancel(ctx)
+
 	now := time.Now()
 	var model models.Activity
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -291,6 +373,90 @@ func (s *ActivityService) CompleteActivity(ctx context.Context, activityID strin
 	s.publishActivityInternal(dto)
 	return &dto, nil
 }
+
+// CancelActivity requests cancellation of a running or queued activity. When the
+// activity's work is running in this process it interrupts it (the work finalizes
+// its own terminal status); otherwise it marks the activity cancelled directly,
+// but only if it is still active. Returns ErrActivityNotCancelable if the activity
+// has already reached a terminal state, or gorm.ErrRecordNotFound if it is unknown.
+func (s *ActivityService) CancelActivity(ctx context.Context, environmentID, activityID, requestedBy string) (*activitytypes.Activity, error) {
+	if err := s.checkInitInternal(); err != nil {
+		return nil, err
+	}
+	activityID = strings.TrimSpace(activityID)
+	if activityID == "" {
+		return nil, fmt.Errorf("activity id is required")
+	}
+	environmentID = strings.TrimSpace(environmentID)
+	if environmentID == "" {
+		environmentID = "0"
+	}
+
+	var model models.Activity
+	if err := s.db.WithContext(ctx).Where("id = ? AND environment_id = ?", activityID, environmentID).First(&model).Error; err != nil {
+		return nil, err
+	}
+	switch model.Status {
+	case models.ActivityStatusSuccess, models.ActivityStatusFailed, models.ActivityStatusCancelled:
+		return nil, ErrActivityNotCancelable
+	case models.ActivityStatusQueued, models.ActivityStatusRunning:
+		// Active states — cancellation can proceed.
+	}
+
+	requestedBy = strings.TrimSpace(requestedBy)
+	if requestedBy == "" {
+		requestedBy = "a user"
+	}
+	writeCtx := utils.ActivityRuntimeContext(ctx, nil)
+	if _, err := s.AppendMessage(writeCtx, activityID, AppendActivityMessageRequest{
+		Level:   models.ActivityMessageLevelWarning,
+		Message: fmt.Sprintf("Cancellation requested by %s", requestedBy),
+	}); err != nil {
+		slog.DebugContext(ctx, "failed to append cancellation message", "activityId", activityID, "error", err)
+	}
+
+	if s.RequestCancel(activityID) {
+		// The running work observes the cancelled context and writes its own
+		// terminal status, which reaches clients via the activity stream. Return
+		// the pre-cancel snapshot rather than reloading here: the worker has not
+		// finished unwinding yet, so a reload would still report "running".
+		dto := activityToDTOInternal(&model)
+		return &dto, nil
+	}
+
+	// Untracked work (e.g. after a process restart, or a queued activity with no
+	// runner): finalize directly, but only if it is still active to avoid
+	// clobbering a concurrently-completing activity.
+	now := time.Now()
+	var finalized models.Activity
+	if err := s.db.WithContext(writeCtx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.First(&finalized, "id = ? AND environment_id = ?", activityID, environmentID).Error; err != nil {
+			return err
+		}
+		updates := completeActivityUpdatesInternal(finalized.StartedAt, models.ActivityStatusCancelled, cancelledMessageInternal, nil, nil, now)
+		result := tx.Model(&models.Activity{}).
+			Where("id = ? AND status IN ?", activityID, []models.ActivityStatus{models.ActivityStatusQueued, models.ActivityStatusRunning}).
+			Updates(updates)
+		if result.Error != nil {
+			return fmt.Errorf("failed to cancel activity: %w", result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return ErrActivityNotCancelable
+		}
+		if err := tx.First(&finalized, "id = ? AND environment_id = ?", activityID, environmentID).Error; err != nil {
+			return fmt.Errorf("failed to load cancelled activity: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+
+	dto := activityToDTOInternal(&finalized)
+	s.publishActivityInternal(dto)
+	return &dto, nil
+}
+
+const cancelledMessageInternal = "Cancelled by user"
 
 func completeActivityUpdatesInternal(startedAt time.Time, status models.ActivityStatus, finalMessage string, errMessage *string, finalStep []string, now time.Time) map[string]any {
 	updates := map[string]any{

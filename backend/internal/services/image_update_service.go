@@ -12,6 +12,7 @@ import (
 	ref "github.com/distribution/reference"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
+	activitylib "github.com/getarcaneapp/arcane/backend/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/crypto"
 	imageupdatecore "github.com/getarcaneapp/arcane/backend/pkg/libarcane/imageupdate"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/ratelimit"
@@ -115,6 +116,11 @@ func (s *ImageUpdateService) completeImageUpdateActivityInternal(ctx context.Con
 	if !success {
 		status = models.ActivityStatusFailed
 		errMessage = utils.StringPtrFromTrimmed(message)
+		if activitylib.CancelledByContext(ctx) {
+			status = models.ActivityStatusCancelled
+			errMessage = nil
+			message = "Image update check cancelled"
+		}
 	}
 	if message == "" {
 		message = "Image update check completed"
@@ -128,6 +134,7 @@ func (s *ImageUpdateService) completeImageUpdateActivityInternal(ctx context.Con
 func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef string) (*imageupdate.Response, error) {
 	startTime := time.Now()
 	activityID := s.startImageUpdateActivityInternal(ctx, imageRef, 1)
+	ctx = s.activityService.Track(ctx, activityID)
 	s.appendImageUpdateActivityMessageInternal(ctx, activityID, models.ActivityMessageLevelInfo, fmt.Sprintf("Checking %s", imageRef), 20, "Checking remote digest")
 
 	parts := s.parseImageReference(imageRef)
@@ -987,6 +994,7 @@ func (s *ImageUpdateService) CheckMultipleImages(ctx context.Context, imageRefs 
 	}
 
 	activityID := s.startImageUpdateActivityInternal(ctx, fmt.Sprintf("%d images", len(imageRefs)), len(imageRefs))
+	ctx = s.activityService.Track(ctx, activityID)
 	s.appendImageUpdateActivityMessageInternal(ctx, activityID, models.ActivityMessageLevelInfo, fmt.Sprintf("Checking %d image references", len(imageRefs)), 5, "Preparing image update check")
 	slog.DebugContext(ctx, "Starting batch image update check", "imageCount", len(imageRefs), "externalCredCount", len(externalCreds))
 

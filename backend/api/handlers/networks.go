@@ -302,7 +302,7 @@ func (h *NetworkHandler) CreateNetwork(ctx context.Context, input *CreateNetwork
 			"action": "create_network",
 			"driver": input.Body.Options.Driver,
 		},
-	}, func() error {
+	}, func(runtimeCtx context.Context) error {
 		var createErr error
 		response, createErr = h.networkService.CreateNetwork(runtimeCtx, input.Body.Name, dockerOptions, *user)
 		return createErr
@@ -447,7 +447,7 @@ func (h *NetworkHandler) DeleteNetwork(ctx context.Context, input *DeleteNetwork
 		Metadata: models.JSON{
 			"action": "remove_network",
 		},
-	}, func() error {
+	}, func(runtimeCtx context.Context) error {
 		return h.networkService.RemoveNetwork(runtimeCtx, input.NetworkID, *user)
 	})
 	if err != nil {
@@ -473,7 +473,7 @@ func (h *NetworkHandler) PruneNetworks(ctx context.Context, input *PruneNetworks
 		Message:        "Pruning unused networks",
 		SuccessMessage: "Networks pruned successfully",
 		Metadata:       models.JSON{"action": "prune_networks"},
-	}, func() error {
+	}, func(runtimeCtx context.Context) error {
 		var pruneErr error
 		report, pruneErr = h.networkService.PruneNetworks(runtimeCtx)
 		return pruneErr

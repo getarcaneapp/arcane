@@ -453,7 +453,7 @@ func (h *ImageHandler) PullImage(ctx context.Context, input *PullImageInput) (*h
 
 			runtimeCtx := utils.ActivityRuntimeContext(humaCtx.Context(), h.appCtx)
 			rawWriter := humaCtx.BodyWriter()
-			activityID := activitylib.StartHandlerActivityForUser(
+			activityID, runtimeCtx := activitylib.StartHandlerActivityForUser(
 				runtimeCtx,
 				h.activityService,
 				input.EnvironmentID,
@@ -512,7 +512,7 @@ func (h *ImageHandler) BuildImage(ctx context.Context, input *BuildImageInput) (
 			if strings.TrimSpace(resourceName) == "" {
 				resourceName = input.Body.ContextDir
 			}
-			activityID := activitylib.StartHandlerActivityForUser(
+			activityID, runtimeCtx := activitylib.StartHandlerActivityForUser(
 				runtimeCtx,
 				h.activityService,
 				input.EnvironmentID,
