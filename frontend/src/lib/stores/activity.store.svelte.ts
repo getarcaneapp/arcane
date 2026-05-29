@@ -50,6 +50,7 @@ function createActivityStore() {
 	let _expandedActivityIds = $state<Record<string, boolean>>({});
 	let _detailLoadingIds = $state<Record<string, boolean>>({});
 	let _detailErrorIds = $state<Record<string, boolean>>({});
+	let _cancellingIds = $state<Record<string, boolean>>({});
 	let _filter = $state<ActivityFilter>('running');
 	let _open = $state(false);
 	let _loading = $state(false);
@@ -363,6 +364,9 @@ function createActivityStore() {
 		isDetailError(activityId: string): boolean {
 			return !!_detailErrorIds[activityId];
 		},
+		isCancelling(activityId: string): boolean {
+			return !!_cancellingIds[activityId];
+		},
 		getDetail(activityId: string): ActivityDetail | null {
 			const activity = _details[activityId]?.activity ?? _activities.find((item) => item.id === activityId);
 			if (!activity) {
@@ -393,6 +397,21 @@ function createActivityStore() {
 			abortStreamInternal();
 		},
 		refresh: () => refreshInternal(),
+		cancelActivity: async (activityId: string) => {
+			if (!activityId || _cancellingIds[activityId]) {
+				return;
+			}
+			_cancellingIds = { ..._cancellingIds, [activityId]: true };
+			try {
+				// The cancelled status arrives via the stream (mergeActivityInternal);
+				// callers handle success/error toasts.
+				await activityService.cancelActivity(activityId, _currentEnvironmentId);
+			} finally {
+				const next = { ..._cancellingIds };
+				delete next[activityId];
+				_cancellingIds = next;
+			}
+		},
 		clearHistory: async () => {
 			await activityService.clearHistory(_currentEnvironmentId);
 			_details = {};

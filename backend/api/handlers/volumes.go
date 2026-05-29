@@ -766,7 +766,7 @@ func (h *VolumeHandler) CreateVolume(ctx context.Context, input *CreateVolumeInp
 			"action": "create_volume",
 			"driver": input.Body.Driver,
 		},
-	}, func() error {
+	}, func(runtimeCtx context.Context) error {
 		var createErr error
 		response, createErr = h.volumeService.CreateVolume(runtimeCtx, options, *user)
 		return createErr
@@ -810,7 +810,7 @@ func (h *VolumeHandler) RemoveVolume(ctx context.Context, input *RemoveVolumeInp
 			"action": "remove_volume",
 			"force":  input.Force,
 		},
-	}, func() error {
+	}, func(runtimeCtx context.Context) error {
 		return h.volumeService.DeleteVolume(runtimeCtx, input.VolumeName, input.Force, *user)
 	})
 	if err != nil {
@@ -844,7 +844,7 @@ func (h *VolumeHandler) PruneVolumes(ctx context.Context, input *PruneVolumesInp
 		Message:        "Pruning unused volumes",
 		SuccessMessage: "Volumes pruned successfully",
 		Metadata:       models.JSON{"action": "prune_volumes"},
-	}, func() error {
+	}, func(runtimeCtx context.Context) error {
 		var pruneErr error
 		report, pruneErr = h.volumeService.PruneVolumes(runtimeCtx)
 		return pruneErr
@@ -1032,7 +1032,7 @@ func (h *VolumeHandler) UploadFile(ctx context.Context, input *UploadFileInput) 
 			"path":     input.Path,
 			"filename": fileHeader.Filename,
 		},
-	}, func() error {
+	}, func(runtimeCtx context.Context) error {
 		return h.volumeService.UploadFile(runtimeCtx, input.VolumeName, input.Path, file, fileHeader.Filename, user)
 	})
 	if err != nil {
@@ -1064,7 +1064,7 @@ func (h *VolumeHandler) CreateDirectory(ctx context.Context, input *CreateDirect
 			"action": "create_volume_directory",
 			"path":   input.Path,
 		},
-	}, func() error {
+	}, func(runtimeCtx context.Context) error {
 		return h.volumeService.CreateDirectory(runtimeCtx, input.VolumeName, input.Path, user)
 	})
 	if err != nil {
@@ -1096,7 +1096,7 @@ func (h *VolumeHandler) DeleteFile(ctx context.Context, input *DeleteFileInput) 
 			"action": "delete_volume_file",
 			"path":   input.Path,
 		},
-	}, func() error {
+	}, func(runtimeCtx context.Context) error {
 		return h.volumeService.DeleteFile(runtimeCtx, input.VolumeName, input.Path, user)
 	})
 	if err != nil {
@@ -1183,7 +1183,7 @@ func (h *VolumeHandler) CreateBackup(ctx context.Context, input *CreateBackupInp
 		Message:        "Creating volume backup",
 		SuccessMessage: "Volume backup created successfully",
 		Metadata:       models.JSON{"action": "create_volume_backup"},
-	}, func() error {
+	}, func(runtimeCtx context.Context) error {
 		var backupErr error
 		backup, backupErr = h.volumeService.CreateBackup(runtimeCtx, input.VolumeName, *user)
 		return backupErr
@@ -1224,7 +1224,7 @@ func (h *VolumeHandler) RestoreBackup(ctx context.Context, input *RestoreBackupI
 			"action":   "restore_volume_backup",
 			"backupId": input.BackupID,
 		},
-	}, func() error {
+	}, func(runtimeCtx context.Context) error {
 		return h.volumeService.RestoreBackup(runtimeCtx, input.VolumeName, input.BackupID, *user)
 	})
 	if err != nil {
@@ -1268,7 +1268,7 @@ func (h *VolumeHandler) RestoreBackupFiles(ctx context.Context, input *RestoreBa
 			"backupId": input.BackupID,
 			"paths":    input.Body.Paths,
 		},
-	}, func() error {
+	}, func(runtimeCtx context.Context) error {
 		return h.volumeService.RestoreBackupFiles(runtimeCtx, input.VolumeName, input.BackupID, input.Body.Paths, *user)
 	})
 	if err != nil {
@@ -1343,7 +1343,7 @@ func (h *VolumeHandler) DeleteBackup(ctx context.Context, input *DeleteBackupInp
 			"action":   "delete_volume_backup",
 			"backupId": input.BackupID,
 		},
-	}, func() error {
+	}, func(runtimeCtx context.Context) error {
 		return h.volumeService.DeleteBackup(runtimeCtx, input.BackupID, user)
 	})
 	if err != nil {
@@ -1417,7 +1417,7 @@ func (h *VolumeHandler) UploadAndRestore(ctx context.Context, input *UploadAndRe
 			"action":   "upload_restore_volume_backup",
 			"filename": fileHeader.Filename,
 		},
-	}, func() error {
+	}, func(runtimeCtx context.Context) error {
 		return h.volumeService.UploadAndRestore(runtimeCtx, input.VolumeName, file, fileHeader.Filename, *user)
 	})
 	if err != nil {

@@ -193,6 +193,7 @@ var permissionCatalog = []PermissionCatalogResource{
 	}},
 	{"activities", "Activities", PermissionScopeEnv, []PermissionCatalogAction{
 		{"read", PermActivitiesRead, "Read", ""},
+		{"cancel", PermActivitiesCancel, "Cancel", ""},
 		{"delete", PermActivitiesDelete, "Clear history", ""},
 	}},
 }

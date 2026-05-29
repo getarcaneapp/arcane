@@ -602,7 +602,7 @@ func (h *ProjectHandler) DeployProject(ctx context.Context, input *DeployProject
 
 			runtimeCtx := utils.ActivityRuntimeContext(humaCtx.Context(), h.appCtx)
 			rawWriter := humaCtx.BodyWriter()
-			activityID := activitylib.StartHandlerActivityForUser(
+			activityID, runtimeCtx := activitylib.StartHandlerActivityForUser(
 				runtimeCtx,
 				h.activityService,
 				input.EnvironmentID,
@@ -658,7 +658,7 @@ func (h *ProjectHandler) DownProject(ctx context.Context, input *DownProjectInpu
 	}
 
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	activityID := activitylib.StartHandlerActivityForUser(runtimeCtx, h.activityService, input.EnvironmentID, models.ActivityTypeProjectDown, "project", input.ProjectID, input.ProjectID, user, "Stopping project", "Project stop requested", models.JSON{"projectID": input.ProjectID})
+	activityID, runtimeCtx := activitylib.StartHandlerActivityForUser(runtimeCtx, h.activityService, input.EnvironmentID, models.ActivityTypeProjectDown, "project", input.ProjectID, input.ProjectID, user, "Stopping project", "Project stop requested", models.JSON{"projectID": input.ProjectID})
 	activityWriter := activitylib.NewWriter(runtimeCtx, h.activityService, activityID, io.Discard, "Stopping project")
 	downCtx := context.WithValue(runtimeCtx, projects.ProgressWriterKey{}, activityWriter)
 	if err := h.projectService.DownProject(downCtx, input.ProjectID, *user); err != nil {
@@ -708,7 +708,7 @@ func (h *ProjectHandler) CreateProject(ctx context.Context, input *CreateProject
 		Message:        "Creating project",
 		SuccessMessage: "Project created successfully",
 		Metadata:       models.JSON{"action": "create_project"},
-	}, func() error {
+	}, func(runtimeCtx context.Context) error {
 		var createErr error
 		proj, createErr = h.projectService.CreateProject(runtimeCtx, input.Body.Name, input.Body.ComposeContent, input.Body.EnvContent, *user)
 		return createErr
@@ -865,7 +865,7 @@ func (h *ProjectHandler) RedeployProject(ctx context.Context, input *RedeployPro
 	}
 
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	activityID := activitylib.StartHandlerActivityForUser(
+	activityID, runtimeCtx := activitylib.StartHandlerActivityForUser(
 		runtimeCtx,
 		h.activityService,
 		input.EnvironmentID,
@@ -929,7 +929,7 @@ func (h *ProjectHandler) DestroyProject(ctx context.Context, input *DestroyProje
 	}
 
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	activityID := activitylib.StartHandlerActivityForUser(runtimeCtx, h.activityService, input.EnvironmentID, models.ActivityTypeProjectDestroy, "project", input.ProjectID, input.ProjectID, user, "Destroying project", "Project destroy requested", models.JSON{"projectID": input.ProjectID, "removeFiles": removeFiles, "removeVolumes": removeVolumes})
+	activityID, runtimeCtx := activitylib.StartHandlerActivityForUser(runtimeCtx, h.activityService, input.EnvironmentID, models.ActivityTypeProjectDestroy, "project", input.ProjectID, input.ProjectID, user, "Destroying project", "Project destroy requested", models.JSON{"projectID": input.ProjectID, "removeFiles": removeFiles, "removeVolumes": removeVolumes})
 	activityWriter := activitylib.NewWriter(runtimeCtx, h.activityService, activityID, io.Discard, "Destroying project")
 	destroyCtx := context.WithValue(runtimeCtx, projects.ProgressWriterKey{}, activityWriter)
 	if err := h.projectService.DestroyProject(destroyCtx, input.ProjectID, removeFiles, removeVolumes, *user); err != nil {
@@ -978,7 +978,7 @@ func (h *ProjectHandler) UpdateProject(ctx context.Context, input *UpdateProject
 		Message:        "Updating project",
 		SuccessMessage: "Project updated successfully",
 		Metadata:       models.JSON{"action": "update_project", "projectID": input.ProjectID},
-	}, func() error {
+	}, func(runtimeCtx context.Context) error {
 		_, updateErr := h.projectService.UpdateProject(runtimeCtx, input.ProjectID, input.Body.Name, input.Body.ComposeContent, input.Body.EnvContent, *user)
 		return updateErr
 	})
@@ -1031,7 +1031,7 @@ func (h *ProjectHandler) UpdateProjectInclude(ctx context.Context, input *Update
 			"projectID":    input.ProjectID,
 			"relativePath": input.Body.RelativePath,
 		},
-	}, func() error {
+	}, func(runtimeCtx context.Context) error {
 		return h.projectService.UpdateProjectIncludeFile(runtimeCtx, input.ProjectID, input.Body.RelativePath, input.Body.Content, *user)
 	})
 	if err != nil {
@@ -1068,7 +1068,7 @@ func (h *ProjectHandler) RestartProject(ctx context.Context, input *RestartProje
 	}
 
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	activityID := activitylib.StartHandlerActivityForUser(runtimeCtx, h.activityService, input.EnvironmentID, models.ActivityTypeProjectRestart, "project", input.ProjectID, input.ProjectID, user, "Restarting project", "Project restart requested", models.JSON{"projectID": input.ProjectID})
+	activityID, runtimeCtx := activitylib.StartHandlerActivityForUser(runtimeCtx, h.activityService, input.EnvironmentID, models.ActivityTypeProjectRestart, "project", input.ProjectID, input.ProjectID, user, "Restarting project", "Project restart requested", models.JSON{"projectID": input.ProjectID})
 	activityWriter := activitylib.NewWriter(runtimeCtx, h.activityService, activityID, io.Discard, "Restarting project")
 	restartCtx := context.WithValue(runtimeCtx, projects.ProgressWriterKey{}, activityWriter)
 	if err := h.projectService.RestartProject(restartCtx, input.ProjectID, *user); err != nil {
@@ -1174,7 +1174,7 @@ func (h *ProjectHandler) PullProjectImages(ctx context.Context, input *PullProje
 
 			runtimeCtx := utils.ActivityRuntimeContext(humaCtx.Context(), h.appCtx)
 			rawWriter := humaCtx.BodyWriter()
-			activityID := activitylib.StartHandlerActivityForUser(
+			activityID, runtimeCtx := activitylib.StartHandlerActivityForUser(
 				runtimeCtx,
 				h.activityService,
 				input.EnvironmentID,
@@ -1246,7 +1246,7 @@ func (h *ProjectHandler) BuildProjectImages(ctx context.Context, input *BuildPro
 
 			runtimeCtx := utils.ActivityRuntimeContext(humaCtx.Context(), h.appCtx)
 			rawWriter := humaCtx.BodyWriter()
-			activityID := activitylib.StartHandlerActivityForUser(
+			activityID, runtimeCtx := activitylib.StartHandlerActivityForUser(
 				runtimeCtx,
 				h.activityService,
 				input.EnvironmentID,

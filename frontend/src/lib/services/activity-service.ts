@@ -21,6 +21,11 @@ export class ActivityService extends BaseAPIService {
 		return this.handleResponse(this.api.get(`/environments/${envId}/activities/${activityId}`, { params: { limit } }));
 	}
 
+	async cancelActivity(activityId: string, environmentId?: string): Promise<Activity> {
+		const envId = await this.resolveEnvironmentId(environmentId);
+		return this.handleResponse(this.api.post(`/environments/${envId}/activities/${encodeURIComponent(activityId)}/cancel`));
+	}
+
 	async clearHistory(environmentId?: string): Promise<ActivityClearHistoryResult> {
 		const envId = await this.resolveEnvironmentId(environmentId);
 		return this.handleResponse(this.api.delete(`/environments/${envId}/activities/history`));
