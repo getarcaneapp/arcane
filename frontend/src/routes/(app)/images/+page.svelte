@@ -109,9 +109,11 @@
 
 	const imageUsageCounts = $derived(imageUsageCountsQuery.data ?? imageUsageFallback);
 
-	const isRefreshing = $derived(
-		(imagesQuery.isFetching && !imagesQuery.isPending) || (imageUsageCountsQuery.isFetching && !imageUsageCountsQuery.isPending)
-	);
+	// Intentionally a manual flag, not $derived(query.isFetching): these queries use
+	// aggressive background refetching (staleTime: 0 + refetchOnMount/WindowFocus:
+	// 'always'), so deriving from isFetching leaves the manual refresh button spinning
+	// constantly. Mirrors the containers page — reflects only user-initiated refreshes.
+	let isRefreshing = $state(false);
 	const isUploading = $derived(uploadImagesMutation.isPending);
 	const isPruning = $derived(pruneImagesMutation.isPending);
 	const isChecking = $derived(checkUpdatesMutation.isPending);
@@ -147,7 +149,12 @@
 	];
 
 	async function refresh() {
-		await Promise.all([imagesQuery.refetch(), imageUsageCountsQuery.refetch()]);
+		isRefreshing = true;
+		try {
+			await Promise.all([imagesQuery.refetch(), imageUsageCountsQuery.refetch()]);
+		} finally {
+			isRefreshing = false;
+		}
 	}
 
 	const canPullImage = $derived(hasPermission('images:pull', envId));

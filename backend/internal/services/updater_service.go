@@ -95,6 +95,7 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (out *up
 	out = &updater.Result{Items: []updater.ResourceResult{}}
 	activityID := s.startAutoUpdateActivityInternal(ctx, dryRun)
 	out.ActivityID = utils.StringPtrFromTrimmed(activityID)
+	ctx = s.activityService.Track(ctx, activityID)
 	defer func() {
 		if out != nil {
 			out.ActivityID = utils.StringPtrFromTrimmed(activityID)
@@ -489,6 +490,11 @@ func (s *UpdaterService) completeAutoUpdateActivityInternal(ctx context.Context,
 		errMessage = &errText
 		message = errText
 	}
+	if status == models.ActivityStatusFailed && activitylib.CancelledByContext(ctx) {
+		status = models.ActivityStatusCancelled
+		message = "Auto-update cancelled"
+		errMessage = nil
+	}
 
 	if _, err := s.activityService.CompleteActivity(utils.ActivityRuntimeContext(ctx, nil), activityID, status, message, errMessage); err != nil {
 		slog.DebugContext(ctx, "failed to complete auto-update activity", "activityId", activityID, "error", err)
@@ -504,6 +510,7 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 	out = &updater.Result{Items: []updater.ResourceResult{}}
 	activityID := s.startSingleContainerUpdateActivityInternal(ctx, containerID)
 	out.ActivityID = utils.StringPtrFromTrimmed(activityID)
+	ctx = s.activityService.Track(ctx, activityID)
 	defer func() {
 		if out != nil {
 			out.ActivityID = utils.StringPtrFromTrimmed(activityID)

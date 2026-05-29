@@ -10,6 +10,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
+	activitylib "github.com/getarcaneapp/arcane/backend/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/dockerrun"
 	libupdater "github.com/getarcaneapp/arcane/backend/pkg/libarcane/imageupdate"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils"
@@ -79,6 +80,7 @@ func (s *SystemService) PruneAll(ctx context.Context, environmentID string, req 
 
 	defer s.finishSystemPruneInternal(environmentID)
 
+	ctx = s.activityService.Track(ctx, activityID)
 	s.runSystemPruneInternal(ctx, req, activityID, result)
 
 	return result, true, nil
@@ -92,6 +94,7 @@ func (s *SystemService) StartPruneAll(ctx context.Context, environmentID string,
 	}
 
 	backgroundCtx := utils.ActivityRuntimeContext(ctx, nil)
+	backgroundCtx = s.activityService.Track(backgroundCtx, activityID)
 
 	go func() {
 		defer s.finishSystemPruneInternal(environmentID)
@@ -277,10 +280,15 @@ func (s *SystemService) completeSystemPruneActivityInternal(ctx context.Context,
 	message := "System prune completed"
 	var errMessage *string
 	if !result.Success || len(result.Errors) > 0 {
-		status = models.ActivityStatusFailed
-		message = "System prune completed with errors"
-		joined := strings.Join(result.Errors, "; ")
-		errMessage = &joined
+		if activitylib.CancelledByContext(ctx) {
+			status = models.ActivityStatusCancelled
+			message = "System prune cancelled"
+		} else {
+			status = models.ActivityStatusFailed
+			message = "System prune completed with errors"
+			joined := strings.Join(result.Errors, "; ")
+			errMessage = &joined
+		}
 	}
 	if _, err := s.activityService.CompleteActivity(utils.ActivityRuntimeContext(ctx, nil), activityID, status, message, errMessage); err != nil {
 		slog.DebugContext(ctx, "failed to complete system prune activity", "activityId", activityID, "error", err)

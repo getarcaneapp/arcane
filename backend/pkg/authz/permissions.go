@@ -166,6 +166,7 @@ const (
 	PermBuildWorkspacesManage = "build-workspaces:manage"
 
 	PermActivitiesRead   = "activities:read"
+	PermActivitiesCancel = "activities:cancel"
 	PermActivitiesDelete = "activities:delete"
 )
 
@@ -276,7 +277,7 @@ func BuiltInEditorPermissions() []string {
 		PermImageUpdatesRead, PermImageUpdatesCheck,
 		PermVulnsRead, PermVulnsScan, PermVulnsManage,
 		PermBuildWorkspacesManage,
-		PermActivitiesRead, PermActivitiesDelete,
+		PermActivitiesRead, PermActivitiesCancel, PermActivitiesDelete,
 	}
 }
 
@@ -300,7 +301,7 @@ func BuiltInDeployerPermissions() []string {
 		PermSystemRead,
 		PermImageUpdatesRead, PermImageUpdatesCheck,
 		PermVulnsRead,
-		PermActivitiesRead,
+		PermActivitiesRead, PermActivitiesCancel,
 	}
 }
 

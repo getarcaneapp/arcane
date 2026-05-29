@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -64,6 +65,16 @@ type StreamActivitiesInput struct {
 	Limit         int    `query:"limit" default:"50" doc:"Initial snapshot limit"`
 }
 
+type CancelActivityInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	ActivityID    string `path:"activityId" doc:"Activity ID"`
+	RequestedBy   string `query:"requestedBy" doc:"Display name to attribute the cancellation to (used when proxying to a remote environment)"`
+}
+
+type CancelActivityOutput struct {
+	Body base.ApiResponse[activity.Activity]
+}
+
 func RegisterActivities(api huma.API, activityService *services.ActivityService, environmentService *services.EnvironmentService) {
 	h := &ActivityHandler{
 		activityService:    activityService,
@@ -111,6 +122,20 @@ func RegisterActivities(api huma.API, activityService *services.ActivityService,
 		},
 		Middlewares: humamw.RequirePermission(api, authz.PermActivitiesRead),
 	}, h.StreamActivities)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "cancel-activity",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/activities/{activityId}/cancel",
+		Summary:     "Cancel a background activity",
+		Description: "Request cancellation of a running or queued background activity",
+		Tags:        []string{"Activities"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+		Middlewares: humamw.RequirePermission(api, authz.PermActivitiesCancel),
+	}, h.CancelActivity)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "clear-activity-history",
@@ -306,6 +331,70 @@ func (h *ActivityHandler) ClearHistory(ctx context.Context, input *ClearActivity
 			Data:    activity.ClearHistoryResult{Deleted: deleted},
 		},
 	}, nil
+}
+
+func (h *ActivityHandler) CancelActivity(ctx context.Context, input *CancelActivityInput) (*CancelActivityOutput, error) {
+	if input.EnvironmentID != "0" {
+		return h.proxyCancelActivityInternal(ctx, input)
+	}
+	if h.activityService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+	if input.ActivityID == "" {
+		return nil, huma.Error400BadRequest("activity id is required")
+	}
+
+	requestedBy := h.cancelRequestedByInternal(ctx, input.RequestedBy)
+	cancelled, err := h.activityService.CancelActivity(ctx, input.EnvironmentID, input.ActivityID, requestedBy)
+	if err != nil {
+		switch {
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			return nil, huma.Error404NotFound("activity not found")
+		case errors.Is(err, services.ErrActivityNotCancelable):
+			return nil, huma.Error409Conflict("activity is not running")
+		default:
+			return nil, huma.Error500InternalServerError(err.Error())
+		}
+	}
+	h.applyActivitySourceLabelInternal(ctx, input.EnvironmentID, cancelled)
+
+	return &CancelActivityOutput{
+		Body: base.ApiResponse[activity.Activity]{
+			Success: true,
+			Data:    *cancelled,
+		},
+	}, nil
+}
+
+func (h *ActivityHandler) proxyCancelActivityInternal(ctx context.Context, input *CancelActivityInput) (*CancelActivityOutput, error) {
+	if h.environmentService == nil {
+		return nil, huma.Error500InternalServerError("environment service not available")
+	}
+	path := fmt.Sprintf("/api/environments/0/activities/%s/cancel", url.PathEscape(input.ActivityID))
+	if requestedBy := h.cancelRequestedByInternal(ctx, input.RequestedBy); requestedBy != "" {
+		path += "?requestedBy=" + url.QueryEscape(requestedBy)
+	}
+	out, err := proxyRemoteJSONInternal[base.ApiResponse[activity.Activity]](ctx, h.environmentService, input.EnvironmentID, http.MethodPost, path, nil)
+	if err != nil {
+		return nil, err
+	}
+	h.applyActivitySourceLabelInternal(ctx, input.EnvironmentID, &out.Data)
+	return &CancelActivityOutput{Body: *out}, nil
+}
+
+// cancelRequestedByInternal resolves a human-readable name for the cancellation
+// audit message, preferring the authenticated user and falling back to a name
+// forwarded from a proxying controller.
+func (h *ActivityHandler) cancelRequestedByInternal(ctx context.Context, forwarded string) string {
+	if user, ok := humamw.GetCurrentUserFromContext(ctx); ok && user != nil {
+		if user.DisplayName != nil && strings.TrimSpace(*user.DisplayName) != "" {
+			return strings.TrimSpace(*user.DisplayName)
+		}
+		if name := strings.TrimSpace(user.Username); name != "" {
+			return name
+		}
+	}
+	return strings.TrimSpace(forwarded)
 }
 
 func (h *ActivityHandler) streamRemoteActivitySnapshotsInternal(

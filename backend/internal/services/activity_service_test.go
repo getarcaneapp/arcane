@@ -11,7 +11,9 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
+	activitylib "github.com/getarcaneapp/arcane/backend/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils"
 	activitytypes "github.com/getarcaneapp/arcane/types/activity"
 )
 
@@ -287,6 +289,68 @@ func TestActivityServiceCompleteActivityRejectsUninitializedServiceInternal(t *t
 	service := NewActivityService(nil)
 	_, err := service.CompleteActivity(context.Background(), "any-id", models.ActivityStatusSuccess, "done", nil)
 	require.Error(t, err)
+}
+
+func TestActivityServiceTrackAndRequestCancelInternal(t *testing.T) {
+	db := setupActivityServiceTestDBInternal(t)
+	service := NewActivityService(db)
+
+	// Mirror the handler flow: work runs under an app-lifecycle runtime context.
+	appCtx := utils.WithAppLifecycleContext(context.Background())
+	runtimeCtx := utils.ActivityRuntimeContext(context.Background(), appCtx)
+
+	created, err := service.StartActivity(runtimeCtx, StartActivityRequest{
+		EnvironmentID: "0",
+		Type:          models.ActivityTypeImagePull,
+		LatestMessage: "running",
+	})
+	require.NoError(t, err)
+
+	workCtx := service.Track(runtimeCtx, created.ID)
+	require.NoError(t, workCtx.Err())
+
+	// A tracked activity is found and cancelled with the ErrCanceled cause.
+	require.True(t, service.RequestCancel(created.ID))
+	require.ErrorIs(t, workCtx.Err(), context.Canceled)
+	require.ErrorIs(t, context.Cause(workCtx), activitylib.ErrCanceled)
+	require.True(t, activitylib.CancelledByContext(workCtx))
+
+	// Completion must land even though the work context is cancelled (this is the
+	// path CompleteHandlerActivity takes after re-wrapping the work context).
+	completed, err := service.CompleteActivity(utils.ActivityRuntimeContext(workCtx, nil), created.ID, models.ActivityStatusCancelled, "Cancelled by user", nil)
+	require.NoError(t, err)
+	require.Equal(t, "cancelled", string(completed.Status))
+	require.NotNil(t, completed.EndedAt)
+
+	// Completing the activity releases the registration.
+	require.False(t, service.RequestCancel(created.ID))
+}
+
+func TestActivityServiceCancelActivityInternal(t *testing.T) {
+	ctx := context.Background()
+	db := setupActivityServiceTestDBInternal(t)
+	service := NewActivityService(db)
+
+	// An untracked running activity (e.g. after a restart) is finalized directly.
+	created, err := service.StartActivity(ctx, StartActivityRequest{
+		EnvironmentID: "0",
+		Type:          models.ActivityTypeSystemPrune,
+		LatestMessage: "running",
+	})
+	require.NoError(t, err)
+
+	cancelled, err := service.CancelActivity(ctx, "0", created.ID, "Tester")
+	require.NoError(t, err)
+	require.Equal(t, "cancelled", string(cancelled.Status))
+	require.NotNil(t, cancelled.EndedAt)
+
+	// Cancelling an already-terminal activity is rejected.
+	_, err = service.CancelActivity(ctx, "0", created.ID, "Tester")
+	require.ErrorIs(t, err, ErrActivityNotCancelable)
+
+	// Unknown activity reports not found.
+	_, err = service.CancelActivity(ctx, "0", "missing", "Tester")
+	require.ErrorIs(t, err, gorm.ErrRecordNotFound)
 }
 
 func receiveActivityEventInternal(t *testing.T, events <-chan activitytypes.StreamEvent) activitytypes.StreamEvent {
