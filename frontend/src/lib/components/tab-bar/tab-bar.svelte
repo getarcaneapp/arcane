@@ -28,7 +28,7 @@
 			{item.label}
 			{#if item.badge !== undefined}
 				<span
-					class="bg-primary text-primary-foreground ml-1 inline-flex min-w-[18px] items-center justify-center rounded-full px-1 text-[10px] font-medium"
+					class="bg-primary text-primary-foreground ml-1 inline-flex min-w-[18px] items-center justify-center rounded-full px-1 text-[11px] font-medium"
 				>
 					{item.badge}
 				</span>

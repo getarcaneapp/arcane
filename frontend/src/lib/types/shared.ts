@@ -194,6 +194,7 @@ export interface DashboardSnapshot {
 	imageUsageCounts: ImageUsageCounts;
 	actionItems: DashboardActionItems;
 	settings: DashboardSnapshotSettings;
+	versionInfo?: AppVersionInformation;
 }
 
 export type EnvironmentDashboardSnapshotState = 'ready' | 'skipped' | 'error';
@@ -207,24 +208,6 @@ export interface DashboardEnvironmentOverview {
 	versionInfo?: AppVersionInformation;
 	snapshotState: EnvironmentDashboardSnapshotState;
 	snapshotError?: string;
-}
-
-export interface DashboardEnvironmentsSummary {
-	totalEnvironments: number;
-	onlineEnvironments: number;
-	standbyEnvironments: number;
-	offlineEnvironments: number;
-	pendingEnvironments: number;
-	errorEnvironments: number;
-	disabledEnvironments: number;
-	containers: ContainerStatusCounts;
-	imageUsageCounts: ImageUsageCounts;
-	environmentsWithActionItems: number;
-}
-
-export interface DashboardEnvironmentsOverview {
-	summary: DashboardEnvironmentsSummary;
-	environments: DashboardEnvironmentOverview[];
 }
 
 export interface DashboardOverviewSummary {
