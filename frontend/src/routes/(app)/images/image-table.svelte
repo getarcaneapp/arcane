@@ -28,6 +28,7 @@
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { hasPermission } from '$lib/utils/auth';
 	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
+	import { bulkConfirmAndRun } from '$lib/utils/bulk-actions';
 
 	import {
 		DownloadIcon,
@@ -81,57 +82,25 @@
 		images = await imageService.getImages(options);
 	}
 
-	async function handleDeleteSelected(ids: string[]) {
-		if (!ids || ids.length === 0) return;
-
-		openConfirmDialog({
+	function handleDeleteSelected(ids: string[]) {
+		bulkConfirmAndRun({
+			ids,
 			title: m.images_remove_selected_title({ count: ids.length }),
 			message: m.images_remove_selected_message({ count: ids.length }),
-			checkboxes: [
-				{
-					id: 'force',
-					label: m.images_remove_force_label(),
-					initialState: false
-				}
-			],
-			confirm: {
-				label: m.common_remove(),
-				destructive: true,
-				action: async (checkboxStates) => {
-					const force = !!checkboxStates['force'];
-					isLoading.removing = true;
-					let successCount = 0;
-					let failureCount = 0;
-
-					for (const id of ids) {
-						const result = await tryCatch(imageService.deleteImage(id, { force }));
-						handleApiResultWithCallbacks({
-							result,
-							message: m.images_remove_failed(),
-							setLoadingState: () => {},
-							onSuccess: () => {
-								successCount++;
-							}
-						});
-						if (result.error) failureCount++;
-					}
-
-					isLoading.removing = false;
-
-					if (successCount > 0) {
-						const msg =
-							successCount === 1 ? m.images_remove_success_one() : m.images_remove_success_many({ count: successCount });
-						toast.success(msg);
-						await refreshImages();
-					}
-					if (failureCount > 0) {
-						const msg = failureCount === 1 ? m.images_remove_failed_one() : m.images_remove_failed_many({ count: failureCount });
-						toast.error(msg);
-					}
-
-					selectedIds = [];
-				}
-			}
+			confirmLabel: m.common_remove(),
+			destructive: true,
+			checkboxes: [{ id: 'force', label: m.images_remove_force_label(), initialState: false }],
+			run: (id, checkboxStates) => imageService.deleteImage(id, { force: !!checkboxStates['force'] }),
+			messages: {
+				success: (count) => (count === 1 ? m.images_remove_success_one() : m.images_remove_success_many({ count })),
+				partial: (success, total, failed) => m.common_bulk_remove_partial({ success, total, failed, resource: m.images_title() }),
+				failure: () => (ids.length === 1 ? m.images_remove_failed_one() : m.images_remove_failed_many({ count: ids.length }))
+			},
+			setLoading: (loading) => (isLoading.removing = loading),
+			onComplete: async (result) => {
+				if (result.success > 0) await refreshImages();
+			},
+			clearSelection: () => (selectedIds = [])
 		});
 	}
 
