@@ -6,10 +6,11 @@
 	import ActivityDetailPanel from './activity-detail-panel.svelte';
 	import { activityStore } from '$lib/stores/activity.store.svelte';
 	import type { ActivityFilter } from '$lib/types/activity.type';
-	import { ActivityIcon, RefreshIcon, TrashIcon } from '$lib/icons';
+	import { ActivityIcon, CloseIcon, RefreshIcon, TrashIcon } from '$lib/icons';
 	import { m } from '$lib/paraglide/messages';
 	import { cn } from '$lib/utils';
 	import { activityFilterLabel } from './activity-labels';
+	import { confirmCancelActivity } from './activity-cancel';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import { toast } from 'svelte-sonner';
 	import IfPermitted from '$lib/components/if-permitted.svelte';
@@ -122,19 +123,36 @@
 			<div>
 				{#each activityStore.filteredActivities as activity (activity.id)}
 					{@const expanded = activityStore.isExpanded(activity.id)}
-					<Collapsible.Root open={expanded} onOpenChange={(open) => activityStore.setActivityExpanded(activity.id, open)}>
-						<Collapsible.Trigger
-							class="focus-visible:ring-ring block w-full cursor-pointer appearance-none border-0 bg-transparent p-0 text-left focus-visible:ring-2 focus-visible:outline-hidden focus-visible:ring-inset"
-							aria-label={m.activity_center_title()}
-						>
-							<ActivityListItem {activity} {expanded} />
-						</Collapsible.Trigger>
-						<Collapsible.Content
-							class="data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:slide-out-to-top-1 data-[state=open]:slide-in-from-top-1 overflow-hidden"
-						>
-							<ActivityDetailPanel {activity} />
-						</Collapsible.Content>
-					</Collapsible.Root>
+					{@const cancelable = activity.status === 'running' || activity.status === 'queued'}
+					<div class="group/activity relative">
+						<Collapsible.Root open={expanded} onOpenChange={(open) => activityStore.setActivityExpanded(activity.id, open)}>
+							<Collapsible.Trigger
+								class="focus-visible:ring-ring block w-full cursor-pointer appearance-none border-0 bg-transparent p-0 text-left focus-visible:ring-2 focus-visible:outline-hidden focus-visible:ring-inset"
+								aria-label={m.activity_center_title()}
+							>
+								<ActivityListItem {activity} {expanded} />
+							</Collapsible.Trigger>
+							<Collapsible.Content
+								class="data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:slide-out-to-top-1 data-[state=open]:slide-in-from-top-1 overflow-hidden"
+							>
+								<ActivityDetailPanel {activity} />
+							</Collapsible.Content>
+						</Collapsible.Root>
+						{#if cancelable}
+							<IfPermitted perm="activities:cancel">
+								<button
+									type="button"
+									onclick={() => confirmCancelActivity(activity.id)}
+									disabled={activityStore.isCancelling(activity.id)}
+									title={m.activity_cancel()}
+									aria-label={m.activity_cancel()}
+									class="text-muted-foreground hover:bg-destructive/10 hover:text-destructive focus-visible:ring-ring bg-background/70 absolute top-1/2 right-11 z-10 flex size-7 -translate-y-1/2 items-center justify-center rounded-md opacity-0 backdrop-blur-sm transition focus-visible:opacity-100 focus-visible:ring-2 focus-visible:outline-hidden group-hover/activity:opacity-100 disabled:pointer-events-none disabled:opacity-40"
+								>
+									<CloseIcon class="size-4" aria-hidden="true" />
+								</button>
+							</IfPermitted>
+						{/if}
+					</div>
 				{/each}
 			</div>
 		{/if}

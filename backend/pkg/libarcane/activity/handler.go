@@ -3,6 +3,7 @@ package activity
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -11,6 +12,22 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils"
 )
+
+// ErrCanceled is the cancellation cause set on an activity's work context when a
+// user requests cancellation. Completion paths read context.Cause to record a
+// cancelled (rather than failed) terminal status.
+var ErrCanceled = errors.New("activity cancelled by user")
+
+// cancelledMessage is the latest-message recorded when work is cancelled.
+const cancelledMessage = "Cancelled by user"
+
+// CancelledByContext reports whether ctx was cancelled by a user cancellation
+// request (as opposed to app shutdown or a deadline). Callers that finalize an
+// activity from a possibly-cancelled work context use this to choose between a
+// cancelled and a failed terminal status.
+func CancelledByContext(ctx context.Context) bool {
+	return ctx != nil && errors.Is(context.Cause(ctx), ErrCanceled)
+}
 
 type HandlerOptions struct {
 	EnvironmentID  string
@@ -25,6 +42,12 @@ type HandlerOptions struct {
 	Metadata       models.JSON
 }
 
+// StartHandlerActivityForUser creates a background activity and returns its ID
+// along with a work context the caller MUST use for the underlying operation.
+// When the service supports cancellation (implements Tracker), the returned
+// context is a cancelable child bound to the activity; cancelling the activity
+// cancels this context. The activity registration is released when the activity
+// is completed via the service. On failure it returns ("", ctx) unchanged.
 func StartHandlerActivityForUser(
 	ctx context.Context,
 	activityService Service,
@@ -37,9 +60,9 @@ func StartHandlerActivityForUser(
 	step string,
 	message string,
 	metadata models.JSON,
-) string {
+) (string, context.Context) {
 	if activityService == nil {
-		return ""
+		return "", ctx
 	}
 
 	activity, err := activityService.StartActivity(ctx, StartRequest{
@@ -55,9 +78,14 @@ func StartHandlerActivityForUser(
 	})
 	if err != nil {
 		slog.DebugContext(ctx, "failed to start background activity", "type", activityType, "error", err)
-		return ""
+		return "", ctx
 	}
-	return activity.ID
+
+	workCtx := ctx
+	if tracker, ok := activityService.(Tracker); ok {
+		workCtx = tracker.Track(ctx, activity.ID)
+	}
+	return activity.ID, workCtx
 }
 
 func CompleteHandlerActivity(ctx context.Context, activityService Service, activityID string, successMessage string, err error) {
@@ -69,10 +97,17 @@ func CompleteHandlerActivity(ctx context.Context, activityService Service, activ
 	var errMessage *string
 	finalMessage := successMessage
 	if err != nil {
-		status = models.ActivityStatusFailed
-		errText := err.Error()
-		errMessage = &errText
-		finalMessage = errText
+		// Read the cancellation cause from the (possibly-tracked) work context
+		// before it is re-wrapped for the DB write below.
+		if CancelledByContext(ctx) {
+			status = models.ActivityStatusCancelled
+			finalMessage = cancelledMessage
+		} else {
+			status = models.ActivityStatusFailed
+			errText := err.Error()
+			errMessage = &errText
+			finalMessage = errText
+		}
 	}
 
 	activityCtx := utils.ActivityRuntimeContext(ctx, nil)
@@ -81,8 +116,12 @@ func CompleteHandlerActivity(ctx context.Context, activityService Service, activ
 	}
 }
 
-func RunHandlerActivity(ctx context.Context, activityService Service, opts HandlerOptions, action func() error) (string, error) {
-	activityID := StartHandlerActivityForUser(
+// RunHandlerActivity starts an activity, runs action with the activity's work
+// context (cancelable when the service supports it), and completes the activity.
+// The action MUST use the provided context for its operation so cancellation
+// propagates.
+func RunHandlerActivity(ctx context.Context, activityService Service, opts HandlerOptions, action func(ctx context.Context) error) (string, error) {
+	activityID, workCtx := StartHandlerActivityForUser(
 		ctx,
 		activityService,
 		opts.EnvironmentID,
@@ -96,8 +135,8 @@ func RunHandlerActivity(ctx context.Context, activityService Service, opts Handl
 		opts.Metadata,
 	)
 
-	err := action()
-	CompleteHandlerActivity(ctx, activityService, activityID, opts.SuccessMessage, err)
+	err := action(workCtx)
+	CompleteHandlerActivity(workCtx, activityService, activityID, opts.SuccessMessage, err)
 	return activityID, err
 }
 

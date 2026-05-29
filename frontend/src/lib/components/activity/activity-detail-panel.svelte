@@ -4,9 +4,11 @@
 	import { CopyButton } from '$lib/components/ui/copy-button';
 	import { activityStore } from '$lib/stores/activity.store.svelte';
 	import type { Activity, ActivityMessage } from '$lib/types/activity.type';
-	import { ActivityIcon, TerminalIcon } from '$lib/icons';
+	import { ActivityIcon, CloseIcon, TerminalIcon } from '$lib/icons';
 	import { m } from '$lib/paraglide/messages';
 	import { cn } from '$lib/utils';
+	import IfPermitted from '$lib/components/if-permitted.svelte';
+	import { confirmCancelActivity } from './activity-cancel';
 	import { activityStatusLabel, activityStatusVariant, activityTypeIcon, activityTypeLabel } from './activity-labels';
 
 	let { activity }: { activity: Activity } = $props();
@@ -30,6 +32,7 @@
 		liveActivity.sourceEnvironmentName || liveActivity.sourceEnvironmentId || liveActivity.environmentId
 	);
 	const startedByName = $derived(liveActivity.startedBy?.displayName || liveActivity.startedBy?.username);
+	const cancelable = $derived(liveActivity.status === 'running' || liveActivity.status === 'queued');
 
 	$effect(() => {
 		messages.length;
@@ -118,6 +121,19 @@
 						<p class="text-muted-foreground mt-1 truncate text-xs">{activityTarget}</p>
 					</div>
 				</div>
+				{#if cancelable}
+					<IfPermitted perm="activities:cancel">
+						<button
+							type="button"
+							onclick={() => confirmCancelActivity(liveActivity.id)}
+							disabled={activityStore.isCancelling(liveActivity.id)}
+							class="border-border/60 text-muted-foreground hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30 focus-visible:ring-ring inline-flex shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition focus-visible:ring-2 focus-visible:outline-hidden disabled:pointer-events-none disabled:opacity-50"
+						>
+							<CloseIcon class="size-3.5" aria-hidden="true" />
+							{m.activity_cancel()}
+						</button>
+					</IfPermitted>
+				{/if}
 			</div>
 
 			<div class="space-y-2">

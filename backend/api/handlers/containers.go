@@ -625,7 +625,7 @@ func (h *ContainerHandler) StartContainer(ctx context.Context, input *ContainerA
 	}
 
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	activityID := activitylib.StartHandlerActivityForUser(runtimeCtx, h.activityService, input.EnvironmentID, models.ActivityTypeContainerStart, "container", input.ContainerID, input.ContainerID, user, "Starting container", "Container start requested", models.JSON{"containerID": input.ContainerID})
+	activityID, runtimeCtx := activitylib.StartHandlerActivityForUser(runtimeCtx, h.activityService, input.EnvironmentID, models.ActivityTypeContainerStart, "container", input.ContainerID, input.ContainerID, user, "Starting container", "Container start requested", models.JSON{"containerID": input.ContainerID})
 	if err := h.containerService.StartContainer(runtimeCtx, input.ContainerID, *user); err != nil {
 		activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Container started", err)
 		return nil, huma.Error500InternalServerError((&common.ContainerStartError{Err: err}).Error())
@@ -651,7 +651,7 @@ func (h *ContainerHandler) StopContainer(ctx context.Context, input *ContainerAc
 	}
 
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	activityID := activitylib.StartHandlerActivityForUser(runtimeCtx, h.activityService, input.EnvironmentID, models.ActivityTypeContainerStop, "container", input.ContainerID, input.ContainerID, user, "Stopping container", "Container stop requested", models.JSON{"containerID": input.ContainerID})
+	activityID, runtimeCtx := activitylib.StartHandlerActivityForUser(runtimeCtx, h.activityService, input.EnvironmentID, models.ActivityTypeContainerStop, "container", input.ContainerID, input.ContainerID, user, "Stopping container", "Container stop requested", models.JSON{"containerID": input.ContainerID})
 	if err := h.containerService.StopContainer(runtimeCtx, input.ContainerID, *user); err != nil {
 		activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Container stopped", err)
 		return nil, huma.Error500InternalServerError((&common.ContainerStopError{Err: err}).Error())
@@ -677,7 +677,7 @@ func (h *ContainerHandler) RestartContainer(ctx context.Context, input *Containe
 	}
 
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	activityID := activitylib.StartHandlerActivityForUser(runtimeCtx, h.activityService, input.EnvironmentID, models.ActivityTypeContainerRestart, "container", input.ContainerID, input.ContainerID, user, "Restarting container", "Container restart requested", models.JSON{"containerID": input.ContainerID})
+	activityID, runtimeCtx := activitylib.StartHandlerActivityForUser(runtimeCtx, h.activityService, input.EnvironmentID, models.ActivityTypeContainerRestart, "container", input.ContainerID, input.ContainerID, user, "Restarting container", "Container restart requested", models.JSON{"containerID": input.ContainerID})
 	if err := h.containerService.RestartContainer(runtimeCtx, input.ContainerID, *user); err != nil {
 		activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Container restarted", err)
 		return nil, huma.Error500InternalServerError((&common.ContainerRestartError{Err: err}).Error())
@@ -703,7 +703,7 @@ func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *Contain
 	}
 
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	activityID := activitylib.StartHandlerActivityForUser(runtimeCtx, h.activityService, input.EnvironmentID, models.ActivityTypeContainerRedeploy, "container", input.ContainerID, input.ContainerID, user, "Starting redeploy", "Container redeploy requested", models.JSON{"containerID": input.ContainerID})
+	activityID, runtimeCtx := activitylib.StartHandlerActivityForUser(runtimeCtx, h.activityService, input.EnvironmentID, models.ActivityTypeContainerRedeploy, "container", input.ContainerID, input.ContainerID, user, "Starting redeploy", "Container redeploy requested", models.JSON{"containerID": input.ContainerID})
 	activityWriter := activitylib.NewWriter(runtimeCtx, h.activityService, activityID, io.Discard, "Redeploying container")
 	redeployCtx := context.WithValue(runtimeCtx, projects.ProgressWriterKey{}, activityWriter)
 	newContainerID, err := h.containerService.RedeployContainer(redeployCtx, input.ContainerID, *user)
@@ -752,7 +752,7 @@ func (h *ContainerHandler) DeleteContainer(ctx context.Context, input *DeleteCon
 	}
 
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	activityID := activitylib.StartHandlerActivityForUser(runtimeCtx, h.activityService, input.EnvironmentID, models.ActivityTypeContainerDelete, "container", input.ContainerID, input.ContainerID, user, "Deleting container", "Container delete requested", models.JSON{"containerID": input.ContainerID, "force": input.Force, "removeVolumes": input.RemoveVolumes})
+	activityID, runtimeCtx := activitylib.StartHandlerActivityForUser(runtimeCtx, h.activityService, input.EnvironmentID, models.ActivityTypeContainerDelete, "container", input.ContainerID, input.ContainerID, user, "Deleting container", "Container delete requested", models.JSON{"containerID": input.ContainerID, "force": input.Force, "removeVolumes": input.RemoveVolumes})
 	if err := h.containerService.DeleteContainer(runtimeCtx, input.ContainerID, input.Force, input.RemoveVolumes, *user); err != nil {
 		activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Container deleted", err)
 		return nil, huma.Error500InternalServerError((&common.ContainerDeleteError{Err: err}).Error())
