@@ -33,7 +33,7 @@
 		type BulkAction
 	} from './arcane-table.types.svelte';
 	import type { Component } from 'svelte';
-	import { extractPersistedPreferences, filterMapsEqual, toFilterMap } from './arcane-table.utils';
+	import { extractPersistedPreferences, filterMapsEqual, fromFilterMap, toFilterMap } from './arcane-table.utils';
 	import ArcaneTablePagination from './arcane-table-pagination.svelte';
 	import ArcaneTableHeader from './arcane-table-header.svelte';
 	import ArcaneTableCell from './arcane-table-cell.svelte';
@@ -605,6 +605,19 @@
 				sorting = [{ id: s.column, desc }];
 			});
 		}
+	});
+
+	// Reflect externally-set requestOptions.filters (e.g. a clickable stat card applying
+	// a filter) back into the facet UI so the displayed filters match the active query.
+	// Only mutates local columnFilters — never triggers onRefresh — so it can't loop with
+	// the forward onColumnFiltersChange path.
+	$effect(() => {
+		const incoming = requestOptions?.filters;
+		const currentMap = untrack(() => toFilterMap(columnFilters));
+		if (filterMapsEqual(incoming, currentMap)) return;
+		untrack(() => {
+			columnFilters = fromFilterMap(incoming);
+		});
 	});
 
 	// Track last persisted settings to prevent infinite loops
