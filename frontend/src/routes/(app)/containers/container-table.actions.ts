@@ -5,6 +5,7 @@ import type { ContainerSummaryDto } from '$lib/types/docker';
 import { handleApiResultWithCallbacks } from '$lib/utils/api';
 import { tryCatch } from '$lib/utils/api';
 import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
+import { bulkConfirmAndRun } from '$lib/utils/bulk-actions';
 import { toast } from 'svelte-sonner';
 import { getContainerDisplayName, type ActionStatus } from './container-table.helpers';
 
@@ -210,37 +211,24 @@ export function createContainerActions({
 		});
 	}
 
-	async function runBulkAction(ids: string[], config: BulkActionConfig) {
-		if (!ids || ids.length === 0) return;
-
-		openConfirmDialog({
+	function runBulkAction(ids: string[], config: BulkActionConfig) {
+		bulkConfirmAndRun({
+			ids,
 			title: config.title(ids.length),
 			message: config.message(ids.length),
-			confirm: {
-				label: config.label,
-				destructive: config.destructive ?? false,
-				action: async () => {
-					isBulkLoading[config.loadingKey] = true;
-
-					const results = await Promise.allSettled(ids.map((id) => config.run(id)));
-
-					const successCount = results.filter((result) => result.status === 'fulfilled').length;
-					const failureCount = results.length - successCount;
-
-					isBulkLoading[config.loadingKey] = false;
-
-					if (successCount === ids.length) {
-						toast.success(config.success(successCount));
-					} else if (successCount > 0) {
-						toast.warning(config.partial(successCount, ids.length, failureCount));
-					} else {
-						toast.error(config.failure());
-					}
-
-					await reloadContainers();
-					setSelectedIds([]);
-				}
-			}
+			confirmLabel: config.label,
+			destructive: config.destructive ?? false,
+			run: (id) => config.run(id),
+			messages: {
+				success: config.success,
+				partial: config.partial,
+				failure: config.failure
+			},
+			setLoading: (loading) => {
+				isBulkLoading[config.loadingKey] = loading;
+			},
+			onComplete: () => reloadContainers(),
+			clearSelection: () => setSelectedIds([])
 		});
 	}
 
@@ -283,51 +271,29 @@ export function createContainerActions({
 		});
 	}
 
-	async function handleBulkRemove(ids: string[]) {
-		if (!ids || ids.length === 0) return;
-
-		openConfirmDialog({
+	function handleBulkRemove(ids: string[]) {
+		bulkConfirmAndRun({
+			ids,
 			title: m.containers_bulk_remove_confirm_title({ count: ids.length }),
 			message: m.containers_bulk_remove_confirm_message({ count: ids.length }),
+			confirmLabel: m.common_remove(),
+			destructive: true,
 			checkboxes: [
-				{
-					id: 'force',
-					label: m.containers_remove_force_label(),
-					initialState: false
-				},
-				{
-					id: 'volumes',
-					label: m.containers_remove_volumes_label(),
-					initialState: false
-				}
+				{ id: 'force', label: m.containers_remove_force_label(), initialState: false },
+				{ id: 'volumes', label: m.containers_remove_volumes_label(), initialState: false }
 			],
-			confirm: {
-				label: m.common_remove(),
-				destructive: true,
-				action: async (checkboxStates) => {
-					const force = !!checkboxStates['force'];
-					const volumes = !!checkboxStates['volumes'];
-					isBulkLoading.remove = true;
-
-					const results = await Promise.allSettled(ids.map((id) => containerService.deleteContainer(id, { force, volumes })));
-
-					const successCount = results.filter((result) => result.status === 'fulfilled').length;
-					const failureCount = results.length - successCount;
-
-					isBulkLoading.remove = false;
-
-					if (successCount === ids.length) {
-						toast.success(m.containers_bulk_remove_success({ count: successCount }));
-					} else if (successCount > 0) {
-						toast.warning(m.containers_bulk_remove_partial({ success: successCount, total: ids.length, failed: failureCount }));
-					} else {
-						toast.error(m.containers_remove_failed());
-					}
-
-					await reloadContainers();
-					setSelectedIds([]);
-				}
-			}
+			run: (id, checkboxStates) =>
+				containerService.deleteContainer(id, { force: !!checkboxStates['force'], volumes: !!checkboxStates['volumes'] }),
+			messages: {
+				success: (count) => m.containers_bulk_remove_success({ count }),
+				partial: (success, total, failed) => m.containers_bulk_remove_partial({ success, total, failed }),
+				failure: () => m.containers_remove_failed()
+			},
+			setLoading: (loading) => {
+				isBulkLoading.remove = loading;
+			},
+			onComplete: () => reloadContainers(),
+			clearSelection: () => setSelectedIds([])
 		});
 	}
 

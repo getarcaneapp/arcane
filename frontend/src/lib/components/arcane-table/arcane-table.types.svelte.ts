@@ -130,7 +130,7 @@ export function buildMobileVisibility(fields: FieldSpec[], persisted?: string[])
 export type BulkAction = {
 	id: string;
 	label: string;
-	action: 'base' | 'start' | 'stop' | 'restart' | 'remove' | 'deploy' | 'redeploy' | 'up' | 'down';
+	action: 'base' | 'start' | 'stop' | 'restart' | 'remove' | 'deploy' | 'redeploy' | 'up' | 'down' | 'prune';
 	onClick: (ids: string[]) => void;
 	disabled?: boolean;
 	disabledReason?: string;

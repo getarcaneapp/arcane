@@ -10,6 +10,10 @@
 		iconColor?: string;
 		bgColor?: string;
 		class?: string;
+		/** When provided, the mini stat card becomes a clickable filter trigger. */
+		onclick?: () => void;
+		/** Highlights the mini stat card as the currently-applied filter. */
+		active?: boolean;
 	}
 </script>
 
@@ -76,6 +80,8 @@
 								icon={card.icon}
 								iconColor={card.iconColor}
 								class={card.class}
+								onclick={card.onclick}
+								active={card.active}
 							/>
 						{/each}
 					</div>

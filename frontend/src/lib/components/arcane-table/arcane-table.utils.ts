@@ -34,6 +34,23 @@ export function toFilterMap(filters: ColumnFiltersState): FilterMap {
 	return out;
 }
 
+/**
+ * Inverse of {@link toFilterMap}: rebuilds tanstack `ColumnFiltersState` from a
+ * request `FilterMap`. Used to reflect externally-set `requestOptions.filters`
+ * (e.g. a clickable stat card) back into the faceted-filter UI. Values are kept
+ * as-is so they match the facet option `value` types (array, boolean, string).
+ */
+export function fromFilterMap(map?: FilterMap): ColumnFiltersState {
+	if (!map) return [];
+	const out: ColumnFiltersState = [];
+	for (const [id, value] of Object.entries(map)) {
+		if (value === undefined || value === null) continue;
+		if (Array.isArray(value) && value.length === 0) continue;
+		out.push({ id, value });
+	}
+	return out;
+}
+
 export function filterMapsEqual(a?: FilterMap, b?: FilterMap): boolean {
 	const keysA = Object.keys(a ?? {});
 	const keysB = Object.keys(b ?? {});

@@ -25,6 +25,7 @@
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { hasPermission } from '$lib/utils/auth';
 	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
+	import { bulkConfirmAndRun } from '$lib/utils/bulk-actions';
 
 	let {
 		volumes = $bindable(),
@@ -128,56 +129,28 @@
 		});
 	}
 
-	async function handleDeleteSelected(ids: string[]) {
-		if (!ids?.length) return;
+	function handleDeleteSelected(ids: string[]) {
+		const idToName = new Map(volumes.data.map((v) => [v.id, v.name] as const));
+		const idsToDelete = ids.filter((id) => !isBackupVolumeName(idToName.get(id)));
 
-		openConfirmDialog({
-			title: m.volumes_remove_selected_title({ count: ids.length }),
-			message: m.volumes_remove_selected_message({ count: ids.length }),
-			confirm: {
-				label: m.common_remove(),
-				destructive: true,
-				action: async () => {
-					isLoading.removing = true;
-					let successCount = 0;
-					let failureCount = 0;
-
-					const idToName = new Map(volumes.data.map((v) => [v.id, v.name] as const));
-					const idsToDelete = ids.filter((id) => !isBackupVolumeName(idToName.get(id)));
-					if (!idsToDelete.length) {
-						isLoading.removing = false;
-						selectedIds = [];
-						return;
-					}
-
-					for (const id of idsToDelete) {
-						const name = idToName.get(id);
-						const safeName = name?.trim() || m.common_unknown();
-						const result = await tryCatch(volumeService.deleteVolume(safeName));
-						handleApiResultWithCallbacks({
-							result,
-							message: m.common_remove_failed({ resource: `${m.resource_volume()} "${safeName}"` }),
-							setLoadingState: () => {},
-							onSuccess: (_data) => {
-								successCount += 1;
-							}
-						});
-						if (result.error) failureCount += 1;
-					}
-
-					isLoading.removing = false;
-					if (successCount > 0) {
-						const successMsg = m.common_bulk_remove_success({ count: successCount, resource: m.volumes_title() });
-						toast.success(successMsg);
-						await refreshVolumes();
-					}
-					if (failureCount > 0) {
-						const failureMsg = m.common_bulk_remove_failed({ count: failureCount, resource: m.volumes_title() });
-						toast.error(failureMsg);
-					}
-					selectedIds = [];
-				}
-			}
+		bulkConfirmAndRun({
+			ids: idsToDelete,
+			title: m.volumes_remove_selected_title({ count: idsToDelete.length }),
+			message: m.volumes_remove_selected_message({ count: idsToDelete.length }),
+			confirmLabel: m.common_remove(),
+			destructive: true,
+			run: (id) => volumeService.deleteVolume(idToName.get(id)?.trim() || m.common_unknown()),
+			messages: {
+				success: (count) => m.common_bulk_remove_success({ count, resource: m.volumes_title() }),
+				partial: (success, total, failed) =>
+					m.common_bulk_remove_partial({ success, total, failed, resource: m.volumes_title() }),
+				failure: () => m.common_bulk_remove_failed({ count: idsToDelete.length, resource: m.volumes_title() })
+			},
+			setLoading: (loading) => (isLoading.removing = loading),
+			onComplete: async (result) => {
+				if (result.success > 0) await refreshVolumes();
+			},
+			clearSelection: () => (selectedIds = [])
 		});
 	}
 

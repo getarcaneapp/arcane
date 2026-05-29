@@ -18,6 +18,7 @@
 	import { networkService } from '$lib/services/network-service';
 	import { NetworksIcon, GlobeIcon, InspectIcon, TrashIcon, EllipsisIcon } from '$lib/icons';
 	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
+	import { bulkConfirmAndRun } from '$lib/utils/bulk-actions';
 
 	type FieldVisibility = Record<string, boolean>;
 
@@ -81,7 +82,7 @@
 		});
 	}
 
-	async function handleDeleteSelectedNetworks(ids: string[]) {
+	function handleDeleteSelectedNetworks(ids: string[]) {
 		const selectedNetworkList = networks.data.filter((n) => ids.includes(n.id));
 		const defaultNetworks = selectedNetworkList.filter((n) => n.isDefault);
 
@@ -91,46 +92,24 @@
 			return;
 		}
 
-		openConfirmDialog({
+		bulkConfirmAndRun({
+			ids,
 			title: m.networks_delete_selected_title({ count: ids.length }),
 			message: m.networks_delete_selected_message({ count: ids.length }),
-			confirm: {
-				label: m.common_delete(),
-				destructive: true,
-				action: async () => {
-					isLoading.remove = true;
-					let successCount = 0;
-					let failureCount = 0;
-
-					for (const networkId of ids) {
-						const network = networks.data.find((n) => n.id === networkId);
-						if (!network) continue;
-
-						const result = await tryCatch(networkService.deleteNetwork(networkId));
-						if (result.error) {
-							failureCount++;
-							toast.error(
-								m.common_delete_failed({ resource: `${m.resource_network()} "${network.name ?? m.common_unknown()}"` })
-							);
-						} else {
-							successCount++;
-							toast.success(
-								m.common_delete_success({
-									resource: `${m.resource_network()} "${network.name ?? m.common_unknown()}"`
-								}),
-								activityToastOptions(extractActivityId(result.data))
-							);
-						}
-					}
-
-					isLoading.remove = false;
-
-					if (successCount > 0) {
-						await refreshNetworks();
-					}
-					selectedIds = [];
-				}
-			}
+			confirmLabel: m.common_delete(),
+			destructive: true,
+			run: (id) => networkService.deleteNetwork(id),
+			messages: {
+				success: (count) => m.common_bulk_delete_success({ count, resource: m.networks_title() }),
+				partial: (success, total, failed) =>
+					m.common_bulk_delete_partial({ success, total, failed, resource: m.networks_title() }),
+				failure: () => m.common_bulk_delete_failed({ count: ids.length, resource: m.networks_title() })
+			},
+			setLoading: (loading) => (isLoading.remove = loading),
+			onComplete: async (result) => {
+				if (result.success > 0) await refreshNetworks();
+			},
+			clearSelection: () => (selectedIds = [])
 		});
 	}
 
