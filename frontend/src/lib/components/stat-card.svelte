@@ -12,6 +12,10 @@
 		subtitle?: string;
 		class?: ClassValue;
 		variant?: 'default' | 'mini';
+		/** When provided (mini variant), the card becomes a button — e.g. to apply a table filter. */
+		onclick?: () => void;
+		/** Highlights the mini card as the currently-applied filter. */
+		active?: boolean;
 	}
 
 	let {
@@ -22,22 +26,43 @@
 		bgColor = 'bg-primary/10',
 		subtitle,
 		class: className,
-		variant = 'default'
+		variant = 'default',
+		onclick,
+		active = false
 	}: Props = $props();
 </script>
 
-{#if variant === 'mini'}
-	<div class={cn('flex items-center gap-1.5 px-1', className)}>
-		<Icon class={cn('size-3.5 opacity-80', iconColor)} />
-		<div class="flex items-baseline gap-1">
-			<span class="text-sm leading-none font-semibold tabular-nums">
-				{value}
-			</span>
-			<span class="text-muted-foreground text-[10px] leading-none font-medium tracking-wider whitespace-nowrap uppercase">
-				{title}
-			</span>
-		</div>
+{#snippet miniContent()}
+	<Icon class={cn('size-3.5 opacity-80', iconColor)} />
+	<div class="flex items-baseline gap-1">
+		<span class="text-sm leading-none font-semibold tabular-nums">
+			{value}
+		</span>
+		<span class="text-muted-foreground text-[10px] leading-none font-medium tracking-wider whitespace-nowrap uppercase">
+			{title}
+		</span>
 	</div>
+{/snippet}
+
+{#if variant === 'mini'}
+	{#if onclick}
+		<button
+			type="button"
+			{onclick}
+			aria-pressed={active}
+			class={cn(
+				'hover:bg-foreground/5 focus-visible:ring-primary/40 -mx-0.5 flex cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-0.5 transition-colors focus-visible:ring-2 focus-visible:outline-none',
+				active && 'bg-primary/10 ring-primary/30 ring-1',
+				className
+			)}
+		>
+			{@render miniContent()}
+		</button>
+	{:else}
+		<div class={cn('flex items-center gap-1.5 px-1', className)}>
+			{@render miniContent()}
+		</div>
+	{/if}
 {:else}
 	<div
 		class={cn(

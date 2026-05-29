@@ -28,6 +28,7 @@
 	import * as InputGroup from '$lib/components/ui/input-group/index.js';
 	import { getSettingsSubpageUrlsInNavOrder } from '$lib/config/navigation-config';
 	import HeaderCard from '$lib/components/header-card.svelte';
+	import { Spinner } from '$lib/components/ui/spinner/index.js';
 
 	let {}: PageProps = $props();
 
@@ -219,9 +220,7 @@
 
 			{#if isSearching}
 				<div class="py-8 text-center sm:py-12">
-					<div
-						class="border-primary mx-auto mb-3 size-8 animate-spin rounded-full border-4 border-t-transparent sm:mb-4 sm:size-12"
-					></div>
+					<Spinner class="text-primary mx-auto mb-3 size-8 sm:mb-4 sm:size-12" />
 					<p class="text-muted-foreground text-sm sm:text-base">{m.settings_searching()}</p>
 				</div>
 			{:else if searchResults.length === 0}
