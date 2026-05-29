@@ -1,12 +1,14 @@
 <script lang="ts">
 	import { goto, invalidateAll } from '$app/navigation';
 	import { formatDistanceToNow } from 'date-fns';
-	import { onDestroy } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import { ActionButtonGroup, type ActionButton } from '$lib/components/action-button-group/index.js';
+	import { type ActionButton } from '$lib/components/action-button-group/index.js';
+	import { cn } from '$lib/utils';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import PruneConfirmationDialog from '$lib/components/dialogs/prune-confirmation-dialog.svelte';
+	import DockerInfoDialog from '$lib/components/dialogs/docker-info-dialog.svelte';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import * as Card from '$lib/components/ui/card/index.js';
 	import { m } from '$lib/paraglide/messages';
@@ -23,6 +25,7 @@
 		DashboardSnapshot
 	} from '$lib/types/shared';
 	import type { Environment } from '$lib/types/environment';
+	import type { DockerInfo } from '$lib/types/docker';
 	import type { PruneType, SystemPruneRequest } from '$lib/types/automation';
 	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '$lib/utils/api';
 	import { capitalizeFirstLetter } from '$lib/utils/formatting';
@@ -35,7 +38,9 @@
 		ContainersIcon,
 		CpuIcon,
 		EnvironmentsIcon,
+		GpuIcon,
 		ImagesIcon,
+		InfoIcon,
 		InspectIcon,
 		MemoryStickIcon,
 		RefreshIcon,
@@ -74,6 +79,24 @@
 	let upgradeDialogOpenById = $state<Record<string, boolean>>({});
 	let upgradeDialogUpgradingById = $state<Record<string, boolean>>({});
 
+	type EnvironmentSnapshotState = {
+		snapshot: DashboardSnapshot | null;
+		loading: boolean;
+		hasLoaded: boolean;
+		error: string | null;
+	};
+
+	const dashboardSnapshotPollInterval = 15000;
+	let snapshotByEnvironmentId = $state<Record<string, EnvironmentSnapshotState>>({});
+	let snapshotPollers: Record<string, ReturnType<typeof setInterval>> = {};
+
+	let dockerInfoOpen = $state(false);
+	let dockerInfoData = $state<DockerInfo | null>(null);
+	let dockerInfoPromise = $state<Promise<DockerInfo> | null>(null);
+	let dockerInfoError = $state<string | null>(null);
+	let dockerInfoByEnvironmentId = $state<Record<string, DockerInfo | undefined>>({});
+	let dockerInfoPromiseByEnvironmentId = $state<Record<string, Promise<DockerInfo> | undefined>>({});
+
 	const availableEnvironments = $derived(environmentStore.available);
 	const currentEnvironmentId = $derived(environmentStore.selected?.id ?? null);
 
@@ -111,33 +134,6 @@
 		return 2;
 	}
 
-	function buildEnvironmentLoadPromise(
-		environment: Environment,
-		currentDebugFlag: boolean
-	): Promise<DashboardEnvironmentOverview> {
-		return dashboardService
-			.getDashboardForEnvironment(environment.id, {
-				debugAllGood: currentDebugFlag
-			})
-			.then((snapshot) => ({
-				environment,
-				containers: snapshot.containers.counts ?? { runningContainers: 0, stoppedContainers: 0, totalContainers: 0 },
-				imageUsageCounts: snapshot.imageUsageCounts,
-				actionItems: snapshot.actionItems,
-				settings: snapshot.settings,
-				snapshotState: 'ready' as const
-			}))
-			.catch((error) => ({
-				environment,
-				containers: { runningContainers: 0, stoppedContainers: 0, totalContainers: 0 },
-				imageUsageCounts: { imagesInuse: 0, imagesUnused: 0, totalImages: 0, totalImageSize: 0 },
-				actionItems: { items: [] },
-				settings: emptySnapshotSettings,
-				snapshotState: 'error' as const,
-				snapshotError: extractApiErrorMessage(error)
-			}));
-	}
-
 	function buildOverviewSummaryFromItemsInternal(settledEnvironments: DashboardEnvironmentOverview[]): DashboardOverviewSummary {
 		return {
 			totalEnvironments: settledEnvironments.length,
@@ -155,22 +151,6 @@
 			imagesInUse: settledEnvironments.reduce((total, item) => total + item.imageUsageCounts.imagesInuse, 0),
 			imagesUnused: settledEnvironments.reduce((total, item) => total + item.imageUsageCounts.imagesUnused, 0),
 			totalImageSize: settledEnvironments.reduce((total, item) => total + item.imageUsageCounts.totalImageSize, 0)
-		};
-	}
-
-	function mapOverviewSummary(summary: import('$lib/types/shared').DashboardEnvironmentsSummary): DashboardOverviewSummary {
-		return {
-			totalEnvironments: summary.totalEnvironments,
-			reachableEnvironments: summary.onlineEnvironments + summary.standbyEnvironments,
-			unavailableEnvironments: summary.offlineEnvironments + summary.pendingEnvironments + summary.errorEnvironments,
-			disabledEnvironments: summary.disabledEnvironments,
-			totalContainers: summary.containers.totalContainers,
-			runningContainers: summary.containers.runningContainers,
-			stoppedContainers: summary.containers.stoppedContainers,
-			totalImages: summary.imageUsageCounts.totalImages,
-			imagesInUse: summary.imageUsageCounts.imagesInuse,
-			imagesUnused: summary.imageUsageCounts.imagesUnused,
-			totalImageSize: summary.imageUsageCounts.totalImageSize
 		};
 	}
 
@@ -238,6 +218,95 @@
 		}
 	}
 
+	async function fetchEnvironmentSnapshot(environment: Environment) {
+		if (!snapshotByEnvironmentId[environment.id]) {
+			return;
+		}
+
+		const result = await tryCatch(dashboardService.getDashboardForEnvironment(environment.id, { debugAllGood }));
+		const state = snapshotByEnvironmentId[environment.id];
+		if (!state) {
+			return;
+		}
+
+		if (result.error) {
+			state.error = extractApiErrorMessage(result.error);
+		} else {
+			state.snapshot = result.data;
+			state.error = null;
+			state.hasLoaded = true;
+		}
+		state.loading = false;
+	}
+
+	function ensureEnvironmentSnapshot(environment: Environment) {
+		if (!shouldLoadEnvironment(environment)) {
+			removeEnvironmentSnapshot(environment.id);
+			return;
+		}
+
+		if (!snapshotByEnvironmentId[environment.id]) {
+			snapshotByEnvironmentId[environment.id] = { snapshot: null, loading: true, hasLoaded: false, error: null };
+		}
+
+		if (snapshotPollers[environment.id]) {
+			return;
+		}
+
+		void fetchEnvironmentSnapshot(environment);
+		snapshotPollers[environment.id] = setInterval(() => {
+			void fetchEnvironmentSnapshot(environment);
+		}, dashboardSnapshotPollInterval);
+	}
+
+	function removeEnvironmentSnapshot(environmentId: string) {
+		const poller = snapshotPollers[environmentId];
+		if (poller) {
+			clearInterval(poller);
+			delete snapshotPollers[environmentId];
+		}
+		delete snapshotByEnvironmentId[environmentId];
+	}
+
+	function cleanupEnvironmentSnapshots() {
+		for (const environmentId of Object.keys(snapshotPollers)) {
+			removeEnvironmentSnapshot(environmentId);
+		}
+	}
+
+	async function loadDockerInfo(environment: Environment): Promise<DockerInfo> {
+		try {
+			const info = await systemService.getDockerInfoForEnvironment(environment.id);
+			dockerInfoByEnvironmentId[environment.id] = info;
+			dockerInfoData = info;
+			return info;
+		} finally {
+			delete dockerInfoPromiseByEnvironmentId[environment.id];
+			dockerInfoPromise = null;
+		}
+	}
+
+	function openDockerInfo(environment: Environment) {
+		dockerInfoError = null;
+		dockerInfoOpen = true;
+		dockerInfoData = dockerInfoByEnvironmentId[environment.id] ?? null;
+		if (dockerInfoData) {
+			dockerInfoPromise = null;
+			return;
+		}
+
+		dockerInfoPromise = dockerInfoPromiseByEnvironmentId[environment.id] ?? null;
+		if (dockerInfoPromise) {
+			return;
+		}
+
+		dockerInfoPromise = loadDockerInfo(environment).catch((error) => {
+			dockerInfoError = extractApiErrorMessage(error);
+			throw error;
+		});
+		dockerInfoPromiseByEnvironmentId[environment.id] = dockerInfoPromise;
+	}
+
 	const environmentCards = $derived.by((): DashboardEnvironmentCardState[] => {
 		const refreshNonce = reloadVersion;
 		void refreshNonce;
@@ -257,65 +326,112 @@
 			})
 			.map(({ environment }) => ({ environment }));
 	});
+	const loadableEnvironmentCards = $derived(environmentCards.filter(({ environment }) => shouldLoadEnvironment(environment)));
+	const loadableEnvironmentIds = $derived.by(() => new Set(loadableEnvironmentCards.map(({ environment }) => environment.id)));
 
-	const environmentBoardStatePromise = $derived.by(
-		async (): Promise<{
-			overviewById: Map<string, DashboardEnvironmentOverview>;
-			summary: DashboardOverviewSummary;
-		}> => {
-			void reloadVersion;
+	const boardState = $derived.by(() => {
+		void reloadVersion;
 
-			const currentEnvironmentCards = environmentCards;
-			const result = await tryCatch(dashboardService.getDashboardEnvironmentsOverview({ debugAllGood }));
-			if (!result.error) {
-				return {
-					overviewById: new Map(result.data.environments.map((item) => [item.environment.id, item])),
-					summary: mapOverviewSummary(result.data.summary)
+		const overviewById = new Map<string, DashboardEnvironmentOverview>();
+		const items: DashboardEnvironmentOverview[] = [];
+
+		for (const { environment } of environmentCards) {
+			const state = snapshotByEnvironmentId[environment.id];
+			let item: DashboardEnvironmentOverview;
+
+			if (state?.snapshot) {
+				const snapshot = state.snapshot;
+				item = {
+					environment,
+					containers: snapshot.containers.counts ?? { runningContainers: 0, stoppedContainers: 0, totalContainers: 0 },
+					imageUsageCounts: snapshot.imageUsageCounts,
+					actionItems: snapshot.actionItems,
+					settings: snapshot.settings,
+					versionInfo: snapshot.versionInfo,
+					snapshotState: 'ready'
 				};
+			} else if (state?.error) {
+				item = {
+					...createBaseEnvironmentOverview(environment),
+					snapshotState: 'error',
+					snapshotError: state.error
+				};
+			} else {
+				item = createBaseEnvironmentOverview(environment);
 			}
 
-			const fallbackItems = await Promise.all(
-				currentEnvironmentCards.map((item) =>
-					shouldLoadEnvironment(item.environment)
-						? buildEnvironmentLoadPromise(item.environment, debugAllGood)
-						: Promise.resolve(createBaseEnvironmentOverview(item.environment))
-				)
-			);
-
-			return {
-				overviewById: new Map(fallbackItems.map((item) => [item.environment.id, item])),
-				summary: buildOverviewSummaryFromItemsInternal(fallbackItems)
-			};
+			overviewById.set(environment.id, item);
+			items.push(item);
 		}
-	);
 
-	$effect(() => {
-		const reachableEnvironmentIds: string[] = [];
+		return {
+			overviewById,
+			summary: buildOverviewSummaryFromItemsInternal(items)
+		};
+	});
 
-		for (const item of environmentCards) {
-			if (!shouldLoadEnvironment(item.environment)) {
+	function isEnvironmentSnapshotLoading(environmentId: string): boolean {
+		const state = snapshotByEnvironmentId[environmentId];
+		return Boolean(state && state.loading && !state.hasLoaded);
+	}
+
+	const boardSummaryLoading = $derived.by(() => {
+		let hasReachable = false;
+		for (const { environment } of environmentCards) {
+			if (!shouldLoadEnvironment(environment)) {
 				continue;
 			}
-
-			reachableEnvironmentIds.push(item.environment.id);
-			ensureEnvironmentLiveStats(item.environment);
-		}
-
-		for (const environmentId of Object.keys(liveStatsByEnvironmentId)) {
-			if (!reachableEnvironmentIds.includes(environmentId)) {
-				removeEnvironmentLiveStats(environmentId);
+			hasReachable = true;
+			if (snapshotByEnvironmentId[environment.id]?.hasLoaded) {
+				return false;
 			}
 		}
+		return hasReachable;
+	});
+
+	$effect(() => {
+		const environmentsToLoad = loadableEnvironmentCards.map(({ environment }) => environment);
+
+		untrack(() => {
+			for (const environment of environmentsToLoad) {
+				ensureEnvironmentLiveStats(environment);
+				ensureEnvironmentSnapshot(environment);
+			}
+		});
+	});
+
+	$effect(() => {
+		const reachableEnvironmentIds = loadableEnvironmentIds;
+
+		untrack(() => {
+			for (const environmentId of Object.keys(liveStatsByEnvironmentId)) {
+				if (!reachableEnvironmentIds.has(environmentId)) {
+					removeEnvironmentLiveStats(environmentId);
+				}
+			}
+
+			for (const environmentId of Object.keys(snapshotByEnvironmentId)) {
+				if (!reachableEnvironmentIds.has(environmentId)) {
+					removeEnvironmentSnapshot(environmentId);
+				}
+			}
+		});
 	});
 
 	onDestroy(() => {
 		cleanupEnvironmentLiveStats();
+		cleanupEnvironmentSnapshots();
 	});
 
 	async function refreshOverview() {
 		isRefreshing = true;
 		try {
 			await invalidateAll();
+			await Promise.all(
+				environmentCards
+					.filter(({ environment }) => shouldLoadEnvironment(environment))
+					.map(({ environment }) => fetchEnvironmentSnapshot(environment))
+			);
 			reloadVersion += 1;
 		} finally {
 			isRefreshing = false;
@@ -481,6 +597,18 @@
 		return `${bytes.format(used, { unitSeparator: ' ' }) ?? '-'} / ${bytes.format(total, { unitSeparator: ' ' }) ?? '-'}`;
 	}
 
+	function getGpuMetric(stats: SystemStats | null): number | null {
+		const gpus = stats?.gpus?.filter((gpu) => gpu.memoryTotal > 0) ?? [];
+		if (gpus.length === 0) return null;
+		const totalPercent = gpus.reduce((sum, gpu) => sum + (gpu.memoryUsed / gpu.memoryTotal) * 100, 0);
+		return totalPercent / gpus.length;
+	}
+
+	function getGpuMetricLabel(stats: SystemStats | null): string {
+		const count = stats?.gpuCount ?? 0;
+		return count > 0 ? `${count} ${count === 1 ? m.dashboard_meter_gpu_device() : m.dashboard_meter_gpu_devices()}` : '--';
+	}
+
 	function canPruneEnvironment(item: DashboardEnvironmentOverview): boolean {
 		return (
 			canPruneInEnvironment(item.environment.id) &&
@@ -492,18 +620,6 @@
 
 	function getEnvironmentActionButtons(item: DashboardEnvironmentOverview, isCurrent: boolean): ActionButton[] {
 		const buttons: ActionButton[] = [];
-
-		if (canPruneInEnvironment(item.environment.id)) {
-			buttons.push({
-				id: `${item.environment.id}-prune`,
-				action: 'prune',
-				label: m.quick_actions_prune_system(),
-				loading: pruningEnvironmentId === item.environment.id,
-				disabled: !canPruneEnvironment(item) || !!pruningEnvironmentId,
-				onclick: () => openPruneDialog(item),
-				icon: TrashIcon
-			});
-		}
 
 		buttons.push({
 			id: `${item.environment.id}-use`,
@@ -521,6 +637,27 @@
 			onclick: () => void goto(`/environments/${item.environment.id}`),
 			icon: InspectIcon
 		});
+
+		buttons.push({
+			id: `${item.environment.id}-docker-info`,
+			action: 'base',
+			label: m.common_inspect(),
+			disabled: !shouldLoadEnvironment(item.environment),
+			onclick: () => openDockerInfo(item.environment),
+			icon: InfoIcon
+		});
+
+		if (canPruneInEnvironment(item.environment.id)) {
+			buttons.push({
+				id: `${item.environment.id}-prune`,
+				action: 'prune',
+				label: m.quick_actions_prune_system(),
+				loading: pruningEnvironmentId === item.environment.id,
+				disabled: !canPruneEnvironment(item) || !!pruningEnvironmentId,
+				onclick: () => openPruneDialog(item),
+				icon: TrashIcon
+			});
+		}
 
 		return buttons;
 	}
@@ -634,9 +771,7 @@
 </script>
 
 <div class="flex h-full min-h-0 flex-col gap-3 overflow-hidden pt-2 md:gap-4 md:pt-3">
-	<header
-		class="dark:border-surface/80 dark:bg-surface/10 shrink-0 rounded-xl border border-white/80 bg-white/10 p-3 shadow-sm backdrop-blur-sm sm:p-4"
-	>
+	<header class="bg-card/60 backdrop-blur-md border-border/70 shrink-0 rounded-xl border p-3 shadow-xs sm:p-4">
 		<div class="relative flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
 			<div class="space-y-1">
 				<p class="text-muted-foreground text-[11px] font-semibold tracking-[0.14em] uppercase">{m.dashboard_title()}</p>
@@ -657,7 +792,7 @@
 	<section class="shrink-0 space-y-2">
 		<h2 class="text-base font-semibold tracking-tight">{m.common_overview()}</h2>
 
-		{#await environmentBoardStatePromise}
+		{#if boardSummaryLoading}
 			<div class="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-4">
 				{#each [1, 2, 3, 4] as tile (tile)}
 					<div class="border-border/50 bg-background/50 rounded-xl border p-3">
@@ -667,7 +802,7 @@
 					</div>
 				{/each}
 			</div>
-		{:then boardState}
+		{:else}
 			{@const summary = boardState.summary}
 			<div class="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-4">
 				<div class="border-border/50 bg-background/50 rounded-xl border p-3">
@@ -706,7 +841,7 @@
 					<div class="text-muted-foreground mt-0.5 text-xs">{formatStorageOverviewLabel(summary)}</div>
 				</div>
 			</div>
-		{/await}
+		{/if}
 	</section>
 
 	<section class="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -734,19 +869,17 @@
 					{@const cpuMetric = getCpuMetric(systemStats)}
 					{@const memoryMetric = getMemoryMetric(systemStats)}
 					{@const diskMetric = getDiskMetric(systemStats)}
+					{@const gpuMetric = getGpuMetric(systemStats)}
 
 					<Card.Root
 						variant="outlined"
-						class={`overflow-hidden border transition-colors ${isCurrent ? 'border-blue-500/40 bg-blue-500/5' : 'border-border/60'}`}
+						class={`overflow-hidden border transition-colors ${isCurrent ? 'border-primary/25 bg-primary/[0.04]' : 'border-border/60'}`}
 					>
-						<Card.Content class="space-y-4 p-4">
-							<div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+						<Card.Content class="space-y-5 p-5">
+							<div class="border-border/60 flex flex-col gap-3 border-b pb-4 sm:flex-row sm:items-start sm:justify-between">
 								<div class="min-w-0 space-y-2">
 									<div class="flex flex-wrap items-center gap-2">
 										<div class="text-base font-semibold tracking-tight">{environment.name}</div>
-										{#if isCurrent}
-											<StatusBadge text={m.common_current()} variant="blue" size="sm" minWidth="none" />
-										{/if}
 										<StatusBadge
 											text={capitalizeFirstLetter(getResolvedStatusLabel(environment))}
 											variant={statusVariant}
@@ -754,7 +887,7 @@
 											minWidth="none"
 										/>
 										<StatusBadge text={transportBadge.text} variant={transportBadge.variant} size="sm" minWidth="none" />
-										{#await environmentBoardStatePromise then boardState}
+										{#if boardState}
 											{@const loadedItem = boardState.overviewById.get(environment.id) ?? baseItem}
 											{@const vInfo =
 												loadedItem.versionInfo ||
@@ -814,23 +947,43 @@
 													/>
 												{/if}
 											{/if}
-										{/await}
+										{/if}
 									</div>
 
-									<div class="text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+									<div class="text-muted-foreground/70 mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px]">
 										<span class="font-mono">{environment.apiUrl}</span>
 										<span>•</span>
 										<span title={activity.title}>{activity.label}: {activity.value}</span>
 									</div>
 								</div>
 
-								<div class="flex min-w-0 flex-1 items-start justify-end pt-1 sm:pt-0">
-									{#await environmentBoardStatePromise}
-										<ActionButtonGroup buttons={getEnvironmentActionButtons(baseItem, isCurrent)} size="sm" />
-									{:then boardState}
-										{@const loadedItem = boardState.overviewById.get(environment.id) ?? baseItem}
-										<ActionButtonGroup buttons={getEnvironmentActionButtons(loadedItem, isCurrent)} size="sm" />
-									{/await}
+								<div class="flex shrink-0 items-center gap-1 pt-1 sm:pt-0">
+									{#each getEnvironmentActionButtons(boardState.overviewById.get(environment.id) ?? baseItem, isCurrent) as btn (btn.id)}
+										{@const isActiveEnv = isCurrent && btn.id === `${environment.id}-use`}
+										<ArcaneTooltip.Root>
+											<ArcaneTooltip.Trigger>
+												{#snippet child({ props })}
+													<ArcaneButton
+														{...props}
+														action={btn.action}
+														size="icon"
+														tone="ghost"
+														icon={btn.icon}
+														customLabel={btn.label}
+														loading={btn.loading}
+														disabled={btn.disabled}
+														onclick={btn.onclick}
+														class={cn(
+															'size-8',
+															btn.action === 'prune' && 'text-destructive hover:bg-destructive/10 hover:text-destructive',
+															isActiveEnv && 'disabled:opacity-100 [&_svg]:text-blue-600! dark:[&_svg]:text-blue-500!'
+														)}
+													/>
+												{/snippet}
+											</ArcaneTooltip.Trigger>
+											<ArcaneTooltip.Content>{isActiveEnv ? m.common_current() : btn.label}</ArcaneTooltip.Content>
+										</ArcaneTooltip.Root>
+									{/each}
 								</div>
 							</div>
 
@@ -840,12 +993,12 @@
 										<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
 											{m.containers_title()}
 										</div>
-										{#await environmentBoardStatePromise}
+										{#if isEnvironmentSnapshotLoading(environment.id)}
 											<div class="mt-2 space-y-2">
 												<Skeleton class="h-6 w-20" />
 												<Skeleton class="h-3 w-24" />
 											</div>
-										{:then boardState}
+										{:else}
 											{@const loadedItem = boardState.overviewById.get(environment.id) ?? baseItem}
 											<div class="mt-1 text-lg font-semibold">
 												{loadedItem.containers.runningContainers}/{loadedItem.containers.totalContainers}
@@ -854,17 +1007,17 @@
 												{loadedItem.containers.stoppedContainers}
 												{m.common_stopped()}
 											</div>
-										{/await}
+										{/if}
 									</div>
 
 									<div class="border-border/50 bg-background/50 rounded-lg border p-3">
 										<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">{m.images_title()}</div>
-										{#await environmentBoardStatePromise}
+										{#if isEnvironmentSnapshotLoading(environment.id)}
 											<div class="mt-2 space-y-2">
 												<Skeleton class="h-6 w-14" />
 												<Skeleton class="h-3 w-28" />
 											</div>
-										{:then boardState}
+										{:else}
 											{@const loadedItem = boardState.overviewById.get(environment.id) ?? baseItem}
 											<div class="mt-1 text-lg font-semibold">{loadedItem.imageUsageCounts.totalImages}</div>
 											<div class="text-muted-foreground text-xs">
@@ -872,23 +1025,23 @@
 												{m.common_in_use()} · {loadedItem.imageUsageCounts.imagesUnused}
 												{m.common_unused()}
 											</div>
-										{/await}
+										{/if}
 									</div>
 
 									<div class="border-border/50 bg-background/50 rounded-lg border p-3">
 										<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
 											{m.dashboard_action_items_title()}
 										</div>
-										{#await environmentBoardStatePromise}
+										{#if isEnvironmentSnapshotLoading(environment.id)}
 											<div class="mt-2 space-y-2">
 												<Skeleton class="h-6 w-12" />
 												<Skeleton class="h-3 w-32" />
 											</div>
-										{:then boardState}
+										{:else}
 											{@const loadedItem = boardState.overviewById.get(environment.id) ?? baseItem}
 											<div class="mt-1 text-lg font-semibold">{loadedItem.actionItems.items.length}</div>
 											<div class="text-muted-foreground text-xs">{getActionSummary(loadedItem)}</div>
-										{/await}
+										{/if}
 									</div>
 								</div>
 							{:else}
@@ -899,8 +1052,8 @@
 							{/if}
 
 							{#if shouldLoadEnvironment(environment)}
-								<div class="border-border/50 bg-background/40 rounded-xl border p-1">
-									<div class="grid grid-cols-1 gap-1 sm:grid-cols-3">
+								<div class="pt-1">
+									<div class="grid grid-cols-1 gap-1 {gpuMetric !== null ? 'sm:grid-cols-2 lg:grid-cols-4' : 'sm:grid-cols-3'}">
 										{#if liveStatsLoading}
 											{#each [1, 2, 3] as tile (tile)}
 												<div class="min-w-0 px-2.5 py-2.5">
@@ -938,19 +1091,29 @@
 												labelClass="truncate"
 												meterValue={diskMetric}
 											/>
+
+											{#if gpuMetric !== null}
+												<DashboardMetricTile
+													title={m.dashboard_meter_gpu()}
+													icon={GpuIcon}
+													value={formatPercent(gpuMetric)}
+													label={getGpuMetricLabel(systemStats)}
+													meterValue={gpuMetric}
+												/>
+											{/if}
 										{/if}
 									</div>
 								</div>
 							{/if}
 
-							{#await environmentBoardStatePromise then boardState}
+							{#if boardState}
 								{@const loadedItem = boardState.overviewById.get(environment.id) ?? baseItem}
 								{#if loadedItem.snapshotState === 'error' && loadedItem.snapshotError}
 									<div class="rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 text-xs text-red-700 dark:text-red-300">
 										{m.dashboard_all_summary_unavailable({ error: loadedItem.snapshotError })}
 									</div>
 								{/if}
-							{/await}
+							{/if}
 						</Card.Content>
 					</Card.Root>
 				{/each}
@@ -965,3 +1128,5 @@
 	onConfirm={confirmPrune}
 	onCancel={closePruneDialog}
 />
+
+<DockerInfoDialog bind:open={dockerInfoOpen} dockerInfo={dockerInfoData} {dockerInfoPromise} errorMessage={dockerInfoError} />

@@ -26,6 +26,17 @@
 		if (!timeStr) return '-';
 		return formatDateTimeShort(timeStr) || timeStr;
 	}
+
+	function shortCommit(commit: { ID?: string } | undefined | null): string {
+		const id = commit?.ID;
+		if (!id) return '-';
+		return id.length > 12 ? id.slice(0, 12) : id;
+	}
+
+	function swarmActive(info: DockerInfo): boolean {
+		const state = (info.Swarm as { LocalNodeState?: string } | undefined)?.LocalNodeState;
+		return !!state && state !== 'inactive';
+	}
 </script>
 
 <ResponsiveDialog
@@ -65,23 +76,45 @@
 </ResponsiveDialog>
 
 {#snippet dialogBody(info: DockerInfo)}
-	<div class="space-y-6 pt-4">
-		<div class="grid gap-6">
-			{@render statsSection(info)}
-			{@render resourcesSection(info)}
-		</div>
+	<div class="space-y-4 pt-2">
+		{#if info.Warnings && info.Warnings.length > 0}
+			{@render warningsCard(info.Warnings)}
+		{/if}
 
-		<div class="grid gap-6 lg:grid-cols-2 xl:grid-cols-3">
+		{@render statsSection(info)}
+		{@render resourcesSection(info)}
+
+		<div class="columns-1 gap-3 sm:columns-2 lg:columns-3 [&>*]:mb-3 [&>*]:break-inside-avoid">
 			{@render systemSection(info)}
 			{@render versionSection(info)}
 			{@render configurationSection(info)}
-		</div>
-
-		<div class="grid gap-6 lg:grid-cols-2 xl:grid-cols-3">
-			{@render networkSection(info)}
+			{@render capabilitiesSection(info)}
+			{#if info.DriverStatus && info.DriverStatus.length > 0}
+				{@render storageDetailsSection(info)}
+			{/if}
 			{@render securitySection(info)}
 			{@render pluginsSection(info)}
+			{#if swarmActive(info)}
+				{@render swarmSection(info)}
+			{/if}
+			{#if info.Labels && info.Labels.length > 0}
+				{@render labelsSection(info)}
+			{/if}
+			{@render networkSection(info)}
 		</div>
+	</div>
+{/snippet}
+
+{#snippet warningsCard(warnings: string[])}
+	<div class="space-y-1.5 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
+		<h3 class="text-xs font-semibold tracking-wider text-amber-600 uppercase dark:text-amber-400">
+			{m.docker_info_warnings_section()}
+		</h3>
+		<ul class="space-y-1">
+			{#each warnings as warning, i (i)}
+				<li class="text-xs [overflow-wrap:anywhere] text-amber-700 dark:text-amber-300">{warning}</li>
+			{/each}
+		</ul>
 	</div>
 {/snippet}
 
@@ -95,48 +128,6 @@
 			{@render statCard(m.docker_info_paused_label(), info.ContainersPaused ?? 0, 'amber')}
 			{@render statCard(m.common_stopped(), info.ContainersStopped ?? 0, 'red')}
 			{@render statCard(m.docker_info_images_label(), info.Images ?? 0, 'blue')}
-		</div>
-	</div>
-{/snippet}
-
-{#snippet systemSection(info: DockerInfo)}
-	<div class="space-y-2">
-		<h3 class="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
-			{m.docker_info_system_section()}
-		</h3>
-		<div class="space-y-1.5 rounded-lg border p-3">
-			{@render infoRow(m.common_name(), info.Name)}
-			{@render infoRow(m.common_id(), info.ID, true)}
-			{@render infoRow(m.docker_info_os_label(), info.OperatingSystem)}
-			{@render infoRow(m.docker_info_os_type_label(), info.OSType)}
-			{@render infoRow(m.common_architecture(), info.Architecture)}
-			{@render infoRow(m.docker_info_kernel_version_label(), info.KernelVersion)}
-			{@render infoRow(m.docker_info_system_time(), formatTime(info.SystemTime), false)}
-			{@render infoRow(m.docker_info_root_dir(), info.DockerRootDir, true)}
-		</div>
-	</div>
-{/snippet}
-
-{#snippet versionSection(info: DockerInfo)}
-	<div class="space-y-2">
-		<h3 class="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
-			{m.docker_info_version_section()}
-		</h3>
-		<div class="space-y-1.5 rounded-lg border p-3">
-			{@render infoRow(m.docker_info_server_version_label(), info.ServerVersion)}
-			{@render infoRow(m.docker_info_api_version_label(), info.apiVersion)}
-			{@render infoRow(m.docker_info_go_version_label(), info.goVersion)}
-			<div class="flex items-center justify-between gap-4">
-				<span class="text-muted-foreground text-xs">{m.docker_info_git_commit_label()}</span>
-				<div class="flex items-center gap-2">
-					<code class="bg-muted rounded px-1.5 py-0.5 text-xs">{info.gitCommit?.slice(0, 8) ?? '-'}</code>
-					{#if info.gitCommit}
-						<CopyButton text={info.gitCommit} size="icon" class="size-6" title="Copy full commit hash" />
-					{/if}
-				</div>
-			</div>
-			{@render infoRow(m.docker_info_build_time_label(), formatTime(info.buildTime), false)}
-			{@render infoRow(m.docker_info_experimental(), info.ExperimentalBuild ? m.common_yes() : m.common_no(), false)}
 		</div>
 	</div>
 {/snippet}
@@ -170,12 +161,62 @@
 	</div>
 {/snippet}
 
+{#snippet systemSection(info: DockerInfo)}
+	<div class="space-y-2">
+		<h3 class="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
+			{m.docker_info_system_section()}
+		</h3>
+		<div class="space-y-1 rounded-lg border p-2.5">
+			{@render infoRow(m.common_name(), info.Name)}
+			{@render infoRow(m.common_id(), info.ID, true)}
+			{@render infoRow(m.docker_info_os_label(), info.OperatingSystem)}
+			{@render infoRow(m.docker_info_os_version_label(), info.OSVersion)}
+			{@render infoRow(m.docker_info_os_type_label(), info.OSType)}
+			{@render infoRow(m.common_architecture(), info.Architecture)}
+			{@render infoRow(m.docker_info_kernel_version_label(), info.KernelVersion)}
+			{@render infoRow(m.docker_info_system_time(), formatTime(info.SystemTime), false)}
+			{@render infoRow(m.docker_info_root_dir(), info.DockerRootDir, true)}
+			{@render infoRow(m.docker_info_index_server_label(), info.IndexServerAddress, true)}
+		</div>
+	</div>
+{/snippet}
+
+{#snippet versionSection(info: DockerInfo)}
+	<div class="space-y-2">
+		<h3 class="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
+			{m.docker_info_version_section()}
+		</h3>
+		<div class="space-y-1 rounded-lg border p-2.5">
+			{@render infoRow(m.docker_info_server_version_label(), info.ServerVersion)}
+			{@render infoRow(m.docker_info_api_version_label(), info.apiVersion)}
+			{@render infoRow(m.docker_info_go_version_label(), info.goVersion)}
+			<div class="grid grid-cols-[minmax(112px,38%)_minmax(0,1fr)] items-start gap-x-4 gap-y-1">
+				<span class="text-muted-foreground text-[10px] tracking-tight uppercase">{m.docker_info_git_commit_label()}</span>
+				<div class="flex items-center justify-end gap-2">
+					<code class="bg-muted rounded px-1.5 py-0.5 text-xs">{info.gitCommit?.slice(0, 8) ?? '-'}</code>
+					{#if info.gitCommit}
+						<CopyButton text={info.gitCommit} size="icon" class="size-6" title="Copy full commit hash" />
+					{/if}
+				</div>
+			</div>
+			{@render infoRow(m.docker_info_build_time_label(), formatTime(info.buildTime), false)}
+			{@render infoRow(m.docker_info_experimental(), info.ExperimentalBuild ? m.common_yes() : m.common_no(), false)}
+			{@render infoRow(m.docker_info_containerd_commit_label(), shortCommit(info.ContainerdCommit), true)}
+			{@render infoRow(m.docker_info_runc_commit_label(), shortCommit(info.RuncCommit), true)}
+			{@render infoRow(m.docker_info_init_commit_label(), shortCommit(info.InitCommit), true)}
+			{#if info.ProductLicense}
+				{@render infoRow(m.docker_info_product_license_label(), info.ProductLicense, false)}
+			{/if}
+		</div>
+	</div>
+{/snippet}
+
 {#snippet configurationSection(info: DockerInfo)}
 	<div class="space-y-2">
 		<h3 class="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
 			{m.common_configuration()}
 		</h3>
-		<div class="space-y-1.5 rounded-lg border p-3">
+		<div class="space-y-1 rounded-lg border p-2.5">
 			{@render infoRow(m.docker_info_storage_driver_label(), info.Driver)}
 			{@render infoRow(m.docker_info_logging_driver_label(), info.LoggingDriver)}
 			{@render infoRow(m.docker_info_cgroup_driver_label(), info.CgroupDriver)}
@@ -183,6 +224,41 @@
 			{@render infoRow(m.docker_info_isolation(), info.Isolation)}
 			{@render infoRow(m.docker_info_init_binary(), info.InitBinary)}
 			{@render infoRow(m.docker_info_default_runtime(), info.DefaultRuntime)}
+			{@render infoRow(m.docker_info_debug_label(), info.Debug ? m.common_yes() : m.common_no(), false)}
+			{@render infoRow(m.docker_info_live_restore_label(), info.LiveRestoreEnabled ? m.common_yes() : m.common_no(), false)}
+			{@render infoRow(m.docker_info_event_listeners_label(), info.NEventsListener ?? 0, false)}
+		</div>
+	</div>
+{/snippet}
+
+{#snippet capabilitiesSection(info: DockerInfo)}
+	<div class="space-y-2">
+		<h3 class="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
+			{m.docker_info_capabilities_section()}
+		</h3>
+		<div class="space-y-1 rounded-lg border p-2.5">
+			{@render capRow(m.docker_info_memory_limit_label(), info.MemoryLimit)}
+			{@render capRow(m.docker_info_swap_limit_label(), info.SwapLimit)}
+			{@render capRow(m.docker_info_kernel_memory_tcp_label(), info.KernelMemoryTCP)}
+			{@render capRow(m.docker_info_cpu_cfs_period_label(), info.CpuCfsPeriod)}
+			{@render capRow(m.docker_info_cpu_cfs_quota_label(), info.CpuCfsQuota)}
+			{@render capRow(m.docker_info_cpu_shares_label(), info.CPUShares)}
+			{@render capRow(m.docker_info_cpu_set_label(), info.CPUSet)}
+			{@render capRow(m.docker_info_pids_limit_label(), info.PidsLimit)}
+			{@render capRow(m.docker_info_oom_kill_disable_label(), info.OomKillDisable)}
+		</div>
+	</div>
+{/snippet}
+
+{#snippet storageDetailsSection(info: DockerInfo)}
+	<div class="space-y-2">
+		<h3 class="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
+			{m.docker_info_storage_details_section()}
+		</h3>
+		<div class="space-y-1 rounded-lg border p-2.5">
+			{#each info.DriverStatus ?? [] as entry, i (i)}
+				{@render infoRow(entry[0] ?? '', entry[1], false)}
+			{/each}
 		</div>
 	</div>
 {/snippet}
@@ -192,52 +268,21 @@
 		<h3 class="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
 			{m.resource_networks_cap()} & {m.docker_info_proxy_label()}
 		</h3>
-		<div class="space-y-1.5 rounded-lg border p-3">
+		<div class="space-y-1 rounded-lg border p-2.5">
 			{@render infoRow(m.docker_info_ipv4_forwarding(), info.IPv4Forwarding ? m.common_enabled() : m.common_disabled(), false)}
 			{@render infoRow(m.docker_info_http_proxy(), info.HttpProxy)}
 			{@render infoRow(m.docker_info_https_proxy(), info.HttpsProxy)}
 			{@render infoRow(m.docker_info_no_proxy(), info.NoProxy)}
-			{@render infoRow(m.docker_info_bridge_ip(), info.DefaultAddressPools?.[0]?.Base)}
-		</div>
-	</div>
-{/snippet}
-
-{#snippet pluginsSection(info: DockerInfo)}
-	<div class="space-y-2">
-		<h3 class="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
-			{m.docker_info_plugins_section()}
-		</h3>
-		<div class="space-y-3 rounded-lg border p-3">
-			<div>
-				<div class="text-muted-foreground mb-1 text-[10px] tracking-tight uppercase">{m.resource_volumes_cap()}</div>
-				<div class="flex flex-wrap gap-1">
-					{#each info.Plugins?.Volume ?? [] as plugin}
-						<Badge variant="outline" class="px-1.5 py-0 text-[10px]">{plugin}</Badge>
-					{:else}
-						<span class="text-muted-foreground text-xs">-</span>
-					{/each}
+			{#if info.DefaultAddressPools && info.DefaultAddressPools.length > 0}
+				<div>
+					<div class="text-muted-foreground mb-1 text-[10px] tracking-tight uppercase">{m.docker_info_address_pools_label()}</div>
+					<div class="flex flex-wrap gap-1">
+						{#each info.DefaultAddressPools as pool, i (i)}
+							<Badge variant="outline" class="px-1.5 py-0 font-mono text-[10px]">{pool.Base}/{pool.Size}</Badge>
+						{/each}
+					</div>
 				</div>
-			</div>
-			<div>
-				<div class="text-muted-foreground mb-1 text-[10px] tracking-tight uppercase">{m.resource_networks_cap()}</div>
-				<div class="flex flex-wrap gap-1">
-					{#each info.Plugins?.Network ?? [] as plugin}
-						<Badge variant="outline" class="px-1.5 py-0 text-[10px]">{plugin}</Badge>
-					{:else}
-						<span class="text-muted-foreground text-xs">-</span>
-					{/each}
-				</div>
-			</div>
-			<div>
-				<div class="text-muted-foreground mb-1 text-[10px] tracking-tight uppercase">{m.docker_info_logs_plugin()}</div>
-				<div class="flex flex-wrap gap-1">
-					{#each info.Plugins?.Log ?? [] as plugin}
-						<Badge variant="outline" class="px-1.5 py-0 text-[10px]">{plugin}</Badge>
-					{:else}
-						<span class="text-muted-foreground text-xs">-</span>
-					{/each}
-				</div>
-			</div>
+			{/if}
 		</div>
 	</div>
 {/snippet}
@@ -247,26 +292,59 @@
 		<h3 class="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
 			{m.security_title()} & {m.docker_info_runtimes()}
 		</h3>
-		<div class="space-y-3 rounded-lg border p-3">
-			<div>
-				<div class="text-muted-foreground mb-1 text-[10px] tracking-tight uppercase">{m.docker_info_security_options()}</div>
-				<div class="flex flex-wrap gap-1">
-					{#each info.SecurityOptions ?? [] as opt}
-						<Badge variant="outline" class="px-1.5 py-0 text-[10px]">{opt}</Badge>
-					{:else}
-						<span class="text-muted-foreground text-xs">-</span>
-					{/each}
-				</div>
-			</div>
-			<div>
-				<div class="text-muted-foreground mb-1 text-[10px] tracking-tight uppercase">{m.docker_info_runtimes()}</div>
-				<div class="flex flex-wrap gap-1">
-					{#each Object.keys(info.Runtimes ?? {}) as runtime}
-						<Badge variant="outline" class="px-1.5 py-0 text-[10px]">{runtime}</Badge>
-					{:else}
-						<span class="text-muted-foreground text-xs">-</span>
-					{/each}
-				</div>
+		<div class="space-y-2 rounded-lg border p-2.5">
+			{@render tagGroup(m.docker_info_security_options(), info.SecurityOptions)}
+			{@render tagGroup(m.docker_info_runtimes(), Object.keys(info.Runtimes ?? {}))}
+		</div>
+	</div>
+{/snippet}
+
+{#snippet pluginsSection(info: DockerInfo)}
+	<div class="space-y-2">
+		<h3 class="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
+			{m.docker_info_plugins_section()}
+		</h3>
+		<div class="space-y-2 rounded-lg border p-2.5">
+			{@render tagGroup(m.resource_volumes_cap(), info.Plugins?.Volume)}
+			{@render tagGroup(m.resource_networks_cap(), info.Plugins?.Network)}
+			{@render tagGroup(m.docker_info_logs_plugin(), info.Plugins?.Log)}
+			{@render tagGroup(m.docker_info_authorization_plugin(), info.Plugins?.Authorization)}
+		</div>
+	</div>
+{/snippet}
+
+{#snippet swarmSection(info: DockerInfo)}
+	{@const swarm = info.Swarm as {
+		LocalNodeState?: string;
+		ControlAvailable?: boolean;
+		NodeID?: string;
+		Managers?: number;
+		Nodes?: number;
+	}}
+	<div class="space-y-2">
+		<h3 class="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
+			{m.docker_info_swarm_section()}
+		</h3>
+		<div class="space-y-1 rounded-lg border p-2.5">
+			{@render infoRow(m.docker_info_swarm_state_label(), swarm.LocalNodeState, false)}
+			{@render infoRow(m.docker_info_swarm_manager_label(), swarm.ControlAvailable ? m.common_yes() : m.common_no(), false)}
+			{@render infoRow(m.docker_info_swarm_node_id_label(), swarm.NodeID, true)}
+			{@render infoRow(m.docker_info_swarm_managers_label(), swarm.Managers ?? 0, false)}
+			{@render infoRow(m.docker_info_swarm_nodes_label(), swarm.Nodes ?? 0, false)}
+		</div>
+	</div>
+{/snippet}
+
+{#snippet labelsSection(info: DockerInfo)}
+	<div class="space-y-2">
+		<h3 class="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
+			{m.docker_info_labels_section()}
+		</h3>
+		<div class="rounded-lg border p-3">
+			<div class="flex flex-wrap gap-1">
+				{#each info.Labels ?? [] as label, i (i)}
+					<Badge variant="outline" class="px-1.5 py-0 font-mono text-[10px]">{label}</Badge>
+				{/each}
 			</div>
 		</div>
 	</div>
@@ -303,11 +381,33 @@
 	</div>
 {/snippet}
 
-{#snippet infoRow(label: string, value: string | undefined | null, mono: boolean = true)}
+{#snippet tagGroup(label: string, items: string[] | undefined)}
+	<div>
+		<div class="text-muted-foreground mb-1 text-[10px] tracking-tight uppercase">{label}</div>
+		<div class="flex flex-wrap gap-1">
+			{#each items ?? [] as item, i (i)}
+				<Badge variant="outline" class="px-1.5 py-0 text-[10px]">{item}</Badge>
+			{:else}
+				<span class="text-muted-foreground text-xs">-</span>
+			{/each}
+		</div>
+	</div>
+{/snippet}
+
+{#snippet capRow(label: string, value: boolean | undefined)}
+	<div class="flex items-center justify-between gap-2">
+		<span class="text-muted-foreground text-[10px] tracking-tight uppercase [overflow-wrap:anywhere]">{label}</span>
+		<span class="text-[10px] font-medium {value ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}">
+			{value ? m.common_yes() : m.common_no()}
+		</span>
+	</div>
+{/snippet}
+
+{#snippet infoRow(label: string, value: string | number | undefined | null, mono: boolean = true)}
 	<div class="grid grid-cols-[minmax(112px,38%)_minmax(0,1fr)] items-start gap-x-4 gap-y-1">
 		<span class="text-muted-foreground text-[10px] tracking-tight uppercase">{label}</span>
 		<span class="text-right text-xs [overflow-wrap:anywhere] {mono ? 'font-mono' : ''}">
-			{value || '-'}
+			{value === undefined || value === null || value === '' ? '-' : value}
 		</span>
 	</div>
 {/snippet}
