@@ -41,7 +41,14 @@ type VolumeService struct {
 	imageService     *ImageService
 	backupVolumeName string
 	helperMu         sync.Mutex
-	helperByVolume   map[string]string
+	helperByVolume   map[string]*volumeHelper
+}
+
+// volumeHelper tracks a reused read-only browse helper container and the last
+// time it serviced a request, so idle helpers can be reaped.
+type volumeHelper struct {
+	id         string
+	lastUsedAt time.Time
 }
 
 const volumeHelperImage = DefaultArcaneToolsImage
@@ -80,7 +87,7 @@ func NewVolumeService(db *database.DB, dockerService *DockerClientService, event
 		containerService: containerService,
 		imageService:     imageService,
 		backupVolumeName: backupVolumeName,
-		helperByVolume:   make(map[string]string),
+		helperByVolume:   make(map[string]*volumeHelper),
 	}
 }
 
@@ -166,6 +173,12 @@ func (s *VolumeService) DeleteVolume(ctx context.Context, name string, force boo
 		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
+	// Stop any read-only browse helper first; a helper mounting the volume would
+	// otherwise block a non-forced VolumeRemove with "volume is in use".
+	if stopErr := s.StopHelper(ctx, name); stopErr != nil {
+		slog.WarnContext(ctx, "could not stop volume browse helper before delete", "volume", name, "error", stopErr.Error())
+	}
+
 	if _, err := dockerClient.VolumeRemove(ctx, name, client.VolumeRemoveOptions{
 		Force: force,
 	}); err != nil {
@@ -196,6 +209,11 @@ func (s *VolumeService) PruneVolumesWithOptions(ctx context.Context, all bool) (
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
+
+	// Stop all read-only browse helpers first; a helper mounting a volume marks it
+	// "in use" and would prevent VolumePrune from reclaiming an otherwise-unused
+	// volume. Helpers are re-created on demand on the next browse request.
+	s.CleanupHelperContainers(ctx)
 
 	preserveTrivyCache := s.preserveTrivyCacheOnVolumePruneInternal()
 
@@ -783,7 +801,7 @@ func (s *VolumeService) createTempContainerInternal(ctx context.Context, volumeN
 
 	if readOnly {
 		s.helperMu.Lock()
-		s.helperByVolume[volumeName] = resp.ID
+		s.helperByVolume[volumeName] = &volumeHelper{id: resp.ID, lastUsedAt: time.Now()}
 		s.helperMu.Unlock()
 		return resp.ID, func() {}, nil
 	}
@@ -793,13 +811,13 @@ func (s *VolumeService) createTempContainerInternal(ctx context.Context, volumeN
 
 func (s *VolumeService) getReusableReadOnlyContainerInternal(ctx context.Context, dockerClient *client.Client, volumeName string) (string, bool) {
 	s.helperMu.Lock()
-	containerID := s.helperByVolume[volumeName]
+	helper := s.helperByVolume[volumeName]
 	s.helperMu.Unlock()
-	if containerID == "" {
+	if helper == nil || helper.id == "" {
 		return "", false
 	}
 
-	inspect, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
+	inspect, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, helper.id, client.ContainerInspectOptions{})
 	if err != nil || inspect.Container.State == nil || !inspect.Container.State.Running {
 		s.helperMu.Lock()
 		delete(s.helperByVolume, volumeName)
@@ -807,7 +825,19 @@ func (s *VolumeService) getReusableReadOnlyContainerInternal(ctx context.Context
 		return "", false
 	}
 
-	return containerID, true
+	s.touchHelperInternal(volumeName)
+
+	return helper.id, true
+}
+
+// touchHelperInternal records that the helper for volumeName just serviced a
+// request, resetting its idle clock. No-op if the entry is gone.
+func (s *VolumeService) touchHelperInternal(volumeName string) {
+	s.helperMu.Lock()
+	defer s.helperMu.Unlock()
+	if helper := s.helperByVolume[volumeName]; helper != nil {
+		helper.lastUsedAt = time.Now()
+	}
 }
 
 func (s *VolumeService) CleanupHelperContainers(ctx context.Context) {
@@ -819,12 +849,12 @@ func (s *VolumeService) CleanupHelperContainers(ctx context.Context) {
 
 	s.helperMu.Lock()
 	helperIDs := make([]string, 0, len(s.helperByVolume))
-	for _, containerID := range s.helperByVolume {
-		if containerID != "" {
-			helperIDs = append(helperIDs, containerID)
+	for _, helper := range s.helperByVolume {
+		if helper != nil && helper.id != "" {
+			helperIDs = append(helperIDs, helper.id)
 		}
 	}
-	s.helperByVolume = make(map[string]string)
+	s.helperByVolume = make(map[string]*volumeHelper)
 	s.helperMu.Unlock()
 
 	for _, containerID := range helperIDs {
@@ -832,6 +862,95 @@ func (s *VolumeService) CleanupHelperContainers(ctx context.Context) {
 			slog.WarnContext(ctx, "failed to remove helper container", "container_id", containerID, "error", err.Error())
 		}
 	}
+}
+
+// ReapIdleHelpers removes reused read-only browse helper containers that have
+// not serviced a request within idleTimeout. It is map-driven (orphaned helpers
+// not tracked in helperByVolume are left to the startup orphan sweep). Entries
+// are removed from the map before the container is removed, so a concurrent
+// request simply gets a cache miss and re-creates a fresh helper.
+func (s *VolumeService) ReapIdleHelpers(ctx context.Context, idleTimeout time.Duration) (int, error) {
+	if idleTimeout <= 0 {
+		return 0, nil
+	}
+
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get docker client for idle helper reap: %w", err)
+	}
+
+	staleIDs := s.collectStaleHelperIDsInternal(time.Now(), idleTimeout)
+
+	removed := 0
+	for _, containerID := range staleIDs {
+		if _, err := dockerClient.ContainerRemove(ctx, containerID, volumeHelperRemoveOptionsInternal()); err != nil {
+			slog.WarnContext(ctx, "failed to remove idle helper container", "container_id", containerID, "error", err.Error())
+			continue
+		}
+		removed++
+	}
+
+	return removed, nil
+}
+
+// collectStaleHelperIDsInternal removes idle (and any nil) entries from the helper
+// map and returns the container IDs that should be removed. Pure map/mutex
+// bookkeeping with no Docker calls, so it can be unit-tested directly. Entries are
+// dropped before their containers are removed so a concurrent request gets a clean
+// cache miss and re-creates a fresh helper.
+func (s *VolumeService) collectStaleHelperIDsInternal(now time.Time, idleTimeout time.Duration) []string {
+	staleIDs := make([]string, 0)
+	s.helperMu.Lock()
+	defer s.helperMu.Unlock()
+	for volumeName, helper := range s.helperByVolume {
+		if helper == nil {
+			delete(s.helperByVolume, volumeName)
+			continue
+		}
+		if now.Sub(helper.lastUsedAt) >= idleTimeout {
+			staleIDs = append(staleIDs, helper.id)
+			delete(s.helperByVolume, volumeName)
+		}
+	}
+	return staleIDs
+}
+
+// StopHelper removes the reused read-only browse helper for a single volume, if
+// one exists. It is idempotent: stopping a volume with no active helper returns
+// nil.
+func (s *VolumeService) StopHelper(ctx context.Context, volumeName string) error {
+	if strings.TrimSpace(volumeName) == "" {
+		return nil
+	}
+
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get docker client for helper stop: %w", err)
+	}
+
+	containerID := s.takeHelperIDInternal(volumeName)
+	if containerID == "" {
+		return nil
+	}
+
+	if _, err := dockerClient.ContainerRemove(ctx, containerID, volumeHelperRemoveOptionsInternal()); err != nil {
+		return fmt.Errorf("failed to remove helper container: %w", err)
+	}
+
+	return nil
+}
+
+// takeHelperIDInternal removes the helper entry for volumeName and returns its
+// container ID, or "" if there was none. Pure map/mutex bookkeeping.
+func (s *VolumeService) takeHelperIDInternal(volumeName string) string {
+	s.helperMu.Lock()
+	defer s.helperMu.Unlock()
+	helper := s.helperByVolume[volumeName]
+	delete(s.helperByVolume, volumeName)
+	if helper == nil {
+		return ""
+	}
+	return helper.id
 }
 
 func (s *VolumeService) CleanupOrphanedVolumeHelpers(ctx context.Context) error {

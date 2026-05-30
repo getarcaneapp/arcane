@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
 	volumetypes "github.com/getarcaneapp/arcane/types/volume"
@@ -365,4 +366,58 @@ func TestBackupArchiveFilenameInternal(t *testing.T) {
 			require.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func TestCollectStaleHelperIDsInternal(t *testing.T) {
+	now := time.Now()
+	s := &VolumeService{
+		helperByVolume: map[string]*volumeHelper{
+			"fresh":  {id: "c-fresh", lastUsedAt: now.Add(-1 * time.Minute)},
+			"stale":  {id: "c-stale", lastUsedAt: now.Add(-11 * time.Minute)},
+			"atedge": {id: "c-atedge", lastUsedAt: now.Add(-10 * time.Minute)},
+			"nilent": nil,
+		},
+	}
+
+	stale := s.collectStaleHelperIDsInternal(now, 10*time.Minute)
+
+	require.ElementsMatch(t, []string{"c-stale", "c-atedge"}, stale,
+		"helpers idle >= timeout (and exactly at the edge) should be collected")
+
+	// Only the fresh entry survives; stale, at-edge, and nil entries are dropped.
+	require.Len(t, s.helperByVolume, 1)
+	require.Contains(t, s.helperByVolume, "fresh")
+}
+
+func TestTakeHelperIDInternal(t *testing.T) {
+	s := &VolumeService{
+		helperByVolume: map[string]*volumeHelper{
+			"vol-a": {id: "c-a", lastUsedAt: time.Now()},
+		},
+	}
+
+	// Present: returns id and removes the entry.
+	require.Equal(t, "c-a", s.takeHelperIDInternal("vol-a"))
+	require.NotContains(t, s.helperByVolume, "vol-a")
+
+	// Absent (idempotent): returns "" without panicking.
+	require.Equal(t, "", s.takeHelperIDInternal("vol-a"))
+	require.Equal(t, "", s.takeHelperIDInternal("never-existed"))
+}
+
+func TestTouchHelperInternal(t *testing.T) {
+	old := time.Now().Add(-30 * time.Minute)
+	s := &VolumeService{
+		helperByVolume: map[string]*volumeHelper{
+			"vol-a": {id: "c-a", lastUsedAt: old},
+		},
+	}
+
+	s.touchHelperInternal("vol-a")
+	require.True(t, s.helperByVolume["vol-a"].lastUsedAt.After(old),
+		"touch should reset the idle clock forward")
+
+	// Missing volume is a no-op (must not panic or create an entry).
+	s.touchHelperInternal("missing")
+	require.NotContains(t, s.helperByVolume, "missing")
 }

@@ -474,6 +474,12 @@ type Update struct {
 	// Required: false
 	AutoHealRestartWindow *string `json:"autoHealRestartWindow,omitempty"`
 
+	// VolumeBrowserHelperIdleTimeout is the number of minutes a volume-browser helper
+	// container may sit idle before it is automatically removed (0 disables).
+	//
+	// Required: false
+	VolumeBrowserHelperIdleTimeout *string `json:"volumeBrowserHelperIdleTimeout,omitempty"`
+
 	// BuildProvider is the default build provider (local|depot).
 	//
 	// Required: false
