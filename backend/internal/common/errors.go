@@ -1778,6 +1778,56 @@ func IsInvalidRoleAssignmentError(err error) bool {
 	return isErrorTypeInternal[*InvalidRoleAssignmentError](err)
 }
 
+type FederatedCredentialNotFoundError struct{}
+
+func (e *FederatedCredentialNotFoundError) Error() string {
+	return "federated credential not found"
+}
+
+func IsErrorFederatedCredentialNotFound(err error) bool {
+	return isErrorTypeInternal[*FederatedCredentialNotFoundError](err)
+}
+
+type FederatedCredentialInvalidError struct{}
+
+func (e *FederatedCredentialInvalidError) Error() string {
+	return "invalid federated credential"
+}
+
+func IsErrorFederatedCredentialInvalid(err error) bool {
+	return isErrorTypeInternal[*FederatedCredentialInvalidError](err)
+}
+
+type FederatedCredentialInvalidRequestError struct{}
+
+func (e *FederatedCredentialInvalidRequestError) Error() string {
+	return "invalid federated token exchange request"
+}
+
+func IsErrorFederatedCredentialInvalidRequest(err error) bool {
+	return isErrorTypeInternal[*FederatedCredentialInvalidRequestError](err)
+}
+
+type FederatedCredentialInvalidGrantError struct{}
+
+func (e *FederatedCredentialInvalidGrantError) Error() string {
+	return "invalid federated token grant"
+}
+
+func IsErrorFederatedCredentialInvalidGrant(err error) bool {
+	return isErrorTypeInternal[*FederatedCredentialInvalidGrantError](err)
+}
+
+type FederatedCredentialPermissionEscalationError struct{}
+
+func (e *FederatedCredentialPermissionEscalationError) Error() string {
+	return "cannot map a federated credential to a role you do not hold"
+}
+
+func IsErrorFederatedCredentialPermissionEscalation(err error) bool {
+	return isErrorTypeInternal[*FederatedCredentialPermissionEscalationError](err)
+}
+
 type OidcMappingNotFoundError struct{}
 
 func (e *OidcMappingNotFoundError) Error() string {

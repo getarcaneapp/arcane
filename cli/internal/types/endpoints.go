@@ -9,10 +9,11 @@ type ArcaneApiEndpoints struct {
 	VersionEndpoint string
 
 	// Authentication
-	AuthLogoutEndpoint   string
-	AuthMeEndpoint       string
-	AuthPasswordEndpoint string
-	AuthRefreshEndpoint  string
+	AuthLogoutEndpoint    string
+	AuthMeEndpoint        string
+	AuthPasswordEndpoint  string
+	AuthRefreshEndpoint   string
+	AuthFederatedEndpoint string
 
 	// OIDC
 	OIDCDeviceCodeEndpoint  string
@@ -178,10 +179,11 @@ var Endpoints = ArcaneApiEndpoints{ //nolint:gosec // static endpoint paths; aut
 	VersionEndpoint: "/api/version",
 
 	// Authentication
-	AuthLogoutEndpoint:   "/api/auth/logout",
-	AuthMeEndpoint:       "/api/auth/me",
-	AuthPasswordEndpoint: "/api/auth/password",
-	AuthRefreshEndpoint:  "/api/auth/refresh",
+	AuthLogoutEndpoint:    "/api/auth/logout",
+	AuthMeEndpoint:        "/api/auth/me",
+	AuthPasswordEndpoint:  "/api/auth/password",
+	AuthRefreshEndpoint:   "/api/auth/refresh",
+	AuthFederatedEndpoint: "/api/auth/federated/token",
 
 	// OIDC
 	OIDCDeviceCodeEndpoint:  "/api/oidc/device/code",
@@ -342,10 +344,11 @@ var Endpoints = ArcaneApiEndpoints{ //nolint:gosec // static endpoint paths; aut
 }
 
 // Auth endpoints
-func (e ArcaneApiEndpoints) AuthLogout() string   { return e.AuthLogoutEndpoint }
-func (e ArcaneApiEndpoints) AuthMe() string       { return e.AuthMeEndpoint }
-func (e ArcaneApiEndpoints) AuthPassword() string { return e.AuthPasswordEndpoint }
-func (e ArcaneApiEndpoints) AuthRefresh() string  { return e.AuthRefreshEndpoint }
+func (e ArcaneApiEndpoints) AuthLogout() string    { return e.AuthLogoutEndpoint }
+func (e ArcaneApiEndpoints) AuthMe() string        { return e.AuthMeEndpoint }
+func (e ArcaneApiEndpoints) AuthPassword() string  { return e.AuthPasswordEndpoint }
+func (e ArcaneApiEndpoints) AuthRefresh() string   { return e.AuthRefreshEndpoint }
+func (e ArcaneApiEndpoints) AuthFederated() string { return e.AuthFederatedEndpoint }
 
 // OIDC endpoints
 func (e ArcaneApiEndpoints) OIDCDeviceCode() string  { return e.OIDCDeviceCodeEndpoint }
