@@ -24,10 +24,19 @@ func SetupPlaywrightRoutes(api *echo.Group, playwrightService *services.Playwrig
 
 	playwright.POST("/create-test-api-keys", playwrightHandler.CreateTestApiKeysHandler)
 	playwright.POST("/delete-test-api-keys", playwrightHandler.DeleteTestApiKeysHandler)
+	playwright.POST("/create-test-federated-credential", playwrightHandler.CreateTestFederatedCredentialHandler)
 }
 
 type CreateTestApiKeysRequest struct {
 	Count int `json:"count"`
+}
+
+type CreateTestFederatedCredentialRequest struct {
+	IssuerURL       string   `json:"issuerUrl"`
+	Audiences       []string `json:"audiences"`
+	Subject         string   `json:"subject"`
+	RoleID          string   `json:"roleId"`
+	TokenTTLSeconds int      `json:"tokenTtlSeconds"`
 }
 
 func (ph *PlaywrightHandler) CreateTestApiKeysHandler(c echo.Context) error {
@@ -54,4 +63,25 @@ func (ph *PlaywrightHandler) DeleteTestApiKeysHandler(c echo.Context) error {
 	}
 
 	return c.NoContent(http.StatusNoContent)
+}
+
+func (ph *PlaywrightHandler) CreateTestFederatedCredentialHandler(c echo.Context) error {
+	var req CreateTestFederatedCredentialRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "invalid request body"})
+	}
+
+	credentialID, err := ph.PlaywrightService.CreateTestFederatedCredential(
+		c.Request().Context(),
+		req.IssuerURL,
+		req.Audiences,
+		req.Subject,
+		req.RoleID,
+		req.TokenTTLSeconds,
+	)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]any{"error": err.Error()})
+	}
+
+	return c.JSON(http.StatusCreated, map[string]any{"credential": map[string]string{"id": credentialID}})
 }
