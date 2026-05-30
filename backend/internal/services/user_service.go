@@ -403,7 +403,9 @@ func (s *UserService) UpgradePasswordHash(ctx context.Context, userID, password 
 
 func (s *UserService) ListUsersPaginated(ctx context.Context, params pagination.QueryParams) ([]user.User, pagination.Response, error) {
 	var users []models.User
-	query := s.db.WithContext(ctx).Model(&models.User{})
+	query := s.db.WithContext(ctx).
+		Model(&models.User{}).
+		Where("is_service_account = ?", false)
 
 	if term := strings.TrimSpace(params.Search); term != "" {
 		searchPattern := "%" + term + "%"

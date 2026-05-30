@@ -44,6 +44,7 @@ type Services struct {
 	Version           *services.VersionService
 	Notification      *services.NotificationService
 	ApiKey            *services.ApiKeyService
+	Federated         *services.FederatedCredentialService
 	GitRepository     *services.GitRepositoryService
 	GitOpsSync        *services.GitOpsSyncService
 	Webhook           *services.WebhookService
@@ -104,6 +105,7 @@ func initializeServices(ctx context.Context, db *database.DB, cfg *config.Config
 	svcs.Template = services.NewTemplateService(ctx, db, httpClient, svcs.Settings)
 	svcs.Auth = services.NewAuthService(svcs.User, svcs.Settings, svcs.Event, svcs.Session, svcs.Role, cfg.JWTSecret, cfg)
 	svcs.Oidc = services.NewOidcService(svcs.Auth, svcs.Settings, cfg, httpClient)
+	svcs.Federated = services.NewFederatedCredentialService(db, svcs.Auth, svcs.User, svcs.Settings, svcs.Event, httpClient).WithRoleService(svcs.Role)
 	svcs.System = services.NewSystemService(db, svcs.Docker, svcs.Container, svcs.Image, svcs.Volume, svcs.Network, svcs.Settings, svcs.Activity)
 	svcs.SystemUpgrade = services.NewSystemUpgradeService(svcs.Docker, svcs.Version, svcs.Event, svcs.Settings)
 	svcs.Updater = services.NewUpdaterService(db, svcs.Settings, svcs.Docker, svcs.Project, svcs.ImageUpdate, svcs.ContainerRegistry, svcs.Event, svcs.Image, svcs.Notification, svcs.SystemUpgrade, svcs.Activity)

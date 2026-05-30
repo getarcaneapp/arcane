@@ -144,6 +144,7 @@ type Services struct {
 	Auth              *services.AuthService
 	Oidc              *services.OidcService
 	ApiKey            *services.ApiKeyService
+	Federated         *services.FederatedCredentialService
 	AppImages         *services.ApplicationImagesService
 	Project           *services.ProjectService
 	Event             *services.EventService
@@ -317,6 +318,7 @@ func registerHandlers(api huma.API, svc *Services) {
 	var authSvc *services.AuthService
 	var oidcSvc *services.OidcService
 	var apiKeySvc *services.ApiKeyService
+	var federatedSvc *services.FederatedCredentialService
 	var appImagesSvc *services.ApplicationImagesService
 	var projectSvc *services.ProjectService
 	var eventSvc *services.EventService
@@ -358,6 +360,7 @@ func registerHandlers(api huma.API, svc *Services) {
 		authSvc = svc.Auth
 		oidcSvc = svc.Oidc
 		apiKeySvc = svc.ApiKey
+		federatedSvc = svc.Federated
 		appImagesSvc = svc.AppImages
 		projectSvc = svc.Project
 		eventSvc = svc.Event
@@ -396,6 +399,7 @@ func registerHandlers(api huma.API, svc *Services) {
 	handlers.RegisterHealth(api)
 	handlers.RegisterAuth(api, userSvc, authSvc, oidcSvc)
 	handlers.RegisterApiKeys(api, apiKeySvc)
+	handlers.RegisterFederatedCredentials(api, federatedSvc)
 	handlers.RegisterRoles(api, roleSvc)
 	handlers.RegisterAppImages(api, appImagesSvc)
 	handlers.RegisterUsers(api, userSvc, authSvc)
