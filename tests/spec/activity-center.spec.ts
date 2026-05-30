@@ -1,4 +1,157 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Locator, type Page, type Route } from '@playwright/test';
+
+type MockEnvironment = {
+	id: string;
+	name: string;
+	apiUrl: string;
+	status: 'online' | 'standby' | 'offline' | 'error' | 'pending';
+	enabled: boolean;
+	isEdge: boolean;
+};
+
+type MockActivity = {
+	id: string;
+	environmentId: string;
+	sourceEnvironmentId?: string;
+	sourceEnvironmentName?: string;
+	type: string;
+	status: string;
+	resourceType?: string;
+	resourceId?: string;
+	resourceName?: string;
+	latestMessage?: string;
+	startedAt: string;
+	createdAt: string;
+	updatedAt?: string;
+};
+
+const localEnvironment: MockEnvironment = {
+	id: '0',
+	name: 'Local',
+	apiUrl: 'unix:///var/run/docker.sock',
+	status: 'online',
+	enabled: true,
+	isEdge: false
+};
+
+const remoteEnvironment: MockEnvironment = {
+	id: 'remote-activity-test',
+	name: 'Remote Lab',
+	apiUrl: 'https://remote.example.invalid',
+	status: 'offline',
+	enabled: false,
+	isEdge: false
+};
+
+function paginated<T>(data: T[]) {
+	return {
+		success: true,
+		data,
+		pagination: {
+			totalPages: 1,
+			totalItems: data.length,
+			currentPage: 1,
+			itemsPerPage: data.length,
+			grandTotalItems: data.length
+		}
+	};
+}
+
+function activity(
+	id: string,
+	environmentId: string,
+	sourceEnvironmentName: string,
+	resourceName: string,
+	minutesAgo: number
+): MockActivity {
+	const timestamp = new Date(Date.now() - minutesAgo * 60_000).toISOString();
+	return {
+		id,
+		environmentId,
+		sourceEnvironmentId: environmentId,
+		sourceEnvironmentName,
+		type: 'resource_action',
+		status: 'success',
+		resourceType: 'network',
+		resourceId: resourceName,
+		resourceName,
+		latestMessage: `${resourceName} completed`,
+		startedAt: timestamp,
+		createdAt: timestamp,
+		updatedAt: timestamp
+	};
+}
+
+function activityEnvironmentIdFromPath(pathname: string): string | null {
+	const match = pathname.match(/^\/api\/environments\/([^/]+)\/activities(?:\/stream)?$/);
+	return match ? decodeURIComponent(match[1]) : null;
+}
+
+async function preserveLocalEnvironmentSelection(page: Page) {
+	await page.addInitScript(() => {
+		localStorage.removeItem('selectedEnvironmentId');
+	});
+}
+
+async function mockEnvironmentList(page: Page, environments: MockEnvironment[]) {
+	await page.context().route(/\/api\/environments(?:\?.*)?$/, async (route) => {
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify(paginated(environments))
+		});
+	});
+}
+
+async function mockActivityReads(
+	page: Page,
+	activitiesByEnvironment: Record<string, MockActivity[]>,
+	failedEnvironmentIds = new Set<string>()
+) {
+	await page
+		.context()
+		.route(
+			/\/api\/environments\/[^/]+\/activities(?:\/stream)?(?:\?.*)?$/,
+			async (route: Route) => {
+				const url = new URL(route.request().url());
+				const environmentId = activityEnvironmentIdFromPath(url.pathname);
+				if (!environmentId) {
+					await route.continue();
+					return;
+				}
+
+				if (failedEnvironmentIds.has(environmentId)) {
+					await route.fulfill({
+						status: 503,
+						contentType: 'application/json',
+						body: JSON.stringify({ success: false, message: 'environment unavailable' })
+					});
+					return;
+				}
+
+				const activities = activitiesByEnvironment[environmentId] ?? [];
+				if (url.pathname.endsWith('/stream')) {
+					await route.fulfill({
+						status: 200,
+						contentType: 'application/x-json-stream',
+						body:
+							JSON.stringify({
+								type: 'snapshot',
+								activities,
+								timestamp: new Date().toISOString()
+							}) + '\n'
+					});
+					return;
+				}
+
+				await route.fulfill({
+					status: 200,
+					contentType: 'application/json',
+					body: JSON.stringify(paginated(activities))
+				});
+			}
+		);
+}
 
 function extractActivityId(value: unknown): string | undefined {
 	if (!value || typeof value !== 'object') return undefined;
@@ -76,7 +229,127 @@ async function openActivityCenter(page: Page) {
 	return activityCenter;
 }
 
+function activityRow(activityCenter: Locator, text: string) {
+	return activityCenter
+		.locator('button[aria-label="Activity Center"]')
+		.filter({ hasText: text })
+		.first();
+}
+
+function waitForActivityList(page: Page, environmentId: string) {
+	return page.waitForResponse((response) => {
+		const url = new URL(response.url());
+		return (
+			response.request().method() === 'GET' &&
+			url.pathname === `/api/environments/${encodeURIComponent(environmentId)}/activities`
+		);
+	});
+}
+
 test.describe('Activity Center', () => {
+	test('shows activity from every configured environment', async ({ page }) => {
+		await preserveLocalEnvironmentSelection(page);
+		await mockEnvironmentList(page, [localEnvironment, remoteEnvironment]);
+		await mockActivityReads(page, {
+			'0': [activity('local-activity', '0', 'Local', 'local-network', 5)],
+			'remote-activity-test': [
+				activity('remote-activity', 'remote-activity-test', 'Remote Lab', 'remote-network', 1)
+			]
+		});
+
+		const localActivityList = waitForActivityList(page, '0');
+		const remoteActivityList = waitForActivityList(page, 'remote-activity-test');
+		await page.goto('/dashboard');
+		await Promise.all([localActivityList, remoteActivityList]);
+		await page.waitForLoadState('load');
+		await page.waitForLoadState('networkidle');
+
+		const activityCenter = await openActivityCenter(page);
+		await activityCenter.getByRole('button', { name: 'Completed' }).click();
+
+		await expect(activityRow(activityCenter, 'local-network')).toBeVisible();
+		await expect(activityRow(activityCenter, 'remote-network')).toBeVisible();
+		await expect(activityCenter.getByText('Local').first()).toBeVisible();
+		await expect(activityCenter.getByText('Remote Lab').first()).toBeVisible();
+		await expect(page.getByRole('button', { name: /Local/ }).first()).toBeVisible();
+	});
+
+	test('keeps reachable activity visible when a configured environment fails', async ({ page }) => {
+		await preserveLocalEnvironmentSelection(page);
+		await mockEnvironmentList(page, [localEnvironment, remoteEnvironment]);
+		await mockActivityReads(
+			page,
+			{
+				'0': [activity('local-activity', '0', 'Local', 'local-network', 5)]
+			},
+			new Set(['remote-activity-test'])
+		);
+
+		const localActivityList = waitForActivityList(page, '0');
+		const remoteActivityList = waitForActivityList(page, 'remote-activity-test');
+		await page.goto('/dashboard');
+		await Promise.all([localActivityList, remoteActivityList]);
+		await page.waitForLoadState('load');
+		await page.waitForLoadState('networkidle');
+
+		const activityCenter = await openActivityCenter(page);
+		await activityCenter.getByRole('button', { name: 'Completed' }).click();
+
+		await expect(activityRow(activityCenter, 'local-network')).toBeVisible();
+		await expect(activityCenter.getByText('Could not load activity from Remote Lab')).toBeVisible();
+	});
+
+	test('clears history for every configured environment and reports partial failures', async ({
+		page
+	}) => {
+		await preserveLocalEnvironmentSelection(page);
+		await mockEnvironmentList(page, [localEnvironment, remoteEnvironment]);
+		await mockActivityReads(page, {
+			'0': [activity('local-activity', '0', 'Local', 'local-network', 5)],
+			'remote-activity-test': [
+				activity('remote-activity', 'remote-activity-test', 'Remote Lab', 'remote-network', 1)
+			]
+		});
+
+		const deletedEnvironments: string[] = [];
+		await page.route(/\/api\/environments\/[^/]+\/activities\/history$/, async (route) => {
+			const url = new URL(route.request().url());
+			const match = url.pathname.match(/^\/api\/environments\/([^/]+)\/activities\/history$/);
+			const environmentId = match ? decodeURIComponent(match[1]) : '';
+			deletedEnvironments.push(environmentId);
+
+			if (environmentId === 'remote-activity-test') {
+				await route.fulfill({
+					status: 503,
+					contentType: 'application/json',
+					body: JSON.stringify({ success: false, message: 'environment unavailable' })
+				});
+				return;
+			}
+
+			await route.fulfill({
+				status: 200,
+				contentType: 'application/json',
+				body: JSON.stringify({ success: true, data: { deleted: 2 } })
+			});
+		});
+
+		const localActivityList = waitForActivityList(page, '0');
+		const remoteActivityList = waitForActivityList(page, 'remote-activity-test');
+		await page.goto('/dashboard');
+		await Promise.all([localActivityList, remoteActivityList]);
+		await page.waitForLoadState('load');
+
+		const activityCenter = await openActivityCenter(page);
+		await activityCenter.getByRole('button', { name: 'Clear history' }).click();
+		await page.getByRole('button', { name: 'Clear History', exact: true }).last().click();
+
+		await expect.poll(() => deletedEnvironments.sort()).toEqual(['0', 'remote-activity-test']);
+		await expect(
+			page.getByText('Activity history partially cleared. Succeeded for 1. Failed for Remote Lab.')
+		).toBeVisible();
+	});
+
 	test('shows completed activity details for UI-triggered work', async ({ page }) => {
 		const networkName = `e2e-activity-network-${Date.now()}`;
 		let networkId: string | undefined;
