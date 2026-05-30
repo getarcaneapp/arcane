@@ -72,6 +72,18 @@ export interface ActivityClearHistoryResult {
 	deleted: number;
 }
 
+export interface ActivityEnvironmentFailure {
+	environmentId: string;
+	environmentName: string;
+	message?: string;
+}
+
+export interface ActivityClearHistorySummary {
+	deleted: number;
+	succeeded: number;
+	failed: ActivityEnvironmentFailure[];
+}
+
 export interface ActivityStreamEvent {
 	type: 'snapshot' | 'activity' | 'message' | 'heartbeat';
 	activityId?: string;
