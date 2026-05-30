@@ -66,11 +66,12 @@ const (
 	EventTypeNetworkDelete EventType = "network.delete"
 	EventTypeNetworkError  EventType = "network.error"
 
-	EventTypeSystemPrune      EventType = "system.prune"
-	EventTypeUserLogin        EventType = "user.login"
-	EventTypeUserLogout       EventType = "user.logout"
-	EventTypeSystemAutoUpdate EventType = "system.auto_update"
-	EventTypeSystemUpgrade    EventType = "system.upgrade"
+	EventTypeSystemPrune       EventType = "system.prune"
+	EventTypeUserLogin         EventType = "user.login"
+	EventTypeUserLogout        EventType = "user.logout"
+	EventTypeFederatedExchange EventType = "federated.exchange"
+	EventTypeSystemAutoUpdate  EventType = "system.auto_update"
+	EventTypeSystemUpgrade     EventType = "system.upgrade"
 
 	EventTypeEnvironmentCreate            EventType = "environment.create"
 	EventTypeEnvironmentConnect           EventType = "environment.connect"

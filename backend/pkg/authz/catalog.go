@@ -42,6 +42,13 @@ var permissionCatalog = []PermissionCatalogResource{
 		{"update", PermApiKeysUpdate, "Update", ""},
 		{"delete", PermApiKeysDelete, "Delete", ""},
 	}},
+	{"federated", "Federated Credentials", PermissionScopeGlobal, []PermissionCatalogAction{
+		{"list", PermFederatedList, "List", ""},
+		{"read", PermFederatedRead, "Read", ""},
+		{"create", PermFederatedCreate, "Create", ""},
+		{"update", PermFederatedUpdate, "Update", ""},
+		{"delete", PermFederatedDelete, "Delete", ""},
+	}},
 	{"settings", "Settings", PermissionScopeGlobal, []PermissionCatalogAction{
 		{"read", PermSettingsRead, "Read", ""},
 		{"write", PermSettingsWrite, "Write", ""},

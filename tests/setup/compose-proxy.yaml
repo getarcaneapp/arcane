@@ -33,7 +33,9 @@ services:
   arcane:
     image: arcane:playwright-tests
     ports:
-      - '3002:3552'
+      - '${E2E_PROXY_PORT:-3002}:3552'
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
     environment:
       - ENVIRONMENT=testing
       - APP_ENV=test

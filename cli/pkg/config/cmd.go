@@ -16,13 +16,14 @@ import (
 )
 
 var (
-	setServerURL     string
-	setAPIKey        string
-	setJWTToken      string
-	setEnvironment   string
-	setLogLevel      string
-	setDefaultLimit  int
-	setResourceLimit []string
+	setServerURL         string
+	setAPIKey            string
+	setJWTToken          string
+	setEnvironment       string
+	setFederatedAudience string
+	setLogLevel          string
+	setDefaultLimit      int
+	setResourceLimit     []string
 )
 
 // ConfigCmd is the command for managing API configuration
@@ -47,6 +48,7 @@ var configShowCmd = &cobra.Command{
 		fmt.Printf("JWT Token:           %s\n", maskAPIKey(cfg.JWTToken))
 		fmt.Printf("Refresh Token:       %s\n", maskAPIKey(cfg.RefreshToken))
 		fmt.Printf("Default Environment: %s\n", maskIfEmpty(cfg.DefaultEnvironment, "0 (local)"))
+		fmt.Printf("Federated Audience:  %s\n", maskIfEmpty(cfg.FederatedAudience, "(not set)"))
 		fmt.Printf("Log Level:           %s\n", maskIfEmpty(cfg.LogLevel, "info (default)"))
 		fmt.Printf("CLI Update Channel:  %s\n", maskIfEmpty(cfg.CLIUpdateChannel, "(auto)"))
 		fmt.Printf("Pagination Default:  %s\n", maskIfEmpty(intToString(cfg.Pagination.Default.Limit), "(not set)"))
@@ -273,6 +275,7 @@ func init() {
 	configSetCmd.Flags().StringVar(&setAPIKey, "api-key", "", "API key for authentication")
 	configSetCmd.Flags().StringVar(&setJWTToken, "jwt-token", "", "JWT access token for authentication (Bearer token)")
 	configSetCmd.Flags().StringVar(&setEnvironment, "environment", "", "Default environment ID")
+	configSetCmd.Flags().StringVar(&setFederatedAudience, "federated-audience", "", "Default audience for federated authentication")
 	configSetCmd.Flags().StringVar(&setLogLevel, "log-level", "", "Default log level (debug, info, warn, error)")
 	configSetCmd.Flags().IntVar(&setDefaultLimit, "default-limit", 0, "Global default list limit for paginated resources (0 clears)")
 	configSetCmd.Flags().StringSliceVar(&setResourceLimit, "resource-limit", nil, "Per-resource list limit in the form resource=limit (repeatable, 0 clears)")
@@ -345,6 +348,12 @@ func applyConfigSetFlags(cmd *cobra.Command, cfg *clitypes.Config) (bool, error)
 	if setEnvironment != "" {
 		cfg.DefaultEnvironment = setEnvironment
 		fmt.Printf("Set default_environment = %s\n", setEnvironment)
+		updated = true
+	}
+
+	if setFederatedAudience != "" {
+		cfg.FederatedAudience = setFederatedAudience
+		fmt.Printf("Set federated_audience = %s\n", setFederatedAudience)
 		updated = true
 	}
 
@@ -431,6 +440,10 @@ func applyConfigSetArg(cfg *clitypes.Config, key, value string) (bool, error) {
 		cfg.DefaultEnvironment = value
 		fmt.Printf("Set default_environment = %s\n", value)
 		return true, nil
+	case "federated-audience", "federated_audience", "audience":
+		cfg.FederatedAudience = value
+		fmt.Printf("Set federated_audience = %s\n", value)
+		return true, nil
 	case "log-level", "loglevel", "log_level":
 		cfg.LogLevel = value
 		fmt.Printf("Set log_level = %s\n", value)
@@ -481,7 +494,7 @@ func applyConfigSetArg(cfg *clitypes.Config, key, value string) (bool, error) {
 		return applyResourceLimitByKey(cfg, key, resource, value)
 	}
 
-	return false, fmt.Errorf("unknown config key %q. Supported keys include server-url, api-key, jwt-token, environment, log-level, default-limit, resource-limit, and pagination.resources.<resource>.limit", key)
+	return false, fmt.Errorf("unknown config key %q. Supported keys include server-url, api-key, jwt-token, environment, federated-audience, log-level, default-limit, resource-limit, and pagination.resources.<resource>.limit", key)
 }
 
 func applyResourceLimitByKey(cfg *clitypes.Config, key, resourceValue, limitValue string) (bool, error) {

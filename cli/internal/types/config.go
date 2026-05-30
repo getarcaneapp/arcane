@@ -88,6 +88,8 @@ type Config struct {
 	RefreshToken string `yaml:"refresh_token,omitempty" mapstructure:"refresh_token"` //nolint:gosec // persisted config schema requires this field name
 	// DefaultEnvironment is the default environment ID to use
 	DefaultEnvironment string `yaml:"default_environment,omitempty" mapstructure:"default_environment"`
+	// FederatedAudience is the default token audience for `arcane-cli auth federated`
+	FederatedAudience string `yaml:"federated_audience,omitempty" mapstructure:"federated_audience"`
 	// LogLevel is the logging level (debug, info, warn, error, fatal, panic)
 	LogLevel string `yaml:"log_level,omitempty" mapstructure:"log_level"`
 	// CLIUpdateChannel controls which channel self-update uses (stable or next).
