@@ -821,6 +821,7 @@
 	"volumes_browser_new_folder": "New Folder",
 	"volumes_browser_upload_files": "Upload Files",
 	"volumes_browser_stop": "Stop browsing",
+	"volumes_browser_stop_error": "Failed to stop volume browser",
 	"volumes_browser_stop_success": "Volume browser stopped",
 	"volumes_browser_delete_confirm": "Are you sure you want to delete {name}?",
 	"volumes_backup_create": "Create Backup",

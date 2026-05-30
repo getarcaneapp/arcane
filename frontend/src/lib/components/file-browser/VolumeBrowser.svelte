@@ -24,22 +24,23 @@
 			toast.success(m.volumes_browser_stop_success());
 		} catch {
 			// Best-effort; the backend idle reaper will clean up regardless.
+			toast.error(m.volumes_browser_stop_error());
 		}
 	}
 
+	// Hard tab-close / refresh: SvelteKit's onDestroy can't reliably complete an
+	// async request during unload, so fire a keepalive beacon instead. Cookie auth
+	// (credentials are same-origin) means sendBeacon carries the session.
+	function handlePageHide() {
+		if (!envId) return;
+		const base = apiClient.defaults.baseURL || '/api';
+		navigator.sendBeacon(`${base}/environments/${envId}/volumes/${volumeName}/browse/stop`);
+	}
+	// Referenced only via <svelte:window>; keep the checker from flagging it unused.
+	$effect(() => void handlePageHide);
+
 	onMount(() => {
 		void environmentStore.getCurrentEnvironmentId().then((id) => (envId = id));
-
-		// Hard tab-close / refresh: SvelteKit's onDestroy can't reliably complete an
-		// async request during unload, so fire a keepalive beacon instead. Cookie auth
-		// (credentials are same-origin) means sendBeacon carries the session.
-		const handlePageHide = () => {
-			if (!envId) return;
-			const base = apiClient.defaults.baseURL || '/api';
-			navigator.sendBeacon(`${base}/environments/${envId}/volumes/${volumeName}/browse/stop`);
-		};
-		window.addEventListener('pagehide', handlePageHide);
-		return () => window.removeEventListener('pagehide', handlePageHide);
 	});
 
 	onDestroy(() => {
@@ -102,6 +103,8 @@
 			})
 	};
 </script>
+
+<svelte:window onpagehide={handlePageHide} />
 
 <GenericFileBrowser {provider} rootLabel={volumeName} persistKey="volume-file-browser">
 	{#snippet headerActions()}
