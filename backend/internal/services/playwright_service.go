@@ -6,21 +6,27 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 
+	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	"github.com/getarcaneapp/arcane/types/apikey"
+	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 type PlaywrightService struct {
-	apiKeyService *ApiKeyService
-	userService   *UserService
+	apiKeyService              *ApiKeyService
+	userService                *UserService
+	federatedCredentialService *FederatedCredentialService
 }
 
-func NewPlaywrightService(apiKeyService *ApiKeyService, userService *UserService) *PlaywrightService {
+func NewPlaywrightService(apiKeyService *ApiKeyService, userService *UserService, federatedCredentialService *FederatedCredentialService) *PlaywrightService {
 	return &PlaywrightService{
-		apiKeyService: apiKeyService,
-		userService:   userService,
+		apiKeyService:              apiKeyService,
+		userService:                userService,
+		federatedCredentialService: federatedCredentialService,
 	}
 }
 
@@ -91,4 +97,59 @@ func (ps *PlaywrightService) DeleteAllTestApiKeys(ctx context.Context) error {
 
 	slog.Info("Playwright: Test API keys deleted", "count", len(apiKeys))
 	return nil
+}
+
+func (ps *PlaywrightService) CreateTestFederatedCredential(ctx context.Context, issuerURL string, audiences []string, subject string, roleID string, tokenTTLSeconds int) (string, error) {
+	if ps.federatedCredentialService == nil || ps.federatedCredentialService.db == nil {
+		return "", fmt.Errorf("federated credential service is not available")
+	}
+	if strings.TrimSpace(issuerURL) == "" || strings.TrimSpace(subject) == "" || strings.TrimSpace(roleID) == "" || len(audiences) == 0 {
+		return "", fmt.Errorf("issuerUrl, subject, roleId, and audiences are required")
+	}
+	if tokenTTLSeconds <= 0 {
+		tokenTTLSeconds = 600
+	}
+
+	var credentialID string
+	err := ps.federatedCredentialService.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		serviceUser := models.User{
+			Username:         "svc_federated_e2e_" + strings.ReplaceAll(uuid.NewString(), "-", ""),
+			IsServiceAccount: true,
+		}
+		if err := tx.Create(&serviceUser).Error; err != nil {
+			return fmt.Errorf("failed to create federated e2e user: %w", err)
+		}
+
+		credential := models.FederatedCredential{
+			Name:            "Playwright Federated Credential",
+			Enabled:         true,
+			IssuerURL:       strings.TrimRight(strings.TrimSpace(issuerURL), "/"),
+			Audiences:       models.StringSlice(audiences),
+			SubjectClaim:    "sub",
+			SubjectMatch:    strings.TrimSpace(subject),
+			MatchType:       models.FederatedCredentialMatchExact,
+			RoleID:          strings.TrimSpace(roleID),
+			IdentityUserID:  serviceUser.ID,
+			TokenTTLSeconds: tokenTTLSeconds,
+		}
+		if err := tx.Create(&credential).Error; err != nil {
+			return fmt.Errorf("failed to create federated e2e credential: %w", err)
+		}
+
+		assignment := models.UserRoleAssignment{
+			UserID: serviceUser.ID,
+			RoleID: credential.RoleID,
+			Source: models.RoleAssignmentSourceManual,
+		}
+		if err := tx.Create(&assignment).Error; err != nil {
+			return fmt.Errorf("failed to create federated e2e role assignment: %w", err)
+		}
+
+		credentialID = credential.ID
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	return credentialID, nil
 }

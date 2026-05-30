@@ -159,6 +159,9 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services)
 		}, 5, 5,
 	))
 	apiGroup.Use(middleware.PerIPRateLimitForPaths(
+		[]string{"/api/auth/federated/token"}, 10, 10,
+	))
+	apiGroup.Use(middleware.PerIPRateLimitForPaths(
 		[]string{"/api/webhooks/trigger/:token"}, 60, 10,
 	))
 	handlerAppCtx := handlers.NewActivityAppContext(ctx)
@@ -175,6 +178,7 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services)
 
 	// Register public webhook trigger endpoint before auth middleware (token in URL is the sole auth)
 	api.RegisterWebhookTrigger(apiGroup, appServices.Webhook, handlerAppCtx) //nolint:contextcheck // app lifecycle context is intentionally wrapped for detached activity work.
+	handlers.RegisterFederatedTokenExchange(apiGroup, appServices.Federated) //nolint:contextcheck // public RFC 8693 form endpoint uses request context.
 
 	//nolint:contextcheck // Echo middleware reads context from echo.Context.Request().Context(), not a parameter.
 	envProxyMiddleware := middleware.NewEnvProxyMiddlewareWithParam(
@@ -191,6 +195,7 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services)
 		Auth:              appServices.Auth,
 		Oidc:              appServices.Oidc,
 		ApiKey:            appServices.ApiKey,
+		Federated:         appServices.Federated,
 		AppImages:         appServices.AppImages,
 		Project:           appServices.Project,
 		Event:             appServices.Event,

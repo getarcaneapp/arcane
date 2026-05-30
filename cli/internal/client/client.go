@@ -32,6 +32,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -160,6 +161,11 @@ func NewFromConfig() (*Client, error) {
 	if strings.TrimSpace(state.EnvOverride) != "" {
 		cfg.DefaultEnvironment = strings.TrimSpace(state.EnvOverride)
 	}
+	if token := strings.TrimSpace(os.Getenv("ARCANE_TOKEN")); token != "" {
+		cfg.JWTToken = token
+		cfg.APIKey = ""
+		cfg.RefreshToken = ""
+	}
 	c, err := New(cfg)
 	if err != nil {
 		return nil, err
@@ -179,6 +185,11 @@ func NewFromConfigUnauthenticated() (*Client, error) {
 	state := runstate.Get()
 	if strings.TrimSpace(state.EnvOverride) != "" {
 		cfg.DefaultEnvironment = strings.TrimSpace(state.EnvOverride)
+	}
+	if token := strings.TrimSpace(os.Getenv("ARCANE_TOKEN")); token != "" {
+		cfg.JWTToken = token
+		cfg.APIKey = ""
+		cfg.RefreshToken = ""
 	}
 	c, err := NewUnauthenticated(cfg)
 	if err != nil {

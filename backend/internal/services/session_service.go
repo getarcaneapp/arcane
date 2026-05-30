@@ -37,6 +37,7 @@ func (s *SessionService) CreateSession(ctx context.Context, userID string, expir
 		RefreshTokenHash: refreshHash,
 		UserAgent:        pkgutils.StringPtrFromTrimmed(meta.UserAgent),
 		IPAddress:        pkgutils.StringPtrFromTrimmed(meta.IPAddress),
+		Source:           models.UserSessionSourceLocal,
 		LastUsedAt:       now,
 		ExpiresAt:        expiresAt,
 	}
@@ -46,6 +47,26 @@ func (s *SessionService) CreateSession(ctx context.Context, userID string, expir
 	}
 
 	return session, refreshJTI, nil
+}
+
+func (s *SessionService) CreateFederatedSession(ctx context.Context, userID string, expiresAt time.Time, credentialID string) (*models.UserSession, error) {
+	refreshHash := hashRefreshJTIInternal(uuid.NewString())
+	now := time.Now()
+
+	session := &models.UserSession{
+		UserID:                userID,
+		RefreshTokenHash:      refreshHash,
+		Source:                models.UserSessionSourceFederated,
+		FederatedCredentialID: pkgutils.StringPtrFromTrimmed(credentialID),
+		LastUsedAt:            now,
+		ExpiresAt:             expiresAt,
+	}
+
+	if err := s.db.WithContext(ctx).Create(session).Error; err != nil {
+		return nil, fmt.Errorf("failed to create federated user session: %w", err)
+	}
+
+	return session, nil
 }
 
 func (s *SessionService) GetSessionByID(ctx context.Context, sessionID string) (*models.UserSession, error) {

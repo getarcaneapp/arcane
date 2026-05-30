@@ -636,8 +636,9 @@ var eventDefinitions = map[models.EventType]struct {
 	models.EventTypeSystemAutoUpdate: {"System auto-update completed", "System auto-update process has completed", models.EventSeverityInfo},
 	models.EventTypeSystemUpgrade:    {"System upgrade completed", "System upgrade process has completed", models.EventSeverityInfo},
 
-	models.EventTypeUserLogin:  {"User logged in: %s", "User '%s' has logged in", models.EventSeverityInfo},
-	models.EventTypeUserLogout: {"User logged out: %s", "User '%s' has logged out", models.EventSeverityInfo},
+	models.EventTypeUserLogin:         {"User logged in: %s", "User '%s' has logged in", models.EventSeverityInfo},
+	models.EventTypeUserLogout:        {"User logged out: %s", "User '%s' has logged out", models.EventSeverityInfo},
+	models.EventTypeFederatedExchange: {"Federated credential exchange: %s", "Federated credential exchange for '%s'", models.EventSeverityInfo},
 }
 
 func (s *EventService) toEventDto(e *models.Event) *event.Event {

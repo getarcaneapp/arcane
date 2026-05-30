@@ -32,6 +32,10 @@ export const queryKeys = {
 		all: ['api-keys'] as const,
 		list: (options: SearchPaginationSortRequest) => ['api-keys', stableSerialize(options)] as const
 	},
+	federatedCredentials: {
+		all: ['federated-credentials'] as const,
+		list: (options: SearchPaginationSortRequest) => ['federated-credentials', stableSerialize(options)] as const
+	},
 	environments: {
 		all: ['environments'] as const,
 		list: (options: SearchPaginationSortRequest) => ['environments', stableSerialize(options)] as const,
