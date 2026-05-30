@@ -17,6 +17,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
+	pkgutils "github.com/getarcaneapp/arcane/backend/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils/cache"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils/dbutil"
 	roletypes "github.com/getarcaneapp/arcane/types/role"
@@ -569,9 +570,10 @@ func (s *RoleService) ReplaceOidcAssignments(ctx context.Context, userID string,
 func (s *RoleService) CountGlobalAdminsExcludingUser(ctx context.Context, excludedUserID string) (int, error) {
 	var count int64
 	if err := s.db.WithContext(ctx).
-		Model(&models.UserRoleAssignment{}).
-		Distinct("user_id").
-		Where("role_id = ? AND environment_id IS NULL AND user_id <> ?", authz.BuiltInRoleAdmin, excludedUserID).
+		Table("user_role_assignments AS ura").
+		Joins("JOIN users ON users.id = ura.user_id").
+		Distinct("ura.user_id").
+		Where("ura.role_id = ? AND ura.environment_id IS NULL AND ura.user_id <> ? AND users.is_service_account = ?", authz.BuiltInRoleAdmin, excludedUserID, false).
 		Count(&count).Error; err != nil {
 		return 0, fmt.Errorf("failed to count global admins: %w", err)
 	}
@@ -580,9 +582,10 @@ func (s *RoleService) CountGlobalAdminsExcludingUser(ctx context.Context, exclud
 
 func (s *RoleService) countGlobalAdminsInternal(_ context.Context, tx *gorm.DB) (int, error) {
 	var count int64
-	if err := tx.Model(&models.UserRoleAssignment{}).
-		Distinct("user_id").
-		Where("role_id = ? AND environment_id IS NULL", authz.BuiltInRoleAdmin).
+	if err := tx.Table("user_role_assignments AS ura").
+		Joins("JOIN users ON users.id = ura.user_id").
+		Distinct("ura.user_id").
+		Where("ura.role_id = ? AND ura.environment_id IS NULL AND users.is_service_account = ?", authz.BuiltInRoleAdmin, false).
 		Count(&count).Error; err != nil {
 		return 0, fmt.Errorf("failed to count global admins: %w", err)
 	}
@@ -913,6 +916,26 @@ func (s *RoleService) ValidatePermissionsAgainstCaller(caller *authz.PermissionS
 	if err := validatePermissionsInternal(desired); err != nil {
 		return err
 	}
+	return validatePermissionSetAgainstCallerInternal(caller, desired, "")
+}
+
+// ValidateRoleAssignmentAgainstCaller rejects assigning a role at the requested
+// scope when the caller does not hold every permission in that role at that
+// same scope.
+func (s *RoleService) ValidateRoleAssignmentAgainstCaller(ctx context.Context, caller *authz.PermissionSet, roleID string, environmentID *string) error {
+	role, err := s.GetRole(ctx, roleID)
+	if err != nil {
+		return err
+	}
+
+	desired := []string(role.Permissions)
+	if err := validatePermissionsInternal(desired); err != nil {
+		return err
+	}
+	return validatePermissionSetAgainstCallerInternal(caller, desired, pkgutils.DerefString(environmentID))
+}
+
+func validatePermissionSetAgainstCallerInternal(caller *authz.PermissionSet, desired []string, environmentID string) error {
 	if caller == nil {
 		if len(desired) == 0 {
 			return nil
@@ -923,7 +946,7 @@ func (s *RoleService) ValidatePermissionsAgainstCaller(caller *authz.PermissionS
 		return nil
 	}
 	for _, p := range desired {
-		if !caller.Allows(p, "") {
+		if !caller.Allows(p, environmentID) {
 			return &common.RolePermissionEscalationError{Perm: p}
 		}
 	}

@@ -38,6 +38,12 @@ const (
 	PermApiKeysUpdate = "apikeys:update"
 	PermApiKeysDelete = "apikeys:delete"
 
+	PermFederatedList   = "federated:list"
+	PermFederatedRead   = "federated:read"
+	PermFederatedCreate = "federated:create"
+	PermFederatedUpdate = "federated:update"
+	PermFederatedDelete = "federated:delete"
+
 	PermSettingsRead  = "settings:read"
 	PermSettingsWrite = "settings:write"
 
@@ -257,6 +263,7 @@ func BuiltInEditorPermissions() []string {
 		PermUsersList, PermUsersRead,
 		PermRolesList, PermRolesRead,
 		PermApiKeysList, PermApiKeysRead,
+		PermFederatedList, PermFederatedRead,
 		PermSettingsRead,
 		PermEnvironmentsList, PermEnvironmentsRead, PermEnvironmentsSync,
 		PermRegistriesList, PermRegistriesRead,
@@ -312,6 +319,7 @@ func BuiltInViewerPermissions() []string {
 		PermUsersList, PermUsersRead,
 		PermRolesList, PermRolesRead,
 		PermApiKeysList, PermApiKeysRead,
+		PermFederatedList, PermFederatedRead,
 		PermSettingsRead,
 		PermEnvironmentsList, PermEnvironmentsRead,
 		PermRegistriesList, PermRegistriesRead,

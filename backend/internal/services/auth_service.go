@@ -45,12 +45,14 @@ type AuthSettings struct {
 
 type userClaims struct {
 	jwt.RegisteredClaims
-	SessionID   string `json:"sid,omitempty"`
-	UserID      string `json:"user_id"`
-	Username    string `json:"username"`
-	Email       string `json:"email,omitempty"`
-	DisplayName string `json:"display_name,omitempty"`
-	AppVersion  string `json:"app_version,omitempty"`
+	SessionID             string `json:"sid,omitempty"`
+	UserID                string `json:"user_id"`
+	Username              string `json:"username"`
+	Email                 string `json:"email,omitempty"`
+	DisplayName           string `json:"display_name,omitempty"`
+	AppVersion            string `json:"app_version,omitempty"`
+	TokenType             string `json:"token_type,omitempty"`
+	FederatedCredentialID string `json:"federated_credential_id,omitempty"`
 }
 
 type refreshClaims struct {
@@ -891,6 +893,70 @@ func (s *AuthService) buildTokenPairInternal(ctx context.Context, user *models.U
 		RefreshToken: refreshTokenString,
 		ExpiresAt:    accessTokenExpiry,
 	}, nil
+}
+
+func (s *AuthService) IssueFederatedToken(ctx context.Context, user *models.User, credentialID string, ttlSeconds int) (*TokenPair, error) {
+	if s.sessionService == nil {
+		return nil, &common.SessionServiceUnavailableError{}
+	}
+	if user == nil {
+		return nil, ErrUserNotFound
+	}
+
+	ttlSeconds = clampFederatedTokenTTLSecondsInternal(ttlSeconds)
+	now := time.Now()
+	accessTokenExpiry := now.Add(time.Duration(ttlSeconds) * time.Second)
+
+	session, err := s.sessionService.CreateFederatedSession(ctx, user.ID, accessTokenExpiry, credentialID)
+	if err != nil {
+		return nil, err
+	}
+
+	claims := userClaims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			ID:        user.ID,
+			Subject:   "access",
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(accessTokenExpiry),
+		},
+		SessionID:             session.ID,
+		UserID:                user.ID,
+		Username:              user.Username,
+		AppVersion:            config.Version,
+		TokenType:             models.UserSessionSourceFederated,
+		FederatedCredentialID: credentialID,
+	}
+
+	if user.Email != nil {
+		claims.Email = *user.Email
+	}
+	if user.DisplayName != nil {
+		claims.DisplayName = *user.DisplayName
+	}
+
+	accessToken := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	accessTokenString, err := accessToken.SignedString(s.jwtSecret)
+	if err != nil {
+		return nil, err
+	}
+
+	return &TokenPair{
+		AccessToken: accessTokenString,
+		ExpiresAt:   accessTokenExpiry,
+	}, nil
+}
+
+func clampFederatedTokenTTLSecondsInternal(ttlSeconds int) int {
+	if ttlSeconds <= 0 {
+		return 900
+	}
+	if ttlSeconds < 60 {
+		return 60
+	}
+	if ttlSeconds > 3600 {
+		return 3600
+	}
+	return ttlSeconds
 }
 
 func validateSessionActiveInternal(session *models.UserSession) error {

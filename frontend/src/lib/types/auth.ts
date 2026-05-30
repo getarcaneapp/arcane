@@ -198,3 +198,47 @@ export type UpdateApiKey = {
 	expiresAt?: string;
 	permissions?: ApiKeyPermissionGrant[];
 };
+
+// --- Federated credentials ---
+
+export type FederatedCredentialMatchType = 'exact' | 'glob';
+
+export type FederatedCredential = {
+	id: string;
+	name: string;
+	description?: string;
+	enabled: boolean;
+	issuerUrl: string;
+	audiences: string[];
+	subjectClaim: string;
+	subjectMatch: string;
+	matchType: FederatedCredentialMatchType;
+	roleId: string;
+	environmentId?: string;
+	identityUserId: string;
+	tokenTtlSeconds: number;
+	lastUsedAt?: string;
+	expiresAt?: string;
+	createdAt: string;
+	updatedAt?: string;
+	serviceUsername?: string;
+	roleName?: string;
+	environmentName?: string;
+};
+
+export type CreateFederatedCredential = {
+	name: string;
+	description?: string;
+	enabled: boolean;
+	issuerUrl: string;
+	audiences: string[];
+	subjectClaim?: string;
+	subjectMatch: string;
+	matchType?: FederatedCredentialMatchType;
+	roleId: string;
+	environmentId?: string;
+	tokenTtlSeconds?: number;
+	expiresAt?: string;
+};
+
+export type UpdateFederatedCredential = Partial<CreateFederatedCredential>;

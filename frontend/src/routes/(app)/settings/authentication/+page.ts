@@ -1,26 +1,59 @@
 import { oidcMappingService } from '$lib/services/oidc-mapping-service';
+import { federatedCredentialService } from '$lib/services/federated-credential-service';
 import { roleService } from '$lib/services/role-service';
 import { environmentManagementService } from '$lib/services/env-mgmt-service';
+import { queryKeys } from '$lib/query/query-keys';
+import type { SearchPaginationSortRequest } from '$lib/types/shared';
+import { resolveInitialTableRequest } from '$lib/utils/tables';
 import type { PageLoad } from './$types';
 
-export const load: PageLoad = async ({ parent }) => {
+export const load: PageLoad = async ({ parent, url }) => {
 	const parentData = await parent();
+	const { queryClient } = parentData;
+	const activeAuthTab = url.searchParams.get('tab') === 'federated' ? 'federated' : 'settings';
+	const federatedCredentialRequestOptions = resolveInitialTableRequest('arcane-federated-credentials-table', {
+		pagination: {
+			page: 1,
+			limit: 20
+		},
+		sort: {
+			column: 'createdAt',
+			direction: 'desc'
+		}
+	} satisfies SearchPaginationSortRequest);
 
 	// OIDC mappings live alongside the OIDC config in this page. We load them
 	// here (instead of a standalone /settings/oidc-mappings route) so admins
 	// configure groups claim + the mappings that read from it in one place.
-	const [mappings, roles, environmentsPage] = await Promise.all([
+	const [mappings, federatedCredentials, roles, environmentsPage] = await Promise.all([
 		oidcMappingService.list(),
-		roleService.getAll(),
-		environmentManagementService.getEnvironments({
-			pagination: { page: 1, limit: 1000 },
-			sort: { column: 'name', direction: 'asc' }
+		queryClient.fetchQuery({
+			queryKey: queryKeys.federatedCredentials.list(federatedCredentialRequestOptions),
+			queryFn: () => federatedCredentialService.list(federatedCredentialRequestOptions)
+		}),
+		queryClient.fetchQuery({
+			queryKey: ['roles', 'all'],
+			queryFn: () => roleService.getAll()
+		}),
+		queryClient.fetchQuery({
+			queryKey: queryKeys.environments.list({
+				pagination: { page: 1, limit: 1000 },
+				sort: { column: 'name', direction: 'asc' }
+			}),
+			queryFn: () =>
+				environmentManagementService.getEnvironments({
+					pagination: { page: 1, limit: 1000 },
+					sort: { column: 'name', direction: 'asc' }
+				})
 		})
 	]);
 
 	return {
 		...parentData,
+		activeAuthTab,
 		oidcMappings: mappings,
+		federatedCredentials,
+		federatedCredentialRequestOptions,
 		roles,
 		environments: environmentsPage.data
 	};

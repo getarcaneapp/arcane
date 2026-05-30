@@ -178,6 +178,7 @@ func Load() (*types.Config, error) {
 	v.SetConfigType("yaml")
 	v.SetDefault("server_url", "http://localhost:3552")
 	v.SetDefault("default_environment", "0")
+	v.SetDefault("federated_audience", "")
 	v.SetDefault("log_level", "info")
 	if err := v.ReadInConfig(); err != nil {
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
@@ -231,6 +232,9 @@ func Save(c *types.Config) error {
 	}
 	if cfg.DefaultEnvironment != "" {
 		v.Set("default_environment", cfg.DefaultEnvironment)
+	}
+	if cfg.FederatedAudience != "" {
+		v.Set("federated_audience", cfg.FederatedAudience)
 	}
 	if cfg.LogLevel != "" {
 		v.Set("log_level", cfg.LogLevel)
@@ -301,6 +305,7 @@ func InitDefaultFile() (bool, error) {
 	v.Set("jwt_token", "")
 	v.Set("refresh_token", "")
 	v.Set("default_environment", "0")
+	v.Set("federated_audience", "")
 	v.Set("log_level", "info")
 
 	v.Set("pagination.default.limit", defaultPaginationInitLimit)
