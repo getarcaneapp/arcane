@@ -6,7 +6,7 @@
 	import ActivityDetailPanel from './activity-detail-panel.svelte';
 	import { activityStore } from '$lib/stores/activity.store.svelte';
 	import type { ActivityFilter } from '$lib/types/activity.type';
-	import { ActivityIcon, CloseIcon, RefreshIcon, TrashIcon } from '$lib/icons';
+	import { ActivityIcon, AlertTriangleIcon, CloseIcon, RefreshIcon, TrashIcon } from '$lib/icons';
 	import { m } from '$lib/paraglide/messages';
 	import { cn } from '$lib/utils';
 	import { activityFilterLabel } from './activity-labels';
@@ -34,7 +34,16 @@
 				destructive: true,
 				action: async () => {
 					try {
-						await activityStore.clearHistory();
+						const result = await activityStore.clearHistory();
+						if (result.failed.length > 0) {
+							toast.warning(
+								m.activity_clear_history_partial({
+									count: result.succeeded,
+									environments: result.failed.map((failure) => failure.environmentName).join(', ')
+								})
+							);
+							return;
+						}
 						toast.success(m.activity_clear_history_success());
 					} catch (error) {
 						console.error('Failed to clear activity history:', error);
@@ -104,6 +113,28 @@
 	</div>
 
 	<div class="min-h-[68vh] flex-1 overflow-y-auto">
+		{#if activityStore.environmentFailures.length > 0}
+			<div class="border-border/60 bg-muted/25 border-b px-4 py-3">
+				<div class="text-muted-foreground flex items-start gap-2 text-xs">
+					<AlertTriangleIcon class="mt-0.5 size-4 shrink-0 text-amber-500" aria-hidden="true" />
+					<div class="min-w-0 flex-1 space-y-1">
+						{#each activityStore.environmentFailures as failure (failure.environmentId)}
+							<p class="leading-relaxed">
+								{m.activity_environment_load_failed({ environment: failure.environmentName })}
+							</p>
+						{/each}
+					</div>
+					<button
+						type="button"
+						onclick={() => activityStore.retryStream()}
+						class="text-primary hover:text-primary/80 shrink-0 text-xs font-medium underline"
+					>
+						{m.common_retry()}
+					</button>
+				</div>
+			</div>
+		{/if}
+
 		{#if activityStore.loading && activityStore.activities.length === 0}
 			<div class="flex min-h-96 items-center justify-center p-6 text-center">
 				<div class="space-y-2">
