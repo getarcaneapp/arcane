@@ -65,6 +65,11 @@ export class VolumeBrowserService extends BaseAPIService {
 			})
 		);
 	}
+
+	async stopBrowsing(volumeName: string): Promise<void> {
+		const envId = await environmentStore.getCurrentEnvironmentId();
+		return this.handleResponse(this.api.post(`/environments/${envId}/volumes/${volumeName}/browse/stop`));
+	}
 }
 
 export const volumeBrowserService = new VolumeBrowserService();

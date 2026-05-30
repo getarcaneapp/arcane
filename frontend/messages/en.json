@@ -820,6 +820,8 @@
 	"volumes_remove_success": "Volume {name} removed successfully",
 	"volumes_browser_new_folder": "New Folder",
 	"volumes_browser_upload_files": "Upload Files",
+	"volumes_browser_stop": "Stop browsing",
+	"volumes_browser_stop_success": "Volume browser stopped",
 	"volumes_browser_delete_confirm": "Are you sure you want to delete {name}?",
 	"volumes_backup_create": "Create Backup",
 	"volumes_backup_restore_confirm": "Are you sure you want to restore this backup? This will overwrite the current volume contents!",

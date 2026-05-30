@@ -38,6 +38,7 @@ export type Settings = {
 	autoHealExcludedContainers?: string;
 	autoHealMaxRestarts?: number;
 	autoHealRestartWindow?: number;
+	volumeBrowserHelperIdleTimeout?: number;
 	maxImageUploadSize: number;
 	gitSyncMaxFiles: number;
 	gitSyncMaxTotalSizeMb: number;
