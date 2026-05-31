@@ -79,6 +79,11 @@ const (
 
 	PermEventsRead      = "events:read"
 	PermCustomizeManage = "customize:manage"
+
+	// PermDiagnosticsRead gates the admin-only runtime diagnostics surface
+	// (runtime/memory/GC stats, WebSocket metrics, pprof profiles, and the live
+	// backend log tail). Global-scoped; seeded only into the Admin role.
+	PermDiagnosticsRead = "diagnostics:read"
 )
 
 // Env-scoped permissions (resolved against the {id} env ID in the path).

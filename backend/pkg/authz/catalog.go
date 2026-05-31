@@ -92,6 +92,9 @@ var permissionCatalog = []PermissionCatalogResource{
 	{"customize", "Customize", PermissionScopeGlobal, []PermissionCatalogAction{
 		{"manage", PermCustomizeManage, "Manage", ""},
 	}},
+	{"diagnostics", "Diagnostics", PermissionScopeGlobal, []PermissionCatalogAction{
+		{"read", PermDiagnosticsRead, "View", "View runtime diagnostics, pprof profiles, and backend logs"},
+	}},
 	{"containers", "Containers", PermissionScopeEnv, []PermissionCatalogAction{
 		{"list", PermContainersList, "List", ""},
 		{"read", PermContainersRead, "Read", ""},

@@ -11,7 +11,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/api/handlers"
 	"github.com/getarcaneapp/arcane/backend/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
-	"github.com/getarcaneapp/arcane/backend/internal/services"
+	"github.com/getarcaneapp/arcane/backend/internal/di"
 	"github.com/labstack/echo/v4"
 )
 
@@ -137,51 +137,8 @@ func capitalizeFirst(s string) string {
 	return strings.ToUpper(s[:1]) + s[1:]
 }
 
-// Services holds all service dependencies needed by Huma handlers.
-type Services struct {
-	AppContext        context.Context
-	User              *services.UserService
-	Auth              *services.AuthService
-	Oidc              *services.OidcService
-	ApiKey            *services.ApiKeyService
-	Federated         *services.FederatedCredentialService
-	AppImages         *services.ApplicationImagesService
-	Project           *services.ProjectService
-	Event             *services.EventService
-	Activity          *services.ActivityService
-	Version           *services.VersionService
-	Environment       *services.EnvironmentService
-	Settings          *services.SettingsService
-	JobSchedule       *services.JobService
-	SettingsSearch    *services.SettingsSearchService
-	ContainerRegistry *services.ContainerRegistryService
-	Template          *services.TemplateService
-	Docker            *services.DockerClientService
-	Image             *services.ImageService
-	ImageUpdate       *services.ImageUpdateService
-	Build             *services.BuildService
-	BuildWorkspace    *services.BuildWorkspaceService
-	Volume            *services.VolumeService
-	Container         *services.ContainerService
-	Network           *services.NetworkService
-	Port              *services.PortService
-	Swarm             *services.SwarmService
-	Notification      *services.NotificationService
-	Updater           *services.UpdaterService
-	CustomizeSearch   *services.CustomizeSearchService
-	System            *services.SystemService
-	SystemUpgrade     *services.SystemUpgradeService
-	GitRepository     *services.GitRepositoryService
-	GitOpsSync        *services.GitOpsSyncService
-	Webhook           *services.WebhookService
-	Vulnerability     *services.VulnerabilityService
-	Dashboard         *services.DashboardService
-	Role              *services.RoleService
-	Config            *config.Config
-}
-
 // SetupAPI creates and configures the Huma API attached to the Echo router.
-func SetupAPI(e *echo.Echo, apiGroup *echo.Group, cfg *config.Config, svc *Services) huma.API {
+func SetupAPI(e *echo.Echo, apiGroup *echo.Group, appCtx handlers.ActivityAppContext, cfg *config.Config, svc *di.Services) huma.API {
 	humaConfig := huma.DefaultConfig("Arcane API", config.Version)
 	humaConfig.Info.Description = "Modern Docker Management, Designed for Everyone"
 
@@ -230,7 +187,7 @@ func SetupAPI(e *echo.Echo, apiGroup *echo.Group, cfg *config.Config, svc *Servi
 	api.UseMiddleware(middleware.NewAuthBridge(api, svc.Auth, svc.ApiKey, svc.Role, svc.Environment, cfg))
 
 	// Register all Huma handlers
-	registerHandlers(api, svc)
+	registerHandlersInternal(api, svc, appCtx, cfg)
 
 	// Register Scalar API docs endpoint with dark mode
 	registerScalarDocs(apiGroup)
@@ -306,128 +263,52 @@ func SetupAPIForSpec() huma.API {
 	api := humaecho.NewWithGroup(e, apiGroup, humaConfig)
 
 	// Register handlers with nil services (just for schema)
-	registerHandlers(api, nil)
+	registerHandlersInternal(api, nil, handlers.NewActivityAppContext(context.Background()), nil)
 
 	return api
 }
 
 // registerHandlers registers all Huma-based API handlers.
 // Add new handlers here as they are migrated from Gin.
-func registerHandlers(api huma.API, svc *Services) {
-	var userSvc *services.UserService
-	var authSvc *services.AuthService
-	var oidcSvc *services.OidcService
-	var apiKeySvc *services.ApiKeyService
-	var federatedSvc *services.FederatedCredentialService
-	var appImagesSvc *services.ApplicationImagesService
-	var projectSvc *services.ProjectService
-	var eventSvc *services.EventService
-	var activitySvc *services.ActivityService
-	var versionSvc *services.VersionService
-	var environmentSvc *services.EnvironmentService
-	var settingsSvc *services.SettingsService
-	var jobScheduleSvc *services.JobService
-	var settingsSearchSvc *services.SettingsSearchService
-	var containerRegistrySvc *services.ContainerRegistryService
-	var templateSvc *services.TemplateService
-	var dockerSvc *services.DockerClientService
-	var imageSvc *services.ImageService
-	var imageUpdateSvc *services.ImageUpdateService
-	var buildSvc *services.BuildService
-	var buildWorkspaceSvc *services.BuildWorkspaceService
-	var volumeSvc *services.VolumeService
-	var containerSvc *services.ContainerService
-	var networkSvc *services.NetworkService
-	var portSvc *services.PortService
-	var swarmSvc *services.SwarmService
-	var notificationSvc *services.NotificationService
-	var updaterSvc *services.UpdaterService
-	var customizeSearchSvc *services.CustomizeSearchService
-	var systemSvc *services.SystemService
-	var systemUpgradeSvc *services.SystemUpgradeService
-	var gitRepositorySvc *services.GitRepositoryService
-	var gitOpsSyncSvc *services.GitOpsSyncService
-	var webhookSvc *services.WebhookService
-	var vulnerabilitySvc *services.VulnerabilityService
-	var dashboardSvc *services.DashboardService
-	var roleSvc *services.RoleService
-	var appCtx context.Context
-	var cfg *config.Config
-
-	if svc != nil {
-		appCtx = svc.AppContext
-		userSvc = svc.User
-		authSvc = svc.Auth
-		oidcSvc = svc.Oidc
-		apiKeySvc = svc.ApiKey
-		federatedSvc = svc.Federated
-		appImagesSvc = svc.AppImages
-		projectSvc = svc.Project
-		eventSvc = svc.Event
-		activitySvc = svc.Activity
-		versionSvc = svc.Version
-		environmentSvc = svc.Environment
-		settingsSvc = svc.Settings
-		jobScheduleSvc = svc.JobSchedule
-		settingsSearchSvc = svc.SettingsSearch
-		containerRegistrySvc = svc.ContainerRegistry
-		templateSvc = svc.Template
-		dockerSvc = svc.Docker
-		imageSvc = svc.Image
-		imageUpdateSvc = svc.ImageUpdate
-		buildSvc = svc.Build
-		buildWorkspaceSvc = svc.BuildWorkspace
-		volumeSvc = svc.Volume
-		containerSvc = svc.Container
-		networkSvc = svc.Network
-		portSvc = svc.Port
-		swarmSvc = svc.Swarm
-		notificationSvc = svc.Notification
-		updaterSvc = svc.Updater
-		customizeSearchSvc = svc.CustomizeSearch
-		systemSvc = svc.System
-		systemUpgradeSvc = svc.SystemUpgrade
-		gitRepositorySvc = svc.GitRepository
-		gitOpsSyncSvc = svc.GitOpsSync
-		webhookSvc = svc.Webhook
-		vulnerabilitySvc = svc.Vulnerability
-		dashboardSvc = svc.Dashboard
-		roleSvc = svc.Role
-		cfg = svc.Config
+func registerHandlersInternal(api huma.API, svc *di.Services, handlerAppCtx handlers.ActivityAppContext, cfg *config.Config) {
+	// svc is nil during OpenAPI spec generation (SetupAPIForSpec); an empty
+	// container keeps every field a true-nil pointer so handler nil-guards hold.
+	if svc == nil {
+		svc = &di.Services{}
 	}
-	handlerAppCtx := handlers.NewActivityAppContext(appCtx)
 	handlers.RegisterHealth(api)
-	handlers.RegisterAuth(api, userSvc, authSvc, oidcSvc)
-	handlers.RegisterApiKeys(api, apiKeySvc)
-	handlers.RegisterFederatedCredentials(api, federatedSvc)
-	handlers.RegisterRoles(api, roleSvc)
-	handlers.RegisterAppImages(api, appImagesSvc)
-	handlers.RegisterUsers(api, userSvc, authSvc)
-	handlers.RegisterProjects(api, projectSvc, activitySvc, handlerAppCtx)
-	handlers.RegisterVersion(api, versionSvc)
-	handlers.RegisterEvents(api, eventSvc, apiKeySvc)
-	handlers.RegisterActivities(api, activitySvc, environmentSvc)
-	handlers.RegisterOidc(api, authSvc, oidcSvc, roleSvc, userSvc, cfg)
-	handlers.RegisterEnvironments(api, environmentSvc, settingsSvc, apiKeySvc, eventSvc, cfg)
-	handlers.RegisterContainerRegistries(api, containerRegistrySvc, environmentSvc)
-	handlers.RegisterTemplates(api, templateSvc, environmentSvc)
-	handlers.RegisterImages(api, dockerSvc, imageSvc, imageUpdateSvc, settingsSvc, buildSvc, activitySvc, handlerAppCtx)
-	handlers.RegisterBuildWorkspaces(api, buildWorkspaceSvc)
-	handlers.RegisterImageUpdates(api, imageUpdateSvc, imageSvc, handlerAppCtx)
-	handlers.RegisterSettings(api, settingsSvc, settingsSearchSvc, environmentSvc, cfg)
-	handlers.RegisterJobSchedules(api, jobScheduleSvc, environmentSvc)
-	handlers.RegisterVolumes(api, dockerSvc, volumeSvc, activitySvc, handlerAppCtx)
-	handlers.RegisterContainers(api, containerSvc, dockerSvc, settingsSvc, activitySvc, handlerAppCtx)
-	handlers.RegisterPorts(api, portSvc)
-	handlers.RegisterNetworks(api, networkSvc, dockerSvc, activitySvc, handlerAppCtx)
-	handlers.RegisterSwarm(api, swarmSvc, environmentSvc, eventSvc, cfg)
-	handlers.RegisterNotifications(api, notificationSvc, cfg)
-	handlers.RegisterUpdater(api, updaterSvc, handlerAppCtx)
-	handlers.RegisterCustomize(api, customizeSearchSvc)
-	handlers.RegisterSystem(api, dockerSvc, systemSvc, systemUpgradeSvc, cfg, activitySvc, handlerAppCtx)
-	handlers.RegisterGitRepositories(api, gitRepositorySvc)
-	handlers.RegisterGitOpsSyncs(api, gitOpsSyncSvc)
-	handlers.RegisterWebhooks(api, webhookSvc)
-	handlers.RegisterVulnerability(api, vulnerabilitySvc, handlerAppCtx)
-	handlers.RegisterDashboard(api, dashboardSvc)
+	handlers.RegisterAuth(api, svc.User, svc.Auth, svc.Oidc)
+	handlers.RegisterApiKeys(api, svc.ApiKey)
+	handlers.RegisterFederatedCredentials(api, svc.Federated)
+	handlers.RegisterRoles(api, svc.Role)
+	handlers.RegisterAppImages(api, svc.AppImages)
+	handlers.RegisterUsers(api, svc.User, svc.Auth)
+	handlers.RegisterProjects(api, svc.Project, svc.Activity, handlerAppCtx)
+	handlers.RegisterVersion(api, svc.Version)
+	handlers.RegisterEvents(api, svc.Event, svc.ApiKey)
+	handlers.RegisterActivities(api, svc.Activity, svc.Environment)
+	handlers.RegisterOidc(api, svc.Auth, svc.Oidc, svc.Role, svc.User, cfg)
+	handlers.RegisterEnvironments(api, svc.Environment, svc.Settings, svc.ApiKey, svc.Event, cfg)
+	handlers.RegisterContainerRegistries(api, svc.ContainerRegistry, svc.Environment)
+	handlers.RegisterTemplates(api, svc.Template, svc.Environment)
+	handlers.RegisterImages(api, svc.Docker, svc.Image, svc.ImageUpdate, svc.Settings, svc.Build, svc.Activity, handlerAppCtx)
+	handlers.RegisterBuildWorkspaces(api, svc.BuildWorkspace)
+	handlers.RegisterImageUpdates(api, svc.ImageUpdate, svc.Image, handlerAppCtx)
+	handlers.RegisterSettings(api, svc.Settings, svc.SettingsSearch, svc.Environment, cfg)
+	handlers.RegisterJobSchedules(api, svc.JobSchedule, svc.Environment)
+	handlers.RegisterVolumes(api, svc.Docker, svc.Volume, svc.Activity, handlerAppCtx)
+	handlers.RegisterContainers(api, svc.Container, svc.Docker, svc.Settings, svc.Activity, handlerAppCtx)
+	handlers.RegisterPorts(api, svc.Port)
+	handlers.RegisterNetworks(api, svc.Network, svc.Docker, svc.Activity, handlerAppCtx)
+	handlers.RegisterSwarm(api, svc.Swarm, svc.Environment, svc.Event, cfg)
+	handlers.RegisterNotifications(api, svc.Notification, cfg)
+	handlers.RegisterUpdater(api, svc.Updater, handlerAppCtx)
+	handlers.RegisterCustomize(api, svc.CustomizeSearch)
+	handlers.RegisterSystem(api, svc.Docker, svc.System, svc.SystemUpgrade, cfg, svc.Activity, handlerAppCtx)
+	handlers.RegisterDiagnostics(api, svc.Diagnostics)
+	handlers.RegisterGitRepositories(api, svc.GitRepository)
+	handlers.RegisterGitOpsSyncs(api, svc.GitOpsSync)
+	handlers.RegisterWebhooks(api, svc.Webhook)
+	handlers.RegisterVulnerability(api, svc.Vulnerability, handlerAppCtx)
+	handlers.RegisterDashboard(api, svc.Dashboard)
 }
