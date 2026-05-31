@@ -223,7 +223,7 @@ jobs:
   e2e-tests:
     name: E2E Tests (${{ matrix.database.name }})
     if: ${{ github.head_ref != 'l10n_crowdin' }}
-    runs-on: depot-ubuntu-latest
+    runs-on: depot-ubuntu-24.04-4
     permissions:
       contents: read
       actions: write
@@ -301,7 +301,7 @@ jobs:
   cli-e2e-tests:
     name: CLI E2E Tests (proxy)
     if: ${{ github.head_ref != 'l10n_crowdin' }}
-    runs-on: depot-ubuntu-latest
+    runs-on: depot-ubuntu-24.04-4
     permissions:
       contents: read
       actions: write
