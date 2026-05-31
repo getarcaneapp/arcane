@@ -3,12 +3,12 @@ package imageupdate
 import "strings"
 
 const (
-	// Core labels
+	// LabelArcane and the constants below are the core Arcane container labels.
 	LabelArcane      = "com.getarcaneapp.arcane"         // Identifies the Arcane container itself
 	LabelArcaneAgent = "com.getarcaneapp.arcane.agent"   // Identifies an Arcane agent container
 	LabelUpdater     = "com.getarcaneapp.arcane.updater" // Enable/disable updates (true/false)
 
-	// Dependency labels
+	// LabelDependsOn and the constants below are update-dependency labels.
 	LabelDependsOn  = "com.getarcaneapp.arcane.depends-on"  // Comma-separated list of container names this depends on
 	LabelStopSignal = "com.getarcaneapp.arcane.stop-signal" // Custom stop signal (e.g., SIGINT)
 )

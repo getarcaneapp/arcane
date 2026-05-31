@@ -1,7 +1,9 @@
 package apikeys
 
 import (
+	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -116,7 +118,7 @@ var listCmd = &cobra.Command{
 				key.ID,
 				key.Name,
 				description,
-				fmt.Sprintf("%d", len(key.Permissions)),
+				strconv.Itoa(len(key.Permissions)),
 				key.CreatedAt.Format("2006-01-02 15:04"),
 				lastUsed,
 			}
@@ -146,7 +148,7 @@ var createCmd = &cobra.Command{
 			return err
 		}
 		if len(grants) == 0 {
-			return fmt.Errorf("at least one --permission is required (e.g. --permission containers:list)")
+			return errors.New("at least one --permission is required (e.g. --permission containers:list)")
 		}
 		createReq := apikey.CreateApiKey{
 			Name:        args[0],
@@ -274,7 +276,7 @@ var getCmd = &cobra.Command{
 		if result.Data.ExpiresAt != nil {
 			output.KeyValue("Expires", result.Data.ExpiresAt.Format("2006-01-02 15:04"))
 		}
-		output.KeyValue("Permissions", fmt.Sprintf("%d", len(result.Data.Permissions)))
+		output.KeyValue("Permissions", strconv.Itoa(len(result.Data.Permissions)))
 		if len(result.Data.Permissions) > 0 {
 			rows := make([][]string, len(result.Data.Permissions))
 			for i, g := range result.Data.Permissions {

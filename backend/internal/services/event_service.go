@@ -165,10 +165,10 @@ func (s *EventService) canForwardEventToManagerHTTP() bool {
 
 func (s *EventService) forwardEventToManagerHTTP(ctx context.Context, eventModel *models.Event) error {
 	if eventModel == nil {
-		return fmt.Errorf("event is required")
+		return errors.New("event is required")
 	}
 	if s.cfg == nil || strings.TrimSpace(s.cfg.AgentToken) == "" {
-		return fmt.Errorf("agent token is required for manager event sync")
+		return errors.New("agent token is required for manager event sync")
 	}
 
 	managerEventsURL, err := managerEventEndpointURL(s.cfg.GetManagerBaseURL())
@@ -203,9 +203,9 @@ func (s *EventService) forwardEventToManagerHTTP(ctx context.Context, eventModel
 		return fmt.Errorf("failed to create manager event request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-API-Key", s.cfg.AgentToken)
+	req.Header.Set("X-Api-Key", s.cfg.AgentToken)
 
-	resp, err := s.httpClient.Do(req) //nolint:gosec // managerEventsURL is validated in managerEventEndpointURL before request
+	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send event to manager: %w", err)
 	}
@@ -225,7 +225,7 @@ func (s *EventService) forwardEventToManagerHTTP(ctx context.Context, eventModel
 func managerEventEndpointURL(rawBaseURL string) (string, error) {
 	trimmed := strings.TrimSpace(rawBaseURL)
 	if trimmed == "" {
-		return "", fmt.Errorf("manager API URL is required")
+		return "", errors.New("manager API URL is required")
 	}
 
 	baseURL, err := url.Parse(trimmed)
@@ -236,7 +236,7 @@ func managerEventEndpointURL(rawBaseURL string) (string, error) {
 		return "", fmt.Errorf("unsupported scheme %q", baseURL.Scheme)
 	}
 	if baseURL.Host == "" {
-		return "", fmt.Errorf("manager API URL host is required")
+		return "", errors.New("manager API URL host is required")
 	}
 
 	baseURL.RawQuery = ""
@@ -382,7 +382,7 @@ func (s *EventService) DeleteEvent(ctx context.Context, eventID string) error {
 			return fmt.Errorf("failed to delete event: %w", result.Error)
 		}
 		if result.RowsAffected == 0 {
-			return fmt.Errorf("event not found")
+			return errors.New("event not found")
 		}
 		return nil
 	})
@@ -534,7 +534,7 @@ func (s *EventService) LogErrorEvent(ctx context.Context, eventType models.Event
 	eventMetadata["error"] = err.Error()
 
 	titleCaser := cases.Title(language.English)
-	title := fmt.Sprintf("%s error", titleCaser.String(resourceType))
+	title := titleCaser.String(resourceType) + " error"
 	if resourceName != "" {
 		title = fmt.Sprintf("%s error: %s", titleCaser.String(resourceType), resourceName)
 	}
@@ -670,7 +670,7 @@ func (s *EventService) generateEventTitle(eventType models.EventType, resourceNa
 	if def, ok := eventDefinitions[eventType]; ok {
 		return fmt.Sprintf(def.TitleFormat, resourceName)
 	}
-	return fmt.Sprintf("Event: %s", string(eventType))
+	return "Event: " + string(eventType)
 }
 
 func (s *EventService) generateEventDescription(eventType models.EventType, resourceType, resourceName string) string {

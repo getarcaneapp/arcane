@@ -50,7 +50,7 @@ func buildPaginationParamsInternal(start, limit int, sortCol, sortDir, search st
 			Sort:  sortCol,
 			Order: pagination.SortOrder(sortDir),
 		},
-		PaginationParams: pagination.PaginationParams{
+		Params: pagination.Params{
 			Start: start,
 			Limit: limit,
 		},

@@ -90,7 +90,7 @@ func createAuthValidatorInternal(appServices *Services) middleware.AuthValidator
 	return func(ctx context.Context, c echo.Context) bool {
 		req := c.Request()
 		// Check for API key authentication
-		if apiKey := req.Header.Get("X-API-Key"); apiKey != "" {
+		if apiKey := req.Header.Get("X-Api-Key"); apiKey != "" {
 			// User-owned API key
 			if user, err := appServices.ApiKey.ValidateApiKey(ctx, apiKey); err == nil && user != nil {
 				return true

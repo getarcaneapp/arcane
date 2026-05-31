@@ -347,7 +347,7 @@ func (h *ImageHandler) ListImages(ctx context.Context, input *ListImagesInput) (
 			Sort:  input.Sort,
 			Order: pagination.SortOrder(input.Order),
 		},
-		PaginationParams: pagination.PaginationParams{
+		Params: pagination.Params{
 			Start: input.Start,
 			Limit: input.Limit,
 		},

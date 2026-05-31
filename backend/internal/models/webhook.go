@@ -20,6 +20,8 @@ const (
 )
 
 type Webhook struct {
+	BaseModel
+
 	Name            string     `json:"name" gorm:"column:name;not null"`
 	TokenHash       string     `json:"-" gorm:"column:token_hash;not null;uniqueIndex"`
 	TokenPrefix     string     `json:"tokenPrefix" gorm:"column:token_prefix;not null"`
@@ -30,7 +32,6 @@ type Webhook struct {
 	EnvironmentID   string     `json:"environmentId" gorm:"column:environment_id;not null;default:''"`
 	Enabled         bool       `json:"enabled" gorm:"column:enabled;not null;default:true"`
 	LastTriggeredAt *time.Time `json:"lastTriggeredAt,omitempty" gorm:"column:last_triggered_at"`
-	BaseModel
 }
 
 func (Webhook) TableName() string {

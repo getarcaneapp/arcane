@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"regexp"
@@ -454,7 +455,7 @@ func (s *SystemService) pruneContainersInternal(ctx context.Context, options sys
 	filterArgs := make(client.Filters)
 	if options.Mode == system.PruneContainerModeOlderThan {
 		if strings.TrimSpace(options.Until) == "" {
-			return fmt.Errorf("container prune mode olderThan requires until")
+			return errors.New("container prune mode olderThan requires until")
 		}
 		filterArgs = filterArgs.Add("until", options.Until)
 	}
@@ -479,14 +480,14 @@ func (s *SystemService) pruneImagesInternal(ctx context.Context, options system.
 	filterArgs := make(client.Filters)
 	switch options.Mode {
 	case system.PruneImageModeNone:
-		return fmt.Errorf("image prune mode none is not allowed")
+		return errors.New("image prune mode none is not allowed")
 	case system.PruneImageModeDangling:
 		filterArgs = filterArgs.Add("dangling", "true")
 	case system.PruneImageModeAll:
 		filterArgs = filterArgs.Add("dangling", "false")
 	case system.PruneImageModeOlderThan:
 		if strings.TrimSpace(options.Until) == "" {
-			return fmt.Errorf("image prune mode olderThan requires until")
+			return errors.New("image prune mode olderThan requires until")
 		}
 		filterArgs = filterArgs.Add("dangling", "false")
 		filterArgs = filterArgs.Add("until", options.Until)
@@ -537,7 +538,7 @@ func (s *SystemService) pruneBuildCacheInternal(ctx context.Context, options sys
 	}
 	if options.Mode == system.PruneBuildCacheModeOlderThan {
 		if strings.TrimSpace(options.Until) == "" {
-			return fmt.Errorf("build cache prune mode olderThan requires until")
+			return errors.New("build cache prune mode olderThan requires until")
 		}
 		pruneOptions.Filters = make(client.Filters)
 		pruneOptions.Filters = pruneOptions.Filters.Add("until", options.Until)
@@ -582,7 +583,7 @@ func (s *SystemService) pruneNetworksInternal(ctx context.Context, options syste
 	filterArgs := make(client.Filters)
 	if options.Mode == system.PruneNetworkModeOlderThan {
 		if strings.TrimSpace(options.Until) == "" {
-			return fmt.Errorf("network prune mode olderThan requires until")
+			return errors.New("network prune mode olderThan requires until")
 		}
 		filterArgs = filterArgs.Add("until", options.Until)
 	}
@@ -600,14 +601,14 @@ func (s *SystemService) pruneNetworksInternal(ctx context.Context, options syste
 
 func (s *SystemService) ParseDockerRunCommand(command string) (*system.DockerRunCommand, error) {
 	if command == "" {
-		return nil, fmt.Errorf("docker run command must be a non-empty string")
+		return nil, errors.New("docker run command must be a non-empty string")
 	}
 
 	cmd := strings.TrimSpace(command)
 	cmd = regexp.MustCompile(`^docker\s+run\s+`).ReplaceAllString(cmd, "")
 
 	if cmd == "" {
-		return nil, fmt.Errorf("no arguments found after 'docker run'")
+		return nil, errors.New("no arguments found after 'docker run'")
 	}
 
 	result := &system.DockerRunCommand{}
@@ -617,7 +618,7 @@ func (s *SystemService) ParseDockerRunCommand(command string) (*system.DockerRun
 	}
 
 	if len(tokens) == 0 {
-		return nil, fmt.Errorf("no valid tokens found in docker run command")
+		return nil, errors.New("no valid tokens found in docker run command")
 	}
 
 	if err := dockerrun.ParseTokens(tokens, result); err != nil {
@@ -625,7 +626,7 @@ func (s *SystemService) ParseDockerRunCommand(command string) (*system.DockerRun
 	}
 
 	if result.Image == "" {
-		return nil, fmt.Errorf("no Docker image specified in command")
+		return nil, errors.New("no Docker image specified in command")
 	}
 
 	return result, nil
@@ -633,7 +634,7 @@ func (s *SystemService) ParseDockerRunCommand(command string) (*system.DockerRun
 
 func (s *SystemService) ConvertToDockerCompose(parsed *system.DockerRunCommand) (string, string, string, error) {
 	if parsed.Image == "" {
-		return "", "", "", fmt.Errorf("cannot convert to Docker Compose: no image specified")
+		return "", "", "", errors.New("cannot convert to Docker Compose: no image specified")
 	}
 
 	serviceName := parsed.Name

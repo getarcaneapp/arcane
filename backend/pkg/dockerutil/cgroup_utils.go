@@ -34,7 +34,7 @@ func DetectCgroupLimits() (*CgroupLimits, error) {
 	}
 
 	if !isInCgroup() {
-		return nil, fmt.Errorf("not running in a cgroup")
+		return nil, errors.New("not running in a cgroup")
 	}
 
 	if isCgroupV2() {
@@ -178,7 +178,7 @@ func getCgroupV1Path() (string, error) {
 		return "", fmt.Errorf("error scanning cgroup file: %w", err)
 	}
 
-	return "", fmt.Errorf("cgroup path not found")
+	return "", errors.New("cgroup path not found")
 }
 
 func readCgroupV1Int64(path string) (int64, error) {

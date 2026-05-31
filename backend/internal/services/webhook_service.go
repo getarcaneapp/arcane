@@ -202,7 +202,7 @@ func (s *WebhookService) CreateWebhook(ctx context.Context, name, targetType, ac
 		_, _ = s.eventService.CreateEvent(ctx, CreateEventRequest{
 			Type:          models.EventTypeWebhookCreate,
 			Severity:      models.EventSeveritySuccess,
-			Title:         fmt.Sprintf("Webhook created: %s", wh.Name),
+			Title:         "Webhook created: " + wh.Name,
 			Description:   fmt.Sprintf("Created webhook '%s' targeting %s (%s)", wh.Name, wh.TargetType, wh.ActionType),
 			ResourceType:  new("webhook"),
 			ResourceID:    &wh.ID,
@@ -337,7 +337,7 @@ func (s *WebhookService) DeleteWebhook(ctx context.Context, id, environmentID st
 		_, _ = s.eventService.CreateEvent(ctx, CreateEventRequest{
 			Type:          models.EventTypeWebhookDelete,
 			Severity:      models.EventSeverityInfo,
-			Title:         fmt.Sprintf("Webhook deleted: %s", wh.Name),
+			Title:         "Webhook deleted: " + wh.Name,
 			Description:   fmt.Sprintf("Deleted webhook '%s'", wh.Name),
 			ResourceType:  new("webhook"),
 			ResourceID:    &wh.ID,
@@ -372,7 +372,7 @@ func (s *WebhookService) UpdateWebhook(ctx context.Context, id, environmentID st
 		_, _ = s.eventService.CreateEvent(ctx, CreateEventRequest{
 			Type:          models.EventTypeWebhookUpdate,
 			Severity:      models.EventSeveritySuccess,
-			Title:         fmt.Sprintf("Webhook updated: %s", wh.Name),
+			Title:         "Webhook updated: " + wh.Name,
 			Description:   fmt.Sprintf("Updated webhook '%s' enabled=%v", wh.Name, enabled),
 			ResourceType:  new("webhook"),
 			ResourceID:    &wh.ID,
@@ -430,7 +430,7 @@ func (s *WebhookService) TriggerByToken(ctx context.Context, rawToken string) (*
 
 	// Record trigger time — best-effort, do not fail the request if this update fails.
 	now := time.Now()
-	_ = s.db.WithContext(ctx).Model(wh).Update("last_triggered_at", now).Error //nolint:errcheck
+	_ = s.db.WithContext(ctx).Model(wh).Update("last_triggered_at", now).Error
 
 	s.logWebhookEventInternal(ctx, wh, actionType, models.EventSeveritySuccess, "")
 
@@ -550,7 +550,7 @@ func (s *WebhookService) syncWebhookContainerTargetInternal(ctx context.Context,
 		return
 	}
 
-	_ = s.db.WithContext(ctx).Model(wh).Updates(updates).Error //nolint:errcheck
+	_ = s.db.WithContext(ctx).Model(wh).Updates(updates).Error
 }
 
 func (s *WebhookService) executeProjectWebhookActionInternal(ctx context.Context, wh *models.Webhook, actionType string) (*updater.Result, error) {
@@ -620,9 +620,9 @@ func (s *WebhookService) logWebhookEventInternal(ctx context.Context, wh *models
 	if s.eventService == nil {
 		return
 	}
-	title := fmt.Sprintf("Webhook triggered: %s", wh.Name)
+	title := "Webhook triggered: " + wh.Name
 	if severity == models.EventSeverityError {
-		title = fmt.Sprintf("Webhook trigger failed: %s", wh.Name)
+		title = "Webhook trigger failed: " + wh.Name
 	}
 	description := fmt.Sprintf("Target type: %s, action: %s", wh.TargetType, actionType)
 	if errMsg != "" {

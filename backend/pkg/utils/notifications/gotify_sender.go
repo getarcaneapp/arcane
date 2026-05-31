@@ -2,8 +2,10 @@ package notifications
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/getarcaneapp/arcane/backend/internal/models"
@@ -15,11 +17,11 @@ import (
 // URL example: gotify://host[:port][/path]/token[?query]
 func BuildGotifyURL(config models.GotifyConfig) (string, error) {
 	if config.Host == "" {
-		return "", fmt.Errorf("gotify host is required")
+		return "", errors.New("gotify host is required")
 	}
 
 	if config.Token == "" {
-		return "", fmt.Errorf("gotify token is required")
+		return "", errors.New("gotify token is required")
 	}
 
 	u := &url.URL{
@@ -42,7 +44,7 @@ func BuildGotifyURL(config models.GotifyConfig) (string, error) {
 
 	q := u.Query()
 	// Always set priority if it's within valid range, 0 is a valid priority
-	q.Set("priority", fmt.Sprintf("%d", config.Priority))
+	q.Set("priority", strconv.Itoa(config.Priority))
 
 	if config.Title != "" {
 		q.Set("title", config.Title)

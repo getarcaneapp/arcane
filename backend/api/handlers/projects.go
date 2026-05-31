@@ -209,6 +209,8 @@ type PullProgressEvent struct {
 
 // RegisterProjects registers project management routes using Huma.
 // Note: WebSocket and streaming endpoints remain as Gin handlers.
+//
+//nolint:maintidx // long but flat Huma route-registration function; complexity is sequential, not branching
 func RegisterProjects(api huma.API, projectService *services.ProjectService, activityService *services.ActivityService, appCtx ActivityAppContext) {
 	h := &ProjectHandler{
 		projectService:  projectService,
@@ -522,7 +524,7 @@ func (h *ProjectHandler) ListProjects(ctx context.Context, input *ListProjectsIn
 			Sort:  input.Sort,
 			Order: pagination.SortOrder(input.Order),
 		},
-		PaginationParams: pagination.PaginationParams{
+		Params: pagination.Params{
 			Start: input.Start,
 			Limit: input.Limit,
 		},
@@ -571,10 +573,10 @@ func (h *ProjectHandler) GetProjectStatusCounts(ctx context.Context, input *GetP
 		Body: base.ApiResponse[project.StatusCounts]{
 			Success: true,
 			Data: project.StatusCounts{
-				RunningProjects:  int(running),
-				StoppedProjects:  int(stopped),
-				TotalProjects:    int(total),
-				ArchivedProjects: int(archived),
+				RunningProjects:  running,
+				StoppedProjects:  stopped,
+				TotalProjects:    total,
+				ArchivedProjects: archived,
 			},
 		},
 	}, nil
@@ -1200,7 +1202,7 @@ func (h *ProjectHandler) PullProjectImages(ctx context.Context, input *PullProje
 		Body: func(humaCtx huma.Context) { //nolint:contextcheck // context is obtained from humaCtx.Context()
 			httpx.SetJSONStreamHeaders(humaCtx)
 
-			runtimeCtx := utils.ActivityRuntimeContext(humaCtx.Context(), h.appCtx) //nolint:contextcheck // activity context intentionally outlives the HTTP stream (uses app lifecycle context)
+			runtimeCtx := utils.ActivityRuntimeContext(humaCtx.Context(), h.appCtx)
 			rawWriter := humaCtx.BodyWriter()
 			activityID, runtimeCtx := activitylib.StartHandlerActivityForUser(
 				runtimeCtx,
@@ -1269,7 +1271,7 @@ func (h *ProjectHandler) BuildProjectImages(ctx context.Context, input *BuildPro
 		Body: func(humaCtx huma.Context) { //nolint:contextcheck // context is obtained from humaCtx.Context()
 			httpx.SetJSONStreamHeaders(humaCtx)
 
-			runtimeCtx := utils.ActivityRuntimeContext(humaCtx.Context(), h.appCtx) //nolint:contextcheck // activity context intentionally outlives the HTTP stream (uses app lifecycle context)
+			runtimeCtx := utils.ActivityRuntimeContext(humaCtx.Context(), h.appCtx)
 			rawWriter := humaCtx.BodyWriter()
 			activityID, runtimeCtx := activitylib.StartHandlerActivityForUser(
 				runtimeCtx,

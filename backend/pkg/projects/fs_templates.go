@@ -36,7 +36,7 @@ func ReadFolderComposeTemplate(baseDir, folder string) (string, *string, string,
 		}
 	}
 
-	desc := fmt.Sprintf("Imported from %s", composePath)
+	desc := "Imported from " + composePath
 	return string(b), envPtr, desc, true, nil
 }
 

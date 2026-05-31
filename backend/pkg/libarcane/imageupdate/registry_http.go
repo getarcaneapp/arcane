@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -197,7 +198,7 @@ func FetchDigest(ctx context.Context, registryHost, repository, tag string, cred
 
 	digest := extractDigestFromHeadersInternal(resp.Header)
 	if digest == "" {
-		return "", fmt.Errorf("no digest header found in response")
+		return "", errors.New("no digest header found in response")
 	}
 
 	return digest, nil
@@ -206,7 +207,7 @@ func FetchDigest(ctx context.Context, registryHost, repository, tag string, cred
 func fetchRateLimitWithTokenAuthInternal(ctx context.Context, httpClient *http.Client, registryHost, repository, tag, challenge string, credential *Credentials) (*RateLimitInfo, error) {
 	realm, service := parseWWWAuthInternal(challenge)
 	if realm == "" {
-		return nil, fmt.Errorf("no auth realm found")
+		return nil, errors.New("no auth realm found")
 	}
 	if err := validateAuthRealmInternal(registryHost, realm); err != nil {
 		return nil, err
@@ -233,7 +234,7 @@ func fetchRateLimitWithTokenAuthInternal(ctx context.Context, httpClient *http.C
 func fetchWithTokenAuthInternal(ctx context.Context, httpClient *http.Client, registryHost, repository, tag, challenge string, credential *Credentials) (string, error) {
 	realm, service := parseWWWAuthInternal(challenge)
 	if realm == "" {
-		return "", fmt.Errorf("no auth realm found")
+		return "", errors.New("no auth realm found")
 	}
 	if err := validateAuthRealmInternal(registryHost, realm); err != nil {
 		return "", err
@@ -256,7 +257,7 @@ func fetchWithTokenAuthInternal(ctx context.Context, httpClient *http.Client, re
 
 	digest := extractDigestFromHeadersInternal(resp.Header)
 	if digest == "" {
-		return "", fmt.Errorf("no digest header found in authenticated response")
+		return "", errors.New("no digest header found in authenticated response")
 	}
 
 	return digest, nil
@@ -287,7 +288,7 @@ func fetchRegistryTokenInternal(ctx context.Context, httpClient *http.Client, au
 		req.SetBasicAuth(strings.TrimSpace(credential.Username), strings.TrimSpace(credential.Token))
 	}
 
-	resp, err := httpClient.Do(req) //nolint:gosec // authURL comes from the registry challenge for the current image
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("token request failed: %w", err)
 	}
@@ -310,7 +311,7 @@ func fetchRegistryTokenInternal(ctx context.Context, httpClient *http.Client, au
 		token = strings.TrimSpace(tokenResponse.Legacy)
 	}
 	if token == "" {
-		return "", fmt.Errorf("no token in response")
+		return "", errors.New("no token in response")
 	}
 
 	return token, nil
@@ -325,7 +326,7 @@ func manifestRequestInternal(ctx context.Context, httpClient *http.Client, regis
 	}
 	addManifestRequestHeadersInternal(req, authHeader)
 
-	resp, err := httpClient.Do(req) //nolint:gosec // manifestURL is derived from the normalized image reference
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("manifest request failed: %w", err)
 	}
@@ -341,7 +342,7 @@ func manifestRequestInternal(ctx context.Context, httpClient *http.Client, regis
 		}
 		addManifestRequestHeadersInternal(getReq, authHeader)
 
-		getResp, err := httpClient.Do(getReq) //nolint:gosec // manifestURL is derived from the normalized image reference
+		getResp, err := httpClient.Do(getReq)
 		if err != nil {
 			return nil, fmt.Errorf("manifest fallback request failed: %w", err)
 		}
@@ -424,18 +425,18 @@ func extractDigestFromHeadersInternal(headers http.Header) string {
 }
 
 func extractRateLimitFromHeadersInternal(headers http.Header) (*RateLimitInfo, error) {
-	limit, limitWindow, limitErr := parseRateLimitHeaderInternal(headers.Get("RateLimit-Limit"))
+	limit, limitWindow, limitErr := parseRateLimitHeaderInternal(headers.Get("Ratelimit-Limit"))
 	if limitErr != nil {
 		return nil, fmt.Errorf("parse RateLimit-Limit: %w", limitErr)
 	}
 
-	remaining, remainingWindow, remainingErr := parseRateLimitHeaderInternal(headers.Get("RateLimit-Remaining"))
+	remaining, remainingWindow, remainingErr := parseRateLimitHeaderInternal(headers.Get("Ratelimit-Remaining"))
 	if remainingErr != nil {
 		return nil, fmt.Errorf("parse RateLimit-Remaining: %w", remainingErr)
 	}
 
 	if limit == nil && remaining == nil {
-		return nil, fmt.Errorf("rate limit headers not returned")
+		return nil, errors.New("rate limit headers not returned")
 	}
 
 	windowSeconds := limitWindow
@@ -453,7 +454,7 @@ func extractRateLimitFromHeadersInternal(headers http.Header) (*RateLimitInfo, e
 		Remaining:     remaining,
 		Used:          used,
 		WindowSeconds: windowSeconds,
-		Source:        strings.TrimSpace(headers.Get("Docker-RateLimit-Source")),
+		Source:        strings.TrimSpace(headers.Get("Docker-Ratelimit-Source")),
 	}, nil
 }
 
@@ -493,7 +494,7 @@ func parseRateLimitHeaderInternal(value string) (*int, *int, error) {
 
 func parsePositiveIntInternal(value string) (*int, error) {
 	if value == "" {
-		return nil, fmt.Errorf("empty integer value")
+		return nil, errors.New("empty integer value")
 	}
 
 	parsed, err := strconv.Atoi(value)
@@ -586,7 +587,7 @@ func validateAuthRealmInternal(registryHost, realm string) error {
 	registry := normalizeAuthRealmHostInternal(registryHost)
 
 	if realmHost == "" {
-		return fmt.Errorf("invalid auth realm host")
+		return errors.New("invalid auth realm host")
 	}
 	if realmHost == registry {
 		return nil

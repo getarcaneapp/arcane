@@ -1,6 +1,6 @@
 package pagination
 
-type PaginationParams struct {
+type Params struct {
 	Start int
 	Limit int
 	// SkipCount opts out of the COUNT(*) query that backs TotalItems/TotalPages.
@@ -13,7 +13,7 @@ type PaginationParams struct {
 // UnknownTotal is the sentinel returned in TotalItems/TotalPages when SkipCount is set.
 const UnknownTotal int64 = -1
 
-func paginateItemsFunction[T any](items []T, params PaginationParams) []T {
+func paginateItemsFunction[T any](items []T, params Params) []T {
 	if params.Limit <= 0 {
 		return items
 	}

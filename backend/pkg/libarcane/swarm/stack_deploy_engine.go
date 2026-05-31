@@ -188,10 +188,7 @@ func reconcileStackServices(
 		if service.Name == "" {
 			service.Name = key
 		}
-		spec, err := buildServiceSpec(service, stackName, stackLabels, networkNameByKey, configMetaByKey, secretMetaByKey, project.Volumes)
-		if err != nil {
-			return nil, err
-		}
+		spec := buildServiceSpec(service, stackName, stackLabels, networkNameByKey, configMetaByKey, secretMetaByKey, project.Volumes)
 		desiredServices[spec.Name] = struct{}{}
 
 		if existing, ok := existingServices[spec.Name]; ok {
@@ -613,7 +610,7 @@ func buildServiceSpec(
 	configMetaByKey map[string]resourceMeta,
 	secretMetaByKey map[string]resourceMeta,
 	projectVolumes composegotypes.Volumes,
-) (swarm.ServiceSpec, error) {
+) swarm.ServiceSpec {
 	serviceName := stackScopedName(stackName, service.Name)
 	serviceLabels := mergeLabels(nil, stackLabels)
 	if service.Deploy != nil {
@@ -668,7 +665,7 @@ func buildServiceSpec(
 	applyDeployConfig(&spec, service.Deploy, service.Scale)
 	applyServicePorts(&spec, service.Ports)
 
-	return spec, nil
+	return spec
 }
 
 func createSwarmService(
@@ -1082,8 +1079,8 @@ func convertIPAM(cfg composegotypes.IPAMConfig) *network.IPAM {
 			if pool == nil {
 				continue
 			}
-			subnet, _ := parsePrefix(pool.Subnet)
-			ipRange, _ := parsePrefix(pool.IPRange)
+			subnet := parsePrefix(pool.Subnet)
+			ipRange := parsePrefix(pool.IPRange)
 			gateway, _ := parseAddr(pool.Gateway)
 			pools = append(pools, network.IPAMConfig{
 				Subnet:     subnet,
@@ -1123,16 +1120,16 @@ func parseAddr(value string) (netip.Addr, bool) {
 	return addr, true
 }
 
-func parsePrefix(value string) (netip.Prefix, bool) {
+func parsePrefix(value string) netip.Prefix {
 	value = strings.TrimSpace(value)
 	if value == "" {
-		return netip.Prefix{}, false
+		return netip.Prefix{}
 	}
 	prefix, err := netip.ParsePrefix(value)
 	if err != nil {
-		return netip.Prefix{}, false
+		return netip.Prefix{}
 	}
-	return prefix, true
+	return prefix
 }
 
 func parseAuxAddresses(values map[string]string) map[string]netip.Addr {

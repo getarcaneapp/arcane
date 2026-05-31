@@ -278,14 +278,14 @@ func (s *SettingsService) loadDatabaseConfigFromEnv(ctx context.Context, db *dat
 			slog.DebugContext(ctx, "loadDatabaseConfigFromEnv: env override found", "key", key, "env", envVarName, "valueMasked", mask)
 			rv.Field(i).FieldByName("Value").SetString(utils.TrimQuotes(val))
 			continue
-		} else if val, ok := settingsMap[key]; ok {
+		}
+		if val, ok := settingsMap[key]; ok {
 			// Fallback to database if environment variable is not set
 			slog.DebugContext(ctx, "loadDatabaseConfigFromEnv: using database fallback", "key", key)
 			rv.Field(i).FieldByName("Value").SetString(val)
 			continue
-		} else {
-			slog.DebugContext(ctx, "loadDatabaseConfigFromEnv: env not set and no database value", "key", key, "env", envVarName)
 		}
+		slog.DebugContext(ctx, "loadDatabaseConfigFromEnv: env not set and no database value", "key", key, "env", envVarName)
 	}
 
 	// debug: final snapshot (only show which fields are non-empty)
@@ -467,7 +467,7 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 	changedAutoHeal := false
 	changedTimeouts := make([]libarcane.SettingUpdate, 0)
 
-	for i := 0; i < rt.NumField(); i++ {
+	for i := range rt.NumField() {
 		field := rt.Field(i)
 		fieldValue := rv.Field(i)
 
@@ -500,7 +500,7 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 		}
 
 		if key == "accentColor" && value != "" && value != "default" && !settings.SafeAccentColor.MatchString(value) {
-			return nil, false, false, false, false, false, nil, fmt.Errorf("invalid accentColor value")
+			return nil, false, false, false, false, false, nil, errors.New("invalid accentColor value")
 		}
 
 		var valueToSave string
@@ -829,11 +829,11 @@ func (s *SettingsService) GetStringSetting(ctx context.Context, key, defaultValu
 }
 
 func (s *SettingsService) SetBoolSetting(ctx context.Context, key string, value bool) error {
-	return s.UpdateSetting(ctx, key, fmt.Sprintf("%t", value))
+	return s.UpdateSetting(ctx, key, strconv.FormatBool(value))
 }
 
 func (s *SettingsService) SetIntSetting(ctx context.Context, key string, value int) error {
-	return s.UpdateSetting(ctx, key, fmt.Sprintf("%d", value))
+	return s.UpdateSetting(ctx, key, strconv.Itoa(value))
 }
 
 func (s *SettingsService) SetStringSetting(ctx context.Context, key, value string) error {

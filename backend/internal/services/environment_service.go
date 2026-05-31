@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
 	"strings"
 	"sync"
@@ -303,12 +304,12 @@ func (s *EnvironmentService) ListSwarmNodeAgentEnvironments(ctx context.Context,
 func buildSwarmNodeAgentNameInternal(hostname, nodeID string) string {
 	trimmedHostname := strings.TrimSpace(hostname)
 	if trimmedHostname != "" {
-		return fmt.Sprintf("Swarm Node Agent - %s", trimmedHostname)
+		return "Swarm Node Agent - " + trimmedHostname
 	}
 	if len(nodeID) > 12 {
 		nodeID = nodeID[:12]
 	}
-	return fmt.Sprintf("Swarm Node Agent - %s", nodeID)
+	return "Swarm Node Agent - " + nodeID
 }
 
 func buildSwarmNodeAgentURLInternal(nodeID string) string {
@@ -326,7 +327,7 @@ func (s *EnvironmentService) applySwarmNodeAgentApiKeyInternal(
 	rotate bool,
 ) (string, error) {
 	if env == nil {
-		return "", fmt.Errorf("environment is required")
+		return "", errors.New("environment is required")
 	}
 
 	if !rotate && env.AccessToken != nil && strings.TrimSpace(*env.AccessToken) != "" {
@@ -334,7 +335,7 @@ func (s *EnvironmentService) applySwarmNodeAgentApiKeyInternal(
 	}
 
 	if s.apiKeyService == nil {
-		return "", fmt.Errorf("api key service not configured")
+		return "", errors.New("api key service not configured")
 	}
 
 	apiKeyDto, err := s.apiKeyService.CreateEnvironmentApiKey(ctx, env.ID, userID)
@@ -355,10 +356,10 @@ func (s *EnvironmentService) EnsureSwarmNodeAgentEnvironment(
 	rotate bool,
 ) (*models.Environment, string, error) {
 	if strings.TrimSpace(parentEnvironmentID) == "" {
-		return nil, "", fmt.Errorf("parent environment ID is required")
+		return nil, "", errors.New("parent environment ID is required")
 	}
 	if strings.TrimSpace(nodeID) == "" {
-		return nil, "", fmt.Errorf("swarm node ID is required")
+		return nil, "", errors.New("swarm node ID is required")
 	}
 
 	var env models.Environment
@@ -447,7 +448,7 @@ func (s *EnvironmentService) GetEnvironmentByID(ctx context.Context, id string) 
 	var environment models.Environment
 	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&environment).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, fmt.Errorf("environment not found")
+			return nil, errors.New("environment not found")
 		}
 		return nil, fmt.Errorf("failed to get environment: %w", err)
 	}
@@ -760,7 +761,7 @@ func (s *EnvironmentService) TestConnection(ctx context.Context, id string, cust
 		}
 		return "offline", fmt.Errorf("failed to create request: %w", err)
 	}
-	resp, err := s.httpClient.Do(req) //nolint:gosec // intentional request to configured remote environment API URL
+	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		if customApiUrl == nil {
 			_ = s.updateEnvironmentStatusInternal(ctx, id, string(models.EnvironmentStatusOffline))
@@ -787,7 +788,7 @@ func (s *EnvironmentService) testEdgeConnection(ctx context.Context, id string) 
 	if !edge.HasActiveTunnel(id) {
 		if _, ok := edge.RequestTunnelAndWait(ctx, id, edge.DefaultTunnelDemandTTL, edge.DefaultTunnelAcquireTimeout()); !ok {
 			_ = s.updateEnvironmentStatusInternal(ctx, id, string(models.EnvironmentStatusOffline))
-			return "offline", fmt.Errorf("edge agent is not connected")
+			return "offline", errors.New("edge agent is not connected")
 		}
 	}
 
@@ -1075,13 +1076,13 @@ func (s *EnvironmentService) GenerateDeploymentSnippets(ctx context.Context, env
 		"    environment:",
 		"      - AGENT_MODE=true",
 		"      - EDGE_TRANSPORT=poll",
-		fmt.Sprintf("      - AGENT_TOKEN=%s", apiKey),
-		fmt.Sprintf("      - MANAGER_API_URL=%s", managerURL),
+		"      - AGENT_TOKEN=" + apiKey,
+		"      - MANAGER_API_URL=" + managerURL,
 		"    ports:",
 		"      - \"3553:3553\"",
 		"    volumes:",
 		"      - /var/run/docker.sock:/var/run/docker.sock",
-		fmt.Sprintf("      - arcane-data:%s", deploymentSnippetsDataPath),
+		"      - arcane-data:" + deploymentSnippetsDataPath,
 		"",
 		"volumes:",
 		"  arcane-data:",
@@ -1121,11 +1122,11 @@ func (s *EnvironmentService) GenerateEdgeDeploymentSnippets(ctx context.Context,
 		"    environment:",
 		"      - EDGE_AGENT=true",
 		"      - EDGE_TRANSPORT=poll",
-		fmt.Sprintf("      - AGENT_TOKEN=%s", apiKey),
-		fmt.Sprintf("      - MANAGER_API_URL=%s", managerURL),
+		"      - AGENT_TOKEN=" + apiKey,
+		"      - MANAGER_API_URL=" + managerURL,
 		"    volumes:",
 		"      - /var/run/docker.sock:/var/run/docker.sock",
-		fmt.Sprintf("      - arcane-data:%s", deploymentSnippetsDataPath),
+		"      - arcane-data:" + deploymentSnippetsDataPath,
 		"",
 		"volumes:",
 		"  arcane-data:",
@@ -1224,12 +1225,12 @@ func buildMTLSDeploymentSnippetInternal(managerURL string, apiKey string, genera
 		"      - EDGE_AGENT=true",
 		"      - EDGE_TRANSPORT=poll",
 		"      - EDGE_MTLS_MODE=required",
-		fmt.Sprintf("      - EDGE_MTLS_ASSETS_DIR=%s", deploymentSnippetsMTLSPath),
-		fmt.Sprintf("      - AGENT_TOKEN=%s", apiKey),
-		fmt.Sprintf("      - MANAGER_API_URL=%s", managerURL),
+		"      - EDGE_MTLS_ASSETS_DIR=" + deploymentSnippetsMTLSPath,
+		"      - AGENT_TOKEN=" + apiKey,
+		"      - MANAGER_API_URL=" + managerURL,
 		"    volumes:",
 		"      - /var/run/docker.sock:/var/run/docker.sock",
-		fmt.Sprintf("      - arcane-data:%s", deploymentSnippetsDataPath),
+		"      - arcane-data:" + deploymentSnippetsDataPath,
 		"",
 		"volumes:",
 		"  arcane-data:",
@@ -1268,7 +1269,7 @@ func (s *EnvironmentService) resolveRemoteEnvironmentTargetInternal(ctx context.
 	}
 
 	if envID == "0" {
-		return nil, fmt.Errorf("cannot proxy request to local environment")
+		return nil, errors.New("cannot proxy request to local environment")
 	}
 
 	targetURL := strings.TrimRight(environment.ApiUrl, "/")
@@ -1316,7 +1317,7 @@ func (s *EnvironmentService) getProxyRequestContextInternal(ctx context.Context)
 		return timeouts.WithTimeout(ctx, settings.ProxyRequestTimeout.AsInt(), timeouts.DefaultProxyRequest)
 	}
 
-	return context.WithTimeout(ctx, timeouts.DefaultProxyRequest) //nolint:gosec // helper intentionally returns the cancel func to callers.
+	return context.WithTimeout(ctx, timeouts.DefaultProxyRequest)
 }
 
 func (s *EnvironmentService) buildRemoteRequestInternal(
@@ -1327,13 +1328,11 @@ func (s *EnvironmentService) buildRemoteRequestInternal(
 	headers map[string]string,
 ) (remenv.Request, error) {
 	if target == nil {
-		return remenv.Request{}, fmt.Errorf("remote environment target is required")
+		return remenv.Request{}, errors.New("remote environment target is required")
 	}
 
 	requestHeaders := make(map[string]string, len(headers)+2)
-	for key, value := range headers {
-		requestHeaders[key] = value
-	}
+	maps.Copy(requestHeaders, headers)
 	if len(body) > 0 && method != http.MethodGet && requestHeaders["Content-Type"] == "" {
 		requestHeaders["Content-Type"] = "application/json"
 	}
@@ -1422,7 +1421,7 @@ func ensureRemoteEnvironmentTunnelAvailableInternal(ctx context.Context, envID s
 		return nil
 	}
 
-	return fmt.Errorf("edge agent is not connected")
+	return errors.New("edge agent is not connected")
 }
 
 func doRemoteEnvironmentTunnelRequestInternal(

@@ -10,6 +10,7 @@ const (
 
 type UserSession struct {
 	BaseModel
+
 	UserID                string               `json:"userId" gorm:"column:user_id;not null;index"`
 	User                  *User                `json:"user,omitempty" gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE"`
 	RefreshTokenHash      string               `json:"-" gorm:"column:refresh_token_hash;not null;uniqueIndex"`
