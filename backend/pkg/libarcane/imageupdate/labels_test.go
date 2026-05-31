@@ -259,6 +259,58 @@ func TestIsUpdateDisabled(t *testing.T) {
 	}
 }
 
+func TestIsSwarmTask(t *testing.T) {
+	tests := []struct {
+		name   string
+		labels map[string]string
+		want   bool
+	}{
+		{
+			name:   "nil labels",
+			labels: nil,
+			want:   false,
+		},
+		{
+			name:   "empty labels",
+			labels: map[string]string{},
+			want:   false,
+		},
+		{
+			name:   "unrelated labels",
+			labels: map[string]string{"com.example.service": "api"},
+			want:   false,
+		},
+		{
+			name:   "swarm service id",
+			labels: map[string]string{LabelSwarmServiceID: "service-id"},
+			want:   true,
+		},
+		{
+			name:   "swarm service name",
+			labels: map[string]string{LabelSwarmServiceName: "web"},
+			want:   true,
+		},
+		{
+			name:   "case insensitive label key",
+			labels: map[string]string{"COM.DOCKER.SWARM.SERVICE.ID": "service-id"},
+			want:   true,
+		},
+		{
+			name:   "empty swarm label value",
+			labels: map[string]string{LabelSwarmServiceID: "   "},
+			want:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsSwarmTask(tt.labels); got != tt.want {
+				t.Errorf("IsSwarmTask() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestShouldDisableArcaneServerRedeploy(t *testing.T) {
 	tests := []struct {
 		name               string

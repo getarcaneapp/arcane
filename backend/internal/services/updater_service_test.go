@@ -270,6 +270,124 @@ func TestUpdaterService_CLICalledWithSystemUser(t *testing.T) {
 	assert.Equal(t, systemUser.Username, mockUpgrade.capturedUser.Username)
 }
 
+func TestUpdaterService_UpdateSingleContainerSkipsSwarmTaskInternal(t *testing.T) {
+	ctx := context.Background()
+	const containerID = "swarm-task-1"
+	labels := map[string]string{
+		libupdater.LabelSwarmServiceID:   "service-1",
+		libupdater.LabelSwarmServiceName: "web",
+	}
+	pullCalled := false
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/containers/json"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode([]container.Summary{
+				{
+					ID:      containerID,
+					Names:   []string{"/web.1.task"},
+					Image:   "nginx:latest",
+					ImageID: "sha256:old-image",
+					Labels:  labels,
+				},
+			}))
+		case strings.Contains(r.URL.Path, "/containers/") && strings.HasSuffix(r.URL.Path, "/json"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(container.InspectResponse{
+				ID:    containerID,
+				Image: "sha256:old-image",
+				Config: &container.Config{
+					Image:  "nginx:latest",
+					Labels: labels,
+				},
+			}))
+		case strings.HasSuffix(r.URL.Path, "/images/create"):
+			pullCalled = true
+			http.Error(w, "unexpected pull", http.StatusInternalServerError)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	dcli, err := dockerclient.NewClientWithOpts(
+		dockerclient.WithHost("tcp://"+srv.Listener.Addr().String()),
+		dockerclient.WithVersion("1.46"),
+	)
+	require.NoError(t, err)
+
+	db := setupActivityServiceTestDBInternal(t)
+	svc := NewUpdaterService(nil, nil, &DockerClientService{client: dcli, config: &config.Config{}}, nil, nil, nil, nil, nil, nil, nil, NewActivityService(db))
+
+	out, err := svc.UpdateSingleContainer(ctx, containerID)
+	require.NoError(t, err)
+	require.NotNil(t, out)
+	require.Len(t, out.Items, 1)
+	assert.Equal(t, "skipped", out.Items[0].Status)
+	assert.Contains(t, out.Items[0].Error, "swarm service")
+	assert.False(t, pullCalled, "swarm task update must not pull or recreate the task container")
+}
+
+func TestUpdaterService_RestartContainersUsingOldIDsSkipsSwarmTaskInternal(t *testing.T) {
+	ctx := context.Background()
+	const containerID = "swarm-task-1"
+	labels := map[string]string{
+		libupdater.LabelSwarmServiceID:   "service-1",
+		libupdater.LabelSwarmServiceName: "web",
+	}
+	stopCalled := false
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/containers/json"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode([]container.Summary{
+				{
+					ID:      containerID,
+					Names:   []string{"/web.1.task"},
+					Image:   "nginx:latest",
+					ImageID: "sha256:old-image",
+					Labels:  labels,
+				},
+			}))
+		case strings.Contains(r.URL.Path, "/containers/") && strings.HasSuffix(r.URL.Path, "/json"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(container.InspectResponse{
+				ID:    containerID,
+				Name:  "/web.1.task",
+				Image: "sha256:old-image",
+				Config: &container.Config{
+					Image:  "nginx:latest",
+					Labels: labels,
+				},
+			}))
+		case strings.Contains(r.URL.Path, "/containers/") && strings.HasSuffix(r.URL.Path, "/stop"):
+			stopCalled = true
+			http.Error(w, "unexpected stop", http.StatusInternalServerError)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	dcli, err := dockerclient.NewClientWithOpts(
+		dockerclient.WithHost("tcp://"+srv.Listener.Addr().String()),
+		dockerclient.WithVersion("1.46"),
+	)
+	require.NoError(t, err)
+
+	settingsDB := setupUpdaterServiceSettingsDB(t)
+	settings, err := NewSettingsService(ctx, settingsDB)
+	require.NoError(t, err)
+	svc := NewUpdaterService(nil, settings, &DockerClientService{client: dcli, config: &config.Config{}}, nil, nil, nil, nil, nil, nil, nil, nil)
+
+	results, err := svc.restartContainersUsingOldIDs(ctx, map[string]string{"sha256:old-image": "nginx:latest"}, nil)
+	require.NoError(t, err)
+	assert.Empty(t, results)
+	assert.False(t, stopCalled, "swarm task update must not stop the orchestrator-owned task container")
+}
+
 // TestUpdaterService_UpgradeServiceNotNilCheck verifies the nil check logic
 func TestUpdaterService_UpgradeServiceNotNilCheck(t *testing.T) {
 	ctx := context.Background()
