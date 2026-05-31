@@ -8,6 +8,7 @@ import (
 	"log/slog"
 
 	"github.com/getarcaneapp/arcane/backend/internal/config"
+	"github.com/getarcaneapp/arcane/backend/internal/di"
 	"github.com/getarcaneapp/arcane/backend/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
@@ -22,7 +23,7 @@ func registerEdgeTunnelRoutes(
 	ctx context.Context,
 	cfg *config.Config,
 	apiGroup *echo.Group,
-	appServices *Services,
+	appServices *di.Services,
 ) *edge.TunnelServer {
 	// Resolver that validates API key and returns the environment ID
 	resolver := func(ctx context.Context, token string) (string, error) {
