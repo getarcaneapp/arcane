@@ -72,6 +72,20 @@ async function removeVolumeViaApi(page: Page, volumeName: string) {
 		.catch(() => undefined);
 }
 
+async function gotoVolumeDetail(page: Page, volumeName: string) {
+	const volumePath = `/api/environments/0/volumes/${encodeURIComponent(volumeName)}`;
+	const detailResponse = page.waitForResponse((response) => {
+		const request = response.request();
+		return request.method() === 'GET' && new URL(response.url()).pathname === volumePath;
+	});
+
+	await page.goto(`/volumes/${encodeURIComponent(volumeName)}`);
+	const response = await detailResponse;
+	expect(response.ok(), `Expected successful GET ${volumePath}`).toBeTruthy();
+	await expect(page).toHaveURL(new RegExp(`/volumes/.+`));
+	await expect(page.getByRole('heading', { level: 1, name: volumeName })).toBeVisible();
+}
+
 function facetIds(title: string) {
 	const key = title.toLowerCase();
 	return {
@@ -126,11 +140,7 @@ test.describe('Volumes Page', () => {
 
 		try {
 			await createVolumeViaApi(page, volumeName);
-			await page.goto(`/volumes/${encodeURIComponent(volumeName)}`);
-			await page.waitForLoadState('load');
-
-			await expect(page).toHaveURL(new RegExp(`/volumes/.+`));
-			await expect(page.getByRole('heading', { level: 1, name: volumeName })).toBeVisible();
+			await gotoVolumeDetail(page, volumeName);
 		} finally {
 			await removeVolumeViaApi(page, volumeName);
 		}
@@ -168,8 +178,7 @@ test.describe('Volumes Page', () => {
 		const volumeName = `e2e-badge-volume-${Date.now()}`;
 		try {
 			await createVolumeViaApi(page, volumeName);
-			await page.goto(`/volumes/${encodeURIComponent(volumeName)}`);
-			await page.waitForLoadState('load');
+			await gotoVolumeDetail(page, volumeName);
 
 			await expect(page.getByText('Unused').first()).toBeVisible();
 		} finally {
