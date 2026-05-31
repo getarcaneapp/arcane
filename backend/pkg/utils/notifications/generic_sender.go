@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -21,7 +22,7 @@ import (
 // BuildGenericURL and sendGenericDirectInternal.
 func resolveWebhookURLInternal(config models.GenericConfig) (*url.URL, error) {
 	if config.WebhookURL == "" {
-		return nil, fmt.Errorf("webhook URL is empty")
+		return nil, errors.New("webhook URL is empty")
 	}
 
 	parsed, err := url.Parse(config.WebhookURL)
@@ -43,7 +44,7 @@ func resolveWebhookURLInternal(config models.GenericConfig) (*url.URL, error) {
 	}
 
 	if parsed.Host == "" {
-		return nil, fmt.Errorf("invalid webhook URL: missing host")
+		return nil, errors.New("invalid webhook URL: missing host")
 	}
 
 	switch strings.ToLower(parsed.Scheme) {
@@ -128,7 +129,7 @@ func BuildGenericURL(config models.GenericConfig) (string, error) {
 // but embed a success/failure indicator inside the JSON body.
 func SendGenericWithTitle(ctx context.Context, config models.GenericConfig, title, message string) error {
 	if config.WebhookURL == "" {
-		return fmt.Errorf("webhook URL is empty")
+		return errors.New("webhook URL is empty")
 	}
 
 	// When the caller needs response-body validation we make the HTTP request

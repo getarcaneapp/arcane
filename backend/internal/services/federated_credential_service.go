@@ -474,7 +474,7 @@ func (s *FederatedCredentialService) providerForIssuerInternal(ctx context.Conte
 
 	provider, ok := v.(*oidc.Provider)
 	if !ok || provider == nil {
-		return nil, fmt.Errorf("federated issuer discovery returned invalid provider")
+		return nil, errors.New("federated issuer discovery returned invalid provider")
 	}
 	return provider, nil
 }
@@ -612,7 +612,6 @@ func normalizeCreateFederatedCredentialInternal(req federatedtypes.CreateFederat
 }
 
 func applyFederatedCredentialUpdateInternal(existing models.FederatedCredential, req federatedtypes.UpdateFederatedCredential) (models.FederatedCredential, bool, error) {
-	roleChanged := false
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
 		if name == "" {

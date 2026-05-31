@@ -3,6 +3,7 @@ package gitops
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -619,7 +620,7 @@ func init() {
 func resolveGitOpsSync(ctx context.Context, c *client.Client, identifier string, allowPrompt bool) (*gitops.GitOpsSync, bool, error) {
 	trimmed := strings.TrimSpace(identifier)
 	if trimmed == "" {
-		return nil, false, fmt.Errorf("gitops sync identifier is required")
+		return nil, false, errors.New("gitops sync identifier is required")
 	}
 
 	resp, err := c.Get(ctx, types.Endpoints.GitOpsSync(c.EnvID(), trimmed))

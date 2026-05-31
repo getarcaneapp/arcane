@@ -1732,7 +1732,7 @@ type UnknownPermissionError struct {
 }
 
 func (e *UnknownPermissionError) Error() string {
-	return fmt.Sprintf("Unknown permission: %s", e.Perm)
+	return "Unknown permission: " + e.Perm
 }
 
 func IsUnknownPermissionError(err error) bool {
@@ -1748,7 +1748,7 @@ type RolePermissionEscalationError struct {
 }
 
 func (e *RolePermissionEscalationError) Error() string {
-	return fmt.Sprintf("cannot grant a permission you do not hold: %s", e.Perm)
+	return "cannot grant a permission you do not hold: " + e.Perm
 }
 
 func IsRolePermissionEscalationError(err error) bool {
@@ -1796,6 +1796,38 @@ func (e *FederatedCredentialInvalidError) Error() string {
 
 func IsErrorFederatedCredentialInvalid(err error) bool {
 	return isErrorTypeInternal[*FederatedCredentialInvalidError](err)
+}
+
+// DefaultTransportTypeError is returned when http.DefaultTransport is not the
+// expected *http.Transport concrete type and therefore cannot be cloned.
+type DefaultTransportTypeError struct{}
+
+func (e *DefaultTransportTypeError) Error() string {
+	return "http.DefaultTransport is not *http.Transport"
+}
+
+// ManagerCALockTypeError is returned when a cached manager CA lock value is not
+// the expected *sync.Mutex.
+type ManagerCALockTypeError struct{}
+
+func (e *ManagerCALockTypeError) Error() string {
+	return "manager CA lock value is not *sync.Mutex"
+}
+
+// ECRTokenResultTypeError is returned when a deduplicated ECR token refresh
+// yields a value that is not the expected *ecrTokenResult.
+type ECRTokenResultTypeError struct{}
+
+func (e *ECRTokenResultTypeError) Error() string {
+	return "unexpected ECR token result type"
+}
+
+// OidcProviderCacheTypeError is returned when a cached OIDC provider value is
+// not the expected *oidc.Provider.
+type OidcProviderCacheTypeError struct{}
+
+func (e *OidcProviderCacheTypeError) Error() string {
+	return "unexpected provider type from cache"
 }
 
 type FederatedCredentialInvalidRequestError struct{}

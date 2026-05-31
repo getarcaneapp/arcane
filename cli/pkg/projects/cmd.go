@@ -3,12 +3,14 @@ package projects
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -116,8 +118,8 @@ func runProjectsList(cmd *cobra.Command, forceHasUpdateFilter bool) error {
 				proj.Name,
 				proj.Status,
 				projectUpdateStatus(proj),
-				fmt.Sprintf("%d", imageCount),
-				fmt.Sprintf("%d", updatedCount),
+				strconv.Itoa(imageCount),
+				strconv.Itoa(updatedCount),
 			}
 		}
 		output.Table(headers, rows)
@@ -132,8 +134,8 @@ func runProjectsList(cmd *cobra.Command, forceHasUpdateFilter bool) error {
 			proj.ID,
 			proj.Name,
 			proj.Status,
-			fmt.Sprintf("%d", proj.ServiceCount),
-			fmt.Sprintf("%d", proj.RunningCount),
+			strconv.Itoa(proj.ServiceCount),
+			strconv.Itoa(proj.RunningCount),
 			proj.CreatedAt,
 		}
 	}
@@ -656,7 +658,7 @@ func init() {
 func resolveProject(ctx context.Context, c *client.Client, identifier string, allowPrompt bool) (*project.Details, bool, error) {
 	trimmed := strings.TrimSpace(identifier)
 	if trimmed == "" {
-		return nil, false, fmt.Errorf("project identifier is required")
+		return nil, false, errors.New("project identifier is required")
 	}
 
 	resp, err := c.Get(ctx, types.Endpoints.Project(c.EnvID(), trimmed))

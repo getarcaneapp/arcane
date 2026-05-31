@@ -9,12 +9,12 @@ import (
 	"golang.org/x/sync/singleflight"
 )
 
-type ErrStale struct {
+type StaleError struct {
 	Err error
 }
 
-func (e *ErrStale) Error() string { return "stale cache value: " + e.Err.Error() }
-func (e *ErrStale) Unwrap() error { return e.Err }
+func (e *StaleError) Error() string { return "stale cache value: " + e.Err.Error() }
+func (e *StaleError) Unwrap() error { return e.Err }
 
 type Cache[T any] struct {
 	ttl time.Duration
@@ -125,7 +125,7 @@ func (c *Cache[T]) GetOrFetch(ctx context.Context, fetch func(ctx context.Contex
 	})
 	if err != nil {
 		if hasStale {
-			return stale, &ErrStale{Err: err}
+			return stale, &StaleError{Err: err}
 		}
 		var zero T
 		return zero, err

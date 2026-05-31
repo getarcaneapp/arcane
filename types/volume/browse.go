@@ -15,6 +15,7 @@ type FileEntry struct {
 
 type FileMetadata struct {
 	FileEntry
+
 	MimeType string `json:"mimeType" doc:"MIME type of the file"`
 	IsText   bool   `json:"isText" doc:"Whether the file is a text file"`
 	IsBinary bool   `json:"isBinary" doc:"Whether the file is a binary file"`

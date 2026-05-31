@@ -309,7 +309,7 @@ func (h *SystemHandler) GetDockerInfo(ctx context.Context, input *GetDockerInfoI
 	if !docker.IsDockerContainer() {
 		if cgroupLimits, err := docker.DetectCgroupLimits(); err == nil {
 			if limit := cgroupLimits.MemoryLimit; limit > 0 {
-				limitInt := int64(limit)
+				limitInt := limit
 				if memTotal == 0 || limitInt < memTotal {
 					memTotal = limitInt
 				}

@@ -149,6 +149,7 @@ type GetSwarmNodeAgentDeploymentInput struct {
 
 type SwarmNodeAgentDeployment struct {
 	DeploymentSnippet
+
 	EnvironmentID string                     `json:"environmentId"`
 	Agent         swarmtypes.NodeAgentStatus `json:"agent"`
 }
@@ -1331,7 +1332,7 @@ func (h *SwarmHandler) RenderStackConfig(ctx context.Context, input *RenderSwarm
 	return &RenderSwarmStackConfigOutput{Body: base.ApiResponse[swarmtypes.StackRenderConfigResponse]{Success: true, Data: *resp}}, nil
 }
 
-// GetSwarmInfo returns the current swarm cluster metadata for an environment.
+// GetSwarmStatus returns the current swarm cluster metadata for an environment.
 //
 // It delegates to the swarm service to inspect the local swarm state and maps
 // service-layer failures to the API's HTTP error model.
@@ -1935,7 +1936,7 @@ func buildSwarmQueryParams(search, sort, order string, start, limit int) paginat
 			Sort:  strings.TrimSpace(sort),
 			Order: pagination.SortOrder(order),
 		},
-		PaginationParams: pagination.PaginationParams{
+		Params: pagination.Params{
 			Start: start,
 			Limit: limit,
 		},

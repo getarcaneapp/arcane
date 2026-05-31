@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -145,7 +146,7 @@ func atomicWriteHexFile(path string, key []byte, mode os.FileMode) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	if err := os.Rename(tmpPath, path); err != nil { //nolint:gosec // destination path is internally derived from app-controlled config directory
+	if err := os.Rename(tmpPath, path); err != nil {
 		return err
 	}
 	if err := os.Chmod(path, mode); err != nil {
@@ -163,7 +164,7 @@ func deriveDevKey() []byte {
 // Encrypt encrypts a plaintext string using AES-GCM
 func Encrypt(plaintext string) (string, error) {
 	if encryptionKey == nil {
-		return "", fmt.Errorf("encryption not initialized - call InitEncryption first")
+		return "", errors.New("encryption not initialized - call InitEncryption first")
 	}
 
 	if plaintext == "" {
@@ -192,7 +193,7 @@ func Encrypt(plaintext string) (string, error) {
 // Decrypt decrypts a base64 encoded ciphertext string using AES-GCM
 func Decrypt(ciphertext string) (string, error) {
 	if encryptionKey == nil {
-		return "", fmt.Errorf("encryption not initialized - call InitEncryption first")
+		return "", errors.New("encryption not initialized - call InitEncryption first")
 	}
 
 	if ciphertext == "" {
@@ -216,7 +217,7 @@ func Decrypt(ciphertext string) (string, error) {
 
 	nonceSize := gcm.NonceSize()
 	if len(data) < nonceSize {
-		return "", fmt.Errorf("ciphertext too short")
+		return "", errors.New("ciphertext too short")
 	}
 
 	nonce, ciphertextBytes := data[:nonceSize], data[nonceSize:]

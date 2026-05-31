@@ -21,7 +21,7 @@ func TestBuildResponseFromFilterResult(t *testing.T) {
 				TotalAvailable: 10,
 			},
 			params: QueryParams{
-				PaginationParams: PaginationParams{
+				Params: Params{
 					Start: 0,
 					Limit: -1,
 				},
@@ -42,7 +42,7 @@ func TestBuildResponseFromFilterResult(t *testing.T) {
 				TotalAvailable: 0,
 			},
 			params: QueryParams{
-				PaginationParams: PaginationParams{
+				Params: Params{
 					Start: 0,
 					Limit: -1,
 				},
@@ -63,7 +63,7 @@ func TestBuildResponseFromFilterResult(t *testing.T) {
 				TotalAvailable: 100,
 			},
 			params: QueryParams{
-				PaginationParams: PaginationParams{
+				Params: Params{
 					Start: 0,
 					Limit: 10,
 				},
@@ -84,7 +84,7 @@ func TestBuildResponseFromFilterResult(t *testing.T) {
 				TotalAvailable: 100,
 			},
 			params: QueryParams{
-				PaginationParams: PaginationParams{
+				Params: Params{
 					Start: 10,
 					Limit: 10,
 				},
@@ -105,7 +105,7 @@ func TestBuildResponseFromFilterResult(t *testing.T) {
 				TotalAvailable: 3,
 			},
 			params: QueryParams{
-				PaginationParams: PaginationParams{
+				Params: Params{
 					Start: 0,
 					Limit: 0,
 				},
@@ -133,32 +133,32 @@ func TestPaginateItemsFunction(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		params   PaginationParams
+		params   Params
 		expected []int
 	}{
 		{
 			name:     "show all mode (limit = -1)",
-			params:   PaginationParams{Start: 0, Limit: -1},
+			params:   Params{Start: 0, Limit: -1},
 			expected: []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
 		},
 		{
 			name:     "show all mode (limit = 0)",
-			params:   PaginationParams{Start: 0, Limit: 0},
+			params:   Params{Start: 0, Limit: 0},
 			expected: []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
 		},
 		{
 			name:     "normal pagination first page",
-			params:   PaginationParams{Start: 0, Limit: 3},
+			params:   Params{Start: 0, Limit: 3},
 			expected: []int{1, 2, 3},
 		},
 		{
 			name:     "normal pagination second page",
-			params:   PaginationParams{Start: 3, Limit: 3},
+			params:   Params{Start: 3, Limit: 3},
 			expected: []int{4, 5, 6},
 		},
 		{
 			name:     "pagination at end of list",
-			params:   PaginationParams{Start: 8, Limit: 5},
+			params:   Params{Start: 8, Limit: 5},
 			expected: []int{9, 10},
 		},
 	}

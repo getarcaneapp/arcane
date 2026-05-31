@@ -98,7 +98,7 @@ func (s *UserService) validateBcryptPassword(hash, password string) error {
 func (s *UserService) validateArgon2Password(encodedHash, password string) error {
 	parts := strings.Split(encodedHash, "$")
 	if len(parts) != 6 {
-		return fmt.Errorf("invalid hash format")
+		return errors.New("invalid hash format")
 	}
 
 	var version int
@@ -107,7 +107,7 @@ func (s *UserService) validateArgon2Password(encodedHash, password string) error
 		return err
 	}
 	if version != argon2.Version {
-		return fmt.Errorf("incompatible version of argon2")
+		return errors.New("incompatible version of argon2")
 	}
 
 	var memory, iterations uint32
@@ -129,14 +129,14 @@ func (s *UserService) validateArgon2Password(encodedHash, password string) error
 
 	hashLen := len(decodedHash)
 	if hashLen < 0 || hashLen > 0x7fffffff {
-		return fmt.Errorf("invalid hash length")
+		return errors.New("invalid hash length")
 	}
 
 	comparisonHash := argon2.IDKey([]byte(password), salt, iterations, memory, parallelism, uint32(hashLen))
 
 	// constant-time compare
 	if subtle.ConstantTimeCompare(comparisonHash, decodedHash) != 1 {
-		return fmt.Errorf("invalid password")
+		return errors.New("invalid password")
 	}
 
 	return nil
@@ -216,7 +216,7 @@ func (s *UserService) AttachOidcSubjectTransactional(ctx context.Context, userID
 
 		// If already linked to a different subject, abort
 		if u.OidcSubjectId != nil && *u.OidcSubjectId != "" && *u.OidcSubjectId != subject {
-			return fmt.Errorf("user already linked to another OIDC subject")
+			return errors.New("user already linked to another OIDC subject")
 		}
 
 		// Link subject
@@ -420,10 +420,7 @@ func (s *UserService) ListUsersPaginated(ctx context.Context, params pagination.
 		return nil, pagination.Response{}, fmt.Errorf("failed to paginate users: %w", err)
 	}
 
-	result, err := s.toUserResponseDtosInternal(ctx, users)
-	if err != nil {
-		return nil, pagination.Response{}, err
-	}
+	result := s.toUserResponseDtosInternal(ctx, users)
 
 	return result, paginationResp, nil
 }
@@ -432,12 +429,12 @@ func (s *UserService) ToUserResponseDto(ctx context.Context, u models.User) (use
 	return s.toUserResponseDtoInternal(ctx, u), nil
 }
 
-func (s *UserService) toUserResponseDtosInternal(ctx context.Context, users []models.User) ([]user.User, error) {
+func (s *UserService) toUserResponseDtosInternal(ctx context.Context, users []models.User) []user.User {
 	result := make([]user.User, len(users))
 	for i, u := range users {
 		result[i] = s.toUserResponseDtoInternal(ctx, u)
 	}
-	return result, nil
+	return result
 }
 
 // toUserResponseDtoInternal builds the public User DTO. RoleAssignments and

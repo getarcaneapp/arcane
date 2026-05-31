@@ -300,6 +300,8 @@ type UploadAndRestoreOutput struct {
 }
 
 // RegisterVolumes registers volume management routes using Huma.
+//
+//nolint:maintidx // long but flat Huma route-registration function; complexity is sequential, not branching
 func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, volumeService *services.VolumeService, activityService *services.ActivityService, appCtx ActivityAppContext) {
 	h := &VolumeHandler{
 		volumeService:   volumeService,
@@ -673,7 +675,7 @@ func (h *VolumeHandler) ListVolumes(ctx context.Context, input *ListVolumesInput
 			Sort:  input.Sort,
 			Order: pagination.SortOrder(input.Order),
 		},
-		PaginationParams: pagination.PaginationParams{
+		Params: pagination.Params{
 			Start: input.Start,
 			Limit: input.Limit,
 		},
@@ -1123,7 +1125,7 @@ func (h *VolumeHandler) ListBackups(ctx context.Context, input *ListBackupsInput
 			Sort:  input.Sort,
 			Order: pagination.SortOrder(input.Order),
 		},
-		PaginationParams: pagination.PaginationParams{
+		Params: pagination.Params{
 			Start: input.Start,
 			Limit: input.Limit,
 		},

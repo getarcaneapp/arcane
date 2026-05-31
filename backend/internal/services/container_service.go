@@ -285,7 +285,7 @@ func (s *ContainerService) StartContainer(ctx context.Context, containerID strin
 
 	err = s.eventService.LogContainerEvent(ctx, models.EventTypeContainerStart, containerID, "name", user.ID, user.Username, "0", metadata)
 	if err != nil {
-		fmt.Printf("Could not log container start action: %s\n", err)
+		slog.WarnContext(ctx, "could not log container start action", "error", err)
 	}
 
 	_, err = dockerClient.ContainerStart(ctx, containerID, client.ContainerStartOptions{})
@@ -767,7 +767,7 @@ func (s *ContainerService) CreateContainer(ctx context.Context, config *containe
 	}
 
 	if logErr := s.eventService.LogContainerEvent(ctx, models.EventTypeContainerCreate, resp.ID, "name", user.ID, user.Username, "0", metadata); logErr != nil {
-		fmt.Printf("Could not log container stop action: %s\n", logErr)
+		slog.WarnContext(ctx, "could not log container stop action", "error", logErr)
 	}
 
 	if _, err := dockerClient.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{}); err != nil {

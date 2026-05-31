@@ -48,6 +48,7 @@ type GetOidcStatusOutput struct {
 
 type GetOidcAuthUrlInput struct {
 	OidcHeaders
+
 	Body auth.OidcAuthUrlRequest
 }
 
@@ -58,6 +59,7 @@ type GetOidcAuthUrlOutput struct {
 
 type HandleOidcCallbackInput struct {
 	OidcHeaders
+
 	OidcStateCookie string `cookie:"oidc_state" doc:"OIDC state cookie from auth URL request"`
 	Body            auth.OidcCallbackRequest
 }

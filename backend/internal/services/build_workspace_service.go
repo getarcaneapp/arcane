@@ -109,7 +109,7 @@ func (s *BuildWorkspaceService) GetFileContent(ctx context.Context, filePath str
 		return nil, "", fmt.Errorf("failed to stat file: %w", err)
 	}
 	if info.IsDir() {
-		return nil, "", fmt.Errorf("path is a directory")
+		return nil, "", errors.New("path is a directory")
 	}
 
 	if maxBytes <= 0 {
@@ -153,7 +153,7 @@ func (s *BuildWorkspaceService) DownloadFile(ctx context.Context, filePath strin
 		return nil, 0, fmt.Errorf("failed to stat file: %w", err)
 	}
 	if info.IsDir() {
-		return nil, 0, fmt.Errorf("path is a directory")
+		return nil, 0, errors.New("path is a directory")
 	}
 
 	file, err := os.Open(fullPath)
@@ -245,7 +245,7 @@ func (s *BuildWorkspaceService) DeleteFile(ctx context.Context, filePath string)
 	}
 
 	if cleaned == "/" {
-		return fmt.Errorf("cannot delete root directory")
+		return errors.New("cannot delete root directory")
 	}
 
 	fullPath, err := joinBuildRoot(root, cleaned)
@@ -271,7 +271,7 @@ func (s *BuildWorkspaceService) resolveRoot() (string, error) {
 	}
 
 	if !filepath.IsAbs(root) {
-		return "", fmt.Errorf("builds directory must be an absolute path")
+		return "", errors.New("builds directory must be an absolute path")
 	}
 
 	cleaned := filepath.Clean(root)
@@ -293,10 +293,10 @@ func sanitizeBuildPath(input string) (string, error) {
 		cleaned = "/" + cleaned
 	}
 	if strings.Contains(cleaned, "/../") || strings.HasSuffix(cleaned, "/..") || cleaned == "/.." {
-		return "", fmt.Errorf("invalid path: path traversal not allowed")
+		return "", errors.New("invalid path: path traversal not allowed")
 	}
 	if !strings.HasPrefix(cleaned, "/") {
-		return "", fmt.Errorf("invalid path: must be absolute")
+		return "", errors.New("invalid path: must be absolute")
 	}
 
 	return cleaned, nil
@@ -305,25 +305,25 @@ func sanitizeBuildPath(input string) (string, error) {
 func sanitizeUploadFilename(filename string) (string, error) {
 	name := strings.TrimSpace(filename)
 	if name == "" {
-		return "", fmt.Errorf("invalid filename")
+		return "", errors.New("invalid filename")
 	}
 
 	// Reject any path separators (handle both Unix and Windows-style separators).
 	if strings.Contains(name, "/") || strings.Contains(name, "\\") {
-		return "", fmt.Errorf("invalid filename: must not contain path separators")
+		return "", errors.New("invalid filename: must not contain path separators")
 	}
 
 	// On Windows, disallow drive/volume prefixes (e.g. C: or \\server\share).
 	if vol := filepath.VolumeName(name); vol != "" {
-		return "", fmt.Errorf("invalid filename: must not include volume prefix")
+		return "", errors.New("invalid filename: must not include volume prefix")
 	}
 
 	base := filepath.Base(name)
 	if base != name {
-		return "", fmt.Errorf("invalid filename: must not contain path separators")
+		return "", errors.New("invalid filename: must not contain path separators")
 	}
 	if base == "." || base == ".." {
-		return "", fmt.Errorf("invalid filename")
+		return "", errors.New("invalid filename")
 	}
 
 	return base, nil
@@ -333,7 +333,7 @@ func joinBuildRoot(root, cleaned string) (string, error) {
 	rel := strings.TrimPrefix(cleaned, "/")
 	fullPath := filepath.Join(root, filepath.FromSlash(rel))
 	if !isWithinRoot(root, fullPath) {
-		return "", fmt.Errorf("invalid path: outside builds directory")
+		return "", errors.New("invalid path: outside builds directory")
 	}
 	return fullPath, nil
 }

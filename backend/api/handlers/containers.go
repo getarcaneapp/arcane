@@ -33,7 +33,7 @@ type ContainerHandler struct {
 	appCtx           context.Context
 }
 
-// Paginated response
+// ContainerPaginatedResponse is the paginated list response for containers.
 type ContainerPaginatedResponse struct {
 	Success    bool                          `json:"success"`
 	Data       []containertypes.Summary      `json:"data"`
@@ -130,7 +130,7 @@ type DeleteContainerOutput struct {
 	Body ContainerActionResponse
 }
 
-// RegisterContainers registers container endpoints.
+// SetAutoUpdateInput is the request input for toggling container auto-update.
 type SetAutoUpdateInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ContainerID   string `path:"containerId" doc:"Container ID"`
@@ -275,7 +275,7 @@ func (h *ContainerHandler) ListContainers(ctx context.Context, input *ListContai
 			Sort:  input.Sort,
 			Order: pagination.SortOrder(input.Order),
 		},
-		PaginationParams: pagination.PaginationParams{
+		Params: pagination.Params{
 			Start: input.Start,
 			Limit: input.Limit,
 		},
@@ -339,9 +339,9 @@ func (h *ContainerHandler) GetContainerStatusCounts(ctx context.Context, input *
 		Body: ContainerStatusCountsResponse{
 			Success: true,
 			Data: containertypes.StatusCounts{
-				RunningContainers: int(running),
-				StoppedContainers: int(stopped),
-				TotalContainers:   int(total),
+				RunningContainers: running,
+				StoppedContainers: stopped,
+				TotalContainers:   total,
 			},
 		},
 	}, nil

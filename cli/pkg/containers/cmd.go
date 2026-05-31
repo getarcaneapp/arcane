@@ -3,6 +3,7 @@ package containers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -150,7 +151,7 @@ func buildContainersListPath(cmd *cobra.Command, c *client.Client, forceHasUpdat
 	path := types.Endpoints.Containers(c.EnvID())
 	if containersAll {
 		if cmd != nil && (cmd.Flags().Changed("limit") || cmd.Flags().Changed("start")) {
-			return "", fmt.Errorf("--all cannot be combined with explicit pagination flags")
+			return "", errors.New("--all cannot be combined with explicit pagination flags")
 		}
 	} else {
 		var err error
@@ -570,10 +571,10 @@ var containersCreateCmd = &cobra.Command{
 
 		// Validate required fields
 		if req.Name == "" {
-			return fmt.Errorf("--name is required")
+			return errors.New("--name is required")
 		}
 		if req.Image == "" {
-			return fmt.Errorf("--image is required")
+			return errors.New("--image is required")
 		}
 
 		path := types.Endpoints.Containers(c.EnvID())
@@ -689,7 +690,7 @@ func containerDisplayName(details *container.Details) string {
 func resolveContainer(ctx context.Context, c *client.Client, identifier string, allowPrompt bool) (*container.Details, bool, error) {
 	trimmed := strings.TrimSpace(identifier)
 	if trimmed == "" {
-		return nil, false, fmt.Errorf("container identifier is required")
+		return nil, false, errors.New("container identifier is required")
 	}
 
 	details, complete, found, err := fetchContainerByIdentifier(ctx, c, trimmed)

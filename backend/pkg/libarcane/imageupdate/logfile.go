@@ -2,6 +2,7 @@ package imageupdate
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -130,11 +131,11 @@ func formatSlogValueInternal(v slog.Value) string {
 // SetupMessageOnlyLogFile configures slog to write structured logs to stdout and a
 // message-only format to a file under dataDir.
 //
-// The file format is: <msg> key=value key=value ... (no time/level/source) to keep
+// The file format is: <msg> key=value ... (no time/level/source) to keep
 // upgrade logs concise for end users.
 func SetupMessageOnlyLogFile(dataDir string, filePrefix string, minLevel slog.Level) (*os.File, error) {
 	if strings.TrimSpace(dataDir) == "" {
-		return nil, fmt.Errorf("dataDir is required")
+		return nil, errors.New("dataDir is required")
 	}
 	if strings.TrimSpace(filePrefix) == "" {
 		filePrefix = "arcane-upgrade"

@@ -55,7 +55,7 @@ func (s *GitRepositoryService) GetRepositoryByID(ctx context.Context, id string)
 	var repository models.GitRepository
 	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&repository).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, fmt.Errorf("repository not found")
+			return nil, errors.New("repository not found")
 		}
 		return nil, fmt.Errorf("failed to get repository: %w", err)
 	}
@@ -66,7 +66,7 @@ func (s *GitRepositoryService) GetRepositoryByName(ctx context.Context, name str
 	var repository models.GitRepository
 	if err := s.db.WithContext(ctx).Where("name = ?", name).First(&repository).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, fmt.Errorf("repository not found")
+			return nil, errors.New("repository not found")
 		}
 		return nil, fmt.Errorf("failed to get repository: %w", err)
 	}
@@ -268,14 +268,11 @@ func validateGitRepositoryCredentialChangeInternal(repository *models.GitReposit
 
 	if len(missingFields) == 1 {
 		field := missingFields[0]
-		return &models.ValidationError{Field: field, Message: fmt.Sprintf("Changing repository URL requires re-supplying or clearing the %s", missingCredentialLabels[0])}
+		return &models.ValidationError{Field: field, Message: "Changing repository URL requires re-supplying or clearing the " + missingCredentialLabels[0]}
 	}
 
 	return models.NewValidationError(
-		fmt.Sprintf(
-			"Changing repository URL requires re-supplying or clearing all stored credentials: %s",
-			strings.Join(missingCredentialLabels, " and "),
-		),
+		"Changing repository URL requires re-supplying or clearing all stored credentials: "+strings.Join(missingCredentialLabels, " and "),
 		map[string]any{"fields": missingFields},
 	)
 }

@@ -2,6 +2,7 @@ package auth
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -44,7 +45,7 @@ GitHub Actions example:
 		exportOutput, _ := cmd.Flags().GetBool("export")
 
 		if cmdutil.JSONOutputEnabled(cmd) && exportOutput {
-			return fmt.Errorf("--json and --export cannot be used together")
+			return errors.New("--json and --export cannot be used together")
 		}
 
 		cfg, err := config.Load()
@@ -73,7 +74,7 @@ GitHub Actions example:
 			return err
 		}
 		if tokenResp.AccessToken == "" {
-			return fmt.Errorf("federated token exchange failed: empty access token")
+			return errors.New("federated token exchange failed: empty access token")
 		}
 
 		expiresAt := time.Now().UTC().Add(time.Duration(tokenResp.ExpiresIn) * time.Second)
@@ -149,7 +150,7 @@ func resolveFederatedSubjectTokenInternal(cmd *cobra.Command, provider string, a
 		}
 		token = strings.TrimSpace(string(data))
 		if token == "" {
-			return "", "", fmt.Errorf("token file is empty")
+			return "", "", errors.New("token file is empty")
 		}
 		return token, "file", nil
 	}
@@ -162,7 +163,7 @@ func resolveFederatedSubjectTokenInternal(cmd *cobra.Command, provider string, a
 		}
 		token = strings.TrimSpace(string(data))
 		if token == "" {
-			return "", "", fmt.Errorf("stdin token is empty")
+			return "", "", errors.New("stdin token is empty")
 		}
 		return token, "stdin", nil
 	}

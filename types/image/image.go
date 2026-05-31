@@ -178,7 +178,7 @@ type PruneReport struct {
 // combining both types into a single list and converting space reclaimed to int64.
 func NewPruneReport(src image.PruneReport) PruneReport {
 	// Safely convert uint64 to int64, capping at MaxInt64 to prevent overflow
-	spaceReclaimed := int64(0)
+	var spaceReclaimed int64
 	if src.SpaceReclaimed > uint64(math.MaxInt64) {
 		spaceReclaimed = math.MaxInt64
 	} else {
@@ -537,7 +537,7 @@ func NewDetailSummary(src *image.InspectResponse) DetailSummary {
 		if len(src.Config.ExposedPorts) > 0 {
 			out.Config.ExposedPorts = make(map[string]struct{}, len(src.Config.ExposedPorts))
 			for p := range src.Config.ExposedPorts {
-				out.Config.ExposedPorts[string(p)] = struct{}{}
+				out.Config.ExposedPorts[p] = struct{}{}
 			}
 		}
 		if len(src.Config.Env) > 0 {
@@ -553,7 +553,8 @@ func NewDetailSummary(src *image.InspectResponse) DetailSummary {
 			}
 		}
 		out.Config.WorkingDir = src.Config.WorkingDir
-		out.Config.ArgsEscaped = src.Config.ArgsEscaped //nolint:staticcheck // Required for Docker Windows image compatibility
+		//nolint:staticcheck // SA1019: deprecated field intentionally copied for Docker Windows image compatibility
+		out.Config.ArgsEscaped = src.Config.ArgsEscaped
 	}
 
 	out.Architecture = src.Architecture
