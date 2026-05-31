@@ -30,7 +30,7 @@ func (m *BaseModel) BeforeUpdate(_ *gorm.DB) (err error) {
 	return nil
 }
 
-// nolint:recvcheck
+//nolint:recvcheck
 type JSON map[string]any
 
 func (j JSON) Value() (driver.Value, error) {
@@ -55,7 +55,7 @@ func (j *JSON) Scan(value any) error {
 	}
 }
 
-// nolint:recvcheck
+//nolint:recvcheck
 type StringSlice []string
 
 func (s StringSlice) Value() (driver.Value, error) {

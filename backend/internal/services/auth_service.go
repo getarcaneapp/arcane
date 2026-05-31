@@ -30,9 +30,9 @@ var (
 	ErrOidcAuthDisabled     = errors.New("OIDC authentication is disabled")
 )
 
-type TokenPair struct { //nolint:gosec // API response contract intentionally includes token fields
+type TokenPair struct {
 	AccessToken  string    `json:"accessToken"`
-	RefreshToken string    `json:"refreshToken"` //nolint:gosec // API response contract requires refreshToken field
+	RefreshToken string    `json:"refreshToken"`
 	ExpiresAt    time.Time `json:"expiresAt"`
 }
 
@@ -45,6 +45,7 @@ type AuthSettings struct {
 
 type userClaims struct {
 	jwt.RegisteredClaims
+
 	SessionID             string `json:"sid,omitempty"`
 	UserID                string `json:"user_id"`
 	Username              string `json:"username"`
@@ -57,6 +58,7 @@ type userClaims struct {
 
 type refreshClaims struct {
 	jwt.RegisteredClaims
+
 	UserID     string `json:"user_id"`
 	SessionID  string `json:"sid,omitempty"`
 	AppVersion string `json:"app_version,omitempty"`

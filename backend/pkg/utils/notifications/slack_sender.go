@@ -2,6 +2,7 @@ package notifications
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/getarcaneapp/arcane/backend/internal/models"
@@ -12,7 +13,7 @@ import (
 // BuildSlackURL converts SlackConfig to Shoutrrr URL format using shoutrrr's Config
 func BuildSlackURL(config models.SlackConfig) (string, error) {
 	if config.Token == "" {
-		return "", fmt.Errorf("slack token is required")
+		return "", errors.New("slack token is required")
 	}
 
 	// Parse the token to get the token object
@@ -38,7 +39,7 @@ func BuildSlackURL(config models.SlackConfig) (string, error) {
 // SendSlack sends a message via Shoutrrr Slack using proper service configuration
 func SendSlack(ctx context.Context, config models.SlackConfig, message string) error {
 	if config.Token == "" {
-		return fmt.Errorf("slack token is empty")
+		return errors.New("slack token is empty")
 	}
 
 	shoutrrrURL, err := BuildSlackURL(config)

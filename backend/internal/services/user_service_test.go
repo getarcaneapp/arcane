@@ -94,9 +94,9 @@ func TestListUsersPaginatedSetsCanDeleteFromGlobalAdminCount(t *testing.T) {
 	nonAdmin := createTestUser(t, userSvc, "user-1", "user")
 
 	users, _, err := userSvc.ListUsersPaginated(ctx, pagination.QueryParams{
-		PaginationParams: pagination.PaginationParams{Start: 0, Limit: 20},
-		SortParams:       pagination.SortParams{Sort: "Username", Order: pagination.SortOrder("asc")},
-		Filters:          map[string]string{},
+		Params:     pagination.Params{Start: 0, Limit: 20},
+		SortParams: pagination.SortParams{Sort: "Username", Order: pagination.SortOrder("asc")},
+		Filters:    map[string]string{},
 	})
 	require.NoError(t, err)
 	require.Len(t, users, 2)

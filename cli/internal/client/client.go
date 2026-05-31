@@ -45,7 +45,7 @@ import (
 )
 
 const (
-	headerAPIKey   = "X-API-KEY" //nolint:gosec
+	headerAPIKey   = "X-Api-Key" // #nosec G101 -- HTTP header name, not a credential
 	defaultTimeout = 10 * time.Minute
 	defaultEnvID   = "0"
 	maxErrorBody   = 4096
@@ -280,7 +280,7 @@ func (c *Client) Request(ctx context.Context, method, path string, body any) (*h
 			req.Header.Set("Accept", "application/json")
 			start := time.Now()
 			logger.GetLogger().Debug("Sending request", "method", method, "url", fullURL, "env_id", c.envID, "streaming_body", true)
-			resp, err := c.httpClient.Do(req) //nolint:gosec // intentional request to configured Arcane server URL
+			resp, err := c.httpClient.Do(req)
 			if err != nil {
 				logger.GetLogger().Debug("Request failed", "method", method, "url", fullURL, "env_id", c.envID, "duration", time.Since(start).String(), "error", err)
 				return nil, fmt.Errorf("request failed: %w", err)
@@ -323,7 +323,7 @@ func (c *Client) RequestRaw(ctx context.Context, method, path string, body io.Re
 
 	start := time.Now()
 	logger.GetLogger().Debug("Sending raw request", "method", method, "url", fullURL, "env_id", c.envID)
-	resp, err := c.httpClient.Do(req) //nolint:gosec // intentional request to configured Arcane server URL
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		logger.GetLogger().Debug("Raw request failed", "method", method, "url", fullURL, "env_id", c.envID, "duration", time.Since(start).String(), "error", err)
 		return nil, fmt.Errorf("request failed: %w", err)
@@ -335,7 +335,7 @@ func (c *Client) RequestRaw(ctx context.Context, method, path string, body io.Re
 
 func (c *Client) resolveURL(path string) (string, error) {
 	if strings.TrimSpace(path) == "" {
-		return "", fmt.Errorf("invalid path: empty")
+		return "", errors.New("invalid path: empty")
 	}
 	if strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") {
 		if _, err := url.Parse(path); err != nil {
@@ -348,7 +348,7 @@ func (c *Client) resolveURL(path string) (string, error) {
 		return "", fmt.Errorf("invalid path: %w", err)
 	}
 	if c.baseURLParsed == nil {
-		return "", fmt.Errorf("invalid base URL")
+		return "", errors.New("invalid base URL")
 	}
 	return c.baseURLParsed.ResolveReference(rel).String(), nil
 }
@@ -373,7 +373,7 @@ func (c *Client) doRequest(ctx context.Context, method, fullURL string, bodyByte
 
 		start := time.Now()
 		logger.GetLogger().Debug("Sending request", "method", method, "url", fullURL, "env_id", c.envID, "attempt", attempt, "max_attempts", attempts, "body_bytes", len(bodyBytes))
-		resp, err := c.httpClient.Do(req) //nolint:gosec // intentional request to configured Arcane server URL
+		resp, err := c.httpClient.Do(req)
 		if err != nil {
 			logger.GetLogger().Debug("Request failed", "method", method, "url", fullURL, "env_id", c.envID, "attempt", attempt, "duration", time.Since(start).String(), "error", err)
 			if attempt < attempts && c.shouldRetry(method, 0, err) {
@@ -478,7 +478,7 @@ func (c *Client) applyAuth(req *http.Request) {
 
 func (c *Client) refreshAccessToken(ctx context.Context) error {
 	if c.refreshToken == "" {
-		return fmt.Errorf("refresh token not configured; run `arcane auth login`")
+		return errors.New("refresh token not configured; run `arcane auth login`")
 	}
 
 	bodyBytes, err := json.Marshal(map[string]string{"refreshToken": c.refreshToken})
@@ -487,7 +487,7 @@ func (c *Client) refreshAccessToken(ctx context.Context) error {
 	}
 
 	if c.baseURLParsed == nil {
-		return fmt.Errorf("invalid base URL")
+		return errors.New("invalid base URL")
 	}
 	refreshURL := c.baseURLParsed.ResolveReference(&url.URL{Path: types.Endpoints.AuthRefresh()}).String()
 	logger.GetLogger().Debug("Sending token refresh request", "url", refreshURL)
@@ -500,7 +500,7 @@ func (c *Client) refreshAccessToken(ctx context.Context) error {
 	req.Header.Set("Accept", "application/json")
 
 	start := time.Now()
-	resp, err := c.httpClient.Do(req) //nolint:gosec // intentional request to configured Arcane server URL
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		logger.GetLogger().Debug("Token refresh request failed", "url", refreshURL, "duration", time.Since(start).String(), "error", err)
 		return fmt.Errorf("token refresh failed: %w", err)
@@ -522,7 +522,7 @@ func (c *Client) refreshAccessToken(ctx context.Context) error {
 		return fmt.Errorf("failed to parse refresh response: %w", err)
 	}
 	if !result.Success || result.Data.Token == "" {
-		return fmt.Errorf("token refresh failed: unexpected response from server")
+		return errors.New("token refresh failed: unexpected response from server")
 	}
 
 	newRefresh := result.Data.RefreshToken
@@ -658,7 +658,7 @@ func DecodeResponseStrict[T any](resp *http.Response) (*APIResponse[T], error) {
 		if strings.TrimSpace(result.Error) != "" {
 			return &result, fmt.Errorf("API error: %s", result.Error)
 		}
-		return &result, fmt.Errorf("API error: request was not successful")
+		return &result, errors.New("API error: request was not successful")
 	}
 
 	return &result, nil

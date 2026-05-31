@@ -2,7 +2,6 @@ package edge
 
 import (
 	"errors"
-	"fmt"
 	"strings"
 	"sync"
 
@@ -40,13 +39,13 @@ func getActiveAgentTunnelConn() TunnelConnection {
 // PublishEventToManager sends an event from the active agent tunnel to the manager.
 func PublishEventToManager(event *TunnelEvent) error {
 	if event == nil {
-		return fmt.Errorf("event is required")
+		return errors.New("event is required")
 	}
 	if strings.TrimSpace(event.Type) == "" {
-		return fmt.Errorf("event type is required")
+		return errors.New("event type is required")
 	}
 	if strings.TrimSpace(event.Title) == "" {
-		return fmt.Errorf("event title is required")
+		return errors.New("event title is required")
 	}
 
 	conn := getActiveAgentTunnelConn()

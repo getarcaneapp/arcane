@@ -199,7 +199,7 @@ func buildSettingsFieldCacheInternal() {
 	ordered := make([]settingFieldMeta, 0, rt.NumField())
 	byKey := make(map[string]settingFieldMeta, rt.NumField())
 
-	for i := 0; i < rt.NumField(); i++ {
+	for i := range rt.NumField() {
 		field := rt.Field(i)
 		key, attrs, _ := strings.Cut(field.Tag.Get("key"), ",")
 		if key == "" {
@@ -364,7 +364,7 @@ func (e SettingSensitiveForbiddenError) Is(target error) bool {
 
 type OidcConfig struct {
 	ClientID     string `json:"clientId"`
-	ClientSecret string `json:"clientSecret"` //nolint:gosec // OIDC schema compatibility requires this field name
+	ClientSecret string `json:"clientSecret"`
 	IssuerURL    string `json:"issuerUrl"`
 	Scopes       string `json:"scopes"`
 

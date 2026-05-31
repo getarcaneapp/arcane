@@ -408,7 +408,7 @@ func (s *ApiKeyService) CreateEnvironmentApiKey(ctx context.Context, environment
 	if len(environmentID) > 8 {
 		envIDShort = environmentID[:8]
 	}
-	name := fmt.Sprintf("Environment Bootstrap Key - %s", envIDShort)
+	name := "Environment Bootstrap Key - " + envIDShort
 	created, err := s.createAPIKeyWithRawKey(ctx, nil, rawKey, apikey.CreateApiKey{
 		Name:        name,
 		Description: new("Auto-generated key for environment pairing"),

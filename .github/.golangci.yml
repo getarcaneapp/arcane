@@ -5,46 +5,92 @@ run:
 linters:
   default: none
   enable:
+    - arangolint
     - asasalint
     - asciicheck
     - bidichk
     - bodyclose
+    - canonicalheader
+    - clickhouselint
     - contextcheck
     - copyloopvar
+    - decorder
     - dupl
+    - dupword
     - durationcheck
+    - embeddedstructfieldcheck
     - errcheck
     - errchkjson
+    - errname
     - errorlint
     - exhaustive
+    - exptostd
+    - fatcontext
+    - forbidigo
+    - forcetypeassert
+    - ginkgolinter
     - gocheckcompilerdirectives
     - gochecksumtype
     - gocognit
     - gocritic
+    - gocyclo
+    - godoclint
+    - goheader
+    - gomoddirectives
+    - gomodguard_v2
+    - goprintffuncname
     - gosec
     - gosmopolitan
     - govet
+    - grouper
+    - iface
+    - importas
+    - inamedparam
     - ineffassign
+    - interfacebloat
+    - intrange
+    - iotamixing
     - loggercheck
+    - maintidx
     - makezero
-    - misspell
     - mirror
+    - misspell
+    - modernize
     - musttag
     - nakedret
     - nilerr
     - nilnesserr
     - noctx
+    - nolintlint
+    - nosprintfhostport
+    - perfsprint
+    - prealloc
+    - predeclared
+    - promlinter
     - protogetter
     - reassign
     - recvcheck
+    - revive
     - rowserrcheck
+    - sloglint
     - spancheck
     - sqlclosecheck
     - staticcheck
+    - testableexamples
     - testifylint
+    - unconvert
+    - unparam
+    - unqueryvet
     - unused
     - usestdlibvars
+    - usetesting
+    - wastedassign
+    - whitespace
     - zerologlint
+  settings:
+    gomoddirectives:
+      # replace directives (=> ../cli, => ../types). Allow them.
+      replace-local: true
   exclusions:
     generated: lax
     presets:
@@ -52,6 +98,25 @@ linters:
       - common-false-positives
       - legacy
       - std-error-handling
+    rules:
+      # Initialism naming (ApiKey -> APIKey, AppUrl -> AppURL, etc.) is intentional,
+      # widespread, and API-surface; track separately rather than churn it here.
+      - linters:
+          - revive
+        text: "var-naming:"
+      # Unused params are required by interface/callback/gorm-hook signatures.
+      - linters:
+          - revive
+        text: "unused-parameter:"
+      # Package-prefixed exported names (swarm.SwarmInfo, port.PortMapping, etc.) are
+      # an intentional, monorepo-wide convention; renaming is a large public-API change.
+      - linters:
+          - revive
+        text: "exported:"
+      # The cli command package is a CLI entrypoint; printing to stdout is correct.
+      - linters:
+          - forbidigo
+        path: cli/
     paths:
       - '.*\.pb\.go$'
       - third_party$

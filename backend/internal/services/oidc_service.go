@@ -20,6 +20,7 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/sync/singleflight"
 
+	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils"
@@ -206,10 +207,8 @@ func (s *OidcService) ValidateMobileRedirectURI(ctx context.Context, uri string)
 	if uri == "" {
 		return errors.New("mobile redirect URI is empty")
 	}
-	for _, allowed := range s.GetMobileRedirectAllowlist(ctx) {
-		if allowed == uri {
-			return nil
-		}
+	if slices.Contains(s.GetMobileRedirectAllowlist(ctx), uri) {
+		return nil
 	}
 	return fmt.Errorf("mobile redirect URI %q is not in the configured allowlist", uri)
 }
@@ -328,7 +327,11 @@ func (s *OidcService) getOrDiscoverProviderInternal(ctx context.Context, cfg *mo
 		return nil, err
 	}
 
-	return v.(*oidc.Provider), nil
+	provider, ok := v.(*oidc.Provider)
+	if !ok {
+		return nil, &common.OidcProviderCacheTypeError{}
+	}
+	return provider, nil
 }
 
 func (s *OidcService) discoverProviderInternal(ctx context.Context, issuer string) (*oidc.Provider, string, error) {
@@ -450,7 +453,7 @@ func (s *OidcService) fetchUserInfoClaimsInternal(ctx context.Context, cfg *mode
 	request.Header.Set("Accept", "application/json")
 
 	client := s.getHttpClientInternal(cfg.SkipTlsVerify)
-	resp, err := client.Do(request) //nolint:gosec // intentional request to configured OIDC userinfo endpoint
+	resp, err := client.Do(request)
 	if err != nil {
 		return nil, err
 	}
@@ -749,7 +752,7 @@ func (s *OidcService) makeDeviceAuthRequestInternal(ctx context.Context, endpoin
 	req.Header.Set("Accept", "application/json")
 
 	client := s.getHttpClientInternal(skipTls)
-	resp, err := client.Do(req) //nolint:gosec // intentional request to configured OIDC device authorization endpoint
+	resp, err := client.Do(req)
 	if err != nil {
 		slog.Error("makeDeviceAuthRequestInternal: request failed", "error", err)
 		return nil, fmt.Errorf("device authorization request failed: %w", err)
@@ -858,7 +861,7 @@ func (s *OidcService) makeTokenRequestInternal(ctx context.Context, endpoint str
 	req.Header.Set("Accept", "application/json")
 
 	client := s.getHttpClientInternal(skipTls)
-	resp, err := client.Do(req) //nolint:gosec // intentional request to configured OIDC token endpoint
+	resp, err := client.Do(req)
 	if err != nil {
 		slog.Error("makeTokenRequestInternal: request failed", "error", err)
 		return nil, fmt.Errorf("token request failed: %w", err)

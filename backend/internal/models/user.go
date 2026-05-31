@@ -5,6 +5,8 @@ import (
 )
 
 type User struct {
+	BaseModel
+
 	Username               string     `json:"username" sortable:"true"`
 	PasswordHash           string     `json:"-" gorm:"column:password_hash"`
 	DisplayName            *string    `json:"displayName,omitempty" gorm:"column:display_name" sortable:"true"`
@@ -19,7 +21,6 @@ type User struct {
 	OidcAccessToken          *string    `json:"-" gorm:"type:text"`
 	OidcRefreshToken         *string    `json:"-" gorm:"type:text"`
 	OidcAccessTokenExpiresAt *time.Time `json:"-"`
-	BaseModel
 }
 
 func (User) TableName() string {

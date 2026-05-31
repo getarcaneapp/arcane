@@ -3,6 +3,7 @@ package ci
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -36,7 +37,7 @@ func DetectToken(ctx context.Context, provider string, audience string, getenv f
 		if token := strings.TrimSpace(getenv("CI_JOB_JWT_V2")); token != "" {
 			return token, ProviderGitLab, nil
 		}
-		return "", "", fmt.Errorf("no supported CI OIDC token source detected")
+		return "", "", errors.New("no supported CI OIDC token source detected")
 	case ProviderGitHub:
 		token, err := mintGitHubActionsTokenInternal(ctx, audience, getenv, httpClient)
 		if err != nil {
@@ -46,11 +47,11 @@ func DetectToken(ctx context.Context, provider string, audience string, getenv f
 	case ProviderGitLab:
 		token := strings.TrimSpace(getenv("CI_JOB_JWT_V2"))
 		if token == "" {
-			return "", "", fmt.Errorf("CI_JOB_JWT_V2 is not set; pass a GitLab id_tokens value with --token")
+			return "", "", errors.New("CI_JOB_JWT_V2 is not set; pass a GitLab id_tokens value with --token")
 		}
 		return token, ProviderGitLab, nil
 	case ProviderGeneric:
-		return "", "", fmt.Errorf("generic provider requires --token, --token-file, or --token-stdin")
+		return "", "", errors.New("generic provider requires --token, --token-file, or --token-stdin")
 	default:
 		return "", "", fmt.Errorf("unsupported federated provider %q", provider)
 	}
@@ -60,7 +61,7 @@ func mintGitHubActionsTokenInternal(ctx context.Context, audience string, getenv
 	requestURL := strings.TrimSpace(getenv("ACTIONS_ID_TOKEN_REQUEST_URL"))
 	requestToken := strings.TrimSpace(getenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN"))
 	if requestURL == "" || requestToken == "" {
-		return "", fmt.Errorf("GitHub Actions OIDC request environment is not set")
+		return "", errors.New("GitHub Actions OIDC request environment is not set")
 	}
 
 	parsedURL, err := url.Parse(requestURL)
@@ -102,7 +103,7 @@ func mintGitHubActionsTokenInternal(ctx context.Context, audience string, getenv
 	}
 	token := strings.TrimSpace(payload.Value)
 	if token == "" {
-		return "", fmt.Errorf("GitHub Actions OIDC response did not include a token")
+		return "", errors.New("GitHub Actions OIDC response did not include a token")
 	}
 	return token, nil
 }

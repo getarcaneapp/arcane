@@ -3,6 +3,7 @@ package updates
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 
 	"github.com/getarcaneapp/arcane/cli/internal/client"
 	"github.com/getarcaneapp/arcane/cli/internal/output"
@@ -140,7 +141,7 @@ var checkImageCmd = &cobra.Command{
 		}
 
 		output.Header("Image Update Status")
-		output.KeyValue("Has Update", fmt.Sprintf("%t", result.Data.HasUpdate))
+		output.KeyValue("Has Update", strconv.FormatBool(result.Data.HasUpdate))
 		if result.Data.HasUpdate {
 			output.KeyValue("Update Type", result.Data.UpdateType)
 			output.KeyValue("Current Version", result.Data.CurrentVersion)
@@ -183,10 +184,10 @@ var summaryCmd = &cobra.Command{
 		}
 
 		output.Header("Image Updates Summary")
-		output.KeyValue("Total Images", fmt.Sprintf("%d", result.Data.TotalImages))
-		output.KeyValue("Images with Updates", fmt.Sprintf("%d", result.Data.ImagesWithUpdates))
-		output.KeyValue("Digest Updates", fmt.Sprintf("%d", result.Data.DigestUpdates))
-		output.KeyValue("Errors", fmt.Sprintf("%d", result.Data.ErrorsCount))
+		output.KeyValue("Total Images", strconv.Itoa(result.Data.TotalImages))
+		output.KeyValue("Images with Updates", strconv.Itoa(result.Data.ImagesWithUpdates))
+		output.KeyValue("Digest Updates", strconv.Itoa(result.Data.DigestUpdates))
+		output.KeyValue("Errors", strconv.Itoa(result.Data.ErrorsCount))
 		return nil
 	},
 }

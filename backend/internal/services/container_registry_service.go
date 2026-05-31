@@ -392,7 +392,7 @@ func (s *ContainerRegistryService) GetAllRegistryAuthConfigs(ctx context.Context
 			Password:      token,
 			ServerAddress: serverAddress,
 		}
-		for _, key := range utilsregistry.RegistryAuthLookupKeys(normalizedHost) {
+		for _, key := range utilsregistry.LookupKeys(normalizedHost) {
 			authConfigs[key] = authConfig
 		}
 	}
@@ -708,7 +708,7 @@ func (s *ContainerRegistryService) GetImageDigest(ctx context.Context, imageRef 
 		return result.Digest, nil
 	})
 
-	var staleErr *cache.ErrStale
+	var staleErr *cache.StaleError
 	if err != nil && !errors.As(err, &staleErr) {
 		return "", err
 	}

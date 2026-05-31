@@ -21,6 +21,7 @@ var unitBytesType = reflect.TypeFor[composetypes.UnitBytes]()
 // handle serviceConfig separately from the rest of the payload.
 type runtimeServiceJSON struct {
 	runtimeServiceAlias
+
 	ServiceConfig json.RawMessage `json:"serviceConfig,omitempty"`
 }
 
@@ -32,6 +33,7 @@ type runtimeServiceAlias RuntimeService
 // services array while still decoding the rest of the struct normally.
 type detailsJSON struct {
 	detailsAlias
+
 	Services        []json.RawMessage `json:"services,omitempty"`
 	RuntimeServices []RuntimeService  `json:"runtimeServices,omitempty"`
 }

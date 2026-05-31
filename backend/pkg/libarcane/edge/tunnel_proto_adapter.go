@@ -1,6 +1,7 @@
 package edge
 
 import (
+	"errors"
 	"fmt"
 	"maps"
 	"math"
@@ -10,7 +11,7 @@ import (
 
 func tunnelMessageToManagerProto(msg *TunnelMessage) (*tunnelpb.ManagerMessage, error) {
 	if msg == nil {
-		return nil, fmt.Errorf("message is nil")
+		return nil, errors.New("message is nil")
 	}
 
 	switch msg.Type {
@@ -119,7 +120,7 @@ func tunnelMessageToManagerProto(msg *TunnelMessage) (*tunnelpb.ManagerMessage, 
 
 func managerProtoToTunnelMessage(msg *tunnelpb.ManagerMessage) (*TunnelMessage, error) {
 	if msg == nil {
-		return nil, fmt.Errorf("manager message is nil")
+		return nil, errors.New("manager message is nil")
 	}
 
 	switch payload := msg.GetPayload().(type) {
@@ -214,7 +215,7 @@ func managerProtoToTunnelMessage(msg *tunnelpb.ManagerMessage) (*TunnelMessage, 
 
 func tunnelMessageToAgentProto(msg *TunnelMessage) (*tunnelpb.AgentMessage, error) {
 	if msg == nil {
-		return nil, fmt.Errorf("message is nil")
+		return nil, errors.New("message is nil")
 	}
 
 	switch msg.Type {
@@ -328,7 +329,7 @@ func tunnelMessageToAgentProto(msg *TunnelMessage) (*tunnelpb.AgentMessage, erro
 
 func agentProtoToTunnelMessage(msg *tunnelpb.AgentMessage) (*TunnelMessage, error) {
 	if msg == nil {
-		return nil, fmt.Errorf("agent message is nil")
+		return nil, errors.New("agent message is nil")
 	}
 
 	switch payload := msg.GetPayload().(type) {

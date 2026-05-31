@@ -146,7 +146,7 @@ func PerAgentTokenRateLimit(perMinute int, burst int) echo.MiddlewareFunc {
 			req := c.Request()
 			key := strings.TrimSpace(req.Header.Get("X-Arcane-Agent-Token"))
 			if key == "" {
-				key = strings.TrimSpace(req.Header.Get("X-API-Key"))
+				key = strings.TrimSpace(req.Header.Get("X-Api-Key"))
 			}
 			if key == "" {
 				return next(c)

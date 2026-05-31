@@ -3,6 +3,7 @@ package libbuild
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -15,7 +16,7 @@ import (
 
 func (b *builder) newLocalBuildkitSessionInternal(ctx context.Context) (*buildSession, error) {
 	if b.dockerClientProvider == nil {
-		return nil, fmt.Errorf("docker service not available")
+		return nil, errors.New("docker service not available")
 	}
 
 	dockerClient, err := b.dockerClientProvider.GetClient(ctx)

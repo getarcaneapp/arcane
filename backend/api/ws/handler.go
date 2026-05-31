@@ -157,6 +157,7 @@ type WebSocketHandler struct {
 	logStreams        map[string]*wsLogStream
 	cpuCache          struct {
 		sync.RWMutex
+
 		value     float64
 		timestamp time.Time
 	}
@@ -181,6 +182,7 @@ type WebSocketHandler struct {
 
 	diskUsagePathCache struct {
 		sync.RWMutex
+
 		value     string
 		timestamp time.Time
 	}
@@ -813,7 +815,7 @@ func (h *WebSocketHandler) ContainerStats(c echo.Context) error {
 	conn, err := h.wsUpgrader.Upgrade(c.Response().Writer, c.Request(), nil)
 	if err != nil {
 		slog.DebugContext(c.Request().Context(), "Failed to upgrade WebSocket for container stats", "containerID", containerID, "error", err)
-		return nil //nolint:nilerr // Upgrade has already written an HTTP error response to the client.
+		return nil
 	}
 
 	connID := h.wsMetrics.RegisterConnection(buildWSConnectionInfoInternal(c, systemtypes.WSKindContainerStats, containerID))
@@ -829,13 +831,20 @@ func (h *WebSocketHandler) ContainerStats(c echo.Context) error {
 
 func (h *WebSocketHandler) getOrCreateContainerStatsHubInternal(containerID string) *wshub.Hub {
 	if existing, ok := h.containerStatsHubs.Load(containerID); ok {
-		return existing.(*wshub.Hub)
+		if hub, ok := existing.(*wshub.Hub); ok {
+			return hub
+		}
 	}
 
 	hub := wshub.NewHub(64)
 	actual, loaded := h.containerStatsHubs.LoadOrStore(containerID, hub)
 	if loaded {
-		return actual.(*wshub.Hub)
+		if existingHub, ok := actual.(*wshub.Hub); ok {
+			return existingHub
+		}
+		// type assertion failure is impossible in practice, but avoid running
+		// an unregistered hub if it somehow occurs
+		return hub
 	}
 
 	h.runContainerStatsHubInternal(containerID, hub)
@@ -843,7 +852,7 @@ func (h *WebSocketHandler) getOrCreateContainerStatsHubInternal(containerID stri
 }
 
 func (h *WebSocketHandler) runContainerStatsHubInternal(containerID string, hub *wshub.Hub) {
-	ctx, cancel := context.WithCancel(context.Background()) //nolint:gosec // cancel is intentionally retained and invoked by the hub OnEmpty callback.
+	ctx, cancel := context.WithCancel(context.Background())
 	var cleanupTimer *time.Timer
 	var cleanupTimerMu sync.Mutex
 
@@ -972,7 +981,7 @@ func (h *WebSocketHandler) execCleanupFuncInternal(ctx context.Context, execSess
 	return func() {
 		slog.Debug("Cleaning up exec session", "execID", execID, "containerID", containerID, "contextErr", ctx.Err())
 		// Cleanup must proceed even if parent ctx is canceled.
-		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second) //nolint:contextcheck
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cleanupCancel()
 		if err := execSession.Close(cleanupCtx); err != nil { //nolint:contextcheck
 			slog.Warn("Failed to clean up exec session", "execID", execID, "error", err)
@@ -1037,11 +1046,14 @@ func (h *WebSocketHandler) pipeExecInputInternal(ctx context.Context, cancel con
 // System WebSocket Endpoints
 // ============================================================================
 
-// checkRateLimit checks and applies rate limiting for WebSocket connections.
+// checkRateLimitInternal checks and applies rate limiting for WebSocket connections.
 // Returns the counter and whether the connection should be allowed.
-func (h *WebSocketHandler) checkRateLimit(clientIP string) (*int32, bool) {
+func (h *WebSocketHandler) checkRateLimitInternal(clientIP string) (*int32, bool) {
 	connCount, _ := h.activeConnections.LoadOrStore(clientIP, new(int32))
-	count := connCount.(*int32)
+	count, ok := connCount.(*int32)
+	if !ok {
+		return nil, false
+	}
 
 	currentCount := atomic.AddInt32(count, 1)
 	if currentCount > 5 {
@@ -1051,8 +1063,8 @@ func (h *WebSocketHandler) checkRateLimit(clientIP string) (*int32, bool) {
 	return count, true
 }
 
-// releaseRateLimit decrements the connection counter and cleans up if needed.
-func (h *WebSocketHandler) releaseRateLimit(clientIP string, count *int32) {
+// releaseRateLimitInternal decrements the connection counter and cleans up if needed.
+func (h *WebSocketHandler) releaseRateLimitInternal(clientIP string, count *int32) {
 	newCount := atomic.AddInt32(count, -1)
 	if newCount <= 0 {
 		h.activeConnections.Delete(clientIP)
@@ -1069,7 +1081,7 @@ func (h *WebSocketHandler) acquireSystemStatsSamplerInternal(ctx context.Context
 		return waitForSystemStatsSamplerReadyInternal(ctx, ready)
 	}
 
-	samplerCtx, cancel := context.WithCancel(context.WithoutCancel(ctx)) //nolint:gosec // cancel is intentionally retained in sampler state and invoked when the last subscriber disconnects.
+	samplerCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	ready := make(chan struct{})
 	h.systemStatsSampler.cancel = cancel
 	h.systemStatsSampler.ready = ready
@@ -1371,14 +1383,14 @@ func (h *WebSocketHandler) getCachedCgroupLimitsInternal() *docker.CgroupLimits 
 func (h *WebSocketHandler) SystemStats(c echo.Context) error {
 	clientIP := c.RealIP()
 
-	count, allowed := h.checkRateLimit(clientIP)
+	count, allowed := h.checkRateLimitInternal(clientIP)
 	if !allowed {
 		return c.JSON(http.StatusTooManyRequests, map[string]any{
 			"success": false,
 			"error":   "Too many concurrent stats connections from this IP",
 		})
 	}
-	defer h.releaseRateLimit(clientIP, count)
+	defer h.releaseRateLimitInternal(clientIP, count)
 
 	conn, err := h.wsUpgrader.Upgrade(c.Response().Writer, c.Request(), nil)
 	if err != nil {

@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -74,10 +75,10 @@ func (s *JobService) GetJobSchedules(ctx context.Context) jobschedule.Config {
 
 func (s *JobService) UpdateJobSchedules(ctx context.Context, updates jobschedule.Update) (jobschedule.Config, error) {
 	if s == nil || s.db == nil || s.settings == nil {
-		return jobschedule.Config{}, fmt.Errorf("job service not initialized")
+		return jobschedule.Config{}, errors.New("job service not initialized")
 	}
 	if s.cfg != nil && s.cfg.UIConfigurationDisabled {
-		return jobschedule.Config{}, fmt.Errorf("job schedule updates are disabled")
+		return jobschedule.Config{}, errors.New("job schedule updates are disabled")
 	}
 
 	current := s.GetJobSchedules(ctx)
@@ -200,7 +201,7 @@ func jobMetadataAffectedBySettingInternal(jobMeta meta.JobMetadata, changed map[
 
 func (s *JobService) ListJobs(ctx context.Context) (*jobschedule.JobListResponse, error) {
 	if s == nil || s.settings == nil {
-		return nil, fmt.Errorf("job service not initialized")
+		return nil, errors.New("job service not initialized")
 	}
 
 	allMetadata := meta.GetAllJobMetadata()
@@ -243,7 +244,7 @@ func (s *JobService) RunJobNowInline(ctx context.Context, jobID string) error {
 
 func (s *JobService) getRunnableJobInternal(jobID string) (schedulertypes.Job, error) {
 	if s == nil || s.scheduler == nil {
-		return nil, fmt.Errorf("job service or scheduler not initialized")
+		return nil, errors.New("job service or scheduler not initialized")
 	}
 
 	meta, ok := meta.GetJobMetadata(jobID)

@@ -81,7 +81,7 @@ func TestDecodeAuthHeader_InvalidInput(t *testing.T) {
 }
 
 func TestRegistryAuthLookupKeys(t *testing.T) {
-	assert.Equal(t, []string{"ghcr.io"}, RegistryAuthLookupKeys("https://GHCR.IO/"))
-	assert.Equal(t, []string{"docker.io", "index.docker.io", "registry-1.docker.io"}, RegistryAuthLookupKeys("https://index.docker.io/v1/"))
-	assert.Nil(t, RegistryAuthLookupKeys("   "))
+	assert.Equal(t, []string{"ghcr.io"}, LookupKeys("https://GHCR.IO/"))
+	assert.Equal(t, []string{"docker.io", "index.docker.io", "registry-1.docker.io"}, LookupKeys("https://index.docker.io/v1/"))
+	assert.Nil(t, LookupKeys("   "))
 }

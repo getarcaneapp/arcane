@@ -312,7 +312,6 @@ func (h *SettingsHandler) UpdateSettings(ctx context.Context, input *UpdateSetti
 }
 
 func (h *SettingsHandler) validateSettingsUpdateInput(input settings.Update) error {
-
 	// Validate projects directory if provided and changed from current value.
 	// Skip validation when the value matches the current (possibly env-overridden) setting
 	// so that saving unrelated settings doesn't fail due to env-provided directory formats.

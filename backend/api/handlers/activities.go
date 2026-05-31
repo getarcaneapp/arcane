@@ -256,7 +256,7 @@ func (h *ActivityHandler) streamLocalActivitiesInternal(
 ) {
 	sendSnapshot := func() bool {
 		activities, _, err := h.activityService.ListActivitiesPaginated(ctx, input.EnvironmentID, pagination.QueryParams{
-			PaginationParams: pagination.PaginationParams{Limit: resolveActivityStreamLimitInternal(input.Limit)},
+			Params: pagination.Params{Limit: resolveActivityStreamLimitInternal(input.Limit)},
 		})
 		if err != nil {
 			return false

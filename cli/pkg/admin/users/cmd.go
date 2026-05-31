@@ -77,11 +77,11 @@ func summarizeRoleAssignments(assignments []user.RoleAssignmentSummary) string {
 		b := buckets[roleID]
 		switch {
 		case b.hasGlobal && b.envScoped == 0:
-			parts = append(parts, fmt.Sprintf("%s (global)", roleID))
+			parts = append(parts, roleID+" (global)")
 		case b.hasGlobal && b.envScoped > 0:
 			parts = append(parts, fmt.Sprintf("%s (global +%d envs)", roleID, b.envScoped))
 		case b.envScoped == 1:
-			parts = append(parts, fmt.Sprintf("%s on 1 env", roleID))
+			parts = append(parts, roleID+" on 1 env")
 		default:
 			parts = append(parts, fmt.Sprintf("%s on %d envs", roleID, b.envScoped))
 		}
