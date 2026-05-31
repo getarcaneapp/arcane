@@ -144,6 +144,51 @@ func TestEnvironmentMiddleware_KeepsNotificationEndpointsLocal(t *testing.T) {
 	assert.True(t, localHandlerHit)
 }
 
+func TestEnvironmentMiddleware_KeepsActivityEndpointsLocal(t *testing.T) {
+	tests := []struct {
+		name   string
+		method string
+		route  string
+		path   string
+	}{
+		{
+			name:   "list activities",
+			method: http.MethodGet,
+			route:  "/environments/:id/activities",
+			path:   "/api/environments/env-edge/activities?limit=50",
+		},
+		{
+			name:   "stream activities",
+			method: http.MethodGet,
+			route:  "/environments/:id/activities/stream",
+			path:   "/api/environments/env-edge/activities/stream?limit=50",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			middleware := newTestEnvironmentMiddleware()
+			router := echo.New()
+			api := attachMiddleware(router, middleware)
+
+			localHandlerHit := false
+			api.Add(tt.method, tt.route, func(c echo.Context) error {
+				localHandlerHit = true
+				return c.JSON(http.StatusOK, map[string]any{"success": true})
+			})
+
+			req := httptest.NewRequest(tt.method, tt.path, nil)
+			recorder := httptest.NewRecorder()
+
+			router.ServeHTTP(recorder, req)
+
+			assert.Equal(t, http.StatusOK, recorder.Code)
+			assert.Contains(t, recorder.Body.String(), "\"success\":true")
+			assert.True(t, localHandlerHit)
+		})
+	}
+}
+
 func TestEnvironmentMiddleware_ProxyWebSocketRejectsEdgeTargetsWithoutTunnel(t *testing.T) {
 	middleware := newTestEnvironmentMiddleware()
 	e := echo.New()

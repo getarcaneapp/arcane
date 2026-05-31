@@ -200,6 +200,10 @@ func (m *EnvironmentMiddleware) hasResourcePath(c echo.Context, envID string) bo
 }
 
 func isManagementPathInternal(suffix string) bool {
+	if suffix == "/activities" || strings.HasPrefix(suffix, "/activities/") {
+		return true
+	}
+
 	if strings.HasPrefix(suffix, "/notifications") {
 		return true
 	}
