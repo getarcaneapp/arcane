@@ -202,7 +202,11 @@ const (
 	imagePullModeAlways
 )
 
-var composePullProjectServicesInternal = projects.ComposePull
+var (
+	composePullProjectServicesInternal = projects.ComposePull
+	composeStopProjectServicesInternal = projects.ComposeStop
+	composeUpProjectServicesInternal   = projects.ComposeUp
+)
 
 func resolveServiceImagePullMode(svc composetypes.ServiceConfig) imagePullMode {
 	rawPolicy := strings.ToLower(strings.TrimSpace(svc.PullPolicy))
@@ -744,6 +748,7 @@ func (s *ProjectService) UpdateProjectServices(ctx context.Context, projectID st
 	if err != nil {
 		return err
 	}
+	previousStatus := projectFromDb.Status
 
 	// 1. Load project
 	compProj, _, err := s.loadComposeProjectForProjectInternal(ctx, projectFromDb, nil)
@@ -759,21 +764,22 @@ func (s *ProjectService) UpdateProjectServices(ctx context.Context, projectID st
 	// 3. Pull images for specific services
 	writeProjectProgressInternal(ctx, "Pulling updated service images", 20, "pull")
 	if err := s.composePullSelectedServicesInternal(ctx, compProj, servicesToUpdate); err != nil {
-		slog.WarnContext(ctx, "compose pull failed, continuing", "error", err)
+		if statusErr := s.updateProjectStatusInternal(ctx, projectID, previousStatus); statusErr != nil {
+			slog.ErrorContext(ctx, "UpdateProjectServices: failed to restore project status after compose pull failure", "projectID", projectID, "error", statusErr)
+		}
+		return fmt.Errorf("pull updated service images: %w", err)
 	}
 
 	// 4. Stop specific services
 	writeProjectProgressInternal(ctx, "Stopping selected services", 45, "stop")
-	if err := projects.ComposeStop(ctx, compProj, servicesToUpdate); err != nil {
+	if err := composeStopProjectServicesInternal(ctx, compProj, servicesToUpdate); err != nil {
 		slog.WarnContext(ctx, "compose stop failed, continuing", "error", err)
 	}
 
 	// 5. Up specific services
 	writeProjectProgressInternal(ctx, "Starting selected services", 70, "up")
-	if err := projects.ComposeUp(ctx, compProj, servicesToUpdate, false, false); err != nil {
-		if statusErr := s.updateProjectStatusandCountsInternal(ctx, projectID, models.ProjectStatusStopped); statusErr != nil {
-			slog.ErrorContext(ctx, "UpdateProjectServices: failed to set stopped status after compose up failure", "projectID", projectID, "error", statusErr)
-		}
+	if err := composeUpProjectServicesInternal(ctx, compProj, servicesToUpdate, false, true); err != nil {
+		s.restoreProjectStatusAfterFailedDeployInternal(ctx, projectID)
 		return fmt.Errorf("failed to up services: %w", err)
 	}
 

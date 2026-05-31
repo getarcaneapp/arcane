@@ -21,7 +21,7 @@ import (
 	"github.com/moby/moby/client"
 )
 
-var ArcaneUpgraderImage = "ghcr.io/getarcaneapp/arcane:latest"
+const defaultArcaneUpgraderImageInternal = "ghcr.io/getarcaneapp/arcane:latest"
 
 type SystemUpgradeService struct {
 	upgrading       atomic.Bool
@@ -114,14 +114,15 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 
 	// Use the same image reference as the currently running Arcane container for the upgrader.
 	// This avoids mismatches where a newer/older upgrader CLI expects different behavior.
+	upgraderImage := defaultArcaneUpgraderImageInternal
 	if currentContainer.Config != nil {
 		if img := strings.TrimSpace(currentContainer.Config.Image); img != "" {
-			ArcaneUpgraderImage = img
+			upgraderImage = img
 		}
 	}
-	slog.Debug("Using upgrader image", "image", ArcaneUpgraderImage)
+	slog.Debug("Using upgrader image", "image", upgraderImage)
 
-	slog.Info("Spawning upgrade CLI command", "containerName", containerName, "upgraderImage", ArcaneUpgraderImage)
+	slog.Info("Spawning upgrade CLI command", "containerName", containerName, "upgraderImage", upgraderImage)
 
 	// Spawn the upgrade command in a detached container
 	// This will run independently of the current container
@@ -131,16 +132,16 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 	}
 
 	// Pull the upgrader image first to ensure it exists
-	slog.Info("Pulling upgrader image", "image", ArcaneUpgraderImage)
+	slog.Info("Pulling upgrader image", "image", upgraderImage)
 
 	settings := s.settingsService.GetSettingsConfig()
 	pullCtx, pullCancel := timeouts.WithTimeout(ctx, settings.DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull)
 	defer pullCancel()
 
-	pullReader, err := dockerClient.ImagePull(pullCtx, ArcaneUpgraderImage, client.ImagePullOptions{})
+	pullReader, err := dockerClient.ImagePull(pullCtx, upgraderImage, client.ImagePullOptions{})
 	if err != nil {
 		if errors.Is(pullCtx.Err(), context.DeadlineExceeded) {
-			return fmt.Errorf("upgrader image pull timed out for %s (increase DOCKER_IMAGE_PULL_TIMEOUT or setting)", ArcaneUpgraderImage)
+			return fmt.Errorf("upgrader image pull timed out for %s (increase DOCKER_IMAGE_PULL_TIMEOUT or setting)", upgraderImage)
 		}
 		return fmt.Errorf("pull upgrader image: %w", err)
 	}
@@ -152,7 +153,7 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 	if closeErr := pullReader.Close(); closeErr != nil {
 		slog.Warn("Failed to close upgrader image pull reader", "error", closeErr)
 	}
-	slog.Info("Upgrader image pulled successfully", "image", ArcaneUpgraderImage)
+	slog.Info("Upgrader image pulled successfully", "image", upgraderImage)
 
 	// Try to get the /app/data mount from current container so upgrade logs persist.
 	appDataMount := dockerutils.MountForDestination(currentContainer.Mounts, "/app/data", "/app/data")
@@ -180,7 +181,7 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 	}
 
 	config := &containertypes.Config{
-		Image: ArcaneUpgraderImage,
+		Image: upgraderImage,
 		Cmd:   []string{binaryPath, "upgrade", "--container", containerName},
 		Env:   runtimeOptions.ContainerEnv,
 		Labels: map[string]string{
