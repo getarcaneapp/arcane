@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -135,7 +136,7 @@ func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef stri
 	startTime := time.Now()
 	activityID := s.startImageUpdateActivityInternal(ctx, imageRef, 1)
 	ctx = s.activityService.Track(ctx, activityID)
-	s.appendImageUpdateActivityMessageInternal(ctx, activityID, models.ActivityMessageLevelInfo, fmt.Sprintf("Checking %s", imageRef), 20, "Checking remote digest")
+	s.appendImageUpdateActivityMessageInternal(ctx, activityID, models.ActivityMessageLevelInfo, "Checking "+imageRef, 20, "Checking remote digest")
 
 	parts := s.parseImageReference(imageRef)
 	if parts == nil {
@@ -208,7 +209,7 @@ func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef stri
 
 func (s *ImageUpdateService) checkDigestUpdateWithSnapshotInternal(ctx context.Context, parts *ImageParts) (*imageupdate.Response, *localImageSnapshot, error) {
 	if s.registryService == nil {
-		return nil, nil, fmt.Errorf("registry service unavailable")
+		return nil, nil, errors.New("registry service unavailable")
 	}
 
 	imageRef := fmt.Sprintf("%s/%s:%s", parts.Registry, parts.Repository, parts.Tag)
@@ -395,7 +396,7 @@ func (s *ImageUpdateService) resolveImageRefFromInspect(ctx context.Context, doc
 			}
 		}
 	}
-	return "", fmt.Errorf("no valid tags or digests")
+	return "", errors.New("no valid tags or digests")
 }
 
 func (s *ImageUpdateService) resolveImageRefFromContainers(ctx context.Context, dockerClient client.APIClient, imageID string) (string, error) {
@@ -534,7 +535,7 @@ func (s *ImageUpdateService) saveUpdateResultWithSnapshotInternal(ctx context.Co
 
 	parts := s.parseImageReference(imageRef)
 	if parts == nil {
-		return fmt.Errorf("invalid image reference")
+		return errors.New("invalid image reference")
 	}
 	imageID, err := s.getImageIDByRef(ctx, imageRef)
 	if err != nil {
@@ -595,15 +596,15 @@ func countBatchResultOutcomesInternal(imageRefs []string, results map[string]*im
 // SUCCESS, and up-to-date images stay INFO.
 func imageCheckResultMessageInternal(imageRef string, res *imageupdate.Response) (models.ActivityMessageLevel, string) {
 	if res == nil {
-		return models.ActivityMessageLevelError, fmt.Sprintf("%s: check failed", imageRef)
+		return models.ActivityMessageLevelError, imageRef + ": check failed"
 	}
 	if err := strings.TrimSpace(res.Error); err != "" {
 		return models.ActivityMessageLevelError, fmt.Sprintf("%s: %s", imageRef, err)
 	}
 	if res.HasUpdate {
-		return models.ActivityMessageLevelSuccess, fmt.Sprintf("%s — update available", imageRef)
+		return models.ActivityMessageLevelSuccess, imageRef + " — update available"
 	}
-	return models.ActivityMessageLevelInfo, fmt.Sprintf("%s — up to date", imageRef)
+	return models.ActivityMessageLevelInfo, imageRef + " — up to date"
 }
 
 func extractRepoAndTagFromImage(dockerImage image.InspectResponse) (repo, tag string) {
@@ -1053,7 +1054,7 @@ func (s *ImageUpdateService) CheckMultipleImages(ctx context.Context, imageRefs 
 
 	if err := g.Wait(); err != nil {
 		slog.ErrorContext(ctx, "Batch check error", "error", err)
-		s.completeImageUpdateActivityInternal(ctx, activityID, false, fmt.Sprintf("Image update check failed: %s", err.Error()))
+		s.completeImageUpdateActivityInternal(ctx, activityID, false, "Image update check failed: "+err.Error())
 		return results, err
 	}
 

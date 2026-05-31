@@ -3,6 +3,7 @@ package edge
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/url"
@@ -21,7 +22,7 @@ import (
 func (c *TunnelClient) connectAndServeGRPC(ctx context.Context) error {
 	managerAddr := strings.TrimSpace(c.managerGRPCAddr)
 	if managerAddr == "" {
-		return fmt.Errorf("manager gRPC address is empty")
+		return errors.New("manager gRPC address is empty")
 	}
 
 	dialOpts := []grpc.DialOption{
@@ -47,7 +48,7 @@ func (c *TunnelClient) connectAndServeGRPC(ctx context.Context) error {
 			return fmt.Errorf("failed to configure edge gRPC TLS: %w", err)
 		}
 		if tlsConfig == nil {
-			tlsConfig = &tls.Config{MinVersion: tls.VersionTLS12} //nolint:gosec
+			tlsConfig = &tls.Config{MinVersion: tls.VersionTLS12}
 		}
 		dialOpts = append(dialOpts, grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
 	} else {

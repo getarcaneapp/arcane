@@ -77,7 +77,7 @@ func TestActivityServiceLifecycleInternal(t *testing.T) {
 	require.Equal(t, 100, *completed.Progress)
 
 	list, paginationResp, err := service.ListActivitiesPaginated(ctx, "0", pagination.QueryParams{
-		PaginationParams: pagination.PaginationParams{Limit: 10},
+		Params: pagination.Params{Limit: 10},
 	})
 	require.NoError(t, err)
 	require.Len(t, list, 1)

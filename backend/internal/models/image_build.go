@@ -11,6 +11,8 @@ const (
 )
 
 type ImageBuild struct {
+	BaseModel
+
 	EnvironmentID   string           `json:"environmentId" gorm:"column:environment_id;index"`
 	UserID          *string          `json:"userId,omitempty" gorm:"column:user_id"`
 	Username        *string          `json:"username,omitempty" gorm:"column:username"`
@@ -42,7 +44,6 @@ type ImageBuild struct {
 	OutputTruncated bool             `json:"outputTruncated" gorm:"column:output_truncated;default:false"`
 	CompletedAt     *time.Time       `json:"completedAt,omitempty" gorm:"column:completed_at" sortable:"true"`
 	DurationMs      *int64           `json:"durationMs,omitempty" gorm:"column:duration_ms"`
-	BaseModel
 }
 
 func (ImageBuild) TableName() string {

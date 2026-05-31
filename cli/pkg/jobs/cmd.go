@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/getarcaneapp/arcane/cli/internal/client"
@@ -91,7 +92,7 @@ var updateCmd = &cobra.Command{
 		}
 
 		if req.EnvironmentHealthInterval == nil && req.EventCleanupInterval == nil && req.ExpiredSessionsCleanupInterval == nil {
-			return fmt.Errorf("no updates provided (set at least one interval flag)")
+			return errors.New("no updates provided (set at least one interval flag)")
 		}
 
 		resp, err := c.Put(cmd.Context(), types.Endpoints.JobSchedules(c.EnvID()), req)

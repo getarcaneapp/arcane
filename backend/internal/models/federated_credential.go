@@ -8,6 +8,8 @@ const (
 )
 
 type FederatedCredential struct {
+	BaseModel
+
 	Name            string       `json:"name" gorm:"column:name;not null" sortable:"true"`
 	Description     *string      `json:"description,omitempty" gorm:"column:description"`
 	Enabled         bool         `json:"enabled" gorm:"column:enabled;not null;default:false;index" sortable:"true"`
@@ -25,7 +27,6 @@ type FederatedCredential struct {
 	IdentityUser    *User        `json:"identityUser,omitempty" gorm:"foreignKey:IdentityUserID;constraint:OnDelete:CASCADE"`
 	Role            *Role        `json:"role,omitempty" gorm:"foreignKey:RoleID;constraint:OnDelete:RESTRICT"`
 	Environment     *Environment `json:"environment,omitempty" gorm:"foreignKey:EnvironmentID;constraint:OnDelete:SET NULL"`
-	BaseModel
 }
 
 func (FederatedCredential) TableName() string {

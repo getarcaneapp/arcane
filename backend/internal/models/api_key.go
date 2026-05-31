@@ -5,6 +5,8 @@ import (
 )
 
 type ApiKey struct {
+	BaseModel
+
 	Name          string     `json:"name" gorm:"column:name;not null" sortable:"true"`
 	Description   *string    `json:"description,omitempty" gorm:"column:description"`
 	KeyHash       string     `json:"-" gorm:"column:key_hash;not null"`
@@ -14,7 +16,6 @@ type ApiKey struct {
 	EnvironmentID *string    `json:"environmentId,omitempty" gorm:"column:environment_id"`
 	ExpiresAt     *time.Time `json:"expiresAt,omitempty" gorm:"column:expires_at" sortable:"true"`
 	LastUsedAt    *time.Time `json:"lastUsedAt,omitempty" gorm:"column:last_used_at" sortable:"true"`
-	BaseModel
 }
 
 func (ApiKey) TableName() string {

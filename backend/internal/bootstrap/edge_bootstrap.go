@@ -3,6 +3,7 @@ package bootstrap
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -51,7 +52,7 @@ func registerEdgeTunnelRoutes(
 
 	eventCallback := func(ctx context.Context, envID string, evt *edge.TunnelEvent) error {
 		if evt == nil {
-			return fmt.Errorf("event payload is required")
+			return errors.New("event payload is required")
 		}
 
 		var metadata models.JSON
@@ -118,7 +119,7 @@ func registerEdgeTunnelRoutes(
 			Type:          models.EventTypeEnvironmentMTLSEnroll,
 			Severity:      edgeMTLSEnrollmentSeverityInternal(reenrolled),
 			Title:         "Edge mTLS enrollment",
-			Description:   fmt.Sprintf("Edge agent completed mTLS enrollment from %s", remoteAddr),
+			Description:   "Edge agent completed mTLS enrollment from " + remoteAddr,
 			ResourceType:  new("environment"),
 			ResourceID:    &envIDCopy,
 			ResourceName:  &envNameCopy,

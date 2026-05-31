@@ -64,7 +64,7 @@ func (h *PortHandler) ListPorts(ctx context.Context, input *ListPortsInput) (*Li
 			Sort:  strings.TrimSpace(input.Sort),
 			Order: pagination.SortOrder(input.Order),
 		},
-		PaginationParams: pagination.PaginationParams{
+		Params: pagination.Params{
 			Start: input.Start,
 			Limit: input.Limit,
 		},

@@ -231,7 +231,7 @@ func (h *NetworkHandler) ListNetworks(ctx context.Context, input *ListNetworksIn
 			Sort:  strings.TrimSpace(input.Sort),
 			Order: pagination.SortOrder(input.Order),
 		},
-		PaginationParams: pagination.PaginationParams{
+		Params: pagination.Params{
 			Start: input.Start,
 			Limit: input.Limit,
 		},

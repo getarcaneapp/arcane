@@ -128,7 +128,7 @@ func (s *NotificationService) resolveNotificationTargetInternal(ctx context.Cont
 
 func (s *NotificationService) resolveNotificationTargetForAccessTokenInternal(ctx context.Context, accessToken string) (NotificationTarget, error) {
 	if s.environmentSvc == nil {
-		return NotificationTarget{}, fmt.Errorf("environment service not initialized")
+		return NotificationTarget{}, errors.New("environment service not initialized")
 	}
 
 	env, err := s.environmentSvc.ResolveEnvironmentByAccessToken(ctx, accessToken)
@@ -152,10 +152,10 @@ func (s *NotificationService) resolveNotificationTargetForAccessTokenInternal(ct
 
 func (s *NotificationService) dispatchNotificationToManagerInternal(ctx context.Context, payload notificationdto.DispatchRequest) error {
 	if s.config == nil || strings.TrimSpace(s.config.GetManagerBaseURL()) == "" {
-		return fmt.Errorf("manager API URL is required for notification dispatch")
+		return errors.New("manager API URL is required for notification dispatch")
 	}
 	if strings.TrimSpace(s.config.AgentToken) == "" {
-		return fmt.Errorf("agent token is required for notification dispatch")
+		return errors.New("agent token is required for notification dispatch")
 	}
 
 	body, err := json.Marshal(payload)
@@ -169,9 +169,9 @@ func (s *NotificationService) dispatchNotificationToManagerInternal(ctx context.
 		return fmt.Errorf("failed to create notification dispatch request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-API-Key", s.config.AgentToken)
+	req.Header.Set("X-Api-Key", s.config.AgentToken)
 
-	resp, err := s.httpClient.Do(req) //nolint:gosec // dispatch URL is derived from validated manager configuration
+	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to dispatch notification to manager: %w", err)
 	}
@@ -187,7 +187,7 @@ func (s *NotificationService) dispatchNotificationToManagerInternal(ctx context.
 
 func (s *NotificationService) DispatchNotification(ctx context.Context, accessToken string, payload notificationdto.DispatchRequest) error {
 	if s.config != nil && s.config.AgentMode {
-		return fmt.Errorf("notification dispatch is manager-only")
+		return errors.New("notification dispatch is manager-only")
 	}
 
 	target, err := s.resolveNotificationTargetForAccessTokenInternal(ctx, accessToken)
@@ -198,25 +198,25 @@ func (s *NotificationService) DispatchNotification(ctx context.Context, accessTo
 	switch payload.Kind {
 	case notificationdto.DispatchKindImageUpdate:
 		if payload.ImageUpdate == nil {
-			return fmt.Errorf("image update payload is required")
+			return errors.New("image update payload is required")
 		}
 		logManagerDispatchNotificationInternal(ctx, target, payload.Kind)
 		return s.sendImageUpdateNotificationForTargetInternal(ctx, target, payload.ImageUpdate.ImageRef, &payload.ImageUpdate.UpdateInfo, models.NotificationEventImageUpdate)
 	case notificationdto.DispatchKindBatchImageUpdate:
 		if payload.BatchImageUpdate == nil {
-			return fmt.Errorf("batch image update payload is required")
+			return errors.New("batch image update payload is required")
 		}
 		logManagerDispatchNotificationInternal(ctx, target, payload.Kind)
 		return s.sendBatchImageUpdateNotificationForTargetInternal(ctx, target, payload.BatchImageUpdate.Updates)
 	case notificationdto.DispatchKindContainerUpdate:
 		if payload.ContainerUpdate == nil {
-			return fmt.Errorf("container update payload is required")
+			return errors.New("container update payload is required")
 		}
 		logManagerDispatchNotificationInternal(ctx, target, payload.Kind)
 		return s.sendContainerUpdateNotificationForTargetInternal(ctx, target, payload.ContainerUpdate.ContainerName, payload.ContainerUpdate.ImageRef, payload.ContainerUpdate.OldDigest, payload.ContainerUpdate.NewDigest)
 	case notificationdto.DispatchKindVulnerabilityFound:
 		if payload.VulnerabilityFound == nil {
-			return fmt.Errorf("vulnerability payload is required")
+			return errors.New("vulnerability payload is required")
 		}
 		logManagerDispatchNotificationInternal(ctx, target, payload.Kind)
 		return s.sendVulnerabilityNotificationForTargetInternal(ctx, target, VulnerabilityNotificationPayload{
@@ -230,13 +230,13 @@ func (s *NotificationService) DispatchNotification(ctx context.Context, accessTo
 		})
 	case notificationdto.DispatchKindPruneReport:
 		if payload.PruneReport == nil {
-			return fmt.Errorf("prune report payload is required")
+			return errors.New("prune report payload is required")
 		}
 		logManagerDispatchNotificationInternal(ctx, target, payload.Kind)
 		return s.sendPruneReportNotificationForTargetInternal(ctx, target, &payload.PruneReport.Result)
 	case notificationdto.DispatchKindAutoHeal:
 		if payload.AutoHeal == nil {
-			return fmt.Errorf("auto-heal payload is required")
+			return errors.New("auto-heal payload is required")
 		}
 		logManagerDispatchNotificationInternal(ctx, target, payload.Kind)
 		return s.sendAutoHealNotificationForTargetInternal(ctx, target, payload.AutoHeal.ContainerName, payload.AutoHeal.ContainerID)
@@ -299,7 +299,7 @@ func (s *NotificationService) DeleteSettings(ctx context.Context, provider model
 
 func (s *NotificationService) SendImageUpdateNotification(ctx context.Context, imageRef string, updateInfo *imageupdate.Response, eventType models.NotificationEventType) error {
 	if updateInfo == nil {
-		return fmt.Errorf("updateInfo is required")
+		return errors.New("updateInfo is required")
 	}
 
 	if s.config != nil && s.config.AgentMode {
@@ -586,7 +586,7 @@ func (s *NotificationService) sendDiscordNotification(ctx context.Context, envir
 	}
 
 	if discordConfig.WebhookID == "" || discordConfig.Token == "" {
-		return fmt.Errorf("discord webhook ID or token not configured")
+		return errors.New("discord webhook ID or token not configured")
 	}
 
 	// Decrypt token if encrypted
@@ -623,10 +623,10 @@ func (s *NotificationService) sendTelegramNotification(ctx context.Context, envi
 	}
 
 	if telegramConfig.BotToken == "" {
-		return fmt.Errorf("telegram bot token not configured")
+		return errors.New("telegram bot token not configured")
 	}
 	if len(telegramConfig.ChatIDs) == 0 {
-		return fmt.Errorf("no telegram chat IDs configured")
+		return errors.New("no telegram chat IDs configured")
 	}
 
 	// Decrypt bot token if encrypted
@@ -668,10 +668,10 @@ func (s *NotificationService) sendEmailNotification(ctx context.Context, environ
 	}
 
 	if emailConfig.SMTPHost == "" || emailConfig.SMTPPort == 0 {
-		return fmt.Errorf("SMTP host or port not configured")
+		return errors.New("SMTP host or port not configured")
 	}
 	if len(emailConfig.ToAddresses) == 0 {
-		return fmt.Errorf("no recipient email addresses configured")
+		return errors.New("no recipient email addresses configured")
 	}
 
 	if _, err := mail.ParseAddress(emailConfig.FromAddress); err != nil {
@@ -696,7 +696,7 @@ func (s *NotificationService) sendEmailNotification(ctx context.Context, environ
 		return fmt.Errorf("failed to render email template: %w", err)
 	}
 
-	subject := notifications.BuildEmailSubject(environmentName, fmt.Sprintf("Container Update Available: %s", notifications.SanitizeForEmail(imageRef)))
+	subject := notifications.BuildEmailSubject(environmentName, "Container Update Available: "+notifications.SanitizeForEmail(imageRef))
 	if err := notifications.SendEmail(ctx, emailConfig, subject, htmlBody); err != nil {
 		return fmt.Errorf("failed to send email: %w", err)
 	}
@@ -763,7 +763,7 @@ func (s *NotificationService) sendDiscordContainerUpdateNotification(ctx context
 	}
 
 	if discordConfig.WebhookID == "" || discordConfig.Token == "" {
-		return fmt.Errorf("discord webhook ID or token not configured")
+		return errors.New("discord webhook ID or token not configured")
 	}
 
 	// Decrypt token if encrypted
@@ -802,10 +802,10 @@ func (s *NotificationService) sendTelegramContainerUpdateNotification(ctx contex
 	}
 
 	if telegramConfig.BotToken == "" {
-		return fmt.Errorf("telegram bot token not configured")
+		return errors.New("telegram bot token not configured")
 	}
 	if len(telegramConfig.ChatIDs) == 0 {
-		return fmt.Errorf("no telegram chat IDs configured")
+		return errors.New("no telegram chat IDs configured")
 	}
 
 	// Decrypt bot token if encrypted
@@ -849,10 +849,10 @@ func (s *NotificationService) sendEmailContainerUpdateNotification(ctx context.C
 	}
 
 	if emailConfig.SMTPHost == "" || emailConfig.SMTPPort == 0 {
-		return fmt.Errorf("SMTP host or port not configured")
+		return errors.New("SMTP host or port not configured")
 	}
 	if len(emailConfig.ToAddresses) == 0 {
-		return fmt.Errorf("no recipient email addresses configured")
+		return errors.New("no recipient email addresses configured")
 	}
 
 	if _, err := mail.ParseAddress(emailConfig.FromAddress); err != nil {
@@ -877,7 +877,7 @@ func (s *NotificationService) sendEmailContainerUpdateNotification(ctx context.C
 		return fmt.Errorf("failed to render email template: %w", err)
 	}
 
-	subject := notifications.BuildEmailSubject(environmentName, fmt.Sprintf("Container Updated: %s", notifications.SanitizeForEmail(containerName)))
+	subject := notifications.BuildEmailSubject(environmentName, "Container Updated: "+notifications.SanitizeForEmail(containerName))
 	if err := notifications.SendEmail(ctx, emailConfig, subject, htmlBody); err != nil {
 		return fmt.Errorf("failed to send email: %w", err)
 	}
@@ -953,7 +953,7 @@ func (s *NotificationService) TestNotification(ctx context.Context, environmentI
 	// Test vulnerability notification (all providers)
 	if testType == notificationTestTypeVulnerability {
 		payload := VulnerabilityNotificationPayload{
-			CVEID:        fmt.Sprintf("Daily Summary - %s", time.Now().UTC().Format("2006-01-02")),
+			CVEID:        "Daily Summary - " + time.Now().UTC().Format("2006-01-02"),
 			Severity:     "Critical:1 High:3 Medium:2 Low:1 Unknown:0",
 			ImageName:    "5 image(s) scanned, 2 with fixable vulnerabilities",
 			FixedVersion: "7 fixable vulnerability record(s)",
@@ -1209,10 +1209,10 @@ func (s *NotificationService) sendTestEmail(ctx context.Context, environmentName
 	}
 
 	if emailConfig.SMTPHost == "" || emailConfig.SMTPPort == 0 {
-		return fmt.Errorf("SMTP host or port not configured")
+		return errors.New("SMTP host or port not configured")
 	}
 	if len(emailConfig.ToAddresses) == 0 {
-		return fmt.Errorf("no recipient email addresses configured")
+		return errors.New("no recipient email addresses configured")
 	}
 
 	if _, err := mail.ParseAddress(emailConfig.FromAddress); err != nil {
@@ -1454,10 +1454,10 @@ func (s *NotificationService) sendBatchEmailNotification(ctx context.Context, en
 	}
 
 	if emailConfig.SMTPHost == "" || emailConfig.SMTPPort == 0 {
-		return fmt.Errorf("SMTP host or port not configured")
+		return errors.New("SMTP host or port not configured")
 	}
 	if len(emailConfig.ToAddresses) == 0 {
-		return fmt.Errorf("no recipient email addresses configured")
+		return errors.New("no recipient email addresses configured")
 	}
 
 	if _, err := mail.ParseAddress(emailConfig.FromAddress); err != nil {
@@ -1558,26 +1558,26 @@ func (s *NotificationService) sendSignalNotification(ctx context.Context, enviro
 	}
 
 	if signalConfig.Host == "" {
-		return fmt.Errorf("signal host not configured")
+		return errors.New("signal host not configured")
 	}
 	if signalConfig.Port == 0 {
-		return fmt.Errorf("signal port not configured")
+		return errors.New("signal port not configured")
 	}
 	if signalConfig.Source == "" {
-		return fmt.Errorf("signal source phone number not configured")
+		return errors.New("signal source phone number not configured")
 	}
 	if len(signalConfig.Recipients) == 0 {
-		return fmt.Errorf("no signal recipients configured")
+		return errors.New("no signal recipients configured")
 	}
 
 	// Validate authentication
 	hasBasicAuth := signalConfig.User != "" && signalConfig.Password != ""
 	hasTokenAuth := signalConfig.Token != ""
 	if !hasBasicAuth && !hasTokenAuth {
-		return fmt.Errorf("signal requires either basic auth (user/password) or token authentication")
+		return errors.New("signal requires either basic auth (user/password) or token authentication")
 	}
 	if hasBasicAuth && hasTokenAuth {
-		return fmt.Errorf("signal cannot use both basic auth and token authentication simultaneously")
+		return errors.New("signal cannot use both basic auth and token authentication simultaneously")
 	}
 
 	// Decrypt sensitive fields if encrypted
@@ -1621,26 +1621,26 @@ func (s *NotificationService) sendSignalContainerUpdateNotification(ctx context.
 	}
 
 	if signalConfig.Host == "" {
-		return fmt.Errorf("signal host not configured")
+		return errors.New("signal host not configured")
 	}
 	if signalConfig.Port == 0 {
-		return fmt.Errorf("signal port not configured")
+		return errors.New("signal port not configured")
 	}
 	if signalConfig.Source == "" {
-		return fmt.Errorf("signal source phone number not configured")
+		return errors.New("signal source phone number not configured")
 	}
 	if len(signalConfig.Recipients) == 0 {
-		return fmt.Errorf("no signal recipients configured")
+		return errors.New("no signal recipients configured")
 	}
 
 	// Validate authentication
 	hasBasicAuth := signalConfig.User != "" && signalConfig.Password != ""
 	hasTokenAuth := signalConfig.Token != ""
 	if !hasBasicAuth && !hasTokenAuth {
-		return fmt.Errorf("signal requires either basic auth (user/password) or token authentication")
+		return errors.New("signal requires either basic auth (user/password) or token authentication")
 	}
 	if hasBasicAuth && hasTokenAuth {
-		return fmt.Errorf("signal cannot use both basic auth and token authentication simultaneously")
+		return errors.New("signal cannot use both basic auth and token authentication simultaneously")
 	}
 
 	// Decrypt sensitive fields if encrypted
@@ -1689,10 +1689,10 @@ func (s *NotificationService) sendBatchSignalNotification(ctx context.Context, e
 	hasBasicAuth := signalConfig.User != "" && signalConfig.Password != ""
 	hasTokenAuth := signalConfig.Token != ""
 	if !hasBasicAuth && !hasTokenAuth {
-		return fmt.Errorf("signal requires either basic auth (user/password) or token authentication")
+		return errors.New("signal requires either basic auth (user/password) or token authentication")
 	}
 	if hasBasicAuth && hasTokenAuth {
-		return fmt.Errorf("signal cannot use both basic auth and token authentication simultaneously")
+		return errors.New("signal cannot use both basic auth and token authentication simultaneously")
 	}
 
 	// Decrypt sensitive fields if encrypted
@@ -1853,10 +1853,10 @@ func (s *NotificationService) sendPushoverNotification(ctx context.Context, envi
 	}
 
 	if pushoverConfig.Token == "" {
-		return fmt.Errorf("pushover API token not configured")
+		return errors.New("pushover API token not configured")
 	}
 	if pushoverConfig.User == "" {
-		return fmt.Errorf("pushover user key not configured")
+		return errors.New("pushover user key not configured")
 	}
 
 	message := notifications.BuildImageUpdateNotificationMessage(
@@ -1880,10 +1880,10 @@ func (s *NotificationService) sendPushoverContainerUpdateNotification(ctx contex
 	}
 
 	if pushoverConfig.Token == "" {
-		return fmt.Errorf("pushover API token not configured")
+		return errors.New("pushover API token not configured")
 	}
 	if pushoverConfig.User == "" {
-		return fmt.Errorf("pushover user key not configured")
+		return errors.New("pushover user key not configured")
 	}
 
 	message := notifications.BuildContainerUpdateNotificationMessage(
@@ -1932,7 +1932,7 @@ func (s *NotificationService) sendGenericNotification(ctx context.Context, envir
 	}
 
 	if genericConfig.WebhookURL == "" {
-		return fmt.Errorf("webhook URL not configured")
+		return errors.New("webhook URL not configured")
 	}
 
 	message := notifications.BuildImageUpdateNotificationMessage(
@@ -1961,7 +1961,7 @@ func (s *NotificationService) sendGenericContainerUpdateNotification(ctx context
 	}
 
 	if genericConfig.WebhookURL == "" {
-		return fmt.Errorf("webhook URL not configured")
+		return errors.New("webhook URL not configured")
 	}
 
 	message := notifications.BuildContainerUpdateNotificationMessage(
@@ -2033,10 +2033,10 @@ func (s *NotificationService) sendEmailVulnerabilityNotification(ctx context.Con
 		return fmt.Errorf("failed to unmarshal email config: %w", err)
 	}
 	if emailConfig.SMTPHost == "" || emailConfig.SMTPPort == 0 {
-		return fmt.Errorf("SMTP host or port not configured")
+		return errors.New("SMTP host or port not configured")
 	}
 	if len(emailConfig.ToAddresses) == 0 {
-		return fmt.Errorf("no recipient email addresses configured")
+		return errors.New("no recipient email addresses configured")
 	}
 	if _, err := mail.ParseAddress(emailConfig.FromAddress); err != nil {
 		return fmt.Errorf("invalid from address: %w", err)
@@ -2057,7 +2057,7 @@ func (s *NotificationService) sendEmailVulnerabilityNotification(ctx context.Con
 	if err != nil {
 		return fmt.Errorf("failed to render summary email template: %w", err)
 	}
-	subject := notifications.BuildEmailSubject(environmentName, fmt.Sprintf("Daily Vulnerability Summary: %s", notifications.SanitizeForEmail(payload.CVEID)))
+	subject := notifications.BuildEmailSubject(environmentName, "Daily Vulnerability Summary: "+notifications.SanitizeForEmail(payload.CVEID))
 	if err := notifications.SendEmail(ctx, emailConfig, subject, htmlBody); err != nil {
 		return fmt.Errorf("failed to send email: %w", err)
 	}
@@ -2074,7 +2074,7 @@ func (s *NotificationService) sendDiscordVulnerabilityNotification(ctx context.C
 		return fmt.Errorf("failed to unmarshal Discord config: %w", err)
 	}
 	if discordConfig.WebhookID == "" || discordConfig.Token == "" {
-		return fmt.Errorf("discord webhook ID or token not configured")
+		return errors.New("discord webhook ID or token not configured")
 	}
 	if discordConfig.Token != "" {
 		decrypted, err := crypto.Decrypt(discordConfig.Token)
@@ -2108,10 +2108,10 @@ func (s *NotificationService) sendTelegramVulnerabilityNotification(ctx context.
 		return fmt.Errorf("failed to unmarshal Telegram config: %w", err)
 	}
 	if telegramConfig.BotToken == "" {
-		return fmt.Errorf("telegram bot token not configured")
+		return errors.New("telegram bot token not configured")
 	}
 	if len(telegramConfig.ChatIDs) == 0 {
-		return fmt.Errorf("no telegram chat IDs configured")
+		return errors.New("no telegram chat IDs configured")
 	}
 	if telegramConfig.BotToken != "" {
 		decrypted, err := crypto.Decrypt(telegramConfig.BotToken)
@@ -2148,7 +2148,7 @@ func (s *NotificationService) sendSignalVulnerabilityNotification(ctx context.Co
 		return fmt.Errorf("failed to unmarshal Signal config: %w", err)
 	}
 	if signalConfig.Host == "" || signalConfig.Port == 0 || signalConfig.Source == "" || len(signalConfig.Recipients) == 0 {
-		return fmt.Errorf("signal not fully configured")
+		return errors.New("signal not fully configured")
 	}
 	if signalConfig.Password != "" {
 		decrypted, err := crypto.Decrypt(signalConfig.Password)
@@ -2209,7 +2209,7 @@ func (s *NotificationService) sendPushoverVulnerabilityNotification(ctx context.
 		return err
 	}
 	if pushoverConfig.Token == "" || pushoverConfig.User == "" {
-		return fmt.Errorf("pushover token or user not configured")
+		return errors.New("pushover token or user not configured")
 	}
 	message := buildVulnerabilitySummaryMessageInternal(notifications.MessageFormatPlain, environmentName, payload)
 	if pushoverConfig.Title == "" {
@@ -2237,7 +2237,7 @@ func (s *NotificationService) sendGotifyVulnerabilityNotification(ctx context.Co
 }
 
 func (s *NotificationService) sendMatrixVulnerabilityNotification(ctx context.Context, environmentName string, payload VulnerabilityNotificationPayload, config models.JSON) error {
-	matrixConfig, err := prepareMatrixConfigInternal(config, "Matrix")
+	matrixConfig, err := prepareMatrixConfigInternal(config)
 	if err != nil {
 		return err
 	}
@@ -2258,7 +2258,7 @@ func (s *NotificationService) sendGenericVulnerabilityNotification(ctx context.C
 		return fmt.Errorf("failed to unmarshal Generic config: %w", err)
 	}
 	if genericConfig.WebhookURL == "" {
-		return fmt.Errorf("webhook URL not configured")
+		return errors.New("webhook URL not configured")
 	}
 	message := notifications.BuildVulnerabilitySummaryNotificationMessage(
 		notifications.MessageFormatPlain,
@@ -2287,7 +2287,7 @@ func (s *NotificationService) sendBatchGenericNotification(ctx context.Context, 
 	}
 
 	if genericConfig.WebhookURL == "" {
-		return fmt.Errorf("webhook URL not configured")
+		return errors.New("webhook URL not configured")
 	}
 
 	title := "Container Image Updates Available"
@@ -2366,7 +2366,7 @@ func (s *NotificationService) sendBatchGotifyNotification(ctx context.Context, e
 }
 
 func (s *NotificationService) sendMatrixNotification(ctx context.Context, environmentName, imageRef string, updateInfo *imageupdate.Response, config models.JSON) error {
-	matrixConfig, err := prepareMatrixConfigInternal(config, "Matrix")
+	matrixConfig, err := prepareMatrixConfigInternal(config)
 	if err != nil {
 		return err
 	}
@@ -2386,7 +2386,7 @@ func (s *NotificationService) sendMatrixNotification(ctx context.Context, enviro
 }
 
 func (s *NotificationService) sendMatrixContainerUpdateNotification(ctx context.Context, environmentName, containerName, imageRef, oldDigest, newDigest string, config models.JSON) error {
-	matrixConfig, err := prepareMatrixConfigInternal(config, "Matrix")
+	matrixConfig, err := prepareMatrixConfigInternal(config)
 	if err != nil {
 		return err
 	}
@@ -2408,7 +2408,7 @@ func (s *NotificationService) sendMatrixContainerUpdateNotification(ctx context.
 }
 
 func (s *NotificationService) sendBatchMatrixNotification(ctx context.Context, environmentName string, updates map[string]*imageupdate.Response, config models.JSON) error {
-	matrixConfig, err := prepareMatrixConfigInternal(config, "Matrix")
+	matrixConfig, err := prepareMatrixConfigInternal(config)
 	if err != nil {
 		return err
 	}
@@ -2516,7 +2516,7 @@ func (s *NotificationService) sendDiscordPruneNotification(ctx context.Context, 
 	}
 
 	if discordConfig.WebhookID == "" || discordConfig.Token == "" {
-		return fmt.Errorf("discord webhook ID or token not configured")
+		return errors.New("discord webhook ID or token not configured")
 	}
 
 	if err := s.decryptDiscordTokenInternal(&discordConfig); err != nil {
@@ -2539,7 +2539,7 @@ func (s *NotificationService) sendTelegramPruneNotification(ctx context.Context,
 	}
 
 	if telegramConfig.BotToken == "" || len(telegramConfig.ChatIDs) == 0 {
-		return fmt.Errorf("telegram bot token or chat IDs not configured")
+		return errors.New("telegram bot token or chat IDs not configured")
 	}
 
 	if err := s.decryptTelegramTokenInternal(&telegramConfig); err != nil {
@@ -2759,7 +2759,7 @@ func (s *NotificationService) sendDiscordAutoHealNotification(ctx context.Contex
 		return err
 	}
 	if discordConfig.WebhookID == "" || discordConfig.Token == "" {
-		return fmt.Errorf("discord webhook ID or token not configured")
+		return errors.New("discord webhook ID or token not configured")
 	}
 	if err := s.decryptDiscordTokenInternal(&discordConfig); err != nil {
 		return err
@@ -2794,7 +2794,7 @@ func (s *NotificationService) sendTelegramAutoHealNotification(ctx context.Conte
 		return err
 	}
 	if telegramConfig.BotToken == "" || len(telegramConfig.ChatIDs) == 0 {
-		return fmt.Errorf("telegram bot token or chat IDs not configured")
+		return errors.New("telegram bot token or chat IDs not configured")
 	}
 	if err := s.decryptTelegramTokenInternal(&telegramConfig); err != nil {
 		return err
@@ -2909,10 +2909,10 @@ func decodeNotificationConfigInternal[T any](config models.JSON, providerName st
 
 func (s *NotificationService) validateEmailConfigInternal(config *models.EmailConfig) error {
 	if config.SMTPHost == "" || config.SMTPPort == 0 {
-		return fmt.Errorf("SMTP host or port not configured")
+		return errors.New("SMTP host or port not configured")
 	}
 	if len(config.ToAddresses) == 0 {
-		return fmt.Errorf("no recipient email addresses configured")
+		return errors.New("no recipient email addresses configured")
 	}
 	return nil
 }
@@ -2936,7 +2936,7 @@ func prepareSlackConfigInternal(config models.JSON, providerName string, require
 		return models.SlackConfig{}, err
 	}
 	if requireToken && slackConfig.Token == "" {
-		return models.SlackConfig{}, fmt.Errorf("slack token not configured")
+		return models.SlackConfig{}, errors.New("slack token not configured")
 	}
 	if err := decryptStringCredentialInternal(&slackConfig.Token); err != nil {
 		return models.SlackConfig{}, err
@@ -2950,7 +2950,7 @@ func prepareNtfyConfigInternal(config models.JSON, providerName string, requireT
 		return models.NtfyConfig{}, err
 	}
 	if requireTopic && ntfyConfig.Topic == "" {
-		return models.NtfyConfig{}, fmt.Errorf("ntfy topic is required")
+		return models.NtfyConfig{}, errors.New("ntfy topic is required")
 	}
 	if err := decryptStringCredentialInternal(&ntfyConfig.Password); err != nil {
 		return models.NtfyConfig{}, err
@@ -2980,8 +2980,8 @@ func prepareGotifyConfigInternal(config models.JSON, providerName string) (model
 	return gotifyConfig, nil
 }
 
-func prepareMatrixConfigInternal(config models.JSON, providerName string) (models.MatrixConfig, error) {
-	matrixConfig, err := decodeNotificationConfigInternal[models.MatrixConfig](config, providerName)
+func prepareMatrixConfigInternal(config models.JSON) (models.MatrixConfig, error) {
+	matrixConfig, err := decodeNotificationConfigInternal[models.MatrixConfig](config, "Matrix")
 	if err != nil {
 		return models.MatrixConfig{}, err
 	}

@@ -2,6 +2,7 @@ package upgrade
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -170,7 +171,7 @@ func findArcaneContainer(ctx context.Context, dockerClient *client.Client) (cont
 		}
 	}
 
-	return container.InspectResponse{}, fmt.Errorf("no running Arcane container found")
+	return container.InspectResponse{}, errors.New("no running Arcane container found")
 }
 
 func isLegacyServerLabel(labels map[string]string) bool {

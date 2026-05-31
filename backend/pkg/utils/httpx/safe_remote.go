@@ -126,7 +126,7 @@ func NewSafeOutboundHTTPClient(base *http.Client, lookupIP LookupIPFunc) (*http.
 		if lastErr != nil {
 			return nil, lastErr
 		}
-		return nil, fmt.Errorf("failed to resolve remote host")
+		return nil, errors.New("failed to resolve remote host")
 	}
 
 	client := *base
@@ -150,7 +150,11 @@ func NewSafeOutboundHTTPClient(base *http.Client, lookupIP LookupIPFunc) (*http.
 func cloneHTTPTransportInternal(base http.RoundTripper) (*http.Transport, error) {
 	switch t := base.(type) {
 	case nil:
-		return http.DefaultTransport.(*http.Transport).Clone(), nil
+		defaultTransport, ok := http.DefaultTransport.(*http.Transport)
+		if !ok {
+			return nil, &common.DefaultTransportTypeError{}
+		}
+		return defaultTransport.Clone(), nil
 	case *http.Transport:
 		return t.Clone(), nil
 	default:

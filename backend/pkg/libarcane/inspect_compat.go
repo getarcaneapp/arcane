@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -55,7 +56,7 @@ func (c *inspectCompatibilityClient) NetworkList(ctx context.Context, options cl
 // JSON when the primary typed decode fails on a ParseAddr-style CIDR issue.
 func ContainerInspectWithCompatibility(ctx context.Context, apiClient client.APIClient, containerID string, options client.ContainerInspectOptions) (client.ContainerInspectResult, error) {
 	if apiClient == nil {
-		return client.ContainerInspectResult{}, fmt.Errorf("docker api client is nil")
+		return client.ContainerInspectResult{}, errors.New("docker api client is nil")
 	}
 
 	result, err := apiClient.ContainerInspect(ctx, containerID, options)
@@ -93,7 +94,7 @@ func ContainerInspectWithCompatibility(ctx context.Context, apiClient client.API
 // JSON when the primary typed decode fails on a ParseAddr-style CIDR issue.
 func NetworkInspectWithCompatibility(ctx context.Context, apiClient client.APIClient, networkID string, options client.NetworkInspectOptions) (client.NetworkInspectResult, error) {
 	if apiClient == nil {
-		return client.NetworkInspectResult{}, fmt.Errorf("docker api client is nil")
+		return client.NetworkInspectResult{}, errors.New("docker api client is nil")
 	}
 
 	result, err := apiClient.NetworkInspect(ctx, networkID, options)
@@ -134,7 +135,7 @@ func NetworkInspectWithCompatibility(ctx context.Context, apiClient client.APICl
 // when the primary typed decode fails on a ParseAddr-style CIDR issue.
 func NetworkListWithCompatibility(ctx context.Context, apiClient client.APIClient, options client.NetworkListOptions) (client.NetworkListResult, error) {
 	if apiClient == nil {
-		return client.NetworkListResult{}, fmt.Errorf("docker api client is nil")
+		return client.NetworkListResult{}, errors.New("docker api client is nil")
 	}
 
 	result, err := apiClient.NetworkList(ctx, options)
@@ -170,7 +171,7 @@ func NetworkListWithCompatibility(ctx context.Context, apiClient client.APIClien
 func fetchDockerAPIJSONInternal(ctx context.Context, apiClient client.APIClient, resourcePath string, query url.Values) ([]byte, error) {
 	dialer := apiClient.Dialer()
 	if dialer == nil {
-		return nil, fmt.Errorf("docker api client does not expose a dialer")
+		return nil, errors.New("docker api client does not expose a dialer")
 	}
 
 	reqURL := &url.URL{

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -126,7 +127,7 @@ func (s *ActivityService) releaseCancelInternal(activityID string) {
 
 func (s *ActivityService) checkInitInternal() error {
 	if s == nil || s.db == nil {
-		return fmt.Errorf("activity service not initialized")
+		return errors.New("activity service not initialized")
 	}
 	return nil
 }
@@ -189,7 +190,7 @@ func (s *ActivityService) UpdateActivity(ctx context.Context, activityID string,
 	}
 	activityID = strings.TrimSpace(activityID)
 	if activityID == "" {
-		return nil, fmt.Errorf("activity id is required")
+		return nil, errors.New("activity id is required")
 	}
 
 	updates := map[string]any{
@@ -221,7 +222,7 @@ func (s *ActivityService) UpdateActivity(ctx context.Context, activityID string,
 			return fmt.Errorf("failed to update activity: %w", result.Error)
 		}
 		if result.RowsAffected == 0 {
-			return fmt.Errorf("activity not found")
+			return errors.New("activity not found")
 		}
 		if err := tx.First(&model, "id = ?", activityID).Error; err != nil {
 			return fmt.Errorf("failed to load updated activity: %w", err)
@@ -242,7 +243,7 @@ func (s *ActivityService) AppendMessage(ctx context.Context, activityID string, 
 	}
 	activityID = strings.TrimSpace(activityID)
 	if activityID == "" {
-		return nil, fmt.Errorf("activity id is required")
+		return nil, errors.New("activity id is required")
 	}
 
 	messageText := strings.TrimSpace(req.Message)
@@ -291,7 +292,7 @@ func (s *ActivityService) AppendMessage(ctx context.Context, activityID string, 
 			return fmt.Errorf("failed to update activity latest message: %w", result.Error)
 		}
 		if result.RowsAffected == 0 {
-			return fmt.Errorf("activity not found")
+			return errors.New("activity not found")
 		}
 		if err := tx.First(&updated, "id = ?", activityID).Error; err != nil {
 			return fmt.Errorf("failed to load updated activity: %w", err)
@@ -320,7 +321,7 @@ func (s *ActivityService) CompleteActivity(ctx context.Context, activityID strin
 
 	activityID = strings.TrimSpace(activityID)
 	if activityID == "" {
-		return nil, fmt.Errorf("activity id is required")
+		return nil, errors.New("activity id is required")
 	}
 
 	// The activity is reaching a terminal state; release any cancel registration.
@@ -386,7 +387,7 @@ func (s *ActivityService) CancelActivity(ctx context.Context, environmentID, act
 	}
 	activityID = strings.TrimSpace(activityID)
 	if activityID == "" {
-		return nil, fmt.Errorf("activity id is required")
+		return nil, errors.New("activity id is required")
 	}
 	environmentID = strings.TrimSpace(environmentID)
 	if environmentID == "" {
@@ -411,7 +412,7 @@ func (s *ActivityService) CancelActivity(ctx context.Context, environmentID, act
 	writeCtx := utils.ActivityRuntimeContext(ctx, nil)
 	if _, err := s.AppendMessage(writeCtx, activityID, AppendActivityMessageRequest{
 		Level:   models.ActivityMessageLevelWarning,
-		Message: fmt.Sprintf("Cancellation requested by %s", requestedBy),
+		Message: "Cancellation requested by " + requestedBy,
 	}); err != nil {
 		slog.DebugContext(ctx, "failed to append cancellation message", "activityId", activityID, "error", err)
 	}
@@ -551,8 +552,8 @@ func (s *ActivityService) GetActivityDetail(ctx context.Context, environmentID, 
 	}
 
 	outMessages := make([]activitytypes.Message, 0, len(messages))
-	for i := len(messages) - 1; i >= 0; i-- {
-		outMessages = append(outMessages, activityMessageToDTOInternal(&messages[i]))
+	for _, v := range slices.Backward(messages) {
+		outMessages = append(outMessages, activityMessageToDTOInternal(&v))
 	}
 
 	return &activitytypes.Detail{
@@ -769,10 +770,7 @@ func clampProgressPtrInternal(value *int) *int {
 	if value == nil {
 		return nil
 	}
-	clamped := max(*value, 0)
-	if clamped > 100 {
-		clamped = 100
-	}
+	clamped := min(max(*value, 0), 100)
 	return &clamped
 }
 

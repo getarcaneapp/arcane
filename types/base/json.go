@@ -9,7 +9,7 @@ import (
 // in a database. It implements the sql.Valuer and sql.Scanner interfaces for
 // seamless database integration.
 //
-// nolint:recvcheck
+//nolint:recvcheck
 type JsonObject map[string]any
 
 // Value implements the driver.Valuer interface for database storage.

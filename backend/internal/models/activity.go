@@ -46,6 +46,8 @@ const (
 )
 
 type Activity struct {
+	BaseModel
+
 	EnvironmentID        string         `json:"environmentId" gorm:"column:environment_id;not null;index" sortable:"true"`
 	Type                 ActivityType   `json:"type" gorm:"column:type;not null;index" sortable:"true"`
 	Status               ActivityStatus `json:"status" gorm:"column:status;not null;index" sortable:"true"`
@@ -63,7 +65,6 @@ type Activity struct {
 	DurationMs           *int64         `json:"durationMs,omitempty" gorm:"column:duration_ms" sortable:"true"`
 	Error                *string        `json:"error,omitempty" gorm:"column:error"`
 	Metadata             JSON           `json:"metadata,omitempty" gorm:"type:text"`
-	BaseModel
 }
 
 func (Activity) TableName() string {
@@ -71,12 +72,13 @@ func (Activity) TableName() string {
 }
 
 type ActivityMessage struct {
+	BaseModel
+
 	ActivityID string               `json:"activityId" gorm:"column:activity_id;not null;index"`
 	Level      ActivityMessageLevel `json:"level" gorm:"column:level;not null"`
 	Message    string               `json:"message" gorm:"column:message;not null"`
 	Payload    JSON                 `json:"payload,omitempty" gorm:"type:text"`
 	Activity   *Activity            `json:"-" gorm:"foreignKey:ActivityID;constraint:OnDelete:CASCADE"`
-	BaseModel
 }
 
 func (ActivityMessage) TableName() string {

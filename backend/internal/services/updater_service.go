@@ -90,7 +90,7 @@ func NewUpdaterService(
 // per-resource result summary. When dryRun is true, it reports the planned
 // actions without mutating containers or projects.
 //
-//nolint:gocognit
+//nolint:gocognit,gocyclo,maintidx // large but sequential update-orchestration flow; refactor tracked separately
 func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (out *updater.Result, err error) {
 	start := time.Now()
 	out = &updater.Result{Items: []updater.ResourceResult{}}
@@ -191,7 +191,7 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (out *up
 
 	for i := range plans {
 		p := plans[i]
-		s.appendAutoUpdateActivityMessageInternal(ctx, activityID, fmt.Sprintf("Checking update for %s", p.oldRef), "Checking image", 20)
+		s.appendAutoUpdateActivityMessageInternal(ctx, activityID, "Checking update for "+p.oldRef, "Checking image", 20)
 		item := updater.ResourceResult{
 			ResourceID:   p.oldRef,
 			ResourceType: "image",
@@ -501,7 +501,7 @@ func (s *UpdaterService) completeAutoUpdateActivityInternal(ctx context.Context,
 // UpdateSingleContainer updates a single container by ID to the latest available image.
 // It pulls the new image, stops the container, removes it, and recreates it with the new image.
 //
-//nolint:gocognit // single-container update flow is intentionally linear with explicit early exits for failure reporting
+//nolint:gocognit,gocyclo,maintidx // single-container update flow is intentionally linear with explicit early exits for failure reporting
 func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID string) (out *updater.Result, err error) {
 	start := time.Now()
 	out = &updater.Result{Items: []updater.ResourceResult{}}
@@ -876,7 +876,6 @@ func (s *UpdaterService) GetHistory(ctx context.Context, limit int) ([]models.Au
 
 // --- internals ---
 
-//nolint:gocognit
 func (s *UpdaterService) updateContainer(ctx context.Context, cnt container.Summary, inspect container.InspectResponse, newRef string) error {
 	dcli, err := s.dockerService.GetClient(ctx)
 	if err != nil {
@@ -891,7 +890,7 @@ func (s *UpdaterService) updateContainer(ctx context.Context, cnt container.Summ
 	// This method should not be called for Arcane containers
 	if isArcane {
 		slog.ErrorContext(ctx, "updateContainer: called for Arcane container - should use CLI upgrade instead", "containerId", cnt.ID, "containerName", name)
-		return fmt.Errorf("arcane containers must use CLI upgrade method (TriggerUpgradeViaCLI), not inline update")
+		return errors.New("arcane containers must use CLI upgrade method (TriggerUpgradeViaCLI), not inline update")
 	}
 
 	slog.DebugContext(ctx, "updateContainer: starting update", "containerId", cnt.ID, "containerName", name, "newRef", newRef, "isArcane", isArcane)
@@ -1054,11 +1053,11 @@ func normalizeImageUpdateRefInternal(imageRef string) string {
 	return parts.NormalizedRef
 }
 
-func addNormalizedImageUpdateRefInternal(ctx context.Context, out map[string]struct{}, imageRef, logMessage string, attrs ...any) bool {
+func addNormalizedImageUpdateRefInternal(ctx context.Context, out map[string]struct{}, imageRef, logMessage string, attrs ...any) {
 	normalizedRef := normalizeImageUpdateRefInternal(imageRef)
 	if normalizedRef != "" {
 		out[normalizedRef] = struct{}{}
-		return true
+		return
 	}
 
 	args := slices.Clone(attrs)
@@ -1068,7 +1067,6 @@ func addNormalizedImageUpdateRefInternal(ctx context.Context, out map[string]str
 	} else {
 		slog.Debug(logMessage, args...)
 	}
-	return false
 }
 
 func (s *UpdaterService) stripDigest(ref string) string {
@@ -1361,7 +1359,7 @@ type restartPlan struct {
 	implicit bool
 }
 
-//nolint:gocognit
+//nolint:gocognit,gocyclo,maintidx // restart-orchestration flow remaps old/new container IDs in one pass; refactor tracked separately
 func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldIDToNewRef map[string]string, oldRefToNewRef map[string]string) ([]updater.ResourceResult, error) {
 	dcli, err := s.dockerService.GetClient(ctx)
 	if err != nil {
@@ -1942,14 +1940,14 @@ func (s *UpdaterService) logAutoUpdate(ctx context.Context, sev models.EventSeve
 			img = fmt.Sprint(metadata["imageOld"])
 		}
 		if img != "" {
-			title = fmt.Sprintf("Auto-update: image pull %s", img)
+			title = "Auto-update: image pull " + img
 		} else {
 			title = "Auto-update: image pull"
 		}
 	case "image_prune":
 		imageID := fmt.Sprint(metadata["imageId"])
 		if imageID != "" {
-			title = fmt.Sprintf("Auto-update: image prune %s", imageID)
+			title = "Auto-update: image prune " + imageID
 		} else {
 			title = "Auto-update: image prune"
 		}
@@ -1959,7 +1957,7 @@ func (s *UpdaterService) logAutoUpdate(ctx context.Context, sev models.EventSeve
 			name = fmt.Sprint(metadata["containerId"])
 		}
 		if name != "" {
-			title = fmt.Sprintf("Auto-update: container %s", name)
+			title = "Auto-update: container " + name
 		} else {
 			title = "Auto-update: container"
 		}
@@ -1969,7 +1967,7 @@ func (s *UpdaterService) logAutoUpdate(ctx context.Context, sev models.EventSeve
 			name = fmt.Sprint(metadata["projectId"])
 		}
 		if name != "" {
-			title = fmt.Sprintf("Auto-update: project %s", name)
+			title = "Auto-update: project " + name
 		} else {
 			title = "Auto-update: project"
 		}
