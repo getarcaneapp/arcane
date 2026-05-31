@@ -7,102 +7,83 @@ import (
 	"net/http"
 
 	"github.com/getarcaneapp/arcane/backend/internal/config"
+	"github.com/getarcaneapp/arcane/backend/internal/di"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
 	pkg_scheduler "github.com/getarcaneapp/arcane/backend/pkg/scheduler"
 )
 
-func registerJobs(appCtx context.Context, newScheduler *pkg_scheduler.JobScheduler, appServices *Services, appConfig *config.Config) {
-	autoUpdateJob := pkg_scheduler.NewAutoUpdateJob(appServices.Updater, appServices.Settings)
-	newScheduler.RegisterJob(autoUpdateJob)
+func registerJobs(appCtx context.Context, newScheduler *pkg_scheduler.JobScheduler, appServices *di.Services, appConfig *config.Config) {
+	// wire constructs every job from the built services; bootstrap owns registration,
+	// the agent-mode gating, the startup heartbeat, and the settings callbacks.
+	jobs := di.InitializeJobs(appCtx, appConfig, appServices)
 
-	imagePollingJob := pkg_scheduler.NewImagePollingJob(appServices.ImageUpdate, appServices.Settings, appServices.Environment)
-	newScheduler.RegisterJob(imagePollingJob)
-
-	environmentHealthJob := pkg_scheduler.NewEnvironmentHealthJob(appServices.Environment, appServices.Settings)
+	newScheduler.RegisterJob(jobs.AutoUpdate)
+	newScheduler.RegisterJob(jobs.ImagePolling)
 	if !appConfig.AgentMode {
-		newScheduler.RegisterJob(environmentHealthJob)
+		newScheduler.RegisterJob(jobs.EnvironmentHealth)
 	}
-
-	dockerClientRefreshJob := pkg_scheduler.NewDockerClientRefreshJob(appServices.Docker, appServices.Settings)
-	newScheduler.RegisterJob(dockerClientRefreshJob)
-
-	analyticsJob := pkg_scheduler.NewAnalyticsJob(appServices.Settings, appServices.KV, nil, appConfig)
-	newScheduler.RegisterJob(analyticsJob)
+	newScheduler.RegisterJob(jobs.DockerClientRefresh)
+	newScheduler.RegisterJob(jobs.Analytics)
 	// Send initial heartbeat on startup without blocking bootstrap.
-	go analyticsJob.Run(appCtx)
+	go jobs.Analytics.Run(appCtx)
+	newScheduler.RegisterJob(jobs.EventCleanup)
+	newScheduler.RegisterJob(jobs.ExpiredSessionsCleanup)
+	newScheduler.RegisterJob(jobs.ScheduledPrune)
+	// FilesystemWatcher is intentionally not scheduler-registered; it watches inline
+	// and is only rebound on settings changes below.
+	newScheduler.RegisterJob(jobs.GitOpsSync)
+	newScheduler.RegisterJob(jobs.VulnerabilityScan)
+	newScheduler.RegisterJob(jobs.AutoHeal)
 
-	eventCleanupJob := pkg_scheduler.NewEventCleanupJob(appServices.Event, appServices.Activity, appServices.Settings)
-	newScheduler.RegisterJob(eventCleanupJob)
-
-	expiredSessionsCleanupJob := pkg_scheduler.NewExpiredSessionsCleanupJob(appServices.Session, appServices.Settings)
-	newScheduler.RegisterJob(expiredSessionsCleanupJob)
-
-	scheduledPruneJob := pkg_scheduler.NewScheduledPruneJob(appServices.System, appServices.Settings, appServices.Notification)
-	newScheduler.RegisterJob(scheduledPruneJob)
-
-	fsWatcherJob, err := pkg_scheduler.RegisterFilesystemWatcherJob(appCtx, appServices.Project, appServices.Template, appServices.Settings, appConfig.ProjectScanMaxDepth)
-	if err != nil {
-		slog.ErrorContext(appCtx, "Failed to register filesystem watcher job", "error", err)
-	}
-
-	gitOpsSyncJob := pkg_scheduler.NewGitOpsSyncJob(appServices.GitOpsSync, appServices.Settings)
-	newScheduler.RegisterJob(gitOpsSyncJob)
-
-	vulnerabilityScanJob := pkg_scheduler.NewVulnerabilityScanJob(appServices.Vulnerability, appServices.Settings)
-	newScheduler.RegisterJob(vulnerabilityScanJob)
-
-	autoHealJob := pkg_scheduler.NewAutoHealJob(appServices.Docker, appServices.Settings, appServices.Event, appServices.Notification)
-	newScheduler.RegisterJob(autoHealJob)
-
-	setupSettingsCallbacks(appCtx, appServices, appConfig, newScheduler, imagePollingJob, autoUpdateJob, environmentHealthJob, fsWatcherJob, scheduledPruneJob, vulnerabilityScanJob, autoHealJob)
+	setupSettingsCallbacks(appCtx, appServices, appConfig, newScheduler, jobs)
 }
 
-func setupSettingsCallbacks(lifecycleCtx context.Context, appServices *Services, appConfig *config.Config, newScheduler *pkg_scheduler.JobScheduler, imagePollingJob *pkg_scheduler.ImagePollingJob, autoUpdateJob *pkg_scheduler.AutoUpdateJob, environmentHealthJob *pkg_scheduler.EnvironmentHealthJob, fsWatcherJob *pkg_scheduler.FilesystemWatcherJob, scheduledPruneJob *pkg_scheduler.ScheduledPruneJob, vulnerabilityScanJob *pkg_scheduler.VulnerabilityScanJob, autoHealJob *pkg_scheduler.AutoHealJob) {
+func setupSettingsCallbacks(lifecycleCtx context.Context, appServices *di.Services, appConfig *config.Config, newScheduler *pkg_scheduler.JobScheduler, jobs *di.Jobs) {
 	appServices.Settings.OnImagePollingSettingsChanged = func(_ context.Context) {
-		if err := newScheduler.RescheduleJob(lifecycleCtx, imagePollingJob); err != nil {
+		if err := newScheduler.RescheduleJob(lifecycleCtx, jobs.ImagePolling); err != nil {
 			slog.WarnContext(lifecycleCtx, "Failed to reschedule image-polling job", "error", err)
 		}
-		if err := newScheduler.RescheduleJob(lifecycleCtx, autoUpdateJob); err != nil {
+		if err := newScheduler.RescheduleJob(lifecycleCtx, jobs.AutoUpdate); err != nil {
 			slog.WarnContext(lifecycleCtx, "Failed to reschedule auto-update job", "error", err)
 		}
 		if !appConfig.AgentMode {
-			if err := newScheduler.RescheduleJob(lifecycleCtx, environmentHealthJob); err != nil {
+			if err := newScheduler.RescheduleJob(lifecycleCtx, jobs.EnvironmentHealth); err != nil {
 				slog.WarnContext(lifecycleCtx, "Failed to reschedule environment-health job", "error", err)
 			}
 		}
 	}
 	appServices.Settings.OnAutoUpdateSettingsChanged = func(ctx context.Context) {
 		slog.DebugContext(lifecycleCtx, "AutoUpdateSettingsChanged callback triggered", "triggerContextCanceled", ctx.Err() != nil)
-		if err := newScheduler.RescheduleJob(lifecycleCtx, autoUpdateJob); err != nil {
+		if err := newScheduler.RescheduleJob(lifecycleCtx, jobs.AutoUpdate); err != nil {
 			slog.WarnContext(lifecycleCtx, "Failed to reschedule auto-update job", "error", err)
 		}
 	}
 	appServices.Settings.OnProjectsDirectoryChanged = func(_ context.Context) {
-		if fsWatcherJob != nil {
-			if err := fsWatcherJob.RestartProjectsWatcher(lifecycleCtx); err != nil {
+		if jobs.FilesystemWatcher != nil {
+			if err := jobs.FilesystemWatcher.RestartProjectsWatcher(lifecycleCtx); err != nil {
 				slog.WarnContext(lifecycleCtx, "Failed to restart projects filesystem watcher", "error", err)
 			}
 		}
 	}
 	appServices.Settings.OnTemplatesDirectoryChanged = func(_ context.Context) {
-		if fsWatcherJob != nil {
-			if err := fsWatcherJob.RestartTemplatesWatcher(lifecycleCtx); err != nil {
+		if jobs.FilesystemWatcher != nil {
+			if err := jobs.FilesystemWatcher.RestartTemplatesWatcher(lifecycleCtx); err != nil {
 				slog.WarnContext(lifecycleCtx, "Failed to restart templates filesystem watcher", "error", err)
 			}
 		}
 	}
 	appServices.Settings.OnScheduledPruneSettingsChanged = func(_ context.Context) {
-		if err := newScheduler.RescheduleJob(lifecycleCtx, scheduledPruneJob); err != nil {
+		if err := newScheduler.RescheduleJob(lifecycleCtx, jobs.ScheduledPrune); err != nil {
 			slog.WarnContext(lifecycleCtx, "Failed to reschedule scheduled-prune job", "error", err)
 		}
 	}
 	appServices.Settings.OnVulnerabilityScanSettingsChanged = func(_ context.Context) {
-		if err := newScheduler.RescheduleJob(lifecycleCtx, vulnerabilityScanJob); err != nil {
+		if err := newScheduler.RescheduleJob(lifecycleCtx, jobs.VulnerabilityScan); err != nil {
 			slog.WarnContext(lifecycleCtx, "Failed to reschedule vulnerability-scan job", "error", err)
 		}
 	}
 	appServices.Settings.OnAutoHealSettingsChanged = func(ctx context.Context) {
-		if err := newScheduler.RescheduleJob(ctx, autoHealJob); err != nil {
+		if err := newScheduler.RescheduleJob(ctx, jobs.AutoHeal); err != nil {
 			slog.WarnContext(ctx, "Failed to reschedule auto-heal job", "error", err)
 		}
 	}
@@ -116,7 +97,7 @@ func setupSettingsCallbacks(lifecycleCtx context.Context, appServices *Services,
 }
 
 // syncTimeoutSettingsToAgentsInternal syncs timeout settings to all connected remote environments
-func syncTimeoutSettingsToAgentsInternal(ctx context.Context, appServices *Services, timeoutSettings []libarcane.SettingUpdate) {
+func syncTimeoutSettingsToAgentsInternal(ctx context.Context, appServices *di.Services, timeoutSettings []libarcane.SettingUpdate) {
 	envs, err := appServices.Environment.ListRemoteEnvironments(ctx)
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to list remote environments for timeout sync", "error", err)

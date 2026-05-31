@@ -17,10 +17,12 @@ import (
 	"github.com/moby/moby/client"
 
 	"github.com/getarcaneapp/arcane/backend/internal/config"
+	"github.com/getarcaneapp/arcane/backend/internal/di"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	libcrypto "github.com/getarcaneapp/arcane/backend/pkg/libarcane/crypto"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge"
 	tunnelpb "github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge/proto/tunnel/v1"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/logstream"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/startup"
 	"github.com/getarcaneapp/arcane/backend/pkg/scheduler"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils"
@@ -45,6 +47,9 @@ func Bootstrap(ctx context.Context) error {
 	cfg.DockerConfig = runtimeIdentityCfg.DockerConfig
 
 	SetupSlogLogger(cfg)
+	// Tee all slog output into the in-memory ring buffer that powers the
+	// diagnostics live log tail.
+	slog.SetDefault(slog.New(logstream.NewSlogHandler(slog.Default().Handler(), logstream.Default())))
 	ConfigureGormLogger(cfg)
 	slog.InfoContext(ctx, "Arcane is starting...", "version", config.Version)
 	slog.InfoContext(ctx, "Arcane Identity Configuration", "PUID", os.Getuid(), "PGID", os.Getgid())
@@ -70,10 +75,11 @@ func Bootstrap(ctx context.Context) error {
 
 	httpClient := newConfiguredHTTPClient(cfg)
 
-	appServices, dockerClientService, err := initializeServices(appCtx, db, cfg, httpClient)
+	appServices, err := di.InitializeServices(appCtx, db, cfg, httpClient)
 	if err != nil {
 		return fmt.Errorf("failed to initialize services: %w", err)
 	}
+	dockerClientService := appServices.Docker
 	defer dockerClientService.Close()
 	defer func(ctx context.Context) {
 		baseCtx := context.WithoutCancel(ctx)
@@ -111,7 +117,7 @@ func newConfiguredHTTPClient(cfg *config.Config) *http.Client {
 	return httputils.NewHTTPClient()
 }
 
-func initializeStartupState(appCtx context.Context, cfg *config.Config, appServices *Services, dockerClientService *services.DockerClientService, httpClient *http.Client) {
+func initializeStartupState(appCtx context.Context, cfg *config.Config, appServices *di.Services, dockerClientService *services.DockerClientService, httpClient *http.Client) {
 	if appServices.Volume != nil {
 		startup.CleanupOrphanedVolumeHelpers(appCtx, appServices.Volume.CleanupOrphanedVolumeHelpers)
 	}
