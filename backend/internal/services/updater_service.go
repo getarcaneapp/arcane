@@ -589,6 +589,21 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 		return out, nil
 	}
 
+	if libupdater.IsSwarmTask(labels) && !isArcaneContainer {
+		slog.InfoContext(ctx, "UpdateSingleContainer: skipping swarm task container", "containerID", containerID)
+		out.Items = append(out.Items, updater.ResourceResult{
+			ResourceID:   targetContainer.ID,
+			ResourceType: "container",
+			ResourceName: containerName,
+			Status:       "skipped",
+			Error:        "swarm service; update at the service level",
+		})
+		out.Skipped++
+		out.Checked = 1
+		out.Duration = time.Since(start).String()
+		return out, nil
+	}
+
 	// Resolve the best pullable image reference for this container.
 	configImageRef := ""
 	if inspectBefore.Config != nil {
@@ -1416,6 +1431,11 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 
 		// Skip containers with opt-out label
 		if libupdater.IsUpdateDisabled(c.Labels) {
+			continue
+		}
+
+		if libupdater.IsSwarmTask(c.Labels) && !libupdater.IsArcaneContainer(c.Labels) {
+			slog.DebugContext(ctx, "restartContainersUsingOldIDs: skipping swarm task container", "containerId", c.ID, "names", c.Names)
 			continue
 		}
 

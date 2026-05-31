@@ -87,8 +87,8 @@ func provideResourcesFSInternal() embed.FS {
 // wire_gen.go call them in a normal build.
 
 // provideVersionServiceInternal supplies the bool/string scalars wire can't inject by type.
-func provideVersionServiceInternal(httpClient *http.Client, cfg *config.Config, registry *services.ContainerRegistryService, docker *services.DockerClientService) *services.VersionService {
-	return services.NewVersionService(httpClient, cfg.UpdateCheckDisabled, config.Version, config.Revision, registry, docker)
+func provideVersionServiceInternal(httpClient *http.Client, cfg *config.Config, registry *services.ContainerRegistryService, docker *services.DockerClientService, imageUpdate *services.ImageUpdateService) *services.VersionService {
+	return services.NewVersionService(httpClient, cfg.UpdateCheckDisabled, config.Version, config.Revision, registry, docker, imageUpdate)
 }
 
 // provideGitRepositoryServiceInternal supplies cfg.GitWorkDir (bare string).
