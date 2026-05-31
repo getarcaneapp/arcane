@@ -144,6 +144,7 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *di.Servic
 
 	authMiddleware := appServices.AuthMiddleware
 	e.Use(middleware.NewCORSMiddleware(cfg).Add())
+	e.Use(middleware.NewCSRFMiddleware(cfg).Add()) //nolint:contextcheck // Echo middleware uses request context from echo.Context, not the app lifecycle context.
 
 	apiGroup := e.Group("/api")
 

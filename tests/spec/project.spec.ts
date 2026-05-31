@@ -562,6 +562,8 @@ test.describe('New Compose Project Page', () => {
 	});
 
 	test('should create a new project successfully', async ({ page }) => {
+		test.slow();
+
 		const projectName = `test-project-${Date.now()}`;
 		const containerName = `test-nginx-container-${Date.now()}`;
 		const envFile = TEST_ENV_FILE.replace(/CONTAINER_NAME=.*/m, `CONTAINER_NAME=${containerName}`);
@@ -654,10 +656,24 @@ test.describe('New Compose Project Page', () => {
 			.getByRole('button', { name: 'Up', exact: true })
 			.filter({ hasText: 'Up' })
 			.last();
+		const deployResponsePromise = page.waitForResponse(
+			(response) =>
+				response.request().method() === 'POST' &&
+				/\/api\/environments\/[^/]+\/projects\/[^/]+\/up$/.test(getPathname(response.url()))
+		);
 		await deployButton.click();
 
-		await page.waitForTimeout(5000);
-		await page.waitForLoadState('load');
+		const deployResponse = await deployResponsePromise;
+		expect(deployResponse.ok()).toBe(true);
+		expect(await deployResponse.finished()).toBeNull();
+
+		const projectId = createdProjectId ?? getProjectIdFromPageUrl(page.url());
+		await expect
+			.poll(async () => (await fetchProjectDetail(page, projectId))?.status, {
+				message: 'Expected project to be running after deploy',
+				timeout: 60000
+			})
+			.toBe('running');
 
 		expect(projectPullRequestCount).toBe(0);
 		await expect(page.getByText('Running', { exact: true }).first()).toBeVisible({
