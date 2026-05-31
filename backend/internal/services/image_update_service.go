@@ -804,6 +804,23 @@ func (s *ImageUpdateService) MarkImageRefUpToDateAfterPull(ctx context.Context, 
 	})
 }
 
+func (s *ImageUpdateService) getStoredUpdateByImageIDInternal(ctx context.Context, imageID string) (*models.ImageUpdateRecord, bool, error) {
+	imageID = strings.TrimSpace(imageID)
+	if s == nil || s.db == nil || imageID == "" {
+		return nil, false, nil
+	}
+
+	var record models.ImageUpdateRecord
+	if err := s.db.WithContext(ctx).Where("id = ?", imageID).First(&record).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, false, nil
+		}
+		return nil, false, fmt.Errorf("get stored image update by image id: %w", err)
+	}
+
+	return &record, true, nil
+}
+
 // GetUnnotifiedUpdates returns a map of image IDs that have updates but haven't been notified yet
 func (s *ImageUpdateService) GetUnnotifiedUpdates(ctx context.Context) (map[string]*models.ImageUpdateRecord, error) {
 	var records []models.ImageUpdateRecord
