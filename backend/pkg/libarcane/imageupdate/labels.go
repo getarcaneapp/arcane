@@ -8,6 +8,10 @@ const (
 	LabelArcaneAgent = "com.getarcaneapp.arcane.agent"   // Identifies an Arcane agent container
 	LabelUpdater     = "com.getarcaneapp.arcane.updater" // Enable/disable updates (true/false)
 
+	// LabelSwarmServiceID and LabelSwarmServiceName identify Docker Swarm task containers.
+	LabelSwarmServiceID   = "com.docker.swarm.service.id"
+	LabelSwarmServiceName = "com.docker.swarm.service.name"
+
 	// LabelDependsOn and the constants below are update-dependency labels.
 	LabelDependsOn  = "com.getarcaneapp.arcane.depends-on"  // Comma-separated list of container names this depends on
 	LabelStopSignal = "com.getarcaneapp.arcane.stop-signal" // Custom stop signal (e.g., SIGINT)
@@ -62,6 +66,11 @@ func IsUpdateDisabled(labels map[string]string) bool {
 	return false
 }
 
+// IsSwarmTask checks if the labels identify a Docker Swarm task container.
+func IsSwarmTask(labels map[string]string) bool {
+	return hasNonEmptyLabelInternal(labels, LabelSwarmServiceID) || hasNonEmptyLabelInternal(labels, LabelSwarmServiceName)
+}
+
 // GetStopSignal returns the custom stop signal if set, otherwise empty string
 func GetStopSignal(labels map[string]string) string {
 	if labels == nil {
@@ -82,6 +91,20 @@ func hasTruthyLabelInternal(labels map[string]string, target string) bool {
 
 	for k, v := range labels {
 		if strings.EqualFold(k, target) && isTruthyLabelValueInternal(v) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func hasNonEmptyLabelInternal(labels map[string]string, target string) bool {
+	if labels == nil {
+		return false
+	}
+
+	for k, v := range labels {
+		if strings.EqualFold(k, target) && strings.TrimSpace(v) != "" {
 			return true
 		}
 	}
