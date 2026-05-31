@@ -2,7 +2,7 @@ package fswatch
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -79,7 +79,7 @@ func (fw *Watcher) Start(ctx context.Context) error {
 		return nil
 	}
 	if fw.stopped {
-		return fmt.Errorf("watcher already stopped")
+		return errors.New("watcher already stopped")
 	}
 
 	if err := fw.watcher.Add(fw.watchedPath); err != nil {

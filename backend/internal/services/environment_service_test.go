@@ -736,8 +736,8 @@ func TestEnvironmentService_ListMethods_ExcludeHiddenEnvironments(t *testing.T) 
 		}).Error)
 
 	listedEnvironments, _, err := svc.ListEnvironmentsPaginated(ctx, pagination.QueryParams{
-		PaginationParams: pagination.PaginationParams{Start: 0, Limit: 20},
-		Filters:          map[string]string{},
+		Params:  pagination.Params{Start: 0, Limit: 20},
+		Filters: map[string]string{},
 	})
 	require.NoError(t, err)
 	require.Len(t, listedEnvironments, 2)
@@ -834,8 +834,8 @@ func TestEnvironmentService_ListEnvironmentsPaginated_FiltersByRuntimeType(t *te
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			listedEnvironments, _, err := svc.ListEnvironmentsPaginated(ctx, pagination.QueryParams{
-				PaginationParams: pagination.PaginationParams{Start: 0, Limit: 20},
-				Filters:          map[string]string{"type": tt.typeFilter},
+				Params:  pagination.Params{Start: 0, Limit: 20},
+				Filters: map[string]string{"type": tt.typeFilter},
 			})
 			require.NoError(t, err)
 			require.ElementsMatch(t, tt.wantIDs, environmentIDsInternal(listedEnvironments))

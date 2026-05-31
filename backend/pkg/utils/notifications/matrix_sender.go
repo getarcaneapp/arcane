@@ -2,6 +2,7 @@ package notifications
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -15,7 +16,7 @@ import (
 // URL example: matrix://user:password@host[:port]/[?rooms=!roomID1[,roomAlias2]][&disableTLS=yes]
 func BuildMatrixURL(config models.MatrixConfig) (string, error) {
 	if config.Host == "" {
-		return "", fmt.Errorf("matrix host is required")
+		return "", errors.New("matrix host is required")
 	}
 
 	// Build the base URL

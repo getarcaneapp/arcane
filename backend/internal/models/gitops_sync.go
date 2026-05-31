@@ -5,6 +5,8 @@ import (
 )
 
 type GitOpsSync struct {
+	BaseModel
+
 	Name              string         `json:"name" sortable:"true" search:"sync,gitops,automation,deploy,deployment,continuous"`
 	EnvironmentID     string         `json:"environmentId" sortable:"true"`
 	Environment       *Environment   `json:"environment,omitempty" gorm:"foreignKey:EnvironmentID"`
@@ -27,7 +29,6 @@ type GitOpsSync struct {
 	LastSyncStatus    *string        `json:"lastSyncStatus,omitempty" search:"status,success,failed,pending,error"`
 	LastSyncError     *string        `json:"lastSyncError,omitempty"`
 	LastSyncCommit    *string        `json:"lastSyncCommit,omitempty" search:"commit,hash,sha,revision"`
-	BaseModel
 }
 
 func (GitOpsSync) TableName() string {

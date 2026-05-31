@@ -11,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/ecr"
+	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/crypto"
 )
@@ -48,7 +49,10 @@ func (s *ContainerRegistryService) GetOrRefreshECRToken(ctx context.Context, reg
 	if sErr != nil {
 		return "", "", sErr
 	}
-	r := result.(*ecrTokenResult)
+	r, ok := result.(*ecrTokenResult)
+	if !ok {
+		return "", "", &common.ECRTokenResultTypeError{}
+	}
 	return r.username, r.password, nil
 }
 

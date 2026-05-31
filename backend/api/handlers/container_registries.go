@@ -452,7 +452,7 @@ func (h *ContainerRegistryHandler) SyncRegistries(ctx context.Context, input *Sy
 // Helper Methods
 // ============================================================================
 
-func (h *ContainerRegistryHandler) triggerRemoteRegistrySync(ctx context.Context, reason string) { //nolint:contextcheck // intentionally spawns background sync
+func (h *ContainerRegistryHandler) triggerRemoteRegistrySync(ctx context.Context, reason string) {
 	if h.environmentService == nil {
 		return
 	}

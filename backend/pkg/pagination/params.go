@@ -3,6 +3,7 @@ package pagination
 type QueryParams struct {
 	SearchQuery
 	SortParams
-	PaginationParams
+	Params
+
 	Filters map[string]string
 }

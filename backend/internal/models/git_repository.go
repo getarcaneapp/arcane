@@ -1,6 +1,8 @@
 package models
 
 type GitRepository struct {
+	BaseModel
+
 	Name                   string  `json:"name" sortable:"true" search:"git,repository,repo,source,version,control,github,gitlab,bitbucket"`
 	URL                    string  `json:"url" sortable:"true" search:"url,git,clone,remote,https,ssh"`
 	AuthType               string  `json:"authType" sortable:"true" search:"auth,authentication,credentials,token,ssh,http"` // none, http, ssh
@@ -10,7 +12,6 @@ type GitRepository struct {
 	SSHHostKeyVerification string  `json:"sshHostKeyVerification" gorm:"default:accept_new"`      // strict, accept_new, skip
 	Description            *string `json:"description,omitempty" sortable:"true"`
 	Enabled                bool    `json:"enabled" sortable:"true" search:"enabled,active,disabled"`
-	BaseModel
 }
 
 func (GitRepository) TableName() string {

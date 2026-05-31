@@ -43,7 +43,7 @@ func TestEnvironmentHandlerApplyEdgeRuntimeState(t *testing.T) {
 			IsEdge: false,
 		}
 
-		handler.applyEdgeRuntimeState(&env)
+		handler.applyEdgeRuntimeStateInternal(&env)
 
 		assert.Equal(t, string(models.EnvironmentStatusOnline), env.Status)
 		assert.Nil(t, env.EdgeTransport)
@@ -68,7 +68,7 @@ func TestEnvironmentHandlerApplyEdgeRuntimeState(t *testing.T) {
 			IsEdge: true,
 		}
 
-		handler.applyEdgeRuntimeState(&env)
+		handler.applyEdgeRuntimeStateInternal(&env)
 
 		assert.Equal(t, string(models.EnvironmentStatusOffline), env.Status)
 		assert.Nil(t, env.EdgeTransport)
@@ -95,7 +95,7 @@ func TestEnvironmentHandlerApplyEdgeRuntimeState(t *testing.T) {
 			IsEdge: true,
 		}
 
-		handler.applyEdgeRuntimeState(&env)
+		handler.applyEdgeRuntimeStateInternal(&env)
 
 		assert.Equal(t, string(models.EnvironmentStatusPending), env.Status)
 		assert.Nil(t, env.EdgeTransport)
@@ -129,7 +129,7 @@ func TestEnvironmentHandlerApplyEdgeRuntimeState(t *testing.T) {
 			IsEdge: true,
 		}
 
-		handler.applyEdgeRuntimeState(&env)
+		handler.applyEdgeRuntimeStateInternal(&env)
 
 		assert.Equal(t, string(models.EnvironmentStatusOnline), env.Status)
 		if assert.NotNil(t, env.EdgeTransport) {
@@ -166,7 +166,7 @@ func TestEnvironmentHandlerApplyEdgeRuntimeState(t *testing.T) {
 			IsEdge: true,
 		}
 
-		handler.applyEdgeRuntimeState(&env)
+		handler.applyEdgeRuntimeStateInternal(&env)
 
 		assert.Equal(t, string(models.EnvironmentStatusStandby), env.Status)
 		if assert.NotNil(t, env.Connected) {

@@ -33,6 +33,7 @@ package images
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -88,7 +89,7 @@ var imagesListCmd = &cobra.Command{
 			return err
 		}
 		if imagesInUseOnly && imagesUnusedOnly {
-			return fmt.Errorf("--inuse and --unused cannot be used together")
+			return errors.New("--inuse and --unused cannot be used together")
 		}
 
 		path := types.Endpoints.Images(c.EnvID())
@@ -431,7 +432,7 @@ var imagesPullCmd = &cobra.Command{
 				}
 				if currentID != event.ID {
 					currentID = event.ID
-					progressUI.SetLabel(fmt.Sprintf("Downloading %s", event.ID))
+					progressUI.SetLabel("Downloading " + event.ID)
 					progressUI.SetTotal(event.ProgressDetail.Total)
 				}
 				progressUI.SetCurrent(event.ProgressDetail.Current)
@@ -732,7 +733,7 @@ func init() {
 func resolveImageID(ctx context.Context, c *client.Client, identifier string, allowPrompt bool) (string, error) {
 	trimmed := strings.TrimSpace(identifier)
 	if trimmed == "" {
-		return "", fmt.Errorf("image identifier is required")
+		return "", errors.New("image identifier is required")
 	}
 
 	resolvedID, found, err := resolveImageByID(ctx, c, trimmed)

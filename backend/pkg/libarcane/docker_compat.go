@@ -2,6 +2,7 @@ package libarcane
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -82,7 +83,7 @@ func IsDockerAPIVersionAtLeast(current, minimum string) bool {
 		return false
 	}
 
-	for i := range len(cur) {
+	for i := range cur {
 		if cur[i] > minV[i] {
 			return true
 		}
@@ -227,7 +228,7 @@ func ContainerCreateWithCompatibility(ctx context.Context, dockerClient client.A
 // already resolved the daemon API version.
 func ContainerCreateWithCompatibilityForAPIVersion(ctx context.Context, dockerClient client.APIClient, options client.ContainerCreateOptions, apiVersion string) (client.ContainerCreateResult, error) {
 	if dockerClient == nil {
-		return client.ContainerCreateResult{}, fmt.Errorf("docker api client is nil")
+		return client.ContainerCreateResult{}, errors.New("docker api client is nil")
 	}
 
 	adjustedOptions, extraEndpoints := PrepareContainerCreateOptionsForDockerAPI(options, apiVersion)

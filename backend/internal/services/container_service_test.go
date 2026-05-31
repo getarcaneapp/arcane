@@ -40,7 +40,7 @@ func TestPaginateContainerProjectGroupsKeepsProjectWhole(t *testing.T) {
 
 	groupedItems, resp := paginateContainerProjectGroupsInternal(
 		pagination.FilterResult[containertypes.Summary]{Items: items, TotalCount: int64(len(items)), TotalAvailable: int64(len(items))},
-		pagination.QueryParams{PaginationParams: pagination.PaginationParams{Start: 0, Limit: 20}},
+		pagination.QueryParams{Params: pagination.Params{Start: 0, Limit: 20}},
 	)
 
 	require.Len(t, groupedItems, 19)

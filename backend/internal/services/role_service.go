@@ -302,7 +302,7 @@ func (s *RoleService) GetRole(ctx context.Context, id string) (*models.Role, err
 
 func (s *RoleService) CreateRole(ctx context.Context, name string, description *string, permissions []string) (*models.Role, error) {
 	if strings.TrimSpace(name) == "" {
-		return nil, fmt.Errorf("role name is required")
+		return nil, errors.New("role name is required")
 	}
 	if err := validatePermissionsInternal(permissions); err != nil {
 		return nil, err
@@ -722,10 +722,10 @@ func (s *RoleService) GetOidcMapping(ctx context.Context, id string) (*models.Oi
 
 func (s *RoleService) CreateOidcMapping(ctx context.Context, claimValue, roleID string, environmentID *string) (*models.OidcRoleMapping, error) {
 	if strings.TrimSpace(claimValue) == "" {
-		return nil, fmt.Errorf("claim value is required")
+		return nil, errors.New("claim value is required")
 	}
 	if strings.TrimSpace(roleID) == "" {
-		return nil, fmt.Errorf("role id is required")
+		return nil, errors.New("role id is required")
 	}
 	mapping := &models.OidcRoleMapping{
 		ClaimValue:    claimValue,

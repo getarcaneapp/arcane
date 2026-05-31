@@ -2,6 +2,7 @@ package notifications
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/getarcaneapp/arcane/backend/internal/models"
@@ -40,10 +41,10 @@ func BuildTelegramURL(config models.TelegramConfig) (string, error) {
 // SendTelegram sends a message via Shoutrrr Telegram using proper service configuration
 func SendTelegram(ctx context.Context, config models.TelegramConfig, message string) error {
 	if config.BotToken == "" {
-		return fmt.Errorf("telegram bot token is empty")
+		return errors.New("telegram bot token is empty")
 	}
 	if len(config.ChatIDs) == 0 {
-		return fmt.Errorf("no telegram chat IDs configured")
+		return errors.New("no telegram chat IDs configured")
 	}
 
 	shoutrrrURL, err := BuildTelegramURL(config)

@@ -70,7 +70,7 @@ func (s *VersionService) getLatestReleaseInternal(ctx context.Context) (latestRe
 			return latestRelease{}, fmt.Errorf("create GitHub request: %w", err)
 		}
 
-		resp, err := s.httpClient.Do(req) //nolint:gosec // intentional request to fixed GitHub releases API endpoint
+		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return latestRelease{}, fmt.Errorf("get latest release: %w", err)
 		}
@@ -89,7 +89,7 @@ func (s *VersionService) getLatestReleaseInternal(ctx context.Context) (latestRe
 			return latestRelease{}, fmt.Errorf("decode payload: %w", err)
 		}
 		if payload.TagName == "" {
-			return latestRelease{}, fmt.Errorf("GitHub API returned empty tag name")
+			return latestRelease{}, errors.New("GitHub API returned empty tag name")
 		}
 
 		return latestRelease{
@@ -99,7 +99,7 @@ func (s *VersionService) getLatestReleaseInternal(ctx context.Context) (latestRe
 		}, nil
 	})
 
-	if staleErr, ok := errors.AsType[*cache.ErrStale](err); ok {
+	if staleErr, ok := errors.AsType[*cache.StaleError](err); ok {
 		slog.Warn("Failed to fetch latest release, returning stale cache", "error", staleErr.Err)
 		return rel, nil
 	}
@@ -176,7 +176,7 @@ func (s *VersionService) GetVersionInformation(ctx context.Context, currentVersi
 
 	latest, err := s.GetLatestVersion(ctx)
 	if err != nil {
-		if staleErr, ok := errors.AsType[*cache.ErrStale](err); ok {
+		if staleErr, ok := errors.AsType[*cache.StaleError](err); ok {
 			slog.Warn("Failed to refresh latest version; using stale cache", "error", staleErr.Err)
 		} else {
 			return check, err
@@ -207,7 +207,7 @@ func (s *VersionService) isSemverVersion() bool {
 func (s *VersionService) getDisplayVersion() string {
 	version := strings.TrimPrefix(strings.TrimSpace(s.version), "v")
 	if strings.Contains(strings.ToLower(version), "next") && s.revision != "" && s.revision != "unknown" {
-		return fmt.Sprintf("next-%s", config.ShortRevision())
+		return "next-" + config.ShortRevision()
 	}
 	if s.isSemverVersion() {
 		return "v" + version
@@ -246,7 +246,7 @@ func (s *VersionService) GetAppVersionInfo(ctx context.Context) *version.Info {
 	// For semver versions, check GitHub releases
 	if isSemver {
 		rel, err := s.getLatestReleaseInternal(ctx)
-		var staleErr *cache.ErrStale
+		var staleErr *cache.StaleError
 		if err == nil || errors.As(err, &staleErr) {
 			if rel.TagName != "" {
 				info.NewestVersion = rel.TagName

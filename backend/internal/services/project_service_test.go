@@ -2434,8 +2434,8 @@ func TestProjectService_ListProjects_FiltersByUpdateStatus(t *testing.T) {
 				Filters: map[string]string{
 					"updates": tt.filter,
 				},
-				PaginationParams: pagination.PaginationParams{Limit: -1},
-				SortParams:       pagination.SortParams{Sort: "name", Order: pagination.SortAsc},
+				Params:     pagination.Params{Limit: -1},
+				SortParams: pagination.SortParams{Sort: "name", Order: pagination.SortAsc},
 			})
 			require.NoError(t, err)
 			require.EqualValues(t, len(tt.expected), page.TotalItems)
@@ -2581,8 +2581,8 @@ func TestProjectService_ListProjects_FiltersArchivedProjects(t *testing.T) {
 	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
 
 	items, page, err := svc.ListProjects(ctx, pagination.QueryParams{
-		PaginationParams: pagination.PaginationParams{Limit: -1},
-		SortParams:       pagination.SortParams{Sort: "name", Order: pagination.SortAsc},
+		Params:     pagination.Params{Limit: -1},
+		SortParams: pagination.SortParams{Sort: "name", Order: pagination.SortAsc},
 	})
 	require.NoError(t, err)
 	require.EqualValues(t, 1, page.TotalItems)
@@ -2590,9 +2590,9 @@ func TestProjectService_ListProjects_FiltersArchivedProjects(t *testing.T) {
 	assert.Equal(t, "active-demo", items[0].Name)
 
 	items, page, err = svc.ListProjects(ctx, pagination.QueryParams{
-		Filters:          map[string]string{"archived": "true"},
-		PaginationParams: pagination.PaginationParams{Limit: -1},
-		SortParams:       pagination.SortParams{Sort: "name", Order: pagination.SortAsc},
+		Filters:    map[string]string{"archived": "true"},
+		Params:     pagination.Params{Limit: -1},
+		SortParams: pagination.SortParams{Sort: "name", Order: pagination.SortAsc},
 	})
 	require.NoError(t, err)
 	require.EqualValues(t, 1, page.TotalItems)
@@ -2601,9 +2601,9 @@ func TestProjectService_ListProjects_FiltersArchivedProjects(t *testing.T) {
 	assert.True(t, items[0].IsArchived)
 
 	items, page, err = svc.ListProjects(ctx, pagination.QueryParams{
-		Filters:          map[string]string{"archived": "all"},
-		PaginationParams: pagination.PaginationParams{Limit: -1},
-		SortParams:       pagination.SortParams{Sort: "name", Order: pagination.SortAsc},
+		Filters:    map[string]string{"archived": "all"},
+		Params:     pagination.Params{Limit: -1},
+		SortParams: pagination.SortParams{Sort: "name", Order: pagination.SortAsc},
 	})
 	require.NoError(t, err)
 	require.EqualValues(t, 2, page.TotalItems)
@@ -2800,8 +2800,8 @@ func TestProjectService_ListProjects_WithDerivedStatusFilter_AllowsAllPageSizeSe
 		Filters: map[string]string{
 			"status": string(models.ProjectStatusStopped),
 		},
-		PaginationParams: pagination.PaginationParams{Limit: -1},
-		SortParams:       pagination.SortParams{Sort: "name", Order: pagination.SortAsc},
+		Params:     pagination.Params{Limit: -1},
+		SortParams: pagination.SortParams{Sort: "name", Order: pagination.SortAsc},
 	})
 	require.NoError(t, err)
 	assert.EqualValues(t, 25, page.TotalItems)
@@ -2881,7 +2881,6 @@ func TestProjectService_PrepareServiceBuildRequest_MapsComposeFields(t *testing.
 		"web",
 		serviceCfg,
 		ProjectBuildOptions{},
-		nil,
 	)
 	require.NoError(t, err)
 
@@ -2916,7 +2915,6 @@ func TestProjectService_PrepareServiceBuildRequest_MapsComposeFields(t *testing.
 func TestProjectService_PrepareServiceBuildRequest_KeepsContainerPaths(t *testing.T) {
 	svc := &ProjectService{}
 	proj := &composetypes.Project{WorkingDir: "/app/data/projects/demo", Name: "demo"}
-	pm := projects.NewPathMapper("/app/data/projects", "/docker-data/arcane/projects")
 
 	serviceCfg := composetypes.ServiceConfig{
 		Name:  "web",
@@ -2934,7 +2932,6 @@ func TestProjectService_PrepareServiceBuildRequest_KeepsContainerPaths(t *testin
 		"web",
 		serviceCfg,
 		ProjectBuildOptions{},
-		pm,
 	)
 	require.NoError(t, err)
 
@@ -2951,7 +2948,6 @@ func TestProjectService_PrepareServiceBuildRequest_KeepsContainerPaths(t *testin
 func TestProjectService_PrepareServiceBuildRequest_BuildDotKeepsContainerPath(t *testing.T) {
 	svc := &ProjectService{}
 	proj := &composetypes.Project{WorkingDir: "/app/data/projects/caddy", Name: "caddy"}
-	pm := projects.NewPathMapper("/app/data/projects", "/storage/volumes/arcane/projects")
 
 	serviceCfg := composetypes.ServiceConfig{
 		Name:  "caddy",
@@ -2968,7 +2964,6 @@ func TestProjectService_PrepareServiceBuildRequest_BuildDotKeepsContainerPath(t 
 		"caddy",
 		serviceCfg,
 		ProjectBuildOptions{},
-		pm,
 	)
 	require.NoError(t, err)
 
@@ -2996,7 +2991,6 @@ func TestProjectService_PrepareServiceBuildRequest_UsesInlineDockerfile(t *testi
 		"web",
 		serviceCfg,
 		ProjectBuildOptions{},
-		nil,
 	)
 	require.NoError(t, err)
 
@@ -3064,7 +3058,6 @@ func TestProjectService_PrepareServiceBuildRequest_GeneratedImageProviderGuardra
 		"web",
 		serviceCfg,
 		ProjectBuildOptions{Provider: "depot"},
-		nil,
 	)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "must define an image when using depot")
@@ -3076,7 +3069,6 @@ func TestProjectService_PrepareServiceBuildRequest_GeneratedImageProviderGuardra
 		"web",
 		serviceCfg,
 		ProjectBuildOptions{Provider: "local", Push: new(true)},
-		nil,
 	)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "must define an image when push is enabled")
@@ -3281,8 +3273,8 @@ func TestProjectService_SyncProjectsFromFileSystem_DiscoversNestedProjectsAndRel
 	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
 
 	items, page, err := svc.ListProjects(ctx, pagination.QueryParams{
-		SortParams:       pagination.SortParams{Sort: "path", Order: pagination.SortAsc},
-		PaginationParams: pagination.PaginationParams{Limit: -1},
+		SortParams: pagination.SortParams{Sort: "path", Order: pagination.SortAsc},
+		Params:     pagination.Params{Limit: -1},
 	})
 	require.NoError(t, err)
 	require.EqualValues(t, 2, page.TotalItems)
@@ -3360,8 +3352,8 @@ services:
 	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
 
 	items, page, err := svc.ListProjects(ctx, pagination.QueryParams{
-		SortParams:       pagination.SortParams{Sort: "path", Order: pagination.SortAsc},
-		PaginationParams: pagination.PaginationParams{Limit: -1},
+		SortParams: pagination.SortParams{Sort: "path", Order: pagination.SortAsc},
+		Params:     pagination.Params{Limit: -1},
 	})
 	require.NoError(t, err)
 	require.EqualValues(t, 1, page.TotalItems)
@@ -3527,8 +3519,8 @@ func TestProjectService_SyncProjectsFromFileSystem_DetectsNestedSymlinkedProject
 	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
 
 	items, page, err := svc.ListProjects(ctx, pagination.QueryParams{
-		SortParams:       pagination.SortParams{Sort: "path", Order: pagination.SortAsc},
-		PaginationParams: pagination.PaginationParams{Limit: -1},
+		SortParams: pagination.SortParams{Sort: "path", Order: pagination.SortAsc},
+		Params:     pagination.Params{Limit: -1},
 	})
 	require.NoError(t, err)
 	require.EqualValues(t, 1, page.TotalItems)

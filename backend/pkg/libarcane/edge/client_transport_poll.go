@@ -25,7 +25,7 @@ type pollManagedTunnelSession struct {
 func (c *TunnelClient) connectAndServePoll(ctx context.Context) error {
 	managerBaseURL := strings.TrimRight(strings.TrimSpace(c.cfg.GetManagerBaseURL()), "/")
 	if managerBaseURL == "" {
-		return fmt.Errorf("manager base URL is empty")
+		return errors.New("manager base URL is empty")
 	}
 	httpClient, err := NewManagerHTTPClient(c.cfg, 0)
 	if err != nil {
@@ -202,7 +202,7 @@ func (c *TunnelClient) pollTunnelControlInternal(ctx context.Context, pollURL st
 }
 
 func (c *TunnelClient) startPollManagedSessionInternal(ctx context.Context) *pollManagedTunnelSession {
-	sessionCtx, cancel := context.WithCancel(ctx) //nolint:gosec // helper intentionally returns the cancel func via the managed session.
+	sessionCtx, cancel := context.WithCancel(ctx)
 	done := make(chan error, 1)
 
 	go func() {
@@ -228,7 +228,7 @@ func (c *TunnelClient) stopPollManagedSessionInternal(ctx context.Context, sessi
 		return err
 	case <-ctx.Done():
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return fmt.Errorf("timed out waiting for poll-managed websocket session to stop")
+			return errors.New("timed out waiting for poll-managed websocket session to stop")
 		}
 		return ctx.Err()
 	}

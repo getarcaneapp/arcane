@@ -3,6 +3,7 @@ package notifications
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 
 	"github.com/getarcaneapp/arcane/cli/internal/client"
 	"github.com/getarcaneapp/arcane/cli/internal/cmdutil"
@@ -64,9 +65,9 @@ var settingsGetCmd = &cobra.Command{
 		rows := make([][]string, len(result))
 		for i, setting := range result {
 			rows[i] = []string{
-				fmt.Sprintf("%d", setting.ID),
+				strconv.FormatUint(uint64(setting.ID), 10),
 				string(setting.Provider),
-				fmt.Sprintf("%t", setting.Enabled),
+				strconv.FormatBool(setting.Enabled),
 			}
 		}
 

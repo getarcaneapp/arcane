@@ -1,7 +1,7 @@
 package types
 
 import (
-	"fmt"
+	"errors"
 	"maps"
 	"strings"
 )
@@ -81,11 +81,11 @@ type Config struct {
 	// ServerURL is the base URL of the Arcane server (e.g., http://localhost:3552)
 	ServerURL string `yaml:"server_url" mapstructure:"server_url"`
 	// APIKey is the API key for authentication (sent as X-API-KEY)
-	APIKey string `yaml:"api_key,omitempty" mapstructure:"api_key"` //nolint:gosec // persisted config schema requires this field name
+	APIKey string `yaml:"api_key,omitempty" mapstructure:"api_key"`
 	// JWTToken is the JWT access token for authentication (sent as Authorization: Bearer)
-	JWTToken string `yaml:"jwt_token,omitempty" mapstructure:"jwt_token"` //nolint:gosec // persisted config schema requires this field name
+	JWTToken string `yaml:"jwt_token,omitempty" mapstructure:"jwt_token"`
 	// RefreshToken is the refresh token for obtaining new access tokens
-	RefreshToken string `yaml:"refresh_token,omitempty" mapstructure:"refresh_token"` //nolint:gosec // persisted config schema requires this field name
+	RefreshToken string `yaml:"refresh_token,omitempty" mapstructure:"refresh_token"`
 	// DefaultEnvironment is the default environment ID to use
 	DefaultEnvironment string `yaml:"default_environment,omitempty" mapstructure:"default_environment"`
 	// FederatedAudience is the default token audience for `arcane-cli auth federated`
@@ -107,7 +107,7 @@ func (c *Config) HasAuth() bool {
 // This is useful for commands like `auth login` that do not require prior authentication.
 func (c *Config) ValidateServerURL() error {
 	if c.ServerURL == "" {
-		return fmt.Errorf("server_url is not configured. Run: arcane config set --server-url <url>")
+		return errors.New("server_url is not configured. Run: arcane config set --server-url <url>")
 	}
 	return nil
 }
@@ -120,7 +120,7 @@ func (c *Config) Validate() error {
 		return err
 	}
 	if !c.HasAuth() {
-		return fmt.Errorf("authentication is not configured. Run: arcane config set --api-key <key> OR arcane auth login")
+		return errors.New("authentication is not configured. Run: arcane config set --api-key <key> OR arcane auth login")
 	}
 	return nil
 }

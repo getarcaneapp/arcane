@@ -354,11 +354,11 @@ func NewServiceSummary(service swarm.Service, nodeNames []string, networkNameByI
 		image = spec.TaskTemplate.ContainerSpec.Image
 	}
 
-	ports := make([]ServicePort, 0)
 	portSpecs := service.Endpoint.Spec.Ports
 	if len(portSpecs) == 0 {
 		portSpecs = service.Endpoint.Ports
 	}
+	ports := make([]ServicePort, 0, len(portSpecs))
 	for _, port := range portSpecs {
 		ports = append(ports, ServicePort{
 			Protocol:      string(port.Protocol),

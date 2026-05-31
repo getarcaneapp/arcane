@@ -86,7 +86,7 @@ func (c *Client) getAuth(config AuthConfig) (transport.AuthMethod, error) {
 
 			return publicKeys, nil
 		}
-		return nil, fmt.Errorf("ssh key required for ssh authentication")
+		return nil, errors.New("ssh key required for ssh authentication")
 	case "none":
 		return nil, nil
 	default:
@@ -410,7 +410,7 @@ func ValidatePath(repoPath, requestedPath string) error {
 		return fmt.Errorf("invalid path: %w", err)
 	}
 	if strings.HasPrefix(rel, "..") || strings.Contains(rel, string(filepath.Separator)+".."+string(filepath.Separator)) {
-		return fmt.Errorf("path traversal attempt detected")
+		return errors.New("path traversal attempt detected")
 	}
 
 	return nil
@@ -435,7 +435,7 @@ func (c *Client) BrowseTree(ctx context.Context, repoPath, targetPath string) ([
 	}
 
 	if !info.IsDir() {
-		return nil, fmt.Errorf("path is not a directory")
+		return nil, errors.New("path is not a directory")
 	}
 
 	entries, err := os.ReadDir(fullPath)
@@ -604,7 +604,7 @@ func (c *Client) WalkDirectory(ctx context.Context, repoPath, composePath string
 
 	// Validate we found at least one file
 	if len(result.Files) == 0 {
-		return nil, fmt.Errorf("no files found in sync directory (directory may be empty or all files were skipped)")
+		return nil, errors.New("no files found in sync directory (directory may be empty or all files were skipped)")
 	}
 
 	return result, nil

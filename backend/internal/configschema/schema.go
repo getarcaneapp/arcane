@@ -3,6 +3,7 @@ package configschema
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/format"
@@ -443,7 +444,7 @@ func resolveSourceRootInternal(sourceRoot string) (string, error) {
 		return "", fmt.Errorf("resolve source root from %q: expected backend/internal/config/config.go", sourceRoot)
 	}
 
-	return "", fmt.Errorf("resolve source root: run from the repository root/backend directory or pass --source-root")
+	return "", errors.New("resolve source root: run from the repository root/backend directory or pass --source-root")
 }
 
 func resolveSourceRootCandidateInternal(candidate string) (string, error) {

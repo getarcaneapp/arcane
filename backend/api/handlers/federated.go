@@ -193,7 +193,7 @@ func (h *FederatedCredentialHandler) ListFederatedCredentials(ctx context.Contex
 			Sort:  input.Sort,
 			Order: pagination.SortOrder(input.Order),
 		},
-		PaginationParams: pagination.PaginationParams{
+		Params: pagination.Params{
 			Start: input.Start,
 			Limit: input.Limit,
 		},

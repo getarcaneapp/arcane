@@ -73,13 +73,13 @@ type stagedDirectorySync struct {
 
 func validateSyncLimits(maxFiles *int, maxTotalSize, maxBinarySize *int64) error {
 	if maxFiles != nil && *maxFiles < 0 {
-		return fmt.Errorf("maxSyncFiles must be non-negative")
+		return errors.New("maxSyncFiles must be non-negative")
 	}
 	if maxTotalSize != nil && *maxTotalSize < 0 {
-		return fmt.Errorf("maxSyncTotalSize must be non-negative")
+		return errors.New("maxSyncTotalSize must be non-negative")
 	}
 	if maxBinarySize != nil && *maxBinarySize < 0 {
-		return fmt.Errorf("maxSyncBinarySize must be non-negative")
+		return errors.New("maxSyncBinarySize must be non-negative")
 	}
 	return nil
 }
@@ -214,7 +214,7 @@ func (s *GitOpsSyncService) GetSyncByID(ctx context.Context, environmentID, id s
 	if err := q.First(&sync).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			slog.WarnContext(ctx, "GitOps sync not found", "syncID", id, "environmentID", environmentID)
-			return nil, fmt.Errorf("sync not found")
+			return nil, errors.New("sync not found")
 		}
 		slog.ErrorContext(ctx, "Failed to get GitOps sync", "syncID", id, "environmentID", environmentID, "error", err)
 		return nil, fmt.Errorf("failed to get sync: %w", err)
@@ -280,7 +280,7 @@ func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string
 		sync.MaxSyncBinarySize = *req.MaxSyncBinarySize
 	}
 
-	if err := s.db.WithContext(ctx).Select("*").Omit("Environment", "Repository", "Project").Create(&sync).Error; err != nil {
+	if err := s.db.WithContext(ctx).Omit("Environment", "Repository", "Project").Create(&sync).Error; err != nil {
 		slog.ErrorContext(ctx, "Failed to create GitOps sync in database", "name", req.Name, "repositoryID", req.RepositoryID, "environmentID", environmentID, "error", err)
 		return nil, fmt.Errorf("failed to create sync: %w", err)
 	}
@@ -488,8 +488,8 @@ func (s *GitOpsSyncService) prepareSyncSource(ctx context.Context, sync *models.
 	}
 
 	if !s.repoService.gitClient.FileExists(ctx, repoPath, sync.ComposePath) {
-		errMsg := fmt.Sprintf("compose file not found: %s", sync.ComposePath)
-		return &preparedSyncSource{repoPath: repoPath, commitHash: commitHash}, s.failSync(ctx, sync.ID, result, sync, actor, fmt.Sprintf("Compose file not found at %s", sync.ComposePath), errMsg)
+		errMsg := "compose file not found: " + sync.ComposePath
+		return &preparedSyncSource{repoPath: repoPath, commitHash: commitHash}, s.failSync(ctx, sync.ID, result, sync, actor, "Compose file not found at "+sync.ComposePath, errMsg)
 	}
 
 	composeContent, err := s.repoService.gitClient.ReadFile(ctx, repoPath, sync.ComposePath)
@@ -521,7 +521,7 @@ func (s *GitOpsSyncService) prepareSyncSource(ctx context.Context, sync *models.
 func (s *GitOpsSyncService) performDirectorySync(ctx context.Context, sync *models.GitOpsSync, id string, actor models.User, result *gitops.SyncResult, source *preparedSyncSource) (*gitops.SyncResult, error) {
 	slog.InfoContext(ctx, "Using directory sync mode", "syncId", id, "composePath", sync.ComposePath)
 
-	_, syncFiles, err := s.walkAndParseSyncDirectory(ctx, sync, source.repoPath)
+	syncFiles, err := s.walkAndParseSyncDirectory(ctx, sync, source.repoPath)
 	if err != nil {
 		return result, s.failSync(ctx, id, result, sync, actor, "Failed to walk directory", err.Error())
 	}
@@ -578,7 +578,7 @@ func (s *GitOpsSyncService) performSwarmStackSyncInternal(ctx context.Context, s
 
 	var syncFiles []projects.SyncFile
 	if sync.SyncDirectory {
-		_, files, err := s.walkAndParseSyncDirectory(ctx, sync, source.repoPath)
+		files, err := s.walkAndParseSyncDirectory(ctx, sync, source.repoPath)
 		if err != nil {
 			return result, s.failSync(ctx, id, result, sync, actor, "Failed to walk directory", err.Error())
 		}
@@ -789,7 +789,7 @@ func (s *GitOpsSyncService) BrowseFiles(ctx context.Context, environmentID, id s
 
 	repository := sync.Repository
 	if repository == nil {
-		return nil, fmt.Errorf("repository not found")
+		return nil, errors.New("repository not found")
 	}
 
 	authConfig, err := s.repoService.GetAuthConfig(browseCtx, repository)
@@ -1001,8 +1001,8 @@ func marshalSyncedFiles(files []string) *string {
 }
 
 // walkAndParseSyncDirectory walks the repository directory and returns all files with their contents.
-// Returns the compose file content, the list of SyncFile entries, and an error if any.
-func (s *GitOpsSyncService) walkAndParseSyncDirectory(ctx context.Context, sync *models.GitOpsSync, repoPath string) (string, []projects.SyncFile, error) {
+// Returns the list of SyncFile entries and an error if any; it fails if the compose file is missing.
+func (s *GitOpsSyncService) walkAndParseSyncDirectory(ctx context.Context, sync *models.GitOpsSync, repoPath string) ([]projects.SyncFile, error) {
 	slog.InfoContext(ctx, "Starting directory walk", "syncId", sync.ID, "composePath", sync.ComposePath)
 
 	// Walk the directory to get all files
@@ -1010,7 +1010,7 @@ func (s *GitOpsSyncService) walkAndParseSyncDirectory(ctx context.Context, sync 
 
 	walkResult, err := s.repoService.gitClient.WalkDirectory(ctx, repoPath, sync.ComposePath, maxFiles, maxTotalSize, maxBinarySize)
 	if err != nil {
-		return "", nil, fmt.Errorf("failed to walk directory: %w", err)
+		return nil, fmt.Errorf("failed to walk directory: %w", err)
 	}
 
 	slog.InfoContext(ctx, "Directory walk complete",
@@ -1022,7 +1022,7 @@ func (s *GitOpsSyncService) walkAndParseSyncDirectory(ctx context.Context, sync 
 	// WalkDirectory roots the walk at filepath.Dir(sync.ComposePath), so the
 	// compose file is always emitted at the top level as filepath.Base(sync.ComposePath).
 	composeFileName := filepath.Base(sync.ComposePath)
-	var composeContent string
+	composeFound := false
 
 	// Convert walked files to SyncFile format
 	syncFiles := make([]projects.SyncFile, len(walkResult.Files))
@@ -1032,15 +1032,15 @@ func (s *GitOpsSyncService) walkAndParseSyncDirectory(ctx context.Context, sync 
 			Content:      f.Content,
 		}
 		if f.RelativePath == composeFileName {
-			composeContent = string(f.Content)
+			composeFound = true
 		}
 	}
 
-	if composeContent == "" {
-		return "", nil, fmt.Errorf("compose file %s not found in walked directory", composeFileName)
+	if !composeFound {
+		return nil, fmt.Errorf("compose file %s not found in walked directory", composeFileName)
 	}
 
-	return composeContent, syncFiles, nil
+	return syncFiles, nil
 }
 
 // syncProjectDirectoryInternal runs the new directory-sync path end to end:
@@ -1505,10 +1505,7 @@ func (s *GitOpsSyncService) validateDirectorySyncStageInternal(ctx context.Conte
 		return 0, err
 	}
 
-	pathMapper, pmErr := s.projectService.getPathMapper(ctx)
-	if pmErr != nil {
-		slog.WarnContext(ctx, "failed to create path mapper for directory sync validation, continuing without translation", "error", pmErr)
-	}
+	pathMapper := s.projectService.getPathMapper(ctx)
 
 	autoInjectEnv := s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false)
 	project, err := projects.LoadComposeProjectLenient(

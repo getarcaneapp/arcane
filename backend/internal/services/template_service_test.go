@@ -355,8 +355,8 @@ func TestGetAllTemplatesPaginated_FiltersByType(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			templates, _, err := service.GetAllTemplatesPaginated(context.Background(), pagination.QueryParams{
-				PaginationParams: pagination.PaginationParams{Start: 0, Limit: 20},
-				Filters:          map[string]string{"type": tt.typeFilter},
+				Params:  pagination.Params{Start: 0, Limit: 20},
+				Filters: map[string]string{"type": tt.typeFilter},
 			})
 			require.NoError(t, err)
 			require.ElementsMatch(t, tt.wantIDs, templateIDsInternal(templates))

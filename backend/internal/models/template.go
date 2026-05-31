@@ -2,6 +2,7 @@ package models
 
 type TemplateRegistry struct {
 	BaseModel
+
 	Name        string `json:"name"`
 	URL         string `json:"url"`
 	Enabled     bool   `json:"enabled"`
@@ -10,6 +11,7 @@ type TemplateRegistry struct {
 
 type ComposeTemplate struct {
 	BaseModel
+
 	Name        string                   `json:"name"`
 	Description string                   `json:"description"`
 	Content     string                   `json:"content" gorm:"type:text"`

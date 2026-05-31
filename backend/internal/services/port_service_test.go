@@ -53,7 +53,7 @@ func TestPortService_ListPortsPaginated_FlattensPublishedAndExposedPorts(t *test
 	}))
 
 	items, page, err := svc.ListPortsPaginated(context.Background(), pagination.QueryParams{
-		PaginationParams: pagination.PaginationParams{Limit: 20},
+		Params: pagination.Params{Limit: 20},
 	})
 	require.NoError(t, err)
 	require.Len(t, items, 3)
@@ -107,7 +107,7 @@ func TestPortService_ListPortsPaginated_SortsByHostPortWithUnpublishedLast(t *te
 			Sort:  "hostPort",
 			Order: pagination.SortAsc,
 		},
-		PaginationParams: pagination.PaginationParams{Limit: 20},
+		Params: pagination.Params{Limit: 20},
 	})
 	require.NoError(t, err)
 	require.Len(t, items, 3)
@@ -154,7 +154,7 @@ func TestPortService_ListPortsPaginated_SortsByHostPortDescWithUnpublishedLast(t
 			Sort:  "hostPort",
 			Order: pagination.SortDesc,
 		},
-		PaginationParams: pagination.PaginationParams{Limit: 20},
+		Params: pagination.Params{Limit: 20},
 	})
 	require.NoError(t, err)
 	require.Len(t, items, 3)
@@ -201,7 +201,7 @@ func TestPortService_ListPortsPaginated_SortsByHostIPDescWithUnpublishedLast(t *
 			Sort:  "hostIp",
 			Order: pagination.SortDesc,
 		},
-		PaginationParams: pagination.PaginationParams{Limit: 20},
+		Params: pagination.Params{Limit: 20},
 	})
 	require.NoError(t, err)
 	require.Len(t, items, 3)
