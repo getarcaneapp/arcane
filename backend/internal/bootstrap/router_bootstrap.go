@@ -4,8 +4,6 @@ import (
 	"context"
 	"log/slog"
 	"net"
-	"net/http"
-	"net/http/pprof"
 	"path"
 	"strings"
 
@@ -18,6 +16,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/api/ws"
 	"github.com/getarcaneapp/arcane/backend/frontend"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
+	"github.com/getarcaneapp/arcane/backend/internal/di"
 	"github.com/getarcaneapp/arcane/backend/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils/cookie"
@@ -25,8 +24,8 @@ import (
 )
 
 var (
-	registerPlaywrightRoutes []func(apiGroup *echo.Group, services *Services)
-	registerBuildableRoutes  []func(apiGroup *echo.Group, services *Services)
+	registerPlaywrightRoutes []func(apiGroup *echo.Group, services *di.Services)
+	registerBuildableRoutes  []func(apiGroup *echo.Group, services *di.Services)
 )
 
 var loggerSkipPatterns = []string{
@@ -83,7 +82,7 @@ func requestLoggerMiddlewareInternal() echo.MiddlewareFunc {
 	}
 }
 
-func createAuthValidatorInternal(appServices *Services) middleware.AuthValidator {
+func createAuthValidatorInternal(appServices *di.Services) middleware.AuthValidator {
 	return func(ctx context.Context, c echo.Context) bool {
 		req := c.Request()
 		// Check for API key authentication
@@ -117,7 +116,7 @@ func createAuthValidatorInternal(appServices *Services) middleware.AuthValidator
 	}
 }
 
-func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services) (*echo.Echo, *edge.TunnelServer) {
+func setupRouter(ctx context.Context, cfg *config.Config, appServices *di.Services) (*echo.Echo, *edge.TunnelServer) {
 	e := echo.New()
 	e.HideBanner = true
 	e.HidePort = true
@@ -140,10 +139,7 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services)
 	e.Use(requestLoggerMiddlewareInternal())                       //nolint:contextcheck
 	e.Use(secureCookieContextMiddlewareInternal(trustedProxyNets)) //nolint:contextcheck
 
-	authMiddleware := middleware.NewAuthMiddleware(appServices.Auth, cfg).
-		WithApiKeyValidator(appServices.ApiKey).
-		WithEnvironmentAccessTokenResolver(appServices.Environment).
-		WithPermissionResolver(appServices.Role)
+	authMiddleware := appServices.AuthMiddleware
 	e.Use(middleware.NewCORSMiddleware(cfg).Add())
 
 	apiGroup := e.Group("/api")
@@ -186,59 +182,14 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *Services)
 	)
 	apiGroup.Use(envProxyMiddleware)
 
-	humaServices := &api.Services{
-		AppContext:        ctx,
-		User:              appServices.User,
-		Auth:              appServices.Auth,
-		Oidc:              appServices.Oidc,
-		ApiKey:            appServices.ApiKey,
-		Federated:         appServices.Federated,
-		AppImages:         appServices.AppImages,
-		Project:           appServices.Project,
-		Event:             appServices.Event,
-		Activity:          appServices.Activity,
-		Version:           appServices.Version,
-		Environment:       appServices.Environment,
-		Settings:          appServices.Settings,
-		JobSchedule:       appServices.JobSchedule,
-		SettingsSearch:    appServices.SettingsSearch,
-		ContainerRegistry: appServices.ContainerRegistry,
-		Template:          appServices.Template,
-		Docker:            appServices.Docker,
-		Image:             appServices.Image,
-		ImageUpdate:       appServices.ImageUpdate,
-		Build:             appServices.Build,
-		BuildWorkspace:    appServices.BuildWorkspace,
-		Volume:            appServices.Volume,
-		Container:         appServices.Container,
-		Network:           appServices.Network,
-		Port:              appServices.Port,
-		Swarm:             appServices.Swarm,
-		Notification:      appServices.Notification,
-		Updater:           appServices.Updater,
-		CustomizeSearch:   appServices.CustomizeSearch,
-		System:            appServices.System,
-		SystemUpgrade:     appServices.SystemUpgrade,
-		GitRepository:     appServices.GitRepository,
-		GitOpsSync:        appServices.GitOpsSync,
-		Webhook:           appServices.Webhook,
-		Vulnerability:     appServices.Vulnerability,
-		Dashboard:         appServices.Dashboard,
-		Role:              appServices.Role,
-		Config:            cfg,
-	}
-
-	_ = api.SetupAPI(e, apiGroup, cfg, humaServices) //nolint:contextcheck // app lifecycle context is carried in humaServices for detached activity work.
+	_ = api.SetupAPI(e, apiGroup, handlerAppCtx, cfg, appServices) //nolint:contextcheck // app lifecycle context is intentionally wrapped for detached activity work.
 
 	for _, register := range registerBuildableRoutes {
 		register(apiGroup, appServices)
 	}
 
-	api.RegisterDiagnosticsRoutes(apiGroup, authMiddleware, ws.DefaultWebSocketMetrics()) //nolint:contextcheck
-	registerPprofRoutesInternal(apiGroup, authMiddleware)                                 //nolint:contextcheck
-
 	// Remaining echo handlers (WebSocket/streaming)
-	ws.NewWebSocketHandler(apiGroup, appServices.Project, appServices.Container, appServices.Swarm, appServices.System, authMiddleware, cfg) //nolint:contextcheck
+	ws.NewWebSocketHandler(apiGroup, appServices.Project, appServices.Container, appServices.Swarm, appServices.System, appServices.Diagnostics, authMiddleware, cfg) //nolint:contextcheck
 
 	// Register edge tunnel endpoint for manager to accept agent connections
 	// This is only registered when NOT in agent mode (i.e., running as manager)
@@ -323,16 +274,4 @@ func remoteAddrInTrustedProxiesInternal(remoteAddr string, nets []*net.IPNet) bo
 		}
 	}
 	return false
-}
-
-func registerPprofRoutesInternal(apiGroup *echo.Group, authMiddleware *middleware.AuthMiddleware) {
-	pprofGroup := apiGroup.Group("/debug/pprof", authMiddleware.WithAdminRequired().Add())
-	pprofGroup.GET("", echo.WrapHandler(http.HandlerFunc(pprof.Index)))
-	pprofGroup.GET("/", echo.WrapHandler(http.HandlerFunc(pprof.Index)))
-	pprofGroup.GET("/cmdline", echo.WrapHandler(http.HandlerFunc(pprof.Cmdline)))
-	pprofGroup.GET("/profile", echo.WrapHandler(http.HandlerFunc(pprof.Profile)))
-	pprofGroup.POST("/symbol", echo.WrapHandler(http.HandlerFunc(pprof.Symbol)))
-	pprofGroup.GET("/symbol", echo.WrapHandler(http.HandlerFunc(pprof.Symbol)))
-	pprofGroup.GET("/trace", echo.WrapHandler(http.HandlerFunc(pprof.Trace)))
-	pprofGroup.GET("/:name", echo.WrapHandler(http.HandlerFunc(pprof.Index)))
 }

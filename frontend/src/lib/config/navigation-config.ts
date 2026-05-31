@@ -296,6 +296,13 @@ export const navigationItems: NavigationSections = {
 					icon: ShieldAlertIcon,
 					scope: 'global',
 					requiredPermission: ['roles:read', 'roles:list']
+				},
+				{
+					title: m.diagnostics_title(),
+					url: '/settings/diagnostics',
+					icon: ActivityIcon,
+					scope: 'global',
+					requiredPermission: 'diagnostics:read'
 				}
 			]
 		}

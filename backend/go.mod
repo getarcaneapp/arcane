@@ -31,6 +31,7 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/google/uuid v1.6.0
+	github.com/google/wire v0.7.0
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
 	github.com/hashicorp/go-uuid v1.0.3
 	github.com/jinzhu/copier v0.4.0
@@ -128,6 +129,7 @@ require (
 	github.com/google/go-github/v39 v39.2.0 // indirect
 	github.com/google/go-querystring v1.2.0 // indirect
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
+	github.com/google/subcommands v1.2.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
@@ -219,6 +221,7 @@ require (
 	go.yaml.in/yaml/v4 v4.0.0-rc.4 // indirect
 	golang.org/x/sys v0.45.0 // indirect
 	golang.org/x/term v0.43.0 // indirect
+	golang.org/x/tools v0.45.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260511170946-3700d4141b60 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260511170946-3700d4141b60 // indirect
 	gopkg.in/ini.v1 v1.67.2 // indirect
@@ -231,3 +234,5 @@ require (
 	modernc.org/sqlite v1.50.1 // indirect
 	tags.cncf.io/container-device-interface v1.1.0 // indirect
 )
+
+tool github.com/google/wire/cmd/wire

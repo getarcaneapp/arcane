@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/internal/config"
+	"github.com/getarcaneapp/arcane/backend/internal/di"
+	"github.com/getarcaneapp/arcane/backend/internal/middleware"
 	libcrypto "github.com/getarcaneapp/arcane/backend/pkg/libarcane/crypto"
 	tunnelpb "github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge/proto/tunnel/v1"
 	"github.com/stretchr/testify/assert"
@@ -149,10 +151,13 @@ func TestConfigureHTTPProtocolsInternal(t *testing.T) {
 }
 
 func TestHTTP2APIResponsesDoNotUseAPIGzipInternal(t *testing.T) {
-	router, _ := setupRouter(context.Background(), &config.Config{
+	cfg := &config.Config{
 		AppUrl:      "http://localhost:3552",
 		Environment: config.AppEnvironmentTest,
-	}, &Services{})
+	}
+	router, _ := setupRouter(context.Background(), cfg, &di.Services{
+		AuthMiddleware: middleware.NewAuthMiddleware(nil, cfg),
+	})
 	handler, protocols := configureHTTPProtocolsInternal(false, router)
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
