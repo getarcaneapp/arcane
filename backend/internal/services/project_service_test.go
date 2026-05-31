@@ -895,6 +895,122 @@ func TestProjectService_ComposePullSelectedServicesInternal_LeavesRecordsWhenPul
 	assert.Zero(t, count)
 }
 
+func TestProjectService_UpdateProjectServicesHardFailsWhenPullFailsInternal(t *testing.T) {
+	ctx := context.Background()
+	db := setupProjectTestDB(t)
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
+
+	projectPath := createComposeProjectDir(t, projectsDir, "compose-update-pull-fail")
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("services:\n  app:\n    image: registry.example.com/team/app:9.9.9\n"), 0o644))
+
+	projectRecord := &models.Project{
+		BaseModel: models.BaseModel{ID: "project-update-pull-fail"},
+		Name:      "compose-update-pull-fail",
+		DirName:   ptr("compose-update-pull-fail"),
+		Path:      projectPath,
+		Status:    models.ProjectStatusRunning,
+	}
+	require.NoError(t, db.Create(projectRecord).Error)
+	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+		ID:             "sha256:selected-old",
+		Repository:     "registry.example.com/team/app",
+		Tag:            "9.9.9",
+		HasUpdate:      true,
+		UpdateType:     models.UpdateTypeDigest,
+		CurrentVersion: "9.9.9",
+		CheckTime:      time.Now().UTC().Add(-time.Hour),
+	}).Error)
+
+	originalComposePull := composePullProjectServicesInternal
+	originalComposeUp := composeUpProjectServicesInternal
+	t.Cleanup(func() {
+		composePullProjectServicesInternal = originalComposePull
+		composeUpProjectServicesInternal = originalComposeUp
+	})
+
+	composePullProjectServicesInternal = func(context.Context, *composetypes.Project, []string) error {
+		return errors.New("compose pull failed")
+	}
+	upCalled := false
+	composeUpProjectServicesInternal = func(context.Context, *composetypes.Project, []string, bool, bool) error {
+		upCalled = true
+		return errors.New("compose up should not run")
+	}
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
+	err = svc.UpdateProjectServices(ctx, projectRecord.ID, []string{"app"}, systemUser)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "pull updated service images")
+	assert.False(t, upCalled, "compose up must not run after a pull failure")
+
+	var persistedProject models.Project
+	require.NoError(t, db.WithContext(ctx).Where("id = ?", projectRecord.ID).First(&persistedProject).Error)
+	assert.Equal(t, models.ProjectStatusRunning, persistedProject.Status)
+
+	var persistedRecord models.ImageUpdateRecord
+	require.NoError(t, db.WithContext(ctx).Where("id = ?", "sha256:selected-old").First(&persistedRecord).Error)
+	assert.True(t, persistedRecord.HasUpdate)
+}
+
+func TestProjectService_UpdateProjectServicesForcesRecreateInternal(t *testing.T) {
+	ctx := context.Background()
+	db := setupProjectTestDB(t)
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
+
+	projectPath := createComposeProjectDir(t, projectsDir, "compose-update-force")
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("services:\n  app:\n    image: registry.example.com/team/app:9.9.9\n"), 0o644))
+
+	projectRecord := &models.Project{
+		BaseModel: models.BaseModel{ID: "project-update-force"},
+		Name:      "compose-update-force",
+		DirName:   ptr("compose-update-force"),
+		Path:      projectPath,
+		Status:    models.ProjectStatusRunning,
+	}
+	require.NoError(t, db.Create(projectRecord).Error)
+
+	originalComposePull := composePullProjectServicesInternal
+	originalComposeStop := composeStopProjectServicesInternal
+	originalComposeUp := composeUpProjectServicesInternal
+	t.Cleanup(func() {
+		composePullProjectServicesInternal = originalComposePull
+		composeStopProjectServicesInternal = originalComposeStop
+		composeUpProjectServicesInternal = originalComposeUp
+	})
+
+	composePullProjectServicesInternal = func(context.Context, *composetypes.Project, []string) error {
+		return nil
+	}
+	composeStopProjectServicesInternal = func(context.Context, *composetypes.Project, []string) error {
+		return nil
+	}
+	upCalled := false
+	forceRecreate := false
+	composeUpProjectServicesInternal = func(_ context.Context, _ *composetypes.Project, services []string, removeOrphans bool, force bool) error {
+		upCalled = true
+		forceRecreate = force
+		assert.Equal(t, []string{"app"}, services)
+		assert.False(t, removeOrphans)
+		return errors.New("compose up failed after assertion")
+	}
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
+	err = svc.UpdateProjectServices(ctx, projectRecord.ID, []string{"app"}, systemUser)
+	require.Error(t, err)
+	assert.True(t, upCalled)
+	assert.True(t, forceRecreate, "service updates must force recreate after pulling the updated image")
+}
+
 func TestProjectService_UpdateProject_RenamesDirectoryWhenNameChanges(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
