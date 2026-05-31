@@ -25,6 +25,11 @@ func TestResolveEdgeCommandName(t *testing.T) {
 		{name: "project logs stream", method: "GET", path: "/api/environments/0/ws/projects/p1/logs", stream: true, command: "project.logs.stream", shouldHit: true},
 		{name: "project updates", method: "GET", path: "/api/environments/0/projects/p1/updates", command: "project.updates", shouldHit: true},
 		{name: "project archive", method: "POST", path: "/api/environments/0/projects/p1/archive", command: "project.archive", shouldHit: true},
+		{name: "activity list", method: "GET", path: "/api/environments/0/activities?limit=50", command: "activity.list", shouldHit: true},
+		{name: "activity inspect", method: "GET", path: "/api/environments/0/activities/activity-1", command: "activity.inspect", shouldHit: true},
+		{name: "activity cancel", method: "POST", path: "/api/environments/0/activities/activity-1/cancel", command: "activity.cancel", shouldHit: true},
+		{name: "activity history clear", method: "DELETE", path: "/api/environments/0/activities/history", command: "activity.history.clear", shouldHit: true},
+		{name: "activity stream remains manager local", method: "GET", path: "/api/environments/0/activities/stream?limit=50", shouldHit: false},
 		{name: "health", method: "HEAD", path: "/api/environments/0/system/health", command: "system.health", shouldHit: true},
 		{name: "unknown", method: "PATCH", path: "/api/environments/0/containers", shouldHit: false},
 	}
