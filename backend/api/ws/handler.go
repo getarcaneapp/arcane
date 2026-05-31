@@ -134,11 +134,6 @@ func (m *WebSocketMetrics) applyDelta(kind string, delta int64) {
 
 var defaultWebSocketMetrics = NewWebSocketMetrics()
 
-// DefaultWebSocketMetrics returns the package-level WebSocketMetrics singleton.
-func DefaultWebSocketMetrics() *WebSocketMetrics {
-	return defaultWebSocketMetrics
-}
-
 // ============================================================================
 // WebSocket Handler
 // ============================================================================
@@ -146,16 +141,17 @@ func DefaultWebSocketMetrics() *WebSocketMetrics {
 // WebSocketHandler consolidates all WebSocket and streaming endpoints.
 // REST endpoints are handled by Huma handlers.
 type WebSocketHandler struct {
-	projectService    *services.ProjectService
-	containerService  *services.ContainerService
-	swarmService      *services.SwarmService
-	systemService     *services.SystemService
-	wsUpgrader        websocket.Upgrader
-	wsMetrics         *WebSocketMetrics
-	activeConnections sync.Map
-	logStreamsMu      sync.Mutex
-	logStreams        map[string]*wsLogStream
-	cpuCache          struct {
+	projectService     *services.ProjectService
+	containerService   *services.ContainerService
+	swarmService       *services.SwarmService
+	systemService      *services.SystemService
+	diagnosticsService *services.DiagnosticsService
+	wsUpgrader         websocket.Upgrader
+	wsMetrics          *WebSocketMetrics
+	activeConnections  sync.Map
+	logStreamsMu       sync.Mutex
+	logStreams         map[string]*wsLogStream
+	cpuCache           struct {
 		sync.RWMutex
 
 		value     float64
@@ -321,18 +317,20 @@ func NewWebSocketHandler(
 	containerService *services.ContainerService,
 	swarmService *services.SwarmService,
 	systemService *services.SystemService,
+	diagnosticsService *services.DiagnosticsService,
 	authMiddleware *middleware.AuthMiddleware,
 	cfg *config.Config,
 ) {
 	handler := &WebSocketHandler{
-		projectService:   projectService,
-		containerService: containerService,
-		swarmService:     swarmService,
-		systemService:    systemService,
-		wsMetrics:        defaultWebSocketMetrics,
-		logStreams:       make(map[string]*wsLogStream),
-		cgroupCache:      system.NewCgroupCache(cgroupCacheTTL),
-		gpuMonitor:       system.NewGPUMonitor(cfg.GPUMonitoringEnabled, cfg.GPUType),
+		projectService:     projectService,
+		containerService:   containerService,
+		swarmService:       swarmService,
+		systemService:      systemService,
+		diagnosticsService: diagnosticsService,
+		wsMetrics:          defaultWebSocketMetrics,
+		logStreams:         make(map[string]*wsLogStream),
+		cgroupCache:        system.NewCgroupCache(cgroupCacheTTL),
+		gpuMonitor:         system.NewGPUMonitor(cfg.GPUMonitoringEnabled, cfg.GPUType),
 		wsUpgrader: websocket.Upgrader{
 			CheckOrigin:       httputil.ValidateWebSocketOrigin(cfg.GetAppURL()),
 			ReadBufferSize:    32 * 1024,
@@ -347,6 +345,7 @@ func NewWebSocketHandler(
 	wsGroup.GET("/containers/:containerId/terminal", handler.ContainerExec, middleware.RequirePermission(authz.PermContainersExec))
 	wsGroup.GET("/swarm/services/:serviceId/logs", handler.ServiceLogs, middleware.RequirePermission(authz.PermSwarmServicesLogs))
 	wsGroup.GET("/system/stats", handler.SystemStats, middleware.RequirePermission(authz.PermSystemRead))
+	handler.registerDiagnosticsRoutesInternal(group, authMiddleware)
 }
 
 // ============================================================================

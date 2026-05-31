@@ -1,4 +1,5 @@
 import type { SystemStats } from '$lib/types/shared';
+import type { Diagnostics, LogEntry } from '$lib/types/diagnostics';
 
 export interface ReconnectWSOptions<T> {
 	buildUrl: () => string | Promise<string>;
@@ -253,6 +254,52 @@ export function createContainerStatsWebSocket(opts: {
 		maxBackoff: opts.maxBackoff,
 		autoConnect: false,
 		shouldReconnect: opts.shouldReconnect
+	});
+}
+
+export function createDiagnosticsWebSocket(opts: {
+	onMessage: (data: Diagnostics) => void;
+	onOpen?: () => void;
+	onClose?: () => void;
+	onError?: (err: Event | Error) => void;
+	maxBackoff?: number;
+}) {
+	const buildUrl = () => {
+		const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
+		return `${protocol}://${location.host}/api/diagnostics/stream`;
+	};
+
+	return new ReconnectingWebSocket<Diagnostics>({
+		buildUrl,
+		parseMessage: (evt) => JSON.parse(evt.data as string) as Diagnostics,
+		onMessage: opts.onMessage,
+		onOpen: opts.onOpen,
+		onClose: opts.onClose,
+		onError: opts.onError,
+		maxBackoff: opts.maxBackoff
+	});
+}
+
+export function createBackendLogsWebSocket(opts: {
+	onMessage: (data: LogEntry) => void;
+	onOpen?: () => void;
+	onClose?: () => void;
+	onError?: (err: Event | Error) => void;
+	maxBackoff?: number;
+}) {
+	const buildUrl = () => {
+		const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
+		return `${protocol}://${location.host}/api/diagnostics/logs/stream`;
+	};
+
+	return new ReconnectingWebSocket<LogEntry>({
+		buildUrl,
+		parseMessage: (evt) => JSON.parse(evt.data as string) as LogEntry,
+		onMessage: opts.onMessage,
+		onOpen: opts.onOpen,
+		onClose: opts.onClose,
+		onError: opts.onError,
+		maxBackoff: opts.maxBackoff
 	});
 }
 
