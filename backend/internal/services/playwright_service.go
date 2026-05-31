@@ -78,7 +78,7 @@ func (ps *PlaywrightService) DeleteAllTestApiKeys(ctx context.Context) error {
 		SearchQuery: pagination.SearchQuery{
 			Search: "test-api-key",
 		},
-		PaginationParams: pagination.PaginationParams{
+		Params: pagination.Params{
 			Start: 0,
 			Limit: 1000,
 		},

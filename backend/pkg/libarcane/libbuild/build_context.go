@@ -1,7 +1,7 @@
 package libbuild
 
 import (
-	"fmt"
+	"errors"
 	"net/url"
 	"path"
 	"strings"
@@ -37,13 +37,13 @@ func ParseGitBuildContextSource(raw string) (*GitBuildContextSource, bool, error
 
 	fragment = strings.TrimSpace(fragment)
 	if fragment == "" {
-		return nil, true, fmt.Errorf("git build context fragment cannot be empty")
+		return nil, true, errors.New("git build context fragment cannot be empty")
 	}
 
 	ref, subdir, hasSubdir := strings.Cut(fragment, ":")
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
-		return nil, true, fmt.Errorf("git build context ref cannot be empty")
+		return nil, true, errors.New("git build context ref cannot be empty")
 	}
 	source.Ref = ref
 
@@ -53,15 +53,15 @@ func ParseGitBuildContextSource(raw string) (*GitBuildContextSource, bool, error
 
 	subdir = strings.TrimSpace(subdir)
 	if subdir == "" {
-		return nil, true, fmt.Errorf("git build context subdir cannot be empty")
+		return nil, true, errors.New("git build context subdir cannot be empty")
 	}
 	if strings.HasPrefix(subdir, "/") {
-		return nil, true, fmt.Errorf("git build context subdir must be relative")
+		return nil, true, errors.New("git build context subdir must be relative")
 	}
 
 	cleanSubdir := path.Clean(subdir)
 	if cleanSubdir == "." || cleanSubdir == ".." || strings.HasPrefix(cleanSubdir, "../") {
-		return nil, true, fmt.Errorf("git build context subdir must stay within the repository")
+		return nil, true, errors.New("git build context subdir must stay within the repository")
 	}
 
 	source.Subdir = cleanSubdir

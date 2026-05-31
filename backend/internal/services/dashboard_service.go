@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"time"
@@ -65,7 +66,7 @@ func NewDashboardService(
 
 func (s *DashboardService) GetSnapshot(ctx context.Context, options DashboardActionItemsOptions) (*dashboardtypes.Snapshot, error) {
 	if s.dockerService == nil {
-		return nil, fmt.Errorf("docker service not available")
+		return nil, errors.New("docker service not available")
 	}
 
 	dockerSnapshot, err := s.dockerService.GetSnapshot(ctx, localEnvironmentID)

@@ -55,7 +55,7 @@ func WriteComposeFile(projectsRoot, dirPath, content string) error {
 	rootAbs = filepath.Clean(rootAbs)
 
 	if !IsSafeSubdirectory(rootAbs, dirPath) {
-		return fmt.Errorf("refusing to write compose file: path outside projects root")
+		return errors.New("refusing to write compose file: path outside projects root")
 	}
 
 	if err := os.MkdirAll(dirPath, pkgutils.DirPerm); err != nil {
@@ -92,7 +92,7 @@ func WriteProjectFile(projectsRoot, dirPath, fileName, content string) error {
 	rootAbs = filepath.Clean(rootAbs)
 
 	if !IsSafeSubdirectory(rootAbs, dirPath) {
-		return fmt.Errorf("refusing to write project file: path outside projects root")
+		return errors.New("refusing to write project file: path outside projects root")
 	}
 
 	if err := os.MkdirAll(dirPath, pkgutils.DirPerm); err != nil {
@@ -125,7 +125,7 @@ func RemoveProjectFile(projectsRoot, dirPath, fileName string) error {
 	rootAbs = filepath.Clean(rootAbs)
 
 	if !IsSafeSubdirectory(rootAbs, dirPath) {
-		return fmt.Errorf("refusing to remove project file: path outside projects root")
+		return errors.New("refusing to remove project file: path outside projects root")
 	}
 
 	if fileName == "" || filepath.Base(fileName) != fileName || strings.Contains(fileName, string(filepath.Separator)) {
@@ -234,7 +234,7 @@ func WriteSyncedDirectory(projectsRoot, projectPath string, files []SyncFile) ([
 	projectAbs = filepath.Clean(projectAbs)
 
 	if !IsSafeSubdirectory(rootAbs, projectAbs) {
-		return nil, fmt.Errorf("project path is outside projects root")
+		return nil, errors.New("project path is outside projects root")
 	}
 
 	// Ensure project directory exists
@@ -298,7 +298,7 @@ func CleanupRemovedFiles(projectsRoot, projectPath string, oldFiles, newFiles []
 	projectAbs = filepath.Clean(projectAbs)
 
 	if !IsSafeSubdirectory(rootAbs, projectAbs) {
-		return fmt.Errorf("project path is outside projects root")
+		return errors.New("project path is outside projects root")
 	}
 
 	// Build set of new files for quick lookup

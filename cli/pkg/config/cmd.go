@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -134,7 +135,7 @@ Legacy flag syntax (flags shown below) is still supported:
 		updated = updated || updatedByFlags
 
 		if !updated {
-			return fmt.Errorf("no configuration values provided. Use `arcane config set <key> <value>` (e.g. `arcane config set server-url http://localhost:3552`) or legacy flags (--server-url, --api-key, --jwt-token, --environment, --log-level, --default-limit, --resource-limit)")
+			return errors.New("no configuration values provided. Use `arcane config set <key> <value>` (e.g. `arcane config set server-url http://localhost:3552`) or legacy flags (--server-url, --api-key, --jwt-token, --environment, --log-level, --default-limit, --resource-limit)")
 		}
 
 		if err := config.Save(cfg); err != nil {
@@ -186,7 +187,7 @@ var configTestCmd = &cobra.Command{
 		if cfg.JWTToken != "" {
 			req.Header.Set("Authorization", "Bearer "+cfg.JWTToken)
 		} else {
-			req.Header.Set("X-API-KEY", cfg.APIKey)
+			req.Header.Set("X-Api-Key", cfg.APIKey)
 		}
 
 		resp, err := httpClient.Do(req)
@@ -365,7 +366,7 @@ func applyConfigSetFlags(cmd *cobra.Command, cfg *clitypes.Config) (bool, error)
 
 	if cmd.Flags().Changed("default-limit") {
 		if setDefaultLimit < 0 {
-			return false, fmt.Errorf("--default-limit must be >= 0")
+			return false, errors.New("--default-limit must be >= 0")
 		}
 		cfg.SetDefaultLimit(setDefaultLimit)
 		if setDefaultLimit == 0 {

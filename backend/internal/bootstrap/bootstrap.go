@@ -58,11 +58,13 @@ func Bootstrap(ctx context.Context) error {
 		return fmt.Errorf("failed to initialize database: %w", err)
 	}
 	defer func(ctx context.Context) {
-		// Use background context for shutdown as appCtx is already canceled
-		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second) //nolint:contextcheck
+		// appCtx is already canceled here, so derive the shutdown deadline from a
+		// non-canceled copy of it.
+		baseCtx := context.WithoutCancel(ctx)
+		shutdownCtx, shutdownCancel := context.WithTimeout(baseCtx, 10*time.Second)
 		defer shutdownCancel()
 		if err := db.Close(); err != nil {
-			slog.ErrorContext(shutdownCtx, "Error closing database", "error", err) //nolint:contextcheck
+			slog.ErrorContext(shutdownCtx, "Error closing database", "error", err)
 		}
 	}(appCtx)
 
@@ -93,7 +95,7 @@ func Bootstrap(ctx context.Context) error {
 
 	startEdgeTunnelClientIfConfigured(appCtx, cfg, router)
 
-	err = runServices(appCtx, cfg, router, tunnelServer, scheduler)
+	err = runServicesInternal(appCtx, cfg, router, tunnelServer, scheduler)
 	if err != nil {
 		return fmt.Errorf("failed to run services: %w", err)
 	}
@@ -294,7 +296,7 @@ func handleAgentBootstrapPairing(ctx context.Context, cfg *config.Config, httpCl
 		return fmt.Errorf("failed to create pairing request: %w", err)
 	}
 
-	req.Header.Set("X-API-Key", cfg.AgentToken)
+	req.Header.Set("X-Api-Key", cfg.AgentToken)
 
 	if cfg.EdgeAgent && strings.TrimSpace(cfg.ManagerApiUrl) != "" {
 		edgeClient, edgeErr := edge.NewManagerHTTPClient(&edge.Config{
@@ -312,7 +314,7 @@ func handleAgentBootstrapPairing(ctx context.Context, cfg *config.Config, httpCl
 		httpClient = edgeClient
 	}
 
-	resp, err := httpClient.Do(req) //nolint:gosec // intentional request to configured manager pairing endpoint
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("pairing request failed: %w", err)
 	}
@@ -341,7 +343,9 @@ func handleAgentBootstrapPairing(ctx context.Context, cfg *config.Config, httpCl
 	}
 }
 
-func runServices(appCtx context.Context, cfg *config.Config, router http.Handler, tunnelServer *edge.TunnelServer, schedulers ...interface{ Run(context.Context) error }) error {
+func runServicesInternal(appCtx context.Context, cfg *config.Config, router http.Handler, tunnelServer *edge.TunnelServer, schedulers ...interface {
+	Run(ctx context.Context) error
+}) error {
 	for _, s := range schedulers {
 		scheduler := s
 		go func() {
@@ -398,7 +402,7 @@ func runServices(appCtx context.Context, cfg *config.Config, router http.Handler
 	}
 
 	// Use background context for shutdown as appCtx is already canceled
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second) //nolint:contextcheck
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil { //nolint:contextcheck
@@ -425,7 +429,7 @@ func prepareServerTLSInternal(ctx context.Context, cfg *config.Config) (bool, st
 	tlsKeyFile := strings.TrimSpace(cfg.TLSKeyFile)
 	edgeCfg := buildEdgeRuntimeConfigInternal(cfg)
 	if useTLS && (tlsCertFile == "" || tlsKeyFile == "") {
-		return false, "", "", nil, fmt.Errorf("TLS_ENABLED requires both TLS_CERT_FILE and TLS_KEY_FILE")
+		return false, "", "", nil, errors.New("TLS_ENABLED requires both TLS_CERT_FILE and TLS_KEY_FILE")
 	}
 
 	if cfg.AgentMode {

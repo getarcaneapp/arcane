@@ -12,6 +12,7 @@ type StatsHistorySample struct {
 // StatsStreamPayload is the container stats websocket payload.
 type StatsStreamPayload struct {
 	dockercontainer.StatsResponse
+
 	StatsHistory         []StatsHistorySample `json:"statsHistory,omitempty"`
 	CurrentHistorySample StatsHistorySample   `json:"currentHistorySample"`
 }

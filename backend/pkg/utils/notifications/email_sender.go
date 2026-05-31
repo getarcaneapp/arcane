@@ -3,6 +3,7 @@ package notifications
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"time"
 
@@ -61,7 +62,7 @@ func smtpAuthTypeFromModeInternal(mode models.EmailAuthMode) mail.SMTPAuthType {
 
 func buildMailClientInternal(config models.EmailConfig, options smtpBuildOptions) (*mail.Client, error) {
 	if config.SMTPHost == "" {
-		return nil, fmt.Errorf("SMTP host is empty")
+		return nil, errors.New("SMTP host is empty")
 	}
 	if config.SMTPPort < 1 || config.SMTPPort > 65535 {
 		return nil, fmt.Errorf("invalid SMTP port: %d", config.SMTPPort)
@@ -113,17 +114,17 @@ func SendEmail(ctx context.Context, config models.EmailConfig, subject, htmlBody
 
 func sendEmailInternal(ctx context.Context, config models.EmailConfig, subject, htmlBody string, options smtpBuildOptions) error {
 	if ctx == nil {
-		return fmt.Errorf("email send context is required")
+		return errors.New("email send context is required")
 	}
 	if err := ctx.Err(); err != nil {
 		return fmt.Errorf("email send canceled: %w", err)
 	}
 
 	if config.FromAddress == "" {
-		return fmt.Errorf("from address is required")
+		return errors.New("from address is required")
 	}
 	if len(config.ToAddresses) == 0 {
-		return fmt.Errorf("at least one recipient is required")
+		return errors.New("at least one recipient is required")
 	}
 
 	client, err := buildMailClientInternal(config, options)

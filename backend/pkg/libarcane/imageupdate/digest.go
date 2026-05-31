@@ -2,6 +2,7 @@ package imageupdate
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -83,7 +84,7 @@ func (c *DigestChecker) CheckImageNeedsUpdate(ctx context.Context, imageRef stri
 	result.LocalDigest = localDigest
 
 	if c.digestResolver == nil {
-		result.Error = fmt.Errorf("remote digest resolver unavailable")
+		result.Error = errors.New("remote digest resolver unavailable")
 		return result
 	}
 
@@ -130,7 +131,7 @@ func (c *DigestChecker) getLocalDigestInternal(ctx context.Context, imageRef str
 		return inspect.ID, nil
 	}
 
-	return "", fmt.Errorf("no digest available for image")
+	return "", errors.New("no digest available for image")
 }
 
 // CompareWithPulled compares the current container's image with a freshly pulled image

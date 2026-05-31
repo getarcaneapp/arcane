@@ -129,8 +129,7 @@ func TestSwarmService_getPathMapperInternal(t *testing.T) {
 	svc := NewSwarmService(nil, settingsSvc, nil, nil, nil)
 
 	t.Run("returns nil when paths match", func(t *testing.T) {
-		pm, err := svc.getPathMapperInternal(ctx)
-		require.NoError(t, err)
+		pm := svc.getPathMapperInternal(ctx)
 		require.Nil(t, pm) // Default is /app/data/swarm/sources which matches itself
 	})
 
@@ -140,8 +139,7 @@ func TestSwarmService_getPathMapperInternal(t *testing.T) {
 		err := settingsSvc.UpdateSetting(ctx, "swarmStackSourcesDirectory", containerDir+":"+hostDir)
 		require.NoError(t, err)
 
-		pm, err := svc.getPathMapperInternal(ctx)
-		require.NoError(t, err)
+		pm := svc.getPathMapperInternal(ctx)
 		require.NotNil(t, pm)
 		require.True(t, pm.IsNonMatchingMount())
 

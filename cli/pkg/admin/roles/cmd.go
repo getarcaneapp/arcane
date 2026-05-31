@@ -6,7 +6,9 @@
 package roles
 
 import (
+	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/getarcaneapp/arcane/cli/internal/cmdutil"
@@ -94,8 +96,8 @@ var listCmd = &cobra.Command{
 				r.ID,
 				r.Name,
 				roleType,
-				fmt.Sprintf("%d", r.AssignedUserCount),
-				fmt.Sprintf("%d", len(r.Permissions)),
+				strconv.Itoa(r.AssignedUserCount),
+				strconv.Itoa(len(r.Permissions)),
 			}
 		}
 		output.Table(headers, rows)
@@ -135,9 +137,9 @@ var getCmd = &cobra.Command{
 		if result.Data.Description != nil {
 			output.KeyValue("Description", *result.Data.Description)
 		}
-		output.KeyValue("Built-in", fmt.Sprintf("%t", result.Data.BuiltIn))
-		output.KeyValue("Assigned users", fmt.Sprintf("%d", result.Data.AssignedUserCount))
-		output.KeyValue("Permissions", fmt.Sprintf("%d", len(result.Data.Permissions)))
+		output.KeyValue("Built-in", strconv.FormatBool(result.Data.BuiltIn))
+		output.KeyValue("Assigned users", strconv.Itoa(result.Data.AssignedUserCount))
+		output.KeyValue("Permissions", strconv.Itoa(len(result.Data.Permissions)))
 		if len(result.Data.Permissions) > 0 {
 			rows := make([][]string, len(result.Data.Permissions))
 			for i, p := range result.Data.Permissions {
@@ -155,10 +157,10 @@ var createCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if roleCreateName == "" {
-			return fmt.Errorf("--name is required")
+			return errors.New("--name is required")
 		}
 		if len(roleCreatePermissions) == 0 {
-			return fmt.Errorf("at least one --permission is required")
+			return errors.New("at least one --permission is required")
 		}
 		c, err := cmdutil.ClientFromCommand(cmd)
 		if err != nil {
@@ -188,7 +190,7 @@ var createCmd = &cobra.Command{
 		}
 		output.Success("Role %s created", result.Data.Name)
 		output.KeyValue("ID", result.Data.ID)
-		output.KeyValue("Permissions", fmt.Sprintf("%d", len(result.Data.Permissions)))
+		output.KeyValue("Permissions", strconv.Itoa(len(result.Data.Permissions)))
 		return nil
 	},
 }

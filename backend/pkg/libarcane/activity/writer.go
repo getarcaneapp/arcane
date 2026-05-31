@@ -210,7 +210,7 @@ func (w *Writer) updateLayerProgressInternal(id, status string, rawDetail any) *
 		statusLower := strings.ToLower(item.status)
 		switch {
 		case layerCompleteInternal(statusLower):
-			weighted += 1
+			weighted++
 		case strings.Contains(statusLower, "extracting"):
 			weighted += 0.95
 		case strings.Contains(statusLower, "verifying"):
@@ -224,10 +224,7 @@ func (w *Writer) updateLayerProgressInternal(id, status string, rawDetail any) *
 		}
 	}
 
-	progress := min(int((weighted/float64(len(w.layers)))*100), 100)
-	if progress < 0 {
-		progress = 0
-	}
+	progress := max(min(int((weighted/float64(len(w.layers)))*100), 100), 0)
 	return &progress
 }
 
@@ -420,7 +417,7 @@ func containerEventMessageInternal(payload map[string]any) string {
 	if state != "" {
 		return fmt.Sprintf("Container %s: %s", service, state)
 	}
-	return fmt.Sprintf("Container %s", service)
+	return "Container " + service
 }
 
 func fallbackStepInternal(value, fallback string) string {

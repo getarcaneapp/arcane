@@ -320,12 +320,12 @@ func ensureSQLiteFilesExistInternal(databaseURL string) error {
 	// prepareWritablePathsInternal is not called.
 	dir := filepath.Dir(sqlitePath)
 	if dir != "" && dir != "." {
-		if err := os.MkdirAll(dir, pkgutils.DirPerm); err != nil { //nolint:gosec // path is derived from the configured SQLite DSN, not user input
+		if err := os.MkdirAll(dir, pkgutils.DirPerm); err != nil {
 			return fmt.Errorf("create sqlite directory %s: %w", dir, err)
 		}
 	}
 
-	file, err := os.OpenFile(sqlitePath, os.O_CREATE|os.O_RDWR, pkgutils.FilePerm) //nolint:gosec // path is derived from the configured SQLite DSN
+	file, err := os.OpenFile(sqlitePath, os.O_CREATE|os.O_RDWR, pkgutils.FilePerm)
 	if err != nil {
 		return fmt.Errorf("create sqlite file %s: %w", sqlitePath, err)
 	}
@@ -385,7 +385,7 @@ func chownRecursiveInternal(path string, uid int, gid int, mountpoints map[strin
 			}
 			return filepath.SkipDir
 		}
-		//nolint:gosec // currentPath comes from fixed container paths under /app/data or /builds
+
 		return lchownFn(currentPath, uid, gid)
 	})
 }

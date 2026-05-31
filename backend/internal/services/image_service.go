@@ -401,14 +401,14 @@ func (s *ImageService) PruneImages(ctx context.Context, options systemtypes.Prun
 	filterArgs := make(client.Filters)
 	switch options.Mode {
 	case systemtypes.PruneImageModeNone:
-		return nil, fmt.Errorf("image prune mode none is not allowed")
+		return nil, errors.New("image prune mode none is not allowed")
 	case systemtypes.PruneImageModeDangling:
 		filterArgs = filterArgs.Add("dangling", "true")
 	case systemtypes.PruneImageModeAll:
 		filterArgs = filterArgs.Add("dangling", "false")
 	case systemtypes.PruneImageModeOlderThan:
 		if strings.TrimSpace(options.Until) == "" {
-			return nil, fmt.Errorf("image prune mode olderThan requires until")
+			return nil, errors.New("image prune mode olderThan requires until")
 		}
 		filterArgs = filterArgs.Add("until", options.Until)
 	default:

@@ -6,6 +6,6 @@ package utils
 const (
 	HeaderAgentBootstrap = "X-Arcane-Agent-Bootstrap"
 	HeaderAgentToken     = "X-Arcane-Agent-Token" // #nosec G101: header name, not a credential
-	HeaderApiKey         = "X-API-Key"            // #nosec G101: header name, not a credential
+	HeaderApiKey         = "X-Api-Key"            // #nosec G101: header name, not a credential
 	AgentPairingPrefix   = "/api/environments/0/agent/pair"
 )
