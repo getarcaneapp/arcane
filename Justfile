@@ -443,35 +443,35 @@ deps action="update" target="all":
 # -----------------------------------------------------------------------------
 
 # Run go mod tidy in backend module
-[group('go-modules')]
+[group('gomod')]
 _gomod-tidy-backend:
     cd backend && go mod tidy
 
 # Run go mod tidy in CLI module
-[group('go-modules')]
+[group('gomod')]
 _gomod-tidy-cli:
     cd cli && go mod tidy
 
 # Run go mod tidy in types module
-[group('go-modules')]
+[group('gomod')]
 _gomod-tidy-types:
     cd types && go mod tidy
 
 # Run go mod tidy in all Go modules
-[group('go-modules')]
+[group('gomod')]
 _gomod-tidy-go: _gomod-tidy-backend _gomod-tidy-cli _gomod-tidy-types
 
-[group('go-modules')]
+[group('gomod')]
 _gomod-tidy-all:
     @just _gomod-tidy-go
     go work sync
 
-[group('go-modules')]
+[group('gomod')]
 _gomod-sync-all:
     go work sync
 
 # Go module targets. Valid: "tidy [backend|cli|types|go|all]", "sync all".
-[group('go-modules')]
+[group('gomod')]
 gomod action="tidy" target="all":
     @just "_gomod-{{ action }}-{{ target }}"
 
@@ -481,8 +481,18 @@ gomod action="tidy" target="all":
 
 # Generate edge tunnel protobuf/gRPC code.
 [group('codegen')]
-proto-backend:
+_generate-proto:
     cd {{ edge_proto_dir }} && go run github.com/bufbuild/buf/cmd/buf@latest generate
+
+# Generate Wire dependency injection code.
+[group('codegen')]
+_generate-wire:
+    cd backend && go tool wire ./...
+
+# Generate targets. Valid: "proto", "wire".
+[group('codegen')]
+generate target:
+    @just "_generate-{{ target }}"
 
 # Generate the docs config schema JSON.
 [group('docs')]

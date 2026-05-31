@@ -2008,28 +2008,34 @@ function parsePattern2(value) {
       continue;
     }
     if (char === "{") {
-      let variableName = "";
-      let closingIndex = -1;
-      for (let cursor = index + 1; cursor < value.length; cursor += 1) {
-        const current = value[cursor];
-        if (current === "}") {
-          closingIndex = cursor;
-          break;
-        }
-        variableName += current;
-      }
+      const closingIndex = findPlaceholderClosingIndex(value, index);
       if (closingIndex === -1) {
         buffer += char;
         continue;
       }
+      const placeholder = value.slice(index + 1, closingIndex);
+      const markupNode = parseMarkupPlaceholder(placeholder);
       flushBuffer();
+      if (markupNode) {
+        for (const option of markupNode.options ?? []) {
+          if (option.value.type === "variable-reference") {
+            declarations.push({
+              type: "input-variable",
+              name: option.value.name
+            });
+          }
+        }
+        pattern.push(markupNode);
+        index = closingIndex;
+        continue;
+      }
       declarations.push({
         type: "input-variable",
-        name: variableName
+        name: placeholder
       });
       pattern.push({
         type: "expression",
-        arg: { type: "variable-reference", name: variableName }
+        arg: { type: "variable-reference", name: placeholder }
       });
       index = closingIndex;
       continue;
@@ -2040,6 +2046,176 @@ function parsePattern2(value) {
   return {
     declarations,
     pattern
+  };
+}
+function findPlaceholderClosingIndex(value, openingIndex) {
+  let inQuotedLiteral = false;
+  for (let cursor = openingIndex + 1; cursor < value.length; cursor += 1) {
+    const current = value[cursor];
+    if (inQuotedLiteral && current === "\\") {
+      cursor += 1;
+      continue;
+    }
+    if (current === "|") {
+      inQuotedLiteral = !inQuotedLiteral;
+      continue;
+    }
+    if (current === "}" && inQuotedLiteral === false) {
+      return cursor;
+    }
+  }
+  return -1;
+}
+function parseMarkupPlaceholder(placeholder) {
+  if (placeholder.startsWith("#")) {
+    const parsed = parseMarkupBody(placeholder.slice(1), true);
+    if (!parsed) {
+      throw new Error(`Invalid markup placeholder: {${placeholder}}`);
+    }
+    const { name, options, attributes, standalone } = parsed;
+    return {
+      type: standalone ? "markup-standalone" : "markup-start",
+      name,
+      ...options.length > 0 ? { options } : {},
+      ...attributes.length > 0 ? { attributes } : {}
+    };
+  }
+  if (placeholder.startsWith("/")) {
+    const parsed = parseMarkupBody(placeholder.slice(1), false);
+    if (!parsed) {
+      throw new Error(`Invalid markup placeholder: {${placeholder}}`);
+    }
+    const { name, options, attributes } = parsed;
+    return {
+      type: "markup-end",
+      name,
+      ...options.length > 0 ? { options } : {},
+      ...attributes.length > 0 ? { attributes } : {}
+    };
+  }
+  return void 0;
+}
+function parseMarkupBody(body, allowStandalone) {
+  let index = 0;
+  const options = [];
+  const attributes = [];
+  let standalone = false;
+  index = skipWhitespace(body, index);
+  const nameToken = readNameToken(body, index);
+  if (!nameToken) return void 0;
+  const name = nameToken.value;
+  index = nameToken.nextIndex;
+  while (index < body.length) {
+    index = skipWhitespace(body, index);
+    if (index >= body.length) break;
+    if (allowStandalone && body[index] === "/") {
+      const trailing = body.slice(index + 1).trim();
+      if (trailing.length > 0) return void 0;
+      standalone = true;
+      index = body.length;
+      break;
+    }
+    if (body[index] === "@") {
+      index += 1;
+      const attributeName = readIdentifier(body, index);
+      if (!attributeName) return void 0;
+      index = attributeName.nextIndex;
+      index = skipWhitespace(body, index);
+      if (body[index] === "=") {
+        index += 1;
+        index = skipWhitespace(body, index);
+        const attributeValue = parseMarkupValue(body, index);
+        if (!attributeValue) return void 0;
+        if (attributeValue.value.type === "variable-reference") {
+          return void 0;
+        }
+        attributes.push({
+          name: attributeName.value,
+          value: attributeValue.value
+        });
+        index = attributeValue.nextIndex;
+      } else {
+        attributes.push({ name: attributeName.value, value: true });
+      }
+      continue;
+    }
+    const optionName = readIdentifier(body, index);
+    if (!optionName) return void 0;
+    index = optionName.nextIndex;
+    index = skipWhitespace(body, index);
+    if (body[index] !== "=") return void 0;
+    index += 1;
+    index = skipWhitespace(body, index);
+    const optionValue = parseMarkupValue(body, index);
+    if (!optionValue) return void 0;
+    options.push({
+      name: optionName.value,
+      value: optionValue.value
+    });
+    index = optionValue.nextIndex;
+  }
+  return { name, options, attributes, standalone };
+}
+function skipWhitespace(value, index) {
+  while (index < value.length && /\s/.test(value[index])) {
+    index += 1;
+  }
+  return index;
+}
+function readNameToken(value, index) {
+  return readIdentifier(value, index);
+}
+function readIdentifier(value, index) {
+  let cursor = index;
+  while (cursor < value.length && /\s/.test(value[cursor]) === false && value[cursor] !== "=" && value[cursor] !== "/" && value[cursor] !== "@") {
+    cursor += 1;
+  }
+  const parsed = value.slice(index, cursor);
+  if (parsed.length === 0) return void 0;
+  return { value: parsed, nextIndex: cursor };
+}
+function parseMarkupValue(value, index) {
+  if (index >= value.length) return void 0;
+  if (value[index] === "|") {
+    let cursor = index + 1;
+    let literal2 = "";
+    while (cursor < value.length) {
+      const char = value[cursor];
+      if (char === "\\") {
+        const next = value[cursor + 1];
+        if (next === "|" || next === "\\" || next === "}") {
+          literal2 += next;
+          cursor += 2;
+          continue;
+        }
+        literal2 += char;
+        cursor += 1;
+        continue;
+      }
+      if (char === "|") {
+        return {
+          value: { type: "literal", value: literal2 },
+          nextIndex: cursor + 1
+        };
+      }
+      literal2 += char;
+      cursor += 1;
+    }
+    return void 0;
+  }
+  if (value[index] === "$") {
+    const variable = readIdentifier(value, index + 1);
+    if (!variable) return void 0;
+    return {
+      value: { type: "variable-reference", name: variable.value },
+      nextIndex: variable.nextIndex
+    };
+  }
+  const literal = readIdentifier(value, index);
+  if (!literal) return void 0;
+  return {
+    value: { type: "literal", value: literal.value },
+    nextIndex: literal.nextIndex
   };
 }
 function parseMatches(value) {
@@ -2083,13 +2259,26 @@ function parseDeclaration(value) {
   } else if (value.startsWith("local")) {
     const match = value.match(/local (\w+) = (\w+): (\w+)(.*)/);
     const [, name, ref, fn, optionsString] = match;
-    const options = optionsString?.trim().split(/\s+/).map((pair) => {
-      const [key, value2] = pair.split("=");
-      return key && value2 ? {
-        name: key,
-        value: { type: "literal", value: value2 }
-      } : null;
-    }).filter(Boolean);
+    const options = [];
+    for (const optionMatch of (optionsString ?? "").matchAll(
+      /(\w+)\s*=\s*([^\s]+)/g
+    )) {
+      const optionName = optionMatch[1];
+      const optionValue = optionMatch[2];
+      if (!optionName || !optionValue) {
+        continue;
+      }
+      options.push({
+        name: optionName,
+        value: optionValue.startsWith("$") && optionValue.length > 1 ? {
+          type: "variable-reference",
+          name: optionValue.slice(1)
+        } : {
+          type: "literal",
+          value: optionValue
+        }
+      });
+    }
     return {
       type: "local-variable",
       name: name.trim(),
@@ -2219,18 +2408,76 @@ function serializeVariants(bundle, message, variants) {
 function serializePattern(pattern) {
   let result = "";
   for (const part of pattern) {
-    if (part.type === "text") {
-      result += escapePatternText(part.value);
-    } else if (part.arg.type === "variable-reference") {
-      result += `{${part.arg.name}}`;
-    } else {
-      throw new Error("Unsupported expression type");
+    switch (part.type) {
+      case "text":
+        result += escapePatternText(part.value);
+        break;
+      case "expression":
+        if (part.arg.type === "variable-reference") {
+          result += `{${part.arg.name}}`;
+          break;
+        }
+        throw new Error("Unsupported expression type");
+      case "markup-start":
+        result += serializeMarkup(
+          "#",
+          part.name,
+          part.options,
+          part.attributes,
+          false
+        );
+        break;
+      case "markup-end":
+        result += serializeMarkup(
+          "/",
+          part.name,
+          part.options,
+          part.attributes,
+          false
+        );
+        break;
+      case "markup-standalone":
+        result += serializeMarkup(
+          "#",
+          part.name,
+          part.options,
+          part.attributes,
+          true
+        );
+        break;
+      default:
+        throw new Error("Unsupported pattern element type");
     }
   }
   return result;
 }
 function escapePatternText(value) {
   return value.replace(/\\/g, "\\\\").replace(/{/g, "\\{").replace(/}/g, "\\}");
+}
+function serializeMarkup(prefix, name, options, attributes, standalone) {
+  const serializedOptions = (options ?? []).map((option) => {
+    if (option.value.type === "variable-reference") {
+      return `${option.name}=$${option.value.name}`;
+    }
+    return `${option.name}=|${escapeMarkupLiteral(option.value.value)}|`;
+  });
+  const serializedAttributes = (attributes ?? []).map((attribute) => {
+    if (attribute.value === true) {
+      return `@${attribute.name}`;
+    }
+    return `@${attribute.name}=|${escapeMarkupLiteral(attribute.value.value)}|`;
+  });
+  const metadata = [...serializedOptions, ...serializedAttributes].join(" ");
+  if (metadata.length === 0) {
+    return standalone ? `{${prefix}${name}/}` : `{${prefix}${name}}`;
+  }
+  if (standalone) {
+    return `{${prefix}${name} ${metadata}/}`;
+  }
+  return `{${prefix}${name} ${metadata}}`;
+}
+function escapeMarkupLiteral(value) {
+  return value.replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/}/g, "\\}");
 }
 function serializeMatcher(matches) {
   const parts = matches.sort((a, b) => a.key.localeCompare(b.key)).map(
@@ -2253,10 +2500,15 @@ function serializeDeclaration(declaration) {
     }
     if (declaration.value.annotation?.options) {
       for (const option of declaration.value?.annotation?.options ?? []) {
-        if (option.value.type !== "literal") {
-          throw new Error("Unsupported option type");
+        if (option.value.type === "literal") {
+          result += ` ${option.name}=${option.value.value}`;
+          continue;
         }
-        result += ` ${option.name}=${option.value.value}`;
+        if (option.value.type === "variable-reference") {
+          result += ` ${option.name}=$${option.value.name}`;
+          continue;
+        }
+        throw new Error("Unsupported option type");
       }
     }
     return result;
