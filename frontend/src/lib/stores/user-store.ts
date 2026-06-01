@@ -51,10 +51,11 @@ const hasAnyPermission = (perms: string[], envId?: string): boolean => {
 	return perms.some((p) => set.has(p));
 };
 
-/** Returns true if the caller holds the built-in Admin role globally OR is a sudo caller. */
+/** Returns true if the caller effectively holds global administrator access. */
 const isGlobalAdmin = (): boolean => {
 	const user = get(userStore);
 	if (!user) return false;
+	if (typeof user.isGlobalAdmin === 'boolean') return user.isGlobalAdmin;
 	const global = user.permissionsByEnv?.[GLOBAL_SCOPE];
 	if (global?.includes(SUDO_PERMISSION)) return true;
 	return !!user.roleAssignments?.some((a) => a.roleId === BUILT_IN_ROLE_ADMIN && !a.environmentId);

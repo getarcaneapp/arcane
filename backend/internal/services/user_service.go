@@ -477,6 +477,7 @@ func (s *UserService) toUserResponseDtoInternal(ctx context.Context, u models.Us
 		}
 	}
 	if ps, err := s.roleService.ResolvePermissions(ctx, &u); err == nil && ps != nil {
+		dto.IsGlobalAdmin = ps.IsGlobalAdmin()
 		dto.PermissionsByEnv = permissionSetToMap(ps)
 	}
 	return dto

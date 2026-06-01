@@ -37,6 +37,7 @@ type User struct {
 	Email                  *string                 `json:"email,omitempty" doc:"Email address of the user" example:"john@example.com"`
 	RoleAssignments        []RoleAssignmentSummary `json:"roleAssignments" doc:"Role assignments held by the user"`
 	PermissionsByEnv       map[string][]string     `json:"permissionsByEnv" doc:"Permissions the user effectively holds, keyed by environment ID. The 'global' key holds permissions that apply across every environment (and to org-level endpoints)."`
+	IsGlobalAdmin          bool                    `json:"isGlobalAdmin" doc:"Whether the user effectively holds global administrator access"`
 	CanDelete              bool                    `json:"canDelete" doc:"Whether the user can currently be deleted"`
 	OidcSubjectId          *string                 `json:"oidcSubjectId,omitempty" doc:"OIDC subject identifier for SSO users"`
 	Locale                 *string                 `json:"locale,omitempty" doc:"Locale preference of the user" example:"en-US"`

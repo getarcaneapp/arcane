@@ -99,6 +99,7 @@ type UpdateOidcRoleMapping struct {
 // picker without hard-coding the taxonomy.
 type PermissionsManifest struct {
 	Resources []PermissionResource `json:"resources" doc:"Resource groups, in display order"`
+	Presets   []PermissionPreset   `json:"presets,omitempty" doc:"Optional preset permission bundles for bulk selection in the UI"`
 }
 
 // PermissionResource is one resource group in the manifest (e.g. "containers").
@@ -111,10 +112,19 @@ type PermissionResource struct {
 
 // PermissionAction is one permission inside a resource group.
 type PermissionAction struct {
-	Key         string `json:"key" doc:"Action verb" example:"start"`
-	Permission  string `json:"permission" doc:"Fully-qualified permission string used in role definitions" example:"containers:start"`
-	Label       string `json:"label" doc:"Human-readable label" example:"Start"`
-	Description string `json:"description,omitempty" doc:"Optional longer description"`
+	Key         string   `json:"key" doc:"Action verb" example:"start"`
+	Permission  string   `json:"permission" doc:"Fully-qualified permission string used in role definitions" example:"containers:start"`
+	Label       string   `json:"label" doc:"Human-readable label" example:"Start"`
+	Description string   `json:"description,omitempty" doc:"Optional longer description"`
+	Requires    []string `json:"requires,omitempty" doc:"Permissions that should be auto-selected when this permission is chosen in the UI"`
+}
+
+// PermissionPreset is an optional bulk-selection bundle exposed to the UI.
+type PermissionPreset struct {
+	Key         string   `json:"key" doc:"Stable preset key" example:"editor"`
+	Label       string   `json:"label" doc:"Human-readable preset label" example:"All permissions (non-admin)"`
+	Description string   `json:"description,omitempty" doc:"Optional longer description for the preset"`
+	Permissions []string `json:"permissions" doc:"Permissions included when the preset is selected"`
 }
 
 // ApiKeyPermissionGrant is one permission grant on an API key, optionally
