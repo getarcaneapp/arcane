@@ -771,9 +771,10 @@ func (s *GitOpsSyncService) performDirectorySync(ctx context.Context, sync *mode
 
 	if contentsChanged {
 		if redeployErr := s.redeployIfRunningAfterSync(ctx, project, actor, "directory"); redeployErr != nil {
+			// redeployIfRunningAfterSync only ever returns redeployAfterSyncFailedError;
+			// AsType remains as a defensive guard against future contract drift.
 			if typed, ok := errors.AsType[redeployAfterSyncFailedError](redeployErr); ok {
 				s.markSyncRedeployFailedInternal(ctx, sync, id, source.commitHash, syncedFiles, typed, actor, result)
-				return result, redeployErr
 			}
 			return result, redeployErr
 		}
@@ -794,10 +795,13 @@ func (s *GitOpsSyncService) performSingleFileSyncInternal(ctx context.Context, s
 
 	project, err := s.getOrCreateProjectInternal(ctx, sync, id, source.composeContent, source.envContent, result, actor)
 	if err != nil {
+		// err may be a redeployAfterSyncFailedError (from updateProjectForSyncInternal)
+		// or a plain failSync error (from CreateProject / ApplyGitSyncProjectFiles).
+		// Only the typed case warrants the redeploy-failure marker; the rest just
+		// surface through the caller.
 		if redeployErr, ok := errors.AsType[redeployAfterSyncFailedError](err); ok {
 			syncedFiles := []string{filepath.Base(sync.ComposePath)}
 			s.markSyncRedeployFailedInternal(ctx, sync, id, source.commitHash, syncedFiles, redeployErr, actor, result)
-			return result, err
 		}
 		return result, err
 	}
