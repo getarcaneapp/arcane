@@ -149,7 +149,7 @@ func MountForSubpath(mounts []containertypes.MountPoint, containerPath string, t
 		if m.Destination == "" {
 			continue
 		}
-		if !pathHasPrefix(containerPath, m.Destination) {
+		if !pathHasPrefixInternal(containerPath, m.Destination) {
 			continue
 		}
 		if best == nil || len(m.Destination) > len(best.Destination) {
@@ -187,10 +187,10 @@ func MountForSubpath(mounts []containertypes.MountPoint, containerPath string, t
 	}
 }
 
-// pathHasPrefix reports whether containerPath is at or under prefix,
+// pathHasPrefixInternal reports whether containerPath is at or under prefix,
 // treating both as POSIX-style paths. Avoids false positives like
 // "/app/datax" matching "/app/data".
-func pathHasPrefix(containerPath, prefix string) bool {
+func pathHasPrefixInternal(containerPath, prefix string) bool {
 	if containerPath == prefix {
 		return true
 	}
