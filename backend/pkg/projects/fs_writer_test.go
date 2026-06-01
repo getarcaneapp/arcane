@@ -137,6 +137,59 @@ func TestWriteComposeFile_PreservesExistingPodmanComposeNames(t *testing.T) {
 	}
 }
 
+func TestWriteSyncedDirectory_HonorsExecutableBit(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("file mode bits are not represented on Windows FS")
+	}
+
+	root := t.TempDir()
+	project := filepath.Join(root, "myproject")
+	files := []SyncFile{
+		{RelativePath: "compose.yml", Content: []byte("services:\n  app:\n    image: alpine\n"), Executable: false},
+		{RelativePath: "scripts/pre-deploy.sh", Content: []byte("#!/bin/sh\necho hi\n"), Executable: true},
+		{RelativePath: "README.md", Content: []byte("readme"), Executable: false},
+	}
+
+	_, err := WriteSyncedDirectory(root, project, files)
+	require.NoError(t, err)
+
+	composeInfo, err := os.Stat(filepath.Join(project, "compose.yml"))
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0), composeInfo.Mode().Perm()&0o111, "compose.yml should not be executable")
+
+	scriptInfo, err := os.Stat(filepath.Join(project, "scripts/pre-deploy.sh"))
+	require.NoError(t, err)
+	assert.NotEqual(t, os.FileMode(0), scriptInfo.Mode().Perm()&0o111, "scripts/pre-deploy.sh should be executable")
+}
+
+func TestWriteSyncedDirectory_DowngradesExecutableBit(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("file mode bits are not represented on Windows FS")
+	}
+
+	root := t.TempDir()
+	project := filepath.Join(root, "myproject")
+	// First write: script committed as +x.
+	_, err := WriteSyncedDirectory(root, project, []SyncFile{
+		{RelativePath: "scripts/hook.sh", Content: []byte("#!/bin/sh\n"), Executable: true},
+	})
+	require.NoError(t, err)
+	first, err := os.Stat(filepath.Join(project, "scripts/hook.sh"))
+	require.NoError(t, err)
+	require.NotEqual(t, os.FileMode(0), first.Mode().Perm()&0o111)
+
+	// Second write: same file, now without +x (e.g. the repo dropped the bit).
+	// The write path must re-chmod so the on-disk mode tracks the repo, not
+	// the previous write.
+	_, err = WriteSyncedDirectory(root, project, []SyncFile{
+		{RelativePath: "scripts/hook.sh", Content: []byte("#!/bin/sh\necho updated\n"), Executable: false},
+	})
+	require.NoError(t, err)
+	second, err := os.Stat(filepath.Join(project, "scripts/hook.sh"))
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0), second.Mode().Perm()&0o111, "executable bit should clear on update when repo no longer marks +x")
+}
+
 func TestWriteComposeFile_PreservesExistingCustomComposeNames(t *testing.T) {
 	t.Parallel()
 

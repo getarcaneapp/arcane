@@ -48,6 +48,7 @@ type ProjectService struct {
 	imageService                *ImageService
 	dockerService               *DockerClientService
 	buildService                *BuildService
+	lifecycleService            *LifecycleService
 	config                      *config.Config
 	registryCredentialsProvider registryCredentialsProviderInternal
 
@@ -65,16 +66,17 @@ type composeCacheEntry struct {
 	project       *composetypes.Project
 }
 
-func NewProjectService(db *database.DB, settingsService *SettingsService, eventService *EventService, imageService *ImageService, dockerService *DockerClientService, buildService *BuildService, cfg *config.Config) *ProjectService {
+func NewProjectService(db *database.DB, settingsService *SettingsService, eventService *EventService, imageService *ImageService, dockerService *DockerClientService, buildService *BuildService, lifecycleService *LifecycleService, cfg *config.Config) *ProjectService {
 	return &ProjectService{
-		db:              db,
-		settingsService: settingsService,
-		eventService:    eventService,
-		imageService:    imageService,
-		dockerService:   dockerService,
-		buildService:    buildService,
-		config:          cfg,
-		composeCache:    cache.NewKeyed[string, composeCacheEntry](),
+		db:               db,
+		settingsService:  settingsService,
+		eventService:     eventService,
+		imageService:     imageService,
+		dockerService:    dockerService,
+		buildService:     buildService,
+		lifecycleService: lifecycleService,
+		config:           cfg,
+		composeCache:     cache.NewKeyed[string, composeCacheEntry](),
 	}
 }
 
@@ -2035,13 +2037,25 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 		resolvedPullPolicy = "missing"
 	}
 
-	project, _, derr := s.loadComposeProjectForProjectInternal(ctx, projectFromDb, nil)
-	if derr != nil {
-		return fmt.Errorf("failed to load compose project in %s: %w", projectFromDb.Path, derr)
-	}
-
 	if err := s.updateProjectStatusInternal(ctx, projectID, models.ProjectStatusDeploying); err != nil {
 		return fmt.Errorf("failed to update project status to deploying: %w", err)
+	}
+
+	// Run any configured pre-deploy lifecycle hook before loading the compose
+	// project so hooks can produce files that compose then consumes (e.g.
+	// `sops -d secrets.enc.env > .env.runtime` for an `env_file: .env.runtime`
+	// service). A failed hook aborts the deploy.
+	if s.lifecycleService != nil {
+		if lerr := s.lifecycleService.RunPreDeploy(ctx, projectFromDb, user); lerr != nil {
+			s.restoreProjectStatusAfterFailedDeployInternal(ctx, projectID)
+			return fmt.Errorf("pre-deploy lifecycle hook failed: %w", lerr)
+		}
+	}
+
+	project, _, derr := s.loadComposeProjectForProjectInternal(ctx, projectFromDb, nil)
+	if derr != nil {
+		s.restoreProjectStatusAfterFailedDeployInternal(ctx, projectID)
+		return fmt.Errorf("failed to load compose project in %s: %w", projectFromDb.Path, derr)
 	}
 
 	progressWriter, _ := ctx.Value(projects.ProgressWriterKey{}).(io.Writer)

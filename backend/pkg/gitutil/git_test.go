@@ -380,6 +380,38 @@ func TestWalkDirectory_BasicWalk(t *testing.T) {
 	}
 }
 
+func TestWalkDirectory_PreservesExecutableBit(t *testing.T) {
+	tmpDir := t.TempDir()
+	writeFileInternal(t, tmpDir, "compose.yaml", minimalCompose())
+	writeFileInternal(t, tmpDir, "scripts/hook.sh", []byte("#!/bin/sh\necho hi\n"))
+	writeFileInternal(t, tmpDir, "README.md", []byte("readme"))
+	if err := os.Chmod(filepath.Join(tmpDir, "scripts/hook.sh"), 0o755); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+
+	client := NewClient("")
+	result, err := client.WalkDirectory(context.Background(), tmpDir, "compose.yaml", 0, 0, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	byPath := map[string]SyncFileInfo{}
+	for _, f := range result.Files {
+		byPath[f.RelativePath] = f
+	}
+
+	hook, ok := byPath[filepath.ToSlash("scripts/hook.sh")]
+	if !ok {
+		t.Fatalf("expected scripts/hook.sh in walk result, got %v", byPath)
+	}
+	if !hook.Executable {
+		t.Errorf("expected scripts/hook.sh to be reported Executable, got false")
+	}
+	if readme, ok := byPath["README.md"]; ok && readme.Executable {
+		t.Errorf("expected README.md to not be Executable")
+	}
+}
+
 func TestWalkDirectory_MaxFilesLimit(t *testing.T) {
 	tmpDir := t.TempDir()
 	writeFileInternal(t, tmpDir, "compose.yaml", minimalCompose())

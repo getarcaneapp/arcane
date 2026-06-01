@@ -1553,7 +1553,7 @@ type GitOpsSyncCreationError struct {
 }
 
 func (e *GitOpsSyncCreationError) Error() string {
-	return "Failed to create GitOps sync"
+	return fmt.Sprintf("Failed to create GitOps sync: %v", e.Err)
 }
 
 type GitOpsSyncRetrievalError struct {
@@ -1569,7 +1569,7 @@ type GitOpsSyncUpdateError struct {
 }
 
 func (e *GitOpsSyncUpdateError) Error() string {
-	return "Failed to update GitOps sync"
+	return fmt.Sprintf("Failed to update GitOps sync: %v", e.Err)
 }
 
 type GitOpsSyncDeletionError struct {

@@ -13,6 +13,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	git "github.com/getarcaneapp/arcane/backend/v2/pkg/gitutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
+	"github.com/getarcaneapp/arcane/types/v2/gitops"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -31,7 +32,7 @@ func setupGitOpsSyncDirectoryTestService(t *testing.T) (*GitOpsSyncService, *dat
 	projectsDir := t.TempDir()
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
-	projectService := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
+	projectService := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, config.Load())
 
 	return NewGitOpsSyncService(db, nil, projectService, nil, nil, settingsService), db, projectsDir
 }
@@ -664,4 +665,253 @@ func TestGitOpsSyncService_GetEffectiveSyncLimits(t *testing.T) {
 		require.Equal(t, int64(0), maxTotalSize)
 		require.Equal(t, int64(0), maxBinarySize)
 	})
+}
+
+// setupLifecycleValidationService builds a GitOpsSyncService with lifecycle
+// hooks enabled in settings so the validator's gate doesn't short-circuit
+// the rule checks under test.
+func setupLifecycleValidationService(t *testing.T) (*GitOpsSyncService, context.Context) {
+	t.Helper()
+	ctx := context.Background()
+	svc, _, _ := setupGitOpsSyncDirectoryTestService(t)
+	require.NoError(t, svc.settingsService.SetStringSetting(ctx, "lifecycleEnabled", "true"))
+	return svc, ctx
+}
+
+func strPtr(s string) *string { return &s }
+func intPtr(i int) *int       { return &i }
+func boolPtr(b bool) *bool    { return &b }
+
+func TestValidateLifecycleConfig_AllNilNoError(t *testing.T) {
+	svc, ctx := setupLifecycleValidationService(t)
+	require.NoError(t, svc.validateLifecycleConfigInternal(ctx, nil, lifecycleConfigInputInternal{}))
+}
+
+func TestValidateLifecycleConfig_RejectsWhenGloballyDisabled(t *testing.T) {
+	svc, _, _ := setupGitOpsSyncDirectoryTestService(t)
+	ctx := context.Background()
+	// lifecycleEnabled defaults to false; do not enable.
+	err := svc.validateLifecycleConfigInternal(ctx, nil, lifecycleConfigInputInternal{
+		scriptPath:  strPtr("scripts/deploy.sh"),
+		runnerImage: strPtr("alpine:latest"),
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "disabled")
+}
+
+func TestValidateLifecycleConfig_RejectsAbsoluteScriptPath(t *testing.T) {
+	svc, ctx := setupLifecycleValidationService(t)
+	err := svc.validateLifecycleConfigInternal(ctx, nil, lifecycleConfigInputInternal{
+		scriptPath:  strPtr("/etc/passwd"),
+		runnerImage: strPtr("alpine:latest"),
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "relative")
+}
+
+func TestValidateLifecycleConfig_RejectsTraversalScriptPath(t *testing.T) {
+	svc, ctx := setupLifecycleValidationService(t)
+	err := svc.validateLifecycleConfigInternal(ctx, nil, lifecycleConfigInputInternal{
+		scriptPath:  strPtr("../outside.sh"),
+		runnerImage: strPtr("alpine:latest"),
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "escape")
+}
+
+func TestValidateLifecycleConfig_RejectsOverlongScriptPath(t *testing.T) {
+	svc, ctx := setupLifecycleValidationService(t)
+	long := make([]byte, 257)
+	for i := range long {
+		long[i] = 'a'
+	}
+	err := svc.validateLifecycleConfigInternal(ctx, nil, lifecycleConfigInputInternal{
+		scriptPath:  strPtr(string(long)),
+		runnerImage: strPtr("alpine:latest"),
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "256")
+}
+
+func TestValidateLifecycleConfig_RejectsScriptWithoutRunnerImageOnCreate(t *testing.T) {
+	svc, ctx := setupLifecycleValidationService(t)
+	err := svc.validateLifecycleConfigInternal(ctx, nil, lifecycleConfigInputInternal{
+		scriptPath: strPtr("scripts/deploy.sh"),
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "Runner image is required")
+}
+
+func TestValidateLifecycleConfig_AcceptsScriptWithExistingRunnerImageOnUpdate(t *testing.T) {
+	svc, ctx := setupLifecycleValidationService(t)
+	existing := &models.GitOpsSync{SyncDirectory: true}
+	existing.PreDeployRunnerImage = strPtr("alpine:latest")
+	require.NoError(t, svc.validateLifecycleConfigInternal(ctx, existing, lifecycleConfigInputInternal{
+		scriptPath: strPtr("scripts/deploy.sh"),
+	}))
+}
+
+func TestValidateLifecycleConfig_RejectsTimeoutZeroOrNegative(t *testing.T) {
+	svc, ctx := setupLifecycleValidationService(t)
+	for _, v := range []int{0, -1, -3600} {
+		err := svc.validateLifecycleConfigInternal(ctx, nil, lifecycleConfigInputInternal{
+			timeoutSec: intPtr(v),
+		})
+		require.Errorf(t, err, "expected error for timeoutSec=%d", v)
+		require.Contains(t, err.Error(), "at least 1")
+	}
+}
+
+func TestValidateLifecycleConfig_RejectsTimeoutAboveSettingCap(t *testing.T) {
+	svc, ctx := setupLifecycleValidationService(t)
+	require.NoError(t, svc.settingsService.SetStringSetting(ctx, "lifecycleMaxTimeoutSec", "120"))
+	err := svc.validateLifecycleConfigInternal(ctx, nil, lifecycleConfigInputInternal{
+		timeoutSec: intPtr(300),
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "exceeds")
+}
+
+func TestValidateLifecycleConfig_RejectsInvalidEnvKey(t *testing.T) {
+	svc, ctx := setupLifecycleValidationService(t)
+	err := svc.validateLifecycleConfigInternal(ctx, nil, lifecycleConfigInputInternal{
+		env: strPtr("FOO-BAR=baz"),
+	})
+	require.Error(t, err)
+}
+
+func TestValidateLifecycleConfig_AcceptsValidEnv(t *testing.T) {
+	svc, ctx := setupLifecycleValidationService(t)
+	require.NoError(t, svc.validateLifecycleConfigInternal(ctx, nil, lifecycleConfigInputInternal{
+		env: strPtr("FOO=bar\nBAZ_2=qux"),
+	}))
+}
+
+func TestValidateLifecycleConfig_RejectsRelativeMountSource(t *testing.T) {
+	svc, ctx := setupLifecycleValidationService(t)
+	err := svc.validateLifecycleConfigInternal(ctx, nil, lifecycleConfigInputInternal{
+		extraMounts: strPtr("relative/path:/in/container"),
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "absolute")
+}
+
+func TestValidateLifecycleConfig_RejectsRelativeMountTarget(t *testing.T) {
+	svc, ctx := setupLifecycleValidationService(t)
+	err := svc.validateLifecycleConfigInternal(ctx, nil, lifecycleConfigInputInternal{
+		extraMounts: strPtr("/host/path:relative/target"),
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "absolute")
+}
+
+func TestValidateLifecycleConfig_AllowsClearingScriptWithoutImage(t *testing.T) {
+	svc, ctx := setupLifecycleValidationService(t)
+	existing := &models.GitOpsSync{}
+	existing.PreDeployScriptPath = strPtr("scripts/old.sh")
+	existing.PreDeployRunnerImage = strPtr("alpine:latest")
+	// User clears the script (empty string in update); image clear is implied not required.
+	require.NoError(t, svc.validateLifecycleConfigInternal(ctx, existing, lifecycleConfigInputInternal{
+		scriptPath: strPtr(""),
+	}))
+}
+
+func TestValidateLifecycleConfig_RejectsScriptWithoutSyncDirectoryOnCreate(t *testing.T) {
+	svc, ctx := setupLifecycleValidationService(t)
+	err := svc.validateLifecycleConfigInternal(ctx, nil, lifecycleConfigInputInternal{
+		scriptPath:    strPtr("scripts/deploy.sh"),
+		runnerImage:   strPtr("alpine:latest"),
+		syncDirectory: boolPtr(false),
+	})
+	require.Error(t, err)
+	validationErr, ok := errors.AsType[*models.ValidationError](err)
+	require.True(t, ok, "expected *models.ValidationError, got %T", err)
+	require.Equal(t, "preDeployScriptPath", validationErr.Field)
+}
+
+func TestValidateLifecycleConfig_AcceptsScriptWithSyncDirectoryOnCreate(t *testing.T) {
+	svc, ctx := setupLifecycleValidationService(t)
+	require.NoError(t, svc.validateLifecycleConfigInternal(ctx, nil, lifecycleConfigInputInternal{
+		scriptPath:    strPtr("scripts/deploy.sh"),
+		runnerImage:   strPtr("alpine:latest"),
+		syncDirectory: boolPtr(true),
+	}))
+}
+
+func TestValidateLifecycleConfig_AcceptsScriptWhenExistingSyncHasSyncDirectory(t *testing.T) {
+	svc, ctx := setupLifecycleValidationService(t)
+	existing := &models.GitOpsSync{SyncDirectory: true}
+	require.NoError(t, svc.validateLifecycleConfigInternal(ctx, existing, lifecycleConfigInputInternal{
+		scriptPath:  strPtr("scripts/deploy.sh"),
+		runnerImage: strPtr("alpine:latest"),
+	}))
+}
+
+func TestValidateLifecycleConfig_RejectsSyncDirectoryToggleOffWhileScriptStillSet(t *testing.T) {
+	svc, ctx := setupLifecycleValidationService(t)
+	existing := &models.GitOpsSync{SyncDirectory: true}
+	existing.PreDeployScriptPath = strPtr("scripts/deploy.sh")
+	existing.PreDeployRunnerImage = strPtr("alpine:latest")
+	// Admin toggles syncDirectory off without clearing the script — should be rejected.
+	err := svc.validateLifecycleConfigInternal(ctx, existing, lifecycleConfigInputInternal{
+		syncDirectory: boolPtr(false),
+	})
+	require.Error(t, err)
+	validationErr, ok := errors.AsType[*models.ValidationError](err)
+	require.True(t, ok, "expected *models.ValidationError, got %T", err)
+	require.Equal(t, "preDeployScriptPath", validationErr.Field)
+}
+
+func TestRedeployAfterSyncFailedError_FormatAndUnwrap(t *testing.T) {
+	cause := errors.New("pre-deploy hook bombed")
+	err := redeployAfterSyncFailedError{cause: cause}
+
+	require.Equal(t, "redeploy failed: pre-deploy hook bombed", err.Error())
+	require.True(t, errors.Is(err, cause), "Unwrap should expose the cause for errors.Is")
+
+	typed, ok := errors.AsType[redeployAfterSyncFailedError](err)
+	require.True(t, ok)
+	require.Equal(t, cause, typed.cause)
+}
+
+func TestMarkSyncRedeployFailedInternal_PersistsErrorOnSyncRow(t *testing.T) {
+	ctx := context.Background()
+	svc, db, _ := setupGitOpsSyncDirectoryTestService(t)
+	// Event logging requires a real EventService; the shared setup leaves it
+	// nil since most tests don't exercise the event path.
+	require.NoError(t, db.AutoMigrate(&models.Event{}))
+	svc.eventService = NewEventService(db, config.Load(), nil)
+
+	sync := &models.GitOpsSync{
+		BaseModel:     models.BaseModel{ID: "sync-1"},
+		Name:          "redeploy-fail",
+		EnvironmentID: "0",
+		RepositoryID:  "repo-1",
+		Branch:        "main",
+		ComposePath:   "compose.yml",
+		TargetType:    "project",
+	}
+	require.NoError(t, db.WithContext(ctx).Select("*").Omit("Environment", "Repository", "Project").Create(sync).Error)
+
+	result := &gitops.SyncResult{Success: true}
+	syncedFiles := []string{"compose.yml", "scripts/pre-deploy.sh"}
+	hookErr := redeployAfterSyncFailedError{cause: errors.New("pre-deploy hook failed: exit 1")}
+
+	svc.markSyncRedeployFailedInternal(ctx, sync, sync.ID, "abc123", syncedFiles, hookErr, models.User{BaseModel: models.BaseModel{ID: "user"}, Username: "tester"}, result)
+
+	require.False(t, result.Success)
+	require.NotNil(t, result.Error)
+	require.Contains(t, *result.Error, "pre-deploy hook failed")
+
+	var stored models.GitOpsSync
+	require.NoError(t, db.WithContext(ctx).First(&stored, "id = ?", sync.ID).Error)
+	require.NotNil(t, stored.LastSyncStatus)
+	require.Equal(t, "failed", *stored.LastSyncStatus)
+	require.NotNil(t, stored.LastSyncError)
+	require.Contains(t, *stored.LastSyncError, "pre-deploy hook failed")
+	// The synced-files list should still be populated so operators can see
+	// what reached disk before the redeploy died.
+	require.NotNil(t, stored.SyncedFiles)
+	require.Contains(t, *stored.SyncedFiles, "compose.yml")
+	require.Contains(t, *stored.SyncedFiles, "scripts/pre-deploy.sh")
 }

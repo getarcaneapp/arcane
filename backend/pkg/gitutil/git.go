@@ -597,6 +597,11 @@ type SyncFileInfo struct {
 	Content      []byte
 	Size         int64
 	IsBinary     bool
+	// Executable mirrors git's +x bit so callers can preserve it on the
+	// destination. Required for lifecycle hooks: a script committed as
+	// 100755 must arrive in the project workspace runnable, otherwise the
+	// lifecycle runner fails to exec it.
+	Executable bool
 }
 
 // DirectoryWalkResult holds the result of walking a directory for sync
@@ -728,11 +733,16 @@ func (c *Client) appendSyncFile(root *os.Root, path string, d fs.DirEntry, resul
 		return fmt.Errorf("total size limit exceeded (max %d bytes)", limits.maxTotalSize)
 	}
 
+	executable := false
+	if info, err := d.Info(); err == nil {
+		executable = info.Mode()&0o111 != 0
+	}
 	result.Files = append(result.Files, SyncFileInfo{
 		RelativePath: path,
 		Content:      content,
 		Size:         fileSize,
 		IsBinary:     isBinary,
+		Executable:   executable,
 	})
 	result.TotalFiles++
 	result.TotalSize += fileSize

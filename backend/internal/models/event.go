@@ -89,6 +89,11 @@ const (
 	EventTypeWebhookDelete  EventType = "webhook.delete"
 	EventTypeWebhookTrigger EventType = "webhook.trigger"
 
+	// EventTypeLifecycleExecute is emitted by LifecycleService each time a
+	// pre-deploy script runs. Severity is success on a clean exit and warning
+	// on non-zero exit or timeout.
+	EventTypeLifecycleExecute EventType = "lifecycle.execute"
+
 	// EventSeverityInfo and the constants below enumerate event severities.
 	EventSeverityInfo    EventSeverity = "info"
 	EventSeverityWarning EventSeverity = "warning"

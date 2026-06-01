@@ -35,6 +35,7 @@ type Services struct {
 	Image             *services.ImageService
 	Build             *services.BuildService
 	BuildWorkspace    *services.BuildWorkspaceService
+	Lifecycle         *services.LifecycleService
 	Volume            *services.VolumeService
 	Network           *services.NetworkService
 	Port              *services.PortService
@@ -114,8 +115,8 @@ func provideContainerRegistryServiceInternal(db *database.DB, docker *services.D
 	}, kv)
 }
 
-func provideProjectServiceInternal(db *database.DB, settings *services.SettingsService, event *services.EventService, image *services.ImageService, docker *services.DockerClientService, build *services.BuildService, environment *services.EnvironmentService, cfg *config.Config) *services.ProjectService {
-	return services.NewProjectService(db, settings, event, image, docker, build, cfg).
+func provideProjectServiceInternal(db *database.DB, settings *services.SettingsService, event *services.EventService, image *services.ImageService, docker *services.DockerClientService, build *services.BuildService, lifecycle *services.LifecycleService, environment *services.EnvironmentService, cfg *config.Config) *services.ProjectService {
+	return services.NewProjectService(db, settings, event, image, docker, build, lifecycle, cfg).
 		WithRegistryCredentialsProvider(environment.GetEnabledRegistryCredentials)
 }
 

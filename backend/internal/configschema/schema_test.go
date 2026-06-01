@@ -304,6 +304,8 @@ var expectedSettingOverrideKeys = []string{
 	"httpClientTimeout",
 	"iconCatalog",
 	"keyboardShortcutsEnabled",
+	"lifecycleEnabled",
+	"lifecycleMaxTimeoutSec",
 	"maxImageUploadSize",
 	"mobileNavigationMode",
 	"mobileNavigationShowLabels",

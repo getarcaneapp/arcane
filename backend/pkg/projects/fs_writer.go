@@ -218,6 +218,9 @@ func WriteFileWithPerm(filePath, content string, perm os.FileMode) error {
 type SyncFile struct {
 	RelativePath string // Path relative to the project directory
 	Content      []byte
+	// Executable preserves the source's +x bit so lifecycle hooks and other
+	// repo-committed scripts arrive runnable in the project workspace.
+	Executable bool
 }
 
 // WriteSyncedDirectory writes multiple files to a project directory.
@@ -272,9 +275,19 @@ func WriteSyncedDirectory(projectsRoot, projectPath string, files []SyncFile) ([
 			return nil, fmt.Errorf("failed to inspect target path for %s: %w", file.RelativePath, err)
 		}
 
-		// Write the file
-		if err := os.WriteFile(targetPathClean, file.Content, pkgutils.FilePerm); err != nil {
+		// Write the file. Honor the source's executable bit so scripts arrive
+		// runnable for lifecycle hooks and similar consumers.
+		perm := pkgutils.FilePerm
+		if file.Executable {
+			perm = 0o755
+		}
+		if err := os.WriteFile(targetPathClean, file.Content, perm); err != nil {
 			return nil, fmt.Errorf("failed to write file %s: %w", file.RelativePath, err)
+		}
+		// os.WriteFile only honors the mode on file creation. Re-chmod so an
+		// update path also lifts/lowers the +x bit to match the repo.
+		if err := os.Chmod(targetPathClean, perm); err != nil {
+			return nil, fmt.Errorf("failed to set mode on %s: %w", file.RelativePath, err)
 		}
 
 		writtenPaths = append(writtenPaths, file.RelativePath)

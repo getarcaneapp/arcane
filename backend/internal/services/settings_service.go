@@ -193,6 +193,8 @@ func DefaultSettingsConfig() *models.Settings {
 		GitSyncMaxTotalSizeMb:           models.SettingVariable{Value: "50"},
 		GitSyncMaxBinarySizeMb:          models.SettingVariable{Value: "10"},
 		EnvironmentHealthInterval:       models.SettingVariable{Value: "0 */2 * * * *"},
+		LifecycleEnabled:                models.SettingVariable{Value: "false"},
+		LifecycleMaxTimeoutSec:          models.SettingVariable{Value: "300"},
 
 		DockerAPITimeout:       models.SettingVariable{Value: "30"},
 		DockerImagePullTimeout: models.SettingVariable{Value: "600"},
