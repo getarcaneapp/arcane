@@ -14,7 +14,8 @@
 		SettingsIcon,
 		FileTextIcon,
 		AlertIcon,
-		GlobeIcon
+		GlobeIcon,
+		CodeIcon
 	} from '$lib/icons';
 	import { type TabItem } from '$lib/components/tab-bar/index.js';
 	import TabbedPageLayout from '$lib/layouts/tabbed-page-layout.svelte';
@@ -111,6 +112,21 @@
 		initialData: data.project,
 		refetchOnMount: false
 	}));
+
+	const lifecycleSyncQuery = createQuery(() => {
+		const syncId = data.project?.gitOpsManagedBy;
+		return {
+			queryKey: queryKeys.gitOpsSyncs.detail(envId, syncId ?? 'none'),
+			queryFn: () => gitOpsSyncService.getSync(envId, syncId!),
+			enabled: !!syncId,
+			staleTime: 30_000
+		};
+	});
+
+	const lifecycleSync = $derived(lifecycleSyncQuery.data);
+	const hasLifecycleHook = $derived(
+		!!(lifecycleSync?.preDeployScriptPath && lifecycleSync.preDeployScriptPath.trim().length > 0)
+	);
 
 	const formSchema = z
 		.object({
@@ -287,9 +303,15 @@
 			pending: treeTabPending(key)
 		}))
 	);
+	// Validity check covers both include files (editable) and directory files
+	// (read-only — currently used to surface the pre-deploy script alongside
+	// includes in classic layout). A path that no longer exists in either set
+	// is forgotten so a removed file doesn't leave a dangling tab selection.
 	const selectedIncludeTab = $derived.by(() => {
 		if (!selectedIncludeTabPreference) return null;
-		return includeFilePaths.has(selectedIncludeTabPreference) ? selectedIncludeTabPreference : null;
+		if (includeFilePaths.has(selectedIncludeTabPreference)) return selectedIncludeTabPreference;
+		if (directoryFilePaths.has(selectedIncludeTabPreference)) return selectedIncludeTabPreference;
+		return null;
 	});
 	let composeHasChanges = $derived($inputs.composeContent.value !== serverComposeContent);
 	let envHasChanges = $derived($inputs.envContent.value !== serverEnvContent);
@@ -1288,6 +1310,18 @@
 													{/if}
 												</div>
 											{/if}
+											{#if hasLifecycleHook && lifecycleSync?.preDeployScriptPath}
+												<div class="flex items-center gap-1.5 font-mono text-xs">
+													<span class="text-muted-foreground">{m.git_sync_pre_deploy_title()}:</span>
+													<span class="bg-muted rounded px-1.5 py-0.5">{lifecycleSync.preDeployScriptPath}</span>
+													<span class="text-muted-foreground">
+														{m.lifecycle_inline_runner_summary({
+															image: lifecycleSync.preDeployRunnerImage || 'alpine:latest',
+															network: lifecycleSync.preDeployNetworkMode || 'none'
+														})}
+													</span>
+												</div>
+											{/if}
 											<span class="text-muted-foreground text-xs">
 												{m.git_managed_env_note()}
 											</span>
@@ -1483,10 +1517,10 @@
 							</div>
 						{:else}
 							<div class="flex h-full min-h-0 flex-col gap-4">
-								{#if project?.includeFiles && project.includeFiles.length > 0}
+								{#if (project?.includeFiles && project.includeFiles.length > 0) || (hasLifecycleHook && lifecycleSync?.preDeployScriptPath && directoryFilePaths.has(lifecycleSync.preDeployScriptPath))}
 									<div class="border-border bg-card rounded-lg border">
 										<div class="border-border scrollbar-hide flex gap-2 overflow-x-auto border-b p-2">
-											{#each project.includeFiles as includeFile (includeFile.relativePath)}
+											{#each project?.includeFiles ?? [] as includeFile (includeFile.relativePath)}
 												<ArcaneButton
 													action="base"
 													tone={selectedIncludeTab === includeFile.relativePath ? 'outline-primary' : 'ghost'}
@@ -1497,18 +1531,34 @@
 													customLabel={includeFile.relativePath}
 												/>
 											{/each}
+											{#if hasLifecycleHook && lifecycleSync?.preDeployScriptPath && directoryFilePaths.has(lifecycleSync.preDeployScriptPath)}
+												{@const scriptPath = lifecycleSync.preDeployScriptPath}
+												<ArcaneButton
+													action="base"
+													tone={selectedIncludeTab === scriptPath ? 'outline-primary' : 'ghost'}
+													size="sm"
+													class="shrink-0"
+													onclick={() => toggleIncludeFileTab(scriptPath)}
+													icon={CodeIcon}
+													customLabel={scriptPath}
+												/>
+											{/if}
 										</div>
 									</div>
 								{/if}
 
 								{#if selectedIncludeTab}
 									{@const includeFile = project?.includeFiles?.find((f) => f.relativePath === selectedIncludeTab)}
-									{#if includeFile}
-										{#await getProjectFileResource('include', includeFile.relativePath)}
-											<div class="text-muted-foreground flex h-full min-h-0 items-center justify-center rounded-lg border">
-												{m.common_loading()}
-											</div>
-										{:then}
+									{@const dirFile = !includeFile
+										? project?.directoryFiles?.find((f) => f.relativePath === selectedIncludeTab)
+										: undefined}
+									{@const fileKind = includeFile ? 'include' : 'directory'}
+									{#await getProjectFileResource(fileKind, selectedIncludeTab)}
+										<div class="text-muted-foreground flex h-full min-h-0 items-center justify-center rounded-lg border">
+											{m.common_loading()}
+										</div>
+									{:then loaded}
+										{#if includeFile}
 											<CodePanel
 												bind:open={includeFilesPanelStates[includeFile.relativePath]}
 												title={includeFile.relativePath}
@@ -1522,14 +1572,20 @@
 												enableDiff={true}
 												editorContext={codeEditorContext}
 											/>
-										{:catch error}
-											<div
-												class="text-destructive flex h-full min-h-0 items-center justify-center rounded-lg border px-4 text-sm"
-											>
-												{error instanceof Error ? error.message : String(error)}
-											</div>
-										{/await}
-									{/if}
+										{:else if dirFile}
+											<CodePanel
+												open={true}
+												title={loaded.relativePath}
+												language="env"
+												value={loaded.content ?? ''}
+												readOnly={true}
+											/>
+										{/if}
+									{:catch error}
+										<div class="text-destructive flex h-full min-h-0 items-center justify-center rounded-lg border px-4 text-sm">
+											{error instanceof Error ? error.message : String(error)}
+										</div>
+									{/await}
 								{:else}
 									<ResizableSplit
 										class="min-h-0 flex-1 lg:gap-2"

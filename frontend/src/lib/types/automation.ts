@@ -128,6 +128,12 @@ export interface GitOpsSyncCreateDto {
 	maxSyncFiles?: number;
 	maxSyncTotalSize?: number;
 	maxSyncBinarySize?: number;
+	preDeployScriptPath?: string;
+	preDeployRunnerImage?: string;
+	preDeployEnv?: string;
+	preDeployExtraMounts?: string;
+	preDeployTimeoutSec?: number;
+	preDeployNetworkMode?: string;
 }
 
 export interface GitOpsSyncUpdateDto {
@@ -143,6 +149,12 @@ export interface GitOpsSyncUpdateDto {
 	maxSyncFiles?: number;
 	maxSyncTotalSize?: number;
 	maxSyncBinarySize?: number;
+	preDeployScriptPath?: string;
+	preDeployRunnerImage?: string;
+	preDeployEnv?: string;
+	preDeployExtraMounts?: string;
+	preDeployTimeoutSec?: number;
+	preDeployNetworkMode?: string;
 }
 
 export interface GitOpsSync {
@@ -167,6 +179,15 @@ export interface GitOpsSync {
 	lastSyncStatus?: string;
 	lastSyncError?: string;
 	lastSyncCommit?: string;
+	preDeployScriptPath?: string;
+	preDeployRunnerImage?: string;
+	preDeployEnv?: string;
+	preDeployExtraMounts?: string;
+	preDeployTimeoutSec: number;
+	preDeployNetworkMode: string;
+	preDeployLastRunAt?: string;
+	preDeployLastRunStatus?: string;
+	preDeployLastRunOutput?: string;
 	createdAt: string;
 	updatedAt: string;
 }

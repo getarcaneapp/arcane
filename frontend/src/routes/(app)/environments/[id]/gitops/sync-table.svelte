@@ -1,6 +1,7 @@
 <script lang="ts">
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { LifecycleIndicator } from '$lib/components/lifecycle-indicator';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { toast } from 'svelte-sonner';
@@ -190,13 +191,16 @@
 </script>
 
 {#snippet NameCell({ item, value }: { item: GitOpsSync; value: any; row: ArcaneRow<GitOpsSync> })}
-	{#if item.projectId}
-		<a class="font-medium hover:underline" href={getProjectDetailsUrl(item.projectId)}>
-			{value}
-		</a>
-	{:else}
-		<span class="font-medium">{value}</span>
-	{/if}
+	<span class="inline-flex items-center gap-1.5">
+		{#if item.projectId}
+			<a class="font-medium hover:underline" href={getProjectDetailsUrl(item.projectId)}>
+				{value}
+			</a>
+		{:else}
+			<span class="font-medium">{value}</span>
+		{/if}
+		<LifecycleIndicator scriptPath={item.preDeployScriptPath} />
+	</span>
 {/snippet}
 
 {#snippet BranchCell({ value }: { value: any; item: GitOpsSync; row: ArcaneRow<GitOpsSync> })}
