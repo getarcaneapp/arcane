@@ -140,7 +140,7 @@ type lifecycleConfigInputInternal struct {
 func (s *GitOpsSyncService) validateLifecycleConfigInternal(ctx context.Context, current *models.GitOpsSync, in lifecycleConfigInputInternal) error {
 	lifecycleFieldSet := in.scriptPath != nil || in.runnerImage != nil || in.env != nil || in.extraMounts != nil || in.timeoutSec != nil || in.networkMode != nil
 	syncDirectoryChanging := in.syncDirectory != nil
-	effectiveScriptPath := resolveLifecycleEffectiveStringInternal(currentString(current, func(c *models.GitOpsSync) *string { return c.PreDeployScriptPath }), in.scriptPath)
+	effectiveScriptPath := resolveLifecycleEffectiveStringInternal(currentStringInternal(current, func(c *models.GitOpsSync) *string { return c.PreDeployScriptPath }), in.scriptPath)
 
 	// If nothing lifecycle-related is being touched and the resulting state
 	// has no script configured, there's nothing to validate.
@@ -169,7 +169,7 @@ func (s *GitOpsSyncService) validateLifecycleConfigInternal(ctx context.Context,
 			return &models.ValidationError{Field: "preDeployScriptPath", Message: "Script path must not escape the project directory."}
 		}
 
-		effectiveRunnerImage := resolveLifecycleEffectiveStringInternal(currentString(current, func(c *models.GitOpsSync) *string { return c.PreDeployRunnerImage }), in.runnerImage)
+		effectiveRunnerImage := resolveLifecycleEffectiveStringInternal(currentStringInternal(current, func(c *models.GitOpsSync) *string { return c.PreDeployRunnerImage }), in.runnerImage)
 		if effectiveRunnerImage == "" {
 			return &models.ValidationError{Field: "preDeployRunnerImage", Message: "Runner image is required when a script path is set."}
 		}
@@ -210,7 +210,7 @@ func resolveLifecycleEffectiveStringInternal(existing string, update *string) st
 	return strings.TrimSpace(existing)
 }
 
-func currentString(sync *models.GitOpsSync, accessor func(*models.GitOpsSync) *string) string {
+func currentStringInternal(sync *models.GitOpsSync, accessor func(*models.GitOpsSync) *string) string {
 	if sync == nil {
 		return ""
 	}
