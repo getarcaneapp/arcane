@@ -10,7 +10,7 @@
 	import { Switch } from '$lib/components/ui/switch/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import FileBrowserDialog from '$lib/components/dialogs/file-browser-dialog.svelte';
-	import type { GitOpsSync, GitOpsSyncCreateDto, GitOpsSyncUpdateDto, GitRepository, BranchInfo } from '$lib/types/automation';
+	import type { FileTreeNode, GitOpsSync, GitOpsSyncCreateDto, GitOpsSyncUpdateDto, GitRepository, BranchInfo } from '$lib/types/automation';
 	import { gitRepositoryService } from '$lib/services/git-repository-service';
 	import { settingsService } from '$lib/services/settings-service';
 	import { z } from 'zod/v4';
@@ -35,6 +35,10 @@
 
 	let isEditMode = $derived(!!syncToEdit);
 	let showFileBrowser = $state(false);
+	let fileBrowserTarget = $state<'compose' | 'preDeployScript'>('compose');
+
+	const composeFileFilter = (file: FileTreeNode) =>
+		file.type === 'file' && (file.name.endsWith('.yml') || file.name.endsWith('.yaml'));
 	let selectedTargetType = $state<GitOpsSyncTargetType>('project');
 
 	const targetTypeOptions = [
@@ -56,7 +60,13 @@
 		maxSyncTotalSizeMb: z.coerce.number().int().nonnegative(),
 		maxSyncBinarySizeMb: z.coerce.number().int().nonnegative(),
 		autoSync: z.boolean().default(true),
-		syncInterval: z.number().min(1).default(5)
+		syncInterval: z.number().min(1).default(5),
+		preDeployScriptPath: z.string().default(''),
+		preDeployRunnerImage: z.string().default(''),
+		preDeployTimeoutSec: z.coerce.number().int().positive().default(60),
+		preDeployNetworkMode: z.string().default('none'),
+		preDeployEnv: z.string().default(''),
+		preDeployExtraMounts: z.string().default('')
 	});
 
 	const bytesPerMegabyte = 1024 * 1024;
@@ -94,7 +104,13 @@
 				? bytesToMegabytesInternal(syncToEdit.maxSyncBinarySize, 0)
 				: (settingsQuery.data?.gitSyncMaxBinarySizeMb ?? 0),
 		autoSync: open && syncToEdit ? (syncToEdit.autoSync ?? true) : true,
-		syncInterval: open && syncToEdit ? (syncToEdit.syncInterval ?? 5) : 5
+		syncInterval: open && syncToEdit ? (syncToEdit.syncInterval ?? 5) : 5,
+		preDeployScriptPath: open && syncToEdit ? (syncToEdit.preDeployScriptPath ?? '') : '',
+		preDeployRunnerImage: open && syncToEdit ? (syncToEdit.preDeployRunnerImage ?? '') : '',
+		preDeployTimeoutSec: open && syncToEdit ? (syncToEdit.preDeployTimeoutSec ?? 60) : 60,
+		preDeployNetworkMode: open && syncToEdit ? (syncToEdit.preDeployNetworkMode ?? 'none') : 'none',
+		preDeployEnv: open && syncToEdit ? (syncToEdit.preDeployEnv ?? '') : '',
+		preDeployExtraMounts: open && syncToEdit ? (syncToEdit.preDeployExtraMounts ?? '') : ''
 	});
 
 	let { inputs, ...form } = $derived(createForm<typeof formSchema>(formSchema, formData));
@@ -163,7 +179,13 @@
 			maxSyncTotalSize: megabytesToBytesInternal(data.maxSyncTotalSizeMb),
 			maxSyncBinarySize: megabytesToBytesInternal(data.maxSyncBinarySizeMb),
 			autoSync: data.autoSync,
-			syncInterval: data.syncInterval
+			syncInterval: data.syncInterval,
+			preDeployScriptPath: data.preDeployScriptPath.trim(),
+			preDeployRunnerImage: data.preDeployRunnerImage.trim(),
+			preDeployTimeoutSec: data.preDeployTimeoutSec,
+			preDeployNetworkMode: data.preDeployNetworkMode.trim(),
+			preDeployEnv: data.preDeployEnv.trim(),
+			preDeployExtraMounts: data.preDeployExtraMounts.trim()
 		};
 
 		onSubmit({ sync: payload, isEditMode });
@@ -285,7 +307,10 @@
 								type="button"
 								variant="outline"
 								size="icon"
-								onclick={() => (showFileBrowser = true)}
+								onclick={() => {
+									fileBrowserTarget = 'compose';
+									showFileBrowser = true;
+								}}
 								disabled={!selectedRepository?.value || !$inputs.branch.value}
 								title={m.git_sync_browse_files_title()}
 							>
@@ -380,6 +405,109 @@
 					</Collapsible.Content>
 				</Collapsible.Root>
 
+				<Collapsible.Root class="group/collapsible">
+					<Collapsible.Trigger
+						type="button"
+						class="text-muted-foreground hover:text-foreground flex w-full items-start justify-between gap-3 rounded-md px-1 py-1.5 text-left text-sm transition-colors"
+					>
+						<span class="min-w-0">
+							<span class="block font-medium">{m.git_sync_pre_deploy_title()}</span>
+						</span>
+						<ArrowRightIcon class="mt-0.5 size-4 shrink-0 transition-transform group-data-[state=open]/collapsible:rotate-90" />
+					</Collapsible.Trigger>
+					<Collapsible.Content>
+						<div class="border-border/70 mt-2 space-y-3 rounded-lg border border-dashed p-3">
+							<Alert.Root
+								class="border-amber-500/30 bg-amber-500/5 text-amber-700 dark:text-amber-300 [&>svg]:top-1/2 [&>svg]:-translate-y-1/2"
+							>
+								<InfoIcon class="size-4" />
+								<Alert.Description class="text-xs">
+									{m.git_sync_pre_deploy_acknowledgement()}
+								</Alert.Description>
+							</Alert.Root>
+
+							<p class="text-muted-foreground text-xs">{m.git_sync_pre_deploy_description()}</p>
+
+							<div class="space-y-1.5">
+								<Label for="preDeployScriptPath" class="text-sm font-medium">
+									{m.git_sync_pre_deploy_script_path_label()}
+								</Label>
+								<div class="flex gap-2">
+									<div class="flex-1">
+										<Input
+											id="preDeployScriptPath"
+											type="text"
+											placeholder={m.git_sync_pre_deploy_script_path_placeholder()}
+											bind:value={$inputs.preDeployScriptPath.value}
+											aria-invalid={$inputs.preDeployScriptPath.error ? 'true' : undefined}
+										/>
+									</div>
+									<Button
+										type="button"
+										variant="outline"
+										size="icon"
+										onclick={() => {
+											fileBrowserTarget = 'preDeployScript';
+											showFileBrowser = true;
+										}}
+										disabled={!selectedRepository?.value || !$inputs.branch.value}
+										title={m.git_sync_browse_files_title()}
+									>
+										<FolderOpenIcon class="size-4" />
+									</Button>
+								</div>
+								<p class="text-muted-foreground text-xs">{m.git_sync_pre_deploy_script_path_help()}</p>
+								{#if $inputs.preDeployScriptPath.error}
+									<p class="text-destructive text-xs font-medium">{$inputs.preDeployScriptPath.error}</p>
+								{/if}
+							</div>
+
+							<FormInput
+								label={m.git_sync_pre_deploy_runner_image_label()}
+								type="text"
+								placeholder={m.git_sync_pre_deploy_runner_image_placeholder()}
+								helpText={m.git_sync_pre_deploy_runner_image_help()}
+								bind:input={$inputs.preDeployRunnerImage}
+							/>
+
+							<div class="grid gap-3 sm:grid-cols-2">
+								<FormInput
+									label={m.git_sync_pre_deploy_timeout_label()}
+									type="number"
+									placeholder="60"
+									helpText={m.git_sync_pre_deploy_timeout_help()}
+									bind:input={$inputs.preDeployTimeoutSec}
+								/>
+								<FormInput
+									label={m.git_sync_pre_deploy_network_mode_label()}
+									type="text"
+									placeholder={m.git_sync_pre_deploy_network_mode_placeholder()}
+									helpText={m.git_sync_pre_deploy_network_mode_help()}
+									bind:input={$inputs.preDeployNetworkMode}
+								/>
+							</div>
+
+							<FormInput
+								type="textarea"
+								label={m.git_sync_pre_deploy_env_label()}
+								placeholder={m.git_sync_pre_deploy_env_placeholder()}
+								helpText={m.git_sync_pre_deploy_env_help()}
+								bind:input={$inputs.preDeployEnv}
+								inputClass="font-mono text-xs"
+							/>
+
+							<FormInput
+								type="textarea"
+								label={m.git_sync_pre_deploy_extra_mounts_label()}
+								placeholder={m.git_sync_pre_deploy_extra_mounts_placeholder()}
+								helpText={m.git_sync_pre_deploy_extra_mounts_help()}
+								bind:input={$inputs.preDeployExtraMounts}
+								inputClass="font-mono text-xs"
+							/>
+						</div>
+					</Collapsible.Content>
+				</Collapsible.Root>
+
 				<Alert.Root class="border-border/70 bg-muted/20 text-muted-foreground py-2 [&>svg]:top-1/2 [&>svg]:-translate-y-1/2">
 					<InfoIcon class="size-4" />
 					<Alert.Description class="text-xs">
@@ -412,11 +540,38 @@
 	{/snippet}
 </ResponsiveDialog>
 
+{#snippet composeBadge(file: FileTreeNode)}
+	{#if composeFileFilter(file)}
+		<span class="bg-primary/10 text-primary ml-auto rounded px-2 py-0.5 text-xs">
+			{m.git_sync_browse_compose_label()}
+		</span>
+	{/if}
+{/snippet}
+
+{#snippet composeFooterHint()}
+	<p class="text-muted-foreground text-xs">{m.git_sync_browse_hint()}</p>
+{/snippet}
+
 <FileBrowserDialog
 	bind:open={showFileBrowser}
 	repositoryId={selectedRepository?.value || ''}
 	branch={$inputs.branch.value}
+	description={fileBrowserTarget === 'preDeployScript'
+		? m.git_sync_browse_files_description_script()
+		: m.git_sync_browse_files_description()}
+	rootPath={fileBrowserTarget === 'preDeployScript'
+		? $inputs.composePath.value.includes('/')
+			? $inputs.composePath.value.replace(/\/[^/]*$/, '')
+			: ''
+		: ''}
+	fileFilter={fileBrowserTarget === 'preDeployScript' ? undefined : composeFileFilter}
+	fileBadge={fileBrowserTarget === 'preDeployScript' ? undefined : composeBadge}
+	footerHint={fileBrowserTarget === 'preDeployScript' ? undefined : composeFooterHint}
 	onSelect={(path) => {
-		$inputs.composePath.value = path;
+		if (fileBrowserTarget === 'preDeployScript') {
+			$inputs.preDeployScriptPath.value = path;
+		} else {
+			$inputs.composePath.value = path;
+		}
 	}}
 />
