@@ -173,7 +173,11 @@ func (s *LifecycleService) executePreDeployInternal(ctx context.Context, project
 	durationMs := time.Since(start).Milliseconds()
 
 	status := lifecycleStatusForResultInternal(exitCode, runErr)
-	persistedOutput := truncateLifecycleOutputInternal(combineLifecycleOutputInternal(stdoutContent, stderrContent), lifecycleMaxOutputBytes)
+	// stdoutBuf/stderrBuf already enforce lifecycleMaxOutputBytes each with a
+	// proper "...<truncated>" marker, so the combined string is already
+	// bounded and we don't slice again here — a second byte-boundary cut
+	// could land mid-UTF-8 codepoint and produce garbled output.
+	persistedOutput := combineLifecycleOutputInternal(stdoutContent, stderrContent)
 	s.persistLastRunInternal(ctx, sync.ID, status, persistedOutput, start)
 	s.emitLifecycleEventInternal(ctx, project, sync, status, exitCode, durationMs, runErr)
 
@@ -668,13 +672,6 @@ func combineLifecycleOutputInternal(stdout, stderr string) string {
 	default:
 		return stdout + "\n--- stderr ---\n" + stderr
 	}
-}
-
-func truncateLifecycleOutputInternal(content string, maxBytes int) string {
-	if maxBytes <= 0 || len(content) <= maxBytes {
-		return content
-	}
-	return content[:maxBytes] + "\n...<truncated>"
 }
 
 func removeLifecycleContainerInternal(ctx context.Context, dockerClient *client.Client, containerID string, apiTimeoutSec int) {

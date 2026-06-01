@@ -5,7 +5,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -216,16 +215,6 @@ func TestCombineLifecycleOutput(t *testing.T) {
 		got := combineLifecycleOutputInternal(c.stdout, c.stderr)
 		assert.Equal(t, c.want, got, "stdout=%q stderr=%q", c.stdout, c.stderr)
 	}
-}
-
-func TestTruncateLifecycleOutput(t *testing.T) {
-	short := "hello"
-	assert.Equal(t, short, truncateLifecycleOutputInternal(short, 1024))
-
-	long := strings.Repeat("a", 200)
-	got := truncateLifecycleOutputInternal(long, 100)
-	require.True(t, strings.HasPrefix(got, strings.Repeat("a", 100)))
-	require.Contains(t, got, "<truncated>")
 }
 
 func TestRunPreDeploy_NilProject(t *testing.T) {
