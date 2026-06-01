@@ -1,0 +1,9 @@
+ALTER TABLE gitops_syncs DROP COLUMN pre_deploy_last_run_output;
+ALTER TABLE gitops_syncs DROP COLUMN pre_deploy_last_run_status;
+ALTER TABLE gitops_syncs DROP COLUMN pre_deploy_last_run_at;
+ALTER TABLE gitops_syncs DROP COLUMN pre_deploy_network_mode;
+ALTER TABLE gitops_syncs DROP COLUMN pre_deploy_timeout_sec;
+ALTER TABLE gitops_syncs DROP COLUMN pre_deploy_extra_mounts;
+ALTER TABLE gitops_syncs DROP COLUMN pre_deploy_env;
+ALTER TABLE gitops_syncs DROP COLUMN pre_deploy_runner_image;
+ALTER TABLE gitops_syncs DROP COLUMN pre_deploy_script_path;

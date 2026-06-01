@@ -248,6 +248,7 @@ func loadComposeProjectInternal(
 		slog.WarnContext(ctx, "Failed to load environment", "error", err)
 	}
 
+	// Override wins: maps.Copy(dst, src) copies src into dst.
 	maps.Copy(fullEnvMap, envOverride)
 
 	// Set PWD

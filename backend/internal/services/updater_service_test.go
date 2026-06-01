@@ -445,7 +445,7 @@ func TestUpdaterService_LazyRegisterComposeProjectInternal_AddsServicesForRegist
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	projectService := NewProjectService(db, nil, nil, nil, nil, nil, config.Load())
+	projectService := NewProjectService(db, nil, nil, nil, nil, nil, nil, config.Load())
 	svc := &UpdaterService{projectService: projectService}
 
 	projectNameToID := map[string]string{}

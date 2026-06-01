@@ -35,6 +35,7 @@ type Services struct {
 	Image             *services.ImageService
 	Build             *services.BuildService
 	BuildWorkspace    *services.BuildWorkspaceService
+	Lifecycle         *services.LifecycleService
 	Volume            *services.VolumeService
 	Network           *services.NetworkService
 	Port              *services.PortService

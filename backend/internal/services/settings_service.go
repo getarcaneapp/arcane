@@ -160,6 +160,8 @@ func DefaultSettingsConfig() *models.Settings {
 		TrivyCpuLimit:                   models.SettingVariable{Value: "1"},
 		TrivyMemoryLimitMb:              models.SettingVariable{Value: "0"},
 		TrivyConcurrentScanContainers:   models.SettingVariable{Value: "1"},
+		LifecycleEnabled:                models.SettingVariable{Value: "false"},
+		LifecycleMaxTimeoutSec:          models.SettingVariable{Value: "300"},
 		OidcEnabled:                     models.SettingVariable{Value: "false"},
 		OidcClientId:                    models.SettingVariable{Value: ""},
 		OidcClientSecret:                models.SettingVariable{Value: ""},

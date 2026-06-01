@@ -91,6 +91,113 @@ func getCurrentContainerInspectTargetInternal(currentContainerID func() (string,
 	return strings.TrimSpace(value), nil
 }
 
+// MountForCurrentContainerSubpath inspects the current container, finds the
+// existing mount whose destination covers containerPath, and returns a Mount
+// suitable for use in another container creation that exposes the same data
+// at target. Returns nil + no error if Arcane isn't running inside a
+// container or no suitable mount is found — callers can fall back to a
+// plain bind on containerPath in that case.
+func MountForCurrentContainerSubpath(ctx context.Context, dockerCli *client.Client, containerPath, target string) (*mounttypes.Mount, error) {
+	if dockerCli == nil {
+		return nil, nil
+	}
+	inspectTarget, err := getCurrentContainerInspectTargetInternal(GetCurrentContainerID, os.Hostname)
+	if err != nil {
+		return nil, err
+	}
+	inspect, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerCli, inspectTarget, client.ContainerInspectOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return MountForSubpath(inspect.Container.Mounts, containerPath, target), nil
+}
+
+// MountForSubpath returns a Mount that exposes a subpath of one of the
+// current container's existing mounts at the requested target. It's a
+// generalisation of MountForDestination for the case where the caller
+// wants a sub-tree below an existing mount destination (e.g.
+// "/app/data/projects/X" when "/app/data" is what the container has
+// mounted).
+//
+// The function picks the most-specific mount whose Destination is a
+// prefix of containerPath, then constructs the Mount based on the
+// backing type:
+//
+//   - TypeBind:   Source = mount.Source joined with the relative subpath.
+//     Works because bind sources are real host paths the daemon
+//     can address directly.
+//   - TypeVolume: Source = mount.Name (the volume name), and the relative
+//     subpath is set on VolumeOptions.Subpath. This lets the
+//     daemon mount the named volume directly without needing a
+//     host-side path translation — important for setups where
+//     the underlying volume storage is opaque (Docker Desktop
+//     on WSL2, Docker-in-Docker, etc.).
+//
+// Returns nil if no mount destination is a prefix of containerPath or if
+// the matching mount is of an unsupported type.
+func MountForSubpath(mounts []containertypes.MountPoint, containerPath string, target string) *mounttypes.Mount {
+	if strings.TrimSpace(containerPath) == "" {
+		return nil
+	}
+	if strings.TrimSpace(target) == "" {
+		target = containerPath
+	}
+
+	var best *containertypes.MountPoint
+	for i := range mounts {
+		m := &mounts[i]
+		if m.Destination == "" {
+			continue
+		}
+		if !pathHasPrefix(containerPath, m.Destination) {
+			continue
+		}
+		if best == nil || len(m.Destination) > len(best.Destination) {
+			best = m
+		}
+	}
+	if best == nil {
+		return nil
+	}
+
+	relative := strings.TrimPrefix(strings.TrimPrefix(containerPath, best.Destination), "/")
+	readOnly := !best.RW
+
+	switch best.Type { //nolint:exhaustive // only bind and volume mounts are translatable; the default returns nil for the rest
+	case mounttypes.TypeBind:
+		if strings.TrimSpace(best.Source) == "" {
+			return nil
+		}
+		source := best.Source
+		if relative != "" {
+			source = strings.TrimRight(source, "/") + "/" + relative
+		}
+		return &mounttypes.Mount{Type: mounttypes.TypeBind, Source: source, Target: target, ReadOnly: readOnly}
+	case mounttypes.TypeVolume:
+		if strings.TrimSpace(best.Name) == "" {
+			return nil
+		}
+		m := &mounttypes.Mount{Type: mounttypes.TypeVolume, Source: best.Name, Target: target, ReadOnly: readOnly}
+		if relative != "" {
+			m.VolumeOptions = &mounttypes.VolumeOptions{Subpath: relative}
+		}
+		return m
+	default:
+		return nil
+	}
+}
+
+// pathHasPrefix reports whether containerPath is at or under prefix,
+// treating both as POSIX-style paths. Avoids false positives like
+// "/app/datax" matching "/app/data".
+func pathHasPrefix(containerPath, prefix string) bool {
+	if containerPath == prefix {
+		return true
+	}
+	p := strings.TrimRight(prefix, "/") + "/"
+	return strings.HasPrefix(containerPath, p)
+}
+
 // MountForDestination returns a Mount suitable for container creation that mirrors an
 // existing container mount at the given destination.
 //

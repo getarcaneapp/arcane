@@ -197,6 +197,19 @@ type Update struct {
 	// Required: false
 	GitSyncMaxBinarySizeMb *string `json:"gitSyncMaxBinarySizeMb,omitempty"`
 
+	// LifecycleEnabled gates whether GitOps syncs may configure pre-deploy
+	// lifecycle scripts. Disabled by default because scripts are repo-trusted
+	// code that runs on every deploy.
+	//
+	// Required: false
+	LifecycleEnabled *string `json:"lifecycleEnabled,omitempty"`
+
+	// LifecycleMaxTimeoutSec caps the per-sync pre-deploy timeout admins can
+	// configure. Zero disables the cap.
+	//
+	// Required: false
+	LifecycleMaxTimeoutSec *string `json:"lifecycleMaxTimeoutSec,omitempty"`
+
 	// BaseServerURL is the base URL of the server.
 	//
 	// Required: false

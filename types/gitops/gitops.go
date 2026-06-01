@@ -168,6 +168,64 @@ type GitOpsSync struct {
 	// Required: false
 	LastSyncCommit *string `json:"lastSyncCommit,omitempty"`
 
+	// PreDeployScriptPath is the optional path inside the synced repo to a
+	// script executed in a throwaway container before each deploy. Scripts
+	// are repo-trusted code; the configured runner image, env, and mounts
+	// shape the runtime context (admin-managed, never from repo data).
+	//
+	// Required: false
+	PreDeployScriptPath *string `json:"preDeployScriptPath,omitempty"`
+
+	// PreDeployRunnerImage is the image used to run the pre-deploy script.
+	// Required whenever PreDeployScriptPath is set.
+	//
+	// Required: false
+	PreDeployRunnerImage *string `json:"preDeployRunnerImage,omitempty"`
+
+	// PreDeployEnv is the KEY=VALUE env config exposed to the script, one
+	// entry per line; same format as a .env file.
+	//
+	// Required: false
+	PreDeployEnv *string `json:"preDeployEnv,omitempty"`
+
+	// PreDeployExtraMounts is the bind-mount config added to the runner
+	// container, one entry per line in docker -v "src:tgt[:ro|:rw]" form.
+	//
+	// Required: false
+	PreDeployExtraMounts *string `json:"preDeployExtraMounts,omitempty"`
+
+	// PreDeployTimeoutSec bounds the script execution. Capped by the
+	// lifecycleMaxTimeoutSec global setting at run time.
+	//
+	// Required: true
+	PreDeployTimeoutSec int `json:"preDeployTimeoutSec"`
+
+	// PreDeployNetworkMode is the Docker network mode passed to the runner
+	// container. Defaults to "none" so scripts run with no network access
+	// unless explicitly opted in. Set to "bridge", "host", or a named
+	// network when the script needs outbound or compose-network access.
+	//
+	// Required: true
+	PreDeployNetworkMode string `json:"preDeployNetworkMode"`
+
+	// PreDeployLastRunAt is the timestamp of the most recent pre-deploy
+	// lifecycle hook run on this sync.
+	//
+	// Required: false
+	PreDeployLastRunAt *time.Time `json:"preDeployLastRunAt,omitempty"`
+
+	// PreDeployLastRunStatus is the status of the most recent pre-deploy
+	// lifecycle hook run: "success", "failed", or "timeout".
+	//
+	// Required: false
+	PreDeployLastRunStatus *string `json:"preDeployLastRunStatus,omitempty"`
+
+	// PreDeployLastRunOutput is the truncated combined stdout+stderr from
+	// the most recent pre-deploy lifecycle hook run.
+	//
+	// Required: false
+	PreDeployLastRunOutput *string `json:"preDeployLastRunOutput,omitempty"`
+
 	// CreatedAt is the date and time at which the sync was created.
 	//
 	// Required: true
@@ -367,6 +425,47 @@ type CreateSyncRequest struct {
 	//
 	// Required: false
 	MaxSyncBinarySize *int64 `json:"maxSyncBinarySize,omitempty"`
+
+	// PreDeployScriptPath is the optional path inside the synced repo to a
+	// script executed in a throwaway container before each deploy. When set,
+	// PreDeployRunnerImage must also be supplied.
+	//
+	// Required: false
+	PreDeployScriptPath *string `json:"preDeployScriptPath,omitempty"`
+
+	// PreDeployRunnerImage is the image used to run the pre-deploy script.
+	// Required whenever PreDeployScriptPath is set.
+	//
+	// Required: false
+	PreDeployRunnerImage *string `json:"preDeployRunnerImage,omitempty"`
+
+	// PreDeployEnv is the env config exposed to the script, one KEY=VALUE
+	// entry per line; same format as a .env file. Keys must match POSIX
+	// identifier syntax.
+	//
+	// Required: false
+	PreDeployEnv *string `json:"preDeployEnv,omitempty"`
+
+	// PreDeployExtraMounts is the bind-mount config added to the runner
+	// container, one entry per line in docker -v "src:tgt[:ro|:rw]" form.
+	// Source and target must be absolute paths.
+	//
+	// Required: false
+	PreDeployExtraMounts *string `json:"preDeployExtraMounts,omitempty"`
+
+	// PreDeployTimeoutSec bounds the script execution. Capped by the
+	// lifecycleMaxTimeoutSec global setting at validation time. Defaults to 60.
+	//
+	// Required: false
+	PreDeployTimeoutSec *int `json:"preDeployTimeoutSec,omitempty"`
+
+	// PreDeployNetworkMode is the Docker network mode for the runner
+	// container. Defaults to "none" (no network access). Set to "bridge",
+	// "host", or a named Docker network to grant outbound or compose-network
+	// access.
+	//
+	// Required: false
+	PreDeployNetworkMode *string `json:"preDeployNetworkMode,omitempty"`
 }
 
 // UpdateSyncRequest represents the request to update a gitops sync.
@@ -435,6 +534,46 @@ type UpdateSyncRequest struct {
 	//
 	// Required: false
 	MaxSyncBinarySize *int64 `json:"maxSyncBinarySize,omitempty"`
+
+	// PreDeployScriptPath is the optional path inside the synced repo to a
+	// script executed in a throwaway container before each deploy. Set to
+	// an empty string to clear an existing configuration.
+	//
+	// Required: false
+	PreDeployScriptPath *string `json:"preDeployScriptPath,omitempty"`
+
+	// PreDeployRunnerImage is the image used to run the pre-deploy script.
+	// Required whenever PreDeployScriptPath is non-empty.
+	//
+	// Required: false
+	PreDeployRunnerImage *string `json:"preDeployRunnerImage,omitempty"`
+
+	// PreDeployEnv is the env config exposed to the script, one KEY=VALUE
+	// entry per line; same format as a .env file. Keys must match POSIX
+	// identifier syntax.
+	//
+	// Required: false
+	PreDeployEnv *string `json:"preDeployEnv,omitempty"`
+
+	// PreDeployExtraMounts is the bind-mount config added to the runner
+	// container, one entry per line in docker -v "src:tgt[:ro|:rw]" form.
+	// Source and target must be absolute paths.
+	//
+	// Required: false
+	PreDeployExtraMounts *string `json:"preDeployExtraMounts,omitempty"`
+
+	// PreDeployTimeoutSec bounds the script execution. Capped by the
+	// lifecycleMaxTimeoutSec global setting at validation time.
+	//
+	// Required: false
+	PreDeployTimeoutSec *int `json:"preDeployTimeoutSec,omitempty"`
+
+	// PreDeployNetworkMode is the Docker network mode for the runner
+	// container. Set to "none", "bridge", "host", or a named Docker
+	// network. Empty string resets to the default ("none").
+	//
+	// Required: false
+	PreDeployNetworkMode *string `json:"preDeployNetworkMode,omitempty"`
 }
 
 // SyncResult represents the result of a sync operation.

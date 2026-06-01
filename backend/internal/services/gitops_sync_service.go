@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"maps"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -43,6 +44,23 @@ const (
 	defaultMaxSyncTotalSize    = defaultMaxSyncTotalSizeMB * 1024 * 1024
 	defaultMaxSyncBinarySize   = defaultMaxSyncBinarySizeMB * 1024 * 1024
 )
+
+// redeployAfterSyncFailedError is returned by the internal sync flow when
+// the file sync succeeded but the auto-redeploy that follows it failed
+// (e.g. a pre-deploy lifecycle hook returned non-zero). Callers surface
+// this on the sync row's LastSyncError so the failure is visible from the
+// gitops UI rather than only in the logs.
+type redeployAfterSyncFailedError struct {
+	cause error
+}
+
+func (e redeployAfterSyncFailedError) Error() string {
+	return "redeploy failed: " + e.cause.Error()
+}
+
+func (e redeployAfterSyncFailedError) Unwrap() error {
+	return e.cause
+}
 
 type scheduledGitOpsSync struct {
 	ID            string
@@ -82,6 +100,196 @@ func validateSyncLimits(maxFiles *int, maxTotalSize, maxBinarySize *int64) error
 		return errors.New("maxSyncBinarySize must be non-negative")
 	}
 	return nil
+}
+
+// lifecycleConfigInputInternal is the slice of CreateSyncRequest /
+// UpdateSyncRequest fields relevant to the pre-deploy lifecycle hook. Both
+// request types collapse into the same shape so a single validator handles
+// both flows.
+type lifecycleConfigInputInternal struct {
+	scriptPath    *string
+	runnerImage   *string
+	env           *string
+	extraMounts   *string
+	timeoutSec    *int
+	networkMode   *string
+	syncDirectory *bool
+}
+
+func (s *GitOpsSyncService) validateLifecycleConfigInternal(ctx context.Context, current *models.GitOpsSync, in lifecycleConfigInputInternal) error {
+	lifecycleFieldSet := in.scriptPath != nil || in.runnerImage != nil || in.env != nil || in.extraMounts != nil || in.timeoutSec != nil || in.networkMode != nil
+	syncDirectoryChanging := in.syncDirectory != nil
+	effectiveScriptPath := resolveLifecycleEffectiveStringInternal(currentString(current, func(c *models.GitOpsSync) *string { return c.PreDeployScriptPath }), in.scriptPath)
+
+	// If nothing lifecycle-related is being touched and the resulting state
+	// has no script configured, there's nothing to validate.
+	if !lifecycleFieldSet && (!syncDirectoryChanging || effectiveScriptPath == "") {
+		return nil
+	}
+
+	// Kill switch only blocks updates that actively touch lifecycle fields;
+	// toggling unrelated fields on an existing config shouldn't be rejected
+	// just because the global setting was turned off afterwards.
+	if lifecycleFieldSet && !s.settingsService.GetBoolSetting(ctx, "lifecycleEnabled", false) {
+		return &models.ValidationError{Field: "preDeployScriptPath", Message: "Pre-deploy lifecycle hooks are disabled. An admin must enable lifecycleEnabled in settings before they can be configured."}
+	}
+
+	if effectiveScriptPath != "" {
+		if len(effectiveScriptPath) > 256 {
+			return &models.ValidationError{Field: "preDeployScriptPath", Message: "Script path must be 256 characters or fewer."}
+		}
+		// scriptPath is a POSIX repo path, not a host path; use path.IsAbs so the
+		// check behaves the same on Windows-based contributor machines.
+		if path.IsAbs(filepath.ToSlash(effectiveScriptPath)) {
+			return &models.ValidationError{Field: "preDeployScriptPath", Message: "Script path must be relative to the project directory."}
+		}
+		cleaned := filepath.ToSlash(filepath.Clean(effectiveScriptPath))
+		if cleaned == ".." || strings.HasPrefix(cleaned, "../") {
+			return &models.ValidationError{Field: "preDeployScriptPath", Message: "Script path must not escape the project directory."}
+		}
+
+		effectiveRunnerImage := resolveLifecycleEffectiveStringInternal(currentString(current, func(c *models.GitOpsSync) *string { return c.PreDeployRunnerImage }), in.runnerImage)
+		if effectiveRunnerImage == "" {
+			return &models.ValidationError{Field: "preDeployRunnerImage", Message: "Runner image is required when a script path is set."}
+		}
+
+		if !resolveEffectiveSyncDirectoryInternal(current, in.syncDirectory) {
+			return &models.ValidationError{Field: "preDeployScriptPath", Message: "Pre-deploy script requires \"Sync entire directory\" so the script is included in the synced files."}
+		}
+	}
+
+	if in.timeoutSec != nil {
+		if *in.timeoutSec < 1 {
+			return &models.ValidationError{Field: "preDeployTimeoutSec", Message: "Timeout must be at least 1 second."}
+		}
+		maxTimeoutSec := s.settingsService.GetIntSetting(ctx, "lifecycleMaxTimeoutSec", lifecycleDefaultMaxTimeoutSec)
+		if maxTimeoutSec > 0 && *in.timeoutSec > maxTimeoutSec {
+			return &models.ValidationError{Field: "preDeployTimeoutSec", Message: fmt.Sprintf("Timeout %ds exceeds the lifecycleMaxTimeoutSec setting (%ds).", *in.timeoutSec, maxTimeoutSec)}
+		}
+	}
+
+	if _, err := parseLifecycleEnvTextInternal(in.env); err != nil {
+		return &models.ValidationError{Field: "preDeployEnv", Message: err.Error()}
+	}
+	if _, err := parseLifecycleExtraMountsTextInternal(in.extraMounts); err != nil {
+		return &models.ValidationError{Field: "preDeployExtraMounts", Message: err.Error()}
+	}
+
+	return nil
+}
+
+// resolveLifecycleEffectiveStringInternal computes the value a string field
+// will take after an update: a nil update leaves the existing value, a
+// non-nil update (including empty string, which clears) overrides it. Used
+// to validate the post-update state of a sync record.
+func resolveLifecycleEffectiveStringInternal(existing string, update *string) string {
+	if update != nil {
+		return strings.TrimSpace(*update)
+	}
+	return strings.TrimSpace(existing)
+}
+
+func currentString(sync *models.GitOpsSync, accessor func(*models.GitOpsSync) *string) string {
+	if sync == nil {
+		return ""
+	}
+	if p := accessor(sync); p != nil {
+		return *p
+	}
+	return ""
+}
+
+// resolveEffectiveSyncDirectoryInternal mirrors the string resolver but for
+// the SyncDirectory bool: a nil update keeps the existing value, a non-nil
+// update overrides it. On create (current=nil) and no update, defaults to
+// false to match the model's create-time default.
+func resolveEffectiveSyncDirectoryInternal(current *models.GitOpsSync, update *bool) bool {
+	if update != nil {
+		return *update
+	}
+	if current != nil {
+		return current.SyncDirectory
+	}
+	return false
+}
+
+// applyLifecycleFieldsToSyncInternal copies lifecycle config from a Create
+// request into a new GitOpsSync row before insert. Strings are trimmed;
+// empty strings remain unset (nil pointer) except for fields that have a
+// non-null default at the DB level.
+func applyLifecycleFieldsToSyncInternal(sync *models.GitOpsSync, in lifecycleConfigInputInternal) {
+	sync.PreDeployScriptPath = nullableTrimmedStringInternal(in.scriptPath)
+	sync.PreDeployRunnerImage = nullableTrimmedStringInternal(in.runnerImage)
+	sync.PreDeployEnv = nullableTrimmedStringInternal(in.env)
+	sync.PreDeployExtraMounts = nullableTrimmedStringInternal(in.extraMounts)
+	if in.timeoutSec != nil {
+		sync.PreDeployTimeoutSec = *in.timeoutSec
+	}
+	if mode := normalizeLifecycleNetworkModeInternal(in.networkMode); mode != "" {
+		sync.PreDeployNetworkMode = mode
+	}
+}
+
+// addLifecycleUpdatesInternal appends lifecycle field updates to the GORM
+// updates map. nil pointers leave the field unchanged; non-nil empty strings
+// clear nullable fields to NULL and reset fixed-default fields to their
+// default value.
+func addLifecycleUpdatesInternal(updates map[string]any, in lifecycleConfigInputInternal) {
+	if in.scriptPath != nil {
+		updates["pre_deploy_script_path"] = nullableUpdateStringValueInternal(in.scriptPath)
+	}
+	if in.runnerImage != nil {
+		updates["pre_deploy_runner_image"] = nullableUpdateStringValueInternal(in.runnerImage)
+	}
+	if in.env != nil {
+		updates["pre_deploy_env"] = nullableUpdateStringValueInternal(in.env)
+	}
+	if in.extraMounts != nil {
+		updates["pre_deploy_extra_mounts"] = nullableUpdateStringValueInternal(in.extraMounts)
+	}
+	if in.timeoutSec != nil {
+		updates["pre_deploy_timeout_sec"] = *in.timeoutSec
+	}
+	if in.networkMode != nil {
+		updates["pre_deploy_network_mode"] = normalizeLifecycleNetworkModeInternal(in.networkMode)
+	}
+}
+
+// normalizeLifecycleNetworkModeInternal returns the canonical network mode
+// string for a user-supplied value. Empty / whitespace / unset all map to
+// "none" so the secure-by-default behaviour is restored when the user clears
+// the field.
+func normalizeLifecycleNetworkModeInternal(p *string) string {
+	if p == nil {
+		return "none"
+	}
+	trimmed := strings.TrimSpace(*p)
+	if trimmed == "" {
+		return "none"
+	}
+	return trimmed
+}
+
+func nullableTrimmedStringInternal(p *string) *string {
+	if p == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*p)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
+}
+
+func nullableUpdateStringValueInternal(p *string) any {
+	if p == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*p)
+	if trimmed == "" {
+		return nil
+	}
+	return trimmed
 }
 
 func normalizeSyncLimitSetting(value, defaultValue int) int {
@@ -280,7 +488,23 @@ func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string
 		sync.MaxSyncBinarySize = *req.MaxSyncBinarySize
 	}
 
-	if err := s.db.WithContext(ctx).Omit("Environment", "Repository", "Project").Create(&sync).Error; err != nil {
+	lifecycleCfg := lifecycleConfigInputInternal{
+		scriptPath:    req.PreDeployScriptPath,
+		runnerImage:   req.PreDeployRunnerImage,
+		env:           req.PreDeployEnv,
+		extraMounts:   req.PreDeployExtraMounts,
+		timeoutSec:    req.PreDeployTimeoutSec,
+		networkMode:   req.PreDeployNetworkMode,
+		syncDirectory: req.SyncDirectory,
+	}
+	if err := s.validateLifecycleConfigInternal(ctx, nil, lifecycleCfg); err != nil {
+		return nil, err
+	}
+	applyLifecycleFieldsToSyncInternal(&sync, lifecycleCfg)
+
+	// Select("*") forces explicit zero values (e.g. "0 = unlimited" sync limits and
+	// unset pre-deploy fields) to persist instead of GORM substituting column defaults.
+	if err := s.db.WithContext(ctx).Select("*").Omit("Environment", "Repository", "Project").Create(&sync).Error; err != nil { //nolint:unqueryvet // intentional Select("*"); see comment above
 		slog.ErrorContext(ctx, "Failed to create GitOps sync in database", "name", req.Name, "repositoryID", req.RepositoryID, "environmentID", environmentID, "error", err)
 		return nil, fmt.Errorf("failed to create sync: %w", err)
 	}
@@ -360,6 +584,20 @@ func (s *GitOpsSyncService) UpdateSync(ctx context.Context, environmentID, id st
 	if req.MaxSyncBinarySize != nil {
 		updates["max_sync_binary_size"] = *req.MaxSyncBinarySize
 	}
+
+	lifecycleCfg := lifecycleConfigInputInternal{
+		scriptPath:    req.PreDeployScriptPath,
+		runnerImage:   req.PreDeployRunnerImage,
+		env:           req.PreDeployEnv,
+		extraMounts:   req.PreDeployExtraMounts,
+		timeoutSec:    req.PreDeployTimeoutSec,
+		networkMode:   req.PreDeployNetworkMode,
+		syncDirectory: req.SyncDirectory,
+	}
+	if err := s.validateLifecycleConfigInternal(ctx, sync, lifecycleCfg); err != nil {
+		return nil, err
+	}
+	addLifecycleUpdatesInternal(updates, lifecycleCfg)
 
 	if len(updates) > 0 {
 		if err := s.db.WithContext(ctx).Model(sync).Updates(updates).Error; err != nil {
@@ -532,7 +770,13 @@ func (s *GitOpsSyncService) performDirectorySync(ctx context.Context, sync *mode
 	}
 
 	if contentsChanged {
-		s.redeployIfRunningAfterSync(ctx, project, actor, "directory")
+		if redeployErr := s.redeployIfRunningAfterSync(ctx, project, actor, "directory"); redeployErr != nil {
+			if typed, ok := errors.AsType[redeployAfterSyncFailedError](redeployErr); ok {
+				s.markSyncRedeployFailedInternal(ctx, sync, id, source.commitHash, syncedFiles, typed, actor, result)
+				return result, redeployErr
+			}
+			return result, redeployErr
+		}
 	}
 
 	s.updateSyncStatusWithFiles(ctx, id, "success", "", source.commitHash, syncedFiles)
@@ -550,6 +794,11 @@ func (s *GitOpsSyncService) performSingleFileSyncInternal(ctx context.Context, s
 
 	project, err := s.getOrCreateProjectInternal(ctx, sync, id, source.composeContent, source.envContent, result, actor)
 	if err != nil {
+		if redeployErr, ok := errors.AsType[redeployAfterSyncFailedError](err); ok {
+			syncedFiles := []string{filepath.Base(sync.ComposePath)}
+			s.markSyncRedeployFailedInternal(ctx, sync, id, source.commitHash, syncedFiles, redeployErr, actor, result)
+			return result, err
+		}
 		return result, err
 	}
 
@@ -634,20 +883,24 @@ func (s *GitOpsSyncService) performSwarmStackSyncInternal(ctx context.Context, s
 }
 
 // redeployIfRunningAfterSync redeploys a project only when it is already
-// running and the latest sync actually changed managed content.
-func (s *GitOpsSyncService) redeployIfRunningAfterSync(ctx context.Context, project *models.Project, actor models.User, syncMode string) {
+// running and the latest sync actually changed managed content. Returns a
+// redeployAfterSyncFailedError when the redeploy itself fails; callers
+// surface that on the sync row's LastSyncError.
+func (s *GitOpsSyncService) redeployIfRunningAfterSync(ctx context.Context, project *models.Project, actor models.User, syncMode string) error {
 	details, err := s.projectService.GetProjectDetails(ctx, project.ID, projecttypes.AllDetails())
 	if err != nil {
-		return
+		return nil //nolint:nilerr // best-effort: skip post-sync redeploy when project state can't be determined
 	}
 	if details.Status != string(models.ProjectStatusRunning) && details.Status != string(models.ProjectStatusPartiallyRunning) {
-		return
+		return nil
 	}
 
 	slog.InfoContext(ctx, "Redeploying project due to content change from Git sync", "syncMode", syncMode, "projectName", project.Name, "projectId", project.ID)
 	if err := s.projectService.RedeployProject(ctx, project.ID, actor); err != nil {
 		slog.ErrorContext(ctx, "Failed to redeploy project after Git sync", "syncMode", syncMode, "error", err, "projectId", project.ID)
+		return redeployAfterSyncFailedError{cause: err}
 	}
+	return nil
 }
 
 // logSyncSuccess records the Git sync completion event once the filesystem and
@@ -885,6 +1138,20 @@ func (s *GitOpsSyncService) failSync(ctx context.Context, id string, result *git
 	return fmt.Errorf("%s", errMsg)
 }
 
+// markSyncRedeployFailedInternal records a sync where the file sync wrote
+// cleanly but the auto-redeploy that follows failed (typically a pre-deploy
+// lifecycle hook returning non-zero). The synced-files list and commit hash
+// are preserved on the row so operators can see what reached disk; the
+// error message surfaces the redeploy failure on LastSyncError.
+func (s *GitOpsSyncService) markSyncRedeployFailedInternal(ctx context.Context, sync *models.GitOpsSync, id, commitHash string, syncedFiles []string, redeployErr redeployAfterSyncFailedError, actor models.User, result *gitops.SyncResult) {
+	errMsg := redeployErr.Error()
+	result.Success = false
+	result.Message = "Sync wrote files but redeploy failed"
+	result.Error = new(errMsg)
+	s.updateSyncStatusWithFiles(ctx, id, "failed", errMsg, commitHash, syncedFiles)
+	s.logSyncError(ctx, sync, actor, errMsg)
+}
+
 func (s *GitOpsSyncService) createProjectForSyncInternal(ctx context.Context, sync *models.GitOpsSync, id string, composeContent string, envContent *string, result *gitops.SyncResult, actor models.User) (*models.Project, error) {
 	project, err := s.projectService.CreateProject(ctx, sync.ProjectName, composeContent, envContent, actor)
 	if err != nil {
@@ -952,13 +1219,16 @@ func (s *GitOpsSyncService) updateProjectForSyncInternal(ctx context.Context, sy
 	newCompose, newEnv, _ := s.projectService.GetProjectContent(ctx, project.ID)
 	contentChanged := oldCompose != newCompose || envContentChangedInternal(oldEnv, newEnv)
 
-	// If content changed and project is running, redeploy
+	// If content changed and project is running, redeploy. A redeploy failure
+	// is bubbled up as a redeployAfterSyncFailedError so the parent flow can
+	// reflect it on the sync row's LastSyncError.
 	if contentChanged {
 		details, err := s.projectService.GetProjectDetails(ctx, project.ID, projecttypes.AllDetails())
 		if err == nil && (details.Status == string(models.ProjectStatusRunning) || details.Status == string(models.ProjectStatusPartiallyRunning)) {
 			slog.InfoContext(ctx, "Redeploying project due to content change from Git sync", "projectName", project.Name, "projectId", project.ID)
 			if err := s.projectService.RedeployProject(ctx, project.ID, actor); err != nil {
 				slog.ErrorContext(ctx, "Failed to redeploy project after Git sync", "error", err, "projectId", project.ID)
+				return redeployAfterSyncFailedError{cause: err}
 			}
 		}
 	}
@@ -1030,6 +1300,7 @@ func (s *GitOpsSyncService) walkAndParseSyncDirectory(ctx context.Context, sync 
 		syncFiles[i] = projects.SyncFile{
 			RelativePath: f.RelativePath,
 			Content:      f.Content,
+			Executable:   f.Executable,
 		}
 		if f.RelativePath == composeFileName {
 			composeFound = true

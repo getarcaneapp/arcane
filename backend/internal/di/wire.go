@@ -45,6 +45,7 @@ var ServiceSet = wire.NewSet(
 	services.NewImageService,
 	services.NewBuildService,
 	services.NewBuildWorkspaceService,
+	services.NewLifecycleService,
 	services.NewProjectService,
 	services.NewContainerService,
 	services.NewDashboardService,

@@ -29,6 +29,24 @@ type GitOpsSync struct {
 	LastSyncStatus    *string        `json:"lastSyncStatus,omitempty" search:"status,success,failed,pending,error"`
 	LastSyncError     *string        `json:"lastSyncError,omitempty"`
 	LastSyncCommit    *string        `json:"lastSyncCommit,omitempty" search:"commit,hash,sha,revision"`
+
+	// Pre-deploy lifecycle hook (configuration)
+	// When PreDeployScriptPath is set, the named script is executed in a
+	// throwaway container before each deploy of the linked project. The script,
+	// runner image, and execution context together act as repo-trusted code —
+	// any push to the repo that changes the script will run unreviewed on the
+	// next deploy. See docs for details.
+	PreDeployScriptPath  *string `json:"preDeployScriptPath,omitempty" gorm:"column:pre_deploy_script_path" search:"lifecycle,hook,pre-deploy,script,path"`
+	PreDeployRunnerImage *string `json:"preDeployRunnerImage,omitempty" gorm:"column:pre_deploy_runner_image"`
+	PreDeployEnv         *string `json:"preDeployEnv,omitempty" gorm:"column:pre_deploy_env"`                  // KEY=VALUE lines, one per line; same format as .env files
+	PreDeployExtraMounts *string `json:"preDeployExtraMounts,omitempty" gorm:"column:pre_deploy_extra_mounts"` // docker -v style "src:tgt[:ro|:rw]" entries, one per line
+	PreDeployTimeoutSec  int     `json:"preDeployTimeoutSec" gorm:"column:pre_deploy_timeout_sec;default:60"`
+	PreDeployNetworkMode string  `json:"preDeployNetworkMode" gorm:"column:pre_deploy_network_mode;default:'none'"` // Docker network mode passed to the runner container. Default "none" denies network access; set to "bridge", "host", or a named network when the script needs it.
+
+	// Pre-deploy lifecycle hook (last-run state)
+	PreDeployLastRunAt     *time.Time `json:"preDeployLastRunAt,omitempty" gorm:"column:pre_deploy_last_run_at" sortable:"true"`
+	PreDeployLastRunStatus *string    `json:"preDeployLastRunStatus,omitempty" gorm:"column:pre_deploy_last_run_status" sortable:"true"` // "success" | "failed" | "timeout"
+	PreDeployLastRunOutput *string    `json:"preDeployLastRunOutput,omitempty" gorm:"column:pre_deploy_last_run_output"`                 // truncated stdout+stderr
 }
 
 func (GitOpsSync) TableName() string {
