@@ -1,0 +1,7 @@
+# Files that must be LF on disk regardless of the checkout platform, because
+# they're consumed by tooling that chokes on CRLF (bash shebangs, just,
+# shell scripts copied verbatim into Linux runner containers).
+.husky/* text eol=lf
+.husky/_/* text eol=lf
+Justfile text eol=lf
+*.sh text eol=lf
