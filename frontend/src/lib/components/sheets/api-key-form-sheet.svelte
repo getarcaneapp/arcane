@@ -5,6 +5,7 @@
 	import PermissionPicker from '$lib/components/role-editor/permission-picker.svelte';
 	import type { ApiKey } from '$lib/types/auth';
 	import type { PermissionsManifest, ApiKeyPermissionGrant } from '$lib/types/auth';
+	import { normalizePermissionSelection } from '$lib/utils/permissions';
 	import { z } from 'zod/v4';
 	import { createForm, preventDefault } from '$lib/utils/settings';
 	import * as m from '$lib/paraglide/messages.js';
@@ -52,7 +53,10 @@
 		name: apiKeyToEdit?.name || '',
 		description: apiKeyToEdit?.description || '',
 		expiresAt: apiKeyToEdit?.expiresAt ? new Date(apiKeyToEdit.expiresAt) : undefined,
-		permissions: availablePermissions.map((p) => p.permission)
+		permissions: normalizePermissionSelection(
+			manifest,
+			availablePermissions.map((p) => p.permission)
+		)
 	});
 
 	let { inputs, ...form } = $derived(createForm<typeof formSchema>(formSchema, formData));

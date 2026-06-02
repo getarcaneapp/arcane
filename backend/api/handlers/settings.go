@@ -71,6 +71,20 @@ type GetCategoriesOutput struct {
 	Body []category.Category
 }
 
+var settingsCategoryPermissionsInternal = map[string][]string{
+	"activity":       {authz.PermSettingsRead},
+	"apikeys":        {authz.PermApiKeysList, authz.PermApiKeysRead},
+	"appearance":     {authz.PermSettingsRead},
+	"authentication": {authz.PermSettingsRead},
+	"build":          {authz.PermSettingsRead},
+	"jobschedule":    {authz.PermJobsManage},
+	"notifications":  {authz.PermNotificationsManage},
+	"security":       {authz.PermSettingsRead},
+	"timeouts":       {authz.PermSettingsRead},
+	"users":          {authz.PermUsersList, authz.PermUsersRead},
+	"webhooks":       {authz.PermWebhooksList},
+}
+
 // validateProjectsDirectoryValueInternal validates a projects directory value allowing:
 // - Unix absolute paths (/...)
 // - Windows drive paths (C:/..., C:\...)
@@ -171,7 +185,6 @@ func RegisterSettings(api huma.API, settingsService *services.SettingsService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermSettingsRead),
 	}, h.Search)
 
 	huma.Register(api, huma.Operation{
@@ -185,8 +198,51 @@ func RegisterSettings(api huma.API, settingsService *services.SettingsService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermSettingsRead),
 	}, h.GetCategories)
+}
+
+func permissionSetAllowsAtAnyScopeInternal(ps *authz.PermissionSet, perm string) bool {
+	if ps == nil {
+		return false
+	}
+	if ps.Allows(perm, "") {
+		return true
+	}
+	for envID := range ps.PerEnv {
+		if ps.Allows(perm, envID) {
+			return true
+		}
+	}
+	return false
+}
+
+func canAccessSettingsCategoryInternal(ps *authz.PermissionSet, categoryID string) bool {
+	if ps == nil {
+		return false
+	}
+	perms, ok := settingsCategoryPermissionsInternal[categoryID]
+	if !ok {
+		return false
+	}
+	for _, perm := range perms {
+		if permissionSetAllowsAtAnyScopeInternal(ps, perm) {
+			return true
+		}
+	}
+	return false
+}
+
+func filterSettingsCategoriesInternal(ps *authz.PermissionSet, categories []category.Category) []category.Category {
+	if ps == nil {
+		return []category.Category{}
+	}
+	filtered := make([]category.Category, 0, len(categories))
+	for _, cat := range categories {
+		if canAccessSettingsCategoryInternal(ps, cat.ID) {
+			filtered = append(filtered, cat)
+		}
+	}
+	return filtered
 }
 
 func (h *SettingsHandler) appendRuntimeSettingsInternal(settingsDto []settings.PublicSetting, includeAuthenticatedOnly bool) []settings.PublicSetting {
@@ -416,7 +472,10 @@ func (h *SettingsHandler) Search(ctx context.Context, input *SearchSettingsInput
 		return nil, huma.Error400BadRequest((&common.QueryParameterRequiredError{}).Error())
 	}
 
+	ps, _ := humamw.PermissionsFromContext(ctx)
 	results := h.settingsSearchService.Search(input.Body.Query)
+	results.Results = filterSettingsCategoriesInternal(ps, results.Results)
+	results.Count = len(results.Results)
 	return &SearchSettingsOutput{Body: results}, nil
 }
 
@@ -426,6 +485,7 @@ func (h *SettingsHandler) GetCategories(ctx context.Context, input *struct{}) (*
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	categories := h.settingsSearchService.GetSettingsCategories()
+	ps, _ := humamw.PermissionsFromContext(ctx)
+	categories := filterSettingsCategoriesInternal(ps, h.settingsSearchService.GetSettingsCategories())
 	return &GetCategoriesOutput{Body: categories}, nil
 }

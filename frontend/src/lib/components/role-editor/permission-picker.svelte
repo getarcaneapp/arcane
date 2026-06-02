@@ -3,7 +3,8 @@
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { Input } from '$lib/components/ui/input';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
-	import type { PermissionsManifest, PermissionResource, PermissionAction } from '$lib/types/auth';
+	import type { PermissionsManifest, PermissionResource, PermissionAction, PermissionPreset } from '$lib/types/auth';
+	import { normalizePermissionSelection } from '$lib/utils/permissions';
 	import { m } from '$lib/paraglide/messages';
 
 	type Props = {
@@ -40,8 +41,13 @@
 	);
 
 	const selectedSet = $derived(new Set(selected));
+	const presets = $derived(manifest.presets ?? []);
 
 	const openValues: string[] = $derived(normalizedQuery ? filteredGroups.map((g) => g.resource.key) : []);
+
+	function replaceSelected(next: string[]) {
+		selected = normalizePermissionSelection(manifest, next);
+	}
 
 	function countSelectedInGroup(resource: PermissionResource): number {
 		let count = 0;
@@ -63,9 +69,9 @@
 		const groupPerms = resource.actions.map((a) => a.permission);
 		if (checked) {
 			const without = selected.filter((p) => !groupPerms.includes(p));
-			selected = [...without, ...groupPerms];
+			replaceSelected([...without, ...groupPerms]);
 		} else {
-			selected = selected.filter((p) => !groupPerms.includes(p));
+			replaceSelected(selected.filter((p) => !groupPerms.includes(p)));
 		}
 	}
 
@@ -73,15 +79,48 @@
 		if (disabled) return;
 		if (checked) {
 			if (!selected.includes(permission)) {
-				selected = [...selected, permission];
+				replaceSelected([...selected, permission]);
 			}
 		} else {
-			selected = selected.filter((p) => p !== permission);
+			replaceSelected(selected.filter((p) => p !== permission));
+		}
+	}
+
+	function isPresetSelected(preset: PermissionPreset): boolean {
+		return preset.permissions.length > 0 && preset.permissions.every((permission) => selectedSet.has(permission));
+	}
+
+	function togglePreset(preset: PermissionPreset, checked: boolean) {
+		if (disabled) return;
+		if (checked) {
+			replaceSelected([...selected, ...preset.permissions]);
+		} else {
+			replaceSelected(selected.filter((permission) => !preset.permissions.includes(permission)));
 		}
 	}
 </script>
 
 <div class="space-y-4">
+	{#if presets.length > 0}
+		<div class="space-y-2 rounded-md border p-3">
+			{#each presets as preset (preset.key)}
+				<label class="flex cursor-pointer items-start gap-3 rounded-md p-2 hover:bg-accent/40">
+					<Checkbox
+						checked={isPresetSelected(preset)}
+						{disabled}
+						onCheckedChange={(checked) => togglePreset(preset, checked === true)}
+					/>
+					<div class="flex flex-col gap-0.5">
+						<span class="text-sm leading-none font-medium">{preset.label}</span>
+						{#if preset.description}
+							<span class="text-muted-foreground text-xs">{preset.description}</span>
+						{/if}
+					</div>
+				</label>
+			{/each}
+		</div>
+	{/if}
+
 	{#if showSearch}
 		<Input type="text" placeholder={m.permissions_search_placeholder()} bind:value={query} {disabled} />
 	{/if}

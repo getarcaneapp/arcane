@@ -1,13 +1,17 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { get } from 'svelte/store';
 	import { onMount } from 'svelte';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { Card } from '$lib/components/ui/card';
 	import { m } from '$lib/paraglide/messages';
 	import { UiConfigDisabledTag } from '$lib/components/badges/index.js';
 	import { customizeSearchService } from '$lib/services/customize-search';
+	import userStore from '$lib/stores/user-store';
+	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import type { CustomizeCategory } from '$lib/types/shared';
 	import { debounced } from '$lib/utils/ws';
+	import { getAuthRedirectPath } from '$lib/utils/auth';
 	import * as InputGroup from '$lib/components/ui/input-group/index.js';
 	import { getCustomizeSubpageUrlsInNavOrder } from '$lib/config/navigation-config';
 	import {
@@ -38,9 +42,13 @@
 		'git-branch': GitBranchIcon
 	};
 
+	function isAccessibleCategory(category: CustomizeCategory) {
+		return getAuthRedirectPath(category.url, get(userStore), environmentStore.selected?.id) === null;
+	}
+
 	onMount(async () => {
 		try {
-			customizeCategories = orderCategoriesByNav(await customizeSearchService.getCategories());
+			customizeCategories = orderCategoriesByNav((await customizeSearchService.getCategories()).filter(isAccessibleCategory));
 		} catch (error) {
 			console.error('Failed to load categories:', error);
 		}
@@ -78,7 +86,7 @@
 		try {
 			const response = await customizeSearchService.search(trimmedQuery);
 			if (requestId === currentSearchRequest) {
-				searchResults = response.results || [];
+				searchResults = (response.results || []).filter(isAccessibleCategory);
 				isSearching = false;
 			}
 		} catch (error) {

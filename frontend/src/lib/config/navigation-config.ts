@@ -67,6 +67,41 @@ export type NavigationSections = {
 	settingsItems: NavigationItem[];
 };
 
+const CUSTOMIZE_LANDING_PERMISSIONS = [
+	'customize:manage',
+	'templates:list',
+	'templates:read',
+	'registries:list',
+	'registries:read',
+	'git-repositories:list',
+	'git-repositories:read'
+];
+
+const SETTINGS_LANDING_PERMISSIONS = [
+	'settings:read',
+	'apikeys:list',
+	'apikeys:read',
+	'webhooks:list',
+	'jobs:manage',
+	'notifications:manage',
+	'users:list',
+	'users:read',
+	'roles:list',
+	'roles:read',
+	'diagnostics:read'
+];
+
+// `/settings` is a mixed landing page: some subpages are global-only while
+// others are driven by the currently selected environment (for example
+// webhooks, notifications, and jobs). We intentionally use env scope here so
+// the landing page is reachable when the selected environment grants one of
+// those env-scoped capabilities.
+const SETTINGS_LANDING_RULE: RouteAccessRule = {
+	prefix: '/settings',
+	perms: SETTINGS_LANDING_PERMISSIONS,
+	scope: 'env'
+};
+
 export const navigationItems: NavigationSections = {
 	managementItems: [
 		{
@@ -99,7 +134,6 @@ export const navigationItems: NavigationSections = {
 			icon: CustomizeIcon,
 			shortcut: ['mod', '4'],
 			scope: 'global',
-			requiredPermission: 'customize:manage',
 			items: [
 				{
 					title: m.templates_title(),
@@ -217,8 +251,6 @@ export const navigationItems: NavigationSections = {
 			url: '/settings',
 			icon: SettingsIcon,
 			shortcut: ['mod', '0'],
-			scope: 'global',
-			requiredPermission: 'settings:read',
 			items: [
 				{
 					title: m.api_key_page_title(),
@@ -405,9 +437,11 @@ export function getRouteAccessRules(): RouteAccessRule[] {
 	const out: RouteAccessRule[] = [];
 	routeAccessRulesForItems(navigationItems.managementItems, out);
 	routeAccessRulesForItems(navigationItems.resourceItems, out);
+	out.push({ prefix: '/customize', perms: CUSTOMIZE_LANDING_PERMISSIONS, scope: 'global' });
 	out.push({ prefix: '/swarm', perms: ['swarm:read'], scope: 'env' });
 	routeAccessRulesForItems(navigationItems.swarmItems, out);
 	routeAccessRulesForItems(navigationItems.settingsItems, out);
+	out.push(SETTINGS_LANDING_RULE);
 	return out;
 }
 
@@ -417,6 +451,7 @@ export function getRouteFallbackRules(): RouteAccessRule[] {
 			rule.prefix === '/dashboard' ||
 			rule.prefix === '/containers' ||
 			rule.prefix === '/projects' ||
+			rule.prefix === '/customize' ||
 			rule.prefix === '/images' ||
 			rule.prefix === '/volumes' ||
 			rule.prefix === '/networks' ||

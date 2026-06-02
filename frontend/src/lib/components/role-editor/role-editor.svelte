@@ -5,6 +5,7 @@
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import PermissionPicker from './permission-picker.svelte';
 	import type { Role, PermissionsManifest } from '$lib/types/auth';
+	import { normalizePermissionSelection } from '$lib/utils/permissions';
 	import { CopyIcon } from '$lib/icons';
 	import { z } from 'zod/v4';
 	import { createForm, preventDefault } from '$lib/utils/settings';
@@ -32,7 +33,7 @@
 	const formData = $derived({
 		name: role?.name ?? '',
 		description: role?.description ?? '',
-		permissions: role?.permissions ?? []
+		permissions: normalizePermissionSelection(manifest, role?.permissions ?? [])
 	});
 
 	const { inputs, ...form } = $derived(createForm<typeof formSchema>(formSchema, formData));
