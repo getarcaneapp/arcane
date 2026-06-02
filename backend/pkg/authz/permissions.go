@@ -155,6 +155,13 @@ const (
 	PermGitOpsUpdate = "gitops:update"
 	PermGitOpsDelete = "gitops:delete"
 	PermGitOpsSync   = "gitops:sync"
+	// PermGitOpsLifecycle gates configuring a sync's pre-deploy lifecycle hook
+	// (script + runner image + env + host bind mounts + network mode), which is
+	// effectively arbitrary code execution on the host. It is intentionally
+	// separate from gitops:create / gitops:update so that holding those broader
+	// permissions (e.g. the built-in Editor role) does not by itself grant the
+	// ability to author hooks; seeded only into the Admin built-in role.
+	PermGitOpsLifecycle = "gitops:lifecycle"
 
 	PermWebhooksList   = "webhooks:list"
 	PermWebhooksCreate = "webhooks:create"

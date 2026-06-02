@@ -19,7 +19,6 @@
 		disabled = false,
 		type = 'text',
 		rows = 3,
-		inputClass = '',
 		children,
 		autocomplete = 'off',
 		...restProps
@@ -33,9 +32,6 @@
 		disabled?: boolean;
 		type?: 'text' | 'password' | 'email' | 'number' | 'checkbox' | 'date' | 'switch' | 'textarea';
 		rows?: number;
-		// Forwarded to the inner Input/Textarea so callers can apply
-		// content-specific styling (e.g. font-mono for code-like values).
-		inputClass?: string;
 		children?: Snippet;
 		autocomplete?: HTMLInputElement['autocomplete'];
 	} = $props();
@@ -57,11 +53,11 @@
 			{#if type === 'switch'}
 				<Switch {id} bind:checked={input.value as boolean} {disabled} />
 			{:else if type === 'textarea'}
-				<Textarea {id} {placeholder} {rows} bind:value={input.value as string} {disabled} class={inputClass} />
+				<Textarea {id} {placeholder} {rows} bind:value={input.value as string} {disabled} />
 			{:else if type === 'date'}
 				<DatePicker {id} bind:value={input.value as Date} {disabled} />
 			{:else}
-				<Input {id} {placeholder} {type} bind:value={input.value} {disabled} {autocomplete} class={inputClass} />
+				<Input {id} {placeholder} {type} bind:value={input.value} {disabled} {autocomplete} />
 			{/if}
 		{/if}
 		{#if input?.error}

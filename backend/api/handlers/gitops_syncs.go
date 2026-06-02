@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/danielgtaylor/huma/v2"
+	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
@@ -135,6 +136,25 @@ func RegisterGitOpsSyncs(api huma.API, syncService *services.GitOpsSyncService) 
 	registerGitOpsSecuredInternal(api, "browseGitOpsSyncFiles", "GET", "/environments/{id}/gitops-syncs/{syncId}/files", "Browse GitOps sync files", "Browse files in the synced repository", authz.PermGitOpsRead, h.BrowseFiles)
 }
 
+// requireLifecyclePermissionInternal rejects callers lacking gitops:lifecycle
+// for the target environment when a create/update request configures the
+// pre-deploy lifecycle hook. Configuring the hook lets the caller run an
+// arbitrary container — with host bind mounts, env, and network access — on
+// every sync, so it is gated behind its own permission (seeded only into the
+// Admin built-in role) rather than the broader gitops:create / gitops:update
+// permissions that non-admin roles such as Editor hold. Whether a request
+// touches the hook is decided by the request type itself
+// (gitops.*SyncRequest.HasPreDeployConfig) so the field set has a single owner.
+func requireLifecyclePermissionInternal(ctx context.Context, environmentID string, lifecycleRequested bool) error {
+	if !lifecycleRequested {
+		return nil
+	}
+	if ps, _ := humamw.PermissionsFromContext(ctx); ps.Allows(authz.PermGitOpsLifecycle, environmentID) {
+		return nil
+	}
+	return huma.Error403Forbidden("configuring a pre-deploy lifecycle hook requires the " + authz.PermGitOpsLifecycle + " permission")
+}
+
 // ============================================================================
 // Handler Methods
 // ============================================================================
@@ -166,6 +186,10 @@ func (h *GitOpsSyncHandler) ListSyncs(ctx context.Context, input *ListGitOpsSync
 func (h *GitOpsSyncHandler) CreateSync(ctx context.Context, input *CreateGitOpsSyncInput) (*CreateGitOpsSyncOutput, error) {
 	if h.syncService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if err := requireLifecyclePermissionInternal(ctx, input.EnvironmentID, input.Body.HasPreDeployConfig()); err != nil {
+		return nil, err
 	}
 
 	actor := currentActorInternal(ctx)
@@ -237,6 +261,10 @@ func (h *GitOpsSyncHandler) GetSync(ctx context.Context, input *GetGitOpsSyncInp
 func (h *GitOpsSyncHandler) UpdateSync(ctx context.Context, input *UpdateGitOpsSyncInput) (*UpdateGitOpsSyncOutput, error) {
 	if h.syncService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if err := requireLifecyclePermissionInternal(ctx, input.EnvironmentID, input.Body.HasPreDeployConfig()); err != nil {
+		return nil, err
 	}
 
 	actor := currentActorInternal(ctx)
