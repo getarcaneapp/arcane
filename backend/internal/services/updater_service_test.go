@@ -8,15 +8,20 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/compose-spec/compose-go/v2/loader"
+	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	glsqlite "github.com/glebarez/sqlite"
 	"github.com/moby/moby/api/types/container"
+	dockertypesimage "github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/api/types/network"
 	dockerclient "github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
@@ -485,6 +490,120 @@ func TestUpdaterService_LazyRegisterComposeProjectInternal_AddsServicesForRegist
 	assert.Equal(t, project.ID, projectNameToID[loader.NormalizeProjectName(project.Name)])
 }
 
+func TestUpdaterService_RestartContainersUsingOldIDsMatchesComposeConfigImageInternal(t *testing.T) {
+	ctx := context.Background()
+	db := setupProjectTestDB(t)
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settings, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, settings.SetStringSetting(ctx, "projectsDirectory", projectsDir))
+
+	projectPath := createComposeProjectDir(t, projectsDir, "compose-update-config-image")
+	imageRef := "registry.example.com/team/app:latest"
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("services:\n  app:\n    image: "+imageRef+"\n"), 0o644))
+
+	projectRecord := &models.Project{
+		BaseModel: models.BaseModel{ID: "project-update-config-image"},
+		Name:      "compose-update-config-image",
+		DirName:   ptr("compose-update-config-image"),
+		Path:      projectPath,
+		Status:    models.ProjectStatusRunning,
+	}
+	require.NoError(t, db.Create(projectRecord).Error)
+
+	originalComposePull := composePullProjectServicesInternal
+	originalComposeStop := composeStopProjectServicesInternal
+	originalComposeUp := composeUpProjectServicesInternal
+	t.Cleanup(func() {
+		composePullProjectServicesInternal = originalComposePull
+		composeStopProjectServicesInternal = originalComposeStop
+		composeUpProjectServicesInternal = originalComposeUp
+	})
+
+	var pulledServices []string
+	composePullProjectServicesInternal = func(_ context.Context, _ *composetypes.Project, services []string) error {
+		pulledServices = append([]string(nil), services...)
+		return nil
+	}
+	composeStopProjectServicesInternal = func(context.Context, *composetypes.Project, []string) error {
+		return nil
+	}
+	upCalled := false
+	composeUpProjectServicesInternal = func(_ context.Context, _ *composetypes.Project, services []string, removeOrphans bool, force bool) error {
+		upCalled = true
+		assert.Equal(t, []string{"app"}, services)
+		assert.False(t, removeOrphans)
+		assert.True(t, force)
+		return nil
+	}
+
+	labels := map[string]string{
+		"com.docker.compose.project": "compose-update-config-image",
+		"com.docker.compose.service": "app",
+	}
+	containerID := "compose-app-1"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/containers/json"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode([]container.Summary{
+				{
+					ID:      containerID,
+					Names:   []string{"/compose-update-config-image-app-1"},
+					Image:   "sha256:old-untagged",
+					ImageID: "sha256:old-untagged",
+					Labels:  labels,
+				},
+			}))
+		case strings.Contains(r.URL.Path, "/containers/") && strings.HasSuffix(r.URL.Path, "/json"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(container.InspectResponse{
+				ID:    containerID,
+				Name:  "/compose-update-config-image-app-1",
+				Image: "sha256:old-untagged",
+				Config: &container.Config{
+					Image:  imageRef,
+					Labels: labels,
+				},
+			}))
+		case strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json"):
+			encodedRef := strings.TrimSuffix(r.URL.Path[strings.LastIndex(r.URL.Path, "/images/")+len("/images/"):], "/json")
+			decodedRef, decodeErr := url.PathUnescape(encodedRef)
+			require.NoError(t, decodeErr)
+			require.Equal(t, imageRef, decodedRef)
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(dockertypesimage.InspectResponse{
+				ID:       "sha256:new-image",
+				RepoTags: []string{imageRef},
+			}))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	dcli, err := dockerclient.NewClientWithOpts(
+		dockerclient.WithHost("tcp://"+srv.Listener.Addr().String()),
+		dockerclient.WithVersion("1.46"),
+	)
+	require.NoError(t, err)
+
+	projectService := NewProjectService(db, settings, NewEventService(db, config.Load(), nil), nil, nil, nil, config.Load())
+	svc := NewUpdaterService(db, settings, &DockerClientService{client: dcli, config: &config.Config{}}, projectService, nil, nil, nil, nil, nil, nil, nil)
+
+	results, err := svc.restartContainersUsingOldIDs(ctx, nil, map[string]string{imageRef: imageRef})
+
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	assert.True(t, upCalled, "compose services matched by inspected config image must be recreated")
+	assert.Equal(t, []string{"app"}, pulledServices)
+	assert.Equal(t, "failed", results[0].Status)
+	assert.Contains(t, results[0].Error, "still running old image")
+	assert.NotContains(t, results[0].Error, "no matching updated image")
+}
+
 func TestPendingComposeProjectServicesInternal(t *testing.T) {
 	processedProjectServices := map[string]map[string]struct{}{}
 
@@ -511,13 +630,6 @@ func TestAnyImageIDsInUseSet(t *testing.T) {
 	assert.False(t, anyImageIDsInUseSetInternal([]string{"sha256:one"}, nil))
 }
 
-func TestIsImageIDLikeReference(t *testing.T) {
-	assert.True(t, isImageIDLikeReferenceInternal("sha256:abcdef"))
-	assert.True(t, isImageIDLikeReferenceInternal("SHA256:ABCDEF"))
-	assert.False(t, isImageIDLikeReferenceInternal("nginx:latest"))
-	assert.False(t, isImageIDLikeReferenceInternal("docker.io/library/nginx:latest"))
-}
-
 func TestCollectUsedImagesFromContainers_FastPathSkipsInspectLikeRefs(t *testing.T) {
 	out := map[string]struct{}{}
 
@@ -530,14 +642,14 @@ func TestCollectUsedImagesFromContainers_FastPathSkipsInspectLikeRefs(t *testing
 	}
 
 	for _, c := range containers {
-		if c.Image != "" && !isImageIDLikeReferenceInternal(c.Image) {
+		if c.Image != "" && !libupdater.IsImageIDLikeReference(c.Image) {
 			addNormalizedImageUpdateRefInternal(context.Background(), out, c.Image, "test skip invalid image reference")
 		}
 	}
 
-	assert.Contains(t, out, normalizeImageUpdateRefInternal("nginx:latest"))
-	assert.Contains(t, out, normalizeImageUpdateRefInternal("redis:7"))
-	assert.NotContains(t, out, normalizeImageUpdateRefInternal("sha256:abcdef"))
+	assert.Contains(t, out, libupdater.NormalizeImageUpdateRef("nginx:latest"))
+	assert.Contains(t, out, libupdater.NormalizeImageUpdateRef("redis:7"))
+	assert.NotContains(t, out, libupdater.NormalizeImageUpdateRef("sha256:abcdef"))
 	assert.NotContains(t, out, "")
 }
 
@@ -850,79 +962,11 @@ func TestCollectUsedImagesFromComposeContainersInternal(t *testing.T) {
 
 	svc.collectUsedImagesFromComposeContainersInternal(context.Background(), composeContainers, activeProjects, out)
 
-	assert.Contains(t, out, normalizeImageUpdateRefInternal("nginx:latest"))
-	assert.NotContains(t, out, normalizeImageUpdateRefInternal("redis:7"))
-	assert.NotContains(t, out, normalizeImageUpdateRefInternal("postgres:16"))
-	assert.NotContains(t, out, normalizeImageUpdateRefInternal("sha256:abcdef"))
+	assert.Contains(t, out, libupdater.NormalizeImageUpdateRef("nginx:latest"))
+	assert.NotContains(t, out, libupdater.NormalizeImageUpdateRef("redis:7"))
+	assert.NotContains(t, out, libupdater.NormalizeImageUpdateRef("postgres:16"))
+	assert.NotContains(t, out, libupdater.NormalizeImageUpdateRef("sha256:abcdef"))
 	assert.NotContains(t, out, "")
-}
-
-func TestResolveContainerImageMatchInternal(t *testing.T) {
-	svc := &UpdaterService{}
-	updatedNorm := map[string]string{
-		normalizeImageUpdateRefInternal("nginx:latest"): "nginx:latest",
-	}
-	oldIDToNewRef := map[string]string{
-		"sha256:img1": "redis:7",
-	}
-
-	tests := []struct {
-		name        string
-		container   container.Summary
-		updatedNorm map[string]string
-		wantRef     string
-		wantMatchID string
-	}{
-		{
-			name: "match by image id",
-			container: container.Summary{
-				ImageID: "sha256:img1",
-				Image:   "some/other:tag",
-			},
-			wantRef:     "redis:7",
-			wantMatchID: "sha256:img1",
-		},
-		{
-			name: "match by normalized image tag from summary",
-			container: container.Summary{
-				ImageID: "sha256:unknown",
-				Image:   "docker.io/library/nginx:latest",
-			},
-			wantRef:     "nginx:latest",
-			wantMatchID: normalizeImageUpdateRefInternal("nginx:latest"),
-		},
-		{
-			name: "image id-like summary value cannot be tag matched",
-			container: container.Summary{
-				ImageID: "sha256:unknown",
-				Image:   "sha256:abcdef",
-			},
-			wantRef:     "",
-			wantMatchID: "",
-		},
-		{
-			name: "invalid image reference does not match empty normalized key",
-			container: container.Summary{
-				ImageID: "sha256:unknown",
-				Image:   "Bad/Image:latest",
-			},
-			updatedNorm: map[string]string{"": "wrong:latest"},
-			wantRef:     "",
-			wantMatchID: "",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			localUpdatedNorm := updatedNorm
-			if tt.updatedNorm != nil {
-				localUpdatedNorm = tt.updatedNorm
-			}
-			gotRef, gotMatch := svc.resolveContainerImageMatchInternal(tt.container, oldIDToNewRef, localUpdatedNorm)
-			assert.Equal(t, tt.wantRef, gotRef)
-			assert.Equal(t, tt.wantMatchID, gotMatch)
-		})
-	}
 }
 
 func TestResolvePullableImageRefInternal(t *testing.T) {
@@ -1104,6 +1148,6 @@ func TestUpdaterService_CollectUsedImages_SkipsExcludedContainers(t *testing.T) 
 
 	require.NoError(t, svc.collectUsedImagesFromContainersInternal(ctx, dcli, out))
 
-	assert.NotContains(t, out, normalizeImageUpdateRefInternal("nginx:latest"), "excluded container image must not be collected")
-	assert.Contains(t, out, normalizeImageUpdateRefInternal("redis:7"), "non-excluded container image must be collected")
+	assert.NotContains(t, out, libupdater.NormalizeImageUpdateRef("nginx:latest"), "excluded container image must not be collected")
+	assert.Contains(t, out, libupdater.NormalizeImageUpdateRef("redis:7"), "non-excluded container image must be collected")
 }

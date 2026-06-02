@@ -144,7 +144,7 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (out *up
 			continue
 		}
 		oldRef := fmt.Sprintf("%s:%s", r.Repository, r.Tag)
-		oldNorm := normalizeImageUpdateRefInternal(oldRef)
+		oldNorm := libupdater.NormalizeImageUpdateRef(oldRef)
 		if oldNorm == "" {
 			slog.DebugContext(ctx, "ApplyPending: skipping invalid pending image reference", "imageRef", oldRef)
 			continue
@@ -160,6 +160,7 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (out *up
 		}
 
 		oldIDs, _ := s.resolveLocalImageIDsForRef(ctx, oldRef)
+		oldIDs = libupdater.AppendImageUpdateRecordIDToOldIDs(oldIDs, r.ID)
 		plans = append(plans, updatePlan{oldRef: oldRef, newRef: newRef, oldIDs: oldIDs})
 	}
 
@@ -220,7 +221,7 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (out *up
 
 		// Digest pre-check: if registry supports it and digests match, avoid pulling entirely.
 		// This also prevents unnecessary restarts when the update record is stale.
-		normNew := normalizeImageUpdateRefInternal(p.newRef)
+		normNew := libupdater.NormalizeImageUpdateRef(p.newRef)
 		check := digestChecker.CheckImageNeedsUpdate(ctx, normNew)
 		skipPull := false
 
@@ -617,7 +618,7 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 			slog.DebugContext(ctx, "UpdateSingleContainer: failed to inspect container image for fallback refs", "containerID", containerID, "imageID", inspectBefore.Image, "error", inspectErr)
 		}
 	}
-	if imageRef == "" || isImageIDLikeReferenceInternal(imageRef) {
+	if imageRef == "" || libupdater.IsImageIDLikeReference(imageRef) {
 		out.Items = append(out.Items, updater.ResourceResult{
 			ResourceID:   targetContainer.ID,
 			ResourceType: "container",
@@ -630,7 +631,7 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 		return out, nil
 	}
 
-	normalizedRef := normalizeImageUpdateRefInternal(imageRef)
+	normalizedRef := libupdater.NormalizeImageUpdateRef(imageRef)
 	repo, tag := s.parseRepoAndTag(normalizedRef)
 
 	if repo == "" || tag == "" {
@@ -1060,16 +1061,8 @@ func buildUpdaterRecreateNetworkingConfigInternal(networkMode container.NetworkM
 	return &network.NetworkingConfig{EndpointsConfig: sanitizedEndpointsConfig}
 }
 
-func normalizeImageUpdateRefInternal(imageRef string) string {
-	parts, err := libupdater.NormalizeReference(imageRef)
-	if err != nil {
-		return ""
-	}
-	return parts.NormalizedRef
-}
-
 func addNormalizedImageUpdateRefInternal(ctx context.Context, out map[string]struct{}, imageRef, logMessage string, attrs ...any) {
-	normalizedRef := normalizeImageUpdateRefInternal(imageRef)
+	normalizedRef := libupdater.NormalizeImageUpdateRef(imageRef)
 	if normalizedRef != "" {
 		out[normalizedRef] = struct{}{}
 		return
@@ -1126,7 +1119,7 @@ func (s *UpdaterService) collectUsedImagesFromContainersInternal(ctx context.Con
 		}
 
 		imageRef := strings.TrimSpace(c.Image)
-		if imageRef != "" && !isImageIDLikeReferenceInternal(imageRef) {
+		if imageRef != "" && !libupdater.IsImageIDLikeReference(imageRef) {
 			addNormalizedImageUpdateRefInternal(ctx, out, imageRef, "collectUsedImagesFromContainersInternal: skipping invalid image reference", "containerId", c.ID)
 			continue
 		}
@@ -1162,11 +1155,6 @@ func (s *UpdaterService) buildExcludedContainerSetInternal(ctx context.Context) 
 		}
 	}
 	return excluded
-}
-
-func isImageIDLikeReferenceInternal(ref string) bool {
-	ref = strings.ToLower(strings.TrimSpace(ref))
-	return strings.HasPrefix(ref, "sha256:")
 }
 
 // Aggregate images in use across containers and compose projects
@@ -1273,7 +1261,7 @@ func (s *UpdaterService) collectUsedImagesFromComposeContainersInternal(ctx cont
 		}
 
 		imageRef := strings.TrimSpace(c.Image)
-		if imageRef == "" || isImageIDLikeReferenceInternal(imageRef) {
+		if imageRef == "" || libupdater.IsImageIDLikeReference(imageRef) {
 			continue
 		}
 		addNormalizedImageUpdateRefInternal(ctx, out, imageRef, "collectUsedImagesFromComposeContainersInternal: skipping invalid image reference", "containerId", c.ID)
@@ -1400,7 +1388,7 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 
 	updatedNorm := map[string]string{}
 	for oldRef, nr := range oldRefToNewRef {
-		if normalizedRef := normalizeImageUpdateRefInternal(oldRef); normalizedRef != "" {
+		if normalizedRef := libupdater.NormalizeImageUpdateRef(oldRef); normalizedRef != "" {
 			updatedNorm[normalizedRef] = nr
 		} else {
 			slog.DebugContext(ctx, "restartContainersUsingOldIDs: skipping invalid old image reference", "imageRef", oldRef)
@@ -1466,7 +1454,17 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 			Name:      name,
 		})
 
-		newRef, match := s.resolveContainerImageMatchInternal(c, oldIDToNewRef, updatedNorm)
+		var inspected *container.InspectResponse
+		newRef, match := libupdater.ResolveContainerImageMatch(c, nil, oldIDToNewRef, updatedNorm)
+		if newRef == "" && libupdater.ShouldInspectUnmatchedContainerForImageMatch(c) {
+			inspectResult, ierr := libarcane.ContainerInspectWithCompatibility(ctx, dcli, c.ID, client.ContainerInspectOptions{})
+			if ierr != nil {
+				slog.DebugContext(ctx, "restartContainersUsingOldIDs: inspect for image match failed", "containerId", c.ID, "err", ierr)
+			} else {
+				inspected = &inspectResult.Container
+				newRef, match = libupdater.ResolveContainerImageMatch(c, inspected, oldIDToNewRef, updatedNorm)
+			}
+		}
 
 		if newRef != "" {
 			// Check if container is already on the target image
@@ -1476,15 +1474,16 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 				targetImageIDs[newRef] = tids
 			}
 
-			if c.ImageID != "" && slices.Contains(tids, c.ImageID) {
+			currentImageID := libupdater.CurrentContainerImageID(c, inspected)
+			if currentImageID != "" && slices.Contains(tids, currentImageID) {
 				// Already on target image
 				slog.InfoContext(ctx, "restartContainersUsingOldIDs: container already on target image; skipping restart",
-					"containerId", c.ID, "containerName", name, "imageID", c.ImageID, "newRef", newRef)
+					"containerId", c.ID, "containerName", name, "imageID", currentImageID, "newRef", newRef)
 				newRef = ""
 			}
 		}
 
-		p := &restartPlan{cnt: c, newRef: newRef, match: match, explicit: newRef != ""}
+		p := &restartPlan{cnt: c, inspect: inspected, newRef: newRef, match: match, explicit: newRef != ""}
 		plansByName[name] = p
 		if p.explicit {
 			markedForRestart[name] = true
@@ -1496,6 +1495,11 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 	if len(markedForRestart) > 0 {
 		for i := range containersWithDeps {
 			cwd := containersWithDeps[i]
+			if p, ok := plansByName[cwd.Name]; ok && p.inspect != nil {
+				containersWithDeps[i] = libupdater.ExtractContainerDeps(ctx, dcli, cwd.Container, *p.inspect)
+				continue
+			}
+
 			inspectResult, ierr := libarcane.ContainerInspectWithCompatibility(ctx, dcli, cwd.Container.ID, client.ContainerInspectOptions{})
 			if ierr != nil {
 				continue
@@ -1626,7 +1630,7 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 			ResourceType: "container",
 			Status:       "checked",
 			OldImages:    map[string]string{"main": p.match},
-			NewImages:    map[string]string{"main": normalizeImageUpdateRefInternal(p.newRef)},
+			NewImages:    map[string]string{"main": libupdater.NormalizeImageUpdateRef(p.newRef)},
 		}
 
 		if p.newRef == "" {
@@ -1672,13 +1676,20 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 					if pErr, failed := projectResults[proj.ID]; failed {
 						res.Status = "failed"
 						res.Error = fmt.Sprintf("project-level update failed: %v", pErr)
+					} else if verifyErr := libupdater.VerifyComposeServiceUpdatedImage(ctx, dcli, projectName, serviceName, libupdater.CurrentContainerImageID(p.cnt, p.inspect)); verifyErr != nil {
+						// A per-service verification failure is specific to this service. The
+						// project-level update already ran for every pending service, so we must
+						// not poison projectResults here: sibling services that are already
+						// running the new image would otherwise be reported as failures.
+						res.Status = "failed"
+						res.Error = fmt.Sprintf("service update verification failed: %v", verifyErr)
 					} else {
 						res.Status = "updated"
 						res.UpdateAvailable = true
 						res.UpdateApplied = true
 						// Send notification
 						if s.notificationService != nil {
-							if notifErr := s.notificationService.SendContainerUpdateNotification(ctx, name, p.newRef, p.match, normalizeImageUpdateRefInternal(p.newRef)); notifErr != nil {
+							if notifErr := s.notificationService.SendContainerUpdateNotification(ctx, name, p.newRef, p.match, libupdater.NormalizeImageUpdateRef(p.newRef)); notifErr != nil {
 								slog.WarnContext(ctx, "Failed to send container update notification", "containerId", p.cnt.ID, "containerName", name, "imageRef", p.newRef, "error", notifErr.Error())
 							}
 						}
@@ -1707,7 +1718,7 @@ func (s *UpdaterService) restartContainersUsingOldIDs(ctx context.Context, oldID
 
 				// Send notification after successful container update
 				if s.notificationService != nil {
-					if notifErr := s.notificationService.SendContainerUpdateNotification(ctx, name, p.newRef, p.match, normalizeImageUpdateRefInternal(p.newRef)); notifErr != nil {
+					if notifErr := s.notificationService.SendContainerUpdateNotification(ctx, name, p.newRef, p.match, libupdater.NormalizeImageUpdateRef(p.newRef)); notifErr != nil {
 						slog.WarnContext(ctx, "Failed to send container update notification", "containerId", p.cnt.ID, "containerName", name, "imageRef", p.newRef, "error", notifErr.Error())
 					}
 				}
@@ -1904,41 +1915,18 @@ func (s *UpdaterService) statusSnapshotInternal() updater.Status {
 	}
 }
 
-func (s *UpdaterService) resolveContainerImageMatchInternal(c container.Summary, oldIDToNewRef map[string]string, updatedNorm map[string]string) (newRef, match string) {
-	if c.ImageID != "" {
-		if nr, ok := oldIDToNewRef[c.ImageID]; ok {
-			return nr, c.ImageID
-		}
-	}
-
-	imageRef := strings.TrimSpace(c.Image)
-	if imageRef == "" || isImageIDLikeReferenceInternal(imageRef) {
-		return "", ""
-	}
-
-	norm := normalizeImageUpdateRefInternal(imageRef)
-	if norm == "" {
-		return "", ""
-	}
-	if nr, ok := updatedNorm[norm]; ok {
-		return nr, norm
-	}
-
-	return "", ""
-}
-
 func resolvePullableImageRefInternal(summaryImage, inspectConfigImage string, repoTags []string) (ref, source string) {
-	if image := strings.TrimSpace(inspectConfigImage); image != "" && !isImageIDLikeReferenceInternal(image) {
+	if image := strings.TrimSpace(inspectConfigImage); image != "" && !libupdater.IsImageIDLikeReference(image) {
 		return image, "container_inspect_config"
 	}
 
-	if image := strings.TrimSpace(summaryImage); image != "" && !isImageIDLikeReferenceInternal(image) {
+	if image := strings.TrimSpace(summaryImage); image != "" && !libupdater.IsImageIDLikeReference(image) {
 		return image, "container_summary"
 	}
 
 	for _, tag := range repoTags {
 		trimmed := strings.TrimSpace(tag)
-		if trimmed == "" || trimmed == "<none>:<none>" || isImageIDLikeReferenceInternal(trimmed) {
+		if trimmed == "" || trimmed == "<none>:<none>" || libupdater.IsImageIDLikeReference(trimmed) {
 			continue
 		}
 		return trimmed, "image_repo_tag"
