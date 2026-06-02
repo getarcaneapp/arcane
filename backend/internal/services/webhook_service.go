@@ -576,7 +576,7 @@ func (s *WebhookService) executeProjectWebhookActionInternal(ctx context.Context
 		}
 		return nil, nil
 	case models.WebhookActionTypeRedeploy:
-		if err := s.projectService.RedeployProject(ctx, wh.TargetID, systemUser); err != nil {
+		if err := s.projectService.RedeployProject(ctx, wh.TargetID, systemUser, nil); err != nil {
 			return nil, s.wrapWebhookActionErrorInternal(ctx, wh, "project", actionType, err)
 		}
 		return nil, nil

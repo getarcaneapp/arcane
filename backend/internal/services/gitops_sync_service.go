@@ -682,7 +682,7 @@ func (s *GitOpsSyncService) redeployIfRunningAfterSync(ctx context.Context, proj
 	}
 
 	slog.InfoContext(ctx, "Redeploying project due to content change from Git sync", "syncMode", syncMode, "projectName", project.Name, "projectId", project.ID)
-	if err := s.projectService.RedeployProject(ctx, project.ID, actor); err != nil {
+	if err := s.projectService.RedeployProject(ctx, project.ID, actor, nil); err != nil {
 		slog.ErrorContext(ctx, "Failed to redeploy project after Git sync", "syncMode", syncMode, "error", err, "projectId", project.ID)
 	}
 }
@@ -994,7 +994,7 @@ func (s *GitOpsSyncService) updateProjectForSyncInternal(ctx context.Context, sy
 		details, err := s.projectService.GetProjectDetails(ctx, project.ID, projecttypes.AllDetails())
 		if err == nil && (details.Status == string(models.ProjectStatusRunning) || details.Status == string(models.ProjectStatusPartiallyRunning)) {
 			slog.InfoContext(ctx, "Redeploying project due to content change from Git sync", "projectName", project.Name, "projectId", project.ID)
-			if err := s.projectService.RedeployProject(ctx, project.ID, actor); err != nil {
+			if err := s.projectService.RedeployProject(ctx, project.ID, actor, nil); err != nil {
 				slog.ErrorContext(ctx, "Failed to redeploy project after Git sync", "error", err, "projectId", project.ID)
 			}
 		}
