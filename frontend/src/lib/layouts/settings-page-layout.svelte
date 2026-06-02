@@ -88,11 +88,11 @@
 					<UiConfigDisabledTag />
 				{/if}
 
-				{#if pageType === 'form' && formState && !showReadOnlyTag}
+				{#if pageType === 'form' && formState?.saveFunction && !showReadOnlyTag}
 					<div class="hidden items-center gap-2 sm:flex">
 						{#if formState.hasChanges}
 							<span class="mr-2 text-xs text-orange-600 dark:text-orange-400">{m.common_unsaved_changes()}</span>
-						{:else if !formState.hasChanges && formState.saveFunction}
+						{:else if !formState.hasChanges}
 							<span class="mr-2 text-xs text-green-600 dark:text-green-400">{m.common_all_changes_saved()}</span>
 						{/if}
 

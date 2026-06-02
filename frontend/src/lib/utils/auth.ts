@@ -1,9 +1,14 @@
 import { get } from 'svelte/store';
 import userStore from '$lib/stores/user-store';
 import { environmentStore } from '$lib/stores/environment.store.svelte';
-import { getRouteAccessRules, getRouteFallbackRules, type RouteAccessRule } from '$lib/config/navigation-config';
-import { BUILT_IN_ROLE_ADMIN, GLOBAL_SCOPE, SUDO_PERMISSION } from '$lib/types/auth';
-import type { User } from '$lib/types/auth';
+import {
+	canReachAccessSurface,
+	getFallbackAccessSurfaces,
+	getRouteAccessSurfaces,
+	pathMatchesAccessSurface
+} from '$lib/utils/access-policy';
+import { GLOBAL_SCOPE, SUDO_PERMISSION } from '$lib/types/auth';
+import type { PermissionsManifest, User } from '$lib/types/auth';
 
 // --- Store-backed permission checks (for .svelte / runtime) ---
 
@@ -65,7 +70,7 @@ function isUserGlobalAdmin(user: User): boolean {
 	if (typeof user.isGlobalAdmin === 'boolean') return user.isGlobalAdmin;
 	const global = user.permissionsByEnv?.[GLOBAL_SCOPE];
 	if (global?.includes(SUDO_PERMISSION)) return true;
-	return !!user.roleAssignments?.some((a) => a.roleId === BUILT_IN_ROLE_ADMIN && !a.environmentId);
+	return false;
 }
 
 export function userIsGlobalAdmin(user: User | null | undefined): boolean {
@@ -79,23 +84,6 @@ function isAdminOnlyRoute(path: string): boolean {
 const matchesAny = (path: string, prefixes: string[]) =>
 	prefixes.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
 
-function permissionsForEnv(user: User, envId?: string): Set<string> {
-	const out = new Set<string>();
-	const global = user.permissionsByEnv?.[GLOBAL_SCOPE];
-	if (global) for (const p of global) out.add(p);
-	if (envId && envId !== GLOBAL_SCOPE) {
-		const env = user.permissionsByEnv?.[envId];
-		if (env) for (const p of env) out.add(p);
-	}
-	return out;
-}
-
-function userCanReach(user: User, perms: string[], scope: 'global' | 'env', envId?: string): boolean {
-	const set = permissionsForEnv(user, scope === 'env' ? envId : undefined);
-	if (set.has(SUDO_PERMISSION)) return true;
-	return perms.some((p) => set.has(p));
-}
-
 function userHasAnyAccess(user: User): boolean {
 	if (!user.permissionsByEnv) return false;
 	for (const perms of Object.values(user.permissionsByEnv)) {
@@ -104,16 +92,25 @@ function userHasAnyAccess(user: User): boolean {
 	return false;
 }
 
-function pickFallbackRoute(user: User, envId?: string): string {
-	for (const rule of getRouteFallbackRules()) {
-		if (userCanReach(user, rule.perms, rule.scope, envId)) {
-			return rule.prefix;
+function pickFallbackRoute(
+	user: User,
+	envId: string | undefined,
+	accessManifest: PermissionsManifest | null | undefined
+): string {
+	for (const surface of getFallbackAccessSurfaces(accessManifest)) {
+		if (canReachAccessSurface(accessManifest, surface.id, user, envId)) {
+			return surface.url ?? '/no-access';
 		}
 	}
 	return '/no-access';
 }
 
-export function getAuthRedirectPath(path: string, user: User | null, envId?: string): string | null {
+export function getAuthRedirectPath(
+	path: string,
+	user: User | null,
+	envId?: string,
+	accessManifest?: PermissionsManifest | null
+): string | null {
 	const isSignedIn = !!user;
 
 	if (path === '/') {
@@ -138,11 +135,10 @@ export function getAuthRedirectPath(path: string, user: User | null, envId?: str
 		return '/settings/roles';
 	}
 
-	const sorted: RouteAccessRule[] = [...getRouteAccessRules()].sort((a, b) => b.prefix.length - a.prefix.length);
-	for (const rule of sorted) {
-		if (matchesAny(path, [rule.prefix])) {
-			if (!userCanReach(user, rule.perms, rule.scope, envId)) {
-				const fallback = pickFallbackRoute(user, envId);
+	for (const surface of getRouteAccessSurfaces(accessManifest)) {
+		if (pathMatchesAccessSurface(path, surface)) {
+			if (!canReachAccessSurface(accessManifest, surface.id, user, envId)) {
+				const fallback = pickFallbackRoute(user, envId, accessManifest);
 				return fallback === path ? '/no-access' : fallback;
 			}
 			break;
