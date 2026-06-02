@@ -1,5 +1,5 @@
 import type { User } from '$lib/types/auth';
-import { GLOBAL_SCOPE, SUDO_PERMISSION, BUILT_IN_ROLE_ADMIN } from '$lib/types/auth';
+import { GLOBAL_SCOPE, SUDO_PERMISSION } from '$lib/types/auth';
 import { writable, get } from 'svelte/store';
 import { setLocale } from '$lib/utils/formatting';
 
@@ -58,7 +58,7 @@ const isGlobalAdmin = (): boolean => {
 	if (typeof user.isGlobalAdmin === 'boolean') return user.isGlobalAdmin;
 	const global = user.permissionsByEnv?.[GLOBAL_SCOPE];
 	if (global?.includes(SUDO_PERMISSION)) return true;
-	return !!user.roleAssignments?.some((a) => a.roleId === BUILT_IN_ROLE_ADMIN && !a.environmentId);
+	return false;
 };
 
 export default {

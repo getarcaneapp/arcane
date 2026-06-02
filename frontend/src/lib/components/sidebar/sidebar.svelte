@@ -15,7 +15,7 @@
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
 	import { useSidebar } from '$lib/components/ui/sidebar/index.js';
 	import type { ComponentProps } from 'svelte';
-	import type { User } from '$lib/types/auth';
+	import type { PermissionsManifest, User } from '$lib/types/auth';
 	import type { AppVersionInformation } from '$lib/types/settings';
 	import SidebarLogo from './sidebar-logo.svelte';
 	import SidebarUpdatebanner from './sidebar-updatebanner.svelte';
@@ -35,11 +35,13 @@
 		user,
 		versionInformation,
 		swarmEnabled = false,
+		permissionsManifest = null,
 		...restProps
 	}: ComponentProps<typeof Sidebar.Root> & {
 		versionInformation: AppVersionInformation;
 		user?: User | null;
 		swarmEnabled?: boolean;
+		permissionsManifest?: PermissionsManifest | null;
 	} = $props();
 
 	let autoLoginEnabled = $state(false);
@@ -61,10 +63,16 @@
 	const managementItemsRaw = $derived(getManagementItems(currentEnvId));
 	const swarmItemsRaw = $derived(getSwarmNavigationItems(swarmEnabled));
 
-	const managementItems = $derived(filterByPermissions(managementItemsRaw, effectiveUser ?? null, currentEnvId));
-	const resourceItems = $derived(filterByPermissions(navigationItems.resourceItems, effectiveUser ?? null, currentEnvId));
-	const swarmItems = $derived(filterByPermissions(swarmItemsRaw, effectiveUser ?? null, currentEnvId));
-	const settingsItems = $derived(filterByPermissions(navigationItems.settingsItems, effectiveUser ?? null, currentEnvId));
+	const managementItems = $derived(
+		filterByPermissions(managementItemsRaw, effectiveUser ?? null, currentEnvId, permissionsManifest)
+	);
+	const resourceItems = $derived(
+		filterByPermissions(navigationItems.resourceItems, effectiveUser ?? null, currentEnvId, permissionsManifest)
+	);
+	const swarmItems = $derived(filterByPermissions(swarmItemsRaw, effectiveUser ?? null, currentEnvId, permissionsManifest));
+	const settingsItems = $derived(
+		filterByPermissions(navigationItems.settingsItems, effectiveUser ?? null, currentEnvId, permissionsManifest)
+	);
 </script>
 
 <VersionInfoDialog

@@ -98,8 +98,9 @@ type UpdateOidcRoleMapping struct {
 // grouped by resource. The frontend uses this to render the permission
 // picker without hard-coding the taxonomy.
 type PermissionsManifest struct {
-	Resources []PermissionResource `json:"resources" doc:"Resource groups, in display order"`
-	Presets   []PermissionPreset   `json:"presets,omitempty" doc:"Optional preset permission bundles for bulk selection in the UI"`
+	Resources      []PermissionResource `json:"resources" doc:"Resource groups, in display order"`
+	Presets        []PermissionPreset   `json:"presets,omitempty" doc:"Optional preset permission bundles for bulk selection in the UI"`
+	AccessSurfaces []AccessSurface      `json:"accessSurfaces,omitempty" doc:"Backend-owned route, landing, and category access metadata for frontend UX gating"`
 }
 
 // PermissionResource is one resource group in the manifest (e.g. "containers").
@@ -125,6 +126,22 @@ type PermissionPreset struct {
 	Label       string   `json:"label" doc:"Human-readable preset label" example:"All permissions (non-admin)"`
 	Description string   `json:"description,omitempty" doc:"Optional longer description for the preset"`
 	Permissions []string `json:"permissions" doc:"Permissions included when the preset is selected"`
+}
+
+// AccessSurface describes one UI surface whose visibility is driven by
+// backend-owned RBAC metadata. It is advisory UX metadata; backend handlers and
+// middleware remain authoritative for actual enforcement.
+type AccessSurface struct {
+	ID            string   `json:"id" doc:"Stable surface identifier" example:"settings.category.webhooks"`
+	Kind          string   `json:"kind" enum:"route,settings-category,customize-category,landing" doc:"Surface type"`
+	URL           string   `json:"url,omitempty" doc:"Route URL or prefix represented by this surface" example:"/settings/webhooks"`
+	Label         string   `json:"label" doc:"Human-readable surface label" example:"Webhooks"`
+	AccessMode    string   `json:"accessMode" enum:"permissions,any-child" doc:"How reachability is evaluated"`
+	MatchMode     string   `json:"matchMode" enum:"any-of,all-of" doc:"How permissions are combined when accessMode is permissions"`
+	ScopeMode     string   `json:"scopeMode" enum:"global-only,selected-env-plus-global,any-effective-scope" doc:"Which effective permission scope is considered"`
+	Permissions   []string `json:"permissions,omitempty" doc:"Permissions used by permission-based surfaces"`
+	Children      []string `json:"children,omitempty" doc:"Child surface IDs used by aggregate landing surfaces"`
+	FallbackOrder int      `json:"fallbackOrder,omitempty" doc:"Positive ordering hint for route fallback selection"`
 }
 
 // ApiKeyPermissionGrant is one permission grant on an API key, optionally
