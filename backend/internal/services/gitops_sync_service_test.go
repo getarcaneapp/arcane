@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
@@ -864,14 +865,14 @@ func TestValidateLifecycleConfig_RejectsSyncDirectoryToggleOffWhileScriptStillSe
 
 func TestRedeployAfterSyncFailedError_FormatAndUnwrap(t *testing.T) {
 	cause := errors.New("pre-deploy hook bombed")
-	err := redeployAfterSyncFailedError{cause: cause}
+	err := &common.RedeployAfterSyncFailedError{Err: cause}
 
 	require.Equal(t, "redeploy failed: pre-deploy hook bombed", err.Error())
 	require.True(t, errors.Is(err, cause), "Unwrap should expose the cause for errors.Is")
 
-	typed, ok := errors.AsType[redeployAfterSyncFailedError](err)
+	typed, ok := errors.AsType[*common.RedeployAfterSyncFailedError](err)
 	require.True(t, ok)
-	require.Equal(t, cause, typed.cause)
+	require.Equal(t, cause, typed.Err)
 }
 
 func TestMarkSyncRedeployFailedInternal_PersistsErrorOnSyncRow(t *testing.T) {
@@ -895,7 +896,7 @@ func TestMarkSyncRedeployFailedInternal_PersistsErrorOnSyncRow(t *testing.T) {
 
 	result := &gitops.SyncResult{Success: true}
 	syncedFiles := []string{"compose.yml", "scripts/pre-deploy.sh"}
-	hookErr := redeployAfterSyncFailedError{cause: errors.New("pre-deploy hook failed: exit 1")}
+	hookErr := &common.RedeployAfterSyncFailedError{Err: errors.New("pre-deploy hook failed: exit 1")}
 
 	svc.markSyncRedeployFailedInternal(ctx, sync, sync.ID, "abc123", syncedFiles, hookErr, models.User{BaseModel: models.BaseModel{ID: "user"}, Username: "tester"}, result)
 

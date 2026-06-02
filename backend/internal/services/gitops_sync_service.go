@@ -68,23 +68,6 @@ const (
 	defaultMaxSyncBinarySize   = defaultMaxSyncBinarySizeMB * 1024 * 1024
 )
 
-// redeployAfterSyncFailedError is returned by the internal sync flow when
-// the file sync succeeded but the auto-redeploy that follows it failed
-// (e.g. a pre-deploy lifecycle hook returned non-zero). Callers surface
-// this on the sync row's LastSyncError so the failure is visible from the
-// gitops UI rather than only in the logs.
-type redeployAfterSyncFailedError struct {
-	cause error
-}
-
-func (e redeployAfterSyncFailedError) Error() string {
-	return "redeploy failed: " + e.cause.Error()
-}
-
-func (e redeployAfterSyncFailedError) Unwrap() error {
-	return e.cause
-}
-
 // preparedSyncSource captures the repository data needed by the sync execution
 // paths after the source repository has been cloned and validated.
 type preparedSyncSource struct {
@@ -962,9 +945,9 @@ func (s *GitOpsSyncService) performDirectorySync(ctx context.Context, sync *mode
 
 	if contentsChanged {
 		if redeployErr := s.redeployIfRunningAfterSync(ctx, project, actor, "directory"); redeployErr != nil {
-			// redeployIfRunningAfterSync only ever returns redeployAfterSyncFailedError;
+			// redeployIfRunningAfterSync only ever returns *common.RedeployAfterSyncFailedError;
 			// AsType remains as a defensive guard against future contract drift.
-			if typed, ok := errors.AsType[redeployAfterSyncFailedError](redeployErr); ok {
+			if typed, ok := errors.AsType[*common.RedeployAfterSyncFailedError](redeployErr); ok {
 				s.markSyncRedeployFailedInternal(ctx, sync, id, source.commitHash, syncedFiles, typed, actor, result)
 			}
 			return result, redeployErr
@@ -986,11 +969,11 @@ func (s *GitOpsSyncService) performSingleFileSyncInternal(ctx context.Context, s
 
 	project, err := s.getOrCreateProjectInternal(ctx, sync, id, source.composeContent, source.envContent, result, actor)
 	if err != nil {
-		// err may be a redeployAfterSyncFailedError (from updateProjectForSyncInternal)
+		// err may be a *common.RedeployAfterSyncFailedError (from updateProjectForSyncInternal)
 		// or a plain failSync error (from CreateProject / ApplyGitSyncProjectFiles).
 		// Only the typed case warrants the redeploy-failure marker; the rest just
 		// surface through the caller.
-		if redeployErr, ok := errors.AsType[redeployAfterSyncFailedError](err); ok {
+		if redeployErr, ok := errors.AsType[*common.RedeployAfterSyncFailedError](err); ok {
 			syncedFiles := []string{filepath.Base(sync.ComposePath)}
 			s.markSyncRedeployFailedInternal(ctx, sync, id, source.commitHash, syncedFiles, redeployErr, actor, result)
 		}
@@ -1079,7 +1062,7 @@ func (s *GitOpsSyncService) performSwarmStackSyncInternal(ctx context.Context, s
 
 // redeployIfRunningAfterSync redeploys a project only when it is already
 // running and the latest sync actually changed managed content. Returns a
-// redeployAfterSyncFailedError when the redeploy itself fails; callers
+// *common.RedeployAfterSyncFailedError when the redeploy itself fails; callers
 // surface that on the sync row's LastSyncError.
 func (s *GitOpsSyncService) redeployIfRunningAfterSync(ctx context.Context, project *models.Project, actor models.User, syncMode string) error {
 	details, err := s.projectService.GetProjectDetails(ctx, project.ID, projecttypes.AllDetails())
@@ -1093,7 +1076,7 @@ func (s *GitOpsSyncService) redeployIfRunningAfterSync(ctx context.Context, proj
 	slog.InfoContext(ctx, "Redeploying project due to content change from Git sync", "syncMode", syncMode, "projectName", project.Name, "projectId", project.ID)
 	if err := s.projectService.RedeployProject(ctx, project.ID, actor, nil); err != nil {
 		slog.ErrorContext(ctx, "Failed to redeploy project after Git sync", "syncMode", syncMode, "error", err, "projectId", project.ID)
-		return redeployAfterSyncFailedError{cause: err}
+		return &common.RedeployAfterSyncFailedError{Err: err}
 	}
 	return nil
 }
@@ -1303,7 +1286,7 @@ func (s *GitOpsSyncService) failSync(ctx context.Context, id string, result *git
 // lifecycle hook returning non-zero). The synced-files list and commit hash
 // are preserved on the row so operators can see what reached disk; the
 // error message surfaces the redeploy failure on LastSyncError.
-func (s *GitOpsSyncService) markSyncRedeployFailedInternal(ctx context.Context, sync *models.GitOpsSync, id, commitHash string, syncedFiles []string, redeployErr redeployAfterSyncFailedError, actor models.User, result *gitops.SyncResult) {
+func (s *GitOpsSyncService) markSyncRedeployFailedInternal(ctx context.Context, sync *models.GitOpsSync, id, commitHash string, syncedFiles []string, redeployErr *common.RedeployAfterSyncFailedError, actor models.User, result *gitops.SyncResult) {
 	errMsg := redeployErr.Error()
 	result.Success = false
 	result.Message = "Sync wrote files but redeploy failed"
@@ -1380,15 +1363,15 @@ func (s *GitOpsSyncService) updateProjectForSyncInternal(ctx context.Context, sy
 	contentChanged := oldCompose != newCompose || envContentChangedInternal(oldEnv, newEnv)
 
 	// If content changed and project is running, redeploy. A redeploy failure
-	// is bubbled up as a redeployAfterSyncFailedError so the parent flow can
-	// reflect it on the sync row's LastSyncError.
+	// is bubbled up as a *common.RedeployAfterSyncFailedError so the parent flow
+	// can reflect it on the sync row's LastSyncError.
 	if contentChanged {
 		details, err := s.projectService.GetProjectDetails(ctx, project.ID, projecttypes.AllDetails())
 		if err == nil && (details.Status == string(models.ProjectStatusRunning) || details.Status == string(models.ProjectStatusPartiallyRunning)) {
 			slog.InfoContext(ctx, "Redeploying project due to content change from Git sync", "projectName", project.Name, "projectId", project.ID)
 			if err := s.projectService.RedeployProject(ctx, project.ID, actor, nil); err != nil {
 				slog.ErrorContext(ctx, "Failed to redeploy project after Git sync", "error", err, "projectId", project.ID)
-				return redeployAfterSyncFailedError{cause: err}
+				return &common.RedeployAfterSyncFailedError{Err: err}
 			}
 		}
 	}
