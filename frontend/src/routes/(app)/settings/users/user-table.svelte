@@ -127,9 +127,9 @@
 
 	type BadgeVariant = 'red' | 'blue' | 'purple' | 'gray' | 'green';
 
-	/** True when the user holds the built-in Admin role globally. */
+	/** True when the backend reports effective global administrator access. */
 	function isGlobalAdmin(user: User): boolean {
-		return !!user.roleAssignments?.some((a) => a.roleId === BUILT_IN_ROLE_ADMIN && !a.environmentId);
+		return user.isGlobalAdmin === true;
 	}
 
 	/** Color variant for a role badge keyed off the role ID (not its localized name). */

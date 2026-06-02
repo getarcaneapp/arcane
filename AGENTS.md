@@ -113,6 +113,17 @@ Domain types shared between backend and CLI. Each domain has its own package (e.
 
 The CLI is a Cobra application. Commands live under `cli/pkg/<domain>/`, shared command helpers live under `cli/internal/`, and public API shapes should come from `types/` instead of duplicating structs.
 
+## RBAC Architecture
+
+Keep Arcane RBAC split into three distinct layers:
+
+- Permission catalog: `backend/pkg/authz/catalog.go` and `permissions.go` are the source of truth for raw capabilities, scope taxonomy, labels, permission constants, and built-in bundles.
+- Access-surface registry: `backend/pkg/authz/access_policy.go` is the source of truth for page, route, landing, settings category, and customize category reachability metadata. Use it when filtering backend category responses or publishing frontend access policy.
+- Frontend UX gates: navigation config owns presentation only: labels, icons, order, grouping, and stable `accessSurfaceId` references. Route redirects, sidebar visibility, mobile nav, and landing cards evaluate backend-published access surfaces instead of duplicating permission arrays.
+- Backend enforcement: middleware, handlers, and services remain authoritative. Access surfaces are advisory UI metadata and must not replace `RequirePermission`, `RequireGlobalAdmin`, or service-level validation such as anti-escalation checks.
+
+Admin semantics come from effective permissions: `PermissionSet.IsGlobalAdmin()` on the backend and `isGlobalAdmin` in user DTOs on the frontend. Do not infer global administrator access from built-in role IDs in frontend authorization checks; role IDs may still be used for labels, badge colors, presets, and assignment UX.
+
 ## Critical Patterns
 
 ### Svelte 5 ONLY — No Svelte 4 Syntax
