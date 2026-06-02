@@ -221,6 +221,7 @@
 		<GitOpsSyncFormSheet
 			bind:open={isSyncDialogOpen}
 			bind:syncToEdit
+			{environmentId}
 			targetType={dialogTargetType}
 			onSubmit={handleSyncDialogSubmit}
 			isLoading={isLoading.create || isLoading.edit}

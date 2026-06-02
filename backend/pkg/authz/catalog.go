@@ -168,6 +168,7 @@ var permissionCatalog = []PermissionCatalogResource{
 		{"update", PermGitOpsUpdate, "Update", ""},
 		{"delete", PermGitOpsDelete, "Delete", ""},
 		{"sync", PermGitOpsSync, "Trigger sync", ""},
+		{"lifecycle", PermGitOpsLifecycle, "Configure pre-deploy hooks", "Create or modify a sync's pre-deploy lifecycle hook, which runs an arbitrary container with host bind mounts and env on every sync"},
 	}},
 	{"webhooks", "Webhooks", PermissionScopeEnv, []PermissionCatalogAction{
 		{"list", PermWebhooksList, "List", ""},
