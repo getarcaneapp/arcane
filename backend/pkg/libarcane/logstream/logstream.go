@@ -130,7 +130,7 @@ func (h *slogHandler) Handle(ctx context.Context, r slog.Record) error {
 	if r.NumAttrs() > 0 {
 		attrs = make(map[string]any, r.NumAttrs())
 		r.Attrs(func(a slog.Attr) bool {
-			attrs[a.Key] = a.Value.Any()
+			attrs[a.Key] = normalizeAttrValueInternal(a.Value)
 			return true
 		})
 	}
@@ -149,4 +149,69 @@ func (h *slogHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 
 func (h *slogHandler) WithGroup(name string) slog.Handler {
 	return &slogHandler{base: h.base.WithGroup(name), b: h.b}
+}
+
+func normalizeAttrValueInternal(value slog.Value) any {
+	value = value.Resolve()
+
+	switch value.Kind() {
+	case slog.KindAny:
+		return normalizeAnyValueInternal(value.Any())
+	case slog.KindBool:
+		return value.Bool()
+	case slog.KindDuration:
+		return value.Duration()
+	case slog.KindFloat64:
+		return value.Float64()
+	case slog.KindGroup:
+		return normalizeGroupAttrsInternal(value.Group())
+	case slog.KindInt64:
+		return value.Int64()
+	case slog.KindLogValuer:
+		return value.String()
+	case slog.KindString:
+		return value.String()
+	case slog.KindTime:
+		return value.Time()
+	case slog.KindUint64:
+		return value.Uint64()
+	default:
+		return value.String()
+	}
+}
+
+func normalizeAnyValueInternal(value any) any {
+	switch typed := value.(type) {
+	case slog.Attr:
+		return map[string]any{typed.Key: normalizeAttrValueInternal(typed.Value)}
+	case []slog.Attr:
+		return normalizeGroupAttrsInternal(typed)
+	case slog.Value:
+		return normalizeAttrValueInternal(typed)
+	case []any:
+		out := make([]any, len(typed))
+		for i, item := range typed {
+			out[i] = normalizeAnyValueInternal(item)
+		}
+		return out
+	case map[string]any:
+		out := make(map[string]any, len(typed))
+		for key, item := range typed {
+			out[key] = normalizeAnyValueInternal(item)
+		}
+		return out
+	default:
+		return value
+	}
+}
+
+func normalizeGroupAttrsInternal(attrs []slog.Attr) map[string]any {
+	out := make(map[string]any, len(attrs))
+	for _, attr := range attrs {
+		if attr.Key == "" {
+			continue
+		}
+		out[attr.Key] = normalizeAttrValueInternal(attr.Value)
+	}
+	return out
 }

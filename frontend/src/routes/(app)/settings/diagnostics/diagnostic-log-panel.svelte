@@ -7,6 +7,7 @@
 	import { cn } from '$lib/utils';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { TrashIcon } from '$lib/icons';
+	import { attrsText } from './diagnostic-log-formatting';
 
 	interface Props {
 		height?: string;
@@ -63,13 +64,6 @@
 	function fmtTime(t: string): string {
 		const d = new Date(t);
 		return isNaN(d.getTime()) ? t : timeFmt.format(d);
-	}
-
-	function attrsText(attrs?: Record<string, unknown>): string {
-		if (!attrs) return '';
-		return Object.entries(attrs)
-			.map(([k, v]) => `${k}=${String(v)}`)
-			.join('  ');
 	}
 
 	function logKey(entry: LogEntry): string {
@@ -153,7 +147,7 @@
 					<span class={cn('w-12 shrink-0 font-semibold uppercase', levelClass(entry.level))}>{entry.level}</span>
 					<span class="min-w-0 break-words whitespace-pre-wrap">
 						{entry.message}
-						{#if entry.attrs}<span class="text-muted-foreground">{attrsText(entry.attrs)}</span>{/if}
+						{#if entry.attrs}<span class="text-muted-foreground ml-2">{attrsText(entry.attrs)}</span>{/if}
 					</span>
 				</div>
 			{/each}
