@@ -1244,6 +1244,42 @@ func (e *UpdaterHistoryError) Error() string {
 	return fmt.Sprintf("Failed to get updater history: %v", e.Err)
 }
 
+type UpdaterDockerServiceUnavailableError struct{}
+
+func (e *UpdaterDockerServiceUnavailableError) Error() string {
+	return "docker service unavailable"
+}
+
+type UpdaterDockerClientUnavailableError struct{}
+
+func (e *UpdaterDockerClientUnavailableError) Error() string {
+	return "docker client unavailable"
+}
+
+type UpdaterImageServiceUnavailableError struct{}
+
+func (e *UpdaterImageServiceUnavailableError) Error() string {
+	return "image service unavailable"
+}
+
+type UpdaterDatabaseUnavailableError struct{}
+
+func (e *UpdaterDatabaseUnavailableError) Error() string {
+	return "database unavailable"
+}
+
+type UpdaterServiceUnavailableError struct{}
+
+func (e *UpdaterServiceUnavailableError) Error() string {
+	return "updater service unavailable"
+}
+
+type UpdaterProjectServiceUnavailableError struct{}
+
+func (e *UpdaterProjectServiceUnavailableError) Error() string {
+	return "project service unavailable"
+}
+
 type UserListError struct {
 	Err error
 }

@@ -15,12 +15,12 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	activitylib "github.com/getarcaneapp/arcane/backend/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/crypto"
-	imageupdatecore "github.com/getarcaneapp/arcane/backend/pkg/libarcane/imageupdate"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/ratelimit"
 	registry "github.com/getarcaneapp/arcane/backend/pkg/libarcane/registryauth"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 	"github.com/getarcaneapp/arcane/types/imageupdate"
+	updaterdigest "github.com/getarcaneapp/updater/pkg/digest"
 	"github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/client"
 	"golang.org/x/sync/errgroup"
@@ -301,7 +301,7 @@ func (s *ImageUpdateService) parseImageReference(imageRef string) *ImageParts {
 // Fallback parser for cases where the official parser fails
 func (s *ImageUpdateService) parseImageReferenceFallback(imageRef string) *ImageParts {
 	var registryHost, repository, tag string
-	if _, ok := imageupdatecore.DigestFromReferenceSuffix(imageRef); ok {
+	if _, ok := updaterdigest.FromReferenceSuffix(imageRef); ok {
 		digestParts := strings.Split(imageRef, "@")
 		if len(digestParts) != 2 {
 			return nil
@@ -467,7 +467,7 @@ func (s *ImageUpdateService) inspectLocalImageSnapshotInternal(ctx context.Conte
 	// Extract all digests from RepoDigests
 	if len(inspectResponse.RepoDigests) > 0 {
 		for _, repoDigest := range inspectResponse.RepoDigests {
-			digest, ok := imageupdatecore.DigestFromReferenceSuffix(repoDigest)
+			digest, ok := updaterdigest.FromReferenceSuffix(repoDigest)
 			if !ok {
 				continue
 			}
