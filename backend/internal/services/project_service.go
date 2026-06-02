@@ -1843,10 +1843,10 @@ func (s *ProjectService) UnarchiveProject(ctx context.Context, projectID string,
 	return nil
 }
 
-// resolveRemoveOrphans decides whether compose up should remove orphan containers.
+// resolveRemoveOrphansInternal decides whether compose up should remove orphan containers.
 // GitOps-managed projects always remove orphans so the running stack matches the
 // tracked compose file. Non-GitOps callers may opt in per request via DeployOptions.
-func resolveRemoveOrphans(gitOpsManaged bool, options *project.DeployOptions) bool {
+func resolveRemoveOrphansInternal(gitOpsManaged bool, options *project.DeployOptions) bool {
 	return gitOpsManaged || (options != nil && options.RemoveOrphans)
 }
 
@@ -1888,7 +1888,7 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 	}
 
 	gitOpsManaged := projectFromDb.GitOpsManagedBy != nil && *projectFromDb.GitOpsManagedBy != ""
-	removeOrphans := resolveRemoveOrphans(gitOpsManaged, options)
+	removeOrphans := resolveRemoveOrphansInternal(gitOpsManaged, options)
 
 	slog.Info("starting compose up with health check support", "projectID", projectID, "projectName", project.Name, "services", len(project.Services), "removeOrphans", removeOrphans)
 	// Health/progress streaming (if any) is handled inside projects.ComposeUp via ctx.

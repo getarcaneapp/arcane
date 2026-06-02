@@ -3823,7 +3823,7 @@ func TestResolveRemoveOrphans(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, resolveRemoveOrphans(tt.gitOpsManaged, tt.options))
+			require.Equal(t, tt.want, resolveRemoveOrphansInternal(tt.gitOpsManaged, tt.options))
 		})
 	}
 }
