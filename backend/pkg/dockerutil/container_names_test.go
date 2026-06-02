@@ -1,10 +1,6 @@
 package docker
 
-import (
-	"testing"
-
-	"github.com/moby/moby/api/types/container"
-)
+import "testing"
 
 func TestContainerNameFromNames(t *testing.T) {
 	tests := []struct {
@@ -38,33 +34,6 @@ func TestContainerNameFromNames(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := ContainerNameFromNames(tt.names); got != tt.want {
 				t.Errorf("ContainerNameFromNames() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestContainerSummaryName(t *testing.T) {
-	tests := []struct {
-		name string
-		cnt  container.Summary
-		want string
-	}{
-		{
-			name: "uses Docker name",
-			cnt:  container.Summary{Names: []string{"/myapp"}, ID: "abc123456789"},
-			want: "myapp",
-		},
-		{
-			name: "falls back to short ID",
-			cnt:  container.Summary{Names: []string{}, ID: "abc123456789"},
-			want: "abc123456789",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := ContainerSummaryName(tt.cnt); got != tt.want {
-				t.Errorf("ContainerSummaryName() = %v, want %v", got, tt.want)
 			}
 		})
 	}
