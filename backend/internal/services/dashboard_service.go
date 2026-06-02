@@ -10,12 +10,12 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	dockerutils "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
-	libupdater "github.com/getarcaneapp/arcane/backend/pkg/libarcane/imageupdate"
 	"github.com/getarcaneapp/arcane/types/base"
 	containertypes "github.com/getarcaneapp/arcane/types/container"
 	dashboardtypes "github.com/getarcaneapp/arcane/types/dashboard"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
 	versiontypes "github.com/getarcaneapp/arcane/types/version"
+	libupdater "github.com/getarcaneapp/updater/pkg/labels"
 	dockercontainer "github.com/moby/moby/api/types/container"
 	"golang.org/x/sync/errgroup"
 )
