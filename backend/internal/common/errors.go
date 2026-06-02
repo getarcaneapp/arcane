@@ -1523,6 +1523,23 @@ func (e *GitOpsSyncMappingError) Error() string {
 	return "Failed to map GitOps sync"
 }
 
+// RedeployAfterSyncFailedError is returned by the internal GitOps sync flow
+// when the file sync succeeded but the auto-redeploy that follows it failed
+// (e.g. a pre-deploy lifecycle hook returned non-zero). Callers surface this on
+// the sync row's LastSyncError so the failure is visible from the GitOps UI
+// rather than only in the logs.
+type RedeployAfterSyncFailedError struct {
+	Err error
+}
+
+func (e *RedeployAfterSyncFailedError) Error() string {
+	return "redeploy failed: " + e.Err.Error()
+}
+
+func (e *RedeployAfterSyncFailedError) Unwrap() error {
+	return e.Err
+}
+
 type VulnerabilityScanError struct {
 	Err error
 }
