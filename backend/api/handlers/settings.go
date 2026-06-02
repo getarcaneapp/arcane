@@ -71,20 +71,6 @@ type GetCategoriesOutput struct {
 	Body []category.Category
 }
 
-var settingsCategoryPermissionsInternal = map[string][]string{
-	"activity":       {authz.PermSettingsRead},
-	"apikeys":        {authz.PermApiKeysList, authz.PermApiKeysRead},
-	"appearance":     {authz.PermSettingsRead},
-	"authentication": {authz.PermSettingsRead},
-	"build":          {authz.PermSettingsRead},
-	"jobschedule":    {authz.PermJobsManage},
-	"notifications":  {authz.PermNotificationsManage},
-	"security":       {authz.PermSettingsRead},
-	"timeouts":       {authz.PermSettingsRead},
-	"users":          {authz.PermUsersList, authz.PermUsersRead},
-	"webhooks":       {authz.PermWebhooksList},
-}
-
 // validateProjectsDirectoryValueInternal validates a projects directory value allowing:
 // - Unix absolute paths (/...)
 // - Windows drive paths (C:/..., C:\...)
@@ -201,48 +187,32 @@ func RegisterSettings(api huma.API, settingsService *services.SettingsService, s
 	}, h.GetCategories)
 }
 
-func permissionSetAllowsAtAnyScopeInternal(ps *authz.PermissionSet, perm string) bool {
-	if ps == nil {
-		return false
-	}
-	if ps.Allows(perm, "") {
-		return true
-	}
-	for envID := range ps.PerEnv {
-		if ps.Allows(perm, envID) {
-			return true
-		}
-	}
-	return false
-}
-
-func canAccessSettingsCategoryInternal(ps *authz.PermissionSet, categoryID string) bool {
-	if ps == nil {
-		return false
-	}
-	perms, ok := settingsCategoryPermissionsInternal[categoryID]
-	if !ok {
-		return false
-	}
-	for _, perm := range perms {
-		if permissionSetAllowsAtAnyScopeInternal(ps, perm) {
-			return true
-		}
-	}
-	return false
-}
-
 func filterSettingsCategoriesInternal(ps *authz.PermissionSet, categories []category.Category) []category.Category {
 	if ps == nil {
 		return []category.Category{}
 	}
 	filtered := make([]category.Category, 0, len(categories))
 	for _, cat := range categories {
-		if canAccessSettingsCategoryInternal(ps, cat.ID) {
+		if canAccessSettingsCategoryAtAnyScopeInternal(ps, cat.ID) {
 			filtered = append(filtered, cat)
 		}
 	}
 	return filtered
+}
+
+func canAccessSettingsCategoryAtAnyScopeInternal(ps *authz.PermissionSet, categoryID string) bool {
+	if ps == nil {
+		return false
+	}
+	if authz.CanAccessSettingsCategory(ps, categoryID, "") {
+		return true
+	}
+	for envID := range ps.PerEnv {
+		if authz.CanAccessSettingsCategory(ps, categoryID, envID) {
+			return true
+		}
+	}
+	return false
 }
 
 func (h *SettingsHandler) appendRuntimeSettingsInternal(settingsDto []settings.PublicSetting, includeAuthenticatedOnly bool) []settings.PublicSetting {

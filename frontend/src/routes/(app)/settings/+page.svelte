@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { get } from 'svelte/store';
 	import { onMount } from 'svelte';
 	import {
 		SearchIcon,
@@ -24,17 +23,16 @@
 	import { m } from '$lib/paraglide/messages';
 	import { UiConfigDisabledTag } from '$lib/components/badges/index.js';
 	import { settingsSearchService } from '$lib/services/settings-search';
-	import userStore from '$lib/stores/user-store';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import type { SettingsCategory } from '$lib/types/shared';
 	import { debounced } from '$lib/utils/ws';
-	import { getAuthRedirectPath } from '$lib/utils/auth';
+	import { canReachAccessSurface, canReachAccessSurfaceUrl } from '$lib/utils/access-policy';
 	import * as InputGroup from '$lib/components/ui/input-group/index.js';
 	import { getSettingsSubpageUrlsInNavOrder } from '$lib/config/navigation-config';
 	import HeaderCard from '$lib/components/header-card.svelte';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 
-	let {}: PageProps = $props();
+	let { data }: PageProps = $props();
 
 	let searchQuery = $state('');
 	let showSearchResults = $state(false);
@@ -42,7 +40,8 @@
 	let isSearching = $state(false);
 	let settingsCategories = $state<SettingsCategory[]>([]);
 	let currentSearchRequest = $state(0);
-	const hiddenCategoryUrls = new Set(['/settings/security']);
+	const user = $derived(data.user);
+	const permissionsManifest = $derived(data.permissionsManifest);
 
 	const iconMap: Record<string, any> = {
 		settings: SettingsIcon,
@@ -61,11 +60,7 @@
 
 	onMount(async () => {
 		try {
-			settingsCategories = orderCategoriesByNav(
-				(await settingsSearchService.getCategories()).filter(
-					(category) => isVisibleCategory(category) && isAccessibleCategory(category)
-				)
-			);
+			settingsCategories = orderCategoriesByNav((await settingsSearchService.getCategories()).filter(isAccessibleCategory));
 		} catch (error) {
 			console.error('Failed to load categories:', error);
 		}
@@ -90,9 +85,7 @@
 		try {
 			const response = await settingsSearchService.search(trimmedQuery);
 			if (requestId === currentSearchRequest) {
-				searchResults = (response.results || []).filter(
-					(category) => isVisibleCategory(category) && isAccessibleCategory(category)
-				);
+				searchResults = (response.results || []).filter(isAccessibleCategory);
 				isSearching = false;
 			}
 		} catch (error) {
@@ -112,12 +105,19 @@
 		goto(categoryUrl);
 	}
 
-	function isVisibleCategory(category: SettingsCategory) {
-		return !hiddenCategoryUrls.has(category.url);
+	function isAccessibleCategory(category: SettingsCategory) {
+		if (!permissionsManifest?.accessSurfaces?.length) return true;
+		if (category.id === 'jobschedule') {
+			return canReachAccessSurface(permissionsManifest, 'settings.category.jobschedule', user, environmentStore.selected?.id);
+		}
+		return canReachAccessSurfaceUrl(permissionsManifest, category.url, user, environmentStore.selected?.id);
 	}
 
-	function isAccessibleCategory(category: SettingsCategory) {
-		return getAuthRedirectPath(category.url, get(userStore), environmentStore.selected?.id) === null;
+	function getCategoryUrl(category: SettingsCategory) {
+		if (category.id === 'jobschedule') {
+			return `/environments/${environmentStore.selected?.id ?? '0'}?tab=jobs`;
+		}
+		return category.url;
 	}
 
 	function orderCategoriesByNav(categories: SettingsCategory[]) {
@@ -205,7 +205,7 @@
 			{#each settingsCategories as category (category.id)}
 				{@const Icon = getIconComponent(category.icon)}
 				<Card class="hover:border-primary/30 group cursor-pointer transition-colors duration-200">
-					<button onclick={() => navigateToCategory(category.url)} class="w-full p-4 text-left sm:p-6">
+					<button onclick={() => navigateToCategory(getCategoryUrl(category))} class="w-full p-4 text-left sm:p-6">
 						<div class="flex items-start justify-between gap-3">
 							<div class="flex min-w-0 flex-1 items-start gap-3 sm:gap-4">
 								<div
@@ -261,7 +261,7 @@
 										action="base"
 										tone="outline"
 										size="sm"
-										onclick={() => navigateToCategory(result.url)}
+										onclick={() => navigateToCategory(getCategoryUrl(result))}
 										class="shrink-0"
 										customLabel={m.settings_go_to_page()}
 									/>

@@ -16,6 +16,7 @@
 	import { extractApiErrorMessage } from '$lib/utils/api';
 	import { hasPermission } from '$lib/utils/auth';
 	import type { AppVersionInformation } from '$lib/types/settings';
+	import type { PermissionsManifest, User } from '$lib/types/auth';
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
 
 	let {
@@ -23,16 +24,18 @@
 		user = null,
 		versionInformation,
 		swarmItems = [],
+		permissionsManifest = null,
 		debug = false
 	}: {
 		open: boolean;
-		user?: any;
+		user?: User | null;
 		versionInformation?: AppVersionInformation;
 		swarmItems?: NavigationItem[];
+		permissionsManifest?: PermissionsManifest | null;
 		debug?: boolean;
 	} = $props();
 
-	let storeUser: any = $state(null);
+	let storeUser = $state<User | null>(null);
 
 	$effect(() => {
 		const unsub = userStore.subscribe((u) => (storeUser = u));
@@ -43,9 +46,15 @@
 	const memoizedUser = $derived.by(() => user ?? storeUser);
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
 	const managementItemsRaw = $derived(getManagementItems(currentEnvId));
-	const managementItems = $derived(filterByPermissions(managementItemsRaw, memoizedUser ?? null, currentEnvId));
-	const resourceItems = $derived(filterByPermissions(navigationItems.resourceItems, memoizedUser ?? null, currentEnvId));
-	const settingsItems = $derived(filterByPermissions(navigationItems.settingsItems, memoizedUser ?? null, currentEnvId));
+	const managementItems = $derived(
+		filterByPermissions(managementItemsRaw, memoizedUser ?? null, currentEnvId, permissionsManifest)
+	);
+	const resourceItems = $derived(
+		filterByPermissions(navigationItems.resourceItems, memoizedUser ?? null, currentEnvId, permissionsManifest)
+	);
+	const settingsItems = $derived(
+		filterByPermissions(navigationItems.settingsItems, memoizedUser ?? null, currentEnvId, permissionsManifest)
+	);
 
 	let upgrading = $state(false);
 	let showConfirmDialog = $state(false);
