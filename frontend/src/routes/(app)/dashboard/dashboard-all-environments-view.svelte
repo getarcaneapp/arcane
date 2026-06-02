@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { goto, invalidateAll } from '$app/navigation';
+	import { goto } from '$app/navigation';
 	import { formatDistanceToNow } from 'date-fns';
 	import { onDestroy, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
@@ -32,8 +32,11 @@
 	import { tryCatch } from '$lib/utils/api';
 	import { getEnvironmentStatusVariant, isEnvironmentOnline, resolveEnvironmentStatus } from '$lib/utils/docker';
 	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
+	import { queryKeys } from '$lib/query/query-keys';
+	import { createVisibilityPoller, type VisibilityPoller } from '$lib/utils/visibility-poller';
 	import { createStatsWebSocket, type ReconnectingWebSocket } from '$lib/utils/ws';
 	import { bytes } from '$lib/utils/formatting';
+	import { useQueryClient } from '@tanstack/svelte-query';
 	import {
 		ContainersIcon,
 		CpuIcon,
@@ -61,6 +64,7 @@
 		debugUpgrade?: boolean;
 	} = $props();
 
+	const queryClient = useQueryClient();
 	const emptySnapshotSettings: DashboardSnapshot['settings'] = {};
 
 	type EnvironmentLiveStatsState = {
@@ -88,7 +92,7 @@
 
 	const dashboardSnapshotPollInterval = 15000;
 	let snapshotByEnvironmentId = $state<Record<string, EnvironmentSnapshotState>>({});
-	let snapshotPollers: Record<string, ReturnType<typeof setInterval>> = {};
+	let snapshotPollers: Record<string, VisibilityPoller> = {};
 
 	let dockerInfoOpen = $state(false);
 	let dockerInfoData = $state<DockerInfo | null>(null);
@@ -218,12 +222,21 @@
 		}
 	}
 
-	async function fetchEnvironmentSnapshot(environment: Environment) {
+	async function fetchEnvironmentSnapshot(environment: Environment, force = false) {
 		if (!snapshotByEnvironmentId[environment.id]) {
 			return;
 		}
 
-		const result = await tryCatch(dashboardService.getDashboardForEnvironment(environment.id, { debugAllGood }));
+		const queryKey = queryKeys.dashboard.snapshot(environment.id, debugAllGood);
+		if (force) {
+			await queryClient.invalidateQueries({ queryKey });
+		}
+		const result = await tryCatch(
+			queryClient.fetchQuery({
+				queryKey,
+				queryFn: () => dashboardService.getDashboardForEnvironment(environment.id, { debugAllGood })
+			})
+		);
 		const state = snapshotByEnvironmentId[environment.id];
 		if (!state) {
 			return;
@@ -253,16 +266,19 @@
 			return;
 		}
 
-		void fetchEnvironmentSnapshot(environment);
-		snapshotPollers[environment.id] = setInterval(() => {
-			void fetchEnvironmentSnapshot(environment);
-		}, dashboardSnapshotPollInterval);
+		const poller = createVisibilityPoller({
+			intervalMs: dashboardSnapshotPollInterval,
+			poll: () => fetchEnvironmentSnapshot(environment, true),
+			immediate: true
+		});
+		snapshotPollers[environment.id] = poller;
+		poller.start();
 	}
 
 	function removeEnvironmentSnapshot(environmentId: string) {
 		const poller = snapshotPollers[environmentId];
 		if (poller) {
-			clearInterval(poller);
+			poller.stop();
 			delete snapshotPollers[environmentId];
 		}
 		delete snapshotByEnvironmentId[environmentId];
@@ -426,11 +442,11 @@
 	async function refreshOverview() {
 		isRefreshing = true;
 		try {
-			await invalidateAll();
+			await queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
 			await Promise.all(
 				environmentCards
 					.filter(({ environment }) => shouldLoadEnvironment(environment))
-					.map(({ environment }) => fetchEnvironmentSnapshot(environment))
+					.map(({ environment }) => fetchEnvironmentSnapshot(environment, true))
 			);
 			reloadVersion += 1;
 		} finally {

@@ -2,7 +2,7 @@
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
-	import { goto, invalidateAll } from '$app/navigation';
+	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 	import { preventDefault, createForm } from '$lib/utils/settings';
 	import { tryCatch } from '$lib/utils/api';
@@ -33,6 +33,7 @@
 	import EditableName from '../../../projects/components/EditableName.svelte';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { ComposeEditorSplit } from '$lib/components/compose';
+	import { invalidateSwarmStackQueries, invalidateTemplateQueries } from '$lib/query/query-client';
 
 	let { data } = $props();
 
@@ -107,7 +108,8 @@
 			setLoadingState: (value) => (saving = value),
 			onSuccess: async () => {
 				toast.success(m.common_create_success({ resource: `${m.swarm_stack()} "${name}"` }));
-				goto('/swarm/stacks', { invalidateAll: true });
+				await invalidateSwarmStackQueries(name);
+				goto('/swarm/stacks');
 			}
 		});
 	}
@@ -124,7 +126,8 @@
 			setLoadingState: (value) => (saving = value),
 			onSuccess: async () => {
 				toast.success(m.common_update_success({ resource: `${m.swarm_stack()} "${name}"` }));
-				goto(`/swarm/stacks/${encodeURIComponent(name)}`, { invalidateAll: true });
+				await invalidateSwarmStackQueries(name);
+				goto(`/swarm/stacks/${encodeURIComponent(name)}`);
 			}
 		});
 	}
@@ -187,6 +190,7 @@
 			setLoadingState: (value) => (creatingTemplate = value),
 			onSuccess: async () => {
 				toast.success(m.common_create_success({ resource: `${m.resource_template()} "${name}"` }));
+				await invalidateTemplateQueries();
 			}
 		});
 	}
@@ -438,5 +442,5 @@
 	bind:open={showTemplateDialog}
 	templates={data.composeTemplates || []}
 	onSelect={handleTemplateSelect}
-	onDownloadSuccess={invalidateAll}
+	onDownloadSuccess={() => invalidateTemplateQueries()}
 />

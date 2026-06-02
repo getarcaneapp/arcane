@@ -2,7 +2,9 @@
 	import { createContainerStatsWebSocket, type ReconnectingWebSocket } from '$lib/utils/ws';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import type { ContainerStats as ContainerStatsType } from '$lib/types/docker';
-	import { invalidateAll } from '$app/navigation';
+	import { goto } from '$app/navigation';
+	import { queryKeys } from '$lib/query/query-keys';
+	import { useQueryClient } from '@tanstack/svelte-query';
 	import { onDestroy } from 'svelte';
 
 	let {
@@ -16,6 +18,8 @@
 		stats?: ContainerStatsType | null;
 		hasInitialStatsLoaded?: boolean;
 	} = $props();
+
+	const queryClient = useQueryClient();
 
 	void stats;
 	void hasInitialStatsLoaded;
@@ -38,7 +42,7 @@
 				containerId,
 				onMessage: (statsData) => {
 					if (statsData.removed) {
-						void invalidateAll();
+						void handleContainerRemoved(envId);
 						return;
 					}
 
@@ -65,6 +69,17 @@
 			console.error('Failed to connect to stats stream:', error);
 			isConnecting = false;
 		}
+	}
+
+	async function handleContainerRemoved(envId: string) {
+		await Promise.all([
+			queryClient.invalidateQueries({ queryKey: queryKeys.containers.all }),
+			queryClient.invalidateQueries({ queryKey: queryKeys.containers.statusCounts(envId) }),
+			containerId
+				? queryClient.invalidateQueries({ queryKey: queryKeys.containers.detail(envId, containerId) })
+				: Promise.resolve()
+		]);
+		await goto('/containers');
 	}
 
 	function closeStatsStream() {

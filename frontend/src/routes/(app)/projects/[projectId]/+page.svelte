@@ -13,7 +13,6 @@
 	import { getStatusVariant } from '$lib/utils/docker';
 	import { capitalizeFirstLetter } from '$lib/utils/formatting';
 	import { page } from '$app/state';
-	import { invalidateAll } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 	import { tryCatch } from '$lib/utils/api';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api';
@@ -629,7 +628,12 @@
 			setLoadingState: (value) => (isLoading.syncing = value),
 			onSuccess: async () => {
 				toast.success(m.git_sync_success());
-				await invalidateAll();
+				await refreshProjectDetails();
+				await Promise.all([
+					queryClient.invalidateQueries({ queryKey: ['projects', envId] }),
+					queryClient.invalidateQueries({ queryKey: queryKeys.projects.statusCounts(envId) }),
+					queryClient.invalidateQueries({ queryKey: ['gitops-syncs', envId] })
+				]);
 			}
 		});
 	}

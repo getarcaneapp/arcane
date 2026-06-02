@@ -1,6 +1,7 @@
 import { PersistedState } from 'runed';
-import { goto, invalidateAll } from '$app/navigation';
+import { goto } from '$app/navigation';
 import { page } from '$app/state';
+import { invalidateEnvironmentScopedQueries } from '$lib/query/query-client';
 import type { Environment } from '$lib/types/environment';
 import { isEnvironmentOnline } from '$lib/utils/docker';
 
@@ -140,6 +141,7 @@ function createEnvironmentManagementStore() {
 		setEnvironment: async (environment: Environment) => {
 			if (!environment.enabled) return;
 			if (_selectedEnvironment?.id !== environment.id) {
+				const previousEnvironmentId = _selectedEnvironment?.id;
 				_assignSelectedEnvironment(environment);
 
 				// Check if we're on a resource detail page (e.g., /containers/abc123)
@@ -149,7 +151,11 @@ function createEnvironmentManagementStore() {
 				if (listPage) {
 					await goto(listPage);
 				} else {
-					await invalidateAll();
+					await Promise.all(
+						[previousEnvironmentId, environment.id]
+							.filter((environmentId): environmentId is string => Boolean(environmentId))
+							.map((environmentId) => invalidateEnvironmentScopedQueries(environmentId))
+					);
 				}
 			}
 		},

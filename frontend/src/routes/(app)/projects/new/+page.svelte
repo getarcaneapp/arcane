@@ -3,7 +3,7 @@
 	import { ArrowLeftIcon, TerminalIcon, CopyIcon, TemplateIcon, AddIcon, GitBranchIcon } from '$lib/icons';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
-	import { goto, invalidateAll } from '$app/navigation';
+	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 	import { preventDefault, createForm } from '$lib/utils/settings';
 	import { tryCatch } from '$lib/utils/api';
@@ -29,6 +29,7 @@
 	import IfPermitted from '$lib/components/if-permitted.svelte';
 	import { ComposeEditorSplit } from '$lib/components/compose';
 	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
+	import { invalidateProjectQueries, invalidateTemplateQueries } from '$lib/query/query-client';
 
 	let { data } = $props();
 
@@ -101,7 +102,8 @@
 					m.common_create_success({ resource: `${m.resource_project()} "${name}"` }),
 					activityToastOptions(extractActivityId(project))
 				);
-				goto(`/projects/${project.id}`, { invalidateAll: true });
+				await invalidateProjectQueries(await environmentStore.getCurrentEnvironmentId(), project.id);
+				goto(`/projects/${project.id}`);
 			}
 		});
 	}
@@ -169,6 +171,7 @@
 			setLoadingState: (value) => (creatingTemplate = value),
 			onSuccess: async () => {
 				toast.success(m.common_create_success({ resource: `${m.resource_template()} "${name}"` }));
+				await invalidateTemplateQueries();
 			}
 		});
 	}
@@ -432,5 +435,5 @@
 	bind:open={showTemplateDialog}
 	templates={data.composeTemplates || []}
 	onSelect={handleTemplateSelect}
-	onDownloadSuccess={invalidateAll}
+	onDownloadSuccess={() => invalidateTemplateQueries()}
 />

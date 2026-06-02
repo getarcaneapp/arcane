@@ -29,6 +29,7 @@
 	import { hasPermission } from '$lib/utils/auth';
 	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 	import { bulkConfirmAndRun } from '$lib/utils/bulk-actions';
+	import { createVisibilityPoller, type VisibilityPoller } from '$lib/utils/visibility-poller';
 
 	import {
 		DownloadIcon,
@@ -70,7 +71,7 @@
 	let isPullingInline = $state<Record<string, boolean>>({});
 	let isScanningInline = $state<Record<string, boolean>>({});
 	let scanRequestedAtByImage = $state<Record<string, string>>({});
-	let scanPollTimeout: ReturnType<typeof setTimeout> | null = null;
+	let scanPoller: VisibilityPoller | null = null;
 	let scanPollInFlight = false;
 	const SCAN_POLL_INTERVAL_MS = 4000;
 
@@ -229,10 +230,8 @@
 	}
 
 	function stopBatchScanPolling() {
-		if (scanPollTimeout) {
-			clearTimeout(scanPollTimeout);
-			scanPollTimeout = null;
-		}
+		scanPoller?.stop();
+		scanPoller = null;
 	}
 
 	function getScanningImageIds(): string[] {
@@ -249,7 +248,6 @@
 		}
 
 		if (scanPollInFlight) {
-			scheduleBatchScanPolling();
 			return;
 		}
 
@@ -293,20 +291,18 @@
 			console.error('Failed to poll vulnerability summaries:', error);
 		} finally {
 			scanPollInFlight = false;
-			if (getScanningImageIds().length > 0) {
-				scheduleBatchScanPolling();
-			}
+			if (getScanningImageIds().length === 0) stopBatchScanPolling();
 		}
 	}
 
-	function scheduleBatchScanPolling() {
-		stopBatchScanPolling();
-		scanPollTimeout = setTimeout(() => void pollBatchScanSummaries(), SCAN_POLL_INTERVAL_MS);
-	}
-
 	function startBatchScanPolling() {
-		if (scanPollTimeout) return;
-		void pollBatchScanSummaries();
+		if (scanPoller) return;
+		scanPoller = createVisibilityPoller({
+			intervalMs: SCAN_POLL_INTERVAL_MS,
+			poll: pollBatchScanSummaries,
+			immediate: true
+		});
+		scanPoller.start();
 	}
 
 	$effect(() => {

@@ -9,9 +9,11 @@
 	import { Switch } from '$lib/components/ui/switch/index.js';
 	import { CopyButton } from '$lib/components/ui/copy-button';
 	import { cn } from '$lib/utils';
-	import { goto, invalidateAll } from '$app/navigation';
+	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { toast } from 'svelte-sonner';
+	import { useQueryClient } from '@tanstack/svelte-query';
+	import { queryKeys } from '$lib/query/query-keys';
 	import { m } from '$lib/paraglide/messages';
 	import { environmentManagementService } from '$lib/services/env-mgmt-service.js';
 	import { settingsService } from '$lib/services/settings-service';
@@ -19,6 +21,7 @@
 	import type { AppVersionInformation } from '$lib/types/settings';
 	import type { Environment, EnvironmentStatus } from '$lib/types/environment';
 	import { isEnvironmentOnline, resolveEnvironmentStatus } from '$lib/utils/docker';
+	import { createVisibilityPoller } from '$lib/utils/visibility-poller';
 	import MobileFloatingFormActions from '$lib/components/form/mobile-floating-form-actions.svelte';
 	import { createSettingsForm } from '$lib/utils/settings';
 	import DetailsTab from './components/DetailsTab.svelte';
@@ -42,6 +45,7 @@
 	} from '$lib/icons';
 
 	let { data } = $props();
+	const queryClient = useQueryClient();
 	let { environment, settings, versionInformation } = $derived(data);
 	let refreshedEnvironment: Environment | null = $state(null);
 	let runtimeEnvironment: Environment = $derived.by(() => {
@@ -359,17 +363,30 @@
 	});
 
 	onMount(() => {
-		if (environment.isEdge) {
-			void refreshRuntimeEnvironment();
-		}
+		if (!environment.isEdge) return;
 
-		const interval = window.setInterval(() => {
-			if (!environment.isEdge) return;
-			void refreshRuntimeEnvironment();
-		}, 5000);
+		const poller = createVisibilityPoller({
+			intervalMs: 5000,
+			immediate: true,
+			poll: refreshRuntimeEnvironment
+		});
 
-		return () => window.clearInterval(interval);
+		poller.start();
+		return () => poller.stop();
 	});
+
+	async function refreshEnvironmentQueries() {
+		await Promise.all([
+			queryClient.invalidateQueries({ queryKey: queryKeys.environments.detail(environment.id) }),
+			queryClient.invalidateQueries({ queryKey: queryKeys.environments.settings(environment.id) }),
+			queryClient.invalidateQueries({ queryKey: queryKeys.environments.all })
+		]);
+		const latestEnvironment = await queryClient.fetchQuery({
+			queryKey: queryKeys.environments.detail(environment.id),
+			queryFn: () => environmentManagementService.get(environment.id)
+		});
+		refreshedEnvironment = latestEnvironment;
+	}
 
 	async function refreshRuntimeEnvironment() {
 		try {
@@ -399,7 +416,7 @@
 			isRefreshing = true;
 			statusOverride = null;
 			remoteVersion = null;
-			await invalidateAll();
+			await refreshEnvironmentQueries();
 		} catch (err) {
 			console.error('Failed to refresh environment:', err);
 			toast.error(m.common_refresh_failed({ resource: m.resource_environment() }));
@@ -440,7 +457,7 @@
 
 			// If testing with saved URL (not custom), refresh to get backend's updated status
 			if (!customUrl) {
-				await invalidateAll();
+				await refreshEnvironmentQueries();
 			}
 		} catch (error) {
 			statusOverride = environment.isEdge ? null : 'offline';
@@ -463,7 +480,7 @@
 			if (result.apiKey) {
 				regeneratedApiKey = result.apiKey;
 				toast.success(m.environments_regenerate_key_success());
-				await invalidateAll();
+				await refreshEnvironmentQueries();
 			} else {
 				toast.error(m.environments_regenerate_key_failed());
 			}

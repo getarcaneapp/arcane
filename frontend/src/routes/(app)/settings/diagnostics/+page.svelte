@@ -5,6 +5,7 @@
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as Collapsible from '$lib/components/ui/collapsible';
 	import { createDiagnosticsWebSocket, ReconnectingWebSocket } from '$lib/utils/ws';
+	import { createVisibilityPoller, type VisibilityPoller } from '$lib/utils/visibility-poller';
 	import { diagnosticsService } from '$lib/services/diagnostics-service';
 	import type { Diagnostics, PprofProfile } from '$lib/types/diagnostics';
 	import {
@@ -30,7 +31,7 @@
 	let error = $state<string | null>(null);
 
 	let ws: ReconnectingWebSocket<Diagnostics> | null = null;
-	let tick: ReturnType<typeof setInterval> | null = null;
+	let tickPoller: VisibilityPoller | null = null;
 
 	const wsKindLabels: Record<string, string> = {
 		project_logs: m.diagnostics_ws_project_logs(),
@@ -187,10 +188,17 @@
 	onMount(() => {
 		refresh();
 		openStream();
-		tick = setInterval(() => (now = Date.now()), 1000);
+		tickPoller = createVisibilityPoller({
+			intervalMs: 1000,
+			poll: () => {
+				now = Date.now();
+			}
+		});
+		tickPoller.start();
 		return () => {
 			closeStream();
-			if (tick) clearInterval(tick);
+			tickPoller?.stop();
+			tickPoller = null;
 		};
 	});
 </script>

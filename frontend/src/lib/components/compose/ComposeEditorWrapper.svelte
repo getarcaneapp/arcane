@@ -4,7 +4,8 @@
 	import { AlertIcon, ExternalLinkIcon } from '$lib/icons';
 	import * as m from '$lib/paraglide/messages';
 	import { toast } from 'svelte-sonner';
-	import { invalidateAll } from '$app/navigation';
+	import { invalidateProjectQueries } from '$lib/query/query-client';
+	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import type { Snippet } from 'svelte';
 
 	let {
@@ -35,7 +36,7 @@
 		try {
 			await onSave();
 			toast.success(m.container_compose_save_success());
-			await invalidateAll();
+			await invalidateProjectQueries(await environmentStore.getCurrentEnvironmentId(), projectId);
 		} catch (err: unknown) {
 			const message = err instanceof Error ? err.message : m.container_compose_save_failed();
 			toast.error(message);

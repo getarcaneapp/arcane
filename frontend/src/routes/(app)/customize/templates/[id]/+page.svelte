@@ -5,9 +5,10 @@
 	import CodeEditor from '$lib/components/code-editor/editor.svelte';
 	import FormInput from '$lib/components/form/form-input.svelte';
 	import IconImage from '$lib/components/icon-image.svelte';
-	import { goto, invalidateAll } from '$app/navigation';
+	import { goto } from '$app/navigation';
 	import { m } from '$lib/paraglide/messages.js';
 	import { templateService } from '$lib/services/template-service';
+	import { invalidateTemplateQueries } from '$lib/query/query-client';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
@@ -107,7 +108,7 @@
 				originalDescription = validated.description ?? '';
 				originalCompose = validated.composeContent;
 				originalEnv = validated.envContent ?? '';
-				await invalidateAll();
+				await invalidateTemplateQueries(template.id);
 			}
 		});
 	}
@@ -135,9 +136,10 @@
 			const downloadedTemplate = await templateService.download(template.id);
 			toast.success(m.templates_downloaded_success({ name: template.name }));
 			if (downloadedTemplate?.id) {
+				await invalidateTemplateQueries(downloadedTemplate.id);
 				await goto(`/customize/templates/${downloadedTemplate.id}`, { replaceState: true });
 			} else {
-				await invalidateAll();
+				await invalidateTemplateQueries(template.id);
 			}
 		} catch (error) {
 			console.error('Error downloading template:', error);
@@ -160,6 +162,7 @@
 					try {
 						await templateService.deleteTemplate(template.id);
 						toast.success(m.common_delete_success({ resource: `${m.resource_template()} "${template.name}"` }));
+						await invalidateTemplateQueries(template.id);
 						await goto('/customize/templates');
 					} catch (error) {
 						console.error('Error deleting template:', error);

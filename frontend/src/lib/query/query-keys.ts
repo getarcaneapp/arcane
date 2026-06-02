@@ -22,6 +22,7 @@ export const queryKeys = {
 	settings: {
 		all: ['settings'] as const,
 		global: () => ['settings', 'global'] as const,
+		public: () => ['settings', 'public'] as const,
 		byEnvironment: (environmentId: string) => ['settings', environmentId] as const
 	},
 	users: {
@@ -60,6 +61,7 @@ export const queryKeys = {
 		all: ['templates'] as const,
 		allTemplates: () => ['templates', 'all'] as const,
 		defaults: () => ['templates', 'defaults'] as const,
+		contentPrefix: () => ['template-content'] as const,
 		list: (options: SearchPaginationSortRequest) => ['templates', stableSerialize(options)] as const,
 		content: (templateId: string) => ['template-content', templateId] as const,
 		registries: () => ['template-registries'] as const,
@@ -73,11 +75,16 @@ export const queryKeys = {
 		listGlobal: (options: SearchPaginationSortRequest) => ['events', 'global', stableSerialize(options)] as const,
 		deleteSelectedGlobal: () => ['events', 'delete-selected', 'global'] as const
 	},
+	dashboard: {
+		all: ['dashboard'] as const,
+		snapshot: (environmentId: string, debugAllGood = false) => ['dashboard', environmentId, debugAllGood] as const
+	},
 	system: {
 		upgradeAvailable: (scope: 'mobile-nav' | 'sidebar') => ['system', 'upgrade-available', scope] as const,
 		environmentUpgradeAvailable: (environmentId: string) =>
 			['system', 'upgrade-available', 'environment', environmentId] as const,
 		upgradeHealth: (environmentId: string) => ['system', 'upgrade-health', environmentId] as const,
+		versionInfoPrefix: () => ['system', 'version-info'] as const,
 		versionInfo: (environmentId: string) => ['system', 'version-info', environmentId] as const,
 		dockerInfo: (environmentId: string) => ['system', 'docker-info', environmentId] as const
 	},
@@ -154,5 +161,26 @@ export const queryKeys = {
 		list: (environmentId: string, path: string) => ['build-workspace', environmentId, 'list', path] as const,
 		contentPrefix: (environmentId: string) => ['build-workspace', environmentId, 'content'] as const,
 		content: (environmentId: string, path: string) => ['build-workspace', environmentId, 'content', path] as const
+	},
+	swarm: {
+		all: ['swarm'] as const,
+		services: {
+			all: ['swarm', 'services'] as const,
+			list: (options: SearchPaginationSortRequest) => ['swarm', 'services', stableSerialize(options)] as const,
+			detail: (serviceId: string) => ['swarm', 'service', serviceId] as const,
+			detailPrefix: () => ['swarm', 'service'] as const,
+			tasks: (serviceId: string, options: SearchPaginationSortRequest) =>
+				['swarm', 'service', serviceId, 'tasks', stableSerialize(options)] as const
+		},
+		stacks: {
+			all: ['swarm', 'stacks'] as const,
+			list: (options: SearchPaginationSortRequest) => ['swarm', 'stacks', stableSerialize(options)] as const,
+			detail: (name: string) => ['swarm', 'stack', name] as const,
+			detailPrefix: () => ['swarm', 'stack'] as const,
+			services: (name: string, options: SearchPaginationSortRequest) =>
+				['swarm', 'stack', name, 'services', stableSerialize(options)] as const,
+			tasks: (name: string, options: SearchPaginationSortRequest) =>
+				['swarm', 'stack', name, 'tasks', stableSerialize(options)] as const
+		}
 	}
 } as const;

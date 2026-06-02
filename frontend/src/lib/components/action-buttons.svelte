@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { openConfirmDialog } from './confirm-dialog';
-	import { goto, invalidateAll } from '$app/navigation';
+	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 	import { tryCatch } from '$lib/utils/api';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api';
@@ -18,6 +18,7 @@
 	import { createMutation } from '@tanstack/svelte-query';
 	import { hasPermission } from '$lib/utils/auth';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import { invalidateContainerQueries, invalidateProjectQueries } from '$lib/query/query-client';
 
 	type TargetType = 'container' | 'project';
 	type LoadingStates = {
@@ -206,6 +207,15 @@
 		return configuredProvider;
 	});
 
+	async function invalidateTargetQueries() {
+		const envId = await environmentStore.getCurrentEnvironmentId();
+		if (type === 'container') {
+			await invalidateContainerQueries(envId, id);
+			return;
+		}
+		await invalidateProjectQueries(envId, id);
+	}
+
 	// Tailwind xl breakpoint is 1280px. We use this to avoid mounting two desktop variants at once
 	// (which would duplicate portaled popovers when the same `open` state is bound twice).
 	let isXlUp = $state(true);
@@ -259,7 +269,7 @@
 								type: type
 							}),
 							onSuccess: async () => {
-								await invalidateAll();
+								await invalidateTargetQueries();
 								goto(type === 'project' ? '/projects' : '/containers');
 							}
 						});
@@ -321,7 +331,7 @@
 			projectService
 				.deployProject(id, () => {}, options ?? deployOptionsStore.getRequestOptions())
 				.then(async () => {
-					await invalidateAll();
+					await invalidateTargetQueries();
 					itemState = 'running';
 					onActionComplete('running');
 				})
@@ -365,7 +375,7 @@
 			projectService
 				.pullProjectImages(id, () => {})
 				.then(async () => {
-					await invalidateAll();
+					await invalidateTargetQueries();
 					onActionComplete(itemState);
 				})
 				.catch((error: any) => {
@@ -393,7 +403,7 @@
 					() => {}
 				)
 				.then(async () => {
-					await invalidateAll();
+					await invalidateTargetQueries();
 				})
 				.catch((error: any) => {
 					const message = error?.message || m.build_failed();

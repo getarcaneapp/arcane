@@ -1,4 +1,3 @@
-import { browser } from '$app/environment';
 import { environmentManagementService } from '$lib/services/env-mgmt-service';
 import { settingsService } from '$lib/services/settings-service';
 import { roleService } from '$lib/services/role-service';
@@ -12,52 +11,38 @@ import { type AppVersionInformation } from '$lib/types/settings';
 import type { SearchPaginationSortRequest } from '$lib/types/shared';
 import { authService } from '$lib/services/auth-service';
 import { tryCatch } from '$lib/utils/api';
-import { QueryClient } from '@tanstack/svelte-query';
 import { queryKeys } from '$lib/query/query-keys';
+import { getAppQueryClient } from '$lib/query/query-client';
 
 export const ssr = false;
 
 export const load = async () => {
-	// Tanstack Query Client
-	const queryClient = new QueryClient({
-		defaultOptions: {
-			queries: {
-				enabled: browser,
-				staleTime: 0,
-				gcTime: 60 * 1000,
-				refetchOnMount: 'always',
-				refetchOnWindowFocus: 'always',
-				refetchOnReconnect: 'always'
-			}
-		}
-	});
+	const queryClient = getAppQueryClient();
 
 	// Step 1: Check authentication first
 	let user = await userService.getCurrentUser().catch(() => null);
 
 	// Step 1.5: Check auto-login config (and attempt auto-login if enabled)
-	if (browser) {
-		const autoLoginConfig = await queryClient.fetchQuery({
-			queryKey: queryKeys.auth.autoLoginConfig(),
-			queryFn: () => authService.getAutoLoginConfig()
-		});
+	const autoLoginConfig = await queryClient.fetchQuery({
+		queryKey: queryKeys.auth.autoLoginConfig(),
+		queryFn: () => authService.getAutoLoginConfig()
+	});
 
-		if (autoLoginConfig) {
-			if (autoLoginConfig.enabled) {
-				settingsStore.autoLoginEnabled.set(true);
-				settingsStore.autoLoginEnabled.clearDisabledCache();
-				if (!user) {
-					// Attempt auto-login using server-configured credentials
-					user = await queryClient.fetchQuery({
-						queryKey: queryKeys.auth.autoLoginAttempt(),
-						queryFn: () => authService.attemptAutoLogin()
-					});
-				}
-			} else {
-				settingsStore.autoLoginEnabled.set(false);
-				// Cache that auto-login is disabled to avoid checking on every page load
-				settingsStore.autoLoginEnabled.cacheDisabled();
+	if (autoLoginConfig) {
+		if (autoLoginConfig.enabled) {
+			settingsStore.autoLoginEnabled.set(true);
+			settingsStore.autoLoginEnabled.clearDisabledCache();
+			if (!user) {
+				// Attempt auto-login using server-configured credentials
+				user = await queryClient.fetchQuery({
+					queryKey: queryKeys.auth.autoLoginAttempt(),
+					queryFn: () => authService.attemptAutoLogin()
+				});
 			}
+		} else {
+			settingsStore.autoLoginEnabled.set(false);
+			// Cache that auto-login is disabled to avoid checking on every page load
+			settingsStore.autoLoginEnabled.cacheDisabled();
 		}
 	}
 
@@ -83,8 +68,14 @@ export const load = async () => {
 
 		// Fetch settings after environment store is initialized
 		// Settings service depends on environmentStore.getCurrentEnvironmentId()
+		const currentEnvironmentId = await environmentStore.getCurrentEnvironmentId();
 		const [loadedSettings, loadedSwarmStatus, loadedPermissionsManifest] = await Promise.all([
-			settingsService.getSettings().catch(() => null),
+			queryClient
+				.fetchQuery({
+					queryKey: queryKeys.settings.byEnvironment(currentEnvironmentId),
+					queryFn: () => settingsService.getSettings()
+				})
+				.catch(() => null),
 			swarmService.getSwarmStatus().catch(() => null),
 			roleService.getPermissionsManifest().catch(() => null)
 		]);
@@ -96,7 +87,12 @@ export const load = async () => {
 		await environmentStore.initialize([]);
 
 		// Try to fetch public settings for login page configuration
-		settings = await settingsService.getPublicSettings().catch(() => null);
+		settings = await queryClient
+			.fetchQuery({
+				queryKey: queryKeys.settings.public(),
+				queryFn: () => settingsService.getPublicSettings()
+			})
+			.catch(() => null);
 	}
 
 	// Step 3: Update stores with fetched data (always, even if null)
@@ -120,7 +116,10 @@ export const load = async () => {
 	};
 
 	try {
-		const info = await versionService.getVersionInformation();
+		const info = await queryClient.fetchQuery({
+			queryKey: queryKeys.system.versionInfo('app'),
+			queryFn: () => versionService.getVersionInformation()
+		});
 		versionInformation = {
 			currentVersion: info.currentVersion,
 			currentTag: info.currentTag,

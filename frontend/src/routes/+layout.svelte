@@ -1,6 +1,5 @@
 <script lang="ts">
-	import { browser, dev } from '$app/environment';
-	import { invalidateAll } from '$app/navigation';
+	import { dev } from '$app/environment';
 	import { navigating, page } from '$app/state';
 	import ConfirmDialog from '$lib/components/confirm-dialog/confirm-dialog.svelte';
 	import FirstLoginPasswordDialog from '$lib/components/dialogs/first-login-password-dialog.svelte';
@@ -11,8 +10,11 @@
 	import { IsMobile } from '$lib/hooks/is-mobile.svelte.js';
 	import { IsTablet } from '$lib/hooks/is-tablet.svelte.js';
 	import { m } from '$lib/paraglide/messages';
+	import { userService } from '$lib/services/user-service';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import settingsStore from '$lib/stores/config-store';
+	import userStore from '$lib/stores/user-store';
+	import { invalidateAuthStateQueries } from '$lib/query/query-client';
 	import { cn } from '$lib/utils';
 	import { QueryClientProvider } from '@tanstack/svelte-query';
 	import { SvelteQueryDevtools } from '@tanstack/svelte-query-devtools';
@@ -21,9 +23,11 @@
 	import '../app.css';
 
 	let { data, children }: LayoutProps = $props();
+	let refreshedUser = $state<typeof data.user | undefined>(undefined);
+	const currentUser = $derived(refreshedUser ?? data.user);
 
 	onMount(() => {
-		if (!dev && browser && 'serviceWorker' in navigator) {
+		if (!dev && 'serviceWorker' in navigator) {
 			navigator.serviceWorker.register('/service-worker.js');
 		}
 	});
@@ -42,11 +46,15 @@
 
 	const autoLoginEnabled = $derived(settingsStore.autoLoginEnabled.isEnabled());
 	const showPasswordChangeDialog = $derived(
-		!!(data.user && data.user.requiresPasswordChange && !isAuthPage && !autoLoginEnabled)
+		!!(currentUser && currentUser.requiresPasswordChange && !isAuthPage && !autoLoginEnabled)
 	);
 
-	function handlePasswordChangeSuccess() {
-		invalidateAll();
+	async function handlePasswordChangeSuccess() {
+		await invalidateAuthStateQueries();
+		refreshedUser = await userService.getCurrentUser().catch(() => null);
+		if (refreshedUser) {
+			await userStore.setUser(refreshedUser);
+		}
 	}
 
 	const pageTitle = $derived(
@@ -57,13 +65,13 @@
 <svelte:head><title>{pageTitle}</title></svelte:head>
 
 <div class={cn('flex min-h-dvh flex-col', 'bg-transparent')}>
-	{#if !settings && data.user}
+	{#if !settings && currentUser}
 		<Error message={m.error_occurred()} showButton={true} />
 	{:else}
 		<Tooltip.Provider>
 			<QueryClientProvider client={data.queryClient}>
 				{@render children()}
-				<FirstLoginPasswordDialog open={showPasswordChangeDialog} onSuccess={handlePasswordChangeSuccess} />
+				<FirstLoginPasswordDialog open={showPasswordChangeDialog} onSuccess={() => void handlePasswordChangeSuccess()} />
 				{#if dev}
 					<SvelteQueryDevtools />
 				{/if}

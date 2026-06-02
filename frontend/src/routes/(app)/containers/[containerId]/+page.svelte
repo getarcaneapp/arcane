@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { invalidateAll } from '$app/navigation';
 	import ActionButtons from '$lib/components/action-buttons.svelte';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { bytes } from '$lib/utils/formatting';
@@ -42,7 +41,9 @@
 	import { parse as parseYaml } from 'yaml';
 	import type { IncludeFile } from '$lib/types/swarm';
 	import { projectService } from '$lib/services/project-service';
+	import { containerService } from '$lib/services/container-service';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import { invalidateContainerQueries } from '$lib/query/query-client';
 	import { hasPermission } from '$lib/utils/auth';
 	let { data } = $props();
 	let container = $derived(data?.container as ContainerDetailsDto);
@@ -124,7 +125,10 @@
 	const primaryIpAddress = $derived(getPrimaryIpAddress(container?.networkSettings));
 
 	async function refreshData() {
-		await invalidateAll();
+		if (!container?.id) return;
+		const envId = await environmentStore.getCurrentEnvironmentId();
+		await invalidateContainerQueries(envId, container.id);
+		container = await containerService.getContainerForEnvironment(envId, container.id);
 	}
 
 	const hasEnvVars = $derived(!!(container?.config?.env && container.config.env.length > 0));

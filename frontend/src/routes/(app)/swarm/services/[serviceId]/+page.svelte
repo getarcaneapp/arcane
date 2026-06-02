@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { invalidateAll, goto } from '$app/navigation';
+	import { goto } from '$app/navigation';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import TabbedPageLayout from '$lib/layouts/tabbed-page-layout.svelte';
@@ -53,6 +53,7 @@
 	} from '$lib/utils/docker';
 	import { hasPermission } from '$lib/utils/auth';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import { invalidateSwarmServiceQueries } from '$lib/query/query-client';
 
 	let { data } = $props();
 	let service = $derived(data?.service as SwarmServiceInspect);
@@ -199,7 +200,8 @@
 	}
 
 	async function refreshData() {
-		await invalidateAll();
+		await invalidateSwarmServiceQueries(service?.id);
+		service = await swarmService.getService(service.id);
 	}
 
 	// Editor
@@ -263,6 +265,7 @@
 						setLoadingState: (v) => (isLoading.remove = v),
 						onSuccess: async () => {
 							toast.success(m.common_delete_success({ resource: `${m.swarm_service()} "${serviceName}"` }));
+							await invalidateSwarmServiceQueries(service.id);
 							goto('/swarm/services');
 						}
 					});
