@@ -69,6 +69,7 @@ export type UpdateOidcRoleMapping = CreateOidcRoleMapping;
 export type PermissionsManifest = {
 	resources: PermissionResource[];
 	presets?: PermissionPreset[];
+	accessSurfaces?: AccessSurface[];
 };
 
 export type PermissionResource = {
@@ -91,6 +92,24 @@ export type PermissionPreset = {
 	label: string;
 	description?: string;
 	permissions: string[];
+};
+
+export type AccessSurfaceKind = 'route' | 'settings-category' | 'customize-category' | 'landing';
+export type AccessMode = 'permissions' | 'any-child';
+export type AccessMatchMode = 'any-of' | 'all-of';
+export type AccessScopeMode = 'global-only' | 'selected-env-plus-global' | 'any-effective-scope';
+
+export type AccessSurface = {
+	id: string;
+	kind: AccessSurfaceKind;
+	url?: string;
+	label: string;
+	accessMode: AccessMode;
+	matchMode: AccessMatchMode;
+	scopeMode: AccessScopeMode;
+	permissions?: string[];
+	children?: string[];
+	fallbackOrder?: number;
 };
 
 export type ApiKeyPermissionGrant = {

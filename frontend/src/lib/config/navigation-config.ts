@@ -30,8 +30,8 @@ import {
 } from '$lib/icons';
 import { m } from '$lib/paraglide/messages';
 import type { ShortcutKey } from '$lib/utils/navigation';
-import type { User } from '$lib/types/auth';
-import { GLOBAL_SCOPE, SUDO_PERMISSION } from '$lib/types/auth';
+import type { PermissionsManifest, User } from '$lib/types/auth';
+import { canReachAccessSurface } from '$lib/utils/access-policy';
 
 export type NavigationItem = {
 	title: string;
@@ -40,24 +40,10 @@ export type NavigationItem = {
 	shortcut?: ShortcutKey[];
 	items?: NavigationItem[];
 	/**
-	 * Permission(s) the user must hold to see this item. ANY-of semantics: if
-	 * the user has at least one of the listed permissions on the relevant
-	 * scope, the item is visible. Omit to make the item visible to every
-	 * authenticated user.
+	 * Backend-owned access-surface ID that gates this item. Omit to make the
+	 * item visible to every authenticated user.
 	 */
-	requiredPermission?: string | string[];
-	/**
-	 * Scope for the permission check. `'global'` checks the global permission
-	 * set; `'env'` (default for resource items) accepts permissions scoped to
-	 * the currently-selected environment.
-	 */
-	scope?: 'global' | 'env';
-};
-
-export type RouteAccessRule = {
-	prefix: string;
-	perms: string[];
-	scope: 'global' | 'env';
+	accessSurfaceId?: string;
 };
 
 export type NavigationSections = {
@@ -67,41 +53,6 @@ export type NavigationSections = {
 	settingsItems: NavigationItem[];
 };
 
-const CUSTOMIZE_LANDING_PERMISSIONS = [
-	'customize:manage',
-	'templates:list',
-	'templates:read',
-	'registries:list',
-	'registries:read',
-	'git-repositories:list',
-	'git-repositories:read'
-];
-
-const SETTINGS_LANDING_PERMISSIONS = [
-	'settings:read',
-	'apikeys:list',
-	'apikeys:read',
-	'webhooks:list',
-	'jobs:manage',
-	'notifications:manage',
-	'users:list',
-	'users:read',
-	'roles:list',
-	'roles:read',
-	'diagnostics:read'
-];
-
-// `/settings` is a mixed landing page: some subpages are global-only while
-// others are driven by the currently selected environment (for example
-// webhooks, notifications, and jobs). We intentionally use env scope here so
-// the landing page is reachable when the selected environment grants one of
-// those env-scoped capabilities.
-const SETTINGS_LANDING_RULE: RouteAccessRule = {
-	prefix: '/settings',
-	perms: SETTINGS_LANDING_PERMISSIONS,
-	scope: 'env'
-};
-
 export const navigationItems: NavigationSections = {
 	managementItems: [
 		{
@@ -109,59 +60,52 @@ export const navigationItems: NavigationSections = {
 			url: '/dashboard',
 			icon: DashboardIcon,
 			shortcut: ['mod', '1'],
-			scope: 'env',
-			requiredPermission: 'dashboard:read'
+			accessSurfaceId: 'route.dashboard'
 		},
 		{
 			title: m.projects_title(),
 			url: '/projects',
 			icon: ProjectsIcon,
 			shortcut: ['mod', '2'],
-			scope: 'env',
-			requiredPermission: ['projects:list', 'projects:read']
+			accessSurfaceId: 'route.projects'
 		},
 		{
 			title: m.environments_title(),
 			url: '/environments',
 			icon: EnvironmentsIcon,
 			shortcut: ['mod', '3'],
-			scope: 'global',
-			requiredPermission: ['environments:list', 'environments:read']
+			accessSurfaceId: 'route.environments'
 		},
 		{
 			title: m.customize_title(),
 			url: '/customize',
 			icon: CustomizeIcon,
 			shortcut: ['mod', '4'],
-			scope: 'global',
+			accessSurfaceId: 'landing.customize',
 			items: [
 				{
 					title: m.templates_title(),
 					url: '/customize/templates',
 					icon: TemplateIcon,
-					scope: 'global',
-					requiredPermission: ['templates:list', 'templates:read']
+					accessSurfaceId: 'customize.category.templates'
 				},
 				{
 					title: m.registries_title(),
 					url: '/customize/registries',
 					icon: RegistryIcon,
-					scope: 'global',
-					requiredPermission: ['registries:list', 'registries:read']
+					accessSurfaceId: 'customize.category.registries'
 				},
 				{
 					title: m.variables_title(),
 					url: '/customize/variables',
 					icon: VariableIcon,
-					scope: 'global',
-					requiredPermission: ['templates:read']
+					accessSurfaceId: 'customize.category.variables'
 				},
 				{
 					title: m.git_repositories_title(),
 					url: '/customize/git-repositories',
 					icon: GitBranchIcon,
-					scope: 'global',
-					requiredPermission: ['git-repositories:list', 'git-repositories:read']
+					accessSurfaceId: 'customize.category.git-repositories'
 				}
 			]
 		}
@@ -172,24 +116,21 @@ export const navigationItems: NavigationSections = {
 			url: '/containers',
 			icon: ContainersIcon,
 			shortcut: ['mod', '5'],
-			scope: 'env',
-			requiredPermission: ['containers:list', 'containers:read']
+			accessSurfaceId: 'route.containers'
 		},
 		{
 			title: m.images_title(),
 			url: '/images',
 			icon: ImagesIcon,
 			shortcut: ['mod', '6'],
-			scope: 'env',
-			requiredPermission: ['images:list', 'images:read'],
+			accessSurfaceId: 'route.images',
 			items: [
-				{ title: m.builds(), url: '/images/builds', icon: HammerIcon, scope: 'env', requiredPermission: 'images:build' },
+				{ title: m.builds(), url: '/images/builds', icon: HammerIcon, accessSurfaceId: 'route.images.builds' },
 				{
 					title: m.vuln_title(),
 					url: '/images/vulnerabilities',
 					icon: ShieldAlertIcon,
-					scope: 'env',
-					requiredPermission: 'vulnerabilities:read'
+					accessSurfaceId: 'route.images.vulnerabilities'
 				}
 			]
 		},
@@ -198,24 +139,21 @@ export const navigationItems: NavigationSections = {
 			url: '/updates',
 			icon: UpdateIcon,
 			shortcut: ['mod', 'u'],
-			scope: 'env',
-			requiredPermission: 'image-updates:read'
+			accessSurfaceId: 'route.updates'
 		},
 		{
 			title: m.networks_title(),
 			url: '/networks',
 			icon: NetworksIcon,
 			shortcut: ['mod', '7'],
-			scope: 'env',
-			requiredPermission: ['networks:list', 'networks:read'],
+			accessSurfaceId: 'route.networks',
 			items: [
-				{ title: m.ports_title(), url: '/ports', icon: HashIcon, scope: 'env', requiredPermission: 'containers:list' },
+				{ title: m.ports_title(), url: '/ports', icon: HashIcon, accessSurfaceId: 'route.ports' },
 				{
 					title: m.networks_topology_button(),
 					url: '/networks/topology',
 					icon: GitBranchIcon,
-					scope: 'env',
-					requiredPermission: 'networks:read'
+					accessSurfaceId: 'route.networks.topology'
 				}
 			]
 		},
@@ -224,18 +162,17 @@ export const navigationItems: NavigationSections = {
 			url: '/volumes',
 			icon: VolumesIcon,
 			shortcut: ['mod', '8'],
-			scope: 'env',
-			requiredPermission: ['volumes:list', 'volumes:read']
+			accessSurfaceId: 'route.volumes'
 		}
 	],
 	swarmItems: [
-		{ title: 'Services', url: '/swarm/services', icon: DockIcon, scope: 'env', requiredPermission: 'swarm:services' },
-		{ title: 'Nodes', url: '/swarm/nodes', icon: UsersIcon, scope: 'env', requiredPermission: 'swarm:nodes' },
-		{ title: 'Tasks', url: '/swarm/tasks', icon: JobsIcon, scope: 'env', requiredPermission: 'swarm:read' },
-		{ title: 'Stacks', url: '/swarm/stacks', icon: LayersIcon, scope: 'env', requiredPermission: 'swarm:stacks' },
-		{ title: 'Cluster', url: '/swarm/cluster', icon: SettingsIcon, scope: 'env', requiredPermission: 'swarm:read' },
-		{ title: 'Configs', url: '/swarm/configs', icon: TemplateIcon, scope: 'env', requiredPermission: 'swarm:configs' },
-		{ title: 'Secrets', url: '/swarm/secrets', icon: LockIcon, scope: 'env', requiredPermission: 'swarm:secrets' }
+		{ title: 'Services', url: '/swarm/services', icon: DockIcon, accessSurfaceId: 'route.swarm.services' },
+		{ title: 'Nodes', url: '/swarm/nodes', icon: UsersIcon, accessSurfaceId: 'route.swarm.nodes' },
+		{ title: 'Tasks', url: '/swarm/tasks', icon: JobsIcon, accessSurfaceId: 'route.swarm.tasks' },
+		{ title: 'Stacks', url: '/swarm/stacks', icon: LayersIcon, accessSurfaceId: 'route.swarm.stacks' },
+		{ title: 'Cluster', url: '/swarm/cluster', icon: SettingsIcon, accessSurfaceId: 'route.swarm.cluster' },
+		{ title: 'Configs', url: '/swarm/configs', icon: TemplateIcon, accessSurfaceId: 'route.swarm.configs' },
+		{ title: 'Secrets', url: '/swarm/secrets', icon: LockIcon, accessSurfaceId: 'route.swarm.secrets' }
 	],
 	settingsItems: [
 		{
@@ -243,98 +180,87 @@ export const navigationItems: NavigationSections = {
 			url: '/events',
 			icon: EventsIcon,
 			shortcut: ['mod', '9'],
-			scope: 'global',
-			requiredPermission: 'events:read'
+			accessSurfaceId: 'route.events'
 		},
 		{
 			title: m.settings_title(),
 			url: '/settings',
 			icon: SettingsIcon,
 			shortcut: ['mod', '0'],
+			accessSurfaceId: 'landing.settings',
 			items: [
 				{
 					title: m.api_key_page_title(),
 					url: '/settings/api-keys',
 					icon: ApiKeyIcon,
 					shortcut: ['mod', 'shift', '1'],
-					scope: 'global',
-					requiredPermission: 'apikeys:list'
+					accessSurfaceId: 'settings.category.apikeys'
 				},
 				{
 					title: m.appearance_title(),
 					url: '/settings/appearance',
 					icon: AppearanceIcon,
 					shortcut: ['mod', 'shift', '2'],
-					scope: 'global',
-					requiredPermission: 'settings:read'
+					accessSurfaceId: 'settings.category.appearance'
 				},
 				{
 					title: m.webhook_page_title(),
 					url: '/settings/webhooks',
 					icon: GlobeIcon,
-					scope: 'env',
-					requiredPermission: 'webhooks:list'
+					accessSurfaceId: 'settings.category.webhooks'
 				},
 				{
 					title: m.authentication_title(),
 					url: '/settings/authentication',
 					icon: LockIcon,
 					shortcut: ['mod', 'shift', '3'],
-					scope: 'global',
-					requiredPermission: 'settings:read'
+					accessSurfaceId: 'settings.category.authentication'
 				},
 				{
 					title: m.notifications_title(),
 					url: '/settings/notifications',
 					icon: NotificationsIcon,
 					shortcut: ['mod', 'shift', '4'],
-					scope: 'env',
-					requiredPermission: 'notifications:manage'
+					accessSurfaceId: 'settings.category.notifications'
 				},
 				{
 					title: m.activity_settings_title(),
 					url: '/settings/activity',
 					icon: ActivityIcon,
-					scope: 'env',
-					requiredPermission: 'settings:read'
+					accessSurfaceId: 'settings.category.activity'
 				},
 				{
 					title: m.builds(),
 					url: '/settings/builds',
 					icon: HammerIcon,
 					shortcut: ['mod', 'shift', '6'],
-					scope: 'global',
-					requiredPermission: 'settings:read'
+					accessSurfaceId: 'settings.category.build'
 				},
 				{
 					title: m.timeouts_settings(),
 					url: '/settings/timeouts',
 					icon: JobsIcon,
 					shortcut: ['mod', 'shift', '7'],
-					scope: 'global',
-					requiredPermission: 'settings:read'
+					accessSurfaceId: 'settings.category.timeouts'
 				},
 				{
 					title: m.users_title(),
 					url: '/settings/users',
 					icon: UsersIcon,
 					shortcut: ['mod', 'shift', '8'],
-					scope: 'global',
-					requiredPermission: ['users:read', 'users:list']
+					accessSurfaceId: 'settings.category.users'
 				},
 				{
 					title: m.roles_title(),
 					url: '/settings/roles',
 					icon: ShieldAlertIcon,
-					scope: 'global',
-					requiredPermission: ['roles:read', 'roles:list']
+					accessSurfaceId: 'settings.category.roles'
 				},
 				{
 					title: m.diagnostics_title(),
 					url: '/settings/diagnostics',
 					icon: ActivityIcon,
-					scope: 'global',
-					requiredPermission: 'diagnostics:read'
+					accessSurfaceId: 'settings.category.diagnostics'
 				}
 			]
 		}
@@ -357,8 +283,8 @@ export const navigationItems: NavigationSections = {
 /**
  * Filter a navigation tree to entries the user can reach. Empty parent groups
  * (i.e. those whose children were all filtered out and which themselves have
- * no required permission) are preserved; empty parent groups whose own
- * permission check fails are removed.
+ * no access surface) are preserved; empty parent groups whose own access
+ * surface check fails are removed.
  *
  * @param items navigation items to filter
  * @param user the current user (or null when unauthenticated)
@@ -367,15 +293,16 @@ export const navigationItems: NavigationSections = {
 export function filterByPermissions(
 	items: NavigationItem[] | undefined,
 	user: User | null,
-	currentEnvId: string | undefined
+	currentEnvId: string | undefined,
+	accessManifest?: PermissionsManifest | null
 ): NavigationItem[] {
 	if (!items) return [];
 	if (!user) return [];
 	const out: NavigationItem[] = [];
 	for (const item of items) {
-		if (!canSeeItem(item, user, currentEnvId)) continue;
+		if (!canSeeItem(item, user, currentEnvId, accessManifest)) continue;
 		if (item.items && item.items.length > 0) {
-			const filteredChildren = filterByPermissions(item.items, user, currentEnvId);
+			const filteredChildren = filterByPermissions(item.items, user, currentEnvId, accessManifest);
 			// Drop a parent group only when it has children declared but none
 			// survived the filter. A parent with NO children declared (a leaf
 			// link that happens to have an empty items array) stays.
@@ -388,24 +315,15 @@ export function filterByPermissions(
 	return out;
 }
 
-function canSeeItem(item: NavigationItem, user: User, currentEnvId: string | undefined): boolean {
-	if (!item.requiredPermission) return true;
-	const required = Array.isArray(item.requiredPermission) ? item.requiredPermission : [item.requiredPermission];
-	const scope = item.scope ?? 'env';
-	const set = effectivePermissions(user, scope === 'env' ? currentEnvId : undefined);
-	if (set.has(SUDO_PERMISSION)) return true;
-	return required.some((p) => set.has(p));
-}
-
-function effectivePermissions(user: User, envId: string | undefined): Set<string> {
-	const out = new Set<string>();
-	const global = user.permissionsByEnv?.[GLOBAL_SCOPE];
-	if (global) for (const p of global) out.add(p);
-	if (envId && envId !== GLOBAL_SCOPE) {
-		const env = user.permissionsByEnv?.[envId];
-		if (env) for (const p of env) out.add(p);
-	}
-	return out;
+function canSeeItem(
+	item: NavigationItem,
+	user: User,
+	currentEnvId: string | undefined,
+	accessManifest: PermissionsManifest | null | undefined
+): boolean {
+	if (!item.accessSurfaceId) return true;
+	if (!accessManifest?.accessSurfaces?.length) return true;
+	return canReachAccessSurface(accessManifest, item.accessSurfaceId, user, currentEnvId);
 }
 
 export function getSettingsSubpageUrlsInNavOrder(): string[] {
@@ -416,52 +334,6 @@ export function getSettingsSubpageUrlsInNavOrder(): string[] {
 export function getCustomizeSubpageUrlsInNavOrder(): string[] {
 	const entry = navigationItems.managementItems.find((item) => item.url === '/customize');
 	return entry?.items?.map((item) => item.url) ?? [];
-}
-
-function routeAccessRulesForItems(items: NavigationItem[], out: RouteAccessRule[]): void {
-	for (const item of items) {
-		if (item.requiredPermission) {
-			out.push({
-				prefix: item.url,
-				perms: Array.isArray(item.requiredPermission) ? item.requiredPermission : [item.requiredPermission],
-				scope: item.scope ?? 'env'
-			});
-		}
-		if (item.items) {
-			routeAccessRulesForItems(item.items, out);
-		}
-	}
-}
-
-export function getRouteAccessRules(): RouteAccessRule[] {
-	const out: RouteAccessRule[] = [];
-	routeAccessRulesForItems(navigationItems.managementItems, out);
-	routeAccessRulesForItems(navigationItems.resourceItems, out);
-	out.push({ prefix: '/customize', perms: CUSTOMIZE_LANDING_PERMISSIONS, scope: 'global' });
-	out.push({ prefix: '/swarm', perms: ['swarm:read'], scope: 'env' });
-	routeAccessRulesForItems(navigationItems.swarmItems, out);
-	routeAccessRulesForItems(navigationItems.settingsItems, out);
-	out.push(SETTINGS_LANDING_RULE);
-	return out;
-}
-
-export function getRouteFallbackRules(): RouteAccessRule[] {
-	return getRouteAccessRules().filter((rule) => {
-		return (
-			rule.prefix === '/dashboard' ||
-			rule.prefix === '/containers' ||
-			rule.prefix === '/projects' ||
-			rule.prefix === '/customize' ||
-			rule.prefix === '/images' ||
-			rule.prefix === '/volumes' ||
-			rule.prefix === '/networks' ||
-			rule.prefix === '/swarm/services' ||
-			rule.prefix === '/swarm/stacks' ||
-			rule.prefix === '/swarm/cluster' ||
-			rule.prefix === '/events' ||
-			rule.prefix === '/settings'
-		);
-	});
 }
 
 export const defaultMobilePinnedItems: NavigationItem[] = [
@@ -486,7 +358,12 @@ export type MobileNavigationSettings = {
 	scrollToHide: boolean;
 };
 
-export function getAvailableMobileNavItems(options?: { swarmEnabled?: boolean }): NavigationItem[] {
+export function getAvailableMobileNavItems(options?: {
+	swarmEnabled?: boolean;
+	user?: User | null;
+	currentEnvId?: string;
+	accessManifest?: PermissionsManifest | null;
+}): NavigationItem[] {
 	const flatItems: NavigationItem[] = [];
 	if (navigationItems.managementItems) {
 		flatItems.push(...navigationItems.managementItems);
@@ -511,7 +388,9 @@ export function getAvailableMobileNavItems(options?: { swarmEnabled?: boolean })
 		}
 	}
 
-	return flatItems;
+	if (options?.user === null) return [];
+	if (!options?.user) return flatItems;
+	return filterByPermissions(flatItems, options.user, options.currentEnvId, options.accessManifest);
 }
 
 export const defaultMobileNavigationSettings: MobileNavigationSettings = {
@@ -526,7 +405,8 @@ export function getManagementItems(environmentId: string): NavigationItem[] {
 		title: m.git_syncs_title(),
 		url: `/environments/${environmentId}/gitops`,
 		icon: GitBranchIcon,
-		shortcut: ['mod', 'g']
+		shortcut: ['mod', 'g'],
+		accessSurfaceId: 'route.environments.gitops'
 	};
 
 	return navigationItems.managementItems.map((item) => {
