@@ -1,5 +1,6 @@
 <script lang="ts">
 	import * as Select from '$lib/components/ui/select';
+	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import {
@@ -32,6 +33,8 @@
 		{ id: GLOBAL_OPTION_ID, name: m.users_role_assignments_scope_global() },
 		...environments.map((env) => ({ id: env.id, name: env.name }))
 	]);
+
+	const quickPresetRoles = $derived(roles.filter((role) => role.id === BUILT_IN_ROLE_EDITOR || role.id === BUILT_IN_ROLE_ADMIN));
 
 	function getRoleVariant(roleId: string) {
 		switch (roleId) {
@@ -87,9 +90,54 @@
 	function roleSelectedLabel(value: string): string {
 		return roles.find((r) => r.id === value)?.name ?? m.common_select_option();
 	}
+
+	function hasGlobalRoleAssignment(roleId: string): boolean {
+		return assignments.some((assignment) => assignment.roleId === roleId && !assignment.environmentId);
+	}
+
+	function toggleQuickPreset(roleId: string, checked: boolean) {
+		if (disabled) return;
+		const conflictingRoleId =
+			roleId === BUILT_IN_ROLE_ADMIN ? BUILT_IN_ROLE_EDITOR : roleId === BUILT_IN_ROLE_EDITOR ? BUILT_IN_ROLE_ADMIN : '';
+		let next = assignments;
+		if (checked) {
+			if (conflictingRoleId) {
+				next = next.filter((assignment) => !(assignment.roleId === conflictingRoleId && !assignment.environmentId));
+			}
+			if (!next.some((assignment) => assignment.roleId === roleId && !assignment.environmentId)) {
+				next = [...next, { roleId, environmentId: undefined }];
+			}
+		} else {
+			next = next.filter((assignment) => !(assignment.roleId === roleId && !assignment.environmentId));
+		}
+		assignments = next;
+	}
 </script>
 
 <div class="space-y-3">
+	{#if quickPresetRoles.length > 0}
+		<div class="space-y-2 rounded-md border p-3">
+			{#each quickPresetRoles as role (role.id)}
+				<label class="flex cursor-pointer items-start gap-3 rounded-md p-2 hover:bg-accent/40">
+					<Checkbox
+						checked={hasGlobalRoleAssignment(role.id)}
+						{disabled}
+						onCheckedChange={(checked) => toggleQuickPreset(role.id, checked === true)}
+					/>
+					<div class="flex flex-col gap-1">
+						<div class="flex items-center gap-2">
+							<StatusBadge text={role.name} variant={getRoleVariant(role.id)} size="sm" minWidth="none" />
+							<span class="text-xs text-muted-foreground">{m.users_role_assignments_scope_global()}</span>
+						</div>
+						{#if role.description}
+							<span class="text-muted-foreground text-xs">{role.description}</span>
+						{/if}
+					</div>
+				</label>
+			{/each}
+		</div>
+	{/if}
+
 	{#if assignments.length === 0}
 		<p class="text-muted-foreground rounded-md border border-dashed p-4 text-center text-sm">
 			{m.users_role_assignments_description()}

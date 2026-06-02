@@ -156,10 +156,9 @@ func RegisterRoles(api huma.API, roleService *services.RoleService) {
 		Method:      http.MethodGet,
 		Path:        "/roles/available-permissions",
 		Summary:     "Get the permission manifest",
-		Description: "Returns every permission the server recognizes, grouped by resource. Used by the role editor UI.",
+		Description: "Returns every permission the server recognizes, grouped by resource. Used by permission-picking UIs.",
 		Tags:        []string{"Roles"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermRolesRead),
 	}, h.GetPermissionsManifest)
 
 	huma.Register(api, huma.Operation{
@@ -408,6 +407,7 @@ func buildPermissionsManifestInternal() roletypes.PermissionsManifest {
 				Permission:  action.Permission,
 				Label:       action.Label,
 				Description: action.Description,
+				Requires:    requiredPermissionsForPickerInternal(action.Permission),
 			}
 		}
 		resources[i] = roletypes.PermissionResource{
@@ -417,5 +417,53 @@ func buildPermissionsManifestInternal() roletypes.PermissionsManifest {
 			Actions: actions,
 		}
 	}
-	return roletypes.PermissionsManifest{Resources: resources}
+	return roletypes.PermissionsManifest{
+		Resources: resources,
+		Presets: []roletypes.PermissionPreset{
+			{
+				Key:         "editor",
+				Label:       "All permissions (non-admin)",
+				Description: "Matches the built-in Editor permission set.",
+				Permissions: authz.BuiltInEditorPermissions(),
+			},
+			{
+				Key:         "global-admin",
+				Label:       "Global Admin",
+				Description: "Select every permission in the manifest.",
+				Permissions: authz.AllPermissions(),
+			},
+		},
+	}
+}
+
+func requiredPermissionsForPickerInternal(permission string) []string {
+	switch permission {
+	case authz.PermSettingsWrite,
+		authz.PermApiKeysList,
+		authz.PermApiKeysRead,
+		authz.PermApiKeysCreate,
+		authz.PermApiKeysUpdate,
+		authz.PermApiKeysDelete,
+		authz.PermFederatedList,
+		authz.PermFederatedRead,
+		authz.PermFederatedCreate,
+		authz.PermFederatedUpdate,
+		authz.PermFederatedDelete,
+		authz.PermUsersList,
+		authz.PermUsersRead,
+		authz.PermUsersCreate,
+		authz.PermUsersUpdate,
+		authz.PermUsersDelete,
+		authz.PermRolesList,
+		authz.PermRolesRead,
+		authz.PermWebhooksList,
+		authz.PermWebhooksCreate,
+		authz.PermWebhooksUpdate,
+		authz.PermWebhooksDelete,
+		authz.PermNotificationsManage,
+		authz.PermDiagnosticsRead:
+		return []string{authz.PermSettingsRead}
+	default:
+		return nil
+	}
 }

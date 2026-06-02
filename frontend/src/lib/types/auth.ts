@@ -68,6 +68,7 @@ export type UpdateOidcRoleMapping = CreateOidcRoleMapping;
 
 export type PermissionsManifest = {
 	resources: PermissionResource[];
+	presets?: PermissionPreset[];
 };
 
 export type PermissionResource = {
@@ -82,6 +83,14 @@ export type PermissionAction = {
 	permission: string;
 	label: string;
 	description?: string;
+	requires?: string[];
+};
+
+export type PermissionPreset = {
+	key: string;
+	label: string;
+	description?: string;
+	permissions: string[];
 };
 
 export type ApiKeyPermissionGrant = {
@@ -108,6 +117,7 @@ export type User = {
 	email?: string;
 	roleAssignments: RoleAssignmentSummary[];
 	permissionsByEnv: Record<string, string[]>;
+	isGlobalAdmin?: boolean;
 	canDelete?: boolean;
 	createdAt: string;
 	lastLogin?: string;
@@ -125,6 +135,7 @@ export type CreateUser = Omit<
 	| 'lastLogin'
 	| 'oidcSubjectId'
 	| 'passwordHash'
+	| 'isGlobalAdmin'
 	| 'requiresPasswordChange'
 	| 'roleAssignments'
 	| 'permissionsByEnv'
