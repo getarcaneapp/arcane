@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { get } from 'svelte/store';
 	import { onMount } from 'svelte';
 	import {
 		SearchIcon,
@@ -23,8 +24,11 @@
 	import { m } from '$lib/paraglide/messages';
 	import { UiConfigDisabledTag } from '$lib/components/badges/index.js';
 	import { settingsSearchService } from '$lib/services/settings-search';
+	import userStore from '$lib/stores/user-store';
+	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import type { SettingsCategory } from '$lib/types/shared';
 	import { debounced } from '$lib/utils/ws';
+	import { getAuthRedirectPath } from '$lib/utils/auth';
 	import * as InputGroup from '$lib/components/ui/input-group/index.js';
 	import { getSettingsSubpageUrlsInNavOrder } from '$lib/config/navigation-config';
 	import HeaderCard from '$lib/components/header-card.svelte';
@@ -57,7 +61,11 @@
 
 	onMount(async () => {
 		try {
-			settingsCategories = orderCategoriesByNav((await settingsSearchService.getCategories()).filter(isVisibleCategory));
+			settingsCategories = orderCategoriesByNav(
+				(await settingsSearchService.getCategories()).filter(
+					(category) => isVisibleCategory(category) && isAccessibleCategory(category)
+				)
+			);
 		} catch (error) {
 			console.error('Failed to load categories:', error);
 		}
@@ -82,7 +90,9 @@
 		try {
 			const response = await settingsSearchService.search(trimmedQuery);
 			if (requestId === currentSearchRequest) {
-				searchResults = (response.results || []).filter(isVisibleCategory);
+				searchResults = (response.results || []).filter(
+					(category) => isVisibleCategory(category) && isAccessibleCategory(category)
+				);
 				isSearching = false;
 			}
 		} catch (error) {
@@ -104,6 +114,10 @@
 
 	function isVisibleCategory(category: SettingsCategory) {
 		return !hiddenCategoryUrls.has(category.url);
+	}
+
+	function isAccessibleCategory(category: SettingsCategory) {
+		return getAuthRedirectPath(category.url, get(userStore), environmentStore.selected?.id) === null;
 	}
 
 	function orderCategoriesByNav(categories: SettingsCategory[]) {

@@ -102,6 +102,7 @@
 					m.common_unknown(),
 				roleAssignments: [],
 				permissionsByEnv: {},
+				isGlobalAdmin: false,
 				createdAt: new Date().toISOString()
 			};
 

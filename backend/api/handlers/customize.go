@@ -35,6 +35,13 @@ type GetCustomizeCategoriesOutput struct {
 	Body []category.Category
 }
 
+var customizeCategoryPermissionsInternal = map[string][]string{
+	"templates":        {authz.PermTemplatesList, authz.PermTemplatesRead},
+	"registries":       {authz.PermRegistriesList, authz.PermRegistriesRead},
+	"variables":        {authz.PermTemplatesRead},
+	"git-repositories": {authz.PermGitReposList, authz.PermGitReposRead},
+}
+
 // RegisterCustomize registers customization endpoints using Huma.
 func RegisterCustomize(api huma.API, customizeSearchService *services.CustomizeSearchService) {
 	h := &CustomizeHandler{
@@ -52,7 +59,6 @@ func RegisterCustomize(api huma.API, customizeSearchService *services.CustomizeS
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermCustomizeManage),
 	}, h.Search)
 
 	huma.Register(api, huma.Operation{
@@ -66,8 +72,39 @@ func RegisterCustomize(api huma.API, customizeSearchService *services.CustomizeS
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermCustomizeManage),
 	}, h.GetCategories)
+}
+
+func canAccessCustomizeCategoryInternal(ps *authz.PermissionSet, categoryID string) bool {
+	if ps == nil {
+		return false
+	}
+	if ps.Allows(authz.PermCustomizeManage, "") {
+		return true
+	}
+	perms, ok := customizeCategoryPermissionsInternal[categoryID]
+	if !ok {
+		return false
+	}
+	for _, perm := range perms {
+		if ps.Allows(perm, "") {
+			return true
+		}
+	}
+	return false
+}
+
+func filterCustomizeCategoriesInternal(ps *authz.PermissionSet, categories []category.Category) []category.Category {
+	if ps == nil {
+		return []category.Category{}
+	}
+	filtered := make([]category.Category, 0, len(categories))
+	for _, cat := range categories {
+		if canAccessCustomizeCategoryInternal(ps, cat.ID) {
+			filtered = append(filtered, cat)
+		}
+	}
+	return filtered
 }
 
 // Search searches customization options by query.
@@ -80,19 +117,10 @@ func (h *CustomizeHandler) Search(ctx context.Context, input *SearchCustomizeInp
 		return nil, huma.Error400BadRequest((&common.QueryParameterRequiredError{}).Error())
 	}
 
-	results := h.customizeSearchService.Search(input.Body.Query)
-
 	ps, _ := humamw.PermissionsFromContext(ctx)
-	if !ps.IsGlobalAdmin() {
-		filtered := []category.Category{}
-		for _, cat := range results.Results {
-			if cat.ID != "registries" && cat.ID != "variables" {
-				filtered = append(filtered, cat)
-			}
-		}
-		results.Results = filtered
-		results.Count = len(filtered)
-	}
+	results := h.customizeSearchService.Search(input.Body.Query)
+	results.Results = filterCustomizeCategoriesInternal(ps, results.Results)
+	results.Count = len(results.Results)
 
 	return &SearchCustomizeOutput{
 		Body: results,
@@ -105,18 +133,8 @@ func (h *CustomizeHandler) GetCategories(ctx context.Context, input *GetCustomiz
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	categories := h.customizeSearchService.GetCustomizeCategories()
-
 	ps, _ := humamw.PermissionsFromContext(ctx)
-	if !ps.IsGlobalAdmin() {
-		filtered := []category.Category{}
-		for _, cat := range categories {
-			if cat.ID != "registries" && cat.ID != "variables" {
-				filtered = append(filtered, cat)
-			}
-		}
-		categories = filtered
-	}
+	categories := filterCustomizeCategoriesInternal(ps, h.customizeSearchService.GetCustomizeCategories())
 
 	return &GetCustomizeCategoriesOutput{
 		Body: categories,

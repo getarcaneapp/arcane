@@ -62,6 +62,7 @@ const PROTECTED_PREFIXES = [
 const UNAUTHENTICATED_ONLY_PREFIXES = ['/login', '/oidc/login', '/oidc/callback', '/auth/oidc/callback', '/img', '/favicon.ico'];
 
 function isUserGlobalAdmin(user: User): boolean {
+	if (typeof user.isGlobalAdmin === 'boolean') return user.isGlobalAdmin;
 	const global = user.permissionsByEnv?.[GLOBAL_SCOPE];
 	if (global?.includes(SUDO_PERMISSION)) return true;
 	return !!user.roleAssignments?.some((a) => a.roleId === BUILT_IN_ROLE_ADMIN && !a.environmentId);

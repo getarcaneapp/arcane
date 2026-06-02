@@ -5,6 +5,7 @@
 	import { mode, toggleMode } from 'mode-watcher';
 	import { format, formatDistanceToNow } from 'date-fns';
 	import HeaderCard from '$lib/components/header-card.svelte';
+	import ApiKeyFormSheet from '$lib/components/sheets/api-key-form-sheet.svelte';
 	import { Card } from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
@@ -14,11 +15,12 @@
 	import LocalePicker from '$lib/components/locale-picker.svelte';
 	import { userService } from '$lib/services/user-service';
 	import { apiKeyService } from '$lib/services/api-key-service';
+	import { roleService } from '$lib/services/role-service';
 	import userStore from '$lib/stores/user-store';
 	import settingsStore from '$lib/stores/config-store';
 	import { getDefaultProfilePicture } from '$lib/utils/docker';
 	import { GLOBAL_SCOPE } from '$lib/types/auth';
-	import type { ApiKey, ApiKeyCreated } from '$lib/types/auth';
+	import type { ApiKey, ApiKeyCreated, CreateApiKey, PermissionsManifest } from '$lib/types/auth';
 	import { UserIcon, LogoutIcon, ShieldAlertIcon, SunIcon, MoonIcon, ApiKeyIcon, AddIcon, CopyIcon, TrashIcon } from '$lib/icons';
 
 	let { data: _data }: PageProps = $props();
@@ -76,10 +78,9 @@
 	let apiKeys = $state<ApiKey[]>([]);
 	let apiKeysLoading = $state(false);
 	let showCreateKeyForm = $state(false);
-	let newKeyName = $state('');
-	let newKeyDescription = $state('');
 	let creatingKey = $state(false);
 	let createdKey = $state<ApiKeyCreated | null>(null);
+	let permissionsManifest = $state<PermissionsManifest | null>(null);
 
 	$effect(() => {
 		if (!profileLoaded && currentUser) {
@@ -168,18 +169,19 @@
 		}
 	}
 
-	async function createApiKey() {
-		if (!newKeyName.trim() || creatingKey) return;
+	async function loadPermissionsManifest() {
+		try {
+			permissionsManifest = await roleService.getPermissionsManifest();
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : 'Failed to load available permissions');
+		}
+	}
+
+	async function createApiKey({ apiKey }: { apiKey: CreateApiKey; isEditMode: boolean; apiKeyId?: string }) {
 		creatingKey = true;
 		try {
-			const created = await apiKeyService.createMine({
-				name: newKeyName.trim(),
-				description: newKeyDescription.trim() || undefined,
-				permissions: []
-			});
+			const created = await apiKeyService.createMine(apiKey);
 			createdKey = created;
-			newKeyName = '';
-			newKeyDescription = '';
 			showCreateKeyForm = false;
 			await loadApiKeys();
 		} catch (err) {
@@ -207,6 +209,7 @@
 
 	onMount(() => {
 		void loadApiKeys();
+		void loadPermissionsManifest();
 	});
 
 	async function logoutAllOther() {
@@ -285,38 +288,33 @@
 								/>
 							</div>
 						</div>
-
-						{#if isOidcUser}
-							<p class="text-muted-foreground text-xs">Profile fields are managed by your identity provider.</p>
-						{:else}
-							<div class="flex flex-col-reverse items-stretch justify-end gap-2 sm:flex-row sm:items-center">
-								<ArcaneButton
-									action="cancel"
-									tone="ghost"
-									customLabel="Reset"
-									onclick={resetProfile}
-									disabled={!profileDirty || profileSaving}
-								/>
-								<ArcaneButton
-									action="save"
-									customLabel="Save changes"
-									onclick={saveProfile}
-									loading={profileSaving}
-									disabled={!profileDirty || profileSaving}
-								/>
-							</div>
-						{/if}
+						<div class="flex justify-end gap-2">
+							<ArcaneButton
+								action="cancel"
+								tone="outline"
+								customLabel="Reset"
+								onclick={resetProfile}
+								disabled={!profileDirty || profileSaving}
+							/>
+							<ArcaneButton
+								action="save"
+								customLabel="Save profile"
+								onclick={saveProfile}
+								loading={profileSaving}
+								disabled={!profileDirty || profileSaving || isOidcUser}
+							/>
+						</div>
 					</div>
 				</Card>
 
 				<!-- Password -->
-				{#if !isOidcUser && !autoLoginEnabled}
+				{#if !isOidcUser}
 					<Card class="overflow-hidden">
 						<div class="border-b p-4 sm:p-6">
 							<h2 class="text-base font-semibold tracking-tight sm:text-lg">Password</h2>
-							<p class="text-muted-foreground mt-1 text-xs sm:text-sm">Changing your password signs out every other session</p>
+							<p class="text-muted-foreground mt-1 text-xs sm:text-sm">Change your account password</p>
 						</div>
-						<div class="space-y-4 p-4 sm:p-6">
+						<div class="space-y-5 p-4 sm:p-6">
 							<div class="space-y-2">
 								<Label for="account-current-password">Current password</Label>
 								<Input
@@ -404,6 +402,7 @@
 								customLabel="New key"
 								icon={AddIcon}
 								onclick={() => (showCreateKeyForm = true)}
+								disabled={!permissionsManifest}
 							/>
 						{/if}
 					</div>
@@ -435,43 +434,6 @@
 										size="sm"
 										customLabel="I've saved it"
 										onclick={() => (createdKey = null)}
-									/>
-								</div>
-							</div>
-						{/if}
-
-						{#if showCreateKeyForm}
-							<div class="mb-4 space-y-3 rounded-lg border p-4">
-								<div class="space-y-2">
-									<Label for="api-key-name">Key name</Label>
-									<Input id="api-key-name" bind:value={newKeyName} placeholder="e.g. CI deploy bot" />
-								</div>
-								<div class="space-y-2">
-									<Label for="api-key-description">Description (optional)</Label>
-									<Input id="api-key-description" bind:value={newKeyDescription} placeholder="What is this key for?" />
-								</div>
-								<p class="text-muted-foreground text-xs">
-									Keys are created without explicit permission scopes. An admin can add scopes later from Settings &rarr; API Keys
-									if needed.
-								</p>
-								<div class="flex justify-end gap-2">
-									<ArcaneButton
-										action="cancel"
-										tone="ghost"
-										customLabel="Cancel"
-										onclick={() => {
-											showCreateKeyForm = false;
-											newKeyName = '';
-											newKeyDescription = '';
-										}}
-										disabled={creatingKey}
-									/>
-									<ArcaneButton
-										action="create"
-										customLabel="Create key"
-										onclick={createApiKey}
-										loading={creatingKey}
-										disabled={!newKeyName.trim() || creatingKey}
 									/>
 								</div>
 							</div>
@@ -647,3 +609,14 @@
 		<div class="text-muted-foreground py-12 text-center text-sm">Loading account…</div>
 	{/if}
 </div>
+
+{#if permissionsManifest}
+	<ApiKeyFormSheet
+		bind:open={showCreateKeyForm}
+		apiKeyToEdit={null}
+		manifest={permissionsManifest}
+		availablePermissions={[]}
+		onSubmit={createApiKey}
+		isLoading={creatingKey}
+	/>
+{/if}
