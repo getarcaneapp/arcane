@@ -418,7 +418,8 @@ func buildPermissionsManifestInternal() roletypes.PermissionsManifest {
 		}
 	}
 	return roletypes.PermissionsManifest{
-		Resources: resources,
+		Resources:      resources,
+		AccessSurfaces: buildAccessSurfaceManifestInternal(),
 		Presets: []roletypes.PermissionPreset{
 			{
 				Key:         "editor",
@@ -434,6 +435,26 @@ func buildPermissionsManifestInternal() roletypes.PermissionsManifest {
 			},
 		},
 	}
+}
+
+func buildAccessSurfaceManifestInternal() []roletypes.AccessSurface {
+	surfaces := authz.AccessSurfaces()
+	out := make([]roletypes.AccessSurface, len(surfaces))
+	for i, surface := range surfaces {
+		out[i] = roletypes.AccessSurface{
+			ID:            surface.ID,
+			Kind:          surface.Kind,
+			URL:           surface.URL,
+			Label:         surface.Label,
+			AccessMode:    surface.AccessMode,
+			MatchMode:     surface.MatchMode,
+			ScopeMode:     surface.ScopeMode,
+			Permissions:   append([]string(nil), surface.Permissions...),
+			Children:      append([]string(nil), surface.Children...),
+			FallbackOrder: surface.FallbackOrder,
+		}
+	}
+	return out
 }
 
 func requiredPermissionsForPickerInternal(permission string) []string {

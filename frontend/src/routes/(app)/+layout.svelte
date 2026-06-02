@@ -19,6 +19,7 @@
 	const versionInformation = $derived(data.versionInformation);
 	const user = $derived(data.user);
 	const settings = $derived(data.settings);
+	const permissionsManifest = $derived(data.permissionsManifest);
 	const swarmEnabled = $derived(data.swarmEnabled === true);
 
 	const isMobile = new IsMobile();
@@ -31,15 +32,21 @@
 	});
 	const navigationMode = $derived(navigationSettings.mode);
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
-	const managementItems = $derived(getManagementItems(currentEnvId));
-	const settingsShortcutItems = $derived(filterByPermissions(navigationItems.settingsItems, user ?? null, currentEnvId));
+	const managementItemsRaw = $derived(getManagementItems(currentEnvId));
+	const managementItems = $derived(filterByPermissions(managementItemsRaw, user ?? null, currentEnvId, permissionsManifest));
+	const resourceItems = $derived(
+		filterByPermissions(navigationItems.resourceItems, user ?? null, currentEnvId, permissionsManifest)
+	);
+	const settingsShortcutItems = $derived(
+		filterByPermissions(navigationItems.settingsItems, user ?? null, currentEnvId, permissionsManifest)
+	);
 	const shortcutItems = $derived.by(() => {
-		const items: NavigationItem[] = [...managementItems, ...navigationItems.resourceItems, ...settingsShortcutItems];
+		const items: NavigationItem[] = [...managementItems, ...resourceItems, ...settingsShortcutItems];
 		return flattenNavigationItems(items).filter((item) => item.shortcut?.length);
 	});
 
 	$effect(() => {
-		const redirectPath = getAuthRedirectPath(page.url.pathname, user, currentEnvId);
+		const redirectPath = getAuthRedirectPath(page.url.pathname, user, currentEnvId, permissionsManifest);
 		if (redirectPath) {
 			goto(redirectPath);
 		}
@@ -95,10 +102,10 @@
 			{@render children()}
 		</section>
 	</main>
-	<MobileNav {navigationSettings} {user} {versionInformation} {swarmEnabled} />
+	<MobileNav {navigationSettings} {user} {versionInformation} {swarmEnabled} {permissionsManifest} />
 {:else}
 	<Sidebar.Provider>
-		<AppSidebar {versionInformation} {user} {swarmEnabled} />
+		<AppSidebar {versionInformation} {user} {swarmEnabled} {permissionsManifest} />
 		<main class="h-dvh flex-1">
 			<section class="h-full p-3 sm:p-5">
 				{@render children()}

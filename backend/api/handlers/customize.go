@@ -35,13 +35,6 @@ type GetCustomizeCategoriesOutput struct {
 	Body []category.Category
 }
 
-var customizeCategoryPermissionsInternal = map[string][]string{
-	"templates":        {authz.PermTemplatesList, authz.PermTemplatesRead},
-	"registries":       {authz.PermRegistriesList, authz.PermRegistriesRead},
-	"variables":        {authz.PermTemplatesRead},
-	"git-repositories": {authz.PermGitReposList, authz.PermGitReposRead},
-}
-
 // RegisterCustomize registers customization endpoints using Huma.
 func RegisterCustomize(api huma.API, customizeSearchService *services.CustomizeSearchService) {
 	h := &CustomizeHandler{
@@ -75,32 +68,13 @@ func RegisterCustomize(api huma.API, customizeSearchService *services.CustomizeS
 	}, h.GetCategories)
 }
 
-func canAccessCustomizeCategoryInternal(ps *authz.PermissionSet, categoryID string) bool {
-	if ps == nil {
-		return false
-	}
-	if ps.Allows(authz.PermCustomizeManage, "") {
-		return true
-	}
-	perms, ok := customizeCategoryPermissionsInternal[categoryID]
-	if !ok {
-		return false
-	}
-	for _, perm := range perms {
-		if ps.Allows(perm, "") {
-			return true
-		}
-	}
-	return false
-}
-
 func filterCustomizeCategoriesInternal(ps *authz.PermissionSet, categories []category.Category) []category.Category {
 	if ps == nil {
 		return []category.Category{}
 	}
 	filtered := make([]category.Category, 0, len(categories))
 	for _, cat := range categories {
-		if canAccessCustomizeCategoryInternal(ps, cat.ID) {
+		if authz.CanAccessCustomizeCategory(ps, cat.ID, "") {
 			filtered = append(filtered, cat)
 		}
 	}
