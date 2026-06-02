@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	libupdater "github.com/getarcaneapp/arcane/backend/pkg/libarcane/imageupdate"
+	libupdater "github.com/getarcaneapp/updater/pkg/labels"
 	"github.com/moby/moby/api/types/container"
 	dockertypesimage "github.com/moby/moby/api/types/image"
 	"github.com/opencontainers/go-digest"

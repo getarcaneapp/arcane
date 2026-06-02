@@ -2,8 +2,6 @@ package docker
 
 import (
 	"strings"
-
-	"github.com/moby/moby/api/types/container"
 )
 
 // ContainerNameFromNames returns Docker's first container name without the
@@ -14,17 +12,4 @@ func ContainerNameFromNames(names []string) string {
 	}
 
 	return strings.TrimPrefix(names[0], "/")
-}
-
-// ContainerSummaryName returns a displayable container name from a Docker
-// summary, falling back to the short container ID when Docker has no name.
-func ContainerSummaryName(cnt container.Summary) string {
-	if name := ContainerNameFromNames(cnt.Names); name != "" {
-		return name
-	}
-
-	if len(cnt.ID) >= 12 {
-		return cnt.ID[:12]
-	}
-	return cnt.ID
 }
