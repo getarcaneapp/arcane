@@ -193,11 +193,6 @@ type DeleteFileInput struct {
 	Path          string `query:"path" doc:"File or directory path to delete"`
 }
 
-type StopBrowsingInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	VolumeName    string `path:"volumeName" doc:"Volume name"`
-}
-
 type ListBackupsInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	VolumeName    string `path:"volumeName" doc:"Volume name"`
@@ -505,18 +500,6 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 		},
 		Middlewares: humamw.RequireAdmin(api),
 	}, h.DeleteFile)
-
-	huma.Register(api, huma.Operation{
-		OperationID: "stop-volume-browser",
-		Method:      http.MethodPost,
-		Path:        "/environments/{id}/volumes/{volumeName}/browse/stop",
-		Summary:     "Stop volume browser helper",
-		Tags:        []string{"Volume Browser"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
-	}, h.StopBrowsing)
 
 	// --- Volume Backup Endpoints ---
 
@@ -1013,19 +996,6 @@ func (h *VolumeHandler) DeleteFile(ctx context.Context, input *DeleteFileInput) 
 	return &base.ApiResponse[base.MessageResponse]{
 		Success: true,
 		Data:    base.MessageResponse{Message: "Deleted successfully"},
-	}, nil
-}
-
-func (h *VolumeHandler) StopBrowsing(ctx context.Context, input *StopBrowsingInput) (*base.ApiResponse[base.MessageResponse], error) {
-	if h.volumeService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-	if err := h.volumeService.StopHelper(ctx, input.VolumeName); err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
-	}
-	return &base.ApiResponse[base.MessageResponse]{
-		Success: true,
-		Data:    base.MessageResponse{Message: "Volume browser stopped"},
 	}, nil
 }
 

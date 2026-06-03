@@ -14,10 +14,12 @@ const VolumeHelperReaperJobName = "volume-helper-reaper"
 // long a volume-browser helper container may sit idle before it is reaped.
 const volumeHelperIdleTimeoutSetting = "volumeBrowserHelperIdleTimeout"
 
-const defaultVolumeHelperIdleTimeoutMinutes = 10
+const defaultVolumeHelperIdleTimeoutMinutes = 5
+
+const volumeHelperReaperSchedule = "0 */5 * * * *"
 
 // VolumeHelperReaperJob periodically removes idle volume-browser helper
-// containers. The run frequency is fixed (every minute); how stale a helper must
+// containers. The run frequency is fixed (every 5 minutes); how stale a helper must
 // be to be reaped is driven by the volumeBrowserHelperIdleTimeout setting.
 type VolumeHelperReaperJob struct {
 	volumeService   *services.VolumeService
@@ -35,10 +37,10 @@ func (j *VolumeHelperReaperJob) Name() string {
 	return VolumeHelperReaperJobName
 }
 
-// Schedule runs the reaper every minute. This is intentionally not configurable;
-// the idle timeout (read in Run) is the user-facing knob.
+// Schedule runs the reaper every 5 minutes. This is intentionally not
+// configurable; the idle timeout (read in Run) is the user-facing knob.
 func (j *VolumeHelperReaperJob) Schedule(ctx context.Context) string {
-	return "0 * * * * *"
+	return volumeHelperReaperSchedule
 }
 
 func (j *VolumeHelperReaperJob) Run(ctx context.Context) {

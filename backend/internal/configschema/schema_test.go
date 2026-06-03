@@ -367,6 +367,7 @@ var expectedSettingOverrideKeys = []string{
 	"trivyResourceLimitsEnabled",
 	"trivyScanTimeout",
 	"trivySecurityOpts",
+	"volumeBrowserHelperIdleTimeout",
 	"vulnerabilityScanEnabled",
 	"vulnerabilityScanInterval",
 }

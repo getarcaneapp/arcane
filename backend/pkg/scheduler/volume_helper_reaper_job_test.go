@@ -14,8 +14,8 @@ func TestVolumeHelperReaperJob_Name(t *testing.T) {
 
 func TestVolumeHelperReaperJob_Schedule(t *testing.T) {
 	job := NewVolumeHelperReaperJob(nil, nil)
-	// Fixed every-minute schedule; the idle timeout (read in Run) is the knob.
-	require.Equal(t, "0 * * * * *", job.Schedule(context.Background()))
+	// Fixed every-5-minute schedule; the idle timeout (read in Run) is the knob.
+	require.Equal(t, "0 */5 * * * *", job.Schedule(context.Background()))
 }
 
 func TestVolumeHelperReaperJob_Reschedule(t *testing.T) {
