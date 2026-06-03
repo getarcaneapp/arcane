@@ -70,33 +70,6 @@ func ComposeRestart(ctx context.Context, proj *types.Project, services []string)
 	})
 }
 
-func ComposePull(ctx context.Context, proj *types.Project, services []string) error {
-	// Detach from the HTTP request context so that proxy timeouts do not cancel
-	// long image pulls. See #1209.
-	pullCtx, cancel := detachFromHTTPContextInternal(ctx)
-	defer cancel()
-
-	c, err := NewClient(pullCtx)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = c.Close() }()
-
-	filteredProject, err := filterProjectServicesForPullInternal(proj, services)
-	if err != nil {
-		return err
-	}
-	return c.svc.Pull(pullCtx, filteredProject, api.PullOptions{})
-}
-
-func filterProjectServicesForPullInternal(proj *types.Project, services []string) (*types.Project, error) {
-	if proj == nil || len(services) == 0 {
-		return proj, nil
-	}
-
-	return proj.WithSelectedServices(services, types.IgnoreDependencies)
-}
-
 func ComposeStop(ctx context.Context, proj *types.Project, services []string) error {
 	if len(services) == 0 {
 		return nil

@@ -114,6 +114,11 @@ func provideContainerRegistryServiceInternal(db *database.DB, docker *services.D
 	}, kv)
 }
 
+func provideProjectServiceInternal(db *database.DB, settings *services.SettingsService, event *services.EventService, image *services.ImageService, docker *services.DockerClientService, build *services.BuildService, environment *services.EnvironmentService, cfg *config.Config) *services.ProjectService {
+	return services.NewProjectService(db, settings, event, image, docker, build, cfg).
+		WithRegistryCredentialsProvider(environment.GetEnabledRegistryCredentials)
+}
+
 // provideUpdaterServiceInternal passes *SystemUpgradeService for the unexported
 // selfUpgradeService parameter so wire never sees the unexported type.
 func provideUpdaterServiceInternal(db *database.DB, settings *services.SettingsService, docker *services.DockerClientService, project *services.ProjectService, imageUpdate *services.ImageUpdateService, registry *services.ContainerRegistryService, event *services.EventService, image *services.ImageService, notification *services.NotificationService, systemUpgrade *services.SystemUpgradeService, activity *services.ActivityService) *services.UpdaterService {
