@@ -3,7 +3,13 @@ package services
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,9 +17,158 @@ import (
 	moduleapi "github.com/getarcaneapp/updater/api"
 	updaterlabels "github.com/getarcaneapp/updater/pkg/labels"
 	moduletypes "github.com/getarcaneapp/updater/types"
+	"github.com/moby/moby/api/types/container"
+	dockertypesimage "github.com/moby/moby/api/types/image"
+	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type fakeDockerClientProviderInternal struct {
+	client any
+}
+
+func (f fakeDockerClientProviderInternal) DockerClient(context.Context) (*client.Client, error) {
+	cli, _ := f.client.(*client.Client)
+	if cli == nil {
+		return nil, errors.New("docker client unavailable")
+	}
+	return cli, nil
+}
+
+type fakeImagePullerInternal struct {
+	pulled []string
+	fail   map[string]error
+}
+
+func (f *fakeImagePullerInternal) PullImage(_ context.Context, imageRef string, _ io.Writer) error {
+	f.pulled = append(f.pulled, imageRef)
+	if f.fail == nil {
+		return nil
+	}
+	return f.fail[imageRef]
+}
+
+type fakeRunRecorderInternal struct {
+	results []moduletypes.ResourceResult
+}
+
+func (f *fakeRunRecorderInternal) RecordUpdateRun(_ context.Context, result moduletypes.ResourceResult) error {
+	f.results = append(f.results, result)
+	return nil
+}
+
+type fakeSettingsProviderInternal struct{}
+
+func (fakeSettingsProviderInternal) ExcludedContainers(context.Context) ([]string, error) {
+	return nil, nil
+}
+
+type fakeUsedImageCollectorInternal struct {
+	images map[string]struct{}
+}
+
+func (f fakeUsedImageCollectorInternal) UsedImages(context.Context) (map[string]struct{}, error) {
+	return f.images, nil
+}
+
+type fakeProjectUpdaterInternal struct {
+	projects   map[string]moduletypes.ComposeProject
+	updateErrs map[string]error
+	calls      []string
+}
+
+func (f *fakeProjectUpdaterInternal) ProjectByComposeName(_ context.Context, composeName string) (moduletypes.ComposeProject, error) {
+	if project, ok := f.projects[composeName]; ok {
+		return project, nil
+	}
+	return moduletypes.ComposeProject{}, errors.New("project not found")
+}
+
+func (f *fakeProjectUpdaterInternal) UpdateServices(_ context.Context, projectID string, services []string) error {
+	f.calls = append(f.calls, projectID+":"+strings.Join(services, ","))
+	if f.updateErrs == nil {
+		return nil
+	}
+	return f.updateErrs[projectID]
+}
+
+func newUpdaterApplyPendingDockerServerInternal(
+	t *testing.T,
+	containers []container.Summary,
+	verificationByService map[string][]container.Summary,
+	inspectByID map[string]container.InspectResponse,
+	imageInspectByRef map[string]dockertypesimage.InspectResponse,
+) *httptest.Server {
+	t.Helper()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/_ping"):
+			_, _ = io.WriteString(w, "OK")
+		case strings.HasSuffix(r.URL.Path, "/version"):
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"ApiVersion":    "1.41",
+				"MinAPIVersion": "1.24",
+				"Version":       "24.0.0",
+			})
+		case strings.HasSuffix(r.URL.Path, "/images/json"):
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode([]dockertypesimage.Summary{})
+		case strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json"):
+			encodedRef := strings.TrimSuffix(r.URL.Path[strings.LastIndex(r.URL.Path, "/images/")+len("/images/"):], "/json")
+			imageRef, err := url.PathUnescape(encodedRef)
+			require.NoError(t, err)
+			inspect, ok := imageInspectByRef[imageRef]
+			if !ok {
+				http.NotFound(w, r)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(inspect)
+		case strings.HasSuffix(r.URL.Path, "/containers/json"):
+			response := containers
+			if filters := strings.TrimSpace(r.URL.Query().Get("filters")); filters != "" {
+				var raw map[string]map[string]bool
+				require.NoError(t, json.Unmarshal([]byte(filters), &raw))
+				projectName := ""
+				serviceName := ""
+				for value := range raw["label"] {
+					switch {
+					case strings.HasPrefix(value, "com.docker.compose.project="):
+						projectName = strings.TrimPrefix(value, "com.docker.compose.project=")
+					case strings.HasPrefix(value, "com.docker.compose.service="):
+						serviceName = strings.TrimPrefix(value, "com.docker.compose.service=")
+					}
+				}
+				if projectName != "" && serviceName != "" {
+					if matched, ok := verificationByService[projectName+"/"+serviceName]; ok {
+						response = matched
+					} else {
+						response = nil
+					}
+				}
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(response)
+		case strings.Contains(r.URL.Path, "/containers/") && strings.HasSuffix(r.URL.Path, "/json"):
+			containerID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path[strings.LastIndex(r.URL.Path, "/containers/"):], "/containers/"), "/json")
+			inspect, ok := inspectByID[containerID]
+			if !ok {
+				http.NotFound(w, r)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(inspect)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+
+	t.Cleanup(server.Close)
+	return server
+}
 
 type mockSystemUpgradeServiceInternal struct {
 	triggerCalled bool
@@ -285,6 +440,165 @@ func TestUpdaterService_RecordUpdateRunAdapterInternal(t *testing.T) {
 	assert.Equal(t, "nginx:1.2.3", record.OldImageVersions["main"])
 	assert.Equal(t, "nginx:1.2.4", record.NewImageVersions["main"])
 	assert.Equal(t, "test", record.Details["source"])
+}
+
+func TestUpdaterService_ApplyPending_ProjectFailureDoesNotBlockOtherProjectsInternal(t *testing.T) {
+	ctx := context.Background()
+
+	oldRefFailed := "registry.example.com/team/fail:1.0.0"
+	newRefFailed := "registry.example.com/team/fail:1.0.1"
+	oldRefUpdated := "registry.example.com/team/success:2.0.0"
+	newRefUpdated := "registry.example.com/team/success:2.0.1"
+	oldImageIDFailed := "sha256:old-fail"
+	newImageIDFailed := "sha256:new-fail"
+	oldImageIDUpdated := "sha256:old-success"
+	newImageIDUpdated := "sha256:new-success"
+
+	failedLabels := map[string]string{
+		"com.docker.compose.project": "proj-fail",
+		"com.docker.compose.service": "app",
+	}
+	updatedLabels := map[string]string{
+		"com.docker.compose.project": "proj-success",
+		"com.docker.compose.service": "app",
+	}
+
+	containers := []container.Summary{
+		{
+			ID:      "container-fail",
+			Names:   []string{"/proj-fail-app-1"},
+			Image:   oldRefFailed,
+			ImageID: oldImageIDFailed,
+			Labels:  failedLabels,
+			State:   "running",
+		},
+		{
+			ID:      "container-success",
+			Names:   []string{"/proj-success-app-1"},
+			Image:   oldRefUpdated,
+			ImageID: oldImageIDUpdated,
+			Labels:  updatedLabels,
+			State:   "running",
+		},
+	}
+
+	verificationByService := map[string][]container.Summary{
+		"proj-success/app": {
+			{
+				ID:      "container-success-new",
+				Names:   []string{"/proj-success-app-1"},
+				Image:   newRefUpdated,
+				ImageID: newImageIDUpdated,
+				Labels:  updatedLabels,
+				State:   "running",
+			},
+		},
+	}
+
+	inspectByID := map[string]container.InspectResponse{
+		"container-fail": {
+			ID:    "container-fail",
+			Image: oldImageIDFailed,
+			Config: &container.Config{
+				Image:  oldRefFailed,
+				Labels: failedLabels,
+			},
+		},
+		"container-success": {
+			ID:    "container-success",
+			Image: oldImageIDUpdated,
+			Config: &container.Config{
+				Image:  oldRefUpdated,
+				Labels: updatedLabels,
+			},
+		},
+	}
+
+	imageInspectByRef := map[string]dockertypesimage.InspectResponse{
+		newRefFailed: {
+			ID:       newImageIDFailed,
+			RepoTags: []string{newRefFailed},
+		},
+		newRefUpdated: {
+			ID:       newImageIDUpdated,
+			RepoTags: []string{newRefUpdated},
+		},
+	}
+
+	server := newUpdaterApplyPendingDockerServerInternal(t, containers, verificationByService, inspectByID, imageInspectByRef)
+	dockerProvider := fakeDockerClientProviderInternal{client: newTestDockerClient(t, server)}
+	puller := &fakeImagePullerInternal{}
+	recorder := &fakeRunRecorderInternal{}
+	projectUpdater := &fakeProjectUpdaterInternal{
+		projects: map[string]moduletypes.ComposeProject{
+			"proj-fail":    {ID: "project-fail", Name: "proj-fail"},
+			"proj-success": {ID: "project-success", Name: "proj-success"},
+		},
+		updateErrs: map[string]error{
+			"project-fail": errors.New("pull updated service images: unauthorized"),
+		},
+	}
+
+	svc := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	svc.engine = moduleapi.NewService(moduleapi.Config{
+		DockerClientProvider: dockerProvider,
+		ImagePuller:          puller,
+		PendingStore: moduleapi.NewMemoryPendingStore(
+			moduletypes.ImageUpdateRecord{
+				ID:             oldImageIDFailed,
+				Repository:     "registry.example.com/team/fail",
+				Tag:            "1.0.0",
+				HasUpdate:      true,
+				UpdateType:     moduletypes.UpdateTypeTag,
+				CurrentVersion: "1.0.0",
+				LatestVersion:  ptr("1.0.1"),
+			},
+			moduletypes.ImageUpdateRecord{
+				ID:             oldImageIDUpdated,
+				Repository:     "registry.example.com/team/success",
+				Tag:            "2.0.0",
+				HasUpdate:      true,
+				UpdateType:     moduletypes.UpdateTypeTag,
+				CurrentVersion: "2.0.0",
+				LatestVersion:  ptr("2.0.1"),
+			},
+		),
+		RunRecorder:    recorder,
+		Settings:       fakeSettingsProviderInternal{},
+		ProjectUpdater: projectUpdater,
+		UsedImageCollector: fakeUsedImageCollectorInternal{images: map[string]struct{}{
+			oldRefFailed:  {},
+			oldRefUpdated: {},
+		}},
+		LabelPolicy: updaterlabels.DefaultLabelPolicy(),
+	})
+
+	result, err := svc.ApplyPending(ctx, false)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, 3, result.Updated, "updated count should include both image pulls and the successfully updated container")
+	assert.Equal(t, 1, result.Failed, "the failed project should be recorded as failed")
+	assert.GreaterOrEqual(t, len(result.Items), 4)
+	assert.ElementsMatch(t, []string{newRefFailed, newRefUpdated}, puller.pulled)
+	assert.ElementsMatch(t, []string{"project-fail:app", "project-success:app"}, projectUpdater.calls)
+
+	statusByResource := map[string]string{}
+	errorByResource := map[string]string{}
+	for _, item := range result.Items {
+		statusByResource[item.ResourceID] = item.Status
+		errorByResource[item.ResourceID] = item.Error
+	}
+
+	assert.Equal(t, moduletypes.StatusFailed, statusByResource["container-fail"])
+	assert.Contains(t, errorByResource["container-fail"], "project-level update failed")
+	assert.Equal(t, moduletypes.StatusUpdated, statusByResource["container-success"])
+
+	var recordedStatuses []string
+	for _, recorded := range recorder.results {
+		recordedStatuses = append(recordedStatuses, recorded.Status)
+	}
+	assert.Contains(t, recordedStatuses, moduletypes.StatusFailed)
+	assert.Contains(t, recordedStatuses, moduletypes.StatusUpdated)
 }
 
 func TestResolvePullableImageRefInternal(t *testing.T) {
