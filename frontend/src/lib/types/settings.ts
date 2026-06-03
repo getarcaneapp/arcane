@@ -151,7 +151,6 @@ export type JobSchedules = {
 	dockerClientRefreshInterval: string;
 	pollingInterval: string;
 	scheduledPruneInterval: string;
-	gitopsSyncInterval: string;
 	vulnerabilityScanInterval: string;
 	autoHealInterval: string;
 };

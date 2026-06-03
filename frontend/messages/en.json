@@ -1532,8 +1532,6 @@
 	"jobs_image_polling_description": "Checks container registries for new image versions",
 	"jobs_scheduled_prune_name": "Scheduled Prune",
 	"jobs_scheduled_prune_description": "Removes unused containers, images, volumes, and networks",
-	"jobs_gitops_sync_name": "GitOps Sync",
-	"jobs_gitops_sync_description": "Synchronizes project state with configured git repositories",
 	"jobs_filesystem_watcher_name": "Filesystem Watcher",
 	"jobs_filesystem_watcher_description": "Monitors project directory for changes and syncs automatically",
 	"jobs_cron_expression": "Cron Expression",

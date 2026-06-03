@@ -152,7 +152,6 @@ func provideAuthMiddlewareInternal(auth *services.AuthService, apiKey *services.
 type Jobs struct {
 	AutoUpdate             *pkg_scheduler.AutoUpdateJob
 	ImagePolling           *pkg_scheduler.ImagePollingJob
-	EnvironmentHealth      *pkg_scheduler.EnvironmentHealthJob
 	DockerClientRefresh    *pkg_scheduler.DockerClientRefreshJob
 	Analytics              *pkg_scheduler.AnalyticsJob
 	EventCleanup           *pkg_scheduler.EventCleanupJob
@@ -160,7 +159,6 @@ type Jobs struct {
 	ExpiredSessionsCleanup *pkg_scheduler.ExpiredSessionsCleanupJob
 	ScheduledPrune         *pkg_scheduler.ScheduledPruneJob
 	FilesystemWatcher      *pkg_scheduler.FilesystemWatcherJob
-	GitOpsSync             *pkg_scheduler.GitOpsSyncJob
 	VulnerabilityScan      *pkg_scheduler.VulnerabilityScanJob
 	AutoHeal               *pkg_scheduler.AutoHealJob
 }

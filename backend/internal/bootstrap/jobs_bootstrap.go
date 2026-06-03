@@ -19,9 +19,6 @@ func registerJobs(appCtx context.Context, newScheduler *pkg_scheduler.JobSchedul
 
 	newScheduler.RegisterJob(jobs.AutoUpdate)
 	newScheduler.RegisterJob(jobs.ImagePolling)
-	if !appConfig.AgentMode {
-		newScheduler.RegisterJob(jobs.EnvironmentHealth)
-	}
 	newScheduler.RegisterJob(jobs.DockerClientRefresh)
 	newScheduler.RegisterJob(jobs.Analytics)
 	// Send initial heartbeat on startup without blocking bootstrap.
@@ -32,11 +29,39 @@ func registerJobs(appCtx context.Context, newScheduler *pkg_scheduler.JobSchedul
 	newScheduler.RegisterJob(jobs.ScheduledPrune)
 	// FilesystemWatcher is intentionally not scheduler-registered; it watches inline
 	// and is only rebound on settings changes below.
-	newScheduler.RegisterJob(jobs.GitOpsSync)
 	newScheduler.RegisterJob(jobs.VulnerabilityScan)
 	newScheduler.RegisterJob(jobs.AutoHeal)
 
+	// GitOps sync and environment health are no longer single global jobs; each
+	// entity registers its own dynamic job.
+	registerDynamicJobs(appCtx, newScheduler, appServices, appConfig)
+
 	setupSettingsCallbacks(appCtx, appServices, appConfig, newScheduler, jobs)
+}
+
+// registerDynamicJobs injects the scheduler into the services that own per-entity
+// jobs and registers the jobs for already-existing entities at startup. AddJob is
+// an idempotent upsert, so these run safely before the scheduler is started.
+func registerDynamicJobs(appCtx context.Context, newScheduler *pkg_scheduler.JobScheduler, appServices *di.Services, appConfig *config.Config) {
+	// GitOps: one job per auto-sync-enabled sync (runs on manager and agents).
+	if appServices.GitOpsSync != nil {
+		appServices.GitOpsSync.SetScheduler(appCtx, newScheduler)
+		appServices.GitOpsSync.RegisterAutoSyncJobsOnStartup(appCtx)
+	}
+
+	// Environment health: one job per enabled environment (manager only). The Jobs
+	// UI still addresses "environment-health" by ID, so bridge its reschedule and
+	// run-now back to EnvironmentService.
+	if !appConfig.AgentMode && appServices.Environment != nil {
+		appServices.Environment.SetScheduler(appCtx, newScheduler)
+		appServices.JobSchedule.OnEnvironmentHealthReschedule = func(ctx context.Context) {
+			appServices.Environment.RescheduleHealthJobs(ctx)
+		}
+		appServices.JobSchedule.RunEnvironmentHealthNow = func(ctx context.Context) error {
+			return appServices.Environment.RunHealthChecksNow(ctx)
+		}
+		appServices.Environment.RegisterHealthJobsOnStartup(appCtx)
+	}
 }
 
 func setupSettingsCallbacks(lifecycleCtx context.Context, appServices *di.Services, appConfig *config.Config, newScheduler *pkg_scheduler.JobScheduler, jobs *di.Jobs) {
@@ -46,11 +71,6 @@ func setupSettingsCallbacks(lifecycleCtx context.Context, appServices *di.Servic
 		}
 		if err := newScheduler.RescheduleJob(lifecycleCtx, jobs.AutoUpdate); err != nil {
 			slog.WarnContext(lifecycleCtx, "Failed to reschedule auto-update job", "error", err)
-		}
-		if !appConfig.AgentMode {
-			if err := newScheduler.RescheduleJob(lifecycleCtx, jobs.EnvironmentHealth); err != nil {
-				slog.WarnContext(lifecycleCtx, "Failed to reschedule environment-health job", "error", err)
-			}
 		}
 	}
 	appServices.Settings.OnAutoUpdateSettingsChanged = func(ctx context.Context) {

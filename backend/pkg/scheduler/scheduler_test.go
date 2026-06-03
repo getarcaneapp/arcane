@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	schedulertypes "github.com/getarcaneapp/arcane/types/scheduler"
 	"github.com/stretchr/testify/require"
 )
 
@@ -183,4 +184,67 @@ func TestJobScheduler_RescheduleJob_UsesLifecycleContextForShutdown(t *testing.T
 	case <-time.After(1500 * time.Millisecond):
 		t.Fatal("scheduled job did not observe lifecycle cancellation")
 	}
+}
+
+func TestJobScheduler_AddJob_UpsertReplacesEntryWithoutLeaking(t *testing.T) {
+	js := NewJobScheduler(context.Background(), nil)
+
+	job := &testSchedulerJob{name: "dyn-upsert", schedule: "*/5 * * * * *"}
+	require.NoError(t, js.AddJob(context.Background(), job))
+	require.True(t, js.HasJob(job.Name()))
+	require.Len(t, js.cron.Entries(), 1)
+	firstEntry := js.entryIDs[job.Name()]
+
+	// Re-adding with a changed schedule (e.g. a new sync interval) must replace the
+	// existing cron entry, not leak a second one that keeps firing forever.
+	job.schedule = "*/10 * * * * *"
+	require.NoError(t, js.AddJob(context.Background(), job))
+	require.Len(t, js.cron.Entries(), 1)
+	require.NotEqual(t, firstEntry, js.entryIDs[job.Name()])
+}
+
+func TestJobScheduler_AddJob_InvalidRescheduleClearsRegisteredState(t *testing.T) {
+	js := NewJobScheduler(context.Background(), nil)
+
+	job := &testSchedulerJob{name: "dyn-invalid-reschedule", schedule: "*/5 * * * * *"}
+	require.NoError(t, js.AddJob(context.Background(), job))
+	require.True(t, js.HasJob(job.Name()))
+	require.Len(t, js.cron.Entries(), 1)
+
+	job.schedule = "not a cron schedule"
+	require.Error(t, js.AddJob(context.Background(), job))
+	require.False(t, js.HasJob(job.Name()))
+	require.NotContains(t, js.entryIDs, job.Name())
+	require.Empty(t, js.cron.Entries())
+}
+
+func TestJobScheduler_RemoveJob_RemovesEntryAndIsNoopWhenAbsent(t *testing.T) {
+	js := NewJobScheduler(context.Background(), nil)
+
+	// Removing an unknown job must be a safe no-op (e.g. deleting a sync that never
+	// had auto-sync enabled).
+	js.RemoveJob(context.Background(), "never-registered")
+
+	job := &testSchedulerJob{name: "dyn-remove", schedule: "*/5 * * * * *"}
+	require.NoError(t, js.AddJob(context.Background(), job))
+	require.True(t, js.HasJob(job.Name()))
+	require.Len(t, js.cron.Entries(), 1)
+
+	js.RemoveJob(context.Background(), job.Name())
+	require.False(t, js.HasJob(job.Name()))
+	require.NotContains(t, js.entryIDs, job.Name())
+	require.Empty(t, js.cron.Entries())
+}
+
+func TestJobScheduler_AddJob_GenericJobWithoutShouldRunIsScheduled(t *testing.T) {
+	js := NewJobScheduler(context.Background(), nil)
+
+	job := &schedulertypes.GenericJob{
+		JobName:    "generic-dyn",
+		ScheduleFn: func(context.Context) string { return "@every 1m" },
+		RunFn:      func(context.Context) {},
+	}
+	require.NoError(t, js.AddJob(context.Background(), job))
+	require.True(t, js.HasJob(job.Name()))
+	require.Len(t, js.cron.Entries(), 1)
 }
