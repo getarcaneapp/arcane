@@ -78,6 +78,7 @@ const (
 	PermGitReposSync   = "git-repositories:sync"
 
 	PermEventsRead      = "events:read"
+	PermEventsDelete    = "events:delete"
 	PermCustomizeManage = "customize:manage"
 
 	// PermDiagnosticsRead gates the admin-only runtime diagnostics surface

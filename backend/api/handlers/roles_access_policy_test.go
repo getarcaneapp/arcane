@@ -32,3 +32,21 @@ func TestBuildPermissionsManifestIncludesAccessSurfaces(t *testing.T) {
 	registrySurfaces := authz.AccessSurfaces()
 	require.Len(t, manifest.AccessSurfaces, len(registrySurfaces))
 }
+
+func TestBuildPermissionsManifestIncludesEventsDelete(t *testing.T) {
+	manifest := buildPermissionsManifestInternal()
+
+	for _, resource := range manifest.Resources {
+		if resource.Key != "events" {
+			continue
+		}
+		for _, action := range resource.Actions {
+			if action.Permission == authz.PermEventsDelete {
+				return
+			}
+		}
+		t.Fatalf("events resource did not include %s", authz.PermEventsDelete)
+	}
+
+	t.Fatal("events resource not found")
+}

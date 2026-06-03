@@ -285,7 +285,7 @@ func registerHandlersInternal(api huma.API, svc *di.Services, handlerAppCtx hand
 	handlers.RegisterUsers(api, svc.User, svc.Auth)
 	handlers.RegisterProjects(api, svc.Project, svc.Activity, handlerAppCtx)
 	handlers.RegisterVersion(api, svc.Version)
-	handlers.RegisterEvents(api, svc.Event, svc.ApiKey)
+	handlers.RegisterEvents(api, svc.Event)
 	handlers.RegisterActivities(api, svc.Activity, svc.Environment)
 	handlers.RegisterOidc(api, svc.Auth, svc.Oidc, svc.Role, svc.User, cfg)
 	handlers.RegisterEnvironments(api, svc.Environment, svc.Settings, svc.ApiKey, svc.Event, cfg)

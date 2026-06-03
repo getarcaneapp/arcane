@@ -86,7 +86,7 @@
 		});
 	}
 
-	const canManageEvents = $derived(hasPermission('events:read'));
+	const canManageEvents = $derived(hasPermission('events:delete'));
 
 	const actionButtons: ActionButton[] = $derived([
 		...(selectedIds.length > 0 && canManageEvents

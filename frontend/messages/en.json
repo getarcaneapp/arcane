@@ -2955,6 +2955,17 @@
 	"roles_subtitle": "Define what users and API keys can do",
 	"roles_create_title": "Create role",
 	"roles_edit_title": "Edit role",
+	"roles_delete_title": "Delete role \"{name}\"?",
+	"roles_delete_selected_title": [
+		{
+			"declarations": ["input count", "local countPlural = count: plural"],
+			"selectors": ["countPlural"],
+			"match": {
+				"countPlural=one": "Delete {count} role?",
+				"countPlural=other": "Delete {count} roles?"
+			}
+		}
+	],
 	"roles_delete_message": "Delete role \"{name}\"? This removes every assignment of it.",
 	"roles_save_changes": "Save changes",
 	"roles_clone_button": "Clone as custom role",
@@ -2974,7 +2985,16 @@
 	"roles_col_type": "Type",
 	"roles_col_assigned_users": "Assigned users",
 	"roles_col_permissions": "Permissions",
-	"roles_assigned_users_count": "{count} users",
+	"roles_assigned_users_count": [
+		{
+			"declarations": ["input count", "local countPlural = count: plural"],
+			"selectors": ["countPlural"],
+			"match": {
+				"countPlural=one": "{count} user",
+				"countPlural=other": "{count} users"
+			}
+		}
+	],
 	"_comment_permissions": "=== PERMISSION PICKER ===",
 	"permissions_group_label": "{resource} ({selected}/{total})",
 	"permissions_select_all": "Select all",
@@ -2987,8 +3007,12 @@
 	"oidc_mappings_subtitle": "Map OIDC group claims to roles assigned on login",
 	"oidc_mappings_create_title": "Add OIDC mapping",
 	"oidc_mappings_edit_title": "Edit OIDC mapping",
+	"oidc_mappings_delete_title": "Delete OIDC mapping?",
 	"oidc_mappings_delete_message": "Delete mapping for claim \"{claim}\"? Users logged in through this claim will lose their assigned role on next login.",
+	"oidc_mappings_delete_failed": "Failed to delete mapping",
+	"oidc_mappings_delete_success": "Mapping deleted",
 	"oidc_mappings_col_claim": "Claim value",
+	"oidc_mappings_col_role": "Role",
 	"oidc_mappings_col_scope": "Environment",
 	"oidc_mappings_claim_label": "Claim value",
 	"oidc_mappings_claim_placeholder": "e.g. docker-admins",

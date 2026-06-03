@@ -18,6 +18,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
+	pkgutils "github.com/getarcaneapp/arcane/backend/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils/mapper"
 	"github.com/getarcaneapp/arcane/types/event"
 	"golang.org/x/text/cases"
@@ -176,9 +177,9 @@ func (s *EventService) forwardEventToManagerHTTP(ctx context.Context, eventModel
 		return fmt.Errorf("manager API URL is invalid for manager event sync: %w", err)
 	}
 
-	payload := event.CreateEvent{
-		Type:          string(eventModel.Type),
-		Severity:      string(eventModel.Severity),
+	payload := CreateEventRequest{
+		Type:          eventModel.Type,
+		Severity:      eventModel.Severity,
 		Title:         eventModel.Title,
 		Description:   eventModel.Description,
 		ResourceType:  eventModel.ResourceType,
@@ -190,7 +191,7 @@ func (s *EventService) forwardEventToManagerHTTP(ctx context.Context, eventModel
 	}
 
 	if len(eventModel.Metadata) > 0 {
-		payload.Metadata = map[string]any(eventModel.Metadata)
+		payload.Metadata = eventModel.Metadata
 	}
 
 	body, err := json.Marshal(payload)
@@ -203,7 +204,7 @@ func (s *EventService) forwardEventToManagerHTTP(ctx context.Context, eventModel
 		return fmt.Errorf("failed to create manager event request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Api-Key", s.cfg.AgentToken)
+	req.Header.Set(pkgutils.HeaderAgentToken, s.cfg.AgentToken)
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
@@ -279,39 +280,6 @@ func copyOptionalStringPtr(value *string) *string {
 		return nil
 	}
 	return new(*value)
-}
-
-func (s *EventService) CreateEventFromDto(ctx context.Context, req event.CreateEvent) (*event.Event, error) {
-	severity := models.EventSeverity(req.Severity)
-	if severity == "" {
-		severity = models.EventSeverityInfo
-	}
-
-	metadata := models.JSON{}
-	if req.Metadata != nil {
-		metadata = models.JSON(req.Metadata)
-	}
-
-	createReq := CreateEventRequest{
-		Type:          models.EventType(req.Type),
-		Severity:      severity,
-		Title:         req.Title,
-		Description:   req.Description,
-		ResourceType:  req.ResourceType,
-		ResourceID:    req.ResourceID,
-		ResourceName:  req.ResourceName,
-		UserID:        req.UserID,
-		Username:      req.Username,
-		EnvironmentID: req.EnvironmentID,
-		Metadata:      metadata,
-	}
-
-	event, err := s.CreateEvent(ctx, createReq)
-	if err != nil {
-		return nil, err
-	}
-
-	return s.toEventDto(event), nil
 }
 
 func (s *EventService) ListEventsPaginated(ctx context.Context, params pagination.QueryParams) ([]event.Event, pagination.Response, error) {
@@ -639,31 +607,6 @@ var eventDefinitions = map[models.EventType]struct {
 	models.EventTypeUserLogin:         {"User logged in: %s", "User '%s' has logged in", models.EventSeverityInfo},
 	models.EventTypeUserLogout:        {"User logged out: %s", "User '%s' has logged out", models.EventSeverityInfo},
 	models.EventTypeFederatedExchange: {"Federated credential exchange: %s", "Federated credential exchange for '%s'", models.EventSeverityInfo},
-}
-
-func (s *EventService) toEventDto(e *models.Event) *event.Event {
-	var metadata map[string]any
-	if e.Metadata != nil {
-		metadata = map[string]any(e.Metadata)
-	}
-
-	return &event.Event{
-		ID:            e.ID,
-		Type:          string(e.Type),
-		Severity:      string(e.Severity),
-		Title:         e.Title,
-		Description:   e.Description,
-		ResourceType:  e.ResourceType,
-		ResourceID:    e.ResourceID,
-		ResourceName:  e.ResourceName,
-		UserID:        e.UserID,
-		Username:      e.Username,
-		EnvironmentID: e.EnvironmentID,
-		Metadata:      metadata,
-		Timestamp:     e.Timestamp,
-		CreatedAt:     e.CreatedAt,
-		UpdatedAt:     e.UpdatedAt,
-	}
 }
 
 func (s *EventService) generateEventTitle(eventType models.EventType, resourceName string) string {

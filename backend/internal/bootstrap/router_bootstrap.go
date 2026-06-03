@@ -177,6 +177,7 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *di.Servic
 	// Register public webhook trigger endpoint before auth middleware (token in URL is the sole auth)
 	api.RegisterWebhookTrigger(apiGroup, appServices.Webhook, handlerAppCtx) //nolint:contextcheck // app lifecycle context is intentionally wrapped for detached activity work.
 	handlers.RegisterFederatedTokenExchange(apiGroup, appServices.Federated) //nolint:contextcheck // public RFC 8693 form endpoint uses request context.
+	handlers.RegisterAgentEventIngestion(apiGroup, appServices.Event, cfg)   //nolint:contextcheck // internal agent-token route; intentionally outside user/RBAC auth.
 
 	//nolint:contextcheck // Echo middleware reads context from echo.Context.Request().Context(), not a parameter.
 	envProxyMiddleware := middleware.NewEnvProxyMiddlewareWithParam(
