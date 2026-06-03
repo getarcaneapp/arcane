@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/internal/common"
@@ -21,9 +22,22 @@ import (
 	"github.com/getarcaneapp/arcane/backend/pkg/utils/mapper"
 	"github.com/getarcaneapp/arcane/types/gitops"
 	projecttypes "github.com/getarcaneapp/arcane/types/project"
+	schedulertypes "github.com/getarcaneapp/arcane/types/scheduler"
 	"github.com/getarcaneapp/arcane/types/swarm"
 	"gorm.io/gorm"
 )
+
+// DynamicScheduler is the subset of the job scheduler used by services that
+// register per-entity jobs at runtime (GitOps syncs, environment health). It is a
+// consumer-side interface satisfied by *pkg/scheduler.JobScheduler; the scheduler
+// is injected post-construction via SetScheduler because it is created after the
+// service graph is built (and pkg/scheduler imports this package, so it cannot be
+// a wire input here).
+type DynamicScheduler interface {
+	AddJob(ctx context.Context, job schedulertypes.Job) error
+	RemoveJob(ctx context.Context, name string)
+	HasJob(name string) bool
+}
 
 type GitOpsSyncService struct {
 	db              *database.DB
@@ -32,6 +46,15 @@ type GitOpsSyncService struct {
 	swarmService    *SwarmService
 	eventService    *EventService
 	settingsService *SettingsService
+
+	// scheduler and lifecycleCtx are injected post-construction via SetScheduler.
+	scheduler    DynamicScheduler
+	lifecycleCtx context.Context
+	// runningSyncs guards against overlapping PerformSync runs for the same sync.
+	// The previous single global job serialized syncs implicitly; with independent
+	// per-sync jobs (plus manual/webhook/startup triggers) a sync could otherwise
+	// run concurrently with itself and race the clone/redeploy of one project.
+	runningSyncs sync.Map
 }
 
 const defaultGitSyncTimeout = 5 * time.Minute
@@ -43,13 +66,6 @@ const (
 	defaultMaxSyncTotalSize    = defaultMaxSyncTotalSizeMB * 1024 * 1024
 	defaultMaxSyncBinarySize   = defaultMaxSyncBinarySizeMB * 1024 * 1024
 )
-
-type scheduledGitOpsSync struct {
-	ID            string
-	EnvironmentID string
-	SyncInterval  int
-	LastSyncAt    *time.Time
-}
 
 // preparedSyncSource captures the repository data needed by the sync execution
 // paths after the source repository has been cloned and validated.
@@ -104,6 +120,131 @@ func NewGitOpsSyncService(db *database.DB, repoService *GitRepositoryService, pr
 		eventService:    eventService,
 		settingsService: settingsService,
 	}
+}
+
+const gitOpsSyncJobPrefix = "gitops-sync:"
+
+func gitOpsSyncJobNameInternal(syncID string) string { return gitOpsSyncJobPrefix + syncID }
+
+// SetScheduler injects the job scheduler and the app lifecycle context. It must be
+// called during bootstrap (after the service graph is built) before any per-sync
+// jobs are registered. The lifecycle context is used for background sync kicks so
+// they outlive the request/bootstrap goroutine that triggered them.
+func (s *GitOpsSyncService) SetScheduler(ctx context.Context, scheduler DynamicScheduler) { //nolint:contextcheck // background sync kicks must capture the app lifecycle context, not request contexts
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	s.lifecycleCtx = ctx
+	s.scheduler = scheduler
+}
+
+func (s *GitOpsSyncService) schedulerCtxInternal(ctx context.Context) context.Context {
+	if s.lifecycleCtx != nil {
+		return s.lifecycleCtx
+	}
+	if ctx != nil {
+		return context.WithoutCancel(ctx)
+	}
+	return context.Background()
+}
+
+// buildSyncJobInternal returns the dynamic job for a single sync. The schedule is a
+// fixed "@every Nm" interval; the run body re-reads the sync each fire (so a row
+// deleted or toggled to AutoSync=false self-cancels cleanly) and delegates to
+// PerformSync, which owns its own timeout and the per-sync in-flight guard.
+func (s *GitOpsSyncService) buildSyncJobInternal(syncID, environmentID string, intervalMinutes int) *schedulertypes.GenericJob {
+	interval := max(intervalMinutes, 1)
+	schedule := fmt.Sprintf("@every %dm", interval)
+	return &schedulertypes.GenericJob{
+		JobName: gitOpsSyncJobNameInternal(syncID),
+		ScheduleFn: func(_ context.Context) string {
+			return schedule
+		},
+		RunFn: func(ctx context.Context) {
+			sync, err := s.GetSyncByID(ctx, environmentID, syncID)
+			if err != nil {
+				slog.DebugContext(ctx, "gitops auto-sync skipped; sync not found", "syncId", syncID, "error", err)
+				return
+			}
+			if !sync.AutoSync {
+				return
+			}
+			if _, err := s.PerformSync(ctx, environmentID, syncID, systemUser); err != nil {
+				slog.ErrorContext(ctx, "gitops auto-sync run failed", "syncId", syncID, "error", err)
+			}
+		},
+	}
+}
+
+func (s *GitOpsSyncService) registerSyncJobInternal(ctx context.Context, syncID, environmentID string, intervalMinutes int) {
+	if s.scheduler == nil {
+		return
+	}
+	job := s.buildSyncJobInternal(syncID, environmentID, intervalMinutes)
+	schedulerCtx := s.schedulerCtxInternal(ctx)
+	if err := s.scheduler.AddJob(schedulerCtx, job); err != nil {
+		slog.ErrorContext(schedulerCtx, "Failed to register gitops sync job", "syncId", syncID, "error", err)
+	}
+}
+
+func (s *GitOpsSyncService) unregisterSyncJobInternal(ctx context.Context, syncID string) {
+	if s.scheduler == nil {
+		return
+	}
+	s.scheduler.RemoveJob(s.schedulerCtxInternal(ctx), gitOpsSyncJobNameInternal(syncID))
+}
+
+// kickSyncInternal runs a sync once in the background on the app lifecycle context.
+// Used when auto-sync is freshly enabled or when a sync is overdue at startup, so
+// the first run does not wait a full interval.
+func (s *GitOpsSyncService) kickSyncInternal(ctx context.Context, syncID, environmentID string) {
+	ctx = s.schedulerCtxInternal(ctx)
+	go func() {
+		if _, err := s.PerformSync(ctx, environmentID, syncID, systemUser); err != nil {
+			slog.ErrorContext(ctx, "gitops immediate sync kick failed", "syncId", syncID, "error", err)
+		}
+	}()
+}
+
+// RegisterAutoSyncJobsOnStartup registers a dynamic job for every auto-sync-enabled
+// sync and kicks an immediate run for any that are overdue. This replaces the old
+// global polling job so existing syncs keep running after upgrade.
+func (s *GitOpsSyncService) RegisterAutoSyncJobsOnStartup(ctx context.Context) {
+	if s.scheduler == nil {
+		return
+	}
+	var syncs []models.GitOpsSync
+	if err := s.db.WithContext(ctx).
+		Where("auto_sync = ?", true).
+		Find(&syncs).Error; err != nil {
+		slog.ErrorContext(ctx, "Failed to load auto-sync jobs on startup", "error", err)
+		return
+	}
+	for i := range syncs {
+		sync := syncs[i]
+		s.registerSyncJobInternal(ctx, sync.ID, sync.EnvironmentID, sync.SyncInterval)
+		if isGitOpsSyncOverdueInternal(&sync) {
+			s.kickSyncInternal(ctx, sync.ID, sync.EnvironmentID)
+		}
+	}
+	slog.InfoContext(ctx, "Registered gitops auto-sync jobs on startup", "count", len(syncs))
+}
+
+func isGitOpsSyncOverdueInternal(sync *models.GitOpsSync) bool {
+	if sync.LastSyncAt == nil {
+		return true
+	}
+	interval := max(sync.SyncInterval, 1)
+	return time.Now().After(sync.LastSyncAt.Add(time.Duration(interval) * time.Minute))
+}
+
+// acquireSyncLockInternal returns a release func and true when no sync is currently
+// running for the given id; otherwise it returns false and the caller should skip.
+func (s *GitOpsSyncService) acquireSyncLockInternal(syncID string) (func(), bool) {
+	if _, loaded := s.runningSyncs.LoadOrStore(syncID, struct{}{}); loaded {
+		return nil, false
+	}
+	return func() { s.runningSyncs.Delete(syncID) }, true
 }
 
 func (s *GitOpsSyncService) getEnvironmentSyncLimits(ctx context.Context) (int, int64, int64) {
@@ -305,6 +446,12 @@ func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string
 		// Don't fail the entire creation - the sync config exists and can be retried
 	}
 
+	// Register the recurring job if auto-sync is on. The initial sync above already
+	// ran once, so no extra kick is needed here.
+	if sync.AutoSync {
+		s.registerSyncJobInternal(ctx, sync.ID, sync.EnvironmentID, sync.SyncInterval)
+	}
+
 	return s.GetSyncByID(ctx, "", sync.ID)
 }
 
@@ -312,6 +459,17 @@ func (s *GitOpsSyncService) UpdateSync(ctx context.Context, environmentID, id st
 	sync, err := s.GetSyncByID(ctx, environmentID, id)
 	if err != nil {
 		return nil, err
+	}
+
+	// Capture state needed to reconcile the dynamic job after the update.
+	oldAutoSync := sync.AutoSync
+	newAutoSync := sync.AutoSync
+	if req.AutoSync != nil {
+		newAutoSync = *req.AutoSync
+	}
+	newInterval := sync.SyncInterval
+	if req.SyncInterval != nil {
+		newInterval = *req.SyncInterval
 	}
 
 	updates := make(map[string]any)
@@ -381,6 +539,18 @@ func (s *GitOpsSyncService) UpdateSync(ctx context.Context, environmentID, id st
 		})
 	}
 
+	// Reconcile the dynamic job to match the new state.
+	switch {
+	case newAutoSync:
+		s.registerSyncJobInternal(ctx, sync.ID, sync.EnvironmentID, newInterval)
+		if !oldAutoSync {
+			// Freshly enabled — kick a run now so it doesn't wait a full interval.
+			s.kickSyncInternal(ctx, sync.ID, sync.EnvironmentID)
+		}
+	default:
+		s.unregisterSyncJobInternal(ctx, sync.ID)
+	}
+
 	return s.GetSyncByID(ctx, environmentID, id)
 }
 
@@ -390,6 +560,10 @@ func (s *GitOpsSyncService) DeleteSync(ctx context.Context, environmentID, id st
 	if err != nil {
 		return err
 	}
+
+	// Stop the recurring job before the row goes away. Any in-flight run re-reads
+	// the sync and self-cancels once the row is gone.
+	s.unregisterSyncJobInternal(ctx, id)
 
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Clear gitops_managed_by for the associated project, if any.
@@ -406,6 +580,9 @@ func (s *GitOpsSyncService) DeleteSync(ctx context.Context, environmentID, id st
 		}
 		return nil
 	}); err != nil {
+		if sync.AutoSync {
+			s.registerSyncJobInternal(ctx, sync.ID, sync.EnvironmentID, sync.SyncInterval)
+		}
 		return err
 	}
 
@@ -427,6 +604,15 @@ func (s *GitOpsSyncService) DeleteSync(ctx context.Context, environmentID, id st
 }
 
 func (s *GitOpsSyncService) PerformSync(ctx context.Context, environmentID, id string, actor models.User) (*gitops.SyncResult, error) {
+	// Coalesce overlapping runs for the same sync (scheduled fire, startup/enable
+	// kick, manual trigger, webhook) so they don't race the clone/redeploy.
+	release, ok := s.acquireSyncLockInternal(id)
+	if !ok {
+		slog.InfoContext(ctx, "GitOps sync already in progress; skipping", "syncId", id)
+		return &gitops.SyncResult{Success: false, Message: "sync already in progress", SyncedAt: time.Now()}, nil
+	}
+	defer release()
+
 	syncCtx, cancel := context.WithTimeout(ctx, defaultGitSyncTimeout)
 	defer cancel()
 
@@ -710,41 +896,6 @@ func (s *GitOpsSyncService) GetSyncStatus(ctx context.Context, environmentID, id
 	}
 
 	return status, nil
-}
-
-func (s *GitOpsSyncService) SyncAllEnabled(ctx context.Context) error {
-	var syncs []scheduledGitOpsSync
-	if err := s.db.WithContext(ctx).
-		Table("gitops_syncs").
-		Select("id", "environment_id", "sync_interval", "last_sync_at").
-		Where("auto_sync = ?", true).
-		Find(&syncs).Error; err != nil {
-		return fmt.Errorf("failed to get auto-sync enabled syncs: %w", err)
-	}
-
-	for _, sync := range syncs {
-		// Check if sync is due
-		if sync.LastSyncAt != nil {
-			nextSync := sync.LastSyncAt.Add(time.Duration(sync.SyncInterval) * time.Minute)
-			// Use a 30-second buffer to account for execution time drift
-			if time.Now().Add(30 * time.Second).Before(nextSync) {
-				continue
-			}
-		}
-
-		// Perform sync
-		result, err := s.PerformSync(ctx, sync.EnvironmentID, sync.ID, systemUser)
-		if err != nil {
-			slog.ErrorContext(ctx, "Failed to sync", "syncId", sync.ID, "error", err)
-			continue
-		}
-
-		if result.Success {
-			slog.InfoContext(ctx, "Sync completed", "syncId", sync.ID, "message", result.Message)
-		}
-	}
-
-	return nil
 }
 
 func (s *GitOpsSyncService) ReconcileDirectorySyncProjectsOnStartup(ctx context.Context) error {

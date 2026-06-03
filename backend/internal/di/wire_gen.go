@@ -122,7 +122,6 @@ func InitializeJobs(ctx context.Context, cfg *config.Config, svcs *Services) *Jo
 	imageUpdateService := svcs.ImageUpdate
 	environmentService := svcs.Environment
 	imagePollingJob := scheduler.NewImagePollingJob(imageUpdateService, settingsService, environmentService)
-	environmentHealthJob := scheduler.NewEnvironmentHealthJob(environmentService, settingsService)
 	dockerClientService := svcs.Docker
 	dockerClientRefreshJob := scheduler.NewDockerClientRefreshJob(dockerClientService, settingsService)
 	kvService := svcs.KV
@@ -138,22 +137,18 @@ func InitializeJobs(ctx context.Context, cfg *config.Config, svcs *Services) *Jo
 	projectService := svcs.Project
 	templateService := svcs.Template
 	filesystemWatcherJob := provideFilesystemWatcherJobInternal(ctx, projectService, templateService, settingsService, cfg)
-	gitOpsSyncService := svcs.GitOpsSync
-	gitOpsSyncJob := scheduler.NewGitOpsSyncJob(gitOpsSyncService, settingsService)
 	vulnerabilityService := svcs.Vulnerability
 	vulnerabilityScanJob := scheduler.NewVulnerabilityScanJob(vulnerabilityService, settingsService)
 	autoHealJob := scheduler.NewAutoHealJob(dockerClientService, settingsService, eventService, notificationService)
 	jobs := &Jobs{
 		AutoUpdate:             autoUpdateJob,
 		ImagePolling:           imagePollingJob,
-		EnvironmentHealth:      environmentHealthJob,
 		DockerClientRefresh:    dockerClientRefreshJob,
 		Analytics:              analyticsJob,
 		EventCleanup:           eventCleanupJob,
 		ExpiredSessionsCleanup: expiredSessionsCleanupJob,
 		ScheduledPrune:         scheduledPruneJob,
 		FilesystemWatcher:      filesystemWatcherJob,
-		GitOpsSync:             gitOpsSyncJob,
 		VulnerabilityScan:      vulnerabilityScanJob,
 		AutoHeal:               autoHealJob,
 	}
@@ -186,6 +181,6 @@ var ServiceSet = wire.NewSet(
 var JobSet = wire.NewSet(wire.FieldsOf(new(*Services),
 	"Updater", "Settings", "ImageUpdate", "Environment", "Docker", "KV",
 	"Event", "Activity", "Session", "System", "Notification", "Project",
-	"Template", "GitOpsSync", "Vulnerability",
-), scheduler.NewAutoUpdateJob, scheduler.NewImagePollingJob, scheduler.NewEnvironmentHealthJob, scheduler.NewDockerClientRefreshJob, provideAnalyticsJobInternal, scheduler.NewEventCleanupJob, scheduler.NewExpiredSessionsCleanupJob, scheduler.NewScheduledPruneJob, provideFilesystemWatcherJobInternal, scheduler.NewGitOpsSyncJob, scheduler.NewVulnerabilityScanJob, scheduler.NewAutoHealJob, wire.Struct(new(Jobs), "*"),
+	"Template", "Vulnerability",
+), scheduler.NewAutoUpdateJob, scheduler.NewImagePollingJob, scheduler.NewDockerClientRefreshJob, provideAnalyticsJobInternal, scheduler.NewEventCleanupJob, scheduler.NewExpiredSessionsCleanupJob, scheduler.NewScheduledPruneJob, provideFilesystemWatcherJobInternal, scheduler.NewVulnerabilityScanJob, scheduler.NewAutoHealJob, wire.Struct(new(Jobs), "*"),
 )
