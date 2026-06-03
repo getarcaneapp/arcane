@@ -1342,7 +1342,18 @@ func isDistributionFallbackEligibleInternal(err error) bool {
 		return false
 	}
 
-	return updaterregistry.IsFallbackEligibleDaemonError(err)
+	if updaterregistry.IsFallbackEligibleDaemonError(err) {
+		return true
+	}
+
+	if isUnauthorizedRegistryErrorInternal(err) {
+		return false
+	}
+
+	errLower := strings.ToLower(err.Error())
+	return strings.Contains(errLower, "context deadline exceeded") ||
+		strings.Contains(errLower, "client.timeout exceeded") ||
+		strings.Contains(errLower, "i/o timeout")
 }
 
 func (s *ContainerRegistryService) fetchDigestFromRegistryInternal(ctx context.Context, registryHost, repository, tag string, credential *resolvedRegistryCredential) (string, error) {
