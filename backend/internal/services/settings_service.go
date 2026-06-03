@@ -141,7 +141,6 @@ func DefaultSettingsConfig() *models.Settings {
 		AutoHealExcludedContainers:          models.SettingVariable{Value: ""},
 		AutoHealMaxRestarts:                 models.SettingVariable{Value: "5"},
 		AutoHealRestartWindow:               models.SettingVariable{Value: "30"},
-		GitopsSyncInterval:                  models.SettingVariable{Value: "0 */1 * * * *"},
 		BaseServerURL:                       models.SettingVariable{Value: "http://localhost"},
 		EnableGravatar:                      models.SettingVariable{Value: "true"},
 		DefaultShell:                        models.SettingVariable{Value: "/bin/sh"},

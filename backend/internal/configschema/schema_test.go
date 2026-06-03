@@ -301,7 +301,6 @@ var expectedSettingOverrideKeys = []string{
 	"gitSyncMaxBinarySizeMb",
 	"gitSyncMaxFiles",
 	"gitSyncMaxTotalSizeMb",
-	"gitopsSyncInterval",
 	"httpClientTimeout",
 	"keyboardShortcutsEnabled",
 	"maxImageUploadSize",
