@@ -43,7 +43,7 @@ func InitializeServices(ctx context.Context, db *database.DB, cfg *config.Config
 	imageService := services.NewImageService(db, dockerClientService, containerRegistryService, imageUpdateService, vulnerabilityService, eventService)
 	gitRepositoryService := provideGitRepositoryServiceInternal(db, cfg, eventService, settingsService)
 	buildService := services.NewBuildService(db, settingsService, dockerClientService, containerRegistryService, gitRepositoryService, eventService)
-	projectService := services.NewProjectService(db, settingsService, eventService, imageService, dockerClientService, buildService, cfg)
+	projectService := provideProjectServiceInternal(db, settingsService, eventService, imageService, dockerClientService, buildService, environmentService, cfg)
 	jobService := services.NewJobService(db, settingsService, cfg)
 	settingsSearchService := services.NewSettingsSearchService()
 	customizeSearchService := services.NewCustomizeSearchService()
@@ -166,7 +166,7 @@ func InitializeJobs(ctx context.Context, cfg *config.Config, svcs *Services) *Jo
 // no longer maintained by hand. wire.Struct assembles the aggregate Services.
 var ServiceSet = wire.NewSet(
 
-	provideResourcesFSInternal, services.NewEventService, services.NewActivityService, services.NewSettingsService, services.NewKVService, services.NewJobService, services.NewSettingsSearchService, services.NewCustomizeSearchService, services.NewApplicationImagesService, services.NewDockerClientService, services.NewRoleService, services.NewSessionService, services.NewEnvironmentService, services.NewNotificationService, services.NewVulnerabilityService, services.NewImageUpdateService, services.NewImageService, services.NewBuildService, services.NewBuildWorkspaceService, services.NewProjectService, services.NewContainerService, services.NewDashboardService, services.NewNetworkService, services.NewPortService, services.NewSwarmService, services.NewTemplateService, services.NewOidcService, services.NewSystemService, services.NewSystemUpgradeService, services.NewDiagnosticsService, services.NewGitOpsSyncService, services.NewWebhookService, provideVersionServiceInternal,
+	provideResourcesFSInternal, services.NewEventService, services.NewActivityService, services.NewSettingsService, services.NewKVService, services.NewJobService, services.NewSettingsSearchService, services.NewCustomizeSearchService, services.NewApplicationImagesService, services.NewDockerClientService, services.NewRoleService, services.NewSessionService, services.NewEnvironmentService, services.NewNotificationService, services.NewVulnerabilityService, services.NewImageUpdateService, services.NewImageService, services.NewBuildService, services.NewBuildWorkspaceService, provideProjectServiceInternal, services.NewContainerService, services.NewDashboardService, services.NewNetworkService, services.NewPortService, services.NewSwarmService, services.NewTemplateService, services.NewOidcService, services.NewSystemService, services.NewSystemUpgradeService, services.NewDiagnosticsService, services.NewGitOpsSyncService, services.NewWebhookService, provideVersionServiceInternal,
 	provideGitRepositoryServiceInternal,
 	provideVolumeServiceInternal,
 	provideAuthServiceInternal,

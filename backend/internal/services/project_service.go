@@ -42,18 +42,21 @@ import (
 )
 
 type ProjectService struct {
-	db              *database.DB
-	settingsService *SettingsService
-	eventService    *EventService
-	imageService    *ImageService
-	dockerService   *DockerClientService
-	buildService    *BuildService
-	config          *config.Config
+	db                          *database.DB
+	settingsService             *SettingsService
+	eventService                *EventService
+	imageService                *ImageService
+	dockerService               *DockerClientService
+	buildService                *BuildService
+	config                      *config.Config
+	registryCredentialsProvider registryCredentialsProviderInternal
 
 	composeNameCacheMu  sync.RWMutex
 	composeNameToProjID map[string]string
 	composeCache        *cache.KeyedCache[string, composeCacheEntry]
 }
+
+type registryCredentialsProviderInternal func(context.Context) ([]containerregistry.Credential, error)
 
 type composeCacheEntry struct {
 	composePath   string
@@ -73,6 +76,27 @@ func NewProjectService(db *database.DB, settingsService *SettingsService, eventS
 		config:          cfg,
 		composeCache:    cache.NewKeyed[string, composeCacheEntry](),
 	}
+}
+
+func (s *ProjectService) WithRegistryCredentialsProvider(provider func(context.Context) ([]containerregistry.Credential, error)) *ProjectService {
+	if s == nil {
+		return nil
+	}
+	s.registryCredentialsProvider = provider
+	return s
+}
+
+func (s *ProjectService) resolveRegistryCredentialsInternal(ctx context.Context) ([]containerregistry.Credential, error) {
+	if s == nil || s.registryCredentialsProvider == nil {
+		return nil, nil
+	}
+
+	credentials, err := s.registryCredentialsProvider(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get enabled registry credentials: %w", err)
+	}
+
+	return credentials, nil
 }
 
 func (s *ProjectService) getPathMapper(ctx context.Context) *projects.PathMapper {
@@ -203,7 +227,6 @@ const (
 )
 
 var (
-	composePullProjectServicesInternal = projects.ComposePull
 	composeStopProjectServicesInternal = projects.ComposeStop
 	composeUpProjectServicesInternal   = projects.ComposeUp
 )
@@ -686,17 +709,29 @@ func (s *ProjectService) reconcilePulledImageRefsInternal(ctx context.Context, i
 	}
 }
 
-func (s *ProjectService) composePullSelectedServicesInternal(ctx context.Context, compProj *composetypes.Project, servicesToUpdate []string) error {
+func (s *ProjectService) composePullSelectedServicesInternal(
+	ctx context.Context,
+	compProj *composetypes.Project,
+	servicesToUpdate []string,
+	user models.User,
+	credentials []containerregistry.Credential,
+) error {
 	if compProj == nil {
 		return nil
 	}
 
-	imageRefsToReconcile := buildSelectedProjectImageRefsInternal(compProj, servicesToUpdate)
-	if err := composePullProjectServicesInternal(ctx, compProj, servicesToUpdate); err != nil {
-		return err
+	imageRefsToPull := buildSelectedProjectImageRefsInternal(compProj, servicesToUpdate)
+	if len(imageRefsToPull) == 0 {
+		return nil
 	}
 
-	s.reconcilePulledImageRefsInternal(ctx, imageRefsToReconcile)
+	progressWriter, _ := ctx.Value(projects.ProgressWriterKey{}).(io.Writer)
+	for _, imageRef := range imageRefsToPull {
+		if err := s.pullAndReconcileImageInternal(ctx, imageRef, progressWriter, user, credentials); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -707,6 +742,10 @@ func (s *ProjectService) pullAndReconcileImageInternal(
 	user models.User,
 	credentials []containerregistry.Credential,
 ) error {
+	if s == nil || s.imageService == nil {
+		return errors.New("image service not available")
+	}
+
 	settings := s.settingsService.GetSettingsConfig()
 
 	pullCtx, pullCancel := timeouts.WithTimeout(ctx, settings.DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull)
@@ -761,9 +800,17 @@ func (s *ProjectService) UpdateProjectServices(ctx context.Context, projectID st
 		return err
 	}
 
+	credentials, err := s.resolveRegistryCredentialsInternal(ctx)
+	if err != nil {
+		if statusErr := s.updateProjectStatusInternal(ctx, projectID, previousStatus); statusErr != nil {
+			slog.ErrorContext(ctx, "UpdateProjectServices: failed to restore project status after credential lookup failure", "projectID", projectID, "error", statusErr)
+		}
+		return fmt.Errorf("resolve registry credentials: %w", err)
+	}
+
 	// 3. Pull images for specific services
 	writeProjectProgressInternal(ctx, "Pulling updated service images", 20, "pull")
-	if err := s.composePullSelectedServicesInternal(ctx, compProj, servicesToUpdate); err != nil {
+	if err := s.composePullSelectedServicesInternal(ctx, compProj, servicesToUpdate, user, credentials); err != nil {
 		if statusErr := s.updateProjectStatusInternal(ctx, projectID, previousStatus); statusErr != nil {
 			slog.ErrorContext(ctx, "UpdateProjectServices: failed to restore project status after compose pull failure", "projectID", projectID, "error", statusErr)
 		}

@@ -25,6 +25,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/pkg/projects"
 	buildtypes "github.com/getarcaneapp/arcane/types/builds"
+	"github.com/getarcaneapp/arcane/types/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
 	projecttypes "github.com/getarcaneapp/arcane/types/project"
 	libupdater "github.com/getarcaneapp/updater/pkg/labels"
@@ -73,6 +74,10 @@ func setupProjectTestDB(t *testing.T) *database.DB {
 }
 
 func newProjectImagePullServer(t *testing.T, inspectByRef map[string]dockertypesimage.InspectResponse) *httptest.Server {
+	return newProjectImagePullServerWithObserverInternal(t, inspectByRef, nil)
+}
+
+func newProjectImagePullServerWithObserverInternal(t *testing.T, inspectByRef map[string]dockertypesimage.InspectResponse, onPull func(fullRef string, authHeader string)) *httptest.Server {
 	t.Helper()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -86,6 +91,9 @@ func newProjectImagePullServer(t *testing.T, inspectByRef map[string]dockertypes
 				if lastColon <= lastSlash {
 					fullRef += ":" + tag
 				}
+			}
+			if onPull != nil {
+				onPull(fullRef, strings.TrimSpace(r.Header.Get("X-Registry-Auth")))
 			}
 
 			w.Header().Set("Content-Type", "application/json")
@@ -758,17 +766,31 @@ func TestProjectService_ComposePullSelectedServicesInternal_ReconcilesOnlyOnSucc
 	settingsService, err := NewSettingsService(ctx, db)
 	require.NoError(t, err)
 
-	imageRef := "registry.example.com/team/app:9.9.9"
-	repository := "registry.example.com/team/app"
-	imageID := "sha256:team-app-compose"
-	imageDigest := digest.FromString("team-app-compose-digest").String()
+	privateImageRef := "registry.example.com/team/app:9.9.9"
+	privateRepository := "registry.example.com/team/app"
+	privateImageID := "sha256:team-app-compose"
+	privateImageDigest := digest.FromString("team-app-compose-digest").String()
+	publicImageRef := "docker.io/library/nginx:1.27"
+	publicRepository := "docker.io/library/nginx"
+	publicImageID := "sha256:nginx-compose"
+	publicImageDigest := digest.FromString("nginx-compose-digest").String()
 
-	server := newProjectImagePullServer(t, map[string]dockertypesimage.InspectResponse{
-		imageRef: {
-			ID:          imageID,
-			RepoTags:    []string{imageRef},
-			RepoDigests: []string{repository + "@" + imageDigest},
+	pullsByRef := map[string]int{}
+	authHeadersByRef := map[string]string{}
+	server := newProjectImagePullServerWithObserverInternal(t, map[string]dockertypesimage.InspectResponse{
+		privateImageRef: {
+			ID:          privateImageID,
+			RepoTags:    []string{privateImageRef},
+			RepoDigests: []string{privateRepository + "@" + privateImageDigest},
 		},
+		publicImageRef: {
+			ID:          publicImageID,
+			RepoTags:    []string{publicImageRef},
+			RepoDigests: []string{publicRepository + "@" + publicImageDigest},
+		},
+	}, func(fullRef string, authHeader string) {
+		pullsByRef[fullRef]++
+		authHeadersByRef[fullRef] = authHeader
 	})
 
 	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
@@ -782,11 +804,15 @@ func TestProjectService_ComposePullSelectedServicesInternal_ReconcilesOnlyOnSucc
 		Services: composetypes.Services{
 			"app": {
 				Name:  "app",
-				Image: imageRef,
+				Image: privateImageRef,
+			},
+			"app-copy": {
+				Name:  "app-copy",
+				Image: privateImageRef,
 			},
 			"sidecar": {
 				Name:  "sidecar",
-				Image: "registry.example.com/team/sidecar:1.0.0",
+				Image: publicImageRef,
 			},
 			"builder": {
 				Name:  "builder",
@@ -798,7 +824,7 @@ func TestProjectService_ComposePullSelectedServicesInternal_ReconcilesOnlyOnSucc
 	now := time.Now().UTC().Add(-time.Hour)
 	require.NoError(t, db.Create(&models.ImageUpdateRecord{
 		ID:             "sha256:selected-old",
-		Repository:     repository,
+		Repository:     privateRepository,
 		Tag:            "9.9.9",
 		HasUpdate:      true,
 		UpdateType:     models.UpdateTypeDigest,
@@ -807,23 +833,31 @@ func TestProjectService_ComposePullSelectedServicesInternal_ReconcilesOnlyOnSucc
 	}).Error)
 	require.NoError(t, db.Create(&models.ImageUpdateRecord{
 		ID:             "sha256:sidecar-old",
-		Repository:     "registry.example.com/team/sidecar",
-		Tag:            "1.0.0",
+		Repository:     publicRepository,
+		Tag:            "1.27",
 		HasUpdate:      true,
 		UpdateType:     models.UpdateTypeDigest,
-		CurrentVersion: "1.0.0",
+		CurrentVersion: "1.27",
 		CheckTime:      now,
 	}).Error)
 
-	originalComposePull := composePullProjectServicesInternal
-	t.Cleanup(func() { composePullProjectServicesInternal = originalComposePull })
+	credentials := []containerregistry.Credential{{
+		URL:      "https://registry.example.com",
+		Username: "arcane-user",
+		Token:    "arcane-token",
+		Enabled:  true,
+	}}
 
-	composePullProjectServicesInternal = func(_ context.Context, _ *composetypes.Project, services []string) error {
-		assert.Equal(t, []string{"app"}, services)
-		return nil
-	}
+	require.NoError(t, svc.composePullSelectedServicesInternal(ctx, projectDef, []string{"app", "app-copy", "sidecar", "builder"}, systemUser, credentials))
+	assert.Equal(t, 1, pullsByRef[privateImageRef], "duplicate service refs should only be pulled once")
+	assert.Equal(t, 1, pullsByRef[publicImageRef], "selected public image should still be pulled")
+	assert.Len(t, pullsByRef, 2, "build-backed services should not trigger image pulls")
 
-	require.NoError(t, svc.composePullSelectedServicesInternal(ctx, projectDef, []string{"app"}))
+	privateAuth := decodeRegistryAuth(t, authHeadersByRef[privateImageRef])
+	assert.Equal(t, "arcane-user", privateAuth.Username)
+	assert.Equal(t, "arcane-token", privateAuth.Password)
+	assert.Equal(t, "registry.example.com", privateAuth.ServerAddress)
+	assert.Empty(t, authHeadersByRef[publicImageRef], "public image pull should not receive unrelated registry auth")
 
 	// sha256:selected-old may still be used by another container — must not be cleared (fixes #2453).
 	var selectedRecord models.ImageUpdateRecord
@@ -834,10 +868,15 @@ func TestProjectService_ComposePullSelectedServicesInternal_ReconcilesOnlyOnSucc
 	require.NoError(t, db.WithContext(ctx).Where("id = ?", "sha256:sidecar-old").First(&sidecarRecord).Error)
 	assert.True(t, sidecarRecord.HasUpdate)
 
-	var currentRecord models.ImageUpdateRecord
-	require.NoError(t, db.WithContext(ctx).Where("id = ?", imageID).First(&currentRecord).Error)
-	assert.False(t, currentRecord.HasUpdate)
-	assert.Equal(t, imageDigest, stringPtrToString(currentRecord.LatestDigest))
+	var privateCurrentRecord models.ImageUpdateRecord
+	require.NoError(t, db.WithContext(ctx).Where("id = ?", privateImageID).First(&privateCurrentRecord).Error)
+	assert.False(t, privateCurrentRecord.HasUpdate)
+	assert.Equal(t, privateImageDigest, stringPtrToString(privateCurrentRecord.LatestDigest))
+
+	var publicCurrentRecord models.ImageUpdateRecord
+	require.NoError(t, db.WithContext(ctx).Where("id = ?", publicImageID).First(&publicCurrentRecord).Error)
+	assert.False(t, publicCurrentRecord.HasUpdate)
+	assert.Equal(t, publicImageDigest, stringPtrToString(publicCurrentRecord.LatestDigest))
 }
 
 func TestProjectService_ComposePullSelectedServicesInternal_LeavesRecordsWhenPullFails(t *testing.T) {
@@ -850,7 +889,16 @@ func TestProjectService_ComposePullSelectedServicesInternal_LeavesRecordsWhenPul
 	imageRef := "registry.example.com/team/app:9.9.9"
 	repository := "registry.example.com/team/app"
 
-	dockerService := &DockerClientService{}
+	failingServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/images/create") {
+			http.Error(w, "pull failed", http.StatusUnauthorized)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(failingServer.Close)
+
+	dockerService := &DockerClientService{client: newTestDockerClient(t, failingServer)}
 	imageUpdateService := NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
 	imageService := NewImageService(db, dockerService, nil, imageUpdateService, nil, NewEventService(db, nil, nil))
 	svc := NewProjectService(db, settingsService, nil, imageService, dockerService, nil, config.Load())
@@ -875,16 +923,9 @@ func TestProjectService_ComposePullSelectedServicesInternal_LeavesRecordsWhenPul
 		CheckTime:      time.Now().UTC().Add(-time.Hour),
 	}).Error)
 
-	originalComposePull := composePullProjectServicesInternal
-	t.Cleanup(func() { composePullProjectServicesInternal = originalComposePull })
-
-	composePullProjectServicesInternal = func(context.Context, *composetypes.Project, []string) error {
-		return errors.New("compose pull failed")
-	}
-
-	err = svc.composePullSelectedServicesInternal(ctx, projectDef, []string{"app"})
+	err = svc.composePullSelectedServicesInternal(ctx, projectDef, []string{"app"}, systemUser, nil)
 	require.Error(t, err)
-	assert.ErrorContains(t, err, "compose pull failed")
+	assert.ErrorContains(t, err, "failed to pull image")
 
 	var selectedRecord models.ImageUpdateRecord
 	require.NoError(t, db.WithContext(ctx).Where("id = ?", "sha256:selected-old").First(&selectedRecord).Error)
@@ -905,8 +946,22 @@ func TestProjectService_UpdateProjectServicesHardFailsWhenPullFailsInternal(t *t
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
+	imageRef := "registry.example.com/team/app:9.9.9"
+	failingServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/images/create") {
+			http.Error(w, "compose pull failed", http.StatusUnauthorized)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(failingServer.Close)
+
+	dockerService := &DockerClientService{client: newTestDockerClient(t, failingServer)}
+	imageUpdateService := NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
+	imageService := NewImageService(db, dockerService, nil, imageUpdateService, nil, NewEventService(db, nil, nil))
+
 	projectPath := createComposeProjectDir(t, projectsDir, "compose-update-pull-fail")
-	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("services:\n  app:\n    image: registry.example.com/team/app:9.9.9\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("services:\n  app:\n    image: "+imageRef+"\n"), 0o644))
 
 	projectRecord := &models.Project{
 		BaseModel: models.BaseModel{ID: "project-update-pull-fail"},
@@ -926,23 +981,17 @@ func TestProjectService_UpdateProjectServicesHardFailsWhenPullFailsInternal(t *t
 		CheckTime:      time.Now().UTC().Add(-time.Hour),
 	}).Error)
 
-	originalComposePull := composePullProjectServicesInternal
 	originalComposeUp := composeUpProjectServicesInternal
 	t.Cleanup(func() {
-		composePullProjectServicesInternal = originalComposePull
 		composeUpProjectServicesInternal = originalComposeUp
 	})
-
-	composePullProjectServicesInternal = func(context.Context, *composetypes.Project, []string) error {
-		return errors.New("compose pull failed")
-	}
 	upCalled := false
 	composeUpProjectServicesInternal = func(context.Context, *composetypes.Project, []string, bool, bool) error {
 		upCalled = true
 		return errors.New("compose up should not run")
 	}
 
-	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, nil, imageService, dockerService, nil, config.Load())
 	err = svc.UpdateProjectServices(ctx, projectRecord.ID, []string{"app"}, systemUser)
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "pull updated service images")
@@ -967,8 +1016,25 @@ func TestProjectService_UpdateProjectServicesForcesRecreateInternal(t *testing.T
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
+	imageRef := "registry.example.com/team/app:9.9.9"
+	repository := "registry.example.com/team/app"
+	imageID := "sha256:project-update-force"
+	imageDigest := digest.FromString("project-update-force-digest").String()
+
+	server := newProjectImagePullServer(t, map[string]dockertypesimage.InspectResponse{
+		imageRef: {
+			ID:          imageID,
+			RepoTags:    []string{imageRef},
+			RepoDigests: []string{repository + "@" + imageDigest},
+		},
+	})
+
+	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
+	imageUpdateService := NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
+	imageService := NewImageService(db, dockerService, nil, imageUpdateService, nil, NewEventService(db, nil, nil))
+
 	projectPath := createComposeProjectDir(t, projectsDir, "compose-update-force")
-	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("services:\n  app:\n    image: registry.example.com/team/app:9.9.9\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("services:\n  app:\n    image: "+imageRef+"\n"), 0o644))
 
 	projectRecord := &models.Project{
 		BaseModel: models.BaseModel{ID: "project-update-force"},
@@ -979,18 +1045,12 @@ func TestProjectService_UpdateProjectServicesForcesRecreateInternal(t *testing.T
 	}
 	require.NoError(t, db.Create(projectRecord).Error)
 
-	originalComposePull := composePullProjectServicesInternal
 	originalComposeStop := composeStopProjectServicesInternal
 	originalComposeUp := composeUpProjectServicesInternal
 	t.Cleanup(func() {
-		composePullProjectServicesInternal = originalComposePull
 		composeStopProjectServicesInternal = originalComposeStop
 		composeUpProjectServicesInternal = originalComposeUp
 	})
-
-	composePullProjectServicesInternal = func(context.Context, *composetypes.Project, []string) error {
-		return nil
-	}
 	composeStopProjectServicesInternal = func(context.Context, *composetypes.Project, []string) error {
 		return nil
 	}
@@ -1004,7 +1064,7 @@ func TestProjectService_UpdateProjectServicesForcesRecreateInternal(t *testing.T
 		return errors.New("compose up failed after assertion")
 	}
 
-	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, nil, imageService, dockerService, nil, config.Load())
 	err = svc.UpdateProjectServices(ctx, projectRecord.ID, []string{"app"}, systemUser)
 	require.Error(t, err)
 	assert.True(t, upCalled)
