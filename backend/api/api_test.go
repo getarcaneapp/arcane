@@ -168,3 +168,15 @@ func TestSetupAPIForSpec_TemplateReadRoutesProtected(t *testing.T) {
 		})
 	}
 }
+
+func TestSetupAPIForSpec_DoesNotRegisterPublicCreateEvent(t *testing.T) {
+	api := SetupAPIForSpec()
+
+	pathItem := api.OpenAPI().Paths["/events"]
+	if pathItem == nil {
+		t.Fatal("expected /events path to be registered for list events")
+	}
+	if pathItem.Post != nil {
+		t.Fatal("expected POST /events to be absent from the public API")
+	}
+}

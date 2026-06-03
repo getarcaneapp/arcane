@@ -152,10 +152,10 @@ func legacyRolesContainsAdminInternal(raw string) bool {
 }
 
 // AssertGlobalAdminExists returns a *common.NoGlobalAdminRemainsError if zero
-// users hold a globally-scoped Admin role assignment. Called at boot after the
-// backfill migration; also called from inside mutation paths.
+// non-service users resolve to global administrator permissions. Called at boot
+// after the backfill migration; also called from inside mutation paths.
 func (s *RoleService) AssertGlobalAdminExists(ctx context.Context) error {
-	count, err := s.countGlobalAdminsInternal(ctx, s.db.WithContext(ctx))
+	count, err := s.countEffectiveGlobalAdminsInternal(ctx, s.db.WithContext(ctx), "")
 	if err != nil {
 		return err
 	}
@@ -458,7 +458,7 @@ func (s *RoleService) SetUserAssignments(ctx context.Context, userID string, des
 				return fmt.Errorf("failed to insert assignments: %w", err)
 			}
 		}
-		count, err := s.countGlobalAdminsInternal(ctx, tx)
+		count, err := s.countEffectiveGlobalAdminsInternal(ctx, tx, "")
 		if err != nil {
 			return err
 		}
@@ -547,7 +547,7 @@ func (s *RoleService) ReplaceOidcAssignments(ctx context.Context, userID string,
 				return fmt.Errorf("failed to insert oidc assignments: %w", err)
 			}
 		}
-		count, err := s.countGlobalAdminsInternal(ctx, tx)
+		count, err := s.countEffectiveGlobalAdminsInternal(ctx, tx, "")
 		if err != nil {
 			return err
 		}
@@ -563,33 +563,55 @@ func (s *RoleService) ReplaceOidcAssignments(ctx context.Context, userID string,
 	return nil
 }
 
-// CountGlobalAdminsExcludingUser returns the number of distinct users (other
-// than excludedUserID) that hold a global Admin assignment. Used as the
-// authoritative check for "removing this user / demoting this assignment
-// would leave the system with no admin."
+// CountGlobalAdminsExcludingUser returns the number of non-service users (other
+// than excludedUserID) whose resolved global permissions satisfy IsGlobalAdmin.
+// Used as the authoritative check for "removing this user / demoting this
+// assignment would leave the system with no admin."
 func (s *RoleService) CountGlobalAdminsExcludingUser(ctx context.Context, excludedUserID string) (int, error) {
-	var count int64
-	if err := s.db.WithContext(ctx).
-		Table("user_role_assignments AS ura").
-		Joins("JOIN users ON users.id = ura.user_id").
-		Distinct("ura.user_id").
-		Where("ura.role_id = ? AND ura.environment_id IS NULL AND ura.user_id <> ? AND users.is_service_account = ?", authz.BuiltInRoleAdmin, excludedUserID, false).
-		Count(&count).Error; err != nil {
-		return 0, fmt.Errorf("failed to count global admins: %w", err)
-	}
-	return int(count), nil
+	return s.countEffectiveGlobalAdminsInternal(ctx, s.db.WithContext(ctx), excludedUserID)
 }
 
-func (s *RoleService) countGlobalAdminsInternal(_ context.Context, tx *gorm.DB) (int, error) {
-	var count int64
-	if err := tx.Table("user_role_assignments AS ura").
-		Joins("JOIN users ON users.id = ura.user_id").
-		Distinct("ura.user_id").
-		Where("ura.role_id = ? AND ura.environment_id IS NULL AND users.is_service_account = ?", authz.BuiltInRoleAdmin, false).
-		Count(&count).Error; err != nil {
-		return 0, fmt.Errorf("failed to count global admins: %w", err)
+func (s *RoleService) countEffectiveGlobalAdminsInternal(ctx context.Context, tx *gorm.DB, excludedUserID string) (int, error) {
+	type globalPermissionRow struct {
+		UserID      string `gorm:"column:user_id"`
+		Permissions string `gorm:"column:permissions"`
 	}
-	return int(count), nil
+
+	var rows []globalPermissionRow
+	query := tx.WithContext(ctx).
+		Table("users AS u").
+		Select("u.id AS user_id, r.permissions AS permissions").
+		Joins("INNER JOIN user_role_assignments ura ON ura.user_id = u.id AND ura.environment_id IS NULL").
+		Joins("INNER JOIN roles r ON r.id = ura.role_id").
+		Where("u.is_service_account = ?", false)
+	if strings.TrimSpace(excludedUserID) != "" {
+		query = query.Where("u.id <> ?", excludedUserID)
+	}
+	if err := query.Scan(&rows).Error; err != nil {
+		return 0, fmt.Errorf("failed to list global role permissions for admin count: %w", err)
+	}
+
+	permissionsByUser := make(map[string]*authz.PermissionSet, len(rows))
+	for _, r := range rows {
+		ps := permissionsByUser[r.UserID]
+		if ps == nil {
+			ps = authz.NewPermissionSet()
+			permissionsByUser[r.UserID] = ps
+		}
+		perms, err := decodePermissionsJSONInternal(r.Permissions)
+		if err != nil {
+			return 0, fmt.Errorf("failed to decode role permissions: %w", err)
+		}
+		ps.AddGlobal(perms...)
+	}
+
+	count := 0
+	for _, ps := range permissionsByUser {
+		if ps.IsGlobalAdmin() {
+			count++
+		}
+	}
+	return count, nil
 }
 
 // ---------- Permission resolution ----------
