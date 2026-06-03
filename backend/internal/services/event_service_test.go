@@ -12,7 +12,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/types/event"
+	pkgutils "github.com/getarcaneapp/arcane/backend/pkg/utils"
 	glsqlite "github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -182,14 +182,14 @@ func TestEventService_CreateEvent_ForwardsToManagerAPIInAgentMode(t *testing.T) 
 	ctx := context.Background()
 	db := setupEventServiceTestDB(t)
 
-	requests := make(chan event.CreateEvent, 1)
+	requests := make(chan CreateEventRequest, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, http.MethodPost, r.Method)
 		require.Equal(t, "/api/events", r.URL.Path)
-		require.Equal(t, "test-agent-token", r.Header.Get("X-API-Key"))
+		require.Equal(t, "test-agent-token", r.Header.Get(pkgutils.HeaderAgentToken))
 
 		defer func() { _ = r.Body.Close() }()
-		var payload event.CreateEvent
+		var payload CreateEventRequest
 		require.NoError(t, json.NewDecoder(r.Body).Decode(&payload))
 
 		select {
@@ -220,8 +220,8 @@ func TestEventService_CreateEvent_ForwardsToManagerAPIInAgentMode(t *testing.T) 
 
 	select {
 	case payload := <-requests:
-		require.Equal(t, string(models.EventTypeContainerStart), payload.Type)
-		require.Equal(t, string(models.EventSeverityInfo), payload.Severity)
+		require.Equal(t, models.EventTypeContainerStart, payload.Type)
+		require.Equal(t, models.EventSeverityInfo, payload.Severity)
 		require.Equal(t, "Container started: web", payload.Title)
 		require.NotNil(t, payload.EnvironmentID)
 		require.Equal(t, "0", *payload.EnvironmentID)

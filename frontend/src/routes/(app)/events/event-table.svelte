@@ -269,7 +269,7 @@
 					{m.common_view_details()}
 				</DropdownMenu.Item>
 
-				<IfPermitted perm="events:read">
+				<IfPermitted perm="events:delete">
 					<DropdownMenu.Separator />
 
 					<DropdownMenu.Item

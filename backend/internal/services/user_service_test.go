@@ -109,3 +109,28 @@ func TestListUsersPaginatedSetsCanDeleteFromGlobalAdminCount(t *testing.T) {
 	require.False(t, canDeleteByID[lastAdmin.ID])
 	require.True(t, canDeleteByID[nonAdmin.ID])
 }
+
+func TestDeleteUserRejectsDeletingOnlyCustomAllPermissionsAdmin(t *testing.T) {
+	userSvc, roleSvc := setupUserAndRoleServices(t)
+	ctx := context.Background()
+
+	customAdmin := createTestUser(t, userSvc, "custom-admin", "custom-admin")
+	customRole, err := roleSvc.CreateRole(ctx, "Custom Admin", nil, authz.AllPermissions())
+	require.NoError(t, err)
+	require.NoError(t, roleSvc.SetUserAssignments(ctx, customAdmin.ID, []models.UserRoleAssignment{
+		{RoleID: customRole.ID, EnvironmentID: nil},
+	}))
+
+	err = userSvc.DeleteUser(ctx, customAdmin.ID)
+	require.ErrorIs(t, err, ErrCannotRemoveLastAdmin)
+
+	users, _, err := userSvc.ListUsersPaginated(ctx, pagination.QueryParams{
+		Params:     pagination.Params{Start: 0, Limit: 20},
+		SortParams: pagination.SortParams{Sort: "Username", Order: pagination.SortOrder("asc")},
+		Filters:    map[string]string{},
+	})
+	require.NoError(t, err)
+	require.Len(t, users, 1)
+	require.False(t, users[0].CanDelete)
+	require.True(t, users[0].IsGlobalAdmin)
+}

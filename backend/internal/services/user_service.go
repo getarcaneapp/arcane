@@ -334,22 +334,15 @@ func (s *UserService) CreateDefaultAdmin(ctx context.Context) error {
 }
 
 func (s *UserService) DeleteUser(ctx context.Context, id string) error {
-	// Last-admin guard: if this user holds the only global Admin assignment,
-	// refuse the delete. Checked OUTSIDE the transaction because RoleService
-	// uses its own session — and the guard is informational only (the unique
-	// index in user_role_assignments wouldn't catch this cross-row condition).
+	// Last-admin guard: if this user's effective permissions make them the only
+	// global admin, refuse the delete. Checked outside the transaction because
+	// RoleService uses its own session and the guard spans rows.
 	if s.roleService != nil {
-		var holdsGlobalAdmin bool
-		assignments, err := s.roleService.ListUserAssignments(ctx, id)
-		if err == nil {
-			for _, a := range assignments {
-				if a.RoleID == authz.BuiltInRoleAdmin && a.EnvironmentID == nil {
-					holdsGlobalAdmin = true
-					break
-				}
-			}
+		ps, err := s.roleService.ResolvePermissions(ctx, &models.User{BaseModel: models.BaseModel{ID: id}})
+		if err != nil {
+			return err
 		}
-		if holdsGlobalAdmin {
+		if ps != nil && ps.IsGlobalAdmin() {
 			remaining, err := s.roleService.CountGlobalAdminsExcludingUser(ctx, id)
 			if err != nil {
 				return err
@@ -439,8 +432,7 @@ func (s *UserService) toUserResponseDtosInternal(ctx context.Context, users []mo
 
 // toUserResponseDtoInternal builds the public User DTO. RoleAssignments and
 // PermissionsByEnv come from the RBAC service. CanDelete is false when this
-// user holds the only global Admin assignment (i.e. removing them would orphan
-// the instance).
+// user is the only effective global admin.
 func (s *UserService) toUserResponseDtoInternal(ctx context.Context, u models.User) user.User {
 	dto := user.User{
 		ID:                     u.ID,
@@ -467,18 +459,16 @@ func (s *UserService) toUserResponseDtoInternal(ctx context.Context, u models.Us
 				EnvironmentID: r.EnvironmentID,
 				Source:        r.Source,
 			}
-			// Last-admin guard: this user is non-deletable if they hold the
-			// only global Admin assignment.
-			if r.RoleID == authz.BuiltInRoleAdmin && r.EnvironmentID == nil {
-				if remaining, cerr := s.roleService.CountGlobalAdminsExcludingUser(ctx, u.ID); cerr == nil && remaining == 0 {
-					dto.CanDelete = false
-				}
-			}
 		}
 	}
 	if ps, err := s.roleService.ResolvePermissions(ctx, &u); err == nil && ps != nil {
 		dto.IsGlobalAdmin = ps.IsGlobalAdmin()
 		dto.PermissionsByEnv = permissionSetToMap(ps)
+		if dto.IsGlobalAdmin {
+			if remaining, cerr := s.roleService.CountGlobalAdminsExcludingUser(ctx, u.ID); cerr == nil && remaining == 0 {
+				dto.CanDelete = false
+			}
+		}
 	}
 	return dto
 }

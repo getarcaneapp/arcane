@@ -18,6 +18,7 @@
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import type { AppVersionInformation } from '$lib/types/settings';
 	import type { Environment, EnvironmentStatus } from '$lib/types/environment';
+	import { hasPermission } from '$lib/utils/auth';
 	import { isEnvironmentOnline, resolveEnvironmentStatus } from '$lib/utils/docker';
 	import MobileFloatingFormActions from '$lib/components/form/mobile-floating-form-actions.svelte';
 	import { createSettingsForm } from '$lib/utils/settings';
@@ -71,8 +72,10 @@
 	let isCurrentlyStandby = $derived(currentStatus === 'standby');
 	let showSettingsTabs = $derived(runtimeEnvironment.enabled && isCurrentlyOnline && settings !== null);
 	let hasMTLSAssets = $derived(Boolean(runtimeEnvironment.edgeMTLSCertificate));
+	let canPairEnvironments = $derived(hasPermission('environments:pair'));
 	let showMTLSDownloads = $derived(
-		runtimeEnvironment.id !== '0' &&
+		canPairEnvironments &&
+			runtimeEnvironment.id !== '0' &&
 			runtimeEnvironment.isEdge &&
 			(runtimeEnvironment.edgeSecurityMode === 'mtls' || hasMTLSAssets)
 	);

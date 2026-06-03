@@ -102,8 +102,7 @@
 	async function handleDeleteMapping(mapping: OidcRoleMapping) {
 		const safeClaim = mapping.claimValue?.trim() || m.common_unknown();
 		openConfirmDialog({
-			// TODO: i18n — add oidc_mappings_delete_title key
-			title: 'Delete OIDC mapping?',
+			title: m.oidc_mappings_delete_title(),
 			message: m.oidc_mappings_delete_message({ claim: safeClaim }),
 			confirm: {
 				label: m.common_delete(),
@@ -112,12 +111,10 @@
 					isLoading.removing = true;
 					handleApiResultWithCallbacks({
 						result: await tryCatch(oidcMappingService.delete(mapping.id)),
-						// TODO: i18n — add oidc_mappings_delete_failed key
-						message: 'Failed to delete mapping',
+						message: m.oidc_mappings_delete_failed(),
 						setLoadingState: (value) => (isLoading.removing = value),
 						onSuccess: async () => {
-							// TODO: i18n — add oidc_mappings_delete_success key
-							toast.success('Mapping deleted');
+							toast.success(m.oidc_mappings_delete_success());
 							await onRefresh();
 						}
 					});
@@ -131,7 +128,7 @@
 		{
 			id: 'roleId',
 			accessorKey: 'roleId',
-			title: 'Role' /* TODO: i18n — add oidc_mappings_col_role key */,
+			title: m.oidc_mappings_col_role(),
 			sortable: true,
 			cell: RoleCell
 		},
@@ -145,7 +142,7 @@
 	] satisfies ColumnSpec<OidcRoleMapping>[];
 
 	const mobileFields = [
-		{ id: 'roleId', label: 'Role' /* TODO: i18n — add oidc_mappings_col_role key */, defaultVisible: true },
+		{ id: 'roleId', label: m.oidc_mappings_col_role(), defaultVisible: true },
 		{ id: 'environmentId', label: m.oidc_mappings_col_scope(), defaultVisible: true }
 	];
 
