@@ -88,6 +88,7 @@ var permissionCatalog = []PermissionCatalogResource{
 	}},
 	{"events", "Events", PermissionScopeGlobal, []PermissionCatalogAction{
 		{"read", PermEventsRead, "Read", ""},
+		{"delete", PermEventsDelete, "Delete", ""},
 	}},
 	{"customize", "Customize", PermissionScopeGlobal, []PermissionCatalogAction{
 		{"manage", PermCustomizeManage, "Manage", ""},

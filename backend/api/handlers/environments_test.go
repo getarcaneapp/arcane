@@ -1,16 +1,61 @@
 package handlers
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"testing"
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
+	"github.com/getarcaneapp/arcane/backend/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge"
 	envtypes "github.com/getarcaneapp/arcane/types/environment"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+func TestEnvironmentSecretDeploymentRoutesRequirePairPermission(t *testing.T) {
+	testCases := []struct {
+		name string
+		path string
+	}{
+		{name: "deployment snippets", path: "/api/environments/env-1/deployment"},
+		{name: "mtls bundle", path: "/api/environments/env-1/deployment/mtls/bundle"},
+		{name: "mtls file", path: "/api/environments/env-1/deployment/mtls/agent.key"},
+		{name: "edge ca", path: "/api/edge-mtls/ca"},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name+" read denied", func(t *testing.T) {
+			ps := authz.NewPermissionSet()
+			ps.AddGlobal(authz.PermEnvironmentsRead)
+			router, api := newPermissionGatingRouterInternal(t, ps)
+			RegisterEnvironments(api, nil, nil, nil, nil, nil)
+
+			req := httptest.NewRequest(http.MethodGet, testCase.path, nil)
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+
+			require.Equal(t, http.StatusForbidden, rec.Code)
+			require.Contains(t, rec.Body.String(), authz.PermEnvironmentsPair)
+		})
+
+		t.Run(testCase.name+" pair allowed", func(t *testing.T) {
+			ps := authz.NewPermissionSet()
+			ps.AddGlobal(authz.PermEnvironmentsPair)
+			router, api := newPermissionGatingRouterInternal(t, ps)
+			RegisterEnvironments(api, nil, nil, nil, nil, nil)
+
+			req := httptest.NewRequest(http.MethodGet, testCase.path, nil)
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+
+			require.NotEqual(t, http.StatusForbidden, rec.Code)
+		})
+	}
+}
 
 func TestEnvironmentMTLSAssetDownloadName(t *testing.T) {
 	env := &models.Environment{Name: "Lab Server"}

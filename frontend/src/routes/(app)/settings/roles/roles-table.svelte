@@ -73,8 +73,7 @@
 		if (deletableSelectedIds.length === 0) return;
 
 		openConfirmDialog({
-			// TODO: i18n — add roles_delete_selected_title key
-			title: `Delete ${deletableSelectedIds.length} role${deletableSelectedIds.length === 1 ? '' : 's'}?`,
+			title: m.roles_delete_selected_title({ count: deletableSelectedIds.length }),
 			message: m.roles_delete_message({ name: m.common_unknown() }),
 			confirm: {
 				label: m.common_delete(),
@@ -122,8 +121,7 @@
 
 		const safeName = role.name?.trim() || m.common_unknown();
 		openConfirmDialog({
-			// TODO: i18n — add roles_delete_title key
-			title: `Delete role "${safeName}"?`,
+			title: m.roles_delete_title({ name: safeName }),
 			message: m.roles_delete_message({ name: safeName }),
 			confirm: {
 				label: m.common_delete(),
@@ -145,9 +143,8 @@
 	}
 
 	const columns = [
-		// TODO: i18n — add roles_name_label and roles_description_label keys
-		{ accessorKey: 'name', title: 'Name', sortable: true, cell: NameCell },
-		{ accessorKey: 'description', title: 'Description', sortable: false, cell: DescriptionCell },
+		{ accessorKey: 'name', title: m.roles_name_label(), sortable: true, cell: NameCell },
+		{ accessorKey: 'description', title: m.roles_description_label(), sortable: false, cell: DescriptionCell },
 		{ id: 'type', accessorKey: 'builtIn', title: m.roles_col_type(), sortable: false, cell: TypeCell },
 		{
 			id: 'assignedUsers',
@@ -166,8 +163,7 @@
 	] satisfies ColumnSpec<Role>[];
 
 	const mobileFields = [
-		// TODO: i18n — add roles_description_label key
-		{ id: 'description', label: 'Description', defaultVisible: true },
+		{ id: 'description', label: m.roles_description_label(), defaultVisible: true },
 		{ id: 'permissions', label: m.roles_col_permissions(), defaultVisible: true },
 		{ id: 'assignedUsers', label: m.roles_col_assigned_users(), defaultVisible: true }
 	];
@@ -206,7 +202,7 @@
 {/snippet}
 
 {#snippet AssignedUsersCell({ item }: { item: Role })}
-	<span class="tabular-nums">{item.assignedUserCount === 1 ? '1 user' : `${item.assignedUserCount} users`}</span>
+	<span class="tabular-nums">{m.roles_assigned_users_count({ count: item.assignedUserCount })}</span>
 {/snippet}
 
 {#snippet PermissionsCell({ item }: { item: Role })}
@@ -242,8 +238,7 @@
 			},
 			{
 				label: m.roles_col_assigned_users(),
-				// TODO: i18n — roles_assigned_users_count has a malformed ICU plural in en.json
-				getValue: (item: Role) => (item.assignedUserCount === 1 ? '1 user' : `${item.assignedUserCount} users`),
+				getValue: (item: Role) => m.roles_assigned_users_count({ count: item.assignedUserCount }),
 				icon: ShieldAlertIcon,
 				iconVariant: 'gray' as const,
 				show: mobileFieldVisibility['assignedUsers'] ?? true
