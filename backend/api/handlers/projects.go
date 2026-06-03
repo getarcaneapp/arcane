@@ -108,6 +108,7 @@ type GetProjectFileOutput struct {
 type RedeployProjectInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ProjectID     string `path:"projectId" doc:"Project ID"`
+	Body          *project.DeployOptions
 }
 
 type RedeployProjectOutput struct {
@@ -811,7 +812,7 @@ func (h *ProjectHandler) RedeployProject(ctx context.Context, input *RedeployPro
 		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
 	}
 
-	if err := h.projectService.RedeployProject(ctx, input.ProjectID, *user); err != nil {
+	if err := h.projectService.RedeployProject(ctx, input.ProjectID, *user, input.Body); err != nil {
 		var archivedErr *common.ProjectArchivedError
 		if errors.As(err, &archivedErr) {
 			return nil, huma.Error400BadRequest(err.Error())

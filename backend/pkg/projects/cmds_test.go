@@ -6,6 +6,7 @@ import (
 	"time"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
+	"github.com/docker/compose/v5/pkg/api"
 	"github.com/stretchr/testify/require"
 )
 
@@ -106,4 +107,29 @@ func TestFilterProjectServicesForPullInternalReturnsDeepCopiedProject(t *testing
 
 	require.Contains(t, project.Services["web"].DependsOn, "db")
 	require.Contains(t, project.Networks, "default")
+}
+
+func TestComposeUpOptions_RemoveOrphans(t *testing.T) {
+	proj := &composetypes.Project{Name: "test"}
+
+	t.Run("removeOrphans true propagates to CreateOptions", func(t *testing.T) {
+		upOptions, _ := composeUpOptions(proj, nil, true, false)
+		require.True(t, upOptions.RemoveOrphans)
+	})
+
+	t.Run("removeOrphans false leaves CreateOptions disabled", func(t *testing.T) {
+		upOptions, _ := composeUpOptions(proj, nil, false, false)
+		require.False(t, upOptions.RemoveOrphans)
+	})
+
+	t.Run("removeOrphans is independent of forceRecreate", func(t *testing.T) {
+		// forceRecreate drives the Recreate policy, not RemoveOrphans.
+		upOptions, _ := composeUpOptions(proj, nil, true, true)
+		require.True(t, upOptions.RemoveOrphans)
+		require.Equal(t, api.RecreateForce, upOptions.Recreate)
+
+		upOptions, _ = composeUpOptions(proj, nil, false, true)
+		require.False(t, upOptions.RemoveOrphans)
+		require.Equal(t, api.RecreateForce, upOptions.Recreate)
+	})
 }

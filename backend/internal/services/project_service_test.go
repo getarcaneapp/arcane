@@ -3805,3 +3805,25 @@ func dockerHostFromProjectRuntimeServerURLInternal(t *testing.T, serverURL strin
 func ptr(v string) *string {
 	return new(v)
 }
+
+func TestResolveRemoveOrphans(t *testing.T) {
+	tests := []struct {
+		name          string
+		gitOpsManaged bool
+		options       *projecttypes.DeployOptions
+		want          bool
+	}{
+		{"non-gitops, nil options", false, nil, false},
+		{"non-gitops, flag false", false, &projecttypes.DeployOptions{RemoveOrphans: false}, false},
+		{"non-gitops, flag true opts in", false, &projecttypes.DeployOptions{RemoveOrphans: true}, true},
+		{"gitops, nil options stays true", true, nil, true},
+		{"gitops, flag false stays true", true, &projecttypes.DeployOptions{RemoveOrphans: false}, true},
+		{"gitops, flag true stays true", true, &projecttypes.DeployOptions{RemoveOrphans: true}, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, resolveRemoveOrphansInternal(tt.gitOpsManaged, tt.options))
+		})
+	}
+}
