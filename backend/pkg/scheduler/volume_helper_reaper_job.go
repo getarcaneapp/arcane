@@ -14,7 +14,7 @@ const (
 	// volumeHelperIdleTimeoutSetting is the settings key (in minutes) controlling how
 	// long a volume-browser helper container may sit idle before it is reaped.
 	volumeHelperIdleTimeoutSetting        = "volumeBrowserHelperIdleTimeout"
-	defaultVolumeHelperIdleTimeoutMinutes = 5
+	defaultVolumeHelperIdleTimeoutMinutes = 10
 	volumeHelperReaperSchedule            = "0 */5 * * * *"
 )
 
