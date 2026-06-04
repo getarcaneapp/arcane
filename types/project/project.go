@@ -80,6 +80,11 @@ type DeployOptions struct {
 	//
 	// Required: false
 	ForceRecreate bool `json:"forceRecreate,omitempty"`
+
+	// RemoveOrphans removes containers for services not defined in the compose file.
+	//
+	// Required: false
+	RemoveOrphans bool `json:"removeOrphans,omitempty"`
 }
 
 // UpdateIncludeFile is used to update an include file within a project.

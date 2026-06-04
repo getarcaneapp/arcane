@@ -76,6 +76,9 @@ func requestLoggerMiddlewareInternal() echo.MiddlewareFunc {
 			if edge.IsInternalTunnelRequest(c.Request().Context()) {
 				return next(c)
 			}
+			if c.Request().Body == nil {
+				c.Request().Body = http.NoBody
+			}
 			return loggerMiddleware(next)(c)
 		}
 	}

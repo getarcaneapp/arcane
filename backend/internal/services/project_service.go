@@ -1843,6 +1843,13 @@ func (s *ProjectService) UnarchiveProject(ctx context.Context, projectID string,
 	return nil
 }
 
+// resolveRemoveOrphansInternal decides whether compose up should remove orphan containers.
+// GitOps-managed projects always remove orphans so the running stack matches the
+// tracked compose file. Non-GitOps callers may opt in per request via DeployOptions.
+func resolveRemoveOrphansInternal(gitOpsManaged bool, options *project.DeployOptions) bool {
+	return gitOpsManaged || (options != nil && options.RemoveOrphans)
+}
+
 func (s *ProjectService) DeployProject(ctx context.Context, projectID string, user models.User, options *project.DeployOptions) error {
 	projectFromDb, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
@@ -1880,7 +1887,8 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 		return fmt.Errorf("failed to prepare project images for deploy: %w", perr)
 	}
 
-	removeOrphans := projectFromDb.GitOpsManagedBy != nil && *projectFromDb.GitOpsManagedBy != ""
+	gitOpsManaged := projectFromDb.GitOpsManagedBy != nil && *projectFromDb.GitOpsManagedBy != ""
+	removeOrphans := resolveRemoveOrphansInternal(gitOpsManaged, options)
 
 	slog.Info("starting compose up with health check support", "projectID", projectID, "projectName", project.Name, "services", len(project.Services), "removeOrphans", removeOrphans)
 	// Health/progress streaming (if any) is handled inside projects.ComposeUp via ctx.
@@ -2051,7 +2059,7 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, r
 	return nil
 }
 
-func (s *ProjectService) RedeployProject(ctx context.Context, projectID string, user models.User) error {
+func (s *ProjectService) RedeployProject(ctx context.Context, projectID string, user models.User, options *project.DeployOptions) error {
 	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
 		return err
@@ -2077,7 +2085,7 @@ func (s *ProjectService) RedeployProject(ctx context.Context, projectID string, 
 		slog.ErrorContext(ctx, "could not log project redeploy action", "error", logErr)
 	}
 
-	return s.DeployProject(ctx, projectID, user, nil)
+	return s.DeployProject(ctx, projectID, user, options)
 }
 
 func (s *ProjectService) projectRedeployDisabledInternal(ctx context.Context, proj models.Project) (bool, error) {
