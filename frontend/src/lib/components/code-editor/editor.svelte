@@ -14,7 +14,7 @@
 		type Diagnostic,
 		type LintSource
 	} from '@codemirror/lint';
-	import { keymap, hoverTooltip, EditorView } from '@codemirror/view';
+	import { keymap, hoverTooltip, EditorView, ViewPlugin, closeHoverTooltips, hasHoverTooltips } from '@codemirror/view';
 	import { type Extension } from '@codemirror/state';
 	import { parseDocument } from 'yaml';
 	import { browser } from '$app/environment';
@@ -82,6 +82,9 @@
 	let activeView = $state<EditorView | null>(null);
 	let schemaState = $state<ComposeSchemaContext | null>(null);
 	let shortcutsEnabled = $derived($configStore?.keyboardShortcutsEnabled !== false);
+	let schemaHoverSuppressedUntil = 0;
+
+	const schemaHoverSelectionSuppressionMs = 2500;
 
 	const storageKey = $derived(fileId ? `arcane.editor.state:${fileId}` : null);
 	const isDiffActive = $derived(Boolean(enableDiff && diffOpen && originalValue !== undefined));
@@ -170,6 +173,35 @@
 			cursorLine: line.number,
 			cursorCol: position - line.from + 1
 		});
+	}
+
+	function hasNonEmptySelection(view: EditorView): boolean {
+		return view.state.selection.ranges.some((range) => !range.empty);
+	}
+
+	function isNodeInEditor(view: EditorView, node: Node | null): boolean {
+		return !!node && (node === view.dom || view.dom.contains(node));
+	}
+
+	function nativeSelectionTouchesEditor(view: EditorView): boolean {
+		const selection = view.dom.ownerDocument.getSelection();
+		if (!selection || selection.isCollapsed) return false;
+		return isNodeInEditor(view, selection.anchorNode) || isNodeInEditor(view, selection.focusNode);
+	}
+
+	function suppressSchemaHoverForSelection() {
+		schemaHoverSuppressedUntil = Date.now() + schemaHoverSelectionSuppressionMs;
+	}
+
+	function isSchemaHoverSuppressed(view: EditorView): boolean {
+		return hasNonEmptySelection(view) || nativeSelectionTouchesEditor(view) || Date.now() < schemaHoverSuppressedUntil;
+	}
+
+	function closeActiveSchemaHoverForSelection(view: EditorView) {
+		suppressSchemaHoverForSelection();
+		if (hasHoverTooltips(view.state)) {
+			view.dispatch({ effects: closeHoverTooltips });
+		}
 	}
 
 	function persistEditorState(view: EditorView) {
@@ -392,50 +424,105 @@
 		};
 	};
 
-	const yamlHover = hoverTooltip(async (view, position) => {
-		if (language !== 'yaml') return null;
-		const source = view.state.doc.toString();
-		const variableRef = resolveVariableSourceAtPosition(source, position, effectiveEditorContext);
-		if (variableRef) {
+	const yamlHover = hoverTooltip(
+		async (view, position) => {
+			if (language !== 'yaml' || isSchemaHoverSuppressed(view)) return null;
+			const source = view.state.doc.toString();
+			const variableRef = resolveVariableSourceAtPosition(source, position, effectiveEditorContext);
+			if (variableRef) {
+				return {
+					pos: position,
+					create() {
+						const dom = document.createElement('div');
+						dom.className = 'arcane-hover';
+						dom.innerHTML = `<strong>${variableRef.name}</strong><div>Source: ${variableRef.source}</div>`;
+						return { dom };
+					}
+				};
+			}
+
+			const yamlContext = findYamlPositionContext(source, position);
+			if (!yamlContext || !yamlContext.currentKey) return null;
+
+			const schema = schemaState ?? (await getComposeSchemaContext());
+			if (isSchemaHoverSuppressed(view)) return null;
+			schemaState = schema;
+			if (!schema.schema) return null;
+
+			const doc = getSchemaDocForPath(schema.schema, yamlContext.path);
+			if (!doc) return null;
+
 			return {
-				pos: position,
+				pos: yamlContext.keyFrom ?? position,
+				end: yamlContext.keyTo ?? position,
 				create() {
 					const dom = document.createElement('div');
 					dom.className = 'arcane-hover';
-					dom.innerHTML = `<strong>${variableRef.name}</strong><div>Source: ${variableRef.source}</div>`;
+					const examples =
+						doc.examples && doc.examples.length > 0 ? `<div><strong>Examples:</strong> ${doc.examples.join(', ')}</div>` : '';
+					dom.innerHTML = `
+						<div><strong>${doc.title ?? yamlContext.currentKey}</strong></div>
+						${doc.description ? `<div>${doc.description}</div>` : ''}
+						${doc.defaultValue ? `<div><strong>Default:</strong> ${doc.defaultValue}</div>` : ''}
+						${examples}
+					`;
 					return { dom };
 				}
 			};
-		}
-
-		const yamlContext = findYamlPositionContext(source, position);
-		if (!yamlContext || !yamlContext.currentKey) return null;
-
-		const schema = schemaState ?? (await getComposeSchemaContext());
-		schemaState = schema;
-		if (!schema.schema) return null;
-
-		const doc = getSchemaDocForPath(schema.schema, yamlContext.path);
-		if (!doc) return null;
-
-		return {
-			pos: yamlContext.keyFrom ?? position,
-			end: yamlContext.keyTo ?? position,
-			create() {
-				const dom = document.createElement('div');
-				dom.className = 'arcane-hover';
-				const examples =
-					doc.examples && doc.examples.length > 0 ? `<div><strong>Examples:</strong> ${doc.examples.join(', ')}</div>` : '';
-				dom.innerHTML = `
-					<div><strong>${doc.title ?? yamlContext.currentKey}</strong></div>
-					${doc.description ? `<div>${doc.description}</div>` : ''}
-					${doc.defaultValue ? `<div><strong>Default:</strong> ${doc.defaultValue}</div>` : ''}
-					${examples}
-				`;
-				return { dom };
+		},
+		{
+			hideOn(tr) {
+				return tr.selection ? tr.newSelection.ranges.some((range) => !range.empty) : false;
 			}
-		};
-	});
+		}
+	);
+
+	const selectionHoverGuardExtension: Extension = [
+		ViewPlugin.fromClass(
+			class {
+				private readonly view: EditorView;
+				private readonly ownerDocument: Document;
+
+				constructor(view: EditorView) {
+					this.view = view;
+					this.ownerDocument = view.dom.ownerDocument;
+					this.ownerDocument.addEventListener('selectionchange', this.handleSelectionChange);
+				}
+
+				update() {
+					if (hasNonEmptySelection(this.view)) {
+						suppressSchemaHoverForSelection();
+					}
+				}
+
+				destroy() {
+					this.ownerDocument.removeEventListener('selectionchange', this.handleSelectionChange);
+				}
+
+				private handleSelectionChange = () => {
+					if (nativeSelectionTouchesEditor(this.view)) {
+						closeActiveSchemaHoverForSelection(this.view);
+					}
+				};
+			}
+		),
+		EditorView.domEventHandlers({
+			pointerdown(event, view) {
+				if (event.pointerType === 'touch' || event.pointerType === 'pen') {
+					closeActiveSchemaHoverForSelection(view);
+				}
+				return false;
+			},
+			touchstart(_event, view) {
+				closeActiveSchemaHoverForSelection(view);
+				return false;
+			},
+			touchmove(_event, view) {
+				closeActiveSchemaHoverForSelection(view);
+				return false;
+			}
+		})
+	];
 
 	const editorLifecycleExtension = EditorView.updateListener.of((update) => {
 		if (!update.view) return;
@@ -526,7 +613,7 @@
 
 	function getLanguageExtension(lang: CodeLanguage, options: { lightweight?: boolean } = {}): Extension[] {
 		const lightweight = options.lightweight === true;
-		const extensions: Extension[] = [editorLifecycleExtension, shortcutKeymapExtension];
+		const extensions: Extension[] = [editorLifecycleExtension, selectionHoverGuardExtension, shortcutKeymapExtension];
 
 		if (!readOnly) {
 			extensions.push(enterIndentKeymaps[lang]);
@@ -908,6 +995,7 @@
 		padding: 0.5rem 0.625rem;
 		font-size: 0.75rem;
 		line-height: 1.4;
+		pointer-events: none;
 		border-radius: 0.5rem;
 		border: 1px solid var(--border);
 		background: color-mix(in oklab, var(--background) 96%, black 4%);
