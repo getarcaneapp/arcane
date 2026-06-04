@@ -33,7 +33,7 @@
     "@xyflow/svelte": "^1.6.0",
     "ajv": "^8.20.0",
     "ansi-to-html": "^0.7.2",
-    "date-fns": "^4.3.0",
+    "date-fns": "^4.4.0",
     "embla-carousel-svelte": "^8.6.0",
     "ky": "^2.0.2",
     "marked": "^18.0.4",
