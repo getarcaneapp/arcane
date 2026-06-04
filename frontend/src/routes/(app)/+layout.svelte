@@ -20,6 +20,7 @@
 	const user = $derived(data.user);
 	const settings = $derived(data.settings);
 	const permissionsManifest = $derived(data.permissionsManifest);
+	const permissionsManifestLoadFailed = $derived(data.permissionsManifestLoadFailed);
 	const swarmEnabled = $derived(data.swarmEnabled === true);
 
 	const isMobile = new IsMobile();
@@ -46,7 +47,13 @@
 	});
 
 	$effect(() => {
-		const redirectPath = getAuthRedirectPath(page.url.pathname, user, currentEnvId, permissionsManifest);
+		const redirectPath = getAuthRedirectPath(
+			page.url.pathname,
+			user,
+			currentEnvId,
+			permissionsManifest,
+			permissionsManifestLoadFailed
+		);
 		if (redirectPath) {
 			goto(redirectPath);
 		}

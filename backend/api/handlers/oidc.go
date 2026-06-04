@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -517,8 +518,19 @@ func (h *OidcHandler) CreateOidcRoleMapping(ctx context.Context, input *CreateOi
 	if h.roleService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
-	mapping, err := h.roleService.CreateOidcMapping(ctx, input.Body.ClaimValue, input.Body.RoleID, input.Body.EnvironmentID)
+	claimValue := strings.TrimSpace(input.Body.ClaimValue)
+	roleID := strings.TrimSpace(input.Body.RoleID)
+	if claimValue == "" {
+		return nil, huma.Error400BadRequest("claim value is required")
+	}
+	if roleID == "" {
+		return nil, huma.Error400BadRequest("role id is required")
+	}
+	mapping, err := h.roleService.CreateOidcMapping(ctx, claimValue, roleID, input.Body.EnvironmentID)
 	if err != nil {
+		if common.IsInvalidRoleAssignmentError(err) {
+			return nil, huma.Error400BadRequest(err.Error())
+		}
 		return nil, huma.Error500InternalServerError("failed to create mapping: " + err.Error())
 	}
 	out := &CreateOidcRoleMappingOutput{}
@@ -531,13 +543,24 @@ func (h *OidcHandler) UpdateOidcRoleMapping(ctx context.Context, input *UpdateOi
 	if h.roleService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
-	mapping, err := h.roleService.UpdateOidcMapping(ctx, input.ID, input.Body.ClaimValue, input.Body.RoleID, input.Body.EnvironmentID)
+	claimValue := strings.TrimSpace(input.Body.ClaimValue)
+	roleID := strings.TrimSpace(input.Body.RoleID)
+	if claimValue == "" {
+		return nil, huma.Error400BadRequest("claim value is required")
+	}
+	if roleID == "" {
+		return nil, huma.Error400BadRequest("role id is required")
+	}
+	mapping, err := h.roleService.UpdateOidcMapping(ctx, input.ID, claimValue, roleID, input.Body.EnvironmentID)
 	if err != nil {
 		if common.IsOidcMappingNotFoundError(err) {
 			return nil, huma.Error404NotFound("mapping not found")
 		}
 		if common.IsOidcMappingEnvManagedError(err) {
 			return nil, huma.Error409Conflict(err.Error())
+		}
+		if common.IsInvalidRoleAssignmentError(err) {
+			return nil, huma.Error400BadRequest(err.Error())
 		}
 		return nil, huma.Error500InternalServerError("failed to update mapping: " + err.Error())
 	}
