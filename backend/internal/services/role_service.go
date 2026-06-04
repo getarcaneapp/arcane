@@ -743,25 +743,45 @@ func (s *RoleService) GetOidcMapping(ctx context.Context, id string) (*models.Oi
 }
 
 func (s *RoleService) CreateOidcMapping(ctx context.Context, claimValue, roleID string, environmentID *string) (*models.OidcRoleMapping, error) {
-	if strings.TrimSpace(claimValue) == "" {
+	claimValue = strings.TrimSpace(claimValue)
+	roleID = strings.TrimSpace(roleID)
+	if claimValue == "" {
 		return nil, errors.New("claim value is required")
 	}
-	if strings.TrimSpace(roleID) == "" {
+	if roleID == "" {
 		return nil, errors.New("role id is required")
 	}
-	mapping := &models.OidcRoleMapping{
-		ClaimValue:    claimValue,
-		RoleID:        roleID,
-		EnvironmentID: environmentID,
-		Source:        models.OidcMappingSourceManual,
+	var mapping models.OidcRoleMapping
+	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+		if err := validateRoleIDsExistInternal(tx, []string{roleID}); err != nil {
+			return err
+		}
+		mapping = models.OidcRoleMapping{
+			ClaimValue:    claimValue,
+			RoleID:        roleID,
+			EnvironmentID: environmentID,
+			Source:        models.OidcMappingSourceManual,
+		}
+		if err := tx.Create(&mapping).Error; err != nil {
+			return fmt.Errorf("failed to create oidc mapping: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
-	if err := s.db.WithContext(ctx).Create(mapping).Error; err != nil {
-		return nil, fmt.Errorf("failed to create oidc mapping: %w", err)
-	}
-	return mapping, nil
+	return &mapping, nil
 }
 
 func (s *RoleService) UpdateOidcMapping(ctx context.Context, id, claimValue, roleID string, environmentID *string) (*models.OidcRoleMapping, error) {
+	claimValue = strings.TrimSpace(claimValue)
+	roleID = strings.TrimSpace(roleID)
+	if claimValue == "" {
+		return nil, errors.New("claim value is required")
+	}
+	if roleID == "" {
+		return nil, errors.New("role id is required")
+	}
 	var out models.OidcRoleMapping
 	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
 		var existing models.OidcRoleMapping
@@ -773,6 +793,9 @@ func (s *RoleService) UpdateOidcMapping(ctx context.Context, id, claimValue, rol
 		}
 		if existing.Source == models.OidcMappingSourceEnv {
 			return &common.OidcMappingEnvManagedError{}
+		}
+		if err := validateRoleIDsExistInternal(tx, []string{roleID}); err != nil {
+			return err
 		}
 		existing.ClaimValue = claimValue
 		existing.RoleID = roleID
@@ -787,6 +810,38 @@ func (s *RoleService) UpdateOidcMapping(ctx context.Context, id, claimValue, rol
 		return nil, err
 	}
 	return &out, nil
+}
+
+func validateRoleIDsExistInternal(tx *gorm.DB, roleIDs []string) error {
+	if len(roleIDs) == 0 {
+		return nil
+	}
+	roleIDSet := make(map[string]struct{}, len(roleIDs))
+	for _, roleID := range roleIDs {
+		if roleID == "" {
+			return errors.New("role id is required")
+		}
+		roleIDSet[roleID] = struct{}{}
+	}
+
+	normalized := make([]string, 0, len(roleIDSet))
+	for roleID := range roleIDSet {
+		normalized = append(normalized, roleID)
+	}
+	var found []string
+	if err := tx.Model(&models.Role{}).Where("id IN ?", normalized).Pluck("id", &found).Error; err != nil {
+		return fmt.Errorf("failed to verify role ids: %w", err)
+	}
+	foundSet := make(map[string]struct{}, len(found))
+	for _, id := range found {
+		foundSet[id] = struct{}{}
+	}
+	for _, id := range normalized {
+		if _, ok := foundSet[id]; !ok {
+			return &common.InvalidRoleAssignmentError{RoleID: id}
+		}
+	}
+	return nil
 }
 
 func (s *RoleService) DeleteOidcMapping(ctx context.Context, id string) error {

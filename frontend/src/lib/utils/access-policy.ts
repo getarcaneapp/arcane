@@ -34,7 +34,12 @@ export function getRouteAccessSurfaces(manifest: PermissionsManifest | null | un
 	return (manifest?.accessSurfaces ?? [])
 		.filter((surface) => !!surface.url)
 		.slice()
-		.sort((a, b) => (b.url?.length ?? 0) - (a.url?.length ?? 0));
+		.sort((a, b) => {
+			const aTemplates = (a.url?.match(/\{[^}]+\}/g) ?? []).length;
+			const bTemplates = (b.url?.match(/\{[^}]+\}/g) ?? []).length;
+			if (aTemplates !== bTemplates) return aTemplates - bTemplates;
+			return (b.url?.length ?? 0) - (a.url?.length ?? 0);
+		});
 }
 
 export function getFallbackAccessSurfaces(manifest: PermissionsManifest | null | undefined): AccessSurface[] {
@@ -50,7 +55,7 @@ export function pathMatchesAccessSurface(path: string, surface: AccessSurface): 
 
 	const pathSegments = splitPathInternal(path);
 	const templateSegments = splitPathInternal(template);
-	if (templateSegments.length > pathSegments.length) return false;
+	if (templateSegments.length !== pathSegments.length) return false;
 
 	for (let i = 0; i < templateSegments.length; i++) {
 		const expected = templateSegments[i];

@@ -32,6 +32,46 @@ func TestPermissionSetEnvScopedDoesNotLeak(t *testing.T) {
 	}
 }
 
+func TestPermissionSetIsGlobalAdminRejectsUnknownPermissions(t *testing.T) {
+	ps := NewPermissionSet()
+	perms := AllPermissions()
+	for i, perm := range perms {
+		if i == 0 {
+			continue
+		}
+		ps.AddGlobal(perm)
+	}
+	ps.AddGlobal("projects:made-up")
+
+	if ps.IsGlobalAdmin() {
+		t.Fatal("global admin should reject injected unknown permissions")
+	}
+}
+
+func TestPermissionSetIsGlobalAdminRequiresExactKnownSet(t *testing.T) {
+	ps := NewPermissionSet()
+	perms := AllPermissions()
+	for _, perm := range perms[1:] {
+		ps.AddGlobal(perm)
+	}
+	ps.AddGlobal("containers:does-not-exist")
+
+	if ps.IsGlobalAdmin() {
+		t.Fatal("global admin should require the complete known permission set")
+	}
+}
+
+func TestPermissionSetIsGlobalAdmin(t *testing.T) {
+	ps := NewPermissionSet()
+	for _, perm := range AllPermissions() {
+		ps.AddGlobal(perm)
+	}
+
+	if !ps.IsGlobalAdmin() {
+		t.Fatal("complete known permission set should be global admin")
+	}
+}
+
 func TestSudoAllowsEverything(t *testing.T) {
 	ps := SudoPermissionSet()
 	if !ps.Allows(PermContainersDelete, "any-env") {
