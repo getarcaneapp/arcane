@@ -19,8 +19,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/libbuild"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	buildtypes "github.com/getarcaneapp/arcane/types/builds"
+	"github.com/getarcaneapp/arcane/types/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
-	dockerregistry "github.com/moby/moby/api/types/registry"
 	"gorm.io/gorm"
 )
 
@@ -74,7 +74,7 @@ func (s *BuildService) GetRegistryAuthForHost(ctx context.Context, registryHost 
 	return s.registryService.GetRegistryAuthForHost(ctx, registryHost)
 }
 
-func (s *BuildService) GetAllRegistryAuthConfigs(ctx context.Context) (map[string]dockerregistry.AuthConfig, error) {
+func (s *BuildService) GetAllRegistryAuthConfigs(ctx context.Context) (map[string]containerregistry.RegistryAuthConfig, error) {
 	if s.registryService == nil {
 		return nil, nil
 	}

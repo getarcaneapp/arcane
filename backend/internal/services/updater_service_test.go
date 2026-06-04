@@ -13,13 +13,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	moduleapi "github.com/getarcaneapp/updater/api"
 	updaterlabels "github.com/getarcaneapp/updater/pkg/labels"
 	moduletypes "github.com/getarcaneapp/updater/types"
 	"github.com/moby/moby/api/types/container"
 	dockertypesimage "github.com/moby/moby/api/types/image"
-	"github.com/moby/moby/client"
+	client "github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -325,15 +326,18 @@ func TestUpdaterService_DockerClientAdapterInternal(t *testing.T) {
 	})
 
 	t.Run("delegates to configured docker service", func(t *testing.T) {
-		server := newProjectImagePullServer(t, nil)
-		wantClient := newTestDockerClient(t, server)
-		dockerSvc := &DockerClientService{client: wantClient}
+		server := newDockerPingTestServerInternal(t, "1.41")
+		dockerSvc := &DockerClientService{
+			client: newTestDockerClient(t, server),
+			config: &config.Config{DockerHost: server.URL},
+		}
 		svc := NewUpdaterService(nil, nil, dockerSvc, nil, nil, nil, nil, nil, nil, nil, nil)
 
 		gotClient, err := svc.DockerClient(ctx)
 
 		require.NoError(t, err)
-		assert.Same(t, wantClient, gotClient)
+		require.NotNil(t, gotClient)
+		assert.Equal(t, "1.41", gotClient.ClientVersion())
 	})
 }
 
@@ -526,7 +530,7 @@ func TestUpdaterService_ApplyPending_ProjectFailureDoesNotBlockOtherProjectsInte
 	}
 
 	server := newUpdaterApplyPendingDockerServerInternal(t, containers, verificationByService, inspectByID, imageInspectByRef)
-	dockerProvider := fakeDockerClientProviderInternal{client: newTestDockerClient(t, server)}
+	dockerProvider := fakeDockerClientProviderInternal{client: newRawTestDockerClient(t, server)}
 	puller := &fakeImagePullerInternal{}
 	recorder := &fakeRunRecorderInternal{}
 	projectUpdater := &fakeProjectUpdaterInternal{

@@ -2,19 +2,24 @@ package services
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	dockersdkclient "github.com/docker/go-sdk/client"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/crypto"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/startup"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 	dockerregistry "github.com/moby/moby/api/types/registry"
-	"github.com/moby/moby/client"
+	client "github.com/moby/moby/client"
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/assert"
@@ -28,8 +33,36 @@ type fakeRegistryDaemonClient struct {
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
+type dockerConfigTestDocument struct {
+	Auths      map[string]dockerConfigAuthEntry `json:"auths"`
+	CredsStore string                           `json:"credsStore,omitempty"`
+	DetachKeys string                           `json:"detachKeys,omitempty"`
+}
+
 func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
+}
+
+func readDockerConfigTestDocument(t *testing.T, dockerConfigDir string) dockerConfigTestDocument {
+	t.Helper()
+
+	raw, err := os.ReadFile(filepath.Join(dockerConfigDir, startup.DockerConfigFileName))
+	require.NoError(t, err)
+
+	var doc dockerConfigTestDocument
+	require.NoError(t, json.Unmarshal(raw, &doc))
+	return doc
+}
+
+func decodeDockerConfigAuthEntryInternal(t *testing.T, encoded string) (string, string) {
+	t.Helper()
+
+	decoded, err := base64.StdEncoding.DecodeString(encoded)
+	require.NoError(t, err)
+
+	username, password, ok := strings.Cut(string(decoded), ":")
+	require.True(t, ok)
+	return username, password
 }
 
 func (f *fakeRegistryDaemonClient) RegistryLogin(ctx context.Context, options client.RegistryLoginOptions) (client.RegistryLoginResult, error) {
@@ -46,13 +79,13 @@ func (f *fakeRegistryDaemonClient) DistributionInspect(ctx context.Context, imag
 	return f.distributionInspectFn(ctx, imageRef, options)
 }
 
-func newTestDockerClient(t *testing.T, server *httptest.Server) *client.Client {
+func newRawTestDockerClient(t *testing.T, server *httptest.Server) *client.Client {
 	t.Helper()
 
 	httpClient := server.Client()
 	cli, err := client.New(
 		client.WithHost(server.URL),
-		client.WithVersion("1.41"),
+		client.WithAPIVersion("1.41"),
 		client.WithHTTPClient(httpClient),
 	)
 	require.NoError(t, err)
@@ -62,6 +95,22 @@ func newTestDockerClient(t *testing.T, server *httptest.Server) *client.Client {
 	})
 
 	return cli
+}
+
+func newTestDockerClient(t *testing.T, server *httptest.Server) dockersdkclient.SDKClient {
+	t.Helper()
+
+	rawClient := newRawTestDockerClient(t, server)
+	sdkClient, err := dockersdkclient.New(
+		context.Background(),
+		dockersdkclient.WithDockerAPI(rawClient),
+		dockersdkclient.WithHealthCheck(func(context.Context) func(dockersdkclient.SDKClient) error {
+			return func(dockersdkclient.SDKClient) error { return nil }
+		}),
+	)
+	require.NoError(t, err)
+
+	return sdkClient
 }
 
 func newDockerHubRateLimitTestClient(t *testing.T, handler http.HandlerFunc) *http.Client {
@@ -139,6 +188,116 @@ func TestContainerRegistryService_GetAllRegistryAuthConfigs_SkipsInvalidEntries(
 	assert.Equal(t, "example-user", exampleCfg.Username)
 	assert.Equal(t, "example-token", exampleCfg.Password)
 	assert.Equal(t, "registry.example.com", exampleCfg.ServerAddress)
+}
+
+func TestContainerRegistryService_ReconcileDockerConfig_WritesManagedAuthsAndPreservesOtherFields(t *testing.T) {
+	_, db := setupImageServiceAuthTest(t)
+	createTestPullRegistry(t, db, "https://index.docker.io/v1/", "docker-user", "docker-token")
+	createTestPullRegistry(t, db, "https://GHCR.IO/", "gh-user", "gh-token")
+
+	dockerConfigDir := t.TempDir()
+	t.Setenv("DOCKER_CONFIG", dockerConfigDir)
+
+	existingConfig := `{"credsStore":"osxkeychain","detachKeys":"ctrl-e,e","auths":{"obsolete.example.com":{"auth":"b2xkOnRva2Vu"}}}`
+	require.NoError(t, os.WriteFile(filepath.Join(dockerConfigDir, startup.DockerConfigFileName), []byte(existingConfig), dockerConfigFilePerm))
+
+	svc := NewContainerRegistryService(db, nil, nil)
+	require.NoError(t, svc.ReconcileDockerConfig(context.Background()))
+
+	doc := readDockerConfigTestDocument(t, dockerConfigDir)
+	assert.Equal(t, "osxkeychain", doc.CredsStore)
+	assert.Equal(t, "ctrl-e,e", doc.DetachKeys)
+	assert.NotContains(t, doc.Auths, "obsolete.example.com")
+
+	require.Contains(t, doc.Auths, "docker.io")
+	dockerUser, dockerPassword := decodeDockerConfigAuthEntryInternal(t, doc.Auths["docker.io"].Auth)
+	assert.Equal(t, "docker-user", dockerUser)
+	assert.Equal(t, "docker-token", dockerPassword)
+	assert.Contains(t, doc.Auths, "registry-1.docker.io")
+	assert.Contains(t, doc.Auths, "index.docker.io")
+
+	require.Contains(t, doc.Auths, "ghcr.io")
+	ghUser, ghPassword := decodeDockerConfigAuthEntryInternal(t, doc.Auths["ghcr.io"].Auth)
+	assert.Equal(t, "gh-user", ghUser)
+	assert.Equal(t, "gh-token", ghPassword)
+}
+
+func TestContainerRegistryService_CreateRegistry_ReconcilesDockerConfig(t *testing.T) {
+	_, db := setupImageServiceAuthTest(t)
+	dockerConfigDir := t.TempDir()
+	t.Setenv("DOCKER_CONFIG", dockerConfigDir)
+
+	svc := NewContainerRegistryService(db, nil, nil)
+	_, err := svc.CreateRegistry(context.Background(), models.CreateContainerRegistryRequest{
+		URL:      "https://registry.example.com",
+		Username: "registry-user",
+		Token:    "registry-token",
+	})
+	require.NoError(t, err)
+
+	doc := readDockerConfigTestDocument(t, dockerConfigDir)
+	require.Contains(t, doc.Auths, "registry.example.com")
+	username, password := decodeDockerConfigAuthEntryInternal(t, doc.Auths["registry.example.com"].Auth)
+	assert.Equal(t, "registry-user", username)
+	assert.Equal(t, "registry-token", password)
+}
+
+func TestContainerRegistryService_UpdateRegistry_DisablingRegistryRemovesDockerConfigAuth(t *testing.T) {
+	_, db := setupImageServiceAuthTest(t)
+	dockerConfigDir := t.TempDir()
+	t.Setenv("DOCKER_CONFIG", dockerConfigDir)
+
+	svc := NewContainerRegistryService(db, nil, nil)
+	reg, err := svc.CreateRegistry(context.Background(), models.CreateContainerRegistryRequest{
+		URL:      "https://registry.example.com",
+		Username: "registry-user",
+		Token:    "registry-token",
+	})
+	require.NoError(t, err)
+
+	enabled := false
+	_, err = svc.UpdateRegistry(context.Background(), reg.ID, models.UpdateContainerRegistryRequest{
+		Enabled: &enabled,
+	})
+	require.NoError(t, err)
+
+	_, statErr := os.Stat(filepath.Join(dockerConfigDir, startup.DockerConfigFileName))
+	assert.ErrorIs(t, statErr, os.ErrNotExist)
+}
+
+func TestContainerRegistryService_SyncRegistries_ReconcilesDockerConfig(t *testing.T) {
+	_, db := setupImageServiceAuthTest(t)
+	createTestPullRegistry(t, db, "https://registry.example.com", "registry-user", "registry-token")
+
+	var existing models.ContainerRegistry
+	require.NoError(t, db.WithContext(context.Background()).First(&existing).Error)
+
+	dockerConfigDir := t.TempDir()
+	t.Setenv("DOCKER_CONFIG", dockerConfigDir)
+
+	svc := NewContainerRegistryService(db, nil, nil)
+	require.NoError(t, svc.ReconcileDockerConfig(context.Background()))
+
+	err := svc.SyncRegistries(context.Background(), []containerregistry.Sync{
+		{
+			ID:           existing.ID,
+			URL:          "https://ghcr.io",
+			Username:     "gh-user",
+			Token:        "gh-token",
+			Enabled:      true,
+			RegistryType: registryTypeGeneric,
+			CreatedAt:    existing.CreatedAt,
+			UpdatedAt:    existing.UpdatedAt,
+		},
+	})
+	require.NoError(t, err)
+
+	doc := readDockerConfigTestDocument(t, dockerConfigDir)
+	assert.NotContains(t, doc.Auths, "registry.example.com")
+	require.Contains(t, doc.Auths, "ghcr.io")
+	username, password := decodeDockerConfigAuthEntryInternal(t, doc.Auths["ghcr.io"].Auth)
+	assert.Equal(t, "gh-user", username)
+	assert.Equal(t, "gh-token", password)
 }
 
 func TestContainerRegistryService_GetRegistryPullUsage_AnonymousDockerHubLimit(t *testing.T) {

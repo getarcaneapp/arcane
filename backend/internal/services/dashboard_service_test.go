@@ -18,7 +18,6 @@ import (
 	glsqlite "github.com/glebarez/sqlite"
 	dockercontainer "github.com/moby/moby/api/types/container"
 	dockerimage "github.com/moby/moby/api/types/image"
-	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
@@ -69,17 +68,8 @@ func newDashboardTestDockerService(
 	}))
 	t.Cleanup(server.Close)
 
-	dockerClient, err := client.NewClientWithOpts(
-		client.WithHost(server.URL),
-		client.WithVersion("1.41"),
-	)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		_ = dockerClient.Close()
-	})
-
 	return &DockerClientService{
-		client:          dockerClient,
+		client:          newTestDockerClient(t, server),
 		settingsService: settingsSvc,
 	}
 }

@@ -61,6 +61,7 @@ resources/            # migrations, images, fonts, email templates
 - Direct Echo routes are reserved for behavior that does not fit Huma cleanly, such as WebSockets, streaming/diagnostics, webhook trigger routes, Playwright-only routes, buildable auth routes, and the embedded frontend.
 - Use `slog` for structured logging with context
 - Error wrapping: `fmt.Errorf("context: %w", err)`
+- Do not add stub/pass-through helper functions that only call one underlying function with the same arguments. Call the real helper directly, or move meaningful logic into the existing function.
 
 **Reuse `pkg/` helpers — do not duplicate or wrap:** Before writing inline logic, check `pkg/` for an existing helper:
 

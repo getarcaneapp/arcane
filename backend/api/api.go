@@ -17,8 +17,12 @@ import (
 
 const (
 	arcaneTypesPrefix = "github.com/getarcaneapp/arcane/types/"
-	dockerSDKPrefix   = "github.com/moby/moby"
 )
+
+var dockerSDKPrefixes = []string{
+	"github.com/moby/moby",
+	"github.com/docker/go-sdk",
+}
 
 var dockerSchemaPrefixes = map[string]string{
 	"types":     "DockerTypes",
@@ -93,11 +97,13 @@ func arcanePackageName(pkgPath string) (string, bool) {
 }
 
 func dockerSchemaPrefix(pkgPath, shortPkg string) (string, bool) {
-	if strings.Contains(pkgPath, dockerSDKPrefix) {
-		parts := strings.Split(pkgPath, "/")
-		last := parts[len(parts)-1]
-		if prefix, ok := dockerSchemaPrefixes[last]; ok {
-			return prefix, true
+	for _, prefixRoot := range dockerSDKPrefixes {
+		if strings.Contains(pkgPath, prefixRoot) {
+			parts := strings.Split(pkgPath, "/")
+			last := parts[len(parts)-1]
+			if prefix, ok := dockerSchemaPrefixes[last]; ok {
+				return prefix, true
+			}
 		}
 	}
 

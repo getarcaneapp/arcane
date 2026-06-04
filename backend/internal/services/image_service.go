@@ -2,31 +2,40 @@ package services
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
 
 	ref "github.com/distribution/reference"
+	dockersdkimage "github.com/docker/go-sdk/image"
+	appconfig "github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	dockerutils "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
 	utilsregistry "github.com/getarcaneapp/arcane/backend/pkg/libarcane/registryauth"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/startup"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
+	containertypes "github.com/getarcaneapp/arcane/types/container"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
 	systemtypes "github.com/getarcaneapp/arcane/types/system"
 	"github.com/getarcaneapp/arcane/types/vulnerability"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/image"
-	"github.com/moby/moby/client"
+	client "github.com/moby/moby/client"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 )
+
+var dockerSDKImagePullInternal = dockersdkimage.Pull
 
 type ImageService struct {
 	db                   *database.DB
@@ -117,6 +126,12 @@ func (s *ImageService) RemoveImage(ctx context.Context, id string, force bool, u
 		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
+	sdkClient, err := s.dockerService.GetSDKClient(ctx)
+	if err != nil {
+		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", id, "", user.ID, user.Username, "0", err, models.JSON{"action": "delete", "force": force})
+		return fmt.Errorf("failed to connect to Docker: %w", err)
+	}
+
 	imageDetails, inspectErr := dockerClient.ImageInspect(ctx, id)
 	var imageName string
 	if inspectErr == nil && len(imageDetails.RepoTags) > 0 {
@@ -130,7 +145,10 @@ func (s *ImageService) RemoveImage(ctx context.Context, id string, force bool, u
 		PruneChildren: true,
 	}
 
-	_, err = dockerClient.ImageRemove(ctx, id, options)
+	_, err = dockersdkimage.Remove(ctx, id,
+		dockersdkimage.WithRemoveClient(sdkClient),
+		dockersdkimage.WithRemoveOptions(options),
+	)
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", id, imageName, user.ID, user.Username, "0", err, models.JSON{"action": "delete", "force": force})
 		return fmt.Errorf("failed to remove image: %w", err)
@@ -170,66 +188,10 @@ func (s *ImageService) RemoveImage(ctx context.Context, id string, force bool, u
 }
 
 func (s *ImageService) PullImage(ctx context.Context, imageName string, progressWriter io.Writer, user models.User, externalCreds []containerregistry.Credential) error {
-	dockerClient, err := s.dockerService.GetClient(ctx)
-	if err != nil {
+	if err := pullImageWithRuntimeCredentialsInternal(ctx, s.dockerService, s.registryService, imageName, progressWriter, externalCreds); err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", err, models.JSON{"action": "pull"})
-		return fmt.Errorf("failed to connect to Docker: %w", err)
+		return err
 	}
-
-	slog.DebugContext(ctx, "Attempting to pull image", "image", imageName, "externalCredCount", len(externalCreds))
-
-	pullOptions, err := s.getPullOptionsWithAuth(ctx, imageName, externalCreds)
-	if err != nil {
-		slog.WarnContext(ctx, "Failed to get registry authentication for image; proceeding without auth", "image", imageName, "error", err.Error())
-		pullOptions = client.ImagePullOptions{}
-	}
-
-	initialHasAuth := pullOptions.RegistryAuth != ""
-	retriedWithoutAuth := false
-
-	reader, err := dockerClient.ImagePull(ctx, imageName, pullOptions)
-	if err != nil && shouldRetryAnonymousPullInternal(pullOptions, err) {
-		retriedWithoutAuth = true
-		slog.WarnContext(ctx, "Docker ImagePull failed with registry auth; retrying anonymously", "image", imageName, "error", err.Error())
-		pullOptions = client.ImagePullOptions{}
-		reader, err = dockerClient.ImagePull(ctx, imageName, pullOptions)
-	}
-	if err != nil {
-		slog.ErrorContext(ctx, "Docker ImagePull failed", "image", imageName, "hasAuth", pullOptions.RegistryAuth != "", "initialHasAuth", initialHasAuth, "retriedWithoutAuth", retriedWithoutAuth, "error", err.Error())
-		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", err, models.JSON{"action": "pull"})
-		return fmt.Errorf("failed to initiate image pull for %s: %w", imageName, err)
-	}
-	defer func() { _ = reader.Close() }()
-
-	streamWriter := progressWriter
-	if streamWriter == nil {
-		streamWriter = io.Discard
-	}
-
-	flusher, implementsFlusher := streamWriter.(http.Flusher)
-	streamErr := dockerutils.ConsumeJSONMessageStream(reader, func(line []byte) error {
-		if _, writeErr := streamWriter.Write(line); writeErr != nil {
-			return writeErr
-		}
-		if _, writeErr := streamWriter.Write([]byte("\n")); writeErr != nil {
-			return writeErr
-		}
-		if implementsFlusher {
-			flusher.Flush()
-		}
-		return nil
-	})
-	if streamErr != nil {
-		if errors.Is(streamErr, context.Canceled) || strings.Contains(streamErr.Error(), "context canceled") {
-			slog.Debug("image pull stream canceled", "image", imageName, "err", streamErr)
-			s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", streamErr, models.JSON{"action": "pull", "step": "canceled"})
-			return fmt.Errorf("image pull stream canceled for %s: %w", imageName, streamErr)
-		}
-		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", streamErr, models.JSON{"action": "pull", "step": "read_stream"})
-		return fmt.Errorf("error reading image pull stream for %s: %w", imageName, streamErr)
-	}
-
-	slog.Debug("image pull stream completed", "image", imageName)
 
 	metadata := models.JSON{
 		"action":    "pull",
@@ -245,6 +207,221 @@ func (s *ImageService) PullImage(ctx context.Context, imageName string, progress
 	}
 
 	return nil
+}
+
+func pullImageWithRuntimeCredentialsInternal(ctx context.Context, dockerService *DockerClientService, registryService *ContainerRegistryService, imageName string, progressWriter io.Writer, externalCreds []containerregistry.Credential) error {
+	if dockerService == nil {
+		return errors.New("docker service is not configured")
+	}
+
+	sdkClient, err := dockerService.GetSDKClient(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to connect to Docker: %w", err)
+	}
+
+	slog.DebugContext(ctx, "Attempting to pull image via go-sdk", "image", imageName, "externalCredCount", len(externalCreds))
+
+	if registryService != nil {
+		if err := registryService.ReconcileDockerConfig(ctx); err != nil {
+			return fmt.Errorf("reconcile Docker config before image pull: %w", err)
+		}
+	}
+
+	if err := startup.EnsureDockerConfigFile(appconfig.Load().DockerConfig); err != nil {
+		return err
+	}
+
+	username, token, usedSource, err := resolveRuntimePullCredentialsInternal(ctx, registryService, imageName, externalCreds)
+	if err != nil {
+		return err
+	}
+
+	baseOptions := []dockersdkimage.PullOption{
+		dockersdkimage.WithPullClient(sdkClient),
+		dockersdkimage.WithPullHandler(buildImagePullHandlerInternal(progressWriter)),
+		dockersdkimage.WithCredentialsFn(func(string) (string, string, error) {
+			return username, token, nil
+		}),
+	}
+
+	err = dockerSDKImagePullInternal(ctx, imageName, baseOptions...)
+	if err != nil && isUnauthorizedPullErrorInternal(err) {
+		slog.WarnContext(ctx, "go-sdk image pull failed with credentials; retrying anonymously", "image", imageName, "credentialSource", usedSource, "error", err.Error())
+		anonymousOptions := []dockersdkimage.PullOption{
+			dockersdkimage.WithPullClient(sdkClient),
+			dockersdkimage.WithPullHandler(buildImagePullHandlerInternal(progressWriter)),
+			dockersdkimage.WithCredentialsFn(func(string) (string, string, error) {
+				return "", "", nil
+			}),
+		}
+		err = dockerSDKImagePullInternal(ctx, imageName, anonymousOptions...)
+	}
+	if err != nil {
+		return fmt.Errorf("failed to initiate image pull for %s: %w", imageName, err)
+	}
+
+	slog.Debug("image pull stream completed", "image", imageName, "credentialSource", usedSource)
+	return nil
+}
+
+func buildImagePullHandlerInternal(progressWriter io.Writer) func(io.ReadCloser) error {
+	streamWriter := progressWriter
+	if streamWriter == nil {
+		streamWriter = io.Discard
+	}
+
+	flusher, implementsFlusher := streamWriter.(http.Flusher)
+
+	return func(reader io.ReadCloser) error {
+		streamErr := dockerutils.ConsumeJSONMessageStream(reader, func(line []byte) error {
+			if _, writeErr := streamWriter.Write(line); writeErr != nil {
+				return writeErr
+			}
+			if _, writeErr := streamWriter.Write([]byte("\n")); writeErr != nil {
+				return writeErr
+			}
+			if implementsFlusher {
+				flusher.Flush()
+			}
+			return nil
+		})
+		if streamErr != nil {
+			if errors.Is(streamErr, context.Canceled) || strings.Contains(streamErr.Error(), "context canceled") {
+				slog.Debug("image pull stream canceled", "err", streamErr)
+				return fmt.Errorf("image pull stream canceled: %w", streamErr)
+			}
+			return fmt.Errorf("error reading image pull stream: %w", streamErr)
+		}
+
+		return nil
+	}
+}
+
+func resolveExternalPullCredentialsInternal(imageRef string, externalCreds []containerregistry.Credential) (string, string, bool) {
+	registryHost := utilsregistry.ExtractRegistryHost(imageRef)
+	for _, cred := range externalCreds {
+		if !cred.Enabled || strings.TrimSpace(cred.Username) == "" || strings.TrimSpace(cred.Token) == "" {
+			continue
+		}
+
+		if utilsregistry.IsRegistryMatch(cred.URL, registryHost) {
+			return strings.TrimSpace(cred.Username), strings.TrimSpace(cred.Token), true
+		}
+	}
+
+	return "", "", false
+}
+
+func resolveManagedPullCredentialsInternal(ctx context.Context, registryService *ContainerRegistryService, imageRef string, externalCreds []containerregistry.Credential) (string, string, bool, error) {
+	username, token, ok := resolveExternalPullCredentialsInternal(imageRef, externalCreds)
+	if ok {
+		return username, token, true, nil
+	}
+
+	if registryService == nil {
+		return "", "", false, nil
+	}
+
+	registryHost := utilsregistry.ExtractRegistryHost(imageRef)
+	authHeader, err := registryService.GetRegistryAuthForHost(ctx, registryHost)
+	if err != nil {
+		return "", "", false, fmt.Errorf("failed to get registry credentials: %w", err)
+	}
+	if authHeader == "" {
+		return "", "", false, nil
+	}
+
+	authConfig, err := utilsregistry.DecodeAuthHeader(authHeader)
+	if err != nil {
+		return "", "", false, fmt.Errorf("failed to decode registry credentials: %w", err)
+	}
+	if strings.TrimSpace(authConfig.Username) == "" || strings.TrimSpace(authConfig.Password) == "" {
+		return "", "", false, nil
+	}
+
+	return strings.TrimSpace(authConfig.Username), strings.TrimSpace(authConfig.Password), true, nil
+}
+
+func resolveRuntimePullCredentialsInternal(ctx context.Context, registryService *ContainerRegistryService, imageRef string, externalCreds []containerregistry.Credential) (string, string, string, error) {
+	username, token, ok, err := resolveDockerConfigPullCredentialsInternal(imageRef)
+	if err != nil {
+		return "", "", "", err
+	}
+	if ok {
+		return username, token, "docker-config", nil
+	}
+
+	username, token, ok, err = resolveManagedPullCredentialsInternal(ctx, registryService, imageRef, externalCreds)
+	if err != nil {
+		return "", "", "", err
+	}
+	if ok {
+		return username, token, "managed", nil
+	}
+
+	return "", "", "", nil
+}
+
+func resolveDockerConfigPullCredentialsInternal(imageRef string) (string, string, bool, error) {
+	configPath := startup.ResolveDockerConfigPath(appconfig.Load().DockerConfig)
+	raw, err := os.ReadFile(configPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", "", false, nil
+		}
+		return "", "", false, fmt.Errorf("read Docker config credentials: %w", err)
+	}
+	if strings.TrimSpace(string(raw)) == "" {
+		return "", "", false, nil
+	}
+
+	var doc struct {
+		Auths map[string]dockerConfigAuthEntry `json:"auths"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		return "", "", false, fmt.Errorf("parse Docker config credentials: %w", err)
+	}
+	if len(doc.Auths) == 0 {
+		return "", "", false, nil
+	}
+
+	registryHost := utilsregistry.ExtractRegistryHost(imageRef)
+	for _, key := range utilsregistry.LookupKeys(registryHost) {
+		if username, token, ok, err := decodeDockerConfigAuthEntryForPullInternal(doc.Auths[key]); ok || err != nil {
+			return username, token, ok, err
+		}
+	}
+
+	for key, entry := range doc.Auths {
+		if !utilsregistry.IsRegistryMatch(key, registryHost) {
+			continue
+		}
+		return decodeDockerConfigAuthEntryForPullInternal(entry)
+	}
+
+	return "", "", false, nil
+}
+
+func decodeDockerConfigAuthEntryForPullInternal(entry dockerConfigAuthEntry) (string, string, bool, error) {
+	encoded := strings.TrimSpace(entry.Auth)
+	if encoded == "" {
+		return "", "", false, nil
+	}
+
+	decoded, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return "", "", false, fmt.Errorf("decode Docker config auth entry: %w", err)
+	}
+
+	username, token, ok := strings.Cut(string(decoded), ":")
+	if !ok {
+		return "", "", false, errors.New("decode Docker config auth entry: missing username/password separator")
+	}
+	if strings.TrimSpace(username) == "" || strings.TrimSpace(token) == "" {
+		return "", "", false, nil
+	}
+
+	return strings.TrimSpace(username), strings.TrimSpace(token), true, nil
 }
 
 func (s *ImageService) ReconcilePulledImageUpdate(ctx context.Context, imageName string) error {
@@ -322,52 +499,6 @@ func (s *ImageService) ImageExistsLocally(ctx context.Context, imageName string)
 		return false, nil
 	}
 	return false, fmt.Errorf("failed to inspect image %s: %w", imageName, err)
-}
-
-func (s *ImageService) getPullOptionsWithAuth(ctx context.Context, imageRef string, externalCreds []containerregistry.Credential) (client.ImagePullOptions, error) {
-	pullOptions := client.ImagePullOptions{}
-
-	registryHost := utilsregistry.ExtractRegistryHost(imageRef)
-
-	// Check external credentials first
-	for _, cred := range externalCreds {
-		if !cred.Enabled || cred.Username == "" || cred.Token == "" {
-			continue
-		}
-
-		if utilsregistry.IsRegistryMatch(cred.URL, registryHost) {
-			authStr, err := utilsregistry.EncodeAuthHeader(cred.Username, cred.Token, utilsregistry.NormalizeRegistryURL(cred.URL))
-			if err != nil {
-				return pullOptions, fmt.Errorf("failed to create auth header: %w", err)
-			}
-			pullOptions.RegistryAuth = authStr
-
-			slog.DebugContext(ctx, "Using external credentials for image pull", "registry", registryHost, "username", cred.Username)
-			return pullOptions, nil
-		}
-	}
-
-	if s.registryService == nil {
-		return pullOptions, nil
-	}
-
-	authStr, err := s.registryService.GetRegistryAuthForHost(ctx, registryHost)
-	if err != nil {
-		return pullOptions, fmt.Errorf("failed to get registry credentials: %w", err)
-	}
-	if authStr != "" {
-		pullOptions.RegistryAuth = authStr
-		slog.DebugContext(ctx, "Using database credentials for image pull", "registry", registryHost)
-	}
-
-	return pullOptions, nil
-}
-
-func shouldRetryAnonymousPullInternal(pullOptions client.ImagePullOptions, pullErr error) bool {
-	if pullOptions.RegistryAuth == "" || pullErr == nil {
-		return false
-	}
-	return isUnauthorizedPullErrorInternal(pullErr)
 }
 
 func isUnauthorizedPullErrorInternal(err error) bool {
@@ -820,6 +951,34 @@ func (s *ImageService) BuildProjectIDMap(ctx context.Context, containers []conta
 	return projectIDs
 }
 
+func (s *ImageService) BuildProjectIDMapFromSummaries(ctx context.Context, containers []containertypes.Summary) map[string]string {
+	projectIDs := make(map[string]string)
+	if s.db == nil {
+		return projectIDs
+	}
+
+	projectNameSet := make(map[string]struct{})
+	for _, c := range containers {
+		if c.Labels == nil {
+			continue
+		}
+		if projectName := dockerutils.ComposeProjectLabel(c.Labels); projectName != "" {
+			projectNameSet[projectName] = struct{}{}
+		}
+	}
+	if len(projectNameSet) == 0 {
+		return projectIDs
+	}
+
+	all := s.loadProjectIDByNameCachedInternal(ctx)
+	for name := range projectNameSet {
+		if id, ok := all[name]; ok {
+			projectIDs[name] = id
+		}
+	}
+	return projectIDs
+}
+
 func buildUsageMapInternal(containers []container.Summary, projectIDByName map[string]string) map[string][]imagetypes.UsedBy {
 	usageMap := make(map[string][]imagetypes.UsedBy)
 	projectSeen := make(map[string]map[string]bool)
@@ -857,6 +1016,57 @@ func buildUsageMapInternal(containers []container.Summary, projectIDByName map[s
 		}
 		if containerName == "" {
 			containerName = c.ID
+		}
+
+		if containerSeen[c.ImageID] == nil {
+			containerSeen[c.ImageID] = make(map[string]bool)
+		}
+		if !containerSeen[c.ImageID][c.ID] {
+			usageMap[c.ImageID] = append(usageMap[c.ImageID], imagetypes.UsedBy{
+				Type: "container",
+				Name: containerName,
+				ID:   c.ID,
+			})
+			containerSeen[c.ImageID][c.ID] = true
+		}
+	}
+
+	return usageMap
+}
+
+func buildUsageMapFromSummariesInternal(containers []containertypes.Summary, projectIDByName map[string]string) map[string][]imagetypes.UsedBy {
+	usageMap := make(map[string][]imagetypes.UsedBy)
+	projectSeen := make(map[string]map[string]bool)
+	containerSeen := make(map[string]map[string]bool)
+
+	for _, c := range containers {
+		if c.ImageID == "" {
+			continue
+		}
+
+		projectName := dockerutils.ComposeProjectLabel(c.Labels)
+		if projectName != "" {
+			projectID := projectIDByName[projectName]
+			if projectSeen[c.ImageID] == nil {
+				projectSeen[c.ImageID] = make(map[string]bool)
+			}
+			if !projectSeen[c.ImageID][projectName] {
+				usedBy := imagetypes.UsedBy{
+					Type: "project",
+					Name: projectName,
+				}
+				if projectID != "" {
+					usedBy.ID = projectID
+				}
+				usageMap[c.ImageID] = append(usageMap[c.ImageID], usedBy)
+				projectSeen[c.ImageID][projectName] = true
+			}
+			continue
+		}
+
+		containerName := c.ID
+		if len(c.Names) > 0 && strings.TrimSpace(c.Names[0]) != "" {
+			containerName = strings.TrimPrefix(c.Names[0], "/")
 		}
 
 		if containerSeen[c.ImageID] == nil {

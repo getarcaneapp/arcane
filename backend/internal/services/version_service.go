@@ -19,7 +19,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/version"
 	libupdater "github.com/getarcaneapp/updater/pkg/labels"
 	containertypes "github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/client"
+	client "github.com/moby/moby/client"
 	"golang.org/x/mod/semver"
 )
 
@@ -370,7 +370,7 @@ func (s *VersionService) detectCurrentImageInfo(ctx context.Context) (tag string
 }
 
 // detectContainerID tries to get the current container ID, falling back to label-based detection
-func (s *VersionService) detectContainerID(ctx context.Context, dockerClient *client.Client) string {
+func (s *VersionService) detectContainerID(ctx context.Context, dockerClient client.APIClient) string {
 	containerId, err := s.getCurrentContainerID()
 	if err == nil {
 		slog.Debug("detectContainerID: found via getCurrentContainerID", "containerId", containerId)
@@ -383,7 +383,7 @@ func (s *VersionService) detectContainerID(ctx context.Context, dockerClient *cl
 }
 
 // findArcaneContainerByLabel searches for the Arcane container using labels
-func (s *VersionService) findArcaneContainerByLabel(ctx context.Context, dockerClient *client.Client) string {
+func (s *VersionService) findArcaneContainerByLabel(ctx context.Context, dockerClient client.APIClient) string {
 	f := make(client.Filters)
 	f = f.Add("label", libupdater.LabelArcane+"=true")
 	list, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true, Filters: f})
@@ -419,7 +419,7 @@ func (s *VersionService) findArcaneContainerByLabel(ctx context.Context, dockerC
 }
 
 // extractImageDetails extracts digest and imageRef from a container's image
-func (s *VersionService) extractImageDetails(ctx context.Context, dockerClient *client.Client, container containertypes.InspectResponse) (imageRef, digest string) {
+func (s *VersionService) extractImageDetails(ctx context.Context, dockerClient client.APIClient, container containertypes.InspectResponse) (imageRef, digest string) {
 	if container.Image == "" {
 		return "", ""
 	}

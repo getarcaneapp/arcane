@@ -760,6 +760,8 @@ func TestProjectService_PullImageForService_UpdatesCurrentImageRecordAfterPull(t
 }
 
 func TestProjectService_ComposePullSelectedServicesInternal_ReconcilesOnlyOnSuccess(t *testing.T) {
+	t.Setenv("DOCKER_CONFIG", t.TempDir())
+
 	ctx := context.Background()
 	db := setupProjectTestDB(t)
 
@@ -857,7 +859,10 @@ func TestProjectService_ComposePullSelectedServicesInternal_ReconcilesOnlyOnSucc
 	assert.Equal(t, "arcane-user", privateAuth.Username)
 	assert.Equal(t, "arcane-token", privateAuth.Password)
 	assert.Equal(t, "registry.example.com", privateAuth.ServerAddress)
-	assert.Empty(t, authHeadersByRef[publicImageRef], "public image pull should not receive unrelated registry auth")
+	publicAuth := decodeRegistryAuth(t, authHeadersByRef[publicImageRef])
+	assert.Empty(t, publicAuth.Username, "public image pull should not receive unrelated registry username")
+	assert.Empty(t, publicAuth.Password, "public image pull should not receive unrelated registry password")
+	assert.Empty(t, publicAuth.IdentityToken, "public image pull should not receive unrelated registry token")
 
 	// sha256:selected-old may still be used by another container — must not be cleared (fixes #2453).
 	var selectedRecord models.ImageUpdateRecord

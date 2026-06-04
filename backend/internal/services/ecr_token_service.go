@@ -108,12 +108,18 @@ func (s *ContainerRegistryService) refreshECRTokenInternal(ctx context.Context, 
 	now := time.Now().UTC()
 	reg.ECRToken = encryptedToken
 	reg.ECRTokenGeneratedAt = &now
+	persisted := true
 	if saveErr := s.db.WithContext(ctx).Model(reg).Updates(map[string]any{
 		"ecr_token":              encryptedToken,
 		"ecr_token_generated_at": now,
 	}).Error; saveErr != nil {
 		// Non-fatal: log but continue — the token is still usable for this call.
+		persisted = false
 		slog.WarnContext(ctx, "failed to persist ECR token to database", "registry", reg.URL, "error", saveErr)
+	}
+
+	if persisted && !isDockerConfigReconcileContextInternal(ctx) {
+		s.reconcileDockerConfigAfterMutationInternal(ctx, "refresh_ecr_token")
 	}
 
 	return &ecrTokenResult{username: "AWS", password: ecrPassword}, nil

@@ -2,8 +2,8 @@ package services
 
 import (
 	"context"
-	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"strings"
@@ -18,7 +18,7 @@ import (
 	libupdater "github.com/getarcaneapp/updater/pkg/labels"
 	containertypes "github.com/moby/moby/api/types/container"
 	mounttypes "github.com/moby/moby/api/types/mount"
-	"github.com/moby/moby/client"
+	client "github.com/moby/moby/client"
 )
 
 const defaultArcaneUpgraderImageInternal = "ghcr.io/getarcaneapp/arcane:latest"
@@ -29,6 +29,7 @@ type SystemUpgradeService struct {
 	versionService  *VersionService
 	eventService    *EventService
 	settingsService *SettingsService
+	registryService *ContainerRegistryService
 }
 
 type upgraderRuntimeOptionsInternal struct {
@@ -42,12 +43,14 @@ func NewSystemUpgradeService(
 	versionService *VersionService,
 	eventService *EventService,
 	settingsService *SettingsService,
+	registryService *ContainerRegistryService,
 ) *SystemUpgradeService {
 	return &SystemUpgradeService{
 		dockerService:   dockerService,
 		versionService:  versionService,
 		eventService:    eventService,
 		settingsService: settingsService,
+		registryService: registryService,
 	}
 }
 
@@ -138,20 +141,11 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 	pullCtx, pullCancel := timeouts.WithTimeout(ctx, settings.DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull)
 	defer pullCancel()
 
-	pullReader, err := dockerClient.ImagePull(pullCtx, upgraderImage, client.ImagePullOptions{})
-	if err != nil {
-		if errors.Is(pullCtx.Err(), context.DeadlineExceeded) {
+	if err := pullImageWithRuntimeCredentialsInternal(pullCtx, s.dockerService, s.registryService, upgraderImage, io.Discard, nil); err != nil {
+		if pullCtx.Err() == context.DeadlineExceeded {
 			return fmt.Errorf("upgrader image pull timed out for %s (increase DOCKER_IMAGE_PULL_TIMEOUT or setting)", upgraderImage)
 		}
 		return fmt.Errorf("pull upgrader image: %w", err)
-	}
-	// Drain and validate the JSON stream to complete the pull.
-	if err := dockerutils.ConsumeJSONMessageStream(pullReader, nil); err != nil {
-		_ = pullReader.Close()
-		return fmt.Errorf("failed to complete upgrader image pull: %w", err)
-	}
-	if closeErr := pullReader.Close(); closeErr != nil {
-		slog.Warn("Failed to close upgrader image pull reader", "error", closeErr)
 	}
 	slog.Info("Upgrader image pulled successfully", "image", upgraderImage)
 

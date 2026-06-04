@@ -22,6 +22,9 @@ const (
 	mountInfoPath           = "/proc/self/mountinfo"
 )
 
+// DockerConfigFileName is the Docker CLI-compatible registry auth document name.
+const DockerConfigFileName = "config.json"
+
 var lchownFn = os.Lchown
 
 type runtimeIdentityRequest struct {
@@ -147,17 +150,72 @@ func defaultRuntimeIdentityRequestInternal(dockerHost string) runtimeIdentityReq
 	}
 }
 
+// RuntimeDockerConfigDir returns the managed Docker config directory used when
+// Arcane switches to its non-root runtime identity.
+func RuntimeDockerConfigDir(configDir string) string {
+	configDir = strings.TrimSpace(configDir)
+	if configDir != "" {
+		return filepath.Clean(configDir)
+	}
+
+	return defaultDockerConfigDir
+}
+
+// ResolveDockerConfigDir returns the effective Docker config directory for
+// runtime consumers after startup has had a chance to set DOCKER_CONFIG.
+func ResolveDockerConfigDir(configDir string) string {
+	if dir := strings.TrimSpace(configDir); dir != "" {
+		return filepath.Clean(dir)
+	}
+	if dir := strings.TrimSpace(os.Getenv("DOCKER_CONFIG")); dir != "" {
+		return filepath.Clean(dir)
+	}
+	if homeDir, err := os.UserHomeDir(); err == nil && strings.TrimSpace(homeDir) != "" {
+		return filepath.Join(homeDir, ".docker")
+	}
+	return defaultDockerConfigDir
+}
+
+// ResolveDockerConfigPath returns the effective Docker config.json path.
+func ResolveDockerConfigPath(configDir string) string {
+	return filepath.Join(ResolveDockerConfigDir(configDir), DockerConfigFileName)
+}
+
+// EnsureDockerConfigFile creates an empty Docker config.json when it does not
+// exist yet, matching Docker CLI behavior for a user with no saved credentials.
+func EnsureDockerConfigFile(configDir string) error {
+	configPath := ResolveDockerConfigPath(configDir)
+	if _, err := os.Stat(configPath); err == nil {
+		return nil
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("stat Docker config file: %w", err)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(configPath), pkgutils.DirPerm); err != nil {
+		return fmt.Errorf("create Docker config directory: %w", err)
+	}
+
+	file, err := os.OpenFile(configPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		if os.IsExist(err) {
+			return nil
+		}
+		return fmt.Errorf("create Docker config file: %w", err)
+	}
+	defer func() { _ = file.Close() }()
+
+	if _, err := file.WriteString("{}"); err != nil {
+		return fmt.Errorf("initialize Docker config file: %w", err)
+	}
+
+	return nil
+}
+
 func runtimeDockerConfigDirInternal(cfg *RuntimeIdentityConfig) string {
 	if cfg == nil {
 		cfg = &RuntimeIdentityConfig{}
 	}
-
-	configDir := strings.TrimSpace(cfg.DockerConfig)
-	if configDir != "" {
-		return configDir
-	}
-
-	return defaultDockerConfigDir
+	return RuntimeDockerConfigDir(cfg.DockerConfig)
 }
 
 func ensureRuntimeDockerConfigInternal(cfg *RuntimeIdentityConfig, setenv func(string, string) error, uid int, gid int) error {

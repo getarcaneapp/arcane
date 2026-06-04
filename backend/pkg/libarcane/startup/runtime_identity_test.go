@@ -78,12 +78,14 @@ func TestRuntimeDockerConfigDir(t *testing.T) {
 		dir := runtimeDockerConfigDirInternal(&RuntimeIdentityConfig{})
 
 		require.Equal(t, defaultDockerConfigDir, dir)
+		require.Equal(t, defaultDockerConfigDir, RuntimeDockerConfigDir(""))
 	})
 
 	t.Run("preserves explicit docker config", func(t *testing.T) {
 		dir := runtimeDockerConfigDirInternal(&RuntimeIdentityConfig{DockerConfig: "/custom/docker-config"})
 
 		require.Equal(t, "/custom/docker-config", dir)
+		require.Equal(t, "/custom/docker-config", RuntimeDockerConfigDir(" /custom/docker-config "))
 	})
 
 	t.Run("default runtime uses non-root identity", func(t *testing.T) {
@@ -95,6 +97,30 @@ func TestRuntimeDockerConfigDir(t *testing.T) {
 		require.Equal(t, defaultRuntimeUID, req.UID)
 		require.Equal(t, defaultRuntimeGID, req.GID)
 	})
+}
+
+func TestResolveDockerConfigPath(t *testing.T) {
+	t.Run("uses explicit config first", func(t *testing.T) {
+		t.Setenv("DOCKER_CONFIG", "/env/docker-config")
+
+		require.Equal(t, filepath.Join("/custom/docker-config", DockerConfigFileName), ResolveDockerConfigPath(" /custom/docker-config "))
+	})
+
+	t.Run("uses docker config environment", func(t *testing.T) {
+		t.Setenv("DOCKER_CONFIG", "/env/docker-config")
+
+		require.Equal(t, filepath.Join("/env/docker-config", DockerConfigFileName), ResolveDockerConfigPath(""))
+	})
+}
+
+func TestEnsureDockerConfigFile(t *testing.T) {
+	dockerConfigDir := t.TempDir()
+
+	require.NoError(t, EnsureDockerConfigFile(dockerConfigDir))
+
+	raw, err := os.ReadFile(filepath.Join(dockerConfigDir, DockerConfigFileName))
+	require.NoError(t, err)
+	require.Equal(t, "{}", string(raw))
 }
 
 func TestConfigureRuntimeDockerConfigEnv(t *testing.T) {

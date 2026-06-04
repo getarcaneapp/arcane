@@ -5,7 +5,7 @@ import (
 
 	containertypes "github.com/moby/moby/api/types/container"
 	systemtypes "github.com/moby/moby/api/types/system"
-	"github.com/moby/moby/client"
+	client "github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
 )
 

@@ -10,7 +10,7 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/volume"
-	"github.com/moby/moby/client"
+	client "github.com/moby/moby/client"
 )
 
 var (
@@ -20,7 +20,7 @@ var (
 	volumeUsageCacheTTL   = 30 * time.Second
 )
 
-func GetVolumeUsageData(ctx context.Context, dockerClient *client.Client) ([]volume.Volume, error) {
+func GetVolumeUsageData(ctx context.Context, dockerClient client.APIClient) ([]volume.Volume, error) {
 	volumeUsageCacheMutex.RLock()
 	if time.Since(volumeUsageCacheTime) < volumeUsageCacheTTL && volumeUsageCache != nil {
 		cached := volumeUsageCache
@@ -86,7 +86,7 @@ func FilterContainersUsingVolume(containers []container.Summary, volumeName stri
 // GetContainersUsingVolume lists all containers and returns IDs that mount the named volume.
 // For batch checks (multiple volumes), prefer listing containers once via dockerClient.ContainerList
 // and calling FilterContainersUsingVolume per volume.
-func GetContainersUsingVolume(ctx context.Context, dockerClient *client.Client, volumeName string) ([]string, error) {
+func GetContainersUsingVolume(ctx context.Context, dockerClient client.APIClient, volumeName string) ([]string, error) {
 	containerList, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list containers: %w", err)

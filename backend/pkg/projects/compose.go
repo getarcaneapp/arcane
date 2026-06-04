@@ -10,7 +10,7 @@ import (
 	"github.com/docker/compose/v5/pkg/api"
 	composev2 "github.com/docker/compose/v5/pkg/compose"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
-	"github.com/moby/moby/client"
+	client "github.com/moby/moby/client"
 )
 
 type Client struct {

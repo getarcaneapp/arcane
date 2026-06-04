@@ -2,11 +2,14 @@ package services
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -15,10 +18,12 @@ import (
 	"golang.org/x/sync/singleflight"
 
 	cerrdefs "github.com/containerd/errdefs"
+	appconfig "github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/crypto"
 	utilsregistry "github.com/getarcaneapp/arcane/backend/pkg/libarcane/registryauth"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/startup"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils/cache"
@@ -26,8 +31,7 @@ import (
 	updaterdigest "github.com/getarcaneapp/updater/pkg/digest"
 	updaterrefs "github.com/getarcaneapp/updater/pkg/refs"
 	updaterregistry "github.com/getarcaneapp/updater/pkg/registry"
-	dockerregistry "github.com/moby/moby/api/types/registry"
-	"github.com/moby/moby/client"
+	client "github.com/moby/moby/client"
 )
 
 const (
@@ -38,7 +42,15 @@ const (
 	registryRateLimitKeyPrefix          = "container_registry:rate_limits:"
 	dockerHubRateLimitRepository        = "ratelimitpreview/test"
 	dockerHubRateLimitTag               = "latest"
+	dockerConfigDirectoryPerm           = 0o700
+	dockerConfigFilePerm                = 0o600
 )
+
+type dockerConfigReconcileContextKey struct{}
+
+type dockerConfigAuthEntry struct {
+	Auth string `json:"auth"`
+}
 
 type RegistryDaemonClient interface {
 	RegistryLogin(ctx context.Context, options client.RegistryLoginOptions) (client.RegistryLoginResult, error)
@@ -77,6 +89,7 @@ type ContainerRegistryService struct {
 	dockerClient           registryDaemonGetter
 	cache                  map[string]*cache.Cache[string] // imageRef -> digest cache
 	cacheMu                sync.RWMutex
+	dockerConfigMu         sync.Mutex
 	ecrRefreshGroup        singleflight.Group
 	distributionHTTPClient *http.Client
 	kvService              *KVService
@@ -178,6 +191,7 @@ func (s *ContainerRegistryService) CreateRegistry(ctx context.Context, req model
 	if err := s.db.WithContext(ctx).Create(registry).Error; err != nil {
 		return nil, fmt.Errorf("failed to create registry: %w", err)
 	}
+	s.reconcileDockerConfigAfterMutationInternal(ctx, "create_registry")
 
 	return registry, nil
 }
@@ -211,6 +225,7 @@ func (s *ContainerRegistryService) UpdateRegistry(ctx context.Context, id string
 	if err := s.db.WithContext(ctx).Save(registry).Error; err != nil {
 		return nil, fmt.Errorf("failed to update registry: %w", err)
 	}
+	s.reconcileDockerConfigAfterMutationInternal(ctx, "update_registry")
 
 	return registry, nil
 }
@@ -284,6 +299,7 @@ func (s *ContainerRegistryService) DeleteRegistry(ctx context.Context, id string
 	if err := s.db.WithContext(ctx).Where("id = ?", id).Delete(&models.ContainerRegistry{}).Error; err != nil {
 		return fmt.Errorf("failed to delete container registry: %w", err)
 	}
+	s.reconcileDockerConfigAfterMutationInternal(ctx, "delete_registry")
 	return nil
 }
 
@@ -343,13 +359,13 @@ func (s *ContainerRegistryService) GetRegistryAuthForHost(ctx context.Context, r
 	return utilsregistry.EncodeAuthHeader(cfg.Username, cfg.Password, cfg.ServerAddress)
 }
 
-func (s *ContainerRegistryService) GetAllRegistryAuthConfigs(ctx context.Context) (map[string]dockerregistry.AuthConfig, error) {
+func (s *ContainerRegistryService) GetAllRegistryAuthConfigs(ctx context.Context) (map[string]containerregistry.RegistryAuthConfig, error) {
 	registries, err := s.GetEnabledRegistries(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	authConfigs := make(map[string]dockerregistry.AuthConfig, len(registries))
+	authConfigs := make(map[string]containerregistry.RegistryAuthConfig, len(registries))
 	for i := range registries {
 		reg := &registries[i]
 		if !reg.Enabled {
@@ -395,7 +411,7 @@ func (s *ContainerRegistryService) GetAllRegistryAuthConfigs(ctx context.Context
 			}
 		}
 
-		authConfig := dockerregistry.AuthConfig{
+		authConfig := containerregistry.RegistryAuthConfig{
 			Username:      username,
 			Password:      token,
 			ServerAddress: serverAddress,
@@ -639,6 +655,187 @@ func registryPullCountKeyInternal(registryHost string) string {
 
 func registryRateLimitKeyInternal(registryID string) string {
 	return registryRateLimitKeyPrefix + strings.TrimSpace(registryID)
+}
+
+func withDockerConfigReconcileContextInternal(ctx context.Context) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	return context.WithValue(ctx, dockerConfigReconcileContextKey{}, true)
+}
+
+func isDockerConfigReconcileContextInternal(ctx context.Context) bool {
+	if ctx == nil {
+		return false
+	}
+
+	active, _ := ctx.Value(dockerConfigReconcileContextKey{}).(bool)
+	return active
+}
+
+func buildDockerConfigAuthEntriesInternal(authConfigs map[string]containerregistry.RegistryAuthConfig) map[string]dockerConfigAuthEntry {
+	if len(authConfigs) == 0 {
+		return nil
+	}
+
+	auths := make(map[string]dockerConfigAuthEntry, len(authConfigs))
+	for host, cfg := range authConfigs {
+		host = strings.TrimSpace(host)
+		if host == "" || cfg.Username == "" || cfg.Password == "" {
+			continue
+		}
+
+		auths[host] = dockerConfigAuthEntry{
+			Auth: base64.StdEncoding.EncodeToString([]byte(cfg.Username + ":" + cfg.Password)),
+		}
+	}
+
+	if len(auths) == 0 {
+		return nil
+	}
+
+	return auths
+}
+
+func buildDockerConfigJSONInternal(authConfigs map[string]containerregistry.RegistryAuthConfig) ([]byte, error) {
+	auths := buildDockerConfigAuthEntriesInternal(authConfigs)
+	if len(auths) == 0 {
+		return nil, nil
+	}
+
+	return json.Marshal(struct {
+		Auths map[string]dockerConfigAuthEntry `json:"auths"`
+	}{Auths: auths})
+}
+
+func (s *ContainerRegistryService) BuildDockerConfigJSON(ctx context.Context) ([]byte, error) {
+	if s == nil {
+		return nil, nil
+	}
+
+	authConfigs, err := s.GetAllRegistryAuthConfigs(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return buildDockerConfigJSONInternal(authConfigs)
+}
+
+func (s *ContainerRegistryService) ReconcileDockerConfig(ctx context.Context) error {
+	if s == nil {
+		return nil
+	}
+
+	configPath := startup.ResolveDockerConfigPath(appconfig.Load().DockerConfig)
+	reconcileCtx := withDockerConfigReconcileContextInternal(ctx)
+
+	authConfigs, err := s.GetAllRegistryAuthConfigs(reconcileCtx)
+	if err != nil {
+		return fmt.Errorf("load registry auth configs: %w", err)
+	}
+
+	authEntries := buildDockerConfigAuthEntriesInternal(authConfigs)
+
+	s.dockerConfigMu.Lock()
+	defer s.dockerConfigMu.Unlock()
+
+	doc, err := loadDockerConfigDocumentInternal(configPath)
+	if err != nil {
+		return fmt.Errorf("load docker config document: %w", err)
+	}
+
+	if len(authEntries) == 0 {
+		delete(doc, "auths")
+	} else {
+		doc["auths"] = authEntries
+	}
+
+	if err := writeDockerConfigDocumentInternal(configPath, doc); err != nil {
+		return fmt.Errorf("write docker config document: %w", err)
+	}
+
+	return nil
+}
+
+func (s *ContainerRegistryService) reconcileDockerConfigAfterMutationInternal(ctx context.Context, reason string) {
+	if err := s.ReconcileDockerConfig(ctx); err != nil {
+		slog.WarnContext(ctx, "failed to reconcile Docker config from registry state", "reason", reason, "error", err)
+	}
+}
+
+func loadDockerConfigDocumentInternal(path string) (map[string]any, error) {
+	raw, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return map[string]any{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	if strings.TrimSpace(string(raw)) == "" {
+		return map[string]any{}, nil
+	}
+
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		return nil, fmt.Errorf("parse Docker config JSON: %w", err)
+	}
+	if doc == nil {
+		return map[string]any{}, nil
+	}
+
+	return doc, nil
+}
+
+func writeDockerConfigDocumentInternal(path string, doc map[string]any) error {
+	if len(doc) == 0 {
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		return nil
+	}
+
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, dockerConfigDirectoryPerm); err != nil {
+		return err
+	}
+
+	tmpFile, err := os.CreateTemp(dir, "."+startup.DockerConfigFileName+".*")
+	if err != nil {
+		return err
+	}
+
+	tmpPath := tmpFile.Name()
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+
+	if err := tmpFile.Chmod(dockerConfigFilePerm); err != nil {
+		_ = tmpFile.Close()
+		return err
+	}
+
+	encoder := json.NewEncoder(tmpFile)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(doc); err != nil {
+		_ = tmpFile.Close()
+		return err
+	}
+
+	if err := tmpFile.Close(); err != nil {
+		return err
+	}
+
+	if err := os.Rename(tmpPath, path); err != nil {
+		return err
+	}
+
+	cleanup = false
+	return nil
 }
 
 func registryProviderInternal(registryHost, registryType string) string {
@@ -1078,7 +1275,15 @@ func (s *ContainerRegistryService) SyncRegistries(ctx context.Context, syncItems
 	}
 
 	// Delete registries that are not in the sync list
-	return s.deleteUnsyncedInternal(ctx, existingMap, syncedIDs)
+	if err := s.deleteUnsyncedInternal(ctx, existingMap, syncedIDs); err != nil {
+		return err
+	}
+
+	if err := s.ReconcileDockerConfig(ctx); err != nil {
+		return fmt.Errorf("sync registries: reconcile docker config: %w", err)
+	}
+
+	return nil
 }
 
 func (s *ContainerRegistryService) getExistingRegistriesMapInternal(ctx context.Context) (map[string]*models.ContainerRegistry, error) {

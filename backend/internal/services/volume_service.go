@@ -18,6 +18,8 @@ import (
 	"sync"
 	"time"
 
+	dockersdkclient "github.com/docker/go-sdk/client"
+	dockersdkvolume "github.com/docker/go-sdk/volume"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	docker "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
@@ -30,7 +32,12 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/volume"
-	"github.com/moby/moby/client"
+	client "github.com/moby/moby/client"
+)
+
+var (
+	dockerSDKVolumeNewInternal      = dockersdkvolume.New
+	dockerSDKVolumeFindByIDInternal = dockersdkvolume.FindByID
 )
 
 type VolumeService struct {
@@ -140,30 +147,73 @@ func (s *VolumeService) CreateVolume(ctx context.Context, options client.VolumeC
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	created, err := dockerClient.VolumeCreate(ctx, options)
-	if err != nil {
-		s.eventService.LogErrorEvent(ctx, models.EventTypeVolumeError, "volume", "", options.Name, user.ID, user.Username, "0", err, models.JSON{"action": "create", "driver": options.Driver})
-		return nil, fmt.Errorf("failed to create volume: %w", err)
+	var createdVolume *volume.Volume
+	if sdkClient, sdkErr := s.dockerService.GetSDKClient(ctx); sdkErr == nil && canUseSDKVolumeCreateInternal(options) {
+		sdkVolume, sdkCreateErr := dockerSDKVolumeNewInternal(ctx, buildSDKVolumeCreateOptionsInternal(sdkClient, options)...)
+		if sdkCreateErr != nil {
+			s.eventService.LogErrorEvent(ctx, models.EventTypeVolumeError, "volume", "", options.Name, user.ID, user.Username, "0", sdkCreateErr, models.JSON{"action": "create", "driver": options.Driver})
+			return nil, fmt.Errorf("failed to create volume: %w", sdkCreateErr)
+		}
+		if sdkVolume != nil {
+			createdVolume = sdkVolume.Volume
+		}
+	}
+	if createdVolume == nil {
+		created, createErr := dockerClient.VolumeCreate(ctx, options)
+		if createErr != nil {
+			s.eventService.LogErrorEvent(ctx, models.EventTypeVolumeError, "volume", "", options.Name, user.ID, user.Username, "0", createErr, models.JSON{"action": "create", "driver": options.Driver})
+			return nil, fmt.Errorf("failed to create volume: %w", createErr)
+		}
+
+		volResult, inspectErr := dockerClient.VolumeInspect(ctx, created.Volume.Name, client.VolumeInspectOptions{})
+		if inspectErr != nil {
+			s.eventService.LogErrorEvent(ctx, models.EventTypeVolumeError, "volume", created.Volume.Name, created.Volume.Name, user.ID, user.Username, "0", inspectErr, models.JSON{"action": "create", "driver": options.Driver, "step": "inspect"})
+			return nil, fmt.Errorf("failed to inspect created volume: %w", inspectErr)
+		}
+		createdVolume = &volResult.Volume
+	}
+	if createdVolume == nil {
+		return nil, errors.New("failed to inspect created volume: volume metadata unavailable")
 	}
 
-	vol, err := dockerClient.VolumeInspect(ctx, created.Volume.Name, client.VolumeInspectOptions{})
-	if err != nil {
-		s.eventService.LogErrorEvent(ctx, models.EventTypeVolumeError, "volume", created.Volume.Name, created.Volume.Name, user.ID, user.Username, "0", err, models.JSON{"action": "create", "driver": options.Driver, "step": "inspect"})
-		return nil, fmt.Errorf("failed to inspect created volume: %w", err)
-	}
+	vol := *createdVolume
 
 	metadata := models.JSON{
 		"action": "create",
-		"driver": vol.Volume.Driver,
-		"name":   vol.Volume.Name,
+		"driver": vol.Driver,
+		"name":   vol.Name,
 	}
-	if logErr := s.eventService.LogVolumeEvent(ctx, models.EventTypeVolumeCreate, vol.Volume.Name, vol.Volume.Name, user.ID, user.Username, "0", metadata); logErr != nil {
-		slog.WarnContext(ctx, "could not log volume creation action", "volume", vol.Volume.Name, "error", logErr.Error())
+	if logErr := s.eventService.LogVolumeEvent(ctx, models.EventTypeVolumeCreate, vol.Name, vol.Name, user.ID, user.Username, "0", metadata); logErr != nil {
+		slog.WarnContext(ctx, "could not log volume creation action", "volume", vol.Name, "error", logErr.Error())
 	}
 
 	docker.InvalidateVolumeUsageCache()
 
-	return new(volumetypes.NewSummary(vol.Volume)), nil
+	return new(volumetypes.NewSummary(vol)), nil
+}
+
+func canUseSDKVolumeCreateInternal(options client.VolumeCreateOptions) bool {
+	driver := strings.TrimSpace(options.Driver)
+	if driver != "" && !strings.EqualFold(driver, "local") {
+		return false
+	}
+	if len(options.DriverOpts) > 0 {
+		return false
+	}
+
+	return true
+}
+
+func buildSDKVolumeCreateOptionsInternal(sdkClient dockersdkclient.SDKClient, options client.VolumeCreateOptions) []dockersdkvolume.Option {
+	createOptions := []dockersdkvolume.Option{dockersdkvolume.WithClient(sdkClient)}
+	if name := strings.TrimSpace(options.Name); name != "" {
+		createOptions = append(createOptions, dockersdkvolume.WithName(name))
+	}
+	if len(options.Labels) > 0 {
+		createOptions = append(createOptions, dockersdkvolume.WithLabels(options.Labels))
+	}
+
+	return createOptions
 }
 
 func (s *VolumeService) DeleteVolume(ctx context.Context, name string, force bool, user models.User) error {
@@ -180,11 +230,30 @@ func (s *VolumeService) DeleteVolume(ctx context.Context, name string, force boo
 		slog.WarnContext(ctx, "could not stop volume browse helper before delete", "volume", name, "error", stopErr.Error())
 	}
 
-	if _, err := dockerClient.VolumeRemove(ctx, name, client.VolumeRemoveOptions{
-		Force: force,
-	}); err != nil {
-		s.eventService.LogErrorEvent(ctx, models.EventTypeVolumeError, "volume", name, name, user.ID, user.Username, "0", err, models.JSON{"action": "delete", "force": force})
-		return fmt.Errorf("failed to remove volume: %w", err)
+	deletedWithSDK := false
+	if sdkClient, sdkErr := s.dockerService.GetSDKClient(ctx); sdkErr == nil {
+		sdkVolume, findErr := dockerSDKVolumeFindByIDInternal(ctx, name, dockersdkvolume.WithFindClient(sdkClient))
+		if findErr == nil && sdkVolume != nil {
+			terminateOptions := make([]dockersdkvolume.TerminateOption, 0, 1)
+			if force {
+				terminateOptions = append(terminateOptions, dockersdkvolume.WithForce())
+			}
+			if terminateErr := sdkVolume.Terminate(ctx, terminateOptions...); terminateErr == nil {
+				deletedWithSDK = true
+			} else {
+				s.eventService.LogErrorEvent(ctx, models.EventTypeVolumeError, "volume", name, name, user.ID, user.Username, "0", terminateErr, models.JSON{"action": "delete", "force": force})
+				return fmt.Errorf("failed to remove volume: %w", terminateErr)
+			}
+		}
+	}
+
+	if !deletedWithSDK {
+		if _, err := dockerClient.VolumeRemove(ctx, name, client.VolumeRemoveOptions{
+			Force: force,
+		}); err != nil {
+			s.eventService.LogErrorEvent(ctx, models.EventTypeVolumeError, "volume", name, name, user.ID, user.Username, "0", err, models.JSON{"action": "delete", "force": force})
+			return fmt.Errorf("failed to remove volume: %w", err)
+		}
 	}
 
 	metadata := models.JSON{
@@ -439,7 +508,7 @@ func (s *VolumeService) DownloadFile(ctx context.Context, volumeName, filePath s
 	return s.downloadFileFromContainerInternal(ctx, dockerClient, containerID, targetPath, cleanup)
 }
 
-func (s *VolumeService) getHelperImageInternal(ctx context.Context, dockerClient *client.Client) (string, error) {
+func (s *VolumeService) getHelperImageInternal(ctx context.Context, dockerClient client.APIClient) (string, error) {
 	slog.DebugContext(ctx, "volume service: resolve helper image")
 	var err error
 	if dockerClient == nil {
@@ -476,11 +545,11 @@ func (s *VolumeService) getHelperImageInternal(ctx context.Context, dockerClient
 	return "", fmt.Errorf("failed to resolve helper image: tools image unavailable and arcane fallback not found (pull error: %w)", pullErr)
 }
 
-func (s *VolumeService) getArchiveHelperImageInternal(ctx context.Context, dockerClient *client.Client) (string, error) {
+func (s *VolumeService) getArchiveHelperImageInternal(ctx context.Context, dockerClient client.APIClient) (string, error) {
 	return s.getHelperImageInternal(ctx, dockerClient)
 }
 
-func (s *VolumeService) resolveArcaneHelperImageInternal(ctx context.Context, dockerClient *client.Client) (string, string, bool) {
+func (s *VolumeService) resolveArcaneHelperImageInternal(ctx context.Context, dockerClient client.APIClient) (string, string, bool) {
 	hostname, _ := os.Hostname()
 	if hostname != "" {
 		if inspect, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, hostname, client.ContainerInspectOptions{}); err == nil && inspect.Container.Config != nil && strings.TrimSpace(inspect.Container.Config.Image) != "" {
@@ -515,7 +584,7 @@ func resolveBackupStorageMountFromMountsInternal(mounts []container.MountPoint, 
 	}, true
 }
 
-func (s *VolumeService) resolveBackupStorageMountInternal(ctx context.Context, dockerClient *client.Client, target string, readOnly bool) backupStorageMountInternal {
+func (s *VolumeService) resolveBackupStorageMountInternal(ctx context.Context, dockerClient client.APIClient, target string, readOnly bool) backupStorageMountInternal {
 	if dockerClient != nil {
 		containerID := s.getArcaneContainerIDInternal(ctx, dockerClient)
 		if containerID != "" {
@@ -540,7 +609,7 @@ func (s *VolumeService) resolveBackupStorageMountInternal(ctx context.Context, d
 	}
 }
 
-func (s *VolumeService) resolveUsableBackupStorageMountInternal(ctx context.Context, dockerClient *client.Client, target string, readOnly bool) (backupStorageMountInternal, error) {
+func (s *VolumeService) resolveUsableBackupStorageMountInternal(ctx context.Context, dockerClient client.APIClient, target string, readOnly bool) (backupStorageMountInternal, error) {
 	backupStorage := s.resolveBackupStorageMountInternal(ctx, dockerClient, target, readOnly)
 	if backupStorage.requiresEnsure {
 		if err := s.ensureBackupVolumeInternal(ctx); err != nil {
@@ -594,7 +663,7 @@ func (s *VolumeService) BackupMountWarning(ctx context.Context) string {
 	return backupMountWarningFromArcaneMountsInternal(inspect.Container.Mounts)
 }
 
-func (s *VolumeService) getArcaneContainerIDInternal(ctx context.Context, dockerClient *client.Client) string {
+func (s *VolumeService) getArcaneContainerIDInternal(ctx context.Context, dockerClient client.APIClient) string {
 	hostname, _ := os.Hostname()
 	if hostname != "" {
 		if inspect, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, hostname, client.ContainerInspectOptions{}); err == nil {
@@ -618,7 +687,7 @@ func (s *VolumeService) getArcaneContainerIDInternal(ctx context.Context, docker
 	return containers.Items[0].ID
 }
 
-func (s *VolumeService) createBackupTempContainerWithMountInternal(ctx context.Context, dockerClient *client.Client, helperImage string, backupMount mount.Mount) (string, func(), error) {
+func (s *VolumeService) createBackupTempContainerWithMountInternal(ctx context.Context, dockerClient client.APIClient, helperImage string, backupMount mount.Mount) (string, func(), error) {
 	var err error
 	if dockerClient == nil {
 		dockerClient, err = s.dockerService.GetClient(ctx)
@@ -663,7 +732,7 @@ func (s *VolumeService) createBackupTempContainerWithMountInternal(ctx context.C
 	return resp.ID, cleanup, nil
 }
 
-func (s *VolumeService) createBackupTempContainerInternal(ctx context.Context, dockerClient *client.Client, target string, readOnly bool) (string, func(), error) {
+func (s *VolumeService) createBackupTempContainerInternal(ctx context.Context, dockerClient client.APIClient, target string, readOnly bool) (string, func(), error) {
 	slog.DebugContext(ctx, "volume service: create backup temp container", "target", target, "read_only", readOnly)
 	var err error
 	if dockerClient == nil {
@@ -808,7 +877,7 @@ func (s *VolumeService) createTempContainerInternal(ctx context.Context, volumeN
 	return resp.ID, cleanup, nil
 }
 
-func (s *VolumeService) getReusableReadOnlyContainerInternal(ctx context.Context, dockerClient *client.Client, volumeName string) (string, bool) {
+func (s *VolumeService) getReusableReadOnlyContainerInternal(ctx context.Context, dockerClient client.APIClient, volumeName string) (string, bool) {
 	s.helperMu.Lock()
 	helper := s.helperByVolume[volumeName]
 	s.helperMu.Unlock()
@@ -2047,7 +2116,7 @@ func (s *VolumeService) enrichVolumesWithUsageDataInternal(volumes []volume.Volu
 	return result
 }
 
-func (s *VolumeService) buildVolumeContainerMapInternal(ctx context.Context, dockerClient *client.Client) (map[string][]string, error) {
+func (s *VolumeService) buildVolumeContainerMapInternal(ctx context.Context, dockerClient client.APIClient) (map[string][]string, error) {
 	slog.DebugContext(ctx, "volume service: build volume container map")
 	containers, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
 	if err != nil {
@@ -2303,7 +2372,7 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 
 func (s *VolumeService) downloadFileFromContainerInternal(
 	ctx context.Context,
-	dockerClient *client.Client,
+	dockerClient client.APIClient,
 	containerID string,
 	containerPath string,
 	cleanup func(),

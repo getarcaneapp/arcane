@@ -12,6 +12,7 @@ import (
 	"time"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
+	dockersdkcontainer "github.com/docker/go-sdk/container"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
@@ -29,8 +30,10 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/events"
 	"github.com/moby/moby/api/types/network"
-	"github.com/moby/moby/client"
+	client "github.com/moby/moby/client"
 )
+
+var dockerSDKContainerFromIDInternal = dockersdkcontainer.FromID
 
 type ContainerService struct {
 	db              *database.DB
@@ -155,30 +158,12 @@ func writeContainerProgressInternal(ctx context.Context, message string, progres
 	}
 }
 
-func (s *ContainerService) pullRedeployImageInternal(ctx context.Context, dockerClient *client.Client, imageName, containerID, containerName string, user models.User) error {
+func (s *ContainerService) pullRedeployImageInternal(ctx context.Context, imageName, containerID, containerName string, user models.User) error {
 	settings := s.settingsService.GetSettingsConfig()
 	pullCtx, pullCancel := timeouts.WithTimeout(ctx, settings.DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull)
 	defer pullCancel()
 
-	pullOptions, authErr := s.imageService.getPullOptionsWithAuth(ctx, imageName, nil)
-	if authErr != nil {
-		slog.WarnContext(ctx, "failed to get registry authentication for container redeploy pull; proceeding without auth",
-			"image", imageName,
-			"error", authErr.Error(),
-		)
-		pullOptions = client.ImagePullOptions{}
-	}
-
-	reader, pullErr := dockerClient.ImagePull(pullCtx, imageName, pullOptions)
-	if pullErr != nil && shouldRetryAnonymousPullInternal(pullOptions, pullErr) {
-		slog.WarnContext(ctx, "container redeploy image pull failed with registry auth; retrying anonymously",
-			"image", imageName,
-			"error", pullErr.Error(),
-		)
-		pullOptions = client.ImagePullOptions{}
-		reader, pullErr = dockerClient.ImagePull(pullCtx, imageName, pullOptions)
-	}
-	if pullErr != nil {
+	if pullErr := pullImageWithRuntimeCredentialsInternal(pullCtx, s.dockerService, s.imageService.registryService, imageName, nil, nil); pullErr != nil {
 		if errors.Is(pullCtx.Err(), context.DeadlineExceeded) {
 			s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, containerName, user.ID, user.Username, "0", pullErr, models.JSON{
 				"action": "redeploy",
@@ -195,22 +180,11 @@ func (s *ContainerService) pullRedeployImageInternal(ctx context.Context, docker
 		})
 		return fmt.Errorf("failed to pull image %s: %w", imageName, pullErr)
 	}
-	defer func() { _ = reader.Close() }()
-
-	streamErr := dockerutils.ConsumeJSONMessageStream(reader, nil)
-	if streamErr != nil {
-		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, containerName, user.ID, user.Username, "0", streamErr, models.JSON{
-			"action": "redeploy",
-			"step":   "complete_pull",
-			"image":  imageName,
-		})
-		return fmt.Errorf("failed to complete image pull: %w", streamErr)
-	}
 
 	return nil
 }
 
-func (s *ContainerService) prepareContainerForRedeployInternal(ctx context.Context, dockerClient *client.Client, containerID, containerName, backupName string, wasRunning bool, user models.User) error {
+func (s *ContainerService) prepareContainerForRedeployInternal(ctx context.Context, dockerClient client.APIClient, containerID, containerName, backupName string, wasRunning bool, user models.User) error {
 	if containerName != "" {
 		if _, err := dockerClient.ContainerRename(ctx, containerID, client.ContainerRenameOptions{NewName: backupName}); err != nil {
 			s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, containerName, user.ID, user.Username, "0", err, models.JSON{
@@ -247,7 +221,7 @@ func (s *ContainerService) prepareContainerForRedeployInternal(ctx context.Conte
 	return fmt.Errorf("failed to stop container: %w", err)
 }
 
-func (s *ContainerService) restoreContainerAfterRedeployFailureInternal(ctx context.Context, dockerClient *client.Client, containerID, containerName, backupName, failedStep string, wasRunning bool, user models.User) {
+func (s *ContainerService) restoreContainerAfterRedeployFailureInternal(ctx context.Context, dockerClient client.APIClient, containerID, containerName, backupName, failedStep string, wasRunning bool, user models.User) {
 	if wasRunning {
 		if _, startErr := dockerClient.ContainerStart(ctx, containerID, client.ContainerStartOptions{}); startErr != nil {
 			s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, containerName, user.ID, user.Username, "0", startErr, models.JSON{
@@ -272,10 +246,10 @@ func (s *ContainerService) restoreContainerAfterRedeployFailureInternal(ctx cont
 }
 
 func (s *ContainerService) StartContainer(ctx context.Context, containerID string, user models.User) error {
-	dockerClient, err := s.dockerService.GetClient(ctx)
+	sdkContainer, err := s.sdkContainerByReferenceInternal(ctx, containerID)
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, models.JSON{"action": "start"})
-		return fmt.Errorf("failed to connect to Docker: %w", err)
+		return err
 	}
 
 	metadata := models.JSON{
@@ -288,7 +262,7 @@ func (s *ContainerService) StartContainer(ctx context.Context, containerID strin
 		slog.WarnContext(ctx, "could not log container start action", "error", err)
 	}
 
-	_, err = dockerClient.ContainerStart(ctx, containerID, client.ContainerStartOptions{})
+	err = sdkContainer.Start(ctx)
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, models.JSON{"action": "start"})
 	}
@@ -296,10 +270,10 @@ func (s *ContainerService) StartContainer(ctx context.Context, containerID strin
 }
 
 func (s *ContainerService) StopContainer(ctx context.Context, containerID string, user models.User) error {
-	dockerClient, err := s.dockerService.GetClient(ctx)
+	sdkContainer, err := s.sdkContainerByReferenceInternal(ctx, containerID)
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, models.JSON{"action": "stop"})
-		return fmt.Errorf("failed to connect to Docker: %w", err)
+		return err
 	}
 
 	metadata := models.JSON{
@@ -312,7 +286,7 @@ func (s *ContainerService) StopContainer(ctx context.Context, containerID string
 		return fmt.Errorf("failed to log action: %w", err)
 	}
 
-	_, err = dockerClient.ContainerStop(ctx, containerID, client.ContainerStopOptions{Timeout: new(30)})
+	err = sdkContainer.Stop(ctx, dockersdkcontainer.StopTimeout(30*time.Second))
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, models.JSON{"action": "stop"})
 	}
@@ -320,10 +294,10 @@ func (s *ContainerService) StopContainer(ctx context.Context, containerID string
 }
 
 func (s *ContainerService) RestartContainer(ctx context.Context, containerID string, user models.User) error {
-	dockerClient, err := s.dockerService.GetClient(ctx)
+	sdkContainer, err := s.sdkContainerByReferenceInternal(ctx, containerID)
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, models.JSON{"action": "restart"})
-		return fmt.Errorf("failed to connect to Docker: %w", err)
+		return err
 	}
 
 	metadata := models.JSON{
@@ -336,11 +310,28 @@ func (s *ContainerService) RestartContainer(ctx context.Context, containerID str
 		return fmt.Errorf("failed to log action: %w", err)
 	}
 
-	_, err = dockerClient.ContainerRestart(ctx, containerID, client.ContainerRestartOptions{})
+	err = sdkContainer.Stop(ctx, dockersdkcontainer.StopTimeout(30*time.Second))
+	if err == nil {
+		err = sdkContainer.Start(ctx)
+	}
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, models.JSON{"action": "restart"})
 	}
 	return err
+}
+
+func (s *ContainerService) sdkContainerByReferenceInternal(ctx context.Context, ref string) (*dockersdkcontainer.Container, error) {
+	sdkClient, err := s.dockerService.GetSDKClient(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
+	}
+
+	sdkContainer, err := dockerSDKContainerFromIDInternal(ctx, sdkClient, ref)
+	if err != nil {
+		return nil, fmt.Errorf("container not found: %w", err)
+	}
+
+	return sdkContainer, nil
 }
 
 // tryRedeployViaComposeProjectInternal attempts to redeploy a compose-managed
@@ -529,7 +520,7 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 
 	if imageName != "" {
 		writeContainerProgressInternal(ctx, "Pulling latest container image", 20, "pull")
-		if err := s.pullRedeployImageInternal(ctx, dockerClient, imageName, containerID, containerName, user); err != nil {
+		if err := s.pullRedeployImageInternal(ctx, imageName, containerID, containerName, user); err != nil {
 			return "", err
 		}
 	}
@@ -612,12 +603,12 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 }
 
 func (s *ContainerService) GetContainerByReference(ctx context.Context, ref string) (*container.InspectResponse, error) {
-	dockerClient, err := s.dockerService.GetClient(ctx)
+	sdkContainer, err := s.sdkContainerByReferenceInternal(ctx, ref)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
+		return nil, err
 	}
 
-	containerInspect, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, ref, client.ContainerInspectOptions{})
+	containerInspect, err := sdkContainer.Inspect(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("container not found: %w", err)
 	}
@@ -720,19 +711,11 @@ func (s *ContainerService) CreateContainer(ctx context.Context, config *containe
 	_, err = dockerClient.ImageInspect(ctx, config.Image)
 	if err != nil {
 		// Image not found locally, need to pull it
-		pullOptions, authErr := s.imageService.getPullOptionsWithAuth(ctx, config.Image, credentials)
-		if authErr != nil {
-			slog.WarnContext(ctx, "Failed to get registry authentication for container image; proceeding without auth",
-				"image", config.Image,
-				"error", authErr.Error())
-			pullOptions = client.ImagePullOptions{}
-		}
-
 		settings := s.settingsService.GetSettingsConfig()
 		pullCtx, pullCancel := timeouts.WithTimeout(ctx, settings.DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull)
 		defer pullCancel()
 
-		reader, pullErr := dockerClient.ImagePull(pullCtx, config.Image, pullOptions)
+		pullErr := pullImageWithRuntimeCredentialsInternal(pullCtx, s.dockerService, s.imageService.registryService, config.Image, nil, credentials)
 		if pullErr != nil {
 			if errors.Is(pullCtx.Err(), context.DeadlineExceeded) {
 				s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", "", containerName, user.ID, user.Username, "0", pullErr, models.JSON{"action": "create", "image": config.Image, "step": "pull_image_timeout"})
@@ -740,13 +723,6 @@ func (s *ContainerService) CreateContainer(ctx context.Context, config *containe
 			}
 			s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", "", containerName, user.ID, user.Username, "0", pullErr, models.JSON{"action": "create", "image": config.Image, "step": "pull_image"})
 			return nil, fmt.Errorf("failed to pull image %s: %w", config.Image, pullErr)
-		}
-		defer func() { _ = reader.Close() }()
-
-		streamErr := dockerutils.ConsumeJSONMessageStream(reader, nil)
-		if streamErr != nil {
-			s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", "", containerName, user.ID, user.Username, "0", streamErr, models.JSON{"action": "create", "image": config.Image, "step": "complete_pull"})
-			return nil, fmt.Errorf("failed to complete image pull: %w", streamErr)
 		}
 	}
 
@@ -1353,7 +1329,7 @@ type ExecSession struct {
 	execID       string
 	containerID  string
 	hijackedResp client.HijackedResponse
-	dockerClient *client.Client
+	dockerClient client.APIClient
 	closeOnce    sync.Once
 }
 

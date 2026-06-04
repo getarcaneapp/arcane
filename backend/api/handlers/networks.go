@@ -283,9 +283,6 @@ func (h *NetworkHandler) CreateNetwork(ctx context.Context, input *CreateNetwork
 		return nil, huma.Error401Unauthorized("not authenticated")
 	}
 
-	// Convert to Docker SDK options
-	dockerOptions := input.Body.Options.ToDockerCreateOptions()
-
 	var response *dockernetwork.CreateResponse
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
@@ -304,7 +301,7 @@ func (h *NetworkHandler) CreateNetwork(ctx context.Context, input *CreateNetwork
 		},
 	}, func(runtimeCtx context.Context) error {
 		var createErr error
-		response, createErr = h.networkService.CreateNetwork(runtimeCtx, input.Body.Name, dockerOptions, *user)
+		response, createErr = h.networkService.CreateNetwork(runtimeCtx, input.Body.Name, input.Body.Options, *user)
 		return createErr
 	})
 	if err != nil {

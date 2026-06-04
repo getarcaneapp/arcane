@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/joho/godotenv"
-	"github.com/moby/moby/client"
+	client "github.com/moby/moby/client"
 
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/di"
@@ -154,6 +154,12 @@ func initializeStartupState(appCtx context.Context, cfg *config.Config, appServi
 
 	if err := appServices.Settings.NormalizeBuildsDirectory(appCtx); err != nil {
 		slog.WarnContext(appCtx, "Failed to normalize builds directory", "error", err)
+	}
+
+	if appServices.ContainerRegistry != nil {
+		if err := appServices.ContainerRegistry.ReconcileDockerConfig(appCtx); err != nil {
+			slog.WarnContext(appCtx, "Failed to reconcile Docker config from stored registries", "error", err)
+		}
 	}
 
 	if err := appServices.Environment.EnsureLocalEnvironment(appCtx, cfg.AppUrl); err != nil {

@@ -19,7 +19,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/pkg/utils"
 	"github.com/getarcaneapp/arcane/types/base"
 	volumetypes "github.com/getarcaneapp/arcane/types/volume"
-	"github.com/moby/moby/client"
+	client "github.com/moby/moby/client"
 )
 
 // VolumeHandler provides Huma-based volume management endpoints.

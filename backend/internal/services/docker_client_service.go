@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v5"
+	dockersdkclient "github.com/docker/go-sdk/client"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	docker "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
@@ -18,32 +19,37 @@ import (
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/eventbus"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils/cache"
+	containertypes "github.com/getarcaneapp/arcane/types/container"
 	dashboardtypes "github.com/getarcaneapp/arcane/types/dashboard"
+	networktypes "github.com/getarcaneapp/arcane/types/network"
+	volumetypes "github.com/getarcaneapp/arcane/types/volume"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/events"
 	"github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/api/types/volume"
-	"github.com/moby/moby/client"
+	mobyclient "github.com/moby/moby/client"
 	"golang.org/x/sync/errgroup"
 )
 
-const dockerClientNegotiationTimeout = 5 * time.Second
-const dockerListCacheTTL = 0
+const (
+	dockerClientNegotiationTimeout = 5 * time.Second
+	dockerListCacheTTL             = 0
+)
 
 type DockerClientService struct {
 	db                *database.DB
 	config            *config.Config
 	settingsService   *SettingsService
-	client            *client.Client
+	client            dockersdkclient.SDKClient
 	clientVersion     string
 	clientLastProbe   time.Time
 	mu                sync.Mutex
 	containerCache    *cache.Cache[[]container.Summary]
 	imageCache        *cache.Cache[[]image.Summary]
 	networkCache      *cache.Cache[[]network.Summary]
-	volumeCache       *cache.Cache[*client.VolumeListResult]
+	volumeCache       *cache.Cache[*mobyclient.VolumeListResult]
 	eventBus          *eventbus.DockerEventBus
 	subscriptionCtx   context.Context
 	subscriptionStop  context.CancelFunc
@@ -59,7 +65,7 @@ func NewDockerClientService(ctx context.Context, db *database.DB, cfg *config.Co
 		containerCache:   cache.New[[]container.Summary](dockerListCacheTTL),
 		imageCache:       cache.New[[]image.Summary](dockerListCacheTTL),
 		networkCache:     cache.New[[]network.Summary](dockerListCacheTTL),
-		volumeCache:      cache.New[*client.VolumeListResult](dockerListCacheTTL),
+		volumeCache:      cache.New[*mobyclient.VolumeListResult](dockerListCacheTTL),
 		eventBus:         eventbus.NewDockerEventBus(),
 		subscriptionCtx:  subscriptionCtx,
 		subscriptionStop: subscriptionStop,
@@ -68,13 +74,13 @@ func NewDockerClientService(ctx context.Context, db *database.DB, cfg *config.Co
 	return svc
 }
 
-func newDockerClientInternal(ctx context.Context, host string) (*client.Client, error) {
+func newDockerClientInternal(ctx context.Context, host string) (dockersdkclient.SDKClient, error) {
 	apiVersion, err := detectDockerAPIVersionInternal(ctx, host)
 	if err != nil {
 		return nil, err
 	}
 
-	configuredClient, err := newDockerClientWithAPIVersionInternal(host, apiVersion)
+	configuredClient, err := newDockerClientWithAPIVersionInternal(ctx, host, apiVersion)
 	if err != nil {
 		return nil, err
 	}
@@ -83,10 +89,20 @@ func newDockerClientInternal(ctx context.Context, host string) (*client.Client, 
 }
 
 func detectDockerAPIVersionInternal(ctx context.Context, host string) (string, error) {
-	probeClient, err := client.New(
-		client.WithHost(host),
+	probeAPIClient, err := newDockerAPIClientInternal(host)
+	if err != nil {
+		return "", fmt.Errorf("failed to create Docker probe client: %w", err)
+	}
+
+	probeClient, err := dockersdkclient.New(
+		ctx,
+		dockersdkclient.WithDockerAPI(libarcane.WrapDockerAPIClientForInspectCompatibility(probeAPIClient)),
+		dockersdkclient.WithHealthCheck(func(context.Context) func(dockersdkclient.SDKClient) error {
+			return func(dockersdkclient.SDKClient) error { return nil }
+		}),
 	)
 	if err != nil {
+		_ = probeAPIClient.Close()
 		return "", fmt.Errorf("failed to create Docker probe client: %w", err)
 	}
 	defer closeDockerClientInternal(probeClient, "failed to close probe Docker client")
@@ -94,33 +110,65 @@ func detectDockerAPIVersionInternal(ctx context.Context, host string) (string, e
 	ctx, cancel := context.WithTimeout(ctx, dockerClientNegotiationTimeout)
 	defer cancel()
 
-	pingResult, err := probeClient.Ping(ctx, client.PingOptions{})
+	pingResult, err := probeClient.Ping(ctx, mobyclient.PingOptions{})
 	if err != nil {
 		return "", fmt.Errorf("failed to negotiate Docker API version: %w", err)
 	}
 
 	apiVersion := strings.TrimSpace(pingResult.APIVersion)
 	if apiVersion == "" {
-		slog.WarnContext(ctx, "Docker ping did not report an API version, using minimum supported client API version", "api_version", client.MinAPIVersion)
-		return client.MinAPIVersion, nil
+		slog.WarnContext(ctx, "Docker ping did not report an API version, using minimum supported client API version", "api_version", mobyclient.MinAPIVersion)
+		return mobyclient.MinAPIVersion, nil
 	}
 
 	return apiVersion, nil
 }
 
-func newDockerClientWithAPIVersionInternal(host string, apiVersion string) (*client.Client, error) {
-	configuredClient, err := client.New(
-		client.WithHost(host),
-		client.WithAPIVersion(apiVersion),
-	)
+func newDockerClientWithAPIVersionInternal(ctx context.Context, host string, apiVersion string) (dockersdkclient.SDKClient, error) {
+	baseAPIClient, err := newDockerAPIClientWithAPIVersionInternal(host, apiVersion)
 	if err != nil {
 		return nil, fmt.Errorf("failed to configure Docker client API version %s: %w", apiVersion, err)
+	}
+
+	baseClient, err := dockersdkclient.New(
+		ctx,
+		dockersdkclient.WithDockerAPI(libarcane.WrapDockerAPIClientForInspectCompatibility(baseAPIClient)),
+		dockersdkclient.WithHealthCheck(func(context.Context) func(dockersdkclient.SDKClient) error {
+			return func(dockersdkclient.SDKClient) error { return nil }
+		}),
+	)
+	if err != nil {
+		_ = baseAPIClient.Close()
+		return nil, fmt.Errorf("failed to configure Docker client API version %s: %w", apiVersion, err)
+	}
+
+	configuredClient, err := dockersdkclient.New(
+		ctx,
+		dockersdkclient.WithDockerAPI(libarcane.WrapDockerAPIClientForInspectCompatibility(baseClient)),
+		dockersdkclient.WithHealthCheck(func(context.Context) func(dockersdkclient.SDKClient) error {
+			return func(dockersdkclient.SDKClient) error { return nil }
+		}),
+	)
+	if err != nil {
+		_ = baseClient.Close()
+		return nil, fmt.Errorf("failed to wrap Docker client API version %s with go-sdk: %w", apiVersion, err)
 	}
 
 	return configuredClient, nil
 }
 
-func closeDockerClientInternal(cli *client.Client, message string) {
+func newDockerAPIClientInternal(host string) (mobyclient.APIClient, error) {
+	return mobyclient.New(mobyclient.WithHost(host))
+}
+
+func newDockerAPIClientWithAPIVersionInternal(host string, apiVersion string) (mobyclient.APIClient, error) {
+	return mobyclient.New(
+		mobyclient.WithHost(host),
+		mobyclient.WithAPIVersion(apiVersion),
+	)
+}
+
+func closeDockerClientInternal(cli mobyclient.APIClient, message string) {
 	if cli == nil {
 		return
 	}
@@ -132,7 +180,11 @@ func closeDockerClientInternal(cli *client.Client, message string) {
 
 // GetClient returns a singleton Docker client instance.
 // It initializes the client on the first call.
-func (s *DockerClientService) GetClient(ctx context.Context) (*client.Client, error) {
+func (s *DockerClientService) GetClient(ctx context.Context) (dockersdkclient.SDKClient, error) {
+	return s.getAPIClientCompatibilityInternal(ctx)
+}
+
+func (s *DockerClientService) getAPIClientCompatibilityInternal(ctx context.Context) (dockersdkclient.SDKClient, error) {
 	s.mu.Lock()
 	if s.client != nil {
 		cli := s.client
@@ -162,6 +214,10 @@ func (s *DockerClientService) GetClient(ctx context.Context) (*client.Client, er
 	return cli, nil
 }
 
+func (s *DockerClientService) GetSDKClient(ctx context.Context) (dockersdkclient.SDKClient, error) {
+	return s.GetClient(ctx)
+}
+
 // RefreshClient probes the Docker daemon and recreates the cached client when
 // the daemon's effective API version changed.
 func (s *DockerClientService) RefreshClient(ctx context.Context) error {
@@ -178,7 +234,7 @@ func (s *DockerClientService) RefreshClient(ctx context.Context) error {
 	}
 	s.mu.Unlock()
 
-	cli, err := newDockerClientWithAPIVersionInternal(s.config.DockerHost, apiVersion)
+	cli, err := newDockerClientWithAPIVersionInternal(ctx, s.config.DockerHost, apiVersion)
 	if err != nil {
 		return fmt.Errorf("failed to refresh Docker client: %w", err)
 	}
@@ -247,7 +303,7 @@ func (s *DockerClientService) ensureListCachesInternal() {
 		s.networkCache = cache.New[[]network.Summary](dockerListCacheTTL)
 	}
 	if s.volumeCache == nil {
-		s.volumeCache = cache.New[*client.VolumeListResult](dockerListCacheTTL)
+		s.volumeCache = cache.New[*mobyclient.VolumeListResult](dockerListCacheTTL)
 	}
 	s.mu.Unlock()
 }
@@ -329,7 +385,7 @@ func (s *DockerClientService) WatchEvents(ctx context.Context) {
 
 		s.invalidateListCachesInternal()
 		eventBackoff.Reset()
-		result := dockerClient.Events(ctx, client.EventsListOptions{})
+		result := dockerClient.Events(ctx, mobyclient.EventsListOptions{})
 		err = s.consumeEventsInternal(ctx, result.Messages, result.Err)
 		if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, io.EOF) {
 			slog.WarnContext(ctx, "Docker event stream stopped", "error", err)
@@ -384,7 +440,7 @@ func (s *DockerClientService) listContainersInternal(ctx context.Context) ([]con
 		apiCtx, cancel := timeouts.WithTimeout(ctx, settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI)
 		defer cancel()
 
-		containerList, err := dockerClient.ContainerList(apiCtx, client.ContainerListOptions{All: true})
+		containerList, err := dockerClient.ContainerList(apiCtx, mobyclient.ContainerListOptions{All: true})
 		if err != nil {
 			return nil, fmt.Errorf("failed to list Docker containers: %w", err)
 		}
@@ -405,7 +461,7 @@ func (s *DockerClientService) listImagesInternal(ctx context.Context) ([]image.S
 		apiCtx, cancel := timeouts.WithTimeout(ctx, settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI)
 		defer cancel()
 
-		imageList, err := dockerClient.ImageList(apiCtx, client.ImageListOptions{All: true})
+		imageList, err := dockerClient.ImageList(apiCtx, mobyclient.ImageListOptions{All: true})
 		if err != nil {
 			return nil, fmt.Errorf("failed to list Docker images: %w", err)
 		}
@@ -426,7 +482,7 @@ func (s *DockerClientService) listNetworksInternal(ctx context.Context) ([]netwo
 		apiCtx, cancel := timeouts.WithTimeout(ctx, settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI)
 		defer cancel()
 
-		networkList, err := libarcane.NetworkListWithCompatibility(apiCtx, dockerClient, client.NetworkListOptions{})
+		networkList, err := libarcane.NetworkListWithCompatibility(apiCtx, dockerClient, mobyclient.NetworkListOptions{})
 		if err != nil {
 			return nil, fmt.Errorf("failed to list Docker networks: %w", err)
 		}
@@ -434,10 +490,10 @@ func (s *DockerClientService) listNetworksInternal(ctx context.Context) ([]netwo
 	})
 }
 
-func (s *DockerClientService) listVolumesInternal(ctx context.Context) (*client.VolumeListResult, error) {
+func (s *DockerClientService) listVolumesInternal(ctx context.Context) (*mobyclient.VolumeListResult, error) {
 	s.ensureListCachesInternal()
 	volumeCache := s.volumeCache
-	return volumeCache.GetOrFetch(ctx, func(ctx context.Context) (*client.VolumeListResult, error) {
+	return volumeCache.GetOrFetch(ctx, func(ctx context.Context) (*mobyclient.VolumeListResult, error) {
 		dockerClient, err := s.GetClient(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to connect to Docker: %w", err)
@@ -447,7 +503,7 @@ func (s *DockerClientService) listVolumesInternal(ctx context.Context) (*client.
 		apiCtx, cancel := timeouts.WithTimeout(ctx, settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI)
 		defer cancel()
 
-		volResp, err := dockerClient.VolumeList(apiCtx, client.VolumeListOptions{})
+		volResp, err := dockerClient.VolumeList(apiCtx, mobyclient.VolumeListOptions{})
 		if err != nil {
 			return nil, fmt.Errorf("failed to list Docker volumes: %w", err)
 		}
@@ -461,7 +517,7 @@ func (s *DockerClientService) GetSnapshot(ctx context.Context, envID string) (*d
 	var containers []container.Summary
 	var images []image.Summary
 	var networks []network.Summary
-	var volumes *client.VolumeListResult
+	var volumes *mobyclient.VolumeListResult
 
 	g.Go(func() error {
 		var err error
@@ -493,11 +549,31 @@ func (s *DockerClientService) GetSnapshot(ctx context.Context, envID string) (*d
 		return nil, err
 	}
 
+	containerItems := make([]containertypes.Summary, 0, len(containers))
+	for _, item := range containers {
+		containerItems = append(containerItems, containertypes.NewSummary(item))
+	}
+
+	imageItems := mapDockerImagesToDTOs(images, buildUsageMapInternal(containers, nil), nil, nil)
+
+	networkItems := make([]networktypes.Summary, 0, len(networks))
+	for _, item := range networks {
+		networkItems = append(networkItems, networktypes.NewSummary(item))
+	}
+
+	volumeItems := make([]volumetypes.Volume, 0)
+	if volumes != nil {
+		volumeItems = make([]volumetypes.Volume, 0, len(volumes.Items))
+		for _, item := range volumes.Items {
+			volumeItems = append(volumeItems, volumetypes.NewSummary(item))
+		}
+	}
+
 	return &dashboardtypes.DockerSnapshot{
-		Containers: containers,
-		Images:     images,
-		Networks:   networks,
-		Volumes:    volumes,
+		Containers: containerItems,
+		Images:     imageItems,
+		Networks:   networkItems,
+		Volumes:    volumeItems,
 	}, nil
 }
 

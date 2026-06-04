@@ -10,7 +10,7 @@ import (
 
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
-	"github.com/moby/moby/client"
+	client "github.com/moby/moby/client"
 )
 
 const NetworkScopedMacAddressMinAPIVersion = "1.44"

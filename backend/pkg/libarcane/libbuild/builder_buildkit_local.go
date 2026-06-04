@@ -19,7 +19,7 @@ func (b *builder) newLocalBuildkitSessionInternal(ctx context.Context) (*buildSe
 		return nil, errors.New("docker service not available")
 	}
 
-	dockerClient, err := b.dockerClientProvider.GetClient(ctx)
+	dockerClient, err := b.dockerClientProvider.GetSDKClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}

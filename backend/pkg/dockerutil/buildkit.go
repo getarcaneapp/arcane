@@ -5,7 +5,7 @@ import (
 	"net"
 
 	bkclient "github.com/moby/buildkit/client"
-	"github.com/moby/moby/client"
+	client "github.com/moby/moby/client"
 )
 
 /*

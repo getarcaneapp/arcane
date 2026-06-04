@@ -2,6 +2,15 @@ package containerregistry
 
 import "time"
 
+type RegistryAuthConfig struct {
+	Username      string `json:"username,omitempty"`
+	Password      string `json:"password,omitempty"`
+	Auth          string `json:"auth,omitempty"`
+	ServerAddress string `json:"serverAddress,omitempty"`
+	IdentityToken string `json:"identityToken,omitempty"`
+	RegistryToken string `json:"registryToken,omitempty"`
+}
+
 // ContainerRegistry represents a container registry in API responses.
 type ContainerRegistry struct {
 	// ID of the container registry.

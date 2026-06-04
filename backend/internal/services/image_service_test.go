@@ -3,9 +3,12 @@ package services
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
+	dockersdkimage "github.com/docker/go-sdk/image"
 	glsqlite "github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -14,11 +17,9 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/crypto"
+	"github.com/getarcaneapp/arcane/types/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
 	"github.com/getarcaneapp/arcane/types/vulnerability"
-	dockerauthconfig "github.com/moby/moby/api/pkg/authconfig"
-	dockerregistry "github.com/moby/moby/api/types/registry"
-	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -138,56 +139,137 @@ func createTestPullRegistry(t *testing.T, db *database.DB, url, username, token 
 	require.NoError(t, db.WithContext(context.Background()).Create(reg).Error)
 }
 
-func decodeRegistryAuth(t *testing.T, encoded string) dockerregistry.AuthConfig {
-	t.Helper()
-
-	cfg, err := dockerauthconfig.Decode(encoded)
-	require.NoError(t, err)
-	return *cfg
-}
-
-func TestGetPullOptionsWithAuth_DBRegistrySkipsEmptyToken(t *testing.T) {
+func TestResolveManagedPullCredentialsInternal_DBRegistrySkipsEmptyToken(t *testing.T) {
 	svc, db := setupImageServiceAuthTest(t)
 	createTestPullRegistry(t, db, "https://docker.io", "docker-user", "   ")
 
-	pullOptions, err := svc.getPullOptionsWithAuth(context.Background(), "docker.io/library/nginx:latest", nil)
+	username, token, ok, err := resolveManagedPullCredentialsInternal(context.Background(), svc.registryService, "docker.io/library/nginx:latest", nil)
 	require.NoError(t, err)
-	assert.Empty(t, pullOptions.RegistryAuth)
+	assert.Empty(t, username)
+	assert.Empty(t, token)
+	assert.False(t, ok)
 }
 
-func TestGetPullOptionsWithAuth_DBRegistrySkipsEmptyUsername(t *testing.T) {
+func TestResolveManagedPullCredentialsInternal_DBRegistrySkipsEmptyUsername(t *testing.T) {
 	svc, db := setupImageServiceAuthTest(t)
 	createTestPullRegistry(t, db, "https://docker.io", "   ", "docker-token")
 
-	pullOptions, err := svc.getPullOptionsWithAuth(context.Background(), "docker.io/library/nginx:latest", nil)
+	username, token, ok, err := resolveManagedPullCredentialsInternal(context.Background(), svc.registryService, "docker.io/library/nginx:latest", nil)
 	require.NoError(t, err)
-	assert.Empty(t, pullOptions.RegistryAuth)
+	assert.Empty(t, username)
+	assert.Empty(t, token)
+	assert.False(t, ok)
 }
 
-func TestGetPullOptionsWithAuth_DBRegistryUsesValidCredentials(t *testing.T) {
+func TestResolveManagedPullCredentialsInternal_DBRegistryUsesValidCredentials(t *testing.T) {
 	svc, db := setupImageServiceAuthTest(t)
 	createTestPullRegistry(t, db, "https://index.docker.io/v1/", "docker-user", "docker-token")
 
-	pullOptions, err := svc.getPullOptionsWithAuth(context.Background(), "docker.io/library/nginx:latest", nil)
+	username, token, ok, err := resolveManagedPullCredentialsInternal(context.Background(), svc.registryService, "docker.io/library/nginx:latest", nil)
 	require.NoError(t, err)
-	require.NotEmpty(t, pullOptions.RegistryAuth)
-
-	authCfg := decodeRegistryAuth(t, pullOptions.RegistryAuth)
-	assert.Equal(t, "docker-user", authCfg.Username)
-	assert.Equal(t, "docker-token", authCfg.Password)
-	assert.Equal(t, "https://index.docker.io/v1/", authCfg.ServerAddress)
+	require.True(t, ok)
+	assert.Equal(t, "docker-user", username)
+	assert.Equal(t, "docker-token", token)
 }
 
-func TestShouldRetryAnonymousPullInternal_UnauthorizedWithAuth(t *testing.T) {
-	err := errors.New(`Error response from daemon: Head "registry-1.docker.io/v2/library/nginx/manifests/latest": unauthorized: incorrect username or password`)
+func TestResolveManagedPullCredentialsInternal_PublicImageUsesNoCredentials(t *testing.T) {
+	svc, db := setupImageServiceAuthTest(t)
+	createTestPullRegistry(t, db, "https://registry.example.com", "registry-user", "registry-token")
 
-	assert.True(t, shouldRetryAnonymousPullInternal(client.ImagePullOptions{RegistryAuth: "encoded-auth"}, err))
+	username, token, ok, err := resolveManagedPullCredentialsInternal(context.Background(), svc.registryService, "docker.io/library/nginx:latest", nil)
+	require.NoError(t, err)
+	assert.Empty(t, username)
+	assert.Empty(t, token)
+	assert.False(t, ok)
 }
 
-func TestShouldRetryAnonymousPullInternal_SkipsRetryWithoutUnauthorizedOrAuth(t *testing.T) {
-	nonAuthErr := errors.New("Error response from daemon: i/o timeout")
-	unauthorizedErr := errors.New("unauthorized: authentication required")
+func TestResolveExternalPullCredentialsInternal_MatchesRegistryHost(t *testing.T) {
+	username, password, ok := resolveExternalPullCredentialsInternal("ghcr.io/getarcaneapp/arcane:latest", []containerregistry.Credential{
+		{URL: "https://ghcr.io", Username: "gh-user", Token: "gh-token", Enabled: true},
+		{URL: "https://docker.io", Username: "docker-user", Token: "docker-token", Enabled: true},
+	})
 
-	assert.False(t, shouldRetryAnonymousPullInternal(client.ImagePullOptions{RegistryAuth: "encoded-auth"}, nonAuthErr))
-	assert.False(t, shouldRetryAnonymousPullInternal(client.ImagePullOptions{}, unauthorizedErr))
+	require.True(t, ok)
+	assert.Equal(t, "gh-user", username)
+	assert.Equal(t, "gh-token", password)
+}
+
+func TestImageService_PullImageInternal_RetriesAnonymouslyOnUnauthorized(t *testing.T) {
+	server := httptest.NewServer(http.NotFoundHandler())
+	defer server.Close()
+
+	svc := &ImageService{
+		dockerService: &DockerClientService{client: newTestDockerClient(t, server)},
+	}
+
+	originalPull := dockerSDKImagePullInternal
+	t.Cleanup(func() {
+		dockerSDKImagePullInternal = originalPull
+	})
+
+	calls := 0
+	dockerSDKImagePullInternal = func(ctx context.Context, imageName string, opts ...dockersdkimage.PullOption) error {
+		calls++
+		if calls == 1 {
+			return errors.New("unauthorized: authentication required")
+		}
+		return nil
+	}
+
+	err := pullImageWithRuntimeCredentialsInternal(context.Background(), svc.dockerService, svc.registryService, "ghcr.io/getarcaneapp/arcane:latest", nil, nil)
+	require.NoError(t, err)
+	assert.Equal(t, 2, calls)
+}
+
+func TestImageService_PullImageInternal_ReconcilesDockerConfigBeforePull(t *testing.T) {
+	dockerConfigDir := t.TempDir()
+	t.Setenv("DOCKER_CONFIG", dockerConfigDir)
+
+	server := httptest.NewServer(http.NotFoundHandler())
+	defer server.Close()
+
+	svc, db := setupImageServiceAuthTest(t)
+	svc.dockerService = &DockerClientService{client: newTestDockerClient(t, server)}
+	createTestPullRegistry(t, db, "https://ghcr.io", "gh-user", "gh-token")
+
+	originalPull := dockerSDKImagePullInternal
+	t.Cleanup(func() {
+		dockerSDKImagePullInternal = originalPull
+	})
+
+	dockerSDKImagePullInternal = func(ctx context.Context, imageName string, opts ...dockersdkimage.PullOption) error {
+		doc := readDockerConfigTestDocument(t, dockerConfigDir)
+		require.Contains(t, doc.Auths, "ghcr.io")
+		username, password := decodeDockerConfigAuthEntryInternal(t, doc.Auths["ghcr.io"].Auth)
+		assert.Equal(t, "gh-user", username)
+		assert.Equal(t, "gh-token", password)
+		return nil
+	}
+
+	require.NoError(t, pullImageWithRuntimeCredentialsInternal(context.Background(), svc.dockerService, svc.registryService, "ghcr.io/getarcaneapp/arcane:latest", nil, nil))
+}
+
+func TestImageService_PullImageInternal_DoesNotRetryOnNonUnauthorizedError(t *testing.T) {
+	server := httptest.NewServer(http.NotFoundHandler())
+	defer server.Close()
+
+	svc := &ImageService{
+		dockerService: &DockerClientService{client: newTestDockerClient(t, server)},
+	}
+
+	originalPull := dockerSDKImagePullInternal
+	t.Cleanup(func() {
+		dockerSDKImagePullInternal = originalPull
+	})
+
+	calls := 0
+	dockerSDKImagePullInternal = func(ctx context.Context, imageName string, opts ...dockersdkimage.PullOption) error {
+		calls++
+		return errors.New("i/o timeout")
+	}
+
+	err := pullImageWithRuntimeCredentialsInternal(context.Background(), svc.dockerService, svc.registryService, "ghcr.io/getarcaneapp/arcane:latest", nil, nil)
+	require.Error(t, err)
+	assert.Equal(t, 1, calls)
+	assert.Contains(t, err.Error(), "failed to initiate image pull")
 }

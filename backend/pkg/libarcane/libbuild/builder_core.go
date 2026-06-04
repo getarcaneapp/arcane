@@ -177,7 +177,7 @@ func (b *builder) buildWithBuildkitSessionInternal(
 			return nil, missingClientErr
 		}
 
-		dockerClient, dockerClientErr := b.dockerClientProvider.GetClient(ctx)
+		dockerClient, dockerClientErr := b.dockerClientProvider.GetSDKClient(ctx)
 		if dockerClientErr != nil {
 			buildErr = dockerClientErr
 			writeProgressEventInternal(progressWriter, imagetypes.ProgressEvent{

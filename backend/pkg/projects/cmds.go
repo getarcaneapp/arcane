@@ -10,7 +10,7 @@ import (
 	"github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/client"
+	client "github.com/moby/moby/client"
 
 	"github.com/getarcaneapp/arcane/backend/pkg/utils"
 )

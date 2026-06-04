@@ -9,7 +9,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	containertypes "github.com/getarcaneapp/arcane/types/container"
 	porttypes "github.com/getarcaneapp/arcane/types/port"
-	"github.com/moby/moby/client"
+	client "github.com/moby/moby/client"
 )
 
 type PortService struct {

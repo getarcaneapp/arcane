@@ -22,7 +22,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/imageupdate"
 	updaterdigest "github.com/getarcaneapp/updater/pkg/digest"
 	"github.com/moby/moby/api/types/image"
-	"github.com/moby/moby/client"
+	client "github.com/moby/moby/client"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 )

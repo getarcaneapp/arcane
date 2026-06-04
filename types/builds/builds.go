@@ -4,9 +4,9 @@ import (
 	"context"
 	"io"
 
+	dockersdkclient "github.com/docker/go-sdk/client"
+	"github.com/getarcaneapp/arcane/types/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
-	dockerregistry "github.com/moby/moby/api/types/registry"
-	dockerclient "github.com/moby/moby/client"
 )
 
 type BuildSettings struct {
@@ -21,13 +21,13 @@ type SettingsProvider interface {
 }
 
 type DockerClientProvider interface {
-	GetClient(ctx context.Context) (*dockerclient.Client, error)
+	GetSDKClient(ctx context.Context) (dockersdkclient.SDKClient, error)
 }
 
 type RegistryAuthProvider interface {
 	GetRegistryAuthForImage(ctx context.Context, imageRef string) (string, error)
 	GetRegistryAuthForHost(ctx context.Context, registryHost string) (string, error)
-	GetAllRegistryAuthConfigs(ctx context.Context) (map[string]dockerregistry.AuthConfig, error)
+	GetAllRegistryAuthConfigs(ctx context.Context) (map[string]containerregistry.RegistryAuthConfig, error)
 }
 
 type Builder interface {

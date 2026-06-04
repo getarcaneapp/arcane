@@ -7,8 +7,8 @@ import (
 
 	configtypes "github.com/docker/cli/cli/config/types"
 	utilsregistry "github.com/getarcaneapp/arcane/backend/pkg/libarcane/registryauth"
+	"github.com/getarcaneapp/arcane/types/containerregistry"
 	"github.com/moby/buildkit/session/auth/authprovider"
-	dockerregistry "github.com/moby/moby/api/types/registry"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -29,7 +29,7 @@ func (f fakeRegistryAuthProvider) GetRegistryAuthForHost(_ context.Context, host
 	return f.hostAuth[host], nil
 }
 
-func (f fakeRegistryAuthProvider) GetAllRegistryAuthConfigs(_ context.Context) (map[string]dockerregistry.AuthConfig, error) {
+func (f fakeRegistryAuthProvider) GetAllRegistryAuthConfigs(_ context.Context) (map[string]containerregistry.RegistryAuthConfig, error) {
 	return nil, nil
 }
 

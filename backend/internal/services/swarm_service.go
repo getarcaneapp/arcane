@@ -192,7 +192,7 @@ func (s *SwarmService) GetService(ctx context.Context, serviceID string) (*swarm
 	return &inspect, nil
 }
 
-func (s *SwarmService) resolveServiceNodeNamesInternal(ctx context.Context, dockerClient *dockerclient.Client, serviceID string) []string {
+func (s *SwarmService) resolveServiceNodeNamesInternal(ctx context.Context, dockerClient dockerclient.APIClient, serviceID string) []string {
 	nodesResult, err := dockerClient.NodeList(ctx, dockerclient.NodeListOptions{})
 	if err != nil {
 		return nil
@@ -228,7 +228,7 @@ func (s *SwarmService) resolveServiceNodeNamesInternal(ctx context.Context, dock
 
 func (s *SwarmService) enrichServiceNetworkDetailsInternal(
 	ctx context.Context,
-	dockerClient *dockerclient.Client,
+	dockerClient dockerclient.APIClient,
 	networkConfigs []swarm.NetworkAttachmentConfig,
 ) map[string]swarmtypes.ServiceNetworkDetail {
 	if len(networkConfigs) == 0 {
@@ -297,7 +297,7 @@ func (s *SwarmService) enrichServiceNetworkDetailsInternal(
 
 func (s *SwarmService) enrichServiceMountsInternal(
 	ctx context.Context,
-	dockerClient *dockerclient.Client,
+	dockerClient dockerclient.APIClient,
 	containerSpec *swarm.ContainerSpec,
 ) []swarmtypes.ServiceMount {
 	if containerSpec == nil {
@@ -1525,7 +1525,7 @@ func (s *SwarmService) removeSourceOnlyStackInternal(ctx context.Context, enviro
 	return s.deleteStackSourceInternal(ctx, environmentID, stackName)
 }
 
-func (s *SwarmService) removeStackServicesInternal(ctx context.Context, dockerClient *dockerclient.Client, services []swarm.Service) error {
+func (s *SwarmService) removeStackServicesInternal(ctx context.Context, dockerClient dockerclient.APIClient, services []swarm.Service) error {
 	serviceIDs := make(map[string]struct{}, len(services))
 	for _, service := range services {
 		serviceIDs[service.ID] = struct{}{}
@@ -1541,7 +1541,7 @@ func (s *SwarmService) removeStackServicesInternal(ctx context.Context, dockerCl
 	return nil
 }
 
-func (s *SwarmService) removeStackConfigsInternal(ctx context.Context, dockerClient *dockerclient.Client, stackLabel string) error {
+func (s *SwarmService) removeStackConfigsInternal(ctx context.Context, dockerClient dockerclient.APIClient, stackLabel string) error {
 	configFilter := make(dockerclient.Filters).Add("label", stackLabel)
 	configsResult, err := dockerClient.ConfigList(ctx, dockerclient.ConfigListOptions{Filters: configFilter})
 	if err != nil {
@@ -1556,7 +1556,7 @@ func (s *SwarmService) removeStackConfigsInternal(ctx context.Context, dockerCli
 	return nil
 }
 
-func (s *SwarmService) removeStackSecretsInternal(ctx context.Context, dockerClient *dockerclient.Client, stackLabel string) error {
+func (s *SwarmService) removeStackSecretsInternal(ctx context.Context, dockerClient dockerclient.APIClient, stackLabel string) error {
 	secretFilter := make(dockerclient.Filters).Add("label", stackLabel)
 	secretsResult, err := dockerClient.SecretList(ctx, dockerclient.SecretListOptions{Filters: secretFilter})
 	if err != nil {
@@ -1571,7 +1571,7 @@ func (s *SwarmService) removeStackSecretsInternal(ctx context.Context, dockerCli
 	return nil
 }
 
-func (s *SwarmService) removeStackNetworksInternal(ctx context.Context, dockerClient *dockerclient.Client, stackLabel string) error {
+func (s *SwarmService) removeStackNetworksInternal(ctx context.Context, dockerClient dockerclient.APIClient, stackLabel string) error {
 	networkFilter := make(dockerclient.Filters).Add("label", stackLabel)
 	networksResult, err := dockerClient.NetworkList(ctx, dockerclient.NetworkListOptions{Filters: networkFilter})
 	if err != nil {
@@ -1889,7 +1889,7 @@ func (s *SwarmService) listTasksPaginatedWithFiltersInternal(ctx context.Context
 	return result.Items, paginationResp, nil
 }
 
-func (s *SwarmService) summarizeServicesInternal(ctx context.Context, dockerClient *dockerclient.Client, services []swarm.Service) ([]swarmtypes.ServiceSummary, error) {
+func (s *SwarmService) summarizeServicesInternal(ctx context.Context, dockerClient dockerclient.APIClient, services []swarm.Service) ([]swarmtypes.ServiceSummary, error) {
 	nodesResult, err := dockerClient.NodeList(ctx, dockerclient.NodeListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list swarm nodes: %w", err)
@@ -1952,7 +1952,7 @@ func (s *SwarmService) summarizeServicesInternal(ctx context.Context, dockerClie
 	return summaries, nil
 }
 
-func (s *SwarmService) listStackServicesRawInternal(ctx context.Context, dockerClient *dockerclient.Client, stackName string) ([]swarm.Service, error) {
+func (s *SwarmService) listStackServicesRawInternal(ctx context.Context, dockerClient dockerclient.APIClient, stackName string) ([]swarm.Service, error) {
 	stackName = strings.TrimSpace(stackName)
 	if stackName == "" {
 		return nil, errors.New("stack name is required")
@@ -1970,7 +1970,7 @@ func (s *SwarmService) listStackServicesRawInternal(ctx context.Context, dockerC
 	return servicesResult.Items, nil
 }
 
-func (s *SwarmService) waitForRemovedServiceTasksInternal(ctx context.Context, dockerClient *dockerclient.Client, serviceIDs map[string]struct{}, timeout time.Duration) error {
+func (s *SwarmService) waitForRemovedServiceTasksInternal(ctx context.Context, dockerClient dockerclient.APIClient, serviceIDs map[string]struct{}, timeout time.Duration) error {
 	if len(serviceIDs) == 0 {
 		return nil
 	}

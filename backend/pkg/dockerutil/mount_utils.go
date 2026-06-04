@@ -9,13 +9,13 @@ import (
 	"github.com/getarcaneapp/arcane/backend/pkg/projects"
 	containertypes "github.com/moby/moby/api/types/container"
 	mounttypes "github.com/moby/moby/api/types/mount"
-	"github.com/moby/moby/client"
+	client "github.com/moby/moby/client"
 )
 
 // GetHostPathForContainerPath attempts to discover the host-side path for a given container path
 // by inspecting the container itself. This is useful for Docker-in-Docker scenarios
 // where the application needs to know host paths for volume mapping.
-func GetHostPathForContainerPath(ctx context.Context, dockerCli *client.Client, containerPath string) (string, error) {
+func GetHostPathForContainerPath(ctx context.Context, dockerCli client.APIClient, containerPath string) (string, error) {
 	if dockerCli == nil {
 		return "", nil // No docker client, can't discover
 	}

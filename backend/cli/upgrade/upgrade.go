@@ -14,7 +14,7 @@ import (
 	updaterlogs "github.com/getarcaneapp/updater/pkg/logs"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
-	"github.com/moby/moby/client"
+	client "github.com/moby/moby/client"
 	"github.com/spf13/cobra"
 )
 

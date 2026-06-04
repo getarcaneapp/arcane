@@ -10,6 +10,7 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/volume"
+	client "github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
 )
 
@@ -419,4 +420,11 @@ func TestTouchHelperInternal(t *testing.T) {
 	// Missing volume is a no-op (must not panic or create an entry).
 	s.touchHelperInternal("missing")
 	require.NotContains(t, s.helperByVolume, "missing")
+}
+
+func TestCanUseSDKVolumeCreateInternal(t *testing.T) {
+	require.True(t, canUseSDKVolumeCreateInternal(client.VolumeCreateOptions{}))
+	require.True(t, canUseSDKVolumeCreateInternal(client.VolumeCreateOptions{Driver: "local"}))
+	require.False(t, canUseSDKVolumeCreateInternal(client.VolumeCreateOptions{Driver: "nfs"}))
+	require.False(t, canUseSDKVolumeCreateInternal(client.VolumeCreateOptions{DriverOpts: map[string]string{"type": "nfs"}}))
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	dockerutils "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/types/base"
 	containertypes "github.com/getarcaneapp/arcane/types/container"
 	dashboardtypes "github.com/getarcaneapp/arcane/types/dashboard"
@@ -76,17 +77,12 @@ func (s *DashboardService) GetSnapshot(ctx context.Context, options DashboardAct
 	dockerContainers := dockerSnapshot.Containers
 	dockerImages := dockerSnapshot.Images
 
-	filteredContainers := filterInternalContainers(dockerContainers, false)
+	filteredContainers := filterInternalContainerSummaries(dockerContainers, false)
 	containerItems := make([]containertypes.Summary, 0, len(filteredContainers))
 	currentContainerID, currentContainerErr := dockerutils.GetCurrentContainerID()
-	if s.containerService != nil {
-		containerItems = s.containerService.buildContainerSummaries(filteredContainers, nil, currentContainerID, currentContainerErr)
-	} else {
-		for _, container := range filteredContainers {
-			summary := containertypes.NewSummary(container)
-			summary.RedeployDisabled = libupdater.ShouldDisableArcaneServerRedeploy(summary.Labels, summary.ID, currentContainerID, currentContainerErr)
-			containerItems = append(containerItems, summary)
-		}
+	for _, container := range filteredContainers {
+		container.RedeployDisabled = libupdater.ShouldDisableArcaneServerRedeploy(container.Labels, container.ID, currentContainerID, currentContainerErr)
+		containerItems = append(containerItems, container)
 	}
 
 	containerCounts := containertypes.StatusCounts{TotalContainers: len(containerItems)}
@@ -112,12 +108,12 @@ func (s *DashboardService) GetSnapshot(ctx context.Context, options DashboardAct
 
 	var projectIDByName map[string]string
 	if s.imageService != nil {
-		projectIDByName = s.imageService.BuildProjectIDMap(ctx, filteredContainers)
+		projectIDByName = s.imageService.BuildProjectIDMapFromSummaries(ctx, filteredContainers)
 	} else {
 		projectIDByName = map[string]string{}
 	}
-	imageUsageMap := buildUsageMapInternal(filteredContainers, projectIDByName)
-	imageItems := mapDockerImagesToDTOs(dockerImages, imageUsageMap, nil, nil)
+	imageUsageMap := buildUsageMapFromSummariesInternal(filteredContainers, projectIDByName)
+	imageItems := applyImageUsageToSummariesInternal(dockerImages, imageUsageMap)
 	sort.Slice(imageItems, func(i, j int) bool {
 		if imageItems[i].Size == imageItems[j].Size {
 			return imageItems[i].ID < imageItems[j].ID
@@ -127,7 +123,7 @@ func (s *DashboardService) GetSnapshot(ctx context.Context, options DashboardAct
 	imagePage := limitDashboardItemsInternal(imageItems, dashboardSnapshotPreloadLimit)
 
 	imageUsageCounts := imagetypes.UsageCounts{}
-	imageUsageCounts.Inuse, imageUsageCounts.Unused, imageUsageCounts.Total = countImageUsageInternal(dockerImages, filteredContainers)
+	imageUsageCounts.Inuse, imageUsageCounts.Unused, imageUsageCounts.Total = countImageUsageFromSummariesInternal(dockerImages, filteredContainers)
 	for _, img := range dockerImages {
 		imageUsageCounts.TotalSize += img.Size
 	}
@@ -162,7 +158,7 @@ func (s *DashboardService) GetSnapshot(ctx context.Context, options DashboardAct
 func (s *DashboardService) buildActionItemsForSnapshotInternal(
 	ctx context.Context,
 	options DashboardActionItemsOptions,
-	containers []dockercontainer.Summary,
+	containers []containertypes.Summary,
 	_ any,
 ) (*dashboardtypes.ActionItems, error) {
 	if options.DebugAllGood {
@@ -216,6 +212,52 @@ func (s *DashboardService) buildActionItemsForSnapshotInternal(
 	}
 
 	return buildDashboardActionItemsInternal(stoppedContainers, pendingResourceUpdates, actionableVulnerabilities, expiringAPIKeys), nil
+}
+
+func filterInternalContainerSummaries(containers []containertypes.Summary, includeInternal bool) []containertypes.Summary {
+	if includeInternal {
+		return containers
+	}
+
+	filtered := make([]containertypes.Summary, 0, len(containers))
+	for _, container := range containers {
+		if libarcane.IsInternalContainer(container.Labels) {
+			continue
+		}
+		filtered = append(filtered, container)
+	}
+	return filtered
+}
+
+func applyImageUsageToSummariesInternal(images []imagetypes.Summary, usageMap map[string][]imagetypes.UsedBy) []imagetypes.Summary {
+	items := make([]imagetypes.Summary, 0, len(images))
+	for _, image := range images {
+		image.UsedBy = usageMap[image.ID]
+		image.InUse = len(image.UsedBy) > 0
+		items = append(items, image)
+	}
+	return items
+}
+
+func countImageUsageFromSummariesInternal(images []imagetypes.Summary, containers []containertypes.Summary) (inuse int, unused int, total int) {
+	inUseImageIDs := make(map[string]struct{}, len(containers))
+	for _, c := range containers {
+		if c.ImageID == "" {
+			continue
+		}
+		inUseImageIDs[c.ImageID] = struct{}{}
+	}
+
+	for _, img := range images {
+		total++
+		if _, ok := inUseImageIDs[img.ID]; ok {
+			inuse++
+			continue
+		}
+		unused++
+	}
+
+	return inuse, unused, total
 }
 
 func buildDashboardActionItemsInternal(

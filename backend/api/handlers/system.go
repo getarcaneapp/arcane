@@ -19,7 +19,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/dockerinfo"
 	"github.com/getarcaneapp/arcane/types/system"
 	dockersystem "github.com/moby/moby/api/types/system"
-	"github.com/moby/moby/client"
+	client "github.com/moby/moby/client"
 )
 
 // SystemHandler handles system management endpoints.

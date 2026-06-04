@@ -4,11 +4,9 @@ import (
 	"github.com/getarcaneapp/arcane/types/base"
 	containertypes "github.com/getarcaneapp/arcane/types/container"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
+	networktypes "github.com/getarcaneapp/arcane/types/network"
 	versiontypes "github.com/getarcaneapp/arcane/types/version"
-	dockercontainer "github.com/moby/moby/api/types/container"
-	dockerimage "github.com/moby/moby/api/types/image"
-	dockernetwork "github.com/moby/moby/api/types/network"
-	"github.com/moby/moby/client"
+	volumetypes "github.com/getarcaneapp/arcane/types/volume"
 )
 
 type ActionItemKind string
@@ -54,10 +52,10 @@ type ActionItems struct {
 type SnapshotSettings struct{}
 
 type DockerSnapshot struct {
-	Containers []dockercontainer.Summary `json:"containers"`
-	Images     []dockerimage.Summary     `json:"images"`
-	Networks   []dockernetwork.Summary   `json:"networks"`
-	Volumes    *client.VolumeListResult  `json:"volumes"`
+	Containers []containertypes.Summary `json:"containers"`
+	Images     []imagetypes.Summary     `json:"images"`
+	Networks   []networktypes.Summary   `json:"networks"`
+	Volumes    []volumetypes.Volume     `json:"volumes"`
 }
 
 type SnapshotContainers struct {

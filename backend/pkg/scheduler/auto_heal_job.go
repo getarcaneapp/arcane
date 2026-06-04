@@ -12,7 +12,7 @@ import (
 	dockerutil "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
 	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/client"
+	client "github.com/moby/moby/client"
 	"github.com/robfig/cron/v3"
 	"golang.org/x/sync/errgroup"
 )
@@ -34,10 +34,10 @@ type AutoHealJob struct {
 	mu       sync.Mutex
 	restarts map[string]*restartRecord
 
-	getDockerClient  func() (*client.Client, error)
-	listContainers   func(ctx context.Context, dockerClient *client.Client) ([]container.Summary, error)
-	inspectContainer func(ctx context.Context, dockerClient *client.Client, containerID string) (container.InspectResponse, error)
-	restartContainer func(ctx context.Context, dockerClient *client.Client, containerID string) error
+	getDockerClient  func() (client.APIClient, error)
+	listContainers   func(ctx context.Context, dockerClient client.APIClient) ([]container.Summary, error)
+	inspectContainer func(ctx context.Context, dockerClient client.APIClient, containerID string) (container.InspectResponse, error)
+	restartContainer func(ctx context.Context, dockerClient client.APIClient, containerID string) error
 }
 
 func NewAutoHealJob(
@@ -138,7 +138,7 @@ func (j *AutoHealJob) filterCandidatesInternal(containers []container.Summary, e
 
 func (j *AutoHealJob) processCandidateInternal(
 	ctx context.Context,
-	dockerClient *client.Client,
+	dockerClient client.APIClient,
 	candidate container.Summary,
 	maxRestarts int,
 	restartWindow time.Duration,
@@ -270,7 +270,7 @@ func (j *AutoHealJob) isExcluded(name string, excluded map[string]struct{}) bool
 	return ok
 }
 
-func (j *AutoHealJob) inspectContainerInternal(ctx context.Context, dockerClient *client.Client, containerID string) (container.InspectResponse, error) {
+func (j *AutoHealJob) inspectContainerInternal(ctx context.Context, dockerClient client.APIClient, containerID string) (container.InspectResponse, error) {
 	if j.inspectContainer != nil {
 		return j.inspectContainer(ctx, dockerClient, containerID)
 	}
@@ -283,7 +283,7 @@ func (j *AutoHealJob) inspectContainerInternal(ctx context.Context, dockerClient
 	return inspect.Container, nil
 }
 
-func (j *AutoHealJob) restartContainerInternal(ctx context.Context, dockerClient *client.Client, containerID string) error {
+func (j *AutoHealJob) restartContainerInternal(ctx context.Context, dockerClient client.APIClient, containerID string) error {
 	if j.restartContainer != nil {
 		return j.restartContainer(ctx, dockerClient, containerID)
 	}
@@ -292,7 +292,7 @@ func (j *AutoHealJob) restartContainerInternal(ctx context.Context, dockerClient
 	return err
 }
 
-func (j *AutoHealJob) getDockerClientInternal(ctx context.Context) (*client.Client, error) {
+func (j *AutoHealJob) getDockerClientInternal(ctx context.Context) (client.APIClient, error) {
 	if j.getDockerClient != nil {
 		return j.getDockerClient()
 	}
@@ -300,7 +300,7 @@ func (j *AutoHealJob) getDockerClientInternal(ctx context.Context) (*client.Clie
 	return j.dockerClientService.GetClient(ctx)
 }
 
-func (j *AutoHealJob) listContainersInternal(ctx context.Context, dockerClient *client.Client) ([]container.Summary, error) {
+func (j *AutoHealJob) listContainersInternal(ctx context.Context, dockerClient client.APIClient) ([]container.Summary, error) {
 	if j.listContainers != nil {
 		return j.listContainers(ctx, dockerClient)
 	}

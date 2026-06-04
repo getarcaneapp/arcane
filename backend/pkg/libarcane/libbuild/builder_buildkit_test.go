@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	dockersdkclient "github.com/docker/go-sdk/client"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
 	dockerclient "github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
@@ -103,7 +104,7 @@ func TestBuildSolveOptInternal_NonLocalLoadKeepsDockerExporter(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := dockerclient.NewClientWithOpts(dockerclient.WithHost(server.URL), dockerclient.WithVersion("1.54"))
+	client, err := dockerclient.New(dockerclient.WithHost(server.URL), dockerclient.WithAPIVersion("1.54"))
 	require.NoError(t, err)
 
 	b := &builder{dockerClientProvider: testDockerClientProvider{client: client}}
@@ -138,6 +139,11 @@ type testDockerClientProvider struct {
 	client *dockerclient.Client
 }
 
-func (p testDockerClientProvider) GetClient(context.Context) (*dockerclient.Client, error) {
-	return p.client, nil
+func (p testDockerClientProvider) GetSDKClient(ctx context.Context) (dockersdkclient.SDKClient, error) {
+	return dockersdkclient.New(ctx,
+		dockersdkclient.WithDockerAPI(p.client),
+		dockersdkclient.WithHealthCheck(func(context.Context) func(dockersdkclient.SDKClient) error {
+			return func(dockersdkclient.SDKClient) error { return nil }
+		}),
+	)
 }

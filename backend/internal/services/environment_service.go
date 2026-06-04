@@ -26,7 +26,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/gitops"
 	schedulertypes "github.com/getarcaneapp/arcane/types/scheduler"
 	"github.com/google/uuid"
-	"github.com/moby/moby/client"
+	client "github.com/moby/moby/client"
 	"gorm.io/gorm"
 )
 

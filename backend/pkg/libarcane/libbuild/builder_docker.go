@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	dockerutils "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
+	"github.com/getarcaneapp/arcane/types/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
 	"github.com/moby/go-archive"
 	dockercontainer "github.com/moby/moby/api/types/container"
@@ -331,7 +332,7 @@ func prepareDockerBuildContextInternal(input dockerBuildInput) (string, string, 
 
 func (b *builder) performDockerBuildInternal(
 	ctx context.Context,
-	dockerClient *dockerclient.Client,
+	dockerClient dockerclient.APIClient,
 	buildContext io.Reader,
 	buildOpts dockerclient.ImageBuildOptions,
 	progressWriter io.Writer,
@@ -349,7 +350,7 @@ func (b *builder) performDockerBuildInternal(
 
 func (b *builder) pushDockerImagesInternal(
 	ctx context.Context,
-	dockerClient *dockerclient.Client,
+	dockerClient dockerclient.APIClient,
 	tags []string,
 	progressWriter io.Writer,
 	serviceName string,
@@ -452,12 +453,31 @@ func buildDockerImageOptionsInternal(
 	return buildOpts, nil
 }
 
+func convertRegistryAuthConfigsInternal(authConfigs map[string]containerregistry.RegistryAuthConfig) map[string]dockerregistry.AuthConfig {
+	if len(authConfigs) == 0 {
+		return nil
+	}
+
+	converted := make(map[string]dockerregistry.AuthConfig, len(authConfigs))
+	for host, cfg := range authConfigs {
+		converted[host] = dockerregistry.AuthConfig{
+			Username:      cfg.Username,
+			Password:      cfg.Password,
+			Auth:          cfg.Auth,
+			ServerAddress: cfg.ServerAddress,
+			IdentityToken: cfg.IdentityToken,
+			RegistryToken: cfg.RegistryToken,
+		}
+	}
+	return converted
+}
+
 func (b *builder) buildWithDockerInternal(ctx context.Context, req imagetypes.BuildRequest, progressWriter io.Writer, serviceName string) (*imagetypes.BuildResult, error) {
 	if b.dockerClientProvider == nil {
 		return nil, errors.New("docker service not available")
 	}
 
-	dockerClient, err := b.dockerClientProvider.GetClient(ctx)
+	dockerClient, err := b.dockerClientProvider.GetSDKClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
@@ -489,7 +509,7 @@ func (b *builder) buildWithDockerInternal(ctx context.Context, req imagetypes.Bu
 		Status:  "build started",
 	})
 
-	var authConfigs map[string]dockerregistry.AuthConfig
+	var authConfigs map[string]containerregistry.RegistryAuthConfig
 	if b.registryAuthProvider != nil {
 		loadedAuthConfigs, authErr := b.registryAuthProvider.GetAllRegistryAuthConfigs(ctx)
 		if authErr != nil {
@@ -503,7 +523,7 @@ func (b *builder) buildWithDockerInternal(ctx context.Context, req imagetypes.Bu
 		}
 	}
 
-	buildOpts, buildOptsErr := buildDockerImageOptionsInternal(req, input, dockerfileForBuild, authConfigs)
+	buildOpts, buildOptsErr := buildDockerImageOptionsInternal(req, input, dockerfileForBuild, convertRegistryAuthConfigsInternal(authConfigs))
 	if buildOptsErr != nil {
 		writeProgressEventInternal(progressWriter, imagetypes.ProgressEvent{Type: "build", Service: serviceName, Error: buildOptsErr.Error()})
 		return nil, buildOptsErr
@@ -593,6 +613,9 @@ func readDockerignoreInternal(contextDir string) []string {
 			continue
 		}
 		patterns = append(patterns, line)
+	}
+	if err := scanner.Err(); err != nil {
+		return patterns
 	}
 
 	return patterns

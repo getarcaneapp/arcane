@@ -19,7 +19,7 @@ import (
 	libupdater "github.com/getarcaneapp/updater/pkg/labels"
 	"github.com/goccy/go-yaml"
 	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/client"
+	client "github.com/moby/moby/client"
 	"golang.org/x/sync/errgroup"
 )
 

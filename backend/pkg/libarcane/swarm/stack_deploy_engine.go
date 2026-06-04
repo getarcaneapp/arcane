@@ -90,7 +90,7 @@ type StackRenderResult struct {
 // Returns an error if the stack name is empty, the compose or env content is
 // invalid, a referenced resource cannot be inspected or created, or any Docker
 // API call required to reconcile the stack fails.
-func DeployStack(ctx context.Context, dockerClient *dockerclient.Client, opts StackDeployOptions) error {
+func DeployStack(ctx context.Context, dockerClient dockerclient.APIClient, opts StackDeployOptions) error {
 	stackName := strings.TrimSpace(opts.Name)
 	if stackName == "" {
 		return errors.New("stack name is required")
@@ -171,7 +171,7 @@ func DeployStack(ctx context.Context, dockerClient *dockerclient.Client, opts St
 
 func reconcileStackServices(
 	ctx context.Context,
-	dockerClient *dockerclient.Client,
+	dockerClient dockerclient.APIClient,
 	project *composegotypes.Project,
 	stackName string,
 	stackLabels map[string]string,
@@ -208,7 +208,7 @@ func reconcileStackServices(
 
 func cleanupStackResources(
 	ctx context.Context,
-	dockerClient *dockerclient.Client,
+	dockerClient dockerclient.APIClient,
 	stackName string,
 	configMetaByKey map[string]resourceMeta,
 	secretMetaByKey map[string]resourceMeta,
@@ -330,7 +330,7 @@ func loadComposeProject(ctx context.Context, projectName, composeContent, envCon
 	return project, nil
 }
 
-func listStackServices(ctx context.Context, dockerClient *dockerclient.Client, stackName string) (map[string]swarm.Service, error) {
+func listStackServices(ctx context.Context, dockerClient dockerclient.APIClient, stackName string) (map[string]swarm.Service, error) {
 	filter := make(dockerclient.Filters).Add("label", fmt.Sprintf("%s=%s", swarmtypes.StackNamespaceLabel, stackName))
 	servicesResult, err := dockerClient.ServiceList(ctx, dockerclient.ServiceListOptions{Filters: filter})
 	if err != nil {
@@ -345,7 +345,7 @@ func listStackServices(ctx context.Context, dockerClient *dockerclient.Client, s
 	return byName, nil
 }
 
-func ensureSwarmNetworks(ctx context.Context, dockerClient *dockerclient.Client, project *composegotypes.Project, stackName string, stackLabels map[string]string) (map[string]string, error) {
+func ensureSwarmNetworks(ctx context.Context, dockerClient dockerclient.APIClient, project *composegotypes.Project, stackName string, stackLabels map[string]string) (map[string]string, error) {
 	result := make(map[string]string, len(project.Networks))
 	for key, cfg := range project.Networks {
 		networkName := strings.TrimSpace(cfg.Name)
@@ -395,7 +395,7 @@ func ensureSwarmNetworks(ctx context.Context, dockerClient *dockerclient.Client,
 	return result, nil
 }
 
-func ensureSwarmConfigs(ctx context.Context, dockerClient *dockerclient.Client, project *composegotypes.Project, stackName string, stackLabels map[string]string) (map[string]resourceMeta, error) {
+func ensureSwarmConfigs(ctx context.Context, dockerClient dockerclient.APIClient, project *composegotypes.Project, stackName string, stackLabels map[string]string) (map[string]resourceMeta, error) {
 	result := make(map[string]resourceMeta, len(project.Configs))
 	for key, cfg := range project.Configs {
 		name := resolveResourceName(stackName, key, cfg.Name, cfg.External)
@@ -421,7 +421,7 @@ func ensureSwarmConfigs(ctx context.Context, dockerClient *dockerclient.Client, 
 // driver_opts so that Swarm services pick up the correct volume configuration.
 // Without this step Docker creates a plain local volume on first use and the
 // driver options are silently ignored — the root cause of issue #2376.
-func ensureSwarmVolumesInternal(ctx context.Context, dockerClient *dockerclient.Client, project *composegotypes.Project, stackName string, stackLabels map[string]string) error {
+func ensureSwarmVolumesInternal(ctx context.Context, dockerClient dockerclient.APIClient, project *composegotypes.Project, stackName string, stackLabels map[string]string) error {
 	for key, cfg := range project.Volumes {
 		// External volumes must already exist; nothing to create.
 		if cfg.External {
@@ -459,7 +459,7 @@ func ensureSwarmVolumesInternal(ctx context.Context, dockerClient *dockerclient.
 	return nil
 }
 
-func ensureSwarmSecrets(ctx context.Context, dockerClient *dockerclient.Client, project *composegotypes.Project, stackName string, stackLabels map[string]string) (map[string]resourceMeta, error) {
+func ensureSwarmSecrets(ctx context.Context, dockerClient dockerclient.APIClient, project *composegotypes.Project, stackName string, stackLabels map[string]string) (map[string]resourceMeta, error) {
 	result := make(map[string]resourceMeta, len(project.Secrets))
 	for key, cfg := range project.Secrets {
 		name := resolveResourceName(stackName, key, cfg.Name, cfg.External)
@@ -481,7 +481,7 @@ func ensureSwarmSecrets(ctx context.Context, dockerClient *dockerclient.Client, 
 	return result, nil
 }
 
-func ensureConfig(ctx context.Context, dockerClient *dockerclient.Client, name string, cfg composegotypes.ConfigObjConfig, stackLabels map[string]string, workingDir string) (resourceMeta, error) {
+func ensureConfig(ctx context.Context, dockerClient dockerclient.APIClient, name string, cfg composegotypes.ConfigObjConfig, stackLabels map[string]string, workingDir string) (resourceMeta, error) {
 	return ensureManagedFileResourceInternal(ctx, name, composegotypes.FileObjectConfig(cfg), cfg.Labels, stackLabels, workingDir, managedFileResourceOptionsInternal{
 		ResourceType: "config",
 		Inspect: func(ctx context.Context, managedName string) (resourceMeta, error) {
@@ -491,7 +491,7 @@ func ensureConfig(ctx context.Context, dockerClient *dockerclient.Client, name s
 	})
 }
 
-func ensureSecret(ctx context.Context, dockerClient *dockerclient.Client, name string, cfg composegotypes.SecretConfig, stackLabels map[string]string, workingDir string) (resourceMeta, error) {
+func ensureSecret(ctx context.Context, dockerClient dockerclient.APIClient, name string, cfg composegotypes.SecretConfig, stackLabels map[string]string, workingDir string) (resourceMeta, error) {
 	return ensureManagedFileResourceInternal(ctx, name, composegotypes.FileObjectConfig(cfg), cfg.Labels, stackLabels, workingDir, managedFileResourceOptionsInternal{
 		ResourceType: "secret",
 		Inspect: func(ctx context.Context, managedName string) (resourceMeta, error) {
@@ -501,7 +501,7 @@ func ensureSecret(ctx context.Context, dockerClient *dockerclient.Client, name s
 	})
 }
 
-func createConfigResourceInternal(dockerClient *dockerclient.Client) func(context.Context, string, map[string]string, []byte) (resourceMeta, error) {
+func createConfigResourceInternal(dockerClient dockerclient.APIClient) func(context.Context, string, map[string]string, []byte) (resourceMeta, error) {
 	return func(ctx context.Context, managedName string, labels map[string]string, data []byte) (resourceMeta, error) {
 		spec := swarm.ConfigSpec{
 			Annotations: managedResourceAnnotationsInternal(managedName, labels),
@@ -516,7 +516,7 @@ func createConfigResourceInternal(dockerClient *dockerclient.Client) func(contex
 	}
 }
 
-func createSecretResourceInternal(dockerClient *dockerclient.Client) func(context.Context, string, map[string]string, []byte) (resourceMeta, error) {
+func createSecretResourceInternal(dockerClient dockerclient.APIClient) func(context.Context, string, map[string]string, []byte) (resourceMeta, error) {
 	return func(ctx context.Context, managedName string, labels map[string]string, data []byte) (resourceMeta, error) {
 		spec := swarm.SecretSpec{
 			Annotations: managedResourceAnnotationsInternal(managedName, labels),
@@ -573,7 +573,7 @@ func ensureManagedFileResourceInternal(
 	return opts.Create(ctx, managedName, resourceLabels, data)
 }
 
-func inspectConfig(ctx context.Context, dockerClient *dockerclient.Client, name string) (resourceMeta, error) {
+func inspectConfig(ctx context.Context, dockerClient dockerclient.APIClient, name string) (resourceMeta, error) {
 	configResult, err := dockerClient.ConfigInspect(ctx, name, dockerclient.ConfigInspectOptions{})
 	if err != nil {
 		return resourceMeta{}, err
@@ -582,7 +582,7 @@ func inspectConfig(ctx context.Context, dockerClient *dockerclient.Client, name 
 	return resourceMeta{ID: config.ID, Name: config.Spec.Name}, nil
 }
 
-func inspectSecret(ctx context.Context, dockerClient *dockerclient.Client, name string) (resourceMeta, error) {
+func inspectSecret(ctx context.Context, dockerClient dockerclient.APIClient, name string) (resourceMeta, error) {
 	secretResult, err := dockerClient.SecretInspect(ctx, name, dockerclient.SecretInspectOptions{})
 	if err != nil {
 		return resourceMeta{}, err
@@ -670,7 +670,7 @@ func buildServiceSpec(
 
 func createSwarmService(
 	ctx context.Context,
-	dockerClient *dockerclient.Client,
+	dockerClient dockerclient.APIClient,
 	spec swarm.ServiceSpec,
 	withRegistryAuth bool,
 	registryAuthForImage func(context.Context, string) (string, error),
@@ -696,7 +696,7 @@ func createSwarmService(
 
 func updateSwarmService(
 	ctx context.Context,
-	dockerClient *dockerclient.Client,
+	dockerClient dockerclient.APIClient,
 	existing swarm.Service,
 	spec swarm.ServiceSpec,
 	withRegistryAuth bool,
@@ -1362,7 +1362,7 @@ func resolveRegistryAuthForSpec(
 	return encodedRegistryAuth, nil
 }
 
-func cleanupStaleConfigs(ctx context.Context, dockerClient *dockerclient.Client, stackName string, desiredNames map[string]struct{}) error {
+func cleanupStaleConfigs(ctx context.Context, dockerClient dockerclient.APIClient, stackName string, desiredNames map[string]struct{}) error {
 	return cleanupStaleManagedResourcesInternal(ctx, stackName, desiredNames, staleManagedResourceOptionsInternal{
 		ResourceType: "config",
 		List:         listStaleConfigResourcesInternal(dockerClient),
@@ -1370,7 +1370,7 @@ func cleanupStaleConfigs(ctx context.Context, dockerClient *dockerclient.Client,
 	})
 }
 
-func cleanupStaleSecrets(ctx context.Context, dockerClient *dockerclient.Client, stackName string, desiredNames map[string]struct{}) error {
+func cleanupStaleSecrets(ctx context.Context, dockerClient dockerclient.APIClient, stackName string, desiredNames map[string]struct{}) error {
 	return cleanupStaleManagedResourcesInternal(ctx, stackName, desiredNames, staleManagedResourceOptionsInternal{
 		ResourceType: "secret",
 		List:         listStaleSecretResourcesInternal(dockerClient),
@@ -1378,7 +1378,7 @@ func cleanupStaleSecrets(ctx context.Context, dockerClient *dockerclient.Client,
 	})
 }
 
-func listStaleConfigResourcesInternal(dockerClient *dockerclient.Client) func(context.Context, dockerclient.Filters) ([]staleManagedResourceInternal, error) {
+func listStaleConfigResourcesInternal(dockerClient dockerclient.APIClient) func(context.Context, dockerclient.Filters) ([]staleManagedResourceInternal, error) {
 	return func(ctx context.Context, filters dockerclient.Filters) ([]staleManagedResourceInternal, error) {
 		configsResult, err := dockerClient.ConfigList(ctx, dockerclient.ConfigListOptions{Filters: filters})
 		if err != nil {
@@ -1391,7 +1391,7 @@ func listStaleConfigResourcesInternal(dockerClient *dockerclient.Client) func(co
 	}
 }
 
-func listStaleSecretResourcesInternal(dockerClient *dockerclient.Client) func(context.Context, dockerclient.Filters) ([]staleManagedResourceInternal, error) {
+func listStaleSecretResourcesInternal(dockerClient dockerclient.APIClient) func(context.Context, dockerclient.Filters) ([]staleManagedResourceInternal, error) {
 	return func(ctx context.Context, filters dockerclient.Filters) ([]staleManagedResourceInternal, error) {
 		secretsResult, err := dockerClient.SecretList(ctx, dockerclient.SecretListOptions{Filters: filters})
 		if err != nil {
@@ -1412,14 +1412,14 @@ func collectStaleManagedResourcesInternal[T any](items []T, convert func(T) stal
 	return resources
 }
 
-func removeConfigResourceInternal(dockerClient *dockerclient.Client) func(context.Context, string) error {
+func removeConfigResourceInternal(dockerClient dockerclient.APIClient) func(context.Context, string) error {
 	return func(ctx context.Context, id string) error {
 		_, err := dockerClient.ConfigRemove(ctx, id, dockerclient.ConfigRemoveOptions{})
 		return err
 	}
 }
 
-func removeSecretResourceInternal(dockerClient *dockerclient.Client) func(context.Context, string) error {
+func removeSecretResourceInternal(dockerClient dockerclient.APIClient) func(context.Context, string) error {
 	return func(ctx context.Context, id string) error {
 		_, err := dockerClient.SecretRemove(ctx, id, dockerclient.SecretRemoveOptions{})
 		return err

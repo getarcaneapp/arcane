@@ -4,9 +4,12 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/netip"
 	"sort"
 	"strings"
 
+	dockersdkclient "github.com/docker/go-sdk/client"
+	dockersdknetwork "github.com/docker/go-sdk/network"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	dockerutil "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
@@ -15,9 +18,11 @@ import (
 	networktypes "github.com/getarcaneapp/arcane/types/network"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
-	"github.com/moby/moby/client"
+	client "github.com/moby/moby/client"
 	"golang.org/x/sync/errgroup"
 )
+
+var dockerSDKNetworkNewInternal = dockersdknetwork.New
 
 type NetworkService struct {
 	db            *database.DB
@@ -170,17 +175,32 @@ func (s *NetworkService) GetNetworkTopology(ctx context.Context) (*networktypes.
 	return topology, nil
 }
 
-func (s *NetworkService) CreateNetwork(ctx context.Context, name string, options client.NetworkCreateOptions, user models.User) (*network.CreateResponse, error) {
+func (s *NetworkService) CreateNetwork(ctx context.Context, name string, createOptions networktypes.CreateOptions, user models.User) (*network.CreateResponse, error) {
+	options := toDockerNetworkCreateOptionsInternal(createOptions)
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeNetworkError, "network", "", name, user.ID, user.Username, "0", err, models.JSON{"action": "create", "driver": options.Driver})
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	response, err := dockerClient.NetworkCreate(ctx, name, options)
-	if err != nil {
-		s.eventService.LogErrorEvent(ctx, models.EventTypeNetworkError, "network", "", name, user.ID, user.Username, "0", err, models.JSON{"action": "create", "driver": options.Driver})
-		return nil, fmt.Errorf("failed to create network: %w", err)
+	response := network.CreateResponse{}
+	if sdkClient, sdkErr := s.dockerService.GetSDKClient(ctx); sdkErr == nil && canUseSDKNetworkCreateInternal(options) {
+		createdNetwork, sdkCreateErr := dockerSDKNetworkNewInternal(ctx, buildSDKNetworkCreateOptionsInternal(sdkClient, name, options)...)
+		if sdkCreateErr != nil {
+			s.eventService.LogErrorEvent(ctx, models.EventTypeNetworkError, "network", "", name, user.ID, user.Username, "0", sdkCreateErr, models.JSON{"action": "create", "driver": options.Driver})
+			return nil, fmt.Errorf("failed to create network: %w", sdkCreateErr)
+		}
+		response.ID = createdNetwork.ID()
+	} else {
+		createResult, createErr := dockerClient.NetworkCreate(ctx, name, options)
+		if createErr != nil {
+			s.eventService.LogErrorEvent(ctx, models.EventTypeNetworkError, "network", "", name, user.ID, user.Username, "0", createErr, models.JSON{"action": "create", "driver": options.Driver})
+			return nil, fmt.Errorf("failed to create network: %w", createErr)
+		}
+		response = network.CreateResponse{
+			ID:      createResult.ID,
+			Warning: strings.Join(createResult.Warning, "; "),
+		}
 	}
 
 	metadata := models.JSON{
@@ -192,17 +212,144 @@ func (s *NetworkService) CreateNetwork(ctx context.Context, name string, options
 		slog.WarnContext(ctx, "could not log network creation action", "error", logErr)
 	}
 
-	warning := ""
-	if len(response.Warning) > 0 {
-		warning = strings.Join(response.Warning, "; ")
+	return &response, nil
+}
+
+func toDockerNetworkCreateOptionsInternal(src networktypes.CreateOptions) client.NetworkCreateOptions {
+	opts := client.NetworkCreateOptions{
+		Driver:     src.Driver,
+		Internal:   src.Internal,
+		Attachable: src.Attachable,
+		Ingress:    src.Ingress,
+		EnableIPv6: boolPtrIfTrueInternal(src.EnableIPv6),
+		Options:    src.Options,
+		Labels:     src.Labels,
 	}
 
-	out := network.CreateResponse{
-		ID:      response.ID,
-		Warning: warning,
+	if src.IPAM != nil {
+		opts.IPAM = toDockerNetworkIPAMInternal(src.IPAM)
 	}
 
-	return &out, nil
+	return opts
+}
+
+func boolPtrIfTrueInternal(v bool) *bool {
+	if !v {
+		return nil
+	}
+
+	return &v
+}
+
+func toDockerNetworkIPAMInternal(src *networktypes.IPAM) *network.IPAM {
+	dockerIPAM := &network.IPAM{
+		Driver:  src.Driver,
+		Options: src.Options,
+	}
+
+	for _, cfg := range src.Config {
+		if dockerCfg, ok := toDockerNetworkIPAMConfigInternal(cfg); ok {
+			dockerIPAM.Config = append(dockerIPAM.Config, dockerCfg)
+		}
+	}
+
+	return dockerIPAM
+}
+
+func toDockerNetworkIPAMConfigInternal(cfg networktypes.IPAMConfig) (network.IPAMConfig, bool) {
+	dockerCfg := network.IPAMConfig{}
+	hasAny := false
+
+	if parsed, ok := parseNetworkPrefixInternal(cfg.Subnet); ok {
+		dockerCfg.Subnet = parsed
+		hasAny = true
+	}
+	if parsed, ok := parseNetworkAddrInternal(cfg.Gateway); ok {
+		dockerCfg.Gateway = parsed
+		hasAny = true
+	}
+	if parsed, ok := parseNetworkPrefixInternal(cfg.IPRange); ok {
+		dockerCfg.IPRange = parsed
+		hasAny = true
+	}
+	if aux := parseNetworkAuxAddressInternal(cfg.AuxAddress); len(aux) > 0 {
+		dockerCfg.AuxAddress = aux
+		hasAny = true
+	}
+
+	return dockerCfg, hasAny
+}
+
+func parseNetworkPrefixInternal(raw string) (netip.Prefix, bool) {
+	prefix, err := netip.ParsePrefix(strings.TrimSpace(raw))
+	if err != nil {
+		return netip.Prefix{}, false
+	}
+
+	return prefix, true
+}
+
+func parseNetworkAddrInternal(raw string) (netip.Addr, bool) {
+	addr, err := netip.ParseAddr(strings.TrimSpace(raw))
+	if err != nil {
+		return netip.Addr{}, false
+	}
+
+	return addr, true
+}
+
+func parseNetworkAuxAddressInternal(auxAddress map[string]string) map[string]netip.Addr {
+	if len(auxAddress) == 0 {
+		return nil
+	}
+
+	aux := make(map[string]netip.Addr, len(auxAddress))
+	for key, rawAddr := range auxAddress {
+		if parsed, ok := parseNetworkAddrInternal(rawAddr); ok {
+			aux[key] = parsed
+		}
+	}
+
+	return aux
+}
+
+func canUseSDKNetworkCreateInternal(options client.NetworkCreateOptions) bool {
+	if options.Ingress {
+		return false
+	}
+	if len(options.Options) > 0 {
+		return false
+	}
+
+	return true
+}
+
+func buildSDKNetworkCreateOptionsInternal(sdkClient dockersdkclient.SDKClient, name string, options client.NetworkCreateOptions) []dockersdknetwork.Option {
+	createOptions := []dockersdknetwork.Option{
+		dockersdknetwork.WithClient(sdkClient),
+		dockersdknetwork.WithName(name),
+	}
+
+	if driver := strings.TrimSpace(options.Driver); driver != "" {
+		createOptions = append(createOptions, dockersdknetwork.WithDriver(driver))
+	}
+	if options.Internal {
+		createOptions = append(createOptions, dockersdknetwork.WithInternal())
+	}
+	if options.Attachable {
+		createOptions = append(createOptions, dockersdknetwork.WithAttachable())
+	}
+	if options.EnableIPv6 != nil && *options.EnableIPv6 {
+		createOptions = append(createOptions, dockersdknetwork.WithEnableIPv6())
+	}
+	if options.IPAM != nil {
+		createOptions = append(createOptions, dockersdknetwork.WithIPAM(options.IPAM))
+	}
+	if len(options.Labels) > 0 {
+		createOptions = append(createOptions, dockersdknetwork.WithLabels(options.Labels))
+	}
+
+	return createOptions
 }
 
 func (s *NetworkService) RemoveNetwork(ctx context.Context, id string, user models.User) error {

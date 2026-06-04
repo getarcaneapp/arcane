@@ -27,7 +27,7 @@ import (
 	"github.com/getarcaneapp/updater/pkg/refs"
 	moduletypes "github.com/getarcaneapp/updater/types"
 	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/client"
+	client "github.com/moby/moby/client"
 )
 
 const autoUpdateComposeStandaloneFallbackSettingKeyInternal = "autoUpdateComposeStandaloneFallback"
@@ -347,12 +347,37 @@ func autoUpdateEventTitleInternal(phase string, metadata models.JSON) string {
 	}
 }
 
-// DockerClient returns Arcane's configured Docker client for the updater engine.
+// DockerClient returns a concrete Moby client for the external updater engine.
+// This remains a temporary compatibility bridge until the updater module accepts
+// Docker API interfaces instead of a concrete client type.
 func (s *UpdaterService) DockerClient(ctx context.Context) (*client.Client, error) {
 	if s == nil || s.deps.Docker == nil {
 		return nil, &common.UpdaterDockerServiceUnavailableError{}
 	}
-	return s.deps.Docker.GetClient(ctx)
+
+	host := s.deps.Docker.DockerHost()
+	dockerClient, err := s.deps.Docker.GetClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	apiVersion := strings.TrimSpace(libarcane.DetectDockerAPIVersion(ctx, dockerClient))
+	if apiVersion == "" {
+		apiVersion, err = detectDockerAPIVersionInternal(ctx, host)
+		if err != nil {
+			return nil, fmt.Errorf("resolve Docker API version for updater: %w", err)
+		}
+	}
+
+	legacyClient, err := client.New(
+		client.WithHost(host),
+		client.WithAPIVersion(apiVersion),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create legacy Docker client for updater: %w", err)
+	}
+
+	return legacyClient, nil
 }
 
 // PullImage pulls an image through Arcane's image service.
@@ -827,7 +852,7 @@ func (s *UpdaterService) CollectUsedImages(ctx context.Context) (map[string]stru
 	return out, nil
 }
 
-func (s *UpdaterService) collectUsedImagesFromContainersInternal(ctx context.Context, dcli *client.Client, out map[string]struct{}) error {
+func (s *UpdaterService) collectUsedImagesFromContainersInternal(ctx context.Context, dcli client.APIClient, out map[string]struct{}) error {
 	if dcli == nil {
 		return nil
 	}
@@ -893,7 +918,7 @@ func (s *UpdaterService) collectUsedImagesFromComposeContainersInternal(ctx cont
 	}
 }
 
-func (s *UpdaterService) normalizedTagsForContainerInternal(ctx context.Context, dcli *client.Client, inspect container.InspectResponse) []string {
+func (s *UpdaterService) normalizedTagsForContainerInternal(ctx context.Context, dcli client.APIClient, inspect container.InspectResponse) []string {
 	seen := map[string]struct{}{}
 
 	if dcli != nil {
