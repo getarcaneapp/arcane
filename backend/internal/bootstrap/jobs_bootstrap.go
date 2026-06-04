@@ -34,8 +34,8 @@ func registerJobs(appCtx context.Context, newScheduler *pkg_scheduler.JobSchedul
 	eventCleanupJob := pkg_scheduler.NewEventCleanupJob(appServices.Event, appServices.Settings)
 	newScheduler.RegisterJob(eventCleanupJob)
 
-	volumeHelperReaperJob := pkg_scheduler.NewVolumeHelperReaperJob(appServices.Volume, appServices.Settings)
-	newScheduler.RegisterJob(volumeHelperReaperJob)
+	pruningVolumeHelperJob := pkg_scheduler.NewPruningVolumeHelperJob(appServices.Volume, appServices.Settings)
+	newScheduler.RegisterJob(pruningVolumeHelperJob)
 
 	expiredSessionsCleanupJob := pkg_scheduler.NewExpiredSessionsCleanupJob(appServices.Session, appServices.Settings)
 	newScheduler.RegisterJob(expiredSessionsCleanupJob)
