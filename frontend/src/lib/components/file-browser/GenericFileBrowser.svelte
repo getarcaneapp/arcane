@@ -33,12 +33,7 @@
 	import bytes from '$lib/utils/bytes';
 	import { format } from 'date-fns';
 
-	let {
-		provider,
-		rootLabel,
-		persistKey,
-		headerActions
-	}: { provider: FileProvider; rootLabel?: string; persistKey?: string; headerActions?: import('svelte').Snippet } = $props();
+	let { provider, rootLabel, persistKey }: { provider: FileProvider; rootLabel?: string; persistKey?: string } = $props();
 
 	let currentPath = $state('/');
 	let files = $state<FileEntry[]>([]);
@@ -188,7 +183,6 @@
 				icon={UploadIcon}
 				customLabel={m.volumes_browser_upload_files()}
 			/>
-			{@render headerActions?.()}
 		</div>
 	</div>
 
