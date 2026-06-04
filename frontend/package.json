@@ -74,7 +74,7 @@
     "typescript": "^6.0.3",
     "unplugin-icons": "^23.0.1",
     "vaul-svelte": "1.0.0-next.7",
-    "vite": "^8.0.14",
+    "vite": "^8.0.16",
     "zod": "^4.4.3"
   }
 }
