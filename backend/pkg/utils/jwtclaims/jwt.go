@@ -87,7 +87,7 @@ const (
 	// KnownInsecureJWTSecret is the placeholder shipped in config.go's struct
 	// tag; it must never sign real tokens. Keep in sync with the `default:` tag
 	// on Config.JWTSecret.
-	KnownInsecureJWTSecret = "default-jwt-secret-change-me" //nolint:gosec // public placeholder config default, intentionally rejected for production signing
+	KnownInsecureJWTSecret = "default-jwt-secret-change-me" // #nosec G101: public placeholder config default, intentionally rejected for production signing
 	// MinJWTSecretLength matches the 32-byte floor enforced for ENCRYPTION_KEY.
 	MinJWTSecretLength = 32
 )
