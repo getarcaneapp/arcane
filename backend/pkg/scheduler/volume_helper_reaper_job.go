@@ -8,15 +8,15 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 )
 
-const VolumeHelperReaperJobName = "volume-helper-reaper"
+const (
+	VolumeHelperReaperJobName = "volume-helper-reaper"
 
-// volumeHelperIdleTimeoutSetting is the settings key (in minutes) controlling how
-// long a volume-browser helper container may sit idle before it is reaped.
-const volumeHelperIdleTimeoutSetting = "volumeBrowserHelperIdleTimeout"
-
-const defaultVolumeHelperIdleTimeoutMinutes = 5
-
-const volumeHelperReaperSchedule = "0 */5 * * * *"
+	// volumeHelperIdleTimeoutSetting is the settings key (in minutes) controlling how
+	// long a volume-browser helper container may sit idle before it is reaped.
+	volumeHelperIdleTimeoutSetting        = "volumeBrowserHelperIdleTimeout"
+	defaultVolumeHelperIdleTimeoutMinutes = 5
+	volumeHelperReaperSchedule            = "0 */5 * * * *"
+)
 
 // VolumeHelperReaperJob periodically removes idle volume-browser helper
 // containers. The run frequency is fixed (every 5 minutes); how stale a helper must
