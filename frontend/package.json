@@ -30,7 +30,7 @@
     "@uiw/codemirror-themes": "^4.25.10",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
-    "@xyflow/svelte": "^1.5.2",
+    "@xyflow/svelte": "^1.6.0",
     "ajv": "^8.20.0",
     "ansi-to-html": "^0.7.2",
     "date-fns": "^4.3.0",
