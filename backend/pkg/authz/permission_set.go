@@ -44,11 +44,10 @@ func (ps *PermissionSet) Allows(perm, envID string) bool {
 // Global set contains every defined permission. Used by the backward-compat
 // IsAdminFromContext helper and by last-admin guards.
 //
-// Implementation: every insertion path runs through
-// services.validatePermissionsInternal → authz.IsKnownPermission, which does
-// an exact-set check against AllPermissions(). ps.Global is therefore a true
-// subset of AllPermissions, and equal cardinality implies equality — no
-// per-call slice allocation or O(N) walk on the auth hot path.
+// Implementation: first checks cardinality against TotalPermissionsCount() for a
+// fast early exit, then walks AllPermissions() to confirm every known
+// permission is present. This guards against a ps.Global that contains the right
+// count but includes injected unknown permissions instead of all real ones.
 func (ps *PermissionSet) IsGlobalAdmin() bool {
 	if ps == nil {
 		return false
@@ -56,7 +55,15 @@ func (ps *PermissionSet) IsGlobalAdmin() bool {
 	if ps.Sudo {
 		return true
 	}
-	return len(ps.Global) >= TotalPermissionsCount()
+	if len(ps.Global) != TotalPermissionsCount() {
+		return false
+	}
+	for _, permission := range AllPermissions() {
+		if _, ok := ps.Global[permission]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 // SudoPermissionSet returns a PermissionSet that allows every action. Used for

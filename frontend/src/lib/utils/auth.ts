@@ -109,7 +109,8 @@ export function getAuthRedirectPath(
 	path: string,
 	user: User | null,
 	envId?: string,
-	accessManifest?: PermissionsManifest | null
+	accessManifest?: PermissionsManifest | null,
+	accessManifestLoadFailed = false
 ): string | null {
 	const isSignedIn = !!user;
 
@@ -123,6 +124,16 @@ export function getAuthRedirectPath(
 
 	if (isSignedIn && matchesAny(path, UNAUTHENTICATED_ONLY_PREFIXES)) {
 		return '/dashboard';
+	}
+
+	if (
+		isSignedIn &&
+		!accessManifestLoadFailed &&
+		path !== '/no-access' &&
+		!accessManifest?.accessSurfaces?.length &&
+		matchesAny(path, PROTECTED_PREFIXES)
+	) {
+		return '/no-access';
 	}
 
 	if (!isSignedIn || !user) return null;
