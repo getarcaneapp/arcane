@@ -29,6 +29,7 @@
 	import { hasPermission } from '$lib/utils/auth';
 	import IconImage from '$lib/components/icon-image.svelte';
 	import { getArcaneIconUrlFromLabels, getContainerIpAddresses } from '$lib/utils/docker';
+	import { hasAnyLoadingState } from '$lib/utils/bulk-actions';
 	import { createContainerActions } from './container-table.actions';
 	import {
 		getActionStatusMessage,
@@ -143,9 +144,7 @@
 		isBulkLoading
 	});
 
-	const isAnyLoading = $derived(
-		Object.values(actionStatus).some((status) => status !== '') || Object.values(isBulkLoading).some((loading) => loading)
-	);
+	const isAnyLoading = $derived(hasAnyLoadingState(actionStatus, isBulkLoading));
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 	let customSettings = $state<Record<string, unknown>>({});

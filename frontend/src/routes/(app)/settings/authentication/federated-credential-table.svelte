@@ -12,6 +12,7 @@
 	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
 	import { federatedCredentialService } from '$lib/services/federated-credential-service';
+	import { formatOptionalDateTime, isPastDate } from '$lib/utils/formatting';
 	import * as m from '$lib/paraglide/messages.js';
 	import { LockIcon, TrashIcon, EditIcon, EllipsisIcon } from '$lib/icons';
 	import { isGlobalAdmin } from '$lib/utils/auth';
@@ -35,24 +36,14 @@
 	});
 	const canManageFederatedCredentials = $derived(isGlobalAdmin());
 
-	function formatDate(dateString?: string): string {
-		if (!dateString) return '-';
-		return new Date(dateString).toLocaleString();
-	}
-
-	function isExpired(expiresAt?: string): boolean {
-		if (!expiresAt) return false;
-		return new Date(expiresAt) < new Date();
-	}
-
 	function getStatusText(credential: FederatedCredential): string {
-		if (isExpired(credential.expiresAt)) return m.federated_credential_status_expired();
+		if (isPastDate(credential.expiresAt)) return m.federated_credential_status_expired();
 		if (!credential.enabled) return m.common_disabled();
 		return m.common_enabled();
 	}
 
 	function getStatusVariant(credential: FederatedCredential): 'red' | 'green' | 'gray' {
-		if (isExpired(credential.expiresAt)) return 'red';
+		if (isPastDate(credential.expiresAt)) return 'red';
 		if (!credential.enabled) return 'gray';
 		return 'green';
 	}
@@ -195,7 +186,7 @@
 {/snippet}
 
 {#snippet LastUsedCell({ item }: { item: FederatedCredential })}
-	{formatDate(item.lastUsedAt)}
+	{formatOptionalDateTime(item.lastUsedAt)}
 {/snippet}
 
 {#snippet FederatedCredentialMobileCardSnippet({
@@ -233,7 +224,7 @@
 			},
 			{
 				label: m.federated_credential_last_used(),
-				getValue: (item: FederatedCredential) => formatDate(item.lastUsedAt),
+				getValue: (item: FederatedCredential) => formatOptionalDateTime(item.lastUsedAt),
 				icon: LockIcon,
 				iconVariant: 'gray' as const,
 				show: mobileFieldVisibility['lastUsedAt'] ?? true

@@ -9,15 +9,10 @@
 	import MobileUserCard from './mobile-user-card.svelte';
 	import ActivityCenterTrigger from '$lib/components/activity/activity-center-trigger.svelte';
 	import * as Drawer from '$lib/components/ui/drawer/index.js';
-	import { queryKeys } from '$lib/query/query-keys';
-	import systemUpgradeService from '$lib/services/api/system-upgrade-service';
 	import UpdateCenterDialog from '$lib/components/dialogs/update-center-dialog.svelte';
-	import { toast } from 'svelte-sonner';
-	import { extractApiErrorMessage } from '$lib/utils/api';
-	import { hasPermission } from '$lib/utils/auth';
+	import { useUpgradeCheck } from '$lib/hooks/use-upgrade-check.svelte';
 	import type { AppVersionInformation } from '$lib/types/settings';
 	import type { PermissionsManifest, User } from '$lib/types/auth';
-	import { createMutation, createQuery } from '@tanstack/svelte-query';
 
 	let {
 		open = $bindable(false),
@@ -56,60 +51,11 @@
 		filterByPermissions(navigationItems.settingsItems, memoizedUser ?? null, currentEnvId, permissionsManifest)
 	);
 
-	let upgrading = $state(false);
-	let showConfirmDialog = $state(false);
-	const canInstallUpdates = $derived(hasPermission('environments:update'));
-
-	const shouldCheckUpgrade = $derived(!!(versionInformation?.updateAvailable && canInstallUpdates && !debug));
-	const upgradeAvailabilityQuery = createQuery(() => ({
-		queryKey: queryKeys.system.upgradeAvailable('mobile-nav'),
-		queryFn: () => systemUpgradeService.checkUpgradeAvailable(),
-		enabled: shouldCheckUpgrade,
-		staleTime: 0
-	}));
-
-	const canUpgrade = $derived.by(() => {
-		if (debug) return true;
-		const result = upgradeAvailabilityQuery.data;
-		return !!result?.canUpgrade && !result?.error;
+	const upgradeCheck = useUpgradeCheck({
+		queryScope: 'mobile-nav',
+		getVersionInformation: () => versionInformation,
+		getDebug: () => debug
 	});
-	const checkingUpgrade = $derived(
-		!!(shouldCheckUpgrade && (upgradeAvailabilityQuery.isPending || upgradeAvailabilityQuery.isFetching))
-	);
-	const shouldShowUpgrade = $derived((canUpgrade && canInstallUpdates) || debug);
-
-	const updateType = $derived.by(() => {
-		if (!versionInformation) return 'none';
-		if (versionInformation.isSemverVersion) return 'semver';
-		if (versionInformation.currentTag && versionInformation.newestDigest) return 'digest';
-		return 'none';
-	});
-
-	const versionChip = $derived.by(() => {
-		if (!versionInformation) return '';
-		if (updateType === 'semver') return versionInformation.newestVersion ?? '';
-		if (updateType === 'digest') return versionInformation.currentTag ?? '';
-		return '';
-	});
-
-	const shouldShowBanner = $derived(versionInformation?.updateAvailable || debug);
-	const triggerUpgradeMutation = createMutation(() => ({
-		mutationFn: () => systemUpgradeService.triggerUpgrade(),
-		onError: (error: unknown) => {
-			const errorMessage = extractApiErrorMessage(error);
-			const wrappedPrefix = m.upgrade_failed({ error: '' });
-			toast.error(errorMessage.startsWith(wrappedPrefix) ? errorMessage : m.upgrade_failed({ error: errorMessage }));
-			upgrading = false;
-		}
-	}));
-
-	function handleUpgradeClick() {
-		showConfirmDialog = true;
-	}
-
-	function handleConfirmUpgrade() {
-		triggerUpgradeMutation.mutate();
-	}
 
 	function handleItemClick() {
 		open = false;
@@ -372,11 +318,11 @@
 						{versionInformation.displayVersion ?? versionInformation.currentVersion}
 					</p>
 				</div>
-				{#if shouldShowBanner}
+				{#if upgradeCheck.shouldShowBanner}
 					<button
 						type="button"
-						onclick={handleUpgradeClick}
-						disabled={upgrading || checkingUpgrade}
+						onclick={upgradeCheck.openDialog}
+						disabled={upgradeCheck.upgrading || upgradeCheck.checkingUpgrade}
 						class="group hover:bg-muted/50 focus-visible:ring-primary/40 mt-3 flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left transition-colors focus-visible:ring-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60"
 					>
 						<span class="relative flex size-2 shrink-0 items-center justify-center">
@@ -386,9 +332,9 @@
 						<span class="text-foreground flex-1 text-sm font-medium">
 							{m.sidebar_update_available()}
 						</span>
-						{#if versionChip}
+						{#if upgradeCheck.versionChip}
 							<span class="bg-muted text-muted-foreground rounded-md px-1.5 py-0.5 font-mono text-[11px]">
-								{versionChip}
+								{upgradeCheck.versionChip}
 							</span>
 						{/if}
 					</button>
@@ -399,12 +345,12 @@
 </Drawer.Root>
 
 <UpdateCenterDialog
-	bind:open={showConfirmDialog}
-	bind:upgrading
+	bind:open={upgradeCheck.showConfirmDialog}
+	bind:upgrading={upgradeCheck.upgrading}
 	{versionInformation}
-	canInstall={shouldShowUpgrade}
+	canInstall={upgradeCheck.shouldShowUpgrade}
 	{debug}
-	onConfirm={handleConfirmUpgrade}
+	onConfirm={upgradeCheck.confirmUpgrade}
 />
 
 <style>

@@ -10,7 +10,7 @@ import type {
 import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
 import { transformPaginationParams } from '$lib/utils/tables';
 
-export default class GitRepositoryService extends BaseAPIService {
+class GitRepositoryService extends BaseAPIService {
 	async getRepositories(options?: SearchPaginationSortRequest): Promise<Paginated<GitRepository>> {
 		const params = transformPaginationParams(options);
 		const res = await this.api.get('/customize/git-repositories', { params });

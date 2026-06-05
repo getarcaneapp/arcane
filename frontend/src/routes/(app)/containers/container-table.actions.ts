@@ -6,6 +6,8 @@ import { handleApiResultWithCallbacks } from '$lib/utils/api';
 import { tryCatch } from '$lib/utils/api';
 import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 import { bulkConfirmAndRun } from '$lib/utils/bulk-actions';
+import { confirmAndRemoveContainer, confirmAndUpdateContainer, runContainerLifecycleAction } from '$lib/utils/container-actions';
+import type { TableActionConfig, TableBulkActionConfig } from '$lib/utils/table-action-types';
 import { toast } from 'svelte-sonner';
 import { getContainerDisplayName, type ActionStatus } from './container-table.helpers';
 
@@ -26,44 +28,10 @@ type ActionDeps = {
 
 type ContainerActionKind = 'start' | 'stop' | 'restart' | 'redeploy';
 
-type ContainerActionConfig = {
-	status: ActionStatus;
-	run: (id: string) => Promise<unknown>;
-	success: () => string;
-	failure: () => string;
-};
+type ContainerActionConfig = TableActionConfig<ActionStatus>;
+type BulkActionConfig = TableBulkActionConfig<keyof BulkLoadingState>;
 
-type BulkActionConfig = {
-	title: (count: number) => string;
-	message: (count: number) => string;
-	label: string;
-	loadingKey: keyof BulkLoadingState;
-	run: (id: string) => Promise<unknown>;
-	success: (count: number) => string;
-	partial: (success: number, total: number, failed: number) => string;
-	failure: () => string;
-	destructive?: boolean;
-};
-
-const containerActionConfigs: Record<ContainerActionKind, ContainerActionConfig> = {
-	start: {
-		status: 'starting',
-		run: (id) => containerService.startContainer(id),
-		success: () => m.containers_start_success(),
-		failure: () => m.containers_start_failed()
-	},
-	stop: {
-		status: 'stopping',
-		run: (id) => containerService.stopContainer(id),
-		success: () => m.containers_stop_success(),
-		failure: () => m.containers_stop_failed()
-	},
-	restart: {
-		status: 'restarting',
-		run: (id) => containerService.restartContainer(id),
-		success: () => m.containers_restart_success(),
-		failure: () => m.containers_restart_failed()
-	},
+const containerActionConfigs: Record<Exclude<ContainerActionKind, 'start' | 'stop' | 'restart'>, ContainerActionConfig> = {
 	redeploy: {
 		status: 'redeploying',
 		run: (id) => containerService.redeployContainer(id),
@@ -86,6 +54,18 @@ export function createContainerActions({
 	};
 
 	async function performContainerAction(action: ContainerActionKind, id: string) {
+		if (action === 'start' || action === 'stop' || action === 'restart') {
+			await runContainerLifecycleAction({
+				action,
+				containerId: id,
+				setStatus: (status) => {
+					actionStatus[id] = status;
+				},
+				onRefresh: reloadContainers
+			});
+			return;
+		}
+
 		const config = containerActionConfigs[action];
 		actionStatus[id] = config.status;
 
@@ -109,80 +89,27 @@ export function createContainerActions({
 	}
 
 	async function handleRemoveContainer(id: string, name: string) {
-		openConfirmDialog({
-			title: m.containers_remove_confirm_title(),
-			message: m.containers_remove_confirm_message({ resource: name }),
-			checkboxes: [
-				{
-					id: 'force',
-					label: m.containers_remove_force_label(),
-					initialState: false
-				},
-				{
-					id: 'volumes',
-					label: m.containers_remove_volumes_label(),
-					initialState: false
-				}
-			],
-			confirm: {
-				label: m.common_remove(),
-				destructive: true,
-				action: async (checkboxStates) => {
-					const force = !!checkboxStates['force'];
-					const volumes = !!checkboxStates['volumes'];
-					actionStatus[id] = 'removing';
-					handleApiResultWithCallbacks({
-						result: await tryCatch(containerService.deleteContainer(id, { force, volumes })),
-						message: m.containers_remove_failed(),
-						setLoadingState: (value) => {
-							actionStatus[id] = value ? 'removing' : '';
-						},
-						async onSuccess(data) {
-							toast.success(m.containers_remove_success(), activityToastOptions(extractActivityId(data)));
-							await reloadContainers();
-						}
-					});
-				}
-			}
+		confirmAndRemoveContainer({
+			containerId: id,
+			containerName: name,
+			setStatus: (status) => {
+				actionStatus[id] = status;
+			},
+			onRefresh: reloadContainers
 		});
 	}
 
 	async function handleUpdateContainer(container: ContainerSummaryDto) {
 		const containerName = getContainerDisplayName(container);
 
-		openConfirmDialog({
-			title: m.containers_update_confirm_title(),
-			message: m.containers_update_confirm_message({ name: containerName }),
-			confirm: {
-				label: m.containers_update_container(),
-				destructive: false,
-				action: async () => {
-					actionStatus[container.id] = 'updating';
-					try {
-						const result = await containerService.updateContainer(container.id);
-						const toastOptions = activityToastOptions(extractActivityId(result));
-
-						if (result.failed > 0) {
-							const failedItem = result.items?.find((item: { status?: string; error?: string }) => item.status === 'failed');
-							toast.error(
-								m.containers_update_failed({ name: containerName }) + (failedItem?.error ? `: ${failedItem.error}` : ''),
-								toastOptions
-							);
-						} else if (result.updated > 0) {
-							toast.success(m.containers_update_success({ name: containerName }), toastOptions);
-						} else {
-							toast.info(m.image_update_up_to_date_title(), toastOptions);
-						}
-
-						await reloadContainers();
-					} catch (error) {
-						console.error('Container update failed:', error);
-						toast.error(m.containers_update_failed({ name: containerName }));
-					} finally {
-						actionStatus[container.id] = '';
-					}
-				}
-			}
+		confirmAndUpdateContainer({
+			containerId: container.id,
+			containerName,
+			useActivityToast: true,
+			setLoading: (loading) => {
+				actionStatus[container.id] = loading ? 'updating' : '';
+			},
+			onRefresh: reloadContainers
 		});
 	}
 

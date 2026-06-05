@@ -24,6 +24,7 @@
 	import type { VulnerabilityScanResult } from '$lib/types/environment';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { hasPermission } from '$lib/utils/auth';
+	import { toastVulnerabilityScanStatus } from '$lib/utils/vulnerability';
 	import { VolumesIcon, ClockIcon, TagIcon, LayersIcon, CpuIcon, InfoIcon, SettingsIcon, HashIcon } from '$lib/icons';
 
 	let { data } = $props();
@@ -72,13 +73,11 @@
 			const result = await vulnerabilityService.scanImage(image.id);
 			vulnerabilityScan = result;
 			lastScanRequestedAt = result.scanTime || new Date().toISOString();
-			if (result.status === 'completed') {
-				toast.success(m.vuln_scan_completed(), activityToastOptions(result.activityId));
-			} else if (result.status === 'failed') {
-				toast.error(result.error || m.vuln_scan_failed(), activityToastOptions(result.activityId));
-			} else {
-				toast.info(m.vuln_scan_started(), activityToastOptions(result.activityId));
+			if (isVulnerabilityScanInProgress(result.status)) {
+				toastVulnerabilityScanStatus(result, { includeStarted: true });
 				beginScanPolling(true);
+			} else {
+				toastVulnerabilityScanStatus(result);
 			}
 		} catch (error) {
 			console.error('Failed to scan image:', error);
@@ -153,12 +152,7 @@
 					} as VulnerabilityScanResult;
 				}
 				if (showToast) {
-					const toastOptions = activityToastOptions(extractActivityId(resolvedSummary));
-					if (resolvedSummary.status === 'completed') {
-						toast.success(m.vuln_scan_completed(), toastOptions);
-					} else {
-						toast.error(resolvedSummary.error || m.vuln_scan_failed(), toastOptions);
-					}
+					toastVulnerabilityScanStatus(resolvedSummary);
 				}
 			},
 			onError: () => {}

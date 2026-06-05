@@ -6,7 +6,7 @@ import { transformPaginationParams } from '$lib/utils/tables';
 
 export type PortsPaginatedResponse = Paginated<PortMappingDto>;
 
-export class PortService extends BaseAPIService {
+class PortService extends BaseAPIService {
 	private async resolveEnvironmentId(environmentId?: string): Promise<string> {
 		return environmentId ?? (await environmentStore.getCurrentEnvironmentId());
 	}

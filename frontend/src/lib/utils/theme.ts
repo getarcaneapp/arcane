@@ -213,8 +213,9 @@ const DEFAULT_ACCENT_COLOR = 'oklch(0.606 0.25 292.717)';
 
 let htmlClassObserver: MutationObserver | null = null;
 
+// fallow-ignore-next-line unused-export
 export const accentColorPreviewStore = writable<string>(DEFAULT_ACCENT_COLOR);
-export const oledModeStore = writable<boolean>(false);
+const oledModeStore = writable<boolean>(false);
 
 export function resolveApplicationTheme(value?: string | null): ApplicationTheme {
 	if (!value) {
@@ -262,7 +263,7 @@ function ensureThemeColorSyncObserver(): void {
 	});
 }
 
-export function syncBrowserThemeColor(): void {
+function syncBrowserThemeColor(): void {
 	if (typeof document === 'undefined') {
 		return;
 	}

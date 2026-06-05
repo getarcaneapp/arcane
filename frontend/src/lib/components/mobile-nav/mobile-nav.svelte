@@ -12,6 +12,7 @@
 	import type { AppVersionInformation } from '$lib/types/settings';
 	import type { PermissionsManifest, User } from '$lib/types/auth';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import { registerNavigationVisibilityController } from '$lib/utils/navigation';
 
 	let {
 		navigationSettings,
@@ -51,6 +52,10 @@
 	let visible = $state(true);
 	let menuOpen = $state(false);
 	let navElement: HTMLElement;
+
+	function resetVisibility() {
+		visible = true;
+	}
 
 	const gestures = new MobileNavGestures(
 		{
@@ -97,8 +102,13 @@
 	// Show nav when menu closes
 	$effect(() => {
 		if (!menuOpen) {
-			visible = true;
+			resetVisibility();
 		}
+	});
+
+	$effect(() => {
+		registerNavigationVisibilityController({ resetVisibility });
+		return () => registerNavigationVisibilityController(null);
 	});
 
 	// Keep page padding in sync with nav height via CSS variables

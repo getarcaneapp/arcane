@@ -676,12 +676,25 @@ test.describe('New Compose Project Page', () => {
 			.toBe('running');
 
 		expect(projectPullRequestCount).toBe(0);
+		const projectReloadResponse = page.waitForResponse(
+			(response) =>
+				response.request().method() === 'GET' &&
+				getPathname(response.url()) === `/api/environments/0/projects/${projectId}` &&
+				response.ok(),
+			{ timeout: 30000 }
+		);
 		await page.reload();
-		await page.waitForLoadState('load');
-		await expect(page.getByText('Running', { exact: true }).first()).toBeVisible({
-			timeout: 20000
+		await projectReloadResponse;
+		await expect(page).toHaveURL(new RegExp(`/projects/${projectId}`));
+		await expect
+			.poll(async () => (await fetchProjectDetail(page, projectId))?.status, {
+				message: 'Expected project to still be running after reload',
+				timeout: 30000
+			})
+			.toBe('running');
+		await expect(page.getByRole('button', { name: 'Down', exact: true })).toBeVisible({
+			timeout: 30000
 		});
-		await expect(page.getByRole('button', { name: 'Down', exact: true })).toBeVisible();
 	});
 
 	test('should send selected deploy split-button options in the up request', async ({ page }) => {

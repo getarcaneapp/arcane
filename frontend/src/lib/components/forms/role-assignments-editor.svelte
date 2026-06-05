@@ -13,6 +13,7 @@
 	import type { Environment } from '$lib/types/environment';
 	import { CloseIcon } from '$lib/icons';
 	import { m } from '$lib/paraglide/messages';
+	import { buildGlobalEnvironmentOptions, createRoleEnvironmentLabelers, GLOBAL_ENVIRONMENT_OPTION_ID } from '$lib/utils/options';
 
 	type Assignment = { roleId: string; environmentId?: string };
 
@@ -25,14 +26,8 @@
 
 	let { assignments = $bindable([]), roles, environments, disabled = false }: Props = $props();
 
-	const GLOBAL_OPTION_ID = 'global';
-
-	type EnvOption = { id: string; name: string };
-
-	const envOptions: EnvOption[] = $derived([
-		{ id: GLOBAL_OPTION_ID, name: m.users_role_assignments_scope_global() },
-		...environments.map((env) => ({ id: env.id, name: env.name }))
-	]);
+	const envOptions = $derived(buildGlobalEnvironmentOptions(environments, m.users_role_assignments_scope_global()));
+	const selectedLabel = $derived(createRoleEnvironmentLabelers(roles, envOptions, m.common_select_option()));
 
 	const quickPresetRoles = $derived(roles.filter((role) => role.id === BUILT_IN_ROLE_EDITOR || role.id === BUILT_IN_ROLE_ADMIN));
 
@@ -52,11 +47,11 @@
 	}
 
 	function envIdToSelectValue(envId: string | undefined): string {
-		return envId ?? GLOBAL_OPTION_ID;
+		return envId ?? GLOBAL_ENVIRONMENT_OPTION_ID;
 	}
 
 	function selectValueToEnvId(value: string): string | undefined {
-		return value === GLOBAL_OPTION_ID ? undefined : value;
+		return value === GLOBAL_ENVIRONMENT_OPTION_ID ? undefined : value;
 	}
 
 	function isEnvTaken(envValue: string, roleId: string, currentIndex: number): boolean {
@@ -81,14 +76,6 @@
 	function removeAssignment(index: number) {
 		if (disabled) return;
 		assignments = assignments.filter((_, i) => i !== index);
-	}
-
-	function envSelectedLabel(value: string): string {
-		return envOptions.find((o) => o.id === value)?.name ?? m.common_select_option();
-	}
-
-	function roleSelectedLabel(value: string): string {
-		return roles.find((r) => r.id === value)?.name ?? m.common_select_option();
 	}
 
 	function hasGlobalRoleAssignment(roleId: string): boolean {
@@ -154,7 +141,7 @@
 				onValueChange={(v) => updateAssignment(index, { environmentId: selectValueToEnvId(v) })}
 			>
 				<Select.Trigger class="w-full" aria-label={m.users_role_assignments_environment()}>
-					<span>{envSelectedLabel(envValue)}</span>
+					<span>{selectedLabel.environment(envValue)}</span>
 				</Select.Trigger>
 				<Select.Content>
 					{#each envOptions as option (option.id)}
@@ -177,7 +164,7 @@
 			>
 				<Select.Trigger class="w-full" aria-label={m.users_role_assignments_role()}>
 					<span class="flex items-center gap-2">
-						<span>{roleSelectedLabel(assignment.roleId)}</span>
+						<span>{selectedLabel.role(assignment.roleId)}</span>
 					</span>
 				</Select.Trigger>
 				<Select.Content>

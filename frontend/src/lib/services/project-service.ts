@@ -2,6 +2,7 @@ import { m } from '$lib/paraglide/messages';
 import { environmentStore } from '$lib/stores/environment.store.svelte';
 import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
 import type { IncludeFile, Project, ProjectStatusCounts } from '$lib/types/swarm';
+import { readNdjsonStream } from '$lib/utils/streaming';
 import { transformPaginationParams } from '$lib/utils/tables';
 import BaseAPIService from './api-service';
 
@@ -10,7 +11,7 @@ export type DeployProjectOptions = {
 	forceRecreate?: boolean;
 };
 
-export class ProjectService extends BaseAPIService {
+class ProjectService extends BaseAPIService {
 	private async resolveEnvironmentId(environmentId?: string): Promise<string> {
 		return environmentId ?? (await environmentStore.getCurrentEnvironmentId());
 	}
@@ -50,34 +51,11 @@ export class ProjectService extends BaseAPIService {
 			throw new Error(m.progress_deploy_failed_to_start({ status }));
 		}
 
-		const reader = res.body.getReader();
-		const decoder = new TextDecoder();
-		let buffer = '';
-
-		while (true) {
-			const { value, done } = await reader.read();
-			if (done) break;
-
-			buffer += decoder.decode(value, { stream: true });
-			const lines = buffer.split('\n');
-			buffer = lines.pop() || '';
-
-			for (const line of lines) {
-				const trimmed = line.trim();
-				if (!trimmed) continue;
-				let obj: any;
-				try {
-					obj = JSON.parse(trimmed);
-				} catch {
-					continue;
-				}
-
-				onLine?.(obj);
-				if (obj?.error) {
-					throw new Error(typeof obj.error === 'string' ? obj.error : obj.error?.message || m.progress_deploy_failed());
-				}
+		await this.readProjectStream(res.body, onLine, (obj) => {
+			if (obj?.error) {
+				throw new Error(typeof obj.error === 'string' ? obj.error : obj.error?.message || m.progress_deploy_failed());
 			}
-		}
+		});
 
 		// The deploy stream doesn't return the project object; fetch fresh details.
 		return this.getProject(projectId);
@@ -125,6 +103,14 @@ export class ProjectService extends BaseAPIService {
 	private async getProjectSection(path: string): Promise<Project> {
 		const response = await this.handleResponse<{ project?: Project; success?: boolean } | Project>(this.api.get(path));
 		return 'project' in response && response.project ? response.project : (response as Project);
+	}
+
+	private async readProjectStream(
+		body: ReadableStream<Uint8Array>,
+		onLine?: (data: any) => void,
+		onMessage?: (data: any) => void
+	): Promise<void> {
+		await readNdjsonStream(body, onMessage, onLine);
 	}
 
 	async getProjectFile(projectId: string, relativePath: string): Promise<IncludeFile> {
@@ -203,29 +189,7 @@ export class ProjectService extends BaseAPIService {
 			throw new Error(`Failed to start project image pull (${res.status})`);
 		}
 
-		const reader = res.body.getReader();
-		const decoder = new TextDecoder();
-		let buffer = '';
-
-		while (true) {
-			const { value, done } = await reader.read();
-			if (done) break;
-
-			buffer += decoder.decode(value, { stream: true });
-			const lines = buffer.split('\n');
-			buffer = lines.pop() || '';
-
-			for (const line of lines) {
-				const trimmed = line.trim();
-				if (!trimmed) continue;
-				try {
-					const obj = JSON.parse(trimmed);
-					onLine?.(obj);
-				} catch {
-					// ignore malformed line
-				}
-			}
-		}
+		await this.readProjectStream(res.body, onLine);
 	}
 
 	buildProjectImages(
@@ -256,32 +220,11 @@ export class ProjectService extends BaseAPIService {
 			throw new Error(`Failed to start project build (${res.status})`);
 		}
 
-		const reader = res.body.getReader();
-		const decoder = new TextDecoder();
-		let buffer = '';
-
-		while (true) {
-			const { value, done } = await reader.read();
-			if (done) break;
-
-			buffer += decoder.decode(value, { stream: true });
-			const lines = buffer.split('\n');
-			buffer = lines.pop() || '';
-
-			for (const line of lines) {
-				const trimmed = line.trim();
-				if (!trimmed) continue;
-				try {
-					const obj = JSON.parse(trimmed);
-					onLine?.(obj);
-					if (obj?.error) {
-						throw new Error(typeof obj.error === 'string' ? obj.error : obj.error?.message || m.build_failed());
-					}
-				} catch (err) {
-					if (err instanceof Error) throw err;
-				}
+		await this.readProjectStream(res.body, onLine, (obj) => {
+			if (obj?.error) {
+				throw new Error(typeof obj.error === 'string' ? obj.error : obj.error?.message || m.build_failed());
 			}
-		}
+		});
 	}
 
 	pullProjectImages(projectId: string): Promise<void>;

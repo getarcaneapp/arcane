@@ -106,7 +106,7 @@ export async function handleApiResultWithCallbacks<T>({
 
 // --- Page load error helpers ---
 
-export function extractApiErrorStatus(err: unknown, fallbackStatus = 500): number {
+function extractApiErrorStatus(err: unknown, fallbackStatus = 500): number {
 	if (err && typeof err === 'object') {
 		const maybeResponse = (err as { response?: { status?: unknown } }).response;
 		const responseStatus = maybeResponse?.status;

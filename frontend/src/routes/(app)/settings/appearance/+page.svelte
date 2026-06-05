@@ -8,7 +8,7 @@
 	import { SettingsPageLayout } from '$lib/layouts';
 	import { Switch } from '$lib/components/ui/switch/index.js';
 	import { useSidebar } from '$lib/components/ui/sidebar/context.svelte.js';
-	import { createSettingsForm } from '$lib/utils/settings';
+	import { createSettingsForm } from '$lib/utils/settings-form';
 	import SettingsRow from '$lib/components/settings/settings-row.svelte';
 	import LocalePicker from '$lib/components/locale-picker.svelte';
 	import AccentColorPicker from '$lib/components/accent-color/accent-color-picker.svelte';

@@ -5,7 +5,7 @@ import { isLocalSetting, extractLocalSettings, extractEnvironmentSettings } from
 
 type KeyValuePair = { key: string; value: string };
 
-export default class SettingsService extends BaseAPIService {
+class SettingsService extends BaseAPIService {
 	async getSettings(): Promise<Settings> {
 		// Wait for environment store to be initialized before fetching settings
 		await environmentStore.ready;

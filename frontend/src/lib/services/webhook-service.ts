@@ -2,7 +2,7 @@ import BaseAPIService from './api-service';
 import { environmentStore } from '$lib/stores/environment.store.svelte';
 import type { Webhook, WebhookCreated, CreateWebhook, UpdateWebhook } from '$lib/types/environment';
 
-export default class WebhookAPIService extends BaseAPIService {
+class WebhookAPIService extends BaseAPIService {
 	private async resolveEnvironmentId(environmentId?: string): Promise<string> {
 		return environmentId ?? (await environmentStore.getCurrentEnvironmentId());
 	}

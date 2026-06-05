@@ -7,6 +7,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import settingsStore from '$lib/stores/config-store';
 	import { createForm } from '$lib/utils/settings';
+	import { isDepotBuildAvailable } from '$lib/utils/build-provider';
 	import { toast } from 'svelte-sonner';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { ResourceDetailLayout } from '$lib/layouts/index.js';
@@ -67,11 +68,7 @@
 		return `…/${tail}`;
 	});
 
-	const depotAvailable = $derived.by(() => {
-		const projectId = ($settingsStore?.depotProjectId ?? '').trim();
-		const token = ($settingsStore?.depotToken ?? '').trim();
-		return Boolean($settingsStore?.depotConfigured) || (Boolean(projectId) && Boolean(token));
-	});
+	const depotAvailable = $derived(isDepotBuildAvailable($settingsStore));
 
 	const providerOptions = $derived.by<BuildProviderOption[]>(() => {
 		const options: BuildProviderOption[] = [
@@ -219,30 +216,29 @@
 	});
 	const buildHistoryDetailsLoading = $derived(buildHistoryDetailQuery.isPending || buildHistoryDetailQuery.isFetching);
 
-	type ImageBuildRequest = {
-		envId: string;
-		contextDir: string;
-		dockerfile?: string;
-		tags: string[];
-		target?: string;
-		buildArgs?: Record<string, string>;
-		labels?: Record<string, string>;
-		cacheFrom?: string[];
-		cacheTo?: string[];
-		noCache?: boolean;
-		pull?: boolean;
-		network?: string;
-		isolation?: string;
-		shmSize?: number;
-		ulimits?: Record<string, string>;
-		entitlements?: string[];
-		privileged?: boolean;
-		extraHosts?: string[];
-		platforms?: string[];
-		provider: 'local' | 'depot';
-		push: boolean;
-		load: boolean;
-	};
+	type ImageBuildRequest = { envId: string; provider: 'local' | 'depot' } & Pick<
+		ImageBuildRecord,
+		| 'contextDir'
+		| 'dockerfile'
+		| 'tags'
+		| 'target'
+		| 'buildArgs'
+		| 'labels'
+		| 'cacheFrom'
+		| 'cacheTo'
+		| 'noCache'
+		| 'pull'
+		| 'network'
+		| 'isolation'
+		| 'shmSize'
+		| 'ulimits'
+		| 'entitlements'
+		| 'privileged'
+		| 'extraHosts'
+		| 'platforms'
+		| 'push'
+		| 'load'
+	>;
 
 	const buildMutation = createMutation(() => ({
 		mutationKey: queryKeys.images.buildRun(selectedEnvId),

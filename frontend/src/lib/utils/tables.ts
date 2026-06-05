@@ -2,11 +2,12 @@ import { browser } from '$app/environment';
 import { PersistedState } from 'runed';
 import { decodeSort, type CompactTablePrefs } from '$lib/components/arcane-table/arcane-table.types.svelte';
 import { TABLE_PAGE_SIZE_ALL, TABLE_PAGE_SIZE_OPTIONS } from '$lib/constants/table-pagination';
+import { environmentStore } from '$lib/stores/environment.store.svelte';
 import type { FilterMap, FilterValue, SearchPaginationSortRequest } from '$lib/types/shared';
 
 const DEFAULT_LIMIT = 20;
 
-export function normalizeTablePageSize(limit: unknown): number | undefined {
+function normalizeTablePageSize(limit: unknown): number | undefined {
 	const parsed = typeof limit === 'number' ? limit : Number.parseInt(String(limit), 10);
 
 	if (!Number.isFinite(parsed)) return undefined;
@@ -113,6 +114,43 @@ export function resolveInitialTableRequest(
 	}
 
 	return base;
+}
+
+export function resolveInitialListPageRequest(
+	persistKey: string,
+	sort: NonNullable<SearchPaginationSortRequest['sort']>,
+	limit = 20
+): SearchPaginationSortRequest {
+	return resolveInitialTableRequest(persistKey, {
+		pagination: {
+			page: 1,
+			limit
+		},
+		sort
+	} satisfies SearchPaginationSortRequest);
+}
+
+type QueryClientLike = {
+	fetchQuery: <T>(options: { queryKey: unknown; queryFn: () => Promise<T> }) => Promise<T>;
+};
+
+type ParentWithQueryClient = () => Promise<unknown>;
+
+export async function resolveListPageLoadContext(
+	parent: ParentWithQueryClient,
+	persistKey: string,
+	sort: NonNullable<SearchPaginationSortRequest['sort']>,
+	limit = 20
+) {
+	const parentData = (await parent()) as { queryClient: QueryClientLike };
+	const envId = await environmentStore.getCurrentEnvironmentId();
+	const requestOptions = resolveInitialListPageRequest(persistKey, sort, limit);
+
+	return {
+		queryClient: parentData.queryClient,
+		envId,
+		requestOptions
+	};
 }
 
 export function transformPaginationParams(options?: SearchPaginationSortRequest): Record<string, any> {

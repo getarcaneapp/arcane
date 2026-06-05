@@ -8,6 +8,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { bytes } from '$lib/utils/formatting';
 	import { calculateCPUPercent, calculateMemoryUsage } from '$lib/utils/docker';
+	import { refreshLogViewerStream, startLogViewerStream, stopLogViewerStream } from '$lib/utils/log-viewer';
 	import { CpuIcon, FileTextIcon, MemoryStickIcon } from '$lib/icons';
 	import ContainerLogStatMonitor from './ContainerLogStatMonitor.svelte';
 
@@ -127,15 +128,15 @@
 	}
 
 	function handleStart() {
-		viewer?.startLogStream();
+		startLogViewerStream(viewer);
 	}
 
 	function handleStop() {
-		viewer?.stopLogStream();
+		stopLogViewerStream(viewer);
 	}
 
 	async function handleRefresh() {
-		await viewer?.clearLogs({ hard: true, restart: true });
+		await refreshLogViewerStream(viewer);
 	}
 
 	// Sync isStreaming from viewer callbacks

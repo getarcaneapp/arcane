@@ -1,6 +1,7 @@
 <script lang="ts" generics="TData">
 	import type { Table } from '@tanstack/table-core';
-	import { DataTableFacetedFilter, DataTableViewOptions } from './index.js';
+	import DataTableFacetedFilter from './arcane-table-filter.svelte';
+	import DataTableViewOptions from './arcane-table-view-options.svelte';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import {
 		imageUpdateFilters,

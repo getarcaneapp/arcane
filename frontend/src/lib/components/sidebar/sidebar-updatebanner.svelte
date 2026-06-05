@@ -5,14 +5,9 @@
 	import { useSidebar } from '$lib/components/ui/sidebar/index.js';
 	import type { AppVersionInformation } from '$lib/types/settings';
 	import { m } from '$lib/paraglide/messages';
-	import { queryKeys } from '$lib/query/query-keys';
-	import systemUpgradeService from '$lib/services/api/system-upgrade-service';
 	import UpdateCenterDialog from '$lib/components/dialogs/update-center-dialog.svelte';
-	import { toast } from 'svelte-sonner';
 	import { DownloadIcon } from '$lib/icons';
-	import { extractApiErrorMessage } from '$lib/utils/api';
-	import { createMutation, createQuery } from '@tanstack/svelte-query';
-	import { hasPermission } from '$lib/utils/auth';
+	import { useUpgradeCheck } from '$lib/hooks/use-upgrade-check.svelte';
 
 	let {
 		isCollapsed,
@@ -25,88 +20,37 @@
 	} = $props();
 
 	const sidebar = useSidebar();
-
-	let upgrading = $state(false);
-	let showConfirmDialog = $state(false);
-	const canInstallUpdates = $derived(hasPermission('environments:update'));
-
-	const shouldCheckUpgrade = $derived(!!(versionInformation?.updateAvailable && canInstallUpdates && !debug));
-	const upgradeAvailabilityQuery = createQuery(() => ({
-		queryKey: queryKeys.system.upgradeAvailable('sidebar'),
-		queryFn: () => systemUpgradeService.checkUpgradeAvailable(),
-		enabled: shouldCheckUpgrade,
-		staleTime: 0
-	}));
-
-	const canUpgrade = $derived.by(() => {
-		if (debug) return true;
-		const result = upgradeAvailabilityQuery.data;
-		return !!result?.canUpgrade && !result?.error;
-	});
-	const checkingUpgrade = $derived(
-		!!(shouldCheckUpgrade && (upgradeAvailabilityQuery.isPending || upgradeAvailabilityQuery.isFetching))
-	);
-	const shouldShowUpgrade = $derived((canUpgrade && canInstallUpdates) || debug);
-
-	const updateType = $derived.by(() => {
-		if (!versionInformation) return 'none';
-		if (versionInformation.isSemverVersion) return 'semver';
-		if (versionInformation.currentTag && versionInformation.newestDigest) return 'digest';
-		return 'none';
-	});
-
-	const versionChip = $derived.by(() => {
-		if (!versionInformation) return '';
-		if (updateType === 'semver') return versionInformation.newestVersion ?? '';
-		if (updateType === 'digest') return versionInformation.currentTag ?? '';
-		return '';
+	const upgradeCheck = useUpgradeCheck({
+		queryScope: 'sidebar',
+		getVersionInformation: () => versionInformation,
+		getDebug: () => debug
 	});
 
 	const tooltipText = $derived(
 		m.sidebar_update_available_tooltip({
-			version: versionInformation?.newestVersion ?? versionChip ?? m.common_unknown()
+			version: versionInformation?.newestVersion ?? upgradeCheck.versionChip ?? m.common_unknown()
 		})
 	);
-
-	const triggerUpgradeMutation = createMutation(() => ({
-		mutationFn: () => systemUpgradeService.triggerUpgrade(),
-		onError: (error: unknown) => {
-			const errorMessage = extractApiErrorMessage(error);
-			const wrappedPrefix = m.upgrade_failed({ error: '' });
-			toast.error(errorMessage.startsWith(wrappedPrefix) ? errorMessage : m.upgrade_failed({ error: errorMessage }));
-			upgrading = false;
-		}
-	}));
-
-	function openDialog() {
-		showConfirmDialog = true;
-	}
-
-	function handleConfirmUpgrade() {
-		triggerUpgradeMutation.mutate();
-	}
-
-	const shouldShowBanner = $derived(versionInformation?.updateAvailable || debug);
 </script>
 
 <UpdateCenterDialog
-	bind:open={showConfirmDialog}
-	bind:upgrading
+	bind:open={upgradeCheck.showConfirmDialog}
+	bind:upgrading={upgradeCheck.upgrading}
 	{versionInformation}
-	canInstall={shouldShowUpgrade}
+	canInstall={upgradeCheck.shouldShowUpgrade}
 	{debug}
-	onConfirm={handleConfirmUpgrade}
+	onConfirm={upgradeCheck.confirmUpgrade}
 />
 
-{#if shouldShowBanner}
+{#if upgradeCheck.shouldShowBanner}
 	<div class={cn('pb-2', isCollapsed ? 'px-1' : 'px-3')}>
 		<Separator.Root class="mb-2 opacity-30" />
 
 		{#if !isCollapsed}
 			<button
 				type="button"
-				onclick={openDialog}
-				disabled={upgrading || checkingUpgrade}
+				onclick={upgradeCheck.openDialog}
+				disabled={upgradeCheck.upgrading || upgradeCheck.checkingUpgrade}
 				class="group hover:bg-muted/50 focus-visible:ring-primary/40 flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors focus-visible:ring-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60"
 			>
 				<span class="relative flex size-2 shrink-0 items-center justify-center">
@@ -116,9 +60,9 @@
 				<span class="text-foreground flex-1 text-sm font-medium">
 					{m.sidebar_update_available()}
 				</span>
-				{#if versionChip}
+				{#if upgradeCheck.versionChip}
 					<span class="bg-muted text-muted-foreground rounded-md px-1.5 py-0.5 font-mono text-[11px]">
-						{versionChip}
+						{upgradeCheck.versionChip}
 					</span>
 				{/if}
 			</button>
@@ -127,8 +71,8 @@
 				<Tooltip.Trigger>
 					{#snippet child({ props })}
 						<button
-							onclick={openDialog}
-							disabled={upgrading || checkingUpgrade}
+							onclick={upgradeCheck.openDialog}
+							disabled={upgradeCheck.upgrading || upgradeCheck.checkingUpgrade}
 							class="hover:bg-muted/60 focus-visible:ring-primary/40 relative mx-auto flex size-8 items-center justify-center rounded-lg transition-colors focus-visible:ring-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60"
 							{...props}
 						>

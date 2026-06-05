@@ -3,7 +3,7 @@ import type { CreateFederatedCredential, FederatedCredential, UpdateFederatedCre
 import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
 import { transformPaginationParams } from '$lib/utils/tables';
 
-export default class FederatedCredentialAPIService extends BaseAPIService {
+class FederatedCredentialAPIService extends BaseAPIService {
 	async list(options?: SearchPaginationSortRequest): Promise<Paginated<FederatedCredential>> {
 		const params = transformPaginationParams(options);
 		const res = await this.api.get('/federated-credentials', { params });

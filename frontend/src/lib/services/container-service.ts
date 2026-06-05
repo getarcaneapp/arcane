@@ -22,7 +22,7 @@ export interface ContainerDetailsResponse {
 	data: ContainerDetailsDto;
 }
 
-export class ContainerService extends BaseAPIService {
+class ContainerService extends BaseAPIService {
 	private async resolveEnvironmentId(environmentId?: string): Promise<string> {
 		return environmentId ?? (await environmentStore.getCurrentEnvironmentId());
 	}

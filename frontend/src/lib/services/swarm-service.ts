@@ -46,7 +46,7 @@ export type SwarmNodesPaginatedResponse = Paginated<SwarmNodeSummary>;
 export type SwarmTasksPaginatedResponse = Paginated<SwarmTaskSummary>;
 export type SwarmStacksPaginatedResponse = Paginated<SwarmStackSummary>;
 
-export class SwarmService extends BaseAPIService {
+class SwarmService extends BaseAPIService {
 	async getServices(options?: SearchPaginationSortRequest): Promise<SwarmServicesPaginatedResponse> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		const params = transformPaginationParams(options);

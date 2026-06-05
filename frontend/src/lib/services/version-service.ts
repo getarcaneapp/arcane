@@ -11,24 +11,7 @@ async function getVersionInformation(): Promise<AppVersionInformation> {
 		const res = await apiClient.get('/app-version', {
 			timeout: 2000
 		});
-		const data = res.data as {
-			currentVersion?: string;
-			currentTag?: string;
-			currentDigest?: string;
-			displayVersion?: string;
-			revision?: string;
-			shortRevision?: string;
-			goVersion?: string;
-			enabledFeatures?: string[];
-			buildTime?: string;
-			isSemverVersion?: boolean;
-			newestVersion?: string;
-			newestDigest?: string;
-			updateAvailable?: boolean;
-			releaseUrl?: string;
-			releaseNotes?: string;
-			releasedAt?: string;
-		};
+		const data = res.data as Partial<AppVersionInformation>;
 
 		return {
 			currentVersion: data.currentVersion || getCurrentVersion(),

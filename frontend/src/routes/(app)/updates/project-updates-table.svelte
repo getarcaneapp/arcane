@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { format } from 'date-fns';
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import { UniversalMobileCard, type ColumnSpec, type MobileFieldVisibility } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
@@ -7,6 +6,7 @@
 	import type { Project } from '$lib/types/swarm';
 	import type { ImageUpdateInfoDto } from '$lib/types/docker';
 	import { ProjectsIcon, ImagesIcon } from '$lib/icons';
+	import { formatImageUpdateCheckedAt, formatImageUpdateValue } from '$lib/utils/image-updates';
 
 	type ProjectUpdateRow = {
 		id: string;
@@ -31,13 +31,6 @@
 	let selectedIds = $state<string[]>([]);
 	let mobileFieldVisibility = $state<MobileFieldVisibility>({});
 
-	function formatCheckedAt(value: string) {
-		if (!value) return '-';
-		const parsed = new Date(value);
-		if (Number.isNaN(parsed.getTime())) return '-';
-		return format(parsed, 'PP p');
-	}
-
 	function summarizeImageRefs(imageRefs: string[]): string {
 		if (imageRefs.length === 0) return '-';
 		if (imageRefs.length === 1) return imageRefs[0] ?? '-';
@@ -55,13 +48,7 @@
 		const info = firstRef ? updateInfoByRef[firstRef] : undefined;
 		if (!info) return '-';
 
-		const digest = mode === 'current' ? info.currentDigest : info.latestDigest;
-		if (digest?.trim()) return digest.trim();
-
-		const version = mode === 'current' ? info.currentVersion : info.latestVersion;
-		if (version?.trim()) return version.trim();
-
-		return '-';
+		return formatImageUpdateValue(info, mode);
 	}
 
 	function resolveCheckedAt(project: Project) {
@@ -135,7 +122,7 @@
 {/snippet}
 
 {#snippet CheckedAtCell({ value }: { value: unknown })}
-	<span class="text-sm">{formatCheckedAt(typeof value === 'string' ? value : '')}</span>
+	<span class="text-sm">{formatImageUpdateCheckedAt(typeof value === 'string' ? value : '')}</span>
 {/snippet}
 
 {#snippet ProjectUpdatesMobileCard({ item }: { item: ProjectUpdateRow })}
@@ -158,7 +145,7 @@
 			},
 			{
 				label: m.common_updated(),
-				getValue: (item: ProjectUpdateRow) => formatCheckedAt(item.checkedAt)
+				getValue: (item: ProjectUpdateRow) => formatImageUpdateCheckedAt(item.checkedAt)
 			}
 		]}
 		onclick={(item: ProjectUpdateRow) => {

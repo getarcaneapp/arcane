@@ -1,26 +1,19 @@
 import { imageService } from '$lib/services/image-service';
 import { settingsService } from '$lib/services/settings-service';
 import { queryKeys } from '$lib/query/query-keys';
-import type { SearchPaginationSortRequest } from '$lib/types/shared';
-import { resolveInitialTableRequest } from '$lib/utils/tables';
+import { resolveListPageLoadContext } from '$lib/utils/tables';
 import { throwPageLoadError } from '$lib/utils/api';
 import type { PageLoad } from './$types';
-import { environmentStore } from '$lib/stores/environment.store.svelte';
 
 export const load: PageLoad = async ({ parent }) => {
-	const { queryClient } = await parent();
-	const envId = await environmentStore.getCurrentEnvironmentId();
-
-	const imageRequestOptions = resolveInitialTableRequest('arcane-image-table', {
-		pagination: {
-			page: 1,
-			limit: 20
-		},
-		sort: {
-			column: 'created',
-			direction: 'desc'
-		}
-	} satisfies SearchPaginationSortRequest);
+	const {
+		queryClient,
+		envId,
+		requestOptions: imageRequestOptions
+	} = await resolveListPageLoadContext(parent, 'arcane-image-table', {
+		column: 'created',
+		direction: 'desc'
+	});
 	let images;
 	let settings;
 	let imageUsageCounts;
