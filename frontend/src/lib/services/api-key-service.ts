@@ -3,7 +3,7 @@ import type { ApiKey, ApiKeyCreated, CreateApiKey, UpdateApiKey } from '$lib/typ
 import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
 import { transformPaginationParams } from '$lib/utils/tables';
 
-export default class ApiKeyAPIService extends BaseAPIService {
+class ApiKeyAPIService extends BaseAPIService {
 	async getApiKeys(options?: SearchPaginationSortRequest): Promise<Paginated<ApiKey>> {
 		const params = transformPaginationParams(options);
 		const res = await this.api.get('/api-keys', { params });

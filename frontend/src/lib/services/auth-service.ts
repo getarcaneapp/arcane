@@ -9,7 +9,7 @@ const REFRESH_TOKEN_KEY = 'arcane_refresh_token';
 const TOKEN_EXPIRY_KEY = 'arcane_token_expiry';
 const REFRESH_BUFFER_MS = 5 * 60 * 1000; // Refresh 5 minutes before expiry
 
-export class AuthService extends BaseAPIService {
+class AuthService extends BaseAPIService {
 	private refreshTimer: ReturnType<typeof setTimeout> | null = null;
 	private isRefreshing = false;
 	private refreshSubscribers: Array<(token: string | null, error?: Error) => void> = [];

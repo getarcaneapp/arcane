@@ -13,7 +13,7 @@ import { transformPaginationParams } from '$lib/utils/tables';
 
 export type VolumesPaginatedResponse = Paginated<VolumeSummaryDto, VolumeUsageCounts>;
 
-export class VolumeService extends BaseAPIService {
+class VolumeService extends BaseAPIService {
 	private async resolveEnvironmentId(environmentId?: string): Promise<string> {
 		return environmentId ?? (await environmentStore.getCurrentEnvironmentId());
 	}

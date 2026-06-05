@@ -336,7 +336,7 @@ export function getCustomizeSubpageUrlsInNavOrder(): string[] {
 	return entry?.items?.map((item) => item.url) ?? [];
 }
 
-export const defaultMobilePinnedItems: NavigationItem[] = [
+const defaultMobilePinnedItems: NavigationItem[] = [
 	navigationItems.managementItems[0]!,
 	navigationItems.managementItems[1]!,
 	navigationItems.resourceItems[0]!,

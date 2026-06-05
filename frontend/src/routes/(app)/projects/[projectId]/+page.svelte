@@ -42,6 +42,7 @@
 	import ProjectUpdateItem from '$lib/components/project-update-item.svelte';
 	import IfPermitted from '$lib/components/if-permitted.svelte';
 	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
+	import { globalVariablesToMap } from '$lib/utils/template-load';
 
 	let { data } = $props();
 	let projectId = $derived(data.projectId);
@@ -71,9 +72,7 @@
 	let loadedIncludeFileContents = $state<Record<string, string>>({});
 	let loadedDirectoryFileContents = $state<Record<string, string>>({});
 	let projectFilePromises: Record<string, Promise<IncludeFile> | undefined> = {};
-	const globalVariableMap = $derived.by(() =>
-		Object.fromEntries((data.globalVariables ?? []).map((item) => [item.key, item.value]))
-	);
+	const globalVariableMap = $derived(globalVariablesToMap(data.globalVariables));
 
 	const projectDetailQuery = createQuery(() => ({
 		queryKey: queryKeys.projects.detail(envId, projectId),

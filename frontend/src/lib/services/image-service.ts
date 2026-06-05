@@ -6,7 +6,7 @@ import type { AutoUpdateCheck, AutoUpdateResult } from '$lib/types/automation';
 import type { PruneImagesOptions } from '$lib/types/automation';
 import { transformPaginationParams } from '$lib/utils/tables';
 
-export class ImageService extends BaseAPIService {
+class ImageService extends BaseAPIService {
 	private async resolveEnvironmentId(environmentId?: string): Promise<string> {
 		return environmentId ?? (await environmentStore.getCurrentEnvironmentId());
 	}

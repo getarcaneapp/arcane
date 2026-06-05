@@ -13,7 +13,7 @@
 	import settingsStore from '$lib/stores/config-store';
 	import { SettingsPageLayout } from '$lib/layouts';
 	import { CopyButton } from '$lib/components/ui/copy-button';
-	import { createSettingsForm } from '$lib/utils/settings';
+	import { createSettingsForm } from '$lib/utils/settings-form';
 	import * as Alert from '$lib/components/ui/alert';
 	import * as Collapsible from '$lib/components/ui/collapsible';
 	import SettingsRow from '$lib/components/settings/settings-row.svelte';

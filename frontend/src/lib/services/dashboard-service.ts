@@ -5,7 +5,7 @@ interface GetDashboardOptions {
 	debugAllGood?: boolean;
 }
 
-export class DashboardService extends BaseAPIService {
+class DashboardService extends BaseAPIService {
 	async getDashboardForEnvironment(environmentId: string, options?: GetDashboardOptions): Promise<DashboardSnapshot> {
 		const params = options?.debugAllGood ? { debugAllGood: 'true' } : undefined;
 		return this.handleResponse(this.api.get(`/environments/${environmentId}/dashboard`, { params }));

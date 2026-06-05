@@ -6,7 +6,7 @@
 	import { SettingsPageLayout } from '$lib/layouts';
 	import { ClockIcon } from '$lib/icons';
 	import TextInputWithLabel from '$lib/components/form/text-input-with-label.svelte';
-	import { createSettingsForm } from '$lib/utils/settings';
+	import { createSettingsForm } from '$lib/utils/settings-form';
 
 	let { data } = $props();
 

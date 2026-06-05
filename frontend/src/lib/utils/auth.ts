@@ -1,4 +1,3 @@
-import { get } from 'svelte/store';
 import userStore from '$lib/stores/user-store';
 import { environmentStore } from '$lib/stores/environment.store.svelte';
 import {
@@ -27,24 +26,9 @@ export function hasAnyPermission(perms: string[], envId?: string): boolean {
 	return userStore.hasAnyPermission(perms, resolveEnvId(envId));
 }
 
-export function permissions(envId?: string): Set<string> {
-	return userStore.permissions(resolveEnvId(envId));
-}
-
 export function isGlobalAdmin(): boolean {
 	return userStore.isGlobalAdmin();
 }
-
-export function hasAnyAccess(user: User | null): boolean {
-	if (!user?.permissionsByEnv) return false;
-	for (const perms of Object.values(user.permissionsByEnv)) {
-		if (perms.length > 0) return true;
-	}
-	return false;
-}
-
-export { GLOBAL_SCOPE };
-export { get };
 
 // --- Load-function helpers (run before stores hydrate) ---
 

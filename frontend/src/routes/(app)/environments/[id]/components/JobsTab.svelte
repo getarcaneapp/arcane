@@ -56,14 +56,29 @@
 	let searchTerm = $state('');
 	let autoHealSearchTerm = $state('');
 
-	const excludedContainers = $derived.by(() => {
-		const savedValue = $formInputs.autoUpdateExcludedContainers?.value || '';
+	function parseExcludedContainerSet(value: string | undefined) {
 		return new SvelteSet(
-			savedValue
+			(value || '')
 				.split(',')
 				.map((s: string) => normalizeContainerName(s.trim()))
 				.filter(Boolean)
 		);
+	}
+
+	function toggleExcludedContainerValue(current: SvelteSet<string>, containerName: string): string {
+		const normalizedName = normalizeContainerName(containerName);
+		const newSet = new SvelteSet(current);
+		if (newSet.has(normalizedName)) {
+			newSet.delete(normalizedName);
+		} else {
+			newSet.add(normalizedName);
+		}
+
+		return Array.from(newSet).join(',');
+	}
+
+	const excludedContainers = $derived.by(() => {
+		return parseExcludedContainerSet($formInputs.autoUpdateExcludedContainers?.value);
 	});
 
 	function resolveSettingsUrl(_job: JobStatus, prereq: JobPrerequisite): string | undefined {
@@ -91,40 +106,18 @@
 	}
 
 	function toggleContainerExclusion(containerName: string) {
-		const normalizedName = normalizeContainerName(containerName);
-		const newSet = new SvelteSet(excludedContainers);
-		if (newSet.has(normalizedName)) {
-			newSet.delete(normalizedName);
-		} else {
-			newSet.add(normalizedName);
-		}
-
 		if ($formInputs.autoUpdateExcludedContainers) {
-			$formInputs.autoUpdateExcludedContainers.value = Array.from(newSet).join(',');
+			$formInputs.autoUpdateExcludedContainers.value = toggleExcludedContainerValue(excludedContainers, containerName);
 		}
 	}
 
 	const autoHealExcludedContainers = $derived.by(() => {
-		const savedValue = $formInputs.autoHealExcludedContainers?.value || '';
-		return new SvelteSet(
-			savedValue
-				.split(',')
-				.map((s: string) => normalizeContainerName(s.trim()))
-				.filter(Boolean)
-		);
+		return parseExcludedContainerSet($formInputs.autoHealExcludedContainers?.value);
 	});
 
 	function toggleAutoHealContainerExclusion(containerName: string) {
-		const normalizedName = normalizeContainerName(containerName);
-		const newSet = new SvelteSet(autoHealExcludedContainers);
-		if (newSet.has(normalizedName)) {
-			newSet.delete(normalizedName);
-		} else {
-			newSet.add(normalizedName);
-		}
-
 		if ($formInputs.autoHealExcludedContainers) {
-			$formInputs.autoHealExcludedContainers.value = Array.from(newSet).join(',');
+			$formInputs.autoHealExcludedContainers.value = toggleExcludedContainerValue(autoHealExcludedContainers, containerName);
 		}
 	}
 

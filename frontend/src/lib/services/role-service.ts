@@ -3,7 +3,7 @@ import type { Role, CreateRole, UpdateRole, RoleAssignment, SetUserAssignments, 
 import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
 import { transformPaginationParams } from '$lib/utils/tables';
 
-export default class RoleAPIService extends BaseAPIService {
+class RoleAPIService extends BaseAPIService {
 	async getRoles(options?: SearchPaginationSortRequest): Promise<Paginated<Role>> {
 		const params = transformPaginationParams(options);
 		const res = await this.api.get('/roles', { params });

@@ -3,7 +3,13 @@ import { environmentStore } from '$lib/stores/environment.store.svelte';
 import type { DockerInfo } from '$lib/types/docker';
 import type { SystemPruneRequest } from '$lib/types/automation';
 
-export class SystemService extends BaseAPIService {
+type ConvertedDockerRun = {
+	dockerCompose: string;
+	envVars: string;
+	serviceName: string;
+};
+
+class SystemService extends BaseAPIService {
 	async pruneAll(options: SystemPruneRequest) {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		return this.pruneAllForEnvironment(envId, options);
@@ -32,12 +38,13 @@ export class SystemService extends BaseAPIService {
 		return this.handleResponse(this.api.get(`/environments/${environmentId}/system/docker/info`));
 	}
 
-	async convert(dockerRunCommand: string) {
+	async convert(dockerRunCommand: string): Promise<ConvertedDockerRun> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
-		const res = await this.api.post(`/environments/${envId}/system/convert`, {
-			dockerRunCommand
-		});
-		return res.data;
+		return this.handleResponse(
+			this.api.post(`/environments/${envId}/system/convert`, {
+				dockerRunCommand
+			})
+		);
 	}
 }
 

@@ -12,10 +12,15 @@
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { createForm } from '$lib/utils/settings';
-	import { tryCatch } from '$lib/utils/api';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api';
 	import { ComposeEditorSplit } from '$lib/components/compose';
-	import { z } from 'zod/v4';
+	import { globalVariablesToMap } from '$lib/utils/template-load';
+	import {
+		createNamedTemplateSchema,
+		getTemplateEditorValidationState,
+		hasTemplateEditorErrors,
+		resetTemplateEditorFields,
+		runTemplateEditorSave
+	} from '$lib/utils/template-editor';
 	import {
 		ArrowLeftIcon,
 		ProjectsIcon,
@@ -36,25 +41,22 @@
 	let envVars = $derived(data.templateData.envVariables);
 
 	// Edit state (custom templates only)
-	let saving = $state(false);
-	let isDeleting = $state(false);
-	let isDownloading = $state(false);
-	let composeHasErrors = $state(false);
-	let envHasErrors = $state(false);
-	let composeValidationReady = $state(false);
-	let envValidationReady = $state(false);
+	let status = $state({
+		saving: false,
+		isDeleting: false,
+		isDownloading: false
+	});
+	let validation = $state({
+		composeHasErrors: false,
+		envHasErrors: false,
+		composeValidationReady: false,
+		envValidationReady: false
+	});
 
-	const globalVariableMap = $derived.by(() =>
-		Object.fromEntries((data.globalVariables ?? []).map((item) => [item.key, item.value]))
-	);
+	const globalVariableMap = $derived(globalVariablesToMap(data.globalVariables));
 
 	// Form schema for custom template editing
-	const formSchema = z.object({
-		name: z.string().min(1, m.templates_template_name_required()),
-		description: z.string().optional().default(''),
-		composeContent: z.string().min(1, m.templates_content_required()),
-		envContent: z.string().optional().default('')
-	});
+	const formSchema = createNamedTemplateSchema();
 
 	let originalName = $state(untrack(() => template.name));
 	let originalDescription = $state(untrack(() => template.description ?? ''));
@@ -76,32 +78,31 @@
 			$inputs.composeContent.value !== originalCompose ||
 			$inputs.envContent.value !== originalEnv
 	);
+	const validationState = $derived(
+		getTemplateEditorValidationState(
+			validation.composeValidationReady,
+			validation.envValidationReady,
+			validation.composeHasErrors,
+			validation.envHasErrors
+		)
+	);
 
-	const canSave = $derived(hasChanges && composeValidationReady && envValidationReady && !composeHasErrors && !envHasErrors);
+	const canSave = $derived(hasChanges && !hasTemplateEditorErrors(validationState));
 
 	async function handleSave() {
-		if (!composeValidationReady || !envValidationReady || composeHasErrors || envHasErrors) {
-			toast.error(m.templates_validation_error());
-			return;
-		}
-		const validated = form.validate();
-		if (!validated) {
-			toast.error(m.templates_validation_error());
-			return;
-		}
-
-		handleApiResultWithCallbacks({
-			result: await tryCatch(
+		await runTemplateEditorSave({
+			validationState,
+			validate: form.validate,
+			save: (validated) =>
 				templateService.updateTemplate(template.id, {
 					name: validated.name,
 					description: validated.description,
 					content: validated.composeContent,
 					envContent: validated.envContent
-				})
-			),
-			message: m.templates_save_template_failed(),
-			setLoadingState: (value) => (saving = value),
-			onSuccess: async () => {
+				}),
+			failureMessage: m.templates_save_template_failed(),
+			setLoading: (value) => (status.saving = value),
+			onSuccess: async (validated) => {
 				toast.success(m.templates_save_template_success({ name: validated.name }));
 				originalName = validated.name;
 				originalDescription = validated.description ?? '';
@@ -113,24 +114,37 @@
 	}
 
 	function handleReset() {
-		$inputs.name.value = originalName;
-		$inputs.description.value = originalDescription;
-		$inputs.composeContent.value = originalCompose;
-		$inputs.envContent.value = originalEnv;
-		toast.info(m.templates_reset_success());
+		resetTemplateEditorFields([
+			{
+				set: (value) => ($inputs.name.value = value),
+				value: originalName
+			},
+			{
+				set: (value) => ($inputs.description.value = value),
+				value: originalDescription
+			},
+			{
+				set: (value) => ($inputs.composeContent.value = value),
+				value: originalCompose
+			},
+			{
+				set: (value) => ($inputs.envContent.value = value),
+				value: originalEnv
+			}
+		]);
 	}
 
 	// Read-only view helpers (remote templates)
-	const localVersionOfRemote = $derived(() => {
+	const localVersionOfRemote = $derived.by(() => {
 		if (!template.isRemote || !template.metadata?.remoteUrl) return null;
 		return data.allTemplates.find((t) => !t.isRemote && t.metadata?.remoteUrl === template.metadata?.remoteUrl);
 	});
 
-	const canDownload = $derived(template.isRemote && !localVersionOfRemote());
+	const canDownload = $derived(template.isRemote && !localVersionOfRemote);
 
 	async function handleDownload() {
-		if (isDownloading || !canDownload) return;
-		isDownloading = true;
+		if (status.isDownloading || !canDownload) return;
+		status.isDownloading = true;
 		try {
 			const downloadedTemplate = await templateService.download(template.id);
 			toast.success(m.templates_downloaded_success({ name: template.name }));
@@ -143,12 +157,12 @@
 			console.error('Error downloading template:', error);
 			toast.error(error instanceof Error ? error.message : m.templates_download_failed());
 		} finally {
-			isDownloading = false;
+			status.isDownloading = false;
 		}
 	}
 
 	async function handleDelete() {
-		if (isDeleting) return;
+		if (status.isDeleting) return;
 		openConfirmDialog({
 			title: m.common_delete_title({ resource: m.resource_template() }),
 			message: m.common_delete_confirm({ resource: `${m.resource_template()} "${template.name}"` }),
@@ -156,7 +170,7 @@
 				label: m.templates_delete_template(),
 				destructive: true,
 				action: async () => {
-					isDeleting = true;
+					status.isDeleting = true;
 					try {
 						await templateService.deleteTemplate(template.id);
 						toast.success(m.common_delete_success({ resource: `${m.resource_template()} "${template.name}"` }));
@@ -168,7 +182,7 @@
 								? error.message
 								: m.common_delete_failed({ resource: `${m.resource_template()} "${template.name}"` })
 						);
-						isDeleting = false;
+						status.isDeleting = false;
 					}
 				}
 			}
@@ -192,13 +206,13 @@
 						input={$inputs.name}
 						label={m.templates_template_name_label()}
 						placeholder={m.templates_template_name_placeholder()}
-						disabled={saving}
+						disabled={status.saving}
 					/>
 					<FormInput
 						input={$inputs.description}
 						label={m.templates_template_description_label()}
 						placeholder={m.templates_template_description_placeholder()}
-						disabled={saving}
+						disabled={status.saving}
 					/>
 				</div>
 				<div class="flex flex-col gap-2 sm:flex-row sm:items-start">
@@ -208,21 +222,21 @@
 						customLabel={m.compose_create_project()}
 						class="w-full gap-2 sm:w-auto"
 					/>
-					<ArcaneButton action="cancel" onclick={handleReset} disabled={!hasChanges || saving}>
+					<ArcaneButton action="cancel" onclick={handleReset} disabled={!hasChanges || status.saving}>
 						{m.common_reset()}
 					</ArcaneButton>
 					<ArcaneButton
 						action="save"
 						onclick={handleSave}
 						disabled={!canSave}
-						loading={saving}
+						loading={status.saving}
 						loadingLabel={m.common_action_saving()}
 					/>
 					<ArcaneButton
 						action="remove"
 						onclick={handleDelete}
-						disabled={isDeleting}
-						loading={isDeleting}
+						disabled={status.isDeleting}
+						loading={status.isDeleting}
 						loadingLabel={m.common_action_deleting()}
 						customLabel={m.templates_delete_template()}
 						class="w-full gap-2 sm:w-auto"
@@ -260,7 +274,7 @@
 					{m.templates_remote()}
 				</Badge>
 				{#if template.metadata?.tags && template.metadata.tags.length > 0}
-					{#each template.metadata.tags as tag}
+					{#each template.metadata.tags as tag (tag)}
 						<Badge variant="outline">{tag}</Badge>
 					{/each}
 				{/if}
@@ -277,18 +291,18 @@
 					<ArcaneButton
 						action="base"
 						onclick={handleDownload}
-						disabled={isDownloading}
-						loading={isDownloading}
+						disabled={status.isDownloading}
+						loading={status.isDownloading}
 						loadingLabel={m.common_action_downloading()}
 						class="w-full gap-2 sm:w-auto"
 					>
 						<DownloadIcon class="size-4" />
 						{m.templates_download()}
 					</ArcaneButton>
-				{:else if template.isRemote && localVersionOfRemote()}
+				{:else if template.isRemote && localVersionOfRemote}
 					<ArcaneButton
 						action="base"
-						onclick={() => goto(`/customize/templates/${localVersionOfRemote()?.id}`)}
+						onclick={() => goto(`/customize/templates/${localVersionOfRemote?.id}`)}
 						class="w-full gap-2 sm:w-auto"
 					>
 						<ProjectsIcon class="size-4" />
@@ -321,10 +335,10 @@
 							<CodeEditor
 								bind:value={$inputs.composeContent.value}
 								language="yaml"
-								readOnly={saving}
+								readOnly={status.saving}
 								fontSize="13px"
-								bind:hasErrors={composeHasErrors}
-								bind:validationReady={composeValidationReady}
+								bind:hasErrors={validation.composeHasErrors}
+								bind:validationReady={validation.composeValidationReady}
 								fileId="templates:custom:{template.id}:compose"
 								originalValue={originalCompose}
 								enableDiff={true}
@@ -359,10 +373,10 @@
 							<CodeEditor
 								bind:value={$inputs.envContent.value}
 								language="env"
-								readOnly={saving}
+								readOnly={status.saving}
 								fontSize="13px"
-								bind:hasErrors={envHasErrors}
-								bind:validationReady={envValidationReady}
+								bind:hasErrors={validation.envHasErrors}
+								bind:validationReady={validation.envValidationReady}
 								fileId="templates:custom:{template.id}:env"
 								originalValue={originalEnv}
 								enableDiff={true}
@@ -449,7 +463,7 @@
 								</div>
 							</Card.Header>
 							<Card.Content class="grid grid-cols-1 gap-2 p-4">
-								{#each services as service}
+								{#each services as service (service)}
 									<Card.Root variant="subtle" class="min-w-0">
 										<Card.Content class="flex min-w-0 items-center gap-3 p-3">
 											<div class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-blue-500/10">
@@ -474,7 +488,7 @@
 								</div>
 							</Card.Header>
 							<Card.Content class="grid grid-cols-1 gap-2 p-4">
-								{#each envVars as envVar}
+								{#each envVars as envVar (envVar.key)}
 									<Card.Root variant="subtle" class="min-w-0">
 										<Card.Content class="flex min-w-0 flex-col gap-2 p-3">
 											<div class="text-muted-foreground text-xs font-semibold tracking-wide break-words uppercase select-all">

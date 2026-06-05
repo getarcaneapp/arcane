@@ -4,7 +4,7 @@ import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
 import type { AppVersionInformation } from '$lib/types/settings';
 import { transformPaginationParams } from '$lib/utils/tables';
 
-export default class EnvironmentManagementService extends BaseAPIService {
+class EnvironmentManagementService extends BaseAPIService {
 	async create(dto: CreateEnvironmentDTO): Promise<Environment> {
 		const res = await this.api.post('/environments', dto);
 		return res.data.data as Environment;

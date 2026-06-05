@@ -5,7 +5,7 @@ import type { SearchPaginationSortRequest, Paginated } from '$lib/types/shared';
 import { transformPaginationParams } from '$lib/utils/tables';
 import { environmentStore } from '$lib/stores/environment.store.svelte';
 
-export default class TemplateService extends BaseAPIService {
+class TemplateService extends BaseAPIService {
 	async getTemplates(options?: SearchPaginationSortRequest): Promise<Paginated<Template>> {
 		const params = transformPaginationParams(options);
 		const response = await this.api.get('/templates', { params });

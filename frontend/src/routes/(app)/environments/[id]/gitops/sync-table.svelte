@@ -3,7 +3,6 @@
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import { toast } from 'svelte-sonner';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api';
 	import { tryCatch } from '$lib/utils/api';
@@ -26,6 +25,7 @@
 		HashIcon,
 		EllipsisIcon
 	} from '$lib/icons';
+	import { bulkConfirmAndRun, confirmAndRun } from '$lib/utils/bulk-actions';
 
 	type FieldVisibility = Record<string, boolean>;
 
@@ -59,67 +59,46 @@
 	}
 
 	async function handleDeleteSelected(ids: string[]) {
-		if (!ids?.length) return;
-
-		openConfirmDialog({
+		bulkConfirmAndRun({
+			ids,
 			title: m.common_remove_title({ resource: `${ids.length} ${m.resource_sync()}(s)` }),
 			message: m.common_remove_message({ resource: `${ids.length} ${m.resource_sync()}(s)` }),
-			confirm: {
-				label: m.common_remove(),
-				destructive: true,
-				action: async () => {
-					isLoading.removing = true;
-
-					let successCount = 0;
-					let failureCount = 0;
-					for (const id of ids) {
-						const sync = syncs.data.find((s) => s.id === id);
-						const result = await tryCatch(gitOpsSyncService.deleteSync(environmentId, id));
-						if (result.error) {
-							failureCount++;
-							toast.error(m.common_delete_failed({ resource: sync?.name ?? m.common_unknown() }));
-						} else {
-							successCount++;
-						}
-					}
-
-					if (successCount > 0) {
-						toast.success(m.common_delete_success({ resource: `${successCount} ${m.resource_sync()}(s)` }));
-						syncs = await gitOpsSyncService.getSyncs(environmentId, requestOptions);
-					}
-					if (failureCount > 0) toast.error(m.common_delete_failed({ resource: `${failureCount} items` }));
-
-					selectedIds = [];
-					isLoading.removing = false;
+			confirmLabel: m.common_remove(),
+			destructive: true,
+			run: (id) => gitOpsSyncService.deleteSync(environmentId, id),
+			messages: {
+				success: (count) => m.common_delete_success({ resource: `${count} ${m.resource_sync()}(s)` }),
+				partial: (_success, _total, failed) => m.common_delete_failed({ resource: `${failed} items` }),
+				failure: () => m.common_delete_failed({ resource: `${ids.length} items` })
+			},
+			setLoading: (loading) => (isLoading.removing = loading),
+			onItemFailure: (id) => {
+				const sync = syncs.data.find((item) => item.id === id);
+				toast.error(m.common_delete_failed({ resource: sync?.name ?? m.common_unknown() }));
+			},
+			onComplete: async (result) => {
+				if (result.success > 0) {
+					syncs = await gitOpsSyncService.getSyncs(environmentId, requestOptions);
 				}
-			}
+			},
+			clearSelection: () => (selectedIds = []),
+			sequential: true
 		});
 	}
 
 	async function handleDeleteOne(id: string, name: string) {
 		const safeName = name ?? m.common_unknown();
-		openConfirmDialog({
+		confirmAndRun({
 			title: m.git_sync_remove_confirm(),
 			message: m.git_sync_remove_message(),
-			confirm: {
-				label: m.common_remove(),
-				destructive: true,
-				action: async () => {
-					isLoading.removing = true;
-
-					const result = await tryCatch(gitOpsSyncService.deleteSync(environmentId, id));
-					handleApiResultWithCallbacks({
-						result,
-						message: m.common_delete_failed({ resource: safeName }),
-						setLoadingState: () => {},
-						onSuccess: async () => {
-							toast.success(m.common_delete_success({ resource: `${m.resource_sync()} "${safeName}"` }));
-							syncs = await gitOpsSyncService.getSyncs(environmentId, requestOptions);
-						}
-					});
-
-					isLoading.removing = false;
-				}
+			confirmLabel: m.common_remove(),
+			destructive: true,
+			setLoading: (loading) => (isLoading.removing = loading),
+			run: () => gitOpsSyncService.deleteSync(environmentId, id),
+			failureMessage: m.common_delete_failed({ resource: safeName }),
+			onSuccess: async () => {
+				toast.success(m.common_delete_success({ resource: `${m.resource_sync()} "${safeName}"` }));
+				syncs = await gitOpsSyncService.getSyncs(environmentId, requestOptions);
 			}
 		});
 	}
@@ -175,7 +154,7 @@
 		},
 		{
 			accessorKey: 'lastSyncCommit',
-			title: 'Commit',
+			title: m.git_sync_commit(),
 			sortable: true,
 			cell: CommitCell
 		},
@@ -194,7 +173,7 @@
 		{ id: 'composePath', label: m.git_sync_compose_path(), defaultVisible: true },
 		{ id: 'autoSync', label: m.git_sync_auto_sync(), defaultVisible: true },
 		{ id: 'lastSyncStatus', label: m.git_sync_status(), defaultVisible: true },
-		{ id: 'lastSyncCommit', label: 'Commit', defaultVisible: false },
+		{ id: 'lastSyncCommit', label: m.git_sync_commit(), defaultVisible: false },
 		{ id: 'lastSyncAt', label: m.git_sync_last_sync(), defaultVisible: true }
 	];
 

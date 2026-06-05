@@ -5,6 +5,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { swarmService } from '$lib/services/swarm-service';
 	import type { SwarmTaskSummary } from '$lib/types/swarm';
+	import { getSwarmTaskStateVariant, sortSwarmTasks } from '$lib/utils/swarm-tasks';
 	import { JobsIcon, ConnectionIcon } from '$lib/icons';
 
 	let {
@@ -19,42 +20,13 @@
 	let isLoading = $state(false);
 	let hasLoaded = $state(false);
 
-	const STATE_ORDER: Record<string, number> = {
-		running: 0,
-		starting: 1,
-		pending: 2,
-		ready: 3,
-		complete: 4,
-		shutdown: 5,
-		failed: 6,
-		rejected: 7,
-		orphaned: 8,
-		remove: 9
-	};
-
-	function stateVariant(state: string): 'green' | 'amber' | 'red' | 'gray' {
-		if (state === 'running') return 'green';
-		if (state === 'pending' || state === 'starting') return 'amber';
-		if (state === 'failed' || state === 'rejected' || state === 'shutdown') return 'red';
-		return 'gray';
-	}
-
-	function sortTasks(raw: SwarmTaskSummary[]): SwarmTaskSummary[] {
-		return [...raw].sort((a, b) => {
-			const stateA = STATE_ORDER[a.currentState] ?? 99;
-			const stateB = STATE_ORDER[b.currentState] ?? 99;
-			if (stateA !== stateB) return stateA - stateB;
-			return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
-		});
-	}
-
 	async function loadTasks() {
 		isLoading = true;
 		try {
 			const result = await swarmService.getServiceTasks(serviceId, {
 				pagination: { page: 1, limit: 100 }
 			});
-			tasks = sortTasks(result.data ?? []);
+			tasks = sortSwarmTasks(result.data ?? []);
 		} catch (err) {
 			console.error(m.swarm_service_tasks_load_failed_log(), err);
 		} finally {
@@ -108,7 +80,7 @@
 									</div>
 									<div class="text-muted-foreground font-mono text-xs">{task.id.slice(0, 12)}</div>
 								</div>
-								<StatusBadge text={task.currentState} variant={stateVariant(task.currentState)} />
+								<StatusBadge text={task.currentState} variant={getSwarmTaskStateVariant(task.currentState)} />
 							</div>
 							<div class="grid grid-cols-2 gap-2">
 								<div>
@@ -124,7 +96,7 @@
 									<div class="text-muted-foreground mb-1 text-xs font-semibold">
 										{m.swarm_desired_state()}
 									</div>
-									<StatusBadge text={task.desiredState} variant={stateVariant(task.desiredState)} size="sm" />
+									<StatusBadge text={task.desiredState} variant={getSwarmTaskStateVariant(task.desiredState)} size="sm" />
 								</div>
 								{#if task.error}
 									<div class="col-span-2">

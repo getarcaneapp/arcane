@@ -18,9 +18,9 @@ type Options = {
  * </script>
  *
  * <button onclick={clipboard.copy('Hello, World!')}>
- *     {#if clipboard.copied === 'success'}
+ *     {#if clipboard.status === 'success'}
  *         Copied!
- *     {:else if clipboard.copied === 'failure'}
+ *     {:else if clipboard.status === 'failure'}
  *         Failed to copy!
  *     {:else}
  *         Copy
@@ -72,11 +72,6 @@ export class UseClipboard {
 		}
 
 		return this.#copiedStatus;
-	}
-
-	/** true when the user has just copied to the clipboard. */
-	get copied() {
-		return this.#copiedStatus === 'success';
 	}
 
 	/**	Indicates whether a copy has occurred

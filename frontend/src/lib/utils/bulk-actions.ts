@@ -1,6 +1,6 @@
 import { toast } from 'svelte-sonner';
 import { openConfirmDialog } from '$lib/components/confirm-dialog';
-import { tryCatch, type Result } from '$lib/utils/api';
+import { handleApiResultWithCallbacks, tryCatch, type Result } from '$lib/utils/api';
 import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 
 /**
@@ -36,6 +36,8 @@ export interface RunBulkOperationOptions<T> {
 	onComplete?: (result: BulkOperationResult) => void | Promise<unknown>;
 	/** Clears the table selection after completion. Always called when there were ids. */
 	clearSelection?: () => void;
+	/** Optional per-item failure side effect, such as an item-specific toast. */
+	onItemFailure?: (id: string) => void;
 	/** Run operations one at a time instead of concurrently. Defaults to concurrent. */
 	sequential?: boolean;
 }
@@ -45,13 +47,14 @@ export interface RunBulkOperationOptions<T> {
  * toast (success / partial / failure), then refreshes and clears the selection.
  * The success toast links to the first resulting activity when one is present.
  */
-export async function runBulkOperation<T>({
+async function runBulkOperation<T>({
 	ids,
 	run,
 	messages,
 	setLoading,
 	onComplete,
 	clearSelection,
+	onItemFailure,
 	sequential = false
 }: RunBulkOperationOptions<T>): Promise<BulkOperationResult> {
 	const total = ids?.length ?? 0;
@@ -59,9 +62,10 @@ export async function runBulkOperation<T>({
 	if (total === 0) return result;
 
 	let firstActivityId: string | undefined;
-	const tally = (outcome: Result<T>) => {
+	const tally = (id: string, outcome: Result<T>) => {
 		if (outcome.error) {
 			result.failed += 1;
+			onItemFailure?.(id);
 		} else {
 			result.success += 1;
 			if (!firstActivityId) firstActivityId = extractActivityId(outcome.data);
@@ -72,11 +76,11 @@ export async function runBulkOperation<T>({
 	try {
 		if (sequential) {
 			for (const id of ids) {
-				tally(await tryCatch(run(id)));
+				tally(id, await tryCatch(run(id)));
 			}
 		} else {
-			const outcomes = await Promise.all(ids.map((id) => tryCatch(run(id))));
-			for (const outcome of outcomes) tally(outcome);
+			const outcomes = await Promise.all(ids.map(async (id) => [id, await tryCatch(run(id))] as const));
+			for (const [id, outcome] of outcomes) tally(id, outcome);
 		}
 	} finally {
 		setLoading?.(false);
@@ -129,6 +133,7 @@ export function bulkConfirmAndRun<T>({
 	setLoading,
 	onComplete,
 	clearSelection,
+	onItemFailure,
 	sequential
 }: BulkConfirmAndRunOptions<T>): void {
 	if (!ids || ids.length === 0) return;
@@ -148,9 +153,56 @@ export function bulkConfirmAndRun<T>({
 					setLoading,
 					onComplete,
 					clearSelection,
+					onItemFailure,
 					sequential
 				});
 			}
 		}
 	});
+}
+
+export interface ConfirmAndRunOptions<T> {
+	title: string;
+	message: string;
+	confirmLabel: string;
+	destructive?: boolean;
+	setLoading?: (loading: boolean) => void;
+	run: () => Promise<T>;
+	failureMessage: string;
+	onSuccess?: (result: T) => void | Promise<void>;
+}
+
+export function confirmAndRun<T>({
+	title,
+	message,
+	confirmLabel,
+	destructive = false,
+	setLoading,
+	run,
+	failureMessage,
+	onSuccess
+}: ConfirmAndRunOptions<T>): void {
+	openConfirmDialog({
+		title,
+		message,
+		confirm: {
+			label: confirmLabel,
+			destructive,
+			action: async () => {
+				handleApiResultWithCallbacks({
+					result: await tryCatch(run()),
+					message: failureMessage,
+					setLoadingState: setLoading ?? (() => {}),
+					onSuccess
+				});
+			}
+		}
+	});
+}
+
+export function hasAnyLoadingState<TStatus extends string>(
+	actionStatus: Record<string, TStatus>,
+	loadingState: Record<string, boolean>
+): boolean {
+	return Object.values(actionStatus).some((status) => status !== '') || Object.values(loadingState).some(Boolean);
 }

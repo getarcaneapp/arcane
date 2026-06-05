@@ -20,4 +20,3 @@ class JobScheduleService extends BaseAPIService {
 }
 
 export const jobScheduleService = new JobScheduleService();
-export default JobScheduleService;

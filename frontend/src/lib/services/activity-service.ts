@@ -4,7 +4,7 @@ import type { Activity, ActivityClearHistoryResult, ActivityDetail } from '$lib/
 import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
 import { transformPaginationParams } from '$lib/utils/tables';
 
-export class ActivityService extends BaseAPIService {
+class ActivityService extends BaseAPIService {
 	private async resolveEnvironmentId(environmentId?: string): Promise<string> {
 		return environmentId ?? (await environmentStore.getCurrentEnvironmentId());
 	}

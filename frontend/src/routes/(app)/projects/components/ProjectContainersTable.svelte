@@ -13,17 +13,14 @@
 	import type { ColumnSpec, BulkAction } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
 	import { goto } from '$app/navigation';
-	import { toast } from 'svelte-sonner';
-	import { openConfirmDialog } from '$lib/components/confirm-dialog';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api';
-	import { tryCatch } from '$lib/utils/api';
 	import { containerService } from '$lib/services/container-service';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { hasPermission } from '$lib/utils/auth';
 	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
 	import IconImage from '$lib/components/icon-image.svelte';
 	import { getArcaneIconUrlFromLabels } from '$lib/utils/docker';
-	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
+	import { bulkConfirmAndRun, hasAnyLoadingState } from '$lib/utils/bulk-actions';
+	import { confirmAndRemoveContainer, runContainerLifecycleAction } from '$lib/utils/container-actions';
 	import {
 		StartIcon,
 		StopIcon,
@@ -106,72 +103,24 @@
 	}
 
 	async function performContainerAction(action: 'start' | 'stop' | 'restart', id: string) {
-		if (!id) return;
-
-		const statusMap = { start: 'starting', stop: 'stopping', restart: 'restarting' } as const;
-		actionStatus[id] = statusMap[action];
-
-		try {
-			const serviceCall =
-				action === 'start'
-					? containerService.startContainer(id)
-					: action === 'stop'
-						? containerService.stopContainer(id)
-						: containerService.restartContainer(id);
-
-			const messageMap = {
-				start: { failed: m.containers_start_failed(), success: m.containers_start_success() },
-				stop: { failed: m.containers_stop_failed(), success: m.containers_stop_success() },
-				restart: { failed: m.containers_restart_failed(), success: m.containers_restart_success() }
-			};
-
-			handleApiResultWithCallbacks({
-				result: await tryCatch(serviceCall),
-				message: messageMap[action].failed,
-				setLoadingState: (value) => {
-					actionStatus[id] = value ? statusMap[action] : '';
-				},
-				async onSuccess(data) {
-					toast.success(messageMap[action].success, activityToastOptions(extractActivityId(data)));
-					await onRefresh?.();
-				}
-			});
-		} catch (error) {
-			console.error('Container action failed:', error);
-			toast.error(m.containers_action_error());
-			actionStatus[id] = '';
-		}
+		await runContainerLifecycleAction({
+			action,
+			containerId: id,
+			setStatus: (status) => {
+				actionStatus[id] = status;
+			},
+			onRefresh
+		});
 	}
 
 	async function handleRemoveContainer(id: string, name: string) {
-		openConfirmDialog({
-			title: m.containers_remove_confirm_title(),
-			message: m.containers_remove_confirm_message({ resource: name }),
-			checkboxes: [
-				{ id: 'force', label: m.containers_remove_force_label(), initialState: false },
-				{ id: 'volumes', label: m.containers_remove_volumes_label(), initialState: false }
-			],
-			confirm: {
-				label: m.common_remove(),
-				destructive: true,
-				action: async (checkboxStates) => {
-					const force = !!checkboxStates['force'];
-					const volumes = !!checkboxStates['volumes'];
-					actionStatus[id] = 'removing';
-
-					handleApiResultWithCallbacks({
-						result: await tryCatch(containerService.deleteContainer(id, { force, volumes })),
-						message: m.containers_remove_failed(),
-						setLoadingState: (value) => {
-							actionStatus[id] = value ? 'removing' : '';
-						},
-						async onSuccess(data) {
-							toast.success(m.containers_remove_success(), activityToastOptions(extractActivityId(data)));
-							await onRefresh?.();
-						}
-					});
-				}
-			}
+		confirmAndRemoveContainer({
+			containerId: id,
+			containerName: name,
+			setStatus: (status) => {
+				actionStatus[id] = status;
+			},
+			onRefresh
 		});
 	}
 
@@ -188,7 +137,9 @@
 				label: m.common_start(),
 				destructive: false,
 				fn: (id: string) => containerService.startContainer(id),
-				success: m.containers_bulk_start_success({ count: validIds.length }),
+				success: (count: number) => m.containers_bulk_start_success({ count }),
+				partial: (success: number, total: number, failed: number) => m.containers_bulk_start_partial({ success, total, failed }),
+				failure: () => m.containers_start_failed(),
 				loadingKey: 'start' as const
 			},
 			stop: {
@@ -197,7 +148,9 @@
 				label: m.common_stop(),
 				destructive: false,
 				fn: (id: string) => containerService.stopContainer(id),
-				success: m.containers_bulk_stop_success({ count: validIds.length }),
+				success: (count: number) => m.containers_bulk_stop_success({ count }),
+				partial: (success: number, total: number, failed: number) => m.containers_bulk_stop_partial({ success, total, failed }),
+				failure: () => m.containers_stop_failed(),
 				loadingKey: 'stop' as const
 			},
 			restart: {
@@ -206,7 +159,10 @@
 				label: m.common_restart(),
 				destructive: false,
 				fn: (id: string) => containerService.restartContainer(id),
-				success: m.containers_bulk_restart_success({ count: validIds.length }),
+				success: (count: number) => m.containers_bulk_restart_success({ count }),
+				partial: (success: number, total: number, failed: number) =>
+					m.containers_bulk_restart_partial({ success, total, failed }),
+				failure: () => m.containers_restart_failed(),
 				loadingKey: 'restart' as const
 			},
 			remove: {
@@ -215,45 +171,38 @@
 				label: m.common_remove(),
 				destructive: true,
 				fn: (id: string) => containerService.deleteContainer(id, { force: false, volumes: false }),
-				success: m.containers_bulk_remove_success({ count: validIds.length }),
+				success: (count: number) => m.containers_bulk_remove_success({ count }),
+				partial: (success: number, total: number, failed: number) => m.containers_bulk_remove_partial({ success, total, failed }),
+				failure: () => m.containers_remove_failed(),
 				loadingKey: 'remove' as const
 			}
 		};
 
 		const config = actionConfig[action];
 
-		openConfirmDialog({
+		bulkConfirmAndRun({
+			ids: validIds,
 			title: config.title,
 			message: config.message,
-			confirm: {
-				label: config.label,
-				destructive: config.destructive,
-				action: async () => {
-					isBulkLoading[config.loadingKey] = true;
-
-					const results = await Promise.allSettled(validIds.map((id) => config.fn(id)));
-					const successCount = results.filter((r) => r.status === 'fulfilled').length;
-
-					isBulkLoading[config.loadingKey] = false;
-
-					if (successCount === validIds.length) {
-						toast.success(config.success);
-					} else if (successCount > 0) {
-						toast.warning(`${successCount} of ${validIds.length} succeeded`);
-					} else {
-						toast.error(m.containers_action_error());
-					}
-
-					selectedIds = [];
-					await onRefresh?.();
-				}
+			confirmLabel: config.label,
+			destructive: config.destructive,
+			run: (id) => config.fn(id),
+			messages: {
+				success: config.success,
+				partial: config.partial,
+				failure: config.failure
+			},
+			setLoading: (loading) => {
+				isBulkLoading[config.loadingKey] = loading;
+			},
+			onComplete: async () => onRefresh?.(),
+			clearSelection: () => {
+				selectedIds = [];
 			}
 		});
 	}
 
-	const isAnyLoading = $derived(
-		Object.values(actionStatus).some((status) => status !== '') || Object.values(isBulkLoading).some((loading) => loading)
-	);
+	const isAnyLoading = $derived(hasAnyLoadingState(actionStatus, isBulkLoading));
 
 	const showActionsColumn = $derived(servicesWithIds.some((service) => service.status === 'running'));
 
