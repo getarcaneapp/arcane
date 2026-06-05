@@ -71,7 +71,14 @@ jobs:
       - name: Run unit tests
         env:
           CGO_ENABLED: ${{ matrix.module.cgo_enabled }}
+          GO_JUNIT_REPORT_FILE: test-results/junit.xml
         run: just test ${{ matrix.module.name }}
+
+      - name: Report Go test results to Depot
+        if: ${{ !cancelled() }}
+        uses: depot/test-report-action@v1
+        with:
+          path: ${{ matrix.module.path }}/test-results/
 
       - name: Upload coverage artifact
         if: always()
