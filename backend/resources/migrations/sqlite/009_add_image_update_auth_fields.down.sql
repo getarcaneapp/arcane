@@ -1,1 +1,0 @@
--- no-op: dropping columns in SQLite requires table rebuild; intentionally left empty
