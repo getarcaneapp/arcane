@@ -7,6 +7,8 @@ replace (
 	github.com/getarcaneapp/arcane/types => ../types
 )
 
+tool github.com/google/wire/cmd/wire
+
 require (
 	github.com/aws/aws-sdk-go-v2/config v1.32.18
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.17
@@ -24,7 +26,7 @@ require (
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/getarcaneapp/arcane/cli v1.19.5
 	github.com/getarcaneapp/arcane/types v1.19.5
-	github.com/getarcaneapp/updater v0.3.2
+	github.com/getarcaneapp/updater v0.3.4
 	github.com/glebarez/sqlite v1.11.0
 	github.com/go-git/go-git/v5 v5.19.1
 	github.com/goccy/go-yaml v1.19.2
@@ -235,5 +237,3 @@ require (
 	modernc.org/sqlite v1.50.1 // indirect
 	tags.cncf.io/container-device-interface v1.1.0 // indirect
 )
-
-tool github.com/google/wire/cmd/wire

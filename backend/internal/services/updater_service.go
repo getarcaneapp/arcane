@@ -137,9 +137,9 @@ func (s *UpdaterService) registryDigestResolverInternal() updaterdigest.RemoteRe
 }
 
 // ApplyPending executes pending image updates.
-func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (out *updater.Result, err error) {
+func (s *UpdaterService) ApplyPending(ctx context.Context, options updater.Options) (out *updater.Result, err error) {
 	start := time.Now()
-	activityID := s.startAutoUpdateActivityInternal(ctx, dryRun)
+	activityID := s.startAutoUpdateActivityInternal(ctx, options.DryRun)
 	out = &updater.Result{Items: []updater.ResourceResult{}, ActivityID: utils.StringPtrFromTrimmed(activityID)}
 	ctx = s.trackActivityInternal(ctx, activityID)
 	ctx = contextWithActivityIDInternal(ctx, activityID)
@@ -156,13 +156,14 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (out *up
 	}()
 
 	s.recordAutoUpdateEventInternal(ctx, models.EventSeverityInfo, models.JSON{
-		"phase":  "start",
-		"dryRun": dryRun,
-		"time":   time.Now().UTC().Format(time.RFC3339),
+		"phase":       "start",
+		"dryRun":      options.DryRun,
+		"forceUpdate": options.ForceUpdate,
+		"time":        time.Now().UTC().Format(time.RFC3339),
 	})
 	s.appendAutoUpdateActivityMessageInternal(ctx, activityID, "Planning pending updates", "Planning updates", 5)
 
-	moduleResult, engineErr := s.engineInternal().ApplyPending(ctx, moduletypes.Options{DryRun: dryRun})
+	moduleResult, engineErr := s.engineInternal().ApplyPending(ctx, moduleOptionsFromUpdaterOptionsInternal(options))
 	if moduleResult != nil {
 		out = resultFromModuleInternal(moduleResult)
 		out.ActivityID = utils.StringPtrFromTrimmed(activityID)
@@ -173,7 +174,7 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (out *up
 		return out, err
 	}
 
-	if !dryRun && s.deps.ImageUpdates != nil {
+	if !options.DryRun && s.deps.ImageUpdates != nil {
 		s.appendAutoUpdateActivityMessageInternal(ctx, activityID, "Cleaning up update records", "Cleaning up", 95)
 		if cleanupErr := s.deps.ImageUpdates.CleanupOrphanedRecords(ctx); cleanupErr != nil {
 			s.loggerInternal().WarnContext(ctx, "cleanup orphaned update records failed", "error", cleanupErr)
@@ -181,13 +182,14 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, dryRun bool) (out *up
 	}
 
 	s.recordAutoUpdateEventInternal(ctx, models.EventSeverityInfo, models.JSON{
-		"phase":    "complete",
-		"checked":  out.Checked,
-		"updated":  out.Updated,
-		"skipped":  out.Skipped,
-		"failed":   out.Failed,
-		"duration": out.Duration,
-		"time":     time.Now().UTC().Format(time.RFC3339),
+		"phase":     "complete",
+		"checked":   out.Checked,
+		"updated":   out.Updated,
+		"restarted": out.Restarted,
+		"skipped":   out.Skipped,
+		"failed":    out.Failed,
+		"duration":  out.Duration,
+		"time":      time.Now().UTC().Format(time.RFC3339),
 	})
 	return out, nil
 }
@@ -362,9 +364,17 @@ func (s *UpdaterService) PullImage(ctx context.Context, imageRef string, progres
 	}
 	activityID := activityIDFromContextInternal(ctx)
 	writer := activitylib.NewWriter(ctx, s.deps.Activity, activityID, progress, "Pulling updated images")
-	err := s.deps.ImagePuller.PullImage(ctx, imageRef, writer, s.deps.SystemUser, nil)
-	activitylib.FlushWriter(writer)
-	return err
+	defer activitylib.FlushWriter(writer)
+
+	if s.deps.Projects != nil {
+		resolved, err := s.deps.Projects.resolveRegistryCredentialsInternal(ctx)
+		if err != nil {
+			return fmt.Errorf("resolve registry credentials: %w", err)
+		}
+		return s.deps.ImagePuller.PullImage(ctx, imageRef, writer, s.deps.SystemUser, resolved)
+	}
+
+	return s.deps.ImagePuller.PullImage(ctx, imageRef, writer, s.deps.SystemUser, nil)
 }
 
 // PendingImageUpdates returns pending image update records from Arcane's database.
@@ -659,6 +669,15 @@ func imageUpdateRecordToModuleInternal(record models.ImageUpdateRecord) modulety
 	}
 }
 
+func moduleOptionsFromUpdaterOptionsInternal(options updater.Options) moduletypes.Options {
+	return moduletypes.Options{
+		Type:        options.Type,
+		ResourceIDs: slices.Clone(options.ResourceIds),
+		Force:       options.ForceUpdate,
+		DryRun:      options.DryRun,
+	}
+}
+
 func resultFromModuleInternal(result *moduletypes.Result) *updater.Result {
 	if result == nil {
 		return &updater.Result{Items: []updater.ResourceResult{}}
@@ -667,6 +686,7 @@ func resultFromModuleInternal(result *moduletypes.Result) *updater.Result {
 		Success:    result.Success,
 		Checked:    result.Checked,
 		Updated:    result.Updated,
+		Restarted:  result.Restarted,
 		Skipped:    result.Skipped,
 		Failed:     result.Failed,
 		StartTime:  result.StartTime,
