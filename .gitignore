@@ -41,6 +41,9 @@ tests/test-results/*
 tests/.report/*
 tests/.auth/
 tests/.bin/
+backend/test-results/
+cli/test-results/
+types/test-results/
 backend/.bin
 backend/build-errors.log
 frontend/bun.lock
