@@ -182,6 +182,7 @@ func DefaultSettingsConfig() *models.Settings {
 		SidebarHoverExpansion:               models.SettingVariable{Value: "true"},
 		KeyboardShortcutsEnabled:            models.SettingVariable{Value: "true"},
 		ApplicationTheme:                    models.SettingVariable{Value: "default"},
+		IconCatalog:                         models.SettingVariable{Value: "selfhst"},
 		AccentColor:                         models.SettingVariable{Value: "oklch(0.606 0.25 292.717)"},
 		OledMode:                            models.SettingVariable{Value: "false"},
 		MaxImageUploadSize:                  models.SettingVariable{Value: "500"},

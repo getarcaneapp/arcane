@@ -80,7 +80,7 @@ func (s *DashboardService) GetSnapshot(ctx context.Context, options DashboardAct
 	containerItems := make([]containertypes.Summary, 0, len(filteredContainers))
 	currentContainerID, currentContainerErr := dockerutils.GetCurrentContainerID()
 	if s.containerService != nil {
-		containerItems = s.containerService.buildContainerSummaries(filteredContainers, nil, currentContainerID, currentContainerErr)
+		containerItems = s.containerService.buildContainerSummaries(ctx, filteredContainers, nil, currentContainerID, currentContainerErr)
 	} else {
 		for _, container := range filteredContainers {
 			summary := containertypes.NewSummary(container)

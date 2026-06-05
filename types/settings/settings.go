@@ -227,6 +227,11 @@ type Update struct {
 	// Required: false
 	ApplicationTheme *string `json:"applicationTheme,omitempty"`
 
+	// IconCatalog is the catalog used to resolve icon slugs.
+	//
+	// Required: false
+	IconCatalog *string `json:"iconCatalog,omitempty"`
+
 	// AuthLocalEnabled indicates if local authentication is enabled.
 	//
 	// Required: false

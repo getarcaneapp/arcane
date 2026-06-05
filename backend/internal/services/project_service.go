@@ -31,6 +31,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils/cache"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils/iconcatalog"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils/mapper"
 	"github.com/getarcaneapp/arcane/types"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
@@ -197,7 +198,8 @@ type ProjectServiceInfo struct {
 	ContainerName    string                      `json:"container_name"`
 	Ports            []string                    `json:"ports"`
 	Health           *string                     `json:"health,omitempty"`
-	IconURL          string                      `json:"icon_url,omitempty"`
+	IconLightURL     string                      `json:"icon_light_url,omitempty"`
+	IconDarkURL      string                      `json:"icon_dark_url,omitempty"`
 	ServiceConfig    *composetypes.ServiceConfig `json:"service_config,omitempty"`
 	Labels           map[string]string           `json:"labels,omitempty"`
 	RedeployDisabled bool                        `json:"redeploy_disabled,omitempty"`
@@ -945,6 +947,11 @@ func (s *ProjectService) GetProjectServices(ctx context.Context, projectID strin
 			svcConfig = &cfg
 		}
 
+		resolvedIcon := s.resolveIconSetInternal(ctx, iconcatalog.FirstNonEmpty(
+			projects.FindArcaneIconSet(c.Labels),
+			meta.ServiceIconSets[c.Service],
+			meta.ProjectIcon,
+		))
 		services = append(services, ProjectServiceInfo{
 			Name:             c.Service,
 			Image:            c.Image,
@@ -953,7 +960,8 @@ func (s *ProjectService) GetProjectServices(ctx context.Context, projectID strin
 			ContainerName:    c.Name,
 			Ports:            formatPorts(c.Publishers),
 			Health:           health,
-			IconURL:          meta.ServiceIcons[c.Service],
+			IconLightURL:     resolvedIcon.IconLightURL,
+			IconDarkURL:      resolvedIcon.IconDarkURL,
 			ServiceConfig:    svcConfig,
 			Labels:           c.Labels,
 			RedeployDisabled: libupdater.ShouldDisableArcaneServerRedeploy(c.Labels, c.ID, currentContainerID, currentContainerErr),
@@ -963,12 +971,17 @@ func (s *ProjectService) GetProjectServices(ctx context.Context, projectID strin
 
 	for _, svc := range composeProject.Services {
 		if !have[svc.Name] {
+			resolvedIcon := s.resolveIconSetInternal(ctx, iconcatalog.FirstNonEmpty(
+				meta.ServiceIconSets[svc.Name],
+				meta.ProjectIcon,
+			))
 			services = append(services, ProjectServiceInfo{
 				Name:          svc.Name,
 				Image:         svc.Image,
 				Status:        "stopped",
 				Ports:         []string{},
-				IconURL:       meta.ServiceIcons[svc.Name],
+				IconLightURL:  resolvedIcon.IconLightURL,
+				IconDarkURL:   resolvedIcon.IconDarkURL,
 				ServiceConfig: new(svc),
 			})
 		}
@@ -1012,7 +1025,7 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 	resp.RelativePath = s.getProjectRelativePathInternal(projectsDir, proj.Path)
 	resp.GitOpsManagedBy = proj.GitOpsManagedBy
 	meta := s.getProjectMetadataForProject(ctx, *proj)
-	resp.IconURL = meta.ProjectIconURL
+	applyResolvedProjectIconInternal(&resp, s.resolveIconSetInternal(ctx, meta.ProjectIcon))
 	resp.URLs = meta.ProjectURLS
 
 	// Default counts/status from DB (will be overridden if runtime check succeeds)
@@ -1091,7 +1104,8 @@ func buildProjectRuntimeServicesInternal(services []ProjectServiceInfo) []projec
 			ContainerName:    svc.ContainerName,
 			Ports:            svc.Ports,
 			Health:           svc.Health,
-			IconURL:          svc.IconURL,
+			IconLightURL:     svc.IconLightURL,
+			IconDarkURL:      svc.IconDarkURL,
 			ServiceConfig:    svc.ServiceConfig,
 			RedeployDisabled: svc.RedeployDisabled,
 		}
@@ -3795,7 +3809,11 @@ func (s *ProjectService) appendDiscoveredComposeProjectUpdatesInternal(
 	}
 
 	knownProjectNames := s.buildKnownComposeProjectNameSetInternal(ctx, projectsArray)
-	discovered := buildDiscoveredComposeProjectUpdateRowsInternal(ctx, composeContainers, knownProjectNames, s.imageService)
+	iconCatalog := iconcatalog.DefaultCatalog
+	if s.settingsService != nil {
+		iconCatalog = s.settingsService.GetStringSetting(ctx, "iconCatalog", iconcatalog.DefaultCatalog)
+	}
+	discovered := buildDiscoveredComposeProjectUpdateRowsInternal(ctx, composeContainers, knownProjectNames, s.imageService, iconCatalog)
 	if len(discovered) == 0 {
 		return items
 	}
@@ -3857,6 +3875,7 @@ func buildDiscoveredComposeProjectUpdateRowsInternal(
 	composeContainers []container.Summary,
 	knownProjectNames map[string]struct{},
 	imageService *ImageService,
+	iconCatalog string,
 ) []project.Details {
 	containersByProject := make(map[string][]container.Summary)
 	for _, c := range composeContainers {
@@ -3883,7 +3902,7 @@ func buildDiscoveredComposeProjectUpdateRowsInternal(
 	updateInfoByRef := getRuntimeContainerUpdateInfoByRefInternal(ctx, composeContainers, imageService)
 	rows := make([]project.Details, 0, len(containersByProject))
 	for projectName, projectContainers := range containersByProject {
-		runtimeServices := buildDiscoveredRuntimeServicesInternal(projectContainers)
+		runtimeServices := buildDiscoveredRuntimeServicesInternal(projectContainers, iconCatalog)
 		imageRefs := projects.ImageRefsFromRuntimeServices(runtimeServices)
 		updateInfo := buildProjectUpdateInfoSummaryInternal(imageRefs, updateInfoByRef)
 		if updateInfo == nil || !updateInfo.HasUpdate {
@@ -3988,7 +4007,7 @@ func getRuntimeContainerUpdateInfoByRefInternal(
 	return updateInfoByRef
 }
 
-func buildDiscoveredRuntimeServicesInternal(containers []container.Summary) []project.RuntimeService {
+func buildDiscoveredRuntimeServicesInternal(containers []container.Summary, iconCatalog string) []project.RuntimeService {
 	runtimeServices := make([]project.RuntimeService, 0, len(containers))
 	seenServices := make(map[string]struct{}, len(containers))
 	for _, c := range containers {
@@ -4009,6 +4028,7 @@ func buildDiscoveredRuntimeServicesInternal(containers []container.Summary) []pr
 
 		containerName := dockerutil.ContainerNameFromNames(c.Names)
 
+		resolvedIcon := iconcatalog.Resolve(iconCatalog, projects.FindArcaneIconSet(c.Labels))
 		runtimeServices = append(runtimeServices, project.RuntimeService{
 			Name:          serviceName,
 			Image:         imageRef,
@@ -4016,6 +4036,8 @@ func buildDiscoveredRuntimeServicesInternal(containers []container.Summary) []pr
 			ContainerID:   c.ID,
 			ContainerName: containerName,
 			Ports:         formatDockerPorts(c.Ports),
+			IconLightURL:  resolvedIcon.IconLightURL,
+			IconDarkURL:   resolvedIcon.IconDarkURL,
 		})
 	}
 
@@ -4186,7 +4208,7 @@ func (s *ProjectService) fetchProjectStatusConcurrently(ctx context.Context, pro
 			results[i].RelativePath = s.getProjectRelativePathInternal(projectsDir, p.Path)
 			results[i].GitOpsManagedBy = p.GitOpsManagedBy
 			meta := s.getProjectMetadataForProject(ctx, p)
-			results[i].IconURL = meta.ProjectIconURL
+			applyResolvedProjectIconInternal(&results[i], s.resolveIconSetInternal(ctx, meta.ProjectIcon))
 			results[i].URLs = meta.ProjectURLS
 			results[i].Status = string(models.ProjectStatusUnknown)
 		}
@@ -4224,7 +4246,7 @@ func (s *ProjectService) mapProjectToDto(ctx context.Context, projectsDir string
 	resp.RelativePath = s.getProjectRelativePathInternal(projectsDir, p.Path)
 	resp.GitOpsManagedBy = p.GitOpsManagedBy
 	meta := s.getProjectMetadataForProject(ctx, p)
-	resp.IconURL = meta.ProjectIconURL
+	applyResolvedProjectIconInternal(&resp, s.resolveIconSetInternal(ctx, meta.ProjectIcon))
 	resp.URLs = meta.ProjectURLS
 
 	projectContainers := lookupProjectContainers(p, containersByProject)
@@ -4255,6 +4277,11 @@ func (s *ProjectService) mapProjectToDto(ctx context.Context, projectsDir string
 			resp.RedeployDisabled = true
 		}
 
+		resolvedIcon := s.resolveIconSetInternal(ctx, iconcatalog.FirstNonEmpty(
+			projects.FindArcaneIconSet(c.Labels),
+			meta.ServiceIconSets[svcName],
+			meta.ProjectIcon,
+		))
 		services = append(services, ProjectServiceInfo{
 			Name:             svcName,
 			Image:            c.Image,
@@ -4263,6 +4290,8 @@ func (s *ProjectService) mapProjectToDto(ctx context.Context, projectsDir string
 			ContainerName:    containerName,
 			Ports:            formatDockerPorts(c.Ports),
 			Health:           health,
+			IconLightURL:     resolvedIcon.IconLightURL,
+			IconDarkURL:      resolvedIcon.IconDarkURL,
 			Labels:           c.Labels,
 			RedeployDisabled: redeployDisabled,
 		})
@@ -4283,6 +4312,8 @@ func (s *ProjectService) mapProjectToDto(ctx context.Context, projectsDir string
 			ContainerName:    s.ContainerName,
 			Ports:            s.Ports,
 			Health:           s.Health,
+			IconLightURL:     s.IconLightURL,
+			IconDarkURL:      s.IconDarkURL,
 			ServiceConfig:    s.ServiceConfig,
 			RedeployDisabled: s.RedeployDisabled,
 		}
@@ -4332,7 +4363,7 @@ func (s *ProjectService) mapProjectToDto(ctx context.Context, projectsDir string
 func (s *ProjectService) getProjectMetadataForProject(ctx context.Context, p models.Project) projects.ArcaneComposeMetadata {
 	composeFile, err := s.resolveProjectComposeFileInternal(ctx, &p)
 	if err != nil {
-		return projects.ArcaneComposeMetadata{ServiceIcons: map[string]string{}}
+		return projects.ArcaneComposeMetadata{ServiceIconSets: map[string]projects.IconSet{}}
 	}
 
 	projectsDirectory, projectsDirErr := s.getProjectsDirectoryInternal(ctx)
@@ -4344,10 +4375,26 @@ func (s *ProjectService) getProjectMetadataForProject(ctx context.Context, p mod
 	meta, err := projects.ParseArcaneComposeMetadata(ctx, composeFile, projectsDirectory, autoInjectEnv)
 	if err != nil {
 		slog.WarnContext(ctx, "failed to parse Arcane compose metadata", "path", composeFile, "error", err)
-		return projects.ArcaneComposeMetadata{ServiceIcons: map[string]string{}}
+		return projects.ArcaneComposeMetadata{ServiceIconSets: map[string]projects.IconSet{}}
 	}
 
 	return meta
+}
+
+func (s *ProjectService) resolveIconSetInternal(ctx context.Context, iconSet iconcatalog.IconSet) iconcatalog.ResolvedIconSet {
+	catalog := iconcatalog.DefaultCatalog
+	if s != nil && s.settingsService != nil {
+		catalog = s.settingsService.GetStringSetting(ctx, "iconCatalog", iconcatalog.DefaultCatalog)
+	}
+	return iconcatalog.Resolve(catalog, iconSet)
+}
+
+func applyResolvedProjectIconInternal(resp *project.Details, icon iconcatalog.ResolvedIconSet) {
+	if resp == nil {
+		return
+	}
+	resp.IconLightURL = icon.IconLightURL
+	resp.IconDarkURL = icon.IconDarkURL
 }
 
 // End Table Functions

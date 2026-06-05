@@ -7,7 +7,7 @@
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { PortBadge } from '$lib/components/badges/index.js';
 	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
-	import { getStatusVariant } from '$lib/utils/docker';
+	import { getStatusVariant, getThemedIconUrl } from '$lib/utils/docker';
 	import { capitalizeFirstLetter } from '$lib/utils/formatting';
 	import type { RuntimeService } from '$lib/types/swarm';
 	import type { ColumnSpec, BulkAction } from '$lib/components/arcane-table';
@@ -18,7 +18,7 @@
 	import { hasPermission } from '$lib/utils/auth';
 	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
 	import IconImage from '$lib/components/icon-image.svelte';
-	import { getArcaneIconUrlFromLabels } from '$lib/utils/docker';
+	import { mode } from 'mode-watcher';
 	import { bulkConfirmAndRun, hasAnyLoadingState } from '$lib/utils/bulk-actions';
 	import { confirmAndRemoveContainer, runContainerLifecycleAction } from '$lib/utils/container-actions';
 	import {
@@ -263,7 +263,7 @@
 
 {#snippet NameCell({ item }: { item: ServiceWithId })}
 	{@const displayName = item.containerName || item.name}
-	{@const iconUrl = item.iconUrl ?? getArcaneIconUrlFromLabels(item.serviceConfig?.labels)}
+	{@const iconUrl = getThemedIconUrl(item, mode.current)}
 	<div class="flex items-center gap-2">
 		<IconImage src={iconUrl} alt={displayName} fallback={BoxIcon} class="size-4" containerClass="size-7" />
 		{#if item.containerId}
@@ -336,7 +336,7 @@
 	<UniversalMobileCard
 		{item}
 		icon={(item) => {
-			const iconUrl = item.iconUrl ?? getArcaneIconUrlFromLabels(item.serviceConfig?.labels);
+			const iconUrl = getThemedIconUrl(item, mode.current);
 			return {
 				component: BoxIcon,
 				variant: item.status === 'running' ? 'emerald' : item.status === 'exited' ? 'red' : 'amber',

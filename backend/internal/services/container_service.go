@@ -22,6 +22,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils/cache"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils/iconcatalog"
 	containertypes "github.com/getarcaneapp/arcane/types/container"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
@@ -41,11 +42,13 @@ type ContainerService struct {
 	projectService  *ProjectService
 	statsHistory    containerstats.Store
 	updateInfoCache *cache.KeyedCache[string, *imagetypes.UpdateInfo]
+	iconMetaCache   *cache.TTL[projects.ArcaneComposeMetadata]
 }
 
 const (
-	containerGroupByProject = "project"
-	containerNoProjectGroup = "No Project"
+	containerGroupByProject  = "project"
+	containerNoProjectGroup  = "No Project"
+	containerIconMetadataTTL = 5 * time.Second
 )
 
 type ContainerListResult struct {
@@ -64,6 +67,7 @@ func NewContainerService(ctx context.Context, db *database.DB, eventService *Eve
 		settingsService: settingsService,
 		projectService:  projectService,
 		updateInfoCache: cache.NewKeyed[string, *imagetypes.UpdateInfo](),
+		iconMetaCache:   cache.NewTTL[projects.ArcaneComposeMetadata](containerIconMetadataTTL),
 	}
 	svc.subscribeUpdateInfoCacheInvalidationInternal(ctx)
 	return svc
@@ -638,6 +642,7 @@ func (s *ContainerService) GetContainerDetails(ctx context.Context, id string) (
 	details := containertypes.NewDetails(containerInspect)
 	currentContainerID, currentContainerErr := dockerutils.GetCurrentContainerID()
 	details.RedeployDisabled = libupdater.ShouldDisableArcaneServerRedeploy(details.Labels, details.ID, currentContainerID, currentContainerErr)
+	s.applyContainerDetailsIconInternal(ctx, &details)
 
 	return details, nil
 }
@@ -902,7 +907,7 @@ func (s *ContainerService) ListContainersPaginated(
 	imageIDs := collectImageIDs(dockerContainers)
 	updateInfoMap := s.getUpdateInfoMap(ctx, imageIDs)
 	currentContainerID, currentContainerErr := dockerutils.GetCurrentContainerID()
-	items := s.buildContainerSummaries(dockerContainers, updateInfoMap, currentContainerID, currentContainerErr)
+	items := s.buildContainerSummaries(ctx, dockerContainers, updateInfoMap, currentContainerID, currentContainerErr)
 
 	config := s.buildContainerPaginationConfig()
 	counts := s.calculateContainerStatusCounts(items)
@@ -1114,17 +1119,100 @@ func (s *ContainerService) getUpdateInfoMap(ctx context.Context, imageIDs []stri
 	return updateInfoMap
 }
 
-func (s *ContainerService) buildContainerSummaries(containers []container.Summary, updateInfoMap map[string]*imagetypes.UpdateInfo, currentContainerID string, currentContainerErr error) []containertypes.Summary {
+func (s *ContainerService) buildContainerSummaries(ctx context.Context, containers []container.Summary, updateInfoMap map[string]*imagetypes.UpdateInfo, currentContainerID string, currentContainerErr error) []containertypes.Summary {
 	items := make([]containertypes.Summary, 0, len(containers))
+	metadataByProject := map[string]projects.ArcaneComposeMetadata{}
 	for _, dc := range containers {
 		summary := containertypes.NewSummary(dc)
 		if info, exists := updateInfoMap[dc.ImageID]; exists {
 			summary.UpdateInfo = info
 		}
 		summary.RedeployDisabled = libupdater.ShouldDisableArcaneServerRedeploy(summary.Labels, summary.ID, currentContainerID, currentContainerErr)
+		s.applyContainerSummaryIconInternal(ctx, &summary, metadataByProject)
 		items = append(items, summary)
 	}
 	return items
+}
+
+func (s *ContainerService) applyContainerSummaryIconInternal(ctx context.Context, summary *containertypes.Summary, metadataByProject map[string]projects.ArcaneComposeMetadata) {
+	if summary == nil {
+		return
+	}
+	resolvedIcon := s.resolveContainerIconInternal(ctx, summary.Labels, metadataByProject)
+	summary.IconLightURL = resolvedIcon.IconLightURL
+	summary.IconDarkURL = resolvedIcon.IconDarkURL
+}
+
+func (s *ContainerService) applyContainerDetailsIconInternal(ctx context.Context, details *containertypes.Details) {
+	if details == nil {
+		return
+	}
+	resolvedIcon := s.resolveContainerIconInternal(ctx, details.Labels, nil)
+	details.IconLightURL = resolvedIcon.IconLightURL
+	details.IconDarkURL = resolvedIcon.IconDarkURL
+}
+
+func (s *ContainerService) resolveContainerIconInternal(ctx context.Context, labels map[string]string, metadataByProject map[string]projects.ArcaneComposeMetadata) iconcatalog.ResolvedIconSet {
+	explicitIcon := projects.FindArcaneIconSet(labels)
+	if iconSetHasBothVariantsInternal(explicitIcon) {
+		return s.resolveIconSetInternal(ctx, explicitIcon)
+	}
+
+	projectName := dockerutils.ComposeProjectLabel(labels)
+	if projectName == "" || s == nil || s.projectService == nil {
+		return s.resolveIconSetInternal(ctx, explicitIcon)
+	}
+
+	meta := s.getCachedProjectIconMetadataInternal(ctx, projectName, metadataByProject)
+
+	serviceName := dockerutils.ComposeServiceLabel(labels)
+	return s.resolveIconSetInternal(ctx, iconcatalog.FirstNonEmpty(
+		explicitIcon,
+		meta.ServiceIconSets[serviceName],
+		meta.ProjectIcon,
+	))
+}
+
+func iconSetHasBothVariantsInternal(iconSet iconcatalog.IconSet) bool {
+	return strings.TrimSpace(iconSet.Light) != "" && strings.TrimSpace(iconSet.Dark) != ""
+}
+
+func (s *ContainerService) getCachedProjectIconMetadataInternal(ctx context.Context, projectName string, metadataByProject map[string]projects.ArcaneComposeMetadata) projects.ArcaneComposeMetadata {
+	if metadataByProject != nil {
+		if meta, ok := metadataByProject[projectName]; ok {
+			return meta
+		}
+	}
+
+	if s.iconMetaCache != nil {
+		if meta, ok := s.iconMetaCache.Get(projectName); ok {
+			if metadataByProject != nil {
+				metadataByProject[projectName] = meta
+			}
+			return meta
+		}
+	}
+
+	meta := projects.ArcaneComposeMetadata{ServiceIconSets: map[string]projects.IconSet{}}
+	proj, err := s.projectService.GetProjectByComposeName(ctx, projectName)
+	if err == nil && proj != nil {
+		meta = s.projectService.getProjectMetadataForProject(ctx, *proj)
+	}
+	if s.iconMetaCache != nil {
+		s.iconMetaCache.Put(projectName, meta)
+	}
+	if metadataByProject != nil {
+		metadataByProject[projectName] = meta
+	}
+	return meta
+}
+
+func (s *ContainerService) resolveIconSetInternal(ctx context.Context, iconSet iconcatalog.IconSet) iconcatalog.ResolvedIconSet {
+	catalog := iconcatalog.DefaultCatalog
+	if s != nil && s.settingsService != nil {
+		catalog = s.settingsService.GetStringSetting(ctx, "iconCatalog", iconcatalog.DefaultCatalog)
+	}
+	return iconcatalog.Resolve(catalog, iconSet)
 }
 
 func (s *ContainerService) buildContainerPaginationConfig() pagination.Config[containertypes.Summary] {

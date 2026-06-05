@@ -22,13 +22,14 @@
 	import ImageUpdateItem from '$lib/components/image-update-item.svelte';
 	import { PersistedState } from 'runed';
 	import { onMount } from 'svelte';
+	import { mode } from 'mode-watcher';
 	import { ContainerStatsManager } from './components/container-stats-manager.svelte';
 	import ContainerStatsSync from './components/container-stats-sync.svelte';
 	import ContainerStatsCell from './components/container-stats-cell.svelte';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { hasPermission } from '$lib/utils/auth';
 	import IconImage from '$lib/components/icon-image.svelte';
-	import { getArcaneIconUrlFromLabels, getContainerIpAddresses } from '$lib/utils/docker';
+	import { getContainerIpAddresses, getThemedIconUrl } from '$lib/utils/docker';
 	import { hasAnyLoadingState } from '$lib/utils/bulk-actions';
 	import { createContainerActions } from './container-table.actions';
 	import {
@@ -373,7 +374,7 @@
 
 {#snippet NameCell({ item }: { item: ContainerSummaryDto })}
 	{@const displayName = getContainerDisplayName(item)}
-	{@const iconUrl = getArcaneIconUrlFromLabels(item.labels)}
+	{@const iconUrl = getThemedIconUrl(item, mode.current)}
 	<div class="flex items-center gap-2">
 		<IconImage src={iconUrl} alt={displayName} fallback={BoxIcon} class="size-4" containerClass="size-7" />
 		<a class="font-medium hover:underline" href="/containers/{item.id}">{displayName}</a>
@@ -478,7 +479,7 @@
 	<UniversalMobileCard
 		{item}
 		icon={(item) => {
-			const iconUrl = getArcaneIconUrlFromLabels(item.labels);
+			const iconUrl = getThemedIconUrl(item, mode.current);
 			const state = item.state;
 			return {
 				component: BoxIcon,

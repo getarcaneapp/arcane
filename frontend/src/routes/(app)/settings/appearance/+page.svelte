@@ -11,6 +11,7 @@
 	import { createSettingsForm } from '$lib/utils/settings-form';
 	import SettingsRow from '$lib/components/settings/settings-row.svelte';
 	import LocalePicker from '$lib/components/locale-picker.svelte';
+	import SelectWithLabel from '$lib/components/form/select-with-label.svelte';
 	import AccentColorPicker from '$lib/components/accent-color/accent-color-picker.svelte';
 	import ApplicationThemePicker from '$lib/components/application-theme/application-theme-picker.svelte';
 	import { applyAccentColor } from '$lib/utils/theme';
@@ -26,6 +27,7 @@
 
 	const formSchema = z.object({
 		applicationTheme: z.enum(APPLICATION_THEME_VALUES),
+		iconCatalog: z.enum(['selfhst', 'dashboard-icons']),
 		mobileNavigationMode: z.enum(['floating', 'docked']),
 		mobileNavigationShowLabels: z.boolean(),
 		sidebarHoverExpansion: z.boolean(),
@@ -103,6 +105,14 @@
 	);
 	const isDarkMode = $derived(mode.current === 'dark');
 	const isDefaultApplicationTheme = $derived($formInputs.applicationTheme.value === 'default');
+	const iconCatalogOptions = $derived([
+		{ value: 'selfhst', label: m.icon_catalog_selfhst(), description: m.icon_catalog_selfhst_description() },
+		{
+			value: 'dashboard-icons',
+			label: m.icon_catalog_dashboard_icons(),
+			description: m.icon_catalog_dashboard_icons_description()
+		}
+	]);
 
 	function handleOledModeChange(checked: boolean) {
 		$formInputs.oledMode.value = checked;
@@ -147,6 +157,18 @@
 							previousColor={currentSettings.accentColor}
 							bind:selectedColor={$formInputs.accentColor.value}
 							disabled={isReadOnly}
+						/>
+					</SettingsRow>
+
+					<!-- Icon Catalog -->
+					<SettingsRow label={m.icon_catalog()} description={m.icon_catalog_description()}>
+						<SelectWithLabel
+							id="iconCatalog"
+							label={m.icon_catalog()}
+							bind:value={$formInputs.iconCatalog.value}
+							error={$formInputs.iconCatalog.error}
+							disabled={isReadOnly}
+							options={iconCatalogOptions}
 						/>
 					</SettingsRow>
 
