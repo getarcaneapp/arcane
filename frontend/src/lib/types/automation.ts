@@ -13,6 +13,7 @@ export interface AutoUpdateCheck {
 export interface AutoUpdateResult {
 	checked: number;
 	updated: number;
+	restarted?: number;
 	skipped: number;
 	failed: number;
 	items: AutoUpdateResourceResult[];
@@ -24,7 +25,7 @@ export interface AutoUpdateResourceResult {
 	resourceId: string;
 	resourceName: string;
 	resourceType: AutoUpdateResourceType;
-	status: 'checked' | 'up_to_date' | 'update_available' | 'updated' | 'failed' | 'skipped';
+	status: 'checked' | 'up_to_date' | 'update_available' | 'updated' | 'restarted' | 'failed' | 'skipped';
 	updateAvailable: boolean;
 	updateApplied: boolean;
 	oldImages?: Record<string, string>;

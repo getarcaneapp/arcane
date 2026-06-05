@@ -1,5 +1,22 @@
 package updater
 
+const (
+	// StatusChecked indicates a resource was checked.
+	StatusChecked = "checked"
+	// StatusUpdated indicates a resource was updated.
+	StatusUpdated = "updated"
+	// StatusRestarted indicates a resource was restarted because a dependency changed.
+	StatusRestarted = "restarted"
+	// StatusSkipped indicates a resource was skipped.
+	StatusSkipped = "skipped"
+	// StatusFailed indicates a resource failed to update.
+	StatusFailed = "failed"
+	// StatusUpToDate indicates a resource is already up to date.
+	StatusUpToDate = "up_to_date"
+	// StatusUpdateAvailable indicates an update is available.
+	StatusUpdateAvailable = "update_available"
+)
+
 type Options struct {
 	// Type filters updates by resource type ("image" | "container" | "project")
 	Type string `json:"type,omitempty"`
@@ -31,7 +48,7 @@ type ResourceResult struct {
 	// Required: true
 	ResourceType string `json:"resourceType"`
 
-	// Status is the current status ("checked" | "updated" | "skipped" | "failed" | "up_to_date" | "update_available").
+	// Status is the current status ("checked" | "updated" | "restarted" | "skipped" | "failed" | "up_to_date" | "update_available").
 	//
 	// Required: true
 	Status string `json:"status"`
@@ -83,6 +100,11 @@ type Result struct {
 	//
 	// Required: true
 	Updated int `json:"updated"`
+
+	// Restarted is the number of resources restarted because a dependency changed.
+	//
+	// Required: false
+	Restarted int `json:"restarted,omitempty"`
 
 	// Skipped is the number of resources skipped.
 	//

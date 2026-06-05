@@ -590,7 +590,7 @@ func (s *WebhookService) executeUpdaterWebhookActionInternal(ctx context.Context
 		return nil, ErrWebhookInvalidAction
 	}
 
-	result, err := s.updaterService.ApplyPending(ctx, false)
+	result, err := s.updaterService.ApplyPending(ctx, updater.Options{})
 	if err != nil {
 		return nil, s.wrapWebhookActionErrorInternal(ctx, wh, "updater", actionType, err)
 	}

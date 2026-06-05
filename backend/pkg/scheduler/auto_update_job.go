@@ -5,6 +5,7 @@ import (
 	"log/slog"
 
 	"github.com/getarcaneapp/arcane/backend/internal/services"
+	"github.com/getarcaneapp/arcane/types/updater"
 )
 
 type AutoUpdateJob struct {
@@ -48,7 +49,7 @@ func (j *AutoUpdateJob) Run(ctx context.Context) {
 
 	slog.InfoContext(ctx, "auto-update run started")
 
-	result, err := j.updaterService.ApplyPending(ctx, false)
+	result, err := j.updaterService.ApplyPending(ctx, updater.Options{})
 	if err != nil {
 		slog.ErrorContext(ctx, "auto-update run failed", "err", err)
 		return
@@ -57,6 +58,7 @@ func (j *AutoUpdateJob) Run(ctx context.Context) {
 	slog.InfoContext(ctx, "auto-update run completed",
 		"checked", result.Checked,
 		"updated", result.Updated,
+		"restarted", result.Restarted,
 		"skipped", result.Skipped,
 		"failed", result.Failed,
 	)

@@ -13,6 +13,7 @@ const (
 	AutoUpdateStatusCompleted AutoUpdateStatus = "completed"
 	AutoUpdateStatusFailed    AutoUpdateStatus = "failed"
 	AutoUpdateStatusSkipped   AutoUpdateStatus = "skipped"
+	AutoUpdateStatusRestarted AutoUpdateStatus = "restarted"
 )
 
 type AutoUpdateRecord struct {
