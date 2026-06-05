@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 ARG VERSION="dev"
 ARG REVISION="unknown"
-ARG ARCANE_RUNTIME_BASE_IMAGE=ghcr.io/getarcaneapp/base:trixie
+ARG ARCANE_RUNTIME_BASE_IMAGE=ghcr.io/getarcaneapp/base:distroless
 
 FROM --platform=$BUILDPLATFORM golang:1.26.4-trixie AS agent-builder
 ARG TARGETARCH
