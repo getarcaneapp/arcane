@@ -349,6 +349,74 @@ func TestActivityServiceCancelActivityInternal(t *testing.T) {
 	require.ErrorIs(t, err, gorm.ErrRecordNotFound)
 }
 
+func TestActivityServiceFailStaleImageUpdateChecksInternal(t *testing.T) {
+	ctx := context.Background()
+	db := setupActivityServiceTestDBInternal(t)
+	service := NewActivityService(db)
+
+	staleCheck, err := service.StartActivity(ctx, StartActivityRequest{
+		EnvironmentID: "0",
+		Type:          models.ActivityTypeImageUpdateCheck,
+		LatestMessage: "checking",
+	})
+	require.NoError(t, err)
+	freshCheck, err := service.StartActivity(ctx, StartActivityRequest{
+		EnvironmentID: "0",
+		Type:          models.ActivityTypeImageUpdateCheck,
+		LatestMessage: "checking",
+	})
+	require.NoError(t, err)
+	staleOtherType, err := service.StartActivity(ctx, StartActivityRequest{
+		EnvironmentID: "0",
+		Type:          models.ActivityTypeImagePull,
+		LatestMessage: "pulling",
+	})
+	require.NoError(t, err)
+	completedCheck, err := service.StartActivity(ctx, StartActivityRequest{
+		EnvironmentID: "0",
+		Type:          models.ActivityTypeImageUpdateCheck,
+		LatestMessage: "checking",
+	})
+	require.NoError(t, err)
+	_, err = service.CompleteActivity(ctx, completedCheck.ID, models.ActivityStatusSuccess, "complete", nil)
+	require.NoError(t, err)
+
+	oldStartedAt := time.Now().Add(-7 * time.Hour)
+	for _, id := range []string{staleCheck.ID, staleOtherType.ID, completedCheck.ID} {
+		require.NoError(t, db.Model(&models.Activity{}).Where("id = ?", id).Updates(map[string]any{
+			"started_at": oldStartedAt,
+			"updated_at": oldStartedAt,
+		}).Error)
+	}
+
+	failed, err := service.FailStaleImageUpdateChecks(ctx)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, failed)
+
+	var stale models.Activity
+	require.NoError(t, db.First(&stale, "id = ?", staleCheck.ID).Error)
+	require.Equal(t, models.ActivityStatusFailed, stale.Status)
+	require.NotNil(t, stale.EndedAt)
+	require.NotNil(t, stale.DurationMs)
+	require.Contains(t, stale.LatestMessage, "stale")
+	require.NotNil(t, stale.Error)
+	require.Contains(t, *stale.Error, "stale")
+
+	var fresh models.Activity
+	require.NoError(t, db.First(&fresh, "id = ?", freshCheck.ID).Error)
+	require.Equal(t, models.ActivityStatusRunning, fresh.Status)
+	require.Nil(t, fresh.EndedAt)
+
+	var other models.Activity
+	require.NoError(t, db.First(&other, "id = ?", staleOtherType.ID).Error)
+	require.Equal(t, models.ActivityStatusRunning, other.Status)
+	require.Nil(t, other.EndedAt)
+
+	var completed models.Activity
+	require.NoError(t, db.First(&completed, "id = ?", completedCheck.ID).Error)
+	require.Equal(t, models.ActivityStatusSuccess, completed.Status)
+}
+
 func receiveActivityEventInternal(t *testing.T, events <-chan activitytypes.StreamEvent) activitytypes.StreamEvent {
 	t.Helper()
 
