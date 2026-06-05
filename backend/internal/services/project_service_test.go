@@ -3606,6 +3606,45 @@ func TestProjectService_SyncProjectsFromFileSystem_RemovesDeletedNestedProject(t
 	assert.Empty(t, items)
 }
 
+func TestProjectService_SyncProjectsFromFileSystem_RemovesProjectsBeyondReducedScanMaxDepth(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsRoot := t.TempDir()
+	topLevelPath := createComposeProjectDir(t, projectsRoot, "project1")
+	nestedPath := createComposeProjectDir(t, projectsRoot, filepath.Join("group", "project2"))
+
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+
+	// Initial sync at the default scan depth discovers both the top-level and
+	// the nested project, persisting them to the database.
+	defaultSvc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
+	require.NoError(t, defaultSvc.SyncProjectsFromFileSystem(ctx))
+
+	items, err := defaultSvc.ListAllProjects(ctx)
+	require.NoError(t, err)
+	require.Len(t, items, 2)
+
+	// Lowering the scan depth must prune the nested project from the database on
+	// the next sync, even though its compose file still exists on disk.
+	t.Setenv("PROJECT_SCAN_MAX_DEPTH", "1")
+	depthLimitedSvc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
+	require.NoError(t, depthLimitedSvc.SyncProjectsFromFileSystem(ctx))
+
+	items, err = depthLimitedSvc.ListAllProjects(ctx)
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	assert.Equal(t, "project1", items[0].Name)
+	assert.Equal(t, topLevelPath, items[0].Path)
+
+	// The pruned project's files must remain untouched on disk so raising the
+	// depth again re-discovers it.
+	assert.FileExists(t, filepath.Join(nestedPath, "compose.yaml"))
+}
+
 func TestProjectService_SyncProjectsFromFileSystem_PreservesDBRecordsWhenDirectoryUnreadable(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX permission-denied behavior is not portable to Windows")

@@ -1528,7 +1528,7 @@ func (s *ProjectService) SyncProjectsFromFileSystem(ctx context.Context) error {
 		seen[discoveredProject.Path] = struct{}{}
 	}
 
-	if cerr := s.cleanupDBProjects(ctx, seen, followProjectSymlinks); cerr != nil {
+	if cerr := s.cleanupDBProjectsInternal(ctx, seen, followProjectSymlinks, projectsDir, s.config.ProjectScanMaxDepth); cerr != nil {
 		slog.WarnContext(ctx, "error during DB cleanup of projects", "error", cerr)
 	}
 
@@ -1601,54 +1601,92 @@ func (s *ProjectService) upsertProjectForDir(ctx context.Context, dirName, dirPa
 	return nil
 }
 
-func (s *ProjectService) cleanupDBProjects(ctx context.Context, seen map[string]struct{}, followProjectSymlinks bool) error {
+func (s *ProjectService) cleanupDBProjectsInternal(ctx context.Context, seen map[string]struct{}, followProjectSymlinks bool, projectsDir string, maxDepth int) error {
 	var all []models.Project
 	if err := s.db.WithContext(ctx).Find(&all).Error; err != nil {
 		return fmt.Errorf("list projects for cleanup failed: %w", err)
 	}
 
 	for _, p := range all {
-		// Skip paths seen in this pass
-		if _, ok := seen[p.Path]; ok {
+		if skipProjectCleanupInternal(p, seen) {
 			continue
 		}
-
-		// Skip projects whose lifecycle is owned by the gitops system.
-		// Their compose files may not exist on disk yet (e.g. during a sync
-		// or after an SSH/clone failure) and should never be deleted here.
-		if p.GitOpsManagedBy != nil && strings.TrimSpace(*p.GitOpsManagedBy) != "" {
-			continue
-		}
-
-		validDir, err := projects.IsProjectDirectoryPath(p.Path, followProjectSymlinks)
-		if err != nil {
-			if os.IsNotExist(err) {
-				if derr := s.db.WithContext(ctx).Delete(&models.Project{}, "id = ?", p.ID).Error; derr != nil {
-					slog.WarnContext(ctx, "failed to delete missing-path project", "projectID", p.ID, "error", derr)
-				}
-				continue
-			}
-			slog.WarnContext(ctx, "stat error during cleanup", "path", p.Path, "error", err)
-			continue
-		}
-		if !validDir {
-			if derr := s.db.WithContext(ctx).Delete(&models.Project{}, "id = ?", p.ID).Error; derr != nil {
-				slog.WarnContext(ctx, "failed to delete non-project path", "projectID", p.ID, "path", p.Path, "error", derr)
-			}
-			continue
-		}
-
-		if _, err := s.resolveProjectComposeFileInternal(ctx, &p); err != nil {
-			if _, ok := errors.AsType[*common.ProjectComposeFileNotFoundError](err); !ok {
-				slog.WarnContext(ctx, "failed to validate project compose file during cleanup", "projectID", p.ID, "path", p.Path, "error", err)
-				continue
-			}
-			if derr := s.db.WithContext(ctx).Delete(&models.Project{}, "id = ?", p.ID).Error; derr != nil {
-				slog.WarnContext(ctx, "failed to delete project without compose", "projectID", p.ID, "error", derr)
-			}
-		}
+		s.cleanupUnseenProjectInternal(ctx, p, followProjectSymlinks, projectsDir, maxDepth)
 	}
 	return nil
+}
+
+func skipProjectCleanupInternal(p models.Project, seen map[string]struct{}) bool {
+	// Skip paths seen in this pass.
+	if _, ok := seen[p.Path]; ok {
+		return true
+	}
+
+	// Skip projects whose lifecycle is owned by the gitops system. Their compose
+	// files may not exist on disk yet (e.g. during a sync or after an SSH/clone
+	// failure) and should never be deleted here.
+	return p.GitOpsManagedBy != nil && strings.TrimSpace(*p.GitOpsManagedBy) != ""
+}
+
+func (s *ProjectService) cleanupUnseenProjectInternal(ctx context.Context, p models.Project, followProjectSymlinks bool, projectsDir string, maxDepth int) {
+	if s.projectExceedsScanDepthInternal(p, projectsDir, maxDepth) {
+		s.deleteProjectDuringCleanupInternal(ctx, p, "failed to delete project beyond configured scan depth", "path", p.Path)
+		return
+	}
+
+	validDir, err := projects.IsProjectDirectoryPath(p.Path, followProjectSymlinks)
+	if err != nil {
+		s.cleanupProjectPathErrorInternal(ctx, p, err)
+		return
+	}
+	if !validDir {
+		s.deleteProjectDuringCleanupInternal(ctx, p, "failed to delete non-project path", "path", p.Path)
+		return
+	}
+
+	s.cleanupProjectComposeFileInternal(ctx, p)
+}
+
+func (s *ProjectService) projectExceedsScanDepthInternal(p models.Project, projectsDir string, maxDepth int) bool {
+	// Remove projects that still exist on disk but now fall outside the configured
+	// scan depth (e.g. after PROJECT_SCAN_MAX_DEPTH was lowered). They are no
+	// longer discovered, so they must not linger in the list. Projects at the
+	// projects root or outside it (relativePath == "") are left to the on-disk
+	// validation below.
+	if maxDepth <= 0 {
+		return false
+	}
+
+	rel := s.getProjectRelativePathInternal(projectsDir, p.Path)
+	return rel != "" && strings.Count(rel, "/")+1 > maxDepth
+}
+
+func (s *ProjectService) cleanupProjectPathErrorInternal(ctx context.Context, p models.Project, err error) {
+	if os.IsNotExist(err) {
+		s.deleteProjectDuringCleanupInternal(ctx, p, "failed to delete missing-path project")
+		return
+	}
+
+	slog.WarnContext(ctx, "stat error during cleanup", "path", p.Path, "error", err)
+}
+
+func (s *ProjectService) cleanupProjectComposeFileInternal(ctx context.Context, p models.Project) {
+	if _, err := s.resolveProjectComposeFileInternal(ctx, &p); err != nil {
+		if _, ok := errors.AsType[*common.ProjectComposeFileNotFoundError](err); !ok {
+			slog.WarnContext(ctx, "failed to validate project compose file during cleanup", "projectID", p.ID, "path", p.Path, "error", err)
+			return
+		}
+		s.deleteProjectDuringCleanupInternal(ctx, p, "failed to delete project without compose")
+	}
+}
+
+func (s *ProjectService) deleteProjectDuringCleanupInternal(ctx context.Context, p models.Project, failureMessage string, attrs ...any) {
+	if derr := s.db.WithContext(ctx).Delete(&models.Project{}, "id = ?", p.ID).Error; derr != nil {
+		logAttrs := make([]any, 0, 4+len(attrs))
+		logAttrs = append(logAttrs, "projectID", p.ID, "error", derr)
+		logAttrs = append(logAttrs, attrs...)
+		slog.WarnContext(ctx, failureMessage, logAttrs...)
+	}
 }
 
 func (s *ProjectService) ListAllProjects(ctx context.Context) ([]models.Project, error) {

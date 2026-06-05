@@ -676,6 +676,8 @@ test.describe('New Compose Project Page', () => {
 			.toBe('running');
 
 		expect(projectPullRequestCount).toBe(0);
+		await page.reload();
+		await page.waitForLoadState('load');
 		await expect(page.getByText('Running', { exact: true }).first()).toBeVisible({
 			timeout: 20000
 		});
