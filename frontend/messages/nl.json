@@ -1177,7 +1177,7 @@
 	"projects_bulk_up": "Omhoog ({count})",
 	"projects_bulk_down": "Gestopt ({count})",
 	"projects_bulk_redeploy": "Herimplementeren ({count})",
-	"projects_bulk_archive": "Archief ({count})",
+	"projects_bulk_archive": "Archiveer ({count})",
 	"projects_bulk_archive_confirm_title": "Archiveer {count} project(en)",
 	"projects_bulk_archive_confirm_message": "Weet je zeker dat je {count} project(en) wilt archiveren? Gearchiveerde projecten moeten al gestopt zijn.",
 	"projects_bulk_archive_success": "{count} project(en) succesvol gearchiveerd",
