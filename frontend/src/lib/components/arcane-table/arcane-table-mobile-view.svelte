@@ -6,7 +6,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { cn } from '$lib/utils';
 	import type { Snippet, Component } from 'svelte';
-	import type { GroupedData } from './arcane-table.types.svelte.ts';
+	import { getTableRowsForItems, shouldIgnoreTableRowClick, type GroupedData } from './arcane-table.types.svelte';
 	import { slide } from 'svelte/transition';
 
 	void slide;
@@ -35,20 +35,9 @@
 
 	const hasExpand = $derived(!!expandedRowContent);
 
-	function shouldIgnoreRowClick(event: MouseEvent): boolean {
-		const target = event.target as HTMLElement | null;
-		return !!target?.closest('a, button, input, [role="checkbox"], [data-slot="checkbox"], [data-row-select-ignore]');
-	}
-
 	function handleRowClick(event: MouseEvent, rowId: string) {
-		if (shouldIgnoreRowClick(event)) return;
+		if (shouldIgnoreTableRowClick(event)) return;
 		if (hasExpand) onToggleRowExpanded?.(rowId);
-	}
-
-	// Get rows for a specific group from the table model
-	function getRowsForGroup(groupItems: any[]) {
-		const groupIds = new Set(groupItems.map((item) => item.id));
-		return table.getRowModel().rows.filter((row) => groupIds.has((row.original as any).id));
 	}
 
 	// Check if we should render grouped view
@@ -59,7 +48,7 @@
 	{#if isGrouped && groupedRows}
 		<div class="space-y-4 py-2">
 			{#each groupedRows as group (group.groupName)}
-				{@const groupRows = getRowsForGroup(group.items)}
+				{@const groupRows = getTableRowsForItems(table, group.items)}
 				{@const IconComponent = groupIcon?.(group.groupName)}
 
 				<DropdownCard

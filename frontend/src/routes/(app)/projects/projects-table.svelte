@@ -20,6 +20,7 @@
 	import { FolderOpenIcon, LayersIcon, CalendarIcon, ProjectsIcon, GitBranchIcon, RefreshIcon } from '$lib/icons';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { hasPermission } from '$lib/utils/auth';
+	import { hasAnyLoadingState } from '$lib/utils/bulk-actions';
 	import IfPermitted from '$lib/components/if-permitted.svelte';
 	import IconImage from '$lib/components/icon-image.svelte';
 	import type { ActionStatus } from './projects-table.helpers';
@@ -134,9 +135,7 @@
 		getEnvId: () => envId
 	});
 
-	const isAnyLoading = $derived(
-		Object.values(actionStatus).some((status) => status !== '') || Object.values(isBulkLoading).some((loading) => loading)
-	);
+	const isAnyLoading = $derived(hasAnyLoadingState(actionStatus, isBulkLoading));
 	const selectedProjects = $derived.by(() => (projects?.data ?? []).filter((project) => selectedIds?.includes(project.id)));
 	const hasRedeployDisabledSelection = $derived.by(() => selectedProjects.some((project) => project.redeployDisabled));
 	const hasArchivedSelection = $derived.by(() => selectedProjects.some((project) => project.isArchived));

@@ -7,7 +7,7 @@
 	import { Label } from '$lib/components/ui/label';
 	import { ActivityIcon } from '$lib/icons';
 	import TextInputWithLabel from '$lib/components/form/text-input-with-label.svelte';
-	import { createSettingsForm } from '$lib/utils/settings';
+	import { createSettingsForm } from '$lib/utils/settings-form';
 
 	let { data } = $props();
 

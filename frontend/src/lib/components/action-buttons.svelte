@@ -17,6 +17,7 @@
 	import { EllipsisIcon } from '$lib/icons';
 	import { createMutation } from '@tanstack/svelte-query';
 	import { hasPermission } from '$lib/utils/auth';
+	import { isDepotBuildAvailable } from '$lib/utils/build-provider';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 
 	type TargetType = 'container' | 'project';
@@ -193,11 +194,7 @@
 	const canPull = $derived(type === 'project' && hasPermission('projects:deploy', currentEnvId));
 	const canBuild = $derived(type === 'project' && hasPermission('projects:deploy', currentEnvId));
 	const deployButtonLabel = $derived(projectHasBuildDirective ? m.compose_build_and_deploy() : m.common_up());
-	const depotAvailable = $derived.by(() => {
-		const projectId = ($settingsStore?.depotProjectId ?? '').trim();
-		const token = ($settingsStore?.depotToken ?? '').trim();
-		return Boolean($settingsStore?.depotConfigured) || (Boolean(projectId) && Boolean(token));
-	});
+	const depotAvailable = $derived(isDepotBuildAvailable($settingsStore));
 	const projectBuildProvider = $derived.by<'local' | 'depot'>(() => {
 		const configuredProvider = ($settingsStore?.buildProvider as 'local' | 'depot') ?? 'local';
 		if (configuredProvider === 'depot' && !depotAvailable) {

@@ -9,10 +9,16 @@
 	import { createForm, preventDefault } from '$lib/utils/settings';
 	import { tryCatch } from '$lib/utils/api';
 	import { toast } from 'svelte-sonner';
-	import { z } from 'zod/v4';
 	import CodePanel from '../../../projects/components/CodePanel.svelte';
 	import EditableName from '../../../projects/components/EditableName.svelte';
 	import { ComposeEditorSplit } from '$lib/components/compose';
+	import { globalVariablesToMap } from '$lib/utils/template-load';
+	import {
+		createNamedTemplateSchema,
+		getTemplateEditorValidationState,
+		hasTemplateEditorErrors,
+		validateTemplateEditorForm
+	} from '$lib/utils/template-editor';
 
 	let { data } = $props();
 
@@ -23,16 +29,9 @@
 	let envValidationReady = $state(false);
 	let nameInputRef = $state<HTMLInputElement | null>(null);
 
-	const globalVariableMap = $derived.by(() =>
-		Object.fromEntries((data.globalVariables ?? []).map((item) => [item.key, item.value]))
-	);
+	const globalVariableMap = $derived(globalVariablesToMap(data.globalVariables));
 
-	const formSchema = z.object({
-		name: z.string().min(1, m.templates_template_name_required()),
-		description: z.string().optional().default(''),
-		composeContent: z.string().min(1, m.templates_content_required()),
-		envContent: z.string().optional().default('')
-	});
+	const formSchema = createNamedTemplateSchema();
 
 	const initialValues = {
 		name: '',
@@ -43,20 +42,19 @@
 
 	const { inputs, ...form } = createForm<typeof formSchema>(formSchema, initialValues);
 
-	const hasEditorErrors = $derived(!composeValidationReady || !envValidationReady || composeHasErrors || envHasErrors);
+	const hasEditorErrors = $derived(
+		hasTemplateEditorErrors(
+			getTemplateEditorValidationState(composeValidationReady, envValidationReady, composeHasErrors, envHasErrors)
+		)
+	);
 	const canCreate = $derived(!!$inputs.name.value && !!$inputs.composeContent.value && !hasEditorErrors && !saving);
 
 	async function handleCreate() {
-		if (hasEditorErrors) {
-			toast.error(m.templates_validation_error());
-			return;
-		}
-
-		const validated = form.validate();
-		if (!validated) {
-			toast.error(m.templates_validation_error());
-			return;
-		}
+		const validated = validateTemplateEditorForm(
+			getTemplateEditorValidationState(composeValidationReady, envValidationReady, composeHasErrors, envHasErrors),
+			form.validate
+		);
+		if (!validated) return;
 
 		handleApiResultWithCallbacks({
 			result: await tryCatch(

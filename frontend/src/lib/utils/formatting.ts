@@ -10,11 +10,6 @@ export function capitalizeFirstLetter(string: string): string {
 	return string.charAt(0).toUpperCase() + string.slice(1);
 }
 
-export function shortId(id: string | undefined, length = 12): string {
-	if (!id) return 'N/A';
-	return id.substring(0, length);
-}
-
 export function truncateString(str: string | undefined, maxLength: number): string {
 	if (!str) return '';
 	if (str.length <= maxLength) {
@@ -75,7 +70,7 @@ function bytesImpl(value: BytesValue, options?: BytesFormatOptions): string | nu
 	return null;
 }
 
-export function formatBytes(value: number, options?: BytesFormatOptions): string | null {
+function formatBytes(value: number, options?: BytesFormatOptions): string | null {
 	if (!Number.isFinite(value)) {
 		return null;
 	}
@@ -122,7 +117,7 @@ export function formatBytes(value: number, options?: BytesFormatOptions): string
 	return str + unitSeparator + unit;
 }
 
-export function parseBytes(val: string | number): number | null {
+function parseBytes(val: string | number): number | null {
 	if (typeof val === 'number' && !Number.isNaN(val)) {
 		return val;
 	}
@@ -176,6 +171,19 @@ export function formatDateTimeShort(date: Date | string | null | undefined): str
 	const d = typeof date === 'string' ? new Date(date) : date;
 	if (isNaN(d.getTime())) return '';
 	return formatDate(d, 'PPp');
+}
+
+export function formatOptionalDateTime(date: Date | string | null | undefined, fallback = '-'): string {
+	if (!date) return fallback;
+	const d = typeof date === 'string' ? new Date(date) : date;
+	if (isNaN(d.getTime())) return fallback;
+	return d.toLocaleString();
+}
+
+export function isPastDate(date: Date | string | null | undefined): boolean {
+	if (!date) return false;
+	const d = typeof date === 'string' ? new Date(date) : date;
+	return !isNaN(d.getTime()) && d < new Date();
 }
 
 export function formatTime(date: Date | string | null | undefined): string {
@@ -252,7 +260,7 @@ const ANSI_ESCAPE_SEQUENCE = /\x1B\[[0-?]*[ -/]*[@-~]/g;
 const ANSI_OSC_SEQUENCE = /\x1B\][^\x07]*(?:\x07|\x1B\\)/g;
 const LOOSE_ANSI_MARKER_SEQUENCE = /\[(?:\d{1,3}(?:;\d{1,3})*)m/g;
 
-export function stripAnsi(input: string): string {
+function stripAnsi(input: string): string {
 	return input.replace(ANSI_ESCAPE_SEQUENCE, '').replace(ANSI_OSC_SEQUENCE, '').replace(LOOSE_ANSI_MARKER_SEQUENCE, '');
 }
 

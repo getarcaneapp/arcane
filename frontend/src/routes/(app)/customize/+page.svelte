@@ -8,10 +8,12 @@
 	import { customizeSearchService } from '$lib/services/customize-search';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import type { CustomizeCategory } from '$lib/types/shared';
-	import { debounced } from '$lib/utils/ws';
 	import { canReachAccessSurfaceUrl } from '$lib/utils/access-policy';
 	import * as InputGroup from '$lib/components/ui/input-group/index.js';
 	import { getCustomizeSubpageUrlsInNavOrder } from '$lib/config/navigation-config';
+	import { useCategorySearch } from '$lib/hooks/use-category-search.svelte';
+	import { getCategoryIcon, orderCategoriesByNav } from '$lib/utils/category-page';
+	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import {
 		SearchIcon,
 		TemplateIcon,
@@ -20,19 +22,20 @@
 		RegistryIcon,
 		VariableIcon,
 		CustomizeIcon,
-		GitBranchIcon
+		GitBranchIcon,
+		CloseIcon
 	} from '$lib/icons';
 	import HeaderCard from '$lib/components/header-card.svelte';
 
 	let { data }: PageProps = $props();
-	let searchQuery = $state('');
-	let showSearchResults = $state(false);
-	let searchResults = $state<CustomizeCategory[]>([]);
-	let isSearching = $state(false);
 	let customizeCategories = $state<CustomizeCategory[]>([]);
-	let currentSearchRequest = $state(0);
 	const user = $derived(data.user);
 	const permissionsManifest = $derived(data.permissionsManifest);
+	const categorySearch = useCategorySearch<CustomizeCategory>({
+		search: (query) => customizeSearchService.search(query),
+		filter: isAccessibleCategory,
+		onError: (error) => console.error('Search failed:', error)
+	});
 
 	const iconMap: Record<string, any> = {
 		'file-text': FileTextIcon,
@@ -49,74 +52,21 @@
 
 	onMount(async () => {
 		try {
-			customizeCategories = orderCategoriesByNav((await customizeSearchService.getCategories()).filter(isAccessibleCategory));
+			customizeCategories = orderCategoriesByNav(
+				(await customizeSearchService.getCategories()).filter(isAccessibleCategory),
+				getCustomizeSubpageUrlsInNavOrder()
+			);
 		} catch (error) {
 			console.error('Failed to load categories:', error);
 		}
 	});
 
-	function orderCategoriesByNav(categories: CustomizeCategory[]) {
-		const navUrls = getCustomizeSubpageUrlsInNavOrder();
-		const categoriesByUrl = new Map(categories.map((category) => [category.url, category]));
-		const orderedCategories = navUrls
-			.map((url) => categoriesByUrl.get(url))
-			.filter((category): category is CustomizeCategory => Boolean(category));
-		const unmatchedCategories = categories
-			.filter((category) => !navUrls.includes(category.url))
-			.sort((a, b) => a.title.localeCompare(b.title));
-
-		return [...orderedCategories, ...unmatchedCategories];
-	}
-
-	async function performSearch(query: string) {
-		const trimmedQuery = query.trim();
-
-		if (!trimmedQuery) {
-			searchResults = [];
-			showSearchResults = false;
-			isSearching = false;
-			currentSearchRequest++;
-			return;
-		}
-
-		currentSearchRequest++;
-		const requestId = currentSearchRequest;
-		isSearching = true;
-		showSearchResults = true;
-
-		try {
-			const response = await customizeSearchService.search(trimmedQuery);
-			if (requestId === currentSearchRequest) {
-				searchResults = (response.results || []).filter(isAccessibleCategory);
-				isSearching = false;
-			}
-		} catch (error) {
-			console.error('Search failed:', error);
-			if (requestId === currentSearchRequest) {
-				searchResults = [];
-				isSearching = false;
-			}
-		}
-	}
-
-	const debouncedSearch = debounced((query: string) => {
-		void performSearch(query);
-	}, 300);
-
 	function navigateToCategory(categoryUrl: string) {
 		goto(categoryUrl);
 	}
 
-	function clearSearch() {
-		searchQuery = '';
-		showSearchResults = false;
-		isSearching = false;
-		searchResults = [];
-		currentSearchRequest++;
-	}
-
 	function getIconComponent(iconName: string) {
-		return iconMap[iconName] || CustomizeIcon;
+		return getCategoryIcon(iconMap, iconName, CustomizeIcon);
 	}
 </script>
 
@@ -143,20 +93,29 @@
 			<InputGroup.Root>
 				<InputGroup.Input
 					placeholder={m.customize_search_placeholder()}
-					value={searchQuery}
+					value={categorySearch.searchQuery}
 					oninput={(e) => {
-						searchQuery = e.currentTarget.value;
-						debouncedSearch(e.currentTarget.value);
+						categorySearch.searchQuery = e.currentTarget.value;
+						categorySearch.debouncedSearch(e.currentTarget.value);
 					}}
 					onkeydown={(e) => {
 						if (e.key === 'Enter') {
-							performSearch((e.currentTarget as HTMLInputElement).value);
+							categorySearch.performSearch((e.currentTarget as HTMLInputElement).value);
 						}
 					}}
 				/>
 				<InputGroup.Addon>
-					{#if showSearchResults}
-						<ArcaneButton action="base" tone="ghost" size="icon" onclick={clearSearch} class="size-6 p-0">×</ArcaneButton>
+					{#if categorySearch.showSearchResults}
+						<ArcaneButton
+							action="base"
+							tone="ghost"
+							size="sm"
+							onclick={categorySearch.clearSearch}
+							class="h-6 w-6 p-0"
+							icon={CloseIcon}
+							showLabel={false}
+							customLabel={m.customize_clear_search()}
+						/>
 					{:else}
 						<SearchIcon class="size-4" />
 					{/if}
@@ -165,7 +124,7 @@
 		</div>
 	</HeaderCard>
 
-	{#if !showSearchResults}
+	{#if !categorySearch.showSearchResults}
 		<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 xl:grid-cols-3">
 			{#each customizeCategories as category (category.id)}
 				{@const Icon = getIconComponent(category.icon)}
@@ -193,19 +152,17 @@
 		<div class="space-y-6 sm:space-y-8">
 			<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
 				<h2 class="text-base font-semibold sm:text-lg">
-					{m.customize_search_results({ query: searchQuery })} ({searchResults.length}
-					{searchResults.length === 1 ? m.customize_result() : m.customize_results()})
+					{m.customize_search_results({ query: categorySearch.searchQuery })} ({categorySearch.searchResults.length}
+					{categorySearch.searchResults.length === 1 ? m.customize_result() : m.customize_results()})
 				</h2>
 			</div>
 
-			{#if isSearching}
+			{#if categorySearch.isSearching}
 				<div class="py-8 text-center sm:py-12">
-					<div
-						class="border-primary mx-auto mb-3 size-8 animate-spin rounded-full border-4 border-t-transparent sm:mb-4 sm:size-12"
-					></div>
-					<p class="text-muted-foreground text-sm sm:text-base">Searching...</p>
+					<Spinner class="text-primary mx-auto mb-3 size-8 sm:mb-4 sm:size-12" />
+					<p class="text-muted-foreground text-sm sm:text-base">{m.customize_searching()}</p>
 				</div>
-			{:else if searchResults.length === 0}
+			{:else if categorySearch.searchResults.length === 0}
 				<div class="py-8 text-center sm:py-12">
 					<SearchIcon class="text-muted-foreground mx-auto mb-3 size-8 sm:mb-4 sm:size-12" />
 					<h3 class="mb-2 text-base font-medium sm:text-lg">{m.customize_no_options()}</h3>
@@ -213,7 +170,7 @@
 				</div>
 			{:else}
 				<div class="space-y-4 sm:space-y-6">
-					{#each searchResults as result (result.id)}
+					{#each categorySearch.searchResults as result (result.id)}
 						{@const Icon = getIconComponent(result.icon)}
 						<div class="bg-background/40 rounded-lg border shadow-sm">
 							<div class="border-b p-4 sm:p-6">

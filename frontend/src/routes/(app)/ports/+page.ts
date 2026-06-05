@@ -1,25 +1,18 @@
 import { portService } from '$lib/services/port-service';
 import { queryKeys } from '$lib/query/query-keys';
-import type { SearchPaginationSortRequest } from '$lib/types/shared';
-import { resolveInitialTableRequest } from '$lib/utils/tables';
+import { resolveListPageLoadContext } from '$lib/utils/tables';
 import { throwPageLoadError } from '$lib/utils/api';
 import type { PageLoad } from './$types';
-import { environmentStore } from '$lib/stores/environment.store.svelte';
 
 export const load: PageLoad = async ({ parent }) => {
-	const { queryClient } = await parent();
-	const envId = await environmentStore.getCurrentEnvironmentId();
-
-	const portRequestOptions = resolveInitialTableRequest('arcane-ports-table', {
-		pagination: {
-			page: 1,
-			limit: 20
-		},
-		sort: {
-			column: 'hostPort',
-			direction: 'asc'
-		}
-	} satisfies SearchPaginationSortRequest);
+	const {
+		queryClient,
+		envId,
+		requestOptions: portRequestOptions
+	} = await resolveListPageLoadContext(parent, 'arcane-ports-table', {
+		column: 'hostPort',
+		direction: 'asc'
+	});
 
 	let ports;
 	try {

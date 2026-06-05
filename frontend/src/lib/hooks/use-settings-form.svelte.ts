@@ -55,7 +55,7 @@ export class UseSettingsForm<
 			// Sync to external context (side effect)
 			if (this.formState) {
 				this.formState.hasChanges = this.hasChanges;
-				this.formState.isLoading = this.#isLoading;
+				this.formState.isLoading = this.isLoading;
 				if (this.#saveFunction) this.formState.saveFunction = this.#saveFunction;
 				if (this.#resetFunction) this.formState.resetFunction = this.#resetFunction;
 			}

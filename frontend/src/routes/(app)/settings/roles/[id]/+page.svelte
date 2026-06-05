@@ -3,12 +3,10 @@
 	import { goto } from '$app/navigation';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api';
 	import { tryCatch } from '$lib/utils/api';
-	import RoleEditor from '$lib/components/role-editor/role-editor.svelte';
 	import type { UpdateRole, CreateRole } from '$lib/types/auth';
 	import { m } from '$lib/paraglide/messages';
 	import { roleService } from '$lib/services/role-service';
-	import { SettingsPageLayout } from '$lib/layouts/index.js';
-	import { ShieldAlertIcon } from '$lib/icons';
+	import RoleEditorPage from '../role-editor-page.svelte';
 
 	let { data } = $props();
 
@@ -49,8 +47,11 @@
 	}
 </script>
 
-<SettingsPageLayout title={m.roles_edit_title()} description={m.roles_subtitle()} icon={ShieldAlertIcon} pageType="form">
-	{#snippet mainContent()}
-		<RoleEditor role={data.role} manifest={data.permissionsManifest} {isLoading} onSubmit={handleSubmit} onClone={handleClone} />
-	{/snippet}
-</SettingsPageLayout>
+<RoleEditorPage
+	title={m.roles_edit_title()}
+	role={data.role}
+	manifest={data.permissionsManifest}
+	{isLoading}
+	onSubmit={handleSubmit}
+	onClone={handleClone}
+/>

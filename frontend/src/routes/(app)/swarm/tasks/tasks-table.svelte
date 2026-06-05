@@ -8,6 +8,7 @@
 	import type { SwarmTaskSummary } from '$lib/types/swarm';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { getSwarmTaskIconVariant, getSwarmTaskStateVariant } from '$lib/utils/swarm-tasks';
 
 	let {
 		tasks = $bindable(),
@@ -20,20 +21,6 @@
 		fetchTasks?: (options: SearchPaginationSortRequest) => Promise<Paginated<SwarmTaskSummary>>;
 		persistKey?: string;
 	} = $props();
-
-	function stateVariant(state: string): 'green' | 'amber' | 'red' | 'gray' {
-		if (state === 'running') return 'green';
-		if (state === 'pending' || state === 'starting') return 'amber';
-		if (state === 'failed' || state === 'rejected' || state === 'shutdown') return 'red';
-		return 'gray';
-	}
-
-	function iconVariant(state: string): 'emerald' | 'amber' | 'red' | 'gray' {
-		if (state === 'running') return 'emerald';
-		if (state === 'pending' || state === 'starting') return 'amber';
-		if (state === 'failed' || state === 'rejected' || state === 'shutdown') return 'red';
-		return 'gray';
-	}
 
 	const columns = [
 		{ accessorKey: 'id', title: m.common_id(), hidden: true },
@@ -55,11 +42,11 @@
 </script>
 
 {#snippet StateCell({ value }: { value: unknown })}
-	<StatusBadge text={String(value ?? m.common_unknown())} variant={stateVariant(String(value ?? ''))} />
+	<StatusBadge text={String(value ?? m.common_unknown())} variant={getSwarmTaskStateVariant(String(value ?? ''))} />
 {/snippet}
 
 {#snippet DesiredStateCell({ value }: { value: unknown })}
-	<StatusBadge text={String(value ?? m.common_unknown())} variant={stateVariant(String(value ?? ''))} />
+	<StatusBadge text={String(value ?? m.common_unknown())} variant={getSwarmTaskStateVariant(String(value ?? ''))} />
 {/snippet}
 
 {#snippet TaskMobileCardSnippet({
@@ -73,14 +60,14 @@
 		{item}
 		icon={() => ({
 			component: JobsIcon,
-			variant: iconVariant(item.currentState)
+			variant: getSwarmTaskIconVariant(item.currentState)
 		})}
 		title={(item: SwarmTaskSummary) => item.name}
 		subtitle={(item: SwarmTaskSummary) => ((mobileFieldVisibility['serviceName'] ?? true) ? item.serviceName : null)}
 		badges={[
 			(item: SwarmTaskSummary) =>
 				(mobileFieldVisibility['currentState'] ?? true)
-					? { variant: stateVariant(item.currentState), text: item.currentState }
+					? { variant: getSwarmTaskStateVariant(item.currentState), text: item.currentState }
 					: null
 		]}
 		fields={[

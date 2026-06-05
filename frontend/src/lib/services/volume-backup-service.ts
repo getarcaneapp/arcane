@@ -6,7 +6,7 @@ import { transformPaginationParams } from '$lib/utils/tables';
 
 export type VolumeBackupListResponse = Paginated<BackupEntry> & { warnings?: string[] };
 
-export class VolumeBackupService extends BaseAPIService {
+class VolumeBackupService extends BaseAPIService {
 	async createBackup(volumeName: string): Promise<BackupEntry> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		const res = await this.api.post(`/environments/${envId}/volumes/${volumeName}/backups`);

@@ -1,4 +1,3 @@
-import { PersistedState } from 'runed';
 import { m } from '$lib/paraglide/messages';
 import type { ContainerStats, ContainerSummaryDto } from '$lib/types/docker';
 import type { Environment, EnvironmentStatus } from '$lib/types/environment';
@@ -154,7 +153,7 @@ export function getProjectUpdateTooltip(updateInfo?: ProjectUpdateInfo): string 
 
 // --- Updates filter transforms ---
 
-export const updatesFilter = 'has_update';
+const updatesFilter = 'has_update';
 
 export function ensureUpdatesFilter<T extends SearchPaginationSortRequest>(options: T): T {
 	return {
@@ -179,71 +178,19 @@ export function ensureStandaloneContainerUpdatesFilter<T extends SearchPaginatio
 
 // --- Image pull progress tracking ---
 
-export type PullPhase = 'preparing' | 'downloading' | 'extracting' | 'verifying' | 'waiting' | 'complete' | 'error';
-
 export interface LayerProgress {
 	current: number;
 	total: number;
 	status: string;
 }
 
-export interface PullProgressState {
-	progress: number;
-	statusText: string;
-	error: string;
-	layers: Record<string, LayerProgress>;
-}
-
-export const showImageLayersState = new PersistedState('arcane-show-image-layers', false);
-
-export function createPullProgressState(): PullProgressState {
-	return {
-		progress: 0,
-		statusText: '',
-		error: '',
-		layers: {}
-	};
-}
-
-export function isLayerComplete(status: string): boolean {
+function isLayerComplete(status: string): boolean {
 	const s = status.toLowerCase();
 	return (
 		s.includes('pull complete') ||
 		s.includes('already exists') ||
 		s.includes('downloaded newer image') ||
 		s.includes('image is up to date')
-	);
-}
-
-export function getPullPhase(status: string, isComplete = false, hasError = false): PullPhase {
-	if (hasError) return 'error';
-	if (isComplete) return 'complete';
-
-	const s = status.toLowerCase();
-	if (isLayerComplete(s)) return 'complete';
-	if (s.includes('downloading')) return 'downloading';
-	if (s.includes('extracting')) return 'extracting';
-	if (s.includes('verifying') || s.includes('digest')) return 'verifying';
-	if (s.includes('waiting')) return 'waiting';
-	if (s.includes('pulling') || s.includes('pull')) return 'downloading';
-	return 'preparing';
-}
-
-export function isDownloadingLine(data: unknown): boolean {
-	if (!data || typeof data !== 'object') return false;
-
-	const obj = data as Record<string, unknown>;
-	const status = String(obj['status'] ?? '').toLowerCase();
-	const pd = obj['progressDetail'] as Record<string, unknown> | undefined;
-
-	if (pd && (typeof pd['total'] === 'number' || typeof pd['current'] === 'number')) return true;
-
-	return (
-		status.includes('downloading') ||
-		status.includes('extracting') ||
-		status.includes('pulling fs layer') ||
-		status.includes('download complete') ||
-		status.includes('pull complete')
 	);
 }
 
@@ -350,44 +297,6 @@ export function updateLayerFromStreamData(layers: Record<string, LayerProgress>,
 	return { ...layers, [id]: currentLayer };
 }
 
-export function createPullStreamHandler(callbacks: {
-	onStatusChange: (status: string) => void;
-	onProgressChange: (progress: number) => void;
-	onLayersChange: (layers: Record<string, LayerProgress>) => void;
-	onError: (error: string) => void;
-	onFirstDownload?: () => void;
-	errorMessage: string;
-}) {
-	let layers: Record<string, LayerProgress> = {};
-	let hasOpenedPopover = false;
-
-	return (data: unknown) => {
-		if (!data) return;
-
-		if (!hasOpenedPopover && isDownloadingLine(data)) {
-			hasOpenedPopover = true;
-			callbacks.onFirstDownload?.();
-		}
-
-		const errorMsg = extractErrorMessage(data, callbacks.errorMessage);
-		if (errorMsg) {
-			callbacks.onError(errorMsg);
-			return;
-		}
-
-		const obj = data as Record<string, unknown>;
-		if (obj['status'] && typeof obj['status'] === 'string') {
-			callbacks.onStatusChange(obj['status']);
-		}
-
-		layers = updateLayerFromStreamData(layers, data);
-		callbacks.onLayersChange(layers);
-
-		const progress = calculateOverallProgress(layers);
-		callbacks.onProgressChange(progress);
-	};
-}
-
 export function getAggregateStatus(layers: Record<string, LayerProgress>, fallbackStatus = '', isComplete = false): string {
 	if (isComplete) return 'Pull complete';
 
@@ -411,30 +320,6 @@ export function getAggregateStatus(layers: Record<string, LayerProgress>, fallba
 	return fallbackStatus || 'Preparing';
 }
 
-export function getAggregatePullPhase(layers: Record<string, LayerProgress>, isComplete = false, hasError = false): PullPhase {
-	if (hasError) return 'error';
-	if (isComplete) return 'complete';
-
-	const entries = Object.values(layers);
-	if (entries.length === 0) return 'preparing';
-
-	if (areAllLayersComplete(layers)) return 'complete';
-
-	const stats = getLayerStats(layers);
-
-	if (stats.downloading > 0 || stats.extracting > 0) return 'downloading';
-
-	const hasVerifying = entries.some(
-		(l) => l.status?.toLowerCase().includes('verifying') || l.status?.toLowerCase().includes('digest')
-	);
-	if (hasVerifying) return 'verifying';
-
-	const hasWaiting = entries.some((l) => l.status?.toLowerCase().includes('waiting'));
-	if (hasWaiting) return 'waiting';
-
-	return 'preparing';
-}
-
 // --- Vulnerability scan polling ---
 
 const SCAN_IN_PROGRESS_STATUSES = new Set(['pending', 'scanning']);
@@ -445,11 +330,6 @@ export type VulnerabilityScanPollOptions = {
 	onUpdate?: (summary: VulnerabilityScanSummary) => void;
 	onComplete?: (summary: VulnerabilityScanSummary) => void;
 	onError?: (error: unknown) => void;
-};
-
-export type VulnerabilityScanTracker = {
-	cancel: () => void;
-	promise: Promise<VulnerabilityScanSummary>;
 };
 
 export type VulnerabilityScanStabilizeOptions = {
@@ -465,7 +345,7 @@ function delay(ms: number): Promise<void> {
 	});
 }
 
-export function toTimestampMs(value?: string | number | Date | null): number {
+function toTimestampMs(value?: string | number | Date | null): number {
 	if (value == null) return 0;
 	if (value instanceof Date) {
 		const ts = value.getTime();
@@ -574,38 +454,6 @@ export function startVulnerabilityScanPolling(
 	};
 }
 
-export function startVulnerabilityScanTracking(
-	imageId: string,
-	fetchSummary: (imageId: string) => Promise<VulnerabilityScanSummary>,
-	options: VulnerabilityScanPollOptions = {}
-): VulnerabilityScanTracker {
-	let resolvePromise: (summary: VulnerabilityScanSummary) => void;
-	let rejectPromise: (error: unknown) => void;
-
-	const promise = new Promise<VulnerabilityScanSummary>((resolve, reject) => {
-		resolvePromise = resolve;
-		rejectPromise = reject;
-	});
-
-	const cancel = startVulnerabilityScanPolling(imageId, fetchSummary, {
-		...options,
-		onComplete: (summary) => {
-			options.onComplete?.(summary);
-			if (summary.status === 'completed') {
-				resolvePromise(summary);
-			} else {
-				rejectPromise(summary);
-			}
-		},
-		onError: (error) => {
-			options.onError?.(error);
-			rejectPromise(error);
-		}
-	});
-
-	return { cancel, promise };
-}
-
 // --- Arcane icon label extraction ---
 
 const ARCANE_ICON_LABELS = ['arcane.icon', 'com.getarcaneapp.arcane.icon'];
@@ -669,8 +517,6 @@ export function getStatusVariant(status?: string | null): StatusVariant {
 	if (!status) return 'gray';
 	return STATUS_VARIANT_MAP[String(status).toLowerCase()] ?? 'gray';
 }
-
-export { STATUS_VARIANT_MAP as statusVariantMap };
 
 // --- Environment status resolution ---
 

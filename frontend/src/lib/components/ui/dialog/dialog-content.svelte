@@ -2,7 +2,7 @@
 	import { Dialog as DialogPrimitive } from 'bits-ui';
 	import { CloseIcon } from '$lib/icons';
 	import type { Snippet } from 'svelte';
-	import * as Dialog from './index.js';
+	import Overlay from './dialog-overlay.svelte';
 	import { cn, type WithoutChildrenOrChild } from '$lib/utils.js';
 
 	let {
@@ -21,8 +21,8 @@
 	} = $props();
 </script>
 
-<Dialog.Portal {...portalProps}>
-	<Dialog.Overlay class={overlayClass} />
+<DialogPrimitive.Portal {...portalProps}>
+	<Overlay class={overlayClass} />
 	<DialogPrimitive.Content
 		bind:ref
 		data-slot="dialog-content"
@@ -42,4 +42,4 @@
 			</DialogPrimitive.Close>
 		{/if}
 	</DialogPrimitive.Content>
-</Dialog.Portal>
+</DialogPrimitive.Portal>

@@ -1,7 +1,7 @@
 import BaseAPIService from './api-service';
 import type { OidcRoleMapping, CreateOidcRoleMapping, UpdateOidcRoleMapping } from '$lib/types/auth';
 
-export default class OidcMappingAPIService extends BaseAPIService {
+class OidcMappingAPIService extends BaseAPIService {
 	async list(): Promise<OidcRoleMapping[]> {
 		return this.handleResponse(this.api.get('/oidc/role-mappings')) as Promise<OidcRoleMapping[]>;
 	}

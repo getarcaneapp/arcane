@@ -13,6 +13,7 @@
 	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
 	import { apiKeyService } from '$lib/services/api-key-service';
+	import { formatOptionalDateTime, isPastDate } from '$lib/utils/formatting';
 	import * as m from '$lib/paraglide/messages.js';
 	import { ApiKeyIcon, TrashIcon, EditIcon, EllipsisIcon } from '$lib/icons';
 	import IfPermitted from '$lib/components/if-permitted.svelte';
@@ -35,23 +36,13 @@
 		removing: false
 	});
 
-	function formatDate(dateString?: string): string {
-		if (!dateString) return '-';
-		return new Date(dateString).toLocaleString();
-	}
-
-	function isExpired(expiresAt?: string): boolean {
-		if (!expiresAt) return false;
-		return new Date(expiresAt) < new Date();
-	}
-
 	function getStatusText(apiKey: ApiKey): string {
-		if (isExpired(apiKey.expiresAt)) return m.api_key_status_expired();
+		if (isPastDate(apiKey.expiresAt)) return m.api_key_status_expired();
 		return m.api_key_status_active();
 	}
 
 	function getStatusVariant(apiKey: ApiKey): 'red' | 'green' {
-		if (isExpired(apiKey.expiresAt)) return 'red';
+		if (isPastDate(apiKey.expiresAt)) return 'red';
 		return 'green';
 	}
 
@@ -200,7 +191,7 @@
 {#snippet ExpiresCell({ item }: { item: ApiKey })}
 	<div class="flex items-center gap-2">
 		{#if item.expiresAt}
-			<span class={isExpired(item.expiresAt) ? 'text-red-500' : ''}>{formatDate(item.expiresAt)}</span>
+			<span class={isPastDate(item.expiresAt) ? 'text-red-500' : ''}>{formatOptionalDateTime(item.expiresAt)}</span>
 		{:else}
 			<span class="text-muted-foreground">{m.api_key_expires_never()}</span>
 		{/if}
@@ -209,7 +200,7 @@
 {/snippet}
 
 {#snippet LastUsedCell({ item }: { item: ApiKey })}
-	{formatDate(item.lastUsedAt)}
+	{formatOptionalDateTime(item.lastUsedAt)}
 {/snippet}
 
 {#snippet ApiKeyMobileCardSnippet({
@@ -240,14 +231,14 @@
 			},
 			{
 				label: m.api_key_expires_at(),
-				getValue: (item: ApiKey) => (item.expiresAt ? formatDate(item.expiresAt) : m.api_key_expires_never()),
+				getValue: (item: ApiKey) => (item.expiresAt ? formatOptionalDateTime(item.expiresAt) : m.api_key_expires_never()),
 				icon: ApiKeyIcon,
 				iconVariant: 'gray' as const,
 				show: mobileFieldVisibility['expiresAt'] ?? true
 			},
 			{
 				label: m.api_key_last_used(),
-				getValue: (item: ApiKey) => formatDate(item.lastUsedAt),
+				getValue: (item: ApiKey) => formatOptionalDateTime(item.lastUsedAt),
 				icon: ApiKeyIcon,
 				iconVariant: 'gray' as const,
 				show: mobileFieldVisibility['lastUsedAt'] ?? true

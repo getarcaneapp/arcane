@@ -7,6 +7,7 @@
 	import { toast } from 'svelte-sonner';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { m } from '$lib/paraglide/messages';
+	import { readNdjsonStream } from '$lib/utils/streaming';
 
 	type ImagePullFormProps = {
 		open: boolean;
@@ -82,38 +83,21 @@
 	}
 
 	function drainPullStream(body: ReadableStream<Uint8Array>, fullImageName: string) {
-		const reader = body.getReader();
-		const decoder = new TextDecoder();
-		let buffer = '';
-
 		(async () => {
+			let streamFailed = false;
 			try {
-				while (true) {
-					const { done, value } = await reader.read();
-					if (done) break;
-
-					buffer += decoder.decode(value, { stream: true });
-					const lines = buffer.split('\n');
-					buffer = lines.pop() || '';
-
-					for (const line of lines) {
-						if (!line.trim()) continue;
-						try {
-							const parsed = JSON.parse(line);
-							if (parsed?.error) {
-								const errMsg =
-									typeof parsed.error === 'string' ? parsed.error : parsed.error.message || m.images_pull_stream_error();
-								toast.error(errMsg);
-								onPullFinished(false, fullImageName, errMsg);
-								return;
-							}
-						} catch {
-							// ignore non-JSON lines
-						}
+				await readNdjsonStream(body, (parsed) => {
+					if (parsed?.error) {
+						const errMsg = typeof parsed.error === 'string' ? parsed.error : parsed.error.message || m.images_pull_stream_error();
+						streamFailed = true;
+						toast.error(errMsg);
+						onPullFinished(false, fullImageName, errMsg);
+						throw new Error(errMsg);
 					}
-				}
+				});
 				onPullFinished(true, fullImageName);
 			} catch (error: any) {
+				if (streamFailed) return;
 				const message = error.message || m.images_pull_unexpected_error();
 				toast.error(message);
 				onPullFinished(false, fullImageName, message);

@@ -3,9 +3,10 @@
 	import { m } from '$lib/paraglide/messages';
 	import { swarmService } from '$lib/services/swarm-service';
 	import { untrack } from 'svelte';
-	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
+	import { ResourcePageLayout, type StatCardConfig } from '$lib/layouts/index.js';
 	import { useEnvironmentRefresh } from '$lib/hooks/use-environment-refresh.svelte';
 	import { parallelRefresh } from '$lib/utils/api';
+	import { createRefreshActionButtons } from '$lib/utils/resource-actions';
 	import SwarmStacksTable from './stacks-table.svelte';
 	import { goto } from '$app/navigation';
 	import { hasPermission } from '$lib/utils/auth';
@@ -39,26 +40,16 @@
 	const currentEnvId = $derived(environmentStore.selected?.id);
 	const canCreateStack = $derived(hasPermission('swarm:stacks', currentEnvId));
 
-	const actionButtons: ActionButton[] = $derived.by(() => {
-		const buttons: ActionButton[] = [];
-		if (canCreateStack) {
-			buttons.push({
-				id: 'create',
-				action: 'create',
-				label: m.common_create_button({ resource: m.swarm_stack() }),
-				onclick: () => goto('/swarm/stacks/new')
-			});
-		}
-		buttons.push({
-			id: 'refresh',
-			action: 'restart',
-			label: m.common_refresh(),
-			onclick: refresh,
-			loading: isLoading.refresh,
-			disabled: isLoading.refresh
-		});
-		return buttons;
-	});
+	const actionButtons = $derived.by(() =>
+		createRefreshActionButtons({
+			canCreate: canCreateStack,
+			createLabel: m.common_create_button({ resource: m.swarm_stack() }),
+			onCreate: () => goto('/swarm/stacks/new'),
+			refreshLabel: m.common_refresh(),
+			onRefresh: refresh,
+			refreshing: isLoading.refresh
+		})
+	);
 
 	const statCards: StatCardConfig[] = $derived([
 		{

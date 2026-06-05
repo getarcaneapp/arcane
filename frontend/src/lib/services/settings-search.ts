@@ -1,7 +1,7 @@
 import { apiClient } from './api-service';
 import type { SettingsSearchResponse, SettingsCategory } from '$lib/types/shared';
 
-export class SettingsSearchService {
+class SettingsSearchService {
 	private baseUrl = '/settings';
 
 	async search(query: string): Promise<SettingsSearchResponse> {

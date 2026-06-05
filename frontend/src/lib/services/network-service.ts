@@ -13,7 +13,7 @@ import { transformPaginationParams } from '$lib/utils/tables';
 
 export type NetworksPaginatedResponse = Paginated<NetworkSummaryDto, NetworkUsageCounts>;
 
-export class NetworkService extends BaseAPIService {
+class NetworkService extends BaseAPIService {
 	private async resolveEnvironmentId(environmentId?: string): Promise<string> {
 		return environmentId ?? (await environmentStore.getCurrentEnvironmentId());
 	}

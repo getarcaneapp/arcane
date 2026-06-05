@@ -15,6 +15,7 @@
 	import * as Tabs from '$lib/components/ui/tabs/index.js';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { hasPermission } from '$lib/utils/auth';
+	import { mapVulnerabilityPage, mapVulnerabilityRequest } from '$lib/utils/vulnerability';
 
 	let { data } = $props();
 
@@ -63,46 +64,6 @@
 		];
 		return items.filter((item) => item.value > 0);
 	});
-
-	function mapVulnerabilityRequest(options: SearchPaginationSortRequest): SearchPaginationSortRequest {
-		const filters = { ...(options.filters ?? {}) };
-		if (filters['vulnSeverity']) {
-			filters['severity'] = filters['vulnSeverity'];
-			delete filters['vulnSeverity'];
-		}
-
-		const sort = options.sort?.column === 'vulnSeverity' ? { ...options.sort, column: 'severity' } : options.sort;
-
-		return {
-			...options,
-			sort,
-			filters: Object.keys(filters).length ? filters : undefined
-		};
-	}
-
-	function getVulnerabilityKey(vuln: VulnerabilityWithImage, index: number): string {
-		return [
-			vuln.imageId,
-			vuln.vulnerabilityId,
-			vuln.pkgName,
-			vuln.installedVersion ?? '',
-			vuln.fixedVersion ?? '',
-			String(index)
-		].join('-');
-	}
-
-	function mapVulnerabilityPage(page: Paginated<VulnerabilityWithImage>, options: SearchPaginationSortRequest) {
-		const pageNumber = options.pagination?.page ?? page.pagination?.currentPage ?? 1;
-		const limit = options.pagination?.limit ?? page.pagination?.itemsPerPage ?? 20;
-		const offset = (pageNumber - 1) * limit;
-		return {
-			...page,
-			data: (page.data ?? []).map((item, index) => ({
-				...item,
-				id: getVulnerabilityKey(item, offset + index)
-			}))
-		};
-	}
 
 	async function refreshAll() {
 		const requestForApi = mapVulnerabilityRequest(requestOptions);

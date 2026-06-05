@@ -3,27 +3,28 @@ import { PersistedState } from 'runed';
 import { get } from 'svelte/store';
 import { defaultMobileNavigationSettings, type MobileNavigationSettings } from '$lib/config/navigation-config';
 import settingsStore from '$lib/stores/config-store';
-import type { MobileNavInteractionManager } from '$lib/hooks/use-mobile-nav-interactions';
 
 // --- Mobile nav state ---
 
-export const pinnedItemsStore = new PersistedState('mobile-nav-settings', defaultMobileNavigationSettings);
+const pinnedItemsStore = new PersistedState('mobile-nav-settings', defaultMobileNavigationSettings);
 
 export const navigationSettingsOverridesStore = new PersistedState<Partial<MobileNavigationSettings>>(
 	'navigation-settings-overrides',
 	{}
 );
 
-let mobileNavManager: MobileNavInteractionManager | null = null;
+type NavigationVisibilityController = {
+	resetVisibility: () => void;
+};
 
-export function registerNavigationManager(manager: MobileNavInteractionManager) {
-	mobileNavManager = manager;
+let mobileNavController: NavigationVisibilityController | null = null;
+
+export function registerNavigationVisibilityController(controller: NavigationVisibilityController | null) {
+	mobileNavController = controller;
 }
 
 export function resetNavigationVisibility() {
-	if (mobileNavManager) {
-		mobileNavManager.resetVisibility();
-	}
+	mobileNavController?.resetVisibility();
 }
 
 export function getEffectiveNavigationSettings(): MobileNavigationSettings {
@@ -49,22 +50,13 @@ export function getEffectiveNavigationSettings(): MobileNavigationSettings {
 	};
 }
 
-export function updateNavigationOverrides(overrides: Partial<MobileNavigationSettings>) {
-	const currentOverrides = navigationSettingsOverridesStore.current;
-	navigationSettingsOverridesStore.current = { ...currentOverrides, ...overrides };
-}
-
-export function clearNavigationOverrides() {
-	navigationSettingsOverridesStore.current = {};
-}
-
 // --- Keyboard shortcuts ---
 
 export type ShortcutKey = 'mod' | 'shift' | 'alt' | 'ctrl' | 'meta' | string;
 
 const MODIFIER_KEYS = new Set(['mod', 'shift', 'alt', 'ctrl', 'meta']);
 
-export function isMacOS(): boolean {
+function isMacOS(): boolean {
 	if (!browser) return false;
 	const platform = navigator?.platform?.toLowerCase() ?? '';
 	const userAgent = navigator?.userAgent?.toLowerCase() ?? '';
@@ -185,7 +177,7 @@ function commitSegmentForHost(hostname: string): string {
 	return '/commit/';
 }
 
-export function toGitWebUrl(raw: string): string | null {
+function toGitWebUrl(raw: string): string | null {
 	const trimmed = raw.trim();
 	if (!trimmed) return null;
 

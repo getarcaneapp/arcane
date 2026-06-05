@@ -9,6 +9,7 @@
 	import type { NetworkCreateOptions } from '$lib/types/docker';
 	import { z } from 'zod/v4';
 	import { createForm, preventDefault } from '$lib/utils/settings';
+	import { parseKeyValuePairs } from '$lib/utils/form-parsers';
 	import SelectWithLabel from '../form/select-with-label.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { CloseIcon } from '$lib/icons';
@@ -57,27 +58,6 @@
 
 	// Dynamic labels state for the key-value pairs
 	let labels = $state<{ key: string; value: string }[]>([{ key: '', value: '' }]);
-
-	function parseKeyValuePairs(text: string): Record<string, string> {
-		if (!text?.trim()) return {};
-
-		const result: Record<string, string> = {};
-		const lines = text.split('\n');
-
-		for (const line of lines) {
-			const trimmed = line.trim();
-			if (!trimmed || !trimmed.includes('=')) continue;
-
-			const [key, ...valueParts] = trimmed.split('=');
-			const value = valueParts.join('=');
-
-			if (key?.trim()) {
-				result[key.trim()] = value.trim();
-			}
-		}
-
-		return result;
-	}
 
 	function addLabel() {
 		labels = [...labels, { key: '', value: '' }];

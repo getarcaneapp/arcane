@@ -21,7 +21,7 @@
 	import { hasPermission } from '$lib/utils/auth';
 	import { isEnvironmentOnline, resolveEnvironmentStatus } from '$lib/utils/docker';
 	import MobileFloatingFormActions from '$lib/components/form/mobile-floating-form-actions.svelte';
-	import { createSettingsForm } from '$lib/utils/settings';
+	import { createSettingsForm } from '$lib/utils/settings-form';
 	import DetailsTab from './components/DetailsTab.svelte';
 	import GeneralTab from './components/GeneralTab.svelte';
 	import DockerTab from './components/DockerTab.svelte';

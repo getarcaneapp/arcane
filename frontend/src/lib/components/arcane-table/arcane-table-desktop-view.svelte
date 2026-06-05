@@ -6,7 +6,14 @@
 	import { FolderXIcon, ArrowRightIcon, ArrowDownIcon } from '$lib/icons';
 	import { m } from '$lib/paraglide/messages';
 	import { cn } from '$lib/utils';
-	import type { ColumnWidth, ColumnAlign, GroupedData, GroupSelectionState } from './arcane-table.types.svelte.ts';
+	import {
+		getTableRowsForItems,
+		shouldIgnoreTableRowClick,
+		type ColumnWidth,
+		type ColumnAlign,
+		type GroupedData,
+		type GroupSelectionState
+	} from './arcane-table.types.svelte';
 	import TableCheckbox from './arcane-table-checkbox.svelte';
 	import type { Component, Snippet } from 'svelte';
 	import { slide } from 'svelte/transition';
@@ -70,13 +77,8 @@
 	const stickyActionsClasses = `sticky right-0 z-10 transition-colors ${stickyCellSurfaceClasses}`;
 	const stickySelectClasses = `w-0 pr-6! ${stickyCellSurfaceClasses}`;
 
-	function shouldIgnoreRowClick(event: MouseEvent): boolean {
-		const target = event.target as HTMLElement | null;
-		return !!target?.closest('a, button, input, [role="checkbox"], [data-slot="checkbox"], [data-row-select-ignore]');
-	}
-
 	function handleRowClick(event: MouseEvent, rowId: string) {
-		if (shouldIgnoreRowClick(event)) return;
+		if (shouldIgnoreTableRowClick(event)) return;
 		if (hasExpand) {
 			onToggleRowExpanded?.(rowId);
 			return;
@@ -101,11 +103,6 @@
 	}
 
 	// Get rows for a specific group from the table model
-	function getRowsForGroup(groupItems: any[]) {
-		const groupIds = new Set(groupItems.map((item) => item.id));
-		return table.getRowModel().rows.filter((row) => groupIds.has((row.original as any).id));
-	}
-
 	const isGrouped = $derived(groupedRows !== null && groupedRows.length > 0);
 </script>
 
@@ -143,7 +140,7 @@
 			{#if isGrouped && groupedRows}
 				{#each groupedRows as group (group.groupName)}
 					{@const isCollapsed = groupCollapsedState[group.groupName] ?? true}
-					{@const groupRows = getRowsForGroup(group.items)}
+					{@const groupRows = getTableRowsForItems(table, group.items)}
 					{@const selectionState = getGroupSelectionState?.(group.items) ?? 'none'}
 					{@const hasSelection = selectionState !== 'none'}
 					{@const IconComponent = groupIcon?.(group.groupName)}

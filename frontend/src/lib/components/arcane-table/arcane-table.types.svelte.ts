@@ -1,4 +1,4 @@
-import type { Row, Column, FilterFn, ColumnFiltersState, VisibilityState } from '@tanstack/table-core';
+import type { Row, Column, FilterFn, ColumnFiltersState, VisibilityState, Table as TableType } from '@tanstack/table-core';
 import type { Snippet } from 'svelte';
 import type { Component } from 'svelte';
 
@@ -102,7 +102,7 @@ export function encodeMobileVisibility(visibility: Record<string, boolean>): str
 	return encoded;
 }
 
-export function decodeMobileVisibility(encoded?: string[]): Record<string, boolean> {
+function decodeMobileVisibility(encoded?: string[]): Record<string, boolean> {
 	if (!encoded?.length) return {};
 	const visibility: Record<string, boolean> = {};
 	for (const entry of encoded) {
@@ -145,3 +145,13 @@ export type GroupedData<T> = {
 };
 
 export type GroupSelectionState = 'none' | 'some' | 'all';
+
+export function shouldIgnoreTableRowClick(event: MouseEvent): boolean {
+	const target = event.target as HTMLElement | null;
+	return !!target?.closest('a, button, input, [role="checkbox"], [data-slot="checkbox"], [data-row-select-ignore]');
+}
+
+export function getTableRowsForItems<T extends { id?: string }>(table: TableType<T>, groupItems: Array<{ id: string }>) {
+	const groupIds = new Set(groupItems.map((item) => item.id));
+	return table.getRowModel().rows.filter((row) => groupIds.has(row.original.id ?? ''));
+}

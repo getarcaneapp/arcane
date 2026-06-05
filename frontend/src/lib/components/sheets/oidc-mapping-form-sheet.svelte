@@ -9,6 +9,7 @@
 	import { z } from 'zod/v4';
 	import { createForm, preventDefault } from '$lib/utils/settings';
 	import { m } from '$lib/paraglide/messages';
+	import { buildGlobalEnvironmentOptions, createRoleEnvironmentLabelers, GLOBAL_ENVIRONMENT_OPTION_ID } from '$lib/utils/options';
 
 	type Props = {
 		open: boolean;
@@ -21,14 +22,10 @@
 
 	let { open = $bindable(false), mappingToEdit, roles, environments, isLoading, onSubmit }: Props = $props();
 
-	const GLOBAL_OPTION_ID = 'global';
-
 	const isEditMode = $derived(!!mappingToEdit);
 
-	const envOptions = $derived([
-		{ id: GLOBAL_OPTION_ID, name: m.oidc_mappings_scope_global_option() },
-		...environments.map((env) => ({ id: env.id, name: env.name }))
-	]);
+	const envOptions = $derived(buildGlobalEnvironmentOptions(environments, m.oidc_mappings_scope_global_option()));
+	const selectedLabel = $derived(createRoleEnvironmentLabelers(roles, envOptions, m.common_select_option()));
 
 	const formSchema = z.object({
 		claimValue: z.string().min(1, m.oidc_mappings_claim_required()),
@@ -39,18 +36,10 @@
 	const formData = $derived({
 		claimValue: mappingToEdit?.claimValue ?? '',
 		roleId: mappingToEdit?.roleId ?? roles[0]?.id ?? '',
-		environmentId: mappingToEdit?.environmentId ?? GLOBAL_OPTION_ID
+		environmentId: mappingToEdit?.environmentId ?? GLOBAL_ENVIRONMENT_OPTION_ID
 	});
 
 	const { inputs, ...form } = $derived(createForm<typeof formSchema>(formSchema, formData));
-
-	function envSelectedLabel(value: string): string {
-		return envOptions.find((o) => o.id === value)?.name ?? m.common_select_option();
-	}
-
-	function roleSelectedLabel(value: string): string {
-		return roles.find((r) => r.id === value)?.name ?? m.common_select_option();
-	}
 
 	function handleSubmit() {
 		const data = form.validate();
@@ -58,7 +47,7 @@
 		onSubmit({
 			claimValue: data.claimValue,
 			roleId: data.roleId,
-			environmentId: data.environmentId === GLOBAL_OPTION_ID ? undefined : data.environmentId
+			environmentId: data.environmentId === GLOBAL_ENVIRONMENT_OPTION_ID ? undefined : data.environmentId
 		});
 	}
 
@@ -89,7 +78,7 @@
 				<Label for="oidc-mapping-role" class="mb-0">{m.oidc_mappings_role_label()}</Label>
 				<Select.Root type="single" bind:value={$inputs.roleId.value} disabled={isLoading}>
 					<Select.Trigger id="oidc-mapping-role" class="w-full {$inputs.roleId.error ? 'border-destructive' : ''}">
-						<span>{roleSelectedLabel($inputs.roleId.value)}</span>
+						<span>{selectedLabel.role($inputs.roleId.value)}</span>
 					</Select.Trigger>
 					<Select.Content>
 						{#each roles as role (role.id)}
@@ -113,7 +102,7 @@
 				<Label for="oidc-mapping-env" class="mb-0">{m.oidc_mappings_scope_label()}</Label>
 				<Select.Root type="single" bind:value={$inputs.environmentId.value} disabled={isLoading}>
 					<Select.Trigger id="oidc-mapping-env" class="w-full">
-						<span>{envSelectedLabel($inputs.environmentId.value)}</span>
+						<span>{selectedLabel.environment($inputs.environmentId.value)}</span>
 					</Select.Trigger>
 					<Select.Content>
 						{#each envOptions as option (option.id)}

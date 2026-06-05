@@ -7,7 +7,7 @@
 	import TextInputWithLabel from '$lib/components/form/text-input-with-label.svelte';
 	import SelectWithLabel from '$lib/components/form/select-with-label.svelte';
 	import { m } from '$lib/paraglide/messages';
-	import { createSettingsForm } from '$lib/utils/settings';
+	import { createSettingsForm } from '$lib/utils/settings-form';
 	import { settingsService } from '$lib/services/settings-service';
 
 	let { data } = $props();
