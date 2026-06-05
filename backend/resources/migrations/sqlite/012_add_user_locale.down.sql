@@ -1,1 +1,0 @@
--- SQLite down migration: to rollback, recreate the users table without the 'locale' column and copy data back.

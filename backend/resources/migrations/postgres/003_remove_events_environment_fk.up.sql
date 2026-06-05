@@ -1,1 +1,0 @@
-ALTER TABLE events DROP CONSTRAINT IF EXISTS events_environment_id_fkey;

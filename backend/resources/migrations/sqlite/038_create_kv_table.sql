@@ -1,0 +1,10 @@
+-- +goose Up
+CREATE TABLE IF NOT EXISTS kv (
+    key TEXT NOT NULL PRIMARY KEY,
+    value TEXT NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME
+);
+
+-- +goose Down
+DROP TABLE IF EXISTS kv;
