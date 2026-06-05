@@ -1,6 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
 const baseURL = process.env.BASE_URL || 'http://localhost:3000';
+const ciJunitOutputFile = process.env.PLAYWRIGHT_JUNIT_OUTPUT_FILE || 'test-results/junit.xml';
 
 export default defineConfig({
 	testDir: '.',
@@ -11,7 +12,18 @@ export default defineConfig({
 	globalSetup: './setup/global-setup',
 	globalTeardown: './setup/global-teardown',
 	reporter: process.env.CI
-		? [['html', { outputFolder: '.report' }], ['github']]
+		? [
+				['html', { outputFolder: '.report' }],
+				['github'],
+				[
+					'junit',
+					{
+						outputFile: ciJunitOutputFile,
+						includeProjectInTestName: true,
+						stripANSIControlSequences: true
+					}
+				]
+			]
 		: [['line'], ['html', { open: 'never', outputFolder: '.report' }]],
 	use: {
 		baseURL,
