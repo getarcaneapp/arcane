@@ -17,6 +17,15 @@ func registerJobs(appCtx context.Context, newScheduler *pkg_scheduler.JobSchedul
 	// the agent-mode gating, the startup heartbeat, and the settings callbacks.
 	jobs := di.InitializeJobs(appCtx, appConfig, appServices)
 
+	if appServices.Activity != nil {
+		failed, err := appServices.Activity.FailStaleImageUpdateChecks(appCtx)
+		if err != nil {
+			slog.WarnContext(appCtx, "Failed to mark stale image update checks as failed", "count", failed, "error", err)
+		} else if failed > 0 {
+			slog.InfoContext(appCtx, "Marked stale image update checks as failed", "count", failed)
+		}
+	}
+
 	newScheduler.RegisterJob(jobs.AutoUpdate)
 	newScheduler.RegisterJob(jobs.ImagePolling)
 	newScheduler.RegisterJob(jobs.DockerClientRefresh)

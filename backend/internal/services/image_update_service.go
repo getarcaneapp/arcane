@@ -17,6 +17,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/crypto"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/ratelimit"
 	registry "github.com/getarcaneapp/arcane/backend/pkg/libarcane/registryauth"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 	"github.com/getarcaneapp/arcane/types/imageupdate"
@@ -63,6 +64,33 @@ func NewImageUpdateService(db *database.DB, settingsService *SettingsService, re
 		registryLimiter:     ratelimit.NewRegistryRateLimiter(),
 		activityService:     activityService,
 	}
+}
+
+func (s *ImageUpdateService) dockerAPIContextInternal(ctx context.Context) (context.Context, context.CancelFunc) {
+	timeoutSeconds := 0
+	if s != nil && s.settingsService != nil {
+		timeoutSeconds = s.settingsService.GetSettingsConfig().DockerAPITimeout.AsInt()
+	}
+	return timeouts.WithTimeout(ctx, timeoutSeconds, timeouts.DefaultDockerAPI)
+}
+
+func (s *ImageUpdateService) registryContextInternal(ctx context.Context) (context.Context, context.CancelFunc) {
+	timeoutSeconds := 0
+	if s != nil && s.settingsService != nil {
+		timeoutSeconds = s.settingsService.GetSettingsConfig().RegistryTimeout.AsInt()
+	}
+	return timeouts.WithTimeout(ctx, timeoutSeconds, timeouts.DefaultRegistry)
+}
+
+func (s *ImageUpdateService) dockerClientInternal(ctx context.Context) (*client.Client, error) {
+	if s == nil || s.dockerService == nil {
+		return nil, errors.New("docker service unavailable")
+	}
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
+	}
+	return dockerClient, nil
 }
 
 func (s *ImageUpdateService) startImageUpdateActivityInternal(ctx context.Context, resourceName string, count int) string {
@@ -214,7 +242,9 @@ func (s *ImageUpdateService) checkDigestUpdateWithSnapshotInternal(ctx context.C
 
 	imageRef := fmt.Sprintf("%s/%s:%s", parts.Registry, parts.Repository, parts.Tag)
 	start := time.Now()
-	digestResult, err := s.registryService.inspectImageDigestInternal(ctx, imageRef, nil)
+	registryCtx, registryCancel := s.registryContextInternal(ctx)
+	digestResult, err := s.registryService.inspectImageDigestInternal(registryCtx, imageRef, nil)
+	registryCancel()
 	elapsed := time.Since(start)
 	if err != nil {
 		partial := digestResult // may contain auth metadata even on error
@@ -359,9 +389,9 @@ func (s *ImageUpdateService) parseImageReferenceFallback(imageRef string) *Image
 }
 
 func (s *ImageUpdateService) getImageRefByIDInternal(ctx context.Context, imageID string) (string, error) {
-	dockerClient, err := s.dockerService.GetClient(ctx)
+	dockerClient, err := s.dockerClientInternal(ctx)
 	if err != nil {
-		return "", fmt.Errorf("failed to connect to Docker: %w", err)
+		return "", err
 	}
 
 	imageID = strings.TrimPrefix(imageID, "sha256:")
@@ -380,7 +410,10 @@ func (s *ImageUpdateService) getImageRefByIDInternal(ctx context.Context, imageI
 }
 
 func (s *ImageUpdateService) resolveImageRefFromInspect(ctx context.Context, dockerClient client.APIClient, imageID string) (string, error) {
-	inspectResponse, err := dockerClient.ImageInspect(ctx, imageID)
+	apiCtx, cancel := s.dockerAPIContextInternal(ctx)
+	defer cancel()
+
+	inspectResponse, err := dockerClient.ImageInspect(apiCtx, imageID)
 	if err != nil {
 		return "", err
 	}
@@ -401,7 +434,10 @@ func (s *ImageUpdateService) resolveImageRefFromInspect(ctx context.Context, doc
 
 func (s *ImageUpdateService) resolveImageRefFromContainers(ctx context.Context, dockerClient client.APIClient, imageID string) (string, error) {
 	fullID := "sha256:" + imageID
-	containers, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
+	apiCtx, cancel := s.dockerAPIContextInternal(ctx)
+	defer cancel()
+
+	containers, err := dockerClient.ContainerList(apiCtx, client.ContainerListOptions{All: true})
 	if err != nil {
 		return "", err
 	}
@@ -417,12 +453,15 @@ func (s *ImageUpdateService) resolveImageRefFromContainers(ctx context.Context, 
 }
 
 func (s *ImageUpdateService) getAllImageRefsInternal(ctx context.Context, limit int) ([]string, error) {
-	dockerClient, err := s.dockerService.GetClient(ctx)
+	dockerClient, err := s.dockerClientInternal(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
+		return nil, err
 	}
 
-	imageList, err := dockerClient.ImageList(ctx, client.ImageListOptions{})
+	apiCtx, cancel := s.dockerAPIContextInternal(ctx)
+	defer cancel()
+
+	imageList, err := dockerClient.ImageList(apiCtx, client.ImageListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list Docker images: %w", err)
 	}
@@ -451,12 +490,15 @@ func dedupeImageRefsFromSummariesInternal(images []image.Summary, limit int) []s
 }
 
 func (s *ImageUpdateService) inspectLocalImageSnapshotInternal(ctx context.Context, imageRef string) (*localImageSnapshot, error) {
-	dockerClient, err := s.dockerService.GetClient(ctx)
+	dockerClient, err := s.dockerClientInternal(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
+		return nil, err
 	}
 
-	inspectResponse, err := dockerClient.ImageInspect(ctx, imageRef)
+	apiCtx, cancel := s.dockerAPIContextInternal(ctx)
+	defer cancel()
+
+	inspectResponse, err := dockerClient.ImageInspect(apiCtx, imageRef)
 	if err != nil {
 		return nil, fmt.Errorf("failed to inspect image: %w", err)
 	}
@@ -725,12 +767,15 @@ func savePreparedUpdateResultWithTxInternal(tx *gorm.DB, imageID, repo, tag stri
 }
 
 func (s *ImageUpdateService) saveUpdateResultByIDInternal(ctx context.Context, imageID string, result *imageupdate.Response) error {
-	dockerClient, err := s.dockerService.GetClient(ctx)
+	dockerClient, err := s.dockerClientInternal(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to connect to Docker: %w", err)
+		return err
 	}
 
-	dockerImage, err := dockerClient.ImageInspect(ctx, imageID)
+	apiCtx, cancel := s.dockerAPIContextInternal(ctx)
+	defer cancel()
+
+	dockerImage, err := dockerClient.ImageInspect(apiCtx, imageID)
 	if err != nil {
 		return fmt.Errorf("failed to inspect image: %w", err)
 	}
@@ -746,12 +791,15 @@ func (s *ImageUpdateService) savePreparedUpdateResultInternal(ctx context.Contex
 }
 
 func (s *ImageUpdateService) getImageIDByRef(ctx context.Context, imageRef string) (string, error) {
-	dockerClient, err := s.dockerService.GetClient(ctx)
+	dockerClient, err := s.dockerClientInternal(ctx)
 	if err != nil {
-		return "", fmt.Errorf("failed to connect to Docker: %w", err)
+		return "", err
 	}
 
-	inspectResponse, err := dockerClient.ImageInspect(ctx, imageRef)
+	apiCtx, cancel := s.dockerAPIContextInternal(ctx)
+	defer cancel()
+
+	inspectResponse, err := dockerClient.ImageInspect(apiCtx, imageRef)
 	if err != nil {
 		return "", fmt.Errorf("image not found: %w", err)
 	}
@@ -855,6 +903,25 @@ type batchImage struct {
 	parts        *ImageParts
 }
 
+type batchImageProgressRecorder struct {
+	mu        sync.Mutex
+	results   map[string]*imageupdate.Response
+	completed int
+	total     int
+}
+
+func (r *batchImageProgressRecorder) recordInternal(refs []string, res *imageupdate.Response) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.completed++
+	progress := 10 + int(float64(r.completed)/float64(r.total)*80)
+	for _, ref := range refs {
+		r.results[ref] = res
+	}
+	return progress
+}
+
 func (s *ImageUpdateService) parseAndGroupImagesInternal(imageRefs []string) (map[string]map[string]struct{}, map[string]*imageupdate.Response, []batchImage) {
 	regRepos := make(map[string]map[string]struct{})
 	results := make(map[string]*imageupdate.Response)
@@ -902,7 +969,9 @@ func (s *ImageUpdateService) checkSingleImageInBatchInternal(ctx context.Context
 
 	start := time.Now()
 	imageRef := fmt.Sprintf("%s/%s:%s", parts.Registry, parts.Repository, parts.Tag)
-	digestResult, digestErr := s.registryService.inspectImageDigestInternal(ctx, imageRef, externalCreds)
+	registryCtx, registryCancel := s.registryContextInternal(ctx)
+	digestResult, digestErr := s.registryService.inspectImageDigestInternal(registryCtx, imageRef, externalCreds)
+	registryCancel()
 	if digestErr != nil {
 		resp := &imageupdate.Response{
 			Error:          digestErr.Error(),
@@ -1004,6 +1073,52 @@ func (s *ImageUpdateService) resolveBatchCredentialsInternal(ctx context.Context
 	return credentials
 }
 
+func (s *ImageUpdateService) checkBatchImageInternal(ctx context.Context, activityID string, resolvedCreds []containerregistry.Credential, img batchImage, recorder *batchImageProgressRecorder) error {
+	registry := img.parts.Registry
+
+	if err := s.registryLimiter.Acquire(ctx, registry); err != nil {
+		slog.DebugContext(ctx, "skipping image check: registry limiter acquire failed",
+			"imageRef", img.canonicalRef,
+			"registry", registry,
+			"error", err.Error())
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+
+		res := &imageupdate.Response{
+			Error:          err.Error(),
+			CheckTime:      time.Now(),
+			ResponseTimeMs: 0,
+			ActivityID:     utils.StringPtrFromTrimmed(activityID),
+		}
+		s.recordBatchImageCheckInternal(ctx, activityID, img, res, nil, recorder)
+		return nil
+	}
+	defer s.registryLimiter.Release(registry)
+
+	res, snapshot := s.checkSingleImageInBatchInternal(ctx, resolvedCreds, img.parts)
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	if res != nil {
+		res.ActivityID = utils.StringPtrFromTrimmed(activityID)
+	}
+
+	s.recordBatchImageCheckInternal(ctx, activityID, img, res, snapshot, recorder)
+	return nil
+}
+
+func (s *ImageUpdateService) recordBatchImageCheckInternal(ctx context.Context, activityID string, img batchImage, res *imageupdate.Response, snapshot *localImageSnapshot, recorder *batchImageProgressRecorder) {
+	progress := recorder.recordInternal(img.refs, res)
+
+	level, message := imageCheckResultMessageInternal(img.canonicalRef, res)
+	s.appendImageUpdateActivityMessageInternal(ctx, activityID, level, message, progress, "Checking image")
+
+	if err := s.saveUpdateResultWithSnapshotInternal(ctx, img.canonicalRef, res, snapshot); err != nil {
+		slog.WarnContext(ctx, "Failed to save update result", "imageRef", img.canonicalRef, "error", err.Error())
+	}
+}
+
 func (s *ImageUpdateService) CheckMultipleImages(ctx context.Context, imageRefs []string, externalCreds []containerregistry.Credential) (map[string]*imageupdate.Response, error) {
 	startBatch := time.Now()
 	results := make(map[string]*imageupdate.Response, len(imageRefs))
@@ -1028,44 +1143,16 @@ func (s *ImageUpdateService) CheckMultipleImages(ctx context.Context, imageRefs 
 
 	slog.DebugContext(ctx, "Resolved batch registry credentials", "credentialCount", len(resolvedCreds), "registryCount", len(regRepos))
 
-	var mu sync.Mutex
-	completed := 0
+	recorder := &batchImageProgressRecorder{
+		results: results,
+		total:   len(images),
+	}
 	g, groupCtx := errgroup.WithContext(ctx)
 	g.SetLimit(10) // Limit concurrency
 
 	for _, img := range images {
 		g.Go(func() error {
-			registry := img.parts.Registry
-
-			if err := s.registryLimiter.Acquire(groupCtx, registry); err != nil {
-				slog.DebugContext(groupCtx, "skipping image check: registry limiter acquire failed",
-					"imageRef", img.canonicalRef,
-					"registry", registry,
-					"error", err.Error())
-				return err
-			}
-			defer s.registryLimiter.Release(registry)
-
-			res, snapshot := s.checkSingleImageInBatchInternal(groupCtx, resolvedCreds, img.parts)
-			if res != nil {
-				res.ActivityID = utils.StringPtrFromTrimmed(activityID)
-			}
-
-			mu.Lock()
-			completed++
-			progress := 10 + int(float64(completed)/float64(len(images))*80)
-			for _, ref := range img.refs {
-				results[ref] = res
-			}
-			mu.Unlock()
-
-			level, message := imageCheckResultMessageInternal(img.canonicalRef, res)
-			s.appendImageUpdateActivityMessageInternal(groupCtx, activityID, level, message, progress, "Checking image")
-
-			if err := s.saveUpdateResultWithSnapshotInternal(groupCtx, img.canonicalRef, res, snapshot); err != nil {
-				slog.WarnContext(groupCtx, "Failed to save update result", "imageRef", img.canonicalRef, "error", err.Error())
-			}
-			return nil
+			return s.checkBatchImageInternal(groupCtx, activityID, resolvedCreds, img, recorder)
 		})
 	}
 
@@ -1167,13 +1254,16 @@ func (s *ImageUpdateService) CleanupOrphanedRecords(ctx context.Context) error {
 		return nil
 	}
 
-	dockerClient, err := s.dockerService.GetClient(ctx)
+	dockerClient, err := s.dockerClientInternal(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to connect to Docker: %w", err)
+		return err
 	}
 
 	// Get all image IDs from Docker
-	dockerImagesResult, err := dockerClient.ImageList(ctx, client.ImageListOptions{})
+	apiCtx, cancel := s.dockerAPIContextInternal(ctx)
+	defer cancel()
+
+	dockerImagesResult, err := dockerClient.ImageList(apiCtx, client.ImageListOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to list Docker images: %w", err)
 	}
@@ -1203,12 +1293,15 @@ func (s *ImageUpdateService) CleanupOrphanedRecords(ctx context.Context) error {
 }
 
 func (s *ImageUpdateService) GetUpdateSummary(ctx context.Context) (*imageupdate.Summary, error) {
-	dockerClient, err := s.dockerService.GetClient(ctx)
+	dockerClient, err := s.dockerClientInternal(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
+		return nil, err
 	}
 
-	dockerImagesResult, err := dockerClient.ImageList(ctx, client.ImageListOptions{})
+	apiCtx, cancel := s.dockerAPIContextInternal(ctx)
+	defer cancel()
+
+	dockerImagesResult, err := dockerClient.ImageList(apiCtx, client.ImageListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list Docker images: %w", err)
 	}

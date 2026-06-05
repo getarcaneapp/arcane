@@ -24,6 +24,7 @@ const (
 	defaultActivityRetentionDays = 30
 	defaultActivityHistoryLimit  = 1000
 	defaultActivityMessages      = 500
+	staleImageUpdateCheckAge     = 6 * time.Hour
 )
 
 type ActivityService struct {
@@ -458,6 +459,37 @@ func (s *ActivityService) CancelActivity(ctx context.Context, environmentID, act
 }
 
 const cancelledMessageInternal = "Cancelled by user"
+
+// FailStaleImageUpdateChecks marks image update checks that were left running
+// across a prior process lifetime as failed. It intentionally scopes cleanup to
+// old image-update-check activities so startup repair cannot affect other work.
+func (s *ActivityService) FailStaleImageUpdateChecks(ctx context.Context) (int64, error) {
+	if s == nil || s.db == nil {
+		return 0, nil
+	}
+
+	cutoff := time.Now().Add(-staleImageUpdateCheckAge)
+	var staleChecks []models.Activity
+	if err := s.db.WithContext(ctx).
+		Where("type = ? AND status = ? AND started_at < ?", models.ActivityTypeImageUpdateCheck, models.ActivityStatusRunning, cutoff).
+		Find(&staleChecks).Error; err != nil {
+		return 0, fmt.Errorf("find stale image update checks: %w", err)
+	}
+
+	const message = "Image update check failed because it was stale after Arcane restarted"
+	errMessage := message
+	var failed int64
+	var failErrs []error
+	for i := range staleChecks {
+		if _, err := s.CompleteActivity(ctx, staleChecks[i].ID, models.ActivityStatusFailed, message, &errMessage, "Image update check failed"); err != nil {
+			failErrs = append(failErrs, fmt.Errorf("fail stale image update check %s: %w", staleChecks[i].ID, err))
+			continue
+		}
+		failed++
+	}
+
+	return failed, errors.Join(failErrs...)
+}
 
 func completeActivityUpdatesInternal(startedAt time.Time, status models.ActivityStatus, finalMessage string, errMessage *string, finalStep []string, now time.Time) map[string]any {
 	updates := map[string]any{
