@@ -128,13 +128,13 @@ func (h *UpdaterHandler) RunUpdater(ctx context.Context, input *RunUpdaterInput)
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	dryRun := false
+	options := updater.Options{}
 	if input.Body != nil {
-		dryRun = input.Body.DryRun
+		options = *input.Body
 	}
 
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	out, err := h.updaterService.ApplyPending(runtimeCtx, dryRun)
+	out, err := h.updaterService.ApplyPending(runtimeCtx, options)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.UpdaterRunError{Err: err}).Error())
 	}

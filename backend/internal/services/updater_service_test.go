@@ -13,7 +13,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/crypto"
+	arcaneupdater "github.com/getarcaneapp/arcane/types/updater"
 	moduleapi "github.com/getarcaneapp/updater/api"
 	updaterlabels "github.com/getarcaneapp/updater/pkg/labels"
 	moduletypes "github.com/getarcaneapp/updater/types"
@@ -187,7 +190,7 @@ func TestUpdaterService_ApplyPendingNoRecordsInternal(t *testing.T) {
 	db := setupProjectTestDB(t)
 	svc := NewUpdaterService(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
-	result, err := svc.ApplyPending(ctx, true)
+	result, err := svc.ApplyPending(ctx, arcaneupdater.Options{DryRun: true})
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -220,6 +223,44 @@ func TestUpdaterService_ConfigUsesComposeStandaloneFallbackSettingInternal(t *te
 
 		assert.True(t, cfg.AllowComposeStandaloneFallback)
 	})
+}
+
+func TestUpdaterService_ModuleOptionsFromUpdaterOptionsInternal(t *testing.T) {
+	got := moduleOptionsFromUpdaterOptionsInternal(arcaneupdater.Options{
+		Type:        moduletypes.ResourceTypeImage,
+		ResourceIds: []string{"image-1", "image-2"},
+		ForceUpdate: true,
+		DryRun:      true,
+	})
+
+	assert.Equal(t, moduletypes.ResourceTypeImage, got.Type)
+	assert.Equal(t, []string{"image-1", "image-2"}, got.ResourceIDs)
+	assert.True(t, got.Force)
+	assert.True(t, got.DryRun)
+}
+
+func TestUpdaterService_ResultFromModulePreservesRestartedInternal(t *testing.T) {
+	got := resultFromModuleInternal(&moduletypes.Result{
+		Success:   true,
+		Checked:   2,
+		Updated:   1,
+		Restarted: 1,
+		Items: []moduletypes.ResourceResult{
+			{
+				ResourceID:    "web-id",
+				ResourceName:  "web",
+				ResourceType:  moduletypes.ResourceTypeContainer,
+				Status:        moduletypes.StatusRestarted,
+				UpdateApplied: true,
+			},
+		},
+	})
+
+	require.NotNil(t, got)
+	assert.Equal(t, 1, got.Restarted)
+	require.Len(t, got.Items, 1)
+	assert.Equal(t, arcaneupdater.StatusRestarted, got.Items[0].Status)
+	assert.True(t, got.Items[0].UpdateApplied)
 }
 
 func TestUpdaterService_TriggerSelfUpdateViaCLIInternal(t *testing.T) {
@@ -360,6 +401,41 @@ func TestUpdaterService_PullImageAdapterInternal(t *testing.T) {
 		err := svc.PullImage(ctx, "nginx:latest", &progress)
 
 		require.NoError(t, err)
+		assert.Contains(t, progress.String(), "Pulled")
+	})
+
+	t.Run("passes database registry credentials to Arcane image puller", func(t *testing.T) {
+		db := setupProjectTestDB(t)
+		require.NoError(t, db.AutoMigrate(&models.ContainerRegistry{}, &models.KVEntry{}))
+		crypto.InitEncryption(&crypto.Config{
+			Environment:   string(config.AppEnvironmentTest),
+			EncryptionKey: "test-encryption-key-for-testing-32bytes-min",
+		})
+		createTestPullRegistry(t, db, "https://registry.example.com", "db-user", "db-token")
+
+		imageRef := "registry.example.com/team/app:latest"
+		var gotAuth string
+		server := newProjectImagePullServerWithObserverInternal(t, nil, func(fullRef string, authHeader string) {
+			if fullRef == imageRef {
+				gotAuth = authHeader
+			}
+		})
+		dockerSvc := &DockerClientService{client: newTestDockerClient(t, server)}
+		registrySvc := NewContainerRegistryService(db, nil, NewKVService(db))
+		imageSvc := NewImageService(db, dockerSvc, registrySvc, nil, nil, NewEventService(db, nil, nil))
+		envSvc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
+		projectSvc := NewProjectService(db, nil, nil, nil, nil, nil, nil).
+			WithRegistryCredentialsProvider(envSvc.GetEnabledRegistryCredentials)
+		svc := NewUpdaterService(db, nil, dockerSvc, projectSvc, nil, nil, nil, imageSvc, nil, nil, nil)
+		var progress bytes.Buffer
+
+		err := svc.PullImage(ctx, imageRef, &progress)
+
+		require.NoError(t, err)
+		require.NotEmpty(t, gotAuth)
+		authConfig := decodeRegistryAuth(t, gotAuth)
+		assert.Equal(t, "db-user", authConfig.Username)
+		assert.Equal(t, "db-token", authConfig.Password)
 		assert.Contains(t, progress.String(), "Pulled")
 	})
 }
@@ -573,7 +649,7 @@ func TestUpdaterService_ApplyPending_ProjectFailureDoesNotBlockOtherProjectsInte
 		LabelPolicy: updaterlabels.DefaultLabelPolicy(),
 	})
 
-	result, err := svc.ApplyPending(ctx, false)
+	result, err := svc.ApplyPending(ctx, arcaneupdater.Options{})
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.Equal(t, 3, result.Updated, "updated count should include both image pulls and the successfully updated container")
