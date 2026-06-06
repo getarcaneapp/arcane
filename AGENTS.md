@@ -2,154 +2,106 @@
 
 > **All AI agents must conform to [AI_POLICY.md](./AI_POLICY.md)**
 
-Arcane is a modern Docker management UI with a **Go backend** (Echo router with Huma v2 typed API), **SvelteKit frontend** (Svelte 5), an optional headless agent, and a Cobra CLI. Three Go modules are unified via `go.work`: `backend/`, `cli/`, `types/`.
-
-### Domain docs
-
-Single-context domain docs live at `CONTEXT.md`;
+Arcane is a Docker management UI: **Go backend** (Echo + Huma v2), **SvelteKit v3 frontend** (Svelte 5), optional headless agent, Cobra CLI. Three Go modules via `go.work`: `backend/`, `cli/`, `types/`. Domain docs: `CONTEXT.md`.
 
 ## Development Environment
 
 ```bash
-./scripts/development/dev.sh start    # Start Docker-based dev environment (hot reload)
-./scripts/development/dev.sh stop|restart|rebuild|clean|logs
+./scripts/development/dev.sh start|stop|restart|rebuild|clean|logs
+# Frontend: http://localhost:3000 (Vite HMR) | Backend: http://localhost:3552 (Air)
 ```
 
-- Frontend: http://localhost:3000 (Vite HMR)
-- Backend: http://localhost:3552 (Air hot reload)
+## ⚠️ Golden Rules — READ FIRST
+
+1. **ALWAYS update existing code in place.** Never create a new function, service, helper, or API wrapper when one already exists that does the same thing. Find the existing code and modify it.
+2. **NEVER create stub, shim, or pass-through helper functions.** If a `pkg/` helper or service method exists, call it directly. Do not write a thin wrapper that just forwards to it.
+3. **NEVER duplicate functionality.** Before writing anything, search `pkg/`, `internal/services/`, and `frontend/src/lib/services/` for existing implementations.
+4. **NEVER create a new API standard.** If the codebase uses Huma v2 typed handlers on Echo, do not introduce Gin, raw `http.HandlerFunc`, or untyped patterns. Extend the existing standard.
 
 ## Architecture Overview
 
 ### Backend (`backend/`)
 
 ```
-cmd/                  # backend entrypoint
+cmd/                  # entrypoint
 api/                  # HTTP API surface
-├── api.go            # Huma v2 setup mounted on Echo via humaecho
-├── handlers/         # Huma handlers — thin wrappers that call services
-├── middleware/       # Huma-specific auth bridge
+├── api.go            # Huma v2 on Echo via humaecho — register handlers here
+├── handlers/         # Thin Huma handlers → call services
+├── middleware/       # Huma auth bridge
 └── ws/               # Echo WebSocket handlers
-frontend/             # embedded SvelteKit build registration
+frontend/             # embedded SvelteKit build
 internal/
-├── bootstrap/        # App initialization, DI wiring, Echo router setup — START HERE
-├── config/           # Environment configuration
-├── database/         # GORM connection and migrations
-├── middleware/       # Echo middleware: auth, CORS, env proxy, rate limiting
-├── models/           # GORM database models (include BaseModel for UUID, timestamps)
-└── services/         # Business logic — *_service.go files contain domain logic
+├── bootstrap/        # DI wiring, router setup — START HERE
+├── config/           # env config
+├── database/         # GORM + migrations
+├── middleware/       # Echo middleware (auth, CORS, rate limit)
+├── models/           # GORM models (embed BaseModel)
+└── services/         # Business logic — *_service.go
 pkg/
-├── authz/            # Permission taxonomy and authorization primitives
-├── dockerutil/       # Low-level Docker helpers (container names, compose labels, log streaming, mounts/volumes/networks)
-├── fswatch/          # Filesystem watcher that detects project file changes
-├── gitutil/          # Git client for GitOps (clone, branches, file tree, read)
-├── libarcane/        # Core reusable backend/domain libraries (compose deploy, edge, image update, build, swarm)
-├── pagination/       # Search/filter/sort/pagination helpers (DB and in-memory)
-├── projects/         # Compose project parsing, env, includes, discovery, filesystem helpers
-├── remenv/           # Remote-environment request/response transport client (agent/edge)
-├── scheduler/        # Cron-backed background jobs
-└── utils/            # Shared helper utilities (strings, cache, ptr, httpx, mapper)
-resources/            # migrations, images, fonts, email templates
+├── authz/            # Permissions + access policy
+├── dockerutil/       # Docker helpers (names, labels, logs, mounts)
+├── libarcane/        # Core libraries (compose, edge, image update, build, swarm)
+├── pagination/       # Search/filter/sort/pagination
+├── projects/         # Compose parsing, image refs, discovery
+├── scheduler/        # Cron jobs
+└── utils/            # Shared helpers (strings, cache, ptr, httpx)
+resources/            # migrations, images, email templates
 ```
 
 **Key patterns:**
 
-- Echo is the HTTP router. Do not add Gin code or Gin middleware.
-- Huma v2 is still the typed REST/OpenAPI layer, mounted on Echo in `backend/api/api.go` with `humaecho.NewWithGroup`.
-- Handlers are thin: extract typed input and auth context, call a service, return a typed response.
-- Services receive dependencies via constructor injection (see [bootstrap.go](backend/internal/bootstrap/bootstrap.go))
-- Router wiring and cross-cutting Echo middleware live in [router_bootstrap.go](backend/internal/bootstrap/router_bootstrap.go)
-- Direct Echo routes are reserved for behavior that does not fit Huma cleanly, such as WebSockets, streaming/diagnostics, webhook trigger routes, Playwright-only routes, buildable auth routes, and the embedded frontend.
-- Use `slog` for structured logging with context
-- Error wrapping: `fmt.Errorf("context: %w", err)`
+- Echo is the HTTP router. Huma v2 is the typed REST/OpenAPI layer mounted via `humaecho.NewWithGroup`.
+- Handlers are thin: extract typed input → call service → return typed response.
+- Services use constructor injection (see `bootstrap.go`).
+- Direct Echo routes only for WebSockets, streaming, diagnostics, webhooks, Playwright routes, and embedded frontend.
+- Use `slog` for logging, `fmt.Errorf("context: %w", err)` for errors.
 
-**Reuse `pkg/` helpers — do not duplicate or wrap:** Before writing inline logic, check `pkg/` for an existing helper:
+**Reuse `pkg/` helpers — call directly, never wrap:**
 
-- Docker primitives → `pkg/dockerutil`: container display names (`ContainerNameFromNames`, `ContainerSummaryName`), Compose labels (`ComposeProjectLabel`/`ComposeServiceLabel`, keyed by `ComposeProjectLabelKey`/`ComposeServiceLabelKey`), log streaming (`StreamContainerLogs`/`StreamMultiplexedLogs`/`ReadAllLogs`), and mount/volume/network/cgroup utilities.
-- Compose parsing → `pkg/projects`: image-ref extraction (`ImageRefsFromComposeServices`/`ImageRefsFromComposeConfigs`/`ImageRefsFromRuntimeServices`), plus compose load, env state, includes, and project discovery.
-- Listing endpoints → `pkg/pagination` (`SearchOrderAndPaginate`, `PaginateAndSortDB`); shared string/ptr/cache helpers → `pkg/utils`.
-
-Call middleware/library functions directly at the call site. Do not add thin pass-through helpers or stubs that only forward to a single underlying call.
-
-### API Layer (`backend/api/`)
-
-```
-api.go               # Huma config, schema naming, auth bridge, handler registration
-handlers/*.go        # Resource handlers registered with huma.Register
-middleware/auth.go   # Bridge from Huma middleware to auth services
-ws/handler.go        # Echo WebSocket endpoints under /api/environments/:id/ws
-diagnostics.go       # Direct Echo diagnostic routes
-webhooks_trigger.go  # Public Echo webhook trigger route
-```
-
-Huma handlers use typed input/output structs with struct tags for validation:
-
-```go
-type ListContainersInput struct {
-    EnvironmentID string `path:"id" doc:"Environment ID"`
-    Search        string `query:"search" doc:"Search query"`
-    Limit         int    `query:"limit" default:"20" doc:"Limit"`
-}
-```
-
-Register new typed API handlers from `backend/api/handlers/` through `registerHandlers` in [api.go](backend/api/api.go). Use Echo groups only when the endpoint needs raw `echo.Context`, WebSockets, streaming, or custom middleware behavior that Huma cannot model.
+- Docker → `pkg/dockerutil`: `ContainerNameFromNames`, `ComposeProjectLabel`/`ComposeServiceLabel`, `StreamContainerLogs`/`ReadAllLogs`
+- Compose → `pkg/projects`: `ImageRefsFromComposeServices`/`ImageRefsFromRuntimeServices`
+- Pagination → `pkg/pagination`: `SearchOrderAndPaginate`, `PaginateAndSortDB`
+- Shared → `pkg/utils`
 
 ### Frontend (`frontend/src/`)
 
+SvelteKit v3 — config lives in `vite.config.ts` (no `svelte.config.js`). Routes use `+page.svelte`/`+page.ts`/`+layout.svelte`/`+layout.ts` naming.
+
 ```
-routes/(app)/         # Main app pages (dashboard, containers, images, etc.)
+routes/(app)/         # App pages (dashboard, containers, images, etc.)
 routes/(auth)/        # Auth pages
-lib/components/       # Reusable Svelte components (shadcn-svelte based)
-lib/services/         # API service classes extending BaseAPIService
-lib/stores/           # Svelte stores (*.store.svelte files use runes)
+lib/components/       # Reusable components (shadcn-svelte)
+lib/services/         # API services extending BaseAPIService
+lib/stores/           # Svelte stores (*.store.svelte using runes)
 lib/types/            # TypeScript types
-../messages/en.json   # Source i18n messages; Crowdin handles other locales
+../messages/en.json   # i18n source strings (Paraglide)
 ```
 
 ### Shared Types (`types/`)
 
-Domain types shared between backend and CLI. Each domain has its own package (e.g., `types/container/`, `types/image/`).
+Domain types shared between backend and CLI. Each domain has its own package.
 
 ### CLI (`cli/`)
 
-The CLI is a Cobra application. Commands live under `cli/pkg/<domain>/`, shared command helpers live under `cli/internal/`, and public API shapes should come from `types/` instead of duplicating structs.
-
-## RBAC Architecture
-
-Keep Arcane RBAC split into three distinct layers:
-
-- Permission catalog: `backend/pkg/authz/catalog.go` and `permissions.go` are the source of truth for raw capabilities, scope taxonomy, labels, permission constants, and built-in bundles.
-- Access-surface registry: `backend/pkg/authz/access_policy.go` is the source of truth for page, route, landing, settings category, and customize category reachability metadata. Use it when filtering backend category responses or publishing frontend access policy.
-- Frontend UX gates: navigation config owns presentation only: labels, icons, order, grouping, and stable `accessSurfaceId` references. Route redirects, sidebar visibility, mobile nav, and landing cards evaluate backend-published access surfaces instead of duplicating permission arrays.
-- Backend enforcement: middleware, handlers, and services remain authoritative. Access surfaces are advisory UI metadata and must not replace `RequirePermission`, `RequireGlobalAdmin`, or service-level validation such as anti-escalation checks.
-
-Admin semantics come from effective permissions: `PermissionSet.IsGlobalAdmin()` on the backend and `isGlobalAdmin` in user DTOs on the frontend. Do not infer global administrator access from built-in role IDs in frontend authorization checks; role IDs may still be used for labels, badge colors, presets, and assignment UX.
+Cobra app. Commands in `cli/pkg/<domain>/`, helpers in `cli/internal/`, types from `types/`.
 
 ## Critical Patterns
 
-### Svelte 5 ONLY — No Svelte 4 Syntax
+### Svelte 5 Runes ONLY
 
 ```svelte
-<!-- Props: use $props() -->
-let { prop1, prop2 }: { prop1: string; prop2?: number } = $props();
-
-<!-- State: use $state() -->
-let count = $state(0);
-
-<!-- Derived values: use $derived() or $derived.by() -->
-let doubled = $derived(count * 2);
-let computed = $derived.by(() => complexCalculation());
-
-<!-- Side effects: use $effect() -->
-$effect(() => { /* runs when dependencies change */ });
+<script lang="ts">
+  let { name }: { name: string } = $props();
+  let count = $state(0);
+  let doubled = $derived(count * 2);
+  $effect(() => { /* ... */ });
+</script>
+<button onclick={handleClick}>Click</button>
 ```
 
-**NEVER use:** `export let`, `on:click` (use `onclick`), `$:`, `$$props`, `$$restProps`, slot syntax
-
-Example component: [job-card.svelte](frontend/src/lib/components/job-card/job-card.svelte)
+**NEVER:** `export let`, `on:click`, `$:`, `$$props`, `$$restProps`, old slot syntax.
 
 ### API Service Pattern
-
-Frontend services extend `BaseAPIService` and use `environmentStore` for multi-environment support:
 
 ```typescript
 export class ContainerService extends BaseAPIService {
@@ -162,428 +114,93 @@ export class ContainerService extends BaseAPIService {
 export const containerService = new ContainerService();
 ```
 
-### Echo + Huma Handler Pattern
-
-Use Huma for normal REST endpoints. Define typed input/output structs, then register the operation with `huma.Register` in the relevant `backend/api/handlers/*.go` file:
+### Huma Handler Pattern
 
 ```go
+// 1. Define typed input/output structs
 type ListContainersInput struct {
     EnvironmentID string `path:"id" doc:"Environment ID"`
     Search        string `query:"search" doc:"Search query"`
-    Limit         int    `query:"limit" default:"20" doc:"Limit"`
+    Limit         int    `query:"limit" default:"20"`
 }
+
+// 2. Register in handlers via huma.Register (in registerHandlers in api.go)
+// 3. Handler body: call service, return response
 ```
 
-Echo middleware and router setup belong in [router_bootstrap.go](backend/internal/bootstrap/router_bootstrap.go) or `backend/internal/middleware/`. Huma authentication behavior belongs in `backend/api/middleware/`.
-
-## Testing
-
-```bash
-# Backend unit tests
-cd backend && go test ./...
-
-# E2E tests (Playwright)
-just test e2e
-
-# Frontend type checking
-just lint frontend
-```
-
-Backend tests use in-memory SQLite and testify. See [auth_service_test.go](backend/internal/services/auth_service_test.go) for patterns.
-
-## Anti-Patterns to Avoid
-
-### Anti-Pattern 1: Business Logic in Handlers
-
-**Bad**: Handler contains business logic
-
-```go
-func (h *ContainerHandler) RestartContainer(ctx context.Context, input *RestartInput) (*RestartOutput, error) {
-    container, err := h.dockerClient.ContainerInspect(ctx, input.ID)
-    if container.State.Running {
-        h.dockerClient.ContainerStop(ctx, input.ID, nil)
-    }
-    return h.dockerClient.ContainerStart(ctx, input.ID, nil)
-}
-```
-
-**Good**: Handler calls service
-
-```go
-func (h *ContainerHandler) RestartContainer(ctx context.Context, input *RestartInput) (*RestartOutput, error) {
-    err := h.containerService.Restart(ctx, input.EnvironmentID, input.ID)
-    if err != nil {
-        return nil, fmt.Errorf("failed to restart container: %w", err)
-    }
-    return &RestartOutput{Success: true}, nil
-}
-```
-
-### Anti-Pattern 1b: Reintroducing Gin
-
-**Bad**: Adding a parallel Gin router or Gin middleware
-
-```go
-r := gin.Default()
-r.GET("/api/containers", handler)
-```
-
-**Good**: Mount REST endpoints through Huma on the existing Echo router, or use an Echo group for raw streaming/WebSocket cases
-
-```go
-huma.Register(api, huma.Operation{
-    OperationID: "list-containers",
-    Method:      http.MethodGet,
-    Path:        "/environments/{id}/containers",
-    Tags:        []string{"Containers"},
-}, h.ListContainers)
-```
-
-### Anti-Pattern 2: Svelte 4 Syntax
-
-**Bad**: Using deprecated Svelte 4 patterns
-
-```svelte
-<script>
-  export let name;
-  $: greeting = `Hello ${name}`;
-</script>
-<button on:click={handleClick}>Click</button>
-```
-
-**Good**: Using Svelte 5 runes
-
-```svelte
-<script lang="ts">
-  let { name }: { name: string } = $props();
-  let greeting = $derived(`Hello ${name}`);
-</script>
-<button onclick={handleClick}>Click</button>
-```
-
-### Anti-Pattern 3: Missing Multi-Environment Support
-
-**Bad**: Hardcoded API path without environment
-
-```typescript
-async getContainers() {
-    return this.api.get('/containers');
-}
-```
-
-**Good**: Include environment ID in path
-
-```typescript
-async getContainers() {
-    const envId = await environmentStore.getCurrentEnvironmentId();
-    return this.api.get(`/environments/${envId}/containers`);
-}
-```
-
-### Anti-Pattern 4: Missing BaseModel
-
-**Bad**: Model without standard fields
-
-```go
-type Stack struct {
-    ID   string `json:"id"`
-    Name string `json:"name"`
-}
-```
-
-**Good**: Model with BaseModel
+### GORM Model Pattern
 
 ```go
 type Stack struct {
     models.BaseModel
-    Name string `json:"name" gorm:"column:name"`
+    Name string `json:"name" gorm:"column:name" sortable:"true"`
 }
-
 func (Stack) TableName() string { return "stacks" }
 ```
 
-### Anti-Pattern 5: Using TypeScript `any`
+Use `Preload` for relationships. Use `models.JSON` for JSON fields, `models.StringSlice` for string arrays.
 
-**Bad**: Untyped data
+### i18n — No Raw Strings
 
-```typescript
-function processContainer(data: any) {
-  return data.name;
-}
-```
-
-**Good**: Properly typed
-
-```typescript
-import type { Container } from "$lib/types";
-
-function processContainer(data: Container): string {
-  return data.name;
-}
-```
-
-### Anti-Pattern 6: Raw Frontend Strings
-
-**Bad**: User-facing text hardcoded in components
-
-```svelte
-<Button>Save changes</Button>
-```
-
-**Good**: Add the source string to `frontend/messages/en.json` and call the generated Paraglide message
+All user-facing text goes in `frontend/messages/en.json`, accessed via Paraglide messages:
 
 ```svelte
 <Button>{m.common_save_changes()}</Button>
 ```
 
-## Container Registry Integration
+## RBAC Architecture
 
-- Use generic authentication (bearer tokens, basic auth)
-- Support multiple providers (Docker Hub, GHCR, custom OCI)
-- Use case-insensitive header checking
+Three layers — keep them separate:
+
+- **Permission catalog** (`backend/pkg/authz/catalog.go`, `permissions.go`): raw capabilities, scope taxonomy, constants.
+- **Access-surface registry** (`backend/pkg/authz/access_policy.go`): page/route/landing reachability metadata.
+- **Frontend UX gates**: navigation config with `accessSurfaceId` references. Backend enforcement via `RequirePermission`/`RequireGlobalAdmin` remains authoritative.
+
+Admin semantics from `PermissionSet.IsGlobalAdmin()` (backend) / `isGlobalAdmin` in user DTOs (frontend). Do not infer admin from role IDs in frontend auth checks.
 
 ## Multi-Environment Support
 
-Arcane supports managing multiple Docker environments (local + remote agents). The frontend uses `environmentStore` to track the active environment:
+- Environment ID `"0"` = local Docker socket
+- All API calls include `/environments/{id}/` prefix
+- `environmentStore.ready` is a Promise — await before use
+- On environment change, detail pages redirect to list pages
 
-```typescript
-// LOCAL_DOCKER_ENVIRONMENT_ID = '0' is the local Docker socket
-const envId = await environmentStore.getCurrentEnvironmentId();
+## Background Jobs
 
-// All API calls include environment ID in the path
-this.api.get(`/environments/${envId}/containers`);
-```
+1. Implement `Job` interface in `backend/pkg/scheduler/` (`Name()`, `Schedule()` → 6-field cron, `Run()`)
+2. Register in `jobs_bootstrap.go`
 
-**Key patterns:**
+## Image & Container Updates
 
-- Environment ID `"0"` = local Docker connection
-- Remote environments connect via agents (standard or edge)
-- `environmentStore.ready` is a Promise — await before accessing environment-specific data
-- When environment changes, resource detail pages redirect to list pages (resources don't exist across environments)
-
-See [environment.store.svelte.ts](frontend/src/lib/stores/environment.store.svelte.ts) for implementation.
-
-## Background Job Scheduling
-
-Jobs use cron-based scheduling via `robfig/cron/v3`. To add a new job:
-
-1. Implement the `Job` interface in `backend/pkg/scheduler/`:
-
-```go
-type Job interface {
-    Name() string                      // Unique job identifier
-    Schedule(ctx context.Context) string  // Cron expression (6-field with seconds)
-    Run(ctx context.Context)           // Job execution logic
-}
-```
-
-2. Create job with service dependencies:
-
-```go
-type MyJob struct {
-    myService      *services.MyService
-    settingsService *services.SettingsService
-}
-
-func NewMyJob(myService *services.MyService, settings *services.SettingsService) *MyJob {
-    return &MyJob{myService: myService, settingsService: settings}
-}
-
-func (j *MyJob) Schedule(ctx context.Context) string {
-    return j.settingsService.GetStringSetting(ctx, "myJobInterval", "0 0 * * * *") // hourly default
-}
-```
-
-3. Register in [jobs_bootstrap.go](backend/internal/bootstrap/jobs_bootstrap.go):
-
-```go
-myJob := pkg_scheduler.NewMyJob(appServices.MyService, appServices.Settings)
-newScheduler.RegisterJob(myJob)
-```
-
-**Note:** Cron uses 6 fields (with seconds): `"0 0 * * * *"` = every hour at :00:00
-
-## Image & Container Update Logic
-
-Update detection and application are split across layers — change behavior at the matching layer:
-
-- **`backend/pkg/libarcane/imageupdate/`** — comparison primitives: `digest.go` (DigestChecker: local vs remote digest), `registry_http.go` (registry digest / rate-limit queries, reference parsing), `labels.go` (Arcane/Compose label checks, self-redeploy guards), `sorter.go` (dependency-ordered container restart).
-- **`backend/internal/services/image_update_service.go`** — checks for updates and persists update records (`CheckImageUpdate`, `CheckMultipleImages`, `CheckAllImages`, `GetUpdateSummary`, `MarkImageRefUpToDateAfterPull`).
-- **`backend/internal/services/updater_service.go`** — applies updates to running containers (`ApplyPending`, `UpdateSingleContainer`), with status/history.
-- **`backend/api/handlers/image_updates.go`** — check/query API (`check-image-update`, `check-all-images`, `get-update-summary`); **`updater.go`** — apply API (`run-updater`, `update-container`, status/history).
-- **`backend/pkg/scheduler/`** — background drivers: `image_polling_job.go` (periodic checks), `auto_update_job.go` (auto-apply), `auto_heal_job.go` (restart unhealthy containers).
-
-Project image references are cached on the project row (`image_refs_json`, extracted via the `pkg/projects` `ImageRefsFrom*` helpers); per-project update summaries are assembled in `project_service.go`.
-
-## Database Patterns (GORM)
-
-### BaseModel
-
-All models embed `BaseModel` for UUID primary key and timestamps:
-
-```go
-type MyModel struct {
-    models.BaseModel           // ID, CreatedAt, UpdatedAt
-    Name        string         `json:"name" gorm:"column:name" sortable:"true"`
-    ForeignID   string         `json:"foreignId" gorm:"column:foreign_id"`
-    Related     *OtherModel    `json:"related,omitempty" gorm:"foreignKey:ForeignID"`
-}
-
-func (MyModel) TableName() string { return "my_models" }
-```
-
-### Relationships & Preloading
-
-Always use `Preload` for eager loading relationships:
-
-```go
-// Single preload
-s.db.WithContext(ctx).Preload("Registry").Where("id = ?", id).First(&template)
-
-// Multiple preloads
-s.db.WithContext(ctx).
-    Preload("Repository").
-    Preload("Project").
-    Where("id = ?", id).First(&sync)
-```
-
-### Custom Types
-
-Use `models.JSON` for arbitrary JSON fields and `models.StringSlice` for string arrays — both implement `driver.Valuer` and `sql.Scanner`.
+- `backend/pkg/libarcane/imageupdate/` — digest checks, registry queries, label checks, sorter
+- `backend/internal/services/image_update_service.go` — check + persist update records
+- `backend/internal/services/updater_service.go` — apply updates
+- `backend/api/handlers/image_updates.go` + `updater.go` — API endpoints
+- `backend/pkg/scheduler/` — `image_polling_job.go`, `auto_update_job.go`, `auto_heal_job.go`
 
 ## Agent Modes
 
-Arcane supports two agent modes with different connection directions.
-
-### Edge mode
-
-Edge agents connect outbound to a central manager via WebSocket or gRPC tunnel, allowing management of Docker hosts behind NAT/firewalls. The agent dials the manager; the manager never dials the agent.
-
-**Architecture:**
-
-- Manager: Receives tunnel connections, proxies HTTP requests over WebSocket
-- Agent: Connects outbound to manager, executes requests locally
-
-**Configuration** (agent side):
-
-```bash
-EDGE_AGENT=true
-MANAGER_API_URL=https://manager.example.com
-AGENT_TOKEN=<api-key>
-```
-
-**Message types** (see [tunnel.go](backend/pkg/libarcane/edge/tunnel.go)):
-
-- `request` / `response`: HTTP request/response proxying
-- `heartbeat` / `heartbeat_ack`: Connection keepalive
-- `ws_start` / `ws_data` / `ws_close`: WebSocket streaming (logs, stats)
-
-### Direct mode
-
-Direct agents are passive: the agent runs an HTTP server on TCP 3553 and the manager initiates every request. Requires inbound TCP 3553 on the agent host, but no outbound path back to the manager. Suits one-way network setups (SSH forward tunnels, restricted-outbound hosts).
-
-**Configuration** (agent side):
-
-```bash
-AGENT_MODE=true
-AGENT_TOKEN=<api-key>
-```
-
-`MANAGER_API_URL` is **not** used in Direct mode — the agent never dials out. Pairing completes when the manager's periodic health-check (every 2 min by default) reaches the agent.
-
-**When implementing agent features:**
-
-- Check `cfg.AgentMode` to skip manager-only logic (e.g., environment health checks)
-- Edge agents auto-pair on startup; Direct agents are paired by the manager's reachability check
-- Edge connections are stateless — each request is independent
-
-## AI-Assisted Contributions
-
-If you're an AI coding agent (like Claude Code, GitHub Copilot, Cursor, or similar) assisting a human developer:
-
-### Required Reading
-
-1. **Must read**: [AI_POLICY.md](AI_POLICY.md) — Disclosure requirements and quality standards
-2. **Must follow**: All coding patterns in this document
-3. **Must ensure**: Human has tested the changes locally
-
-### Common AI Pitfalls to Avoid
-
-When working with Arcane:
-
-❌ **Don't use Svelte 4 syntax**: This project uses Svelte 5 exclusively. No `export let`, no `on:click`, no `$:` reactive statements.
-
-❌ **Don't put business logic in handlers**: Handlers should be thin wrappers that call services. Check `backend/internal/services/` for patterns.
-
-❌ **Don't ignore multi-environment patterns**: All API endpoints must include environment ID. Check `environmentStore` usage in frontend services.
-
-❌ **Don't skip BaseModel**: All database models must embed `models.BaseModel` for UUID and timestamps.
-
-❌ **Don't ignore existing patterns**: Before writing new code, search for similar functionality:
-
-```bash
-# Find existing patterns
-git grep "func.*Service" backend/internal/services/
-git grep "extends BaseAPIService" frontend/src/lib/services/
-```
-
-### Good AI-Assisted Contribution Pattern
-
-1. **Start with the issue**: Read the full GitHub issue and understand the user's actual problem
-2. **Find existing patterns**: Search for similar code in the same package/directory
-3. **Follow the pattern**: Match structure, error handling, naming conventions
-4. **Test comprehensively**: Run dev environment, verify frontend and backend work
-5. **Explain in human terms**: Write PR descriptions that explain WHY, not just WHAT
-
-### Testing Requirements
-
-Before submitting any AI-assisted contribution, ensure:
-
-```bash
-# 1. Start development environment
-./scripts/development/dev.sh start
-
-# 2. Backend tests (if you changed Go code)
-just test backend
-
-# 3. Frontend type checking (if you changed frontend code)
-just lint frontend
-
-# 4. E2E tests
-just test e2e
-
-# 5. Verify hot reload works
-# - Frontend: http://localhost:3000
-# - Backend: http://localhost:3552
-```
-
-If any of these fail, **do not submit the PR**. Fix the issues first.
-
-### PR Description Template for AI-Assisted Contributions
-
-```markdown
-## Summary
-
-[One paragraph explaining what this PR does and why]
-
-## Related Issue
-
-Fixes #[issue number]
-
-## Changes
-
-- [Specific change 1 with rationale]
-- [Specific change 2 with rationale]
+- **Edge**: Agent dials out to manager via WebSocket/gRPC tunnel. Config: `EDGE_AGENT=true`, `MANAGER_API_URL`, `AGENT_TOKEN`.
+- **Direct**: Agent runs HTTP server on TCP 3553, manager dials in. Config: `AGENT_MODE=true`, `AGENT_TOKEN`. No `MANAGER_API_URL`.
 
 ## Testing
 
-- [ ] Dev environment starts successfully
-- [ ] Backend tests pass: `cd backend && go test ./...`
-- [ ] Frontend type checks pass: `just lint frontend`
-- [ ] Manually tested: [describe how]
-
-## AI Tool Used
-
-AI Tool: [e.g., Claude Code, GitHub Copilot, Cursor]
-Assistance Level: [Significant/Moderate/Minor]
+```bash
+cd backend && go test ./...        # unit tests (in-memory SQLite, testify)
+just test e2e                      # Playwright E2E
+just lint frontend                 # Svelte type checking
 ```
+
+## Anti-Patterns
+
+| ❌ Don't                                         | ✅ Do                                              |
+| ------------------------------------------------ | -------------------------------------------------- |
+| Business logic in handlers                       | Thin handlers → services                           |
+| Gin router/middleware                            | Huma on Echo                                       |
+| Svelte 4 syntax (`export let`, `on:click`, `$:`) | Svelte 5 runes (`$props()`, `onclick`, `$derived`) |
+| Hardcoded API paths without env ID               | Include `/environments/{id}/`                      |
+| Models without `BaseModel`                       | Embed `models.BaseModel`                           |
+| TypeScript `any`                                 | Proper types from `$lib/types`                     |
+| Hardcoded UI strings                             | Paraglide messages via `m.*()`                     |
+| Wrapping `pkg/` helpers                          | Call existing helpers directly                     |
+| New API standard (raw HTTP, untyped)             | Extend existing Huma typed handlers                |
