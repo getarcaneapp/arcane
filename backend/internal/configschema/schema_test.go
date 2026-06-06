@@ -302,6 +302,7 @@ var expectedSettingOverrideKeys = []string{
 	"gitSyncMaxFiles",
 	"gitSyncMaxTotalSizeMb",
 	"httpClientTimeout",
+	"iconCatalog",
 	"keyboardShortcutsEnabled",
 	"maxImageUploadSize",
 	"mobileNavigationMode",

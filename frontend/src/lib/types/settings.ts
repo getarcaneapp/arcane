@@ -3,6 +3,7 @@ import type { TemplateRegistryConfig } from './swarm';
 // --- Application settings ---
 
 export type ApplicationTheme = 'default' | 'graphite' | 'ocean' | 'amber' | 'github' | 'nord' | 'everforest' | 'rosepine';
+export type IconCatalog = 'selfhst' | 'dashboard-icons';
 
 export type Settings = {
 	projectsDirectory: string;
@@ -53,6 +54,7 @@ export type Settings = {
 	defaultShell: string;
 	dockerHost: string;
 	applicationTheme: ApplicationTheme;
+	iconCatalog: IconCatalog;
 	accentColor: string;
 	oledMode: boolean;
 	autoInjectEnv: boolean;

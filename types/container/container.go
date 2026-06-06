@@ -722,6 +722,16 @@ type Summary struct {
 	// Required: true
 	Mounts []Mount `json:"mounts"`
 
+	// IconLightURL is the resolved light icon URL for dark themes.
+	//
+	// Required: false
+	IconLightURL string `json:"iconLightUrl,omitempty"`
+
+	// IconDarkURL is the resolved dark icon URL for light themes.
+	//
+	// Required: false
+	IconDarkURL string `json:"iconDarkUrl,omitempty"`
+
 	// UpdateInfo contains image update information for this container.
 	//
 	// Required: false
@@ -836,6 +846,16 @@ type Details struct {
 	//
 	// Required: false
 	ComposeInfo *ComposeInfo `json:"composeInfo,omitempty"`
+
+	// IconLightURL is the resolved light icon URL for dark themes.
+	//
+	// Required: false
+	IconLightURL string `json:"iconLightUrl,omitempty"`
+
+	// IconDarkURL is the resolved dark icon URL for light themes.
+	//
+	// Required: false
+	IconDarkURL string `json:"iconDarkUrl,omitempty"`
 
 	// RedeployDisabled indicates whether redeploy actions are disabled for this container.
 	//

@@ -24,6 +24,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils/iconcatalog"
 	buildtypes "github.com/getarcaneapp/arcane/types/builds"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
@@ -2679,7 +2680,7 @@ func TestBuildDiscoveredComposeProjectUpdateRowsInternal(t *testing.T) {
 			State:   "running",
 			Labels:  map[string]string{},
 		},
-	}, map[string]struct{}{"known": {}}, imageService)
+	}, map[string]struct{}{"known": {}}, imageService, iconcatalog.DefaultCatalog)
 
 	require.Len(t, rows, 1)
 	row := rows[0]
@@ -2720,7 +2721,7 @@ func TestBuildDiscoveredComposeProjectUpdateRowsInternal_FallsBackToImageID(t *t
 				"com.docker.compose.service": "web",
 			},
 		},
-	}, map[string]struct{}{}, imageService)
+	}, map[string]struct{}{}, imageService, iconcatalog.DefaultCatalog)
 
 	require.Len(t, rows, 1)
 	assert.Equal(t, []string{"nginx:latest"}, rows[0].UpdateInfo.UpdatedImageRefs)
@@ -3513,13 +3514,15 @@ services:
     image: nickfedor/watchtower:latest
 `), 0o600))
 
-	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "metadata.yaml"), []byte(`x-watchtower-icon: &watchtower-icon "${ICON_CDN_URL:+${ICON_CDN_URL}/svg/watchtower.svg}"
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "metadata.yaml"), []byte(`x-watchtower-icon-light: &watchtower-icon "${ICON_CDN_URL:+${ICON_CDN_URL}/svg/watchtower.svg}"
 x-arcane:
-  icon: *watchtower-icon
+  icon-light: *watchtower-icon
+  icon-dark: *watchtower-icon
 services:
   watchtower:
     labels:
-      com.getarcaneapp.arcane.icon: *watchtower-icon
+      com.getarcaneapp.arcane.icon-light: *watchtower-icon
+      com.getarcaneapp.arcane.icon-dark: *watchtower-icon
 `), 0o600))
 
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
@@ -3534,7 +3537,8 @@ services:
 	require.NoError(t, err)
 	require.EqualValues(t, 1, page.TotalItems)
 	require.Len(t, items, 1)
-	assert.Equal(t, "https://cdn.jsdelivr.net/gh/selfhst/icons@main/svg/watchtower.svg", items[0].IconURL)
+	assert.Equal(t, "https://cdn.jsdelivr.net/gh/selfhst/icons@main/svg/watchtower.svg", items[0].IconLightURL)
+	assert.Equal(t, "https://cdn.jsdelivr.net/gh/selfhst/icons@main/svg/watchtower.svg", items[0].IconDarkURL)
 }
 
 func TestProjectService_CountProjectFolders_RecursivelyCountsNestedProjects(t *testing.T) {

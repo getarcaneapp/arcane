@@ -12,6 +12,8 @@ export interface BaseContainer {
 	labels: Record<string, string>;
 	state: string;
 	status: string;
+	iconLightUrl?: string;
+	iconDarkUrl?: string;
 }
 
 export interface PortBinding {
@@ -195,6 +197,8 @@ export interface ContainerDetailsDto {
 	mounts: ContainerMounts[];
 	labels: Record<string, string>;
 	composeInfo?: ComposeInfo;
+	iconLightUrl?: string;
+	iconDarkUrl?: string;
 	redeployDisabled?: boolean;
 }
 

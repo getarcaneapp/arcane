@@ -10,10 +10,11 @@
 	import TabbedPageLayout from '$lib/layouts/tabbed-page-layout.svelte';
 	import ActionButtons from '$lib/components/action-buttons.svelte';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
-	import { getStatusVariant } from '$lib/utils/docker';
+	import { getStatusVariant, getThemedIconUrl } from '$lib/utils/docker';
 	import { capitalizeFirstLetter } from '$lib/utils/formatting';
 	import { page } from '$app/state';
 	import { invalidateAll } from '$app/navigation';
+	import { mode } from 'mode-watcher';
 	import { toast } from 'svelte-sonner';
 	import { tryCatch } from '$lib/utils/api';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api';
@@ -674,7 +675,7 @@
 		{#snippet headerInfo()}
 			<div class="flex min-w-0 items-start gap-3">
 				<IconImage
-					src={project.iconUrl}
+					src={getThemedIconUrl(project, mode.current)}
 					alt={project.name}
 					fallback={ProjectsIcon}
 					class="size-6"

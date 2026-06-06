@@ -496,7 +496,8 @@ export interface RuntimeService {
 	containerName?: string;
 	ports?: string[];
 	health?: string;
-	iconUrl?: string;
+	iconLightUrl?: string;
+	iconDarkUrl?: string;
 	serviceConfig?: ProjectService;
 	redeployDisabled?: boolean;
 }
@@ -520,7 +521,8 @@ export interface Project {
 	dirName?: string;
 	relativePath?: string;
 	path: string;
-	iconUrl?: string;
+	iconLightUrl?: string;
+	iconDarkUrl?: string;
 	urls?: string[];
 	runningCount: string;
 	serviceCount: string;

@@ -1,11 +1,13 @@
 import { get, writable } from 'svelte/store';
 import { z } from 'zod/v4';
 import type { ApplicationTheme } from '$lib/types/settings';
+import type { IconCatalog } from '$lib/types/settings';
 
 // --- Local vs environment settings classification ---
 
 export type LocalSettings = {
 	applicationTheme: ApplicationTheme;
+	iconCatalog: IconCatalog;
 	accentColor: string;
 	oledMode: boolean;
 	mobileNavigationMode: string;
@@ -17,6 +19,7 @@ export type LocalSettings = {
 
 const LOCAL_SETTING_KEYS = new Set([
 	'applicationTheme',
+	'iconCatalog',
 	'accentColor',
 	'oledMode',
 	'mobileNavigationMode',
