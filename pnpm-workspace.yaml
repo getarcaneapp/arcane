@@ -28,6 +28,7 @@ overrides:
   fast-uri: ">=3.1.2"
   ws: ">=8.20.1"
   "@sveltejs/kit": ">=3.0.0-next.1"
+  "@sveltejs/adapter-static": ">=4.0.0-next.0"
 allowBuilds:
   "@tailwindcss/oxide": true
   esbuild: true
@@ -43,5 +44,5 @@ minimumReleaseAgeExclude:
   - "@fallow-cli/win32-arm64-msvc@2.89.0"
   - "@fallow-cli/win32-x64-msvc@2.89.0"
   - fallow@2.89.0
-  - '@sveltejs/kit@3.0.0-next.1'
-  - '@sveltejs/adapter-static@4.0.0-next.0'
+  - "@sveltejs/kit@3.0.0-next.1"
+  - "@sveltejs/adapter-static@4.0.0-next.0"

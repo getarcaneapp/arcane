@@ -24,6 +24,7 @@ overrides:
   fast-uri: '>=3.1.2'
   ws: '>=8.20.1'
   '@sveltejs/kit': '>=3.0.0-next.1'
+  '@sveltejs/adapter-static': '>=4.0.0-next.0'
 
 packageExtensionsChecksum: sha256-Yj0m2AD9TZO/cWup5bCg2l8l7VHtLu5doy9Oybhgv+w=
 
@@ -175,7 +176,7 @@ importers:
         specifier: ^0.1.4
         version: 0.1.4
       '@sveltejs/adapter-static':
-        specifier: ^4.0.0-next.0
+        specifier: '>=4.0.0-next.0'
         version: 4.0.0-next.0(@sveltejs/kit@3.0.0-next.1(@sveltejs/vite-plugin-svelte@7.1.2(svelte@5.56.1)(vite@8.0.16(@types/node@25.9.1)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0)))(svelte@5.56.1)(typescript@6.0.3)(vite@8.0.16(@types/node@25.9.1)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0)))
       '@sveltejs/vite-plugin-svelte':
         specifier: ^7.1.2
