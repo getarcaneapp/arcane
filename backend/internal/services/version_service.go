@@ -227,17 +227,19 @@ func (s *VersionService) GetAppVersionInfo(ctx context.Context) *version.Info {
 
 	// Build base info struct (always populated)
 	info := &version.Info{
-		CurrentVersion:  ver,
-		CurrentTag:      currentTag,
-		CurrentDigest:   currentDigest,
-		DisplayVersion:  s.getDisplayVersion(),
-		Revision:        s.revision,
-		ShortRevision:   config.ShortRevision(),
-		GoVersion:       config.GoVersion(),
-		EnabledFeatures: parseEnabledFeatures(),
-		BuildTime:       config.BuildTime,
-		IsSemverVersion: isSemver,
-		UpdateAvailable: false,
+		CurrentVersion:   ver,
+		CurrentTag:       currentTag,
+		CurrentDigest:    currentDigest,
+		DisplayVersion:   s.getDisplayVersion(),
+		Revision:         s.revision,
+		ShortRevision:    config.ShortRevision(),
+		GoVersion:        config.GoVersion(),
+		NodeVersion:      config.NodeVersion,
+		SvelteKitVersion: config.SvelteKitVersion,
+		EnabledFeatures:  parseEnabledFeatures(),
+		BuildTime:        config.BuildTime,
+		IsSemverVersion:  isSemver,
+		UpdateAvailable:  false,
 	}
 
 	// If update checks disabled, return base info

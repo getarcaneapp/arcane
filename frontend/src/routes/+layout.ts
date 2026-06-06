@@ -1,4 +1,4 @@
-import { browser } from '$app/environment';
+import { browser } from '$app/env';
 import { environmentManagementService } from '$lib/services/env-mgmt-service';
 import { settingsService } from '$lib/services/settings-service';
 import { roleService } from '$lib/services/role-service';
@@ -118,6 +118,8 @@ export const load = async () => {
 		revision: 'unknown',
 		shortRevision: 'unknown',
 		goVersion: 'unknown',
+		nodeVersion: 'unknown',
+		svelteKitVersion: 'unknown',
 		enabledFeatures: [],
 		isSemverVersion: false
 	};
@@ -132,6 +134,8 @@ export const load = async () => {
 			revision: info.revision,
 			shortRevision: info.shortRevision || (info.revision?.slice(0, 8) ?? 'unknown'),
 			goVersion: info.goVersion || 'unknown',
+			nodeVersion: info.nodeVersion || 'unknown',
+			svelteKitVersion: info.svelteKitVersion || 'unknown',
 			enabledFeatures: info.enabledFeatures ?? [],
 			buildTime: info.buildTime,
 			isSemverVersion: info.isSemverVersion,

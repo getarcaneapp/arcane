@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { browser } from '$app/environment';
+	import { browser } from '$app/env';
 	import { goto } from '$app/navigation';
 	import { ArcaneButton } from '$lib/components/arcane-button';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';

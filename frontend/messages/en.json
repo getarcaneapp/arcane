@@ -2097,6 +2097,8 @@
 	"version_info_tag": "Image Tag",
 	"version_info_full_commit": "Full Commit Hash",
 	"version_info_go_version": "Go Version",
+	"version_info_node_version": "Node Version",
+	"version_info_sveltekit_version": "SvelteKit Version",
 	"version_info_build_time": "Build Time",
 	"version_info_digest": "Image Digest",
 	"version_info_view_release": "View Release",

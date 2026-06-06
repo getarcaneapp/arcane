@@ -209,7 +209,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: 25
+          node-version: 26
           cache: pnpm
 
       - name: Setup Just
@@ -263,7 +263,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: 25
+          node-version: 26
           cache: pnpm
 
       - name: Set up Depot CLI
@@ -332,7 +332,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: 25
+          node-version: 26
           cache: pnpm
 
       - name: Setup Go
