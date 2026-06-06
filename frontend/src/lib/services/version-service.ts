@@ -1,4 +1,4 @@
-import { version as currentVersion } from '$app/environment';
+import { version as currentVersion } from '$app/env';
 import { apiClient } from './api-service';
 import type { AppVersionInformation } from '$lib/types/settings';
 
@@ -21,6 +21,8 @@ async function getVersionInformation(): Promise<AppVersionInformation> {
 			revision: data.revision || 'unknown',
 			shortRevision: data.shortRevision || data.revision?.slice(0, 8) || 'unknown',
 			goVersion: data.goVersion || 'unknown',
+			nodeVersion: data.nodeVersion || 'unknown',
+			svelteKitVersion: data.svelteKitVersion || 'unknown',
 			enabledFeatures: data.enabledFeatures ?? [],
 			buildTime: data.buildTime,
 			isSemverVersion: data.isSemverVersion || false,
@@ -39,6 +41,8 @@ async function getVersionInformation(): Promise<AppVersionInformation> {
 			revision: 'unknown',
 			shortRevision: 'unknown',
 			goVersion: 'unknown',
+			nodeVersion: 'unknown',
+			svelteKitVersion: 'unknown',
 			enabledFeatures: [],
 			isSemverVersion: false,
 			updateAvailable: false

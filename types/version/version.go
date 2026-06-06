@@ -32,6 +32,16 @@ type Info struct {
 	// Required: true
 	GoVersion string `json:"goVersion"`
 
+	// NodeVersion is the Node.js version used to build the frontend.
+	//
+	// Required: true
+	NodeVersion string `json:"nodeVersion"`
+
+	// SvelteKitVersion is the SvelteKit version used to build the frontend.
+	//
+	// Required: true
+	SvelteKitVersion string `json:"svelteKitVersion"`
+
 	// EnabledFeatures is the list of build-time feature flags compiled into the binary.
 	//
 	// Required: false

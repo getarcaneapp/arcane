@@ -3,7 +3,7 @@ ARG BUILD_TAGS=""
 ARG ARCANE_RUNTIME_BASE_IMAGE=ghcr.io/getarcaneapp/base:distroless
 
 # Stage 1: Build Frontend
-FROM --platform=$BUILDPLATFORM node:25-trixie-slim AS frontend-builder
+FROM --platform=$BUILDPLATFORM node:26-trixie-slim AS frontend-builder
 RUN npm install -g --force corepack@v0.34.5 && corepack enable
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
@@ -16,6 +16,11 @@ COPY frontend/package.json ./frontend/package.json
 RUN --mount=type=cache,id=arcane-pnpm-v2,target=/pnpm/store,sharing=locked \
     pnpm fetch && \
     pnpm install -r --offline --frozen-lockfile
+
+RUN printf 'NODE_VERSION=%s\nSVELTEKIT_VERSION=%s\n' \
+    "$(node --version)" \
+    "$(pnpm -C frontend exec node -p 'require("@sveltejs/kit/package.json").version')" \
+    > /tmp/arcane-frontend-build.env
 
 COPY frontend ./frontend
 
@@ -47,7 +52,9 @@ COPY backend ./
 COPY .arcane.json ../arcane.json
 
 COPY --from=frontend-builder /build/frontend/dist ./frontend/dist
+COPY --from=frontend-builder /tmp/arcane-frontend-build.env /tmp/arcane-frontend-build.env
 RUN --mount=type=cache,target=/root/.cache/go-build \
+    . /tmp/arcane-frontend-build.env && \
     if [ "${VERSION}" = "dev" ]; then VERSION=$(jq -r '.version // "dev"' ../arcane.json); fi && \
     if [ "${REVISION}" = "unknown" ]; then REVISION=$(jq -r '.revision // "unknown"' ../arcane.json); fi && \
     if [ "${BUILD_TIME}" = "unknown" ]; then BUILD_TIME=$(jq -r '.buildTime // "unknown"' ../arcane.json); fi && \
@@ -60,7 +67,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=linux \
     go build \
     -tags "${BUILD_TAGS}" \
-    -ldflags "-w -s -X github.com/getarcaneapp/arcane/backend/internal/config.Version=${VERSION} -X github.com/getarcaneapp/arcane/backend/internal/config.Revision=${REVISION} -X github.com/getarcaneapp/arcane/backend/internal/config.BuildTime=${BUILD_TIME}" \
+    -ldflags "-w -s -X github.com/getarcaneapp/arcane/backend/internal/config.Version=${VERSION} -X github.com/getarcaneapp/arcane/backend/internal/config.Revision=${REVISION} -X github.com/getarcaneapp/arcane/backend/internal/config.BuildTime=${BUILD_TIME} -X github.com/getarcaneapp/arcane/backend/internal/config.NodeVersion=${NODE_VERSION} -X github.com/getarcaneapp/arcane/backend/internal/config.SvelteKitVersion=${SVELTEKIT_VERSION}" \
     -trimpath \
     -o /build/arcane \
     ./cmd/main.go

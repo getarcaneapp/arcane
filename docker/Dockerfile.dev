@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # Stage 1: Frontend Development with optimized caching
-FROM --platform=$BUILDPLATFORM node:25-trixie-slim AS frontend-dev
+FROM --platform=$BUILDPLATFORM node:26-trixie-slim AS frontend-dev
 
 RUN npm install -g --force corepack && corepack enable pnpm
 

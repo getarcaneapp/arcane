@@ -1,7 +1,7 @@
 <script lang="ts">
 	// Dozzle reference: the grouped row shell and left-side timestamp treatment here were
 	// informed by amir20/dozzle's LogItem.vue and GroupedLogItem.vue.
-	import { dev } from '$app/environment';
+	import { dev } from '$app/env';
 	import * as Collapsible from '$lib/components/ui/collapsible';
 	import { ArrowDownIcon, ArrowRightIcon } from '$lib/icons';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';

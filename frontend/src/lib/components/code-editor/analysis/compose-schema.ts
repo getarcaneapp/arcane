@@ -1,6 +1,6 @@
 import Ajv, { type ValidateFunction } from 'ajv';
 import type { Completion } from '@codemirror/autocomplete';
-import { browser } from '$app/environment';
+import { browser } from '$app/env';
 import type { SchemaDoc, SchemaStatus } from './types';
 
 const DOCKER_COMPOSE_SCHEMA_URL =

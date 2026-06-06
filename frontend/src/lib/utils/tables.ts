@@ -1,4 +1,4 @@
-import { browser } from '$app/environment';
+import { browser } from '$app/env';
 import { PersistedState } from 'runed';
 import { decodeSort, type CompactTablePrefs } from '$lib/components/arcane-table/arcane-table.types.svelte';
 import { TABLE_PAGE_SIZE_ALL, TABLE_PAGE_SIZE_OPTIONS } from '$lib/constants/table-pagination';
