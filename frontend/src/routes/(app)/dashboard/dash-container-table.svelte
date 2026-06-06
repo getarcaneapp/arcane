@@ -12,10 +12,11 @@
 	import { m } from '$lib/paraglide/messages';
 	import { containerService } from '$lib/services/container-service';
 	import { goto } from '$app/navigation';
+	import { mode } from 'mode-watcher';
 	import { useResponsiveTableLimit } from '$lib/hooks/use-responsive-table-limit.svelte';
 	import { ContainersIcon, ArrowRightIcon } from '$lib/icons';
 	import IconImage from '$lib/components/icon-image.svelte';
-	import { getArcaneIconUrlFromLabels } from '$lib/utils/docker';
+	import { getThemedIconUrl } from '$lib/utils/docker';
 
 	let {
 		containers = $bindable(),
@@ -50,7 +51,7 @@
 {#snippet NameCell({ item }: { item: ContainerSummaryDto })}
 	{@const firstName = item.names?.[0] ?? ''}
 	{@const displayName = firstName ? (firstName.startsWith('/') ? firstName.substring(1) : firstName) : item.id.substring(0, 12)}
-	{@const iconUrl = getArcaneIconUrlFromLabels(item.labels)}
+	{@const iconUrl = getThemedIconUrl(item, mode.current)}
 	<div class="flex items-center gap-2">
 		<IconImage src={iconUrl} alt={displayName} fallback={ContainersIcon} class="size-4" containerClass="size-7" />
 		<a class="font-medium hover:underline" href="/containers/{item.id}">{displayName}</a>
@@ -65,7 +66,7 @@
 	<UniversalMobileCard
 		{item}
 		icon={(item) => {
-			const iconUrl = getArcaneIconUrlFromLabels(item.labels);
+			const iconUrl = getThemedIconUrl(item, mode.current);
 			const state = item.state;
 			return {
 				component: ContainersIcon,

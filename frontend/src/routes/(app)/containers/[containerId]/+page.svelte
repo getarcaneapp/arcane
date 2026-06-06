@@ -23,8 +23,8 @@
 	import ContainerDetailStatsSync from '../components/container-detail-stats-sync.svelte';
 	import ContainerHealthcheck from '../components/ContainerHealthcheck.svelte';
 	import IconImage from '$lib/components/icon-image.svelte';
-	import { getArcaneIconUrlFromLabels } from '$lib/utils/docker';
-	import { calculateMemoryUsage } from '$lib/utils/docker';
+	import { calculateMemoryUsage, getThemedIconUrl } from '$lib/utils/docker';
+	import { mode } from 'mode-watcher';
 	import {
 		ArrowLeftIcon,
 		AlertIcon,
@@ -80,7 +80,7 @@
 	};
 
 	const containerDisplayName = $derived(cleanContainerName(container?.name));
-	const containerIconUrl = $derived(getArcaneIconUrlFromLabels(container?.labels));
+	const containerIconUrl = $derived(getThemedIconUrl(container, mode.current));
 
 	const calculateCPUPercent = (statsData: ContainerStatsType | null): number => {
 		if (!statsData || !statsData.cpu_stats || !statsData.precpu_stats) {

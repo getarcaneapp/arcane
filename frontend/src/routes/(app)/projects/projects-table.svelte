@@ -6,10 +6,11 @@
 	import { BoxIcon, EditIcon, StartIcon, RestartIcon, StopIcon, TrashIcon, RedeployIcon, EllipsisIcon } from '$lib/icons';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { goto } from '$app/navigation';
+	import { mode } from 'mode-watcher';
 	import { toast } from 'svelte-sonner';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
-	import { getStatusVariant } from '$lib/utils/docker';
+	import { getStatusVariant, getThemedIconUrl } from '$lib/utils/docker';
 	import { capitalizeFirstLetter } from '$lib/utils/formatting';
 	import { format } from 'date-fns';
 	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '$lib/components/arcane-table';
@@ -228,7 +229,13 @@
 
 {#snippet NameCell({ item }: { item: Project })}
 	<div class="flex items-center gap-2">
-		<IconImage src={item.iconUrl} alt={item.name} fallback={FolderOpenIcon} class="size-8" containerClass="size-10" />
+		<IconImage
+			src={getThemedIconUrl(item, mode.current)}
+			alt={item.name}
+			fallback={FolderOpenIcon}
+			class="size-8"
+			containerClass="size-10"
+		/>
 		<a class="font-medium hover:underline" href="/projects/{item.id}">{item.name}</a>
 		{#if item.isArchived}
 			<span class="bg-muted text-muted-foreground rounded px-1.5 py-0.5 text-xs font-medium">{m.projects_archived_badge()}</span>
@@ -296,7 +303,7 @@
 		icon={(item: Project) => ({
 			component: FolderOpenIcon,
 			variant: item.status === 'running' ? 'emerald' : item.status === 'exited' ? 'red' : 'amber',
-			imageUrl: item.iconUrl,
+			imageUrl: getThemedIconUrl(item, mode.current) ?? undefined,
 			alt: item.name
 		})}
 		title={(item: Project) => item.name}

@@ -30,25 +30,25 @@ const ARCANE_ROOT_EXTENSION_COMPLETIONS: ArcaneCompletionSpec[] = [
 	{
 		label: 'x-arcane',
 		detail: 'Arcane extension',
-		info: 'Arcane compose metadata block for project-level icon and URLs.'
-	},
-	{
-		label: 'x-arcane-icon',
-		detail: 'Arcane extension helper',
-		info: 'Optional extension key often used for YAML anchors/reuse of icon values.'
+		info: 'Arcane compose metadata block for project-level theme icons and URLs.'
 	}
 ];
 
 const ARCANE_BLOCK_COMPLETIONS: ArcaneCompletionSpec[] = [
 	{
 		label: 'icon',
-		detail: 'Arcane project icon',
-		info: 'Project icon URL or icon identifier.'
+		detail: 'Arcane project fallback icon',
+		info: 'Fallback project icon URL or catalog slug used only when icon-light and icon-dark are not set.'
 	},
 	{
-		label: 'icons',
-		detail: 'Arcane project icon (alias)',
-		info: 'Alias for icon metadata; first non-empty value is used.'
+		label: 'icon-light',
+		detail: 'Arcane project icon for dark theme',
+		info: 'Light project icon URL or catalog slug used in dark theme.'
+	},
+	{
+		label: 'icon-dark',
+		detail: 'Arcane project icon for light theme',
+		info: 'Dark project icon URL or catalog slug used in light theme.'
 	},
 	{
 		label: 'urls',
@@ -61,20 +61,25 @@ const ARCANE_SERVICE_EXTENSION_COMPLETIONS: ArcaneCompletionSpec[] = [
 	{
 		label: 'x-arcane',
 		detail: 'Arcane service extension',
-		info: 'Arcane service metadata block for service icon overrides.'
+		info: 'Arcane service metadata block for service theme icon overrides.'
 	}
 ];
 
 const ARCANE_SERVICE_BLOCK_COMPLETIONS: ArcaneCompletionSpec[] = [
 	{
 		label: 'icon',
-		detail: 'Arcane service icon',
-		info: 'Service icon URL or icon identifier.'
+		detail: 'Arcane service fallback icon',
+		info: 'Fallback service icon URL or catalog slug used only when icon-light and icon-dark are not set.'
 	},
 	{
-		label: 'icons',
-		detail: 'Arcane service icon (alias)',
-		info: 'Alias for service icon metadata; first non-empty value is used.'
+		label: 'icon-light',
+		detail: 'Arcane service icon for dark theme',
+		info: 'Light service icon URL or catalog slug used in dark theme.'
+	},
+	{
+		label: 'icon-dark',
+		detail: 'Arcane service icon for light theme',
+		info: 'Dark service icon URL or catalog slug used in light theme.'
 	}
 ];
 
@@ -313,28 +318,28 @@ function getArcaneSchemaDocForPath(path: Array<string | number>): SchemaDoc | nu
 	if (path.length === 1 && path[0] === 'x-arcane') {
 		return {
 			title: 'x-arcane',
-			description: 'Arcane extension block for project-level metadata such as icon and custom URLs.'
+			description: 'Arcane extension block for project-level metadata such as theme icons and custom URLs.'
 		};
 	}
 
-	if (path.length === 1 && path[0] === 'x-arcane-icon') {
+	if (path.length === 2 && path[0] === 'x-arcane' && path[1] === 'icon-light') {
 		return {
-			title: 'x-arcane-icon',
-			description: 'Optional Arcane helper extension key, commonly used as a YAML anchor value for icon reuse.'
+			title: 'x-arcane.icon-light',
+			description: 'Light project icon URL or catalog slug used in dark theme.'
+		};
+	}
+
+	if (path.length === 2 && path[0] === 'x-arcane' && path[1] === 'icon-dark') {
+		return {
+			title: 'x-arcane.icon-dark',
+			description: 'Dark project icon URL or catalog slug used in light theme.'
 		};
 	}
 
 	if (path.length === 2 && path[0] === 'x-arcane' && path[1] === 'icon') {
 		return {
 			title: 'x-arcane.icon',
-			description: 'Project icon URL or icon identifier used for the stack/project display.'
-		};
-	}
-
-	if (path.length === 2 && path[0] === 'x-arcane' && path[1] === 'icons') {
-		return {
-			title: 'x-arcane.icons',
-			description: 'Alias for icon metadata. Arcane uses the first non-empty value between icon/icons.'
+			description: 'Fallback project icon URL or catalog slug used only when icon-light and icon-dark are not set.'
 		};
 	}
 
@@ -357,11 +362,14 @@ function getArcaneSchemaDocForPath(path: Array<string | number>): SchemaDoc | nu
 		path[0] === 'services' &&
 		typeof path[1] === 'string' &&
 		path[2] === 'x-arcane' &&
-		(path[3] === 'icon' || path[3] === 'icons')
+		(path[3] === 'icon' || path[3] === 'icon-light' || path[3] === 'icon-dark')
 	) {
 		return {
 			title: `services.<name>.x-arcane.${String(path[3])}`,
-			description: 'Service icon URL or icon identifier override.'
+			description:
+				path[3] === 'icon'
+					? 'Fallback service icon URL or catalog slug used only when icon-light and icon-dark are not set.'
+					: 'Service theme icon URL or catalog slug override.'
 		};
 	}
 
