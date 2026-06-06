@@ -12,7 +12,7 @@ overrides:
   devalue: ">=5.8.1"
   valibot: ^1.2.0
   validator: ^13.15.22
-  cookie: ^0.7.0
+  cookie: ^1.0.2
   next: ^16.1.7
   undici: ^6.23.0
   ajv: ">=8.18.0"
@@ -27,18 +27,21 @@ overrides:
   uuid: ">=11.1.1"
   fast-uri: ">=3.1.2"
   ws: ">=8.20.1"
+  "@sveltejs/kit": ">=3.0.0-next.1"
 allowBuilds:
   "@tailwindcss/oxide": true
   esbuild: true
   sharp: true
 minimumReleaseAgeExclude:
   - prettier-plugin-svelte@4.0.1
-  - '@fallow-cli/darwin-arm64@2.89.0'
-  - '@fallow-cli/darwin-x64@2.89.0'
-  - '@fallow-cli/linux-arm64-gnu@2.89.0'
-  - '@fallow-cli/linux-arm64-musl@2.89.0'
-  - '@fallow-cli/linux-x64-gnu@2.89.0'
-  - '@fallow-cli/linux-x64-musl@2.89.0'
-  - '@fallow-cli/win32-arm64-msvc@2.89.0'
-  - '@fallow-cli/win32-x64-msvc@2.89.0'
+  - "@fallow-cli/darwin-arm64@2.89.0"
+  - "@fallow-cli/darwin-x64@2.89.0"
+  - "@fallow-cli/linux-arm64-gnu@2.89.0"
+  - "@fallow-cli/linux-arm64-musl@2.89.0"
+  - "@fallow-cli/linux-x64-gnu@2.89.0"
+  - "@fallow-cli/linux-x64-musl@2.89.0"
+  - "@fallow-cli/win32-arm64-msvc@2.89.0"
+  - "@fallow-cli/win32-x64-msvc@2.89.0"
   - fallow@2.89.0
+  - '@sveltejs/kit@3.0.0-next.1'
+  - '@sveltejs/adapter-static@4.0.0-next.0'

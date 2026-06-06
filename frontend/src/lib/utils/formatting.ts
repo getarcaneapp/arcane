@@ -1,5 +1,5 @@
 import Convert from 'ansi-to-html';
-import { format as formatDate, setDefaultOptions } from 'date-fns';
+import { format as formatDate, setDefaultOptions, type Locale as DateFnsLocale } from 'date-fns';
 import { z } from 'zod/v4';
 import { setLocale as setParaglideLocale, type Locale } from '$lib/paraglide/runtime';
 
@@ -193,15 +193,48 @@ export function formatTime(date: Date | string | null | undefined): string {
 	return formatDate(d, 'pp');
 }
 
-export async function setLocale(locale: Locale, reload = true) {
-	let dateFnsLocale: string = locale;
-	if (dateFnsLocale === 'en') {
-		dateFnsLocale = 'en-US';
-	}
+type DateFnsLocaleModule = {
+	[key: string]: DateFnsLocale;
+};
 
+function resolveDateFnsLocale(loader: () => Promise<DateFnsLocaleModule>): Promise<DateFnsLocale> {
+	return loader().then((module) => {
+		const locale = (module as { default?: DateFnsLocale }).default ?? Object.values(module)[0];
+		if (!locale) {
+			throw new Error('date-fns locale module did not export a locale');
+		}
+		return locale;
+	});
+}
+
+const dateFnsLocaleLoaders: Record<Locale, () => Promise<DateFnsLocale>> = {
+	cs: () => resolveDateFnsLocale(() => import('date-fns/locale/cs')),
+	da: () => resolveDateFnsLocale(() => import('date-fns/locale/da')),
+	de: () => resolveDateFnsLocale(() => import('date-fns/locale/de')),
+	el: () => resolveDateFnsLocale(() => import('date-fns/locale/el')),
+	en: () => resolveDateFnsLocale(() => import('date-fns/locale/en-US')),
+	eo: () => resolveDateFnsLocale(() => import('date-fns/locale/eo')),
+	es: () => resolveDateFnsLocale(() => import('date-fns/locale/es')),
+	fr: () => resolveDateFnsLocale(() => import('date-fns/locale/fr')),
+	hu: () => resolveDateFnsLocale(() => import('date-fns/locale/hu')),
+	it: () => resolveDateFnsLocale(() => import('date-fns/locale/it')),
+	ja: () => resolveDateFnsLocale(() => import('date-fns/locale/ja')),
+	ko: () => resolveDateFnsLocale(() => import('date-fns/locale/ko')),
+	nl: () => resolveDateFnsLocale(() => import('date-fns/locale/nl')),
+	pl: () => resolveDateFnsLocale(() => import('date-fns/locale/pl')),
+	'pt-BR': () => resolveDateFnsLocale(() => import('date-fns/locale/pt-BR')),
+	ru: () => resolveDateFnsLocale(() => import('date-fns/locale/ru')),
+	sv: () => resolveDateFnsLocale(() => import('date-fns/locale/sv')),
+	uk: () => resolveDateFnsLocale(() => import('date-fns/locale/uk')),
+	vi: () => resolveDateFnsLocale(() => import('date-fns/locale/vi')),
+	'zh-CN': () => resolveDateFnsLocale(() => import('date-fns/locale/zh-CN')),
+	'zh-TW': () => resolveDateFnsLocale(() => import('date-fns/locale/zh-TW'))
+};
+
+export async function setLocale(locale: Locale, reload = true) {
 	const [zodResult, dateFnsResult] = await Promise.allSettled([
 		import(`../../../node_modules/zod/v4/locales/${locale}.js`),
-		import(`../../../node_modules/date-fns/locale/${dateFnsLocale}.js`)
+		dateFnsLocaleLoaders[locale]()
 	]);
 
 	if (zodResult.status === 'fulfilled') {
@@ -214,7 +247,7 @@ export async function setLocale(locale: Locale, reload = true) {
 
 	if (dateFnsResult.status === 'fulfilled') {
 		setDefaultOptions({
-			locale: dateFnsResult.value.default
+			locale: dateFnsResult.value
 		});
 	} else {
 		console.warn(`Failed to load date-fns locale for ${locale}:`, dateFnsResult.reason);

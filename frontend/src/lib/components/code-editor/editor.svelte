@@ -16,8 +16,7 @@
 	} from '@codemirror/lint';
 	import { keymap, hoverTooltip, EditorView, ViewPlugin, closeHoverTooltips, hasHoverTooltips } from '@codemirror/view';
 	import { type Extension } from '@codemirror/state';
-	import { parseDocument } from 'yaml';
-	import { browser } from '$app/environment';
+	import { browser } from '$app/env';
 	import { m } from '$lib/paraglide/messages';
 	import configStore from '$lib/stores/config-store';
 	import { mode } from 'mode-watcher';
@@ -25,21 +24,26 @@
 	import { createDefaultSummary, ENV_SNIPPETS, YAML_SNIPPETS } from './editor-constants';
 	import { createEnterIndentKeymap } from './enter-indentation';
 	import { createMergeHostAction, type MergeActionParams } from './merge-editor';
-	import {
-		analyzeComposeContent,
-		findYamlPositionContext,
-		resolveVariableSourceAtPosition,
-		type YamlPositionContext
-	} from './analysis/compose-analysis';
 	import { analyzeEnvContent } from './analysis/env-analysis';
-	import {
-		getComposeSchemaContext,
-		getCompletionOptionsForPath,
-		getEnumValueCompletions,
-		getSchemaDocForPath,
-		type ComposeSchemaContext
-	} from './analysis/compose-schema';
+	import type { YamlPositionContext } from './analysis/compose-analysis';
+	import type { ComposeSchemaContext } from './analysis/compose-schema';
 	import type { CodeLanguage, DiagnosticSummary, EditorContext, OutlineItem } from './analysis/types';
+
+	type ComposeAnalysisModule = typeof import('./analysis/compose-analysis');
+	type ComposeSchemaModule = typeof import('./analysis/compose-schema');
+
+	let composeAnalysisModulePromise: Promise<ComposeAnalysisModule> | null = null;
+	let composeSchemaModulePromise: Promise<ComposeSchemaModule> | null = null;
+
+	function loadComposeAnalysisModule(): Promise<ComposeAnalysisModule> {
+		composeAnalysisModulePromise ??= import('./analysis/compose-analysis');
+		return composeAnalysisModulePromise;
+	}
+
+	function loadComposeSchemaModule(): Promise<ComposeSchemaModule> {
+		composeSchemaModulePromise ??= import('./analysis/compose-schema');
+		return composeSchemaModulePromise;
+	}
 
 	let {
 		value = $bindable(''),
@@ -268,12 +272,13 @@
 		return formatted.join('\n').replace(/\n{3,}/g, '\n\n');
 	}
 
-	function formatDocument() {
+	async function formatDocument() {
 		if (!activeView || readOnly) return;
 		const current = activeView.state.doc.toString();
 		let formatted = current;
 
 		if (language === 'yaml') {
+			const { parseDocument } = await import('yaml');
 			const parsed = parseDocument(current, { strict: false, uniqueKeys: false });
 			if (parsed.errors.length === 0) {
 				formatted = parsed.toString({ indent: 2, lineWidth: 0 });
@@ -307,7 +312,7 @@
 		commandPaletteOpen = false;
 		switch (id) {
 			case 'format':
-				formatDocument();
+				void formatDocument();
 				break;
 			case 'next-diagnostic':
 				if (activeView) nextDiagnostic(activeView);
@@ -354,7 +359,8 @@
 	});
 
 	const schemaCompletions = async (context: CompletionContext, yamlContext: YamlPositionContext): Promise<Completion[]> => {
-		const schema = await getComposeSchemaContext();
+		const schemaModule = await loadComposeSchemaModule();
+		const schema = await schemaModule.getComposeSchemaContext();
 		schemaState = schema;
 		updateSummary({
 			schemaStatus: schema.status,
@@ -366,16 +372,17 @@
 		const prefix = before?.text ?? '';
 
 		if (yamlContext.atKey) {
-			return [...YAML_SNIPPETS, ...getCompletionOptionsForPath(schema.schema, yamlContext.parentPath, prefix)];
+			return [...YAML_SNIPPETS, ...schemaModule.getCompletionOptionsForPath(schema.schema, yamlContext.parentPath, prefix)];
 		}
 
-		return getEnumValueCompletions(schema.schema, yamlContext.path);
+		return schemaModule.getEnumValueCompletions(schema.schema, yamlContext.path);
 	};
 
 	const composeCompletionSource = async (context: CompletionContext) => {
 		if (language !== 'yaml' || readOnly) return null;
 		const source = context.state.doc.toString();
-		const yamlContext = findYamlPositionContext(source, context.pos);
+		const analysisModule = await loadComposeAnalysisModule();
+		const yamlContext = analysisModule.findYamlPositionContext(source, context.pos);
 		if (!yamlContext) return null;
 
 		const before = context.matchBefore(/[\w.-]*/);
@@ -428,7 +435,8 @@
 		async (view, position) => {
 			if (language !== 'yaml' || isSchemaHoverSuppressed(view)) return null;
 			const source = view.state.doc.toString();
-			const variableRef = resolveVariableSourceAtPosition(source, position, effectiveEditorContext);
+			const analysisModule = await loadComposeAnalysisModule();
+			const variableRef = analysisModule.resolveVariableSourceAtPosition(source, position, effectiveEditorContext);
 			if (variableRef) {
 				return {
 					pos: position,
@@ -441,15 +449,16 @@
 				};
 			}
 
-			const yamlContext = findYamlPositionContext(source, position);
+			const yamlContext = analysisModule.findYamlPositionContext(source, position);
 			if (!yamlContext || !yamlContext.currentKey) return null;
 
-			const schema = schemaState ?? (await getComposeSchemaContext());
+			const schemaModule = await loadComposeSchemaModule();
+			const schema = schemaState ?? (await schemaModule.getComposeSchemaContext());
 			if (isSchemaHoverSuppressed(view)) return null;
 			schemaState = schema;
 			if (!schema.schema) return null;
 
-			const doc = getSchemaDocForPath(schema.schema, yamlContext.path);
+			const doc = schemaModule.getSchemaDocForPath(schema.schema, yamlContext.path);
 			if (!doc) return null;
 
 			return {
@@ -552,7 +561,7 @@
 		{
 			key: 'Shift-Alt-f',
 			run() {
-				formatDocument();
+				void formatDocument();
 				return true;
 			}
 		},
@@ -573,9 +582,10 @@
 			return [];
 		}
 
-		const schema = await getComposeSchemaContext();
+		const [schemaModule, analysisModule] = await Promise.all([loadComposeSchemaModule(), loadComposeAnalysisModule()]);
+		const schema = await schemaModule.getComposeSchemaContext();
 		schemaState = schema;
-		const analysis = await analyzeComposeContent(view, schema, effectiveEditorContext);
+		const analysis = await analysisModule.analyzeComposeContent(view, schema, effectiveEditorContext);
 		activeOutlineItems = analysis.outlineItems;
 
 		updateSummaryFromDiagnostics(analysis.diagnostics, {
