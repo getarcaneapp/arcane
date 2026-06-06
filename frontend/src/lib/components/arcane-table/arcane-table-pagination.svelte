@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { type Table as TableType } from '@tanstack/table-core';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as Select from '$lib/components/ui/select/index.js';
 	import { m } from '$lib/paraglide/messages';
@@ -18,8 +17,7 @@
 		setPage,
 		setPageSize
 	}: {
-		table: TableType<any>;
-		items: Paginated<any>;
+		items: Paginated<unknown>;
 		currentPage: number;
 		totalPages: number;
 		totalItems: number;
