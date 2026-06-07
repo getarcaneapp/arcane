@@ -18,7 +18,7 @@ setup('create gitops sync in arcane', async ({ page }) => {
 
 	// Step 1: Create a Git Repository in Arcane pointing to GitHub
 	await page.goto('/customize/git-repositories');
-	await page.waitForLoadState('networkidle');
+	await page.waitForLoadState('load');
 
 	// Check if test repo already exists
 	const existingRepo = page.getByRole('cell', { name: GITOPS_REPO_NAME });
@@ -68,7 +68,7 @@ setup('create gitops sync in arcane', async ({ page }) => {
 
 	// Step 2: Create GitOps Sync
 	await page.goto('/environments/0/gitops');
-	await page.waitForLoadState('networkidle');
+	await page.waitForLoadState('load');
 
 	// Check if sync already exists
 	const existingSync = page.getByRole('cell', { name: GITOPS_SYNC_NAME });
@@ -151,10 +151,10 @@ setup('create gitops sync in arcane', async ({ page }) => {
 	// Step 3: Trigger initial sync to create the managed project
 	console.log('Triggering initial sync...');
 	await page.reload();
-	await page.waitForLoadState('networkidle');
+	await page.waitForLoadState('load');
 
 	// Find the sync row and trigger sync
-	const syncRow = page.locator('tr').filter({ hasText: GITOPS_SYNC_NAME });
+	const syncRow = page.locator('tr').filter({ hasText: GITOPS_SYNC_NAME }).first();
 	if ((await syncRow.count()) > 0) {
 		// Look for sync button or menu
 		const syncButton = syncRow.getByRole('button', { name: /Sync|Sync Now/i });
@@ -163,6 +163,7 @@ setup('create gitops sync in arcane', async ({ page }) => {
 		if ((await syncButton.count()) > 0) {
 			await syncButton.click();
 		} else if ((await menuButton.count()) > 0) {
+			await syncRow.hover();
 			await menuButton.click();
 			await page.waitForTimeout(300);
 			const syncMenuItem = page.getByRole('menuitem', { name: /Sync/i });
@@ -178,7 +179,7 @@ setup('create gitops sync in arcane', async ({ page }) => {
 
 	// Verify project was created
 	await page.goto('/projects');
-	await page.waitForLoadState('networkidle');
+	await page.waitForLoadState('load');
 	await page.waitForTimeout(2000);
 
 	console.log('GitOps test setup complete!');

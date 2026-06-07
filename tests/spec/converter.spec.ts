@@ -23,33 +23,20 @@ const SELECTORS = {
 };
 
 async function openConvertFromDockerRun(page: Page) {
-	// Wait for the page to be fully loaded
-	await page.waitForLoadState('networkidle');
+	await page.waitForLoadState('load');
 
-	// Split-button chevron trigger on /projects/new. (Trigger is rendered via child snippet,
-	// so data-slot="dropdown-menu-trigger" may not be present on the final button element.)
-	let dropdownTrigger = page.locator('button.rounded-l-none.px-2').first();
-	if ((await dropdownTrigger.count()) === 0) {
-		// Fallback for markup changes: use the old icon-only heuristic
-		dropdownTrigger = page.locator('button:has(svg)').filter({ hasText: '' }).last();
-	}
-
+	const createProjectGroup = page
+		.getByRole('group')
+		.filter({ has: page.getByRole('button', { name: 'Create Project' }) })
+		.first();
+	const dropdownTrigger = createProjectGroup.locator('button').last();
 	await expect(dropdownTrigger).toBeVisible();
 	await dropdownTrigger.click();
 
-	// Prefer text match, but keep positional fallback for non-English locales.
-	const menuItems = page.locator('[data-slot="dropdown-menu-item"], [role="menuitem"]');
-	await expect(menuItems.first()).toBeVisible();
+	const menu = page.locator('[data-slot="dropdown-menu-content"]:visible').last();
+	await expect(menu).toBeVisible();
+	await menu.getByRole('menuitem', { name: /Convert from Docker Run/i }).click();
 
-	const convertItemByText = menuItems.filter({ hasText: /Convert from Docker Run/i }).first();
-	if (await convertItemByText.count()) {
-		await convertItemByText.click();
-	} else {
-		// Item order in this menu is: template, converter, git repo, separator, ...
-		await menuItems.nth(1).click();
-	}
-
-	// Ensure converter dialog is open before interacting with inputs
 	await expect(page.getByRole('button', SELECTORS.convertButton())).toBeVisible();
 }
 
@@ -66,7 +53,7 @@ async function setupMockConvert(page: Page, payload: ConvertResponse) {
 test.describe('Docker Run to Compose Converter', () => {
 	test.beforeEach(async ({ page }) => {
 		await page.goto(ROUTES.page);
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 	});
 
 	test('should convert simple docker run command', async ({ page }) => {

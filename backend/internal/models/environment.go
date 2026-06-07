@@ -3,6 +3,8 @@ package models
 import "time"
 
 type Environment struct {
+	BaseModel
+
 	Name                string     `json:"name" sortable:"true"`
 	ApiUrl              string     `json:"apiUrl" gorm:"column:api_url" sortable:"true"`
 	Status              string     `json:"status" sortable:"true"`
@@ -14,8 +16,6 @@ type Environment struct {
 	ApiKeyID            *string    `json:"-" gorm:"column:api_key_id"`
 	ParentEnvironmentID *string    `json:"-" gorm:"column:parent_environment_id"`
 	SwarmNodeID         *string    `json:"-" gorm:"column:swarm_node_id"`
-
-	BaseModel
 }
 
 func (Environment) TableName() string { return "environments" }

@@ -9,10 +9,11 @@
 	import * as Tabs from '$lib/components/ui/tabs';
 	import TemplatesBrowser from './components/TemplatesBrowser.svelte';
 	import RegistryManager from './components/RegistryManager.svelte';
-	import type { TemplateRegistry } from '$lib/types/template.type';
+	import type { TemplateRegistry } from '$lib/types/swarm';
 	import { untrack } from 'svelte';
-	import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
+	import type { SearchPaginationSortRequest } from '$lib/types/shared';
 	import { RegistryIcon, TemplateIcon, FolderOpenIcon } from '$lib/icons';
+	import { hasPermission } from '$lib/utils/auth';
 
 	let { data } = $props();
 
@@ -129,26 +130,35 @@
 		}
 	}
 
-	const actionButtons: ActionButton[] = [
-		{
-			id: 'create',
-			action: 'create',
-			label: m.templates_create_template(),
-			onclick: () => goto('/customize/templates/create')
-		},
-		{
-			id: 'default',
-			action: 'edit',
-			label: m.templates_edit_default(),
-			onclick: () => goto('/customize/templates/default')
-		},
-		{
+	const canCreateTemplate = $derived(hasPermission('templates:create'));
+	const canUpdateTemplate = $derived(hasPermission('templates:update'));
+
+	const actionButtons: ActionButton[] = $derived.by(() => {
+		const buttons: ActionButton[] = [];
+		if (canCreateTemplate) {
+			buttons.push({
+				id: 'create',
+				action: 'create',
+				label: m.templates_create_template(),
+				onclick: () => goto('/customize/templates/create')
+			});
+		}
+		if (canUpdateTemplate) {
+			buttons.push({
+				id: 'default',
+				action: 'edit',
+				label: m.templates_edit_default(),
+				onclick: () => goto('/customize/templates/default')
+			});
+		}
+		buttons.push({
 			id: 'refresh',
 			action: 'restart',
 			label: m.common_refresh(),
 			onclick: refreshTemplates
-		}
-	];
+		});
+		return buttons;
+	});
 
 	const localTemplatesCount = $derived(templates.data?.filter((t) => !t.isRemote).length ?? 0);
 	const remoteTemplatesCount = $derived(templates.data?.filter((t) => t.isRemote).length ?? 0);

@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/getarcaneapp/arcane/backend/internal/common"
-	libupdater "github.com/getarcaneapp/arcane/backend/pkg/libarcane/imageupdate"
+	libupdater "github.com/getarcaneapp/updater/pkg/labels"
 	containertypes "github.com/moby/moby/api/types/container"
 	mounttypes "github.com/moby/moby/api/types/mount"
 	networktypes "github.com/moby/moby/api/types/network"

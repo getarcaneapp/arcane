@@ -75,7 +75,7 @@ func TestGitRepositoryService_UpdateRepository_RejectsURLChangeWhenStoredTokenWo
 	})
 
 	_, err := svc.UpdateRepository(context.Background(), repo.ID, models.UpdateGitRepositoryRequest{
-		URL: gitRepositoryStringPtrInternal("https://attacker.tld/repo.git"),
+		URL: new("https://attacker.tld/repo.git"),
 	}, models.User{})
 	require.Error(t, err)
 
@@ -100,7 +100,7 @@ func TestGitRepositoryService_UpdateRepository_RejectsURLChangeWhenStoredSSHKeyW
 	})
 
 	_, err := svc.UpdateRepository(context.Background(), repo.ID, models.UpdateGitRepositoryRequest{
-		URL: gitRepositoryStringPtrInternal("git@attacker.tld:acme/private.git"),
+		URL: new("git@attacker.tld:acme/private.git"),
 	}, models.User{})
 	require.Error(t, err)
 
@@ -127,7 +127,7 @@ func TestGitRepositoryService_UpdateRepository_RejectsURLChangeWhenStoredTokenAn
 	})
 
 	_, err := svc.UpdateRepository(context.Background(), repo.ID, models.UpdateGitRepositoryRequest{
-		URL: gitRepositoryStringPtrInternal("https://attacker.tld/repo.git"),
+		URL: new("https://attacker.tld/repo.git"),
 	}, models.User{})
 	require.Error(t, err)
 
@@ -149,8 +149,8 @@ func TestGitRepositoryService_UpdateRepository_AllowsURLChangeWhenTokenIsResuppl
 	})
 
 	updated, err := svc.UpdateRepository(context.Background(), repo.ID, models.UpdateGitRepositoryRequest{
-		URL:   gitRepositoryStringPtrInternal("https://github.com/acme/private-rotated.git"),
-		Token: gitRepositoryStringPtrInternal("ghp_new_token"),
+		URL:   new("https://github.com/acme/private-rotated.git"),
+		Token: new("ghp_new_token"),
 	}, models.User{})
 	require.NoError(t, err)
 
@@ -171,8 +171,8 @@ func TestGitRepositoryService_UpdateRepository_AllowsURLChangeWhenTokenIsCleared
 	})
 
 	updated, err := svc.UpdateRepository(context.Background(), repo.ID, models.UpdateGitRepositoryRequest{
-		URL:   gitRepositoryStringPtrInternal("https://github.com/acme/public.git"),
-		Token: gitRepositoryStringPtrInternal(""),
+		URL:   new("https://github.com/acme/public.git"),
+		Token: new(""),
 	}, models.User{})
 	require.NoError(t, err)
 
@@ -191,8 +191,8 @@ func TestGitRepositoryService_UpdateRepository_AllowsSameURLWithoutCredentialRes
 	})
 
 	updated, err := svc.UpdateRepository(context.Background(), repo.ID, models.UpdateGitRepositoryRequest{
-		URL:      gitRepositoryStringPtrInternal("https://github.com/acme/private.git"),
-		Username: gitRepositoryStringPtrInternal("deploy-bot"),
+		URL:      new("https://github.com/acme/private.git"),
+		Username: new("deploy-bot"),
 	}, models.User{})
 	require.NoError(t, err)
 

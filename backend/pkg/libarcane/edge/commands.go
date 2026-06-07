@@ -10,6 +10,7 @@ type commandRoute struct {
 	PathPattern string
 	CommandName string
 	Stream      bool
+	LocalOnly   bool
 }
 
 var commandRoutes = []commandRoute{
@@ -47,6 +48,12 @@ var commandRoutes = []commandRoute{
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/image-updates/check-batch", CommandName: "image_update.check_batch"},
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/image-updates/check-all", CommandName: "image_update.check_all"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/image-updates/summary", CommandName: "image_update.summary"},
+
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/activities", CommandName: "activity.list"},
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/activities/stream", LocalOnly: true},
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/activities/{activityId}", CommandName: "activity.inspect"},
+	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/activities/{activityId}/cancel", CommandName: "activity.cancel"},
+	{Method: http.MethodDelete, PathPattern: "/api/environments/{id}/activities/history", CommandName: "activity.history.clear"},
 
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/images/{imageId}/vulnerabilities/scan", CommandName: "vulnerability.scan"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/images/{imageId}/vulnerabilities", CommandName: "vulnerability.list"},
@@ -144,9 +151,6 @@ var commandRoutes = []commandRoute{
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/notifications/settings", CommandName: "notification.settings.upsert"},
 	{Method: http.MethodDelete, PathPattern: "/api/environments/{id}/notifications/settings/{provider}", CommandName: "notification.settings.delete"},
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/notifications/test/{provider}", CommandName: "notification.test"},
-	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/notifications/apprise", CommandName: "notification.apprise.get"},
-	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/notifications/apprise", CommandName: "notification.apprise.upsert"},
-	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/notifications/apprise/test", CommandName: "notification.apprise.test"},
 
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/dashboard", CommandName: "dashboard.snapshot"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/dashboard/action-items", CommandName: "dashboard.action_items"},
@@ -198,6 +202,10 @@ func ResolveEdgeCommandName(method, requestPath string, stream bool) (string, bo
 		return "", false
 	}
 
+	if route.LocalOnly {
+		return "", false
+	}
+
 	return route.CommandName, true
 }
 
@@ -210,6 +218,9 @@ func AdvertisedEdgeCommands() []string {
 	seen := make(map[string]struct{}, len(commandRoutes))
 	commands := make([]string, 0, len(commandRoutes))
 	for _, route := range commandRoutes {
+		if route.LocalOnly {
+			continue
+		}
 		if _, ok := seen[route.CommandName]; ok {
 			continue
 		}

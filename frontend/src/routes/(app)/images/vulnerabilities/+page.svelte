@@ -3,20 +3,19 @@
 	import { m } from '$lib/paraglide/messages';
 	import { vulnerabilityService } from '$lib/services/vulnerability-service';
 	import { imageService } from '$lib/services/image-service';
-	import { parallelRefresh } from '$lib/utils/refresh.util';
+	import { parallelRefresh } from '$lib/utils/api';
 	import { useEnvironmentRefresh } from '$lib/hooks/use-environment-refresh.svelte';
-	import type {
-		EnvironmentVulnerabilitySummary,
-		VulnerabilityWithImage,
-		IgnoredVulnerability
-	} from '$lib/types/vulnerability.type';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
+	import type { EnvironmentVulnerabilitySummary, VulnerabilityWithImage, IgnoredVulnerability } from '$lib/types/environment';
+	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
 	import { untrack } from 'svelte';
 	import SecurityVulnerabilityTable from './security-vulnerability-table.svelte';
 	import IgnoredVulnerabilitiesTable from './ignored-vulnerabilities-table.svelte';
 	import { toast } from 'svelte-sonner';
 	import { InspectIcon } from '$lib/icons';
 	import * as Tabs from '$lib/components/ui/tabs/index.js';
+	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import { hasPermission } from '$lib/utils/auth';
+	import { mapVulnerabilityPage, mapVulnerabilityRequest } from '$lib/utils/vulnerability';
 
 	let { data } = $props();
 
@@ -65,46 +64,6 @@
 		];
 		return items.filter((item) => item.value > 0);
 	});
-
-	function mapVulnerabilityRequest(options: SearchPaginationSortRequest): SearchPaginationSortRequest {
-		const filters = { ...(options.filters ?? {}) };
-		if (filters['vulnSeverity']) {
-			filters['severity'] = filters['vulnSeverity'];
-			delete filters['vulnSeverity'];
-		}
-
-		const sort = options.sort?.column === 'vulnSeverity' ? { ...options.sort, column: 'severity' } : options.sort;
-
-		return {
-			...options,
-			sort,
-			filters: Object.keys(filters).length ? filters : undefined
-		};
-	}
-
-	function getVulnerabilityKey(vuln: VulnerabilityWithImage, index: number): string {
-		return [
-			vuln.imageId,
-			vuln.vulnerabilityId,
-			vuln.pkgName,
-			vuln.installedVersion ?? '',
-			vuln.fixedVersion ?? '',
-			String(index)
-		].join('-');
-	}
-
-	function mapVulnerabilityPage(page: Paginated<VulnerabilityWithImage>, options: SearchPaginationSortRequest) {
-		const pageNumber = options.pagination?.page ?? page.pagination?.currentPage ?? 1;
-		const limit = options.pagination?.limit ?? page.pagination?.itemsPerPage ?? 20;
-		const offset = (pageNumber - 1) * limit;
-		return {
-			...page,
-			data: (page.data ?? []).map((item, index) => ({
-				...item,
-				id: getVulnerabilityKey(item, offset + index)
-			}))
-		};
-	}
 
 	async function refreshAll() {
 		const requestForApi = mapVulnerabilityRequest(requestOptions);
@@ -289,27 +248,34 @@
 		}
 	}
 
-	const actionButtons: ActionButton[] = $derived([
-		{
-			id: 'scan-all',
-			action: 'base',
-			label: isLoading.scanningAll
-				? `${m.security_scanning()} (${scanProgress.current}/${scanProgress.total})`
-				: m.security_scan_all(),
-			onclick: scanAllImages,
-			loading: isLoading.scanningAll,
-			disabled: isLoading.scanningAll || isLoading.refreshing,
-			icon: InspectIcon
-		},
-		{
+	const currentEnvId = $derived(environmentStore.selected?.id || '0');
+	const canScanVuln = $derived(hasPermission('vulnerabilities:scan', currentEnvId));
+
+	const actionButtons: ActionButton[] = $derived.by(() => {
+		const buttons: ActionButton[] = [];
+		if (canScanVuln) {
+			buttons.push({
+				id: 'scan-all',
+				action: 'base',
+				label: isLoading.scanningAll
+					? `${m.security_scanning()} (${scanProgress.current}/${scanProgress.total})`
+					: m.security_scan_all(),
+				onclick: scanAllImages,
+				loading: isLoading.scanningAll,
+				disabled: isLoading.scanningAll || isLoading.refreshing,
+				icon: InspectIcon
+			});
+		}
+		buttons.push({
 			id: 'refresh',
 			action: 'restart',
 			label: m.common_refresh(),
 			onclick: refreshAll,
 			loading: isLoading.refreshing,
 			disabled: isLoading.refreshing || isLoading.scanningAll
-		}
-	]);
+		});
+		return buttons;
+	});
 </script>
 
 <ResourcePageLayout title={m.security_title()} subtitle={m.security_subtitle()} {actionButtons}>

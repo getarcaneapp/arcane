@@ -20,7 +20,7 @@ const FIELD_LABELS = {
 
 async function navigateToBuildWorkspace(page: Page) {
 	await page.goto(ROUTES.page);
-	await page.waitForLoadState('networkidle');
+	await page.waitForLoadState('load');
 	await expect(page.getByRole('heading', { level: 1, name: /Build Workspace/i })).toBeVisible();
 }
 

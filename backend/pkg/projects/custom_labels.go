@@ -12,34 +12,43 @@ import (
 	"github.com/compose-spec/compose-go/v2/loader"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils/iconcatalog"
 	"github.com/goccy/go-yaml"
 )
 
 const (
-	// ArcaneIconLabel is the full reverse-DNS label key for service-level icons.
+	// ArcaneIconLabel is the full reverse-DNS label key for fallback service-level icons.
 	ArcaneIconLabel = "com.getarcaneapp.arcane.icon"
+	// ArcaneIconLightLabel is the full reverse-DNS label key for light service-level icons.
+	ArcaneIconLightLabel = "com.getarcaneapp.arcane.icon-light"
+	// ArcaneIconDarkLabel is the full reverse-DNS label key for dark service-level icons.
+	ArcaneIconDarkLabel = "com.getarcaneapp.arcane.icon-dark"
 
-	arcaneBlockKey = "x-arcane"
-	arcaneIconKey  = "icon"
-	arcaneIconsKey = "icons"
-	arcaneURLsKey  = "urls"
+	arcaneBlockKey     = "x-arcane"
+	arcaneIconKey      = "icon"
+	arcaneIconsKey     = "icons"
+	arcaneIconLightKey = "icon-light"
+	arcaneIconDarkKey  = "icon-dark"
+	arcaneURLsKey      = "urls"
 )
+
+type IconSet = iconcatalog.IconSet
 
 // ArcaneComposeMetadata represents Arcane-specific configuration extracted from a Compose file.
 type ArcaneComposeMetadata struct {
-	// ProjectIconURL is the URL to an icon representing the entire project.
-	ProjectIconURL string
+	// ProjectIcon contains fallback, light, and dark icon values for the project.
+	ProjectIcon IconSet
 	// ProjectURLS are additional URLs related to the project (e.g., documentation, homepage).
 	ProjectURLS []string
-	// ServiceIcons maps service names to their respective icon identifiers or URLs.
-	ServiceIcons map[string]string
+	// ServiceIconSets maps service names to their fallback, light, and dark icon values.
+	ServiceIconSets map[string]IconSet
 }
 
 // ParseArcaneComposeMetadata reads a Docker Compose file and extracts Arcane-specific metadata.
 // When projectsDirectory is set, Arcane's project env loading is used so .env.global is available.
 func ParseArcaneComposeMetadata(ctx context.Context, composeFilePath, projectsDirectory string, autoInjectEnv bool) (ArcaneComposeMetadata, error) {
 	if composeFilePath == "" {
-		return ArcaneComposeMetadata{ServiceIcons: map[string]string{}}, nil
+		return emptyArcaneComposeMetadataInternal(), nil
 	}
 
 	workdir := filepath.Dir(composeFilePath)
@@ -51,7 +60,7 @@ func ParseArcaneComposeMetadata(ctx context.Context, composeFilePath, projectsDi
 	envLoader := NewEnvLoader(projectsDirectory, workdir, autoInjectEnv)
 	envMap, _, err := envLoader.LoadEnvironment(ctx)
 	if err != nil {
-		return ArcaneComposeMetadata{ServiceIcons: map[string]string{}}, fmt.Errorf("load project environment: %w", err)
+		return emptyArcaneComposeMetadataInternal(), fmt.Errorf("load project environment: %w", err)
 	}
 
 	return ParseArcaneComposeMetadataWithEnv(ctx, composeFilePath, envMap)
@@ -63,7 +72,7 @@ func ParseArcaneComposeMetadataWithEnv(ctx context.Context, composeFilePath stri
 }
 
 func parseArcaneComposeMetadataFromFileInternal(ctx context.Context, composeFilePath string, envMap map[string]string, visited map[string]struct{}) (ArcaneComposeMetadata, error) {
-	meta := ArcaneComposeMetadata{ServiceIcons: map[string]string{}}
+	meta := emptyArcaneComposeMetadataInternal()
 	if composeFilePath == "" {
 		return meta, nil
 	}
@@ -112,39 +121,43 @@ func parseArcaneComposeMetadataFromFileInternal(ctx context.Context, composeFile
 }
 
 func extractArcaneComposeMetadata(project *composetypes.Project) ArcaneComposeMetadata {
-	meta := ArcaneComposeMetadata{ServiceIcons: map[string]string{}}
+	meta := emptyArcaneComposeMetadataInternal()
 	if project == nil {
 		return meta
 	}
 
 	if arcaneBlock, ok := project.Extensions[arcaneBlockKey]; ok {
-		meta.ProjectIconURL, meta.ProjectURLS = parseArcaneBlock(arcaneBlock)
+		meta.ProjectIcon, meta.ProjectURLS = parseArcaneBlockInternal(arcaneBlock)
 	}
 
 	for name, svc := range project.Services {
-		icon := findArcaneIconLabel(svc.Labels)
-		if icon == "" && svc.Deploy != nil {
-			icon = findArcaneIconLabel(svc.Deploy.Labels)
+		iconSet := FindArcaneIconSet(svc.Labels)
+		if iconSet.IsEmpty() && svc.Deploy != nil {
+			iconSet = FindArcaneIconSet(svc.Deploy.Labels)
 		}
-		if icon == "" {
+		if iconSet.IsEmpty() {
 			if arcaneBlock, ok := svc.Extensions[arcaneBlockKey]; ok {
-				icon, _ = parseArcaneBlock(arcaneBlock)
+				iconSet, _ = parseArcaneBlockInternal(arcaneBlock)
 			}
 		}
-		if icon != "" {
-			meta.ServiceIcons[name] = icon
+		if !iconSet.IsEmpty() {
+			meta.ServiceIconSets[name] = iconSet
 		}
 	}
 
 	return meta
 }
 
-func parseArcaneBlock(block any) (string, []string) {
+func parseArcaneBlockInternal(block any) (IconSet, []string) {
 	arcaneBlock, ok := utils.AsStringMap(block)
 	if !ok {
-		return "", nil
+		return IconSet{}, nil
 	}
-	icon := utils.FirstNonEmpty(getFirstString(arcaneBlock[arcaneIconKey]), getFirstString(arcaneBlock[arcaneIconsKey]))
+	icon := IconSet{
+		Icon:  utils.FirstNonEmpty(getFirstString(arcaneBlock[arcaneIconKey]), getFirstString(arcaneBlock[arcaneIconsKey])),
+		Light: getFirstString(arcaneBlock[arcaneIconLightKey]),
+		Dark:  getFirstString(arcaneBlock[arcaneIconDarkKey]),
+	}
 	urls := utils.UniqueNonEmptyStrings(utils.Collect(arcaneBlock[arcaneURLsKey], utils.ToString))
 	return icon, urls
 }
@@ -154,19 +167,34 @@ func mergeArcaneComposeMetadata(target *ArcaneComposeMetadata, source ArcaneComp
 		return
 	}
 
-	if target.ProjectIconURL == "" {
-		target.ProjectIconURL = source.ProjectIconURL
-	}
+	target.ProjectIcon = mergeIconSetFieldsInternal(target.ProjectIcon, source.ProjectIcon)
 
 	target.ProjectURLS = utils.UniqueNonEmptyStrings(append(target.ProjectURLS, source.ProjectURLS...))
 
-	if target.ServiceIcons == nil {
-		target.ServiceIcons = map[string]string{}
+	if target.ServiceIconSets == nil {
+		target.ServiceIconSets = map[string]IconSet{}
 	}
-	for name, icon := range source.ServiceIcons {
-		if _, exists := target.ServiceIcons[name]; !exists {
-			target.ServiceIcons[name] = icon
-		}
+	for name, iconSet := range source.ServiceIconSets {
+		target.ServiceIconSets[name] = mergeIconSetFieldsInternal(target.ServiceIconSets[name], iconSet)
+	}
+}
+
+func mergeIconSetFieldsInternal(target, source IconSet) IconSet {
+	if strings.TrimSpace(target.Icon) == "" {
+		target.Icon = source.Icon
+	}
+	if strings.TrimSpace(target.Light) == "" {
+		target.Light = source.Light
+	}
+	if strings.TrimSpace(target.Dark) == "" {
+		target.Dark = source.Dark
+	}
+	return target
+}
+
+func emptyArcaneComposeMetadataInternal() ArcaneComposeMetadata {
+	return ArcaneComposeMetadata{
+		ServiceIconSets: map[string]IconSet{},
 	}
 }
 
@@ -319,24 +347,53 @@ func getFirstString(v any) string {
 	return ""
 }
 
-// findArcaneIconLabel attempts to locate an Arcane icon label within service labels.
+// FindArcaneIconSet attempts to locate Arcane icon labels within service labels.
 // It supports both map[string]string and []string label formats.
-func findArcaneIconLabel(labels any) string {
+func FindArcaneIconSet(labels any) IconSet {
+	iconSet := IconSet{}
 	if labelMap, ok := utils.AsStringMap(labels); ok {
 		for key, value := range labelMap {
-			if isArcaneIconLabel(key) {
-				return utils.ToString(value)
-			}
+			assignArcaneIconValueInternal(&iconSet, key, utils.ToString(value))
 		}
+		return iconSet
 	}
 
 	for _, s := range utils.Collect(labels, utils.ToString) {
-		if key, value, ok := parseLabelPair(s); ok && isArcaneIconLabel(key) {
-			return value
+		if key, value, ok := parseLabelPair(s); ok {
+			assignArcaneIconValueInternal(&iconSet, key, value)
 		}
 	}
 
-	return ""
+	return iconSet
+}
+
+func assignArcaneIconValueInternal(iconSet *IconSet, key string, value string) {
+	if iconSet == nil {
+		return
+	}
+
+	switch normalizeArcaneIconLabelInternal(key) {
+	case "icon":
+		iconSet.Icon = value
+	case "icon-light":
+		iconSet.Light = value
+	case "icon-dark":
+		iconSet.Dark = value
+	}
+}
+
+func normalizeArcaneIconLabelInternal(key string) string {
+	normalized := strings.ToLower(strings.TrimSpace(key))
+	switch normalized {
+	case ArcaneIconLabel, "arcane.icon":
+		return "icon"
+	case ArcaneIconLightLabel, "arcane.icon-light":
+		return "icon-light"
+	case ArcaneIconDarkLabel, "arcane.icon-dark":
+		return "icon-dark"
+	default:
+		return ""
+	}
 }
 
 // parseLabelPair parses a "KEY=VALUE" string into its components.
@@ -346,9 +403,4 @@ func parseLabelPair(raw string) (string, string, bool) {
 		return "", "", false
 	}
 	return strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1]), true
-}
-
-// isArcaneIconLabel checks if a label key matches the Arcane icon label definition.
-func isArcaneIconLabel(key string) bool {
-	return strings.ToLower(strings.TrimSpace(key)) == ArcaneIconLabel
 }

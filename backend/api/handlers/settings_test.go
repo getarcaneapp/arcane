@@ -87,8 +87,7 @@ func TestSettingsHandler_UpdateLocalEnvironment_RejectsUnreadableProjectsDirecto
 
 	handler := &SettingsHandler{settingsService: settingsSvc, cfg: &config.Config{}}
 
-	dirPtr := unreadable
-	_, err = handler.updateSettingsForLocalEnvironment(ctx, apitypes.Update{ProjectsDirectory: &dirPtr})
+	_, err = handler.updateSettingsForLocalEnvironment(ctx, apitypes.Update{ProjectsDirectory: new(unreadable)})
 	require.Error(t, err)
 
 	var statusErr huma.StatusError

@@ -7,13 +7,13 @@ import type {
 	VolumeUsageCounts,
 	VolumeCreateRequest,
 	VolumeSizeInfo
-} from '$lib/types/volume.type';
-import type { SearchPaginationSortRequest, Paginated } from '$lib/types/pagination.type';
-import { transformPaginationParams } from '$lib/utils/params.util';
+} from '$lib/types/docker';
+import type { SearchPaginationSortRequest, Paginated } from '$lib/types/shared';
+import { transformPaginationParams } from '$lib/utils/tables';
 
 export type VolumesPaginatedResponse = Paginated<VolumeSummaryDto, VolumeUsageCounts>;
 
-export class VolumeService extends BaseAPIService {
+class VolumeService extends BaseAPIService {
 	private async resolveEnvironmentId(environmentId?: string): Promise<string> {
 		return environmentId ?? (await environmentStore.getCurrentEnvironmentId());
 	}

@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"strings"
 	"sync"
@@ -24,6 +24,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 	"github.com/getarcaneapp/arcane/types/environment"
 	"github.com/getarcaneapp/arcane/types/gitops"
+	schedulertypes "github.com/getarcaneapp/arcane/types/scheduler"
 	"github.com/google/uuid"
 	"github.com/moby/moby/client"
 	"gorm.io/gorm"
@@ -40,7 +41,21 @@ type EnvironmentService struct {
 	tokenCacheMu    sync.RWMutex
 	tokenCache      map[string]edgeTokenCacheEntry
 	tokenByEnvID    map[string]string
+
+	// scheduler and lifecycleCtx are injected post-construction via SetScheduler
+	// (manager-only). Each enabled environment gets its own health-check job; this
+	// replaces the single global environment-health job.
+	scheduler    DynamicScheduler
+	lifecycleCtx context.Context
+	// runningHealthChecks guards against a per-environment health check overlapping
+	// with itself (replaces the old single job's atomic "running" guard).
+	runningHealthChecks sync.Map
 }
+
+const (
+	defaultEnvironmentHealthInterval = "0 */2 * * * *"
+	environmentHealthCheckTimeout    = 90 * time.Second
+)
 
 type edgeTokenCacheEntry struct {
 	EnvironmentID string
@@ -71,6 +86,164 @@ func NewEnvironmentService(db *database.DB, httpClient *http.Client, dockerServi
 		}),
 		tokenCache:   make(map[string]edgeTokenCacheEntry),
 		tokenByEnvID: make(map[string]string),
+	}
+}
+
+const environmentHealthJobPrefix = "environment-health:"
+
+func environmentHealthJobNameInternal(envID string) string { return environmentHealthJobPrefix + envID }
+
+// SetScheduler injects the job scheduler and app lifecycle context. Called during
+// bootstrap on the manager only (agent mode leaves scheduler nil, so all health-job
+// registration becomes a no-op).
+func (s *EnvironmentService) SetScheduler(ctx context.Context, scheduler DynamicScheduler) { //nolint:contextcheck // health-check jobs must capture the app lifecycle context, not request contexts
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	s.lifecycleCtx = ctx
+	s.scheduler = scheduler
+}
+
+func (s *EnvironmentService) schedulerCtxInternal(ctx context.Context) context.Context {
+	if s.lifecycleCtx != nil {
+		return s.lifecycleCtx
+	}
+	if ctx != nil {
+		return context.WithoutCancel(ctx)
+	}
+	return context.Background()
+}
+
+// buildHealthJobInternal builds the dynamic job for one environment. The schedule is
+// the global environmentHealthInterval (environment health has no per-entity
+// interval); the run body re-reads nothing it can't and self-cancels cleanly when
+// the environment is gone.
+func (s *EnvironmentService) buildHealthJobInternal(envID string) *schedulertypes.GenericJob {
+	return &schedulertypes.GenericJob{
+		JobName: environmentHealthJobNameInternal(envID),
+		ScheduleFn: func(ctx context.Context) string {
+			sched := s.settingsService.GetStringSetting(ctx, "environmentHealthInterval", defaultEnvironmentHealthInterval)
+			if sched == "" {
+				return defaultEnvironmentHealthInterval
+			}
+			return sched
+		},
+		RunFn: func(ctx context.Context) {
+			s.runHealthCheckInternal(ctx, envID)
+		},
+	}
+}
+
+func (s *EnvironmentService) registerHealthJobInternal(ctx context.Context, envID string) {
+	if s.scheduler == nil {
+		return
+	}
+	schedulerCtx := s.schedulerCtxInternal(ctx)
+	if err := s.scheduler.AddJob(schedulerCtx, s.buildHealthJobInternal(envID)); err != nil {
+		slog.ErrorContext(schedulerCtx, "Failed to register environment health job", "environment_id", envID, "error", err)
+	}
+}
+
+func (s *EnvironmentService) removeHealthJobInternal(ctx context.Context, envID string) {
+	if s.scheduler == nil {
+		return
+	}
+	s.scheduler.RemoveJob(s.schedulerCtxInternal(ctx), environmentHealthJobNameInternal(envID))
+}
+
+func (s *EnvironmentService) listEnabledEnvironmentIDsInternal(ctx context.Context) ([]string, error) {
+	var ids []string
+	if err := s.db.WithContext(ctx).
+		Table("environments").
+		Where("enabled = ?", true).
+		Pluck("id", &ids).Error; err != nil {
+		return nil, fmt.Errorf("failed to list enabled environments: %w", err)
+	}
+	return ids, nil
+}
+
+func (s *EnvironmentService) registerAllEnabledHealthJobsInternal(ctx context.Context) int {
+	ids, err := s.listEnabledEnvironmentIDsInternal(ctx)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to list environments for health jobs", "error", err)
+		return 0
+	}
+	for _, id := range ids {
+		s.registerHealthJobInternal(ctx, id)
+	}
+	return len(ids)
+}
+
+// RegisterHealthJobsOnStartup registers a health-check job for every enabled
+// environment. Replaces the old global environment-health job.
+func (s *EnvironmentService) RegisterHealthJobsOnStartup(ctx context.Context) {
+	if s.scheduler == nil {
+		return
+	}
+	n := s.registerAllEnabledHealthJobsInternal(ctx)
+	slog.InfoContext(ctx, "Registered environment health jobs on startup", "count", n)
+}
+
+// RescheduleHealthJobs re-registers all enabled environments' health jobs, picking
+// up a changed global interval. Wired from the Jobs UI via JobService.
+func (s *EnvironmentService) RescheduleHealthJobs(ctx context.Context) {
+	if s.scheduler == nil {
+		return
+	}
+	s.registerAllEnabledHealthJobsInternal(ctx)
+}
+
+// RunHealthChecksNow runs every enabled environment's health check synchronously.
+// Backs the "run now" button for the environment-health job in the Jobs UI.
+func (s *EnvironmentService) RunHealthChecksNow(ctx context.Context) error {
+	ids, err := s.listEnabledEnvironmentIDsInternal(ctx)
+	if err != nil {
+		return err
+	}
+	for _, id := range ids {
+		s.runHealthCheckInternal(ctx, id)
+	}
+	return nil
+}
+
+func (s *EnvironmentService) acquireHealthLockInternal(envID string) (func(), bool) {
+	if _, loaded := s.runningHealthChecks.LoadOrStore(envID, struct{}{}); loaded {
+		return nil, false
+	}
+	return func() { s.runningHealthChecks.Delete(envID) }, true
+}
+
+// runHealthCheckInternal tests one environment's connection (updating its DB status)
+// and, for online remotes, syncs registries and repositories to it.
+func (s *EnvironmentService) runHealthCheckInternal(ctx context.Context, envID string) {
+	release, ok := s.acquireHealthLockInternal(envID)
+	if !ok {
+		slog.WarnContext(ctx, "environment health check skipped; previous run still in progress", "environment_id", envID)
+		return
+	}
+	defer release()
+
+	status, err := s.TestConnection(ctx, envID, nil)
+	switch {
+	case err != nil:
+		slog.WarnContext(ctx, "environment health check failed", "environment_id", envID, "status", status, "error", err)
+		return
+	case status != "online":
+		return
+	}
+
+	// Local environment (ID "0") has no registries/repositories to push.
+	if envID == "0" {
+		return
+	}
+
+	syncCtx, cancel := context.WithTimeout(ctx, environmentHealthCheckTimeout)
+	defer cancel()
+	if err := s.SyncRegistriesToEnvironment(syncCtx, envID); err != nil {
+		slog.WarnContext(syncCtx, "failed to sync registries during health check", "environment_id", envID, "error", err)
+	}
+	if err := s.SyncRepositoriesToEnvironment(syncCtx, envID); err != nil {
+		slog.WarnContext(syncCtx, "failed to sync git repositories during health check", "environment_id", envID, "error", err)
 	}
 }
 
@@ -285,6 +458,10 @@ func (s *EnvironmentService) CreateEnvironment(ctx context.Context, environment 
 	// Create event in background
 	go s.createEnvironmentEvent(context.WithoutCancel(ctx), environment.ID, environment.Name, models.EventTypeEnvironmentCreate, "Environment Created", fmt.Sprintf("Environment '%s' was created", environment.Name), models.EventSeveritySuccess, userID, username)
 
+	if environment.Enabled {
+		s.registerHealthJobInternal(ctx, environment.ID)
+	}
+
 	return environment, nil
 }
 
@@ -304,12 +481,12 @@ func (s *EnvironmentService) ListSwarmNodeAgentEnvironments(ctx context.Context,
 func buildSwarmNodeAgentNameInternal(hostname, nodeID string) string {
 	trimmedHostname := strings.TrimSpace(hostname)
 	if trimmedHostname != "" {
-		return fmt.Sprintf("Swarm Node Agent - %s", trimmedHostname)
+		return "Swarm Node Agent - " + trimmedHostname
 	}
 	if len(nodeID) > 12 {
 		nodeID = nodeID[:12]
 	}
-	return fmt.Sprintf("Swarm Node Agent - %s", nodeID)
+	return "Swarm Node Agent - " + nodeID
 }
 
 func buildSwarmNodeAgentURLInternal(nodeID string) string {
@@ -327,7 +504,7 @@ func (s *EnvironmentService) applySwarmNodeAgentApiKeyInternal(
 	rotate bool,
 ) (string, error) {
 	if env == nil {
-		return "", fmt.Errorf("environment is required")
+		return "", errors.New("environment is required")
 	}
 
 	if !rotate && env.AccessToken != nil && strings.TrimSpace(*env.AccessToken) != "" {
@@ -335,7 +512,7 @@ func (s *EnvironmentService) applySwarmNodeAgentApiKeyInternal(
 	}
 
 	if s.apiKeyService == nil {
-		return "", fmt.Errorf("api key service not configured")
+		return "", errors.New("api key service not configured")
 	}
 
 	apiKeyDto, err := s.apiKeyService.CreateEnvironmentApiKey(ctx, env.ID, userID)
@@ -356,10 +533,10 @@ func (s *EnvironmentService) EnsureSwarmNodeAgentEnvironment(
 	rotate bool,
 ) (*models.Environment, string, error) {
 	if strings.TrimSpace(parentEnvironmentID) == "" {
-		return nil, "", fmt.Errorf("parent environment ID is required")
+		return nil, "", errors.New("parent environment ID is required")
 	}
 	if strings.TrimSpace(nodeID) == "" {
-		return nil, "", fmt.Errorf("swarm node ID is required")
+		return nil, "", errors.New("swarm node ID is required")
 	}
 
 	var env models.Environment
@@ -448,7 +625,7 @@ func (s *EnvironmentService) GetEnvironmentByID(ctx context.Context, id string) 
 	var environment models.Environment
 	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&environment).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, fmt.Errorf("environment not found")
+			return nil, errors.New("environment not found")
 		}
 		return nil, fmt.Errorf("failed to get environment: %w", err)
 	}
@@ -696,6 +873,17 @@ func (s *EnvironmentService) UpdateEnvironment(ctx context.Context, id string, u
 		s.syncEnvironmentTokenCacheInternal(id, accessToken)
 	}
 
+	// Reconcile the per-environment health job when the enabled flag is toggled.
+	if rawEnabled, ok := updates["enabled"]; ok {
+		if enabled, isBool := rawEnabled.(bool); isBool {
+			if enabled {
+				s.registerHealthJobInternal(ctx, id)
+			} else {
+				s.removeHealthJobInternal(ctx, id)
+			}
+		}
+	}
+
 	// Create event in background (skip for local environment)
 	if id != "0" {
 		go s.createEnvironmentEvent(context.WithoutCancel(ctx), id, updated.Name, models.EventTypeEnvironmentUpdate, "Environment Updated", fmt.Sprintf("Environment '%s' was updated", updated.Name), models.EventSeverityInfo, userID, username)
@@ -711,7 +899,13 @@ func (s *EnvironmentService) DeleteEnvironment(ctx context.Context, id string, u
 		return err
 	}
 
+	// Stop the per-environment health job before the row is removed.
+	s.removeHealthJobInternal(ctx, id)
+
 	if err := s.db.WithContext(ctx).Delete(&models.Environment{}, "id = ?", id).Error; err != nil {
+		if env.Enabled {
+			s.registerHealthJobInternal(ctx, env.ID)
+		}
 		return fmt.Errorf("failed to delete environment: %w", err)
 	}
 
@@ -761,7 +955,7 @@ func (s *EnvironmentService) TestConnection(ctx context.Context, id string, cust
 		}
 		return "offline", fmt.Errorf("failed to create request: %w", err)
 	}
-	resp, err := s.httpClient.Do(req) //nolint:gosec // intentional request to configured remote environment API URL
+	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		if customApiUrl == nil {
 			_ = s.updateEnvironmentStatusInternal(ctx, id, string(models.EnvironmentStatusOffline))
@@ -788,7 +982,7 @@ func (s *EnvironmentService) testEdgeConnection(ctx context.Context, id string) 
 	if !edge.HasActiveTunnel(id) {
 		if _, ok := edge.RequestTunnelAndWait(ctx, id, edge.DefaultTunnelDemandTTL, edge.DefaultTunnelAcquireTimeout()); !ok {
 			_ = s.updateEnvironmentStatusInternal(ctx, id, string(models.EnvironmentStatusOffline))
-			return "offline", fmt.Errorf("edge agent is not connected")
+			return "offline", errors.New("edge agent is not connected")
 		}
 	}
 
@@ -971,64 +1165,6 @@ func (s *EnvironmentService) RegenerateEnvironmentApiKey(ctx context.Context, en
 	return nil
 }
 
-// Deprecated - Use the Api Key flow
-func (s *EnvironmentService) PairAgentWithBootstrap(ctx context.Context, apiUrl, bootstrapToken string) (string, error) {
-	pairURL, err := buildEnvironmentEndpointURLInternal(apiUrl, "/api/environments/0/agent/pair")
-	if err != nil {
-		return "", fmt.Errorf("invalid agent API URL: %w", err)
-	}
-
-	reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, pairURL, nil)
-	if err != nil {
-		return "", fmt.Errorf("create request: %w", err)
-	}
-	req.Header.Set("X-Arcane-Agent-Bootstrap", bootstrapToken)
-
-	resp, err := s.httpClient.Do(req) //nolint:gosec // intentional request to configured remote environment API URL
-	if err != nil {
-		return "", fmt.Errorf("request failed: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(body))
-	}
-
-	var parsed struct {
-		Success bool `json:"success"`
-		Data    struct {
-			Token string `json:"token"`
-		} `json:"data"`
-		Message string `json:"message"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
-		return "", fmt.Errorf("decode response: %w", err)
-	}
-	if !parsed.Success || parsed.Data.Token == "" {
-		return "", fmt.Errorf("pairing unsuccessful")
-	}
-
-	return parsed.Data.Token, nil
-}
-
-func (s *EnvironmentService) PairAndPersistAgentToken(ctx context.Context, environmentID, apiUrl, bootstrapToken string) (string, error) {
-	token, err := s.PairAgentWithBootstrap(ctx, apiUrl, bootstrapToken)
-	if err != nil {
-		return "", err
-	}
-	if err := s.db.WithContext(ctx).
-		Model(&models.Environment{}).
-		Where("id = ?", environmentID).
-		Update("access_token", token).Error; err != nil {
-		return "", fmt.Errorf("failed to persist agent token: %w", err)
-	}
-	s.syncEnvironmentTokenCacheInternal(environmentID, token)
-	return token, nil
-}
-
 func (s *EnvironmentService) GetDB() *database.DB {
 	return s.db
 }
@@ -1134,13 +1270,13 @@ func (s *EnvironmentService) GenerateDeploymentSnippets(ctx context.Context, env
 		"    environment:",
 		"      - AGENT_MODE=true",
 		"      - EDGE_TRANSPORT=poll",
-		fmt.Sprintf("      - AGENT_TOKEN=%s", apiKey),
-		fmt.Sprintf("      - MANAGER_API_URL=%s", managerURL),
+		"      - AGENT_TOKEN=" + apiKey,
+		"      - MANAGER_API_URL=" + managerURL,
 		"    ports:",
 		"      - \"3553:3553\"",
 		"    volumes:",
 		"      - /var/run/docker.sock:/var/run/docker.sock",
-		fmt.Sprintf("      - arcane-data:%s", deploymentSnippetsDataPath),
+		"      - arcane-data:" + deploymentSnippetsDataPath,
 		"",
 		"volumes:",
 		"  arcane-data:",
@@ -1180,11 +1316,11 @@ func (s *EnvironmentService) GenerateEdgeDeploymentSnippets(ctx context.Context,
 		"    environment:",
 		"      - EDGE_AGENT=true",
 		"      - EDGE_TRANSPORT=poll",
-		fmt.Sprintf("      - AGENT_TOKEN=%s", apiKey),
-		fmt.Sprintf("      - MANAGER_API_URL=%s", managerURL),
+		"      - AGENT_TOKEN=" + apiKey,
+		"      - MANAGER_API_URL=" + managerURL,
 		"    volumes:",
 		"      - /var/run/docker.sock:/var/run/docker.sock",
-		fmt.Sprintf("      - arcane-data:%s", deploymentSnippetsDataPath),
+		"      - arcane-data:" + deploymentSnippetsDataPath,
 		"",
 		"volumes:",
 		"  arcane-data:",
@@ -1235,17 +1371,15 @@ func (s *EnvironmentService) logGeneratedMTLSEventsInternal(ctx context.Context,
 		}
 	}
 	if assets.CertIssued {
-		resourceType := "environment"
 		envIDCopy := envID
-		envNameCopy := envName
 		if _, err := s.eventService.CreateEvent(ctx, CreateEventRequest{
 			Type:          models.EventTypeEnvironmentMTLSCertIssued,
 			Severity:      models.EventSeverityInfo,
 			Title:         "Edge mTLS certificate issued",
 			Description:   fmt.Sprintf("Arcane issued an edge mTLS client certificate for environment '%s'", envName),
-			ResourceType:  &resourceType,
+			ResourceType:  new("environment"),
 			ResourceID:    &envIDCopy,
-			ResourceName:  &envNameCopy,
+			ResourceName:  new(envName),
 			EnvironmentID: &envIDCopy,
 			Metadata:      models.JSON{"kind": "client"},
 		}); err != nil {
@@ -1285,12 +1419,12 @@ func buildMTLSDeploymentSnippetInternal(managerURL string, apiKey string, genera
 		"      - EDGE_AGENT=true",
 		"      - EDGE_TRANSPORT=poll",
 		"      - EDGE_MTLS_MODE=required",
-		fmt.Sprintf("      - EDGE_MTLS_ASSETS_DIR=%s", deploymentSnippetsMTLSPath),
-		fmt.Sprintf("      - AGENT_TOKEN=%s", apiKey),
-		fmt.Sprintf("      - MANAGER_API_URL=%s", managerURL),
+		"      - EDGE_MTLS_ASSETS_DIR=" + deploymentSnippetsMTLSPath,
+		"      - AGENT_TOKEN=" + apiKey,
+		"      - MANAGER_API_URL=" + managerURL,
 		"    volumes:",
 		"      - /var/run/docker.sock:/var/run/docker.sock",
-		fmt.Sprintf("      - arcane-data:%s", deploymentSnippetsDataPath),
+		"      - arcane-data:" + deploymentSnippetsDataPath,
 		"",
 		"volumes:",
 		"  arcane-data:",
@@ -1329,7 +1463,7 @@ func (s *EnvironmentService) resolveRemoteEnvironmentTargetInternal(ctx context.
 	}
 
 	if envID == "0" {
-		return nil, fmt.Errorf("cannot proxy request to local environment")
+		return nil, errors.New("cannot proxy request to local environment")
 	}
 
 	targetURL := strings.TrimRight(environment.ApiUrl, "/")
@@ -1377,7 +1511,7 @@ func (s *EnvironmentService) getProxyRequestContextInternal(ctx context.Context)
 		return timeouts.WithTimeout(ctx, settings.ProxyRequestTimeout.AsInt(), timeouts.DefaultProxyRequest)
 	}
 
-	return context.WithTimeout(ctx, timeouts.DefaultProxyRequest) //nolint:gosec // helper intentionally returns the cancel func to callers.
+	return context.WithTimeout(ctx, timeouts.DefaultProxyRequest)
 }
 
 func (s *EnvironmentService) buildRemoteRequestInternal(
@@ -1388,13 +1522,11 @@ func (s *EnvironmentService) buildRemoteRequestInternal(
 	headers map[string]string,
 ) (remenv.Request, error) {
 	if target == nil {
-		return remenv.Request{}, fmt.Errorf("remote environment target is required")
+		return remenv.Request{}, errors.New("remote environment target is required")
 	}
 
 	requestHeaders := make(map[string]string, len(headers)+2)
-	for key, value := range headers {
-		requestHeaders[key] = value
-	}
+	maps.Copy(requestHeaders, headers)
 	if len(body) > 0 && method != http.MethodGet && requestHeaders["Content-Type"] == "" {
 		requestHeaders["Content-Type"] = "application/json"
 	}
@@ -1483,7 +1615,7 @@ func ensureRemoteEnvironmentTunnelAvailableInternal(ctx context.Context, envID s
 		return nil
 	}
 
-	return fmt.Errorf("edge agent is not connected")
+	return errors.New("edge agent is not connected")
 }
 
 func doRemoteEnvironmentTunnelRequestInternal(

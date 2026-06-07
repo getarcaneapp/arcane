@@ -5,7 +5,9 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
+	humamw "github.com/getarcaneapp/arcane/backend/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
+	"github.com/getarcaneapp/arcane/backend/pkg/authz"
 	"github.com/getarcaneapp/arcane/types/base"
 	dashboardtypes "github.com/getarcaneapp/arcane/types/dashboard"
 )
@@ -23,23 +25,6 @@ type GetDashboardOutput struct {
 	Body base.ApiResponse[dashboardtypes.Snapshot]
 }
 
-type GetDashboardActionItemsInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	DebugAllGood  bool   `query:"debugAllGood" default:"false" doc:"Debug mode: force an empty action item list"`
-}
-
-type GetDashboardActionItemsOutput struct {
-	Body base.ApiResponse[dashboardtypes.ActionItems]
-}
-
-type GetDashboardEnvironmentsOverviewInput struct {
-	DebugAllGood bool `query:"debugAllGood" default:"false" doc:"Debug mode: force empty action item lists"`
-}
-
-type GetDashboardEnvironmentsOverviewOutput struct {
-	Body base.ApiResponse[dashboardtypes.EnvironmentsOverview]
-}
-
 func RegisterDashboard(api huma.API, dashboardService *services.DashboardService) {
 	h := &DashboardHandler{dashboardService: dashboardService}
 
@@ -54,33 +39,8 @@ func RegisterDashboard(api huma.API, dashboardService *services.DashboardService
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequirePermission(api, authz.PermDashboardRead),
 	}, h.GetDashboard)
-
-	huma.Register(api, huma.Operation{
-		OperationID: "get-dashboard-action-items",
-		Method:      http.MethodGet,
-		Path:        "/environments/{id}/dashboard/action-items",
-		Summary:     "Get dashboard action items",
-		Description: "Returns only dashboard action items that currently need attention",
-		Tags:        []string{"Dashboard"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
-	}, h.GetActionItems)
-
-	huma.Register(api, huma.Operation{
-		OperationID: "get-dashboard-environments-overview",
-		Method:      http.MethodGet,
-		Path:        "/dashboard/environments",
-		Summary:     "Get aggregate environments dashboard overview",
-		Description: "Returns dashboard summary data for all visible environments",
-		Tags:        []string{"Dashboard"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
-	}, h.GetEnvironmentsOverview)
 }
 
 func (h *DashboardHandler) GetDashboard(ctx context.Context, input *GetDashboardInput) (*GetDashboardOutput, error) {
@@ -106,62 +66,6 @@ func (h *DashboardHandler) GetDashboard(ctx context.Context, input *GetDashboard
 		Body: base.ApiResponse[dashboardtypes.Snapshot]{
 			Success: true,
 			Data:    *snapshot,
-		},
-	}, nil
-}
-
-func (h *DashboardHandler) GetActionItems(ctx context.Context, input *GetDashboardActionItemsInput) (*GetDashboardActionItemsOutput, error) {
-	if h.dashboardService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
-	// EnvironmentID is consumed by env proxy/auth middleware for routing/validation.
-	_ = input.EnvironmentID
-
-	actionItems, err := h.dashboardService.GetActionItems(ctx, services.DashboardActionItemsOptions{
-		DebugAllGood: input.DebugAllGood,
-	})
-	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
-	}
-
-	if actionItems == nil {
-		actionItems = &dashboardtypes.ActionItems{Items: []dashboardtypes.ActionItem{}}
-	} else if actionItems.Items == nil {
-		actionItems.Items = []dashboardtypes.ActionItem{}
-	}
-
-	return &GetDashboardActionItemsOutput{
-		Body: base.ApiResponse[dashboardtypes.ActionItems]{
-			Success: true,
-			Data:    *actionItems,
-		},
-	}, nil
-}
-
-func (h *DashboardHandler) GetEnvironmentsOverview(
-	ctx context.Context,
-	input *GetDashboardEnvironmentsOverviewInput,
-) (*GetDashboardEnvironmentsOverviewOutput, error) {
-	if h.dashboardService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
-	overview, err := h.dashboardService.GetEnvironmentsOverview(ctx, services.DashboardActionItemsOptions{
-		DebugAllGood: input.DebugAllGood,
-	})
-	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
-	}
-
-	if overview == nil {
-		return nil, huma.Error500InternalServerError("dashboard environments overview not available")
-	}
-
-	return &GetDashboardEnvironmentsOverviewOutput{
-		Body: base.ApiResponse[dashboardtypes.EnvironmentsOverview]{
-			Success: true,
-			Data:    *overview,
 		},
 	}, nil
 }

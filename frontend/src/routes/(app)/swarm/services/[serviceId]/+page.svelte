@@ -8,8 +8,8 @@
 	import * as Tabs from '$lib/components/ui/tabs/index.js';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import { toast } from 'svelte-sonner';
-	import { tryCatch } from '$lib/utils/try-catch';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
+	import { tryCatch } from '$lib/utils/api';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api';
 	import { swarmService } from '$lib/services/swarm-service';
 	import type {
 		RawServiceNetworkAttachment,
@@ -23,7 +23,7 @@
 		SwarmServiceMount,
 		SwarmServicePort,
 		SwarmServiceModeSpec
-	} from '$lib/types/swarm.type';
+	} from '$lib/types/swarm';
 	import ServiceEditorDialog from '../service-editor-dialog.svelte';
 	import ServiceOverview from '../components/ServiceOverview.svelte';
 	import ServiceLogsPanel from '../components/ServiceLogsPanel.svelte';
@@ -50,7 +50,9 @@
 		getSwarmServiceModeLabel,
 		getSwarmServiceModeVariant,
 		isSwarmServiceModeScalable
-	} from '$lib/utils/swarm-service-mode.utils';
+	} from '$lib/utils/docker';
+	import { hasPermission } from '$lib/utils/auth';
+	import { environmentStore } from '$lib/stores/environment.store.svelte';
 
 	let { data } = $props();
 	let service = $derived(data?.service as SwarmServiceInspect);
@@ -169,9 +171,12 @@
 	const showNetworkTab = $derived(hasPorts || hasNetworks);
 	const hasMounts = $derived(mounts.length > 0);
 
+	const envId = $derived(environmentStore.selected?.id || '0');
+	const canViewServiceLogs = $derived(hasPermission('swarm:services:logs', envId));
+
 	const tabItems = $derived<TabItem[]>([
 		{ value: 'overview', label: m.common_overview(), icon: DockIcon },
-		{ value: 'logs', label: m.common_logs(), icon: FileTextIcon },
+		...(canViewServiceLogs ? [{ value: 'logs', label: m.common_logs(), icon: FileTextIcon }] : []),
 		{ value: 'tasks', label: m.swarm_tasks_title(), icon: JobsIcon },
 		...(showConfiguration ? [{ value: 'config', label: m.common_configuration(), icon: SettingsIcon }] : []),
 		...(showNetworkTab ? [{ value: 'network', label: m.containers_nav_networks(), icon: NetworksIcon }] : []),

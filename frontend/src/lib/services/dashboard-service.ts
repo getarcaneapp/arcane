@@ -1,38 +1,14 @@
 import BaseAPIService from './api-service';
-import { environmentStore } from '$lib/stores/environment.store.svelte';
-import type { DashboardActionItems, DashboardEnvironmentsOverview, DashboardSnapshot } from '$lib/types/dashboard.type';
+import type { DashboardSnapshot } from '$lib/types/shared';
 
-interface GetDashboardActionItemsOptions {
+interface GetDashboardOptions {
 	debugAllGood?: boolean;
 }
 
-export class DashboardService extends BaseAPIService {
-	async getDashboard(options?: GetDashboardActionItemsOptions): Promise<DashboardSnapshot> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.getDashboardForEnvironment(envId, options);
-	}
-
-	async getDashboardForEnvironment(environmentId: string, options?: GetDashboardActionItemsOptions): Promise<DashboardSnapshot> {
+class DashboardService extends BaseAPIService {
+	async getDashboardForEnvironment(environmentId: string, options?: GetDashboardOptions): Promise<DashboardSnapshot> {
 		const params = options?.debugAllGood ? { debugAllGood: 'true' } : undefined;
 		return this.handleResponse(this.api.get(`/environments/${environmentId}/dashboard`, { params }));
-	}
-
-	async getActionItems(): Promise<DashboardActionItems> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.getActionItemsForEnvironment(envId);
-	}
-
-	async getActionItemsForEnvironment(
-		environmentId: string,
-		options?: GetDashboardActionItemsOptions
-	): Promise<DashboardActionItems> {
-		const params = options?.debugAllGood ? { debugAllGood: 'true' } : undefined;
-		return this.handleResponse(this.api.get(`/environments/${environmentId}/dashboard/action-items`, { params }));
-	}
-
-	async getDashboardEnvironmentsOverview(options?: GetDashboardActionItemsOptions): Promise<DashboardEnvironmentsOverview> {
-		const params = options?.debugAllGood ? { debugAllGood: 'true' } : undefined;
-		return this.handleResponse(this.api.get('/dashboard/environments', { params }));
 	}
 }
 

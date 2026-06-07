@@ -67,7 +67,6 @@ func createTestEnvironmentServiceUser(t *testing.T, ctx context.Context, userSer
 	user := &models.User{
 		BaseModel: models.BaseModel{ID: id},
 		Username:  fmt.Sprintf("user-%s", id),
-		Roles:     models.StringSlice{"admin"},
 	}
 
 	created, err := userService.CreateUser(ctx, user)
@@ -267,7 +266,6 @@ func TestEnvironmentService_SyncRepositoriesToEnvironment_UsesAgentHeaders(t *te
 	require.NoError(t, db.AutoMigrate(&models.GitRepository{}))
 	svc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
 
-	description := "test repo"
 	createTestGitRepository(t, db, models.GitRepository{
 		BaseModel:   models.BaseModel{ID: "repo-1", CreatedAt: time.Now()},
 		Name:        "repo-1",
@@ -276,7 +274,7 @@ func TestEnvironmentService_SyncRepositoriesToEnvironment_UsesAgentHeaders(t *te
 		Username:    "arcane",
 		Token:       encryptSecretForTest(t, "repo-token"),
 		Enabled:     true,
-		Description: &description,
+		Description: new("test repo"),
 	})
 
 	accessToken := "token-1"
@@ -738,8 +736,8 @@ func TestEnvironmentService_ListMethods_ExcludeHiddenEnvironments(t *testing.T) 
 		}).Error)
 
 	listedEnvironments, _, err := svc.ListEnvironmentsPaginated(ctx, pagination.QueryParams{
-		PaginationParams: pagination.PaginationParams{Start: 0, Limit: 20},
-		Filters:          map[string]string{},
+		Params:  pagination.Params{Start: 0, Limit: 20},
+		Filters: map[string]string{},
 	})
 	require.NoError(t, err)
 	require.Len(t, listedEnvironments, 2)
@@ -836,8 +834,8 @@ func TestEnvironmentService_ListEnvironmentsPaginated_FiltersByRuntimeType(t *te
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			listedEnvironments, _, err := svc.ListEnvironmentsPaginated(ctx, pagination.QueryParams{
-				PaginationParams: pagination.PaginationParams{Start: 0, Limit: 20},
-				Filters:          map[string]string{"type": tt.typeFilter},
+				Params:  pagination.Params{Start: 0, Limit: 20},
+				Filters: map[string]string{"type": tt.typeFilter},
 			})
 			require.NoError(t, err)
 			require.ElementsMatch(t, tt.wantIDs, environmentIDsInternal(listedEnvironments))
@@ -929,23 +927,13 @@ func TestEnvironmentService_GenerateEdgeDeploymentSnippets_ReturnsBasicSnippetsW
 	require.Contains(t, snippets.DockerCompose, "MANAGER_API_URL=https://manager.example.com")
 }
 
-func TestEnvironmentService_PairAgentWithBootstrap_RejectsInvalidURL(t *testing.T) {
-	svc := NewEnvironmentService(nil, nil, nil, nil, nil, nil)
-
-	_, err := svc.PairAgentWithBootstrap(context.Background(), "ftp://example.com", "bootstrap-token")
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "invalid agent API URL")
-}
-
 func TestEnvironmentService_TestConnection_RejectsInvalidCustomURL(t *testing.T) {
 	ctx := context.Background()
 	db := setupEnvironmentServiceTestDB(t)
 	svc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
 
 	createTestEnvironment(t, db, "env-1", "http://example.com", nil)
-	customURL := "ftp://example.com"
-
-	status, err := svc.TestConnection(ctx, "env-1", &customURL)
+	status, err := svc.TestConnection(ctx, "env-1", new("ftp://example.com"))
 	require.Error(t, err)
 	require.Equal(t, "offline", status)
 	require.Contains(t, err.Error(), "invalid environment API URL")

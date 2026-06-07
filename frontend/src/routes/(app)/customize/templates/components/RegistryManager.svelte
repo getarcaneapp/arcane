@@ -6,7 +6,7 @@
 	import { Switch } from '$lib/components/ui/switch';
 	import { Snippet } from '$lib/components/ui/snippet';
 	import { m } from '$lib/paraglide/messages';
-	import type { TemplateRegistry } from '$lib/types/template.type';
+	import type { TemplateRegistry } from '$lib/types/swarm';
 	import { RegistryIcon, CommunityIcon, ExternalLinkIcon, AlertTriangleIcon } from '$lib/icons';
 
 	let {

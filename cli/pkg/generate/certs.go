@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"math/big"
 	"net"
@@ -126,7 +127,7 @@ type serverTLSPaths struct {
 
 func generateEdgeMTLSBundleInternal(outDir, envID string, appURL string) (*edgeMTLSPaths, error) {
 	if envID == "" {
-		return nil, fmt.Errorf("env ID is required")
+		return nil, errors.New("env ID is required")
 	}
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return nil, fmt.Errorf("failed to create output directory: %w", err)
@@ -155,7 +156,7 @@ func generateEdgeMTLSBundleInternal(outDir, envID string, appURL string) (*edgeM
 	if trustDomain != "" {
 		dnsSANs = append(dnsSANs, "arcane-agent."+trustDomain)
 	}
-	clientTemplate, err := NewEdgeMTLSClientTemplate(fmt.Sprintf("arcane-edge-%s", envID), BuildEdgeMTLSURISAN(appURL, envID), dnsSANs)
+	clientTemplate, err := NewEdgeMTLSClientTemplate("arcane-edge-"+envID, BuildEdgeMTLSURISAN(appURL, envID), dnsSANs)
 	if err != nil {
 		return nil, err
 	}
@@ -187,15 +188,15 @@ func generateEdgeMTLSBundleInternal(outDir, envID string, appURL string) (*edgeM
 
 func generateServerTLSBundleInternal(outDir, commonName string, hosts []string, certName string, keyName string) (*serverTLSPaths, error) {
 	if commonName == "" {
-		return nil, fmt.Errorf("common name is required")
+		return nil, errors.New("common name is required")
 	}
 	certName = filepath.Base(strings.TrimSpace(certName))
 	if certName == "." || certName == "" {
-		return nil, fmt.Errorf("certificate file name is required")
+		return nil, errors.New("certificate file name is required")
 	}
 	keyName = filepath.Base(strings.TrimSpace(keyName))
 	if keyName == "." || keyName == "" {
-		return nil, fmt.Errorf("key file name is required")
+		return nil, errors.New("key file name is required")
 	}
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return nil, fmt.Errorf("failed to create output directory: %w", err)
@@ -249,7 +250,7 @@ func NewEdgeMTLSCATemplate() (*x509.Certificate, error) {
 func NewEdgeMTLSClientTemplate(commonName string, uriSAN *url.URL, dnsSANs []string) (*x509.Certificate, error) {
 	commonName = strings.TrimSpace(commonName)
 	if commonName == "" {
-		return nil, fmt.Errorf("common name is required")
+		return nil, errors.New("common name is required")
 	}
 	template, err := newCertificateTemplateInternal(commonName)
 	if err != nil {
@@ -278,7 +279,7 @@ func NewEdgeMTLSClientTemplate(commonName string, uriSAN *url.URL, dnsSANs []str
 func NewServerTLSTemplate(commonName string, hosts []string) (*x509.Certificate, error) {
 	commonName = strings.TrimSpace(commonName)
 	if commonName == "" {
-		return nil, fmt.Errorf("common name is required")
+		return nil, errors.New("common name is required")
 	}
 	template, err := newCertificateTemplateInternal(commonName)
 	if err != nil {

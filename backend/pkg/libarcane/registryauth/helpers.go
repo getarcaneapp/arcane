@@ -5,9 +5,9 @@ import (
 	"sort"
 	"strings"
 
+	ref "github.com/distribution/reference"
 	dockerauthconfig "github.com/moby/moby/api/pkg/authconfig"
 	dockerregistry "github.com/moby/moby/api/types/registry"
-	ref "go.podman.io/image/v5/docker/reference"
 )
 
 func GetRegistryAddress(imageRef string) (string, error) {
@@ -95,7 +95,7 @@ func DecodeAuthHeader(authEncoded string) (dockerregistry.AuthConfig, error) {
 	return *cfg, nil
 }
 
-func RegistryAuthLookupKeys(url string) []string {
+func LookupKeys(url string) []string {
 	normalizedHost := NormalizeRegistryForComparison(url)
 	if normalizedHost == "" {
 		return nil

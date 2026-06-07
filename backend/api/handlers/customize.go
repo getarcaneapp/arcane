@@ -9,6 +9,7 @@ import (
 	humamw "github.com/getarcaneapp/arcane/backend/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
+	"github.com/getarcaneapp/arcane/backend/pkg/authz"
 	"github.com/getarcaneapp/arcane/types/category"
 	"github.com/getarcaneapp/arcane/types/search"
 )
@@ -67,6 +68,19 @@ func RegisterCustomize(api huma.API, customizeSearchService *services.CustomizeS
 	}, h.GetCategories)
 }
 
+func filterCustomizeCategoriesInternal(ps *authz.PermissionSet, categories []category.Category) []category.Category {
+	if ps == nil {
+		return []category.Category{}
+	}
+	filtered := make([]category.Category, 0, len(categories))
+	for _, cat := range categories {
+		if authz.CanAccessCustomizeCategory(ps, cat.ID, "") {
+			filtered = append(filtered, cat)
+		}
+	}
+	return filtered
+}
+
 // Search searches customization options by query.
 func (h *CustomizeHandler) Search(ctx context.Context, input *SearchCustomizeInput) (*SearchCustomizeOutput, error) {
 	if h.customizeSearchService == nil {
@@ -77,18 +91,10 @@ func (h *CustomizeHandler) Search(ctx context.Context, input *SearchCustomizeInp
 		return nil, huma.Error400BadRequest((&common.QueryParameterRequiredError{}).Error())
 	}
 
+	ps, _ := humamw.PermissionsFromContext(ctx)
 	results := h.customizeSearchService.Search(input.Body.Query)
-
-	if !humamw.IsAdminFromContext(ctx) {
-		filtered := []category.Category{}
-		for _, cat := range results.Results {
-			if cat.ID != "registries" && cat.ID != "variables" {
-				filtered = append(filtered, cat)
-			}
-		}
-		results.Results = filtered
-		results.Count = len(filtered)
-	}
+	results.Results = filterCustomizeCategoriesInternal(ps, results.Results)
+	results.Count = len(results.Results)
 
 	return &SearchCustomizeOutput{
 		Body: results,
@@ -101,17 +107,8 @@ func (h *CustomizeHandler) GetCategories(ctx context.Context, input *GetCustomiz
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	categories := h.customizeSearchService.GetCustomizeCategories()
-
-	if !humamw.IsAdminFromContext(ctx) {
-		filtered := []category.Category{}
-		for _, cat := range categories {
-			if cat.ID != "registries" && cat.ID != "variables" {
-				filtered = append(filtered, cat)
-			}
-		}
-		categories = filtered
-	}
+	ps, _ := humamw.PermissionsFromContext(ctx)
+	categories := filterCustomizeCategoriesInternal(ps, h.customizeSearchService.GetCustomizeCategories())
 
 	return &GetCustomizeCategoriesOutput{
 		Body: categories,

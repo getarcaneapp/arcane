@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
-	import type { Event } from '$lib/types/event.type';
+	import type { Event } from '$lib/types/shared';
 	import EventTable from './event-table.svelte';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import { m } from '$lib/paraglide/messages';
@@ -10,6 +10,7 @@
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
 	import { EventsIcon } from '$lib/icons';
+	import { hasPermission } from '$lib/utils/auth';
 
 	let { data } = $props();
 
@@ -85,8 +86,10 @@
 		});
 	}
 
+	const canManageEvents = $derived(hasPermission('events:delete'));
+
 	const actionButtons: ActionButton[] = $derived([
-		...(selectedIds.length > 0
+		...(selectedIds.length > 0 && canManageEvents
 			? [
 					{
 						id: 'remove-selected',

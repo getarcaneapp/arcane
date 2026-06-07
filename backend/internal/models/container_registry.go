@@ -5,6 +5,8 @@ import (
 )
 
 type ContainerRegistry struct {
+	BaseModel
+
 	URL                 string     `json:"url" sortable:"true"`
 	Username            string     `json:"username" sortable:"true"`
 	Token               string     `json:"token"`
@@ -19,7 +21,6 @@ type ContainerRegistry struct {
 	ECRTokenGeneratedAt *time.Time `json:"ecrTokenGeneratedAt"`
 	CreatedAt           time.Time  `json:"createdAt" sortable:"true"`
 	UpdatedAt           time.Time  `json:"updatedAt" sortable:"true"`
-	BaseModel
 }
 
 func (ContainerRegistry) TableName() string {

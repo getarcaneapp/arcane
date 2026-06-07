@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	ref "github.com/distribution/reference"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/types/imageupdate"
@@ -20,11 +21,10 @@ import (
 	dockertypesimage "github.com/moby/moby/api/types/image"
 	dockerregistry "github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
-	digest "github.com/opencontainers/go-digest"
+	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	ref "go.podman.io/image/v5/docker/reference"
 	"gorm.io/gorm"
 )
 
@@ -500,6 +500,79 @@ func TestImageUpdateService_GetImageRefByIDInternal_UsesContainerFallback(t *tes
 	}
 }
 
+func TestImageUpdateService_CheckImageUpdate_SkipsDigestPinnedReferenceInternal(t *testing.T) {
+	db := setupImageUpdateTestDB(t)
+	pinnedDigest := digest.FromString("pinned-newt").String()
+	imageRef := "ghcr.io/fosrl/newt@" + pinnedDigest
+	eventService := NewEventService(db, nil, nil)
+	svc := NewImageUpdateService(db, nil, nil, nil, eventService, nil, nil)
+
+	result, err := svc.CheckImageUpdate(context.Background(), imageRef)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.False(t, result.HasUpdate)
+	assert.Equal(t, "digest", result.UpdateType)
+	assert.Equal(t, pinnedDigest, result.CurrentDigest)
+	assert.Equal(t, pinnedDigest, result.LatestDigest)
+	assert.Empty(t, result.Error)
+}
+
+func TestImageUpdateService_CheckMultipleImages_SkipsDigestPinnedReferenceInternal(t *testing.T) {
+	db := setupImageUpdateTestDB(t)
+	pinnedDigest := digest.FromString("batch-pinned-newt").String()
+	imageRef := "ghcr.io/fosrl/newt@" + pinnedDigest
+	svc := NewImageUpdateService(db, nil, nil, nil, nil, nil, nil)
+
+	regRepos, initialResults, grouped := svc.parseAndGroupImagesInternal([]string{imageRef})
+	require.Empty(t, regRepos)
+	require.Empty(t, grouped)
+	require.Contains(t, initialResults, imageRef)
+	require.NotNil(t, initialResults[imageRef])
+	assert.Empty(t, initialResults[imageRef].Error)
+
+	results, err := svc.CheckMultipleImages(context.Background(), []string{imageRef}, nil)
+	require.NoError(t, err)
+	require.Contains(t, results, imageRef)
+	require.NotNil(t, results[imageRef])
+	assert.False(t, results[imageRef].HasUpdate)
+	assert.Equal(t, "digest", results[imageRef].UpdateType)
+	assert.Equal(t, pinnedDigest, results[imageRef].CurrentDigest)
+	assert.Equal(t, pinnedDigest, results[imageRef].LatestDigest)
+	assert.Empty(t, results[imageRef].Error)
+}
+
+func TestImageUpdateService_CheckMultipleImages_SkippedDigestPinnedReferenceClearsStaleErrorInternal(t *testing.T) {
+	db := setupImageUpdateTestDB(t)
+	pinnedDigest := digest.FromString("stale-pinned-newt").String()
+	imageRef := "ghcr.io/fosrl/newt@" + pinnedDigest
+	repository := "ghcr.io/fosrl/newt"
+	staleError := "failed to get remote digest"
+	recordID := buildSyntheticImageUpdateRecordIDInternal(repository, "latest")
+	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+		ID:             recordID,
+		Repository:     repository,
+		Tag:            "latest",
+		HasUpdate:      false,
+		UpdateType:     "digest",
+		CurrentVersion: "latest",
+		LastError:      &staleError,
+		CheckTime:      time.Now().Add(-time.Hour),
+	}).Error)
+	svc := NewImageUpdateService(db, nil, nil, nil, nil, nil, nil)
+
+	results, err := svc.CheckMultipleImages(context.Background(), []string{imageRef}, nil)
+	require.NoError(t, err)
+	require.Contains(t, results, imageRef)
+	assert.Empty(t, results[imageRef].Error)
+
+	var saved models.ImageUpdateRecord
+	require.NoError(t, db.WithContext(context.Background()).Where("id = ?", recordID).First(&saved).Error)
+	assert.False(t, saved.HasUpdate)
+	assert.Nil(t, saved.LastError)
+	assert.Equal(t, pinnedDigest, stringPtrToString(saved.CurrentDigest))
+	assert.Equal(t, pinnedDigest, stringPtrToString(saved.LatestDigest))
+}
+
 func TestImageUpdateService_CheckImageUpdate_UsesRegistryFallback(t *testing.T) {
 	db := setupImageUpdateTestDB(t)
 	localDigest := digest.FromString("localdigest").String()
@@ -523,7 +596,7 @@ func TestImageUpdateService_CheckImageUpdate_UsesRegistryFallback(t *testing.T) 
 
 	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
 	eventService := NewEventService(db, nil, nil)
-	svc := NewImageUpdateService(db, nil, registryService, dockerService, eventService, nil)
+	svc := NewImageUpdateService(db, nil, registryService, dockerService, eventService, nil, nil)
 
 	result, err := svc.CheckImageUpdate(context.Background(), imageRef)
 	require.NoError(t, err)
@@ -563,7 +636,7 @@ func TestImageUpdateService_CheckMultipleImages_UsesRegistryFallback(t *testing.
 
 	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
 	eventService := NewEventService(db, nil, nil)
-	svc := NewImageUpdateService(db, nil, registryService, dockerService, eventService, nil)
+	svc := NewImageUpdateService(db, nil, registryService, dockerService, eventService, nil, nil)
 
 	results, err := svc.CheckMultipleImages(context.Background(), []string{imageRef}, nil)
 	require.NoError(t, err)
@@ -580,6 +653,130 @@ func TestImageUpdateService_CheckMultipleImages_UsesRegistryFallback(t *testing.
 	var saved models.ImageUpdateRecord
 	require.NoError(t, db.WithContext(context.Background()).Where("id = ?", "sha256:local-image-id").First(&saved).Error)
 	assert.Equal(t, remoteDigest, stringPtrToString(saved.LatestDigest))
+}
+
+func TestImageUpdateService_CheckMultipleImagesCompletesActivityWhenRequestContextCanceledInternal(t *testing.T) {
+	db := setupImageUpdateTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.Activity{}, &models.ActivityMessage{}))
+
+	activityService := NewActivityService(db)
+	svc := NewImageUpdateService(db, nil, nil, nil, nil, nil, activityService)
+
+	for range 5 {
+		require.NoError(t, svc.registryLimiter.Acquire(context.Background(), "docker.io"))
+	}
+	defer func() {
+		for range 5 {
+			svc.registryLimiter.Release("docker.io")
+		}
+	}()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := svc.CheckMultipleImages(ctx, []string{"nginx:latest"}, nil)
+		errCh <- err
+	}()
+
+	var activity models.Activity
+	require.Eventually(t, func() bool {
+		return db.Where("type = ?", models.ActivityTypeImageUpdateCheck).First(&activity).Error == nil
+	}, time.Second, 10*time.Millisecond)
+
+	cancel()
+
+	select {
+	case err := <-errCh:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for image update check to return")
+	}
+
+	require.Eventually(t, func() bool {
+		if err := db.First(&activity, "id = ?", activity.ID).Error; err != nil {
+			return false
+		}
+		return activity.Status == models.ActivityStatusFailed
+	}, time.Second, 10*time.Millisecond)
+	assert.Equal(t, "Image update check complete", activity.Step)
+	assert.Contains(t, activity.LatestMessage, "Image update check failed")
+}
+
+func TestImageUpdateService_CheckMultipleImagesTimesOutStalledRegistryCheckInternal(t *testing.T) {
+	db := setupImageUpdateTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.Activity{}, &models.ActivityMessage{}))
+
+	settingsService := newImageUpdateTestSettingsServiceInternal("1", "30")
+	activityService := NewActivityService(db)
+	dockerServer := newImageUpdateRegistryOnlyServer(t, "team/app:1.2.3", digest.FromString("unused").String())
+	defer dockerServer.Close()
+	registryService := NewContainerRegistryService(db, func(context.Context) (RegistryDaemonClient, error) {
+		return &fakeRegistryDaemonClient{
+			distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+				<-ctx.Done()
+				return client.DistributionInspectResult{}, ctx.Err()
+			},
+		}, nil
+	}, nil)
+
+	parentCtx, cancel := context.WithTimeout(context.Background(), 2500*time.Millisecond)
+	defer cancel()
+
+	svc := NewImageUpdateService(db, settingsService, registryService, &DockerClientService{client: newTestDockerClient(t, dockerServer)}, nil, nil, activityService)
+
+	start := time.Now()
+	results, err := svc.CheckMultipleImages(parentCtx, []string{"registry.example.com/team/app:1.2.3"}, nil)
+	elapsed := time.Since(start)
+
+	require.NoError(t, err)
+	require.Less(t, elapsed, 2*time.Second)
+	require.Contains(t, results, "registry.example.com/team/app:1.2.3")
+	require.NotNil(t, results["registry.example.com/team/app:1.2.3"])
+	require.Contains(t, results["registry.example.com/team/app:1.2.3"].Error, context.DeadlineExceeded.Error())
+
+	var activity models.Activity
+	require.NoError(t, db.Where("type = ?", models.ActivityTypeImageUpdateCheck).First(&activity).Error)
+	require.Equal(t, models.ActivityStatusFailed, activity.Status)
+	require.NotNil(t, activity.EndedAt)
+	require.NotNil(t, activity.DurationMs)
+	require.Equal(t, "Image update check complete", activity.Step)
+	require.Contains(t, activity.LatestMessage, "0 checked, 1 errors")
+}
+
+func TestImageUpdateService_GetAllImageRefsUsesDockerAPITimeoutInternal(t *testing.T) {
+	db := setupImageUpdateTestDB(t)
+	settingsService := newImageUpdateTestSettingsServiceInternal("30", "1")
+	server := newBlockedDockerAPIServerInternal(t, "/images/json")
+	svc := NewImageUpdateService(db, settingsService, nil, &DockerClientService{client: newTestDockerClient(t, server)}, nil, nil, nil)
+
+	parentCtx, cancel := context.WithTimeout(context.Background(), 2500*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	_, err := svc.getAllImageRefsInternal(parentCtx, 0)
+	elapsed := time.Since(start)
+
+	require.Error(t, err)
+	require.Less(t, elapsed, 2*time.Second)
+	require.Contains(t, err.Error(), context.DeadlineExceeded.Error())
+}
+
+func TestImageUpdateService_InspectLocalImageSnapshotUsesDockerAPITimeoutInternal(t *testing.T) {
+	db := setupImageUpdateTestDB(t)
+	settingsService := newImageUpdateTestSettingsServiceInternal("30", "1")
+	server := newBlockedDockerAPIServerInternal(t, "/images/")
+	svc := NewImageUpdateService(db, settingsService, nil, &DockerClientService{client: newTestDockerClient(t, server)}, nil, nil, nil)
+
+	parentCtx, cancel := context.WithTimeout(context.Background(), 2500*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	_, err := svc.inspectLocalImageSnapshotInternal(parentCtx, "registry.example.com/team/app:1.2.3")
+	elapsed := time.Since(start)
+
+	require.Error(t, err)
+	require.Less(t, elapsed, 2*time.Second)
+	require.Contains(t, err.Error(), context.DeadlineExceeded.Error())
 }
 
 func TestImageUpdateService_CheckMultipleImages_UsesDockerHubCredentialsOnFirstAttempt(t *testing.T) {
@@ -618,7 +815,7 @@ func TestImageUpdateService_CheckMultipleImages_UsesDockerHubCredentialsOnFirstA
 
 	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
 	eventService := NewEventService(db, nil, nil)
-	svc := NewImageUpdateService(db, nil, registryService, dockerService, eventService, nil)
+	svc := NewImageUpdateService(db, nil, registryService, dockerService, eventService, nil, nil)
 
 	results, err := svc.CheckMultipleImages(context.Background(), []string{"docker.io/library/registry:3"}, nil)
 	require.NoError(t, err)
@@ -658,7 +855,7 @@ func TestImageUpdateService_CheckMultipleImages_PersistsRefScopedErrorsWhenLocal
 
 	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
 	eventService := NewEventService(db, nil, nil)
-	svc := NewImageUpdateService(db, nil, registryService, dockerService, eventService, nil)
+	svc := NewImageUpdateService(db, nil, registryService, dockerService, eventService, nil, nil)
 
 	results, err := svc.CheckMultipleImages(context.Background(), []string{imageRef}, nil)
 	require.NoError(t, err)
@@ -686,7 +883,7 @@ func TestImageUpdateService_SaveUpdateResultWithSnapshotInternal_PersistsRegistr
 	require.NoError(t, err)
 	imageRef := serverURL.Host + "/library/nginx:alpine"
 
-	svc := NewImageUpdateService(db, nil, nil, &DockerClientService{client: newTestDockerClient(t, server)}, nil, nil)
+	svc := NewImageUpdateService(db, nil, nil, &DockerClientService{client: newTestDockerClient(t, server)}, nil, nil, nil)
 	result := &imageupdate.Response{
 		HasUpdate:      true,
 		UpdateType:     "digest",
@@ -763,7 +960,7 @@ func TestImageUpdateService_MarkImageRefUpToDateAfterPull_ClearsMatchingRecordsA
 		CheckTime:      now,
 	}).Error)
 
-	svc := NewImageUpdateService(db, nil, nil, &DockerClientService{client: newTestDockerClient(t, server)}, nil, nil)
+	svc := NewImageUpdateService(db, nil, nil, &DockerClientService{client: newTestDockerClient(t, server)}, nil, nil, nil)
 
 	require.NoError(t, svc.MarkImageRefUpToDateAfterPull(context.Background(), imageRef))
 
@@ -1210,6 +1407,29 @@ func TestDedupeImageRefsFromSummaries_WithLimit(t *testing.T) {
 
 	refsLimited := dedupeImageRefsFromSummariesInternal(summaries, 2)
 	assert.Equal(t, []string{"nginx:latest", "redis:7"}, refsLimited)
+}
+
+func newImageUpdateTestSettingsServiceInternal(registryTimeout, dockerAPITimeout string) *SettingsService {
+	settingsService := &SettingsService{}
+	cfg := DefaultSettingsConfig()
+	cfg.RegistryTimeout.Value = registryTimeout
+	cfg.DockerAPITimeout.Value = dockerAPITimeout
+	settingsService.config.Store(cfg)
+	return settingsService
+}
+
+func newBlockedDockerAPIServerInternal(t *testing.T, pathContains string) *httptest.Server {
+	t.Helper()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, pathContains) {
+			<-r.Context().Done()
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(server.Close)
+	return server
 }
 
 func containsAll(set map[string]struct{}, refs ...string) bool {

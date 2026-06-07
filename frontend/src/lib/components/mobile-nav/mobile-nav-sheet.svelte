@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { navigationItems, getManagementItems } from '$lib/config/navigation-config';
+	import { navigationItems, getManagementItems, filterByPermissions } from '$lib/config/navigation-config';
 	import type { NavigationItem } from '$lib/config/navigation-config';
 	import { cn } from '$lib/utils';
 	import { page } from '$app/state';
@@ -7,30 +7,30 @@
 	import { m } from '$lib/paraglide/messages';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import MobileUserCard from './mobile-user-card.svelte';
+	import ActivityCenterTrigger from '$lib/components/activity/activity-center-trigger.svelte';
 	import * as Drawer from '$lib/components/ui/drawer/index.js';
-	import { queryKeys } from '$lib/query/query-keys';
-	import systemUpgradeService from '$lib/services/api/system-upgrade-service';
 	import UpdateCenterDialog from '$lib/components/dialogs/update-center-dialog.svelte';
-	import { toast } from 'svelte-sonner';
-	import { extractApiErrorMessage } from '$lib/utils/api.util';
-	import type { AppVersionInformation } from '$lib/types/application-configuration';
-	import { createMutation, createQuery } from '@tanstack/svelte-query';
+	import { useUpgradeCheck } from '$lib/hooks/use-upgrade-check.svelte';
+	import type { AppVersionInformation } from '$lib/types/settings';
+	import type { PermissionsManifest, User } from '$lib/types/auth';
 
 	let {
 		open = $bindable(false),
 		user = null,
 		versionInformation,
 		swarmItems = [],
+		permissionsManifest = null,
 		debug = false
 	}: {
 		open: boolean;
-		user?: any;
+		user?: User | null;
 		versionInformation?: AppVersionInformation;
 		swarmItems?: NavigationItem[];
+		permissionsManifest?: PermissionsManifest | null;
 		debug?: boolean;
 	} = $props();
 
-	let storeUser: any = $state(null);
+	let storeUser = $state<User | null>(null);
 
 	$effect(() => {
 		const unsub = userStore.subscribe((u) => (storeUser = u));
@@ -40,62 +40,22 @@
 	const currentPath = $derived(page.url.pathname);
 	const memoizedUser = $derived.by(() => user ?? storeUser);
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
-	const managementItems = $derived(getManagementItems(currentEnvId));
-
-	let upgrading = $state(false);
-	let showConfirmDialog = $state(false);
-	const isAdmin = $derived(!!user?.roles?.includes('admin'));
-
-	const shouldCheckUpgrade = $derived(!!(versionInformation?.updateAvailable && isAdmin && !debug));
-	const upgradeAvailabilityQuery = createQuery(() => ({
-		queryKey: queryKeys.system.upgradeAvailable('mobile-nav'),
-		queryFn: () => systemUpgradeService.checkUpgradeAvailable(),
-		enabled: shouldCheckUpgrade,
-		staleTime: 0
-	}));
-
-	const canUpgrade = $derived.by(() => {
-		if (debug) return true;
-		const result = upgradeAvailabilityQuery.data;
-		return !!result?.canUpgrade && !result?.error;
-	});
-	const checkingUpgrade = $derived(
-		!!(shouldCheckUpgrade && (upgradeAvailabilityQuery.isPending || upgradeAvailabilityQuery.isFetching))
+	const managementItemsRaw = $derived(getManagementItems(currentEnvId));
+	const managementItems = $derived(
+		filterByPermissions(managementItemsRaw, memoizedUser ?? null, currentEnvId, permissionsManifest)
 	);
-	const shouldShowUpgrade = $derived((canUpgrade && isAdmin) || debug);
+	const resourceItems = $derived(
+		filterByPermissions(navigationItems.resourceItems, memoizedUser ?? null, currentEnvId, permissionsManifest)
+	);
+	const settingsItems = $derived(
+		filterByPermissions(navigationItems.settingsItems, memoizedUser ?? null, currentEnvId, permissionsManifest)
+	);
 
-	const updateType = $derived.by(() => {
-		if (!versionInformation) return 'none';
-		if (versionInformation.isSemverVersion) return 'semver';
-		if (versionInformation.currentTag && versionInformation.newestDigest) return 'digest';
-		return 'none';
+	const upgradeCheck = useUpgradeCheck({
+		queryScope: 'mobile-nav',
+		getVersionInformation: () => versionInformation,
+		getDebug: () => debug
 	});
-
-	const versionChip = $derived.by(() => {
-		if (!versionInformation) return '';
-		if (updateType === 'semver') return versionInformation.newestVersion ?? '';
-		if (updateType === 'digest') return versionInformation.currentTag ?? '';
-		return '';
-	});
-
-	const shouldShowBanner = $derived(versionInformation?.updateAvailable || debug);
-	const triggerUpgradeMutation = createMutation(() => ({
-		mutationFn: () => systemUpgradeService.triggerUpgrade(),
-		onError: (error: unknown) => {
-			const errorMessage = extractApiErrorMessage(error);
-			const wrappedPrefix = m.upgrade_failed({ error: '' });
-			toast.error(errorMessage.startsWith(wrappedPrefix) ? errorMessage : m.upgrade_failed({ error: errorMessage }));
-			upgrading = false;
-		}
-	}));
-
-	function handleUpgradeClick() {
-		showConfirmDialog = true;
-	}
-
-	function handleConfirmUpgrade() {
-		triggerUpgradeMutation.mutate();
-	}
 
 	function handleItemClick() {
 		open = false;
@@ -116,6 +76,7 @@
 			{#if memoizedUser}
 				<MobileUserCard user={memoizedUser} class="mb-6" />
 			{/if}
+			<ActivityCenterTrigger mobile class="mb-4" onOpen={handleItemClick} />
 		</div>
 
 		<div class="scrollbar-hide flex-1 overflow-y-auto px-6">
@@ -192,7 +153,7 @@
 						{m.sidebar_resources()}
 					</h4>
 					<div class="space-y-2">
-						{#each navigationItems.resourceItems as item (item.url)}
+						{#each resourceItems as item (item.url)}
 							{#if item.items}
 								{@const IconComponent = item.icon}
 								<div class="space-y-2">
@@ -282,53 +243,16 @@
 					</section>
 				{/if}
 
-				{#if isAdmin}
-					{#if navigationItems.settingsItems}
-						<section>
-							<h4 class="text-muted-foreground/70 mb-4 px-3 text-[11px] font-semibold tracking-widest uppercase">
-								{m.sidebar_administration()}
-							</h4>
-							<div class="space-y-2">
-								{#each navigationItems.settingsItems as item (item.url)}
-									{#if item.items}
-										{@const IconComponent = item.icon}
-										<div class="space-y-2">
-											<a
-												href={item.url}
-												onclick={handleItemClick}
-												class={cn(
-													'flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition-all duration-200 ease-out',
-													isActiveItem(item)
-														? 'bg-muted text-foreground hover:bg-muted/70 shadow-sm'
-														: 'text-foreground hover:bg-muted/50'
-												)}
-											>
-												<IconComponent size={20} />
-												<span>{item.title}</span>
-											</a>
-											<div class="ml-6 space-y-1">
-												{#each item.items as subItem (subItem.url)}
-													{@const SubIconComponent = subItem.icon}
-													<a
-														href={subItem.url}
-														onclick={handleItemClick}
-														class={cn(
-															'flex items-center gap-3 rounded-xl px-4 py-2 text-sm transition-all duration-200 ease-out',
-															'focus-visible:ring-muted-foreground/50 hover:scale-[1.01] focus-visible:ring-1 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent',
-															isActiveItem(subItem)
-																? 'bg-muted/70 text-foreground shadow-sm'
-																: 'text-muted-foreground hover:text-foreground hover:bg-muted/40'
-														)}
-														aria-current={isActiveItem(subItem) ? 'page' : undefined}
-													>
-														<SubIconComponent size={16} />
-														<span>{subItem.title}</span>
-													</a>
-												{/each}
-											</div>
-										</div>
-									{:else}
-										{@const IconComponent = item.icon}
+				{#if settingsItems.length > 0}
+					<section>
+						<h4 class="text-muted-foreground/70 mb-4 px-3 text-[11px] font-semibold tracking-widest uppercase">
+							{m.sidebar_administration()}
+						</h4>
+						<div class="space-y-2">
+							{#each settingsItems as item (item.url)}
+								{#if item.items}
+									{@const IconComponent = item.icon}
+									<div class="space-y-2">
 										<a
 											href={item.url}
 											onclick={handleItemClick}
@@ -342,11 +266,46 @@
 											<IconComponent size={20} />
 											<span>{item.title}</span>
 										</a>
-									{/if}
-								{/each}
-							</div>
-						</section>
-					{/if}
+										<div class="ml-6 space-y-1">
+											{#each item.items as subItem (subItem.url)}
+												{@const SubIconComponent = subItem.icon}
+												<a
+													href={subItem.url}
+													onclick={handleItemClick}
+													class={cn(
+														'flex items-center gap-3 rounded-xl px-4 py-2 text-sm transition-all duration-200 ease-out',
+														'focus-visible:ring-muted-foreground/50 hover:scale-[1.01] focus-visible:ring-1 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent',
+														isActiveItem(subItem)
+															? 'bg-muted/70 text-foreground shadow-sm'
+															: 'text-muted-foreground hover:text-foreground hover:bg-muted/40'
+													)}
+													aria-current={isActiveItem(subItem) ? 'page' : undefined}
+												>
+													<SubIconComponent size={16} />
+													<span>{subItem.title}</span>
+												</a>
+											{/each}
+										</div>
+									</div>
+								{:else}
+									{@const IconComponent = item.icon}
+									<a
+										href={item.url}
+										onclick={handleItemClick}
+										class={cn(
+											'flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition-all duration-200 ease-out',
+											isActiveItem(item)
+												? 'bg-muted text-foreground hover:bg-muted/70 shadow-sm'
+												: 'text-foreground hover:bg-muted/50'
+										)}
+									>
+										<IconComponent size={20} />
+										<span>{item.title}</span>
+									</a>
+								{/if}
+							{/each}
+						</div>
+					</section>
 				{/if}
 			</div>
 		</div>
@@ -355,14 +314,15 @@
 			{#if versionInformation}
 				<div class="text-muted-foreground/60 text-center text-xs">
 					<p class="font-medium">
-						Arcane {versionInformation.displayVersion ?? versionInformation.currentVersion}
+						{m.layout_title()}
+						{versionInformation.displayVersion ?? versionInformation.currentVersion}
 					</p>
 				</div>
-				{#if shouldShowBanner}
+				{#if upgradeCheck.shouldShowBanner}
 					<button
 						type="button"
-						onclick={handleUpgradeClick}
-						disabled={upgrading || checkingUpgrade}
+						onclick={upgradeCheck.openDialog}
+						disabled={upgradeCheck.upgrading || upgradeCheck.checkingUpgrade}
 						class="group hover:bg-muted/50 focus-visible:ring-primary/40 mt-3 flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left transition-colors focus-visible:ring-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60"
 					>
 						<span class="relative flex size-2 shrink-0 items-center justify-center">
@@ -372,9 +332,9 @@
 						<span class="text-foreground flex-1 text-sm font-medium">
 							{m.sidebar_update_available()}
 						</span>
-						{#if versionChip}
+						{#if upgradeCheck.versionChip}
 							<span class="bg-muted text-muted-foreground rounded-md px-1.5 py-0.5 font-mono text-[11px]">
-								{versionChip}
+								{upgradeCheck.versionChip}
 							</span>
 						{/if}
 					</button>
@@ -385,12 +345,12 @@
 </Drawer.Root>
 
 <UpdateCenterDialog
-	bind:open={showConfirmDialog}
-	bind:upgrading
+	bind:open={upgradeCheck.showConfirmDialog}
+	bind:upgrading={upgradeCheck.upgrading}
 	{versionInformation}
-	canInstall={shouldShowUpgrade}
+	canInstall={upgradeCheck.shouldShowUpgrade}
 	{debug}
-	onConfirm={handleConfirmUpgrade}
+	onConfirm={upgradeCheck.confirmUpgrade}
 />
 
 <style>

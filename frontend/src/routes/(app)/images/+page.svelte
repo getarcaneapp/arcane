@@ -3,20 +3,22 @@
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { toast } from 'svelte-sonner';
 	import ImagePullSheet from '$lib/components/sheets/image-pull-sheet.svelte';
-	import bytes from '$lib/utils/bytes';
+	import { bytes } from '$lib/utils/formatting';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import { displaySize, FileDropZone, MEGABYTE, type FileDropZoneProps } from '$lib/components/ui/file-drop-zone';
 	import ImageTable from './image-table.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { imageService } from '$lib/services/image-service';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import { hasPermission } from '$lib/utils/auth';
 	import { queryKeys } from '$lib/query/query-keys';
-	import type { ImageUsageCounts } from '$lib/types/image.type';
+	import type { ImageUsageCounts } from '$lib/types/docker';
 	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
 	import { CloseIcon, VolumesIcon, LocalFolderComputerIcon } from '$lib/icons';
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
 	import PruneModeCard from '$lib/components/prune/prune-mode-card.svelte';
+	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 
 	let { data } = $props();
 
@@ -58,8 +60,8 @@
 				mode: imagePruneMode,
 				...(imagePruneMode === 'olderThan' ? { until: imagePruneUntil } : {})
 			}),
-		onSuccess: async () => {
-			toast.success(m.images_pruned_success());
+		onSuccess: async (data) => {
+			toast.success(m.images_pruned_success(), activityToastOptions(extractActivityId(data)));
 			await Promise.all([imagesQuery.refetch(), imageUsageCountsQuery.refetch()]);
 			isConfirmPruneDialogOpen = false;
 		},
@@ -71,8 +73,8 @@
 	const checkUpdatesMutation = createMutation(() => ({
 		mutationKey: ['images', 'check-updates', envId],
 		mutationFn: () => imageService.checkAllImages(),
-		onSuccess: async () => {
-			toast.success(m.images_update_check_completed());
+		onSuccess: async (data) => {
+			toast.success(m.images_update_check_completed(), activityToastOptions(extractActivityId(data)));
 			await imagesQuery.refetch();
 		},
 		onError: () => {
@@ -107,9 +109,11 @@
 
 	const imageUsageCounts = $derived(imageUsageCountsQuery.data ?? imageUsageFallback);
 
-	const isRefreshing = $derived(
-		(imagesQuery.isFetching && !imagesQuery.isPending) || (imageUsageCountsQuery.isFetching && !imageUsageCountsQuery.isPending)
-	);
+	// Intentionally a manual flag, not $derived(query.isFetching): these queries use
+	// aggressive background refetching (staleTime: 0 + refetchOnMount/WindowFocus:
+	// 'always'), so deriving from isFetching leaves the manual refresh button spinning
+	// constantly. Mirrors the containers page — reflects only user-initiated refreshes.
+	let isRefreshing = $state(false);
 	const isUploading = $derived(uploadImagesMutation.isPending);
 	const isPruning = $derived(pruneImagesMutation.isPending);
 	const isChecking = $derived(checkUpdatesMutation.isPending);
@@ -145,39 +149,63 @@
 	];
 
 	async function refresh() {
-		await Promise.all([imagesQuery.refetch(), imageUsageCountsQuery.refetch()]);
+		isRefreshing = true;
+		try {
+			await Promise.all([imagesQuery.refetch(), imageUsageCountsQuery.refetch()]);
+		} finally {
+			isRefreshing = false;
+		}
 	}
 
-	const actionButtons: ActionButton[] = $derived([
-		{ id: 'pull', action: 'pull', label: m.images_pull_image(), onclick: () => (isPullDialogOpen = true) },
-		{ id: 'upload', action: 'create', label: m.images_upload_image(), onclick: () => (isUploadDialogOpen = true) },
-		{
-			id: 'check-updates',
-			action: 'inspect',
-			label: m.images_check_updates(),
-			loadingLabel: m.common_action_checking(),
-			onclick: handleTriggerBulkUpdateCheck,
-			loading: isChecking,
-			disabled: isChecking
-		},
-		{
+	const canPullImage = $derived(hasPermission('images:pull', envId));
+	const canUploadImage = $derived(hasPermission('images:upload', envId));
+	const canPruneImage = $derived(hasPermission('images:prune', envId));
+
+	const actionButtons: ActionButton[] = $derived.by(() => {
+		const buttons: ActionButton[] = [];
+		if (canPullImage) {
+			buttons.push({ id: 'pull', action: 'pull', label: m.images_pull_image(), onclick: () => (isPullDialogOpen = true) });
+		}
+		if (canUploadImage) {
+			buttons.push({
+				id: 'upload',
+				action: 'create',
+				label: m.images_upload_image(),
+				onclick: () => (isUploadDialogOpen = true)
+			});
+		}
+		if (canPullImage) {
+			buttons.push({
+				id: 'check-updates',
+				action: 'inspect',
+				label: m.images_check_updates(),
+				loadingLabel: m.common_action_checking(),
+				onclick: handleTriggerBulkUpdateCheck,
+				loading: isChecking,
+				disabled: isChecking
+			});
+		}
+		buttons.push({
 			id: 'refresh',
 			action: 'restart',
 			label: m.common_refresh(),
 			onclick: refresh,
 			loading: isRefreshing,
 			disabled: isRefreshing
-		},
-		{
-			id: 'prune',
-			action: 'remove',
-			label: m.images_prune_unused(),
-			loadingLabel: m.common_action_pruning(),
-			onclick: () => (isConfirmPruneDialogOpen = true),
-			loading: isPruning,
-			disabled: isPruning
+		});
+		if (canPruneImage) {
+			buttons.push({
+				id: 'prune',
+				action: 'remove',
+				label: m.images_prune_unused(),
+				loadingLabel: m.common_action_pruning(),
+				onclick: () => (isConfirmPruneDialogOpen = true),
+				loading: isPruning,
+				disabled: isPruning
+			});
 		}
-	]);
+		return buttons;
+	});
 
 	const statCards: StatCardConfig[] = $derived([
 		{
@@ -201,6 +229,7 @@
 			bind:images
 			bind:selectedIds
 			bind:requestOptions
+			loading={imagesQuery.isLoading}
 			onRefreshData={async (options) => {
 				requestOptions = options;
 				await Promise.all([imagesQuery.refetch(), imageUsageCountsQuery.refetch()]);

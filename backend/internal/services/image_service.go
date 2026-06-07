@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	ref "github.com/distribution/reference"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	dockerutils "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
@@ -23,7 +24,6 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/client"
-	ref "go.podman.io/image/v5/docker/reference"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 )
@@ -401,14 +401,14 @@ func (s *ImageService) PruneImages(ctx context.Context, options systemtypes.Prun
 	filterArgs := make(client.Filters)
 	switch options.Mode {
 	case systemtypes.PruneImageModeNone:
-		return nil, fmt.Errorf("image prune mode none is not allowed")
+		return nil, errors.New("image prune mode none is not allowed")
 	case systemtypes.PruneImageModeDangling:
 		filterArgs = filterArgs.Add("dangling", "true")
 	case systemtypes.PruneImageModeAll:
 		filterArgs = filterArgs.Add("dangling", "false")
 	case systemtypes.PruneImageModeOlderThan:
 		if strings.TrimSpace(options.Until) == "" {
-			return nil, fmt.Errorf("image prune mode olderThan requires until")
+			return nil, errors.New("image prune mode olderThan requires until")
 		}
 		filterArgs = filterArgs.Add("until", options.Until)
 	default:
@@ -570,11 +570,6 @@ func (s *ImageService) GetUpdateInfoByImageRefs(ctx context.Context, imageRefs [
 }
 
 func (s *ImageService) ListImagesPaginated(ctx context.Context, params pagination.QueryParams) ([]imagetypes.Summary, pagination.Response, error) {
-	dockerClient, err := s.dockerService.GetClient(ctx)
-	if err != nil {
-		return nil, pagination.Response{}, fmt.Errorf("failed to connect to Docker: %w", err)
-	}
-
 	var (
 		dockerImages  []image.Summary
 		containers    []container.Summary
@@ -586,22 +581,22 @@ func (s *ImageService) ListImagesPaginated(ctx context.Context, params paginatio
 	// Fetch Docker images
 	g.Go(func() error {
 		var err error
-		imageList, err := dockerClient.ImageList(groupCtx, client.ImageListOptions{})
+		imageList, err := s.dockerService.listImagesInternal(groupCtx)
 		if err != nil {
 			return fmt.Errorf("failed to list Docker images: %w", err)
 		}
-		dockerImages = imageList.Items
+		dockerImages = imageList
 		return nil
 	})
 
 	// Fetch containers to determine usage
 	g.Go(func() error {
 		var err error
-		containerList, err := dockerClient.ContainerList(groupCtx, client.ContainerListOptions{All: true})
+		containerList, err := s.dockerService.listContainersInternal(groupCtx)
 		if err != nil {
 			return fmt.Errorf("failed to list containers: %w", err)
 		}
-		containers = containerList.Items
+		containers = containerList
 		return nil
 	})
 
@@ -744,18 +739,13 @@ func convertLabels(labels map[string]string) map[string]any {
 }
 
 func (s *ImageService) GetTotalImageSize(ctx context.Context) (int64, error) {
-	dockerClient, err := s.dockerService.GetClient(ctx)
-	if err != nil {
-		return 0, fmt.Errorf("failed to connect to Docker: %w", err)
-	}
-
-	imageList, err := dockerClient.ImageList(ctx, client.ImageListOptions{})
+	images, err := s.dockerService.listImagesInternal(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("failed to list images: %w", err)
 	}
 
 	var total int64
-	for _, img := range imageList.Items {
+	for _, img := range images {
 		total += img.Size
 	}
 
@@ -813,7 +803,7 @@ func (s *ImageService) BuildProjectIDMap(ctx context.Context, containers []conta
 		if c.Labels == nil {
 			continue
 		}
-		if projectName := c.Labels["com.docker.compose.project"]; projectName != "" {
+		if projectName := dockerutils.ComposeProjectLabel(c.Labels); projectName != "" {
 			projectNameSet[projectName] = struct{}{}
 		}
 	}
@@ -840,10 +830,7 @@ func buildUsageMapInternal(containers []container.Summary, projectIDByName map[s
 			continue
 		}
 
-		projectName := ""
-		if c.Labels != nil {
-			projectName = c.Labels["com.docker.compose.project"]
-		}
+		projectName := dockerutils.ComposeProjectLabel(c.Labels)
 
 		if projectName != "" {
 			projectID := projectIDByName[projectName]

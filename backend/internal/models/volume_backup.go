@@ -8,9 +8,11 @@ import (
 
 type VolumeBackup struct {
 	BaseModel
+
 	VolumeName string    `json:"volumeName" gorm:"column:volume_name;index"`
 	Size       int64     `json:"size" gorm:"column:size"`
 	CreatedAt  time.Time `json:"createdAt" gorm:"column:created_at"`
+	ActivityID *string   `json:"activityId,omitempty" gorm:"-"`
 }
 
 func (*VolumeBackup) TableName() string {

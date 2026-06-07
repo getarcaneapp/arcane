@@ -10,7 +10,7 @@ type (
 )
 
 const (
-	// Event types
+	// EventTypeContainerStart and the constants below enumerate Arcane event types.
 	EventTypeContainerStart   EventType = "container.start"
 	EventTypeContainerStop    EventType = "container.stop"
 	EventTypeContainerRestart EventType = "container.restart"
@@ -66,11 +66,12 @@ const (
 	EventTypeNetworkDelete EventType = "network.delete"
 	EventTypeNetworkError  EventType = "network.error"
 
-	EventTypeSystemPrune      EventType = "system.prune"
-	EventTypeUserLogin        EventType = "user.login"
-	EventTypeUserLogout       EventType = "user.logout"
-	EventTypeSystemAutoUpdate EventType = "system.auto_update"
-	EventTypeSystemUpgrade    EventType = "system.upgrade"
+	EventTypeSystemPrune       EventType = "system.prune"
+	EventTypeUserLogin         EventType = "user.login"
+	EventTypeUserLogout        EventType = "user.logout"
+	EventTypeFederatedExchange EventType = "federated.exchange"
+	EventTypeSystemAutoUpdate  EventType = "system.auto_update"
+	EventTypeSystemUpgrade     EventType = "system.upgrade"
 
 	EventTypeEnvironmentCreate            EventType = "environment.create"
 	EventTypeEnvironmentConnect           EventType = "environment.connect"
@@ -88,7 +89,7 @@ const (
 	EventTypeWebhookDelete  EventType = "webhook.delete"
 	EventTypeWebhookTrigger EventType = "webhook.trigger"
 
-	// Event severities
+	// EventSeverityInfo and the constants below enumerate event severities.
 	EventSeverityInfo    EventSeverity = "info"
 	EventSeverityWarning EventSeverity = "warning"
 	EventSeverityError   EventSeverity = "error"
@@ -96,6 +97,8 @@ const (
 )
 
 type Event struct {
+	BaseModel
+
 	Type          EventType     `json:"type" sortable:"true"`
 	Severity      EventSeverity `json:"severity" sortable:"true"`
 	Title         string        `json:"title" sortable:"true"`
@@ -108,7 +111,6 @@ type Event struct {
 	EnvironmentID *string       `json:"environmentId,omitempty"`
 	Metadata      JSON          `json:"metadata,omitempty" gorm:"type:text"`
 	Timestamp     time.Time     `json:"timestamp" sortable:"true"`
-	BaseModel
 }
 
 func (Event) TableName() string {

@@ -1,6 +1,7 @@
 import { render } from 'react-email';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { colors, fonts } from './theme';
 
 const outputDir = '../backend/resources/email-templates';
 
@@ -64,9 +65,10 @@ async function buildTemplateFile(Component: any, templateName: string, isPlainTe
 		);
 	} else {
 		// For HTML, wrap each item in a paragraph tag with proper styling
+		// Keep this in sync with imageItemStyle in emails/batch-image-updates.tsx.
 		normalized = normalized.replace(
 			/<p[^>]*>IMAGELIST_PLACEHOLDER<\/p>/g,
-			'{{range .ImageList}}<p style="font-size:13px;line-height:20px;color:#cbd5e1;margin:4px 0;font-family:monospace">• {{.}}</p>{{end}}'
+			`{{range .ImageList}}<p style="font-size:13px;line-height:20px;color:${colors.textBody};margin:4px 0;font-family:${fonts.mono}">• {{.}}</p>{{end}}`
 		);
 	}
 

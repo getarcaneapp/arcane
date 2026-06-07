@@ -6,17 +6,18 @@
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { Badge } from '$lib/components/ui/badge';
-	import { tryCatch } from '$lib/utils/try-catch';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
+	import { tryCatch } from '$lib/utils/api';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api';
 	import { formatDistanceToNow } from 'date-fns';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
-	import type { Event } from '$lib/types/event.type';
+	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
+	import type { Event } from '$lib/types/shared';
 	import type { ColumnSpec, MobileFieldVisibility } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
 	import EventDetailsDialog from '$lib/components/dialogs/event-details-dialog.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { eventService } from '$lib/services/event-service';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import IfPermitted from '$lib/components/if-permitted.svelte';
 	import { TrashIcon, InfoIcon, NotificationsIcon, TagIcon, EnvironmentsIcon, UserIcon, EllipsisIcon } from '$lib/icons';
 
 	let {
@@ -268,16 +269,18 @@
 					{m.common_view_details()}
 				</DropdownMenu.Item>
 
-				<DropdownMenu.Separator />
+				<IfPermitted perm="events:delete">
+					<DropdownMenu.Separator />
 
-				<DropdownMenu.Item
-					variant="destructive"
-					onclick={() => handleDeleteEvent(item.id, item.title)}
-					disabled={isLoading.removing}
-				>
-					<TrashIcon class="size-4" />
-					{m.common_delete()}
-				</DropdownMenu.Item>
+					<DropdownMenu.Item
+						variant="destructive"
+						onclick={() => handleDeleteEvent(item.id, item.title)}
+						disabled={isLoading.removing}
+					>
+						<TrashIcon class="size-4" />
+						{m.common_delete()}
+					</DropdownMenu.Item>
+				</IfPermitted>
 			</DropdownMenu.Group>
 		</DropdownMenu.Content>
 	</DropdownMenu.Root>

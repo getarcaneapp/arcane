@@ -11,6 +11,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
+	"github.com/getarcaneapp/arcane/backend/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils/validation"
 	"github.com/getarcaneapp/arcane/types/base"
 	"github.com/getarcaneapp/arcane/types/user"
@@ -97,7 +98,7 @@ func RegisterUsers(api huma.API, userService *services.UserService, authService 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermUsersList),
 	}, h.ListUsers)
 
 	huma.Register(api, huma.Operation{
@@ -111,7 +112,7 @@ func RegisterUsers(api huma.API, userService *services.UserService, authService 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermUsersCreate),
 	}, h.CreateUser)
 
 	huma.Register(api, huma.Operation{
@@ -125,7 +126,7 @@ func RegisterUsers(api huma.API, userService *services.UserService, authService 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermUsersRead),
 	}, h.GetUser)
 
 	huma.Register(api, huma.Operation{
@@ -139,7 +140,7 @@ func RegisterUsers(api huma.API, userService *services.UserService, authService 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermUsersUpdate),
 	}, h.UpdateUser)
 
 	huma.Register(api, huma.Operation{
@@ -153,7 +154,7 @@ func RegisterUsers(api huma.API, userService *services.UserService, authService 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermUsersDelete),
 	}, h.DeleteUser)
 }
 
@@ -167,11 +168,7 @@ func (h *UserHandler) ListUsers(ctx context.Context, input *ListUsersInput) (*Li
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
-
-	params := buildPaginationParamsInternal(0, input.Start, input.Limit, input.Sort, input.Order, input.Search)
+	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 
 	users, paginationResp, err := h.userService.ListUsersPaginated(ctx, params)
 	if err != nil {
@@ -199,10 +196,6 @@ func (h *UserHandler) CreateUser(ctx context.Context, input *CreateUserInput) (*
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
-
 	normalizedEmail, err := normalizeOptionalEmailInternal(input.Body.Email)
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
@@ -219,15 +212,10 @@ func (h *UserHandler) CreateUser(ctx context.Context, input *CreateUserInput) (*
 		PasswordHash: hashedPassword,
 		DisplayName:  input.Body.DisplayName,
 		Email:        input.Body.Email,
-		Roles:        input.Body.Roles,
 		Locale:       input.Body.Locale,
 		BaseModel: models.BaseModel{
 			CreatedAt: time.Now(),
 		},
-	}
-
-	if userModel.Roles == nil {
-		userModel.Roles = []string{"user"}
 	}
 
 	createdUser, err := h.userService.CreateUser(ctx, userModel)
@@ -254,10 +242,6 @@ func (h *UserHandler) GetUser(ctx context.Context, input *GetUserInput) (*GetUse
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
-
 	userModel, err := h.userService.GetUserByID(ctx, input.UserID)
 	if err != nil {
 		return nil, huma.Error404NotFound((&common.UserNotFoundError{}).Error())
@@ -282,10 +266,6 @@ func (h *UserHandler) UpdateUser(ctx context.Context, input *UpdateUserInput) (*
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
-
 	userModel, err := h.userService.GetUserByID(ctx, input.UserID)
 	if err != nil {
 		return nil, huma.Error404NotFound((&common.UserNotFoundError{}).Error())
@@ -305,9 +285,6 @@ func (h *UserHandler) UpdateUser(ctx context.Context, input *UpdateUserInput) (*
 	}
 	if input.Body.Email != nil {
 		userModel.Email = input.Body.Email
-	}
-	if input.Body.Roles != nil {
-		userModel.Roles = input.Body.Roles
 	}
 	if input.Body.Locale != nil {
 		userModel.Locale = input.Body.Locale
@@ -355,10 +332,6 @@ func (h *UserHandler) UpdateUser(ctx context.Context, input *UpdateUserInput) (*
 func (h *UserHandler) DeleteUser(ctx context.Context, input *DeleteUserInput) (*DeleteUserOutput, error) {
 	if h.userService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
-	}
-
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
 	}
 
 	if err := h.userService.DeleteUser(ctx, input.UserID); err != nil {

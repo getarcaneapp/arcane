@@ -6,7 +6,9 @@ import (
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
+	humamw "github.com/getarcaneapp/arcane/backend/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
+	"github.com/getarcaneapp/arcane/backend/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	"github.com/getarcaneapp/arcane/types/base"
 	porttypes "github.com/getarcaneapp/arcane/types/port"
@@ -45,6 +47,7 @@ func RegisterPorts(api huma.API, portSvc *services.PortService) {
 		Summary:     "List port mappings",
 		Tags:        []string{"Ports"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Middlewares: humamw.RequirePermission(api, authz.PermContainersList),
 	}, h.ListPorts)
 }
 
@@ -61,7 +64,7 @@ func (h *PortHandler) ListPorts(ctx context.Context, input *ListPortsInput) (*Li
 			Sort:  strings.TrimSpace(input.Sort),
 			Order: pagination.SortOrder(input.Order),
 		},
-		PaginationParams: pagination.PaginationParams{
+		Params: pagination.Params{
 			Start: input.Start,
 			Limit: input.Limit,
 		},

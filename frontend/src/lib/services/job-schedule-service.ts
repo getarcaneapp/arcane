@@ -1,5 +1,5 @@
 import BaseAPIService from './api-service';
-import type { JobSchedules, JobSchedulesUpdate, JobListResponse, JobRunResponse } from '$lib/types/job-schedule.type';
+import type { JobSchedules, JobSchedulesUpdate, JobListResponse, JobRunResponse } from '$lib/types/settings';
 
 class JobScheduleService extends BaseAPIService {
 	async getJobSchedules(environmentId: string = '0'): Promise<JobSchedules> {
@@ -20,4 +20,3 @@ class JobScheduleService extends BaseAPIService {
 }
 
 export const jobScheduleService = new JobScheduleService();
-export default JobScheduleService;

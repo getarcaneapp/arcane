@@ -1,1 +1,0 @@
--- No-op: SQLite doesn't enforce VARCHAR length constraints

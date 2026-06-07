@@ -3,7 +3,7 @@
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
 	import { page } from '$app/state';
 	import { useSidebar } from '$lib/components/ui/sidebar/context.svelte.js';
-	import type { ShortcutKey } from '$lib/utils/keyboard-shortcut.utils';
+	import type { ShortcutKey } from '$lib/utils/navigation';
 	import { ArrowRightIcon } from '$lib/icons';
 	import SidebarCollapsibleItem from './sidebar-collapsible-item.svelte';
 	import SidebarItemTooltipContent from './sidebar-item-tooltip-content.svelte';

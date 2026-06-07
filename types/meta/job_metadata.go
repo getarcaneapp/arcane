@@ -146,24 +146,6 @@ var jobMetadataRegistry = map[string]JobMetadata{
 			},
 		},
 	},
-	"gitops-sync": {
-		ID:             "gitops-sync",
-		Name:           "GitOps Sync",
-		Description:    "Synchronizes project state with configured git repositories",
-		Category:       "sync",
-		SettingsKey:    "gitopsSyncInterval",
-		EnabledKey:     "gitopsSyncEnabled",
-		ManagerOnly:    false,
-		IsContinuous:   false,
-		CanRunManually: true,
-		Prerequisites: []JobPrerequisiteMetadata{
-			{
-				SettingKey:  "gitopsSyncEnabled",
-				Label:       "GitOps sync enabled",
-				SettingsURL: "/settings/gitops",
-			},
-		},
-	},
 	"filesystem-watcher": {
 		ID:             "filesystem-watcher",
 		Name:           "Filesystem Watcher",

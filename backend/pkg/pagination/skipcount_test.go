@@ -30,8 +30,8 @@ func TestPaginateAndSortDB_SkipCountReturnsUnknownTotals(t *testing.T) {
 
 	var got []widget
 	resp, err := PaginateAndSortDB(QueryParams{
-		PaginationParams: PaginationParams{Start: 0, Limit: 2, SkipCount: true},
-		SortParams:       SortParams{Sort: "Name", Order: SortOrder("asc")},
+		Params:     Params{Start: 0, Limit: 2, SkipCount: true},
+		SortParams: SortParams{Sort: "Name", Order: SortOrder("asc")},
 	}, db.Model(&widget{}), &got)
 	require.NoError(t, err)
 	require.Len(t, got, 2)
@@ -46,8 +46,8 @@ func TestPaginateAndSortDB_DefaultStillCounts(t *testing.T) {
 
 	var got []widget
 	resp, err := PaginateAndSortDB(QueryParams{
-		PaginationParams: PaginationParams{Start: 0, Limit: 2},
-		SortParams:       SortParams{Sort: "Name", Order: SortOrder("asc")},
+		Params:     Params{Start: 0, Limit: 2},
+		SortParams: SortParams{Sort: "Name", Order: SortOrder("asc")},
 	}, db.Model(&widget{}), &got)
 	require.NoError(t, err)
 	require.Len(t, got, 2)
@@ -60,8 +60,8 @@ func TestPaginateAndSortDB_SkipCountShowAll(t *testing.T) {
 
 	var got []widget
 	resp, err := PaginateAndSortDB(QueryParams{
-		PaginationParams: PaginationParams{Start: 0, Limit: -1, SkipCount: true},
-		SortParams:       SortParams{Sort: "Name", Order: SortOrder("asc")},
+		Params:     Params{Start: 0, Limit: -1, SkipCount: true},
+		SortParams: SortParams{Sort: "Name", Order: SortOrder("asc")},
 	}, db.Model(&widget{}), &got)
 	require.NoError(t, err)
 	require.Len(t, got, 5)

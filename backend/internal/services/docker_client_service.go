@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	backoff "github.com/cenkalti/backoff/v5"
+	"github.com/cenkalti/backoff/v5"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	docker "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
@@ -557,7 +557,7 @@ func countImageUsageInternal(images []image.Summary, containers []container.Summ
 	return inuse, unused, total
 }
 
-func (s *DockerClientService) GetAllNetworks(ctx context.Context) (_ []network.Summary, inuseNetworks int, unusedNetworks int, totalNetworks int, error error) {
+func (s *DockerClientService) GetAllNetworks(ctx context.Context) ([]network.Summary, int, int, int, error) {
 	containers, err := s.listContainersInternal(ctx)
 	if err != nil {
 		return nil, 0, 0, 0, err

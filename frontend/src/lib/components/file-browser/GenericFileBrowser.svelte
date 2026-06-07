@@ -1,15 +1,15 @@
 <script lang="ts" module>
-	import type { BackupEntry, FileEntry } from '$lib/types/file-browser.type';
+	import type { BackupEntry, FileEntry } from '$lib/types/shared';
 
 	export interface FileProvider {
 		list: (path: string) => Promise<FileEntry[]>;
-		mkdir: (path: string) => Promise<void>;
-		upload: (path: string, file: File) => Promise<void>;
-		delete: (path: string) => Promise<void>;
+		mkdir: (path: string) => Promise<unknown>;
+		upload: (path: string, file: File) => Promise<unknown>;
+		delete: (path: string) => Promise<unknown>;
 		download: (path: string) => Promise<void>;
 		getContent: (path: string) => Promise<{ content: string }>;
 		listBackups?: () => Promise<BackupEntry[]>;
-		restoreFromBackup?: (backupId: string, path: string) => Promise<void>;
+		restoreFromBackup?: (backupId: string, path: string) => Promise<unknown>;
 		backupHasPath?: (backupId: string, path: string) => Promise<boolean>;
 	}
 </script>
@@ -30,10 +30,18 @@
 	import * as Alert from '$lib/components/ui/alert';
 	import { Label } from '$lib/components/ui/label';
 	import { toast } from 'svelte-sonner';
-	import bytes from '$lib/utils/bytes';
+	import { bytes } from '$lib/utils/formatting';
 	import { format } from 'date-fns';
+	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import { hasPermission } from '$lib/utils/auth';
+	import IfPermitted from '$lib/components/if-permitted.svelte';
+	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 
 	let { provider, rootLabel, persistKey }: { provider: FileProvider; rootLabel?: string; persistKey?: string } = $props();
+
+	const currentEnvId = $derived(environmentStore.selected?.id || '0');
+	const canDeleteVolume = $derived(hasPermission('volumes:delete', currentEnvId));
+	const canBackupVolume = $derived(hasPermission('volumes:backup', currentEnvId));
 
 	let currentPath = $state('/');
 	let files = $state<FileEntry[]>([]);
@@ -113,8 +121,8 @@
 		if (!restoreTarget || !provider.restoreFromBackup || !selectedBackupId) return;
 		restoringFile = true;
 		try {
-			await provider.restoreFromBackup(selectedBackupId, restoreTarget.path);
-			toast.success(m.volumes_backup_file_restore_success());
+			const result = await provider.restoreFromBackup(selectedBackupId, restoreTarget.path);
+			toast.success(m.volumes_backup_file_restore_success(), activityToastOptions(extractActivityId(result)));
 			showRestoreFile = false;
 			// Refresh the file list to show the restored file
 			await loadFiles(currentPath);
@@ -167,22 +175,24 @@
 	<div class="flex items-center justify-between">
 		<FileBreadcrumb path={currentPath} {rootLabel} onNavigate={handleNavigate} />
 		<div class="flex gap-2">
-			<ArcaneButton
-				action="base"
-				tone="outline"
-				size="sm"
-				onclick={() => (showCreateFolder = true)}
-				icon={MoveToFolderIcon}
-				customLabel={m.volumes_browser_new_folder()}
-			/>
-			<ArcaneButton
-				action="base"
-				tone="outline"
-				size="sm"
-				onclick={() => (showUpload = true)}
-				icon={UploadIcon}
-				customLabel={m.volumes_browser_upload_files()}
-			/>
+			<IfPermitted perm="volumes:upload">
+				<ArcaneButton
+					action="base"
+					tone="outline"
+					size="sm"
+					onclick={() => (showCreateFolder = true)}
+					icon={MoveToFolderIcon}
+					customLabel={m.volumes_browser_new_folder()}
+				/>
+				<ArcaneButton
+					action="base"
+					tone="outline"
+					size="sm"
+					onclick={() => (showUpload = true)}
+					icon={UploadIcon}
+					customLabel={m.volumes_browser_upload_files()}
+				/>
+			</IfPermitted>
 		</div>
 	</div>
 
@@ -201,10 +211,10 @@
 			{persistKey}
 			onNavigate={handleNavigate}
 			onRefresh={() => loadFiles(currentPath)}
-			onDelete={(file) => provider.delete(file.path)}
+			onDelete={canDeleteVolume ? (file) => provider.delete(file.path) : undefined}
 			onDownload={(file) => provider.download(file.path)}
 			onPreview={(file) => (previewFile = file)}
-			onRestoreFromBackup={canRestoreFromBackup ? openRestoreFileDialog : undefined}
+			onRestoreFromBackup={canRestoreFromBackup && canBackupVolume ? openRestoreFileDialog : undefined}
 		/>
 	{/if}
 </div>
@@ -315,17 +325,19 @@
 				selectedBackupId = '';
 			}}
 		/>
-		<ArcaneButton
-			action="create"
-			customLabel="Restore file"
-			onclick={handleRestoreFile}
-			loading={restoringFile}
-			disabled={restoringFile ||
-				loadingBackups ||
-				checkingBackup ||
-				!selectedBackupId ||
-				!restoreTarget ||
-				(requiresBackupCheck && backupHasFile !== true)}
-		/>
+		{#if canBackupVolume}
+			<ArcaneButton
+				action="create"
+				customLabel="Restore file"
+				onclick={handleRestoreFile}
+				loading={restoringFile}
+				disabled={restoringFile ||
+					loadingBackups ||
+					checkingBackup ||
+					!selectedBackupId ||
+					!restoreTarget ||
+					(requiresBackupCheck && backupHasFile !== true)}
+			/>
+		{/if}
 	{/snippet}
 </ResponsiveDialog>

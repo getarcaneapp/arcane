@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	containerregistry "github.com/getarcaneapp/arcane/types/containerregistry"
+	"github.com/getarcaneapp/arcane/types/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
@@ -319,6 +319,11 @@ type ActionResult struct {
 	//
 	// Required: false
 	Errors []string `json:"errors,omitempty"`
+
+	// ActivityID is the background activity that tracked this action.
+	//
+	// Required: false
+	ActivityID *string `json:"activityId,omitempty"`
 }
 
 // Port represents a port binding for a container.
@@ -717,6 +722,16 @@ type Summary struct {
 	// Required: true
 	Mounts []Mount `json:"mounts"`
 
+	// IconLightURL is the resolved light icon URL for dark themes.
+	//
+	// Required: false
+	IconLightURL string `json:"iconLightUrl,omitempty"`
+
+	// IconDarkURL is the resolved dark icon URL for light themes.
+	//
+	// Required: false
+	IconDarkURL string `json:"iconDarkUrl,omitempty"`
+
 	// UpdateInfo contains image update information for this container.
 	//
 	// Required: false
@@ -832,10 +847,25 @@ type Details struct {
 	// Required: false
 	ComposeInfo *ComposeInfo `json:"composeInfo,omitempty"`
 
+	// IconLightURL is the resolved light icon URL for dark themes.
+	//
+	// Required: false
+	IconLightURL string `json:"iconLightUrl,omitempty"`
+
+	// IconDarkURL is the resolved dark icon URL for light themes.
+	//
+	// Required: false
+	IconDarkURL string `json:"iconDarkUrl,omitempty"`
+
 	// RedeployDisabled indicates whether redeploy actions are disabled for this container.
 	//
 	// Required: false
 	RedeployDisabled bool `json:"redeployDisabled,omitempty"`
+
+	// ActivityID is the background activity that tracked the action returning these details.
+	//
+	// Required: false
+	ActivityID *string `json:"activityId,omitempty"`
 }
 
 // Created represents a newly created container.

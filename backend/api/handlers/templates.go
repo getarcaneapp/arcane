@@ -11,6 +11,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
+	"github.com/getarcaneapp/arcane/backend/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils/mapper"
 	"github.com/getarcaneapp/arcane/types/base"
 	"github.com/getarcaneapp/arcane/types/env"
@@ -192,7 +193,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermTemplatesRead),
 	}, h.FetchRegistry)
 
 	huma.Register(api, huma.Operation{
@@ -202,6 +203,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService, 
 		Summary:     "List templates (paginated)",
 		Description: "Get a paginated list of compose templates",
 		Tags:        []string{"Templates"},
+		Middlewares: humamw.RequirePermission(api, authz.PermTemplatesList),
 	}, h.ListTemplates)
 
 	huma.Register(api, huma.Operation{
@@ -211,6 +213,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService, 
 		Summary:     "List all templates",
 		Description: "Get all compose templates without pagination",
 		Tags:        []string{"Templates"},
+		Middlewares: humamw.RequirePermission(api, authz.PermTemplatesList),
 	}, h.GetAllTemplates)
 
 	huma.Register(api, huma.Operation{
@@ -220,6 +223,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService, 
 		Summary:     "Get a template",
 		Description: "Get a compose template by ID",
 		Tags:        []string{"Templates"},
+		Middlewares: humamw.RequirePermission(api, authz.PermTemplatesRead),
 	}, h.GetTemplate)
 
 	huma.Register(api, huma.Operation{
@@ -229,6 +233,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService, 
 		Summary:     "Get template content",
 		Description: "Get the compose content for a template with parsed data",
 		Tags:        []string{"Templates"},
+		Middlewares: humamw.RequirePermission(api, authz.PermTemplatesRead),
 	}, h.GetTemplateContent)
 
 	// Protected endpoints
@@ -243,6 +248,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequirePermission(api, authz.PermTemplatesCreate),
 	}, h.CreateTemplate)
 
 	huma.Register(api, huma.Operation{
@@ -256,6 +262,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequirePermission(api, authz.PermTemplatesUpdate),
 	}, h.UpdateTemplate)
 
 	huma.Register(api, huma.Operation{
@@ -269,6 +276,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequirePermission(api, authz.PermTemplatesDelete),
 	}, h.DeleteTemplate)
 
 	huma.Register(api, huma.Operation{
@@ -282,6 +290,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequirePermission(api, authz.PermTemplatesRead),
 	}, h.DownloadTemplate)
 
 	huma.Register(api, huma.Operation{
@@ -295,6 +304,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequirePermission(api, authz.PermTemplatesRead),
 	}, h.GetDefaultTemplates)
 
 	huma.Register(api, huma.Operation{
@@ -308,6 +318,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequirePermission(api, authz.PermTemplatesUpdate),
 	}, h.SaveDefaultTemplates)
 
 	huma.Register(api, huma.Operation{
@@ -321,6 +332,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequirePermission(api, authz.PermTemplatesList),
 	}, h.GetRegistries)
 
 	huma.Register(api, huma.Operation{
@@ -334,7 +346,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermTemplatesCreate),
 	}, h.CreateRegistry)
 
 	huma.Register(api, huma.Operation{
@@ -348,7 +360,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermTemplatesUpdate),
 	}, h.UpdateRegistry)
 
 	huma.Register(api, huma.Operation{
@@ -362,7 +374,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermTemplatesDelete),
 	}, h.DeleteRegistry)
 
 	huma.Register(api, huma.Operation{
@@ -376,7 +388,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermTemplatesRead),
 	}, h.GetGlobalVariables)
 
 	huma.Register(api, huma.Operation{
@@ -390,7 +402,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermTemplatesUpdate),
 	}, h.UpdateGlobalVariables)
 }
 
@@ -404,7 +416,7 @@ func (h *TemplateHandler) ListTemplates(ctx context.Context, input *ListTemplate
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	params := buildPaginationParamsInternal(0, input.Start, input.Limit, input.Sort, input.Order, input.Search)
+	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	if params.Limit == 0 {
 		params.Limit = 20
 	}
@@ -771,9 +783,6 @@ func (h *TemplateHandler) GetRegistries(ctx context.Context, _ *GetTemplateRegis
 
 // CreateRegistry creates a new template registry.
 func (h *TemplateHandler) CreateRegistry(ctx context.Context, input *CreateTemplateRegistryInput) (*CreateTemplateRegistryOutput, error) {
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
 	if h.templateService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -803,9 +812,6 @@ func (h *TemplateHandler) CreateRegistry(ctx context.Context, input *CreateTempl
 
 // UpdateRegistry updates a template registry.
 func (h *TemplateHandler) UpdateRegistry(ctx context.Context, input *UpdateTemplateRegistryInput) (*UpdateTemplateRegistryOutput, error) {
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
 	if h.templateService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -839,9 +845,6 @@ func (h *TemplateHandler) UpdateRegistry(ctx context.Context, input *UpdateTempl
 
 // DeleteRegistry deletes a template registry.
 func (h *TemplateHandler) DeleteRegistry(ctx context.Context, input *DeleteTemplateRegistryInput) (*DeleteTemplateRegistryOutput, error) {
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
 	if h.templateService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -869,9 +872,6 @@ func (h *TemplateHandler) DeleteRegistry(ctx context.Context, input *DeleteTempl
 
 // FetchRegistry fetches templates from a remote registry URL.
 func (h *TemplateHandler) FetchRegistry(ctx context.Context, input *FetchTemplateRegistryInput) (*FetchTemplateRegistryOutput, error) {
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
 	if h.templateService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -900,9 +900,6 @@ func (h *TemplateHandler) FetchRegistry(ctx context.Context, input *FetchTemplat
 
 // GetGlobalVariables returns global template variables.
 func (h *TemplateHandler) GetGlobalVariables(ctx context.Context, input *GetGlobalVariablesInput) (*GetGlobalVariablesOutput, error) {
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
 	if h.templateService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -939,9 +936,6 @@ func (h *TemplateHandler) getGlobalVariablesForRemoteEnvironmentInternal(ctx con
 
 // UpdateGlobalVariables updates global template variables.
 func (h *TemplateHandler) UpdateGlobalVariables(ctx context.Context, input *UpdateGlobalVariablesInput) (*UpdateGlobalVariablesOutput, error) {
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
 	if h.templateService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}

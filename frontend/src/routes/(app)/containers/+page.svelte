@@ -8,15 +8,15 @@
 	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import userStore from '$lib/stores/user-store';
-	import { fromStore } from 'svelte/store';
-	import type { ContainerCreateRequest, ContainerStatusCounts } from '$lib/types/container.type';
+	import { hasPermission } from '$lib/utils/auth';
+	import type { ContainerCreateRequest, ContainerStatusCounts } from '$lib/types/docker';
 	import { createMutation } from '@tanstack/svelte-query';
 	import { BoxIcon } from '$lib/icons';
 	import { queryKeys } from '$lib/query/query-keys';
-	import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
+	import type { SearchPaginationSortRequest } from '$lib/types/shared';
 	import type { ContainerListRequestOptions } from '$lib/services/container-service';
 	import ContainerEnvironmentSync from './components/container-environment-sync.svelte';
+	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 
 	let { data } = $props();
 
@@ -56,8 +56,8 @@
 	const checkUpdatesMutation = createMutation(() => ({
 		mutationKey: queryKeys.containers.checkUpdates(envId),
 		mutationFn: () => imageService.runAutoUpdate(),
-		onSuccess: async () => {
-			toast.success(m.containers_check_updates_success());
+		onSuccess: async (data) => {
+			toast.success(m.containers_check_updates_success(), activityToastOptions(extractActivityId(data)));
 			await refreshContainers();
 		},
 		onError: () => {
@@ -105,8 +105,7 @@
 
 	const containerStatusCounts = $derived(containers.counts ?? countsFallback);
 
-	const storeUser = fromStore(userStore);
-	const isAdmin = $derived(!!storeUser.current?.roles?.includes('admin'));
+	const canAutoUpdate = $derived(hasPermission('containers:autoupdate', envId));
 
 	const actionButtons: ActionButton[] = $derived(
 		[
@@ -118,7 +117,7 @@
 				loading: createContainerMutation.isPending,
 				disabled: createContainerMutation.isPending
 			},
-			isAdmin
+			canAutoUpdate
 				? {
 						id: 'check-updates',
 						action: 'update',

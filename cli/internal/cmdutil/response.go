@@ -2,6 +2,7 @@ package cmdutil
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -27,7 +28,7 @@ func (e *HTTPStatusError) Error() string {
 // EnsureSuccessStatus returns an error for non-2xx responses.
 func EnsureSuccessStatus(resp *http.Response) error {
 	if resp == nil {
-		return fmt.Errorf("nil HTTP response")
+		return errors.New("nil HTTP response")
 	}
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		return nil
@@ -45,7 +46,7 @@ func DecodeJSON[T any](resp *http.Response, out *T) error {
 		return err
 	}
 	if out == nil {
-		return fmt.Errorf("nil decode target")
+		return errors.New("nil decode target")
 	}
 	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
 		return fmt.Errorf("failed to parse response: %w", err)

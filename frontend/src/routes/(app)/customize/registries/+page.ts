@@ -1,7 +1,7 @@
 import { containerRegistryService } from '$lib/services/container-registry-service';
 import { queryKeys } from '$lib/query/query-keys';
-import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
-import { resolveInitialTableRequest } from '$lib/utils/table-persistence.util';
+import type { SearchPaginationSortRequest } from '$lib/types/shared';
+import { resolveInitialTableRequest } from '$lib/utils/tables';
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async ({ parent }) => {

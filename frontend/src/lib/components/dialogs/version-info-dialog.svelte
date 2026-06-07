@@ -1,11 +1,11 @@
 <script lang="ts">
 	import { ResponsiveDialog } from '$lib/components/ui/responsive-dialog/index.js';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import type { AppVersionInformation } from '$lib/types/application-configuration';
+	import type { AppVersionInformation } from '$lib/types/settings';
 	import { m } from '$lib/paraglide/messages';
 	import { CopyButton } from '$lib/components/ui/copy-button';
-	import { getApplicationLogo } from '$lib/utils/image.util';
-	import { accentColorPreviewStore } from '$lib/utils/accent-color-util';
+	import { getApplicationLogo } from '$lib/utils/docker';
+	import { accentColorPreviewStore } from '$lib/utils/theme';
 	import { ExternalLinkIcon, GithubIcon, BookOpenIcon } from '$lib/icons';
 
 	interface Props {
@@ -23,6 +23,8 @@
 		currentTag: 'edge',
 		revision: 'b9c2a1240c83a54b73b5cf2e5d3f23a9b102837f',
 		goVersion: 'go1.22.1',
+		nodeVersion: 'v26.0.0',
+		svelteKitVersion: '3.0.0-next.1',
 		buildTime: '2026-04-15T12:00:00Z',
 		enabledFeatures: ['autologin'],
 		currentDigest: 'sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
@@ -57,6 +59,10 @@
 		{@render infoRowWithCopy(m.version_info_full_commit(), displayInfo.revision, displayInfo.revision)}
 
 		{@render infoRow(m.version_info_go_version(), displayInfo.goVersion || '-')}
+
+		{@render infoRow(m.version_info_node_version(), displayInfo.nodeVersion || '-')}
+
+		{@render infoRow(m.version_info_sveltekit_version(), displayInfo.svelteKitVersion || '-')}
 
 		{#if displayInfo.buildTime && displayInfo.buildTime !== 'unknown'}
 			{@render infoRow(m.version_info_build_time(), displayInfo.buildTime, false)}

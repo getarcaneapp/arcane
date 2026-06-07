@@ -2,15 +2,16 @@
 	import { toast } from 'svelte-sonner';
 	import NewEnvironmentSheet from '$lib/components/sheets/new-environment-sheet.svelte';
 	import EnvironmentTable from './environment-table.svelte';
-	import { tryCatch } from '$lib/utils/try-catch';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
+	import { tryCatch } from '$lib/utils/api';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import { m } from '$lib/paraglide/messages';
 	import { environmentManagementService } from '$lib/services/env-mgmt-service';
 	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type ActionButton } from '$lib/layouts/index.js';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { simpleRefresh } from '$lib/utils/refresh.util';
+	import { simpleRefresh } from '$lib/utils/api';
+	import { hasPermission } from '$lib/utils/auth';
 	import { DownloadIcon } from '$lib/icons';
 
 	let { data } = $props();
@@ -30,7 +31,8 @@
 		);
 	}
 
-	const currentUserIsAdmin = $derived(!!data.user?.roles?.includes('admin'));
+	const canCreateEnvironment = $derived(hasPermission('environments:create'));
+	const canDeleteEnvironment = $derived(hasPermission('environments:delete'));
 
 	async function handleBulkDelete() {
 		if (selectedIds.length === 0) return;
@@ -82,7 +84,7 @@
 	}
 
 	const actionButtons: ActionButton[] = $derived([
-		...(selectedIds.length > 0 && currentUserIsAdmin
+		...(selectedIds.length > 0 && canDeleteEnvironment
 			? [
 					{
 						id: 'remove-selected',
@@ -94,7 +96,7 @@
 					}
 				]
 			: []),
-		...(currentUserIsAdmin
+		...(canCreateEnvironment
 			? [
 					{
 						id: 'create',
@@ -104,7 +106,7 @@
 					}
 				]
 			: []),
-		...(currentUserIsAdmin && data.settings?.edgeMTLSManagerCAAvailable
+		...(canCreateEnvironment && data.settings?.edgeMTLSManagerCAAvailable
 			? [
 					{
 						id: 'download-edge-ca',

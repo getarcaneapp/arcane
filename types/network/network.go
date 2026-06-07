@@ -200,6 +200,11 @@ type CreateResponse struct {
 	//
 	// Required: false
 	Warning string `json:"warning,omitempty"`
+
+	// ActivityID is the activity created by the network creation action.
+	//
+	// Required: false
+	ActivityID *string `json:"activityId,omitempty"`
 }
 
 // CreateRequest contains the parameters for creating a network.
@@ -369,6 +374,11 @@ type PruneReport struct {
 	//
 	// Required: true
 	SpaceReclaimed uint64 `json:"spaceReclaimed"`
+
+	// ActivityID is the activity created by the prune action.
+	//
+	// Required: false
+	ActivityID *string `json:"activityId,omitempty"`
 }
 
 // NewSummary creates a Summary from a docker network.Summary, calculating InUse and IsDefault fields.

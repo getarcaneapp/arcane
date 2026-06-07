@@ -2,9 +2,7 @@ package scheduler
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
-	"strconv"
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/internal/services"
@@ -14,12 +12,14 @@ const EventCleanupJobName = "event-cleanup"
 
 type EventCleanupJob struct {
 	eventService    *services.EventService
+	activityService *services.ActivityService
 	settingsService *services.SettingsService
 }
 
-func NewEventCleanupJob(eventService *services.EventService, settingsService *services.SettingsService) *EventCleanupJob {
+func NewEventCleanupJob(eventService *services.EventService, activityService *services.ActivityService, settingsService *services.SettingsService) *EventCleanupJob {
 	return &EventCleanupJob{
 		eventService:    eventService,
+		activityService: activityService,
 		settingsService: settingsService,
 	}
 }
@@ -33,18 +33,6 @@ func (j *EventCleanupJob) Schedule(ctx context.Context) string {
 	if s == "" {
 		return "0 0 */6 * * *"
 	}
-
-	// Handle legacy straight int if it somehow didn't get migrated
-	if i, err := strconv.Atoi(s); err == nil {
-		if i <= 0 {
-			i = 360
-		}
-		if i%60 == 0 {
-			return fmt.Sprintf("0 0 */%d * * *", i/60)
-		}
-		return fmt.Sprintf("0 */%d * * * *", i)
-	}
-
 	return s
 }
 
@@ -61,6 +49,22 @@ func (j *EventCleanupJob) Run(ctx context.Context) {
 	slog.InfoContext(ctx, "Event cleanup job completed successfully",
 		"jobName", EventCleanupJobName,
 		"olderThan", olderThan.String())
+
+	if j.activityService != nil {
+		retentionDays := j.settingsService.GetIntSetting(ctx, "activityHistoryRetentionDays", 30)
+		maxEntries := j.settingsService.GetIntSetting(ctx, "activityHistoryMaxEntries", 1000)
+		deleted, err := j.activityService.PruneHistory(ctx, retentionDays, maxEntries)
+		if err != nil {
+			slog.ErrorContext(ctx, "Failed to prune activity history", "jobName", EventCleanupJobName, "error", err)
+			return
+		}
+
+		slog.InfoContext(ctx, "Activity history cleanup completed successfully",
+			"jobName", EventCleanupJobName,
+			"retentionDays", retentionDays,
+			"maxEntries", maxEntries,
+			"deleted", deleted)
+	}
 }
 
 func (j *EventCleanupJob) Reschedule(ctx context.Context) error {

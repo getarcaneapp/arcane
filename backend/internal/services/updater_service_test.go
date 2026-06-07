@@ -1,858 +1,346 @@
 package services
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
-	"net"
+	"io"
 	"net/http"
 	"net/http/httptest"
-	"net/netip"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/compose-spec/compose-go/v2/loader"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
-	"github.com/getarcaneapp/arcane/backend/internal/database"
-	glsqlite "github.com/glebarez/sqlite"
+	"github.com/getarcaneapp/arcane/backend/internal/models"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/crypto"
+	arcaneupdater "github.com/getarcaneapp/arcane/types/updater"
+	moduleapi "github.com/getarcaneapp/updater/api"
+	updaterlabels "github.com/getarcaneapp/updater/pkg/labels"
+	moduletypes "github.com/getarcaneapp/updater/types"
 	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/network"
-	dockerclient "github.com/moby/moby/client"
+	dockertypesimage "github.com/moby/moby/api/types/image"
+	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gorm.io/gorm"
-
-	"github.com/getarcaneapp/arcane/backend/internal/models"
-	libupdater "github.com/getarcaneapp/arcane/backend/pkg/libarcane/imageupdate"
 )
 
-// mockSystemUpgradeService is a simple mock implementation for testing
-type mockSystemUpgradeService struct {
+type fakeDockerClientProviderInternal struct {
+	client any
+}
+
+func (f fakeDockerClientProviderInternal) DockerClient(context.Context) (*client.Client, error) {
+	cli, _ := f.client.(*client.Client)
+	if cli == nil {
+		return nil, errors.New("docker client unavailable")
+	}
+	return cli, nil
+}
+
+type fakeImagePullerInternal struct {
+	pulled []string
+	fail   map[string]error
+}
+
+func (f *fakeImagePullerInternal) PullImage(_ context.Context, imageRef string, _ io.Writer) error {
+	f.pulled = append(f.pulled, imageRef)
+	if f.fail == nil {
+		return nil
+	}
+	return f.fail[imageRef]
+}
+
+type fakeRunRecorderInternal struct {
+	results []moduletypes.ResourceResult
+}
+
+func (f *fakeRunRecorderInternal) RecordUpdateRun(_ context.Context, result moduletypes.ResourceResult) error {
+	f.results = append(f.results, result)
+	return nil
+}
+
+type fakeSettingsProviderInternal struct{}
+
+func (fakeSettingsProviderInternal) ExcludedContainers(context.Context) ([]string, error) {
+	return nil, nil
+}
+
+type fakeUsedImageCollectorInternal struct {
+	images map[string]struct{}
+}
+
+func (f fakeUsedImageCollectorInternal) UsedImages(context.Context) (map[string]struct{}, error) {
+	return f.images, nil
+}
+
+type fakeProjectUpdaterInternal struct {
+	projects   map[string]moduletypes.ComposeProject
+	updateErrs map[string]error
+	calls      []string
+}
+
+func (f *fakeProjectUpdaterInternal) ProjectByComposeName(_ context.Context, composeName string) (moduletypes.ComposeProject, error) {
+	if project, ok := f.projects[composeName]; ok {
+		return project, nil
+	}
+	return moduletypes.ComposeProject{}, errors.New("project not found")
+}
+
+func (f *fakeProjectUpdaterInternal) UpdateServices(_ context.Context, projectID string, services []string) error {
+	f.calls = append(f.calls, projectID+":"+strings.Join(services, ","))
+	if f.updateErrs == nil {
+		return nil
+	}
+	return f.updateErrs[projectID]
+}
+
+func newUpdaterApplyPendingDockerServerInternal(
+	t *testing.T,
+	containers []container.Summary,
+	verificationByService map[string][]container.Summary,
+	inspectByID map[string]container.InspectResponse,
+	imageInspectByRef map[string]dockertypesimage.InspectResponse,
+) *httptest.Server {
+	t.Helper()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/_ping"):
+			_, _ = io.WriteString(w, "OK")
+		case strings.HasSuffix(r.URL.Path, "/version"):
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"ApiVersion":    "1.41",
+				"MinAPIVersion": "1.24",
+				"Version":       "24.0.0",
+			})
+		case strings.HasSuffix(r.URL.Path, "/images/json"):
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode([]dockertypesimage.Summary{})
+		case strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json"):
+			encodedRef := strings.TrimSuffix(r.URL.Path[strings.LastIndex(r.URL.Path, "/images/")+len("/images/"):], "/json")
+			imageRef, err := url.PathUnescape(encodedRef)
+			require.NoError(t, err)
+			inspect, ok := imageInspectByRef[imageRef]
+			if !ok {
+				http.NotFound(w, r)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(inspect)
+		case strings.HasSuffix(r.URL.Path, "/containers/json"):
+			response := containers
+			if filters := strings.TrimSpace(r.URL.Query().Get("filters")); filters != "" {
+				var raw map[string]map[string]bool
+				require.NoError(t, json.Unmarshal([]byte(filters), &raw))
+				projectName := ""
+				serviceName := ""
+				for value := range raw["label"] {
+					switch {
+					case strings.HasPrefix(value, "com.docker.compose.project="):
+						projectName = strings.TrimPrefix(value, "com.docker.compose.project=")
+					case strings.HasPrefix(value, "com.docker.compose.service="):
+						serviceName = strings.TrimPrefix(value, "com.docker.compose.service=")
+					}
+				}
+				if projectName != "" && serviceName != "" {
+					if matched, ok := verificationByService[projectName+"/"+serviceName]; ok {
+						response = matched
+					} else {
+						response = nil
+					}
+				}
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(response)
+		case strings.Contains(r.URL.Path, "/containers/") && strings.HasSuffix(r.URL.Path, "/json"):
+			containerID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path[strings.LastIndex(r.URL.Path, "/containers/"):], "/containers/"), "/json")
+			inspect, ok := inspectByID[containerID]
+			if !ok {
+				http.NotFound(w, r)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(inspect)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+
+	t.Cleanup(server.Close)
+	return server
+}
+
+type mockSystemUpgradeServiceInternal struct {
 	triggerCalled bool
 	triggerError  error
 	capturedUser  *models.User
-	canUpgrade    bool
 }
 
-func (m *mockSystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user models.User) error {
+func (m *mockSystemUpgradeServiceInternal) TriggerUpgradeViaCLI(_ context.Context, user models.User) error {
 	m.triggerCalled = true
 	m.capturedUser = &user
 	return m.triggerError
 }
 
-func (m *mockSystemUpgradeService) CanUpgrade(ctx context.Context) (bool, error) {
-	return m.canUpgrade, nil
-}
-
-// TestUpdaterService_ArcaneLabel_TriggersCLIUpgrade verifies that when the
-// com.getarcaneapp.arcane label is set to "true", the IsArcaneContainer check
-// returns true, indicating that CLI upgrade should be triggered
-func TestUpdaterService_ArcaneLabel_TriggersCLIUpgrade(t *testing.T) {
+func TestUpdaterService_ApplyPendingNoRecordsInternal(t *testing.T) {
 	ctx := context.Background()
-
-	// Create mock upgrade service
-	mockUpgrade := &mockSystemUpgradeService{}
-
-	// Test with Arcane label set to "true"
-	labels := map[string]string{
-		"com.getarcaneapp.arcane": "true",
-	}
-
-	// Verify that IsArcaneContainer correctly identifies the label
-	isArcane := libupdater.IsArcaneContainer(labels)
-	assert.True(t, isArcane, "IsArcaneContainer should return true for Arcane label")
-
-	// Simulate the logic from restartContainersUsingOldIDs:
-	// When upgradeService is not nil and isArcane is true, CLI should be called
-	if isArcane {
-		_ = mockUpgrade.TriggerUpgradeViaCLI(ctx, systemUser)
-	}
-
-	// Verify CLI upgrade was called
-	assert.True(t, mockUpgrade.triggerCalled, "TriggerUpgradeViaCLI should have been called for Arcane container")
-}
-
-func TestUpdaterService_ArcaneAgentLabel_TriggersCLIUpgrade(t *testing.T) {
-	ctx := context.Background()
-	mockUpgrade := &mockSystemUpgradeService{}
-	service := &UpdaterService{upgradeService: mockUpgrade}
-
-	labels := map[string]string{
-		libupdater.LabelArcaneAgent: "true",
-	}
-
-	err := service.triggerSelfUpdateViaCLIInternal(ctx, "test", "container-1", "arcane-agent", labels)
-
-	require.NoError(t, err)
-	assert.True(t, mockUpgrade.triggerCalled, "TriggerUpgradeViaCLI should have been called for Arcane agent container")
-	assert.NotNil(t, mockUpgrade.capturedUser)
-	assert.Equal(t, systemUser.ID, mockUpgrade.capturedUser.ID)
-}
-
-// TestUpdaterService_NonArcaneLabel_DoesNotTriggerCLI verifies that containers without
-// the Arcane label do not trigger CLI upgrade
-func TestUpdaterService_NonArcaneLabel_DoesNotTriggerCLI(t *testing.T) {
-	ctx := context.Background()
-
-	// Create mock upgrade service
-	mockUpgrade := &mockSystemUpgradeService{}
-
-	// Test with no Arcane label
-	labels := map[string]string{
-		"some.other.label": "true",
-	}
-
-	// Verify that IsArcaneContainer returns false
-	isArcane := libupdater.IsArcaneContainer(labels)
-	assert.False(t, isArcane, "IsArcaneContainer should return false for non-Arcane container")
-
-	// Simulate the logic from restartContainersUsingOldIDs
-	if isArcane {
-		_ = mockUpgrade.TriggerUpgradeViaCLI(ctx, systemUser)
-	}
-
-	// Verify CLI upgrade was NOT called
-	assert.False(t, mockUpgrade.triggerCalled, "TriggerUpgradeViaCLI should not have been called for non-Arcane container")
-}
-
-func TestUpdaterService_TriggerSelfUpdateViaCLI_NonArcaneContainer(t *testing.T) {
-	ctx := context.Background()
-	mockUpgrade := &mockSystemUpgradeService{}
-	service := &UpdaterService{upgradeService: mockUpgrade}
-
-	labels := map[string]string{
-		"some.other.label": "true",
-	}
-
-	err := service.triggerSelfUpdateViaCLIInternal(ctx, "test", "container-1", "not-arcane", labels)
-
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "container is not an Arcane self-update target")
-	assert.False(t, mockUpgrade.triggerCalled, "non-Arcane containers must not trigger the CLI upgrade path")
-}
-
-// TestUpdaterService_ArcaneLabelWithError_PropagatesError verifies that CLI upgrade errors
-// are properly propagated
-func TestUpdaterService_ArcaneLabelWithError_PropagatesError(t *testing.T) {
-	ctx := context.Background()
-
-	// Create mock that returns an error
-	expectedErr := errors.New("upgrade already in progress")
-	mockUpgrade := &mockSystemUpgradeService{
-		triggerError: expectedErr,
-	}
-
-	labels := map[string]string{
-		"com.getarcaneapp.arcane": "true",
-	}
-
-	isArcane := libupdater.IsArcaneContainer(labels)
-	assert.True(t, isArcane, "Should detect Arcane container")
-
-	// Call the upgrade method
-	var err error
-	if isArcane {
-		err = mockUpgrade.TriggerUpgradeViaCLI(ctx, systemUser)
-	}
-
-	// Verify error is propagated
-	require.Error(t, err, "Error should be propagated from TriggerUpgradeViaCLI")
-	assert.Equal(t, expectedErr, err, "Should return the same error")
-	assert.True(t, mockUpgrade.triggerCalled, "TriggerUpgradeViaCLI should have been attempted")
-}
-
-// TestUpdaterService_NilUpgradeService_GracefulHandling verifies graceful handling
-// when upgrade service is nil
-func TestUpdaterService_NilUpgradeService_GracefulHandling(t *testing.T) {
-	ctx := context.Background()
-	service := &UpdaterService{}
-
-	labels := map[string]string{
-		libupdater.LabelArcane: "true",
-	}
-
-	err := service.triggerSelfUpdateViaCLIInternal(ctx, "test", "container-1", "arcane", labels)
-
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "server self-update requires CLI upgrade service")
-}
-
-func TestUpdaterService_ArcaneAgentLabel_MissingUpgradeServiceReturnsError(t *testing.T) {
-	ctx := context.Background()
-	service := &UpdaterService{}
-
-	labels := map[string]string{
-		libupdater.LabelArcaneAgent: "true",
-	}
-
-	err := service.triggerSelfUpdateViaCLIInternal(ctx, "test", "container-1", "arcane-agent", labels)
-
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "agent self-update requires CLI upgrade service")
-}
-
-// TestUpdaterService_ArcaneLabelVariations tests various label formats
-func TestUpdaterService_ArcaneLabelVariations(t *testing.T) {
-	tests := []struct {
-		name           string
-		labels         map[string]string
-		expectedArcane bool
-		description    string
-	}{
-		{
-			name: "standard arcane label",
-			labels: map[string]string{
-				"com.getarcaneapp.arcane": "true",
-			},
-			expectedArcane: true,
-			description:    "Standard Arcane label should be detected",
-		},
-		{
-			name:           "empty labels",
-			labels:         map[string]string{},
-			expectedArcane: false,
-			description:    "Empty labels should not be detected as Arcane",
-		},
-		{
-			name:           "nil labels",
-			labels:         nil,
-			expectedArcane: false,
-			description:    "Nil labels should not be detected as Arcane",
-		},
-		{
-			name: "other labels only",
-			labels: map[string]string{
-				"some.other.label": "true",
-			},
-			expectedArcane: false,
-			description:    "Non-Arcane labels should not be detected as Arcane",
-		},
-		{
-			name: "arcane label false",
-			labels: map[string]string{
-				"com.getarcaneapp.arcane": "false",
-			},
-			expectedArcane: false,
-			description:    "Arcane label set to false should not be detected as Arcane",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			isArcane := libupdater.IsArcaneContainer(tt.labels)
-			assert.Equal(t, tt.expectedArcane, isArcane, tt.description)
-		})
-	}
-}
-
-// TestUpdaterService_CLICalledWithSystemUser verifies that systemUser is passed
-func TestUpdaterService_CLICalledWithSystemUser(t *testing.T) {
-	ctx := context.Background()
-
-	mockUpgrade := &mockSystemUpgradeService{}
-
-	labels := map[string]string{
-		"com.getarcaneapp.arcane": "true",
-	}
-
-	isArcane := libupdater.IsArcaneContainer(labels)
-	assert.True(t, isArcane)
-
-	if isArcane {
-		_ = mockUpgrade.TriggerUpgradeViaCLI(ctx, systemUser)
-	}
-
-	// Verify systemUser was passed
-	assert.True(t, mockUpgrade.triggerCalled)
-	assert.NotNil(t, mockUpgrade.capturedUser)
-	assert.Equal(t, systemUser.ID, mockUpgrade.capturedUser.ID)
-	assert.Equal(t, systemUser.Username, mockUpgrade.capturedUser.Username)
-}
-
-// TestUpdaterService_UpgradeServiceNotNilCheck verifies the nil check logic
-func TestUpdaterService_UpgradeServiceNotNilCheck(t *testing.T) {
-	ctx := context.Background()
-
-	labels := map[string]string{
-		"com.getarcaneapp.arcane": "true",
-	}
-
-	// Test with non-nil upgrade service
-	mockUpgrade := &mockSystemUpgradeService{}
-	isArcane := libupdater.IsArcaneContainer(labels)
-
-	// This is the actual logic from restartContainersUsingOldIDs
-	if isArcane {
-		_ = mockUpgrade.TriggerUpgradeViaCLI(ctx, systemUser)
-	}
-
-	assert.True(t, mockUpgrade.triggerCalled, "Should call CLI upgrade when service is not nil")
-}
-
-func TestLookupComposeProjectIDInternal(t *testing.T) {
-	t.Run("exact match", func(t *testing.T) {
-		projectID, ok := lookupComposeProjectIDInternal("myproject", map[string]string{
-			"myproject": "p1",
-		})
-		require.True(t, ok)
-		assert.Equal(t, "p1", projectID)
-	})
-
-	t.Run("normalized fallback", func(t *testing.T) {
-		projectID, ok := lookupComposeProjectIDInternal("My Project", map[string]string{
-			loader.NormalizeProjectName("myproject"): "p1",
-		})
-		require.True(t, ok)
-		assert.Equal(t, "p1", projectID)
-	})
-
-	t.Run("missing project", func(t *testing.T) {
-		projectID, ok := lookupComposeProjectIDInternal("missing", map[string]string{
-			"other": "p1",
-		})
-		require.False(t, ok)
-		assert.Empty(t, projectID)
-	})
-}
-
-func TestUpdaterService_LazyRegisterComposeProjectInternal_AddsServicesForRegisteredProject(t *testing.T) {
 	db := setupProjectTestDB(t)
+	svc := NewUpdaterService(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+
+	result, err := svc.ApplyPending(ctx, arcaneupdater.Options{DryRun: true})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Zero(t, result.Checked)
+	assert.Zero(t, result.Updated)
+	assert.Zero(t, result.Skipped)
+	assert.Zero(t, result.Failed)
+	assert.Empty(t, result.Items)
+}
+
+func TestUpdaterService_ConfigUsesComposeStandaloneFallbackSettingInternal(t *testing.T) {
 	ctx := context.Background()
 
-	project := &models.Project{
-		BaseModel: models.BaseModel{ID: "p1"},
-		Name:      "My Project!",
-		Path:      "/tmp/my-project",
-	}
-	require.NoError(t, db.Create(project).Error)
+	t.Run("defaults disabled without settings service", func(t *testing.T) {
+		svc := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
-	projectService := NewProjectService(db, nil, nil, nil, nil, nil, config.Load())
-	svc := &UpdaterService{projectService: projectService}
+		cfg := svc.configInternal(ctx)
 
-	projectNameToID := map[string]string{}
-	projectIDToObj := map[string]*models.Project{}
-	projectToServices := map[string][]string{}
-	projectToSeenServices := map[string]map[string]struct{}{}
+		assert.False(t, cfg.AllowComposeStandaloneFallback)
+	})
 
-	firstPlan := &restartPlan{
-		newRef: "nginx:latest",
-		inspect: &container.InspectResponse{
-			Config: &container.Config{
-				Labels: map[string]string{
-					"com.docker.compose.project": "myproject",
-					"com.docker.compose.service": "web",
-				},
-			},
-		},
-	}
-	secondPlan := &restartPlan{
-		newRef: "nginx:latest",
-		inspect: &container.InspectResponse{
-			Config: &container.Config{
-				Labels: map[string]string{
-					"com.docker.compose.project": "myproject",
-					"com.docker.compose.service": "worker",
-				},
-			},
-		},
-	}
+	t.Run("reads settings service", func(t *testing.T) {
+		db := setupProjectTestDB(t)
+		settingsSvc, err := NewSettingsService(ctx, db)
+		require.NoError(t, err)
+		require.NoError(t, settingsSvc.SetBoolSetting(ctx, autoUpdateComposeStandaloneFallbackSettingKeyInternal, true))
+		svc := NewUpdaterService(db, settingsSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
-	svc.lazyRegisterComposeProjectInternal(ctx, firstPlan, projectNameToID, projectIDToObj, projectToServices, projectToSeenServices)
-	svc.lazyRegisterComposeProjectInternal(ctx, secondPlan, projectNameToID, projectIDToObj, projectToServices, projectToSeenServices)
+		cfg := svc.configInternal(ctx)
 
-	require.Contains(t, projectToServices, project.ID)
-	assert.Equal(t, []string{"web", "worker"}, projectToServices[project.ID])
-	assert.Equal(t, project.ID, projectNameToID[project.Name])
-	assert.Equal(t, project.ID, projectNameToID[loader.NormalizeProjectName(project.Name)])
-}
-
-func TestPendingComposeProjectServicesInternal(t *testing.T) {
-	processedProjectServices := map[string]map[string]struct{}{}
-
-	assert.Equal(t, []string{"A"}, pendingComposeProjectServicesInternal(processedProjectServices, "project-1", []string{"A"}))
-
-	markComposeProjectServicesProcessedInternal(processedProjectServices, "project-1", []string{"A"})
-	assert.Empty(t, pendingComposeProjectServicesInternal(processedProjectServices, "project-1", []string{"A"}))
-	assert.Equal(t, []string{"B"}, pendingComposeProjectServicesInternal(processedProjectServices, "project-1", []string{"A", "B"}))
-
-	markComposeProjectServicesProcessedInternal(processedProjectServices, "project-1", []string{"B"})
-	assert.Empty(t, pendingComposeProjectServicesInternal(processedProjectServices, "project-1", []string{"A", "B"}))
-}
-
-func TestAnyImageIDsInUseSet(t *testing.T) {
-	inUseSet := map[string]struct{}{
-		"sha256:one": {},
-		"sha256:two": {},
-	}
-
-	assert.True(t, anyImageIDsInUseSetInternal([]string{"sha256:one"}, inUseSet))
-	assert.True(t, anyImageIDsInUseSetInternal([]string{"sha256:three", "sha256:two"}, inUseSet))
-	assert.False(t, anyImageIDsInUseSetInternal([]string{"sha256:three"}, inUseSet))
-	assert.False(t, anyImageIDsInUseSetInternal(nil, inUseSet))
-	assert.False(t, anyImageIDsInUseSetInternal([]string{"sha256:one"}, nil))
-}
-
-func TestIsImageIDLikeReference(t *testing.T) {
-	assert.True(t, isImageIDLikeReferenceInternal("sha256:abcdef"))
-	assert.True(t, isImageIDLikeReferenceInternal("SHA256:ABCDEF"))
-	assert.False(t, isImageIDLikeReferenceInternal("nginx:latest"))
-	assert.False(t, isImageIDLikeReferenceInternal("docker.io/library/nginx:latest"))
-}
-
-func TestCollectUsedImagesFromContainers_FastPathSkipsInspectLikeRefs(t *testing.T) {
-	out := map[string]struct{}{}
-
-	// Simulate fast-path behavior expectations without Docker client dependency.
-	containers := []container.Summary{
-		{Image: "nginx:latest"},
-		{Image: "sha256:abcdef"},
-		{Image: "redis:7"},
-		{Image: "Bad/Image:latest"},
-	}
-
-	for _, c := range containers {
-		if c.Image != "" && !isImageIDLikeReferenceInternal(c.Image) {
-			addNormalizedImageUpdateRefInternal(context.Background(), out, c.Image, "test skip invalid image reference")
-		}
-	}
-
-	assert.Contains(t, out, normalizeImageUpdateRefInternal("nginx:latest"))
-	assert.Contains(t, out, normalizeImageUpdateRefInternal("redis:7"))
-	assert.NotContains(t, out, normalizeImageUpdateRefInternal("sha256:abcdef"))
-	assert.NotContains(t, out, "")
-}
-
-func mustHardwareAddr(t *testing.T, value string) network.HardwareAddr {
-	t.Helper()
-
-	hw, err := net.ParseMAC(value)
-	require.NoError(t, err)
-
-	return network.HardwareAddr(hw)
-}
-
-func TestBuildUpdaterRecreateNetworkingConfig(t *testing.T) {
-	tests := []struct {
-		name        string
-		networkMode container.NetworkMode
-		settings    *container.NetworkSettings
-		apiVersion  string
-		assertions  func(t *testing.T, got *network.NetworkingConfig)
-	}{
-		{
-			name:        "skips container network mode",
-			networkMode: container.NetworkMode("container:db"),
-			apiVersion:  "1.44",
-			settings: &container.NetworkSettings{
-				Networks: map[string]*network.EndpointSettings{
-					"custom": {Aliases: []string{"app"}},
-				},
-			},
-			assertions: func(t *testing.T, got *network.NetworkingConfig) {
-				require.Nil(t, got)
-			},
-		},
-		{
-			name:        "returns nil for empty settings",
-			networkMode: container.NetworkMode("bridge"),
-			apiVersion:  "1.44",
-			settings:    &container.NetworkSettings{},
-			assertions: func(t *testing.T, got *network.NetworkingConfig) {
-				require.Nil(t, got)
-			},
-		},
-		{
-			name:        "preserves recreate-safe endpoint config and strips runtime fields",
-			networkMode: container.NetworkMode("bridge"),
-			apiVersion:  "1.43",
-			settings: &container.NetworkSettings{
-				Networks: map[string]*network.EndpointSettings{
-					"bridge": {
-						IPAMConfig: &network.EndpointIPAMConfig{
-							IPv4Address:  netip.MustParseAddr("172.18.0.50"),
-							LinkLocalIPs: []netip.Addr{netip.MustParseAddr("169.254.10.10")},
-						},
-						Links:       []string{"db:db"},
-						Aliases:     []string{"app", "app-1"},
-						DriverOpts:  map[string]string{"l2proxy": "true"},
-						GwPriority:  42,
-						MacAddress:  mustHardwareAddr(t, "02:42:ac:11:00:02"),
-						IPAddress:   netip.MustParseAddr("172.18.0.20"),
-						Gateway:     netip.MustParseAddr("172.18.0.1"),
-						IPPrefixLen: 16,
-					},
-					"synobridge": nil,
-				},
-			},
-			assertions: func(t *testing.T, got *network.NetworkingConfig) {
-				require.NotNil(t, got)
-				require.Len(t, got.EndpointsConfig, 2)
-
-				bridge := got.EndpointsConfig["bridge"]
-				require.NotNil(t, bridge)
-				require.NotNil(t, bridge.IPAMConfig)
-				assert.Equal(t, netip.MustParseAddr("172.18.0.50"), bridge.IPAMConfig.IPv4Address)
-				assert.Equal(t, []netip.Addr{netip.MustParseAddr("169.254.10.10")}, bridge.IPAMConfig.LinkLocalIPs)
-				assert.Equal(t, []string{"db:db"}, bridge.Links)
-				assert.Equal(t, []string{"app", "app-1"}, bridge.Aliases)
-				assert.Equal(t, map[string]string{"l2proxy": "true"}, bridge.DriverOpts)
-				assert.Equal(t, 42, bridge.GwPriority)
-				assert.Empty(t, bridge.MacAddress)
-				assert.False(t, bridge.IPAddress.IsValid())
-				assert.False(t, bridge.Gateway.IsValid())
-				assert.Zero(t, bridge.IPPrefixLen)
-
-				synobridge := got.EndpointsConfig["synobridge"]
-				require.NotNil(t, synobridge)
-				assert.Empty(t, synobridge.Aliases)
-			},
-		},
-		{
-			name:        "preserves network mac address when docker api supports it",
-			networkMode: container.NetworkMode("bridge"),
-			apiVersion:  "1.44",
-			settings: &container.NetworkSettings{
-				Networks: map[string]*network.EndpointSettings{
-					"custom": {
-						Aliases:    []string{"app"},
-						MacAddress: mustHardwareAddr(t, "02:42:ac:11:00:03"),
-					},
-				},
-			},
-			assertions: func(t *testing.T, got *network.NetworkingConfig) {
-				require.NotNil(t, got)
-				require.Len(t, got.EndpointsConfig, 1)
-
-				endpoint := got.EndpointsConfig["custom"]
-				require.NotNil(t, endpoint)
-				assert.Equal(t, []string{"app"}, endpoint.Aliases)
-				assert.Equal(t, "02:42:ac:11:00:03", endpoint.MacAddress.String())
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := buildUpdaterRecreateNetworkingConfigInternal(tt.networkMode, tt.settings, tt.apiVersion)
-			tt.assertions(t, got)
-		})
-	}
-
-	t.Run("clones aliases slice", func(t *testing.T) {
-		settings := &container.NetworkSettings{
-			Networks: map[string]*network.EndpointSettings{
-				"custom": {
-					IPAMConfig: &network.EndpointIPAMConfig{
-						IPv4Address: netip.MustParseAddr("10.10.0.5"),
-					},
-					Links:      []string{"db:db"},
-					Aliases:    []string{"app"},
-					DriverOpts: map[string]string{"mode": "l2"},
-				},
-			},
-		}
-
-		got := buildUpdaterRecreateNetworkingConfigInternal(container.NetworkMode("bridge"), settings, "1.44")
-		require.NotNil(t, got)
-
-		got.EndpointsConfig["custom"].IPAMConfig.IPv4Address = netip.MustParseAddr("10.10.0.99")
-		got.EndpointsConfig["custom"].Links[0] = "cache:cache"
-		got.EndpointsConfig["custom"].Aliases[0] = "changed"
-		got.EndpointsConfig["custom"].DriverOpts["mode"] = "l3"
-
-		require.NotNil(t, settings.Networks["custom"].IPAMConfig)
-		assert.Equal(t, netip.MustParseAddr("10.10.0.5"), settings.Networks["custom"].IPAMConfig.IPv4Address)
-		assert.Equal(t, []string{"db:db"}, settings.Networks["custom"].Links)
-		assert.Equal(t, []string{"app"}, settings.Networks["custom"].Aliases)
-		assert.Equal(t, map[string]string{"mode": "l2"}, settings.Networks["custom"].DriverOpts)
+		assert.True(t, cfg.AllowComposeStandaloneFallback)
 	})
 }
 
-func setupUpdaterServiceTestDB(t *testing.T) *database.DB {
-	t.Helper()
+func TestUpdaterService_ModuleOptionsFromUpdaterOptionsInternal(t *testing.T) {
+	got := moduleOptionsFromUpdaterOptionsInternal(arcaneupdater.Options{
+		Type:        moduletypes.ResourceTypeImage,
+		ResourceIds: []string{"image-1", "image-2"},
+		ForceUpdate: true,
+		DryRun:      true,
+	})
 
-	db, err := gorm.Open(glsqlite.Open(":memory:"), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&models.ImageUpdateRecord{}))
-
-	return &database.DB{DB: db}
+	assert.Equal(t, moduletypes.ResourceTypeImage, got.Type)
+	assert.Equal(t, []string{"image-1", "image-2"}, got.ResourceIDs)
+	assert.True(t, got.Force)
+	assert.True(t, got.DryRun)
 }
 
-func TestUpdaterService_ClearImageUpdateRecordByID_AvoidsRepoCanonicalMismatch(t *testing.T) {
+func TestUpdaterService_ResultFromModulePreservesRestartedInternal(t *testing.T) {
+	got := resultFromModuleInternal(&moduletypes.Result{
+		Success:   true,
+		Checked:   2,
+		Updated:   1,
+		Restarted: 1,
+		Items: []moduletypes.ResourceResult{
+			{
+				ResourceID:    "web-id",
+				ResourceName:  "web",
+				ResourceType:  moduletypes.ResourceTypeContainer,
+				Status:        moduletypes.StatusRestarted,
+				UpdateApplied: true,
+			},
+		},
+	})
+
+	require.NotNil(t, got)
+	assert.Equal(t, 1, got.Restarted)
+	require.Len(t, got.Items, 1)
+	assert.Equal(t, arcaneupdater.StatusRestarted, got.Items[0].Status)
+	assert.True(t, got.Items[0].UpdateApplied)
+}
+
+func TestUpdaterService_TriggerSelfUpdateViaCLIInternal(t *testing.T) {
 	ctx := context.Background()
-	db := setupUpdaterServiceTestDB(t)
 
-	record := models.ImageUpdateRecord{
-		ID:             "sha256:old-image",
-		Repository:     "nginx",
-		Tag:            "latest",
-		HasUpdate:      true,
-		UpdateType:     models.UpdateTypeDigest,
-		CurrentVersion: "latest",
-		CheckTime:      time.Now(),
-	}
-	require.NoError(t, db.WithContext(ctx).Create(&record).Error)
+	t.Run("server label triggers upgrade with system user", func(t *testing.T) {
+		mockUpgrade := &mockSystemUpgradeServiceInternal{}
+		svc := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, mockUpgrade, nil)
 
-	svc := &UpdaterService{db: db}
-
-	// Simulate the previous clear path that used normalized repo/tag.
-	require.NoError(t, svc.clearImageUpdateRecord(ctx, "docker.io/library/nginx", "latest"))
-
-	var unchanged models.ImageUpdateRecord
-	require.NoError(t, db.WithContext(ctx).Where("id = ?", record.ID).First(&unchanged).Error)
-	assert.True(t, unchanged.HasUpdate, "repo/tag clear should not match when repository canonicalization differs")
-
-	require.NoError(t, svc.clearImageUpdateRecordByID(ctx, record.ID))
-
-	var cleared models.ImageUpdateRecord
-	require.NoError(t, db.WithContext(ctx).Where("id = ?", record.ID).First(&cleared).Error)
-	assert.False(t, cleared.HasUpdate, "clear by image ID should always match the intended record")
-}
-
-func TestUpdaterService_CollectUsedImages_NoSourcesReturnsError(t *testing.T) {
-	svc := &UpdaterService{}
-
-	used, err := svc.collectUsedImages(context.Background())
-	require.Error(t, err)
-	assert.Nil(t, used)
-}
-
-func TestUpdaterService_ApplyPending_SkipsWhenUsedImageDiscoveryFails(t *testing.T) {
-	ctx := context.Background()
-	db := setupUpdaterServiceTestDB(t)
-
-	record := models.ImageUpdateRecord{
-		ID:             "sha256:pending-image",
-		Repository:     "nginx",
-		Tag:            "latest",
-		HasUpdate:      true,
-		UpdateType:     models.UpdateTypeDigest,
-		CurrentVersion: "latest",
-		CheckTime:      time.Now(),
-	}
-	require.NoError(t, db.WithContext(ctx).Create(&record).Error)
-
-	svc := &UpdaterService{
-		db: db,
-		dockerService: &DockerClientService{
-			config: &config.Config{DockerHost: "://bad-host"},
-		},
-	}
-
-	out, err := svc.ApplyPending(ctx, false)
-	require.NoError(t, err)
-	require.NotNil(t, out)
-	assert.Empty(t, out.Items)
-	assert.Zero(t, out.Checked)
-	assert.Zero(t, out.Updated)
-	assert.NotEmpty(t, out.Duration)
-
-	var persisted models.ImageUpdateRecord
-	require.NoError(t, db.WithContext(ctx).Where("id = ?", record.ID).First(&persisted).Error)
-	assert.True(t, persisted.HasUpdate, "record should remain pending when used-image discovery fails")
-}
-
-func TestActiveComposeProjectNameSetInternal(t *testing.T) {
-	projects := []models.Project{
-		{Name: "My-App", Status: models.ProjectStatusRunning},
-		{Name: "skip-me", Status: models.ProjectStatusStopped},
-		{Name: "another_app", Status: models.ProjectStatusPartiallyRunning},
-		{Name: "archived-app", Status: models.ProjectStatusRunning, IsArchived: true},
-		{Name: "", Status: models.ProjectStatusRunning},
-	}
-
-	got := activeComposeProjectNameSetInternal(projects)
-
-	assert.Contains(t, got, "My-App")
-	assert.Contains(t, got, "my-app")
-	assert.Contains(t, got, "another_app")
-	assert.NotContains(t, got, "skip-me")
-	assert.NotContains(t, got, "archived-app")
-}
-
-func TestCollectUsedImagesFromComposeContainersInternal(t *testing.T) {
-	svc := &UpdaterService{}
-	out := map[string]struct{}{}
-	activeProjects := map[string]struct{}{
-		"myapp": {},
-	}
-
-	composeContainers := []container.Summary{
-		{
-			Image: "nginx:latest",
-			Labels: map[string]string{
-				"com.docker.compose.project": "myapp",
-			},
-		},
-		{
-			Image: "redis:7",
-			Labels: map[string]string{
-				"com.docker.compose.project": "myapp",
-				libupdater.LabelUpdater:      "false",
-			},
-		},
-		{
-			Image: "postgres:16",
-			Labels: map[string]string{
-				"com.docker.compose.project": "otherapp",
-			},
-		},
-		{
-			Image: "sha256:abcdef",
-			Labels: map[string]string{
-				"com.docker.compose.project": "myapp",
-			},
-		},
-		{
-			Image: "Bad/Image:latest",
-			Labels: map[string]string{
-				"com.docker.compose.project": "myapp",
-			},
-		},
-	}
-
-	svc.collectUsedImagesFromComposeContainersInternal(context.Background(), composeContainers, activeProjects, out)
-
-	assert.Contains(t, out, normalizeImageUpdateRefInternal("nginx:latest"))
-	assert.NotContains(t, out, normalizeImageUpdateRefInternal("redis:7"))
-	assert.NotContains(t, out, normalizeImageUpdateRefInternal("postgres:16"))
-	assert.NotContains(t, out, normalizeImageUpdateRefInternal("sha256:abcdef"))
-	assert.NotContains(t, out, "")
-}
-
-func TestResolveContainerImageMatchInternal(t *testing.T) {
-	svc := &UpdaterService{}
-	updatedNorm := map[string]string{
-		normalizeImageUpdateRefInternal("nginx:latest"): "nginx:latest",
-	}
-	oldIDToNewRef := map[string]string{
-		"sha256:img1": "redis:7",
-	}
-
-	tests := []struct {
-		name        string
-		container   container.Summary
-		updatedNorm map[string]string
-		wantRef     string
-		wantMatchID string
-	}{
-		{
-			name: "match by image id",
-			container: container.Summary{
-				ImageID: "sha256:img1",
-				Image:   "some/other:tag",
-			},
-			wantRef:     "redis:7",
-			wantMatchID: "sha256:img1",
-		},
-		{
-			name: "match by normalized image tag from summary",
-			container: container.Summary{
-				ImageID: "sha256:unknown",
-				Image:   "docker.io/library/nginx:latest",
-			},
-			wantRef:     "nginx:latest",
-			wantMatchID: normalizeImageUpdateRefInternal("nginx:latest"),
-		},
-		{
-			name: "image id-like summary value cannot be tag matched",
-			container: container.Summary{
-				ImageID: "sha256:unknown",
-				Image:   "sha256:abcdef",
-			},
-			wantRef:     "",
-			wantMatchID: "",
-		},
-		{
-			name: "invalid image reference does not match empty normalized key",
-			container: container.Summary{
-				ImageID: "sha256:unknown",
-				Image:   "Bad/Image:latest",
-			},
-			updatedNorm: map[string]string{"": "wrong:latest"},
-			wantRef:     "",
-			wantMatchID: "",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			localUpdatedNorm := updatedNorm
-			if tt.updatedNorm != nil {
-				localUpdatedNorm = tt.updatedNorm
-			}
-			gotRef, gotMatch := svc.resolveContainerImageMatchInternal(tt.container, oldIDToNewRef, localUpdatedNorm)
-			assert.Equal(t, tt.wantRef, gotRef)
-			assert.Equal(t, tt.wantMatchID, gotMatch)
+		err := svc.TriggerSelfUpdateViaCLI(ctx, "test", "container-1", "arcane", map[string]string{
+			updaterlabels.LabelArcane: "true",
 		})
-	}
-}
 
-func TestResolvePullableImageRefInternal(t *testing.T) {
-	tests := []struct {
-		name         string
-		summaryImage string
-		inspectImage string
-		repoTags     []string
-		wantRef      string
-		wantSource   string
-	}{
-		{
-			name:         "prefers inspect config image",
-			summaryImage: "portainer/portainer.ce:latest",
-			inspectImage: "ghcr.io/example/app:1.2.3",
-			wantRef:      "ghcr.io/example/app:1.2.3",
-			wantSource:   "container_inspect_config",
-		},
-		{
-			name:         "falls back to summary image when inspect image is id-like",
-			summaryImage: "portainer/portainer.ce:latest",
-			inspectImage: "sha256:abcdef",
-			wantRef:      "portainer/portainer.ce:latest",
-			wantSource:   "container_summary",
-		},
-		{
-			name:         "falls back to repo tag when summary and inspect are id-like",
-			summaryImage: "sha256:abc123",
-			inspectImage: "sha256:def456",
-			repoTags:     []string{"<none>:<none>", "docker.io/library/portainer/portainer.ce:latest"},
-			wantRef:      "docker.io/library/portainer/portainer.ce:latest",
-			wantSource:   "image_repo_tag",
-		},
-		{
-			name:         "returns empty when only id-like candidates exist",
-			summaryImage: "sha256:abc123",
-			inspectImage: "sha256:def456",
-			repoTags:     []string{"<none>:<none>", "sha256:fff"},
-			wantRef:      "",
-			wantSource:   "",
-		},
-	}
+		require.NoError(t, err)
+		assert.True(t, mockUpgrade.triggerCalled)
+		require.NotNil(t, mockUpgrade.capturedUser)
+		assert.Equal(t, systemUser.ID, mockUpgrade.capturedUser.ID)
+		assert.Equal(t, systemUser.Username, mockUpgrade.capturedUser.Username)
+	})
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			gotRef, gotSource := resolvePullableImageRefInternal(tt.summaryImage, tt.inspectImage, tt.repoTags)
-			assert.Equal(t, tt.wantRef, gotRef)
-			assert.Equal(t, tt.wantSource, gotSource)
+	t.Run("agent label triggers upgrade", func(t *testing.T) {
+		mockUpgrade := &mockSystemUpgradeServiceInternal{}
+		svc := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, mockUpgrade, nil)
+
+		err := svc.TriggerSelfUpdateViaCLI(ctx, "test", "container-1", "arcane-agent", map[string]string{
+			updaterlabels.LabelArcaneAgent: "true",
 		})
-	}
+
+		require.NoError(t, err)
+		assert.True(t, mockUpgrade.triggerCalled)
+	})
+
+	t.Run("non Arcane labels fail without triggering upgrade", func(t *testing.T) {
+		mockUpgrade := &mockSystemUpgradeServiceInternal{}
+		svc := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, mockUpgrade, nil)
+
+		err := svc.TriggerSelfUpdateViaCLI(ctx, "test", "container-1", "demo", map[string]string{
+			"com.example.app": "demo",
+		})
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "not an Arcane self-update target")
+		assert.False(t, mockUpgrade.triggerCalled)
+	})
+
+	t.Run("missing upgrade service reports required hook", func(t *testing.T) {
+		svc := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+
+		err := svc.TriggerSelfUpdateViaCLI(ctx, "test", "container-1", "arcane", map[string]string{
+			updaterlabels.LabelArcane: "true",
+		})
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "self-update requires CLI upgrade service")
+	})
+
+	t.Run("upgrade errors are wrapped", func(t *testing.T) {
+		mockUpgrade := &mockSystemUpgradeServiceInternal{triggerError: errors.New("upgrade failed")}
+		svc := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, mockUpgrade, nil)
+
+		err := svc.TriggerSelfUpdateViaCLI(ctx, "test", "container-1", "arcane", map[string]string{
+			updaterlabels.LabelArcane: "true",
+		})
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "CLI upgrade failed")
+	})
 }
 
 func TestUpdaterService_StatusTrackingInternal(t *testing.T) {
-	svc := &UpdaterService{
-		updatingContainers: map[string]bool{},
-		updatingProjects:   map[string]bool{},
-	}
+	svc := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
-	stopContainer := svc.beginContainerUpdateInternal("container-1")
-	stopProject := svc.beginProjectUpdateInternal("project-a")
+	stopContainer := svc.BeginContainerUpdate("container-1")
+	stopProject := svc.BeginProjectUpdate("project-a")
 
 	status := svc.GetStatus()
 	assert.Equal(t, 1, status.UpdatingContainers)
 	assert.Equal(t, 1, status.UpdatingProjects)
-	assert.ElementsMatch(t, []string{"container-1"}, status.ContainerIds)
-	assert.ElementsMatch(t, []string{"project-a"}, status.ProjectIds)
+	assert.Equal(t, []string{"container-1"}, status.ContainerIds)
+	assert.Equal(t, []string{"project-a"}, status.ProjectIds)
 
 	stopContainer()
 	stopProject()
@@ -864,110 +352,375 @@ func TestUpdaterService_StatusTrackingInternal(t *testing.T) {
 	assert.Empty(t, status.ProjectIds)
 }
 
-func TestComposeProjectNameFromLabelsInternal(t *testing.T) {
-	assert.Equal(t, "", composeProjectNameFromLabelsInternal(nil))
-	assert.Equal(t, "", composeProjectNameFromLabelsInternal(map[string]string{}))
-	assert.Equal(t, "my-project", composeProjectNameFromLabelsInternal(map[string]string{
-		"com.docker.compose.project": " my-project ",
-	}))
+func TestUpdaterService_DockerClientAdapterInternal(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("missing docker service returns unavailable error", func(t *testing.T) {
+		svc := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+
+		cli, err := svc.DockerClient(ctx)
+
+		require.Error(t, err)
+		assert.Nil(t, cli)
+		assert.Contains(t, err.Error(), "docker service unavailable")
+	})
+
+	t.Run("delegates to configured docker service", func(t *testing.T) {
+		server := newProjectImagePullServer(t, nil)
+		wantClient := newTestDockerClient(t, server)
+		dockerSvc := &DockerClientService{client: wantClient}
+		svc := NewUpdaterService(nil, nil, dockerSvc, nil, nil, nil, nil, nil, nil, nil, nil)
+
+		gotClient, err := svc.DockerClient(ctx)
+
+		require.NoError(t, err)
+		assert.Same(t, wantClient, gotClient)
+	})
 }
 
-func TestDockerProxyContainerNameInternal(t *testing.T) {
+func TestUpdaterService_PullImageAdapterInternal(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("missing image service returns unavailable error", func(t *testing.T) {
+		svc := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+
+		err := svc.PullImage(ctx, "registry.example.com/app:1.2.3", nil)
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "image service unavailable")
+	})
+
+	t.Run("delegates to Arcane image puller", func(t *testing.T) {
+		db := setupProjectTestDB(t)
+		server := newProjectImagePullServer(t, nil)
+		dockerSvc := &DockerClientService{client: newTestDockerClient(t, server)}
+		imageSvc := NewImageService(db, dockerSvc, nil, nil, nil, NewEventService(db, nil, nil))
+		svc := NewUpdaterService(db, nil, dockerSvc, nil, nil, nil, nil, imageSvc, nil, nil, nil)
+		var progress bytes.Buffer
+
+		err := svc.PullImage(ctx, "nginx:latest", &progress)
+
+		require.NoError(t, err)
+		assert.Contains(t, progress.String(), "Pulled")
+	})
+
+	t.Run("passes database registry credentials to Arcane image puller", func(t *testing.T) {
+		db := setupProjectTestDB(t)
+		require.NoError(t, db.AutoMigrate(&models.ContainerRegistry{}, &models.KVEntry{}))
+		crypto.InitEncryption(&crypto.Config{
+			Environment:   string(config.AppEnvironmentTest),
+			EncryptionKey: "test-encryption-key-for-testing-32bytes-min",
+		})
+		createTestPullRegistry(t, db, "https://registry.example.com", "db-user", "db-token")
+
+		imageRef := "registry.example.com/team/app:latest"
+		var gotAuth string
+		server := newProjectImagePullServerWithObserverInternal(t, nil, func(fullRef string, authHeader string) {
+			if fullRef == imageRef {
+				gotAuth = authHeader
+			}
+		})
+		dockerSvc := &DockerClientService{client: newTestDockerClient(t, server)}
+		registrySvc := NewContainerRegistryService(db, nil, NewKVService(db))
+		imageSvc := NewImageService(db, dockerSvc, registrySvc, nil, nil, NewEventService(db, nil, nil))
+		envSvc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
+		projectSvc := NewProjectService(db, nil, nil, nil, nil, nil, nil).
+			WithRegistryCredentialsProvider(envSvc.GetEnabledRegistryCredentials)
+		svc := NewUpdaterService(db, nil, dockerSvc, projectSvc, nil, nil, nil, imageSvc, nil, nil, nil)
+		var progress bytes.Buffer
+
+		err := svc.PullImage(ctx, imageRef, &progress)
+
+		require.NoError(t, err)
+		require.NotEmpty(t, gotAuth)
+		authConfig := decodeRegistryAuth(t, gotAuth)
+		assert.Equal(t, "db-user", authConfig.Username)
+		assert.Equal(t, "db-token", authConfig.Password)
+		assert.Contains(t, progress.String(), "Pulled")
+	})
+}
+
+func TestUpdaterService_PendingImageUpdatesAdapterInternal(t *testing.T) {
+	ctx := context.Background()
+	db := setupProjectTestDB(t)
+	latest := "1.2.4"
+	currentDigest := "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+	latestDigest := "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+	lastError := "previous check failed"
+	checkTime := time.Now().Add(-time.Hour).UTC()
+	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+		ID:             "pending",
+		Repository:     "registry.example.com/team/app",
+		Tag:            "1.2.3",
+		HasUpdate:      true,
+		UpdateType:     models.UpdateTypeTag,
+		CurrentVersion: "1.2.3",
+		LatestVersion:  &latest,
+		CurrentDigest:  &currentDigest,
+		LatestDigest:   &latestDigest,
+		CheckTime:      checkTime,
+		LastError:      &lastError,
+	}).Error)
+	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+		ID:         "not-pending",
+		Repository: "registry.example.com/team/old",
+		Tag:        "1.0.0",
+		HasUpdate:  false,
+		UpdateType: models.UpdateTypeDigest,
+		CheckTime:  checkTime,
+	}).Error)
+	svc := NewUpdaterService(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+
+	records, err := svc.PendingImageUpdates(ctx)
+
+	require.NoError(t, err)
+	require.Len(t, records, 1)
+	assert.Equal(t, "pending", records[0].ID)
+	assert.Equal(t, "registry.example.com/team/app", records[0].Repository)
+	assert.Equal(t, "1.2.3", records[0].Tag)
+	assert.True(t, records[0].HasUpdate)
+	assert.Equal(t, moduletypes.UpdateTypeTag, records[0].UpdateType)
+	assert.Equal(t, "1.2.3", records[0].CurrentVersion)
+	assert.Equal(t, &latest, records[0].LatestVersion)
+	assert.Equal(t, &currentDigest, records[0].CurrentDigest)
+	assert.Equal(t, &latestDigest, records[0].LatestDigest)
+	assert.Equal(t, &lastError, records[0].LastError)
+}
+
+func TestUpdaterService_RecordUpdateRunAdapterInternal(t *testing.T) {
+	ctx := context.Background()
+	db := setupProjectTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.AutoUpdateRecord{}))
+	svc := NewUpdaterService(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+
+	err := svc.RecordUpdateRun(ctx, moduletypes.ResourceResult{
+		ResourceID:      "container-1",
+		ResourceName:    "web",
+		ResourceType:    moduletypes.ResourceTypeContainer,
+		Status:          moduletypes.StatusUpdated,
+		UpdateAvailable: true,
+		UpdateApplied:   true,
+		OldImages:       map[string]string{"main": "nginx:1.2.3"},
+		NewImages:       map[string]string{"main": "nginx:1.2.4"},
+		Details:         map[string]any{"source": "test"},
+	})
+
+	require.NoError(t, err)
+	var record models.AutoUpdateRecord
+	require.NoError(t, db.First(&record, "resource_id = ?", "container-1").Error)
+	assert.Equal(t, "web", record.ResourceName)
+	assert.Equal(t, "container", record.ResourceType)
+	assert.Equal(t, models.AutoUpdateStatus(moduletypes.StatusUpdated), record.Status)
+	assert.True(t, record.UpdateAvailable)
+	assert.True(t, record.UpdateApplied)
+	assert.Equal(t, "nginx:1.2.3", record.OldImageVersions["main"])
+	assert.Equal(t, "nginx:1.2.4", record.NewImageVersions["main"])
+	assert.Equal(t, "test", record.Details["source"])
+}
+
+func TestUpdaterService_ApplyPending_ProjectFailureDoesNotBlockOtherProjectsInternal(t *testing.T) {
+	ctx := context.Background()
+
+	oldRefFailed := "registry.example.com/team/fail:1.0.0"
+	newRefFailed := "registry.example.com/team/fail:1.0.1"
+	oldRefUpdated := "registry.example.com/team/success:2.0.0"
+	newRefUpdated := "registry.example.com/team/success:2.0.1"
+	oldImageIDFailed := "sha256:old-fail"
+	newImageIDFailed := "sha256:new-fail"
+	oldImageIDUpdated := "sha256:old-success"
+	newImageIDUpdated := "sha256:new-success"
+
+	failedLabels := map[string]string{
+		"com.docker.compose.project": "proj-fail",
+		"com.docker.compose.service": "app",
+	}
+	updatedLabels := map[string]string{
+		"com.docker.compose.project": "proj-success",
+		"com.docker.compose.service": "app",
+	}
+
+	containers := []container.Summary{
+		{
+			ID:      "container-fail",
+			Names:   []string{"/proj-fail-app-1"},
+			Image:   oldRefFailed,
+			ImageID: oldImageIDFailed,
+			Labels:  failedLabels,
+			State:   "running",
+		},
+		{
+			ID:      "container-success",
+			Names:   []string{"/proj-success-app-1"},
+			Image:   oldRefUpdated,
+			ImageID: oldImageIDUpdated,
+			Labels:  updatedLabels,
+			State:   "running",
+		},
+	}
+
+	verificationByService := map[string][]container.Summary{
+		"proj-success/app": {
+			{
+				ID:      "container-success-new",
+				Names:   []string{"/proj-success-app-1"},
+				Image:   newRefUpdated,
+				ImageID: newImageIDUpdated,
+				Labels:  updatedLabels,
+				State:   "running",
+			},
+		},
+	}
+
+	inspectByID := map[string]container.InspectResponse{
+		"container-fail": {
+			ID:    "container-fail",
+			Image: oldImageIDFailed,
+			Config: &container.Config{
+				Image:  oldRefFailed,
+				Labels: failedLabels,
+			},
+		},
+		"container-success": {
+			ID:    "container-success",
+			Image: oldImageIDUpdated,
+			Config: &container.Config{
+				Image:  oldRefUpdated,
+				Labels: updatedLabels,
+			},
+		},
+	}
+
+	imageInspectByRef := map[string]dockertypesimage.InspectResponse{
+		newRefFailed: {
+			ID:       newImageIDFailed,
+			RepoTags: []string{newRefFailed},
+		},
+		newRefUpdated: {
+			ID:       newImageIDUpdated,
+			RepoTags: []string{newRefUpdated},
+		},
+	}
+
+	server := newUpdaterApplyPendingDockerServerInternal(t, containers, verificationByService, inspectByID, imageInspectByRef)
+	dockerProvider := fakeDockerClientProviderInternal{client: newTestDockerClient(t, server)}
+	puller := &fakeImagePullerInternal{}
+	recorder := &fakeRunRecorderInternal{}
+	projectUpdater := &fakeProjectUpdaterInternal{
+		projects: map[string]moduletypes.ComposeProject{
+			"proj-fail":    {ID: "project-fail", Name: "proj-fail"},
+			"proj-success": {ID: "project-success", Name: "proj-success"},
+		},
+		updateErrs: map[string]error{
+			"project-fail": errors.New("pull updated service images: unauthorized"),
+		},
+	}
+
+	svc := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	svc.engine = moduleapi.NewService(moduleapi.Config{
+		DockerClientProvider: dockerProvider,
+		ImagePuller:          puller,
+		PendingStore: moduleapi.NewMemoryPendingStore(
+			moduletypes.ImageUpdateRecord{
+				ID:             oldImageIDFailed,
+				Repository:     "registry.example.com/team/fail",
+				Tag:            "1.0.0",
+				HasUpdate:      true,
+				UpdateType:     moduletypes.UpdateTypeTag,
+				CurrentVersion: "1.0.0",
+				LatestVersion:  ptr("1.0.1"),
+			},
+			moduletypes.ImageUpdateRecord{
+				ID:             oldImageIDUpdated,
+				Repository:     "registry.example.com/team/success",
+				Tag:            "2.0.0",
+				HasUpdate:      true,
+				UpdateType:     moduletypes.UpdateTypeTag,
+				CurrentVersion: "2.0.0",
+				LatestVersion:  ptr("2.0.1"),
+			},
+		),
+		RunRecorder:    recorder,
+		Settings:       fakeSettingsProviderInternal{},
+		ProjectUpdater: projectUpdater,
+		UsedImageCollector: fakeUsedImageCollectorInternal{images: map[string]struct{}{
+			oldRefFailed:  {},
+			oldRefUpdated: {},
+		}},
+		LabelPolicy: updaterlabels.DefaultLabelPolicy(),
+	})
+
+	result, err := svc.ApplyPending(ctx, arcaneupdater.Options{})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, 3, result.Updated, "updated count should include both image pulls and the successfully updated container")
+	assert.Equal(t, 1, result.Failed, "the failed project should be recorded as failed")
+	assert.GreaterOrEqual(t, len(result.Items), 4)
+	assert.ElementsMatch(t, []string{newRefFailed, newRefUpdated}, puller.pulled)
+	assert.ElementsMatch(t, []string{"project-fail:app", "project-success:app"}, projectUpdater.calls)
+
+	statusByResource := map[string]string{}
+	errorByResource := map[string]string{}
+	for _, item := range result.Items {
+		statusByResource[item.ResourceID] = item.Status
+		errorByResource[item.ResourceID] = item.Error
+	}
+
+	assert.Equal(t, moduletypes.StatusFailed, statusByResource["container-fail"])
+	assert.Contains(t, errorByResource["container-fail"], "project-level update failed")
+	assert.Equal(t, moduletypes.StatusUpdated, statusByResource["container-success"])
+
+	var recordedStatuses []string
+	for _, recorded := range recorder.results {
+		recordedStatuses = append(recordedStatuses, recorded.Status)
+	}
+	assert.Contains(t, recordedStatuses, moduletypes.StatusFailed)
+	assert.Contains(t, recordedStatuses, moduletypes.StatusUpdated)
+}
+
+func TestResolvePullableImageRefInternal(t *testing.T) {
 	tests := []struct {
-		name       string
-		dockerHost string
-		expected   string
+		name           string
+		summaryImage   string
+		inspectImage   string
+		repoTags       []string
+		expectedRef    string
+		expectedSource string
 	}{
-		{"empty", "", ""},
-		{"unix socket", "unix:///var/run/docker.sock", ""},
-		{"tcp with container hostname", "tcp://arcane-docker-socket-proxy:2375", "arcane-docker-socket-proxy"},
-		{"tcp with container hostname no port", "tcp://my-proxy", "my-proxy"},
-		{"tcp with ip address", "tcp://192.168.1.100:2375", ""},
-		{"tcp with localhost", "tcp://localhost:2375", ""},
-		{"tcp with fqdn", "tcp://docker.example.com:2375", ""},
-		{"tcp with ipv6 address", "tcp://[::1]:2375", ""},
-		{"tcp with ipv6 no port", "tcp://[::1]", ""},
-		{"tcp with spaces", "  tcp://my-proxy:2375  ", "my-proxy"},
+		{
+			name:           "inspect config image wins",
+			summaryImage:   "nginx:latest",
+			inspectImage:   "registry.example.com/nginx:stable",
+			expectedRef:    "registry.example.com/nginx:stable",
+			expectedSource: "container_inspect_config",
+		},
+		{
+			name:           "summary image used when inspect is image ID",
+			summaryImage:   "redis:7",
+			inspectImage:   "sha256:abcdef",
+			expectedRef:    "redis:7",
+			expectedSource: "container_summary",
+		},
+		{
+			name:           "repo tag fallback skips none tag",
+			summaryImage:   "sha256:abcdef",
+			inspectImage:   "sha256:abcdef",
+			repoTags:       []string{"<none>:<none>", "postgres:16"},
+			expectedRef:    "postgres:16",
+			expectedSource: "image_repo_tag",
+		},
+		{
+			name:         "no pullable ref",
+			summaryImage: "sha256:abcdef",
+			inspectImage: "sha256:abcdef",
+			repoTags:     []string{"<none>:<none>"},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.expected, dockerProxyContainerNameInternal(tt.dockerHost))
+			gotRef, gotSource := moduleapi.ResolvePullableImageRef(tt.summaryImage, tt.inspectImage, tt.repoTags)
+			assert.Equal(t, tt.expectedRef, gotRef)
+			assert.Equal(t, tt.expectedSource, gotSource)
 		})
 	}
-}
-
-func setupUpdaterServiceSettingsDB(t *testing.T) *database.DB {
-	t.Helper()
-	db, err := gorm.Open(glsqlite.Open(":memory:"), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&models.SettingVariable{}))
-	return &database.DB{DB: db}
-}
-
-func TestUpdaterService_BuildExcludedContainerSetInternal_Empty(t *testing.T) {
-	ctx := context.Background()
-	db := setupUpdaterServiceSettingsDB(t)
-	settings, err := NewSettingsService(ctx, db)
-	require.NoError(t, err)
-	svc := &UpdaterService{settingsService: settings}
-
-	excluded := svc.buildExcludedContainerSetInternal(ctx)
-	assert.Nil(t, excluded, "empty exclusion setting should return nil map")
-}
-
-func TestUpdaterService_BuildExcludedContainerSetInternal_ParsesList(t *testing.T) {
-	ctx := context.Background()
-	db := setupUpdaterServiceSettingsDB(t)
-	settings, err := NewSettingsService(ctx, db)
-	require.NoError(t, err)
-	require.NoError(t, settings.UpdateSetting(ctx, "autoUpdateExcludedContainers", "container-a, container-b , container-c"))
-
-	svc := &UpdaterService{settingsService: settings}
-	excluded := svc.buildExcludedContainerSetInternal(ctx)
-
-	assert.True(t, excluded["container-a"])
-	assert.True(t, excluded["container-b"])
-	assert.True(t, excluded["container-c"])
-	assert.False(t, excluded["container-d"])
-}
-
-// TestUpdaterService_CollectUsedImages_SkipsExcludedContainers verifies that images
-// used ONLY by excluded containers are not included in the used-images set, so the
-// auto-update job does not pull images for those containers.
-func TestUpdaterService_CollectUsedImages_SkipsExcludedContainers(t *testing.T) {
-	ctx := context.Background()
-	db := setupUpdaterServiceSettingsDB(t)
-	settings, err := NewSettingsService(ctx, db)
-	require.NoError(t, err)
-	require.NoError(t, settings.UpdateSetting(ctx, "autoUpdateExcludedContainers", "excluded-container"))
-
-	// Serve a fake Docker daemon that returns two containers: one excluded, one not.
-	fakeContainers := []container.Summary{
-		{ID: "c1", Names: []string{"/excluded-container"}, Image: "nginx:latest"},
-		{ID: "c2", Names: []string{"/active-container"}, Image: "redis:7"},
-	}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, "/containers/json") {
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(fakeContainers)
-			return
-		}
-		http.NotFound(w, r)
-	}))
-	defer srv.Close()
-
-	dcli, err := dockerclient.NewClientWithOpts(
-		dockerclient.WithHost("tcp://"+srv.Listener.Addr().String()),
-		dockerclient.WithVersion("1.46"),
-	)
-	require.NoError(t, err)
-
-	svc := &UpdaterService{settingsService: settings}
-	out := map[string]struct{}{}
-
-	require.NoError(t, svc.collectUsedImagesFromContainersInternal(ctx, dcli, out))
-
-	assert.NotContains(t, out, normalizeImageUpdateRefInternal("nginx:latest"), "excluded container image must not be collected")
-	assert.Contains(t, out, normalizeImageUpdateRefInternal("redis:7"), "non-excluded container image must be collected")
 }

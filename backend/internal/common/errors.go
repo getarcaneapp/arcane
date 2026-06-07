@@ -423,14 +423,6 @@ func (e *AgentTokenPersistenceError) Error() string {
 	return "Failed to persist agent token"
 }
 
-type AgentPairingError struct {
-	Err error
-}
-
-func (e *AgentPairingError) Error() string {
-	return fmt.Sprintf("Agent pairing failed: %v", e.Err)
-}
-
 type EnvironmentCreationError struct {
 	Err error
 }
@@ -733,28 +725,6 @@ func (e *NotificationTestError) Error() string {
 	return fmt.Sprintf("Failed to send test notification: %v", e.Err)
 }
 
-type AppriseSettingsNotFoundError struct{}
-
-func (e *AppriseSettingsNotFoundError) Error() string {
-	return "Apprise settings not found"
-}
-
-type AppriseSettingsUpdateError struct {
-	Err error
-}
-
-func (e *AppriseSettingsUpdateError) Error() string {
-	return fmt.Sprintf("Failed to update Apprise settings: %v", e.Err)
-}
-
-type AppriseTestError struct {
-	Err error
-}
-
-func (e *AppriseTestError) Error() string {
-	return fmt.Sprintf("Failed to send Apprise test notification: %v", e.Err)
-}
-
 type OidcStatusError struct {
 	Err error
 }
@@ -1004,14 +974,6 @@ type DockerInfoError struct {
 
 func (e *DockerInfoError) Error() string {
 	return fmt.Sprintf("Failed to get Docker info: %v", e.Err)
-}
-
-type SystemPruneError struct {
-	Err error
-}
-
-func (e *SystemPruneError) Error() string {
-	return fmt.Sprintf("Failed to prune resources: %v", e.Err)
 }
 
 type ContainerStartAllError struct {
@@ -1280,6 +1242,42 @@ type UpdaterHistoryError struct {
 
 func (e *UpdaterHistoryError) Error() string {
 	return fmt.Sprintf("Failed to get updater history: %v", e.Err)
+}
+
+type UpdaterDockerServiceUnavailableError struct{}
+
+func (e *UpdaterDockerServiceUnavailableError) Error() string {
+	return "docker service unavailable"
+}
+
+type UpdaterDockerClientUnavailableError struct{}
+
+func (e *UpdaterDockerClientUnavailableError) Error() string {
+	return "docker client unavailable"
+}
+
+type UpdaterImageServiceUnavailableError struct{}
+
+func (e *UpdaterImageServiceUnavailableError) Error() string {
+	return "image service unavailable"
+}
+
+type UpdaterDatabaseUnavailableError struct{}
+
+func (e *UpdaterDatabaseUnavailableError) Error() string {
+	return "database unavailable"
+}
+
+type UpdaterServiceUnavailableError struct{}
+
+func (e *UpdaterServiceUnavailableError) Error() string {
+	return "updater service unavailable"
+}
+
+type UpdaterProjectServiceUnavailableError struct{}
+
+func (e *UpdaterProjectServiceUnavailableError) Error() string {
+	return "project service unavailable"
 }
 
 type UserListError struct {
@@ -1732,3 +1730,201 @@ func (e *BuildKitDockerExporterError) Error() string {
 }
 
 func (e *BuildKitDockerExporterError) Unwrap() error { return e.Err }
+
+// ----- RBAC / role service errors -----
+
+type RoleNotFoundError struct{}
+
+func (e *RoleNotFoundError) Error() string {
+	return "Role not found"
+}
+
+func IsRoleNotFoundError(err error) bool {
+	return isErrorTypeInternal[*RoleNotFoundError](err)
+}
+
+type RoleBuiltInError struct{}
+
+func (e *RoleBuiltInError) Error() string {
+	return "Built-in role cannot be modified"
+}
+
+func IsRoleBuiltInError(err error) bool {
+	return isErrorTypeInternal[*RoleBuiltInError](err)
+}
+
+type RoleNameTakenError struct{}
+
+func (e *RoleNameTakenError) Error() string {
+	return "Role name already in use"
+}
+
+func IsRoleNameTakenError(err error) bool {
+	return isErrorTypeInternal[*RoleNameTakenError](err)
+}
+
+type UnknownPermissionError struct {
+	Perm string
+}
+
+func (e *UnknownPermissionError) Error() string {
+	return "Unknown permission: " + e.Perm
+}
+
+func IsUnknownPermissionError(err error) bool {
+	return isErrorTypeInternal[*UnknownPermissionError](err)
+}
+
+// RolePermissionEscalationError is returned when a caller attempts to author a
+// role containing a permission they do not themselves hold at global scope.
+// Used by the CreateRole and UpdateRole handlers as defense-in-depth alongside
+// the RequireGlobalAdmin middleware.
+type RolePermissionEscalationError struct {
+	Perm string
+}
+
+func (e *RolePermissionEscalationError) Error() string {
+	return "cannot grant a permission you do not hold: " + e.Perm
+}
+
+func IsRolePermissionEscalationError(err error) bool {
+	return isErrorTypeInternal[*RolePermissionEscalationError](err)
+}
+
+// InvalidRoleAssignmentError is returned when SetUserAssignments is called with
+// a RoleID or EnvironmentID that doesn't exist in the database. Surfaces as a
+// 400 Bad Request so callers see a descriptive message instead of an opaque
+// FK-violation 500 from the underlying tx.Create.
+type InvalidRoleAssignmentError struct {
+	RoleID        string
+	EnvironmentID string
+}
+
+func (e *InvalidRoleAssignmentError) Error() string {
+	if e.RoleID != "" {
+		return fmt.Sprintf("invalid role assignment: role %q does not exist", e.RoleID)
+	}
+	if e.EnvironmentID != "" {
+		return fmt.Sprintf("invalid role assignment: environment %q does not exist", e.EnvironmentID)
+	}
+	return "invalid role assignment"
+}
+
+func IsInvalidRoleAssignmentError(err error) bool {
+	return isErrorTypeInternal[*InvalidRoleAssignmentError](err)
+}
+
+type FederatedCredentialNotFoundError struct{}
+
+func (e *FederatedCredentialNotFoundError) Error() string {
+	return "federated credential not found"
+}
+
+func IsErrorFederatedCredentialNotFound(err error) bool {
+	return isErrorTypeInternal[*FederatedCredentialNotFoundError](err)
+}
+
+type FederatedCredentialInvalidError struct{}
+
+func (e *FederatedCredentialInvalidError) Error() string {
+	return "invalid federated credential"
+}
+
+func IsErrorFederatedCredentialInvalid(err error) bool {
+	return isErrorTypeInternal[*FederatedCredentialInvalidError](err)
+}
+
+// DefaultTransportTypeError is returned when http.DefaultTransport is not the
+// expected *http.Transport concrete type and therefore cannot be cloned.
+type DefaultTransportTypeError struct{}
+
+func (e *DefaultTransportTypeError) Error() string {
+	return "http.DefaultTransport is not *http.Transport"
+}
+
+// ManagerCALockTypeError is returned when a cached manager CA lock value is not
+// the expected *sync.Mutex.
+type ManagerCALockTypeError struct{}
+
+func (e *ManagerCALockTypeError) Error() string {
+	return "manager CA lock value is not *sync.Mutex"
+}
+
+// ECRTokenResultTypeError is returned when a deduplicated ECR token refresh
+// yields a value that is not the expected *ecrTokenResult.
+type ECRTokenResultTypeError struct{}
+
+func (e *ECRTokenResultTypeError) Error() string {
+	return "unexpected ECR token result type"
+}
+
+// OidcProviderCacheTypeError is returned when a cached OIDC provider value is
+// not the expected *oidc.Provider.
+type OidcProviderCacheTypeError struct{}
+
+func (e *OidcProviderCacheTypeError) Error() string {
+	return "unexpected provider type from cache"
+}
+
+type FederatedCredentialInvalidRequestError struct{}
+
+func (e *FederatedCredentialInvalidRequestError) Error() string {
+	return "invalid federated token exchange request"
+}
+
+func IsErrorFederatedCredentialInvalidRequest(err error) bool {
+	return isErrorTypeInternal[*FederatedCredentialInvalidRequestError](err)
+}
+
+type FederatedCredentialInvalidGrantError struct{}
+
+func (e *FederatedCredentialInvalidGrantError) Error() string {
+	return "invalid federated token grant"
+}
+
+func IsErrorFederatedCredentialInvalidGrant(err error) bool {
+	return isErrorTypeInternal[*FederatedCredentialInvalidGrantError](err)
+}
+
+type FederatedCredentialPermissionEscalationError struct{}
+
+func (e *FederatedCredentialPermissionEscalationError) Error() string {
+	return "cannot map a federated credential to a role you do not hold"
+}
+
+func IsErrorFederatedCredentialPermissionEscalation(err error) bool {
+	return isErrorTypeInternal[*FederatedCredentialPermissionEscalationError](err)
+}
+
+type OidcMappingNotFoundError struct{}
+
+func (e *OidcMappingNotFoundError) Error() string {
+	return "OIDC role mapping not found"
+}
+
+func IsOidcMappingNotFoundError(err error) bool {
+	return isErrorTypeInternal[*OidcMappingNotFoundError](err)
+}
+
+// OidcMappingEnvManagedError is returned when an API caller attempts to mutate
+// an OIDC role mapping that was declared via OIDC_ROLE_MAPPINGS. Env-managed
+// rows can only be changed by editing the env var and restarting.
+type OidcMappingEnvManagedError struct{}
+
+func (e *OidcMappingEnvManagedError) Error() string {
+	return "OIDC role mapping is managed by OIDC_ROLE_MAPPINGS and cannot be edited at runtime"
+}
+
+func IsOidcMappingEnvManagedError(err error) bool {
+	return isErrorTypeInternal[*OidcMappingEnvManagedError](err)
+}
+
+type NoGlobalAdminRemainsError struct{}
+
+func (e *NoGlobalAdminRemainsError) Error() string {
+	return "At least one user must retain a global Admin role assignment"
+}
+
+func IsNoGlobalAdminRemainsError(err error) bool {
+	return isErrorTypeInternal[*NoGlobalAdminRemainsError](err)
+}

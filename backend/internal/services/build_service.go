@@ -16,7 +16,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	buildgit "github.com/getarcaneapp/arcane/backend/pkg/gitutil"
-	libbuild "github.com/getarcaneapp/arcane/backend/pkg/libarcane/libbuild"
+	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/libbuild"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	buildtypes "github.com/getarcaneapp/arcane/types/builds"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
@@ -155,12 +155,10 @@ func (s *BuildService) BuildImage(ctx context.Context, environmentID string, req
 		var errMsg *string
 		if err != nil {
 			status = models.ImageBuildStatusFailed
-			errorText := err.Error()
-			errMsg = &errorText
+			errMsg = new(err.Error())
 		}
 
-		durationMs := completedAt.Sub(startedAt).Milliseconds()
-		if updateErr := s.completeBuildRecord(ctx, buildRecordID, status, outputPtr, logCapture.Truncated(), errMsg, digest, provider, completedAt, &durationMs); updateErr != nil {
+		if updateErr := s.completeBuildRecord(ctx, buildRecordID, status, outputPtr, logCapture.Truncated(), errMsg, digest, provider, completedAt, new(completedAt.Sub(startedAt).Milliseconds())); updateErr != nil {
 			slog.WarnContext(ctx, "failed to update build history record", "error", updateErr)
 		}
 	}
@@ -275,17 +273,17 @@ func (s *BuildService) resolveBuildRequestInternal(
 		return req, func() error { return nil }, nil
 	}
 
-	writeBuildProgressStatusInternal(progressWriter, serviceName, fmt.Sprintf("resolving remote git context %s", source.RepositoryURL))
+	writeBuildProgressStatusInternal(progressWriter, serviceName, "resolving remote git context "+source.RepositoryURL)
 
 	authConfig, matchedRepository, err := s.resolveGitBuildAuthInternal(ctx, source.RepositoryURL)
 	if err != nil {
 		return imagetypes.BuildRequest{}, func() error { return nil }, err
 	}
 	if matchedRepository {
-		writeBuildProgressStatusInternal(progressWriter, serviceName, fmt.Sprintf("using saved git credentials for %s", source.RepositoryURL))
+		writeBuildProgressStatusInternal(progressWriter, serviceName, "using saved git credentials for "+source.RepositoryURL)
 	}
 	if libbuild.RequiresGitRemoteProbe(source.RepositoryURL) {
-		writeBuildProgressStatusInternal(progressWriter, serviceName, fmt.Sprintf("verifying remote git repository %s", source.RepositoryURL))
+		writeBuildProgressStatusInternal(progressWriter, serviceName, "verifying remote git repository "+source.RepositoryURL)
 		if err := s.probeGitContextInternal(ctx, source.RepositoryURL, authConfig); err != nil {
 			return imagetypes.BuildRequest{}, func() error { return nil }, fmt.Errorf("failed to verify remote git repository %q: %w", source.RepositoryURL, err)
 		}
@@ -312,10 +310,10 @@ func (s *BuildService) resolveBuildRequestInternal(
 	}
 	if !info.IsDir() {
 		_ = s.cleanupGitContextInternal(repoPath)
-		return imagetypes.BuildRequest{}, func() error { return nil }, fmt.Errorf("resolved git build context is not a directory")
+		return imagetypes.BuildRequest{}, func() error { return nil }, errors.New("resolved git build context is not a directory")
 	}
 
-	writeBuildProgressStatusInternal(progressWriter, serviceName, fmt.Sprintf("using remote build context %s", source.Raw))
+	writeBuildProgressStatusInternal(progressWriter, serviceName, "using remote build context "+source.Raw)
 
 	resolvedReq := req
 	resolvedReq.ContextDir = contextDir
@@ -397,7 +395,7 @@ func writeBuildProgressStatusInternal(progressWriter io.Writer, serviceName, sta
 
 func (s *BuildService) ListImageBuildsByEnvironmentPaginated(ctx context.Context, environmentID string, params pagination.QueryParams) ([]imagetypes.BuildRecord, pagination.Response, error) {
 	if s.db == nil {
-		return nil, pagination.Response{}, fmt.Errorf("build history not available")
+		return nil, pagination.Response{}, errors.New("build history not available")
 	}
 
 	var builds []models.ImageBuild
@@ -433,7 +431,7 @@ func (s *BuildService) ListImageBuildsByEnvironmentPaginated(ctx context.Context
 
 func (s *BuildService) GetImageBuildByID(ctx context.Context, environmentID, buildID string) (*imagetypes.BuildRecord, error) {
 	if s.db == nil {
-		return nil, fmt.Errorf("build history not available")
+		return nil, errors.New("build history not available")
 	}
 
 	var build models.ImageBuild
@@ -527,7 +525,7 @@ func (s *BuildService) completeBuildRecord(
 			return fmt.Errorf("failed to update build record: %w", result.Error)
 		}
 		if result.RowsAffected == 0 {
-			return fmt.Errorf("build record not found")
+			return errors.New("build record not found")
 		}
 		return nil
 	})

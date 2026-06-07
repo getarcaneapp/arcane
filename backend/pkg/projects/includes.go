@@ -81,7 +81,7 @@ func ParseIncludesFromContent(composeFilePath string, content []byte, envMap Env
 		// `include:` key present but null (e.g. `include: ~`) — treat as empty.
 		return []IncludeFile{}, nil
 	default:
-		return nil, fmt.Errorf("invalid include type")
+		return nil, errors.New("invalid include type")
 	}
 
 	return includeFiles, nil
@@ -111,7 +111,7 @@ func extractIncludePathsInternal(item any) ([]string, error) {
 	case map[string]any:
 		return extractIncludePathsFromMapInternal(v)
 	default:
-		return nil, fmt.Errorf("invalid include item type")
+		return nil, errors.New("invalid include item type")
 	}
 }
 
@@ -137,7 +137,7 @@ func extractIncludePathsFromMapInternal(v map[string]any) ([]string, error) {
 
 func resolveIncludeFileInternal(includePath, baseDir string, envMap EnvMap, includeContent bool) (IncludeFile, error) {
 	if includePath == "" {
-		return IncludeFile{}, fmt.Errorf("empty include path")
+		return IncludeFile{}, errors.New("empty include path")
 	}
 
 	// Expand environment variables in the include path (e.g., ${PROJECT_STACK_DIR})
@@ -194,7 +194,7 @@ func readIncludeContentInternal(fullPath, includePath string, includeContent boo
 // Only allows writing within the project directory
 func ValidateIncludePathForWrite(projectDir, includePath string) (string, error) {
 	if includePath == "" {
-		return "", fmt.Errorf("include path cannot be empty")
+		return "", errors.New("include path cannot be empty")
 	}
 
 	// Resolve project directory to absolute path and evaluate symlinks
@@ -239,7 +239,7 @@ func ValidateIncludePathForWrite(projectDir, includePath string) (string, error)
 
 	// Prevent targeting the project directory itself
 	if evalPath == absProjectDir {
-		return "", fmt.Errorf("include path cannot be the project directory itself")
+		return "", errors.New("include path cannot be the project directory itself")
 	}
 
 	// Check if resolved path is within project directory
@@ -247,7 +247,7 @@ func ValidateIncludePathForWrite(projectDir, includePath string) (string, error)
 	isWithinProject := strings.HasPrefix(evalPath+string(filepath.Separator), projectPrefix)
 
 	if !isWithinProject {
-		return "", fmt.Errorf("write access denied: path is outside project directory")
+		return "", errors.New("write access denied: path is outside project directory")
 	}
 
 	return absFullPath, nil

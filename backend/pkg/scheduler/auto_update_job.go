@@ -2,11 +2,10 @@ package scheduler
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
-	"strconv"
 
 	"github.com/getarcaneapp/arcane/backend/internal/services"
+	"github.com/getarcaneapp/arcane/types/updater"
 )
 
 type AutoUpdateJob struct {
@@ -36,21 +35,6 @@ func (j *AutoUpdateJob) Schedule(ctx context.Context) string {
 	if s == "" {
 		return "0 0 0 * * *"
 	}
-
-	// Handle legacy straight int if it somehow didn't get migrated
-	if i, err := strconv.Atoi(s); err == nil {
-		if i <= 0 {
-			i = 1440
-		}
-		if i%1440 == 0 {
-			return fmt.Sprintf("0 0 0 */%d * *", i/1440)
-		}
-		if i%60 == 0 {
-			return fmt.Sprintf("0 0 */%d * * *", i/60)
-		}
-		return fmt.Sprintf("0 */%d * * * *", i)
-	}
-
 	return s
 }
 
@@ -65,7 +49,7 @@ func (j *AutoUpdateJob) Run(ctx context.Context) {
 
 	slog.InfoContext(ctx, "auto-update run started")
 
-	result, err := j.updaterService.ApplyPending(ctx, false)
+	result, err := j.updaterService.ApplyPending(ctx, updater.Options{})
 	if err != nil {
 		slog.ErrorContext(ctx, "auto-update run failed", "err", err)
 		return
@@ -74,6 +58,7 @@ func (j *AutoUpdateJob) Run(ctx context.Context) {
 	slog.InfoContext(ctx, "auto-update run completed",
 		"checked", result.Checked,
 		"updated", result.Updated,
+		"restarted", result.Restarted,
 		"skipped", result.Skipped,
 		"failed", result.Failed,
 	)

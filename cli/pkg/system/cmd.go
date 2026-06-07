@@ -3,6 +3,7 @@ package system
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 
 	"github.com/getarcaneapp/arcane/cli/internal/client"
 	"github.com/getarcaneapp/arcane/cli/internal/cmdutil"
@@ -327,7 +328,7 @@ var upgradeCheckCmd = &cobra.Command{
 		}
 
 		output.Header("Upgrade Check")
-		output.KeyValue("Can Upgrade", fmt.Sprintf("%t", result.CanUpgrade))
+		output.KeyValue("Can Upgrade", strconv.FormatBool(result.CanUpgrade))
 		output.KeyValue("Message", result.Message)
 		if result.Error {
 			output.KeyValue("Error", "true")

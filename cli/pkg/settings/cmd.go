@@ -28,44 +28,11 @@ var listCmd = &cobra.Command{
 	Short:        "List environment settings",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := client.NewFromConfig()
-		if err != nil {
-			return err
-		}
-
-		resp, err := c.Get(cmd.Context(), types.Endpoints.Settings(c.EnvID()))
-		if err != nil {
-			return fmt.Errorf("failed to get settings: %w", err)
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result []settings.PublicSetting
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
-		}
-
-		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
-		}
-
-		headers := []string{"KEY", "TYPE", "VALUE"}
-		rows := make([][]string, len(result))
-		for i, s := range result {
-			rows[i] = []string{
-				s.Key,
-				s.Type,
-				s.Value,
-			}
-		}
-
-		output.Table(headers, rows)
-		fmt.Printf("\nTotal: %d settings\n", len(result))
-		return nil
+		return runSettingsList(cmd, settingsListConfig{
+			endpoint:       types.Endpoints.Settings,
+			failureMessage: "failed to get settings",
+			totalLabel:     "settings",
+		})
 	},
 }
 
@@ -120,41 +87,55 @@ var publicCmd = &cobra.Command{
 	Short:        "List public settings",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := client.NewFromConfig()
-		if err != nil {
-			return err
-		}
-
-		resp, err := c.Get(cmd.Context(), types.Endpoints.SettingsPublic(c.EnvID()))
-		if err != nil {
-			return fmt.Errorf("failed to get public settings: %w", err)
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result []settings.PublicSetting
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
-		}
-
-		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
-		}
-
-		headers := []string{"KEY", "TYPE", "VALUE"}
-		rows := make([][]string, len(result))
-		for i, s := range result {
-			rows[i] = []string{s.Key, s.Type, s.Value}
-		}
-
-		output.Table(headers, rows)
-		fmt.Printf("\nTotal: %d public settings\n", len(result))
-		return nil
+		return runSettingsList(cmd, settingsListConfig{
+			endpoint:       types.Endpoints.SettingsPublic,
+			failureMessage: "failed to get public settings",
+			totalLabel:     "public settings",
+		})
 	},
+}
+
+type settingsListConfig struct {
+	endpoint       func(string) string
+	failureMessage string
+	totalLabel     string
+}
+
+func runSettingsList(cmd *cobra.Command, cfg settingsListConfig) error {
+	c, err := client.NewFromConfig()
+	if err != nil {
+		return err
+	}
+
+	resp, err := c.Get(cmd.Context(), cfg.endpoint(c.EnvID()))
+	if err != nil {
+		return fmt.Errorf("%s: %w", cfg.failureMessage, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	var result []settings.PublicSetting
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if jsonOutput {
+		resultBytes, err := json.MarshalIndent(result, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to marshal JSON: %w", err)
+		}
+		fmt.Println(string(resultBytes))
+		return nil
+	}
+
+	headers := []string{"KEY", "TYPE", "VALUE"}
+	rows := make([][]string, len(result))
+	for i, s := range result {
+		rows[i] = []string{s.Key, s.Type, s.Value}
+	}
+
+	output.Table(headers, rows)
+	fmt.Printf("\nTotal: %d %s\n", len(result), cfg.totalLabel)
+	return nil
 }
 
 func init() {

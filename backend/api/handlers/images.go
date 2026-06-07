@@ -11,8 +11,13 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	humamw "github.com/getarcaneapp/arcane/backend/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
+	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
+	"github.com/getarcaneapp/arcane/backend/pkg/authz"
+	activitylib "github.com/getarcaneapp/arcane/backend/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/types/base"
 	"github.com/getarcaneapp/arcane/types/image"
 	"github.com/getarcaneapp/arcane/types/system"
@@ -26,6 +31,8 @@ type ImageHandler struct {
 	imageUpdateService *services.ImageUpdateService
 	settingsService    *services.SettingsService
 	buildService       *services.BuildService
+	activityService    *services.ActivityService
+	appCtx             context.Context
 }
 
 // --- Huma Input/Output Wrappers ---
@@ -149,13 +156,15 @@ type UploadImageOutput struct {
 }
 
 // RegisterImages registers image management routes using Huma.
-func RegisterImages(api huma.API, dockerService *services.DockerClientService, imageService *services.ImageService, imageUpdateService *services.ImageUpdateService, settingsService *services.SettingsService, buildService *services.BuildService) {
+func RegisterImages(api huma.API, dockerService *services.DockerClientService, imageService *services.ImageService, imageUpdateService *services.ImageUpdateService, settingsService *services.SettingsService, buildService *services.BuildService, activityService *services.ActivityService, appCtx ActivityAppContext) {
 	h := &ImageHandler{
 		dockerService:      dockerService,
 		imageService:       imageService,
 		imageUpdateService: imageUpdateService,
 		settingsService:    settingsService,
 		buildService:       buildService,
+		activityService:    activityService,
+		appCtx:             appCtx.contextInternal(),
 	}
 
 	huma.Register(api, huma.Operation{
@@ -169,6 +178,7 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequirePermission(api, authz.PermImagesList),
 	}, h.ListImages)
 
 	huma.Register(api, huma.Operation{
@@ -182,6 +192,7 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequirePermission(api, authz.PermImagesList),
 	}, h.GetImageUsageCounts)
 
 	huma.Register(api, huma.Operation{
@@ -195,6 +206,7 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequirePermission(api, authz.PermImagesRead),
 	}, h.GetImage)
 
 	huma.Register(api, huma.Operation{
@@ -208,7 +220,7 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermImagesDelete),
 	}, h.RemoveImage)
 
 	huma.Register(api, huma.Operation{
@@ -222,7 +234,7 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermImagesPull),
 	}, h.PullImage)
 
 	huma.Register(api, huma.Operation{
@@ -236,7 +248,7 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermImagesBuild),
 	}, h.BuildImage)
 
 	huma.Register(api, huma.Operation{
@@ -250,6 +262,7 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequirePermission(api, authz.PermImagesList),
 	}, h.ListImageBuilds)
 
 	huma.Register(api, huma.Operation{
@@ -263,6 +276,7 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequirePermission(api, authz.PermImagesRead),
 	}, h.GetImageBuild)
 
 	huma.Register(api, huma.Operation{
@@ -276,7 +290,7 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermImagesPrune),
 	}, h.PruneImages)
 
 	huma.Register(api, huma.Operation{
@@ -307,7 +321,7 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 				},
 			},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermImagesUpload),
 	}, h.UploadImage)
 }
 
@@ -333,7 +347,7 @@ func (h *ImageHandler) ListImages(ctx context.Context, input *ListImagesInput) (
 			Sort:  input.Sort,
 			Order: pagination.SortOrder(input.Order),
 		},
-		PaginationParams: pagination.PaginationParams{
+		Params: pagination.Params{
 			Start: input.Start,
 			Limit: input.Limit,
 		},
@@ -389,9 +403,6 @@ func (h *ImageHandler) GetImage(ctx context.Context, input *GetImageInput) (*Get
 
 // RemoveImage removes a Docker image.
 func (h *ImageHandler) RemoveImage(ctx context.Context, input *RemoveImageInput) (*RemoveImageOutput, error) {
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
 	if h.imageService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -417,9 +428,6 @@ func (h *ImageHandler) RemoveImage(ctx context.Context, input *RemoveImageInput)
 
 // PullImage pulls a Docker image with streaming progress.
 func (h *ImageHandler) PullImage(ctx context.Context, input *PullImageInput) (*huma.StreamResponse, error) {
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
 	if h.imageService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -439,26 +447,43 @@ func (h *ImageHandler) PullImage(ctx context.Context, input *PullImageInput) (*h
 
 	return &huma.StreamResponse{
 		Body: func(humaCtx huma.Context) { //nolint:contextcheck // context is obtained from humaCtx.Context()
-			humaCtx.SetHeader("Content-Type", "application/x-json-stream")
-			humaCtx.SetHeader("Cache-Control", "no-cache")
-			humaCtx.SetHeader("Connection", "keep-alive")
-			humaCtx.SetHeader("X-Accel-Buffering", "no")
+			httpx.SetJSONStreamHeaders(humaCtx)
 
-			writer := humaCtx.BodyWriter()
+			runtimeCtx := utils.ActivityRuntimeContext(humaCtx.Context(), h.appCtx)
+			rawWriter := humaCtx.BodyWriter()
+			activityID, runtimeCtx := activitylib.StartHandlerActivityForUser(
+				runtimeCtx,
+				h.activityService,
+				input.EnvironmentID,
+				models.ActivityTypeImagePull,
+				"image",
+				"",
+				fullImageName,
+				user,
+				"Pulling image",
+				"Image pull started",
+				models.JSON{"imageName": fullImageName},
+			)
+			activitylib.WriteStartedLine(rawWriter, activityID)
+			if f, ok := rawWriter.(http.Flusher); ok {
+				f.Flush()
+			}
 
-			if err := h.imageService.PullImage(humaCtx.Context(), fullImageName, writer, *user, credentials); err != nil {
+			writer := activitylib.NewWriter(runtimeCtx, h.activityService, activityID, rawWriter, "Pulling image")
+			if err := h.imageService.PullImage(runtimeCtx, fullImageName, writer, *user, credentials); err != nil {
+				activitylib.FlushWriter(writer)
+				activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Image pull failed", err)
 				_, _ = fmt.Fprintf(writer, `{"error":%q}`+"\n", err.Error())
 				return
 			}
+			activitylib.FlushWriter(writer)
+			activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Image pull completed", nil)
 		},
 	}, nil
 }
 
 // BuildImage builds a Docker image with streaming progress.
 func (h *ImageHandler) BuildImage(ctx context.Context, input *BuildImageInput) (*huma.StreamResponse, error) {
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
 	if h.buildService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -474,16 +499,41 @@ func (h *ImageHandler) BuildImage(ctx context.Context, input *BuildImageInput) (
 
 	return &huma.StreamResponse{
 		Body: func(humaCtx huma.Context) { //nolint:contextcheck // context is obtained from humaCtx.Context()
-			humaCtx.SetHeader("Content-Type", "application/x-json-stream")
-			humaCtx.SetHeader("Cache-Control", "no-cache")
-			humaCtx.SetHeader("Connection", "keep-alive")
-			humaCtx.SetHeader("X-Accel-Buffering", "no")
+			httpx.SetJSONStreamHeaders(humaCtx)
 
-			writer := humaCtx.BodyWriter()
-			if _, err := h.buildService.BuildImage(humaCtx.Context(), input.EnvironmentID, input.Body, writer, "", user); err != nil {
+			runtimeCtx := utils.ActivityRuntimeContext(humaCtx.Context(), h.appCtx)
+			rawWriter := humaCtx.BodyWriter()
+			resourceName := strings.Join(input.Body.Tags, ", ")
+			if strings.TrimSpace(resourceName) == "" {
+				resourceName = input.Body.ContextDir
+			}
+			activityID, runtimeCtx := activitylib.StartHandlerActivityForUser(
+				runtimeCtx,
+				h.activityService,
+				input.EnvironmentID,
+				models.ActivityTypeImageBuild,
+				"image",
+				"",
+				resourceName,
+				user,
+				"Building image",
+				"Image build started",
+				models.JSON{"contextDir": input.Body.ContextDir, "tags": input.Body.Tags},
+			)
+			activitylib.WriteStartedLine(rawWriter, activityID)
+			if f, ok := rawWriter.(http.Flusher); ok {
+				f.Flush()
+			}
+
+			writer := activitylib.NewWriter(runtimeCtx, h.activityService, activityID, rawWriter, "Building image")
+			if _, err := h.buildService.BuildImage(runtimeCtx, input.EnvironmentID, input.Body, writer, "", user); err != nil {
+				activitylib.FlushWriter(writer)
+				activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Image build failed", err)
 				_, _ = fmt.Fprintf(writer, `{"error":%q}`+"\n", err.Error())
 				return
 			}
+			activitylib.FlushWriter(writer)
+			activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Image build completed", nil)
 		},
 	}, nil
 }
@@ -498,7 +548,7 @@ func (h *ImageHandler) ListImageBuilds(ctx context.Context, input *ListImageBuil
 		return nil, huma.Error400BadRequest((&common.EnvironmentIDRequiredError{}).Error())
 	}
 
-	params := buildPaginationParamsInternal(0, input.Start, input.Limit, input.Sort, input.Order, input.Search)
+	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	if input.Status != "" {
 		params.Filters["status"] = input.Status
 	}
@@ -562,9 +612,6 @@ func (h *ImageHandler) GetImageBuild(ctx context.Context, input *GetImageBuildIn
 
 // PruneImages removes unused Docker images.
 func (h *ImageHandler) PruneImages(ctx context.Context, input *PruneImagesInput) (*PruneImagesOutput, error) {
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
 	if h.imageService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -687,9 +734,6 @@ func (h *ImageHandler) GetImageUsageCounts(ctx context.Context, input *GetImageU
 
 // UploadImage uploads a Docker image from a tar archive.
 func (h *ImageHandler) UploadImage(ctx context.Context, input *UploadImageInput) (*UploadImageOutput, error) {
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
 	if h.imageService == nil || h.settingsService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}

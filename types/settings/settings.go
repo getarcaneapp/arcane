@@ -94,12 +94,15 @@ type Update struct {
 	// Required: false
 	EnvironmentHealthInterval *string `json:"environmentHealthInterval,omitempty"`
 
-	// PruneMode is the Docker prune mode ("all" or "dangling").
-	//
-	// Deprecated: Use the granular prune mode settings instead.
+	// ActivityHistoryRetentionDays is the number of days of completed Activity Center history to retain.
 	//
 	// Required: false
-	PruneMode *string `json:"dockerPruneMode,omitempty" binding:"omitempty,oneof=all dangling"`
+	ActivityHistoryRetentionDays *string `json:"activityHistoryRetentionDays,omitempty"`
+
+	// ActivityHistoryMaxEntries is the maximum completed Activity Center entries to retain per environment.
+	//
+	// Required: false
+	ActivityHistoryMaxEntries *string `json:"activityHistoryMaxEntries,omitempty"`
 
 	// DefaultDeployPullPolicy is the default image pull policy used for project deploys.
 	//
@@ -115,41 +118,6 @@ type Update struct {
 	//
 	// Required: false
 	ScheduledPruneInterval *string `json:"scheduledPruneInterval,omitempty"`
-
-	// ScheduledPruneContainers indicates if stopped containers should be pruned.
-	//
-	// Deprecated: Use pruneContainerMode instead.
-	//
-	// Required: false
-	ScheduledPruneContainers *string `json:"scheduledPruneContainers,omitempty"`
-
-	// ScheduledPruneImages indicates if unused images should be pruned.
-	//
-	// Deprecated: Use pruneImageMode instead.
-	//
-	// Required: false
-	ScheduledPruneImages *string `json:"scheduledPruneImages,omitempty"`
-
-	// ScheduledPruneVolumes indicates if unused volumes should be pruned.
-	//
-	// Deprecated: Use pruneVolumeMode instead.
-	//
-	// Required: false
-	ScheduledPruneVolumes *string `json:"scheduledPruneVolumes,omitempty"`
-
-	// ScheduledPruneNetworks indicates if unused networks should be pruned.
-	//
-	// Deprecated: Use pruneNetworkMode instead.
-	//
-	// Required: false
-	ScheduledPruneNetworks *string `json:"scheduledPruneNetworks,omitempty"`
-
-	// ScheduledPruneBuildCache indicates if build cache should be pruned.
-	//
-	// Deprecated: Use pruneBuildCacheMode instead.
-	//
-	// Required: false
-	ScheduledPruneBuildCache *string `json:"scheduledPruneBuildCache,omitempty"`
 
 	// PruneContainerMode controls how containers are pruned during scheduled prune.
 	//
@@ -259,6 +227,11 @@ type Update struct {
 	// Required: false
 	ApplicationTheme *string `json:"applicationTheme,omitempty"`
 
+	// IconCatalog is the catalog used to resolve icon slugs.
+	//
+	// Required: false
+	IconCatalog *string `json:"iconCatalog,omitempty"`
+
 	// AuthLocalEnabled indicates if local authentication is enabled.
 	//
 	// Required: false
@@ -334,11 +307,6 @@ type Update struct {
 	// Required: false
 	TrivyConcurrentScanContainers *string `json:"trivyConcurrentScanContainers,omitempty"`
 
-	// AuthOidcConfig is deprecated and will be removed in a future release.
-	//
-	// Required: false
-	AuthOidcConfig *string `json:"authOidcConfig,omitempty"`
-
 	// OidcClientId is the OIDC client identifier.
 	//
 	// Required: false
@@ -359,15 +327,11 @@ type Update struct {
 	// Required: false
 	OidcScopes *string `json:"oidcScopes,omitempty"`
 
-	// OidcAdminClaim is the OIDC claim name used to identify administrators.
+	// OidcGroupsClaim is the OIDC claim path read on every login to drive
+	// role assignment via oidc_role_mappings. Default: "groups".
 	//
 	// Required: false
-	OidcAdminClaim *string `json:"oidcAdminClaim,omitempty"`
-
-	// OidcAdminValue is the OIDC claim value that identifies administrators.
-	//
-	// Required: false
-	OidcAdminValue *string `json:"oidcAdminValue,omitempty"`
+	OidcGroupsClaim *string `json:"oidcGroupsClaim,omitempty"`
 
 	// OidcSkipTlsVerify indicates if TLS verification should be skipped for OIDC.
 	//

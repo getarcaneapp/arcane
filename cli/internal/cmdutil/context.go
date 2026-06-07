@@ -1,6 +1,7 @@
 package cmdutil
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -12,7 +13,7 @@ import (
 // ClientFromCommand returns a configured authenticated client for the command.
 func ClientFromCommand(cmd *cobra.Command) (*client.Client, error) {
 	if cmd == nil {
-		return nil, fmt.Errorf("nil command")
+		return nil, errors.New("nil command")
 	}
 	if app, ok := runtimectx.From(cmd.Context()); ok {
 		return app.Client()
@@ -23,7 +24,7 @@ func ClientFromCommand(cmd *cobra.Command) (*client.Client, error) {
 // UnauthClientFromCommand returns a configured unauthenticated client for the command.
 func UnauthClientFromCommand(cmd *cobra.Command) (*client.Client, error) {
 	if cmd == nil {
-		return nil, fmt.Errorf("nil command")
+		return nil, errors.New("nil command")
 	}
 	if app, ok := runtimectx.From(cmd.Context()); ok {
 		return app.UnauthClient()

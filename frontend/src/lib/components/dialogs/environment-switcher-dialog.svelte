@@ -6,24 +6,24 @@
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { environmentManagementService } from '$lib/services/env-mgmt-service';
 	import { queryKeys } from '$lib/query/query-keys';
-	import type { Environment } from '$lib/types/environment.type';
+	import type { Environment } from '$lib/types/environment';
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 	import { m } from '$lib/paraglide/messages';
 	import { cn } from '$lib/utils';
 	import settingsStore from '$lib/stores/config-store';
-	import { debounced } from '$lib/utils/utils';
-	import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
+	import { debounced } from '$lib/utils/ws';
+	import type { SearchPaginationSortRequest } from '$lib/types/shared';
 	import { tick } from 'svelte';
 	import { EnvironmentsIcon, RemoteEnvironmentIcon, AddIcon, SearchIcon, CloseIcon, SettingsIcon } from '$lib/icons';
 	import { useQueryClient } from '@tanstack/svelte-query';
+	import IfPermitted from '$lib/components/if-permitted.svelte';
 
 	type Props = {
 		open: boolean;
-		isAdmin?: boolean;
 	};
 
-	let { open = $bindable(false), isAdmin = false }: Props = $props();
+	let { open = $bindable(false) }: Props = $props();
 	const queryClient = useQueryClient();
 
 	let searchQuery = $state('');
@@ -356,7 +356,7 @@
 
 	{#snippet footer()}
 		<div class="flex w-full items-center justify-between gap-2">
-			{#if isAdmin}
+			<IfPermitted perm="environments:create">
 				<ArcaneButton
 					action="base"
 					tone="outline"
@@ -367,9 +367,10 @@
 						goto('/environments');
 					}}
 				/>
-			{:else}
-				<div></div>
-			{/if}
+				{#snippet fallback()}
+					<div></div>
+				{/snippet}
+			</IfPermitted>
 			<ArcaneButton action="base" tone="outline" customLabel={m.common_close()} onclick={closeDialog} />
 		</div>
 	{/snippet}

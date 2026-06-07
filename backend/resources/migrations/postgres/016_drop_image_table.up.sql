@@ -1,1 +1,0 @@
-DROP TABLE IF EXISTS images_table;

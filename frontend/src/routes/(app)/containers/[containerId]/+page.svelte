@@ -3,14 +3,10 @@
 	import { invalidateAll } from '$app/navigation';
 	import ActionButtons from '$lib/components/action-buttons.svelte';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
-	import bytes from '$lib/utils/bytes';
+	import { bytes } from '$lib/utils/formatting';
 	import { tick } from 'svelte';
 	import { page } from '$app/state';
-	import type {
-		ContainerDetailsDto,
-		ContainerNetworkSettings,
-		ContainerStats as ContainerStatsType
-	} from '$lib/types/container.type';
+	import type { ContainerDetailsDto, ContainerNetworkSettings, ContainerStats as ContainerStatsType } from '$lib/types/docker';
 	import { m } from '$lib/paraglide/messages';
 	import TabbedPageLayout from '$lib/layouts/tabbed-page-layout.svelte';
 	import { type TabItem } from '$lib/components/tab-bar/index.js';
@@ -27,8 +23,8 @@
 	import ContainerDetailStatsSync from '../components/container-detail-stats-sync.svelte';
 	import ContainerHealthcheck from '../components/ContainerHealthcheck.svelte';
 	import IconImage from '$lib/components/icon-image.svelte';
-	import { getArcaneIconUrlFromLabels } from '$lib/utils/arcane-labels';
-	import { calculateMemoryUsage } from '$lib/utils/container-stats.utils';
+	import { calculateMemoryUsage, getThemedIconUrl } from '$lib/utils/docker';
+	import { mode } from 'mode-watcher';
 	import {
 		ArrowLeftIcon,
 		AlertIcon,
@@ -44,9 +40,10 @@
 		HealthIcon
 	} from '$lib/icons';
 	import { parse as parseYaml } from 'yaml';
-	import type { IncludeFile } from '$lib/types/project.type';
+	import type { IncludeFile } from '$lib/types/swarm';
 	import { projectService } from '$lib/services/project-service';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import { hasPermission } from '$lib/utils/auth';
 	let { data } = $props();
 	let container = $derived(data?.container as ContainerDetailsDto);
 	let stats = $state(null as ContainerStatsType | null);
@@ -83,7 +80,7 @@
 	};
 
 	const containerDisplayName = $derived(cleanContainerName(container?.name));
-	const containerIconUrl = $derived(getArcaneIconUrlFromLabels(container?.labels));
+	const containerIconUrl = $derived(getThemedIconUrl(container, mode.current));
 
 	const calculateCPUPercent = (statsData: ContainerStatsType | null): number => {
 		if (!statsData || !statsData.cpu_stats || !statsData.precpu_stats) {
@@ -140,8 +137,11 @@
 	);
 	const showNetworkTab = $derived(hasNetworks || hasPorts);
 	const hasMounts = $derived(!!(container?.mounts && container.mounts.length > 0));
+	const currentEnvId = $derived(environmentStore.selected?.id);
+	const canViewLogs = $derived(hasPermission('containers:logs', currentEnvId));
+	const canExecShell = $derived(hasPermission('containers:exec', currentEnvId));
 	const showStats = $derived(!!container?.state?.running);
-	const showShell = $derived(!!container?.state?.running);
+	const showShell = $derived(!!container?.state?.running && canExecShell);
 	const hasHealthcheck = $derived(
 		!!(container?.config?.healthcheck?.test && container.config.healthcheck.test.length > 0) || !!container?.state?.health
 	);
@@ -213,7 +213,7 @@
 	const tabItems = $derived<TabItem[]>([
 		{ value: 'overview', label: m.common_overview(), icon: ContainersIcon },
 		...(showStats ? [{ value: 'stats', label: m.containers_nav_metrics(), icon: StatsIcon }] : []),
-		{ value: 'logs', label: m.containers_nav_logs(), icon: FileTextIcon },
+		...(canViewLogs ? [{ value: 'logs', label: m.containers_nav_logs(), icon: FileTextIcon }] : []),
 		...(showShell ? [{ value: 'shell', label: m.common_shell(), icon: TerminalIcon }] : []),
 		...(hasHealthcheck ? [{ value: 'healthcheck', label: m.containers_nav_healthcheck(), icon: HealthIcon }] : []),
 		...(showConfiguration ? [{ value: 'config', label: m.common_configuration(), icon: SettingsIcon }] : []),

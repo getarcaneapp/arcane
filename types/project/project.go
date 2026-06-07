@@ -137,10 +137,15 @@ type RuntimeService struct {
 	// Required: false
 	Health *string `json:"health,omitempty"`
 
-	// IconURL is an optional icon URL derived from Arcane labels.
+	// IconLightURL is an optional light icon URL for dark themes.
 	//
 	// Required: false
-	IconURL string `json:"iconUrl,omitempty"`
+	IconLightURL string `json:"iconLightUrl,omitempty"`
+
+	// IconDarkURL is an optional dark icon URL for light themes.
+	//
+	// Required: false
+	IconDarkURL string `json:"iconDarkUrl,omitempty"`
 
 	// ServiceConfig is the configuration of the service from the compose file.
 	//
@@ -300,6 +305,11 @@ type CreateReponse struct {
 	//
 	// Required: true
 	UpdatedAt string `json:"updatedAt"`
+
+	// ActivityID is the activity created by the project action.
+	//
+	// Required: false
+	ActivityID *string `json:"activityId,omitempty"`
 }
 
 // Details contains detailed information about a project.
@@ -329,10 +339,15 @@ type Details struct {
 	// Required: true
 	Path string `json:"path"`
 
-	// IconURL is the optional stack icon URL from compose metadata.
+	// IconLightURL is the optional light stack icon URL for dark themes.
 	//
 	// Required: false
-	IconURL string `json:"iconUrl,omitempty"`
+	IconLightURL string `json:"iconLightUrl,omitempty"`
+
+	// IconDarkURL is the optional dark stack icon URL for light themes.
+	//
+	// Required: false
+	IconDarkURL string `json:"iconDarkUrl,omitempty"`
 
 	// URLs are optional custom stack URLs from compose metadata.
 	//
@@ -449,6 +464,11 @@ type Details struct {
 	//
 	// Required: false
 	GitRepositoryURL string `json:"gitRepositoryURL,omitempty"`
+
+	// ActivityID is the activity created by the project action.
+	//
+	// Required: false
+	ActivityID *string `json:"activityId,omitempty"`
 }
 
 // Destroy is used to destroy a project.

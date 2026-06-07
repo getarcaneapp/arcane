@@ -1,9 +1,9 @@
 import BaseAPIService from './api-service';
-import type { User, CreateUser } from '$lib/types/user.type';
-import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
-import { transformPaginationParams } from '$lib/utils/params.util';
+import type { User, CreateUser } from '$lib/types/auth';
+import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
+import { transformPaginationParams } from '$lib/utils/tables';
 
-export default class UserAPIService extends BaseAPIService {
+class UserAPIService extends BaseAPIService {
 	async getUsers(options?: SearchPaginationSortRequest): Promise<Paginated<User>> {
 		const params = transformPaginationParams(options);
 		const res = await this.api.get('/users', { params });
@@ -32,6 +32,14 @@ export default class UserAPIService extends BaseAPIService {
 
 	async changePassword(data: { currentPassword: string; newPassword: string }): Promise<void> {
 		return this.handleResponse(this.api.post('/auth/password', data)) as Promise<void>;
+	}
+
+	async logoutAllOtherSessions(): Promise<void> {
+		return this.handleResponse(this.api.post('/auth/sessions/logout-all')) as Promise<void>;
+	}
+
+	async updateMyProfile(data: { displayName?: string; email?: string; locale?: string }): Promise<User> {
+		return this.handleResponse(this.api.put('/auth/me/profile', data)) as Promise<User>;
 	}
 }
 
