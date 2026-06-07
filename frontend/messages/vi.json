@@ -4,6 +4,8 @@
 	"layout_title": "Arcane",
 	"accent_color": "Màu chủ đạo",
 	"accent_color_description": "Chọn màu chủ đạo để tùy chỉnh giao diện của Arcane",
+	"font_size": "Kích thước phông chữ",
+	"font_size_description": "Điều chỉnh kích thước văn bản và giao diện người dùng",
 	"application_theme": "Chủ đề ứng dụng",
 	"application_theme_description": "Chọn chủ đề hình ảnh chung cho Arcane. Cài đặt này được lưu trữ chung cho toàn hệ thống và hiển thị bản xem trước ngay lập tức.",
 	"application_theme_default": "Mặc định",
