@@ -3,6 +3,7 @@ package services
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -434,6 +435,130 @@ func TestBuildAutoHealNotificationMessageInternal_IncludesEnvironment(t *testing
 
 	require.Contains(t, message, "**Environment:** Cluster One")
 	require.Equal(t, 1, strings.Count(message, "Environment"))
+}
+
+func TestNotificationCredentialInternal_KeepsPlaintextLegacyValues(t *testing.T) {
+	setupNotificationTestDB(t)
+
+	value := "discord-webhook-token/plaintext"
+
+	require.NoError(t, decryptStringCredentialInternal(&value))
+	require.Equal(t, "discord-webhook-token/plaintext", value)
+}
+
+func TestNotificationCredentialInternal_DecryptsEncryptedValues(t *testing.T) {
+	setupNotificationTestDB(t)
+
+	encrypted, err := crypto.Encrypt("gotify-application-token")
+	require.NoError(t, err)
+
+	require.NoError(t, decryptStringCredentialInternal(&encrypted))
+	require.Equal(t, "gotify-application-token", encrypted)
+}
+
+func TestNotificationCredentialInternal_ReturnsErrorForCorruptedCiphertext(t *testing.T) {
+	setupNotificationTestDB(t)
+
+	encrypted, err := crypto.Encrypt("gotify-application-token")
+	require.NoError(t, err)
+
+	ciphertext, err := base64.StdEncoding.DecodeString(encrypted)
+	require.NoError(t, err)
+	ciphertext[len(ciphertext)-1] ^= 0xff
+	corrupted := base64.StdEncoding.EncodeToString(ciphertext)
+
+	require.Error(t, decryptStringCredentialInternal(&corrupted))
+}
+
+func TestNotificationCredentialInternal_LeavesEmptyValuesEmpty(t *testing.T) {
+	setupNotificationTestDB(t)
+
+	value := ""
+
+	require.NoError(t, decryptStringCredentialInternal(&value))
+	require.Empty(t, value)
+}
+
+func TestNotificationService_CreateOrUpdateSettingsEncryptsCredentialFieldsInternal(t *testing.T) {
+	ctx := context.Background()
+	db := setupNotificationTestDB(t)
+	svc := NewNotificationService(db, &config.Config{}, nil)
+
+	_, err := svc.CreateOrUpdateSettings(ctx, models.NotificationProviderDiscord, true, models.JSON{
+		"webhookId": "123456789",
+		"token":     "discord-secret-token",
+		"username":  "Arcane",
+	})
+	require.NoError(t, err)
+
+	var stored models.NotificationSettings
+	require.NoError(t, db.WithContext(ctx).Where("provider = ?", models.NotificationProviderDiscord).First(&stored).Error)
+	require.Equal(t, "123456789", stored.Config["webhookId"])
+	require.Equal(t, "Arcane", stored.Config["username"])
+	require.NotEqual(t, "discord-secret-token", stored.Config["token"])
+
+	decrypted, err := crypto.Decrypt(stored.Config["token"].(string))
+	require.NoError(t, err)
+	require.Equal(t, "discord-secret-token", decrypted)
+}
+
+func TestNotificationService_CreateOrUpdateSettingsPreservesStoredCredentialWhenEmptyInternal(t *testing.T) {
+	ctx := context.Background()
+	db := setupNotificationTestDB(t)
+	svc := NewNotificationService(db, &config.Config{}, nil)
+
+	_, err := svc.CreateOrUpdateSettings(ctx, models.NotificationProviderGotify, true, models.JSON{
+		"host":  "gotify.example",
+		"token": "initial-gotify-token",
+		"title": "Initial",
+	})
+	require.NoError(t, err)
+
+	_, err = svc.CreateOrUpdateSettings(ctx, models.NotificationProviderGotify, true, models.JSON{
+		"host":  "gotify.example",
+		"token": "",
+		"title": "Updated",
+	})
+	require.NoError(t, err)
+
+	var stored models.NotificationSettings
+	require.NoError(t, db.WithContext(ctx).Where("provider = ?", models.NotificationProviderGotify).First(&stored).Error)
+	require.Equal(t, "Updated", stored.Config["title"])
+
+	decrypted, err := crypto.Decrypt(stored.Config["token"].(string))
+	require.NoError(t, err)
+	require.Equal(t, "initial-gotify-token", decrypted)
+}
+
+func TestNotificationService_CreateOrUpdateSettingsPreservesCredentialAcrossDisableInternal(t *testing.T) {
+	ctx := context.Background()
+	db := setupNotificationTestDB(t)
+	svc := NewNotificationService(db, &config.Config{}, nil)
+
+	_, err := svc.CreateOrUpdateSettings(ctx, models.NotificationProviderGotify, true, models.JSON{
+		"host":  "gotify.example",
+		"token": "initial-gotify-token",
+		"title": "Initial",
+	})
+	require.NoError(t, err)
+
+	_, err = svc.CreateOrUpdateSettings(ctx, models.NotificationProviderGotify, false, models.JSON{})
+	require.NoError(t, err)
+
+	_, err = svc.CreateOrUpdateSettings(ctx, models.NotificationProviderGotify, true, models.JSON{
+		"host":  "gotify.example",
+		"token": "",
+		"title": "Re-enabled",
+	})
+	require.NoError(t, err)
+
+	var stored models.NotificationSettings
+	require.NoError(t, db.WithContext(ctx).Where("provider = ?", models.NotificationProviderGotify).First(&stored).Error)
+	require.Equal(t, "Re-enabled", stored.Config["title"])
+
+	decrypted, err := crypto.Decrypt(stored.Config["token"].(string))
+	require.NoError(t, err)
+	require.Equal(t, "initial-gotify-token", decrypted)
 }
 
 func TestSupportedNotificationTestTypes_IncludesAutoHeal(t *testing.T) {

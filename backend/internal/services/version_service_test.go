@@ -106,3 +106,14 @@ func TestVersionService_GetAppVersionInfoDoesNotUseStoredDigestUpdateForSemverBu
 	assert.Equal(t, latestDigest, info.NewestDigest)
 	assert.Equal(t, currentDigest, info.CurrentDigest)
 }
+
+func TestVersionService_GetAppVersionInfoPreservesDevVersionInternal(t *testing.T) {
+	svc := NewVersionService(nil, true, "dev", "unknown", nil, nil, nil)
+
+	info := svc.GetAppVersionInfo(context.Background())
+
+	require.NotNil(t, info)
+	assert.Equal(t, "dev", info.CurrentVersion)
+	assert.Equal(t, "dev", info.DisplayVersion)
+	assert.False(t, info.IsSemverVersion)
+}

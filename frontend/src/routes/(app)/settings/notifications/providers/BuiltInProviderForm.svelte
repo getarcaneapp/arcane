@@ -16,10 +16,22 @@
 		values: AnyBuiltInValues;
 		disabled?: boolean;
 		isTesting?: boolean;
+		hasExistingCredentials?: boolean;
+		hasExistingPassword?: boolean;
+		hasExistingToken?: boolean;
 		onTest?: (testType?: string) => void;
 	}
 
-	let { provider, values = $bindable(), disabled = false, isTesting = false, onTest }: Props = $props();
+	let {
+		provider,
+		values = $bindable(),
+		disabled = false,
+		isTesting = false,
+		hasExistingCredentials = false,
+		hasExistingPassword = false,
+		hasExistingToken = false,
+		onTest
+	}: Props = $props();
 
 	const providerMeta: Record<NotificationProviderKey, { title: string; description: string }> = {
 		discord: {
@@ -82,6 +94,12 @@
 		}
 	}
 
+	function addRequiredCredentialIssue(ctx: z.RefinementCtx, value: string, path: string, message: string) {
+		if (!value.trim() && !hasExistingCredentials) {
+			addCustomFieldIssue(ctx, path, message);
+		}
+	}
+
 	const providerSchemas: Record<NotificationProviderKey, z.ZodTypeAny> = {
 		discord: z
 			.object({
@@ -95,7 +113,7 @@
 			.superRefine((d, ctx) => {
 				if (!d.enabled) return;
 				addRequiredTrimmedFieldIssue(ctx, d.webhookId, 'webhookId', 'Webhook ID is required when Discord is enabled');
-				addRequiredTrimmedFieldIssue(ctx, d.token, 'token', 'Webhook Token is required when Discord is enabled');
+				addRequiredCredentialIssue(ctx, d.token, 'token', 'Webhook Token is required when Discord is enabled');
 			}),
 		email: z
 			.object({
@@ -160,7 +178,7 @@
 			})
 			.superRefine((d, ctx) => {
 				if (!d.enabled) return;
-				addRequiredTrimmedFieldIssue(ctx, d.botToken, 'botToken', 'Bot Token is required when Telegram is enabled');
+				addRequiredCredentialIssue(ctx, d.botToken, 'botToken', 'Bot Token is required when Telegram is enabled');
 				if (!d.chatIds.trim()) {
 					ctx.addIssue({
 						code: 'custom',
@@ -203,8 +221,16 @@
 					ctx.addIssue({ code: 'custom', message: m.notifications_signal_recipients_required(), path: ['recipients'] });
 				}
 
-				const hasBasicAuth = d.user.trim() && d.password.trim();
-				const hasTokenAuth = d.token.trim();
+				const wantsBasicAuth = Boolean(d.user.trim() || d.password.trim());
+				const hasBasicAuth = Boolean(d.user.trim() && (d.password.trim() || hasExistingPassword));
+				const hasTokenAuth = Boolean(d.token.trim() || (!wantsBasicAuth && hasExistingToken));
+				if (d.user.trim() && !d.password.trim() && !hasExistingPassword) {
+					ctx.addIssue({
+						code: 'custom',
+						message: m.notifications_signal_auth_required(),
+						path: ['password']
+					});
+				}
 				if (!hasBasicAuth && !hasTokenAuth) {
 					ctx.addIssue({
 						code: 'custom',
@@ -234,7 +260,7 @@
 			})
 			.superRefine((d, ctx) => {
 				if (!d.enabled) return;
-				addRequiredTrimmedFieldIssue(ctx, d.token, 'token', m.notifications_slack_token_required());
+				addRequiredCredentialIssue(ctx, d.token, 'token', m.notifications_slack_token_required());
 			}),
 		ntfy: z
 			.object({
@@ -272,7 +298,7 @@
 			})
 			.superRefine((d, ctx) => {
 				if (!d.enabled) return;
-				addRequiredTrimmedFieldIssue(ctx, d.token, 'token', m.common_required());
+				addRequiredCredentialIssue(ctx, d.token, 'token', m.common_required());
 				addRequiredTrimmedFieldIssue(ctx, d.user, 'user', m.common_required());
 			}),
 		gotify: z
@@ -290,7 +316,7 @@
 			.superRefine((d, ctx) => {
 				if (!d.enabled) return;
 				addRequiredTrimmedFieldIssue(ctx, d.host, 'host', m.common_required());
-				addRequiredTrimmedFieldIssue(ctx, d.token, 'token', m.common_required());
+				addRequiredCredentialIssue(ctx, d.token, 'token', m.common_required());
 			}),
 		matrix: z
 			.object({

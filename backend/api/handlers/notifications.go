@@ -188,7 +188,7 @@ func (h *NotificationHandler) GetAllNotificationSettings(ctx context.Context, in
 			ID:       setting.ID,
 			Provider: notification.Provider(setting.Provider),
 			Enabled:  setting.Enabled,
-			Config:   base.JsonObject(setting.Config),
+			Config:   base.JsonObject(services.RedactNotificationConfigCredentials(setting.Provider, setting.Config)),
 		}
 	}
 
@@ -210,7 +210,7 @@ func (h *NotificationHandler) GetNotificationSettings(ctx context.Context, input
 		ID:       settings.ID,
 		Provider: notification.Provider(settings.Provider),
 		Enabled:  settings.Enabled,
-		Config:   base.JsonObject(settings.Config),
+		Config:   base.JsonObject(services.RedactNotificationConfigCredentials(settings.Provider, settings.Config)),
 	}
 
 	return &GetNotificationSettingsOutput{Body: response}, nil
@@ -239,7 +239,7 @@ func (h *NotificationHandler) CreateOrUpdateNotificationSettings(ctx context.Con
 		ID:       settings.ID,
 		Provider: notification.Provider(settings.Provider),
 		Enabled:  settings.Enabled,
-		Config:   base.JsonObject(settings.Config),
+		Config:   base.JsonObject(services.RedactNotificationConfigCredentials(settings.Provider, settings.Config)),
 	}
 
 	return &CreateOrUpdateNotificationSettingsOutput{Body: response}, nil

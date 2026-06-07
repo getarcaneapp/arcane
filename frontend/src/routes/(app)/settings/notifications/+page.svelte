@@ -139,6 +139,10 @@
 			genericHasChanges
 	);
 
+	function hasSavedCredential(settings: NotificationSettings | null, field: string) {
+		return settings?.config ? Object.prototype.hasOwnProperty.call(settings.config, field) : false;
+	}
+
 	// Sync with settings form context
 	$effect(() => {
 		if (formState) {
@@ -268,8 +272,7 @@
 			if (signalHasChanges) {
 				try {
 					const settings = signalFormValuesToSettings(signalValues);
-					await notificationService.updateSettings('signal', settings);
-					savedSettings.signal = settings;
+					savedSettings.signal = await notificationService.updateSettings('signal', settings);
 					signalBaseline = { ...signalValues };
 				} catch (error: any) {
 					const errorMsg = error?.response?.data?.error || error.message || 'Unknown error';
@@ -438,6 +441,7 @@
 						bind:values={emailValues}
 						disabled={isReadOnly}
 						{isTesting}
+						hasExistingCredentials={savedSettings.email !== null}
 						onTest={(testType) => testNotification('email', testType)}
 					/>
 				</Tabs.Content>
@@ -449,6 +453,7 @@
 						bind:values={discordValues}
 						disabled={isReadOnly}
 						{isTesting}
+						hasExistingCredentials={savedSettings.discord !== null}
 						onTest={(testType) => testNotification('discord', testType)}
 					/>
 				</Tabs.Content>
@@ -460,6 +465,7 @@
 						bind:values={telegramValues}
 						disabled={isReadOnly}
 						{isTesting}
+						hasExistingCredentials={savedSettings.telegram !== null}
 						onTest={(testType) => testNotification('telegram', testType)}
 					/>
 				</Tabs.Content>
@@ -471,6 +477,9 @@
 						bind:values={signalValues}
 						disabled={isReadOnly}
 						{isTesting}
+						hasExistingCredentials={savedSettings.signal !== null}
+						hasExistingPassword={hasSavedCredential(savedSettings.signal, 'password')}
+						hasExistingToken={hasSavedCredential(savedSettings.signal, 'token')}
 						onTest={(testType) => testNotification('signal', testType)}
 					/>
 				</Tabs.Content>
@@ -482,6 +491,7 @@
 						bind:values={slackValues}
 						disabled={isReadOnly}
 						{isTesting}
+						hasExistingCredentials={savedSettings.slack !== null}
 						onTest={(testType) => testNotification('slack', testType)}
 					/>
 				</Tabs.Content>
@@ -493,6 +503,7 @@
 						bind:values={ntfyValues}
 						disabled={isReadOnly}
 						{isTesting}
+						hasExistingCredentials={savedSettings.ntfy !== null}
 						onTest={(testType) => testNotification('ntfy', testType)}
 					/>
 				</Tabs.Content>
@@ -504,6 +515,7 @@
 						bind:values={pushoverValues}
 						disabled={isReadOnly}
 						{isTesting}
+						hasExistingCredentials={savedSettings.pushover !== null}
 						onTest={(testType) => testNotification('pushover', testType)}
 					/>
 				</Tabs.Content>
@@ -515,6 +527,7 @@
 						bind:values={gotifyValues}
 						disabled={isReadOnly}
 						{isTesting}
+						hasExistingCredentials={savedSettings.gotify !== null}
 						onTest={(testType) => testNotification('gotify', testType)}
 					/>
 				</Tabs.Content>
@@ -526,6 +539,7 @@
 						bind:values={matrixValues}
 						disabled={isReadOnly}
 						{isTesting}
+						hasExistingCredentials={savedSettings.matrix !== null}
 						onTest={(testType) => testNotification('matrix', testType)}
 					/>
 				</Tabs.Content>
@@ -537,6 +551,7 @@
 						bind:values={genericValues}
 						disabled={isReadOnly}
 						{isTesting}
+						hasExistingCredentials={savedSettings.generic !== null}
 						onTest={(testType) => testNotification('generic', testType)}
 					/>
 				</Tabs.Content>
