@@ -2,6 +2,7 @@ import { Column, Hr, Row, Section, Text } from 'react-email';
 import { BaseTemplate } from '../components/base-template';
 import CardHeader from '../components/card-header';
 import { sharedPreviewProps, sharedTemplateProps } from '../props';
+import { colors, fonts, radii } from '../theme';
 
 interface BatchImageUpdatesEmailProps {
 	logoURL: string;
@@ -101,16 +102,16 @@ export default BatchImageUpdatesEmail;
 const mainTextStyle = {
 	fontSize: '16px',
 	lineHeight: '24px',
-	color: '#cbd5e1',
+	color: colors.textBody,
 	margin: '0 0 16px 0'
 };
 
 const infoSectionStyle = {
 	marginTop: '20px',
-	backgroundColor: 'rgba(15, 23, 42, 0.5)',
-	border: '1px solid rgba(148, 163, 184, 0.1)',
+	backgroundColor: colors.panel,
+	border: `1px solid ${colors.panelBorder}`,
 	padding: '20px',
-	borderRadius: '12px'
+	borderRadius: radii.panel
 };
 
 const infoRowStyle = {
@@ -126,13 +127,13 @@ const labelColumnStyle = {
 const labelStyle = {
 	fontSize: '14px',
 	fontWeight: '600' as const,
-	color: '#94a3b8',
+	color: colors.textMuted,
 	margin: '8px 0'
 };
 
 const valueStyle = {
 	fontSize: '14px',
-	color: '#e2e8f0',
+	color: colors.textValue,
 	margin: '8px 0',
 	wordBreak: 'break-word' as const
 };
@@ -140,43 +141,43 @@ const valueStyle = {
 const countStyle = {
 	fontSize: '24px',
 	fontWeight: '700' as const,
-	color: '#34d399',
+	color: colors.success,
 	margin: '8px 0'
 };
 
 const dividerStyle = {
-	borderColor: 'rgba(148, 163, 184, 0.2)',
+	borderColor: colors.divider,
 	margin: '4px 0'
 };
 
 const footerStyle = {
 	fontSize: '13px',
 	lineHeight: '20px',
-	color: '#94a3b8',
+	color: colors.textMuted,
 	margin: '0'
 };
 
 const imageListSectionStyle = {
 	marginTop: '24px',
-	backgroundColor: 'rgba(15, 23, 42, 0.3)',
-	border: '1px solid rgba(148, 163, 184, 0.1)',
+	backgroundColor: colors.panel,
+	border: `1px solid ${colors.panelBorder}`,
 	padding: '16px',
-	borderRadius: '8px'
+	borderRadius: radii.panel
 };
 
 const imageListHeaderStyle = {
 	fontSize: '14px',
 	fontWeight: '600' as const,
-	color: '#94a3b8',
+	color: colors.textMuted,
 	margin: '0 0 12px 0'
 };
 
 const imageItemStyle = {
 	fontSize: '13px',
 	lineHeight: '20px',
-	color: '#cbd5e1',
+	color: colors.textBody,
 	margin: '4px 0',
-	fontFamily: 'monospace'
+	fontFamily: fonts.mono
 };
 
 BatchImageUpdatesEmail.TemplateProps = {
