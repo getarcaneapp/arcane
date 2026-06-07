@@ -2988,7 +2988,7 @@
 	"roles_col_type": "Τύπος",
 	"roles_col_assigned_users": "Ορισμένοι χρήστες",
 	"roles_col_permissions": "Δικαιώματα",
-	"roles_assigned_users_count": "{count} user(s)",
+	"roles_assigned_users_count": "{count} χρήστης/-ες",
 	"_comment_permissions": "=== ΕΠΙΛΟΓΗ ΔΙΚΑΙΩΜΑΤΩΝ ===",
 	"permissions_group_label": "{resource} ({selected}/{total})",
 	"permissions_select_all": "Επιλογή όλων",
