@@ -4,6 +4,8 @@
 	"layout_title": "Arcane",
 	"accent_color": "Χρώμα Τονισμού",
 	"accent_color_description": "Επιλέξτε ένα χρώμα έμφασης για να προσαρμόσετε την εμφάνιση του Arcane",
+	"font_size": "Μέγεθος γραμματοσειράς",
+	"font_size_description": "Προσαρμόστε το μέγεθος του κειμένου και της διεπαφής χρήστη",
 	"application_theme": "Θέμα εφαρμογής",
 	"application_theme_description": "Επιλέξτε το γενικό οπτικό θέμα για το Arcane. Αυτή η ρύθμιση αποθηκεύεται σε παγκόσμιο επίπεδο και εμφανίζεται αμέσως σε προεπισκόπηση.",
 	"application_theme_default": "Προεπιλογή",
