@@ -229,6 +229,7 @@
 			bind:images
 			bind:selectedIds
 			bind:requestOptions
+			loading={imagesQuery.isLoading}
 			onRefreshData={async (options) => {
 				requestOptions = options;
 				await Promise.all([imagesQuery.refetch(), imageUsageCountsQuery.refetch()]);

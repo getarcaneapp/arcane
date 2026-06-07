@@ -1,17 +1,8 @@
-<script lang="ts" generics="TData extends {id: string}">
-	import {
-		type ColumnDef,
-		type ColumnFiltersState,
-		type Row,
-		type RowSelectionState,
-		type SortingState,
-		type VisibilityState,
-		type Table as TableType,
-		getCoreRowModel
-	} from '@tanstack/table-core';
-	import { createSvelteTable } from '$lib/components/ui/data-table/data-table.svelte.js';
+<script lang="ts" generics="TData extends Record<string, any> & { id: string }">
+	import { createTable, renderComponent, renderSnippet } from '@tanstack/svelte-table';
+	import type { ColumnFiltersState, RowSelectionState, SortingState, ColumnVisibilityState } from '@tanstack/table-core';
+	import { arcaneTableFeatures, type ArcaneColumnDef, type ArcaneRow, type ArcaneTable } from './table-features';
 	import DataTableToolbar from './arcane-table-toolbar.svelte';
-	import { renderComponent, renderSnippet } from '$lib/components/ui/data-table/render-helpers.js';
 	import { onMount, untrack } from 'svelte';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
 	import type { Snippet } from 'svelte';
@@ -47,6 +38,7 @@
 		withoutFilters = false,
 		withoutPagination = false,
 		selectionDisabled = false,
+		loading = false,
 		unstyled = false,
 		onRefresh,
 		columns,
@@ -61,7 +53,7 @@
 		customToolbarActions,
 		customTableView,
 		customSettings = $bindable<Record<string, unknown>>({}),
-		columnVisibility = $bindable<VisibilityState>({}),
+		columnVisibility = $bindable<ColumnVisibilityState>({}),
 		groupedRows = null,
 		// Grouping props
 		groupBy,
@@ -78,11 +70,13 @@
 		withoutFilters?: boolean;
 		withoutPagination?: boolean;
 		selectionDisabled?: boolean;
+		/** When true and there's no data yet, the desktop view shows skeleton rows (first-load). */
+		loading?: boolean;
 		unstyled?: boolean;
 		onRefresh: (requestOptions: SearchPaginationSortRequest) => Promise<Paginated<TData>>;
 		columns: ColumnSpec<TData>[];
-		rowActions?: Snippet<[{ row: Row<TData>; item: TData }]>;
-		mobileCard: Snippet<[{ row: Row<TData>; item: TData; mobileFieldVisibility: Record<string, boolean> }]>;
+		rowActions?: Snippet<[{ row: ArcaneRow<TData>; item: TData }]>;
+		mobileCard: Snippet<[{ row: ArcaneRow<TData>; item: TData; mobileFieldVisibility: Record<string, boolean> }]>;
 		mobileFields?: FieldSpec[];
 		mobileFieldVisibility?: Record<string, boolean>;
 		selectedIds?: string[];
@@ -93,7 +87,7 @@
 		customTableView?: Snippet<
 			[
 				{
-					table: TableType<TData>;
+					table: ArcaneTable<TData>;
 					renderPagination: Snippet;
 					mobileFieldsForOptions: { id: string; label: string; visible: boolean }[];
 					onToggleMobileField: (fieldId: string) => void;
@@ -101,7 +95,7 @@
 			]
 		>;
 		customSettings?: Record<string, unknown>;
-		columnVisibility?: VisibilityState;
+		columnVisibility?: ColumnVisibilityState;
 		groupedRows?: GroupedData<TData>[] | null;
 		// Grouping props
 		groupBy?: (item: TData) => string;
@@ -110,7 +104,7 @@
 		onGroupToggle?: (groupName: string) => void;
 		imageNameFilterOptions?: string[];
 		// Expandable row props
-		expandedRowContent?: Snippet<[{ row: Row<TData>; item: TData }]>;
+		expandedRowContent?: Snippet<[{ row: ArcaneRow<TData>; item: TData }]>;
 	} = $props();
 
 	// Default page size constant
@@ -127,6 +121,10 @@
 
 	// Expandable row state
 	let expandedRows = $state<Set<string>>(new Set());
+
+	// The desktop scroll container, bound below and handed to the desktop view so it can virtualize
+	// long flat lists. The unstyled/styled branches are mutually exclusive, so one ref suffices.
+	let desktopScrollEl = $state<HTMLElement>();
 
 	function toggleRowExpanded(rowId: string) {
 		const next = new Set(expandedRows);
@@ -256,7 +254,7 @@
 		updatePagination({ limit, page: 1 });
 	}
 
-	function onToggleAll(checked: boolean, table: TableType<TData>) {
+	function onToggleAll(checked: boolean, table: ArcaneTable<TData>) {
 		const pageIds = table.getRowModel().rows.map((r) => (r.original as TData).id);
 		if (checked) {
 			const set = new Set([...(selectedIds ?? []), ...pageIds]);
@@ -275,8 +273,8 @@
 		}
 	}
 
-	function buildColumns(specs: ColumnSpec<TData>[], isSelectionDisabled: boolean): ColumnDef<TData>[] {
-		const cols: ColumnDef<TData>[] = [];
+	function buildColumns(specs: ColumnSpec<TData>[], isSelectionDisabled: boolean): ArcaneColumnDef<TData>[] {
+		const cols: ArcaneColumnDef<TData>[] = [];
 
 		if (!isSelectionDisabled) {
 			cols.push({
@@ -386,7 +384,7 @@
 		return `${colIds}:${hasRowActions}:${isSelectionDisabled}`;
 	}
 
-	let cachedColumnsDef = $state<ColumnDef<TData>[]>([]);
+	let cachedColumnsDef = $state<ArcaneColumnDef<TData>[]>([]);
 	let lastColumnsKey = '';
 
 	// Use $effect to rebuild columns only when structure changes
@@ -403,7 +401,17 @@
 	// Compute effective column count (add 1 for expand chevron column when expandable)
 	const effectiveColumnsCount = $derived(columnsDef.length + (expandedRowContent ? 1 : 0));
 
-	const table = createSvelteTable({
+	const table = createTable({
+		features: arcaneTableFeatures,
+		// Manual / server-side mode: no client row models are registered, so sorting and
+		// filtering never run on the client — these flags make that explicit. Pagination is
+		// fully external (no rowPaginationFeature registered), so there is no manualPagination.
+		manualSorting: true,
+		manualFiltering: true,
+		// Stable row identity across server refreshes. Without this v9 keys rows by positional
+		// index, so every onRefresh fetch re-keys all rows and forces a full re-render; keying
+		// by the backing id lets unchanged rows (and their DOM/selection) be reused.
+		getRowId: (row) => row.id,
 		get data() {
 			return items.data ?? [];
 		},
@@ -503,8 +511,7 @@
 				prefs.current = { ...prefs.current, g: globalFilter };
 			}
 			onRefresh(requestOptions);
-		},
-		getCoreRowModel: getCoreRowModel()
+		}
 	});
 
 	function onToggleMobileField(fieldId: string) {
@@ -653,18 +660,7 @@
 </script>
 
 {#snippet PaginationSnippet()}
-	<ArcaneTablePagination
-		{table}
-		{items}
-		{currentPage}
-		{totalPages}
-		{totalItems}
-		{pageSize}
-		{canPrev}
-		{canNext}
-		{setPage}
-		{setPageSize}
-	/>
+	<ArcaneTablePagination {items} {currentPage} {totalPages} {totalItems} {pageSize} {canPrev} {canNext} {setPage} {setPageSize} />
 {/snippet}
 
 {#if customTableView}
@@ -688,7 +684,7 @@
 			</div>
 		{/if}
 
-		<div class="[isolation:isolate] hidden h-full min-h-0 flex-1 overflow-auto md:block">
+		<div bind:this={desktopScrollEl} class="[isolation:isolate] hidden h-full min-h-0 flex-1 overflow-auto md:block">
 			<ArcaneTableDesktopView
 				{table}
 				{selectedIds}
@@ -705,6 +701,8 @@
 				{expandedRowContent}
 				{expandedRows}
 				onToggleRowExpanded={toggleRowExpanded}
+				scrollElement={desktopScrollEl}
+				{loading}
 			/>
 		</div>
 
@@ -720,6 +718,7 @@
 					{expandedRowContent}
 					{expandedRows}
 					onToggleRowExpanded={toggleRowExpanded}
+					{loading}
 				/>
 			</div>
 		</div>
@@ -749,7 +748,10 @@
 			</div>
 		{/if}
 
-		<div class="bg-background/80 [isolation:isolate] hidden h-full min-h-0 flex-1 overflow-auto md:block">
+		<div
+			bind:this={desktopScrollEl}
+			class="bg-background/80 [isolation:isolate] hidden h-full min-h-0 flex-1 overflow-auto md:block"
+		>
 			<ArcaneTableDesktopView
 				{table}
 				{selectedIds}
@@ -765,6 +767,8 @@
 				{expandedRowContent}
 				{expandedRows}
 				onToggleRowExpanded={toggleRowExpanded}
+				scrollElement={desktopScrollEl}
+				{loading}
 			/>
 		</div>
 
@@ -778,6 +782,7 @@
 				{expandedRowContent}
 				{expandedRows}
 				onToggleRowExpanded={toggleRowExpanded}
+				{loading}
 			/>
 		</div>
 

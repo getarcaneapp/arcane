@@ -43,6 +43,10 @@ async function getCodeMirrorValue(editor: Locator) {
 
 async function openDropdownMenu(page: Page, trigger: Locator) {
 	await expect(trigger).toBeVisible();
+	const row = trigger.locator('xpath=ancestor::tr[1]');
+	if ((await row.count()) > 0) {
+		await row.hover();
+	}
 	await trigger.click();
 
 	const menu = page.locator('[data-slot="dropdown-menu-content"]:visible').last();

@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { fetchImageCountsWithRetry, fetchImagesWithRetry } from '../utils/fetch.util';
 import { ImageUsageCounts } from 'types/image.type';
+import { openRowActionsMenu } from '../utils/table-actions.util';
 
 const ROUTES = {
 	page: '/images',
@@ -123,17 +124,17 @@ test.describe('Images Page', () => {
 		await navigateToImages(page);
 
 		const firstRow = page.locator('tbody tr').first();
-		await firstRow.getByRole('button', { name: 'Open menu' }).click();
-		await page.getByRole('menuitem', { name: 'Inspect' }).click();
+		const menu = await openRowActionsMenu(page, firstRow);
+		await menu.getByRole('menuitem', { name: 'Inspect' }).click();
 	});
 
 	test('should pull image from dropdown menu', async ({ page }) => {
 		test.skip(!realImages.length, 'No images available for pull API test');
 		await navigateToImages(page);
 
-		const firstRow = await page.getByRole('cell', { name: 'Open menu' }).first();
-		await firstRow.getByRole('button', { name: 'Open menu' }).click();
-		await page.getByRole('menuitem', { name: 'Pull' }).click();
+		const firstRow = page.locator('tbody tr').first();
+		const menu = await openRowActionsMenu(page, firstRow);
+		await menu.getByRole('menuitem', { name: 'Pull' }).click();
 
 		await page.waitForLoadState('load');
 
@@ -152,8 +153,8 @@ test.describe('Images Page', () => {
 		test.skip(!deleteableImage, 'No deletable images available');
 
 		const firstRow = await page.getByRole('row', { name: 'ghcr.io/linuxserver/radarr' });
-		await firstRow.getByRole('button', { name: 'Open menu' }).click();
-		await page.getByRole('menuitem', { name: 'Remove' }).click();
+		const menu = await openRowActionsMenu(page, firstRow);
+		await menu.getByRole('menuitem', { name: 'Remove' }).click();
 
 		await expect(
 			page.locator(

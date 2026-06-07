@@ -160,6 +160,7 @@
 	"common_select_option": "Select an option",
 	"common_sort_by": "Sort by",
 	"common_no_results_found": "No results found.",
+	"common_no_results_hint": "Try adjusting your search or filters.",
 	"common_clear_filters": "Clear filters",
 	"common_search": "Search…",
 	"common_usage": "Usage",

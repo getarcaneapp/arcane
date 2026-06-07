@@ -8,8 +8,7 @@
 	import { tryCatch } from '$lib/utils/api';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
 	import type { GitOpsSync } from '$lib/types/automation';
-	import type { Row } from '@tanstack/table-core';
-	import type { ColumnSpec, BulkAction } from '$lib/components/arcane-table';
+	import type { ColumnSpec, BulkAction, ArcaneRow } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
 	import { format } from 'date-fns';
 	import { m } from '$lib/paraglide/messages';
@@ -190,7 +189,7 @@
 	]);
 </script>
 
-{#snippet NameCell({ item, value }: { item: GitOpsSync; value: any; row: Row<GitOpsSync> })}
+{#snippet NameCell({ item, value }: { item: GitOpsSync; value: any; row: ArcaneRow<GitOpsSync> })}
 	{#if item.projectId}
 		<a class="font-medium hover:underline" href={getProjectDetailsUrl(item.projectId)}>
 			{value}
@@ -200,25 +199,25 @@
 	{/if}
 {/snippet}
 
-{#snippet BranchCell({ value }: { value: any; item: GitOpsSync; row: Row<GitOpsSync> })}
+{#snippet BranchCell({ value }: { value: any; item: GitOpsSync; row: ArcaneRow<GitOpsSync> })}
 	<div class="flex items-center gap-1.5">
 		<GitBranchIcon class="text-muted-foreground size-3.5" />
 		<code class="bg-muted text-muted-foreground rounded px-2 py-0.5 text-xs">{value}</code>
 	</div>
 {/snippet}
 
-{#snippet PathCell({ value }: { value: any; item: GitOpsSync; row: Row<GitOpsSync> })}
+{#snippet PathCell({ value }: { value: any; item: GitOpsSync; row: ArcaneRow<GitOpsSync> })}
 	<div class="flex items-center gap-1.5">
 		<FolderIcon class="text-muted-foreground size-3.5" />
 		<code class="bg-muted text-muted-foreground rounded px-2 py-0.5 text-xs">{value}</code>
 	</div>
 {/snippet}
 
-{#snippet AutoSyncCell({ value }: { value: any; item: GitOpsSync; row: Row<GitOpsSync> })}
+{#snippet AutoSyncCell({ value }: { value: any; item: GitOpsSync; row: ArcaneRow<GitOpsSync> })}
 	<StatusBadge variant={value ? 'blue' : 'gray'} text={value ? m.common_enabled() : m.common_disabled()} />
 {/snippet}
 
-{#snippet StatusCell({ value }: { value: any; item: GitOpsSync; row: Row<GitOpsSync> })}
+{#snippet StatusCell({ value }: { value: any; item: GitOpsSync; row: ArcaneRow<GitOpsSync> })}
 	{#if value === 'success'}
 		<StatusBadge variant="green" text={m.common_success()} />
 	{:else if value === 'failed'}
@@ -230,7 +229,7 @@
 	{/if}
 {/snippet}
 
-{#snippet CommitCell({ value, item }: { value: any; item: GitOpsSync; row: Row<GitOpsSync> })}
+{#snippet CommitCell({ value, item }: { value: any; item: GitOpsSync; row: ArcaneRow<GitOpsSync> })}
 	{#if value}
 		{@const commitUrl = item.repository?.url ? toGitCommitUrl(item.repository.url, String(value)) : null}
 		<div class="flex items-center gap-1.5">
@@ -254,7 +253,7 @@
 	{/if}
 {/snippet}
 
-{#snippet LastSyncCell({ value }: { value: any; item: GitOpsSync; row: Row<GitOpsSync> })}
+{#snippet LastSyncCell({ value }: { value: any; item: GitOpsSync; row: ArcaneRow<GitOpsSync> })}
 	<span class="text-sm">{value ? format(new Date(value), 'PP p') : m.common_never()}</span>
 {/snippet}
 

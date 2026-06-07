@@ -1,4 +1,5 @@
-import type { Row, Column, FilterFn, ColumnFiltersState, VisibilityState, Table as TableType } from '@tanstack/table-core';
+import type { CellData, ColumnFiltersState, ColumnVisibilityState, RowData, TableFeatures } from '@tanstack/table-core';
+import type { ArcaneColumn, ArcaneFilterFn, ArcaneRow, ArcaneSvelteTable } from './table-features';
 import type { Snippet } from 'svelte';
 import type { Component } from 'svelte';
 
@@ -23,17 +24,31 @@ export type SortState = { column: string; direction: SortDirection };
 export type ColumnWidth = 'auto' | 'min' | 'max' | number;
 export type ColumnAlign = 'left' | 'center' | 'right';
 
-export type ColumnSpec<T> = {
+// Arcane stows presentation hints on each column's `meta`. Augmenting v9's `ColumnMeta`
+// (which now threads TFeatures/TData/TValue) types these instead of the inline
+// `meta as { … }` casts the desktop view / toolbar / view-options used to read them back.
+// The generic signature must mirror table-core's declaration for declaration merging.
+declare module '@tanstack/table-core' {
+	interface ColumnMeta<TFeatures extends TableFeatures, TData extends RowData, TValue extends CellData = CellData> {
+		title?: string;
+		filterOptions?: FilterOption[];
+		width?: ColumnWidth;
+		align?: ColumnAlign;
+		truncate?: boolean;
+	}
+}
+
+export type ColumnSpec<T extends RowData> = {
 	accessorKey?: keyof T & string;
 	accessorFn?: (row: T) => any;
 	id?: string;
 	title: string;
 	hidden?: boolean;
 	sortable?: boolean;
-	cell?: Snippet<[{ row: Row<T>; item: T; value: unknown }]>;
-	header?: Snippet<[{ column: Column<T>; title: string; class?: string }]>;
+	cell?: Snippet<[{ row: ArcaneRow<T>; item: T; value: unknown }]>;
+	header?: Snippet<[{ column: ArcaneColumn<T>; title: string; class?: string }]>;
 	class?: string;
-	filterFn?: FilterFn<T>;
+	filterFn?: ArcaneFilterFn<T>;
 	filterOptions?: FilterOption[];
 	width?: ColumnWidth;
 	align?: ColumnAlign;
@@ -57,7 +72,7 @@ export type CompactTablePrefs = {
 	c?: Record<string, unknown>;
 };
 
-export function encodeHidden(visibility: VisibilityState): string[] {
+export function encodeHidden(visibility: ColumnVisibilityState): string[] {
 	const hidden: string[] = [];
 	for (const [id, visible] of Object.entries(visibility)) {
 		if (visible === false) hidden.push(id);
@@ -65,7 +80,7 @@ export function encodeHidden(visibility: VisibilityState): string[] {
 	return hidden;
 }
 
-export function applyHiddenPatch(target: VisibilityState, hidden?: string[]) {
+export function applyHiddenPatch(target: ColumnVisibilityState, hidden?: string[]) {
 	if (!hidden?.length) return;
 	for (const id of hidden) {
 		target[id] = false;
@@ -151,7 +166,10 @@ export function shouldIgnoreTableRowClick(event: MouseEvent): boolean {
 	return !!target?.closest('a, button, input, [role="checkbox"], [data-slot="checkbox"], [data-row-select-ignore]');
 }
 
-export function getTableRowsForItems<T extends { id?: string }>(table: TableType<T>, groupItems: Array<{ id: string }>) {
+export function getTableRowsForItems<T extends RowData & { id?: string }>(
+	table: ArcaneSvelteTable<T>,
+	groupItems: Array<{ id: string }>
+) {
 	const groupIds = new Set(groupItems.map((item) => item.id));
 	return table.getRowModel().rows.filter((row) => groupIds.has(row.original.id ?? ''));
 }

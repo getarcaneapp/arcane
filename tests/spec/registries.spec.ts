@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { openRowActionsMenu } from '../utils/table-actions.util';
 
 const route = '/customize/registries';
 const TOKEN = process.env.REGISTRY_TEST_TOKEN ?? 'e2e-token';
@@ -168,8 +169,8 @@ test.describe('Container Registries', () => {
 		await expect(row).toBeVisible();
 
 		// Test Connection (accept either success or failure toast)
-		await row.getByRole('button', { name: 'Open menu' }).click();
-		await page.getByRole('menuitem', { name: 'Test Connection' }).click();
+		const menu = await openRowActionsMenu(page, row);
+		await menu.getByRole('menuitem', { name: 'Test Connection' }).click();
 	});
 
 	test('should open Remove Selected dialog and cancel (no mutation)', async ({ page }) => {

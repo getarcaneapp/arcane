@@ -37,6 +37,7 @@ async function deleteEnvironmentViaUI(page: Page, environmentName: string) {
 		return;
 	}
 
+	await envRow.hover();
 	await envRow.getByRole('button', { name: /open menu/i }).click();
 	await page.getByRole('menuitem', { name: 'Delete', exact: true }).click();
 	await page.getByRole('button', { name: 'Remove', exact: true }).click();

@@ -48,13 +48,15 @@
 		selectedIds = $bindable(),
 		requestOptions = $bindable(),
 		onImageUpdated,
-		onRefreshData
+		onRefreshData,
+		loading = false
 	}: {
 		images: Paginated<ImageSummaryDto>;
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
 		onImageUpdated?: () => Promise<void>;
 		onRefreshData?: (options: SearchPaginationSortRequest) => Promise<void>;
+		loading?: boolean;
 	} = $props();
 
 	let isLoading = $state({
@@ -717,6 +719,7 @@
 <ArcaneTable
 	persistKey="arcane-image-table"
 	items={images}
+	{loading}
 	bind:requestOptions
 	bind:selectedIds
 	bind:mobileFieldVisibility

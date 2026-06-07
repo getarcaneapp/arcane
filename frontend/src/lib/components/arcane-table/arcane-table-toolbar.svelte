@@ -1,5 +1,5 @@
-<script lang="ts" generics="TData">
-	import type { Table } from '@tanstack/table-core';
+<script lang="ts" generics="TData extends Record<string, any>">
+	import type { ArcaneSvelteTable } from './table-features';
 	import DataTableFacetedFilter from './arcane-table-filter.svelte';
 	import DataTableViewOptions from './arcane-table-view-options.svelte';
 	import { Input } from '$lib/components/ui/input/index.js';
@@ -32,7 +32,7 @@
 		class: className,
 		imageNameFilterOptions = []
 	}: {
-		table: Table<TData>;
+		table: ArcaneSvelteTable<TData>;
 		selectedIds?: string[];
 		selectionDisabled?: boolean;
 		bulkActions?: BulkAction[];
@@ -45,7 +45,7 @@
 		imageNameFilterOptions?: string[];
 	} = $props();
 
-	const isFiltered = $derived(table.getState().columnFilters.length > 0 || !!table.getState().globalFilter);
+	const isFiltered = $derived(table.state.columnFilters.length > 0 || !!table.state.globalFilter);
 	const usageColumn = $derived(table.getAllColumns().some((col) => col.id === 'inUse') ? table.getColumn('inUse') : undefined);
 	const updatesColumn = $derived(
 		table.getAllColumns().some((col) => col.id === 'updates') ? table.getColumn('updates') : undefined
@@ -84,7 +84,7 @@
 				!!(imageNameColumn && imageNameFilterOptions.length > 0) ||
 				!!(statusColumn && serviceCountColumn))
 	);
-	const activeFilterCount = $derived(table.getState().columnFilters.length);
+	const activeFilterCount = $derived(table.state.columnFilters.length);
 </script>
 
 <div class={cn('flex flex-wrap items-center gap-2 px-3 py-2.5', className)}>
@@ -93,7 +93,7 @@
 			<SearchIcon class="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
 			<Input
 				placeholder={m.common_search()}
-				value={(table.getState().globalFilter as string) ?? ''}
+				value={(table.state.globalFilter as string) ?? ''}
 				oninput={(e) => debouncedSetGlobal(e.currentTarget.value)}
 				onchange={(e) => table.setGlobalFilter(e.currentTarget.value)}
 				onkeydown={(e) => {

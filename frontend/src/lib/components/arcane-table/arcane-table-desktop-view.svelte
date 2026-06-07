@@ -1,8 +1,10 @@
-<script lang="ts">
-	import { type Table as TableType, type Cell, type Row } from '@tanstack/table-core';
+<script lang="ts" generics="TData extends Record<string, any> & { id: string }">
+	import type { ArcaneCell, ArcaneRow, ArcaneSvelteTable } from './table-features';
+	import { FlexRender } from '@tanstack/svelte-table';
+	import { createVirtualizer } from './virtualizer.svelte';
+	import Skeleton from '$lib/components/ui/skeleton/skeleton.svelte';
 	import * as Table from '$lib/components/ui/table/index.js';
 	import * as Empty from '$lib/components/ui/empty/index.js';
-	import FlexRender from '$lib/components/ui/data-table/flex-render.svelte';
 	import { FolderXIcon, ArrowRightIcon, ArrowDownIcon } from '$lib/icons';
 	import { m } from '$lib/paraglide/messages';
 	import { cn } from '$lib/utils';
@@ -16,6 +18,7 @@
 	} from './arcane-table.types.svelte';
 	import TableCheckbox from './arcane-table-checkbox.svelte';
 	import type { Component, Snippet } from 'svelte';
+	import type { Attachment } from 'svelte/attachments';
 	import { slide } from 'svelte/transition';
 
 	void slide;
@@ -35,23 +38,29 @@
 		unstyled = false,
 		expandedRowContent,
 		expandedRows,
-		onToggleRowExpanded
+		onToggleRowExpanded,
+		scrollElement,
+		loading = false
 	}: {
-		table: TableType<any>;
+		table: ArcaneSvelteTable<TData>;
 		selectedIds: string[];
 		columnsCount: number;
-		groupedRows?: GroupedData<any>[] | null;
+		groupedRows?: GroupedData<TData>[] | null;
 		groupIcon?: (groupName: string) => Component;
 		groupCollapsedState?: Record<string, boolean>;
 		selectionDisabled?: boolean;
 		onGroupToggle?: (groupName: string) => void;
-		getGroupSelectionState?: (groupItems: any[]) => GroupSelectionState;
-		onToggleGroupSelection?: (groupItems: any[]) => void;
+		getGroupSelectionState?: (groupItems: TData[]) => GroupSelectionState;
+		onToggleGroupSelection?: (groupItems: TData[]) => void;
 		onToggleRowSelection?: (id: string, selected: boolean) => void;
 		unstyled?: boolean;
-		expandedRowContent?: Snippet<[{ row: Row<any>; item: any }]>;
+		expandedRowContent?: Snippet<[{ row: ArcaneRow<TData>; item: TData }]>;
 		expandedRows?: Set<string>;
 		onToggleRowExpanded?: (rowId: string) => void;
+		/** The scrollable ancestor, supplied by the wrapper, used to virtualize long flat lists. */
+		scrollElement?: HTMLElement;
+		/** First-load flag — when set and there's no data, render skeleton rows. */
+		loading?: boolean;
 	} = $props();
 
 	const hasExpand = $derived(!!expandedRowContent);
@@ -73,9 +82,11 @@
 		return '';
 	}
 
-	const stickyCellSurfaceClasses = 'bg-background/95';
-	const stickyActionsClasses = `sticky right-0 z-10 transition-colors ${stickyCellSurfaceClasses}`;
-	const stickySelectClasses = `w-0 pr-6! ${stickyCellSurfaceClasses}`;
+	// Narrow, transparent select cell so the row's hover/selected highlight shows through it
+	// uniformly (it carried an opaque background before, which broke the highlight at the edge).
+	const selectCellClasses = 'w-0 pr-4!';
+	// Row actions live in a zero-width host cell; their content floats over the row (see cellContent).
+	const actionsCellClasses = 'relative w-0 p-0 last:pr-0';
 
 	function handleRowClick(event: MouseEvent, rowId: string) {
 		if (shouldIgnoreTableRowClick(event)) return;
@@ -89,12 +100,11 @@
 	}
 
 	// Get cell classes based on column metadata
-	function getCellClasses(cell: Cell<any, unknown>, isGrouped: boolean, isFirstCell: boolean): string {
-		const meta = cell.column.columnDef.meta as { width?: ColumnWidth; align?: ColumnAlign; truncate?: boolean } | undefined;
+	function getCellClasses(cell: ArcaneCell<TData>, isGrouped: boolean, isFirstCell: boolean): string {
+		const meta = cell.column.columnDef.meta;
 		return cn(
-			cell.column.id === 'actions' && 'text-right whitespace-nowrap',
-			cell.column.id === 'select' && stickySelectClasses,
-			cell.column.id === 'actions' && stickyActionsClasses,
+			cell.column.id === 'select' && selectCellClasses,
+			cell.column.id === 'actions' && actionsCellClasses,
 			getWidthClass(meta?.width),
 			getAlignClass(meta?.align),
 			meta?.truncate && 'max-w-0 truncate',
@@ -104,7 +114,99 @@
 
 	// Get rows for a specific group from the table model
 	const isGrouped = $derived(groupedRows !== null && groupedRows.length > 0);
+
+	// --- Row virtualization ---------------------------------------------------------------------
+	// Only the flat (non-grouped, non-expandable) path is virtualized, and only past a threshold —
+	// the case that matters is the "All" page size (TABLE_PAGE_SIZE_ALL), where the server returns
+	// the full unpaginated set. Normal paginated pages (<= 100 rows) render plainly. Grouped and
+	// expandable layouts keep their existing, proven rendering.
+	const VIRTUALIZE_THRESHOLD = 100;
+	const ROW_ESTIMATE_PX = 52;
+	const flatRows = $derived(table.getRowModel().rows);
+	const shouldVirtualize = $derived(!isGrouped && !hasExpand && !!scrollElement && flatRows.length > VIRTUALIZE_THRESHOLD);
+
+	// Runes can't be created conditionally, so the virtualizer always exists but is `enabled` only
+	// when we actually virtualize; disabled, it stays cheap and reports an empty window.
+	const rowVirtualizer = createVirtualizer<HTMLElement, HTMLTableRowElement>(() => ({
+		count: flatRows.length,
+		getScrollElement: () => scrollElement ?? null,
+		estimateSize: () => ROW_ESTIMATE_PX,
+		overscan: 10,
+		getItemKey: (index) => flatRows[index]?.id ?? index,
+		enabled: shouldVirtualize
+	}));
 </script>
+
+{#snippet cellContent(cell: ArcaneCell<TData>)}
+	{#if cell.column.id === 'actions'}
+		<!-- Row actions float over the row's right edge, revealed on hover/focus (or while the menu is
+		     open). pointer-events are off until revealed so the hidden control can't swallow row clicks. -->
+		<div
+			class="pointer-events-none absolute top-1/2 right-2 z-10 -translate-y-1/2 opacity-0 transition-opacity group-hover/row:pointer-events-auto group-hover/row:opacity-100 group-focus-within/row:pointer-events-auto group-focus-within/row:opacity-100 has-[[data-state=open]]:pointer-events-auto has-[[data-state=open]]:opacity-100"
+			data-row-select-ignore
+		>
+			<FlexRender {cell} />
+		</div>
+	{:else}
+		<FlexRender {cell} />
+	{/if}
+{/snippet}
+
+{#snippet flatRow(row: ArcaneRow<TData>, measureRow?: Attachment<HTMLTableRowElement>)}
+	{@const rowId = row.original.id}
+	{@const isExpanded = expandedRows?.has(rowId) ?? false}
+	<Table.Row
+		{@attach measureRow}
+		data-state={(selectedIds ?? []).includes(rowId) && 'selected'}
+		onclick={(event) => handleRowClick(event, rowId)}
+		class={cn(hasExpand && 'cursor-pointer', isExpanded && 'bg-primary/15')}
+	>
+		{#if hasExpand}
+			<Table.Cell class="w-8 px-2" data-row-select-ignore>
+				<button
+					class="text-muted-foreground hover:text-foreground flex items-center justify-center transition-transform duration-200"
+					class:rotate-90={isExpanded}
+					onclick={(e) => {
+						e.stopPropagation();
+						onToggleRowExpanded?.(rowId);
+					}}
+					aria-label={isExpanded ? 'Collapse row' : 'Expand row'}
+				>
+					<ArrowRightIcon class="size-4" />
+				</button>
+			</Table.Cell>
+		{/if}
+		{#each row.getVisibleCells() as cell (cell.id)}
+			<Table.Cell class={getCellClasses(cell, false, false)}>
+				{@render cellContent(cell)}
+			</Table.Cell>
+		{/each}
+	</Table.Row>
+
+	{#if hasExpand && isExpanded && expandedRowContent}
+		<Table.Row class="bg-primary/10 hover:bg-primary/10">
+			<Table.Cell colspan={columnsCount} class="p-0">
+				<div transition:slide={{ duration: 200 }}>
+					<div class="px-6 py-4">
+						{@render expandedRowContent({ row, item: row.original })}
+					</div>
+				</div>
+			</Table.Cell>
+		</Table.Row>
+	{/if}
+{/snippet}
+
+{#snippet skeletonRows()}
+	{#each Array.from({ length: 8 }, (_, i) => i) as r (r)}
+		<Table.Row class="hover:bg-transparent">
+			{#each Array.from({ length: columnsCount }, (_, i) => i) as c (c)}
+				<Table.Cell>
+					<Skeleton class="h-4 w-full max-w-[140px]" />
+				</Table.Cell>
+			{/each}
+		</Table.Row>
+	{/each}
+{/snippet}
 
 <div
 	class={cn(
@@ -113,7 +215,7 @@
 			'[&_tr]:border-border/40! [&_thead]:bg-transparent! [&_thead]:backdrop-blur-none [&_tr]:bg-transparent! [&_tr]:hover:bg-transparent! [&_tr:hover_td]:bg-transparent! [&_tr[data-state=selected]]:bg-transparent! [&_tr[data-state=selected]_td]:bg-transparent!'
 	)}
 >
-	<Table.Root>
+	<Table.Root class={shouldVirtualize ? 'table-fixed' : undefined}>
 		<Table.Header>
 			{#each table.getHeaderGroups() as headerGroup (headerGroup.id)}
 				<Table.Row>
@@ -123,13 +225,10 @@
 					{#each headerGroup.headers as header (header.id)}
 						<Table.Head
 							colspan={header.colSpan}
-							class={cn(
-								header.column.id === 'select' && stickySelectClasses,
-								header.column.id === 'actions' && stickyActionsClasses
-							)}
+							class={cn(header.column.id === 'select' && selectCellClasses, header.column.id === 'actions' && actionsCellClasses)}
 						>
 							{#if !header.isPlaceholder}
-								<FlexRender content={header.column.columnDef.header} context={header.getContext()} />
+								<FlexRender {header} />
 							{/if}
 						</Table.Head>
 					{/each}
@@ -153,7 +252,7 @@
 						onclick={() => onGroupToggle?.(group.groupName)}
 					>
 						{#if !selectionDisabled}
-							<Table.Cell class={stickySelectClasses}>
+							<Table.Cell class={selectCellClasses}>
 								<TableCheckbox
 									checked={selectionState === 'all'}
 									indeterminate={selectionState === 'some'}
@@ -182,7 +281,7 @@
 					<!-- Group Items (if not collapsed) -->
 					{#if !isCollapsed}
 						{#each groupRows as row (row.id)}
-							{@const rowId = (row.original as any).id}
+							{@const rowId = row.original.id}
 							{@const isExpanded = expandedRows?.has(rowId) ?? false}
 							<Table.Row
 								data-state={(selectedIds ?? []).includes(rowId) && 'selected'}
@@ -207,20 +306,7 @@
 								{#each row.getVisibleCells() as cell, cellIndex (cell.id)}
 									{@const isFirstDataCell = !selectionDisabled ? cellIndex === 1 : cellIndex === 0}
 									<Table.Cell class={getCellClasses(cell, true, isFirstDataCell)}>
-										{#if cell.column.id === 'actions'}
-											<div class="flex items-center justify-end" data-row-select-ignore>
-												<div
-													class={cn(
-														'border-border/40 bg-background pointer-events-auto flex items-center gap-1 rounded-md border px-2 py-1',
-														unstyled && 'border-transparent bg-transparent shadow-none'
-													)}
-												>
-													<FlexRender content={cell.column.columnDef.cell} context={cell.getContext()} />
-												</div>
-											</div>
-										{:else}
-											<FlexRender content={cell.column.columnDef.cell} context={cell.getContext()} />
-										{/if}
+										{@render cellContent(cell)}
 									</Table.Cell>
 								{/each}
 							</Table.Row>
@@ -250,70 +336,19 @@
 							>
 								<Empty.Header>
 									<Empty.Media variant="icon">
-										<FolderXIcon class="text-muted-foreground/40 size-10" />
+										<FolderXIcon class="text-muted-foreground/60 size-10" />
 									</Empty.Media>
-									<Empty.Title class="text-base font-medium">{m.common_no_results_found()}</Empty.Title>
+									<Empty.Title class="text-lg font-semibold">{m.common_no_results_found()}</Empty.Title>
+									<Empty.Description class="text-muted-foreground text-sm">{m.common_no_results_hint()}</Empty.Description>
 								</Empty.Header>
 							</Empty.Root>
 						</Table.Cell>
 					</Table.Row>
 				{/if}
 			{:else}
-				{#each table.getRowModel().rows as row (row.id)}
-					{@const rowId = (row.original as any).id}
-					{@const isExpanded = expandedRows?.has(rowId) ?? false}
-					<Table.Row
-						data-state={(selectedIds ?? []).includes(rowId) && 'selected'}
-						onclick={(event) => handleRowClick(event, rowId)}
-						class={cn(hasExpand && 'cursor-pointer', isExpanded && 'bg-primary/15')}
-					>
-						{#if hasExpand}
-							<Table.Cell class="w-8 px-2" data-row-select-ignore>
-								<button
-									class="text-muted-foreground hover:text-foreground flex items-center justify-center transition-transform duration-200"
-									class:rotate-90={isExpanded}
-									onclick={(e) => {
-										e.stopPropagation();
-										onToggleRowExpanded?.(rowId);
-									}}
-									aria-label={isExpanded ? 'Collapse row' : 'Expand row'}
-								>
-									<ArrowRightIcon class="size-4" />
-								</button>
-							</Table.Cell>
-						{/if}
-						{#each row.getVisibleCells() as cell (cell.id)}
-							<Table.Cell class={getCellClasses(cell, false, false)}>
-								{#if cell.column.id === 'actions'}
-									<div class="flex items-center justify-end" data-row-select-ignore>
-										<div
-											class={cn(
-												'border-border/40 bg-background pointer-events-auto flex items-center gap-1 rounded-full border px-2 py-1 shadow-sm',
-												unstyled && 'border-transparent bg-transparent shadow-none'
-											)}
-										>
-											<FlexRender content={cell.column.columnDef.cell} context={cell.getContext()} />
-										</div>
-									</div>
-								{:else}
-									<FlexRender content={cell.column.columnDef.cell} context={cell.getContext()} />
-								{/if}
-							</Table.Cell>
-						{/each}
-					</Table.Row>
-
-					{#if hasExpand && isExpanded && expandedRowContent}
-						<Table.Row class="bg-primary/10 hover:bg-primary/10">
-							<Table.Cell colspan={columnsCount} class="p-0">
-								<div transition:slide={{ duration: 200 }}>
-									<div class="px-6 py-4">
-										{@render expandedRowContent({ row, item: row.original })}
-									</div>
-								</div>
-							</Table.Cell>
-						</Table.Row>
-					{/if}
-				{:else}
+				{#if loading && flatRows.length === 0}
+					{@render skeletonRows()}
+				{:else if flatRows.length === 0}
 					<Table.Row>
 						<Table.Cell colspan={columnsCount} class="h-48">
 							<Empty.Root
@@ -323,14 +358,37 @@
 							>
 								<Empty.Header>
 									<Empty.Media variant="icon">
-										<FolderXIcon class="text-muted-foreground/40 size-10" />
+										<FolderXIcon class="text-muted-foreground/60 size-10" />
 									</Empty.Media>
-									<Empty.Title class="text-base font-medium">{m.common_no_results_found()}</Empty.Title>
+									<Empty.Title class="text-lg font-semibold">{m.common_no_results_found()}</Empty.Title>
+									<Empty.Description class="text-muted-foreground text-sm">{m.common_no_results_hint()}</Empty.Description>
 								</Empty.Header>
 							</Empty.Root>
 						</Table.Cell>
 					</Table.Row>
-				{/each}
+				{:else if shouldVirtualize}
+					{@const vItems = rowVirtualizer.virtualItems}
+					{@const first = vItems[0]}
+					{@const last = vItems[vItems.length - 1]}
+					{@const padTop = first ? first.start : 0}
+					{@const padBottom = last ? rowVirtualizer.totalSize - last.end : 0}
+					{#if padTop > 0}
+						<tr aria-hidden="true"><td colspan={columnsCount} class="border-0 p-0" style="height: {padTop}px"></td></tr>
+					{/if}
+					{#each vItems as vItem (vItem.key)}
+						{@const row = flatRows[vItem.index]}
+						{#if row}
+							{@render flatRow(row, rowVirtualizer.measureElement)}
+						{/if}
+					{/each}
+					{#if padBottom > 0}
+						<tr aria-hidden="true"><td colspan={columnsCount} class="border-0 p-0" style="height: {padBottom}px"></td></tr>
+					{/if}
+				{:else}
+					{#each flatRows as row (row.id)}
+						{@render flatRow(row)}
+					{/each}
+				{/if}
 			{/if}
 		</Table.Body>
 	</Table.Root>

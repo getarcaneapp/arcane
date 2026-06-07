@@ -11,6 +11,7 @@
 	import { createQuery } from '@tanstack/svelte-query';
 	import UpdateStatusPopover from '$lib/components/update-status-popover.svelte';
 	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
+	import UncheckedRingIcon from '$lib/components/unchecked-ring-icon.svelte';
 
 	interface Props {
 		updateInfo?: ImageUpdateData;
@@ -489,17 +490,17 @@
 					<button
 						onclick={checkImageUpdate}
 						disabled={isChecking}
-						class="group flex h-4 w-4 items-center justify-center rounded-full border-2 border-dashed border-gray-400 transition-colors hover:border-blue-400 hover:bg-blue-50 disabled:cursor-not-allowed dark:hover:bg-blue-950"
+						class="flex size-4 items-center justify-center rounded-full text-gray-400 transition-colors hover:text-blue-400 disabled:cursor-not-allowed"
 					>
 						{#if isChecking}
-							<Spinner class="h-2 w-2 text-blue-400" />
+							<Spinner class="size-3 text-blue-400" />
 						{:else}
-							<div class="h-1.5 w-1.5 rounded-full bg-gray-400 transition-colors group-hover:bg-blue-400"></div>
+							<UncheckedRingIcon />
 						{/if}
 					</button>
 				{:else}
-					<div class="flex h-4 w-4 items-center justify-center rounded-full border-2 border-dashed border-gray-400 opacity-30">
-						<div class="h-1.5 w-1.5 rounded-full bg-gray-400"></div>
+					<div class="flex size-4 items-center justify-center text-gray-400 opacity-30">
+						<UncheckedRingIcon />
 					</div>
 				{/if}
 			</span>
