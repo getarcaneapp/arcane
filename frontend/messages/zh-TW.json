@@ -4,6 +4,8 @@
 	"layout_title": "Arcane",
 	"accent_color": "強調色",
 	"accent_color_description": "選擇一個強調色以自訂 Arcane 的外觀",
+	"font_size": "字體大小",
+	"font_size_description": "調整文字大小與使用者介面",
 	"application_theme": "應用主題",
 	"application_theme_description": "選擇 Arcane 的整體視覺主題。此設定會儲存於全局，並可立即預覽。",
 	"application_theme_default": "預設",
