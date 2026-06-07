@@ -2988,7 +2988,7 @@
 	"roles_col_type": "Typ",
 	"roles_col_assigned_users": "Přiřazení uživatelé",
 	"roles_col_permissions": "Oprávnění",
-	"roles_assigned_users_count": "{count} user(s)",
+	"roles_assigned_users_count": "{count} uživatel(é)",
 	"_comment_permissions": "=== VÝBĚR OPRÁVNĚNÍ ===",
 	"permissions_group_label": "{resource} ({selected}/{total})",
 	"permissions_select_all": "Vyberte vše",
