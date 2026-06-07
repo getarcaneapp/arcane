@@ -2988,7 +2988,7 @@
 	"roles_col_type": "Típus",
 	"roles_col_assigned_users": "Kijelölt felhasználók",
 	"roles_col_permissions": "Jogosultságok",
-	"roles_assigned_users_count": "{count} user(s)",
+	"roles_assigned_users_count": "{count} felhasználó(k)",
 	"_comment_permissions": "=== ENGEDÉLYVÁLASZTÓ ===",
 	"permissions_group_label": "{resource} ({selected}/{total})",
 	"permissions_select_all": "Összes kijelölése",
