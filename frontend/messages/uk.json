@@ -2988,7 +2988,7 @@
 	"roles_col_type": "Тип",
 	"roles_col_assigned_users": "Призначені користувачі",
 	"roles_col_permissions": "Права доступу",
-	"roles_assigned_users_count": "{count} user(s)",
+	"roles_assigned_users_count": "{count} користувач(ів)",
 	"_comment_permissions": "=== ВИБІР ПРАВ ДОСТУПУ ===",
 	"permissions_group_label": "{resource} ({selected}/{total})",
 	"permissions_select_all": "Вибрати все",
