@@ -1,3 +1,18 @@
+## v2.0.1
+
+### Bug fixes
+
+* update gomodule imports to /v2([6cb4913](https://github.com/getarcaneapp/arcane/commit/6cb491328f928532213d8efb846e96714dfd4f23) by @kmendell)
+* decrypting of notification tokens failing ([#2850](https://github.com/getarcaneapp/arcane/pull/2850) by @kmendell)
+
+### Dependencies
+
+* bump updater module to new module name([50c0847](https://github.com/getarcaneapp/arcane/commit/50c084717deeb78179857e52768994d87a3690ac) by @kmendell)
+
+
+
+**Full Changelog**: https://github.com/getarcaneapp/arcane/compare/v2.0.0...v2.0.1
+
 ## v2.0.0
 
 ### New features
