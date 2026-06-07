@@ -2988,7 +2988,7 @@
 	"roles_col_type": "Loại",
 	"roles_col_assigned_users": "Người dùng được chỉ định",
 	"roles_col_permissions": "Quyền truy cập",
-	"roles_assigned_users_count": "{count} user(s)",
+	"roles_assigned_users_count": "{count} người dùng",
 	"_comment_permissions": "=== CÔNG CỤ CHỌN QUYỀN ===",
 	"permissions_group_label": "{resource} ({selected}/{total})",
 	"permissions_select_all": "Chọn tất cả",
