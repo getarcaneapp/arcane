@@ -2988,7 +2988,7 @@
 	"roles_col_type": "Tipo",
 	"roles_col_assigned_users": "Usuários designados",
 	"roles_col_permissions": "Permissões",
-	"roles_assigned_users_count": "{count} user(s)",
+	"roles_assigned_users_count": "{count} usuário(s)",
 	"_comment_permissions": "=== SELETOR DE PERMISSÕES ===",
 	"permissions_group_label": "{resource} ({selected}/{total})",
 	"permissions_select_all": "Selecionar tudo",
