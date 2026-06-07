@@ -13,7 +13,6 @@
 	import { getStatusVariant, getThemedIconUrl } from '$lib/utils/docker';
 	import { capitalizeFirstLetter } from '$lib/utils/formatting';
 	import { page } from '$app/state';
-	import { invalidateAll } from '$app/navigation';
 	import { mode } from 'mode-watcher';
 	import { toast } from 'svelte-sonner';
 	import { tryCatch } from '$lib/utils/api';
@@ -253,6 +252,15 @@
 		selectedFile?: 'compose' | 'env' | string;
 	};
 
+	type RebaseEditorDraftOptions = {
+		preserveEditableDrafts?: boolean;
+		clearLoadedFileCache?: boolean;
+	};
+
+	type RefreshProjectDetailsOptions = RebaseEditorDraftOptions & {
+		forceRebaseDraft?: boolean;
+	};
+
 	const defaultComposeUIPrefs: ComposeUIPrefs = {
 		tab: 'compose',
 		composeOpen: true,
@@ -308,18 +316,51 @@
 		return [...refs];
 	}
 
-	function rebaseEditorDraft(details: Project) {
+	function getProjectIncludeFileContents(details: Project | null | undefined): Record<string, string> {
+		return Object.fromEntries(
+			(details?.includeFiles ?? []).flatMap((file) =>
+				file.content === undefined ? [] : [[file.relativePath, file.content] as const]
+			)
+		);
+	}
+
+	function getDirtyIncludeDrafts(): Record<string, string> {
+		return Object.fromEntries(
+			Object.entries(includeFilesState).filter(([relativePath, content]) => content !== serverIncludeFiles[relativePath])
+		);
+	}
+
+	function clearLoadedProjectFileCache() {
+		loadedIncludeFileContents = {};
+		loadedDirectoryFileContents = {};
+		projectFilePromises = {};
+	}
+
+	function rebaseEditorDraft(details: Project, options: RebaseEditorDraftOptions = {}) {
+		const envDraft = $inputs.envContent.value;
+		const shouldPreserveEnvDraft = options.preserveEditableDrafts === true && envDraft !== serverEnvContent;
+		const dirtyIncludeDrafts = options.preserveEditableDrafts === true ? getDirtyIncludeDrafts() : {};
+
+		if (options.clearLoadedFileCache === true) {
+			clearLoadedProjectFileCache();
+		}
+
 		const normalizedProject = withLoadedProjectFileContent(details);
 		if (!normalizedProject) return;
 
 		$inputs.name.value = normalizedProject.name || '';
 		$inputs.composeContent.value = normalizedProject.composeContent || '';
-		$inputs.envContent.value = normalizedProject.envContent || '';
-		includeFilesState = Object.fromEntries(
-			(normalizedProject.includeFiles ?? []).flatMap((file) =>
-				file.content === undefined ? [] : [[file.relativePath, file.content] as const]
+		$inputs.envContent.value = shouldPreserveEnvDraft ? envDraft : normalizedProject.envContent || '';
+
+		const freshIncludeFiles = getProjectIncludeFileContents(normalizedProject);
+		includeFilesState = {
+			...freshIncludeFiles,
+			...Object.fromEntries(
+				Object.entries(dirtyIncludeDrafts).filter(([relativePath]) =>
+					(normalizedProject.includeFiles ?? []).some((file) => file.relativePath === relativePath)
+				)
 			)
-		);
+		};
 	}
 
 	async function syncProjectQueries(updatedProject: Project) {
@@ -606,14 +647,14 @@
 		globalVariables: globalVariableMap
 	});
 
-	async function refreshProjectDetails() {
+	async function refreshProjectDetails(options: RefreshProjectDetailsOptions = {}) {
 		if (!projectId) return;
-		handleApiResultWithCallbacks({
+		await handleApiResultWithCallbacks({
 			result: await tryCatch(projectService.getProject(projectId)),
 			message: m.common_refresh_failed({ resource: m.project() }),
 			onSuccess: async (updatedProject) => {
-				if (!hasChanges) {
-					rebaseEditorDraft(updatedProject);
+				if (options.forceRebaseDraft || !hasChanges) {
+					rebaseEditorDraft(updatedProject, options);
 				}
 				await syncProjectQueries(updatedProject);
 			}
@@ -623,13 +664,18 @@
 	async function handleSyncFromGit() {
 		if (!envId || !project?.gitOpsManagedBy) return;
 		isLoading.syncing = true;
-		handleApiResultWithCallbacks({
+		await handleApiResultWithCallbacks({
 			result: await tryCatch(gitOpsSyncService.performSync(envId, project.gitOpsManagedBy)),
 			message: m.git_sync_failed(),
 			setLoadingState: (value) => (isLoading.syncing = value),
 			onSuccess: async () => {
+				await refreshProjectDetails({
+					forceRebaseDraft: true,
+					preserveEditableDrafts: true,
+					clearLoadedFileCache: true
+				});
+				await queryClient.invalidateQueries({ queryKey: queryKeys.gitOpsSyncs.all });
 				toast.success(m.git_sync_success());
-				await invalidateAll();
 			}
 		});
 	}
@@ -816,15 +862,17 @@
 					bind:restartLoading={isLoading.restarting}
 					bind:removeLoading={isLoading.removing}
 					bind:redeployLoading={isLoading.redeploying}
-					onActionComplete={refreshProjectDetails}
-					onRefresh={refreshProjectDetails}
+					onActionComplete={() => {
+						void refreshProjectDetails();
+					}}
+					onRefresh={() => refreshProjectDetails()}
 				/>
 			</div>
 		{/snippet}
 
 		{#snippet tabContent()}
 			<Tabs.Content value="services" class="h-full">
-				<ProjectContainersTable services={project.runtimeServices} {projectId} onRefresh={refreshProjectDetails} />
+				<ProjectContainersTable services={project.runtimeServices} {projectId} onRefresh={() => refreshProjectDetails()} />
 			</Tabs.Content>
 
 			<Tabs.Content value="compose" class="h-full min-h-0">
