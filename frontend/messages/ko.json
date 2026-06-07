@@ -4,6 +4,8 @@
 	"layout_title": "Arcane",
 	"accent_color": "강조 색상",
 	"accent_color_description": "Arcane UI에 적용할 강조 색상을 선택하세요.",
+	"font_size": "글자 크기",
+	"font_size_description": "텍스트 크기와 UI 크기 조정",
 	"application_theme": "애플리케이션 테마",
 	"application_theme_description": "Arcane의 전체적인 테마를 선택합니다. 이 설정은 전역으로 저장되며 화면에 즉시 반영됩니다.",
 	"application_theme_default": "기본 (Default)",
