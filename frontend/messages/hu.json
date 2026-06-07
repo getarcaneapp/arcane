@@ -4,6 +4,8 @@
 	"layout_title": "Arcane",
 	"accent_color": "Accent Color",
 	"accent_color_description": "Select an accent color to customize the appearance of Arcane",
+	"font_size": "Betűméret",
+	"font_size_description": "A szöveg és a felhasználói felület méretének beállítása",
 	"application_theme": "Alkalmazás témája",
 	"application_theme_description": "Choose the overall visual theme for Arcane. This setting is stored globally and previews immediately.",
 	"application_theme_default": "Alapértelmezett",
