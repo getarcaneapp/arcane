@@ -2988,7 +2988,7 @@
 	"roles_col_type": "Type",
 	"roles_col_assigned_users": "Tildelte brugere",
 	"roles_col_permissions": "Rettigheder",
-	"roles_assigned_users_count": "{count} user(s)",
+	"roles_assigned_users_count": "{count} bruger(e)",
 	"_comment_permissions": "=== TILLADELSESVÆLGER ===",
 	"permissions_group_label": "{resource} ({selected}/{total})",
 	"permissions_select_all": "Vælg alt",
