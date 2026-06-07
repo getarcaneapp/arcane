@@ -46,3 +46,5 @@ minimumReleaseAgeExclude:
   - fallow@2.89.0
   - "@sveltejs/kit@3.0.0-next.1"
   - "@sveltejs/adapter-static@4.0.0-next.0"
+  - '@tanstack/svelte-table@9.0.0-beta.1'
+  - '@tanstack/table-core@9.0.0-beta.1'

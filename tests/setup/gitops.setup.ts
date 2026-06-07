@@ -154,7 +154,7 @@ setup('create gitops sync in arcane', async ({ page }) => {
 	await page.waitForLoadState('load');
 
 	// Find the sync row and trigger sync
-	const syncRow = page.locator('tr').filter({ hasText: GITOPS_SYNC_NAME });
+	const syncRow = page.locator('tr').filter({ hasText: GITOPS_SYNC_NAME }).first();
 	if ((await syncRow.count()) > 0) {
 		// Look for sync button or menu
 		const syncButton = syncRow.getByRole('button', { name: /Sync|Sync Now/i });
@@ -163,6 +163,7 @@ setup('create gitops sync in arcane', async ({ page }) => {
 		if ((await syncButton.count()) > 0) {
 			await syncButton.click();
 		} else if ((await menuButton.count()) > 0) {
+			await syncRow.hover();
 			await menuButton.click();
 			await page.waitForTimeout(300);
 			const syncMenuItem = page.getByRole('menuitem', { name: /Sync/i });

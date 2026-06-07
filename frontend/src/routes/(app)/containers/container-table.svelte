@@ -231,7 +231,7 @@
 	const columns = $derived([
 		{ accessorKey: 'id', title: m.common_id(), cell: IdCell, hidden: true },
 		{ accessorKey: 'names', id: 'name', title: m.common_name(), sortable: !groupByProject, cell: NameCell },
-		{ accessorKey: 'image', title: m.common_image(), sortable: !groupByProject, cell: ImageCell, truncate: true },
+		{ accessorKey: 'image', title: m.common_image(), sortable: !groupByProject, cell: ImageCell, width: 'max' },
 		{ accessorKey: 'state', title: m.common_state(), sortable: !groupByProject, cell: StateCell },
 		{
 			id: 'updates',
@@ -452,8 +452,8 @@
 
 {#snippet ImageCell({ item }: { item: ContainerSummaryDto })}
 	<ArcaneTooltip.Root>
-		<ArcaneTooltip.Trigger class="block w-full min-w-0">
-			<span class="block w-full cursor-default truncate text-left font-mono text-xs">
+		<ArcaneTooltip.Trigger class="flex w-full min-w-0">
+			<span class="min-w-0 flex-1 cursor-default truncate text-left font-mono text-xs">
 				{truncateImageDigest(item.image)}
 			</span>
 		</ArcaneTooltip.Trigger>

@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { createTestApiKeys, deleteTestApiKeys } from '../utils/playwright.util';
+import { openRowActionsMenu } from '../utils/table-actions.util';
 
 const API_KEYS_ROUTE = '/settings/api-keys';
 
@@ -99,8 +100,8 @@ test.describe('API Keys Page', () => {
 		const firstRow = page.locator('tbody tr').first();
 		await expect(firstRow).toBeVisible();
 
-		await firstRow.getByRole('button', { name: 'Open menu' }).click();
-		await page.getByRole('menuitem', { name: 'Edit' }).click();
+		const menu = await openRowActionsMenu(page, firstRow);
+		await menu.getByRole('menuitem', { name: 'Edit' }).click();
 
 		await expect(page.getByRole('dialog')).toBeVisible();
 		await expect(page.getByText('Edit API Key')).toBeVisible();
@@ -115,8 +116,8 @@ test.describe('API Keys Page', () => {
 		const firstRow = page.locator('tbody tr').first();
 		await expect(firstRow).toBeVisible();
 
-		await firstRow.getByRole('button', { name: 'Open menu' }).click();
-		await page.getByRole('menuitem', { name: 'Delete' }).click();
+		const menu = await openRowActionsMenu(page, firstRow);
+		await menu.getByRole('menuitem', { name: 'Delete' }).click();
 
 		// Should show confirmation dialog
 		await expect(page.getByText(/Delete API Key/i)).toBeVisible();
@@ -153,8 +154,8 @@ test.describe('API Keys Page', () => {
 		const keyRow = page.locator(`tr:has-text("${apiKeyName}")`);
 		await expect(keyRow).toBeVisible();
 
-		await keyRow.getByRole('button', { name: 'Open menu' }).click();
-		await page.getByRole('menuitem', { name: 'Delete' }).click();
+		const menu = await openRowActionsMenu(page, keyRow);
+		await menu.getByRole('menuitem', { name: 'Delete' }).click();
 
 		// Confirm deletion
 		await expect(page.getByText(/Delete API Key/i)).toBeVisible();
