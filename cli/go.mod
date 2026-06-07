@@ -12,7 +12,7 @@ require (
 	github.com/fatih/color v1.19.0
 	github.com/getarcaneapp/arcane/types/v2 v2.0.1
 	github.com/go-viper/mapstructure/v2 v2.5.0
-	github.com/mattn/go-runewidth v0.0.23
+	github.com/mattn/go-runewidth v0.0.24
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	github.com/spf13/viper v1.21.0
