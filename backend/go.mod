@@ -26,7 +26,6 @@ require (
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/getarcaneapp/arcane/cli/v2 v2.0.1
 	github.com/getarcaneapp/arcane/types/v2 v2.0.1
-	go.getarcane.app/updater v0.3.7
 	github.com/glebarez/sqlite v1.11.0
 	github.com/go-git/go-git/v5 v5.19.1
 	github.com/goccy/go-yaml v1.19.2
@@ -52,10 +51,11 @@ require (
 	github.com/pressly/goose/v3 v3.27.1
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/samber/slog-echo v1.23.0
-	github.com/shirou/gopsutil/v4 v4.26.4
+	github.com/shirou/gopsutil/v4 v4.26.5
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
 	github.com/wneessen/go-mail v0.7.3
+	go.getarcane.app/updater v0.3.7
 	golang.org/x/crypto v0.52.0
 	golang.org/x/mod v0.36.0
 	golang.org/x/net v0.55.0
