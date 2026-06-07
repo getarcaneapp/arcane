@@ -1,12 +1,11 @@
 import { test, expect, type Page } from '@playwright/test';
 import { createTestApiKeys, deleteTestApiKeys } from '../utils/playwright.util';
-import { openRowActionsMenu } from '../utils/table-actions.util';
 
 const API_KEYS_ROUTE = '/settings/api-keys';
 
 async function navigateToApiKeys(page: Page) {
 	await page.goto(API_KEYS_ROUTE);
-	await page.waitForLoadState('load');
+	await page.waitForLoadState('networkidle');
 }
 
 test.describe('API Keys Page', () => {
@@ -68,10 +67,6 @@ test.describe('API Keys Page', () => {
 			await descInput.fill('E2E test API key');
 		}
 
-		// Select at least one permission (form requires min 1)
-		await createDialog.getByPlaceholder(/Filter permissions/i).fill('containers:list');
-		await createDialog.getByRole('checkbox', { name: 'Select all' }).check();
-
 		// Submit the form
 		await createDialog.getByRole('button', { name: /Create API Key/i }).click();
 
@@ -100,8 +95,8 @@ test.describe('API Keys Page', () => {
 		const firstRow = page.locator('tbody tr').first();
 		await expect(firstRow).toBeVisible();
 
-		const menu = await openRowActionsMenu(page, firstRow);
-		await menu.getByRole('menuitem', { name: 'Edit' }).click();
+		await firstRow.getByRole('button', { name: 'Open menu' }).click();
+		await page.getByRole('menuitem', { name: 'Edit' }).click();
 
 		await expect(page.getByRole('dialog')).toBeVisible();
 		await expect(page.getByText('Edit API Key')).toBeVisible();
@@ -116,8 +111,8 @@ test.describe('API Keys Page', () => {
 		const firstRow = page.locator('tbody tr').first();
 		await expect(firstRow).toBeVisible();
 
-		const menu = await openRowActionsMenu(page, firstRow);
-		await menu.getByRole('menuitem', { name: 'Delete' }).click();
+		await firstRow.getByRole('button', { name: 'Open menu' }).click();
+		await page.getByRole('menuitem', { name: 'Delete' }).click();
 
 		// Should show confirmation dialog
 		await expect(page.getByText(/Delete API Key/i)).toBeVisible();
@@ -136,11 +131,6 @@ test.describe('API Keys Page', () => {
 
 		const apiKeyName = `delete-test-${Date.now()}`;
 		await createDialog.getByLabel(/Name/i).fill(apiKeyName);
-
-		// Select at least one permission (form requires min 1)
-		await createDialog.getByPlaceholder(/Filter permissions/i).fill('containers:list');
-		await createDialog.getByRole('checkbox', { name: 'Select all' }).check();
-
 		await createDialog.getByRole('button', { name: /Create API Key/i }).click();
 
 		// Wait for creation success and close reveal dialog
@@ -154,8 +144,8 @@ test.describe('API Keys Page', () => {
 		const keyRow = page.locator(`tr:has-text("${apiKeyName}")`);
 		await expect(keyRow).toBeVisible();
 
-		const menu = await openRowActionsMenu(page, keyRow);
-		await menu.getByRole('menuitem', { name: 'Delete' }).click();
+		await keyRow.getByRole('button', { name: 'Open menu' }).click();
+		await page.getByRole('menuitem', { name: 'Delete' }).click();
 
 		// Confirm deletion
 		await expect(page.getByText(/Delete API Key/i)).toBeVisible();

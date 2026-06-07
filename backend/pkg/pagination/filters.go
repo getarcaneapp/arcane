@@ -27,7 +27,7 @@ func SearchOrderAndPaginate[T any](items []T, params QueryParams, searchConfig C
 	items = sortFunction(items, params.SortParams, searchConfig.SortBindings)
 
 	totalCount := len(items)
-	items = paginateItemsFunction(items, params.Params)
+	items = paginateItemsFunction(items, params.PaginationParams)
 
 	return FilterResult[T]{
 		Items:          items,

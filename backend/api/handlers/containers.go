@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"io"
 	"maps"
 	"net/http"
 	"net/netip"
@@ -11,14 +10,9 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	humamw "github.com/getarcaneapp/arcane/backend/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
-	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"github.com/getarcaneapp/arcane/backend/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
-	activitylib "github.com/getarcaneapp/arcane/backend/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/pkg/utils"
 	"github.com/getarcaneapp/arcane/types/base"
 	containertypes "github.com/getarcaneapp/arcane/types/container"
 	dockercontainer "github.com/moby/moby/api/types/container"
@@ -29,11 +23,9 @@ type ContainerHandler struct {
 	containerService *services.ContainerService
 	dockerService    *services.DockerClientService
 	settingsService  *services.SettingsService
-	activityService  *services.ActivityService
-	appCtx           context.Context
 }
 
-// ContainerPaginatedResponse is the paginated list response for containers.
+// Paginated response
 type ContainerPaginatedResponse struct {
 	Success    bool                          `json:"success"`
 	Data       []containertypes.Summary      `json:"data"`
@@ -130,7 +122,7 @@ type DeleteContainerOutput struct {
 	Body ContainerActionResponse
 }
 
-// SetAutoUpdateInput is the request input for toggling container auto-update.
+// RegisterContainers registers container endpoints.
 type SetAutoUpdateInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ContainerID   string `path:"containerId" doc:"Container ID"`
@@ -143,13 +135,11 @@ type SetAutoUpdateOutput struct {
 	Body ContainerActionResponse
 }
 
-func RegisterContainers(api huma.API, containerSvc *services.ContainerService, dockerSvc *services.DockerClientService, settingsSvc *services.SettingsService, activitySvc *services.ActivityService, appCtx ActivityAppContext) {
+func RegisterContainers(api huma.API, containerSvc *services.ContainerService, dockerSvc *services.DockerClientService, settingsSvc *services.SettingsService) {
 	h := &ContainerHandler{
 		containerService: containerSvc,
 		dockerService:    dockerSvc,
 		settingsService:  settingsSvc,
-		activityService:  activitySvc,
-		appCtx:           appCtx.contextInternal(),
 	}
 
 	huma.Register(api, huma.Operation{
@@ -160,7 +150,6 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Description: "Paginated list of containers",
 		Tags:        []string{"Containers"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermContainersList),
 	}, h.ListContainers)
 
 	huma.Register(api, huma.Operation{
@@ -170,7 +159,6 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Summary:     "Container status counts",
 		Tags:        []string{"Containers"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermContainersList),
 	}, h.GetContainerStatusCounts)
 
 	huma.Register(api, huma.Operation{
@@ -180,7 +168,7 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Summary:     "Create container",
 		Tags:        []string{"Containers"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermContainersCreate),
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.CreateContainer)
 
 	huma.Register(api, huma.Operation{
@@ -190,7 +178,6 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Summary:     "Get container",
 		Tags:        []string{"Containers"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermContainersRead),
 	}, h.GetContainer)
 
 	huma.Register(api, huma.Operation{
@@ -200,7 +187,7 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Summary:     "Start container",
 		Tags:        []string{"Containers"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermContainersStart),
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.StartContainer)
 
 	huma.Register(api, huma.Operation{
@@ -210,7 +197,7 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Summary:     "Stop container",
 		Tags:        []string{"Containers"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermContainersStop),
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.StopContainer)
 
 	huma.Register(api, huma.Operation{
@@ -220,7 +207,7 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Summary:     "Restart container",
 		Tags:        []string{"Containers"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermContainersRestart),
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.RestartContainer)
 
 	huma.Register(api, huma.Operation{
@@ -231,7 +218,7 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Description: "Pull latest image and recreate container",
 		Tags:        []string{"Containers"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermContainersRedeploy),
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.RedeployContainer)
 
 	huma.Register(api, huma.Operation{
@@ -241,7 +228,7 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Summary:     "Delete container",
 		Tags:        []string{"Containers"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermContainersDelete),
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.DeleteContainer)
 
 	huma.Register(api, huma.Operation{
@@ -252,7 +239,7 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Description: "Enable or disable auto-update for a specific container",
 		Tags:        []string{"Containers", "Updater"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermContainersAutoUpdate),
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.SetAutoUpdate)
 }
 
@@ -275,7 +262,7 @@ func (h *ContainerHandler) ListContainers(ctx context.Context, input *ListContai
 			Sort:  input.Sort,
 			Order: pagination.SortOrder(input.Order),
 		},
-		Params: pagination.Params{
+		PaginationParams: pagination.PaginationParams{
 			Start: input.Start,
 			Limit: input.Limit,
 		},
@@ -339,9 +326,9 @@ func (h *ContainerHandler) GetContainerStatusCounts(ctx context.Context, input *
 		Body: ContainerStatusCountsResponse{
 			Success: true,
 			Data: containertypes.StatusCounts{
-				RunningContainers: running,
-				StoppedContainers: stopped,
-				TotalContainers:   total,
+				RunningContainers: int(running),
+				StoppedContainers: int(stopped),
+				TotalContainers:   int(total),
 			},
 		},
 	}, nil
@@ -549,6 +536,9 @@ func buildNetworkingConfig(body containertypes.Create) *network.NetworkingConfig
 }
 
 func (h *ContainerHandler) CreateContainer(ctx context.Context, input *CreateContainerInput) (*CreateContainerOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.containerService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -615,64 +605,9 @@ func (h *ContainerHandler) GetContainer(ctx context.Context, input *GetContainer
 }
 
 func (h *ContainerHandler) StartContainer(ctx context.Context, input *ContainerActionInput) (*ContainerActionOutput, error) {
-	return h.runContainerActionInternal(ctx, input, containerActionConfigInternal{
-		ActivityType:    models.ActivityTypeContainerStart,
-		Step:            "Starting container",
-		StartMessage:    "Container start requested",
-		CompleteMessage: "Container started",
-		SuccessMessage:  "Container started successfully",
-		Action: func(runtimeCtx context.Context, containerID string, user models.User) error {
-			return h.containerService.StartContainer(runtimeCtx, containerID, user)
-		},
-		Error: func(err error) error {
-			return huma.Error500InternalServerError((&common.ContainerStartError{Err: err}).Error())
-		},
-	})
-}
-
-func (h *ContainerHandler) StopContainer(ctx context.Context, input *ContainerActionInput) (*ContainerActionOutput, error) {
-	return h.runContainerActionInternal(ctx, input, containerActionConfigInternal{
-		ActivityType:    models.ActivityTypeContainerStop,
-		Step:            "Stopping container",
-		StartMessage:    "Container stop requested",
-		CompleteMessage: "Container stopped",
-		SuccessMessage:  "Container stopped successfully",
-		Action: func(runtimeCtx context.Context, containerID string, user models.User) error {
-			return h.containerService.StopContainer(runtimeCtx, containerID, user)
-		},
-		Error: func(err error) error {
-			return huma.Error500InternalServerError((&common.ContainerStopError{Err: err}).Error())
-		},
-	})
-}
-
-func (h *ContainerHandler) RestartContainer(ctx context.Context, input *ContainerActionInput) (*ContainerActionOutput, error) {
-	return h.runContainerActionInternal(ctx, input, containerActionConfigInternal{
-		ActivityType:    models.ActivityTypeContainerRestart,
-		Step:            "Restarting container",
-		StartMessage:    "Container restart requested",
-		CompleteMessage: "Container restarted",
-		SuccessMessage:  "Container restarted successfully",
-		Action: func(runtimeCtx context.Context, containerID string, user models.User) error {
-			return h.containerService.RestartContainer(runtimeCtx, containerID, user)
-		},
-		Error: func(err error) error {
-			return huma.Error500InternalServerError((&common.ContainerRestartError{Err: err}).Error())
-		},
-	})
-}
-
-type containerActionConfigInternal struct {
-	ActivityType    models.ActivityType
-	Step            string
-	StartMessage    string
-	CompleteMessage string
-	SuccessMessage  string
-	Action          func(context.Context, string, models.User) error
-	Error           func(error) error
-}
-
-func (h *ContainerHandler) runContainerActionInternal(ctx context.Context, input *ContainerActionInput, cfg containerActionConfigInternal) (*ContainerActionOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.containerService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -682,23 +617,72 @@ func (h *ContainerHandler) runContainerActionInternal(ctx context.Context, input
 		return nil, huma.Error401Unauthorized("not authenticated")
 	}
 
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	activityID, runtimeCtx := activitylib.StartHandlerActivityForUser(runtimeCtx, h.activityService, input.EnvironmentID, cfg.ActivityType, "container", input.ContainerID, input.ContainerID, user, cfg.Step, cfg.StartMessage, models.JSON{"containerID": input.ContainerID})
-	if err := cfg.Action(runtimeCtx, input.ContainerID, *user); err != nil {
-		activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, cfg.CompleteMessage, err)
-		return nil, cfg.Error(err)
+	if err := h.containerService.StartContainer(ctx, input.ContainerID, *user); err != nil {
+		return nil, huma.Error500InternalServerError((&common.ContainerStartError{Err: err}).Error())
 	}
-	activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, cfg.CompleteMessage, nil)
 
 	return &ContainerActionOutput{
 		Body: ContainerActionResponse{
 			Success: true,
-			Data:    base.MessageResponse{Message: cfg.SuccessMessage, ActivityID: utils.StringPtrFromTrimmed(activityID)},
+			Data:    base.MessageResponse{Message: "Container started successfully"},
+		},
+	}, nil
+}
+
+func (h *ContainerHandler) StopContainer(ctx context.Context, input *ContainerActionInput) (*ContainerActionOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
+	if h.containerService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	user, exists := humamw.GetCurrentUserFromContext(ctx)
+	if !exists {
+		return nil, huma.Error401Unauthorized("not authenticated")
+	}
+
+	if err := h.containerService.StopContainer(ctx, input.ContainerID, *user); err != nil {
+		return nil, huma.Error500InternalServerError((&common.ContainerStopError{Err: err}).Error())
+	}
+
+	return &ContainerActionOutput{
+		Body: ContainerActionResponse{
+			Success: true,
+			Data:    base.MessageResponse{Message: "Container stopped successfully"},
+		},
+	}, nil
+}
+
+func (h *ContainerHandler) RestartContainer(ctx context.Context, input *ContainerActionInput) (*ContainerActionOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
+	if h.containerService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	user, exists := humamw.GetCurrentUserFromContext(ctx)
+	if !exists {
+		return nil, huma.Error401Unauthorized("not authenticated")
+	}
+
+	if err := h.containerService.RestartContainer(ctx, input.ContainerID, *user); err != nil {
+		return nil, huma.Error500InternalServerError((&common.ContainerRestartError{Err: err}).Error())
+	}
+
+	return &ContainerActionOutput{
+		Body: ContainerActionResponse{
+			Success: true,
+			Data:    base.MessageResponse{Message: "Container restarted successfully"},
 		},
 	}, nil
 }
 
 func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *ContainerActionInput) (*GetContainerOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.containerService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -708,24 +692,14 @@ func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *Contain
 		return nil, huma.Error401Unauthorized("not authenticated")
 	}
 
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	activityID, runtimeCtx := activitylib.StartHandlerActivityForUser(runtimeCtx, h.activityService, input.EnvironmentID, models.ActivityTypeContainerRedeploy, "container", input.ContainerID, input.ContainerID, user, "Starting redeploy", "Container redeploy requested", models.JSON{"containerID": input.ContainerID})
-	activityWriter := activitylib.NewWriter(runtimeCtx, h.activityService, activityID, io.Discard, "Redeploying container")
-	redeployCtx := context.WithValue(runtimeCtx, projects.ProgressWriterKey{}, activityWriter)
-	newContainerID, err := h.containerService.RedeployContainer(redeployCtx, input.ContainerID, *user)
+	newContainerID, err := h.containerService.RedeployContainer(ctx, input.ContainerID, *user)
 	if err != nil {
-		activitylib.FlushWriter(activityWriter)
-		activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Container redeploy failed", err)
 		return nil, huma.Error500InternalServerError((&common.ContainerRedeployError{Err: err}).Error())
 	}
-	activitylib.FlushWriter(activityWriter)
-	activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Container redeployed", nil)
 
 	// Fetch full container details to return (consistent with other endpoints)
-	details, inspectErr := h.containerService.GetContainerDetails(runtimeCtx, newContainerID)
+	details, inspectErr := h.containerService.GetContainerDetails(ctx, newContainerID)
 	if inspectErr == nil {
-		details.ActivityID = utils.StringPtrFromTrimmed(activityID)
-
 		return &GetContainerOutput{
 			Body: ContainerDetailsResponse{
 				Success: true,
@@ -740,14 +714,16 @@ func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *Contain
 		Body: ContainerDetailsResponse{
 			Success: true,
 			Data: containertypes.Details{
-				ID:         newContainerID,
-				ActivityID: utils.StringPtrFromTrimmed(activityID),
+				ID: newContainerID,
 			},
 		},
 	}, nil
 }
 
 func (h *ContainerHandler) DeleteContainer(ctx context.Context, input *DeleteContainerInput) (*DeleteContainerOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.containerService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -757,23 +733,22 @@ func (h *ContainerHandler) DeleteContainer(ctx context.Context, input *DeleteCon
 		return nil, huma.Error401Unauthorized("not authenticated")
 	}
 
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	activityID, runtimeCtx := activitylib.StartHandlerActivityForUser(runtimeCtx, h.activityService, input.EnvironmentID, models.ActivityTypeContainerDelete, "container", input.ContainerID, input.ContainerID, user, "Deleting container", "Container delete requested", models.JSON{"containerID": input.ContainerID, "force": input.Force, "removeVolumes": input.RemoveVolumes})
-	if err := h.containerService.DeleteContainer(runtimeCtx, input.ContainerID, input.Force, input.RemoveVolumes, *user); err != nil {
-		activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Container deleted", err)
+	if err := h.containerService.DeleteContainer(ctx, input.ContainerID, input.Force, input.RemoveVolumes, *user); err != nil {
 		return nil, huma.Error500InternalServerError((&common.ContainerDeleteError{Err: err}).Error())
 	}
-	activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Container deleted", nil)
 
 	return &DeleteContainerOutput{
 		Body: ContainerActionResponse{
 			Success: true,
-			Data:    base.MessageResponse{Message: "Container deleted successfully", ActivityID: utils.StringPtrFromTrimmed(activityID)},
+			Data:    base.MessageResponse{Message: "Container deleted successfully"},
 		},
 	}, nil
 }
 
 func (h *ContainerHandler) SetAutoUpdate(ctx context.Context, input *SetAutoUpdateInput) (*SetAutoUpdateOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.settingsService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}

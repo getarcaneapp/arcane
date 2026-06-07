@@ -1,0 +1,5 @@
+ALTER TABLE IF EXISTS image_updates
+    ADD COLUMN IF NOT EXISTS auth_method TEXT,
+    ADD COLUMN IF NOT EXISTS auth_username TEXT,
+    ADD COLUMN IF NOT EXISTS auth_registry TEXT,
+    ADD COLUMN IF NOT EXISTS used_credential BOOLEAN DEFAULT FALSE;

@@ -2,7 +2,6 @@ import { Column, Hr, Row, Section, Text } from 'react-email';
 import { BaseTemplate } from '../components/base-template';
 import CardHeader from '../components/card-header';
 import { sharedPreviewProps, sharedTemplateProps } from '../props';
-import { colors, fonts, radii } from '../theme';
 
 interface ContainerUpdateEmailProps {
 	logoURL: string;
@@ -143,16 +142,16 @@ export default ContainerUpdateEmail;
 const mainTextStyle = {
 	fontSize: '16px',
 	lineHeight: '24px',
-	color: colors.textBody,
+	color: '#cbd5e1',
 	margin: '0 0 16px 0'
 };
 
 const infoSectionStyle = {
 	marginTop: '20px',
-	backgroundColor: colors.panel,
-	border: `1px solid ${colors.panelBorder}`,
+	backgroundColor: 'rgba(15, 23, 42, 0.5)',
+	border: '1px solid rgba(148, 163, 184, 0.1)',
 	padding: '20px',
-	borderRadius: radii.panel
+	borderRadius: '12px'
 };
 
 const infoRowStyle = {
@@ -168,40 +167,40 @@ const labelColumnStyle = {
 const labelStyle = {
 	fontSize: '14px',
 	fontWeight: '600' as const,
-	color: colors.textMuted,
+	color: '#94a3b8',
 	margin: '8px 0'
 };
 
 const valueStyle = {
 	fontSize: '14px',
-	color: colors.textValue,
+	color: '#e2e8f0',
 	margin: '8px 0',
 	wordBreak: 'break-word' as const
 };
 
 const digestStyle = {
 	fontSize: '13px',
-	color: colors.textValue,
-	fontFamily: fonts.mono,
+	color: '#e2e8f0',
+	fontFamily: "'Courier New', Courier, monospace",
 	margin: '8px 0'
 };
 
 const statusStyle = {
 	fontSize: '14px',
 	fontWeight: '600' as const,
-	color: colors.success,
+	color: '#34d399',
 	margin: '8px 0'
 };
 
 const dividerStyle = {
-	borderColor: colors.divider,
+	borderColor: 'rgba(148, 163, 184, 0.2)',
 	margin: '4px 0'
 };
 
 const footerStyle = {
 	fontSize: '13px',
 	lineHeight: '20px',
-	color: colors.textMuted,
+	color: '#94a3b8',
 	margin: '0'
 };
 

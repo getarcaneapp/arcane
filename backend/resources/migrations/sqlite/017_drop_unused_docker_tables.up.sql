@@ -1,0 +1,3 @@
+DROP TABLE IF EXISTS containers;
+DROP TABLE IF EXISTS volumes;
+DROP TABLE IF EXISTS networks;

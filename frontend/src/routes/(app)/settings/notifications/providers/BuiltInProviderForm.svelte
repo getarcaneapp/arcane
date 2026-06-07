@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages';
 	import { z } from 'zod/v4';
-	import type { NotificationProviderKey, ProviderFormValuesMap } from '$lib/types/notifications';
+	import type { NotificationProviderKey, ProviderFormValuesMap } from '$lib/types/notification-providers';
 	import ProviderFormWrapper from './ProviderFormWrapper.svelte';
 	import EventSubscriptions from './EventSubscriptions.svelte';
 	import DynamicProviderFormBuilder from './DynamicProviderFormBuilder.svelte';
@@ -64,24 +64,6 @@
 		}
 	};
 
-	const eventSubscriptionSchemaFields = {
-		eventImageUpdate: z.boolean(),
-		eventContainerUpdate: z.boolean(),
-		eventVulnerabilityFound: z.boolean(),
-		eventPruneReport: z.boolean(),
-		eventAutoHeal: z.boolean()
-	};
-
-	function addCustomFieldIssue(ctx: z.RefinementCtx, path: string, message: string) {
-		ctx.addIssue({ code: 'custom', message, path: [path] });
-	}
-
-	function addRequiredTrimmedFieldIssue(ctx: z.RefinementCtx, value: string, path: string, message: string) {
-		if (!value.trim()) {
-			addCustomFieldIssue(ctx, path, message);
-		}
-	}
-
 	const providerSchemas: Record<NotificationProviderKey, z.ZodTypeAny> = {
 		discord: z
 			.object({
@@ -90,12 +72,20 @@
 				token: z.string(),
 				username: z.string(),
 				avatarUrl: z.string(),
-				...eventSubscriptionSchemaFields
+				eventImageUpdate: z.boolean(),
+				eventContainerUpdate: z.boolean(),
+				eventVulnerabilityFound: z.boolean(),
+				eventPruneReport: z.boolean(),
+				eventAutoHeal: z.boolean()
 			})
 			.superRefine((d, ctx) => {
 				if (!d.enabled) return;
-				addRequiredTrimmedFieldIssue(ctx, d.webhookId, 'webhookId', 'Webhook ID is required when Discord is enabled');
-				addRequiredTrimmedFieldIssue(ctx, d.token, 'token', 'Webhook Token is required when Discord is enabled');
+				if (!d.webhookId.trim()) {
+					ctx.addIssue({ code: 'custom', message: 'Webhook ID is required when Discord is enabled', path: ['webhookId'] });
+				}
+				if (!d.token.trim()) {
+					ctx.addIssue({ code: 'custom', message: 'Webhook Token is required when Discord is enabled', path: ['token'] });
+				}
 			}),
 		email: z
 			.object({
@@ -108,7 +98,11 @@
 				toAddresses: z.string(),
 				tlsMode: z.enum(['none', 'starttls', 'ssl']),
 				authMode: z.enum(['auto', 'plain', 'login', 'crammd5']),
-				...eventSubscriptionSchemaFields
+				eventImageUpdate: z.boolean(),
+				eventContainerUpdate: z.boolean(),
+				eventVulnerabilityFound: z.boolean(),
+				eventPruneReport: z.boolean(),
+				eventAutoHeal: z.boolean()
 			})
 			.superRefine((d, ctx) => {
 				if (!d.enabled) return;
@@ -156,11 +150,17 @@
 				preview: z.boolean(),
 				notification: z.boolean(),
 				title: z.string(),
-				...eventSubscriptionSchemaFields
+				eventImageUpdate: z.boolean(),
+				eventContainerUpdate: z.boolean(),
+				eventVulnerabilityFound: z.boolean(),
+				eventPruneReport: z.boolean(),
+				eventAutoHeal: z.boolean()
 			})
 			.superRefine((d, ctx) => {
 				if (!d.enabled) return;
-				addRequiredTrimmedFieldIssue(ctx, d.botToken, 'botToken', 'Bot Token is required when Telegram is enabled');
+				if (!d.botToken.trim()) {
+					ctx.addIssue({ code: 'custom', message: 'Bot Token is required when Telegram is enabled', path: ['botToken'] });
+				}
 				if (!d.chatIds.trim()) {
 					ctx.addIssue({
 						code: 'custom',
@@ -180,7 +180,11 @@
 				source: z.string(),
 				recipients: z.string(),
 				disableTls: z.boolean(),
-				...eventSubscriptionSchemaFields
+				eventImageUpdate: z.boolean(),
+				eventContainerUpdate: z.boolean(),
+				eventVulnerabilityFound: z.boolean(),
+				eventPruneReport: z.boolean(),
+				eventAutoHeal: z.boolean()
 			})
 			.superRefine((d, ctx) => {
 				if (!d.enabled) return;
@@ -230,11 +234,17 @@
 				title: z.string(),
 				channel: z.string(),
 				threadTs: z.string(),
-				...eventSubscriptionSchemaFields
+				eventImageUpdate: z.boolean(),
+				eventContainerUpdate: z.boolean(),
+				eventVulnerabilityFound: z.boolean(),
+				eventPruneReport: z.boolean(),
+				eventAutoHeal: z.boolean()
 			})
 			.superRefine((d, ctx) => {
 				if (!d.enabled) return;
-				addRequiredTrimmedFieldIssue(ctx, d.token, 'token', m.notifications_slack_token_required());
+				if (!d.token.trim()) {
+					ctx.addIssue({ code: 'custom', message: m.notifications_slack_token_required(), path: ['token'] });
+				}
 			}),
 		ntfy: z
 			.object({
@@ -251,13 +261,19 @@
 				cache: z.boolean(),
 				firebase: z.boolean(),
 				disableTlsVerification: z.boolean(),
-				...eventSubscriptionSchemaFields
+				eventImageUpdate: z.boolean(),
+				eventContainerUpdate: z.boolean(),
+				eventVulnerabilityFound: z.boolean(),
+				eventPruneReport: z.boolean(),
+				eventAutoHeal: z.boolean()
 			})
 			.superRefine((d, ctx) => {
 				if (!d.enabled) return;
-				addRequiredTrimmedFieldIssue(ctx, d.topic, 'topic', 'Topic is required when Ntfy is enabled');
+				if (!d.topic.trim()) {
+					ctx.addIssue({ code: 'custom', message: 'Topic is required when Ntfy is enabled', path: ['topic'] });
+				}
 				if (d.port > 0 && (d.port < 1 || d.port > 65535)) {
-					addCustomFieldIssue(ctx, 'port', 'Port must be between 1 and 65535');
+					ctx.addIssue({ code: 'custom', message: 'Port must be between 1 and 65535', path: ['port'] });
 				}
 			}),
 		pushover: z
@@ -268,12 +284,20 @@
 				devices: z.string(),
 				priority: z.coerce.number().int().min(-2).max(2),
 				title: z.string(),
-				...eventSubscriptionSchemaFields
+				eventImageUpdate: z.boolean(),
+				eventContainerUpdate: z.boolean(),
+				eventVulnerabilityFound: z.boolean(),
+				eventPruneReport: z.boolean(),
+				eventAutoHeal: z.boolean()
 			})
 			.superRefine((d, ctx) => {
 				if (!d.enabled) return;
-				addRequiredTrimmedFieldIssue(ctx, d.token, 'token', m.common_required());
-				addRequiredTrimmedFieldIssue(ctx, d.user, 'user', m.common_required());
+				if (!d.token.trim()) {
+					ctx.addIssue({ code: 'custom', message: m.common_required(), path: ['token'] });
+				}
+				if (!d.user.trim()) {
+					ctx.addIssue({ code: 'custom', message: m.common_required(), path: ['user'] });
+				}
 			}),
 		gotify: z
 			.object({
@@ -285,12 +309,20 @@
 				priority: z.coerce.number().int(),
 				title: z.string(),
 				disableTls: z.boolean(),
-				...eventSubscriptionSchemaFields
+				eventImageUpdate: z.boolean(),
+				eventContainerUpdate: z.boolean(),
+				eventVulnerabilityFound: z.boolean(),
+				eventPruneReport: z.boolean(),
+				eventAutoHeal: z.boolean()
 			})
 			.superRefine((d, ctx) => {
 				if (!d.enabled) return;
-				addRequiredTrimmedFieldIssue(ctx, d.host, 'host', m.common_required());
-				addRequiredTrimmedFieldIssue(ctx, d.token, 'token', m.common_required());
+				if (!d.host.trim()) {
+					ctx.addIssue({ code: 'custom', message: m.common_required(), path: ['host'] });
+				}
+				if (!d.token.trim()) {
+					ctx.addIssue({ code: 'custom', message: m.common_required(), path: ['token'] });
+				}
 			}),
 		matrix: z
 			.object({
@@ -301,11 +333,17 @@
 				username: z.string(),
 				password: z.string(),
 				disableTlsVerification: z.boolean(),
-				...eventSubscriptionSchemaFields
+				eventImageUpdate: z.boolean(),
+				eventContainerUpdate: z.boolean(),
+				eventVulnerabilityFound: z.boolean(),
+				eventPruneReport: z.boolean(),
+				eventAutoHeal: z.boolean()
 			})
 			.superRefine((d, ctx) => {
 				if (!d.enabled) return;
-				addRequiredTrimmedFieldIssue(ctx, d.host, 'host', m.common_required());
+				if (!d.host.trim()) {
+					ctx.addIssue({ code: 'custom', message: m.common_required(), path: ['host'] });
+				}
 			}),
 		generic: z
 			.object({
@@ -316,11 +354,21 @@
 				titleKey: z.string(),
 				messageKey: z.string(),
 				customHeaders: z.string(),
-				...eventSubscriptionSchemaFields
+				eventImageUpdate: z.boolean(),
+				eventContainerUpdate: z.boolean(),
+				eventVulnerabilityFound: z.boolean(),
+				eventPruneReport: z.boolean(),
+				eventAutoHeal: z.boolean()
 			})
 			.superRefine((d, ctx) => {
 				if (!d.enabled) return;
-				addRequiredTrimmedFieldIssue(ctx, d.webhookUrl, 'webhookUrl', 'Webhook URL is required when Generic Webhook is enabled');
+				if (!d.webhookUrl.trim()) {
+					ctx.addIssue({
+						code: 'custom',
+						message: 'Webhook URL is required when Generic Webhook is enabled',
+						path: ['webhookUrl']
+					});
+				}
 			})
 	};
 

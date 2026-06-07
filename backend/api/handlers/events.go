@@ -2,26 +2,19 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
-	"log/slog"
-	"net/http"
-	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	humamw "github.com/getarcaneapp/arcane/backend/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
-	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"github.com/getarcaneapp/arcane/backend/pkg/authz"
-	pkgutils "github.com/getarcaneapp/arcane/backend/pkg/utils"
 	"github.com/getarcaneapp/arcane/types/base"
 	"github.com/getarcaneapp/arcane/types/event"
-	"github.com/labstack/echo/v4"
 )
 
 // EventHandler handles event management endpoints.
 type EventHandler struct {
 	eventService *services.EventService
+	apiKeySvc    *services.ApiKeyService
 }
 
 // ============================================================================
@@ -64,6 +57,15 @@ type GetEventsByEnvironmentOutput struct {
 	Body EventPaginatedResponse
 }
 
+type CreateEventInput struct {
+	XAPIKey string `header:"X-API-Key" doc:"API key for environment-scoped event forwarding"`
+	Body    event.CreateEvent
+}
+
+type CreateEventOutput struct {
+	Body base.ApiResponse[event.Event]
+}
+
 type DeleteEventInput struct {
 	EventID string `path:"eventId" doc:"Event ID"`
 }
@@ -76,72 +78,11 @@ type DeleteEventOutput struct {
 // Registration
 // ============================================================================
 
-// RegisterAgentEventIngestion registers the manager ingestion endpoint used by
-// direct agents when no edge tunnel is active. This route is not part of the
-// Huma/OpenAPI surface and authenticates only with the configured agent token.
-func RegisterAgentEventIngestion(g *echo.Group, eventService *services.EventService, cfg *config.Config) {
-	g.POST("/events", func(c echo.Context) error {
-		if eventService == nil {
-			return c.JSON(http.StatusInternalServerError, base.ApiResponse[base.MessageResponse]{
-				Success: false,
-				Data:    base.MessageResponse{Message: "service not available"},
-			})
-		}
-		if cfg == nil || strings.TrimSpace(cfg.AgentToken) == "" {
-			slog.Warn("agent event ingestion is disabled because agent token is not configured")
-			return c.JSON(http.StatusServiceUnavailable, base.ApiResponse[base.MessageResponse]{
-				Success: false,
-				Data:    base.MessageResponse{Message: "agent event ingestion is not configured"},
-			})
-		}
-		if !validAgentEventIngestionTokenInternal(c.Request(), cfg) {
-			return c.JSON(http.StatusUnauthorized, base.ApiResponse[base.MessageResponse]{
-				Success: false,
-				Data:    base.MessageResponse{Message: "invalid agent token"},
-			})
-		}
-
-		var input services.CreateEventRequest
-		decoder := json.NewDecoder(http.MaxBytesReader(c.Response(), c.Request().Body, 1<<20))
-		if err := decoder.Decode(&input); err != nil {
-			return c.JSON(http.StatusBadRequest, base.ApiResponse[base.MessageResponse]{
-				Success: false,
-				Data:    base.MessageResponse{Message: "invalid event payload"},
-			})
-		}
-		if strings.TrimSpace(string(input.Type)) == "" || strings.TrimSpace(input.Title) == "" {
-			return c.JSON(http.StatusBadRequest, base.ApiResponse[base.MessageResponse]{
-				Success: false,
-				Data:    base.MessageResponse{Message: "event type and title are required"},
-			})
-		}
-
-		if _, err := eventService.CreateEvent(c.Request().Context(), input); err != nil {
-			return c.JSON(http.StatusInternalServerError, base.ApiResponse[base.MessageResponse]{
-				Success: false,
-				Data:    base.MessageResponse{Message: (&common.EventCreationError{Err: err}).Error()},
-			})
-		}
-
-		return c.JSON(http.StatusAccepted, base.ApiResponse[base.MessageResponse]{
-			Success: true,
-			Data:    base.MessageResponse{Message: "event ingested"},
-		})
-	})
-}
-
-func validAgentEventIngestionTokenInternal(r *http.Request, cfg *config.Config) bool {
-	if cfg == nil {
-		return false
-	}
-	token := r.Header.Get(pkgutils.HeaderAgentToken)
-	return token != "" && token == cfg.AgentToken
-}
-
 // RegisterEvents registers all event management endpoints.
-func RegisterEvents(api huma.API, eventService *services.EventService) {
+func RegisterEvents(api huma.API, eventService *services.EventService, apiKeySvc *services.ApiKeyService) {
 	h := &EventHandler{
 		eventService: eventService,
+		apiKeySvc:    apiKeySvc,
 	}
 
 	huma.Register(api, huma.Operation{
@@ -155,8 +96,22 @@ func RegisterEvents(api huma.API, eventService *services.EventService) {
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermEventsRead),
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.ListEvents)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "createEvent",
+		Method:      "POST",
+		Path:        "/events",
+		Summary:     "Create an event",
+		Description: "Create a new system event",
+		Tags:        []string{"Events"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+		Middlewares: humamw.RequireAdmin(api),
+	}, h.CreateEvent)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "deleteEvent",
@@ -169,7 +124,7 @@ func RegisterEvents(api huma.API, eventService *services.EventService) {
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermEventsDelete),
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.DeleteEvent)
 
 	huma.Register(api, huma.Operation{
@@ -183,7 +138,7 @@ func RegisterEvents(api huma.API, eventService *services.EventService) {
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermEventsRead),
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.GetEventsByEnvironment)
 }
 
@@ -197,7 +152,11 @@ func (h *EventHandler) ListEvents(ctx context.Context, input *ListEventsInput) (
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
+
+	params := buildPaginationParamsInternal(0, input.Start, input.Limit, input.Sort, input.Order, input.Search)
 
 	if input.Severity != "" {
 		params.Filters["severity"] = input.Severity
@@ -232,11 +191,15 @@ func (h *EventHandler) GetEventsByEnvironment(ctx context.Context, input *GetEve
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
+
 	if input.EnvironmentID == "" {
 		return nil, huma.Error400BadRequest((&common.EnvironmentIDRequiredError{}).Error())
 	}
 
-	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
+	params := buildPaginationParamsInternal(0, input.Start, input.Limit, input.Sort, input.Order, input.Search)
 
 	if input.Severity != "" {
 		params.Filters["severity"] = input.Severity
@@ -265,10 +228,47 @@ func (h *EventHandler) GetEventsByEnvironment(ctx context.Context, input *GetEve
 	}, nil
 }
 
+// CreateEvent creates a new event.
+func (h *EventHandler) CreateEvent(ctx context.Context, input *CreateEventInput) (*CreateEventOutput, error) {
+	if h.eventService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if h.apiKeySvc != nil && input.XAPIKey != "" {
+		resolvedEnvironmentID, err := h.apiKeySvc.GetEnvironmentByApiKey(ctx, input.XAPIKey)
+		if err != nil {
+			return nil, huma.Error401Unauthorized("invalid environment API key")
+		}
+		if resolvedEnvironmentID != nil && *resolvedEnvironmentID != "" {
+			input.Body.EnvironmentID = new(*resolvedEnvironmentID)
+		}
+	}
+
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
+
+	evt, err := h.eventService.CreateEventFromDto(ctx, input.Body)
+	if err != nil {
+		return nil, huma.Error500InternalServerError((&common.EventCreationError{Err: err}).Error())
+	}
+
+	return &CreateEventOutput{
+		Body: base.ApiResponse[event.Event]{
+			Success: true,
+			Data:    *evt,
+		},
+	}, nil
+}
+
 // DeleteEvent deletes an event.
 func (h *EventHandler) DeleteEvent(ctx context.Context, input *DeleteEventInput) (*DeleteEventOutput, error) {
 	if h.eventService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
 	}
 
 	if input.EventID == "" {

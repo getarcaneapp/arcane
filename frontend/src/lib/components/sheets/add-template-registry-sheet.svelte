@@ -4,7 +4,7 @@
 	import FormInput from '$lib/components/form/form-input.svelte';
 	import SwitchWithLabel from '$lib/components/form/labeled-switch.svelte';
 	import { z } from 'zod/v4';
-	import { createForm, preventDefault } from '$lib/utils/settings';
+	import { createForm, preventDefault } from '$lib/utils/form.utils';
 	import * as Alert from '$lib/components/ui/alert/index.js';
 	import { m } from '$lib/paraglide/messages';
 	import { templateService } from '$lib/services/template-service';

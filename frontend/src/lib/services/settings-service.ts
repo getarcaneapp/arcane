@@ -1,11 +1,11 @@
 import BaseAPIService from './api-service';
-import type { Settings, OidcStatusInfo } from '$lib/types/settings';
+import type { Settings, OidcStatusInfo } from '$lib/types/settings.type';
 import { environmentStore } from '$lib/stores/environment.store.svelte';
-import { isLocalSetting, extractLocalSettings, extractEnvironmentSettings } from '$lib/utils/settings';
+import { isLocalSetting, extractLocalSettings, extractEnvironmentSettings } from '$lib/utils/settings.util';
 
 type KeyValuePair = { key: string; value: string };
 
-class SettingsService extends BaseAPIService {
+export default class SettingsService extends BaseAPIService {
 	async getSettings(): Promise<Settings> {
 		// Wait for environment store to be initialized before fetching settings
 		await environmentStore.ready;

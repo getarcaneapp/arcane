@@ -3,11 +3,6 @@ package dockerinfo
 import "github.com/moby/moby/api/types/system"
 
 type Info struct {
-	// Embedded system.Info from the Docker daemon.
-	//
-	// Required: true
-	system.Info
-
 	// Success indicates if the Docker daemon information was successfully retrieved.
 	//
 	// Required: true
@@ -42,4 +37,9 @@ type Info struct {
 	//
 	// Required: true
 	BuildTime string `json:"buildTime"`
+
+	// Embedded system.Info from the Docker daemon.
+	//
+	// Required: true
+	system.Info
 }

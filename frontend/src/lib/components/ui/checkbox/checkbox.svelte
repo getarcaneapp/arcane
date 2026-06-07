@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Checkbox as CheckboxPrimitive } from 'bits-ui';
 	import { cn, type WithoutChildrenOrChild } from '$lib/utils.js';
+	import { CheckIcon, MinusIcon } from '$lib/icons';
 
 	let {
 		ref = $bindable(null),
@@ -15,7 +16,7 @@
 	bind:ref
 	data-slot="checkbox"
 	class={cn(
-		'border-input bg-input data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground data-[state=checked]:border-primary data-[state=indeterminate]:bg-primary data-[state=indeterminate]:text-primary-foreground data-[state=indeterminate]:border-primary focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive peer relative flex size-4 shrink-0 items-center justify-center rounded-[4px] border shadow-xs transition-shadow outline-none focus-visible:ring-[3px] disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50',
+		'border-input bg-input data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground dark:data-[state=checked]:bg-primary data-[state=checked]:border-primary focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive peer flex size-4 shrink-0 items-center justify-center rounded-[4px] border shadow-xs transition-shadow outline-none focus-visible:ring-[3px] disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50',
 		className
 	)}
 	bind:checked
@@ -23,27 +24,11 @@
 	{...restProps}
 >
 	{#snippet children({ checked, indeterminate })}
-		<div
-			data-slot="checkbox-indicator"
-			class="pointer-events-none absolute inset-0 flex items-center justify-center text-current transition-none"
-		>
+		<div data-slot="checkbox-indicator" class="text-current transition-none">
 			{#if checked}
-				<svg
-					class="absolute top-1/2 left-1/2 size-3 -translate-x-1/2 -translate-y-1/2"
-					viewBox="0 0 12 12"
-					fill="none"
-					aria-hidden="true"
-				>
-					<path
-						d="M3 6.15L5.2 8.25L9 3.85"
-						stroke="currentColor"
-						stroke-width="1.8"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-					/>
-				</svg>
+				<CheckIcon class="size-3.5" />
 			{:else if indeterminate}
-				<span class="absolute top-1/2 left-1/2 h-[2px] w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-current"></span>
+				<MinusIcon class="size-3.5" />
 			{/if}
 		</div>
 	{/snippet}

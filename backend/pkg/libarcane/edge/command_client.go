@@ -2,7 +2,6 @@ package edge
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -35,13 +34,13 @@ func NewCommandClient() *CommandClient {
 
 func (c *CommandClient) Execute(ctx context.Context, tunnel *AgentTunnel, req *CommandRequest) (*CommandResult, error) {
 	if ctx == nil {
-		return nil, errors.New("context is required")
+		return nil, fmt.Errorf("context is required")
 	}
 	if err := validateConnectedTunnelInternal(tunnel); err != nil {
 		return nil, err
 	}
 	if req == nil {
-		return nil, errors.New("command request is required")
+		return nil, fmt.Errorf("command request is required")
 	}
 
 	commandName := req.Command
@@ -101,16 +100,16 @@ func (c *CommandClient) Execute(ctx context.Context, tunnel *AgentTunnel, req *C
 
 func (c *CommandClient) OpenStream(ctx context.Context, tunnel *AgentTunnel, req *CommandRequest) error {
 	if ctx == nil {
-		return errors.New("context is required")
+		return fmt.Errorf("context is required")
 	}
 	if err := validateConnectedTunnelInternal(tunnel); err != nil {
 		return err
 	}
 	if req == nil {
-		return errors.New("command request is required")
+		return fmt.Errorf("command request is required")
 	}
 	if req.ID == "" {
-		return errors.New("stream ID is required")
+		return fmt.Errorf("stream ID is required")
 	}
 
 	commandName := req.Command
@@ -144,7 +143,7 @@ var DefaultCommandClient = NewCommandClient()
 
 func validateConnectedTunnelInternal(tunnel *AgentTunnel) error {
 	if tunnel == nil || tunnel.Conn == nil || tunnel.Conn.IsClosed() {
-		return errors.New("edge tunnel is not connected")
+		return fmt.Errorf("edge tunnel is not connected")
 	}
 	return nil
 }

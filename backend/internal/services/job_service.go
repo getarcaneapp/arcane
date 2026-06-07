@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -38,13 +37,6 @@ type JobService struct {
 	scheduler    JobRunner
 	lifecycleCtx context.Context
 	location     *time.Location // Timezone for cron schedule calculations
-
-	// environment-health is no longer a single scheduler job — it fans out to one
-	// dynamic job per environment owned by EnvironmentService. These bridge the Jobs
-	// UI (which addresses jobs by ID) back to that service. Set during bootstrap on
-	// the manager only.
-	OnEnvironmentHealthReschedule func(ctx context.Context)
-	RunEnvironmentHealthNow       func(ctx context.Context) error
 }
 
 func NewJobService(db *database.DB, settings *SettingsService, cfg *config.Config) *JobService {
@@ -74,6 +66,7 @@ func (s *JobService) GetJobSchedules(ctx context.Context) jobschedule.Config {
 		DockerClientRefreshInterval:    s.settings.GetStringSetting(ctx, "dockerClientRefreshInterval", "*/30 * * * * *"),
 		PollingInterval:                s.settings.GetStringSetting(ctx, "pollingInterval", "0 */15 * * * *"),
 		ScheduledPruneInterval:         s.settings.GetStringSetting(ctx, "scheduledPruneInterval", "0 0 0 * * *"),
+		GitopsSyncInterval:             s.settings.GetStringSetting(ctx, "gitopsSyncInterval", "0 */1 * * * *"),
 		VulnerabilityScanInterval:      s.settings.GetStringSetting(ctx, "vulnerabilityScanInterval", "0 0 0 * * *"),
 		AutoHealInterval:               s.settings.GetStringSetting(ctx, "autoHealInterval", "*/30 * * * * *"),
 	}
@@ -81,10 +74,10 @@ func (s *JobService) GetJobSchedules(ctx context.Context) jobschedule.Config {
 
 func (s *JobService) UpdateJobSchedules(ctx context.Context, updates jobschedule.Update) (jobschedule.Config, error) {
 	if s == nil || s.db == nil || s.settings == nil {
-		return jobschedule.Config{}, errors.New("job service not initialized")
+		return jobschedule.Config{}, fmt.Errorf("job service not initialized")
 	}
 	if s.cfg != nil && s.cfg.UIConfigurationDisabled {
-		return jobschedule.Config{}, errors.New("job schedule updates are disabled")
+		return jobschedule.Config{}, fmt.Errorf("job schedule updates are disabled")
 	}
 
 	current := s.GetJobSchedules(ctx)
@@ -101,6 +94,7 @@ func (s *JobService) UpdateJobSchedules(ctx context.Context, updates jobschedule
 		{key: "dockerClientRefreshInterval", current: current.DockerClientRefreshInterval, update: updates.DockerClientRefreshInterval},
 		{key: "pollingInterval", current: current.PollingInterval, update: updates.PollingInterval},
 		{key: "scheduledPruneInterval", current: current.ScheduledPruneInterval, update: updates.ScheduledPruneInterval},
+		{key: "gitopsSyncInterval", current: current.GitopsSyncInterval, update: updates.GitopsSyncInterval},
 		{key: "vulnerabilityScanInterval", current: current.VulnerabilityScanInterval, update: updates.VulnerabilityScanInterval},
 		{key: "autoHealInterval", current: current.AutoHealInterval, update: updates.AutoHealInterval},
 	}
@@ -173,19 +167,6 @@ func (s *JobService) RescheduleJobsForSettingKeys(ctx context.Context, changedKe
 			continue
 		}
 
-		// environment-health fans out to per-environment dynamic jobs; delegate the
-		// reschedule to EnvironmentService instead of looking up a single job.
-		if jobID == "environment-health" {
-			if s.OnEnvironmentHealthReschedule != nil {
-				reschedCtx := ctx //nolint:contextcheck // lifecycle context preferred so jobs outlive the request
-				if s.lifecycleCtx != nil {
-					reschedCtx = s.lifecycleCtx
-				}
-				s.OnEnvironmentHealthReschedule(reschedCtx)
-			}
-			continue
-		}
-
 		job, ok := s.scheduler.GetJob(jobID)
 		if !ok {
 			slog.DebugContext(ctx, "Skipping reschedule for unregistered job", "job", jobID)
@@ -219,7 +200,7 @@ func jobMetadataAffectedBySettingInternal(jobMeta meta.JobMetadata, changed map[
 
 func (s *JobService) ListJobs(ctx context.Context) (*jobschedule.JobListResponse, error) {
 	if s == nil || s.settings == nil {
-		return nil, errors.New("job service not initialized")
+		return nil, fmt.Errorf("job service not initialized")
 	}
 
 	allMetadata := meta.GetAllJobMetadata()
@@ -249,12 +230,6 @@ func (s *JobService) ListJobs(ctx context.Context) (*jobschedule.JobListResponse
 }
 
 func (s *JobService) RunJobNowInline(ctx context.Context, jobID string) error {
-	// environment-health runs as per-environment dynamic jobs; "run now" fans out
-	// through EnvironmentService rather than a single registered job.
-	if jobID == "environment-health" && s.RunEnvironmentHealthNow != nil {
-		return s.RunEnvironmentHealthNow(context.WithoutCancel(ctx))
-	}
-
 	job, err := s.getRunnableJobInternal(jobID)
 	if err != nil {
 		return err
@@ -268,7 +243,7 @@ func (s *JobService) RunJobNowInline(ctx context.Context, jobID string) error {
 
 func (s *JobService) getRunnableJobInternal(jobID string) (schedulertypes.Job, error) {
 	if s == nil || s.scheduler == nil {
-		return nil, errors.New("job service or scheduler not initialized")
+		return nil, fmt.Errorf("job service or scheduler not initialized")
 	}
 
 	meta, ok := meta.GetJobMetadata(jobID)
@@ -313,6 +288,7 @@ func (s *JobService) getJobScheduleInternal(ctx context.Context, meta meta.JobMe
 		"dockerClientRefreshInterval":    "*/30 * * * * *",
 		"pollingInterval":                "0 */15 * * * *",
 		"scheduledPruneInterval":         "0 0 0 * * *",
+		"gitopsSyncInterval":             "0 */1 * * * *",
 		"vulnerabilityScanInterval":      "0 0 0 * * *",
 		"autoHealInterval":               "*/30 * * * * *",
 	}

@@ -1,6 +1,6 @@
-import { version as currentVersion } from '$app/env';
+import { version as currentVersion } from '$app/environment';
 import { apiClient } from './api-service';
-import type { AppVersionInformation } from '$lib/types/settings';
+import type { AppVersionInformation } from '$lib/types/application-configuration';
 
 function getCurrentVersion() {
 	return currentVersion;
@@ -11,7 +11,24 @@ async function getVersionInformation(): Promise<AppVersionInformation> {
 		const res = await apiClient.get('/app-version', {
 			timeout: 2000
 		});
-		const data = res.data as Partial<AppVersionInformation>;
+		const data = res.data as {
+			currentVersion?: string;
+			currentTag?: string;
+			currentDigest?: string;
+			displayVersion?: string;
+			revision?: string;
+			shortRevision?: string;
+			goVersion?: string;
+			enabledFeatures?: string[];
+			buildTime?: string;
+			isSemverVersion?: boolean;
+			newestVersion?: string;
+			newestDigest?: string;
+			updateAvailable?: boolean;
+			releaseUrl?: string;
+			releaseNotes?: string;
+			releasedAt?: string;
+		};
 
 		return {
 			currentVersion: data.currentVersion || getCurrentVersion(),
@@ -21,8 +38,6 @@ async function getVersionInformation(): Promise<AppVersionInformation> {
 			revision: data.revision || 'unknown',
 			shortRevision: data.shortRevision || data.revision?.slice(0, 8) || 'unknown',
 			goVersion: data.goVersion || 'unknown',
-			nodeVersion: data.nodeVersion || 'unknown',
-			svelteKitVersion: data.svelteKitVersion || 'unknown',
 			enabledFeatures: data.enabledFeatures ?? [],
 			buildTime: data.buildTime,
 			isSemverVersion: data.isSemverVersion || false,
@@ -41,8 +56,6 @@ async function getVersionInformation(): Promise<AppVersionInformation> {
 			revision: 'unknown',
 			shortRevision: 'unknown',
 			goVersion: 'unknown',
-			nodeVersion: 'unknown',
-			svelteKitVersion: 'unknown',
 			enabledFeatures: [],
 			isSemverVersion: false,
 			updateAvailable: false

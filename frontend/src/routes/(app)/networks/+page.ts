@@ -1,18 +1,25 @@
 import { networkService } from '$lib/services/network-service';
 import { queryKeys } from '$lib/query/query-keys';
-import { resolveListPageLoadContext } from '$lib/utils/tables';
-import { throwPageLoadError } from '$lib/utils/api';
+import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
+import { resolveInitialTableRequest } from '$lib/utils/table-persistence.util';
+import { throwPageLoadError } from '$lib/utils/page-load-error.util';
 import type { PageLoad } from './$types';
+import { environmentStore } from '$lib/stores/environment.store.svelte';
 
 export const load: PageLoad = async ({ parent }) => {
-	const {
-		queryClient,
-		envId,
-		requestOptions: networkRequestOptions
-	} = await resolveListPageLoadContext(parent, 'arcane-networks-table', {
-		column: 'name',
-		direction: 'asc'
-	});
+	const { queryClient } = await parent();
+	const envId = await environmentStore.getCurrentEnvironmentId();
+
+	const networkRequestOptions = resolveInitialTableRequest('arcane-networks-table', {
+		pagination: {
+			page: 1,
+			limit: 20
+		},
+		sort: {
+			column: 'name',
+			direction: 'asc'
+		}
+	} satisfies SearchPaginationSortRequest);
 
 	// Single API call - counts are included in the response
 	let networks;

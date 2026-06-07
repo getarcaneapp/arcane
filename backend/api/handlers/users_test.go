@@ -9,7 +9,7 @@ import (
 	humamw "github.com/getarcaneapp/arcane/backend/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"github.com/getarcaneapp/arcane/backend/pkg/authz"
+	usertypes "github.com/getarcaneapp/arcane/types/user"
 	glsqlite "github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -27,12 +27,13 @@ func setupUserHandlerTestDB(t *testing.T) *database.DB {
 	return &database.DB{DB: db}
 }
 
-func createHandlerTestUser(t *testing.T, svc *services.UserService, id, username string, _ models.StringSlice) *models.User {
+func createHandlerTestUser(t *testing.T, svc *services.UserService, id, username string, roles models.StringSlice) *models.User {
 	t.Helper()
 
 	user := &models.User{
 		BaseModel: models.BaseModel{ID: id},
 		Username:  username,
+		Roles:     roles,
 	}
 
 	created, err := svc.CreateUser(context.Background(), user)
@@ -42,22 +43,36 @@ func createHandlerTestUser(t *testing.T, svc *services.UserService, id, username
 }
 
 func adminContext() context.Context {
-	return context.WithValue(context.Background(), humamw.ContextKeyUserPermissions, authz.SudoPermissionSet())
+	return context.WithValue(context.Background(), humamw.ContextKeyUserIsAdmin, true)
 }
 
 func TestDeleteUserReturnsConflictForLastAdmin(t *testing.T) {
 	db := setupUserHandlerTestDB(t)
-	require.NoError(t, db.AutoMigrate(&models.Role{}, &models.UserRoleAssignment{}, &models.Environment{}))
-	roleSvc := services.NewRoleService(db)
-	require.NoError(t, roleSvc.EnsureBuiltInRoles(context.Background()))
-	userSvc := services.NewUserService(db).WithRoleService(roleSvc)
+	userSvc := services.NewUserService(db)
 	handler := &UserHandler{userService: userSvc}
-	admin := createHandlerTestUser(t, userSvc, "admin-1", "arcane", models.StringSlice{})
-	require.NoError(t, roleSvc.SetUserAssignments(context.Background(), admin.ID, []models.UserRoleAssignment{
-		{RoleID: authz.BuiltInRoleAdmin, EnvironmentID: nil},
-	}))
+	admin := createHandlerTestUser(t, userSvc, "admin-1", "arcane", models.StringSlice{"admin"})
 
 	_, err := handler.DeleteUser(adminContext(), &DeleteUserInput{UserID: admin.ID})
+	require.Error(t, err)
+
+	var statusErr huma.StatusError
+	require.ErrorAs(t, err, &statusErr)
+	require.Equal(t, http.StatusConflict, statusErr.GetStatus())
+	require.Contains(t, statusErr.Error(), services.ErrCannotRemoveLastAdmin.Error())
+}
+
+func TestUpdateUserReturnsConflictWhenRemovingLastAdminRole(t *testing.T) {
+	db := setupUserHandlerTestDB(t)
+	userSvc := services.NewUserService(db)
+	handler := &UserHandler{userService: userSvc}
+	admin := createHandlerTestUser(t, userSvc, "admin-1", "arcane", models.StringSlice{"ADMIN"})
+
+	_, err := handler.UpdateUser(adminContext(), &UpdateUserInput{
+		UserID: admin.ID,
+		Body: usertypes.UpdateUser{
+			Roles: []string{"user"},
+		},
+	})
 	require.Error(t, err)
 
 	var statusErr huma.StatusError

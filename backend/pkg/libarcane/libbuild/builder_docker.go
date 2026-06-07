@@ -25,7 +25,6 @@ import (
 
 type dockerBuildInput struct {
 	buildFilesystemInput
-
 	platform    string
 	buildArgs   map[string]*string
 	labels      map[string]string
@@ -141,7 +140,7 @@ func prepareDockerBuildInputInternal(req imagetypes.BuildRequest) (dockerBuildIn
 	}
 
 	if len(req.Platforms) > 1 {
-		return dockerBuildInput{}, true, errors.New("docker build fallback does not support multi-platform builds")
+		return dockerBuildInput{}, true, fmt.Errorf("docker build fallback does not support multi-platform builds")
 	}
 
 	platform := ""
@@ -361,7 +360,7 @@ func (b *builder) pushDockerImagesInternal(
 		writeProgressEventInternal(progressWriter, imagetypes.ProgressEvent{
 			Type:    "build",
 			Service: serviceName,
-			Status:  "pushing " + tag,
+			Status:  fmt.Sprintf("pushing %s", tag),
 		})
 		pushOptions := dockerclient.ImagePushOptions{}
 		if b.registryAuthProvider != nil {
@@ -370,7 +369,7 @@ func (b *builder) pushDockerImagesInternal(
 				writeProgressEventInternal(progressWriter, imagetypes.ProgressEvent{
 					Type:    "build",
 					Service: serviceName,
-					Status:  "registry auth unavailable for " + tag,
+					Status:  fmt.Sprintf("registry auth unavailable for %s", tag),
 				})
 			} else if authHeader != "" {
 				pushOptions.RegistryAuth = authHeader

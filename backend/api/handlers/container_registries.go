@@ -10,7 +10,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"github.com/getarcaneapp/arcane/backend/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/crypto"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils/mapper"
 	"github.com/getarcaneapp/arcane/types/base"
@@ -121,7 +120,6 @@ func RegisterContainerRegistries(api huma.API, registryService *services.Contain
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermRegistriesList),
 	}, h.ListRegistries)
 
 	huma.Register(api, huma.Operation{
@@ -135,7 +133,7 @@ func RegisterContainerRegistries(api huma.API, registryService *services.Contain
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermRegistriesCreate),
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.CreateRegistry)
 
 	huma.Register(api, huma.Operation{
@@ -149,7 +147,7 @@ func RegisterContainerRegistries(api huma.API, registryService *services.Contain
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermRegistriesUpdate),
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.SyncRegistries)
 
 	huma.Register(api, huma.Operation{
@@ -163,7 +161,6 @@ func RegisterContainerRegistries(api huma.API, registryService *services.Contain
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermRegistriesRead),
 	}, h.GetPullUsage)
 
 	huma.Register(api, huma.Operation{
@@ -177,7 +174,6 @@ func RegisterContainerRegistries(api huma.API, registryService *services.Contain
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermRegistriesRead),
 	}, h.GetRegistry)
 
 	huma.Register(api, huma.Operation{
@@ -191,7 +187,7 @@ func RegisterContainerRegistries(api huma.API, registryService *services.Contain
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermRegistriesUpdate),
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.UpdateRegistry)
 
 	huma.Register(api, huma.Operation{
@@ -205,7 +201,7 @@ func RegisterContainerRegistries(api huma.API, registryService *services.Contain
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermRegistriesDelete),
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.DeleteRegistry)
 
 	huma.Register(api, huma.Operation{
@@ -219,7 +215,7 @@ func RegisterContainerRegistries(api huma.API, registryService *services.Contain
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermRegistriesTest),
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.TestRegistry)
 }
 
@@ -233,7 +229,7 @@ func (h *ContainerRegistryHandler) ListRegistries(ctx context.Context, input *Li
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
+	params := buildPaginationParamsInternal(0, input.Start, input.Limit, input.Sort, input.Order, input.Search)
 
 	registries, paginationResp, err := h.registryService.GetRegistriesPaginated(ctx, params)
 	if err != nil {
@@ -278,6 +274,10 @@ func (h *ContainerRegistryHandler) GetPullUsage(ctx context.Context, input *stru
 func (h *ContainerRegistryHandler) CreateRegistry(ctx context.Context, input *CreateContainerRegistryInput) (*CreateContainerRegistryOutput, error) {
 	if h.registryService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
 	}
 
 	reg, err := h.registryService.CreateRegistry(ctx, input.Body)
@@ -332,6 +332,10 @@ func (h *ContainerRegistryHandler) UpdateRegistry(ctx context.Context, input *Up
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
+
 	reg, err := h.registryService.UpdateRegistry(ctx, input.ID, input.Body)
 	if err != nil {
 		apiErr := models.ToAPIError(err)
@@ -359,6 +363,10 @@ func (h *ContainerRegistryHandler) DeleteRegistry(ctx context.Context, input *De
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
+
 	if err := h.registryService.DeleteRegistry(ctx, input.ID); err != nil {
 		apiErr := models.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.RegistryDeletionError{Err: err}).Error())
@@ -380,6 +388,10 @@ func (h *ContainerRegistryHandler) DeleteRegistry(ctx context.Context, input *De
 func (h *ContainerRegistryHandler) TestRegistry(ctx context.Context, input *TestContainerRegistryInput) (*TestContainerRegistryOutput, error) {
 	if h.registryService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
 	}
 
 	reg, err := h.registryService.GetRegistryByID(ctx, input.ID)
@@ -433,6 +445,10 @@ func (h *ContainerRegistryHandler) SyncRegistries(ctx context.Context, input *Sy
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
+
 	if err := h.registryService.SyncRegistries(ctx, input.Body.Registries); err != nil {
 		apiErr := models.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.RegistrySyncError{Err: err}).Error())
@@ -452,7 +468,7 @@ func (h *ContainerRegistryHandler) SyncRegistries(ctx context.Context, input *Sy
 // Helper Methods
 // ============================================================================
 
-func (h *ContainerRegistryHandler) triggerRemoteRegistrySync(ctx context.Context, reason string) {
+func (h *ContainerRegistryHandler) triggerRemoteRegistrySync(ctx context.Context, reason string) { //nolint:contextcheck // intentionally spawns background sync
 	if h.environmentService == nil {
 		return
 	}

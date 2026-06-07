@@ -1,31 +1,18 @@
 <script lang="ts">
 	import * as ResponsiveDialog from '$lib/components/ui/responsive-dialog/index.js';
-	import * as Alert from '$lib/components/ui/alert/index.js';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import FormInput from '$lib/components/form/form-input.svelte';
-	import RoleAssignmentsEditor from '$lib/components/forms/role-assignments-editor.svelte';
-	import type { User } from '$lib/types/auth';
-	import type { Role } from '$lib/types/auth';
-	import type { Environment } from '$lib/types/environment';
+	import SwitchWithLabel from '$lib/components/form/labeled-switch.svelte';
+	import type { User } from '$lib/types/user.type';
 	import { z } from 'zod/v4';
-	import { createForm, preventDefault } from '$lib/utils/settings';
-	import { isValidUserEmail } from '$lib/utils/formatting';
+	import { createForm, preventDefault } from '$lib/utils/form.utils';
+	import { isValidUserEmail } from '$lib/utils/email.utils';
 	import { m } from '$lib/paraglide/messages';
-	import IfPermitted from '$lib/components/if-permitted.svelte';
-
-	type RoleAssignmentInput = { roleId: string; environmentId?: string };
-	type UserSubmission = Omit<Partial<User>, 'roleAssignments'> & {
-		password?: string;
-		roleAssignments?: RoleAssignmentInput[];
-	};
 
 	type UserFormProps = {
 		open: boolean;
 		userToEdit: User | null;
-		roles: Role[];
-		environments: Environment[];
-		availableRoleAssignments?: RoleAssignmentInput[];
-		onSubmit: (data: { user: UserSubmission; isEditMode: boolean; userId?: string }) => void;
+		onSubmit: (data: { user: Partial<User> & { password?: string }; isEditMode: boolean; userId?: string }) => void;
 		isLoading: boolean;
 		allowUsernameEdit?: boolean;
 	};
@@ -33,9 +20,6 @@
 	let {
 		open = $bindable(false),
 		userToEdit = $bindable(),
-		roles,
-		environments,
-		availableRoleAssignments = [],
 		onSubmit,
 		isLoading,
 		allowUsernameEdit = false
@@ -46,8 +30,6 @@
 	let canEditUsername = $derived(!isEditMode || allowUsernameEdit);
 
 	let isOidcUser = $derived(!!userToEdit?.oidcSubjectId);
-	let hasOidcAssignments = $derived(!!userToEdit?.roleAssignments?.some((a) => a.source === 'oidc'));
-	let assignmentsDisabled = $derived(isOidcUser && hasOidcAssignments);
 
 	const formSchema = z.object({
 		username: z.string().min(1, m.common_username_required()),
@@ -57,14 +39,7 @@
 			.string()
 			.trim()
 			.refine((value) => value === '' || isValidUserEmail(value), m.common_invalid_email()),
-		roleAssignments: z
-			.array(
-				z.object({
-					roleId: z.string().min(1),
-					environmentId: z.string().optional()
-				})
-			)
-			.min(1, m.users_role_assignments_required())
+		isAdmin: z.boolean().default(false)
 	});
 
 	let formData = $derived({
@@ -72,7 +47,7 @@
 		password: '',
 		displayName: userToEdit?.displayName || '',
 		email: userToEdit?.email || '',
-		roleAssignments: availableRoleAssignments
+		isAdmin: Boolean(userToEdit?.roles?.includes('admin'))
 	});
 
 	let { inputs, ...form } = $derived(createForm<typeof formSchema>(formSchema, formData));
@@ -81,19 +56,19 @@
 		const data = form.validate();
 		if (!data) return;
 
-		// For OIDC users, only allow role assignment changes
+		// For OIDC users, only allow role changes
 		if (isOidcUser) {
 			onSubmit({
-				user: { roleAssignments: data.roleAssignments },
+				user: { roles: [data.isAdmin ? 'admin' : 'user'] },
 				isEditMode,
 				userId: userToEdit?.id
 			});
 			return;
 		}
 
-		const userData: UserSubmission = {
+		const userData: Partial<User> & { password?: string } = {
 			displayName: data.displayName,
-			roleAssignments: data.roleAssignments
+			roles: [data.isAdmin ? 'admin' : 'user']
 		};
 
 		if (data.email) {
@@ -129,7 +104,7 @@
 	description={isEditMode
 		? m.users_edit_description({ username: userToEdit?.username ?? m.common_unknown() })
 		: m.users_create_description()}
-	contentClass="sm:max-w-[640px]"
+	contentClass="sm:max-w-[500px]"
 >
 	{#snippet children()}
 		<form onsubmit={preventDefault(handleSubmit)} novalidate class="grid gap-4 py-6">
@@ -173,29 +148,12 @@
 				disabled={isOidcUser}
 				bind:input={$inputs.email}
 			/>
-			<IfPermitted adminOnly>
-				<div>
-					<label for="roleAssignments" class="text-sm font-medium">{m.users_role_assignments_label()}</label>
-					<p class="text-muted-foreground mb-2 text-xs">{m.users_role_assignments_description()}</p>
-					{#if assignmentsDisabled}
-						<Alert.Root variant="default" class="mb-3">
-							<Alert.Description>
-								{m.users_role_assignments_oidc_managed()}
-								<a href="/settings/authentication" class="text-primary ml-2 underline">{m.users_role_assignments_oidc_link()}</a>
-							</Alert.Description>
-						</Alert.Root>
-					{/if}
-					<RoleAssignmentsEditor
-						bind:assignments={$inputs.roleAssignments.value}
-						{roles}
-						{environments}
-						disabled={assignmentsDisabled}
-					/>
-					{#if $inputs.roleAssignments.error}
-						<p class="text-destructive mt-1 text-xs">{$inputs.roleAssignments.error}</p>
-					{/if}
-				</div>
-			</IfPermitted>
+			<SwitchWithLabel
+				id="isAdminSwitch"
+				label={m.common_admin()}
+				description={m.users_administrator_description()}
+				bind:checked={$inputs.isAdmin.value}
+			/>
 		</form>
 	{/snippet}
 

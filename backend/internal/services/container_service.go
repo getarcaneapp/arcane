@@ -1,6 +1,7 @@
 package services
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -18,15 +19,15 @@ import (
 	dockerutils "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/containerstats"
+	libupdater "github.com/getarcaneapp/arcane/backend/pkg/libarcane/imageupdate"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils/cache"
-	"github.com/getarcaneapp/arcane/backend/pkg/utils/iconcatalog"
 	containertypes "github.com/getarcaneapp/arcane/types/container"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
-	libupdater "github.com/getarcaneapp/updater/pkg/labels"
+	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/events"
 	"github.com/moby/moby/api/types/network"
@@ -42,13 +43,11 @@ type ContainerService struct {
 	projectService  *ProjectService
 	statsHistory    containerstats.Store
 	updateInfoCache *cache.KeyedCache[string, *imagetypes.UpdateInfo]
-	iconMetaCache   *cache.TTL[projects.ArcaneComposeMetadata]
 }
 
 const (
-	containerGroupByProject  = "project"
-	containerNoProjectGroup  = "No Project"
-	containerIconMetadataTTL = 5 * time.Second
+	containerGroupByProject = "project"
+	containerNoProjectGroup = "No Project"
 )
 
 type ContainerListResult struct {
@@ -67,7 +66,6 @@ func NewContainerService(ctx context.Context, db *database.DB, eventService *Eve
 		settingsService: settingsService,
 		projectService:  projectService,
 		updateInfoCache: cache.NewKeyed[string, *imagetypes.UpdateInfo](),
-		iconMetaCache:   cache.NewTTL[projects.ArcaneComposeMetadata](containerIconMetadataTTL),
 	}
 	svc.subscribeUpdateInfoCacheInvalidationInternal(ctx)
 	return svc
@@ -146,17 +144,6 @@ func shouldStartRedeployedContainerInternal(containerInfo container.InspectRespo
 	}
 
 	return shouldStart
-}
-
-func writeContainerProgressInternal(ctx context.Context, message string, progress int, phase string) {
-	progressWriter, _ := ctx.Value(projects.ProgressWriterKey{}).(io.Writer)
-	if progressWriter == nil {
-		return
-	}
-	payload := fmt.Sprintf(`{"type":"container","phase":%q,"status":%q,"progressDetail":{"current":%d,"total":100}}`+"\n", phase, message, progress)
-	if _, err := progressWriter.Write([]byte(payload)); err != nil {
-		slog.DebugContext(ctx, "failed to write container progress", "phase", phase, "error", err)
-	}
 }
 
 func (s *ContainerService) pullRedeployImageInternal(ctx context.Context, dockerClient *client.Client, imageName, containerID, containerName string, user models.User) error {
@@ -289,7 +276,7 @@ func (s *ContainerService) StartContainer(ctx context.Context, containerID strin
 
 	err = s.eventService.LogContainerEvent(ctx, models.EventTypeContainerStart, containerID, "name", user.ID, user.Username, "0", metadata)
 	if err != nil {
-		slog.WarnContext(ctx, "could not log container start action", "error", err)
+		fmt.Printf("Could not log container start action: %s\n", err)
 	}
 
 	_, err = dockerClient.ContainerStart(ctx, containerID, client.ContainerStartOptions{})
@@ -367,8 +354,8 @@ func (s *ContainerService) tryRedeployViaComposeProjectInternal(ctx context.Cont
 		return "", false, nil
 	}
 	labels := containerInfo.Config.Labels
-	projectName := dockerutils.ComposeProjectLabel(labels)
-	serviceName := dockerutils.ComposeServiceLabel(labels)
+	projectName := strings.TrimSpace(labels["com.docker.compose.project"])
+	serviceName := strings.TrimSpace(labels["com.docker.compose.service"])
 	if projectName == "" || serviceName == "" {
 		return "", false, nil
 	}
@@ -532,14 +519,12 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 	}
 
 	if imageName != "" {
-		writeContainerProgressInternal(ctx, "Pulling latest container image", 20, "pull")
 		if err := s.pullRedeployImageInternal(ctx, dockerClient, imageName, containerID, containerName, user); err != nil {
 			return "", err
 		}
 	}
 
 	backupName := buildRedeployBackupNameInternal(containerName, containerID)
-	writeContainerProgressInternal(ctx, "Preparing existing container", 45, "prepare")
 	if err := s.prepareContainerForRedeployInternal(ctx, dockerClient, containerID, containerName, backupName, wasRunning, user); err != nil {
 		return "", err
 	}
@@ -551,7 +536,6 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 		newConfig.Hostname = ""
 	}
 
-	writeContainerProgressInternal(ctx, "Creating replacement container", 65, "create")
 	createResp, err := libarcane.ContainerCreateWithCompatibilityForAPIVersion(ctx, dockerClient, client.ContainerCreateOptions{
 		Config:           &newConfig,
 		HostConfig:       containerInfo.HostConfig,
@@ -569,7 +553,6 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 	}
 
 	if shouldStartRedeployedContainerInternal(containerInfo, wasRunning) {
-		writeContainerProgressInternal(ctx, "Starting replacement container", 80, "start")
 		_, err = dockerClient.ContainerStart(ctx, createResp.ID, client.ContainerStartOptions{})
 		if err != nil {
 			if _, removeErr := dockerClient.ContainerRemove(ctx, createResp.ID, client.ContainerRemoveOptions{Force: true}); removeErr != nil {
@@ -611,7 +594,6 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 		slog.WarnContext(ctx, "failed to log deploy event", "err", logErr)
 	}
 
-	writeContainerProgressInternal(ctx, "Container redeployed", 100, "complete")
 	return createResp.ID, nil
 }
 
@@ -642,7 +624,6 @@ func (s *ContainerService) GetContainerDetails(ctx context.Context, id string) (
 	details := containertypes.NewDetails(containerInspect)
 	currentContainerID, currentContainerErr := dockerutils.GetCurrentContainerID()
 	details.RedeployDisabled = libupdater.ShouldDisableArcaneServerRedeploy(details.Labels, details.ID, currentContainerID, currentContainerErr)
-	s.applyContainerDetailsIconInternal(ctx, &details)
 
 	return details, nil
 }
@@ -772,7 +753,7 @@ func (s *ContainerService) CreateContainer(ctx context.Context, config *containe
 	}
 
 	if logErr := s.eventService.LogContainerEvent(ctx, models.EventTypeContainerCreate, resp.ID, "name", user.ID, user.Username, "0", metadata); logErr != nil {
-		slog.WarnContext(ctx, "could not log container stop action", "error", logErr)
+		fmt.Printf("Could not log container stop action: %s\n", logErr)
 	}
 
 	if _, err := dockerClient.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{}); err != nil {
@@ -873,7 +854,97 @@ func (s *ContainerService) StreamLogs(ctx context.Context, containerID string, l
 	defer func() { _ = logs.Close() }()
 
 	isTTY := containerInspect.Container.Config != nil && containerInspect.Container.Config.Tty
-	return dockerutils.StreamContainerLogs(ctx, logs, logsChan, follow, isTTY)
+	return s.streamContainerLogsInternal(ctx, logs, logsChan, follow, isTTY)
+}
+
+func (s *ContainerService) streamContainerLogsInternal(ctx context.Context, logs io.ReadCloser, logsChan chan<- string, follow bool, isTTY bool) error {
+	if isTTY {
+		return s.streamRawLogsInternal(ctx, logs, logsChan)
+	}
+	if follow {
+		return streamMultiplexedLogs(ctx, logs, logsChan)
+	}
+	return s.readAllLogs(ctx, logs, logsChan)
+}
+
+func (s *ContainerService) streamRawLogsInternal(ctx context.Context, logs io.Reader, logsChan chan<- string) error {
+	return s.readLogsFromReader(ctx, logs, logsChan, "")
+}
+
+// readLogsFromReader reads logs line by line from a reader
+func (s *ContainerService) readLogsFromReader(ctx context.Context, reader io.Reader, logsChan chan<- string, prefix string) error {
+	bufferedReader := bufio.NewReader(reader)
+
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
+		line, err := bufferedReader.ReadString('\n')
+		if len(line) > 0 {
+			trimmed := strings.TrimRight(line, "\r\n")
+			if trimmed != "" {
+				if prefix != "" {
+					trimmed = prefix + trimmed
+				}
+
+				select {
+				case logsChan <- trimmed:
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			}
+		}
+
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			return err
+		}
+	}
+}
+
+func (s *ContainerService) readAllLogs(ctx context.Context, logs io.ReadCloser, logsChan chan<- string) error {
+	stdoutBuf := &strings.Builder{}
+	stderrBuf := &strings.Builder{}
+	stdCopyDone := make(chan struct{})
+	defer close(stdCopyDone)
+
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = logs.Close()
+		case <-stdCopyDone:
+		}
+	}()
+
+	_, err := stdcopy.StdCopy(stdoutBuf, stderrBuf, logs)
+	if err != nil && !errors.Is(err, io.EOF) {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
+		return fmt.Errorf("failed to demultiplex logs: %w", err)
+	}
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return ctxErr
+	}
+
+	// Send stdout lines
+	if stdoutBuf.Len() > 0 {
+		if err := s.readLogsFromReader(ctx, strings.NewReader(stdoutBuf.String()), logsChan, ""); err != nil {
+			return err
+		}
+	}
+
+	// Send stderr lines with prefix
+	if stderrBuf.Len() > 0 {
+		if err := s.readLogsFromReader(ctx, strings.NewReader(stderrBuf.String()), logsChan, "[STDERR] "); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (s *ContainerService) ListContainersPaginated(
@@ -907,7 +978,7 @@ func (s *ContainerService) ListContainersPaginated(
 	imageIDs := collectImageIDs(dockerContainers)
 	updateInfoMap := s.getUpdateInfoMap(ctx, imageIDs)
 	currentContainerID, currentContainerErr := dockerutils.GetCurrentContainerID()
-	items := s.buildContainerSummaries(ctx, dockerContainers, updateInfoMap, currentContainerID, currentContainerErr)
+	items := s.buildContainerSummaries(dockerContainers, updateInfoMap, currentContainerID, currentContainerErr)
 
 	config := s.buildContainerPaginationConfig()
 	counts := s.calculateContainerStatusCounts(items)
@@ -1047,7 +1118,7 @@ func getContainerProjectNameInternal(container containertypes.Summary) string {
 		return containerNoProjectGroup
 	}
 
-	projectName := dockerutils.ComposeProjectLabel(container.Labels)
+	projectName := strings.TrimSpace(container.Labels["com.docker.compose.project"])
 	if projectName == "" {
 		return containerNoProjectGroup
 	}
@@ -1119,100 +1190,17 @@ func (s *ContainerService) getUpdateInfoMap(ctx context.Context, imageIDs []stri
 	return updateInfoMap
 }
 
-func (s *ContainerService) buildContainerSummaries(ctx context.Context, containers []container.Summary, updateInfoMap map[string]*imagetypes.UpdateInfo, currentContainerID string, currentContainerErr error) []containertypes.Summary {
+func (s *ContainerService) buildContainerSummaries(containers []container.Summary, updateInfoMap map[string]*imagetypes.UpdateInfo, currentContainerID string, currentContainerErr error) []containertypes.Summary {
 	items := make([]containertypes.Summary, 0, len(containers))
-	metadataByProject := map[string]projects.ArcaneComposeMetadata{}
 	for _, dc := range containers {
 		summary := containertypes.NewSummary(dc)
 		if info, exists := updateInfoMap[dc.ImageID]; exists {
 			summary.UpdateInfo = info
 		}
 		summary.RedeployDisabled = libupdater.ShouldDisableArcaneServerRedeploy(summary.Labels, summary.ID, currentContainerID, currentContainerErr)
-		s.applyContainerSummaryIconInternal(ctx, &summary, metadataByProject)
 		items = append(items, summary)
 	}
 	return items
-}
-
-func (s *ContainerService) applyContainerSummaryIconInternal(ctx context.Context, summary *containertypes.Summary, metadataByProject map[string]projects.ArcaneComposeMetadata) {
-	if summary == nil {
-		return
-	}
-	resolvedIcon := s.resolveContainerIconInternal(ctx, summary.Labels, metadataByProject)
-	summary.IconLightURL = resolvedIcon.IconLightURL
-	summary.IconDarkURL = resolvedIcon.IconDarkURL
-}
-
-func (s *ContainerService) applyContainerDetailsIconInternal(ctx context.Context, details *containertypes.Details) {
-	if details == nil {
-		return
-	}
-	resolvedIcon := s.resolveContainerIconInternal(ctx, details.Labels, nil)
-	details.IconLightURL = resolvedIcon.IconLightURL
-	details.IconDarkURL = resolvedIcon.IconDarkURL
-}
-
-func (s *ContainerService) resolveContainerIconInternal(ctx context.Context, labels map[string]string, metadataByProject map[string]projects.ArcaneComposeMetadata) iconcatalog.ResolvedIconSet {
-	explicitIcon := projects.FindArcaneIconSet(labels)
-	if iconSetHasBothVariantsInternal(explicitIcon) {
-		return s.resolveIconSetInternal(ctx, explicitIcon)
-	}
-
-	projectName := dockerutils.ComposeProjectLabel(labels)
-	if projectName == "" || s == nil || s.projectService == nil {
-		return s.resolveIconSetInternal(ctx, explicitIcon)
-	}
-
-	meta := s.getCachedProjectIconMetadataInternal(ctx, projectName, metadataByProject)
-
-	serviceName := dockerutils.ComposeServiceLabel(labels)
-	return s.resolveIconSetInternal(ctx, iconcatalog.FirstNonEmpty(
-		explicitIcon,
-		meta.ServiceIconSets[serviceName],
-		meta.ProjectIcon,
-	))
-}
-
-func iconSetHasBothVariantsInternal(iconSet iconcatalog.IconSet) bool {
-	return strings.TrimSpace(iconSet.Light) != "" && strings.TrimSpace(iconSet.Dark) != ""
-}
-
-func (s *ContainerService) getCachedProjectIconMetadataInternal(ctx context.Context, projectName string, metadataByProject map[string]projects.ArcaneComposeMetadata) projects.ArcaneComposeMetadata {
-	if metadataByProject != nil {
-		if meta, ok := metadataByProject[projectName]; ok {
-			return meta
-		}
-	}
-
-	if s.iconMetaCache != nil {
-		if meta, ok := s.iconMetaCache.Get(projectName); ok {
-			if metadataByProject != nil {
-				metadataByProject[projectName] = meta
-			}
-			return meta
-		}
-	}
-
-	meta := projects.ArcaneComposeMetadata{ServiceIconSets: map[string]projects.IconSet{}}
-	proj, err := s.projectService.GetProjectByComposeName(ctx, projectName)
-	if err == nil && proj != nil {
-		meta = s.projectService.getProjectMetadataForProject(ctx, *proj)
-	}
-	if s.iconMetaCache != nil {
-		s.iconMetaCache.Put(projectName, meta)
-	}
-	if metadataByProject != nil {
-		metadataByProject[projectName] = meta
-	}
-	return meta
-}
-
-func (s *ContainerService) resolveIconSetInternal(ctx context.Context, iconSet iconcatalog.IconSet) iconcatalog.ResolvedIconSet {
-	catalog := iconcatalog.DefaultCatalog
-	if s != nil && s.settingsService != nil {
-		catalog = s.settingsService.GetStringSetting(ctx, "iconCatalog", iconcatalog.DefaultCatalog)
-	}
-	return iconcatalog.Resolve(catalog, iconSet)
 }
 
 func (s *ContainerService) buildContainerPaginationConfig() pagination.Config[containertypes.Summary] {
@@ -1385,7 +1373,7 @@ func (s *ContainerService) buildContainerFilterAccessors() []pagination.FilterAc
 		{
 			Key: "standalone",
 			Fn: func(c containertypes.Summary, filterValue string) bool {
-				isStandalone := dockerutils.ComposeProjectLabel(c.Labels) == ""
+				isStandalone := strings.TrimSpace(c.Labels["com.docker.compose.project"]) == ""
 				switch filterValue {
 				case "true", "1":
 					return isStandalone

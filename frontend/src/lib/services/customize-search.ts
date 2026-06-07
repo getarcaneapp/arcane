@@ -1,7 +1,7 @@
 import { apiClient } from './api-service';
-import type { CustomizeSearchResponse, CustomizeCategory } from '$lib/types/shared';
+import type { CustomizeSearchResponse, CustomizeCategory } from '$lib/types/customize-search.type';
 
-class CustomizeSearchService {
+export class CustomizeSearchService {
 	private baseUrl = '/customize';
 
 	async search(query: string): Promise<CustomizeSearchResponse> {

@@ -2,7 +2,7 @@
 	import * as Collapsible from '$lib/components/ui/collapsible/index.js';
 	import { ArrowDownIcon } from '$lib/icons';
 	import FormInput from '$lib/components/form/form-input.svelte';
-	import { preventDefault } from '$lib/utils/settings';
+	import { preventDefault } from '$lib/utils/form.utils';
 	import { m } from '$lib/paraglide/messages';
 	import type { BuildFormInputsStore } from './build-form.types';
 

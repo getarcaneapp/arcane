@@ -1,5 +1,4 @@
 import { Column, Heading, Row, Text } from 'react-email';
-import { colors, fonts, radii } from '../theme';
 
 export default function CardHeader({ title, warning }: { title: string; warning?: boolean }) {
 	return (
@@ -18,15 +17,14 @@ const titleStyle = {
 	fontSize: '24px',
 	fontWeight: 'bold' as const,
 	margin: 0,
-	color: colors.textPrimary,
-	fontFamily: fonts.mono
+	color: '#f1f5f9'
 };
 
 const warningStyle = {
-	backgroundColor: colors.warningBg,
-	color: colors.warningText,
+	backgroundColor: '#fbbf24',
+	color: '#78350f',
 	padding: '4px 12px',
-	borderRadius: radii.badge,
+	borderRadius: '12px',
 	fontSize: '12px',
 	fontWeight: '600' as const,
 	display: 'inline-block',

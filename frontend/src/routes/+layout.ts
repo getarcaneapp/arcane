@@ -1,18 +1,16 @@
-import { browser } from '$app/env';
+import { browser } from '$app/environment';
 import { environmentManagementService } from '$lib/services/env-mgmt-service';
 import { settingsService } from '$lib/services/settings-service';
-import { roleService } from '$lib/services/role-service';
 import { swarmService } from '$lib/services/swarm-service';
 import { userService } from '$lib/services/user-service';
 import versionService from '$lib/services/version-service';
 import settingsStore from '$lib/stores/config-store';
 import { environmentStore } from '$lib/stores/environment.store.svelte';
 import userStore from '$lib/stores/user-store';
-import { type AppVersionInformation } from '$lib/types/settings';
-import type { SearchPaginationSortRequest } from '$lib/types/shared';
-import type { PermissionsManifest } from '$lib/types/auth';
+import { type AppVersionInformation } from '$lib/types/application-configuration';
+import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
 import { authService } from '$lib/services/auth-service';
-import { tryCatch } from '$lib/utils/api';
+import { tryCatch } from '$lib/utils/try-catch';
 import { QueryClient } from '@tanstack/svelte-query';
 import { queryKeys } from '$lib/query/query-keys';
 
@@ -65,8 +63,6 @@ export const load = async () => {
 	// Step 2: Only fetch authenticated data if user is logged in
 	let settings = null;
 	let swarmEnabled = false;
-	let permissionsManifest: PermissionsManifest | null = null;
-	let permissionsManifestLoadFailed = false;
 	if (user) {
 		// Initialize environment store (required for settings service)
 		const environmentRequestOptions: SearchPaginationSortRequest = {
@@ -85,15 +81,12 @@ export const load = async () => {
 
 		// Fetch settings after environment store is initialized
 		// Settings service depends on environmentStore.getCurrentEnvironmentId()
-		const [loadedSettings, loadedSwarmStatus, loadedPermissionsManifest] = await Promise.all([
+		const [loadedSettings, loadedSwarmStatus] = await Promise.all([
 			settingsService.getSettings().catch(() => null),
-			swarmService.getSwarmStatus().catch(() => null),
-			roleService.getPermissionsManifest().catch((): PermissionsManifest | null => null)
+			swarmService.getSwarmStatus().catch(() => null)
 		]);
 		settings = loadedSettings;
 		swarmEnabled = loadedSwarmStatus?.enabled === true;
-		permissionsManifest = loadedPermissionsManifest;
-		permissionsManifestLoadFailed = loadedPermissionsManifest === null;
 	} else {
 		// Initialize empty environment store for unauthenticated users
 		await environmentStore.initialize([]);
@@ -118,8 +111,6 @@ export const load = async () => {
 		revision: 'unknown',
 		shortRevision: 'unknown',
 		goVersion: 'unknown',
-		nodeVersion: 'unknown',
-		svelteKitVersion: 'unknown',
 		enabledFeatures: [],
 		isSemverVersion: false
 	};
@@ -134,8 +125,6 @@ export const load = async () => {
 			revision: info.revision,
 			shortRevision: info.shortRevision || (info.revision?.slice(0, 8) ?? 'unknown'),
 			goVersion: info.goVersion || 'unknown',
-			nodeVersion: info.nodeVersion || 'unknown',
-			svelteKitVersion: info.svelteKitVersion || 'unknown',
 			enabledFeatures: info.enabledFeatures ?? [],
 			buildTime: info.buildTime,
 			isSemverVersion: info.isSemverVersion,
@@ -151,8 +140,6 @@ export const load = async () => {
 	return {
 		user,
 		settings,
-		permissionsManifest,
-		permissionsManifestLoadFailed,
 		versionInformation,
 		queryClient,
 		swarmEnabled

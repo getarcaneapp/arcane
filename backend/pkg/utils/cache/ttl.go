@@ -64,10 +64,3 @@ func (c *TTL[V]) DeleteFunc(fn func(key string, value V) bool) {
 		}
 	}
 }
-
-// Delete removes the entry for key, if present.
-func (c *TTL[V]) Delete(key string) {
-	c.mu.Lock()
-	delete(c.entries, key)
-	c.mu.Unlock()
-}

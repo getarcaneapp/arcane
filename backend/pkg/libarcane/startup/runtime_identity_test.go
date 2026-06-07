@@ -11,29 +11,18 @@ import (
 )
 
 func TestLoadRuntimeIdentityRequest(t *testing.T) {
-	t.Run("enabled with default non-root runtime when unset", func(t *testing.T) {
-		req, warning, err := loadRuntimeIdentityRequestInternal(&RuntimeIdentityConfig{
-			DockerHost: "unix:///tmp/docker.sock",
-		})
+	t.Run("disabled when unset", func(t *testing.T) {
+		req, warning, err := loadRuntimeIdentityRequestInternal(&RuntimeIdentityConfig{})
 		require.NoError(t, err)
 		require.Empty(t, warning)
-		require.True(t, req.Enabled)
-		require.Equal(t, defaultRuntimeUID, req.UID)
-		require.Equal(t, defaultRuntimeGID, req.GID)
-		require.Equal(t, uint32(defaultRuntimeUID), req.CredentialUID)
-		require.Equal(t, uint32(defaultRuntimeGID), req.CredentialGID)
-		require.Equal(t, "unix:///tmp/docker.sock", req.DockerHost)
+		require.False(t, req.Enabled)
 	})
 
 	t.Run("warning when partial config", func(t *testing.T) {
 		req, warning, err := loadRuntimeIdentityRequestInternal(&RuntimeIdentityConfig{PUID: "1001"})
 		require.NoError(t, err)
 		require.Contains(t, warning, "PUID and PGID must both be set")
-		require.True(t, req.Enabled)
-		require.Equal(t, defaultRuntimeUID, req.UID)
-		require.Equal(t, defaultRuntimeGID, req.GID)
-		require.Equal(t, uint32(defaultRuntimeUID), req.CredentialUID)
-		require.Equal(t, uint32(defaultRuntimeGID), req.CredentialGID)
+		require.False(t, req.Enabled)
 	})
 
 	t.Run("error when invalid numeric value", func(t *testing.T) {
@@ -86,14 +75,12 @@ func TestRuntimeDockerConfigDir(t *testing.T) {
 		require.Equal(t, "/custom/docker-config", dir)
 	})
 
-	t.Run("default runtime uses non-root identity", func(t *testing.T) {
+	t.Run("root default runtime leaves runtime identity disabled", func(t *testing.T) {
 		req, warning, err := loadRuntimeIdentityRequestInternal(&RuntimeIdentityConfig{})
 
 		require.NoError(t, err)
 		require.Empty(t, warning)
-		require.True(t, req.Enabled)
-		require.Equal(t, defaultRuntimeUID, req.UID)
-		require.Equal(t, defaultRuntimeGID, req.GID)
+		require.False(t, req.Enabled)
 	})
 }
 

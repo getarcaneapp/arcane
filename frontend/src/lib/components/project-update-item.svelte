@@ -1,13 +1,12 @@
 <script lang="ts">
-	import type { ProjectUpdateInfo } from '$lib/types/swarm';
-	import { getProjectUpdateStatus, getProjectUpdateText } from '$lib/utils/docker';
+	import type { ProjectUpdateInfo } from '$lib/types/project.type';
+	import { getProjectUpdateStatus, getProjectUpdateText } from '$lib/utils/project-update.util';
 	import { m } from '$lib/paraglide/messages';
 	import UpdateStatusPopover from '$lib/components/update-status-popover.svelte';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { AlertIcon, CircleArrowUpIcon, ClockIcon, ImagesIcon, RefreshIcon, VerifiedCheckIcon } from '$lib/icons';
 	import type { Component } from 'svelte';
 	import { format } from 'date-fns';
-	import UncheckedRingIcon from '$lib/components/unchecked-ring-icon.svelte';
 
 	interface Props {
 		updateInfo?: ProjectUpdateInfo;
@@ -174,9 +173,11 @@
 					{#if status === 'error'}
 						<AlertIcon class="size-4 text-red-500 transition-colors group-hover:text-blue-400" />
 					{:else}
-						<span class="flex size-4 items-center justify-center text-gray-400 transition-colors group-hover:text-blue-400">
-							<UncheckedRingIcon />
-						</span>
+						<div
+							class="flex h-4 w-4 items-center justify-center rounded-full border-2 border-dashed border-gray-400 transition-colors group-hover:border-blue-400 group-hover:bg-blue-50"
+						>
+							<div class="h-1.5 w-1.5 rounded-full bg-gray-400 transition-colors group-hover:bg-blue-400"></div>
+						</div>
 					{/if}
 				</button>
 			</span>
@@ -193,8 +194,8 @@
 				{:else if status === 'has_update'}
 					<CircleArrowUpIcon class="size-4 text-blue-500" />
 				{:else}
-					<div class="flex size-4 items-center justify-center text-gray-400 opacity-60">
-						<UncheckedRingIcon />
+					<div class="flex h-4 w-4 items-center justify-center rounded-full border-2 border-dashed border-gray-400 opacity-60">
+						<div class="h-1.5 w-1.5 rounded-full bg-gray-400"></div>
 					</div>
 				{/if}
 			</span>
@@ -236,7 +237,7 @@
 							<div class="space-y-2">
 								<div class="text-foreground text-[11px] font-medium tracking-wide uppercase">{m.images_has_updates()}</div>
 								<div class="max-h-40 space-y-1 overflow-auto">
-									{#each updatedImageRefs as imageRef (imageRef)}
+									{#each updatedImageRefs as imageRef}
 										<div class="bg-muted text-foreground rounded-md px-2 py-1 font-mono text-xs break-all">
 											{imageRef}
 										</div>

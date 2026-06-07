@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -13,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cenkalti/backoff/v5"
+	backoff "github.com/cenkalti/backoff/v5"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 )
@@ -134,7 +133,7 @@ func (j *AnalyticsJob) Run(ctx context.Context) {
 			}
 			req.Header.Set("Content-Type", "application/json")
 
-			resp, err := j.httpClient.Do(req)
+			resp, err := j.httpClient.Do(req) //nolint:gosec // intentional request to configured analytics heartbeat endpoint
 			if err != nil {
 				return struct{}{}, fmt.Errorf("failed to send request: %w", err)
 			}
@@ -194,7 +193,7 @@ func (j *AnalyticsJob) Reschedule(ctx context.Context) error {
 
 func (j *AnalyticsJob) claimHeartbeatAttemptWindowInternal(ctx context.Context) (bool, error) {
 	if j.kvService == nil {
-		return false, errors.New("analytics heartbeat kv service is not configured")
+		return false, fmt.Errorf("analytics heartbeat kv service is not configured")
 	}
 
 	j.runMu.Lock()

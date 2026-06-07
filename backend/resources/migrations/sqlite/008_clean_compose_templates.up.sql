@@ -1,0 +1,1 @@
+ALTER TABLE compose_templates DROP COLUMN meta_updated_at;

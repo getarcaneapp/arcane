@@ -118,6 +118,8 @@ func TestSetupAPIForSpec_PublicRoutesOverrideSecurity(t *testing.T) {
 		{path: "/environments/pair", method: "POST"},
 		{path: "/version", method: "GET"},
 		{path: "/app-version", method: "GET"},
+		{path: "/fonts/sans", method: "GET"},
+		{path: "/fonts/mono", method: "GET"},
 	}
 
 	for _, testCase := range testCases {
@@ -166,17 +168,5 @@ func TestSetupAPIForSpec_TemplateReadRoutesProtected(t *testing.T) {
 				t.Fatalf("expected API security %v, got %v", expectedSecurity, api.OpenAPI().Security)
 			}
 		})
-	}
-}
-
-func TestSetupAPIForSpec_DoesNotRegisterPublicCreateEvent(t *testing.T) {
-	api := SetupAPIForSpec()
-
-	pathItem := api.OpenAPI().Paths["/events"]
-	if pathItem == nil {
-		t.Fatal("expected /events path to be registered for list events")
-	}
-	if pathItem.Post != nil {
-		t.Fatal("expected POST /events to be absent from the public API")
 	}
 }

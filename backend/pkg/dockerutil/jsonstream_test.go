@@ -30,4 +30,11 @@ func TestConsumeJSONMessageStream(t *testing.T) {
 		}
 	})
 
+	t.Run("returns legacy top-level error string", func(t *testing.T) {
+		stream := strings.NewReader(`{"error":"manifest unknown"}` + "\n")
+		err := ConsumeJSONMessageStream(stream, nil)
+		if err == nil || !strings.Contains(err.Error(), "manifest unknown") {
+			t.Fatalf("expected manifest unknown error, got %v", err)
+		}
+	})
 }

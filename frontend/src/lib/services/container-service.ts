@@ -6,9 +6,9 @@ import type {
 	ContainerSummaryGroupDto,
 	ContainerCreateRequest,
 	ContainerDetailsDto
-} from '$lib/types/docker';
-import type { SearchPaginationSortRequest, Paginated } from '$lib/types/shared';
-import { transformPaginationParams } from '$lib/utils/tables';
+} from '$lib/types/container.type';
+import type { SearchPaginationSortRequest, Paginated } from '$lib/types/pagination.type';
+import { transformPaginationParams } from '$lib/utils/params.util';
 
 export type ContainersPaginatedResponse = Paginated<ContainerSummaryDto, ContainerStatusCounts> & {
 	groups?: ContainerSummaryGroupDto[];
@@ -22,7 +22,7 @@ export interface ContainerDetailsResponse {
 	data: ContainerDetailsDto;
 }
 
-class ContainerService extends BaseAPIService {
+export class ContainerService extends BaseAPIService {
 	private async resolveEnvironmentId(environmentId?: string): Promise<string> {
 		return environmentId ?? (await environmentStore.getCurrentEnvironmentId());
 	}

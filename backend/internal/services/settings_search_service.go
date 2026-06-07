@@ -64,10 +64,6 @@ func (s *SettingsSearchService) buildCategoriesFromModel() []category.Category {
 		keywords := utils.ParseKeywords(metaTag["keywords"])
 		categoryID := metaTag["category"]
 		if categoryID == "" {
-			catMeta := utils.ParseMetaTag(field.Tag.Get("catmeta"))
-			categoryID = catMeta["id"]
-		}
-		if categoryID == "" {
 			categoryID = "jobs"
 		}
 

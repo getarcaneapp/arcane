@@ -1,13 +1,12 @@
 import { test, expect, type Page } from '@playwright/test';
 import { fetchContainersWithRetry, type Paginated } from '../utils/fetch.util';
 import { ContainerSummary } from 'types/containers.type';
-import { openRowActionsMenu } from '../utils/table-actions.util';
 
 const CONTAINERS_ROUTE = '/containers';
 
 async function navigateToContainers(page: Page) {
 	await page.goto(CONTAINERS_ROUTE);
-	await page.waitForLoadState('load');
+	await page.waitForLoadState('networkidle');
 }
 
 let containersData: Paginated<ContainerSummary> = { data: [], pagination: { totalItems: 0 } };
@@ -51,8 +50,8 @@ test.describe('Containers Page', () => {
 		await navigateToContainers(page);
 
 		const firstRow = page.locator('tbody tr').first();
-		const menu = await openRowActionsMenu(page, firstRow);
-		await menu.getByRole('menuitem', { name: 'Inspect', exact: true }).click();
+		await firstRow.getByRole('button', { name: 'Open menu' }).click();
+		await page.getByRole('menuitem', { name: 'Inspect', exact: true }).click();
 
 		await expect(page).toHaveURL(/\/containers\/.+/);
 		await expect(
@@ -67,7 +66,7 @@ test.describe('Containers Page', () => {
 		test.skip(!running, 'No running container available');
 
 		await page.goto(`/containers/${running!.id}`);
-		await page.waitForLoadState('load');
+		await page.waitForLoadState('networkidle');
 
 		await page.getByRole('tab', { name: 'Logs' }).click();
 
@@ -88,7 +87,7 @@ test.describe('Containers Page', () => {
 		test.skip(!stopped, 'No stopped container available');
 
 		await page.goto(`/containers/${stopped!.id}`);
-		await page.waitForLoadState('load');
+		await page.waitForLoadState('networkidle');
 
 		await page.getByRole('tab', { name: 'Logs' }).click();
 
@@ -108,9 +107,9 @@ test.describe('Containers Page', () => {
 
 		if (running) {
 			const row = page.locator(`tr:has(a[href="/containers/${running.id}"])`);
-			const menu = await openRowActionsMenu(page, row);
-			await expect(menu.getByRole('menuitem', { name: 'Restart', exact: true })).toBeVisible();
-			await expect(menu.getByRole('menuitem', { name: 'Stop', exact: true })).toBeVisible();
+			await row.getByRole('button', { name: 'Open menu' }).click();
+			await expect(page.getByRole('menuitem', { name: 'Restart', exact: true })).toBeVisible();
+			await expect(page.getByRole('menuitem', { name: 'Stop', exact: true })).toBeVisible();
 			await page.keyboard.press('Escape');
 		} else {
 			test.info().annotations.push({
@@ -121,8 +120,8 @@ test.describe('Containers Page', () => {
 
 		if (stopped) {
 			const row = page.locator(`tr:has(a[href="/containers/${stopped.id}"])`);
-			const menu = await openRowActionsMenu(page, row);
-			await expect(menu.getByRole('menuitem', { name: 'Start', exact: true })).toBeVisible();
+			await row.getByRole('button', { name: 'Open menu' }).click();
+			await expect(page.getByRole('menuitem', { name: 'Start', exact: true })).toBeVisible();
 			await page.keyboard.press('Escape');
 		} else {
 			test.info().annotations.push({
@@ -139,8 +138,8 @@ test.describe('Containers Page', () => {
 		await navigateToContainers(page);
 
 		const row = page.locator(`tr:has(a[href="/containers/${any.id}"])`);
-		const menu = await openRowActionsMenu(page, row);
-		await menu.getByRole('menuitem', { name: 'Remove', exact: true }).click();
+		await row.getByRole('button', { name: 'Open menu' }).click();
+		await page.getByRole('menuitem', { name: 'Remove', exact: true }).click();
 
 		const dialog = page.locator(
 			'div[role="heading"][aria-level="2"][data-dialog-title]:has-text("Confirm Container Removal")'

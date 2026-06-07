@@ -3,7 +3,9 @@ package docker
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"io"
+	"strings"
 
 	"github.com/moby/moby/api/types/jsonstream"
 )
@@ -29,6 +31,14 @@ func ConsumeJSONMessageStream(reader io.Reader, lineHandler func([]byte) error) 
 		}
 		if msg.Error != nil {
 			return msg.Error
+		}
+
+		// Some daemons include an additional top-level "error" string.
+		var legacy struct {
+			Error string `json:"error,omitempty"`
+		}
+		if err := json.Unmarshal(line, &legacy); err == nil && strings.TrimSpace(legacy.Error) != "" {
+			return errors.New(strings.TrimSpace(legacy.Error))
 		}
 	}
 

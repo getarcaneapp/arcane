@@ -3,7 +3,6 @@ package edge
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -229,55 +228,34 @@ func (c *TunnelClient) connectAndServeManagedTunnelInternal(ctx context.Context)
 	if c.shouldAttemptWebSocketTunnelInternal() {
 		return c.connectAndServeWebSocket(ctx)
 	}
-	return errors.New("no edge tunnel transport is available")
+	return fmt.Errorf("no edge tunnel transport is available")
 }
 
 func (c *TunnelClient) shouldFallbackToWebSocketInternal() bool {
-	return c.shouldAttemptWebSocketTunnelInternal()
+	if !c.shouldAttemptWebSocketTunnelInternal() {
+		return false
+	}
+	return c.managerWebSocketURLInternal() != ""
 }
 
 func (c *TunnelClient) shouldAttemptGRPCTunnelInternal() bool {
-	transports := c.managedTunnelTransportsInternal()
-	return transports.grpc
+	if c == nil {
+		return false
+	}
+	if UsePollEdgeTransport(c.cfg) {
+		return strings.TrimSpace(c.managerGRPCAddr) != ""
+	}
+	return UseGRPCEdgeTransport(c.cfg)
 }
 
 func (c *TunnelClient) shouldAttemptWebSocketTunnelInternal() bool {
-	transports := c.managedTunnelTransportsInternal()
-	return transports.websocket
-}
-
-type managedTunnelTransportsInternal struct {
-	grpc      bool
-	websocket bool
-}
-
-func (c *TunnelClient) managedTunnelTransportsInternal() managedTunnelTransportsInternal {
-	if c == nil || c.cfg == nil {
-		return managedTunnelTransportsInternal{}
+	if c == nil {
+		return false
 	}
-
-	managerGRPCAvailable := strings.TrimSpace(c.managerGRPCAddr) != ""
-	managerWebSocketAvailable := c.managerWebSocketURLInternal() != ""
-	transport := NormalizeEdgeTransport(c.cfg.EdgeTransport)
-
-	switch transport {
-	case EdgeTransportPoll:
-		return managedTunnelTransportsInternal{
-			grpc:      managerGRPCAvailable,
-			websocket: managerWebSocketAvailable,
-		}
-	case EdgeTransportWebSocket:
-		return managedTunnelTransportsInternal{
-			websocket: managerWebSocketAvailable,
-		}
-	case EdgeTransportGRPC:
-		return managedTunnelTransportsInternal{
-			grpc:      managerGRPCAvailable,
-			websocket: strings.TrimSpace(c.cfg.EdgeTransport) == "" && managerWebSocketAvailable,
-		}
-	default:
-		return managedTunnelTransportsInternal{}
+	if UsePollEdgeTransport(c.cfg) {
+		return c.managerWebSocketURLInternal() != ""
 	}
+	return UseWebSocketEdgeTransport(c.cfg)
 }
 
 func (c *TunnelClient) managerWebSocketURLInternal() string {
@@ -356,7 +334,7 @@ func (c *TunnelClient) registerMessageInternal() *TunnelMessage {
 
 func (c *TunnelClient) awaitRegistrationInternal(ctx context.Context) (*TunnelMessage, error) {
 	if c == nil || c.conn == nil {
-		return nil, errors.New("edge tunnel connection is not initialized")
+		return nil, fmt.Errorf("edge tunnel connection is not initialized")
 	}
 	conn := c.conn
 
@@ -387,7 +365,7 @@ func (c *TunnelClient) awaitRegistrationInternal(ctx context.Context) (*TunnelMe
 			return nil, fmt.Errorf("failed to receive tunnel registration response: %w", result.err)
 		}
 		if result.msg == nil {
-			return nil, errors.New("received empty tunnel registration response")
+			return nil, fmt.Errorf("received empty tunnel registration response")
 		}
 		if result.msg.Type != MessageTypeRegisterResponse {
 			return nil, fmt.Errorf("unexpected first tunnel message: %s", result.msg.Type)
@@ -941,10 +919,7 @@ func (c *TunnelClient) handleStreamData(ctx context.Context, msg *TunnelMessage)
 		slog.DebugContext(ctx, "Received WebSocket data for unknown stream", "stream_id", msg.ID)
 		return
 	}
-	stream, ok := streamRaw.(*activeWSStream)
-	if !ok {
-		return
-	}
+	stream := streamRaw.(*activeWSStream)
 	stream.mu.Lock()
 	if stream.closed {
 		stream.mu.Unlock()
@@ -970,10 +945,7 @@ func (c *TunnelClient) handleStreamClose(ctx context.Context, msg *TunnelMessage
 	if !ok {
 		return
 	}
-	stream, ok := streamRaw.(*activeWSStream)
-	if !ok {
-		return
-	}
+	stream := streamRaw.(*activeWSStream)
 	c.closeWebSocketStream(msg.ID, stream)
 	slog.DebugContext(ctx, "Closed WebSocket stream", "stream_id", msg.ID)
 }
@@ -1292,25 +1264,25 @@ func (r *streamingResponseRecorder) writeHeaderLocked(statusCode int) error {
 // StartTunnelClientWithErrors starts the tunnel client and returns a channel for connection errors.
 func StartTunnelClientWithErrors(ctx context.Context, cfg *Config, handler http.Handler) (<-chan error, error) {
 	if !cfg.EdgeAgent {
-		return nil, errors.New("edge tunnel disabled")
+		return nil, fmt.Errorf("edge tunnel disabled")
 	}
 
 	if UseGRPCEdgeTransport(cfg) {
 		if cfg.GetManagerGRPCAddr() == "" {
-			return nil, errors.New("MANAGER_API_URL with a valid host is required for gRPC transport")
+			return nil, fmt.Errorf("MANAGER_API_URL with a valid host is required for gRPC transport")
 		}
 	}
 
 	if UseWebSocketEdgeTransport(cfg) && strings.TrimSpace(cfg.GetManagerBaseURL()) == "" {
-		return nil, errors.New("MANAGER_API_URL is required for websocket transport")
+		return nil, fmt.Errorf("MANAGER_API_URL is required for websocket transport")
 	}
 
 	if UsePollEdgeTransport(cfg) && strings.TrimSpace(cfg.GetManagerBaseURL()) == "" {
-		return nil, errors.New("MANAGER_API_URL is required for poll transport")
+		return nil, fmt.Errorf("MANAGER_API_URL is required for poll transport")
 	}
 
 	if cfg.AgentToken == "" {
-		return nil, errors.New("AGENT_TOKEN is required")
+		return nil, fmt.Errorf("AGENT_TOKEN is required")
 	}
 
 	if err := EnsureAgentMTLSAssets(ctx, cfg); err != nil {

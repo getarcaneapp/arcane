@@ -12,23 +12,23 @@
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
 	import { m } from '$lib/paraglide/messages';
 	import { swarmService } from '$lib/services/swarm-service';
-	import { hasPermission } from '$lib/utils/auth';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import userStore from '$lib/stores/user-store';
 	import type {
 		SwarmInfo,
 		SwarmInitRequest,
 		SwarmJoinRequest,
 		SwarmJoinTokensResponse,
 		SwarmUpdateRequest
-	} from '$lib/types/swarm';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api';
-	import { tryCatch } from '$lib/utils/api';
+	} from '$lib/types/swarm.type';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
+	import { tryCatch } from '$lib/utils/try-catch';
+	import { fromStore } from 'svelte/store';
 	import { toast } from 'svelte-sonner';
 
 	let {}: PageProps = $props();
 
-	const currentEnvId = $derived(environmentStore.selected?.id);
-	const canManageSwarm = $derived(hasPermission('swarm:nodes', currentEnvId));
+	const storeUser = fromStore(userStore);
+	const isAdmin = $derived(!!storeUser.current?.roles?.includes('admin'));
 
 	let swarmInfo = $state<SwarmInfo | null>(null);
 	let joinTokens = $state<SwarmJoinTokensResponse | null>(null);
@@ -304,7 +304,7 @@
 								size="sm"
 								customLabel={m.common_actions()}
 								onclick={() => (securityDialogOpen = true)}
-								disabled={!canManageSwarm}
+								disabled={!isAdmin}
 							/>
 						</Card.Action>
 					</Card.Header>
@@ -336,7 +336,7 @@
 								size="sm"
 								customLabel={m.swarm_cluster_rotate_tokens()}
 								onclick={handleRotateTokens}
-								disabled={!canManageSwarm || !isSwarmInitialized || isLoading.rotateTokens}
+								disabled={!isAdmin || !isSwarmInitialized || isLoading.rotateTokens}
 								loading={isLoading.rotateTokens}
 							/>
 						</Card.Action>
@@ -440,7 +440,7 @@
 								action="create"
 								customLabel={m.swarm_cluster_initialize_action()}
 								onclick={handleInit}
-								disabled={!canManageSwarm || isLoading.init}
+								disabled={!isAdmin || isLoading.init}
 								loading={isLoading.init}
 							/>
 						</Card.Content>
@@ -466,7 +466,7 @@
 								action="create"
 								customLabel={m.swarm_cluster_join_action()}
 								onclick={handleJoin}
-								disabled={!canManageSwarm || isLoading.join}
+								disabled={!isAdmin || isLoading.join}
 								loading={isLoading.join}
 							/>
 						</Card.Content>
@@ -512,7 +512,7 @@
 							action="save"
 							customLabel={m.swarm_cluster_update_spec_action()}
 							onclick={handleUpdateSpec}
-							disabled={!canManageSwarm || isLoading.updateSpec}
+							disabled={!isAdmin || isLoading.updateSpec}
 							loading={isLoading.updateSpec}
 						/>
 					</div>
@@ -543,7 +543,7 @@
 								action="save"
 								customLabel={m.swarm_cluster_unlock_action()}
 								onclick={handleUnlock}
-								disabled={!canManageSwarm || isLoading.unlock}
+								disabled={!isAdmin || isLoading.unlock}
 								loading={isLoading.unlock}
 							/>
 						</div>
@@ -558,7 +558,7 @@
 							action="remove"
 							customLabel={m.swarm_cluster_leave_action()}
 							onclick={handleLeave}
-							disabled={!canManageSwarm || isLoading.leave}
+							disabled={!isAdmin || isLoading.leave}
 							loading={isLoading.leave}
 						/>
 					</div>

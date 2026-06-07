@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 
 const defaultDashboardPath = '/dashboard';
+const currentDashboardPath = '/dashboard?view=current';
 
 const mockedStats = {
 	cpuUsage: 12.3,
@@ -123,8 +124,9 @@ test.describe('Dashboard system stats websocket', () => {
 		await mockDashboardStatsWebSocket(page);
 
 		await page.goto(defaultDashboardPath);
-		await page.waitForLoadState('load');
+		await page.waitForLoadState('networkidle');
 
+		await expect(page.getByRole('tab', { name: 'All' })).toHaveAttribute('data-state', 'active');
 		await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible();
 		await expect(page.getByRole('heading', { name: 'Environment Board' })).toBeVisible();
 		await expect(page.getByText('12.3%', { exact: true })).toBeVisible();
@@ -133,19 +135,31 @@ test.describe('Dashboard system stats websocket', () => {
 		await expect(page.getByText('7 CPUs', { exact: true })).toBeVisible();
 		await expect(page.getByText('512 MB / 1 GB', { exact: true })).toBeVisible();
 		await expect(page.getByText('256 MB / 1 GB', { exact: true })).toBeVisible();
-		await expect(page.locator('main').getByText('Local Docker', { exact: true })).toBeVisible();
+		await expect(page.getByText('Current', { exact: true }).first()).toBeVisible();
 		await expect(page.getByText('HTTP', { exact: true }).first()).toBeVisible();
 	});
 
-	test('loads dashboard content without eagerly loading docker info', async ({ page }) => {
+	test('loads dashboard content from the aggregated overview endpoint without dashboard REST fan-out', async ({
+		page
+	}) => {
 		await mockDashboardStatsWebSocket(page);
 		const requestPaths = collectDashboardRequestPaths(page);
 
 		await page.goto(defaultDashboardPath);
-		await page.waitForLoadState('load');
-		await expect(page.getByRole('heading', { name: 'Environment Board' })).toBeVisible();
+		await page.waitForLoadState('networkidle');
 
-		await expect.poll(() => requestPaths).toContain('/api/environments/0/dashboard');
+		expect(requestPaths).toContain('/api/dashboard/environments');
+
+		for (const blockedPattern of [
+			/\/api\/environments\/[^/]+\/dashboard$/,
+			/\/api\/environments\/[^/]+\/containers$/,
+			/\/api\/environments\/[^/]+\/containers\/counts$/,
+			/\/api\/environments\/[^/]+\/images$/,
+			/\/api\/environments\/[^/]+\/images\/counts$/,
+			/\/api\/environments\/[^/]+\/dashboard\/action-items$/
+		]) {
+			expect(countMatchingRequests(requestPaths, blockedPattern)).toBe(0);
+		}
 
 		expect(
 			countMatchingRequests(requestPaths, /\/api\/environments\/[^/]+\/system\/docker\/info$/)
@@ -159,8 +173,10 @@ test.describe('Dashboard system stats websocket', () => {
 		const requestPaths = collectDashboardRequestPaths(page);
 
 		await page.goto(defaultDashboardPath);
-		await page.waitForLoadState('load');
-		await expect(page.getByRole('heading', { name: 'Environment Board' })).toBeVisible();
+		await page.waitForLoadState('networkidle');
+		await page.getByRole('tab', { name: 'Current' }).click();
+		await expect(page).toHaveURL(currentDashboardPath);
+		await page.waitForLoadState('networkidle');
 
 		expect(
 			countMatchingRequests(requestPaths, /\/api\/environments\/[^/]+\/system\/docker\/info$/)

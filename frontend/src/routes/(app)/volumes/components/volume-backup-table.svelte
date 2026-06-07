@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { volumeBackupService, type VolumeBackupListResponse } from '$lib/services/volume-backup-service';
 	import { volumeService } from '$lib/services/volume-service';
-	import type { BackupEntry } from '$lib/types/shared';
+	import type { BackupEntry } from '$lib/types/file-browser.type';
 	import { onMount } from 'svelte';
 	import {
 		LoadingSpinnerIcon,
@@ -19,10 +19,10 @@
 	import { ArcaneButton } from '$lib/components/arcane-button';
 	import { toast } from 'svelte-sonner';
 	import * as m from '$lib/paraglide/messages.js';
-	import { bytes } from '$lib/utils/formatting';
+	import bytes from '$lib/utils/bytes';
 	import { format } from 'date-fns';
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import type { SearchPaginationSortRequest } from '$lib/types/shared';
+	import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import { UniversalMobileCard, type ColumnSpec, type MobileFieldVisibility } from '$lib/components/arcane-table';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
@@ -31,15 +31,8 @@
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
 	import * as Checkbox from '$lib/components/ui/checkbox';
 	import * as Alert from '$lib/components/ui/alert';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { hasPermission } from '$lib/utils/auth';
-	import IfPermitted from '$lib/components/if-permitted.svelte';
-	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 
 	let { volumeName }: { volumeName: string } = $props();
-
-	const currentEnvId = $derived(environmentStore.selected?.id || '0');
-	const canBackupVolume = $derived(hasPermission('volumes:backup', currentEnvId));
 
 	let backupsPaginated = $state<VolumeBackupListResponse>({
 		data: [],
@@ -86,8 +79,8 @@
 	async function handleCreate() {
 		creating = true;
 		try {
-			const result = await volumeBackupService.createBackup(volumeName);
-			toast.success(m.common_success(), activityToastOptions(extractActivityId(result)));
+			await volumeBackupService.createBackup(volumeName);
+			toast.success(m.common_success());
 			await loadData(requestOptions);
 		} catch (e: any) {
 			toast.error(e.message || m.common_failed());
@@ -105,8 +98,8 @@
 				destructive: true,
 				action: async () => {
 					try {
-						const result = await volumeBackupService.deleteBackup(backup.id);
-						toast.success(m.common_delete_success({ resource: 'Backup' }), activityToastOptions(extractActivityId(result)));
+						await volumeBackupService.deleteBackup(backup.id);
+						toast.success(m.common_delete_success({ resource: 'Backup' }));
 						await loadData(requestOptions);
 					} catch (e: any) {
 						toast.error(e.message || m.common_delete_failed({ resource: 'Backup' }));
@@ -174,8 +167,8 @@
 				destructive: !!usageWarning,
 				action: async () => {
 					try {
-						const result = await volumeBackupService.restoreBackup(volumeName, backup.id);
-						toast.success(m.volumes_backup_restore_success(), activityToastOptions(extractActivityId(result)));
+						await volumeBackupService.restoreBackup(volumeName, backup.id);
+						toast.success(m.volumes_backup_restore_success());
 						await loadData(requestOptions);
 					} catch (e: any) {
 						toast.error(e.message || m.common_failed());
@@ -191,11 +184,8 @@
 
 		restoringFiles = true;
 		try {
-			const result = await volumeBackupService.restoreBackupFiles(volumeName, restoreTarget.id, selectedPaths);
-			toast.success(
-				m.volumes_backup_restore_files_success({ count: selectedPaths.length }),
-				activityToastOptions(extractActivityId(result))
-			);
+			await volumeBackupService.restoreBackupFiles(volumeName, restoreTarget.id, selectedPaths);
+			toast.success(m.volumes_backup_restore_files_success({ count: selectedPaths.length }));
 			showRestoreFiles = false;
 		} catch (e: any) {
 			toast.error(e.message || m.common_failed());
@@ -253,44 +243,38 @@
 		</DropdownMenu.Trigger>
 		<DropdownMenu.Content align="end">
 			<DropdownMenu.Group>
-				{#if canBackupVolume}
-					<DropdownMenu.Item onclick={() => handleRestore(item)}>
-						<RestartIcon class="size-4" />
-						Restore
-					</DropdownMenu.Item>
-					<DropdownMenu.Item onclick={() => openRestoreFilesDialog(item)}>
-						<FileTextIcon class="size-4" />
-						Restore files
-					</DropdownMenu.Item>
-				{/if}
+				<DropdownMenu.Item onclick={() => handleRestore(item)}>
+					<RestartIcon class="size-4" />
+					Restore
+				</DropdownMenu.Item>
+				<DropdownMenu.Item onclick={() => openRestoreFilesDialog(item)}>
+					<FileTextIcon class="size-4" />
+					Restore files
+				</DropdownMenu.Item>
 				<DropdownMenu.Item onclick={() => volumeBackupService.downloadBackup(item.id)}>
 					<DownloadIcon class="size-4" />
 					{m.templates_download()}
 				</DropdownMenu.Item>
-				<IfPermitted perm="volumes:delete">
-					<DropdownMenu.Separator />
-					<DropdownMenu.Item variant="destructive" onclick={() => handleDelete(item)}>
-						<TrashIcon class="size-4" />
-						{m.common_remove()}
-					</DropdownMenu.Item>
-				</IfPermitted>
+				<DropdownMenu.Separator />
+				<DropdownMenu.Item variant="destructive" onclick={() => handleDelete(item)}>
+					<TrashIcon class="size-4" />
+					{m.common_remove()}
+				</DropdownMenu.Item>
 			</DropdownMenu.Group>
 		</DropdownMenu.Content>
 	</DropdownMenu.Root>
 {/snippet}
 
 {#snippet ToolbarActions()}
-	{#if canBackupVolume}
-		<ArcaneButton
-			action="create"
-			customLabel={m.volumes_backup_create()}
-			loading={creating}
-			disabled={creating}
-			onclick={handleCreate}
-			size="sm"
-			icon={AddIcon}
-		/>
-	{/if}
+	<ArcaneButton
+		action="create"
+		customLabel={m.volumes_backup_create()}
+		loading={creating}
+		disabled={creating}
+		onclick={handleCreate}
+		size="sm"
+		icon={AddIcon}
+	/>
 {/snippet}
 
 {#snippet BackupMobileCardSnippet({
@@ -382,7 +366,7 @@
 					<div class="text-muted-foreground flex items-center justify-center py-8 text-sm">No files found in this backup.</div>
 				{:else}
 					<div class="divide-border/40 divide-y">
-						{#each filteredBackupFiles as filePath (filePath)}
+						{#each filteredBackupFiles as filePath}
 							<div class="flex items-center gap-3 px-3 py-2">
 								<Checkbox.Root
 									checked={selectedPaths.includes(filePath)}
@@ -413,14 +397,12 @@
 				backupFilesSearch = '';
 			}}
 		/>
-		{#if canBackupVolume}
-			<ArcaneButton
-				action="create"
-				customLabel="Restore files"
-				onclick={handleRestoreFiles}
-				loading={restoringFiles}
-				disabled={restoringFiles || selectedPaths.length === 0}
-			/>
-		{/if}
+		<ArcaneButton
+			action="create"
+			customLabel="Restore files"
+			onclick={handleRestoreFiles}
+			loading={restoringFiles}
+			disabled={restoringFiles || selectedPaths.length === 0}
+		/>
 	{/snippet}
 </ResponsiveDialog>

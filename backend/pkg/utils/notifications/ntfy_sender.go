@@ -2,7 +2,6 @@ package notifications
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -16,7 +15,7 @@ import (
 // URL example: ntfy://[user:password@]host[:port]/topic[?query]
 func BuildNtfyURL(config models.NtfyConfig) (string, error) {
 	if config.Topic == "" {
-		return "", errors.New("ntfy topic is required")
+		return "", fmt.Errorf("ntfy topic is required")
 	}
 
 	// Default host to ntfy.sh if not specified
@@ -88,7 +87,7 @@ func BuildNtfyURL(config models.NtfyConfig) (string, error) {
 // SendNtfy sends a message via Shoutrrr Ntfy using proper service configuration
 func SendNtfy(ctx context.Context, config models.NtfyConfig, message string) error {
 	if config.Topic == "" {
-		return errors.New("ntfy topic is required")
+		return fmt.Errorf("ntfy topic is required")
 	}
 
 	shoutrrrURL, err := BuildNtfyURL(config)

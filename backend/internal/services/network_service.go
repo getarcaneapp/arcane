@@ -3,7 +3,6 @@ package services
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"sort"
 	"strings"
 
@@ -189,7 +188,7 @@ func (s *NetworkService) CreateNetwork(ctx context.Context, name string, options
 		"name":   name,
 	}
 	if logErr := s.eventService.LogNetworkEvent(ctx, models.EventTypeNetworkCreate, response.ID, name, user.ID, user.Username, "0", metadata); logErr != nil {
-		slog.WarnContext(ctx, "could not log network creation action", "error", logErr)
+		fmt.Printf("Could not log network creation action: %s\n", logErr)
 	}
 
 	warning := ""
@@ -230,7 +229,7 @@ func (s *NetworkService) RemoveNetwork(ctx context.Context, id string, user mode
 		"networkId": id,
 	}
 	if logErr := s.eventService.LogNetworkEvent(ctx, models.EventTypeNetworkDelete, id, networkName, user.ID, user.Username, "0", metadata); logErr != nil {
-		slog.WarnContext(ctx, "could not log network delete action", "error", logErr)
+		fmt.Printf("Could not log network delete action: %s\n", logErr)
 	}
 
 	return nil
@@ -255,7 +254,7 @@ func (s *NetworkService) PruneNetworks(ctx context.Context) (*network.PruneRepor
 		"networksDeleted": len(pruneReport.NetworksDeleted),
 	}
 	if logErr := s.eventService.LogNetworkEvent(ctx, models.EventTypeNetworkDelete, "", "bulk_prune", systemUser.ID, systemUser.Username, "0", metadata); logErr != nil {
-		slog.WarnContext(ctx, "could not log network prune action", "error", logErr)
+		fmt.Printf("Could not log network prune action: %s\n", logErr)
 	}
 
 	return &pruneReport, nil

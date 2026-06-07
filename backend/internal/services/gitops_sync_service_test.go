@@ -232,14 +232,8 @@ func TestGitOpsSyncService_DirectorySync_RealWalkWithNestedConfig(t *testing.T) 
 	}
 	require.NoError(t, db.Create(sync).Error)
 
-	syncFiles, err := svc.walkAndParseSyncDirectory(ctx, sync, repoPath)
+	composeContent, syncFiles, err := svc.walkAndParseSyncDirectory(ctx, sync, repoPath)
 	require.NoError(t, err)
-	var composeContent string
-	for _, f := range syncFiles {
-		if f.RelativePath == "docker-compose.yml" {
-			composeContent = string(f.Content)
-		}
-	}
 	assert.Contains(t, composeContent, "./config/dynamic_config.yml")
 
 	project, syncedFiles, created, changed, err := svc.syncProjectDirectoryInternal(ctx, sync, syncFiles, models.User{})
@@ -313,7 +307,7 @@ func TestGitOpsSyncService_DirectorySync_OverwritesExistingDirectoryAtFilePath(t
 	}
 	require.NoError(t, db.Create(sync).Error)
 
-	syncFiles, err := svc.walkAndParseSyncDirectory(ctx, sync, repoPath)
+	_, syncFiles, err := svc.walkAndParseSyncDirectory(ctx, sync, repoPath)
 	require.NoError(t, err)
 
 	updatedProject, syncedFiles, created, changed, err := svc.syncProjectDirectoryInternal(ctx, sync, syncFiles, models.User{})

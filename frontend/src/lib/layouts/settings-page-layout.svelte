@@ -50,7 +50,7 @@
 <div class={cn('px-2 py-4 pb-5 sm:px-6 sm:py-6 sm:pb-10 lg:px-8', className)}>
 	<div class="border-border/50 border-b pb-4 sm:pb-6">
 		<div class="flex items-center justify-between gap-4">
-			<div class="flex flex-1 items-start gap-3 sm:gap-4">
+			<div class="flex flex-1 items-center gap-3 sm:gap-4">
 				{#if Icon}
 					<div
 						class="bg-primary/10 text-primary ring-primary/20 flex size-8 shrink-0 items-center justify-center rounded-lg ring-1 sm:size-10"
@@ -59,12 +59,18 @@
 					</div>
 				{/if}
 				<div class="min-w-0">
-					<h1 class="text-xl font-semibold tracking-tight sm:text-2xl">{title}</h1>
+					<h1 class="text-xl font-semibold tracking-tight sm:text-3xl">{title}</h1>
 					{#if description}
 						<p class="text-muted-foreground mt-1 hidden text-sm sm:block sm:text-base">{@html description}</p>
 					{/if}
-					{#if pageType === 'management' && statCards && statCards.length > 0}
-						<div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
+				</div>
+			</div>
+
+			{#if pageType === 'management' && statCards && statCards.length > 0}
+				<div class="hidden flex-1 items-center justify-center md:flex">
+					<div class="border-border/50 relative overflow-hidden rounded-full border">
+						<div class="bg-muted/50 absolute inset-0"></div>
+						<div class="relative flex items-center gap-4 px-4 py-1.5 backdrop-blur-md">
 							{#each statCards as card, i}
 								{#if i > 0}
 									<div class="bg-border/50 h-4 w-px"></div>
@@ -79,20 +85,20 @@
 								/>
 							{/each}
 						</div>
-					{/if}
+					</div>
 				</div>
-			</div>
+			{/if}
 
 			<div class="flex flex-1 items-center justify-end gap-2">
 				{#if showReadOnlyTag}
 					<UiConfigDisabledTag />
 				{/if}
 
-				{#if pageType === 'form' && formState?.saveFunction && !showReadOnlyTag}
+				{#if pageType === 'form' && formState && !showReadOnlyTag}
 					<div class="hidden items-center gap-2 sm:flex">
 						{#if formState.hasChanges}
 							<span class="mr-2 text-xs text-orange-600 dark:text-orange-400">{m.common_unsaved_changes()}</span>
-						{:else if !formState.hasChanges}
+						{:else if !formState.hasChanges && formState.saveFunction}
 							<span class="mr-2 text-xs text-green-600 dark:text-green-400">{m.common_all_changes_saved()}</span>
 						{/if}
 

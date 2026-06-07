@@ -4,11 +4,10 @@
 	import * as Card from '$lib/components/ui/card';
 	import LogViewer from '$lib/components/logs/log-viewer.svelte';
 	import LogControls from '$lib/components/logs/log-controls.svelte';
-	import type { ContainerStats, ContainerStatsHistorySample } from '$lib/types/docker';
+	import type { ContainerStats, ContainerStatsHistorySample } from '$lib/types/container.type';
 	import { m } from '$lib/paraglide/messages';
-	import { bytes } from '$lib/utils/formatting';
-	import { calculateCPUPercent, calculateMemoryUsage } from '$lib/utils/docker';
-	import { refreshLogViewerStream, startLogViewerStream, stopLogViewerStream } from '$lib/utils/log-viewer';
+	import bytes from '$lib/utils/bytes';
+	import { calculateCPUPercent, calculateMemoryUsage } from '$lib/utils/container-stats.utils';
 	import { CpuIcon, FileTextIcon, MemoryStickIcon } from '$lib/icons';
 	import ContainerLogStatMonitor from './ContainerLogStatMonitor.svelte';
 
@@ -128,15 +127,15 @@
 	}
 
 	function handleStart() {
-		startLogViewerStream(viewer);
+		viewer?.startLogStream();
 	}
 
 	function handleStop() {
-		stopLogViewerStream(viewer);
+		viewer?.stopLogStream();
 	}
 
 	async function handleRefresh() {
-		await refreshLogViewerStream(viewer);
+		await viewer?.clearLogs({ hard: true, restart: true });
 	}
 
 	// Sync isStreaming from viewer callbacks

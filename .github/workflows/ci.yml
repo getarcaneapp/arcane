@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, "breaking/**"]
   pull_request:
     branches: [main, "release/**", "breaking/**"]
 
@@ -71,14 +71,7 @@ jobs:
       - name: Run unit tests
         env:
           CGO_ENABLED: ${{ matrix.module.cgo_enabled }}
-          GO_JUNIT_REPORT_FILE: test-results/junit.xml
         run: just test ${{ matrix.module.name }}
-
-      - name: Report Go test results to Depot
-        if: ${{ !cancelled() }}
-        uses: depot/test-report-action@v1
-        with:
-          path: ${{ matrix.module.path }}/test-results/
 
       - name: Upload coverage artifact
         if: always()
@@ -209,7 +202,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: 26
+          node-version: 25
           cache: pnpm
 
       - name: Setup Just
@@ -230,7 +223,7 @@ jobs:
   e2e-tests:
     name: E2E Tests (${{ matrix.database.name }})
     if: ${{ github.head_ref != 'l10n_crowdin' }}
-    runs-on: depot-ubuntu-24.04-4
+    runs-on: depot-ubuntu-latest
     permissions:
       contents: read
       actions: write
@@ -263,7 +256,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: 26
+          node-version: 25
           cache: pnpm
 
       - name: Set up Depot CLI
@@ -291,11 +284,10 @@ jobs:
         run: just deps install tests
 
       - name: Run Playwright E2E tests
-        run: mkdir -p tests/test-results && pnpm -C tests exec playwright test --project=chromium
+        run: pnpm -C tests exec playwright test --project=chromium
         env:
           COMPOSE_FILE: ${{ matrix.database.compose_file }}
           BASE_URL: http://localhost:${{ matrix.database.port }}
-          PLAYWRIGHT_JUNIT_OUTPUT_FILE: test-results/playwright-${{ matrix.database.name }}.xml
 
       - name: Upload Playwright HTML report
         if: always()
@@ -306,16 +298,10 @@ jobs:
           include-hidden-files: true
           retention-days: 15
 
-      - name: Report Playwright test results to Depot
-        if: ${{ !cancelled() }}
-        uses: depot/test-report-action@v1
-        with:
-          path: tests/test-results/
-
   cli-e2e-tests:
     name: CLI E2E Tests (proxy)
     if: ${{ github.head_ref != 'l10n_crowdin' }}
-    runs-on: depot-ubuntu-24.04-4
+    runs-on: depot-ubuntu-latest
     permissions:
       contents: read
       actions: write
@@ -332,7 +318,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: 26
+          node-version: 25
           cache: pnpm
 
       - name: Setup Go
@@ -351,12 +337,11 @@ jobs:
         run: pnpm -C tests install
 
       - name: Run CLI E2E tests against socket proxy
-        run: mkdir -p tests/test-results && pnpm -C tests exec playwright test --project=cli
+        run: pnpm -C tests exec playwright test --project=cli
         env:
           COMPOSE_FILE: setup/compose-proxy.yaml
           BASE_URL: http://localhost:3002
           E2E_ADMIN_STATIC_API_KEY: ${{ secrets.E2E_ADMIN_STATIC_API_KEY }}
-          PLAYWRIGHT_JUNIT_OUTPUT_FILE: test-results/playwright-cli.xml
 
       - name: Upload Playwright HTML report
         if: always()
@@ -366,9 +351,3 @@ jobs:
           path: tests/.report
           include-hidden-files: true
           retention-days: 15
-
-      - name: Report Playwright test results to Depot
-        if: ${{ !cancelled() }}
-        uses: depot/test-report-action@v1
-        with:
-          path: tests/test-results/

@@ -636,7 +636,6 @@ func downloadFileInternal(ctx context.Context, url, outputPath string) error {
 	return nil
 }
 
-//nolint:goprintffuncname // internal verbose-logging helper; printf-style by design
 func verboseCLIUpdateInternal(format string, args ...any) {
 	if !cliUpdateVerbose {
 		return
@@ -667,7 +666,7 @@ func findChecksumInternal(checksums string, artifactNames ...string) (string, er
 		}
 	}
 
-	for line := range strings.SplitSeq(checksums, "\n") {
+	for _, line := range strings.Split(checksums, "\n") {
 		fields := strings.Fields(strings.TrimSpace(line))
 		if len(fields) < 2 {
 			continue
@@ -682,7 +681,7 @@ func findChecksumInternal(checksums string, artifactNames ...string) (string, er
 
 func checksumEntryNamesInternal(checksums string) []string {
 	names := make([]string, 0)
-	for line := range strings.SplitSeq(checksums, "\n") {
+	for _, line := range strings.Split(checksums, "\n") {
 		fields := strings.Fields(strings.TrimSpace(line))
 		if len(fields) < 2 {
 			continue

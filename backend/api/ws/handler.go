@@ -18,7 +18,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"github.com/getarcaneapp/arcane/backend/pkg/authz"
 	docker "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/system"
 	wshub "github.com/getarcaneapp/arcane/backend/pkg/libarcane/ws"
@@ -134,6 +133,11 @@ func (m *WebSocketMetrics) applyDelta(kind string, delta int64) {
 
 var defaultWebSocketMetrics = NewWebSocketMetrics()
 
+// DefaultWebSocketMetrics returns the package-level WebSocketMetrics singleton.
+func DefaultWebSocketMetrics() *WebSocketMetrics {
+	return defaultWebSocketMetrics
+}
+
 // ============================================================================
 // WebSocket Handler
 // ============================================================================
@@ -141,19 +145,17 @@ var defaultWebSocketMetrics = NewWebSocketMetrics()
 // WebSocketHandler consolidates all WebSocket and streaming endpoints.
 // REST endpoints are handled by Huma handlers.
 type WebSocketHandler struct {
-	projectService     *services.ProjectService
-	containerService   *services.ContainerService
-	swarmService       *services.SwarmService
-	systemService      *services.SystemService
-	diagnosticsService *services.DiagnosticsService
-	wsUpgrader         websocket.Upgrader
-	wsMetrics          *WebSocketMetrics
-	activeConnections  sync.Map
-	logStreamsMu       sync.Mutex
-	logStreams         map[string]*wsLogStream
-	cpuCache           struct {
+	projectService    *services.ProjectService
+	containerService  *services.ContainerService
+	swarmService      *services.SwarmService
+	systemService     *services.SystemService
+	wsUpgrader        websocket.Upgrader
+	wsMetrics         *WebSocketMetrics
+	activeConnections sync.Map
+	logStreamsMu      sync.Mutex
+	logStreams        map[string]*wsLogStream
+	cpuCache          struct {
 		sync.RWMutex
-
 		value     float64
 		timestamp time.Time
 	}
@@ -178,7 +180,6 @@ type WebSocketHandler struct {
 
 	diskUsagePathCache struct {
 		sync.RWMutex
-
 		value     string
 		timestamp time.Time
 	}
@@ -317,20 +318,18 @@ func NewWebSocketHandler(
 	containerService *services.ContainerService,
 	swarmService *services.SwarmService,
 	systemService *services.SystemService,
-	diagnosticsService *services.DiagnosticsService,
 	authMiddleware *middleware.AuthMiddleware,
 	cfg *config.Config,
 ) {
 	handler := &WebSocketHandler{
-		projectService:     projectService,
-		containerService:   containerService,
-		swarmService:       swarmService,
-		systemService:      systemService,
-		diagnosticsService: diagnosticsService,
-		wsMetrics:          defaultWebSocketMetrics,
-		logStreams:         make(map[string]*wsLogStream),
-		cgroupCache:        system.NewCgroupCache(cgroupCacheTTL),
-		gpuMonitor:         system.NewGPUMonitor(cfg.GPUMonitoringEnabled, cfg.GPUType),
+		projectService:   projectService,
+		containerService: containerService,
+		swarmService:     swarmService,
+		systemService:    systemService,
+		wsMetrics:        defaultWebSocketMetrics,
+		logStreams:       make(map[string]*wsLogStream),
+		cgroupCache:      system.NewCgroupCache(cgroupCacheTTL),
+		gpuMonitor:       system.NewGPUMonitor(cfg.GPUMonitoringEnabled, cfg.GPUType),
 		wsUpgrader: websocket.Upgrader{
 			CheckOrigin:       httputil.ValidateWebSocketOrigin(cfg.GetAppURL()),
 			ReadBufferSize:    32 * 1024,
@@ -339,13 +338,12 @@ func NewWebSocketHandler(
 		},
 	}
 	wsGroup := group.Group("/environments/:id/ws", authMiddleware.WithAdminNotRequired().Add())
-	wsGroup.GET("/projects/:projectId/logs", handler.ProjectLogs, middleware.RequirePermission(authz.PermProjectsLogs))
-	wsGroup.GET("/containers/:containerId/logs", handler.ContainerLogs, middleware.RequirePermission(authz.PermContainersLogs))
-	wsGroup.GET("/containers/:containerId/stats", handler.ContainerStats, middleware.RequirePermission(authz.PermContainersRead))
-	wsGroup.GET("/containers/:containerId/terminal", handler.ContainerExec, middleware.RequirePermission(authz.PermContainersExec))
-	wsGroup.GET("/swarm/services/:serviceId/logs", handler.ServiceLogs, middleware.RequirePermission(authz.PermSwarmServicesLogs))
-	wsGroup.GET("/system/stats", handler.SystemStats, middleware.RequirePermission(authz.PermSystemRead))
-	handler.registerDiagnosticsRoutesInternal(group, authMiddleware)
+	wsGroup.GET("/projects/:projectId/logs", handler.ProjectLogs)
+	wsGroup.GET("/containers/:containerId/logs", handler.ContainerLogs)
+	wsGroup.GET("/containers/:containerId/stats", handler.ContainerStats)
+	wsGroup.GET("/containers/:containerId/terminal", handler.ContainerExec)
+	wsGroup.GET("/swarm/services/:serviceId/logs", handler.ServiceLogs)
+	wsGroup.GET("/system/stats", handler.SystemStats)
 }
 
 // ============================================================================
@@ -814,7 +812,7 @@ func (h *WebSocketHandler) ContainerStats(c echo.Context) error {
 	conn, err := h.wsUpgrader.Upgrade(c.Response().Writer, c.Request(), nil)
 	if err != nil {
 		slog.DebugContext(c.Request().Context(), "Failed to upgrade WebSocket for container stats", "containerID", containerID, "error", err)
-		return nil
+		return nil //nolint:nilerr // Upgrade has already written an HTTP error response to the client.
 	}
 
 	connID := h.wsMetrics.RegisterConnection(buildWSConnectionInfoInternal(c, systemtypes.WSKindContainerStats, containerID))
@@ -830,20 +828,13 @@ func (h *WebSocketHandler) ContainerStats(c echo.Context) error {
 
 func (h *WebSocketHandler) getOrCreateContainerStatsHubInternal(containerID string) *wshub.Hub {
 	if existing, ok := h.containerStatsHubs.Load(containerID); ok {
-		if hub, ok := existing.(*wshub.Hub); ok {
-			return hub
-		}
+		return existing.(*wshub.Hub)
 	}
 
 	hub := wshub.NewHub(64)
 	actual, loaded := h.containerStatsHubs.LoadOrStore(containerID, hub)
 	if loaded {
-		if existingHub, ok := actual.(*wshub.Hub); ok {
-			return existingHub
-		}
-		// type assertion failure is impossible in practice, but avoid running
-		// an unregistered hub if it somehow occurs
-		return hub
+		return actual.(*wshub.Hub)
 	}
 
 	h.runContainerStatsHubInternal(containerID, hub)
@@ -851,7 +842,7 @@ func (h *WebSocketHandler) getOrCreateContainerStatsHubInternal(containerID stri
 }
 
 func (h *WebSocketHandler) runContainerStatsHubInternal(containerID string, hub *wshub.Hub) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.Background()) //nolint:gosec // cancel is intentionally retained and invoked by the hub OnEmpty callback.
 	var cleanupTimer *time.Timer
 	var cleanupTimerMu sync.Mutex
 
@@ -980,7 +971,7 @@ func (h *WebSocketHandler) execCleanupFuncInternal(ctx context.Context, execSess
 	return func() {
 		slog.Debug("Cleaning up exec session", "execID", execID, "containerID", containerID, "contextErr", ctx.Err())
 		// Cleanup must proceed even if parent ctx is canceled.
-		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second) //nolint:contextcheck
 		defer cleanupCancel()
 		if err := execSession.Close(cleanupCtx); err != nil { //nolint:contextcheck
 			slog.Warn("Failed to clean up exec session", "execID", execID, "error", err)
@@ -1045,14 +1036,11 @@ func (h *WebSocketHandler) pipeExecInputInternal(ctx context.Context, cancel con
 // System WebSocket Endpoints
 // ============================================================================
 
-// checkRateLimitInternal checks and applies rate limiting for WebSocket connections.
+// checkRateLimit checks and applies rate limiting for WebSocket connections.
 // Returns the counter and whether the connection should be allowed.
-func (h *WebSocketHandler) checkRateLimitInternal(clientIP string) (*int32, bool) {
+func (h *WebSocketHandler) checkRateLimit(clientIP string) (*int32, bool) {
 	connCount, _ := h.activeConnections.LoadOrStore(clientIP, new(int32))
-	count, ok := connCount.(*int32)
-	if !ok {
-		return nil, false
-	}
+	count := connCount.(*int32)
 
 	currentCount := atomic.AddInt32(count, 1)
 	if currentCount > 5 {
@@ -1062,8 +1050,8 @@ func (h *WebSocketHandler) checkRateLimitInternal(clientIP string) (*int32, bool
 	return count, true
 }
 
-// releaseRateLimitInternal decrements the connection counter and cleans up if needed.
-func (h *WebSocketHandler) releaseRateLimitInternal(clientIP string, count *int32) {
+// releaseRateLimit decrements the connection counter and cleans up if needed.
+func (h *WebSocketHandler) releaseRateLimit(clientIP string, count *int32) {
 	newCount := atomic.AddInt32(count, -1)
 	if newCount <= 0 {
 		h.activeConnections.Delete(clientIP)
@@ -1080,7 +1068,7 @@ func (h *WebSocketHandler) acquireSystemStatsSamplerInternal(ctx context.Context
 		return waitForSystemStatsSamplerReadyInternal(ctx, ready)
 	}
 
-	samplerCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	samplerCtx, cancel := context.WithCancel(context.WithoutCancel(ctx)) //nolint:gosec // cancel is intentionally retained in sampler state and invoked when the last subscriber disconnects.
 	ready := make(chan struct{})
 	h.systemStatsSampler.cancel = cancel
 	h.systemStatsSampler.ready = ready
@@ -1382,14 +1370,14 @@ func (h *WebSocketHandler) getCachedCgroupLimitsInternal() *docker.CgroupLimits 
 func (h *WebSocketHandler) SystemStats(c echo.Context) error {
 	clientIP := c.RealIP()
 
-	count, allowed := h.checkRateLimitInternal(clientIP)
+	count, allowed := h.checkRateLimit(clientIP)
 	if !allowed {
 		return c.JSON(http.StatusTooManyRequests, map[string]any{
 			"success": false,
 			"error":   "Too many concurrent stats connections from this IP",
 		})
 	}
-	defer h.releaseRateLimitInternal(clientIP, count)
+	defer h.releaseRateLimit(clientIP, count)
 
 	conn, err := h.wsUpgrader.Upgrade(c.Response().Writer, c.Request(), nil)
 	if err != nil {

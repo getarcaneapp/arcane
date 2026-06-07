@@ -4,17 +4,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
-	"maps"
 	"net/http"
 	"strings"
 	"time"
 )
 
 const (
-	HeaderAPIKey        = "X-Api-Key"            // #nosec G101: header name, not a credential
+	HeaderAPIKey        = "X-API-Key"            // #nosec G101: header name, not a credential
 	HeaderAgentToken    = "X-Arcane-Agent-Token" // #nosec G101: header name, not a credential
 	HeaderAuthorization = "Authorization"
 	bearerScheme        = "Bearer "
@@ -73,14 +71,14 @@ type TunnelTransportFuncs struct {
 
 func (t TunnelTransportFuncs) EnsureAvailable(ctx context.Context, envID string) error {
 	if t.EnsureAvailableFunc == nil {
-		return errors.New("edge transport unavailable")
+		return fmt.Errorf("edge transport unavailable")
 	}
 	return t.EnsureAvailableFunc(ctx, envID)
 }
 
 func (t TunnelTransportFuncs) Do(ctx context.Context, envID, method, path string, headers map[string]string, body []byte) (*Response, error) {
 	if t.DoFunc == nil {
-		return nil, errors.New("edge transport unavailable")
+		return nil, fmt.Errorf("edge transport unavailable")
 	}
 	return t.DoFunc(ctx, envID, method, path, headers, body)
 }
@@ -124,7 +122,7 @@ func (c *Client) DoJSON(ctx context.Context, req Request, out any) error {
 
 func (c *Client) doViaTunnelInternal(ctx context.Context, req Request) (*Response, error) {
 	if c.tunnel == nil {
-		return nil, &TransportError{Err: errors.New("edge transport unavailable")}
+		return nil, &TransportError{Err: fmt.Errorf("edge transport unavailable")}
 	}
 
 	if err := c.tunnel.EnsureAvailable(ctx, req.EnvironmentID); err != nil {
@@ -154,7 +152,7 @@ func (c *Client) doDirectHTTPInternal(ctx context.Context, req Request) (*Respon
 		httpReq.Header.Set(key, value)
 	}
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.httpClient.Do(httpReq) //nolint:gosec // intentional request to configured remote environment URL
 	if err != nil {
 		return nil, &TransportError{Err: err}
 	}
@@ -192,7 +190,7 @@ func (r *Response) DecodeJSON(out any) error {
 		return nil
 	}
 	if r == nil {
-		return &DecodeError{Err: errors.New("response is nil")}
+		return &DecodeError{Err: fmt.Errorf("response is nil")}
 	}
 	if err := json.Unmarshal(r.Body, out); err != nil {
 		return &DecodeError{Err: err}
@@ -299,6 +297,8 @@ func cloneHeaders(headers map[string]string) map[string]string {
 	}
 
 	out := make(map[string]string, len(headers))
-	maps.Copy(out, headers)
+	for key, value := range headers {
+		out[key] = value
+	}
 	return out
 }

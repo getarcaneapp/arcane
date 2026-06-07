@@ -1,0 +1,403 @@
+package imageupdate
+
+import (
+	"bytes"
+	"context"
+	"log/slog"
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestMessageOnlyHandler_Handle(t *testing.T) {
+	tests := []struct {
+		name    string
+		level   slog.Level
+		message string
+		attrs   []slog.Attr
+		want    string
+	}{
+		{
+			name:    "info message only",
+			level:   slog.LevelInfo,
+			message: "Test message",
+			attrs:   []slog.Attr{},
+			want:    "Test message",
+		},
+		{
+			name:    "debug message",
+			level:   slog.LevelDebug,
+			message: "Debug info",
+			attrs:   []slog.Attr{},
+			want:    "Debug info",
+		},
+		{
+			name:    "error message",
+			level:   slog.LevelError,
+			message: "Error occurred",
+			attrs:   []slog.Attr{},
+			want:    "Error occurred",
+		},
+		{
+			name:    "message with string attribute",
+			level:   slog.LevelInfo,
+			message: "Processing",
+			attrs:   []slog.Attr{slog.String("key", "value")},
+			want:    "Processing key=\"value\"",
+		},
+		{
+			name:    "message with int attribute",
+			level:   slog.LevelInfo,
+			message: "Count",
+			attrs:   []slog.Attr{slog.Int("count", 42)},
+			want:    "Count count=42",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			handler := newMessageOnlyHandlerInternal(&buf, slog.LevelDebug)
+
+			record := slog.NewRecord(time.Now(), tt.level, tt.message, 0)
+			for _, attr := range tt.attrs {
+				record.AddAttrs(attr)
+			}
+
+			if err := handler.Handle(context.Background(), record); err != nil {
+				t.Errorf("Handle() error = %v", err)
+				return
+			}
+
+			got := strings.TrimSpace(buf.String())
+			if got != tt.want {
+				t.Errorf("Handle() output = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMessageOnlyHandler_Enabled(t *testing.T) {
+	tests := []struct {
+		name     string
+		minLevel slog.Level
+		level    slog.Level
+		want     bool
+	}{
+		{
+			name:     "info enabled at debug level",
+			minLevel: slog.LevelDebug,
+			level:    slog.LevelInfo,
+			want:     true,
+		},
+		{
+			name:     "debug disabled at info level",
+			minLevel: slog.LevelInfo,
+			level:    slog.LevelDebug,
+			want:     false,
+		},
+		{
+			name:     "error enabled at info level",
+			minLevel: slog.LevelInfo,
+			level:    slog.LevelError,
+			want:     true,
+		},
+		{
+			name:     "warn enabled at warn level",
+			minLevel: slog.LevelWarn,
+			level:    slog.LevelWarn,
+			want:     true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			handler := newMessageOnlyHandlerInternal(&buf, tt.minLevel)
+
+			if got := handler.Enabled(context.Background(), tt.level); got != tt.want {
+				t.Errorf("Enabled() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMessageOnlyHandler_WithAttrs(t *testing.T) {
+	var buf bytes.Buffer
+	handler := newMessageOnlyHandlerInternal(&buf, slog.LevelInfo)
+
+	attrs := []slog.Attr{
+		slog.String("key1", "value1"),
+		slog.Int("key2", 42),
+	}
+
+	newHandler := handler.WithAttrs(attrs)
+	if newHandler == nil {
+		t.Error("WithAttrs() returned nil")
+	}
+
+	// Should return same handler type
+	if _, ok := newHandler.(*messageOnlyHandler); !ok {
+		t.Error("WithAttrs() did not return messageOnlyHandler")
+	}
+
+	// Test that attrs are included in output
+	record := slog.NewRecord(time.Now(), slog.LevelInfo, "Test", 0)
+	if err := newHandler.Handle(context.Background(), record); err != nil {
+		t.Errorf("Handle() error = %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "key1") || !strings.Contains(output, "key2") {
+		t.Errorf("WithAttrs() output missing attributes: %q", output)
+	}
+}
+
+func TestMessageOnlyHandler_WithGroup(t *testing.T) {
+	var buf bytes.Buffer
+	handler := newMessageOnlyHandlerInternal(&buf, slog.LevelInfo)
+
+	newHandler := handler.WithGroup("testgroup")
+	if newHandler == nil {
+		t.Error("WithGroup() returned nil")
+	}
+
+	// Should return same handler type
+	if _, ok := newHandler.(*messageOnlyHandler); !ok {
+		t.Error("WithGroup() did not return messageOnlyHandler")
+	}
+
+	// Test that group is used in output
+	record := slog.NewRecord(time.Now(), slog.LevelInfo, "Test", 0)
+	record.AddAttrs(slog.String("key", "value"))
+	if err := newHandler.Handle(context.Background(), record); err != nil {
+		t.Errorf("Handle() error = %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "testgroup") {
+		t.Errorf("WithGroup() output missing group name: %q", output)
+	}
+}
+
+func TestFormatSlogValue(t *testing.T) {
+	tests := []struct {
+		name  string
+		value slog.Value
+		want  string
+	}{
+		{
+			name:  "string value",
+			value: slog.StringValue("test"),
+			want:  "\"test\"",
+		},
+		{
+			name:  "int value",
+			value: slog.Int64Value(42),
+			want:  "42",
+		},
+		{
+			name:  "bool value true",
+			value: slog.BoolValue(true),
+			want:  "true",
+		},
+		{
+			name:  "bool value false",
+			value: slog.BoolValue(false),
+			want:  "false",
+		},
+		{
+			name:  "float value",
+			value: slog.Float64Value(3.14),
+			want:  "3.14",
+		},
+		{
+			name:  "uint value",
+			value: slog.Uint64Value(100),
+			want:  "100",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := formatSlogValueInternal(tt.value)
+			if got != tt.want {
+				t.Errorf("formatSlogValueInternal() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFormatSlogValue_Time(t *testing.T) {
+	now := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+	value := slog.TimeValue(now)
+
+	got := formatSlogValueInternal(value)
+
+	// Should be quoted and contain the date
+	if !strings.HasPrefix(got, "\"") || !strings.HasSuffix(got, "\"") {
+		t.Errorf("formatSlogValueInternal(time) should be quoted, got %q", got)
+	}
+	if !strings.Contains(got, "2024") {
+		t.Errorf("formatSlogValueInternal(time) should contain year, got %q", got)
+	}
+}
+
+func TestFormatSlogValue_Duration(t *testing.T) {
+	value := slog.DurationValue(5 * time.Second)
+	got := formatSlogValueInternal(value)
+
+	// Should be quoted and contain duration string
+	if !strings.HasPrefix(got, "\"") || !strings.HasSuffix(got, "\"") {
+		t.Errorf("formatSlogValueInternal(duration) should be quoted, got %q", got)
+	}
+	if !strings.Contains(got, "5s") {
+		t.Errorf("formatSlogValueInternal(duration) should contain duration, got %q", got)
+	}
+}
+
+func TestMultiHandler_Enabled(t *testing.T) {
+	var buf1, buf2 bytes.Buffer
+	handler1 := newMessageOnlyHandlerInternal(&buf1, slog.LevelInfo)
+	handler2 := newMessageOnlyHandlerInternal(&buf2, slog.LevelWarn)
+
+	multi := slog.NewMultiHandler(handler1, handler2)
+
+	tests := []struct {
+		name  string
+		level slog.Level
+		want  bool
+	}{
+		{
+			name:  "debug - neither enabled",
+			level: slog.LevelDebug,
+			want:  false,
+		},
+		{
+			name:  "info - first enabled",
+			level: slog.LevelInfo,
+			want:  true,
+		},
+		{
+			name:  "warn - both enabled",
+			level: slog.LevelWarn,
+			want:  true,
+		},
+		{
+			name:  "error - both enabled",
+			level: slog.LevelError,
+			want:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := multi.Enabled(context.Background(), tt.level); got != tt.want {
+				t.Errorf("Enabled() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMultiHandler_Handle(t *testing.T) {
+	var buf1, buf2 bytes.Buffer
+	handler1 := newMessageOnlyHandlerInternal(&buf1, slog.LevelInfo)
+	handler2 := newMessageOnlyHandlerInternal(&buf2, slog.LevelInfo)
+
+	multi := slog.NewMultiHandler(handler1, handler2)
+
+	record := slog.NewRecord(time.Now(), slog.LevelInfo, "Test message", 0)
+	if err := multi.Handle(context.Background(), record); err != nil {
+		t.Errorf("Handle() error = %v", err)
+	}
+
+	// Both handlers should have received the message
+	if !strings.Contains(buf1.String(), "Test message") {
+		t.Error("multi handler did not write to first handler")
+	}
+	if !strings.Contains(buf2.String(), "Test message") {
+		t.Error("multi handler did not write to second handler")
+	}
+}
+
+func TestMultiHandler_WithAttrs(t *testing.T) {
+	var buf1, buf2 bytes.Buffer
+	handler1 := newMessageOnlyHandlerInternal(&buf1, slog.LevelInfo)
+	handler2 := newMessageOnlyHandlerInternal(&buf2, slog.LevelInfo)
+
+	multi := slog.NewMultiHandler(handler1, handler2)
+
+	attrs := []slog.Attr{slog.String("key", "value")}
+	withAttrs := multi.WithAttrs(attrs)
+
+	record := slog.NewRecord(time.Now(), slog.LevelInfo, "Test", 0)
+	if err := withAttrs.Handle(context.Background(), record); err != nil {
+		t.Errorf("Handle() error = %v", err)
+	}
+	if !strings.Contains(buf1.String(), "key=\"value\"") {
+		t.Errorf("WithAttrs() missing attr in first handler output: %q", buf1.String())
+	}
+	if !strings.Contains(buf2.String(), "key=\"value\"") {
+		t.Errorf("WithAttrs() missing attr in second handler output: %q", buf2.String())
+	}
+}
+
+func TestMultiHandler_WithGroup(t *testing.T) {
+	var buf1, buf2 bytes.Buffer
+	handler1 := newMessageOnlyHandlerInternal(&buf1, slog.LevelInfo)
+	handler2 := newMessageOnlyHandlerInternal(&buf2, slog.LevelInfo)
+
+	multi := slog.NewMultiHandler(handler1, handler2)
+
+	withGroup := multi.WithGroup("testgroup")
+
+	record := slog.NewRecord(time.Now(), slog.LevelInfo, "Test", 0)
+	record.AddAttrs(slog.String("key", "value"))
+	if err := withGroup.Handle(context.Background(), record); err != nil {
+		t.Errorf("Handle() error = %v", err)
+	}
+	if !strings.Contains(buf1.String(), "testgroup.key=\"value\"") {
+		t.Errorf("WithGroup() missing grouped attr in first handler output: %q", buf1.String())
+	}
+	if !strings.Contains(buf2.String(), "testgroup.key=\"value\"") {
+		t.Errorf("WithGroup() missing grouped attr in second handler output: %q", buf2.String())
+	}
+}
+
+func TestNewMessageOnlyHandler(t *testing.T) {
+	var buf bytes.Buffer
+	handler := newMessageOnlyHandlerInternal(&buf, slog.LevelInfo)
+
+	if handler.minLevel != slog.LevelInfo {
+		t.Errorf("newMessageOnlyHandlerInternal() minLevel = %v, want %v", handler.minLevel, slog.LevelInfo)
+	}
+
+	if handler.mu == nil {
+		t.Error("newMessageOnlyHandlerInternal() did not initialize mutex")
+	}
+}
+
+func TestMessageOnlyHandler_MultipleMessages(t *testing.T) {
+	var buf bytes.Buffer
+	handler := newMessageOnlyHandlerInternal(&buf, slog.LevelInfo)
+
+	messages := []string{
+		"First message",
+		"Second message",
+		"Third message",
+	}
+
+	for _, msg := range messages {
+		record := slog.NewRecord(time.Now(), slog.LevelInfo, msg, 0)
+		if err := handler.Handle(context.Background(), record); err != nil {
+			t.Errorf("Handle() error = %v", err)
+		}
+	}
+
+	output := buf.String()
+	for _, msg := range messages {
+		if !strings.Contains(output, msg) {
+			t.Errorf("Output missing message %q", msg)
+		}
+	}
+}

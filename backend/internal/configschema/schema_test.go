@@ -77,6 +77,13 @@ func TestGenerate_SettingEnvOverridesMatchModelMetadata(t *testing.T) {
 	assert.Equal(t, "arcane-mobile://oidc-callback", oidcMobileRedirectURIs.DefaultValue)
 	assert.Equal(t, "authentication", oidcMobileRedirectURIs.Category)
 
+	legacyOIDC, ok := entries["authOidcConfig"]
+	require.True(t, ok)
+	assert.True(t, legacyOIDC.Deprecated)
+	assert.NotEmpty(t, legacyOIDC.Note)
+	assert.Contains(t, legacyOIDC.Requires, "AGENT_MODE=true")
+	assert.Empty(t, legacyOIDC.DefaultValue)
+
 	trivyImage, ok := entries["trivyImage"]
 	require.True(t, ok)
 	assert.Contains(t, trivyImage.Requires, "UI_CONFIGURATION_DISABLED=true")
@@ -230,16 +237,16 @@ var expectedEnvConfigVars = []string{
 	"LOG_JSON",
 	"LOG_LEVEL",
 	"MANAGER_API_URL",
+	"OIDC_ADMIN_CLAIM",
+	"OIDC_ADMIN_VALUE",
 	"OIDC_AUTO_REDIRECT_TO_PROVIDER",
 	"OIDC_CLIENT_ID",
 	"OIDC_CLIENT_SECRET",
 	"OIDC_ENABLED",
-	"OIDC_GROUPS_CLAIM",
 	"OIDC_ISSUER_URL",
 	"OIDC_MOBILE_REDIRECT_URIS",
 	"OIDC_PROVIDER_LOGO_URL",
 	"OIDC_PROVIDER_NAME",
-	"OIDC_ROLE_MAPPINGS",
 	"OIDC_SCOPES",
 	"OIDC_SKIP_TLS_VERIFY",
 	"PGID",
@@ -263,10 +270,9 @@ var expectedEnvConfigVars = []string{
 
 var expectedSettingOverrideKeys = []string{
 	"accentColor",
-	"activityHistoryMaxEntries",
-	"activityHistoryRetentionDays",
 	"applicationTheme",
 	"authLocalEnabled",
+	"authOidcConfig",
 	"authPasswordPolicy",
 	"authSessionTimeout",
 	"autoHealEnabled",
@@ -276,7 +282,6 @@ var expectedSettingOverrideKeys = []string{
 	"autoHealRestartWindow",
 	"autoInjectEnv",
 	"autoUpdate",
-	"autoUpdateComposeStandaloneFallback",
 	"autoUpdateExcludedContainers",
 	"autoUpdateInterval",
 	"baseServerUrl",
@@ -301,19 +306,20 @@ var expectedSettingOverrideKeys = []string{
 	"gitSyncMaxBinarySizeMb",
 	"gitSyncMaxFiles",
 	"gitSyncMaxTotalSizeMb",
+	"gitopsSyncInterval",
 	"httpClientTimeout",
-	"iconCatalog",
 	"keyboardShortcutsEnabled",
 	"maxImageUploadSize",
 	"mobileNavigationMode",
 	"mobileNavigationShowLabels",
+	"oidcAdminClaim",
+	"oidcAdminValue",
 	"oidcAuthorizationEndpoint",
 	"oidcAutoRedirectToProvider",
 	"oidcClientId",
 	"oidcClientSecret",
 	"oidcDeviceAuthorizationEndpoint",
 	"oidcEnabled",
-	"oidcGroupsClaim",
 	"oidcIssuerUrl",
 	"oidcJwksEndpoint",
 	"oidcMergeAccounts",
@@ -339,8 +345,13 @@ var expectedSettingOverrideKeys = []string{
 	"pruneNetworkUntil",
 	"pruneVolumeMode",
 	"registryTimeout",
+	"scheduledPruneBuildCache",
+	"scheduledPruneContainers",
 	"scheduledPruneEnabled",
+	"scheduledPruneImages",
 	"scheduledPruneInterval",
+	"scheduledPruneNetworks",
+	"scheduledPruneVolumes",
 	"sidebarHoverExpansion",
 	"swarmStackSourcesDirectory",
 	"templatesDirectory",

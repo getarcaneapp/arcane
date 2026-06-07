@@ -3,7 +3,6 @@
 	import LogViewer from '$lib/components/logs/log-viewer.svelte';
 	import LogControls from '$lib/components/logs/log-controls.svelte';
 	import { m } from '$lib/paraglide/messages';
-	import { refreshLogViewerStream, startLogViewerStream, stopLogViewerStream } from '$lib/utils/log-viewer';
 	import { FileTextIcon } from '$lib/icons';
 
 	let {
@@ -19,15 +18,15 @@
 	let showParsedJson = $state(false);
 
 	function handleStart() {
-		startLogViewerStream(viewer);
+		viewer?.startLogStream();
 	}
 
 	function handleStop() {
-		stopLogViewerStream(viewer);
+		viewer?.stopLogStream();
 	}
 
 	async function handleRefresh() {
-		await refreshLogViewerStream(viewer);
+		await viewer?.clearLogs({ hard: true, restart: true });
 	}
 
 	function handleStreamStart() {

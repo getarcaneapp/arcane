@@ -4,7 +4,7 @@
 	import { page } from '$app/state';
 	import { toast } from 'svelte-sonner';
 	import userStore from '$lib/stores/user-store';
-	import type { User } from '$lib/types/auth';
+	import type { User } from '$lib/types/user.type';
 	import { m } from '$lib/paraglide/messages';
 	import settingsStore from '$lib/stores/config-store';
 	import { settingsService } from '$lib/services/settings-service';
@@ -86,9 +86,6 @@
 			};
 		},
 		onSuccess: async ({ authResult, redirectTo }) => {
-			// Build a placeholder user from the OIDC response. The real user
-			// (with role assignments + permissions) is fetched by invalidateAll
-			// below, which re-runs the root +layout.ts loader.
 			const user: User = {
 				id: authResult.user!.sub || authResult.user!.email || '',
 				username: authResult.user!.preferred_username || authResult.user!.email || '',
@@ -100,29 +97,17 @@
 					authResult.user!.preferred_username ||
 					authResult.user!.email ||
 					m.common_unknown(),
-				roleAssignments: [],
-				permissionsByEnv: {},
-				isGlobalAdmin: false,
+				roles: authResult.user!.groups || ['user'],
 				createdAt: new Date().toISOString()
 			};
 
 			userStore.setUser(user);
-			// invalidateAll re-runs the root +layout.ts loader, which fetches
-			// settings (with a graceful catch). We don't fetch them here directly
-			// — a user with zero/limited permissions would 403 on settings:read
-			// and crash this handler, leaving them stuck on a white screen.
 			await invalidateAll();
-			try {
-				const settings = await queryClient.fetchQuery({
-					queryKey: queryKeys.settings.global(),
-					queryFn: () => settingsService.getSettings()
-				});
-				settingsStore.set(settings);
-			} catch (err) {
-				// User lacks settings:read or settings fetch failed — not fatal;
-				// the root layout already pulls public settings as a fallback.
-				console.warn('Skipping post-login settings fetch:', err);
-			}
+			const settings = await queryClient.fetchQuery({
+				queryKey: queryKeys.settings.global(),
+				queryFn: () => settingsService.getSettings()
+			});
+			settingsStore.set(settings);
 			toast.success('Successfully logged in!');
 			await goto(redirectTo, { replaceState: true });
 		},
@@ -178,12 +163,6 @@
 					<p class="mt-2 text-sm">{error}</p>
 					<p class="text-muted-foreground mt-4 text-xs">{m.auth_redirecting_to_login()}</p>
 				</div>
-			{:else}
-				<!-- Defensive fallback: if neither branch matches (e.g. an
-				     unexpected throw inside onSuccess), the user would otherwise
-				     see a blank page with no way out. Always show a logout link. -->
-				<p class="text-muted-foreground text-sm">{m.auth_processing_login()}</p>
-				<a href="/logout" class="text-primary mt-6 text-xs underline">{m.common_logout()}</a>
 			{/if}
 		</div>
 	</div>

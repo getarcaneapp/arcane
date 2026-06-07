@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -138,7 +137,7 @@ func (l *EnvLoader) loadAndMergeGlobalEnv(ctx context.Context, path string, envM
 }
 
 func (l *EnvLoader) loadAndMergeProjectEnv(ctx context.Context, path string, envMap, injectionVars EnvMap) error {
-	key := strings.Join([]string{path, l.projectsDir, strconv.FormatBool(l.autoInjectEnv), envContextFingerprintInternal(envMap)}, "\x00")
+	key := strings.Join([]string{path, l.projectsDir, fmt.Sprint(l.autoInjectEnv), envContextFingerprintInternal(envMap)}, "\x00")
 	entry, err := loadCachedEnvFileInternal(ctx, projectEnvFileCache, key, path, envMap)
 	if err != nil {
 		return err
@@ -401,7 +400,7 @@ func parseEnvWithContext(r io.Reader, contextEnv EnvMap) (EnvMap, error) {
 		return nil, fmt.Errorf("parse env: %w", err)
 	}
 
-	return envMap, nil
+	return EnvMap(envMap), nil
 }
 
 func readOptionalProjectFileInternal(projectPath, fileName string) (string, bool, error) {

@@ -6,11 +6,8 @@ import (
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
-	humamw "github.com/getarcaneapp/arcane/backend/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"github.com/getarcaneapp/arcane/backend/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/pkg/utils"
 	"github.com/getarcaneapp/arcane/types/base"
 	imagetypes "github.com/getarcaneapp/arcane/types/image"
 	"github.com/getarcaneapp/arcane/types/imageupdate"
@@ -19,7 +16,6 @@ import (
 type ImageUpdateHandler struct {
 	imageUpdateService *services.ImageUpdateService
 	imageService       *services.ImageService
-	appCtx             context.Context
 }
 
 type CheckImageUpdateInput struct {
@@ -76,11 +72,10 @@ type GetUpdateSummaryOutput struct {
 }
 
 // RegisterImageUpdates registers image update endpoints.
-func RegisterImageUpdates(api huma.API, imageUpdateSvc *services.ImageUpdateService, imageSvc *services.ImageService, appCtx ActivityAppContext) {
+func RegisterImageUpdates(api huma.API, imageUpdateSvc *services.ImageUpdateService, imageSvc *services.ImageService) {
 	h := &ImageUpdateHandler{
 		imageUpdateService: imageUpdateSvc,
 		imageService:       imageSvc,
-		appCtx:             appCtx.contextInternal(),
 	}
 
 	huma.Register(api, huma.Operation{
@@ -90,7 +85,6 @@ func RegisterImageUpdates(api huma.API, imageUpdateSvc *services.ImageUpdateServ
 		Summary:     "Check image update by reference",
 		Tags:        []string{"Image Updates"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermImageUpdatesCheck),
 	}, h.CheckImageUpdate)
 
 	huma.Register(api, huma.Operation{
@@ -100,7 +94,6 @@ func RegisterImageUpdates(api huma.API, imageUpdateSvc *services.ImageUpdateServ
 		Summary:     "Check image update by ID",
 		Tags:        []string{"Image Updates"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermImageUpdatesCheck),
 	}, h.CheckImageUpdateByID)
 
 	huma.Register(api, huma.Operation{
@@ -110,7 +103,6 @@ func RegisterImageUpdates(api huma.API, imageUpdateSvc *services.ImageUpdateServ
 		Summary:     "Check image update by ID (POST)",
 		Tags:        []string{"Image Updates"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermImageUpdatesCheck),
 	}, h.CheckImageUpdateByID)
 
 	huma.Register(api, huma.Operation{
@@ -120,7 +112,6 @@ func RegisterImageUpdates(api huma.API, imageUpdateSvc *services.ImageUpdateServ
 		Summary:     "Check multiple images",
 		Tags:        []string{"Image Updates"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermImageUpdatesCheck),
 	}, h.CheckMultipleImages)
 
 	huma.Register(api, huma.Operation{
@@ -130,7 +121,6 @@ func RegisterImageUpdates(api huma.API, imageUpdateSvc *services.ImageUpdateServ
 		Summary:     "Check all images",
 		Tags:        []string{"Image Updates"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermImageUpdatesCheck),
 	}, h.CheckAllImages)
 
 	huma.Register(api, huma.Operation{
@@ -140,7 +130,6 @@ func RegisterImageUpdates(api huma.API, imageUpdateSvc *services.ImageUpdateServ
 		Summary:     "Get persisted update info for image references",
 		Tags:        []string{"Image Updates"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermImageUpdatesRead),
 	}, h.GetUpdateInfoByRefs)
 
 	huma.Register(api, huma.Operation{
@@ -150,7 +139,6 @@ func RegisterImageUpdates(api huma.API, imageUpdateSvc *services.ImageUpdateServ
 		Summary:     "Get update summary",
 		Tags:        []string{"Image Updates"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermImageUpdatesRead),
 	}, h.GetUpdateSummary)
 }
 
@@ -159,8 +147,7 @@ func (h *ImageUpdateHandler) CheckImageUpdate(ctx context.Context, input *CheckI
 		return nil, huma.Error400BadRequest((&common.ImageRefRequiredError{}).Error())
 	}
 
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	result, err := h.imageUpdateService.CheckImageUpdate(runtimeCtx, input.ImageRef)
+	result, err := h.imageUpdateService.CheckImageUpdate(ctx, input.ImageRef)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.ImageUpdateCheckError{Err: err}).Error())
 	}
@@ -178,8 +165,7 @@ func (h *ImageUpdateHandler) CheckImageUpdateByID(ctx context.Context, input *Ch
 		return nil, huma.Error400BadRequest((&common.ImageIDRequiredError{}).Error())
 	}
 
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	result, err := h.imageUpdateService.CheckImageUpdateByID(runtimeCtx, input.ImageID)
+	result, err := h.imageUpdateService.CheckImageUpdateByID(ctx, input.ImageID)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.ImageUpdateCheckError{Err: err}).Error())
 	}
@@ -203,8 +189,7 @@ func (h *ImageUpdateHandler) CheckMultipleImages(ctx context.Context, input *Che
 		}, nil
 	}
 
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	results, err := h.imageUpdateService.CheckMultipleImages(runtimeCtx, input.Body.ImageRefs, input.Body.Credentials)
+	results, err := h.imageUpdateService.CheckMultipleImages(ctx, input.Body.ImageRefs, input.Body.Credentials)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.BatchImageUpdateCheckError{Err: err}).Error())
 	}
@@ -218,8 +203,7 @@ func (h *ImageUpdateHandler) CheckMultipleImages(ctx context.Context, input *Che
 }
 
 func (h *ImageUpdateHandler) CheckAllImages(ctx context.Context, input *CheckAllImagesInput) (*CheckAllImagesOutput, error) {
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	results, err := h.imageUpdateService.CheckAllImages(runtimeCtx, 0, input.Body.Credentials)
+	results, err := h.imageUpdateService.CheckAllImages(ctx, 0, input.Body.Credentials)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.AllImageUpdateCheckError{Err: err}).Error())
 	}

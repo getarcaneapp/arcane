@@ -7,13 +7,13 @@ import type {
 	NetworkCreateOptions,
 	NetworkInspectDto,
 	NetworkTopologyDto
-} from '$lib/types/docker';
-import type { SearchPaginationSortRequest, Paginated } from '$lib/types/shared';
-import { transformPaginationParams } from '$lib/utils/tables';
+} from '$lib/types/network.type';
+import type { SearchPaginationSortRequest, Paginated } from '$lib/types/pagination.type';
+import { transformPaginationParams } from '$lib/utils/params.util';
 
 export type NetworksPaginatedResponse = Paginated<NetworkSummaryDto, NetworkUsageCounts>;
 
-class NetworkService extends BaseAPIService {
+export class NetworkService extends BaseAPIService {
 	private async resolveEnvironmentId(environmentId?: string): Promise<string> {
 		return environmentId ?? (await environmentStore.getCurrentEnvironmentId());
 	}

@@ -1,11 +1,11 @@
 import BaseAPIService from './api-service';
-import type { TemplateRegistry, Template, RemoteRegistry, TemplateContentData } from '$lib/types/swarm';
-import type { Variable } from '$lib/types/shared';
-import type { SearchPaginationSortRequest, Paginated } from '$lib/types/shared';
-import { transformPaginationParams } from '$lib/utils/tables';
+import type { TemplateRegistry, Template, RemoteRegistry, TemplateContentData } from '$lib/types/template.type';
+import type { Variable } from '$lib/types/variable.type';
+import type { SearchPaginationSortRequest, Paginated } from '$lib/types/pagination.type';
+import { transformPaginationParams } from '$lib/utils/params.util';
 import { environmentStore } from '$lib/stores/environment.store.svelte';
 
-class TemplateService extends BaseAPIService {
+export default class TemplateService extends BaseAPIService {
 	async getTemplates(options?: SearchPaginationSortRequest): Promise<Paginated<Template>> {
 		const params = transformPaginationParams(options);
 		const response = await this.api.get('/templates', { params });

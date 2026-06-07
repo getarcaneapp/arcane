@@ -1,7 +1,6 @@
 package dockerrun
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 
@@ -21,7 +20,7 @@ func ParseTokens(tokens []string, result *systemtypes.DockerRunCommand) error {
 		} else {
 			if result.Image == "" {
 				if token == "" {
-					return errors.New("image name cannot be empty")
+					return fmt.Errorf("image name cannot be empty")
 				}
 				result.Image = token
 			} else {

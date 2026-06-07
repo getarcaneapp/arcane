@@ -9,11 +9,10 @@ type ArcaneApiEndpoints struct {
 	VersionEndpoint string
 
 	// Authentication
-	AuthLogoutEndpoint    string
-	AuthMeEndpoint        string
-	AuthPasswordEndpoint  string
-	AuthRefreshEndpoint   string
-	AuthFederatedEndpoint string
+	AuthLogoutEndpoint   string
+	AuthMeEndpoint       string
+	AuthPasswordEndpoint string
+	AuthRefreshEndpoint  string
 
 	// OIDC
 	OIDCDeviceCodeEndpoint  string
@@ -25,18 +24,8 @@ type ArcaneApiEndpoints struct {
 	ApiKeyEndpoint  string
 
 	// Users
-	UsersEndpoint               string
-	UserEndpoint                string
-	UserRoleAssignmentsEndpoint string
-
-	// Roles (RBAC)
-	RolesEndpoint                     string
-	RoleEndpoint                      string
-	RolesAvailablePermissionsEndpoint string
-
-	// OIDC role mappings
-	OidcRoleMappingsEndpoint string
-	OidcRoleMappingEndpoint  string
+	UsersEndpoint string
+	UserEndpoint  string
 
 	// Environments
 	EnvironmentsEndpoint       string
@@ -117,6 +106,8 @@ type ArcaneApiEndpoints struct {
 	SettingsPublicEndpoint string
 
 	// Notifications
+	NotificationsAppriseEndpoint         string
+	NotificationsAppriseTestEndpoint     string
 	NotificationsSettingsEndpoint        string
 	NotificationSettingsProviderEndpoint string
 	NotificationsTestProviderEndpoint    string
@@ -145,12 +136,14 @@ type ArcaneApiEndpoints struct {
 	TemplateFetchEndpoint       string
 
 	// Dashboard
-	DashboardEndpoint string
+	DashboardActionItemsEndpoint string
 
 	// Assets
 	AppImagesFaviconEndpoint string
 	AppImagesLogoEndpoint    string
 	AppImagesProfileEndpoint string
+	FontsMonoEndpoint        string
+	FontsSansEndpoint        string
 
 	// Customization
 	CustomizeCategoriesEndpoint string
@@ -179,11 +172,10 @@ var Endpoints = ArcaneApiEndpoints{ //nolint:gosec // static endpoint paths; aut
 	VersionEndpoint: "/api/version",
 
 	// Authentication
-	AuthLogoutEndpoint:    "/api/auth/logout",
-	AuthMeEndpoint:        "/api/auth/me",
-	AuthPasswordEndpoint:  "/api/auth/password",
-	AuthRefreshEndpoint:   "/api/auth/refresh",
-	AuthFederatedEndpoint: "/api/auth/federated/token",
+	AuthLogoutEndpoint:   "/api/auth/logout",
+	AuthMeEndpoint:       "/api/auth/me",
+	AuthPasswordEndpoint: "/api/auth/password",
+	AuthRefreshEndpoint:  "/api/auth/refresh",
 
 	// OIDC
 	OIDCDeviceCodeEndpoint:  "/api/oidc/device/code",
@@ -195,18 +187,8 @@ var Endpoints = ArcaneApiEndpoints{ //nolint:gosec // static endpoint paths; aut
 	ApiKeyEndpoint:  "/api/api-keys/%s",
 
 	// Users
-	UsersEndpoint:               "/api/users",
-	UserEndpoint:                "/api/users/%s",
-	UserRoleAssignmentsEndpoint: "/api/users/%s/role-assignments",
-
-	// Roles (RBAC)
-	RolesEndpoint:                     "/api/roles",
-	RoleEndpoint:                      "/api/roles/%s",
-	RolesAvailablePermissionsEndpoint: "/api/roles/available-permissions",
-
-	// OIDC role mappings
-	OidcRoleMappingsEndpoint: "/api/oidc/role-mappings",
-	OidcRoleMappingEndpoint:  "/api/oidc/role-mappings/%s",
+	UsersEndpoint: "/api/users",
+	UserEndpoint:  "/api/users/%s",
 
 	// Environments
 	EnvironmentsEndpoint:       "/api/environments",
@@ -287,6 +269,8 @@ var Endpoints = ArcaneApiEndpoints{ //nolint:gosec // static endpoint paths; aut
 	SettingsPublicEndpoint: "/api/environments/%s/settings/public",
 
 	// Notifications
+	NotificationsAppriseEndpoint:         "/api/environments/%s/notifications/apprise",
+	NotificationsAppriseTestEndpoint:     "/api/environments/%s/notifications/apprise/test",
 	NotificationsSettingsEndpoint:        "/api/environments/%s/notifications/settings",
 	NotificationSettingsProviderEndpoint: "/api/environments/%s/notifications/settings/%s",
 	NotificationsTestProviderEndpoint:    "/api/environments/%s/notifications/test/%s",
@@ -315,12 +299,14 @@ var Endpoints = ArcaneApiEndpoints{ //nolint:gosec // static endpoint paths; aut
 	TemplateFetchEndpoint:       "/api/templates/fetch",
 
 	// Dashboard
-	DashboardEndpoint: "/api/environments/%s/dashboard",
+	DashboardActionItemsEndpoint: "/api/environments/%s/dashboard/action-items",
 
 	// Assets
 	AppImagesFaviconEndpoint: "/api/app-images/favicon",
 	AppImagesLogoEndpoint:    "/api/app-images/logo",
 	AppImagesProfileEndpoint: "/api/app-images/profile",
+	FontsMonoEndpoint:        "/api/fonts/mono",
+	FontsSansEndpoint:        "/api/fonts/sans",
 
 	// Customization
 	CustomizeCategoriesEndpoint: "/api/customize/categories",
@@ -344,49 +330,25 @@ var Endpoints = ArcaneApiEndpoints{ //nolint:gosec // static endpoint paths; aut
 }
 
 // Auth endpoints
-
-func (e ArcaneApiEndpoints) AuthLogout() string    { return e.AuthLogoutEndpoint }
-func (e ArcaneApiEndpoints) AuthMe() string        { return e.AuthMeEndpoint }
-func (e ArcaneApiEndpoints) AuthPassword() string  { return e.AuthPasswordEndpoint }
-func (e ArcaneApiEndpoints) AuthRefresh() string   { return e.AuthRefreshEndpoint }
-func (e ArcaneApiEndpoints) AuthFederated() string { return e.AuthFederatedEndpoint }
+func (e ArcaneApiEndpoints) AuthLogout() string   { return e.AuthLogoutEndpoint }
+func (e ArcaneApiEndpoints) AuthMe() string       { return e.AuthMeEndpoint }
+func (e ArcaneApiEndpoints) AuthPassword() string { return e.AuthPasswordEndpoint }
+func (e ArcaneApiEndpoints) AuthRefresh() string  { return e.AuthRefreshEndpoint }
 
 // OIDC endpoints
-
 func (e ArcaneApiEndpoints) OIDCDeviceCode() string  { return e.OIDCDeviceCodeEndpoint }
 func (e ArcaneApiEndpoints) OIDCDeviceToken() string { return e.OIDCDeviceTokenEndpoint }
 func (e ArcaneApiEndpoints) OIDCStatus() string      { return e.OIDCStatusEndpoint }
 
 // API Key endpoints
-
 func (e ArcaneApiEndpoints) ApiKeys() string         { return e.ApiKeysEndpoint }
 func (e ArcaneApiEndpoints) ApiKey(id string) string { return fmt.Sprintf(e.ApiKeyEndpoint, id) }
 
 // User endpoints
-
 func (e ArcaneApiEndpoints) Users() string         { return e.UsersEndpoint }
 func (e ArcaneApiEndpoints) User(id string) string { return fmt.Sprintf(e.UserEndpoint, id) }
-func (e ArcaneApiEndpoints) UserRoleAssignments(userID string) string {
-	return fmt.Sprintf(e.UserRoleAssignmentsEndpoint, userID)
-}
-
-// Role (RBAC) endpoints
-
-func (e ArcaneApiEndpoints) Roles() string         { return e.RolesEndpoint }
-func (e ArcaneApiEndpoints) Role(id string) string { return fmt.Sprintf(e.RoleEndpoint, id) }
-func (e ArcaneApiEndpoints) RolesAvailablePermissions() string {
-	return e.RolesAvailablePermissionsEndpoint
-}
-
-// OIDC role mapping endpoints
-
-func (e ArcaneApiEndpoints) OidcRoleMappings() string { return e.OidcRoleMappingsEndpoint }
-func (e ArcaneApiEndpoints) OidcRoleMapping(id string) string {
-	return fmt.Sprintf(e.OidcRoleMappingEndpoint, id)
-}
 
 // Environment endpoints
-
 func (e ArcaneApiEndpoints) Environments() string { return e.EnvironmentsEndpoint }
 
 func (e ArcaneApiEndpoints) Environment(id string) string {
@@ -402,7 +364,6 @@ func (e ArcaneApiEndpoints) EnvironmentVersion(envID string) string {
 }
 
 // Container endpoints
-
 func (e ArcaneApiEndpoints) Containers(envID string) string {
 	return fmt.Sprintf(e.ContainersEndpoint, envID)
 }
@@ -436,7 +397,6 @@ func (e ArcaneApiEndpoints) ContainersCounts(envID string) string {
 }
 
 // Image endpoints
-
 func (e ArcaneApiEndpoints) Images(envID string) string { return fmt.Sprintf(e.ImagesEndpoint, envID) }
 
 func (e ArcaneApiEndpoints) Image(envID, imageID string) string {
@@ -460,7 +420,6 @@ func (e ArcaneApiEndpoints) ImagesUpload(envID string) string {
 }
 
 // Image Update endpoints
-
 func (e ArcaneApiEndpoints) ImageUpdatesCheck(envID string) string {
 	return fmt.Sprintf(e.ImageUpdatesCheckEndpoint, envID)
 }
@@ -478,7 +437,6 @@ func (e ArcaneApiEndpoints) ImageUpdatesSummary(envID string) string {
 }
 
 // Network endpoints
-
 func (e ArcaneApiEndpoints) Networks(envID string) string {
 	return fmt.Sprintf(e.NetworksEndpoint, envID)
 }
@@ -496,7 +454,6 @@ func (e ArcaneApiEndpoints) NetworksPrune(envID string) string {
 }
 
 // Volume endpoints
-
 func (e ArcaneApiEndpoints) Volumes(envID string) string {
 	return fmt.Sprintf(e.VolumesEndpoint, envID)
 }
@@ -522,7 +479,6 @@ func (e ArcaneApiEndpoints) VolumeUsage(envID, volumeName string) string {
 }
 
 // Project endpoints
-
 func (e ArcaneApiEndpoints) Projects(envID string) string {
 	return fmt.Sprintf(e.ProjectsEndpoint, envID)
 }
@@ -564,7 +520,6 @@ func (e ArcaneApiEndpoints) ProjectIncludes(envID, projectID string) string {
 }
 
 // System endpoints
-
 func (e ArcaneApiEndpoints) SystemPrune(envID string) string {
 	return fmt.Sprintf(e.SystemPruneEndpoint, envID)
 }
@@ -598,7 +553,6 @@ func (e ArcaneApiEndpoints) SystemUpgradeCheck(envID string) string {
 }
 
 // Updater endpoints
-
 func (e ArcaneApiEndpoints) UpdaterStatus(envID string) string {
 	return fmt.Sprintf(e.UpdaterStatusEndpoint, envID)
 }
@@ -612,13 +566,11 @@ func (e ArcaneApiEndpoints) UpdaterHistory(envID string) string {
 }
 
 // Job schedule endpoints
-
 func (e ArcaneApiEndpoints) JobSchedules(envID string) string {
 	return fmt.Sprintf(e.JobSchedulesEndpoint, envID)
 }
 
 // Settings endpoints
-
 func (e ArcaneApiEndpoints) Settings(envID string) string {
 	return fmt.Sprintf(e.SettingsEndpoint, envID)
 }
@@ -628,6 +580,13 @@ func (e ArcaneApiEndpoints) SettingsPublic(envID string) string {
 }
 
 // Notification endpoints
+func (e ArcaneApiEndpoints) NotificationsApprise(envID string) string {
+	return fmt.Sprintf(e.NotificationsAppriseEndpoint, envID)
+}
+
+func (e ArcaneApiEndpoints) NotificationsAppriseTest(envID string) string {
+	return fmt.Sprintf(e.NotificationsAppriseTestEndpoint, envID)
+}
 
 func (e ArcaneApiEndpoints) NotificationsSettings(envID string) string {
 	return fmt.Sprintf(e.NotificationsSettingsEndpoint, envID)
@@ -642,7 +601,6 @@ func (e ArcaneApiEndpoints) NotificationsTestProvider(envID, provider string) st
 }
 
 // Container Registry endpoints
-
 func (e ArcaneApiEndpoints) ContainerRegistries() string { return e.ContainerRegistriesEndpoint }
 
 func (e ArcaneApiEndpoints) ContainerRegistry(id string) string {
@@ -654,7 +612,6 @@ func (e ArcaneApiEndpoints) ContainerRegistryTest(id string) string {
 }
 
 // Event endpoints
-
 func (e ArcaneApiEndpoints) Events() string         { return e.EventsEndpoint }
 func (e ArcaneApiEndpoints) Event(id string) string { return fmt.Sprintf(e.EventEndpoint, id) }
 func (e ArcaneApiEndpoints) EventsEnvironment(envID string) string {
@@ -662,7 +619,6 @@ func (e ArcaneApiEndpoints) EventsEnvironment(envID string) string {
 }
 
 // Template endpoints
-
 func (e ArcaneApiEndpoints) Templates() string           { return e.TemplatesEndpoint }
 func (e ArcaneApiEndpoints) Template(id string) string   { return fmt.Sprintf(e.TemplateEndpoint, id) }
 func (e ArcaneApiEndpoints) TemplatesAll() string        { return e.TemplatesAllEndpoint }
@@ -681,13 +637,11 @@ func (e ArcaneApiEndpoints) TemplateDownload(id string) string {
 func (e ArcaneApiEndpoints) TemplateFetch() string { return e.TemplateFetchEndpoint }
 
 // Dashboard endpoints
-
-func (e ArcaneApiEndpoints) Dashboard(envID string) string {
-	return fmt.Sprintf(e.DashboardEndpoint, envID)
+func (e ArcaneApiEndpoints) DashboardActionItems(envID string) string {
+	return fmt.Sprintf(e.DashboardActionItemsEndpoint, envID)
 }
 
 // GitOps Sync endpoints
-
 func (e ArcaneApiEndpoints) GitOpsSyncs(envID string) string {
 	return fmt.Sprintf(e.GitOpsSyncsEndpoint, envID)
 }
@@ -708,7 +662,6 @@ func (e ArcaneApiEndpoints) GitOpsSyncsImport(envID string) string {
 }
 
 // Git Repository endpoints
-
 func (e ArcaneApiEndpoints) GitRepositories() string { return e.GitRepositoriesEndpoint }
 func (e ArcaneApiEndpoints) GitRepository(id string) string {
 	return fmt.Sprintf(e.GitRepositoryEndpoint, id)

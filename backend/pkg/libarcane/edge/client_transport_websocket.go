@@ -2,7 +2,6 @@ package edge
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -16,7 +15,7 @@ import (
 func (c *TunnelClient) connectAndServeWebSocket(ctx context.Context) error {
 	managerWSURL := c.managerWebSocketURLInternal()
 	if managerWSURL == "" {
-		return errors.New("manager WebSocket URL is empty")
+		return fmt.Errorf("manager WebSocket URL is empty")
 	}
 	c.managerURL = managerWSURL
 

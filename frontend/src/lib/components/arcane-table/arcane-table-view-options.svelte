@@ -1,5 +1,5 @@
-<script lang="ts" generics="TData extends Record<string, any>">
-	import type { ArcaneSvelteTable } from './table-features';
+<script lang="ts" generics="TData">
+	import type { Table } from '@tanstack/table-core';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { m } from '$lib/paraglide/messages';
@@ -12,7 +12,7 @@
 		onToggleField,
 		customViewOptions
 	}: {
-		table?: ArcaneSvelteTable<TData>;
+		table?: Table<TData>;
 		fields?: { id: string; label: string; visible: boolean }[];
 		onToggleField?: (fieldId: string) => void;
 		customViewOptions?: Snippet;
@@ -49,7 +49,8 @@
 				{#each table
 					.getAllColumns()
 					.filter((col) => typeof col.accessorFn !== 'undefined' && col.getCanHide()) as column (column)}
-					{@const headerText = column.columnDef.meta?.title ?? column.id}
+					{@const meta = column.columnDef.meta as { title?: string }}
+					{@const headerText = meta?.title ?? column.id}
 					<DropdownMenu.CheckboxItem
 						checked={column.getIsVisible()}
 						onCheckedChange={(checked) => column.toggleVisibility(checked === true)}

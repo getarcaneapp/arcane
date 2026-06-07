@@ -11,21 +11,20 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cenkalti/backoff/v5"
+	backoff "github.com/cenkalti/backoff/v5"
 	"golang.org/x/sync/singleflight"
 
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/crypto"
+	imageupdatecore "github.com/getarcaneapp/arcane/backend/pkg/libarcane/imageupdate"
 	utilsregistry "github.com/getarcaneapp/arcane/backend/pkg/libarcane/registryauth"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils/cache"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils/mapper"
 	"github.com/getarcaneapp/arcane/types/containerregistry"
-	updaterdigest "github.com/getarcaneapp/updater/pkg/digest"
-	updaterrefs "github.com/getarcaneapp/updater/pkg/refs"
-	updaterregistry "github.com/getarcaneapp/updater/pkg/registry"
 	dockerregistry "github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
 )
@@ -62,14 +61,8 @@ type resolvedRegistryCredential struct {
 }
 
 type registryRateLimitCacheEntryInternal struct {
-	RateLimit updaterregistry.RateLimitInfo `json:"rateLimit"`
+	RateLimit imageupdatecore.RateLimitInfo `json:"rateLimit"`
 	CheckedAt time.Time                     `json:"checkedAt"`
-}
-
-type rateLimitRoundTripFuncInternal func(*http.Request) (*http.Response, error)
-
-func (f rateLimitRoundTripFuncInternal) RoundTrip(req *http.Request) (*http.Response, error) {
-	return f(req)
 }
 
 type ContainerRegistryService struct {
@@ -88,7 +81,7 @@ func NewContainerRegistryService(db *database.DB, dockerClient registryDaemonGet
 	return &ContainerRegistryService{
 		db:                     db,
 		dockerClient:           dockerClient,
-		distributionHTTPClient: updaterregistry.NewRegistryHTTPClient(),
+		distributionHTTPClient: imageupdatecore.NewRegistryHTTPClient(),
 		cache:                  make(map[string]*cache.Cache[string]),
 		kvService:              kvService,
 	}
@@ -106,14 +99,25 @@ func (s *ContainerRegistryService) GetRegistriesPaginated(ctx context.Context, p
 	var registries []models.ContainerRegistry
 	q := s.db.WithContext(ctx).Model(&models.ContainerRegistry{})
 
-	q = pagination.ApplyLikeSearch(q, params.Search, "url LIKE ? OR username LIKE ? OR COALESCE(description, '') LIKE ?")
+	if term := strings.TrimSpace(params.Search); term != "" {
+		searchPattern := "%" + term + "%"
+		q = q.Where(
+			"url LIKE ? OR username LIKE ? OR COALESCE(description, '') LIKE ?",
+			searchPattern, searchPattern, searchPattern,
+		)
+	}
 
 	q = pagination.ApplyBooleanFilter(q, "enabled", params.Filters["enabled"])
 	q = pagination.ApplyBooleanFilter(q, "insecure", params.Filters["insecure"])
 
-	out, paginationResp, err := pagination.PaginateSortAndMapDB[models.ContainerRegistry, containerregistry.ContainerRegistry](params, q, &registries)
+	paginationResp, err := pagination.PaginateAndSortDB(params, q, &registries)
 	if err != nil {
-		return nil, pagination.Response{}, fmt.Errorf("failed to list container registries: %w", err)
+		return nil, pagination.Response{}, fmt.Errorf("failed to paginate container registries: %w", err)
+	}
+
+	out, mapErr := mapper.MapSlice[models.ContainerRegistry, containerregistry.ContainerRegistry](registries)
+	if mapErr != nil {
+		return nil, pagination.Response{}, fmt.Errorf("failed to map registries: %w", mapErr)
 	}
 
 	return out, paginationResp, nil
@@ -400,7 +404,7 @@ func (s *ContainerRegistryService) GetAllRegistryAuthConfigs(ctx context.Context
 			Password:      token,
 			ServerAddress: serverAddress,
 		}
-		for _, key := range utilsregistry.LookupKeys(normalizedHost) {
+		for _, key := range utilsregistry.RegistryAuthLookupKeys(normalizedHost) {
 			authConfigs[key] = authConfig
 		}
 	}
@@ -474,7 +478,6 @@ func (s *ContainerRegistryService) buildRegistryPullUsageInternal(ctx context.Co
 	}
 
 	if cachedRateLimit, checkedAt, ok := s.getCachedRateLimitInternal(ctx, reg.ID); ok {
-		ensureRateLimitUsedInternal(cachedRateLimit)
 		usage.Limit = cachedRateLimit.Limit
 		usage.Remaining = cachedRateLimit.Remaining
 		usage.Used = cachedRateLimit.Used
@@ -490,7 +493,6 @@ func (s *ContainerRegistryService) buildRegistryPullUsageInternal(ctx context.Co
 		usage.Error = err.Error()
 		return usage
 	}
-	ensureRateLimitUsedInternal(rateLimit)
 
 	usage.Limit = rateLimit.Limit
 	usage.Remaining = rateLimit.Remaining
@@ -500,14 +502,6 @@ func (s *ContainerRegistryService) buildRegistryPullUsageInternal(ctx context.Co
 	s.setCachedRateLimitInternal(ctx, reg.ID, rateLimit, usage.CheckedAt)
 
 	return usage
-}
-
-func ensureRateLimitUsedInternal(rateLimit *updaterregistry.RateLimitInfo) {
-	if rateLimit == nil || rateLimit.Used != nil || rateLimit.Limit == nil || rateLimit.Remaining == nil {
-		return
-	}
-	used := max(*rateLimit.Limit-*rateLimit.Remaining, 0)
-	rateLimit.Used = &used
 }
 
 func (s *ContainerRegistryService) getObservedPullsInternal(ctx context.Context, registryHost string) int64 {
@@ -524,7 +518,7 @@ func (s *ContainerRegistryService) getObservedPullsInternal(ctx context.Context,
 	return value
 }
 
-func (s *ContainerRegistryService) dockerHubCredentialForRegistryInternal(reg models.ContainerRegistry) (*updaterregistry.Credentials, string, string, error) {
+func (s *ContainerRegistryService) dockerHubCredentialForRegistryInternal(reg models.ContainerRegistry) (*imageupdatecore.Credentials, string, string, error) {
 	if reg.RegistryType != registryTypeGeneric {
 		return nil, "anonymous", "", nil
 	}
@@ -544,42 +538,17 @@ func (s *ContainerRegistryService) dockerHubCredentialForRegistryInternal(reg mo
 		return nil, "anonymous", "", nil
 	}
 
-	return &updaterregistry.Credentials{
+	return &imageupdatecore.Credentials{
 		Username: username,
 		Token:    token,
 	}, "credential", username, nil
 }
 
-func (s *ContainerRegistryService) fetchDockerHubRateLimitInternal(ctx context.Context, credential *updaterregistry.Credentials) (*updaterregistry.RateLimitInfo, error) {
-	return updaterregistry.FetchRegistryRateLimit(ctx, "docker.io", dockerHubRateLimitRepository, dockerHubRateLimitTag, credential, dockerHubRateLimitHTTPClientInternal(s.distributionHTTPClient))
+func (s *ContainerRegistryService) fetchDockerHubRateLimitInternal(ctx context.Context, credential *imageupdatecore.Credentials) (*imageupdatecore.RateLimitInfo, error) {
+	return imageupdatecore.FetchRegistryRateLimit(ctx, "docker.io", dockerHubRateLimitRepository, dockerHubRateLimitTag, credential, s.distributionHTTPClient)
 }
 
-func dockerHubRateLimitHTTPClientInternal(httpClient *http.Client) *http.Client {
-	if httpClient == nil {
-		return nil
-	}
-
-	cloned := *httpClient
-	baseTransport := cloned.Transport
-	if baseTransport == nil {
-		baseTransport = http.DefaultTransport
-	}
-
-	cloned.Transport = rateLimitRoundTripFuncInternal(func(req *http.Request) (*http.Response, error) {
-		if req.Method == http.MethodGet &&
-			req.URL.Host == "registry-1.docker.io" &&
-			req.URL.Path == "/v2/"+dockerHubRateLimitRepository+"/manifests/"+dockerHubRateLimitTag {
-			rewritten := req.Clone(req.Context())
-			rewritten.Method = http.MethodHead
-			req = rewritten
-		}
-		return baseTransport.RoundTrip(req)
-	})
-
-	return &cloned
-}
-
-func (s *ContainerRegistryService) getCachedRateLimitInternal(ctx context.Context, registryID string) (*updaterregistry.RateLimitInfo, time.Time, bool) {
+func (s *ContainerRegistryService) getCachedRateLimitInternal(ctx context.Context, registryID string) (*imageupdatecore.RateLimitInfo, time.Time, bool) {
 	if s.kvService == nil || registryID == "" {
 		return nil, time.Time{}, false
 	}
@@ -605,7 +574,7 @@ func (s *ContainerRegistryService) getCachedRateLimitInternal(ctx context.Contex
 	return &entry.RateLimit, entry.CheckedAt, true
 }
 
-func (s *ContainerRegistryService) setCachedRateLimitInternal(ctx context.Context, registryID string, rateLimit *updaterregistry.RateLimitInfo, checkedAt time.Time) {
+func (s *ContainerRegistryService) setCachedRateLimitInternal(ctx context.Context, registryID string, rateLimit *imageupdatecore.RateLimitInfo, checkedAt time.Time) {
 	if s.kvService == nil || registryID == "" || rateLimit == nil {
 		return
 	}
@@ -751,7 +720,7 @@ func (s *ContainerRegistryService) GetImageDigest(ctx context.Context, imageRef 
 		return result.Digest, nil
 	})
 
-	var staleErr *cache.StaleError
+	var staleErr *cache.ErrStale
 	if err != nil && !errors.As(err, &staleErr) {
 		return "", err
 	}
@@ -760,7 +729,7 @@ func (s *ContainerRegistryService) GetImageDigest(ctx context.Context, imageRef 
 }
 
 func (s *ContainerRegistryService) inspectImageDigestInternal(ctx context.Context, imageRef string, externalCreds []containerregistry.Credential) (*registryDigestResult, error) {
-	parts, err := updaterrefs.NormalizeReference(imageRef)
+	parts, err := imageupdatecore.NormalizeReference(imageRef)
 	if err != nil {
 		return nil, err
 	}
@@ -849,7 +818,7 @@ func (s *ContainerRegistryService) inspectImageDigestViaDaemonInternal(ctx conte
 
 	inspectResult, err := dockerClient.DistributionInspect(ctx, normalizedRef, client.DistributionInspectOptions{})
 	if err == nil {
-		digest, normalizeErr := updaterdigest.Normalize(inspectResult.Descriptor.Digest.String())
+		digest, normalizeErr := imageupdatecore.NormalizeDigest(inspectResult.Descriptor.Digest.String())
 		if normalizeErr != nil {
 			return nil, fmt.Errorf("distribution inspect returned invalid digest for %s: %w", normalizedRef, normalizeErr)
 		}
@@ -887,7 +856,7 @@ func (s *ContainerRegistryService) inspectImageDigestWithCredentialsInternal(ctx
 			EncodedRegistryAuth: authHeader,
 		})
 		if err == nil {
-			digest, normalizeErr := updaterdigest.Normalize(inspectResult.Descriptor.Digest.String())
+			digest, normalizeErr := imageupdatecore.NormalizeDigest(inspectResult.Descriptor.Digest.String())
 			if normalizeErr != nil {
 				return nil, fmt.Errorf("distribution inspect returned invalid digest for %s: %w", normalizedRef, normalizeErr)
 			}
@@ -1256,7 +1225,7 @@ func (s *ContainerRegistryService) deleteUnsyncedInternal(ctx context.Context, e
 }
 
 func normalizeImageReferenceForDistributionInternal(imageRef string) (string, string, error) {
-	parts, err := updaterrefs.NormalizeReference(imageRef)
+	parts, err := imageupdatecore.NormalizeReference(imageRef)
 	if err != nil {
 		return "", "", err
 	}
@@ -1342,30 +1311,19 @@ func isDistributionFallbackEligibleInternal(err error) bool {
 		return false
 	}
 
-	if updaterregistry.IsFallbackEligibleDaemonError(err) {
-		return true
-	}
-
-	if isUnauthorizedRegistryErrorInternal(err) {
-		return false
-	}
-
-	errLower := strings.ToLower(err.Error())
-	return strings.Contains(errLower, "context deadline exceeded") ||
-		strings.Contains(errLower, "client.timeout exceeded") ||
-		strings.Contains(errLower, "i/o timeout")
+	return imageupdatecore.IsFallbackEligibleDaemonError(err)
 }
 
 func (s *ContainerRegistryService) fetchDigestFromRegistryInternal(ctx context.Context, registryHost, repository, tag string, credential *resolvedRegistryCredential) (string, error) {
-	var distributionCredential *updaterregistry.Credentials
+	var distributionCredential *imageupdatecore.Credentials
 	if credential != nil {
-		distributionCredential = &updaterregistry.Credentials{
+		distributionCredential = &imageupdatecore.Credentials{
 			Username: strings.TrimSpace(credential.Username),
 			Token:    strings.TrimSpace(credential.Token),
 		}
 	}
 
-	return updaterregistry.FetchDigest(
+	return imageupdatecore.FetchDigest(
 		ctx,
 		registryHost,
 		repository,

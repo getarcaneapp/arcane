@@ -4,11 +4,11 @@
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { goto } from '$app/navigation';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import type { SearchPaginationSortRequest } from '$lib/types/shared';
+	import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { format } from 'date-fns';
-	import { capitalizeFirstLetter, truncateImageDigest } from '$lib/utils/formatting';
-	import type { ContainerSummaryDto } from '$lib/types/docker';
+	import { capitalizeFirstLetter, truncateImageDigest } from '$lib/utils/string.utils';
+	import type { ContainerSummaryDto } from '$lib/types/container.type';
 	import type { ColumnSpec, BulkAction } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
 	import { PortBadge } from '$lib/components/badges/index.js';
@@ -22,19 +22,19 @@
 	import ImageUpdateItem from '$lib/components/image-update-item.svelte';
 	import { PersistedState } from 'runed';
 	import { onMount } from 'svelte';
-	import { mode } from 'mode-watcher';
 	import { ContainerStatsManager } from './components/container-stats-manager.svelte';
 	import ContainerStatsSync from './components/container-stats-sync.svelte';
 	import ContainerStatsCell from './components/container-stats-cell.svelte';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { hasPermission } from '$lib/utils/auth';
+	import userStore from '$lib/stores/user-store';
+	import { fromStore } from 'svelte/store';
 	import IconImage from '$lib/components/icon-image.svelte';
-	import { getContainerIpAddresses, getThemedIconUrl } from '$lib/utils/docker';
-	import { hasAnyLoadingState } from '$lib/utils/bulk-actions';
+	import { getArcaneIconUrlFromLabels } from '$lib/utils/arcane-labels';
 	import { createContainerActions } from './container-table.actions';
 	import {
 		getActionStatusMessage,
 		getContainerDisplayName,
+		getContainerIpAddresses,
 		getProjectName,
 		getStateBadgeVariant,
 		parseImageRef,
@@ -145,7 +145,12 @@
 		isBulkLoading
 	});
 
-	const isAnyLoading = $derived(hasAnyLoadingState(actionStatus, isBulkLoading));
+	const isAnyLoading = $derived(
+		Object.values(actionStatus).some((status) => status !== '') || Object.values(isBulkLoading).some((loading) => loading)
+	);
+
+	const storeUser = fromStore(userStore);
+	const isAdmin = $derived(!!storeUser.current?.roles?.includes('admin'));
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 	let customSettings = $state<Record<string, unknown>>({});
@@ -179,7 +184,6 @@
 	});
 
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
-	const canUpdateContainers = $derived(hasPermission('containers:autoupdate', currentEnvId));
 
 	onMount(() => {
 		collapsedGroupsState = new PersistedState<Record<string, boolean>>('container-groups-collapsed', {});
@@ -231,7 +235,7 @@
 	const columns = $derived([
 		{ accessorKey: 'id', title: m.common_id(), cell: IdCell, hidden: true },
 		{ accessorKey: 'names', id: 'name', title: m.common_name(), sortable: !groupByProject, cell: NameCell },
-		{ accessorKey: 'image', title: m.common_image(), sortable: !groupByProject, cell: ImageCell, width: 'max' },
+		{ accessorKey: 'image', title: m.common_image(), sortable: !groupByProject, cell: ImageCell, truncate: true },
 		{ accessorKey: 'state', title: m.common_state(), sortable: !groupByProject, cell: StateCell },
 		{
 			id: 'updates',
@@ -369,14 +373,14 @@
 {/snippet}
 
 {#snippet PortsCell({ item }: { item: ContainerSummaryDto })}
-	<PortBadge ports={item.ports ?? []} hideExposed={hideExposedPorts} wrap={false} />
+	<PortBadge ports={item.ports ?? []} hideExposed={hideExposedPorts} />
 {/snippet}
 
 {#snippet NameCell({ item }: { item: ContainerSummaryDto })}
 	{@const displayName = getContainerDisplayName(item)}
-	{@const iconUrl = getThemedIconUrl(item, mode.current)}
+	{@const iconUrl = getArcaneIconUrlFromLabels(item.labels)}
 	<div class="flex items-center gap-2">
-		<IconImage src={iconUrl} alt={displayName} fallback={BoxIcon} class="size-6" containerClass="size-8" />
+		<IconImage src={iconUrl} alt={displayName} fallback={BoxIcon} class="size-4" containerClass="size-7" />
 		<a class="font-medium hover:underline" href="/containers/{item.id}">{displayName}</a>
 	</div>
 {/snippet}
@@ -422,7 +426,7 @@
 					icon={StopIcon}
 				/>
 			{/if}
-			{#if !status && item.updateInfo?.hasUpdate && canUpdateContainers}
+			{#if !status && item.updateInfo?.hasUpdate && isAdmin}
 				<ArcaneButton
 					action="base"
 					tone="ghost"
@@ -445,15 +449,15 @@
 		imageId={item.imageId}
 		repo={imageRef.repo}
 		tag={imageRef.tag}
-		onUpdateContainer={canUpdateContainers ? () => handleUpdateContainer(item) : undefined}
+		onUpdateContainer={isAdmin ? () => handleUpdateContainer(item) : undefined}
 		debugHasUpdate={false}
 	/>
 {/snippet}
 
 {#snippet ImageCell({ item }: { item: ContainerSummaryDto })}
 	<ArcaneTooltip.Root>
-		<ArcaneTooltip.Trigger class="flex w-full min-w-0">
-			<span class="min-w-0 flex-1 cursor-default truncate text-left font-mono text-xs">
+		<ArcaneTooltip.Trigger class="block w-full min-w-0">
+			<span class="block w-full cursor-default truncate text-left font-mono text-xs">
 				{truncateImageDigest(item.image)}
 			</span>
 		</ArcaneTooltip.Trigger>
@@ -479,7 +483,7 @@
 	<UniversalMobileCard
 		{item}
 		icon={(item) => {
-			const iconUrl = getThemedIconUrl(item, mode.current);
+			const iconUrl = getArcaneIconUrlFromLabels(item.labels);
 			const state = item.state;
 			return {
 				component: BoxIcon,
@@ -588,7 +592,7 @@
 									imageId={item.imageId}
 									repo={imageRef.repo}
 									tag={imageRef.tag}
-									onUpdateContainer={canUpdateContainers ? () => handleUpdateContainer(item) : undefined}
+									onUpdateContainer={isAdmin ? () => handleUpdateContainer(item) : undefined}
 									debugHasUpdate={false}
 								/>
 							</div>
@@ -620,7 +624,7 @@
 
 				<DropdownMenu.Separator />
 
-				{#if item.updateInfo?.hasUpdate && canUpdateContainers}
+				{#if item.updateInfo?.hasUpdate && isAdmin}
 					<DropdownMenu.Item onclick={() => handleUpdateContainer(item)} disabled={status === 'updating' || isAnyLoading}>
 						{#if status === 'updating'}
 							<Spinner class="size-4" />

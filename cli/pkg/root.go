@@ -21,6 +21,7 @@
 // # Command Groups
 //
 //   - admin: Administration & platform management
+//   - alerts: Show dashboard alerts
 //   - auth: Authentication operations
 //   - config: Manage CLI configuration
 //   - containers: Manage containers
@@ -38,8 +39,8 @@ import (
 	"strings"
 	"time"
 
-	"charm.land/fang/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/fang"
 	"github.com/fatih/color"
 	"github.com/getarcaneapp/arcane/cli/internal/config"
 	"github.com/getarcaneapp/arcane/cli/internal/logger"
@@ -47,6 +48,7 @@ import (
 	"github.com/getarcaneapp/arcane/cli/internal/runstate"
 	runtimectx "github.com/getarcaneapp/arcane/cli/internal/runtime"
 	"github.com/getarcaneapp/arcane/cli/pkg/admin"
+	"github.com/getarcaneapp/arcane/cli/pkg/alerts"
 	"github.com/getarcaneapp/arcane/cli/pkg/auth"
 	"github.com/getarcaneapp/arcane/cli/pkg/completion"
 	configClient "github.com/getarcaneapp/arcane/cli/pkg/config"
@@ -254,6 +256,7 @@ func init() {
 	rootCmd.AddCommand(generate.GenerateCmd)
 	rootCmd.AddCommand(version.VersionCmd)
 	rootCmd.AddCommand(auth.AuthCmd)
+	rootCmd.AddCommand(alerts.AlertsCmd)
 	rootCmd.AddCommand(containers.ContainersCmd)
 	rootCmd.AddCommand(images.ImagesCmd)
 	rootCmd.AddCommand(volumes.VolumesCmd)

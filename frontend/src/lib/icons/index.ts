@@ -12,7 +12,6 @@ export { default as ImagesIcon } from 'virtual:icons/solar/gallery-linear';
 export { default as NetworksIcon } from 'virtual:icons/fluent/virtual-network-16-filled';
 export { default as VolumesIcon } from 'virtual:icons/fluent/hard-drive-20-filled';
 export { default as EventsIcon } from 'virtual:icons/material-symbols/event-list';
-export { default as ActivityIcon } from 'virtual:icons/lucide/activity';
 export { default as SettingsIcon } from 'virtual:icons/solar/settings-outline';
 export { default as AppearanceIcon } from 'virtual:icons/f7/paintbrush';
 export { default as DockerBrandIcon } from 'virtual:icons/cib/docker';
@@ -95,6 +94,7 @@ export { default as ConnectionIcon } from 'virtual:icons/gravity-ui/plug-connect
 export { default as LayersIcon } from 'virtual:icons/solar/layers-minimalistic-linear';
 export { default as HashIcon } from 'virtual:icons/gravity-ui/hashtag';
 export { default as LocalFolderComputerIcon } from 'virtual:icons/streamline/local-storage-folder-remix';
+export { default as MinusIcon } from 'virtual:icons/solar/minus-circle-linear';
 export { default as SendEmailIcon } from 'virtual:icons/solar/plain-2-linear';
 export { default as VolumeUnusedIcon } from 'virtual:icons/clarity/hard-disk-solid-alerted';
 export { default as OpenIdIcon } from 'virtual:icons/simple-icons/openid';

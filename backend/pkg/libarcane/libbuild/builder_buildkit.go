@@ -133,14 +133,14 @@ func (b *builder) buildSolveOptInternal(ctx context.Context, req imagetypes.Buil
 		frontendAttrs["platform"] = strings.Join(req.Platforms, ",")
 	}
 	for key, val := range req.BuildArgs {
-		frontendAttrs["build-arg:"+key] = val
+		frontendAttrs[fmt.Sprintf("build-arg:%s", key)] = val
 	}
 	for key, val := range req.Labels {
 		k := strings.TrimSpace(key)
 		if k == "" {
 			continue
 		}
-		frontendAttrs["label:"+k] = val
+		frontendAttrs[fmt.Sprintf("label:%s", k)] = val
 	}
 
 	solveOpt := buildkit.SolveOpt{

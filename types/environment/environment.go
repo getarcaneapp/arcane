@@ -21,7 +21,12 @@ type Create struct {
 	// AccessToken for authentication with the environment.
 	//
 	// Required: false
-	AccessToken *string `json:"accessToken,omitempty"`
+	AccessToken *string `json:"accessToken,omitempty"` //nolint:gosec // API schema requires accessToken field name
+
+	// BootstrapToken for initial setup of the environment.
+	//
+	// Required: false
+	BootstrapToken *string `json:"bootstrapToken,omitempty"`
 
 	// UseApiKey indicates if an API key should be generated for pairing.
 	//
@@ -53,7 +58,12 @@ type Update struct {
 	// AccessToken for authentication with the environment.
 	//
 	// Required: false
-	AccessToken *string `json:"accessToken,omitempty"`
+	AccessToken *string `json:"accessToken,omitempty"` //nolint:gosec // API schema requires accessToken field name
+
+	// BootstrapToken for initial setup of the environment.
+	//
+	// Required: false
+	BootstrapToken *string `json:"bootstrapToken,omitempty"`
 
 	// RegenerateApiKey indicates whether to regenerate the API key.
 	//
@@ -202,7 +212,7 @@ type Environment struct {
 	// ApiKey is returned only when creating or regenerating
 	//
 	// Required: false
-	ApiKey *string `json:"apiKey,omitempty"`
+	ApiKey *string `json:"apiKey,omitempty"` //nolint:gosec // API schema requires apiKey field name
 }
 
 // AgentPairRequest is the request body for pairing with an agent.

@@ -86,7 +86,7 @@
 	const badgeClasses = $derived(
 		cn(
 			'inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-[var(--radius)] font-semibold tracking-tight',
-			'border transition-colors',
+			'border transition-all duration-300',
 			sizeStyles[size as Size],
 			variantStyles[variant as Variant],
 			minWidthClasses[minWidth as MinWidth],

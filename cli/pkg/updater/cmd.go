@@ -3,7 +3,6 @@ package updater
 import (
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/getarcaneapp/arcane/cli/internal/client"
@@ -54,8 +53,8 @@ var statusCmd = &cobra.Command{
 		}
 
 		output.Header("Updater Status")
-		output.KeyValue("Updating Containers", strconv.Itoa(result.Data.UpdatingContainers))
-		output.KeyValue("Updating Projects", strconv.Itoa(result.Data.UpdatingProjects))
+		output.KeyValue("Updating Containers", fmt.Sprintf("%d", result.Data.UpdatingContainers))
+		output.KeyValue("Updating Projects", fmt.Sprintf("%d", result.Data.UpdatingProjects))
 		return nil
 	},
 }
@@ -94,10 +93,10 @@ var runCmd = &cobra.Command{
 		}
 
 		output.Header("Updater Results")
-		output.KeyValue("Checked", strconv.Itoa(result.Data.Checked))
-		output.KeyValue("Updated", strconv.Itoa(result.Data.Updated))
-		output.KeyValue("Skipped", strconv.Itoa(result.Data.Skipped))
-		output.KeyValue("Failed", strconv.Itoa(result.Data.Failed))
+		output.KeyValue("Checked", fmt.Sprintf("%d", result.Data.Checked))
+		output.KeyValue("Updated", fmt.Sprintf("%d", result.Data.Updated))
+		output.KeyValue("Skipped", fmt.Sprintf("%d", result.Data.Skipped))
+		output.KeyValue("Failed", fmt.Sprintf("%d", result.Data.Failed))
 		output.KeyValue("Duration", result.Data.Duration)
 		return nil
 	},
@@ -137,9 +136,9 @@ var historyCmd = &cobra.Command{
 		rows := make([][]string, len(result.Data))
 		for i, h := range result.Data {
 			rows[i] = []string{
-				strconv.Itoa(h.Checked),
-				strconv.Itoa(h.Updated),
-				strconv.Itoa(h.Failed),
+				fmt.Sprintf("%d", h.Checked),
+				fmt.Sprintf("%d", h.Updated),
+				fmt.Sprintf("%d", h.Failed),
 				h.Duration,
 			}
 		}

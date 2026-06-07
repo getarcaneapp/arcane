@@ -2,11 +2,15 @@
 	import * as Card from '$lib/components/ui/card';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { m } from '$lib/paraglide/messages';
-	import type { SwarmServiceInspect } from '$lib/types/swarm';
+	import type { SwarmServiceInspect } from '$lib/types/swarm.type';
 	import { format, formatDistanceToNow } from 'date-fns';
 	import { InfoIcon, ConnectionIcon } from '$lib/icons';
-	import { truncateImageDigest } from '$lib/utils/formatting';
-	import { getSwarmServiceModeLabel, getSwarmServiceModeVariant, isSwarmServiceModeScalable } from '$lib/utils/docker';
+	import { truncateImageDigest } from '$lib/utils/string.utils';
+	import {
+		getSwarmServiceModeLabel,
+		getSwarmServiceModeVariant,
+		isSwarmServiceModeScalable
+	} from '$lib/utils/swarm-service-mode.utils';
 
 	interface Props {
 		service: SwarmServiceInspect;

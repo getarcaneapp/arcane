@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { cn } from '$lib/utils';
 	import { m } from '$lib/paraglide/messages';
-	import { getApplicationLogo } from '$lib/utils/docker';
-	import { accentColorPreviewStore } from '$lib/utils/theme';
+	import { getApplicationLogo } from '$lib/utils/image.util';
+	import { accentColorPreviewStore } from '$lib/utils/accent-color-util';
 
 	let { isCollapsed }: { isCollapsed: boolean } = $props();
 

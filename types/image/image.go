@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/containerregistry"
+	containerregistry "github.com/getarcaneapp/arcane/types/containerregistry"
 	"github.com/getarcaneapp/arcane/types/vulnerability"
 	"github.com/moby/moby/api/types/image"
 )
@@ -178,7 +178,7 @@ type PruneReport struct {
 // combining both types into a single list and converting space reclaimed to int64.
 func NewPruneReport(src image.PruneReport) PruneReport {
 	// Safely convert uint64 to int64, capping at MaxInt64 to prevent overflow
-	var spaceReclaimed int64
+	spaceReclaimed := int64(0)
 	if src.SpaceReclaimed > uint64(math.MaxInt64) {
 		spaceReclaimed = math.MaxInt64
 	} else {
@@ -537,7 +537,7 @@ func NewDetailSummary(src *image.InspectResponse) DetailSummary {
 		if len(src.Config.ExposedPorts) > 0 {
 			out.Config.ExposedPorts = make(map[string]struct{}, len(src.Config.ExposedPorts))
 			for p := range src.Config.ExposedPorts {
-				out.Config.ExposedPorts[p] = struct{}{}
+				out.Config.ExposedPorts[string(p)] = struct{}{}
 			}
 		}
 		if len(src.Config.Env) > 0 {
@@ -553,8 +553,7 @@ func NewDetailSummary(src *image.InspectResponse) DetailSummary {
 			}
 		}
 		out.Config.WorkingDir = src.Config.WorkingDir
-		//nolint:staticcheck // SA1019: deprecated field intentionally copied for Docker Windows image compatibility
-		out.Config.ArgsEscaped = src.Config.ArgsEscaped
+		out.Config.ArgsEscaped = src.Config.ArgsEscaped //nolint:staticcheck // Required for Docker Windows image compatibility
 	}
 
 	out.Architecture = src.Architecture

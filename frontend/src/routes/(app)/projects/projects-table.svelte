@@ -1,17 +1,16 @@
 <script lang="ts">
-	import type { Project } from '$lib/types/swarm';
+	import type { Project } from '$lib/types/project.type';
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { BoxIcon, EditIcon, StartIcon, RestartIcon, StopIcon, TrashIcon, RedeployIcon, EllipsisIcon } from '$lib/icons';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { goto } from '$app/navigation';
-	import { mode } from 'mode-watcher';
 	import { toast } from 'svelte-sonner';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
-	import { getStatusVariant, getThemedIconUrl } from '$lib/utils/docker';
-	import { capitalizeFirstLetter } from '$lib/utils/formatting';
+	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
+	import { getStatusVariant } from '$lib/utils/status.utils';
+	import { capitalizeFirstLetter } from '$lib/utils/string.utils';
 	import { format } from 'date-fns';
 	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
@@ -20,9 +19,6 @@
 	import { projectService } from '$lib/services/project-service';
 	import { FolderOpenIcon, LayersIcon, CalendarIcon, ProjectsIcon, GitBranchIcon, RefreshIcon } from '$lib/icons';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { hasPermission } from '$lib/utils/auth';
-	import { hasAnyLoadingState } from '$lib/utils/bulk-actions';
-	import IfPermitted from '$lib/components/if-permitted.svelte';
 	import IconImage from '$lib/components/icon-image.svelte';
 	import type { ActionStatus } from './projects-table.helpers';
 	import { createProjectActions } from './projects-table.actions';
@@ -34,7 +30,7 @@
 		getProjectUpdateText,
 		getProjectUpdateTooltip,
 		getProjectUpdateVariant
-	} from '$lib/utils/docker';
+	} from '$lib/utils/project-update.util';
 
 	let {
 		projects = $bindable(),
@@ -111,11 +107,6 @@
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 	const envId = $derived(environmentStore.selected?.id);
-	const currentEnvId = $derived(environmentStore.selected?.id || '0');
-	const canUpdateProject = $derived(hasPermission('projects:update', currentEnvId));
-	const canDeployProject = $derived(hasPermission('projects:deploy', currentEnvId));
-	const canDownProject = $derived(hasPermission('projects:down', currentEnvId));
-	const canArchiveProject = $derived(hasPermission('projects:archive', currentEnvId));
 
 	const {
 		performProjectAction,
@@ -136,7 +127,9 @@
 		getEnvId: () => envId
 	});
 
-	const isAnyLoading = $derived(hasAnyLoadingState(actionStatus, isBulkLoading));
+	const isAnyLoading = $derived(
+		Object.values(actionStatus).some((status) => status !== '') || Object.values(isBulkLoading).some((loading) => loading)
+	);
 	const selectedProjects = $derived.by(() => (projects?.data ?? []).filter((project) => selectedIds?.includes(project.id)));
 	const hasRedeployDisabledSelection = $derived.by(() => selectedProjects.some((project) => project.redeployDisabled));
 	const hasArchivedSelection = $derived.by(() => selectedProjects.some((project) => project.isArchived));
@@ -182,7 +175,7 @@
 			action: 'up',
 			onClick: handleBulkUp,
 			loading: isBulkLoading.up,
-			disabled: !canDeployProject || isAnyLoading || hasArchivedSelection,
+			disabled: isAnyLoading || hasArchivedSelection,
 			disabledReason: hasArchivedSelection ? m.projects_archived_badge() : undefined,
 			icon: StartIcon
 		},
@@ -192,7 +185,7 @@
 			action: 'down',
 			onClick: handleBulkDown,
 			loading: isBulkLoading.down,
-			disabled: !canDownProject || isAnyLoading || hasArchivedSelection,
+			disabled: isAnyLoading || hasArchivedSelection,
 			disabledReason: hasArchivedSelection ? m.projects_archived_badge() : undefined,
 			icon: StopIcon
 		},
@@ -202,7 +195,7 @@
 			action: 'redeploy',
 			onClick: handleBulkRedeploy,
 			loading: isBulkLoading.redeploy,
-			disabled: !canDeployProject || isAnyLoading || hasRedeployDisabledSelection || hasArchivedSelection,
+			disabled: isAnyLoading || hasRedeployDisabledSelection || hasArchivedSelection,
 			disabledReason: hasArchivedSelection
 				? m.projects_archived_badge()
 				: hasRedeployDisabledSelection
@@ -216,7 +209,7 @@
 			action: 'base',
 			onClick: handleBulkArchive,
 			loading: isBulkLoading.archive,
-			disabled: !canArchiveProject || isAnyLoading || hasArchivedSelection || hasRunningSelection,
+			disabled: isAnyLoading || hasArchivedSelection || hasRunningSelection,
 			disabledReason: hasRunningSelection
 				? m.projects_archive_requires_stopped()
 				: hasArchivedSelection
@@ -229,13 +222,7 @@
 
 {#snippet NameCell({ item }: { item: Project })}
 	<div class="flex items-center gap-2">
-		<IconImage
-			src={getThemedIconUrl(item, mode.current)}
-			alt={item.name}
-			fallback={FolderOpenIcon}
-			class="size-6"
-			containerClass="size-8"
-		/>
+		<IconImage src={item.iconUrl} alt={item.name} fallback={FolderOpenIcon} class="size-8" containerClass="size-10" />
 		<a class="font-medium hover:underline" href="/projects/{item.id}">{item.name}</a>
 		{#if item.isArchived}
 			<span class="bg-muted text-muted-foreground rounded px-1.5 py-0.5 text-xs font-medium">{m.projects_archived_badge()}</span>
@@ -303,7 +290,7 @@
 		icon={(item: Project) => ({
 			component: FolderOpenIcon,
 			variant: item.status === 'running' ? 'emerald' : item.status === 'exited' ? 'red' : 'amber',
-			imageUrl: getThemedIconUrl(item, mode.current) ?? undefined,
+			imageUrl: item.iconUrl,
 			alt: item.name
 		})}
 		title={(item: Project) => item.name}
@@ -392,7 +379,7 @@
 					{m.common_edit()}
 				</DropdownMenu.Item>
 
-				{#if item.gitOpsManagedBy && canUpdateProject}
+				{#if item.gitOpsManagedBy}
 					<DropdownMenu.Item
 						onclick={() => handleSyncFromGit(item.id, item.gitOpsManagedBy!)}
 						disabled={status === 'syncing' || isAnyLoading}
@@ -409,119 +396,107 @@
 				<DropdownMenu.Separator />
 
 				{#if item.status !== 'running'}
-					{#if canDeployProject}
-						<DropdownMenu.Item
-							onclick={() => performProjectAction('start', item.id)}
-							disabled={item.isArchived || status === 'starting' || isAnyLoading}
-							title={item.isArchived ? m.projects_archived_badge() : undefined}
-						>
-							{#if status === 'starting'}
-								<Spinner class="size-4" />
-							{:else}
-								<StartIcon class="size-4" />
-							{/if}
-							{m.common_up()}
-						</DropdownMenu.Item>
-					{/if}
+					<DropdownMenu.Item
+						onclick={() => performProjectAction('start', item.id)}
+						disabled={item.isArchived || status === 'starting' || isAnyLoading}
+						title={item.isArchived ? m.projects_archived_badge() : undefined}
+					>
+						{#if status === 'starting'}
+							<Spinner class="size-4" />
+						{:else}
+							<StartIcon class="size-4" />
+						{/if}
+						{m.common_up()}
+					</DropdownMenu.Item>
 				{:else}
-					{#if canDownProject}
-						<DropdownMenu.Item
-							onclick={() => performProjectAction('stop', item.id)}
-							disabled={item.isArchived || status === 'stopping' || isAnyLoading}
-							title={item.isArchived ? m.projects_archived_badge() : undefined}
-						>
-							{#if status === 'stopping'}
-								<Spinner class="size-4" />
-							{:else}
-								<StopIcon class="size-4" />
-							{/if}
-							{m.common_down()}
-						</DropdownMenu.Item>
-					{/if}
+					<DropdownMenu.Item
+						onclick={() => performProjectAction('stop', item.id)}
+						disabled={item.isArchived || status === 'stopping' || isAnyLoading}
+						title={item.isArchived ? m.projects_archived_badge() : undefined}
+					>
+						{#if status === 'stopping'}
+							<Spinner class="size-4" />
+						{:else}
+							<StopIcon class="size-4" />
+						{/if}
+						{m.common_down()}
+					</DropdownMenu.Item>
 
-					<IfPermitted perm="projects:restart">
-						<DropdownMenu.Item
-							onclick={() => performProjectAction('restart', item.id)}
-							disabled={item.isArchived || status === 'restarting' || isAnyLoading}
-							title={item.isArchived ? m.projects_archived_badge() : undefined}
-						>
-							{#if status === 'restarting'}
-								<Spinner class="size-4" />
-							{:else}
-								<RestartIcon class="size-4" />
-							{/if}
-							{m.common_restart()}
-						</DropdownMenu.Item>
-					</IfPermitted>
+					<DropdownMenu.Item
+						onclick={() => performProjectAction('restart', item.id)}
+						disabled={item.isArchived || status === 'restarting' || isAnyLoading}
+						title={item.isArchived ? m.projects_archived_badge() : undefined}
+					>
+						{#if status === 'restarting'}
+							<Spinner class="size-4" />
+						{:else}
+							<RestartIcon class="size-4" />
+						{/if}
+						{m.common_restart()}
+					</DropdownMenu.Item>
 				{/if}
 
-				{#if canDeployProject}
-					{#if item.redeployDisabled}
-						<DropdownMenu.Item disabled title={m.common_redeploy_disabled_arcane_self()}>
-							<RedeployIcon class="size-4 opacity-50" />
-							{m.compose_pull_redeploy()}
-						</DropdownMenu.Item>
-					{:else}
-						<DropdownMenu.Item
-							onclick={() => performProjectAction('redeploy', item.id)}
-							disabled={item.isArchived || status === 'redeploying' || isAnyLoading}
-							title={item.isArchived ? m.projects_archived_badge() : undefined}
-						>
-							{#if status === 'redeploying'}
-								<Spinner class="size-4" />
-							{:else}
-								<RedeployIcon class="size-4" />
-							{/if}
-							{m.compose_pull_redeploy()}
-						</DropdownMenu.Item>
-					{/if}
+				{#if item.redeployDisabled}
+					<DropdownMenu.Item disabled title={m.common_redeploy_disabled_arcane_self()}>
+						<RedeployIcon class="size-4 opacity-50" />
+						{m.compose_pull_redeploy()}
+					</DropdownMenu.Item>
+				{:else}
+					<DropdownMenu.Item
+						onclick={() => performProjectAction('redeploy', item.id)}
+						disabled={item.isArchived || status === 'redeploying' || isAnyLoading}
+						title={item.isArchived ? m.projects_archived_badge() : undefined}
+					>
+						{#if status === 'redeploying'}
+							<Spinner class="size-4" />
+						{:else}
+							<RedeployIcon class="size-4" />
+						{/if}
+						{m.compose_pull_redeploy()}
+					</DropdownMenu.Item>
 				{/if}
 
 				<DropdownMenu.Separator />
 
-				{#if canArchiveProject}
-					{#if item.isArchived}
-						<DropdownMenu.Item
-							onclick={() => performProjectAction('unarchive', item.id)}
-							disabled={status === 'unarchiving' || isAnyLoading}
-						>
-							{#if status === 'unarchiving'}
-								<Spinner class="size-4" />
-							{:else}
-								<BoxIcon class="size-4" />
-							{/if}
-							{m.projects_unarchive()}
-						</DropdownMenu.Item>
-					{:else}
-						<DropdownMenu.Item
-							onclick={() => performProjectAction('archive', item.id)}
-							disabled={isProjectArchiveBlocked(item) || status === 'archiving' || isAnyLoading}
-							title={isProjectArchiveBlocked(item) ? m.projects_archive_requires_stopped() : undefined}
-						>
-							{#if status === 'archiving'}
-								<Spinner class="size-4" />
-							{:else}
-								<BoxIcon class="size-4" />
-							{/if}
-							{m.projects_archive()}
-						</DropdownMenu.Item>
-					{/if}
-				{/if}
-
-				<IfPermitted perm="projects:delete">
+				{#if item.isArchived}
 					<DropdownMenu.Item
-						variant="destructive"
-						onclick={() => handleDestroyProject(item.id)}
-						disabled={status === 'destroying' || isAnyLoading}
+						onclick={() => performProjectAction('unarchive', item.id)}
+						disabled={status === 'unarchiving' || isAnyLoading}
 					>
-						{#if status === 'destroying'}
+						{#if status === 'unarchiving'}
 							<Spinner class="size-4" />
 						{:else}
-							<TrashIcon class="size-4" />
+							<BoxIcon class="size-4" />
 						{/if}
-						{m.compose_destroy()}
+						{m.projects_unarchive()}
 					</DropdownMenu.Item>
-				</IfPermitted>
+				{:else}
+					<DropdownMenu.Item
+						onclick={() => performProjectAction('archive', item.id)}
+						disabled={isProjectArchiveBlocked(item) || status === 'archiving' || isAnyLoading}
+						title={isProjectArchiveBlocked(item) ? m.projects_archive_requires_stopped() : undefined}
+					>
+						{#if status === 'archiving'}
+							<Spinner class="size-4" />
+						{:else}
+							<BoxIcon class="size-4" />
+						{/if}
+						{m.projects_archive()}
+					</DropdownMenu.Item>
+				{/if}
+
+				<DropdownMenu.Item
+					variant="destructive"
+					onclick={() => handleDestroyProject(item.id)}
+					disabled={status === 'destroying' || isAnyLoading}
+				>
+					{#if status === 'destroying'}
+						<Spinner class="size-4" />
+					{:else}
+						<TrashIcon class="size-4" />
+					{/if}
+					{m.compose_destroy()}
+				</DropdownMenu.Item>
 			</DropdownMenu.Group>
 		</DropdownMenu.Content>
 	</DropdownMenu.Root>

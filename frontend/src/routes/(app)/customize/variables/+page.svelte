@@ -7,11 +7,10 @@
 	import { CopyButton } from '$lib/components/ui/copy-button';
 	import { ResourcePageLayout, type ActionButton } from '$lib/layouts/index.js';
 	import { templateService } from '$lib/services/template-service.js';
-	import type { Variable } from '$lib/types/shared';
+	import type { Variable } from '$lib/types/variable.type';
 	import { untrack } from 'svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { SearchIcon, CloseIcon, AlertIcon, VariableIcon } from '$lib/icons';
-	import { hasPermission } from '$lib/utils/auth';
 
 	let { data } = $props();
 	let envVars = $state<Variable[]>(untrack(() => [...data.variables]));
@@ -105,30 +104,24 @@
 		}
 	});
 
-	const canUpdateVariables = $derived(hasPermission('templates:update'));
-
-	const actionButtons = $derived<ActionButton[]>(
-		canUpdateVariables
-			? [
-					{
-						id: 'reset',
-						action: 'restart',
-						label: m.common_reset(),
-						onclick: resetForm,
-						disabled: !hasChanges || isLoading
-					},
-					{
-						id: 'save',
-						action: 'save',
-						label: m.common_save(),
-						loadingLabel: m.common_saving(),
-						loading: isLoading,
-						disabled: isLoading || !hasChanges,
-						onclick: onSubmit
-					}
-				]
-			: []
-	);
+	const actionButtons = $derived<ActionButton[]>([
+		{
+			id: 'reset',
+			action: 'restart',
+			label: m.common_reset(),
+			onclick: resetForm,
+			disabled: !hasChanges || isLoading
+		},
+		{
+			id: 'save',
+			action: 'save',
+			label: m.common_save(),
+			loadingLabel: m.common_saving(),
+			loading: isLoading,
+			disabled: isLoading || !hasChanges,
+			onclick: onSubmit
+		}
+	]);
 </script>
 
 <ResourcePageLayout title={m.variables_title()} subtitle={m.variables_subtitle()} {actionButtons}>
@@ -175,16 +168,14 @@
 									<SearchIcon class="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
 									<Input type="text" placeholder={m.common_search()} bind:value={searchQuery} class="h-9 pl-10" />
 								</div>
-								{#if canUpdateVariables}
-									<ArcaneButton
-										action="create"
-										size="sm"
-										onclick={addEnvVar}
-										disabled={isLoading}
-										customLabel={m.variables_add_button()}
-										class="shrink-0"
-									/>
-								{/if}
+								<ArcaneButton
+									action="create"
+									size="sm"
+									onclick={addEnvVar}
+									disabled={isLoading}
+									customLabel={m.variables_add_button()}
+									class="shrink-0"
+								/>
 							</div>
 						</div>
 					</Card.Header>
@@ -243,19 +234,17 @@
 												/>
 												<InputGroup.Addon align="inline-end">
 													<CopyButton text={envVar.value} variant="ghost" tabindex={-1} />
-													{#if canUpdateVariables}
-														<InputGroup.Button
-															variant="ghost"
-															aria-label={m.common_remove()}
-															size="icon-xs"
-															onclick={() => removeEnvVar(actualIndex)}
-															disabled={isLoading}
-															class="text-destructive hover:text-destructive"
-															title={m.common_remove()}
-														>
-															<CloseIcon />
-														</InputGroup.Button>
-													{/if}
+													<InputGroup.Button
+														variant="ghost"
+														aria-label={m.common_remove()}
+														size="icon-xs"
+														onclick={() => removeEnvVar(actualIndex)}
+														disabled={isLoading}
+														class="text-destructive hover:text-destructive"
+														title={m.common_remove()}
+													>
+														<CloseIcon />
+													</InputGroup.Button>
 												</InputGroup.Addon>
 											</InputGroup.Root>
 										</div>

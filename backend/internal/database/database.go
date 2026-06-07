@@ -2,25 +2,30 @@ package database
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
-	"io/fs"
 	"log/slog"
+	"math"
 	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
 	glsqlite "github.com/glebarez/sqlite"
-	goose "github.com/pressly/goose/v3"
+	"github.com/golang-migrate/migrate/v4"
+	"github.com/golang-migrate/migrate/v4/database"
+	postgresMigrate "github.com/golang-migrate/migrate/v4/database/postgres"
+	sqliteMigrate "github.com/golang-migrate/migrate/v4/database/sqlite3"
+	"github.com/golang-migrate/migrate/v4/source"
+	_ "github.com/golang-migrate/migrate/v4/source/github"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
+	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/resources"
 )
 
@@ -30,13 +35,14 @@ type DB struct {
 
 type MigrationOptions struct {
 	AllowDowngrade bool
+	githubRef      string
 }
 
 const (
-	dbProviderSQLite   = "sqlite"
-	dbProviderPostgres = "postgres"
-	gooseVersionTable  = "goose_db_version"
-	legacyVersionTable = "schema_migrations"
+	migrationRepositoryOwner       = "getarcaneapp"
+	migrationRepositoryName        = "arcane"
+	migrationRepositoryPath        = "backend/resources/migrations"
+	migrationRepositoryRefFallback = "main"
 )
 
 var customGormLogger logger.Interface
@@ -45,8 +51,24 @@ func SetGormLogger(l logger.Interface) {
 	customGormLogger = l
 }
 
+func (o MigrationOptions) githubRefInternal() string {
+	return githubRefForRevisionInternal(o, config.Revision)
+}
+
+func githubRefForRevisionInternal(options MigrationOptions, revision string) string {
+	if ref := strings.TrimSpace(options.githubRef); ref != "" {
+		return ref
+	}
+
+	if ref := strings.TrimSpace(revision); ref != "" && ref != "unknown" {
+		return ref
+	}
+
+	return migrationRepositoryRefFallback
+}
+
 func Initialize(ctx context.Context, databaseURL string, options MigrationOptions) (*DB, error) {
-	db, err := connectDatabaseInternal(ctx, databaseURL)
+	db, err := connectDatabase(ctx, databaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
@@ -61,17 +83,33 @@ func Initialize(ctx context.Context, databaseURL string, options MigrationOption
 		return nil, fmt.Errorf("failed to get sql.DB: %w", err)
 	}
 
+	// Determine database provider for migrations
 	var dbProvider string
 	switch {
 	case strings.HasPrefix(databaseURL, "file:"):
-		dbProvider = dbProviderSQLite
+		dbProvider = "sqlite"
 	case strings.HasPrefix(databaseURL, "postgres"):
-		dbProvider = dbProviderPostgres
+		dbProvider = "postgres"
 	default:
 		return nil, fmt.Errorf("unsupported database type in URL: %s", databaseURL)
 	}
 
-	if err := migrateDatabaseInternal(ctx, sqlDB, dbProvider, options); err != nil {
+	// Choose the correct driver for migrations
+	var driver database.Driver
+	switch dbProvider {
+	case "sqlite":
+		driver, err = sqliteMigrate.WithInstance(sqlDB, &sqliteMigrate.Config{})
+	case "postgres":
+		driver, err = postgresMigrate.WithInstance(sqlDB, &postgresMigrate.Config{})
+	default:
+		return nil, fmt.Errorf("unsupported database provider: %s", dbProvider)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to create migration driver: %w", err)
+	}
+
+	// Run migrations
+	if err := migrateDatabase(driver, dbProvider, options); err != nil {
 		slog.Error("Failed to run migrations", "error", err)
 		return nil, fmt.Errorf("failed to run migrations: %w", err)
 	}
@@ -90,16 +128,16 @@ func Initialize(ctx context.Context, databaseURL string, options MigrationOption
 	return db, nil
 }
 
-func connectDatabaseInternal(ctx context.Context, databaseURL string) (*DB, error) {
+func connectDatabase(ctx context.Context, databaseURL string) (*DB, error) {
 	var dialector gorm.Dialector
 
 	switch {
 	case strings.HasPrefix(databaseURL, "file:"):
-		connString, err := parseSqliteConnectionStringInternal(databaseURL)
+		connString, err := parseSqliteConnectionString(databaseURL)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse SQLite connection string: %w", err)
 		}
-		if err := ensureSQLiteDirectoryInternal(connString); err != nil {
+		if err := ensureSQLiteDirectory(connString); err != nil {
 			return nil, fmt.Errorf("failed to prepare SQLite directory: %w", err)
 		}
 		dialector = glsqlite.Open(connString)
@@ -141,344 +179,208 @@ func connectDatabaseInternal(ctx context.Context, databaseURL string) (*DB, erro
 	return nil, err
 }
 
-func migrateDatabaseInternal(ctx context.Context, db *sql.DB, dbProvider string, options MigrationOptions) error {
+func migrateDatabase(driver database.Driver, dbProvider string, options MigrationOptions) error {
 	requiredVersion, err := getHighestEmbeddedMigrationVersionInternal(dbProvider)
 	if err != nil {
 		return fmt.Errorf("failed to determine target migration version for %s: %w", dbProvider, err)
 	}
 
-	return migrateDatabaseToVersionInternal(ctx, db, dbProvider, options, requiredVersion)
+	return migrateDatabaseToVersionInternal(driver, dbProvider, options, requiredVersion)
 }
 
-func migrateDatabaseToVersionInternal(ctx context.Context, db *sql.DB, dbProvider string, options MigrationOptions, requiredVersion int64) error {
-	if err := adoptLegacyMigrationStateInternal(ctx, db, dbProvider, options); err != nil {
+func migrateDatabaseToVersionInternal(driver database.Driver, dbProvider string, options MigrationOptions, requiredVersion uint) error {
+	embeddedMigrate, embeddedSource, err := newEmbeddedMigrateInstanceInternal(driver, dbProvider)
+	if err != nil {
+		return fmt.Errorf("failed to create embedded migration instance: %w", err)
+	}
+	defer closeMigrateSourceInternal(embeddedSource, "embedded migrate source")
+
+	currentVersion, dirty, hasVersion, err := currentMigrationStateInternal(embeddedMigrate)
+	if err != nil {
 		return err
 	}
 
-	provider, err := newGooseProviderInternal(db, dbProvider)
-	if err != nil {
-		return fmt.Errorf("failed to create goose provider for %s: %w", dbProvider, err)
+	logMigrationStateInternal(dbProvider, currentVersion, requiredVersion, dirty, hasVersion)
+
+	if hasVersion && dirty && currentVersion < requiredVersion {
+		if !options.AllowDowngrade {
+			return fmt.Errorf("database schema version %d is dirty (interrupted forward migration); resolve it manually or set ALLOW_DOWNGRADE=true to clear the dirty flag and re-apply the migration", currentVersion)
+		}
+
+		forceVersion, forceErr := safeUintToIntInternal(currentVersion)
+		if forceErr != nil {
+			return fmt.Errorf("failed to convert current migration version %d while clearing dirty state: %w", currentVersion, forceErr)
+		}
+
+		if err := embeddedMigrate.Force(forceVersion); err != nil {
+			return fmt.Errorf("failed to clear dirty migration state for version %d: %w", currentVersion, err)
+		}
+
+		slog.Warn("Cleared dirty migration state before re-applying forward migration", "provider", dbProvider, "version", currentVersion)
 	}
 
-	currentVersion, err := provider.GetDBVersion(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to determine current migration version for %s: %w", dbProvider, err)
+	if hasVersion && dirty && currentVersion == requiredVersion {
+		if !options.AllowDowngrade {
+			return fmt.Errorf("database schema version %d is dirty; resolve it manually or set ALLOW_DOWNGRADE=true to clear the dirty flag after verifying the database state", currentVersion)
+		}
+
+		forceVersion, forceErr := safeUintToIntInternal(currentVersion)
+		if forceErr != nil {
+			return fmt.Errorf("failed to convert current migration version %d while clearing dirty state: %w", currentVersion, forceErr)
+		}
+
+		if err := embeddedMigrate.Force(forceVersion); err != nil {
+			return fmt.Errorf("failed to clear dirty migration state for version %d: %w", currentVersion, err)
+		}
+
+		slog.Warn("Cleared dirty migration state at current version because ALLOW_DOWNGRADE=true", "provider", dbProvider, "version", currentVersion)
+		logUpToDateStateInternal(embeddedMigrate, dbProvider)
+		return nil
 	}
 
-	logMigrationStateInternal(dbProvider, currentVersion, requiredVersion)
-
-	if currentVersion > requiredVersion {
+	if hasVersion && currentVersion > requiredVersion {
 		if !options.AllowDowngrade {
 			return fmt.Errorf("database schema version %d is newer than this Arcane binary supports (target %d for %s); downgrade requires ALLOW_DOWNGRADE=true and a database backup before startup", currentVersion, requiredVersion, dbProvider)
 		}
 
-		missingVersions, err := missingEmbeddedDowngradeMigrationsInternal(ctx, db, dbProvider, requiredVersion)
-		if err != nil {
+		if err := migrateDatabaseFromGitHubInternal(driver, dbProvider, currentVersion, requiredVersion, options.githubRefInternal()); err != nil {
 			return err
 		}
-		if len(missingVersions) > 0 {
-			return fmt.Errorf("cannot downgrade database from version %d to %d for %s: embedded Goose migrations are missing for applied version(s) %v, so the rollback SQL is unavailable in this Arcane binary; ALLOW_DOWNGRADE=true is not sufficient, restore the database from a backup taken before the newer schema was applied", currentVersion, requiredVersion, dbProvider, missingVersions)
-		}
 
-		if _, err := provider.DownTo(ctx, requiredVersion); err != nil {
-			return fmt.Errorf("failed to downgrade database from version %d to %d for %s using embedded Goose migrations: %w", currentVersion, requiredVersion, dbProvider, err)
-		}
-
-		slog.Info("Database downgrade completed successfully", "provider", dbProvider, "fromVersion", currentVersion, "toVersion", requiredVersion)
 		return nil
 	}
 
-	if currentVersion == requiredVersion {
-		logUpToDateStateInternal(dbProvider, currentVersion)
-		return nil
+	upErr := embeddedMigrate.Up()
+	if upErr != nil && !errors.Is(upErr, migrate.ErrNoChange) {
+		return fmt.Errorf("failed to apply embedded migrations for %s: %w", dbProvider, upErr)
 	}
 
-	if _, err := provider.UpTo(ctx, requiredVersion); err != nil {
-		return fmt.Errorf("failed to apply embedded Goose migrations for %s: %w", dbProvider, err)
+	if errors.Is(upErr, migrate.ErrNoChange) {
+		logUpToDateStateInternal(embeddedMigrate, dbProvider)
+		return nil
 	}
 
 	slog.Info("Database migrations completed successfully", "provider", dbProvider, "targetVersion", requiredVersion)
 	return nil
 }
 
-func newGooseProviderInternal(db *sql.DB, dbProvider string) (*goose.Provider, error) {
-	migrationsFS, err := embeddedMigrationFSInternal(dbProvider)
+func migrateDatabaseFromGitHubInternal(driver database.Driver, dbProvider string, currentVersion, requiredVersion uint, githubRef string) error {
+	slog.Warn("Database downgrade detected",
+		"provider", dbProvider,
+		"currentVersion", currentVersion,
+		"requiredVersion", requiredVersion,
+		"source", buildGitHubMigrationSourceURLInternal(dbProvider, githubRef),
+	)
+
+	githubSource, err := newGitHubMigrationSourceInternal(dbProvider, githubRef)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("failed to create GitHub migration source for %s downgrade: %w; hint: ensure outbound GitHub access is available and set GITHUB_TOKEN if the GitHub API is rate-limited", dbProvider, err)
 	}
 
-	dialect, err := gooseDialectInternal(dbProvider)
-	if err != nil {
-		return nil, err
-	}
-
-	return goose.NewProvider(dialect, db, migrationsFS)
+	return migrateDatabaseFromSourceInternal(driver, dbProvider, currentVersion, requiredVersion, "github", "github migrate source", githubSource)
 }
 
-func embeddedMigrationFSInternal(dbProvider string) (fs.FS, error) {
-	migrationsFS, err := fs.Sub(resources.FS, "migrations/"+dbProvider)
+func migrateDatabaseFromSourceInternal(driver database.Driver, dbProvider string, currentVersion, requiredVersion uint, sourceName, sourceLabel string, sourceDriver source.Driver) error {
+	if sourceDriver == nil {
+		return fmt.Errorf("failed to create %s migration source for provider %s: source driver is nil", sourceName, dbProvider)
+	}
+	defer closeMigrateSourceInternal(sourceDriver, sourceLabel)
+
+	migrationInstance, err := migrate.NewWithInstance(sourceName, sourceDriver, "arcane", driver)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load embedded migrations for %s: %w", dbProvider, err)
+		return fmt.Errorf("failed to create %s migration instance for provider %s: %w", sourceName, dbProvider, err)
 	}
 
-	return migrationsFS, nil
-}
-
-func gooseDialectInternal(dbProvider string) (goose.Dialect, error) {
-	switch dbProvider {
-	case dbProviderSQLite:
-		return goose.DialectSQLite3, nil
-	case dbProviderPostgres:
-		return goose.DialectPostgres, nil
-	default:
-		return "", fmt.Errorf("unsupported database provider: %s", dbProvider)
-	}
-}
-
-func adoptLegacyMigrationStateInternal(ctx context.Context, db *sql.DB, dbProvider string, options MigrationOptions) error {
-	legacyState, ok, err := legacyMigrationStateInternal(ctx, db, dbProvider)
+	forceVersion, err := safeUintToIntInternal(currentVersion)
 	if err != nil {
-		return err
-	}
-	if !ok {
-		return nil
+		return fmt.Errorf("failed to convert current migration version %d for downgrade: %w", currentVersion, err)
 	}
 
-	if legacyState.dirty {
-		if !options.AllowDowngrade {
-			return fmt.Errorf("database schema version %d is dirty in legacy %s table; resolve it manually or set ALLOW_DOWNGRADE=true after verifying the database state", legacyState.version, legacyVersionTable)
-		}
-
-		if err := clearLegacyMigrationDirtyInternal(ctx, db, dbProvider, legacyState.version); err != nil {
-			return err
-		}
-		slog.Warn("Cleared dirty legacy migration state because ALLOW_DOWNGRADE=true", "provider", dbProvider, "version", legacyState.version)
+	if err := migrationInstance.Force(forceVersion); err != nil {
+		return fmt.Errorf("failed to normalize migration state before downgrade from %d to %d for %s: %w", currentVersion, requiredVersion, dbProvider, err)
 	}
 
-	hasGooseState, err := gooseVersionTableHasAppliedMigrationsInternal(ctx, db, dbProvider)
-	if err != nil {
-		return err
-	}
-	if hasGooseState {
-		return nil
+	err = migrationInstance.Migrate(requiredVersion)
+	if err != nil && !errors.Is(err, migrate.ErrNoChange) {
+		return fmt.Errorf("failed to downgrade database from version %d to %d for %s: %w", currentVersion, requiredVersion, dbProvider, err)
 	}
 
-	versions, err := getEmbeddedMigrationVersionsInternal(dbProvider)
-	if err != nil {
-		return err
-	}
-
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("failed to start legacy migration adoption transaction for %s: %w", dbProvider, err)
-	}
-	defer func() {
-		_ = tx.Rollback()
-	}()
-
-	if err := createGooseVersionTableInternal(ctx, tx, dbProvider); err != nil {
-		return err
-	}
-
-	if err := clearGooseVersionTableInternal(ctx, tx, dbProvider); err != nil {
-		return err
-	}
-
-	if err := insertGooseMigrationVersionInternal(ctx, tx, dbProvider, 0); err != nil {
-		return err
-	}
-	versionApplied := legacyState.version == 0
-	for _, version := range versions {
-		if version > legacyState.version {
-			break
-		}
-		if err := insertGooseMigrationVersionInternal(ctx, tx, dbProvider, version); err != nil {
-			return err
-		}
-		if version == legacyState.version {
-			versionApplied = true
-		}
-	}
-	if !versionApplied {
-		if err := insertGooseMigrationVersionInternal(ctx, tx, dbProvider, legacyState.version); err != nil {
-			return err
-		}
-	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("failed to commit legacy migration adoption for %s: %w", dbProvider, err)
-	}
-
-	slog.Info("Adopted legacy migration state into Goose", "provider", dbProvider, "legacyVersion", legacyState.version)
+	slog.Info("Database downgrade completed successfully", "provider", dbProvider, "fromVersion", currentVersion, "toVersion", requiredVersion)
 	return nil
 }
 
-type legacyMigrationState struct {
-	version int64
-	dirty   bool
-}
-
-func legacyMigrationStateInternal(ctx context.Context, db *sql.DB, dbProvider string) (legacyMigrationState, bool, error) {
-	exists, err := legacyVersionTableExistsInternal(ctx, db, dbProvider)
+func newEmbeddedMigrationSourceInternal(dbProvider string) (source.Driver, error) {
+	sourceDriver, err := iofs.New(resources.FS, "migrations/"+dbProvider)
 	if err != nil {
-		return legacyMigrationState{}, false, err
-	}
-	if !exists {
-		return legacyMigrationState{}, false, nil
+		return nil, fmt.Errorf("failed to create embedded migration source: %w", err)
 	}
 
-	var state legacyMigrationState
-	err = db.QueryRowContext(ctx, fmt.Sprintf("SELECT version, dirty FROM %s ORDER BY version DESC LIMIT 1", legacyVersionTable)).Scan(&state.version, &state.dirty)
-	if errors.Is(err, sql.ErrNoRows) {
-		return legacyMigrationState{}, false, nil
+	return sourceDriver, nil
+}
+
+func newEmbeddedMigrateInstanceInternal(driver database.Driver, dbProvider string) (*migrate.Migrate, source.Driver, error) {
+	sourceDriver, err := newEmbeddedMigrationSourceInternal(dbProvider)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	m, err := migrate.NewWithInstance("iofs", sourceDriver, "arcane", driver)
+	if err != nil {
+		if closeErr := sourceDriver.Close(); closeErr != nil {
+			slog.Warn("Failed to close embedded migration source after instance creation failure", "provider", dbProvider, "error", closeErr)
+		}
+		return nil, nil, fmt.Errorf("failed to create migration instance: %w", err)
+	}
+
+	return m, sourceDriver, nil
+}
+
+func newGitHubMigrationSourceInternal(dbProvider string, githubRef string) (source.Driver, error) {
+	sourceDriver, err := source.Open(buildGitHubMigrationSourceURLInternal(dbProvider, githubRef))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create GitHub migration source for provider %s: %w", dbProvider, err)
+	}
+
+	return sourceDriver, nil
+}
+
+func buildGitHubMigrationSourceURLInternal(dbProvider, githubRef string) string {
+	return fmt.Sprintf("github://%s/%s/%s/%s#%s", migrationRepositoryOwner, migrationRepositoryName, migrationRepositoryPath, dbProvider, githubRef)
+}
+
+func safeUintToIntInternal(value uint) (int, error) {
+	if value > uint(math.MaxInt) {
+		return 0, fmt.Errorf("value %d exceeds max int", value)
+	}
+
+	return int(value), nil
+}
+
+func currentMigrationStateInternal(m *migrate.Migrate) (version uint, dirty bool, hasVersion bool, err error) {
+	version, dirty, err = m.Version()
+	if errors.Is(err, migrate.ErrNilVersion) {
+		return 0, false, false, nil
 	}
 	if err != nil {
-		return legacyMigrationState{}, false, fmt.Errorf("failed to read legacy migration state for %s: %w", dbProvider, err)
+		return 0, false, false, fmt.Errorf("failed to determine current migration version: %w", err)
 	}
 
-	return state, true, nil
+	return version, dirty, true, nil
 }
 
-func legacyVersionTableExistsInternal(ctx context.Context, db *sql.DB, dbProvider string) (bool, error) {
-	switch dbProvider {
-	case dbProviderSQLite:
-		var count int
-		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?`, legacyVersionTable).Scan(&count); err != nil {
-			return false, fmt.Errorf("failed to check legacy migration table for sqlite: %w", err)
-		}
-		return count > 0, nil
-	case dbProviderPostgres:
-		var exists bool
-		if err := db.QueryRowContext(ctx, `SELECT to_regclass($1) IS NOT NULL`, legacyVersionTable).Scan(&exists); err != nil {
-			return false, fmt.Errorf("failed to check legacy migration table for postgres: %w", err)
-		}
-		return exists, nil
+func logUpToDateStateInternal(m *migrate.Migrate, dbProvider string) {
+	version, versionDirty, versionErr := m.Version()
+	switch {
+	case errors.Is(versionErr, migrate.ErrNilVersion):
+		slog.Info("Database schema is up to date", "provider", dbProvider, "migrationVersion", 0, "dirty", false)
+	case versionErr != nil:
+		slog.Info("Database schema is up to date", "provider", dbProvider)
 	default:
-		return false, fmt.Errorf("unsupported database provider: %s", dbProvider)
+		slog.Info("Database schema is up to date", "provider", dbProvider, "migrationVersion", version, "dirty", versionDirty)
 	}
 }
 
-func clearLegacyMigrationDirtyInternal(ctx context.Context, db *sql.DB, dbProvider string, version int64) error {
-	queryFormat := "UPDATE " + legacyVersionTable + " SET dirty = false WHERE version = %s"
-	query, args, err := sqlWithProviderPlaceholderInternal(dbProvider, queryFormat, version)
-	if err != nil {
-		return err
-	}
-	if _, err := db.ExecContext(ctx, query, args...); err != nil {
-		return fmt.Errorf("failed to clear legacy dirty migration state for %s version %d: %w", dbProvider, version, err)
-	}
-	return nil
-}
-
-func gooseVersionTableHasAppliedMigrationsInternal(ctx context.Context, db *sql.DB, dbProvider string) (bool, error) {
-	exists, err := gooseVersionTableExistsInternal(ctx, db, dbProvider)
-	if err != nil || !exists {
-		return false, err
-	}
-
-	var version int64
-	if err := db.QueryRowContext(ctx, fmt.Sprintf("SELECT COALESCE(MAX(version_id), 0) FROM %s WHERE is_applied = %s", gooseVersionTable, appliedLiteralInternal(dbProvider))).Scan(&version); err != nil {
-		return false, fmt.Errorf("failed to read Goose migration state for %s: %w", dbProvider, err)
-	}
-	return version > 0, nil
-}
-
-func gooseVersionTableExistsInternal(ctx context.Context, db *sql.DB, dbProvider string) (bool, error) {
-	switch dbProvider {
-	case dbProviderSQLite:
-		var count int
-		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?`, gooseVersionTable).Scan(&count); err != nil {
-			return false, fmt.Errorf("failed to check Goose version table for sqlite: %w", err)
-		}
-		return count > 0, nil
-	case dbProviderPostgres:
-		var exists bool
-		if err := db.QueryRowContext(ctx, `SELECT to_regclass($1) IS NOT NULL`, gooseVersionTable).Scan(&exists); err != nil {
-			return false, fmt.Errorf("failed to check Goose version table for postgres: %w", err)
-		}
-		return exists, nil
-	default:
-		return false, fmt.Errorf("unsupported database provider: %s", dbProvider)
-	}
-}
-
-type sqlExecerInternal interface {
-	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
-}
-
-func createGooseVersionTableInternal(ctx context.Context, execer sqlExecerInternal, dbProvider string) error {
-	var query string
-	switch dbProvider {
-	case dbProviderSQLite:
-		query = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-	id INTEGER PRIMARY KEY AUTOINCREMENT,
-	version_id INTEGER NOT NULL,
-	is_applied INTEGER NOT NULL,
-	tstamp TIMESTAMP DEFAULT (datetime('now'))
-)`, gooseVersionTable)
-	case dbProviderPostgres:
-		query = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-	id integer PRIMARY KEY GENERATED BY DEFAULT AS IDENTITY,
-	version_id bigint NOT NULL,
-	is_applied boolean NOT NULL,
-	tstamp timestamp NOT NULL DEFAULT now()
-)`, gooseVersionTable)
-	default:
-		return fmt.Errorf("unsupported database provider: %s", dbProvider)
-	}
-
-	if _, err := execer.ExecContext(ctx, query); err != nil {
-		return fmt.Errorf("failed to create Goose version table for %s: %w", dbProvider, err)
-	}
-	return nil
-}
-
-func clearGooseVersionTableInternal(ctx context.Context, execer sqlExecerInternal, dbProvider string) error {
-	if _, err := execer.ExecContext(ctx, "DELETE FROM "+gooseVersionTable); err != nil {
-		return fmt.Errorf("failed to clear Goose version table for %s: %w", dbProvider, err)
-	}
-	return nil
-}
-
-func insertGooseMigrationVersionInternal(ctx context.Context, execer sqlExecerInternal, dbProvider string, version int64) error {
-	switch dbProvider {
-	case dbProviderSQLite:
-		if _, err := execer.ExecContext(ctx, fmt.Sprintf("INSERT INTO %s (version_id, is_applied) VALUES (?, ?)", gooseVersionTable), version, true); err != nil {
-			return fmt.Errorf("failed to insert Goose migration version %d for sqlite: %w", version, err)
-		}
-	case dbProviderPostgres:
-		if _, err := execer.ExecContext(ctx, fmt.Sprintf("INSERT INTO %s (version_id, is_applied) VALUES ($1, $2)", gooseVersionTable), version, true); err != nil {
-			return fmt.Errorf("failed to insert Goose migration version %d for postgres: %w", version, err)
-		}
-	default:
-		return fmt.Errorf("unsupported database provider: %s", dbProvider)
-	}
-	return nil
-}
-
-func sqlWithProviderPlaceholderInternal(dbProvider, queryFormat string, arg any) (string, []any, error) {
-	switch dbProvider {
-	case dbProviderSQLite:
-		return fmt.Sprintf(queryFormat, "?"), []any{arg}, nil
-	case dbProviderPostgres:
-		return fmt.Sprintf(queryFormat, "$1"), []any{arg}, nil
-	default:
-		return "", nil, fmt.Errorf("unsupported database provider: %s", dbProvider)
-	}
-}
-
-func appliedLiteralInternal(dbProvider string) string {
-	if dbProvider == dbProviderPostgres {
-		return "true"
-	}
-	return "1"
-}
-
-func logUpToDateStateInternal(dbProvider string, version int64) {
-	slog.Info("Database schema is up to date", "provider", dbProvider, "migrationVersion", version)
-}
-
-func getHighestEmbeddedMigrationVersionInternal(dbProvider string) (int64, error) {
+func getHighestEmbeddedMigrationVersionInternal(dbProvider string) (uint, error) {
 	versions, err := getEmbeddedMigrationVersionsInternal(dbProvider)
 	if err != nil {
 		return 0, err
@@ -490,31 +392,27 @@ func getHighestEmbeddedMigrationVersionInternal(dbProvider string) (int64, error
 	return versions[len(versions)-1], nil
 }
 
-func getEmbeddedMigrationVersionsInternal(dbProvider string) ([]int64, error) {
+func getEmbeddedMigrationVersionsInternal(dbProvider string) ([]uint, error) {
 	entries, err := resources.FS.ReadDir("migrations/" + dbProvider)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read embedded migrations for %s: %w", dbProvider, err)
 	}
 
-	versionsMap := make(map[int64]struct{})
+	versionsMap := make(map[uint]struct{})
 	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") {
+		if entry.IsDir() {
 			continue
 		}
 
-		versionText, _, found := strings.Cut(entry.Name(), "_")
-		if !found {
-			continue
-		}
-		version, parseErr := strconv.ParseInt(versionText, 10, 64)
+		migration, parseErr := source.DefaultParse(entry.Name())
 		if parseErr != nil {
 			continue
 		}
 
-		versionsMap[version] = struct{}{}
+		versionsMap[migration.Version] = struct{}{}
 	}
 
-	versions := make([]int64, 0, len(versionsMap))
+	versions := make([]uint, 0, len(versionsMap))
 	for version := range versionsMap {
 		versions = append(versions, version)
 	}
@@ -523,60 +421,27 @@ func getEmbeddedMigrationVersionsInternal(dbProvider string) ([]int64, error) {
 	return versions, nil
 }
 
-// missingEmbeddedDowngradeMigrationsInternal returns the applied migration
-// versions above requiredVersion that have no matching embedded migration file.
-// Goose can only roll back migrations whose .Down SQL is embedded in this
-// binary, so any such missing version makes an embedded-only downgrade
-// impossible and signals that a restore from backup is required.
-func missingEmbeddedDowngradeMigrationsInternal(ctx context.Context, db *sql.DB, dbProvider string, requiredVersion int64) ([]int64, error) {
-	embeddedVersions, err := getEmbeddedMigrationVersionsInternal(dbProvider)
-	if err != nil {
-		return nil, err
+func logMigrationStateInternal(dbProvider string, currentVersion, requiredVersion uint, dirty, hasVersion bool) {
+	if !hasVersion {
+		slog.Info("Resolved database migration state", "provider", dbProvider, "currentVersion", 0, "requiredVersion", requiredVersion, "dirty", false)
+		return
 	}
 
-	embeddedSet := make(map[int64]struct{}, len(embeddedVersions))
-	for _, version := range embeddedVersions {
-		embeddedSet[version] = struct{}{}
-	}
-
-	queryFormat := "SELECT DISTINCT version_id FROM " + gooseVersionTable +
-		" WHERE is_applied = " + appliedLiteralInternal(dbProvider) +
-		" AND version_id > %s ORDER BY version_id"
-	query, args, err := sqlWithProviderPlaceholderInternal(dbProvider, queryFormat, requiredVersion)
-	if err != nil {
-		return nil, err
-	}
-
-	rows, err := db.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read applied migration versions for %s: %w", dbProvider, err)
-	}
-	defer func() {
-		_ = rows.Close()
-	}()
-
-	var missing []int64
-	for rows.Next() {
-		var version int64
-		if err := rows.Scan(&version); err != nil {
-			return nil, fmt.Errorf("failed to scan applied migration version for %s: %w", dbProvider, err)
-		}
-		if _, ok := embeddedSet[version]; !ok {
-			missing = append(missing, version)
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("failed to iterate applied migration versions for %s: %w", dbProvider, err)
-	}
-
-	return missing, nil
+	slog.Info("Resolved database migration state", "provider", dbProvider, "currentVersion", currentVersion, "requiredVersion", requiredVersion, "dirty", dirty)
 }
 
-func logMigrationStateInternal(dbProvider string, currentVersion, requiredVersion int64) {
-	slog.Info("Resolved database migration state", "provider", dbProvider, "currentVersion", currentVersion, "requiredVersion", requiredVersion)
+func closeMigrateSourceInternal(sourceDriver source.Driver, sourceName string) {
+	if sourceDriver == nil {
+		return
+	}
+
+	sourceErr := sourceDriver.Close()
+	if sourceErr != nil {
+		slog.Warn("Failed to close migration source", "source", sourceName, "error", sourceErr)
+	}
 }
 
-func parseSqliteConnectionStringInternal(connString string) (string, error) {
+func parseSqliteConnectionString(connString string) (string, error) {
 	if !strings.HasPrefix(connString, "file:") {
 		connString = "file:" + connString
 	}
@@ -635,19 +500,15 @@ func (db *DB) FindEnvironmentIDByApiKey(ctx context.Context, apiKey string) (str
 }
 
 func (db *DB) Close() error {
-	sqlDB, err := db.SQLDB()
+	sqlDB, err := db.DB.DB()
 	if err != nil {
 		return err
 	}
 	return sqlDB.Close()
 }
 
-func (db *DB) SQLDB() (*sql.DB, error) {
-	return db.DB.DB()
-}
-
 // Create parent directory for file-based SQLite if needed
-func ensureSQLiteDirectoryInternal(connString string) error {
+func ensureSQLiteDirectory(connString string) error {
 	if !strings.HasPrefix(connString, "file:") {
 		return nil
 	}
@@ -656,11 +517,13 @@ func ensureSQLiteDirectoryInternal(connString string) error {
 		return fmt.Errorf("failed to parse SQLite DSN: %w", err)
 	}
 
-	// For "file:data/arcane.db?...", path is in Opaque; for "file:/abs/path.db", it's in Path.
+	// For "file:data/arcane.db?...", path is in Opaque; for "file:/abs/path.db", it's in Path
 	pathPart := u.Opaque
 	if pathPart == "" {
 		pathPart = u.Path
 	}
+	// Trim leading slash to handle file:/relative.db
+	pathPart = strings.TrimPrefix(pathPart, "/")
 	if pathPart == "" || strings.HasPrefix(pathPart, ":memory:") {
 		return nil
 	}
@@ -669,5 +532,5 @@ func ensureSQLiteDirectoryInternal(connString string) error {
 	if dir == "" || dir == "." {
 		return nil
 	}
-	return os.MkdirAll(dir, 0o755)
+	return os.MkdirAll(dir, 0o755) //nolint:gosec // directory path is intentionally derived from configured SQLite DSN
 }

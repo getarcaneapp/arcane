@@ -1,17 +1,23 @@
 <script lang="ts">
+	import { format } from 'date-fns';
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
+	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import { UniversalMobileCard, type ColumnSpec, type MobileFieldVisibility } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
-	import type { SearchPaginationSortRequest, Paginated } from '$lib/types/shared';
-	import type { ContainerSummaryDto } from '$lib/types/docker';
-	import type { ImageUpdateInfoDto } from '$lib/types/docker';
-	import type { ContainersPaginatedResponse, ContainerListRequestOptions } from '$lib/services/container-service';
+	import { toast } from 'svelte-sonner';
+	import type { SearchPaginationSortRequest, Paginated } from '$lib/types/pagination.type';
+	import type { ContainerSummaryDto } from '$lib/types/container.type';
+	import type { ImageUpdateInfoDto } from '$lib/types/image.type';
+	import {
+		containerService,
+		type ContainersPaginatedResponse,
+		type ContainerListRequestOptions
+	} from '$lib/services/container-service';
 	import { ContainersIcon, UpdateIcon } from '$lib/icons';
 	import { getContainerDisplayName } from '../containers/container-table.helpers';
-	import IfPermitted from '$lib/components/if-permitted.svelte';
-	import { confirmAndUpdateContainer } from '$lib/utils/container-actions';
-	import { formatImageUpdateCheckedAt, formatImageUpdateValue } from '$lib/utils/image-updates';
+	import userStore from '$lib/stores/user-store';
+	import { fromStore } from 'svelte/store';
 
 	type ContainerUpdateRow = {
 		id: string;
@@ -37,14 +43,36 @@
 	let mobileFieldVisibility = $state<MobileFieldVisibility>({});
 	let updatingContainerIds = $state<Record<string, boolean>>({});
 
+	const storeUser = fromStore(userStore);
+	const isAdmin = $derived(!!storeUser.current?.roles?.includes('admin'));
+
+	function formatUpdateValue(updateInfo: ImageUpdateInfoDto | undefined, mode: 'current' | 'latest') {
+		if (!updateInfo) return '-';
+
+		const digest = mode === 'current' ? updateInfo.currentDigest : updateInfo.latestDigest;
+		if (digest?.trim()) return digest.trim();
+
+		const version = mode === 'current' ? updateInfo.currentVersion : updateInfo.latestVersion;
+		if (version?.trim()) return version.trim();
+
+		return '-';
+	}
+
+	function formatCheckedAt(value: string) {
+		if (!value) return '-';
+		const parsed = new Date(value);
+		if (Number.isNaN(parsed.getTime())) return '-';
+		return format(parsed, 'PP p');
+	}
+
 	function mapContainerRow(container: ContainerSummaryDto): ContainerUpdateRow {
 		return {
 			id: container.id,
 			containerId: container.id,
 			name: getContainerDisplayName(container),
 			imageRef: container.image,
-			currentValue: formatImageUpdateValue(container.updateInfo, 'current'),
-			latestValue: formatImageUpdateValue(container.updateInfo, 'latest'),
+			currentValue: formatUpdateValue(container.updateInfo, 'current'),
+			latestValue: formatUpdateValue(container.updateInfo, 'latest'),
 			checkedAt: container.updateInfo?.checkTime ?? '',
 			updateInfo: container.updateInfo,
 			container
@@ -76,16 +104,39 @@
 	async function handleUpdateContainer(container: ContainerSummaryDto) {
 		const containerName = getContainerDisplayName(container);
 
-		confirmAndUpdateContainer({
-			containerId: container.id,
-			containerName,
-			showPullingToast: true,
-			setLoading: (loading) => {
-				updatingContainerIds = { ...updatingContainerIds, [container.id]: loading };
-			},
-			onRefresh: async () => {
-				const next = await onRefreshData(requestOptions as ContainerListRequestOptions);
-				containers = next;
+		openConfirmDialog({
+			title: m.containers_update_confirm_title(),
+			message: m.containers_update_confirm_message({ name: containerName }),
+			confirm: {
+				label: m.containers_update_container(),
+				destructive: false,
+				action: async () => {
+					updatingContainerIds = { ...updatingContainerIds, [container.id]: true };
+					try {
+						toast.info(m.containers_update_pulling_image());
+
+						const result = await containerService.updateContainer(container.id);
+
+						if (result.failed > 0) {
+							const failedItem = result.items?.find((item: { status?: string; error?: string }) => item.status === 'failed');
+							toast.error(
+								m.containers_update_failed({ name: containerName }) + (failedItem?.error ? `: ${failedItem.error}` : '')
+							);
+						} else if (result.updated > 0) {
+							toast.success(m.containers_update_success({ name: containerName }));
+						} else {
+							toast.info(m.image_update_up_to_date_title());
+						}
+
+						const next = await onRefreshData(requestOptions as ContainerListRequestOptions);
+						containers = next;
+					} catch (error) {
+						console.error('Container update failed:', error);
+						toast.error(m.containers_update_failed({ name: containerName }));
+					} finally {
+						updatingContainerIds = { ...updatingContainerIds, [container.id]: false };
+					}
+				}
 			}
 		});
 	}
@@ -109,11 +160,11 @@
 {/snippet}
 
 {#snippet CheckedAtCell({ value }: { value: unknown })}
-	<span class="text-sm">{formatImageUpdateCheckedAt(typeof value === 'string' ? value : '')}</span>
+	<span class="text-sm">{formatCheckedAt(typeof value === 'string' ? value : '')}</span>
 {/snippet}
 
 {#snippet ActionsCell({ item }: { item: ContainerUpdateRow })}
-	<IfPermitted perm="containers:autoupdate">
+	{#if isAdmin}
 		<ArcaneButton
 			action="update"
 			size="sm"
@@ -123,7 +174,7 @@
 			disabled={!!updatingContainerIds[item.containerId]}
 			icon={UpdateIcon}
 		/>
-	</IfPermitted>
+	{/if}
 {/snippet}
 
 {#snippet ContainerUpdatesMobileCard({ item }: { item: ContainerUpdateRow })}
@@ -146,7 +197,7 @@
 			},
 			{
 				label: m.common_updated(),
-				getValue: (item: ContainerUpdateRow) => formatImageUpdateCheckedAt(item.checkedAt)
+				getValue: (item: ContainerUpdateRow) => formatCheckedAt(item.checkedAt)
 			},
 			{
 				label: m.common_actions(),

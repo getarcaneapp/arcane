@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { toast } from 'svelte-sonner';
-	import type { ImageUpdateData } from '$lib/types/docker';
+	import type { ImageUpdateData } from '$lib/types/image.type';
 	import { m } from '$lib/paraglide/messages';
 	import { imageService } from '$lib/services/image-service';
 	import { queryKeys } from '$lib/query/query-keys';
@@ -10,8 +10,6 @@
 	import { ArrowRightIcon, RefreshIcon, AlertIcon, VerifiedCheckIcon, ApiKeyIcon, CircleArrowUpIcon, BoxIcon } from '$lib/icons';
 	import { createQuery } from '@tanstack/svelte-query';
 	import UpdateStatusPopover from '$lib/components/update-status-popover.svelte';
-	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
-	import UncheckedRingIcon from '$lib/components/unchecked-ring-icon.svelte';
 
 	interface Props {
 		updateInfo?: ImageUpdateData;
@@ -142,12 +140,11 @@
 			const result = await imageUpdateQuery.refetch();
 			if (result.data) {
 				onUpdated?.(result.data);
-				const toastOptions = activityToastOptions(extractActivityId(result.data));
 
 				if (result.data.error) {
-					toast.error(result.data.error || m.images_update_check_failed(), toastOptions);
+					toast.error(result.data.error || m.images_update_check_failed());
 				} else {
-					toast.success(m.images_update_check_completed(), toastOptions);
+					toast.success(m.images_update_check_completed());
 				}
 				return;
 			}
@@ -490,17 +487,17 @@
 					<button
 						onclick={checkImageUpdate}
 						disabled={isChecking}
-						class="flex size-4 items-center justify-center rounded-full text-gray-400 transition-colors hover:text-blue-400 disabled:cursor-not-allowed"
+						class="group flex h-4 w-4 items-center justify-center rounded-full border-2 border-dashed border-gray-400 transition-colors hover:border-blue-400 hover:bg-blue-50 disabled:cursor-not-allowed dark:hover:bg-blue-950"
 					>
 						{#if isChecking}
-							<Spinner class="size-3 text-blue-400" />
+							<Spinner class="h-2 w-2 text-blue-400" />
 						{:else}
-							<UncheckedRingIcon />
+							<div class="h-1.5 w-1.5 rounded-full bg-gray-400 transition-colors group-hover:bg-blue-400"></div>
 						{/if}
 					</button>
 				{:else}
-					<div class="flex size-4 items-center justify-center text-gray-400 opacity-30">
-						<UncheckedRingIcon />
+					<div class="flex h-4 w-4 items-center justify-center rounded-full border-2 border-dashed border-gray-400 opacity-30">
+						<div class="h-1.5 w-1.5 rounded-full bg-gray-400"></div>
 					</div>
 				{/if}
 			</span>

@@ -1,86 +1,73 @@
 <script lang="ts">
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { ArrowLeftIcon, TerminalIcon, TemplateIcon, AddIcon, GitBranchIcon } from '$lib/icons';
+	import { ArrowLeftIcon, TerminalIcon, CopyIcon, TemplateIcon, AddIcon, GitBranchIcon } from '$lib/icons';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
+	import { Label } from '$lib/components/ui/label/index.js';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
-	import { preventDefault, createForm } from '$lib/utils/settings';
+	import { preventDefault, createForm } from '$lib/utils/form.utils';
+	import { tryCatch } from '$lib/utils/try-catch';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
+	import { Textarea } from '$lib/components/ui/textarea/index.js';
+	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
 	import TemplateSelectionDialog from '$lib/components/dialogs/template-selection-dialog.svelte';
+	import type { Template } from '$lib/types/template.type';
+	import { z } from 'zod/v4';
+	import { arcaneButtonVariants, actionConfigs } from '$lib/components/arcane-button/variants';
 	import { m } from '$lib/paraglide/messages';
 	import { projectService } from '$lib/services/project-service.js';
+	import { systemService } from '$lib/services/system-service.js';
+	import { templateService } from '$lib/services/template-service.js';
 	import * as ButtonGroup from '$lib/components/ui/button-group/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { ArrowDownIcon as ChevronDown } from '$lib/icons';
 	import CodePanel from '../components/CodePanel.svelte';
 	import EditableName from '../components/EditableName.svelte';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { hasPermission } from '$lib/utils/auth';
-	import IfPermitted from '$lib/components/if-permitted.svelte';
 	import { ComposeEditorSplit } from '$lib/components/compose';
-	import DockerRunConverterDialog from '$lib/components/compose/docker-run-converter-dialog.svelte';
-	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
-	import { globalVariablesToMap } from '$lib/utils/template-load';
-	import {
-		createComposeEditorSchema,
-		createComposeTemplateDialogFlow,
-		dropdownContentClass,
-		dropdownItemClass,
-		submitComposeResourceForm,
-		templateBtnClass,
-		templateNameSlug
-	} from '$lib/utils/compose-flow';
-	import {
-		getTemplateEditorValidationState,
-		hasTemplateEditorErrors,
-		validateTemplateEditorForm
-	} from '$lib/utils/template-editor';
 
 	let { data } = $props();
 
-	const currentEnvId = $derived(environmentStore.selected?.id || '0');
-	const canCreateProject = $derived(hasPermission('projects:create', currentEnvId));
+	let saving = $state(false);
+	let converting = $state(false);
+	let creatingTemplate = $state(false);
+	let showTemplateDialog = $state(false);
+	let showConverterDialog = $state(false);
+	let isLoadingTemplateContent = $state(false);
 
-	let ui = $state({
-		saving: false,
-		converting: false,
-		creatingTemplate: false,
-		showTemplateDialog: false,
-		showConverterDialog: false,
-		isLoadingTemplateContent: false
+	const formSchema = z.object({
+		name: z
+			.string()
+			.min(1, m.compose_project_name_required())
+			.regex(/^[a-z0-9-_]+$/i, m.compose_project_name_invalid()),
+		composeContent: z.string().min(1, m.compose_compose_content_required()),
+		envContent: z.string().optional().default('')
 	});
-
-	const formSchema = createComposeEditorSchema(m.compose_project_name_required());
 
 	// Initial form values intentionally come from the page load data once.
 	// svelte-ignore state_referenced_locally
 	const formData = {
-		name: data.selectedTemplate ? templateNameSlug(data.selectedTemplate.name) : '',
+		name: data.selectedTemplate ? data.selectedTemplate.name.toLowerCase().replace(/[^a-z0-9-_]/g, '-') : '',
 		composeContent: data.defaultTemplate || '',
 		envContent: data.envTemplate || ''
 	};
 
 	const { inputs, ...form } = createForm<typeof formSchema>(formSchema, formData);
 
+	let dockerRunCommand = $state('');
 	let composeOpen = $state(true);
 	let envOpen = $state(true);
-	let validation = $state({
-		composeHasErrors: false,
-		envHasErrors: false,
-		composeValidationReady: false,
-		envValidationReady: false
-	});
+	let composeHasErrors = $state(false);
+	let envHasErrors = $state(false);
+	let composeValidationReady = $state(false);
+	let envValidationReady = $state(false);
 
-	const globalVariableMap = $derived(globalVariablesToMap(data.globalVariables));
-	const validationState = $derived(
-		getTemplateEditorValidationState(
-			validation.composeValidationReady,
-			validation.envValidationReady,
-			validation.composeHasErrors,
-			validation.envHasErrors
-		)
+	const globalVariableMap = $derived.by(() =>
+		Object.fromEntries((data.globalVariables ?? []).map((item) => [item.key, item.value]))
 	);
-	let hasEditorErrors = $derived(hasTemplateEditorErrors(validationState));
+
+	let hasEditorErrors = $derived(!composeValidationReady || !envValidationReady || composeHasErrors || envHasErrors);
 
 	let nameInputRef = $state<HTMLInputElement | null>(null);
 
@@ -89,29 +76,109 @@
 	}
 
 	async function handleCreateProject() {
-		await submitComposeResourceForm({
-			validate: () => validateTemplateEditorForm(validationState, form.validate),
-			setLoading: (value) => (ui.saving = value),
-			submit: ({ name, composeContent, envContent }) => projectService.createProject(name, composeContent, envContent),
-			failureMessage: (name) => m.common_create_failed({ resource: `${m.resource_project()} "${name}"` }),
-			onSuccess: async (project, { name }) => {
-				toast.success(
-					m.common_create_success({ resource: `${m.resource_project()} "${name}"` }),
-					activityToastOptions(extractActivityId(project))
-				);
+		if (hasEditorErrors) {
+			toast.error(m.templates_validation_error());
+			return;
+		}
+
+		const validated = form.validate();
+		if (!validated) return;
+
+		const { name, composeContent, envContent } = validated;
+
+		handleApiResultWithCallbacks({
+			result: await tryCatch(projectService.createProject(name, composeContent, envContent)),
+			message: m.common_create_failed({ resource: `${m.resource_project()} "${name}"` }),
+			setLoadingState: (value) => (saving = value),
+			onSuccess: async (project) => {
+				toast.success(m.common_create_success({ resource: `${m.resource_project()} "${name}"` }));
 				goto(`/projects/${project.id}`, { invalidateAll: true });
 			}
 		});
 	}
 
-	const { composeHandlers, handleCreateTemplate } = createComposeTemplateDialogFlow({
-		getInputs: () => $inputs,
-		setInputValue: (key, value) => form.setValue(key, value),
-		closeTemplateDialog: () => (ui.showTemplateDialog = false),
-		validate: form.validate,
-		setLoading: (value) => (ui.creatingTemplate = value),
-		hasEditorErrors: () => hasEditorErrors
+	async function handleConvertDockerRun() {
+		if (!dockerRunCommand.trim()) {
+			toast.error(m.compose_enter_docker_run_command());
+			return;
+		}
+
+		handleApiResultWithCallbacks({
+			result: await tryCatch(systemService.convert(dockerRunCommand)),
+			message: m.compose_convert_failed(),
+			setLoadingState: (value) => (converting = value),
+			onSuccess: (data) => {
+				$inputs.composeContent.value = data.dockerCompose;
+				$inputs.envContent.value = data.envVars;
+				$inputs.name.value = data.serviceName;
+
+				toast.success(m.compose_convert_success());
+				dockerRunCommand = '';
+				showConverterDialog = false;
+			}
+		});
+	}
+
+	async function handleTemplateSelect(template: Template) {
+		showTemplateDialog = false;
+
+		$inputs.composeContent.value = template.content ?? '';
+		$inputs.envContent.value = template.envContent ?? '';
+
+		if (!$inputs.name.value?.trim()) {
+			$inputs.name.value = template.name.toLowerCase().replace(/[^a-z0-9-_]/g, '-');
+		}
+		toast.success(m.compose_template_loaded({ name: template.name }));
+	}
+
+	const exampleCommands = [m.compose_example_command_1(), m.compose_example_command_2(), m.compose_example_command_3()];
+
+	function useExample(command: string) {
+		dockerRunCommand = command;
+	}
+
+	async function handleCreateTemplate() {
+		if (hasEditorErrors) {
+			toast.error(m.templates_validation_error());
+			return;
+		}
+
+		const validated = form.validate();
+		if (!validated) return;
+
+		const { name, composeContent, envContent } = validated;
+
+		handleApiResultWithCallbacks({
+			result: await tryCatch(
+				templateService.createTemplate({
+					name,
+					content: composeContent,
+					envContent
+				})
+			),
+			message: m.common_create_failed({ resource: `${m.resource_template()} "${name}"` }),
+			setLoadingState: (value) => (creatingTemplate = value),
+			onSuccess: async () => {
+				toast.success(m.common_create_success({ resource: `${m.resource_template()} "${name}"` }));
+			}
+		});
+	}
+
+	const templateBtnClass = arcaneButtonVariants({
+		tone: actionConfigs.template?.tone ?? 'outline-primary',
+		size: 'default',
+		hoverEffect: 'none'
 	});
+
+	const dropdownContentClass =
+		'arcane-dd-content min-w-[220px] overflow-visible rounded-lg border border-primary/30 bg-background/95 ' +
+		'backdrop-blur supports-[backdrop-filter]:bg-background/80 ring-1 ring-inset ring-primary/20 shadow-sm p-1';
+
+	const dropdownItemClass =
+		'flex cursor-pointer select-none items-center gap-2 rounded-md px-3 py-2 text-sm ' +
+		'text-foreground/90 outline-none transition-colors ' +
+		'hover:bg-primary/10 focus:bg-primary/10 ' +
+		'data-[disabled]:opacity-50 data-[disabled]:pointer-events-none';
 </script>
 
 <div class="bg-background flex h-full min-h-0 flex-col">
@@ -136,7 +203,7 @@
 						error={$inputs.name.error ?? undefined}
 						originalValue=""
 						placeholder={m.compose_project_name_placeholder?.() || 'Enter project name...'}
-						canEdit={!ui.saving && !ui.isLoadingTemplateContent}
+						canEdit={!saving && !isLoadingTemplateContent}
 						class="hidden sm:block"
 					/>
 				</div>
@@ -145,23 +212,23 @@
 			<div class="flex items-center gap-2">
 				<ButtonGroup.Root>
 					<ArcaneTooltip.Root
-						open={!$inputs.name.value && !ui.saving && !ui.converting && !ui.isLoadingTemplateContent ? undefined : false}
+						open={!$inputs.name.value && !saving && !converting && !isLoadingTemplateContent ? undefined : false}
 					>
 						<ArcaneTooltip.Trigger>
 							<span>
-								{#if !hasEditorErrors && canCreateProject}
+								{#if !hasEditorErrors}
 									<ArcaneButton
 										action="create"
 										tone="ghost"
 										disabled={!$inputs.name.value ||
 											!$inputs.composeContent.value ||
 											hasEditorErrors ||
-											ui.saving ||
-											ui.converting ||
-											ui.isLoadingTemplateContent}
+											saving ||
+											converting ||
+											isLoadingTemplateContent}
 										onclick={() => handleSubmit()}
 										class={`${templateBtnClass} gap-2 rounded-r-none`}
-										loading={ui.saving}
+										loading={saving}
 										customLabel={m.compose_create_project()}
 										loadingLabel={m.common_action_creating()}
 									/>
@@ -197,13 +264,13 @@
 							<DropdownMenu.Group>
 								<DropdownMenu.Item
 									class={dropdownItemClass}
-									disabled={ui.saving || ui.converting || ui.isLoadingTemplateContent}
-									onclick={() => (ui.showTemplateDialog = true)}
+									disabled={saving || converting || isLoadingTemplateContent}
+									onclick={() => (showTemplateDialog = true)}
 								>
 									<TemplateIcon class="size-4" />
 									{m.common_use_template()}
 								</DropdownMenu.Item>
-								<DropdownMenu.Item class={dropdownItemClass} onclick={() => (ui.showConverterDialog = true)}>
+								<DropdownMenu.Item class={dropdownItemClass} onclick={() => (showConverterDialog = true)}>
 									<TerminalIcon class="size-4" />
 									{m.compose_convert_from_docker_run()}
 								</DropdownMenu.Item>
@@ -215,27 +282,25 @@
 									<GitBranchIcon class="size-4" />
 									{m.git_from_git_repo()}
 								</DropdownMenu.Item>
-								<IfPermitted perm="templates:create">
-									<DropdownMenu.Separator />
-									<DropdownMenu.Item
-										class={dropdownItemClass}
-										disabled={!$inputs.name.value ||
-											!$inputs.composeContent.value ||
-											hasEditorErrors ||
-											ui.saving ||
-											ui.converting ||
-											ui.creatingTemplate ||
-											ui.isLoadingTemplateContent}
-										onclick={handleCreateTemplate}
-									>
-										{#if ui.creatingTemplate}
-											<Spinner class="size-4" />
-										{:else}
-											<AddIcon class="size-4" />
-										{/if}
-										{m.templates_create_template()}
-									</DropdownMenu.Item>
-								</IfPermitted>
+								<DropdownMenu.Separator />
+								<DropdownMenu.Item
+									class={dropdownItemClass}
+									disabled={!$inputs.name.value ||
+										!$inputs.composeContent.value ||
+										hasEditorErrors ||
+										saving ||
+										converting ||
+										creatingTemplate ||
+										isLoadingTemplateContent}
+									onclick={handleCreateTemplate}
+								>
+									{#if creatingTemplate}
+										<Spinner class="size-4" />
+									{:else}
+										<AddIcon class="size-4" />
+									{/if}
+									{m.templates_create_template()}
+								</DropdownMenu.Item>
 							</DropdownMenu.Group>
 						</DropdownMenu.Content>
 					</DropdownMenu.Root>
@@ -255,7 +320,7 @@
 						error={$inputs.name.error ?? undefined}
 						originalValue=""
 						placeholder={m.compose_project_name_placeholder()}
-						canEdit={!ui.saving && !ui.isLoadingTemplateContent}
+						canEdit={!saving && !isLoadingTemplateContent}
 					/>
 				</div>
 
@@ -267,8 +332,8 @@
 							language="yaml"
 							bind:value={$inputs.composeContent.value}
 							error={$inputs.composeContent.error ?? undefined}
-							bind:hasErrors={validation.composeHasErrors}
-							bind:validationReady={validation.composeValidationReady}
+							bind:hasErrors={composeHasErrors}
+							bind:validationReady={composeValidationReady}
 							fileId="projects:new:compose"
 							editorContext={{
 								envContent: $inputs.envContent.value,
@@ -285,8 +350,8 @@
 							language="env"
 							bind:value={$inputs.envContent.value}
 							error={$inputs.envContent.error ?? undefined}
-							bind:hasErrors={validation.envHasErrors}
-							bind:validationReady={validation.envValidationReady}
+							bind:hasErrors={envHasErrors}
+							bind:validationReady={envValidationReady}
 							fileId="projects:new:env"
 							editorContext={{
 								envContent: $inputs.envContent.value,
@@ -301,15 +366,60 @@
 	</div>
 </div>
 
-<DockerRunConverterDialog
-	bind:open={ui.showConverterDialog}
-	bind:converting={ui.converting}
-	onConverted={composeHandlers.handleDockerRunConverted}
-/>
+<Dialog.Root bind:open={showConverterDialog}>
+	<Dialog.Content class="max-h-[80vh] sm:max-w-[800px]">
+		<Dialog.Header>
+			<Dialog.Title>{m.compose_converter_title()}</Dialog.Title>
+			<Dialog.Description>{m.compose_converter_description()}</Dialog.Description>
+		</Dialog.Header>
+
+		<div class="max-h-[60vh] space-y-4 overflow-y-auto">
+			<div class="space-y-2">
+				<Label for="dockerRunCommand">{m.compose_docker_run_command_label()}</Label>
+				<Textarea
+					id="dockerRunCommand"
+					bind:value={dockerRunCommand}
+					placeholder={m.compose_docker_run_placeholder()}
+					rows={3}
+					disabled={converting}
+					class="font-mono text-sm"
+				/>
+			</div>
+
+			<div class="space-y-2">
+				<Label class="text-muted-foreground text-xs">{m.compose_example_commands_label()}</Label>
+				<div class="space-y-1">
+					{#each exampleCommands as command (command)}
+						<ArcaneButton
+							action="base"
+							tone="ghost"
+							size="sm"
+							class="h-auto w-full justify-start p-2 text-left font-mono text-xs break-all whitespace-normal"
+							onclick={() => useExample(command)}
+							icon={CopyIcon}
+							customLabel={command}
+						/>
+					{/each}
+				</div>
+			</div>
+		</div>
+
+		<div class="flex w-full justify-end pt-4">
+			<ArcaneButton
+				action="create"
+				disabled={!dockerRunCommand.trim() || converting}
+				onclick={handleConvertDockerRun}
+				loading={converting}
+				customLabel={m.compose_convert_action()}
+				loadingLabel={m.compose_converting()}
+			/>
+		</div>
+	</Dialog.Content>
+</Dialog.Root>
 
 <TemplateSelectionDialog
-	bind:open={ui.showTemplateDialog}
+	bind:open={showTemplateDialog}
 	templates={data.composeTemplates || []}
-	onSelect={composeHandlers.handleTemplateSelect}
+	onSelect={handleTemplateSelect}
 	onDownloadSuccess={invalidateAll}
 />

@@ -11,20 +11,9 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"github.com/getarcaneapp/arcane/backend/pkg/authz"
 	pkgutils "github.com/getarcaneapp/arcane/backend/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils/cookie"
 	"github.com/labstack/echo/v4"
-)
-
-// Echo context keys, kept aligned with api/middleware/auth.go constants so
-// shared handlers can read them regardless of which auth layer attached them.
-const (
-	echoCtxKeyUserID          = "userID"
-	echoCtxKeyCurrentUser     = "currentUser"
-	echoCtxKeyUserPermissions = "userPermissions"
-	echoCtxKeyAuthMethod      = "authMethod"
-	echoCtxKeySessionID       = "currentSessionID"
 )
 
 type AuthOptions struct {
@@ -33,25 +22,17 @@ type AuthOptions struct {
 }
 
 type ApiKeyValidator interface {
-	ValidateApiKeyWithID(ctx context.Context, rawKey string) (*models.User, string, error)
+	ValidateApiKey(ctx context.Context, rawKey string) (*models.User, error)
 }
 
 type EnvironmentAccessTokenResolver interface {
 	ResolveEnvironmentByAccessToken(ctx context.Context, token string) (*models.Environment, error)
 }
 
-// PermissionResolver resolves a caller's effective permission set. Implemented
-// by services.RoleService; kept as an interface so tests can stub it.
-type PermissionResolver interface {
-	ResolvePermissions(ctx context.Context, user *models.User) (*authz.PermissionSet, error)
-	ResolveApiKeyPermissions(ctx context.Context, apiKeyID string) (*authz.PermissionSet, error)
-}
-
 type AuthMiddleware struct {
 	authService      *services.AuthService
 	apiKeyValidator  ApiKeyValidator
 	envTokenResolver EnvironmentAccessTokenResolver
-	roleResolver     PermissionResolver
 	cfg              *config.Config
 	options          AuthOptions
 }
@@ -76,12 +57,6 @@ func (m *AuthMiddleware) WithEnvironmentAccessTokenResolver(resolver Environment
 	return &clone
 }
 
-func (m *AuthMiddleware) WithPermissionResolver(resolver PermissionResolver) *AuthMiddleware {
-	clone := *m
-	clone.roleResolver = resolver
-	return &clone
-}
-
 func (m *AuthMiddleware) WithAdminNotRequired() *AuthMiddleware {
 	clone := *m
 	clone.options.AdminRequired = false
@@ -92,30 +67,6 @@ func (m *AuthMiddleware) WithAdminRequired() *AuthMiddleware {
 	clone := *m
 	clone.options.AdminRequired = true
 	return &clone
-}
-
-// RequirePermission returns an Echo middleware that rejects callers lacking
-// `perm` for the environment ID in the request path (or globally for org-level
-// permissions). Use on streaming/WS routes that aren't served by Huma. Expects
-// the caller's PermissionSet to already be on the Echo context via the
-// AuthMiddleware (i.e., chain it AFTER auth).
-func RequirePermission(perm string) echo.MiddlewareFunc {
-	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
-			ps, _ := c.Get(echoCtxKeyUserPermissions).(*authz.PermissionSet)
-			envID := ""
-			if authz.IsEnvScoped(perm) {
-				envID = authz.EnvIDFromPath(c.Request().URL.Path)
-			}
-			if !ps.Allows(perm, envID) {
-				return c.JSON(http.StatusForbidden, models.APIError{
-					Code:    "FORBIDDEN",
-					Message: "permission denied: " + perm,
-				})
-			}
-			return next(c)
-		}
-	}
 }
 
 func (m *AuthMiddleware) Add() echo.MiddlewareFunc {
@@ -179,19 +130,19 @@ func (m *AuthMiddleware) managerAuth(ctx context.Context, c echo.Context, next e
 	// First, check for API key in X-API-Key header
 	if apiKey := req.Header.Get(pkgutils.HeaderApiKey); apiKey != "" {
 		if m.apiKeyValidator != nil {
-			user, keyID, err := m.apiKeyValidator.ValidateApiKeyWithID(ctx, apiKey)
+			user, err := m.apiKeyValidator.ValidateApiKey(ctx, apiKey)
 			if err == nil && user != nil {
-				ps := m.resolveApiKeyPermissionsOrDeny(ctx, keyID)
-				if m.options.AdminRequired && !ps.IsGlobalAdmin() {
+				isAdmin := pkgutils.UserHasRole(user.Roles, "admin")
+				if m.options.AdminRequired && !isAdmin {
 					return c.JSON(http.StatusForbidden, models.APIError{
 						Code:    "FORBIDDEN",
 						Message: "You don't have permission to access this resource",
 					})
 				}
-				c.Set(echoCtxKeyUserID, user.ID)
-				c.Set(echoCtxKeyCurrentUser, user)
-				c.Set(echoCtxKeyUserPermissions, ps)
-				c.Set(echoCtxKeyAuthMethod, "api_key")
+				c.Set("userID", user.ID)
+				c.Set("currentUser", user)
+				c.Set("userIsAdmin", isAdmin)
+				c.Set("authMethod", "api_key")
 				return next(c)
 			}
 		}
@@ -235,49 +186,19 @@ func (m *AuthMiddleware) managerAuth(ctx context.Context, c echo.Context, next e
 		})
 	}
 
-	ps := m.resolvePermissionsOrDeny(ctx, user)
-	if m.options.AdminRequired && !ps.IsGlobalAdmin() {
+	isAdmin := pkgutils.UserHasRole(user.Roles, "admin")
+	if m.options.AdminRequired && !isAdmin {
 		return c.JSON(http.StatusForbidden, models.APIError{
 			Code:    "FORBIDDEN",
 			Message: "You don't have permission to access this resource",
 		})
 	}
 
-	c.Set(echoCtxKeyUserID, user.ID)
-	c.Set(echoCtxKeyCurrentUser, user)
-	c.Set(echoCtxKeySessionID, sessionID)
-	c.Set(echoCtxKeyUserPermissions, ps)
+	c.Set("userID", user.ID)
+	c.Set("currentUser", user)
+	c.Set("currentSessionID", sessionID)
+	c.Set("userIsAdmin", isAdmin)
 	return next(c)
-}
-
-// resolvePermissionsOrDeny returns the user's permission set, or an empty
-// (deny-all) set if the resolver is unavailable or fails. Resolver failures
-// are logged.
-func (m *AuthMiddleware) resolvePermissionsOrDeny(ctx context.Context, user *models.User) *authz.PermissionSet {
-	if m.roleResolver == nil || user == nil {
-		return authz.NewPermissionSet()
-	}
-	ps, err := m.roleResolver.ResolvePermissions(ctx, user)
-	if err != nil || ps == nil {
-		slog.WarnContext(ctx, "failed to resolve user permissions for Echo auth", "error", err)
-		return authz.NewPermissionSet()
-	}
-	return ps
-}
-
-// resolveApiKeyPermissionsOrDeny returns the API key's per-key PermissionSet,
-// or an empty (deny-all) set on failure. Falling back to the owner's role
-// permissions would defeat per-key scoping, so failures are explicitly denied.
-func (m *AuthMiddleware) resolveApiKeyPermissionsOrDeny(ctx context.Context, apiKeyID string) *authz.PermissionSet {
-	if m.roleResolver == nil || apiKeyID == "" {
-		return authz.NewPermissionSet()
-	}
-	ps, err := m.roleResolver.ResolveApiKeyPermissions(ctx, apiKeyID)
-	if err != nil || ps == nil {
-		slog.WarnContext(ctx, "failed to resolve api key permissions for Echo auth", "error", err)
-		return authz.NewPermissionSet()
-	}
-	return ps
 }
 
 func (m *AuthMiddleware) resolveEnvironmentAccessToken(ctx context.Context, token string) (*models.Environment, bool) {
@@ -302,22 +223,24 @@ func agentSudoInternal(c echo.Context) {
 		BaseModel: models.BaseModel{ID: "agent"},
 		Email:     new("agent@getarcane.app"),
 		Username:  "agent",
+		Roles:     []string{"admin"},
 	}
-	c.Set(echoCtxKeyUserID, agentUser.ID)
-	c.Set(echoCtxKeyCurrentUser, agentUser)
-	c.Set(echoCtxKeyUserPermissions, authz.SudoPermissionSet())
-	c.Set(echoCtxKeyAuthMethod, "agent_token")
+	c.Set("userID", agentUser.ID)
+	c.Set("currentUser", agentUser)
+	c.Set("userIsAdmin", true)
+	c.Set("authMethod", "agent_token")
 }
 
 func environmentSudoInternal(c echo.Context, env *models.Environment) {
 	envUser := &models.User{
 		BaseModel: models.BaseModel{ID: "environment:" + env.ID},
 		Username:  env.Name,
+		Roles:     []string{"admin"},
 	}
-	c.Set(echoCtxKeyUserID, envUser.ID)
-	c.Set(echoCtxKeyCurrentUser, envUser)
-	c.Set(echoCtxKeyUserPermissions, authz.SudoPermissionSet())
-	c.Set(echoCtxKeyAuthMethod, "environment_access_token")
+	c.Set("userID", envUser.ID)
+	c.Set("currentUser", envUser)
+	c.Set("userIsAdmin", true)
+	c.Set("authMethod", "environment_access_token")
 }
 
 func extractBearerOrCookieTokenInternal(c echo.Context) string {

@@ -4,17 +4,14 @@
 	import { swarmService } from '$lib/services/swarm-service';
 	import { toast } from 'svelte-sonner';
 	import { untrack } from 'svelte';
-	import { tryCatch } from '$lib/utils/api';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api';
-	import { ResourcePageLayout, type StatCardConfig } from '$lib/layouts/index.js';
+	import { tryCatch } from '$lib/utils/try-catch';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
+	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
 	import { useEnvironmentRefresh } from '$lib/hooks/use-environment-refresh.svelte';
-	import { parallelRefresh } from '$lib/utils/api';
-	import { createRefreshActionButtons } from '$lib/utils/resource-actions';
-	import type { SwarmServiceCreateSpec } from '$lib/types/swarm';
+	import { parallelRefresh } from '$lib/utils/refresh.util';
+	import type { SwarmServiceCreateSpec } from '$lib/types/swarm.type';
 	import SwarmServicesTable from './services-table.svelte';
 	import CreateServiceDialog from '$lib/components/dialogs/create-service-dialog.svelte';
-	import { hasPermission } from '$lib/utils/auth';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
 
 	let { data } = $props();
 
@@ -42,9 +39,6 @@
 
 	const totalServices = $derived(services?.pagination?.totalItems ?? services?.data?.length ?? 0);
 
-	const currentEnvId = $derived(environmentStore.selected?.id);
-	const canCreateService = $derived(hasPermission('swarm:services', currentEnvId));
-
 	async function handleCreateService(spec: SwarmServiceCreateSpec) {
 		handleApiResultWithCallbacks({
 			result: await tryCatch(swarmService.createService({ spec })),
@@ -58,16 +52,22 @@
 		});
 	}
 
-	const actionButtons = $derived.by(() =>
-		createRefreshActionButtons({
-			canCreate: canCreateService,
-			createLabel: m.common_create_button({ resource: m.swarm_service() }),
-			onCreate: () => (showCreateDialog = true),
-			refreshLabel: m.common_refresh(),
-			onRefresh: refresh,
-			refreshing: isLoading.refresh
-		})
-	);
+	const actionButtons: ActionButton[] = $derived([
+		{
+			id: 'create',
+			action: 'create',
+			label: m.common_create_button({ resource: m.swarm_service() }),
+			onclick: () => (showCreateDialog = true)
+		},
+		{
+			id: 'refresh',
+			action: 'restart',
+			label: m.common_refresh(),
+			onclick: refresh,
+			loading: isLoading.refresh,
+			disabled: isLoading.refresh
+		}
+	]);
 
 	const statCards: StatCardConfig[] = $derived([
 		{

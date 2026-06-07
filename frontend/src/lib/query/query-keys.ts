@@ -1,4 +1,4 @@
-import type { SearchPaginationSortRequest } from '$lib/types/shared';
+import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
 
 function stableSerialize(value: unknown): string {
 	if (value === null || value === undefined) return 'null';
@@ -31,10 +31,6 @@ export const queryKeys = {
 	apiKeys: {
 		all: ['api-keys'] as const,
 		list: (options: SearchPaginationSortRequest) => ['api-keys', stableSerialize(options)] as const
-	},
-	federatedCredentials: {
-		all: ['federated-credentials'] as const,
-		list: (options: SearchPaginationSortRequest) => ['federated-credentials', stableSerialize(options)] as const
 	},
 	environments: {
 		all: ['environments'] as const,
@@ -80,6 +76,13 @@ export const queryKeys = {
 		upgradeHealth: (environmentId: string) => ['system', 'upgrade-health', environmentId] as const,
 		versionInfo: (environmentId: string) => ['system', 'version-info', environmentId] as const,
 		dockerInfo: (environmentId: string) => ['system', 'docker-info', environmentId] as const
+	},
+	dashboard: {
+		snapshot: (environmentId: string, debugAllGood = false) =>
+			['dashboard', 'snapshot', environmentId, debugAllGood ? 'debug-all-good' : 'normal'] as const,
+		actionItems: (environmentId: string, debugAllGood = false) =>
+			['dashboard', 'action-items', environmentId, debugAllGood ? 'debug-all-good' : 'normal'] as const,
+		environments: (debugAllGood = false) => ['dashboard', 'environments', debugAllGood ? 'debug-all-good' : 'normal'] as const
 	},
 	containers: {
 		all: ['containers'] as const,

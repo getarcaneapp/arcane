@@ -1,7 +1,6 @@
 import { expect, test } from '@playwright/test';
 import playwrightConfig from '../playwright.config';
 import { createCLIConfig, runCLI, runCLIJSON, type CLIConfig } from '../utils/cli.util';
-import { createMockOidcIssuer } from '../utils/oidc.util';
 import { createTestApiKeys, deleteTestApiKeys } from '../utils/playwright.util';
 
 type CreatedApiKey = {
@@ -14,28 +13,6 @@ type CreatedApiKey = {
 type PaginatedResponse<T> = {
 	data: T[];
 	pagination?: { totalItems?: number };
-};
-
-type Role = {
-	id: string;
-	name: string;
-};
-
-type FederatedCredential = {
-	id: string;
-};
-
-type PlaywrightFederatedCredentialResponse = {
-	credential: FederatedCredential;
-};
-
-type FederatedAuthOutput = {
-	token: string;
-	tokenType: string;
-	expiresIn: number;
-	issuedTokenType: string;
-	source: string;
-	persisted: boolean;
 };
 
 type JsonSmokeCommand = {
@@ -68,33 +45,6 @@ async function runCommandJSON<T>(configPath: string, args: string[]): Promise<T>
 	}
 }
 
-async function arcaneAPI<T>(path: string, init: RequestInit = {}): Promise<T> {
-	const headers = new Headers(init.headers);
-	headers.set('X-API-KEY', apiKey);
-	if (init.body) {
-		headers.set('Content-Type', headers.get('Content-Type') ?? 'application/json');
-	}
-
-	const response = await fetch(new URL(path, baseURL), { ...init, headers });
-	if (!response.ok) {
-		throw new Error(
-			`${init.method ?? 'GET'} ${path} failed: ${response.status} ${await response.text()}`
-		);
-	}
-
-	return (await response.json()) as T;
-}
-
-async function deleteFederatedCredential(id: string): Promise<void> {
-	const response = await fetch(new URL(`/api/federated-credentials/${id}`, baseURL), {
-		method: 'DELETE',
-		headers: { 'X-API-KEY': apiKey }
-	});
-	if (!response.ok && response.status !== 404) {
-		throw new Error(`failed to delete federated credential ${id}: ${response.status}`);
-	}
-}
-
 function expectPaginated(value: unknown): void {
 	expect(value).toEqual(
 		expect.objectContaining({
@@ -104,6 +54,13 @@ function expectPaginated(value: unknown): void {
 }
 
 const readOnlyJsonSmokeCommands: JsonSmokeCommand[] = [
+	{
+		name: 'alerts',
+		args: ['alerts', '--debug-all-good', '--json'],
+		expectation: (value) => {
+			expect(value).toEqual(expect.objectContaining({ items: expect.any(Array) }));
+		}
+	},
 	{
 		name: 'images list',
 		args: ['--output', 'json', 'images', 'list', '--limit', '5'],
@@ -233,6 +190,13 @@ const readOnlyJsonSmokeCommands: JsonSmokeCommand[] = [
 		expectation: expectPaginated
 	},
 	{
+		name: 'admin notifications apprise get',
+		args: ['admin', 'notifications', 'apprise', 'get', '--json'],
+		expectation: (value) => {
+			expect(value).toEqual(expect.objectContaining({ enabled: expect.any(Boolean) }));
+		}
+	},
+	{
 		name: 'admin notifications settings get',
 		args: ['admin', 'notifications', 'settings', 'get', '--json'],
 		expectation: (value) => {
@@ -327,84 +291,6 @@ test.describe('arcane-cli e2e', () => {
 		});
 	});
 
-	test('auth federated exchanges a mock OIDC token and persists the CLI JWT', async () => {
-		const issuer = await createMockOidcIssuer();
-		const config = await createCLIConfig(baseURL, '');
-		const subject = `repo:getarcaneapp/arcane:ref:refs/heads/e2e-${Date.now()}`;
-		const audience = 'arcane-cli-e2e';
-		let credentialID = '';
-
-		try {
-			const roles = await arcaneAPI<PaginatedResponse<Role>>('/api/roles?limit=100');
-			const viewerRole = roles.data.find((role) => role.id === 'role_viewer');
-			expect(viewerRole).toBeTruthy();
-
-			const created = await arcaneAPI<PlaywrightFederatedCredentialResponse>(
-				'/api/playwright/create-test-federated-credential',
-				{
-					method: 'POST',
-					body: JSON.stringify({
-						issuerUrl: issuer.issuerURL,
-						audiences: [audience],
-						subject,
-						roleId: viewerRole!.id,
-						tokenTtlSeconds: 600
-					})
-				}
-			);
-			credentialID = created.credential.id;
-
-			const now = Math.floor(Date.now() / 1000);
-			const subjectToken = issuer.token({
-				iss: issuer.issuerURL,
-				sub: subject,
-				aud: audience,
-				iat: now - 5,
-				nbf: now - 5,
-				exp: now + 300,
-				jti: `cli-e2e-${now}`
-			});
-
-			const exchange = await runCommandJSON<FederatedAuthOutput>(config.configPath, [
-				'auth',
-				'federated',
-				'--server',
-				baseURL,
-				'--audience',
-				audience,
-				'--token',
-				subjectToken,
-				'--persist',
-				'--json'
-			]);
-
-			expect(exchange).toEqual(
-				expect.objectContaining({
-					token: expect.any(String),
-					tokenType: 'Bearer',
-					expiresIn: expect.any(Number),
-					source: 'flag',
-					persisted: true
-				})
-			);
-			expect(exchange.expiresIn).toBeGreaterThan(0);
-
-			const projects = await runCLIJSON<PaginatedResponse<{ id: string }>>(config.configPath, [
-				'projects',
-				'list',
-				'--limit',
-				'1'
-			]);
-			expect(Array.isArray(projects.data)).toBe(true);
-		} finally {
-			if (credentialID) {
-				await deleteFederatedCredential(credentialID);
-			}
-			await config.cleanup();
-			await issuer.close();
-		}
-	});
-
 	test('environments list and get return local environment JSON', async () => {
 		await withConfig(async (config) => {
 			const environments = await runCLIJSON<PaginatedResponse<{ id: string; name: string }>>(
@@ -456,18 +342,13 @@ test.describe('arcane-cli e2e', () => {
 			let created: CreatedApiKey | undefined;
 
 			try {
-				// API keys must carry at least one permission grant in the new
-				// RBAC model — the CLI flag mirrors the backend's minItems:1
-				// requirement. Pick a low-risk read-only perm for the e2e key.
 				created = await runCLIJSON<CreatedApiKey>(config.configPath, [
 					'admin',
 					'api-keys',
 					'create',
 					name,
 					'--description',
-					'Created by CLI e2e',
-					'--permission',
-					'apikeys:list'
+					'Created by CLI e2e'
 				]);
 				expect(created.id).toBeTruthy();
 				expect(created.key).toMatch(/^arc_/);

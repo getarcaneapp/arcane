@@ -454,10 +454,10 @@ func (s *SwarmService) StreamServiceLogs(ctx context.Context, serviceID string, 
 	defer func() { _ = logs.Close() }()
 
 	if follow {
-		return dockerutil.StreamMultiplexedLogs(ctx, logs, logsChan)
+		return streamMultiplexedLogs(ctx, logs, logsChan)
 	}
 
-	return dockerutil.ReadAllLogs(ctx, logs, logsChan)
+	return readAllLogs(logs, logsChan)
 }
 
 func (s *SwarmService) ListNodesPaginated(ctx context.Context, environmentID string, params pagination.QueryParams) ([]swarmtypes.NodeSummary, pagination.Response, error) {
@@ -648,7 +648,7 @@ func (s *SwarmService) fetchSwarmNodeIdentityViaEdgeInternal(ctx context.Context
 		return nil, err
 	}
 	if !parsed.Success {
-		return nil, errors.New("swarm node identity probe failed")
+		return nil, fmt.Errorf("swarm node identity probe failed")
 	}
 
 	return &parsed.Data, nil
@@ -841,7 +841,10 @@ func (s *SwarmService) DeployStack(ctx context.Context, environmentID string, re
 		workingDir = stackSourceDir
 	}
 
-	pm := s.getPathMapperInternal(ctx)
+	pm, err := s.getPathMapperInternal(ctx)
+	if err != nil {
+		slog.WarnContext(ctx, "failed to initialize path mapper, deploying without path translation", "error", err)
+	}
 
 	if err := libswarm.DeployStack(ctx, dockerClient, libswarm.StackDeployOptions{
 		Name:             stackName,
@@ -1649,7 +1652,10 @@ func (s *SwarmService) RenderStackConfig(ctx context.Context, req swarmtypes.Sta
 		return nil, err
 	}
 
-	pm := s.getPathMapperInternal(ctx)
+	pm, err := s.getPathMapperInternal(ctx)
+	if err != nil {
+		slog.WarnContext(ctx, "failed to initialize path mapper, deploying without path translation", "error", err)
+	}
 
 	result, err := libswarm.RenderStackConfig(ctx, libswarm.StackRenderOptions{
 		Name:           req.Name,
@@ -2235,7 +2241,7 @@ func (s *SwarmService) resolveSwarmStackSourceEnvironmentDirInternal(ctx context
 	return rootDir, environmentDir, nil
 }
 
-func (s *SwarmService) getPathMapperInternal(ctx context.Context) *appfs.PathMapper {
+func (s *SwarmService) getPathMapperInternal(ctx context.Context) (*appfs.PathMapper, error) {
 	configuredPath := s.settingsService.GetStringSetting(ctx, "swarmStackSourcesDirectory", defaultSwarmStackSourceRootDir)
 
 	var containerDir, hostDir string
@@ -2278,10 +2284,10 @@ func (s *SwarmService) getPathMapperInternal(ctx context.Context) *appfs.PathMap
 
 	pm := appfs.NewPathMapper(containerDirResolved, hostDirResolved)
 	if !pm.IsNonMatchingMount() {
-		return nil
+		return nil, nil
 	}
 
-	return pm
+	return pm, nil
 }
 
 func (s *SwarmService) ensureSwarmManagerInternal(ctx context.Context) error {
@@ -2443,7 +2449,7 @@ func (s *SwarmService) buildStackPaginationConfigInternal() pagination.Config[sw
 func buildPaginationResponseInternal[T any](result pagination.FilterResult[T], params pagination.QueryParams) pagination.Response {
 	totalPages := int64(0)
 	if params.Limit > 0 {
-		totalPages = (result.TotalCount + int64(params.Limit) - 1) / int64(params.Limit)
+		totalPages = (int64(result.TotalCount) + int64(params.Limit) - 1) / int64(params.Limit)
 	}
 
 	page := 1
@@ -2453,10 +2459,10 @@ func buildPaginationResponseInternal[T any](result pagination.FilterResult[T], p
 
 	return pagination.Response{
 		TotalPages:      totalPages,
-		TotalItems:      result.TotalCount,
+		TotalItems:      int64(result.TotalCount),
 		CurrentPage:     page,
 		ItemsPerPage:    params.Limit,
-		GrandTotalItems: result.TotalAvailable,
+		GrandTotalItems: int64(result.TotalAvailable),
 	}
 }
 

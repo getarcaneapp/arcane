@@ -12,9 +12,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/pkg/utils/dbutil"
 	"github.com/getarcaneapp/arcane/types/apikey"
 	"gorm.io/gorm"
 )
@@ -44,7 +42,6 @@ var defaultAdminAPIKeyDescription = func() *string {
 type ApiKeyService struct {
 	db           *database.DB
 	userService  *UserService
-	roleService  *RoleService
 	argon2Params *Argon2Params
 }
 
@@ -54,16 +51,6 @@ func NewApiKeyService(db *database.DB, userService *UserService) *ApiKeyService 
 		userService:  userService,
 		argon2Params: DefaultArgon2Params(),
 	}
-}
-
-// WithRoleService wires the RoleService dependency. Separated from the
-// constructor to break the bootstrap-ordering cycle between ApiKeyService and
-// RoleService (RoleService.BackfillApiKeyPermissions needs ApiKeyService to
-// exist when it runs, while permission-validated CreateApiKey needs the
-// RoleService).
-func (s *ApiKeyService) WithRoleService(roleService *RoleService) *ApiKeyService {
-	s.roleService = roleService
-	return s
 }
 
 func (s *ApiKeyService) generateApiKey() (string, error) {
@@ -113,72 +100,12 @@ func (s *ApiKeyService) markApiKeyUsedAsync(ctx context.Context, keyID string) {
 }
 
 func (s *ApiKeyService) CreateApiKey(ctx context.Context, userID string, req apikey.CreateApiKey) (*apikey.ApiKeyCreatedDto, error) {
-	if err := s.validateGrantsAgainstUserInternal(ctx, userID, req.Permissions); err != nil {
-		return nil, err
-	}
 	rawKey, err := s.generateApiKey()
 	if err != nil {
 		return nil, err
 	}
 
-	created, err := s.createAPIKeyWithRawKey(ctx, &userID, rawKey, req, nil, nil)
-	if err != nil {
-		return nil, err
-	}
-	if s.roleService != nil {
-		grants := toApiKeyPermissionRowsInternal(created.ID, req.Permissions)
-		if err := s.roleService.SetApiKeyPermissions(ctx, created.ID, grants); err != nil {
-			return nil, fmt.Errorf("failed to persist api key permissions: %w", err)
-		}
-		// Re-load the just-persisted grants into the response DTO so the
-		// frontend doesn't see `"permissions": null` on a successful create.
-		created.Permissions = s.loadKeyGrantsInternal(ctx, created.ID)
-	}
-	return created, nil
-}
-
-// ErrApiKeyPermissionEscalation is returned when a caller attempts to grant an
-// API key permissions they themselves do not hold.
-var ErrApiKeyPermissionEscalation = errors.New("cannot grant a permission you do not have")
-
-// validateGrantsAgainstUserInternal refuses requests that would grant the new key
-// permissions that the requesting user doesn't hold. Sudo callers bypass this
-// (they always pass). If RoleService is unavailable validation is skipped (used
-// only in the boot-bootstrap path where no human caller exists).
-func (s *ApiKeyService) validateGrantsAgainstUserInternal(ctx context.Context, userID string, grants []apikey.PermissionGrant) error {
-	if s.roleService == nil || len(grants) == 0 {
-		return nil
-	}
-	user, err := s.userService.GetUserByID(ctx, userID)
-	if err != nil {
-		return fmt.Errorf("load user for permission validation: %w", err)
-	}
-	ps, err := s.roleService.ResolvePermissions(ctx, user)
-	if err != nil {
-		return fmt.Errorf("resolve user permissions: %w", err)
-	}
-	for _, g := range grants {
-		envID := ""
-		if g.EnvironmentID != nil {
-			envID = *g.EnvironmentID
-		}
-		if !ps.Allows(g.Permission, envID) {
-			return fmt.Errorf("%w: %s (env=%q)", ErrApiKeyPermissionEscalation, g.Permission, envID)
-		}
-	}
-	return nil
-}
-
-func toApiKeyPermissionRowsInternal(apiKeyID string, grants []apikey.PermissionGrant) []models.ApiKeyPermission {
-	out := make([]models.ApiKeyPermission, len(grants))
-	for i, g := range grants {
-		out[i] = models.ApiKeyPermission{
-			ApiKeyID:      apiKeyID,
-			Permission:    g.Permission,
-			EnvironmentID: g.EnvironmentID,
-		}
-	}
-	return out
+	return s.createAPIKeyWithRawKey(ctx, &userID, rawKey, req, nil, nil)
 }
 
 func (s *ApiKeyService) createAPIKeyWithRawKey(
@@ -225,17 +152,6 @@ func isStaticAPIKeyInternal(ak models.ApiKey) bool {
 	return ak.ManagedBy != nil && *ak.ManagedBy == managedByAdminBootstrap
 }
 
-// isEnvironmentBootstrapKeyInternal identifies the auto-generated key minted by
-// CreateEnvironmentApiKey for environment pairing. Those keys have no owner
-// (UserID == nil) and are scoped to a single environment. They carry full
-// env-scoped permissions and must never be hand-edited or deleted via the API
-// — manually clearing the grants would silently break the paired edge agent
-// the next time it tries to authenticate. Cascade-delete still applies when
-// the environment row itself is removed.
-func isEnvironmentBootstrapKeyInternal(ak models.ApiKey) bool {
-	return ak.UserID == nil && ak.EnvironmentID != nil
-}
-
 func toAPIKeyDTOInternal(ak *models.ApiKey) apikey.ApiKey {
 	return apikey.ApiKey{
 		ID:          ak.ID,
@@ -244,20 +160,11 @@ func toAPIKeyDTOInternal(ak *models.ApiKey) apikey.ApiKey {
 		KeyPrefix:   ak.KeyPrefix,
 		UserID:      ak.UserID,
 		IsStatic:    isStaticAPIKeyInternal(*ak),
-		IsBootstrap: isEnvironmentBootstrapKeyInternal(*ak),
 		ExpiresAt:   ak.ExpiresAt,
 		LastUsedAt:  ak.LastUsedAt,
 		CreatedAt:   ak.CreatedAt,
 		UpdatedAt:   ak.UpdatedAt,
 	}
-}
-
-// toAPIKeyDTOWithPermissionsInternal is like toAPIKeyDTOInternal but
-// additionally attaches the key's persisted permission grants.
-func (s *ApiKeyService) toAPIKeyDTOWithPermissionsInternal(ctx context.Context, ak *models.ApiKey) apikey.ApiKey {
-	dto := toAPIKeyDTOInternal(ak)
-	dto.Permissions = s.loadKeyGrantsInternal(ctx, ak.ID)
-	return dto
 }
 
 func (s *ApiKeyService) CreateDefaultAdminAPIKey(ctx context.Context, userID, rawKey string) (*apikey.ApiKeyCreatedDto, error) {
@@ -408,37 +315,11 @@ func (s *ApiKeyService) CreateEnvironmentApiKey(ctx context.Context, environment
 	if len(environmentID) > 8 {
 		envIDShort = environmentID[:8]
 	}
-	name := "Environment Bootstrap Key - " + envIDShort
-	created, err := s.createAPIKeyWithRawKey(ctx, nil, rawKey, apikey.CreateApiKey{
+	name := fmt.Sprintf("Environment Bootstrap Key - %s", envIDShort)
+	return s.createAPIKeyWithRawKey(ctx, nil, rawKey, apikey.CreateApiKey{
 		Name:        name,
 		Description: new("Auto-generated key for environment pairing"),
 	}, nil, &environmentID)
-	if err != nil {
-		return nil, err
-	}
-	// Env-bootstrap keys are infrastructure-level credentials used by the agent
-	// pairing flow; they must always carry every permission scoped to their
-	// environment. Without this seed, the per-key permission resolver returns
-	// an empty set on any request authenticated by this key and every
-	// downstream RequirePermission check fails with 403.
-	if s.roleService != nil {
-		all := authz.AllPermissions()
-		grants := make([]models.ApiKeyPermission, len(all))
-		for i, p := range all {
-			grants[i] = models.ApiKeyPermission{
-				ApiKeyID:      created.ID,
-				Permission:    p,
-				EnvironmentID: &environmentID,
-			}
-		}
-		if err := s.roleService.SetApiKeyPermissions(ctx, created.ID, grants); err != nil {
-			return nil, fmt.Errorf("failed to persist environment bootstrap key permissions: %w", err)
-		}
-		// Re-load grants into the response DTO so callers see the seeded
-		// permissions immediately, not null.
-		created.Permissions = s.loadKeyGrantsInternal(ctx, created.ID)
-	}
-	return created, nil
 }
 
 func (s *ApiKeyService) GetApiKey(ctx context.Context, id string) (*apikey.ApiKey, error) {
@@ -449,7 +330,19 @@ func (s *ApiKeyService) GetApiKey(ctx context.Context, id string) (*apikey.ApiKe
 		}
 		return nil, fmt.Errorf("failed to get API key: %w", err)
 	}
-	return new(s.toAPIKeyDTOWithPermissionsInternal(ctx, &ak)), nil
+
+	return &apikey.ApiKey{
+		ID:          ak.ID,
+		Name:        ak.Name,
+		Description: ak.Description,
+		KeyPrefix:   ak.KeyPrefix,
+		UserID:      ak.UserID,
+		IsStatic:    isStaticAPIKeyInternal(ak),
+		ExpiresAt:   ak.ExpiresAt,
+		LastUsedAt:  ak.LastUsedAt,
+		CreatedAt:   ak.CreatedAt,
+		UpdatedAt:   ak.UpdatedAt,
+	}, nil
 }
 
 func (s *ApiKeyService) ListApiKeys(ctx context.Context, params pagination.QueryParams) ([]apikey.ApiKey, pagination.Response, error) {
@@ -470,38 +363,14 @@ func (s *ApiKeyService) ListApiKeys(ctx context.Context, params pagination.Query
 	}
 
 	result := make([]apikey.ApiKey, len(apiKeys))
-	for i := range apiKeys {
-		// Include per-key permission grants so the edit form preloads with the
-		// key's actual current grants. Without this, the form starts empty and
-		// "Save" would wipe whatever grants the DB has.
-		result[i] = s.toAPIKeyDTOWithPermissionsInternal(ctx, &apiKeys[i])
+	for i, ak := range apiKeys {
+		result[i] = toAPIKeyDTOInternal(&ak)
 	}
 
 	return result, paginationResp, nil
 }
 
-// ListApiKeysByUser returns every non-static, non-bootstrap API key owned by
-// userID. Used by the self-service personal-keys flow.
-func (s *ApiKeyService) ListApiKeysByUser(ctx context.Context, userID string) ([]apikey.ApiKey, error) {
-	var apiKeys []models.ApiKey
-	if err := s.db.WithContext(ctx).
-		Where("user_id = ?", userID).
-		Order("created_at DESC").
-		Find(&apiKeys).Error; err != nil {
-		return nil, fmt.Errorf("failed to list user api keys: %w", err)
-	}
-
-	result := make([]apikey.ApiKey, 0, len(apiKeys))
-	for i := range apiKeys {
-		if isStaticAPIKeyInternal(apiKeys[i]) || isEnvironmentBootstrapKeyInternal(apiKeys[i]) {
-			continue
-		}
-		result = append(result, s.toAPIKeyDTOWithPermissionsInternal(ctx, &apiKeys[i]))
-	}
-	return result, nil
-}
-
-func (s *ApiKeyService) UpdateApiKey(ctx context.Context, callerUserID, id string, req apikey.UpdateApiKey) (*apikey.ApiKey, error) {
+func (s *ApiKeyService) UpdateApiKey(ctx context.Context, id string, req apikey.UpdateApiKey) (*apikey.ApiKey, error) {
 	var ak models.ApiKey
 	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&ak).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -509,22 +378,8 @@ func (s *ApiKeyService) UpdateApiKey(ctx context.Context, callerUserID, id strin
 		}
 		return nil, fmt.Errorf("failed to get API key: %w", err)
 	}
-	if isStaticAPIKeyInternal(ak) || isEnvironmentBootstrapKeyInternal(ak) {
+	if isStaticAPIKeyInternal(ak) {
 		return nil, ErrApiKeyProtected
-	}
-
-	if req.Permissions != nil {
-		// Validate against the key owner's permissions, not the caller's, so a
-		// holder of apikeys:update cannot escalate another user's key beyond
-		// what that user's own roles allow. Owner-less keys (env bootstrap)
-		// fall back to the caller — static admin keys are rejected above.
-		ownerID := callerUserID
-		if ak.UserID != nil {
-			ownerID = *ak.UserID
-		}
-		if err := s.validateGrantsAgainstUserInternal(ctx, ownerID, req.Permissions); err != nil {
-			return nil, err
-		}
 	}
 
 	if req.Name != nil {
@@ -537,23 +392,8 @@ func (s *ApiKeyService) UpdateApiKey(ctx context.Context, callerUserID, id strin
 		ak.ExpiresAt = req.ExpiresAt
 	}
 
-	permissionsUpdated := false
-	if err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
-		if err := tx.Save(&ak).Error; err != nil {
-			return fmt.Errorf("failed to update API key: %w", err)
-		}
-		if req.Permissions != nil && s.roleService != nil {
-			if err := s.roleService.setApiKeyPermissionsInternal(ctx, tx, ak.ID, toApiKeyPermissionRowsInternal(ak.ID, req.Permissions)); err != nil {
-				return fmt.Errorf("failed to update api key permissions: %w", err)
-			}
-			permissionsUpdated = true
-		}
-		return nil
-	}); err != nil {
-		return nil, err
-	}
-	if permissionsUpdated {
-		s.roleService.apiKeyCache.Delete(ak.ID)
+	if err := s.db.WithContext(ctx).Save(&ak).Error; err != nil {
+		return nil, fmt.Errorf("failed to update API key: %w", err)
 	}
 
 	return &apikey.ApiKey{
@@ -563,35 +403,11 @@ func (s *ApiKeyService) UpdateApiKey(ctx context.Context, callerUserID, id strin
 		KeyPrefix:   ak.KeyPrefix,
 		UserID:      ak.UserID,
 		IsStatic:    isStaticAPIKeyInternal(ak),
-		IsBootstrap: isEnvironmentBootstrapKeyInternal(ak),
 		ExpiresAt:   ak.ExpiresAt,
 		LastUsedAt:  ak.LastUsedAt,
 		CreatedAt:   ak.CreatedAt,
 		UpdatedAt:   ak.UpdatedAt,
-		Permissions: s.loadKeyGrantsInternal(ctx, ak.ID),
 	}, nil
-}
-
-// loadKeyGrantsInternal returns the persisted permission grants for an API key.
-// Always returns a non-nil slice (possibly empty) so the JSON-marshalled DTO
-// renders as `"permissions": []` rather than `"permissions": null`, which the
-// frontend treats differently (null hides the picker, [] shows it empty).
-// DB errors are logged and yield an empty slice — the caller never sees nil.
-func (s *ApiKeyService) loadKeyGrantsInternal(ctx context.Context, apiKeyID string) []apikey.PermissionGrant {
-	empty := []apikey.PermissionGrant{}
-	if s.roleService == nil {
-		return empty
-	}
-	var rows []models.ApiKeyPermission
-	if err := s.db.WithContext(ctx).Where("api_key_id = ?", apiKeyID).Find(&rows).Error; err != nil {
-		slog.WarnContext(ctx, "failed to load api key permission grants", "api_key_id", apiKeyID, "error", err)
-		return empty
-	}
-	out := make([]apikey.PermissionGrant, len(rows))
-	for i, r := range rows {
-		out[i] = apikey.PermissionGrant{Permission: r.Permission, EnvironmentID: r.EnvironmentID}
-	}
-	return out
 }
 
 func (s *ApiKeyService) DeleteApiKey(ctx context.Context, id string) error {
@@ -602,7 +418,7 @@ func (s *ApiKeyService) DeleteApiKey(ctx context.Context, id string) error {
 		}
 		return fmt.Errorf("failed to load API key: %w", err)
 	}
-	if isStaticAPIKeyInternal(apiKey) || isEnvironmentBootstrapKeyInternal(apiKey) {
+	if isStaticAPIKeyInternal(apiKey) {
 		return ErrApiKeyProtected
 	}
 
@@ -617,46 +433,39 @@ func (s *ApiKeyService) DeleteApiKey(ctx context.Context, id string) error {
 }
 
 func (s *ApiKeyService) ValidateApiKey(ctx context.Context, rawKey string) (*models.User, error) {
-	user, _, err := s.ValidateApiKeyWithID(ctx, rawKey)
-	return user, err
-}
-
-// ValidateApiKeyWithID is like ValidateApiKey but additionally returns the
-// API key's database ID so callers can resolve per-key permissions.
-func (s *ApiKeyService) ValidateApiKeyWithID(ctx context.Context, rawKey string) (*models.User, string, error) {
 	keyPrefix, err := parseAPIKeyPrefixInternal(rawKey)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 
 	var apiKeys []models.ApiKey
 	if err := s.db.WithContext(ctx).Where("key_prefix = ?", keyPrefix).Find(&apiKeys).Error; err != nil {
-		return nil, "", fmt.Errorf("failed to find API keys: %w", err)
+		return nil, fmt.Errorf("failed to find API keys: %w", err)
 	}
 
 	rawKey = normalizeAPIKeyInputInternal(rawKey)
 	for _, apiKey := range apiKeys {
 		if err := s.validateApiKeyHash(apiKey.KeyHash, rawKey); err == nil {
 			if apiKey.ExpiresAt != nil && apiKey.ExpiresAt.Before(time.Now()) {
-				return nil, "", ErrApiKeyExpired
+				return nil, ErrApiKeyExpired
 			}
 
 			if apiKey.UserID == nil {
-				return nil, "", ErrApiKeyInvalid
+				return nil, ErrApiKeyInvalid
 			}
 
 			s.markApiKeyUsedAsync(ctx, apiKey.ID)
 
 			user, err := s.userService.GetUserByID(ctx, *apiKey.UserID)
 			if err != nil {
-				return nil, "", fmt.Errorf("failed to get user for API key: %w", err)
+				return nil, fmt.Errorf("failed to get user for API key: %w", err)
 			}
 
-			return user, apiKey.ID, nil
+			return user, nil
 		}
 	}
 
-	return nil, "", ErrApiKeyInvalid
+	return nil, ErrApiKeyInvalid
 }
 
 func (s *ApiKeyService) GetEnvironmentByApiKey(ctx context.Context, rawKey string) (*string, error) {

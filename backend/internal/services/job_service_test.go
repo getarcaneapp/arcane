@@ -10,6 +10,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestJobService_GetJobSchedules_DefaultGitOpsInterval(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+
+	settingsSvc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	jobSvc := NewJobService(db, settingsSvc, &config.Config{})
+	cfg := jobSvc.GetJobSchedules(ctx)
+
+	require.Equal(t, "0 */1 * * * *", cfg.GitopsSyncInterval)
+}
+
 func TestJobService_GetJobSchedules_DefaultDockerClientRefreshInterval(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
@@ -89,8 +102,9 @@ func TestJobService_UpdateJobSchedules_ReschedulesChangedJob(t *testing.T) {
 	scheduler := newFakeJobSchedulerInternal("image-polling", "auto-update")
 	jobSvc.SetScheduler(ctx, scheduler)
 
+	nextPollingInterval := "0 */10 * * * *"
 	_, err = jobSvc.UpdateJobSchedules(ctx, jobschedule.Update{
-		PollingInterval: new("0 */10 * * * *"),
+		PollingInterval: &nextPollingInterval,
 	})
 	require.NoError(t, err)
 
@@ -112,8 +126,9 @@ func TestJobService_UpdateJobSchedules_UsesLifecycleContextForReschedule(t *test
 	scheduler := newFakeJobSchedulerInternal("image-polling")
 	jobSvc.SetScheduler(lifecycleCtx, scheduler)
 
+	nextPollingInterval := "0 */10 * * * *"
 	_, err = jobSvc.UpdateJobSchedules(requestCtx, jobschedule.Update{
-		PollingInterval: new("0 */10 * * * *"),
+		PollingInterval: &nextPollingInterval,
 	})
 	require.NoError(t, err)
 
@@ -135,8 +150,9 @@ func TestJobService_UpdateJobSchedules_SkipsManagerOnlyJobsInAgentMode(t *testin
 	scheduler := newFakeJobSchedulerInternal("environment-health")
 	jobSvc.SetScheduler(ctx, scheduler)
 
+	nextHealthInterval := "0 */5 * * * *"
 	_, err = jobSvc.UpdateJobSchedules(ctx, jobschedule.Update{
-		EnvironmentHealthInterval: new("0 */5 * * * *"),
+		EnvironmentHealthInterval: &nextHealthInterval,
 	})
 	require.NoError(t, err)
 

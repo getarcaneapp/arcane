@@ -2,7 +2,6 @@ package notifications
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -19,13 +18,13 @@ func BuildPushoverURL(config models.PushoverConfig) (string, error) {
 	token := strings.TrimSpace(config.Token)
 
 	if user == "" {
-		return "", errors.New("pushover user key is required")
+		return "", fmt.Errorf("pushover user key is required")
 	}
 	if token == "" {
-		return "", errors.New("pushover token is required")
+		return "", fmt.Errorf("pushover token is required")
 	}
 	if config.Priority < -2 || config.Priority > 2 {
-		return "", errors.New("pushover priority must be between -2 and 2")
+		return "", fmt.Errorf("pushover priority must be between -2 and 2")
 	}
 
 	u := &url.URL{
@@ -59,13 +58,13 @@ func BuildPushoverURL(config models.PushoverConfig) (string, error) {
 // SendPushover sends a message via Shoutrrr Pushover using proper service configuration.
 func SendPushover(ctx context.Context, config models.PushoverConfig, message string) error {
 	if strings.TrimSpace(config.Token) == "" {
-		return errors.New("pushover token is empty")
+		return fmt.Errorf("pushover token is empty")
 	}
 	if strings.TrimSpace(config.User) == "" {
-		return errors.New("pushover user key is empty")
+		return fmt.Errorf("pushover user key is empty")
 	}
 	if config.Priority < -2 || config.Priority > 2 {
-		return errors.New("pushover priority must be between -2 and 2")
+		return fmt.Errorf("pushover priority must be between -2 and 2")
 	}
 
 	shoutrrrURL, err := BuildPushoverURL(config)

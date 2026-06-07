@@ -6,18 +6,16 @@
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import { toast } from 'svelte-sonner';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api';
-	import { tryCatch } from '$lib/utils/api';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
-	import type { ContainerRegistry, ContainerRegistryPullUsage } from '$lib/types/docker';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
+	import { tryCatch } from '$lib/utils/try-catch';
+	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
+	import type { ContainerRegistry, ContainerRegistryPullUsage } from '$lib/types/container-registry.type';
 	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
 	import { format } from 'date-fns';
 	import { m } from '$lib/paraglide/messages';
 	import { containerRegistryService } from '$lib/services/container-registry-service';
 	import { RegistryIcon, UserIcon, ExternalLinkIcon, EditIcon, TrashIcon, TestIcon, EllipsisIcon } from '$lib/icons';
-	import { hasPermission } from '$lib/utils/auth';
-	import IfPermitted from '$lib/components/if-permitted.svelte';
 
 	let {
 		registries = $bindable(),
@@ -35,8 +33,6 @@
 
 	let removingId = $state<string | null>(null);
 	let testingId = $state<string | null>(null);
-
-	const canDeleteRegistry = $derived(hasPermission('registries:delete'));
 
 	function maskAccessKeyId(keyId: string | undefined): string {
 		if (!keyId) return m.common_na();
@@ -203,7 +199,7 @@
 			action: 'remove',
 			onClick: handleDeleteSelected,
 			loading: isLoading.removing,
-			disabled: !canDeleteRegistry || isLoading.removing,
+			disabled: isLoading.removing,
 			icon: TrashIcon
 		}
 	]);
@@ -298,40 +294,34 @@
 		</DropdownMenu.Trigger>
 		<DropdownMenu.Content align="end">
 			<DropdownMenu.Group>
-				<IfPermitted perm="registries:test">
-					<DropdownMenu.Item onclick={() => handleTest(item.id, item.url)} disabled={testingId === item.id}>
-						{#if testingId === item.id}
-							<Spinner class="size-4" />
-						{:else}
-							<TestIcon class="size-4" />
-						{/if}
-						{m.registries_test_connection()}
-					</DropdownMenu.Item>
-				</IfPermitted>
+				<DropdownMenu.Item onclick={() => handleTest(item.id, item.url)} disabled={testingId === item.id}>
+					{#if testingId === item.id}
+						<Spinner class="size-4" />
+					{:else}
+						<TestIcon class="size-4" />
+					{/if}
+					{m.registries_test_connection()}
+				</DropdownMenu.Item>
 
-				<IfPermitted perm="registries:update">
-					<DropdownMenu.Item onclick={() => onEditRegistry(item)}>
-						<EditIcon class="size-4" />
-						{m.common_edit()}
-					</DropdownMenu.Item>
-				</IfPermitted>
+				<DropdownMenu.Item onclick={() => onEditRegistry(item)}>
+					<EditIcon class="size-4" />
+					{m.common_edit()}
+				</DropdownMenu.Item>
 
-				{#if canDeleteRegistry}
-					<DropdownMenu.Separator />
+				<DropdownMenu.Separator />
 
-					<DropdownMenu.Item
-						variant="destructive"
-						onclick={() => handleDeleteOne(item.id, item.url)}
-						disabled={removingId === item.id}
-					>
-						{#if removingId === item.id}
-							<Spinner class="size-4" />
-						{:else}
-							<TrashIcon class="size-4" />
-						{/if}
-						{m.common_remove()}
-					</DropdownMenu.Item>
-				{/if}
+				<DropdownMenu.Item
+					variant="destructive"
+					onclick={() => handleDeleteOne(item.id, item.url)}
+					disabled={removingId === item.id}
+				>
+					{#if removingId === item.id}
+						<Spinner class="size-4" />
+					{:else}
+						<TrashIcon class="size-4" />
+					{/if}
+					{m.common_remove()}
+				</DropdownMenu.Item>
 			</DropdownMenu.Group>
 		</DropdownMenu.Content>
 	</DropdownMenu.Root>

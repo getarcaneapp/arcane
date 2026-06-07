@@ -11,9 +11,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/config"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"github.com/getarcaneapp/arcane/backend/pkg/authz"
 	docker "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
-	"github.com/getarcaneapp/arcane/backend/pkg/utils"
 	"github.com/getarcaneapp/arcane/types/base"
 	containertypes "github.com/getarcaneapp/arcane/types/container"
 	"github.com/getarcaneapp/arcane/types/dockerinfo"
@@ -24,12 +22,10 @@ import (
 
 // SystemHandler handles system management endpoints.
 type SystemHandler struct {
-	dockerService   *services.DockerClientService
-	systemService   *services.SystemService
-	upgradeService  *services.SystemUpgradeService
-	activityService *services.ActivityService
-	cfg             *config.Config
-	appCtx          context.Context
+	dockerService  *services.DockerClientService
+	systemService  *services.SystemService
+	upgradeService *services.SystemUpgradeService
+	cfg            *config.Config
 }
 
 // --- Input/Output Types ---
@@ -117,14 +113,12 @@ type TriggerUpgradeOutput struct {
 
 // RegisterSystem registers system management endpoints using Huma.
 // Note: WebSocket endpoints (stats) remain in the Gin handler.
-func RegisterSystem(api huma.API, dockerService *services.DockerClientService, systemService *services.SystemService, upgradeService *services.SystemUpgradeService, cfg *config.Config, activityService *services.ActivityService, appCtx ActivityAppContext) {
+func RegisterSystem(api huma.API, dockerService *services.DockerClientService, systemService *services.SystemService, upgradeService *services.SystemUpgradeService, cfg *config.Config) {
 	h := &SystemHandler{
-		dockerService:   dockerService,
-		systemService:   systemService,
-		upgradeService:  upgradeService,
-		activityService: activityService,
-		cfg:             cfg,
-		appCtx:          appCtx.contextInternal(),
+		dockerService:  dockerService,
+		systemService:  systemService,
+		upgradeService: upgradeService,
+		cfg:            cfg,
 	}
 
 	huma.Register(api, huma.Operation{
@@ -152,7 +146,6 @@ func RegisterSystem(api huma.API, dockerService *services.DockerClientService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermSystemRead),
 	}, h.GetDockerInfo)
 
 	huma.Register(api, huma.Operation{
@@ -166,7 +159,7 @@ func RegisterSystem(api huma.API, dockerService *services.DockerClientService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermSystemPrune),
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.PruneAll)
 
 	huma.Register(api, huma.Operation{
@@ -180,7 +173,7 @@ func RegisterSystem(api huma.API, dockerService *services.DockerClientService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermContainersStart),
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.StartAllContainers)
 
 	huma.Register(api, huma.Operation{
@@ -194,7 +187,7 @@ func RegisterSystem(api huma.API, dockerService *services.DockerClientService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermContainersStart),
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.StartAllStoppedContainers)
 
 	huma.Register(api, huma.Operation{
@@ -208,7 +201,7 @@ func RegisterSystem(api huma.API, dockerService *services.DockerClientService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermContainersStop),
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.StopAllContainers)
 
 	huma.Register(api, huma.Operation{
@@ -222,7 +215,6 @@ func RegisterSystem(api huma.API, dockerService *services.DockerClientService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermContainersCreate),
 	}, h.ConvertDockerRun)
 
 	huma.Register(api, huma.Operation{
@@ -236,7 +228,7 @@ func RegisterSystem(api huma.API, dockerService *services.DockerClientService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermSystemRead),
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.CheckUpgradeAvailable)
 
 	huma.Register(api, huma.Operation{
@@ -251,7 +243,7 @@ func RegisterSystem(api huma.API, dockerService *services.DockerClientService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermSystemUpgrade),
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.TriggerUpgrade)
 }
 
@@ -309,7 +301,7 @@ func (h *SystemHandler) GetDockerInfo(ctx context.Context, input *GetDockerInfoI
 	if !docker.IsDockerContainer() {
 		if cgroupLimits, err := docker.DetectCgroupLimits(); err == nil {
 			if limit := cgroupLimits.MemoryLimit; limit > 0 {
-				limitInt := limit
+				limitInt := int64(limit)
 				if memTotal == 0 || limitInt < memTotal {
 					memTotal = limitInt
 				}
@@ -372,6 +364,10 @@ func (h *SystemHandler) PruneAll(ctx context.Context, input *PruneAllInput) (*Pr
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
+
 	slog.InfoContext(ctx, "System prune operation initiated",
 		"containers", input.Body.Containers,
 		"images", input.Body.Images,
@@ -379,10 +375,18 @@ func (h *SystemHandler) PruneAll(ctx context.Context, input *PruneAllInput) (*Pr
 		"networks", input.Body.Networks,
 		"build_cache", input.Body.BuildCache)
 
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	result := h.systemService.StartPruneAll(runtimeCtx, input.EnvironmentID, input.Body)
+	result, err := h.systemService.PruneAll(ctx, input.Body)
+	if err != nil {
+		slog.ErrorContext(ctx, "System prune operation failed", "error", err)
+		return nil, huma.Error500InternalServerError((&common.SystemPruneError{Err: err}).Error())
+	}
 
-	slog.InfoContext(runtimeCtx, "System prune background activity started", "activityId", result.ActivityID)
+	slog.InfoContext(ctx, "System prune operation completed successfully",
+		"containers_pruned", len(result.ContainersPruned),
+		"images_deleted", len(result.ImagesDeleted),
+		"volumes_deleted", len(result.VolumesDeleted),
+		"networks_deleted", len(result.NetworksDeleted),
+		"space_reclaimed", result.SpaceReclaimed)
 
 	return &PruneAllOutput{
 		Body: base.ApiResponse[system.PruneAllResult]{
@@ -398,8 +402,11 @@ func (h *SystemHandler) StartAllContainers(ctx context.Context, input *StartAllC
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	result, err := h.systemService.StartAllContainers(runtimeCtx, input.EnvironmentID)
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
+
+	result, err := h.systemService.StartAllContainers(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.ContainerStartAllError{Err: err}).Error())
 	}
@@ -418,8 +425,11 @@ func (h *SystemHandler) StartAllStoppedContainers(ctx context.Context, input *St
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	result, err := h.systemService.StartAllStoppedContainers(runtimeCtx, input.EnvironmentID)
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
+
+	result, err := h.systemService.StartAllStoppedContainers(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.ContainerStartStoppedError{Err: err}).Error())
 	}
@@ -438,8 +448,11 @@ func (h *SystemHandler) StopAllContainers(ctx context.Context, input *StopAllCon
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	result, err := h.systemService.StopAllContainers(runtimeCtx, input.EnvironmentID)
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
+
+	result, err := h.systemService.StopAllContainers(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.ContainerStopAllError{Err: err}).Error())
 	}
@@ -484,6 +497,10 @@ func (h *SystemHandler) CheckUpgradeAvailable(ctx context.Context, input *CheckU
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
+
 	canUpgrade, err := h.upgradeService.CanUpgrade(ctx)
 	if err != nil {
 		slog.Debug("System upgrade check failed", "error", err)
@@ -509,6 +526,10 @@ func (h *SystemHandler) CheckUpgradeAvailable(ctx context.Context, input *CheckU
 func (h *SystemHandler) TriggerUpgrade(ctx context.Context, input *TriggerUpgradeInput) (*TriggerUpgradeOutput, error) {
 	if h.upgradeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
 	}
 
 	user, exists := humamw.GetCurrentUserFromContext(ctx)

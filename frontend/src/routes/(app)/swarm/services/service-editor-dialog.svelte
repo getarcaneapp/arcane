@@ -3,13 +3,13 @@
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import * as Select from '$lib/components/ui/select/index.js';
-	import { preventDefault } from '$lib/utils/settings';
+	import { preventDefault } from '$lib/utils/form.utils';
 	import { m } from '$lib/paraglide/messages';
 	import { AddIcon, TrashIcon } from '$lib/icons';
 	import * as Accordion from '$lib/components/ui/accordion/index.js';
 	import FormInput from '$lib/components/form/form-input.svelte';
 	import { untrack } from 'svelte';
-	import { getSwarmServiceModeLabel } from '$lib/utils/docker';
+	import { getSwarmServiceModeLabel } from '$lib/utils/swarm-service-mode.utils';
 
 	type ServiceEditorPayload = {
 		spec: Record<string, unknown>;

@@ -219,13 +219,13 @@ func (t *TunnelConn) SendRequest(ctx context.Context, msg *TunnelMessage, pendin
 }
 
 type grpcManagerStream interface {
-	Send(msg *tunnelpb.ManagerMessage) error
+	Send(*tunnelpb.ManagerMessage) error
 	Recv() (*tunnelpb.AgentMessage, error)
 	Context() context.Context
 }
 
 type grpcAgentStream interface {
-	Send(msg *tunnelpb.AgentMessage) error
+	Send(*tunnelpb.AgentMessage) error
 	Recv() (*tunnelpb.ManagerMessage, error)
 	Context() context.Context
 	CloseSend() error
@@ -418,9 +418,7 @@ func (t *GRPCAgentTunnelConn) markClosed() {
 	t.closedMu.Unlock()
 }
 
-func sendRequestWithPending(ctx context.Context, conn interface {
-	Send(msg *TunnelMessage) error
-}, msg *TunnelMessage, pending *sync.Map) (*TunnelMessage, error) {
+func sendRequestWithPending(ctx context.Context, conn interface{ Send(*TunnelMessage) error }, msg *TunnelMessage, pending *sync.Map) (*TunnelMessage, error) {
 	ctx, cancel := ensureSendRequestContextInternal(ctx)
 	defer cancel()
 
@@ -478,14 +476,14 @@ func (s *cancelableGRPCManagerStream) Context() context.Context {
 
 func ensureSendRequestContextInternal(ctx context.Context) (context.Context, context.CancelFunc) {
 	if ctx == nil {
-		return context.WithTimeout(context.Background(), defaultSendRequestTimeout)
+		return context.WithTimeout(context.Background(), defaultSendRequestTimeout) //nolint:gosec // helper intentionally returns the cancel func to callers.
 	}
 
 	if _, hasDeadline := ctx.Deadline(); hasDeadline {
 		return ctx, func() {}
 	}
 
-	return context.WithTimeout(ctx, defaultSendRequestTimeout)
+	return context.WithTimeout(ctx, defaultSendRequestTimeout) //nolint:gosec // helper intentionally returns the cancel func to callers.
 }
 
 func isExpectedGRPCReceiveErrorInternal(err error) bool {

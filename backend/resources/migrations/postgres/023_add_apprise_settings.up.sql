@@ -1,0 +1,9 @@
+CREATE TABLE IF NOT EXISTS apprise_settings (
+    id SERIAL PRIMARY KEY,
+    api_url VARCHAR(512) NOT NULL,
+    enabled BOOLEAN DEFAULT FALSE,
+    image_update_tag VARCHAR(255),
+    container_update_tag VARCHAR(255),
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

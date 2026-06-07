@@ -102,8 +102,6 @@ func SetColorEnabled(enabled bool) {
 // Success prints a success message in green.
 // The message is prefixed with a newline for visual separation.
 // Format specifiers and arguments work like fmt.Printf.
-//
-//nolint:goprintffuncname // printf-style output helper; *f rename across call sites tracked separately
 func Success(format string, a ...any) {
 	msg := fmt.Sprintf(format, a...)
 	fmt.Printf("\n%s\n", render(successStyle, msg))
@@ -112,8 +110,6 @@ func Success(format string, a ...any) {
 // Error prints an error message in red.
 // The message is prefixed with a newline for visual separation.
 // Format specifiers and arguments work like fmt.Printf.
-//
-//nolint:goprintffuncname // printf-style output helper; *f rename across call sites tracked separately
 func Error(format string, a ...any) {
 	msg := fmt.Sprintf(format, a...)
 	fmt.Printf("\n%s\n", render(errorStyle, msg))
@@ -122,8 +118,6 @@ func Error(format string, a ...any) {
 // Warning prints a warning message in yellow.
 // The message is prefixed with a newline for visual separation.
 // Format specifiers and arguments work like fmt.Printf.
-//
-//nolint:goprintffuncname // printf-style output helper; *f rename across call sites tracked separately
 func Warning(format string, a ...any) {
 	msg := fmt.Sprintf(format, a...)
 	fmt.Printf("\n%s\n", render(warnStyle, msg))
@@ -132,8 +126,6 @@ func Warning(format string, a ...any) {
 // Info prints an info message in cyan.
 // The message is prefixed with a newline for visual separation.
 // Format specifiers and arguments work like fmt.Printf.
-//
-//nolint:goprintffuncname // printf-style output helper; *f rename across call sites tracked separately
 func Info(format string, a ...any) {
 	msg := fmt.Sprintf(format, a...)
 	fmt.Printf("\n%s\n", render(infoStyle, msg))
@@ -142,8 +134,6 @@ func Info(format string, a ...any) {
 // Header prints a header message in bold white.
 // Use this to introduce sections of output. The message is prefixed
 // with a newline for visual separation.
-//
-//nolint:goprintffuncname // printf-style output helper; *f rename across call sites tracked separately
 func Header(format string, a ...any) {
 	msg := fmt.Sprintf(format, a...)
 	fmt.Printf("\n%s\n", render(headerStyle, msg))
@@ -151,8 +141,6 @@ func Header(format string, a ...any) {
 
 // Print prints a standard message without color formatting.
 // Use this for regular output that doesn't need status indication.
-//
-//nolint:goprintffuncname // printf-style output helper; *f rename across call sites tracked separately
 func Print(format string, a ...any) {
 	fmt.Printf(format+"\n", a...)
 }

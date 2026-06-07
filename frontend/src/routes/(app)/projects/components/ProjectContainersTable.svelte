@@ -7,20 +7,20 @@
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { PortBadge } from '$lib/components/badges/index.js';
 	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
-	import { getStatusVariant, getThemedIconUrl } from '$lib/utils/docker';
-	import { capitalizeFirstLetter } from '$lib/utils/formatting';
-	import type { RuntimeService } from '$lib/types/swarm';
+	import { getStatusVariant } from '$lib/utils/status.utils';
+	import { capitalizeFirstLetter } from '$lib/utils/string.utils';
+	import type { RuntimeService } from '$lib/types/project.type';
 	import type { ColumnSpec, BulkAction } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
 	import { goto } from '$app/navigation';
+	import { toast } from 'svelte-sonner';
+	import { openConfirmDialog } from '$lib/components/confirm-dialog';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
+	import { tryCatch } from '$lib/utils/try-catch';
 	import { containerService } from '$lib/services/container-service';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { hasPermission } from '$lib/utils/auth';
 	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
 	import IconImage from '$lib/components/icon-image.svelte';
-	import { mode } from 'mode-watcher';
-	import { bulkConfirmAndRun, hasAnyLoadingState } from '$lib/utils/bulk-actions';
-	import { confirmAndRemoveContainer, runContainerLifecycleAction } from '$lib/utils/container-actions';
+	import { getArcaneIconUrlFromLabels } from '$lib/utils/arcane-labels';
 	import {
 		StartIcon,
 		StopIcon,
@@ -40,12 +40,6 @@
 	}
 
 	let { services = [], projectId, onRefresh }: Props = $props();
-
-	const currentEnvId = $derived(environmentStore.selected?.id || '0');
-	const canStartContainer = $derived(hasPermission('containers:start', currentEnvId));
-	const canStopContainer = $derived(hasPermission('containers:stop', currentEnvId));
-	const canRestartContainer = $derived(hasPermission('containers:restart', currentEnvId));
-	const canDeleteContainer = $derived(hasPermission('containers:delete', currentEnvId));
 
 	// Convert RuntimeService to a format compatible with ArcaneTable
 	type ServiceWithId = RuntimeService & { id: string };
@@ -103,24 +97,72 @@
 	}
 
 	async function performContainerAction(action: 'start' | 'stop' | 'restart', id: string) {
-		await runContainerLifecycleAction({
-			action,
-			containerId: id,
-			setStatus: (status) => {
-				actionStatus[id] = status;
-			},
-			onRefresh
-		});
+		if (!id) return;
+
+		const statusMap = { start: 'starting', stop: 'stopping', restart: 'restarting' } as const;
+		actionStatus[id] = statusMap[action];
+
+		try {
+			const serviceCall =
+				action === 'start'
+					? containerService.startContainer(id)
+					: action === 'stop'
+						? containerService.stopContainer(id)
+						: containerService.restartContainer(id);
+
+			const messageMap = {
+				start: { failed: m.containers_start_failed(), success: m.containers_start_success() },
+				stop: { failed: m.containers_stop_failed(), success: m.containers_stop_success() },
+				restart: { failed: m.containers_restart_failed(), success: m.containers_restart_success() }
+			};
+
+			handleApiResultWithCallbacks({
+				result: await tryCatch(serviceCall),
+				message: messageMap[action].failed,
+				setLoadingState: (value) => {
+					actionStatus[id] = value ? statusMap[action] : '';
+				},
+				async onSuccess() {
+					toast.success(messageMap[action].success);
+					await onRefresh?.();
+				}
+			});
+		} catch (error) {
+			console.error('Container action failed:', error);
+			toast.error(m.containers_action_error());
+			actionStatus[id] = '';
+		}
 	}
 
 	async function handleRemoveContainer(id: string, name: string) {
-		confirmAndRemoveContainer({
-			containerId: id,
-			containerName: name,
-			setStatus: (status) => {
-				actionStatus[id] = status;
-			},
-			onRefresh
+		openConfirmDialog({
+			title: m.containers_remove_confirm_title(),
+			message: m.containers_remove_confirm_message({ resource: name }),
+			checkboxes: [
+				{ id: 'force', label: m.containers_remove_force_label(), initialState: false },
+				{ id: 'volumes', label: m.containers_remove_volumes_label(), initialState: false }
+			],
+			confirm: {
+				label: m.common_remove(),
+				destructive: true,
+				action: async (checkboxStates) => {
+					const force = !!checkboxStates['force'];
+					const volumes = !!checkboxStates['volumes'];
+					actionStatus[id] = 'removing';
+
+					handleApiResultWithCallbacks({
+						result: await tryCatch(containerService.deleteContainer(id, { force, volumes })),
+						message: m.containers_remove_failed(),
+						setLoadingState: (value) => {
+							actionStatus[id] = value ? 'removing' : '';
+						},
+						async onSuccess() {
+							toast.success(m.containers_remove_success());
+							await onRefresh?.();
+						}
+					});
+				}
+			}
 		});
 	}
 
@@ -137,9 +179,7 @@
 				label: m.common_start(),
 				destructive: false,
 				fn: (id: string) => containerService.startContainer(id),
-				success: (count: number) => m.containers_bulk_start_success({ count }),
-				partial: (success: number, total: number, failed: number) => m.containers_bulk_start_partial({ success, total, failed }),
-				failure: () => m.containers_start_failed(),
+				success: m.containers_bulk_start_success({ count: validIds.length }),
 				loadingKey: 'start' as const
 			},
 			stop: {
@@ -148,9 +188,7 @@
 				label: m.common_stop(),
 				destructive: false,
 				fn: (id: string) => containerService.stopContainer(id),
-				success: (count: number) => m.containers_bulk_stop_success({ count }),
-				partial: (success: number, total: number, failed: number) => m.containers_bulk_stop_partial({ success, total, failed }),
-				failure: () => m.containers_stop_failed(),
+				success: m.containers_bulk_stop_success({ count: validIds.length }),
 				loadingKey: 'stop' as const
 			},
 			restart: {
@@ -159,10 +197,7 @@
 				label: m.common_restart(),
 				destructive: false,
 				fn: (id: string) => containerService.restartContainer(id),
-				success: (count: number) => m.containers_bulk_restart_success({ count }),
-				partial: (success: number, total: number, failed: number) =>
-					m.containers_bulk_restart_partial({ success, total, failed }),
-				failure: () => m.containers_restart_failed(),
+				success: m.containers_bulk_restart_success({ count: validIds.length }),
 				loadingKey: 'restart' as const
 			},
 			remove: {
@@ -171,38 +206,45 @@
 				label: m.common_remove(),
 				destructive: true,
 				fn: (id: string) => containerService.deleteContainer(id, { force: false, volumes: false }),
-				success: (count: number) => m.containers_bulk_remove_success({ count }),
-				partial: (success: number, total: number, failed: number) => m.containers_bulk_remove_partial({ success, total, failed }),
-				failure: () => m.containers_remove_failed(),
+				success: m.containers_bulk_remove_success({ count: validIds.length }),
 				loadingKey: 'remove' as const
 			}
 		};
 
 		const config = actionConfig[action];
 
-		bulkConfirmAndRun({
-			ids: validIds,
+		openConfirmDialog({
 			title: config.title,
 			message: config.message,
-			confirmLabel: config.label,
-			destructive: config.destructive,
-			run: (id) => config.fn(id),
-			messages: {
-				success: config.success,
-				partial: config.partial,
-				failure: config.failure
-			},
-			setLoading: (loading) => {
-				isBulkLoading[config.loadingKey] = loading;
-			},
-			onComplete: async () => onRefresh?.(),
-			clearSelection: () => {
-				selectedIds = [];
+			confirm: {
+				label: config.label,
+				destructive: config.destructive,
+				action: async () => {
+					isBulkLoading[config.loadingKey] = true;
+
+					const results = await Promise.allSettled(validIds.map((id) => config.fn(id)));
+					const successCount = results.filter((r) => r.status === 'fulfilled').length;
+
+					isBulkLoading[config.loadingKey] = false;
+
+					if (successCount === validIds.length) {
+						toast.success(config.success);
+					} else if (successCount > 0) {
+						toast.warning(`${successCount} of ${validIds.length} succeeded`);
+					} else {
+						toast.error(m.containers_action_error());
+					}
+
+					selectedIds = [];
+					await onRefresh?.();
+				}
 			}
 		});
 	}
 
-	const isAnyLoading = $derived(hasAnyLoadingState(actionStatus, isBulkLoading));
+	const isAnyLoading = $derived(
+		Object.values(actionStatus).some((status) => status !== '') || Object.values(isBulkLoading).some((loading) => loading)
+	);
 
 	const showActionsColumn = $derived(servicesWithIds.some((service) => service.status === 'running'));
 
@@ -228,7 +270,7 @@
 			action: 'start',
 			onClick: (ids) => handleBulkAction('start', ids),
 			loading: isBulkLoading.start,
-			disabled: !canStartContainer || isAnyLoading,
+			disabled: isAnyLoading,
 			icon: StartIcon
 		},
 		{
@@ -237,7 +279,7 @@
 			action: 'stop',
 			onClick: (ids) => handleBulkAction('stop', ids),
 			loading: isBulkLoading.stop,
-			disabled: !canStopContainer || isAnyLoading,
+			disabled: isAnyLoading,
 			icon: StopIcon
 		},
 		{
@@ -246,7 +288,7 @@
 			action: 'restart',
 			onClick: (ids) => handleBulkAction('restart', ids),
 			loading: isBulkLoading.restart,
-			disabled: !canRestartContainer || isAnyLoading,
+			disabled: isAnyLoading,
 			icon: RefreshIcon
 		},
 		{
@@ -255,7 +297,7 @@
 			action: 'remove',
 			onClick: (ids) => handleBulkAction('remove', ids),
 			loading: isBulkLoading.remove,
-			disabled: !canDeleteContainer || isAnyLoading,
+			disabled: isAnyLoading,
 			icon: TrashIcon
 		}
 	]);
@@ -263,9 +305,9 @@
 
 {#snippet NameCell({ item }: { item: ServiceWithId })}
 	{@const displayName = item.containerName || item.name}
-	{@const iconUrl = getThemedIconUrl(item, mode.current)}
+	{@const iconUrl = item.iconUrl ?? getArcaneIconUrlFromLabels(item.serviceConfig?.labels)}
 	<div class="flex items-center gap-2">
-		<IconImage src={iconUrl} alt={displayName} fallback={BoxIcon} class="size-6" containerClass="size-8" />
+		<IconImage src={iconUrl} alt={displayName} fallback={BoxIcon} class="size-4" containerClass="size-7" />
 		{#if item.containerId}
 			<a class="font-medium hover:underline" href={getContainerUrl(item)}>
 				{displayName}
@@ -309,7 +351,7 @@
 
 {#snippet PortsCell({ item }: { item: ServiceWithId })}
 	{#if item.serviceConfig?.ports && item.serviceConfig.ports.length > 0}
-		<PortBadge ports={item.serviceConfig.ports as any} wrap={false} />
+		<PortBadge ports={item.serviceConfig.ports as any} />
 	{:else if item.ports && item.ports.length > 0}
 		{@const parsedPorts = item.ports.map((p) => {
 			const [numsPart, proto] = p.split('/');
@@ -319,7 +361,7 @@
 			}
 			return { privatePort: parseInt(nums[0] ?? ''), type: proto || 'tcp' };
 		})}
-		<PortBadge ports={parsedPorts} wrap={false} />
+		<PortBadge ports={parsedPorts} />
 	{:else}
 		<span class="text-muted-foreground text-sm">—</span>
 	{/if}
@@ -336,7 +378,7 @@
 	<UniversalMobileCard
 		{item}
 		icon={(item) => {
-			const iconUrl = getThemedIconUrl(item, mode.current);
+			const iconUrl = item.iconUrl ?? getArcaneIconUrlFromLabels(item.serviceConfig?.labels);
 			return {
 				component: BoxIcon,
 				variant: item.status === 'running' ? 'emerald' : item.status === 'exited' ? 'red' : 'amber',
@@ -399,21 +441,19 @@
 							<InspectIcon class="size-4" />
 							{m.common_inspect()}
 						</DropdownMenu.Item>
-						{#if canDeleteContainer}
-							<DropdownMenu.Separator />
-							<DropdownMenu.Item
-								variant="destructive"
-								onclick={() => handleRemoveContainer(item.containerId!, item.containerName || item.name)}
-								disabled={actionStatus[item.id] === 'removing' || isAnyLoading}
-							>
-								{#if actionStatus[item.id] === 'removing'}
-									<Spinner class="size-4" />
-								{:else}
-									<TrashIcon class="size-4" />
-								{/if}
-								{m.common_remove()}
-							</DropdownMenu.Item>
-						{/if}
+						<DropdownMenu.Separator />
+						<DropdownMenu.Item
+							variant="destructive"
+							onclick={() => handleRemoveContainer(item.containerId!, item.containerName || item.name)}
+							disabled={actionStatus[item.id] === 'removing' || isAnyLoading}
+						>
+							{#if actionStatus[item.id] === 'removing'}
+								<Spinner class="size-4" />
+							{:else}
+								<TrashIcon class="size-4" />
+							{/if}
+							{m.common_remove()}
+						</DropdownMenu.Item>
 					</DropdownMenu.Group>
 				</DropdownMenu.Content>
 			</DropdownMenu.Root>
@@ -459,50 +499,44 @@
 
 						<DropdownMenu.Separator />
 
-						{#if canStopContainer}
-							<DropdownMenu.Item
-								onclick={() => performContainerAction('stop', item.containerId!)}
-								disabled={status === 'stopping' || isAnyLoading}
-							>
-								{#if status === 'stopping'}
-									<Spinner class="size-4" />
-								{:else}
-									<StopIcon class="size-4" />
-								{/if}
-								{m.common_stop()}
-							</DropdownMenu.Item>
-						{/if}
+						<DropdownMenu.Item
+							onclick={() => performContainerAction('stop', item.containerId!)}
+							disabled={status === 'stopping' || isAnyLoading}
+						>
+							{#if status === 'stopping'}
+								<Spinner class="size-4" />
+							{:else}
+								<StopIcon class="size-4" />
+							{/if}
+							{m.common_stop()}
+						</DropdownMenu.Item>
 
-						{#if canRestartContainer}
-							<DropdownMenu.Item
-								onclick={() => performContainerAction('restart', item.containerId!)}
-								disabled={status === 'restarting' || isAnyLoading}
-							>
-								{#if status === 'restarting'}
-									<Spinner class="size-4" />
-								{:else}
-									<RefreshIcon class="size-4" />
-								{/if}
-								{m.common_restart()}
-							</DropdownMenu.Item>
-						{/if}
+						<DropdownMenu.Item
+							onclick={() => performContainerAction('restart', item.containerId!)}
+							disabled={status === 'restarting' || isAnyLoading}
+						>
+							{#if status === 'restarting'}
+								<Spinner class="size-4" />
+							{:else}
+								<RefreshIcon class="size-4" />
+							{/if}
+							{m.common_restart()}
+						</DropdownMenu.Item>
 
-						{#if canDeleteContainer}
-							<DropdownMenu.Separator />
+						<DropdownMenu.Separator />
 
-							<DropdownMenu.Item
-								variant="destructive"
-								onclick={() => handleRemoveContainer(item.containerId!, item.containerName || item.name)}
-								disabled={status === 'removing' || isAnyLoading}
-							>
-								{#if status === 'removing'}
-									<Spinner class="size-4" />
-								{:else}
-									<TrashIcon class="size-4" />
-								{/if}
-								{m.common_remove()}
-							</DropdownMenu.Item>
-						{/if}
+						<DropdownMenu.Item
+							variant="destructive"
+							onclick={() => handleRemoveContainer(item.containerId!, item.containerName || item.name)}
+							disabled={status === 'removing' || isAnyLoading}
+						>
+							{#if status === 'removing'}
+								<Spinner class="size-4" />
+							{:else}
+								<TrashIcon class="size-4" />
+							{/if}
+							{m.common_remove()}
+						</DropdownMenu.Item>
 					</DropdownMenu.Group>
 				</DropdownMenu.Content>
 			</DropdownMenu.Root>

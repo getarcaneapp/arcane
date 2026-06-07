@@ -6,7 +6,7 @@ const ROUTES = {
 
 async function openNewEnvironmentSheet(page: Page) {
 	await page.goto(ROUTES.environments);
-	await page.waitForLoadState('load');
+	await page.waitForLoadState('networkidle');
 
 	const addButton = page.getByRole('button', { name: 'Add Environment', exact: true });
 	await expect(addButton).toBeVisible();

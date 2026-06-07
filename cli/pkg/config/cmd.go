@@ -1,7 +1,6 @@
 package config
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -17,14 +16,13 @@ import (
 )
 
 var (
-	setServerURL         string
-	setAPIKey            string
-	setJWTToken          string
-	setEnvironment       string
-	setFederatedAudience string
-	setLogLevel          string
-	setDefaultLimit      int
-	setResourceLimit     []string
+	setServerURL     string
+	setAPIKey        string
+	setJWTToken      string
+	setEnvironment   string
+	setLogLevel      string
+	setDefaultLimit  int
+	setResourceLimit []string
 )
 
 // ConfigCmd is the command for managing API configuration
@@ -49,10 +47,13 @@ var configShowCmd = &cobra.Command{
 		fmt.Printf("JWT Token:           %s\n", maskAPIKey(cfg.JWTToken))
 		fmt.Printf("Refresh Token:       %s\n", maskAPIKey(cfg.RefreshToken))
 		fmt.Printf("Default Environment: %s\n", maskIfEmpty(cfg.DefaultEnvironment, "0 (local)"))
-		fmt.Printf("Federated Audience:  %s\n", maskIfEmpty(cfg.FederatedAudience, "(not set)"))
 		fmt.Printf("Log Level:           %s\n", maskIfEmpty(cfg.LogLevel, "info (default)"))
 		fmt.Printf("CLI Update Channel:  %s\n", maskIfEmpty(cfg.CLIUpdateChannel, "(auto)"))
-		fmt.Printf("Pagination Default:  %s\n", maskIfEmpty(intToString(cfg.Pagination.Default.Limit), "(not set)"))
+		globalLimit := cfg.Pagination.Default.Limit
+		if globalLimit <= 0 {
+			globalLimit = cfg.DefaultLimit
+		}
+		fmt.Printf("Pagination Default:  %s\n", maskIfEmpty(intToString(globalLimit), "(not set)"))
 
 		fmt.Println("\nPagination Resources:")
 		printed := 0
@@ -135,7 +136,7 @@ Legacy flag syntax (flags shown below) is still supported:
 		updated = updated || updatedByFlags
 
 		if !updated {
-			return errors.New("no configuration values provided. Use `arcane config set <key> <value>` (e.g. `arcane config set server-url http://localhost:3552`) or legacy flags (--server-url, --api-key, --jwt-token, --environment, --log-level, --default-limit, --resource-limit)")
+			return fmt.Errorf("no configuration values provided. Use `arcane config set <key> <value>` (e.g. `arcane config set server-url http://localhost:3552`) or legacy flags (--server-url, --api-key, --jwt-token, --environment, --log-level, --default-limit, --resource-limit)")
 		}
 
 		if err := config.Save(cfg); err != nil {
@@ -187,7 +188,7 @@ var configTestCmd = &cobra.Command{
 		if cfg.JWTToken != "" {
 			req.Header.Set("Authorization", "Bearer "+cfg.JWTToken)
 		} else {
-			req.Header.Set("X-Api-Key", cfg.APIKey)
+			req.Header.Set("X-API-KEY", cfg.APIKey)
 		}
 
 		resp, err := httpClient.Do(req)
@@ -276,7 +277,6 @@ func init() {
 	configSetCmd.Flags().StringVar(&setAPIKey, "api-key", "", "API key for authentication")
 	configSetCmd.Flags().StringVar(&setJWTToken, "jwt-token", "", "JWT access token for authentication (Bearer token)")
 	configSetCmd.Flags().StringVar(&setEnvironment, "environment", "", "Default environment ID")
-	configSetCmd.Flags().StringVar(&setFederatedAudience, "federated-audience", "", "Default audience for federated authentication")
 	configSetCmd.Flags().StringVar(&setLogLevel, "log-level", "", "Default log level (debug, info, warn, error)")
 	configSetCmd.Flags().IntVar(&setDefaultLimit, "default-limit", 0, "Global default list limit for paginated resources (0 clears)")
 	configSetCmd.Flags().StringSliceVar(&setResourceLimit, "resource-limit", nil, "Per-resource list limit in the form resource=limit (repeatable, 0 clears)")
@@ -352,12 +352,6 @@ func applyConfigSetFlags(cmd *cobra.Command, cfg *clitypes.Config) (bool, error)
 		updated = true
 	}
 
-	if setFederatedAudience != "" {
-		cfg.FederatedAudience = setFederatedAudience
-		fmt.Printf("Set federated_audience = %s\n", setFederatedAudience)
-		updated = true
-	}
-
 	if setLogLevel != "" {
 		cfg.LogLevel = setLogLevel
 		fmt.Printf("Set log_level = %s\n", setLogLevel)
@@ -366,7 +360,7 @@ func applyConfigSetFlags(cmd *cobra.Command, cfg *clitypes.Config) (bool, error)
 
 	if cmd.Flags().Changed("default-limit") {
 		if setDefaultLimit < 0 {
-			return false, errors.New("--default-limit must be >= 0")
+			return false, fmt.Errorf("--default-limit must be >= 0")
 		}
 		cfg.SetDefaultLimit(setDefaultLimit)
 		if setDefaultLimit == 0 {
@@ -441,10 +435,6 @@ func applyConfigSetArg(cfg *clitypes.Config, key, value string) (bool, error) {
 		cfg.DefaultEnvironment = value
 		fmt.Printf("Set default_environment = %s\n", value)
 		return true, nil
-	case "federated-audience", "federated_audience", "audience":
-		cfg.FederatedAudience = value
-		fmt.Printf("Set federated_audience = %s\n", value)
-		return true, nil
 	case "log-level", "loglevel", "log_level":
 		cfg.LogLevel = value
 		fmt.Printf("Set log_level = %s\n", value)
@@ -495,7 +485,7 @@ func applyConfigSetArg(cfg *clitypes.Config, key, value string) (bool, error) {
 		return applyResourceLimitByKey(cfg, key, resource, value)
 	}
 
-	return false, fmt.Errorf("unknown config key %q. Supported keys include server-url, api-key, jwt-token, environment, federated-audience, log-level, default-limit, resource-limit, and pagination.resources.<resource>.limit", key)
+	return false, fmt.Errorf("unknown config key %q. Supported keys include server-url, api-key, jwt-token, environment, log-level, default-limit, resource-limit, and pagination.resources.<resource>.limit", key)
 }
 
 func applyResourceLimitByKey(cfg *clitypes.Config, key, resourceValue, limitValue string) (bool, error) {

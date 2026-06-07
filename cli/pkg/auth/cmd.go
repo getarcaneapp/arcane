@@ -2,11 +2,9 @@ package auth
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -88,7 +86,7 @@ var loginCmd = &cobra.Command{
 
 		for {
 			if time.Now().After(expiresAt) {
-				return errors.New("device authorization expired; run login again")
+				return fmt.Errorf("device authorization expired; run login again")
 			}
 
 			select {
@@ -118,9 +116,9 @@ var loginCmd = &cobra.Command{
 					ticker.Reset(pollInterval)
 					continue
 				case "expired_token":
-					return errors.New("device authorization expired; run login again")
+					return fmt.Errorf("device authorization expired; run login again")
 				case "access_denied":
-					return errors.New("device authorization denied")
+					return fmt.Errorf("device authorization denied")
 				default:
 					return fmt.Errorf("device token exchange failed (status %d): %s", tokenResp.StatusCode, strings.TrimSpace(string(tokenBody)))
 				}
@@ -131,7 +129,7 @@ var loginCmd = &cobra.Command{
 				return fmt.Errorf("failed to parse token response: %w", err)
 			}
 			if !tokenResult.Success || tokenResult.Token == "" {
-				return errors.New("device token exchange failed: unexpected response from server")
+				return fmt.Errorf("device token exchange failed: unexpected response from server")
 			}
 
 			if cmdutil.JSONOutputEnabled(cmd) || jsonOutput {
@@ -439,9 +437,9 @@ var oidcStatusCmd = &cobra.Command{
 		}
 
 		output.Header("OIDC Status")
-		output.KeyValue("Environment Forced", strconv.FormatBool(result.EnvForced))
-		output.KeyValue("Environment Configured", strconv.FormatBool(result.EnvConfigured))
-		output.KeyValue("Merge Accounts", strconv.FormatBool(result.MergeAccounts))
+		output.KeyValue("Environment Forced", fmt.Sprintf("%t", result.EnvForced))
+		output.KeyValue("Environment Configured", fmt.Sprintf("%t", result.EnvConfigured))
+		output.KeyValue("Merge Accounts", fmt.Sprintf("%t", result.MergeAccounts))
 		return nil
 	},
 }

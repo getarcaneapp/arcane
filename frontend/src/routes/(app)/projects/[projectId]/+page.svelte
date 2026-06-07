@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { IncludeFile, Project } from '$lib/types/swarm';
+	import type { IncludeFile, Project } from '$lib/types/project.type';
 	import * as Tabs from '$lib/components/ui/tabs/index.js';
 	import * as TreeView from '$lib/components/ui/tree-view/index.js';
 	import * as Card from '$lib/components/ui/card';
@@ -10,19 +10,18 @@
 	import TabbedPageLayout from '$lib/layouts/tabbed-page-layout.svelte';
 	import ActionButtons from '$lib/components/action-buttons.svelte';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
-	import { getStatusVariant, getThemedIconUrl } from '$lib/utils/docker';
-	import { capitalizeFirstLetter } from '$lib/utils/formatting';
+	import { getStatusVariant } from '$lib/utils/status.utils';
+	import { capitalizeFirstLetter } from '$lib/utils/string.utils';
 	import { page } from '$app/state';
 	import { invalidateAll } from '$app/navigation';
-	import { mode } from 'mode-watcher';
 	import { toast } from 'svelte-sonner';
-	import { tryCatch } from '$lib/utils/api';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api';
+	import { tryCatch } from '$lib/utils/try-catch';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
 	import { z } from 'zod/v4';
-	import { createForm } from '$lib/utils/settings';
+	import { createForm } from '$lib/utils/form.utils';
 	import { m } from '$lib/paraglide/messages';
-	import { toGitCommitUrl } from '$lib/utils/navigation';
-	import { toSafeHref } from '$lib/utils/navigation';
+	import { toGitCommitUrl } from '$lib/utils/git';
+	import { toSafeHref } from '$lib/utils/url';
 	import { PersistedState } from 'runed';
 	import EditableName from '../components/EditableName.svelte';
 	import ProjectContainersTable from '../components/ProjectContainersTable.svelte';
@@ -35,15 +34,11 @@
 	import { imageService } from '$lib/services/image-service';
 	import { gitOpsSyncService } from '$lib/services/gitops-sync-service';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { hasPermission } from '$lib/utils/auth';
 	import { queryKeys } from '$lib/query/query-keys';
 	import { RefreshIcon } from '$lib/icons';
 	import IconImage from '$lib/components/icon-image.svelte';
 	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import ProjectUpdateItem from '$lib/components/project-update-item.svelte';
-	import IfPermitted from '$lib/components/if-permitted.svelte';
-	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
-	import { globalVariablesToMap } from '$lib/utils/template-load';
 
 	let { data } = $props();
 	let projectId = $derived(data.projectId);
@@ -64,16 +59,14 @@
 	});
 
 	const envId = $derived(environmentStore.selected?.id || '0');
-	const canUpdateProject = $derived(hasPermission('projects:update', envId));
-	const canViewProjectLogs = $derived(hasPermission('projects:logs', envId));
-	// Project lifecycle permissions are evaluated per-button inside
-	// <ActionButtons/> directly; no need to derive them here.
 
 	let includeFilesState = $state<Record<string, string>>({});
 	let loadedIncludeFileContents = $state<Record<string, string>>({});
 	let loadedDirectoryFileContents = $state<Record<string, string>>({});
 	let projectFilePromises: Record<string, Promise<IncludeFile> | undefined> = {};
-	const globalVariableMap = $derived(globalVariablesToMap(data.globalVariables));
+	const globalVariableMap = $derived.by(() =>
+		Object.fromEntries((data.globalVariables ?? []).map((item) => [item.key, item.value]))
+	);
 
 	const projectDetailQuery = createQuery(() => ({
 		queryKey: queryKeys.projects.detail(envId, projectId),
@@ -146,15 +139,14 @@
 	let isGitOpsManaged = $derived(!!project?.gitOpsManagedBy);
 	let hasBuildDirective = $derived(!!project?.hasBuildDirective);
 	let canEditName = $derived(
-		canUpdateProject &&
-			!project?.isArchived &&
+		!project?.isArchived &&
 			!isGitOpsManaged &&
 			!isLoading.saving &&
 			project?.status !== 'running' &&
 			project?.status !== 'partially running'
 	);
-	let canEditCompose = $derived(canUpdateProject && !project?.isArchived && !isGitOpsManaged);
-	let canEditEnv = $derived(canUpdateProject && !project?.isArchived);
+	let canEditCompose = $derived(!project?.isArchived && !isGitOpsManaged);
+	let canEditEnv = $derived(!project?.isArchived);
 	let composeFileName = $derived(project?.composeFileName || 'compose.yaml');
 	let archiveRequiresStopped = $derived(
 		!!project &&
@@ -216,7 +208,7 @@
 			)
 	);
 
-	let canSave = $derived(canUpdateProject && !project?.isArchived && hasChanges && !hasAnyErrors);
+	let canSave = $derived(!project?.isArchived && hasChanges && !hasAnyErrors);
 
 	const tabItems = $derived<TabItem[]>([
 		{
@@ -230,16 +222,12 @@
 			label: m.common_configuration(),
 			icon: SettingsIcon
 		},
-		...(canViewProjectLogs
-			? [
-					{
-						value: 'logs',
-						label: m.compose_nav_logs(),
-						icon: FileTextIcon,
-						disabled: project?.status !== 'running'
-					}
-				]
-			: [])
+		{
+			value: 'logs',
+			label: m.compose_nav_logs(),
+			icon: FileTextIcon,
+			disabled: project?.status !== 'running'
+		}
 	]);
 
 	let nameInputRef = $state<HTMLInputElement | null>(null);
@@ -346,11 +334,10 @@
 				.find((result) => !!result?.error?.trim())
 				?.error?.trim();
 			const hasErrors = !!firstError;
-			const toastOptions = activityToastOptions(extractActivityId(results));
 			if (hasErrors) {
-				toast.error(firstError || m.containers_check_updates_failed(), toastOptions);
+				toast.error(firstError || m.containers_check_updates_failed());
 			} else {
-				toast.success(m.images_update_check_completed(), toastOptions);
+				toast.success(m.images_update_check_completed());
 			}
 			await Promise.all([
 				refreshProjectDetails(),
@@ -440,7 +427,7 @@
 				};
 				rebaseEditorDraft(savedProject);
 				await syncProjectQueries(savedProject);
-				toast.success(m.common_update_success({ resource: m.project() }), activityToastOptions(extractActivityId(savedProject)));
+				toast.success(m.common_update_success({ resource: m.project() }));
 			}
 		});
 	}
@@ -675,7 +662,7 @@
 		{#snippet headerInfo()}
 			<div class="flex min-w-0 items-start gap-3">
 				<IconImage
-					src={getThemedIconUrl(project, mode.current)}
+					src={project.iconUrl}
 					alt={project.name}
 					fallback={ProjectsIcon}
 					class="size-6"
@@ -757,7 +744,7 @@
 
 		{#snippet headerActions()}
 			<div class="flex items-center gap-2">
-				{#if hasChanges && canUpdateProject}
+				{#if hasChanges}
 					<ArcaneButton
 						action="save"
 						loading={isLoading.saving}
@@ -779,30 +766,28 @@
 						class="xl:hidden"
 					/>
 				{/if}
-				<IfPermitted perm="projects:archive">
-					<ArcaneButton
-						action="base"
-						icon={BoxIcon}
-						loading={isLoading.archiving}
-						onclick={handleArchiveToggle}
-						disabled={archiveRequiresStopped}
-						title={archiveRequiresStopped ? m.projects_archive_requires_stopped() : undefined}
-						customLabel={project.isArchived ? m.projects_unarchive() : m.projects_archive()}
-						class="hidden xl:inline-flex"
-					/>
-					<ArcaneButton
-						action="base"
-						icon={BoxIcon}
-						size="icon"
-						showLabel={false}
-						loading={isLoading.archiving}
-						onclick={handleArchiveToggle}
-						disabled={archiveRequiresStopped}
-						title={archiveRequiresStopped ? m.projects_archive_requires_stopped() : undefined}
-						customLabel={project.isArchived ? m.projects_unarchive() : m.projects_archive()}
-						class="xl:hidden"
-					/>
-				</IfPermitted>
+				<ArcaneButton
+					action="base"
+					icon={BoxIcon}
+					loading={isLoading.archiving}
+					onclick={handleArchiveToggle}
+					disabled={archiveRequiresStopped}
+					title={archiveRequiresStopped ? m.projects_archive_requires_stopped() : undefined}
+					customLabel={project.isArchived ? m.projects_unarchive() : m.projects_archive()}
+					class="hidden xl:inline-flex"
+				/>
+				<ArcaneButton
+					action="base"
+					icon={BoxIcon}
+					size="icon"
+					showLabel={false}
+					loading={isLoading.archiving}
+					onclick={handleArchiveToggle}
+					disabled={archiveRequiresStopped}
+					title={archiveRequiresStopped ? m.projects_archive_requires_stopped() : undefined}
+					customLabel={project.isArchived ? m.projects_unarchive() : m.projects_archive()}
+					class="xl:hidden"
+				/>
 				<ActionButtons
 					id={project.id}
 					name={project.name}
@@ -864,18 +849,16 @@
 										</div>
 									</Alert.Description>
 								</div>
-								{#if canUpdateProject}
-									<ArcaneButton
-										action="base"
-										tone="outline-primary"
-										loading={isLoading.syncing}
-										onclick={handleSyncFromGit}
-										icon={RefreshIcon}
-										customLabel={m.git_sync_from_git()}
-										loadingLabel={m.common_syncing()}
-										class="shrink-0"
-									/>
-								{/if}
+								<ArcaneButton
+									action="base"
+									tone="outline-primary"
+									loading={isLoading.syncing}
+									onclick={handleSyncFromGit}
+									icon={RefreshIcon}
+									customLabel={m.git_sync_from_git()}
+									loadingLabel={m.common_syncing()}
+									class="shrink-0"
+								/>
 							</div>
 						</Alert.Root>
 					{/if}

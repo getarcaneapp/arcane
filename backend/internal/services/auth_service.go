@@ -30,9 +30,9 @@ var (
 	ErrOidcAuthDisabled     = errors.New("OIDC authentication is disabled")
 )
 
-type TokenPair struct {
+type TokenPair struct { //nolint:gosec // API response contract intentionally includes token fields
 	AccessToken  string    `json:"accessToken"`
-	RefreshToken string    `json:"refreshToken"`
+	RefreshToken string    `json:"refreshToken"` //nolint:gosec // API response contract requires refreshToken field
 	ExpiresAt    time.Time `json:"expiresAt"`
 }
 
@@ -45,20 +45,17 @@ type AuthSettings struct {
 
 type userClaims struct {
 	jwt.RegisteredClaims
-
-	SessionID             string `json:"sid,omitempty"`
-	UserID                string `json:"user_id"`
-	Username              string `json:"username"`
-	Email                 string `json:"email,omitempty"`
-	DisplayName           string `json:"display_name,omitempty"`
-	AppVersion            string `json:"app_version,omitempty"`
-	TokenType             string `json:"token_type,omitempty"`
-	FederatedCredentialID string `json:"federated_credential_id,omitempty"`
+	SessionID   string   `json:"sid,omitempty"`
+	UserID      string   `json:"user_id"`
+	Username    string   `json:"username"`
+	Email       string   `json:"email,omitempty"`
+	DisplayName string   `json:"display_name,omitempty"`
+	Roles       []string `json:"roles"`
+	AppVersion  string   `json:"app_version,omitempty"`
 }
 
 type refreshClaims struct {
 	jwt.RegisteredClaims
-
 	UserID     string `json:"user_id"`
 	SessionID  string `json:"sid,omitempty"`
 	AppVersion string `json:"app_version,omitempty"`
@@ -74,7 +71,6 @@ type AuthService struct {
 	settingsService *SettingsService
 	eventService    *EventService
 	sessionService  *SessionService
-	roleService     *RoleService
 	jwtSecret       []byte
 	refreshExpiry   time.Duration
 	config          *config.Config
@@ -85,7 +81,7 @@ type AuthService struct {
 	tokenCache *cache.TTL[verifiedTokenEntry]
 }
 
-func NewAuthService(userService *UserService, settingsService *SettingsService, eventService *EventService, sessionService *SessionService, roleService *RoleService, jwtSecret string, cfg *config.Config) *AuthService {
+func NewAuthService(userService *UserService, settingsService *SettingsService, eventService *EventService, sessionService *SessionService, jwtSecret string, cfg *config.Config) *AuthService {
 	// Production managers must supply an explicit, non-default JWT_SECRET (fail
 	// closed, mirroring the ENCRYPTION_KEY guard). Dev and agent mode auto-generate.
 	requireExplicitSecret := cfg.Environment == config.AppEnvironmentProduction && !cfg.AgentMode
@@ -94,7 +90,6 @@ func NewAuthService(userService *UserService, settingsService *SettingsService, 
 		settingsService: settingsService,
 		eventService:    eventService,
 		sessionService:  sessionService,
-		roleService:     roleService,
 		jwtSecret:       jwtclaims.CheckOrGenerateJwtSecret(jwtSecret, requireExplicitSecret),
 		refreshExpiry:   cfg.JWTRefreshExpiry,
 		config:          cfg,
@@ -127,7 +122,8 @@ func (s *AuthService) getAuthSettings(ctx context.Context) (*AuthSettings, error
 			JwksURI:                     settings.OidcJwksEndpoint.Value,
 			DeviceAuthorizationEndpoint: settings.OidcDeviceAuthorizationEndpoint.Value,
 			Scopes:                      settings.OidcScopes.Value,
-			GroupsClaim:                 settings.OidcGroupsClaim.Value,
+			AdminClaim:                  settings.OidcAdminClaim.Value,
+			AdminValue:                  settings.OidcAdminValue.Value,
 			SkipTlsVerify:               settings.OidcSkipTlsVerify.IsTrue(),
 		}
 
@@ -426,6 +422,11 @@ func (s *AuthService) createOidcUser(ctx context.Context, userInfo auth.OidcUser
 		username = userInfo.PreferredUsername
 	}
 
+	roles := models.StringSlice{"user"}
+	if s.isAdminFromOidc(ctx, userInfo, tokenResp) {
+		roles = append(roles, "admin")
+	}
+
 	var displayName *string
 	switch {
 	case userInfo.Name != "":
@@ -441,6 +442,7 @@ func (s *AuthService) createOidcUser(ctx context.Context, userInfo auth.OidcUser
 		Username:      username,
 		DisplayName:   displayName,
 		Email:         new(userInfo.Email),
+		Roles:         roles,
 		OidcSubjectId: new(userInfo.Subject),
 		LastLogin:     new(time.Now()),
 	}
@@ -449,9 +451,6 @@ func (s *AuthService) createOidcUser(ctx context.Context, userInfo auth.OidcUser
 
 	if _, err := s.userService.CreateUser(ctx, user); err != nil {
 		return nil, err
-	}
-	if err := s.syncOidcRoleAssignments(ctx, user, userInfo, tokenResp); err != nil {
-		slog.WarnContext(ctx, "failed to sync OIDC role assignments on user create", "error", err, "user_id", user.ID)
 	}
 	return user, nil
 }
@@ -464,143 +463,116 @@ func (s *AuthService) updateOidcUser(ctx context.Context, user *models.User, use
 		user.Email = new(userInfo.Email)
 	}
 
+	wantAdmin := s.isAdminFromOidc(ctx, userInfo, tokenResp)
+	hasAdmin := hasRole(user.Roles, "admin")
+	switch {
+	case wantAdmin && !hasAdmin:
+		user.Roles = addRole(user.Roles, "admin")
+	case !wantAdmin && hasAdmin:
+		user.Roles = removeRole(user.Roles, "admin")
+	}
+
 	s.persistOidcTokens(user, tokenResp)
 
 	user.LastLogin = new(time.Now())
-	if _, err := s.userService.UpdateUser(ctx, user); err != nil {
-		return err
-	}
-	if err := s.syncOidcRoleAssignments(ctx, user, userInfo, tokenResp); err != nil {
-		slog.WarnContext(ctx, "failed to sync OIDC role assignments on user update", "error", err, "user_id", user.ID)
-	}
-	return nil
+	_, err := s.userService.UpdateUser(ctx, user)
+	return err
 }
 
 func (s *AuthService) mergeOidcWithExistingUser(ctx context.Context, user *models.User, userInfo auth.OidcUserInfo, tokenResp *auth.OidcTokenResponse) error {
 	// Perform the merge atomically to avoid races when multiple OIDC subjects share the same email
-	merged, err := s.userService.AttachOidcSubjectTransactional(ctx, user.ID, userInfo.Subject, func(u *models.User) {
+	_, err := s.userService.AttachOidcSubjectTransactional(ctx, user.ID, userInfo.Subject, func(u *models.User) {
+		// Update display name if not set
 		if userInfo.Name != "" && u.DisplayName == nil {
 			u.DisplayName = new(userInfo.Name)
 		}
+
+		// Update admin role based on OIDC claims
+		wantAdmin := s.isAdminFromOidc(ctx, userInfo, tokenResp)
+		hasAdmin := hasRole(u.Roles, "admin")
+		switch {
+		case wantAdmin && !hasAdmin:
+			u.Roles = addRole(u.Roles, "admin")
+		case !wantAdmin && hasAdmin:
+			u.Roles = removeRole(u.Roles, "admin")
+		}
+
+		// Persist OIDC tokens
 		s.persistOidcTokens(u, tokenResp)
+
 		u.LastLogin = new(time.Now())
 	})
-	if err != nil {
-		return err
-	}
-	if merged != nil {
-		if syncErr := s.syncOidcRoleAssignments(ctx, merged, userInfo, tokenResp); syncErr != nil {
-			slog.WarnContext(ctx, "failed to sync OIDC role assignments on user merge", "error", syncErr, "user_id", merged.ID)
-		}
-	}
-	return nil
+	return err
 }
 
-// syncOidcRoleAssignments rebuilds the user's `source='oidc'` role assignments
-// based on the OIDC group claim and the configured OidcRoleMapping rows.
-// Manual assignments are untouched.
-func (s *AuthService) syncOidcRoleAssignments(ctx context.Context, user *models.User, userInfo auth.OidcUserInfo, tokenResp *auth.OidcTokenResponse) error {
-	if s.roleService == nil || user == nil {
-		return nil
-	}
-
-	groups := s.extractOidcGroups(ctx, userInfo, tokenResp)
-	mappings, err := s.roleService.ListOidcMappings(ctx)
-	if err != nil {
-		return fmt.Errorf("list oidc mappings: %w", err)
-	}
-
-	groupSet := make(map[string]struct{}, len(groups))
-	for _, g := range groups {
-		groupSet[g] = struct{}{}
-	}
-
-	var desired []models.UserRoleAssignment
-	seen := make(map[string]struct{}) // dedup by roleID|envID
-	for _, m := range mappings {
-		if _, ok := groupSet[m.ClaimValue]; !ok {
-			continue
+func hasRole(roles models.StringSlice, role string) bool {
+	for _, r := range roles {
+		if strings.EqualFold(r, role) {
+			return true
 		}
-		key := m.RoleID + "|"
-		if m.EnvironmentID != nil {
-			key += *m.EnvironmentID
-		}
-		if _, dup := seen[key]; dup {
-			continue
-		}
-		seen[key] = struct{}{}
-		desired = append(desired, models.UserRoleAssignment{
-			RoleID:        m.RoleID,
-			EnvironmentID: m.EnvironmentID,
-		})
 	}
-
-	return s.roleService.ReplaceOidcAssignments(ctx, user.ID, desired)
+	return false
 }
 
-// extractOidcGroups reads the user's group memberships from the OIDC userinfo
-// and ID token, using the claim path configured in OidcGroupsClaim (defaults
-// to "groups"). Falls back to userInfo.Groups if no value is found at the
-// configured path.
-func (s *AuthService) extractOidcGroups(ctx context.Context, userInfo auth.OidcUserInfo, tokenResp *auth.OidcTokenResponse) []string {
-	claim := s.oidcGroupsClaim(ctx)
+func addRole(roles models.StringSlice, role string) models.StringSlice {
+	if hasRole(roles, role) {
+		return roles
+	}
+	return append(roles, role)
+}
 
-	if claim != "" {
-		if v, ok := jwtclaims.GetByPath(userInfo.Extra, claim); ok {
-			if groups := stringValuesFromClaim(v); len(groups) > 0 {
-				return groups
-			}
+func removeRole(roles models.StringSlice, role string) models.StringSlice {
+	out := make(models.StringSlice, 0, len(roles))
+	for _, r := range roles {
+		if !strings.EqualFold(r, role) {
+			out = append(out, r)
 		}
-		if tokenResp != nil && tokenResp.IDToken != "" {
-			if parsed := jwtclaims.ParseJWTClaims(tokenResp.IDToken); parsed != nil {
-				if v, ok := jwtclaims.GetByPath(parsed, claim); ok {
-					if groups := stringValuesFromClaim(v); len(groups) > 0 {
-						return groups
-					}
-				}
+	}
+	return out
+}
+
+func (s *AuthService) isAdminFromOidc(ctx context.Context, userInfo auth.OidcUserInfo, tokenResp *auth.OidcTokenResponse) bool {
+	claimKey, values := s.getAdminClaimConfig(ctx)
+	if claimKey == "" {
+		return false
+	}
+
+	if v, ok := jwtclaims.GetByPath(userInfo.Extra, claimKey); ok && jwtclaims.EvalMatch(v, values) {
+		return true
+	}
+
+	if tokenResp != nil && tokenResp.IDToken != "" {
+		if claims := jwtclaims.ParseJWTClaims(tokenResp.IDToken); claims != nil {
+			if v, ok := jwtclaims.GetByPath(claims, claimKey); ok && jwtclaims.EvalMatch(v, values) {
+				return true
 			}
 		}
 	}
 
-	return userInfo.Groups
+	return false
 }
 
-func (s *AuthService) oidcGroupsClaim(ctx context.Context) string {
-	settings, err := s.settingsService.GetSettings(ctx)
-	if err != nil {
-		return "groups"
+func (s *AuthService) getAdminClaimConfig(ctx context.Context) (claim string, values []string) {
+	as, err := s.getAuthSettings(ctx)
+	if err != nil || as.Oidc == nil {
+		return "", nil
 	}
-	v := strings.TrimSpace(settings.OidcGroupsClaim.Value)
-	if v == "" {
-		return "groups"
+	claim = strings.TrimSpace(as.Oidc.AdminClaim)
+	raw := strings.TrimSpace(as.Oidc.AdminValue)
+	if claim == "" {
+		return "", nil
 	}
-	return v
-}
-
-// stringValuesFromClaim flattens a claim value into a slice of strings.
-// Accepts string, []string, []any (coerces each element to string), or nil.
-func stringValuesFromClaim(v any) []string {
-	switch typed := v.(type) {
-	case nil:
-		return nil
-	case string:
-		if typed == "" {
-			return nil
+	if raw == "" {
+		return claim, nil
+	}
+	parts := strings.SplitSeq(raw, ",")
+	for p := range parts {
+		v := strings.TrimSpace(p)
+		if v != "" {
+			values = append(values, v)
 		}
-		return []string{typed}
-	case []string:
-		return typed
-	case []any:
-		out := make([]string, 0, len(typed))
-		for _, item := range typed {
-			if s, ok := item.(string); ok && s != "" {
-				out = append(out, s)
-			}
-		}
-		return out
-	default:
-		return nil
 	}
+	return claim, values
 }
 
 func (s *AuthService) persistOidcTokens(user *models.User, tokenResp *auth.OidcTokenResponse) {
@@ -729,7 +701,8 @@ func (s *AuthService) VerifyToken(ctx context.Context, accessToken string) (*mod
 
 	tokenHash := hashTokenInternal(accessToken)
 	if cached, ok := s.tokenCache.Get(tokenHash); ok {
-		return new(cached.User), cached.SessionID, nil
+		u := cached.User
+		return &u, cached.SessionID, nil
 	}
 
 	// Verify user exists in DB
@@ -816,18 +789,6 @@ func (s *AuthService) RevokeSession(ctx context.Context, sessionID string) error
 	return s.sessionService.RevokeSession(ctx, sessionID)
 }
 
-// LogoutAllOtherSessions revokes every active session for userID except
-// currentSessionID, so the caller stays signed in on their current device.
-func (s *AuthService) LogoutAllOtherSessions(ctx context.Context, userID, currentSessionID string) error {
-	if s.sessionService == nil {
-		return nil
-	}
-	s.tokenCache.DeleteFunc(func(_ string, e verifiedTokenEntry) bool {
-		return e.User.ID == userID && e.SessionID != currentSessionID
-	})
-	return s.sessionService.RevokeAllUserSessionsExcept(ctx, userID, currentSessionID)
-}
-
 func (s *AuthService) createSessionAndTokensInternal(ctx context.Context, user *models.User, meta auth.SessionMeta) (*TokenPair, error) {
 	if s.sessionService == nil {
 		return nil, &common.SessionServiceUnavailableError{}
@@ -855,6 +816,7 @@ func (s *AuthService) buildTokenPairInternal(ctx context.Context, user *models.U
 		SessionID:  session.ID,
 		UserID:     user.ID,
 		Username:   user.Username,
+		Roles:      []string(user.Roles),
 		AppVersion: config.Version,
 	}
 
@@ -895,70 +857,6 @@ func (s *AuthService) buildTokenPairInternal(ctx context.Context, user *models.U
 		RefreshToken: refreshTokenString,
 		ExpiresAt:    accessTokenExpiry,
 	}, nil
-}
-
-func (s *AuthService) IssueFederatedToken(ctx context.Context, user *models.User, credentialID string, ttlSeconds int) (*TokenPair, error) {
-	if s.sessionService == nil {
-		return nil, &common.SessionServiceUnavailableError{}
-	}
-	if user == nil {
-		return nil, ErrUserNotFound
-	}
-
-	ttlSeconds = clampFederatedTokenTTLSecondsInternal(ttlSeconds)
-	now := time.Now()
-	accessTokenExpiry := now.Add(time.Duration(ttlSeconds) * time.Second)
-
-	session, err := s.sessionService.CreateFederatedSession(ctx, user.ID, accessTokenExpiry, credentialID)
-	if err != nil {
-		return nil, err
-	}
-
-	claims := userClaims{
-		RegisteredClaims: jwt.RegisteredClaims{
-			ID:        user.ID,
-			Subject:   "access",
-			IssuedAt:  jwt.NewNumericDate(now),
-			ExpiresAt: jwt.NewNumericDate(accessTokenExpiry),
-		},
-		SessionID:             session.ID,
-		UserID:                user.ID,
-		Username:              user.Username,
-		AppVersion:            config.Version,
-		TokenType:             models.UserSessionSourceFederated,
-		FederatedCredentialID: credentialID,
-	}
-
-	if user.Email != nil {
-		claims.Email = *user.Email
-	}
-	if user.DisplayName != nil {
-		claims.DisplayName = *user.DisplayName
-	}
-
-	accessToken := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	accessTokenString, err := accessToken.SignedString(s.jwtSecret)
-	if err != nil {
-		return nil, err
-	}
-
-	return &TokenPair{
-		AccessToken: accessTokenString,
-		ExpiresAt:   accessTokenExpiry,
-	}, nil
-}
-
-func clampFederatedTokenTTLSecondsInternal(ttlSeconds int) int {
-	if ttlSeconds <= 0 {
-		return 900
-	}
-	if ttlSeconds < 60 {
-		return 60
-	}
-	if ttlSeconds > 3600 {
-		return 3600
-	}
-	return ttlSeconds
 }
 
 func validateSessionActiveInternal(session *models.UserSession) error {

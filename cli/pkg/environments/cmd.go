@@ -2,10 +2,8 @@ package environments
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"sort"
-	"strconv"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -227,7 +225,7 @@ var switchCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if !prompt.IsInteractive() {
-			return errors.New("interactive terminal required; run `arcane config set environment <id>` instead")
+			return fmt.Errorf("interactive terminal required; run `arcane config set environment <id>` instead")
 		}
 
 		cfg, err := config.Load()
@@ -253,7 +251,7 @@ var switchCmd = &cobra.Command{
 		}
 
 		if len(result.Data) == 0 {
-			return errors.New("no environments available")
+			return fmt.Errorf("no environments available")
 		}
 
 		currentEnv := cfg.DefaultEnvironment
@@ -346,7 +344,7 @@ var updateCmd = &cobra.Command{
 
 		var req environment.Update
 		if cmd.Flags().Changed("enabled") && cmd.Flags().Changed("disabled") {
-			return errors.New("--enabled and --disabled are mutually exclusive")
+			return fmt.Errorf("--enabled and --disabled are mutually exclusive")
 		}
 		if cmd.Flags().Changed("name") {
 			req.Name = &envUpdateName
@@ -443,7 +441,7 @@ var versionCmd = &cobra.Command{
 		output.KeyValue("Revision", result.ShortRevision)
 		output.KeyValue("Go Version", result.GoVersion)
 		output.KeyValue("Build Time", result.BuildTime)
-		output.KeyValue("Update Available", strconv.FormatBool(result.UpdateAvailable))
+		output.KeyValue("Update Available", fmt.Sprintf("%t", result.UpdateAvailable))
 		return nil
 	},
 }

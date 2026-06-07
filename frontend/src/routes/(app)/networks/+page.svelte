@@ -3,7 +3,7 @@
 	import { NetworksIcon, ConnectionIcon } from '$lib/icons';
 	import { GitBranchIcon } from '$lib/icons';
 	import { toast } from 'svelte-sonner';
-	import type { NetworkCreateOptions, NetworkUsageCounts } from '$lib/types/docker';
+	import type { NetworkCreateOptions, NetworkUsageCounts } from '$lib/types/network.type';
 	import CreateNetworkSheet from '$lib/components/sheets/create-network-sheet.svelte';
 	import NetworkTable from './network-table.svelte';
 	import { m } from '$lib/paraglide/messages';
@@ -13,7 +13,6 @@
 	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
-	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 
 	let { data } = $props();
 
@@ -34,11 +33,8 @@
 		mutationKey: ['networks', 'create', envId],
 		mutationFn: ({ name, options }: { name: string; options: NetworkCreateOptions }) =>
 			networkService.createNetwork(name, options),
-		onSuccess: async (data, variables) => {
-			toast.success(
-				m.common_create_success({ resource: `${m.resource_network()} "${variables.name}"` }),
-				activityToastOptions(extractActivityId(data))
-			);
+		onSuccess: async (_data, variables) => {
+			toast.success(m.common_create_success({ resource: `${m.resource_network()} "${variables.name}"` }));
 			await networksQuery.refetch();
 			isCreateDialogOpen = false;
 		},

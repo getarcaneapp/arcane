@@ -2,7 +2,6 @@ import { Column, Row, Section, Text } from 'react-email';
 import { BaseTemplate } from '../components/base-template';
 import CardHeader from '../components/card-header';
 import { sharedPreviewProps, sharedTemplateProps } from '../props';
-import { colors, radii } from '../theme';
 
 interface TestEmailProps {
 	logoURL: string;
@@ -33,17 +32,17 @@ export default TestEmail;
 const textStyle = {
 	fontSize: '16px',
 	lineHeight: '24px',
-	color: colors.textBody,
+	color: '#cbd5e1',
 	marginTop: '16px',
 	marginBottom: '0'
 };
 
 const infoSectionStyle = {
 	marginTop: '20px',
-	backgroundColor: colors.panel,
-	border: `1px solid ${colors.panelBorder}`,
+	backgroundColor: 'rgba(15, 23, 42, 0.5)',
+	border: '1px solid rgba(148, 163, 184, 0.1)',
 	padding: '20px',
-	borderRadius: radii.panel
+	borderRadius: '12px'
 };
 
 const infoRowStyle = {
@@ -59,13 +58,13 @@ const labelColumnStyle = {
 const labelStyle = {
 	fontSize: '14px',
 	fontWeight: '600' as const,
-	color: colors.textMuted,
+	color: '#94a3b8',
 	margin: '8px 0'
 };
 
 const valueStyle = {
 	fontSize: '14px',
-	color: colors.textValue,
+	color: '#e2e8f0',
 	margin: '8px 0',
 	wordBreak: 'break-word' as const
 };

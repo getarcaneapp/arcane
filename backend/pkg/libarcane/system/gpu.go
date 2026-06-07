@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/csv"
-	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -82,7 +81,7 @@ func (m *GPUMonitor) Stats(ctx context.Context) ([]systemtypes.GPUStats, error) 
 	t := m.gpuType
 	m.cacheMu.RUnlock()
 	if t == "" {
-		return nil, errors.New("no supported GPU found")
+		return nil, fmt.Errorf("no supported GPU found")
 	}
 	return m.statsForTypeInternal(ctx, t)
 }
@@ -96,7 +95,7 @@ func (m *GPUMonitor) statsForTypeInternal(ctx context.Context, gpuType string) (
 	case "intel":
 		return getIntelStatsInternal(ctx)
 	default:
-		return nil, errors.New("no supported GPU found")
+		return nil, fmt.Errorf("no supported GPU found")
 	}
 }
 
@@ -125,21 +124,21 @@ func (m *GPUMonitor) detectInternal(ctx context.Context) error {
 				slog.InfoContext(ctx, "Using configured GPU type", "type", "nvidia")
 				return nil
 			}
-			return errors.New("nvidia-smi not found but GPU_TYPE set to nvidia")
+			return fmt.Errorf("nvidia-smi not found but GPU_TYPE set to nvidia")
 		case "amd":
 			if HasAMDGPU() {
 				m.markDetectedInternal("amd", AMDGPUSysfsPath)
 				slog.InfoContext(ctx, "Using configured GPU type", "type", "amd")
 				return nil
 			}
-			return errors.New("AMD GPU not found in sysfs but GPU_TYPE set to amd")
+			return fmt.Errorf("AMD GPU not found in sysfs but GPU_TYPE set to amd")
 		case "intel":
 			if path, err := exec.LookPath("intel_gpu_top"); err == nil {
 				m.markDetectedInternal("intel", path)
 				slog.InfoContext(ctx, "Using configured GPU type", "type", "intel")
 				return nil
 			}
-			return errors.New("intel_gpu_top not found but GPU_TYPE set to intel")
+			return fmt.Errorf("intel_gpu_top not found but GPU_TYPE set to intel")
 		default:
 			slog.WarnContext(ctx, "Invalid GPU_TYPE specified, falling back to auto-detection", "gpu_type", t)
 		}
@@ -162,7 +161,7 @@ func (m *GPUMonitor) detectInternal(ctx context.Context) error {
 	}
 
 	m.detectionDone = true
-	return errors.New("no supported GPU found")
+	return fmt.Errorf("no supported GPU found")
 }
 
 // HasAMDGPU reports whether a card with mem_info_vram_total exists under AMDGPUSysfsPath.
@@ -243,7 +242,7 @@ func getNvidiaStatsInternal(ctx context.Context) ([]systemtypes.GPUStats, error)
 	}
 
 	if len(stats) == 0 {
-		return nil, errors.New("no GPU data parsed from nvidia-smi")
+		return nil, fmt.Errorf("no GPU data parsed from nvidia-smi")
 	}
 
 	slog.DebugContext(ctx, "Collected NVIDIA GPU stats", "gpu_count", len(stats))
@@ -266,11 +265,11 @@ func getAMDStatsInternal(ctx context.Context) ([]systemtypes.GPUStats, error) {
 		}
 
 		devicePath := fmt.Sprintf("%s/%s/device", AMDGPUSysfsPath, name)
-		memTotalBytes, err := readSysfsValueInternal(devicePath + "/mem_info_vram_total")
+		memTotalBytes, err := readSysfsValueInternal(fmt.Sprintf("%s/mem_info_vram_total", devicePath))
 		if err != nil {
 			continue
 		}
-		memUsedBytes, err := readSysfsValueInternal(devicePath + "/mem_info_vram_used")
+		memUsedBytes, err := readSysfsValueInternal(fmt.Sprintf("%s/mem_info_vram_used", devicePath))
 		if err != nil {
 			slog.WarnContext(ctx, "Failed to read AMD GPU memory used", "card", name, "error", err)
 			continue
@@ -286,7 +285,7 @@ func getAMDStatsInternal(ctx context.Context) ([]systemtypes.GPUStats, error) {
 	}
 
 	if len(stats) == 0 {
-		return nil, errors.New("no AMD GPU data found in sysfs")
+		return nil, fmt.Errorf("no AMD GPU data found in sysfs")
 	}
 
 	slog.DebugContext(ctx, "Collected AMD GPU stats", "gpu_count", len(stats))

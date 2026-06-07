@@ -1,8 +1,7 @@
 import { apiKeyService } from '$lib/services/api-key-service';
-import { roleService } from '$lib/services/role-service';
 import { queryKeys } from '$lib/query/query-keys';
-import type { SearchPaginationSortRequest } from '$lib/types/shared';
-import { resolveInitialTableRequest } from '$lib/utils/tables';
+import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
+import { resolveInitialTableRequest } from '$lib/utils/table-persistence.util';
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async ({ parent }) => {
@@ -19,21 +18,13 @@ export const load: PageLoad = async ({ parent }) => {
 		}
 	} satisfies SearchPaginationSortRequest);
 
-	const [apiKeys, permissionsManifest] = await Promise.all([
-		queryClient.fetchQuery({
-			queryKey: queryKeys.apiKeys.list(apiKeyRequestOptions),
-			queryFn: () => apiKeyService.getApiKeys(apiKeyRequestOptions)
-		}),
-		queryClient.fetchQuery({
-			queryKey: ['permissions', 'manifest'],
-			queryFn: () => roleService.getPermissionsManifest(),
-			staleTime: Infinity
-		})
-	]);
+	const apiKeys = await queryClient.fetchQuery({
+		queryKey: queryKeys.apiKeys.list(apiKeyRequestOptions),
+		queryFn: () => apiKeyService.getApiKeys(apiKeyRequestOptions)
+	});
 
 	return {
 		apiKeys,
-		apiKeyRequestOptions,
-		permissionsManifest
+		apiKeyRequestOptions
 	};
 };

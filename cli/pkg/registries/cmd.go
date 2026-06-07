@@ -2,7 +2,6 @@ package registries
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 
 	"github.com/getarcaneapp/arcane/cli/internal/client"
@@ -221,7 +220,7 @@ var updateCmd = &cobra.Command{
 
 		req := make(map[string]any)
 		if cmd.Flags().Changed("enabled") && cmd.Flags().Changed("disabled") {
-			return errors.New("--enabled and --disabled are mutually exclusive")
+			return fmt.Errorf("--enabled and --disabled are mutually exclusive")
 		}
 		if cmd.Flags().Changed("url") {
 			req["url"] = registryUpdateURL
@@ -240,7 +239,7 @@ var updateCmd = &cobra.Command{
 		}
 
 		if len(req) == 0 {
-			return errors.New("no updates provided; use --url, --username, --password, --enabled, or --disabled")
+			return fmt.Errorf("no updates provided; use --url, --username, --password, --enabled, or --disabled")
 		}
 
 		resp, err := c.Put(cmd.Context(), types.Endpoints.ContainerRegistry(args[0]), req)

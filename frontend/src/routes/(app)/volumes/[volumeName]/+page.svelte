@@ -3,11 +3,11 @@
 	import { VolumesIcon, ClockIcon, TagIcon, LayersIcon, InfoIcon, GlobeIcon, ContainersIcon, BoxIcon } from '$lib/icons';
 	import { goto } from '$app/navigation';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
-	import { truncateString } from '$lib/utils/formatting';
+	import { truncateString } from '$lib/utils/string.utils';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog/';
 	import { toast } from 'svelte-sonner';
-	import { tryCatch } from '$lib/utils/api';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api';
+	import { tryCatch } from '$lib/utils/try-catch';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { format } from 'date-fns';
 	import { m } from '$lib/paraglide/messages';
@@ -18,9 +18,6 @@
 	import { VolumeBrowser } from '$lib/components/file-browser';
 	import BackupList from '../components/volume-backup-table.svelte';
 	import settingsStore from '$lib/stores/config-store';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { hasPermission } from '$lib/utils/auth';
-	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 
 	let { data } = $props();
 	let volume = $state(untrack(() => data.volume));
@@ -28,9 +25,6 @@
 
 	const backupVolumeName = $derived.by(() => $settingsStore?.backupVolumeName || 'arcane-backups');
 	const isBackupVolume = $derived(volume?.name === backupVolumeName);
-
-	const currentEnvId = $derived(environmentStore.selected?.id || '0');
-	const canDeleteVolume = $derived(hasPermission('volumes:delete', currentEnvId));
 
 	let isLoading = $state({ remove: false });
 	const createdDate = $derived(volume.createdAt ? format(new Date(volume.createdAt), 'PP p') : m.common_unknown());
@@ -61,8 +55,8 @@
 						result: await tryCatch(volumeService.deleteVolume(safeName)),
 						message: m.volumes_remove_failed({ name: safeName }),
 						setLoadingState: (value) => (isLoading.remove = value),
-						onSuccess: async (data) => {
-							toast.success(m.volumes_remove_success({ name: safeName }), activityToastOptions(extractActivityId(data)));
+						onSuccess: async () => {
+							toast.success(m.volumes_remove_success({ name: safeName }));
 							goto('/volumes');
 						}
 					});
@@ -71,20 +65,16 @@
 		});
 	}
 
-	const actions: DetailAction[] = $derived(
-		canDeleteVolume
-			? [
-					{
-						id: 'remove',
-						action: 'remove' as const,
-						label: m.common_remove(),
-						loading: isLoading.remove,
-						disabled: isLoading.remove || isBackupVolume,
-						onclick: () => handleRemoveVolumeConfirm(volume.name)
-					}
-				]
-			: []
-	);
+	const actions: DetailAction[] = $derived([
+		{
+			id: 'remove',
+			action: 'remove',
+			label: m.common_remove(),
+			loading: isLoading.remove,
+			disabled: isLoading.remove || isBackupVolume,
+			onclick: () => handleRemoveVolumeConfirm(volume.name)
+		}
+	]);
 
 	function onTabChange(value: string) {
 		selectedTab = value;

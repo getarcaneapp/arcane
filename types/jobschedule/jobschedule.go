@@ -14,6 +14,7 @@ type Config struct {
 	DockerClientRefreshInterval    string `json:"dockerClientRefreshInterval"`
 	PollingInterval                string `json:"pollingInterval"`
 	ScheduledPruneInterval         string `json:"scheduledPruneInterval"`
+	GitopsSyncInterval             string `json:"gitopsSyncInterval"`
 	VulnerabilityScanInterval      string `json:"vulnerabilityScanInterval"`
 	AutoHealInterval               string `json:"autoHealInterval"`
 }
@@ -29,6 +30,7 @@ type Update struct {
 	DockerClientRefreshInterval    *string `json:"dockerClientRefreshInterval,omitempty"`
 	PollingInterval                *string `json:"pollingInterval,omitempty"`
 	ScheduledPruneInterval         *string `json:"scheduledPruneInterval,omitempty"`
+	GitopsSyncInterval             *string `json:"gitopsSyncInterval,omitempty"`
 	VulnerabilityScanInterval      *string `json:"vulnerabilityScanInterval,omitempty"`
 	AutoHealInterval               *string `json:"autoHealInterval,omitempty"`
 }

@@ -1,5 +1,4 @@
 import { test, expect, type Page } from '@playwright/test';
-import { openRowActionsMenu } from '../utils/table-actions.util';
 
 const route = '/customize/registries';
 const TOKEN = process.env.REGISTRY_TEST_TOKEN ?? 'e2e-token';
@@ -79,7 +78,7 @@ async function mockRegistryPullUsage(
 test.describe('Container Registries', () => {
 	test.beforeEach(async ({ page }) => {
 		await page.goto(route);
-		await page.waitForLoadState('load');
+		await page.waitForLoadState('networkidle');
 	});
 
 	test('should display title and subtitle, and refresh', async ({ page }) => {
@@ -119,7 +118,7 @@ test.describe('Container Registries', () => {
 		await mockRegistryList(page);
 		await mockRegistryPullUsage(page, { remaining: 76, limit: 100, observedPulls: 4 });
 		await page.goto(route);
-		await page.waitForLoadState('load');
+		await page.waitForLoadState('networkidle');
 
 		const table = page.getByRole('table');
 		await expect(table.getByText('Pull Usage')).toBeVisible();
@@ -132,7 +131,7 @@ test.describe('Container Registries', () => {
 		await mockRegistryList(page);
 		await mockRegistryPullUsage(page, { observedPulls: 4 });
 		await page.goto(route);
-		await page.waitForLoadState('load');
+		await page.waitForLoadState('networkidle');
 
 		const table = page.getByRole('table');
 		await expect(table.getByText('Pull Usage')).toBeVisible();
@@ -169,8 +168,8 @@ test.describe('Container Registries', () => {
 		await expect(row).toBeVisible();
 
 		// Test Connection (accept either success or failure toast)
-		const menu = await openRowActionsMenu(page, row);
-		await menu.getByRole('menuitem', { name: 'Test Connection' }).click();
+		await row.getByRole('button', { name: 'Open menu' }).click();
+		await page.getByRole('menuitem', { name: 'Test Connection' }).click();
 	});
 
 	test('should open Remove Selected dialog and cancel (no mutation)', async ({ page }) => {

@@ -13,7 +13,7 @@
 	let { items, onValueChange, class: className }: Props = $props();
 </script>
 
-<Tabs.List class={cn('scrollbar-hide inline-flex max-w-full justify-start gap-1 overflow-x-auto', className)}>
+<Tabs.List class={cn('scrollbar-hide flex w-full justify-start gap-4 overflow-x-auto', className)}>
 	{#each items as item}
 		{@const IconComponent = item.icon}
 		<Tabs.Trigger
@@ -28,7 +28,7 @@
 			{item.label}
 			{#if item.badge !== undefined}
 				<span
-					class="bg-primary text-primary-foreground ml-1 inline-flex min-w-[18px] items-center justify-center rounded-full px-1 text-[11px] font-medium"
+					class="bg-primary text-primary-foreground ml-1 inline-flex min-w-[18px] items-center justify-center rounded-full px-1 text-[10px] font-medium"
 				>
 					{item.badge}
 				</span>

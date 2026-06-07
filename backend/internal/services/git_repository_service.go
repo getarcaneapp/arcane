@@ -10,10 +10,11 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	git "github.com/getarcaneapp/arcane/backend/pkg/gitutil"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/crypto"
-	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/libbuild"
+	libbuild "github.com/getarcaneapp/arcane/backend/pkg/libarcane/libbuild"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/pkg/utils/mapper"
 	"github.com/getarcaneapp/arcane/types/gitops"
 	"gorm.io/gorm"
 )
@@ -38,14 +39,25 @@ func (s *GitRepositoryService) GetRepositoriesPaginated(ctx context.Context, par
 	var repositories []models.GitRepository
 	q := s.db.WithContext(ctx).Model(&models.GitRepository{})
 
-	q = pagination.ApplyLikeSearch(q, params.Search, "name LIKE ? OR url LIKE ? OR COALESCE(description, '') LIKE ?")
+	if term := strings.TrimSpace(params.Search); term != "" {
+		searchPattern := "%" + term + "%"
+		q = q.Where(
+			"name LIKE ? OR url LIKE ? OR COALESCE(description, '') LIKE ?",
+			searchPattern, searchPattern, searchPattern,
+		)
+	}
 
 	q = pagination.ApplyBooleanFilter(q, "enabled", params.Filters["enabled"])
 	q = pagination.ApplyFilter(q, "auth_type", params.Filters["authType"])
 
-	out, paginationResp, err := pagination.PaginateSortAndMapDB[models.GitRepository, gitops.GitRepository](params, q, &repositories)
+	paginationResp, err := pagination.PaginateAndSortDB(params, q, &repositories)
 	if err != nil {
-		return nil, pagination.Response{}, fmt.Errorf("failed to list git repositories: %w", err)
+		return nil, pagination.Response{}, fmt.Errorf("failed to paginate git repositories: %w", err)
+	}
+
+	out, mapErr := mapper.MapSlice[models.GitRepository, gitops.GitRepository](repositories)
+	if mapErr != nil {
+		return nil, pagination.Response{}, fmt.Errorf("failed to map repositories: %w", mapErr)
 	}
 
 	return out, paginationResp, nil
@@ -55,7 +67,7 @@ func (s *GitRepositoryService) GetRepositoryByID(ctx context.Context, id string)
 	var repository models.GitRepository
 	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&repository).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("repository not found")
+			return nil, fmt.Errorf("repository not found")
 		}
 		return nil, fmt.Errorf("failed to get repository: %w", err)
 	}
@@ -66,7 +78,7 @@ func (s *GitRepositoryService) GetRepositoryByName(ctx context.Context, name str
 	var repository models.GitRepository
 	if err := s.db.WithContext(ctx).Where("name = ?", name).First(&repository).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("repository not found")
+			return nil, fmt.Errorf("repository not found")
 		}
 		return nil, fmt.Errorf("failed to get repository: %w", err)
 	}
@@ -268,11 +280,14 @@ func validateGitRepositoryCredentialChangeInternal(repository *models.GitReposit
 
 	if len(missingFields) == 1 {
 		field := missingFields[0]
-		return &models.ValidationError{Field: field, Message: "Changing repository URL requires re-supplying or clearing the " + missingCredentialLabels[0]}
+		return &models.ValidationError{Field: field, Message: fmt.Sprintf("Changing repository URL requires re-supplying or clearing the %s", missingCredentialLabels[0])}
 	}
 
 	return models.NewValidationError(
-		"Changing repository URL requires re-supplying or clearing all stored credentials: "+strings.Join(missingCredentialLabels, " and "),
+		fmt.Sprintf(
+			"Changing repository URL requires re-supplying or clearing all stored credentials: %s",
+			strings.Join(missingCredentialLabels, " and "),
+		),
 		map[string]any{"fields": missingFields},
 	)
 }

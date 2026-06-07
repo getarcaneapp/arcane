@@ -3,44 +3,40 @@
 	import * as Card from '$lib/components/ui/card';
 	import { toast } from 'svelte-sonner';
 	import CodeEditor from '$lib/components/code-editor/editor.svelte';
-	import { createForm } from '$lib/utils/settings';
+	import { createForm } from '$lib/utils/form.utils';
+	import { tryCatch } from '$lib/utils/try-catch';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
 	import { m } from '$lib/paraglide/messages';
 	import { templateService } from '$lib/services/template-service';
+	import { z } from 'zod/v4';
 	import { goto } from '$app/navigation';
 	import TemplateSelectionDialog from '$lib/components/dialogs/template-selection-dialog.svelte';
 	import { ComposeEditorSplit } from '$lib/components/compose';
 	import { untrack } from 'svelte';
-	import type { Template } from '$lib/types/swarm';
-	import { globalVariablesToMap } from '$lib/utils/template-load';
+	import type { Template } from '$lib/types/template.type';
 	import { ArrowLeftIcon, CodeIcon, VariableIcon } from '$lib/icons';
-	import {
-		createTemplateContentSchema,
-		getTemplateEditorValidationState,
-		hasTemplateEditorErrors,
-		resetTemplateEditorFields,
-		runTemplateEditorSave
-	} from '$lib/utils/template-editor';
 
 	let { data } = $props();
 
-	let ui = $state({
-		saving: false,
-		showTemplateDialog: false,
-		isLoadingTemplate: false
-	});
+	let saving = $state(false);
+	let showTemplateDialog = $state(false);
+	let isLoadingTemplate = $state(false);
 	let originalComposeContent = $state(untrack(() => data.composeTemplate));
 	let originalEnvContent = $state(untrack(() => data.envTemplate));
 
-	let validation = $state({
-		composeHasErrors: false,
-		envHasErrors: false,
-		composeValidationReady: false,
-		envValidationReady: false
+	let composeHasErrors = $state(false);
+	let envHasErrors = $state(false);
+	let composeValidationReady = $state(false);
+	let envValidationReady = $state(false);
+
+	const globalVariableMap = $derived.by(() =>
+		Object.fromEntries((data.globalVariables ?? []).map((item) => [item.key, item.value]))
+	);
+
+	const formSchema = z.object({
+		composeContent: z.string().min(1, m.compose_compose_content_required()),
+		envContent: z.string().optional().default('')
 	});
-
-	const globalVariableMap = $derived(globalVariablesToMap(data.globalVariables));
-
-	const formSchema = createTemplateContentSchema();
 
 	let formData = $derived({
 		composeContent: originalComposeContent,
@@ -52,24 +48,27 @@
 	const hasChanges = $derived(
 		$inputs.composeContent.value !== originalComposeContent || $inputs.envContent.value !== originalEnvContent
 	);
-	const validationState = $derived(
-		getTemplateEditorValidationState(
-			validation.composeValidationReady,
-			validation.envValidationReady,
-			validation.composeHasErrors,
-			validation.envHasErrors
-		)
-	);
 
-	const canSave = $derived(hasChanges && !hasTemplateEditorErrors(validationState));
+	const canSave = $derived(hasChanges && composeValidationReady && envValidationReady && !composeHasErrors && !envHasErrors);
 
 	async function handleSave() {
-		await runTemplateEditorSave({
-			validationState,
-			validate: form.validate,
-			save: ({ composeContent, envContent }) => templateService.saveDefaultTemplates(composeContent, envContent),
-			failureMessage: m.templates_save_failed(),
-			setLoading: (value) => (ui.saving = value),
+		if (!composeValidationReady || !envValidationReady || composeHasErrors || envHasErrors) {
+			toast.error(m.templates_validation_error());
+			return;
+		}
+
+		const validated = form.validate();
+		if (!validated) {
+			toast.error(m.templates_validation_error());
+			return;
+		}
+
+		const { composeContent, envContent } = validated;
+
+		handleApiResultWithCallbacks({
+			result: await tryCatch(templateService.saveDefaultTemplates(composeContent, envContent)),
+			message: m.templates_save_failed(),
+			setLoadingState: (value) => (saving = value),
 			onSuccess: async () => {
 				toast.success(m.templates_save_success());
 				originalComposeContent = $inputs.composeContent.value;
@@ -79,21 +78,14 @@
 	}
 
 	async function handleReset() {
-		resetTemplateEditorFields([
-			{
-				set: (value) => ($inputs.composeContent.value = value),
-				value: originalComposeContent
-			},
-			{
-				set: (value) => ($inputs.envContent.value = value),
-				value: originalEnvContent
-			}
-		]);
+		$inputs.composeContent.value = originalComposeContent;
+		$inputs.envContent.value = originalEnvContent;
+		toast.info(m.templates_reset_success());
 	}
 
 	async function handleTemplateSelect(template: Template) {
-		ui.showTemplateDialog = false;
-		ui.isLoadingTemplate = true;
+		showTemplateDialog = false;
+		isLoadingTemplate = true;
 
 		try {
 			const templateContent = await templateService.getTemplateContent(template.id);
@@ -104,7 +96,7 @@
 			console.error('Error loading template:', error);
 			toast.error(error instanceof Error ? error.message : m.templates_download_failed());
 		} finally {
-			ui.isLoadingTemplate = false;
+			isLoadingTemplate = false;
 		}
 	}
 </script>
@@ -127,19 +119,19 @@
 				<ArcaneButton
 					action="base"
 					tone="outline"
-					onclick={() => (ui.showTemplateDialog = true)}
-					disabled={ui.saving || ui.isLoadingTemplate}
+					onclick={() => (showTemplateDialog = true)}
+					disabled={saving || isLoadingTemplate}
 				>
 					{m.common_use_template()}
 				</ArcaneButton>
-				<ArcaneButton action="cancel" onclick={handleReset} disabled={!hasChanges || ui.saving || ui.isLoadingTemplate}>
+				<ArcaneButton action="cancel" onclick={handleReset} disabled={!hasChanges || saving || isLoadingTemplate}>
 					{m.common_reset()}
 				</ArcaneButton>
 				<ArcaneButton
 					action="save"
 					onclick={handleSave}
-					disabled={!canSave || ui.isLoadingTemplate}
-					loading={ui.saving}
+					disabled={!canSave || isLoadingTemplate}
+					loading={saving}
 					loadingLabel={m.common_action_saving()}
 				/>
 			</div>
@@ -166,10 +158,10 @@
 						<CodeEditor
 							bind:value={$inputs.composeContent.value}
 							language="yaml"
-							readOnly={ui.saving || ui.isLoadingTemplate}
+							readOnly={saving || isLoadingTemplate}
 							fontSize="13px"
-							bind:hasErrors={validation.composeHasErrors}
-							bind:validationReady={validation.composeValidationReady}
+							bind:hasErrors={composeHasErrors}
+							bind:validationReady={composeValidationReady}
 							fileId="templates:defaults:compose"
 							originalValue={originalComposeContent}
 							enableDiff={true}
@@ -206,10 +198,10 @@
 						<CodeEditor
 							bind:value={$inputs.envContent.value}
 							language="env"
-							readOnly={ui.saving || ui.isLoadingTemplate}
+							readOnly={saving || isLoadingTemplate}
 							fontSize="13px"
-							bind:hasErrors={validation.envHasErrors}
-							bind:validationReady={validation.envValidationReady}
+							bind:hasErrors={envHasErrors}
+							bind:validationReady={envValidationReady}
 							fileId="templates:defaults:env"
 							originalValue={originalEnvContent}
 							enableDiff={true}
@@ -233,4 +225,4 @@
 	</ComposeEditorSplit>
 </div>
 
-<TemplateSelectionDialog bind:open={ui.showTemplateDialog} templates={data.templates || []} onSelect={handleTemplateSelect} />
+<TemplateSelectionDialog bind:open={showTemplateDialog} templates={data.templates || []} onSelect={handleTemplateSelect} />

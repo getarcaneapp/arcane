@@ -9,7 +9,6 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
-	dockerutil "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
@@ -125,7 +124,7 @@ func (j *AutoHealJob) filterCandidatesInternal(containers []container.Summary, e
 			continue
 		}
 
-		containerName := dockerutil.ContainerNameFromNames(c.Names)
+		containerName := j.getContainerName(c.Names)
 		if j.isExcluded(containerName, excludedContainers) {
 			continue
 		}
@@ -145,7 +144,7 @@ func (j *AutoHealJob) processCandidateInternal(
 	restartWindowMinutes int,
 ) {
 	containerID := candidate.ID
-	containerName := dockerutil.ContainerNameFromNames(candidate.Names)
+	containerName := j.getContainerName(candidate.Names)
 
 	inspect, err := j.inspectContainerInternal(ctx, dockerClient, containerID)
 	if err != nil {
@@ -263,6 +262,14 @@ func (j *AutoHealJob) parseExcludedContainers(ctx context.Context) map[string]st
 		}
 	}
 	return excluded
+}
+
+func (j *AutoHealJob) getContainerName(names []string) string {
+	if len(names) == 0 {
+		return ""
+	}
+	// Docker container names are prefixed with "/"
+	return strings.TrimPrefix(names[0], "/")
 }
 
 func (j *AutoHealJob) isExcluded(name string, excluded map[string]struct{}) bool {

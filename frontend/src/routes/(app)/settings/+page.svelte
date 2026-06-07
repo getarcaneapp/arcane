@@ -15,34 +15,28 @@
 		CloseIcon,
 		JobsIcon,
 		CodeIcon,
-		GlobeIcon,
-		ActivityIcon
+		GlobeIcon
 	} from '$lib/icons';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { Card } from '$lib/components/ui/card';
 	import { m } from '$lib/paraglide/messages';
 	import { UiConfigDisabledTag } from '$lib/components/badges/index.js';
 	import { settingsSearchService } from '$lib/services/settings-search';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import type { SettingsCategory } from '$lib/types/shared';
-	import { canReachAccessSurface, canReachAccessSurfaceUrl } from '$lib/utils/access-policy';
+	import type { SettingsCategory } from '$lib/types/settings-search.type';
+	import { debounced } from '$lib/utils/utils';
 	import * as InputGroup from '$lib/components/ui/input-group/index.js';
 	import { getSettingsSubpageUrlsInNavOrder } from '$lib/config/navigation-config';
 	import HeaderCard from '$lib/components/header-card.svelte';
-	import { Spinner } from '$lib/components/ui/spinner/index.js';
-	import { useCategorySearch } from '$lib/hooks/use-category-search.svelte';
-	import { getCategoryIcon, orderCategoriesByNav } from '$lib/utils/category-page';
 
-	let { data }: PageProps = $props();
+	let {}: PageProps = $props();
 
+	let searchQuery = $state('');
+	let showSearchResults = $state(false);
+	let searchResults = $state<SettingsCategory[]>([]);
+	let isSearching = $state(false);
 	let settingsCategories = $state<SettingsCategory[]>([]);
-	const user = $derived(data.user);
-	const permissionsManifest = $derived(data.permissionsManifest);
-	const categorySearch = useCategorySearch<SettingsCategory>({
-		search: (query) => settingsSearchService.search(query),
-		filter: isAccessibleCategory,
-		onError: (error) => console.error('Search failed:', error)
-	});
+	let currentSearchRequest = $state(0);
+	const hiddenCategoryUrls = new Set(['/settings/security']);
 
 	const iconMap: Record<string, any> = {
 		settings: SettingsIcon,
@@ -55,46 +49,87 @@
 		apikey: ApiKeyIcon,
 		jobs: JobsIcon,
 		code: CodeIcon,
-		globe: GlobeIcon,
-		activity: ActivityIcon
+		globe: GlobeIcon
 	};
 
 	onMount(async () => {
 		try {
-			settingsCategories = orderCategoriesByNav(
-				(await settingsSearchService.getCategories()).filter(isAccessibleCategory),
-				getSettingsSubpageUrlsInNavOrder()
-			);
+			settingsCategories = orderCategoriesByNav((await settingsSearchService.getCategories()).filter(isVisibleCategory));
 		} catch (error) {
 			console.error('Failed to load categories:', error);
 		}
 	});
 
+	async function performSearch(query: string) {
+		const trimmedQuery = query.trim();
+
+		if (!trimmedQuery) {
+			searchResults = [];
+			showSearchResults = false;
+			isSearching = false;
+			currentSearchRequest++;
+			return;
+		}
+
+		currentSearchRequest++;
+		const requestId = currentSearchRequest;
+		isSearching = true;
+		showSearchResults = true;
+
+		try {
+			const response = await settingsSearchService.search(trimmedQuery);
+			if (requestId === currentSearchRequest) {
+				searchResults = (response.results || []).filter(isVisibleCategory);
+				isSearching = false;
+			}
+		} catch (error) {
+			console.error('Search failed:', error);
+			if (requestId === currentSearchRequest) {
+				searchResults = [];
+				isSearching = false;
+			}
+		}
+	}
+
+	const debouncedSearch = debounced((query: string) => {
+		void performSearch(query);
+	}, 300);
+
 	function navigateToCategory(categoryUrl: string) {
 		goto(categoryUrl);
 	}
 
-	function isAccessibleCategory(category: SettingsCategory) {
-		if (!permissionsManifest?.accessSurfaces?.length) return true;
-		if (category.id === 'jobschedule') {
-			return canReachAccessSurface(permissionsManifest, 'settings.category.jobschedule', user, environmentStore.selected?.id);
-		}
-		return canReachAccessSurfaceUrl(permissionsManifest, category.url, user, environmentStore.selected?.id);
+	function isVisibleCategory(category: SettingsCategory) {
+		return !hiddenCategoryUrls.has(category.url);
 	}
 
-	function getCategoryUrl(category: SettingsCategory) {
-		if (category.id === 'jobschedule') {
-			return `/environments/${environmentStore.selected?.id ?? '0'}?tab=jobs`;
-		}
-		return category.url;
+	function orderCategoriesByNav(categories: SettingsCategory[]) {
+		const navUrls = getSettingsSubpageUrlsInNavOrder();
+		const categoriesByUrl = new Map(categories.map((category) => [category.url, category]));
+		const orderedCategories = navUrls
+			.map((url) => categoriesByUrl.get(url))
+			.filter((category): category is SettingsCategory => Boolean(category));
+		const unmatchedCategories = categories
+			.filter((category) => !navUrls.includes(category.url))
+			.sort((a, b) => a.title.localeCompare(b.title));
+
+		return [...orderedCategories, ...unmatchedCategories];
+	}
+
+	function clearSearch() {
+		searchQuery = '';
+		showSearchResults = false;
+		isSearching = false;
+		searchResults = [];
+		currentSearchRequest++;
 	}
 
 	function getIconComponent(iconName: string) {
-		return getCategoryIcon(iconMap, iconName, SettingsIcon);
+		return iconMap[iconName] || SettingsIcon;
 	}
 </script>
 
-<div class="space-y-6 pb-5 md:space-y-8 md:pb-5">
+<div class="space-y-8 pb-5 md:space-y-10 md:pb-5">
 	<HeaderCard>
 		<div class="flex items-center justify-between gap-4">
 			<div class="flex min-w-64 flex-1 items-center gap-3 sm:gap-4">
@@ -117,24 +152,24 @@
 			<InputGroup.Root>
 				<InputGroup.Input
 					placeholder={m.settings_search_placeholder()}
-					value={categorySearch.searchQuery}
+					value={searchQuery}
 					oninput={(e) => {
-						categorySearch.searchQuery = e.currentTarget.value;
-						categorySearch.debouncedSearch(e.currentTarget.value);
+						searchQuery = e.currentTarget.value;
+						debouncedSearch(e.currentTarget.value);
 					}}
 					onkeydown={(e) => {
 						if (e.key === 'Enter') {
-							categorySearch.performSearch((e.currentTarget as HTMLInputElement).value);
+							performSearch((e.currentTarget as HTMLInputElement).value);
 						}
 					}}
 				/>
 				<InputGroup.Addon>
-					{#if categorySearch.showSearchResults}
+					{#if showSearchResults}
 						<ArcaneButton
 							action="base"
 							tone="ghost"
 							size="sm"
-							onclick={categorySearch.clearSearch}
+							onclick={clearSearch}
 							class="h-6 w-6 p-0"
 							icon={CloseIcon}
 							showLabel={false}
@@ -148,12 +183,12 @@
 		</div>
 	</HeaderCard>
 
-	{#if !categorySearch.showSearchResults}
+	{#if !showSearchResults}
 		<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 xl:grid-cols-3">
 			{#each settingsCategories as category (category.id)}
 				{@const Icon = getIconComponent(category.icon)}
-				<Card class="hover:border-primary/30 group cursor-pointer transition-colors duration-200">
-					<button onclick={() => navigateToCategory(getCategoryUrl(category))} class="w-full p-4 text-left sm:p-6">
+				<Card class="hover:border-primary/20 group cursor-pointer transition-all duration-200 hover:shadow-md">
+					<button onclick={() => navigateToCategory(category.url)} class="w-full p-4 text-left sm:p-6">
 						<div class="flex items-start justify-between gap-3">
 							<div class="flex min-w-0 flex-1 items-start gap-3 sm:gap-4">
 								<div
@@ -176,16 +211,18 @@
 		<div class="space-y-6 sm:space-y-8">
 			<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
 				<h2 class="text-base font-semibold sm:text-lg">
-					{m.settings_search_results({ query: categorySearch.searchQuery, count: categorySearch.searchResults.length })}
+					{m.settings_search_results({ query: searchQuery, count: searchResults.length })}
 				</h2>
 			</div>
 
-			{#if categorySearch.isSearching}
+			{#if isSearching}
 				<div class="py-8 text-center sm:py-12">
-					<Spinner class="text-primary mx-auto mb-3 size-8 sm:mb-4 sm:size-12" />
+					<div
+						class="border-primary mx-auto mb-3 size-8 animate-spin rounded-full border-4 border-t-transparent sm:mb-4 sm:size-12"
+					></div>
 					<p class="text-muted-foreground text-sm sm:text-base">{m.settings_searching()}</p>
 				</div>
-			{:else if categorySearch.searchResults.length === 0}
+			{:else if searchResults.length === 0}
 				<div class="py-8 text-center sm:py-12">
 					<SearchIcon class="text-muted-foreground mx-auto mb-3 size-8 sm:mb-4 sm:size-12" />
 					<h3 class="mb-2 text-base font-medium sm:text-lg">{m.settings_no_results()}</h3>
@@ -193,9 +230,9 @@
 				</div>
 			{:else}
 				<div class="space-y-4 sm:space-y-6">
-					{#each categorySearch.searchResults as result (result.id)}
+					{#each searchResults as result (result.id)}
 						{@const Icon = getIconComponent(result.icon)}
-						<div class="bg-background/40 rounded-lg border">
+						<div class="bg-background/40 rounded-lg border shadow-sm">
 							<div class="border-b p-4 sm:p-6">
 								<div class="flex items-center justify-between">
 									<div class="flex items-center gap-3">
@@ -209,7 +246,7 @@
 										action="base"
 										tone="outline"
 										size="sm"
-										onclick={() => navigateToCategory(getCategoryUrl(result))}
+										onclick={() => navigateToCategory(result.url)}
 										class="shrink-0"
 										customLabel={m.settings_go_to_page()}
 									/>

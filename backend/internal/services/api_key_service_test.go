@@ -14,7 +14,6 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/pkg/authz"
 	"github.com/getarcaneapp/arcane/types/apikey"
 )
 
@@ -48,6 +47,7 @@ func createTestAPIKeyUser(t *testing.T, ctx context.Context, userService *UserSe
 	user := &models.User{
 		BaseModel: models.BaseModel{ID: id},
 		Username:  fmt.Sprintf("user-%s", id),
+		Roles:     models.StringSlice{"admin"},
 	}
 
 	created, err := userService.CreateUser(ctx, user)
@@ -118,6 +118,7 @@ func createDefaultAdminUser(t *testing.T, ctx context.Context, userService *User
 	user := &models.User{
 		BaseModel: models.BaseModel{ID: "default-admin-user"},
 		Username:  defaultAdminUsername,
+		Roles:     models.StringSlice{"admin"},
 	}
 
 	created, err := userService.CreateUser(ctx, user)
@@ -190,7 +191,7 @@ func TestUpdateApiKeyRejectsStaticKey(t *testing.T) {
 	created, err := service.CreateDefaultAdminAPIKey(ctx, adminUser.ID, "arc_bootstrapupdateprotected1234567890")
 	require.NoError(t, err)
 
-	updated, err := service.UpdateApiKey(ctx, adminUser.ID, created.ApiKey.ID, apikey.UpdateApiKey{
+	updated, err := service.UpdateApiKey(ctx, created.ApiKey.ID, apikey.UpdateApiKey{
 		Name:        new("renamed"),
 		Description: new("updated description"),
 	})
@@ -202,35 +203,6 @@ func TestUpdateApiKeyRejectsStaticKey(t *testing.T) {
 	require.Equal(t, defaultAdminAPIKeyName, apiKeys[0].Name)
 	require.NotNil(t, apiKeys[0].Description)
 	require.Equal(t, *defaultAdminAPIKeyDescription, *apiKeys[0].Description)
-}
-
-func TestUpdateApiKeyRollsBackMetadataWhenPermissionUpdateFails(t *testing.T) {
-	ctx := context.Background()
-	db := setupAuthServiceTestDB(t)
-	require.NoError(t, db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_akp_uniq ON api_key_permissions(api_key_id, permission, COALESCE(environment_id, ''))").Error)
-
-	roleSvc := NewRoleService(db)
-	require.NoError(t, roleSvc.EnsureBuiltInRoles(ctx))
-	userSvc := NewUserService(db).WithRoleService(roleSvc)
-	service := NewApiKeyService(db, userSvc).WithRoleService(roleSvc)
-	admin := createTestUser(t, userSvc, "admin-update-rollback", "admin-update-rollback")
-	grantGlobalAdmin(t, roleSvc, admin.ID)
-
-	created, err := service.CreateApiKey(ctx, admin.ID, apikey.CreateApiKey{Name: "original"})
-	require.NoError(t, err)
-
-	updated, err := service.UpdateApiKey(ctx, admin.ID, created.ApiKey.ID, apikey.UpdateApiKey{
-		Name: new("renamed"),
-		Permissions: []apikey.PermissionGrant{
-			{Permission: authz.PermContainersList},
-			{Permission: authz.PermContainersList},
-		},
-	})
-	require.Nil(t, updated)
-	require.Error(t, err)
-
-	stored := fetchAPIKey(t, db, created.ApiKey.ID)
-	require.Equal(t, "original", stored.Name)
 }
 
 func TestReconcileDefaultAdminAPIKeyNoOpWhenUnchanged(t *testing.T) {
@@ -433,66 +405,6 @@ func TestGetEnvironmentByAPIKeyExpiredDoesNotUpdateLastUsedAt(t *testing.T) {
 	assertAPIKeyLastUsedStable(t, db, created.ApiKey.ID, nil, 500*time.Millisecond)
 	apiKey := fetchAPIKey(t, db, created.ApiKey.ID)
 	require.Nil(t, apiKey.LastUsedAt)
-}
-
-func TestCreateEnvironmentApiKeySeedsAllPermissionsScopedToEnv(t *testing.T) {
-	ctx := context.Background()
-	db := setupAuthServiceTestDB(t)
-	require.NoError(t, db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_akp_uniq ON api_key_permissions(api_key_id, permission, COALESCE(environment_id, ''))").Error)
-
-	roleSvc := NewRoleService(db)
-	require.NoError(t, roleSvc.EnsureBuiltInRoles(ctx))
-	userSvc := NewUserService(db).WithRoleService(roleSvc)
-	service := NewApiKeyService(db, userSvc).WithRoleService(roleSvc)
-	admin := createTestUser(t, userSvc, "admin-env-bootstrap", "admin-env-bootstrap")
-	grantGlobalAdmin(t, roleSvc, admin.ID)
-
-	envID := "env-bootstrap-test"
-	created, err := service.CreateEnvironmentApiKey(ctx, envID, admin.ID)
-	require.NoError(t, err)
-
-	// Resolve the per-key permission set and confirm every permission is
-	// present, scoped to the bootstrap env (not global).
-	ps, err := roleSvc.ResolveApiKeyPermissions(ctx, created.ApiKey.ID)
-	require.NoError(t, err)
-	require.Empty(t, ps.Global, "bootstrap key permissions must land in PerEnv, not Global")
-	envPerms, ok := ps.PerEnv[envID]
-	require.True(t, ok)
-	for _, p := range authz.AllPermissions() {
-		_, has := envPerms[p]
-		require.True(t, has, "missing permission %s on bootstrap key", p)
-	}
-}
-
-func TestBackfillApiKeyPermissionsRepairsExistingBootstrapKey(t *testing.T) {
-	ctx := context.Background()
-	db := setupAuthServiceTestDB(t)
-	require.NoError(t, db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_akp_uniq ON api_key_permissions(api_key_id, permission, COALESCE(environment_id, ''))").Error)
-
-	roleSvc := NewRoleService(db)
-	require.NoError(t, roleSvc.EnsureBuiltInRoles(ctx))
-
-	// Simulate a pre-existing env-bootstrap key with NO permission grants
-	// (e.g., created on a deployment where the per-key seed step failed).
-	envID := "env-broken-bootstrap"
-	require.NoError(t, db.WithContext(ctx).Create(&models.ApiKey{
-		Name:          "Environment Bootstrap Key - broken",
-		KeyHash:       "hash",
-		KeyPrefix:     "arc_brkn",
-		EnvironmentID: &envID,
-	}).Error)
-
-	require.NoError(t, roleSvc.BackfillApiKeyPermissions(ctx))
-
-	// The backfill should have populated the env-scoped perms retroactively.
-	var keys []models.ApiKey
-	require.NoError(t, db.WithContext(ctx).Where("environment_id = ?", envID).Find(&keys).Error)
-	require.Len(t, keys, 1)
-	ps, err := roleSvc.ResolveApiKeyPermissions(ctx, keys[0].ID)
-	require.NoError(t, err)
-	envPerms, ok := ps.PerEnv[envID]
-	require.True(t, ok)
-	require.Equal(t, len(authz.AllPermissions()), len(envPerms))
 }
 
 func TestGetEnvironmentByAPIKeyRecentLastUsedAtDoesNotRewriteImmediately(t *testing.T) {

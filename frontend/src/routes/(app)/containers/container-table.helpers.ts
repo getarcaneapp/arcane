@@ -1,5 +1,5 @@
 import { m } from '$lib/paraglide/messages';
-import type { ContainerSummaryDto } from '$lib/types/docker';
+import type { ContainerSummaryDto } from '$lib/types/container.type';
 
 export type ActionStatus = 'starting' | 'stopping' | 'restarting' | 'updating' | 'removing' | 'redeploying' | '';
 export type StateBadgeVariant = 'green' | 'red' | 'amber';
@@ -45,6 +45,23 @@ export function getStateBadgeVariant(state: string): StateBadgeVariant {
 	if (state === 'running') return 'green';
 	if (state === 'exited') return 'red';
 	return 'amber';
+}
+
+export function getContainerIpAddresses(container: ContainerSummaryDto): string[] {
+	const networks = container.networkSettings?.networks;
+	if (!networks) return [];
+
+	const seen = new Set<string>();
+	const ipAddresses: string[] = [];
+	for (const networkName of Object.keys(networks).sort((a, b) => a.localeCompare(b))) {
+		const ipAddress = networks[networkName]?.ipAddress?.trim();
+		if (!ipAddress || seen.has(ipAddress)) continue;
+
+		seen.add(ipAddress);
+		ipAddresses.push(ipAddress);
+	}
+
+	return ipAddresses;
 }
 
 export function getProjectName(container: ContainerSummaryDto): string {

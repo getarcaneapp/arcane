@@ -1,4 +1,4 @@
-import type { FormInput } from '$lib/utils/settings';
+import type { FormInput } from '$lib/utils/form.utils';
 import type { Writable } from 'svelte/store';
 
 export type BuildProviderOption = {

@@ -6,19 +6,24 @@ export const TEST_COMPOSE_YAML = `configs:
       Used for testing purposes.
 
 services:
-  nginx:
-    image: ghcr.io/linuxserver/nginx:latest
+  redis:
+    image: redis:latest
     container_name: \${CONTAINER_NAME}
     configs:
       - source: some_content
-        target: /config/test-content.txt
+        target: /etc/some_content.txt
+    command: /bin/sh -c 'cat /etc/some_content.txt && redis-server'
+    ports:
+      - "8081:81"
+      - "6379:6379"
+      - "6378:6378"
     volumes:
-      - nginx_data:/config
+      - redis_data:/data
 
 volumes:
-  nginx_data:
+  redis_data:
     driver: local
 `;
 
-export const TEST_ENV_FILE = `CONTAINER_NAME=test-nginx-container
+export const TEST_ENV_FILE = `CONTAINER_NAME=test-redis-container
 `;

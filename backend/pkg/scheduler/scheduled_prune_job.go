@@ -2,7 +2,9 @@ package scheduler
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"strconv"
 
 	"github.com/getarcaneapp/arcane/backend/internal/services"
 	"github.com/getarcaneapp/arcane/types/system"
@@ -39,6 +41,21 @@ func (j *ScheduledPruneJob) Schedule(ctx context.Context) string {
 		schedule = "0 0 0 * * *"
 	}
 
+	// Handle legacy straight int if it somehow didn't get migrated
+	if i, err := strconv.Atoi(schedule); err == nil {
+		if i <= 0 {
+			i = 1440
+		}
+		switch {
+		case i%1440 == 0:
+			schedule = fmt.Sprintf("0 0 0 */%d * *", i/1440)
+		case i%60 == 0:
+			schedule = fmt.Sprintf("0 0 */%d * * *", i/60)
+		default:
+			schedule = fmt.Sprintf("0 */%d * * * *", i)
+		}
+	}
+
 	parser := cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
 	if _, err := parser.Parse(schedule); err != nil {
 		slog.WarnContext(ctx, "Invalid cron expression for scheduled-prune, using default", "invalid_schedule", schedule, "error", err)
@@ -70,13 +87,9 @@ func (j *ScheduledPruneJob) Run(ctx context.Context) {
 		"build_cache", req.BuildCache,
 	)
 
-	result, started, err := j.systemService.PruneAll(ctx, "0", req)
+	result, err := j.systemService.PruneAll(ctx, req)
 	if err != nil {
 		slog.ErrorContext(ctx, "scheduled prune run failed", "error", err)
-		return
-	}
-	if !started {
-		slog.InfoContext(ctx, "scheduled prune run skipped; prune already in progress", "activityId", result.ActivityID)
 		return
 	}
 

@@ -251,7 +251,8 @@ func TestResolveBackupStorageMountFromMountsInternal(t *testing.T) {
 func TestResolveBackupStorageMountInternalFallsBackToNamedVolume(t *testing.T) {
 	svc := &VolumeService{backupVolumeName: "arcane-backups"}
 
-	got := svc.resolveBackupStorageMountInternal(context.Background(), nil, "/backups", true)
+	got, err := svc.resolveBackupStorageMountInternal(context.Background(), nil, "/backups", true)
+	require.NoError(t, err)
 	require.Equal(t, backupStorageModeNamedVolumeFallback, got.mode)
 	require.Equal(t, mount.TypeVolume, got.mount.Type)
 	require.Equal(t, "arcane-backups", got.mount.Source)

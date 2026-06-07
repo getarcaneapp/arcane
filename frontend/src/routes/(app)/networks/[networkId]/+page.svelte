@@ -22,12 +22,11 @@
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import { ArcaneButton } from '$lib/components/arcane-button';
 	import { goto } from '$app/navigation';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api';
-	import { tryCatch } from '$lib/utils/api';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
+	import { tryCatch } from '$lib/utils/try-catch';
 	import { m } from '$lib/paraglide/messages';
 	import { networkService } from '$lib/services/network-service';
 	import { ResourceDetailLayout, type DetailAction } from '$lib/layouts';
-	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 
 	let { data }: PageProps = $props();
 	let errorMessage = $state('');
@@ -88,11 +87,8 @@
 						result: await tryCatch(networkService.deleteNetwork(network.id)),
 						message: m.networks_remove_failed({ name: network?.name ?? shortId }),
 						setLoadingState: (value) => (isRemoving = value),
-						onSuccess: async (data) => {
-							toast.success(
-								m.networks_remove_success({ name: network?.name ?? shortId }),
-								activityToastOptions(extractActivityId(data))
-							);
+						onSuccess: async () => {
+							toast.success(m.networks_remove_success({ name: network?.name ?? shortId }));
 							goto('/networks');
 						},
 						onError: (error) => {
@@ -321,7 +317,7 @@
 					</Card.Header>
 					<Card.Content class="p-4">
 						<div class="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3">
-							{#each network.peers as peer (`${peer.Name ?? ''}:${peer.IP ?? ''}`)}
+							{#each network.peers as peer}
 								<Card.Root variant="subtle">
 									<Card.Content class="flex flex-col gap-2 p-4">
 										<div class="text-muted-foreground text-xs font-semibold tracking-wide break-all uppercase">{peer.Name}</div>
@@ -349,7 +345,7 @@
 					</Card.Header>
 					<Card.Content class="p-4">
 						<div class="space-y-3">
-							{#each Object.entries(network.services) as [name, service] (name)}
+							{#each Object.entries(network.services) as [name, service]}
 								<Card.Root variant="outlined">
 									<Card.Content class="p-4">
 										<div class="space-y-2">
@@ -381,7 +377,7 @@
 														>{m.networks_service_ports_label()}:</span
 													>
 													<div class="flex flex-wrap gap-1">
-														{#each service.Ports as port (port)}
+														{#each service.Ports as port}
 															<code class="bg-muted text-muted-foreground rounded px-1.5 py-0.5 font-mono text-xs sm:text-sm">
 																{port}
 															</code>

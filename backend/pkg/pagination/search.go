@@ -4,8 +4,7 @@ import (
 	"strings"
 )
 
-// SearchAccessor extracts a searchable string from T. Return any error to skip
-// the field (e.g. when matching an unknown enum state).
+// Return any error to skip the field (for  when matching an unknown state on an enum)
 //
 // Note: returning ("", nil) will match!
 type SearchAccessor[T any] = func(T) (string, error)

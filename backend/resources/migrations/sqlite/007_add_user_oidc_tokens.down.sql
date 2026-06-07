@@ -1,0 +1,2 @@
+-- SQLite cannot DROP COLUMN directly. No-op down migration.
+-- To rollback manually, recreate the users table without these columns and copy data back.

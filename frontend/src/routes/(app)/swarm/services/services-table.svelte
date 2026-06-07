@@ -5,18 +5,17 @@
 	import { DockIcon, GlobeIcon, EllipsisIcon, TrashIcon, NetworksIcon, InspectIcon } from '$lib/icons';
 	import { m } from '$lib/paraglide/messages';
 	import { swarmService } from '$lib/services/swarm-service';
-	import type { SwarmServiceSummary, SwarmServicePort } from '$lib/types/swarm';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
+	import type { SwarmServiceSummary, SwarmServicePort } from '$lib/types/swarm.type';
+	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import { toast } from 'svelte-sonner';
-	import { tryCatch } from '$lib/utils/api';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api';
+	import { tryCatch } from '$lib/utils/try-catch';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
 	import { goto } from '$app/navigation';
-	import { getSwarmServiceModeLabel, getSwarmServiceModeVariant } from '$lib/utils/docker';
-	import IfPermitted from '$lib/components/if-permitted.svelte';
+	import { getSwarmServiceModeLabel, getSwarmServiceModeVariant } from '$lib/utils/swarm-service-mode.utils';
 
 	let {
 		services = $bindable(),
@@ -249,12 +248,10 @@
 					{m.common_inspect()}
 				</DropdownMenu.Item>
 				<DropdownMenu.Separator />
-				<IfPermitted perm="swarm:services">
-					<DropdownMenu.Item variant="destructive" onclick={() => handleDelete(item)} disabled={isAnyLoading}>
-						<TrashIcon class="size-4" />
-						{m.common_delete()}
-					</DropdownMenu.Item>
-				</IfPermitted>
+				<DropdownMenu.Item variant="destructive" onclick={() => handleDelete(item)} disabled={isAnyLoading}>
+					<TrashIcon class="size-4" />
+					{m.common_delete()}
+				</DropdownMenu.Item>
 			</DropdownMenu.Group>
 		</DropdownMenu.Content>
 	</DropdownMenu.Root>

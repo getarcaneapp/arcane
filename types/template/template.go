@@ -101,7 +101,7 @@ type RemoteRegistry struct {
 	Templates []RemoteTemplate `json:"templates"`
 }
 
-// TemplateRegistry represents a local registry configuration.
+// Registry represents a local registry configuration.
 type TemplateRegistry struct {
 	BaseRegistry
 

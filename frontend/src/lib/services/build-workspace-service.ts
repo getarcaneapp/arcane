@@ -1,9 +1,8 @@
 import BaseAPIService from './api-service';
 import { environmentStore } from '$lib/stores/environment.store.svelte';
-import type { FileEntry, FileContentResponse } from '$lib/types/shared';
-import { downloadBlob, filenameFromPath } from '$lib/utils/browser-download';
+import type { FileEntry, FileContentResponse } from '$lib/types/file-browser.type';
 
-class BuildWorkspaceService extends BaseAPIService {
+export class BuildWorkspaceService extends BaseAPIService {
 	async listDirectory(path: string = '/'): Promise<FileEntry[]> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		const res = await this.api.get(`/environments/${envId}/builds/browse`, {
@@ -27,7 +26,14 @@ class BuildWorkspaceService extends BaseAPIService {
 			responseType: 'blob'
 		});
 
-		downloadBlob(res.data, filenameFromPath(path));
+		const url = window.URL.createObjectURL(new Blob([res.data]));
+		const link = document.createElement('a');
+		link.href = url;
+		const fileName = path.split('/').pop() || 'download';
+		link.setAttribute('download', fileName);
+		document.body.appendChild(link);
+		link.click();
+		link.remove();
 	}
 
 	async uploadFile(path: string, file: File): Promise<void> {

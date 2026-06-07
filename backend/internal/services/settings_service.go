@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -56,7 +57,7 @@ func NewSettingsService(ctx context.Context, db *database.DB) (*SettingsService,
 	}
 	svc.envOverrides = resolveSettingsEnvOverridesInternal()
 	if len(svc.envOverrides) > 0 {
-		slog.InfoContext(ctx, "Loaded Environment Settings Overrides", "count", len(svc.envOverrides))
+		slog.InfoContext(ctx, "settings env overrides loaded", "count", len(svc.envOverrides))
 	}
 
 	err := svc.LoadDatabaseSettings(ctx)
@@ -107,89 +108,95 @@ func (s *SettingsService) getDefaultSettings() *models.Settings {
 // DefaultSettingsConfig returns the canonical default settings model used by Arcane.
 func DefaultSettingsConfig() *models.Settings {
 	return &models.Settings{
-		ProjectsDirectory:                   models.SettingVariable{Value: "/app/data/projects"},
-		TemplatesDirectory:                  models.SettingVariable{Value: "/app/data/templates"},
-		FollowProjectSymlinks:               models.SettingVariable{Value: "false"},
-		SwarmStackSourcesDirectory:          models.SettingVariable{Value: "/app/data/swarm/sources"},
-		DiskUsagePath:                       models.SettingVariable{Value: "/app/data/projects"},
-		AutoUpdate:                          models.SettingVariable{Value: "false"},
-		AutoUpdateInterval:                  models.SettingVariable{Value: "0 0 0 * * *"},
-		AutoUpdateExcludedContainers:        models.SettingVariable{Value: ""},
-		AutoUpdateComposeStandaloneFallback: models.SettingVariable{Value: "false"},
-		PollingEnabled:                      models.SettingVariable{Value: "true"},
-		PollingInterval:                     models.SettingVariable{Value: "0 0 * * * *"},
-		DockerClientRefreshInterval:         models.SettingVariable{Value: "*/30 * * * * *"},
-		EventCleanupInterval:                models.SettingVariable{Value: "0 0 */6 * * *"},
-		ExpiredSessionsCleanupInterval:      models.SettingVariable{Value: "0 0 0 * * *"},
-		ActivityHistoryRetentionDays:        models.SettingVariable{Value: "30"},
-		ActivityHistoryMaxEntries:           models.SettingVariable{Value: "1000"},
-		AutoInjectEnv:                       models.SettingVariable{Value: "false"},
-		DefaultDeployPullPolicy:             models.SettingVariable{Value: "missing"},
-		ScheduledPruneEnabled:               models.SettingVariable{Value: "false"},
-		ScheduledPruneInterval:              models.SettingVariable{Value: "0 0 0 * * *"},
-		PruneContainerMode:                  models.SettingVariable{Value: "stopped"},
-		PruneContainerUntil:                 models.SettingVariable{Value: ""},
-		PruneImageMode:                      models.SettingVariable{Value: "dangling"},
-		PruneImageUntil:                     models.SettingVariable{Value: ""},
-		PruneVolumeMode:                     models.SettingVariable{Value: "none"},
-		PruneNetworkMode:                    models.SettingVariable{Value: "unused"},
-		PruneNetworkUntil:                   models.SettingVariable{Value: ""},
-		PruneBuildCacheMode:                 models.SettingVariable{Value: "none"},
-		PruneBuildCacheUntil:                models.SettingVariable{Value: ""},
-		AutoHealEnabled:                     models.SettingVariable{Value: "false"},
-		AutoHealInterval:                    models.SettingVariable{Value: "*/30 * * * * *"},
-		AutoHealExcludedContainers:          models.SettingVariable{Value: ""},
-		AutoHealMaxRestarts:                 models.SettingVariable{Value: "5"},
-		AutoHealRestartWindow:               models.SettingVariable{Value: "30"},
-		VolumeBrowserHelperIdleTimeout:      models.SettingVariable{Value: "10"},
-		BaseServerURL:                       models.SettingVariable{Value: "http://localhost"},
-		EnableGravatar:                      models.SettingVariable{Value: "true"},
-		DefaultShell:                        models.SettingVariable{Value: "/bin/sh"},
-		DockerHost:                          models.SettingVariable{Value: "unix:///var/run/docker.sock"},
-		BuildsDirectory:                     models.SettingVariable{Value: "/builds"},
-		AuthLocalEnabled:                    models.SettingVariable{Value: "true"},
-		AuthSessionTimeout:                  models.SettingVariable{Value: "1440"},
-		AuthPasswordPolicy:                  models.SettingVariable{Value: "strong"},
-		VulnerabilityScanEnabled:            models.SettingVariable{Value: "false"},
-		VulnerabilityScanInterval:           models.SettingVariable{Value: "0 0 0 * * *"},
-		TrivyImage:                          models.SettingVariable{Value: DefaultTrivyImage},
-		TrivyNetwork:                        models.SettingVariable{Value: ""},
-		TrivySecurityOpts:                   models.SettingVariable{Value: ""},
-		TrivyPrivileged:                     models.SettingVariable{Value: "false"},
-		TrivyPreserveCacheOnVolumePrune:     models.SettingVariable{Value: "true"},
-		TrivyResourceLimitsEnabled:          models.SettingVariable{Value: "true"},
-		TrivyCpuLimit:                       models.SettingVariable{Value: "1"},
-		TrivyMemoryLimitMb:                  models.SettingVariable{Value: "0"},
-		TrivyConcurrentScanContainers:       models.SettingVariable{Value: "1"},
-		OidcEnabled:                         models.SettingVariable{Value: "false"},
-		OidcClientId:                        models.SettingVariable{Value: ""},
-		OidcClientSecret:                    models.SettingVariable{Value: ""},
-		OidcIssuerUrl:                       models.SettingVariable{Value: ""},
-		OidcAuthorizationEndpoint:           models.SettingVariable{Value: ""},
-		OidcTokenEndpoint:                   models.SettingVariable{Value: ""},
-		OidcUserinfoEndpoint:                models.SettingVariable{Value: ""},
-		OidcJwksEndpoint:                    models.SettingVariable{Value: ""},
-		OidcScopes:                          models.SettingVariable{Value: "openid email profile"},
-		OidcGroupsClaim:                     models.SettingVariable{Value: "groups"},
-		OidcSkipTlsVerify:                   models.SettingVariable{Value: "false"},
-		OidcAutoRedirectToProvider:          models.SettingVariable{Value: "false"},
-		OidcMergeAccounts:                   models.SettingVariable{Value: "false"},
-		OidcProviderName:                    models.SettingVariable{Value: ""},
-		OidcProviderLogoUrl:                 models.SettingVariable{Value: ""},
-		OidcMobileRedirectUris:              models.SettingVariable{Value: "arcane-mobile://oidc-callback"},
-		MobileNavigationMode:                models.SettingVariable{Value: "floating"},
-		MobileNavigationShowLabels:          models.SettingVariable{Value: "true"},
-		SidebarHoverExpansion:               models.SettingVariable{Value: "true"},
-		KeyboardShortcutsEnabled:            models.SettingVariable{Value: "true"},
-		ApplicationTheme:                    models.SettingVariable{Value: "default"},
-		IconCatalog:                         models.SettingVariable{Value: "selfhst"},
-		AccentColor:                         models.SettingVariable{Value: "oklch(0.606 0.25 292.717)"},
-		OledMode:                            models.SettingVariable{Value: "false"},
-		MaxImageUploadSize:                  models.SettingVariable{Value: "500"},
-		GitSyncMaxFiles:                     models.SettingVariable{Value: "500"},
-		GitSyncMaxTotalSizeMb:               models.SettingVariable{Value: "50"},
-		GitSyncMaxBinarySizeMb:              models.SettingVariable{Value: "10"},
-		EnvironmentHealthInterval:           models.SettingVariable{Value: "0 */2 * * * *"},
+		ProjectsDirectory:               models.SettingVariable{Value: "/app/data/projects"},
+		TemplatesDirectory:              models.SettingVariable{Value: "/app/data/templates"},
+		FollowProjectSymlinks:           models.SettingVariable{Value: "false"},
+		SwarmStackSourcesDirectory:      models.SettingVariable{Value: "/app/data/swarm/sources"},
+		DiskUsagePath:                   models.SettingVariable{Value: "/app/data/projects"},
+		AutoUpdate:                      models.SettingVariable{Value: "false"},
+		AutoUpdateInterval:              models.SettingVariable{Value: "0 0 0 * * *"},
+		AutoUpdateExcludedContainers:    models.SettingVariable{Value: ""},
+		PollingEnabled:                  models.SettingVariable{Value: "true"},
+		PollingInterval:                 models.SettingVariable{Value: "0 0 * * * *"},
+		DockerClientRefreshInterval:     models.SettingVariable{Value: "*/30 * * * * *"},
+		EventCleanupInterval:            models.SettingVariable{Value: "0 0 */6 * * *"},
+		ExpiredSessionsCleanupInterval:  models.SettingVariable{Value: "0 0 0 * * *"},
+		AutoInjectEnv:                   models.SettingVariable{Value: "false"},
+		PruneMode:                       models.SettingVariable{Value: "dangling"}, //nolint:staticcheck // Legacy prune setting is still seeded for migration compatibility.
+		DefaultDeployPullPolicy:         models.SettingVariable{Value: "missing"},
+		ScheduledPruneEnabled:           models.SettingVariable{Value: "false"},
+		ScheduledPruneInterval:          models.SettingVariable{Value: "0 0 0 * * *"},
+		ScheduledPruneContainers:        models.SettingVariable{Value: "true"},  //nolint:staticcheck // Legacy prune setting is still seeded for migration compatibility.
+		ScheduledPruneImages:            models.SettingVariable{Value: "true"},  //nolint:staticcheck // Legacy prune setting is still seeded for migration compatibility.
+		ScheduledPruneVolumes:           models.SettingVariable{Value: "false"}, //nolint:staticcheck // Legacy prune setting is still seeded for migration compatibility.
+		ScheduledPruneNetworks:          models.SettingVariable{Value: "true"},  //nolint:staticcheck // Legacy prune setting is still seeded for migration compatibility.
+		ScheduledPruneBuildCache:        models.SettingVariable{Value: "false"}, //nolint:staticcheck // Legacy prune setting is still seeded for migration compatibility.
+		PruneContainerMode:              models.SettingVariable{Value: "stopped"},
+		PruneContainerUntil:             models.SettingVariable{Value: ""},
+		PruneImageMode:                  models.SettingVariable{Value: "dangling"},
+		PruneImageUntil:                 models.SettingVariable{Value: ""},
+		PruneVolumeMode:                 models.SettingVariable{Value: "none"},
+		PruneNetworkMode:                models.SettingVariable{Value: "unused"},
+		PruneNetworkUntil:               models.SettingVariable{Value: ""},
+		PruneBuildCacheMode:             models.SettingVariable{Value: "none"},
+		PruneBuildCacheUntil:            models.SettingVariable{Value: ""},
+		AutoHealEnabled:                 models.SettingVariable{Value: "false"},
+		AutoHealInterval:                models.SettingVariable{Value: "*/30 * * * * *"},
+		AutoHealExcludedContainers:      models.SettingVariable{Value: ""},
+		AutoHealMaxRestarts:             models.SettingVariable{Value: "5"},
+		AutoHealRestartWindow:           models.SettingVariable{Value: "30"},
+		VolumeBrowserHelperIdleTimeout:  models.SettingVariable{Value: "10"},
+		GitopsSyncInterval:              models.SettingVariable{Value: "0 */1 * * * *"},
+		BaseServerURL:                   models.SettingVariable{Value: "http://localhost"},
+		EnableGravatar:                  models.SettingVariable{Value: "true"},
+		DefaultShell:                    models.SettingVariable{Value: "/bin/sh"},
+		DockerHost:                      models.SettingVariable{Value: "unix:///var/run/docker.sock"},
+		BuildsDirectory:                 models.SettingVariable{Value: "/builds"},
+		AuthLocalEnabled:                models.SettingVariable{Value: "true"},
+		AuthSessionTimeout:              models.SettingVariable{Value: "1440"},
+		AuthPasswordPolicy:              models.SettingVariable{Value: "strong"},
+		VulnerabilityScanEnabled:        models.SettingVariable{Value: "false"},
+		VulnerabilityScanInterval:       models.SettingVariable{Value: "0 0 0 * * *"},
+		TrivyImage:                      models.SettingVariable{Value: DefaultTrivyImage},
+		TrivyNetwork:                    models.SettingVariable{Value: ""},
+		TrivySecurityOpts:               models.SettingVariable{Value: ""},
+		TrivyPrivileged:                 models.SettingVariable{Value: "false"},
+		TrivyPreserveCacheOnVolumePrune: models.SettingVariable{Value: "true"},
+		TrivyResourceLimitsEnabled:      models.SettingVariable{Value: "true"},
+		TrivyCpuLimit:                   models.SettingVariable{Value: "1"},
+		TrivyMemoryLimitMb:              models.SettingVariable{Value: "0"},
+		TrivyConcurrentScanContainers:   models.SettingVariable{Value: "1"},
+		// AuthOidcConfig DEPRECATED will be removed in a future release
+		AuthOidcConfig:             models.SettingVariable{Value: "{}"},
+		OidcEnabled:                models.SettingVariable{Value: "false"},
+		OidcClientId:               models.SettingVariable{Value: ""},
+		OidcClientSecret:           models.SettingVariable{Value: ""},
+		OidcIssuerUrl:              models.SettingVariable{Value: ""},
+		OidcAuthorizationEndpoint:  models.SettingVariable{Value: ""},
+		OidcTokenEndpoint:          models.SettingVariable{Value: ""},
+		OidcUserinfoEndpoint:       models.SettingVariable{Value: ""},
+		OidcJwksEndpoint:           models.SettingVariable{Value: ""},
+		OidcScopes:                 models.SettingVariable{Value: "openid email profile"},
+		OidcAdminClaim:             models.SettingVariable{Value: ""},
+		OidcAdminValue:             models.SettingVariable{Value: ""},
+		OidcSkipTlsVerify:          models.SettingVariable{Value: "false"},
+		OidcAutoRedirectToProvider: models.SettingVariable{Value: "false"},
+		OidcMergeAccounts:          models.SettingVariable{Value: "false"},
+		OidcProviderName:           models.SettingVariable{Value: ""},
+		OidcProviderLogoUrl:        models.SettingVariable{Value: ""},
+		OidcMobileRedirectUris:     models.SettingVariable{Value: "arcane-mobile://oidc-callback"},
+		MobileNavigationMode:       models.SettingVariable{Value: "floating"},
+		MobileNavigationShowLabels: models.SettingVariable{Value: "true"},
+		SidebarHoverExpansion:      models.SettingVariable{Value: "true"},
+		KeyboardShortcutsEnabled:   models.SettingVariable{Value: "true"},
+		ApplicationTheme:           models.SettingVariable{Value: "default"},
+		AccentColor:                models.SettingVariable{Value: "oklch(0.606 0.25 292.717)"},
+		OledMode:                   models.SettingVariable{Value: "false"},
+		MaxImageUploadSize:         models.SettingVariable{Value: "500"},
+		GitSyncMaxFiles:            models.SettingVariable{Value: "500"},
+		GitSyncMaxTotalSizeMb:      models.SettingVariable{Value: "50"},
+		GitSyncMaxBinarySizeMb:     models.SettingVariable{Value: "10"},
+		EnvironmentHealthInterval:  models.SettingVariable{Value: "0 */2 * * * *"},
 
 		DockerAPITimeout:       models.SettingVariable{Value: "30"},
 		DockerImagePullTimeout: models.SettingVariable{Value: "600"},
@@ -225,6 +232,22 @@ func (s *SettingsService) loadDatabaseSettingsInternal(ctx context.Context, db *
 		return nil, fmt.Errorf("failed to load configuration from the database: %w", err)
 	}
 
+	updated, err := s.ensureGranularPruneSettingsMigratedInternal(ctx, db, loaded) //nolint:staticcheck // Legacy prune migration remains temporarily for backward compatibility.
+	if err != nil {
+		return nil, err
+	}
+	if updated {
+		loaded = nil
+		queryCtx, queryCancel = context.WithTimeout(ctx, 10*time.Second)
+		defer queryCancel()
+		err = db.
+			WithContext(queryCtx).
+			Find(&loaded).Error
+		if err != nil {
+			return nil, fmt.Errorf("failed to reload configuration from the database after prune migration: %w", err)
+		}
+	}
+
 	for _, v := range loaded {
 		err = dest.UpdateField(v.Key, v.Value, false)
 
@@ -237,6 +260,144 @@ func (s *SettingsService) loadDatabaseSettingsInternal(ctx context.Context, db *
 	s.applyEnvOverrides(ctx, dest)
 
 	return dest, nil
+}
+
+// Deprecated: This migration path exists only to lift legacy prune settings into the granular model.
+func (s *SettingsService) ensureGranularPruneSettingsMigratedInternal(ctx context.Context, db *database.DB, loaded []models.SettingVariable) (bool, error) {
+	loadedMap := make(map[string]string, len(loaded))
+	for _, setting := range loaded {
+		loadedMap[setting.Key] = setting.Value
+	}
+
+	missingKeys := []string{
+		"pruneContainerMode",
+		"pruneContainerUntil",
+		"pruneImageMode",
+		"pruneImageUntil",
+		"pruneVolumeMode",
+		"pruneNetworkMode",
+		"pruneNetworkUntil",
+		"pruneBuildCacheMode",
+		"pruneBuildCacheUntil",
+	}
+
+	needsMigration := false
+	for _, key := range missingKeys {
+		if _, ok := loadedMap[key]; !ok {
+			needsMigration = true
+			break
+		}
+	}
+
+	if !needsMigration {
+		return false, nil
+	}
+
+	pruneMode := loadedMap["dockerPruneMode"]
+	if pruneMode == "" {
+		pruneMode = "dangling"
+	}
+
+	valuesToPersist := []models.SettingVariable{
+		{Key: "pruneContainerMode", Value: coalesceSettingValueInternal(loadedMap, migrateLegacyContainerPruneModeInternal(loadedMap["scheduledPruneContainers"]), "pruneContainerMode", "scheduledPruneContainerMode")}, //nolint:staticcheck // Legacy prune migration remains temporarily for backward compatibility.
+		{Key: "pruneContainerUntil", Value: coalesceSettingValueInternal(loadedMap, "", "pruneContainerUntil", "scheduledPruneContainerUntil")},
+		{Key: "pruneImageMode", Value: coalesceSettingValueInternal(loadedMap, migrateLegacyImagePruneModeInternal(pruneMode, loadedMap["scheduledPruneImages"]), "pruneImageMode", "scheduledPruneImageMode")}, //nolint:staticcheck // Legacy prune migration remains temporarily for backward compatibility.
+		{Key: "pruneImageUntil", Value: coalesceSettingValueInternal(loadedMap, "", "pruneImageUntil", "scheduledPruneImageUntil")},
+		{Key: "pruneVolumeMode", Value: coalesceSettingValueInternal(loadedMap, migrateLegacyVolumePruneModeInternal(pruneMode, loadedMap["scheduledPruneVolumes"]), "pruneVolumeMode", "scheduledPruneVolumeMode")}, //nolint:staticcheck // Legacy prune migration remains temporarily for backward compatibility.
+		{Key: "pruneNetworkMode", Value: coalesceSettingValueInternal(loadedMap, migrateLegacyNetworkPruneModeInternal(loadedMap["scheduledPruneNetworks"]), "pruneNetworkMode", "scheduledPruneNetworkMode")},       //nolint:staticcheck // Legacy prune migration remains temporarily for backward compatibility.
+		{Key: "pruneNetworkUntil", Value: coalesceSettingValueInternal(loadedMap, "", "pruneNetworkUntil", "scheduledPruneNetworkUntil")},
+		{Key: "pruneBuildCacheMode", Value: coalesceSettingValueInternal(loadedMap, migrateLegacyBuildCachePruneModeInternal(pruneMode, loadedMap["scheduledPruneBuildCache"]), "pruneBuildCacheMode", "scheduledPruneBuildCacheMode")}, //nolint:staticcheck // Legacy prune migration remains temporarily for backward compatibility.
+		{Key: "pruneBuildCacheUntil", Value: coalesceSettingValueInternal(loadedMap, "", "pruneBuildCacheUntil", "scheduledPruneBuildCacheUntil")},
+	}
+
+	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for _, value := range valuesToPersist {
+			if _, ok := loadedMap[value.Key]; ok {
+				continue
+			}
+			if err := tx.Save(&value).Error; err != nil {
+				return fmt.Errorf("failed to persist migrated prune setting %s: %w", value.Key, err)
+			}
+		}
+		return nil
+	}); err != nil {
+		return false, fmt.Errorf("failed to migrate granular prune settings: %w", err)
+	}
+
+	slog.InfoContext(ctx, "migrated legacy prune settings to granular prune settings")
+	return true, nil
+}
+
+// Deprecated: This migration helper exists only to translate legacy prune settings.
+func migrateLegacyContainerPruneModeInternal(legacyValue string) string {
+	if isLegacyPruneEnabledInternal(legacyValue, true) {
+		return "stopped"
+	}
+	return "none"
+}
+
+// Deprecated: This migration helper exists only to translate legacy prune settings.
+func migrateLegacyImagePruneModeInternal(pruneMode, legacyValue string) string {
+	if !isLegacyPruneEnabledInternal(legacyValue, true) {
+		return "none"
+	}
+	if pruneMode == "all" {
+		return "all"
+	}
+	return "dangling"
+}
+
+// Deprecated: This migration helper exists only to translate legacy prune settings.
+func migrateLegacyVolumePruneModeInternal(pruneMode, legacyValue string) string {
+	if !isLegacyPruneEnabledInternal(legacyValue, false) {
+		return "none"
+	}
+	if pruneMode == "all" {
+		return "all"
+	}
+	return "anonymous"
+}
+
+// Deprecated: This migration helper exists only to translate legacy prune settings.
+func migrateLegacyNetworkPruneModeInternal(legacyValue string) string {
+	if isLegacyPruneEnabledInternal(legacyValue, true) {
+		return "unused"
+	}
+	return "none"
+}
+
+// Deprecated: This migration helper exists only to translate legacy prune settings.
+func migrateLegacyBuildCachePruneModeInternal(pruneMode, legacyValue string) string {
+	if !isLegacyPruneEnabledInternal(legacyValue, false) {
+		return "none"
+	}
+	if pruneMode == "all" {
+		return "all"
+	}
+	return "unused"
+}
+
+func isLegacyPruneEnabledInternal(value string, defaultValue bool) bool {
+	if strings.TrimSpace(value) == "" {
+		return defaultValue
+	}
+
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return defaultValue
+	}
+
+	return parsed
+}
+
+func coalesceSettingValueInternal(loadedMap map[string]string, fallback string, keys ...string) string {
+	for _, key := range keys {
+		if value, ok := loadedMap[key]; ok {
+			return value
+		}
+	}
+
+	return fallback
 }
 
 func (s *SettingsService) loadDatabaseConfigFromEnv(ctx context.Context, db *database.DB) (*models.Settings, error) {
@@ -279,14 +440,14 @@ func (s *SettingsService) loadDatabaseConfigFromEnv(ctx context.Context, db *dat
 			slog.DebugContext(ctx, "loadDatabaseConfigFromEnv: env override found", "key", key, "env", envVarName, "valueMasked", mask)
 			rv.Field(i).FieldByName("Value").SetString(utils.TrimQuotes(val))
 			continue
-		}
-		if val, ok := settingsMap[key]; ok {
+		} else if val, ok := settingsMap[key]; ok {
 			// Fallback to database if environment variable is not set
 			slog.DebugContext(ctx, "loadDatabaseConfigFromEnv: using database fallback", "key", key)
 			rv.Field(i).FieldByName("Value").SetString(val)
 			continue
+		} else {
+			slog.DebugContext(ctx, "loadDatabaseConfigFromEnv: env not set and no database value", "key", key, "env", envVarName)
 		}
-		slog.DebugContext(ctx, "loadDatabaseConfigFromEnv: env not set and no database value", "key", key, "env", envVarName)
 	}
 
 	// debug: final snapshot (only show which fields are non-empty)
@@ -383,6 +544,113 @@ func (s *SettingsService) getEffectiveSettingsConfigInternal(ctx context.Context
 	return settings
 }
 
+// MigrateOidcConfigToFields migrates the legacy JSON authOidcConfig to individual fields,
+// and renames legacy auth* keys to their new oidc* names.
+// This should be called during bootstrap to ensure existing configurations are preserved.
+func (s *SettingsService) MigrateOidcConfigToFields(ctx context.Context) error {
+	currentSettings, err := s.GetSettings(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get settings for OIDC migration: %w", err)
+	}
+
+	// Migrate legacy key names (authOidcEnabled -> oidcEnabled, authOidcMergeAccounts -> oidcMergeAccounts)
+	if err := s.migrateOidcKeyNames(ctx); err != nil {
+		slog.WarnContext(ctx, "Failed to migrate OIDC key names", "error", err)
+		// Continue with JSON migration even if key rename fails
+	}
+
+	// Check if migration is needed: if we have authOidcConfig but no oidcClientId
+	if currentSettings.AuthOidcConfig.Value == "" || currentSettings.AuthOidcConfig.Value == "{}" {
+		slog.DebugContext(ctx, "No OIDC config to migrate")
+		return nil
+	}
+
+	// If individual fields are already populated, skip migration
+	if currentSettings.OidcClientId.Value != "" {
+		slog.DebugContext(ctx, "OIDC fields already populated, skipping migration")
+		return nil
+	}
+
+	var oidcConfig models.OidcConfig
+	if err := json.Unmarshal([]byte(currentSettings.AuthOidcConfig.Value), &oidcConfig); err != nil {
+		slog.WarnContext(ctx, "Failed to parse legacy OIDC config for migration", "error", err)
+		return nil
+	}
+
+	// Only migrate if there's actual data
+	if oidcConfig.ClientID == "" && oidcConfig.IssuerURL == "" {
+		slog.DebugContext(ctx, "Legacy OIDC config is empty, skipping migration")
+		return nil
+	}
+
+	slog.InfoContext(ctx, "Migrating legacy OIDC config to individual fields")
+
+	scopes := oidcConfig.Scopes
+	if scopes == "" {
+		scopes = "openid email profile"
+	}
+
+	_, err = s.UpdateSettings(ctx, settings.Update{
+		OidcClientId:     new(oidcConfig.ClientID),
+		OidcClientSecret: new(oidcConfig.ClientSecret),
+		OidcIssuerUrl:    new(oidcConfig.IssuerURL),
+		OidcScopes:       new(scopes),
+		OidcAdminClaim:   new(oidcConfig.AdminClaim),
+		OidcAdminValue:   new(oidcConfig.AdminValue),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to migrate OIDC config: %w", err)
+	}
+
+	slog.InfoContext(ctx, "Successfully migrated OIDC config to individual fields")
+	return nil
+}
+
+// migrateOidcKeyNames renames legacy authOidc* keys to new oidc* keys in the database.
+func (s *SettingsService) migrateOidcKeyNames(ctx context.Context) error {
+	keyMappings := map[string]string{
+		"authOidcEnabled":       "oidcEnabled",
+		"authOidcMergeAccounts": "oidcMergeAccounts",
+		"authOidcClientId":      "oidcClientId",
+		"authOidcClientSecret":  "oidcClientSecret",
+		"authOidcIssuerUrl":     "oidcIssuerUrl",
+		"authOidcScopes":        "oidcScopes",
+		"authOidcAdminClaim":    "oidcAdminClaim",
+		"authOidcAdminValue":    "oidcAdminValue",
+	}
+
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for oldKey, newKey := range keyMappings {
+			// Check if old key exists
+			var oldSetting models.SettingVariable
+			if err := tx.Where("key = ?", oldKey).First(&oldSetting).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					continue // Old key doesn't exist, nothing to migrate
+				}
+				return fmt.Errorf("failed to check old key %s: %w", oldKey, err)
+			}
+
+			// Check if new key already exists
+			var newSetting models.SettingVariable
+			if err := tx.Where("key = ?", newKey).First(&newSetting).Error; err == nil {
+				// New key already exists, delete the old one
+				if err := tx.Delete(&oldSetting).Error; err != nil {
+					return fmt.Errorf("failed to delete old key %s: %w", oldKey, err)
+				}
+				slog.DebugContext(ctx, "Deleted duplicate legacy key", "oldKey", oldKey, "newKey", newKey)
+				continue
+			}
+
+			// Rename: update key from old to new
+			if err := tx.Model(&oldSetting).Update("key", newKey).Error; err != nil {
+				return fmt.Errorf("failed to rename key %s to %s: %w", oldKey, newKey, err)
+			}
+			slog.InfoContext(ctx, "Migrated OIDC setting key", "oldKey", oldKey, "newKey", newKey)
+		}
+		return nil
+	})
+}
+
 func (s *SettingsService) UpdateSetting(ctx context.Context, key, value string) error {
 	if err := s.updateSettingValueNoRefreshInternal(ctx, key, value); err != nil {
 		return err
@@ -468,7 +736,7 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 	changedAutoHeal := false
 	changedTimeouts := make([]libarcane.SettingUpdate, 0)
 
-	for i := range rt.NumField() {
+	for i := 0; i < rt.NumField(); i++ {
 		field := rt.Field(i)
 		fieldValue := rv.Field(i)
 
@@ -501,7 +769,7 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 		}
 
 		if key == "accentColor" && value != "" && value != "default" && !settings.SafeAccentColor.MatchString(value) {
-			return nil, false, false, false, false, false, nil, errors.New("invalid accentColor value")
+			return nil, false, false, false, false, false, nil, fmt.Errorf("invalid accentColor value")
 		}
 
 		var valueToSave string
@@ -531,7 +799,12 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 		case "autoUpdate", "autoUpdateInterval":
 			changedAutoUpdate = true
 		case "scheduledPruneEnabled",
-			"scheduledPruneInterval":
+			"scheduledPruneInterval",
+			"scheduledPruneContainers",
+			"scheduledPruneImages",
+			"scheduledPruneVolumes",
+			"scheduledPruneNetworks",
+			"scheduledPruneBuildCache":
 			changedScheduledPrune = true
 		case "vulnerabilityScanEnabled", "vulnerabilityScanInterval", "trivyNetwork", "trivySecurityOpts", "trivyPrivileged", "trivyResourceLimitsEnabled", "trivyCpuLimit", "trivyMemoryLimitMb", "trivyConcurrentScanContainers":
 			changedVulnerabilityScan = true
@@ -577,6 +850,38 @@ func (s *SettingsService) persistSettings(ctx context.Context, values []models.S
 }
 
 func (s *SettingsService) handleOidcConfigUpdate(ctx context.Context, updates settings.Update) error {
+	// Handle legacy JSON config format (for backward compatibility during migration)
+	if updates.AuthOidcConfig != nil {
+		newCfgStr := *updates.AuthOidcConfig
+		var incoming models.OidcConfig
+		if err := json.Unmarshal([]byte(newCfgStr), &incoming); err != nil {
+			return fmt.Errorf("invalid authOidcConfig JSON: %w", err)
+		}
+
+		current, err := s.GetSettings(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to load current settings: %w", err)
+		}
+
+		if current.AuthOidcConfig.Value != "" {
+			var existing models.OidcConfig
+			if err := json.Unmarshal([]byte(current.AuthOidcConfig.Value), &existing); err == nil {
+				if incoming.ClientSecret == "" {
+					incoming.ClientSecret = existing.ClientSecret
+				}
+			}
+		}
+
+		mergedBytes, err := incoming.MarshalDocument()
+		if err != nil {
+			return fmt.Errorf("failed to marshal merged OIDC config: %w", err)
+		}
+
+		if err := s.updateSettingValueNoRefreshInternal(ctx, "authOidcConfig", string(mergedBytes)); err != nil {
+			return fmt.Errorf("failed to update authOidcConfig: %w", err)
+		}
+	}
+
 	// Handle new individual field for client secret (sensitive field)
 	if updates.OidcClientSecret != nil {
 		secret := *updates.OidcClientSecret
@@ -830,11 +1135,11 @@ func (s *SettingsService) GetStringSetting(ctx context.Context, key, defaultValu
 }
 
 func (s *SettingsService) SetBoolSetting(ctx context.Context, key string, value bool) error {
-	return s.UpdateSetting(ctx, key, strconv.FormatBool(value))
+	return s.UpdateSetting(ctx, key, fmt.Sprintf("%t", value))
 }
 
 func (s *SettingsService) SetIntSetting(ctx context.Context, key string, value int) error {
-	return s.UpdateSetting(ctx, key, strconv.Itoa(value))
+	return s.UpdateSetting(ctx, key, fmt.Sprintf("%d", value))
 }
 
 func (s *SettingsService) SetStringSetting(ctx context.Context, key, value string) error {

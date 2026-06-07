@@ -200,10 +200,6 @@ func (m *EnvironmentMiddleware) hasResourcePath(c echo.Context, envID string) bo
 }
 
 func isManagementPathInternal(suffix string) bool {
-	if suffix == "/activities" || strings.HasPrefix(suffix, "/activities/") {
-		return true
-	}
-
 	if strings.HasPrefix(suffix, "/notifications") {
 		return true
 	}
@@ -346,7 +342,8 @@ func (m *EnvironmentMiddleware) proxyHTTP(c echo.Context, target string, accessT
 	req, err := m.createProxyRequest(c, target, accessToken)
 	if err != nil {
 		errMessage := (&common.EnvironmentProxyRequestCreationError{Err: err}).Error()
-		if invalidTargetErr, ok := errors.AsType[*common.EnvironmentInvalidProxyTargetError](err); ok {
+		var invalidTargetErr *common.EnvironmentInvalidProxyTargetError
+		if errors.As(err, &invalidTargetErr) {
 			errMessage = invalidTargetErr.Error()
 		}
 		return c.JSON(http.StatusInternalServerError, map[string]any{
@@ -355,7 +352,7 @@ func (m *EnvironmentMiddleware) proxyHTTP(c echo.Context, target string, accessT
 		})
 	}
 
-	resp, err := m.httpClient.Do(req)
+	resp, err := m.httpClient.Do(req) //nolint:gosec // intentional proxy request to resolved remote environment URL
 	if err != nil {
 		return c.JSON(http.StatusBadGateway, map[string]any{
 			"success": false,

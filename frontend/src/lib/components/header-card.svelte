@@ -12,10 +12,13 @@
 
 <div
 	class={cn(
-		'bg-card/60 backdrop-blur-md border-border/70 relative overflow-hidden rounded-xl border p-4 shadow-xs sm:p-5',
+		'from-background/60 via-background/40 to-background/60 relative overflow-hidden rounded-xl border bg-linear-to-br p-4 shadow-sm sm:p-6',
 		className
 	)}
 >
+	<div class="bg-primary/10 pointer-events-none absolute -top-10 -right-10 size-40 rounded-full blur-3xl"></div>
+	<div class="bg-muted/40 pointer-events-none absolute -bottom-10 -left-10 size-40 rounded-full blur-3xl"></div>
+
 	<div class="relative">
 		{@render children()}
 	</div>

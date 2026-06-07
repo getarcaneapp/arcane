@@ -1,15 +1,14 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
-	import type { GitRepository, GitRepositoryCreateDto, GitRepositoryUpdateDto } from '$lib/types/automation';
+	import type { GitRepository, GitRepositoryCreateDto, GitRepositoryUpdateDto } from '$lib/types/gitops.type';
 	import GitRepositoryFormSheet from '$lib/components/sheets/git-repository-sheet.svelte';
 	import RepositoryTable from './repository-table.svelte';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api';
-	import { tryCatch } from '$lib/utils/api';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
+	import { tryCatch } from '$lib/utils/try-catch';
 	import { m } from '$lib/paraglide/messages';
 	import { gitRepositoryService } from '$lib/services/git-repository-service';
 	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type ActionButton } from '$lib/layouts/index.js';
-	import { hasPermission } from '$lib/utils/auth';
 
 	let { data } = $props();
 
@@ -75,28 +74,22 @@
 		}
 	}
 
-	const canCreateRepository = $derived(hasPermission('git-repositories:create'));
-
-	const actionButtons: ActionButton[] = $derived.by(() => {
-		const buttons: ActionButton[] = [];
-		if (canCreateRepository) {
-			buttons.push({
-				id: 'create',
-				action: 'create',
-				label: m.common_add_button({ resource: m.resource_repository_cap() }),
-				onclick: openCreateRepositoryDialog
-			});
-		}
-		buttons.push({
+	const actionButtons: ActionButton[] = [
+		{
+			id: 'create',
+			action: 'create',
+			label: m.common_add_button({ resource: m.resource_repository_cap() }),
+			onclick: openCreateRepositoryDialog
+		},
+		{
 			id: 'refresh',
 			action: 'restart',
 			label: m.common_refresh(),
 			onclick: refreshRepositories,
 			loading: isLoading.refresh,
 			disabled: isLoading.refresh
-		});
-		return buttons;
-	});
+		}
+	];
 </script>
 
 <ResourcePageLayout title={m.git_repositories_title()} subtitle={m.git_repositories_subtitle()} {actionButtons}>

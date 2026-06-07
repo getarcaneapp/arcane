@@ -85,12 +85,12 @@ test.describe('Token refresh behaviour', () => {
 	}) => {
 		await registerTokenSeeding(page);
 		const wasRefreshCalled = await mockRefreshSuccess(page);
-		await injectVersionMismatch401Once(page, /\/api\/auth\/me(?:\?.*)?$/);
+		await injectVersionMismatch401Once(page, /\/api\/auth\/me$/);
 
 		await page.goto('/dashboard');
-		await page.waitForLoadState('load');
+		await page.waitForLoadState('networkidle');
 
-		await expect.poll(() => wasRefreshCalled()).toBe(true);
+		expect(wasRefreshCalled()).toBe(true);
 		await expect(page).toHaveURL('/dashboard');
 		await expect(page.getByRole('button', { name: 'Sign in to Arcane' })).not.toBeVisible();
 	});
@@ -100,12 +100,12 @@ test.describe('Token refresh behaviour', () => {
 	}) => {
 		await registerTokenSeeding(page);
 		const wasRefreshCalled = await mockRefreshSuccess(page);
-		await injectVersionMismatch401Once(page, /\/api\/environments\/[^/]+\/containers/);
+		await injectVersionMismatch401Once(page, /\/api\/environments\/0\/containers/);
 
 		await page.goto('/containers');
-		await page.waitForLoadState('load');
+		await page.waitForLoadState('networkidle');
 
-		await expect.poll(() => wasRefreshCalled()).toBe(true);
+		expect(wasRefreshCalled()).toBe(true);
 		await expect(page).toHaveURL('/containers');
 		await expect(page.getByRole('heading', { name: 'Containers', level: 1 })).toBeVisible();
 		await expect(page.getByRole('button', { name: 'Sign in to Arcane' })).not.toBeVisible();
@@ -140,7 +140,7 @@ test.describe('Token refresh behaviour', () => {
 		await page.context().clearCookies();
 		await page.goto('/dashboard');
 		await page.waitForURL(/\/login/, { timeout: 10_000 });
-		await page.waitForLoadState('load');
+		await page.waitForLoadState('networkidle');
 		await expect(page).toHaveURL(/\/login/);
 		await expect(
 			page.getByRole('button', { name: 'Sign in to Arcane', exact: true })

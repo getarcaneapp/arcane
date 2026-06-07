@@ -13,10 +13,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"github.com/getarcaneapp/arcane/backend/pkg/authz"
-	activitylib "github.com/getarcaneapp/arcane/backend/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/pkg/utils"
 	"github.com/getarcaneapp/arcane/types/base"
 	volumetypes "github.com/getarcaneapp/arcane/types/volume"
 	"github.com/moby/moby/client"
@@ -24,10 +21,8 @@ import (
 
 // VolumeHandler provides Huma-based volume management endpoints.
 type VolumeHandler struct {
-	volumeService   *services.VolumeService
-	dockerService   *services.DockerClientService
-	activityService *services.ActivityService
-	appCtx          context.Context
+	volumeService *services.VolumeService
+	dockerService *services.DockerClientService
 }
 
 // --- Huma Input/Output Wrappers ---
@@ -100,7 +95,6 @@ type PruneVolumesInput struct {
 type VolumePruneReportData struct {
 	VolumesDeleted []string `json:"volumesDeleted,omitempty"`
 	SpaceReclaimed uint64   `json:"spaceReclaimed"`
-	ActivityID     *string  `json:"activityId,omitempty"`
 }
 
 type PruneVolumesOutput struct {
@@ -300,14 +294,10 @@ type UploadAndRestoreOutput struct {
 }
 
 // RegisterVolumes registers volume management routes using Huma.
-//
-//nolint:maintidx // long but flat Huma route-registration function; complexity is sequential, not branching
-func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, volumeService *services.VolumeService, activityService *services.ActivityService, appCtx ActivityAppContext) {
+func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, volumeService *services.VolumeService) {
 	h := &VolumeHandler{
-		volumeService:   volumeService,
-		dockerService:   dockerService,
-		activityService: activityService,
-		appCtx:          appCtx.contextInternal(),
+		volumeService: volumeService,
+		dockerService: dockerService,
 	}
 
 	huma.Register(api, huma.Operation{
@@ -321,7 +311,6 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVolumesList),
 	}, h.GetVolumeUsageCounts)
 
 	huma.Register(api, huma.Operation{
@@ -335,7 +324,6 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVolumesList),
 	}, h.ListVolumes)
 
 	huma.Register(api, huma.Operation{
@@ -349,7 +337,6 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVolumesRead),
 	}, h.GetVolume)
 
 	huma.Register(api, huma.Operation{
@@ -363,7 +350,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVolumesCreate),
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.CreateVolume)
 
 	huma.Register(api, huma.Operation{
@@ -377,7 +364,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVolumesDelete),
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.RemoveVolume)
 
 	huma.Register(api, huma.Operation{
@@ -391,7 +378,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVolumesPrune),
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.PruneVolumes)
 
 	huma.Register(api, huma.Operation{
@@ -405,7 +392,6 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVolumesRead),
 	}, h.GetVolumeUsage)
 
 	huma.Register(api, huma.Operation{
@@ -419,7 +405,6 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVolumesList),
 	}, h.GetVolumeSizes)
 
 	// --- Volume Browsing Endpoints ---
@@ -434,7 +419,6 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVolumesBrowse),
 	}, h.BrowseDirectory)
 
 	huma.Register(api, huma.Operation{
@@ -447,7 +431,6 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVolumesBrowse),
 	}, h.GetFileContent)
 
 	huma.Register(api, huma.Operation{
@@ -460,7 +443,6 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVolumesBrowse),
 	}, h.DownloadFile)
 
 	huma.Register(api, huma.Operation{
@@ -490,7 +472,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 				},
 			},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVolumesUpload),
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.UploadFile)
 
 	huma.Register(api, huma.Operation{
@@ -503,7 +485,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVolumesUpload),
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.CreateDirectory)
 
 	huma.Register(api, huma.Operation{
@@ -516,7 +498,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVolumesDelete),
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.DeleteFile)
 
 	// --- Volume Backup Endpoints ---
@@ -531,7 +513,6 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVolumesBrowse),
 	}, h.ListBackups)
 
 	huma.Register(api, huma.Operation{
@@ -544,7 +525,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVolumesBackup),
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.CreateBackup)
 
 	huma.Register(api, huma.Operation{
@@ -557,7 +538,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVolumesBackup),
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.RestoreBackup)
 
 	huma.Register(api, huma.Operation{
@@ -570,7 +551,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVolumesBackup),
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.RestoreBackupFiles)
 
 	huma.Register(api, huma.Operation{
@@ -583,7 +564,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVolumesBackup),
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.DeleteBackup)
 
 	huma.Register(api, huma.Operation{
@@ -596,7 +577,6 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVolumesBrowse),
 	}, h.DownloadBackup)
 
 	huma.Register(api, huma.Operation{
@@ -609,7 +589,6 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVolumesBrowse),
 	}, h.BackupHasPath)
 
 	huma.Register(api, huma.Operation{
@@ -622,7 +601,6 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVolumesBrowse),
 	}, h.ListBackupFiles)
 
 	huma.Register(api, huma.Operation{
@@ -652,7 +630,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 				},
 			},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVolumesUpload),
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.UploadAndRestore)
 }
 
@@ -675,7 +653,7 @@ func (h *VolumeHandler) ListVolumes(ctx context.Context, input *ListVolumesInput
 			Sort:  input.Sort,
 			Order: pagination.SortOrder(input.Order),
 		},
-		Params: pagination.Params{
+		PaginationParams: pagination.PaginationParams{
 			Start: input.Start,
 			Limit: input.Limit,
 		},
@@ -736,6 +714,9 @@ func (h *VolumeHandler) GetVolume(ctx context.Context, input *GetVolumeInput) (*
 
 // CreateVolume creates a new Docker volume.
 func (h *VolumeHandler) CreateVolume(ctx context.Context, input *CreateVolumeInput) (*CreateVolumeOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.volumeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -752,31 +733,10 @@ func (h *VolumeHandler) CreateVolume(ctx context.Context, input *CreateVolumeInp
 		DriverOpts: input.Body.DriverOpts,
 	}
 
-	var response *volumetypes.Volume
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
-		EnvironmentID:  input.EnvironmentID,
-		Type:           models.ActivityTypeResourceAction,
-		ResourceType:   "volume",
-		ResourceID:     input.Body.Name,
-		ResourceName:   input.Body.Name,
-		User:           user,
-		Step:           "Creating volume",
-		Message:        "Creating volume",
-		SuccessMessage: "Volume created successfully",
-		Metadata: models.JSON{
-			"action": "create_volume",
-			"driver": input.Body.Driver,
-		},
-	}, func(runtimeCtx context.Context) error {
-		var createErr error
-		response, createErr = h.volumeService.CreateVolume(runtimeCtx, options, *user)
-		return createErr
-	})
+	response, err := h.volumeService.CreateVolume(ctx, options, *user)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.VolumeCreationError{Err: err}).Error())
 	}
-	response.ActivityID = utils.StringPtrFromTrimmed(activityID)
 
 	return &CreateVolumeOutput{
 		Body: base.ApiResponse[*volumetypes.Volume]{
@@ -788,6 +748,9 @@ func (h *VolumeHandler) CreateVolume(ctx context.Context, input *CreateVolumeInp
 
 // RemoveVolume removes a Docker volume.
 func (h *VolumeHandler) RemoveVolume(ctx context.Context, input *RemoveVolumeInput) (*RemoveVolumeOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.volumeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -797,25 +760,7 @@ func (h *VolumeHandler) RemoveVolume(ctx context.Context, input *RemoveVolumeInp
 		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
 	}
 
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
-		EnvironmentID:  input.EnvironmentID,
-		Type:           models.ActivityTypeResourceAction,
-		ResourceType:   "volume",
-		ResourceID:     input.VolumeName,
-		ResourceName:   input.VolumeName,
-		User:           user,
-		Step:           "Removing volume",
-		Message:        "Removing volume",
-		SuccessMessage: "Volume removed successfully",
-		Metadata: models.JSON{
-			"action": "remove_volume",
-			"force":  input.Force,
-		},
-	}, func(runtimeCtx context.Context) error {
-		return h.volumeService.DeleteVolume(runtimeCtx, input.VolumeName, input.Force, *user)
-	})
-	if err != nil {
+	if err := h.volumeService.DeleteVolume(ctx, input.VolumeName, input.Force, *user); err != nil {
 		return nil, huma.Error500InternalServerError((&common.VolumeDeletionError{Err: err}).Error())
 	}
 
@@ -823,8 +768,7 @@ func (h *VolumeHandler) RemoveVolume(ctx context.Context, input *RemoveVolumeInp
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data: base.MessageResponse{
-				Message:    "Volume removed successfully",
-				ActivityID: utils.StringPtrFromTrimmed(activityID),
+				Message: "Volume removed successfully",
 			},
 		},
 	}, nil
@@ -832,25 +776,14 @@ func (h *VolumeHandler) RemoveVolume(ctx context.Context, input *RemoveVolumeInp
 
 // PruneVolumes removes all unused Docker volumes.
 func (h *VolumeHandler) PruneVolumes(ctx context.Context, input *PruneVolumesInput) (*PruneVolumesOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.volumeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	var report *volumetypes.PruneReport
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
-		EnvironmentID:  input.EnvironmentID,
-		Type:           models.ActivityTypeResourceAction,
-		ResourceType:   "volume",
-		Step:           "Pruning unused volumes",
-		Message:        "Pruning unused volumes",
-		SuccessMessage: "Volumes pruned successfully",
-		Metadata:       models.JSON{"action": "prune_volumes"},
-	}, func(runtimeCtx context.Context) error {
-		var pruneErr error
-		report, pruneErr = h.volumeService.PruneVolumes(runtimeCtx)
-		return pruneErr
-	})
+	report, err := h.volumeService.PruneVolumes(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.VolumePruneError{Err: err}).Error())
 	}
@@ -861,7 +794,6 @@ func (h *VolumeHandler) PruneVolumes(ctx context.Context, input *PruneVolumesInp
 			Data: VolumePruneReportData{
 				VolumesDeleted: report.VolumesDeleted,
 				SpaceReclaimed: report.SpaceReclaimed,
-				ActivityID:     utils.StringPtrFromTrimmed(activityID),
 			},
 		},
 	}, nil
@@ -1002,6 +934,9 @@ func (h *VolumeHandler) DownloadFile(ctx context.Context, input *DownloadFileInp
 }
 
 func (h *VolumeHandler) UploadFile(ctx context.Context, input *UploadFileInput) (*base.ApiResponse[base.MessageResponse], error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.volumeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -1018,95 +953,49 @@ func (h *VolumeHandler) UploadFile(ctx context.Context, input *UploadFileInput) 
 	defer func() { _ = file.Close() }()
 
 	user, _ := humamw.GetCurrentUserFromContext(ctx)
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
-		EnvironmentID:  input.EnvironmentID,
-		Type:           models.ActivityTypeResourceAction,
-		ResourceType:   "volume",
-		ResourceID:     input.VolumeName,
-		ResourceName:   input.VolumeName,
-		User:           user,
-		Step:           "Uploading file",
-		Message:        "Uploading file to volume",
-		SuccessMessage: "File uploaded successfully",
-		Metadata: models.JSON{
-			"action":   "upload_volume_file",
-			"path":     input.Path,
-			"filename": fileHeader.Filename,
-		},
-	}, func(runtimeCtx context.Context) error {
-		return h.volumeService.UploadFile(runtimeCtx, input.VolumeName, input.Path, file, fileHeader.Filename, user)
-	})
+	err = h.volumeService.UploadFile(ctx, input.VolumeName, input.Path, file, fileHeader.Filename, user)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 	return &base.ApiResponse[base.MessageResponse]{
 		Success: true,
-		Data:    base.MessageResponse{Message: "File uploaded successfully", ActivityID: utils.StringPtrFromTrimmed(activityID)},
+		Data:    base.MessageResponse{Message: "File uploaded successfully"},
 	}, nil
 }
 
 func (h *VolumeHandler) CreateDirectory(ctx context.Context, input *CreateDirectoryInput) (*base.ApiResponse[base.MessageResponse], error) {
-	return h.runVolumePathActivityInternal(ctx, input.EnvironmentID, input.VolumeName, input.Path, volumePathActivityConfigInternal{
-		Step:           "Creating directory",
-		Message:        "Creating directory in volume",
-		SuccessMessage: "Directory created successfully",
-		MetadataAction: "create_volume_directory",
-		Action: func(runtimeCtx context.Context, volumeName, path string, user *models.User) error {
-			return h.volumeService.CreateDirectory(runtimeCtx, volumeName, path, user)
-		},
-	})
-}
-
-func (h *VolumeHandler) DeleteFile(ctx context.Context, input *DeleteFileInput) (*base.ApiResponse[base.MessageResponse], error) {
-	return h.runVolumePathActivityInternal(ctx, input.EnvironmentID, input.VolumeName, input.Path, volumePathActivityConfigInternal{
-		Step:           "Deleting file",
-		Message:        "Deleting file or directory from volume",
-		SuccessMessage: "Deleted successfully",
-		MetadataAction: "delete_volume_file",
-		Action: func(runtimeCtx context.Context, volumeName, path string, user *models.User) error {
-			return h.volumeService.DeleteFile(runtimeCtx, volumeName, path, user)
-		},
-	})
-}
-
-type volumePathActivityConfigInternal struct {
-	Step           string
-	Message        string
-	SuccessMessage string
-	MetadataAction string
-	Action         func(context.Context, string, string, *models.User) error
-}
-
-func (h *VolumeHandler) runVolumePathActivityInternal(ctx context.Context, environmentID, volumeName, volumePath string, cfg volumePathActivityConfigInternal) (*base.ApiResponse[base.MessageResponse], error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.volumeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 	user, _ := humamw.GetCurrentUserFromContext(ctx)
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
-		EnvironmentID:  environmentID,
-		Type:           models.ActivityTypeResourceAction,
-		ResourceType:   "volume",
-		ResourceID:     volumeName,
-		ResourceName:   volumeName,
-		User:           user,
-		Step:           cfg.Step,
-		Message:        cfg.Message,
-		SuccessMessage: cfg.SuccessMessage,
-		Metadata: models.JSON{
-			"action": cfg.MetadataAction,
-			"path":   volumePath,
-		},
-	}, func(runtimeCtx context.Context) error {
-		return cfg.Action(runtimeCtx, volumeName, volumePath, user)
-	})
+	err := h.volumeService.CreateDirectory(ctx, input.VolumeName, input.Path, user)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 	return &base.ApiResponse[base.MessageResponse]{
 		Success: true,
-		Data:    base.MessageResponse{Message: cfg.SuccessMessage, ActivityID: utils.StringPtrFromTrimmed(activityID)},
+		Data:    base.MessageResponse{Message: "Directory created successfully"},
+	}, nil
+}
+
+func (h *VolumeHandler) DeleteFile(ctx context.Context, input *DeleteFileInput) (*base.ApiResponse[base.MessageResponse], error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
+	if h.volumeService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+	user, _ := humamw.GetCurrentUserFromContext(ctx)
+	err := h.volumeService.DeleteFile(ctx, input.VolumeName, input.Path, user)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+	return &base.ApiResponse[base.MessageResponse]{
+		Success: true,
+		Data:    base.MessageResponse{Message: "Deleted successfully"},
 	}, nil
 }
 
@@ -1125,7 +1014,7 @@ func (h *VolumeHandler) ListBackups(ctx context.Context, input *ListBackupsInput
 			Sort:  input.Sort,
 			Order: pagination.SortOrder(input.Order),
 		},
-		Params: pagination.Params{
+		PaginationParams: pagination.PaginationParams{
 			Start: input.Start,
 			Limit: input.Limit,
 		},
@@ -1164,6 +1053,9 @@ func (h *VolumeHandler) ListBackups(ctx context.Context, input *ListBackupsInput
 }
 
 func (h *VolumeHandler) CreateBackup(ctx context.Context, input *CreateBackupInput) (*CreateBackupOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.volumeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -1172,28 +1064,10 @@ func (h *VolumeHandler) CreateBackup(ctx context.Context, input *CreateBackupInp
 		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
 	}
 
-	var backup *models.VolumeBackup
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
-		EnvironmentID:  input.EnvironmentID,
-		Type:           models.ActivityTypeResourceAction,
-		ResourceType:   "volume",
-		ResourceID:     input.VolumeName,
-		ResourceName:   input.VolumeName,
-		User:           user,
-		Step:           "Creating backup",
-		Message:        "Creating volume backup",
-		SuccessMessage: "Volume backup created successfully",
-		Metadata:       models.JSON{"action": "create_volume_backup"},
-	}, func(runtimeCtx context.Context) error {
-		var backupErr error
-		backup, backupErr = h.volumeService.CreateBackup(runtimeCtx, input.VolumeName, *user)
-		return backupErr
-	})
+	backup, err := h.volumeService.CreateBackup(ctx, input.VolumeName, *user)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	backup.ActivityID = utils.StringPtrFromTrimmed(activityID)
 	return &CreateBackupOutput{
 		Body: base.ApiResponse[*models.VolumeBackup]{
 			Success: true,
@@ -1203,6 +1077,9 @@ func (h *VolumeHandler) CreateBackup(ctx context.Context, input *CreateBackupInp
 }
 
 func (h *VolumeHandler) RestoreBackup(ctx context.Context, input *RestoreBackupInput) (*RestoreBackupOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.volumeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -1211,36 +1088,22 @@ func (h *VolumeHandler) RestoreBackup(ctx context.Context, input *RestoreBackupI
 		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
 	}
 
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
-		EnvironmentID:  input.EnvironmentID,
-		Type:           models.ActivityTypeResourceAction,
-		ResourceType:   "volume",
-		ResourceID:     input.VolumeName,
-		ResourceName:   input.VolumeName,
-		User:           user,
-		Step:           "Restoring backup",
-		Message:        "Restoring volume backup",
-		SuccessMessage: "Restore initiated successfully",
-		Metadata: models.JSON{
-			"action":   "restore_volume_backup",
-			"backupId": input.BackupID,
-		},
-	}, func(runtimeCtx context.Context) error {
-		return h.volumeService.RestoreBackup(runtimeCtx, input.VolumeName, input.BackupID, *user)
-	})
+	err := h.volumeService.RestoreBackup(ctx, input.VolumeName, input.BackupID, *user)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 	return &RestoreBackupOutput{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
-			Data:    base.MessageResponse{Message: "Restore initiated successfully", ActivityID: utils.StringPtrFromTrimmed(activityID)},
+			Data:    base.MessageResponse{Message: "Restore initiated successfully"},
 		},
 	}, nil
 }
 
 func (h *VolumeHandler) RestoreBackupFiles(ctx context.Context, input *RestoreBackupFilesInput) (*RestoreBackupFilesOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.volumeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -1254,33 +1117,14 @@ func (h *VolumeHandler) RestoreBackupFiles(ctx context.Context, input *RestoreBa
 		return nil, huma.Error400BadRequest("paths are required")
 	}
 
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
-		EnvironmentID:  input.EnvironmentID,
-		Type:           models.ActivityTypeResourceAction,
-		ResourceType:   "volume",
-		ResourceID:     input.VolumeName,
-		ResourceName:   input.VolumeName,
-		User:           user,
-		Step:           "Restoring backup files",
-		Message:        "Restoring files from volume backup",
-		SuccessMessage: "Restore initiated successfully",
-		Metadata: models.JSON{
-			"action":   "restore_volume_backup_files",
-			"backupId": input.BackupID,
-			"paths":    input.Body.Paths,
-		},
-	}, func(runtimeCtx context.Context) error {
-		return h.volumeService.RestoreBackupFiles(runtimeCtx, input.VolumeName, input.BackupID, input.Body.Paths, *user)
-	})
-	if err != nil {
+	if err := h.volumeService.RestoreBackupFiles(ctx, input.VolumeName, input.BackupID, input.Body.Paths, *user); err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 
 	return &RestoreBackupFilesOutput{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
-			Data:    base.MessageResponse{Message: "Restore initiated successfully", ActivityID: utils.StringPtrFromTrimmed(activityID)},
+			Data:    base.MessageResponse{Message: "Restore initiated successfully"},
 		},
 	}, nil
 }
@@ -1326,35 +1170,21 @@ func (h *VolumeHandler) ListBackupFiles(ctx context.Context, input *ListBackupFi
 }
 
 func (h *VolumeHandler) DeleteBackup(ctx context.Context, input *DeleteBackupInput) (*DeleteBackupOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.volumeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 	user, _ := humamw.GetCurrentUserFromContext(ctx)
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
-		EnvironmentID:  input.EnvironmentID,
-		Type:           models.ActivityTypeResourceAction,
-		ResourceType:   "volume_backup",
-		ResourceID:     input.BackupID,
-		ResourceName:   input.BackupID,
-		User:           user,
-		Step:           "Deleting backup",
-		Message:        "Deleting volume backup",
-		SuccessMessage: "Backup deleted successfully",
-		Metadata: models.JSON{
-			"action":   "delete_volume_backup",
-			"backupId": input.BackupID,
-		},
-	}, func(runtimeCtx context.Context) error {
-		return h.volumeService.DeleteBackup(runtimeCtx, input.BackupID, user)
-	})
+	err := h.volumeService.DeleteBackup(ctx, input.BackupID, user)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 	return &DeleteBackupOutput{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
-			Data:    base.MessageResponse{Message: "Backup deleted successfully", ActivityID: utils.StringPtrFromTrimmed(activityID)},
+			Data:    base.MessageResponse{Message: "Backup deleted successfully"},
 		},
 	}, nil
 }
@@ -1384,6 +1214,9 @@ func (h *VolumeHandler) DownloadBackup(ctx context.Context, input *DownloadBacku
 }
 
 func (h *VolumeHandler) UploadAndRestore(ctx context.Context, input *UploadAndRestoreInput) (*UploadAndRestoreOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.volumeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -1404,31 +1237,14 @@ func (h *VolumeHandler) UploadAndRestore(ctx context.Context, input *UploadAndRe
 	}
 	defer func() { _ = file.Close() }()
 
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
-		EnvironmentID:  input.EnvironmentID,
-		Type:           models.ActivityTypeResourceAction,
-		ResourceType:   "volume",
-		ResourceID:     input.VolumeName,
-		ResourceName:   input.VolumeName,
-		User:           user,
-		Step:           "Uploading backup",
-		Message:        "Uploading and restoring volume backup",
-		SuccessMessage: "Backup uploaded and restored successfully",
-		Metadata: models.JSON{
-			"action":   "upload_restore_volume_backup",
-			"filename": fileHeader.Filename,
-		},
-	}, func(runtimeCtx context.Context) error {
-		return h.volumeService.UploadAndRestore(runtimeCtx, input.VolumeName, file, fileHeader.Filename, *user)
-	})
+	err = h.volumeService.UploadAndRestore(ctx, input.VolumeName, file, fileHeader.Filename, *user)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 	return &UploadAndRestoreOutput{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
-			Data:    base.MessageResponse{Message: "Backup uploaded and restored successfully", ActivityID: utils.StringPtrFromTrimmed(activityID)},
+			Data:    base.MessageResponse{Message: "Backup uploaded and restored successfully"},
 		},
 	}, nil
 }

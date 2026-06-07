@@ -8,14 +8,13 @@
 	import { CopyButton } from '$lib/components/ui/copy-button';
 	import { toast } from 'svelte-sonner';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api';
-	import { tryCatch } from '$lib/utils/api';
-	import type { Webhook } from '$lib/types/environment';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
+	import { tryCatch } from '$lib/utils/try-catch';
+	import type { Webhook } from '$lib/types/webhook.type';
+	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import { webhookService } from '$lib/services/webhook-service';
 	import { TrashIcon, EllipsisIcon, GlobeIcon } from '$lib/icons';
 	import * as m from '$lib/paraglide/messages.js';
-	import IfPermitted from '$lib/components/if-permitted.svelte';
 
 	let {
 		webhooks = $bindable(),
@@ -299,18 +298,14 @@
 		</DropdownMenu.Trigger>
 		<DropdownMenu.Content align="end">
 			<DropdownMenu.Group>
-				<IfPermitted perm="webhooks:update">
-					<DropdownMenu.Item onclick={() => handleToggleWebhook(item)} disabled={isLoading.toggling}>
-						{item.enabled ? m.webhook_disable() : m.webhook_enable()}
-					</DropdownMenu.Item>
-				</IfPermitted>
+				<DropdownMenu.Item onclick={() => handleToggleWebhook(item)} disabled={isLoading.toggling}>
+					{item.enabled ? m.webhook_disable() : m.webhook_enable()}
+				</DropdownMenu.Item>
 				<DropdownMenu.Separator />
-				<IfPermitted perm="webhooks:delete">
-					<DropdownMenu.Item variant="destructive" onclick={() => handleDeleteWebhook(item.id, item.name)}>
-						<TrashIcon class="size-4" />
-						{m.common_delete()}
-					</DropdownMenu.Item>
-				</IfPermitted>
+				<DropdownMenu.Item variant="destructive" onclick={() => handleDeleteWebhook(item.id, item.name)}>
+					<TrashIcon class="size-4" />
+					{m.common_delete()}
+				</DropdownMenu.Item>
 			</DropdownMenu.Group>
 		</DropdownMenu.Content>
 	</DropdownMenu.Root>

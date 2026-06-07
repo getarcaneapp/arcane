@@ -2,7 +2,7 @@
 	import * as Card from '$lib/components/ui/card';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { m } from '$lib/paraglide/messages';
-	import type { ContainerDetailsDto, ContainerHealthLogEntry, ContainerHealthcheckDto } from '$lib/types/docker';
+	import type { ContainerDetailsDto, ContainerHealthLogEntry, ContainerHealthcheckDto } from '$lib/types/container.type';
 	import { HealthIcon, SettingsIcon, FileTextIcon } from '$lib/icons';
 	import { format, formatDistanceToNow } from 'date-fns';
 
@@ -38,14 +38,15 @@
 		return isNaN(d.getTime()) ? null : d;
 	}
 
+	// Normalize log entry casing (backend now emits lowercase; tolerate older PascalCase).
 	function normalizeLog(entries: ContainerHealthLogEntry[] | undefined) {
 		if (!entries) return [];
 		return entries
 			.map((e) => ({
-				start: parseDockerDate(e.start),
-				end: parseDockerDate(e.end),
-				exitCode: (e.exitCode ?? 0) as number,
-				output: (e.output ?? '') as string
+				start: parseDockerDate(e.start ?? e.Start),
+				end: parseDockerDate(e.end ?? e.End),
+				exitCode: (e.exitCode ?? e.ExitCode ?? 0) as number,
+				output: (e.output ?? e.Output ?? '') as string
 			}))
 			.filter((e) => e.start || e.end);
 	}

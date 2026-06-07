@@ -1,10 +1,11 @@
 <script lang="ts">
+	import { type Table as TableType } from '@tanstack/table-core';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as Select from '$lib/components/ui/select/index.js';
 	import { m } from '$lib/paraglide/messages';
 	import { ArrowRightIcon, ArrowLeftIcon, DoubleArrowRightIcon, DoubleArrowLeftIcon } from '$lib/icons';
 	import { TABLE_PAGE_SIZE_ALL, TABLE_PAGE_SIZE_OPTIONS } from '$lib/constants/table-pagination';
-	import type { Paginated } from '$lib/types/shared';
+	import type { Paginated } from '$lib/types/pagination.type';
 
 	let {
 		items,
@@ -17,7 +18,8 @@
 		setPage,
 		setPageSize
 	}: {
-		items: Paginated<unknown>;
+		table: TableType<any>;
+		items: Paginated<any>;
 		currentPage: number;
 		totalPages: number;
 		totalItems: number;

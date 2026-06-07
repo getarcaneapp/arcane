@@ -13,7 +13,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"github.com/getarcaneapp/arcane/backend/pkg/authz"
 	"github.com/getarcaneapp/arcane/types/base"
 	"github.com/getarcaneapp/arcane/types/env"
 	"github.com/getarcaneapp/arcane/types/jobschedule"
@@ -23,10 +22,10 @@ import (
 	"gorm.io/gorm"
 )
 
-// adminTestContextInternal returns a context with a sudo PermissionSet attached,
-// suitable for unit-testing handlers that gate via RequirePermission middleware.
+// adminTestContextInternal returns a context with the admin flag set, suitable for
+// unit-testing handlers that call checkAdminInternal directly.
 func adminTestContextInternal() context.Context {
-	return context.WithValue(context.Background(), humamiddleware.ContextKeyUserPermissions, authz.SudoPermissionSet())
+	return context.WithValue(context.Background(), humamiddleware.ContextKeyUserIsAdmin, true)
 }
 
 func setupRemoteHandlerEnvironmentServiceInternal(t *testing.T, server *httptest.Server) *services.EnvironmentService {

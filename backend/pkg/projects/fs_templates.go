@@ -31,12 +31,13 @@ func ReadFolderComposeTemplate(baseDir, folder string) (string, *string, string,
 	for _, envName := range []string{".env.example", ".env"} {
 		envPath := filepath.Join(folderPath, envName)
 		if eb, rerr := os.ReadFile(envPath); rerr == nil {
-			envPtr = new(string(eb))
+			s := string(eb)
+			envPtr = &s
 			break
 		}
 	}
 
-	desc := "Imported from " + composePath
+	desc := fmt.Sprintf("Imported from %s", composePath)
 	return string(b), envPtr, desc, true, nil
 }
 

@@ -13,7 +13,6 @@ const workerGoroutineCountTTL = 5 * time.Second
 
 var workerGoroutineCountCache struct {
 	sync.Mutex
-
 	value int
 	at    time.Time
 }

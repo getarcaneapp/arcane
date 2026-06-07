@@ -2,20 +2,17 @@
 	import { VolumesIcon, VolumeUnusedIcon } from '$lib/icons';
 	import { toast } from 'svelte-sonner';
 	import CreateVolumeSheet from '$lib/components/sheets/create-volume-sheet.svelte';
-	import type { VolumeCreateRequest, VolumeUsageCounts } from '$lib/types/docker';
+	import type { VolumeCreateRequest, VolumeUsageCounts } from '$lib/types/volume.type';
 	import VolumeTable from './volume-table.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { volumeService } from '$lib/services/volume-service';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { hasPermission } from '$lib/utils/auth';
 	import { queryKeys } from '$lib/query/query-keys';
 	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
-	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
-	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
+	import { createMutation, createQuery } from '@tanstack/svelte-query';
 
 	let { data } = $props();
-	const queryClient = useQueryClient();
 
 	let volumes = $state(untrack(() => data.volumes));
 	let requestOptions = $state(untrack(() => data.volumeRequestOptions));
@@ -33,13 +30,10 @@
 	const createVolumeMutation = createMutation(() => ({
 		mutationKey: ['volumes', 'create', envId],
 		mutationFn: (options: VolumeCreateRequest) => volumeService.createVolume(options),
-		onSuccess: async (data, options) => {
+		onSuccess: async (_data, options) => {
 			const name = options.name?.trim() || m.common_unknown();
-			toast.success(
-				m.common_create_success({ resource: `${m.resource_volume()} "${name}"` }),
-				activityToastOptions(extractActivityId(data))
-			);
-			await loadVolumes();
+			toast.success(m.common_create_success({ resource: `${m.resource_volume()} "${name}"` }));
+			await volumesQuery.refetch();
 			isCreateDialogOpen = false;
 		},
 		onError: (_error, options) => {
@@ -58,45 +52,31 @@
 		await createVolumeMutation.mutateAsync(options);
 	}
 
-	async function loadVolumes(options = requestOptions) {
-		requestOptions = options;
-		volumes = await queryClient.fetchQuery({
-			queryKey: queryKeys.volumes.table(envId, options),
-			queryFn: () => volumeService.getVolumesForEnvironment(envId, options)
-		});
-	}
-
 	async function refresh() {
-		await loadVolumes();
+		await volumesQuery.refetch();
 	}
 
 	const isRefreshing = $derived(volumesQuery.isFetching && !volumesQuery.isPending);
 	const volumeUsageCounts = $derived(volumes.counts ?? countsFallback);
 
-	const canCreateVolume = $derived(hasPermission('volumes:create', envId));
-
-	const actionButtons: ActionButton[] = $derived.by(() => {
-		const buttons: ActionButton[] = [];
-		if (canCreateVolume) {
-			buttons.push({
-				id: 'create',
-				action: 'create',
-				label: m.common_create_button({ resource: m.resource_volume_cap() }),
-				onclick: () => (isCreateDialogOpen = true),
-				loading: createVolumeMutation.isPending,
-				disabled: createVolumeMutation.isPending
-			});
-		}
-		buttons.push({
+	const actionButtons: ActionButton[] = $derived([
+		{
+			id: 'create',
+			action: 'create',
+			label: m.common_create_button({ resource: m.resource_volume_cap() }),
+			onclick: () => (isCreateDialogOpen = true),
+			loading: createVolumeMutation.isPending,
+			disabled: createVolumeMutation.isPending
+		},
+		{
 			id: 'refresh',
 			action: 'restart',
 			label: m.common_refresh(),
 			onclick: refresh,
 			loading: isRefreshing,
 			disabled: isRefreshing
-		});
-		return buttons;
-	});
+		}
+	]);
 
 	const statCards: StatCardConfig[] = $derived([
 		{
@@ -116,7 +96,15 @@
 
 <ResourcePageLayout title={m.volumes_title()} subtitle={m.volumes_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
-		<VolumeTable bind:volumes bind:selectedIds bind:requestOptions onRefreshData={loadVolumes} />
+		<VolumeTable
+			bind:volumes
+			bind:selectedIds
+			bind:requestOptions
+			onRefreshData={async (options) => {
+				requestOptions = options;
+				await volumesQuery.refetch();
+			}}
+		/>
 	{/snippet}
 
 	{#snippet additionalContent()}

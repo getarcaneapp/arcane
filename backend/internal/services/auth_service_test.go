@@ -24,17 +24,7 @@ func setupAuthServiceTestDB(t *testing.T) *database.DB {
 	t.Helper()
 	db, err := gorm.Open(glsqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(
-		&models.SettingVariable{},
-		&models.User{},
-		&models.UserSession{},
-		&models.Environment{},
-		&models.Role{},
-		&models.UserRoleAssignment{},
-		&models.ApiKey{},
-		&models.ApiKeyPermission{},
-		&models.OidcRoleMapping{},
-	))
+	require.NoError(t, db.AutoMigrate(&models.SettingVariable{}, &models.User{}, &models.UserSession{}))
 	return &database.DB{DB: db}
 }
 
@@ -59,7 +49,7 @@ func newTestAuthService(secret string) *AuthService {
 	}
 }
 
-func makeAccessToken(t *testing.T, secret []byte, subject string, id string, username string, _ []string, email, displayName string, exp time.Time, sessionIDs ...string) string {
+func makeAccessToken(t *testing.T, secret []byte, subject string, id string, username string, roles []string, email, displayName string, exp time.Time, sessionIDs ...string) string {
 	t.Helper()
 	sessionID := ""
 	if len(sessionIDs) > 0 {
@@ -75,6 +65,7 @@ func makeAccessToken(t *testing.T, secret []byte, subject string, id string, use
 		SessionID:   sessionID,
 		UserID:      id,
 		Username:    username,
+		Roles:       roles,
 		Email:       email,
 		DisplayName: displayName,
 		AppVersion:  config.Version,
@@ -150,6 +141,7 @@ func TestVerifyToken_ValidClaims(t *testing.T) {
 		Username:    "alice",
 		Email:       new("a@example.com"),
 		DisplayName: new("Alice"),
+		Roles:       models.StringSlice{"user", "admin"},
 	}
 	_, err := userSvc.CreateUser(context.Background(), user)
 	require.NoError(t, err)
@@ -167,6 +159,9 @@ func TestVerifyToken_ValidClaims(t *testing.T) {
 	}
 	if verifiedUser.Username != "alice" {
 		t.Errorf("username %q", verifiedUser.Username)
+	}
+	if len(verifiedUser.Roles) != 2 || verifiedUser.Roles[0] != "user" || verifiedUser.Roles[1] != "admin" {
+		t.Errorf("roles %v", verifiedUser.Roles)
 	}
 	if verifiedUser.Email == nil || *verifiedUser.Email != "a@example.com" {
 		t.Errorf("email %v", verifiedUser.Email)
@@ -188,6 +183,7 @@ func TestVerifyToken_RejectsNonHMACAlg(t *testing.T) {
 		},
 		UserID:     "u1",
 		Username:   "bob",
+		Roles:      []string{"user"},
 		AppVersion: config.Version,
 	})
 
@@ -208,6 +204,7 @@ func TestVerifyToken_Expired(t *testing.T) {
 	user := &models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "bob",
+		Roles:     models.StringSlice{"user"},
 	}
 	_, err := userSvc.CreateUser(context.Background(), user)
 	require.NoError(t, err)
@@ -328,6 +325,7 @@ func TestRefreshToken_Valid(t *testing.T) {
 	user := &models.User{
 		BaseModel: models.BaseModel{ID: "u-refresh"},
 		Username:  "refresh-user",
+		Roles:     models.StringSlice{"user"},
 	}
 	_, err = userSvc.CreateUser(context.Background(), user)
 	require.NoError(t, err)
@@ -359,6 +357,7 @@ func TestRefreshToken_VersionMismatchRotates(t *testing.T) {
 	user := &models.User{
 		BaseModel: models.BaseModel{ID: "u-versionmismatch"},
 		Username:  "versionmismatch-user",
+		Roles:     models.StringSlice{"user"},
 	}
 	_, err = userSvc.CreateUser(context.Background(), user)
 	require.NoError(t, err)
@@ -405,6 +404,7 @@ func TestVerifyToken_RejectsRevokedSession(t *testing.T) {
 	user := &models.User{
 		BaseModel: models.BaseModel{ID: "u-revoked"},
 		Username:  "revoked-user",
+		Roles:     models.StringSlice{"user"},
 	}
 	_, err := userSvc.CreateUser(context.Background(), user)
 	require.NoError(t, err)
@@ -428,6 +428,7 @@ func TestVerifyToken_RejectsMissingSessionID(t *testing.T) {
 	user := &models.User{
 		BaseModel: models.BaseModel{ID: "u-no-sid"},
 		Username:  "no-sid-user",
+		Roles:     models.StringSlice{"user"},
 	}
 	_, err := userSvc.CreateUser(context.Background(), user)
 	require.NoError(t, err)
@@ -448,6 +449,7 @@ func TestRevokeSessionThenVerifyTokenFails(t *testing.T) {
 	user := &models.User{
 		BaseModel: models.BaseModel{ID: "u-logout"},
 		Username:  "logout-user",
+		Roles:     models.StringSlice{"user"},
 	}
 	_, err := userSvc.CreateUser(context.Background(), user)
 	require.NoError(t, err)
@@ -474,6 +476,7 @@ func TestRefreshToken_RotatesJTI(t *testing.T) {
 	user := &models.User{
 		BaseModel: models.BaseModel{ID: "u-rotate"},
 		Username:  "rotate-user",
+		Roles:     models.StringSlice{"user"},
 	}
 	_, err = userSvc.CreateUser(context.Background(), user)
 	require.NoError(t, err)
@@ -503,6 +506,7 @@ func TestRefreshToken_RejectsRevokedSession(t *testing.T) {
 	user := &models.User{
 		BaseModel: models.BaseModel{ID: "u-refresh-revoked"},
 		Username:  "refresh-revoked-user",
+		Roles:     models.StringSlice{"user"},
 	}
 	_, err = userSvc.CreateUser(context.Background(), user)
 	require.NoError(t, err)
@@ -529,6 +533,7 @@ func TestChangePassword_RevokesAllSessions(t *testing.T) {
 		BaseModel:    models.BaseModel{ID: "u-password"},
 		Username:     "password-user",
 		PasswordHash: passwordHash,
+		Roles:        models.StringSlice{"user"},
 	}
 	_, err = userSvc.CreateUser(context.Background(), user)
 	require.NoError(t, err)
@@ -559,6 +564,7 @@ func TestChangePassword_KeepsCurrentSessionAlive(t *testing.T) {
 		BaseModel:    models.BaseModel{ID: "u-keep"},
 		Username:     "keep-user",
 		PasswordHash: passwordHash,
+		Roles:        models.StringSlice{"user"},
 	}
 	_, err = userSvc.CreateUser(context.Background(), user)
 	require.NoError(t, err)
@@ -700,6 +706,7 @@ func TestFindOrCreateOidcUser_MergeEnabled_EmailNotVerified_WithExistingUser_Ret
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "existing",
 		Email:     &email,
+		Roles:     models.StringSlice{"user"},
 	}
 	_, err = userSvc.CreateUser(ctx, existing)
 	require.NoError(t, err)
@@ -742,6 +749,7 @@ func TestFindOrCreateOidcUser_MergeEnabled_EmailVerificationMissing_WithExisting
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "existing",
 		Email:     &email,
+		Roles:     models.StringSlice{"user"},
 	}
 	_, err = userSvc.CreateUser(ctx, existing)
 	require.NoError(t, err)

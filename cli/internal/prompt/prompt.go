@@ -1,7 +1,6 @@
 package prompt
 
 import (
-	"errors"
 	"fmt"
 	"os"
 
@@ -21,7 +20,7 @@ func Select(label string, options []string) (int, error) {
 		return -1, fmt.Errorf("no %s options available", label)
 	}
 	if !IsInteractive() {
-		return -1, errors.New("interactive terminal required")
+		return -1, fmt.Errorf("interactive terminal required")
 	}
 
 	items := make([]list.Item, len(options))
@@ -38,16 +37,16 @@ func Select(label string, options []string) (int, error) {
 
 	result, ok := finalModel.(selectModel)
 	if !ok {
-		return -1, errors.New("failed to read selection")
+		return -1, fmt.Errorf("failed to read selection")
 	}
 	if result.canceled {
-		return -1, errors.New("selection canceled")
+		return -1, fmt.Errorf("selection canceled")
 	}
 	if result.choice < 0 {
-		return -1, errors.New("selection required")
+		return -1, fmt.Errorf("selection required")
 	}
 	if result.choice >= len(options) {
-		return -1, errors.New("selection out of range")
+		return -1, fmt.Errorf("selection out of range")
 	}
 
 	clearScreenAndShowSelection(label, options[result.choice])

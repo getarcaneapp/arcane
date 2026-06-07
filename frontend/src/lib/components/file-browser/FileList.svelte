@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { FileEntry } from '$lib/types/shared';
+	import type { FileEntry } from '$lib/types/file-browser.type';
 	import {
 		FolderOpenIcon,
 		FileTextIcon,
@@ -14,15 +14,14 @@
 	import { toast } from 'svelte-sonner';
 	import * as m from '$lib/paraglide/messages.js';
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
+	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import { UniversalMobileCard, type ColumnSpec, type MobileFieldVisibility } from '$lib/components/arcane-table';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import { ArcaneButton } from '$lib/components/arcane-button';
-	import { bytes } from '$lib/utils/formatting';
+	import bytes from '$lib/utils/bytes';
 	import { format } from 'date-fns';
-	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 
 	let {
 		files,
@@ -41,7 +40,7 @@
 		persistKey?: string;
 		onNavigate: (path: string) => void;
 		onRefresh: () => void;
-		onDelete?: (file: FileEntry) => Promise<unknown>;
+		onDelete: (file: FileEntry) => Promise<void>;
 		onDownload: (file: FileEntry) => Promise<void>;
 		onPreview: (file: FileEntry) => void;
 		onRestoreFromBackup?: (file: FileEntry) => void;
@@ -103,7 +102,6 @@
 	}
 
 	async function handleDelete(file: FileEntry) {
-		if (!onDelete) return;
 		openConfirmDialog({
 			title: m.common_remove_title({ resource: file.name }),
 			message: m.volumes_browser_delete_confirm({ name: file.name }),
@@ -112,8 +110,8 @@
 				destructive: true,
 				action: async () => {
 					try {
-						const result = await onDelete(file);
-						toast.success(m.common_delete_success({ resource: file.name }), activityToastOptions(extractActivityId(result)));
+						await onDelete(file);
+						toast.success(m.common_delete_success({ resource: file.name }));
 						onRefresh();
 					} catch (e: any) {
 						toast.error(e.message || m.common_delete_failed({ resource: file.name }));
@@ -227,12 +225,10 @@
 					{/if}
 					<DropdownMenu.Separator />
 				{/if}
-				{#if onDelete}
-					<DropdownMenu.Item variant="destructive" onclick={() => handleDelete(item)}>
-						<TrashIcon class="size-4" />
-						{m.common_delete()}
-					</DropdownMenu.Item>
-				{/if}
+				<DropdownMenu.Item variant="destructive" onclick={() => handleDelete(item)}>
+					<TrashIcon class="size-4" />
+					{m.common_delete()}
+				</DropdownMenu.Item>
 			</DropdownMenu.Group>
 		</DropdownMenu.Content>
 	</DropdownMenu.Root>

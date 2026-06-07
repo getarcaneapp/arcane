@@ -55,7 +55,7 @@ func TestNewAuthBridge_AcceptsEnvironmentAccessTokenViaAPIKey(t *testing.T) {
 	}
 
 	api := humaecho.NewWithGroup(router, apiGroup, humaConfig)
-	api.UseMiddleware(NewAuthBridge(api, &services.AuthService{}, nil, nil, testEnvironmentAccessResolver{
+	api.UseMiddleware(NewAuthBridge(api, &services.AuthService{}, nil, testEnvironmentAccessResolver{
 		env: &models.Environment{
 			BaseModel:   models.BaseModel{ID: "env-self"},
 			Name:        "Self Target",
@@ -174,11 +174,12 @@ func TestNewAuthBridge_OpportunisticAuthOnPublicRoute(t *testing.T) {
 
 	jwtSecret := "test-secret-please-do-not-use-in-prod"
 	cfg := &config.Config{JWTRefreshExpiry: 24 * time.Hour}
-	authSvc := services.NewAuthService(userSvc, nil, nil, sessionSvc, nil, jwtSecret, cfg)
+	authSvc := services.NewAuthService(userSvc, nil, nil, sessionSvc, jwtSecret, cfg)
 
 	_, err := userSvc.CreateUser(context.Background(), &models.User{
 		BaseModel: models.BaseModel{ID: "u-logout"},
 		Username:  "logouttest",
+		Roles:     models.StringSlice{"user"},
 	})
 	require.NoError(t, err)
 
@@ -206,7 +207,7 @@ func TestNewAuthBridge_OpportunisticAuthOnPublicRoute(t *testing.T) {
 		"BearerAuth": {Type: "http", Scheme: "bearer"},
 	}
 	api := humaecho.NewWithGroup(router, apiGroup, humaConfig)
-	api.UseMiddleware(NewAuthBridge(api, authSvc, nil, nil, nil, &config.Config{}))
+	api.UseMiddleware(NewAuthBridge(api, authSvc, nil, nil, &config.Config{}))
 
 	var sawSessionID string
 	huma.Register(api, huma.Operation{

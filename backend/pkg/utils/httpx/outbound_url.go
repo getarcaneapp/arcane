@@ -1,7 +1,6 @@
 package httpx
 
 import (
-	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -14,7 +13,7 @@ import (
 func ValidateOutboundHTTPURL(rawURL string) (*url.URL, error) {
 	trimmed := strings.TrimSpace(rawURL)
 	if trimmed == "" {
-		return nil, errors.New("URL is required")
+		return nil, fmt.Errorf("URL is required")
 	}
 
 	parsed, err := url.Parse(trimmed)
@@ -28,11 +27,11 @@ func ValidateOutboundHTTPURL(rawURL string) (*url.URL, error) {
 	}
 
 	if parsed.User != nil {
-		return nil, errors.New("embedded credentials are not allowed")
+		return nil, fmt.Errorf("embedded credentials are not allowed")
 	}
 
 	if parsed.Host == "" || parsed.Hostname() == "" {
-		return nil, errors.New("URL host is required")
+		return nil, fmt.Errorf("URL host is required")
 	}
 
 	return parsed, nil

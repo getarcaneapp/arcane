@@ -4,23 +4,21 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/getarcaneapp/arcane/backend/api/handlers"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"github.com/getarcaneapp/arcane/backend/pkg/utils"
 	"github.com/labstack/echo/v4"
 )
 
 // RegisterWebhookTrigger registers the public (unauthenticated) trigger endpoint.
 // The token in the URL is the sole authentication mechanism.
 // Rate-limited via PerIPRateLimitForPaths in router_bootstrap.go.
-func RegisterWebhookTrigger(g *echo.Group, webhookService *services.WebhookService, appCtx handlers.ActivityAppContext) {
+func RegisterWebhookTrigger(g *echo.Group, webhookService *services.WebhookService) {
 	g.POST("/webhooks/trigger/:token", func(c echo.Context) error {
 		if webhookService == nil {
 			return c.JSON(http.StatusInternalServerError, map[string]any{"success": false, "error": "service not available"})
 		}
 
 		token := c.Param("token")
-		result, err := webhookService.TriggerByToken(utils.ActivityRuntimeContext(c.Request().Context(), appCtx.ContextInternal()), token)
+		result, err := webhookService.TriggerByToken(c.Request().Context(), token)
 		if err != nil {
 			status := http.StatusInternalServerError
 			if errors.Is(err, services.ErrWebhookNotFound) || errors.Is(err, services.ErrWebhookInvalid) {

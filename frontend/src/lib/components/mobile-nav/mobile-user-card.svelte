@@ -3,13 +3,11 @@
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { mode, toggleMode } from 'mode-watcher';
 	import { m } from '$lib/paraglide/messages';
-	import type { User } from '$lib/types/auth';
+	import type { User } from '$lib/types/user.type';
 	import LocalePicker from '$lib/components/locale-picker.svelte';
 	import EnvironmentSwitcherDialog from '$lib/components/dialogs/environment-switcher-dialog.svelte';
 	import settingsStore from '$lib/stores/config-store';
-	import userStore from '$lib/stores/user-store';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import IfPermitted from '$lib/components/if-permitted.svelte';
 	import {
 		ArrowDownIcon,
 		MoonIcon,
@@ -40,6 +38,7 @@
 	const isDarkMode = $derived(mode.current === 'dark');
 
 	const effectiveUser = $derived(user);
+	const isAdmin = $derived(!!effectiveUser.roles?.includes('admin'));
 
 	function getConnectionString(): string {
 		if (!environmentStore.selected) return '';
@@ -64,7 +63,7 @@
 		<div class="flex-1">
 			<h3 class="text-foreground text-lg font-semibold">{effectiveUser.displayName || effectiveUser.username}</h3>
 			<p class="text-muted-foreground/80 text-sm">
-				{userStore.isGlobalAdmin() ? m.common_admin() : m.common_user()}
+				{effectiveUser.roles?.join(', ')}
 			</p>
 		</div>
 		<div class="flex items-center gap-2">
@@ -95,7 +94,7 @@
 
 	{#if userCardExpanded}
 		<div class="border-border/20 bg-muted/10 space-y-4 border-t p-4">
-			<IfPermitted adminOnly>
+			{#if isAdmin}
 				<button
 					class="bg-background/50 border-border/20 hover:bg-muted/30 flex w-full items-center gap-3 rounded-2xl border p-4 text-left transition-colors"
 					onclick={() => (envDialogOpen = true)}
@@ -122,7 +121,7 @@
 					</div>
 					<ArrowRightIcon class="text-muted-foreground/60 size-5 shrink-0" />
 				</button>
-			</IfPermitted>
+			{/if}
 
 			<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 				<div class="bg-background/50 border-border/20 rounded-2xl border p-4">
@@ -168,4 +167,4 @@
 	{/if}
 </div>
 
-<EnvironmentSwitcherDialog bind:open={envDialogOpen} />
+<EnvironmentSwitcherDialog bind:open={envDialogOpen} {isAdmin} />

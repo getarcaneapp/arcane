@@ -28,9 +28,6 @@ const (
 // Fields with `options:"file"` support Docker secrets via the _FILE suffix.
 // Available options: file, toLower, trimTrailingSlash
 type Config struct {
-	// BuildablesConfig contains feature-specific configuration that can be conditionally compiled
-	BuildablesConfig
-
 	AppUrl            string         `env:"APP_URL" default:"http://localhost:3552"`
 	DatabaseURL       string         `env:"DATABASE_URL" default:"file:data/arcane.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(2500)&_txlock=immediate" options:"file"`
 	AllowDowngrade    bool           `env:"ALLOW_DOWNGRADE" default:"false"`
@@ -40,7 +37,7 @@ type Config struct {
 	TLSCertFile       string         `env:"TLS_CERT_FILE" default:""`
 	TLSKeyFile        string         `env:"TLS_KEY_FILE" default:""`
 	Environment       AppEnvironment `env:"ENVIRONMENT" default:"production"`
-	JWTSecret         string         `env:"JWT_SECRET" default:"default-jwt-secret-change-me" options:"file"`
+	JWTSecret         string         `env:"JWT_SECRET" default:"default-jwt-secret-change-me" options:"file"` //nolint:gosec // configuration field name is part of stable config API
 	JWTRefreshExpiry  time.Duration  `env:"JWT_REFRESH_EXPIRY" default:"168h"`
 	EncryptionKey     string         `env:"ENCRYPTION_KEY" default:"arcane-dev-key-32-characters!!!" options:"file"`
 	AdminStaticAPIKey string         `env:"ADMIN_STATIC_API_KEY" default:"" options:"file"`
@@ -50,17 +47,13 @@ type Config struct {
 	OidcClientSecret           string `env:"OIDC_CLIENT_SECRET" default:"" options:"file"`
 	OidcIssuerURL              string `env:"OIDC_ISSUER_URL" default:""`
 	OidcScopes                 string `env:"OIDC_SCOPES" default:"openid email profile"`
-	OidcGroupsClaim            string `env:"OIDC_GROUPS_CLAIM" default:"groups"`
+	OidcAdminClaim             string `env:"OIDC_ADMIN_CLAIM" default:""`
+	OidcAdminValue             string `env:"OIDC_ADMIN_VALUE" default:""`
 	OidcSkipTlsVerify          bool   `env:"OIDC_SKIP_TLS_VERIFY" default:"false"`
 	OidcAutoRedirectToProvider bool   `env:"OIDC_AUTO_REDIRECT_TO_PROVIDER" default:"false"`
 	OidcProviderName           string `env:"OIDC_PROVIDER_NAME" default:""`
 	OidcProviderLogoUrl        string `env:"OIDC_PROVIDER_LOGO_URL" default:""`
 	OidcMobileRedirectUris     string `env:"OIDC_MOBILE_REDIRECT_URIS" default:"arcane-mobile://oidc-callback"`
-	// OidcRoleMappings declaratively defines OIDC group→role mappings as a
-	// JSON array of role.OidcRoleMappingSpec. Reconciled into source='env'
-	// rows on every boot; rows are read-only at runtime. Supports *_FILE for
-	// Docker secrets. Leave empty to manage mappings purely via the UI/API.
-	OidcRoleMappings string `env:"OIDC_ROLE_MAPPINGS" default:"" options:"file"`
 
 	PUID                    string `env:"PUID" default:""`
 	PGID                    string `env:"PGID" default:""`
@@ -108,6 +101,9 @@ type Config struct {
 	// Timezone for cron job scheduling. Uses IANA timezone names (e.g., "America/New_York", "Europe/London").
 	// "Local" uses the system's local timezone, "UTC" for Coordinated Universal Time.
 	Timezone string `env:"TZ" default:"Local"`
+
+	// BuildablesConfig contains feature-specific configuration that can be conditionally compiled
+	BuildablesConfig
 }
 
 func Load() *Config {
@@ -170,7 +166,7 @@ func loadFromEnv(cfg *Config) {
 		defaultValue := fieldType.Tag.Get("default")
 
 		// Get the environment value directly first
-		envValue := pkgutils.TrimQuotes(os.Getenv(envTag))
+		envValue := trimQuotes(os.Getenv(envTag))
 		if envValue == "" {
 			envValue = defaultValue
 		}
@@ -218,7 +214,7 @@ func visitConfigFields(v reflect.Value, fn func(reflect.Value, reflect.StructFie
 	}
 
 	t := v.Type()
-	for i := range v.NumField() {
+	for i := 0; i < v.NumField(); i++ {
 		field := v.Field(i)
 		fieldType := t.Field(i)
 
@@ -332,14 +328,14 @@ func setFieldValueInternal(field reflect.Value, fieldType reflect.StructField, v
 			defaultValue := fieldType.Tag.Get("default")
 
 			if fallback, fallbackErr := time.ParseDuration(defaultValue); fallbackErr == nil {
-				slog.Warn("Invalid duration for config field, using tagged default",
+				slog.Warn("Invalid duration for config field, using tagged default", //nolint:gosec // logging invalid config input for diagnostics is intentional here.
 					"reason", reason,
 					"field", envTag,
 					"value", value,
 					"default", defaultValue)
 				field.SetInt(int64(fallback))
 			} else {
-				slog.Warn("Invalid duration for config field and invalid tagged default",
+				slog.Warn("Invalid duration for config field and invalid tagged default", //nolint:gosec // logging invalid config input for diagnostics is intentional here.
 					"reason", reason,
 					"field", envTag,
 					"value", value,
@@ -369,6 +365,15 @@ func setFieldValueInternal(field reflect.Value, fieldType reflect.StructField, v
 			field.Set(reflect.ValueOf(os.FileMode(i)))
 		}
 	}
+}
+
+func trimQuotes(s string) string {
+	if len(s) >= 2 {
+		if (s[0] == '"' && s[len(s)-1] == '"') || (s[0] == '\'' && s[len(s)-1] == '\'') {
+			return s[1 : len(s)-1]
+		}
+	}
+	return s
 }
 
 func (a AppEnvironment) IsProdEnvironment() bool {
@@ -476,7 +481,7 @@ func (c *Config) MaskSensitive() map[string]any {
 	v := reflect.ValueOf(c).Elem()
 	t := v.Type()
 
-	for i := range v.NumField() {
+	for i := 0; i < v.NumField(); i++ {
 		field := v.Field(i)
 		fieldType := t.Field(i)
 

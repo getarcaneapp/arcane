@@ -4,7 +4,6 @@
 	import * as Select from '$lib/components/ui/select/index.js';
 	import { Switch } from '$lib/components/ui/switch/index.js';
 	import { m } from '$lib/paraglide/messages';
-	import IfPermitted from '$lib/components/if-permitted.svelte';
 	import type { BuildFormInputsStore, BuildProviderOption } from './build-form.types';
 
 	let {
@@ -58,16 +57,14 @@
 		<Label for="build-load" class="text-sm">{m.load()}</Label>
 	</div>
 
-	<IfPermitted perm="images:build">
-		<ArcaneButton
-			action="start_all"
-			type="button"
-			size="sm"
-			hoverEffect="lift"
-			customLabel={m.build()}
-			onclick={() => onBuild?.()}
-			loading={isBuilding}
-			disabled={isBuilding}
-		/>
-	</IfPermitted>
+	<ArcaneButton
+		action="start_all"
+		type="button"
+		size="sm"
+		hoverEffect="lift"
+		customLabel={m.build()}
+		onclick={() => onBuild?.()}
+		loading={isBuilding}
+		disabled={isBuilding}
+	/>
 </div>

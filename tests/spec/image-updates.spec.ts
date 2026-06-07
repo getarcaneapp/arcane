@@ -1,4 +1,4 @@
-import { test, expect, type Locator, type Page } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import { fetchImagesWithRetry } from '../utils/fetch.util';
 
 const ROUTES = {
@@ -42,7 +42,7 @@ interface UpdateSummary {
 
 async function navigateToImages(page: Page) {
 	await page.goto(ROUTES.page);
-	await page.waitForLoadState('load');
+	await page.waitForLoadState('networkidle');
 }
 
 async function fetchImagesTotal(page: Page, updatesFilter?: string): Promise<number> {
@@ -57,43 +57,6 @@ async function fetchImagesTotal(page: Page, updatesFilter?: string): Promise<num
 	const body = await res.json().catch(() => null as any);
 	const totalItems = Number(body?.pagination?.totalItems ?? 0);
 	return Number.isFinite(totalItems) ? totalItems : 0;
-}
-
-async function getCheckUpdatesAction(page: Page): Promise<Locator> {
-	const pageHeader = page
-		.locator('main header')
-		.filter({ has: page.getByRole('heading', { name: 'Images', exact: true }) })
-		.first();
-	await expect(pageHeader).toBeVisible();
-
-	const directButton = pageHeader
-		.getByRole('button', { name: 'Check Updates', exact: true })
-		.filter({ visible: true })
-		.first();
-
-	if (
-		await expect(directButton)
-			.toBeVisible({ timeout: 5000 })
-			.then(
-				() => true,
-				() => false
-			)
-	) {
-		return directButton;
-	}
-
-	const menuTrigger = pageHeader
-		.getByRole('button', { name: 'More actions' })
-		.filter({ visible: true })
-		.first();
-	await expect(menuTrigger).toBeVisible();
-	await menuTrigger.click();
-
-	const menu = page.locator('[data-slot="dropdown-menu-content"]:visible').last();
-	await expect(menu).toBeVisible();
-	const menuItem = menu.getByRole('menuitem', { name: 'Check Updates', exact: true }).first();
-	await expect(menuItem).toBeVisible();
-	return menuItem;
 }
 
 let realImages: any[] = [];
@@ -113,26 +76,42 @@ test.describe('Image Update UI - Check All Updates Button', () => {
 	test('should display the Check Updates button on images page', async ({ page }) => {
 		await navigateToImages(page);
 
-		const checkUpdatesButton = await getCheckUpdatesAction(page);
+		// Find the Check Updates button - it might be directly visible or in a menu
+		let checkUpdatesButton = page.getByRole('button', { name: 'Check Updates' });
+		const isDirectlyVisible = await checkUpdatesButton.isVisible().catch(() => false);
+
+		if (!isDirectlyVisible) {
+			// Try to find and click the overflow menu trigger
+			const menuTrigger = page.getByRole('button', { name: 'More actions' });
+			await menuTrigger.click();
+			checkUpdatesButton = page.getByRole('menuitem', { name: 'Check Updates' });
+		}
+
 		await expect(checkUpdatesButton).toBeVisible();
 	});
 
 	test('should trigger bulk update check when clicking Check Updates button', async ({ page }) => {
 		await navigateToImages(page);
 
-		const checkUpdatesButton = await getCheckUpdatesAction(page);
-		await expect(checkUpdatesButton).toBeVisible();
+		// Find the Check Updates button - it might be directly visible or in a menu
+		let checkUpdatesButton = page.getByRole('button', { name: 'Check Updates' });
+		const isDirectlyVisible = await checkUpdatesButton.isVisible().catch(() => false);
 
-		const checkAllResponsePromise = page.waitForResponse((response) => {
-			const request = response.request();
-			if (request.method() !== 'POST') return false;
-			return new URL(response.url()).pathname === ROUTES.apiImageUpdatesCheckAll;
-		});
+		if (!isDirectlyVisible) {
+			// Try to find and click the overflow menu trigger
+			const menuTrigger = page.getByRole('button', { name: 'More actions' });
+			await menuTrigger.click();
+			checkUpdatesButton = page.getByRole('menuitem', { name: 'Check Updates' });
+		}
+
+		await expect(checkUpdatesButton).toBeVisible();
 
 		await checkUpdatesButton.click();
 
-		const checkAllResponse = await checkAllResponsePromise;
-		expect(checkAllResponse.ok()).toBeTruthy();
+		if (isDirectlyVisible) {
+			// If it's a direct button, it should show a loading state
+			await expect(checkUpdatesButton).toContainText(/checking/i, { timeout: 10000 });
+		}
 
 		// Eventually a success or completion toast should appear
 		await expect(page.locator('li[data-sonner-toast]')).toBeVisible({ timeout: 60000 });
@@ -327,7 +306,7 @@ test.describe('Image Update UI Integration', () => {
 
 		// Navigate to image detail
 		await page.goto(`/images/${encodeURIComponent(testImage.id)}`);
-		await page.waitForLoadState('load');
+		await page.waitForLoadState('networkidle');
 
 		// The detail page should load
 		await expect(page.locator('h1, h2, [data-testid="image-detail"]').first()).toBeVisible({

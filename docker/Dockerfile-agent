@@ -1,7 +1,6 @@
 # syntax=docker/dockerfile:1
 ARG VERSION="dev"
 ARG REVISION="unknown"
-ARG ARCANE_RUNTIME_BASE_IMAGE=ghcr.io/getarcaneapp/base:distroless
 
 FROM --platform=$BUILDPLATFORM golang:1.26.4-trixie AS agent-builder
 ARG TARGETARCH
@@ -44,16 +43,16 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     -o /out/arcane-agent \
     ./cmd/main.go
 
-RUN mkdir -p /out/rootfs/app/data
-
-FROM ${ARCANE_RUNTIME_BASE_IMAGE} AS agent
+FROM debian:trixie-slim AS agent
 ARG TARGETARCH
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl tzdata tar gzip libdrm2 \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+RUN mkdir -p /app/data
 
-USER 0:0
-COPY --from=agent-builder --chown=65532:65532 /out/rootfs/app/ /app/
-COPY --from=agent-builder --chown=65532:65532 /out/arcane-agent ./arcane-agent
+COPY --from=agent-builder /out/arcane-agent ./arcane-agent
 
 ARG VERSION="dev"
 ARG REVISION="unknown"

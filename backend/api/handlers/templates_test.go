@@ -17,7 +17,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/database"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"github.com/getarcaneapp/arcane/backend/pkg/authz"
 	glsqlite "github.com/glebarez/sqlite"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/labstack/echo/v4"
@@ -131,6 +130,7 @@ func newTemplateFetchTestRouter(t *testing.T, httpClient *http.Client) *echo.Ech
 	_, err = userService.CreateUser(context.Background(), &models.User{
 		BaseModel: models.BaseModel{ID: "user-1"},
 		Username:  "alice",
+		Roles:     models.StringSlice{"admin"},
 	})
 	require.NoError(t, err)
 	require.NoError(t, db.Create(&models.UserSession{
@@ -141,7 +141,7 @@ func newTemplateFetchTestRouter(t *testing.T, httpClient *http.Client) *echo.Ech
 		ExpiresAt:        time.Now().Add(time.Hour),
 	}).Error)
 
-	authService := services.NewAuthService(userService, nil, nil, services.NewSessionService(databaseDB), nil, "test-secret", &config.Config{})
+	authService := services.NewAuthService(userService, nil, nil, services.NewSessionService(databaseDB), "test-secret", &config.Config{})
 	templateService := services.NewTemplateService(context.Background(), nil, httpClient, nil)
 
 	router := echo.New()
@@ -165,23 +165,11 @@ func newTemplateFetchTestRouter(t *testing.T, httpClient *http.Client) *echo.Ech
 	}
 
 	api := humaecho.NewWithGroup(router, apiGroup, humaConfig)
-	api.UseMiddleware(humamiddleware.NewAuthBridge(api, authService, nil, sudoPermResolver{}, nil, &config.Config{}))
+	api.UseMiddleware(humamiddleware.NewAuthBridge(api, authService, nil, nil, &config.Config{}))
 	RegisterHealth(api)
 	RegisterTemplates(api, templateService, nil)
 
 	return router
-}
-
-// sudoPermResolver is a test stub satisfying humamiddleware.PermissionResolver
-// that grants every permission. Used in tests that don't care about RBAC
-// gating — they want auth to succeed and permissions to be unrestricted.
-type sudoPermResolver struct{}
-
-func (sudoPermResolver) ResolvePermissions(_ context.Context, _ *models.User) (*authz.PermissionSet, error) {
-	return authz.SudoPermissionSet(), nil
-}
-func (sudoPermResolver) ResolveApiKeyPermissions(_ context.Context, _ string) (*authz.PermissionSet, error) {
-	return authz.SudoPermissionSet(), nil
 }
 
 func makeTemplateFetchToken(t *testing.T, secret string, userID, username string) string {

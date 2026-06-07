@@ -3,7 +3,6 @@ package projects
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -459,7 +458,7 @@ func CreateUniqueDir(projectsRoot, basePath, name string, perm os.FileMode) (pat
 
 	// Reject empty or invalid sanitized names
 	if sanitized == "" || strings.Trim(sanitized, "_") == "" {
-		return "", "", errors.New("invalid project name: results in empty directory name")
+		return "", "", fmt.Errorf("invalid project name: results in empty directory name")
 	}
 
 	// Get absolute path of the true projects root for validation
@@ -482,7 +481,7 @@ func CreateUniqueDir(projectsRoot, basePath, name string, perm os.FileMode) (pat
 
 		// Security check: ensure candidate is a subdirectory of projectsRoot
 		if !IsSafeSubdirectory(projectsRootAbs, candidateAbs) {
-			return "", "", errors.New("project directory would be outside allowed projects root")
+			return "", "", fmt.Errorf("project directory would be outside allowed projects root")
 		}
 
 		if mkErr := os.Mkdir(candidate, perm); mkErr == nil {
@@ -494,7 +493,7 @@ func CreateUniqueDir(projectsRoot, basePath, name string, perm os.FileMode) (pat
 				if strings.HasPrefix(candidateAbs, projectsRootAbs+string(filepath.Separator)) {
 					_ = os.Remove(candidateAbs)
 				}
-				return "", "", errors.New("created directory is outside allowed projects root")
+				return "", "", fmt.Errorf("created directory is outside allowed projects root")
 			}
 
 			return candidate, folderName, nil

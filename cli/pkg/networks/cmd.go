@@ -3,7 +3,6 @@ package networks
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -45,7 +44,7 @@ var listCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if inUseOnlyFlag && unusedOnlyFlag {
-			return errors.New("--inuse and --unused cannot be used together")
+			return fmt.Errorf("--inuse and --unused cannot be used together")
 		}
 		c, err := client.NewFromConfig()
 		if err != nil {
@@ -346,7 +345,7 @@ func shortID(id string) string {
 func resolveNetworkID(ctx context.Context, c *client.Client, identifier string, allowPrompt bool) (string, string, error) {
 	trimmed := strings.TrimSpace(identifier)
 	if trimmed == "" {
-		return "", "", errors.New("network identifier is required")
+		return "", "", fmt.Errorf("network identifier is required")
 	}
 
 	resp, err := c.Get(ctx, types.Endpoints.Network(c.EnvID(), trimmed))

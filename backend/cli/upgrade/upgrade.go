@@ -2,7 +2,6 @@ package upgrade
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -10,8 +9,7 @@ import (
 
 	docker "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
-	updaterlabels "github.com/getarcaneapp/updater/pkg/labels"
-	updaterlogs "github.com/getarcaneapp/updater/pkg/logs"
+	libupdater "github.com/getarcaneapp/arcane/backend/pkg/libarcane/imageupdate"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
@@ -55,7 +53,7 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	// This prevents interruption when stopping the target container
 	ctx := context.Background()
 
-	logFile, err := updaterlogs.SetupMessageOnlyLogFile("/app/data", "arcane-upgrade", slog.LevelInfo)
+	logFile, err := libupdater.SetupMessageOnlyLogFile("/app/data", "arcane-upgrade", slog.LevelInfo)
 	if err != nil {
 		slog.Warn("Failed to setup file logging", "error", err)
 	} else if logFile != nil {
@@ -153,7 +151,7 @@ func findArcaneContainer(ctx context.Context, dockerClient *client.Client) (cont
 		}
 
 		// New label: com.getarcaneapp.arcane=true
-		if updaterlabels.IsArcaneContainer(labels) {
+		if libupdater.IsArcaneContainer(labels) {
 			slog.Info("Found Arcane container by label", "id", c.ID[:12], "image", c.Image, "names", c.Names)
 			return inspect, nil
 		}
@@ -172,7 +170,7 @@ func findArcaneContainer(ctx context.Context, dockerClient *client.Client) (cont
 		}
 	}
 
-	return container.InspectResponse{}, errors.New("no running Arcane container found")
+	return container.InspectResponse{}, fmt.Errorf("no running Arcane container found")
 }
 
 func isLegacyServerLabel(labels map[string]string) bool {

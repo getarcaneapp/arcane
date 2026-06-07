@@ -41,7 +41,6 @@ func NewClient(ctx context.Context) (*Client, error) {
 
 type inspectCompatibleDockerCli struct {
 	command.Cli
-
 	apiClient client.APIClient
 }
 

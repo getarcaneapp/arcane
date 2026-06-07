@@ -2,7 +2,6 @@ package doctor
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -42,7 +41,7 @@ var DoctorCmd = &cobra.Command{
 
 		cfg := app.Config()
 		if cfg == nil {
-			return errors.New("configuration unavailable")
+			return fmt.Errorf("configuration unavailable")
 		}
 
 		rep := report{Healthy: true}
@@ -124,7 +123,7 @@ var DoctorCmd = &cobra.Command{
 		}
 
 		if !rep.Healthy {
-			return errors.New("diagnostics failed")
+			return fmt.Errorf("diagnostics failed")
 		}
 		return nil
 	},

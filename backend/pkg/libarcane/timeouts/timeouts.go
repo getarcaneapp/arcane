@@ -23,6 +23,6 @@ func GetDuration(settingSeconds int, defaultDuration time.Duration) time.Duratio
 	return defaultDuration
 }
 
-func WithTimeout(ctx context.Context, settingSeconds int, defaultDuration time.Duration) (context.Context, context.CancelFunc) {
-	return context.WithTimeout(ctx, GetDuration(settingSeconds, defaultDuration))
+func WithTimeout(ctx context.Context, settingSeconds int, defaultDuration time.Duration) (context.Context, context.CancelFunc) { //nolint:gosec // helper intentionally returns the cancel func to callers.
+	return context.WithTimeout(ctx, GetDuration(settingSeconds, defaultDuration)) //nolint:gosec // helper intentionally returns the cancel func to callers.
 }

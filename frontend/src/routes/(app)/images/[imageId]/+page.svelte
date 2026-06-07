@@ -3,36 +3,28 @@
 	import { goto } from '$app/navigation';
 	import { Badge } from '$lib/components/ui/badge';
 	import { format } from 'date-fns';
-	import { bytes } from '$lib/utils/formatting';
+	import bytes from '$lib/utils/bytes';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api';
-	import { tryCatch } from '$lib/utils/api';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
+	import { tryCatch } from '$lib/utils/try-catch';
 	import { toast } from 'svelte-sonner';
 	import { onDestroy } from 'svelte';
 	import { ArcaneButton } from '$lib/components/arcane-button';
 	import { m } from '$lib/paraglide/messages';
 	import { imageService } from '$lib/services/image-service.js';
 	import { vulnerabilityService } from '$lib/services/vulnerability-service.js';
-	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 	import {
 		startVulnerabilityScanPolling,
 		stabilizeFailedVulnerabilitySummary,
 		isVulnerabilityScanInProgress
-	} from '$lib/utils/docker';
+	} from '$lib/utils/vulnerability-scan.util';
 	import { ResourceDetailLayout, type DetailAction } from '$lib/layouts';
 	import VulnerabilityScanPanel from '$lib/components/vulnerability/vulnerability-scan-panel.svelte';
-	import type { VulnerabilityScanResult } from '$lib/types/environment';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { hasPermission } from '$lib/utils/auth';
-	import { toastVulnerabilityScanStatus } from '$lib/utils/vulnerability';
+	import type { VulnerabilityScanResult } from '$lib/types/vulnerability.type';
 	import { VolumesIcon, ClockIcon, TagIcon, LayersIcon, CpuIcon, InfoIcon, SettingsIcon, HashIcon } from '$lib/icons';
 
 	let { data } = $props();
 	let { image } = $derived(data);
-
-	const currentEnvId = $derived(environmentStore.selected?.id || '0');
-	const canDeleteImage = $derived(hasPermission('images:delete', currentEnvId));
-	const canScanImage = $derived(hasPermission('vulnerabilities:scan', currentEnvId));
 
 	let isLoading = $state({
 		pulling: false,
@@ -73,11 +65,12 @@
 			const result = await vulnerabilityService.scanImage(image.id);
 			vulnerabilityScan = result;
 			lastScanRequestedAt = result.scanTime || new Date().toISOString();
-			if (isVulnerabilityScanInProgress(result.status)) {
-				toastVulnerabilityScanStatus(result, { includeStarted: true });
-				beginScanPolling(true);
+			if (result.status === 'completed') {
+				toast.success(m.vuln_scan_completed());
+			} else if (result.status === 'failed') {
+				toast.error(result.error || m.vuln_scan_failed());
 			} else {
-				toastVulnerabilityScanStatus(result);
+				beginScanPolling(true);
 			}
 		} catch (error) {
 			console.error('Failed to scan image:', error);
@@ -152,7 +145,11 @@
 					} as VulnerabilityScanResult;
 				}
 				if (showToast) {
-					toastVulnerabilityScanStatus(resolvedSummary);
+					if (resolvedSummary.status === 'completed') {
+						toast.success(m.vuln_scan_completed());
+					} else {
+						toast.error(resolvedSummary.error || m.vuln_scan_failed());
+					}
 				}
 			},
 			onError: () => {}
@@ -218,8 +215,8 @@
 						result: await tryCatch(imageService.deleteImage(id, { force })),
 						message: m.images_remove_failed(),
 						setLoadingState: (value) => (isLoading.removing = value),
-						onSuccess: async (data) => {
-							toast.success(m.images_remove_success(), activityToastOptions(extractActivityId(data)));
+						onSuccess: async () => {
+							toast.success(m.images_remove_success());
 							goto('/images');
 						}
 					});
@@ -228,30 +225,24 @@
 		});
 	}
 
-	const actions: DetailAction[] = $derived.by(() => {
-		const list: DetailAction[] = [];
-		if (canScanImage) {
-			list.push({
-				id: 'scan',
-				action: 'base',
-				label: m.vuln_scan(),
-				loading: isLoading.scanning,
-				disabled: isLoading.scanning,
-				onclick: handleScanImage
-			});
+	const actions: DetailAction[] = $derived([
+		{
+			id: 'scan',
+			action: 'base',
+			label: m.vuln_scan(),
+			loading: isLoading.scanning,
+			disabled: isLoading.scanning,
+			onclick: handleScanImage
+		},
+		{
+			id: 'remove',
+			action: 'remove',
+			label: m.common_remove(),
+			loading: isLoading.removing,
+			disabled: isLoading.removing,
+			onclick: () => handleImageRemove(image.id)
 		}
-		if (canDeleteImage) {
-			list.push({
-				id: 'remove',
-				action: 'remove',
-				label: m.common_remove(),
-				loading: isLoading.removing,
-				disabled: isLoading.removing,
-				onclick: () => handleImageRemove(image.id)
-			});
-		}
-		return list;
-	});
+	]);
 </script>
 
 <ResourceDetailLayout

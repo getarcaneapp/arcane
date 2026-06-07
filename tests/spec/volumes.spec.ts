@@ -11,7 +11,7 @@ test.beforeEach(async ({ page }) => {
 
 async function openCreateVolumeSheet(page: Page) {
 	await page.goto('/volumes');
-	await page.waitForLoadState('load');
+	await page.waitForLoadState('networkidle');
 	await expect(page.getByRole('heading', { name: 'Volumes', level: 1 })).toBeVisible();
 
 	const createButton = page.getByRole('button', { name: 'Create Volume' }).first();
@@ -30,60 +30,46 @@ async function openCreateVolumeSheet(page: Page) {
 async function createVolumeViaUI(page: Page, volumeName: string) {
 	await openCreateVolumeSheet(page);
 	await page.getByRole('dialog').locator('input[type="text"]').first().fill(volumeName);
-	const createRequest = page.waitForResponse(
-		(response) => {
-			const request = response.request();
-			return (
-				request.method() === 'POST' &&
-				/\/api\/environments\/[^/]+\/volumes$/.test(new URL(response.url()).pathname)
-			);
-		},
-		{ timeout: 15000 }
-	);
 	await page.getByRole('dialog').getByRole('button', { name: 'Create Volume' }).click();
-	const createResponse = await createRequest;
-	if (!createResponse.ok()) {
-		throw new Error(
-			`Failed to create volume ${volumeName}: ${createResponse.status()} ${await createResponse.text()}`
-		);
-	}
 	await expect(
 		page.locator('li[data-sonner-toast][data-type="success"] div[data-title]')
 	).toBeVisible();
 }
 
-async function createVolumeViaApi(page: Page, volumeName: string) {
-	const response = await page.request.post('/api/environments/0/volumes', {
-		data: {
-			name: volumeName,
-			driver: 'local'
+async function findVolumeRow(page: Page, volumeName: string, maxRetries = 10) {
+	for (let i = 0; i < maxRetries; i++) {
+		const searchInput = page.getByPlaceholder(/Search/i).first();
+		if (await searchInput.isVisible().catch(() => false)) {
+			await searchInput.fill(volumeName);
 		}
-	});
-	if (!response.ok()) {
-		throw new Error(
-			`Failed to create volume ${volumeName}: ${response.status()} ${await response.text()}`
-		);
+
+		const row = page.locator('tbody tr').filter({ hasText: volumeName }).first();
+		if (await row.isVisible().catch(() => false)) return row;
+		await page.waitForTimeout(500);
+		await page.goto('/volumes');
+		await page.waitForLoadState('networkidle');
 	}
+	return page.locator('tbody tr').filter({ hasText: volumeName }).first();
 }
 
-async function removeVolumeViaApi(page: Page, volumeName: string) {
-	await page.request
-		.delete(`/api/environments/0/volumes/${encodeURIComponent(volumeName)}`)
-		.catch(() => undefined);
-}
+async function removeVolumeViaUI(page: Page, volumeName: string) {
+	if (page.isClosed()) {
+		return;
+	}
 
-async function gotoVolumeDetail(page: Page, volumeName: string) {
-	const volumePath = `/api/environments/0/volumes/${encodeURIComponent(volumeName)}`;
-	const detailResponse = page.waitForResponse((response) => {
-		const request = response.request();
-		return request.method() === 'GET' && new URL(response.url()).pathname === volumePath;
-	});
+	await page.goto('/volumes');
+	await page.waitForLoadState('networkidle');
 
-	await page.goto(`/volumes/${encodeURIComponent(volumeName)}`);
-	const response = await detailResponse;
-	expect(response.ok(), `Expected successful GET ${volumePath}`).toBeTruthy();
-	await expect(page).toHaveURL(new RegExp(`/volumes/.+`));
-	await expect(page.getByRole('heading', { level: 1, name: volumeName })).toBeVisible();
+	const row = await findVolumeRow(page, volumeName, 4);
+	if (!(await row.isVisible().catch(() => false))) return;
+
+	await row.locator('a[href*="/volumes/"]').first().click();
+	await expect(page).toHaveURL(/\/volumes\/.+/);
+	await page.locator('button[data-slot="arcane-button"][data-action="remove"]').click();
+	await page.getByRole('button', { name: 'Remove', exact: true }).last().click();
+	await expect(
+		page.locator('li[data-sonner-toast][data-type="success"] div[data-title]')
+	).toBeVisible();
 }
 
 function facetIds(title: string) {
@@ -116,7 +102,7 @@ test.describe('Volumes Page', () => {
 
 	test('Correct Volume Stat Card Counts', async ({ page }) => {
 		await page.goto('/volumes');
-		await page.waitForLoadState('load');
+		await page.waitForLoadState('networkidle');
 
 		await expect(page.getByText(`${volumeCount.total} Total Volumes`)).toBeVisible();
 	});
@@ -128,7 +114,7 @@ test.describe('Volumes Page', () => {
 
 	test('Display Volume Filters', async ({ page }) => {
 		await page.goto('/volumes');
-		await page.waitForLoadState('load');
+		await page.waitForLoadState('networkidle');
 
 		const { content } = await ensureFacetOpen(page, 'Usage');
 		await expect(content.getByRole('option', { name: /In Use\b/i })).toBeVisible();
@@ -139,19 +125,30 @@ test.describe('Volumes Page', () => {
 		const volumeName = `e2e-inspect-volume-${Date.now()}`;
 
 		try {
-			await createVolumeViaApi(page, volumeName);
-			await gotoVolumeDetail(page, volumeName);
+			await createVolumeViaUI(page, volumeName);
+			await page.goto('/volumes');
+			await page.waitForLoadState('networkidle');
+
+			const row = await findVolumeRow(page, volumeName);
+			await expect(row).toBeVisible();
+			await row.locator('a[href*="/volumes/"]').first().click();
+
+			await expect(page).toHaveURL(new RegExp(`/volumes/.+`));
+			await expect(page.getByRole('heading', { level: 1, name: volumeName })).toBeVisible();
 		} finally {
-			await removeVolumeViaApi(page, volumeName);
+			await removeVolumeViaUI(page, volumeName);
 		}
 	});
 
 	test('Remove Volume', async ({ page }) => {
 		const volumeName = `test-remove-volume-${Date.now()}`;
-		await createVolumeViaApi(page, volumeName);
-		await page.goto(`/volumes/${encodeURIComponent(volumeName)}`);
-		await page.waitForLoadState('load');
+		await createVolumeViaUI(page, volumeName);
+		await page.goto('/volumes');
+		await page.waitForLoadState('networkidle');
 
+		const row = await findVolumeRow(page, volumeName);
+		await expect(row).toBeVisible();
+		await row.locator('a[href*="/volumes/"]').first().click();
 		await expect(page).toHaveURL(new RegExp(`/volumes/.+`));
 		await page.locator('button[data-slot="arcane-button"][data-action="remove"]').click();
 		await page.getByRole('button', { name: 'Remove', exact: true }).last().click();
@@ -165,24 +162,25 @@ test.describe('Volumes Page', () => {
 		const volumeName = `test-volume-${Date.now()}`;
 		try {
 			await createVolumeViaUI(page, volumeName);
-			const response = await page.request.get(
-				`/api/environments/0/volumes/${encodeURIComponent(volumeName)}`
-			);
-			expect(response.ok()).toBe(true);
+			await page.goto('/volumes');
+			await expect(await findVolumeRow(page, volumeName)).toBeVisible();
 		} finally {
-			await removeVolumeViaApi(page, volumeName);
+			await removeVolumeViaUI(page, volumeName);
 		}
 	});
 
 	test('Display correct volume usage badge', async ({ page }) => {
 		const volumeName = `e2e-badge-volume-${Date.now()}`;
 		try {
-			await createVolumeViaApi(page, volumeName);
-			await gotoVolumeDetail(page, volumeName);
+			await createVolumeViaUI(page, volumeName);
+			await page.goto('/volumes');
+			await page.waitForLoadState('networkidle');
 
-			await expect(page.getByText('Unused').first()).toBeVisible();
+			const row = await findVolumeRow(page, volumeName);
+			await expect(row).toBeVisible();
+			await expect(row.getByText('Unused')).toBeVisible();
 		} finally {
-			await removeVolumeViaApi(page, volumeName);
+			await removeVolumeViaUI(page, volumeName);
 		}
 	});
 });

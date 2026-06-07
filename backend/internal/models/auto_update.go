@@ -13,12 +13,9 @@ const (
 	AutoUpdateStatusCompleted AutoUpdateStatus = "completed"
 	AutoUpdateStatusFailed    AutoUpdateStatus = "failed"
 	AutoUpdateStatusSkipped   AutoUpdateStatus = "skipped"
-	AutoUpdateStatusRestarted AutoUpdateStatus = "restarted"
 )
 
 type AutoUpdateRecord struct {
-	BaseModel
-
 	ResourceID       string           `json:"resourceId"`
 	ResourceType     string           `json:"resourceType"`
 	ResourceName     string           `json:"resourceName"`
@@ -31,6 +28,7 @@ type AutoUpdateRecord struct {
 	NewImageVersions JSON             `json:"newImageVersions,omitempty" gorm:"type:text"`
 	Error            *string          `json:"error,omitempty"`
 	Details          JSON             `json:"details,omitempty" gorm:"type:text"`
+	BaseModel
 }
 
 func (AutoUpdateRecord) TableName() string {

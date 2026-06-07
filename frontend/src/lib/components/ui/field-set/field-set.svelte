@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { cn } from '$lib/utils';
-	import { fieldSetVariants } from './variants';
+	import { fieldSetVariants } from '.';
 	import type { FieldSetRootProps } from './types';
 
 	let { ref = $bindable(null), variant = 'default', children, class: className, ...rest }: FieldSetRootProps = $props();

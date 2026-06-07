@@ -7,15 +7,15 @@
 	import { queryKeys } from '$lib/query/query-keys';
 	import environmentUpgradeService from '$lib/services/api/environment-upgrade-service';
 	import systemUpgradeService from '$lib/services/api/system-upgrade-service';
-	import type { AppVersionInformation } from '$lib/types/settings';
-	import type { Environment } from '$lib/types/environment';
-	import { extractApiErrorMessage } from '$lib/utils/api';
+	import type { AppVersionInformation } from '$lib/types/application-configuration';
+	import type { Environment } from '$lib/types/environment.type';
+	import { extractApiErrorMessage } from '$lib/utils/api.util';
 	import { DownloadIcon } from '$lib/icons';
 
 	let {
 		environment,
 		versionInfo,
-		canUpgrade: canUpgradePermission,
+		isAdmin,
 		debug = false,
 		onRefreshRequested,
 		render = 'both',
@@ -24,7 +24,7 @@
 	}: {
 		environment: Environment;
 		versionInfo: AppVersionInformation;
-		canUpgrade: boolean;
+		isAdmin: boolean;
 		debug?: boolean;
 		onRefreshRequested?: () => void | Promise<void>;
 		render?: 'both' | 'trigger' | 'dialog';
@@ -32,7 +32,7 @@
 		upgrading?: boolean;
 	} = $props();
 
-	const shouldCheckUpgrade = $derived(!!(versionInfo.updateAvailable && canUpgradePermission && !debug));
+	const shouldCheckUpgrade = $derived(!!(versionInfo.updateAvailable && isAdmin && !debug));
 	const isLocalEnvironment = $derived(environment.id === '0');
 
 	const upgradeAvailabilityQuery = createQuery(() => ({
@@ -45,7 +45,7 @@
 		staleTime: 0
 	}));
 
-	const upgradeIsAvailable = $derived.by(() => {
+	const canUpgrade = $derived.by(() => {
 		if (debug) return true;
 		const result = upgradeAvailabilityQuery.data;
 		return !!result?.canUpgrade && !result?.error;
@@ -74,9 +74,7 @@
 		return '';
 	});
 
-	const shouldShowUpgrade = $derived(
-		(versionInfo.updateAvailable && canUpgradePermission && upgradeIsAvailable) || (debug && canUpgradePermission)
-	);
+	const shouldShowUpgrade = $derived((versionInfo.updateAvailable && isAdmin && canUpgrade) || (debug && isAdmin));
 
 	const upgradeButtonText = $derived.by(() => {
 		if (upgrading) return m.upgrade_in_progress();

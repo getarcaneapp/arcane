@@ -1,10 +1,10 @@
 import BaseAPIService from './api-service';
-import type { CreateEnvironmentDTO, DeploymentSnippets, Environment, UpdateEnvironmentDTO } from '$lib/types/environment';
-import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
-import type { AppVersionInformation } from '$lib/types/settings';
-import { transformPaginationParams } from '$lib/utils/tables';
+import type { CreateEnvironmentDTO, DeploymentSnippets, Environment, UpdateEnvironmentDTO } from '$lib/types/environment.type';
+import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
+import type { AppVersionInformation } from '$lib/types/application-configuration';
+import { transformPaginationParams } from '$lib/utils/params.util';
 
-class EnvironmentManagementService extends BaseAPIService {
+export default class EnvironmentManagementService extends BaseAPIService {
 	async create(dto: CreateEnvironmentDTO): Promise<Environment> {
 		const res = await this.api.post('/environments', dto);
 		return res.data.data as Environment;

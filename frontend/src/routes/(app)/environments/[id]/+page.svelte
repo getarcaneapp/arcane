@@ -16,12 +16,11 @@
 	import { environmentManagementService } from '$lib/services/env-mgmt-service.js';
 	import { settingsService } from '$lib/services/settings-service';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import type { AppVersionInformation } from '$lib/types/settings';
-	import type { Environment, EnvironmentStatus } from '$lib/types/environment';
-	import { hasPermission } from '$lib/utils/auth';
-	import { isEnvironmentOnline, resolveEnvironmentStatus } from '$lib/utils/docker';
+	import type { AppVersionInformation } from '$lib/types/application-configuration';
+	import type { Environment, EnvironmentStatus } from '$lib/types/environment.type';
+	import { isEnvironmentOnline, resolveEnvironmentStatus } from '$lib/utils/environment-status';
 	import MobileFloatingFormActions from '$lib/components/form/mobile-floating-form-actions.svelte';
-	import { createSettingsForm } from '$lib/utils/settings-form';
+	import { createSettingsForm } from '$lib/utils/settings-form.util';
 	import DetailsTab from './components/DetailsTab.svelte';
 	import GeneralTab from './components/GeneralTab.svelte';
 	import DockerTab from './components/DockerTab.svelte';
@@ -72,10 +71,8 @@
 	let isCurrentlyStandby = $derived(currentStatus === 'standby');
 	let showSettingsTabs = $derived(runtimeEnvironment.enabled && isCurrentlyOnline && settings !== null);
 	let hasMTLSAssets = $derived(Boolean(runtimeEnvironment.edgeMTLSCertificate));
-	let canPairEnvironments = $derived(hasPermission('environments:pair'));
 	let showMTLSDownloads = $derived(
-		canPairEnvironments &&
-			runtimeEnvironment.id !== '0' &&
+		runtimeEnvironment.id !== '0' &&
 			runtimeEnvironment.isEdge &&
 			(runtimeEnvironment.edgeSecurityMode === 'mtls' || hasMTLSAssets)
 	);
@@ -622,7 +619,7 @@
 
 	<Tabs.Root bind:value={activeTab} class="w-full">
 		<div class="my-4">
-			<TabBar items={tabItems} value={activeTab} onValueChange={handleTabChange} />
+			<TabBar items={tabItems} value={activeTab} onValueChange={handleTabChange} class="w-full" />
 		</div>
 
 		<Tabs.Content value="details">

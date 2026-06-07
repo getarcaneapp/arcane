@@ -3,7 +3,6 @@ package handlers
 import (
 	"crypto/x509"
 	"encoding/pem"
-	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -19,10 +18,10 @@ const edgeMTLSCertificateExpiryWarningWindow = 30 * 24 * time.Hour
 
 func generatedEdgeMTLSCAPathInternal(cfg *config.Config) (string, error) {
 	if cfg == nil {
-		return "", errors.New("config not available")
+		return "", fmt.Errorf("config not available")
 	}
 	if edge.NormalizeEdgeMTLSMode(cfg.EdgeMTLSMode) == edge.EdgeMTLSModeDisabled {
-		return "", errors.New("edge mTLS is disabled")
+		return "", fmt.Errorf("edge mTLS is disabled")
 	}
 
 	edgeCfg := &edge.Config{
@@ -49,10 +48,10 @@ func hasGeneratedEdgeMTLSCAInternal(cfg *config.Config) bool {
 
 func generatedEdgeMTLSClientCertPathInternal(cfg *config.Config, envID string) (string, error) {
 	if cfg == nil {
-		return "", errors.New("config not available")
+		return "", fmt.Errorf("config not available")
 	}
 	if edge.NormalizeEdgeMTLSMode(cfg.EdgeMTLSMode) == edge.EdgeMTLSModeDisabled {
-		return "", errors.New("edge mTLS is disabled")
+		return "", fmt.Errorf("edge mTLS is disabled")
 	}
 
 	edgeCfg := &edge.Config{
@@ -83,7 +82,7 @@ func readGeneratedEdgeMTLSCertificateInfoInternal(cfg *config.Config, envID stri
 
 	block, _ := pem.Decode(certPEM)
 	if block == nil {
-		return nil, errors.New("decode generated edge mTLS client certificate PEM")
+		return nil, fmt.Errorf("decode generated edge mTLS client certificate PEM")
 	}
 
 	cert, err := x509.ParseCertificate(block.Bytes)
@@ -94,9 +93,11 @@ func readGeneratedEdgeMTLSCertificateInfoInternal(cfg *config.Config, envID stri
 	expiresAt := cert.NotAfter.UTC()
 	now := time.Now().UTC()
 	remaining := expiresAt.Sub(now)
+	daysRemaining := edgeMTLSCertificateDaysRemainingInternal(now, expiresAt)
+
 	info := &typesenvironment.EdgeMTLSCertificate{
 		ExpiresAt:     &expiresAt,
-		DaysRemaining: new(edgeMTLSCertificateDaysRemainingInternal(now, expiresAt)),
+		DaysRemaining: &daysRemaining,
 		Expired:       now.After(expiresAt),
 		ExpiringSoon:  now.Before(expiresAt) && remaining <= edgeMTLSCertificateExpiryWarningWindow,
 	}

@@ -3,7 +3,6 @@ package notifications
 import (
 	"encoding/json"
 	"fmt"
-	"strconv"
 
 	"github.com/getarcaneapp/arcane/cli/internal/client"
 	"github.com/getarcaneapp/arcane/cli/internal/cmdutil"
@@ -26,9 +25,54 @@ var NotificationsCmd = &cobra.Command{
 	Short:   "Manage notifications",
 }
 
+var appriseCmd = &cobra.Command{
+	Use:   "apprise",
+	Short: "Manage Apprise configuration",
+}
+
 var settingsCmd = &cobra.Command{
 	Use:   "settings",
 	Short: "Manage notification settings",
+}
+
+var appriseGetCmd = &cobra.Command{
+	Use:          "get",
+	Short:        "Get Apprise configuration",
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := client.NewFromConfig()
+		if err != nil {
+			return err
+		}
+
+		resp, err := c.Get(cmd.Context(), types.Endpoints.NotificationsApprise(c.EnvID()))
+		if err != nil {
+			return fmt.Errorf("failed to get apprise config: %w", err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+
+		var result base.ApiResponse[notification.AppriseResponse]
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			return fmt.Errorf("failed to parse response: %w", err)
+		}
+
+		if jsonOutput {
+			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
+			if err != nil {
+				return fmt.Errorf("failed to marshal JSON: %w", err)
+			}
+			fmt.Println(string(resultBytes))
+			return nil
+		}
+
+		output.Header("Apprise Configuration")
+		output.KeyValue("ID", fmt.Sprintf("%d", result.Data.ID))
+		output.KeyValue("API URL", result.Data.APIURL)
+		output.KeyValue("Enabled", fmt.Sprintf("%t", result.Data.Enabled))
+		output.KeyValue("Image Update Tag", result.Data.ImageUpdateTag)
+		output.KeyValue("Container Update Tag", result.Data.ContainerUpdateTag)
+		return nil
+	},
 }
 
 var settingsGetCmd = &cobra.Command{
@@ -65,14 +109,48 @@ var settingsGetCmd = &cobra.Command{
 		rows := make([][]string, len(result))
 		for i, setting := range result {
 			rows[i] = []string{
-				strconv.FormatUint(uint64(setting.ID), 10),
+				fmt.Sprintf("%d", setting.ID),
 				string(setting.Provider),
-				strconv.FormatBool(setting.Enabled),
+				fmt.Sprintf("%t", setting.Enabled),
 			}
 		}
 
 		output.Table(headers, rows)
 		fmt.Printf("\nTotal: %d notification settings\n", len(result))
+		return nil
+	},
+}
+
+var appriseTestCmd = &cobra.Command{
+	Use:          "test",
+	Short:        "Test Apprise notification",
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := client.NewFromConfig()
+		if err != nil {
+			return err
+		}
+
+		resp, err := c.Post(cmd.Context(), types.Endpoints.NotificationsAppriseTest(c.EnvID()), nil)
+		if err != nil {
+			return fmt.Errorf("failed to test apprise: %w", err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
+			return fmt.Errorf("apprise test failed: %w", err)
+		}
+
+		if jsonOutput {
+			var result base.ApiResponse[any]
+			if err := json.NewDecoder(resp.Body).Decode(&result); err == nil {
+				if resultBytes, err := json.MarshalIndent(result.Data, "", "  "); err == nil {
+					fmt.Println(string(resultBytes))
+				}
+			}
+			return nil
+		}
+
+		output.Success("Apprise notification test successful")
 		return nil
 	},
 }
@@ -149,12 +227,18 @@ var testProviderCmd = &cobra.Command{
 }
 
 func init() {
+	NotificationsCmd.AddCommand(appriseCmd)
 	NotificationsCmd.AddCommand(settingsCmd)
 	NotificationsCmd.AddCommand(testProviderCmd)
+
+	appriseCmd.AddCommand(appriseGetCmd)
+	appriseCmd.AddCommand(appriseTestCmd)
 
 	settingsCmd.AddCommand(settingsGetCmd)
 	settingsCmd.AddCommand(settingsDeleteCmd)
 
+	appriseGetCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
+	appriseTestCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	settingsGetCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	settingsDeleteCmd.Flags().BoolVarP(&notifForceFlag, "force", "f", false, "Force deletion without confirmation")
 	settingsDeleteCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")

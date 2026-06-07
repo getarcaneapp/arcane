@@ -1,11 +1,11 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api';
-	import { tryCatch } from '$lib/utils/api';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
+	import { tryCatch } from '$lib/utils/try-catch';
 	import ApiKeyTable from './api-key-table.svelte';
 	import ApiKeyFormSheet from '$lib/components/sheets/api-key-form-sheet.svelte';
-	import type { SearchPaginationSortRequest } from '$lib/types/shared';
-	import type { ApiKey, ApiKeyCreated, CreateApiKey } from '$lib/types/auth';
+	import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
+	import type { ApiKey, ApiKeyCreated } from '$lib/types/api-key.type';
 	import { apiKeyService } from '$lib/services/api-key-service';
 	import { SettingsPageLayout, type SettingsActionButton } from '$lib/layouts/index.js';
 	import * as ResponsiveDialog from '$lib/components/ui/responsive-dialog/index.js';
@@ -51,7 +51,7 @@
 		isEditMode,
 		apiKeyId
 	}: {
-		apiKey: CreateApiKey;
+		apiKey: { name: string; description?: string; expiresAt?: string };
 		isEditMode: boolean;
 		apiKeyId?: string;
 	}) {
@@ -129,20 +129,11 @@
 		<ApiKeyFormSheet
 			bind:open={isDialogOpen.create}
 			apiKeyToEdit={null}
-			manifest={data.permissionsManifest}
-			availablePermissions={[]}
 			onSubmit={handleApiKeySubmit}
 			isLoading={isLoading.creating}
 		/>
 
-		<ApiKeyFormSheet
-			bind:open={isDialogOpen.edit}
-			{apiKeyToEdit}
-			manifest={data.permissionsManifest}
-			availablePermissions={apiKeyToEdit?.permissions ?? []}
-			onSubmit={handleApiKeySubmit}
-			isLoading={isLoading.editing}
-		/>
+		<ApiKeyFormSheet bind:open={isDialogOpen.edit} {apiKeyToEdit} onSubmit={handleApiKeySubmit} isLoading={isLoading.editing} />
 
 		<ResponsiveDialog.Root
 			bind:open={isDialogOpen.showKey}

@@ -9,8 +9,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/internal/common"
 	"github.com/getarcaneapp/arcane/backend/internal/models"
 	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"github.com/getarcaneapp/arcane/backend/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/pkg/utils"
 	"github.com/getarcaneapp/arcane/types/base"
 	"github.com/getarcaneapp/arcane/types/updater"
 )
@@ -18,7 +16,6 @@ import (
 // UpdaterHandler provides Huma-based updater management endpoints.
 type UpdaterHandler struct {
 	updaterService *services.UpdaterService
-	appCtx         context.Context
 }
 
 // --- Huma Input/Output Wrappers ---
@@ -59,10 +56,9 @@ type GetUpdaterHistoryOutput struct {
 }
 
 // RegisterUpdater registers updater management routes using Huma.
-func RegisterUpdater(api huma.API, updaterService *services.UpdaterService, appCtx ActivityAppContext) {
+func RegisterUpdater(api huma.API, updaterService *services.UpdaterService) {
 	h := &UpdaterHandler{
 		updaterService: updaterService,
-		appCtx:         appCtx.contextInternal(),
 	}
 
 	huma.Register(api, huma.Operation{
@@ -76,7 +72,7 @@ func RegisterUpdater(api huma.API, updaterService *services.UpdaterService, appC
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermImageUpdatesCheck),
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.RunUpdater)
 
 	huma.Register(api, huma.Operation{
@@ -90,7 +86,6 @@ func RegisterUpdater(api huma.API, updaterService *services.UpdaterService, appC
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermImageUpdatesRead),
 	}, h.GetUpdaterStatus)
 
 	huma.Register(api, huma.Operation{
@@ -104,7 +99,6 @@ func RegisterUpdater(api huma.API, updaterService *services.UpdaterService, appC
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermImageUpdatesRead),
 	}, h.GetUpdaterHistory)
 
 	huma.Register(api, huma.Operation{
@@ -118,23 +112,25 @@ func RegisterUpdater(api huma.API, updaterService *services.UpdaterService, appC
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermImageUpdatesCheck),
+		Middlewares: humamw.RequireAdmin(api),
 	}, h.UpdateContainer)
 }
 
 // RunUpdater applies pending container updates.
 func (h *UpdaterHandler) RunUpdater(ctx context.Context, input *RunUpdaterInput) (*RunUpdaterOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.updaterService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	options := updater.Options{}
+	dryRun := false
 	if input.Body != nil {
-		options = *input.Body
+		dryRun = input.Body.DryRun
 	}
 
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	out, err := h.updaterService.ApplyPending(runtimeCtx, options)
+	out, err := h.updaterService.ApplyPending(ctx, dryRun)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.UpdaterRunError{Err: err}).Error())
 	}
@@ -189,12 +185,14 @@ func (h *UpdaterHandler) GetUpdaterHistory(ctx context.Context, input *GetUpdate
 
 // UpdateContainer updates a single container by pulling the latest image and applying the appropriate update flow.
 func (h *UpdaterHandler) UpdateContainer(ctx context.Context, input *UpdateContainerInput) (*UpdateContainerOutput, error) {
+	if err := checkAdminInternal(ctx); err != nil {
+		return nil, err
+	}
 	if h.updaterService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	out, err := h.updaterService.UpdateSingleContainer(runtimeCtx, input.ContainerID)
+	out, err := h.updaterService.UpdateSingleContainer(ctx, input.ContainerID)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.UpdaterRunError{Err: err}).Error())
 	}

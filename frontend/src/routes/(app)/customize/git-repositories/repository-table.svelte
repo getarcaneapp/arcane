@@ -3,11 +3,12 @@
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
+	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import { toast } from 'svelte-sonner';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api';
-	import { tryCatch } from '$lib/utils/api';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
-	import type { GitRepository } from '$lib/types/automation';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
+	import { tryCatch } from '$lib/utils/try-catch';
+	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
+	import type { GitRepository } from '$lib/types/gitops.type';
 	import type { ColumnSpec, BulkAction } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
 	import { format } from 'date-fns';
@@ -22,9 +23,6 @@
 		ExternalLinkIcon as LinkIcon,
 		EllipsisIcon
 	} from '$lib/icons';
-	import { hasPermission } from '$lib/utils/auth';
-	import IfPermitted from '$lib/components/if-permitted.svelte';
-	import { bulkConfirmAndRun, confirmAndRun } from '$lib/utils/bulk-actions';
 
 	type FieldVisibility = Record<string, boolean>;
 
@@ -45,8 +43,6 @@
 		testing: false
 	});
 
-	const canDeleteRepository = $derived(hasPermission('git-repositories:delete'));
-
 	const bulkActions = $derived.by<BulkAction[]>(() => [
 		{
 			id: 'remove',
@@ -54,7 +50,7 @@
 			action: 'remove',
 			onClick: handleDeleteSelected,
 			loading: isLoading.removing,
-			disabled: !canDeleteRepository || isLoading.removing,
+			disabled: isLoading.removing,
 			icon: Trash2Icon
 		}
 	]);
@@ -62,46 +58,67 @@
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 
 	async function handleDeleteSelected(ids: string[]) {
-		bulkConfirmAndRun({
-			ids,
+		if (!ids?.length) return;
+
+		openConfirmDialog({
 			title: m.common_remove_title({ resource: `${ids.length} ${m.resource_repository()}(s)` }),
 			message: m.common_remove_message({ resource: `${ids.length} ${m.resource_repository()}(s)` }),
-			confirmLabel: m.common_remove(),
-			destructive: true,
-			run: (id) => gitRepositoryService.deleteRepository(id),
-			messages: {
-				success: (count) => m.common_delete_success({ resource: `${count} ${m.resource_repository()}(s)` }),
-				partial: (_success, _total, failed) => m.common_delete_failed({ resource: `${failed} items` }),
-				failure: () => m.common_delete_failed({ resource: `${ids.length} items` })
-			},
-			setLoading: (loading) => (isLoading.removing = loading),
-			onItemFailure: (id) => {
-				const repo = repositories.data.find((item) => item.id === id);
-				toast.error(m.common_delete_failed({ resource: repo?.name ?? m.common_unknown() }));
-			},
-			onComplete: async (result) => {
-				if (result.success > 0) {
-					repositories = await gitRepositoryService.getRepositories(requestOptions);
+			confirm: {
+				label: m.common_remove(),
+				destructive: true,
+				action: async () => {
+					isLoading.removing = true;
+
+					let successCount = 0;
+					let failureCount = 0;
+					for (const id of ids) {
+						const repo = repositories.data.find((r) => r.id === id);
+						const result = await tryCatch(gitRepositoryService.deleteRepository(id));
+						if (result.error) {
+							failureCount++;
+							toast.error(m.common_delete_failed({ resource: repo?.name ?? m.common_unknown() }));
+						} else {
+							successCount++;
+						}
+					}
+
+					if (successCount > 0) {
+						toast.success(m.common_delete_success({ resource: `${successCount} ${m.resource_repository()}(s)` }));
+						repositories = await gitRepositoryService.getRepositories(requestOptions);
+					}
+					if (failureCount > 0) toast.error(m.common_delete_failed({ resource: `${failureCount} items` }));
+
+					selectedIds = [];
+					isLoading.removing = false;
 				}
-			},
-			clearSelection: () => (selectedIds = []),
-			sequential: true
+			}
 		});
 	}
 
 	async function handleDeleteOne(id: string, name: string) {
 		const safeName = name ?? m.common_unknown();
-		confirmAndRun({
+		openConfirmDialog({
 			title: m.git_repository_remove_confirm(),
 			message: m.git_repository_remove_message(),
-			confirmLabel: m.common_remove(),
-			destructive: true,
-			setLoading: (loading) => (isLoading.removing = loading),
-			run: () => gitRepositoryService.deleteRepository(id),
-			failureMessage: m.common_delete_failed({ resource: safeName }),
-			onSuccess: async () => {
-				toast.success(m.common_delete_success({ resource: `${m.resource_repository()} "${safeName}"` }));
-				repositories = await gitRepositoryService.getRepositories(requestOptions);
+			confirm: {
+				label: m.common_remove(),
+				destructive: true,
+				action: async () => {
+					isLoading.removing = true;
+
+					const result = await tryCatch(gitRepositoryService.deleteRepository(id));
+					handleApiResultWithCallbacks({
+						result,
+						message: m.common_delete_failed({ resource: safeName }),
+						setLoadingState: () => {},
+						onSuccess: async () => {
+							toast.success(m.common_delete_success({ resource: `${m.resource_repository()} "${safeName}"` }));
+							repositories = await gitRepositoryService.getRepositories(requestOptions);
+						}
+					});
+
+					isLoading.removing = false;
+				}
 			}
 		});
 	}
@@ -242,32 +259,26 @@
 		</DropdownMenu.Trigger>
 		<DropdownMenu.Content align="end">
 			<DropdownMenu.Group>
-				<IfPermitted perm="git-repositories:test">
-					<DropdownMenu.Item onclick={() => handleTest(item.id, item.name)} disabled={isLoading.testing}>
-						<TestTubeIcon class="size-4" />
-						{m.git_repository_test_connection()}
-					</DropdownMenu.Item>
-				</IfPermitted>
+				<DropdownMenu.Item onclick={() => handleTest(item.id, item.name)} disabled={isLoading.testing}>
+					<TestTubeIcon class="size-4" />
+					{m.git_repository_test_connection()}
+				</DropdownMenu.Item>
 
-				<IfPermitted perm="git-repositories:update">
-					<DropdownMenu.Item onclick={() => onEditRepository(item)}>
-						<PencilIcon class="size-4" />
-						{m.common_edit()}
-					</DropdownMenu.Item>
-				</IfPermitted>
+				<DropdownMenu.Item onclick={() => onEditRepository(item)}>
+					<PencilIcon class="size-4" />
+					{m.common_edit()}
+				</DropdownMenu.Item>
 
-				{#if canDeleteRepository}
-					<DropdownMenu.Separator />
+				<DropdownMenu.Separator />
 
-					<DropdownMenu.Item
-						variant="destructive"
-						onclick={() => handleDeleteOne(item.id, item.name)}
-						disabled={isLoading.removing}
-					>
-						<Trash2Icon class="size-4" />
-						{m.common_remove()}
-					</DropdownMenu.Item>
-				{/if}
+				<DropdownMenu.Item
+					variant="destructive"
+					onclick={() => handleDeleteOne(item.id, item.name)}
+					disabled={isLoading.removing}
+				>
+					<Trash2Icon class="size-4" />
+					{m.common_remove()}
+				</DropdownMenu.Item>
 			</DropdownMenu.Group>
 		</DropdownMenu.Content>
 	</DropdownMenu.Root>

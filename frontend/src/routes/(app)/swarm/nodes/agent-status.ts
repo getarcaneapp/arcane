@@ -1,5 +1,5 @@
 import { m } from '$lib/paraglide/messages';
-import type { SwarmNodeAgentState } from '$lib/types/swarm';
+import type { SwarmNodeAgentState } from '$lib/types/swarm.type';
 
 export function getSwarmNodeAgentLabel(state: SwarmNodeAgentState | null | undefined): string {
 	switch (state) {

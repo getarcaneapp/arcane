@@ -1,5 +1,4 @@
 import { Button as EmailButton } from 'react-email';
-import { colors, fonts, radii } from '../theme';
 
 interface ButtonProps {
 	href: string;
@@ -9,13 +8,12 @@ interface ButtonProps {
 
 export const Button = ({ href, children, style = {} }: ButtonProps) => {
 	const buttonStyle = {
-		backgroundColor: colors.accent,
-		color: colors.buttonText,
+		backgroundColor: '#000000',
+		color: '#ffffff',
 		padding: '12px 24px',
-		borderRadius: radii.button,
+		borderRadius: '4px',
 		fontSize: '15px',
 		fontWeight: '500',
-		fontFamily: fonts.sans,
 		cursor: 'pointer',
 		marginTop: '10px',
 		...style

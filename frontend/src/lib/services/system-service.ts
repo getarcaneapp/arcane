@@ -1,15 +1,9 @@
 import BaseAPIService from './api-service';
 import { environmentStore } from '$lib/stores/environment.store.svelte';
-import type { DockerInfo } from '$lib/types/docker';
-import type { SystemPruneRequest } from '$lib/types/automation';
+import type { DockerInfo } from '$lib/types/docker-info.type';
+import type { SystemPruneRequest } from '$lib/types/prune.type';
 
-type ConvertedDockerRun = {
-	dockerCompose: string;
-	envVars: string;
-	serviceName: string;
-};
-
-class SystemService extends BaseAPIService {
+export class SystemService extends BaseAPIService {
 	async pruneAll(options: SystemPruneRequest) {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		return this.pruneAllForEnvironment(envId, options);
@@ -38,13 +32,12 @@ class SystemService extends BaseAPIService {
 		return this.handleResponse(this.api.get(`/environments/${environmentId}/system/docker/info`));
 	}
 
-	async convert(dockerRunCommand: string): Promise<ConvertedDockerRun> {
+	async convert(dockerRunCommand: string) {
 		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.handleResponse(
-			this.api.post(`/environments/${envId}/system/convert`, {
-				dockerRunCommand
-			})
-		);
+		const res = await this.api.post(`/environments/${envId}/system/convert`, {
+			dockerRunCommand
+		});
+		return res.data;
 	}
 }
 

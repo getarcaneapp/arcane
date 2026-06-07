@@ -6,14 +6,12 @@
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { m } from '$lib/paraglide/messages';
 	import settingsStore from '$lib/stores/config-store';
-	import { createForm } from '$lib/utils/settings';
-	import { isDepotBuildAvailable } from '$lib/utils/build-provider';
+	import { createForm } from '$lib/utils/form.utils';
 	import { toast } from 'svelte-sonner';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { ResourceDetailLayout } from '$lib/layouts/index.js';
 	import TabbedPageLayout from '$lib/layouts/tabbed-page-layout.svelte';
-	import { sanitizeLogText } from '$lib/utils/formatting';
-	import IfPermitted from '$lib/components/if-permitted.svelte';
+	import { sanitizeLogText } from '$lib/utils/log-text';
 	import {
 		CodeIcon,
 		TerminalIcon,
@@ -41,7 +39,7 @@
 		getLayerStats,
 		isIndeterminatePhase,
 		getAggregateStatus
-	} from '$lib/utils/docker';
+	} from '$lib/utils/pull-progress';
 	import ResizableSplit from '$lib/components/resizable-split.svelte';
 	import BuildControls from './components/build-controls.svelte';
 	import BuildWorkspacePanel from './components/build-workspace-panel.svelte';
@@ -49,8 +47,8 @@
 	import BuildOutputPanel from './components/build-output-panel.svelte';
 	import type { BuildProviderOption } from './components/build-form.types';
 	import { imageService } from '$lib/services/image-service';
-	import type { ImageBuildRecord, ImageBuildStatus } from '$lib/types/docker';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
+	import type { ImageBuildRecord, ImageBuildStatus } from '$lib/types/image.type';
+	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import { queryKeys } from '$lib/query/query-keys';
 	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { format } from 'date-fns';
@@ -68,7 +66,11 @@
 		return `…/${tail}`;
 	});
 
-	const depotAvailable = $derived(isDepotBuildAvailable($settingsStore));
+	const depotAvailable = $derived.by(() => {
+		const projectId = ($settingsStore?.depotProjectId ?? '').trim();
+		const token = ($settingsStore?.depotToken ?? '').trim();
+		return Boolean($settingsStore?.depotConfigured) || (Boolean(projectId) && Boolean(token));
+	});
 
 	const providerOptions = $derived.by<BuildProviderOption[]>(() => {
 		const options: BuildProviderOption[] = [
@@ -216,29 +218,30 @@
 	});
 	const buildHistoryDetailsLoading = $derived(buildHistoryDetailQuery.isPending || buildHistoryDetailQuery.isFetching);
 
-	type ImageBuildRequest = { envId: string; provider: 'local' | 'depot' } & Pick<
-		ImageBuildRecord,
-		| 'contextDir'
-		| 'dockerfile'
-		| 'tags'
-		| 'target'
-		| 'buildArgs'
-		| 'labels'
-		| 'cacheFrom'
-		| 'cacheTo'
-		| 'noCache'
-		| 'pull'
-		| 'network'
-		| 'isolation'
-		| 'shmSize'
-		| 'ulimits'
-		| 'entitlements'
-		| 'privileged'
-		| 'extraHosts'
-		| 'platforms'
-		| 'push'
-		| 'load'
-	>;
+	type ImageBuildRequest = {
+		envId: string;
+		contextDir: string;
+		dockerfile?: string;
+		tags: string[];
+		target?: string;
+		buildArgs?: Record<string, string>;
+		labels?: Record<string, string>;
+		cacheFrom?: string[];
+		cacheTo?: string[];
+		noCache?: boolean;
+		pull?: boolean;
+		network?: string;
+		isolation?: string;
+		shmSize?: number;
+		ulimits?: Record<string, string>;
+		entitlements?: string[];
+		privileged?: boolean;
+		extraHosts?: string[];
+		platforms?: string[];
+		provider: 'local' | 'depot';
+		push: boolean;
+		load: boolean;
+	};
 
 	const buildMutation = createMutation(() => ({
 		mutationKey: queryKeys.images.buildRun(selectedEnvId),
@@ -428,8 +431,17 @@
 
 		update();
 
-		mq.addEventListener('change', update);
-		return () => mq.removeEventListener('change', update);
+		if ('addEventListener' in mq) {
+			mq.addEventListener('change', update);
+			return () => mq.removeEventListener('change', update);
+		}
+
+		// @ts-expect-error legacy MediaQueryList API
+		mq.addListener(update);
+		return () => {
+			// @ts-expect-error legacy MediaQueryList API
+			mq.removeListener(update);
+		};
 	});
 
 	$effect(() => {
@@ -1002,16 +1014,14 @@
 							{/if}
 							<span class="text-muted-foreground">{formatTimestamp(buildHistorySelected.createdAt)}</span>
 						</div>
-						<IfPermitted perm="images:build">
-							<ArcaneButton
-								action="base"
-								tone="outline"
-								size="sm"
-								icon={RedeployIcon}
-								customLabel={m.build_rebuild()}
-								onclick={() => buildHistorySelected && applyBuildConfig(buildHistorySelected)}
-							/>
-						</IfPermitted>
+						<ArcaneButton
+							action="base"
+							tone="outline"
+							size="sm"
+							icon={RedeployIcon}
+							customLabel={m.build_rebuild()}
+							onclick={() => buildHistorySelected && applyBuildConfig(buildHistorySelected)}
+						/>
 					</div>
 					{#if buildHistorySelected.errorMessage}
 						<div class="border-destructive/20 bg-destructive/10 text-destructive rounded-lg border p-3 text-sm">

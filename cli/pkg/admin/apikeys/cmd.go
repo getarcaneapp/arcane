@@ -1,12 +1,11 @@
 package apikeys
 
 import (
-	"errors"
+	"encoding/json"
 	"fmt"
-	"strconv"
-	"strings"
 	"time"
 
+	"github.com/getarcaneapp/arcane/cli/internal/client"
 	"github.com/getarcaneapp/arcane/cli/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/internal/output"
 	"github.com/getarcaneapp/arcane/cli/internal/types"
@@ -23,46 +22,10 @@ var (
 )
 
 var (
-	apikeyCreatePermissions []string
-)
-
-var (
 	apikeyUpdateName        string
 	apikeyUpdateDescription string
 	apikeyUpdateExpiresAt   string
-	apikeyUpdatePermissions []string
 )
-
-// parsePermissionGrantsInternal turns `--permission` tokens into the wire-format
-// grant list. Each token is either `resource:action` (global grant) or
-// `resource:action:envId` (env-scoped grant). Anything else is an error so the
-// user catches typos before the server rejects them.
-func parsePermissionGrantsInternal(tokens []string) ([]apikey.PermissionGrant, error) {
-	out := make([]apikey.PermissionGrant, 0, len(tokens))
-	for _, raw := range tokens {
-		token := strings.TrimSpace(raw)
-		if token == "" {
-			continue
-		}
-		parts := strings.Split(token, ":")
-		switch len(parts) {
-		case 2:
-			out = append(out, apikey.PermissionGrant{Permission: token})
-		case 3:
-			env := parts[2]
-			if parts[0] == "" || parts[1] == "" || env == "" {
-				return nil, fmt.Errorf("invalid --permission value %q (expected `resource:action[:envId]`)", raw)
-			}
-			out = append(out, apikey.PermissionGrant{
-				Permission:    parts[0] + ":" + parts[1],
-				EnvironmentID: &env,
-			})
-		default:
-			return nil, fmt.Errorf("invalid --permission value %q (expected `resource:action[:envId]`)", raw)
-		}
-	}
-	return out, nil
-}
 
 // ApiKeysCmd is the parent command for API key operations
 var ApiKeysCmd = &cobra.Command{
@@ -77,7 +40,7 @@ var listCmd = &cobra.Command{
 	Short:        "List API keys",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := cmdutil.ClientFromCommand(cmd)
+		c, err := client.NewFromConfig()
 		if err != nil {
 			return err
 		}
@@ -95,15 +58,20 @@ var listCmd = &cobra.Command{
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.Paginated[apikey.ApiKey]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return fmt.Errorf("failed to list API keys: %w", err)
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			return fmt.Errorf("failed to parse response: %w", err)
 		}
 
 		if jsonOutput {
-			return cmdutil.PrintJSON(result)
+			resultBytes, err := json.MarshalIndent(result, "", "  ")
+			if err != nil {
+				return fmt.Errorf("failed to marshal JSON: %w", err)
+			}
+			fmt.Println(string(resultBytes))
+			return nil
 		}
 
-		headers := []string{"ID", "NAME", "DESCRIPTION", "PERMISSIONS", "CREATED", "LAST USED"}
+		headers := []string{"ID", "NAME", "DESCRIPTION", "CREATED", "LAST USED"}
 		rows := make([][]string, len(result.Data))
 		for i, key := range result.Data {
 			description := ""
@@ -118,7 +86,6 @@ var listCmd = &cobra.Command{
 				key.ID,
 				key.Name,
 				description,
-				strconv.Itoa(len(key.Permissions)),
 				key.CreatedAt.Format("2006-01-02 15:04"),
 				lastUsed,
 			}
@@ -138,46 +105,51 @@ var createCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		description, _ := cmd.Flags().GetString("description")
 
-		c, err := cmdutil.ClientFromCommand(cmd)
+		c, err := client.NewFromConfig()
 		if err != nil {
 			return err
 		}
 
-		grants, err := parsePermissionGrantsInternal(apikeyCreatePermissions)
-		if err != nil {
-			return err
-		}
-		if len(grants) == 0 {
-			return errors.New("at least one --permission is required (e.g. --permission containers:list)")
-		}
 		createReq := apikey.CreateApiKey{
-			Name:        args[0],
-			Permissions: grants,
+			Name: args[0],
 		}
 		if description != "" {
 			createReq.Description = &description
 		}
-		if expiresAtRaw, _ := cmd.Flags().GetString("expires-at"); expiresAtRaw != "" {
-			parsed, err := time.Parse(time.RFC3339, expiresAtRaw)
-			if err != nil {
-				return fmt.Errorf("invalid --expires-at format (use RFC3339): %w", err)
-			}
-			createReq.ExpiresAt = &parsed
+		// TODO: Parse expiresAt string to time.Time if needed
+		// if expiresAt != "" {
+		//     parsedTime, err := time.Parse(time.RFC3339, expiresAt)
+		//     if err == nil {
+		//         createReq.ExpiresAt = &parsedTime
+		//     }
+		// }
+
+		reqBody, err := json.Marshal(createReq)
+		if err != nil {
+			return fmt.Errorf("failed to marshal request: %w", err)
 		}
 
-		resp, err := c.Post(cmd.Context(), types.Endpoints.ApiKeys(), createReq)
+		resp, err := c.Post(cmd.Context(), types.Endpoints.ApiKeys(), reqBody)
 		if err != nil {
 			return fmt.Errorf("failed to create API key: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
-
-		var result base.ApiResponse[apikey.ApiKeyCreatedDto]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
 			return fmt.Errorf("failed to create API key: %w", err)
 		}
 
+		var result base.ApiResponse[apikey.ApiKeyCreatedDto]
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			return fmt.Errorf("failed to parse response: %w", err)
+		}
+
 		if jsonOutput {
-			return cmdutil.PrintJSON(result.Data)
+			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
+			if err != nil {
+				return fmt.Errorf("failed to marshal JSON: %w", err)
+			}
+			fmt.Println(string(resultBytes))
+			return nil
 		}
 
 		output.Success("API key created successfully")
@@ -209,7 +181,7 @@ var deleteCmd = &cobra.Command{
 			}
 		}
 
-		c, err := cmdutil.ClientFromCommand(cmd)
+		c, err := client.NewFromConfig()
 		if err != nil {
 			return err
 		}
@@ -225,10 +197,15 @@ var deleteCmd = &cobra.Command{
 
 		if jsonOutput {
 			var result base.ApiResponse[any]
-			if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-				return fmt.Errorf("failed to delete API key: %w", err)
+			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+				return fmt.Errorf("failed to parse response: %w", err)
 			}
-			return cmdutil.PrintJSON(result.Data)
+			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
+			if err != nil {
+				return fmt.Errorf("failed to marshal JSON: %w", err)
+			}
+			fmt.Println(string(resultBytes))
+			return nil
 		}
 
 		output.Success("API key deleted successfully")
@@ -242,7 +219,7 @@ var getCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := cmdutil.ClientFromCommand(cmd)
+		c, err := client.NewFromConfig()
 		if err != nil {
 			return err
 		}
@@ -254,12 +231,17 @@ var getCmd = &cobra.Command{
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[apikey.ApiKey]
-		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return fmt.Errorf("failed to get API key: %w", err)
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			return fmt.Errorf("failed to parse response: %w", err)
 		}
 
 		if jsonOutput {
-			return cmdutil.PrintJSON(result.Data)
+			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
+			if err != nil {
+				return fmt.Errorf("failed to marshal JSON: %w", err)
+			}
+			fmt.Println(string(resultBytes))
+			return nil
 		}
 
 		output.Header("API Key Details")
@@ -276,18 +258,6 @@ var getCmd = &cobra.Command{
 		if result.Data.ExpiresAt != nil {
 			output.KeyValue("Expires", result.Data.ExpiresAt.Format("2006-01-02 15:04"))
 		}
-		output.KeyValue("Permissions", strconv.Itoa(len(result.Data.Permissions)))
-		if len(result.Data.Permissions) > 0 {
-			rows := make([][]string, len(result.Data.Permissions))
-			for i, g := range result.Data.Permissions {
-				scope := "global"
-				if g.EnvironmentID != nil {
-					scope = *g.EnvironmentID
-				}
-				rows[i] = []string{g.Permission, scope}
-			}
-			output.Table([]string{"PERMISSION", "SCOPE"}, rows)
-		}
 		return nil
 	},
 }
@@ -298,7 +268,7 @@ var updateCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := cmdutil.ClientFromCommand(cmd)
+		c, err := client.NewFromConfig()
 		if err != nil {
 			return err
 		}
@@ -317,15 +287,6 @@ var updateCmd = &cobra.Command{
 			}
 			req.ExpiresAt = &parsedTime
 		}
-		if cmd.Flags().Changed("permission") {
-			grants, err := parsePermissionGrantsInternal(apikeyUpdatePermissions)
-			if err != nil {
-				return err
-			}
-			// Allow `--permission ""` once to clear all grants. Otherwise
-			// the parsed slice replaces the key's permission set entirely.
-			req.Permissions = grants
-		}
 
 		resp, err := c.Put(cmd.Context(), types.Endpoints.ApiKey(args[0]), req)
 		if err != nil {
@@ -338,10 +299,12 @@ var updateCmd = &cobra.Command{
 
 		if jsonOutput {
 			var result base.ApiResponse[any]
-			if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-				return fmt.Errorf("failed to update API key: %w", err)
+			if err := json.NewDecoder(resp.Body).Decode(&result); err == nil {
+				if resultBytes, err := json.MarshalIndent(result.Data, "", "  "); err == nil {
+					fmt.Println(string(resultBytes))
+				}
 			}
-			return cmdutil.PrintJSON(result.Data)
+			return nil
 		}
 
 		output.Success("API key updated successfully")
@@ -363,11 +326,8 @@ func init() {
 
 	// Create command flags
 	createCmd.Flags().StringP("description", "d", "", "Description for the API key")
-	createCmd.Flags().String("expires-at", "", "Expiration date (RFC3339 format)")
-	createCmd.Flags().StringArrayVarP(&apikeyCreatePermissions, "permission", "p", nil,
-		"Permission to grant as `resource:action[:envId]` (repeatable, required). Omit envId for a global grant. Cannot exceed your own permissions.")
+	createCmd.Flags().String("expires-at", "", "Expiration date (ISO 8601 format)")
 	createCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
-	_ = createCmd.MarkFlagRequired("permission")
 
 	// Get command flags
 	getCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
@@ -376,8 +336,6 @@ func init() {
 	updateCmd.Flags().StringVar(&apikeyUpdateName, "name", "", "API key name")
 	updateCmd.Flags().StringVarP(&apikeyUpdateDescription, "description", "d", "", "API key description")
 	updateCmd.Flags().StringVar(&apikeyUpdateExpiresAt, "expires-at", "", "Expiration date (RFC3339 format)")
-	updateCmd.Flags().StringArrayVarP(&apikeyUpdatePermissions, "permission", "p", nil,
-		"Replace the key's permission grants. Use `resource:action[:envId]` (repeatable). Pass --permission \"\" once to clear all grants.")
 	updateCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 
 	// Delete command flags

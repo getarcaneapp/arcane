@@ -2,7 +2,6 @@ package notifications
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/getarcaneapp/arcane/backend/internal/models"
@@ -26,10 +25,10 @@ func BuildDiscordURL(config models.DiscordConfig) (string, error) {
 // SendDiscord sends a message via Shoutrrr Discord using proper service configuration
 func SendDiscord(ctx context.Context, config models.DiscordConfig, message string) error {
 	if config.WebhookID == "" {
-		return errors.New("discord webhook ID is empty")
+		return fmt.Errorf("discord webhook ID is empty")
 	}
 	if config.Token == "" {
-		return errors.New("discord token is empty")
+		return fmt.Errorf("discord token is empty")
 	}
 
 	shoutrrrURL, err := BuildDiscordURL(config)

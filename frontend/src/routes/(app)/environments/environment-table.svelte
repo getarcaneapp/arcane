@@ -6,25 +6,25 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { goto } from '$app/navigation';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api';
-	import { tryCatch } from '$lib/utils/api';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
+	import { tryCatch } from '$lib/utils/try-catch';
 	import { toast } from 'svelte-sonner';
-	import { extractApiErrorMessage } from '$lib/utils/api';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
+	import { extractApiErrorMessage } from '$lib/utils/api.util';
+	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
 	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '$lib/components/arcane-table';
 	import type { FilterOption } from '$lib/components/arcane-table/arcane-table.types.svelte';
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
-	import type { Environment } from '$lib/types/environment';
+	import type { Environment } from '$lib/types/environment.type';
 	import { m } from '$lib/paraglide/messages';
 	import { environmentManagementService } from '$lib/services/env-mgmt-service';
 	import environmentUpgradeService from '$lib/services/api/environment-upgrade-service';
 	import UpdateCenterDialog from '$lib/components/dialogs/update-center-dialog.svelte';
 	import EnvironmentUpgradeMenuItem from './environment-upgrade-menu-item.svelte';
-	import type { AppVersionInformation } from '$lib/types/settings';
-	import { hasPermission } from '$lib/utils/auth';
+	import type { AppVersionInformation } from '$lib/types/application-configuration';
+	import userStore from '$lib/stores/user-store';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { capitalizeFirstLetter } from '$lib/utils/formatting';
-	import { getEnvironmentStatusVariant, isEnvironmentOnline, resolveEnvironmentStatus } from '$lib/utils/docker';
+	import { capitalizeFirstLetter } from '$lib/utils/string.utils';
+	import { getEnvironmentStatusVariant, isEnvironmentOnline, resolveEnvironmentStatus } from '$lib/utils/environment-status';
 	import { EyeOnIcon, TrashIcon, EnvironmentsIcon, InspectIcon, StatsIcon, EyeOffIcon, TestIcon, EllipsisIcon } from '$lib/icons';
 
 	let {
@@ -43,7 +43,12 @@
 	let selectedEnvironmentForUpgrade = $state<Environment | null>(null);
 	let selectedVersionInfoForUpgrade = $state<AppVersionInformation | null>(null);
 
-	const canInstallUpdates = $derived(hasPermission('environments:update'));
+	let currentUser = $state<{ roles?: string[] } | null>(null);
+	$effect(() => {
+		const unsub = userStore.subscribe((u) => (currentUser = u));
+		return unsub;
+	});
+	const isAdmin = $derived(!!currentUser?.roles?.includes('admin'));
 
 	const environmentTypeFilters: FilterOption[] = [
 		{ value: 'http', label: m.environments_edge_http_label(), icon: EnvironmentsIcon },
@@ -475,7 +480,7 @@
 	bind:open={showUpgradeDialog}
 	onConfirm={handleConfirmUpgrade}
 	versionInformation={selectedVersionInfoForUpgrade ?? undefined}
-	canInstall={canInstallUpdates}
+	canInstall={isAdmin}
 	environmentName={selectedEnvironmentForUpgrade?.name}
 	environmentId={selectedEnvironmentForUpgrade?.id}
 	bind:upgrading={isLoading.upgrading}

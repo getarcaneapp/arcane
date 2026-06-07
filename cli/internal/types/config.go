@@ -1,7 +1,7 @@
 package types
 
 import (
-	"errors"
+	"fmt"
 	"maps"
 	"strings"
 )
@@ -81,21 +81,23 @@ type Config struct {
 	// ServerURL is the base URL of the Arcane server (e.g., http://localhost:3552)
 	ServerURL string `yaml:"server_url" mapstructure:"server_url"`
 	// APIKey is the API key for authentication (sent as X-API-KEY)
-	APIKey string `yaml:"api_key,omitempty" mapstructure:"api_key"`
+	APIKey string `yaml:"api_key,omitempty" mapstructure:"api_key"` //nolint:gosec // persisted config schema requires this field name
 	// JWTToken is the JWT access token for authentication (sent as Authorization: Bearer)
-	JWTToken string `yaml:"jwt_token,omitempty" mapstructure:"jwt_token"`
+	JWTToken string `yaml:"jwt_token,omitempty" mapstructure:"jwt_token"` //nolint:gosec // persisted config schema requires this field name
 	// RefreshToken is the refresh token for obtaining new access tokens
-	RefreshToken string `yaml:"refresh_token,omitempty" mapstructure:"refresh_token"`
+	RefreshToken string `yaml:"refresh_token,omitempty" mapstructure:"refresh_token"` //nolint:gosec // persisted config schema requires this field name
 	// DefaultEnvironment is the default environment ID to use
 	DefaultEnvironment string `yaml:"default_environment,omitempty" mapstructure:"default_environment"`
-	// FederatedAudience is the default token audience for `arcane-cli auth federated`
-	FederatedAudience string `yaml:"federated_audience,omitempty" mapstructure:"federated_audience"`
 	// LogLevel is the logging level (debug, info, warn, error, fatal, panic)
 	LogLevel string `yaml:"log_level,omitempty" mapstructure:"log_level"`
 	// CLIUpdateChannel controls which channel self-update uses (stable or next).
 	CLIUpdateChannel string `yaml:"cli_update_channel,omitempty" mapstructure:"cli_update_channel"`
 	// Pagination contains global and per-resource pagination configuration.
 	Pagination PaginationConfig `yaml:"pagination,omitempty" mapstructure:"pagination"`
+	// DefaultLimit is a legacy global default list limit for paginated resources.
+	DefaultLimit int `yaml:"default_limit,omitempty" mapstructure:"default_limit"`
+	// ResourceLimits is a legacy map of per-resource list limits.
+	ResourceLimits map[string]int `yaml:"resource_limits,omitempty" mapstructure:"resource_limits"`
 }
 
 // HasAuth returns true if either an API key or JWT token is configured.
@@ -107,7 +109,7 @@ func (c *Config) HasAuth() bool {
 // This is useful for commands like `auth login` that do not require prior authentication.
 func (c *Config) ValidateServerURL() error {
 	if c.ServerURL == "" {
-		return errors.New("server_url is not configured. Run: arcane config set --server-url <url>")
+		return fmt.Errorf("server_url is not configured. Run: arcane config set --server-url <url>")
 	}
 	return nil
 }
@@ -120,7 +122,7 @@ func (c *Config) Validate() error {
 		return err
 	}
 	if !c.HasAuth() {
-		return errors.New("authentication is not configured. Run: arcane config set --api-key <key> OR arcane auth login")
+		return fmt.Errorf("authentication is not configured. Run: arcane config set --api-key <key> OR arcane auth login")
 	}
 	return nil
 }
@@ -138,6 +140,10 @@ func (c *Config) Clone() *Config {
 		return nil
 	}
 	out := *c
+	if c.ResourceLimits != nil {
+		out.ResourceLimits = make(map[string]int, len(c.ResourceLimits))
+		maps.Copy(out.ResourceLimits, c.ResourceLimits)
+	}
 	if c.Pagination.Resources != nil {
 		out.Pagination.Resources = make(map[string]PaginationResourceConfig, len(c.Pagination.Resources))
 		maps.Copy(out.Pagination.Resources, c.Pagination.Resources)
@@ -145,7 +151,7 @@ func (c *Config) Clone() *Config {
 	return &out
 }
 
-// LimitFor returns the configured limit for a resource, falling back to the global default.
+// LimitFor returns the configured limit for a resource, falling back to DefaultLimit.
 func (c *Config) LimitFor(resource string) int {
 	if c == nil {
 		return 0
@@ -159,6 +165,16 @@ func (c *Config) LimitFor(resource string) int {
 	if c.Pagination.Default.Limit > 0 {
 		return c.Pagination.Default.Limit
 	}
+
+	// Backward-compatibility with legacy keys.
+	if resource != "" && c.ResourceLimits != nil {
+		if v, ok := c.ResourceLimits[resource]; ok && v > 0 {
+			return v
+		}
+	}
+	if c.DefaultLimit > 0 {
+		return c.DefaultLimit
+	}
 	return 0
 }
 
@@ -168,6 +184,8 @@ func (c *Config) SetDefaultLimit(limit int) {
 		return
 	}
 	c.Pagination.Default.Limit = limit
+	// Keep legacy field in sync for compatibility.
+	c.DefaultLimit = limit
 }
 
 // SetResourceLimit configures per-resource pagination defaults.
@@ -182,9 +200,15 @@ func (c *Config) SetResourceLimit(resource string, limit int) {
 	if c.Pagination.Resources == nil {
 		c.Pagination.Resources = make(map[string]PaginationResourceConfig)
 	}
+	if c.ResourceLimits == nil {
+		c.ResourceLimits = make(map[string]int)
+	}
 	if limit <= 0 {
 		delete(c.Pagination.Resources, resource)
+		delete(c.ResourceLimits, resource)
 		return
 	}
 	c.Pagination.Resources[resource] = PaginationResourceConfig{Limit: limit}
+	// Keep legacy field in sync for compatibility.
+	c.ResourceLimits[resource] = limit
 }

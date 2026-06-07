@@ -3,15 +3,16 @@
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as Card from '$lib/components/ui/card/index.js';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
-	import type { SearchPaginationSortRequest, Paginated } from '$lib/types/shared';
-	import type { ImageSummaryDto } from '$lib/types/docker';
-	import { bytes } from '$lib/utils/formatting';
+	import type { SearchPaginationSortRequest, Paginated } from '$lib/types/pagination.type';
+	import type { ImageSummaryDto } from '$lib/types/image.type';
+	import bytes from '$lib/utils/bytes';
 	import type { ColumnSpec } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
 	import { imageService } from '$lib/services/image-service';
 	import { goto } from '$app/navigation';
-	import { useResponsiveTableLimit } from '$lib/hooks/use-responsive-table-limit.svelte';
+	import { untrack } from 'svelte';
+	import { IsMobile } from '$lib/hooks';
 	import { ImagesIcon, ArrowRightIcon } from '$lib/icons';
 
 	let {
@@ -22,18 +23,68 @@
 		isLoading: boolean;
 	} = $props();
 
-	const tableLimit = useResponsiveTableLimit({
-		initialLimit: images.pagination?.itemsPerPage ?? 5,
-		sort: { column: 'size', direction: 'desc' },
-		getTotalItems: () => images.pagination?.totalItems ?? 0
+	const isMobile = new IsMobile();
+	let displayLimit = $state(images.pagination?.itemsPerPage ?? 5);
+	let lastMeasuredHeight = $state(0);
+
+	const MOBILE_ROWS = 4;
+	const ROW_HEIGHT = 57;
+	const HEADER_HEIGHT = 145;
+	const FOOTER_HEIGHT = 48;
+	const MIN_ROWS = 3;
+	const MAX_ROWS = 50;
+
+	let requestOptions = $state<SearchPaginationSortRequest>({
+		pagination: { page: 1, limit: 5 },
+		sort: { column: 'size', direction: 'desc' }
 	});
 
 	let selectedIds = $state<string[]>([]);
 
+	function shouldReserveFooter(limit: number) {
+		const totalItems = images.pagination?.totalItems ?? 0;
+		return totalItems > limit;
+	}
+
+	function calculateLimitForHeight(height: number) {
+		if (isMobile.current) return MOBILE_ROWS;
+		if (height <= 0) return 5;
+
+		let availableHeight = height - HEADER_HEIGHT;
+		const initialRows = Math.floor(Math.max(0, availableHeight) / ROW_HEIGHT);
+		const footerLimit = Math.max(MIN_ROWS, Math.min(MAX_ROWS, initialRows));
+		if (shouldReserveFooter(footerLimit)) {
+			availableHeight -= FOOTER_HEIGHT;
+		}
+
+		const rows = Math.floor(Math.max(0, availableHeight) / ROW_HEIGHT);
+		return Math.max(MIN_ROWS, Math.min(MAX_ROWS, rows));
+	}
+
+	function updateRequestLimit(limit: number) {
+		const currentOptions = untrack(() => requestOptions);
+		if (currentOptions.pagination?.limit === limit) return;
+
+		requestOptions = {
+			...currentOptions,
+			pagination: {
+				page: currentOptions.pagination?.page ?? 1,
+				limit
+			}
+		};
+	}
+
+	$effect(() => {
+		const nextLimit = calculateLimitForHeight(lastMeasuredHeight);
+		displayLimit = nextLimit;
+		updateRequestLimit(nextLimit);
+	});
+
 	async function refreshImages(options: SearchPaginationSortRequest) {
-		tableLimit.requestOptions = options;
+		requestOptions = options;
 		const result = await imageService.getImages(options);
 		images = result;
+		displayLimit = result.pagination?.itemsPerPage ?? displayLimit;
 		return result;
 	}
 
@@ -107,7 +158,7 @@
 	/>
 {/snippet}
 
-<div class="flex flex-col lg:h-full lg:min-h-0" bind:clientHeight={tableLimit.measuredHeight}>
+<div class="flex flex-col lg:h-full lg:min-h-0" bind:clientHeight={lastMeasuredHeight}>
 	<Card.Root class="flex flex-col lg:h-full lg:min-h-0">
 		<Card.Header icon={ImagesIcon} class="shrink-0">
 			<div class="flex flex-1 items-center justify-between">
@@ -125,8 +176,8 @@
 		</Card.Header>
 		<Card.Content class="px-0 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
 			<ArcaneTable
-				items={{ ...images, data: images.data.slice(0, tableLimit.displayLimit) }}
-				bind:requestOptions={tableLimit.requestOptions}
+				items={{ ...images, data: images.data.slice(0, displayLimit) }}
+				bind:requestOptions
 				bind:selectedIds
 				onRefresh={refreshImages}
 				{columns}
@@ -137,10 +188,10 @@
 				unstyled
 			/>
 		</Card.Content>
-		{#if tableLimit.shouldShowFooter(images.data.length)}
+		{#if images.data.length >= displayLimit && images.pagination.totalItems > displayLimit}
 			<Card.Footer class="border-t px-6 py-3">
 				<span class="text-muted-foreground text-xs">
-					{m.images_showing_of_total({ shown: tableLimit.displayLimit, total: images.pagination.totalItems })}
+					{m.images_showing_of_total({ shown: displayLimit, total: images.pagination.totalItems })}
 				</span>
 			</Card.Footer>
 		{/if}

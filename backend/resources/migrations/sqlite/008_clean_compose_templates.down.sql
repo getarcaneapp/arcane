@@ -1,0 +1,1 @@
+ALTER TABLE compose_templates ADD COLUMN meta_updated_at TEXT;
