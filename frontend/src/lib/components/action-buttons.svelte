@@ -315,17 +315,13 @@
 		setLoading('start', true);
 
 		try {
-			projectService
-				.deployProject(id, () => {}, options ?? deployOptionsStore.getRequestOptions())
-				.then(async () => {
-					await invalidateAll();
-					itemState = 'running';
-					onActionComplete('running');
-				})
-				.catch((e: any) => {
-					const message = e?.message || m.common_action_failed_with_type({ action: m.common_start(), type });
-					toast.error(message);
-				});
+			await projectService.deployProject(id, () => {}, options ?? deployOptionsStore.getRequestOptions());
+			await invalidateAll();
+			itemState = 'running';
+			onActionComplete('running');
+		} catch (e: any) {
+			const message = e?.message || m.common_action_failed_with_type({ action: m.common_start(), type });
+			toast.error(message);
 		} finally {
 			setLoading('start', false);
 		}

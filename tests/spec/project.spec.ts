@@ -1,5 +1,6 @@
 import { test, expect, type Locator, type Page, type Response } from '@playwright/test';
 import { fetchProjectCountsWithRetry, fetchProjectsWithRetry } from '../utils/fetch.util';
+import type { Activity } from '../types/activity.type';
 import { Project, ProjectStatusCounts } from 'types/project.type';
 import { TEST_COMPOSE_YAML, TEST_ENV_FILE } from '../setup/project.data';
 
@@ -97,6 +98,45 @@ async function fetchProjectDetail(page: Page, projectId: string): Promise<Projec
 	if (body.data?.project) return body.data.project as Project;
 	if (body.data) return body.data as Project;
 	return body as Project;
+}
+
+async function fetchLatestProjectDeployActivity(
+	page: Page,
+	projectId: string
+): Promise<Activity | null> {
+	const params = new URLSearchParams({
+		type: 'project_deploy',
+		resourceType: 'project',
+		search: projectId,
+		limit: '10'
+	});
+	const res = await page.request.get(`/api/environments/0/activities?${params.toString()}`);
+	if (!res.ok()) {
+		return null;
+	}
+
+	const body = await res.json().catch(() => null as any);
+	const activities = (body?.data ?? []) as Activity[];
+	return (
+		activities.find(
+			(activity) =>
+				activity.type === 'project_deploy' &&
+				activity.resourceType === 'project' &&
+				(activity.resourceId === projectId || activity.resourceName === projectId)
+		) ?? null
+	);
+}
+
+async function expectProjectDeployActivitySucceeded(page: Page, projectId: string) {
+	await expect
+		.poll(
+			async () => (await fetchLatestProjectDeployActivity(page, projectId))?.status ?? 'missing',
+			{
+				message: 'Expected project deploy activity to complete before reload',
+				timeout: 60000
+			}
+		)
+		.toBe('success');
 }
 
 async function findProjectWithDetailUpdateAction(page: Page): Promise<Project | null> {
@@ -678,6 +718,10 @@ test.describe('New Compose Project Page', () => {
 				timeout: 60000
 			})
 			.toBe('running');
+		await expectProjectDeployActivitySucceeded(page, projectId);
+		await expect(page.getByRole('button', { name: 'Down', exact: true })).toBeVisible({
+			timeout: 30000
+		});
 
 		expect(projectPullRequestCount).toBe(0);
 		const projectReloadResponse = page.waitForResponse(
