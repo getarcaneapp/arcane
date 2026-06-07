@@ -4,6 +4,8 @@
 	"layout_title": "Arcane",
 	"accent_color": "Colore Secondario",
 	"accent_color_description": "Selezionare un colore d'accento per personalizzare l'aspetto di Arcane",
+	"font_size": "Dimensione del carattere",
+	"font_size_description": "Modifica la dimensione del testo e dell'interfaccia utente",
 	"application_theme": "Tema dell'applicazione",
 	"application_theme_description": "Scegliere il tema visivo generale di Arcane. Questa impostazione viene memorizzata a livello globale e viene visualizzata immediatamente in anteprima.",
 	"application_theme_default": "Predefinito",
