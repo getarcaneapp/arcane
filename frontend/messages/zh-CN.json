@@ -4,6 +4,8 @@
 	"layout_title": "Arcane",
 	"accent_color": "亮度颜色",
 	"accent_color_description": "选择要自定义奥术界面的重音颜色",
+	"font_size": "字体大小",
+	"font_size_description": "调整文字大小和用户界面",
 	"application_theme": "主题",
 	"application_theme_description": "为 Arcane 选择整体视觉主题。该设置会全局保存，并立即生效预览。",
 	"application_theme_default": "默认",
