@@ -4,6 +4,8 @@
 	"layout_title": "Arcane",
 	"accent_color": "Accentfarve",
 	"accent_color_description": "Vælg en accentfarve for at tilpasse udseendet af Arcane",
+	"font_size": "Skriftstørrelse",
+	"font_size_description": "Juster tekststørrelsen og brugergrænsefladen",
 	"application_theme": "Applikationstema",
 	"application_theme_description": "Vælg det overordnede visuelle tema for Arcane. Denne indstilling gemmes globalt og vises med det samme.",
 	"application_theme_default": "Standard",
