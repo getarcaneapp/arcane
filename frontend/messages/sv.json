@@ -2988,7 +2988,7 @@
 	"roles_col_type": "Typ",
 	"roles_col_assigned_users": "Tilldelade användare",
 	"roles_col_permissions": "Behörigheter",
-	"roles_assigned_users_count": "{count} user(s)",
+	"roles_assigned_users_count": "{count} användare",
 	"_comment_permissions": "=== BEHÖRIGHETSVÄLJARE ===",
 	"permissions_group_label": "{resource} ({selected}/{total})",
 	"permissions_select_all": "Markera allt",
