@@ -2988,7 +2988,7 @@
 	"roles_col_type": "種類",
 	"roles_col_assigned_users": "割り当てられたユーザー",
 	"roles_col_permissions": "権限",
-	"roles_assigned_users_count": "{count} user(s)",
+	"roles_assigned_users_count": "{count} ユーザー",
 	"_comment_permissions": "=== 権限選択ダイアログ ===",
 	"permissions_group_label": "{resource} ({selected}/{total})",
 	"permissions_select_all": "すべて選択",
