@@ -265,7 +265,7 @@
 	{@const displayName = item.containerName || item.name}
 	{@const iconUrl = getThemedIconUrl(item, mode.current)}
 	<div class="flex items-center gap-2">
-		<IconImage src={iconUrl} alt={displayName} fallback={BoxIcon} class="size-4" containerClass="size-7" />
+		<IconImage src={iconUrl} alt={displayName} fallback={BoxIcon} class="size-6" containerClass="size-8" />
 		{#if item.containerId}
 			<a class="font-medium hover:underline" href={getContainerUrl(item)}>
 				{displayName}
@@ -309,7 +309,7 @@
 
 {#snippet PortsCell({ item }: { item: ServiceWithId })}
 	{#if item.serviceConfig?.ports && item.serviceConfig.ports.length > 0}
-		<PortBadge ports={item.serviceConfig.ports as any} />
+		<PortBadge ports={item.serviceConfig.ports as any} wrap={false} />
 	{:else if item.ports && item.ports.length > 0}
 		{@const parsedPorts = item.ports.map((p) => {
 			const [numsPart, proto] = p.split('/');
@@ -319,7 +319,7 @@
 			}
 			return { privatePort: parseInt(nums[0] ?? ''), type: proto || 'tcp' };
 		})}
-		<PortBadge ports={parsedPorts} />
+		<PortBadge ports={parsedPorts} wrap={false} />
 	{:else}
 		<span class="text-muted-foreground text-sm">—</span>
 	{/if}

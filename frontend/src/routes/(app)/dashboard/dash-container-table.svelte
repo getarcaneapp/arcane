@@ -53,7 +53,7 @@
 	{@const displayName = firstName ? (firstName.startsWith('/') ? firstName.substring(1) : firstName) : item.id.substring(0, 12)}
 	{@const iconUrl = getThemedIconUrl(item, mode.current)}
 	<div class="flex items-center gap-2">
-		<IconImage src={iconUrl} alt={displayName} fallback={ContainersIcon} class="size-4" containerClass="size-7" />
+		<IconImage src={iconUrl} alt={displayName} fallback={ContainersIcon} class="size-6" containerClass="size-8" />
 		<a class="font-medium hover:underline" href="/containers/{item.id}">{displayName}</a>
 	</div>
 {/snippet}

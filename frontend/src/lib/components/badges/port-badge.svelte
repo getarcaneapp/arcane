@@ -9,12 +9,15 @@
 		ports = [] as ContainerPorts[],
 		collapsible = true,
 		maxVisible = 3,
-		hideExposed = false
+		hideExposed = false,
+		wrap = true
 	} = $props<{
 		ports?: ContainerPorts[];
 		collapsible?: boolean;
 		maxVisible?: number;
 		hideExposed?: boolean;
+		// In tables, set false so badges stay on one line (wrapping grows the row height).
+		wrap?: boolean;
 	}>();
 
 	let expanded = $state(false);
@@ -86,7 +89,7 @@
 {#if allPorts.length === 0}
 	<span class="text-muted-foreground text-xs">{m.containers_no_ports()}</span>
 {:else}
-	<div class="flex flex-wrap gap-1.5">
+	<div class="flex gap-1.5 {wrap ? 'flex-wrap' : 'flex-nowrap'}">
 		{#each published as p, i (i)}
 			<ArcaneTooltip.Root interactive>
 				<ArcaneTooltip.Trigger>

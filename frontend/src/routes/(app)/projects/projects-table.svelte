@@ -233,8 +233,8 @@
 			src={getThemedIconUrl(item, mode.current)}
 			alt={item.name}
 			fallback={FolderOpenIcon}
-			class="size-8"
-			containerClass="size-10"
+			class="size-6"
+			containerClass="size-8"
 		/>
 		<a class="font-medium hover:underline" href="/projects/{item.id}">{item.name}</a>
 		{#if item.isArchived}
