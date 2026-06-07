@@ -2988,7 +2988,7 @@
 	"roles_col_type": "类型",
 	"roles_col_assigned_users": "已分配的用户",
 	"roles_col_permissions": "权限",
-	"roles_assigned_users_count": "{count} user(s)",
+	"roles_assigned_users_count": "{count} 用户",
 	"_comment_permissions": "=== 权限选择器 ===",
 	"permissions_group_label": "{resource} ({selected}/{total})",
 	"permissions_select_all": "全选",
