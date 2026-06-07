@@ -2968,21 +2968,7 @@
 	"roles_create_title": "Créer un rôle",
 	"roles_edit_title": "Modifier le rôle",
 	"roles_delete_title": "Supprimer le rôle «{name} » ?",
-	"roles_delete_selected_title": [
-		{
-			"declarations": [
-				"nombre d'entrées",
-				"local countPlural = count : pluriel"
-			],
-			"selectors": [
-				"nombre pluriel"
-			],
-			"match": {
-				"countPlural=one": "Supprimer le rôle « {count} » ?",
-				"countPlural=other": "Supprimer les rôles « {count} » ?"
-			}
-		}
-	],
+	"roles_delete_selected_title": "Supprimer le(s) rôle(s) « {count} » ?",
 	"roles_delete_message": "Supprimer le rôle «{name}» ? Cela supprimera toutes les affectations associées.",
 	"roles_save_changes": "Enregistrer les modifications",
 	"roles_clone_button": "Cloner en tant que rôle personnalisé",
@@ -3002,21 +2988,7 @@
 	"roles_col_type": "Type",
 	"roles_col_assigned_users": "Utilisateurs désignés",
 	"roles_col_permissions": "Autorisations",
-	"roles_assigned_users_count": [
-		{
-			"declarations": [
-				"nombre d'entrées",
-				"local countPlural = count : pluriel"
-			],
-			"selectors": [
-				"nombre pluriel"
-			],
-			"match": {
-				"countPlural=one": "{count} utilisateur",
-				"countPlural=other": "{count} utilisateurs"
-			}
-		}
-	],
+	"roles_assigned_users_count": "{count} user(s)",
 	"_comment_permissions": "=== SÉLECTIONNEUR D'AUTORISATIONS ===",
 	"permissions_group_label": "{resource} ({selected}/{total})",
 	"permissions_select_all": "Tout sélectionner",
