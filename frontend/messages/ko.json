@@ -2988,7 +2988,7 @@
 	"roles_col_type": "유형",
 	"roles_col_assigned_users": "지정된 사용자",
 	"roles_col_permissions": "권한",
-	"roles_assigned_users_count": "{count} user(s)",
+	"roles_assigned_users_count": "{count} 사용자(들)",
 	"_comment_permissions": "=== 권한 선택기 ===",
 	"permissions_group_label": "{resource} ({selected}/{total})",
 	"permissions_select_all": "모두 선택",
