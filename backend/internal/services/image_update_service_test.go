@@ -500,6 +500,79 @@ func TestImageUpdateService_GetImageRefByIDInternal_UsesContainerFallback(t *tes
 	}
 }
 
+func TestImageUpdateService_CheckImageUpdate_SkipsDigestPinnedReferenceInternal(t *testing.T) {
+	db := setupImageUpdateTestDB(t)
+	pinnedDigest := digest.FromString("pinned-newt").String()
+	imageRef := "ghcr.io/fosrl/newt@" + pinnedDigest
+	eventService := NewEventService(db, nil, nil)
+	svc := NewImageUpdateService(db, nil, nil, nil, eventService, nil, nil)
+
+	result, err := svc.CheckImageUpdate(context.Background(), imageRef)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.False(t, result.HasUpdate)
+	assert.Equal(t, "digest", result.UpdateType)
+	assert.Equal(t, pinnedDigest, result.CurrentDigest)
+	assert.Equal(t, pinnedDigest, result.LatestDigest)
+	assert.Empty(t, result.Error)
+}
+
+func TestImageUpdateService_CheckMultipleImages_SkipsDigestPinnedReferenceInternal(t *testing.T) {
+	db := setupImageUpdateTestDB(t)
+	pinnedDigest := digest.FromString("batch-pinned-newt").String()
+	imageRef := "ghcr.io/fosrl/newt@" + pinnedDigest
+	svc := NewImageUpdateService(db, nil, nil, nil, nil, nil, nil)
+
+	regRepos, initialResults, grouped := svc.parseAndGroupImagesInternal([]string{imageRef})
+	require.Empty(t, regRepos)
+	require.Empty(t, grouped)
+	require.Contains(t, initialResults, imageRef)
+	require.NotNil(t, initialResults[imageRef])
+	assert.Empty(t, initialResults[imageRef].Error)
+
+	results, err := svc.CheckMultipleImages(context.Background(), []string{imageRef}, nil)
+	require.NoError(t, err)
+	require.Contains(t, results, imageRef)
+	require.NotNil(t, results[imageRef])
+	assert.False(t, results[imageRef].HasUpdate)
+	assert.Equal(t, "digest", results[imageRef].UpdateType)
+	assert.Equal(t, pinnedDigest, results[imageRef].CurrentDigest)
+	assert.Equal(t, pinnedDigest, results[imageRef].LatestDigest)
+	assert.Empty(t, results[imageRef].Error)
+}
+
+func TestImageUpdateService_CheckMultipleImages_SkippedDigestPinnedReferenceClearsStaleErrorInternal(t *testing.T) {
+	db := setupImageUpdateTestDB(t)
+	pinnedDigest := digest.FromString("stale-pinned-newt").String()
+	imageRef := "ghcr.io/fosrl/newt@" + pinnedDigest
+	repository := "ghcr.io/fosrl/newt"
+	staleError := "failed to get remote digest"
+	recordID := buildSyntheticImageUpdateRecordIDInternal(repository, "latest")
+	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+		ID:             recordID,
+		Repository:     repository,
+		Tag:            "latest",
+		HasUpdate:      false,
+		UpdateType:     "digest",
+		CurrentVersion: "latest",
+		LastError:      &staleError,
+		CheckTime:      time.Now().Add(-time.Hour),
+	}).Error)
+	svc := NewImageUpdateService(db, nil, nil, nil, nil, nil, nil)
+
+	results, err := svc.CheckMultipleImages(context.Background(), []string{imageRef}, nil)
+	require.NoError(t, err)
+	require.Contains(t, results, imageRef)
+	assert.Empty(t, results[imageRef].Error)
+
+	var saved models.ImageUpdateRecord
+	require.NoError(t, db.WithContext(context.Background()).Where("id = ?", recordID).First(&saved).Error)
+	assert.False(t, saved.HasUpdate)
+	assert.Nil(t, saved.LastError)
+	assert.Equal(t, pinnedDigest, stringPtrToString(saved.CurrentDigest))
+	assert.Equal(t, pinnedDigest, stringPtrToString(saved.LatestDigest))
+}
+
 func TestImageUpdateService_CheckImageUpdate_UsesRegistryFallback(t *testing.T) {
 	db := setupImageUpdateTestDB(t)
 	localDigest := digest.FromString("localdigest").String()

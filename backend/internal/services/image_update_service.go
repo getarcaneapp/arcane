@@ -164,6 +164,33 @@ func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef stri
 	startTime := time.Now()
 	activityID := s.startImageUpdateActivityInternal(ctx, imageRef, 1)
 	ctx = s.activityService.Track(ctx, activityID)
+
+	if result, ok := digestPinnedImageUpdateResultInternal(imageRef); ok {
+		result.ResponseTimeMs = int(time.Since(startTime).Milliseconds())
+		result.ActivityID = utils.StringPtrFromTrimmed(activityID)
+		s.appendImageUpdateActivityMessageInternal(ctx, activityID, models.ActivityMessageLevelInfo, imageRef+" — digest pinned, skipped", 100, "Skipping image update check")
+		if saveErr := s.saveUpdateResultWithSnapshotInternal(ctx, imageRef, result, nil); saveErr != nil {
+			slog.WarnContext(ctx, "Failed to save digest-pinned update result", "imageRef", imageRef, "error", saveErr.Error())
+		}
+		if s.eventService != nil {
+			metadata := models.JSON{
+				"action":         "check_update",
+				"imageRef":       imageRef,
+				"hasUpdate":      false,
+				"updateType":     models.UpdateTypeDigest,
+				"currentDigest":  result.CurrentDigest,
+				"latestDigest":   result.LatestDigest,
+				"responseTimeMs": result.ResponseTimeMs,
+				"skippedReason":  "digest_pinned",
+			}
+			if logErr := s.eventService.LogImageEvent(ctx, models.EventTypeImageScan, "", imageRef, systemUser.ID, systemUser.Username, "0", metadata); logErr != nil {
+				slog.WarnContext(ctx, "Failed to log digest-pinned image update check event", "imageRef", imageRef, "error", logErr.Error())
+			}
+		}
+		s.completeImageUpdateActivityInternal(ctx, activityID, true, "Image update check skipped")
+		return result, nil
+	}
+
 	s.appendImageUpdateActivityMessageInternal(ctx, activityID, models.ActivityMessageLevelInfo, "Checking "+imageRef, 20, "Checking remote digest")
 
 	parts := s.parseImageReference(imageRef)
@@ -233,6 +260,32 @@ func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef stri
 	}
 	s.completeImageUpdateActivityInternal(ctx, activityID, true, finalMessage)
 	return digestResult, nil
+}
+
+func digestPinnedImageUpdateResultInternal(imageRef string) (*imageupdate.Response, bool) {
+	imageRef = strings.TrimSpace(imageRef)
+	pinnedDigest, ok := updaterdigest.FromReferenceSuffix(imageRef)
+	if !ok {
+		return nil, false
+	}
+
+	tag := "latest"
+	if named, err := ref.ParseNormalizedNamed(imageRef); err == nil {
+		if tagged, ok := named.(ref.NamedTagged); ok {
+			tag = tagged.Tag()
+		}
+	}
+
+	return &imageupdate.Response{
+		HasUpdate:      false,
+		UpdateType:     models.UpdateTypeDigest,
+		CurrentVersion: tag,
+		LatestVersion:  tag,
+		CurrentDigest:  pinnedDigest,
+		LatestDigest:   pinnedDigest,
+		CheckTime:      time.Now(),
+		ResponseTimeMs: 0,
+	}, true
 }
 
 func (s *ImageUpdateService) checkDigestUpdateWithSnapshotInternal(ctx context.Context, parts *ImageParts) (*imageupdate.Response, *localImageSnapshot, error) {
@@ -929,6 +982,11 @@ func (s *ImageUpdateService) parseAndGroupImagesInternal(imageRefs []string) (ma
 	indexByNormalizedRef := make(map[string]int)
 
 	for _, ref := range imageRefs {
+		if result, ok := digestPinnedImageUpdateResultInternal(ref); ok {
+			results[ref] = result
+			continue
+		}
+
 		parts := s.parseImageReference(ref)
 		if parts == nil {
 			results[ref] = &imageupdate.Response{
@@ -1133,9 +1191,21 @@ func (s *ImageUpdateService) CheckMultipleImages(ctx context.Context, imageRefs 
 
 	regRepos, initialResults, images := s.parseAndGroupImagesInternal(imageRefs)
 	maps.Copy(results, initialResults)
-	for _, result := range initialResults {
-		if result != nil {
-			result.ActivityID = utils.StringPtrFromTrimmed(activityID)
+	for imageRef, result := range initialResults {
+		if result == nil {
+			continue
+		}
+		result.ActivityID = utils.StringPtrFromTrimmed(activityID)
+		if strings.TrimSpace(result.Error) != "" {
+			continue
+		}
+		if _, ok := updaterdigest.FromReferenceSuffix(imageRef); !ok {
+			continue
+		}
+
+		s.appendImageUpdateActivityMessageInternal(ctx, activityID, models.ActivityMessageLevelInfo, imageRef+" — digest pinned, skipped", 5, "Skipping image update check")
+		if err := s.saveUpdateResultWithSnapshotInternal(ctx, imageRef, result, nil); err != nil {
+			slog.WarnContext(ctx, "Failed to save digest-pinned update result", "imageRef", imageRef, "error", err.Error())
 		}
 	}
 
