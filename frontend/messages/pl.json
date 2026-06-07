@@ -4,6 +4,8 @@
 	"layout_title": "Arcane",
 	"accent_color": "Kolor Akcentu",
 	"accent_color_description": "Wybierz kolor akcentu, aby dostosować wygląd Arcane",
+	"font_size": "Rozmiar czcionki",
+	"font_size_description": "Dostosuj rozmiar tekstu i interfejsu użytkownika",
 	"application_theme": "Motyw aplikacji",
 	"application_theme_description": "Wybierz ogólny motyw dla Arcane. To ustawienie jest przechowywane globalnie i natychmiast wyświetla podgląd.",
 	"application_theme_default": "Domyślny",
