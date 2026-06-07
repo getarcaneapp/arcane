@@ -174,8 +174,8 @@
 			src={item.metadata?.iconUrl}
 			alt={item.name}
 			fallback={item.isRemote ? GlobeIcon : FolderOpenIcon}
-			class="size-8"
-			containerClass="size-10"
+			class="size-6"
+			containerClass="size-8"
 		/>
 		<a class="font-medium hover:underline" href="/customize/templates/{item.id}">
 			{item.name}
