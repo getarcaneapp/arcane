@@ -4,6 +4,8 @@
 	"layout_title": "Arcane",
 	"accent_color": "Akcenta koloro",
 	"accent_color_description": "Elektu akcentan koloron por personaligi la aspekton de Arcane",
+	"font_size": "Tipargrandeco",
+	"font_size_description": "Agordu la grandecon de la teksto kaj de la uzantinterfaco.",
 	"application_theme": "Aplika Temo",
 	"application_theme_description": "Elektu la ĝeneralan vidan temon por Arcane. Ĉi tiu agordo estas konservata tutmonde kaj tuj antaŭrigardata.",
 	"application_theme_default": "Normala",
