@@ -20,13 +20,12 @@ require (
 	github.com/danielgtaylor/huma/v2 v2.38.0
 	github.com/depot/depot-go v0.5.2
 	github.com/distribution/reference v0.6.0
-	github.com/docker/cli v29.5.2+incompatible
+	github.com/docker/cli v29.5.3+incompatible
 	github.com/docker/compose/v5 v5.1.4
 	github.com/docker/go-units v0.5.0
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/getarcaneapp/arcane/cli/v2 v2.0.1
 	github.com/getarcaneapp/arcane/types/v2 v2.0.1
-	go.getarcane.app/updater v0.3.7
 	github.com/glebarez/sqlite v1.11.0
 	github.com/go-git/go-git/v5 v5.19.1
 	github.com/goccy/go-yaml v1.19.2
@@ -56,6 +55,7 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
 	github.com/wneessen/go-mail v0.7.3
+	go.getarcane.app/updater v0.3.7
 	golang.org/x/crypto v0.52.0
 	golang.org/x/mod v0.36.0
 	golang.org/x/net v0.55.0
