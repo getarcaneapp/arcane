@@ -41,6 +41,7 @@ type User struct {
 	CanDelete              bool                    `json:"canDelete" doc:"Whether the user can currently be deleted"`
 	OidcSubjectId          *string                 `json:"oidcSubjectId,omitempty" doc:"OIDC subject identifier for SSO users"`
 	Locale                 *string                 `json:"locale,omitempty" doc:"Locale preference of the user" example:"en-US"`
+	FontSize               *int                    `json:"fontSize,omitempty" minimum:"12" maximum:"20" doc:"Preferred root UI font size in px" example:"14"`
 	CreatedAt              string                  `json:"createdAt,omitempty" doc:"Date and time when the user was created"`
 	UpdatedAt              string                  `json:"updatedAt,omitempty" doc:"Date and time when the user was last updated"`
 	RequiresPasswordChange bool                    `json:"requiresPasswordChange" doc:"Whether the user must change their password"`

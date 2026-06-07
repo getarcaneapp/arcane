@@ -13,6 +13,8 @@
 	import * as Avatar from '$lib/components/ui/avatar';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import LocalePicker from '$lib/components/locale-picker.svelte';
+	import FontSizePicker from '$lib/components/font-size-picker.svelte';
+	import { m } from '$lib/paraglide/messages';
 	import { userService } from '$lib/services/user-service';
 	import { apiKeyService } from '$lib/services/api-key-service';
 	import { roleService } from '$lib/services/role-service';
@@ -383,6 +385,13 @@
 								<div class="text-muted-foreground text-xs">UI language for this account</div>
 							</div>
 							<LocalePicker inline />
+						</div>
+						<div class="flex items-center justify-between gap-4 p-3">
+							<div class="min-w-0">
+								<div class="text-sm font-medium">{m.font_size()}</div>
+								<div class="text-muted-foreground text-xs">{m.font_size_description()}</div>
+							</div>
+							<FontSizePicker />
 						</div>
 					</div>
 				</Card>

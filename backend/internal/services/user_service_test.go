@@ -134,3 +134,26 @@ func TestDeleteUserRejectsDeletingOnlyCustomAllPermissionsAdmin(t *testing.T) {
 	require.False(t, users[0].CanDelete)
 	require.True(t, users[0].IsGlobalAdmin)
 }
+
+func TestUpdateUserPersistsFontSizeAndMapsToDto(t *testing.T) {
+	userSvc, _ := setupUserAndRoleServices(t)
+	ctx := context.Background()
+
+	u := createTestUser(t, userSvc, "user-1", "fontuser")
+	require.Nil(t, u.FontSize, "new users default to no explicit font size")
+
+	size := 16
+	u.FontSize = &size
+	_, err := userSvc.UpdateUser(ctx, u)
+	require.NoError(t, err)
+
+	reloaded, err := userSvc.GetUserByID(ctx, u.ID)
+	require.NoError(t, err)
+	require.NotNil(t, reloaded.FontSize)
+	require.Equal(t, 16, *reloaded.FontSize)
+
+	dto, err := userSvc.ToUserResponseDto(ctx, *reloaded)
+	require.NoError(t, err)
+	require.NotNil(t, dto.FontSize)
+	require.Equal(t, 16, *dto.FontSize)
+}

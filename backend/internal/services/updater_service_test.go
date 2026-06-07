@@ -677,6 +677,98 @@ func TestUpdaterService_ApplyPending_ProjectFailureDoesNotBlockOtherProjectsInte
 	assert.Contains(t, recordedStatuses, moduletypes.StatusUpdated)
 }
 
+func TestUpdaterService_ApplyPending_RoutesLegacyArcaneServerThroughSelfUpgradeInternal(t *testing.T) {
+	ctx := context.Background()
+
+	oldRef := "ghcr.io/getarcaneapp/arcane:1.0.0"
+	newRef := "ghcr.io/getarcaneapp/arcane:1.0.1"
+	oldImageID := "sha256:old-arcane"
+	newImageID := "sha256:new-arcane"
+	arcaneLabels := map[string]string{
+		"com.docker.compose.project":          "arcane",
+		"com.docker.compose.service":          "server",
+		updaterlabels.LabelArcaneLegacyServer: "true",
+	}
+
+	containers := []container.Summary{
+		{
+			ID:      "arcane-container",
+			Names:   []string{"/arcane"},
+			Image:   oldRef,
+			ImageID: oldImageID,
+			Labels:  arcaneLabels,
+			State:   "running",
+		},
+	}
+	verificationByService := map[string][]container.Summary{
+		"arcane/server": {
+			{
+				ID:      "arcane-container-new",
+				Names:   []string{"/arcane"},
+				Image:   newRef,
+				ImageID: newImageID,
+				Labels:  arcaneLabels,
+				State:   "running",
+			},
+		},
+	}
+	inspectByID := map[string]container.InspectResponse{
+		"arcane-container": {
+			ID:    "arcane-container",
+			Name:  "/arcane",
+			Image: oldImageID,
+			Config: &container.Config{
+				Image:  oldRef,
+				Labels: arcaneLabels,
+			},
+		},
+	}
+	imageInspectByRef := map[string]dockertypesimage.InspectResponse{
+		newRef: {
+			ID:       newImageID,
+			RepoTags: []string{newRef},
+		},
+	}
+
+	server := newUpdaterApplyPendingDockerServerInternal(t, containers, verificationByService, inspectByID, imageInspectByRef)
+	dockerProvider := fakeDockerClientProviderInternal{client: newTestDockerClient(t, server)}
+	puller := &fakeImagePullerInternal{}
+	projectUpdater := &fakeProjectUpdaterInternal{
+		projects: map[string]moduletypes.ComposeProject{
+			"arcane": {ID: "project-arcane", Name: "arcane"},
+		},
+	}
+	mockUpgrade := &mockSystemUpgradeServiceInternal{}
+
+	svc := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, mockUpgrade, nil)
+	svc.engine = moduleapi.NewService(moduleapi.Config{
+		DockerClientProvider: dockerProvider,
+		ImagePuller:          puller,
+		PendingStore: moduleapi.NewMemoryPendingStore(moduletypes.ImageUpdateRecord{
+			ID:             oldImageID,
+			Repository:     "ghcr.io/getarcaneapp/arcane",
+			Tag:            "1.0.0",
+			HasUpdate:      true,
+			UpdateType:     moduletypes.UpdateTypeTag,
+			CurrentVersion: "1.0.0",
+			LatestVersion:  ptr("1.0.1"),
+		}),
+		Settings:       fakeSettingsProviderInternal{},
+		ProjectUpdater: projectUpdater,
+		SelfUpdater:    svc,
+		UsedImageCollector: fakeUsedImageCollectorInternal{images: map[string]struct{}{
+			oldRef: {},
+		}},
+		LabelPolicy: updaterlabels.DefaultLabelPolicy(),
+	})
+
+	result, err := svc.ApplyPending(ctx, arcaneupdater.Options{})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.True(t, mockUpgrade.triggerCalled, "scheduled auto-update should use CLI self-upgrade for legacy Arcane server labels")
+	assert.Empty(t, projectUpdater.calls, "legacy Arcane server should not be updated through project services")
+}
+
 func TestResolvePullableImageRefInternal(t *testing.T) {
 	tests := []struct {
 		name           string

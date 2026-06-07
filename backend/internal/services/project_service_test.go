@@ -2889,6 +2889,18 @@ func TestProjectService_MapProjectToDto_SetsRedeployDisabledFromRuntimeServices(
 			wantService: true,
 		},
 		{
+			name:               "current legacy Arcane server container disables project redeploy",
+			containerID:        "arcane1234567890",
+			currentContainerID: "arcane1234567890",
+			labels: map[string]string{
+				"com.docker.compose.project":       "arcane",
+				"com.docker.compose.service":       "server",
+				libupdater.LabelArcaneLegacyServer: "true",
+			},
+			wantProject: true,
+			wantService: true,
+		},
+		{
 			name:        "Arcane server container fails closed when current container is unavailable",
 			containerID: "arcane1234567890",
 			currentErr:  errors.New("not running in docker"),

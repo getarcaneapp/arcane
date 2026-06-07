@@ -143,6 +143,7 @@ export type User = {
 	updatedAt?: string;
 	oidcSubjectId?: string;
 	locale?: Locale;
+	fontSize?: number;
 	requiresPasswordChange?: boolean;
 };
 
