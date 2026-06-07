@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"strings"
 	"time"
 
@@ -180,11 +181,26 @@ func isLegacyServerLabel(labels map[string]string) bool {
 		return false
 	}
 	for k, v := range labels {
-		if strings.EqualFold(k, "com.getarcaneapp.arcane.server") {
+		if strings.EqualFold(k, updaterlabels.LabelArcaneLegacyServer) {
 			return strings.EqualFold(strings.TrimSpace(v), "true")
 		}
 	}
 	return false
+}
+
+func normalizeRecreatedArcaneLabelsInternal(labels map[string]string) map[string]string {
+	normalized := maps.Clone(labels)
+	if normalized == nil {
+		return nil
+	}
+	if updaterlabels.IsArcaneContainer(labels) || isLegacyServerLabel(labels) {
+		normalized[updaterlabels.LabelArcane] = "true"
+	}
+	if updaterlabels.IsArcaneAgentContainer(labels) {
+		normalized[updaterlabels.LabelArcaneAgent] = "true"
+		normalized[updaterlabels.LabelArcane] = "true"
+	}
+	return normalized
 }
 
 func isAgentContainer(inspect container.InspectResponse) bool {
@@ -341,6 +357,7 @@ func upgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 	// Create new container config
 	config := *oldContainer.Config
 	config.Image = newImage
+	config.Labels = normalizeRecreatedArcaneLabelsInternal(config.Labels)
 
 	hostConfig, sanitizedMemorySwappiness, engineInfo, err := libarcane.PrepareRecreateHostConfigForEngine(ctx, dockerClient, oldContainer.HostConfig)
 	if err != nil {

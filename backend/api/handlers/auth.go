@@ -68,6 +68,7 @@ type UpdateMyProfileInput struct {
 		DisplayName *string `json:"displayName,omitempty"`
 		Email       *string `json:"email,omitempty"`
 		Locale      *string `json:"locale,omitempty"`
+		FontSize    *int    `json:"fontSize,omitempty" minimum:"12" maximum:"20"`
 	}
 }
 
@@ -410,6 +411,9 @@ func (h *AuthHandler) UpdateMyProfile(ctx context.Context, input *UpdateMyProfil
 	}
 	if input.Body.Locale != nil {
 		userModel.Locale = input.Body.Locale
+	}
+	if input.Body.FontSize != nil {
+		userModel.FontSize = input.Body.FontSize
 	}
 
 	updated, err := h.userService.UpdateUser(ctx, userModel)

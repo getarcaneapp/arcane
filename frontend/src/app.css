@@ -5,6 +5,12 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Orientation/state variants used by shadcn components (e.g. the slider),
+   which key off bits-ui's data-orientation / data-disabled attributes. */
+@custom-variant data-horizontal (&[data-orientation='horizontal']);
+@custom-variant data-vertical (&[data-orientation='vertical']);
+@custom-variant data-disabled (&[data-disabled]);
+
 /* BASE THEMES */
 :root {
 	--radius: 0.6rem;

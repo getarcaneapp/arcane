@@ -364,3 +364,28 @@ export function applyOledMode(enabled: boolean): void {
 
 	syncBrowserThemeColor();
 }
+
+export const FONT_SIZE_MIN = 12;
+export const FONT_SIZE_MAX = 20;
+export const FONT_SIZE_DEFAULT = 14; // matches `html { font-size: 14px }` in app.css
+
+/**
+ * Apply the user's preferred root font size. The UI is sized in `rem` off the
+ * root element, so this scales text and spacing together (a whole-UI zoom). At
+ * the default size we remove the inline override so the CSS rule wins.
+ */
+export function applyFontSize(px?: number | null): void {
+	if (typeof document === 'undefined') {
+		return;
+	}
+
+	const root = document.documentElement;
+
+	if (px == null || px === FONT_SIZE_DEFAULT) {
+		root.style.removeProperty('font-size');
+		return;
+	}
+
+	const clamped = Math.min(FONT_SIZE_MAX, Math.max(FONT_SIZE_MIN, Math.round(px)));
+	root.style.fontSize = `${clamped}px`;
+}
