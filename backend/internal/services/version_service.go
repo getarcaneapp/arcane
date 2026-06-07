@@ -129,6 +129,10 @@ func (s *VersionService) normalizeVersion(ver string) string {
 	if ver == "" {
 		return "v0.0.0"
 	}
+	trimmed := strings.TrimPrefix(ver, "v")
+	if trimmed == "" || trimmed[0] < '0' || trimmed[0] > '9' {
+		return ver
+	}
 	if !strings.HasPrefix(ver, "v") {
 		ver = "v" + ver
 	}

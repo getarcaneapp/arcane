@@ -11,6 +11,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/crypto"
 	notificationdto "github.com/getarcaneapp/arcane/types/v2/notification"
 	glsqlite "github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
@@ -54,6 +55,41 @@ func TestNormalizeNotificationTestType(t *testing.T) {
 	assert.Equal(t, "simple", normalizeNotificationTestType("  "))
 	assert.Equal(t, "auto-heal", normalizeNotificationTestType("auto-heal"))
 	assert.Equal(t, "auto-heal", normalizeNotificationTestType("  auto-heal  "))
+}
+
+func TestNotificationHandlerGetAllNotificationSettingsRedactsCredentialsInternal(t *testing.T) {
+	ctx := context.Background()
+	crypto.InitEncryption(&crypto.Config{
+		EncryptionKey: "test-encryption-key-for-testing-32bytes-min",
+		Environment:   "test",
+	})
+
+	db, svc := setupNotificationHandlerTestService(t)
+	h := &NotificationHandler{
+		notificationService: svc,
+		config:              &config.Config{},
+	}
+
+	_, err := svc.CreateOrUpdateSettings(ctx, models.NotificationProviderDiscord, true, models.JSON{
+		"webhookId": "123456789",
+		"token":     "discord-secret-token",
+		"username":  "Arcane",
+	})
+	require.NoError(t, err)
+
+	output, err := h.GetAllNotificationSettings(ctx, &GetAllNotificationSettingsInput{EnvironmentID: "0"})
+	require.NoError(t, err)
+	require.Len(t, output.Body, 1)
+	require.Equal(t, "123456789", output.Body[0].Config["webhookId"])
+	require.Equal(t, "Arcane", output.Body[0].Config["username"])
+	require.Empty(t, output.Body[0].Config["token"])
+
+	var stored models.NotificationSettings
+	require.NoError(t, db.WithContext(ctx).Where("provider = ?", models.NotificationProviderDiscord).First(&stored).Error)
+	require.NotEqual(t, "discord-secret-token", stored.Config["token"])
+	decrypted, err := crypto.Decrypt(stored.Config["token"].(string))
+	require.NoError(t, err)
+	require.Equal(t, "discord-secret-token", decrypted)
 }
 
 func TestDispatchNotification_RejectsAgentModeInternal(t *testing.T) {
