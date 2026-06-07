@@ -191,8 +191,8 @@ importers:
         specifier: ^4.3.0
         version: 4.3.0(vite@8.0.16(@types/node@25.9.1)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
       '@tanstack/svelte-query-devtools':
-        specifier: ^6.1.33
-        version: 6.1.33(@tanstack/svelte-query@6.1.33(svelte@5.56.2))(svelte@5.56.2)
+        specifier: ^6.1.34
+        version: 6.1.34(@tanstack/svelte-query@6.1.33(svelte@5.56.2))(svelte@5.56.2)
       '@types/node':
         specifier: ^25.9.1
         version: 25.9.1
@@ -1298,16 +1298,16 @@ packages:
   '@tanstack/query-core@5.100.14':
     resolution: {integrity: sha512-5X41dGpxgeaHISCRW2oYwcSycZeULZzAunaudXT9ov1KOTj9xwt0CH6hbwqP1/z74ZWF7rYFnDpyYH07XFcZew==}
 
-  '@tanstack/query-devtools@5.100.14':
-    resolution: {integrity: sha512-g96SmSSQecYTYcyuAMRXr895GplJv01UGt7qttQWPOUyZ5EGz5tbRc589bMc2m5BsPFD6O0PCEAHdbDYNP6UBw==}
+  '@tanstack/query-devtools@5.101.0':
+    resolution: {integrity: sha512-MVqw17k08RQtGGLEL654+dX/btbX9p/8WjkznO//zusLTMaObxi3Q+MoFwGVkC9K3tqjn8qrrNhJevXx4fJTeQ==}
 
   '@tanstack/store@0.11.0':
     resolution: {integrity: sha512-WlzzCt3xi0G6pCAJu1U+2jiECwabETDpQDi3hfkFZvJii9AuZqEKbOiVarX1/bWhTNjU486yQtJCCasi/0q+Cw==}
 
-  '@tanstack/svelte-query-devtools@6.1.33':
-    resolution: {integrity: sha512-y7Wa/hxqEHl+vSfphv7EJNkWheLmt7sFfB2bVzTxVt7PFdukL/4pKYqFX0tX2ORR00uNs4qMng4j3pn5moZ6Wg==}
+  '@tanstack/svelte-query-devtools@6.1.34':
+    resolution: {integrity: sha512-zVXoXqzE/n+j+Zq/47EqJf+DfmJt2+Hoz58ec8+JGa5t4k+b23Ix6Ea1W4IgHKKVVhaWhva4d6RauE4tPyW3Gw==}
     peerDependencies:
-      '@tanstack/svelte-query': ^6.1.33
+      '@tanstack/svelte-query': ^6.1.34
       svelte: ^5.25.0
 
   '@tanstack/svelte-query@6.1.33':
@@ -3666,13 +3666,13 @@ snapshots:
 
   '@tanstack/query-core@5.100.14': {}
 
-  '@tanstack/query-devtools@5.100.14': {}
+  '@tanstack/query-devtools@5.101.0': {}
 
   '@tanstack/store@0.11.0': {}
 
-  '@tanstack/svelte-query-devtools@6.1.33(@tanstack/svelte-query@6.1.33(svelte@5.56.2))(svelte@5.56.2)':
+  '@tanstack/svelte-query-devtools@6.1.34(@tanstack/svelte-query@6.1.33(svelte@5.56.2))(svelte@5.56.2)':
     dependencies:
-      '@tanstack/query-devtools': 5.100.14
+      '@tanstack/query-devtools': 5.101.0
       '@tanstack/svelte-query': 6.1.33(svelte@5.56.2)
       esm-env: 1.2.2
       svelte: 5.56.2
