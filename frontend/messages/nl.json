@@ -4,6 +4,8 @@
 	"layout_title": "Arcane",
 	"accent_color": "Accent kleur",
 	"accent_color_description": "Selecteer een accentkleur om het uiterlijk van Arcane aan te passen",
+	"font_size": "Lettergrootte",
+	"font_size_description": "Pas de tekstgrootte en de gebruikersinterface aan",
 	"application_theme": "Applicatie Thema",
 	"application_theme_description": "Kies het algemene visuele thema voor Arcane. Deze instelling wordt globaal opgeslagen en direct weergegeven.",
 	"application_theme_default": "Standaard",
