@@ -4,6 +4,8 @@
 	"layout_title": "Arcane",
 	"accent_color": "Основной цвет",
 	"accent_color_description": "Выберите основной цвет, чтобы настроить внешний вид Arcane",
+	"font_size": "Размер шрифта",
+	"font_size_description": "Настройка размера текста и интерфейса",
 	"application_theme": "Тема приложения",
 	"application_theme_description": "Выберите общую визуальную тему для Arcane. Этот параметр сохраняется глобально и отображается сразу после выбора.",
 	"application_theme_default": "По умолчанию",
