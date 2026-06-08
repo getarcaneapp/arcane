@@ -230,34 +230,18 @@ var createCmd = &cobra.Command{
 		}
 
 		req := map[string]any{
-			"url":          registryCreateURL,
-			"registryType": registryCreateType,
-		}
-		if registryCreateUsername != "" {
-			req["username"] = registryCreateUsername
-		}
-		if registryCreateToken != "" {
-			req["token"] = registryCreateToken
+			"url":                registryCreateURL,
+			"registryType":       registryCreateType,
+			"username":           registryCreateUsername,
+			"token":              registryCreateToken,
+			"insecure":           registryCreateInsecure,
+			"enabled":            !registryCreateDisabled,
+			"awsAccessKeyId":     registryCreateAWSKeyID,
+			"awsSecretAccessKey": registryCreateAWSSecret,
+			"awsRegion":          registryCreateAWSRegion,
 		}
 		if registryCreateDescription != "" {
 			req["description"] = registryCreateDescription
-		}
-		if cmd.Flags().Changed("insecure") {
-			req["insecure"] = registryCreateInsecure
-		}
-		if cmd.Flags().Changed("disabled") {
-			req["enabled"] = false
-		} else {
-			req["enabled"] = true
-		}
-		if registryCreateAWSKeyID != "" {
-			req["awsAccessKeyId"] = registryCreateAWSKeyID
-		}
-		if registryCreateAWSSecret != "" {
-			req["awsSecretAccessKey"] = registryCreateAWSSecret
-		}
-		if registryCreateAWSRegion != "" {
-			req["awsRegion"] = registryCreateAWSRegion
 		}
 
 		resp, err := c.Post(cmd.Context(), types.Endpoints.ContainerRegistries(), req)
