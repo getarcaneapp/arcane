@@ -340,9 +340,12 @@ arcane-cli completion bash|zsh|fish|powershell
 
 ```yaml
 server_url: https://your-arcane-server.com/
-api_key: arc_xxxxx
+api_key: arc_xxxxx                  # or use `auth login` for JWT
 default_environment: "0"
 log_level: info
+# jwt_token / refresh_token are written by `arcane-cli auth login`
+# federated_audience: ""            # default audience for `auth federated`
+# cli_update_channel: stable        # stable | next
 pagination:
   default:
     limit: 25
@@ -357,7 +360,7 @@ pagination:
       limit: 40
 ```
 
-Config keys for `arcane-cli config set`: `server-url`, `api-key`, `default-environment`, `log-level`
+Config keys for `arcane-cli config set`: `server-url`, `api-key`, `jwt-token`, `default-environment`, `federated-audience`, `log-level`, `cli-update-channel`, `default-limit`, `resource-limit`
 
 ## Common Patterns
 
