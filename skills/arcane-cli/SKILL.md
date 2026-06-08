@@ -363,7 +363,7 @@ Config keys for `arcane-cli config set`: `server-url`, `api-key`, `default-envir
 
 ```bash
 # JSON output for scripting
-arcane-cli containers list --json | jq '.[].name'
+arcane-cli containers list --json | jq '.data[].names[0]'
 
 # Target a specific environment
 arcane-cli containers list --env 2
