@@ -304,10 +304,10 @@ var updateCmd = &cobra.Command{
 			req["token"] = registryUpdatePassword
 		}
 		if cmd.Flags().Changed("enabled") {
-			req["enabled"] = true
+			req["enabled"] = registryUpdateEnabled
 		}
 		if cmd.Flags().Changed("disabled") {
-			req["enabled"] = false
+			req["enabled"] = !registryUpdateDisabled
 		}
 
 		if len(req) == 0 {
