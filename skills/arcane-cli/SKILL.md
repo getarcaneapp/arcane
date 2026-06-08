@@ -210,7 +210,43 @@ arcane-cli registries test <id>
 arcane-cli registries sync                         # sync registry configs
 arcane-cli registries update <id>
 arcane-cli registries delete <id>
+
+# Create a registry (--url required; --registry-type defaults to generic)
+arcane-cli registries create \
+  --url ghcr.io \
+  --username <github-user> \
+  --token <github-pat> \
+  --registry-type generic
+
+# Docker Hub
+arcane-cli registries create --url docker.io --username <user> --token <access-token>
+
+# Private Gitea / self-hosted (HTTP)
+arcane-cli registries create --url registry.example.com --username <user> --token <token> --insecure
+
+# AWS ECR
+arcane-cli registries create \
+  --url <account>.dkr.ecr.<region>.amazonaws.com \
+  --registry-type ecr \
+  --aws-access-key-id AKIAIOSFODNN7EXAMPLE \
+  --aws-secret-access-key <secret> \
+  --aws-region us-east-1
 ```
+
+`registries create` flags:
+
+| Flag | Default | Notes |
+|---|---|---|
+| `--url` | (required) | Registry host (no scheme, no path) |
+| `--username` | | Login username |
+| `--token` | | Password or PAT |
+| `--registry-type` | `generic` | `generic` or `ecr` |
+| `--insecure` | false | Allow plain HTTP |
+| `--disabled` | false | Create in disabled state |
+| `--description` | | Human-readable label |
+| `--aws-access-key-id` | | ECR only |
+| `--aws-secret-access-key` | | ECR only |
+| `--aws-region` | | ECR only |
 
 ## GitOps
 
