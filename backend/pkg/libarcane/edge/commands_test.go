@@ -31,6 +31,7 @@ func TestResolveEdgeCommandName(t *testing.T) {
 		{name: "activity history clear", method: "DELETE", path: "/api/environments/0/activities/history", command: "activity.history.clear", shouldHit: true},
 		{name: "activity stream remains manager local", method: "GET", path: "/api/environments/0/activities/stream?limit=50", shouldHit: false},
 		{name: "health", method: "HEAD", path: "/api/environments/0/system/health", command: "system.health", shouldHit: true},
+		{name: "swarm node identity", method: "GET", path: "/api/swarm/node-identity", command: "swarm.node_identity", shouldHit: true},
 		{name: "unknown", method: "PATCH", path: "/api/environments/0/containers", shouldHit: false},
 	}
 
