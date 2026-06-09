@@ -1,11 +1,8 @@
-import { m } from '$lib/paraglide/messages';
 import { queryKeys } from '$lib/query/query-keys';
 import systemUpgradeService from '$lib/services/api/system-upgrade-service';
 import type { AppVersionInformation } from '$lib/types/settings';
-import { extractApiErrorMessage } from '$lib/utils/api';
 import { hasPermission } from '$lib/utils/auth';
 import { createMutation, createQuery } from '@tanstack/svelte-query';
-import { toast } from 'svelte-sonner';
 
 type UseUpgradeCheckOptions = {
 	queryScope: 'mobile-nav' | 'sidebar';
@@ -54,21 +51,15 @@ export function useUpgradeCheck({ queryScope, getVersionInformation, getDebug = 
 
 	const shouldShowBanner = $derived(getVersionInformation()?.updateAvailable || getDebug());
 	const triggerUpgradeMutation = createMutation(() => ({
-		mutationFn: () => systemUpgradeService.triggerUpgrade(),
-		onError: (error: unknown) => {
-			const errorMessage = extractApiErrorMessage(error);
-			const wrappedPrefix = m.upgrade_failed({ error: '' });
-			toast.error(errorMessage.startsWith(wrappedPrefix) ? errorMessage : m.upgrade_failed({ error: errorMessage }));
-			upgrading = false;
-		}
+		mutationFn: () => systemUpgradeService.triggerUpgrade()
 	}));
 
 	function openDialog() {
 		showConfirmDialog = true;
 	}
 
-	function confirmUpgrade() {
-		triggerUpgradeMutation.mutate();
+	async function confirmUpgrade() {
+		await triggerUpgradeMutation.mutateAsync();
 	}
 
 	return {

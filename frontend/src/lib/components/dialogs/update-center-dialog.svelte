@@ -8,6 +8,7 @@
 	import { onDestroy } from 'svelte';
 	import systemUpgradeService from '$lib/services/api/system-upgrade-service';
 	import { cn } from '$lib/utils';
+	import { extractApiErrorMessage } from '$lib/utils/api';
 	import { ExternalLinkIcon, SuccessIcon } from '$lib/icons';
 	import type { AppVersionInformation } from '$lib/types/settings';
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
@@ -118,7 +119,8 @@
 		}
 	});
 
-	let upgradeStatus = $state<'upgrading' | 'waiting' | 'ready' | 'countdown' | 'complete'>('upgrading');
+	let upgradeStatus = $state<'upgrading' | 'waiting' | 'ready' | 'countdown' | 'complete' | 'failed'>('upgrading');
+	let upgradeFailureMessage = $state('');
 	let countdown = $state(10);
 	let pollAbort = $state<{ aborted: boolean } | null>(null);
 	let countdownInterval: ReturnType<typeof setInterval> | null = null;
@@ -316,8 +318,7 @@
 			if (isRemoteEnvironment) {
 				upgradeStatus = 'complete';
 			} else {
-				upgradeStatus = 'upgrading';
-				upgrading = false;
+				failUpgrade(m.update_center_failed_timeout());
 			}
 		}
 	}
@@ -356,12 +357,32 @@
 	}
 
 	function reloadPage() {
+		if (isContainerDetailPathInternal(window.location.pathname)) {
+			window.location.assign('/containers');
+			return;
+		}
+
 		window.location.reload();
+	}
+
+	function isContainerDetailPathInternal(pathname: string) {
+		return /^\/containers\/[^/]+\/?$/.test(pathname);
+	}
+
+	function failUpgrade(message: string) {
+		if (countdownInterval) {
+			clearInterval(countdownInterval);
+			countdownInterval = null;
+		}
+		upgradeFailureMessage = message;
+		upgradeStatus = 'failed';
+		upgrading = true;
 	}
 
 	async function handleConfirm() {
 		upgrading = true;
 		upgradeStatus = 'upgrading';
+		upgradeFailureMessage = '';
 		log('confirm', {
 			isRemoteEnvironment,
 			environmentId: environmentId ?? '0',
@@ -388,13 +409,15 @@
 			})
 			.catch((err) => {
 				log('trigger-error', err);
+				if (upgradeStatus !== 'ready' && upgradeStatus !== 'countdown' && upgradeStatus !== 'complete') {
+					failUpgrade(m.update_center_failed_trigger({ error: extractApiErrorMessage(err) }));
+				}
 				triggerErrored = true;
 			});
 
 		await Promise.race([triggerPromise, new Promise((r) => setTimeout(r, 1500))]);
 
 		if (triggerErrored) {
-			upgrading = false;
 			return;
 		}
 		if (!upgrading) {
@@ -408,7 +431,7 @@
 				log('fallback-timeout', { reason: 'timeout', isRemoteEnvironment });
 				if (isRemoteEnvironment) {
 					if (upgradeStatus !== 'complete') upgradeStatus = 'complete';
-				} else if (upgradeStatus !== 'countdown') {
+				} else if (upgradeStatus !== 'countdown' && upgradeStatus !== 'failed') {
 					reloadPage();
 				}
 			},
@@ -457,6 +480,8 @@
 					return 3;
 				case 'complete':
 					return labels.length;
+				case 'failed':
+					return Math.min(2, labels.length - 1);
 				default:
 					return 0;
 			}
@@ -479,9 +504,9 @@
 
 <Dialog.Root {open} onOpenChange={(nextOpen) => (open = nextOpen)}>
 	<Dialog.Content
-		class={cn('gap-0 overflow-hidden p-0 sm:max-w-[560px]', upgrading && '[&>button]:hidden')}
+		class={cn('gap-0 overflow-hidden p-0 sm:max-w-[560px]', upgrading && upgradeStatus !== 'failed' && '[&>button]:hidden')}
 		onInteractOutside={(e: Event) => {
-			if (upgrading) e.preventDefault();
+			if (upgrading && upgradeStatus !== 'failed') e.preventDefault();
 		}}
 	>
 		{#if upgrading}
@@ -531,6 +556,18 @@
 							{m.upgrade_reload_auto({ countdown })}
 						</p>
 						<ArcaneButton action="base" onclick={reloadPage} size="sm" customLabel={m.upgrade_reload_now()} />
+					</div>
+				{:else if upgradeStatus === 'failed'}
+					<div class="border-destructive/30 bg-destructive/5 mt-4 rounded-lg border px-3 py-2.5">
+						<p class="text-destructive text-sm font-medium">
+							{m.update_center_failed()}
+						</p>
+						<p class="text-muted-foreground mt-1 text-xs leading-relaxed">
+							{upgradeFailureMessage}
+						</p>
+						<div class="mt-3 flex justify-end">
+							<ArcaneButton action="base" onclick={closeAfterComplete} size="sm" customLabel={m.update_center_close()} />
+						</div>
 					</div>
 				{:else if upgradeStatus === 'complete'}
 					<div class="mt-4 flex items-center justify-between rounded-lg border border-green-500/20 bg-green-500/5 px-3 py-2.5">

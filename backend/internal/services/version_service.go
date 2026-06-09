@@ -15,11 +15,11 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	docker "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
+	arcaneselector "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/selector"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cache"
 	"github.com/getarcaneapp/arcane/types/v2/version"
 	containertypes "github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
-	libupdater "go.getarcane.app/updater/pkg/labels"
 	"golang.org/x/mod/semver"
 )
 
@@ -385,43 +385,7 @@ func (s *VersionService) detectContainerID(ctx context.Context, dockerClient *cl
 	slog.Debug("detectContainerID: getCurrentContainerID failed, trying label fallback", "error", err)
 
 	// Fallback: locate the Arcane container by label (works even when cgroup/hostname detection fails)
-	return s.findArcaneContainerByLabel(ctx, dockerClient)
-}
-
-// findArcaneContainerByLabel searches for the Arcane container using labels
-func (s *VersionService) findArcaneContainerByLabel(ctx context.Context, dockerClient *client.Client) string {
-	f := make(client.Filters)
-	f = f.Add("label", libupdater.LabelArcane+"=true")
-	list, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true, Filters: f})
-	if err != nil {
-		slog.Debug("findArcaneContainerByLabel: failed to list containers", "error", err)
-		return ""
-	}
-	slog.Debug("findArcaneContainerByLabel: found containers with arcane label", "count", len(list.Items))
-
-	var fallbackID string
-	for _, c := range list.Items {
-		slog.Debug("findArcaneContainerByLabel: checking container", "id", c.ID[:12], "state", c.State, "labels", c.Labels)
-		// Skip the upgrader helper container
-		if v, ok := c.Labels["com.getarcaneapp.arcane.upgrader"]; ok && strings.EqualFold(strings.TrimSpace(v), "true") {
-			slog.Debug("findArcaneContainerByLabel: skipping upgrader container", "id", c.ID[:12])
-			continue
-		}
-		// Prefer running containers
-		if c.State == containertypes.StateRunning {
-			slog.Debug("findArcaneContainerByLabel: found running container", "id", c.ID[:12])
-			return c.ID
-		}
-		if fallbackID == "" {
-			fallbackID = c.ID
-		}
-	}
-	if fallbackID != "" {
-		slog.Debug("findArcaneContainerByLabel: using fallback container", "id", fallbackID[:12])
-	} else {
-		slog.Debug("findArcaneContainerByLabel: no container found")
-	}
-	return fallbackID
+	return arcaneselector.FindArcaneContainerByLabel(ctx, dockerClient)
 }
 
 // extractImageDetails extracts digest and imageRef from a container's image

@@ -13,6 +13,70 @@ import (
 	libupdater "go.getarcane.app/updater/pkg/labels"
 )
 
+func TestResolveSystemUpgradeTargetImageInternal(t *testing.T) {
+	tests := []struct {
+		name          string
+		currentImage  string
+		latestVersion string
+		want          string
+	}{
+		{
+			name:          "semver pinned image retargets to latest release tag",
+			currentImage:  "ghcr.io/getarcaneapp/manager:v2.0.0",
+			latestVersion: "v2.0.1",
+			want:          "ghcr.io/getarcaneapp/manager:v2.0.1",
+		},
+		{
+			name:          "short semver tag retargets to latest release tag",
+			currentImage:  "ghcr.io/getarcaneapp/manager:v2.0",
+			latestVersion: "v2.0.1",
+			want:          "ghcr.io/getarcaneapp/manager:v2.0.1",
+		},
+		{
+			name:          "latest tag keeps tracking behavior",
+			currentImage:  "ghcr.io/getarcaneapp/manager:latest",
+			latestVersion: "v2.0.1",
+			want:          "",
+		},
+		{
+			name:          "non semver tag keeps tracking behavior",
+			currentImage:  "ghcr.io/getarcaneapp/manager:next-static",
+			latestVersion: "v2.0.1",
+			want:          "",
+		},
+		{
+			name:          "digest pinned image is not retagged",
+			currentImage:  "ghcr.io/getarcaneapp/manager@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			latestVersion: "v2.0.1",
+			want:          "",
+		},
+		{
+			name:          "older latest version is ignored",
+			currentImage:  "ghcr.io/getarcaneapp/manager:v2.0.1",
+			latestVersion: "v2.0.0",
+			want:          "",
+		},
+		{
+			name:          "empty image is ignored",
+			currentImage:  "",
+			latestVersion: "v2.0.1",
+			want:          "",
+		},
+		{
+			name:          "invalid latest version is ignored",
+			currentImage:  "ghcr.io/getarcaneapp/manager:v2.0.0",
+			latestVersion: "next",
+			want:          "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, resolveSystemUpgradeTargetImageInternal(tt.currentImage, tt.latestVersion))
+		})
+	}
+}
+
 // TestSystemUpgradeService_UpgradeFlag tests the upgrading flag behavior
 func TestSystemUpgradeService_UpgradeFlag(t *testing.T) {
 	s := NewSystemUpgradeService(nil, nil, nil, nil)

@@ -10,15 +10,18 @@ import (
 	"sync/atomic"
 	"time"
 
+	ref "github.com/distribution/reference"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
+	arcaneselector "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/selector"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	containertypes "github.com/moby/moby/api/types/container"
 	mounttypes "github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
 	libupdater "go.getarcane.app/updater/pkg/labels"
+	"golang.org/x/mod/semver"
 )
 
 const defaultArcaneUpgraderImageInternal = "ghcr.io/getarcaneapp/arcane:latest"
@@ -53,19 +56,14 @@ func NewSystemUpgradeService(
 
 // CanUpgrade checks if self-upgrade is possible
 func (s *SystemUpgradeService) CanUpgrade(ctx context.Context) (bool, error) {
-	// Check if running in Docker
-	containerId, err := s.getCurrentContainerIDInternal()
-	if err != nil {
-		return false, err
-	}
-
 	// Verify we can access Docker
-	_, err = s.dockerService.GetClient(ctx)
+	_, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return false, &common.DockerSocketAccessError{}
 	}
 
 	// Verify we can find our container
+	containerId, _ := s.getCurrentContainerIDInternal()
 	_, err = s.findArcaneContainerInternal(ctx, containerId)
 	if err != nil {
 		return false, err
@@ -82,15 +80,19 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 	}
 	defer s.upgrading.Store(false)
 
-	// Get current container name
-	containerId, err := s.getCurrentContainerIDInternal()
-	if err != nil {
-		return fmt.Errorf("get current container: %w", err)
+	// Current-container ID detection can fail under some container runtimes, so
+	// treat it as a best-effort fast path and fall back to Arcane labels.
+	containerId, currentContainerIDErr := s.getCurrentContainerIDInternal()
+	if currentContainerIDErr != nil {
+		slog.Debug("Failed to detect current container ID for upgrade; falling back to labels", "error", currentContainerIDErr)
 	}
 
 	currentContainer, err := s.findArcaneContainerInternal(ctx, containerId)
 	if err != nil {
 		return fmt.Errorf("inspect container: %w", err)
+	}
+	if strings.TrimSpace(containerId) == "" {
+		containerId = currentContainer.ID
 	}
 
 	containerName := strings.TrimPrefix(currentContainer.Name, "/")
@@ -120,7 +122,8 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 			upgraderImage = img
 		}
 	}
-	slog.Debug("Using upgrader image", "image", upgraderImage)
+	targetImage := s.resolveSystemUpgradeTargetImageInternal(ctx, currentContainer)
+	slog.Debug("Using upgrader image", "image", upgraderImage, "targetImage", targetImage)
 
 	slog.Info("Spawning upgrade CLI command", "containerName", containerName, "upgraderImage", upgraderImage)
 
@@ -180,13 +183,18 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 		return fmt.Errorf("resolve upgrader docker runtime: %w", err)
 	}
 
+	upgradeCmd := []string{binaryPath, "upgrade", "--container", containerName}
+	if targetImage != "" {
+		upgradeCmd = append(upgradeCmd, "--image", targetImage)
+	}
+
 	config := &containertypes.Config{
 		Image: upgraderImage,
-		Cmd:   []string{binaryPath, "upgrade", "--container", containerName},
+		Cmd:   upgradeCmd,
 		Env:   runtimeOptions.ContainerEnv,
 		Labels: map[string]string{
-			"com.getarcaneapp.arcane.upgrader": "true",
-			"com.getarcaneapp.arcane":          "true",
+			arcaneselector.UpgraderLabel: "true",
+			"com.getarcaneapp.arcane":    "true",
 		},
 	}
 
@@ -234,6 +242,98 @@ func determineUpgradeBinaryPathInternal(labels map[string]string) string {
 	}
 
 	return "/app/arcane"
+}
+
+func (s *SystemUpgradeService) resolveSystemUpgradeTargetImageInternal(ctx context.Context, currentContainer containertypes.InspectResponse) string {
+	if s == nil || s.versionService == nil || currentContainer.Config == nil {
+		return ""
+	}
+
+	latestVersion, err := s.versionService.GetLatestVersion(ctx)
+	if err != nil {
+		slog.WarnContext(ctx, "Failed to resolve latest release for self-upgrade target image", "error", err)
+		return ""
+	}
+
+	return resolveSystemUpgradeTargetImageInternal(currentContainer.Config.Image, latestVersion)
+}
+
+func resolveSystemUpgradeTargetImageInternal(currentImage, latestVersion string) string {
+	currentImage = strings.TrimSpace(currentImage)
+	if currentImage == "" || strings.Contains(currentImage, "@") {
+		return ""
+	}
+
+	latestSemver := normalizeSystemUpgradeSemverInternal(latestVersion)
+	if !semver.IsValid(latestSemver) {
+		return ""
+	}
+
+	named, err := ref.ParseNormalizedNamed(currentImage)
+	if err != nil {
+		return ""
+	}
+
+	tagged, ok := named.(ref.Tagged)
+	if !ok {
+		return ""
+	}
+
+	currentSemver := normalizeSystemUpgradeSemverInternal(tagged.Tag())
+	if !semver.IsValid(currentSemver) || semver.Compare(latestSemver, currentSemver) <= 0 {
+		return ""
+	}
+
+	target, err := ref.WithTag(named, latestSemver)
+	if err != nil {
+		return ""
+	}
+	return target.String()
+}
+
+func normalizeSystemUpgradeSemverInternal(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+
+	if !strings.HasPrefix(value, "v") {
+		if value[0] < '0' || value[0] > '9' {
+			return value
+		}
+		value = "v" + value
+	}
+	if semver.IsValid(value) {
+		return value
+	}
+
+	core := value
+	suffix := ""
+	if idx := strings.IndexAny(value, "-+"); idx > 0 {
+		core = value[:idx]
+		suffix = value[idx:]
+	}
+
+	parts := strings.Split(strings.TrimPrefix(core, "v"), ".")
+	for _, part := range parts {
+		if part == "" {
+			return value
+		}
+		for _, ch := range part {
+			if ch < '0' || ch > '9' {
+				return value
+			}
+		}
+	}
+
+	for len(parts) < 3 {
+		parts = append(parts, "0")
+	}
+	normalized := "v" + strings.Join(parts[:3], ".") + suffix
+	if semver.IsValid(normalized) {
+		return normalized
+	}
+	return value
 }
 
 func resolveSystemUpgraderRuntimeOptionsInternal(
@@ -293,47 +393,39 @@ func (s *SystemUpgradeService) findArcaneContainerInternal(ctx context.Context, 
 	}
 
 	// Try to inspect the container directly
-	container, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, containerId, client.ContainerInspectOptions{})
-	if err == nil {
-		return container.Container, nil
-	}
-
-	// Fallback: search for containers with arcane image
-	filter := make(client.Filters)
-	filter = filter.Add("ancestor", "ghcr.io/getarcaneapp/arcane")
-
-	containers, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{
-		All:     true,
-		Filters: filter,
-	})
-	if err != nil {
-		return containertypes.InspectResponse{}, err
-	}
-
-	for _, c := range containers.Items {
-		if strings.HasPrefix(c.ID, containerId) {
-			inspect, inspectErr := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, c.ID, client.ContainerInspectOptions{})
-			if inspectErr != nil {
-				return containertypes.InspectResponse{}, inspectErr
-			}
-			return inspect.Container, nil
+	containerId = strings.TrimSpace(containerId)
+	if containerId != "" {
+		container, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, containerId, client.ContainerInspectOptions{})
+		if err == nil {
+			return container.Container, nil
 		}
 	}
 
-	// Try without filter - search all containers
+	// Fall back to all containers so aliases like ghcr.io/getarcaneapp/manager
+	// and mixed manager/agent deployments are handled by Arcane labels.
 	allContainers, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
 	if err != nil {
 		return containertypes.InspectResponse{}, err
 	}
 
-	for _, c := range allContainers.Items {
-		if strings.HasPrefix(c.ID, containerId) || c.ID == containerId {
-			inspect, inspectErr := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, c.ID, client.ContainerInspectOptions{})
-			if inspectErr != nil {
-				return containertypes.InspectResponse{}, inspectErr
+	if containerId != "" {
+		for _, c := range allContainers.Items {
+			if strings.HasPrefix(c.ID, containerId) || c.ID == containerId {
+				inspect, inspectErr := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, c.ID, client.ContainerInspectOptions{})
+				if inspectErr != nil {
+					return containertypes.InspectResponse{}, inspectErr
+				}
+				return inspect.Container, nil
 			}
-			return inspect.Container, nil
 		}
+	}
+
+	if selected, ok := arcaneselector.SelectArcaneContainerSummary(allContainers.Items); ok {
+		inspect, inspectErr := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, selected.ID, client.ContainerInspectOptions{})
+		if inspectErr != nil {
+			return containertypes.InspectResponse{}, inspectErr
+		}
+		return inspect.Container, nil
 	}
 
 	return containertypes.InspectResponse{}, &common.ArcaneContainerNotFoundError{}
