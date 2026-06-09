@@ -2077,7 +2077,7 @@
 	"activity_cancel_title": "Zrušit aktivitu?",
 	"activity_cancel_message": "Tímto se žádá o zrušení probíhající operace. Úkony, které Docker již provedl, nelze vrátit zpět.",
 	"activity_cancel_confirm": "Zrušit aktivitu",
-	"activity_cancel_success": "Žádost o zrušení",
+	"activity_cancel_success": "Zažádáno o zrušení",
 	"activity_cancel_failed": "Zrušení aktivity se nezdařilo",
 	"activity_cancel_already_finished": "Aktivita již skončila",
 	"activity_settings_title": "Aktivita",
