@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"reflect"
 	"strings"
 )
 
@@ -70,6 +71,15 @@ func AsStringMap(value any) (map[string]any, bool) {
 			}
 		}
 		return res, len(res) > 0
+	}
+	// Named map types (e.g. compose-go's types.Labels) don't match the cases above.
+	rv := reflect.ValueOf(value)
+	if rv.Kind() == reflect.Map && rv.Type().Key().Kind() == reflect.String {
+		res := make(map[string]any, rv.Len())
+		for iter := rv.MapRange(); iter.Next(); {
+			res[iter.Key().String()] = iter.Value().Interface()
+		}
+		return res, true
 	}
 	return nil, false
 }

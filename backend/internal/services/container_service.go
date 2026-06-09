@@ -1154,7 +1154,7 @@ func (s *ContainerService) applyContainerDetailsIconInternal(ctx context.Context
 
 func (s *ContainerService) resolveContainerIconInternal(ctx context.Context, labels map[string]string, metadataByProject map[string]projects.ArcaneComposeMetadata) iconcatalog.ResolvedIconSet {
 	explicitIcon := projects.FindArcaneIconSet(labels)
-	if iconSetHasBothVariantsInternal(explicitIcon) {
+	if !explicitIcon.IsEmpty() {
 		return s.resolveIconSetInternal(ctx, explicitIcon)
 	}
 
@@ -1171,10 +1171,6 @@ func (s *ContainerService) resolveContainerIconInternal(ctx context.Context, lab
 		meta.ServiceIconSets[serviceName],
 		meta.ProjectIcon,
 	))
-}
-
-func iconSetHasBothVariantsInternal(iconSet iconcatalog.IconSet) bool {
-	return strings.TrimSpace(iconSet.Light) != "" && strings.TrimSpace(iconSet.Dark) != ""
 }
 
 func (s *ContainerService) getCachedProjectIconMetadataInternal(ctx context.Context, projectName string, metadataByProject map[string]projects.ArcaneComposeMetadata) projects.ArcaneComposeMetadata {
