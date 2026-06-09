@@ -39,7 +39,7 @@ const remoteEnvironment: MockEnvironment = {
 	name: 'Remote Lab',
 	apiUrl: 'https://remote.example.invalid',
 	status: 'offline',
-	enabled: false,
+	enabled: true,
 	isEdge: false
 };
 
@@ -83,7 +83,7 @@ function activity(
 }
 
 function activityEnvironmentIdFromPath(pathname: string): string | null {
-	const match = pathname.match(/^\/api\/environments\/([^/]+)\/activities(?:\/stream)?$/);
+	const match = pathname.match(/^\/api\/environments\/([^/]+)\/activities$/);
 	return match ? decodeURIComponent(match[1]) : null;
 }
 
@@ -103,54 +103,61 @@ async function mockEnvironmentList(page: Page, environments: MockEnvironment[]) 
 	});
 }
 
+function aggregatedActivityStreamBody(
+	activitiesByEnvironment: Record<string, MockActivity[]>,
+	failedEnvironmentIds: Set<string>
+): string {
+	const timestamp = new Date().toISOString();
+	const events: string[] = [];
+	for (const [environmentId, activities] of Object.entries(activitiesByEnvironment)) {
+		events.push(JSON.stringify({ type: 'snapshot', environmentId, activities, timestamp }));
+	}
+	for (const environmentId of failedEnvironmentIds) {
+		events.push(
+			JSON.stringify({ type: 'error', environmentId, error: 'environment unavailable', timestamp })
+		);
+	}
+	return events.join('\n') + '\n';
+}
+
 async function mockActivityReads(
 	page: Page,
 	activitiesByEnvironment: Record<string, MockActivity[]>,
 	failedEnvironmentIds = new Set<string>()
 ) {
+	await page.context().route(/\/api\/activities\/stream(?:\?.*)?$/, async (route: Route) => {
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/x-json-stream',
+			body: aggregatedActivityStreamBody(activitiesByEnvironment, failedEnvironmentIds)
+		});
+	});
+
 	await page
 		.context()
-		.route(
-			/\/api\/environments\/[^/]+\/activities(?:\/stream)?(?:\?.*)?$/,
-			async (route: Route) => {
-				const url = new URL(route.request().url());
-				const environmentId = activityEnvironmentIdFromPath(url.pathname);
-				if (!environmentId) {
-					await route.continue();
-					return;
-				}
-
-				if (failedEnvironmentIds.has(environmentId)) {
-					await route.fulfill({
-						status: 503,
-						contentType: 'application/json',
-						body: JSON.stringify({ success: false, message: 'environment unavailable' })
-					});
-					return;
-				}
-
-				const activities = activitiesByEnvironment[environmentId] ?? [];
-				if (url.pathname.endsWith('/stream')) {
-					await route.fulfill({
-						status: 200,
-						contentType: 'application/x-json-stream',
-						body:
-							JSON.stringify({
-								type: 'snapshot',
-								activities,
-								timestamp: new Date().toISOString()
-							}) + '\n'
-					});
-					return;
-				}
-
-				await route.fulfill({
-					status: 200,
-					contentType: 'application/json',
-					body: JSON.stringify(paginated(activities))
-				});
+		.route(/\/api\/environments\/[^/]+\/activities(?:\?.*)?$/, async (route: Route) => {
+			const url = new URL(route.request().url());
+			const environmentId = activityEnvironmentIdFromPath(url.pathname);
+			if (!environmentId) {
+				await route.continue();
+				return;
 			}
-		);
+
+			if (failedEnvironmentIds.has(environmentId)) {
+				await route.fulfill({
+					status: 503,
+					contentType: 'application/json',
+					body: JSON.stringify({ success: false, message: 'environment unavailable' })
+				});
+				return;
+			}
+
+			await route.fulfill({
+				status: 200,
+				contentType: 'application/json',
+				body: JSON.stringify(paginated(activitiesByEnvironment[environmentId] ?? []))
+			});
+		});
 }
 
 function extractActivityId(value: unknown): string | undefined {
@@ -236,13 +243,10 @@ function activityRow(activityCenter: Locator, text: string) {
 		.first();
 }
 
-function waitForActivityList(page: Page, environmentId: string) {
+function waitForActivityStream(page: Page) {
 	return page.waitForResponse((response) => {
 		const url = new URL(response.url());
-		return (
-			response.request().method() === 'GET' &&
-			url.pathname === `/api/environments/${encodeURIComponent(environmentId)}/activities`
-		);
+		return response.request().method() === 'GET' && url.pathname === '/api/activities/stream';
 	});
 }
 
@@ -257,12 +261,10 @@ test.describe('Activity Center', () => {
 			]
 		});
 
-		const localActivityList = waitForActivityList(page, '0');
-		const remoteActivityList = waitForActivityList(page, 'remote-activity-test');
+		const activityStream = waitForActivityStream(page);
 		await page.goto('/dashboard');
-		await Promise.all([localActivityList, remoteActivityList]);
+		await activityStream;
 		await page.waitForLoadState('load');
-		await page.waitForLoadState('networkidle');
 
 		const activityCenter = await openActivityCenter(page);
 		await activityCenter.getByRole('button', { name: 'Completed' }).click();
@@ -285,12 +287,10 @@ test.describe('Activity Center', () => {
 			new Set(['remote-activity-test'])
 		);
 
-		const localActivityList = waitForActivityList(page, '0');
-		const remoteActivityList = waitForActivityList(page, 'remote-activity-test');
+		const activityStream = waitForActivityStream(page);
 		await page.goto('/dashboard');
-		await Promise.all([localActivityList, remoteActivityList]);
+		await activityStream;
 		await page.waitForLoadState('load');
-		await page.waitForLoadState('networkidle');
 
 		const activityCenter = await openActivityCenter(page);
 		await activityCenter.getByRole('button', { name: 'Completed' }).click();
@@ -334,10 +334,9 @@ test.describe('Activity Center', () => {
 			});
 		});
 
-		const localActivityList = waitForActivityList(page, '0');
-		const remoteActivityList = waitForActivityList(page, 'remote-activity-test');
+		const activityStream = waitForActivityStream(page);
 		await page.goto('/dashboard');
-		await Promise.all([localActivityList, remoteActivityList]);
+		await activityStream;
 		await page.waitForLoadState('load');
 
 		const activityCenter = await openActivityCenter(page);

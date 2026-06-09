@@ -31,25 +31,22 @@ class ActivityService extends BaseAPIService {
 		return this.handleResponse(this.api.delete(`/environments/${envId}/activities/history`));
 	}
 
-	getActivityStreamUrl(environmentId: string, limit = 50): string {
+	getActivityStreamUrl(limit = 50): string {
 		const baseUrl = this.api.defaults.baseURL.replace(/\/+$/, '');
 		const params = new URLSearchParams({ limit: String(limit) });
-		return `${baseUrl}/environments/${encodeURIComponent(environmentId)}/activities/stream?${params.toString()}`;
+		return `${baseUrl}/activities/stream?${params.toString()}`;
 	}
 
-	async openActivityStream(environmentId: string, signal: AbortSignal, limit = 50, retry = false): Promise<Response> {
-		const response = await fetch(this.getActivityStreamUrl(environmentId, limit), {
+	async openActivityStream(signal: AbortSignal, limit = 50, retry = false): Promise<Response> {
+		const response = await fetch(this.getActivityStreamUrl(limit), {
 			credentials: 'include',
 			headers: { Accept: 'application/x-json-stream' },
 			signal
 		});
 		if (response.status === 401) {
-			const action = await handleUnauthorizedResponseInternal(
-				`/environments/${encodeURIComponent(environmentId)}/activities/stream`,
-				retry
-			);
+			const action = await handleUnauthorizedResponseInternal('/activities/stream', retry);
 			if (action === 'retry') {
-				return this.openActivityStream(environmentId, signal, limit, true);
+				return this.openActivityStream(signal, limit, true);
 			}
 			if (action === 'redirect') {
 				return new Promise<Response>(() => {});

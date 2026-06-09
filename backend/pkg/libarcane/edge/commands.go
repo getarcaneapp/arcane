@@ -51,7 +51,6 @@ var commandRoutes = []commandRoute{
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/image-updates/summary", CommandName: "image_update.summary"},
 
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/activities", CommandName: "activity.list"},
-	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/activities/stream", LocalOnly: true},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/activities/{activityId}", CommandName: "activity.inspect"},
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/activities/{activityId}/cancel", CommandName: "activity.cancel"},
 	{Method: http.MethodDelete, PathPattern: "/api/environments/{id}/activities/history", CommandName: "activity.history.clear"},

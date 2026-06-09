@@ -85,10 +85,12 @@ export interface ActivityClearHistorySummary {
 }
 
 export interface ActivityStreamEvent {
-	type: 'snapshot' | 'activity' | 'message' | 'heartbeat';
+	type: 'snapshot' | 'activity' | 'message' | 'heartbeat' | 'error';
+	environmentId?: string;
 	activityId?: string;
 	activity?: Activity;
 	activities?: Activity[];
 	message?: ActivityMessage;
+	error?: string;
 	timestamp: string;
 }

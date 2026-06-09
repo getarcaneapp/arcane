@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -61,10 +63,17 @@ type ClearActivityHistoryOutput struct {
 	Body base.ApiResponse[activity.ClearHistoryResult]
 }
 
-type StreamActivitiesInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Limit         int    `query:"limit" default:"50" doc:"Initial snapshot limit"`
+type StreamAllActivitiesInput struct {
+	Limit int `query:"limit" default:"50" doc:"Snapshot limit per environment"`
 }
+
+const (
+	activityStreamHeartbeatInterval    = 15 * time.Second
+	activityStreamRemotePollInterval   = 5 * time.Second
+	activityStreamEnvReconcileInterval = 30 * time.Second
+	activityStreamRemotePollTimeout    = 15 * time.Second
+	activityStreamEventBuffer          = 256
+)
 
 type CancelActivityInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
@@ -111,18 +120,18 @@ func RegisterActivities(api huma.API, activityService *services.ActivityService,
 	}, h.GetActivity)
 
 	huma.Register(api, huma.Operation{
-		OperationID: "stream-activities",
+		OperationID: "stream-all-activities",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/activities/stream",
-		Summary:     "Stream background activities",
-		Description: "Stream background activity updates as JSON lines",
+		Path:        "/activities/stream",
+		Summary:     "Stream background activities across all environments",
+		Description: "Stream background activity updates for the local environment and all enabled remote environments as JSON lines",
 		Tags:        []string{"Activities"},
 		Security: []map[string][]string{
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
 		Middlewares: humamw.RequirePermission(api, authz.PermActivitiesRead),
-	}, h.StreamActivities)
+	}, h.StreamAllActivities)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "cancel-activity",
@@ -221,95 +230,6 @@ func (h *ActivityHandler) GetActivity(ctx context.Context, input *GetActivityInp
 	}, nil
 }
 
-func (h *ActivityHandler) StreamActivities(ctx context.Context, input *StreamActivitiesInput) (*huma.StreamResponse, error) {
-	if h.activityService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
-	return &huma.StreamResponse{
-		Body: func(humaCtx huma.Context) { //nolint:contextcheck // streaming work must use humaCtx.Context()
-			httpx.SetJSONStreamHeaders(humaCtx)
-
-			writer := humaCtx.BodyWriter()
-			encoder := json.NewEncoder(writer)
-			flush := func() {
-				if f, ok := writer.(http.Flusher); ok {
-					f.Flush()
-				}
-			}
-
-			if input.EnvironmentID != "0" {
-				h.streamRemoteActivitySnapshotsInternal(humaCtx.Context(), input, encoder, flush)
-				return
-			}
-
-			h.streamLocalActivitiesInternal(humaCtx.Context(), input, encoder, flush)
-		},
-	}, nil
-}
-
-func (h *ActivityHandler) streamLocalActivitiesInternal(
-	ctx context.Context,
-	input *StreamActivitiesInput,
-	encoder *json.Encoder,
-	flush func(),
-) {
-	sendSnapshot := func() bool {
-		activities, _, err := h.activityService.ListActivitiesPaginated(ctx, input.EnvironmentID, pagination.QueryParams{
-			Params: pagination.Params{Limit: resolveActivityStreamLimitInternal(input.Limit)},
-		})
-		if err != nil {
-			return false
-		}
-		h.applyActivitySourceLabelsInternal(ctx, input.EnvironmentID, activities)
-		if err := encoder.Encode(activity.StreamEvent{
-			Type:       "snapshot",
-			Activities: activities,
-			Timestamp:  time.Now(),
-		}); err != nil {
-			return false
-		}
-		flush()
-		return true
-	}
-	if !sendSnapshot() {
-		return
-	}
-
-	events, missedEvents, unsubscribe := h.activityService.Subscribe(input.EnvironmentID)
-	defer unsubscribe()
-
-	ticker := time.NewTicker(15 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case event, ok := <-events:
-			if !ok {
-				return
-			}
-			h.applyActivityStreamEventSourceLabelInternal(ctx, input.EnvironmentID, &event)
-			if err := encoder.Encode(event); err != nil {
-				return
-			}
-			flush()
-		case <-ticker.C:
-			if missedEvents() && !sendSnapshot() {
-				return
-			}
-			if err := encoder.Encode(activity.StreamEvent{
-				Type:      "heartbeat",
-				Timestamp: time.Now(),
-			}); err != nil {
-				return
-			}
-			flush()
-		}
-	}
-}
-
 func (h *ActivityHandler) ClearHistory(ctx context.Context, input *ClearActivityHistoryInput) (*ClearActivityHistoryOutput, error) {
 	if input.EnvironmentID != "0" {
 		return h.proxyClearHistoryInternal(ctx, input)
@@ -395,51 +315,61 @@ func (h *ActivityHandler) cancelRequestedByInternal(ctx context.Context, forward
 	return strings.TrimSpace(forwarded)
 }
 
-func (h *ActivityHandler) streamRemoteActivitySnapshotsInternal(
-	ctx context.Context,
-	input *StreamActivitiesInput,
-	encoder *json.Encoder,
-	flush func(),
-) {
-	pollTicker := time.NewTicker(5 * time.Second)
-	defer pollTicker.Stop()
-	heartbeatTicker := time.NewTicker(15 * time.Second)
-	defer heartbeatTicker.Stop()
-
-	sendSnapshot := func(ctx context.Context) bool {
-		output, err := h.proxyListActivitiesInternal(ctx, &ListActivitiesInput{
-			EnvironmentID: input.EnvironmentID,
-			Start:         0,
-			Limit:         resolveActivityStreamLimitInternal(input.Limit),
-			Order:         "desc",
-		})
-		if err != nil {
-			return false
-		}
-		if err := encoder.Encode(activity.StreamEvent{
-			Type:       "snapshot",
-			Activities: output.Body.Data,
-			Timestamp:  time.Now(),
-		}); err != nil {
-			return false
-		}
-		flush()
-		return true
+func (h *ActivityHandler) StreamAllActivities(ctx context.Context, input *StreamAllActivitiesInput) (*huma.StreamResponse, error) {
+	if h.activityService == nil || h.environmentService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	if !sendSnapshot(ctx) {
-		return
-	}
+	return &huma.StreamResponse{
+		Body: func(humaCtx huma.Context) { //nolint:contextcheck // streaming work must use humaCtx.Context()
+			httpx.SetJSONStreamHeaders(humaCtx)
+
+			writer := humaCtx.BodyWriter()
+			encoder := json.NewEncoder(writer)
+			flush := func() {
+				if f, ok := writer.(http.Flusher); ok {
+					f.Flush()
+				}
+			}
+
+			h.streamAllActivitiesInternal(humaCtx.Context(), input.Limit, encoder, flush)
+		},
+	}, nil
+}
+
+// streamAllActivitiesInternal multiplexes activity events for the local
+// environment and every enabled remote environment over a single response so
+// the browser needs one connection regardless of environment count.
+func (h *ActivityHandler) streamAllActivitiesInternal(ctx context.Context, limit int, encoder *json.Encoder, flush func()) {
+	streamCtx, cancel := context.WithCancel(ctx)
+
+	events := make(chan activity.StreamEvent, activityStreamEventBuffer)
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		h.runLocalActivityStreamProducerInternal(streamCtx, limit, events)
+	}()
+	go func() {
+		defer wg.Done()
+		h.runRemoteActivityStreamPollersInternal(streamCtx, limit, events)
+	}()
+	defer wg.Wait()
+	defer cancel()
+
+	heartbeat := time.NewTicker(activityStreamHeartbeatInterval)
+	defer heartbeat.Stop()
 
 	for {
 		select {
-		case <-ctx.Done():
+		case <-streamCtx.Done():
 			return
-		case <-pollTicker.C:
-			if !sendSnapshot(ctx) {
+		case event := <-events:
+			if err := encoder.Encode(event); err != nil {
 				return
 			}
-		case <-heartbeatTicker.C:
+			flush()
+		case <-heartbeat.C:
 			if err := encoder.Encode(activity.StreamEvent{
 				Type:      "heartbeat",
 				Timestamp: time.Now(),
@@ -447,6 +377,184 @@ func (h *ActivityHandler) streamRemoteActivitySnapshotsInternal(
 				return
 			}
 			flush()
+		}
+	}
+}
+
+// sendActivityStreamEventInternal forwards an event to the stream writer,
+// giving up when the stream is shutting down so producers can never block.
+func sendActivityStreamEventInternal(ctx context.Context, events chan<- activity.StreamEvent, event activity.StreamEvent) bool {
+	select {
+	case events <- event:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
+func (h *ActivityHandler) runLocalActivityStreamProducerInternal(ctx context.Context, limit int, events chan<- activity.StreamEvent) {
+	sendSnapshot := func() bool {
+		activities, _, err := h.activityService.ListActivitiesPaginated(ctx, "0", pagination.QueryParams{
+			Params: pagination.Params{Limit: resolveActivityStreamLimitInternal(limit)},
+		})
+		if err != nil {
+			if ctx.Err() == nil {
+				sendActivityStreamEventInternal(ctx, events, activity.StreamEvent{
+					Type:          "error",
+					EnvironmentID: "0",
+					Error:         err.Error(),
+					Timestamp:     time.Now(),
+				})
+			}
+			return false
+		}
+		h.applyActivitySourceLabelsInternal(ctx, "0", activities)
+		return sendActivityStreamEventInternal(ctx, events, activity.StreamEvent{
+			Type:          "snapshot",
+			EnvironmentID: "0",
+			Activities:    activities,
+			Timestamp:     time.Now(),
+		})
+	}
+
+	snapshotOK := sendSnapshot()
+
+	eventCh, missedEvents, unsubscribe := h.activityService.Subscribe("0")
+	defer unsubscribe()
+
+	ticker := time.NewTicker(activityStreamHeartbeatInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case event, ok := <-eventCh:
+			if !ok {
+				return
+			}
+			event.EnvironmentID = "0"
+			h.applyActivityStreamEventSourceLabelInternal(ctx, "0", &event)
+			if !sendActivityStreamEventInternal(ctx, events, event) {
+				return
+			}
+		case <-ticker.C:
+			if !snapshotOK || missedEvents() {
+				snapshotOK = sendSnapshot()
+			}
+		}
+	}
+}
+
+// runRemoteActivityStreamPollersInternal keeps one poller goroutine per
+// enabled remote environment, re-listing periodically so environments added
+// or removed while the stream is open are picked up without a reconnect.
+func (h *ActivityHandler) runRemoteActivityStreamPollersInternal(ctx context.Context, limit int, events chan<- activity.StreamEvent) {
+	pollers := make(map[string]context.CancelFunc)
+	var wg sync.WaitGroup
+	defer wg.Wait()
+	defer func() {
+		for _, cancelPoll := range pollers {
+			cancelPoll()
+		}
+	}()
+
+	reconcile := func() {
+		envs, err := h.environmentService.ListRemoteEnvironments(ctx)
+		if err != nil {
+			if ctx.Err() == nil {
+				slog.WarnContext(ctx, "failed to list environments for activity stream", "error", err)
+			}
+			return
+		}
+
+		current := make(map[string]struct{}, len(envs))
+		for _, env := range envs {
+			current[env.ID] = struct{}{}
+			if _, ok := pollers[env.ID]; ok {
+				continue
+			}
+			pollCtx, cancelPoll := context.WithCancel(ctx) //nolint:gosec // cancel is retained in pollers and invoked on env removal or via the deferred cleanup.
+			pollers[env.ID] = cancelPoll
+			wg.Add(1)
+			go func(environmentID string) {
+				defer wg.Done()
+				h.runRemoteActivityStreamPollerInternal(pollCtx, environmentID, limit, events)
+			}(env.ID)
+		}
+
+		for id, cancelPoll := range pollers {
+			if _, ok := current[id]; !ok {
+				cancelPoll()
+				delete(pollers, id)
+			}
+		}
+	}
+
+	reconcile()
+
+	ticker := time.NewTicker(activityStreamEnvReconcileInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			reconcile()
+		}
+	}
+}
+
+func (h *ActivityHandler) runRemoteActivityStreamPollerInternal(ctx context.Context, environmentID string, limit int, events chan<- activity.StreamEvent) {
+	lastError := ""
+
+	poll := func() {
+		pollCtx, cancelPoll := context.WithTimeout(ctx, activityStreamRemotePollTimeout)
+		defer cancelPoll()
+
+		output, err := h.proxyListActivitiesInternal(pollCtx, &ListActivitiesInput{
+			EnvironmentID: environmentID,
+			Limit:         resolveActivityStreamLimitInternal(limit),
+			Order:         "desc",
+		})
+		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			// A failing environment must not end the stream; surface the error
+			// once per distinct message and keep polling.
+			if msg := err.Error(); msg != lastError {
+				lastError = msg
+				sendActivityStreamEventInternal(ctx, events, activity.StreamEvent{
+					Type:          "error",
+					EnvironmentID: environmentID,
+					Error:         msg,
+					Timestamp:     time.Now(),
+				})
+			}
+			return
+		}
+		lastError = ""
+		sendActivityStreamEventInternal(ctx, events, activity.StreamEvent{
+			Type:          "snapshot",
+			EnvironmentID: environmentID,
+			Activities:    output.Body.Data,
+			Timestamp:     time.Now(),
+		})
+	}
+
+	poll()
+
+	ticker := time.NewTicker(activityStreamRemotePollInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			poll()
 		}
 	}
 }

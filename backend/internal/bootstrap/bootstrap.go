@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -377,7 +378,14 @@ func runServicesInternal(appCtx context.Context, cfg *config.Config, router http
 	httpHandler, grpcServer := configureTunnelServerInternal(appCtx, cfg, router, tunnelServer, listenAddr)
 	httpHandler, protocols := configureHTTPProtocolsInternal(useTLS, httpHandler)
 
-	srv, err := newHTTPServerInternal(listenAddr, httpHandler, protocols, useTLS, edgeCfg)
+	// Base context for all request contexts. Derived from Background, NOT
+	// appCtx: appCtx carries the app-lifecycle marker value and inheriting it
+	// would make every request context pass utils.IsAppLifecycleContext (see
+	// pkg/projects/cmds.go).
+	baseCtx, cancelBase := context.WithCancel(context.Background())
+	defer cancelBase()
+
+	srv, err := newHTTPServerInternal(baseCtx, listenAddr, httpHandler, protocols, useTLS, edgeCfg) //nolint:contextcheck // baseCtx is deliberately not derived from appCtx, see comment above
 	if err != nil {
 		return err
 	}
@@ -406,6 +414,12 @@ func runServicesInternal(appCtx context.Context, cfg *config.Config, router http
 	case <-appCtx.Done():
 		slog.InfoContext(appCtx, "Context canceled")
 	}
+
+	// http.Server.Shutdown waits for in-flight handlers but does not cancel
+	// their request contexts; streaming handlers (activity streams, JSON-lines
+	// progress) loop on ctx.Done() and would otherwise pin Shutdown until the
+	// deadline below.
+	cancelBase()
 
 	// Use background context for shutdown as appCtx is already canceled
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -489,7 +503,7 @@ func configureHTTPProtocolsInternal(useTLS bool, handler http.Handler) (http.Han
 	return handler, &protocols
 }
 
-func newHTTPServerInternal(listenAddr string, handler http.Handler, protocols *http.Protocols, useTLS bool, edgeCfg *edge.Config) (*http.Server, error) {
+func newHTTPServerInternal(baseCtx context.Context, listenAddr string, handler http.Handler, protocols *http.Protocols, useTLS bool, edgeCfg *edge.Config) (*http.Server, error) {
 	srv := &http.Server{
 		Addr:              listenAddr,
 		Handler:           handler,
@@ -501,6 +515,10 @@ func newHTTPServerInternal(listenAddr string, handler http.Handler, protocols *h
 		// streaming endpoints (deploy/pull/build progress) need long-lived
 		// connections.
 		IdleTimeout: 120 * time.Second,
+		// BaseContext is canceled right before Shutdown so long-lived
+		// streaming request contexts unblock and graceful shutdown can
+		// complete within its deadline.
+		BaseContext: func(net.Listener) context.Context { return baseCtx },
 	}
 	if !useTLS {
 		return srv, nil
