@@ -3,13 +3,11 @@ package handlers
 import (
 	"context"
 	"net/http"
-	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	porttypes "github.com/getarcaneapp/arcane/types/v2/port"
 )
@@ -56,19 +54,7 @@ func (h *PortHandler) ListPorts(ctx context.Context, input *ListPortsInput) (*Li
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	params := pagination.QueryParams{
-		SearchQuery: pagination.SearchQuery{
-			Search: strings.TrimSpace(input.Search),
-		},
-		SortParams: pagination.SortParams{
-			Sort:  strings.TrimSpace(input.Sort),
-			Order: pagination.SortOrder(input.Order),
-		},
-		Params: pagination.Params{
-			Start: input.Start,
-			Limit: input.Limit,
-		},
-	}
+	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 
 	items, paginationResp, err := h.portService.ListPortsPaginated(ctx, params)
 	if err != nil {
@@ -77,15 +63,9 @@ func (h *PortHandler) ListPorts(ctx context.Context, input *ListPortsInput) (*Li
 
 	return &ListPortsOutput{
 		Body: PortPaginatedResponse{
-			Success: true,
-			Data:    items,
-			Pagination: base.PaginationResponse{
-				TotalPages:      paginationResp.TotalPages,
-				TotalItems:      paginationResp.TotalItems,
-				CurrentPage:     paginationResp.CurrentPage,
-				ItemsPerPage:    paginationResp.ItemsPerPage,
-				GrandTotalItems: paginationResp.GrandTotalItems,
-			},
+			Success:    true,
+			Data:       items,
+			Pagination: toPaginationResponseInternal(paginationResp),
 		},
 	}, nil
 }

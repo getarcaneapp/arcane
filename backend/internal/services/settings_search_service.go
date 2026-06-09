@@ -2,6 +2,7 @@ package services
 
 import (
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -77,7 +78,7 @@ func (s *SettingsSearchService) buildCategoriesFromModel() []category.Category {
 		}
 
 		// Track category order from first appearance
-		if len(categories[categoryID]) == 0 && !utils.Contains(categoryOrder, categoryID) {
+		if len(categories[categoryID]) == 0 && !slices.Contains(categoryOrder, categoryID) {
 			categoryOrder = append(categoryOrder, categoryID)
 		}
 

@@ -492,17 +492,7 @@ func (s *NotificationService) sendImageUpdateNotificationForTargetInternal(ctx c
 
 // isEventEnabled checks if a specific event type is enabled in the config
 func (s *NotificationService) isEventEnabled(config models.JSON, eventType models.NotificationEventType) bool {
-	configBytes, err := json.Marshal(config)
-	if err != nil {
-		return true // Default to enabled if we can't parse
-	}
-
-	var configMap map[string]any
-	if err := json.Unmarshal(configBytes, &configMap); err != nil {
-		return true // Default to enabled if we can't parse
-	}
-
-	events, ok := configMap["events"].(map[string]any)
+	events, ok := config["events"].(map[string]any)
 	if !ok {
 		return true // If no events config, default to enabled
 	}

@@ -40,15 +40,19 @@ func ReadFolderComposeTemplate(baseDir, folder string) (string, *string, string,
 	return string(b), envPtr, desc, true, nil
 }
 
+var (
+	slugInvalidCharsPattern = regexp.MustCompile(`[^a-z0-9\-_]+`)
+	slugDashRunPattern      = regexp.MustCompile(`-+`)
+)
+
 func Slugify(in string) string {
 	in = strings.TrimSpace(strings.ToLower(in))
 	if in == "" {
 		return ""
 	}
 	in = strings.ReplaceAll(in, " ", "-")
-	re := regexp.MustCompile(`[^a-z0-9\-_]+`)
-	in = re.ReplaceAllString(in, "-")
-	in = regexp.MustCompile(`-+`).ReplaceAllString(in, "-")
+	in = slugInvalidCharsPattern.ReplaceAllString(in, "-")
+	in = slugDashRunPattern.ReplaceAllString(in, "-")
 	return strings.Trim(in, "-")
 }
 

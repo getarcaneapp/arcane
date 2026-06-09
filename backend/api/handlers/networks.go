@@ -15,7 +15,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
 	"github.com/getarcaneapp/arcane/types/v2/base"
@@ -218,24 +217,9 @@ func RegisterNetworks(api huma.API, networkSvc *services.NetworkService, dockerS
 }
 
 func (h *NetworkHandler) ListNetworks(ctx context.Context, input *ListNetworksInput) (*ListNetworksOutput, error) {
-	filters := make(map[string]string)
+	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	if input.InUse != "" {
-		filters["inUse"] = input.InUse
-	}
-
-	params := pagination.QueryParams{
-		SearchQuery: pagination.SearchQuery{
-			Search: strings.TrimSpace(input.Search),
-		},
-		SortParams: pagination.SortParams{
-			Sort:  strings.TrimSpace(input.Sort),
-			Order: pagination.SortOrder(input.Order),
-		},
-		Params: pagination.Params{
-			Start: input.Start,
-			Limit: input.Limit,
-		},
-		Filters: filters,
+		params.Filters["inUse"] = input.InUse
 	}
 
 	networks, paginationResp, counts, err := h.networkService.ListNetworksPaginated(ctx, params)
@@ -245,16 +229,10 @@ func (h *NetworkHandler) ListNetworks(ctx context.Context, input *ListNetworksIn
 
 	return &ListNetworksOutput{
 		Body: NetworkPaginatedResponse{
-			Success: true,
-			Data:    networks,
-			Counts:  counts,
-			Pagination: base.PaginationResponse{
-				TotalPages:      paginationResp.TotalPages,
-				TotalItems:      paginationResp.TotalItems,
-				CurrentPage:     paginationResp.CurrentPage,
-				ItemsPerPage:    paginationResp.ItemsPerPage,
-				GrandTotalItems: paginationResp.GrandTotalItems,
-			},
+			Success:    true,
+			Data:       networks,
+			Counts:     counts,
+			Pagination: toPaginationResponseInternal(paginationResp),
 		},
 	}, nil
 }
@@ -278,9 +256,9 @@ func (h *NetworkHandler) GetNetworkCounts(ctx context.Context, input *GetNetwork
 }
 
 func (h *NetworkHandler) CreateNetwork(ctx context.Context, input *CreateNetworkInput) (*CreateNetworkOutput, error) {
-	user, exists := humamw.GetCurrentUserFromContext(ctx)
-	if !exists {
-		return nil, huma.Error401Unauthorized("not authenticated")
+	user, err := requireUserInternal(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	// Convert to Docker SDK options
@@ -428,9 +406,9 @@ func (h *NetworkHandler) GetNetworkTopology(ctx context.Context, input *GetNetwo
 }
 
 func (h *NetworkHandler) DeleteNetwork(ctx context.Context, input *DeleteNetworkInput) (*DeleteNetworkOutput, error) {
-	user, exists := humamw.GetCurrentUserFromContext(ctx)
-	if !exists {
-		return nil, huma.Error401Unauthorized("not authenticated")
+	user, err := requireUserInternal(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)

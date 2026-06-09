@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -137,20 +138,19 @@ func (m *AuthMiddleware) agentAuth(ctx context.Context, c echo.Context, next ech
 
 	req := c.Request()
 	if strings.HasPrefix(req.URL.Path, pkgutils.AgentPairingPrefix) &&
-		m.cfg.AgentToken != "" &&
-		req.Header.Get(pkgutils.HeaderAgentBootstrap) == m.cfg.AgentToken {
+		agentTokenMatchesInternal(req.Header.Get(pkgutils.HeaderAgentBootstrap), m.cfg.AgentToken) {
 		slog.InfoContext(ctx, "Agent auth: bootstrap pairing accepted", "path", req.URL.Path, "method", req.Method)
 		agentSudoInternal(c)
 		return next(c)
 	}
 
-	if tok := req.Header.Get(pkgutils.HeaderAgentToken); tok != "" && m.cfg.AgentToken != "" && tok == m.cfg.AgentToken {
+	if agentTokenMatchesInternal(req.Header.Get(pkgutils.HeaderAgentToken), m.cfg.AgentToken) {
 		agentSudoInternal(c)
 		return next(c)
 	}
 
 	// Check for API key as agent token
-	if tok := req.Header.Get(pkgutils.HeaderApiKey); tok != "" && m.cfg.AgentToken != "" && tok == m.cfg.AgentToken {
+	if agentTokenMatchesInternal(req.Header.Get(pkgutils.HeaderApiKey), m.cfg.AgentToken) {
 		agentSudoInternal(c)
 		return next(c)
 	}
@@ -165,6 +165,15 @@ func (m *AuthMiddleware) agentAuth(ctx context.Context, c echo.Context, next ech
 		Code:    "FORBIDDEN",
 		Message: "Invalid or missing agent token",
 	})
+}
+
+// agentTokenMatchesInternal compares a presented token against the configured
+// agent token in constant time to avoid timing side channels.
+func agentTokenMatchesInternal(presented, configured string) bool {
+	if presented == "" || configured == "" {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(presented), []byte(configured)) == 1
 }
 
 func (m *AuthMiddleware) managerAuth(ctx context.Context, c echo.Context, next echo.HandlerFunc) error {

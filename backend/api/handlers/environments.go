@@ -22,7 +22,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	httputils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
@@ -428,20 +427,7 @@ func (h *EnvironmentHandler) ListEnvironments(ctx context.Context, input *ListEn
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	params := pagination.QueryParams{
-		SearchQuery: pagination.SearchQuery{
-			Search: input.Search,
-		},
-		SortParams: pagination.SortParams{
-			Sort:  input.Sort,
-			Order: pagination.SortOrder(input.Order),
-		},
-		Params: pagination.Params{
-			Start: input.Start,
-			Limit: input.Limit,
-		},
-		Filters: map[string]string{},
-	}
+	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	if input.Type != "" {
 		params.Filters["type"] = input.Type
 	}
@@ -456,15 +442,9 @@ func (h *EnvironmentHandler) ListEnvironments(ctx context.Context, input *ListEn
 
 	return &ListEnvironmentsOutput{
 		Body: EnvironmentPaginatedResponse{
-			Success: true,
-			Data:    envs,
-			Pagination: base.PaginationResponse{
-				TotalPages:      paginationResp.TotalPages,
-				TotalItems:      paginationResp.TotalItems,
-				CurrentPage:     paginationResp.CurrentPage,
-				ItemsPerPage:    paginationResp.ItemsPerPage,
-				GrandTotalItems: paginationResp.GrandTotalItems,
-			},
+			Success:    true,
+			Data:       envs,
+			Pagination: toPaginationResponseInternal(paginationResp),
 		},
 	}, nil
 }
@@ -475,9 +455,9 @@ func (h *EnvironmentHandler) CreateEnvironment(ctx context.Context, input *Creat
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	user, exists := humamw.GetCurrentUserFromContext(ctx)
-	if !exists {
-		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	user, err := requireUserInternal(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	env := &models.Environment{
@@ -645,9 +625,9 @@ func (h *EnvironmentHandler) UpdateEnvironment(ctx context.Context, input *Updat
 	// If regenerating API key, return the new key
 	var newApiKey *string
 	if input.Body.RegenerateApiKey != nil && *input.Body.RegenerateApiKey {
-		user, exists := humamw.GetCurrentUserFromContext(ctx)
-		if !exists {
-			return nil, huma.Error401Unauthorized("Unauthorized")
+		user, err := requireUserInternal(ctx)
+		if err != nil {
+			return nil, err
 		}
 
 		// Delete existing API key if any

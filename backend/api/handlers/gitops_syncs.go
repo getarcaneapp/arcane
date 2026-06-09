@@ -154,16 +154,10 @@ func (h *GitOpsSyncHandler) ListSyncs(ctx context.Context, input *ListGitOpsSync
 
 	return &ListGitOpsSyncsOutput{
 		Body: GitOpsSyncPaginatedResponse{
-			Success: true,
-			Data:    syncs,
-			Counts:  counts,
-			Pagination: base.PaginationResponse{
-				TotalPages:      paginationResp.TotalPages,
-				TotalItems:      paginationResp.TotalItems,
-				CurrentPage:     paginationResp.CurrentPage,
-				ItemsPerPage:    paginationResp.ItemsPerPage,
-				GrandTotalItems: paginationResp.GrandTotalItems,
-			},
+			Success:    true,
+			Data:       syncs,
+			Counts:     counts,
+			Pagination: toPaginationResponseInternal(paginationResp),
 		},
 	}, nil
 }

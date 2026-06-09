@@ -305,9 +305,9 @@ func (h *VulnerabilityHandler) ScanImage(ctx context.Context, input *ScanImageIn
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	user, exists := humamw.GetCurrentUserFromContext(ctx)
-	if !exists {
-		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	user, err := requireUserInternal(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
@@ -428,15 +428,9 @@ func (h *VulnerabilityHandler) ListImageVulnerabilities(ctx context.Context, inp
 
 	return &ListImageVulnerabilitiesOutput{
 		Body: base.Paginated[vulnerability.Vulnerability]{
-			Success: true,
-			Data:    items,
-			Pagination: base.PaginationResponse{
-				TotalPages:      paginationResp.TotalPages,
-				TotalItems:      paginationResp.TotalItems,
-				CurrentPage:     paginationResp.CurrentPage,
-				ItemsPerPage:    paginationResp.ItemsPerPage,
-				GrandTotalItems: paginationResp.GrandTotalItems,
-			},
+			Success:    true,
+			Data:       items,
+			Pagination: toPaginationResponseInternal(paginationResp),
 		},
 	}, nil
 }
@@ -492,15 +486,9 @@ func (h *VulnerabilityHandler) ListAllVulnerabilities(ctx context.Context, input
 
 	return &ListAllVulnerabilitiesOutput{
 		Body: base.Paginated[vulnerability.VulnerabilityWithImage]{
-			Success: true,
-			Data:    items,
-			Pagination: base.PaginationResponse{
-				TotalPages:      paginationResp.TotalPages,
-				TotalItems:      paginationResp.TotalItems,
-				CurrentPage:     paginationResp.CurrentPage,
-				ItemsPerPage:    paginationResp.ItemsPerPage,
-				GrandTotalItems: paginationResp.GrandTotalItems,
-			},
+			Success:    true,
+			Data:       items,
+			Pagination: toPaginationResponseInternal(paginationResp),
 		},
 	}, nil
 }
@@ -563,9 +551,9 @@ func (h *VulnerabilityHandler) IgnoreVulnerability(ctx context.Context, input *I
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	user, exists := humamw.GetCurrentUserFromContext(ctx)
-	if !exists {
-		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	user, err := requireUserInternal(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	payload := &input.Body
@@ -661,15 +649,9 @@ func (h *VulnerabilityHandler) ListIgnoredVulnerabilities(ctx context.Context, i
 
 	return &ListIgnoredVulnerabilitiesOutput{
 		Body: base.Paginated[vulnerability.IgnoredVulnerability]{
-			Success: true,
-			Data:    items,
-			Pagination: base.PaginationResponse{
-				TotalPages:      paginationResp.TotalPages,
-				TotalItems:      paginationResp.TotalItems,
-				CurrentPage:     paginationResp.CurrentPage,
-				ItemsPerPage:    paginationResp.ItemsPerPage,
-				GrandTotalItems: paginationResp.GrandTotalItems,
-			},
+			Success:    true,
+			Data:       items,
+			Pagination: toPaginationResponseInternal(paginationResp),
 		},
 	}, nil
 }

@@ -177,15 +177,9 @@ func (h *UserHandler) ListUsers(ctx context.Context, input *ListUsersInput) (*Li
 
 	return &ListUsersOutput{
 		Body: UserPaginatedResponse{
-			Success: true,
-			Data:    users,
-			Pagination: base.PaginationResponse{
-				TotalPages:      paginationResp.TotalPages,
-				TotalItems:      paginationResp.TotalItems,
-				CurrentPage:     paginationResp.CurrentPage,
-				ItemsPerPage:    paginationResp.ItemsPerPage,
-				GrandTotalItems: paginationResp.GrandTotalItems,
-			},
+			Success:    true,
+			Data:       users,
+			Pagination: toPaginationResponseInternal(paginationResp),
 		},
 	}, nil
 }

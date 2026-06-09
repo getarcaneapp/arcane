@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -31,6 +32,7 @@ import (
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 	libupdater "go.getarcane.app/updater/pkg/labels"
+	"golang.org/x/sync/singleflight"
 )
 
 type ContainerService struct {
@@ -42,6 +44,7 @@ type ContainerService struct {
 	projectService  *ProjectService
 	statsHistory    containerstats.Store
 	updateInfoCache *cache.KeyedCache[string, *imagetypes.UpdateInfo]
+	updateInfoSF    singleflight.Group
 	iconMetaCache   *cache.TTL[projects.ArcaneComposeMetadata]
 }
 
@@ -1100,20 +1103,42 @@ func (s *ContainerService) getUpdateInfoMap(ctx context.Context, imageIDs []stri
 	}
 
 	updateInfoMap := make(map[string]*imagetypes.UpdateInfo, len(imageIDs))
+	var uncachedIDs []string
 	for _, imageID := range imageIDs {
-		info, err := s.updateInfoCache.GetOrFetch(ctx, imageID, nil, func(fetchCtx context.Context) (*imagetypes.UpdateInfo, error) {
-			infos, fetchErr := s.imageService.GetUpdateInfoByImageIDs(fetchCtx, []string{imageID})
-			if fetchErr != nil {
-				return nil, fetchErr
-			}
-			return infos[imageID], nil
-		})
-		if err != nil {
-			slog.WarnContext(ctx, "Failed to fetch image update info for container image", "imageID", imageID, "error", err)
+		info, ok := s.updateInfoCache.Get(imageID)
+		if !ok {
+			uncachedIDs = append(uncachedIDs, imageID)
 			continue
 		}
 		if info != nil {
 			updateInfoMap[imageID] = info
+		}
+	}
+
+	if len(uncachedIDs) > 0 {
+		// Singleflight keyed by the uncached set so concurrent list requests
+		// that miss on the same images share one batch query.
+		slices.Sort(uncachedIDs)
+		res, err, _ := s.updateInfoSF.Do(strings.Join(uncachedIDs, ","), func() (any, error) {
+			infos, fetchErr := s.imageService.GetUpdateInfoByImageIDs(ctx, uncachedIDs)
+			if fetchErr != nil {
+				return nil, fetchErr
+			}
+			for _, imageID := range uncachedIDs {
+				// Cache nil results too so absent rows don't refetch until invalidation.
+				s.updateInfoCache.Set(imageID, infos[imageID])
+			}
+			return infos, nil
+		})
+		if err != nil {
+			slog.WarnContext(ctx, "Failed to fetch image update info for container images", "imageIDs", len(uncachedIDs), "error", err)
+			return updateInfoMap
+		}
+		infos, _ := res.(map[string]*imagetypes.UpdateInfo)
+		for _, imageID := range uncachedIDs {
+			if info := infos[imageID]; info != nil {
+				updateInfoMap[imageID] = info
+			}
 		}
 	}
 	return updateInfoMap

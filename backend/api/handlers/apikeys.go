@@ -10,7 +10,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/types/v2/apikey"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 )
@@ -202,19 +201,7 @@ func (h *ApiKeyHandler) ListApiKeys(ctx context.Context, input *ListApiKeysInput
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	params := pagination.QueryParams{
-		SearchQuery: pagination.SearchQuery{
-			Search: input.Search,
-		},
-		SortParams: pagination.SortParams{
-			Sort:  input.Sort,
-			Order: pagination.SortOrder(input.Order),
-		},
-		Params: pagination.Params{
-			Start: input.Start,
-			Limit: input.Limit,
-		},
-	}
+	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 
 	apiKeys, paginationResp, err := h.apiKeyService.ListApiKeys(ctx, params)
 	if err != nil {
@@ -223,15 +210,9 @@ func (h *ApiKeyHandler) ListApiKeys(ctx context.Context, input *ListApiKeysInput
 
 	return &ListApiKeysOutput{
 		Body: ApiKeyPaginatedResponse{
-			Success: true,
-			Data:    apiKeys,
-			Pagination: base.PaginationResponse{
-				TotalPages:      paginationResp.TotalPages,
-				TotalItems:      paginationResp.TotalItems,
-				CurrentPage:     paginationResp.CurrentPage,
-				ItemsPerPage:    paginationResp.ItemsPerPage,
-				GrandTotalItems: paginationResp.GrandTotalItems,
-			},
+			Success:    true,
+			Data:       apiKeys,
+			Pagination: toPaginationResponseInternal(paginationResp),
 		},
 	}, nil
 }
@@ -266,9 +247,9 @@ func (h *ApiKeyHandler) UpdateApiKey(ctx context.Context, input *UpdateApiKeyInp
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	user, exists := humamw.GetCurrentUserFromContext(ctx)
-	if !exists {
-		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	user, err := requireUserInternal(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	apiKey, err := h.apiKeyService.UpdateApiKey(ctx, user.ID, input.ID, input.Body)
@@ -325,9 +306,9 @@ func (h *ApiKeyHandler) ListMyApiKeys(ctx context.Context, input *struct{}) (*Li
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	user, exists := humamw.GetCurrentUserFromContext(ctx)
-	if !exists {
-		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	user, err := requireUserInternal(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	keys, err := h.apiKeyService.ListApiKeysByUser(ctx, user.ID)
@@ -353,9 +334,9 @@ func (h *ApiKeyHandler) createCurrentUserApiKeyInternal(ctx context.Context, inp
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	user, exists := humamw.GetCurrentUserFromContext(ctx)
-	if !exists {
-		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	user, err := requireUserInternal(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	apiKey, err := h.apiKeyService.CreateApiKey(ctx, user.ID, input.Body)
@@ -382,9 +363,9 @@ func (h *ApiKeyHandler) DeleteMyApiKey(ctx context.Context, input *DeleteApiKeyI
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	user, exists := humamw.GetCurrentUserFromContext(ctx)
-	if !exists {
-		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	user, err := requireUserInternal(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	existing, err := h.apiKeyService.GetApiKey(ctx, input.ID)

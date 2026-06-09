@@ -213,15 +213,9 @@ func (h *EventHandler) ListEvents(ctx context.Context, input *ListEventsInput) (
 
 	return &ListEventsOutput{
 		Body: EventPaginatedResponse{
-			Success: true,
-			Data:    events,
-			Pagination: base.PaginationResponse{
-				TotalPages:      paginationResp.TotalPages,
-				TotalItems:      paginationResp.TotalItems,
-				CurrentPage:     paginationResp.CurrentPage,
-				ItemsPerPage:    paginationResp.ItemsPerPage,
-				GrandTotalItems: paginationResp.GrandTotalItems,
-			},
+			Success:    true,
+			Data:       events,
+			Pagination: toPaginationResponseInternal(paginationResp),
 		},
 	}, nil
 }
@@ -252,15 +246,9 @@ func (h *EventHandler) GetEventsByEnvironment(ctx context.Context, input *GetEve
 
 	return &GetEventsByEnvironmentOutput{
 		Body: EventPaginatedResponse{
-			Success: true,
-			Data:    events,
-			Pagination: base.PaginationResponse{
-				TotalPages:      paginationResp.TotalPages,
-				TotalItems:      paginationResp.TotalItems,
-				CurrentPage:     paginationResp.CurrentPage,
-				ItemsPerPage:    paginationResp.ItemsPerPage,
-				GrandTotalItems: paginationResp.GrandTotalItems,
-			},
+			Success:    true,
+			Data:       events,
+			Pagination: toPaginationResponseInternal(paginationResp),
 		},
 	}, nil
 }

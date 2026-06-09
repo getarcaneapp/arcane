@@ -16,7 +16,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/types/v2/base"
@@ -261,25 +260,12 @@ func (h *ContainerHandler) ListContainers(ctx context.Context, input *ListContai
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	filters := make(map[string]string)
+	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	if input.Updates != "" {
-		filters["updates"] = input.Updates
+		params.Filters["updates"] = input.Updates
 	}
 	if input.Standalone != "" {
-		filters["standalone"] = input.Standalone
-	}
-
-	params := pagination.QueryParams{
-		SearchQuery: pagination.SearchQuery{Search: input.Search},
-		SortParams: pagination.SortParams{
-			Sort:  input.Sort,
-			Order: pagination.SortOrder(input.Order),
-		},
-		Params: pagination.Params{
-			Start: input.Start,
-			Limit: input.Limit,
-		},
-		Filters: filters,
+		params.Filters["standalone"] = input.Standalone
 	}
 
 	result, err := h.containerService.ListContainersPaginated(ctx, params, true, input.IncludeInternal, input.GroupBy)
@@ -289,17 +275,11 @@ func (h *ContainerHandler) ListContainers(ctx context.Context, input *ListContai
 
 	return &ListContainersOutput{
 		Body: ContainerPaginatedResponse{
-			Success: true,
-			Data:    result.Items,
-			Groups:  result.Groups,
-			Counts:  result.Counts,
-			Pagination: base.PaginationResponse{
-				TotalPages:      result.Pagination.TotalPages,
-				TotalItems:      result.Pagination.TotalItems,
-				CurrentPage:     result.Pagination.CurrentPage,
-				ItemsPerPage:    result.Pagination.ItemsPerPage,
-				GrandTotalItems: result.Pagination.GrandTotalItems,
-			},
+			Success:    true,
+			Data:       result.Items,
+			Groups:     result.Groups,
+			Counts:     result.Counts,
+			Pagination: toPaginationResponseInternal(result.Pagination),
 		},
 	}, nil
 }
@@ -553,9 +533,9 @@ func (h *ContainerHandler) CreateContainer(ctx context.Context, input *CreateCon
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	user, exists := humamw.GetCurrentUserFromContext(ctx)
-	if !exists {
-		return nil, huma.Error401Unauthorized("not authenticated")
+	user, err := requireUserInternal(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	config := buildContainerConfig(input.Body)
@@ -677,9 +657,9 @@ func (h *ContainerHandler) runContainerActionInternal(ctx context.Context, input
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	user, exists := humamw.GetCurrentUserFromContext(ctx)
-	if !exists {
-		return nil, huma.Error401Unauthorized("not authenticated")
+	user, err := requireUserInternal(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
@@ -703,9 +683,9 @@ func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *Contain
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	user, exists := humamw.GetCurrentUserFromContext(ctx)
-	if !exists {
-		return nil, huma.Error401Unauthorized("not authenticated")
+	user, err := requireUserInternal(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
@@ -752,9 +732,9 @@ func (h *ContainerHandler) DeleteContainer(ctx context.Context, input *DeleteCon
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	user, exists := humamw.GetCurrentUserFromContext(ctx)
-	if !exists {
-		return nil, huma.Error401Unauthorized("not authenticated")
+	user, err := requireUserInternal(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)

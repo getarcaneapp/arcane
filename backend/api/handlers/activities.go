@@ -189,15 +189,9 @@ func (h *ActivityHandler) ListActivities(ctx context.Context, input *ListActivit
 
 	return &ListActivitiesOutput{
 		Body: base.Paginated[activity.Activity]{
-			Success: true,
-			Data:    activities,
-			Pagination: base.PaginationResponse{
-				TotalPages:      paginationResp.TotalPages,
-				TotalItems:      paginationResp.TotalItems,
-				CurrentPage:     paginationResp.CurrentPage,
-				ItemsPerPage:    paginationResp.ItemsPerPage,
-				GrandTotalItems: paginationResp.GrandTotalItems,
-			},
+			Success:    true,
+			Data:       activities,
+			Pagination: toPaginationResponseInternal(paginationResp),
 		},
 	}, nil
 }

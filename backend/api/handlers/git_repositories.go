@@ -146,15 +146,9 @@ func (h *GitRepositoryHandler) ListRepositories(ctx context.Context, input *List
 
 	return &ListGitRepositoriesOutput{
 		Body: GitRepositoryPaginatedResponse{
-			Success: true,
-			Data:    repositories,
-			Pagination: base.PaginationResponse{
-				TotalPages:      paginationResp.TotalPages,
-				TotalItems:      paginationResp.TotalItems,
-				CurrentPage:     paginationResp.CurrentPage,
-				ItemsPerPage:    paginationResp.ItemsPerPage,
-				GrandTotalItems: paginationResp.GrandTotalItems,
-			},
+			Success:    true,
+			Data:       repositories,
+			Pagination: toPaginationResponseInternal(paginationResp),
 		},
 	}, nil
 }

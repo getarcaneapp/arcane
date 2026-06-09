@@ -201,15 +201,9 @@ func (h *RoleHandler) ListRoles(ctx context.Context, input *ListRolesInput) (*Li
 	}
 	return &ListRolesOutput{
 		Body: RolePaginatedResponse{
-			Success: true,
-			Data:    dtos,
-			Pagination: base.PaginationResponse{
-				TotalPages:      paginationResp.TotalPages,
-				TotalItems:      paginationResp.TotalItems,
-				CurrentPage:     paginationResp.CurrentPage,
-				ItemsPerPage:    paginationResp.ItemsPerPage,
-				GrandTotalItems: paginationResp.GrandTotalItems,
-			},
+			Success:    true,
+			Data:       dtos,
+			Pagination: toPaginationResponseInternal(paginationResp),
 		},
 	}, nil
 }

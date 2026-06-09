@@ -599,13 +599,15 @@ func (s *SystemService) pruneNetworksInternal(ctx context.Context, options syste
 	return nil
 }
 
+var dockerRunPrefixPattern = regexp.MustCompile(`^docker\s+run\s+`)
+
 func (s *SystemService) ParseDockerRunCommand(command string) (*system.DockerRunCommand, error) {
 	if command == "" {
 		return nil, errors.New("docker run command must be a non-empty string")
 	}
 
 	cmd := strings.TrimSpace(command)
-	cmd = regexp.MustCompile(`^docker\s+run\s+`).ReplaceAllString(cmd, "")
+	cmd = dockerRunPrefixPattern.ReplaceAllString(cmd, "")
 
 	if cmd == "" {
 		return nil, errors.New("no arguments found after 'docker run'")
