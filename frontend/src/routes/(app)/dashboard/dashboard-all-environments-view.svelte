@@ -846,7 +846,7 @@
 	</section>
 
 	<section class="flex min-h-0 flex-1 flex-col overflow-hidden">
-		<div class="mb-2 flex items-center justify-between gap-3">
+		<div class="mb-2 flex shrink-0 items-center justify-between gap-3">
 			<h2 class="text-base font-semibold tracking-tight">{m.dashboard_all_environment_board_title()}</h2>
 		</div>
 
@@ -855,272 +855,278 @@
 				<p class="text-muted-foreground text-sm">{m.dashboard_all_no_visible_environments()}</p>
 			</div>
 		{:else}
-			<div class="grid grid-cols-1 gap-4 overflow-y-auto pb-2 xl:grid-cols-2">
-				{#each environmentCards as item (item.environment.id)}
-					{@const baseItem = createBaseEnvironmentOverview(item.environment)}
-					{@const environment = baseItem.environment}
-					{@const resolvedStatus = resolveEnvironmentStatus(environment)}
-					{@const statusVariant = getEnvironmentStatusVariant(resolvedStatus)}
-					{@const transportBadge = getTransportBadge(environment)}
-					{@const activity = getActivityMeta(environment)}
-					{@const isCurrent = currentEnvironmentId === environment.id}
-					{@const liveStatsState = getLiveStatsState(environment.id)}
-					{@const systemStats = liveStatsState?.stats ?? null}
-					{@const liveStatsLoading = liveStatsState?.loading ?? shouldLoadEnvironment(environment)}
-					{@const cpuMetric = getCpuMetric(systemStats)}
-					{@const memoryMetric = getMemoryMetric(systemStats)}
-					{@const diskMetric = getDiskMetric(systemStats)}
-					{@const gpuMetric = getGpuMetric(systemStats)}
+			<div class="min-h-0 flex-1 overflow-y-auto pb-2">
+				<div class="grid grid-cols-1 gap-4 xl:grid-cols-2">
+					{#each environmentCards as item (item.environment.id)}
+						{@const baseItem = createBaseEnvironmentOverview(item.environment)}
+						{@const environment = baseItem.environment}
+						{@const resolvedStatus = resolveEnvironmentStatus(environment)}
+						{@const statusVariant = getEnvironmentStatusVariant(resolvedStatus)}
+						{@const transportBadge = getTransportBadge(environment)}
+						{@const activity = getActivityMeta(environment)}
+						{@const isCurrent = currentEnvironmentId === environment.id}
+						{@const liveStatsState = getLiveStatsState(environment.id)}
+						{@const systemStats = liveStatsState?.stats ?? null}
+						{@const liveStatsLoading = liveStatsState?.loading ?? shouldLoadEnvironment(environment)}
+						{@const cpuMetric = getCpuMetric(systemStats)}
+						{@const memoryMetric = getMemoryMetric(systemStats)}
+						{@const diskMetric = getDiskMetric(systemStats)}
+						{@const gpuMetric = getGpuMetric(systemStats)}
 
-					<Card.Root
-						variant="outlined"
-						class={`dashboard-environment-card [container-type:inline-size] overflow-hidden border transition-colors ${isCurrent ? 'border-blue-500/40 bg-blue-500/5' : 'border-border/60'}`}
-					>
-						<Card.Content class="space-y-5 p-5">
-							<div class="border-border/60 flex flex-col gap-3 border-b pb-4 sm:flex-row sm:items-start sm:justify-between">
-								<div class="min-w-0 space-y-2">
-									<div class="flex min-w-0 flex-wrap items-center gap-2">
-										<div class="min-w-0 max-w-full break-words text-base font-semibold tracking-tight">{environment.name}</div>
-										{#if isCurrent}
-											<StatusBadge text={m.common_current()} variant="blue" size="sm" minWidth="none" />
-										{/if}
-										<StatusBadge
-											text={capitalizeFirstLetter(getResolvedStatusLabel(environment))}
-											variant={statusVariant}
-											size="sm"
-											minWidth="none"
-										/>
-										<StatusBadge text={transportBadge.text} variant={transportBadge.variant} size="sm" minWidth="none" />
-										{#if boardState}
-											{@const loadedItem = boardState.overviewById.get(environment.id) ?? baseItem}
-											{@const vInfo =
-												loadedItem.versionInfo ||
-												(debugUpgrade
-													? ({ displayVersion: 'debug', updateAvailable: true, newestVersion: 'debug-v2' } as any)
-													: null)}
-											{#if vInfo}
-												<div class="flex items-center">
-													{#if vInfo.updateAvailable || debugUpgrade}
-														<ArcaneTooltip.Root>
-															<ArcaneTooltip.Trigger
+						<Card.Root
+							variant="outlined"
+							class={`dashboard-environment-card [container-type:inline-size] overflow-hidden border transition-colors ${isCurrent ? 'border-blue-500/40 bg-blue-500/5' : 'border-border/60'}`}
+						>
+							<Card.Content class="space-y-5 p-5">
+								<div class="border-border/60 flex flex-col gap-3 border-b pb-4 sm:flex-row sm:items-start sm:justify-between">
+									<div class="min-w-0 space-y-2">
+										<div class="flex min-w-0 flex-wrap items-center gap-2">
+											<div class="min-w-0 max-w-full break-words text-base font-semibold tracking-tight">{environment.name}</div>
+											{#if isCurrent}
+												<StatusBadge text={m.common_current()} variant="blue" size="sm" minWidth="none" />
+											{/if}
+											<StatusBadge
+												text={capitalizeFirstLetter(getResolvedStatusLabel(environment))}
+												variant={statusVariant}
+												size="sm"
+												minWidth="none"
+											/>
+											<StatusBadge text={transportBadge.text} variant={transportBadge.variant} size="sm" minWidth="none" />
+											{#if boardState}
+												{@const loadedItem = boardState.overviewById.get(environment.id) ?? baseItem}
+												{@const vInfo =
+													loadedItem.versionInfo ||
+													(debugUpgrade
+														? ({ displayVersion: 'debug', updateAvailable: true, newestVersion: 'debug-v2' } as any)
+														: null)}
+												{#if vInfo}
+													<div class="flex items-center">
+														{#if vInfo.updateAvailable || debugUpgrade}
+															<ArcaneTooltip.Root>
+																<ArcaneTooltip.Trigger
+																	class="bg-surface/50 text-muted-foreground border-border/50 hover:text-foreground inline-flex items-center rounded-md border px-2 py-[2px] font-mono text-[11px] font-medium transition-colors"
+																>
+																	v{vInfo.displayVersion || vInfo.currentTag || vInfo.currentVersion || 'unknown'}
+																	<span class="relative ml-1.5 flex h-2 w-2">
+																		<span
+																			class="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75"
+																		></span>
+																		<span class="relative inline-flex h-2 w-2 rounded-full bg-amber-500"></span>
+																	</span>
+																</ArcaneTooltip.Trigger>
+																<ArcaneTooltip.Content class="flex flex-col items-start gap-2">
+																	<span>
+																		{m.sidebar_update_available()}{#if vInfo.newestVersion || vInfo.newestDigest}: {vInfo.newestVersion ||
+																				vInfo.newestDigest.slice(0, 12)}{/if}
+																	</span>
+																	<DashboardEnvironmentUpgradeAction
+																		{environment}
+																		versionInfo={vInfo}
+																		canUpgrade={canUpgradeEnvironment()}
+																		debug={debugUpgrade}
+																		onRefreshRequested={refreshOverview}
+																		render="trigger"
+																		bind:open={upgradeDialogOpenById[environment.id]}
+																		bind:upgrading={upgradeDialogUpgradingById[environment.id]}
+																	/>
+																</ArcaneTooltip.Content>
+															</ArcaneTooltip.Root>
+														{:else}
+															<div
 																class="bg-surface/50 text-muted-foreground border-border/50 hover:text-foreground inline-flex items-center rounded-md border px-2 py-[2px] font-mono text-[11px] font-medium transition-colors"
 															>
-																v{vInfo.displayVersion || vInfo.currentTag || vInfo.currentVersion || 'unknown'}
-																<span class="relative ml-1.5 flex h-2 w-2">
-																	<span
-																		class="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75"
-																	></span>
-																	<span class="relative inline-flex h-2 w-2 rounded-full bg-amber-500"></span>
-																</span>
-															</ArcaneTooltip.Trigger>
-															<ArcaneTooltip.Content class="flex flex-col items-start gap-2">
-																<span>
-																	{m.sidebar_update_available()}{#if vInfo.newestVersion || vInfo.newestDigest}: {vInfo.newestVersion ||
-																			vInfo.newestDigest.slice(0, 12)}{/if}
-																</span>
-																<DashboardEnvironmentUpgradeAction
-																	{environment}
-																	versionInfo={vInfo}
-																	canUpgrade={canUpgradeEnvironment()}
-																	debug={debugUpgrade}
-																	onRefreshRequested={refreshOverview}
-																	render="trigger"
-																	bind:open={upgradeDialogOpenById[environment.id]}
-																	bind:upgrading={upgradeDialogUpgradingById[environment.id]}
-																/>
-															</ArcaneTooltip.Content>
-														</ArcaneTooltip.Root>
-													{:else}
-														<div
-															class="bg-surface/50 text-muted-foreground border-border/50 hover:text-foreground inline-flex items-center rounded-md border px-2 py-[2px] font-mono text-[11px] font-medium transition-colors"
-														>
-															{vInfo.displayVersion || vInfo.currentTag || vInfo.currentVersion || 'unknown'}
-														</div>
+																{vInfo.displayVersion || vInfo.currentTag || vInfo.currentVersion || 'unknown'}
+															</div>
+														{/if}
+													</div>
+													{#if vInfo.updateAvailable || debugUpgrade}
+														<DashboardEnvironmentUpgradeAction
+															{environment}
+															versionInfo={vInfo}
+															canUpgrade={canUpgradeEnvironment()}
+															debug={debugUpgrade}
+															onRefreshRequested={refreshOverview}
+															render="dialog"
+															bind:open={upgradeDialogOpenById[environment.id]}
+															bind:upgrading={upgradeDialogUpgradingById[environment.id]}
+														/>
 													{/if}
+												{/if}
+											{/if}
+										</div>
+
+										<div class="text-muted-foreground/70 mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px]">
+											<span class="font-mono">{environment.apiUrl}</span>
+											<span>•</span>
+											<span title={activity.title}>{activity.label}: {activity.value}</span>
+										</div>
+									</div>
+
+									<div class="flex shrink-0 items-center gap-1 pt-1 sm:pt-0">
+										{#each getEnvironmentActionButtons(boardState.overviewById.get(environment.id) ?? baseItem, isCurrent) as btn (btn.id)}
+											{@const isActiveEnv = isCurrent && btn.id === `${environment.id}-use`}
+											<ArcaneTooltip.Root>
+												<ArcaneTooltip.Trigger>
+													{#snippet child({ props })}
+														<ArcaneButton
+															{...props}
+															action={btn.action}
+															size="icon"
+															tone="ghost"
+															icon={btn.icon}
+															customLabel={btn.label}
+															loading={btn.loading}
+															disabled={btn.disabled}
+															onclick={btn.onclick}
+															class={cn(
+																'size-8',
+																btn.action === 'prune' && 'text-destructive hover:bg-destructive/10 hover:text-destructive',
+																isActiveEnv && 'disabled:opacity-100 [&_svg]:text-blue-600! dark:[&_svg]:text-blue-500!'
+															)}
+														/>
+													{/snippet}
+												</ArcaneTooltip.Trigger>
+												<ArcaneTooltip.Content>{isActiveEnv ? m.common_current() : btn.label}</ArcaneTooltip.Content>
+											</ArcaneTooltip.Root>
+										{/each}
+									</div>
+								</div>
+
+								{#if shouldLoadEnvironment(environment) || isEnvironmentOnline(environment)}
+									<div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+										<div class="border-border/50 bg-background/50 rounded-lg border p-3">
+											<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
+												{m.containers_title()}
+											</div>
+											{#if isEnvironmentSnapshotLoading(environment.id)}
+												<div class="mt-2 space-y-2">
+													<Skeleton class="h-6 w-20" />
+													<Skeleton class="h-3 w-24" />
 												</div>
-												{#if vInfo.updateAvailable || debugUpgrade}
-													<DashboardEnvironmentUpgradeAction
-														{environment}
-														versionInfo={vInfo}
-														canUpgrade={canUpgradeEnvironment()}
-														debug={debugUpgrade}
-														onRefreshRequested={refreshOverview}
-														render="dialog"
-														bind:open={upgradeDialogOpenById[environment.id]}
-														bind:upgrading={upgradeDialogUpgradingById[environment.id]}
+											{:else}
+												{@const loadedItem = boardState.overviewById.get(environment.id) ?? baseItem}
+												<div class="mt-1 text-lg font-semibold">
+													{loadedItem.containers.runningContainers}/{loadedItem.containers.totalContainers}
+												</div>
+												<div class="text-muted-foreground text-xs">
+													{loadedItem.containers.stoppedContainers}
+													{m.common_stopped()}
+												</div>
+											{/if}
+										</div>
+
+										<div class="border-border/50 bg-background/50 rounded-lg border p-3">
+											<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
+												{m.images_title()}
+											</div>
+											{#if isEnvironmentSnapshotLoading(environment.id)}
+												<div class="mt-2 space-y-2">
+													<Skeleton class="h-6 w-14" />
+													<Skeleton class="h-3 w-28" />
+												</div>
+											{:else}
+												{@const loadedItem = boardState.overviewById.get(environment.id) ?? baseItem}
+												<div class="mt-1 text-lg font-semibold">{loadedItem.imageUsageCounts.totalImages}</div>
+												<div class="text-muted-foreground text-xs">
+													{loadedItem.imageUsageCounts.imagesInuse}
+													{m.common_in_use()} · {loadedItem.imageUsageCounts.imagesUnused}
+													{m.common_unused()}
+												</div>
+											{/if}
+										</div>
+
+										<div class="border-border/50 bg-background/50 rounded-lg border p-3">
+											<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
+												{m.dashboard_action_items_title()}
+											</div>
+											{#if isEnvironmentSnapshotLoading(environment.id)}
+												<div class="mt-2 space-y-2">
+													<Skeleton class="h-6 w-12" />
+													<Skeleton class="h-3 w-32" />
+												</div>
+											{:else}
+												{@const loadedItem = boardState.overviewById.get(environment.id) ?? baseItem}
+												<div class="mt-1 text-lg font-semibold">{loadedItem.actionItems.items.length}</div>
+												<div class="text-muted-foreground text-xs">{getActionSummary(loadedItem)}</div>
+											{/if}
+										</div>
+									</div>
+								{:else}
+									<div class="border-border/50 bg-background/50 rounded-lg border px-4 py-3 text-sm">
+										<p class="font-medium">{m.dashboard_all_environment_unavailable_title()}</p>
+										<p class="text-muted-foreground mt-1">{m.dashboard_all_environment_unavailable_description()}</p>
+									</div>
+								{/if}
+
+								{#if shouldLoadEnvironment(environment)}
+									<div class="pt-1">
+										<div class="grid grid-cols-1 gap-1 {gpuMetric !== null ? 'sm:grid-cols-2 lg:grid-cols-4' : 'sm:grid-cols-3'}">
+											{#if liveStatsLoading}
+												{#each [1, 2, 3] as tile (tile)}
+													<div class="min-w-0 px-2.5 py-2.5">
+														<div class="flex items-start justify-between gap-2">
+															<Skeleton class="h-3 w-20" />
+															<Skeleton class="h-5 w-12" />
+														</div>
+														<Skeleton class="mt-2 h-3 w-24" />
+														<Skeleton class="mt-3 h-1.5 w-full" />
+													</div>
+												{/each}
+											{:else}
+												<DashboardMetricTile
+													title={m.dashboard_meter_cpu()}
+													icon={CpuIcon}
+													value={formatPercent(cpuMetric)}
+													label={getCpuMetricLabel(systemStats)}
+													meterValue={cpuMetric}
+												/>
+
+												<DashboardMetricTile
+													title={m.dashboard_meter_memory()}
+													icon={MemoryStickIcon}
+													value={formatPercent(memoryMetric)}
+													label={getCapacityLabel(systemStats?.memoryUsage, systemStats?.memoryTotal)}
+													labelClass="truncate"
+													meterValue={memoryMetric}
+												/>
+
+												<DashboardMetricTile
+													title={m.dashboard_meter_disk()}
+													icon={VolumesIcon}
+													value={formatPercent(diskMetric)}
+													label={getCapacityLabel(systemStats?.diskUsage, systemStats?.diskTotal)}
+													labelClass="truncate"
+													meterValue={diskMetric}
+												/>
+
+												{#if gpuMetric !== null}
+													<DashboardMetricTile
+														title={m.dashboard_meter_gpu()}
+														icon={GpuIcon}
+														value={formatPercent(gpuMetric)}
+														label={getGpuMetricLabel(systemStats)}
+														meterValue={gpuMetric}
 													/>
 												{/if}
 											{/if}
-										{/if}
-									</div>
-
-									<div class="text-muted-foreground/70 mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px]">
-										<span class="font-mono">{environment.apiUrl}</span>
-										<span>•</span>
-										<span title={activity.title}>{activity.label}: {activity.value}</span>
-									</div>
-								</div>
-
-								<div class="flex shrink-0 items-center gap-1 pt-1 sm:pt-0">
-									{#each getEnvironmentActionButtons(boardState.overviewById.get(environment.id) ?? baseItem, isCurrent) as btn (btn.id)}
-										{@const isActiveEnv = isCurrent && btn.id === `${environment.id}-use`}
-										<ArcaneTooltip.Root>
-											<ArcaneTooltip.Trigger>
-												{#snippet child({ props })}
-													<ArcaneButton
-														{...props}
-														action={btn.action}
-														size="icon"
-														tone="ghost"
-														icon={btn.icon}
-														customLabel={btn.label}
-														loading={btn.loading}
-														disabled={btn.disabled}
-														onclick={btn.onclick}
-														class={cn(
-															'size-8',
-															btn.action === 'prune' && 'text-destructive hover:bg-destructive/10 hover:text-destructive',
-															isActiveEnv && 'disabled:opacity-100 [&_svg]:text-blue-600! dark:[&_svg]:text-blue-500!'
-														)}
-													/>
-												{/snippet}
-											</ArcaneTooltip.Trigger>
-											<ArcaneTooltip.Content>{isActiveEnv ? m.common_current() : btn.label}</ArcaneTooltip.Content>
-										</ArcaneTooltip.Root>
-									{/each}
-								</div>
-							</div>
-
-							{#if shouldLoadEnvironment(environment) || isEnvironmentOnline(environment)}
-								<div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-									<div class="border-border/50 bg-background/50 rounded-lg border p-3">
-										<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
-											{m.containers_title()}
 										</div>
-										{#if isEnvironmentSnapshotLoading(environment.id)}
-											<div class="mt-2 space-y-2">
-												<Skeleton class="h-6 w-20" />
-												<Skeleton class="h-3 w-24" />
-											</div>
-										{:else}
-											{@const loadedItem = boardState.overviewById.get(environment.id) ?? baseItem}
-											<div class="mt-1 text-lg font-semibold">
-												{loadedItem.containers.runningContainers}/{loadedItem.containers.totalContainers}
-											</div>
-											<div class="text-muted-foreground text-xs">
-												{loadedItem.containers.stoppedContainers}
-												{m.common_stopped()}
-											</div>
-										{/if}
-									</div>
-
-									<div class="border-border/50 bg-background/50 rounded-lg border p-3">
-										<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">{m.images_title()}</div>
-										{#if isEnvironmentSnapshotLoading(environment.id)}
-											<div class="mt-2 space-y-2">
-												<Skeleton class="h-6 w-14" />
-												<Skeleton class="h-3 w-28" />
-											</div>
-										{:else}
-											{@const loadedItem = boardState.overviewById.get(environment.id) ?? baseItem}
-											<div class="mt-1 text-lg font-semibold">{loadedItem.imageUsageCounts.totalImages}</div>
-											<div class="text-muted-foreground text-xs">
-												{loadedItem.imageUsageCounts.imagesInuse}
-												{m.common_in_use()} · {loadedItem.imageUsageCounts.imagesUnused}
-												{m.common_unused()}
-											</div>
-										{/if}
-									</div>
-
-									<div class="border-border/50 bg-background/50 rounded-lg border p-3">
-										<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
-											{m.dashboard_action_items_title()}
-										</div>
-										{#if isEnvironmentSnapshotLoading(environment.id)}
-											<div class="mt-2 space-y-2">
-												<Skeleton class="h-6 w-12" />
-												<Skeleton class="h-3 w-32" />
-											</div>
-										{:else}
-											{@const loadedItem = boardState.overviewById.get(environment.id) ?? baseItem}
-											<div class="mt-1 text-lg font-semibold">{loadedItem.actionItems.items.length}</div>
-											<div class="text-muted-foreground text-xs">{getActionSummary(loadedItem)}</div>
-										{/if}
-									</div>
-								</div>
-							{:else}
-								<div class="border-border/50 bg-background/50 rounded-lg border px-4 py-3 text-sm">
-									<p class="font-medium">{m.dashboard_all_environment_unavailable_title()}</p>
-									<p class="text-muted-foreground mt-1">{m.dashboard_all_environment_unavailable_description()}</p>
-								</div>
-							{/if}
-
-							{#if shouldLoadEnvironment(environment)}
-								<div class="pt-1">
-									<div class="grid grid-cols-1 gap-1 {gpuMetric !== null ? 'sm:grid-cols-2 lg:grid-cols-4' : 'sm:grid-cols-3'}">
-										{#if liveStatsLoading}
-											{#each [1, 2, 3] as tile (tile)}
-												<div class="min-w-0 px-2.5 py-2.5">
-													<div class="flex items-start justify-between gap-2">
-														<Skeleton class="h-3 w-20" />
-														<Skeleton class="h-5 w-12" />
-													</div>
-													<Skeleton class="mt-2 h-3 w-24" />
-													<Skeleton class="mt-3 h-1.5 w-full" />
-												</div>
-											{/each}
-										{:else}
-											<DashboardMetricTile
-												title={m.dashboard_meter_cpu()}
-												icon={CpuIcon}
-												value={formatPercent(cpuMetric)}
-												label={getCpuMetricLabel(systemStats)}
-												meterValue={cpuMetric}
-											/>
-
-											<DashboardMetricTile
-												title={m.dashboard_meter_memory()}
-												icon={MemoryStickIcon}
-												value={formatPercent(memoryMetric)}
-												label={getCapacityLabel(systemStats?.memoryUsage, systemStats?.memoryTotal)}
-												labelClass="truncate"
-												meterValue={memoryMetric}
-											/>
-
-											<DashboardMetricTile
-												title={m.dashboard_meter_disk()}
-												icon={VolumesIcon}
-												value={formatPercent(diskMetric)}
-												label={getCapacityLabel(systemStats?.diskUsage, systemStats?.diskTotal)}
-												labelClass="truncate"
-												meterValue={diskMetric}
-											/>
-
-											{#if gpuMetric !== null}
-												<DashboardMetricTile
-													title={m.dashboard_meter_gpu()}
-													icon={GpuIcon}
-													value={formatPercent(gpuMetric)}
-													label={getGpuMetricLabel(systemStats)}
-													meterValue={gpuMetric}
-												/>
-											{/if}
-										{/if}
-									</div>
-								</div>
-							{/if}
-
-							{#if boardState}
-								{@const loadedItem = boardState.overviewById.get(environment.id) ?? baseItem}
-								{#if loadedItem.snapshotState === 'error' && loadedItem.snapshotError}
-									<div class="rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 text-xs text-red-700 dark:text-red-300">
-										{m.dashboard_all_summary_unavailable({ error: loadedItem.snapshotError })}
 									</div>
 								{/if}
-							{/if}
-						</Card.Content>
-					</Card.Root>
-				{/each}
+
+								{#if boardState}
+									{@const loadedItem = boardState.overviewById.get(environment.id) ?? baseItem}
+									{#if loadedItem.snapshotState === 'error' && loadedItem.snapshotError}
+										<div
+											class="rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 text-xs text-red-700 dark:text-red-300"
+										>
+											{m.dashboard_all_summary_unavailable({ error: loadedItem.snapshotError })}
+										</div>
+									{/if}
+								{/if}
+							</Card.Content>
+						</Card.Root>
+					{/each}
+				</div>
 			</div>
 		{/if}
 	</section>
