@@ -20,16 +20,16 @@ var (
 	forceFlag  bool
 	jsonOutput bool
 
-	registryCreateURL          string
-	registryCreateUsername     string
-	registryCreateToken        string
-	registryCreateDescription  string
-	registryCreateInsecure     bool
-	registryCreateDisabled     bool
-	registryCreateType         string
-	registryCreateAWSKeyID     string
-	registryCreateAWSSecret    string
-	registryCreateAWSRegion    string
+	registryCreateURL         string
+	registryCreateUsername    string
+	registryCreateToken       string
+	registryCreateDescription string
+	registryCreateInsecure    bool
+	registryCreateDisabled    bool
+	registryCreateType        string
+	registryCreateAWSKeyID    string
+	registryCreateAWSSecret   string
+	registryCreateAWSRegion   string
 
 	registryUpdateURL      string
 	registryUpdateUsername string
