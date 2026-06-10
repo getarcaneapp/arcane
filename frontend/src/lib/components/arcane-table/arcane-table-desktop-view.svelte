@@ -1,6 +1,6 @@
 <script lang="ts" generics="TData extends Record<string, any> & { id: string }">
-	import type { ArcaneCell, ArcaneRow, ArcaneSvelteTable } from './table-features';
-	import { FlexRender } from '@tanstack/svelte-table';
+	import type { ArcaneCell, ArcaneHeader, ArcaneRow, ArcaneSvelteTable } from './table-features';
+	import { FlexRender as FlexRenderBase } from '@tanstack/svelte-table';
 	import { createVirtualizer } from './virtualizer.svelte';
 	import Skeleton from '$lib/components/ui/skeleton/skeleton.svelte';
 	import * as Table from '$lib/components/ui/table/index.js';
@@ -64,6 +64,11 @@
 	} = $props();
 
 	const hasExpand = $derived(!!expandedRowContent);
+
+	// FlexRender's generics can't be inferred from its union-shaped props, so unaided it
+	// resolves to the broad `Cell<TableFeatures, …>` (which includes feature APIs our cells
+	// don't carry). Pin it to the Arcane feature set instead.
+	const FlexRender = FlexRenderBase as unknown as Component<{ cell: ArcaneCell<TData> } | { header: ArcaneHeader<TData> }>;
 
 	// Get column width class from meta
 	function getWidthClass(width?: ColumnWidth): string {
