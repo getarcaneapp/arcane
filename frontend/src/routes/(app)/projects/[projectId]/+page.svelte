@@ -505,12 +505,6 @@
 		const changes = managedProjectFileChanges.map((change) => ({ ...change }));
 		const contentChanges = new Map<string, string>();
 
-		for (const relativePath of changedIncludeFilePaths) {
-			const content = includeFilesState[relativePath];
-			if (content !== undefined) {
-				contentChanges.set(relativePath, content);
-			}
-		}
 		for (const relativePath of changedManagedProjectFilePaths) {
 			const content = managedProjectFileContents[relativePath];
 			if (content !== undefined) {
@@ -540,6 +534,13 @@
 		return changes;
 	}
 
+	function buildIncludeFileSaveUpdates(): Array<{ relativePath: string; content: string }> {
+		return changedIncludeFilePaths.flatMap((relativePath) => {
+			const content = includeFilesState[relativePath];
+			return content === undefined ? [] : [{ relativePath, content }];
+		});
+	}
+
 	async function handleSaveChanges() {
 		if (!project || !hasChanges) return;
 		if (project.isArchived) {
@@ -559,11 +560,25 @@
 		const namePayload = isGitOpsManaged ? undefined : name;
 		const composePayload = isGitOpsManaged ? undefined : composeContent;
 		const fileChangesPayload = buildProjectFileSaveChanges();
+		const includeFileUpdates = buildIncludeFileSaveUpdates();
 		const fileTreeRevision = fileChangesPayload.length > 0 ? project.fileTreeRevision : undefined;
 
 		handleApiResultWithCallbacks({
 			result: await tryCatch(
-				projectService.updateProject(projectId, namePayload, composePayload, envContent, fileTreeRevision, fileChangesPayload)
+				(async () => {
+					let updatedProject = await projectService.updateProject(
+						projectId,
+						namePayload,
+						composePayload,
+						envContent,
+						fileTreeRevision,
+						fileChangesPayload
+					);
+					for (const update of includeFileUpdates) {
+						updatedProject = await projectService.updateProjectIncludeFile(projectId, update.relativePath, update.content);
+					}
+					return updatedProject;
+				})()
 			),
 			message: m.common_save_failed(),
 			setLoadingState: (value) => (isLoading.saving = value),
