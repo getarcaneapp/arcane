@@ -2,10 +2,22 @@
 	import type { IncludeFile, Project } from '$lib/types/swarm';
 	import type { ProjectFileChange } from '$lib/types/project-files';
 	import * as Tabs from '$lib/components/ui/tabs/index.js';
-	import * as Card from '$lib/components/ui/card';
 	import * as Alert from '$lib/components/ui/alert/index.js';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { ArrowLeftIcon, BoxIcon, ProjectsIcon, LayersIcon, SettingsIcon, FileTextIcon, AlertIcon, GlobeIcon } from '$lib/icons';
+	import {
+		ArrowLeftIcon,
+		ArrowsUpDownIcon,
+		BoxIcon,
+		CloseIcon,
+		ProjectsIcon,
+		LayersIcon,
+		SearchIcon,
+		SettingsIcon,
+		FileTextIcon,
+		AlertIcon,
+		GlobeIcon
+	} from '$lib/icons';
+	import { cn } from '$lib/utils';
 	import { type TabItem } from '$lib/components/tab-bar/index.js';
 	import TabbedPageLayout from '$lib/layouts/tabbed-page-layout.svelte';
 	import ActionButtons from '$lib/components/action-buttons.svelte';
@@ -29,7 +41,7 @@
 	import CodePanel from '../components/CodePanel.svelte';
 	import ProjectsLogsPanel from '../components/ProjectLogsPanel.svelte';
 	import ResizableSplit from '$lib/components/resizable-split.svelte';
-	import SwitchWithLabel from '$lib/components/form/labeled-switch.svelte';
+	import { Switch } from '$lib/components/ui/switch';
 	import { untrack } from 'svelte';
 	import { projectService } from '$lib/services/project-service';
 	import { imageService } from '$lib/services/image-service';
@@ -50,6 +62,7 @@
 		planProjectFileCreate,
 		planProjectFileMove,
 		planProjectFileRename,
+		projectFileBasename,
 		projectFileLanguage,
 		projectFilePathMatches,
 		remapProjectFileRecord,
@@ -206,6 +219,10 @@
 	let envOpen = $state(true);
 	let includeFilesPanelStates = $state<Record<string, boolean>>({});
 	let selectedFilePreference = $state<'compose' | 'env' | string>('compose');
+	let openTabsPreference = $state<string[]>(['compose']);
+	let treeOutlineOpen = $state(false);
+	let treeDiffOpen = $state(false);
+	let treeCommandPaletteOpen = $state(false);
 	let layoutMode = $state<'classic' | 'tree'>('classic');
 	let selectedIncludeTabPreference = $state<string | null>(null);
 	let treePaneWidth = $state(420);
@@ -243,6 +260,16 @@
 			? managedProjectFiles.find((file) => file.relativePath === selectedManagedProjectFilePath)
 			: undefined
 	);
+	const openTabs = $derived.by(() => {
+		const valid = openTabsPreference.filter((key) => {
+			if (key === 'compose' || key === 'env') return true;
+			if (!key.startsWith('file:')) return false;
+			const entry = managedProjectFiles.find((file) => file.relativePath === key.slice(5));
+			return !!entry && !entry.isDirectory;
+		});
+		return valid.length > 0 ? valid : ['compose'];
+	});
+	const activeTreeTab = $derived(openTabs.includes(selectedFile) ? selectedFile : (openTabs[0] ?? 'compose'));
 	const selectedIncludeTab = $derived.by(() => {
 		if (!selectedIncludeTabPreference) return null;
 		return includeFilePaths.has(selectedIncludeTabPreference) ? selectedIncludeTabPreference : null;
@@ -296,6 +323,7 @@
 		autoScroll: boolean;
 		layoutMode: 'classic' | 'tree';
 		selectedFile?: 'compose' | 'env' | string;
+		openTabs?: string[];
 	};
 
 	type RebaseEditorDraftOptions = {
@@ -313,7 +341,8 @@
 		envOpen: true,
 		autoScroll: true,
 		layoutMode: 'classic',
-		selectedFile: 'compose'
+		selectedFile: 'compose',
+		openTabs: ['compose']
 	};
 
 	let prefs: PersistedState<ComposeUIPrefs> | null = null;
@@ -480,7 +509,9 @@
 		if (lastPrefsProjectId === project.id) return;
 
 		lastPrefsProjectId = project.id;
-		prefs = new PersistedState<ComposeUIPrefs>(`arcane.compose.ui:${project.id}`, defaultComposeUIPrefs, {
+		const prefsStorageKey = `arcane.compose.ui:${project.id}`;
+		const hadStoredPrefs = sessionStorage.getItem(prefsStorageKey) !== null;
+		prefs = new PersistedState<ComposeUIPrefs>(prefsStorageKey, defaultComposeUIPrefs, {
 			storage: 'session',
 			syncTabs: false
 		});
@@ -490,13 +521,16 @@
 		envOpen = cur.envOpen ?? defaultComposeUIPrefs.envOpen;
 		autoScrollStackLogs = cur.autoScroll ?? defaultComposeUIPrefs.autoScroll;
 		selectedFilePreference = cur.selectedFile ?? defaultComposeUIPrefs.selectedFile ?? 'compose';
+		openTabsPreference = cur.openTabs && cur.openTabs.length > 0 ? cur.openTabs : [selectedFilePreference];
 
-		// Auto-detect layout mode based on includeFiles or directoryFiles
+		// Auto-detect layout mode based on includeFiles or directoryFiles. PersistedState
+		// always materializes the defaults, so only trust the stored layoutMode when this
+		// project actually had persisted prefs.
 		const hasIncludes = project?.includeFiles && project.includeFiles.length > 0;
 		const hasDirectoryFiles = project?.directoryFiles && project.directoryFiles.length > 0;
 		const hasProjectFiles = project?.projectFiles && project.projectFiles.length > 0;
 		const defaultMode = hasIncludes || hasDirectoryFiles || hasProjectFiles ? 'tree' : 'classic';
-		layoutMode = cur.layoutMode ?? defaultMode;
+		layoutMode = hadStoredPrefs ? (cur.layoutMode ?? defaultMode) : defaultMode;
 	});
 
 	function isDeletedByProjectFileChanges(relativePath: string, changes: ProjectFileChange[]): boolean {
@@ -654,16 +688,10 @@
 			envOpen,
 			autoScroll: autoScrollStackLogs,
 			layoutMode,
-			selectedFile
+			selectedFile,
+			openTabs
 		};
 	}
-
-	$effect(() => {
-		selectedFile;
-		if (layoutMode === 'tree') {
-			persistPrefs();
-		}
-	});
 
 	type ProjectFileKind = 'include' | 'directory' | 'managed';
 
@@ -772,8 +800,56 @@
 		return promise;
 	}
 
-	function selectManagedProjectFile(key: string) {
+	function isManagedDirectoryKey(key: string): boolean {
+		if (!key.startsWith('file:')) return false;
+		return managedProjectFiles.find((file) => file.relativePath === key.slice(5))?.isDirectory === true;
+	}
+
+	function openFileTab(key: string) {
+		if (!isManagedDirectoryKey(key) && !openTabsPreference.includes(key)) {
+			openTabsPreference = [...openTabsPreference, key];
+		}
 		selectedFilePreference = key;
+		if (layoutMode === 'tree') {
+			persistPrefs();
+		}
+	}
+
+	function closeFileTab(key: string) {
+		const index = openTabs.indexOf(key);
+		const remaining = openTabs.filter((tab) => tab !== key);
+		openTabsPreference = openTabsPreference.filter((tab) => tab !== key);
+		if (selectedFile === key) {
+			selectedFilePreference = remaining[Math.min(Math.max(index - 1, 0), remaining.length - 1)] ?? 'compose';
+		}
+		persistPrefs();
+	}
+
+	function treeTabLabel(key: string): string {
+		if (key === 'compose') return composeFileName;
+		if (key === 'env') return '.env';
+		return projectFileBasename(key.startsWith('file:') ? key.slice(5) : key);
+	}
+
+	function treeTabTitle(key: string): string {
+		if (key === 'compose') return composeFileName;
+		if (key === 'env') return '.env';
+		return key.startsWith('file:') ? key.slice(5) : key;
+	}
+
+	function treeTabPending(key: string): boolean {
+		if (key === 'compose') return composeHasChanges;
+		if (key === 'env') return envHasChanges;
+		if (!key.startsWith('file:')) return false;
+		const relativePath = key.slice(5);
+		return (
+			changedManagedProjectFilePaths.includes(relativePath) ||
+			managedProjectFiles.find((file) => file.relativePath === relativePath)?.pending === true
+		);
+	}
+
+	function selectManagedProjectFile(key: string) {
+		openFileTab(key);
 	}
 
 	async function loadManagedProjectFileDraft(relativePath: string) {
@@ -826,6 +902,7 @@
 		includeFilesPanelStates = remapProjectFileRecord(includeFilesPanelStates, oldPath, newPath);
 		includeFilesHasErrors = remapProjectFileRecord(includeFilesHasErrors, oldPath, newPath);
 		includeFilesValidationReady = remapProjectFileRecord(includeFilesValidationReady, oldPath, newPath);
+		openTabsPreference = openTabsPreference.map((tab) => remapSelectedProjectFileKey(tab, oldPath, newPath) ?? tab);
 		const remappedSelection = remapSelectedProjectFileKey(selectedFile, oldPath, newPath);
 		if (remappedSelection) {
 			selectedFilePreference = remappedSelection;
@@ -844,8 +921,9 @@
 		includeFilesPanelStates = removeProjectFileRecord(includeFilesPanelStates, relativePath);
 		includeFilesHasErrors = removeProjectFileRecord(includeFilesHasErrors, relativePath);
 		includeFilesValidationReady = removeProjectFileRecord(includeFilesValidationReady, relativePath);
+		openTabsPreference = openTabsPreference.filter((tab) => !isProjectFileSelectionUnder(tab, relativePath));
 		if (isProjectFileSelectionUnder(selectedFile, relativePath)) {
-			selectedFilePreference = 'compose';
+			selectedFilePreference = openTabs[0] ?? 'compose';
 		}
 	}
 
@@ -857,7 +935,7 @@
 		loadedManagedProjectFileContents = { ...loadedManagedProjectFileContents, [relativePath]: content };
 		managedProjectFileLoadErrors = removeProjectFileRecord(managedProjectFileLoadErrors, relativePath);
 		ensureManagedProjectFileUiState(relativePath);
-		selectedFilePreference = `file:${relativePath}`;
+		openFileTab(`file:${relativePath}`);
 	}
 
 	function createManagedProjectFolder(parentPath: string, name: string) {
@@ -1186,16 +1264,22 @@
 							</div>
 						</Alert.Root>
 					{/if}
-					<div class="mb-4 shrink-0">
-						<SwitchWithLabel
+					<div class="mb-2 flex shrink-0 items-center justify-end gap-2">
+						<label
+							for="layout-mode-toggle"
+							class="text-muted-foreground cursor-pointer text-xs"
+							title={m.project_view_description()}
+						>
+							{m.tree_view()}
+						</label>
+						<Switch
 							id="layout-mode-toggle"
 							checked={layoutMode === 'tree'}
-							label={layoutMode === 'tree' ? m.tree_view() : m.classic()}
-							description={m.project_view_description()}
+							aria-label={m.project_view_description()}
 							onCheckedChange={(checked) => {
 								layoutMode = checked ? 'tree' : 'classic';
 								if (checked) {
-									selectedFilePreference = 'compose';
+									openFileTab('compose');
 									selectedIncludeTabPreference = null;
 								}
 								persistPrefs();
@@ -1219,86 +1303,166 @@
 								onResizeEnd={persistPrefs}
 							>
 								{#snippet first()}
-									<Card.Root class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-										<Card.Header icon={FileTextIcon} class="shrink-0 items-center">
-											<Card.Title>
-												<h2>{m.project_files()}</h2>
-											</Card.Title>
-										</Card.Header>
-										<Card.Content class="min-h-0 flex-1 p-0">
-											<ProjectFileTreePanel
-												{composeFileName}
-												entries={managedProjectFiles}
-												{selectedFile}
-												disabled={!canEditProjectFiles}
-												readOnlyMessage={isGitOpsManaged ? m.project_files_readonly_git() : undefined}
-												onSelect={selectManagedProjectFile}
-												onCreateFile={createManagedProjectFile}
-												onCreateFolder={createManagedProjectFolder}
-												onRename={renameManagedProjectFile}
-												onMove={moveManagedProjectFile}
-												onDelete={deleteManagedProjectFile}
-											/>
-										</Card.Content>
-									</Card.Root>
+									<div class="bg-card border-border flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-lg border">
+										<ProjectFileTreePanel
+											{composeFileName}
+											entries={managedProjectFiles}
+											{selectedFile}
+											disabled={!canEditProjectFiles}
+											readOnlyMessage={isGitOpsManaged ? m.project_files_readonly_git() : undefined}
+											onSelect={selectManagedProjectFile}
+											onCreateFile={createManagedProjectFile}
+											onCreateFolder={createManagedProjectFolder}
+											onRename={renameManagedProjectFile}
+											onMove={moveManagedProjectFile}
+											onDelete={deleteManagedProjectFile}
+										/>
+									</div>
 								{/snippet}
 
 								{#snippet second()}
-									<div class="flex h-full min-h-0 flex-1 flex-col">
-										{#key selectedFile}
-											{#if selectedFile === 'compose'}
-												<CodePanel
-													bind:open={composeOpen}
-													title={composeFileName}
-													language="yaml"
-													validationMode="compose"
-													bind:value={$inputs.composeContent.value}
-													error={$inputs.composeContent.error ?? undefined}
-													readOnly={!canEditCompose}
-													bind:hasErrors={composeHasErrors}
-													bind:validationReady={composeValidationReady}
-													fileId={`project:${projectId}:compose`}
-													originalValue={serverComposeContent}
-													enableDiff={true}
-													editorContext={codeEditorContext}
-												/>
-											{:else if selectedFile === 'env'}
-												<CodePanel
-													bind:open={envOpen}
-													title=".env"
-													language="env"
-													validationMode="env"
-													bind:value={$inputs.envContent.value}
-													error={$inputs.envContent.error ?? undefined}
-													readOnly={!canEditEnv}
-													bind:hasErrors={envHasErrors}
-													bind:validationReady={envValidationReady}
-													fileId={`project:${projectId}:env`}
-													originalValue={serverEnvContent}
-													enableDiff={true}
-													editorContext={codeEditorContext}
-												/>
-											{:else if selectedFile.startsWith('file:')}
-												{@const relativePath = selectedManagedProjectFilePath}
-												{#if selectedManagedProjectFile?.isDirectory}
+									<div class="bg-card border-border flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-lg border">
+										<div class="border-border flex h-9 shrink-0 items-center border-b">
+											<div class="scrollbar-hide flex h-full min-w-0 flex-1 items-center overflow-x-auto">
+												{#each openTabs as tabKey (tabKey)}
+													{@const isActive = activeTreeTab === tabKey}
 													<div
-														class="text-muted-foreground flex h-full min-h-0 items-center justify-center rounded-lg border px-4 text-sm"
+														class={cn(
+															'group border-border flex h-full shrink-0 items-center border-r',
+															isActive ? 'bg-accent' : 'hover:bg-accent/50'
+														)}
 													>
-														{m.project_file_folder_selected()}
-													</div>
-												{:else if selectedManagedProjectFile}
-													{#if managedProjectFileLoadErrors[relativePath]}
-														<div
-															class="text-destructive flex h-full min-h-0 items-center justify-center rounded-lg border px-4 text-sm"
+														<button
+															type="button"
+															class={cn(
+																'flex h-full items-center gap-1.5 pr-1 pl-3 text-[13px]',
+																isActive ? 'text-foreground' : 'text-muted-foreground'
+															)}
+															title={treeTabTitle(tabKey)}
+															onclick={() => openFileTab(tabKey)}
 														>
+															<FileTextIcon
+																class={cn(
+																	'size-3.5 shrink-0',
+																	tabKey === 'compose'
+																		? 'text-blue-500'
+																		: tabKey === 'env'
+																			? 'text-green-500'
+																			: 'text-muted-foreground'
+																)}
+															/>
+															<span class="max-w-40 truncate">{treeTabLabel(tabKey)}</span>
+															{#if treeTabPending(tabKey)}
+																<span
+																	class="bg-primary size-1.5 shrink-0 rounded-full"
+																	role="img"
+																	aria-label={m.common_unsaved_changes()}
+																	title={m.common_unsaved_changes()}
+																></span>
+															{/if}
+														</button>
+														<button
+															type="button"
+															class={cn(
+																'hover:bg-foreground/10 mr-1 inline-flex size-5 shrink-0 items-center justify-center rounded opacity-0 group-hover:opacity-100 focus-visible:opacity-100',
+																isActive && 'opacity-100'
+															)}
+															aria-label={m.common_close()}
+															onclick={() => closeFileTab(tabKey)}
+														>
+															<CloseIcon class="size-3" />
+														</button>
+													</div>
+												{/each}
+											</div>
+											<div class="flex shrink-0 items-center gap-0.5 px-1.5">
+												<ArcaneButton
+													action="base"
+													tone={treeOutlineOpen ? 'outline-primary' : 'ghost'}
+													size="icon"
+													class="size-6"
+													showLabel={false}
+													icon={FileTextIcon}
+													customLabel={m.compose_editor_toggle_outline()}
+													onclick={() => (treeOutlineOpen = !treeOutlineOpen)}
+												/>
+												<ArcaneButton
+													action="base"
+													tone={treeDiffOpen ? 'outline-primary' : 'ghost'}
+													size="icon"
+													class="size-6"
+													showLabel={false}
+													icon={ArrowsUpDownIcon}
+													customLabel={m.compose_editor_toggle_diff()}
+													onclick={() => (treeDiffOpen = !treeDiffOpen)}
+												/>
+												<ArcaneButton
+													action="base"
+													tone="ghost"
+													size="icon"
+													class="size-6"
+													showLabel={false}
+													icon={SearchIcon}
+													customLabel={m.compose_editor_command_palette()}
+													onclick={() => (treeCommandPaletteOpen = true)}
+												/>
+											</div>
+										</div>
+										<div class="flex min-h-0 flex-1 flex-col">
+											{#key activeTreeTab}
+												{#if activeTreeTab === 'compose'}
+													<CodePanel
+														variant="plain"
+														bind:open={composeOpen}
+														title={composeFileName}
+														language="yaml"
+														validationMode="compose"
+														bind:value={$inputs.composeContent.value}
+														error={$inputs.composeContent.error ?? undefined}
+														readOnly={!canEditCompose}
+														bind:hasErrors={composeHasErrors}
+														bind:validationReady={composeValidationReady}
+														fileId={`project:${projectId}:compose`}
+														originalValue={serverComposeContent}
+														enableDiff={true}
+														editorContext={codeEditorContext}
+														bind:outlineOpen={treeOutlineOpen}
+														bind:diffOpen={treeDiffOpen}
+														bind:commandPaletteOpen={treeCommandPaletteOpen}
+													/>
+												{:else if activeTreeTab === 'env'}
+													<CodePanel
+														variant="plain"
+														bind:open={envOpen}
+														title=".env"
+														language="env"
+														validationMode="env"
+														bind:value={$inputs.envContent.value}
+														error={$inputs.envContent.error ?? undefined}
+														readOnly={!canEditEnv}
+														bind:hasErrors={envHasErrors}
+														bind:validationReady={envValidationReady}
+														fileId={`project:${projectId}:env`}
+														originalValue={serverEnvContent}
+														enableDiff={true}
+														editorContext={codeEditorContext}
+														bind:outlineOpen={treeOutlineOpen}
+														bind:diffOpen={treeDiffOpen}
+														bind:commandPaletteOpen={treeCommandPaletteOpen}
+													/>
+												{:else if activeTreeTab.startsWith('file:')}
+													{@const relativePath = activeTreeTab.slice(5)}
+													{#if managedProjectFileLoadErrors[relativePath]}
+														<div class="text-destructive flex h-full min-h-0 items-center justify-center px-4 text-sm">
 															{managedProjectFileLoadErrors[relativePath]}
 														</div>
 													{:else if managedProjectFileContents[relativePath] === undefined}
-														<div class="text-muted-foreground flex h-full min-h-0 items-center justify-center rounded-lg border">
+														<div class="text-muted-foreground flex h-full min-h-0 items-center justify-center">
 															{m.common_loading()}
 														</div>
 													{:else}
 														<CodePanel
+															variant="plain"
 															open={true}
 															title={relativePath}
 															language={projectFileLanguage(relativePath)}
@@ -1311,65 +1475,14 @@
 															originalValue={loadedManagedProjectFileContents[relativePath] ?? ''}
 															enableDiff={true}
 															editorContext={codeEditorContext}
+															bind:outlineOpen={treeOutlineOpen}
+															bind:diffOpen={treeDiffOpen}
+															bind:commandPaletteOpen={treeCommandPaletteOpen}
 														/>
 													{/if}
 												{/if}
-											{:else if selectedFile.startsWith('dir:')}
-												{@const dirRelPath = selectedFile.slice(4)}
-												{@const dirFile = project?.directoryFiles?.find((f) => f.relativePath === dirRelPath)}
-												{#if dirFile}
-													{#await getProjectFileResource('directory', dirRelPath)}
-														<div class="text-muted-foreground flex h-full min-h-0 items-center justify-center rounded-lg border">
-															{m.common_loading()}
-														</div>
-													{:then loadedFile}
-														<CodePanel
-															open={true}
-															title={loadedFile.relativePath}
-															language="yaml"
-															validationMode="none"
-															value={loadedFile.content ?? ''}
-															readOnly={true}
-														/>
-													{:catch error}
-														<div
-															class="text-destructive flex h-full min-h-0 items-center justify-center rounded-lg border px-4 text-sm"
-														>
-															{error instanceof Error ? error.message : String(error)}
-														</div>
-													{/await}
-												{/if}
-											{:else}
-												{@const includeFile = project?.includeFiles?.find((f) => f.relativePath === selectedFile)}
-												{#if includeFile}
-													{#await getProjectFileResource('include', includeFile.relativePath)}
-														<div class="text-muted-foreground flex h-full min-h-0 items-center justify-center rounded-lg border">
-															{m.common_loading()}
-														</div>
-													{:then}
-														<CodePanel
-															bind:open={includeFilesPanelStates[includeFile.relativePath]}
-															title={includeFile.relativePath}
-															language="yaml"
-															validationMode="compose"
-															bind:value={includeFilesState[includeFile.relativePath]}
-															bind:hasErrors={includeFilesHasErrors[includeFile.relativePath]}
-															bind:validationReady={includeFilesValidationReady[includeFile.relativePath]}
-															fileId={`project:${projectId}:include:${includeFile.relativePath}`}
-															originalValue={serverIncludeFiles[includeFile.relativePath] ?? ''}
-															enableDiff={true}
-															editorContext={codeEditorContext}
-														/>
-													{:catch error}
-														<div
-															class="text-destructive flex h-full min-h-0 items-center justify-center rounded-lg border px-4 text-sm"
-														>
-															{error instanceof Error ? error.message : String(error)}
-														</div>
-													{/await}
-												{/if}
-											{/if}
-										{/key}
+											{/key}
+										</div>
 									</div>
 								{/snippet}
 							</ResizableSplit>

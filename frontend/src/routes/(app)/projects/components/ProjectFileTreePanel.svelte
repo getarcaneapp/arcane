@@ -76,6 +76,7 @@
 	}: Props = $props();
 
 	let openFolders = $state<Record<string, boolean>>({});
+	let activeFolderPath = $state('');
 	let dialogOpen = $state(false);
 	let dialogMode = $state<DialogMode>('create_file');
 	let dialogName = $state('');
@@ -91,10 +92,12 @@
 	const entryByPath = $derived.by(() => new Map(entries.map((entry) => [entry.relativePath, entry])));
 	const selectedManagedPath = $derived(selectedFile.startsWith('file:') ? selectedFile.slice(5) : '');
 	const selectedManagedEntry = $derived(selectedManagedPath ? entryByPath.get(selectedManagedPath) : undefined);
-	const selectedParentPath = $derived(
-		selectedManagedEntry?.isDirectory ? selectedManagedEntry.relativePath : projectFileParentPath(selectedManagedPath)
-	);
+	const selectedParentPath = $derived.by(() => {
+		if (activeFolderPath && entryByPath.get(activeFolderPath)?.isDirectory) return activeFolderPath;
+		return selectedManagedEntry?.isDirectory ? selectedManagedEntry.relativePath : projectFileParentPath(selectedManagedPath);
+	});
 	const rows = $derived.by(() => flattenRows(entries, openFolders));
+	const hasDirectories = $derived(entries.some((entry) => entry.isDirectory));
 	const dialogTitle = $derived.by(() => {
 		if (dialogMode === 'upload') return m.project_file_upload_title();
 		if (dialogMode === 'move') return m.project_file_move_title();
@@ -120,6 +123,14 @@
 		allDestinationOptions.filter((option) => option.relativePath === '' || isDestinationVisible(option.relativePath))
 	);
 	const hasValidDestination = $derived(allDestinationOptions.some((option) => !option.disabled));
+
+	function toggleFolder(relativePath: string) {
+		activeFolderPath = relativePath;
+		openFolders = {
+			...openFolders,
+			[relativePath]: openFolders[relativePath] !== true
+		};
+	}
 
 	function flattenRows(files: ManagedProjectFileEntry[], folderStates: Record<string, boolean>): TreeRow[] {
 		const byParent = new Map<string, ManagedProjectFileEntry[]>();
@@ -446,52 +457,58 @@
 </script>
 
 <div class="flex min-h-0 flex-1 flex-col">
-	<div class="border-border flex shrink-0 flex-wrap gap-1.5 border-b p-2">
-		<Tooltip.Root>
-			<Tooltip.Trigger>
-				<ArcaneButton
-					action="create"
-					size="icon"
-					tone="ghost"
-					icon={CreateFileIcon}
-					showLabel={false}
-					{disabled}
-					customLabel={m.project_file_new_file()}
-					onclick={() => openCreateDialog('create_file')}
-				/>
-			</Tooltip.Trigger>
-			<Tooltip.Content>{m.project_file_new_file()}</Tooltip.Content>
-		</Tooltip.Root>
-		<Tooltip.Root>
-			<Tooltip.Trigger>
-				<ArcaneButton
-					action="create"
-					size="icon"
-					tone="ghost"
-					icon={CreateFolderIcon}
-					showLabel={false}
-					{disabled}
-					customLabel={m.project_file_new_folder()}
-					onclick={() => openCreateDialog('create_folder')}
-				/>
-			</Tooltip.Trigger>
-			<Tooltip.Content>{m.project_file_new_folder()}</Tooltip.Content>
-		</Tooltip.Root>
-		<Tooltip.Root>
-			<Tooltip.Trigger>
-				<ArcaneButton
-					action="base"
-					size="icon"
-					tone="ghost"
-					icon={UploadIcon}
-					showLabel={false}
-					{disabled}
-					customLabel={m.project_file_upload_file()}
-					onclick={() => openUploadDialog()}
-				/>
-			</Tooltip.Trigger>
-			<Tooltip.Content>{m.project_file_upload_file()}</Tooltip.Content>
-		</Tooltip.Root>
+	<div class="border-border flex h-9 shrink-0 items-center border-b px-2">
+		<span class="text-muted-foreground text-[11px] font-semibold tracking-wider uppercase">{m.project_files()}</span>
+		<div class="ml-auto flex items-center gap-0.5">
+			<Tooltip.Root>
+				<Tooltip.Trigger>
+					<ArcaneButton
+						action="create"
+						size="icon"
+						tone="ghost"
+						class="size-6"
+						icon={CreateFileIcon}
+						showLabel={false}
+						{disabled}
+						customLabel={m.project_file_new_file()}
+						onclick={() => openCreateDialog('create_file')}
+					/>
+				</Tooltip.Trigger>
+				<Tooltip.Content>{m.project_file_new_file()}</Tooltip.Content>
+			</Tooltip.Root>
+			<Tooltip.Root>
+				<Tooltip.Trigger>
+					<ArcaneButton
+						action="create"
+						size="icon"
+						tone="ghost"
+						class="size-6"
+						icon={CreateFolderIcon}
+						showLabel={false}
+						{disabled}
+						customLabel={m.project_file_new_folder()}
+						onclick={() => openCreateDialog('create_folder')}
+					/>
+				</Tooltip.Trigger>
+				<Tooltip.Content>{m.project_file_new_folder()}</Tooltip.Content>
+			</Tooltip.Root>
+			<Tooltip.Root>
+				<Tooltip.Trigger>
+					<ArcaneButton
+						action="base"
+						size="icon"
+						tone="ghost"
+						class="size-6"
+						icon={UploadIcon}
+						showLabel={false}
+						{disabled}
+						customLabel={m.project_file_upload_file()}
+						onclick={() => openUploadDialog()}
+					/>
+				</Tooltip.Trigger>
+				<Tooltip.Content>{m.project_file_upload_file()}</Tooltip.Content>
+			</Tooltip.Root>
+		</div>
 	</div>
 
 	{#if readOnlyMessage}
@@ -503,53 +520,49 @@
 			<button
 				type="button"
 				class={cn(
-					'hover:bg-accent flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm',
+					'hover:bg-accent flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-[13px]',
 					selectedFile === 'compose' && 'bg-accent'
 				)}
 				onclick={() => onSelect('compose')}
 			>
-				<span class="inline-flex size-4 shrink-0 items-center justify-center"></span>
+				{#if hasDirectories}
+					<span class="inline-flex size-4 shrink-0 items-center justify-center"></span>
+				{/if}
 				<FileTextIcon class="size-4 shrink-0 text-blue-500" />
 				<span class="min-w-0 flex-1 truncate">{composeFileName}</span>
-				<div class="grid w-[5.75rem] shrink-0 grid-cols-3 gap-1">
-					<span class="size-7"></span>
-					<span class="size-7"></span>
-					<span class="inline-flex size-7 items-center justify-center">
-						<LockIcon class="text-muted-foreground size-3.5 shrink-0" aria-label={m.project_file_protected()} />
-					</span>
-				</div>
+				<span class="inline-flex size-6 shrink-0 items-center justify-center">
+					<LockIcon class="text-muted-foreground size-3.5 shrink-0" aria-label={m.project_file_protected()} />
+				</span>
 			</button>
 
 			<button
 				type="button"
 				class={cn(
-					'hover:bg-accent flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm',
+					'hover:bg-accent flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-[13px]',
 					selectedFile === 'env' && 'bg-accent'
 				)}
 				onclick={() => onSelect('env')}
 			>
-				<span class="inline-flex size-4 shrink-0 items-center justify-center"></span>
+				{#if hasDirectories}
+					<span class="inline-flex size-4 shrink-0 items-center justify-center"></span>
+				{/if}
 				<FileTextIcon class="size-4 shrink-0 text-green-500" />
 				<span class="min-w-0 flex-1 truncate">.env</span>
-				<div class="grid w-[5.75rem] shrink-0 grid-cols-3 gap-1">
-					<span class="size-7"></span>
-					<span class="size-7"></span>
-					<span class="inline-flex size-7 items-center justify-center">
-						<LockIcon class="text-muted-foreground size-3.5 shrink-0" aria-label={m.project_file_protected()} />
-					</span>
-				</div>
+				<span class="inline-flex size-6 shrink-0 items-center justify-center">
+					<LockIcon class="text-muted-foreground size-3.5 shrink-0" aria-label={m.project_file_protected()} />
+				</span>
 			</button>
 
 			{#if rows.length === 0}
-				<div class="text-muted-foreground px-8 py-3 text-xs">{m.project_files_empty()}</div>
+				<div class="text-muted-foreground px-7 py-3 text-xs">{m.project_files_empty()}</div>
 			{:else}
 				{#each rows as row (row.relativePath)}
 					<div
 						class={cn(
-							'group hover:bg-accent flex w-full items-center gap-2 rounded-md px-2 py-1 text-sm',
+							'group hover:bg-accent flex w-full items-center gap-1.5 rounded-md px-2 py-0.5 text-[13px]',
 							selectedFile === `file:${row.relativePath}` && 'bg-accent'
 						)}
-						style={`padding-left: ${0.5 + row.depth * 1.25}rem`}
+						style={`padding-left: ${0.5 + row.depth * 1}rem`}
 					>
 						{#if row.isDirectory}
 							<button
@@ -558,26 +571,22 @@
 								aria-label={openFolders[row.relativePath]
 									? m.project_file_collapse_folder({ name: row.name })
 									: m.project_file_expand_folder({ name: row.name })}
-								onclick={() =>
-									(openFolders = {
-										...openFolders,
-										[row.relativePath]: openFolders[row.relativePath] !== true
-									})}
+								onclick={() => toggleFolder(row.relativePath)}
 							>
 								{#if openFolders[row.relativePath] === true}
-									<ArrowDownIcon class="size-4" />
+									<ArrowDownIcon class="size-3.5" />
 								{:else}
-									<ArrowRightIcon class="size-4" />
+									<ArrowRightIcon class="size-3.5" />
 								{/if}
 							</button>
-						{:else}
+						{:else if hasDirectories}
 							<span class="inline-flex size-4 shrink-0 items-center justify-center"></span>
 						{/if}
 
 						<button
 							type="button"
-							class="flex min-w-0 flex-1 items-center gap-2 py-1 text-left"
-							onclick={() => onSelect(`file:${row.relativePath}`)}
+							class="flex min-w-0 flex-1 items-center gap-1.5 py-1 text-left"
+							onclick={() => (row.isDirectory ? toggleFolder(row.relativePath) : onSelect(`file:${row.relativePath}`))}
 						>
 							{#if row.isDirectory}
 								<FolderOpenIcon class="size-4 shrink-0 text-amber-500" />
@@ -586,21 +595,26 @@
 							{/if}
 							<span class="min-w-0 truncate">{row.name}</span>
 							{#if row.pending}
-								<span class="bg-muted text-muted-foreground rounded px-1.5 py-0.5 text-[10px]">{m.common_unsaved_changes()}</span>
+								<span
+									class="bg-primary size-1.5 shrink-0 rounded-full"
+									role="img"
+									aria-label={m.common_unsaved_changes()}
+									title={m.common_unsaved_changes()}
+								></span>
 							{/if}
 						</button>
 
-						<div class="grid w-[5.75rem] shrink-0 grid-cols-3 gap-1">
+						<div class="flex shrink-0 items-center gap-0.5">
 							<Tooltip.Root>
 								<Tooltip.Trigger>
 									<button
 										type="button"
-										class="text-foreground hover:bg-foreground/10 inline-flex size-7 items-center justify-center rounded"
+										class="text-foreground hover:bg-foreground/10 inline-flex size-6 items-center justify-center rounded"
 										aria-label={m.project_file_rename_label({ name: row.relativePath })}
 										{disabled}
 										onclick={() => openRenameDialog(row.relativePath)}
 									>
-										<EditIcon class="size-4" />
+										<EditIcon class="size-3.5" />
 									</button>
 								</Tooltip.Trigger>
 								<Tooltip.Content>{m.project_file_rename_action()}</Tooltip.Content>
@@ -609,12 +623,12 @@
 								<Tooltip.Trigger>
 									<button
 										type="button"
-										class="text-foreground hover:bg-foreground/10 inline-flex size-7 items-center justify-center rounded"
+										class="text-foreground hover:bg-foreground/10 inline-flex size-6 items-center justify-center rounded"
 										aria-label={m.project_file_move_label({ name: row.relativePath })}
 										{disabled}
 										onclick={() => openMoveDialog(row.relativePath)}
 									>
-										<FolderMoveIcon class="size-4" />
+										<FolderMoveIcon class="size-3.5" />
 									</button>
 								</Tooltip.Trigger>
 								<Tooltip.Content>{m.project_file_move_action()}</Tooltip.Content>
@@ -623,12 +637,12 @@
 								<Tooltip.Trigger>
 									<button
 										type="button"
-										class="text-destructive hover:bg-destructive/10 inline-flex size-7 items-center justify-center rounded"
+										class="text-destructive hover:bg-destructive/10 inline-flex size-6 items-center justify-center rounded"
 										aria-label={m.project_file_delete_label({ name: row.relativePath })}
 										{disabled}
 										onclick={() => handleDelete(row)}
 									>
-										<TrashIcon class="size-4" />
+										<TrashIcon class="size-3.5" />
 									</button>
 								</Tooltip.Trigger>
 								<Tooltip.Content>{m.common_delete()}</Tooltip.Content>
