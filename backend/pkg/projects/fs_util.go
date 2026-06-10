@@ -452,6 +452,61 @@ func CopyDirectoryContents(srcDir, destDir string) error {
 	})
 }
 
+// MirrorDirectoryContents makes destDir match srcDir while updating files and
+// directories in place, so existing inodes (and therefore container bind
+// mounts into destDir) stay valid. Entries missing from srcDir or whose type
+// differs are removed, then srcDir is copied over the result.
+func MirrorDirectoryContents(srcDir, destDir string) error {
+	if err := pruneDirectoryContentsInternal(srcDir, destDir); err != nil {
+		return err
+	}
+	return CopyDirectoryContents(srcDir, destDir)
+}
+
+func pruneDirectoryContentsInternal(srcDir, destDir string) error {
+	srcRoot, err := os.OpenRoot(srcDir)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = srcRoot.Close() }()
+
+	destRoot, err := os.OpenRoot(destDir)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = destRoot.Close() }()
+
+	return filepath.WalkDir(destDir, func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if path == destDir {
+			return nil
+		}
+
+		relPath, err := filepath.Rel(destDir, path)
+		if err != nil {
+			return err
+		}
+
+		srcInfo, err := srcRoot.Lstat(relPath)
+		if err == nil && srcInfo.Mode()&os.ModeType == d.Type() {
+			return nil
+		}
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+
+		if err := destRoot.RemoveAll(relPath); err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return filepath.SkipDir
+		}
+		return nil
+	})
+}
+
 // CreateUniqueDir creates a unique directory within the allowed projectsRoot.
 // It validates that the created directory is always within projectsRoot.
 func CreateUniqueDir(projectsRoot, basePath, name string, perm os.FileMode) (path, folderName string, err error) {

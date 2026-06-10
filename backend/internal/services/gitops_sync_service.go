@@ -1738,47 +1738,67 @@ func (s *GitOpsSyncService) createDirectorySyncProjectInternal(ctx context.Conte
 	return project, nil
 }
 
-// updateDirectorySyncProjectInternal swaps a validated staged tree into the existing
-// project path with a temporary backup so failed promotion can roll back.
+// updateDirectorySyncProjectInternal mirrors a validated staged tree into the
+// existing project path in place so running containers keep their bind-mount
+// inodes; a temporary backup copy allows rollback if promotion fails.
 func (s *GitOpsSyncService) updateDirectorySyncProjectInternal(ctx context.Context, sync *models.GitOpsSync, stage *stagedDirectorySync) (*models.Project, error) {
 	project := stage.project
 	projectPath := filepath.Clean(project.Path)
 	backupPath := ""
+	existed := true
 
 	if info, err := os.Stat(projectPath); err == nil {
 		if !info.IsDir() {
 			return nil, fmt.Errorf("project path is not a directory: %s", projectPath)
 		}
-		backupPath = fmt.Sprintf("%s.gitops-backup-%d", projectPath, time.Now().UnixNano())
-		if err := os.Rename(projectPath, backupPath); err != nil {
-			return nil, fmt.Errorf("failed to move current project directory out of the way: %w", err)
+	} else if errors.Is(err, os.ErrNotExist) {
+		existed = false
+		if err := os.MkdirAll(projectPath, 0o755); err != nil {
+			return nil, fmt.Errorf("failed to recreate project directory: %w", err)
 		}
-	} else if !errors.Is(err, os.ErrNotExist) {
+	} else {
 		return nil, fmt.Errorf("failed to inspect current project directory: %w", err)
 	}
 
-	if err := os.Rename(stage.stagePath, projectPath); err != nil {
-		if backupPath != "" {
-			_ = os.Rename(backupPath, projectPath)
+	if existed {
+		projectsDir, err := s.projectService.getProjectsDirectoryInternal(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get projects directory: %w", err)
 		}
+		backupPath, err = os.MkdirTemp(projectsDir, ".gitops-backup-*")
+		if err != nil {
+			return nil, fmt.Errorf("failed to create backup directory: %w", err)
+		}
+		defer func() { _ = os.RemoveAll(backupPath) }()
+		if err := projects.CopyDirectoryContents(projectPath, backupPath); err != nil {
+			return nil, fmt.Errorf("failed to back up current project directory: %w", err)
+		}
+	}
+
+	restore := func() {
+		var restoreErr error
+		if existed {
+			restoreErr = projects.MirrorDirectoryContents(backupPath, projectPath)
+		} else {
+			restoreErr = os.RemoveAll(projectPath)
+		}
+		if restoreErr != nil {
+			slog.ErrorContext(ctx, "Failed to restore project directory after sync promotion failure; directory may be in a mixed state", "projectPath", projectPath, "backupPath", backupPath, "error", restoreErr)
+		}
+	}
+
+	if err := projects.MirrorDirectoryContents(stage.stagePath, projectPath); err != nil {
+		restore()
 		return nil, fmt.Errorf("failed to promote staged project directory: %w", err)
 	}
-	stage.stagePath = ""
 
 	if err := s.db.WithContext(ctx).Model(&models.Project{}).Where("id = ?", project.ID).Updates(map[string]any{
 		"service_count":     stage.serviceCount,
 		"gitops_managed_by": sync.ID,
 		"updated_at":        time.Now(),
 	}).Error; err != nil {
-		if backupPath != "" {
-			_ = os.RemoveAll(projectPath)
-			_ = os.Rename(backupPath, projectPath)
-		}
+		restore()
 		return nil, fmt.Errorf("failed to update project metadata after directory sync: %w", err)
-	}
-
-	if backupPath != "" {
-		_ = os.RemoveAll(backupPath)
 	}
 
 	return project, nil
