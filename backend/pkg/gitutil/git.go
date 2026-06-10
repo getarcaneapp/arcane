@@ -10,6 +10,7 @@ import (
 	nethttp "net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -20,6 +21,7 @@ import (
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/transport"
+	"github.com/go-git/go-git/v5/plumbing/transport/client"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/gofrs/flock"
@@ -27,9 +29,48 @@ import (
 	"golang.org/x/crypto/ssh/knownhosts"
 )
 
+// go-git's file transport execs the git binary, which doesn't exist in the
+// distroless image. Unregister it so a repository URL can never reach it.
+func init() {
+	client.InstallProtocol("file", nil)
+}
+
 // Client handles git operations
 type Client struct {
 	workDir string
+}
+
+var scpLikeURLPattern = regexp.MustCompile(`^[^@/]+@[^:/]+:`)
+
+const errUnsupportedURL = "repository URL must use http(s)://, ssh://, git://, or git@host:path"
+
+// normalizeURL coerces a repository URL into a form go-git resolves to a
+// network transport, never the file transport (which execs the git binary).
+// Schemeless host-style URLs (e.g. github.com/org/repo.git) get https://.
+func normalizeURL(raw string) (string, error) {
+	url := strings.TrimSpace(raw)
+	if url == "" {
+		return "", errors.New("repository URL is empty")
+	}
+
+	if scheme, _, found := strings.Cut(url, "://"); found {
+		switch strings.ToLower(scheme) {
+		case "http", "https", "ssh", "git":
+			return url, nil
+		default:
+			return "", errors.New(errUnsupportedURL)
+		}
+	}
+
+	if scpLikeURLPattern.MatchString(url) {
+		return url, nil
+	}
+
+	if strings.HasPrefix(url, "/") || strings.HasPrefix(url, ".") || strings.HasPrefix(url, "~") {
+		return "", errors.New(errUnsupportedURL)
+	}
+
+	return "https://" + url, nil
 }
 
 // NewClient creates a new git client
@@ -254,6 +295,12 @@ func (c *Client) Clone(ctx context.Context, url, branch string, auth AuthConfig)
 		return "", err
 	}
 
+	url, err = normalizeURL(url)
+	if err != nil {
+		_ = os.RemoveAll(tmpDir)
+		return "", err
+	}
+
 	cloneOptions := &git.CloneOptions{
 		URL:      url,
 		Progress: nil,
@@ -372,6 +419,11 @@ func (c *Client) ProbeRemote(ctx context.Context, url string, auth AuthConfig) e
 
 func (c *Client) listRemoteReferences(ctx context.Context, url string, auth AuthConfig) ([]*plumbing.Reference, error) {
 	authMethod, err := c.getAuth(auth)
+	if err != nil {
+		return nil, err
+	}
+
+	url, err = normalizeURL(url)
 	if err != nil {
 		return nil, err
 	}

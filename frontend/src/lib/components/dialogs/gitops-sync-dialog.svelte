@@ -131,7 +131,7 @@
 	});
 
 	$effect(() => {
-		if (!open || !syncToEdit || repositories.length === 0) return;
+		if (!open || !syncToEdit || repositories.length === 0 || selectedRepository) return;
 		const repo = repositories.find((r) => r.id === syncToEdit.repositoryId);
 		if (repo) {
 			selectedRepository = { value: repo.id, label: repo.name };
