@@ -174,14 +174,16 @@ func newUpdaterApplyPendingDockerServerInternal(
 }
 
 type mockSystemUpgradeServiceInternal struct {
-	triggerCalled bool
-	triggerError  error
-	capturedUser  *models.User
+	triggerCalled  bool
+	triggerError   error
+	capturedUser   *models.User
+	capturedTarget *moduletypes.SelfUpdateTarget
 }
 
-func (m *mockSystemUpgradeServiceInternal) TriggerUpgradeViaCLI(_ context.Context, user models.User) error {
+func (m *mockSystemUpgradeServiceInternal) TriggerUpgradeViaCLI(_ context.Context, user models.User, target moduletypes.SelfUpdateTarget) error {
 	m.triggerCalled = true
 	m.capturedUser = &user
+	m.capturedTarget = &target
 	return m.triggerError
 }
 
@@ -279,6 +281,9 @@ func TestUpdaterService_TriggerSelfUpdateViaCLIInternal(t *testing.T) {
 		require.NotNil(t, mockUpgrade.capturedUser)
 		assert.Equal(t, systemUser.ID, mockUpgrade.capturedUser.ID)
 		assert.Equal(t, systemUser.Username, mockUpgrade.capturedUser.Username)
+		require.NotNil(t, mockUpgrade.capturedTarget)
+		assert.Equal(t, "container-1", mockUpgrade.capturedTarget.ContainerID)
+		assert.Equal(t, "arcane", mockUpgrade.capturedTarget.ContainerName)
 	})
 
 	t.Run("agent label triggers upgrade", func(t *testing.T) {
