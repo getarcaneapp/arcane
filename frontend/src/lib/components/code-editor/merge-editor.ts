@@ -1,6 +1,3 @@
-import { yaml } from '@codemirror/lang-yaml';
-import { StreamLanguage } from '@codemirror/language';
-import { properties } from '@codemirror/legacy-modes/mode/properties';
 import { EditorState, type Extension } from '@codemirror/state';
 import { MergeView } from '@codemirror/merge';
 import { EditorView } from '@codemirror/view';
@@ -17,12 +14,13 @@ export type MergeActionParams = {
 type CreateMergeHostActionOptions = {
 	getTheme: () => Extension;
 	getLanguageExtension: (lang: CodeLanguage, options?: { lightweight?: boolean }) => Extension[];
+	getReadonlyLanguageExtension: (lang: CodeLanguage) => Extension[];
 	onValueChange: (nextValue: string) => void;
 	onPrimaryViewReady: (view: EditorView) => void;
 };
 
 export function createMergeHostAction(options: CreateMergeHostActionOptions): Action<HTMLDivElement, MergeActionParams> {
-	const { getTheme, getLanguageExtension, onValueChange, onPrimaryViewReady } = options;
+	const { getTheme, getLanguageExtension, getReadonlyLanguageExtension, onValueChange, onPrimaryViewReady } = options;
 
 	return (node, params) => {
 		let currentParams = params;
@@ -56,7 +54,7 @@ export function createMergeHostAction(options: CreateMergeHostActionOptions): Ac
 				},
 				b: {
 					doc: currentParams.baseline,
-					extensions: [currentParams.language === 'yaml' ? yaml() : StreamLanguage.define(properties), ...readonlyExtension]
+					extensions: [...getReadonlyLanguageExtension(currentParams.language), ...readonlyExtension]
 				}
 			});
 

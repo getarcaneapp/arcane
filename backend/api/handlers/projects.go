@@ -688,10 +688,18 @@ func (h *ProjectHandler) CreateProject(ctx context.Context, input *CreateProject
 		Metadata:       models.JSON{"action": "create_project"},
 	}, func(runtimeCtx context.Context) error {
 		var createErr error
-		proj, createErr = h.projectService.CreateProject(runtimeCtx, input.Body.Name, input.Body.ComposeContent, input.Body.EnvContent, *user)
+		proj, createErr = h.projectService.CreateProject(runtimeCtx, input.Body.Name, input.Body.ComposeContent, input.Body.EnvContent, input.Body.ProjectFiles, *user)
 		return createErr
 	})
 	if err != nil {
+		var forbiddenErr *common.ProjectFileForbiddenError
+		var badRequestErr *common.ProjectFileBadRequestError
+		switch {
+		case errors.As(err, &forbiddenErr):
+			return nil, huma.Error403Forbidden(err.Error())
+		case errors.As(err, &badRequestErr):
+			return nil, huma.Error400BadRequest(err.Error())
+		}
 		return nil, huma.Error500InternalServerError((&common.ProjectCreationError{Err: err}).Error())
 	}
 
@@ -774,6 +782,7 @@ func (h *ProjectHandler) GetProjectCompose(ctx context.Context, input *GetProjec
 func (h *ProjectHandler) GetProjectFiles(ctx context.Context, input *GetProjectInput) (*GetProjectOutput, error) {
 	return h.getProjectDetailsWithOptionsInternal(ctx, input, project.DetailsOptions{
 		IncludeDirectoryFiles: true,
+		IncludeProjectFiles:   true,
 	})
 }
 
@@ -915,10 +924,21 @@ func (h *ProjectHandler) UpdateProject(ctx context.Context, input *UpdateProject
 		SuccessMessage: "Project updated successfully",
 		Metadata:       models.JSON{"action": "update_project", "projectID": input.ProjectID},
 	}, func(runtimeCtx context.Context) error {
-		_, updateErr := h.projectService.UpdateProject(runtimeCtx, input.ProjectID, input.Body.Name, input.Body.ComposeContent, input.Body.EnvContent, *user)
+		_, updateErr := h.projectService.UpdateProject(runtimeCtx, input.ProjectID, input.Body.Name, input.Body.ComposeContent, input.Body.EnvContent, input.Body.FileTreeRevision, input.Body.FileChanges, *user)
 		return updateErr
 	})
 	if err != nil {
+		var conflictErr *common.ProjectFileConflictError
+		var forbiddenErr *common.ProjectFileForbiddenError
+		var badRequestErr *common.ProjectFileBadRequestError
+		switch {
+		case errors.As(err, &conflictErr):
+			return nil, huma.Error409Conflict(err.Error())
+		case errors.As(err, &forbiddenErr):
+			return nil, huma.Error403Forbidden(err.Error())
+		case errors.As(err, &badRequestErr):
+			return nil, huma.Error400BadRequest(err.Error())
+		}
 		return nil, huma.Error400BadRequest((&common.ProjectUpdateError{Err: err}).Error())
 	}
 

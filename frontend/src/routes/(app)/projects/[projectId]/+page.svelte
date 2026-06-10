@@ -1,7 +1,6 @@
 <script lang="ts">
-	import type { IncludeFile, Project } from '$lib/types/swarm';
+	import type { IncludeFile, Project, ProjectFileChange } from '$lib/types/swarm';
 	import * as Tabs from '$lib/components/ui/tabs/index.js';
-	import * as TreeView from '$lib/components/ui/tree-view/index.js';
 	import * as Card from '$lib/components/ui/card';
 	import * as Alert from '$lib/components/ui/alert/index.js';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
@@ -24,6 +23,7 @@
 	import { toSafeHref } from '$lib/utils/navigation';
 	import { PersistedState } from 'runed';
 	import EditableName from '../components/EditableName.svelte';
+	import ProjectFileTreePanel from '../components/ProjectFileTreePanel.svelte';
 	import ProjectContainersTable from '../components/ProjectContainersTable.svelte';
 	import CodePanel from '../components/CodePanel.svelte';
 	import ProjectsLogsPanel from '../components/ProjectLogsPanel.svelte';
@@ -43,6 +43,17 @@
 	import IfPermitted from '$lib/components/if-permitted.svelte';
 	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 	import { globalVariablesToMap } from '$lib/utils/template-load';
+	import {
+		applyProjectFileChangesForDisplay,
+		joinProjectFilePath,
+		projectFileBasename,
+		projectFileLanguage,
+		projectFileParentPath,
+		projectFilePathMatches,
+		remapProjectFileRecord,
+		removeProjectFileRecord,
+		validateProjectFileName
+	} from '../components/project-file-tree-utils';
 
 	let { data } = $props();
 	let projectId = $derived(data.projectId);
@@ -71,6 +82,11 @@
 	let includeFilesState = $state<Record<string, string>>({});
 	let loadedIncludeFileContents = $state<Record<string, string>>({});
 	let loadedDirectoryFileContents = $state<Record<string, string>>({});
+	let managedProjectFileChanges = $state<ProjectFileChange[]>([]);
+	let managedProjectFileContents = $state<Record<string, string>>({});
+	let loadedManagedProjectFileContents = $state<Record<string, string>>({});
+	let managedProjectFileLoadErrors = $state<Record<string, string>>({});
+	let managedProjectFileLoading = $state<Record<string, boolean>>({});
 	let projectFilePromises: Record<string, Promise<IncludeFile> | undefined> = {};
 	const globalVariableMap = $derived(globalVariablesToMap(data.globalVariables));
 
@@ -118,6 +134,10 @@
 			directoryFiles: (details.directoryFiles ?? []).map((file) => ({
 				...file,
 				content: file.content ?? loadedDirectoryFileContents[file.relativePath]
+			})),
+			projectFiles: (details.projectFiles ?? []).map((file) => ({
+				...file,
+				content: file.content ?? loadedManagedProjectFileContents[file.relativePath]
 			}))
 		};
 	}
@@ -134,12 +154,23 @@
 			)
 		)
 	);
+	const managedProjectFiles = $derived.by(() =>
+		applyProjectFileChangesForDisplay(project?.projectFiles ?? [], managedProjectFileChanges)
+	);
+	const managedProjectFilePaths = $derived.by(() => new Set(managedProjectFiles.map((file) => file.relativePath)));
+	const changedManagedProjectFilePaths = $derived.by(() =>
+		Object.keys(managedProjectFileContents).filter(
+			(relativePath) => managedProjectFileContents[relativePath] !== loadedManagedProjectFileContents[relativePath]
+		)
+	);
 
 	let hasChanges = $derived(
 		$inputs.name.value !== serverName ||
 			$inputs.composeContent.value !== serverComposeContent ||
 			$inputs.envContent.value !== serverEnvContent ||
-			Object.entries(includeFilesState).some(([relativePath, content]) => content !== serverIncludeFiles[relativePath])
+			Object.entries(includeFilesState).some(([relativePath, content]) => content !== serverIncludeFiles[relativePath]) ||
+			managedProjectFileChanges.length > 0 ||
+			changedManagedProjectFilePaths.length > 0
 	);
 
 	let isGitOpsManaged = $derived(!!project?.gitOpsManagedBy);
@@ -154,6 +185,7 @@
 	);
 	let canEditCompose = $derived(canUpdateProject && !project?.isArchived && !isGitOpsManaged);
 	let canEditEnv = $derived(canUpdateProject && !project?.isArchived);
+	let canEditProjectFiles = $derived(canUpdateProject && !project?.isArchived && !isGitOpsManaged);
 	let composeFileName = $derived(project?.composeFileName || 'compose.yaml');
 	let archiveRequiresStopped = $derived(
 		!!project &&
@@ -174,7 +206,7 @@
 	let selectedFilePreference = $state<'compose' | 'env' | string>('compose');
 	let layoutMode = $state<'classic' | 'tree'>('classic');
 	let selectedIncludeTabPreference = $state<string | null>(null);
-	let treePaneWidth = $state(320);
+	let treePaneWidth = $state(420);
 	let composeSplitWidth = $state<number | null>(null);
 	const minTreePaneWidth = 200;
 	const minEditorPaneWidth = 360;
@@ -184,19 +216,31 @@
 	let composeHasErrors = $state(false);
 	let envHasErrors = $state(false);
 	let includeFilesHasErrors = $state<Record<string, boolean>>({});
+	let managedProjectFileHasErrors = $state<Record<string, boolean>>({});
 	let composeValidationReady = $state(false);
 	let envValidationReady = $state(false);
 	let includeFilesValidationReady = $state<Record<string, boolean>>({});
+	let managedProjectFileValidationReady = $state<Record<string, boolean>>({});
 	const includeFilePaths = $derived.by(() => new Set((project?.includeFiles ?? []).map((file) => file.relativePath)));
 	const directoryFilePaths = $derived.by(() => new Set((project?.directoryFiles ?? []).map((file) => file.relativePath)));
 	const selectedFile = $derived.by(() => {
 		const current = selectedFilePreference;
 		if (current === 'compose' || current === 'env') return current;
+		if (current.startsWith('file:')) {
+			const relativePath = current.slice(5);
+			return managedProjectFilePaths.has(relativePath) ? current : 'compose';
+		}
 		if (current.startsWith('dir:')) {
 			return directoryFilePaths.has(current.slice(4)) ? current : 'compose';
 		}
 		return includeFilePaths.has(current) ? current : 'compose';
 	});
+	const selectedManagedProjectFilePath = $derived(selectedFile.startsWith('file:') ? selectedFile.slice(5) : '');
+	const selectedManagedProjectFile = $derived.by(() =>
+		selectedManagedProjectFilePath
+			? managedProjectFiles.find((file) => file.relativePath === selectedManagedProjectFilePath)
+			: undefined
+	);
 	const selectedIncludeTab = $derived.by(() => {
 		if (!selectedIncludeTabPreference) return null;
 		return includeFilePaths.has(selectedIncludeTabPreference) ? selectedIncludeTabPreference : null;
@@ -209,10 +253,7 @@
 
 	let hasAnyErrors = $derived(
 		(composeHasChanges && (!composeValidationReady || composeHasErrors)) ||
-			(envHasChanges && (!envValidationReady || envHasErrors)) ||
-			changedIncludeFilePaths.some(
-				(relativePath) => !includeFilesValidationReady[relativePath] || !!includeFilesHasErrors[relativePath]
-			)
+			(envHasChanges && (!envValidationReady || envHasErrors))
 	);
 
 	let canSave = $derived(canUpdateProject && !project?.isArchived && hasChanges && !hasAnyErrors);
@@ -294,6 +335,21 @@
 		}
 	}
 
+	function ensureManagedProjectFileUiState(relativePath: string) {
+		if (managedProjectFileHasErrors[relativePath] === undefined) {
+			managedProjectFileHasErrors = {
+				...managedProjectFileHasErrors,
+				[relativePath]: false
+			};
+		}
+		if (managedProjectFileValidationReady[relativePath] === undefined) {
+			managedProjectFileValidationReady = {
+				...managedProjectFileValidationReady,
+				[relativePath]: true
+			};
+		}
+	}
+
 	function getProjectImageRefs(details?: Project | null): string[] {
 		const refs = new Set<string>();
 
@@ -333,6 +389,10 @@
 	function clearLoadedProjectFileCache() {
 		loadedIncludeFileContents = {};
 		loadedDirectoryFileContents = {};
+		loadedManagedProjectFileContents = {};
+		managedProjectFileContents = {};
+		managedProjectFileLoadErrors = {};
+		managedProjectFileLoading = {};
 		projectFilePromises = {};
 	}
 
@@ -351,6 +411,12 @@
 		$inputs.name.value = normalizedProject.name || '';
 		$inputs.composeContent.value = normalizedProject.composeContent || '';
 		$inputs.envContent.value = shouldPreserveEnvDraft ? envDraft : normalizedProject.envContent || '';
+		managedProjectFileChanges = [];
+		managedProjectFileContents = {};
+		managedProjectFileHasErrors = {};
+		managedProjectFileValidationReady = {};
+		managedProjectFileLoadErrors = {};
+		managedProjectFileLoading = {};
 
 		const freshIncludeFiles = getProjectIncludeFileContents(normalizedProject);
 		includeFilesState = {
@@ -423,9 +489,53 @@
 		// Auto-detect layout mode based on includeFiles or directoryFiles
 		const hasIncludes = project?.includeFiles && project.includeFiles.length > 0;
 		const hasDirectoryFiles = project?.directoryFiles && project.directoryFiles.length > 0;
-		const defaultMode = hasIncludes || hasDirectoryFiles ? 'tree' : 'classic';
+		const hasProjectFiles = project?.projectFiles && project.projectFiles.length > 0;
+		const defaultMode = hasIncludes || hasDirectoryFiles || hasProjectFiles ? 'tree' : 'classic';
 		layoutMode = cur.layoutMode ?? defaultMode;
 	});
+
+	function isDeletedByProjectFileChanges(relativePath: string, changes: ProjectFileChange[]): boolean {
+		return changes.some((change) => change.operation === 'delete' && projectFilePathMatches(relativePath, change.relativePath));
+	}
+
+	function buildProjectFileSaveChanges(): ProjectFileChange[] {
+		const changes = managedProjectFileChanges.map((change) => ({ ...change }));
+		const contentChanges = new Map<string, string>();
+
+		for (const relativePath of changedIncludeFilePaths) {
+			const content = includeFilesState[relativePath];
+			if (content !== undefined) {
+				contentChanges.set(relativePath, content);
+			}
+		}
+		for (const relativePath of changedManagedProjectFilePaths) {
+			const content = managedProjectFileContents[relativePath];
+			if (content !== undefined) {
+				contentChanges.set(relativePath, content);
+			}
+		}
+
+		const createFilePaths = new Set<string>();
+		for (const change of changes) {
+			if (change.operation === 'create_file') {
+				createFilePaths.add(change.relativePath);
+				change.content = contentChanges.get(change.relativePath) ?? change.content ?? '';
+			}
+		}
+
+		for (const [relativePath, content] of contentChanges.entries()) {
+			if (createFilePaths.has(relativePath) || isDeletedByProjectFileChanges(relativePath, changes)) {
+				continue;
+			}
+			changes.push({
+				operation: 'update_file',
+				relativePath,
+				content
+			});
+		}
+
+		return changes;
+	}
 
 	async function handleSaveChanges() {
 		if (!project || !hasChanges) return;
@@ -445,43 +555,34 @@
 		const { name, composeContent, envContent } = validated;
 		const namePayload = isGitOpsManaged ? undefined : name;
 		const composePayload = isGitOpsManaged ? undefined : composeContent;
+		const fileChangesPayload = buildProjectFileSaveChanges();
+		const fileTreeRevision = fileChangesPayload.length > 0 ? project.fileTreeRevision : undefined;
 
 		handleApiResultWithCallbacks({
-			result: await tryCatch(projectService.updateProject(projectId, namePayload, composePayload, envContent)),
+			result: await tryCatch(
+				projectService.updateProject(projectId, namePayload, composePayload, envContent, fileTreeRevision, fileChangesPayload)
+			),
 			message: m.common_save_failed(),
 			setLoadingState: (value) => (isLoading.saving = value),
 			onSuccess: async (updatedProject: Project) => {
-				let savedProject = updatedProject;
-
-				for (const relativePath of Object.keys(includeFilesState)) {
-					const includeFileContent = includeFilesState[relativePath];
-					if (includeFileContent === undefined) {
-						continue;
-					}
-
-					if (includeFileContent !== serverIncludeFiles[relativePath]) {
-						const includeResult = await tryCatch(
-							projectService.updateProjectIncludeFile(projectId, relativePath, includeFileContent)
-						);
-						if (includeResult.error) {
-							toast.error(includeResult.error.message || m.common_update_failed({ resource: relativePath }));
-							return;
-						}
-						savedProject = includeResult.data;
-					}
-				}
-
 				loadedIncludeFileContents = {
 					...loadedIncludeFileContents,
 					...Object.fromEntries(
 						Object.entries(includeFilesState).filter(([relativePath]) =>
-							(savedProject.includeFiles ?? []).some((file) => file.relativePath === relativePath)
+							(updatedProject.includeFiles ?? []).some((file) => file.relativePath === relativePath)
 						)
 					)
 				};
-				rebaseEditorDraft(savedProject);
-				await syncProjectQueries(savedProject);
-				toast.success(m.common_update_success({ resource: m.project() }), activityToastOptions(extractActivityId(savedProject)));
+				loadedManagedProjectFileContents = {
+					...loadedManagedProjectFileContents,
+					...managedProjectFileContents
+				};
+				rebaseEditorDraft(updatedProject);
+				await syncProjectQueries(updatedProject);
+				toast.success(
+					m.common_update_success({ resource: m.project() }),
+					activityToastOptions(extractActivityId(updatedProject))
+				);
 			}
 		});
 	}
@@ -544,7 +645,7 @@
 		}
 	});
 
-	type ProjectFileKind = 'include' | 'directory';
+	type ProjectFileKind = 'include' | 'directory' | 'managed';
 
 	function getProjectFileKey(projectId: string, kind: ProjectFileKind, relativePath: string): string {
 		return `${projectId}:${kind}:${relativePath}`;
@@ -572,6 +673,21 @@
 		};
 	}
 
+	function updateLoadedManagedProjectFile(relativePath: string, content: string) {
+		ensureManagedProjectFileUiState(relativePath);
+		loadedManagedProjectFileContents = {
+			...loadedManagedProjectFileContents,
+			[relativePath]: content
+		};
+		if (managedProjectFileContents[relativePath] === undefined) {
+			managedProjectFileContents = {
+				...managedProjectFileContents,
+				[relativePath]: content
+			};
+		}
+		managedProjectFileLoadErrors = removeProjectFileRecord(managedProjectFileLoadErrors, relativePath);
+	}
+
 	function getProjectFileResource(kind: ProjectFileKind, relativePath: string): IncludeFile | Promise<IncludeFile> {
 		const currentProjectId = project?.id;
 		if (!currentProjectId) {
@@ -579,18 +695,34 @@
 		}
 		if (kind === 'include') {
 			ensureIncludeFileUiState(relativePath);
+		} else if (kind === 'managed') {
+			ensureManagedProjectFileUiState(relativePath);
+			if (managedProjectFileContents[relativePath] !== undefined) {
+				return {
+					path: relativePath,
+					relativePath,
+					content: managedProjectFileContents[relativePath]
+				};
+			}
 		}
 
 		const targetFile =
 			kind === 'include'
 				? project?.includeFiles?.find((file) => file.relativePath === relativePath)
-				: project?.directoryFiles?.find((file) => file.relativePath === relativePath);
+				: kind === 'directory'
+					? project?.directoryFiles?.find((file) => file.relativePath === relativePath)
+					: managedProjectFiles.find((file) => file.relativePath === relativePath);
 
 		if (!targetFile) {
 			throw new Error('Project file not found');
 		}
 
 		if (targetFile.content !== undefined) {
+			if (kind === 'managed') {
+				updateLoadedManagedProjectFile(relativePath, targetFile.content ?? '');
+			} else {
+				updateLoadedProjectFile(kind, relativePath, targetFile.content ?? '');
+			}
 			return targetFile;
 		}
 
@@ -602,7 +734,11 @@
 
 		const promise = (async () => {
 			const file = await projectService.getProjectFile(currentProjectId, relativePath);
-			updateLoadedProjectFile(kind, relativePath, file.content ?? '');
+			if (kind === 'managed') {
+				updateLoadedManagedProjectFile(relativePath, file.content ?? '');
+			} else {
+				updateLoadedProjectFile(kind, relativePath, file.content ?? '');
+			}
 			return {
 				...file,
 				content: file.content ?? ''
@@ -616,21 +752,203 @@
 		return promise;
 	}
 
-	function selectComposeFile() {
-		selectedFilePreference = 'compose';
+	function selectManagedProjectFile(key: string) {
+		selectedFilePreference = key;
 	}
 
-	function selectEnvFile() {
-		selectedFilePreference = 'env';
+	async function loadManagedProjectFileDraft(relativePath: string) {
+		if (!relativePath || managedProjectFileContents[relativePath] !== undefined || managedProjectFileLoading[relativePath]) {
+			return;
+		}
+
+		managedProjectFileLoading = {
+			...managedProjectFileLoading,
+			[relativePath]: true
+		};
+		managedProjectFileLoadErrors = removeProjectFileRecord(managedProjectFileLoadErrors, relativePath);
+
+		try {
+			const file = await getProjectFileResource('managed', relativePath);
+			updateLoadedManagedProjectFile(relativePath, file.content ?? '');
+		} catch (error) {
+			managedProjectFileLoadErrors = {
+				...managedProjectFileLoadErrors,
+				[relativePath]: error instanceof Error ? error.message : String(error)
+			};
+		} finally {
+			managedProjectFileLoading = removeProjectFileRecord(managedProjectFileLoading, relativePath);
+		}
 	}
 
-	function selectIncludeFile(relativePath: string) {
-		ensureIncludeFileUiState(relativePath);
-		selectedFilePreference = relativePath;
+	$effect(() => {
+		const relativePath = selectedManagedProjectFilePath;
+		const entry = selectedManagedProjectFile;
+		const hasContent = relativePath ? managedProjectFileContents[relativePath] !== undefined : true;
+		const isLoadingFile = relativePath ? managedProjectFileLoading[relativePath] === true : false;
+		const hasLoadError = relativePath ? managedProjectFileLoadErrors[relativePath] !== undefined : false;
+
+		if (!relativePath || !entry || entry.isDirectory || hasContent || isLoadingFile || hasLoadError) {
+			return;
+		}
+
+		void loadManagedProjectFileDraft(relativePath);
+	});
+
+	function normalizeProjectFileOperationName(name: string, parentPath: string): string | null {
+		const normalized = validateProjectFileName(name, parentPath, composeFileName);
+		if (!normalized) {
+			toast.error(m.project_file_invalid_name());
+			return null;
+		}
+		return normalized;
 	}
 
-	function selectDirectoryFile(relativePath: string) {
-		selectedFilePreference = `dir:${relativePath}`;
+	function createManagedProjectFile(parentPath: string, name: string, content = '') {
+		const normalizedName = normalizeProjectFileOperationName(name, parentPath);
+		if (!normalizedName) return;
+		const relativePath = joinProjectFilePath(parentPath, normalizedName);
+		if (managedProjectFilePaths.has(relativePath)) {
+			toast.error(m.project_file_duplicate_name());
+			return;
+		}
+		managedProjectFileChanges = [
+			...managedProjectFileChanges,
+			{
+				operation: 'create_file',
+				relativePath,
+				content
+			}
+		];
+		managedProjectFileContents = {
+			...managedProjectFileContents,
+			[relativePath]: content
+		};
+		loadedManagedProjectFileContents = {
+			...loadedManagedProjectFileContents,
+			[relativePath]: content
+		};
+		managedProjectFileLoadErrors = removeProjectFileRecord(managedProjectFileLoadErrors, relativePath);
+		ensureManagedProjectFileUiState(relativePath);
+		selectedFilePreference = `file:${relativePath}`;
+	}
+
+	function createManagedProjectFolder(parentPath: string, name: string) {
+		const normalizedName = normalizeProjectFileOperationName(name, parentPath);
+		if (!normalizedName) return;
+		const relativePath = joinProjectFilePath(parentPath, normalizedName);
+		if (managedProjectFilePaths.has(relativePath)) {
+			toast.error(m.project_file_duplicate_name());
+			return;
+		}
+		managedProjectFileChanges = [
+			...managedProjectFileChanges,
+			{
+				operation: 'create_folder',
+				relativePath
+			}
+		];
+		selectedFilePreference = `file:${relativePath}`;
+	}
+
+	function renameManagedProjectFile(relativePath: string, newName: string) {
+		const parentPath = projectFileParentPath(relativePath);
+		const normalizedName = normalizeProjectFileOperationName(newName, parentPath);
+		if (!normalizedName) return;
+		const newPath = joinProjectFilePath(parentPath, normalizedName);
+		if (newPath !== relativePath && managedProjectFilePaths.has(newPath)) {
+			toast.error(m.project_file_duplicate_name());
+			return;
+		}
+
+		managedProjectFileChanges = [
+			...managedProjectFileChanges,
+			{
+				operation: 'rename',
+				relativePath,
+				newName: normalizedName
+			}
+		];
+		managedProjectFileContents = remapProjectFileRecord(managedProjectFileContents, relativePath, newPath);
+		loadedManagedProjectFileContents = remapProjectFileRecord(loadedManagedProjectFileContents, relativePath, newPath);
+		managedProjectFileHasErrors = remapProjectFileRecord(managedProjectFileHasErrors, relativePath, newPath);
+		managedProjectFileValidationReady = remapProjectFileRecord(managedProjectFileValidationReady, relativePath, newPath);
+		managedProjectFileLoadErrors = remapProjectFileRecord(managedProjectFileLoadErrors, relativePath, newPath);
+		managedProjectFileLoading = remapProjectFileRecord(managedProjectFileLoading, relativePath, newPath);
+		includeFilesState = remapProjectFileRecord(includeFilesState, relativePath, newPath);
+		loadedIncludeFileContents = remapProjectFileRecord(loadedIncludeFileContents, relativePath, newPath);
+		includeFilesPanelStates = remapProjectFileRecord(includeFilesPanelStates, relativePath, newPath);
+		includeFilesHasErrors = remapProjectFileRecord(includeFilesHasErrors, relativePath, newPath);
+		includeFilesValidationReady = remapProjectFileRecord(includeFilesValidationReady, relativePath, newPath);
+		if (selectedFile.startsWith('file:') && projectFilePathMatches(selectedFile.slice(5), relativePath)) {
+			selectedFilePreference = `file:${newPath}${selectedFile.slice(5 + relativePath.length)}`;
+		}
+	}
+
+	function moveManagedProjectFile(relativePath: string, newParentPath: string) {
+		const entry = managedProjectFiles.find((file) => file.relativePath === relativePath);
+		if (!entry) return;
+		const currentParentPath = projectFileParentPath(relativePath);
+		if (newParentPath === currentParentPath) return;
+		if (entry.isDirectory && newParentPath && projectFilePathMatches(newParentPath, relativePath)) {
+			toast.error(m.project_file_invalid_move_destination());
+			return;
+		}
+
+		const newPath = joinProjectFilePath(newParentPath, projectFileBasename(relativePath));
+		if (newPath !== relativePath && managedProjectFilePaths.has(newPath)) {
+			toast.error(m.project_file_duplicate_name());
+			return;
+		}
+
+		managedProjectFileChanges = [
+			...managedProjectFileChanges,
+			{
+				operation: 'move',
+				relativePath,
+				newParentPath
+			}
+		];
+		managedProjectFileContents = remapProjectFileRecord(managedProjectFileContents, relativePath, newPath);
+		loadedManagedProjectFileContents = remapProjectFileRecord(loadedManagedProjectFileContents, relativePath, newPath);
+		managedProjectFileHasErrors = remapProjectFileRecord(managedProjectFileHasErrors, relativePath, newPath);
+		managedProjectFileValidationReady = remapProjectFileRecord(managedProjectFileValidationReady, relativePath, newPath);
+		managedProjectFileLoadErrors = remapProjectFileRecord(managedProjectFileLoadErrors, relativePath, newPath);
+		managedProjectFileLoading = remapProjectFileRecord(managedProjectFileLoading, relativePath, newPath);
+		includeFilesState = remapProjectFileRecord(includeFilesState, relativePath, newPath);
+		loadedIncludeFileContents = remapProjectFileRecord(loadedIncludeFileContents, relativePath, newPath);
+		includeFilesPanelStates = remapProjectFileRecord(includeFilesPanelStates, relativePath, newPath);
+		includeFilesHasErrors = remapProjectFileRecord(includeFilesHasErrors, relativePath, newPath);
+		includeFilesValidationReady = remapProjectFileRecord(includeFilesValidationReady, relativePath, newPath);
+		if (selectedFile.startsWith('file:') && projectFilePathMatches(selectedFile.slice(5), relativePath)) {
+			selectedFilePreference = `file:${newPath}${selectedFile.slice(5 + relativePath.length)}`;
+		}
+	}
+
+	function deleteManagedProjectFile(relativePath: string) {
+		const entry = managedProjectFiles.find((file) => file.relativePath === relativePath);
+		if (!entry) return;
+		managedProjectFileChanges = [
+			...managedProjectFileChanges,
+			{
+				operation: 'delete',
+				relativePath,
+				recursive: entry.isDirectory
+			}
+		];
+		managedProjectFileContents = removeProjectFileRecord(managedProjectFileContents, relativePath);
+		loadedManagedProjectFileContents = removeProjectFileRecord(loadedManagedProjectFileContents, relativePath);
+		managedProjectFileHasErrors = removeProjectFileRecord(managedProjectFileHasErrors, relativePath);
+		managedProjectFileValidationReady = removeProjectFileRecord(managedProjectFileValidationReady, relativePath);
+		managedProjectFileLoadErrors = removeProjectFileRecord(managedProjectFileLoadErrors, relativePath);
+		managedProjectFileLoading = removeProjectFileRecord(managedProjectFileLoading, relativePath);
+		includeFilesState = removeProjectFileRecord(includeFilesState, relativePath);
+		loadedIncludeFileContents = removeProjectFileRecord(loadedIncludeFileContents, relativePath);
+		includeFilesPanelStates = removeProjectFileRecord(includeFilesPanelStates, relativePath);
+		includeFilesHasErrors = removeProjectFileRecord(includeFilesHasErrors, relativePath);
+		includeFilesValidationReady = removeProjectFileRecord(includeFilesValidationReady, relativePath);
+		if (selectedFile.startsWith('file:') && projectFilePathMatches(selectedFile.slice(5), relativePath)) {
+			selectedFilePreference = 'compose';
+		}
 	}
 
 	function toggleIncludeFileTab(relativePath: string) {
@@ -639,7 +957,7 @@
 	}
 
 	const allComposeContents = $derived.by(() => {
-		return [$inputs.composeContent.value, ...Object.values(includeFilesState)].filter((value) => value.length > 0);
+		return [$inputs.composeContent.value].filter((value) => value.length > 0);
 	});
 	const codeEditorContext = $derived({
 		envContent: $inputs.envContent.value,
@@ -966,143 +1284,151 @@
 												<h2>{m.project_files()}</h2>
 											</Card.Title>
 										</Card.Header>
-										<Card.Content class="min-h-0 flex-1 overflow-auto p-2">
-											<TreeView.Root class="min-w-max p-2 whitespace-nowrap">
-												<TreeView.File
-													name={composeFileName}
-													onclick={selectComposeFile}
-													class={selectedFile === 'compose' ? 'bg-accent' : ''}
-												>
-													{#snippet icon()}
-														<FileTextIcon class="size-4 text-blue-500" />
-													{/snippet}
-												</TreeView.File>
-
-												<TreeView.File name=".env" onclick={selectEnvFile} class={selectedFile === 'env' ? 'bg-accent' : ''}>
-													{#snippet icon()}
-														<FileTextIcon class="size-4 text-green-500" />
-													{/snippet}
-												</TreeView.File>
-
-												{#if project?.includeFiles && project.includeFiles.length > 0}
-													<TreeView.Folder name={m.project_includes()}>
-														{#each project.includeFiles as includeFile (includeFile.relativePath)}
-															<TreeView.File
-																name={includeFile.relativePath}
-																onclick={() => selectIncludeFile(includeFile.relativePath)}
-																class={selectedFile === includeFile.relativePath ? 'bg-accent' : ''}
-															>
-																{#snippet icon()}
-																	<FileTextIcon class="size-4 text-amber-500" />
-																{/snippet}
-															</TreeView.File>
-														{/each}
-													</TreeView.Folder>
-												{/if}
-
-												{#if project?.directoryFiles && project.directoryFiles.length > 0}
-													{#each project.directoryFiles as dirFile (dirFile.relativePath)}
-														<TreeView.File
-															name={dirFile.relativePath}
-															onclick={() => selectDirectoryFile(dirFile.relativePath)}
-															class={selectedFile === `dir:${dirFile.relativePath}` ? 'bg-accent' : ''}
-														>
-															{#snippet icon()}
-																<FileTextIcon class="text-muted-foreground size-4" />
-															{/snippet}
-														</TreeView.File>
-													{/each}
-												{/if}
-											</TreeView.Root>
+										<Card.Content class="min-h-0 flex-1 p-0">
+											<ProjectFileTreePanel
+												{composeFileName}
+												entries={managedProjectFiles}
+												{selectedFile}
+												disabled={!canEditProjectFiles}
+												readOnlyMessage={isGitOpsManaged ? m.project_files_readonly_git() : undefined}
+												onSelect={selectManagedProjectFile}
+												onCreateFile={createManagedProjectFile}
+												onCreateFolder={createManagedProjectFolder}
+												onRename={renameManagedProjectFile}
+												onMove={moveManagedProjectFile}
+												onDelete={deleteManagedProjectFile}
+											/>
 										</Card.Content>
 									</Card.Root>
 								{/snippet}
 
 								{#snippet second()}
 									<div class="flex h-full min-h-0 flex-1 flex-col">
-										{#if selectedFile === 'compose'}
-											<CodePanel
-												bind:open={composeOpen}
-												title={composeFileName}
-												language="yaml"
-												bind:value={$inputs.composeContent.value}
-												error={$inputs.composeContent.error ?? undefined}
-												readOnly={!canEditCompose}
-												bind:hasErrors={composeHasErrors}
-												bind:validationReady={composeValidationReady}
-												fileId={`project:${projectId}:compose`}
-												originalValue={serverComposeContent}
-												enableDiff={true}
-												editorContext={codeEditorContext}
-											/>
-										{:else if selectedFile === 'env'}
-											<CodePanel
-												bind:open={envOpen}
-												title=".env"
-												language="env"
-												bind:value={$inputs.envContent.value}
-												error={$inputs.envContent.error ?? undefined}
-												readOnly={!canEditEnv}
-												bind:hasErrors={envHasErrors}
-												bind:validationReady={envValidationReady}
-												fileId={`project:${projectId}:env`}
-												originalValue={serverEnvContent}
-												enableDiff={true}
-												editorContext={codeEditorContext}
-											/>
-										{:else if selectedFile.startsWith('dir:')}
-											{@const dirRelPath = selectedFile.slice(4)}
-											{@const dirFile = project?.directoryFiles?.find((f) => f.relativePath === dirRelPath)}
-											{#if dirFile}
-												{#await getProjectFileResource('directory', dirRelPath)}
-													<div class="text-muted-foreground flex h-full min-h-0 items-center justify-center rounded-lg border">
-														{m.common_loading()}
-													</div>
-												{:then loadedFile}
-													<CodePanel
-														open={true}
-														title={loadedFile.relativePath}
-														language="yaml"
-														value={loadedFile.content ?? ''}
-														readOnly={true}
-													/>
-												{:catch error}
+										{#key selectedFile}
+											{#if selectedFile === 'compose'}
+												<CodePanel
+													bind:open={composeOpen}
+													title={composeFileName}
+													language="yaml"
+													validationMode="compose"
+													bind:value={$inputs.composeContent.value}
+													error={$inputs.composeContent.error ?? undefined}
+													readOnly={!canEditCompose}
+													bind:hasErrors={composeHasErrors}
+													bind:validationReady={composeValidationReady}
+													fileId={`project:${projectId}:compose`}
+													originalValue={serverComposeContent}
+													enableDiff={true}
+													editorContext={codeEditorContext}
+												/>
+											{:else if selectedFile === 'env'}
+												<CodePanel
+													bind:open={envOpen}
+													title=".env"
+													language="env"
+													validationMode="env"
+													bind:value={$inputs.envContent.value}
+													error={$inputs.envContent.error ?? undefined}
+													readOnly={!canEditEnv}
+													bind:hasErrors={envHasErrors}
+													bind:validationReady={envValidationReady}
+													fileId={`project:${projectId}:env`}
+													originalValue={serverEnvContent}
+													enableDiff={true}
+													editorContext={codeEditorContext}
+												/>
+											{:else if selectedFile.startsWith('file:')}
+												{@const relativePath = selectedManagedProjectFilePath}
+												{#if selectedManagedProjectFile?.isDirectory}
 													<div
-														class="text-destructive flex h-full min-h-0 items-center justify-center rounded-lg border px-4 text-sm"
+														class="text-muted-foreground flex h-full min-h-0 items-center justify-center rounded-lg border px-4 text-sm"
 													>
-														{error instanceof Error ? error.message : String(error)}
+														{m.project_file_folder_selected()}
 													</div>
-												{/await}
+												{:else if selectedManagedProjectFile}
+													{#if managedProjectFileLoadErrors[relativePath]}
+														<div
+															class="text-destructive flex h-full min-h-0 items-center justify-center rounded-lg border px-4 text-sm"
+														>
+															{managedProjectFileLoadErrors[relativePath]}
+														</div>
+													{:else if managedProjectFileContents[relativePath] === undefined}
+														<div class="text-muted-foreground flex h-full min-h-0 items-center justify-center rounded-lg border">
+															{m.common_loading()}
+														</div>
+													{:else}
+														<CodePanel
+															open={true}
+															title={relativePath}
+															language={projectFileLanguage(relativePath)}
+															validationMode="none"
+															bind:value={managedProjectFileContents[relativePath]}
+															readOnly={!canEditProjectFiles}
+															bind:hasErrors={managedProjectFileHasErrors[relativePath]}
+															bind:validationReady={managedProjectFileValidationReady[relativePath]}
+															fileId={`project:${projectId}:file:${relativePath}`}
+															originalValue={loadedManagedProjectFileContents[relativePath] ?? ''}
+															enableDiff={true}
+															editorContext={codeEditorContext}
+														/>
+													{/if}
+												{/if}
+											{:else if selectedFile.startsWith('dir:')}
+												{@const dirRelPath = selectedFile.slice(4)}
+												{@const dirFile = project?.directoryFiles?.find((f) => f.relativePath === dirRelPath)}
+												{#if dirFile}
+													{#await getProjectFileResource('directory', dirRelPath)}
+														<div class="text-muted-foreground flex h-full min-h-0 items-center justify-center rounded-lg border">
+															{m.common_loading()}
+														</div>
+													{:then loadedFile}
+														<CodePanel
+															open={true}
+															title={loadedFile.relativePath}
+															language="yaml"
+															validationMode="none"
+															value={loadedFile.content ?? ''}
+															readOnly={true}
+														/>
+													{:catch error}
+														<div
+															class="text-destructive flex h-full min-h-0 items-center justify-center rounded-lg border px-4 text-sm"
+														>
+															{error instanceof Error ? error.message : String(error)}
+														</div>
+													{/await}
+												{/if}
+											{:else}
+												{@const includeFile = project?.includeFiles?.find((f) => f.relativePath === selectedFile)}
+												{#if includeFile}
+													{#await getProjectFileResource('include', includeFile.relativePath)}
+														<div class="text-muted-foreground flex h-full min-h-0 items-center justify-center rounded-lg border">
+															{m.common_loading()}
+														</div>
+													{:then}
+														<CodePanel
+															bind:open={includeFilesPanelStates[includeFile.relativePath]}
+															title={includeFile.relativePath}
+															language="yaml"
+															validationMode="none"
+															bind:value={includeFilesState[includeFile.relativePath]}
+															bind:hasErrors={includeFilesHasErrors[includeFile.relativePath]}
+															bind:validationReady={includeFilesValidationReady[includeFile.relativePath]}
+															fileId={`project:${projectId}:include:${includeFile.relativePath}`}
+															originalValue={serverIncludeFiles[includeFile.relativePath] ?? ''}
+															enableDiff={true}
+															editorContext={codeEditorContext}
+														/>
+													{:catch error}
+														<div
+															class="text-destructive flex h-full min-h-0 items-center justify-center rounded-lg border px-4 text-sm"
+														>
+															{error instanceof Error ? error.message : String(error)}
+														</div>
+													{/await}
+												{/if}
 											{/if}
-										{:else}
-											{@const includeFile = project?.includeFiles?.find((f) => f.relativePath === selectedFile)}
-											{#if includeFile}
-												{#await getProjectFileResource('include', includeFile.relativePath)}
-													<div class="text-muted-foreground flex h-full min-h-0 items-center justify-center rounded-lg border">
-														{m.common_loading()}
-													</div>
-												{:then}
-													<CodePanel
-														bind:open={includeFilesPanelStates[includeFile.relativePath]}
-														title={includeFile.relativePath}
-														language="yaml"
-														bind:value={includeFilesState[includeFile.relativePath]}
-														bind:hasErrors={includeFilesHasErrors[includeFile.relativePath]}
-														bind:validationReady={includeFilesValidationReady[includeFile.relativePath]}
-														fileId={`project:${projectId}:include:${includeFile.relativePath}`}
-														originalValue={serverIncludeFiles[includeFile.relativePath] ?? ''}
-														enableDiff={true}
-														editorContext={codeEditorContext}
-													/>
-												{:catch error}
-													<div
-														class="text-destructive flex h-full min-h-0 items-center justify-center rounded-lg border px-4 text-sm"
-													>
-														{error instanceof Error ? error.message : String(error)}
-													</div>
-												{/await}
-											{/if}
-										{/if}
+										{/key}
 									</div>
 								{/snippet}
 							</ResizableSplit>
@@ -1138,6 +1464,7 @@
 												bind:open={includeFilesPanelStates[includeFile.relativePath]}
 												title={includeFile.relativePath}
 												language="yaml"
+												validationMode="none"
 												bind:value={includeFilesState[includeFile.relativePath]}
 												bind:hasErrors={includeFilesHasErrors[includeFile.relativePath]}
 												bind:validationReady={includeFilesValidationReady[includeFile.relativePath]}
@@ -1174,6 +1501,7 @@
 													bind:open={composeOpen}
 													title={composeFileName}
 													language="yaml"
+													validationMode="compose"
 													bind:value={$inputs.composeContent.value}
 													error={$inputs.composeContent.error ?? undefined}
 													readOnly={!canEditCompose}
@@ -1193,6 +1521,7 @@
 													bind:open={envOpen}
 													title=".env"
 													language="env"
+													validationMode="env"
 													bind:value={$inputs.envContent.value}
 													error={$inputs.envContent.error ?? undefined}
 													readOnly={!canEditEnv}

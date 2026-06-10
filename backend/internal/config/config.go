@@ -69,6 +69,7 @@ type Config struct {
 	ProjectsDirectory       string `env:"PROJECTS_DIRECTORY" default:"/app/data/projects"`
 	TemplatesDirectory      string `env:"TEMPLATES_DIRECTORY" default:"/app/data/templates"`
 	ProjectScanMaxDepth     int    `env:"PROJECT_SCAN_MAX_DEPTH" default:"3"`
+	ProjectFileTreeMaxDepth int    `env:"PROJECT_FILE_TREE_MAX_DEPTH" default:"20"`
 	ProjectScanSkipDirs     string `env:"PROJECT_SCAN_SKIP_DIRS" default:".git,node_modules,vendor,.venv,venv,__pycache__,.cache,dist,build,target,.next,.nuxt,.svelte-kit"`
 	LogJson                 bool   `env:"LOG_JSON" default:"false"`
 	LogLevel                string `env:"LOG_LEVEL" default:"info" options:"toLower"`

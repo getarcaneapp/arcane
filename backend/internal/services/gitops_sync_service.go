@@ -1037,7 +1037,7 @@ func (s *GitOpsSyncService) failSync(ctx context.Context, id string, result *git
 }
 
 func (s *GitOpsSyncService) createProjectForSyncInternal(ctx context.Context, sync *models.GitOpsSync, id string, composeContent string, envContent *string, result *gitops.SyncResult, actor models.User) (*models.Project, error) {
-	project, err := s.projectService.CreateProject(ctx, sync.ProjectName, composeContent, envContent, actor)
+	project, err := s.projectService.CreateProject(ctx, sync.ProjectName, composeContent, envContent, nil, actor)
 	if err != nil {
 		return nil, s.failSync(ctx, id, result, sync, actor, "Failed to create project", err.Error())
 	}

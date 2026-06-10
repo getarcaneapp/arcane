@@ -5,12 +5,18 @@
 	import { CodeIcon, FileTextIcon, SearchIcon, ArrowsUpDownIcon } from '$lib/icons';
 	import { IsMobile } from '$lib/hooks/is-mobile.svelte.js';
 	import { m } from '$lib/paraglide/messages';
-	import type { CodeLanguage, DiagnosticSummary, EditorContext } from '$lib/components/code-editor/analysis/types';
+	import type {
+		CodeLanguage,
+		CodeValidationMode,
+		DiagnosticSummary,
+		EditorContext
+	} from '$lib/components/code-editor/analysis/types';
 
 	let {
 		title,
 		open = $bindable(true),
 		language,
+		validationMode,
 		value = $bindable(''),
 		error,
 		autoHeight = false,
@@ -39,6 +45,7 @@
 		title: string;
 		open?: boolean;
 		language: CodeLanguage;
+		validationMode?: CodeValidationMode;
 		value?: string;
 		error?: string;
 		autoHeight?: boolean;
@@ -102,6 +109,7 @@
 				<CodeEditor
 					bind:value
 					{language}
+					{validationMode}
 					fontSize="13px"
 					autoHeight={effectiveAutoHeight}
 					{readOnly}

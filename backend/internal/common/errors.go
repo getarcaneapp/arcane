@@ -833,6 +833,17 @@ func (e *ProjectFileNotFoundError) Error() string {
 	return "Project file not found"
 }
 
+type ProjectFileConflictError struct {
+	Err error
+}
+
+func (e *ProjectFileConflictError) Error() string {
+	if e.Err == nil {
+		return "Project files changed; refresh the project and try again"
+	}
+	return e.Err.Error()
+}
+
 type ProjectComposeFileNotFoundError struct {
 	Err error
 }

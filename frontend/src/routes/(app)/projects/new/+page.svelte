@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { ArrowLeftIcon, TerminalIcon, TemplateIcon, AddIcon, GitBranchIcon } from '$lib/icons';
+	import { ArrowLeftIcon, TerminalIcon, TemplateIcon, AddIcon, GitBranchIcon, FileTextIcon } from '$lib/icons';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
@@ -14,13 +14,29 @@
 	import { ArrowDownIcon as ChevronDown } from '$lib/icons';
 	import CodePanel from '../components/CodePanel.svelte';
 	import EditableName from '../components/EditableName.svelte';
+	import ProjectFileTreePanel from '../components/ProjectFileTreePanel.svelte';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { hasPermission } from '$lib/utils/auth';
 	import IfPermitted from '$lib/components/if-permitted.svelte';
 	import { ComposeEditorSplit } from '$lib/components/compose';
+	import * as Card from '$lib/components/ui/card';
+	import ResizableSplit from '$lib/components/resizable-split.svelte';
+	import SwitchWithLabel from '$lib/components/form/labeled-switch.svelte';
 	import DockerRunConverterDialog from '$lib/components/compose/docker-run-converter-dialog.svelte';
 	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 	import { globalVariablesToMap } from '$lib/utils/template-load';
+	import type { ProjectFileDraft } from '$lib/types/swarm';
+	import {
+		joinProjectFilePath,
+		projectFileBasename,
+		projectFileLanguage,
+		projectFileParentPath,
+		projectFilePathMatches,
+		remapProjectFileRecord,
+		removeProjectFileRecord,
+		validateProjectFileName,
+		type ManagedProjectFileEntry
+	} from '../components/project-file-tree-utils';
 	import {
 		createComposeEditorSchema,
 		createComposeTemplateDialogFlow,
@@ -64,6 +80,15 @@
 
 	let composeOpen = $state(true);
 	let envOpen = $state(true);
+	let layoutMode = $state<'classic' | 'tree'>('classic');
+	let selectedProjectFile = $state<'compose' | 'env' | string>('compose');
+	let treePaneWidth = $state(420);
+	const minTreePaneWidth = 200;
+	const minEditorPaneWidth = 360;
+	let newProjectFiles = $state<ProjectFileDraft[]>([]);
+	let newProjectFileContents = $state<Record<string, string>>({});
+	let newProjectFileHasErrors = $state<Record<string, boolean>>({});
+	let newProjectFileValidationReady = $state<Record<string, boolean>>({});
 	let validation = $state({
 		composeHasErrors: false,
 		envHasErrors: false,
@@ -72,6 +97,22 @@
 	});
 
 	const globalVariableMap = $derived(globalVariablesToMap(data.globalVariables));
+	const newProjectFileEntries = $derived.by<ManagedProjectFileEntry[]>(() =>
+		newProjectFiles.map((file) => ({
+			path: file.relativePath,
+			relativePath: file.relativePath,
+			name: projectFileBasename(file.relativePath),
+			isDirectory: !!file.isDirectory,
+			size: file.isDirectory ? 0 : (newProjectFileContents[file.relativePath]?.length ?? 0),
+			content: file.isDirectory ? undefined : (newProjectFileContents[file.relativePath] ?? ''),
+			pending: true
+		}))
+	);
+	const newProjectFilePaths = $derived.by(() => new Set(newProjectFileEntries.map((file) => file.relativePath)));
+	const selectedProjectFilePath = $derived(selectedProjectFile.startsWith('file:') ? selectedProjectFile.slice(5) : '');
+	const selectedProjectFileEntry = $derived(
+		selectedProjectFilePath ? newProjectFileEntries.find((file) => file.relativePath === selectedProjectFilePath) : undefined
+	);
 	const validationState = $derived(
 		getTemplateEditorValidationState(
 			validation.composeValidationReady,
@@ -81,6 +122,11 @@
 		)
 	);
 	let hasEditorErrors = $derived(hasTemplateEditorErrors(validationState));
+	const codeEditorContext = $derived({
+		envContent: $inputs.envContent.value,
+		composeContents: [$inputs.composeContent.value].filter((value) => value.length > 0),
+		globalVariables: globalVariableMap
+	});
 
 	let nameInputRef = $state<HTMLInputElement | null>(null);
 
@@ -92,7 +138,8 @@
 		await submitComposeResourceForm({
 			validate: () => validateTemplateEditorForm(validationState, form.validate),
 			setLoading: (value) => (ui.saving = value),
-			submit: ({ name, composeContent, envContent }) => projectService.createProject(name, composeContent, envContent),
+			submit: ({ name, composeContent, envContent }) =>
+				projectService.createProject(name, composeContent, envContent, buildNewProjectFilePayload()),
 			failureMessage: (name) => m.common_create_failed({ resource: `${m.resource_project()} "${name}"` }),
 			onSuccess: async (project, { name }) => {
 				toast.success(
@@ -112,6 +159,138 @@
 		setLoading: (value) => (ui.creatingTemplate = value),
 		hasEditorErrors: () => hasEditorErrors
 	});
+
+	function ensureNewProjectFileUiState(relativePath: string) {
+		if (newProjectFileHasErrors[relativePath] === undefined) {
+			newProjectFileHasErrors = {
+				...newProjectFileHasErrors,
+				[relativePath]: false
+			};
+		}
+		if (newProjectFileValidationReady[relativePath] === undefined) {
+			newProjectFileValidationReady = {
+				...newProjectFileValidationReady,
+				[relativePath]: true
+			};
+		}
+	}
+
+	function normalizeProjectFileOperationName(name: string, parentPath: string): string | null {
+		const normalized = validateProjectFileName(name, parentPath, 'compose.yaml');
+		if (!normalized) {
+			toast.error(m.project_file_invalid_name());
+			return null;
+		}
+		return normalized;
+	}
+
+	function createNewProjectFile(parentPath: string, name: string, content = '') {
+		const normalizedName = normalizeProjectFileOperationName(name, parentPath);
+		if (!normalizedName) return;
+		const relativePath = joinProjectFilePath(parentPath, normalizedName);
+		if (newProjectFilePaths.has(relativePath)) {
+			toast.error(m.project_file_duplicate_name());
+			return;
+		}
+		newProjectFiles = [...newProjectFiles, { relativePath, isDirectory: false }];
+		newProjectFileContents = {
+			...newProjectFileContents,
+			[relativePath]: content
+		};
+		ensureNewProjectFileUiState(relativePath);
+		selectedProjectFile = `file:${relativePath}`;
+	}
+
+	function createNewProjectFolder(parentPath: string, name: string) {
+		const normalizedName = normalizeProjectFileOperationName(name, parentPath);
+		if (!normalizedName) return;
+		const relativePath = joinProjectFilePath(parentPath, normalizedName);
+		if (newProjectFilePaths.has(relativePath)) {
+			toast.error(m.project_file_duplicate_name());
+			return;
+		}
+		newProjectFiles = [...newProjectFiles, { relativePath, isDirectory: true }];
+		selectedProjectFile = `file:${relativePath}`;
+	}
+
+	function renameNewProjectFile(relativePath: string, newName: string) {
+		const parentPath = projectFileParentPath(relativePath);
+		const normalizedName = normalizeProjectFileOperationName(newName, parentPath);
+		if (!normalizedName) return;
+		const newPath = joinProjectFilePath(parentPath, normalizedName);
+		if (newPath !== relativePath && newProjectFilePaths.has(newPath)) {
+			toast.error(m.project_file_duplicate_name());
+			return;
+		}
+		newProjectFiles = newProjectFiles.map((file) => {
+			if (!projectFilePathMatches(file.relativePath, relativePath)) {
+				return file;
+			}
+			const suffix = file.relativePath.slice(relativePath.length);
+			return {
+				...file,
+				relativePath: `${newPath}${suffix}`
+			};
+		});
+		newProjectFileContents = remapProjectFileRecord(newProjectFileContents, relativePath, newPath);
+		newProjectFileHasErrors = remapProjectFileRecord(newProjectFileHasErrors, relativePath, newPath);
+		newProjectFileValidationReady = remapProjectFileRecord(newProjectFileValidationReady, relativePath, newPath);
+		if (selectedProjectFile.startsWith('file:') && projectFilePathMatches(selectedProjectFile.slice(5), relativePath)) {
+			selectedProjectFile = `file:${newPath}${selectedProjectFile.slice(5 + relativePath.length)}`;
+		}
+	}
+
+	function moveNewProjectFile(relativePath: string, newParentPath: string) {
+		const entry = newProjectFileEntries.find((file) => file.relativePath === relativePath);
+		if (!entry) return;
+		const currentParentPath = projectFileParentPath(relativePath);
+		if (newParentPath === currentParentPath) return;
+		if (entry.isDirectory && newParentPath && projectFilePathMatches(newParentPath, relativePath)) {
+			toast.error(m.project_file_invalid_move_destination());
+			return;
+		}
+
+		const newPath = joinProjectFilePath(newParentPath, projectFileBasename(relativePath));
+		if (newPath !== relativePath && newProjectFilePaths.has(newPath)) {
+			toast.error(m.project_file_duplicate_name());
+			return;
+		}
+
+		newProjectFiles = newProjectFiles.map((file) => {
+			if (!projectFilePathMatches(file.relativePath, relativePath)) {
+				return file;
+			}
+			const suffix = file.relativePath.slice(relativePath.length);
+			return {
+				...file,
+				relativePath: `${newPath}${suffix}`
+			};
+		});
+		newProjectFileContents = remapProjectFileRecord(newProjectFileContents, relativePath, newPath);
+		newProjectFileHasErrors = remapProjectFileRecord(newProjectFileHasErrors, relativePath, newPath);
+		newProjectFileValidationReady = remapProjectFileRecord(newProjectFileValidationReady, relativePath, newPath);
+		if (selectedProjectFile.startsWith('file:') && projectFilePathMatches(selectedProjectFile.slice(5), relativePath)) {
+			selectedProjectFile = `file:${newPath}${selectedProjectFile.slice(5 + relativePath.length)}`;
+		}
+	}
+
+	function deleteNewProjectFile(relativePath: string) {
+		newProjectFiles = newProjectFiles.filter((file) => !projectFilePathMatches(file.relativePath, relativePath));
+		newProjectFileContents = removeProjectFileRecord(newProjectFileContents, relativePath);
+		newProjectFileHasErrors = removeProjectFileRecord(newProjectFileHasErrors, relativePath);
+		newProjectFileValidationReady = removeProjectFileRecord(newProjectFileValidationReady, relativePath);
+		if (selectedProjectFile.startsWith('file:') && projectFilePathMatches(selectedProjectFile.slice(5), relativePath)) {
+			selectedProjectFile = 'compose';
+		}
+	}
+
+	function buildNewProjectFilePayload(): ProjectFileDraft[] {
+		return newProjectFiles.map((file) => ({
+			relativePath: file.relativePath,
+			isDirectory: !!file.isDirectory,
+			content: file.isDirectory ? undefined : (newProjectFileContents[file.relativePath] ?? '')
+		}));
+	}
 </script>
 
 <div class="bg-background flex h-full min-h-0 flex-col">
@@ -259,43 +438,145 @@
 					/>
 				</div>
 
-				<ComposeEditorSplit onsubmit={preventDefault(handleSubmit)}>
-					{#snippet compose()}
-						<CodePanel
-							bind:open={composeOpen}
-							title={m.compose_compose_file_title()}
-							language="yaml"
-							bind:value={$inputs.composeContent.value}
-							error={$inputs.composeContent.error ?? undefined}
-							bind:hasErrors={validation.composeHasErrors}
-							bind:validationReady={validation.composeValidationReady}
-							fileId="projects:new:compose"
-							editorContext={{
-								envContent: $inputs.envContent.value,
-								composeContents: [$inputs.composeContent.value],
-								globalVariables: globalVariableMap
-							}}
-						/>
-					{/snippet}
+				<div class="shrink-0">
+					<SwitchWithLabel
+						id="new-project-layout-mode-toggle"
+						checked={layoutMode === 'tree'}
+						label={layoutMode === 'tree' ? m.tree_view() : m.classic()}
+						description={m.project_view_description()}
+						onCheckedChange={(checked) => {
+							layoutMode = checked ? 'tree' : 'classic';
+							selectedProjectFile = 'compose';
+						}}
+					/>
+				</div>
 
-					{#snippet env()}
-						<CodePanel
-							bind:open={envOpen}
-							title={m.compose_env_title()}
-							language="env"
-							bind:value={$inputs.envContent.value}
-							error={$inputs.envContent.error ?? undefined}
-							bind:hasErrors={validation.envHasErrors}
-							bind:validationReady={validation.envValidationReady}
-							fileId="projects:new:env"
-							editorContext={{
-								envContent: $inputs.envContent.value,
-								composeContents: [$inputs.composeContent.value],
-								globalVariables: globalVariableMap
-							}}
-						/>
-					{/snippet}
-				</ComposeEditorSplit>
+				{#if layoutMode === 'tree'}
+					<ResizableSplit
+						class="min-h-0 flex-1 lg:gap-2"
+						firstClass="flex min-h-0 flex-col"
+						secondClass="flex min-h-0 flex-col"
+						bind:size={treePaneWidth}
+						minSize={minTreePaneWidth}
+						minSecondSize={minEditorPaneWidth}
+						defaultRatio={0.3}
+						stackBelow={1024}
+						ariaLabel={m.compose_editor_resize_files_panel()}
+						persistKey="arcane.compose.split:new-project:tree"
+					>
+						{#snippet first()}
+							<Card.Root class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+								<Card.Header icon={FileTextIcon} class="shrink-0 items-center">
+									<Card.Title>
+										<h2>{m.project_files()}</h2>
+									</Card.Title>
+								</Card.Header>
+								<Card.Content class="min-h-0 flex-1 p-0">
+									<ProjectFileTreePanel
+										composeFileName="compose.yaml"
+										entries={newProjectFileEntries}
+										selectedFile={selectedProjectFile}
+										disabled={ui.saving || ui.isLoadingTemplateContent}
+										onSelect={(key) => (selectedProjectFile = key)}
+										onCreateFile={createNewProjectFile}
+										onCreateFolder={createNewProjectFolder}
+										onRename={renameNewProjectFile}
+										onMove={moveNewProjectFile}
+										onDelete={deleteNewProjectFile}
+									/>
+								</Card.Content>
+							</Card.Root>
+						{/snippet}
+
+						{#snippet second()}
+							<div class="flex h-full min-h-0 flex-1 flex-col">
+								{#key selectedProjectFile}
+									{#if selectedProjectFile === 'compose'}
+										<CodePanel
+											bind:open={composeOpen}
+											title={m.compose_compose_file_title()}
+											language="yaml"
+											validationMode="compose"
+											bind:value={$inputs.composeContent.value}
+											error={$inputs.composeContent.error ?? undefined}
+											bind:hasErrors={validation.composeHasErrors}
+											bind:validationReady={validation.composeValidationReady}
+											fileId="projects:new:compose"
+											editorContext={codeEditorContext}
+										/>
+									{:else if selectedProjectFile === 'env'}
+										<CodePanel
+											bind:open={envOpen}
+											title={m.compose_env_title()}
+											language="env"
+											validationMode="env"
+											bind:value={$inputs.envContent.value}
+											error={$inputs.envContent.error ?? undefined}
+											bind:hasErrors={validation.envHasErrors}
+											bind:validationReady={validation.envValidationReady}
+											fileId="projects:new:env"
+											editorContext={codeEditorContext}
+										/>
+									{:else if selectedProjectFile.startsWith('file:')}
+										{#if selectedProjectFileEntry?.isDirectory}
+											<div
+												class="text-muted-foreground flex h-full min-h-0 items-center justify-center rounded-lg border px-4 text-sm"
+											>
+												{m.project_file_folder_selected()}
+											</div>
+										{:else if selectedProjectFilePath}
+											<CodePanel
+												open={true}
+												title={selectedProjectFilePath}
+												language={projectFileLanguage(selectedProjectFilePath)}
+												validationMode="none"
+												bind:value={newProjectFileContents[selectedProjectFilePath]}
+												bind:hasErrors={newProjectFileHasErrors[selectedProjectFilePath]}
+												bind:validationReady={newProjectFileValidationReady[selectedProjectFilePath]}
+												fileId={`projects:new:file:${selectedProjectFilePath}`}
+												originalValue=""
+												enableDiff={true}
+												editorContext={codeEditorContext}
+											/>
+										{/if}
+									{/if}
+								{/key}
+							</div>
+						{/snippet}
+					</ResizableSplit>
+				{:else}
+					<ComposeEditorSplit onsubmit={preventDefault(handleSubmit)}>
+						{#snippet compose()}
+							<CodePanel
+								bind:open={composeOpen}
+								title={m.compose_compose_file_title()}
+								language="yaml"
+								validationMode="compose"
+								bind:value={$inputs.composeContent.value}
+								error={$inputs.composeContent.error ?? undefined}
+								bind:hasErrors={validation.composeHasErrors}
+								bind:validationReady={validation.composeValidationReady}
+								fileId="projects:new:compose"
+								editorContext={codeEditorContext}
+							/>
+						{/snippet}
+
+						{#snippet env()}
+							<CodePanel
+								bind:open={envOpen}
+								title={m.compose_env_title()}
+								language="env"
+								validationMode="env"
+								bind:value={$inputs.envContent.value}
+								error={$inputs.envContent.error ?? undefined}
+								bind:hasErrors={validation.envHasErrors}
+								bind:validationReady={validation.envValidationReady}
+								fileId="projects:new:env"
+								editorContext={codeEditorContext}
+							/>
+						{/snippet}
+					</ComposeEditorSplit>
+				{/if}
 			</div>
 		</div>
 	</div>
