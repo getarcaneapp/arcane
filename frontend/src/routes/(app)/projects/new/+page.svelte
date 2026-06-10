@@ -25,16 +25,19 @@
 	import DockerRunConverterDialog from '$lib/components/compose/docker-run-converter-dialog.svelte';
 	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 	import { globalVariablesToMap } from '$lib/utils/template-load';
-	import type { ProjectFileDraft } from '$lib/types/swarm';
+	import type { ProjectFileDraft } from '$lib/types/project-files';
 	import {
-		joinProjectFilePath,
+		isProjectFileSelectionUnder,
+		planProjectFileCreate,
+		planProjectFileMove,
+		planProjectFileRename,
 		projectFileBasename,
 		projectFileLanguage,
-		projectFileParentPath,
 		projectFilePathMatches,
+		remapProjectFilePath,
 		remapProjectFileRecord,
+		remapSelectedProjectFileKey,
 		removeProjectFileRecord,
-		validateProjectFileName,
 		type ManagedProjectFileEntry
 	} from '../components/project-file-tree-utils';
 	import {
@@ -175,103 +178,47 @@
 		}
 	}
 
-	function normalizeProjectFileOperationName(name: string, parentPath: string): string | null {
-		const normalized = validateProjectFileName(name, parentPath, 'compose.yaml');
-		if (!normalized) {
-			toast.error(m.project_file_invalid_name());
-			return null;
-		}
-		return normalized;
-	}
-
 	function createNewProjectFile(parentPath: string, name: string, content = '') {
-		const normalizedName = normalizeProjectFileOperationName(name, parentPath);
-		if (!normalizedName) return;
-		const relativePath = joinProjectFilePath(parentPath, normalizedName);
-		if (newProjectFilePaths.has(relativePath)) {
-			toast.error(m.project_file_duplicate_name());
-			return;
-		}
+		const relativePath = planProjectFileCreate(newProjectFilePaths, parentPath, name);
+		if (!relativePath) return;
 		newProjectFiles = [...newProjectFiles, { relativePath, isDirectory: false }];
-		newProjectFileContents = {
-			...newProjectFileContents,
-			[relativePath]: content
-		};
+		newProjectFileContents = { ...newProjectFileContents, [relativePath]: content };
 		ensureNewProjectFileUiState(relativePath);
 		selectedProjectFile = `file:${relativePath}`;
 	}
 
 	function createNewProjectFolder(parentPath: string, name: string) {
-		const normalizedName = normalizeProjectFileOperationName(name, parentPath);
-		if (!normalizedName) return;
-		const relativePath = joinProjectFilePath(parentPath, normalizedName);
-		if (newProjectFilePaths.has(relativePath)) {
-			toast.error(m.project_file_duplicate_name());
-			return;
-		}
+		const relativePath = planProjectFileCreate(newProjectFilePaths, parentPath, name);
+		if (!relativePath) return;
 		newProjectFiles = [...newProjectFiles, { relativePath, isDirectory: true }];
 		selectedProjectFile = `file:${relativePath}`;
 	}
 
+	function applyNewProjectFilePathChange(oldPath: string, newPath: string) {
+		newProjectFiles = newProjectFiles.map((file) => ({
+			...file,
+			relativePath: remapProjectFilePath(file.relativePath, oldPath, newPath)
+		}));
+		newProjectFileContents = remapProjectFileRecord(newProjectFileContents, oldPath, newPath);
+		newProjectFileHasErrors = remapProjectFileRecord(newProjectFileHasErrors, oldPath, newPath);
+		newProjectFileValidationReady = remapProjectFileRecord(newProjectFileValidationReady, oldPath, newPath);
+		const remappedSelection = remapSelectedProjectFileKey(selectedProjectFile, oldPath, newPath);
+		if (remappedSelection) {
+			selectedProjectFile = remappedSelection;
+		}
+	}
+
 	function renameNewProjectFile(relativePath: string, newName: string) {
-		const parentPath = projectFileParentPath(relativePath);
-		const normalizedName = normalizeProjectFileOperationName(newName, parentPath);
-		if (!normalizedName) return;
-		const newPath = joinProjectFilePath(parentPath, normalizedName);
-		if (newPath !== relativePath && newProjectFilePaths.has(newPath)) {
-			toast.error(m.project_file_duplicate_name());
-			return;
-		}
-		newProjectFiles = newProjectFiles.map((file) => {
-			if (!projectFilePathMatches(file.relativePath, relativePath)) {
-				return file;
-			}
-			const suffix = file.relativePath.slice(relativePath.length);
-			return {
-				...file,
-				relativePath: `${newPath}${suffix}`
-			};
-		});
-		newProjectFileContents = remapProjectFileRecord(newProjectFileContents, relativePath, newPath);
-		newProjectFileHasErrors = remapProjectFileRecord(newProjectFileHasErrors, relativePath, newPath);
-		newProjectFileValidationReady = remapProjectFileRecord(newProjectFileValidationReady, relativePath, newPath);
-		if (selectedProjectFile.startsWith('file:') && projectFilePathMatches(selectedProjectFile.slice(5), relativePath)) {
-			selectedProjectFile = `file:${newPath}${selectedProjectFile.slice(5 + relativePath.length)}`;
-		}
+		const plan = planProjectFileRename(newProjectFilePaths, relativePath, newName);
+		if (!plan) return;
+		applyNewProjectFilePathChange(relativePath, plan.newPath);
 	}
 
 	function moveNewProjectFile(relativePath: string, newParentPath: string) {
 		const entry = newProjectFileEntries.find((file) => file.relativePath === relativePath);
-		if (!entry) return;
-		const currentParentPath = projectFileParentPath(relativePath);
-		if (newParentPath === currentParentPath) return;
-		if (entry.isDirectory && newParentPath && projectFilePathMatches(newParentPath, relativePath)) {
-			toast.error(m.project_file_invalid_move_destination());
-			return;
-		}
-
-		const newPath = joinProjectFilePath(newParentPath, projectFileBasename(relativePath));
-		if (newPath !== relativePath && newProjectFilePaths.has(newPath)) {
-			toast.error(m.project_file_duplicate_name());
-			return;
-		}
-
-		newProjectFiles = newProjectFiles.map((file) => {
-			if (!projectFilePathMatches(file.relativePath, relativePath)) {
-				return file;
-			}
-			const suffix = file.relativePath.slice(relativePath.length);
-			return {
-				...file,
-				relativePath: `${newPath}${suffix}`
-			};
-		});
-		newProjectFileContents = remapProjectFileRecord(newProjectFileContents, relativePath, newPath);
-		newProjectFileHasErrors = remapProjectFileRecord(newProjectFileHasErrors, relativePath, newPath);
-		newProjectFileValidationReady = remapProjectFileRecord(newProjectFileValidationReady, relativePath, newPath);
-		if (selectedProjectFile.startsWith('file:') && projectFilePathMatches(selectedProjectFile.slice(5), relativePath)) {
-			selectedProjectFile = `file:${newPath}${selectedProjectFile.slice(5 + relativePath.length)}`;
-		}
+		const newPath = planProjectFileMove(entry, newProjectFilePaths, relativePath, newParentPath);
+		if (!newPath) return;
+		applyNewProjectFilePathChange(relativePath, newPath);
 	}
 
 	function deleteNewProjectFile(relativePath: string) {
@@ -279,7 +226,7 @@
 		newProjectFileContents = removeProjectFileRecord(newProjectFileContents, relativePath);
 		newProjectFileHasErrors = removeProjectFileRecord(newProjectFileHasErrors, relativePath);
 		newProjectFileValidationReady = removeProjectFileRecord(newProjectFileValidationReady, relativePath);
-		if (selectedProjectFile.startsWith('file:') && projectFilePathMatches(selectedProjectFile.slice(5), relativePath)) {
+		if (isProjectFileSelectionUnder(selectedProjectFile, relativePath)) {
 			selectedProjectFile = 'compose';
 		}
 	}

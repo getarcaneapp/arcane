@@ -87,12 +87,22 @@ type ProjectFileDraft struct {
 	Content string `json:"content,omitempty"`
 }
 
+// Project file operations accepted by ProjectFileChange.Operation.
+const (
+	FileOpCreateFile   = "create_file"
+	FileOpCreateFolder = "create_folder"
+	FileOpUpdateFile   = "update_file"
+	FileOpRename       = "rename"
+	FileOpMove         = "move"
+	FileOpDelete       = "delete"
+)
+
 // ProjectFileChange describes one staged file-tree operation.
 type ProjectFileChange struct {
 	// Operation is one of create_file, create_folder, update_file, rename, move, or delete.
 	//
 	// Required: true
-	Operation string `json:"operation" binding:"required"`
+	Operation string `json:"operation" binding:"required" enum:"create_file,create_folder,update_file,rename,move,delete"`
 
 	// RelativePath is the source or target path relative to the project directory.
 	//
@@ -150,7 +160,7 @@ type CreateProject struct {
 	// ProjectFiles are optional text files and folders staged during project creation.
 	//
 	// Required: false
-	ProjectFiles []ProjectFileDraft `json:"projectFiles,omitempty"`
+	ProjectFiles []ProjectFileDraft `json:"projectFiles,omitempty" maxItems:"500"`
 }
 
 // UpdateProject is used to update a project.
@@ -180,7 +190,7 @@ type UpdateProject struct {
 	// FileChanges are staged project file-tree operations applied with Save.
 	//
 	// Required: false
-	FileChanges []ProjectFileChange `json:"fileChanges,omitempty"`
+	FileChanges []ProjectFileChange `json:"fileChanges,omitempty" maxItems:"500"`
 }
 
 // DeployOptions configures project deploy behavior.

@@ -52,9 +52,9 @@ func TestReadProjectFileTree_ZeroMaxDepthDisablesExpansion(t *testing.T) {
 	assert.Empty(t, files)
 }
 
-func TestReadProjectFileTree_UseScanDepthSentinelUsesProjectScanDepth(t *testing.T) {
+func TestReadProjectFileTree_UseScanDepthSentinelUsesFileTreeMaxDepth(t *testing.T) {
 	projectDir := t.TempDir()
-	t.Setenv("PROJECT_SCAN_MAX_DEPTH", "2")
+	t.Setenv("PROJECT_FILE_TREE_MAX_DEPTH", "2")
 
 	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte("services: {}\n"), 0o644))
 	require.NoError(t, os.MkdirAll(filepath.Join(projectDir, "level1", "level2"), 0o755))
@@ -148,10 +148,6 @@ func TestApplyProjectFileChanges_WrapsForbiddenSentinelErrors(t *testing.T) {
 	}, ProjectFileApplyOptions{ComposeFileName: "compose.yaml"})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrProjectFileProtectedPath)
-
-	_, err = validatedProjectTargetPathInternal(projectDir, "../escape.txt", false)
-	require.Error(t, err)
-	assert.ErrorIs(t, err, ErrProjectFileOutsideProjectDirectory)
 
 	targetPath := filepath.Join(projectDir, "target.txt")
 	linkPath := filepath.Join(projectDir, "link.txt")

@@ -2081,15 +2081,10 @@ func (s *ProjectService) CreateProject(ctx context.Context, name, composeContent
 	if err := projects.ApplyProjectFileDrafts(projectPath, projectFiles, projects.ProjectFileApplyOptions{
 		MaxDepth:        s.config.ProjectFileTreeMaxDepth,
 		SkipDirectories: s.config.ProjectScanSkipDirs,
-		ComposeFileName: "compose.yaml",
+		ComposeFileName: projects.DefaultComposeFileName,
 	}); err != nil {
 		_ = os.RemoveAll(projectPath)
-		if errors.Is(err, projects.ErrProjectFileOutsideProjectDirectory) ||
-			errors.Is(err, projects.ErrProjectFileProtectedPath) ||
-			errors.Is(err, projects.ErrProjectFileSymlinkPath) {
-			return nil, &common.ProjectFileForbiddenError{Err: err}
-		}
-		return nil, &common.ProjectFileBadRequestError{Err: err}
+		return nil, wrapProjectFileErrorInternal(err)
 	}
 
 	if err := s.validateComposeContentForUpdate(ctx, projectsDirectory, projectPath, name, composeContent, envContent); err != nil {
@@ -3087,29 +3082,35 @@ func (s *ProjectService) persistProjectFileChanges(ctx context.Context, proj *mo
 		return &common.ProjectFileBadRequestError{Err: errors.New("file tree revision is required")}
 	}
 
-	composeFileName := "compose.yaml"
+	composeFileName := projects.DefaultComposeFileName
 	if composeFile, err := s.resolveProjectComposeFileInternal(ctx, proj); err == nil {
 		composeFileName = filepath.Base(composeFile)
 	}
 
-	err := projects.ApplyProjectFileChanges(proj.Path, fileChanges, projects.ProjectFileApplyOptions{
+	if err := projects.ApplyProjectFileChanges(proj.Path, fileChanges, projects.ProjectFileApplyOptions{
 		ExpectedRevision: strings.TrimSpace(*fileTreeRevision),
 		MaxDepth:         s.config.ProjectFileTreeMaxDepth,
 		SkipDirectories:  s.config.ProjectScanSkipDirs,
 		ComposeFileName:  composeFileName,
-	})
-	if err == nil {
-		return nil
+	}); err != nil {
+		return wrapProjectFileErrorInternal(err)
 	}
-	if errors.Is(err, projects.ErrProjectFileRevisionConflict) {
+	return nil
+}
+
+// wrapProjectFileErrorInternal maps pkg/projects sentinel errors onto the
+// common.ProjectFile* error structs the handlers translate into HTTP statuses.
+func wrapProjectFileErrorInternal(err error) error {
+	switch {
+	case errors.Is(err, projects.ErrProjectFileRevisionConflict):
 		return &common.ProjectFileConflictError{Err: err}
-	}
-	if errors.Is(err, projects.ErrProjectFileOutsideProjectDirectory) ||
-		errors.Is(err, projects.ErrProjectFileProtectedPath) ||
-		errors.Is(err, projects.ErrProjectFileSymlinkPath) {
+	case errors.Is(err, projects.ErrProjectFileOutsideProjectDirectory),
+		errors.Is(err, projects.ErrProjectFileProtectedPath),
+		errors.Is(err, projects.ErrProjectFileSymlinkPath):
 		return &common.ProjectFileForbiddenError{Err: err}
+	default:
+		return &common.ProjectFileBadRequestError{Err: err}
 	}
-	return &common.ProjectFileBadRequestError{Err: err}
 }
 
 func (s *ProjectService) backupProjectDirectoryInternal(projectsDirectory, projectPath string) (string, error) {

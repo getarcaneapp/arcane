@@ -1,4 +1,6 @@
-import type { ProjectFile, ProjectFileChange } from '$lib/types/swarm';
+import { toast } from 'svelte-sonner';
+import { m } from '$lib/paraglide/messages';
+import type { ProjectFile, ProjectFileChange } from '$lib/types/project-files';
 import type { CodeLanguage } from '$lib/components/code-editor/analysis/types';
 
 export type ManagedProjectFileEntry = ProjectFile & {
@@ -51,6 +53,90 @@ export function isReservedProjectFileName(name: string, composeFileName = 'compo
 
 export function projectFilePathMatches(relativePath: string, rootPath: string): boolean {
 	return relativePath === rootPath || relativePath.startsWith(`${rootPath}/`);
+}
+
+function requireValidProjectFileName(name: string, parentPath: string, composeFileName: string): string | null {
+	const normalized = validateProjectFileName(name, parentPath, composeFileName);
+	if (!normalized) {
+		toast.error(m.project_file_invalid_name());
+	}
+	return normalized;
+}
+
+// Validates a create operation and returns the new relative path, or null
+// (after showing a toast) when the name is invalid or already taken.
+export function planProjectFileCreate(
+	existingPaths: ReadonlySet<string>,
+	parentPath: string,
+	name: string,
+	composeFileName = 'compose.yaml'
+): string | null {
+	const normalizedName = requireValidProjectFileName(name, parentPath, composeFileName);
+	if (!normalizedName) return null;
+	const relativePath = joinProjectFilePath(parentPath, normalizedName);
+	if (existingPaths.has(relativePath)) {
+		toast.error(m.project_file_duplicate_name());
+		return null;
+	}
+	return relativePath;
+}
+
+// Validates a rename and returns the normalized name plus resulting path, or
+// null (after showing a toast) when invalid.
+export function planProjectFileRename(
+	existingPaths: ReadonlySet<string>,
+	relativePath: string,
+	newName: string,
+	composeFileName = 'compose.yaml'
+): { newName: string; newPath: string } | null {
+	const parentPath = projectFileParentPath(relativePath);
+	const normalizedName = requireValidProjectFileName(newName, parentPath, composeFileName);
+	if (!normalizedName) return null;
+	const newPath = joinProjectFilePath(parentPath, normalizedName);
+	if (newPath !== relativePath && existingPaths.has(newPath)) {
+		toast.error(m.project_file_duplicate_name());
+		return null;
+	}
+	return { newName: normalizedName, newPath };
+}
+
+// Validates a move and returns the resulting path. Returns null without a
+// toast when the move is a no-op, or with a toast when it is invalid.
+export function planProjectFileMove(
+	entry: Pick<ManagedProjectFileEntry, 'isDirectory'> | undefined,
+	existingPaths: ReadonlySet<string>,
+	relativePath: string,
+	newParentPath: string
+): string | null {
+	if (!entry) return null;
+	if (newParentPath === projectFileParentPath(relativePath)) return null;
+	if (entry.isDirectory && newParentPath && projectFilePathMatches(newParentPath, relativePath)) {
+		toast.error(m.project_file_invalid_move_destination());
+		return null;
+	}
+	const newPath = joinProjectFilePath(newParentPath, projectFileBasename(relativePath));
+	if (newPath !== relativePath && existingPaths.has(newPath)) {
+		toast.error(m.project_file_duplicate_name());
+		return null;
+	}
+	return newPath;
+}
+
+export function remapProjectFilePath(path: string, oldPath: string, newPath: string): string {
+	return projectFilePathMatches(path, oldPath) ? `${newPath}${path.slice(oldPath.length)}` : path;
+}
+
+// Remaps a "file:<path>" selection key after a rename/move; returns null when
+// the selection is unrelated to oldPath.
+export function remapSelectedProjectFileKey(selectedKey: string, oldPath: string, newPath: string): string | null {
+	if (!selectedKey.startsWith('file:')) return null;
+	const selectedPath = selectedKey.slice(5);
+	if (!projectFilePathMatches(selectedPath, oldPath)) return null;
+	return `file:${newPath}${selectedPath.slice(oldPath.length)}`;
+}
+
+export function isProjectFileSelectionUnder(selectedKey: string, rootPath: string): boolean {
+	return selectedKey.startsWith('file:') && projectFilePathMatches(selectedKey.slice(5), rootPath);
 }
 
 export function remapProjectFileRecord<T>(record: Record<string, T>, oldPath: string, newPath: string): Record<string, T> {

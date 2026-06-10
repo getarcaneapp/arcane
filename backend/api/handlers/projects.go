@@ -662,6 +662,21 @@ func (h *ProjectHandler) DownProject(ctx context.Context, input *DownProjectInpu
 	}, nil
 }
 
+// projectFileHTTPError maps project file management errors to HTTP errors.
+// It returns nil when err is not a project file error.
+func projectFileHTTPError(err error) error {
+	if conflictErr, ok := errors.AsType[*common.ProjectFileConflictError](err); ok {
+		return huma.Error409Conflict(conflictErr.Error())
+	}
+	if forbiddenErr, ok := errors.AsType[*common.ProjectFileForbiddenError](err); ok {
+		return huma.Error403Forbidden(forbiddenErr.Error())
+	}
+	if badRequestErr, ok := errors.AsType[*common.ProjectFileBadRequestError](err); ok {
+		return huma.Error400BadRequest(badRequestErr.Error())
+	}
+	return nil
+}
+
 // CreateProject creates a new Docker Compose project.
 func (h *ProjectHandler) CreateProject(ctx context.Context, input *CreateProjectInput) (*CreateProjectOutput, error) {
 	if h.projectService == nil {
@@ -692,13 +707,8 @@ func (h *ProjectHandler) CreateProject(ctx context.Context, input *CreateProject
 		return createErr
 	})
 	if err != nil {
-		var forbiddenErr *common.ProjectFileForbiddenError
-		var badRequestErr *common.ProjectFileBadRequestError
-		switch {
-		case errors.As(err, &forbiddenErr):
-			return nil, huma.Error403Forbidden(err.Error())
-		case errors.As(err, &badRequestErr):
-			return nil, huma.Error400BadRequest(err.Error())
+		if httpErr := projectFileHTTPError(err); httpErr != nil {
+			return nil, httpErr
 		}
 		return nil, huma.Error500InternalServerError((&common.ProjectCreationError{Err: err}).Error())
 	}
@@ -928,16 +938,8 @@ func (h *ProjectHandler) UpdateProject(ctx context.Context, input *UpdateProject
 		return updateErr
 	})
 	if err != nil {
-		var conflictErr *common.ProjectFileConflictError
-		var forbiddenErr *common.ProjectFileForbiddenError
-		var badRequestErr *common.ProjectFileBadRequestError
-		switch {
-		case errors.As(err, &conflictErr):
-			return nil, huma.Error409Conflict(err.Error())
-		case errors.As(err, &forbiddenErr):
-			return nil, huma.Error403Forbidden(err.Error())
-		case errors.As(err, &badRequestErr):
-			return nil, huma.Error400BadRequest(err.Error())
+		if httpErr := projectFileHTTPError(err); httpErr != nil {
+			return nil, httpErr
 		}
 		return nil, huma.Error400BadRequest((&common.ProjectUpdateError{Err: err}).Error())
 	}

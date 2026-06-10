@@ -1,5 +1,6 @@
 <script lang="ts">
-	import type { IncludeFile, Project, ProjectFileChange } from '$lib/types/swarm';
+	import type { IncludeFile, Project } from '$lib/types/swarm';
+	import type { ProjectFileChange } from '$lib/types/project-files';
 	import * as Tabs from '$lib/components/ui/tabs/index.js';
 	import * as Card from '$lib/components/ui/card';
 	import * as Alert from '$lib/components/ui/alert/index.js';
@@ -45,14 +46,15 @@
 	import { globalVariablesToMap } from '$lib/utils/template-load';
 	import {
 		applyProjectFileChangesForDisplay,
-		joinProjectFilePath,
-		projectFileBasename,
+		isProjectFileSelectionUnder,
+		planProjectFileCreate,
+		planProjectFileMove,
+		planProjectFileRename,
 		projectFileLanguage,
-		projectFileParentPath,
 		projectFilePathMatches,
 		remapProjectFileRecord,
-		removeProjectFileRecord,
-		validateProjectFileName
+		remapSelectedProjectFileKey,
+		removeProjectFileRecord
 	} from '../components/project-file-tree-utils';
 
 	let { data } = $props();
@@ -812,147 +814,25 @@
 		void loadManagedProjectFileDraft(relativePath);
 	});
 
-	function normalizeProjectFileOperationName(name: string, parentPath: string): string | null {
-		const normalized = validateProjectFileName(name, parentPath, composeFileName);
-		if (!normalized) {
-			toast.error(m.project_file_invalid_name());
-			return null;
-		}
-		return normalized;
-	}
-
-	function createManagedProjectFile(parentPath: string, name: string, content = '') {
-		const normalizedName = normalizeProjectFileOperationName(name, parentPath);
-		if (!normalizedName) return;
-		const relativePath = joinProjectFilePath(parentPath, normalizedName);
-		if (managedProjectFilePaths.has(relativePath)) {
-			toast.error(m.project_file_duplicate_name());
-			return;
-		}
-		managedProjectFileChanges = [
-			...managedProjectFileChanges,
-			{
-				operation: 'create_file',
-				relativePath,
-				content
-			}
-		];
-		managedProjectFileContents = {
-			...managedProjectFileContents,
-			[relativePath]: content
-		};
-		loadedManagedProjectFileContents = {
-			...loadedManagedProjectFileContents,
-			[relativePath]: content
-		};
-		managedProjectFileLoadErrors = removeProjectFileRecord(managedProjectFileLoadErrors, relativePath);
-		ensureManagedProjectFileUiState(relativePath);
-		selectedFilePreference = `file:${relativePath}`;
-	}
-
-	function createManagedProjectFolder(parentPath: string, name: string) {
-		const normalizedName = normalizeProjectFileOperationName(name, parentPath);
-		if (!normalizedName) return;
-		const relativePath = joinProjectFilePath(parentPath, normalizedName);
-		if (managedProjectFilePaths.has(relativePath)) {
-			toast.error(m.project_file_duplicate_name());
-			return;
-		}
-		managedProjectFileChanges = [
-			...managedProjectFileChanges,
-			{
-				operation: 'create_folder',
-				relativePath
-			}
-		];
-		selectedFilePreference = `file:${relativePath}`;
-	}
-
-	function renameManagedProjectFile(relativePath: string, newName: string) {
-		const parentPath = projectFileParentPath(relativePath);
-		const normalizedName = normalizeProjectFileOperationName(newName, parentPath);
-		if (!normalizedName) return;
-		const newPath = joinProjectFilePath(parentPath, normalizedName);
-		if (newPath !== relativePath && managedProjectFilePaths.has(newPath)) {
-			toast.error(m.project_file_duplicate_name());
-			return;
-		}
-
-		managedProjectFileChanges = [
-			...managedProjectFileChanges,
-			{
-				operation: 'rename',
-				relativePath,
-				newName: normalizedName
-			}
-		];
-		managedProjectFileContents = remapProjectFileRecord(managedProjectFileContents, relativePath, newPath);
-		loadedManagedProjectFileContents = remapProjectFileRecord(loadedManagedProjectFileContents, relativePath, newPath);
-		managedProjectFileHasErrors = remapProjectFileRecord(managedProjectFileHasErrors, relativePath, newPath);
-		managedProjectFileValidationReady = remapProjectFileRecord(managedProjectFileValidationReady, relativePath, newPath);
-		managedProjectFileLoadErrors = remapProjectFileRecord(managedProjectFileLoadErrors, relativePath, newPath);
-		managedProjectFileLoading = remapProjectFileRecord(managedProjectFileLoading, relativePath, newPath);
-		includeFilesState = remapProjectFileRecord(includeFilesState, relativePath, newPath);
-		loadedIncludeFileContents = remapProjectFileRecord(loadedIncludeFileContents, relativePath, newPath);
-		includeFilesPanelStates = remapProjectFileRecord(includeFilesPanelStates, relativePath, newPath);
-		includeFilesHasErrors = remapProjectFileRecord(includeFilesHasErrors, relativePath, newPath);
-		includeFilesValidationReady = remapProjectFileRecord(includeFilesValidationReady, relativePath, newPath);
-		if (selectedFile.startsWith('file:') && projectFilePathMatches(selectedFile.slice(5), relativePath)) {
-			selectedFilePreference = `file:${newPath}${selectedFile.slice(5 + relativePath.length)}`;
+	function remapManagedProjectFileState(oldPath: string, newPath: string) {
+		managedProjectFileContents = remapProjectFileRecord(managedProjectFileContents, oldPath, newPath);
+		loadedManagedProjectFileContents = remapProjectFileRecord(loadedManagedProjectFileContents, oldPath, newPath);
+		managedProjectFileHasErrors = remapProjectFileRecord(managedProjectFileHasErrors, oldPath, newPath);
+		managedProjectFileValidationReady = remapProjectFileRecord(managedProjectFileValidationReady, oldPath, newPath);
+		managedProjectFileLoadErrors = remapProjectFileRecord(managedProjectFileLoadErrors, oldPath, newPath);
+		managedProjectFileLoading = remapProjectFileRecord(managedProjectFileLoading, oldPath, newPath);
+		includeFilesState = remapProjectFileRecord(includeFilesState, oldPath, newPath);
+		loadedIncludeFileContents = remapProjectFileRecord(loadedIncludeFileContents, oldPath, newPath);
+		includeFilesPanelStates = remapProjectFileRecord(includeFilesPanelStates, oldPath, newPath);
+		includeFilesHasErrors = remapProjectFileRecord(includeFilesHasErrors, oldPath, newPath);
+		includeFilesValidationReady = remapProjectFileRecord(includeFilesValidationReady, oldPath, newPath);
+		const remappedSelection = remapSelectedProjectFileKey(selectedFile, oldPath, newPath);
+		if (remappedSelection) {
+			selectedFilePreference = remappedSelection;
 		}
 	}
 
-	function moveManagedProjectFile(relativePath: string, newParentPath: string) {
-		const entry = managedProjectFiles.find((file) => file.relativePath === relativePath);
-		if (!entry) return;
-		const currentParentPath = projectFileParentPath(relativePath);
-		if (newParentPath === currentParentPath) return;
-		if (entry.isDirectory && newParentPath && projectFilePathMatches(newParentPath, relativePath)) {
-			toast.error(m.project_file_invalid_move_destination());
-			return;
-		}
-
-		const newPath = joinProjectFilePath(newParentPath, projectFileBasename(relativePath));
-		if (newPath !== relativePath && managedProjectFilePaths.has(newPath)) {
-			toast.error(m.project_file_duplicate_name());
-			return;
-		}
-
-		managedProjectFileChanges = [
-			...managedProjectFileChanges,
-			{
-				operation: 'move',
-				relativePath,
-				newParentPath
-			}
-		];
-		managedProjectFileContents = remapProjectFileRecord(managedProjectFileContents, relativePath, newPath);
-		loadedManagedProjectFileContents = remapProjectFileRecord(loadedManagedProjectFileContents, relativePath, newPath);
-		managedProjectFileHasErrors = remapProjectFileRecord(managedProjectFileHasErrors, relativePath, newPath);
-		managedProjectFileValidationReady = remapProjectFileRecord(managedProjectFileValidationReady, relativePath, newPath);
-		managedProjectFileLoadErrors = remapProjectFileRecord(managedProjectFileLoadErrors, relativePath, newPath);
-		managedProjectFileLoading = remapProjectFileRecord(managedProjectFileLoading, relativePath, newPath);
-		includeFilesState = remapProjectFileRecord(includeFilesState, relativePath, newPath);
-		loadedIncludeFileContents = remapProjectFileRecord(loadedIncludeFileContents, relativePath, newPath);
-		includeFilesPanelStates = remapProjectFileRecord(includeFilesPanelStates, relativePath, newPath);
-		includeFilesHasErrors = remapProjectFileRecord(includeFilesHasErrors, relativePath, newPath);
-		includeFilesValidationReady = remapProjectFileRecord(includeFilesValidationReady, relativePath, newPath);
-		if (selectedFile.startsWith('file:') && projectFilePathMatches(selectedFile.slice(5), relativePath)) {
-			selectedFilePreference = `file:${newPath}${selectedFile.slice(5 + relativePath.length)}`;
-		}
-	}
-
-	function deleteManagedProjectFile(relativePath: string) {
-		const entry = managedProjectFiles.find((file) => file.relativePath === relativePath);
-		if (!entry) return;
-		managedProjectFileChanges = [
-			...managedProjectFileChanges,
-			{
-				operation: 'delete',
-				relativePath,
-				recursive: entry.isDirectory
-			}
-		];
+	function removeManagedProjectFileState(relativePath: string) {
 		managedProjectFileContents = removeProjectFileRecord(managedProjectFileContents, relativePath);
 		loadedManagedProjectFileContents = removeProjectFileRecord(loadedManagedProjectFileContents, relativePath);
 		managedProjectFileHasErrors = removeProjectFileRecord(managedProjectFileHasErrors, relativePath);
@@ -964,9 +844,52 @@
 		includeFilesPanelStates = removeProjectFileRecord(includeFilesPanelStates, relativePath);
 		includeFilesHasErrors = removeProjectFileRecord(includeFilesHasErrors, relativePath);
 		includeFilesValidationReady = removeProjectFileRecord(includeFilesValidationReady, relativePath);
-		if (selectedFile.startsWith('file:') && projectFilePathMatches(selectedFile.slice(5), relativePath)) {
+		if (isProjectFileSelectionUnder(selectedFile, relativePath)) {
 			selectedFilePreference = 'compose';
 		}
+	}
+
+	function createManagedProjectFile(parentPath: string, name: string, content = '') {
+		const relativePath = planProjectFileCreate(managedProjectFilePaths, parentPath, name, composeFileName);
+		if (!relativePath) return;
+		managedProjectFileChanges = [...managedProjectFileChanges, { operation: 'create_file', relativePath, content }];
+		managedProjectFileContents = { ...managedProjectFileContents, [relativePath]: content };
+		loadedManagedProjectFileContents = { ...loadedManagedProjectFileContents, [relativePath]: content };
+		managedProjectFileLoadErrors = removeProjectFileRecord(managedProjectFileLoadErrors, relativePath);
+		ensureManagedProjectFileUiState(relativePath);
+		selectedFilePreference = `file:${relativePath}`;
+	}
+
+	function createManagedProjectFolder(parentPath: string, name: string) {
+		const relativePath = planProjectFileCreate(managedProjectFilePaths, parentPath, name, composeFileName);
+		if (!relativePath) return;
+		managedProjectFileChanges = [...managedProjectFileChanges, { operation: 'create_folder', relativePath }];
+		selectedFilePreference = `file:${relativePath}`;
+	}
+
+	function renameManagedProjectFile(relativePath: string, newName: string) {
+		const plan = planProjectFileRename(managedProjectFilePaths, relativePath, newName, composeFileName);
+		if (!plan) return;
+		managedProjectFileChanges = [...managedProjectFileChanges, { operation: 'rename', relativePath, newName: plan.newName }];
+		remapManagedProjectFileState(relativePath, plan.newPath);
+	}
+
+	function moveManagedProjectFile(relativePath: string, newParentPath: string) {
+		const entry = managedProjectFiles.find((file) => file.relativePath === relativePath);
+		const newPath = planProjectFileMove(entry, managedProjectFilePaths, relativePath, newParentPath);
+		if (!newPath) return;
+		managedProjectFileChanges = [...managedProjectFileChanges, { operation: 'move', relativePath, newParentPath }];
+		remapManagedProjectFileState(relativePath, newPath);
+	}
+
+	function deleteManagedProjectFile(relativePath: string) {
+		const entry = managedProjectFiles.find((file) => file.relativePath === relativePath);
+		if (!entry) return;
+		managedProjectFileChanges = [
+			...managedProjectFileChanges,
+			{ operation: 'delete', relativePath, recursive: entry.isDirectory }
+		];
+		removeManagedProjectFileState(relativePath);
 	}
 
 	function toggleIncludeFileTab(relativePath: string) {
