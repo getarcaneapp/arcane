@@ -1,6 +1,8 @@
 package dashboard
 
 import (
+	"time"
+
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
@@ -119,4 +121,18 @@ type Snapshot struct {
 	//
 	// Required: false
 	VersionInfo *versiontypes.Info `json:"versionInfo,omitempty"`
+}
+
+const (
+	StreamErrorCodeAgentIncompatible = "agent_incompatible"
+	StreamErrorCodeUnreachable       = "unreachable"
+)
+
+type StreamEvent struct {
+	Type          string    `json:"type"`
+	EnvironmentID string    `json:"environmentId,omitempty"`
+	Snapshot      *Snapshot `json:"snapshot,omitempty"`
+	Error         string    `json:"error,omitempty"`
+	ErrorCode     string    `json:"errorCode,omitempty"`
+	Timestamp     time.Time `json:"timestamp"`
 }

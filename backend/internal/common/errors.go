@@ -1928,3 +1928,20 @@ func (e *NoGlobalAdminRemainsError) Error() string {
 func IsNoGlobalAdminRemainsError(err error) bool {
 	return isErrorTypeInternal[*NoGlobalAdminRemainsError](err)
 }
+
+// AgentDashboardUnsupportedError is emitted on the aggregated dashboard stream
+// when a remote agent does not expose the dashboard snapshot endpoint, which
+// typically means the agent runs an older Arcane version than the manager.
+type AgentDashboardUnsupportedError struct{}
+
+func (e *AgentDashboardUnsupportedError) Error() string {
+	return "Agent does not provide the dashboard endpoint — the agent is likely running an older Arcane version and should be upgraded"
+}
+
+// DashboardSnapshotUnavailableError is returned when a dashboard snapshot
+// request completes without producing a usable snapshot payload.
+type DashboardSnapshotUnavailableError struct{}
+
+func (e *DashboardSnapshotUnavailableError) Error() string {
+	return "dashboard snapshot not available"
+}

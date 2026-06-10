@@ -28,15 +28,14 @@
 			return { text: 'HTTP', variant: 'gray' };
 		}
 
-		if (environment.lastPollAt) {
-			return { text: m.environments_edge_polling_label(), variant: 'blue' };
-		}
-
-		if (!environment.connected || !environment.edgeTransport) {
+		// Prefer the live tunnel transport; fall back to the last one used so
+		// disconnected or poll-only agents still show what they connect with.
+		const transport = (environment.connected ? environment.edgeTransport : undefined) ?? environment.lastEdgeTransport;
+		if (!transport) {
 			return { text: 'Edge', variant: 'gray' };
 		}
 
-		if (environment.edgeTransport === 'websocket') {
+		if (transport === 'websocket') {
 			return { text: 'WebSocket', variant: 'purple' };
 		}
 
