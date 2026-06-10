@@ -253,7 +253,10 @@
 
 	let hasAnyErrors = $derived(
 		(composeHasChanges && (!composeValidationReady || composeHasErrors)) ||
-			(envHasChanges && (!envValidationReady || envHasErrors))
+			(envHasChanges && (!envValidationReady || envHasErrors)) ||
+			changedIncludeFilePaths.some(
+				(relativePath) => !includeFilesValidationReady[relativePath] || !!includeFilesHasErrors[relativePath]
+			)
 	);
 
 	let canSave = $derived(canUpdateProject && !project?.isArchived && hasChanges && !hasAnyErrors);
@@ -330,7 +333,7 @@
 		if (includeFilesValidationReady[relativePath] === undefined) {
 			includeFilesValidationReady = {
 				...includeFilesValidationReady,
-				[relativePath]: true
+				[relativePath]: false
 			};
 		}
 	}
@@ -957,7 +960,7 @@
 	}
 
 	const allComposeContents = $derived.by(() => {
-		return [$inputs.composeContent.value].filter((value) => value.length > 0);
+		return [$inputs.composeContent.value, ...Object.values(includeFilesState)].filter((value) => value.length > 0);
 	});
 	const codeEditorContext = $derived({
 		envContent: $inputs.envContent.value,
@@ -1410,7 +1413,7 @@
 															bind:open={includeFilesPanelStates[includeFile.relativePath]}
 															title={includeFile.relativePath}
 															language="yaml"
-															validationMode="none"
+															validationMode="compose"
 															bind:value={includeFilesState[includeFile.relativePath]}
 															bind:hasErrors={includeFilesHasErrors[includeFile.relativePath]}
 															bind:validationReady={includeFilesValidationReady[includeFile.relativePath]}
@@ -1464,7 +1467,7 @@
 												bind:open={includeFilesPanelStates[includeFile.relativePath]}
 												title={includeFile.relativePath}
 												language="yaml"
-												validationMode="none"
+												validationMode="compose"
 												bind:value={includeFilesState[includeFile.relativePath]}
 												bind:hasErrors={includeFilesHasErrors[includeFile.relativePath]}
 												bind:validationReady={includeFilesValidationReady[includeFile.relativePath]}

@@ -19,9 +19,17 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/project"
 )
 
-const MaxManagedProjectFileBytes = 1024 * 1024
+const (
+	MaxManagedProjectFileBytes  = 1024 * 1024
+	ProjectFileTreeUseScanDepth = -1
+)
 
-var ErrProjectFileRevisionConflict = errors.New("project file tree changed; refresh the project and try again")
+var (
+	ErrProjectFileRevisionConflict        = errors.New("project file tree changed; refresh the project and try again")
+	ErrProjectFileOutsideProjectDirectory = errors.New("path is outside project directory")
+	ErrProjectFileProtectedPath           = errors.New("protected project file cannot be modified")
+	ErrProjectFileSymlinkPath             = errors.New("symlink project paths are not supported")
+)
 
 type ProjectFileApplyOptions struct {
 	ExpectedRevision string
@@ -31,7 +39,7 @@ type ProjectFileApplyOptions struct {
 }
 
 func ReadProjectFileTree(projectPath string, maxDepth int, skipDirectories, composeFileName string) ([]project.ProjectFile, string, error) {
-	if maxDepth <= 0 {
+	if maxDepth == ProjectFileTreeUseScanDepth {
 		maxDepth = config.Load().ProjectScanMaxDepth
 	}
 
@@ -338,7 +346,7 @@ func updateManagedProjectFileInternal(projectAbs string, protected map[string]bo
 		return fmt.Errorf("path is a folder: %s", rel)
 	}
 	if info.Mode()&os.ModeSymlink != 0 {
-		return errors.New("symlink files are not supported")
+		return fmt.Errorf("symlink files are not supported: %w", ErrProjectFileSymlinkPath)
 	}
 
 	if err := os.WriteFile(target, []byte(content), pkgutils.FilePerm); err != nil {
@@ -420,7 +428,7 @@ func moveManagedProjectPathInternal(projectAbs string, protected map[string]bool
 		return fmt.Errorf("inspect project path: %w", err)
 	}
 	if sourceInfo.Mode()&os.ModeSymlink != 0 {
-		return errors.New("symlink paths are not supported")
+		return fmt.Errorf("symlink paths are not supported: %w", ErrProjectFileSymlinkPath)
 	}
 	if sourceInfo.IsDir() && parentRel != "" && projectFilePathMatchesInternal(parentRel, rel) {
 		return errors.New("folder cannot be moved into itself or a descendant")
@@ -439,7 +447,7 @@ func moveManagedProjectPathInternal(projectAbs string, protected map[string]bool
 			return fmt.Errorf("inspect destination folder: %w", err)
 		}
 		if parentInfo.Mode()&os.ModeSymlink != 0 {
-			return errors.New("symlink destination folders are not supported")
+			return fmt.Errorf("symlink destination folders are not supported: %w", ErrProjectFileSymlinkPath)
 		}
 		if !parentInfo.IsDir() {
 			return fmt.Errorf("destination path is not a folder: %s", parentRel)
@@ -489,7 +497,7 @@ func deleteManagedProjectPathInternal(projectAbs string, protected map[string]bo
 		return fmt.Errorf("inspect project path: %w", err)
 	}
 	if info.Mode()&os.ModeSymlink != 0 {
-		return errors.New("symlink paths are not supported")
+		return fmt.Errorf("symlink paths are not supported: %w", ErrProjectFileSymlinkPath)
 	}
 	if info.IsDir() && !recursive {
 		empty, err := isDirectoryEmptyInternal(target)
@@ -516,7 +524,7 @@ func deleteManagedProjectPathInternal(projectAbs string, protected map[string]bo
 func validatedProjectTargetPathInternal(projectAbs, rel string, mustExist bool) (string, error) {
 	target := filepath.Clean(filepath.Join(projectAbs, filepath.FromSlash(rel)))
 	if !IsSafeSubdirectory(projectAbs, target) || target == projectAbs {
-		return "", errors.New("path is outside project directory")
+		return "", ErrProjectFileOutsideProjectDirectory
 	}
 	if err := validateExistingProjectAncestorsInternal(projectAbs, target, mustExist); err != nil {
 		return "", err
@@ -528,7 +536,7 @@ func validateExistingProjectAncestorsInternal(projectAbs, target string, mustExi
 	info, err := os.Lstat(target)
 	if err == nil {
 		if info.Mode()&os.ModeSymlink != 0 {
-			return errors.New("symlink paths are not supported")
+			return fmt.Errorf("symlink paths are not supported: %w", ErrProjectFileSymlinkPath)
 		}
 	} else if mustExist || !errors.Is(err, os.ErrNotExist) {
 		return err
@@ -540,7 +548,7 @@ func validateExistingProjectAncestorsInternal(projectAbs, target string, mustExi
 		switch {
 		case err == nil:
 			if info.Mode()&os.ModeSymlink != 0 {
-				return errors.New("symlink parent directories are not supported")
+				return fmt.Errorf("symlink parent directories are not supported: %w", ErrProjectFileSymlinkPath)
 			}
 			if !info.IsDir() {
 				return fmt.Errorf("parent path is not a directory: %s", current)
@@ -562,7 +570,7 @@ func ensureWritableProjectRelPathInternal(protected map[string]bool, rel string)
 	}
 	rootName := strings.Split(rel, "/")[0]
 	if protected[rel] || protected[rootName] {
-		return fmt.Errorf("protected project file cannot be modified: %s", rel)
+		return fmt.Errorf("%w: %s", ErrProjectFileProtectedPath, rel)
 	}
 	return nil
 }

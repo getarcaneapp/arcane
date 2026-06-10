@@ -38,6 +38,43 @@ func TestReadProjectFileTree_ExcludesProtectedFilesAndReturnsFolders(t *testing.
 	assert.ElementsMatch(t, []string{"README.md", "config", filepath.ToSlash(filepath.Join("config", "app.yaml")), filepath.ToSlash(filepath.Join("config", "nested"))}, relativePaths)
 }
 
+func TestReadProjectFileTree_ZeroMaxDepthDisablesExpansion(t *testing.T) {
+	t.Parallel()
+
+	projectDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte("services: {}\n"), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(projectDir, "config"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "config", "app.yaml"), []byte("value: true\n"), 0o644))
+
+	files, revision, err := ReadProjectFileTree(projectDir, 0, "", "compose.yaml")
+	require.NoError(t, err)
+	assert.NotEmpty(t, revision)
+	assert.Empty(t, files)
+}
+
+func TestReadProjectFileTree_UseScanDepthSentinelUsesProjectScanDepth(t *testing.T) {
+	projectDir := t.TempDir()
+	t.Setenv("PROJECT_SCAN_MAX_DEPTH", "2")
+
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte("services: {}\n"), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(projectDir, "level1", "level2"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "level1", "visible.txt"), []byte("visible\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "level1", "level2", "hidden.txt"), []byte("hidden\n"), 0o644))
+
+	files, _, err := ReadProjectFileTree(projectDir, ProjectFileTreeUseScanDepth, "", "compose.yaml")
+	require.NoError(t, err)
+
+	relativePaths := make([]string, 0, len(files))
+	for _, file := range files {
+		relativePaths = append(relativePaths, file.RelativePath)
+	}
+
+	assert.Contains(t, relativePaths, "level1")
+	assert.Contains(t, relativePaths, filepath.ToSlash(filepath.Join("level1", "visible.txt")))
+	assert.Contains(t, relativePaths, filepath.ToSlash(filepath.Join("level1", "level2")))
+	assert.NotContains(t, relativePaths, filepath.ToSlash(filepath.Join("level1", "level2", "hidden.txt")))
+}
+
 func TestApplyProjectFileChanges_RejectsUnsafePathsAndProtectedFiles(t *testing.T) {
 	t.Parallel()
 
@@ -98,6 +135,37 @@ func TestApplyProjectFileChanges_RejectsUnsafePathsAndProtectedFiles(t *testing.
 			require.Error(t, err)
 		})
 	}
+}
+
+func TestApplyProjectFileChanges_WrapsForbiddenSentinelErrors(t *testing.T) {
+	t.Parallel()
+
+	projectDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte("services: {}\n"), 0o644))
+
+	err := ApplyProjectFileChanges(projectDir, []project.ProjectFileChange{
+		{Operation: "delete", RelativePath: "compose.yaml"},
+	}, ProjectFileApplyOptions{ComposeFileName: "compose.yaml"})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrProjectFileProtectedPath)
+
+	_, err = validatedProjectTargetPathInternal(projectDir, "../escape.txt", false)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrProjectFileOutsideProjectDirectory)
+
+	targetPath := filepath.Join(projectDir, "target.txt")
+	linkPath := filepath.Join(projectDir, "link.txt")
+	require.NoError(t, os.WriteFile(targetPath, []byte("target\n"), 0o644))
+	if err := os.Symlink(targetPath, linkPath); err != nil {
+		t.Skipf("symlink creation is unavailable: %v", err)
+	}
+
+	content := "updated\n"
+	err = ApplyProjectFileChanges(projectDir, []project.ProjectFileChange{
+		{Operation: "update_file", RelativePath: "link.txt", Content: &content},
+	}, ProjectFileApplyOptions{ComposeFileName: "compose.yaml"})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrProjectFileSymlinkPath)
 }
 
 func TestApplyProjectFileChanges_UsesRevisionConflictDetection(t *testing.T) {

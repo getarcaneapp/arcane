@@ -2084,9 +2084,9 @@ func (s *ProjectService) CreateProject(ctx context.Context, name, composeContent
 		ComposeFileName: "compose.yaml",
 	}); err != nil {
 		_ = os.RemoveAll(projectPath)
-		if strings.Contains(err.Error(), "outside project directory") ||
-			strings.Contains(err.Error(), "protected project file") ||
-			strings.Contains(err.Error(), "symlink") {
+		if errors.Is(err, projects.ErrProjectFileOutsideProjectDirectory) ||
+			errors.Is(err, projects.ErrProjectFileProtectedPath) ||
+			errors.Is(err, projects.ErrProjectFileSymlinkPath) {
 			return nil, &common.ProjectFileForbiddenError{Err: err}
 		}
 		return nil, &common.ProjectFileBadRequestError{Err: err}
@@ -3100,9 +3100,9 @@ func (s *ProjectService) persistProjectFileChanges(ctx context.Context, proj *mo
 	if errors.Is(err, projects.ErrProjectFileRevisionConflict) {
 		return &common.ProjectFileConflictError{Err: err}
 	}
-	if strings.Contains(err.Error(), "outside project directory") ||
-		strings.Contains(err.Error(), "protected project file") ||
-		strings.Contains(err.Error(), "symlink") {
+	if errors.Is(err, projects.ErrProjectFileOutsideProjectDirectory) ||
+		errors.Is(err, projects.ErrProjectFileProtectedPath) ||
+		errors.Is(err, projects.ErrProjectFileSymlinkPath) {
 		return &common.ProjectFileForbiddenError{Err: err}
 	}
 	return &common.ProjectFileBadRequestError{Err: err}
