@@ -398,9 +398,6 @@
 
 	const columnsDef = $derived(cachedColumnsDef.length > 0 ? cachedColumnsDef : buildColumns(columns, selectionDisabled));
 
-	// Compute effective column count (add 1 for expand chevron column when expandable)
-	const effectiveColumnsCount = $derived(columnsDef.length + (expandedRowContent ? 1 : 0));
-
 	const table = createTable({
 		features: arcaneTableFeatures,
 		// Manual / server-side mode: no client row models are registered, so sorting and
@@ -514,6 +511,11 @@
 		}
 	});
 
+	// Rendered column count (add 1 for the expand chevron column when expandable). Based on
+	// visible leaf columns, not columnsDef — hidden columns (e.g. id) would otherwise inflate
+	// colspans and create phantom columns that misalign grouped/empty/expanded rows.
+	const effectiveColumnsCount = $derived(table.getVisibleLeafColumns().length + (expandedRowContent ? 1 : 0));
+
 	function onToggleMobileField(fieldId: string) {
 		mobileFieldVisibility = {
 			...mobileFieldVisibility,
@@ -585,10 +587,10 @@
 		if (onGroupToggle) {
 			onGroupToggle(groupName);
 		} else {
-			// Default behavior: toggle collapsed state
+			// Default behavior: toggle collapsed state (unrecorded groups render collapsed)
 			groupCollapsedState = {
 				...groupCollapsedState,
-				[groupName]: !groupCollapsedState[groupName]
+				[groupName]: !(groupCollapsedState[groupName] ?? true)
 			};
 		}
 	}

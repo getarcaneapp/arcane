@@ -80,7 +80,7 @@ func (s *DashboardService) GetSnapshot(ctx context.Context, options DashboardAct
 	containerItems := make([]containertypes.Summary, 0, len(filteredContainers))
 	currentContainerID, currentContainerErr := dockerutils.GetCurrentContainerID()
 	if s.containerService != nil {
-		containerItems = s.containerService.buildContainerSummaries(ctx, filteredContainers, nil, currentContainerID, currentContainerErr)
+		containerItems = s.containerService.buildContainerSummaries(filteredContainers, nil, currentContainerID, currentContainerErr)
 	} else {
 		for _, container := range filteredContainers {
 			summary := containertypes.NewSummary(container)
@@ -109,6 +109,9 @@ func (s *DashboardService) GetSnapshot(ctx context.Context, options DashboardAct
 		return containerItems[i].Created > containerItems[j].Created
 	})
 	containerPage := limitDashboardItemsInternal(containerItems, dashboardSnapshotPreloadLimit)
+	if s.containerService != nil {
+		s.containerService.applyContainerSummaryIconsInternal(ctx, containerPage, nil)
+	}
 
 	var projectIDByName map[string]string
 	if s.imageService != nil {

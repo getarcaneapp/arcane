@@ -224,14 +224,15 @@
 		if (!collapsedGroupsState) return;
 		collapsedGroupsState.current = {
 			...collapsedGroupsState.current,
-			[groupName]: !collapsedGroupsState.current[groupName]
+			// Groups with no recorded state render collapsed, so toggle from that default
+			[groupName]: !(collapsedGroupsState.current[groupName] ?? true)
 		};
 	}
 
 	const columns = $derived([
 		{ accessorKey: 'id', title: m.common_id(), cell: IdCell, hidden: true },
 		{ accessorKey: 'names', id: 'name', title: m.common_name(), sortable: !groupByProject, cell: NameCell },
-		{ accessorKey: 'image', title: m.common_image(), sortable: !groupByProject, cell: ImageCell, width: 'max' },
+		{ accessorKey: 'image', title: m.common_image(), sortable: !groupByProject, cell: ImageCell },
 		{ accessorKey: 'state', title: m.common_state(), sortable: !groupByProject, cell: StateCell },
 		{
 			id: 'updates',

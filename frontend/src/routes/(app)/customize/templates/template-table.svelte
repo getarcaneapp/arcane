@@ -140,7 +140,8 @@
 		if (!collapsedGroupsState) return;
 		collapsedGroupsState.current = {
 			...collapsedGroupsState.current,
-			[groupName]: !collapsedGroupsState.current[groupName]
+			// Groups with no recorded state render collapsed, so toggle from that default
+			[groupName]: !(collapsedGroupsState.current[groupName] ?? true)
 		};
 	}
 

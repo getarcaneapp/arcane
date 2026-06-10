@@ -85,8 +85,6 @@
 	// Narrow, transparent select cell so the row's hover/selected highlight shows through it
 	// uniformly (it carried an opaque background before, which broke the highlight at the edge).
 	const selectCellClasses = 'w-0 pr-4!';
-	// Row actions live in a zero-width host cell; their content floats over the row (see cellContent).
-	const actionsCellClasses = 'relative w-0 p-0 last:pr-0';
 
 	function handleRowClick(event: MouseEvent, rowId: string) {
 		if (shouldIgnoreTableRowClick(event)) return;
@@ -124,6 +122,13 @@
 	const ROW_ESTIMATE_PX = 52;
 	const flatRows = $derived(table.getRowModel().rows);
 	const shouldVirtualize = $derived(!isGrouped && !hasExpand && !!scrollElement && flatRows.length > VIRTUALIZE_THRESHOLD);
+
+	// Row actions live in a host cell that absorbs the table's leftover width, so data columns
+	// size to their content and the floating actions button (see cellContent) gets free room at
+	// the row's end instead of overlapping the last data column. Under the virtualized layout
+	// the table is table-fixed, where a 100%-width column would squash the auto columns to
+	// nothing — there the cell stays zero-width and the button floats over the row as before.
+	const actionsCellClasses = $derived(shouldVirtualize ? 'relative w-0 p-0 last:pr-0' : 'relative w-full p-0 last:pr-0');
 
 	// Runes can't be created conditionally, so the virtualizer always exists but is `enabled` only
 	// when we actually virtualize; disabled, it stays cheap and reports an empty window.
