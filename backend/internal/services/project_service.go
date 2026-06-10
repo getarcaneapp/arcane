@@ -2928,7 +2928,7 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 		return nil, err
 	}
 	if len(fileChanges) > 0 && isGitOpsManagedProjectInternal(&proj) {
-		return nil, &common.ProjectFileForbiddenError{Err: errors.New("Git-managed project files are read-only")}
+		return nil, &common.ProjectFileForbiddenError{Err: errors.New("git-managed project files are read-only")}
 	}
 
 	backupPath := ""
@@ -2967,14 +2967,7 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 		return nil, err
 	}
 
-	// When compose content changes, recalculate service counts and status so the
-	// overview doesn't show stale values (e.g. ghost services after removal).
-	if composeContent != nil || len(fileChanges) > 0 {
-		s.refreshProjectImageRefsInternal(ctx, &proj)
-		if err := s.updateProjectStatusandCountsInternal(ctx, proj.ID, proj.Status); err != nil {
-			slog.WarnContext(ctx, "failed to update service counts after compose edit", "projectID", proj.ID, "error", err)
-		}
-	}
+	s.refreshProjectAfterContentUpdateInternal(ctx, &proj, composeContent, fileChanges)
 
 	metadata := models.JSON{
 		"action":      "update",
@@ -2997,6 +2990,17 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 
 	slog.InfoContext(ctx, "project updated", "projectID", proj.ID, "name", proj.Name)
 	return &proj, nil
+}
+
+func (s *ProjectService) refreshProjectAfterContentUpdateInternal(ctx context.Context, proj *models.Project, composeContent *string, fileChanges []project.ProjectFileChange) {
+	if composeContent == nil && len(fileChanges) == 0 {
+		return
+	}
+
+	s.refreshProjectImageRefsInternal(ctx, proj)
+	if err := s.updateProjectStatusandCountsInternal(ctx, proj.ID, proj.Status); err != nil {
+		slog.WarnContext(ctx, "failed to update service counts after compose edit", "projectID", proj.ID, "error", err)
+	}
 }
 
 func (s *ProjectService) ApplyGitSyncProjectFiles(ctx context.Context, projectID string, composeContent string, gitEnvContent *string, user models.User) (*models.Project, error) {

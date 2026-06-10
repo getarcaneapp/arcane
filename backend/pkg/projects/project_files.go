@@ -11,6 +11,7 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -84,7 +85,7 @@ func ReadProjectFileTree(projectPath string, maxDepth int, skipDirectories, comp
 
 		info, err := entry.Info()
 		if err != nil {
-			return nil
+			return fmt.Errorf("inspect project file: %w", err)
 		}
 
 		isProtected := protected[rel]
@@ -213,7 +214,7 @@ func NormalizeProjectRelativePath(input string) (string, error) {
 	if cleaned == "." || cleaned == ".." || strings.HasPrefix(cleaned, "../") {
 		return "", errors.New("path traversal is not allowed")
 	}
-	for _, segment := range strings.Split(cleaned, "/") {
+	for segment := range strings.SplitSeq(cleaned, "/") {
 		if segment == "" || segment == "." || segment == ".." {
 			return "", errors.New("path contains an invalid segment")
 		}
@@ -434,24 +435,8 @@ func moveManagedProjectPathInternal(projectAbs string, protected map[string]bool
 		return errors.New("folder cannot be moved into itself or a descendant")
 	}
 
-	if parentRel != "" {
-		parent, err := validatedProjectTargetPathInternal(projectAbs, parentRel, false)
-		if err != nil {
-			return err
-		}
-		parentInfo, err := os.Lstat(parent)
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				return fmt.Errorf("destination folder not found: %s", parentRel)
-			}
-			return fmt.Errorf("inspect destination folder: %w", err)
-		}
-		if parentInfo.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("symlink destination folders are not supported: %w", ErrProjectFileSymlinkPath)
-		}
-		if !parentInfo.IsDir() {
-			return fmt.Errorf("destination path is not a folder: %s", parentRel)
-		}
+	if err := validateProjectMoveParentInternal(projectAbs, parentRel); err != nil {
+		return err
 	}
 
 	targetRel := path.Base(rel)
@@ -476,6 +461,31 @@ func moveManagedProjectPathInternal(projectAbs string, protected map[string]bool
 
 	if err := os.Rename(source, target); err != nil {
 		return fmt.Errorf("move project path: %w", err)
+	}
+	return nil
+}
+
+func validateProjectMoveParentInternal(projectAbs, parentRel string) error {
+	if parentRel == "" {
+		return nil
+	}
+
+	parent, err := validatedProjectTargetPathInternal(projectAbs, parentRel, false)
+	if err != nil {
+		return err
+	}
+	parentInfo, err := os.Lstat(parent)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("destination folder not found: %s", parentRel)
+		}
+		return fmt.Errorf("inspect destination folder: %w", err)
+	}
+	if parentInfo.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("symlink destination folders are not supported: %w", ErrProjectFileSymlinkPath)
+	}
+	if !parentInfo.IsDir() {
+		return fmt.Errorf("destination path is not a folder: %s", parentRel)
 	}
 	return nil
 }
@@ -631,9 +641,9 @@ func projectFileRevisionEntryInternal(absPath, rel string, info os.FileInfo, isD
 		b.WriteString("file")
 	}
 	b.WriteByte('\x00')
-	b.WriteString(fmt.Sprintf("%d", info.Size()))
+	b.WriteString(strconv.FormatInt(info.Size(), 10))
 	b.WriteByte('\x00')
-	b.WriteString(fmt.Sprintf("%d", info.ModTime().UnixNano()))
+	b.WriteString(strconv.FormatInt(info.ModTime().UnixNano(), 10))
 	b.WriteByte('\x00')
 	b.WriteString(info.Mode().String())
 	b.WriteByte('\x00')
