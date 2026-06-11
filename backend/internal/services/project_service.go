@@ -2042,6 +2042,11 @@ func (s *ProjectService) DownProject(ctx context.Context, projectID string, user
 }
 
 func (s *ProjectService) CreateProject(ctx context.Context, name, composeContent string, envContent *string, user models.User) (*models.Project, error) {
+	// A top-level `name:` in the compose file is authoritative over the
+	// submitted project name.
+	if yamlName := projects.ComposeContentProjectName(composeContent); yamlName != "" {
+		name = yamlName
+	}
 	sanitized := projects.SanitizeProjectName(name)
 
 	projectsDirectory, err := projects.GetProjectsDirectory(ctx, s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects"))
@@ -2898,6 +2903,21 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 	}
 	if err := ensureProjectMutableInternal(&proj); err != nil {
 		return nil, err
+	}
+
+	// A top-level `name:` in the compose file is authoritative over the
+	// submitted project name. For name-only renames, enforce against the
+	// compose file on disk so the lock can't be bypassed via the API.
+	if composeContent != nil {
+		if yamlName := projects.ComposeContentProjectName(*composeContent); yamlName != "" {
+			name = &yamlName
+		}
+	} else if name != nil {
+		if onDiskCompose, _, readErr := projects.ReadProjectFiles(proj.Path, ""); readErr == nil {
+			if yamlName := projects.ComposeContentProjectName(onDiskCompose); yamlName != "" {
+				name = &yamlName
+			}
+		}
 	}
 
 	if err := s.withProjectRenameRollback(ctx, &proj, func() error {

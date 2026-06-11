@@ -26,6 +26,7 @@
 		createComposeTemplateDialogFlow,
 		dropdownContentClass,
 		dropdownItemClass,
+		extractComposeYamlName,
 		submitComposeResourceForm,
 		templateBtnClass,
 		templateNameSlug
@@ -84,11 +85,19 @@
 
 	let nameInputRef = $state<HTMLInputElement | null>(null);
 
+	const composeYamlName = $derived(extractComposeYamlName($inputs.composeContent.value));
+	// The compose file's top-level `name:` is authoritative; surface it as the
+	// effective name without writing to form state reactively.
+	const effectiveName = $derived(composeYamlName ?? $inputs.name.value);
+
 	async function handleSubmit() {
 		await handleCreateProject();
 	}
 
 	async function handleCreateProject() {
+		// Sync the authoritative compose name into form state at submit time so
+		// validation and the create payload use it (event-time write, not an effect).
+		if (composeYamlName) form.setValue('name', composeYamlName);
 		await submitComposeResourceForm({
 			validate: () => validateTemplateEditorForm(validationState, form.validate),
 			setLoading: (value) => (ui.saving = value),
@@ -131,12 +140,14 @@
 				<div class="hidden items-center gap-3 sm:flex">
 					<EditableName
 						bind:value={$inputs.name.value}
+						displayValue={effectiveName}
 						bind:ref={nameInputRef}
 						variant="inline"
 						error={$inputs.name.error ?? undefined}
 						originalValue=""
 						placeholder={m.compose_project_name_placeholder?.() || 'Enter project name...'}
-						canEdit={!ui.saving && !ui.isLoadingTemplateContent}
+						canEdit={!ui.saving && !ui.isLoadingTemplateContent && !composeYamlName}
+						disabledMessage={composeYamlName ? m.compose_project_name_defined_in_yaml() : undefined}
 						class="hidden sm:block"
 					/>
 				</div>
@@ -145,7 +156,7 @@
 			<div class="flex items-center gap-2">
 				<ButtonGroup.Root>
 					<ArcaneTooltip.Root
-						open={!$inputs.name.value && !ui.saving && !ui.converting && !ui.isLoadingTemplateContent ? undefined : false}
+						open={!effectiveName && !ui.saving && !ui.converting && !ui.isLoadingTemplateContent ? undefined : false}
 					>
 						<ArcaneTooltip.Trigger>
 							<span>
@@ -153,7 +164,7 @@
 									<ArcaneButton
 										action="create"
 										tone="ghost"
-										disabled={!$inputs.name.value ||
+										disabled={!effectiveName ||
 											!$inputs.composeContent.value ||
 											hasEditorErrors ||
 											ui.saving ||
@@ -169,7 +180,7 @@
 							</span>
 						</ArcaneTooltip.Trigger>
 						<ArcaneTooltip.Content class="arcane-tooltip-content max-w-[280px]">
-							{#if $inputs.name.value === ''}
+							{#if effectiveName === ''}
 								<p class="mb-1 text-sm font-medium">{m.compose_project_name_tooltip_title()}</p>
 								<p class="text-muted-foreground text-xs">
 									{m.compose_project_name_tooltip_description()}
@@ -250,12 +261,14 @@
 				<div class="block flex-shrink-0 py-4 sm:hidden">
 					<EditableName
 						bind:value={$inputs.name.value}
+						displayValue={effectiveName}
 						bind:ref={nameInputRef}
 						variant="block"
 						error={$inputs.name.error ?? undefined}
 						originalValue=""
 						placeholder={m.compose_project_name_placeholder()}
-						canEdit={!ui.saving && !ui.isLoadingTemplateContent}
+						canEdit={!ui.saving && !ui.isLoadingTemplateContent && !composeYamlName}
+						disabledMessage={composeYamlName ? m.compose_project_name_defined_in_yaml() : undefined}
 					/>
 				</div>
 
