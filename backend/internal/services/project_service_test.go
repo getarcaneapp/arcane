@@ -1508,7 +1508,7 @@ func TestProjectService_UpdateProject_RenameRejectsStaleStoppedWhenRuntimeIsRunn
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	_, err = svc.UpdateProject(ctx, project.ID, new("bar"), nil, nil, nil, nil, models.User{
+	_, err = svc.UpdateProject(ctx, project.ID, new("bar"), nil, nil, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})

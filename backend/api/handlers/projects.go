@@ -662,7 +662,7 @@ func (h *ProjectHandler) DownProject(ctx context.Context, input *DownProjectInpu
 	}, nil
 }
 
-func projectUpdateHTTPError(err error) error {
+func projectUpdateHTTPErrorInternal(err error) error {
 	if conflictErr, ok := errors.AsType[*services.ProjectVolumeRenameConflictError](err); ok {
 		return huma.Error409Conflict(conflictErr.Error())
 	}
@@ -932,7 +932,7 @@ func (h *ProjectHandler) UpdateProject(ctx context.Context, input *UpdateProject
 		return updateErr
 	})
 	if err != nil {
-		if httpErr := projectUpdateHTTPError(err); httpErr != nil {
+		if httpErr := projectUpdateHTTPErrorInternal(err); httpErr != nil {
 			return nil, httpErr
 		}
 		return nil, huma.Error400BadRequest((&common.ProjectUpdateError{Err: err}).Error())

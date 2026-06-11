@@ -138,7 +138,7 @@ func ComposeVolumeKeysWithExplicitName(composeFiles []string) (map[string]struct
 		if composeFile == "" {
 			continue
 		}
-		keys, err := composeVolumeKeysWithExplicitNameInFile(composeFile)
+		keys, err := composeVolumeKeysWithExplicitNameInFileInternal(composeFile)
 		if err != nil {
 			return nil, err
 		}
@@ -149,7 +149,7 @@ func ComposeVolumeKeysWithExplicitName(composeFiles []string) (map[string]struct
 	return explicit, nil
 }
 
-func composeVolumeKeysWithExplicitNameInFile(path string) (map[string]struct{}, error) {
+func composeVolumeKeysWithExplicitNameInFileInternal(path string) (map[string]struct{}, error) {
 	content, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read compose file: %w", err)
