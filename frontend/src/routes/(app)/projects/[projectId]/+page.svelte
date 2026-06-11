@@ -1331,6 +1331,8 @@
 															'group border-border flex h-full shrink-0 items-center border-r',
 															isActive ? 'bg-accent' : 'hover:bg-accent/50'
 														)}
+														data-tab-key={tabKey}
+														data-active={isActive}
 													>
 														<button
 															type="button"
