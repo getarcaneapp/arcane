@@ -1101,6 +1101,7 @@ func TestProjectService_UpdateProject_RenameFailsWhenVolumeMigrationPreparationF
 
 	eventService := NewEventService(db, nil, nil)
 	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
+	configureProjectRuntimeDockerInternal(t, nil)
 
 	originalPrepare := prepareProjectRenameVolumeMigrationInternal
 	t.Cleanup(func() {
@@ -1111,8 +1112,7 @@ func TestProjectService_UpdateProject_RenameFailsWhenVolumeMigrationPreparationF
 	}
 
 	originalDirName := "Foo"
-	originalPath := filepath.Join(projectsDir, originalDirName)
-	require.NoError(t, os.MkdirAll(originalPath, 0o755))
+	originalPath := createComposeProjectDir(t, projectsDir, originalDirName)
 
 	project := &models.Project{
 		BaseModel: models.BaseModel{ID: "proj-volume-conflict"},
@@ -1150,6 +1150,7 @@ func TestProjectService_UpdateProject_AppliesVolumeMigrationWhenNameChanges(t *t
 
 	eventService := NewEventService(db, nil, nil)
 	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
+	configureProjectRuntimeDockerInternal(t, nil)
 
 	migration := &fakeProjectVolumeRenameMigrationInternal{}
 	originalPrepare := prepareProjectRenameVolumeMigrationInternal
@@ -1161,8 +1162,7 @@ func TestProjectService_UpdateProject_AppliesVolumeMigrationWhenNameChanges(t *t
 	}
 
 	originalDirName := "Foo"
-	originalPath := filepath.Join(projectsDir, originalDirName)
-	require.NoError(t, os.MkdirAll(originalPath, 0o755))
+	originalPath := createComposeProjectDir(t, projectsDir, originalDirName)
 
 	project := &models.Project{
 		BaseModel: models.BaseModel{ID: "proj-volume-success"},
@@ -1186,6 +1186,87 @@ func TestProjectService_UpdateProject_AppliesVolumeMigrationWhenNameChanges(t *t
 	assert.NoDirExists(t, originalPath)
 }
 
+func TestProjectService_PrepareProjectRenameVolumeMigrationForUpdate_UsesComposePreview(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
+
+	dockerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
+			http.NotFound(w, r)
+		case strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+				"Name":   "nginx_data",
+				"Driver": "local",
+				"Labels": map[string]string{
+					composeapi.ProjectLabel: "nginx",
+					composeapi.VolumeLabel:  "data",
+				},
+			}))
+		case strings.HasSuffix(r.URL.Path, "/containers/json"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode([]container.Summary{}))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(dockerServer.Close)
+
+	dockerService := &DockerClientService{client: newTestDockerClient(t, dockerServer)}
+	svc := NewProjectService(db, settingsService, nil, nil, dockerService, nil, config.Load())
+
+	projectPath := filepath.Join(projectsDir, "nginx")
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
+	oldCompose := "services:\n  app:\n    image: nginx:alpine\n    volumes:\n      - data:/data\nvolumes:\n  data:\n    driver: local\n"
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte(oldCompose), 0o644))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-preview-volume-rename"},
+		Name:      "nginx",
+		DirName:   ptr("nginx"),
+		Path:      projectPath,
+		Status:    models.ProjectStatusStopped,
+	}
+
+	t.Run("skips volume made explicit in pending compose", func(t *testing.T) {
+		newCompose := "services:\n  app:\n    image: nginx:alpine\n    volumes:\n      - data:/data\nvolumes:\n  data:\n    name: fixed-data\n"
+
+		migration, err := svc.prepareProjectRenameVolumeMigrationForUpdateInternal(ctx, project, new("web"), projectsDir, &newCompose, nil)
+
+		require.NoError(t, err)
+		require.Nil(t, migration)
+		bytes, readErr := os.ReadFile(filepath.Join(projectPath, "compose.yaml"))
+		require.NoError(t, readErr)
+		require.Equal(t, oldCompose, string(bytes))
+		require.Empty(t, projectUpdatePreviewDirsInternal(t, projectsDir))
+	})
+
+	t.Run("plans unchanged auto-managed volume from pending compose", func(t *testing.T) {
+		newCompose := "services:\n  app:\n    image: nginx:alpine\n    volumes:\n      - data:/data\nvolumes:\n  data:\n    driver: local\n"
+
+		migration, err := svc.prepareProjectRenameVolumeMigrationForUpdateInternal(ctx, project, new("web"), projectsDir, &newCompose, nil)
+
+		require.NoError(t, err)
+		require.NotNil(t, migration)
+		journalSource, ok := migration.(projectVolumeRenameJournalSourceInternal)
+		require.True(t, ok)
+		volumes := journalSource.JournalVolumes()
+		require.Len(t, volumes, 1)
+		require.Equal(t, "data", volumes[0].Key)
+		require.Equal(t, "nginx_data", volumes[0].OldName)
+		require.Equal(t, "web_data", volumes[0].NewName)
+		require.Empty(t, projectUpdatePreviewDirsInternal(t, projectsDir))
+	})
+}
+
 func TestProjectService_UpdateProject_RollsBackVolumeMigrationWhenProjectSaveFails(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
@@ -1198,6 +1279,7 @@ func TestProjectService_UpdateProject_RollsBackVolumeMigrationWhenProjectSaveFai
 
 	eventService := NewEventService(db, nil, nil)
 	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
+	configureProjectRuntimeDockerInternal(t, nil)
 
 	migration := &fakeProjectVolumeRenameMigrationInternal{}
 	originalPrepare := prepareProjectRenameVolumeMigrationInternal
@@ -1215,8 +1297,7 @@ func TestProjectService_UpdateProject_RollsBackVolumeMigrationWhenProjectSaveFai
 	}))
 
 	originalDirName := "Foo"
-	originalPath := filepath.Join(projectsDir, originalDirName)
-	require.NoError(t, os.MkdirAll(originalPath, 0o755))
+	originalPath := createComposeProjectDir(t, projectsDir, originalDirName)
 
 	project := &models.Project{
 		BaseModel: models.BaseModel{ID: "proj-volume-save-fail"},
@@ -1251,10 +1332,10 @@ func TestProjectService_UpdateProject_RenamesDirectoryWhenNameChanges(t *testing
 
 	eventService := NewEventService(db, nil, nil)
 	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
+	configureProjectRuntimeDockerInternal(t, nil)
 
 	originalDirName := "Foo"
-	originalPath := filepath.Join(projectsDir, originalDirName)
-	require.NoError(t, os.MkdirAll(originalPath, 0o755))
+	originalPath := createComposeProjectDir(t, projectsDir, originalDirName)
 
 	project := &models.Project{
 		BaseModel: models.BaseModel{ID: "proj-1"},
@@ -1299,10 +1380,10 @@ func TestProjectService_UpdateProject_RenameFailsWhenTargetDirectoryExists(t *te
 
 	eventService := NewEventService(db, nil, nil)
 	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
+	configureProjectRuntimeDockerInternal(t, nil)
 
 	originalDirName := "Foo"
-	originalPath := filepath.Join(projectsDir, originalDirName)
-	require.NoError(t, os.MkdirAll(originalPath, 0o755))
+	originalPath := createComposeProjectDir(t, projectsDir, originalDirName)
 
 	targetPath := filepath.Join(projectsDir, "bar")
 	require.NoError(t, os.MkdirAll(targetPath, 0o755))
@@ -1374,6 +1455,74 @@ func TestProjectService_UpdateProject_RenameFailsWhenProjectRunning(t *testing.T
 	assert.Equal(t, originalPath, fromDB.Path)
 	require.NotNil(t, fromDB.DirName)
 	assert.Equal(t, "Foo", *fromDB.DirName)
+}
+
+func TestProjectService_UpdateProject_RenameRejectsStaleStoppedWhenRuntimeIsRunning(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
+	configureProjectRuntimeDockerInternal(t, []container.Summary{
+		{
+			ID:     "app-container",
+			Names:  []string{"/foo-app-1"},
+			Image:  "nginx:alpine",
+			State:  container.StateRunning,
+			Status: "Up 30 seconds",
+			Labels: map[string]string{
+				composeapi.ProjectLabel:    "foo",
+				composeapi.ServiceLabel:    "app",
+				composeapi.ConfigHashLabel: "app-hash",
+				composeapi.WorkingDirLabel: filepath.Join(projectsDir, "Foo"),
+			},
+		},
+	})
+
+	originalPrepare := prepareProjectRenameVolumeMigrationInternal
+	t.Cleanup(func() {
+		prepareProjectRenameVolumeMigrationInternal = originalPrepare
+	})
+	prepareCalled := false
+	prepareProjectRenameVolumeMigrationInternal = func(_ context.Context, _ *ProjectService, _ *models.Project, _ *string, _ string) (projectVolumeRenameMigrationInternal, error) {
+		prepareCalled = true
+		return nil, nil
+	}
+
+	originalDirName := "Foo"
+	originalPath := createComposeProjectDir(t, projectsDir, originalDirName)
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-stale-stopped-running-rename"},
+		Name:      "Foo",
+		DirName:   &originalDirName,
+		Path:      originalPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	_, err = svc.UpdateProject(ctx, project.ID, new("bar"), nil, nil, nil, nil, models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "tester",
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "project must be stopped before renaming (current status: running)")
+	assert.False(t, prepareCalled)
+	assert.DirExists(t, originalPath)
+	assert.NoDirExists(t, filepath.Join(projectsDir, "bar"))
+
+	var fromDB models.Project
+	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	assert.Equal(t, "Foo", fromDB.Name)
+	assert.Equal(t, originalPath, fromDB.Path)
+	assert.Equal(t, models.ProjectStatusStopped, fromDB.Status)
 }
 
 func TestProjectService_UpdateProject_RenameResolvesUnknownStoppedStatusBeforeVolumeMigration(t *testing.T) {
@@ -4291,6 +4440,21 @@ func createComposeProjectDir(t *testing.T, root, name string) string {
 	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("services:\n  app:\n    image: nginx:alpine\n"), 0o644))
 
 	return projectPath
+}
+
+func configureProjectRuntimeDockerInternal(t *testing.T, containers []container.Summary) {
+	t.Helper()
+
+	server := newProjectRuntimeDockerServerInternal(t, containers)
+	t.Setenv("DOCKER_HOST", dockerHostFromProjectRuntimeServerURLInternal(t, server.URL))
+}
+
+func projectUpdatePreviewDirsInternal(t *testing.T, projectsDir string) []string {
+	t.Helper()
+
+	matches, err := filepath.Glob(filepath.Join(projectsDir, ".project-update-preview-*"))
+	require.NoError(t, err)
+	return matches
 }
 
 func newProjectRuntimeDockerServerInternal(t *testing.T, containers []container.Summary) *httptest.Server {

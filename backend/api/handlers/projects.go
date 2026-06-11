@@ -666,6 +666,9 @@ func projectUpdateHTTPError(err error) error {
 	if conflictErr, ok := errors.AsType[*services.ProjectVolumeRenameConflictError](err); ok {
 		return huma.Error409Conflict(conflictErr.Error())
 	}
+	if inUseErr, ok := errors.AsType[*services.ProjectVolumeRenameInUseError](err); ok {
+		return huma.Error409Conflict(inUseErr.Error())
+	}
 	if spaceErr, ok := errors.AsType[*services.ProjectVolumeRenameInsufficientSpaceError](err); ok {
 		return huma.NewError(http.StatusInsufficientStorage, spaceErr.Error())
 	}

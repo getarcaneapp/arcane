@@ -128,6 +128,9 @@ func (s *ProjectService) prepareProjectRenameVolumeMigrationInternal(ctx context
 			}
 			return nil, fmt.Errorf("inspect source volume %s: %w", oldName, err)
 		}
+		if err := ensureProjectRenameSourceVolumeDetachedInternal(ctx, dockerClient, oldName); err != nil {
+			return nil, err
+		}
 
 		newConfig := buildProjectRenamedVolumeConfigInternal(volumeConfig, key, newName, newComposeName)
 
@@ -313,12 +316,15 @@ func ensureProjectRenameTargetVolumeAbsentInternal(ctx context.Context, dockerCl
 	return &ProjectVolumeRenameConflictError{VolumeName: newName}
 }
 
-func isProjectRenameComposeTargetVolumeInternal(targetVolume volume.Volume, newComposeName, key string) bool {
-	labels := targetVolume.Labels
-	if labels == nil {
-		return false
+func ensureProjectRenameSourceVolumeDetachedInternal(ctx context.Context, dockerClient *client.Client, oldName string) error {
+	containerIDs, err := dockerutil.GetContainersUsingVolume(ctx, dockerClient, oldName)
+	if err != nil {
+		return fmt.Errorf("inspect containers using source volume %s: %w", oldName, err)
 	}
-	return labels[api.ProjectLabel] == newComposeName && labels[api.VolumeLabel] == key
+	if len(containerIDs) > 0 {
+		return &ProjectVolumeRenameInUseError{VolumeName: oldName, ContainerIDs: containerIDs}
+	}
+	return nil
 }
 
 func createProjectRenamedVolumeInternal(ctx context.Context, dockerClient *client.Client, entry projectVolumeRenameEntryInternal) error {
@@ -458,8 +464,10 @@ func runProjectVolumeHelperContainerInternal(ctx context.Context, dockerClient *
 	}
 
 	cleanup := func() {
-		if _, err := dockerClient.ContainerRemove(ctx, resp.ID, volumeHelperRemoveOptionsInternal()); err != nil && !cerrdefs.IsNotFound(err) {
-			slog.WarnContext(ctx, "failed to remove volume copy helper", "containerID", resp.ID, "error", err)
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		defer cancel()
+		if _, err := dockerClient.ContainerRemove(cleanupCtx, resp.ID, volumeHelperRemoveOptionsInternal()); err != nil && !cerrdefs.IsNotFound(err) {
+			slog.WarnContext(cleanupCtx, "failed to remove volume copy helper", "containerID", resp.ID, "error", err)
 		}
 	}
 	defer cleanup()
@@ -574,6 +582,21 @@ func (e *ProjectVolumeRenameConflictError) Error() string {
 		return "target volume already exists"
 	}
 	return fmt.Sprintf("target volume already exists: %s", e.VolumeName)
+}
+
+type ProjectVolumeRenameInUseError struct {
+	VolumeName   string
+	ContainerIDs []string
+}
+
+func (e *ProjectVolumeRenameInUseError) Error() string {
+	if strings.TrimSpace(e.VolumeName) == "" {
+		return "source volume is still attached to containers"
+	}
+	if len(e.ContainerIDs) == 0 {
+		return fmt.Sprintf("source volume is still attached to containers: %s", e.VolumeName)
+	}
+	return fmt.Sprintf("source volume is still attached to %d container(s): %s", len(e.ContainerIDs), e.VolumeName)
 }
 
 type ProjectVolumeRenameInsufficientSpaceError struct {

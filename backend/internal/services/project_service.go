@@ -2916,7 +2916,7 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 		return nil, err
 	}
 
-	volumeMigration, err := prepareProjectRenameVolumeMigrationInternal(ctx, s, &proj, name, projectsDirectory)
+	volumeMigration, err := s.prepareProjectRenameVolumeMigrationForUpdateInternal(ctx, &proj, name, projectsDirectory, composeContent, envContent)
 	if err != nil {
 		return nil, err
 	}
@@ -3121,6 +3121,46 @@ func (s *ProjectService) getProjectForUpdate(ctx context.Context, projectID stri
 	}
 
 	return proj, projectsDirectory, nil
+}
+
+func (s *ProjectService) prepareProjectRenameVolumeMigrationForUpdateInternal(ctx context.Context, proj *models.Project, name *string, projectsDirectory string, composeContent, envContent *string) (projectVolumeRenameMigrationInternal, error) {
+	if !isProjectRenameRequestedInternal(proj, name) {
+		return nil, nil
+	}
+
+	if composeContent == nil && envContent == nil {
+		return prepareProjectRenameVolumeMigrationInternal(ctx, s, proj, name, projectsDirectory)
+	}
+
+	previewPath, err := os.MkdirTemp(projectsDirectory, ".project-update-preview-*")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create project update preview: %w", err)
+	}
+	defer func() {
+		if removeErr := os.RemoveAll(previewPath); removeErr != nil {
+			slog.WarnContext(ctx, "failed to remove project update preview", "path", previewPath, "error", removeErr)
+		}
+	}()
+
+	if err := projects.CopyDirectoryContents(proj.Path, previewPath); err != nil {
+		return nil, fmt.Errorf("failed to prepare project update preview: %w", err)
+	}
+
+	previewProject := *proj
+	previewProject.Path = previewPath
+	if err := s.persistUpdatedProjectFiles(ctx, &previewProject, projectsDirectory, composeContent, envContent); err != nil {
+		return nil, fmt.Errorf("failed to prepare project update preview: %w", err)
+	}
+
+	return prepareProjectRenameVolumeMigrationInternal(ctx, s, &previewProject, name, projectsDirectory)
+}
+
+func isProjectRenameRequestedInternal(proj *models.Project, name *string) bool {
+	if proj == nil || name == nil {
+		return false
+	}
+	newName := strings.TrimSpace(*name)
+	return newName != "" && proj.Name != newName
 }
 
 func (s *ProjectService) backupProjectDirectoryInternal(projectsDirectory, projectPath string) (string, error) {
@@ -3686,25 +3726,17 @@ func (s *ProjectService) persistGitSyncEnvFilesInternal(projectPath, projectsDir
 }
 
 func (s *ProjectService) ensureProjectStoppedForRenameInternal(ctx context.Context, proj *models.Project, name *string) error {
-	if proj == nil || name == nil {
+	if !isProjectRenameRequestedInternal(proj, name) {
 		return nil
 	}
-
-	newName := strings.TrimSpace(*name)
-	if newName == "" || proj.Name == newName {
-		return nil
-	}
-	if proj.Status == models.ProjectStatusStopped {
-		return nil
-	}
-	if proj.Status != models.ProjectStatusUnknown {
+	if proj.Status != models.ProjectStatusStopped && proj.Status != models.ProjectStatusUnknown {
 		return fmt.Errorf("project must be stopped before renaming (current status: %s)", proj.Status)
 	}
 
 	services, err := s.GetProjectServices(ctx, proj.ID)
 	if err != nil {
-		slog.WarnContext(ctx, "failed to resolve unknown project status before rename", "projectID", proj.ID, "error", err)
-		return fmt.Errorf("project must be stopped before renaming (current status: %s)", proj.Status)
+		slog.WarnContext(ctx, "failed to resolve project status before rename", "projectID", proj.ID, "error", err)
+		return fmt.Errorf("project must be stopped before renaming (current status: %s): failed to verify live status: %w", proj.Status, err)
 	}
 
 	status := s.calculateProjectStatus(services)
