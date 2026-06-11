@@ -18,6 +18,7 @@ func TestProjectVolumeCopyCommandInternal_ChecksCapacityBeforeCopy(t *testing.T)
 	require.Contains(t, command, "df -Pk /to")
 	require.Contains(t, command, "required_kb")
 	require.Contains(t, command, "exit 99")
+	require.NotContains(t, command, "awk")
 	require.Less(t, strings.Index(command, "df -Pk /to"), strings.Index(command, "tar -cf - ."))
 }
 

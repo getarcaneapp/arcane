@@ -280,7 +280,7 @@ func (m *dockerProjectVolumeRenameMigrationInternal) rollbackCreatedTargets(ctx 
 			rollbackErr = errors.Join(rollbackErr, fmt.Errorf("remove helper containers for target volume %s: %w", entry.NewName, err))
 			continue
 		}
-		if err := removeProjectVolumeWithRetryInternal(ctx, dockerClient, entry.NewName, client.VolumeRemoveOptions{Force: false}); err != nil {
+		if err := removeProjectVolumeWithRetryInternal(ctx, dockerClient, entry.NewName, client.VolumeRemoveOptions{Force: true}); err != nil {
 			rollbackErr = errors.Join(rollbackErr, fmt.Errorf("remove target volume %s: %w", entry.NewName, err))
 		}
 	}
@@ -491,8 +491,22 @@ const projectVolumeCopyInsufficientSpaceExitCodeInternal = 99
 
 func projectVolumeCopyCommandInternal() string {
 	return fmt.Sprintf(`set -eu
-source_kb="$(du -sk /from | awk '{print $1}')"
-available_kb="$(df -Pk /to | awk 'NR==2 {print $4}')"
+for required_cmd in du df tar; do
+  if ! command -v "$required_cmd" >/dev/null 2>&1; then
+    echo "volume helper image is missing required command: $required_cmd" >&2
+    exit 127
+  fi
+done
+set -- $(du -sk /from)
+source_kb="$1"
+df_line=""
+while IFS= read -r line; do
+  df_line="$line"
+done <<EOF
+$(df -Pk /to)
+EOF
+set -- $df_line
+available_kb="$4"
 margin_kb="$((source_kb / 10))"
 if [ "$margin_kb" -lt 262144 ]; then margin_kb=262144; fi
 required_kb="$((source_kb + margin_kb))"

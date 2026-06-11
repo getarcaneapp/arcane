@@ -235,7 +235,7 @@ func (s *ProjectService) rollbackProjectRenameJournalInternal(ctx context.Contex
 			if err := removeProjectVolumeHelperContainersInternal(ctx, dockerClient, vol.NewName); err != nil {
 				return err
 			}
-			if err := removeProjectVolumeWithRetryInternal(ctx, dockerClient, vol.NewName, client.VolumeRemoveOptions{Force: false}); err != nil {
+			if err := removeProjectVolumeWithRetryInternal(ctx, dockerClient, vol.NewName, client.VolumeRemoveOptions{Force: true}); err != nil {
 				return fmt.Errorf("remove rollback target volume %s: %w", vol.NewName, err)
 			}
 		}

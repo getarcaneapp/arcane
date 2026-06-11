@@ -482,6 +482,9 @@
 				rebaseEditorDraft(savedProject);
 				await syncProjectQueries(savedProject);
 				toast.success(m.common_update_success({ resource: m.project() }), activityToastOptions(extractActivityId(savedProject)));
+			},
+			onError: async () => {
+				await refreshProjectDetails({ forceRebaseDraft: true });
 			}
 		});
 	}
