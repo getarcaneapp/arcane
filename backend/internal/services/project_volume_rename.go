@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"strings"
 
+	cerrdefs "github.com/containerd/errdefs"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
 	composepkg "github.com/docker/compose/v5/pkg/compose"
@@ -17,7 +18,6 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/volume"
 	"github.com/moby/moby/client"
-	cerrdefs "github.com/moby/moby/errdefs"
 )
 
 type projectVolumeRenameMigrationInternal interface {
