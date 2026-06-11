@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -54,19 +56,19 @@ func projectRenameJournalKeyInternal(projectID string) string {
 	return projectRenameJournalKeyPrefixInternal + strings.TrimSpace(projectID)
 }
 
-func (s *ProjectService) prepareProjectRenameJournalInternal(proj *models.Project, name *string, projectsDirectory string, migration projectVolumeRenameMigrationInternal) (*projectRenameJournalInternal, error) {
+func (s *ProjectService) prepareProjectRenameJournalInternal(proj *models.Project, name *string, projectsDirectory string, migration projectVolumeRenameMigrationInternal) *projectRenameJournalInternal {
 	if s == nil || s.kvService == nil || proj == nil || name == nil {
-		return nil, nil
+		return nil
 	}
 
 	newName := strings.TrimSpace(*name)
 	if newName == "" || proj.Name == newName {
-		return nil, nil
+		return nil
 	}
 
 	newDirName := strings.TrimSpace(projects.SanitizeProjectName(newName))
 	if newDirName == "" || strings.Trim(newDirName, "_") == "" {
-		return nil, nil
+		return nil
 	}
 
 	journal := &projectRenameJournalInternal{
@@ -84,7 +86,7 @@ func (s *ProjectService) prepareProjectRenameJournalInternal(proj *models.Projec
 		journal.Volumes = source.JournalVolumes()
 	}
 
-	return journal, nil
+	return journal
 }
 
 func (s *ProjectService) writeProjectRenameJournalInternal(ctx context.Context, journal *projectRenameJournalInternal, phase string) error {
@@ -190,7 +192,10 @@ func (s *ProjectService) completeProjectRenameJournalInternal(ctx context.Contex
 
 	for _, vol := range journal.Volumes {
 		if _, err := dockerClient.VolumeInspect(ctx, vol.NewName, client.VolumeInspectOptions{}); err != nil {
-			return fmt.Errorf("inspect committed target volume %s: %w", vol.NewName, err)
+			if !cerrdefs.IsNotFound(err) {
+				return fmt.Errorf("inspect committed target volume %s: %w", vol.NewName, err)
+			}
+			slog.WarnContext(ctx, "committed project rename target volume is missing during journal recovery", "projectID", journal.ProjectID, "volume", vol.NewName)
 		}
 		if err := removeProjectVolumeWithRetryInternal(ctx, dockerClient, vol.OldName, client.VolumeRemoveOptions{Force: false}); err != nil {
 			return fmt.Errorf("remove committed source volume %s: %w", vol.OldName, err)
@@ -210,8 +215,7 @@ func (s *ProjectService) rollbackProjectRenameJournalInternal(ctx context.Contex
 		return err
 	}
 
-	for i := len(journal.Volumes) - 1; i >= 0; i-- {
-		vol := journal.Volumes[i]
+	for _, vol := range slices.Backward(journal.Volumes) {
 		oldExists, err := projectRenameVolumeExistsInternal(ctx, dockerClient, vol.OldName)
 		if err != nil {
 			return err
@@ -299,13 +303,14 @@ func rollbackProjectRenameDirectoryInternal(journal *projectRenameJournalInterna
 }
 
 func projectRenameVolumeExistsInternal(ctx context.Context, dockerClient *client.Client, name string) (bool, error) {
-	if _, err := dockerClient.VolumeInspect(ctx, name, client.VolumeInspectOptions{}); err == nil {
+	_, err := dockerClient.VolumeInspect(ctx, name, client.VolumeInspectOptions{})
+	if err == nil {
 		return true, nil
-	} else if cerrdefs.IsNotFound(err) {
-		return false, nil
-	} else {
-		return false, fmt.Errorf("inspect volume %s: %w", name, err)
 	}
+	if cerrdefs.IsNotFound(err) {
+		return false, nil
+	}
+	return false, fmt.Errorf("inspect volume %s: %w", name, err)
 }
 
 func createProjectRenameRecoverySourceVolumeInternal(ctx context.Context, dockerClient *client.Client, vol projectRenameJournalVolumeInternal) error {

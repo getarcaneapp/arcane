@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
+	"slices"
 	"strings"
 	"time"
 
@@ -26,12 +28,12 @@ import (
 )
 
 type projectVolumeRenameMigrationInternal interface {
-	Apply(context.Context) error
-	Rollback(context.Context) error
+	Apply(ctx context.Context) error
+	Rollback(ctx context.Context) error
 }
 
 type projectVolumeRenameCommitterInternal interface {
-	Commit(context.Context) error
+	Commit(ctx context.Context) error
 }
 
 type projectVolumeRenameJournalSourceInternal interface {
@@ -58,25 +60,12 @@ type dockerProjectVolumeRenameMigrationInternal struct {
 const projectVolumeCopyHelperImageInternal = "busybox:1.37.0"
 
 var prepareProjectRenameVolumeMigrationInternal = func(ctx context.Context, svc *ProjectService, proj *models.Project, name *string, projectsDirectory string) (projectVolumeRenameMigrationInternal, error) {
-	return svc.prepareProjectRenameVolumeMigrationInternal(ctx, proj, name, projectsDirectory)
+	return svc.prepareProjectRenameVolumeMigrationInternal(ctx, proj, name)
 }
 
-func (s *ProjectService) prepareProjectRenameVolumeMigrationInternal(ctx context.Context, proj *models.Project, name *string, projectsDirectory string) (projectVolumeRenameMigrationInternal, error) {
-	if s == nil || s.dockerService == nil || proj == nil || name == nil {
-		return nil, nil
-	}
-
-	newProjectName := strings.TrimSpace(*name)
-	if newProjectName == "" || proj.Name == newProjectName {
-		return nil, nil
-	}
-	if proj.Status != models.ProjectStatusStopped {
-		return nil, nil
-	}
-
-	oldComposeName := normalizeComposeProjectName(proj.Name)
-	newComposeName := normalizeComposeProjectName(newProjectName)
-	if oldComposeName == "" || newComposeName == "" || oldComposeName == newComposeName {
+func (s *ProjectService) prepareProjectRenameVolumeMigrationInternal(ctx context.Context, proj *models.Project, name *string) (projectVolumeRenameMigrationInternal, error) {
+	oldComposeName, newComposeName, ok := projectRenameVolumeMigrationComposeNamesInternal(s, proj, name)
+	if !ok {
 		return nil, nil
 	}
 
@@ -102,45 +91,9 @@ func (s *ProjectService) prepareProjectRenameVolumeMigrationInternal(ctx context
 		return nil, fmt.Errorf("failed to connect to Docker for volume rename: %w", err)
 	}
 
-	entries := make([]projectVolumeRenameEntryInternal, 0, len(composeProject.Volumes))
-	for key, volumeConfig := range composeProject.Volumes {
-		if _, explicit := explicitVolumeNames[key]; explicit {
-			continue
-		}
-		if bool(volumeConfig.External) {
-			continue
-		}
-
-		oldName := oldComposeName + "_" + key
-		newName := newComposeName + "_" + key
-		if volumeConfig.Name != oldName || oldName == newName {
-			continue
-		}
-
-		if err := ensureProjectRenameTargetVolumeAbsentInternal(ctx, dockerClient, newName); err != nil {
-			return nil, err
-		}
-
-		oldVolume, err := dockerClient.VolumeInspect(ctx, oldName, client.VolumeInspectOptions{})
-		if err != nil {
-			if cerrdefs.IsNotFound(err) {
-				continue
-			}
-			return nil, fmt.Errorf("inspect source volume %s: %w", oldName, err)
-		}
-		if err := ensureProjectRenameSourceVolumeDetachedInternal(ctx, dockerClient, oldName); err != nil {
-			return nil, err
-		}
-
-		newConfig := buildProjectRenamedVolumeConfigInternal(volumeConfig, key, newName, newComposeName)
-
-		entries = append(entries, projectVolumeRenameEntryInternal{
-			Key:       key,
-			OldName:   oldName,
-			NewName:   newName,
-			OldVolume: oldVolume.Volume,
-			NewConfig: newConfig,
-		})
+	entries, err := collectProjectRenameVolumeEntriesInternal(ctx, dockerClient, composeProject.Volumes, explicitVolumeNames, oldComposeName, newComposeName)
+	if err != nil {
+		return nil, err
 	}
 
 	if len(entries) == 0 {
@@ -153,6 +106,74 @@ func (s *ProjectService) prepareProjectRenameVolumeMigrationInternal(ctx context
 		oldComposeName: oldComposeName,
 		newComposeName: newComposeName,
 	}, nil
+}
+
+func projectRenameVolumeMigrationComposeNamesInternal(s *ProjectService, proj *models.Project, name *string) (string, string, bool) {
+	if s == nil || s.dockerService == nil || proj == nil || name == nil {
+		return "", "", false
+	}
+
+	newProjectName := strings.TrimSpace(*name)
+	if newProjectName == "" || proj.Name == newProjectName || proj.Status != models.ProjectStatusStopped {
+		return "", "", false
+	}
+
+	oldComposeName := normalizeComposeProjectName(proj.Name)
+	newComposeName := normalizeComposeProjectName(newProjectName)
+	if oldComposeName == "" || newComposeName == "" || oldComposeName == newComposeName {
+		return "", "", false
+	}
+
+	return oldComposeName, newComposeName, true
+}
+
+func collectProjectRenameVolumeEntriesInternal(ctx context.Context, dockerClient *client.Client, volumes map[string]composetypes.VolumeConfig, explicitVolumeNames map[string]struct{}, oldComposeName, newComposeName string) ([]projectVolumeRenameEntryInternal, error) {
+	entries := make([]projectVolumeRenameEntryInternal, 0, len(volumes))
+	for key, volumeConfig := range volumes {
+		entry, ok, err := inspectProjectRenameVolumeEntryInternal(ctx, dockerClient, key, volumeConfig, explicitVolumeNames, oldComposeName, newComposeName)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			entries = append(entries, entry)
+		}
+	}
+	return entries, nil
+}
+
+func inspectProjectRenameVolumeEntryInternal(ctx context.Context, dockerClient *client.Client, key string, volumeConfig composetypes.VolumeConfig, explicitVolumeNames map[string]struct{}, oldComposeName, newComposeName string) (projectVolumeRenameEntryInternal, bool, error) {
+	if _, explicit := explicitVolumeNames[key]; explicit || bool(volumeConfig.External) {
+		return projectVolumeRenameEntryInternal{}, false, nil
+	}
+
+	oldName := oldComposeName + "_" + key
+	newName := newComposeName + "_" + key
+	if volumeConfig.Name != oldName || oldName == newName {
+		return projectVolumeRenameEntryInternal{}, false, nil
+	}
+
+	if err := ensureProjectRenameTargetVolumeAbsentInternal(ctx, dockerClient, newName); err != nil {
+		return projectVolumeRenameEntryInternal{}, false, err
+	}
+
+	oldVolume, err := dockerClient.VolumeInspect(ctx, oldName, client.VolumeInspectOptions{})
+	if err != nil {
+		if cerrdefs.IsNotFound(err) {
+			return projectVolumeRenameEntryInternal{}, false, nil
+		}
+		return projectVolumeRenameEntryInternal{}, false, fmt.Errorf("inspect source volume %s: %w", oldName, err)
+	}
+	if err := ensureProjectRenameSourceVolumeDetachedInternal(ctx, dockerClient, oldName); err != nil {
+		return projectVolumeRenameEntryInternal{}, false, err
+	}
+
+	return projectVolumeRenameEntryInternal{
+		Key:       key,
+		OldName:   oldName,
+		NewName:   newName,
+		OldVolume: oldVolume.Volume,
+		NewConfig: buildProjectRenamedVolumeConfigInternal(volumeConfig, key, newName, newComposeName),
+	}, true, nil
 }
 
 func (m *dockerProjectVolumeRenameMigrationInternal) Apply(ctx context.Context) error {
@@ -252,8 +273,7 @@ func (m *dockerProjectVolumeRenameMigrationInternal) Rollback(ctx context.Contex
 		if err != nil {
 			restoreErr = errors.Join(restoreErr, err)
 		} else {
-			for i := len(m.removedOld) - 1; i >= 0; i-- {
-				entry := m.removedOld[i]
+			for _, entry := range slices.Backward(m.removedOld) {
 				if err := recreateProjectSourceVolumeInternal(ctx, dockerClient, entry); err != nil {
 					restoreErr = errors.Join(restoreErr, err)
 					continue
@@ -280,8 +300,7 @@ func (m *dockerProjectVolumeRenameMigrationInternal) Rollback(ctx context.Contex
 
 func (m *dockerProjectVolumeRenameMigrationInternal) rollbackCreatedTargets(ctx context.Context, dockerClient *client.Client) error {
 	var rollbackErr error
-	for i := len(m.createdNew) - 1; i >= 0; i-- {
-		entry := m.createdNew[i]
+	for _, entry := range slices.Backward(m.createdNew) {
 		if err := removeProjectVolumeHelperContainersInternal(ctx, dockerClient, entry.NewName); err != nil {
 			rollbackErr = errors.Join(rollbackErr, fmt.Errorf("remove helper containers for target volume %s: %w", entry.NewName, err))
 			continue
@@ -329,15 +348,9 @@ func ensureProjectRenameSourceVolumeDetachedInternal(ctx context.Context, docker
 
 func createProjectRenamedVolumeInternal(ctx context.Context, dockerClient *client.Client, entry projectVolumeRenameEntryInternal) error {
 	labels := map[string]string{}
-	for k, v := range entry.OldVolume.Labels {
-		labels[k] = v
-	}
-	for k, v := range entry.NewConfig.Labels {
-		labels[k] = v
-	}
-	for k, v := range entry.NewConfig.CustomLabels {
-		labels[k] = v
-	}
+	maps.Copy(labels, entry.OldVolume.Labels)
+	maps.Copy(labels, entry.NewConfig.Labels)
+	maps.Copy(labels, entry.NewConfig.CustomLabels)
 
 	hash, err := composepkg.VolumeHash(entry.NewConfig)
 	if err != nil {
@@ -391,7 +404,7 @@ func containerSummaryMountsVolumeInternal(c container.Summary, volumeName string
 
 func removeProjectVolumeWithRetryInternal(ctx context.Context, dockerClient *client.Client, volumeName string, options client.VolumeRemoveOptions) error {
 	var err error
-	for attempt := 0; attempt < 3; attempt++ {
+	for attempt := range 3 {
 		_, err = dockerClient.VolumeRemove(ctx, volumeName, options)
 		if err == nil || cerrdefs.IsNotFound(err) {
 			return nil
@@ -581,7 +594,7 @@ func (e *ProjectVolumeRenameConflictError) Error() string {
 	if strings.TrimSpace(e.VolumeName) == "" {
 		return "target volume already exists"
 	}
-	return fmt.Sprintf("target volume already exists: %s", e.VolumeName)
+	return "target volume already exists: " + e.VolumeName
 }
 
 type ProjectVolumeRenameInUseError struct {
@@ -594,7 +607,7 @@ func (e *ProjectVolumeRenameInUseError) Error() string {
 		return "source volume is still attached to containers"
 	}
 	if len(e.ContainerIDs) == 0 {
-		return fmt.Sprintf("source volume is still attached to containers: %s", e.VolumeName)
+		return "source volume is still attached to containers: " + e.VolumeName
 	}
 	return fmt.Sprintf("source volume is still attached to %d container(s): %s", len(e.ContainerIDs), e.VolumeName)
 }
@@ -621,8 +634,6 @@ func cloneStringMapInternal(values map[string]string) map[string]string {
 		return nil
 	}
 	cloned := make(map[string]string, len(values))
-	for k, v := range values {
-		cloned[k] = v
-	}
+	maps.Copy(cloned, values)
 	return cloned
 }

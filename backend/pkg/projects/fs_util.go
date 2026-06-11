@@ -167,7 +167,7 @@ func composeVolumeKeysWithExplicitNameInFileInternal(path string) (map[string]st
 
 	volumes, ok := rawVolumes.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("parse compose file: volumes must be a mapping")
+		return nil, errors.New("parse compose file: volumes must be a mapping")
 	}
 
 	explicit := make(map[string]struct{})
