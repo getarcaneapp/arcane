@@ -1014,7 +1014,7 @@ test.describe('GitOps Managed Project', () => {
 		await page.waitForLoadState('load');
 
 		const layoutSwitch = page.getByRole('switch', {
-			name: /Classic|Tree View/i
+			name: /workspace/i
 		});
 		const projectFilesLabel = page.getByText('Project Files', { exact: true });
 		// Projects with extra files default to tree view; start from classic.
@@ -1241,7 +1241,7 @@ test.describe('Project Detail Page', () => {
 
 			// Also validate that we can switch to tree view and see the file list.
 			const layoutSwitch = page.getByRole('switch', {
-				name: /Classic|Tree View/i
+				name: /workspace/i
 			});
 			if (await layoutSwitch.count()) {
 				await layoutSwitch.click();
@@ -1273,7 +1273,7 @@ test.describe('Project Detail Page', () => {
 		await page.waitForLoadState('load');
 
 		let layoutSwitch = page.getByRole('switch', {
-			name: /Classic|Tree View/i
+			name: /workspace/i
 		});
 		test.skip(
 			(await layoutSwitch.count()) === 0,
@@ -1315,7 +1315,7 @@ test.describe('Project Detail Page', () => {
 		await expect(envFileButton).toBeVisible();
 
 		layoutSwitch = page.getByRole('switch', {
-			name: /Classic|Tree View/i
+			name: /workspace/i
 		});
 		await layoutSwitch.click();
 		await expect(page.getByRole('heading', { name: 'compose.yaml' })).toBeVisible();
@@ -1356,7 +1356,7 @@ test.describe('Project Detail Page', () => {
 				.toContain(marker);
 
 			const layoutSwitch = page.getByRole('switch', {
-				name: /Classic|Tree View/i
+				name: /workspace/i
 			});
 			if (await layoutSwitch.count()) {
 				await layoutSwitch.click();

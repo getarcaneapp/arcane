@@ -54,11 +54,11 @@
 		disabled?: boolean;
 		readOnlyMessage?: string;
 		onSelect: (key: string) => void;
-		onCreateFile: (parentPath: string, name: string, content?: string) => void;
-		onCreateFolder: (parentPath: string, name: string) => void;
-		onRename: (relativePath: string, newName: string) => void;
-		onMove: (relativePath: string, newParentPath: string) => void;
-		onDelete: (relativePath: string) => void;
+		onCreateFile?: (parentPath: string, name: string, content?: string) => void;
+		onCreateFolder?: (parentPath: string, name: string) => void;
+		onRename?: (relativePath: string, newName: string) => void;
+		onMove?: (relativePath: string, newParentPath: string) => void;
+		onDelete?: (relativePath: string) => void;
 	}
 
 	let {
@@ -98,6 +98,7 @@
 	});
 	const rows = $derived.by(() => flattenRows(entries, openFolders));
 	const hasDirectories = $derived(entries.some((entry) => entry.isDirectory));
+	const canManageFiles = $derived(!!onCreateFile && !!onCreateFolder && !!onRename && !!onMove && !!onDelete);
 	const dialogTitle = $derived.by(() => {
 		if (dialogMode === 'upload') return m.project_file_upload_title();
 		if (dialogMode === 'move') return m.project_file_move_title();
@@ -360,7 +361,7 @@
 				return;
 			}
 
-			onMove(dialogTargetPath, dialogDestinationPath);
+			onMove?.(dialogTargetPath, dialogDestinationPath);
 			if (dialogDestinationPath) {
 				openFolders = {
 					...openFolders,
@@ -384,7 +385,7 @@
 				return;
 			}
 
-			onRename(dialogTargetPath, name);
+			onRename?.(dialogTargetPath, name);
 			dialogOpen = false;
 			return;
 		}
@@ -414,7 +415,7 @@
 				return;
 			}
 
-			onCreateFile(dialogDestinationPath, name, content);
+			onCreateFile?.(dialogDestinationPath, name, content);
 			if (dialogDestinationPath) {
 				openFolders = {
 					...openFolders,
@@ -426,13 +427,13 @@
 		}
 
 		if (dialogMode === 'create_folder') {
-			onCreateFolder(dialogDestinationPath, name);
+			onCreateFolder?.(dialogDestinationPath, name);
 			openFolders = {
 				...openFolders,
 				[dialogDestinationPath]: true
 			};
 		} else {
-			onCreateFile(dialogDestinationPath, name);
+			onCreateFile?.(dialogDestinationPath, name);
 			openFolders = {
 				...openFolders,
 				[dialogDestinationPath]: true
@@ -450,7 +451,7 @@
 			confirm: {
 				label: m.common_delete(),
 				destructive: true,
-				action: () => onDelete(entry.relativePath)
+				action: () => onDelete?.(entry.relativePath)
 			}
 		});
 	}
@@ -459,56 +460,58 @@
 <div class="flex min-h-0 flex-1 flex-col">
 	<div class="border-border flex h-9 shrink-0 items-center border-b px-2">
 		<span class="text-muted-foreground text-[11px] font-semibold tracking-wider uppercase">{m.project_files()}</span>
-		<div class="ml-auto flex items-center gap-0.5">
-			<Tooltip.Root>
-				<Tooltip.Trigger>
-					<ArcaneButton
-						action="create"
-						size="icon"
-						tone="ghost"
-						class="size-6"
-						icon={CreateFileIcon}
-						showLabel={false}
-						{disabled}
-						customLabel={m.project_file_new_file()}
-						onclick={() => openCreateDialog('create_file')}
-					/>
-				</Tooltip.Trigger>
-				<Tooltip.Content>{m.project_file_new_file()}</Tooltip.Content>
-			</Tooltip.Root>
-			<Tooltip.Root>
-				<Tooltip.Trigger>
-					<ArcaneButton
-						action="create"
-						size="icon"
-						tone="ghost"
-						class="size-6"
-						icon={CreateFolderIcon}
-						showLabel={false}
-						{disabled}
-						customLabel={m.project_file_new_folder()}
-						onclick={() => openCreateDialog('create_folder')}
-					/>
-				</Tooltip.Trigger>
-				<Tooltip.Content>{m.project_file_new_folder()}</Tooltip.Content>
-			</Tooltip.Root>
-			<Tooltip.Root>
-				<Tooltip.Trigger>
-					<ArcaneButton
-						action="base"
-						size="icon"
-						tone="ghost"
-						class="size-6"
-						icon={UploadIcon}
-						showLabel={false}
-						{disabled}
-						customLabel={m.project_file_upload_file()}
-						onclick={() => openUploadDialog()}
-					/>
-				</Tooltip.Trigger>
-				<Tooltip.Content>{m.project_file_upload_file()}</Tooltip.Content>
-			</Tooltip.Root>
-		</div>
+		{#if canManageFiles}
+			<div class="ml-auto flex items-center gap-0.5">
+				<Tooltip.Root>
+					<Tooltip.Trigger>
+						<ArcaneButton
+							action="create"
+							size="icon"
+							tone="ghost"
+							class="size-6"
+							icon={CreateFileIcon}
+							showLabel={false}
+							{disabled}
+							customLabel={m.project_file_new_file()}
+							onclick={() => openCreateDialog('create_file')}
+						/>
+					</Tooltip.Trigger>
+					<Tooltip.Content>{m.project_file_new_file()}</Tooltip.Content>
+				</Tooltip.Root>
+				<Tooltip.Root>
+					<Tooltip.Trigger>
+						<ArcaneButton
+							action="create"
+							size="icon"
+							tone="ghost"
+							class="size-6"
+							icon={CreateFolderIcon}
+							showLabel={false}
+							{disabled}
+							customLabel={m.project_file_new_folder()}
+							onclick={() => openCreateDialog('create_folder')}
+						/>
+					</Tooltip.Trigger>
+					<Tooltip.Content>{m.project_file_new_folder()}</Tooltip.Content>
+				</Tooltip.Root>
+				<Tooltip.Root>
+					<Tooltip.Trigger>
+						<ArcaneButton
+							action="base"
+							size="icon"
+							tone="ghost"
+							class="size-6"
+							icon={UploadIcon}
+							showLabel={false}
+							{disabled}
+							customLabel={m.project_file_upload_file()}
+							onclick={() => openUploadDialog()}
+						/>
+					</Tooltip.Trigger>
+					<Tooltip.Content>{m.project_file_upload_file()}</Tooltip.Content>
+				</Tooltip.Root>
+			</div>
+		{/if}
 	</div>
 
 	{#if readOnlyMessage}
@@ -554,7 +557,9 @@
 			</button>
 
 			{#if rows.length === 0}
-				<div class="text-muted-foreground px-7 py-3 text-xs">{m.project_files_empty()}</div>
+				{#if canManageFiles}
+					<div class="text-muted-foreground px-7 py-3 text-xs">{m.project_files_empty()}</div>
+				{/if}
 			{:else}
 				{#each rows as row (row.relativePath)}
 					<div
@@ -604,50 +609,52 @@
 							{/if}
 						</button>
 
-						<div class="flex shrink-0 items-center gap-0.5">
-							<Tooltip.Root>
-								<Tooltip.Trigger>
-									<button
-										type="button"
-										class="text-foreground hover:bg-foreground/10 inline-flex size-6 items-center justify-center rounded"
-										aria-label={m.project_file_rename_label({ name: row.relativePath })}
-										{disabled}
-										onclick={() => openRenameDialog(row.relativePath)}
-									>
-										<EditIcon class="size-3.5" />
-									</button>
-								</Tooltip.Trigger>
-								<Tooltip.Content>{m.project_file_rename_action()}</Tooltip.Content>
-							</Tooltip.Root>
-							<Tooltip.Root>
-								<Tooltip.Trigger>
-									<button
-										type="button"
-										class="text-foreground hover:bg-foreground/10 inline-flex size-6 items-center justify-center rounded"
-										aria-label={m.project_file_move_label({ name: row.relativePath })}
-										{disabled}
-										onclick={() => openMoveDialog(row.relativePath)}
-									>
-										<FolderMoveIcon class="size-3.5" />
-									</button>
-								</Tooltip.Trigger>
-								<Tooltip.Content>{m.project_file_move_action()}</Tooltip.Content>
-							</Tooltip.Root>
-							<Tooltip.Root>
-								<Tooltip.Trigger>
-									<button
-										type="button"
-										class="text-destructive hover:bg-destructive/10 inline-flex size-6 items-center justify-center rounded"
-										aria-label={m.project_file_delete_label({ name: row.relativePath })}
-										{disabled}
-										onclick={() => handleDelete(row)}
-									>
-										<TrashIcon class="size-3.5" />
-									</button>
-								</Tooltip.Trigger>
-								<Tooltip.Content>{m.common_delete()}</Tooltip.Content>
-							</Tooltip.Root>
-						</div>
+						{#if canManageFiles}
+							<div class="flex shrink-0 items-center gap-0.5">
+								<Tooltip.Root>
+									<Tooltip.Trigger>
+										<button
+											type="button"
+											class="text-foreground hover:bg-foreground/10 inline-flex size-6 items-center justify-center rounded"
+											aria-label={m.project_file_rename_label({ name: row.relativePath })}
+											{disabled}
+											onclick={() => openRenameDialog(row.relativePath)}
+										>
+											<EditIcon class="size-3.5" />
+										</button>
+									</Tooltip.Trigger>
+									<Tooltip.Content>{m.project_file_rename_action()}</Tooltip.Content>
+								</Tooltip.Root>
+								<Tooltip.Root>
+									<Tooltip.Trigger>
+										<button
+											type="button"
+											class="text-foreground hover:bg-foreground/10 inline-flex size-6 items-center justify-center rounded"
+											aria-label={m.project_file_move_label({ name: row.relativePath })}
+											{disabled}
+											onclick={() => openMoveDialog(row.relativePath)}
+										>
+											<FolderMoveIcon class="size-3.5" />
+										</button>
+									</Tooltip.Trigger>
+									<Tooltip.Content>{m.project_file_move_action()}</Tooltip.Content>
+								</Tooltip.Root>
+								<Tooltip.Root>
+									<Tooltip.Trigger>
+										<button
+											type="button"
+											class="text-destructive hover:bg-destructive/10 inline-flex size-6 items-center justify-center rounded"
+											aria-label={m.project_file_delete_label({ name: row.relativePath })}
+											{disabled}
+											onclick={() => handleDelete(row)}
+										>
+											<TrashIcon class="size-3.5" />
+										</button>
+									</Tooltip.Trigger>
+									<Tooltip.Content>{m.common_delete()}</Tooltip.Content>
+								</Tooltip.Root>
+							</div>
+						{/if}
 					</div>
 				{/each}
 			{/if}

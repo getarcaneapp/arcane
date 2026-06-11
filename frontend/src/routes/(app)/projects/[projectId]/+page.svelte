@@ -8,7 +8,6 @@
 		ArrowLeftIcon,
 		ArrowsUpDownIcon,
 		BoxIcon,
-		CloseIcon,
 		ProjectsIcon,
 		LayersIcon,
 		SearchIcon,
@@ -17,7 +16,6 @@
 		AlertIcon,
 		GlobeIcon
 	} from '$lib/icons';
-	import { cn } from '$lib/utils';
 	import { type TabItem } from '$lib/components/tab-bar/index.js';
 	import TabbedPageLayout from '$lib/layouts/tabbed-page-layout.svelte';
 	import ActionButtons from '$lib/components/action-buttons.svelte';
@@ -37,6 +35,7 @@
 	import { PersistedState } from 'runed';
 	import EditableName from '../components/EditableName.svelte';
 	import ProjectFileTreePanel from '../components/ProjectFileTreePanel.svelte';
+	import EditorTabStrip from '../components/EditorTabStrip.svelte';
 	import ProjectContainersTable from '../components/ProjectContainersTable.svelte';
 	import CodePanel from '../components/CodePanel.svelte';
 	import ProjectsLogsPanel from '../components/ProjectLogsPanel.svelte';
@@ -228,6 +227,7 @@
 	let treePaneWidth = $state(420);
 	let composeSplitWidth = $state<number | null>(null);
 	const minTreePaneWidth = 200;
+	const maxTreePaneWidth = 480;
 	const minEditorPaneWidth = 360;
 	const minComposePaneWidth = 360;
 	const minEnvPaneWidth = 280;
@@ -270,6 +270,15 @@
 		return valid.length > 0 ? valid : ['compose'];
 	});
 	const activeTreeTab = $derived(openTabs.includes(selectedFile) ? selectedFile : (openTabs[0] ?? 'compose'));
+	const treeTabs = $derived(
+		openTabs.map((key) => ({
+			key,
+			label: treeTabLabel(key),
+			title: treeTabTitle(key),
+			iconClass: key === 'compose' ? 'text-blue-500' : key === 'env' ? 'text-green-500' : 'text-muted-foreground',
+			pending: treeTabPending(key)
+		}))
+	);
 	const selectedIncludeTab = $derived.by(() => {
 		if (!selectedIncludeTabPreference) return null;
 		return includeFilePaths.has(selectedIncludeTabPreference) ? selectedIncludeTabPreference : null;
@@ -531,6 +540,11 @@
 		const hasProjectFiles = project?.projectFiles && project.projectFiles.length > 0;
 		const defaultMode = hasIncludes || hasDirectoryFiles || hasProjectFiles ? 'tree' : 'classic';
 		layoutMode = hadStoredPrefs ? (cur.layoutMode ?? defaultMode) : defaultMode;
+		// PersistedState seeds storage with the defaults on first mount; persist the
+		// resolved state so the auto-detected layout survives the next visit.
+		if (!hadStoredPrefs) {
+			persistPrefs();
+		}
 	});
 
 	function isDeletedByProjectFileChanges(relativePath: string, changes: ProjectFileChange[]): boolean {
@@ -1270,7 +1284,7 @@
 							class="text-muted-foreground cursor-pointer text-xs"
 							title={m.project_view_description()}
 						>
-							{m.tree_view()}
+							{m.workspace()}
 						</label>
 						<Switch
 							id="layout-mode-toggle"
@@ -1289,21 +1303,23 @@
 
 					<div class="min-h-0 flex-1">
 						{#if layoutMode === 'tree'}
-							<ResizableSplit
-								class="h-full min-h-0 lg:gap-2"
-								firstClass="flex min-h-0 flex-col"
-								secondClass="flex min-h-0 flex-col"
-								bind:size={treePaneWidth}
-								minSize={minTreePaneWidth}
-								minSecondSize={minEditorPaneWidth}
-								defaultRatio={0.3}
-								stackBelow={1024}
-								ariaLabel={m.compose_editor_resize_files_panel()}
-								persistKey={`arcane.compose.split:${project.id}:tree`}
-								onResizeEnd={persistPrefs}
-							>
-								{#snippet first()}
-									<div class="bg-card border-border flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-lg border">
+							<div class="bg-card border-border flex h-full min-h-0 flex-col overflow-hidden rounded-lg border">
+								<ResizableSplit
+									class="h-full min-h-0 flex-1"
+									variant="flush"
+									firstClass="bg-muted/20 border-border flex min-h-0 flex-col border-b lg:border-r lg:border-b-0"
+									secondClass="flex min-h-0 flex-col"
+									bind:size={treePaneWidth}
+									minSize={minTreePaneWidth}
+									maxSize={maxTreePaneWidth}
+									minSecondSize={minEditorPaneWidth}
+									defaultRatio={0.22}
+									stackBelow={1024}
+									ariaLabel={m.compose_editor_resize_files_panel()}
+									persistKey={`arcane.compose.split:${project.id}:tree`}
+									onResizeEnd={persistPrefs}
+								>
+									{#snippet first()}
 										<ProjectFileTreePanel
 											{composeFileName}
 											entries={managedProjectFiles}
@@ -1317,177 +1333,123 @@
 											onMove={moveManagedProjectFile}
 											onDelete={deleteManagedProjectFile}
 										/>
-									</div>
-								{/snippet}
+									{/snippet}
 
-								{#snippet second()}
-									<div class="bg-card border-border flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-lg border">
-										<div class="border-border flex h-9 shrink-0 items-center border-b">
-											<div class="scrollbar-hide flex h-full min-w-0 flex-1 items-center overflow-x-auto">
-												{#each openTabs as tabKey (tabKey)}
-													{@const isActive = activeTreeTab === tabKey}
-													<div
-														class={cn(
-															'group border-border flex h-full shrink-0 items-center border-r',
-															isActive ? 'bg-accent' : 'hover:bg-accent/50'
-														)}
-														data-tab-key={tabKey}
-														data-active={isActive}
-													>
-														<button
-															type="button"
-															class={cn(
-																'flex h-full items-center gap-1.5 pr-1 pl-3 text-[13px]',
-																isActive ? 'text-foreground' : 'text-muted-foreground'
-															)}
-															title={treeTabTitle(tabKey)}
-															onclick={() => openFileTab(tabKey)}
-														>
-															<FileTextIcon
-																class={cn(
-																	'size-3.5 shrink-0',
-																	tabKey === 'compose'
-																		? 'text-blue-500'
-																		: tabKey === 'env'
-																			? 'text-green-500'
-																			: 'text-muted-foreground'
-																)}
-															/>
-															<span class="max-w-40 truncate">{treeTabLabel(tabKey)}</span>
-															{#if treeTabPending(tabKey)}
-																<span
-																	class="bg-primary size-1.5 shrink-0 rounded-full"
-																	role="img"
-																	aria-label={m.common_unsaved_changes()}
-																	title={m.common_unsaved_changes()}
-																></span>
-															{/if}
-														</button>
-														<button
-															type="button"
-															class={cn(
-																'hover:bg-foreground/10 mr-1 inline-flex size-5 shrink-0 items-center justify-center rounded opacity-0 group-hover:opacity-100 focus-visible:opacity-100',
-																isActive && 'opacity-100'
-															)}
-															aria-label={m.common_close()}
-															onclick={() => closeFileTab(tabKey)}
-														>
-															<CloseIcon class="size-3" />
-														</button>
-													</div>
-												{/each}
-											</div>
-											<div class="flex shrink-0 items-center gap-0.5 px-1.5">
-												<ArcaneButton
-													action="base"
-													tone={treeOutlineOpen ? 'outline-primary' : 'ghost'}
-													size="icon"
-													class="size-6"
-													showLabel={false}
-													icon={FileTextIcon}
-													customLabel={m.compose_editor_toggle_outline()}
-													onclick={() => (treeOutlineOpen = !treeOutlineOpen)}
-												/>
-												<ArcaneButton
-													action="base"
-													tone={treeDiffOpen ? 'outline-primary' : 'ghost'}
-													size="icon"
-													class="size-6"
-													showLabel={false}
-													icon={ArrowsUpDownIcon}
-													customLabel={m.compose_editor_toggle_diff()}
-													onclick={() => (treeDiffOpen = !treeDiffOpen)}
-												/>
-												<ArcaneButton
-													action="base"
-													tone="ghost"
-													size="icon"
-													class="size-6"
-													showLabel={false}
-													icon={SearchIcon}
-													customLabel={m.compose_editor_command_palette()}
-													onclick={() => (treeCommandPaletteOpen = true)}
-												/>
-											</div>
-										</div>
-										<div class="flex min-h-0 flex-1 flex-col">
-											{#key activeTreeTab}
-												{#if activeTreeTab === 'compose'}
-													<CodePanel
-														variant="plain"
-														bind:open={composeOpen}
-														title={composeFileName}
-														language="yaml"
-														validationMode="compose"
-														bind:value={$inputs.composeContent.value}
-														error={$inputs.composeContent.error ?? undefined}
-														readOnly={!canEditCompose}
-														bind:hasErrors={composeHasErrors}
-														bind:validationReady={composeValidationReady}
-														fileId={`project:${projectId}:compose`}
-														originalValue={serverComposeContent}
-														enableDiff={true}
-														editorContext={codeEditorContext}
-														bind:outlineOpen={treeOutlineOpen}
-														bind:diffOpen={treeDiffOpen}
-														bind:commandPaletteOpen={treeCommandPaletteOpen}
+									{#snippet second()}
+										<div class="flex h-full min-h-0 flex-1 flex-col">
+											<EditorTabStrip tabs={treeTabs} activeKey={activeTreeTab} onSelect={openFileTab} onClose={closeFileTab}>
+												{#snippet actions()}
+													<ArcaneButton
+														action="base"
+														tone={treeOutlineOpen ? 'outline-primary' : 'ghost'}
+														size="icon"
+														class="size-6"
+														showLabel={false}
+														icon={FileTextIcon}
+														customLabel={m.compose_editor_toggle_outline()}
+														onclick={() => (treeOutlineOpen = !treeOutlineOpen)}
 													/>
-												{:else if activeTreeTab === 'env'}
-													<CodePanel
-														variant="plain"
-														bind:open={envOpen}
-														title=".env"
-														language="env"
-														validationMode="env"
-														bind:value={$inputs.envContent.value}
-														error={$inputs.envContent.error ?? undefined}
-														readOnly={!canEditEnv}
-														bind:hasErrors={envHasErrors}
-														bind:validationReady={envValidationReady}
-														fileId={`project:${projectId}:env`}
-														originalValue={serverEnvContent}
-														enableDiff={true}
-														editorContext={codeEditorContext}
-														bind:outlineOpen={treeOutlineOpen}
-														bind:diffOpen={treeDiffOpen}
-														bind:commandPaletteOpen={treeCommandPaletteOpen}
+													<ArcaneButton
+														action="base"
+														tone={treeDiffOpen ? 'outline-primary' : 'ghost'}
+														size="icon"
+														class="size-6"
+														showLabel={false}
+														icon={ArrowsUpDownIcon}
+														customLabel={m.compose_editor_toggle_diff()}
+														onclick={() => (treeDiffOpen = !treeDiffOpen)}
 													/>
-												{:else if activeTreeTab.startsWith('file:')}
-													{@const relativePath = activeTreeTab.slice(5)}
-													{#if managedProjectFileLoadErrors[relativePath]}
-														<div class="text-destructive flex h-full min-h-0 items-center justify-center px-4 text-sm">
-															{managedProjectFileLoadErrors[relativePath]}
-														</div>
-													{:else if managedProjectFileContents[relativePath] === undefined}
-														<div class="text-muted-foreground flex h-full min-h-0 items-center justify-center">
-															{m.common_loading()}
-														</div>
-													{:else}
+													<ArcaneButton
+														action="base"
+														tone="ghost"
+														size="icon"
+														class="size-6"
+														showLabel={false}
+														icon={SearchIcon}
+														customLabel={m.compose_editor_command_palette()}
+														onclick={() => (treeCommandPaletteOpen = true)}
+													/>
+												{/snippet}
+											</EditorTabStrip>
+											<div class="flex min-h-0 flex-1 flex-col">
+												{#key activeTreeTab}
+													{#if activeTreeTab === 'compose'}
 														<CodePanel
 															variant="plain"
-															open={true}
-															title={relativePath}
-															language={projectFileLanguage(relativePath)}
-															validationMode="none"
-															bind:value={managedProjectFileContents[relativePath]}
-															readOnly={!canEditProjectFiles}
-															bind:hasErrors={managedProjectFileHasErrors[relativePath]}
-															bind:validationReady={managedProjectFileValidationReady[relativePath]}
-															fileId={`project:${projectId}:file:${relativePath}`}
-															originalValue={loadedManagedProjectFileContents[relativePath] ?? ''}
+															bind:open={composeOpen}
+															title={composeFileName}
+															language="yaml"
+															validationMode="compose"
+															bind:value={$inputs.composeContent.value}
+															error={$inputs.composeContent.error ?? undefined}
+															readOnly={!canEditCompose}
+															bind:hasErrors={composeHasErrors}
+															bind:validationReady={composeValidationReady}
+															fileId={`project:${projectId}:compose`}
+															originalValue={serverComposeContent}
 															enableDiff={true}
 															editorContext={codeEditorContext}
 															bind:outlineOpen={treeOutlineOpen}
 															bind:diffOpen={treeDiffOpen}
 															bind:commandPaletteOpen={treeCommandPaletteOpen}
 														/>
+													{:else if activeTreeTab === 'env'}
+														<CodePanel
+															variant="plain"
+															bind:open={envOpen}
+															title=".env"
+															language="env"
+															validationMode="env"
+															bind:value={$inputs.envContent.value}
+															error={$inputs.envContent.error ?? undefined}
+															readOnly={!canEditEnv}
+															bind:hasErrors={envHasErrors}
+															bind:validationReady={envValidationReady}
+															fileId={`project:${projectId}:env`}
+															originalValue={serverEnvContent}
+															enableDiff={true}
+															editorContext={codeEditorContext}
+															bind:outlineOpen={treeOutlineOpen}
+															bind:diffOpen={treeDiffOpen}
+															bind:commandPaletteOpen={treeCommandPaletteOpen}
+														/>
+													{:else if activeTreeTab.startsWith('file:')}
+														{@const relativePath = activeTreeTab.slice(5)}
+														{#if managedProjectFileLoadErrors[relativePath]}
+															<div class="text-destructive flex h-full min-h-0 items-center justify-center px-4 text-sm">
+																{managedProjectFileLoadErrors[relativePath]}
+															</div>
+														{:else if managedProjectFileContents[relativePath] === undefined}
+															<div class="text-muted-foreground flex h-full min-h-0 items-center justify-center">
+																{m.common_loading()}
+															</div>
+														{:else}
+															<CodePanel
+																variant="plain"
+																open={true}
+																title={relativePath}
+																language={projectFileLanguage(relativePath)}
+																validationMode="none"
+																bind:value={managedProjectFileContents[relativePath]}
+																readOnly={!canEditProjectFiles}
+																bind:hasErrors={managedProjectFileHasErrors[relativePath]}
+																bind:validationReady={managedProjectFileValidationReady[relativePath]}
+																fileId={`project:${projectId}:file:${relativePath}`}
+																originalValue={loadedManagedProjectFileContents[relativePath] ?? ''}
+																enableDiff={true}
+																editorContext={codeEditorContext}
+																bind:outlineOpen={treeOutlineOpen}
+																bind:diffOpen={treeDiffOpen}
+																bind:commandPaletteOpen={treeCommandPaletteOpen}
+															/>
+														{/if}
 													{/if}
-												{/if}
-											{/key}
+												{/key}
+											</div>
 										</div>
-									</div>
-								{/snippet}
-							</ResizableSplit>
+									{/snippet}
+								</ResizableSplit>
+							</div>
 						{:else}
 							<div class="flex h-full min-h-0 flex-col gap-4">
 								{#if project?.includeFiles && project.includeFiles.length > 0}
