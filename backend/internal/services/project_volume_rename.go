@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"strings"
 	"time"
@@ -53,6 +54,8 @@ type dockerProjectVolumeRenameMigrationInternal struct {
 	oldComposeName string
 	newComposeName string
 }
+
+const projectVolumeCopyHelperImageInternal = "busybox:1.37.0"
 
 var prepareProjectRenameVolumeMigrationInternal = func(ctx context.Context, svc *ProjectService, proj *models.Project, name *string, projectsDirectory string) (projectVolumeRenameMigrationInternal, error) {
 	return svc.prepareProjectRenameVolumeMigrationInternal(ctx, proj, name, projectsDirectory)
@@ -162,7 +165,7 @@ func (m *dockerProjectVolumeRenameMigrationInternal) Apply(ctx context.Context) 
 		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	helperImage, err := getVolumeHelperImageInternal(ctx, m.service.dockerService, m.service.imageService, dockerClient)
+	helperImage, err := getProjectVolumeCopyHelperImageInternal(ctx, m.service.imageService, dockerClient)
 	if err != nil {
 		return err
 	}
@@ -242,7 +245,7 @@ func (m *dockerProjectVolumeRenameMigrationInternal) Rollback(ctx context.Contex
 
 	var restoreErr error
 	if len(m.removedOld) > 0 {
-		helperImage, err := getVolumeHelperImageInternal(ctx, m.service.dockerService, m.service.imageService, dockerClient)
+		helperImage, err := getProjectVolumeCopyHelperImageInternal(ctx, m.service.imageService, dockerClient)
 		if err != nil {
 			restoreErr = errors.Join(restoreErr, err)
 		} else {
@@ -430,6 +433,8 @@ func copyProjectVolumeDataInternal(ctx context.Context, dockerClient *client.Cli
 		sourceVolume + ":/from:ro",
 		targetVolume + ":/to",
 	}, nil)
+	// Keep the helper until logs are read; runProjectVolumeHelperContainerInternal removes it.
+	hostConfig.AutoRemove = false
 
 	if err := runProjectVolumeHelperContainerInternal(ctx, dockerClient, config, hostConfig); err != nil {
 		var insufficientErr *ProjectVolumeRenameInsufficientSpaceError
@@ -485,6 +490,24 @@ func runProjectVolumeHelperContainerInternal(ctx context.Context, dockerClient *
 	}
 
 	return nil
+}
+
+func getProjectVolumeCopyHelperImageInternal(ctx context.Context, imageService *ImageService, dockerClient *client.Client) (string, error) {
+	if dockerClient == nil {
+		return "", errors.New("docker service unavailable")
+	}
+
+	if _, err := dockerClient.ImageInspect(ctx, projectVolumeCopyHelperImageInternal); err == nil {
+		return projectVolumeCopyHelperImageInternal, nil
+	}
+
+	if imageService == nil {
+		return "", fmt.Errorf("volume copy helper image %s unavailable and image service unavailable", projectVolumeCopyHelperImageInternal)
+	}
+	if err := imageService.PullImage(ctx, projectVolumeCopyHelperImageInternal, io.Discard, systemUser, nil); err != nil {
+		return "", fmt.Errorf("pull volume copy helper image %s: %w", projectVolumeCopyHelperImageInternal, err)
+	}
+	return projectVolumeCopyHelperImageInternal, nil
 }
 
 const projectVolumeCopyInsufficientSpaceExitCodeInternal = 99

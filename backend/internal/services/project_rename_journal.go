@@ -268,7 +268,7 @@ func (s *ProjectService) projectRenameRecoveryDockerInternal(ctx context.Context
 		return nil, "", fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	helperImage, err := getVolumeHelperImageInternal(ctx, s.dockerService, s.imageService, dockerClient)
+	helperImage, err := getProjectVolumeCopyHelperImageInternal(ctx, s.imageService, dockerClient)
 	if err != nil {
 		return nil, "", err
 	}
