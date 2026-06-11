@@ -2912,6 +2912,9 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 	if err := ensureProjectMutableInternal(&proj); err != nil {
 		return nil, err
 	}
+	if err := s.ensureProjectStoppedForRenameInternal(ctx, &proj, name); err != nil {
+		return nil, err
+	}
 
 	volumeMigration, err := prepareProjectRenameVolumeMigrationInternal(ctx, s, &proj, name, projectsDirectory)
 	if err != nil {
@@ -3679,6 +3682,41 @@ func (s *ProjectService) persistGitSyncEnvFilesInternal(projectPath, projectsDir
 		return err
 	}
 
+	return nil
+}
+
+func (s *ProjectService) ensureProjectStoppedForRenameInternal(ctx context.Context, proj *models.Project, name *string) error {
+	if proj == nil || name == nil {
+		return nil
+	}
+
+	newName := strings.TrimSpace(*name)
+	if newName == "" || proj.Name == newName {
+		return nil
+	}
+	if proj.Status == models.ProjectStatusStopped {
+		return nil
+	}
+	if proj.Status != models.ProjectStatusUnknown {
+		return fmt.Errorf("project must be stopped before renaming (current status: %s)", proj.Status)
+	}
+
+	services, err := s.GetProjectServices(ctx, proj.ID)
+	if err != nil {
+		slog.WarnContext(ctx, "failed to resolve unknown project status before rename", "projectID", proj.ID, "error", err)
+		return fmt.Errorf("project must be stopped before renaming (current status: %s)", proj.Status)
+	}
+
+	status := s.calculateProjectStatus(services)
+	if status != models.ProjectStatusStopped {
+		return fmt.Errorf("project must be stopped before renaming (current status: %s)", status)
+	}
+
+	serviceCount, runningCount := s.getServiceCounts(services)
+	proj.Status = models.ProjectStatusStopped
+	proj.StatusReason = nil
+	proj.ServiceCount = serviceCount
+	proj.RunningCount = runningCount
 	return nil
 }
 
