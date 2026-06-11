@@ -8,6 +8,6 @@
   "devDependencies": {
     "@playwright/test": "^1.60.0",
     "@types/node": "^25.9.1",
-    "oxfmt": "^0.53.0"
+    "oxfmt": "^0.54.0"
   }
 }
