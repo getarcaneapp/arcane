@@ -57,7 +57,7 @@ require (
 	github.com/wneessen/go-mail v0.7.3
 	go.getarcane.app/updater v0.3.9
 	golang.org/x/crypto v0.52.0
-	golang.org/x/mod v0.36.0
+	golang.org/x/mod v0.37.0
 	golang.org/x/net v0.55.0
 	golang.org/x/oauth2 v0.36.0
 	golang.org/x/sync v0.21.0
