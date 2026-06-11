@@ -2944,20 +2944,7 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 		}()
 	}
 
-	// A top-level `name:` in the compose file is authoritative over the
-	// submitted project name. For name-only renames, enforce against the
-	// compose file on disk so the lock can't be bypassed via the API.
-	if composeContent != nil {
-		if yamlName := projects.ComposeContentProjectName(*composeContent); yamlName != "" {
-			name = &yamlName
-		}
-	} else if name != nil {
-		if onDiskCompose, _, readErr := projects.ReadProjectFiles(proj.Path, ""); readErr == nil {
-			if yamlName := projects.ComposeContentProjectName(onDiskCompose); yamlName != "" {
-				name = &yamlName
-			}
-		}
-	}
+	name = resolveAuthoritativeProjectNameInternal(&proj, name, composeContent)
 
 	if err := s.withProjectRenameRollback(ctx, &proj, func() error {
 		if err := s.applyProjectRenameIfNeeded(&proj, name, projectsDirectory); err != nil {
@@ -2984,6 +2971,34 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 
 	s.refreshProjectAfterContentUpdateInternal(ctx, &proj, composeContent, fileChanges)
 
+	s.logProjectUpdateEventInternal(ctx, &proj, composeContent, envContent, fileChanges, user)
+
+	slog.InfoContext(ctx, "project updated", "projectID", proj.ID, "name", proj.Name)
+	return &proj, nil
+}
+
+// resolveAuthoritativeProjectNameInternal enforces that a top-level `name:` in
+// the compose file is authoritative over the submitted project name. For
+// name-only renames, it checks the compose file on disk so the lock can't be
+// bypassed via the API.
+func resolveAuthoritativeProjectNameInternal(proj *models.Project, name *string, composeContent *string) *string {
+	if composeContent != nil {
+		if yamlName := projects.ComposeContentProjectName(*composeContent); yamlName != "" {
+			return &yamlName
+		}
+		return name
+	}
+	if name != nil {
+		if onDiskCompose, _, readErr := projects.ReadProjectFiles(proj.Path, ""); readErr == nil {
+			if yamlName := projects.ComposeContentProjectName(onDiskCompose); yamlName != "" {
+				return &yamlName
+			}
+		}
+	}
+	return name
+}
+
+func (s *ProjectService) logProjectUpdateEventInternal(ctx context.Context, proj *models.Project, composeContent, envContent *string, fileChanges []project.ProjectFileChange, user models.User) {
 	metadata := models.JSON{
 		"action":      "update",
 		"projectID":   proj.ID,
@@ -3002,9 +3017,6 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 	if logErr := s.eventService.LogProjectEvent(ctx, models.EventTypeProjectUpdate, proj.ID, proj.Name, user.ID, user.Username, "0", metadata); logErr != nil {
 		slog.ErrorContext(ctx, "could not log project update action", "error", logErr)
 	}
-
-	slog.InfoContext(ctx, "project updated", "projectID", proj.ID, "name", proj.Name)
-	return &proj, nil
 }
 
 func (s *ProjectService) refreshProjectAfterContentUpdateInternal(ctx context.Context, proj *models.Project, composeContent *string, fileChanges []project.ProjectFileChange) {
