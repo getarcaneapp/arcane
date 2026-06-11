@@ -112,8 +112,11 @@ func (s *ApiKeyService) markApiKeyUsedAsync(ctx context.Context, keyID string) {
 	}(keyID)
 }
 
-func (s *ApiKeyService) CreateApiKey(ctx context.Context, userID string, req apikey.CreateApiKey) (*apikey.ApiKeyCreatedDto, error) {
-	if err := s.validateGrantsAgainstUserInternal(ctx, userID, req.Permissions); err != nil {
+func (s *ApiKeyService) CreateApiKey(ctx context.Context, userID string, callerPerms *authz.PermissionSet, req apikey.CreateApiKey) (*apikey.ApiKeyCreatedDto, error) {
+	if err := validateGrantsAgainstPermissionSetInternal(callerPerms, req.Permissions); err != nil {
+		return nil, err
+	}
+	if err := s.validateGrantsAgainstOwnerInternal(ctx, userID, req.Permissions); err != nil {
 		return nil, err
 	}
 	rawKey, err := s.generateApiKey()
@@ -121,7 +124,7 @@ func (s *ApiKeyService) CreateApiKey(ctx context.Context, userID string, req api
 		return nil, err
 	}
 
-	created, err := s.createAPIKeyWithRawKey(ctx, &userID, rawKey, req, nil, nil)
+	created, err := s.createAPIKeyWithRawKey(ctx, &userID, rawKey, req, nil, nil, models.ApiKeyKindScoped)
 	if err != nil {
 		return nil, err
 	}
@@ -141,28 +144,46 @@ func (s *ApiKeyService) CreateApiKey(ctx context.Context, userID string, req api
 // API key permissions they themselves do not hold.
 var ErrApiKeyPermissionEscalation = errors.New("cannot grant a permission you do not have")
 
-// validateGrantsAgainstUserInternal refuses requests that would grant the new key
-// permissions that the requesting user doesn't hold. Sudo callers bypass this
-// (they always pass). If RoleService is unavailable validation is skipped (used
-// only in the boot-bootstrap path where no human caller exists).
-func (s *ApiKeyService) validateGrantsAgainstUserInternal(ctx context.Context, userID string, grants []apikey.PermissionGrant) error {
+// ErrApiKeyPersonalNoGrants is returned when a caller attempts to attach
+// permission grants to a personal key, which has none of its own — it inherits
+// the owner's role permissions at authentication time.
+var ErrApiKeyPersonalNoGrants = errors.New("personal API keys inherit the owner's permissions and cannot carry grants")
+
+// validateGrantsAgainstOwnerInternal caps grants at the key owner's role
+// permissions, so no holder of apikeys:create/update — sudo included — can
+// push a key above what its owner is allowed to do. Complements the caller-set
+// check: the caller cap uses the credential's live context permissions, this
+// one re-resolves the owner's roles from the DB. Skipped when RoleService is
+// unavailable (bootstrap path only, where no human caller exists).
+func (s *ApiKeyService) validateGrantsAgainstOwnerInternal(ctx context.Context, ownerID string, grants []apikey.PermissionGrant) error {
 	if s.roleService == nil || len(grants) == 0 {
 		return nil
 	}
-	user, err := s.userService.GetUserByID(ctx, userID)
+	user, err := s.userService.GetUserByID(ctx, ownerID)
 	if err != nil {
-		return fmt.Errorf("load user for permission validation: %w", err)
+		return fmt.Errorf("load owner for permission validation: %w", err)
 	}
 	ps, err := s.roleService.ResolvePermissions(ctx, user)
 	if err != nil {
-		return fmt.Errorf("resolve user permissions: %w", err)
+		return fmt.Errorf("resolve owner permissions: %w", err)
 	}
+	if err := validateGrantsAgainstPermissionSetInternal(ps, grants); err != nil {
+		return fmt.Errorf("owner's roles do not allow this grant: %w", err)
+	}
+	return nil
+}
+
+// validateGrantsAgainstPermissionSetInternal refuses requests that would grant
+// a key permissions the calling credential does not itself hold right now —
+// session callers are capped by their role permissions, API-key callers by
+// their own grants. Sudo callers always pass; a nil set denies everything.
+func validateGrantsAgainstPermissionSetInternal(callerPerms *authz.PermissionSet, grants []apikey.PermissionGrant) error {
 	for _, g := range grants {
 		envID := ""
 		if g.EnvironmentID != nil {
 			envID = *g.EnvironmentID
 		}
-		if !ps.Allows(g.Permission, envID) {
+		if !callerPerms.Allows(g.Permission, envID) {
 			return fmt.Errorf("%w: %s (env=%q)", ErrApiKeyPermissionEscalation, g.Permission, envID)
 		}
 	}
@@ -181,6 +202,27 @@ func toApiKeyPermissionRowsInternal(apiKeyID string, grants []apikey.PermissionG
 	return out
 }
 
+// CreatePersonalApiKey creates a personal key for userID. Personal keys carry
+// no permission grants of their own; the auth middleware resolves them to the
+// owner's role permissions, so there is nothing to validate or escalate here.
+func (s *ApiKeyService) CreatePersonalApiKey(ctx context.Context, userID string, req apikey.CreateUserApiKey) (*apikey.ApiKeyCreatedDto, error) {
+	rawKey, err := s.generateApiKey()
+	if err != nil {
+		return nil, err
+	}
+
+	created, err := s.createAPIKeyWithRawKey(ctx, &userID, rawKey, apikey.CreateApiKey{
+		Name:        req.Name,
+		Description: req.Description,
+		ExpiresAt:   req.ExpiresAt,
+	}, nil, nil, models.ApiKeyKindPersonal)
+	if err != nil {
+		return nil, err
+	}
+	created.Permissions = []apikey.PermissionGrant{}
+	return created, nil
+}
+
 func (s *ApiKeyService) createAPIKeyWithRawKey(
 	ctx context.Context,
 	userID *string,
@@ -188,6 +230,7 @@ func (s *ApiKeyService) createAPIKeyWithRawKey(
 	req apikey.CreateApiKey,
 	managedBy *string,
 	environmentID *string,
+	kind string,
 ) (*apikey.ApiKeyCreatedDto, error) {
 	rawKey = normalizeAPIKeyInputInternal(rawKey)
 	keyPrefix, err := parseAPIKeyPrefixInternal(rawKey)
@@ -206,6 +249,7 @@ func (s *ApiKeyService) createAPIKeyWithRawKey(
 		KeyHash:       keyHash,
 		KeyPrefix:     keyPrefix,
 		ManagedBy:     managedBy,
+		Kind:          kind,
 		UserID:        userID,
 		EnvironmentID: environmentID,
 		ExpiresAt:     req.ExpiresAt,
@@ -243,6 +287,7 @@ func toAPIKeyDTOInternal(ak *models.ApiKey) apikey.ApiKey {
 		Description: ak.Description,
 		KeyPrefix:   ak.KeyPrefix,
 		UserID:      ak.UserID,
+		Kind:        ak.Kind,
 		IsStatic:    isStaticAPIKeyInternal(*ak),
 		IsBootstrap: isEnvironmentBootstrapKeyInternal(*ak),
 		ExpiresAt:   ak.ExpiresAt,
@@ -264,7 +309,7 @@ func (s *ApiKeyService) CreateDefaultAdminAPIKey(ctx context.Context, userID, ra
 	return s.createAPIKeyWithRawKey(ctx, &userID, rawKey, apikey.CreateApiKey{
 		Name:        defaultAdminAPIKeyName,
 		Description: defaultAdminAPIKeyDescription,
-	}, new(managedByAdminBootstrap), nil)
+	}, new(managedByAdminBootstrap), nil, models.ApiKeyKindScoped)
 }
 
 func (s *ApiKeyService) getDefaultAdminUser(ctx context.Context) (*models.User, error) {
@@ -412,7 +457,7 @@ func (s *ApiKeyService) CreateEnvironmentApiKey(ctx context.Context, environment
 	created, err := s.createAPIKeyWithRawKey(ctx, nil, rawKey, apikey.CreateApiKey{
 		Name:        name,
 		Description: new("Auto-generated key for environment pairing"),
-	}, nil, &environmentID)
+	}, nil, &environmentID, models.ApiKeyKindScoped)
 	if err != nil {
 		return nil, err
 	}
@@ -501,7 +546,7 @@ func (s *ApiKeyService) ListApiKeysByUser(ctx context.Context, userID string) ([
 	return result, nil
 }
 
-func (s *ApiKeyService) UpdateApiKey(ctx context.Context, callerUserID, id string, req apikey.UpdateApiKey) (*apikey.ApiKey, error) {
+func (s *ApiKeyService) UpdateApiKey(ctx context.Context, callerPerms *authz.PermissionSet, id string, req apikey.UpdateApiKey) (*apikey.ApiKey, error) {
 	var ak models.ApiKey
 	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&ak).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -514,15 +559,25 @@ func (s *ApiKeyService) UpdateApiKey(ctx context.Context, callerUserID, id strin
 	}
 
 	if req.Permissions != nil {
-		// Validate against the key owner's permissions, not the caller's, so a
-		// holder of apikeys:update cannot escalate another user's key beyond
-		// what that user's own roles allow. Owner-less keys (env bootstrap)
-		// fall back to the caller — static admin keys are rejected above.
-		ownerID := callerUserID
-		if ak.UserID != nil {
-			ownerID = *ak.UserID
+		if ak.Kind == models.ApiKeyKindPersonal {
+			return nil, ErrApiKeyPersonalNoGrants
 		}
-		if err := s.validateGrantsAgainstUserInternal(ctx, ownerID, req.Permissions); err != nil {
+		// Grants are capped twice: by the calling credential's effective
+		// permissions (a holder of apikeys:update cannot grant anything the
+		// credential itself cannot do right now) AND by the key owner's role
+		// permissions (no caller can push another user's key above what that
+		// user's own roles allow).
+		if err := validateGrantsAgainstPermissionSetInternal(callerPerms, req.Permissions); err != nil {
+			return nil, err
+		}
+		if ak.UserID == nil {
+			// No owner to cap against. The only legitimate ownerless keys are
+			// environment bootstrap keys, rejected as protected above — refuse
+			// grant edits on any other ownerless row rather than fall back to
+			// a weaker caller-only check.
+			return nil, ErrApiKeyProtected
+		}
+		if err := s.validateGrantsAgainstOwnerInternal(ctx, *ak.UserID, req.Permissions); err != nil {
 			return nil, err
 		}
 	}
@@ -562,6 +617,7 @@ func (s *ApiKeyService) UpdateApiKey(ctx context.Context, callerUserID, id strin
 		Description: ak.Description,
 		KeyPrefix:   ak.KeyPrefix,
 		UserID:      ak.UserID,
+		Kind:        ak.Kind,
 		IsStatic:    isStaticAPIKeyInternal(ak),
 		IsBootstrap: isEnvironmentBootstrapKeyInternal(ak),
 		ExpiresAt:   ak.ExpiresAt,
@@ -622,41 +678,41 @@ func (s *ApiKeyService) ValidateApiKey(ctx context.Context, rawKey string) (*mod
 }
 
 // ValidateApiKeyWithID is like ValidateApiKey but additionally returns the
-// API key's database ID so callers can resolve per-key permissions.
-func (s *ApiKeyService) ValidateApiKeyWithID(ctx context.Context, rawKey string) (*models.User, string, error) {
+// API key record so callers can resolve permissions according to its kind.
+func (s *ApiKeyService) ValidateApiKeyWithID(ctx context.Context, rawKey string) (*models.User, *models.ApiKey, error) {
 	keyPrefix, err := parseAPIKeyPrefixInternal(rawKey)
 	if err != nil {
-		return nil, "", err
+		return nil, nil, err
 	}
 
 	var apiKeys []models.ApiKey
 	if err := s.db.WithContext(ctx).Where("key_prefix = ?", keyPrefix).Find(&apiKeys).Error; err != nil {
-		return nil, "", fmt.Errorf("failed to find API keys: %w", err)
+		return nil, nil, fmt.Errorf("failed to find API keys: %w", err)
 	}
 
 	rawKey = normalizeAPIKeyInputInternal(rawKey)
 	for _, apiKey := range apiKeys {
 		if err := s.validateApiKeyHash(apiKey.KeyHash, rawKey); err == nil {
 			if apiKey.ExpiresAt != nil && apiKey.ExpiresAt.Before(time.Now()) {
-				return nil, "", ErrApiKeyExpired
+				return nil, nil, ErrApiKeyExpired
 			}
 
 			if apiKey.UserID == nil {
-				return nil, "", ErrApiKeyInvalid
+				return nil, nil, ErrApiKeyInvalid
 			}
 
 			s.markApiKeyUsedAsync(ctx, apiKey.ID)
 
 			user, err := s.userService.GetUserByID(ctx, *apiKey.UserID)
 			if err != nil {
-				return nil, "", fmt.Errorf("failed to get user for API key: %w", err)
+				return nil, nil, fmt.Errorf("failed to get user for API key: %w", err)
 			}
 
-			return user, apiKey.ID, nil
+			return user, &apiKey, nil
 		}
 	}
 
-	return nil, "", ErrApiKeyInvalid
+	return nil, nil, ErrApiKeyInvalid
 }
 
 func (s *ApiKeyService) GetEnvironmentByApiKey(ctx context.Context, rawKey string) (*string, error) {

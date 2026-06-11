@@ -51,7 +51,7 @@
 		isEditMode,
 		apiKeyId
 	}: {
-		apiKey: CreateApiKey;
+		apiKey: Omit<CreateApiKey, 'permissions'> & Partial<Pick<CreateApiKey, 'permissions'>>;
 		isEditMode: boolean;
 		apiKeyId?: string;
 	}) {
@@ -75,7 +75,7 @@
 				});
 			} else {
 				const safeName = apiKey.name?.trim() || 'Unknown';
-				const result = await tryCatch(apiKeyService.create(apiKey));
+				const result = await tryCatch(apiKeyService.create({ ...apiKey, permissions: apiKey.permissions ?? [] }));
 				handleApiResultWithCallbacks({
 					result,
 					message: m.api_key_create_failed({ name: safeName }),
