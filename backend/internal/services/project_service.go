@@ -2900,14 +2900,34 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 		return nil, err
 	}
 
-	if err := s.withProjectRenameRollback(ctx, &proj, func() error {
-		if err := s.applyProjectRenameIfNeeded(&proj, name, projectsDirectory); err != nil {
+	volumeMigration, err := prepareProjectRenameVolumeMigrationInternal(ctx, s, &proj, name, projectsDirectory)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := s.withProjectRenameRollback(ctx, &proj, func() (err error) {
+		volumeMigrationApplied := false
+		defer func() {
+			if err != nil && volumeMigrationApplied {
+				if rollbackErr := volumeMigration.Rollback(ctx); rollbackErr != nil {
+					slog.WarnContext(ctx, "failed to rollback project volume rename", "projectID", projectID, "error", rollbackErr)
+				}
+			}
+		}()
+
+		if err = s.applyProjectRenameIfNeeded(&proj, name, projectsDirectory); err != nil {
 			return err
 		}
-		if err := s.persistUpdatedProjectFiles(ctx, &proj, projectsDirectory, composeContent, envContent); err != nil {
+		if err = s.persistUpdatedProjectFiles(ctx, &proj, projectsDirectory, composeContent, envContent); err != nil {
 			return err
 		}
-		if err := s.db.WithContext(ctx).Save(&proj).Error; err != nil {
+		if volumeMigration != nil {
+			if err = volumeMigration.Apply(ctx); err != nil {
+				return fmt.Errorf("failed to rename project volumes: %w", err)
+			}
+			volumeMigrationApplied = true
+		}
+		if err = s.db.WithContext(ctx).Save(&proj).Error; err != nil {
 			return fmt.Errorf("failed to update project: %w", err)
 		}
 		return nil

@@ -89,6 +89,46 @@ func TestReadProjectFiles(t *testing.T) {
 	})
 }
 
+func TestComposeVolumeKeysWithExplicitName(t *testing.T) {
+	projectPath := t.TempDir()
+	rootCompose := filepath.Join(projectPath, "compose.yaml")
+	includeCompose := filepath.Join(projectPath, "included.yaml")
+
+	require.NoError(t, os.WriteFile(rootCompose, []byte(`
+services:
+  app:
+    image: nginx:alpine
+    volumes:
+      - data:/data
+      - fixed:/fixed
+      - scalar:/scalar
+volumes:
+  data:
+    driver: local
+  fixed:
+    name: app-data
+  scalar:
+  inline: {}
+`), 0o644))
+	require.NoError(t, os.WriteFile(includeCompose, []byte(`
+volumes:
+  included:
+    name: included-fixed
+  included_implicit:
+    driver: local
+`), 0o644))
+
+	explicit, err := ComposeVolumeKeysWithExplicitName([]string{rootCompose, includeCompose})
+	require.NoError(t, err)
+
+	assert.Contains(t, explicit, "fixed")
+	assert.Contains(t, explicit, "included")
+	assert.NotContains(t, explicit, "data")
+	assert.NotContains(t, explicit, "scalar")
+	assert.NotContains(t, explicit, "inline")
+	assert.NotContains(t, explicit, "included_implicit")
+}
+
 func TestReadProjectDirectoryFiles_RespectsDepthAndSkipDirectories(t *testing.T) {
 	projectPath := t.TempDir()
 

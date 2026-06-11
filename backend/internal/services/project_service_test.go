@@ -1072,6 +1072,173 @@ func TestProjectService_UpdateProjectServicesForcesRecreateInternal(t *testing.T
 	assert.True(t, forceRecreate, "service updates must force recreate after pulling the updated image")
 }
 
+type fakeProjectVolumeRenameMigrationInternal struct {
+	applyCalled    bool
+	rollbackCalled bool
+	applyErr       error
+	rollbackErr    error
+}
+
+func (m *fakeProjectVolumeRenameMigrationInternal) Apply(context.Context) error {
+	m.applyCalled = true
+	return m.applyErr
+}
+
+func (m *fakeProjectVolumeRenameMigrationInternal) Rollback(context.Context) error {
+	m.rollbackCalled = true
+	return m.rollbackErr
+}
+
+func TestProjectService_UpdateProject_RenameFailsWhenVolumeMigrationPreparationFails(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
+
+	originalPrepare := prepareProjectRenameVolumeMigrationInternal
+	t.Cleanup(func() {
+		prepareProjectRenameVolumeMigrationInternal = originalPrepare
+	})
+	prepareProjectRenameVolumeMigrationInternal = func(context.Context, *ProjectService, *models.Project, *string, string) (projectVolumeRenameMigrationInternal, error) {
+		return nil, errors.New("target volume already exists: bar_data")
+	}
+
+	originalDirName := "Foo"
+	originalPath := filepath.Join(projectsDir, originalDirName)
+	require.NoError(t, os.MkdirAll(originalPath, 0o755))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-volume-conflict"},
+		Name:      "Foo",
+		DirName:   &originalDirName,
+		Path:      originalPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	_, err = svc.UpdateProject(ctx, project.ID, new("bar"), nil, nil, models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "tester",
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "target volume already exists")
+	assert.DirExists(t, originalPath)
+	assert.NoDirExists(t, filepath.Join(projectsDir, "bar"))
+
+	var fromDB models.Project
+	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	assert.Equal(t, "Foo", fromDB.Name)
+	assert.Equal(t, originalPath, fromDB.Path)
+}
+
+func TestProjectService_UpdateProject_AppliesVolumeMigrationWhenNameChanges(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
+
+	migration := &fakeProjectVolumeRenameMigrationInternal{}
+	originalPrepare := prepareProjectRenameVolumeMigrationInternal
+	t.Cleanup(func() {
+		prepareProjectRenameVolumeMigrationInternal = originalPrepare
+	})
+	prepareProjectRenameVolumeMigrationInternal = func(context.Context, *ProjectService, *models.Project, *string, string) (projectVolumeRenameMigrationInternal, error) {
+		return migration, nil
+	}
+
+	originalDirName := "Foo"
+	originalPath := filepath.Join(projectsDir, originalDirName)
+	require.NoError(t, os.MkdirAll(originalPath, 0o755))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-volume-success"},
+		Name:      "Foo",
+		DirName:   &originalDirName,
+		Path:      originalPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	updated, err := svc.UpdateProject(ctx, project.ID, new("bar"), nil, nil, models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "tester",
+	})
+	require.NoError(t, err)
+
+	assert.True(t, migration.applyCalled)
+	assert.False(t, migration.rollbackCalled)
+	assert.Equal(t, "bar", updated.Name)
+	assert.DirExists(t, filepath.Join(projectsDir, "bar"))
+	assert.NoDirExists(t, originalPath)
+}
+
+func TestProjectService_UpdateProject_RollsBackVolumeMigrationWhenProjectSaveFails(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
+
+	migration := &fakeProjectVolumeRenameMigrationInternal{}
+	originalPrepare := prepareProjectRenameVolumeMigrationInternal
+	t.Cleanup(func() {
+		prepareProjectRenameVolumeMigrationInternal = originalPrepare
+	})
+	prepareProjectRenameVolumeMigrationInternal = func(context.Context, *ProjectService, *models.Project, *string, string) (projectVolumeRenameMigrationInternal, error) {
+		return migration, nil
+	}
+
+	require.NoError(t, db.Callback().Update().Before("gorm:update").Register("arcane_test_project_save_failure", func(tx *gorm.DB) {
+		if tx.Statement != nil && tx.Statement.Schema != nil && tx.Statement.Schema.Name == "Project" {
+			tx.AddError(errors.New("forced project save failure"))
+		}
+	}))
+
+	originalDirName := "Foo"
+	originalPath := filepath.Join(projectsDir, originalDirName)
+	require.NoError(t, os.MkdirAll(originalPath, 0o755))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-volume-save-fail"},
+		Name:      "Foo",
+		DirName:   &originalDirName,
+		Path:      originalPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	_, err = svc.UpdateProject(ctx, project.ID, new("bar"), nil, nil, models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "tester",
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "forced project save failure")
+	assert.True(t, migration.applyCalled)
+	assert.True(t, migration.rollbackCalled)
+	assert.DirExists(t, originalPath)
+	assert.NoDirExists(t, filepath.Join(projectsDir, "bar"))
+}
+
 func TestProjectService_UpdateProject_RenamesDirectoryWhenNameChanges(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := context.Background()

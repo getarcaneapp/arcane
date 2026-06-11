@@ -1,3 +1,9 @@
+## [Unreleased]
+
+### Added
+
+* Preserve project data volumes when renaming Docker Compose projects.
+
 ## v2.0.2
 
 ### Bug fixes

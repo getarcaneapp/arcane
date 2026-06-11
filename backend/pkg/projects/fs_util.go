@@ -131,6 +131,63 @@ func HasComposeRootKeysInFile(path string) (bool, error) {
 	return hasServices || hasInclude, nil
 }
 
+func ComposeVolumeKeysWithExplicitName(composeFiles []string) (map[string]struct{}, error) {
+	explicit := make(map[string]struct{})
+	for _, composeFile := range composeFiles {
+		composeFile = strings.TrimSpace(composeFile)
+		if composeFile == "" {
+			continue
+		}
+		keys, err := composeVolumeKeysWithExplicitNameInFile(composeFile)
+		if err != nil {
+			return nil, err
+		}
+		for key := range keys {
+			explicit[key] = struct{}{}
+		}
+	}
+	return explicit, nil
+}
+
+func composeVolumeKeysWithExplicitNameInFile(path string) (map[string]struct{}, error) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read compose file: %w", err)
+	}
+
+	composeData := map[string]any{}
+	if err := yaml.Unmarshal(content, &composeData); err != nil {
+		return nil, fmt.Errorf("parse compose file: %w", err)
+	}
+
+	rawVolumes, ok := composeData["volumes"]
+	if !ok || rawVolumes == nil {
+		return map[string]struct{}{}, nil
+	}
+
+	volumes, ok := rawVolumes.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("parse compose file: volumes must be a mapping")
+	}
+
+	explicit := make(map[string]struct{})
+	for key, rawVolume := range volumes {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		volumeConfig, ok := rawVolume.(map[string]any)
+		if !ok {
+			continue
+		}
+		if _, hasName := volumeConfig["name"]; hasName {
+			explicit[key] = struct{}{}
+		}
+	}
+
+	return explicit, nil
+}
+
 func GetTemplatesDirectory(ctx context.Context, templatesDir string) (string, error) {
 	resolved := ResolveConfiguredContainerDirectory(templatesDir, "/app/data/templates")
 	if _, err := os.Stat(resolved); os.IsNotExist(err) {
