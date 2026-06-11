@@ -203,6 +203,7 @@ export type ApiKey = {
 	description?: string;
 	keyPrefix: string;
 	userId: string;
+	kind?: 'scoped' | 'personal';
 	isStatic: boolean;
 	isBootstrap: boolean;
 	expiresAt?: string;
@@ -221,6 +222,13 @@ export type CreateApiKey = {
 	description?: string;
 	expiresAt?: string;
 	permissions: ApiKeyPermissionGrant[];
+};
+
+// Personal keys carry no grants; they inherit the owner's role permissions.
+export type CreateUserApiKey = {
+	name: string;
+	description?: string;
+	expiresAt?: string;
 };
 
 export type UpdateApiKey = {

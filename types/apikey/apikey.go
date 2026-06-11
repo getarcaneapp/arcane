@@ -17,6 +17,15 @@ type CreateApiKey struct {
 	Permissions []PermissionGrant `json:"permissions" minItems:"1" doc:"Permissions granted to this key. Cannot exceed the creator's own permissions."`
 }
 
+// CreateUserApiKey represents the request body for creating a personal API key.
+// Personal keys carry no grants of their own; they inherit the owner's role
+// permissions at authentication time.
+type CreateUserApiKey struct {
+	Name        string     `json:"name" minLength:"1" maxLength:"255" doc:"Name of the API key" example:"My API Key"`
+	Description *string    `json:"description,omitempty" maxLength:"1000" doc:"Optional description of the API key"`
+	ExpiresAt   *time.Time `json:"expiresAt,omitempty" doc:"Optional expiration date for the API key"`
+}
+
 // ApiKey represents an API key without the secret.
 type ApiKey struct {
 	ID          string            `json:"id" doc:"Unique identifier of the API key"`
@@ -24,6 +33,7 @@ type ApiKey struct {
 	Description *string           `json:"description,omitempty" doc:"Description of the API key"`
 	KeyPrefix   string            `json:"keyPrefix" doc:"Prefix of the API key for identification"`
 	UserID      *string           `json:"userId,omitempty" doc:"ID of the user who owns the API key"`
+	Kind        string            `json:"kind" doc:"Key kind: 'scoped' keys use their own permission grants, 'personal' keys inherit the owner's role permissions"`
 	IsStatic    bool              `json:"isStatic" doc:"Whether the API key is environment-managed and protected from deletion"`
 	IsBootstrap bool              `json:"isBootstrap" doc:"Whether the API key is an auto-generated environment bootstrap key (locked from manual edit / delete)"`
 	ExpiresAt   *time.Time        `json:"expiresAt,omitempty" doc:"Expiration date of the API key"`

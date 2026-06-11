@@ -1,5 +1,5 @@
 import BaseAPIService from './api-service';
-import type { ApiKey, ApiKeyCreated, CreateApiKey, UpdateApiKey } from '$lib/types/auth';
+import type { ApiKey, ApiKeyCreated, CreateApiKey, CreateUserApiKey, UpdateApiKey } from '$lib/types/auth';
 import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
 import { transformPaginationParams } from '$lib/utils/tables';
 
@@ -30,7 +30,7 @@ class ApiKeyAPIService extends BaseAPIService {
 		return this.handleResponse(this.api.get('/auth/me/api-keys')) as Promise<ApiKey[]>;
 	}
 
-	async createMine(apiKey: CreateApiKey): Promise<ApiKeyCreated> {
+	async createMine(apiKey: CreateUserApiKey): Promise<ApiKeyCreated> {
 		return this.handleResponse(this.api.post('/auth/me/api-keys', apiKey)) as Promise<ApiKeyCreated>;
 	}
 
