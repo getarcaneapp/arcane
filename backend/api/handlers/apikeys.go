@@ -10,7 +10,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/types/v2/apikey"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 )
@@ -43,6 +42,10 @@ type ListApiKeysOutput struct {
 
 type CreateApiKeyInput struct {
 	Body apikey.CreateApiKey
+}
+
+type CreateMyApiKeyInput struct {
+	Body apikey.CreateUserApiKey
 }
 
 type CreateApiKeyOutput struct {
@@ -169,16 +172,18 @@ func RegisterApiKeys(api huma.API, apiKeyService *services.ApiKeyService) {
 		},
 	}, h.ListMyApiKeys)
 
+	// Personal keys inherit the owner's permissions, so creating or deleting
+	// them is session-only (BearerAuth, no ApiKeyAuth): a stolen API key must
+	// not be able to mint or remove persistence credentials.
 	huma.Register(api, huma.Operation{
 		OperationID: "create-my-api-key",
 		Method:      http.MethodPost,
 		Path:        "/auth/me/api-keys",
 		Summary:     "Create my API key",
-		Description: "Create a new API key owned by the current user",
+		Description: "Create a new personal API key owned by the current user. Personal keys inherit the owner's role permissions.",
 		Tags:        []string{"API Keys"},
 		Security: []map[string][]string{
 			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
 		},
 	}, h.CreateMyApiKey)
 
@@ -191,7 +196,6 @@ func RegisterApiKeys(api huma.API, apiKeyService *services.ApiKeyService) {
 		Tags:        []string{"API Keys"},
 		Security: []map[string][]string{
 			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
 		},
 	}, h.DeleteMyApiKey)
 }
@@ -202,19 +206,7 @@ func (h *ApiKeyHandler) ListApiKeys(ctx context.Context, input *ListApiKeysInput
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	params := pagination.QueryParams{
-		SearchQuery: pagination.SearchQuery{
-			Search: input.Search,
-		},
-		SortParams: pagination.SortParams{
-			Sort:  input.Sort,
-			Order: pagination.SortOrder(input.Order),
-		},
-		Params: pagination.Params{
-			Start: input.Start,
-			Limit: input.Limit,
-		},
-	}
+	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 
 	apiKeys, paginationResp, err := h.apiKeyService.ListApiKeys(ctx, params)
 	if err != nil {
@@ -223,22 +215,40 @@ func (h *ApiKeyHandler) ListApiKeys(ctx context.Context, input *ListApiKeysInput
 
 	return &ListApiKeysOutput{
 		Body: ApiKeyPaginatedResponse{
-			Success: true,
-			Data:    apiKeys,
-			Pagination: base.PaginationResponse{
-				TotalPages:      paginationResp.TotalPages,
-				TotalItems:      paginationResp.TotalItems,
-				CurrentPage:     paginationResp.CurrentPage,
-				ItemsPerPage:    paginationResp.ItemsPerPage,
-				GrandTotalItems: paginationResp.GrandTotalItems,
-			},
+			Success:    true,
+			Data:       apiKeys,
+			Pagination: toPaginationResponseInternal(paginationResp),
 		},
 	}, nil
 }
 
-// CreateApiKey creates a new API key.
+// CreateApiKey creates a new scoped API key. Requested grants are capped by
+// the calling credential's effective permissions.
 func (h *ApiKeyHandler) CreateApiKey(ctx context.Context, input *CreateApiKeyInput) (*CreateApiKeyOutput, error) {
-	return h.createCurrentUserApiKeyInternal(ctx, input)
+	if h.apiKeyService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	user, err := requireUserInternal(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	callerPerms, _ := humamw.PermissionsFromContext(ctx)
+	apiKey, err := h.apiKeyService.CreateApiKey(ctx, user.ID, callerPerms, input.Body)
+	if err != nil {
+		if errors.Is(err, services.ErrApiKeyPermissionEscalation) {
+			return nil, huma.Error403Forbidden(err.Error())
+		}
+		return nil, huma.Error500InternalServerError((&common.ApiKeyCreationError{Err: err}).Error())
+	}
+
+	return &CreateApiKeyOutput{
+		Body: base.ApiResponse[apikey.ApiKeyCreatedDto]{
+			Success: true,
+			Data:    *apiKey,
+		},
+	}, nil
 }
 
 // GetApiKey returns details of a specific API key.
@@ -266,12 +276,12 @@ func (h *ApiKeyHandler) UpdateApiKey(ctx context.Context, input *UpdateApiKeyInp
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	user, exists := humamw.GetCurrentUserFromContext(ctx)
-	if !exists {
-		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	if _, err := requireUserInternal(ctx); err != nil {
+		return nil, err
 	}
 
-	apiKey, err := h.apiKeyService.UpdateApiKey(ctx, user.ID, input.ID, input.Body)
+	callerPerms, _ := humamw.PermissionsFromContext(ctx)
+	apiKey, err := h.apiKeyService.UpdateApiKey(ctx, callerPerms, input.ID, input.Body)
 	if err != nil {
 		if errors.Is(err, services.ErrApiKeyNotFound) {
 			return nil, huma.Error404NotFound((&common.ApiKeyNotFoundError{}).Error())
@@ -281,6 +291,9 @@ func (h *ApiKeyHandler) UpdateApiKey(ctx context.Context, input *UpdateApiKeyInp
 		}
 		if errors.Is(err, services.ErrApiKeyPermissionEscalation) {
 			return nil, huma.Error403Forbidden(err.Error())
+		}
+		if errors.Is(err, services.ErrApiKeyPersonalNoGrants) {
+			return nil, huma.Error400BadRequest(err.Error())
 		}
 		return nil, huma.Error500InternalServerError((&common.ApiKeyUpdateError{Err: err}).Error())
 	}
@@ -325,9 +338,9 @@ func (h *ApiKeyHandler) ListMyApiKeys(ctx context.Context, input *struct{}) (*Li
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	user, exists := humamw.GetCurrentUserFromContext(ctx)
-	if !exists {
-		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	user, err := requireUserInternal(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	keys, err := h.apiKeyService.ListApiKeysByUser(ctx, user.ID)
@@ -343,26 +356,27 @@ func (h *ApiKeyHandler) ListMyApiKeys(ctx context.Context, input *struct{}) (*Li
 	}, nil
 }
 
-// CreateMyApiKey creates a new API key owned by the current user (self-service).
-func (h *ApiKeyHandler) CreateMyApiKey(ctx context.Context, input *CreateApiKeyInput) (*CreateApiKeyOutput, error) {
-	return h.createCurrentUserApiKeyInternal(ctx, input)
-}
-
-func (h *ApiKeyHandler) createCurrentUserApiKeyInternal(ctx context.Context, input *CreateApiKeyInput) (*CreateApiKeyOutput, error) {
+// CreateMyApiKey creates a new personal API key owned by the current user
+// (self-service). Personal keys inherit the owner's role permissions, and may
+// only be minted from an interactive session — never by another API key.
+func (h *ApiKeyHandler) CreateMyApiKey(ctx context.Context, input *CreateMyApiKeyInput) (*CreateApiKeyOutput, error) {
 	if h.apiKeyService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	user, exists := humamw.GetCurrentUserFromContext(ctx)
-	if !exists {
-		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	// Defense in depth alongside the BearerAuth-only Security requirement:
+	// only session auth sets a session ID, so API-key and sudo callers stop here.
+	if _, ok := humamw.GetCurrentSessionIDFromContext(ctx); !ok {
+		return nil, huma.Error403Forbidden("personal API keys can only be managed from an interactive session")
 	}
 
-	apiKey, err := h.apiKeyService.CreateApiKey(ctx, user.ID, input.Body)
+	user, err := requireUserInternal(ctx)
 	if err != nil {
-		if errors.Is(err, services.ErrApiKeyPermissionEscalation) {
-			return nil, huma.Error403Forbidden(err.Error())
-		}
+		return nil, err
+	}
+
+	apiKey, err := h.apiKeyService.CreatePersonalApiKey(ctx, user.ID, input.Body)
+	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.ApiKeyCreationError{Err: err}).Error())
 	}
 
@@ -382,9 +396,15 @@ func (h *ApiKeyHandler) DeleteMyApiKey(ctx context.Context, input *DeleteApiKeyI
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	user, exists := humamw.GetCurrentUserFromContext(ctx)
-	if !exists {
-		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	// Defense in depth alongside the BearerAuth-only Security requirement:
+	// only session auth sets a session ID, so API-key and sudo callers stop here.
+	if _, ok := humamw.GetCurrentSessionIDFromContext(ctx); !ok {
+		return nil, huma.Error403Forbidden("personal API keys can only be managed from an interactive session")
+	}
+
+	user, err := requireUserInternal(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	existing, err := h.apiKeyService.GetApiKey(ctx, input.ID)

@@ -30,39 +30,14 @@ func (s IconSet) IsEmpty() bool {
 		strings.TrimSpace(s.Dark) == ""
 }
 
-func (s IconSet) HasVariant() bool {
-	return strings.TrimSpace(s.Light) != "" || strings.TrimSpace(s.Dark) != ""
-}
-
+// FirstNonEmpty returns the first set that defines any icon value. Levels are
+// isolated: a set that defines one variant never inherits the others from
+// lower-precedence sets.
 func FirstNonEmpty(sets ...IconSet) IconSet {
-	merged := IconSet{}
-	fallback := ""
-
 	for _, set := range sets {
-		if fallback == "" {
-			fallback = strings.TrimSpace(set.Icon)
+		if !set.IsEmpty() {
+			return set
 		}
-		if merged.Light == "" {
-			merged.Light = strings.TrimSpace(set.Light)
-		}
-		if merged.Dark == "" {
-			merged.Dark = strings.TrimSpace(set.Dark)
-		}
-	}
-
-	if strings.TrimSpace(merged.Light) != "" || strings.TrimSpace(merged.Dark) != "" {
-		if fallback != "" {
-			if merged.Light == "" {
-				merged.Light = fallback
-			}
-			if merged.Dark == "" {
-				merged.Dark = fallback
-			}
-		}
-		return merged
-	}
-	if fallback != "" {
-		return IconSet{Icon: fallback}
 	}
 	return IconSet{}
 }
@@ -77,19 +52,22 @@ func Resolve(catalog string, set IconSet) ResolvedIconSet {
 		}
 	}
 
-	light := strings.TrimSpace(set.Light)
-	if light == "" {
-		light = strings.TrimSpace(set.Icon)
-	}
-	dark := strings.TrimSpace(set.Dark)
-	if dark == "" {
-		dark = strings.TrimSpace(set.Icon)
-	}
+	light := firstNonEmptyValueInternal(set.Light, set.Icon, set.Dark)
+	dark := firstNonEmptyValueInternal(set.Dark, set.Icon, set.Light)
 
 	return ResolvedIconSet{
 		IconLightURL: resolveValueInternal(selectedCatalog, light, "light"),
 		IconDarkURL:  resolveValueInternal(selectedCatalog, dark, "dark"),
 	}
+}
+
+func firstNonEmptyValueInternal(values ...string) string {
+	for _, v := range values {
+		if trimmed := strings.TrimSpace(v); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }
 
 func normalizeCatalogInternal(catalog string) string {

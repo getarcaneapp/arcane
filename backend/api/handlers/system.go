@@ -20,6 +20,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/system"
 	dockersystem "github.com/moby/moby/api/types/system"
 	"github.com/moby/moby/client"
+	updatertypes "go.getarcane.app/updater/types"
 )
 
 // SystemHandler handles system management endpoints.
@@ -511,14 +512,14 @@ func (h *SystemHandler) TriggerUpgrade(ctx context.Context, input *TriggerUpgrad
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	user, exists := humamw.GetCurrentUserFromContext(ctx)
-	if !exists {
-		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	user, err := requireUserInternal(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	slog.Info("System upgrade triggered", "user", user.Username, "userId", user.ID)
 
-	err := h.upgradeService.TriggerUpgradeViaCLI(ctx, *user)
+	err = h.upgradeService.TriggerUpgradeViaCLI(ctx, *user, updatertypes.SelfUpdateTarget{})
 	if err != nil {
 		slog.Error("System upgrade failed", "error", err, "user", user.Username)
 

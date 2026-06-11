@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
@@ -37,17 +39,17 @@ func (c ActivityAppContext) contextInternal() context.Context {
 // buildPaginationParamsInternal converts query parameters to pagination.QueryParams.
 // A limit of -1 means "show all items" (no pagination).
 func buildPaginationParamsInternal(start, limit int, sortCol, sortDir, search string) pagination.QueryParams {
-	// limit = -1 means "show all", preserve it; zero or other negative values default to 20
+	// limit = -1 means "show all" and 0 means "no pagination"; only invalid values default to 20
 	if limit < -1 {
 		limit = 20
 	}
 
 	return pagination.QueryParams{
 		SearchQuery: pagination.SearchQuery{
-			Search: search,
+			Search: strings.TrimSpace(search),
 		},
 		SortParams: pagination.SortParams{
-			Sort:  sortCol,
+			Sort:  strings.TrimSpace(sortCol),
 			Order: pagination.SortOrder(sortDir),
 		},
 		Params: pagination.Params{
@@ -56,6 +58,26 @@ func buildPaginationParamsInternal(start, limit int, sortCol, sortDir, search st
 		},
 		Filters: make(map[string]string),
 	}
+}
+
+// toPaginationResponseInternal converts the pagination package's response into the API response shape.
+func toPaginationResponseInternal(p pagination.Response) base.PaginationResponse {
+	return base.PaginationResponse{
+		TotalPages:      p.TotalPages,
+		TotalItems:      p.TotalItems,
+		CurrentPage:     p.CurrentPage,
+		ItemsPerPage:    p.ItemsPerPage,
+		GrandTotalItems: p.GrandTotalItems,
+	}
+}
+
+// requireUserInternal returns the authenticated user from the request context or a 401 error.
+func requireUserInternal(ctx context.Context) (*models.User, error) {
+	user, exists := humamw.GetCurrentUserFromContext(ctx)
+	if !exists || user == nil {
+		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	}
+	return user, nil
 }
 
 func registerSecuredInternal[I, O any](

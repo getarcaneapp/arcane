@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -31,6 +32,7 @@ import (
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 	libupdater "go.getarcane.app/updater/pkg/labels"
+	"golang.org/x/sync/singleflight"
 )
 
 type ContainerService struct {
@@ -42,6 +44,7 @@ type ContainerService struct {
 	projectService  *ProjectService
 	statsHistory    containerstats.Store
 	updateInfoCache *cache.KeyedCache[string, *imagetypes.UpdateInfo]
+	updateInfoSF    singleflight.Group
 	iconMetaCache   *cache.TTL[projects.ArcaneComposeMetadata]
 }
 
@@ -907,7 +910,7 @@ func (s *ContainerService) ListContainersPaginated(
 	imageIDs := collectImageIDs(dockerContainers)
 	updateInfoMap := s.getUpdateInfoMap(ctx, imageIDs)
 	currentContainerID, currentContainerErr := dockerutils.GetCurrentContainerID()
-	items := s.buildContainerSummaries(ctx, dockerContainers, updateInfoMap, currentContainerID, currentContainerErr)
+	items := s.buildContainerSummaries(dockerContainers, updateInfoMap, currentContainerID, currentContainerErr)
 
 	config := s.buildContainerPaginationConfig()
 	counts := s.calculateContainerStatusCounts(items)
@@ -919,6 +922,14 @@ func (s *ContainerService) ListContainersPaginated(
 
 		result := pagination.SearchOrderAndPaginate(items, ungroupedParams, config)
 		groups, paginationResp := paginateContainerProjectGroupsInternal(result, params)
+
+		// Icons must be resolved before flattening: groups hold value copies,
+		// so the flattened items only carry icons applied to the groups first.
+		metadataByProject := map[string]projects.ArcaneComposeMetadata{}
+		for gi := range groups {
+			s.applyContainerSummaryIconsInternal(ctx, groups[gi].Items, metadataByProject)
+		}
+
 		return ContainerListResult{
 			Items:      flattenContainerProjectGroupsInternal(groups),
 			Groups:     groups,
@@ -928,6 +939,7 @@ func (s *ContainerService) ListContainersPaginated(
 	}
 
 	result := pagination.SearchOrderAndPaginate(items, params, config)
+	s.applyContainerSummaryIconsInternal(ctx, result.Items, nil)
 	paginationResp := pagination.BuildResponseFromFilterResult(result, params)
 
 	return ContainerListResult{
@@ -942,8 +954,7 @@ func paginateContainerProjectGroupsInternal(
 	params pagination.QueryParams,
 ) ([]containertypes.SummaryGroup, pagination.Response) {
 	groups := groupContainersByProjectInternal(result.Items)
-	groupedItems := flattenContainerProjectGroupsInternal(groups)
-	totalCount := len(groupedItems)
+	totalCount := len(result.Items)
 
 	if params.Limit <= 0 {
 		return groups, pagination.Response{
@@ -955,30 +966,41 @@ func paginateContainerProjectGroupsInternal(
 		}
 	}
 
-	pages := partitionContainerProjectPagesInternal(groups, params.Limit)
-	requestedPage := 1
-	if params.Limit > 0 {
-		requestedPage = (params.Start / params.Limit) + 1
+	requestedPage := max((params.Start/params.Limit)+1, 1)
+
+	// Pages are contiguous runs of whole groups: a group is never split, so the
+	// group that crosses the limit finishes its page. One walk over group sizes
+	// finds the requested page's group range without materializing other pages.
+	totalPages := 0
+	pageStart, currentCount := 0, 0
+	selStart, selEnd := 0, 0
+	lastStart, lastEnd := 0, 0
+
+	closePage := func(end int) {
+		totalPages++
+		if totalPages == requestedPage {
+			selStart, selEnd = pageStart, end
+		}
+		lastStart, lastEnd = pageStart, end
+		pageStart, currentCount = end, 0
 	}
 
-	if requestedPage < 1 {
-		requestedPage = 1
+	for i := range groups {
+		currentCount += len(groups[i].Items)
+		if currentCount >= params.Limit {
+			closePage(i + 1)
+		}
+	}
+	if pageStart < len(groups) || totalPages == 0 {
+		closePage(len(groups))
 	}
 
-	totalPages := len(pages)
-	if totalPages == 0 {
-		totalPages = 1
-	}
 	if requestedPage > totalPages {
 		requestedPage = totalPages
+		selStart, selEnd = lastStart, lastEnd
 	}
 
-	pageGroups := []containertypes.SummaryGroup{}
-	if len(pages) > 0 {
-		pageGroups = pages[requestedPage-1]
-	}
-
-	return pageGroups, pagination.Response{
+	return groups[selStart:selEnd], pagination.Response{
 		TotalPages:      int64(totalPages),
 		TotalItems:      int64(totalCount),
 		CurrentPage:     requestedPage,
@@ -1013,33 +1035,6 @@ func flattenContainerProjectGroupsInternal(groups []containertypes.SummaryGroup)
 	}
 
 	return flattened
-}
-
-func partitionContainerProjectPagesInternal(groups []containertypes.SummaryGroup, limit int) [][]containertypes.SummaryGroup {
-	if len(groups) == 0 {
-		return [][]containertypes.SummaryGroup{{}}
-	}
-
-	pages := make([][]containertypes.SummaryGroup, 0)
-	currentPage := make([]containertypes.SummaryGroup, 0)
-	currentCount := 0
-
-	for _, group := range groups {
-		currentPage = append(currentPage, group)
-		currentCount += len(group.Items)
-
-		if currentCount >= limit {
-			pages = append(pages, currentPage)
-			currentPage = make([]containertypes.SummaryGroup, 0)
-			currentCount = 0
-		}
-	}
-
-	if len(currentPage) > 0 || len(pages) == 0 {
-		pages = append(pages, currentPage)
-	}
-
-	return pages
 }
 
 func getContainerProjectNameInternal(container containertypes.Summary) string {
@@ -1100,38 +1095,70 @@ func (s *ContainerService) getUpdateInfoMap(ctx context.Context, imageIDs []stri
 	}
 
 	updateInfoMap := make(map[string]*imagetypes.UpdateInfo, len(imageIDs))
+	var uncachedIDs []string
 	for _, imageID := range imageIDs {
-		info, err := s.updateInfoCache.GetOrFetch(ctx, imageID, nil, func(fetchCtx context.Context) (*imagetypes.UpdateInfo, error) {
-			infos, fetchErr := s.imageService.GetUpdateInfoByImageIDs(fetchCtx, []string{imageID})
-			if fetchErr != nil {
-				return nil, fetchErr
-			}
-			return infos[imageID], nil
-		})
-		if err != nil {
-			slog.WarnContext(ctx, "Failed to fetch image update info for container image", "imageID", imageID, "error", err)
+		info, ok := s.updateInfoCache.Get(imageID)
+		if !ok {
+			uncachedIDs = append(uncachedIDs, imageID)
 			continue
 		}
 		if info != nil {
 			updateInfoMap[imageID] = info
 		}
 	}
+
+	if len(uncachedIDs) > 0 {
+		// Singleflight keyed by the uncached set so concurrent list requests
+		// that miss on the same images share one batch query.
+		slices.Sort(uncachedIDs)
+		res, err, _ := s.updateInfoSF.Do(strings.Join(uncachedIDs, ","), func() (any, error) {
+			infos, fetchErr := s.imageService.GetUpdateInfoByImageIDs(ctx, uncachedIDs)
+			if fetchErr != nil {
+				return nil, fetchErr
+			}
+			for _, imageID := range uncachedIDs {
+				// Cache nil results too so absent rows don't refetch until invalidation.
+				s.updateInfoCache.Set(imageID, infos[imageID])
+			}
+			return infos, nil
+		})
+		if err != nil {
+			slog.WarnContext(ctx, "Failed to fetch image update info for container images", "imageIDs", len(uncachedIDs), "error", err)
+			return updateInfoMap
+		}
+		infos, _ := res.(map[string]*imagetypes.UpdateInfo)
+		for _, imageID := range uncachedIDs {
+			if info := infos[imageID]; info != nil {
+				updateInfoMap[imageID] = info
+			}
+		}
+	}
 	return updateInfoMap
 }
 
-func (s *ContainerService) buildContainerSummaries(ctx context.Context, containers []container.Summary, updateInfoMap map[string]*imagetypes.UpdateInfo, currentContainerID string, currentContainerErr error) []containertypes.Summary {
+func (s *ContainerService) buildContainerSummaries(containers []container.Summary, updateInfoMap map[string]*imagetypes.UpdateInfo, currentContainerID string, currentContainerErr error) []containertypes.Summary {
 	items := make([]containertypes.Summary, 0, len(containers))
-	metadataByProject := map[string]projects.ArcaneComposeMetadata{}
 	for _, dc := range containers {
 		summary := containertypes.NewSummary(dc)
 		if info, exists := updateInfoMap[dc.ImageID]; exists {
 			summary.UpdateInfo = info
 		}
 		summary.RedeployDisabled = libupdater.ShouldDisableArcaneServerRedeploy(summary.Labels, summary.ID, currentContainerID, currentContainerErr)
-		s.applyContainerSummaryIconInternal(ctx, &summary, metadataByProject)
 		items = append(items, summary)
 	}
 	return items
+}
+
+// applyContainerSummaryIconsInternal resolves icons for a page of summaries.
+// Icon resolution is deferred until after pagination so the cost is bounded by
+// page size rather than the full container list.
+func (s *ContainerService) applyContainerSummaryIconsInternal(ctx context.Context, summaries []containertypes.Summary, metadataByProject map[string]projects.ArcaneComposeMetadata) {
+	if metadataByProject == nil {
+		metadataByProject = map[string]projects.ArcaneComposeMetadata{}
+	}
+	for i := range summaries {
+		s.applyContainerSummaryIconInternal(ctx, &summaries[i], metadataByProject)
+	}
 }
 
 func (s *ContainerService) applyContainerSummaryIconInternal(ctx context.Context, summary *containertypes.Summary, metadataByProject map[string]projects.ArcaneComposeMetadata) {
@@ -1154,7 +1181,7 @@ func (s *ContainerService) applyContainerDetailsIconInternal(ctx context.Context
 
 func (s *ContainerService) resolveContainerIconInternal(ctx context.Context, labels map[string]string, metadataByProject map[string]projects.ArcaneComposeMetadata) iconcatalog.ResolvedIconSet {
 	explicitIcon := projects.FindArcaneIconSet(labels)
-	if iconSetHasBothVariantsInternal(explicitIcon) {
+	if !explicitIcon.IsEmpty() {
 		return s.resolveIconSetInternal(ctx, explicitIcon)
 	}
 
@@ -1171,10 +1198,6 @@ func (s *ContainerService) resolveContainerIconInternal(ctx context.Context, lab
 		meta.ServiceIconSets[serviceName],
 		meta.ProjectIcon,
 	))
-}
-
-func iconSetHasBothVariantsInternal(iconSet iconcatalog.IconSet) bool {
-	return strings.TrimSpace(iconSet.Light) != "" && strings.TrimSpace(iconSet.Dark) != ""
 }
 
 func (s *ContainerService) getCachedProjectIconMetadataInternal(ctx context.Context, projectName string, metadataByProject map[string]projects.ArcaneComposeMetadata) projects.ArcaneComposeMetadata {

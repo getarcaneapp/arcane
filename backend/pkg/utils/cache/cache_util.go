@@ -43,6 +43,21 @@ func NewKeyed[K comparable, T any]() *KeyedCache[K, T] {
 	}
 }
 
+// Get returns the cached value for key, if present.
+func (c *KeyedCache[K, T]) Get(key K) (T, bool) {
+	c.mu.RLock()
+	cached, ok := c.entries[key]
+	c.mu.RUnlock()
+	return cached, ok
+}
+
+// Set stores value for key, replacing any existing entry.
+func (c *KeyedCache[K, T]) Set(key K, value T) {
+	c.mu.Lock()
+	c.entries[key] = value
+	c.mu.Unlock()
+}
+
 func (c *KeyedCache[K, T]) GetOrFetch(
 	ctx context.Context,
 	key K,

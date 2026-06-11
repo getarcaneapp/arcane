@@ -417,6 +417,54 @@ func TestActivityServiceFailStaleImageUpdateChecksInternal(t *testing.T) {
 	require.Equal(t, models.ActivityStatusSuccess, completed.Status)
 }
 
+func TestActivityServiceResolveStaleAutoUpdateActivitiesInternal(t *testing.T) {
+	ctx := context.Background()
+	db := setupActivityServiceTestDBInternal(t)
+	service := NewActivityService(db)
+
+	selfUpdateRun, err := service.StartActivity(ctx, StartActivityRequest{
+		EnvironmentID: "0",
+		Type:          models.ActivityTypeAutoUpdate,
+		LatestMessage: "updating",
+		Metadata:      models.JSON{"dryRun": false},
+	})
+	require.NoError(t, err)
+	require.NoError(t, service.PatchActivityMetadata(ctx, selfUpdateRun.ID, models.JSON{"selfUpdateTriggered": true}))
+
+	interruptedRun, err := service.StartActivity(ctx, StartActivityRequest{
+		EnvironmentID: "0",
+		Type:          models.ActivityTypeAutoUpdate,
+		LatestMessage: "updating",
+	})
+	require.NoError(t, err)
+	otherType, err := service.StartActivity(ctx, StartActivityRequest{
+		EnvironmentID: "0",
+		Type:          models.ActivityTypeImagePull,
+		LatestMessage: "pulling",
+	})
+	require.NoError(t, err)
+
+	resolved, err := service.ResolveStaleAutoUpdateActivities(ctx)
+	require.NoError(t, err)
+	require.EqualValues(t, 2, resolved)
+
+	var selfUpdated models.Activity
+	require.NoError(t, db.First(&selfUpdated, "id = ?", selfUpdateRun.ID).Error)
+	require.Equal(t, models.ActivityStatusSuccess, selfUpdated.Status)
+	require.NotNil(t, selfUpdated.EndedAt)
+	require.Contains(t, selfUpdated.LatestMessage, "restarted with the updated image")
+	require.Equal(t, false, selfUpdated.Metadata["dryRun"])
+
+	var interrupted models.Activity
+	require.NoError(t, db.First(&interrupted, "id = ?", interruptedRun.ID).Error)
+	require.Equal(t, models.ActivityStatusFailed, interrupted.Status)
+	require.Contains(t, interrupted.LatestMessage, "interrupted")
+
+	var other models.Activity
+	require.NoError(t, db.First(&other, "id = ?", otherType.ID).Error)
+	require.Equal(t, models.ActivityStatusRunning, other.Status)
+}
+
 func receiveActivityEventInternal(t *testing.T, events <-chan activitytypes.StreamEvent) activitytypes.StreamEvent {
 	t.Helper()
 

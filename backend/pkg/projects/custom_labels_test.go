@@ -36,6 +36,30 @@ x-arcane:
 	require.Equal(t, []string{"https://www.example.com"}, meta.ProjectURLS)
 }
 
+func TestParseArcaneComposeMetadata_ServiceLabelIconsOutrankProjectIcon(t *testing.T) {
+	tempDir := t.TempDir()
+
+	composeContent := `x-arcane:
+  icon-light: umami
+  icon-dark: umami
+services:
+  umami:
+    image: ghcr.io/umami-software/umami:latest
+  db:
+    image: postgres:16
+    labels:
+      com.getarcaneapp.arcane.icon-light: postgres
+      com.getarcaneapp.arcane.icon-dark: postgres
+`
+	composePath := filepath.Join(tempDir, "compose.yaml")
+	require.NoError(t, os.WriteFile(composePath, []byte(composeContent), 0o600))
+
+	meta, err := ParseArcaneComposeMetadata(context.Background(), composePath, tempDir, false)
+	require.NoError(t, err)
+	require.Equal(t, IconSet{Light: "postgres", Dark: "postgres"}, meta.ServiceIconSets["db"])
+	require.NotContains(t, meta.ServiceIconSets, "umami")
+}
+
 func TestParseArcaneComposeMetadata_IncludeSupport(t *testing.T) {
 	tempDir := t.TempDir()
 

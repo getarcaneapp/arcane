@@ -24,6 +24,13 @@ func registerJobs(appCtx context.Context, newScheduler *pkg_scheduler.JobSchedul
 		} else if failed > 0 {
 			slog.InfoContext(appCtx, "Marked stale image update checks as failed", "count", failed)
 		}
+
+		resolved, err := appServices.Activity.ResolveStaleAutoUpdateActivities(appCtx)
+		if err != nil {
+			slog.WarnContext(appCtx, "Failed to resolve stale auto-update activities", "count", resolved, "error", err)
+		} else if resolved > 0 {
+			slog.InfoContext(appCtx, "Resolved stale auto-update activities", "count", resolved)
+		}
 	}
 
 	newScheduler.RegisterJob(jobs.AutoUpdate)

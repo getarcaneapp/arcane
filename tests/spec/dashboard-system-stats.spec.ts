@@ -145,7 +145,7 @@ test.describe('Dashboard system stats websocket', () => {
 		await page.waitForLoadState('load');
 		await expect(page.getByRole('heading', { name: 'Environment Board' })).toBeVisible();
 
-		await expect.poll(() => requestPaths).toContain('/api/environments/0/dashboard');
+		await expect.poll(() => requestPaths).toContain('/api/dashboard/stream');
 
 		expect(
 			countMatchingRequests(requestPaths, /\/api\/environments\/[^/]+\/system\/docker\/info$/)

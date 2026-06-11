@@ -1,3 +1,42 @@
+## v2.0.2
+
+### Bug fixes
+
+* update dockerfiles to use correct linker path for version details([725c003](https://github.com/getarcaneapp/arcane/commit/725c0034680aa366dbc8a5e02e827d1057f34ffb) by @kmendell)
+* newly synced git content does not show without a refresh ([#2870](https://github.com/getarcaneapp/arcane/pull/2870) by @kmendell)
+* incorrect height on dashboard cards on smaller screens ([#2878](https://github.com/getarcaneapp/arcane/pull/2878) by @kmendell)
+* add missing swarm-identity endpoint in edge tunnel ([#2886](https://github.com/getarcaneapp/arcane/pull/2886) by @kmendell)
+* activities stream using main context causing app to hang at certain places ([#2887](https://github.com/getarcaneapp/arcane/pull/2887) by @kmendell)
+* x-arcane.icon-light/icon-dark overwriting service-level icons ([#2888](https://github.com/getarcaneapp/arcane/pull/2888) by @kmendell)
+* bind mounts fail to update after git syncs ([#2891](https://github.com/getarcaneapp/arcane/pull/2891) by @kmendell)
+* normalize git repo url, and allow changing of repo url ([#2892](https://github.com/getarcaneapp/arcane/pull/2892) by @kmendell)
+
+### Performance improvements
+
+* group-aware container pagination and table layout fixes ([#2890](https://github.com/getarcaneapp/arcane/pull/2890) by @kmendell)
+
+### Dependencies
+
+* bump github.com/shirou/gopsutil/v4 from 4.26.4 to 4.26.5 in /backend ([#2866](https://github.com/getarcaneapp/arcane/pull/2866) by @dependabot[bot])
+* bump github.com/aws/aws-sdk-go-v2/credentials from 1.19.17 to 1.19.22 in /backend ([#2859](https://github.com/getarcaneapp/arcane/pull/2859) by @dependabot[bot])
+* bump github.com/aws/aws-sdk-go-v2/service/ecr from 1.57.2 to 1.58.3 in /backend ([#2855](https://github.com/getarcaneapp/arcane/pull/2855) by @dependabot[bot])
+* bump svelte from 5.56.1 to 5.56.2 ([#2862](https://github.com/getarcaneapp/arcane/pull/2862) by @dependabot[bot])
+* bump github.com/aws/aws-sdk-go-v2/config from 1.32.18 to 1.32.23 in /backend ([#2864](https://github.com/getarcaneapp/arcane/pull/2864) by @dependabot[bot])
+* bump github.com/docker/cli from 29.5.2+incompatible to 29.5.3+incompatible in /backend ([#2865](https://github.com/getarcaneapp/arcane/pull/2865) by @dependabot[bot])
+* bump charm.land/bubbletea/v2 from 2.0.6 to 2.0.7 in /cli ([#2869](https://github.com/getarcaneapp/arcane/pull/2869) by @dependabot[bot])
+* bump github.com/mattn/go-runewidth from 0.0.23 to 0.0.24 in /cli ([#2868](https://github.com/getarcaneapp/arcane/pull/2868) by @dependabot[bot])
+* bump marked from 18.0.4 to 18.0.5 ([#2858](https://github.com/getarcaneapp/arcane/pull/2858) by @dependabot[bot])
+* bump @tanstack/svelte-query from 6.1.33 to 6.1.34 ([#2861](https://github.com/getarcaneapp/arcane/pull/2861) by @dependabot[bot])
+* bump @codemirror/autocomplete from 6.20.2 to 6.20.3 ([#2852](https://github.com/getarcaneapp/arcane/pull/2852) by @dependabot[bot])
+
+### Other
+
+* reduce handler duplication and cleanup ([#2889](https://github.com/getarcaneapp/arcane/pull/2889) by @kmendell)
+
+
+
+**Full Changelog**: https://github.com/getarcaneapp/arcane/compare/v2.0.1...v2.0.2
+
 ## v2.0.1
 
 ### Bug fixes

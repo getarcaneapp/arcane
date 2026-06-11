@@ -22,6 +22,30 @@ func newTestAutoHealJob() *AutoHealJob {
 	}
 }
 
+func TestAutoHeal_FilterCandidates_SkipsSelfContainer(t *testing.T) {
+	job := newTestAutoHealJob()
+
+	selfFullID := "407163929c492b5c4b01a3981f5de4774c37aa8300bd214b4d62412a3dc56468"
+	containers := []container.Summary{
+		{ID: selfFullID, Names: []string{"/arcane"}},
+		{ID: "aaaabbbbccccddddeeeeffff0000111122223333444455556666777788889999", Names: []string{"/other"}},
+	}
+
+	// Hostname-based detection yields the short 12-char ID.
+	candidates := job.filterCandidatesInternal(containers, nil, selfFullID[:12])
+	require.Len(t, candidates, 1)
+	require.Equal(t, "/other", candidates[0].Names[0])
+
+	// cgroup/mountinfo-based detection yields the full ID.
+	candidates = job.filterCandidatesInternal(containers, nil, selfFullID)
+	require.Len(t, candidates, 1)
+	require.Equal(t, "/other", candidates[0].Names[0])
+
+	// Outside Docker no self ID is detected and the guard is a no-op.
+	candidates = job.filterCandidatesInternal(containers, nil, "")
+	require.Len(t, candidates, 2)
+}
+
 func TestAutoHeal_CanRestart_UnderLimit(t *testing.T) {
 	job := newTestAutoHealJob()
 

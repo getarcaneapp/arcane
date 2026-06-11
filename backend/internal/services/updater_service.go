@@ -55,7 +55,7 @@ type updaterDependenciesInternal struct {
 }
 
 type selfUpgradeServiceInternal interface {
-	TriggerUpgradeViaCLI(ctx context.Context, user models.User) error
+	TriggerUpgradeViaCLI(ctx context.Context, user models.User, target moduletypes.SelfUpdateTarget) error
 }
 
 // NewUpdaterService constructs the Arcane updater facade.
@@ -107,8 +107,20 @@ func (s *UpdaterService) configInternal(ctx context.Context) moduleapi.Config {
 		UsedImageCollector:             moduleapi.UsedImageCollectorFunc(s.CollectUsedImages),
 		LabelPolicy:                    labels.DefaultLabelPolicy(),
 		AllowComposeStandaloneFallback: s.allowComposeStandaloneFallbackInternal(ctx),
+		SelfContainerID:                selfContainerIDInternal(),
 		Logger:                         s.loggerInternal(),
 	}
+}
+
+// selfContainerIDInternal returns the ID of the container Arcane runs in, so
+// the updater engine routes it through the CLI self-updater even when the
+// container is missing the Arcane labels. Empty when not running in Docker.
+func selfContainerIDInternal() string {
+	id, err := dockerutil.GetCurrentContainerID()
+	if err != nil {
+		return ""
+	}
+	return id
 }
 
 func (s *UpdaterService) engineInternal() *moduleapi.Service {
@@ -466,10 +478,33 @@ func (s *UpdaterService) TriggerSelfUpdate(ctx context.Context, target moduletyp
 		}
 		return fmt.Errorf("%s self-update requires CLI upgrade service", instanceType)
 	}
-	if err := s.deps.SelfUpgrade.TriggerUpgradeViaCLI(ctx, s.deps.SystemUser); err != nil {
+
+	// A server self-update stops this process before the run can complete its
+	// activity, so annotate the activity first; startup reconciliation uses
+	// the metadata flag to finalize it after the restart.
+	if target.InstanceType != "agent" {
+		s.markSelfUpdateTriggeredInternal(ctx, target)
+	}
+
+	if err := s.deps.SelfUpgrade.TriggerUpgradeViaCLI(ctx, s.deps.SystemUser, target); err != nil {
 		return fmt.Errorf("CLI upgrade failed: %w", err)
 	}
 	return nil
+}
+
+func (s *UpdaterService) markSelfUpdateTriggeredInternal(ctx context.Context, target moduletypes.SelfUpdateTarget) {
+	activityID := activityIDFromContextInternal(ctx)
+	if s.deps.Activity == nil || activityID == "" {
+		return
+	}
+	message := "Self-update initiated — Arcane will restart"
+	if ref := strings.TrimSpace(target.NewImageRef); ref != "" {
+		message = "Self-update initiated — Arcane will restart with " + ref
+	}
+	s.appendAutoUpdateActivityMessageInternal(ctx, activityID, message, "Self-update", 90)
+	if err := s.deps.Activity.PatchActivityMetadata(ctx, activityID, models.JSON{"selfUpdateTriggered": true}); err != nil {
+		slog.DebugContext(ctx, "failed to mark self-update on activity", "activityId", activityID, "error", err)
+	}
 }
 
 // Notify sends Arcane's container update notification.

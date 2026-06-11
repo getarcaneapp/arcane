@@ -319,9 +319,9 @@ func (h *AuthHandler) ChangePassword(ctx context.Context, input *ChangePasswordI
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	userModel, exists := humamw.GetCurrentUserFromContext(ctx)
-	if !exists {
-		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	userModel, err := requireUserInternal(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	if input.Body.CurrentPassword == "" {
@@ -329,7 +329,7 @@ func (h *AuthHandler) ChangePassword(ctx context.Context, input *ChangePasswordI
 	}
 
 	currentSessionID, _ := humamw.GetCurrentSessionIDFromContext(ctx)
-	err := h.authService.ChangePassword(ctx, userModel.ID, input.Body.CurrentPassword, input.Body.NewPassword, currentSessionID)
+	err = h.authService.ChangePassword(ctx, userModel.ID, input.Body.CurrentPassword, input.Body.NewPassword, currentSessionID)
 	if err != nil {
 		switch {
 		case errors.Is(err, services.ErrInvalidCredentials):
@@ -356,9 +356,9 @@ func (h *AuthHandler) LogoutAllOtherSessions(ctx context.Context, input *struct{
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	userModel, exists := humamw.GetCurrentUserFromContext(ctx)
-	if !exists {
-		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	userModel, err := requireUserInternal(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	currentSessionID, _ := humamw.GetCurrentSessionIDFromContext(ctx)
@@ -383,9 +383,9 @@ func (h *AuthHandler) UpdateMyProfile(ctx context.Context, input *UpdateMyProfil
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	currentUser, exists := humamw.GetCurrentUserFromContext(ctx)
-	if !exists {
-		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	currentUser, err := requireUserInternal(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	isOidcUser := currentUser.OidcSubjectId != nil && *currentUser.OidcSubjectId != ""

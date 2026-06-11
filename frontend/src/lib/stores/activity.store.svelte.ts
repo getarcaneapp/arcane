@@ -23,7 +23,6 @@ type ActivityEnvironmentState = {
 	name: string;
 	activities: Activity[];
 	loading: boolean;
-	connected: boolean;
 	streamError: boolean;
 	errorMessage?: string;
 };
@@ -92,10 +91,14 @@ function createActivityStore() {
 
 	let started = false;
 	let unsubscribeEnvironment: (() => void) | null = null;
-	const streamAbortControllers = new Map<string, AbortController>();
-	const reconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
-	const reconnectAttempts = new Map<string, number>();
-	const streamGenerations = new Map<string, number>();
+	// A single aggregated stream carries every environment's events; per-env
+	// connections would exhaust the browser's 6-per-origin HTTP/1.1 limit.
+	let streamAbortController: AbortController | null = null;
+	let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+	let reconnectAttempt = 0;
+	let streamGeneration = 0;
+	let _streamConnected = $state(false);
+	let _streamFailed = $state(false);
 
 	function createEnvironmentStateInternal(environment: Pick<Environment, 'id' | 'name'>): ActivityEnvironmentState {
 		return {
@@ -103,7 +106,6 @@ function createActivityStore() {
 			name: environmentNameInternal(environment),
 			activities: [],
 			loading: true,
-			connected: false,
 			streamError: false
 		};
 	}
@@ -128,7 +130,6 @@ function createActivityStore() {
 		updateEnvironmentStateInternal(environmentId, (state) => ({
 			...state,
 			loading: false,
-			connected: false,
 			streamError: true,
 			errorMessage: errorMessageInternal(error)
 		}));
@@ -142,44 +143,40 @@ function createActivityStore() {
 		}));
 	}
 
-	function generationInternal(environmentId: string): number {
-		return streamGenerations.get(environmentId) ?? 0;
-	}
-
-	function nextGenerationInternal(environmentId: string): number {
-		const generation = generationInternal(environmentId) + 1;
-		streamGenerations.set(environmentId, generation);
-		return generation;
-	}
-
-	function isCurrentGenerationInternal(environmentId: string, generation: number): boolean {
-		return generationInternal(environmentId) === generation;
-	}
-
-	function clearReconnectTimerInternal(environmentId: string) {
-		const timer = reconnectTimers.get(environmentId);
-		if (timer) {
-			clearTimeout(timer);
-			reconnectTimers.delete(environmentId);
+	// A fresh stream re-emits error events for environments that are still
+	// failing, so stale per-environment errors are cleared on every (re)connect.
+	function clearAllEnvironmentErrorsInternal() {
+		for (const environmentId of Object.keys(_environmentStates)) {
+			if (environmentStateInternal(environmentId)?.streamError) {
+				clearEnvironmentErrorInternal(environmentId);
+			}
 		}
 	}
 
-	function abortEnvironmentStreamInternal(environmentId: string) {
-		clearReconnectTimerInternal(environmentId);
-		streamAbortControllers.get(environmentId)?.abort();
-		streamAbortControllers.delete(environmentId);
-		updateEnvironmentStateInternal(environmentId, (state) => ({
-			...state,
-			connected: false
-		}));
+	function nextGenerationInternal(): number {
+		streamGeneration += 1;
+		return streamGeneration;
 	}
 
-	function stopEnvironmentInternal(environmentId: string) {
-		nextGenerationInternal(environmentId);
-		abortEnvironmentStreamInternal(environmentId);
-		reconnectAttempts.delete(environmentId);
-		streamGenerations.delete(environmentId);
+	function isCurrentGenerationInternal(generation: number): boolean {
+		return streamGeneration === generation;
+	}
 
+	function clearReconnectTimerInternal() {
+		if (reconnectTimer) {
+			clearTimeout(reconnectTimer);
+			reconnectTimer = null;
+		}
+	}
+
+	function abortStreamInternal() {
+		clearReconnectTimerInternal();
+		streamAbortController?.abort();
+		streamAbortController = null;
+		_streamConnected = false;
+	}
+
+	function removeEnvironmentInternal(environmentId: string) {
 		const nextStates = { ..._environmentStates };
 		delete nextStates[environmentId];
 		_environmentStates = nextStates;
@@ -199,6 +196,11 @@ function createActivityStore() {
 	}
 
 	function replaceEnvironmentSnapshotInternal(environmentId: string, activities: Activity[]) {
+		// Snapshots can still arrive (stream or in-flight REST) after the
+		// environment was removed locally; don't resurrect it.
+		if (!environmentStateInternal(environmentId)) {
+			return;
+		}
 		const normalizedActivities = sortActivitiesInternal(
 			activities.map((activity) => normalizeActivityInternal(activity, environmentId))
 		);
@@ -283,6 +285,11 @@ function createActivityStore() {
 	}
 
 	function applyStreamEventInternal(environmentId: string, event: ActivityStreamEvent) {
+		// The aggregated stream can keep delivering events for an environment
+		// for a short while after it was removed locally; don't resurrect it.
+		if (event.type !== 'heartbeat' && !environmentStateInternal(environmentId)) {
+			return;
+		}
 		switch (event.type) {
 			case 'snapshot':
 				replaceEnvironmentSnapshotInternal(environmentId, event.activities ?? []);
@@ -298,27 +305,28 @@ function createActivityStore() {
 				}
 				break;
 			case 'heartbeat':
-				updateEnvironmentStateInternal(environmentId, (state) => ({
-					...state,
-					connected: true
-				}));
+				_streamConnected = true;
+				break;
+			case 'error':
+				setEnvironmentErrorInternal(environmentId, new Error(event.error || 'Activity stream error'));
 				break;
 		}
 	}
 
-	async function refreshEnvironmentInternal(environmentId: string, generation = generationInternal(environmentId)) {
+	async function refreshEnvironmentInternal(environmentId: string, generation = streamGeneration) {
 		updateEnvironmentStateInternal(environmentId, (state) => ({
 			...state,
 			loading: true
 		}));
 		try {
 			const result = await activityService.getActivities({ pagination: { page: 1, limit: ACTIVITY_LIST_LIMIT } }, environmentId);
-			if (!isCurrentGenerationInternal(environmentId, generation)) {
+			// The environment can be removed while the fetch is in-flight; don't resurrect it.
+			if (!isCurrentGenerationInternal(generation) || !environmentStateInternal(environmentId)) {
 				return;
 			}
 			replaceEnvironmentSnapshotInternal(environmentId, result.data ?? []);
 		} catch (error) {
-			if (isCurrentGenerationInternal(environmentId, generation)) {
+			if (isCurrentGenerationInternal(generation) && environmentStateInternal(environmentId)) {
 				console.warn('Failed to refresh activities:', error);
 				setEnvironmentErrorInternal(environmentId, error);
 			}
@@ -330,57 +338,51 @@ function createActivityStore() {
 		await Promise.all(Object.keys(_environmentStates).map((environmentId) => refreshEnvironmentInternal(environmentId)));
 	}
 
-	async function connectStreamInternal(environmentId: string, generation: number) {
-		if (!browser || !isCurrentGenerationInternal(environmentId, generation)) {
+	async function connectStreamInternal(generation: number) {
+		if (!browser || !isCurrentGenerationInternal(generation)) {
 			return;
 		}
 
 		const controller = new AbortController();
-		streamAbortControllers.set(environmentId, controller);
+		streamAbortController = controller;
 		try {
-			const response = await activityService.openActivityStream(environmentId, controller.signal, ACTIVITY_LIST_LIMIT);
-			if (!isCurrentGenerationInternal(environmentId, generation) || !response.body) {
-				if (streamAbortControllers.get(environmentId) === controller) {
-					streamAbortControllers.delete(environmentId);
+			const response = await activityService.openActivityStream(controller.signal, ACTIVITY_LIST_LIMIT);
+			if (!isCurrentGenerationInternal(generation) || !response.body) {
+				if (streamAbortController === controller) {
+					streamAbortController = null;
 				}
 				return;
 			}
 
-			updateEnvironmentStateInternal(environmentId, (state) => ({
-				...state,
-				connected: true,
-				streamError: false,
-				errorMessage: undefined
-			}));
-			reconnectAttempts.set(environmentId, 0);
-			await readJSONLinesInternal(environmentId, response.body, generation);
+			_streamConnected = true;
+			_streamFailed = false;
+			reconnectAttempt = 0;
+			clearAllEnvironmentErrorsInternal();
+			await readJSONLinesInternal(response.body, generation);
 		} catch (error) {
-			if (!controller.signal.aborted && isCurrentGenerationInternal(environmentId, generation)) {
+			if (!controller.signal.aborted && isCurrentGenerationInternal(generation)) {
 				console.warn('Activity stream disconnected:', error);
 			}
 		} finally {
-			if (streamAbortControllers.get(environmentId) === controller) {
-				streamAbortControllers.delete(environmentId);
+			if (streamAbortController === controller) {
+				streamAbortController = null;
 			}
-			if (isCurrentGenerationInternal(environmentId, generation)) {
-				updateEnvironmentStateInternal(environmentId, (state) => ({
-					...state,
-					connected: false
-				}));
+			if (isCurrentGenerationInternal(generation)) {
+				_streamConnected = false;
 				if (!controller.signal.aborted) {
-					scheduleReconnectInternal(environmentId, generation);
+					scheduleReconnectInternal(generation);
 				}
 			}
 		}
 	}
 
-	async function readJSONLinesInternal(environmentId: string, stream: ReadableStream<Uint8Array>, generation: number) {
+	async function readJSONLinesInternal(stream: ReadableStream<Uint8Array>, generation: number) {
 		const reader = stream.getReader();
 		const decoder = new TextDecoder();
 		let buffer = '';
 
 		try {
-			while (isCurrentGenerationInternal(environmentId, generation)) {
+			while (isCurrentGenerationInternal(generation)) {
 				const { done, value } = await reader.read();
 				if (done) {
 					break;
@@ -390,77 +392,49 @@ function createActivityStore() {
 				const lines = buffer.split('\n');
 				buffer = lines.pop() ?? '';
 				for (const line of lines) {
-					handleStreamLineInternal(environmentId, line);
+					handleStreamLineInternal(line);
 				}
 			}
 
 			buffer += decoder.decode();
 			if (buffer.trim()) {
-				handleStreamLineInternal(environmentId, buffer);
+				handleStreamLineInternal(buffer);
 			}
 		} finally {
 			reader.releaseLock();
 		}
 	}
 
-	function handleStreamLineInternal(environmentId: string, line: string) {
+	function handleStreamLineInternal(line: string) {
 		const trimmed = line.trim();
 		if (!trimmed) {
 			return;
 		}
 
 		try {
-			applyStreamEventInternal(environmentId, JSON.parse(trimmed) as ActivityStreamEvent);
+			const event = JSON.parse(trimmed) as ActivityStreamEvent;
+			applyStreamEventInternal(event.environmentId || LOCAL_DOCKER_ENVIRONMENT_ID, event);
 		} catch (error) {
 			console.warn('Failed to parse activity stream line:', error);
 		}
 	}
 
-	function scheduleReconnectInternal(environmentId: string, generation: number) {
-		if (!browser || !started || !isCurrentGenerationInternal(environmentId, generation)) {
+	function scheduleReconnectInternal(generation: number) {
+		if (!browser || !started || !isCurrentGenerationInternal(generation)) {
 			return;
 		}
 
-		const attempt = reconnectAttempts.get(environmentId) ?? 0;
-		if (attempt >= MAX_RECONNECT_ATTEMPTS) {
-			setEnvironmentErrorInternal(environmentId, new Error('Activity stream reconnect attempts exhausted'));
+		if (reconnectAttempt >= MAX_RECONNECT_ATTEMPTS) {
+			_streamFailed = true;
 			return;
 		}
 
-		clearReconnectTimerInternal(environmentId);
-		const delay = Math.min(1000 * 2 ** attempt, MAX_RECONNECT_DELAY);
-		reconnectAttempts.set(environmentId, attempt + 1);
-		reconnectTimers.set(
-			environmentId,
-			setTimeout(() => {
-				void connectStreamInternal(environmentId, generation);
-			}, delay)
-		);
-	}
-
-	function startEnvironmentInternal(environment: Pick<Environment, 'id' | 'name'>) {
-		const environmentId = environment.id || LOCAL_DOCKER_ENVIRONMENT_ID;
-		updateEnvironmentStateInternal(environmentId, (state) => ({
-			...state,
-			id: environmentId,
-			name: environmentNameInternal(environment)
-		}));
-
-		const generation = nextGenerationInternal(environmentId);
-		reconnectAttempts.set(environmentId, 0);
-		abortEnvironmentStreamInternal(environmentId);
-		void refreshEnvironmentInternal(environmentId, generation);
-		void connectStreamInternal(environmentId, generation);
-	}
-
-	function restartEnvironmentInternal(environmentId: string) {
-		const state = environmentStateInternal(environmentId);
-		if (!state) {
-			return;
-		}
-
-		clearEnvironmentErrorInternal(environmentId);
-		startEnvironmentInternal({ id: state.id, name: state.name });
+		clearReconnectTimerInternal();
+		const delay = Math.min(1000 * 2 ** reconnectAttempt, MAX_RECONNECT_DELAY);
+		reconnectAttempt += 1;
+		reconnectTimer = setTimeout(() => {
+			void connectStreamInternal(generation);
+		}, delay);
 	}
 
 	function reconcileEnvironmentsInternal() {
@@ -468,7 +442,9 @@ function createActivityStore() {
 			return;
 		}
 
-		const available = environmentStore.available;
+		// Track only enabled environments — they are the ones the aggregated
+		// stream serves; a disabled environment would never leave "loading".
+		const available = environmentStore.available.filter((environment) => environment.enabled);
 		const environments =
 			available.length > 0
 				? available
@@ -482,7 +458,7 @@ function createActivityStore() {
 
 		for (const environmentId of Object.keys(_environmentStates)) {
 			if (!targetIds.has(environmentId)) {
-				stopEnvironmentInternal(environmentId);
+				removeEnvironmentInternal(environmentId);
 			}
 		}
 
@@ -494,7 +470,12 @@ function createActivityStore() {
 					..._environmentStates,
 					[environmentId]: createEnvironmentStateInternal(environment)
 				};
-				startEnvironmentInternal(environment);
+				// An already-open aggregated stream only picks new environments
+				// up on its server-side reconcile tick; fetch once so the first
+				// snapshot doesn't take up to that interval to appear.
+				if (streamAbortController) {
+					void refreshEnvironmentInternal(environmentId);
+				}
 				continue;
 			}
 
@@ -612,10 +593,10 @@ function createActivityStore() {
 			return Object.values(_environmentStates).some((state) => state.loading);
 		},
 		get connected(): boolean {
-			return Object.values(_environmentStates).some((state) => state.connected);
+			return _streamConnected;
 		},
 		get streamError(): boolean {
-			return Object.values(_environmentStates).some((state) => state.streamError);
+			return _streamFailed || Object.values(_environmentStates).some((state) => state.streamError);
 		},
 		get environmentFailures(): ActivityEnvironmentFailure[] {
 			return environmentFailuresInternal();
@@ -654,6 +635,7 @@ function createActivityStore() {
 			await environmentStore.ready;
 			_currentEnvironmentId = environmentStore.selected?.id ?? LOCAL_DOCKER_ENVIRONMENT_ID;
 			reconcileEnvironmentsInternal();
+			void connectStreamInternal(nextGenerationInternal());
 			unsubscribeEnvironment = environmentStore.subscribeSelected((environment) => {
 				_currentEnvironmentId = environment?.id ?? LOCAL_DOCKER_ENVIRONMENT_ID;
 				reconcileEnvironmentsInternal();
@@ -663,11 +645,9 @@ function createActivityStore() {
 			started = false;
 			unsubscribeEnvironment?.();
 			unsubscribeEnvironment = null;
-
-			for (const environmentId of Object.keys(_environmentStates)) {
-				nextGenerationInternal(environmentId);
-				abortEnvironmentStreamInternal(environmentId);
-			}
+			nextGenerationInternal();
+			abortStreamInternal();
+			reconnectAttempt = 0;
 		},
 		refresh: () => refreshInternal(),
 		cancelActivity: async (activityId: string) => {
@@ -742,12 +722,11 @@ function createActivityStore() {
 			void loadDetailInternal(activityId);
 		},
 		retryStream: () => {
-			for (const environmentId of Object.keys(_environmentStates)) {
-				const state = environmentStateInternal(environmentId);
-				if (state?.streamError) {
-					restartEnvironmentInternal(environmentId);
-				}
-			}
+			_streamFailed = false;
+			reconnectAttempt = 0;
+			clearAllEnvironmentErrorsInternal();
+			abortStreamInternal();
+			void connectStreamInternal(nextGenerationInternal());
 		},
 		setActivityExpanded,
 		toggleActivity

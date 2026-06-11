@@ -2,7 +2,6 @@ package utils
 
 import (
 	"reflect"
-	"slices"
 	"strings"
 )
 
@@ -63,9 +62,4 @@ func ExtractCategoryMetadata(model any, categoryIDsInOrder []string) map[string]
 	}
 
 	return result
-}
-
-// Contains checks if a string slice contains an item
-func Contains(slice []string, item string) bool {
-	return slices.Contains(slice, item)
 }

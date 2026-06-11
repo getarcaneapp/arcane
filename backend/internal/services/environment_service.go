@@ -766,13 +766,15 @@ func environmentTypeKeyInternal(env environment.Environment) string {
 	if !env.IsEdge {
 		return "http"
 	}
-	if env.LastPollAt != nil {
-		return "polling"
+	transport := ""
+	if env.Connected != nil && *env.Connected && env.EdgeTransport != nil {
+		transport = *env.EdgeTransport
+	} else if env.LastEdgeTransport != nil {
+		// Disconnected or poll-only agents classify by the transport they
+		// last used rather than collapsing into the generic edge bucket.
+		transport = *env.LastEdgeTransport
 	}
-	if env.Connected == nil || !*env.Connected || env.EdgeTransport == nil || strings.TrimSpace(*env.EdgeTransport) == "" {
-		return "edge"
-	}
-	switch strings.ToLower(strings.TrimSpace(*env.EdgeTransport)) {
+	switch strings.ToLower(strings.TrimSpace(transport)) {
 	case edge.EdgeTransportWebSocket:
 		return "websocket"
 	case edge.EdgeTransportGRPC:
@@ -802,6 +804,20 @@ func (s *EnvironmentService) ListVisibleEnvironments(ctx context.Context) ([]env
 	}
 
 	return out, nil
+}
+
+// ListRemoteEnvironmentIDs returns the IDs of enabled remote environments; it
+// satisfies aggstream.RemoteEnvironmentLister for aggregated stream handlers.
+func (s *EnvironmentService) ListRemoteEnvironmentIDs(ctx context.Context) ([]string, error) {
+	envs, err := s.ListRemoteEnvironments(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(envs))
+	for _, env := range envs {
+		ids = append(ids, env.ID)
+	}
+	return ids, nil
 }
 
 // ListRemoteEnvironments returns all non-local, enabled environments for syncing purposes.
@@ -1086,6 +1102,11 @@ func (s *EnvironmentService) UpdateEnvironmentConnectionState(ctx context.Contex
 	if connected {
 		updates["status"] = string(models.EnvironmentStatusOnline)
 		updates["last_seen"] = &now
+		// Remember the tunnel transport so the UI can keep showing it after
+		// the tunnel drops or while the agent is poll-only.
+		if state, ok := edge.GetTunnelRuntimeState(id); ok && state.Transport != "" {
+			updates["last_edge_transport"] = state.Transport
+		}
 	} else {
 		updates["status"] = string(models.EnvironmentStatusOffline)
 	}

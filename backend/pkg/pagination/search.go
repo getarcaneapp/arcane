@@ -15,7 +15,7 @@ type SearchQuery struct {
 }
 
 func searchFn[T any](items []T, params SearchQuery, accessors []SearchAccessor[T]) []T {
-	search := strings.TrimSpace(params.Search)
+	search := strings.ToLower(strings.TrimSpace(params.Search))
 
 	if search == "" {
 		return items
@@ -26,7 +26,7 @@ func searchFn[T any](items []T, params SearchQuery, accessors []SearchAccessor[T
 	for iIdx := range items {
 		for aIdx := range accessors {
 			value, err := accessors[aIdx](items[iIdx])
-			if err == nil && strings.Contains(strings.ToLower(value), strings.ToLower(search)) {
+			if err == nil && strings.Contains(strings.ToLower(value), search) {
 				results = append(results, items[iIdx])
 				break
 			}

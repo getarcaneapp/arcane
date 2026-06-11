@@ -212,6 +212,47 @@ func TestHTTP2APIResponsesDoNotUseAPIGzipInternal(t *testing.T) {
 	}
 }
 
+func TestShutdownCancelsStreamingRequestContextsInternal(t *testing.T) {
+	baseCtx, cancelBase := context.WithCancel(context.Background())
+	defer cancelBase()
+
+	handlerEntered := make(chan struct{})
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/x-json-stream")
+		w.WriteHeader(http.StatusOK)
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		close(handlerEntered)
+		// Streaming handlers block until their request context ends; Shutdown
+		// alone never cancels it, so this models an open activity stream.
+		<-r.Context().Done()
+	})
+
+	srv, err := newHTTPServerInternal(baseCtx, "127.0.0.1:0", handler, nil, false, nil)
+	require.NoError(t, err)
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Serve(listener) }()
+
+	resp, err := http.Get("http://" + listener.Addr().String() + "/stream")
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+	<-handlerEntered
+
+	cancelBase()
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	start := time.Now()
+	require.NoError(t, srv.Shutdown(shutdownCtx))
+	require.Less(t, time.Since(start), time.Second)
+	require.ErrorIs(t, <-errCh, http.ErrServerClosed)
+}
+
 func TestPrepareServerTLSInternal_AgentModeSkipsManagerMTLSValidation(t *testing.T) {
 	cfg := &config.Config{
 		AgentMode:     true,

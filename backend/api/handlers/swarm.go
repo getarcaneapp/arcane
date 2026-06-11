@@ -867,9 +867,9 @@ func (h *SwarmHandler) GetNodeAgentDeployment(ctx context.Context, input *GetSwa
 		return nil, mapSwarmServiceError(err, (&common.SwarmNodeNotFoundError{Err: err}).Error())
 	}
 
-	user, ok := humamw.GetCurrentUserFromContext(ctx)
-	if !ok || user == nil {
-		return nil, huma.Error401Unauthorized("Unauthorized")
+	user, err := requireUserInternal(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	env, apiKey, err := h.environmentService.EnsureSwarmNodeAgentEnvironment(
@@ -1834,15 +1834,9 @@ func (h *SwarmHandler) DeleteSecret(ctx context.Context, input *DeleteSwarmSecre
 // Returns a SwarmPaginatedResponse with `Success` set to true.
 func toSwarmPaginatedResponse[T any](items []T, p pagination.Response) SwarmPaginatedResponse[T] {
 	return SwarmPaginatedResponse[T]{
-		Success: true,
-		Data:    items,
-		Pagination: base.PaginationResponse{
-			TotalPages:      p.TotalPages,
-			TotalItems:      p.TotalItems,
-			CurrentPage:     p.CurrentPage,
-			ItemsPerPage:    p.ItemsPerPage,
-			GrandTotalItems: p.GrandTotalItems,
-		},
+		Success:    true,
+		Data:       items,
+		Pagination: toPaginationResponseInternal(p),
 	}
 }
 

@@ -19,6 +19,7 @@
 
 	onMount(() => {
 		void activityStore.start();
+		return () => activityStore.stop();
 	});
 
 	function handleOpenChangeInternal(open: boolean) {

@@ -49,15 +49,20 @@
 		{ value: 'http', label: m.environments_edge_http_label(), icon: EnvironmentsIcon },
 		{ value: 'edge', label: m.environments_edge_label(), icon: EnvironmentsIcon },
 		{ value: 'websocket', label: m.environments_edge_websocket_label(), icon: EnvironmentsIcon },
-		{ value: 'grpc', label: m.environments_edge_grpc_label(), icon: EnvironmentsIcon },
-		{ value: 'polling', label: m.environments_edge_polling_label(), icon: EnvironmentsIcon }
+		{ value: 'grpc', label: m.environments_edge_grpc_label(), icon: EnvironmentsIcon }
 	];
+
+	function resolveEnvironmentTransport(item: Environment): 'grpc' | 'websocket' | undefined {
+		// Prefer the live tunnel transport; fall back to the last one used so
+		// disconnected or poll-only agents still show what they connect with.
+		return (item.connected ? item.edgeTransport : undefined) ?? item.lastEdgeTransport;
+	}
 
 	function getEnvironmentTypeLabel(item: Environment): string {
 		if (!item.isEdge) return m.environments_edge_http_label();
-		if (item.lastPollAt) return m.environments_edge_polling_label();
-		if (!item.connected || !item.edgeTransport) return m.environments_edge_label();
-		if (item.edgeTransport === 'websocket') return m.environments_edge_websocket_label();
+		const transport = resolveEnvironmentTransport(item);
+		if (!transport) return m.environments_edge_label();
+		if (transport === 'websocket') return m.environments_edge_websocket_label();
 		return m.environments_edge_grpc_label();
 	}
 
@@ -311,15 +316,8 @@
 {#snippet TypeCell({ value }: { value: unknown })}
 	{@const env = value as Environment}
 	{@const typeLabel = getEnvironmentTypeLabel(env)}
-	{@const typeVariant = !env.isEdge
-		? 'gray'
-		: env.lastPollAt
-			? 'blue'
-			: !env.connected || !env.edgeTransport
-				? 'gray'
-				: env.edgeTransport === 'websocket'
-					? 'purple'
-					: 'blue'}
+	{@const transport = resolveEnvironmentTransport(env)}
+	{@const typeVariant = !env.isEdge || !transport ? 'gray' : transport === 'websocket' ? 'purple' : 'blue'}
 	<StatusBadge text={typeLabel} variant={typeVariant} />
 {/snippet}
 

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 	"github.com/moby/moby/api/types/container"
@@ -57,6 +58,77 @@ func TestPaginateContainerProjectGroupsKeepsProjectWhole(t *testing.T) {
 	require.Equal(t, 4, projectCounts["immich"])
 	require.Equal(t, 1, projectCounts["other-1"])
 	require.Equal(t, 1, projectCounts["other-18"])
+}
+
+func TestPaginateContainerProjectGroupsSelectsRequestedPage(t *testing.T) {
+	// With Limit=4 the groups partition into three pages:
+	// page 1: proj-a (4), page 2: proj-b (3) + solo-1 (1), page 3: proj-c (2) + solo-2 (1).
+	items := []containertypes.Summary{
+		newGroupedContainerSummary("a-1", "proj-a"),
+		newGroupedContainerSummary("a-2", "proj-a"),
+		newGroupedContainerSummary("a-3", "proj-a"),
+		newGroupedContainerSummary("a-4", "proj-a"),
+		newGroupedContainerSummary("b-1", "proj-b"),
+		newGroupedContainerSummary("b-2", "proj-b"),
+		newGroupedContainerSummary("b-3", "proj-b"),
+		newGroupedContainerSummary("solo-1", "solo-1"),
+		newGroupedContainerSummary("c-1", "proj-c"),
+		newGroupedContainerSummary("c-2", "proj-c"),
+		newGroupedContainerSummary("solo-2", "solo-2"),
+	}
+	result := pagination.FilterResult[containertypes.Summary]{Items: items, TotalCount: int64(len(items)), TotalAvailable: int64(len(items))}
+
+	pageGroups, resp := paginateContainerProjectGroupsInternal(result, pagination.QueryParams{Params: pagination.Params{Start: 4, Limit: 4}})
+
+	require.Equal(t, []string{"proj-b", "solo-1"}, groupNamesOf(pageGroups))
+	require.Equal(t, 2, resp.CurrentPage)
+	require.Equal(t, int64(3), resp.TotalPages)
+	require.Equal(t, int64(11), resp.TotalItems)
+
+	pageGroups, resp = paginateContainerProjectGroupsInternal(result, pagination.QueryParams{Params: pagination.Params{Start: 400, Limit: 4}})
+
+	require.Equal(t, []string{"proj-c", "solo-2"}, groupNamesOf(pageGroups))
+	require.Equal(t, 3, resp.CurrentPage)
+	require.Equal(t, int64(3), resp.TotalPages)
+}
+
+func TestContainerSummaryIconsAppliedAfterGrouping(t *testing.T) {
+	service := &ContainerService{}
+	dockerContainers := []container.Summary{
+		{ID: "app", Names: []string{"/app"}, Labels: map[string]string{
+			"com.docker.compose.project": "media",
+			projects.ArcaneIconLabel:     "immich",
+		}},
+		{ID: "db", Names: []string{"/db"}, Labels: map[string]string{
+			"com.docker.compose.project": "media",
+		}},
+	}
+
+	items := service.buildContainerSummaries(dockerContainers, nil, "", nil)
+	for _, item := range items {
+		require.Empty(t, item.IconLightURL, "icons must be deferred until after pagination")
+	}
+
+	groups, _ := paginateContainerProjectGroupsInternal(
+		pagination.FilterResult[containertypes.Summary]{Items: items, TotalCount: int64(len(items)), TotalAvailable: int64(len(items))},
+		pagination.QueryParams{Params: pagination.Params{Start: 0, Limit: 20}},
+	)
+	for gi := range groups {
+		service.applyContainerSummaryIconsInternal(t.Context(), groups[gi].Items, map[string]projects.ArcaneComposeMetadata{})
+	}
+	flattened := flattenContainerProjectGroupsInternal(groups)
+
+	require.Len(t, groups, 1)
+	require.NotEmpty(t, groups[0].Items[0].IconLightURL)
+	require.NotEmpty(t, flattened[0].IconLightURL, "flattened items must carry icons applied to the groups")
+}
+
+func groupNamesOf(groups []containertypes.SummaryGroup) []string {
+	names := make([]string, 0, len(groups))
+	for _, group := range groups {
+		names = append(names, group.GroupName)
+	}
+	return names
 }
 
 func TestGroupContainersByProjectUsesNoProjectBucket(t *testing.T) {

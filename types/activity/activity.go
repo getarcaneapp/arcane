@@ -89,12 +89,14 @@ type Detail struct {
 }
 
 type StreamEvent struct {
-	Type       string     `json:"type"`
-	ActivityID string     `json:"activityId,omitempty"`
-	Activity   *Activity  `json:"activity,omitempty"`
-	Activities []Activity `json:"activities,omitempty"`
-	Message    *Message   `json:"message,omitempty"`
-	Timestamp  time.Time  `json:"timestamp"`
+	Type          string     `json:"type"`
+	EnvironmentID string     `json:"environmentId,omitempty"`
+	ActivityID    string     `json:"activityId,omitempty"`
+	Activity      *Activity  `json:"activity,omitempty"`
+	Activities    []Activity `json:"activities,omitempty"`
+	Message       *Message   `json:"message,omitempty"`
+	Error         string     `json:"error,omitempty"`
+	Timestamp     time.Time  `json:"timestamp"`
 }
 
 type ClearHistoryResult struct {

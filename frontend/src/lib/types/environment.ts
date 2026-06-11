@@ -18,6 +18,7 @@ export type Environment = {
 	enabled: boolean;
 	isEdge: boolean;
 	edgeTransport?: 'grpc' | 'websocket';
+	lastEdgeTransport?: 'grpc' | 'websocket';
 	edgeSecurityMode?: 'token' | 'mtls';
 	connected?: boolean;
 	connectedAt?: string;

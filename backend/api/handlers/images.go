@@ -15,7 +15,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/types/v2/base"
@@ -331,27 +330,12 @@ func (h *ImageHandler) ListImages(ctx context.Context, input *ListImagesInput) (
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	filters := make(map[string]string)
+	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	if input.InUse != "" {
-		filters["inUse"] = input.InUse
+		params.Filters["inUse"] = input.InUse
 	}
 	if input.Updates != "" {
-		filters["updates"] = input.Updates
-	}
-
-	params := pagination.QueryParams{
-		SearchQuery: pagination.SearchQuery{
-			Search: input.Search,
-		},
-		SortParams: pagination.SortParams{
-			Sort:  input.Sort,
-			Order: pagination.SortOrder(input.Order),
-		},
-		Params: pagination.Params{
-			Start: input.Start,
-			Limit: input.Limit,
-		},
-		Filters: filters,
+		params.Filters["updates"] = input.Updates
 	}
 
 	if params.Limit == 0 {
@@ -369,15 +353,9 @@ func (h *ImageHandler) ListImages(ctx context.Context, input *ListImagesInput) (
 
 	return &ListImagesOutput{
 		Body: ImagePaginatedResponse{
-			Success: true,
-			Data:    images,
-			Pagination: base.PaginationResponse{
-				TotalPages:      paginationResp.TotalPages,
-				TotalItems:      paginationResp.TotalItems,
-				CurrentPage:     paginationResp.CurrentPage,
-				ItemsPerPage:    paginationResp.ItemsPerPage,
-				GrandTotalItems: paginationResp.GrandTotalItems,
-			},
+			Success:    true,
+			Data:       images,
+			Pagination: toPaginationResponseInternal(paginationResp),
 		},
 	}, nil
 }
@@ -407,9 +385,9 @@ func (h *ImageHandler) RemoveImage(ctx context.Context, input *RemoveImageInput)
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	user, exists := humamw.GetCurrentUserFromContext(ctx)
-	if !exists {
-		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	user, err := requireUserInternal(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	if err := h.imageService.RemoveImage(ctx, input.ImageID, input.Force, *user); err != nil {
@@ -436,9 +414,9 @@ func (h *ImageHandler) PullImage(ctx context.Context, input *PullImageInput) (*h
 		return nil, huma.Error400BadRequest("image name is required")
 	}
 
-	user, exists := humamw.GetCurrentUserFromContext(ctx)
-	if !exists {
-		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	user, err := requireUserInternal(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	// Get full image name with tag and credentials
@@ -492,9 +470,9 @@ func (h *ImageHandler) BuildImage(ctx context.Context, input *BuildImageInput) (
 		return nil, huma.Error400BadRequest("contextDir is required")
 	}
 
-	user, exists := humamw.GetCurrentUserFromContext(ctx)
-	if !exists {
-		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	user, err := requireUserInternal(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	return &huma.StreamResponse{
@@ -567,15 +545,9 @@ func (h *ImageHandler) ListImageBuilds(ctx context.Context, input *ListImageBuil
 
 	return &ListImageBuildsOutput{
 		Body: ImageBuildPaginatedResponse{
-			Success: true,
-			Data:    builds,
-			Pagination: base.PaginationResponse{
-				TotalPages:      paginationResp.TotalPages,
-				TotalItems:      paginationResp.TotalItems,
-				CurrentPage:     paginationResp.CurrentPage,
-				ItemsPerPage:    paginationResp.ItemsPerPage,
-				GrandTotalItems: paginationResp.GrandTotalItems,
-			},
+			Success:    true,
+			Data:       builds,
+			Pagination: toPaginationResponseInternal(paginationResp),
 		},
 	}, nil
 }
@@ -738,9 +710,9 @@ func (h *ImageHandler) UploadImage(ctx context.Context, input *UploadImageInput)
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	user, exists := humamw.GetCurrentUserFromContext(ctx)
-	if !exists {
-		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	user, err := requireUserInternal(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	// Get file from multipart form

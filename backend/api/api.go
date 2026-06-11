@@ -310,5 +310,5 @@ func registerHandlersInternal(api huma.API, svc *di.Services, handlerAppCtx hand
 	handlers.RegisterGitOpsSyncs(api, svc.GitOpsSync)
 	handlers.RegisterWebhooks(api, svc.Webhook)
 	handlers.RegisterVulnerability(api, svc.Vulnerability, handlerAppCtx)
-	handlers.RegisterDashboard(api, svc.Dashboard)
+	handlers.RegisterDashboard(api, svc.Dashboard, svc.Environment)
 }

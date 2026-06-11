@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net"
 	"net/http"
@@ -211,7 +212,11 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *di.Servic
 	}
 
 	if err := frontend.RegisterFrontend(e); err != nil {
-		slog.Error("Failed to register frontend", "error", err)
+		if errors.Is(err, frontend.ErrFrontendNotIncluded) {
+			slog.Debug("Frontend not included in this build; skipping frontend registration")
+		} else {
+			slog.Error("Failed to register frontend", "error", err)
+		}
 	}
 
 	return e, tunnelServer

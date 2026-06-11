@@ -34,10 +34,14 @@ type AutoHealJob struct {
 	mu       sync.Mutex
 	restarts map[string]*restartRecord
 
-	getDockerClient  func() (*client.Client, error)
-	listContainers   func(ctx context.Context, dockerClient *client.Client) ([]container.Summary, error)
-	inspectContainer func(ctx context.Context, dockerClient *client.Client, containerID string) (container.InspectResponse, error)
-	restartContainer func(ctx context.Context, dockerClient *client.Client, containerID string) error
+	selfIDOnce sync.Once
+	selfID     string
+
+	getDockerClient    func() (*client.Client, error)
+	listContainers     func(ctx context.Context, dockerClient *client.Client) ([]container.Summary, error)
+	inspectContainer   func(ctx context.Context, dockerClient *client.Client, containerID string) (container.InspectResponse, error)
+	restartContainer   func(ctx context.Context, dockerClient *client.Client, containerID string) error
+	getSelfContainerID func() (string, error)
 }
 
 func NewAutoHealJob(
@@ -103,7 +107,8 @@ func (j *AutoHealJob) Run(ctx context.Context) {
 	restartWindowMinutes := j.settingsService.GetIntSetting(ctx, "autoHealRestartWindow", 30)
 	restartWindow := time.Duration(restartWindowMinutes) * time.Minute
 
-	candidates := j.filterCandidatesInternal(containers, excludedContainers)
+	selfID := j.selfContainerIDInternal(ctx)
+	candidates := j.filterCandidatesInternal(containers, excludedContainers, selfID)
 
 	g, groupCtx := errgroup.WithContext(ctx)
 	g.SetLimit(autoHealInspectConcurrency)
@@ -118,9 +123,37 @@ func (j *AutoHealJob) Run(ctx context.Context) {
 	_ = g.Wait()
 }
 
-func (j *AutoHealJob) filterCandidatesInternal(containers []container.Summary, excludedContainers map[string]struct{}) []container.Summary {
+// selfContainerIDInternal resolves and caches the ID (full 64-char or short
+// prefix) of the container Arcane itself runs in. Returns "" when detection
+// fails (e.g. binary running directly on the host), disabling the guard.
+func (j *AutoHealJob) selfContainerIDInternal(ctx context.Context) string {
+	j.selfIDOnce.Do(func() {
+		detect := j.getSelfContainerID
+		if detect == nil {
+			detect = dockerutil.GetCurrentContainerID
+		}
+		id, err := detect()
+		if err != nil {
+			slog.DebugContext(ctx, "auto-heal: could not determine own container ID; self-protection disabled", "error", err)
+			return
+		}
+		j.selfID = strings.ToLower(strings.TrimSpace(id))
+		slog.InfoContext(ctx, "auto-heal: detected own container; it will never be auto-restarted", "container_id", j.selfID)
+	})
+	return j.selfID
+}
+
+func (j *AutoHealJob) filterCandidatesInternal(containers []container.Summary, excludedContainers map[string]struct{}, selfID string) []container.Summary {
 	candidates := make([]container.Summary, 0, len(containers))
 	for _, c := range containers {
+		// Never restart the container Arcane itself runs in: a slow or
+		// mid-startup manager that trips its own healthcheck would otherwise
+		// be restarted by its own auto-heal, in a loop. Prefix match because
+		// hostname-based detection yields the short 12-char ID.
+		if selfID != "" && strings.HasPrefix(strings.ToLower(c.ID), selfID) {
+			continue
+		}
+
 		if libarcane.IsInternalContainer(c.Labels) {
 			continue
 		}

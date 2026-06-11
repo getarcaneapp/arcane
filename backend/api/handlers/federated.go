@@ -9,7 +9,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	federatedtypes "github.com/getarcaneapp/arcane/types/v2/federated"
 	"github.com/labstack/echo/v4"
@@ -187,32 +186,16 @@ func (h *FederatedCredentialHandler) ListFederatedCredentials(ctx context.Contex
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	credentials, paginationResp, err := h.federatedCredentialService.List(ctx, pagination.QueryParams{
-		SearchQuery: pagination.SearchQuery{Search: input.Search},
-		SortParams: pagination.SortParams{
-			Sort:  input.Sort,
-			Order: pagination.SortOrder(input.Order),
-		},
-		Params: pagination.Params{
-			Start: input.Start,
-			Limit: input.Limit,
-		},
-	})
+	credentials, paginationResp, err := h.federatedCredentialService.List(ctx, buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search))
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to list federated credentials")
 	}
 
 	return &ListFederatedCredentialsOutput{
 		Body: base.Paginated[federatedtypes.FederatedCredential]{
-			Success: true,
-			Data:    credentials,
-			Pagination: base.PaginationResponse{
-				TotalPages:      paginationResp.TotalPages,
-				TotalItems:      paginationResp.TotalItems,
-				CurrentPage:     paginationResp.CurrentPage,
-				ItemsPerPage:    paginationResp.ItemsPerPage,
-				GrandTotalItems: paginationResp.GrandTotalItems,
-			},
+			Success:    true,
+			Data:       credentials,
+			Pagination: toPaginationResponseInternal(paginationResp),
 		},
 	}, nil
 }
@@ -221,9 +204,9 @@ func (h *FederatedCredentialHandler) CreateFederatedCredential(ctx context.Conte
 	if h.federatedCredentialService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
-	user, exists := humamw.GetCurrentUserFromContext(ctx)
-	if !exists {
-		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	user, err := requireUserInternal(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	credential, err := h.federatedCredentialService.Create(ctx, user.ID, input.Body)
@@ -260,9 +243,9 @@ func (h *FederatedCredentialHandler) UpdateFederatedCredential(ctx context.Conte
 	if h.federatedCredentialService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
-	user, exists := humamw.GetCurrentUserFromContext(ctx)
-	if !exists {
-		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	user, err := requireUserInternal(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	credential, err := h.federatedCredentialService.Update(ctx, user.ID, input.ID, input.Body)

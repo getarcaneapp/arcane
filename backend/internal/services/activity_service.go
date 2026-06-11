@@ -491,6 +491,77 @@ func (s *ActivityService) FailStaleImageUpdateChecks(ctx context.Context) (int64
 	return failed, errors.Join(failErrs...)
 }
 
+// PatchActivityMetadata merges patch into the activity's existing metadata,
+// unlike UpdateActivity which replaces the metadata wholesale.
+func (s *ActivityService) PatchActivityMetadata(ctx context.Context, activityID string, patch models.JSON) error {
+	if err := s.checkInitInternal(); err != nil {
+		return err
+	}
+	activityID = strings.TrimSpace(activityID)
+	if activityID == "" {
+		return errors.New("activity id is required")
+	}
+	if len(patch) == 0 {
+		return nil
+	}
+
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var activity models.Activity
+		if err := tx.First(&activity, "id = ?", activityID).Error; err != nil {
+			return fmt.Errorf("failed to load activity: %w", err)
+		}
+		merged := cloneJSONInternal(activity.Metadata)
+		if merged == nil {
+			merged = models.JSON{}
+		}
+		maps.Copy(merged, patch)
+		if err := tx.Model(&models.Activity{}).Where("id = ?", activityID).
+			Updates(map[string]any{"metadata": merged, "updated_at": time.Now()}).Error; err != nil {
+			return fmt.Errorf("failed to patch activity metadata: %w", err)
+		}
+		return nil
+	})
+}
+
+// ResolveStaleAutoUpdateActivities finalizes auto-update activities left
+// running by a prior process lifetime. A run whose metadata marks a triggered
+// self-update completed by restarting Arcane, so it is recorded as success;
+// anything else still running at startup was interrupted and is failed.
+func (s *ActivityService) ResolveStaleAutoUpdateActivities(ctx context.Context) (int64, error) {
+	if s == nil || s.db == nil {
+		return 0, nil
+	}
+
+	var stale []models.Activity
+	if err := s.db.WithContext(ctx).
+		Where("type = ? AND status = ?", models.ActivityTypeAutoUpdate, models.ActivityStatusRunning).
+		Find(&stale).Error; err != nil {
+		return 0, fmt.Errorf("find stale auto-update activities: %w", err)
+	}
+
+	var resolved int64
+	var resolveErrs []error
+	for i := range stale {
+		status := models.ActivityStatusFailed
+		message := "Auto-update interrupted by Arcane restart"
+		var errMessage *string
+		if selfUpdate, _ := stale[i].Metadata["selfUpdateTriggered"].(bool); selfUpdate {
+			status = models.ActivityStatusSuccess
+			message = "Auto-update completed — Arcane restarted with the updated image"
+		} else {
+			errText := message
+			errMessage = &errText
+		}
+		if _, err := s.CompleteActivity(ctx, stale[i].ID, status, message, errMessage); err != nil {
+			resolveErrs = append(resolveErrs, fmt.Errorf("resolve stale auto-update activity %s: %w", stale[i].ID, err))
+			continue
+		}
+		resolved++
+	}
+
+	return resolved, errors.Join(resolveErrs...)
+}
+
 func completeActivityUpdatesInternal(startedAt time.Time, status models.ActivityStatus, finalMessage string, errMessage *string, finalStep []string, now time.Time) map[string]any {
 	updates := map[string]any{
 		"status":      status,

@@ -242,15 +242,9 @@ func (h *ContainerRegistryHandler) ListRegistries(ctx context.Context, input *Li
 
 	return &ListContainerRegistriesOutput{
 		Body: ContainerRegistryPaginatedResponse{
-			Success: true,
-			Data:    registries,
-			Pagination: base.PaginationResponse{
-				TotalPages:      paginationResp.TotalPages,
-				TotalItems:      paginationResp.TotalItems,
-				CurrentPage:     paginationResp.CurrentPage,
-				ItemsPerPage:    paginationResp.ItemsPerPage,
-				GrandTotalItems: paginationResp.GrandTotalItems,
-			},
+			Success:    true,
+			Data:       registries,
+			Pagination: toPaginationResponseInternal(paginationResp),
 		},
 	}, nil
 }

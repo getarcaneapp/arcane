@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -33,7 +34,7 @@ type AuthOptions struct {
 }
 
 type ApiKeyValidator interface {
-	ValidateApiKeyWithID(ctx context.Context, rawKey string) (*models.User, string, error)
+	ValidateApiKeyWithID(ctx context.Context, rawKey string) (*models.User, *models.ApiKey, error)
 }
 
 type EnvironmentAccessTokenResolver interface {
@@ -137,20 +138,19 @@ func (m *AuthMiddleware) agentAuth(ctx context.Context, c echo.Context, next ech
 
 	req := c.Request()
 	if strings.HasPrefix(req.URL.Path, pkgutils.AgentPairingPrefix) &&
-		m.cfg.AgentToken != "" &&
-		req.Header.Get(pkgutils.HeaderAgentBootstrap) == m.cfg.AgentToken {
+		agentTokenMatchesInternal(req.Header.Get(pkgutils.HeaderAgentBootstrap), m.cfg.AgentToken) {
 		slog.InfoContext(ctx, "Agent auth: bootstrap pairing accepted", "path", req.URL.Path, "method", req.Method)
 		agentSudoInternal(c)
 		return next(c)
 	}
 
-	if tok := req.Header.Get(pkgutils.HeaderAgentToken); tok != "" && m.cfg.AgentToken != "" && tok == m.cfg.AgentToken {
+	if agentTokenMatchesInternal(req.Header.Get(pkgutils.HeaderAgentToken), m.cfg.AgentToken) {
 		agentSudoInternal(c)
 		return next(c)
 	}
 
 	// Check for API key as agent token
-	if tok := req.Header.Get(pkgutils.HeaderApiKey); tok != "" && m.cfg.AgentToken != "" && tok == m.cfg.AgentToken {
+	if agentTokenMatchesInternal(req.Header.Get(pkgutils.HeaderApiKey), m.cfg.AgentToken) {
 		agentSudoInternal(c)
 		return next(c)
 	}
@@ -167,6 +167,15 @@ func (m *AuthMiddleware) agentAuth(ctx context.Context, c echo.Context, next ech
 	})
 }
 
+// agentTokenMatchesInternal compares a presented token against the configured
+// agent token in constant time to avoid timing side channels.
+func agentTokenMatchesInternal(presented, configured string) bool {
+	if presented == "" || configured == "" {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(presented), []byte(configured)) == 1
+}
+
 func (m *AuthMiddleware) managerAuth(ctx context.Context, c echo.Context, next echo.HandlerFunc) error {
 	req := c.Request()
 	if agentToken := req.Header.Get(pkgutils.HeaderAgentToken); agentToken != "" {
@@ -178,31 +187,7 @@ func (m *AuthMiddleware) managerAuth(ctx context.Context, c echo.Context, next e
 
 	// First, check for API key in X-API-Key header
 	if apiKey := req.Header.Get(pkgutils.HeaderApiKey); apiKey != "" {
-		if m.apiKeyValidator != nil {
-			user, keyID, err := m.apiKeyValidator.ValidateApiKeyWithID(ctx, apiKey)
-			if err == nil && user != nil {
-				ps := m.resolveApiKeyPermissionsOrDeny(ctx, keyID)
-				if m.options.AdminRequired && !ps.IsGlobalAdmin() {
-					return c.JSON(http.StatusForbidden, models.APIError{
-						Code:    "FORBIDDEN",
-						Message: "You don't have permission to access this resource",
-					})
-				}
-				c.Set(echoCtxKeyUserID, user.ID)
-				c.Set(echoCtxKeyCurrentUser, user)
-				c.Set(echoCtxKeyUserPermissions, ps)
-				c.Set(echoCtxKeyAuthMethod, "api_key")
-				return next(c)
-			}
-		}
-		if env, ok := m.resolveEnvironmentAccessToken(ctx, apiKey); ok {
-			environmentSudoInternal(c, env)
-			return next(c)
-		}
-		return c.JSON(http.StatusUnauthorized, models.APIError{
-			Code:    models.APIErrorCodeUnauthorized,
-			Message: "Invalid or expired API key",
-		})
+		return m.apiKeyHeaderAuth(ctx, c, next, apiKey)
 	}
 
 	token := extractBearerOrCookieTokenInternal(c)
@@ -248,6 +233,43 @@ func (m *AuthMiddleware) managerAuth(ctx context.Context, c echo.Context, next e
 	c.Set(echoCtxKeySessionID, sessionID)
 	c.Set(echoCtxKeyUserPermissions, ps)
 	return next(c)
+}
+
+// apiKeyHeaderAuth authenticates an X-API-Key credential: a user-owned API key
+// first, then an environment access token presented through the same header.
+func (m *AuthMiddleware) apiKeyHeaderAuth(ctx context.Context, c echo.Context, next echo.HandlerFunc, apiKey string) error {
+	if m.apiKeyValidator != nil {
+		user, key, err := m.apiKeyValidator.ValidateApiKeyWithID(ctx, apiKey)
+		if err == nil && user != nil {
+			// Personal keys inherit the owner's role permissions (same
+			// resolution as session auth); scoped keys use their own grants.
+			var ps *authz.PermissionSet
+			if key.Kind == models.ApiKeyKindPersonal {
+				ps = m.resolvePermissionsOrDeny(ctx, user)
+			} else {
+				ps = m.resolveApiKeyPermissionsOrDeny(ctx, key.ID)
+			}
+			if m.options.AdminRequired && !ps.IsGlobalAdmin() {
+				return c.JSON(http.StatusForbidden, models.APIError{
+					Code:    "FORBIDDEN",
+					Message: "You don't have permission to access this resource",
+				})
+			}
+			c.Set(echoCtxKeyUserID, user.ID)
+			c.Set(echoCtxKeyCurrentUser, user)
+			c.Set(echoCtxKeyUserPermissions, ps)
+			c.Set(echoCtxKeyAuthMethod, "api_key")
+			return next(c)
+		}
+	}
+	if env, ok := m.resolveEnvironmentAccessToken(ctx, apiKey); ok {
+		environmentSudoInternal(c, env)
+		return next(c)
+	}
+	return c.JSON(http.StatusUnauthorized, models.APIError{
+		Code:    models.APIErrorCodeUnauthorized,
+		Message: "Invalid or expired API key",
+	})
 }
 
 // resolvePermissionsOrDeny returns the user's permission set, or an empty

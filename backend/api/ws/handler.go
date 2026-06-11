@@ -943,8 +943,34 @@ func (h *WebSocketHandler) ContainerExec(c echo.Context) error {
 	ctx, cancel := context.WithCancel(c.Request().Context())
 	defer cancel()
 
+	const execPongWait = 60 * time.Second
+	_ = conn.SetReadDeadline(time.Now().Add(execPongWait))
+	conn.SetPongHandler(func(string) error {
+		_ = conn.SetReadDeadline(time.Now().Add(execPongWait))
+		return nil
+	})
+	go h.pingExecConnInternal(ctx, conn, execPongWait*9/10)
+
 	h.runContainerExecInternal(ctx, cancel, conn, containerID, shell)
 	return nil
+}
+
+// pingExecConnInternal keeps the exec websocket alive; pongs refresh the read
+// deadline so a silently-dead client fails the next read instead of blocking
+// forever. WriteControl is safe concurrently with the exec output writer.
+func (h *WebSocketHandler) pingExecConnInternal(ctx context.Context, conn *websocket.Conn, period time.Duration) {
+	ticker := time.NewTicker(period)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(time.Second)); err != nil {
+				return
+			}
+		}
+	}
 }
 
 func (h *WebSocketHandler) runContainerExecInternal(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, containerID, shell string) {

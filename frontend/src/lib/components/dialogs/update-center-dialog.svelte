@@ -15,15 +15,18 @@
 	import DOMPurify from 'isomorphic-dompurify';
 	import { formatDistanceToNow } from 'date-fns';
 
+	// open/upgrading have no $bindable fallback: upstream binds can start out
+	// undefined, and binding undefined to a $bindable with a fallback throws
+	// props_invalid_value. Undefined reads as falsy.
 	let {
-		open = $bindable(false),
+		open = $bindable(undefined),
 		versionInformation,
 		onConfirm,
 		environmentName,
 		environmentId,
 		canInstall = true,
 		debug = false,
-		upgrading = $bindable(false)
+		upgrading = $bindable(undefined)
 	}: {
 		open?: boolean;
 		versionInformation?: AppVersionInformation;

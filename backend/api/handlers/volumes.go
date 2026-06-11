@@ -662,24 +662,9 @@ func (h *VolumeHandler) ListVolumes(ctx context.Context, input *ListVolumesInput
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	filters := make(map[string]string)
+	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	if input.InUse != "" {
-		filters["inUse"] = input.InUse
-	}
-
-	params := pagination.QueryParams{
-		SearchQuery: pagination.SearchQuery{
-			Search: input.Search,
-		},
-		SortParams: pagination.SortParams{
-			Sort:  input.Sort,
-			Order: pagination.SortOrder(input.Order),
-		},
-		Params: pagination.Params{
-			Start: input.Start,
-			Limit: input.Limit,
-		},
-		Filters: filters,
+		params.Filters["inUse"] = input.InUse
 	}
 
 	if params.Limit == 0 {
@@ -704,13 +689,7 @@ func (h *VolumeHandler) ListVolumes(ctx context.Context, input *ListVolumesInput
 				Unused: counts.Unused,
 				Total:  counts.Total,
 			},
-			Pagination: base.PaginationResponse{
-				TotalPages:      paginationResp.TotalPages,
-				TotalItems:      paginationResp.TotalItems,
-				CurrentPage:     paginationResp.CurrentPage,
-				ItemsPerPage:    paginationResp.ItemsPerPage,
-				GrandTotalItems: paginationResp.GrandTotalItems,
-			},
+			Pagination: toPaginationResponseInternal(paginationResp),
 		},
 	}, nil
 }
@@ -740,9 +719,9 @@ func (h *VolumeHandler) CreateVolume(ctx context.Context, input *CreateVolumeInp
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	user, exists := humamw.GetCurrentUserFromContext(ctx)
-	if !exists {
-		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	user, err := requireUserInternal(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	options := client.VolumeCreateOptions{
@@ -792,9 +771,9 @@ func (h *VolumeHandler) RemoveVolume(ctx context.Context, input *RemoveVolumeInp
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	user, exists := humamw.GetCurrentUserFromContext(ctx)
-	if !exists {
-		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	user, err := requireUserInternal(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
@@ -1144,15 +1123,9 @@ func (h *VolumeHandler) ListBackups(ctx context.Context, input *ListBackupsInput
 
 	return &ListBackupsOutput{
 		Body: VolumeBackupPaginatedResponse{
-			Success: true,
-			Data:    backups,
-			Pagination: base.PaginationResponse{
-				TotalPages:      paginationResp.TotalPages,
-				TotalItems:      paginationResp.TotalItems,
-				CurrentPage:     paginationResp.CurrentPage,
-				ItemsPerPage:    paginationResp.ItemsPerPage,
-				GrandTotalItems: paginationResp.GrandTotalItems,
-			},
+			Success:    true,
+			Data:       backups,
+			Pagination: toPaginationResponseInternal(paginationResp),
 			Warnings: func() []string {
 				if warning == "" {
 					return nil
@@ -1167,9 +1140,9 @@ func (h *VolumeHandler) CreateBackup(ctx context.Context, input *CreateBackupInp
 	if h.volumeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
-	user, exists := humamw.GetCurrentUserFromContext(ctx)
-	if !exists {
-		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	user, err := requireUserInternal(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	var backup *models.VolumeBackup
@@ -1206,9 +1179,9 @@ func (h *VolumeHandler) RestoreBackup(ctx context.Context, input *RestoreBackupI
 	if h.volumeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
-	user, exists := humamw.GetCurrentUserFromContext(ctx)
-	if !exists {
-		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	user, err := requireUserInternal(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
@@ -1245,9 +1218,9 @@ func (h *VolumeHandler) RestoreBackupFiles(ctx context.Context, input *RestoreBa
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	user, exists := humamw.GetCurrentUserFromContext(ctx)
-	if !exists {
-		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	user, err := requireUserInternal(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	if len(input.Body.Paths) == 0 {
@@ -1387,9 +1360,9 @@ func (h *VolumeHandler) UploadAndRestore(ctx context.Context, input *UploadAndRe
 	if h.volumeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
-	user, exists := humamw.GetCurrentUserFromContext(ctx)
-	if !exists {
-		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+	user, err := requireUserInternal(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	files := input.RawBody.File["file"]

@@ -157,12 +157,6 @@ func TestEnvironmentMiddleware_KeepsActivityEndpointsLocal(t *testing.T) {
 			route:  "/environments/:id/activities",
 			path:   "/api/environments/env-edge/activities?limit=50",
 		},
-		{
-			name:   "stream activities",
-			method: http.MethodGet,
-			route:  "/environments/:id/activities/stream",
-			path:   "/api/environments/env-edge/activities/stream?limit=50",
-		},
 	}
 
 	for _, tt := range tests {

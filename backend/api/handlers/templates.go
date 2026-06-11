@@ -431,15 +431,9 @@ func (h *TemplateHandler) ListTemplates(ctx context.Context, input *ListTemplate
 
 	return &ListTemplatesOutput{
 		Body: TemplatePaginatedResponse{
-			Success: true,
-			Data:    templates,
-			Pagination: base.PaginationResponse{
-				TotalPages:      paginationResp.TotalPages,
-				TotalItems:      paginationResp.TotalItems,
-				CurrentPage:     paginationResp.CurrentPage,
-				ItemsPerPage:    paginationResp.ItemsPerPage,
-				GrandTotalItems: paginationResp.GrandTotalItems,
-			},
+			Success:    true,
+			Data:       templates,
+			Pagination: toPaginationResponseInternal(paginationResp),
 		},
 	}, nil
 }
