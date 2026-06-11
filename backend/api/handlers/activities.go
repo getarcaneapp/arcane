@@ -5,18 +5,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/aggstream"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/types/v2/activity"
@@ -335,55 +334,17 @@ func (h *ActivityHandler) StreamAllActivities(ctx context.Context, input *Stream
 // environment and every enabled remote environment over a single response so
 // the browser needs one connection regardless of environment count.
 func (h *ActivityHandler) streamAllActivitiesInternal(ctx context.Context, limit int, encoder *json.Encoder, flush func()) {
-	streamCtx, cancel := context.WithCancel(ctx)
-
-	events := make(chan activity.StreamEvent, activityStreamEventBuffer)
-	var wg sync.WaitGroup
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		h.runLocalActivityStreamProducerInternal(streamCtx, limit, events)
-	}()
-	go func() {
-		defer wg.Done()
-		h.runRemoteActivityStreamPollersInternal(streamCtx, limit, events)
-	}()
-	defer wg.Wait()
-	defer cancel()
-
-	heartbeat := time.NewTicker(activityStreamHeartbeatInterval)
-	defer heartbeat.Stop()
-
-	for {
-		select {
-		case <-streamCtx.Done():
-			return
-		case event := <-events:
-			if err := encoder.Encode(event); err != nil {
-				return
-			}
-			flush()
-		case <-heartbeat.C:
-			if err := encoder.Encode(activity.StreamEvent{
-				Type:      "heartbeat",
-				Timestamp: time.Now(),
-			}); err != nil {
-				return
-			}
-			flush()
-		}
-	}
-}
-
-// sendActivityStreamEventInternal forwards an event to the stream writer,
-// giving up when the stream is shutting down so producers can never block.
-func sendActivityStreamEventInternal(ctx context.Context, events chan<- activity.StreamEvent, event activity.StreamEvent) bool {
-	select {
-	case events <- event:
-		return true
-	case <-ctx.Done():
-		return false
-	}
+	aggstream.Run(ctx, encoder, flush, activityStreamEventBuffer, activityStreamHeartbeatInterval,
+		func() activity.StreamEvent {
+			return activity.StreamEvent{Type: "heartbeat", Timestamp: time.Now()}
+		},
+		func(ctx context.Context, events chan<- activity.StreamEvent) {
+			h.runLocalActivityStreamProducerInternal(ctx, limit, events)
+		},
+		func(ctx context.Context, events chan<- activity.StreamEvent) {
+			h.runRemoteActivityStreamPollersInternal(ctx, limit, events)
+		},
+	)
 }
 
 func (h *ActivityHandler) runLocalActivityStreamProducerInternal(ctx context.Context, limit int, events chan<- activity.StreamEvent) {
@@ -393,7 +354,7 @@ func (h *ActivityHandler) runLocalActivityStreamProducerInternal(ctx context.Con
 		})
 		if err != nil {
 			if ctx.Err() == nil {
-				sendActivityStreamEventInternal(ctx, events, activity.StreamEvent{
+				aggstream.Send(ctx, events, activity.StreamEvent{
 					Type:          "error",
 					EnvironmentID: "0",
 					Error:         err.Error(),
@@ -403,7 +364,7 @@ func (h *ActivityHandler) runLocalActivityStreamProducerInternal(ctx context.Con
 			return false
 		}
 		h.applyActivitySourceLabelsInternal(ctx, "0", activities)
-		return sendActivityStreamEventInternal(ctx, events, activity.StreamEvent{
+		return aggstream.Send(ctx, events, activity.StreamEvent{
 			Type:          "snapshot",
 			EnvironmentID: "0",
 			Activities:    activities,
@@ -429,7 +390,7 @@ func (h *ActivityHandler) runLocalActivityStreamProducerInternal(ctx context.Con
 			}
 			event.EnvironmentID = "0"
 			h.applyActivityStreamEventSourceLabelInternal(ctx, "0", &event)
-			if !sendActivityStreamEventInternal(ctx, events, event) {
+			if !aggstream.Send(ctx, events, event) {
 				return
 			}
 		case <-ticker.C:
@@ -444,60 +405,10 @@ func (h *ActivityHandler) runLocalActivityStreamProducerInternal(ctx context.Con
 // enabled remote environment, re-listing periodically so environments added
 // or removed while the stream is open are picked up without a reconnect.
 func (h *ActivityHandler) runRemoteActivityStreamPollersInternal(ctx context.Context, limit int, events chan<- activity.StreamEvent) {
-	pollers := make(map[string]context.CancelFunc)
-	var wg sync.WaitGroup
-	defer wg.Wait()
-	defer func() {
-		for _, cancelPoll := range pollers {
-			cancelPoll()
-		}
-	}()
-
-	reconcile := func() {
-		envs, err := h.environmentService.ListRemoteEnvironments(ctx)
-		if err != nil {
-			if ctx.Err() == nil {
-				slog.WarnContext(ctx, "failed to list environments for activity stream", "error", err)
-			}
-			return
-		}
-
-		current := make(map[string]struct{}, len(envs))
-		for _, env := range envs {
-			current[env.ID] = struct{}{}
-			if _, ok := pollers[env.ID]; ok {
-				continue
-			}
-			pollCtx, cancelPoll := context.WithCancel(ctx) //nolint:gosec // cancel is retained in pollers and invoked on env removal or via the deferred cleanup.
-			pollers[env.ID] = cancelPoll
-			wg.Add(1)
-			go func(environmentID string) {
-				defer wg.Done()
-				h.runRemoteActivityStreamPollerInternal(pollCtx, environmentID, limit, events)
-			}(env.ID)
-		}
-
-		for id, cancelPoll := range pollers {
-			if _, ok := current[id]; !ok {
-				cancelPoll()
-				delete(pollers, id)
-			}
-		}
-	}
-
-	reconcile()
-
-	ticker := time.NewTicker(activityStreamEnvReconcileInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			reconcile()
-		}
-	}
+	aggstream.ReconcileEnvironmentPollers(ctx, h.environmentService, activityStreamEnvReconcileInterval, "activity stream",
+		func(pollCtx context.Context, environmentID string) {
+			h.runRemoteActivityStreamPollerInternal(pollCtx, environmentID, limit, events)
+		})
 }
 
 func (h *ActivityHandler) runRemoteActivityStreamPollerInternal(ctx context.Context, environmentID string, limit int, events chan<- activity.StreamEvent) {
@@ -520,7 +431,7 @@ func (h *ActivityHandler) runRemoteActivityStreamPollerInternal(ctx context.Cont
 			// once per distinct message and keep polling.
 			if msg := err.Error(); msg != lastError {
 				lastError = msg
-				sendActivityStreamEventInternal(ctx, events, activity.StreamEvent{
+				aggstream.Send(ctx, events, activity.StreamEvent{
 					Type:          "error",
 					EnvironmentID: environmentID,
 					Error:         msg,
@@ -530,7 +441,7 @@ func (h *ActivityHandler) runRemoteActivityStreamPollerInternal(ctx context.Cont
 			return
 		}
 		lastError = ""
-		sendActivityStreamEventInternal(ctx, events, activity.StreamEvent{
+		aggstream.Send(ctx, events, activity.StreamEvent{
 			Type:          "snapshot",
 			EnvironmentID: environmentID,
 			Activities:    output.Body.Data,

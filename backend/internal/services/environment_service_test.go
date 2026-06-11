@@ -797,6 +797,15 @@ func TestEnvironmentService_ListEnvironmentsPaginated_FiltersByRuntimeType(t *te
 			Enabled:   true,
 			IsEdge:    true,
 		},
+		{
+			BaseModel:         models.BaseModel{ID: "env-last-ws", CreatedAt: now, UpdatedAt: &now},
+			Name:              "LastWebsocket",
+			ApiUrl:            "edge://last-ws",
+			Status:            string(models.EnvironmentStatusOffline),
+			Enabled:           true,
+			IsEdge:            true,
+			LastEdgeTransport: new("websocket"),
+		},
 	}
 	require.NoError(t, db.WithContext(ctx).Create(&envs).Error)
 
@@ -824,11 +833,12 @@ func TestEnvironmentService_ListEnvironmentsPaginated_FiltersByRuntimeType(t *te
 		wantIDs    []string
 	}{
 		{name: "http", typeFilter: "http", wantIDs: []string{"0"}},
-		{name: "edge", typeFilter: "edge", wantIDs: []string{"env-edge"}},
+		// Poll-only edge environments (no tunnel transport) classify as plain edge.
+		{name: "edge", typeFilter: "edge", wantIDs: []string{"env-edge", "env-polling"}},
 		{name: "grpc", typeFilter: "grpc", wantIDs: []string{"env-grpc"}},
-		{name: "websocket", typeFilter: "websocket", wantIDs: []string{"env-websocket"}},
-		{name: "polling", typeFilter: "polling", wantIDs: []string{"env-polling"}},
-		{name: "multiple", typeFilter: "http,polling", wantIDs: []string{"0", "env-polling"}},
+		// Disconnected agents classify by the transport they last used.
+		{name: "websocket", typeFilter: "websocket", wantIDs: []string{"env-websocket", "env-last-ws"}},
+		{name: "multiple", typeFilter: "http,grpc", wantIDs: []string{"0", "env-grpc"}},
 	}
 
 	for _, tt := range tests {

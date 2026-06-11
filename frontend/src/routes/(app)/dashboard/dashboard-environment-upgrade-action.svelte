@@ -12,6 +12,9 @@
 	import { extractApiErrorMessage } from '$lib/utils/api';
 	import { DownloadIcon } from '$lib/icons';
 
+	// open/upgrading have no $bindable fallback: they bind to per-environment
+	// record entries that start out undefined, and binding undefined to a
+	// $bindable with a fallback throws props_invalid_value. Undefined reads as falsy.
 	let {
 		environment,
 		versionInfo,
@@ -19,8 +22,8 @@
 		debug = false,
 		onRefreshRequested,
 		render = 'both',
-		open = $bindable(false),
-		upgrading = $bindable(false)
+		open = $bindable(undefined),
+		upgrading = $bindable(undefined)
 	}: {
 		environment: Environment;
 		versionInfo: AppVersionInformation;

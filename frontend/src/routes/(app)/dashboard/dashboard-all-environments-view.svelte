@@ -2,7 +2,7 @@
 	import { goto, invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { formatDistanceToNow } from 'date-fns';
-	import { onDestroy, untrack } from 'svelte';
+	import { onDestroy, onMount, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { type ActionButton } from '$lib/components/action-button-group/index.js';
 	import { cn } from '$lib/utils';
@@ -13,8 +13,8 @@
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import * as Card from '$lib/components/ui/card/index.js';
 	import { m } from '$lib/paraglide/messages';
-	import { dashboardService } from '$lib/services/dashboard-service';
 	import { systemService } from '$lib/services/system-service';
+	import { dashboardStore } from '$lib/stores/dashboard.store.svelte';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { hasAnyPermission, hasPermission } from '$lib/utils/auth';
 	import type { SystemStats } from '$lib/types/shared';
@@ -79,17 +79,6 @@
 	let liveStatsByEnvironmentId = $state<Record<string, EnvironmentLiveStatsState>>({});
 	let upgradeDialogOpenById = $state<Record<string, boolean>>({});
 	let upgradeDialogUpgradingById = $state<Record<string, boolean>>({});
-
-	type EnvironmentSnapshotState = {
-		snapshot: DashboardSnapshot | null;
-		loading: boolean;
-		hasLoaded: boolean;
-		error: string | null;
-	};
-
-	const dashboardSnapshotPollInterval = 15000;
-	let snapshotByEnvironmentId = $state<Record<string, EnvironmentSnapshotState>>({});
-	let snapshotPollers: Record<string, ReturnType<typeof setInterval>> = {};
 
 	let dockerInfoOpen = $state(false);
 	let dockerInfoData = $state<DockerInfo | null>(null);
@@ -219,62 +208,6 @@
 		}
 	}
 
-	async function fetchEnvironmentSnapshot(environment: Environment) {
-		if (!snapshotByEnvironmentId[environment.id]) {
-			return;
-		}
-
-		const result = await tryCatch(dashboardService.getDashboardForEnvironment(environment.id, { debugAllGood }));
-		const state = snapshotByEnvironmentId[environment.id];
-		if (!state) {
-			return;
-		}
-
-		if (result.error) {
-			state.error = extractApiErrorMessage(result.error);
-		} else {
-			state.snapshot = result.data;
-			state.error = null;
-			state.hasLoaded = true;
-		}
-		state.loading = false;
-	}
-
-	function ensureEnvironmentSnapshot(environment: Environment) {
-		if (!shouldLoadEnvironment(environment)) {
-			removeEnvironmentSnapshot(environment.id);
-			return;
-		}
-
-		if (!snapshotByEnvironmentId[environment.id]) {
-			snapshotByEnvironmentId[environment.id] = { snapshot: null, loading: true, hasLoaded: false, error: null };
-		}
-
-		if (snapshotPollers[environment.id]) {
-			return;
-		}
-
-		void fetchEnvironmentSnapshot(environment);
-		snapshotPollers[environment.id] = setInterval(() => {
-			void fetchEnvironmentSnapshot(environment);
-		}, dashboardSnapshotPollInterval);
-	}
-
-	function removeEnvironmentSnapshot(environmentId: string) {
-		const poller = snapshotPollers[environmentId];
-		if (poller) {
-			clearInterval(poller);
-			delete snapshotPollers[environmentId];
-		}
-		delete snapshotByEnvironmentId[environmentId];
-	}
-
-	function cleanupEnvironmentSnapshots() {
-		for (const environmentId of Object.keys(snapshotPollers)) {
-			removeEnvironmentSnapshot(environmentId);
-		}
-	}
-
 	async function loadDockerInfo(environment: Environment): Promise<DockerInfo> {
 		try {
 			const info = await systemService.getDockerInfoForEnvironment(environment.id);
@@ -330,6 +263,13 @@
 	const loadableEnvironmentCards = $derived(environmentCards.filter(({ environment }) => shouldLoadEnvironment(environment)));
 	const loadableEnvironmentIds = $derived.by(() => new Set(loadableEnvironmentCards.map(({ environment }) => environment.id)));
 
+	function resolveSnapshotErrorMessage(state: NonNullable<ReturnType<typeof dashboardStore.getEnvironmentState>>): string {
+		if (state.errorCode === 'agent_incompatible') {
+			return m.dashboard_all_agent_incompatible();
+		}
+		return state.errorMessage || m.common_unknown();
+	}
+
 	const boardState = $derived.by(() => {
 		void reloadVersion;
 
@@ -337,10 +277,12 @@
 		const items: DashboardEnvironmentOverview[] = [];
 
 		for (const { environment } of environmentCards) {
-			const state = snapshotByEnvironmentId[environment.id];
+			const state = dashboardStore.getEnvironmentState(environment.id);
 			let item: DashboardEnvironmentOverview;
 
 			if (state?.snapshot) {
+				// Last-known data keeps rendering even while the environment is
+				// erroring; the error banner is shown alongside it.
 				const snapshot = state.snapshot;
 				item = {
 					environment,
@@ -349,13 +291,14 @@
 					actionItems: snapshot.actionItems,
 					settings: snapshot.settings,
 					versionInfo: snapshot.versionInfo,
-					snapshotState: 'ready'
+					snapshotState: 'ready',
+					snapshotError: state.streamError ? resolveSnapshotErrorMessage(state) : undefined
 				};
-			} else if (state?.error) {
+			} else if (state?.streamError) {
 				item = {
 					...createBaseEnvironmentOverview(environment),
 					snapshotState: 'error',
-					snapshotError: state.error
+					snapshotError: resolveSnapshotErrorMessage(state)
 				};
 			} else {
 				item = createBaseEnvironmentOverview(environment);
@@ -372,8 +315,7 @@
 	});
 
 	function isEnvironmentSnapshotLoading(environmentId: string): boolean {
-		const state = snapshotByEnvironmentId[environmentId];
-		return Boolean(state && state.loading && !state.hasLoaded);
+		return dashboardStore.isSnapshotLoading(environmentId);
 	}
 
 	const boardSummaryLoading = $derived.by(() => {
@@ -383,7 +325,7 @@
 				continue;
 			}
 			hasReachable = true;
-			if (snapshotByEnvironmentId[environment.id]?.hasLoaded) {
+			if (dashboardStore.getEnvironmentState(environment.id)?.hasLoaded) {
 				return false;
 			}
 		}
@@ -396,7 +338,6 @@
 		untrack(() => {
 			for (const environment of environmentsToLoad) {
 				ensureEnvironmentLiveStats(environment);
-				ensureEnvironmentSnapshot(environment);
 			}
 		});
 	});
@@ -410,29 +351,23 @@
 					removeEnvironmentLiveStats(environmentId);
 				}
 			}
-
-			for (const environmentId of Object.keys(snapshotByEnvironmentId)) {
-				if (!reachableEnvironmentIds.has(environmentId)) {
-					removeEnvironmentSnapshot(environmentId);
-				}
-			}
 		});
+	});
+
+	onMount(() => {
+		void dashboardStore.start({ debugAllGood });
 	});
 
 	onDestroy(() => {
 		cleanupEnvironmentLiveStats();
-		cleanupEnvironmentSnapshots();
+		dashboardStore.stop();
 	});
 
 	async function refreshOverview() {
 		isRefreshing = true;
 		try {
 			await invalidateAll();
-			await Promise.all(
-				environmentCards
-					.filter(({ environment }) => shouldLoadEnvironment(environment))
-					.map(({ environment }) => fetchEnvironmentSnapshot(environment))
-			);
+			await dashboardStore.refresh();
 			reloadVersion += 1;
 		} finally {
 			isRefreshing = false;
@@ -464,15 +399,14 @@
 			return { text: m.dashboard_all_transport_http(), variant: 'gray' };
 		}
 
-		if (environment.lastPollAt) {
-			return { text: m.environments_edge_polling_label(), variant: 'blue' };
-		}
-
-		if (!environment.connected || !environment.edgeTransport) {
+		// Prefer the live tunnel transport; fall back to the last one used so
+		// disconnected or poll-only agents still show what they connect with.
+		const transport = (environment.connected ? environment.edgeTransport : undefined) ?? environment.lastEdgeTransport;
+		if (!transport) {
 			return { text: m.dashboard_all_transport_edge(), variant: 'gray' };
 		}
 
-		return environment.edgeTransport === 'websocket'
+		return transport === 'websocket'
 			? { text: m.dashboard_all_transport_websocket(), variant: 'purple' }
 			: { text: m.dashboard_all_transport_grpc(), variant: 'blue' };
 	}
@@ -1115,7 +1049,7 @@
 
 								{#if boardState}
 									{@const loadedItem = boardState.overviewById.get(environment.id) ?? baseItem}
-									{#if loadedItem.snapshotState === 'error' && loadedItem.snapshotError}
+									{#if loadedItem.snapshotError}
 										<div
 											class="rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 text-xs text-red-700 dark:text-red-300"
 										>

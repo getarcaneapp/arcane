@@ -1,8 +1,10 @@
 package handlers
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -131,4 +133,177 @@ func TestDashboardHandlerGetDashboardReturnsSnapshot(t *testing.T) {
 		{Kind: dashboardtypes.ActionItemKindImageUpdates, Count: 1, Severity: dashboardtypes.ActionItemSeverityWarning},
 		{Kind: dashboardtypes.ActionItemKindExpiringKeys, Count: 1, Severity: dashboardtypes.ActionItemSeverityWarning},
 	}, snapshot.ActionItems.Items)
+}
+
+// runDashboardStreamAllInternal drives streamAllDashboardsInternal through a
+// pipe and returns each decoded event to onEvent until it reports done or the
+// stream ends; remaining output is drained so a blocked encoder can finish.
+func runDashboardStreamAllInternal(t *testing.T, ctx context.Context, cancel context.CancelFunc, handler *DashboardHandler, onEvent func(dashboardtypes.StreamEvent) bool) {
+	t.Helper()
+
+	pr, pw := io.Pipe()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		defer func() { _ = pw.Close() }()
+		handler.streamAllDashboardsInternal(ctx, false, json.NewEncoder(pw), func() {})
+	}()
+
+	scanner := bufio.NewScanner(pr)
+	for scanner.Scan() {
+		var event dashboardtypes.StreamEvent
+		require.NoError(t, json.Unmarshal(scanner.Bytes(), &event))
+		if onEvent(event) {
+			cancel()
+			break
+		}
+	}
+
+	go func() {
+		_, _ = io.Copy(io.Discard, pr)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("stream did not terminate after cancel")
+	}
+}
+
+func TestDashboardHandlerStreamAllEmitsRemoteSnapshotInternal(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	db := setupActivityHandlerTestDBInternal(t)
+	limitStreamTestDBToSingleConnInternal(t, db)
+	settingsService, err := services.NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	token := "remote-token"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/api/environments/0/dashboard", r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"data":{
+			"containers":{"data":[{"id":"c1"}],"counts":{"runningContainers":2,"stoppedContainers":1,"totalContainers":3},"pagination":{"totalPages":1,"totalItems":1,"currentPage":1,"itemsPerPage":20}},
+			"images":{"data":[],"pagination":{"totalPages":1,"totalItems":0,"currentPage":1,"itemsPerPage":20}},
+			"imageUsageCounts":{"imagesInuse":4,"imagesUnused":1,"totalImages":5,"totalImageSize":0},
+			"actionItems":{"items":[]},
+			"settings":{}
+		}}`))
+	}))
+	defer server.Close()
+	createStreamTestRemoteEnvironmentInternal(t, db, server.URL, token)
+
+	handler := &DashboardHandler{
+		dashboardService:   services.NewDashboardService(db, nil, nil, nil, nil, nil, nil, nil, nil),
+		environmentService: services.NewEnvironmentService(db, server.Client(), nil, nil, settingsService, nil),
+	}
+
+	var remoteSnapshot bool
+	runDashboardStreamAllInternal(t, ctx, cancel, handler, func(event dashboardtypes.StreamEvent) bool {
+		if event.Type == "snapshot" && event.EnvironmentID == "remote-1" && event.Snapshot != nil {
+			require.Equal(t, 2, event.Snapshot.Containers.Counts.RunningContainers)
+			require.Equal(t, 3, event.Snapshot.Containers.Counts.TotalContainers)
+			require.Equal(t, 5, event.Snapshot.ImageUsageCounts.Total)
+			require.Empty(t, event.Snapshot.Containers.Data, "first-page table rows must be trimmed from stream events")
+			remoteSnapshot = true
+		}
+		return remoteSnapshot
+	})
+
+	require.True(t, remoteSnapshot)
+}
+
+func TestDashboardHandlerStreamAllLegacyAgentComposesSnapshotFromGranularEndpointsInternal(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	db := setupActivityHandlerTestDBInternal(t)
+	limitStreamTestDBToSingleConnInternal(t, db)
+	settingsService, err := services.NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	token := "remote-token"
+	// Older agents have no /dashboard route but do expose the granular
+	// counts/version endpoints the fallback composes a snapshot from.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/environments/0/containers/counts":
+			_, _ = w.Write([]byte(`{"success":true,"data":{"runningContainers":4,"stoppedContainers":2,"totalContainers":6}}`))
+		case "/api/environments/0/images/counts":
+			_, _ = w.Write([]byte(`{"success":true,"data":{"imagesInuse":3,"imagesUnused":1,"totalImages":4,"totalImageSize":1024}}`))
+		case "/api/app-version":
+			_, _ = w.Write([]byte(`{"currentVersion":"1.9.0","displayVersion":"1.9.0","updateAvailable":true}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"success":false,"error":"API endpoint not found: ` + r.URL.Path + `"}`))
+		}
+	}))
+	defer server.Close()
+	createStreamTestRemoteEnvironmentInternal(t, db, server.URL, token)
+
+	handler := &DashboardHandler{
+		dashboardService:   services.NewDashboardService(db, nil, nil, nil, nil, nil, nil, nil, nil),
+		environmentService: services.NewEnvironmentService(db, server.Client(), nil, nil, settingsService, nil),
+	}
+
+	var composedSnapshot bool
+	runDashboardStreamAllInternal(t, ctx, cancel, handler, func(event dashboardtypes.StreamEvent) bool {
+		if event.Type == "snapshot" && event.EnvironmentID == "remote-1" && event.Snapshot != nil {
+			require.Equal(t, 4, event.Snapshot.Containers.Counts.RunningContainers)
+			require.Equal(t, 2, event.Snapshot.Containers.Counts.StoppedContainers)
+			require.Equal(t, 4, event.Snapshot.ImageUsageCounts.Total)
+			require.Len(t, event.Snapshot.ActionItems.Items, 1)
+			require.Equal(t, dashboardtypes.ActionItemKindStoppedContainers, event.Snapshot.ActionItems.Items[0].Kind)
+			require.NotNil(t, event.Snapshot.VersionInfo)
+			require.Equal(t, "1.9.0", event.Snapshot.VersionInfo.CurrentVersion)
+			composedSnapshot = true
+		}
+		return composedSnapshot
+	})
+
+	require.True(t, composedSnapshot)
+}
+
+func TestDashboardHandlerStreamAllLegacyAgent404EmitsIncompatibleErrorInternal(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	db := setupActivityHandlerTestDBInternal(t)
+	limitStreamTestDBToSingleConnInternal(t, db)
+	settingsService, err := services.NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	token := "remote-token"
+	// An agent so incompatible that even the granular fallback endpoints 404.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"success":false,"error":"API endpoint not found: ` + r.URL.Path + `"}`))
+	}))
+	defer server.Close()
+	createStreamTestRemoteEnvironmentInternal(t, db, server.URL, token)
+
+	handler := &DashboardHandler{
+		dashboardService:   services.NewDashboardService(db, nil, nil, nil, nil, nil, nil, nil, nil),
+		environmentService: services.NewEnvironmentService(db, server.Client(), nil, nil, settingsService, nil),
+	}
+
+	var incompatibleError, localEvent bool
+	runDashboardStreamAllInternal(t, ctx, cancel, handler, func(event dashboardtypes.StreamEvent) bool {
+		if event.Type == "error" && event.EnvironmentID == "remote-1" {
+			require.Equal(t, dashboardtypes.StreamErrorCodeAgentIncompatible, event.ErrorCode)
+			require.NotEmpty(t, event.Error)
+			incompatibleError = true
+		}
+		// The local producer still emits (an error here — no docker in tests),
+		// proving one failing environment doesn't end the stream.
+		if event.EnvironmentID == "0" {
+			localEvent = true
+		}
+		return incompatibleError && localEvent
+	})
+
+	require.True(t, incompatibleError)
+	require.True(t, localEvent)
 }

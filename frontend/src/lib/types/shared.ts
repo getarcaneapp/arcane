@@ -197,6 +197,19 @@ export interface DashboardSnapshot {
 	versionInfo?: AppVersionInformation;
 }
 
+export type DashboardStreamEventType = 'snapshot' | 'error' | 'pending' | 'heartbeat';
+
+export type DashboardStreamErrorCode = 'agent_incompatible' | 'unreachable' | '';
+
+export interface DashboardStreamEvent {
+	type: DashboardStreamEventType;
+	environmentId?: string;
+	snapshot?: DashboardSnapshot;
+	error?: string;
+	errorCode?: DashboardStreamErrorCode;
+	timestamp: string;
+}
+
 export type EnvironmentDashboardSnapshotState = 'ready' | 'skipped' | 'error';
 
 export interface DashboardEnvironmentOverview {

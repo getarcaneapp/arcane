@@ -151,6 +151,13 @@ type Environment struct {
 	// Required: false
 	EdgeTransport *string `json:"edgeTransport,omitempty"`
 
+	// LastEdgeTransport is the most recently used tunnel transport, persisted
+	// so the transport stays known while the tunnel is down or the agent is
+	// poll-only. Values are "grpc" or "websocket".
+	//
+	// Required: false
+	LastEdgeTransport *string `json:"lastEdgeTransport,omitempty"`
+
 	// EdgeSecurityMode indicates how the current edge tunnel authenticated.
 	// Values include "token" and "mtls".
 	//
