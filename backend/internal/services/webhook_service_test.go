@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	libcrypto "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/crypto"
+	"github.com/getarcaneapp/arcane/types/v2"
 	glsqlite "github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -590,7 +591,7 @@ func TestTriggerByToken_ContainerType_NilServiceReturnsError(t *testing.T) {
 	svc := newTestWebhookService(db) // updaterService is nil
 
 	rawToken := "arc_wh_ccddeeff01020304aabbccdd0102030405060708090a0b0c0d0e0f1011121314"
-	insertWebhookDirect(t, ctx, db, rawToken, models.WebhookTargetTypeContainer, models.WebhookActionTypeUpdate, "container-id", "env-1")
+	insertWebhookDirect(t, ctx, db, rawToken, models.WebhookTargetTypeContainer, models.WebhookActionTypeUpdate, "container-id", types.LOCAL_DOCKER_ENVIRONMENT_ID)
 
 	assert.Panics(t, func() {
 		_, _ = svc.TriggerByToken(ctx, rawToken) //nolint:errcheck
@@ -603,7 +604,7 @@ func TestTriggerByToken_UpdaterType_NilServiceReturnsError(t *testing.T) {
 	svc := newTestWebhookService(db) // updaterService is nil
 
 	rawToken := "arc_wh_1122334401020304aabbccdd0102030405060708090a0b0c0d0e0f1011121314"
-	insertWebhookDirect(t, ctx, db, rawToken, models.WebhookTargetTypeUpdater, models.WebhookActionTypeRun, "", "env-1")
+	insertWebhookDirect(t, ctx, db, rawToken, models.WebhookTargetTypeUpdater, models.WebhookActionTypeRun, "", types.LOCAL_DOCKER_ENVIRONMENT_ID)
 
 	// nil updaterService causes a panic, which we verify the dispatch path is reached
 	// by recovering — in production the service is always non-nil
@@ -618,7 +619,7 @@ func TestTriggerByToken_GitOpsType_NilServiceReturnsError(t *testing.T) {
 	svc := newTestWebhookService(db) // gitOpsSyncService is nil
 
 	rawToken := "arc_wh_aabbccdd11223344aabbccdd0102030405060708090a0b0c0d0e0f1011121314"
-	insertWebhookDirect(t, ctx, db, rawToken, models.WebhookTargetTypeGitOps, models.WebhookActionTypeSync, "sync-id", "env-1")
+	insertWebhookDirect(t, ctx, db, rawToken, models.WebhookTargetTypeGitOps, models.WebhookActionTypeSync, "sync-id", types.LOCAL_DOCKER_ENVIRONMENT_ID)
 
 	assert.Panics(t, func() {
 		_, _ = svc.TriggerByToken(ctx, rawToken) //nolint:errcheck
@@ -650,4 +651,74 @@ func TestTriggerByToken_UnknownActionType_ReturnsInvalidAction(t *testing.T) {
 
 	_, err := svc.TriggerByToken(ctx, rawToken)
 	assert.ErrorIs(t, err, ErrWebhookInvalidAction)
+}
+
+func TestRemoteWebhookRequestInternal(t *testing.T) {
+	tests := []struct {
+		name       string
+		wh         models.Webhook
+		actionType string
+		wantMethod string
+		wantPath   string
+		wantResult bool
+		wantErr    error
+	}{
+		{
+			name:       "container update prefers target ref",
+			wh:         models.Webhook{TargetType: models.WebhookTargetTypeContainer, TargetID: "abc123", TargetRef: "my-app"},
+			actionType: models.WebhookActionTypeUpdate,
+			wantMethod: "POST",
+			wantPath:   "/api/environments/0/containers/my-app/update",
+			wantResult: true,
+		},
+		{
+			name:       "container start falls back to target id",
+			wh:         models.Webhook{TargetType: models.WebhookTargetTypeContainer, TargetID: "abc123"},
+			actionType: models.WebhookActionTypeStart,
+			wantMethod: "POST",
+			wantPath:   "/api/environments/0/containers/abc123/start",
+		},
+		{
+			name:       "project update maps to update-services",
+			wh:         models.Webhook{TargetType: models.WebhookTargetTypeProject, TargetID: "p1"},
+			actionType: models.WebhookActionTypeUpdate,
+			wantMethod: "POST",
+			wantPath:   "/api/environments/0/projects/p1/update-services",
+		},
+		{
+			name:       "gitops sync",
+			wh:         models.Webhook{TargetType: models.WebhookTargetTypeGitOps, TargetID: "sync-1"},
+			actionType: models.WebhookActionTypeSync,
+			wantMethod: "POST",
+			wantPath:   "/api/environments/0/gitops-syncs/sync-1/sync",
+		},
+		{
+			name:       "updater run carries result",
+			wh:         models.Webhook{TargetType: models.WebhookTargetTypeUpdater},
+			actionType: models.WebhookActionTypeRun,
+			wantMethod: "POST",
+			wantPath:   "/api/environments/0/updater/run",
+			wantResult: true,
+		},
+		{
+			name:       "invalid action rejected",
+			wh:         models.Webhook{TargetType: models.WebhookTargetTypeContainer, TargetID: "abc"},
+			actionType: models.WebhookActionTypeSync,
+			wantErr:    ErrWebhookInvalidAction,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			method, path, wantResult, err := remoteWebhookRequestInternal(&tt.wh, tt.actionType)
+			if tt.wantErr != nil {
+				assert.ErrorIs(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantMethod, method)
+			assert.Equal(t, tt.wantPath, path)
+			assert.Equal(t, tt.wantResult, wantResult)
+		})
+	}
 }

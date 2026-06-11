@@ -160,6 +160,18 @@ type RestartProjectOutput struct {
 	Body base.ApiResponse[base.MessageResponse]
 }
 
+type UpdateProjectServicesInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	ProjectID     string `path:"projectId" doc:"Project ID"`
+	Body          *struct {
+		Services []string `json:"services,omitempty" doc:"Service names to update; empty updates all services"`
+	}
+}
+
+type UpdateProjectServicesOutput struct {
+	Body base.ApiResponse[base.MessageResponse]
+}
+
 type ArchiveProjectInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ProjectID     string `path:"projectId" doc:"Project ID"`
@@ -440,6 +452,20 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 		},
 		Middlewares: humamw.RequirePermission(api, authz.PermProjectsRestart),
 	}, h.RestartProject)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "update-project-services",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/projects/{projectId}/update-services",
+		Summary:     "Update project services",
+		Description: "Pull latest images and recreate the given services (all services when none are specified)",
+		Tags:        []string{"Projects"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+		Middlewares: humamw.RequirePermission(api, authz.PermProjectsUpdate),
+	}, h.UpdateProjectServices)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "archive-project",
@@ -1000,6 +1026,23 @@ func (h *ProjectHandler) RestartProject(ctx context.Context, input *RestartProje
 	}, nil
 }
 
+// UpdateProjectServices pulls the latest images for the given services and recreates them.
+func (h *ProjectHandler) UpdateProjectServices(ctx context.Context, input *UpdateProjectServicesInput) (*UpdateProjectServicesOutput, error) {
+	var services []string
+	if input.Body != nil {
+		services = input.Body.Services
+	}
+
+	response, err := h.runProjectActivityActionResponseInternal(ctx, input.EnvironmentID, input.ProjectID, h.updateProjectServicesActivityConfigInternal(services))
+	if err != nil {
+		return nil, err
+	}
+
+	return &UpdateProjectServicesOutput{
+		Body: response,
+	}, nil
+}
+
 type projectActivityActionConfigInternal struct {
 	ActivityType    models.ActivityType
 	Step            string
@@ -1026,6 +1069,24 @@ func (h *ProjectHandler) redeployProjectActivityConfigInternal(options *project.
 		},
 		Error: projectArchivedActionErrorInternal(func(err error) error {
 			return huma.Error400BadRequest((&common.ProjectRedeploymentError{Err: err}).Error())
+		}),
+	}
+}
+
+func (h *ProjectHandler) updateProjectServicesActivityConfigInternal(services []string) projectActivityActionConfigInternal {
+	return projectActivityActionConfigInternal{
+		ActivityType:    models.ActivityTypeAutoUpdate,
+		Step:            "Updating project services",
+		StartMessage:    "Project services update requested",
+		WriterStep:      "Updating project services",
+		FailureMessage:  "Project services update failed",
+		SuccessComplete: "Project services updated",
+		SuccessMessage:  "Project services updated successfully",
+		Action: func(runtimeCtx context.Context, projectID string, user models.User) error {
+			return h.projectService.UpdateProjectServices(runtimeCtx, projectID, services, user)
+		},
+		Error: projectArchivedActionErrorInternal(func(err error) error {
+			return huma.Error400BadRequest((&common.ProjectUpdateError{Err: err}).Error())
 		}),
 	}
 }

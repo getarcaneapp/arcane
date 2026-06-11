@@ -8,12 +8,16 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	libcrypto "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/crypto"
+	"github.com/getarcaneapp/arcane/types/v2"
+	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/updater"
 	webhooktypes "github.com/getarcaneapp/arcane/types/v2/webhook"
 	"gorm.io/gorm"
@@ -35,23 +39,31 @@ const (
 )
 
 type WebhookService struct {
-	db                *database.DB
-	containerService  *ContainerService
-	updaterService    *UpdaterService
-	projectService    *ProjectService
-	gitOpsSyncService *GitOpsSyncService
-	eventService      *EventService
+	db                 *database.DB
+	containerService   *ContainerService
+	updaterService     *UpdaterService
+	projectService     *ProjectService
+	gitOpsSyncService  *GitOpsSyncService
+	eventService       *EventService
+	environmentService *EnvironmentService
 }
 
-func NewWebhookService(db *database.DB, containerService *ContainerService, updaterService *UpdaterService, projectService *ProjectService, gitOpsSyncService *GitOpsSyncService, eventService *EventService) *WebhookService {
+func NewWebhookService(db *database.DB, containerService *ContainerService, updaterService *UpdaterService, projectService *ProjectService, gitOpsSyncService *GitOpsSyncService, eventService *EventService, environmentService *EnvironmentService) *WebhookService {
 	return &WebhookService{
-		db:                db,
-		containerService:  containerService,
-		updaterService:    updaterService,
-		projectService:    projectService,
-		gitOpsSyncService: gitOpsSyncService,
-		eventService:      eventService,
+		db:                 db,
+		containerService:   containerService,
+		updaterService:     updaterService,
+		projectService:     projectService,
+		gitOpsSyncService:  gitOpsSyncService,
+		eventService:       eventService,
+		environmentService: environmentService,
 	}
+}
+
+// isRemoteWebhookEnvironmentInternal reports whether environmentID refers to a
+// remote environment (anything but the local Docker environment).
+func isRemoteWebhookEnvironmentInternal(environmentID string) bool {
+	return environmentID != "" && environmentID != types.LOCAL_DOCKER_ENVIRONMENT_ID
 }
 
 // generateWebhookTokenInternal creates a new random webhook token and returns the raw token
@@ -170,7 +182,9 @@ func (s *WebhookService) CreateWebhook(ctx context.Context, name, targetType, ac
 		return nil, "", ErrWebhookMissingTarget
 	}
 
-	if targetType == models.WebhookTargetTypeContainer {
+	// Container references can only be resolved against the local Docker daemon;
+	// remote-environment webhooks keep the raw target and resolve on trigger.
+	if targetType == models.WebhookTargetTypeContainer && !isRemoteWebhookEnvironmentInternal(environmentID) {
 		targetRef, err = s.resolveContainerWebhookTargetRefInternal(ctx, targetID)
 		if err != nil {
 			return nil, "", err
@@ -258,6 +272,13 @@ func (s *WebhookService) ListWebhookSummaries(ctx context.Context, environmentID
 func (s *WebhookService) resolveWebhookTargetNameInternal(ctx context.Context, wh *models.Webhook) string {
 	switch wh.TargetType {
 	case models.WebhookTargetTypeContainer:
+		// Remote containers cannot be resolved against the local Docker daemon.
+		if isRemoteWebhookEnvironmentInternal(wh.EnvironmentID) {
+			if strings.TrimSpace(wh.TargetRef) != "" {
+				return wh.TargetRef
+			}
+			return wh.TargetID
+		}
 		if strings.TrimSpace(wh.TargetRef) != "" {
 			if s.containerService == nil {
 				return wh.TargetRef
@@ -438,6 +459,12 @@ func (s *WebhookService) TriggerByToken(ctx context.Context, rawToken string) (*
 }
 
 func (s *WebhookService) executeWebhookActionInternal(ctx context.Context, wh *models.Webhook, actionType string) (*updater.Result, error) {
+	// Webhooks are stored and triggered on the manager; actions against remote
+	// environments are forwarded through the environment proxy.
+	if isRemoteWebhookEnvironmentInternal(wh.EnvironmentID) {
+		return s.executeRemoteWebhookActionInternal(ctx, wh, actionType)
+	}
+
 	switch wh.TargetType {
 	case models.WebhookTargetTypeContainer:
 		return s.executeContainerWebhookActionInternal(ctx, wh, actionType)
@@ -450,6 +477,81 @@ func (s *WebhookService) executeWebhookActionInternal(ctx context.Context, wh *m
 	default:
 		return nil, ErrWebhookInvalidType
 	}
+}
+
+// remoteWebhookRequestInternal maps a webhook action to the env-scoped API
+// request forwarded to the remote environment. Paths use the agent-local
+// environment ID, matching the environment proxy's path-rewriting convention.
+// wantResult reports whether the response carries an updater.Result payload.
+func remoteWebhookRequestInternal(wh *models.Webhook, actionType string) (method, path string, wantResult bool, err error) {
+	apiPrefix := "/api/environments/" + types.LOCAL_DOCKER_ENVIRONMENT_ID
+
+	switch wh.TargetType {
+	case models.WebhookTargetTypeContainer:
+		ref := strings.TrimSpace(wh.TargetRef)
+		if ref == "" {
+			ref = strings.TrimSpace(wh.TargetID)
+		}
+		if ref == "" {
+			return "", "", false, ErrWebhookMissingTarget
+		}
+		containerPath := apiPrefix + "/containers/" + url.PathEscape(ref)
+		switch actionType {
+		case models.WebhookActionTypeUpdate:
+			return http.MethodPost, containerPath + "/update", true, nil
+		case models.WebhookActionTypeStart, models.WebhookActionTypeStop, models.WebhookActionTypeRestart, models.WebhookActionTypeRedeploy:
+			return http.MethodPost, containerPath + "/" + actionType, false, nil
+		}
+		return "", "", false, ErrWebhookInvalidAction
+	case models.WebhookTargetTypeProject:
+		projectPath := apiPrefix + "/projects/" + url.PathEscape(wh.TargetID)
+		switch actionType {
+		case models.WebhookActionTypeUpdate:
+			return http.MethodPost, projectPath + "/update-services", false, nil
+		case models.WebhookActionTypeUp, models.WebhookActionTypeDown, models.WebhookActionTypeRestart, models.WebhookActionTypeRedeploy:
+			return http.MethodPost, projectPath + "/" + actionType, false, nil
+		}
+		return "", "", false, ErrWebhookInvalidAction
+	case models.WebhookTargetTypeUpdater:
+		if actionType != models.WebhookActionTypeRun {
+			return "", "", false, ErrWebhookInvalidAction
+		}
+		return http.MethodPost, apiPrefix + "/updater/run", true, nil
+	case models.WebhookTargetTypeGitOps:
+		if actionType != models.WebhookActionTypeSync {
+			return "", "", false, ErrWebhookInvalidAction
+		}
+		return http.MethodPost, apiPrefix + "/gitops-syncs/" + url.PathEscape(wh.TargetID) + "/sync", false, nil
+	default:
+		return "", "", false, ErrWebhookInvalidType
+	}
+}
+
+func (s *WebhookService) executeRemoteWebhookActionInternal(ctx context.Context, wh *models.Webhook, actionType string) (*updater.Result, error) {
+	if s.environmentService == nil {
+		return nil, s.wrapWebhookActionErrorInternal(ctx, wh, wh.TargetType, actionType, errors.New("environment service not available"))
+	}
+
+	method, path, wantResult, err := remoteWebhookRequestInternal(wh, actionType)
+	if err != nil {
+		return nil, err
+	}
+
+	var result *updater.Result
+	if wantResult {
+		var out base.ApiResponse[*updater.Result]
+		if err := s.environmentService.ProxyJSONRequest(ctx, wh.EnvironmentID, method, path, nil, &out); err != nil {
+			return nil, s.wrapWebhookActionErrorInternal(ctx, wh, wh.TargetType, actionType, err)
+		}
+		result = out.Data
+	} else {
+		var out base.ApiResponse[any]
+		if err := s.environmentService.ProxyJSONRequest(ctx, wh.EnvironmentID, method, path, nil, &out); err != nil {
+			return nil, s.wrapWebhookActionErrorInternal(ctx, wh, wh.TargetType, actionType, err)
+		}
+	}
+
+	return result, nil
 }
 
 func (s *WebhookService) executeContainerWebhookActionInternal(ctx context.Context, wh *models.Webhook, actionType string) (*updater.Result, error) {
