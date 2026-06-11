@@ -138,20 +138,20 @@ func tryBearerAuthInternal(ctx huma.Context, authService *services.AuthService) 
 }
 
 // tryApiKeyAuthInternal checks if API key authentication should be allowed
-// through. Returns the resolved user plus the API key's database ID so the
-// caller can fetch the key's own permission set.
-func tryApiKeyAuthInternal(ctx huma.Context, apiKeyService *services.ApiKeyService) (*models.User, string, bool) {
+// through. Returns the resolved user plus the API key record so the caller
+// can resolve permissions according to the key's kind.
+func tryApiKeyAuthInternal(ctx huma.Context, apiKeyService *services.ApiKeyService) (*models.User, *models.ApiKey, bool) {
 	apiKey := ctx.Header(pkgutils.HeaderApiKey)
 	if apiKey == "" {
-		return nil, "", false
+		return nil, nil, false
 	}
 
-	user, keyID, err := apiKeyService.ValidateApiKeyWithID(ctx.Context(), apiKey)
+	user, key, err := apiKeyService.ValidateApiKeyWithID(ctx.Context(), apiKey)
 	if err != nil || user == nil {
-		return nil, "", false
+		return nil, nil, false
 	}
 
-	return user, keyID, true
+	return user, key, true
 }
 
 func tryEnvironmentAccessTokenAuthInternal(ctx huma.Context, resolver environmentAccessTokenResolver, token string) (*models.User, bool) {
@@ -292,8 +292,15 @@ func opportunisticBearerAuthInternal(ctx huma.Context, authService *services.Aut
 // handleApiKeyAuthInternal handles the API-key-present branch. If validation
 // fails, it writes 401 directly — Bearer is not attempted as fallback.
 func handleApiKeyAuthInternal(api huma.API, ctx huma.Context, apiKeyService *services.ApiKeyService, permResolver PermissionResolver, envTokenResolver environmentAccessTokenResolver, next func(huma.Context)) {
-	if user, keyID, ok := tryApiKeyAuthInternal(ctx, apiKeyService); ok {
-		ps := resolveApiKeyPermissionsInternal(ctx.Context(), permResolver, keyID)
+	if user, key, ok := tryApiKeyAuthInternal(ctx, apiKeyService); ok {
+		// Personal keys inherit the owner's role permissions (same resolution
+		// as session auth); scoped keys are limited to their own grants.
+		var ps *authz.PermissionSet
+		if key.Kind == models.ApiKeyKindPersonal {
+			ps = resolveUserPermissionsInternal(ctx.Context(), permResolver, user)
+		} else {
+			ps = resolveApiKeyPermissionsInternal(ctx.Context(), permResolver, key.ID)
+		}
 		newCtx := setUserInContextInternal(ctx.Context(), user, ps)
 		next(huma.WithContext(ctx, newCtx))
 		return

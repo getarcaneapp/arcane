@@ -3035,6 +3035,7 @@
 	"_comment_api_key_permissions": "=== API KEY PERMISSIONS ===",
 	"api_key_permissions_description": "Choose the permissions this key may use. You cannot grant a permission you do not hold yourself.",
 	"api_key_permissions_required": "Pick at least one permission",
+	"api_key_personal_inherits_description": "This key has the same permissions as your account.",
 	"api_key_scope_all": "All permissions",
 	"api_key_scope_role": "Matches {role}",
 	"api_key_scope_count": "{count} {count, plural, one {permission} other {permissions}}",

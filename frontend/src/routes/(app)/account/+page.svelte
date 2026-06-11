@@ -17,12 +17,11 @@
 	import { m } from '$lib/paraglide/messages';
 	import { userService } from '$lib/services/user-service';
 	import { apiKeyService } from '$lib/services/api-key-service';
-	import { roleService } from '$lib/services/role-service';
 	import userStore from '$lib/stores/user-store';
 	import settingsStore from '$lib/stores/config-store';
 	import { getDefaultProfilePicture } from '$lib/utils/docker';
 	import { GLOBAL_SCOPE } from '$lib/types/auth';
-	import type { ApiKey, ApiKeyCreated, CreateApiKey, PermissionsManifest } from '$lib/types/auth';
+	import type { ApiKey, ApiKeyCreated, ApiKeyPermissionGrant, CreateUserApiKey } from '$lib/types/auth';
 	import { UserIcon, LogoutIcon, ShieldAlertIcon, SunIcon, MoonIcon, ApiKeyIcon, AddIcon, CopyIcon, TrashIcon } from '$lib/icons';
 
 	let { data: _data }: PageProps = $props();
@@ -82,7 +81,6 @@
 	let showCreateKeyForm = $state(false);
 	let creatingKey = $state(false);
 	let createdKey = $state<ApiKeyCreated | null>(null);
-	let permissionsManifest = $state<PermissionsManifest | null>(null);
 
 	$effect(() => {
 		if (!profileLoaded && currentUser) {
@@ -171,18 +169,22 @@
 		}
 	}
 
-	async function loadPermissionsManifest() {
-		try {
-			permissionsManifest = await roleService.getPermissionsManifest();
-		} catch (err) {
-			toast.error(err instanceof Error ? err.message : 'Failed to load available permissions');
-		}
-	}
-
-	async function createApiKey({ apiKey }: { apiKey: CreateApiKey; isEditMode: boolean; apiKeyId?: string }) {
+	async function createApiKey({
+		apiKey
+	}: {
+		apiKey: { name: string; description?: string; expiresAt?: string; permissions?: ApiKeyPermissionGrant[] };
+		isEditMode: boolean;
+		apiKeyId?: string;
+	}) {
 		creatingKey = true;
 		try {
-			const created = await apiKeyService.createMine(apiKey);
+			// Personal keys carry no grants; they inherit the owner's role permissions.
+			const payload: CreateUserApiKey = {
+				name: apiKey.name,
+				description: apiKey.description,
+				expiresAt: apiKey.expiresAt
+			};
+			const created = await apiKeyService.createMine(payload);
 			createdKey = created;
 			showCreateKeyForm = false;
 			await loadApiKeys();
@@ -211,7 +213,6 @@
 
 	onMount(() => {
 		void loadApiKeys();
-		void loadPermissionsManifest();
 	});
 
 	async function logoutAllOther() {
@@ -248,7 +249,7 @@
 
 	{#if currentUser}
 		<div class="grid gap-6 lg:grid-cols-3">
-			<!-- Left column: profile + password + preferences -->
+			<!-- Left column: profile + password + API keys -->
 			<div class="space-y-6 lg:col-span-2">
 				<!-- Profile -->
 				<Card class="overflow-hidden">
@@ -257,19 +258,29 @@
 						<p class="text-muted-foreground mt-1 text-xs sm:text-sm">Update your display name and email</p>
 					</div>
 					<div class="space-y-5 p-4 sm:p-6">
-						<div class="flex items-center gap-4">
-							<Avatar.Root class="size-16 rounded-xl">
-								<Avatar.Image src={avatarUrl} alt={currentUser.displayName ?? currentUser.username} />
-								<Avatar.Fallback
-									class="from-primary/20 to-primary/10 text-primary border-primary/20 rounded-xl border bg-linear-to-br text-xl font-semibold"
-								>
-									{(currentUser.displayName ?? currentUser.username).charAt(0).toUpperCase()}
-								</Avatar.Fallback>
-							</Avatar.Root>
-							<div class="min-w-0">
-								<div class="text-sm font-medium">@{currentUser.username}</div>
-								<div class="text-muted-foreground text-xs">
-									{isOidcUser ? 'Single sign-on account' : 'Local account'}
+						<div class="flex items-center justify-between gap-4">
+							<div class="flex min-w-0 items-center gap-4">
+								<Avatar.Root class="size-16 rounded-xl">
+									<Avatar.Image src={avatarUrl} alt={currentUser.displayName ?? currentUser.username} />
+									<Avatar.Fallback
+										class="from-primary/20 to-primary/10 text-primary border-primary/20 rounded-xl border bg-linear-to-br text-xl font-semibold"
+									>
+										{(currentUser.displayName ?? currentUser.username).charAt(0).toUpperCase()}
+									</Avatar.Fallback>
+								</Avatar.Root>
+								<div class="min-w-0">
+									<div class="text-sm font-medium">@{currentUser.username}</div>
+									<div class="text-muted-foreground text-xs">
+										{isOidcUser ? 'Single sign-on account' : 'Local account'}
+									</div>
+								</div>
+							</div>
+							<div class="hidden text-right sm:block">
+								{#if safeFormatDate(currentUser.createdAt, 'PP')}
+									<div class="text-muted-foreground text-xs">Member since {safeFormatDate(currentUser.createdAt, 'PP')}</div>
+								{/if}
+								<div class="text-muted-foreground text-xs" title={currentUser.lastLogin ?? ''}>
+									Last login {safeFormatRelative(currentUser.lastLogin) ?? 'Never'}
 								</div>
 							</div>
 						</div>
@@ -290,22 +301,26 @@
 								/>
 							</div>
 						</div>
-						<div class="flex justify-end gap-2">
-							<ArcaneButton
-								action="cancel"
-								tone="outline"
-								customLabel="Reset"
-								onclick={resetProfile}
-								disabled={!profileDirty || profileSaving}
-							/>
-							<ArcaneButton
-								action="save"
-								customLabel="Save profile"
-								onclick={saveProfile}
-								loading={profileSaving}
-								disabled={!profileDirty || profileSaving || isOidcUser}
-							/>
-						</div>
+						{#if !isOidcUser}
+							<div class="flex justify-end gap-2">
+								<ArcaneButton
+									action="cancel"
+									tone="outline"
+									customLabel="Reset"
+									onclick={resetProfile}
+									disabled={!profileDirty || profileSaving}
+								/>
+								<ArcaneButton
+									action="save"
+									customLabel="Save profile"
+									onclick={saveProfile}
+									loading={profileSaving}
+									disabled={!profileDirty || profileSaving}
+								/>
+							</div>
+						{:else}
+							<p class="text-muted-foreground text-xs">Profile details are managed by your identity provider.</p>
+						{/if}
 					</div>
 				</Card>
 
@@ -353,49 +368,6 @@
 					</Card>
 				{/if}
 
-				<!-- Preferences -->
-				<Card class="overflow-hidden">
-					<div class="border-b p-4 sm:p-6">
-						<h2 class="text-base font-semibold tracking-tight sm:text-lg">Preferences</h2>
-						<p class="text-muted-foreground mt-1 text-xs sm:text-sm">Personal display preferences</p>
-					</div>
-					<div class="divide-y p-2">
-						<div class="flex items-center justify-between gap-4 p-3">
-							<div class="min-w-0">
-								<div class="text-sm font-medium">Theme</div>
-								<div class="text-muted-foreground text-xs">Switch between light and dark mode</div>
-							</div>
-							<button
-								type="button"
-								onclick={toggleMode}
-								class="border-border hover:bg-muted/60 flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors"
-							>
-								{#if mode.current === 'dark'}
-									<MoonIcon class="size-4" />
-									Dark
-								{:else}
-									<SunIcon class="size-4" />
-									Light
-								{/if}
-							</button>
-						</div>
-						<div class="flex items-center justify-between gap-4 p-3">
-							<div class="min-w-0">
-								<div class="text-sm font-medium">Language</div>
-								<div class="text-muted-foreground text-xs">UI language for this account</div>
-							</div>
-							<LocalePicker inline />
-						</div>
-						<div class="flex items-center justify-between gap-4 p-3">
-							<div class="min-w-0">
-								<div class="text-sm font-medium">{m.font_size()}</div>
-								<div class="text-muted-foreground text-xs">{m.font_size_description()}</div>
-							</div>
-							<FontSizePicker />
-						</div>
-					</div>
-				</Card>
-
 				<!-- API keys -->
 				<Card class="overflow-hidden">
 					<div class="flex items-start justify-between gap-3 border-b p-4 sm:p-6">
@@ -411,7 +383,6 @@
 								customLabel="New key"
 								icon={AddIcon}
 								onclick={() => (showCreateKeyForm = true)}
-								disabled={!permissionsManifest}
 							/>
 						{/if}
 					</div>
@@ -498,35 +469,49 @@
 				</Card>
 			</div>
 
-			<!-- Right column: account info + roles + danger zone -->
+			<!-- Right column: preferences + roles + danger zone -->
 			<div class="space-y-6">
-				<!-- Account info -->
+				<!-- Preferences -->
 				<Card class="overflow-hidden">
 					<div class="border-b p-4 sm:p-6">
-						<h2 class="text-base font-semibold tracking-tight sm:text-lg">Account info</h2>
+						<h2 class="text-base font-semibold tracking-tight sm:text-lg">Preferences</h2>
+						<p class="text-muted-foreground mt-1 text-xs sm:text-sm">Personal display preferences</p>
 					</div>
-					<dl class="divide-y p-2 text-sm">
+					<div class="divide-y p-2">
 						<div class="flex items-center justify-between gap-4 p-3">
-							<dt class="text-muted-foreground">Username</dt>
-							<dd class="font-medium tabular-nums">@{currentUser.username}</dd>
-						</div>
-						<div class="flex items-center justify-between gap-4 p-3">
-							<dt class="text-muted-foreground">Account type</dt>
-							<dd class="font-medium">{isOidcUser ? 'Single sign-on' : 'Local'}</dd>
-						</div>
-						{#if safeFormatDate(currentUser.createdAt, 'PP')}
-							<div class="flex items-center justify-between gap-4 p-3">
-								<dt class="text-muted-foreground">Member since</dt>
-								<dd class="font-medium">{safeFormatDate(currentUser.createdAt, 'PP')}</dd>
+							<div class="min-w-0">
+								<div class="text-sm font-medium">Theme</div>
+								<div class="text-muted-foreground text-xs">Switch between light and dark mode</div>
 							</div>
-						{/if}
-						<div class="flex items-center justify-between gap-4 p-3">
-							<dt class="text-muted-foreground">Last login</dt>
-							<dd class="text-right font-medium" title={currentUser.lastLogin ?? ''}>
-								{safeFormatRelative(currentUser.lastLogin) ?? 'Never'}
-							</dd>
+							<button
+								type="button"
+								onclick={toggleMode}
+								class="border-border hover:bg-muted/60 flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors"
+							>
+								{#if mode.current === 'dark'}
+									<MoonIcon class="size-4" />
+									Dark
+								{:else}
+									<SunIcon class="size-4" />
+									Light
+								{/if}
+							</button>
 						</div>
-					</dl>
+						<div class="flex items-center justify-between gap-4 p-3">
+							<div class="min-w-0">
+								<div class="text-sm font-medium">Language</div>
+								<div class="text-muted-foreground text-xs">UI language for this account</div>
+							</div>
+							<LocalePicker inline />
+						</div>
+						<div class="flex items-center justify-between gap-4 p-3">
+							<div class="min-w-0">
+								<div class="text-sm font-medium">{m.font_size()}</div>
+								<div class="text-muted-foreground text-xs">{m.font_size_description()}</div>
+							</div>
+							<FontSizePicker />
+						</div>
+					</div>
 				</Card>
 
 				<!-- Roles & access -->
@@ -619,13 +604,10 @@
 	{/if}
 </div>
 
-{#if permissionsManifest}
-	<ApiKeyFormSheet
-		bind:open={showCreateKeyForm}
-		apiKeyToEdit={null}
-		manifest={permissionsManifest}
-		availablePermissions={[]}
-		onSubmit={createApiKey}
-		isLoading={creatingKey}
-	/>
-{/if}
+<ApiKeyFormSheet
+	bind:open={showCreateKeyForm}
+	apiKeyToEdit={null}
+	mode="personal"
+	onSubmit={createApiKey}
+	isLoading={creatingKey}
+/>
