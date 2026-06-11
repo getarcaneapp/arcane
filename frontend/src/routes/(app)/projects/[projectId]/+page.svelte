@@ -68,6 +68,7 @@
 		remapSelectedProjectFileKey,
 		removeProjectFileRecord
 	} from '../components/project-file-tree-utils';
+	import { extractComposeYamlName } from '$lib/utils/compose-flow';
 
 	let { data } = $props();
 	let projectId = $derived(data.projectId);
@@ -178,8 +179,13 @@
 		)
 	);
 
+	const composeYamlName = $derived(extractComposeYamlName($inputs.composeContent.value));
+	// The compose file's top-level `name:` is authoritative; surface it as the
+	// effective name without writing to form state reactively.
+	const effectiveName = $derived(composeYamlName ?? $inputs.name.value);
+
 	let hasChanges = $derived(
-		$inputs.name.value !== serverName ||
+		effectiveName !== serverName ||
 			$inputs.composeContent.value !== serverComposeContent ||
 			$inputs.envContent.value !== serverEnvContent ||
 			Object.entries(includeFilesState).some(([relativePath, content]) => content !== serverIncludeFiles[relativePath]) ||
@@ -189,11 +195,13 @@
 
 	let isGitOpsManaged = $derived(!!project?.gitOpsManagedBy);
 	let hasBuildDirective = $derived(!!project?.hasBuildDirective);
+
 	let canEditName = $derived(
 		canUpdateProject &&
 			!project?.isArchived &&
 			!isGitOpsManaged &&
 			!isLoading.saving &&
+			!composeYamlName &&
 			project?.status !== 'running' &&
 			project?.status !== 'partially running'
 	);
@@ -606,8 +614,8 @@
 		const validated = isGitOpsManaged ? formValues : form.validate();
 		if (!validated) return;
 
-		const { name, composeContent, envContent } = validated;
-		const namePayload = isGitOpsManaged ? undefined : name;
+		const { composeContent, envContent } = validated;
+		const namePayload = isGitOpsManaged ? undefined : effectiveName;
 		const composePayload = isGitOpsManaged ? undefined : composeContent;
 		const fileChangesPayload = buildProjectFileSaveChanges();
 		const includeFileUpdates = buildIncludeFileSaveUpdates();
@@ -657,7 +665,7 @@
 
 	function saveNameIfChanged() {
 		if (project?.isArchived) return;
-		if ($inputs.name.value === serverName) return;
+		if (effectiveName === serverName) return;
 		const validated = form.validate();
 		if (!validated) return;
 		handleSaveChanges();
@@ -1070,7 +1078,7 @@
 		}}
 	>
 		{#snippet headerInfo()}
-			<div class="flex min-w-0 items-start gap-3">
+			<div class="flex min-w-0 items-start gap-2.5">
 				<IconImage
 					src={getThemedIconUrl(project, mode.current)}
 					alt={project.name}
@@ -1079,14 +1087,16 @@
 					containerClass="size-9 bg-transparent ring-0"
 				/>
 				<div class="min-w-0 flex-1">
-					<div class="flex min-w-0 flex-wrap items-center gap-2">
+					<div class="flex min-h-9 min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
 						<EditableName
 							bind:value={$inputs.name.value}
+							displayValue={effectiveName}
 							bind:ref={nameInputRef}
 							variant="inline"
 							error={$inputs.name.error ?? undefined}
 							originalValue={serverName}
 							canEdit={canEditName}
+							disabledMessage={composeYamlName ? m.compose_project_name_defined_in_yaml() : undefined}
 							onCommit={saveNameIfChanged}
 							class="max-w-[10rem] min-w-0 sm:max-w-[14rem] md:max-w-[18rem] lg:max-w-[22rem]"
 						/>
@@ -1107,23 +1117,24 @@
 							checking={checkProjectUpdatesMutation.isPending}
 							disabled={!!project.isArchived}
 						/>
-						{#if project.urls && project.urls.length > 0}
-							<div class="flex min-w-0 flex-wrap items-center gap-2">
-								{#each project.urls as url, i (i)}
-									<a
-										class="ring-offset-background focus-visible:ring-ring bg-background/70 inline-flex min-h-6 max-w-[10rem] min-w-0 items-center gap-1 rounded-lg border border-sky-700/20 px-2 py-0.5 text-[12px] font-semibold shadow-sm transition-colors hover:border-sky-700/40 hover:bg-sky-500/10 hover:shadow-md focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none sm:max-w-[14rem] md:max-w-[18rem] dark:border-sky-400/40 dark:bg-sky-500/20 dark:text-sky-100 dark:hover:border-sky-300/60 dark:hover:bg-sky-500/30"
-										href={toSafeHref(url)}
-										target="_blank"
-										rel="noopener noreferrer"
-										title={url}
-									>
-										<GlobeIcon class="size-3 text-sky-500" />
-										<span class="truncate leading-normal">{formatUrlLabel(url)}</span>
-									</a>
-								{/each}
-							</div>
-						{/if}
 					</div>
+
+					{#if project.urls && project.urls.length > 0}
+						<div class="mt-1 flex min-w-0 flex-wrap items-center gap-1.5">
+							{#each project.urls as url, i (i)}
+								<a
+									class="ring-offset-background focus-visible:ring-ring bg-background/70 inline-flex h-6 max-w-[10rem] min-w-0 items-center gap-1.5 rounded-[var(--radius)] border border-sky-700/20 px-2.5 text-[12px] font-semibold transition-colors hover:border-sky-700/40 hover:bg-sky-500/10 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none sm:max-w-[14rem] md:max-w-[18rem] dark:border-sky-400/40 dark:bg-sky-500/20 dark:text-sky-100 dark:hover:border-sky-300/60 dark:hover:bg-sky-500/30"
+									href={toSafeHref(url)}
+									target="_blank"
+									rel="noopener noreferrer"
+									title={url}
+								>
+									<GlobeIcon class="size-3 text-sky-500" />
+									<span class="truncate">{formatUrlLabel(url)}</span>
+								</a>
+							{/each}
+						</div>
+					{/if}
 
 					{#if project.lastSyncCommit}
 						{@const commitUrl = project.gitRepositoryURL

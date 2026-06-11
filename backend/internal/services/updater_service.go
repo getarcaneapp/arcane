@@ -30,8 +30,6 @@ import (
 	moduletypes "go.getarcane.app/updater/types"
 )
 
-const autoUpdateComposeStandaloneFallbackSettingKeyInternal = "autoUpdateComposeStandaloneFallback"
-
 // UpdaterService is Arcane's handler-facing service for the standalone updater engine.
 type UpdaterService struct {
 	deps   updaterDependenciesInternal
@@ -88,27 +86,26 @@ func NewUpdaterService(
 			SystemUser:             systemUser,
 		},
 	}
-	service.engine = moduleapi.NewService(service.configInternal(context.Background()))
+	service.engine = moduleapi.NewService(service.configInternal())
 	return service
 }
 
-func (s *UpdaterService) configInternal(ctx context.Context) moduleapi.Config {
+func (s *UpdaterService) configInternal() moduleapi.Config {
 	return moduleapi.Config{
-		DockerClientProvider:           s,
-		ImagePuller:                    s,
-		PendingStore:                   s,
-		RunRecorder:                    s,
-		Settings:                       s,
-		RegistryDigestResolver:         s.registryDigestResolverInternal(),
-		ProjectUpdater:                 s,
-		SelfUpdater:                    s,
-		Notifier:                       s,
-		EventRecorder:                  s,
-		UsedImageCollector:             moduleapi.UsedImageCollectorFunc(s.CollectUsedImages),
-		LabelPolicy:                    labels.DefaultLabelPolicy(),
-		AllowComposeStandaloneFallback: s.allowComposeStandaloneFallbackInternal(ctx),
-		SelfContainerID:                selfContainerIDInternal(),
-		Logger:                         s.loggerInternal(),
+		DockerClientProvider:   s,
+		ImagePuller:            s,
+		PendingStore:           s,
+		RunRecorder:            s,
+		Settings:               s,
+		RegistryDigestResolver: s.registryDigestResolverInternal(),
+		ProjectUpdater:         s,
+		SelfUpdater:            s,
+		Notifier:               s,
+		EventRecorder:          s,
+		UsedImageCollector:     moduleapi.UsedImageCollectorFunc(s.CollectUsedImages),
+		LabelPolicy:            labels.DefaultLabelPolicy(),
+		SelfContainerID:        selfContainerIDInternal(),
+		Logger:                 s.loggerInternal(),
 	}
 }
 
@@ -132,13 +129,6 @@ func (s *UpdaterService) loggerInternal() *slog.Logger {
 		return s.deps.Logger
 	}
 	return slog.Default()
-}
-
-func (s *UpdaterService) allowComposeStandaloneFallbackInternal(ctx context.Context) bool {
-	if s == nil || s.deps.Settings == nil {
-		return false
-	}
-	return s.deps.Settings.GetBoolSetting(ctx, autoUpdateComposeStandaloneFallbackSettingKeyInternal, false)
 }
 
 func (s *UpdaterService) registryDigestResolverInternal() updaterdigest.RemoteResolver {

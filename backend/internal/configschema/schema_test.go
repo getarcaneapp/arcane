@@ -277,7 +277,6 @@ var expectedSettingOverrideKeys = []string{
 	"autoHealRestartWindow",
 	"autoInjectEnv",
 	"autoUpdate",
-	"autoUpdateComposeStandaloneFallback",
 	"autoUpdateExcludedContainers",
 	"autoUpdateInterval",
 	"baseServerUrl",

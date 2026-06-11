@@ -1242,6 +1242,7 @@
 	"compose_no_services_found": "No services found for this project",
 	"compose_service_not_created": "Not created",
 	"compose_name_change_not_allowed": "Project name cannot be changed while running. Please stop the project first.",
+	"compose_project_name_defined_in_yaml": "The project name is set by the 'name:' key in the compose file. Remove that key to rename the project.",
 	"compose_logs_title": "Project Logs",
 	"project": "Project",
 	"_comment_environments": "=== ENVIRONMENTS ===",

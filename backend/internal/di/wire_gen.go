@@ -64,7 +64,7 @@ func InitializeServices(ctx context.Context, db *database.DB, cfg *config.Config
 	updaterService := provideUpdaterServiceInternal(db, settingsService, dockerClientService, projectService, imageUpdateService, containerRegistryService, eventService, imageService, notificationService, systemUpgradeService, activityService)
 	federatedCredentialService := provideFederatedCredentialServiceInternal(db, authService, userService, settingsService, eventService, httpClient, roleService)
 	gitOpsSyncService := services.NewGitOpsSyncService(db, gitRepositoryService, projectService, swarmService, eventService, settingsService)
-	webhookService := services.NewWebhookService(db, containerService, updaterService, projectService, gitOpsSyncService, eventService)
+	webhookService := services.NewWebhookService(db, containerService, updaterService, projectService, gitOpsSyncService, eventService, environmentService)
 	dashboardService := services.NewDashboardService(db, dockerClientService, containerService, projectService, imageService, settingsService, vulnerabilityService, environmentService, versionService)
 	authMiddleware := provideAuthMiddlewareInternal(authService, apiKeyService, environmentService, roleService, cfg)
 	diServices := &Services{
