@@ -1,6 +1,7 @@
 package services
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -17,6 +18,7 @@ import (
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
+	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/volume"
 	"github.com/moby/moby/client"
@@ -27,13 +29,20 @@ type projectVolumeRenameMigrationInternal interface {
 	Rollback(context.Context) error
 }
 
+type projectVolumeRenameCommitterInternal interface {
+	Commit(context.Context) error
+}
+
+type projectVolumeRenameJournalSourceInternal interface {
+	JournalVolumes() []projectRenameJournalVolumeInternal
+}
+
 type projectVolumeRenameEntryInternal struct {
-	Key                 string
-	OldName             string
-	NewName             string
-	OldVolume           volume.Volume
-	NewConfig           composetypes.VolumeConfig
-	TargetAlreadyExists bool
+	Key       string
+	OldName   string
+	NewName   string
+	OldVolume volume.Volume
+	NewConfig composetypes.VolumeConfig
 }
 
 type dockerProjectVolumeRenameMigrationInternal struct {
@@ -105,17 +114,13 @@ func (s *ProjectService) prepareProjectRenameVolumeMigrationInternal(ctx context
 			continue
 		}
 
-		targetVolume, targetExists, err := inspectProjectRenameTargetVolumeInternal(ctx, dockerClient, newName, newComposeName, key)
-		if err != nil {
+		if err := ensureProjectRenameTargetVolumeAbsentInternal(ctx, dockerClient, newName); err != nil {
 			return nil, err
 		}
 
 		oldVolume, err := dockerClient.VolumeInspect(ctx, oldName, client.VolumeInspectOptions{})
 		if err != nil {
 			if cerrdefs.IsNotFound(err) {
-				if targetExists {
-					slog.InfoContext(ctx, "project compose volume rename already completed", "oldVolume", oldName, "newVolume", targetVolume.Name)
-				}
 				continue
 			}
 			return nil, fmt.Errorf("inspect source volume %s: %w", oldName, err)
@@ -124,12 +129,11 @@ func (s *ProjectService) prepareProjectRenameVolumeMigrationInternal(ctx context
 		newConfig := buildProjectRenamedVolumeConfigInternal(volumeConfig, key, newName, newComposeName)
 
 		entries = append(entries, projectVolumeRenameEntryInternal{
-			Key:                 key,
-			OldName:             oldName,
-			NewName:             newName,
-			OldVolume:           oldVolume.Volume,
-			NewConfig:           newConfig,
-			TargetAlreadyExists: targetExists,
+			Key:       key,
+			OldName:   oldName,
+			NewName:   newName,
+			OldVolume: oldVolume.Volume,
+			NewConfig: newConfig,
 		})
 	}
 
@@ -164,12 +168,6 @@ func (m *dockerProjectVolumeRenameMigrationInternal) Apply(ctx context.Context) 
 	}
 
 	for _, entry := range m.entries {
-		if entry.TargetAlreadyExists {
-			if err := removeProjectRenameStaleTargetVolumeInternal(ctx, dockerClient, entry.NewName); err != nil {
-				return fmt.Errorf("remove stale target volume %s: %w", entry.NewName, err)
-			}
-		}
-
 		if err := createProjectRenamedVolumeInternal(ctx, dockerClient, entry); err != nil {
 			return errors.Join(err, m.rollbackCreatedTargets(ctx, dockerClient))
 		}
@@ -183,12 +181,27 @@ func (m *dockerProjectVolumeRenameMigrationInternal) Apply(ctx context.Context) 
 		}
 	}
 
+	dockerutil.InvalidateVolumeUsageCache()
+	slog.InfoContext(ctx, "copied project compose volumes for rename", "oldProject", m.oldComposeName, "newProject", m.newComposeName, "count", len(m.entries))
+	return nil
+}
+
+func (m *dockerProjectVolumeRenameMigrationInternal) Commit(ctx context.Context) error {
+	if m == nil || len(m.entries) == 0 {
+		return nil
+	}
+	if m.service == nil || m.service.dockerService == nil {
+		return errors.New("docker service unavailable")
+	}
+
+	dockerClient, err := m.service.dockerService.GetClient(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to connect to Docker: %w", err)
+	}
+
 	for _, entry := range m.entries {
-		if _, err := dockerClient.VolumeRemove(ctx, entry.OldName, client.VolumeRemoveOptions{Force: false}); err != nil {
-			return errors.Join(
-				fmt.Errorf("remove source volume %s: %w", entry.OldName, err),
-				m.Rollback(ctx),
-			)
+		if err := removeProjectVolumeWithRetryInternal(ctx, dockerClient, entry.OldName, client.VolumeRemoveOptions{Force: false}); err != nil {
+			return fmt.Errorf("remove source volume %s: %w", entry.OldName, err)
 		}
 		m.removedOld = append(m.removedOld, entry)
 	}
@@ -196,6 +209,25 @@ func (m *dockerProjectVolumeRenameMigrationInternal) Apply(ctx context.Context) 
 	dockerutil.InvalidateVolumeUsageCache()
 	slog.InfoContext(ctx, "renamed project compose volumes", "oldProject", m.oldComposeName, "newProject", m.newComposeName, "count", len(m.entries))
 	return nil
+}
+
+func (m *dockerProjectVolumeRenameMigrationInternal) JournalVolumes() []projectRenameJournalVolumeInternal {
+	if m == nil || len(m.entries) == 0 {
+		return nil
+	}
+
+	volumes := make([]projectRenameJournalVolumeInternal, 0, len(m.entries))
+	for _, entry := range m.entries {
+		volumes = append(volumes, projectRenameJournalVolumeInternal{
+			Key:     entry.Key,
+			OldName: entry.OldName,
+			NewName: entry.NewName,
+			Driver:  entry.OldVolume.Driver,
+			Options: cloneStringMapInternal(entry.OldVolume.Options),
+			Labels:  cloneStringMapInternal(entry.OldVolume.Labels),
+		})
+	}
+	return volumes
 }
 
 func (m *dockerProjectVolumeRenameMigrationInternal) Rollback(ctx context.Context) error {
@@ -208,25 +240,29 @@ func (m *dockerProjectVolumeRenameMigrationInternal) Rollback(ctx context.Contex
 		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	var rollbackErr error
+	var restoreErr error
 	if len(m.removedOld) > 0 {
 		helperImage, err := getVolumeHelperImageInternal(ctx, m.service.dockerService, m.service.imageService, dockerClient)
 		if err != nil {
-			rollbackErr = errors.Join(rollbackErr, err)
+			restoreErr = errors.Join(restoreErr, err)
 		} else {
 			for i := len(m.removedOld) - 1; i >= 0; i-- {
 				entry := m.removedOld[i]
 				if err := recreateProjectSourceVolumeInternal(ctx, dockerClient, entry); err != nil {
-					rollbackErr = errors.Join(rollbackErr, err)
+					restoreErr = errors.Join(restoreErr, err)
 					continue
 				}
 				if err := copyProjectVolumeDataInternal(ctx, dockerClient, helperImage, entry.NewName, entry.OldName); err != nil {
-					rollbackErr = errors.Join(rollbackErr, fmt.Errorf("restore volume data from %s to %s: %w", entry.NewName, entry.OldName, err))
+					restoreErr = errors.Join(restoreErr, fmt.Errorf("restore volume data from %s to %s: %w", entry.NewName, entry.OldName, err))
 				}
 			}
 		}
 	}
+	if restoreErr != nil {
+		return restoreErr
+	}
 
+	var rollbackErr error
 	if err := m.rollbackCreatedTargets(ctx, dockerClient); err != nil {
 		rollbackErr = errors.Join(rollbackErr, err)
 	}
@@ -240,7 +276,11 @@ func (m *dockerProjectVolumeRenameMigrationInternal) rollbackCreatedTargets(ctx 
 	var rollbackErr error
 	for i := len(m.createdNew) - 1; i >= 0; i-- {
 		entry := m.createdNew[i]
-		if err := removeProjectVolumeWithRetryInternal(ctx, dockerClient, entry.NewName, client.VolumeRemoveOptions{Force: true}); err != nil {
+		if err := removeProjectVolumeHelperContainersInternal(ctx, dockerClient, entry.NewName); err != nil {
+			rollbackErr = errors.Join(rollbackErr, fmt.Errorf("remove helper containers for target volume %s: %w", entry.NewName, err))
+			continue
+		}
+		if err := removeProjectVolumeWithRetryInternal(ctx, dockerClient, entry.NewName, client.VolumeRemoveOptions{Force: false}); err != nil {
 			rollbackErr = errors.Join(rollbackErr, fmt.Errorf("remove target volume %s: %w", entry.NewName, err))
 		}
 	}
@@ -259,20 +299,15 @@ func buildProjectRenamedVolumeConfigInternal(volumeConfig composetypes.VolumeCon
 	return newConfig
 }
 
-func inspectProjectRenameTargetVolumeInternal(ctx context.Context, dockerClient *client.Client, newName, newComposeName, key string) (volume.Volume, bool, error) {
-	targetVolume, err := dockerClient.VolumeInspect(ctx, newName, client.VolumeInspectOptions{})
+func ensureProjectRenameTargetVolumeAbsentInternal(ctx context.Context, dockerClient *client.Client, newName string) error {
+	_, err := dockerClient.VolumeInspect(ctx, newName, client.VolumeInspectOptions{})
 	if err != nil {
 		if cerrdefs.IsNotFound(err) {
-			return volume.Volume{}, false, nil
+			return nil
 		}
-		return volume.Volume{}, false, fmt.Errorf("inspect target volume %s: %w", newName, err)
+		return fmt.Errorf("inspect target volume %s: %w", newName, err)
 	}
-
-	if !isProjectRenameComposeTargetVolumeInternal(targetVolume.Volume, newComposeName, key) {
-		return volume.Volume{}, true, fmt.Errorf("target volume already exists: %s", newName)
-	}
-
-	return targetVolume.Volume, true, nil
+	return &ProjectVolumeRenameConflictError{VolumeName: newName}
 }
 
 func isProjectRenameComposeTargetVolumeInternal(targetVolume volume.Volume, newComposeName, key string) bool {
@@ -316,13 +351,6 @@ func createProjectRenamedVolumeInternal(ctx context.Context, dockerClient *clien
 		return fmt.Errorf("create target volume %s: %w", entry.NewName, err)
 	}
 	return nil
-}
-
-func removeProjectRenameStaleTargetVolumeInternal(ctx context.Context, dockerClient *client.Client, targetVolume string) error {
-	if err := removeProjectVolumeHelperContainersInternal(ctx, dockerClient, targetVolume); err != nil {
-		slog.WarnContext(ctx, "failed to remove project volume helper containers before stale target cleanup", "volume", targetVolume, "error", err)
-	}
-	return removeProjectVolumeWithRetryInternal(ctx, dockerClient, targetVolume, client.VolumeRemoveOptions{Force: false})
 }
 
 func removeProjectVolumeHelperContainersInternal(ctx context.Context, dockerClient *client.Client, volumeName string) error {
@@ -393,7 +421,7 @@ func recreateProjectSourceVolumeInternal(ctx context.Context, dockerClient *clie
 func copyProjectVolumeDataInternal(ctx context.Context, dockerClient *client.Client, helperImage, sourceVolume, targetVolume string) error {
 	config := &container.Config{
 		Image:           helperImage,
-		Cmd:             []string{"sh", "-c", "set -e; cd /from; tar -cf - . | tar -xf - -C /to"},
+		Cmd:             []string{"sh", "-c", projectVolumeCopyCommandInternal()},
 		NetworkDisabled: true,
 		Labels:          buildVolumeHelperLabelsInternal(),
 	}
@@ -403,6 +431,19 @@ func copyProjectVolumeDataInternal(ctx context.Context, dockerClient *client.Cli
 		targetVolume + ":/to",
 	}, nil)
 
+	if err := runProjectVolumeHelperContainerInternal(ctx, dockerClient, config, hostConfig); err != nil {
+		var insufficientErr *ProjectVolumeRenameInsufficientSpaceError
+		if errors.As(err, &insufficientErr) {
+			insufficientErr.SourceVolume = sourceVolume
+			insufficientErr.TargetVolume = targetVolume
+		}
+		return err
+	}
+
+	return nil
+}
+
+func runProjectVolumeHelperContainerInternal(ctx context.Context, dockerClient *client.Client, config *container.Config, hostConfig *container.HostConfig) error {
 	resp, err := dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Config:     config,
 		HostConfig: hostConfig,
@@ -430,6 +471,13 @@ func copyProjectVolumeDataInternal(ctx context.Context, dockerClient *client.Cli
 		}
 	case waitBody := <-waitResult.Result:
 		if waitBody.StatusCode != 0 {
+			logs := readProjectVolumeHelperLogsInternal(ctx, dockerClient, resp.ID)
+			if waitBody.StatusCode == projectVolumeCopyInsufficientSpaceExitCodeInternal {
+				return &ProjectVolumeRenameInsufficientSpaceError{Detail: logs}
+			}
+			if logs != "" {
+				return fmt.Errorf("volume copy container exited with code %d: %s", waitBody.StatusCode, logs)
+			}
 			return fmt.Errorf("volume copy container exited with code %d", waitBody.StatusCode)
 		}
 	case <-ctx.Done():
@@ -437,4 +485,84 @@ func copyProjectVolumeDataInternal(ctx context.Context, dockerClient *client.Cli
 	}
 
 	return nil
+}
+
+const projectVolumeCopyInsufficientSpaceExitCodeInternal = 99
+
+func projectVolumeCopyCommandInternal() string {
+	return fmt.Sprintf(`set -eu
+source_kb="$(du -sk /from | awk '{print $1}')"
+available_kb="$(df -Pk /to | awk 'NR==2 {print $4}')"
+margin_kb="$((source_kb / 10))"
+if [ "$margin_kb" -lt 262144 ]; then margin_kb=262144; fi
+required_kb="$((source_kb + margin_kb))"
+if [ "$available_kb" -lt "$required_kb" ]; then
+  echo "insufficient target volume space: source=${source_kb}KiB available=${available_kb}KiB required=${required_kb}KiB" >&2
+  exit %d
+fi
+cd /from
+tar -cf - . | tar -xf - -C /to`, projectVolumeCopyInsufficientSpaceExitCodeInternal)
+}
+
+func readProjectVolumeHelperLogsInternal(ctx context.Context, dockerClient *client.Client, containerID string) string {
+	logs, err := dockerClient.ContainerLogs(ctx, containerID, client.ContainerLogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+	})
+	if err != nil {
+		slog.DebugContext(ctx, "failed to read volume helper logs", "containerID", containerID, "error", err)
+		return ""
+	}
+	defer func() { _ = logs.Close() }()
+
+	var stdout, stderr bytes.Buffer
+	if _, err := stdcopy.StdCopy(&stdout, &stderr, logs); err != nil {
+		slog.DebugContext(ctx, "failed to decode volume helper logs", "containerID", containerID, "error", err)
+		return ""
+	}
+
+	output := strings.TrimSpace(strings.Join([]string{
+		strings.TrimSpace(stderr.String()),
+		strings.TrimSpace(stdout.String()),
+	}, "\n"))
+	return output
+}
+
+type ProjectVolumeRenameConflictError struct {
+	VolumeName string
+}
+
+func (e *ProjectVolumeRenameConflictError) Error() string {
+	if strings.TrimSpace(e.VolumeName) == "" {
+		return "target volume already exists"
+	}
+	return fmt.Sprintf("target volume already exists: %s", e.VolumeName)
+}
+
+type ProjectVolumeRenameInsufficientSpaceError struct {
+	SourceVolume string
+	TargetVolume string
+	Detail       string
+}
+
+func (e *ProjectVolumeRenameInsufficientSpaceError) Error() string {
+	msg := "insufficient disk space to rename project volume"
+	if e.SourceVolume != "" && e.TargetVolume != "" {
+		msg = fmt.Sprintf("insufficient disk space to copy volume %s to %s", e.SourceVolume, e.TargetVolume)
+	}
+	if strings.TrimSpace(e.Detail) != "" {
+		msg += ": " + strings.TrimSpace(e.Detail)
+	}
+	return msg
+}
+
+func cloneStringMapInternal(values map[string]string) map[string]string {
+	if len(values) == 0 {
+		return nil
+	}
+	cloned := make(map[string]string, len(values))
+	for k, v := range values {
+		cloned[k] = v
+	}
+	return cloned
 }

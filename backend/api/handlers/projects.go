@@ -662,6 +662,16 @@ func (h *ProjectHandler) DownProject(ctx context.Context, input *DownProjectInpu
 	}, nil
 }
 
+func projectUpdateHTTPError(err error) error {
+	if conflictErr, ok := errors.AsType[*services.ProjectVolumeRenameConflictError](err); ok {
+		return huma.Error409Conflict(conflictErr.Error())
+	}
+	if spaceErr, ok := errors.AsType[*services.ProjectVolumeRenameInsufficientSpaceError](err); ok {
+		return huma.NewError(http.StatusInsufficientStorage, spaceErr.Error())
+	}
+	return nil
+}
+
 // CreateProject creates a new Docker Compose project.
 func (h *ProjectHandler) CreateProject(ctx context.Context, input *CreateProjectInput) (*CreateProjectOutput, error) {
 	if h.projectService == nil {
@@ -919,6 +929,9 @@ func (h *ProjectHandler) UpdateProject(ctx context.Context, input *UpdateProject
 		return updateErr
 	})
 	if err != nil {
+		if httpErr := projectUpdateHTTPError(err); httpErr != nil {
+			return nil, httpErr
+		}
 		return nil, huma.Error400BadRequest((&common.ProjectUpdateError{Err: err}).Error())
 	}
 

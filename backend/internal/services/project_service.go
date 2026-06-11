@@ -49,6 +49,7 @@ type ProjectService struct {
 	imageService                *ImageService
 	dockerService               *DockerClientService
 	buildService                *BuildService
+	kvService                   *KVService
 	config                      *config.Config
 	registryCredentialsProvider registryCredentialsProviderInternal
 
@@ -84,6 +85,14 @@ func (s *ProjectService) WithRegistryCredentialsProvider(provider func(context.C
 		return nil
 	}
 	s.registryCredentialsProvider = provider
+	return s
+}
+
+func (s *ProjectService) WithKVService(kvService *KVService) *ProjectService {
+	if s == nil {
+		return nil
+	}
+	s.kvService = kvService
 	return s
 }
 
@@ -2892,6 +2901,10 @@ func (s *ProjectService) RestartProject(ctx context.Context, projectID string, u
 }
 
 func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, name *string, composeContent, envContent *string, user models.User) (*models.Project, error) {
+	if err := s.recoverProjectRenameJournalForProjectInternal(ctx, projectID); err != nil {
+		return nil, err
+	}
+
 	proj, projectsDirectory, err := s.getProjectForUpdate(ctx, projectID)
 	if err != nil {
 		return nil, err
@@ -2905,12 +2918,38 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 		return nil, err
 	}
 
+	renameJournal, err := s.prepareProjectRenameJournalInternal(&proj, name, projectsDirectory, volumeMigration)
+	if err != nil {
+		return nil, err
+	}
+
+	backupPath := ""
+	if composeContent != nil || envContent != nil {
+		backupPath, err = s.backupProjectDirectoryInternal(projectsDirectory, proj.Path)
+		if err != nil {
+			return nil, err
+		}
+		defer func() {
+			if backupPath != "" {
+				_ = os.RemoveAll(backupPath)
+			}
+		}()
+	}
+
+	journalActive := false
+	if renameJournal != nil {
+		if err := s.writeProjectRenameJournalInternal(ctx, renameJournal, projectRenameJournalPhaseStartedInternal); err != nil {
+			return nil, err
+		}
+		journalActive = true
+	}
+
 	if err := s.withProjectRenameRollback(ctx, &proj, func() (err error) {
 		volumeMigrationApplied := false
 		defer func() {
 			if err != nil && volumeMigrationApplied {
 				if rollbackErr := volumeMigration.Rollback(ctx); rollbackErr != nil {
-					slog.WarnContext(ctx, "failed to rollback project volume rename", "projectID", projectID, "error", rollbackErr)
+					err = errors.Join(err, fmt.Errorf("failed to rollback project volume rename: %w", rollbackErr))
 				}
 			}
 		}()
@@ -2926,12 +2965,58 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 				return fmt.Errorf("failed to rename project volumes: %w", err)
 			}
 			volumeMigrationApplied = true
+			if err = s.writeProjectRenameJournalInternal(ctx, renameJournal, projectRenameJournalPhaseTargetsCopiedInternal); err != nil {
+				return err
+			}
 		}
-		if err = s.db.WithContext(ctx).Save(&proj).Error; err != nil {
+
+		tx := s.db.WithContext(ctx).Begin()
+		if tx.Error != nil {
+			return fmt.Errorf("failed to start project update transaction: %w", tx.Error)
+		}
+		txCommitted := false
+		defer func() {
+			if !txCommitted {
+				_ = tx.Rollback().Error
+			}
+		}()
+
+		if err = tx.Save(&proj).Error; err != nil {
 			return fmt.Errorf("failed to update project: %w", err)
+		}
+		if committer, ok := volumeMigration.(projectVolumeRenameCommitterInternal); ok {
+			if err = committer.Commit(ctx); err != nil {
+				return fmt.Errorf("failed to commit project volume rename: %w", err)
+			}
+		}
+		if err = tx.Commit().Error; err != nil {
+			return fmt.Errorf("failed to commit project update: %w", err)
+		}
+		txCommitted = true
+		if renameJournal != nil {
+			if markErr := s.writeProjectRenameJournalInternal(ctx, renameJournal, projectRenameJournalPhaseProjectStateCommitted); markErr != nil {
+				slog.WarnContext(ctx, "failed to mark project rename journal committed", "projectID", projectID, "error", markErr)
+			}
+			if clearErr := s.clearProjectRenameJournalInternal(ctx, projectID); clearErr != nil {
+				slog.WarnContext(ctx, "failed to clear project rename journal", "projectID", projectID, "error", clearErr)
+			} else {
+				journalActive = false
+			}
 		}
 		return nil
 	}); err != nil {
+		if backupPath != "" {
+			if restoreErr := s.restoreProjectDirectoryBackupInternal(ctx, projectsDirectory, proj.Path, backupPath); restoreErr != nil {
+				err = errors.Join(err, fmt.Errorf("failed to restore project files after update failure: %w", restoreErr))
+			}
+		}
+		if journalActive {
+			if recoverErr := s.recoverProjectRenameJournalForProjectInternal(ctx, projectID); recoverErr != nil {
+				err = errors.Join(err, fmt.Errorf("project rename recovery failed: %w", recoverErr))
+			} else {
+				journalActive = false
+			}
+		}
 		return nil, err
 	}
 
@@ -3033,6 +3118,62 @@ func (s *ProjectService) getProjectForUpdate(ctx context.Context, projectID stri
 	}
 
 	return proj, projectsDirectory, nil
+}
+
+func (s *ProjectService) backupProjectDirectoryInternal(projectsDirectory, projectPath string) (string, error) {
+	projectAbs, err := filepath.Abs(projectPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve project path: %w", err)
+	}
+	projectAbs = filepath.Clean(projectAbs)
+
+	rootAbs, err := filepath.Abs(projectsDirectory)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve projects directory: %w", err)
+	}
+	rootAbs = filepath.Clean(rootAbs)
+	if !projects.IsSafeSubdirectory(rootAbs, projectAbs) || projectAbs == rootAbs {
+		return "", errors.New("project path is outside projects directory")
+	}
+
+	backupPath, err := os.MkdirTemp(projectsDirectory, ".project-update-backup-*")
+	if err != nil {
+		return "", fmt.Errorf("failed to create project backup directory: %w", err)
+	}
+	if err := projects.CopyDirectoryContents(projectAbs, backupPath); err != nil {
+		_ = os.RemoveAll(backupPath)
+		return "", fmt.Errorf("failed to backup project files: %w", err)
+	}
+	return backupPath, nil
+}
+
+func (s *ProjectService) restoreProjectDirectoryBackupInternal(ctx context.Context, projectsDirectory, projectPath, backupPath string) error {
+	projectAbs, err := filepath.Abs(projectPath)
+	if err != nil {
+		return fmt.Errorf("failed to resolve project path: %w", err)
+	}
+	projectAbs = filepath.Clean(projectAbs)
+
+	rootAbs, err := filepath.Abs(projectsDirectory)
+	if err != nil {
+		return fmt.Errorf("failed to resolve projects directory: %w", err)
+	}
+	rootAbs = filepath.Clean(rootAbs)
+	if !projects.IsSafeSubdirectory(rootAbs, projectAbs) || projectAbs == rootAbs {
+		return errors.New("project path is outside projects directory")
+	}
+
+	slog.DebugContext(ctx, "restoring project directory backup", "path", projectAbs, "backup", backupPath)
+	if err := os.RemoveAll(projectAbs); err != nil {
+		return fmt.Errorf("failed to remove failed project directory state: %w", err)
+	}
+	if err := os.MkdirAll(projectAbs, common.DirPerm); err != nil {
+		return fmt.Errorf("failed to recreate project directory: %w", err)
+	}
+	if err := projects.CopyDirectoryContents(backupPath, projectAbs); err != nil {
+		return fmt.Errorf("failed to restore project backup: %w", err)
+	}
+	return nil
 }
 
 func (s *ProjectService) withProjectRenameRollback(ctx context.Context, proj *models.Project, run func() error) error {
