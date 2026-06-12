@@ -7,7 +7,7 @@
 <a href="https://pkg.go.dev/github.com/getarcaneapp/arcane/backend"><img src="https://pkg.go.dev/badge/github.com/getarcaneapp/arcane/backend.svg" alt="Go Reference"></a>
 <a href="https://goreportcard.com/report/github.com/getarcaneapp/arcane/backend"><img src="https://goreportcard.com/badge/github.com/getarcaneapp/arcane/backend" alt="Go Report Card"></a>
 <a href="https://github.com/getarcaneapp/arcane/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-BSD--3--Clause-blue.svg" alt="License"></a>
-<a href="https://deepwiki.com/getarcaneapp/arcane"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki"></a>
+<a href="https://snyk.io/test/github/getarcaneapp/arcane"><img src="https://snyk.io/test/github/getarcaneapp/arcane/badge.svg" alt="Known Vulnerabilities"></a>
 
 <br />
 
