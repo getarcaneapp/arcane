@@ -591,7 +591,7 @@ func validateProjectTextContentInternal(content string) error {
 	if len(content) > MaxManagedProjectFileBytes {
 		return fmt.Errorf("file exceeds %d byte limit", MaxManagedProjectFileBytes)
 	}
-	if !utf8.ValidString(content) || strings.IndexByte(content[:min(len(content), 512)], 0) >= 0 {
+	if !utf8.ValidString(content) || strings.IndexByte(content, 0) >= 0 {
 		return errors.New("binary files are not supported")
 	}
 	return nil
