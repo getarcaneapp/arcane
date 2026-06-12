@@ -644,6 +644,18 @@
 						fileTreeRevision,
 						fileChangesPayload
 					);
+
+					// The file-tree changes are committed server-side at this point. Rebase the
+					// local tree state and project query immediately — if an include-file update
+					// below fails, the already-applied changes must not stay queued with a stale
+					// fileTreeRevision, or every retry would be rejected with a 409 conflict.
+					loadedManagedProjectFileContents = {
+						...loadedManagedProjectFileContents,
+						...managedProjectFileContents
+					};
+					rebaseEditorDraft(updatedProject, { preserveManagedProjectFileContents: true, preserveEditableDrafts: true });
+					await syncProjectQueries(updatedProject);
+
 					for (const update of includeFileUpdates) {
 						updatedProject = await projectService.updateProjectIncludeFile(projectId, update.relativePath, update.content);
 					}
@@ -660,10 +672,6 @@
 							(updatedProject.includeFiles ?? []).some((file) => file.relativePath === relativePath)
 						)
 					)
-				};
-				loadedManagedProjectFileContents = {
-					...loadedManagedProjectFileContents,
-					...managedProjectFileContents
 				};
 				rebaseEditorDraft(updatedProject, { preserveManagedProjectFileContents: true });
 				await syncProjectQueries(updatedProject);
