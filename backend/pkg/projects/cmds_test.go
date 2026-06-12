@@ -6,6 +6,8 @@ import (
 	"time"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
+	"github.com/docker/compose/v5/pkg/api"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/stretchr/testify/require"
 )
 
@@ -59,6 +61,16 @@ func TestDetachFromHTTPContextInternal(t *testing.T) {
 		require.True(t, ok)
 		require.InDelta(t, float64(defaultComposeTimeout), float64(time.Until(deadline)), float64(5*time.Second))
 	})
+
+	t.Run("app lifecycle context cancels detached work on shutdown", func(t *testing.T) {
+		appCtx, cancelApp := context.WithCancel(utils.WithAppLifecycleContext(context.Background()))
+		detached, detachedCancel := detachFromHTTPContextInternal(appCtx)
+		defer detachedCancel()
+
+		cancelApp()
+
+		require.ErrorIs(t, detached.Err(), context.Canceled)
+	})
 }
 
 func TestComposeStopSkipsWhenNoServicesSpecified(t *testing.T) {
@@ -71,39 +83,27 @@ func TestComposeStopSkipsWhenNoServicesSpecified(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestFilterProjectServicesForPullInternalReturnsDeepCopiedProject(t *testing.T) {
-	project := &composetypes.Project{
-		Name: "demo",
-		Services: composetypes.Services{
-			"web": {
-				Name: "web",
-				DependsOn: composetypes.DependsOnConfig{
-					"db": {Condition: "service_started"},
-				},
-			},
-			"db": {
-				Name: "db",
-			},
-		},
-		Networks: composetypes.Networks{
-			"default": composetypes.NetworkConfig{
-				Name: "demo_default",
-			},
-		},
-	}
+func TestComposeUpOptions_RemoveOrphans(t *testing.T) {
+	proj := &composetypes.Project{Name: "test"}
 
-	filtered, err := filterProjectServicesForPullInternal(project, []string{"web"})
-	require.NoError(t, err)
-	require.NotNil(t, filtered)
+	t.Run("removeOrphans true propagates to CreateOptions", func(t *testing.T) {
+		upOptions, _ := composeUpOptions(proj, nil, true, false)
+		require.True(t, upOptions.RemoveOrphans)
+	})
 
-	require.Contains(t, filtered.Services, "web")
-	require.NotContains(t, filtered.Services, "db")
+	t.Run("removeOrphans false leaves CreateOptions disabled", func(t *testing.T) {
+		upOptions, _ := composeUpOptions(proj, nil, false, false)
+		require.False(t, upOptions.RemoveOrphans)
+	})
 
-	web := filtered.Services["web"]
-	delete(web.DependsOn, "db")
-	filtered.Services["web"] = web
-	delete(filtered.Networks, "default")
+	t.Run("removeOrphans is independent of forceRecreate", func(t *testing.T) {
+		// forceRecreate drives the Recreate policy, not RemoveOrphans.
+		upOptions, _ := composeUpOptions(proj, nil, true, true)
+		require.True(t, upOptions.RemoveOrphans)
+		require.Equal(t, api.RecreateForce, upOptions.Recreate)
 
-	require.Contains(t, project.Services["web"].DependsOn, "db")
-	require.Contains(t, project.Networks, "default")
+		upOptions, _ = composeUpOptions(proj, nil, false, true)
+		require.False(t, upOptions.RemoveOrphans)
+		require.Equal(t, api.RecreateForce, upOptions.Recreate)
+	})
 }

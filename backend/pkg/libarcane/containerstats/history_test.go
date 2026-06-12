@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	containertypes "github.com/getarcaneapp/arcane/types/container"
+	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
 	"github.com/moby/moby/api/types/container"
 	"github.com/stretchr/testify/require"
 )

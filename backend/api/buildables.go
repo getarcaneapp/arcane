@@ -7,14 +7,14 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/buildables"
-	"github.com/getarcaneapp/arcane/backend/internal/common"
-	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"github.com/getarcaneapp/arcane/backend/pkg/utils/cookie"
-	"github.com/getarcaneapp/arcane/backend/pkg/utils/mapper"
-	"github.com/getarcaneapp/arcane/types/auth"
-	"github.com/getarcaneapp/arcane/types/base"
-	"github.com/getarcaneapp/arcane/types/user"
+	"github.com/getarcaneapp/arcane/backend/v2/buildables"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cookie"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
+	"github.com/getarcaneapp/arcane/types/v2/auth"
+	"github.com/getarcaneapp/arcane/types/v2/base"
+	"github.com/getarcaneapp/arcane/types/v2/user"
 	"github.com/labstack/echo/v4"
 )
 
@@ -89,7 +89,7 @@ func registerAutoLoginRoutes(apiGroup *echo.Group, authService *services.AuthSer
 		}
 		maxAge += 60
 
-		c.Response().Header().Set("Set-Cookie", cookie.BuildTokenCookieString(maxAge, tokenPair.AccessToken))
+		c.Response().Header().Set("Set-Cookie", cookie.BuildTokenCookieStringFor(maxAge, tokenPair.AccessToken, cookie.SecureCookieFromRequest(c.Request())))
 		return c.JSON(http.StatusOK, base.ApiResponse[auth.LoginResponse]{
 			Success: true,
 			Data: auth.LoginResponse{

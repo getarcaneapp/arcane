@@ -9,11 +9,11 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humaecho"
-	"github.com/getarcaneapp/arcane/backend/internal/config"
-	"github.com/getarcaneapp/arcane/backend/internal/database"
-	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"github.com/getarcaneapp/arcane/types/auth"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
+	"github.com/getarcaneapp/arcane/types/v2/auth"
 	glsqlite "github.com/glebarez/sqlite"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/labstack/echo/v4"
@@ -55,7 +55,7 @@ func TestNewAuthBridge_AcceptsEnvironmentAccessTokenViaAPIKey(t *testing.T) {
 	}
 
 	api := humaecho.NewWithGroup(router, apiGroup, humaConfig)
-	api.UseMiddleware(NewAuthBridge(api, &services.AuthService{}, nil, testEnvironmentAccessResolver{
+	api.UseMiddleware(NewAuthBridge(api, &services.AuthService{}, nil, nil, testEnvironmentAccessResolver{
 		env: &models.Environment{
 			BaseModel:   models.BaseModel{ID: "env-self"},
 			Name:        "Self Target",
@@ -87,6 +87,41 @@ func TestNewAuthBridge_AcceptsEnvironmentAccessTokenViaAPIKey(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Contains(t, rec.Body.String(), "environment:env-self")
+}
+
+// A valid API key presented to a BearerAuth-only operation must be rejected:
+// the bridge only attempts API-key auth when the operation declares ApiKeyAuth.
+// This is the gate that makes personal-key create/delete session-only.
+func TestNewAuthBridge_RejectsApiKeyOnBearerOnlyOperation(t *testing.T) {
+	router := echo.New()
+	apiGroup := router.Group("/api")
+
+	humaConfig := huma.DefaultConfig("test", "1.0.0")
+	humaConfig.Components.SecuritySchemes = map[string]*huma.SecurityScheme{
+		"BearerAuth": {Type: "http", Scheme: "bearer"},
+		"ApiKeyAuth": {Type: "apiKey", In: "header", Name: "X-API-Key"},
+	}
+
+	api := humaecho.NewWithGroup(router, apiGroup, humaConfig)
+	api.UseMiddleware(NewAuthBridge(api, &services.AuthService{}, nil, nil, nil, &config.Config{}))
+
+	huma.Register(api, huma.Operation{
+		OperationID: "bearer-only",
+		Method:      http.MethodPost,
+		Path:        "/bearer-only",
+		Security:    []map[string][]string{{"BearerAuth": {}}},
+	}, func(ctx context.Context, _ *secureInput) (*secureOutput, error) {
+		t.Fatal("handler must not be reached with API key auth")
+		return &secureOutput{}, nil
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/bearer-only", nil)
+	req.Header.Set("X-API-Key", "arc_whatever-valid-or-not-never-consulted")
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusUnauthorized, rec.Code)
 }
 
 type testOperationProvider struct {
@@ -174,12 +209,11 @@ func TestNewAuthBridge_OpportunisticAuthOnPublicRoute(t *testing.T) {
 
 	jwtSecret := "test-secret-please-do-not-use-in-prod"
 	cfg := &config.Config{JWTRefreshExpiry: 24 * time.Hour}
-	authSvc := services.NewAuthService(userSvc, nil, nil, sessionSvc, jwtSecret, cfg)
+	authSvc := services.NewAuthService(userSvc, nil, nil, sessionSvc, nil, jwtSecret, cfg)
 
 	_, err := userSvc.CreateUser(context.Background(), &models.User{
 		BaseModel: models.BaseModel{ID: "u-logout"},
 		Username:  "logouttest",
-		Roles:     models.StringSlice{"user"},
 	})
 	require.NoError(t, err)
 
@@ -207,7 +241,7 @@ func TestNewAuthBridge_OpportunisticAuthOnPublicRoute(t *testing.T) {
 		"BearerAuth": {Type: "http", Scheme: "bearer"},
 	}
 	api := humaecho.NewWithGroup(router, apiGroup, humaConfig)
-	api.UseMiddleware(NewAuthBridge(api, authSvc, nil, nil, &config.Config{}))
+	api.UseMiddleware(NewAuthBridge(api, authSvc, nil, nil, nil, &config.Config{}))
 
 	var sawSessionID string
 	huma.Register(api, huma.Operation{

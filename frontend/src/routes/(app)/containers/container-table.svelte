@@ -4,11 +4,11 @@
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { goto } from '$app/navigation';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
+	import type { SearchPaginationSortRequest } from '$lib/types/shared';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { format } from 'date-fns';
-	import { capitalizeFirstLetter, truncateImageDigest } from '$lib/utils/string.utils';
-	import type { ContainerSummaryDto } from '$lib/types/container.type';
+	import { capitalizeFirstLetter, truncateImageDigest } from '$lib/utils/formatting';
+	import type { ContainerSummaryDto } from '$lib/types/docker';
 	import type { ColumnSpec, BulkAction } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
 	import { PortBadge } from '$lib/components/badges/index.js';
@@ -22,19 +22,19 @@
 	import ImageUpdateItem from '$lib/components/image-update-item.svelte';
 	import { PersistedState } from 'runed';
 	import { onMount } from 'svelte';
+	import { mode } from 'mode-watcher';
 	import { ContainerStatsManager } from './components/container-stats-manager.svelte';
 	import ContainerStatsSync from './components/container-stats-sync.svelte';
 	import ContainerStatsCell from './components/container-stats-cell.svelte';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import userStore from '$lib/stores/user-store';
-	import { fromStore } from 'svelte/store';
+	import { hasPermission } from '$lib/utils/auth';
 	import IconImage from '$lib/components/icon-image.svelte';
-	import { getArcaneIconUrlFromLabels } from '$lib/utils/arcane-labels';
+	import { getContainerIpAddresses, getThemedIconUrl } from '$lib/utils/docker';
+	import { hasAnyLoadingState } from '$lib/utils/bulk-actions';
 	import { createContainerActions } from './container-table.actions';
 	import {
 		getActionStatusMessage,
 		getContainerDisplayName,
-		getContainerIpAddress,
 		getProjectName,
 		getStateBadgeVariant,
 		parseImageRef,
@@ -145,12 +145,7 @@
 		isBulkLoading
 	});
 
-	const isAnyLoading = $derived(
-		Object.values(actionStatus).some((status) => status !== '') || Object.values(isBulkLoading).some((loading) => loading)
-	);
-
-	const storeUser = fromStore(userStore);
-	const isAdmin = $derived(!!storeUser.current?.roles?.includes('admin'));
+	const isAnyLoading = $derived(hasAnyLoadingState(actionStatus, isBulkLoading));
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 	let customSettings = $state<Record<string, unknown>>({});
@@ -184,6 +179,7 @@
 	});
 
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
+	const canUpdateContainers = $derived(hasPermission('containers:autoupdate', currentEnvId));
 
 	onMount(() => {
 		collapsedGroupsState = new PersistedState<Record<string, boolean>>('container-groups-collapsed', {});
@@ -228,14 +224,15 @@
 		if (!collapsedGroupsState) return;
 		collapsedGroupsState.current = {
 			...collapsedGroupsState.current,
-			[groupName]: !collapsedGroupsState.current[groupName]
+			// Groups with no recorded state render collapsed, so toggle from that default
+			[groupName]: !(collapsedGroupsState.current[groupName] ?? true)
 		};
 	}
 
 	const columns = $derived([
 		{ accessorKey: 'id', title: m.common_id(), cell: IdCell, hidden: true },
 		{ accessorKey: 'names', id: 'name', title: m.common_name(), sortable: !groupByProject, cell: NameCell },
-		{ accessorKey: 'image', title: m.common_image(), sortable: !groupByProject, cell: ImageCell, truncate: true },
+		{ accessorKey: 'image', title: m.common_image(), sortable: !groupByProject, cell: ImageCell },
 		{ accessorKey: 'state', title: m.common_state(), sortable: !groupByProject, cell: StateCell },
 		{
 			id: 'updates',
@@ -334,8 +331,28 @@
 <ContainerStatsSync {statsManager} envId={currentEnvId} targetIds={shouldConnect} />
 
 {#snippet IPAddressCell({ item }: { item: ContainerSummaryDto })}
-	{@const ip = getContainerIpAddress(item)}
-	<span class="font-mono text-sm">{ip ?? m.common_na()}</span>
+	{@const ipAddresses = getContainerIpAddresses(item)}
+	{#if ipAddresses.length > 0}
+		<div class="space-y-0.5">
+			{#each ipAddresses as ipAddress (ipAddress)}
+				<div class="font-mono text-sm leading-tight">{ipAddress}</div>
+			{/each}
+		</div>
+	{:else}
+		<span class="font-mono text-sm">{m.common_na()}</span>
+	{/if}
+{/snippet}
+
+{#snippet IPAddressesField(ipAddresses: string[])}
+	{#if ipAddresses.length > 0}
+		<span class="flex flex-col gap-0.5">
+			{#each ipAddresses as ipAddress (ipAddress)}
+				<span class="font-mono text-xs leading-tight">{ipAddress}</span>
+			{/each}
+		</span>
+	{:else}
+		<span class="font-mono text-xs">{m.common_na()}</span>
+	{/if}
 {/snippet}
 
 {#snippet CPUCell({ item }: { item: ContainerSummaryDto })}
@@ -353,14 +370,14 @@
 {/snippet}
 
 {#snippet PortsCell({ item }: { item: ContainerSummaryDto })}
-	<PortBadge ports={item.ports ?? []} hideExposed={hideExposedPorts} />
+	<PortBadge ports={item.ports ?? []} hideExposed={hideExposedPorts} wrap={false} />
 {/snippet}
 
 {#snippet NameCell({ item }: { item: ContainerSummaryDto })}
 	{@const displayName = getContainerDisplayName(item)}
-	{@const iconUrl = getArcaneIconUrlFromLabels(item.labels)}
+	{@const iconUrl = getThemedIconUrl(item, mode.current)}
 	<div class="flex items-center gap-2">
-		<IconImage src={iconUrl} alt={displayName} fallback={BoxIcon} class="size-4" containerClass="size-7" />
+		<IconImage src={iconUrl} alt={displayName} fallback={BoxIcon} class="size-6" containerClass="size-8" />
 		<a class="font-medium hover:underline" href="/containers/{item.id}">{displayName}</a>
 	</div>
 {/snippet}
@@ -406,7 +423,7 @@
 					icon={StopIcon}
 				/>
 			{/if}
-			{#if !status && item.updateInfo?.hasUpdate && isAdmin}
+			{#if !status && item.updateInfo?.hasUpdate && canUpdateContainers}
 				<ArcaneButton
 					action="base"
 					tone="ghost"
@@ -429,15 +446,15 @@
 		imageId={item.imageId}
 		repo={imageRef.repo}
 		tag={imageRef.tag}
-		onUpdateContainer={isAdmin ? () => handleUpdateContainer(item) : undefined}
+		onUpdateContainer={canUpdateContainers ? () => handleUpdateContainer(item) : undefined}
 		debugHasUpdate={false}
 	/>
 {/snippet}
 
 {#snippet ImageCell({ item }: { item: ContainerSummaryDto })}
 	<ArcaneTooltip.Root>
-		<ArcaneTooltip.Trigger class="block w-full min-w-0">
-			<span class="block w-full cursor-default truncate text-left font-mono text-xs">
+		<ArcaneTooltip.Trigger class="flex w-full min-w-0">
+			<span class="min-w-0 flex-1 cursor-default truncate text-left font-mono text-xs">
 				{truncateImageDigest(item.image)}
 			</span>
 		</ArcaneTooltip.Trigger>
@@ -463,7 +480,7 @@
 	<UniversalMobileCard
 		{item}
 		icon={(item) => {
-			const iconUrl = getArcaneIconUrlFromLabels(item.labels);
+			const iconUrl = getThemedIconUrl(item, mode.current);
 			const state = item.state;
 			return {
 				component: BoxIcon,
@@ -500,10 +517,11 @@
 			},
 			{
 				label: m.containers_ip_address(),
-				getValue: (item: ContainerSummaryDto) => getContainerIpAddress(item) ?? m.common_na(),
+				getValue: (item: ContainerSummaryDto) => getContainerIpAddresses(item),
 				icon: NetworksIcon,
 				iconVariant: 'sky' as const,
-				type: 'mono' as const,
+				type: 'component' as const,
+				component: IPAddressesField,
 				show: mobileFieldVisibility['ipAddress'] ?? false
 			},
 			{
@@ -571,7 +589,7 @@
 									imageId={item.imageId}
 									repo={imageRef.repo}
 									tag={imageRef.tag}
-									onUpdateContainer={isAdmin ? () => handleUpdateContainer(item) : undefined}
+									onUpdateContainer={canUpdateContainers ? () => handleUpdateContainer(item) : undefined}
 									debugHasUpdate={false}
 								/>
 							</div>
@@ -603,7 +621,7 @@
 
 				<DropdownMenu.Separator />
 
-				{#if item.updateInfo?.hasUpdate && isAdmin}
+				{#if item.updateInfo?.hasUpdate && canUpdateContainers}
 					<DropdownMenu.Item onclick={() => handleUpdateContainer(item)} disabled={status === 'updating' || isAnyLoading}>
 						{#if status === 'updating'}
 							<Spinner class="size-4" />

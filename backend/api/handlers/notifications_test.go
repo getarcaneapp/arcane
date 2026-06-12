@@ -7,11 +7,12 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/backend/internal/config"
-	"github.com/getarcaneapp/arcane/backend/internal/database"
-	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/internal/services"
-	notificationdto "github.com/getarcaneapp/arcane/types/notification"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/crypto"
+	notificationdto "github.com/getarcaneapp/arcane/types/v2/notification"
 	glsqlite "github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -23,7 +24,7 @@ func setupNotificationHandlerTestService(t *testing.T) (*database.DB, *services.
 
 	db, err := gorm.Open(glsqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&models.NotificationSettings{}, &models.SettingVariable{}, &models.NotificationLog{}, &models.Environment{}, &models.AppriseSettings{}))
+	require.NoError(t, db.AutoMigrate(&models.NotificationSettings{}, &models.SettingVariable{}, &models.NotificationLog{}, &models.Environment{}))
 
 	databaseDB := &database.DB{DB: db}
 	envSvc := services.NewEnvironmentService(databaseDB, nil, nil, nil, nil, nil)
@@ -54,6 +55,41 @@ func TestNormalizeNotificationTestType(t *testing.T) {
 	assert.Equal(t, "simple", normalizeNotificationTestType("  "))
 	assert.Equal(t, "auto-heal", normalizeNotificationTestType("auto-heal"))
 	assert.Equal(t, "auto-heal", normalizeNotificationTestType("  auto-heal  "))
+}
+
+func TestNotificationHandlerGetAllNotificationSettingsRedactsCredentialsInternal(t *testing.T) {
+	ctx := context.Background()
+	crypto.InitEncryption(&crypto.Config{
+		EncryptionKey: "test-encryption-key-for-testing-32bytes-min",
+		Environment:   "test",
+	})
+
+	db, svc := setupNotificationHandlerTestService(t)
+	h := &NotificationHandler{
+		notificationService: svc,
+		config:              &config.Config{},
+	}
+
+	_, err := svc.CreateOrUpdateSettings(ctx, models.NotificationProviderDiscord, true, models.JSON{
+		"webhookId": "123456789",
+		"token":     "discord-secret-token",
+		"username":  "Arcane",
+	})
+	require.NoError(t, err)
+
+	output, err := h.GetAllNotificationSettings(ctx, &GetAllNotificationSettingsInput{EnvironmentID: "0"})
+	require.NoError(t, err)
+	require.Len(t, output.Body, 1)
+	require.Equal(t, "123456789", output.Body[0].Config["webhookId"])
+	require.Equal(t, "Arcane", output.Body[0].Config["username"])
+	require.Empty(t, output.Body[0].Config["token"])
+
+	var stored models.NotificationSettings
+	require.NoError(t, db.WithContext(ctx).Where("provider = ?", models.NotificationProviderDiscord).First(&stored).Error)
+	require.NotEqual(t, "discord-secret-token", stored.Config["token"])
+	decrypted, err := crypto.Decrypt(stored.Config["token"].(string))
+	require.NoError(t, err)
+	require.Equal(t, "discord-secret-token", decrypted)
 }
 
 func TestDispatchNotification_RejectsAgentModeInternal(t *testing.T) {

@@ -2,8 +2,10 @@ package migrate
 
 import (
 	"bytes"
+	"io"
 	"testing"
 
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -31,4 +33,16 @@ func TestCommandIncludesMigrationCommands(t *testing.T) {
 	assert.Contains(t, commandNames, "up")
 	assert.Contains(t, commandNames, "down")
 	assert.Contains(t, commandNames, "generate-manifest")
+}
+
+func newCommand(out io.Writer) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:           "migrate",
+		Short:         "Manage Arcane database schema migrations",
+		Version:       MigrateCmd.Version,
+		SilenceUsage:  true,
+		SilenceErrors: true,
+	}
+	configureCommand(cmd, out)
+	return cmd
 }

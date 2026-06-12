@@ -14,10 +14,9 @@
 		type Diagnostic,
 		type LintSource
 	} from '@codemirror/lint';
-	import { keymap, hoverTooltip, EditorView } from '@codemirror/view';
+	import { keymap, hoverTooltip, EditorView, ViewPlugin, closeHoverTooltips, hasHoverTooltips } from '@codemirror/view';
 	import { type Extension } from '@codemirror/state';
-	import { parseDocument } from 'yaml';
-	import { browser } from '$app/environment';
+	import { browser } from '$app/env';
 	import { m } from '$lib/paraglide/messages';
 	import configStore from '$lib/stores/config-store';
 	import { mode } from 'mode-watcher';
@@ -25,21 +24,26 @@
 	import { createDefaultSummary, ENV_SNIPPETS, YAML_SNIPPETS } from './editor-constants';
 	import { createEnterIndentKeymap } from './enter-indentation';
 	import { createMergeHostAction, type MergeActionParams } from './merge-editor';
-	import {
-		analyzeComposeContent,
-		findYamlPositionContext,
-		resolveVariableSourceAtPosition,
-		type YamlPositionContext
-	} from './analysis/compose-analysis';
 	import { analyzeEnvContent } from './analysis/env-analysis';
-	import {
-		getComposeSchemaContext,
-		getCompletionOptionsForPath,
-		getEnumValueCompletions,
-		getSchemaDocForPath,
-		type ComposeSchemaContext
-	} from './analysis/compose-schema';
+	import type { YamlPositionContext } from './analysis/compose-analysis';
+	import type { ComposeSchemaContext } from './analysis/compose-schema';
 	import type { CodeLanguage, DiagnosticSummary, EditorContext, OutlineItem } from './analysis/types';
+
+	type ComposeAnalysisModule = typeof import('./analysis/compose-analysis');
+	type ComposeSchemaModule = typeof import('./analysis/compose-schema');
+
+	let composeAnalysisModulePromise: Promise<ComposeAnalysisModule> | null = null;
+	let composeSchemaModulePromise: Promise<ComposeSchemaModule> | null = null;
+
+	function loadComposeAnalysisModule(): Promise<ComposeAnalysisModule> {
+		composeAnalysisModulePromise ??= import('./analysis/compose-analysis');
+		return composeAnalysisModulePromise;
+	}
+
+	function loadComposeSchemaModule(): Promise<ComposeSchemaModule> {
+		composeSchemaModulePromise ??= import('./analysis/compose-schema');
+		return composeSchemaModulePromise;
+	}
 
 	let {
 		value = $bindable(''),
@@ -82,6 +86,9 @@
 	let activeView = $state<EditorView | null>(null);
 	let schemaState = $state<ComposeSchemaContext | null>(null);
 	let shortcutsEnabled = $derived($configStore?.keyboardShortcutsEnabled !== false);
+	let schemaHoverSuppressedUntil = 0;
+
+	const schemaHoverSelectionSuppressionMs = 2500;
 
 	const storageKey = $derived(fileId ? `arcane.editor.state:${fileId}` : null);
 	const isDiffActive = $derived(Boolean(enableDiff && diffOpen && originalValue !== undefined));
@@ -172,6 +179,35 @@
 		});
 	}
 
+	function hasNonEmptySelection(view: EditorView): boolean {
+		return view.state.selection.ranges.some((range) => !range.empty);
+	}
+
+	function isNodeInEditor(view: EditorView, node: Node | null): boolean {
+		return !!node && (node === view.dom || view.dom.contains(node));
+	}
+
+	function nativeSelectionTouchesEditor(view: EditorView): boolean {
+		const selection = view.dom.ownerDocument.getSelection();
+		if (!selection || selection.isCollapsed) return false;
+		return isNodeInEditor(view, selection.anchorNode) || isNodeInEditor(view, selection.focusNode);
+	}
+
+	function suppressSchemaHoverForSelection() {
+		schemaHoverSuppressedUntil = Date.now() + schemaHoverSelectionSuppressionMs;
+	}
+
+	function isSchemaHoverSuppressed(view: EditorView): boolean {
+		return hasNonEmptySelection(view) || nativeSelectionTouchesEditor(view) || Date.now() < schemaHoverSuppressedUntil;
+	}
+
+	function closeActiveSchemaHoverForSelection(view: EditorView) {
+		suppressSchemaHoverForSelection();
+		if (hasHoverTooltips(view.state)) {
+			view.dispatch({ effects: closeHoverTooltips });
+		}
+	}
+
 	function persistEditorState(view: EditorView) {
 		if (!browser || !storageKey) return;
 		try {
@@ -236,12 +272,13 @@
 		return formatted.join('\n').replace(/\n{3,}/g, '\n\n');
 	}
 
-	function formatDocument() {
+	async function formatDocument() {
 		if (!activeView || readOnly) return;
 		const current = activeView.state.doc.toString();
 		let formatted = current;
 
 		if (language === 'yaml') {
+			const { parseDocument } = await import('yaml');
 			const parsed = parseDocument(current, { strict: false, uniqueKeys: false });
 			if (parsed.errors.length === 0) {
 				formatted = parsed.toString({ indent: 2, lineWidth: 0 });
@@ -275,7 +312,7 @@
 		commandPaletteOpen = false;
 		switch (id) {
 			case 'format':
-				formatDocument();
+				void formatDocument();
 				break;
 			case 'next-diagnostic':
 				if (activeView) nextDiagnostic(activeView);
@@ -322,7 +359,8 @@
 	});
 
 	const schemaCompletions = async (context: CompletionContext, yamlContext: YamlPositionContext): Promise<Completion[]> => {
-		const schema = await getComposeSchemaContext();
+		const schemaModule = await loadComposeSchemaModule();
+		const schema = await schemaModule.getComposeSchemaContext();
 		schemaState = schema;
 		updateSummary({
 			schemaStatus: schema.status,
@@ -334,16 +372,17 @@
 		const prefix = before?.text ?? '';
 
 		if (yamlContext.atKey) {
-			return [...YAML_SNIPPETS, ...getCompletionOptionsForPath(schema.schema, yamlContext.parentPath, prefix)];
+			return [...YAML_SNIPPETS, ...schemaModule.getCompletionOptionsForPath(schema.schema, yamlContext.parentPath, prefix)];
 		}
 
-		return getEnumValueCompletions(schema.schema, yamlContext.path);
+		return schemaModule.getEnumValueCompletions(schema.schema, yamlContext.path);
 	};
 
 	const composeCompletionSource = async (context: CompletionContext) => {
 		if (language !== 'yaml' || readOnly) return null;
 		const source = context.state.doc.toString();
-		const yamlContext = findYamlPositionContext(source, context.pos);
+		const analysisModule = await loadComposeAnalysisModule();
+		const yamlContext = analysisModule.findYamlPositionContext(source, context.pos);
 		if (!yamlContext) return null;
 
 		const before = context.matchBefore(/[\w.-]*/);
@@ -392,50 +431,107 @@
 		};
 	};
 
-	const yamlHover = hoverTooltip(async (view, position) => {
-		if (language !== 'yaml') return null;
-		const source = view.state.doc.toString();
-		const variableRef = resolveVariableSourceAtPosition(source, position, effectiveEditorContext);
-		if (variableRef) {
+	const yamlHover = hoverTooltip(
+		async (view, position) => {
+			if (language !== 'yaml' || isSchemaHoverSuppressed(view)) return null;
+			const source = view.state.doc.toString();
+			const analysisModule = await loadComposeAnalysisModule();
+			const variableRef = analysisModule.resolveVariableSourceAtPosition(source, position, effectiveEditorContext);
+			if (variableRef) {
+				return {
+					pos: position,
+					create() {
+						const dom = document.createElement('div');
+						dom.className = 'arcane-hover';
+						dom.innerHTML = `<strong>${variableRef.name}</strong><div>Source: ${variableRef.source}</div>`;
+						return { dom };
+					}
+				};
+			}
+
+			const yamlContext = analysisModule.findYamlPositionContext(source, position);
+			if (!yamlContext || !yamlContext.currentKey) return null;
+
+			const schemaModule = await loadComposeSchemaModule();
+			const schema = schemaState ?? (await schemaModule.getComposeSchemaContext());
+			if (isSchemaHoverSuppressed(view)) return null;
+			schemaState = schema;
+			if (!schema.schema) return null;
+
+			const doc = schemaModule.getSchemaDocForPath(schema.schema, yamlContext.path);
+			if (!doc) return null;
+
 			return {
-				pos: position,
+				pos: yamlContext.keyFrom ?? position,
+				end: yamlContext.keyTo ?? position,
 				create() {
 					const dom = document.createElement('div');
 					dom.className = 'arcane-hover';
-					dom.innerHTML = `<strong>${variableRef.name}</strong><div>Source: ${variableRef.source}</div>`;
+					const examples =
+						doc.examples && doc.examples.length > 0 ? `<div><strong>Examples:</strong> ${doc.examples.join(', ')}</div>` : '';
+					dom.innerHTML = `
+						<div><strong>${doc.title ?? yamlContext.currentKey}</strong></div>
+						${doc.description ? `<div>${doc.description}</div>` : ''}
+						${doc.defaultValue ? `<div><strong>Default:</strong> ${doc.defaultValue}</div>` : ''}
+						${examples}
+					`;
 					return { dom };
 				}
 			};
-		}
-
-		const yamlContext = findYamlPositionContext(source, position);
-		if (!yamlContext || !yamlContext.currentKey) return null;
-
-		const schema = schemaState ?? (await getComposeSchemaContext());
-		schemaState = schema;
-		if (!schema.schema) return null;
-
-		const doc = getSchemaDocForPath(schema.schema, yamlContext.path);
-		if (!doc) return null;
-
-		return {
-			pos: yamlContext.keyFrom ?? position,
-			end: yamlContext.keyTo ?? position,
-			create() {
-				const dom = document.createElement('div');
-				dom.className = 'arcane-hover';
-				const examples =
-					doc.examples && doc.examples.length > 0 ? `<div><strong>Examples:</strong> ${doc.examples.join(', ')}</div>` : '';
-				dom.innerHTML = `
-					<div><strong>${doc.title ?? yamlContext.currentKey}</strong></div>
-					${doc.description ? `<div>${doc.description}</div>` : ''}
-					${doc.defaultValue ? `<div><strong>Default:</strong> ${doc.defaultValue}</div>` : ''}
-					${examples}
-				`;
-				return { dom };
+		},
+		{
+			hideOn(tr) {
+				return tr.selection ? tr.newSelection.ranges.some((range) => !range.empty) : false;
 			}
-		};
-	});
+		}
+	);
+
+	const selectionHoverGuardExtension: Extension = [
+		ViewPlugin.fromClass(
+			class {
+				private readonly view: EditorView;
+				private readonly ownerDocument: Document;
+
+				constructor(view: EditorView) {
+					this.view = view;
+					this.ownerDocument = view.dom.ownerDocument;
+					this.ownerDocument.addEventListener('selectionchange', this.handleSelectionChange);
+				}
+
+				update() {
+					if (hasNonEmptySelection(this.view)) {
+						suppressSchemaHoverForSelection();
+					}
+				}
+
+				destroy() {
+					this.ownerDocument.removeEventListener('selectionchange', this.handleSelectionChange);
+				}
+
+				private handleSelectionChange = () => {
+					if (nativeSelectionTouchesEditor(this.view)) {
+						closeActiveSchemaHoverForSelection(this.view);
+					}
+				};
+			}
+		),
+		EditorView.domEventHandlers({
+			pointerdown(event, view) {
+				if (event.pointerType === 'touch' || event.pointerType === 'pen') {
+					closeActiveSchemaHoverForSelection(view);
+				}
+				return false;
+			},
+			touchstart(_event, view) {
+				closeActiveSchemaHoverForSelection(view);
+				return false;
+			},
+			touchmove(_event, view) {
+				closeActiveSchemaHoverForSelection(view);
+				return false;
+			}
+		})
+	];
 
 	const editorLifecycleExtension = EditorView.updateListener.of((update) => {
 		if (!update.view) return;
@@ -465,7 +561,7 @@
 		{
 			key: 'Shift-Alt-f',
 			run() {
-				formatDocument();
+				void formatDocument();
 				return true;
 			}
 		},
@@ -486,9 +582,10 @@
 			return [];
 		}
 
-		const schema = await getComposeSchemaContext();
+		const [schemaModule, analysisModule] = await Promise.all([loadComposeSchemaModule(), loadComposeAnalysisModule()]);
+		const schema = await schemaModule.getComposeSchemaContext();
 		schemaState = schema;
-		const analysis = await analyzeComposeContent(view, schema, effectiveEditorContext);
+		const analysis = await analysisModule.analyzeComposeContent(view, schema, effectiveEditorContext);
 		activeOutlineItems = analysis.outlineItems;
 
 		updateSummaryFromDiagnostics(analysis.diagnostics, {
@@ -526,7 +623,7 @@
 
 	function getLanguageExtension(lang: CodeLanguage, options: { lightweight?: boolean } = {}): Extension[] {
 		const lightweight = options.lightweight === true;
-		const extensions: Extension[] = [editorLifecycleExtension, shortcutKeymapExtension];
+		const extensions: Extension[] = [editorLifecycleExtension, selectionHoverGuardExtension, shortcutKeymapExtension];
 
 		if (!readOnly) {
 			extensions.push(enterIndentKeymaps[lang]);
@@ -908,6 +1005,7 @@
 		padding: 0.5rem 0.625rem;
 		font-size: 0.75rem;
 		line-height: 1.4;
+		pointer-events: none;
 		border-radius: 0.5rem;
 		border: 1px solid var(--border);
 		background: color-mix(in oklab, var(--background) 96%, black 4%);

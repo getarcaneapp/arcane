@@ -4,11 +4,24 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/labstack/echo/v4"
 )
+
+const (
+	// tunnelWSPongWait is the deadline for the next pong (or any read) on the
+	// browser-facing side of a proxied WebSocket. Reverse proxies (Caddy,
+	// Nginx, ...) silently drop idle TCP connections; without a heartbeat the
+	// master would hold a dead stream open until something else terminates it.
+	tunnelWSPongWait      = 60 * time.Second
+	tunnelWSPingWriteWait = 1 * time.Second
+	tunnelWSDataWriteWait = 10 * time.Second
+)
+
+var tunnelWSPingPeriod = tunnelWSPongWait * 9 / 10
 
 var wsUpgraderForProxy = websocket.Upgrader{
 	ReadBufferSize:    64 * 1024,
@@ -29,6 +42,12 @@ func ProxyWebSocketRequest(c echo.Context, tunnel *AgentTunnel, targetPath strin
 		return nil
 	}
 	defer func() { _ = clientWS.Close() }()
+
+	_ = clientWS.SetReadDeadline(time.Now().Add(tunnelWSPongWait))
+	clientWS.SetPongHandler(func(string) error {
+		_ = clientWS.SetReadDeadline(time.Now().Add(tunnelWSPongWait))
+		return nil
+	})
 
 	streamID := uuid.New().String()
 	streamCtx, cancel := context.WithCancel(ctx)
@@ -65,7 +84,7 @@ func ProxyWebSocketRequest(c echo.Context, tunnel *AgentTunnel, targetPath strin
 	// Goroutine to read from client and send to agent
 	go forwardClientToAgent(ctx, streamCtx, clientWS, tunnel, streamID, clientDoneCh)
 
-	forwardAgentToClient(ctx, streamCtx, clientWS, agentDataCh, streamID, clientDoneCh)
+	forwardAgentToClient(ctx, streamCtx, clientWS, tunnel, agentDataCh, streamID, clientDoneCh)
 	return nil
 }
 
@@ -109,13 +128,23 @@ func forwardClientToAgent(ctx context.Context, streamCtx context.Context, client
 	}
 }
 
-func forwardAgentToClient(ctx context.Context, streamCtx context.Context, clientWS *websocket.Conn, agentDataCh <-chan *TunnelMessage, streamID string, clientDoneCh <-chan struct{}) {
+func forwardAgentToClient(ctx context.Context, streamCtx context.Context, clientWS *websocket.Conn, tunnel *AgentTunnel, agentDataCh <-chan *TunnelMessage, streamID string, clientDoneCh <-chan struct{}) {
+	pingTicker := time.NewTicker(tunnelWSPingPeriod)
+	defer pingTicker.Stop()
+
 	for {
 		select {
 		case <-streamCtx.Done():
 			return
 		case <-clientDoneCh:
 			return
+		case <-pingTicker.C:
+			_ = clientWS.SetWriteDeadline(time.Now().Add(tunnelWSPingWriteWait))
+			if err := clientWS.WriteMessage(websocket.PingMessage, nil); err != nil {
+				slog.DebugContext(ctx, "Failed to ping client WebSocket", "stream_id", streamID, "error", err)
+				sendWebSocketClose(tunnel, streamID)
+				return
+			}
 		case msg, ok := <-agentDataCh:
 			if !ok {
 				return
@@ -166,6 +195,7 @@ func writeWebSocketData(clientWS *websocket.Conn, msg *TunnelMessage) error {
 		slog.Warn("Dropping WebSocket message with unsupported type", "messageType", msgType)
 		return nil
 	}
+	_ = clientWS.SetWriteDeadline(time.Now().Add(tunnelWSDataWriteWait))
 	return clientWS.WriteMessage(msgType, msg.Body)
 }
 

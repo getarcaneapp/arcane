@@ -3,19 +3,20 @@ package gitops
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/cli/internal/client"
-	"github.com/getarcaneapp/arcane/cli/internal/cmdutil"
-	"github.com/getarcaneapp/arcane/cli/internal/output"
-	"github.com/getarcaneapp/arcane/cli/internal/prompt"
-	"github.com/getarcaneapp/arcane/cli/internal/types"
-	"github.com/getarcaneapp/arcane/types/base"
-	"github.com/getarcaneapp/arcane/types/gitops"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/prompt"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	"github.com/getarcaneapp/arcane/types/v2/base"
+	"github.com/getarcaneapp/arcane/types/v2/gitops"
 	"github.com/spf13/cobra"
 )
 
@@ -619,7 +620,7 @@ func init() {
 func resolveGitOpsSync(ctx context.Context, c *client.Client, identifier string, allowPrompt bool) (*gitops.GitOpsSync, bool, error) {
 	trimmed := strings.TrimSpace(identifier)
 	if trimmed == "" {
-		return nil, false, fmt.Errorf("gitops sync identifier is required")
+		return nil, false, errors.New("gitops sync identifier is required")
 	}
 
 	resp, err := c.Get(ctx, types.Endpoints.GitOpsSync(c.EnvID(), trimmed))

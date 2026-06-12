@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	gen "github.com/getarcaneapp/arcane/cli/pkg/generate"
+	gen "github.com/getarcaneapp/arcane/cli/v2/pkg/generate"
 )
 
 func TestAPIKeyDefaultOutput(t *testing.T) {

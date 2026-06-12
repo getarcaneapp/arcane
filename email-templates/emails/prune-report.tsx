@@ -2,6 +2,7 @@ import { Column, Hr, Row, Section, Text } from 'react-email';
 import { BaseTemplate } from '../components/base-template';
 import CardHeader from '../components/card-header';
 import { sharedPreviewProps, sharedTemplateProps } from '../props';
+import { colors, fonts, radii } from '../theme';
 
 interface PruneReportEmailProps {
 	logoURL: string;
@@ -102,10 +103,10 @@ export default PruneReportEmail;
 const totalSectionStyle = {
 	marginTop: '20px',
 	textAlign: 'center' as const,
-	backgroundColor: 'rgba(15, 23, 42, 0.5)',
-	border: '1px solid rgba(148, 163, 184, 0.1)',
+	backgroundColor: colors.panel,
+	border: `1px solid ${colors.panelBorder}`,
 	padding: '20px',
-	borderRadius: '12px'
+	borderRadius: radii.panel
 };
 
 const totalLabelStyle = {
@@ -113,7 +114,7 @@ const totalLabelStyle = {
 	lineHeight: '18px',
 	letterSpacing: '0.08em',
 	textTransform: 'uppercase' as const,
-	color: '#94a3b8',
+	color: colors.textMuted,
 	margin: '0'
 };
 
@@ -121,16 +122,16 @@ const totalValueStyle = {
 	fontSize: '30px',
 	lineHeight: '36px',
 	fontWeight: '700' as const,
-	color: '#34d399',
+	color: colors.success,
 	margin: '8px 0 0 0'
 };
 
 const breakdownSectionStyle = {
 	marginTop: '18px',
-	backgroundColor: 'rgba(15, 23, 42, 0.5)',
-	border: '1px solid rgba(148, 163, 184, 0.1)',
+	backgroundColor: colors.panel,
+	border: `1px solid ${colors.panelBorder}`,
 	padding: '20px',
-	borderRadius: '12px'
+	borderRadius: radii.panel
 };
 
 const infoRowStyle = {
@@ -146,27 +147,27 @@ const labelColumnStyle = {
 const labelStyle = {
 	fontSize: '14px',
 	fontWeight: '600' as const,
-	color: '#94a3b8',
+	color: colors.textMuted,
 	margin: '8px 0'
 };
 
 const valueStyle = {
 	fontSize: '14px',
-	color: '#e2e8f0',
+	color: colors.textValue,
 	margin: '8px 0',
 	wordBreak: 'break-word' as const,
-	fontFamily: 'monospace'
+	fontFamily: fonts.mono
 };
 
 const dividerStyle = {
-	borderColor: 'rgba(148, 163, 184, 0.2)',
+	borderColor: colors.divider,
 	margin: '4px 0'
 };
 
 const footerStyle = {
 	fontSize: '12px',
 	lineHeight: '18px',
-	color: '#94a3b8',
+	color: colors.textMuted,
 	margin: '0'
 };
 

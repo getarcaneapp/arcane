@@ -210,14 +210,4 @@ export class MobileNavGestures {
 	updateOptions(options: GestureOptions) {
 		this.options = options;
 	}
-
-	destroy() {
-		this.swipeDetector.setElement(null);
-		if (this.scrollTimeout) {
-			clearTimeout(this.scrollTimeout);
-		}
-		if (this.flickDetectTimeout) {
-			clearTimeout(this.flickDetectTimeout);
-		}
-	}
 }

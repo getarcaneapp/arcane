@@ -10,11 +10,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/internal/database"
-	"github.com/getarcaneapp/arcane/backend/internal/models"
-	pkgutils "github.com/getarcaneapp/arcane/backend/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/pkg/utils/dbutil"
-	"github.com/getarcaneapp/arcane/types/auth"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/dbutil"
+	"github.com/getarcaneapp/arcane/types/v2/auth"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -37,6 +37,7 @@ func (s *SessionService) CreateSession(ctx context.Context, userID string, expir
 		RefreshTokenHash: refreshHash,
 		UserAgent:        pkgutils.StringPtrFromTrimmed(meta.UserAgent),
 		IPAddress:        pkgutils.StringPtrFromTrimmed(meta.IPAddress),
+		Source:           models.UserSessionSourceLocal,
 		LastUsedAt:       now,
 		ExpiresAt:        expiresAt,
 	}
@@ -46,6 +47,26 @@ func (s *SessionService) CreateSession(ctx context.Context, userID string, expir
 	}
 
 	return session, refreshJTI, nil
+}
+
+func (s *SessionService) CreateFederatedSession(ctx context.Context, userID string, expiresAt time.Time, credentialID string) (*models.UserSession, error) {
+	refreshHash := hashRefreshJTIInternal(uuid.NewString())
+	now := time.Now()
+
+	session := &models.UserSession{
+		UserID:                userID,
+		RefreshTokenHash:      refreshHash,
+		Source:                models.UserSessionSourceFederated,
+		FederatedCredentialID: pkgutils.StringPtrFromTrimmed(credentialID),
+		LastUsedAt:            now,
+		ExpiresAt:             expiresAt,
+	}
+
+	if err := s.db.WithContext(ctx).Create(session).Error; err != nil {
+		return nil, fmt.Errorf("failed to create federated user session: %w", err)
+	}
+
+	return session, nil
 }
 
 func (s *SessionService) GetSessionByID(ctx context.Context, sessionID string) (*models.UserSession, error) {

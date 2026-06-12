@@ -3,6 +3,7 @@ package services
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -17,21 +18,21 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/internal/config"
-	"github.com/getarcaneapp/arcane/backend/internal/database"
-	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/crypto"
-	"github.com/getarcaneapp/arcane/backend/pkg/utils/notifications"
-	"github.com/getarcaneapp/arcane/types/imageupdate"
-	notificationdto "github.com/getarcaneapp/arcane/types/notification"
-	"github.com/getarcaneapp/arcane/types/system"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/crypto"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/notifications"
+	"github.com/getarcaneapp/arcane/types/v2/imageupdate"
+	notificationdto "github.com/getarcaneapp/arcane/types/v2/notification"
+	"github.com/getarcaneapp/arcane/types/v2/system"
 )
 
 func setupNotificationTestDB(t *testing.T) *database.DB {
 	t.Helper()
 	db, err := gorm.Open(glsqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&models.NotificationSettings{}, &models.SettingVariable{}, &models.NotificationLog{}, &models.Environment{}, &models.AppriseSettings{}))
+	require.NoError(t, db.AutoMigrate(&models.NotificationSettings{}, &models.SettingVariable{}, &models.NotificationLog{}, &models.Environment{}))
 
 	// Initialize crypto for tests (requires 32+ byte key)
 	testCfg := &config.Config{
@@ -82,263 +83,6 @@ func captureNotificationServiceLogsInternal(t *testing.T) *bytes.Buffer {
 	})
 
 	return &buf
-}
-
-func TestNotificationService_MigrateDiscordWebhookUrlToFields(t *testing.T) {
-	ctx := context.Background()
-	db, _, svc := setupNotificationTestServiceInternal(t)
-
-	// Create legacy Discord config with webhookUrl
-	legacyConfig := map[string]any{
-		"webhookUrl": "https://discord.com/api/webhooks/123456789/abcdef123456",
-		"username":   "Arcane Bot",
-		"avatarUrl":  "https://example.com/avatar.png",
-		"events": map[string]bool{
-			"image_update":     true,
-			"container_update": false,
-		},
-	}
-
-	configBytes, err := json.Marshal(legacyConfig)
-	require.NoError(t, err)
-
-	var configJSON models.JSON
-	require.NoError(t, json.Unmarshal(configBytes, &configJSON))
-
-	setting := models.NotificationSettings{
-		Provider: models.NotificationProviderDiscord,
-		Enabled:  true,
-		Config:   configJSON,
-	}
-	require.NoError(t, db.Create(&setting).Error)
-
-	// Run migration
-	err = svc.MigrateDiscordWebhookUrlToFields(ctx)
-	require.NoError(t, err)
-
-	// Verify migration results
-	var migratedSetting models.NotificationSettings
-	require.NoError(t, db.Where("provider = ?", models.NotificationProviderDiscord).First(&migratedSetting).Error)
-
-	var discordConfig models.DiscordConfig
-	configBytes, err = json.Marshal(migratedSetting.Config)
-	require.NoError(t, err)
-	require.NoError(t, json.Unmarshal(configBytes, &discordConfig))
-
-	// Verify webhookId and token were extracted
-	require.Equal(t, "123456789", discordConfig.WebhookID)
-	require.NotEmpty(t, discordConfig.Token)
-
-	// Verify token is encrypted and can be decrypted
-	decryptedToken, err := crypto.Decrypt(discordConfig.Token)
-	require.NoError(t, err)
-	require.Equal(t, "abcdef123456", decryptedToken)
-
-	// Verify other fields were preserved
-	require.Equal(t, "Arcane Bot", discordConfig.Username)
-	require.Equal(t, "https://example.com/avatar.png", discordConfig.AvatarURL)
-	require.True(t, discordConfig.Events[models.NotificationEventImageUpdate])
-	require.False(t, discordConfig.Events[models.NotificationEventContainerUpdate])
-}
-
-func TestNotificationService_MigrateDiscordWebhookUrlToFields_SkipsIfAlreadyMigrated(t *testing.T) {
-	ctx := context.Background()
-	db, _, svc := setupNotificationTestServiceInternal(t)
-
-	// Create already-migrated config with webhookId and token
-	encryptedToken, err := crypto.Encrypt("already-migrated-token")
-	require.NoError(t, err)
-
-	migratedConfig := models.DiscordConfig{
-		WebhookID: "999999999",
-		Token:     encryptedToken,
-		Username:  "Already Migrated",
-	}
-
-	configBytes, err := json.Marshal(migratedConfig)
-	require.NoError(t, err)
-
-	var configJSON models.JSON
-	require.NoError(t, json.Unmarshal(configBytes, &configJSON))
-
-	setting := models.NotificationSettings{
-		Provider: models.NotificationProviderDiscord,
-		Enabled:  true,
-		Config:   configJSON,
-	}
-	require.NoError(t, db.Create(&setting).Error)
-
-	// Run migration - should skip
-	err = svc.MigrateDiscordWebhookUrlToFields(ctx)
-	require.NoError(t, err)
-
-	// Verify config was NOT changed
-	var unchangedSetting models.NotificationSettings
-	require.NoError(t, db.Where("provider = ?", models.NotificationProviderDiscord).First(&unchangedSetting).Error)
-
-	var discordConfig models.DiscordConfig
-	configBytes, err = json.Marshal(unchangedSetting.Config)
-	require.NoError(t, err)
-	require.NoError(t, json.Unmarshal(configBytes, &discordConfig))
-
-	require.Equal(t, "999999999", discordConfig.WebhookID)
-	require.Equal(t, encryptedToken, discordConfig.Token)
-	require.Equal(t, "Already Migrated", discordConfig.Username)
-}
-
-func TestNotificationService_MigrateDiscordWebhookUrlToFields_NoDiscordConfig(t *testing.T) {
-	ctx := context.Background()
-	db, _, svc := setupNotificationTestServiceInternal(t)
-
-	// No Discord config exists - migration should not error
-	err := svc.MigrateDiscordWebhookUrlToFields(ctx)
-	require.NoError(t, err)
-
-	// Verify no settings were created
-	var count int64
-	require.NoError(t, db.Model(&models.NotificationSettings{}).Count(&count).Error)
-	require.Equal(t, int64(0), count)
-}
-
-func TestNotificationService_MigrateDiscordWebhookUrlToFields_InvalidWebhookUrl(t *testing.T) {
-	ctx := context.Background()
-	db, _, svc := setupNotificationTestServiceInternal(t)
-
-	testCases := []struct {
-		name       string
-		webhookUrl string
-	}{
-		{
-			name:       "missing webhooks path",
-			webhookUrl: "https://discord.com/api/other/123456789/abcdef",
-		},
-		{
-			name:       "incomplete webhook path",
-			webhookUrl: "https://discord.com/api/webhooks/123456789",
-		},
-		{
-			name:       "empty webhook url",
-			webhookUrl: "",
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			// Clean up before each sub-test
-			db.Exec("DELETE FROM notification_settings")
-
-			legacyConfig := map[string]any{
-				"webhookUrl": tc.webhookUrl,
-			}
-
-			configBytes, err := json.Marshal(legacyConfig)
-			require.NoError(t, err)
-
-			var configJSON models.JSON
-			require.NoError(t, json.Unmarshal(configBytes, &configJSON))
-
-			setting := models.NotificationSettings{
-				Provider: models.NotificationProviderDiscord,
-				Enabled:  true,
-				Config:   configJSON,
-			}
-			require.NoError(t, db.Create(&setting).Error)
-
-			// Migration should not error but should skip invalid URLs
-			err = svc.MigrateDiscordWebhookUrlToFields(ctx)
-			require.NoError(t, err)
-
-			// Verify config was not changed
-			var unchangedSetting models.NotificationSettings
-			require.NoError(t, db.Where("provider = ?", models.NotificationProviderDiscord).First(&unchangedSetting).Error)
-
-			var resultConfig map[string]any
-			configBytes, err = json.Marshal(unchangedSetting.Config)
-			require.NoError(t, err)
-			require.NoError(t, json.Unmarshal(configBytes, &resultConfig))
-
-			// Should still have webhookUrl (not migrated)
-			if tc.webhookUrl != "" {
-				require.Equal(t, tc.webhookUrl, resultConfig["webhookUrl"])
-			}
-		})
-	}
-}
-
-func TestNotificationService_MigrateDiscordWebhookUrlToFields_EmptyConfig(t *testing.T) {
-	ctx := context.Background()
-	db, _, svc := setupNotificationTestServiceInternal(t)
-
-	// Create Discord setting with empty config
-	setting := models.NotificationSettings{
-		Provider: models.NotificationProviderDiscord,
-		Enabled:  false,
-		Config:   models.JSON{},
-	}
-	require.NoError(t, db.Create(&setting).Error)
-
-	// Migration should not error
-	err := svc.MigrateDiscordWebhookUrlToFields(ctx)
-	require.NoError(t, err)
-
-	// Verify config remains empty
-	var unchangedSetting models.NotificationSettings
-	require.NoError(t, db.Where("provider = ?", models.NotificationProviderDiscord).First(&unchangedSetting).Error)
-	require.Empty(t, unchangedSetting.Config)
-}
-
-func TestNotificationService_MigrateDiscordWebhookUrlToFields_PreservesAllFields(t *testing.T) {
-	ctx := context.Background()
-	db, _, svc := setupNotificationTestServiceInternal(t)
-
-	// Create legacy config with all optional fields
-	legacyConfig := map[string]any{
-		"webhookUrl": "https://discord.com/api/webhooks/111222333/token444555",
-		"username":   "Custom Bot Name",
-		"avatarUrl":  "https://cdn.example.com/bot-avatar.jpg",
-		"events": map[string]bool{
-			"image_update":     false,
-			"container_update": true,
-		},
-	}
-
-	configBytes, err := json.Marshal(legacyConfig)
-	require.NoError(t, err)
-
-	var configJSON models.JSON
-	require.NoError(t, json.Unmarshal(configBytes, &configJSON))
-
-	setting := models.NotificationSettings{
-		Provider: models.NotificationProviderDiscord,
-		Enabled:  true,
-		Config:   configJSON,
-	}
-	require.NoError(t, db.Create(&setting).Error)
-
-	// Run migration
-	err = svc.MigrateDiscordWebhookUrlToFields(ctx)
-	require.NoError(t, err)
-
-	// Verify all fields were preserved
-	var migratedSetting models.NotificationSettings
-	require.NoError(t, db.Where("provider = ?", models.NotificationProviderDiscord).First(&migratedSetting).Error)
-
-	var discordConfig models.DiscordConfig
-	configBytes, err = json.Marshal(migratedSetting.Config)
-	require.NoError(t, err)
-	require.NoError(t, json.Unmarshal(configBytes, &discordConfig))
-
-	require.Equal(t, "111222333", discordConfig.WebhookID)
-	require.NotEmpty(t, discordConfig.Token)
-
-	decryptedToken, err := crypto.Decrypt(discordConfig.Token)
-	require.NoError(t, err)
-	require.Equal(t, "token444555", decryptedToken)
-
-	require.Equal(t, "Custom Bot Name", discordConfig.Username)
-	require.Equal(t, "https://cdn.example.com/bot-avatar.jpg", discordConfig.AvatarURL)
-	require.False(t, discordConfig.Events[models.NotificationEventImageUpdate])
-	require.True(t, discordConfig.Events[models.NotificationEventContainerUpdate])
 }
 
 func TestNotificationService_ResolveNotificationTargetInternal_UsesEnvironmentRecordAndFallback(t *testing.T) {
@@ -691,6 +435,130 @@ func TestBuildAutoHealNotificationMessageInternal_IncludesEnvironment(t *testing
 
 	require.Contains(t, message, "**Environment:** Cluster One")
 	require.Equal(t, 1, strings.Count(message, "Environment"))
+}
+
+func TestNotificationCredentialInternal_KeepsPlaintextLegacyValues(t *testing.T) {
+	setupNotificationTestDB(t)
+
+	value := "discord-webhook-token/plaintext"
+
+	require.NoError(t, decryptStringCredentialInternal(&value))
+	require.Equal(t, "discord-webhook-token/plaintext", value)
+}
+
+func TestNotificationCredentialInternal_DecryptsEncryptedValues(t *testing.T) {
+	setupNotificationTestDB(t)
+
+	encrypted, err := crypto.Encrypt("gotify-application-token")
+	require.NoError(t, err)
+
+	require.NoError(t, decryptStringCredentialInternal(&encrypted))
+	require.Equal(t, "gotify-application-token", encrypted)
+}
+
+func TestNotificationCredentialInternal_ReturnsErrorForCorruptedCiphertext(t *testing.T) {
+	setupNotificationTestDB(t)
+
+	encrypted, err := crypto.Encrypt("gotify-application-token")
+	require.NoError(t, err)
+
+	ciphertext, err := base64.StdEncoding.DecodeString(encrypted)
+	require.NoError(t, err)
+	ciphertext[len(ciphertext)-1] ^= 0xff
+	corrupted := base64.StdEncoding.EncodeToString(ciphertext)
+
+	require.Error(t, decryptStringCredentialInternal(&corrupted))
+}
+
+func TestNotificationCredentialInternal_LeavesEmptyValuesEmpty(t *testing.T) {
+	setupNotificationTestDB(t)
+
+	value := ""
+
+	require.NoError(t, decryptStringCredentialInternal(&value))
+	require.Empty(t, value)
+}
+
+func TestNotificationService_CreateOrUpdateSettingsEncryptsCredentialFieldsInternal(t *testing.T) {
+	ctx := context.Background()
+	db := setupNotificationTestDB(t)
+	svc := NewNotificationService(db, &config.Config{}, nil)
+
+	_, err := svc.CreateOrUpdateSettings(ctx, models.NotificationProviderDiscord, true, models.JSON{
+		"webhookId": "123456789",
+		"token":     "discord-secret-token",
+		"username":  "Arcane",
+	})
+	require.NoError(t, err)
+
+	var stored models.NotificationSettings
+	require.NoError(t, db.WithContext(ctx).Where("provider = ?", models.NotificationProviderDiscord).First(&stored).Error)
+	require.Equal(t, "123456789", stored.Config["webhookId"])
+	require.Equal(t, "Arcane", stored.Config["username"])
+	require.NotEqual(t, "discord-secret-token", stored.Config["token"])
+
+	decrypted, err := crypto.Decrypt(stored.Config["token"].(string))
+	require.NoError(t, err)
+	require.Equal(t, "discord-secret-token", decrypted)
+}
+
+func TestNotificationService_CreateOrUpdateSettingsPreservesStoredCredentialWhenEmptyInternal(t *testing.T) {
+	ctx := context.Background()
+	db := setupNotificationTestDB(t)
+	svc := NewNotificationService(db, &config.Config{}, nil)
+
+	_, err := svc.CreateOrUpdateSettings(ctx, models.NotificationProviderGotify, true, models.JSON{
+		"host":  "gotify.example",
+		"token": "initial-gotify-token",
+		"title": "Initial",
+	})
+	require.NoError(t, err)
+
+	_, err = svc.CreateOrUpdateSettings(ctx, models.NotificationProviderGotify, true, models.JSON{
+		"host":  "gotify.example",
+		"token": "",
+		"title": "Updated",
+	})
+	require.NoError(t, err)
+
+	var stored models.NotificationSettings
+	require.NoError(t, db.WithContext(ctx).Where("provider = ?", models.NotificationProviderGotify).First(&stored).Error)
+	require.Equal(t, "Updated", stored.Config["title"])
+
+	decrypted, err := crypto.Decrypt(stored.Config["token"].(string))
+	require.NoError(t, err)
+	require.Equal(t, "initial-gotify-token", decrypted)
+}
+
+func TestNotificationService_CreateOrUpdateSettingsPreservesCredentialAcrossDisableInternal(t *testing.T) {
+	ctx := context.Background()
+	db := setupNotificationTestDB(t)
+	svc := NewNotificationService(db, &config.Config{}, nil)
+
+	_, err := svc.CreateOrUpdateSettings(ctx, models.NotificationProviderGotify, true, models.JSON{
+		"host":  "gotify.example",
+		"token": "initial-gotify-token",
+		"title": "Initial",
+	})
+	require.NoError(t, err)
+
+	_, err = svc.CreateOrUpdateSettings(ctx, models.NotificationProviderGotify, false, models.JSON{})
+	require.NoError(t, err)
+
+	_, err = svc.CreateOrUpdateSettings(ctx, models.NotificationProviderGotify, true, models.JSON{
+		"host":  "gotify.example",
+		"token": "",
+		"title": "Re-enabled",
+	})
+	require.NoError(t, err)
+
+	var stored models.NotificationSettings
+	require.NoError(t, db.WithContext(ctx).Where("provider = ?", models.NotificationProviderGotify).First(&stored).Error)
+	require.Equal(t, "Re-enabled", stored.Config["title"])
+
+	decrypted, err := crypto.Decrypt(stored.Config["token"].(string))
+	require.NoError(t, err)
+	require.Equal(t, "initial-gotify-token", decrypted)
 }
 
 func TestSupportedNotificationTestTypes_IncludesAutoHeal(t *testing.T) {

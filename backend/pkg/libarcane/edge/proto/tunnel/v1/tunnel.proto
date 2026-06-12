@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package tunnel.v1;
 
-option go_package = "github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge/proto/tunnel/v1;tunnelpb";
+option go_package = "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge/proto/tunnel/v1;tunnelpb";
 
 // TunnelService is the reverse tunnel between an edge agent and manager.
 service TunnelService {

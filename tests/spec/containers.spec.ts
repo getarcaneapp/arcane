@@ -1,22 +1,23 @@
 import { test, expect, type Page } from '@playwright/test';
 import { fetchContainersWithRetry, type Paginated } from '../utils/fetch.util';
 import { ContainerSummary } from 'types/containers.type';
+import { openRowActionsMenu } from '../utils/table-actions.util';
 
 const CONTAINERS_ROUTE = '/containers';
 
 async function navigateToContainers(page: Page) {
 	await page.goto(CONTAINERS_ROUTE);
-	await page.waitForLoadState('networkidle');
+	await page.waitForLoadState('load');
 }
 
 let containersData: Paginated<ContainerSummary> = { data: [], pagination: { totalItems: 0 } };
 
-test.beforeEach(async ({ page }) => {
-	await navigateToContainers(page);
-	containersData = await fetchContainersWithRetry(page);
-});
-
 test.describe('Containers Page', () => {
+	test.beforeEach(async ({ page }) => {
+		await navigateToContainers(page);
+		containersData = await fetchContainersWithRetry(page);
+	});
+
 	test('should display the containers page title and description', async ({ page }) => {
 		await navigateToContainers(page);
 		await expect(page.getByRole('heading', { name: 'Containers', level: 1 })).toBeVisible();
@@ -50,8 +51,8 @@ test.describe('Containers Page', () => {
 		await navigateToContainers(page);
 
 		const firstRow = page.locator('tbody tr').first();
-		await firstRow.getByRole('button', { name: 'Open menu' }).click();
-		await page.getByRole('menuitem', { name: 'Inspect', exact: true }).click();
+		const menu = await openRowActionsMenu(page, firstRow);
+		await menu.getByRole('menuitem', { name: 'Inspect', exact: true }).click();
 
 		await expect(page).toHaveURL(/\/containers\/.+/);
 		await expect(
@@ -66,7 +67,7 @@ test.describe('Containers Page', () => {
 		test.skip(!running, 'No running container available');
 
 		await page.goto(`/containers/${running!.id}`);
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		await page.getByRole('tab', { name: 'Logs' }).click();
 
@@ -87,7 +88,7 @@ test.describe('Containers Page', () => {
 		test.skip(!stopped, 'No stopped container available');
 
 		await page.goto(`/containers/${stopped!.id}`);
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		await page.getByRole('tab', { name: 'Logs' }).click();
 
@@ -107,9 +108,9 @@ test.describe('Containers Page', () => {
 
 		if (running) {
 			const row = page.locator(`tr:has(a[href="/containers/${running.id}"])`);
-			await row.getByRole('button', { name: 'Open menu' }).click();
-			await expect(page.getByRole('menuitem', { name: 'Restart', exact: true })).toBeVisible();
-			await expect(page.getByRole('menuitem', { name: 'Stop', exact: true })).toBeVisible();
+			const menu = await openRowActionsMenu(page, row);
+			await expect(menu.getByRole('menuitem', { name: 'Restart', exact: true })).toBeVisible();
+			await expect(menu.getByRole('menuitem', { name: 'Stop', exact: true })).toBeVisible();
 			await page.keyboard.press('Escape');
 		} else {
 			test.info().annotations.push({
@@ -120,8 +121,8 @@ test.describe('Containers Page', () => {
 
 		if (stopped) {
 			const row = page.locator(`tr:has(a[href="/containers/${stopped.id}"])`);
-			await row.getByRole('button', { name: 'Open menu' }).click();
-			await expect(page.getByRole('menuitem', { name: 'Start', exact: true })).toBeVisible();
+			const menu = await openRowActionsMenu(page, row);
+			await expect(menu.getByRole('menuitem', { name: 'Start', exact: true })).toBeVisible();
 			await page.keyboard.press('Escape');
 		} else {
 			test.info().annotations.push({
@@ -138,8 +139,8 @@ test.describe('Containers Page', () => {
 		await navigateToContainers(page);
 
 		const row = page.locator(`tr:has(a[href="/containers/${any.id}"])`);
-		await row.getByRole('button', { name: 'Open menu' }).click();
-		await page.getByRole('menuitem', { name: 'Remove', exact: true }).click();
+		const menu = await openRowActionsMenu(page, row);
+		await menu.getByRole('menuitem', { name: 'Remove', exact: true }).click();
 
 		const dialog = page.locator(
 			'div[role="heading"][aria-level="2"][data-dialog-title]:has-text("Confirm Container Removal")'
@@ -148,5 +149,80 @@ test.describe('Containers Page', () => {
 
 		await page.getByRole('button', { name: 'Cancel' }).click();
 		await expect(dialog).toBeHidden();
+	});
+});
+
+test.describe('Containers Page network IP addresses', () => {
+	test('should show every network IP address for a multi-network container', async ({
+		page,
+		context
+	}) => {
+		await page.addInitScript(() => {
+			localStorage.removeItem('arcane-container-table');
+		});
+
+		await context.route('**/api/environments/*/containers**', async (route) => {
+			if (route.request().method() !== 'GET') {
+				await route.continue();
+				return;
+			}
+
+			const url = new URL(route.request().url());
+			if (!/^\/api\/environments\/[^/]+\/containers$/.test(url.pathname)) {
+				await route.continue();
+				return;
+			}
+
+			await route.fulfill({
+				status: 200,
+				contentType: 'application/json',
+				body: JSON.stringify({
+					success: true,
+					data: [
+						{
+							id: 'wordpress-multi-network',
+							names: ['/wordpress'],
+							image: 'wordpress:latest',
+							imageId: 'sha256:wordpress',
+							command: 'apache2-foreground',
+							created: 1_700_000_000,
+							labels: {},
+							state: 'running',
+							status: 'Up 5 minutes',
+							ports: [],
+							hostConfig: { networkMode: 'default' },
+							networkSettings: {
+								networks: {
+									proxy: { ipAddress: '172.20.0.10' },
+									private: { ipAddress: '10.10.0.5' }
+								}
+							},
+							mounts: []
+						}
+					],
+					counts: {
+						runningContainers: 1,
+						stoppedContainers: 0,
+						totalContainers: 1
+					},
+					pagination: {
+						totalPages: 1,
+						totalItems: 1,
+						currentPage: 1,
+						itemsPerPage: 20,
+						grandTotalItems: 1
+					}
+				})
+			});
+		});
+
+		await navigateToContainers(page);
+
+		const row = page.locator('tbody tr').filter({
+			has: page.getByRole('link', { name: 'wordpress', exact: true })
+		});
+
+		await expect(row).toContainText('10.10.0.5');
+		await expect(row).toContainText('172.20.0.10');
 	});
 });

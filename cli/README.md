@@ -3,8 +3,8 @@
   <img src="../.github/assets/img/PNG-3.png" alt="Arcane Logo" width="500" />
   <p>The Official Command Line Client</p>
 
-<a href="https://pkg.go.dev/github.com/getarcaneapp/arcane/cli"><img src="https://pkg.go.dev/badge/github.com/getarcaneapp/arcane/cli.svg" alt="Go Reference"></a>
-<a href="https://goreportcard.com/report/github.com/getarcaneapp/arcane/cli"><img src="https://goreportcard.com/badge/github.com/getarcaneapp/arcane/cli" alt="Go Report Card"></a>
+<a href="https://pkg.go.dev/github.com/getarcaneapp/arcane/cli/v2"><img src="https://pkg.go.dev/badge/github.com/getarcaneapp/arcane/cli/v2.svg" alt="Go Reference"></a>
+<a href="https://goreportcard.com/report/github.com/getarcaneapp/arcane/cli/v2"><img src="https://goreportcard.com/badge/github.com/getarcaneapp/arcane/cli/v2" alt="Go Report Card"></a>
 <a href="https://github.com/getarcaneapp/cli/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-BSD--3--Clause-blue.svg" alt="License"></a>
 
 <br />
@@ -15,13 +15,13 @@
 
 This module lives inside the main Arcane repo. To build the CLI locally:
 
-- `go install github.com/getarcaneapp/arcane/cli@latest`
+- `go install github.com/getarcaneapp/arcane/cli/v2@latest`
 
 ## Versions
 
 CLI versions are tagged as `cli/vX.Y.Z` in the main repo. Use module tags to pin a specific release:
 
-- `go install github.com/getarcaneapp/arcane/cli@cli/vX.Y.Z`
+- `go install github.com/getarcaneapp/arcane/cli/v2@cli/vX.Y.Z`
 
 ## Configure
 

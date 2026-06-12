@@ -3,19 +3,20 @@ package networks
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/cli/internal/client"
-	"github.com/getarcaneapp/arcane/cli/internal/cmdutil"
-	"github.com/getarcaneapp/arcane/cli/internal/output"
-	"github.com/getarcaneapp/arcane/cli/internal/prompt"
-	"github.com/getarcaneapp/arcane/cli/internal/types"
-	"github.com/getarcaneapp/arcane/types/base"
-	"github.com/getarcaneapp/arcane/types/network"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/prompt"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	"github.com/getarcaneapp/arcane/types/v2/base"
+	"github.com/getarcaneapp/arcane/types/v2/network"
 	"github.com/spf13/cobra"
 )
 
@@ -44,7 +45,7 @@ var listCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if inUseOnlyFlag && unusedOnlyFlag {
-			return fmt.Errorf("--inuse and --unused cannot be used together")
+			return errors.New("--inuse and --unused cannot be used together")
 		}
 		c, err := client.NewFromConfig()
 		if err != nil {
@@ -345,7 +346,7 @@ func shortID(id string) string {
 func resolveNetworkID(ctx context.Context, c *client.Client, identifier string, allowPrompt bool) (string, string, error) {
 	trimmed := strings.TrimSpace(identifier)
 	if trimmed == "" {
-		return "", "", fmt.Errorf("network identifier is required")
+		return "", "", errors.New("network identifier is required")
 	}
 
 	resp, err := c.Get(ctx, types.Endpoints.Network(c.EnvID(), trimmed))

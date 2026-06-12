@@ -2,32 +2,26 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"log/slog"
-	"net/http"
 	"sort"
-	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/internal/database"
-	"github.com/getarcaneapp/arcane/backend/internal/models"
-	dockerutils "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
-	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
-	libupdater "github.com/getarcaneapp/arcane/backend/pkg/libarcane/imageupdate"
-	"github.com/getarcaneapp/arcane/types/base"
-	containertypes "github.com/getarcaneapp/arcane/types/container"
-	dashboardtypes "github.com/getarcaneapp/arcane/types/dashboard"
-	environmenttypes "github.com/getarcaneapp/arcane/types/environment"
-	imagetypes "github.com/getarcaneapp/arcane/types/image"
-	versiontypes "github.com/getarcaneapp/arcane/types/version"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
+	"github.com/getarcaneapp/arcane/types/v2/base"
+	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
+	dashboardtypes "github.com/getarcaneapp/arcane/types/v2/dashboard"
+	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
+	versiontypes "github.com/getarcaneapp/arcane/types/v2/version"
 	dockercontainer "github.com/moby/moby/api/types/container"
+	libupdater "go.getarcane.app/updater/pkg/labels"
 	"golang.org/x/sync/errgroup"
 )
 
 const defaultDashboardAPIKeyExpiryWindow = 14 * 24 * time.Hour
 const dashboardSnapshotPreloadLimit = 50
-const defaultAggregateDashboardConcurrency = 4
-const defaultAggregateDashboardTimeout = 20 * time.Second
 const localEnvironmentID = "0"
 
 type DashboardService struct {
@@ -72,7 +66,7 @@ func NewDashboardService(
 
 func (s *DashboardService) GetSnapshot(ctx context.Context, options DashboardActionItemsOptions) (*dashboardtypes.Snapshot, error) {
 	if s.dockerService == nil {
-		return nil, fmt.Errorf("docker service not available")
+		return nil, errors.New("docker service not available")
 	}
 
 	dockerSnapshot, err := s.dockerService.GetSnapshot(ctx, localEnvironmentID)
@@ -115,6 +109,9 @@ func (s *DashboardService) GetSnapshot(ctx context.Context, options DashboardAct
 		return containerItems[i].Created > containerItems[j].Created
 	})
 	containerPage := limitDashboardItemsInternal(containerItems, dashboardSnapshotPreloadLimit)
+	if s.containerService != nil {
+		s.containerService.applyContainerSummaryIconsInternal(ctx, containerPage, nil)
+	}
 
 	var projectIDByName map[string]string
 	if s.imageService != nil {
@@ -143,6 +140,11 @@ func (s *DashboardService) GetSnapshot(ctx context.Context, options DashboardAct
 		return nil, err
 	}
 
+	var versionInfo *versiontypes.Info
+	if s.versionService != nil {
+		versionInfo = s.versionService.GetAppVersionInfo(ctx)
+	}
+
 	return &dashboardtypes.Snapshot{
 		Containers: dashboardtypes.SnapshotContainers{
 			Data:       containerPage,
@@ -156,148 +158,8 @@ func (s *DashboardService) GetSnapshot(ctx context.Context, options DashboardAct
 		ImageUsageCounts: imageUsageCounts,
 		ActionItems:      *actionItems,
 		Settings:         dashboardtypes.SnapshotSettings{},
+		VersionInfo:      versionInfo,
 	}, nil
-}
-
-func (s *DashboardService) GetActionItems(ctx context.Context, options DashboardActionItemsOptions) (*dashboardtypes.ActionItems, error) {
-	if options.DebugAllGood {
-		return &dashboardtypes.ActionItems{Items: []dashboardtypes.ActionItem{}}, nil
-	}
-
-	var (
-		stoppedContainers         int
-		pendingResourceUpdates    int
-		actionableVulnerabilities int
-		expiringAPIKeys           int
-	)
-
-	g, groupCtx := errgroup.WithContext(ctx)
-
-	g.Go(func() error {
-		count, err := s.getStoppedContainersCountInternal(groupCtx)
-		if err != nil {
-			return err
-		}
-		stoppedContainers = count
-		return nil
-	})
-
-	g.Go(func() error {
-		count, err := s.getPendingResourceUpdatesCountInternal(groupCtx)
-		if err != nil {
-			return err
-		}
-		pendingResourceUpdates = count
-		return nil
-	})
-
-	g.Go(func() error {
-		count, err := s.getActionableVulnerabilitiesCountInternal(groupCtx)
-		if err != nil {
-			return err
-		}
-		actionableVulnerabilities = count
-		return nil
-	})
-
-	g.Go(func() error {
-		count, err := s.getExpiringAPIKeysCountInternal(groupCtx)
-		if err != nil {
-			return err
-		}
-		expiringAPIKeys = count
-		return nil
-	})
-
-	if err := g.Wait(); err != nil {
-		return nil, err
-	}
-
-	actionItems := make([]dashboardtypes.ActionItem, 0, 4)
-
-	if stoppedContainers > 0 {
-		actionItems = append(actionItems, dashboardtypes.ActionItem{
-			Kind:     dashboardtypes.ActionItemKindStoppedContainers,
-			Count:    stoppedContainers,
-			Severity: dashboardtypes.ActionItemSeverityWarning,
-		})
-	}
-
-	if pendingResourceUpdates > 0 {
-		actionItems = append(actionItems, dashboardtypes.ActionItem{
-			Kind:     dashboardtypes.ActionItemKindImageUpdates,
-			Count:    pendingResourceUpdates,
-			Severity: dashboardtypes.ActionItemSeverityWarning,
-		})
-	}
-
-	if actionableVulnerabilities > 0 {
-		actionItems = append(actionItems, dashboardtypes.ActionItem{
-			Kind:     dashboardtypes.ActionItemKindActionableVulnerabilities,
-			Count:    actionableVulnerabilities,
-			Severity: dashboardtypes.ActionItemSeverityCritical,
-		})
-	}
-
-	if expiringAPIKeys > 0 {
-		actionItems = append(actionItems, dashboardtypes.ActionItem{
-			Kind:     dashboardtypes.ActionItemKindExpiringKeys,
-			Count:    expiringAPIKeys,
-			Severity: dashboardtypes.ActionItemSeverityWarning,
-		})
-	}
-
-	return &dashboardtypes.ActionItems{Items: actionItems}, nil
-}
-
-func (s *DashboardService) GetEnvironmentsOverview(
-	ctx context.Context,
-	options DashboardActionItemsOptions,
-) (*dashboardtypes.EnvironmentsOverview, error) {
-	if s.environmentService == nil {
-		return nil, fmt.Errorf("environment service not available")
-	}
-
-	environments, err := s.environmentService.ListVisibleEnvironments(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list environments: %w", err)
-	}
-
-	overview := &dashboardtypes.EnvironmentsOverview{
-		Environments: make([]dashboardtypes.EnvironmentOverview, len(environments)),
-	}
-
-	g, groupCtx := errgroup.WithContext(ctx)
-	g.SetLimit(defaultAggregateDashboardConcurrency)
-
-	for i := range environments {
-		index := i
-		env := environments[i]
-
-		g.Go(func() error {
-			overview.Environments[index] = s.buildEnvironmentOverviewInternal(groupCtx, env, options)
-			return nil
-		})
-	}
-
-	if err := g.Wait(); err != nil {
-		return nil, fmt.Errorf("failed to build environments overview: %w", err)
-	}
-
-	sort.SliceStable(overview.Environments, func(i, j int) bool {
-		left := overview.Environments[i].Environment
-		right := overview.Environments[j].Environment
-		if left.ID == localEnvironmentID {
-			return true
-		}
-		if right.ID == localEnvironmentID {
-			return false
-		}
-		return left.Name < right.Name
-	})
-
-	overview.Summary = summarizeEnvironmentOverviewInternal(overview.Environments)
-	return overview, nil
 }
 
 func (s *DashboardService) buildActionItemsForSnapshotInternal(
@@ -402,210 +264,6 @@ func buildDashboardActionItemsInternal(
 	return &dashboardtypes.ActionItems{Items: actionItems}
 }
 
-func (s *DashboardService) buildEnvironmentOverviewInternal(
-	ctx context.Context,
-	env environmenttypes.Environment,
-	options DashboardActionItemsOptions,
-) dashboardtypes.EnvironmentOverview {
-	overview := dashboardtypes.EnvironmentOverview{
-		Environment:      env,
-		Containers:       containertypes.StatusCounts{},
-		ImageUsageCounts: imagetypes.UsageCounts{},
-		ActionItems:      dashboardtypes.ActionItems{Items: []dashboardtypes.ActionItem{}},
-		Settings:         dashboardtypes.SnapshotSettings{},
-		SnapshotState:    dashboardtypes.EnvironmentSnapshotStateSkipped,
-	}
-
-	if !env.Enabled || !shouldFetchEnvironmentSnapshotInternal(env) {
-		return overview
-	}
-
-	var (
-		snapshot    *dashboardtypes.Snapshot
-		snapshotErr error
-		versionInfo *versiontypes.Info
-	)
-
-	g, groupCtx := errgroup.WithContext(ctx)
-
-	g.Go(func() error {
-		snapshot, snapshotErr = s.getSnapshotForEnvironmentInternal(groupCtx, env, options)
-		return nil
-	})
-
-	g.Go(func() error {
-		versionInfo = s.getVersionInfoForEnvironmentInternal(groupCtx, env)
-		return nil
-	})
-
-	_ = g.Wait()
-
-	if versionInfo != nil {
-		overview.VersionInfo = versionInfo
-	}
-
-	if snapshotErr != nil {
-		message := snapshotErr.Error()
-		overview.SnapshotState = dashboardtypes.EnvironmentSnapshotStateError
-		overview.SnapshotError = &message
-		return overview
-	}
-
-	overview.Containers = snapshot.Containers.Counts
-	overview.ImageUsageCounts = snapshot.ImageUsageCounts
-	overview.ActionItems = snapshot.ActionItems
-	overview.Settings = snapshot.Settings
-	overview.SnapshotState = dashboardtypes.EnvironmentSnapshotStateReady
-
-	return overview
-}
-
-func shouldFetchEnvironmentSnapshotInternal(env environmenttypes.Environment) bool {
-	switch env.Status {
-	case string(models.EnvironmentStatusOnline), string(models.EnvironmentStatusStandby):
-		return true
-	default:
-		return false
-	}
-}
-
-func (s *DashboardService) getSnapshotForEnvironmentInternal(
-	ctx context.Context,
-	env environmenttypes.Environment,
-	options DashboardActionItemsOptions,
-) (*dashboardtypes.Snapshot, error) {
-	reqCtx, cancel := context.WithTimeout(ctx, defaultAggregateDashboardTimeout)
-	defer cancel()
-
-	if env.ID == localEnvironmentID {
-		return s.GetSnapshot(reqCtx, options)
-	}
-
-	var response base.ApiResponse[dashboardtypes.Snapshot]
-	if err := s.environmentService.ProxyJSONRequest(
-		reqCtx,
-		env.ID,
-		http.MethodGet,
-		buildEnvironmentDashboardProxyPathInternal(options),
-		nil,
-		&response,
-	); err != nil {
-		return nil, fmt.Errorf("failed to proxy dashboard snapshot: %w", err)
-	}
-	if !response.Success {
-		return nil, fmt.Errorf("dashboard snapshot request was not successful")
-	}
-
-	return &response.Data, nil
-}
-
-func buildEnvironmentDashboardProxyPathInternal(options DashboardActionItemsOptions) string {
-	if options.DebugAllGood {
-		return fmt.Sprintf("/api/environments/%s/dashboard?debugAllGood=true", localEnvironmentID)
-	}
-
-	return fmt.Sprintf("/api/environments/%s/dashboard", localEnvironmentID)
-}
-
-func (s *DashboardService) getVersionInfoForEnvironmentInternal(
-	ctx context.Context,
-	env environmenttypes.Environment,
-) *versiontypes.Info {
-	if s.versionService == nil {
-		return nil
-	}
-
-	reqCtx, cancel := context.WithTimeout(ctx, defaultAggregateDashboardTimeout)
-	defer cancel()
-
-	if env.ID == localEnvironmentID {
-		return s.versionService.GetAppVersionInfo(reqCtx)
-	}
-
-	if s.environmentService == nil {
-		return nil
-	}
-
-	var versionInfo versiontypes.Info
-	if err := s.environmentService.ProxyJSONRequest(
-		reqCtx,
-		env.ID,
-		http.MethodGet,
-		"/api/app-version",
-		nil,
-		&versionInfo,
-	); err != nil {
-		slog.DebugContext(reqCtx, "Failed to fetch environment version info for dashboard", "environment_id", env.ID, "error", err)
-		return nil
-	}
-
-	return &versionInfo
-}
-
-func (s *DashboardService) getStoppedContainersCountInternal(ctx context.Context) (int, error) {
-	if s.dockerService == nil {
-		return 0, nil
-	}
-
-	containers, _, _, _, err := s.dockerService.GetAllContainers(ctx)
-	if err != nil {
-		return 0, fmt.Errorf("failed to load container counts: %w", err)
-	}
-
-	stoppedCount := 0
-	for _, container := range containers {
-		if libarcane.IsInternalContainer(container.Labels) {
-			continue
-		}
-
-		if container.State != "running" {
-			stoppedCount++
-		}
-	}
-
-	return stoppedCount, nil
-}
-
-func summarizeEnvironmentOverviewInternal(items []dashboardtypes.EnvironmentOverview) dashboardtypes.EnvironmentsSummary {
-	summary := dashboardtypes.EnvironmentsSummary{}
-
-	for _, item := range items {
-		summary.TotalEnvironments++
-
-		if !item.Environment.Enabled {
-			summary.DisabledEnvironments++
-		} else {
-			switch item.Environment.Status {
-			case string(models.EnvironmentStatusOnline):
-				summary.OnlineEnvironments++
-			case string(models.EnvironmentStatusStandby):
-				summary.StandbyEnvironments++
-			case string(models.EnvironmentStatusPending):
-				summary.PendingEnvironments++
-			case string(models.EnvironmentStatusError):
-				summary.ErrorEnvironments++
-			default:
-				summary.OfflineEnvironments++
-			}
-		}
-
-		summary.Containers.RunningContainers += item.Containers.RunningContainers
-		summary.Containers.StoppedContainers += item.Containers.StoppedContainers
-		summary.Containers.TotalContainers += item.Containers.TotalContainers
-
-		summary.ImageUsageCounts.Inuse += item.ImageUsageCounts.Inuse
-		summary.ImageUsageCounts.Unused += item.ImageUsageCounts.Unused
-		summary.ImageUsageCounts.Total += item.ImageUsageCounts.Total
-		summary.ImageUsageCounts.TotalSize += item.ImageUsageCounts.TotalSize
-
-		if len(item.ActionItems.Items) > 0 {
-			summary.EnvironmentsWithActionItems++
-		}
-	}
-
-	return summary
-}
-
 func (s *DashboardService) getPendingResourceUpdatesCountInternal(ctx context.Context) (int, error) {
 	if s.db == nil || s.dockerService == nil {
 		return 0, nil
@@ -634,7 +292,7 @@ func (s *DashboardService) getPendingResourceUpdatesCountInternal(ctx context.Co
 func filterStandaloneDockerContainersInternal(containers []dockercontainer.Summary) []dockercontainer.Summary {
 	filtered := make([]dockercontainer.Summary, 0, len(containers))
 	for _, c := range containers {
-		if strings.TrimSpace(c.Labels["com.docker.compose.project"]) != "" {
+		if dockerutils.ComposeProjectLabel(c.Labels) != "" {
 			continue
 		}
 		filtered = append(filtered, c)

@@ -14,15 +14,16 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/internal/common"
-	"github.com/getarcaneapp/arcane/backend/internal/config"
-	"github.com/getarcaneapp/arcane/backend/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/internal/services"
-	docker "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
-	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/system"
-	wshub "github.com/getarcaneapp/arcane/backend/pkg/libarcane/ws"
-	httputil "github.com/getarcaneapp/arcane/backend/pkg/utils/httpx"
-	systemtypes "github.com/getarcaneapp/arcane/types/system"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
+	docker "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/system"
+	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
+	httputil "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	systemtypes "github.com/getarcaneapp/arcane/types/v2/system"
 	"github.com/gorilla/websocket"
 	"github.com/labstack/echo/v4"
 	"github.com/shirou/gopsutil/v4/cpu"
@@ -133,11 +134,6 @@ func (m *WebSocketMetrics) applyDelta(kind string, delta int64) {
 
 var defaultWebSocketMetrics = NewWebSocketMetrics()
 
-// DefaultWebSocketMetrics returns the package-level WebSocketMetrics singleton.
-func DefaultWebSocketMetrics() *WebSocketMetrics {
-	return defaultWebSocketMetrics
-}
-
 // ============================================================================
 // WebSocket Handler
 // ============================================================================
@@ -145,17 +141,19 @@ func DefaultWebSocketMetrics() *WebSocketMetrics {
 // WebSocketHandler consolidates all WebSocket and streaming endpoints.
 // REST endpoints are handled by Huma handlers.
 type WebSocketHandler struct {
-	projectService    *services.ProjectService
-	containerService  *services.ContainerService
-	swarmService      *services.SwarmService
-	systemService     *services.SystemService
-	wsUpgrader        websocket.Upgrader
-	wsMetrics         *WebSocketMetrics
-	activeConnections sync.Map
-	logStreamsMu      sync.Mutex
-	logStreams        map[string]*wsLogStream
-	cpuCache          struct {
+	projectService     *services.ProjectService
+	containerService   *services.ContainerService
+	swarmService       *services.SwarmService
+	systemService      *services.SystemService
+	diagnosticsService *services.DiagnosticsService
+	wsUpgrader         websocket.Upgrader
+	wsMetrics          *WebSocketMetrics
+	activeConnections  sync.Map
+	logStreamsMu       sync.Mutex
+	logStreams         map[string]*wsLogStream
+	cpuCache           struct {
 		sync.RWMutex
+
 		value     float64
 		timestamp time.Time
 	}
@@ -180,6 +178,7 @@ type WebSocketHandler struct {
 
 	diskUsagePathCache struct {
 		sync.RWMutex
+
 		value     string
 		timestamp time.Time
 	}
@@ -318,18 +317,20 @@ func NewWebSocketHandler(
 	containerService *services.ContainerService,
 	swarmService *services.SwarmService,
 	systemService *services.SystemService,
+	diagnosticsService *services.DiagnosticsService,
 	authMiddleware *middleware.AuthMiddleware,
 	cfg *config.Config,
 ) {
 	handler := &WebSocketHandler{
-		projectService:   projectService,
-		containerService: containerService,
-		swarmService:     swarmService,
-		systemService:    systemService,
-		wsMetrics:        defaultWebSocketMetrics,
-		logStreams:       make(map[string]*wsLogStream),
-		cgroupCache:      system.NewCgroupCache(cgroupCacheTTL),
-		gpuMonitor:       system.NewGPUMonitor(cfg.GPUMonitoringEnabled, cfg.GPUType),
+		projectService:     projectService,
+		containerService:   containerService,
+		swarmService:       swarmService,
+		systemService:      systemService,
+		diagnosticsService: diagnosticsService,
+		wsMetrics:          defaultWebSocketMetrics,
+		logStreams:         make(map[string]*wsLogStream),
+		cgroupCache:        system.NewCgroupCache(cgroupCacheTTL),
+		gpuMonitor:         system.NewGPUMonitor(cfg.GPUMonitoringEnabled, cfg.GPUType),
 		wsUpgrader: websocket.Upgrader{
 			CheckOrigin:       httputil.ValidateWebSocketOrigin(cfg.GetAppURL()),
 			ReadBufferSize:    32 * 1024,
@@ -338,12 +339,13 @@ func NewWebSocketHandler(
 		},
 	}
 	wsGroup := group.Group("/environments/:id/ws", authMiddleware.WithAdminNotRequired().Add())
-	wsGroup.GET("/projects/:projectId/logs", handler.ProjectLogs)
-	wsGroup.GET("/containers/:containerId/logs", handler.ContainerLogs)
-	wsGroup.GET("/containers/:containerId/stats", handler.ContainerStats)
-	wsGroup.GET("/containers/:containerId/terminal", handler.ContainerExec)
-	wsGroup.GET("/swarm/services/:serviceId/logs", handler.ServiceLogs)
-	wsGroup.GET("/system/stats", handler.SystemStats)
+	wsGroup.GET("/projects/:projectId/logs", handler.ProjectLogs, middleware.RequirePermission(authz.PermProjectsLogs))
+	wsGroup.GET("/containers/:containerId/logs", handler.ContainerLogs, middleware.RequirePermission(authz.PermContainersLogs))
+	wsGroup.GET("/containers/:containerId/stats", handler.ContainerStats, middleware.RequirePermission(authz.PermContainersRead))
+	wsGroup.GET("/containers/:containerId/terminal", handler.ContainerExec, middleware.RequirePermission(authz.PermContainersExec))
+	wsGroup.GET("/swarm/services/:serviceId/logs", handler.ServiceLogs, middleware.RequirePermission(authz.PermSwarmServicesLogs))
+	wsGroup.GET("/system/stats", handler.SystemStats, middleware.RequirePermission(authz.PermSystemRead))
+	handler.registerDiagnosticsRoutesInternal(group, authMiddleware)
 }
 
 // ============================================================================
@@ -812,7 +814,7 @@ func (h *WebSocketHandler) ContainerStats(c echo.Context) error {
 	conn, err := h.wsUpgrader.Upgrade(c.Response().Writer, c.Request(), nil)
 	if err != nil {
 		slog.DebugContext(c.Request().Context(), "Failed to upgrade WebSocket for container stats", "containerID", containerID, "error", err)
-		return nil //nolint:nilerr // Upgrade has already written an HTTP error response to the client.
+		return nil
 	}
 
 	connID := h.wsMetrics.RegisterConnection(buildWSConnectionInfoInternal(c, systemtypes.WSKindContainerStats, containerID))
@@ -828,13 +830,20 @@ func (h *WebSocketHandler) ContainerStats(c echo.Context) error {
 
 func (h *WebSocketHandler) getOrCreateContainerStatsHubInternal(containerID string) *wshub.Hub {
 	if existing, ok := h.containerStatsHubs.Load(containerID); ok {
-		return existing.(*wshub.Hub)
+		if hub, ok := existing.(*wshub.Hub); ok {
+			return hub
+		}
 	}
 
 	hub := wshub.NewHub(64)
 	actual, loaded := h.containerStatsHubs.LoadOrStore(containerID, hub)
 	if loaded {
-		return actual.(*wshub.Hub)
+		if existingHub, ok := actual.(*wshub.Hub); ok {
+			return existingHub
+		}
+		// type assertion failure is impossible in practice, but avoid running
+		// an unregistered hub if it somehow occurs
+		return hub
 	}
 
 	h.runContainerStatsHubInternal(containerID, hub)
@@ -842,7 +851,7 @@ func (h *WebSocketHandler) getOrCreateContainerStatsHubInternal(containerID stri
 }
 
 func (h *WebSocketHandler) runContainerStatsHubInternal(containerID string, hub *wshub.Hub) {
-	ctx, cancel := context.WithCancel(context.Background()) //nolint:gosec // cancel is intentionally retained and invoked by the hub OnEmpty callback.
+	ctx, cancel := context.WithCancel(context.Background())
 	var cleanupTimer *time.Timer
 	var cleanupTimerMu sync.Mutex
 
@@ -934,8 +943,34 @@ func (h *WebSocketHandler) ContainerExec(c echo.Context) error {
 	ctx, cancel := context.WithCancel(c.Request().Context())
 	defer cancel()
 
+	const execPongWait = 60 * time.Second
+	_ = conn.SetReadDeadline(time.Now().Add(execPongWait))
+	conn.SetPongHandler(func(string) error {
+		_ = conn.SetReadDeadline(time.Now().Add(execPongWait))
+		return nil
+	})
+	go h.pingExecConnInternal(ctx, conn, execPongWait*9/10)
+
 	h.runContainerExecInternal(ctx, cancel, conn, containerID, shell)
 	return nil
+}
+
+// pingExecConnInternal keeps the exec websocket alive; pongs refresh the read
+// deadline so a silently-dead client fails the next read instead of blocking
+// forever. WriteControl is safe concurrently with the exec output writer.
+func (h *WebSocketHandler) pingExecConnInternal(ctx context.Context, conn *websocket.Conn, period time.Duration) {
+	ticker := time.NewTicker(period)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(time.Second)); err != nil {
+				return
+			}
+		}
+	}
 }
 
 func (h *WebSocketHandler) runContainerExecInternal(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, containerID, shell string) {
@@ -971,7 +1006,7 @@ func (h *WebSocketHandler) execCleanupFuncInternal(ctx context.Context, execSess
 	return func() {
 		slog.Debug("Cleaning up exec session", "execID", execID, "containerID", containerID, "contextErr", ctx.Err())
 		// Cleanup must proceed even if parent ctx is canceled.
-		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second) //nolint:contextcheck
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cleanupCancel()
 		if err := execSession.Close(cleanupCtx); err != nil { //nolint:contextcheck
 			slog.Warn("Failed to clean up exec session", "execID", execID, "error", err)
@@ -1036,11 +1071,14 @@ func (h *WebSocketHandler) pipeExecInputInternal(ctx context.Context, cancel con
 // System WebSocket Endpoints
 // ============================================================================
 
-// checkRateLimit checks and applies rate limiting for WebSocket connections.
+// checkRateLimitInternal checks and applies rate limiting for WebSocket connections.
 // Returns the counter and whether the connection should be allowed.
-func (h *WebSocketHandler) checkRateLimit(clientIP string) (*int32, bool) {
+func (h *WebSocketHandler) checkRateLimitInternal(clientIP string) (*int32, bool) {
 	connCount, _ := h.activeConnections.LoadOrStore(clientIP, new(int32))
-	count := connCount.(*int32)
+	count, ok := connCount.(*int32)
+	if !ok {
+		return nil, false
+	}
 
 	currentCount := atomic.AddInt32(count, 1)
 	if currentCount > 5 {
@@ -1050,8 +1088,8 @@ func (h *WebSocketHandler) checkRateLimit(clientIP string) (*int32, bool) {
 	return count, true
 }
 
-// releaseRateLimit decrements the connection counter and cleans up if needed.
-func (h *WebSocketHandler) releaseRateLimit(clientIP string, count *int32) {
+// releaseRateLimitInternal decrements the connection counter and cleans up if needed.
+func (h *WebSocketHandler) releaseRateLimitInternal(clientIP string, count *int32) {
 	newCount := atomic.AddInt32(count, -1)
 	if newCount <= 0 {
 		h.activeConnections.Delete(clientIP)
@@ -1068,7 +1106,7 @@ func (h *WebSocketHandler) acquireSystemStatsSamplerInternal(ctx context.Context
 		return waitForSystemStatsSamplerReadyInternal(ctx, ready)
 	}
 
-	samplerCtx, cancel := context.WithCancel(context.WithoutCancel(ctx)) //nolint:gosec // cancel is intentionally retained in sampler state and invoked when the last subscriber disconnects.
+	samplerCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	ready := make(chan struct{})
 	h.systemStatsSampler.cancel = cancel
 	h.systemStatsSampler.ready = ready
@@ -1370,14 +1408,14 @@ func (h *WebSocketHandler) getCachedCgroupLimitsInternal() *docker.CgroupLimits 
 func (h *WebSocketHandler) SystemStats(c echo.Context) error {
 	clientIP := c.RealIP()
 
-	count, allowed := h.checkRateLimit(clientIP)
+	count, allowed := h.checkRateLimitInternal(clientIP)
 	if !allowed {
 		return c.JSON(http.StatusTooManyRequests, map[string]any{
 			"success": false,
 			"error":   "Too many concurrent stats connections from this IP",
 		})
 	}
-	defer h.releaseRateLimit(clientIP, count)
+	defer h.releaseRateLimitInternal(clientIP, count)
 
 	conn, err := h.wsUpgrader.Upgrade(c.Response().Writer, c.Request(), nil)
 	if err != nil {

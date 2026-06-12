@@ -12,12 +12,13 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/compose-spec/compose-go/v2/dotenv"
-	"github.com/getarcaneapp/arcane/backend/pkg/utils/cache"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cache"
 )
 
 const (
@@ -137,7 +138,7 @@ func (l *EnvLoader) loadAndMergeGlobalEnv(ctx context.Context, path string, envM
 }
 
 func (l *EnvLoader) loadAndMergeProjectEnv(ctx context.Context, path string, envMap, injectionVars EnvMap) error {
-	key := strings.Join([]string{path, l.projectsDir, fmt.Sprint(l.autoInjectEnv), envContextFingerprintInternal(envMap)}, "\x00")
+	key := strings.Join([]string{path, l.projectsDir, strconv.FormatBool(l.autoInjectEnv), envContextFingerprintInternal(envMap)}, "\x00")
 	entry, err := loadCachedEnvFileInternal(ctx, projectEnvFileCache, key, path, envMap)
 	if err != nil {
 		return err
@@ -400,7 +401,7 @@ func parseEnvWithContext(r io.Reader, contextEnv EnvMap) (EnvMap, error) {
 		return nil, fmt.Errorf("parse env: %w", err)
 	}
 
-	return EnvMap(envMap), nil
+	return envMap, nil
 }
 
 func readOptionalProjectFileInternal(projectPath, fileName string) (string, bool, error) {

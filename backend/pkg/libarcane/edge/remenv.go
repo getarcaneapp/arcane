@@ -5,12 +5,12 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/backend/pkg/remenv"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
 	"github.com/labstack/echo/v4"
 )
 
 const (
-	HeaderAPIKey        = "X-API-Key" // #nosec G101: header name, not a credential
+	HeaderAPIKey        = "X-Api-Key" // #nosec G101: header name, not a credential
 	HeaderAuthorization = "Authorization"
 	HeaderCookie        = "Cookie"
 	HeaderAgentToken    = "X-Arcane-Agent-Token" // #nosec G101: header name, not a credential

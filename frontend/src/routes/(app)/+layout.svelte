@@ -1,23 +1,26 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { goto, afterNavigate } from '$app/navigation';
-	import { getAuthRedirectPath } from '$lib/utils/redirect.util';
+	import { getAuthRedirectPath } from '$lib/utils/auth';
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
 	import AppSidebar from '$lib/components/sidebar/sidebar.svelte';
 	import MobileNav from '$lib/components/mobile-nav/mobile-nav.svelte';
+	import ActivityCenter from '$lib/components/activity/activity-center.svelte';
 	import { IsMobile } from '$lib/hooks/is-mobile.svelte.js';
 	import { IsTablet } from '$lib/hooks/is-tablet.svelte.js';
-	import { getEffectiveNavigationSettings, navigationSettingsOverridesStore } from '$lib/utils/navigation.utils';
-	import { browser } from '$app/environment';
+	import { getEffectiveNavigationSettings, navigationSettingsOverridesStore } from '$lib/utils/navigation';
+	import { browser } from '$app/env';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { navigationItems, getManagementItems, type NavigationItem } from '$lib/config/navigation-config';
-	import { isEditableTarget, matchesShortcutEvent } from '$lib/utils/keyboard-shortcut.utils';
+	import { navigationItems, getManagementItems, filterByPermissions, type NavigationItem } from '$lib/config/navigation-config';
+	import { isEditableTarget, matchesShortcutEvent } from '$lib/utils/navigation';
 	import { cn } from '$lib/utils';
 	let { data, children }: LayoutProps = $props();
 
 	const versionInformation = $derived(data.versionInformation);
 	const user = $derived(data.user);
 	const settings = $derived(data.settings);
+	const permissionsManifest = $derived(data.permissionsManifest);
+	const permissionsManifestLoadFailed = $derived(data.permissionsManifestLoadFailed);
 	const swarmEnabled = $derived(data.swarmEnabled === true);
 
 	const isMobile = new IsMobile();
@@ -29,17 +32,28 @@
 		return getEffectiveNavigationSettings();
 	});
 	const navigationMode = $derived(navigationSettings.mode);
-	const isAdmin = $derived(!!user?.roles?.includes('admin'));
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
-	const managementItems = $derived(getManagementItems(currentEnvId));
-	const settingsShortcutItems = $derived.by(() => (isAdmin ? (navigationItems.settingsItems ?? []) : []));
+	const managementItemsRaw = $derived(getManagementItems(currentEnvId));
+	const managementItems = $derived(filterByPermissions(managementItemsRaw, user ?? null, currentEnvId, permissionsManifest));
+	const resourceItems = $derived(
+		filterByPermissions(navigationItems.resourceItems, user ?? null, currentEnvId, permissionsManifest)
+	);
+	const settingsShortcutItems = $derived(
+		filterByPermissions(navigationItems.settingsItems, user ?? null, currentEnvId, permissionsManifest)
+	);
 	const shortcutItems = $derived.by(() => {
-		const items: NavigationItem[] = [...managementItems, ...navigationItems.resourceItems, ...settingsShortcutItems];
+		const items: NavigationItem[] = [...managementItems, ...resourceItems, ...settingsShortcutItems];
 		return flattenNavigationItems(items).filter((item) => item.shortcut?.length);
 	});
 
 	$effect(() => {
-		const redirectPath = getAuthRedirectPath(page.url.pathname, user);
+		const redirectPath = getAuthRedirectPath(
+			page.url.pathname,
+			user,
+			currentEnvId,
+			permissionsManifest,
+			permissionsManifestLoadFailed
+		);
 		if (redirectPath) {
 			goto(redirectPath);
 		}
@@ -95,10 +109,10 @@
 			{@render children()}
 		</section>
 	</main>
-	<MobileNav {navigationSettings} {user} {versionInformation} {swarmEnabled} />
+	<MobileNav {navigationSettings} {user} {versionInformation} {swarmEnabled} {permissionsManifest} />
 {:else}
 	<Sidebar.Provider>
-		<AppSidebar {versionInformation} {user} {swarmEnabled} />
+		<AppSidebar {versionInformation} {user} {swarmEnabled} {permissionsManifest} />
 		<main class="h-dvh flex-1">
 			<section class="h-full p-3 sm:p-5">
 				{@render children()}
@@ -106,3 +120,5 @@
 		</main>
 	</Sidebar.Provider>
 {/if}
+
+<ActivityCenter />

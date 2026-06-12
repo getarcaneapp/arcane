@@ -21,12 +21,7 @@ type Create struct {
 	// AccessToken for authentication with the environment.
 	//
 	// Required: false
-	AccessToken *string `json:"accessToken,omitempty"` //nolint:gosec // API schema requires accessToken field name
-
-	// BootstrapToken for initial setup of the environment.
-	//
-	// Required: false
-	BootstrapToken *string `json:"bootstrapToken,omitempty"`
+	AccessToken *string `json:"accessToken,omitempty"`
 
 	// UseApiKey indicates if an API key should be generated for pairing.
 	//
@@ -58,12 +53,7 @@ type Update struct {
 	// AccessToken for authentication with the environment.
 	//
 	// Required: false
-	AccessToken *string `json:"accessToken,omitempty"` //nolint:gosec // API schema requires accessToken field name
-
-	// BootstrapToken for initial setup of the environment.
-	//
-	// Required: false
-	BootstrapToken *string `json:"bootstrapToken,omitempty"`
+	AccessToken *string `json:"accessToken,omitempty"`
 
 	// RegenerateApiKey indicates whether to regenerate the API key.
 	//
@@ -161,6 +151,13 @@ type Environment struct {
 	// Required: false
 	EdgeTransport *string `json:"edgeTransport,omitempty"`
 
+	// LastEdgeTransport is the most recently used tunnel transport, persisted
+	// so the transport stays known while the tunnel is down or the agent is
+	// poll-only. Values are "grpc" or "websocket".
+	//
+	// Required: false
+	LastEdgeTransport *string `json:"lastEdgeTransport,omitempty"`
+
 	// EdgeSecurityMode indicates how the current edge tunnel authenticated.
 	// Values include "token" and "mtls".
 	//
@@ -212,7 +209,7 @@ type Environment struct {
 	// ApiKey is returned only when creating or regenerating
 	//
 	// Required: false
-	ApiKey *string `json:"apiKey,omitempty"` //nolint:gosec // API schema requires apiKey field name
+	ApiKey *string `json:"apiKey,omitempty"`
 }
 
 // AgentPairRequest is the request body for pairing with an agent.

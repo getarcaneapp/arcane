@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"github.com/getarcaneapp/arcane/backend/pkg/fswatch"
-	"github.com/getarcaneapp/arcane/backend/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/fswatch"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 )
 
 type FilesystemWatcherJob struct {
@@ -68,21 +68,28 @@ func (j *FilesystemWatcherJob) Start(ctx context.Context) error {
 
 	j.projectsWatcher = sw
 
-	templatesDir, err := projects.GetTemplatesDirectory(ctx)
+	templatesDir, err := projects.GetTemplatesDirectory(ctx, settings.TemplatesDirectory.Value)
 	if err != nil {
 		return err
 	}
 
 	if j.templateService != nil {
-		tw, err := fswatch.NewWatcher(templatesDir, fswatch.WatcherOptions{
-			Debounce: 3 * time.Second,
-			OnChange: j.handleTemplatesChange,
-			MaxDepth: 1,
-		})
-		if err != nil {
-			return err
+		if directoriesOverlapInternal(projectsDirectory, templatesDir) {
+			slog.ErrorContext(ctx,
+				"Templates and projects directories overlap; templates watcher disabled to prevent compose files being treated as projects",
+				"projectsDirectory", projectsDirectory,
+				"templatesDirectory", templatesDir)
+		} else {
+			tw, err := fswatch.NewWatcher(templatesDir, fswatch.WatcherOptions{
+				Debounce: 3 * time.Second,
+				OnChange: j.handleTemplatesChange,
+				MaxDepth: 1,
+			})
+			if err != nil {
+				return err
+			}
+			j.templatesWatcher = tw
 		}
-		j.templatesWatcher = tw
 	}
 
 	if err := j.projectsWatcher.Start(ctx); err != nil {
@@ -241,4 +248,77 @@ func (j *FilesystemWatcherJob) projectWatcherOptionsInternal(followProjectSymlin
 		MaxDepth:          j.projectScanDepth,
 		FollowSymlinkDirs: followProjectSymlinks,
 	}
+}
+
+func (j *FilesystemWatcherJob) RestartTemplatesWatcher(ctx context.Context) error {
+	if j.templateService == nil {
+		return nil
+	}
+	slog.InfoContext(ctx, "Restarting templates filesystem watcher")
+
+	j.mu.Lock()
+	oldTemplatesWatcher := j.templatesWatcher
+	j.templatesWatcher = nil
+	j.mu.Unlock()
+
+	if oldTemplatesWatcher != nil {
+		if err := oldTemplatesWatcher.Stop(); err != nil {
+			slog.WarnContext(ctx, "Failed to stop templates watcher during restart", "error", err)
+		}
+	}
+
+	settings, err := j.settingsService.GetSettings(ctx)
+	if err != nil {
+		return err
+	}
+	projectsDirectory, err := projects.GetProjectsDirectory(ctx, settings.ProjectsDirectory.Value)
+	if err != nil {
+		return err
+	}
+	templatesDir, err := projects.GetTemplatesDirectory(ctx, settings.TemplatesDirectory.Value)
+	if err != nil {
+		return err
+	}
+
+	if directoriesOverlapInternal(projectsDirectory, templatesDir) {
+		slog.ErrorContext(ctx,
+			"Templates and projects directories overlap; templates watcher not restarted",
+			"projectsDirectory", projectsDirectory,
+			"templatesDirectory", templatesDir)
+		return nil
+	}
+
+	tw, err := fswatch.NewWatcher(templatesDir, fswatch.WatcherOptions{
+		Debounce: 3 * time.Second,
+		OnChange: j.handleTemplatesChange,
+		MaxDepth: 1,
+	})
+	if err != nil {
+		return err
+	}
+	if err := tw.Start(ctx); err != nil {
+		return err
+	}
+
+	j.mu.Lock()
+	j.templatesWatcher = tw
+	j.mu.Unlock()
+
+	slog.InfoContext(ctx, "Templates filesystem watcher restarted", "path", templatesDir)
+
+	if err := j.templateService.SyncLocalTemplatesFromFilesystem(ctx); err != nil {
+		slog.ErrorContext(ctx, "Initial template sync after watcher restart failed", "error", err)
+	}
+
+	return nil
+}
+
+// directoriesOverlapInternal returns true when a or b is the same as or contained in the
+// other. Used to refuse running both watchers against the same tree, which would
+// cause local templates to be auto-imported as projects.
+func directoriesOverlapInternal(a, b string) bool {
+	if a == "" || b == "" {
+		return false
+	}
+	return projects.IsSafeSubdirectory(a, b) || projects.IsSafeSubdirectory(b, a)
 }

@@ -2,25 +2,26 @@ package database
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/backend/resources"
+	"github.com/getarcaneapp/arcane/backend/v2/resources"
 )
 
 type AppMigrationVersion struct {
 	AppVersion       string `json:"appVersion"`
-	MigrationVersion uint   `json:"migrationVersion"`
+	MigrationVersion int64  `json:"migrationVersion"`
 }
 
 type migrationVersionManifest struct {
 	Versions []AppMigrationVersion `json:"versions"`
 }
 
-func ResolveAppMigrationVersion(appVersion string) (uint, error) {
+func ResolveAppMigrationVersion(appVersion string) (int64, error) {
 	normalizedVersion := normalizeAppVersionInternal(appVersion)
 	if normalizedVersion == "" {
-		return 0, fmt.Errorf("target app version is required")
+		return 0, errors.New("target app version is required")
 	}
 
 	versions, err := ListAppMigrationVersions()
@@ -48,7 +49,7 @@ func ListAppMigrationVersions() ([]AppMigrationVersion, error) {
 		return nil, fmt.Errorf("failed to parse migration version manifest: %w", err)
 	}
 	if len(manifest.Versions) == 0 {
-		return nil, fmt.Errorf("migration version manifest has no versions")
+		return nil, errors.New("migration version manifest has no versions")
 	}
 
 	versions := make([]AppMigrationVersion, len(manifest.Versions))

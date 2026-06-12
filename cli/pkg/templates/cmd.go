@@ -3,23 +3,25 @@ package templates
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode"
 
-	"github.com/getarcaneapp/arcane/cli/internal/client"
-	"github.com/getarcaneapp/arcane/cli/internal/cmdutil"
-	"github.com/getarcaneapp/arcane/cli/internal/output"
-	"github.com/getarcaneapp/arcane/cli/internal/prompt"
-	"github.com/getarcaneapp/arcane/cli/internal/types"
-	"github.com/getarcaneapp/arcane/types/base"
-	"github.com/getarcaneapp/arcane/types/env"
-	"github.com/getarcaneapp/arcane/types/template"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/prompt"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	"github.com/getarcaneapp/arcane/types/v2/base"
+	"github.com/getarcaneapp/arcane/types/v2/env"
+	"github.com/getarcaneapp/arcane/types/v2/template"
 	"github.com/spf13/cobra"
 )
 
@@ -78,7 +80,7 @@ var listCmd = &cobra.Command{
 
 		if templateListAll {
 			if cmd.Flags().Changed("limit") || cmd.Flags().Changed("start") {
-				return fmt.Errorf("--all cannot be combined with explicit pagination flags")
+				return errors.New("--all cannot be combined with explicit pagination flags")
 			}
 			path = types.Endpoints.TemplatesAll()
 			resp, err := c.Get(cmd.Context(), path)
@@ -223,8 +225,8 @@ var contentCmd = &cobra.Command{
 		output.Header("Template Content")
 		output.KeyValue("Name", result.Data.Template.Name)
 		output.KeyValue("Description", result.Data.Template.Description)
-		output.KeyValue("Services", fmt.Sprintf("%d", len(result.Data.Services)))
-		output.KeyValue("Env Variables", fmt.Sprintf("%d", len(result.Data.EnvVariables)))
+		output.KeyValue("Services", strconv.Itoa(len(result.Data.Services)))
+		output.KeyValue("Env Variables", strconv.Itoa(len(result.Data.EnvVariables)))
 		fmt.Println("\n--- Compose Content ---")
 		fmt.Println(result.Data.Content)
 		if result.Data.EnvContent != "" {
@@ -455,7 +457,7 @@ var getCmd = &cobra.Command{
 func resolveTemplate(ctx context.Context, c *client.Client, identifier string) (*template.Template, error) {
 	trimmed := strings.TrimSpace(identifier)
 	if trimmed == "" {
-		return nil, fmt.Errorf("template identifier is required")
+		return nil, errors.New("template identifier is required")
 	}
 
 	resp, err := c.Get(ctx, types.Endpoints.Template(trimmed))
@@ -760,7 +762,7 @@ func topTemplatesFromRankedMatches(matches []rankedTemplateMatch, limit int) []t
 	}
 
 	result := make([]template.Template, 0, limit)
-	for i := 0; i < limit; i++ {
+	for i := range limit {
 		result = append(result, matches[i].template)
 	}
 	return result
@@ -770,13 +772,13 @@ func minInt(values ...int) int {
 	if len(values) == 0 {
 		return 0
 	}
-	min := values[0]
+	result := values[0]
 	for _, value := range values[1:] {
-		if value < min {
-			min = value
+		if value < result {
+			result = value
 		}
 	}
-	return min
+	return result
 }
 
 func maxInt(a, b int) int {

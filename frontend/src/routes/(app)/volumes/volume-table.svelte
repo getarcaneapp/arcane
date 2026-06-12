@@ -6,22 +6,26 @@
 	import { toast } from 'svelte-sonner';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
-	import { tryCatch } from '$lib/utils/try-catch';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api';
+	import { tryCatch } from '$lib/utils/api';
 	import { format } from 'date-fns';
-	import { truncateString } from '$lib/utils/string.utils';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
-	import type { VolumeSummaryDto, VolumeSizeInfo } from '$lib/types/volume.type';
+	import { truncateString } from '$lib/utils/formatting';
+	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
+	import type { VolumeSummaryDto, VolumeSizeInfo } from '$lib/types/docker';
 	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
 	import { m } from '$lib/paraglide/messages';
 	import { volumeService } from '$lib/services/volume-service';
-	import bytes from '$lib/utils/bytes';
+	import { bytes } from '$lib/utils/formatting';
 	import { TrashIcon, InspectIcon, VolumesIcon, CalendarIcon, EllipsisIcon } from '$lib/icons';
 	import { Spinner } from '$lib/components/ui/spinner';
 	import settingsStore from '$lib/stores/config-store';
 	import { onMount } from 'svelte';
 	import { SvelteMap } from 'svelte/reactivity';
+	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import { hasPermission } from '$lib/utils/auth';
+	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
+	import { bulkConfirmAndRun } from '$lib/utils/bulk-actions';
 
 	let {
 		volumes = $bindable(),
@@ -38,6 +42,9 @@
 	let isLoading = $state({
 		removing: false
 	});
+
+	const currentEnvId = $derived(environmentStore.selected?.id || '0');
+	const canDeleteVolume = $derived(hasPermission('volumes:delete', currentEnvId));
 	let customSettings = $state<Record<string, unknown>>({});
 	let showInternal = $derived.by(() => {
 		return (customSettings['showInternalVolumes'] as boolean) ?? false;
@@ -109,8 +116,11 @@
 						result: await tryCatch(volumeService.deleteVolume(safeName)),
 						message: m.common_remove_failed({ resource: `${m.resource_volume()} "${safeName}"` }),
 						setLoadingState: (value) => (isLoading.removing = value),
-						onSuccess: async () => {
-							toast.success(m.common_remove_success({ resource: `${m.resource_volume()} "${safeName}"` }));
+						onSuccess: async (data) => {
+							toast.success(
+								m.common_remove_success({ resource: `${m.resource_volume()} "${safeName}"` }),
+								activityToastOptions(extractActivityId(data))
+							);
 							await refreshVolumes();
 						}
 					});
@@ -119,56 +129,28 @@
 		});
 	}
 
-	async function handleDeleteSelected(ids: string[]) {
-		if (!ids?.length) return;
+	function handleDeleteSelected(ids: string[]) {
+		const idToName = new Map(volumes.data.map((v) => [v.id, v.name] as const));
+		const idsToDelete = ids.filter((id) => !isBackupVolumeName(idToName.get(id)));
 
-		openConfirmDialog({
-			title: m.volumes_remove_selected_title({ count: ids.length }),
-			message: m.volumes_remove_selected_message({ count: ids.length }),
-			confirm: {
-				label: m.common_remove(),
-				destructive: true,
-				action: async () => {
-					isLoading.removing = true;
-					let successCount = 0;
-					let failureCount = 0;
-
-					const idToName = new Map(volumes.data.map((v) => [v.id, v.name] as const));
-					const idsToDelete = ids.filter((id) => !isBackupVolumeName(idToName.get(id)));
-					if (!idsToDelete.length) {
-						isLoading.removing = false;
-						selectedIds = [];
-						return;
-					}
-
-					for (const id of idsToDelete) {
-						const name = idToName.get(id);
-						const safeName = name?.trim() || m.common_unknown();
-						const result = await tryCatch(volumeService.deleteVolume(safeName));
-						handleApiResultWithCallbacks({
-							result,
-							message: m.common_remove_failed({ resource: `${m.resource_volume()} "${safeName}"` }),
-							setLoadingState: () => {},
-							onSuccess: (_data) => {
-								successCount += 1;
-							}
-						});
-						if (result.error) failureCount += 1;
-					}
-
-					isLoading.removing = false;
-					if (successCount > 0) {
-						const successMsg = m.common_bulk_remove_success({ count: successCount, resource: m.volumes_title() });
-						toast.success(successMsg);
-						await refreshVolumes();
-					}
-					if (failureCount > 0) {
-						const failureMsg = m.common_bulk_remove_failed({ count: failureCount, resource: m.volumes_title() });
-						toast.error(failureMsg);
-					}
-					selectedIds = [];
-				}
-			}
+		bulkConfirmAndRun({
+			ids: idsToDelete,
+			title: m.volumes_remove_selected_title({ count: idsToDelete.length }),
+			message: m.volumes_remove_selected_message({ count: idsToDelete.length }),
+			confirmLabel: m.common_remove(),
+			destructive: true,
+			run: (id) => volumeService.deleteVolume(idToName.get(id)?.trim() || m.common_unknown()),
+			messages: {
+				success: (count) => m.common_bulk_remove_success({ count, resource: m.volumes_title() }),
+				partial: (success, total, failed) =>
+					m.common_bulk_remove_partial({ success, total, failed, resource: m.volumes_title() }),
+				failure: () => m.common_bulk_remove_failed({ count: idsToDelete.length, resource: m.volumes_title() })
+			},
+			setLoading: (loading) => (isLoading.removing = loading),
+			onComplete: async (result) => {
+				if (result.success > 0) await refreshVolumes();
+			},
+			clearSelection: () => (selectedIds = [])
 		});
 	}
 
@@ -201,7 +183,7 @@
 			action: 'remove',
 			onClick: () => handleDeleteSelected(deletableSelectedIds),
 			loading: isLoading.removing,
-			disabled: isLoading.removing || deletableSelectedIds.length === 0,
+			disabled: !canDeleteVolume || isLoading.removing || deletableSelectedIds.length === 0,
 			icon: TrashIcon
 		}
 	]);
@@ -318,16 +300,18 @@
 					{m.common_inspect()}
 				</DropdownMenu.Item>
 
-				<DropdownMenu.Separator />
+				{#if canDeleteVolume}
+					<DropdownMenu.Separator />
 
-				<DropdownMenu.Item
-					variant="destructive"
-					onclick={() => handleRemoveVolumeConfirm(item.name)}
-					disabled={item.inUse || isBackupVolume(item)}
-				>
-					<TrashIcon class="size-4" />
-					{m.common_remove()}
-				</DropdownMenu.Item>
+					<DropdownMenu.Item
+						variant="destructive"
+						onclick={() => handleRemoveVolumeConfirm(item.name)}
+						disabled={item.inUse || isBackupVolume(item)}
+					>
+						<TrashIcon class="size-4" />
+						{m.common_remove()}
+					</DropdownMenu.Item>
+				{/if}
 			</DropdownMenu.Group>
 		</DropdownMenu.Content>
 	</DropdownMenu.Root>

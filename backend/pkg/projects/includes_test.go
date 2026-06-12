@@ -6,7 +6,7 @@ import (
 	"runtime"
 	"testing"
 
-	pkgutils "github.com/getarcaneapp/arcane/backend/pkg/utils"
+	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 )
 
 func TestParseIncludes_NormalizesRelativePaths(t *testing.T) {

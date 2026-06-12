@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/stretchr/testify/require"
 )
 

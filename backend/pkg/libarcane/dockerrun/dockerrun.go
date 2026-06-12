@@ -1,10 +1,11 @@
 package dockerrun
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
-	systemtypes "github.com/getarcaneapp/arcane/types/system"
+	systemtypes "github.com/getarcaneapp/arcane/types/v2/system"
 )
 
 func ParseTokens(tokens []string, result *systemtypes.DockerRunCommand) error {
@@ -20,7 +21,7 @@ func ParseTokens(tokens []string, result *systemtypes.DockerRunCommand) error {
 		} else {
 			if result.Image == "" {
 				if token == "" {
-					return fmt.Errorf("image name cannot be empty")
+					return errors.New("image name cannot be empty")
 				}
 				result.Image = token
 			} else {

@@ -7,11 +7,12 @@ import (
 	"path"
 
 	"github.com/danielgtaylor/huma/v2"
-	humamw "github.com/getarcaneapp/arcane/backend/api/middleware"
-	"github.com/getarcaneapp/arcane/backend/internal/common"
-	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"github.com/getarcaneapp/arcane/types/base"
-	volumetypes "github.com/getarcaneapp/arcane/types/volume"
+	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
+	"github.com/getarcaneapp/arcane/types/v2/base"
+	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 )
 
 // BuildWorkspaceHandler provides file browsing endpoints for manual build workspaces.
@@ -31,6 +32,7 @@ func RegisterBuildWorkspaces(api huma.API, workspaceService *services.BuildWorks
 		Description: "List files and directories under the builds workspace root",
 		Tags:        []string{"Builds"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Middlewares: humamw.RequirePermission(api, authz.PermBuildWorkspacesManage),
 	}, h.BrowseDirectory)
 
 	huma.Register(api, huma.Operation{
@@ -41,6 +43,7 @@ func RegisterBuildWorkspaces(api huma.API, workspaceService *services.BuildWorks
 		Description: "Read file content under the builds workspace root",
 		Tags:        []string{"Builds"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Middlewares: humamw.RequirePermission(api, authz.PermBuildWorkspacesManage),
 	}, h.GetFileContent)
 
 	huma.Register(api, huma.Operation{
@@ -51,6 +54,7 @@ func RegisterBuildWorkspaces(api huma.API, workspaceService *services.BuildWorks
 		Description: "Download a file from the builds workspace root",
 		Tags:        []string{"Builds"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Middlewares: humamw.RequirePermission(api, authz.PermBuildWorkspacesManage),
 	}, h.DownloadFile)
 
 	huma.Register(api, huma.Operation{
@@ -78,7 +82,7 @@ func RegisterBuildWorkspaces(api huma.API, workspaceService *services.BuildWorks
 				},
 			},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermBuildWorkspacesManage),
 	}, h.UploadFile)
 
 	huma.Register(api, huma.Operation{
@@ -89,7 +93,7 @@ func RegisterBuildWorkspaces(api huma.API, workspaceService *services.BuildWorks
 		Description: "Create a directory under the builds workspace root",
 		Tags:        []string{"Builds"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermBuildWorkspacesManage),
 	}, h.CreateDirectory)
 
 	huma.Register(api, huma.Operation{
@@ -100,7 +104,7 @@ func RegisterBuildWorkspaces(api huma.API, workspaceService *services.BuildWorks
 		Description: "Delete a file or directory under the builds workspace root",
 		Tags:        []string{"Builds"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermBuildWorkspacesManage),
 	}, h.DeleteFile)
 }
 
@@ -198,9 +202,6 @@ func (h *BuildWorkspaceHandler) DownloadFile(ctx context.Context, input *Downloa
 }
 
 func (h *BuildWorkspaceHandler) UploadFile(ctx context.Context, input *UploadBuildFileInput) (*base.ApiResponse[base.MessageResponse], error) {
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
 	if h.service == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -227,9 +228,6 @@ func (h *BuildWorkspaceHandler) UploadFile(ctx context.Context, input *UploadBui
 }
 
 func (h *BuildWorkspaceHandler) CreateDirectory(ctx context.Context, input *CreateBuildDirectoryInput) (*base.ApiResponse[base.MessageResponse], error) {
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
 	if h.service == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -243,9 +241,6 @@ func (h *BuildWorkspaceHandler) CreateDirectory(ctx context.Context, input *Crea
 }
 
 func (h *BuildWorkspaceHandler) DeleteFile(ctx context.Context, input *DeleteBuildFileInput) (*base.ApiResponse[base.MessageResponse], error) {
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
 	if h.service == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}

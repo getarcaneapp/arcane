@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/internal/database"
-	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/internal/services"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	glsqlite "github.com/glebarez/sqlite"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
@@ -20,6 +20,30 @@ func newTestAutoHealJob() *AutoHealJob {
 	return &AutoHealJob{
 		restarts: make(map[string]*restartRecord),
 	}
+}
+
+func TestAutoHeal_FilterCandidates_SkipsSelfContainer(t *testing.T) {
+	job := newTestAutoHealJob()
+
+	selfFullID := "407163929c492b5c4b01a3981f5de4774c37aa8300bd214b4d62412a3dc56468"
+	containers := []container.Summary{
+		{ID: selfFullID, Names: []string{"/arcane"}},
+		{ID: "aaaabbbbccccddddeeeeffff0000111122223333444455556666777788889999", Names: []string{"/other"}},
+	}
+
+	// Hostname-based detection yields the short 12-char ID.
+	candidates := job.filterCandidatesInternal(containers, nil, selfFullID[:12])
+	require.Len(t, candidates, 1)
+	require.Equal(t, "/other", candidates[0].Names[0])
+
+	// cgroup/mountinfo-based detection yields the full ID.
+	candidates = job.filterCandidatesInternal(containers, nil, selfFullID)
+	require.Len(t, candidates, 1)
+	require.Equal(t, "/other", candidates[0].Names[0])
+
+	// Outside Docker no self ID is detected and the guard is a no-op.
+	candidates = job.filterCandidatesInternal(containers, nil, "")
+	require.Len(t, candidates, 2)
 }
 
 func TestAutoHeal_CanRestart_UnderLimit(t *testing.T) {

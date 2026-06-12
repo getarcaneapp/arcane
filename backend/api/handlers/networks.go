@@ -9,19 +9,24 @@ import (
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
-	humamw "github.com/getarcaneapp/arcane/backend/api/middleware"
-	"github.com/getarcaneapp/arcane/backend/internal/common"
-	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/pkg/utils/mapper"
-	"github.com/getarcaneapp/arcane/types/base"
-	networktypes "github.com/getarcaneapp/arcane/types/network"
+	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
+	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
+	"github.com/getarcaneapp/arcane/types/v2/base"
+	networktypes "github.com/getarcaneapp/arcane/types/v2/network"
 	dockernetwork "github.com/moby/moby/api/types/network"
 )
 
 type NetworkHandler struct {
-	networkService *services.NetworkService
-	dockerService  *services.DockerClientService
+	networkService  *services.NetworkService
+	dockerService   *services.DockerClientService
+	activityService *services.ActivityService
+	appCtx          context.Context
 }
 
 type NetworkPaginatedResponse struct {
@@ -132,10 +137,12 @@ type PruneNetworksOutput struct {
 }
 
 // RegisterNetworks registers network endpoints.
-func RegisterNetworks(api huma.API, networkSvc *services.NetworkService, dockerSvc *services.DockerClientService) {
+func RegisterNetworks(api huma.API, networkSvc *services.NetworkService, dockerSvc *services.DockerClientService, activitySvc *services.ActivityService, appCtx ActivityAppContext) {
 	h := &NetworkHandler{
-		networkService: networkSvc,
-		dockerService:  dockerSvc,
+		networkService:  networkSvc,
+		dockerService:   dockerSvc,
+		activityService: activitySvc,
+		appCtx:          appCtx.contextInternal(),
 	}
 
 	huma.Register(api, huma.Operation{
@@ -145,6 +152,7 @@ func RegisterNetworks(api huma.API, networkSvc *services.NetworkService, dockerS
 		Summary:     "List networks",
 		Tags:        []string{"Networks"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Middlewares: humamw.RequirePermission(api, authz.PermNetworksList),
 	}, h.ListNetworks)
 
 	huma.Register(api, huma.Operation{
@@ -154,6 +162,7 @@ func RegisterNetworks(api huma.API, networkSvc *services.NetworkService, dockerS
 		Summary:     "Network counts",
 		Tags:        []string{"Networks"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Middlewares: humamw.RequirePermission(api, authz.PermNetworksList),
 	}, h.GetNetworkCounts)
 
 	huma.Register(api, huma.Operation{
@@ -163,7 +172,7 @@ func RegisterNetworks(api huma.API, networkSvc *services.NetworkService, dockerS
 		Summary:     "Create network",
 		Tags:        []string{"Networks"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermNetworksCreate),
 	}, h.CreateNetwork)
 
 	huma.Register(api, huma.Operation{
@@ -173,6 +182,7 @@ func RegisterNetworks(api huma.API, networkSvc *services.NetworkService, dockerS
 		Summary:     "Get network topology",
 		Tags:        []string{"Networks"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Middlewares: humamw.RequirePermission(api, authz.PermNetworksRead),
 	}, h.GetNetworkTopology)
 
 	huma.Register(api, huma.Operation{
@@ -182,6 +192,7 @@ func RegisterNetworks(api huma.API, networkSvc *services.NetworkService, dockerS
 		Summary:     "Get network",
 		Tags:        []string{"Networks"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Middlewares: humamw.RequirePermission(api, authz.PermNetworksRead),
 	}, h.GetNetwork)
 
 	huma.Register(api, huma.Operation{
@@ -191,7 +202,7 @@ func RegisterNetworks(api huma.API, networkSvc *services.NetworkService, dockerS
 		Summary:     "Delete network",
 		Tags:        []string{"Networks"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermNetworksDelete),
 	}, h.DeleteNetwork)
 
 	huma.Register(api, huma.Operation{
@@ -201,29 +212,14 @@ func RegisterNetworks(api huma.API, networkSvc *services.NetworkService, dockerS
 		Summary:     "Prune networks",
 		Tags:        []string{"Networks"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermNetworksPrune),
 	}, h.PruneNetworks)
 }
 
 func (h *NetworkHandler) ListNetworks(ctx context.Context, input *ListNetworksInput) (*ListNetworksOutput, error) {
-	filters := make(map[string]string)
+	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	if input.InUse != "" {
-		filters["inUse"] = input.InUse
-	}
-
-	params := pagination.QueryParams{
-		SearchQuery: pagination.SearchQuery{
-			Search: strings.TrimSpace(input.Search),
-		},
-		SortParams: pagination.SortParams{
-			Sort:  strings.TrimSpace(input.Sort),
-			Order: pagination.SortOrder(input.Order),
-		},
-		PaginationParams: pagination.PaginationParams{
-			Start: input.Start,
-			Limit: input.Limit,
-		},
-		Filters: filters,
+		params.Filters["inUse"] = input.InUse
 	}
 
 	networks, paginationResp, counts, err := h.networkService.ListNetworksPaginated(ctx, params)
@@ -233,16 +229,10 @@ func (h *NetworkHandler) ListNetworks(ctx context.Context, input *ListNetworksIn
 
 	return &ListNetworksOutput{
 		Body: NetworkPaginatedResponse{
-			Success: true,
-			Data:    networks,
-			Counts:  counts,
-			Pagination: base.PaginationResponse{
-				TotalPages:      paginationResp.TotalPages,
-				TotalItems:      paginationResp.TotalItems,
-				CurrentPage:     paginationResp.CurrentPage,
-				ItemsPerPage:    paginationResp.ItemsPerPage,
-				GrandTotalItems: paginationResp.GrandTotalItems,
-			},
+			Success:    true,
+			Data:       networks,
+			Counts:     counts,
+			Pagination: toPaginationResponseInternal(paginationResp),
 		},
 	}, nil
 }
@@ -266,18 +256,35 @@ func (h *NetworkHandler) GetNetworkCounts(ctx context.Context, input *GetNetwork
 }
 
 func (h *NetworkHandler) CreateNetwork(ctx context.Context, input *CreateNetworkInput) (*CreateNetworkOutput, error) {
-	if err := checkAdminInternal(ctx); err != nil {
+	user, err := requireUserInternal(ctx)
+	if err != nil {
 		return nil, err
-	}
-	user, exists := humamw.GetCurrentUserFromContext(ctx)
-	if !exists {
-		return nil, huma.Error401Unauthorized("not authenticated")
 	}
 
 	// Convert to Docker SDK options
 	dockerOptions := input.Body.Options.ToDockerCreateOptions()
 
-	response, err := h.networkService.CreateNetwork(ctx, input.Body.Name, dockerOptions, *user)
+	var response *dockernetwork.CreateResponse
+	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
+		EnvironmentID:  input.EnvironmentID,
+		Type:           models.ActivityTypeResourceAction,
+		ResourceType:   "network",
+		ResourceID:     input.Body.Name,
+		ResourceName:   input.Body.Name,
+		User:           user,
+		Step:           "Creating network",
+		Message:        "Creating network",
+		SuccessMessage: "Network created successfully",
+		Metadata: models.JSON{
+			"action": "create_network",
+			"driver": input.Body.Options.Driver,
+		},
+	}, func(runtimeCtx context.Context) error {
+		var createErr error
+		response, createErr = h.networkService.CreateNetwork(runtimeCtx, input.Body.Name, dockerOptions, *user)
+		return createErr
+	})
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.NetworkCreationError{Err: err}).Error())
 	}
@@ -286,6 +293,7 @@ func (h *NetworkHandler) CreateNetwork(ctx context.Context, input *CreateNetwork
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.NetworkMappingError{Err: err}).Error())
 	}
+	out.ActivityID = utils.StringPtrFromTrimmed(activityID)
 
 	return &CreateNetworkOutput{
 		Body: NetworkCreatedApiResponse{
@@ -398,31 +406,56 @@ func (h *NetworkHandler) GetNetworkTopology(ctx context.Context, input *GetNetwo
 }
 
 func (h *NetworkHandler) DeleteNetwork(ctx context.Context, input *DeleteNetworkInput) (*DeleteNetworkOutput, error) {
-	if err := checkAdminInternal(ctx); err != nil {
+	user, err := requireUserInternal(ctx)
+	if err != nil {
 		return nil, err
 	}
-	user, exists := humamw.GetCurrentUserFromContext(ctx)
-	if !exists {
-		return nil, huma.Error401Unauthorized("not authenticated")
-	}
 
-	if err := h.networkService.RemoveNetwork(ctx, input.NetworkID, *user); err != nil {
+	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
+		EnvironmentID:  input.EnvironmentID,
+		Type:           models.ActivityTypeResourceAction,
+		ResourceType:   "network",
+		ResourceID:     input.NetworkID,
+		ResourceName:   input.NetworkID,
+		User:           user,
+		Step:           "Removing network",
+		Message:        "Removing network",
+		SuccessMessage: "Network removed successfully",
+		Metadata: models.JSON{
+			"action": "remove_network",
+		},
+	}, func(runtimeCtx context.Context) error {
+		return h.networkService.RemoveNetwork(runtimeCtx, input.NetworkID, *user)
+	})
+	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.NetworkRemovalError{Err: err}).Error())
 	}
 
 	return &DeleteNetworkOutput{
 		Body: NetworkMessageApiResponse{
 			Success: true,
-			Data:    base.MessageResponse{Message: "Network removed successfully"},
+			Data:    base.MessageResponse{Message: "Network removed successfully", ActivityID: utils.StringPtrFromTrimmed(activityID)},
 		},
 	}, nil
 }
 
 func (h *NetworkHandler) PruneNetworks(ctx context.Context, input *PruneNetworksInput) (*PruneNetworksOutput, error) {
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
-	report, err := h.networkService.PruneNetworks(ctx)
+	var report *dockernetwork.PruneReport
+	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
+		EnvironmentID:  input.EnvironmentID,
+		Type:           models.ActivityTypeResourceAction,
+		ResourceType:   "network",
+		Step:           "Pruning unused networks",
+		Message:        "Pruning unused networks",
+		SuccessMessage: "Networks pruned successfully",
+		Metadata:       models.JSON{"action": "prune_networks"},
+	}, func(runtimeCtx context.Context) error {
+		var pruneErr error
+		report, pruneErr = h.networkService.PruneNetworks(runtimeCtx)
+		return pruneErr
+	})
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.NetworkPruneError{Err: err}).Error())
 	}
@@ -431,6 +464,7 @@ func (h *NetworkHandler) PruneNetworks(ctx context.Context, input *PruneNetworks
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.NetworkMappingError{Err: err}).Error())
 	}
+	out.ActivityID = utils.StringPtrFromTrimmed(activityID)
 
 	return &PruneNetworksOutput{
 		Body: NetworkPruneResponse{

@@ -23,7 +23,7 @@ func GenerateAppMigrationVersionsFromGit(ctx context.Context, repoRoot string, i
 	}
 
 	versions := make([]AppMigrationVersion, 0)
-	for _, tag := range strings.Fields(tagsOutput) {
+	for tag := range strings.FieldsSeq(tagsOutput) {
 		appVersion := normalizeAppVersionInternal(tag)
 		if !isReleaseVersionInternal(appVersion) {
 			continue
@@ -82,7 +82,7 @@ func runGitInternal(ctx context.Context, repoRoot string, args ...string) (strin
 	return string(output), nil
 }
 
-func highestMigrationVersionForGitRefInternal(ctx context.Context, repoRoot, ref string) (uint, error) {
+func highestMigrationVersionForGitRefInternal(ctx context.Context, repoRoot, ref string) (int64, error) {
 	output, err := runGitInternal(ctx, repoRoot, "ls-tree", "-r", "--name-only", ref, "--", "backend/resources/migrations/sqlite")
 	if err != nil {
 		return 0, err
@@ -91,9 +91,9 @@ func highestMigrationVersionForGitRefInternal(ctx context.Context, repoRoot, ref
 	return highestMigrationVersionFromPathsInternal(strings.Fields(output)), nil
 }
 
-func highestWorkingTreeMigrationVersionInternal(repoRoot string) (uint, error) {
+func highestWorkingTreeMigrationVersionInternal(repoRoot string) (int64, error) {
 	migrationDir := filepath.Join(repoRoot, "backend", "resources", "migrations", "sqlite")
-	paths, err := filepath.Glob(filepath.Join(migrationDir, "*.up.sql"))
+	paths, err := filepath.Glob(filepath.Join(migrationDir, "*.sql"))
 	if err != nil {
 		return 0, fmt.Errorf("failed to list working tree migrations from %s: %w", migrationDir, err)
 	}
@@ -106,21 +106,21 @@ func highestWorkingTreeMigrationVersionInternal(repoRoot string) (uint, error) {
 	return version, nil
 }
 
-func highestMigrationVersionFromPathsInternal(paths []string) uint {
-	var highest uint
+func highestMigrationVersionFromPathsInternal(paths []string) int64 {
+	var highest int64
 	for _, path := range paths {
 		name := filepath.Base(path)
 		versionPart, _, found := strings.Cut(name, "_")
-		if !found || !strings.HasSuffix(name, ".up.sql") {
+		if !found || !strings.HasSuffix(name, ".sql") {
 			continue
 		}
 
-		version, err := strconv.ParseUint(versionPart, 10, 0)
+		version, err := strconv.ParseInt(versionPart, 10, 64)
 		if err != nil {
 			continue
 		}
-		if uint(version) > highest {
-			highest = uint(version)
+		if version > highest {
+			highest = version
 		}
 	}
 

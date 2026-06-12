@@ -10,12 +10,14 @@ type commandRoute struct {
 	PathPattern string
 	CommandName string
 	Stream      bool
+	LocalOnly   bool
 }
 
 var commandRoutes = []commandRoute{
 	{Method: http.MethodGet, PathPattern: "/api/health", CommandName: "system.health"},
 	{Method: http.MethodHead, PathPattern: "/api/health", CommandName: "system.health"},
 	{Method: http.MethodGet, PathPattern: "/api/app-version", CommandName: "system.version"},
+	{Method: http.MethodGet, PathPattern: "/api/swarm/node-identity", CommandName: "swarm.node_identity"},
 	{Method: http.MethodPost, PathPattern: "/api/container-registries/sync", CommandName: "container_registry.sync"},
 	{Method: http.MethodPost, PathPattern: "/api/git-repositories/sync", CommandName: "git_repository.sync"},
 
@@ -29,6 +31,9 @@ var commandRoutes = []commandRoute{
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/containers/{containerId}/redeploy", CommandName: "container.redeploy"},
 	{Method: http.MethodDelete, PathPattern: "/api/environments/{id}/containers/{containerId}", CommandName: "container.delete"},
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/containers/{containerId}/update", CommandName: "container.update"},
+	{Method: http.MethodPut, PathPattern: "/api/environments/{id}/containers/{containerId}/auto-update", CommandName: "container.auto_update.set"},
+
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/ports", CommandName: "port.list"},
 
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/images", CommandName: "image.list"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/images/counts", CommandName: "image.counts"},
@@ -47,6 +52,12 @@ var commandRoutes = []commandRoute{
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/image-updates/check-batch", CommandName: "image_update.check_batch"},
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/image-updates/check-all", CommandName: "image_update.check_all"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/image-updates/summary", CommandName: "image_update.summary"},
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/image-updates/by-refs", CommandName: "image_update.by_refs"},
+
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/activities", CommandName: "activity.list"},
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/activities/{activityId}", CommandName: "activity.inspect"},
+	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/activities/{activityId}/cancel", CommandName: "activity.cancel"},
+	{Method: http.MethodDelete, PathPattern: "/api/environments/{id}/activities/history", CommandName: "activity.history.clear"},
 
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/images/{imageId}/vulnerabilities/scan", CommandName: "vulnerability.scan"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/images/{imageId}/vulnerabilities", CommandName: "vulnerability.list"},
@@ -67,13 +78,21 @@ var commandRoutes = []commandRoute{
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/projects/{projectId}/down", CommandName: "project.down"},
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/projects", CommandName: "project.create"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/projects/{projectId}", CommandName: "project.inspect"},
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/projects/{projectId}/compose", CommandName: "project.compose"},
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/projects/{projectId}/files", CommandName: "project.files"},
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/projects/{projectId}/runtime", CommandName: "project.runtime"},
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/projects/{projectId}/updates", CommandName: "project.updates"},
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/projects/{projectId}/file", CommandName: "project.file"},
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/projects/{projectId}/redeploy", CommandName: "project.redeploy"},
 	{Method: http.MethodDelete, PathPattern: "/api/environments/{id}/projects/{projectId}/destroy", CommandName: "project.destroy"},
 	{Method: http.MethodPut, PathPattern: "/api/environments/{id}/projects/{projectId}", CommandName: "project.update"},
 	{Method: http.MethodPut, PathPattern: "/api/environments/{id}/projects/{projectId}/includes", CommandName: "project.includes"},
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/projects/{projectId}/restart", CommandName: "project.restart"},
+	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/projects/{projectId}/update-services", CommandName: "project.update_services"},
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/projects/{projectId}/pull", CommandName: "project.pull"},
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/projects/{projectId}/build", CommandName: "project.build"},
+	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/projects/{projectId}/archive", CommandName: "project.archive"},
+	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/projects/{projectId}/unarchive", CommandName: "project.unarchive"},
 
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/gitops-syncs", CommandName: "gitops_sync.list"},
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/gitops-syncs", CommandName: "gitops_sync.create"},
@@ -122,6 +141,10 @@ var commandRoutes = []commandRoute{
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/networks/{networkId}", CommandName: "network.inspect"},
 	{Method: http.MethodDelete, PathPattern: "/api/environments/{id}/networks/{networkId}", CommandName: "network.delete"},
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/networks/prune", CommandName: "network.prune"},
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/networks/topology", CommandName: "network.topology"},
+
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/templates/variables", CommandName: "template.variables.get"},
+	{Method: http.MethodPut, PathPattern: "/api/environments/{id}/templates/variables", CommandName: "template.variables.update"},
 
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/settings/public", CommandName: "settings.public.get"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/settings", CommandName: "settings.get"},
@@ -137,9 +160,6 @@ var commandRoutes = []commandRoute{
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/notifications/settings", CommandName: "notification.settings.upsert"},
 	{Method: http.MethodDelete, PathPattern: "/api/environments/{id}/notifications/settings/{provider}", CommandName: "notification.settings.delete"},
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/notifications/test/{provider}", CommandName: "notification.test"},
-	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/notifications/apprise", CommandName: "notification.apprise.get"},
-	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/notifications/apprise", CommandName: "notification.apprise.upsert"},
-	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/notifications/apprise/test", CommandName: "notification.apprise.test"},
 
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/dashboard", CommandName: "dashboard.snapshot"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/dashboard/action-items", CommandName: "dashboard.action_items"},
@@ -157,6 +177,53 @@ var commandRoutes = []commandRoute{
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/system/convert", CommandName: "system.convert"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/system/upgrade/check", CommandName: "system.upgrade.check"},
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/system/upgrade", CommandName: "system.upgrade.run"},
+
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/swarm/services", CommandName: "swarm.service.list"},
+	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/swarm/services", CommandName: "swarm.service.create"},
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/swarm/services/{serviceId}", CommandName: "swarm.service.inspect"},
+	{Method: http.MethodPut, PathPattern: "/api/environments/{id}/swarm/services/{serviceId}", CommandName: "swarm.service.update"},
+	{Method: http.MethodDelete, PathPattern: "/api/environments/{id}/swarm/services/{serviceId}", CommandName: "swarm.service.delete"},
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/swarm/services/{serviceId}/tasks", CommandName: "swarm.service.tasks"},
+	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/swarm/services/{serviceId}/rollback", CommandName: "swarm.service.rollback"},
+	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/swarm/services/{serviceId}/scale", CommandName: "swarm.service.scale"},
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/swarm/nodes", CommandName: "swarm.node.list"},
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/swarm/nodes/{nodeId}", CommandName: "swarm.node.inspect"},
+	{Method: http.MethodPatch, PathPattern: "/api/environments/{id}/swarm/nodes/{nodeId}", CommandName: "swarm.node.update"},
+	{Method: http.MethodDelete, PathPattern: "/api/environments/{id}/swarm/nodes/{nodeId}", CommandName: "swarm.node.delete"},
+	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/swarm/nodes/{nodeId}/agent/deployment", CommandName: "swarm.node.agent_deployment"},
+	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/swarm/nodes/{nodeId}/promote", CommandName: "swarm.node.promote"},
+	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/swarm/nodes/{nodeId}/demote", CommandName: "swarm.node.demote"},
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/swarm/nodes/{nodeId}/tasks", CommandName: "swarm.node.tasks"},
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/swarm/tasks", CommandName: "swarm.task.list"},
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/swarm/stacks", CommandName: "swarm.stack.list"},
+	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/swarm/stacks", CommandName: "swarm.stack.deploy"},
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/swarm/stacks/{name}", CommandName: "swarm.stack.inspect"},
+	{Method: http.MethodDelete, PathPattern: "/api/environments/{id}/swarm/stacks/{name}", CommandName: "swarm.stack.delete"},
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/swarm/stacks/{name}/source", CommandName: "swarm.stack.source.get"},
+	{Method: http.MethodPut, PathPattern: "/api/environments/{id}/swarm/stacks/{name}/source", CommandName: "swarm.stack.source.update"},
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/swarm/stacks/{name}/services", CommandName: "swarm.stack.services"},
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/swarm/stacks/{name}/tasks", CommandName: "swarm.stack.tasks"},
+	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/swarm/stacks/config/render", CommandName: "swarm.stack.config.render"},
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/swarm/status", CommandName: "swarm.status"},
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/swarm/info", CommandName: "swarm.info"},
+	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/swarm/init", CommandName: "swarm.init"},
+	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/swarm/join", CommandName: "swarm.join"},
+	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/swarm/leave", CommandName: "swarm.leave"},
+	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/swarm/unlock", CommandName: "swarm.unlock"},
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/swarm/unlock-key", CommandName: "swarm.unlock_key"},
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/swarm/join-tokens", CommandName: "swarm.join_tokens.get"},
+	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/swarm/join-tokens/rotate", CommandName: "swarm.join_tokens.rotate"},
+	{Method: http.MethodPut, PathPattern: "/api/environments/{id}/swarm/spec", CommandName: "swarm.spec.update"},
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/swarm/configs", CommandName: "swarm.config.list"},
+	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/swarm/configs", CommandName: "swarm.config.create"},
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/swarm/configs/{configId}", CommandName: "swarm.config.inspect"},
+	{Method: http.MethodPut, PathPattern: "/api/environments/{id}/swarm/configs/{configId}", CommandName: "swarm.config.update"},
+	{Method: http.MethodDelete, PathPattern: "/api/environments/{id}/swarm/configs/{configId}", CommandName: "swarm.config.delete"},
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/swarm/secrets", CommandName: "swarm.secret.list"},
+	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/swarm/secrets", CommandName: "swarm.secret.create"},
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/swarm/secrets/{secretId}", CommandName: "swarm.secret.inspect"},
+	{Method: http.MethodPut, PathPattern: "/api/environments/{id}/swarm/secrets/{secretId}", CommandName: "swarm.secret.update"},
+	{Method: http.MethodDelete, PathPattern: "/api/environments/{id}/swarm/secrets/{secretId}", CommandName: "swarm.secret.delete"},
 
 	{PathPattern: "/api/environments/{id}/ws/projects/{projectId}/logs", CommandName: "project.logs.stream", Stream: true},
 	{PathPattern: "/api/environments/{id}/ws/containers/{containerId}/logs", CommandName: "container.logs.stream", Stream: true},
@@ -191,6 +258,10 @@ func ResolveEdgeCommandName(method, requestPath string, stream bool) (string, bo
 		return "", false
 	}
 
+	if route.LocalOnly {
+		return "", false
+	}
+
 	return route.CommandName, true
 }
 
@@ -203,6 +274,9 @@ func AdvertisedEdgeCommands() []string {
 	seen := make(map[string]struct{}, len(commandRoutes))
 	commands := make([]string, 0, len(commandRoutes))
 	for _, route := range commandRoutes {
+		if route.LocalOnly {
+			continue
+		}
 		if _, ok := seen[route.CommandName]; ok {
 			continue
 		}

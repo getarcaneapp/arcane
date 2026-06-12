@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/cli/internal/types"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
 )
 
 func TestClient_RetriesIdempotentRequests(t *testing.T) {

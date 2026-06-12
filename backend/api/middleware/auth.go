@@ -3,16 +3,18 @@ package middleware
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/backend/internal/common"
-	"github.com/getarcaneapp/arcane/backend/internal/config"
-	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/internal/services"
-	pkgutils "github.com/getarcaneapp/arcane/backend/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/pkg/utils/cookie"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
+	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cookie"
 )
 
 // ContextKey is a type for context keys used by Huma handlers.
@@ -25,8 +27,9 @@ const (
 	ContextKeyCurrentUser ContextKey = "currentUser"
 	// ContextKeyCurrentSessionID is the context key for the authenticated session ID.
 	ContextKeyCurrentSessionID ContextKey = "currentSessionID"
-	// ContextKeyUserIsAdmin is the context key for whether the user is an admin.
-	ContextKeyUserIsAdmin ContextKey = "userIsAdmin"
+	// ContextKeyUserPermissions is the context key for the caller's resolved
+	// PermissionSet, attached by the auth bridge.
+	ContextKeyUserPermissions ContextKey = "userPermissions"
 	// ContextKeyRemoteAddr is the context key for the request remote address.
 	ContextKeyRemoteAddr ContextKey = "remoteAddr"
 )
@@ -49,10 +52,11 @@ func GetCurrentSessionIDFromContext(ctx context.Context) (string, bool) {
 	return sessionID, ok
 }
 
-// IsAdminFromContext checks if the current user is an admin.
-func IsAdminFromContext(ctx context.Context) bool {
-	isAdmin, ok := ctx.Value(ContextKeyUserIsAdmin).(bool)
-	return ok && isAdmin
+// PermissionsFromContext retrieves the caller's resolved PermissionSet.
+// Returns nil, false on unauthenticated paths.
+func PermissionsFromContext(ctx context.Context) (*authz.PermissionSet, bool) {
+	ps, ok := ctx.Value(ContextKeyUserPermissions).(*authz.PermissionSet)
+	return ps, ok
 }
 
 // GetRemoteAddrFromContext retrieves the request remote address from context.
@@ -74,6 +78,13 @@ type operationProvider interface {
 
 type environmentAccessTokenResolver interface {
 	ResolveEnvironmentByAccessToken(ctx context.Context, token string) (*models.Environment, error)
+}
+
+// PermissionResolver resolves a caller's effective permission set. Implemented
+// by services.RoleService; kept as an interface so tests can stub it.
+type PermissionResolver interface {
+	ResolvePermissions(ctx context.Context, user *models.User) (*authz.PermissionSet, error)
+	ResolveApiKeyPermissions(ctx context.Context, apiKeyID string) (*authz.PermissionSet, error)
 }
 
 // parseSecurityRequirementsInternal extracts security requirements from a Huma operation.
@@ -126,19 +137,21 @@ func tryBearerAuthInternal(ctx huma.Context, authService *services.AuthService) 
 	return user, sessionID, nil
 }
 
-// tryApiKeyAuthInternal checks if API key authentication should be allowed through.
-func tryApiKeyAuthInternal(ctx huma.Context, apiKeyService *services.ApiKeyService) (*models.User, bool) {
+// tryApiKeyAuthInternal checks if API key authentication should be allowed
+// through. Returns the resolved user plus the API key record so the caller
+// can resolve permissions according to the key's kind.
+func tryApiKeyAuthInternal(ctx huma.Context, apiKeyService *services.ApiKeyService) (*models.User, *models.ApiKey, bool) {
 	apiKey := ctx.Header(pkgutils.HeaderApiKey)
 	if apiKey == "" {
-		return nil, false
+		return nil, nil, false
 	}
 
-	user, err := apiKeyService.ValidateApiKey(ctx.Context(), apiKey)
+	user, key, err := apiKeyService.ValidateApiKeyWithID(ctx.Context(), apiKey)
 	if err != nil || user == nil {
-		return nil, false
+		return nil, nil, false
 	}
 
-	return user, true
+	return user, key, true
 }
 
 func tryEnvironmentAccessTokenAuthInternal(ctx huma.Context, resolver environmentAccessTokenResolver, token string) (*models.User, bool) {
@@ -184,12 +197,13 @@ func tryAgentAuthInternal(ctx huma.Context, cfg *config.Config) (*models.User, b
 }
 
 // createAgentSudoUserInternal creates a sudo user for agent authentication.
+// The PermissionSet attached to the context (via setUserInContextWithSudoInternal)
+// bypasses every check; the user's Roles field is intentionally empty.
 func createAgentSudoUserInternal() *models.User {
 	return &models.User{
 		BaseModel: models.BaseModel{ID: "agent"},
 		Email:     new("agent@getarcane.app"),
 		Username:  "agent",
-		Roles:     []string{"admin"},
 	}
 }
 
@@ -197,13 +211,14 @@ func createEnvironmentSudoUserInternal(env *models.Environment) *models.User {
 	return &models.User{
 		BaseModel: models.BaseModel{ID: "environment:" + env.ID},
 		Username:  env.Name,
-		Roles:     []string{"admin"},
 	}
 }
 
-// NewAuthBridge creates a Huma middleware that validates JWT tokens and
-// enforces security requirements defined on operations.
-func NewAuthBridge(api huma.API, authService *services.AuthService, apiKeyService *services.ApiKeyService, envTokenResolver environmentAccessTokenResolver, cfg *config.Config) func(ctx huma.Context, next func(huma.Context)) {
+// NewAuthBridge creates a Huma middleware that validates credentials and
+// enforces security requirements defined on operations. It also resolves the
+// caller's effective PermissionSet via permResolver and stashes it on the
+// request context for downstream RequirePermission checks.
+func NewAuthBridge(api huma.API, authService *services.AuthService, apiKeyService *services.ApiKeyService, permResolver PermissionResolver, envTokenResolver environmentAccessTokenResolver, cfg *config.Config) func(ctx huma.Context, next func(huma.Context)) {
 	return func(ctx huma.Context, next func(huma.Context)) {
 		ctx = huma.WithContext(ctx, context.WithValue(ctx.Context(), ContextKeyRemoteAddr, ctx.RemoteAddr()))
 		if authService == nil {
@@ -218,23 +233,23 @@ func NewAuthBridge(api huma.API, authService *services.AuthService, apiKeyServic
 
 		reqs := parseSecurityRequirementsInternal(api, ctx)
 		if !reqs.isRequired {
-			next(opportunisticBearerAuthInternal(ctx, authService))
+			next(opportunisticBearerAuthInternal(ctx, authService, permResolver))
 			return
 		}
 
 		if reqs.apiKeyAuth && ctx.Header(pkgutils.HeaderApiKey) != "" {
-			handleApiKeyAuthInternal(api, ctx, apiKeyService, envTokenResolver, next)
+			handleApiKeyAuthInternal(api, ctx, apiKeyService, permResolver, envTokenResolver, next)
 			return
 		}
 
 		if user, ok := tryEnvironmentAccessTokenAuthInternal(ctx, envTokenResolver, ctx.Header(pkgutils.HeaderAgentToken)); ok {
-			newCtx := setUserInContextInternal(ctx.Context(), user)
+			newCtx := setUserInContextWithSudoInternal(ctx.Context(), user)
 			next(huma.WithContext(ctx, newCtx))
 			return
 		}
 
 		if reqs.bearerAuth {
-			nextCtx, handled := handleBearerAuthInternal(api, ctx, authService)
+			nextCtx, handled := handleBearerAuthInternal(api, ctx, authService, permResolver)
 			if handled {
 				if nextCtx != nil {
 					next(nextCtx)
@@ -255,13 +270,13 @@ func tryAgentAuthCtxInternal(ctx huma.Context, cfg *config.Config) (huma.Context
 	if !ok {
 		return ctx, false
 	}
-	return huma.WithContext(ctx, setUserInContextInternal(ctx.Context(), user)), true
+	return huma.WithContext(ctx, setUserInContextWithSudoInternal(ctx.Context(), user)), true
 }
 
 // opportunisticBearerAuthInternal populates the user/session context if a valid
 // bearer token is present, but never fails the request. Used for public routes
 // (e.g. logout) that still need to know who the caller is when a token exists.
-func opportunisticBearerAuthInternal(ctx huma.Context, authService *services.AuthService) huma.Context {
+func opportunisticBearerAuthInternal(ctx huma.Context, authService *services.AuthService, permResolver PermissionResolver) huma.Context {
 	if extractBearerTokenInternal(ctx) == "" {
 		return ctx
 	}
@@ -269,40 +284,79 @@ func opportunisticBearerAuthInternal(ctx huma.Context, authService *services.Aut
 	if err != nil || user == nil {
 		return ctx
 	}
-	newCtx := setUserInContextInternal(ctx.Context(), user)
+	newCtx := setUserInContextInternal(ctx.Context(), user, resolveUserPermissionsInternal(ctx.Context(), permResolver, user))
 	newCtx = context.WithValue(newCtx, ContextKeyCurrentSessionID, sessionID)
 	return huma.WithContext(ctx, newCtx)
 }
 
 // handleApiKeyAuthInternal handles the API-key-present branch. If validation
 // fails, it writes 401 directly — Bearer is not attempted as fallback.
-func handleApiKeyAuthInternal(api huma.API, ctx huma.Context, apiKeyService *services.ApiKeyService, envTokenResolver environmentAccessTokenResolver, next func(huma.Context)) {
-	if user, ok := tryApiKeyAuthInternal(ctx, apiKeyService); ok {
-		newCtx := setUserInContextInternal(ctx.Context(), user)
+func handleApiKeyAuthInternal(api huma.API, ctx huma.Context, apiKeyService *services.ApiKeyService, permResolver PermissionResolver, envTokenResolver environmentAccessTokenResolver, next func(huma.Context)) {
+	if user, key, ok := tryApiKeyAuthInternal(ctx, apiKeyService); ok {
+		// Personal keys inherit the owner's role permissions (same resolution
+		// as session auth); scoped keys are limited to their own grants.
+		var ps *authz.PermissionSet
+		if key.Kind == models.ApiKeyKindPersonal {
+			ps = resolveUserPermissionsInternal(ctx.Context(), permResolver, user)
+		} else {
+			ps = resolveApiKeyPermissionsInternal(ctx.Context(), permResolver, key.ID)
+		}
+		newCtx := setUserInContextInternal(ctx.Context(), user, ps)
 		next(huma.WithContext(ctx, newCtx))
 		return
 	}
 	if user, ok := tryEnvironmentAccessTokenAuthInternal(ctx, envTokenResolver, ctx.Header(pkgutils.HeaderApiKey)); ok {
-		newCtx := setUserInContextInternal(ctx.Context(), user)
+		newCtx := setUserInContextWithSudoInternal(ctx.Context(), user)
 		next(huma.WithContext(ctx, newCtx))
 		return
 	}
 	_ = huma.WriteErr(api, ctx, http.StatusUnauthorized, "Unauthorized: invalid API key")
 }
 
-func handleBearerAuthInternal(api huma.API, ctx huma.Context, authService *services.AuthService) (huma.Context, bool) {
+func handleBearerAuthInternal(api huma.API, ctx huma.Context, authService *services.AuthService, permResolver PermissionResolver) (huma.Context, bool) {
 	user, sessionID, err := tryBearerAuthInternal(ctx, authService)
 	if err == nil && user != nil {
-		newCtx := setUserInContextInternal(ctx.Context(), user)
+		ps := resolveUserPermissionsInternal(ctx.Context(), permResolver, user)
+		newCtx := setUserInContextInternal(ctx.Context(), user, ps)
 		newCtx = context.WithValue(newCtx, ContextKeyCurrentSessionID, sessionID)
 		return huma.WithContext(ctx, newCtx), true
 	}
 	if errors.Is(err, services.ErrTokenVersionMismatch) || common.IsSessionRevokedError(err) || common.IsTokenValidationError(err) {
-		ctx.AppendHeader("Set-Cookie", cookie.BuildClearTokenCookieStringFor(ctx.TLS() != nil))
+		for _, cookieHeader := range cookie.BuildClearTokenCookieStringsFor(cookie.SecureCookieFromContext(ctx.Context())) {
+			ctx.AppendHeader("Set-Cookie", cookieHeader)
+		}
 		_ = huma.WriteErr(api, ctx, http.StatusUnauthorized, "Session expired. Please log in again.")
 		return nil, true
 	}
 	return nil, false
+}
+
+// resolveUserPermissionsInternal asks the RoleService for the user's resolved
+// PermissionSet. If RoleService is unavailable or the lookup fails (boot-time
+// edge cases, broken DB) it returns nil and logs a warning — handlers then
+// see deny-all, which is the safe default.
+func resolveUserPermissionsInternal(ctx context.Context, permResolver PermissionResolver, user *models.User) *authz.PermissionSet {
+	if permResolver == nil || user == nil {
+		return nil
+	}
+	ps, err := permResolver.ResolvePermissions(ctx, user)
+	if err != nil {
+		slog.WarnContext(ctx, "failed to resolve user permissions", "error", err, "user_id", user.ID)
+		return nil
+	}
+	return ps
+}
+
+func resolveApiKeyPermissionsInternal(ctx context.Context, permResolver PermissionResolver, apiKeyID string) *authz.PermissionSet {
+	if permResolver == nil || apiKeyID == "" {
+		return nil
+	}
+	ps, err := permResolver.ResolveApiKeyPermissions(ctx, apiKeyID)
+	if err != nil {
+		slog.WarnContext(ctx, "failed to resolve api key permissions", "error", err, "api_key_id", apiKeyID)
+		return nil
+	}
+	return ps
 }
 
 // extractBearerTokenInternal extracts the JWT token from Authorization header or cookie.
@@ -337,10 +391,22 @@ func extractTokenFromCookieHeaderInternal(cookieHeader string) string {
 	return ""
 }
 
-// setUserInContextInternal adds the authenticated user to the context.
-func setUserInContextInternal(ctx context.Context, user *models.User) context.Context {
+// setUserInContextInternal adds the authenticated user and the resolved
+// PermissionSet to the context. Callers must supply a non-nil PermissionSet;
+// pass authz.NewPermissionSet() to express deny-all.
+func setUserInContextInternal(ctx context.Context, user *models.User, ps *authz.PermissionSet) context.Context {
+	if ps == nil {
+		ps = authz.NewPermissionSet()
+	}
 	ctx = context.WithValue(ctx, ContextKeyUserID, user.ID)
 	ctx = context.WithValue(ctx, ContextKeyCurrentUser, user)
-	ctx = context.WithValue(ctx, ContextKeyUserIsAdmin, pkgutils.UserHasRole(user.Roles, "admin"))
+	ctx = context.WithValue(ctx, ContextKeyUserPermissions, ps)
 	return ctx
+}
+
+// setUserInContextWithSudoInternal attaches a sudo PermissionSet (bypasses
+// every check) plus the user. Used by the agent token and environment
+// access token paths, which are infrastructure-level and not per-user.
+func setUserInContextWithSudoInternal(ctx context.Context, user *models.User) context.Context {
+	return setUserInContextInternal(ctx, user, authz.SudoPermissionSet())
 }

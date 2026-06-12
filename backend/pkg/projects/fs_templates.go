@@ -2,22 +2,24 @@ package projects
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 
-	pkgutils "github.com/getarcaneapp/arcane/backend/pkg/utils"
+	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 )
 
 func ReadFolderComposeTemplate(baseDir, folder string) (string, *string, string, bool, error) {
-	composePath := filepath.Join(baseDir, folder, "compose.yaml")
-	if _, err := os.Stat(composePath); err != nil {
-		if os.IsNotExist(err) {
+	folderPath := filepath.Join(baseDir, folder)
+	composePath, err := DetectComposeFile(folderPath)
+	if err != nil {
+		if errors.Is(err, errComposeFileNotFoundInternal) {
 			return "", nil, "", false, nil
 		}
-		return "", nil, "", false, fmt.Errorf("stat compose: %w", err)
+		return "", nil, "", false, fmt.Errorf("detect compose file: %w", err)
 	}
 
 	b, err := os.ReadFile(composePath)
@@ -27,16 +29,21 @@ func ReadFolderComposeTemplate(baseDir, folder string) (string, *string, string,
 
 	var envPtr *string
 	for _, envName := range []string{".env.example", ".env"} {
-		envPath := filepath.Join(baseDir, folder, envName)
-		if eb, err := os.ReadFile(envPath); err == nil {
+		envPath := filepath.Join(folderPath, envName)
+		if eb, rerr := os.ReadFile(envPath); rerr == nil {
 			envPtr = new(string(eb))
 			break
 		}
 	}
 
-	desc := fmt.Sprintf("Imported from %s/%s/compose.yaml", baseDir, folder)
+	desc := "Imported from " + composePath
 	return string(b), envPtr, desc, true, nil
 }
+
+var (
+	slugInvalidCharsPattern = regexp.MustCompile(`[^a-z0-9\-_]+`)
+	slugDashRunPattern      = regexp.MustCompile(`-+`)
+)
 
 func Slugify(in string) string {
 	in = strings.TrimSpace(strings.ToLower(in))
@@ -44,14 +51,13 @@ func Slugify(in string) string {
 		return ""
 	}
 	in = strings.ReplaceAll(in, " ", "-")
-	re := regexp.MustCompile(`[^a-z0-9\-_]+`)
-	in = re.ReplaceAllString(in, "-")
-	in = regexp.MustCompile(`-+`).ReplaceAllString(in, "-")
+	in = slugInvalidCharsPattern.ReplaceAllString(in, "-")
+	in = slugDashRunPattern.ReplaceAllString(in, "-")
 	return strings.Trim(in, "-")
 }
 
-func EnsureTemplateDir(ctx context.Context, base string) (dir, composePath, envPath string, err error) {
-	baseDir, derr := GetTemplatesDirectory(ctx)
+func EnsureTemplateDir(ctx context.Context, templatesDir, base string) (dir, composePath, envPath string, err error) {
+	baseDir, derr := GetTemplatesDirectory(ctx, templatesDir)
 	if derr != nil {
 		return "", "", "", fmt.Errorf("ensure templates dir: %w", derr)
 	}
@@ -84,8 +90,8 @@ func WriteTemplateFiles(composePath, envPath, composeContent, envContent string)
 	return &envContent, nil
 }
 
-func EnsureDefaultTemplates(ctx context.Context) error {
-	templatesDir, err := GetTemplatesDirectory(ctx)
+func EnsureDefaultTemplates(ctx context.Context, configuredTemplatesDir string) error {
+	templatesDir, err := GetTemplatesDirectory(ctx, configuredTemplatesDir)
 	if err != nil {
 		return fmt.Errorf("get templates directory: %w", err)
 	}

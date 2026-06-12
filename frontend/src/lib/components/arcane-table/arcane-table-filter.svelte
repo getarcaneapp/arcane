@@ -1,5 +1,4 @@
-<script lang="ts" generics="TData, TValue">
-	import type { Column } from '@tanstack/table-core';
+<script lang="ts">
 	import { SvelteSet } from 'svelte/reactivity';
 	import * as Command from '$lib/components/ui/command/index.js';
 	import * as Popover from '$lib/components/ui/popover/index.js';
@@ -10,13 +9,20 @@
 	import { m } from '$lib/paraglide/messages';
 	import { CheckIcon, FilterIcon } from '$lib/icons';
 
+	// Structural shape of the faceted-filter column controls — see the note in
+	// arcane-table-header.svelte for why we avoid v9's invariant `Column` generic here.
+	type FilterableColumn = {
+		getFilterValue: () => unknown;
+		setFilterValue: (value: unknown) => void;
+	};
+
 	let {
 		column,
 		title,
 		options,
 		showCheckboxes = true
 	}: {
-		column: Column<TData, TValue>;
+		column: FilterableColumn;
 		title: string;
 		options: {
 			label: string;
@@ -40,7 +46,10 @@
 				size="sm"
 				icon={FilterIcon}
 				customLabel={title}
-				class="border-input hover:bg-card/60 h-8 border border-dashed hover:text-inherit"
+				class={cn(
+					'border-input hover:bg-card/60 h-8 border border-dashed hover:text-inherit',
+					selectedValues.size > 0 && 'border-primary/40 bg-primary/10 border-solid text-foreground'
+				)}
 				data-testid={`facet-${title.toLowerCase()}-trigger`}
 			>
 				{#if selectedValues.size > 0}

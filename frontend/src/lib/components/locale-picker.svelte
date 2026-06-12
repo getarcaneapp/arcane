@@ -3,7 +3,7 @@
 	import { getLocale, type Locale } from '$lib/paraglide/runtime';
 	import { m } from '$lib/paraglide/messages';
 	import userStore from '$lib/stores/user-store';
-	import { setLocale } from '$lib/utils/locale.util';
+	import { setLocale } from '$lib/utils/formatting';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { queryKeys } from '$lib/query/query-keys';
 	import { userService } from '$lib/services/user-service';
@@ -26,6 +26,7 @@
 	const queryClient = useQueryClient();
 
 	const locales: Record<string, string> = {
+		cs: 'Čeština',
 		da: 'Dansk',
 		de: 'Deutsch',
 		el: 'Ελληνικά',
@@ -38,6 +39,7 @@
 		ja: '日本語',
 		ko: '한국어',
 		nl: 'Nederlands',
+		pl: 'Polski',
 		'pt-BR': 'Português brasileiro',
 		ru: 'Русский',
 		sv: 'Svenska',
@@ -50,7 +52,7 @@
 	const updateLocaleMutation = createMutation(() => ({
 		mutationFn: async (locale: Locale) => {
 			if ($userStore) {
-				await userService.update($userStore.id, { locale });
+				await userService.updateMyProfile({ locale });
 			}
 			await setLocale(locale);
 			return locale;

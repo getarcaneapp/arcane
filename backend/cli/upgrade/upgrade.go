@@ -2,18 +2,21 @@ package upgrade
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"strings"
 	"time"
 
-	docker "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
-	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
-	libupdater "github.com/getarcaneapp/arcane/backend/pkg/libarcane/imageupdate"
+	docker "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 	"github.com/spf13/cobra"
+	updaterlabels "go.getarcane.app/updater/pkg/labels"
+	updaterlogs "go.getarcane.app/updater/pkg/logs"
 )
 
 var (
@@ -53,7 +56,7 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	// This prevents interruption when stopping the target container
 	ctx := context.Background()
 
-	logFile, err := libupdater.SetupMessageOnlyLogFile("/app/data", "arcane-upgrade", slog.LevelInfo)
+	logFile, err := updaterlogs.SetupMessageOnlyLogFile("/app/data", "arcane-upgrade", slog.LevelInfo)
 	if err != nil {
 		slog.Warn("Failed to setup file logging", "error", err)
 	} else if logFile != nil {
@@ -151,7 +154,7 @@ func findArcaneContainer(ctx context.Context, dockerClient *client.Client) (cont
 		}
 
 		// New label: com.getarcaneapp.arcane=true
-		if libupdater.IsArcaneContainer(labels) {
+		if updaterlabels.IsArcaneContainer(labels) {
 			slog.Info("Found Arcane container by label", "id", c.ID[:12], "image", c.Image, "names", c.Names)
 			return inspect, nil
 		}
@@ -170,7 +173,7 @@ func findArcaneContainer(ctx context.Context, dockerClient *client.Client) (cont
 		}
 	}
 
-	return container.InspectResponse{}, fmt.Errorf("no running Arcane container found")
+	return container.InspectResponse{}, errors.New("no running Arcane container found")
 }
 
 func isLegacyServerLabel(labels map[string]string) bool {
@@ -178,11 +181,26 @@ func isLegacyServerLabel(labels map[string]string) bool {
 		return false
 	}
 	for k, v := range labels {
-		if strings.EqualFold(k, "com.getarcaneapp.arcane.server") {
+		if strings.EqualFold(k, updaterlabels.LabelArcaneLegacyServer) {
 			return strings.EqualFold(strings.TrimSpace(v), "true")
 		}
 	}
 	return false
+}
+
+func normalizeRecreatedArcaneLabelsInternal(labels map[string]string) map[string]string {
+	normalized := maps.Clone(labels)
+	if normalized == nil {
+		return nil
+	}
+	if updaterlabels.IsArcaneContainer(labels) || isLegacyServerLabel(labels) {
+		normalized[updaterlabels.LabelArcane] = "true"
+	}
+	if updaterlabels.IsArcaneAgentContainer(labels) {
+		normalized[updaterlabels.LabelArcaneAgent] = "true"
+		normalized[updaterlabels.LabelArcane] = "true"
+	}
+	return normalized
 }
 
 func isAgentContainer(inspect container.InspectResponse) bool {
@@ -339,6 +357,7 @@ func upgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 	// Create new container config
 	config := *oldContainer.Config
 	config.Image = newImage
+	config.Labels = normalizeRecreatedArcaneLabelsInternal(config.Labels)
 
 	hostConfig, sanitizedMemorySwappiness, engineInfo, err := libarcane.PrepareRecreateHostConfigForEngine(ctx, dockerClient, oldContainer.HostConfig)
 	if err != nil {
@@ -478,7 +497,7 @@ func runMigratorContainerInternal(
 	apiVersion string,
 ) error {
 	if oldContainer.Config == nil {
-		return fmt.Errorf("container config is unavailable")
+		return errors.New("container config is unavailable")
 	}
 
 	migratorConfig := *oldContainer.Config

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/getarcaneapp/arcane/backend/pkg/utils/image"
-	"github.com/getarcaneapp/arcane/types/settings"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/image"
+	"github.com/getarcaneapp/arcane/types/v2/settings"
 )
 
 type ApplicationImagesService struct {

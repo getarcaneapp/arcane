@@ -1,11 +1,10 @@
-FROM alpine:3
+ARG ARCANE_RUNTIME_BASE_IMAGE=ghcr.io/getarcaneapp/base:distroless
+FROM ${ARCANE_RUNTIME_BASE_IMAGE}
 
 ARG TARGETARCH
 ARG TARGETVARIANT
 
 WORKDIR /app
-RUN apk add --no-cache ca-certificates tzdata curl
-RUN mkdir -p /app/data
 
 COPY linux/${TARGETARCH}/${TARGETVARIANT}/arcane ./arcane
 
@@ -13,6 +12,8 @@ ENV ENVIRONMENT=production
 ENV GIN_MODE=release
 ENV PORT=3552
 
+# The container starts as "root", but arcane drops to the requetsed PUID and PGID after the runtime is initialized 
+USER 0:0
 EXPOSE 3552
 VOLUME ["/app/data"]
 

@@ -3,7 +3,7 @@ package meta
 import (
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/jobschedule"
+	"github.com/getarcaneapp/arcane/types/v2/jobschedule"
 )
 
 type JobMetadata struct {
@@ -143,24 +143,6 @@ var jobMetadataRegistry = map[string]JobMetadata{
 				SettingKey:  "scheduledPruneEnabled",
 				Label:       "Scheduled prune enabled",
 				SettingsURL: "/settings/general",
-			},
-		},
-	},
-	"gitops-sync": {
-		ID:             "gitops-sync",
-		Name:           "GitOps Sync",
-		Description:    "Synchronizes project state with configured git repositories",
-		Category:       "sync",
-		SettingsKey:    "gitopsSyncInterval",
-		EnabledKey:     "gitopsSyncEnabled",
-		ManagerOnly:    false,
-		IsContinuous:   false,
-		CanRunManually: true,
-		Prerequisites: []JobPrerequisiteMetadata{
-			{
-				SettingKey:  "gitopsSyncEnabled",
-				Label:       "GitOps sync enabled",
-				SettingsURL: "/settings/gitops",
 			},
 		},
 	},

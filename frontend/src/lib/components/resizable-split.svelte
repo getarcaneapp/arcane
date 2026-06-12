@@ -3,6 +3,7 @@
 	import { onDestroy, onMount } from 'svelte';
 	import { PersistedState } from 'runed';
 	import { DoubleArrowLeftIcon, DoubleArrowRightIcon } from '$lib/icons';
+	import { m } from '$lib/paraglide/messages';
 
 	interface Props {
 		first: Snippet;
@@ -14,6 +15,7 @@
 		allowCollapse?: boolean;
 		collapseThreshold?: number;
 		handleSize?: number;
+		stackBelow?: number;
 		class?: string;
 		firstClass?: string;
 		secondClass?: string;
@@ -34,11 +36,12 @@
 		allowCollapse = true,
 		collapseThreshold = 28,
 		handleSize = 8,
+		stackBelow,
 		class: className = '',
 		firstClass = '',
 		secondClass = '',
 		handleClass = '',
-		ariaLabel = 'Resize panels',
+		ariaLabel,
 		persistKey,
 		persistStorage = 'session',
 		onResizeEnd = () => {}
@@ -47,12 +50,21 @@
 	let containerRef = $state<HTMLDivElement | null>(null);
 	let isResizing = $state(false);
 	let collapsedSide = $state<'first' | 'second' | null>(null);
+	let isStacked = $state(false);
 	let lastSize = 0;
 	let persistedState = $state<PersistedState<number | null> | null>(null);
 	let persistedKey = $state<string | null>(null);
+	let resizeObserver: ResizeObserver | null = null;
 
 	let resizeStartX = 0;
 	let resizeStartWidth = 0;
+
+	const evaluateStacked = () => {
+		if (stackBelow === undefined) return;
+		if (!containerRef && typeof window === 'undefined') return;
+		const width = containerRef ? containerRef.getBoundingClientRect().width : window.innerWidth;
+		isStacked = width < stackBelow;
+	};
 
 	const clampSize = (value: number, minValue: number, maxValue: number) => Math.min(Math.max(value, minValue), maxValue);
 
@@ -123,6 +135,19 @@
 
 	const handleWindowResize = () => {
 		if (isResizing) return;
+		evaluateStacked();
+		if (isStacked) return;
+		if (size === null) {
+			ensureInitialSize();
+			if (size === null) return;
+		}
+		applySize(size);
+	};
+
+	const handleContainerResize = () => {
+		if (isResizing) return;
+		evaluateStacked();
+		if (isStacked) return;
 		if (size === null) {
 			ensureInitialSize();
 			if (size === null) return;
@@ -173,14 +198,25 @@
 	});
 
 	$effect(() => {
-		if (!containerRef || size === null || isResizing) return;
+		if (!containerRef || size === null || isResizing || isStacked) return;
 		applySize(size, false);
 	});
 
 	onMount(() => {
-		ensureInitialSize();
+		evaluateStacked();
+		if (!isStacked) {
+			ensureInitialSize();
+		}
 		window.addEventListener('resize', handleWindowResize);
-		return () => window.removeEventListener('resize', handleWindowResize);
+		if (stackBelow !== undefined && typeof ResizeObserver !== 'undefined' && containerRef) {
+			resizeObserver = new ResizeObserver(handleContainerResize);
+			resizeObserver.observe(containerRef);
+		}
+		return () => {
+			window.removeEventListener('resize', handleWindowResize);
+			resizeObserver?.disconnect();
+			resizeObserver = null;
+		};
 	});
 
 	onDestroy(() => {
@@ -189,53 +225,55 @@
 	});
 </script>
 
-<div bind:this={containerRef} class={`flex min-h-0 min-w-0 ${className}`}>
+<div bind:this={containerRef} class={['flex min-h-0 min-w-0', isStacked && 'flex-col gap-4', className]}>
 	<div
-		class={`min-h-0 min-w-0 flex-none overflow-hidden ${firstClass}`}
-		style={`width: ${size ?? 0}px;`}
-		aria-hidden={collapsedSide === 'first'}
+		class={['min-h-0 min-w-0 overflow-hidden', isStacked ? 'flex-1' : 'flex-none', firstClass]}
+		style={isStacked ? '' : `width: ${size ?? 0}px;`}
+		aria-hidden={!isStacked && collapsedSide === 'first'}
 	>
-		{#if collapsedSide !== 'first'}
+		{#if isStacked || collapsedSide !== 'first'}
 			{@render first()}
 		{/if}
 	</div>
 
-	<div
-		role="separator"
-		aria-orientation="vertical"
-		aria-label={ariaLabel}
-		class={`group relative z-20 flex shrink-0 cursor-col-resize items-stretch justify-center overflow-visible ${handleClass}`}
-		style={`width: ${handleSize}px;`}
-		onpointerdown={startResize}
-	>
-		<div class="bg-border group-hover:bg-primary/50 my-2 w-0.5 rounded-full transition-colors"></div>
-		{#if collapsedSide}
-			<button
-				class="bg-background border-border text-muted-foreground hover:text-foreground focus-visible:ring-ring absolute inset-0 z-10 m-auto flex size-6 items-center justify-center rounded-full border shadow-sm focus-visible:ring-2 focus-visible:outline-none"
-				onclick={(event) => {
-					event.stopPropagation();
-					restoreCollapsed();
-				}}
-				onpointerdown={(event) => event.stopPropagation()}
-				aria-label={collapsedSide === 'first' ? 'Show left panel' : 'Show right panel'}
-				title={collapsedSide === 'first' ? 'Show left panel' : 'Show right panel'}
-				type="button"
-			>
-				{#if collapsedSide === 'first'}
-					<DoubleArrowRightIcon class="size-4" />
-				{:else}
-					<DoubleArrowLeftIcon class="size-4" />
-				{/if}
-			</button>
-		{/if}
-	</div>
+	{#if !isStacked}
+		<div
+			role="separator"
+			aria-orientation="vertical"
+			aria-label={ariaLabel ?? m.common_resize_panels()}
+			class={['group relative z-20 flex shrink-0 cursor-col-resize items-stretch justify-center overflow-visible', handleClass]}
+			style={`width: ${handleSize}px;`}
+			onpointerdown={startResize}
+		>
+			<div class="bg-border group-hover:bg-primary/50 my-2 w-0.5 rounded-full transition-colors"></div>
+			{#if collapsedSide}
+				<button
+					class="bg-background border-border text-muted-foreground hover:text-foreground focus-visible:ring-ring absolute inset-0 z-10 m-auto flex size-6 items-center justify-center rounded-full border shadow-sm focus-visible:ring-2 focus-visible:outline-none"
+					onclick={(event) => {
+						event.stopPropagation();
+						restoreCollapsed();
+					}}
+					onpointerdown={(event) => event.stopPropagation()}
+					aria-label={collapsedSide === 'first' ? m.common_show_left_panel() : m.common_show_right_panel()}
+					title={collapsedSide === 'first' ? m.common_show_left_panel() : m.common_show_right_panel()}
+					type="button"
+				>
+					{#if collapsedSide === 'first'}
+						<DoubleArrowRightIcon class="size-4" />
+					{:else}
+						<DoubleArrowLeftIcon class="size-4" />
+					{/if}
+				</button>
+			{/if}
+		</div>
+	{/if}
 
 	<div
-		class={`min-h-0 min-w-0 flex-1 overflow-hidden ${secondClass}`}
-		style={collapsedSide === 'second' ? 'flex: 0 0 0px; width: 0px;' : ''}
-		aria-hidden={collapsedSide === 'second'}
+		class={['min-h-0 min-w-0 flex-1 overflow-hidden', secondClass]}
+		style={!isStacked && collapsedSide === 'second' ? 'flex: 0 0 0px; width: 0px;' : ''}
+		aria-hidden={!isStacked && collapsedSide === 'second'}
 	>
-		{#if collapsedSide !== 'second'}
+		{#if isStacked || collapsedSide !== 'second'}
 			{@render second()}
 		{/if}
 	</div>

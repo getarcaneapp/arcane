@@ -1,0 +1,22 @@
+{
+	"$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
+	"entry": [
+		"src/routes/**/*.{svelte,ts,js}",
+		"src/hooks.*.ts",
+		"src/lib/paraglide/messages/_index.js",
+		"src/lib/index.ts",
+		"src/lib/components/**/index.ts"
+	],
+	"ignorePatterns": [
+		"src/lib/paraglide/server.js",
+		"src/lib/paraglide/runtime.js",
+		"src/lib/paraglide/registry.js",
+		"email-templates/**",
+		"tests/**"
+	],
+	"ignoreDependencies": ["@iconify/json", "paneforge", "svelte-toolbelt", "isomorphic-dompurify", "tw-animate-css"],
+	"ignoreExportsUsedInFile": {
+		"type": true,
+		"interface": true
+	}
+}

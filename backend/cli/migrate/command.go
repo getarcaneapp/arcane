@@ -2,6 +2,7 @@ package migrate
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -11,10 +12,10 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 
-	"github.com/getarcaneapp/arcane/backend/internal/bootstrap"
-	"github.com/getarcaneapp/arcane/backend/internal/config"
-	"github.com/getarcaneapp/arcane/backend/internal/database"
-	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/startup"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/bootstrap"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/startup"
 )
 
 var MigrateCmd = &cobra.Command{
@@ -27,18 +28,6 @@ var MigrateCmd = &cobra.Command{
 
 func init() {
 	configureCommand(MigrateCmd, os.Stdout)
-}
-
-func newCommand(out io.Writer) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:           "migrate",
-		Short:         "Manage Arcane database schema migrations",
-		Version:       config.Version,
-		SilenceUsage:  true,
-		SilenceErrors: true,
-	}
-	configureCommand(cmd, out)
-	return cmd
 }
 
 func configureCommand(cmd *cobra.Command, out io.Writer) {
@@ -99,7 +88,7 @@ func newDownCommand(out io.Writer) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			targetAppVersion := strings.TrimSpace(args[0])
 			if targetAppVersion == "" {
-				return fmt.Errorf("target version is required")
+				return errors.New("target version is required")
 			}
 
 			targetMigrationVersion, err := database.ResolveAppMigrationVersion(targetAppVersion)
@@ -122,7 +111,7 @@ func newDownCommand(out io.Writer) *cobra.Command {
 				return fmt.Errorf("target Arcane version %s requires schema version %d, but this Arcane binary only includes migrations through %d", targetAppVersion, targetMigrationVersion, status.LatestVersion)
 			}
 			if !status.HasVersion {
-				return fmt.Errorf("database has no migration version; start Arcane once to initialize the schema before downgrading")
+				return errors.New("database has no migration version; start Arcane once to initialize the schema before downgrading")
 			}
 			if status.CurrentVersion < targetMigrationVersion {
 				return fmt.Errorf("database schema version %d is older than target Arcane version %s schema version %d", status.CurrentVersion, targetAppVersion, targetMigrationVersion)
@@ -182,7 +171,7 @@ func newGenerateManifestCommand(out io.Writer) *cobra.Command {
 				return err
 			}
 
-			if err := os.WriteFile(outputPath, manifestBytes, 0o644); err != nil {
+			if err := os.WriteFile(outputPath, manifestBytes, 0o644); err != nil { //nolint:gosec // generated manifest is non-secret repo metadata
 				return fmt.Errorf("failed to write migration manifest: %w", err)
 			}
 

@@ -6,11 +6,12 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
-	humamw "github.com/getarcaneapp/arcane/backend/api/middleware"
-	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"github.com/getarcaneapp/arcane/types/base"
-	"github.com/getarcaneapp/arcane/types/webhook"
+	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
+	"github.com/getarcaneapp/arcane/types/v2/base"
+	"github.com/getarcaneapp/arcane/types/v2/webhook"
 )
 
 type WebhookHandler struct {
@@ -70,6 +71,7 @@ func RegisterWebhooks(api huma.API, webhookService *services.WebhookService) {
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequirePermission(api, authz.PermWebhooksList),
 	}, h.ListWebhooks)
 
 	huma.Register(api, huma.Operation{
@@ -83,7 +85,7 @@ func RegisterWebhooks(api huma.API, webhookService *services.WebhookService) {
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermWebhooksCreate),
 	}, h.CreateWebhook)
 
 	huma.Register(api, huma.Operation{
@@ -97,7 +99,7 @@ func RegisterWebhooks(api huma.API, webhookService *services.WebhookService) {
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermWebhooksUpdate),
 	}, h.UpdateWebhook)
 
 	huma.Register(api, huma.Operation{
@@ -111,7 +113,7 @@ func RegisterWebhooks(api huma.API, webhookService *services.WebhookService) {
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermWebhooksDelete),
 	}, h.DeleteWebhook)
 }
 
@@ -136,9 +138,6 @@ func (h *WebhookHandler) ListWebhooks(ctx context.Context, input *ListWebhooksIn
 
 // CreateWebhook creates a new webhook and returns the raw token (shown once only).
 func (h *WebhookHandler) CreateWebhook(ctx context.Context, input *CreateWebhookInput) (*CreateWebhookOutput, error) {
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
 	if h.webhookService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -191,9 +190,6 @@ func (h *WebhookHandler) CreateWebhook(ctx context.Context, input *CreateWebhook
 
 // UpdateWebhook updates a webhook's enabled state.
 func (h *WebhookHandler) UpdateWebhook(ctx context.Context, input *UpdateWebhookInput) (*UpdateWebhookOutput, error) {
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
 	if h.webhookService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -222,9 +218,6 @@ func (h *WebhookHandler) UpdateWebhook(ctx context.Context, input *UpdateWebhook
 
 // DeleteWebhook removes a webhook.
 func (h *WebhookHandler) DeleteWebhook(ctx context.Context, input *DeleteWebhookInput) (*DeleteWebhookOutput, error) {
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
 	if h.webhookService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}

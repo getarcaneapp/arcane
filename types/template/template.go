@@ -1,8 +1,8 @@
 package template
 
 import (
-	"github.com/getarcaneapp/arcane/types/env"
-	"github.com/getarcaneapp/arcane/types/meta"
+	"github.com/getarcaneapp/arcane/types/v2/env"
+	"github.com/getarcaneapp/arcane/types/v2/meta"
 )
 
 // BaseTemplate contains common fields shared by all template types.
@@ -101,7 +101,7 @@ type RemoteRegistry struct {
 	Templates []RemoteTemplate `json:"templates"`
 }
 
-// Registry represents a local registry configuration.
+// TemplateRegistry represents a local registry configuration.
 type TemplateRegistry struct {
 	BaseRegistry
 

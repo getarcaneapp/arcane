@@ -1,6 +1,6 @@
 package search
 
-import "github.com/getarcaneapp/arcane/types/category"
+import "github.com/getarcaneapp/arcane/types/v2/category"
 
 // Request represents a search request.
 type Request struct {

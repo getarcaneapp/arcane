@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Label } from '$lib/components/ui/label/index.js';
 	import * as RadioGroup from '$lib/components/ui/radio-group/index.js';
-	import { applyAccentColor } from '$lib/utils/accent-color-util';
+	import { applyAccentColor } from '$lib/utils/theme';
 	import CustomColorDialog from './custom-color.svelte';
 	import { CheckIcon, AddIcon } from '$lib/icons';
 

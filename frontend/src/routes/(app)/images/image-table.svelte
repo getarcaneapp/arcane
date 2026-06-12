@@ -6,25 +6,29 @@
 	import { goto } from '$app/navigation';
 	import { onDestroy } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import bytes from '$lib/utils/bytes';
+	import { bytes } from '$lib/utils/formatting';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { Badge } from '$lib/components/ui/badge/index.js';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
-	import { tryCatch } from '$lib/utils/try-catch';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api';
+	import { tryCatch } from '$lib/utils/api';
 	import ImageUpdateItem from '$lib/components/image-update-item.svelte';
 	import VulnerabilityScanItem from '$lib/components/vulnerability/vulnerability-scan-item.svelte';
 	import UniversalMobileCard from '$lib/components/arcane-table/cards/universal-mobile-card.svelte';
 	import * as Tooltip from '$lib/components/ui/tooltip';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
-	import type { ImageSummaryDto, ImageUpdateInfoDto } from '$lib/types/image.type';
-	import type { VulnerabilityScanSummary } from '$lib/types/vulnerability.type';
+	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
+	import type { ImageSummaryDto, ImageUpdateInfoDto } from '$lib/types/docker';
+	import type { VulnerabilityScanSummary } from '$lib/types/environment';
 	import { format } from 'date-fns';
 	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
 	import { imageService } from '$lib/services/image-service';
 	import { vulnerabilityService } from '$lib/services/vulnerability-service';
-	import { isLikelyStaleFailedSummary, isVulnerabilityScanInProgress } from '$lib/utils/vulnerability-scan.util';
+	import { isLikelyStaleFailedSummary, isVulnerabilityScanInProgress } from '$lib/utils/docker';
+	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import { hasPermission } from '$lib/utils/auth';
+	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
+	import { bulkConfirmAndRun } from '$lib/utils/bulk-actions';
 
 	import {
 		DownloadIcon,
@@ -44,19 +48,26 @@
 		selectedIds = $bindable(),
 		requestOptions = $bindable(),
 		onImageUpdated,
-		onRefreshData
+		onRefreshData,
+		loading = false
 	}: {
 		images: Paginated<ImageSummaryDto>;
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
 		onImageUpdated?: () => Promise<void>;
 		onRefreshData?: (options: SearchPaginationSortRequest) => Promise<void>;
+		loading?: boolean;
 	} = $props();
 
 	let isLoading = $state({
 		removing: false,
 		checking: false
 	});
+
+	const currentEnvId = $derived(environmentStore.selected?.id || '0');
+	const canDeleteImage = $derived(hasPermission('images:delete', currentEnvId));
+	const canPullImage = $derived(hasPermission('images:pull', currentEnvId));
+	const canScanImage = $derived(hasPermission('vulnerabilities:scan', currentEnvId));
 
 	let isPullingInline = $state<Record<string, boolean>>({});
 	let isScanningInline = $state<Record<string, boolean>>({});
@@ -73,57 +84,25 @@
 		images = await imageService.getImages(options);
 	}
 
-	async function handleDeleteSelected(ids: string[]) {
-		if (!ids || ids.length === 0) return;
-
-		openConfirmDialog({
+	function handleDeleteSelected(ids: string[]) {
+		bulkConfirmAndRun({
+			ids,
 			title: m.images_remove_selected_title({ count: ids.length }),
 			message: m.images_remove_selected_message({ count: ids.length }),
-			checkboxes: [
-				{
-					id: 'force',
-					label: m.images_remove_force_label(),
-					initialState: false
-				}
-			],
-			confirm: {
-				label: m.common_remove(),
-				destructive: true,
-				action: async (checkboxStates) => {
-					const force = !!checkboxStates['force'];
-					isLoading.removing = true;
-					let successCount = 0;
-					let failureCount = 0;
-
-					for (const id of ids) {
-						const result = await tryCatch(imageService.deleteImage(id, { force }));
-						handleApiResultWithCallbacks({
-							result,
-							message: m.images_remove_failed(),
-							setLoadingState: () => {},
-							onSuccess: () => {
-								successCount++;
-							}
-						});
-						if (result.error) failureCount++;
-					}
-
-					isLoading.removing = false;
-
-					if (successCount > 0) {
-						const msg =
-							successCount === 1 ? m.images_remove_success_one() : m.images_remove_success_many({ count: successCount });
-						toast.success(msg);
-						await refreshImages();
-					}
-					if (failureCount > 0) {
-						const msg = failureCount === 1 ? m.images_remove_failed_one() : m.images_remove_failed_many({ count: failureCount });
-						toast.error(msg);
-					}
-
-					selectedIds = [];
-				}
-			}
+			confirmLabel: m.common_remove(),
+			destructive: true,
+			checkboxes: [{ id: 'force', label: m.images_remove_force_label(), initialState: false }],
+			run: (id, checkboxStates) => imageService.deleteImage(id, { force: !!checkboxStates['force'] }),
+			messages: {
+				success: (count) => (count === 1 ? m.images_remove_success_one() : m.images_remove_success_many({ count })),
+				partial: (success, total, failed) => m.common_bulk_remove_partial({ success, total, failed, resource: m.images_title() }),
+				failure: () => (ids.length === 1 ? m.images_remove_failed_one() : m.images_remove_failed_many({ count: ids.length }))
+			},
+			setLoading: (loading) => (isLoading.removing = loading),
+			onComplete: async (result) => {
+				if (result.success > 0) await refreshImages();
+			},
+			clearSelection: () => (selectedIds = [])
 		});
 	}
 
@@ -150,8 +129,8 @@
 						result,
 						message: m.images_remove_failed(),
 						setLoadingState: () => {},
-						onSuccess: async () => {
-							toast.success(m.images_remove_success());
+						onSuccess: async (data) => {
+							toast.success(m.images_remove_success(), activityToastOptions(extractActivityId(data)));
 							await refreshImages();
 						}
 					});
@@ -174,8 +153,8 @@
 			result,
 			message: m.images_pull_failed(),
 			setLoadingState: () => {},
-			onSuccess: async () => {
-				toast.success(m.images_pull_success({ repoTag }));
+			onSuccess: async (data) => {
+				toast.success(m.images_pull_success({ repoTag }), activityToastOptions(extractActivityId(data)));
 				await refreshImages();
 			}
 		});
@@ -197,6 +176,7 @@
 					imageId: data.imageId,
 					scanTime: data.scanTime,
 					status: data.status,
+					activityId: data.activityId,
 					scanPhase: data.scanPhase,
 					summary: data.summary,
 					error: data.error
@@ -204,14 +184,15 @@
 				await handleVulnerabilityScanChanged(imageId, summary);
 
 				if (data.status === 'completed') {
-					toast.success(m.vuln_scan_completed());
+					toast.success(m.vuln_scan_completed(), activityToastOptions(data.activityId));
 					return;
 				}
 				if (data.status === 'failed') {
-					toast.error(data.error || m.vuln_scan_failed());
+					toast.error(data.error || m.vuln_scan_failed(), activityToastOptions(data.activityId));
 					return;
 				}
 
+				toast.info(m.vuln_scan_started(), activityToastOptions(data.activityId));
 				startBatchScanPolling();
 			}
 		});
@@ -360,7 +341,9 @@
 		{
 			id: 'updates',
 			accessorFn: (row) => {
+				if (!row.repoDigests || row.repoDigests.length === 0) return 'local';
 				if (row.updateInfo?.hasUpdate) return 'has_update';
+				if (row.updateInfo?.updateType === 'local') return 'local';
 				if (row.updateInfo?.error) return 'error';
 				if (row.updateInfo) return 'up_to_date';
 				return 'unknown';
@@ -413,7 +396,7 @@
 			action: 'remove',
 			onClick: handleDeleteSelected,
 			loading: isLoading.removing,
-			disabled: isLoading.removing,
+			disabled: !canDeleteImage || isLoading.removing,
 			icon: TrashIcon
 		}
 	]);
@@ -432,7 +415,7 @@
 {#snippet TagCell({ item }: { item: ImageSummaryDto })}
 	{#if item.repoTags && item.repoTags.length > 0 && item.repoTags[0] !== '<none>:<none>'}
 		<div class="flex flex-wrap gap-1.5">
-			{#each item.repoTags.slice(0, 2) as repoTag}
+			{#each item.repoTags.slice(0, 2) as repoTag, tagIndex (`${repoTag}-${tagIndex}`)}
 				{@const tag = repoTag.split(':').pop() || repoTag}
 				<Badge variant="outline" class="font-mono text-xs">{tag}</Badge>
 			{/each}
@@ -470,7 +453,7 @@
 		{@const visibleUsage = hasOverflow ? item.usedBy.slice(0, maxVisible) : item.usedBy}
 		{@const overflowUsage = hasOverflow ? item.usedBy.slice(maxVisible) : []}
 		<div class="flex flex-wrap gap-1.5">
-			{#each visibleUsage as usage}
+			{#each visibleUsage as usage, usageIndex (`${usage.type}-${usage.id ?? usage.name}-${usageIndex}`)}
 				{#if usage.type === 'project'}
 					{#if usage.id}
 						<a class="inline-flex" href={`/projects/${encodeURIComponent(usage.id)}`}>
@@ -524,7 +507,7 @@
 						</Tooltip.Trigger>
 						<Tooltip.Content class="pointer-events-auto">
 							<div class="flex max-w-xs flex-wrap gap-1.5">
-								{#each overflowUsage as usage}
+								{#each overflowUsage as usage, usageIndex (`${usage.type}-${usage.id ?? usage.name}-${usageIndex}`)}
 									{#if usage.type === 'project'}
 										{#if usage.id}
 											<a class="inline-flex" href={`/projects/${encodeURIComponent(usage.id)}`}>
@@ -583,6 +566,7 @@
 			imageId={item.id}
 			repo={item.repo}
 			tag={item.tag}
+			isLocal={!item.repoDigests || item.repoDigests.length === 0}
 			onUpdated={(newInfo) => handleUpdateInfoChanged(item.id, newInfo)}
 		/>
 	</div>
@@ -626,7 +610,11 @@
 					: null,
 			(item: ImageSummaryDto) => {
 				if (!(mobileFieldVisibility['updates'] ?? false)) return null;
+				if (!item.repoDigests || item.repoDigests.length === 0) {
+					return { variant: 'gray' as const, text: m.image_update_local_title() };
+				}
 				if (item.updateInfo?.hasUpdate) return { variant: 'blue' as const, text: m.images_has_updates() };
+				if (item.updateInfo?.updateType === 'local') return { variant: 'gray' as const, text: m.image_update_local_title() };
 				if (item.updateInfo?.error) return { variant: 'red' as const, text: m.common_error() };
 				if (item.updateInfo) return { variant: 'green' as const, text: m.images_no_updates() };
 				return { variant: 'gray' as const, text: m.common_unknown() };
@@ -689,39 +677,47 @@
 					{m.common_inspect()}
 				</DropdownMenu.Item>
 
-				<DropdownMenu.Separator />
+				{#if canPullImage || canScanImage}
+					<DropdownMenu.Separator />
+				{/if}
 
-				<DropdownMenu.Item
-					onclick={() => handleInlineImagePull(item.id, item.repoTags?.[0] || '')}
-					disabled={isPullingInline[item.id] || !item.repoTags?.[0]}
-				>
-					{#if isPullingInline[item.id]}
-						<Spinner class="size-4" />
-					{:else}
-						<DownloadIcon class="size-4" />
-					{/if}
-					{m.images_pull()}
-				</DropdownMenu.Item>
+				{#if canPullImage}
+					<DropdownMenu.Item
+						onclick={() => handleInlineImagePull(item.id, item.repoTags?.[0] || '')}
+						disabled={isPullingInline[item.id] || !item.repoTags?.[0]}
+					>
+						{#if isPullingInline[item.id]}
+							<Spinner class="size-4" />
+						{:else}
+							<DownloadIcon class="size-4" />
+						{/if}
+						{m.images_pull()}
+					</DropdownMenu.Item>
+				{/if}
 
-				<DropdownMenu.Item onclick={() => handleInlineVulnerabilityScan(item.id)} disabled={isScanningInline[item.id]}>
-					{#if isScanningInline[item.id]}
-						<Spinner class="size-4" />
-					{:else}
-						<ScanIcon class="size-4" />
-					{/if}
-					{m.vuln_scan()}
-				</DropdownMenu.Item>
+				{#if canScanImage}
+					<DropdownMenu.Item onclick={() => handleInlineVulnerabilityScan(item.id)} disabled={isScanningInline[item.id]}>
+						{#if isScanningInline[item.id]}
+							<Spinner class="size-4" />
+						{:else}
+							<ScanIcon class="size-4" />
+						{/if}
+						{m.vuln_scan()}
+					</DropdownMenu.Item>
+				{/if}
 
-				<DropdownMenu.Separator />
+				{#if canDeleteImage}
+					<DropdownMenu.Separator />
 
-				<DropdownMenu.Item variant="destructive" onclick={() => deleteImage(item.id)} disabled={isLoading.removing}>
-					{#if isLoading.removing}
-						<Spinner class="size-4" />
-					{:else}
-						<TrashIcon class="size-4" />
-					{/if}
-					{m.common_remove()}
-				</DropdownMenu.Item>
+					<DropdownMenu.Item variant="destructive" onclick={() => deleteImage(item.id)} disabled={isLoading.removing}>
+						{#if isLoading.removing}
+							<Spinner class="size-4" />
+						{:else}
+							<TrashIcon class="size-4" />
+						{/if}
+						{m.common_remove()}
+					</DropdownMenu.Item>
+				{/if}
 			</DropdownMenu.Group>
 		</DropdownMenu.Content>
 	</DropdownMenu.Root>
@@ -730,6 +726,7 @@
 <ArcaneTable
 	persistKey="arcane-image-table"
 	items={images}
+	{loading}
 	bind:requestOptions
 	bind:selectedIds
 	bind:mobileFieldVisibility

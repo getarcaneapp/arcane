@@ -14,7 +14,7 @@ func NewCommand(root *cobra.Command) *cobra.Command {
 		Short:                 "Generate shell completion scripts",
 		Long:                  "Generate shell completion scripts for bash, zsh, fish, or powershell.",
 		Args:                  cobra.ExactArgs(1),
-		ValidArgs:             []string{"bash", "zsh", "fish", "powershell"},
+		ValidArgs:             []string{"bash", "zsh", "fish", "powershell", "pwsh"},
 		SilenceUsage:          true,
 		DisableFlagsInUseLine: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -25,7 +25,7 @@ func NewCommand(root *cobra.Command) *cobra.Command {
 				return root.GenZshCompletion(os.Stdout)
 			case "fish":
 				return root.GenFishCompletion(os.Stdout, true)
-			case "powershell":
+			case "powershell", "pwsh":
 				return root.GenPowerShellCompletionWithDesc(os.Stdout)
 			default:
 				return fmt.Errorf("unsupported shell %q", args[0])

@@ -1,4 +1,5 @@
-import type { SystemStats } from '$lib/types/system-stats.type';
+import type { SystemStats } from '$lib/types/shared';
+import type { Diagnostics, LogEntry } from '$lib/types/diagnostics';
 
 export interface ReconnectWSOptions<T> {
 	buildUrl: () => string | Promise<string>;
@@ -128,18 +129,6 @@ export class ReconnectingWebSocket<T = unknown> {
 		}, backoff);
 	}
 
-	send(payload: string | ArrayBuffer | Blob) {
-		try {
-			if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-				this.ws.send(payload as any);
-				return true;
-			}
-		} catch (err) {
-			this.opts.onError?.(err as Error);
-		}
-		return false;
-	}
-
 	close() {
 		this.closed = true;
 		this.attempt = 0;
@@ -196,10 +185,6 @@ export class ReconnectingWebSocket<T = unknown> {
 			}
 		});
 	}
-
-	isConnected() {
-		return !!this.ws && this.ws.readyState === WebSocket.OPEN;
-	}
 }
 
 export function createStatsWebSocket(opts: {
@@ -254,4 +239,66 @@ export function createContainerStatsWebSocket(opts: {
 		autoConnect: false,
 		shouldReconnect: opts.shouldReconnect
 	});
+}
+
+export function createDiagnosticsWebSocket(opts: {
+	onMessage: (data: Diagnostics) => void;
+	onOpen?: () => void;
+	onClose?: () => void;
+	onError?: (err: Event | Error) => void;
+	maxBackoff?: number;
+}) {
+	return createDiagnosticsStreamWebSocket('/api/diagnostics/stream', opts);
+}
+
+export function createBackendLogsWebSocket(opts: {
+	onMessage: (data: LogEntry) => void;
+	onOpen?: () => void;
+	onClose?: () => void;
+	onError?: (err: Event | Error) => void;
+	maxBackoff?: number;
+}) {
+	return createDiagnosticsStreamWebSocket('/api/diagnostics/logs/stream', opts);
+}
+
+function createDiagnosticsStreamWebSocket<T>(
+	path: string,
+	opts: {
+		onMessage: (data: T) => void;
+		onOpen?: () => void;
+		onClose?: () => void;
+		onError?: (err: Event | Error) => void;
+		maxBackoff?: number;
+	}
+) {
+	const buildUrl = () => {
+		const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
+		return `${protocol}://${location.host}${path}`;
+	};
+
+	return new ReconnectingWebSocket<T>({
+		buildUrl,
+		parseMessage: (evt) => JSON.parse(evt.data as string) as T,
+		onMessage: opts.onMessage,
+		onOpen: opts.onOpen,
+		onClose: opts.onClose,
+		onError: opts.onError,
+		maxBackoff: opts.maxBackoff
+	});
+}
+
+// --- Debounce helper ---
+
+export function debounced<T extends (...args: any[]) => void>(func: T, delay: number) {
+	let debounceTimeout: ReturnType<typeof setTimeout>;
+
+	return (...args: Parameters<T>) => {
+		if (debounceTimeout !== undefined) {
+			clearTimeout(debounceTimeout);
+		}
+
+		debounceTimeout = setTimeout(() => {
+			func(...args);
+		}, delay);
+	};
 }

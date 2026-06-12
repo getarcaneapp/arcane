@@ -3,19 +3,20 @@ package libbuild
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 	"time"
 
-	docker "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
-	imagetypes "github.com/getarcaneapp/arcane/types/image"
+	docker "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
+	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 	buildkitclient "github.com/moby/buildkit/client"
 )
 
 func (b *builder) newLocalBuildkitSessionInternal(ctx context.Context) (*buildSession, error) {
 	if b.dockerClientProvider == nil {
-		return nil, fmt.Errorf("docker service not available")
+		return nil, errors.New("docker service not available")
 	}
 
 	dockerClient, err := b.dockerClientProvider.GetClient(ctx)

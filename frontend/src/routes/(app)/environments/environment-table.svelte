@@ -6,25 +6,25 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { goto } from '$app/navigation';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
-	import { tryCatch } from '$lib/utils/try-catch';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api';
+	import { tryCatch } from '$lib/utils/api';
 	import { toast } from 'svelte-sonner';
-	import { extractApiErrorMessage } from '$lib/utils/api.util';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
+	import { extractApiErrorMessage } from '$lib/utils/api';
+	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
 	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '$lib/components/arcane-table';
 	import type { FilterOption } from '$lib/components/arcane-table/arcane-table.types.svelte';
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
-	import type { Environment } from '$lib/types/environment.type';
+	import type { Environment } from '$lib/types/environment';
 	import { m } from '$lib/paraglide/messages';
 	import { environmentManagementService } from '$lib/services/env-mgmt-service';
 	import environmentUpgradeService from '$lib/services/api/environment-upgrade-service';
 	import UpdateCenterDialog from '$lib/components/dialogs/update-center-dialog.svelte';
 	import EnvironmentUpgradeMenuItem from './environment-upgrade-menu-item.svelte';
-	import type { AppVersionInformation } from '$lib/types/application-configuration';
-	import userStore from '$lib/stores/user-store';
+	import type { AppVersionInformation } from '$lib/types/settings';
+	import { hasPermission } from '$lib/utils/auth';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { capitalizeFirstLetter } from '$lib/utils/string.utils';
-	import { getEnvironmentStatusVariant, isEnvironmentOnline, resolveEnvironmentStatus } from '$lib/utils/environment-status';
+	import { capitalizeFirstLetter } from '$lib/utils/formatting';
+	import { getEnvironmentStatusVariant, isEnvironmentOnline, resolveEnvironmentStatus } from '$lib/utils/docker';
 	import { EyeOnIcon, TrashIcon, EnvironmentsIcon, InspectIcon, StatsIcon, EyeOffIcon, TestIcon, EllipsisIcon } from '$lib/icons';
 
 	let {
@@ -43,26 +43,26 @@
 	let selectedEnvironmentForUpgrade = $state<Environment | null>(null);
 	let selectedVersionInfoForUpgrade = $state<AppVersionInformation | null>(null);
 
-	let currentUser = $state<{ roles?: string[] } | null>(null);
-	$effect(() => {
-		const unsub = userStore.subscribe((u) => (currentUser = u));
-		return unsub;
-	});
-	const isAdmin = $derived(!!currentUser?.roles?.includes('admin'));
+	const canInstallUpdates = $derived(hasPermission('environments:update'));
 
 	const environmentTypeFilters: FilterOption[] = [
 		{ value: 'http', label: m.environments_edge_http_label(), icon: EnvironmentsIcon },
 		{ value: 'edge', label: m.environments_edge_label(), icon: EnvironmentsIcon },
 		{ value: 'websocket', label: m.environments_edge_websocket_label(), icon: EnvironmentsIcon },
-		{ value: 'grpc', label: m.environments_edge_grpc_label(), icon: EnvironmentsIcon },
-		{ value: 'polling', label: m.environments_edge_polling_label(), icon: EnvironmentsIcon }
+		{ value: 'grpc', label: m.environments_edge_grpc_label(), icon: EnvironmentsIcon }
 	];
+
+	function resolveEnvironmentTransport(item: Environment): 'grpc' | 'websocket' | undefined {
+		// Prefer the live tunnel transport; fall back to the last one used so
+		// disconnected or poll-only agents still show what they connect with.
+		return (item.connected ? item.edgeTransport : undefined) ?? item.lastEdgeTransport;
+	}
 
 	function getEnvironmentTypeLabel(item: Environment): string {
 		if (!item.isEdge) return m.environments_edge_http_label();
-		if (item.lastPollAt) return m.environments_edge_polling_label();
-		if (!item.connected || !item.edgeTransport) return m.environments_edge_label();
-		if (item.edgeTransport === 'websocket') return m.environments_edge_websocket_label();
+		const transport = resolveEnvironmentTransport(item);
+		if (!transport) return m.environments_edge_label();
+		if (transport === 'websocket') return m.environments_edge_websocket_label();
 		return m.environments_edge_grpc_label();
 	}
 
@@ -316,15 +316,8 @@
 {#snippet TypeCell({ value }: { value: unknown })}
 	{@const env = value as Environment}
 	{@const typeLabel = getEnvironmentTypeLabel(env)}
-	{@const typeVariant = !env.isEdge
-		? 'gray'
-		: env.lastPollAt
-			? 'blue'
-			: !env.connected || !env.edgeTransport
-				? 'gray'
-				: env.edgeTransport === 'websocket'
-					? 'purple'
-					: 'blue'}
+	{@const transport = resolveEnvironmentTransport(env)}
+	{@const typeVariant = !env.isEdge || !transport ? 'gray' : transport === 'websocket' ? 'purple' : 'blue'}
 	<StatusBadge text={typeLabel} variant={typeVariant} />
 {/snippet}
 
@@ -480,7 +473,7 @@
 	bind:open={showUpgradeDialog}
 	onConfirm={handleConfirmUpgrade}
 	versionInformation={selectedVersionInfoForUpgrade ?? undefined}
-	canInstall={isAdmin}
+	canInstall={canInstallUpdates}
 	environmentName={selectedEnvironmentForUpgrade?.name}
 	environmentId={selectedEnvironmentForUpgrade?.id}
 	bind:upgrading={isLoading.upgrading}

@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
-	import { tryCatch } from '$lib/utils/try-catch';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api';
+	import { tryCatch } from '$lib/utils/api';
 	import WebhookTable from './webhook-table.svelte';
 	import WebhookFormSheet from '$lib/components/sheets/webhook-form-sheet.svelte';
-	import type { Webhook, WebhookCreated, CreateWebhook } from '$lib/types/webhook.type';
+	import type { Webhook, WebhookCreated, CreateWebhook } from '$lib/types/environment';
 	import { webhookService } from '$lib/services/webhook-service';
 	import { SettingsPageLayout, type SettingsActionButton } from '$lib/layouts/index.js';
 	import * as ResponsiveDialog from '$lib/components/ui/responsive-dialog/index.js';

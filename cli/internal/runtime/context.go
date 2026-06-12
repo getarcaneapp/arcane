@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/getarcaneapp/arcane/cli/internal/client"
-	"github.com/getarcaneapp/arcane/cli/internal/config"
-	clitypes "github.com/getarcaneapp/arcane/cli/internal/types"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/config"
+	clitypes "github.com/getarcaneapp/arcane/cli/v2/internal/types"
 )
 
 type contextKey string

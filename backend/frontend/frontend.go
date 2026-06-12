@@ -47,7 +47,7 @@ func RegisterFrontend(e *echo.Echo) error {
 		if strings.HasPrefix(path, "/api/") {
 			_ = c.JSON(http.StatusNotFound, map[string]any{
 				"success": false,
-				"error":   fmt.Sprintf("API endpoint not found: %s", path),
+				"error":   "API endpoint not found: " + path,
 			})
 			return
 		}

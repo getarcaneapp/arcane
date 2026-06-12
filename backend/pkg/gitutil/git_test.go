@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -522,13 +523,7 @@ func TestWalkDirectory_ComposeInSubdirectory(t *testing.T) {
 		t.Fatalf("expected %d files, got %d (%v)", len(expected), len(paths), paths)
 	}
 	for _, want := range expected {
-		found := false
-		for _, got := range paths {
-			if got == want {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(paths, want)
 		if !found {
 			t.Fatalf("expected walked paths to include %q, got %v", want, paths)
 		}
@@ -556,13 +551,7 @@ func TestWalkDirectory_NestedSiblingFile(t *testing.T) {
 		t.Fatalf("expected %d files, got %d (%v)", len(expected), len(paths), paths)
 	}
 	for _, want := range expected {
-		found := false
-		for _, got := range paths {
-			if got == want {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(paths, want)
 		if !found {
 			t.Fatalf("expected walked paths to include %q, got %v", want, paths)
 		}
@@ -590,13 +579,7 @@ func TestWalkDirectory_SpecialCharsInPath(t *testing.T) {
 		t.Fatalf("expected %d files, got %d (%v)", len(expected), len(paths), paths)
 	}
 	for _, want := range expected {
-		found := false
-		for _, got := range paths {
-			if got == want {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(paths, want)
 		if !found {
 			t.Fatalf("expected walked paths to include %q, got %v", want, paths)
 		}
@@ -647,4 +630,43 @@ func generateTestPublicKeyVariant(t *testing.T) gossh.PublicKey {
 		t.Fatalf("failed to parse test public key variant: %v", err)
 	}
 	return key
+}
+
+func TestNormalizeURL(t *testing.T) {
+	cases := []struct {
+		name    string
+		in      string
+		want    string
+		wantErr bool
+	}{
+		{name: "schemeless gets https prefix", in: "github.com/org/repo.git", want: "https://github.com/org/repo.git"},
+		{name: "https kept as-is", in: "https://github.com/org/repo.git", want: "https://github.com/org/repo.git"},
+		{name: "ssh kept as-is", in: "ssh://git@github.com/org/repo.git", want: "ssh://git@github.com/org/repo.git"},
+		{name: "git kept as-is", in: "git://github.com/org/repo.git", want: "git://github.com/org/repo.git"},
+		{name: "scp-like kept as-is", in: "git@github.com:org/repo.git", want: "git@github.com:org/repo.git"},
+		{name: "file scheme rejected", in: "file:///tmp/repo", wantErr: true},
+		{name: "unsupported scheme rejected", in: "ftp://github.com/org/repo.git", wantErr: true},
+		{name: "local path rejected", in: "/tmp/repo", wantErr: true},
+		{name: "relative path rejected", in: "./repo", wantErr: true},
+		{name: "home-relative path rejected", in: "~/repo", wantErr: true},
+		{name: "empty rejected", in: "", wantErr: true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := normalizeURL(tc.in)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected error, got %q", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("expected %q, got %q", tc.want, got)
+			}
+		})
+	}
 }

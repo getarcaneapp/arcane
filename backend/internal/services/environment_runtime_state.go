@@ -3,9 +3,9 @@ package services
 import (
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge"
-	environmenttypes "github.com/getarcaneapp/arcane/types/environment"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
+	environmenttypes "github.com/getarcaneapp/arcane/types/v2/environment"
 )
 
 // ApplyEnvironmentRuntimeState normalizes edge environment runtime status using

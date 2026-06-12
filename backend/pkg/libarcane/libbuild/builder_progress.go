@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"io"
 
-	imagetypes "github.com/getarcaneapp/arcane/types/image"
+	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 )
 
 type flusher interface{ Flush() }

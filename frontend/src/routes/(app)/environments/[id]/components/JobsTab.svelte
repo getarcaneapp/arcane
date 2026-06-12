@@ -2,7 +2,7 @@
 	import { SvelteSet } from 'svelte/reactivity';
 	import { jobScheduleService } from '$lib/services/job-schedule-service';
 	import { containerService } from '$lib/services/container-service';
-	import { tryCatch } from '$lib/utils/try-catch';
+	import { tryCatch } from '$lib/utils/api';
 	import JobCard from '$lib/components/job-card/job-card.svelte';
 	import { Spinner } from '$lib/components/ui/spinner';
 	import { m } from '$lib/paraglide/messages';
@@ -13,8 +13,8 @@
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import * as ScrollArea from '$lib/components/ui/scroll-area';
 	import { JobsIcon } from '$lib/icons';
-	import type { JobStatus, JobPrerequisite } from '$lib/types/job-schedule.type';
-	import type { ContainerSummaryDto } from '$lib/types/container.type';
+	import type { JobStatus, JobPrerequisite } from '$lib/types/settings';
+	import type { ContainerSummaryDto } from '$lib/types/docker';
 	import type { JobsTabProps } from './tab-props';
 
 	let { formInputs, environmentId }: JobsTabProps = $props();
@@ -56,14 +56,29 @@
 	let searchTerm = $state('');
 	let autoHealSearchTerm = $state('');
 
-	const excludedContainers = $derived.by(() => {
-		const savedValue = $formInputs.autoUpdateExcludedContainers?.value || '';
+	function parseExcludedContainerSet(value: string | undefined) {
 		return new SvelteSet(
-			savedValue
+			(value || '')
 				.split(',')
 				.map((s: string) => normalizeContainerName(s.trim()))
 				.filter(Boolean)
 		);
+	}
+
+	function toggleExcludedContainerValue(current: SvelteSet<string>, containerName: string): string {
+		const normalizedName = normalizeContainerName(containerName);
+		const newSet = new SvelteSet(current);
+		if (newSet.has(normalizedName)) {
+			newSet.delete(normalizedName);
+		} else {
+			newSet.add(normalizedName);
+		}
+
+		return Array.from(newSet).join(',');
+	}
+
+	const excludedContainers = $derived.by(() => {
+		return parseExcludedContainerSet($formInputs.autoUpdateExcludedContainers?.value);
 	});
 
 	function resolveSettingsUrl(_job: JobStatus, prereq: JobPrerequisite): string | undefined {
@@ -75,8 +90,6 @@
 			case 'pollingEnabled':
 			case 'autoUpdate':
 				return `${envBase}?tab=docker`;
-			case 'gitopsSyncEnabled':
-				return `${envBase}?tab=gitops`;
 			case 'scheduledPruneEnabled':
 				return `${envBase}?tab=jobs`;
 			case 'vulnerabilityScanEnabled':
@@ -93,40 +106,18 @@
 	}
 
 	function toggleContainerExclusion(containerName: string) {
-		const normalizedName = normalizeContainerName(containerName);
-		const newSet = new SvelteSet(excludedContainers);
-		if (newSet.has(normalizedName)) {
-			newSet.delete(normalizedName);
-		} else {
-			newSet.add(normalizedName);
-		}
-
 		if ($formInputs.autoUpdateExcludedContainers) {
-			$formInputs.autoUpdateExcludedContainers.value = Array.from(newSet).join(',');
+			$formInputs.autoUpdateExcludedContainers.value = toggleExcludedContainerValue(excludedContainers, containerName);
 		}
 	}
 
 	const autoHealExcludedContainers = $derived.by(() => {
-		const savedValue = $formInputs.autoHealExcludedContainers?.value || '';
-		return new SvelteSet(
-			savedValue
-				.split(',')
-				.map((s: string) => normalizeContainerName(s.trim()))
-				.filter(Boolean)
-		);
+		return parseExcludedContainerSet($formInputs.autoHealExcludedContainers?.value);
 	});
 
 	function toggleAutoHealContainerExclusion(containerName: string) {
-		const normalizedName = normalizeContainerName(containerName);
-		const newSet = new SvelteSet(autoHealExcludedContainers);
-		if (newSet.has(normalizedName)) {
-			newSet.delete(normalizedName);
-		} else {
-			newSet.add(normalizedName);
-		}
-
 		if ($formInputs.autoHealExcludedContainers) {
-			$formInputs.autoHealExcludedContainers.value = Array.from(newSet).join(',');
+			$formInputs.autoHealExcludedContainers.value = toggleExcludedContainerValue(autoHealExcludedContainers, containerName);
 		}
 	}
 
@@ -148,7 +139,7 @@
 		{ id: 'telemetry', label: m.jobs_telemetry_heading() }
 	];
 
-	const hiddenJobIds = new Set(['analytics-heartbeat', 'gitops-sync', 'filesystem-watcher']);
+	const hiddenJobIds = new Set(['analytics-heartbeat', 'filesystem-watcher']);
 
 	function getJobsByCategory(categoryId: string, jobs: JobStatus[]): JobStatus[] {
 		return jobs.filter((j) => {

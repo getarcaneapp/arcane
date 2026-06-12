@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	clitypes "github.com/getarcaneapp/arcane/cli/internal/types"
+	clitypes "github.com/getarcaneapp/arcane/cli/v2/internal/types"
 )
 
 func TestApplyConfigSetArgs(t *testing.T) {

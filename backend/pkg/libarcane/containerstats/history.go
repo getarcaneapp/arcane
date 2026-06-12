@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	containertypes "github.com/getarcaneapp/arcane/types/container"
+	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
 	dockercontainer "github.com/moby/moby/api/types/container"
 )
 

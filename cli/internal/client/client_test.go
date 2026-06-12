@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/cli/internal/types"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
 )
 
 func TestClient_UsesAPIKeyHeader(t *testing.T) {

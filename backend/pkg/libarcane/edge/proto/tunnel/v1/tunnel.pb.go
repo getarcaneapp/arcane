@@ -2025,7 +2025,7 @@ const file_tunnel_v1_tunnel_proto_rawDesc = "" +
 	"\rmetadata_json\x18\n" +
 	" \x01(\fR\fmetadataJson2R\n" +
 	"\rTunnelService\x12A\n" +
-	"\aConnect\x12\x17.tunnel.v1.AgentMessage\x1a\x19.tunnel.v1.ManagerMessage(\x010\x01BTZRgithub.com/getarcaneapp/arcane/backend/pkg/libarcane/edge/proto/tunnel/v1;tunnelpbb\x06proto3"
+	"\aConnect\x12\x17.tunnel.v1.AgentMessage\x1a\x19.tunnel.v1.ManagerMessage(\x010\x01BWZUgithub.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge/proto/tunnel/v1;tunnelpbb\x06proto3"
 
 var (
 	file_tunnel_v1_tunnel_proto_rawDescOnce sync.Once

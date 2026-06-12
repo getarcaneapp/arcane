@@ -7,24 +7,27 @@
 	import { queryKeys } from '$lib/query/query-keys';
 	import environmentUpgradeService from '$lib/services/api/environment-upgrade-service';
 	import systemUpgradeService from '$lib/services/api/system-upgrade-service';
-	import type { AppVersionInformation } from '$lib/types/application-configuration';
-	import type { Environment } from '$lib/types/environment.type';
-	import { extractApiErrorMessage } from '$lib/utils/api.util';
+	import type { AppVersionInformation } from '$lib/types/settings';
+	import type { Environment } from '$lib/types/environment';
+	import { extractApiErrorMessage } from '$lib/utils/api';
 	import { DownloadIcon } from '$lib/icons';
 
+	// open/upgrading have no $bindable fallback: they bind to per-environment
+	// record entries that start out undefined, and binding undefined to a
+	// $bindable with a fallback throws props_invalid_value. Undefined reads as falsy.
 	let {
 		environment,
 		versionInfo,
-		isAdmin,
+		canUpgrade: canUpgradePermission,
 		debug = false,
 		onRefreshRequested,
 		render = 'both',
-		open = $bindable(false),
-		upgrading = $bindable(false)
+		open = $bindable(undefined),
+		upgrading = $bindable(undefined)
 	}: {
 		environment: Environment;
 		versionInfo: AppVersionInformation;
-		isAdmin: boolean;
+		canUpgrade: boolean;
 		debug?: boolean;
 		onRefreshRequested?: () => void | Promise<void>;
 		render?: 'both' | 'trigger' | 'dialog';
@@ -32,7 +35,7 @@
 		upgrading?: boolean;
 	} = $props();
 
-	const shouldCheckUpgrade = $derived(!!(versionInfo.updateAvailable && isAdmin && !debug));
+	const shouldCheckUpgrade = $derived(!!(versionInfo.updateAvailable && canUpgradePermission && !debug));
 	const isLocalEnvironment = $derived(environment.id === '0');
 
 	const upgradeAvailabilityQuery = createQuery(() => ({
@@ -45,7 +48,7 @@
 		staleTime: 0
 	}));
 
-	const canUpgrade = $derived.by(() => {
+	const upgradeIsAvailable = $derived.by(() => {
 		if (debug) return true;
 		const result = upgradeAvailabilityQuery.data;
 		return !!result?.canUpgrade && !result?.error;
@@ -74,7 +77,9 @@
 		return '';
 	});
 
-	const shouldShowUpgrade = $derived((versionInfo.updateAvailable && isAdmin && canUpgrade) || (debug && isAdmin));
+	const shouldShowUpgrade = $derived(
+		(versionInfo.updateAvailable && canUpgradePermission && upgradeIsAvailable) || (debug && canUpgradePermission)
+	);
 
 	const upgradeButtonText = $derived.by(() => {
 		if (upgrading) return m.upgrade_in_progress();

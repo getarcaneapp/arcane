@@ -8,8 +8,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/cli/internal/client"
-	clitypes "github.com/getarcaneapp/arcane/cli/internal/types"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
+	clitypes "github.com/getarcaneapp/arcane/cli/v2/internal/types"
 )
 
 func BenchmarkClientListMediumPayload(b *testing.B) {

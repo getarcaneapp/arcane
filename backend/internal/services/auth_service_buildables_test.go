@@ -6,8 +6,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/backend/buildables"
-	"github.com/getarcaneapp/arcane/backend/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v2/buildables"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/stretchr/testify/require"
 )
 

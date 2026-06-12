@@ -7,16 +7,18 @@
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
-	import { tryCatch } from '$lib/utils/try-catch';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api';
+	import { tryCatch } from '$lib/utils/api';
 	import UniversalMobileCard from '$lib/components/arcane-table/cards/universal-mobile-card.svelte';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
-	import type { Template } from '$lib/types/template.type';
+	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
+	import type { Template } from '$lib/types/swarm';
 	import type { ColumnSpec, MobileFieldVisibility } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
 	import { templateTypeFilters } from '$lib/components/arcane-table/data';
 	import { templateService } from '$lib/services/template-service';
-	import { truncateString } from '$lib/utils/string.utils';
+	import { truncateString } from '$lib/utils/formatting';
+	import { hasPermission } from '$lib/utils/auth';
+	import IfPermitted from '$lib/components/if-permitted.svelte';
 	import { PersistedState } from 'runed';
 	import { onMount } from 'svelte';
 	import IconImage from '$lib/components/icon-image.svelte';
@@ -44,6 +46,9 @@
 
 	let deletingId = $state<string | null>(null);
 	let downloadingId = $state<string | null>(null);
+
+	const canReadTemplate = $derived(hasPermission('templates:read'));
+	const canDeleteTemplate = $derived(hasPermission('templates:delete'));
 
 	async function handleDeleteTemplate(id: string, name: string) {
 		openConfirmDialog({
@@ -135,7 +140,8 @@
 		if (!collapsedGroupsState) return;
 		collapsedGroupsState.current = {
 			...collapsedGroupsState.current,
-			[groupName]: !collapsedGroupsState.current[groupName]
+			// Groups with no recorded state render collapsed, so toggle from that default
+			[groupName]: !(collapsedGroupsState.current[groupName] ?? true)
 		};
 	}
 
@@ -169,8 +175,8 @@
 			src={item.metadata?.iconUrl}
 			alt={item.name}
 			fallback={item.isRemote ? GlobeIcon : FolderOpenIcon}
-			class="size-8"
-			containerClass="size-10"
+			class="size-6"
+			containerClass="size-8"
 		/>
 		<a class="font-medium hover:underline" href="/customize/templates/{item.id}">
 			{item.name}
@@ -283,14 +289,18 @@
 					{m.common_view_details()}
 				</DropdownMenu.Item>
 
-				<DropdownMenu.Item onclick={() => goto(`/projects/new?templateId=${item.id}`)}>
-					<MoveToFolderIcon class="size-4" />
-					{m.compose_create_project()}
-				</DropdownMenu.Item>
+				<IfPermitted perm="projects:create">
+					<DropdownMenu.Item onclick={() => goto(`/projects/new?templateId=${item.id}`)}>
+						<MoveToFolderIcon class="size-4" />
+						{m.compose_create_project()}
+					</DropdownMenu.Item>
+				</IfPermitted>
 
-				<DropdownMenu.Separator />
+				{#if (item.isRemote && canReadTemplate) || (!item.isRemote && canDeleteTemplate)}
+					<DropdownMenu.Separator />
+				{/if}
 
-				{#if item.isRemote}
+				{#if item.isRemote && canReadTemplate}
 					<DropdownMenu.Item onclick={() => handleDownloadTemplate(item.id, item.name)} disabled={downloadingId === item.id}>
 						{#if downloadingId === item.id}
 							<Spinner class="size-4" />
@@ -299,7 +309,7 @@
 						{/if}
 						{m.templates_download()}
 					</DropdownMenu.Item>
-				{:else}
+				{:else if !item.isRemote && canDeleteTemplate}
 					<DropdownMenu.Item
 						variant="destructive"
 						onclick={() => handleDeleteTemplate(item.id, item.name)}

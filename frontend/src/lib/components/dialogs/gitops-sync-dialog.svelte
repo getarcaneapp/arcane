@@ -10,11 +10,11 @@
 	import { Switch } from '$lib/components/ui/switch/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import FileBrowserDialog from '$lib/components/dialogs/file-browser-dialog.svelte';
-	import type { GitOpsSync, GitOpsSyncCreateDto, GitOpsSyncUpdateDto, GitRepository, BranchInfo } from '$lib/types/gitops.type';
+	import type { GitOpsSync, GitOpsSyncCreateDto, GitOpsSyncUpdateDto, GitRepository, BranchInfo } from '$lib/types/automation';
 	import { gitRepositoryService } from '$lib/services/git-repository-service';
 	import { settingsService } from '$lib/services/settings-service';
 	import { z } from 'zod/v4';
-	import { createForm, preventDefault } from '$lib/utils/form.utils';
+	import { createForm, preventDefault } from '$lib/utils/settings';
 	import { queryKeys } from '$lib/query/query-keys';
 	import { m } from '$lib/paraglide/messages';
 	import { ArrowRightIcon, FolderOpenIcon, InfoIcon } from '$lib/icons';
@@ -131,7 +131,7 @@
 	});
 
 	$effect(() => {
-		if (!open || !syncToEdit || repositories.length === 0) return;
+		if (!open || !syncToEdit || repositories.length === 0 || selectedRepository) return;
 		const repo = repositories.find((r) => r.id === syncToEdit.repositoryId);
 		if (repo) {
 			selectedRepository = { value: repo.id, label: repo.name };

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/backend/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/stretchr/testify/assert"
 )
 

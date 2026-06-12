@@ -4,19 +4,19 @@
 	import * as Card from '$lib/components/ui/card/index.js';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
-	import { getStatusVariant } from '$lib/utils/status.utils';
-	import { capitalizeFirstLetter } from '$lib/utils/string.utils';
-	import type { SearchPaginationSortRequest, Paginated } from '$lib/types/pagination.type';
-	import type { ContainerSummaryDto } from '$lib/types/container.type';
+	import { getStatusVariant } from '$lib/utils/docker';
+	import { capitalizeFirstLetter } from '$lib/utils/formatting';
+	import type { SearchPaginationSortRequest, Paginated } from '$lib/types/shared';
+	import type { ContainerSummaryDto } from '$lib/types/docker';
 	import type { ColumnSpec } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
 	import { containerService } from '$lib/services/container-service';
 	import { goto } from '$app/navigation';
-	import { untrack } from 'svelte';
-	import { IsMobile } from '$lib/hooks';
+	import { mode } from 'mode-watcher';
+	import { useResponsiveTableLimit } from '$lib/hooks/use-responsive-table-limit.svelte';
 	import { ContainersIcon, ArrowRightIcon } from '$lib/icons';
 	import IconImage from '$lib/components/icon-image.svelte';
-	import { getArcaneIconUrlFromLabels } from '$lib/utils/arcane-labels';
+	import { getThemedIconUrl } from '$lib/utils/docker';
 
 	let {
 		containers = $bindable(),
@@ -26,67 +26,17 @@
 		isLoading: boolean;
 	} = $props();
 
-	const isMobile = new IsMobile();
 	let selectedIds = $state<string[]>([]);
-	let displayLimit = $state(containers.pagination?.itemsPerPage ?? 5);
-	let lastMeasuredHeight = $state(0);
-
-	const MOBILE_ROWS = 4;
-	const ROW_HEIGHT = 57;
-	const HEADER_HEIGHT = 145;
-	const FOOTER_HEIGHT = 48;
-	const MIN_ROWS = 3;
-	const MAX_ROWS = 50;
-
-	let requestOptions = $state<SearchPaginationSortRequest>({
-		pagination: { page: 1, limit: 5 },
-		sort: { column: 'created', direction: 'desc' }
-	});
-
-	function shouldReserveFooter(limit: number) {
-		const totalItems = containers.pagination?.totalItems ?? 0;
-		return totalItems > limit;
-	}
-
-	function calculateLimitForHeight(height: number) {
-		if (isMobile.current) return MOBILE_ROWS;
-		if (height <= 0) return 5;
-
-		let availableHeight = height - HEADER_HEIGHT;
-		const initialRows = Math.floor(Math.max(0, availableHeight) / ROW_HEIGHT);
-		const footerLimit = Math.max(MIN_ROWS, Math.min(MAX_ROWS, initialRows));
-		if (shouldReserveFooter(footerLimit)) {
-			availableHeight -= FOOTER_HEIGHT;
-		}
-
-		const rows = Math.floor(Math.max(0, availableHeight) / ROW_HEIGHT);
-		return Math.max(MIN_ROWS, Math.min(MAX_ROWS, rows));
-	}
-
-	function updateRequestLimit(limit: number) {
-		const currentOptions = untrack(() => requestOptions);
-		if (currentOptions.pagination?.limit === limit) return;
-
-		requestOptions = {
-			...currentOptions,
-			pagination: {
-				page: currentOptions.pagination?.page ?? 1,
-				limit
-			}
-		};
-	}
-
-	$effect(() => {
-		const nextLimit = calculateLimitForHeight(lastMeasuredHeight);
-		displayLimit = nextLimit;
-		updateRequestLimit(nextLimit);
+	const tableLimit = useResponsiveTableLimit({
+		initialLimit: containers.pagination?.itemsPerPage ?? 5,
+		sort: { column: 'created', direction: 'desc' },
+		getTotalItems: () => containers.pagination?.totalItems ?? 0
 	});
 
 	async function refreshContainers(options: SearchPaginationSortRequest) {
-		requestOptions = options;
+		tableLimit.requestOptions = options;
 		const result = await containerService.getContainers(options);
 		containers = result;
-		displayLimit = result.pagination?.itemsPerPage ?? displayLimit;
 		return result;
 	}
 
@@ -101,9 +51,9 @@
 {#snippet NameCell({ item }: { item: ContainerSummaryDto })}
 	{@const firstName = item.names?.[0] ?? ''}
 	{@const displayName = firstName ? (firstName.startsWith('/') ? firstName.substring(1) : firstName) : item.id.substring(0, 12)}
-	{@const iconUrl = getArcaneIconUrlFromLabels(item.labels)}
+	{@const iconUrl = getThemedIconUrl(item, mode.current)}
 	<div class="flex items-center gap-2">
-		<IconImage src={iconUrl} alt={displayName} fallback={ContainersIcon} class="size-4" containerClass="size-7" />
+		<IconImage src={iconUrl} alt={displayName} fallback={ContainersIcon} class="size-6" containerClass="size-8" />
 		<a class="font-medium hover:underline" href="/containers/{item.id}">{displayName}</a>
 	</div>
 {/snippet}
@@ -116,7 +66,7 @@
 	<UniversalMobileCard
 		{item}
 		icon={(item) => {
-			const iconUrl = getArcaneIconUrlFromLabels(item.labels);
+			const iconUrl = getThemedIconUrl(item, mode.current);
 			const state = item.state;
 			return {
 				component: ContainersIcon,
@@ -150,7 +100,7 @@
 	/>
 {/snippet}
 
-<div class="flex flex-col lg:h-full lg:min-h-0" bind:clientHeight={lastMeasuredHeight}>
+<div class="flex flex-col lg:h-full lg:min-h-0" bind:clientHeight={tableLimit.measuredHeight}>
 	<Card.Root class="flex flex-col lg:h-full lg:min-h-0">
 		<Card.Header icon={ContainersIcon} class="shrink-0">
 			<div class="flex flex-1 items-center justify-between">
@@ -168,8 +118,8 @@
 		</Card.Header>
 		<Card.Content class="px-0 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
 			<ArcaneTable
-				items={{ ...containers, data: containers.data.slice(0, displayLimit) }}
-				bind:requestOptions
+				items={{ ...containers, data: containers.data.slice(0, tableLimit.displayLimit) }}
+				bind:requestOptions={tableLimit.requestOptions}
 				bind:selectedIds
 				onRefresh={refreshContainers}
 				{columns}
@@ -180,10 +130,10 @@
 				unstyled
 			/>
 		</Card.Content>
-		{#if containers.data.length >= displayLimit && containers.pagination.totalItems > displayLimit}
+		{#if tableLimit.shouldShowFooter(containers.data.length)}
 			<Card.Footer class="border-t px-6 py-3">
 				<span class="text-muted-foreground text-xs">
-					{m.containers_showing_of_total({ shown: displayLimit, total: containers.pagination.totalItems })}
+					{m.containers_showing_of_total({ shown: tableLimit.displayLimit, total: containers.pagination.totalItems })}
 				</span>
 			</Card.Footer>
 		{/if}

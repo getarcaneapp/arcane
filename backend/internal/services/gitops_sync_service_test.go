@@ -8,11 +8,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/backend/internal/config"
-	"github.com/getarcaneapp/arcane/backend/internal/database"
-	"github.com/getarcaneapp/arcane/backend/internal/models"
-	git "github.com/getarcaneapp/arcane/backend/pkg/gitutil"
-	"github.com/getarcaneapp/arcane/backend/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	git "github.com/getarcaneapp/arcane/backend/v2/pkg/gitutil"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -232,8 +232,14 @@ func TestGitOpsSyncService_DirectorySync_RealWalkWithNestedConfig(t *testing.T) 
 	}
 	require.NoError(t, db.Create(sync).Error)
 
-	composeContent, syncFiles, err := svc.walkAndParseSyncDirectory(ctx, sync, repoPath)
+	syncFiles, err := svc.walkAndParseSyncDirectory(ctx, sync, repoPath)
 	require.NoError(t, err)
+	var composeContent string
+	for _, f := range syncFiles {
+		if f.RelativePath == "docker-compose.yml" {
+			composeContent = string(f.Content)
+		}
+	}
 	assert.Contains(t, composeContent, "./config/dynamic_config.yml")
 
 	project, syncedFiles, created, changed, err := svc.syncProjectDirectoryInternal(ctx, sync, syncFiles, models.User{})
@@ -307,7 +313,7 @@ func TestGitOpsSyncService_DirectorySync_OverwritesExistingDirectoryAtFilePath(t
 	}
 	require.NoError(t, db.Create(sync).Error)
 
-	_, syncFiles, err := svc.walkAndParseSyncDirectory(ctx, sync, repoPath)
+	syncFiles, err := svc.walkAndParseSyncDirectory(ctx, sync, repoPath)
 	require.NoError(t, err)
 
 	updatedProject, syncedFiles, created, changed, err := svc.syncProjectDirectoryInternal(ctx, sync, syncFiles, models.User{})

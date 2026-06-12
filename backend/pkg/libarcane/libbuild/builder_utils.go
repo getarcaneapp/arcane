@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	imagetypes "github.com/getarcaneapp/arcane/types/image"
+	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 )
 
 func normalizeBuildRequestInternal(req imagetypes.BuildRequest, providerName string) imagetypes.BuildRequest {

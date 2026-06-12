@@ -1,13 +1,23 @@
 package handlers
 
 import (
+	"context"
+	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/backend/internal/config"
-	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge"
-	apitypes "github.com/getarcaneapp/arcane/types/settings"
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
+	apitypes "github.com/getarcaneapp/arcane/types/v2/settings"
+	glsqlite "github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 func TestSettingsHandler_AppendRuntimeSettings(t *testing.T) {
@@ -50,6 +60,42 @@ func TestSettingsHandler_AppendRuntimeSettings_DoesNotGenerateEdgeMTLSCA(t *test
 	require.Equal(t, "false", authenticatedKeys["edgeMTLSManagerCAAvailable"])
 	require.NoFileExists(t, filepath.Join(assetsDir, "ca.crt"))
 	require.NoFileExists(t, filepath.Join(assetsDir, "ca.key"))
+}
+
+func TestSettingsHandler_UpdateLocalEnvironment_RejectsUnreadableProjectsDirectory(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission-denied behavior is not portable to Windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("test requires a non-root UID to trigger permission-denied on ReadDir")
+	}
+
+	ctx := context.Background()
+
+	db, err := gorm.Open(glsqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&models.SettingVariable{}))
+
+	settingsSvc, err := services.NewSettingsService(ctx, &database.DB{DB: db})
+	require.NoError(t, err)
+
+	originalDir := settingsSvc.GetSettingsConfig().ProjectsDirectory.Value
+
+	unreadable := t.TempDir()
+	require.NoError(t, os.Chmod(unreadable, 0))
+	t.Cleanup(func() { _ = os.Chmod(unreadable, 0o700) })
+
+	handler := &SettingsHandler{settingsService: settingsSvc, cfg: &config.Config{}}
+
+	_, err = handler.updateSettingsForLocalEnvironment(ctx, apitypes.Update{ProjectsDirectory: new(unreadable)})
+	require.Error(t, err)
+
+	var statusErr huma.StatusError
+	require.ErrorAs(t, err, &statusErr, "expected a huma status error")
+	require.Equal(t, 400, statusErr.GetStatus())
+	require.True(t, strings.Contains(err.Error(), "cannot read projects directory"), "error message should explain the failure: %s", err.Error())
+
+	require.Equal(t, originalDir, settingsSvc.GetSettingsConfig().ProjectsDirectory.Value, "projectsDirectory must not be persisted on validation failure")
 }
 
 func runtimeSettingKeysInternal(settings []apitypes.PublicSetting) map[string]string {

@@ -10,16 +10,18 @@ import (
 	nethttp "net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/gitops"
+	"github.com/getarcaneapp/arcane/types/v2/gitops"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/transport"
+	"github.com/go-git/go-git/v5/plumbing/transport/client"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/gofrs/flock"
@@ -27,9 +29,48 @@ import (
 	"golang.org/x/crypto/ssh/knownhosts"
 )
 
+// go-git's file transport execs the git binary, which doesn't exist in the
+// distroless image. Unregister it so a repository URL can never reach it.
+func init() {
+	client.InstallProtocol("file", nil)
+}
+
 // Client handles git operations
 type Client struct {
 	workDir string
+}
+
+var scpLikeURLPattern = regexp.MustCompile(`^[^@/]+@[^:/]+:`)
+
+const errUnsupportedURL = "repository URL must use http(s)://, ssh://, git://, or git@host:path"
+
+// normalizeURL coerces a repository URL into a form go-git resolves to a
+// network transport, never the file transport (which execs the git binary).
+// Schemeless host-style URLs (e.g. github.com/org/repo.git) get https://.
+func normalizeURL(raw string) (string, error) {
+	url := strings.TrimSpace(raw)
+	if url == "" {
+		return "", errors.New("repository URL is empty")
+	}
+
+	if scheme, _, found := strings.Cut(url, "://"); found {
+		switch strings.ToLower(scheme) {
+		case "http", "https", "ssh", "git":
+			return url, nil
+		default:
+			return "", errors.New(errUnsupportedURL)
+		}
+	}
+
+	if scpLikeURLPattern.MatchString(url) {
+		return url, nil
+	}
+
+	if strings.HasPrefix(url, "/") || strings.HasPrefix(url, ".") || strings.HasPrefix(url, "~") {
+		return "", errors.New(errUnsupportedURL)
+	}
+
+	return "https://" + url, nil
 }
 
 // NewClient creates a new git client
@@ -86,7 +127,7 @@ func (c *Client) getAuth(config AuthConfig) (transport.AuthMethod, error) {
 
 			return publicKeys, nil
 		}
-		return nil, fmt.Errorf("ssh key required for ssh authentication")
+		return nil, errors.New("ssh key required for ssh authentication")
 	case "none":
 		return nil, nil
 	default:
@@ -254,6 +295,12 @@ func (c *Client) Clone(ctx context.Context, url, branch string, auth AuthConfig)
 		return "", err
 	}
 
+	url, err = normalizeURL(url)
+	if err != nil {
+		_ = os.RemoveAll(tmpDir)
+		return "", err
+	}
+
 	cloneOptions := &git.CloneOptions{
 		URL:      url,
 		Progress: nil,
@@ -376,6 +423,11 @@ func (c *Client) listRemoteReferences(ctx context.Context, url string, auth Auth
 		return nil, err
 	}
 
+	url, err = normalizeURL(url)
+	if err != nil {
+		return nil, err
+	}
+
 	// Create a remote without cloning
 	rem := git.NewRemote(nil, &config.RemoteConfig{
 		Name: "origin",
@@ -410,7 +462,7 @@ func ValidatePath(repoPath, requestedPath string) error {
 		return fmt.Errorf("invalid path: %w", err)
 	}
 	if strings.HasPrefix(rel, "..") || strings.Contains(rel, string(filepath.Separator)+".."+string(filepath.Separator)) {
-		return fmt.Errorf("path traversal attempt detected")
+		return errors.New("path traversal attempt detected")
 	}
 
 	return nil
@@ -435,7 +487,7 @@ func (c *Client) BrowseTree(ctx context.Context, repoPath, targetPath string) ([
 	}
 
 	if !info.IsDir() {
-		return nil, fmt.Errorf("path is not a directory")
+		return nil, errors.New("path is not a directory")
 	}
 
 	entries, err := os.ReadDir(fullPath)
@@ -604,7 +656,7 @@ func (c *Client) WalkDirectory(ctx context.Context, repoPath, composePath string
 
 	// Validate we found at least one file
 	if len(result.Files) == 0 {
-		return nil, fmt.Errorf("no files found in sync directory (directory may be empty or all files were skipped)")
+		return nil, errors.New("no files found in sync directory (directory may be empty or all files were skipped)")
 	}
 
 	return result, nil

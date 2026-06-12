@@ -1,6 +1,6 @@
 services:
   arcane-migrator:
-    image: ghcr.io/getarcaneapp/arcane-headless:latest
+    image: ghcr.io/getarcaneapp/agent:latest
     restart: "no"
     # To downgrade:
     # 1. Stop the edge agent and back up the agent-data volume.
@@ -18,7 +18,7 @@ services:
       - agent-data:/app/data
 
   arcane-edge-agent:
-    image: ghcr.io/getarcaneapp/arcane-headless:${ARCANE_VERSION:-latest}
+    image: ghcr.io/getarcaneapp/agent:${ARCANE_VERSION:-latest}
     container_name: arcane-edge-agent
     depends_on:
       arcane-migrator:

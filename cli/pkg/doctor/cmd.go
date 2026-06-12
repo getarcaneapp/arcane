@@ -2,12 +2,13 @@ package doctor
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/cli/internal/config"
-	"github.com/getarcaneapp/arcane/cli/internal/output"
-	runtimectx "github.com/getarcaneapp/arcane/cli/internal/runtime"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/config"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
+	runtimectx "github.com/getarcaneapp/arcane/cli/v2/internal/runtime"
 	"github.com/spf13/cobra"
 )
 
@@ -41,7 +42,7 @@ var DoctorCmd = &cobra.Command{
 
 		cfg := app.Config()
 		if cfg == nil {
-			return fmt.Errorf("configuration unavailable")
+			return errors.New("configuration unavailable")
 		}
 
 		rep := report{Healthy: true}
@@ -123,7 +124,7 @@ var DoctorCmd = &cobra.Command{
 		}
 
 		if !rep.Healthy {
-			return fmt.Errorf("diagnostics failed")
+			return errors.New("diagnostics failed")
 		}
 		return nil
 	},

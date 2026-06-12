@@ -10,15 +10,15 @@ import (
 	"sync"
 	"time"
 
-	backoff "github.com/cenkalti/backoff/v5"
-	"github.com/getarcaneapp/arcane/backend/internal/config"
-	"github.com/getarcaneapp/arcane/backend/internal/database"
-	docker "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
-	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/eventbus"
-	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/timeouts"
-	"github.com/getarcaneapp/arcane/backend/pkg/utils/cache"
-	dashboardtypes "github.com/getarcaneapp/arcane/types/dashboard"
+	"github.com/cenkalti/backoff/v5"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	docker "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/eventbus"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cache"
+	dashboardtypes "github.com/getarcaneapp/arcane/types/v2/dashboard"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/events"
 	"github.com/moby/moby/api/types/image"
@@ -557,7 +557,7 @@ func countImageUsageInternal(images []image.Summary, containers []container.Summ
 	return inuse, unused, total
 }
 
-func (s *DockerClientService) GetAllNetworks(ctx context.Context) (_ []network.Summary, inuseNetworks int, unusedNetworks int, totalNetworks int, error error) {
+func (s *DockerClientService) GetAllNetworks(ctx context.Context) ([]network.Summary, int, int, int, error) {
 	containers, err := s.listContainersInternal(ctx)
 	if err != nil {
 		return nil, 0, 0, 0, err

@@ -3,9 +3,10 @@
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import FormInput from '$lib/components/form/form-input.svelte';
 	import * as Accordion from '$lib/components/ui/accordion/index.js';
-	import type { VolumeCreateRequest } from '$lib/types/volume.type';
+	import type { VolumeCreateRequest } from '$lib/types/docker';
 	import { z } from 'zod/v4';
-	import { createForm, preventDefault } from '$lib/utils/form.utils';
+	import { createForm, preventDefault } from '$lib/utils/settings';
+	import { parseKeyValuePairs } from '$lib/utils/form-parsers';
 	import SelectWithLabel from '../form/select-with-label.svelte';
 	import { m } from '$lib/paraglide/messages';
 
@@ -40,27 +41,6 @@
 	});
 
 	let { inputs, ...form } = $derived(createForm<typeof formSchema>(formSchema, formData));
-
-	function parseKeyValuePairs(text: string): Record<string, string> {
-		if (!text?.trim()) return {};
-
-		const result: Record<string, string> = {};
-		const lines = text.split('\n');
-
-		for (const line of lines) {
-			const trimmed = line.trim();
-			if (!trimmed || !trimmed.includes('=')) continue;
-
-			const [key, ...valueParts] = trimmed.split('=');
-			const value = valueParts.join('=');
-
-			if (key?.trim()) {
-				result[key.trim()] = value.trim();
-			}
-		}
-
-		return result;
-	}
 
 	function handleSubmit() {
 		const data = form.validate();

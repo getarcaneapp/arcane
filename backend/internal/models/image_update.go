@@ -5,6 +5,8 @@ import (
 )
 
 type ImageUpdateRecord struct {
+	BaseModel
+
 	ID             string    `json:"id" gorm:"primaryKey;type:text"`
 	Repository     string    `json:"repository"`
 	Tag            string    `json:"tag"`
@@ -24,8 +26,6 @@ type ImageUpdateRecord struct {
 	UsedCredential bool    `json:"usedCredential,omitempty" gorm:"column:used_credential"`
 
 	NotificationSent bool `json:"notificationSent" gorm:"column:notification_sent;default:false"`
-
-	BaseModel
 }
 
 func (i *ImageUpdateRecord) TableName() string {
@@ -43,6 +43,7 @@ type ImageUpdate struct {
 const (
 	UpdateTypeDigest = "digest"
 	UpdateTypeTag    = "tag"
+	UpdateTypeLocal  = "local"
 )
 
 func (i *ImageUpdateRecord) NeedsUpdate() bool {

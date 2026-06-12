@@ -1,12 +1,12 @@
 import BaseAPIService from './api-service';
 import { environmentStore } from '$lib/stores/environment.store.svelte';
-import type { SearchPaginationSortRequest, Paginated } from '$lib/types/pagination.type';
-import type { PortMappingDto } from '$lib/types/port.type';
-import { transformPaginationParams } from '$lib/utils/params.util';
+import type { SearchPaginationSortRequest, Paginated } from '$lib/types/shared';
+import type { PortMappingDto } from '$lib/types/docker';
+import { transformPaginationParams } from '$lib/utils/tables';
 
 export type PortsPaginatedResponse = Paginated<PortMappingDto>;
 
-export class PortService extends BaseAPIService {
+class PortService extends BaseAPIService {
 	private async resolveEnvironmentId(environmentId?: string): Promise<string> {
 		return environmentId ?? (await environmentStore.getCurrentEnvironmentId());
 	}

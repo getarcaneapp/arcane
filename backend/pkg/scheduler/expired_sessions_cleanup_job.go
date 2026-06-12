@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/internal/services"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 )
 
 const ExpiredSessionsCleanupJobName = "expired-sessions-cleanup"

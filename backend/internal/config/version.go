@@ -3,9 +3,11 @@ package config
 import "runtime"
 
 var (
-	Version   = "dev"
-	Revision  = "unknown"
-	BuildTime = "unknown"
+	Version          = "dev"
+	Revision         = "unknown"
+	BuildTime        = "unknown"
+	NodeVersion      = "unknown"
+	SvelteKitVersion = "unknown"
 )
 
 // ShortRevision returns the first 8 characters of the revision hash

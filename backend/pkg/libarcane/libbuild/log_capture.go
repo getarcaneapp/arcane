@@ -3,7 +3,7 @@ package libbuild
 import (
 	"bytes"
 
-	buildtypes "github.com/getarcaneapp/arcane/types/builds"
+	buildtypes "github.com/getarcaneapp/arcane/types/v2/builds"
 )
 
 // logCapture stores build output up to a max byte size.

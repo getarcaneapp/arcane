@@ -1,8 +1,7 @@
 package generate
 
 import (
-	cligenerate "github.com/getarcaneapp/arcane/cli/pkg/generate"
-	"github.com/spf13/cobra"
+	cligenerate "github.com/getarcaneapp/arcane/cli/v2/pkg/generate"
 )
 
-var GenerateCmd *cobra.Command = cligenerate.GenerateCmd
+var GenerateCmd = cligenerate.GenerateCmd

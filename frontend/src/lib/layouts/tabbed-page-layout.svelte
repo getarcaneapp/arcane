@@ -57,7 +57,7 @@
 		>
 			<div class="max-w-full px-4 py-3">
 				<div class="flex items-start justify-between gap-3">
-					<div class="flex min-w-0 items-start gap-3">
+					<div class="flex min-w-0 items-start gap-2">
 						{#if backUrl}
 							<ArcaneButton action="base" tone="ghost" size="sm" href={backUrl}>
 								<ArrowLeftIcon class="size-4" />
@@ -86,7 +86,7 @@
 		{#if showFloatingHeader}
 			<div class="fixed top-4 left-1/2 z-30 -translate-x-1/2 transition-all duration-300 ease-in-out">
 				<div
-					class="bg-popover/90 supports-backdrop-filter:bg-popover/80 bubble-shadow-lg border-border/50 rounded-xl border px-4 py-3 backdrop-blur-md"
+					class="bg-popover/90 supports-backdrop-filter:bg-popover/80 bubble-shadow-lg border-border/50 rounded-lg border px-4 py-3 backdrop-blur-md"
 				>
 					<div class="flex items-center gap-4">
 						<div class="min-w-0">

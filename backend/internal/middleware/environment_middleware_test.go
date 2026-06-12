@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
 )
@@ -144,6 +144,90 @@ func TestEnvironmentMiddleware_KeepsNotificationEndpointsLocal(t *testing.T) {
 	assert.True(t, localHandlerHit)
 }
 
+func TestEnvironmentMiddleware_KeepsWebhookEndpointsLocal(t *testing.T) {
+	tests := []struct {
+		name   string
+		method string
+		route  string
+		path   string
+	}{
+		{
+			name:   "list webhooks",
+			method: http.MethodGet,
+			route:  "/environments/:id/webhooks",
+			path:   "/api/environments/env-edge/webhooks",
+		},
+		{
+			name:   "delete webhook",
+			method: http.MethodDelete,
+			route:  "/environments/:id/webhooks/:webhookId",
+			path:   "/api/environments/env-edge/webhooks/wh-1",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			middleware := newTestEnvironmentMiddleware()
+			router := echo.New()
+			api := attachMiddleware(router, middleware)
+
+			localHandlerHit := false
+			api.Add(tt.method, tt.route, func(c echo.Context) error {
+				localHandlerHit = true
+				return c.JSON(http.StatusOK, map[string]any{"success": true})
+			})
+
+			req := httptest.NewRequest(tt.method, tt.path, nil)
+			recorder := httptest.NewRecorder()
+
+			router.ServeHTTP(recorder, req)
+
+			assert.Equal(t, http.StatusOK, recorder.Code)
+			assert.Contains(t, recorder.Body.String(), "\"success\":true")
+			assert.True(t, localHandlerHit)
+		})
+	}
+}
+
+func TestEnvironmentMiddleware_KeepsActivityEndpointsLocal(t *testing.T) {
+	tests := []struct {
+		name   string
+		method string
+		route  string
+		path   string
+	}{
+		{
+			name:   "list activities",
+			method: http.MethodGet,
+			route:  "/environments/:id/activities",
+			path:   "/api/environments/env-edge/activities?limit=50",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			middleware := newTestEnvironmentMiddleware()
+			router := echo.New()
+			api := attachMiddleware(router, middleware)
+
+			localHandlerHit := false
+			api.Add(tt.method, tt.route, func(c echo.Context) error {
+				localHandlerHit = true
+				return c.JSON(http.StatusOK, map[string]any{"success": true})
+			})
+
+			req := httptest.NewRequest(tt.method, tt.path, nil)
+			recorder := httptest.NewRecorder()
+
+			router.ServeHTTP(recorder, req)
+
+			assert.Equal(t, http.StatusOK, recorder.Code)
+			assert.Contains(t, recorder.Body.String(), "\"success\":true")
+			assert.True(t, localHandlerHit)
+		})
+	}
+}
+
 func TestEnvironmentMiddleware_ProxyWebSocketRejectsEdgeTargetsWithoutTunnel(t *testing.T) {
 	middleware := newTestEnvironmentMiddleware()
 	e := echo.New()
@@ -229,4 +313,16 @@ func TestIsWebSocketUpgrade(t *testing.T) {
 			assert.Equal(t, tt.expected, result, "headers: %v", tt.headers)
 		})
 	}
+}
+
+func TestEnvironmentMiddleware_CreateProxyRequest_RejectsInvalidProxyTarget(t *testing.T) {
+	middleware := newTestEnvironmentMiddleware()
+	e := echo.New()
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/environments/env-edge/containers", nil)
+	c := e.NewContext(req, recorder)
+
+	_, err := middleware.createProxyRequest(c, "ftp://example.com/containers", nil)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "Invalid proxy target URL")
 }

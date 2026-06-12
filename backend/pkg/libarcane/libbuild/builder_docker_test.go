@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	imagetypes "github.com/getarcaneapp/arcane/types/image"
+	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 	dockerregistry "github.com/moby/moby/api/types/registry"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

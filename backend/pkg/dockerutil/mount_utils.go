@@ -5,8 +5,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	containertypes "github.com/moby/moby/api/types/container"
 	mounttypes "github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"

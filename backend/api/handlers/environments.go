@@ -15,18 +15,19 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
-	humamw "github.com/getarcaneapp/arcane/backend/api/middleware"
-	"github.com/getarcaneapp/arcane/backend/internal/common"
-	"github.com/getarcaneapp/arcane/backend/internal/config"
-	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge"
-	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/pkg/utils/mapper"
-	"github.com/getarcaneapp/arcane/types/base"
-	"github.com/getarcaneapp/arcane/types/environment"
-	"github.com/getarcaneapp/arcane/types/version"
+	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	httputils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
+	"github.com/getarcaneapp/arcane/types/v2/base"
+	"github.com/getarcaneapp/arcane/types/v2/environment"
+	"github.com/getarcaneapp/arcane/types/v2/version"
 )
 
 const localDockerEnvironmentID = "0"
@@ -70,7 +71,8 @@ type CreateEnvironmentInput struct {
 
 type EnvironmentWithApiKey struct {
 	environment.Environment
-	ApiKey *string `json:"apiKey,omitempty" doc:"API key for pairing (only shown once during creation)"` //nolint:gosec // response schema requires apiKey naming
+
+	ApiKey *string `json:"apiKey,omitempty" doc:"API key for pairing (only shown once during creation)"`
 }
 
 type CreateEnvironmentOutput struct {
@@ -153,7 +155,7 @@ type DeploymentSnippet struct {
 type DeploymentSnippetFile struct {
 	Name          string `json:"name" doc:"Suggested filename"`
 	Content       string `json:"content,omitempty" doc:"PEM file contents. Omitted for sensitive files such as private keys; use downloadUrl instead."`
-	DownloadURL   string `json:"downloadUrl,omitempty" doc:"Admin-only endpoint to download this file when content is withheld"`
+	DownloadURL   string `json:"downloadUrl,omitempty" doc:"Pairing-permission endpoint to download this file when content is withheld"`
 	Sensitive     bool   `json:"sensitive,omitempty" doc:"True when this file is sensitive and must be fetched via downloadUrl"`
 	ContainerPath string `json:"containerPath" doc:"Container mount path expected by the mTLS snippet"`
 	Permissions   string `json:"permissions" doc:"Suggested file mode"`
@@ -218,6 +220,7 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequirePermission(api, authz.PermEnvironmentsList),
 	}, h.ListEnvironments)
 
 	huma.Register(api, huma.Operation{
@@ -231,7 +234,7 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermEnvironmentsCreate),
 	}, h.CreateEnvironment)
 
 	huma.Register(api, huma.Operation{
@@ -245,6 +248,7 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequirePermission(api, authz.PermEnvironmentsRead),
 	}, h.GetEnvironment)
 
 	huma.Register(api, huma.Operation{
@@ -258,7 +262,7 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermEnvironmentsUpdate),
 	}, h.UpdateEnvironment)
 
 	huma.Register(api, huma.Operation{
@@ -272,7 +276,7 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermEnvironmentsDelete),
 	}, h.DeleteEnvironment)
 
 	huma.Register(api, huma.Operation{
@@ -286,7 +290,7 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermEnvironmentsRead),
 	}, h.TestConnection)
 
 	huma.Register(api, huma.Operation{
@@ -300,6 +304,7 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequirePermission(api, authz.PermEnvironmentsSync),
 	}, h.UpdateHeartbeat)
 
 	huma.Register(api, huma.Operation{
@@ -313,7 +318,7 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermEnvironmentsPair),
 	}, h.PairAgent)
 
 	huma.Register(api, huma.Operation{
@@ -327,7 +332,7 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermEnvironmentsSync),
 	}, h.SyncEnvironment)
 
 	huma.Register(api, huma.Operation{
@@ -352,7 +357,7 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermEnvironmentsPair),
 	}, h.GetDeploymentSnippets)
 
 	huma.Register(api, huma.Operation{
@@ -366,7 +371,7 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermEnvironmentsPair),
 	}, h.DownloadEnvironmentMTLSBundle)
 
 	huma.Register(api, huma.Operation{
@@ -380,7 +385,7 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermEnvironmentsPair),
 	}, h.DownloadEnvironmentMTLSFile)
 
 	huma.Register(api, huma.Operation{
@@ -394,6 +399,7 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequirePermission(api, authz.PermEnvironmentsRead),
 	}, h.GetEnvironmentVersion)
 
 	huma.Register(api, huma.Operation{
@@ -407,7 +413,7 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermEnvironmentsPair),
 	}, h.DownloadEdgeMTLSCA)
 }
 
@@ -421,20 +427,7 @@ func (h *EnvironmentHandler) ListEnvironments(ctx context.Context, input *ListEn
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	params := pagination.QueryParams{
-		SearchQuery: pagination.SearchQuery{
-			Search: input.Search,
-		},
-		SortParams: pagination.SortParams{
-			Sort:  input.Sort,
-			Order: pagination.SortOrder(input.Order),
-		},
-		PaginationParams: pagination.PaginationParams{
-			Start: input.Start,
-			Limit: input.Limit,
-		},
-		Filters: map[string]string{},
-	}
+	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	if input.Type != "" {
 		params.Filters["type"] = input.Type
 	}
@@ -444,20 +437,14 @@ func (h *EnvironmentHandler) ListEnvironments(ctx context.Context, input *ListEn
 		return nil, huma.Error500InternalServerError((&common.EnvironmentListError{Err: err}).Error())
 	}
 	for i := range envs {
-		h.applyEdgeRuntimeState(&envs[i])
+		h.applyEdgeRuntimeStateInternal(&envs[i])
 	}
 
 	return &ListEnvironmentsOutput{
 		Body: EnvironmentPaginatedResponse{
-			Success: true,
-			Data:    envs,
-			Pagination: base.PaginationResponse{
-				TotalPages:      paginationResp.TotalPages,
-				TotalItems:      paginationResp.TotalItems,
-				CurrentPage:     paginationResp.CurrentPage,
-				ItemsPerPage:    paginationResp.ItemsPerPage,
-				GrandTotalItems: paginationResp.GrandTotalItems,
-			},
+			Success:    true,
+			Data:       envs,
+			Pagination: toPaginationResponseInternal(paginationResp),
 		},
 	}, nil
 }
@@ -468,13 +455,9 @@ func (h *EnvironmentHandler) CreateEnvironment(ctx context.Context, input *Creat
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	if err := checkAdminInternal(ctx); err != nil {
+	user, err := requireUserInternal(ctx)
+	if err != nil {
 		return nil, err
-	}
-
-	user, exists := humamw.GetCurrentUserFromContext(ctx)
-	if !exists {
-		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
 	}
 
 	env := &models.Environment{
@@ -495,13 +478,13 @@ func (h *EnvironmentHandler) CreateEnvironment(ctx context.Context, input *Creat
 	useApiKey := input.Body.UseApiKey != nil && *input.Body.UseApiKey
 
 	if useApiKey {
-		return h.createEnvironmentWithApiKey(ctx, env, user)
+		return h.createEnvironmentWithApiKeyInternal(ctx, env, user)
 	}
 
-	return h.createEnvironmentLegacy(ctx, env, user, input.Body)
+	return h.createEnvironmentLegacyInternal(ctx, env, user, input.Body)
 }
 
-func (h *EnvironmentHandler) createEnvironmentWithApiKey(ctx context.Context, env *models.Environment, user *models.User) (*CreateEnvironmentOutput, error) {
+func (h *EnvironmentHandler) createEnvironmentWithApiKeyInternal(ctx context.Context, env *models.Environment, user *models.User) (*CreateEnvironmentOutput, error) {
 	// New API key-based pairing flow
 	env.Status = string(models.EnvironmentStatusPending)
 
@@ -535,7 +518,7 @@ func (h *EnvironmentHandler) createEnvironmentWithApiKey(ctx context.Context, en
 	if mapErr != nil {
 		return nil, huma.Error500InternalServerError((&common.EnvironmentMappingError{Err: mapErr}).Error())
 	}
-	h.applyEdgeRuntimeState(&out)
+	h.applyEdgeRuntimeStateInternal(&out)
 
 	return &CreateEnvironmentOutput{
 		Body: base.ApiResponse[EnvironmentWithApiKey]{
@@ -548,16 +531,8 @@ func (h *EnvironmentHandler) createEnvironmentWithApiKey(ctx context.Context, en
 	}, nil
 }
 
-func (h *EnvironmentHandler) createEnvironmentLegacy(ctx context.Context, env *models.Environment, user *models.User, body environment.Create) (*CreateEnvironmentOutput, error) {
-	// Legacy pairing flows
-	if (body.AccessToken == nil || *body.AccessToken == "") && body.BootstrapToken != nil && *body.BootstrapToken != "" {
-		token, err := h.environmentService.PairAgentWithBootstrap(ctx, body.ApiUrl, *body.BootstrapToken)
-		if err != nil {
-			slog.ErrorContext(ctx, "Failed to pair with agent", "apiUrl", body.ApiUrl, "error", err.Error())
-			return nil, huma.Error502BadGateway((&common.AgentPairingError{Err: err}).Error())
-		}
-		env.AccessToken = &token
-	} else if body.AccessToken != nil && *body.AccessToken != "" {
+func (h *EnvironmentHandler) createEnvironmentLegacyInternal(ctx context.Context, env *models.Environment, user *models.User, body environment.Create) (*CreateEnvironmentOutput, error) {
+	if body.AccessToken != nil && *body.AccessToken != "" {
 		env.AccessToken = body.AccessToken
 	}
 
@@ -568,14 +543,14 @@ func (h *EnvironmentHandler) createEnvironmentLegacy(ctx context.Context, env *m
 
 	// Sync registries and git repositories in background (intentionally detached from request context)
 	if created.AccessToken != nil && *created.AccessToken != "" {
-		h.triggerEnvironmentResourceSync(ctx, created.ID, created.Name, "environment creation")
+		h.triggerEnvironmentResourceSyncInternal(ctx, created.ID, created.Name, "environment creation")
 	}
 
 	out, mapErr := mapper.MapOne[*models.Environment, environment.Environment](created)
 	if mapErr != nil {
 		return nil, huma.Error500InternalServerError((&common.EnvironmentMappingError{Err: mapErr}).Error())
 	}
-	h.applyEdgeRuntimeState(&out)
+	h.applyEdgeRuntimeStateInternal(&out)
 
 	return &CreateEnvironmentOutput{
 		Body: base.ApiResponse[EnvironmentWithApiKey]{
@@ -602,7 +577,7 @@ func (h *EnvironmentHandler) GetEnvironment(ctx context.Context, input *GetEnvir
 	if mapErr != nil {
 		return nil, huma.Error500InternalServerError((&common.EnvironmentMappingError{Err: mapErr}).Error())
 	}
-	h.applyEdgeRuntimeState(&out)
+	h.applyEdgeRuntimeStateInternal(&out)
 	if env.IsEdge {
 		if certInfo, certErr := readGeneratedEdgeMTLSCertificateInfoInternal(h.cfg, env.ID); certErr == nil {
 			out.EdgeMTLSCertificate = certInfo
@@ -623,17 +598,10 @@ func (h *EnvironmentHandler) UpdateEnvironment(ctx context.Context, input *Updat
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
-
 	isLocalEnv := input.ID == localDockerEnvironmentID
-	updates := h.buildUpdateMap(&input.Body, isLocalEnv)
+	updates := h.buildUpdateMapInternal(&input.Body, isLocalEnv)
 
-	pairingSucceeded, err := h.handleEnvironmentPairing(ctx, input.ID, &input.Body, updates, isLocalEnv)
-	if err != nil {
-		return nil, err
-	}
+	h.handleEnvironmentPairingInternal(ctx, input.ID, &input.Body, updates, isLocalEnv)
 
 	user, _ := humamw.GetCurrentUserFromContext(ctx)
 	var userID, username *string
@@ -646,20 +614,20 @@ func (h *EnvironmentHandler) UpdateEnvironment(ctx context.Context, input *Updat
 		return nil, huma.Error500InternalServerError((&common.EnvironmentUpdateError{Err: updateErr}).Error())
 	}
 
-	h.triggerPostUpdateTasks(ctx, input.ID, updated, pairingSucceeded, &input.Body) //nolint:contextcheck // intentionally detached background tasks
+	h.triggerPostUpdateTasksInternal(ctx, input.ID, updated, &input.Body)
 
 	out, mapErr := mapper.MapOne[*models.Environment, environment.Environment](updated)
 	if mapErr != nil {
 		return nil, huma.Error500InternalServerError((&common.EnvironmentMappingError{Err: mapErr}).Error())
 	}
-	h.applyEdgeRuntimeState(&out)
+	h.applyEdgeRuntimeStateInternal(&out)
 
 	// If regenerating API key, return the new key
 	var newApiKey *string
 	if input.Body.RegenerateApiKey != nil && *input.Body.RegenerateApiKey {
-		user, exists := humamw.GetCurrentUserFromContext(ctx)
-		if !exists {
-			return nil, huma.Error401Unauthorized("Unauthorized")
+		user, err := requireUserInternal(ctx)
+		if err != nil {
+			return nil, err
 		}
 
 		// Delete existing API key if any
@@ -694,7 +662,7 @@ func (h *EnvironmentHandler) UpdateEnvironment(ctx context.Context, input *Updat
 		if mapErr != nil {
 			return nil, huma.Error500InternalServerError((&common.EnvironmentMappingError{Err: mapErr}).Error())
 		}
-		h.applyEdgeRuntimeState(&out)
+		h.applyEdgeRuntimeStateInternal(&out)
 
 		newApiKey = new(apiKeyDto.Key)
 	}
@@ -710,7 +678,7 @@ func (h *EnvironmentHandler) UpdateEnvironment(ctx context.Context, input *Updat
 	}, nil
 }
 
-func (h *EnvironmentHandler) applyEdgeRuntimeState(env *environment.Environment) {
+func (h *EnvironmentHandler) applyEdgeRuntimeStateInternal(env *environment.Environment) {
 	services.ApplyEnvironmentRuntimeState(env)
 }
 
@@ -718,10 +686,6 @@ func (h *EnvironmentHandler) applyEdgeRuntimeState(env *environment.Environment)
 func (h *EnvironmentHandler) DeleteEnvironment(ctx context.Context, input *DeleteEnvironmentInput) (*DeleteEnvironmentOutput, error) {
 	if h.environmentService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
-	}
-
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
 	}
 
 	if input.ID == localDockerEnvironmentID {
@@ -752,10 +716,6 @@ func (h *EnvironmentHandler) DeleteEnvironment(ctx context.Context, input *Delet
 func (h *EnvironmentHandler) TestConnection(ctx context.Context, input *TestConnectionInput) (*TestConnectionOutput, error) {
 	if h.environmentService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
-	}
-
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
 	}
 
 	var apiUrl *string
@@ -809,10 +769,6 @@ func (h *EnvironmentHandler) PairAgent(ctx context.Context, input *PairAgentInpu
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
-
 	if input.ID != localDockerEnvironmentID {
 		return nil, huma.Error404NotFound("Not found")
 	}
@@ -842,10 +798,6 @@ func (h *EnvironmentHandler) SyncEnvironment(ctx context.Context, input *SyncEnv
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
-
 	// Sync registries
 	if err := h.environmentService.SyncRegistriesToEnvironment(ctx, input.ID); err != nil {
 		slog.WarnContext(ctx, "Failed to sync registries", "environmentID", input.ID, "error", err.Error())
@@ -870,7 +822,7 @@ func (h *EnvironmentHandler) SyncEnvironment(ctx context.Context, input *SyncEnv
 // Helper Methods
 // ============================================================================
 
-func (h *EnvironmentHandler) buildUpdateMap(req *environment.Update, isLocalEnv bool) map[string]any {
+func (h *EnvironmentHandler) buildUpdateMapInternal(req *environment.Update, isLocalEnv bool) map[string]any {
 	updates := map[string]any{}
 
 	if !isLocalEnv {
@@ -889,36 +841,19 @@ func (h *EnvironmentHandler) buildUpdateMap(req *environment.Update, isLocalEnv 
 	return updates
 }
 
-func (h *EnvironmentHandler) handleEnvironmentPairing(ctx context.Context, environmentID string, req *environment.Update, updates map[string]any, isLocalEnv bool) (bool, error) {
-	pairingSucceeded := false
-
+func (h *EnvironmentHandler) handleEnvironmentPairingInternal(ctx context.Context, environmentID string, req *environment.Update, updates map[string]any, isLocalEnv bool) {
+	_ = ctx
+	_ = environmentID
 	if isLocalEnv {
-		return pairingSucceeded, nil
+		return
 	}
 
-	if req.AccessToken == nil && req.BootstrapToken != nil && *req.BootstrapToken != "" {
-		current, err := h.environmentService.GetEnvironmentByID(ctx, environmentID)
-		if err != nil || current == nil {
-			return false, huma.Error404NotFound("Environment not found")
-		}
-
-		apiUrl := current.ApiUrl
-		if req.ApiUrl != nil && *req.ApiUrl != "" {
-			apiUrl = *req.ApiUrl
-		}
-
-		if _, err := h.environmentService.PairAndPersistAgentToken(ctx, environmentID, apiUrl, *req.BootstrapToken); err != nil {
-			return false, huma.Error502BadGateway("Agent pairing failed: " + err.Error())
-		}
-		pairingSucceeded = true
-	} else if req.AccessToken != nil {
+	if req.AccessToken != nil {
 		updates["access_token"] = *req.AccessToken
 	}
-
-	return pairingSucceeded, nil
 }
 
-func (h *EnvironmentHandler) triggerPostUpdateTasks(ctx context.Context, environmentID string, updated *models.Environment, pairingSucceeded bool, req *environment.Update) { //nolint:contextcheck // intentionally spawns background tasks
+func (h *EnvironmentHandler) triggerPostUpdateTasksInternal(ctx context.Context, environmentID string, updated *models.Environment, req *environment.Update) {
 	if updated.Enabled {
 		detachedCtx := context.WithoutCancel(ctx)
 		go func(syncCtx context.Context, envID string, envName string) {
@@ -930,12 +865,12 @@ func (h *EnvironmentHandler) triggerPostUpdateTasks(ctx context.Context, environ
 		}(detachedCtx, environmentID, updated.Name)
 	}
 
-	if updated.AccessToken != nil && *updated.AccessToken != "" && (pairingSucceeded || (req.AccessToken != nil && *req.AccessToken != "") || req.Name != nil) {
-		h.triggerEnvironmentResourceSync(ctx, environmentID, updated.Name, "environment update")
+	if updated.AccessToken != nil && *updated.AccessToken != "" && ((req.AccessToken != nil && *req.AccessToken != "") || req.Name != nil) {
+		h.triggerEnvironmentResourceSyncInternal(ctx, environmentID, updated.Name, "environment update")
 	}
 }
 
-func (h *EnvironmentHandler) triggerEnvironmentResourceSync(ctx context.Context, environmentID string, environmentName string, reason string) { //nolint:contextcheck // intentionally spawns background tasks
+func (h *EnvironmentHandler) triggerEnvironmentResourceSyncInternal(ctx context.Context, environmentID string, environmentName string, reason string) {
 	detachedCtx := context.WithoutCancel(ctx)
 
 	go func(syncCtx context.Context, envID string, envName string, syncReason string) {
@@ -999,7 +934,7 @@ func (h *EnvironmentHandler) PairEnvironment(ctx context.Context, input *PairEnv
 	}
 
 	slog.InfoContext(ctx, "Environment pairing completed", "environmentID", *envID, "environmentName", env.Name)
-	h.triggerEnvironmentResourceSync(ctx, *envID, env.Name, "environment pairing")
+	h.triggerEnvironmentResourceSyncInternal(ctx, *envID, env.Name, "environment pairing")
 
 	return &PairEnvironmentOutput{
 		Body: base.ApiResponse[base.MessageResponse]{
@@ -1015,10 +950,6 @@ func (h *EnvironmentHandler) PairEnvironment(ctx context.Context, input *PairEnv
 func (h *EnvironmentHandler) GetDeploymentSnippets(ctx context.Context, input *GetDeploymentSnippetsInput) (*GetDeploymentSnippetsOutput, error) {
 	if h.environmentService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
-	}
-
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
 	}
 
 	env, err := h.environmentService.GetEnvironmentByID(ctx, input.ID)
@@ -1127,14 +1058,21 @@ func (h *EnvironmentHandler) GetEnvironmentVersion(ctx context.Context, input *G
 		}
 	} else {
 		// Direct HTTP request for non-edge environments
-		url := strings.TrimRight(env.ApiUrl, "/") + "/api/app-version"
-		req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, url, nil)
+		validatedURL, validateErr := httputils.ValidateOutboundHTTPURL(env.ApiUrl)
+		if validateErr != nil {
+			return nil, huma.Error400BadRequest("Invalid environment API URL")
+		}
+		validatedURL.RawQuery = ""
+		validatedURL.Fragment = ""
+		validatedURL.Path = strings.TrimRight(validatedURL.Path, "/") + "/api/app-version"
+
+		req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, validatedURL.String(), nil)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("Failed to create request")
 		}
 
 		client := &http.Client{Timeout: 15 * time.Second}
-		resp, err := client.Do(req) //nolint:gosec // intentional request to configured remote environment API URL
+		resp, err := client.Do(req)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("Request failed: " + err.Error())
 		}
@@ -1165,10 +1103,6 @@ func (h *EnvironmentHandler) GetEnvironmentVersion(ctx context.Context, input *G
 
 // DownloadEdgeMTLSCA downloads the Arcane-managed edge mTLS CA certificate.
 func (h *EnvironmentHandler) DownloadEdgeMTLSCA(ctx context.Context, _ *DownloadEdgeMTLSCAInput) (*huma.StreamResponse, error) {
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
-
 	caPath, err := generatedEdgeMTLSCAPathInternal(h.cfg)
 	if err != nil {
 		return nil, huma.Error404NotFound("Arcane-managed edge mTLS CA is not available")
@@ -1195,7 +1129,7 @@ func (h *EnvironmentHandler) DownloadEdgeMTLSCA(ctx context.Context, _ *Download
 				slog.WarnContext(humaCtx.Context(), "Failed to stream edge mTLS CA download", "fileName", fileName, "bytesWritten", written, "bytesExpected", len(caPEM), "error", writeErr)
 				return
 			}
-			h.logMTLSAuditEvent(humaCtx.Context(), nil, models.EventTypeEnvironmentMTLSDownload,
+			h.logMTLSAuditEventInternal(humaCtx.Context(), nil, models.EventTypeEnvironmentMTLSDownload,
 				"mTLS CA downloaded",
 				fmt.Sprintf("Administrator downloaded edge mTLS CA %q", fileName),
 				models.JSON{
@@ -1207,11 +1141,7 @@ func (h *EnvironmentHandler) DownloadEdgeMTLSCA(ctx context.Context, _ *Download
 }
 
 func (h *EnvironmentHandler) DownloadEnvironmentMTLSBundle(ctx context.Context, input *DownloadEnvironmentMTLSBundleInput) (*huma.StreamResponse, error) {
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
-
-	env, files, err := h.loadEnvironmentMTLSFiles(ctx, input.ID)
+	env, files, err := h.loadEnvironmentMTLSFilesInternal(ctx, input.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -1256,7 +1186,7 @@ func (h *EnvironmentHandler) DownloadEnvironmentMTLSBundle(ctx context.Context, 
 				slog.WarnContext(humaCtx.Context(), "Failed to stream edge mTLS bundle download", "environmentID", input.ID, "fileName", fileName, "bytesWritten", written, "bytesExpected", archive.Len(), "error", writeErr)
 				return
 			}
-			h.logMTLSAuditEvent(humaCtx.Context(), env, models.EventTypeEnvironmentMTLSDownload,
+			h.logMTLSAuditEventInternal(humaCtx.Context(), env, models.EventTypeEnvironmentMTLSDownload,
 				"mTLS bundle downloaded",
 				fmt.Sprintf("Administrator downloaded edge mTLS bundle %q (%d files)", fileName, len(files)),
 				models.JSON{
@@ -1269,11 +1199,7 @@ func (h *EnvironmentHandler) DownloadEnvironmentMTLSBundle(ctx context.Context, 
 }
 
 func (h *EnvironmentHandler) DownloadEnvironmentMTLSFile(ctx context.Context, input *DownloadEnvironmentMTLSFileInput) (*huma.StreamResponse, error) {
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
-
-	env, file, err := h.loadEnvironmentMTLSFile(ctx, input.ID, input.FileName)
+	env, file, err := h.loadEnvironmentMTLSFileInternal(ctx, input.ID, input.FileName)
 	if err != nil {
 		return nil, err
 	}
@@ -1291,7 +1217,7 @@ func (h *EnvironmentHandler) DownloadEnvironmentMTLSFile(ctx context.Context, in
 				slog.WarnContext(humaCtx.Context(), "Failed to stream edge mTLS asset download", "environmentID", input.ID, "fileName", file.Name, "bytesWritten", written, "bytesExpected", len(fileContent), "error", writeErr)
 				return
 			}
-			h.logMTLSAuditEvent(humaCtx.Context(), env, models.EventTypeEnvironmentMTLSDownload,
+			h.logMTLSAuditEventInternal(humaCtx.Context(), env, models.EventTypeEnvironmentMTLSDownload,
 				"mTLS asset downloaded",
 				fmt.Sprintf("Administrator downloaded edge mTLS asset %q", file.Name),
 				models.JSON{
@@ -1328,7 +1254,7 @@ func (h *EnvironmentHandler) loadEnvironmentMTLSEnvironmentInternal(ctx context.
 	return env, nil
 }
 
-func (h *EnvironmentHandler) loadEnvironmentMTLSFiles(ctx context.Context, environmentID string) (*models.Environment, []services.DeploymentSnippetFile, error) {
+func (h *EnvironmentHandler) loadEnvironmentMTLSFilesInternal(ctx context.Context, environmentID string) (*models.Environment, []services.DeploymentSnippetFile, error) {
 	env, err := h.loadEnvironmentMTLSEnvironmentInternal(ctx, environmentID)
 	if err != nil {
 		return nil, nil, err
@@ -1352,8 +1278,8 @@ func (h *EnvironmentHandler) loadEnvironmentMTLSFiles(ctx context.Context, envir
 	return env, snippets.MTLS.Files, nil
 }
 
-func (h *EnvironmentHandler) loadEnvironmentMTLSFile(ctx context.Context, environmentID string, fileName string) (*models.Environment, services.DeploymentSnippetFile, error) {
-	env, files, err := h.loadEnvironmentMTLSFiles(ctx, environmentID)
+func (h *EnvironmentHandler) loadEnvironmentMTLSFileInternal(ctx context.Context, environmentID string, fileName string) (*models.Environment, services.DeploymentSnippetFile, error) {
+	env, files, err := h.loadEnvironmentMTLSFilesInternal(ctx, environmentID)
 	if err != nil {
 		return nil, services.DeploymentSnippetFile{}, err
 	}
@@ -1426,10 +1352,10 @@ func environmentMTLSAssetFileModeInternal(file services.DeploymentSnippetFile) o
 	return 0o644
 }
 
-// logMTLSAuditEvent records an audit event for administrator-triggered
+// logMTLSAuditEventInternal records an audit event for administrator-triggered
 // edge mTLS actions (downloads, bundle exports). Must never include raw
 // certificate content or private key material.
-func (h *EnvironmentHandler) logMTLSAuditEvent(ctx context.Context, env *models.Environment, eventType models.EventType, title, description string, extra models.JSON) {
+func (h *EnvironmentHandler) logMTLSAuditEventInternal(ctx context.Context, env *models.Environment, eventType models.EventType, title, description string, extra models.JSON) {
 	if h == nil || h.eventService == nil {
 		return
 	}
@@ -1437,10 +1363,8 @@ func (h *EnvironmentHandler) logMTLSAuditEvent(ctx context.Context, env *models.
 	user, _ := humamw.GetCurrentUserFromContext(ctx)
 	var userID, username *string
 	if user != nil {
-		uid := user.ID
-		uname := user.Username
-		userID = &uid
-		username = &uname
+		userID = new(user.ID)
+		username = new(user.Username)
 	}
 
 	if extra == nil {
@@ -1461,11 +1385,9 @@ func (h *EnvironmentHandler) logMTLSAuditEvent(ctx context.Context, env *models.
 	}
 	if env != nil {
 		envID := env.ID
-		envName := env.Name
-		resourceType := "environment"
-		req.ResourceType = &resourceType
+		req.ResourceType = new("environment")
 		req.ResourceID = &envID
-		req.ResourceName = &envName
+		req.ResourceName = new(env.Name)
 		req.EnvironmentID = &envID
 	}
 

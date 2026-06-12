@@ -4,7 +4,7 @@
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { VolumesIcon, TerminalIcon, FolderOpenIcon } from '$lib/icons';
-	import type { SwarmServiceMount } from '$lib/types/swarm.type';
+	import type { SwarmServiceMount } from '$lib/types/swarm';
 
 	interface Props {
 		mounts: SwarmServiceMount[];

@@ -3,13 +3,13 @@ package handlers
 import (
 	"context"
 	"net/http"
-	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
-	"github.com/getarcaneapp/arcane/types/base"
-	porttypes "github.com/getarcaneapp/arcane/types/port"
+	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
+	"github.com/getarcaneapp/arcane/types/v2/base"
+	porttypes "github.com/getarcaneapp/arcane/types/v2/port"
 )
 
 type PortHandler struct {
@@ -45,6 +45,7 @@ func RegisterPorts(api huma.API, portSvc *services.PortService) {
 		Summary:     "List port mappings",
 		Tags:        []string{"Ports"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Middlewares: humamw.RequirePermission(api, authz.PermContainersList),
 	}, h.ListPorts)
 }
 
@@ -53,19 +54,7 @@ func (h *PortHandler) ListPorts(ctx context.Context, input *ListPortsInput) (*Li
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	params := pagination.QueryParams{
-		SearchQuery: pagination.SearchQuery{
-			Search: strings.TrimSpace(input.Search),
-		},
-		SortParams: pagination.SortParams{
-			Sort:  strings.TrimSpace(input.Sort),
-			Order: pagination.SortOrder(input.Order),
-		},
-		PaginationParams: pagination.PaginationParams{
-			Start: input.Start,
-			Limit: input.Limit,
-		},
-	}
+	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 
 	items, paginationResp, err := h.portService.ListPortsPaginated(ctx, params)
 	if err != nil {
@@ -74,15 +63,9 @@ func (h *PortHandler) ListPorts(ctx context.Context, input *ListPortsInput) (*Li
 
 	return &ListPortsOutput{
 		Body: PortPaginatedResponse{
-			Success: true,
-			Data:    items,
-			Pagination: base.PaginationResponse{
-				TotalPages:      paginationResp.TotalPages,
-				TotalItems:      paginationResp.TotalItems,
-				CurrentPage:     paginationResp.CurrentPage,
-				ItemsPerPage:    paginationResp.ItemsPerPage,
-				GrandTotalItems: paginationResp.GrandTotalItems,
-			},
+			Success:    true,
+			Data:       items,
+			Pagination: toPaginationResponseInternal(paginationResp),
 		},
 	}, nil
 }

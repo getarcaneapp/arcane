@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	docker "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
+	docker "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 )
 
 // CgroupCache memoizes the result of cgroup limit detection for a configurable TTL.

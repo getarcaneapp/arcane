@@ -6,12 +6,11 @@
     "scminput": false,
     "typescript": true
   },
-  "typescript.tsdk": "frontend/node_modules/typescript/lib",
   "go.buildTags": "playwright,buildables",
   "prettier.documentSelectors": ["**/*.svelte"],
   "tasks.statusbar.default.hide": true,
   "tasks.statusbar.limit": 8,
   "github.copilot.chat.summarizeAgentConversationHistory.enabled": false,
-  "snyk.advanced.organization": "a7adead1-b200-490f-91c5-8fa0e410d62c",
-  "snyk.advanced.autoSelectOrganization": true
+  "snyk.advanced.autoSelectOrganization": false,
+  "js/ts.tsdk.path": "frontend/node_modules/typescript/lib"
 }

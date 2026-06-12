@@ -3,6 +3,10 @@ package services
 import (
 	"context"
 	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -10,12 +14,13 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/internal/config"
-	"github.com/getarcaneapp/arcane/backend/internal/database"
-	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/crypto"
-	imagetypes "github.com/getarcaneapp/arcane/types/image"
-	"github.com/getarcaneapp/arcane/types/vulnerability"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/crypto"
+	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
+	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
+	"github.com/getarcaneapp/arcane/types/v2/vulnerability"
 	dockerauthconfig "github.com/moby/moby/api/pkg/authconfig"
 	dockerregistry "github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
@@ -176,6 +181,51 @@ func TestGetPullOptionsWithAuth_DBRegistryUsesValidCredentials(t *testing.T) {
 	assert.Equal(t, "docker-user", authCfg.Username)
 	assert.Equal(t, "docker-token", authCfg.Password)
 	assert.Equal(t, "https://index.docker.io/v1/", authCfg.ServerAddress)
+}
+
+func TestGetPullOptionsWithAuth_ExternalCredentialsOverrideDBRegistryInternal(t *testing.T) {
+	svc, db := setupImageServiceAuthTest(t)
+	createTestPullRegistry(t, db, "https://registry.example.com", "db-user", "db-token")
+
+	pullOptions, err := svc.getPullOptionsWithAuth(context.Background(), "registry.example.com/team/app:latest", []containerregistry.Credential{
+		{URL: "https://registry.example.com", Username: "external-user", Token: "external-token", Enabled: true},
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, pullOptions.RegistryAuth)
+
+	authCfg := decodeRegistryAuth(t, pullOptions.RegistryAuth)
+	assert.Equal(t, "external-user", authCfg.Username)
+	assert.Equal(t, "external-token", authCfg.Password)
+	assert.Equal(t, "registry.example.com", authCfg.ServerAddress)
+}
+
+func TestImageServicePullImageRetriesAnonymouslyAfterAuthRejectedInternal(t *testing.T) {
+	db := setupProjectTestDB(t)
+	authHeaders := []string{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/images/create") {
+			http.NotFound(w, r)
+			return
+		}
+		authHeaders = append(authHeaders, r.Header.Get(dockerregistry.AuthHeader))
+		if len(authHeaders) == 1 {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		_, _ = w.Write([]byte(`{"status":"Pulled anonymously"}` + "\n"))
+	}))
+	t.Cleanup(server.Close)
+
+	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
+	imageSvc := NewImageService(db, dockerService, nil, nil, nil, NewEventService(db, nil, nil))
+
+	err := imageSvc.PullImage(context.Background(), "registry.example.com/team/app:latest", io.Discard, systemUser, []containerregistry.Credential{
+		{URL: "https://registry.example.com", Username: "external-user", Token: "external-token", Enabled: true},
+	})
+	require.NoError(t, err)
+	require.Len(t, authHeaders, 2)
+	assert.NotEmpty(t, authHeaders[0])
+	assert.Empty(t, authHeaders[1])
 }
 
 func TestShouldRetryAnonymousPullInternal_UnauthorizedWithAuth(t *testing.T) {

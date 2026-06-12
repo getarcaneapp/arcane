@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	configtypes "github.com/docker/cli/cli/config/types"
-	utilsregistry "github.com/getarcaneapp/arcane/backend/pkg/libarcane/registryauth"
+	utilsregistry "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/registryauth"
 	"github.com/moby/buildkit/session/auth/authprovider"
 	dockerregistry "github.com/moby/moby/api/types/registry"
 	"github.com/stretchr/testify/assert"
@@ -106,4 +106,22 @@ func TestWrapBuildkitSolveErrorInternal_LeavesGenericErrorsUnchanged(t *testing.
 
 	require.ErrorIs(t, wrapped, err)
 	assert.Equal(t, err.Error(), wrapped.Error())
+}
+
+func TestWrapBuildkitSolveErrorInternal_WrapsDockerAndImageExporterErrors(t *testing.T) {
+	t.Run("docker exporter", func(t *testing.T) {
+		rawErr := errors.New(`failed to solve: exporter "docker" could not be found`)
+		wrapped := wrapBuildkitSolveErrorInternal(rawErr, "local")
+
+		require.ErrorIs(t, wrapped, rawErr)
+		assert.Contains(t, wrapped.Error(), "the Docker Engine embedded BuildKit requires the docker image-store exporter")
+	})
+
+	t.Run("image exporter", func(t *testing.T) {
+		rawErr := errors.New(`failed to solve: exporter "image" could not be found`)
+		wrapped := wrapBuildkitSolveErrorInternal(rawErr, "depot")
+
+		require.ErrorIs(t, wrapped, rawErr)
+		assert.Contains(t, wrapped.Error(), "depot and remote BuildKit providers require the image exporter")
+	})
 }

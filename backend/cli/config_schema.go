@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/getarcaneapp/arcane/backend/internal/configschema"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/configschema"
 	"github.com/spf13/cobra"
 )
 

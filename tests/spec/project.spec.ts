@@ -1,5 +1,6 @@
-import { test, expect, type Locator, type Page } from '@playwright/test';
+import { test, expect, type Locator, type Page, type Response } from '@playwright/test';
 import { fetchProjectCountsWithRetry, fetchProjectsWithRetry } from '../utils/fetch.util';
+import type { Activity } from '../types/activity.type';
 import { Project, ProjectStatusCounts } from 'types/project.type';
 import { TEST_COMPOSE_YAML, TEST_ENV_FILE } from '../setup/project.data';
 
@@ -17,7 +18,7 @@ const DEPLOY_STREAM_SUCCESS =
 
 async function navigateToProjects(page: Page) {
 	await page.goto(ROUTES.page);
-	await page.waitForLoadState('networkidle');
+	await page.waitForLoadState('load');
 }
 
 async function setCodeMirrorValue(page: Page, editor: Locator, text: string) {
@@ -25,7 +26,7 @@ async function setCodeMirrorValue(page: Page, editor: Locator, text: string) {
 	await expect(content).toBeVisible();
 	await content.click({ position: { x: 10, y: 10 } });
 	await content.press('ControlOrMeta+A');
-	await page.keyboard.type(text, { delay: 0 });
+	await page.keyboard.insertText(text);
 }
 
 async function getCodeMirrorValue(editor: Locator) {
@@ -43,6 +44,10 @@ async function getCodeMirrorValue(editor: Locator) {
 
 async function openDropdownMenu(page: Page, trigger: Locator) {
 	await expect(trigger).toBeVisible();
+	const row = trigger.locator('xpath=ancestor::tr[1]');
+	if ((await row.count()) > 0) {
+		await row.hover();
+	}
 	await trigger.click();
 
 	const menu = page.locator('[data-slot="dropdown-menu-content"]:visible').last();
@@ -52,16 +57,12 @@ async function openDropdownMenu(page: Page, trigger: Locator) {
 }
 
 async function clickProjectsPageUpdateAction(page: Page) {
-	const updateProjectsButton = page.getByRole('button', { name: 'Update Projects', exact: true });
-	if (await updateProjectsButton.isVisible().catch(() => false)) {
-		await updateProjectsButton.click();
-		return;
-	}
-
-	const moreActionsButton = page.getByRole('button', { name: 'More actions', exact: true });
-	await expect(moreActionsButton).toBeVisible();
-	await moreActionsButton.click();
-	await page.getByRole('menuitem', { name: 'Update Projects', exact: true }).click();
+	const updateProjectsButton = page
+		.locator('main button:visible')
+		.filter({ hasText: 'Update Projects' })
+		.first();
+	await expect(updateProjectsButton).toBeVisible();
+	await updateProjectsButton.click();
 }
 
 async function clickProjectDetailUpdateAction(page: Page) {
@@ -99,6 +100,45 @@ async function fetchProjectDetail(page: Page, projectId: string): Promise<Projec
 	return body as Project;
 }
 
+async function fetchLatestProjectDeployActivity(
+	page: Page,
+	projectId: string
+): Promise<Activity | null> {
+	const params = new URLSearchParams({
+		type: 'project_deploy',
+		resourceType: 'project',
+		search: projectId,
+		limit: '10'
+	});
+	const res = await page.request.get(`/api/environments/0/activities?${params.toString()}`);
+	if (!res.ok()) {
+		return null;
+	}
+
+	const body = await res.json().catch(() => null as any);
+	const activities = (body?.data ?? []) as Activity[];
+	return (
+		activities.find(
+			(activity) =>
+				activity.type === 'project_deploy' &&
+				activity.resourceType === 'project' &&
+				(activity.resourceId === projectId || activity.resourceName === projectId)
+		) ?? null
+	);
+}
+
+async function expectProjectDeployActivitySucceeded(page: Page, projectId: string) {
+	await expect
+		.poll(
+			async () => (await fetchLatestProjectDeployActivity(page, projectId))?.status ?? 'missing',
+			{
+				message: 'Expected project deploy activity to complete before reload',
+				timeout: 60000
+			}
+		)
+		.toBe('success');
+}
+
 async function findProjectWithDetailUpdateAction(page: Page): Promise<Project | null> {
 	for (const project of realProjects) {
 		if (Number(project.serviceCount ?? 0) <= 0) {
@@ -122,12 +162,24 @@ function getProjectIdFromPageUrl(url: string): string {
 	return url.split('/projects/')[1]?.split(/[?#]/)[0] ?? '';
 }
 
+async function expectProjectCreateResponse(responsePromise: Promise<Response>) {
+	const response = await responsePromise;
+	if (response.ok()) {
+		return response;
+	}
+
+	const body = await response.text().catch(() => '<unreadable response body>');
+	throw new Error(
+		`Create project request failed with ${response.status()} ${response.statusText()}: ${body}`
+	);
+}
+
 async function createProjectViaUI(page: Page, projectName: string) {
-	const containerName = `test-redis-container-${Date.now()}`;
+	const containerName = `test-nginx-container-${Date.now()}`;
 	const envFile = TEST_ENV_FILE.replace(/CONTAINER_NAME=.*/m, `CONTAINER_NAME=${containerName}`);
 
 	await page.goto(ROUTES.newProject);
-	await page.waitForLoadState('networkidle');
+	await page.waitForLoadState('load');
 
 	await page.getByRole('button', { name: 'My New Project' }).click();
 	await page.getByRole('textbox', { name: 'My New Project' }).fill(projectName);
@@ -141,12 +193,23 @@ async function createProjectViaUI(page: Page, projectName: string) {
 
 	await setCodeMirrorValue(page, composeEditor, TEST_COMPOSE_YAML);
 	await setCodeMirrorValue(page, envEditor, envFile);
+	await expect
+		.poll(async () => (await getCodeMirrorValue(composeEditor)).trimEnd(), {
+			message: 'Expected compose editor to contain the exact test compose fixture before creation'
+		})
+		.toBe(TEST_COMPOSE_YAML.trimEnd());
 
 	const createButton = page
 		.getByRole('button', { name: 'Create Project' })
 		.locator('[data-slot="arcane-button"]');
 	await expect(createButton).toBeEnabled();
+	const createResponsePromise = page.waitForResponse(
+		(response) =>
+			response.request().method() === 'POST' &&
+			/\/api\/environments\/[^/]+\/projects$/.test(getPathname(response.url()))
+	);
 	await createButton.click();
+	await expectProjectCreateResponse(createResponsePromise);
 
 	await page.waitForURL(/\/projects\/(?!new$).+/, { timeout: 10000 });
 	await expect(page.getByRole('button', { name: projectName })).toBeVisible();
@@ -180,7 +243,7 @@ async function destroyProjectByNameViaUI(page: Page, projectName: string) {
 	}
 
 	await page.goto(ROUTES.page);
-	await page.waitForLoadState('networkidle');
+	await page.waitForLoadState('load');
 
 	const searchInput = page.getByPlaceholder('Search…');
 	if (await searchInput.isVisible().catch(() => false)) {
@@ -279,7 +342,7 @@ test.describe('Projects Page', () => {
 	test('should show project actions menu', async ({ page }) => {
 		test.skip(!realProjects.length, 'No projects available for actions menu test');
 
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 		const firstRow = page.locator('tbody tr').first();
 		const menu = await openDropdownMenu(page, firstRow.getByRole('button', { name: 'Open menu' }));
 
@@ -314,7 +377,7 @@ test.describe('Projects Page', () => {
 			});
 
 			await page.goto(ROUTES.page);
-			await page.waitForLoadState('networkidle');
+			await page.waitForLoadState('load');
 			await expect(page.locator('tbody tr').filter({ hasText: projectName })).toHaveCount(0);
 
 			await page.getByLabel('Show archived').check();
@@ -344,7 +407,7 @@ test.describe('Projects Page', () => {
 	test('should navigate to project details when project name is clicked', async ({ page }) => {
 		test.skip(!realProjects.length, 'No projects available for navigation test');
 
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 		// Get the first project link that points to /projects/ (not the "Git" indicator link)
 		const firstProjectLink = page
 			.locator('tbody tr')
@@ -404,7 +467,7 @@ test.describe('Projects Page', () => {
 	test('should display project status badges', async ({ page }) => {
 		test.skip(!realProjects.length, 'No projects available for status badge test');
 
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		const runningProjects = realProjects.filter((p) => p.status === 'running');
 		const stoppedProjects = realProjects.filter((p) => p.status === 'stopped');
@@ -422,7 +485,7 @@ test.describe('Projects Page', () => {
 test.describe('New Compose Project Page', () => {
 	test.beforeEach(async ({ page }) => {
 		await page.goto(ROUTES.newProject);
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 	});
 
 	test('should display the create project form', async ({ page }) => {
@@ -543,8 +606,10 @@ test.describe('New Compose Project Page', () => {
 	});
 
 	test('should create a new project successfully', async ({ page }) => {
+		test.slow();
+
 		const projectName = `test-project-${Date.now()}`;
-		const containerName = `test-redis-container-${Date.now()}`;
+		const containerName = `test-nginx-container-${Date.now()}`;
 		const envFile = TEST_ENV_FILE.replace(/CONTAINER_NAME=.*/m, `CONTAINER_NAME=${containerName}`);
 		let createdProjectId: string | null = null;
 		let projectPullRequestCount = 0;
@@ -556,12 +621,17 @@ test.describe('New Compose Project Page', () => {
 		const composeEditor = page.locator('.cm-editor:visible').first();
 		await expect(composeEditor).toBeVisible();
 		await setCodeMirrorValue(page, composeEditor, TEST_COMPOSE_YAML);
-		await expect(composeEditor).toContainText(/redis/i);
+		await expect(composeEditor).toContainText(/nginx/i);
+		await expect
+			.poll(async () => (await getCodeMirrorValue(composeEditor)).trimEnd(), {
+				message: 'Expected compose editor to contain the exact test compose fixture before creation'
+			})
+			.toBe(TEST_COMPOSE_YAML.trimEnd());
 
 		const envEditor = page.locator('.cm-editor:visible').nth(1);
 		await expect(envEditor).toBeVisible();
 		await setCodeMirrorValue(page, envEditor, envFile);
-		await expect(envEditor).toContainText(/redis/i);
+		await expect(envEditor).toContainText(/nginx/i);
 
 		await page.route('/api/environments/*/projects', async (route) => {
 			if (route.request().method() === 'POST') {
@@ -570,7 +640,7 @@ test.describe('New Compose Project Page', () => {
 
 				try {
 					const parsed = JSON.parse(responseBody);
-					createdProjectId = parsed.id;
+					createdProjectId = parsed.data?.id ?? parsed.id;
 				} catch {
 					// Keep existing createdProjectId value if parsing fails
 				}
@@ -588,7 +658,13 @@ test.describe('New Compose Project Page', () => {
 		const createButton = page
 			.getByRole('button', { name: 'Create Project' })
 			.locator('[data-slot="arcane-button"]');
+		const createResponsePromise = page.waitForResponse(
+			(response) =>
+				response.request().method() === 'POST' &&
+				/\/api\/environments\/[^/]+\/projects$/.test(getPathname(response.url()))
+		);
 		await createButton.click();
+		await expectProjectCreateResponse(createResponsePromise);
 
 		await page.waitForURL(/\/projects\/.+/, { timeout: 10000 });
 
@@ -601,10 +677,10 @@ test.describe('New Compose Project Page', () => {
 		await expect(page.getByRole('button', { name: projectName })).toBeVisible();
 
 		await page.getByRole('tab', { name: 'Services' }).click();
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		const serviceTable = page.getByRole('table');
-		const serviceNameWhenStopped = serviceTable.getByText('redis', {
+		const serviceNameWhenStopped = serviceTable.getByText('nginx', {
 			exact: true
 		});
 		const emptyServicesState = page.getByText(/No services found for this project/i);
@@ -624,16 +700,49 @@ test.describe('New Compose Project Page', () => {
 			.getByRole('button', { name: 'Up', exact: true })
 			.filter({ hasText: 'Up' })
 			.last();
+		const deployResponsePromise = page.waitForResponse(
+			(response) =>
+				response.request().method() === 'POST' &&
+				/\/api\/environments\/[^/]+\/projects\/[^/]+\/up$/.test(getPathname(response.url()))
+		);
 		await deployButton.click();
 
-		await page.waitForTimeout(5000);
-		await page.waitForLoadState('networkidle');
+		const deployResponse = await deployResponsePromise;
+		expect(deployResponse.ok()).toBe(true);
+		expect(await deployResponse.finished()).toBeNull();
+
+		const projectId = createdProjectId ?? getProjectIdFromPageUrl(page.url());
+		await expect
+			.poll(async () => (await fetchProjectDetail(page, projectId))?.status, {
+				message: 'Expected project to be running after deploy',
+				timeout: 60000
+			})
+			.toBe('running');
+		await expectProjectDeployActivitySucceeded(page, projectId);
+		await expect(page.getByRole('button', { name: 'Down', exact: true })).toBeVisible({
+			timeout: 30000
+		});
 
 		expect(projectPullRequestCount).toBe(0);
-		await expect(page.getByText('Running', { exact: true })).toBeVisible({
-			timeout: 20000
+		const projectReloadResponse = page.waitForResponse(
+			(response) =>
+				response.request().method() === 'GET' &&
+				getPathname(response.url()) === `/api/environments/0/projects/${projectId}` &&
+				response.ok(),
+			{ timeout: 30000 }
+		);
+		await page.reload();
+		await projectReloadResponse;
+		await expect(page).toHaveURL(new RegExp(`/projects/${projectId}`));
+		await expect
+			.poll(async () => (await fetchProjectDetail(page, projectId))?.status, {
+				message: 'Expected project to still be running after reload',
+				timeout: 30000
+			})
+			.toBe('running');
+		await expect(page.getByRole('button', { name: 'Down', exact: true })).toBeVisible({
+			timeout: 30000
 		});
-		await expect(page.getByRole('button', { name: 'Down', exact: true })).toBeVisible();
 	});
 
 	test('should send selected deploy split-button options in the up request', async ({ page }) => {
@@ -726,7 +835,7 @@ test.describe('New Compose Project Page', () => {
 		try {
 			await createProjectViaUI(page, projectName);
 			await page.goto(ROUTES.page);
-			await page.waitForLoadState('networkidle');
+			await page.waitForLoadState('load');
 
 			await page.route('**/api/environments/*/projects/*/redeploy', async (route) => {
 				if (route.request().method() !== 'POST') {
@@ -784,57 +893,26 @@ test.describe('New Compose Project Page', () => {
 
 	test('should destroy the project and remove files from disk', async ({ page }) => {
 		const projectName = `test-destroy-${Date.now()}`;
+		let projectId = '';
 
-		// 1. Create the project first
-		await page.getByRole('button', { name: 'My New Project' }).click();
-		await page.getByRole('textbox', { name: 'My New Project' }).fill(projectName);
-		await page.getByRole('textbox', { name: 'My New Project' }).press('Enter');
+		try {
+			projectId = await createProjectViaUI(page, projectName);
+			await destroyCurrentProjectViaUI(page);
+			projectId = '';
 
-		const composeEditor = page.locator('.cm-editor:visible').first();
-		await expect(composeEditor).toBeVisible();
-		await setCodeMirrorValue(page, composeEditor, TEST_COMPOSE_YAML);
-
-		const createButton = page
-			.locator('button[data-slot="arcane-button"]')
-			.filter({ hasText: 'Create Project' });
-		await createButton.click();
-
-		await page.waitForURL(/\/projects\/.+/, { timeout: 10000 });
-		await expect(page.getByRole('button', { name: projectName })).toBeVisible();
-
-		// 2. Destroy the project
-		const destroyButton = page.getByRole('button', {
-			name: 'Destroy',
-			exact: true
-		});
-		await expect(destroyButton).toBeVisible();
-		await destroyButton.click();
-
-		// 3. Handle the confirmation dialog
-		const dialog = page.getByRole('dialog');
-		await expect(dialog).toBeVisible();
-
-		// Check "Remove project files"
-		const removeFilesCheckbox = dialog.getByLabel(/Remove project files/i);
-		await removeFilesCheckbox.check();
-
-		// Click "Destroy" in the dialog
-		const confirmDestroyButton = dialog.getByRole('button', {
-			name: 'Destroy',
-			exact: true
-		});
-		await confirmDestroyButton.click();
-
-		// 4. Verify redirection and project removal
-		await page.waitForURL(ROUTES.page, { timeout: 10000 });
-		await expect(page.getByRole('link', { name: projectName })).not.toBeVisible();
+			await expect(page.getByRole('link', { name: projectName })).not.toBeVisible();
+		} finally {
+			if (projectId) {
+				await destroyProjectByIdViaAPI(page, projectId);
+			}
+		}
 	});
 });
 
 test.describe('GitOps Managed Project', () => {
 	test('should navigate back to gitops when opened from the git syncs page', async ({ page }) => {
 		await page.goto('/environments/0/gitops');
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		const projectLink = page.locator('tbody tr').locator('a[href^="/projects/"]').first();
 		test.skip((await projectLink.count()) === 0, 'No GitOps project links found');
@@ -855,12 +933,12 @@ test.describe('GitOps Managed Project', () => {
 		test.skip(!gitOpsProject, 'No GitOps-managed projects found');
 
 		await page.goto(`/projects/${gitOpsProject!.id}`);
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		// Navigate to Configuration tab
 		const configTab = page.getByRole('tab', { name: /Configuration|Config/i });
 		await configTab.click();
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		// Verify the GitOps read-only alert is visible (title contains "Git" and "Read-only")
 		await expect(page.getByText('Git Read-only')).toBeVisible();
@@ -872,11 +950,11 @@ test.describe('GitOps Managed Project', () => {
 		test.skip(!gitOpsProject, 'No GitOps-managed projects found');
 
 		await page.goto(`/projects/${gitOpsProject!.id}`);
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		const configTab = page.getByRole('tab', { name: /Configuration|Config/i });
 		await configTab.click();
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		// Verify the Sync from Git button is present
 		await expect(page.getByRole('button', { name: 'Sync from Git' })).toBeVisible();
@@ -887,7 +965,7 @@ test.describe('GitOps Managed Project', () => {
 		test.skip(!gitOpsProject, 'No GitOps-managed projects with sync commit found');
 
 		await page.goto(`/projects/${gitOpsProject!.id}`);
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		// The commit hash should be visible somewhere on the page
 		const commitHash = gitOpsProject!.lastSyncCommit!.substring(0, 7);
@@ -899,7 +977,7 @@ test.describe('GitOps Managed Project', () => {
 		test.skip(!gitOpsProject, 'No GitOps-managed projects found');
 
 		await page.goto(`/projects/${gitOpsProject!.id}`);
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		// The name button should be disabled for GitOps-managed projects
 		const nameButton = page.getByRole('button', { name: gitOpsProject!.name });
@@ -911,11 +989,11 @@ test.describe('GitOps Managed Project', () => {
 		test.skip(!gitOpsProject, 'No GitOps-managed projects found');
 
 		await page.goto(`/projects/${gitOpsProject!.id}`);
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		const configTab = page.getByRole('tab', { name: /Configuration|Config/i });
 		await configTab.click();
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		await page.waitForTimeout(800);
 		const composeContent = page.locator('.cm-editor:visible').first().locator('.cm-content');
@@ -929,11 +1007,11 @@ test.describe('GitOps Managed Project', () => {
 		test.skip(!gitOpsProject, 'No GitOps-managed projects found');
 
 		await page.goto(`/projects/${gitOpsProject!.id}`);
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		const configTab = page.getByRole('tab', { name: /Configuration|Config/i });
 		await configTab.click();
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		await page.waitForTimeout(800);
 		const envEditor = page.locator('.cm-editor:visible').nth(1);
@@ -952,7 +1030,7 @@ test.describe('GitOps Managed Project', () => {
 		});
 		if (await layoutSwitch.count()) {
 			await layoutSwitch.click();
-			await page.waitForLoadState('networkidle');
+			await page.waitForLoadState('load');
 
 			const envFileButton = page.getByRole('button', { name: '.env' }).first();
 			await expect(envFileButton).toBeVisible();
@@ -970,7 +1048,7 @@ test.describe('GitOps Managed Project', () => {
 		test.skip(!regularProject, 'No regular (non-GitOps) stopped projects found');
 
 		await page.goto(`/projects/${regularProject!.id}`);
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		// The name button should be enabled for regular projects that are stopped
 		const nameButton = page.getByRole('button', { name: regularProject!.name });
@@ -979,7 +1057,7 @@ test.describe('GitOps Managed Project', () => {
 		// Navigate to Configuration tab
 		const configTab = page.getByRole('tab', { name: /Configuration|Config/i });
 		await configTab.click();
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		// GitOps alert should NOT be visible
 		await expect(page.getByText('Git Read-only')).not.toBeVisible();
@@ -995,11 +1073,11 @@ test.describe('GitOps Managed Project', () => {
 		test.skip(!regularProject, 'No regular (non-GitOps) projects found');
 
 		await page.goto(`/projects/${regularProject!.id}`);
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		const configTab = page.getByRole('tab', { name: /Configuration|Config/i });
 		await configTab.click();
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		// Verify no GitOps-related UI elements
 		await expect(page.getByText(/managed by Git\./i)).not.toBeVisible();
@@ -1013,7 +1091,7 @@ test.describe('Project Detail Page', () => {
 
 		const firstProject = realProjects[0];
 		await page.goto(`/projects/${firstProject.id || firstProject.name}`);
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		const backLink = page.getByRole('link', { name: /^Back$/i }).first();
 		await expect(backLink).toBeVisible();
@@ -1028,7 +1106,7 @@ test.describe('Project Detail Page', () => {
 
 		const firstProject = realProjects[0];
 		await page.goto(`/projects/${firstProject.id || firstProject.name}`);
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		await expect(page.getByRole('button', { name: firstProject.name, exact: false })).toBeVisible();
 
@@ -1041,7 +1119,7 @@ test.describe('Project Detail Page', () => {
 		test.skip(!realProjects.length, 'No projects available for navigation test');
 		const firstProject = realProjects[0];
 		await page.goto(`/projects/${firstProject.id || firstProject.name}`);
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		await expect(page.getByRole('tab', { name: /Services/i })).toBeVisible();
 		await expect(page.getByRole('tab', { name: /Configuration|Config/i })).toBeVisible();
@@ -1083,7 +1161,7 @@ test.describe('Project Detail Page', () => {
 		});
 
 		await page.goto(`/projects/${projectWithServices!.id || projectWithServices!.name}`);
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		const clicked = await clickProjectDetailUpdateAction(page);
 		test.skip(!clicked, 'Current project detail view has no clickable update action');
@@ -1098,7 +1176,7 @@ test.describe('Project Detail Page', () => {
 		const projectWithServices =
 			realProjects.find((p) => (p.serviceCount ?? 0) > 0) ?? realProjects[0]!;
 		await page.goto(`/projects/${projectWithServices.id || projectWithServices.name}`);
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		await page.getByRole('tab', { name: /Services/i }).click();
 
@@ -1122,7 +1200,7 @@ test.describe('Project Detail Page', () => {
 
 		const firstProject = realProjects[0];
 		await page.goto(`/projects/${firstProject.id || firstProject.name}`);
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		const configTab = page.getByRole('tab', { name: /Configuration|Config/i });
 		await configTab.click();
@@ -1186,11 +1264,11 @@ test.describe('Project Detail Page', () => {
 		test.skip(!regularProject, 'No regular (non-GitOps) projects found');
 
 		await page.goto(`/projects/${regularProject!.id || regularProject!.name}`);
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		const configTab = page.getByRole('tab', { name: /Configuration|Config/i });
 		await configTab.click();
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		let layoutSwitch = page.getByRole('switch', {
 			name: /Classic|Tree View/i
@@ -1210,12 +1288,12 @@ test.describe('Project Detail Page', () => {
 		}
 
 		await page.reload();
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		const restoredConfigTab = page.getByRole('tab', { name: /Configuration|Config/i });
 		if ((await restoredConfigTab.getAttribute('aria-selected')) !== 'true') {
 			await restoredConfigTab.click();
-			await page.waitForLoadState('networkidle');
+			await page.waitForLoadState('load');
 		}
 
 		await expect(projectFilesHeading).toBeVisible();
@@ -1252,7 +1330,7 @@ test.describe('Project Detail Page', () => {
 		try {
 			const configTab = page.getByRole('tab', { name: /Configuration|Config/i });
 			await configTab.click();
-			await page.waitForLoadState('networkidle');
+			await page.waitForLoadState('load');
 
 			let composeEditor = page.locator('.cm-editor:visible').first();
 			await expect(composeEditor).toBeVisible();
@@ -1293,12 +1371,12 @@ test.describe('Project Detail Page', () => {
 			}
 
 			await page.reload();
-			await page.waitForLoadState('networkidle');
+			await page.waitForLoadState('load');
 
 			const restoredConfigTab = page.getByRole('tab', { name: /Configuration|Config/i });
 			if ((await restoredConfigTab.getAttribute('aria-selected')) !== 'true') {
 				await restoredConfigTab.click();
-				await page.waitForLoadState('networkidle');
+				await page.waitForLoadState('load');
 			}
 
 			composeEditor = page.locator('.cm-editor:visible').first();
@@ -1321,7 +1399,7 @@ test.describe('Project Detail Page', () => {
 		const targetProject = runningProject!;
 
 		await page.goto(`/projects/${targetProject.id || targetProject.name}`);
-		await page.waitForLoadState('networkidle');
+		await page.waitForLoadState('load');
 
 		const logsTab = page.getByRole('tab', { name: /Logs/i });
 		await expect(logsTab).toBeEnabled();

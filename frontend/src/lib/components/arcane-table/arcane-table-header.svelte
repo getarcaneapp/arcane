@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { type Column } from '@tanstack/table-core';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { cn } from '$lib/utils.js';
@@ -9,13 +8,23 @@
 
 	type DivAttributes = SvelteHTMLElements['div'];
 
+	// Structural shape of the column controls this header drives. v9's `Column<TFeatures, TData>`
+	// is invariant in TData and can't be threaded cleanly through `renderComponent`, so we depend
+	// only on the methods used here — the real column satisfies this with no generic and no `any`.
+	type SortableHeaderColumn = {
+		getCanSort: () => boolean;
+		getIsSorted: () => false | 'asc' | 'desc';
+		toggleSorting: (desc?: boolean) => void;
+		toggleVisibility: (value?: boolean) => void;
+	};
+
 	let {
 		column,
 		title,
 		class: className,
 		...restProps
 	}: {
-		column?: Column<any, any>;
+		column?: SortableHeaderColumn;
 		title: string;
 		class?: string;
 	} & DivAttributes = $props();
@@ -39,11 +48,11 @@
 						class="data-[state=open]:bg-accent -ml-3 h-8"
 					>
 						{#if column.getIsSorted() === 'desc'}
-							<ArrowDownIcon />
+							<ArrowDownIcon class="text-foreground size-4" />
 						{:else if column.getIsSorted() === 'asc'}
-							<ArrowUpIcon />
+							<ArrowUpIcon class="text-foreground size-4" />
 						{:else}
-							<ArrowsUpDownIcon />
+							<ArrowsUpDownIcon class="text-muted-foreground/70 size-4" />
 						{/if}
 					</ArcaneButton>
 				{/snippet}

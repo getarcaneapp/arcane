@@ -9,27 +9,33 @@
 	import { m } from '$lib/paraglide/messages';
 	import { MobileNavGestures } from './gestures.svelte';
 	import './styles.css';
-	import type { AppVersionInformation } from '$lib/types/application-configuration';
+	import type { AppVersionInformation } from '$lib/types/settings';
+	import type { PermissionsManifest, User } from '$lib/types/auth';
+	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import { registerNavigationVisibilityController } from '$lib/utils/navigation';
 
 	let {
 		navigationSettings,
 		user = null,
 		versionInformation,
 		swarmEnabled = false,
+		permissionsManifest = null,
 		class: className = ''
 	}: {
 		navigationSettings: MobileNavigationSettings;
-		user?: any;
+		user?: User | null;
 		versionInformation?: AppVersionInformation;
 		swarmEnabled?: boolean;
+		permissionsManifest?: PermissionsManifest | null;
 		class?: string;
 	} = $props();
 
 	const swarmItems = $derived(getSwarmNavigationItems(swarmEnabled));
+	const currentEnvId = $derived(environmentStore.selected?.id || '0');
 
 	const pinnedItems = $derived.by(() => {
 		if (!navigationSettings?.pinnedItems) return [];
-		const availableItems = getAvailableMobileNavItems({ swarmEnabled });
+		const availableItems = getAvailableMobileNavItems({ swarmEnabled, user, currentEnvId, accessManifest: permissionsManifest });
 		return navigationSettings.pinnedItems
 			.map((url) => availableItems.find((item) => item.url === url))
 			.filter((item) => item !== undefined);
@@ -46,6 +52,10 @@
 	let visible = $state(true);
 	let menuOpen = $state(false);
 	let navElement: HTMLElement;
+
+	function resetVisibility() {
+		visible = true;
+	}
 
 	const gestures = new MobileNavGestures(
 		{
@@ -92,8 +102,13 @@
 	// Show nav when menu closes
 	$effect(() => {
 		if (!menuOpen) {
-			visible = true;
+			resetVisibility();
 		}
+	});
+
+	$effect(() => {
+		registerNavigationVisibilityController({ resetVisibility });
+		return () => registerNavigationVisibilityController(null);
 	});
 
 	// Keep page padding in sync with nav height via CSS variables
@@ -188,4 +203,4 @@
 	{/if}
 </nav>
 
-<MobileNavSheet bind:open={menuOpen} {user} {versionInformation} {swarmItems} />
+<MobileNavSheet bind:open={menuOpen} {user} {versionInformation} {swarmItems} {permissionsManifest} />

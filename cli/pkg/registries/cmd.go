@@ -2,14 +2,15 @@ package registries
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 
-	"github.com/getarcaneapp/arcane/cli/internal/client"
-	"github.com/getarcaneapp/arcane/cli/internal/cmdutil"
-	"github.com/getarcaneapp/arcane/cli/internal/output"
-	"github.com/getarcaneapp/arcane/cli/internal/types"
-	"github.com/getarcaneapp/arcane/types/base"
-	"github.com/getarcaneapp/arcane/types/containerregistry"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	"github.com/getarcaneapp/arcane/types/v2/base"
+	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	"github.com/spf13/cobra"
 )
 
@@ -220,7 +221,7 @@ var updateCmd = &cobra.Command{
 
 		req := make(map[string]any)
 		if cmd.Flags().Changed("enabled") && cmd.Flags().Changed("disabled") {
-			return fmt.Errorf("--enabled and --disabled are mutually exclusive")
+			return errors.New("--enabled and --disabled are mutually exclusive")
 		}
 		if cmd.Flags().Changed("url") {
 			req["url"] = registryUpdateURL
@@ -239,7 +240,7 @@ var updateCmd = &cobra.Command{
 		}
 
 		if len(req) == 0 {
-			return fmt.Errorf("no updates provided; use --url, --username, --password, --enabled, or --disabled")
+			return errors.New("no updates provided; use --url, --username, --password, --enabled, or --disabled")
 		}
 
 		resp, err := c.Put(cmd.Context(), types.Endpoints.ContainerRegistry(args[0]), req)

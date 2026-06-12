@@ -9,23 +9,24 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
-	humamiddleware "github.com/getarcaneapp/arcane/backend/api/middleware"
-	"github.com/getarcaneapp/arcane/backend/internal/database"
-	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"github.com/getarcaneapp/arcane/types/base"
-	"github.com/getarcaneapp/arcane/types/env"
-	"github.com/getarcaneapp/arcane/types/jobschedule"
-	settingstypes "github.com/getarcaneapp/arcane/types/settings"
+	humamiddleware "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
+	"github.com/getarcaneapp/arcane/types/v2/base"
+	"github.com/getarcaneapp/arcane/types/v2/env"
+	"github.com/getarcaneapp/arcane/types/v2/jobschedule"
+	settingstypes "github.com/getarcaneapp/arcane/types/v2/settings"
 	glsqlite "github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
 
-// adminTestContextInternal returns a context with the admin flag set, suitable for
-// unit-testing handlers that call checkAdminInternal directly.
+// adminTestContextInternal returns a context with a sudo PermissionSet attached,
+// suitable for unit-testing handlers that gate via RequirePermission middleware.
 func adminTestContextInternal() context.Context {
-	return context.WithValue(context.Background(), humamiddleware.ContextKeyUserIsAdmin, true)
+	return context.WithValue(context.Background(), humamiddleware.ContextKeyUserPermissions, authz.SudoPermissionSet())
 }
 
 func setupRemoteHandlerEnvironmentServiceInternal(t *testing.T, server *httptest.Server) *services.EnvironmentService {

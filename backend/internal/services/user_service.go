@@ -15,11 +15,12 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"github.com/getarcaneapp/arcane/backend/internal/database"
-	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/pkg/utils/dbutil"
-	"github.com/getarcaneapp/arcane/types/user"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/dbutil"
+	"github.com/getarcaneapp/arcane/types/v2/user"
 )
 
 type Argon2Params struct {
@@ -42,6 +43,7 @@ func DefaultArgon2Params() *Argon2Params {
 
 type UserService struct {
 	db           *database.DB
+	roleService  *RoleService
 	argon2Params *Argon2Params
 }
 
@@ -52,6 +54,14 @@ func NewUserService(db *database.DB) *UserService {
 		db:           db,
 		argon2Params: DefaultArgon2Params(),
 	}
+}
+
+// WithRoleService wires the RoleService dependency. Separated from the
+// constructor so the bootstrap can construct UserService first (RoleService
+// itself has no UserService dependency).
+func (s *UserService) WithRoleService(roleService *RoleService) *UserService {
+	s.roleService = roleService
+	return s
 }
 
 func (s *UserService) hashPassword(password string) (string, error) {
@@ -88,7 +98,7 @@ func (s *UserService) validateBcryptPassword(hash, password string) error {
 func (s *UserService) validateArgon2Password(encodedHash, password string) error {
 	parts := strings.Split(encodedHash, "$")
 	if len(parts) != 6 {
-		return fmt.Errorf("invalid hash format")
+		return errors.New("invalid hash format")
 	}
 
 	var version int
@@ -97,7 +107,7 @@ func (s *UserService) validateArgon2Password(encodedHash, password string) error
 		return err
 	}
 	if version != argon2.Version {
-		return fmt.Errorf("incompatible version of argon2")
+		return errors.New("incompatible version of argon2")
 	}
 
 	var memory, iterations uint32
@@ -119,14 +129,14 @@ func (s *UserService) validateArgon2Password(encodedHash, password string) error
 
 	hashLen := len(decodedHash)
 	if hashLen < 0 || hashLen > 0x7fffffff {
-		return fmt.Errorf("invalid hash length")
+		return errors.New("invalid hash length")
 	}
 
 	comparisonHash := argon2.IDKey([]byte(password), salt, iterations, memory, parallelism, uint32(hashLen))
 
 	// constant-time compare
 	if subtle.ConstantTimeCompare(comparisonHash, decodedHash) != 1 {
-		return fmt.Errorf("invalid password")
+		return errors.New("invalid password")
 	}
 
 	return nil
@@ -163,27 +173,15 @@ func (s *UserService) GetUserByEmail(ctx context.Context, email string) (*models
 
 func (s *UserService) UpdateUser(ctx context.Context, user *models.User) (*models.User, error) {
 	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
-		var existing models.User
 		if err := tx.
 			Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("id = ?", user.ID).
-			First(&existing).Error; err != nil {
+			First(&models.User{}).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return ErrUserNotFound
 			}
 			return fmt.Errorf("failed to load user: %w", err)
 		}
-
-		if userHasRoleInternal(existing.Roles, "admin") && !userHasRoleInternal(user.Roles, "admin") {
-			remainingAdmins, err := s.remainingAdminCountExcludingUserInternal(tx, user.ID)
-			if err != nil {
-				return err
-			}
-			if remainingAdmins == 0 {
-				return ErrCannotRemoveLastAdmin
-			}
-		}
-
 		if err := tx.Save(user).Error; err != nil {
 			return fmt.Errorf("failed to update user: %w", err)
 		}
@@ -218,7 +216,7 @@ func (s *UserService) AttachOidcSubjectTransactional(ctx context.Context, userID
 
 		// If already linked to a different subject, abort
 		if u.OidcSubjectId != nil && *u.OidcSubjectId != "" && *u.OidcSubjectId != subject {
-			return fmt.Errorf("user already linked to another OIDC subject")
+			return errors.New("user already linked to another OIDC subject")
 		}
 
 		// Link subject
@@ -251,62 +249,118 @@ func (s *UserService) CreateDefaultAdmin(ctx context.Context) error {
 		return fmt.Errorf("failed to hash default admin password: %w", err)
 	}
 
-	return dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	// Step 1: ensure the default admin user row exists. If the users table is
+	// empty we create it; otherwise we find the existing `arcane` user (if any).
+	// Either way the role assignment is reconciled below — idempotently — so
+	// upgrades from older builds that didn't grant the role get patched up.
+	var adminUserID string
+	err = dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
 		var count int64
 		if err := tx.Model(&models.User{}).Count(&count).Error; err != nil {
 			return fmt.Errorf("failed to count users: %w", err)
 		}
 
-		if count > 0 {
-			slog.WarnContext(ctx, "Users already exist, skipping default admin creation")
+		if count == 0 {
+			email := "admin@localhost"
+			displayName := "Arcane Admin"
+			userModel := &models.User{
+				Username:               "arcane",
+				Email:                  new(email),
+				DisplayName:            new(displayName),
+				PasswordHash:           hashedPassword,
+				RequiresPasswordChange: true,
+			}
+			if err := tx.Create(userModel).Error; err != nil {
+				return fmt.Errorf("failed to create default admin user: %w", err)
+			}
+			adminUserID = userModel.ID
+			slog.InfoContext(ctx, "👑 Default admin user created!")
+			slog.InfoContext(ctx, "🔑 Username: arcane")
+			slog.InfoContext(ctx, "🔑 Password: arcane-admin")
+			slog.InfoContext(ctx, "⚠️  User will be prompted to change password on first login")
 			return nil
 		}
 
-		email := "admin@localhost"
-		displayName := "Arcane Admin"
-		userModel := &models.User{
-			Username:               "arcane",
-			Email:                  new(email),
-			DisplayName:            new(displayName),
-			PasswordHash:           hashedPassword,
-			Roles:                  models.StringSlice{"admin"},
-			RequiresPasswordChange: true,
+		// Users already exist — see if `arcane` is one of them. If not,
+		// someone removed the default admin on purpose and we leave it alone.
+		var existing models.User
+		err := tx.Where("username = ?", "arcane").First(&existing).Error
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return fmt.Errorf("failed to look up default admin user: %w", err)
 		}
-
-		if err := tx.Create(userModel).Error; err != nil {
-			return fmt.Errorf("failed to create default admin user: %w", err)
-		}
-
-		slog.InfoContext(ctx, "👑 Default admin user created!")
-		slog.InfoContext(ctx, "🔑 Username: arcane")
-		slog.InfoContext(ctx, "🔑 Password: arcane-admin")
-		slog.InfoContext(ctx, "⚠️  User will be prompted to change password on first login")
-
+		adminUserID = existing.ID
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+
+	if adminUserID == "" || s.roleService == nil {
+		return nil
+	}
+
+	// Step 2: ensure the default admin holds the global Admin role assignment.
+	// Idempotent — if the assignment already exists, SetUserAssignments is a
+	// no-op write (it dedupes via the unique index). This recovers users that
+	// were created by older builds before the role-grant on bootstrap was
+	// wired up.
+	assignments, err := s.roleService.ListUserAssignments(ctx, adminUserID)
+	if err != nil {
+		return fmt.Errorf("failed to list default admin assignments: %w", err)
+	}
+	for _, a := range assignments {
+		if a.RoleID == authz.BuiltInRoleAdmin && a.EnvironmentID == nil {
+			return nil // already has it
+		}
+	}
+	desired := append([]models.UserRoleAssignment{}, assignments...)
+	desired = append(desired, models.UserRoleAssignment{
+		RoleID:        authz.BuiltInRoleAdmin,
+		EnvironmentID: nil,
+	})
+	// Strip the source field so SetUserAssignments classifies everything as manual.
+	manual := make([]models.UserRoleAssignment, 0, len(desired))
+	for _, a := range desired {
+		manual = append(manual, models.UserRoleAssignment{RoleID: a.RoleID, EnvironmentID: a.EnvironmentID})
+	}
+	if err := s.roleService.SetUserAssignments(ctx, adminUserID, manual); err != nil {
+		return fmt.Errorf("failed to grant default admin global role: %w", err)
+	}
+	slog.InfoContext(ctx, "Default admin granted global Admin role assignment", "user_id", adminUserID)
+	return nil
 }
 
 func (s *UserService) DeleteUser(ctx context.Context, id string) error {
+	// Last-admin guard: if this user's effective permissions make them the only
+	// global admin, refuse the delete. Checked outside the transaction because
+	// RoleService uses its own session and the guard spans rows.
+	if s.roleService != nil {
+		ps, err := s.roleService.ResolvePermissions(ctx, &models.User{BaseModel: models.BaseModel{ID: id}})
+		if err != nil {
+			return err
+		}
+		if ps != nil && ps.IsGlobalAdmin() {
+			remaining, err := s.roleService.CountGlobalAdminsExcludingUser(ctx, id)
+			if err != nil {
+				return err
+			}
+			if remaining == 0 {
+				return ErrCannotRemoveLastAdmin
+			}
+		}
+	}
 	return dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
-		var existing models.User
 		if err := tx.
 			Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("id = ?", id).
-			First(&existing).Error; err != nil {
+			First(&models.User{}).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return ErrUserNotFound
 			}
 			return fmt.Errorf("failed to load user: %w", err)
-		}
-
-		if userHasRoleInternal(existing.Roles, "admin") {
-			remainingAdmins, err := s.remainingAdminCountExcludingUserInternal(tx, id)
-			if err != nil {
-				return err
-			}
-			if remainingAdmins == 0 {
-				return ErrCannotRemoveLastAdmin
-			}
 		}
 
 		if err := tx.Delete(&models.User{}, "id = ?", id).Error; err != nil {
@@ -342,7 +396,9 @@ func (s *UserService) UpgradePasswordHash(ctx context.Context, userID, password 
 
 func (s *UserService) ListUsersPaginated(ctx context.Context, params pagination.QueryParams) ([]user.User, pagination.Response, error) {
 	var users []models.User
-	query := s.db.WithContext(ctx).Model(&models.User{})
+	query := s.db.WithContext(ctx).
+		Model(&models.User{}).
+		Where("is_service_account = ?", false)
 
 	if term := strings.TrimSpace(params.Search); term != "" {
 		searchPattern := "%" + term + "%"
@@ -357,55 +413,95 @@ func (s *UserService) ListUsersPaginated(ctx context.Context, params pagination.
 		return nil, pagination.Response{}, fmt.Errorf("failed to paginate users: %w", err)
 	}
 
-	result, err := s.toUserResponseDtosInternal(ctx, users)
-	if err != nil {
-		return nil, pagination.Response{}, err
-	}
+	result := s.toUserResponseDtosInternal(ctx, users)
 
 	return result, paginationResp, nil
 }
 
 func (s *UserService) ToUserResponseDto(ctx context.Context, u models.User) (user.User, error) {
-	if !userHasRoleInternal(u.Roles, "admin") {
-		return toUserResponseDtoInternal(u, 0), nil
-	}
-
-	adminCount, err := s.adminUserCountInternal(ctx)
-	if err != nil {
-		return user.User{}, err
-	}
-
-	return toUserResponseDtoInternal(u, adminCount), nil
+	return s.toUserResponseDtoInternal(ctx, u), nil
 }
 
-func (s *UserService) toUserResponseDtosInternal(ctx context.Context, users []models.User) ([]user.User, error) {
-	adminCount, err := s.adminUserCountInternal(ctx)
-	if err != nil {
-		return nil, err
-	}
-
+func (s *UserService) toUserResponseDtosInternal(ctx context.Context, users []models.User) []user.User {
 	result := make([]user.User, len(users))
 	for i, u := range users {
-		result[i] = toUserResponseDtoInternal(u, adminCount)
+		result[i] = s.toUserResponseDtoInternal(ctx, u)
 	}
-
-	return result, nil
+	return result
 }
 
-func toUserResponseDtoInternal(u models.User, adminCount int) user.User {
-	return user.User{
+// toUserResponseDtoInternal builds the public User DTO. RoleAssignments and
+// PermissionsByEnv come from the RBAC service. CanDelete is false when this
+// user is the only effective global admin.
+func (s *UserService) toUserResponseDtoInternal(ctx context.Context, u models.User) user.User {
+	dto := user.User{
 		ID:                     u.ID,
 		Username:               u.Username,
 		DisplayName:            u.DisplayName,
 		Email:                  u.Email,
-		Roles:                  u.Roles,
-		CanDelete:              !userHasRoleInternal(u.Roles, "admin") || adminCount > 1,
+		CanDelete:              true,
 		OidcSubjectId:          u.OidcSubjectId,
 		Locale:                 u.Locale,
+		FontSize:               u.FontSize,
 		RequiresPasswordChange: u.RequiresPasswordChange,
 		CreatedAt:              u.CreatedAt.Format("2006-01-02T15:04:05.999999Z"),
 		UpdatedAt:              u.UpdatedAt.Format("2006-01-02T15:04:05.999999Z"),
+		RoleAssignments:        []user.RoleAssignmentSummary{},
+		PermissionsByEnv:       map[string][]string{},
 	}
+	if s.roleService == nil {
+		return dto
+	}
+	if rows, err := s.roleService.ListUserAssignments(ctx, u.ID); err == nil {
+		dto.RoleAssignments = make([]user.RoleAssignmentSummary, len(rows))
+		for i, r := range rows {
+			dto.RoleAssignments[i] = user.RoleAssignmentSummary{
+				RoleID:        r.RoleID,
+				EnvironmentID: r.EnvironmentID,
+				Source:        r.Source,
+			}
+		}
+	}
+	if ps, err := s.roleService.ResolvePermissions(ctx, &u); err == nil && ps != nil {
+		dto.IsGlobalAdmin = ps.IsGlobalAdmin()
+		dto.PermissionsByEnv = permissionSetToMap(ps)
+		if dto.IsGlobalAdmin {
+			if remaining, cerr := s.roleService.CountGlobalAdminsExcludingUser(ctx, u.ID); cerr == nil && remaining == 0 {
+				dto.CanDelete = false
+			}
+		}
+	}
+	return dto
+}
+
+// permissionSetToMap flattens a PermissionSet into the wire format consumed
+// by the frontend: a map from environment ID (or "global") to a list of
+// permission strings. Sudo callers expose "*" under "global" as a sentinel
+// meaning "every permission".
+func permissionSetToMap(ps *authz.PermissionSet) map[string][]string {
+	out := map[string][]string{}
+	if ps == nil {
+		return out
+	}
+	if ps.Sudo {
+		out["global"] = []string{"*"}
+		return out
+	}
+	if len(ps.Global) > 0 {
+		globals := make([]string, 0, len(ps.Global))
+		for p := range ps.Global {
+			globals = append(globals, p)
+		}
+		out["global"] = globals
+	}
+	for envID, perms := range ps.PerEnv {
+		list := make([]string, 0, len(perms))
+		for p := range perms {
+			list = append(list, p)
+		}
+		out[envID] = list
+	}
+	return out
 }
 
 func (s *UserService) GetUser(ctx context.Context, userID string) (*models.User, error) {
@@ -421,50 +517,4 @@ func (s *UserService) getUserInternal(ctx context.Context, userID string, tx *go
 		First(&user).
 		Error
 	return &user, err
-}
-
-func (s *UserService) remainingAdminCountExcludingUserInternal(tx *gorm.DB, excludedUserID string) (int, error) {
-	var count int64
-	if err := s.adminUsersScopeInternal(tx.Model(&models.User{}).Where("id <> ?", excludedUserID)).Count(&count).Error; err != nil {
-		return 0, fmt.Errorf("failed to count remaining admin users: %w", err)
-	}
-
-	return int(count), nil
-}
-
-func userHasRoleInternal(roles models.StringSlice, role string) bool {
-	for _, currentRole := range roles {
-		if strings.EqualFold(currentRole, role) {
-			return true
-		}
-	}
-
-	return false
-}
-
-func (s *UserService) adminUserCountInternal(ctx context.Context) (int, error) {
-	var count int64
-	if err := s.adminUsersScopeInternal(s.db.WithContext(ctx).Model(&models.User{})).Count(&count).Error; err != nil {
-		return 0, fmt.Errorf("failed to count admin users: %w", err)
-	}
-
-	return int(count), nil
-}
-
-func (s *UserService) adminUsersScopeInternal(query *gorm.DB) *gorm.DB {
-	switch s.db.Name() {
-	case "sqlite":
-		return query.Where(
-			"EXISTS (SELECT 1 FROM json_each(users.roles) WHERE lower(json_each.value) = ?)",
-			"admin",
-		)
-	case "postgres":
-		return query.Where(
-			"EXISTS (SELECT 1 FROM jsonb_array_elements_text(users.roles::jsonb) AS role WHERE lower(role) = ?)",
-			"admin",
-		)
-	default:
-		slog.Warn("Using LIKE-based admin role query fallback for unsupported database dialect", "dialect", s.db.Name())
-		return query.Where("LOWER(roles) LIKE ?", `%\"admin\"%`)
-	}
 }

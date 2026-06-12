@@ -46,7 +46,7 @@ func ProxyRequest(ctx context.Context, tunnel *AgentTunnel, method, path, query 
 
 func registerPendingRequestInternal(tunnel *AgentTunnel, requestID string) (<-chan *TunnelMessage, error) {
 	if requestID == "" {
-		return nil, fmt.Errorf("request ID is required")
+		return nil, errors.New("request ID is required")
 	}
 
 	respCh := make(chan *TunnelMessage, 256)
@@ -79,9 +79,8 @@ func collectCommandResponseInternal(ctx context.Context, respCh <-chan *TunnelMe
 			case MessageTypeCommandOutput, MessageTypeStreamData, MessageTypeFileChunk:
 				state.handleStreamData(incoming)
 			case MessageTypeCommandComplete:
-				if done, status, headers, body, err := state.handleCommandComplete(incoming); done {
-					return status, headers, body, err
-				}
+				status, headers, body, err := state.handleCommandComplete(incoming)
+				return status, headers, body, err
 			case MessageTypeStreamEnd:
 				if done, status, headers, body := state.handleStreamEnd(); done {
 					return status, headers, body, nil
@@ -151,7 +150,7 @@ func (s *grpcResponseState) handleStreamEnd() (bool, int, map[string]string, []b
 	return true, s.status, stripInternalTunnelHeaders(s.respHeaders), s.respBody.Bytes()
 }
 
-func (s *grpcResponseState) handleCommandComplete(incoming *TunnelMessage) (bool, int, map[string]string, []byte, error) {
+func (s *grpcResponseState) handleCommandComplete(incoming *TunnelMessage) (int, map[string]string, []byte, error) {
 	if !s.gotResponse {
 		s.gotResponse = true
 		s.status = incoming.Status
@@ -161,9 +160,9 @@ func (s *grpcResponseState) handleCommandComplete(incoming *TunnelMessage) (bool
 		s.respBody.Write(incoming.Body)
 	}
 	if incoming.Error != "" && incoming.Status >= http.StatusBadRequest {
-		return true, incoming.Status, stripInternalTunnelHeaders(s.respHeaders), s.respBody.Bytes(), errors.New(incoming.Error)
+		return incoming.Status, stripInternalTunnelHeaders(s.respHeaders), s.respBody.Bytes(), errors.New(incoming.Error)
 	}
-	return true, incoming.Status, stripInternalTunnelHeaders(s.respHeaders), s.respBody.Bytes(), nil
+	return incoming.Status, stripInternalTunnelHeaders(s.respHeaders), s.respBody.Bytes(), nil
 }
 
 // ProxyHTTPRequest is a helper that proxies an echo context through a tunnel

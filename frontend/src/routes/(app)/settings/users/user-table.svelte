@@ -5,29 +5,36 @@
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
-	import { tryCatch } from '$lib/utils/try-catch';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
-	import type { User } from '$lib/types/user.type';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api';
+	import { tryCatch } from '$lib/utils/api';
+	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
+	import type { User } from '$lib/types/auth';
+	import type { Role } from '$lib/types/auth';
+	import { BUILT_IN_ROLE_ADMIN, BUILT_IN_ROLE_EDITOR, BUILT_IN_ROLE_DEPLOYER, BUILT_IN_ROLE_VIEWER } from '$lib/types/auth';
 	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
 	import { userService } from '$lib/services/user-service';
 	import { UserIcon, TrashIcon, EditIcon, EllipsisIcon } from '$lib/icons';
+	import IfPermitted from '$lib/components/if-permitted.svelte';
 
 	let {
 		users = $bindable(),
 		selectedIds = $bindable(),
 		requestOptions = $bindable(),
+		roles,
 		onUsersChanged,
 		onEditUser
 	}: {
 		users: Paginated<User>;
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
+		roles: Role[];
 		onUsersChanged: () => Promise<void>;
 		onEditUser: (user: User) => void;
 	} = $props();
+
+	const rolesById = $derived(new Map(roles.map((r) => [r.id, r])));
 
 	let isLoading = $state({
 		removing: false
@@ -118,27 +125,72 @@
 		});
 	}
 
-	function getRoleBadgeVariant(roles: string[]) {
-		if (roles?.includes('admin')) return 'red';
-		return 'green';
+	type BadgeVariant = 'red' | 'blue' | 'purple' | 'gray' | 'green';
+
+	/** True when the backend reports effective global administrator access. */
+	function isGlobalAdmin(user: User): boolean {
+		return user.isGlobalAdmin === true;
 	}
 
-	function getRoleText(roles: string[]) {
-		if (roles?.includes('admin')) return m.common_admin();
-		return m.common_user();
+	/** Color variant for a role badge keyed off the role ID (not its localized name). */
+	function roleVariant(roleId: string): BadgeVariant {
+		switch (roleId) {
+			case BUILT_IN_ROLE_ADMIN:
+				return 'red';
+			case BUILT_IN_ROLE_EDITOR:
+				return 'blue';
+			case BUILT_IN_ROLE_DEPLOYER:
+				return 'purple';
+			case BUILT_IN_ROLE_VIEWER:
+				return 'gray';
+			default:
+				return 'green'; // custom roles
+		}
+	}
+
+	function roleName(roleId: string): string {
+		return rolesById.get(roleId)?.name ?? m.common_unknown();
+	}
+
+	/**
+	 * Resolves what to render in the Role column for a given user. Three states:
+	 * - no assignments       → single "No access" gray badge
+	 * - holds global Admin   → single "Admin" red badge (collapses any other rows)
+	 * - everything else      → one badge per distinct role, with a tooltip
+	 *                          listing which environments each scope applies to
+	 */
+	function rolesSummary(user: User): { text: string; variant: BadgeVariant; tooltip?: string }[] {
+		const assignments = user.roleAssignments ?? [];
+		if (assignments.length === 0) {
+			return [{ text: m.users_role_summary_none(), variant: 'gray' }];
+		}
+		if (isGlobalAdmin(user)) {
+			return [{ text: m.common_admin(), variant: 'red' }];
+		}
+		// Group by roleId so a user assigned the same role on multiple envs gets
+		// one badge with a tooltip listing the env count.
+		const byRole = new Map<string, number>();
+		for (const a of assignments) {
+			byRole.set(a.roleId, (byRole.get(a.roleId) ?? 0) + 1);
+		}
+		return Array.from(byRole.entries()).map(([roleId, count]) => ({
+			text: roleName(roleId),
+			variant: roleVariant(roleId),
+			tooltip: count > 1 ? m.users_role_summary_env_count({ count }) : undefined
+		}));
 	}
 
 	const columns = [
 		{ accessorKey: 'username', title: m.common_username(), sortable: true, cell: UsernameCell },
 		{ accessorKey: 'displayName', title: m.common_display_name(), sortable: true, cell: DisplayNameCell },
 		{ accessorKey: 'email', title: m.common_email(), sortable: true, cell: EmailCell },
-		{ accessorKey: 'roles', title: m.common_role(), sortable: true, cell: RoleCell }
+		{ accessorKey: 'roleAssignments', title: m.common_role(), sortable: false, cell: RoleCell }
 	] satisfies ColumnSpec<User>[];
 
 	const mobileFields = [
 		{ id: 'displayName', label: m.common_display_name(), defaultVisible: true },
 		{ id: 'email', label: m.common_email(), defaultVisible: true },
-		{ id: 'roles', label: m.common_role(), defaultVisible: true }
+		{ id: 'roleAssignments', label: m.common_role(), defaultVisible: true }
 	];
 
 	const bulkActions = $derived.by<BulkAction[]>(() => [
@@ -169,7 +221,11 @@
 {/snippet}
 
 {#snippet RoleCell({ item }: { item: User })}
-	<StatusBadge text={getRoleText(item.roles)} variant={getRoleBadgeVariant(item.roles)} />
+	<div class="flex flex-wrap items-center gap-1">
+		{#each rolesSummary(item) as badge (badge.text)}
+			<StatusBadge text={badge.text} variant={badge.variant} tooltip={badge.tooltip} />
+		{/each}
+	</div>
 {/snippet}
 
 {#snippet UserMobileCardSnippet({ item, mobileFieldVisibility }: { item: User; mobileFieldVisibility: MobileFieldVisibility })}
@@ -179,13 +235,18 @@
 		title={(item: User) => item.username}
 		subtitle={(item: User) => ((mobileFieldVisibility['email'] ?? true) && item.email ? item.email : null)}
 		badges={[
-			(item: User) =>
-				(mobileFieldVisibility['roles'] ?? true)
-					? {
-							variant: getRoleBadgeVariant(item.roles) === 'red' ? 'red' : 'green',
-							text: getRoleText(item.roles)
-						}
-					: null
+			(item: User) => {
+				if (!(mobileFieldVisibility['roleAssignments'] ?? true)) return null;
+				const summary = rolesSummary(item);
+				// Mobile cards take a single badge; show the first (or a "+N" hint
+				// when the user has multiple distinct roles).
+				const [head, ...rest] = summary;
+				if (!head) return null;
+				if (rest.length === 0) {
+					return { variant: head.variant, text: head.text };
+				}
+				return { variant: head.variant, text: `${head.text} +${rest.length}` };
+			}
 		]}
 		fields={[
 			{
@@ -213,22 +274,26 @@
 		<DropdownMenu.Content align="end">
 			<DropdownMenu.Group>
 				{#if !item.oidcSubjectId}
-					<DropdownMenu.Item onclick={() => onEditUser(item)}>
-						<EditIcon class="size-4" />
-						{m.common_edit()}
-					</DropdownMenu.Item>
+					<IfPermitted perm="users:update">
+						<DropdownMenu.Item onclick={() => onEditUser(item)}>
+							<EditIcon class="size-4" />
+							{m.common_edit()}
+						</DropdownMenu.Item>
 
-					<DropdownMenu.Separator />
+						<DropdownMenu.Separator />
+					</IfPermitted>
 				{/if}
 
-				<DropdownMenu.Item
-					variant="destructive"
-					disabled={!canDeleteUser(item) || isLoading.removing}
-					onclick={() => handleDeleteUser(item)}
-				>
-					<TrashIcon class="size-4" />
-					{m.common_delete()}
-				</DropdownMenu.Item>
+				<IfPermitted perm="users:delete">
+					<DropdownMenu.Item
+						variant="destructive"
+						disabled={!canDeleteUser(item) || isLoading.removing}
+						onclick={() => handleDeleteUser(item)}
+					>
+						<TrashIcon class="size-4" />
+						{m.common_delete()}
+					</DropdownMenu.Item>
+				</IfPermitted>
 			</DropdownMenu.Group>
 		</DropdownMenu.Content>
 	</DropdownMenu.Root>

@@ -1,5 +1,5 @@
 import type { ColumnFiltersState } from '@tanstack/table-core';
-import type { FilterMap } from '$lib/types/pagination.type';
+import type { FilterMap } from '$lib/types/shared';
 import type { CompactTablePrefs } from './arcane-table.types.svelte';
 import { decodeFilters, decodeSort } from './arcane-table.types.svelte';
 
@@ -30,6 +30,23 @@ export function toFilterMap(filters: ColumnFiltersState): FilterMap {
 		} else if (value !== undefined && value !== null && String(value).trim() !== '') {
 			out[id] = value as any;
 		}
+	}
+	return out;
+}
+
+/**
+ * Inverse of {@link toFilterMap}: rebuilds tanstack `ColumnFiltersState` from a
+ * request `FilterMap`. Used to reflect externally-set `requestOptions.filters`
+ * (e.g. a clickable stat card) back into the faceted-filter UI. Values are kept
+ * as-is so they match the facet option `value` types (array, boolean, string).
+ */
+export function fromFilterMap(map?: FilterMap): ColumnFiltersState {
+	if (!map) return [];
+	const out: ColumnFiltersState = [];
+	for (const [id, value] of Object.entries(map)) {
+		if (value === undefined || value === null) continue;
+		if (Array.isArray(value) && value.length === 0) continue;
+		out.push({ id, value });
 	}
 	return out;
 }

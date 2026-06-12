@@ -3,6 +3,7 @@ package containers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,13 +12,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/cli/internal/client"
-	"github.com/getarcaneapp/arcane/cli/internal/cmdutil"
-	"github.com/getarcaneapp/arcane/cli/internal/output"
-	"github.com/getarcaneapp/arcane/cli/internal/prompt"
-	"github.com/getarcaneapp/arcane/cli/internal/types"
-	"github.com/getarcaneapp/arcane/types/base"
-	"github.com/getarcaneapp/arcane/types/container"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/prompt"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	"github.com/getarcaneapp/arcane/types/v2/base"
+	"github.com/getarcaneapp/arcane/types/v2/container"
 	"github.com/spf13/cobra"
 )
 
@@ -150,7 +151,7 @@ func buildContainersListPath(cmd *cobra.Command, c *client.Client, forceHasUpdat
 	path := types.Endpoints.Containers(c.EnvID())
 	if containersAll {
 		if cmd != nil && (cmd.Flags().Changed("limit") || cmd.Flags().Changed("start")) {
-			return "", fmt.Errorf("--all cannot be combined with explicit pagination flags")
+			return "", errors.New("--all cannot be combined with explicit pagination flags")
 		}
 	} else {
 		var err error
@@ -264,39 +265,11 @@ var containersStartCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := client.NewFromConfig()
-		if err != nil {
-			return err
-		}
-
-		resolved, _, err := resolveContainer(cmd.Context(), c, args[0], false)
-		if err != nil {
-			return err
-		}
-
-		path := types.Endpoints.ContainerStart(c.EnvID(), resolved.ID)
-		resp, err := c.Post(cmd.Context(), path, nil)
-		if err != nil {
-			return fmt.Errorf("failed to start container: %w", err)
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result base.ApiResponse[container.ActionResult]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
-		}
-
-		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
-		}
-
-		output.Success("Container %s started successfully", containerDisplayName(resolved))
-		return nil
+		return runContainerPostAction[base.MessageResponse](cmd, args[0], containerPostActionConfig[base.MessageResponse]{
+			endpoint:       types.Endpoints.ContainerStart,
+			failureMessage: "failed to start container",
+			successVerb:    "started",
+		})
 	},
 }
 
@@ -306,39 +279,11 @@ var containersStopCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := client.NewFromConfig()
-		if err != nil {
-			return err
-		}
-
-		resolved, _, err := resolveContainer(cmd.Context(), c, args[0], false)
-		if err != nil {
-			return err
-		}
-
-		path := types.Endpoints.ContainerStop(c.EnvID(), resolved.ID)
-		resp, err := c.Post(cmd.Context(), path, nil)
-		if err != nil {
-			return fmt.Errorf("failed to stop container: %w", err)
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result base.ApiResponse[container.ActionResult]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
-		}
-
-		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
-		}
-
-		output.Success("Container %s stopped successfully", containerDisplayName(resolved))
-		return nil
+		return runContainerPostAction[base.MessageResponse](cmd, args[0], containerPostActionConfig[base.MessageResponse]{
+			endpoint:       types.Endpoints.ContainerStop,
+			failureMessage: "failed to stop container",
+			successVerb:    "stopped",
+		})
 	},
 }
 
@@ -348,39 +293,11 @@ var containersRestartCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := client.NewFromConfig()
-		if err != nil {
-			return err
-		}
-
-		resolved, _, err := resolveContainer(cmd.Context(), c, args[0], false)
-		if err != nil {
-			return err
-		}
-
-		path := types.Endpoints.ContainerRestart(c.EnvID(), resolved.ID)
-		resp, err := c.Post(cmd.Context(), path, nil)
-		if err != nil {
-			return fmt.Errorf("failed to restart container: %w", err)
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result base.ApiResponse[container.ActionResult]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
-		}
-
-		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
-		}
-
-		output.Success("Container %s restarted successfully", containerDisplayName(resolved))
-		return nil
+		return runContainerPostAction[base.MessageResponse](cmd, args[0], containerPostActionConfig[base.MessageResponse]{
+			endpoint:       types.Endpoints.ContainerRestart,
+			failureMessage: "failed to restart container",
+			successVerb:    "restarted",
+		})
 	},
 }
 
@@ -390,42 +307,12 @@ var containersUpdateCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := client.NewFromConfig()
-		if err != nil {
-			return err
-		}
-
-		resolved, _, err := resolveContainer(cmd.Context(), c, args[0], false)
-		if err != nil {
-			return err
-		}
-
-		// Updating a container can take a long time as it pulls the image
-		c.SetTimeout(30 * time.Minute)
-
-		path := types.Endpoints.ContainerUpdate(c.EnvID(), resolved.ID)
-		resp, err := c.Post(cmd.Context(), path, nil)
-		if err != nil {
-			return fmt.Errorf("failed to update container: %w", err)
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result base.ApiResponse[container.ActionResult]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
-		}
-
-		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
-		}
-
-		output.Success("Container %s updated successfully", containerDisplayName(resolved))
-		return nil
+		return runContainerPostAction[container.ActionResult](cmd, args[0], containerPostActionConfig[container.ActionResult]{
+			endpoint:       types.Endpoints.ContainerUpdate,
+			failureMessage: "failed to update container",
+			successVerb:    "updated",
+			timeout:        30 * time.Minute,
+		})
 	},
 }
 
@@ -435,42 +322,60 @@ var containersRedeployCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := client.NewFromConfig()
-		if err != nil {
-			return err
-		}
-
-		resolved, _, err := resolveContainer(cmd.Context(), c, args[0], false)
-		if err != nil {
-			return err
-		}
-
-		c.SetTimeout(30 * time.Minute)
-
-		path := types.Endpoints.ContainerRedeploy(c.EnvID(), resolved.ID)
-		resp, err := c.Post(cmd.Context(), path, nil)
-		if err != nil {
-			return fmt.Errorf("failed to redeploy container: %w", err)
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		var result base.ApiResponse[container.Details]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
-		}
-
-		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(resultBytes))
-			return nil
-		}
-
-		output.Success("Container %s redeployed successfully", containerDisplayName(resolved))
-		return nil
+		return runContainerPostAction[container.Details](cmd, args[0], containerPostActionConfig[container.Details]{
+			endpoint:       types.Endpoints.ContainerRedeploy,
+			failureMessage: "failed to redeploy container",
+			successVerb:    "redeployed",
+			timeout:        30 * time.Minute,
+		})
 	},
+}
+
+type containerPostActionConfig[T any] struct {
+	endpoint       func(string, string) string
+	failureMessage string
+	successVerb    string
+	timeout        time.Duration
+}
+
+func runContainerPostAction[T any](cmd *cobra.Command, containerRef string, cfg containerPostActionConfig[T]) error {
+	c, err := client.NewFromConfig()
+	if err != nil {
+		return err
+	}
+
+	resolved, _, err := resolveContainer(cmd.Context(), c, containerRef, false)
+	if err != nil {
+		return err
+	}
+
+	if cfg.timeout > 0 {
+		c.SetTimeout(cfg.timeout)
+	}
+
+	path := cfg.endpoint(c.EnvID(), resolved.ID)
+	resp, err := c.Post(cmd.Context(), path, nil)
+	if err != nil {
+		return fmt.Errorf("%s: %w", cfg.failureMessage, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	var result base.ApiResponse[T]
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if jsonOutput {
+		resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to marshal JSON: %w", err)
+		}
+		fmt.Println(string(resultBytes))
+		return nil
+	}
+
+	output.Success("Container %s %s successfully", containerDisplayName(resolved), cfg.successVerb)
+	return nil
 }
 
 var containersDeleteCmd = &cobra.Command{
@@ -666,10 +571,10 @@ var containersCreateCmd = &cobra.Command{
 
 		// Validate required fields
 		if req.Name == "" {
-			return fmt.Errorf("--name is required")
+			return errors.New("--name is required")
 		}
 		if req.Image == "" {
-			return fmt.Errorf("--image is required")
+			return errors.New("--image is required")
 		}
 
 		path := types.Endpoints.Containers(c.EnvID())
@@ -785,7 +690,7 @@ func containerDisplayName(details *container.Details) string {
 func resolveContainer(ctx context.Context, c *client.Client, identifier string, allowPrompt bool) (*container.Details, bool, error) {
 	trimmed := strings.TrimSpace(identifier)
 	if trimmed == "" {
-		return nil, false, fmt.Errorf("container identifier is required")
+		return nil, false, errors.New("container identifier is required")
 	}
 
 	details, complete, found, err := fetchContainerByIdentifier(ctx, c, trimmed)

@@ -17,7 +17,7 @@
 //
 // Version and Revision variables are set at build time via ldflags:
 //
-//	go build -ldflags "-X github.com/getarcaneapp/arcane/cli/internal/config.Version=1.0.0"
+//	go build -ldflags "-X github.com/getarcaneapp/arcane/cli/v2/internal/config.Version=1.0.0"
 package config
 
 import (
@@ -28,7 +28,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/getarcaneapp/arcane/cli/internal/types"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
 )
@@ -68,35 +68,8 @@ func normalizeConfig(cfg *types.Config) *types.Config {
 		return DefaultConfig()
 	}
 
-	if normalized.Pagination.Default.Limit <= 0 && normalized.DefaultLimit > 0 {
-		normalized.Pagination.Default.Limit = normalized.DefaultLimit
-	}
-	if normalized.DefaultLimit <= 0 && normalized.Pagination.Default.Limit > 0 {
-		normalized.DefaultLimit = normalized.Pagination.Default.Limit
-	}
-
 	if normalized.Pagination.Resources == nil {
 		normalized.Pagination.Resources = make(map[string]types.PaginationResourceConfig)
-	}
-	if normalized.ResourceLimits == nil {
-		normalized.ResourceLimits = make(map[string]int)
-	}
-
-	for resource, limit := range normalized.ResourceLimits {
-		resource = types.NormalizePaginatedResource(resource)
-		if resource == "" || limit <= 0 {
-			continue
-		}
-		if _, exists := normalized.Pagination.Resources[resource]; !exists {
-			normalized.Pagination.Resources[resource] = types.PaginationResourceConfig{Limit: limit}
-		}
-	}
-	for resource, cfg := range normalized.Pagination.Resources {
-		resource = types.NormalizePaginatedResource(resource)
-		if resource == "" || cfg.Limit <= 0 {
-			continue
-		}
-		normalized.ResourceLimits[resource] = cfg.Limit
 	}
 
 	return normalized
@@ -205,6 +178,7 @@ func Load() (*types.Config, error) {
 	v.SetConfigType("yaml")
 	v.SetDefault("server_url", "http://localhost:3552")
 	v.SetDefault("default_environment", "0")
+	v.SetDefault("federated_audience", "")
 	v.SetDefault("log_level", "info")
 	if err := v.ReadInConfig(); err != nil {
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
@@ -259,6 +233,9 @@ func Save(c *types.Config) error {
 	if cfg.DefaultEnvironment != "" {
 		v.Set("default_environment", cfg.DefaultEnvironment)
 	}
+	if cfg.FederatedAudience != "" {
+		v.Set("federated_audience", cfg.FederatedAudience)
+	}
 	if cfg.LogLevel != "" {
 		v.Set("log_level", cfg.LogLevel)
 	}
@@ -276,24 +253,6 @@ func Save(c *types.Config) error {
 			continue
 		}
 		v.Set(fmt.Sprintf("pagination.resources.%s.limit", resource), rc.Limit)
-	}
-
-	// Legacy keys retained for backward compatibility.
-	if cfg.DefaultLimit > 0 {
-		v.Set("default_limit", cfg.DefaultLimit)
-	}
-	if len(cfg.ResourceLimits) > 0 {
-		legacy := make(map[string]int)
-		for resource, limit := range cfg.ResourceLimits {
-			resource = types.NormalizePaginatedResource(resource)
-			if resource == "" || limit <= 0 {
-				continue
-			}
-			legacy[resource] = limit
-		}
-		if len(legacy) > 0 {
-			v.Set("resource_limits", legacy)
-		}
 	}
 
 	if err := v.WriteConfigAs(path); err != nil {
@@ -346,19 +305,13 @@ func InitDefaultFile() (bool, error) {
 	v.Set("jwt_token", "")
 	v.Set("refresh_token", "")
 	v.Set("default_environment", "0")
+	v.Set("federated_audience", "")
 	v.Set("log_level", "info")
 
 	v.Set("pagination.default.limit", defaultPaginationInitLimit)
 	for _, resource := range types.KnownPaginatedResources {
 		v.Set(fmt.Sprintf("pagination.resources.%s.limit", resource), defaultPaginationInitLimit)
 	}
-
-	v.Set("default_limit", defaultPaginationInitLimit)
-	legacy := make(map[string]int, len(types.KnownPaginatedResources))
-	for _, resource := range types.KnownPaginatedResources {
-		legacy[resource] = defaultPaginationInitLimit
-	}
-	v.Set("resource_limits", legacy)
 
 	if err := v.WriteConfigAs(path); err != nil {
 		return false, fmt.Errorf("failed to write config file: %w", err)

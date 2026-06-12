@@ -9,11 +9,11 @@ import type {
 	BrowseResponse,
 	ImportGitOpsSyncRequest,
 	ImportGitOpsSyncResponse
-} from '$lib/types/gitops.type';
-import type { Paginated, SearchPaginationSortRequest } from '$lib/types/pagination.type';
-import { transformPaginationParams } from '$lib/utils/params.util';
+} from '$lib/types/automation';
+import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
+import { transformPaginationParams } from '$lib/utils/tables';
 
-export default class GitOpsSyncService extends BaseAPIService {
+class GitOpsSyncService extends BaseAPIService {
 	async getSyncs(environmentId: string, options?: SearchPaginationSortRequest): Promise<Paginated<GitOpsSync, GitOpsSyncCounts>> {
 		const params = transformPaginationParams(options);
 		const res = await this.api.get(`/environments/${environmentId}/gitops-syncs`, { params });

@@ -1,1 +1,0 @@
-DROP INDEX IF EXISTS idx_users_oidc_subject_id_unique;

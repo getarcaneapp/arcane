@@ -3,22 +3,22 @@
 	import { openConfirmDialog } from './confirm-dialog';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
-	import { tryCatch } from '$lib/utils/try-catch';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
+	import { tryCatch } from '$lib/utils/api';
+	import { handleApiResultWithCallbacks } from '$lib/utils/api';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import DeploySplitButton from '$lib/components/deploy-split-button/deploy-split-button.svelte';
-	import ProgressPopover from '$lib/components/progress-popover.svelte';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { m } from '$lib/paraglide/messages';
 	import settingsStore from '$lib/stores/config-store';
 	import { deployOptionsStore } from '$lib/stores/deploy-options.store.svelte';
 	import { containerService, type ContainerDetailsResponse } from '$lib/services/container-service';
 	import { projectService, type DeployProjectOptions } from '$lib/services/project-service';
-	import type { Project } from '$lib/types/project.type';
-	import { isDownloadingLine, calculateOverallProgress, areAllLayersComplete } from '$lib/utils/pull-progress';
-	import { sanitizeLogText } from '$lib/utils/log-text';
-	import { EllipsisIcon, DownloadIcon, HammerIcon } from '$lib/icons';
+	import type { Project } from '$lib/types/swarm';
+	import { EllipsisIcon } from '$lib/icons';
 	import { createMutation } from '@tanstack/svelte-query';
+	import { hasPermission } from '$lib/utils/auth';
+	import { isDepotBuildAvailable } from '$lib/utils/build-provider';
+	import { environmentStore } from '$lib/stores/environment.store.svelte';
 
 	type TargetType = 'container' | 'project';
 	type LoadingStates = {
@@ -36,7 +36,6 @@
 
 	let {
 		id,
-		name,
 		type = 'container',
 		itemState = 'stopped',
 		desktopVariant = 'labels',
@@ -105,8 +104,8 @@
 		stop: !!(isLoading.stop || loading?.stop || stopLoading),
 		restart: !!(isLoading.restart || loading?.restart || restartLoading),
 		remove: !!(isLoading.remove || loading?.remove || removeLoading),
-		pulling: !!(isLoading.pull || loading?.pull),
-		building: !!(isLoading.build || loading?.build),
+		pull: !!(isLoading.pull || loading?.pull),
+		build: !!(isLoading.build || loading?.build),
 		redeploy: !!(isLoading.redeploy || loading?.redeploy || redeployLoading),
 		validating: !!(isLoading.validating || loading?.validating),
 		refresh: !!(isLoading.refresh || loading?.refresh || refreshLoading)
@@ -121,11 +120,7 @@
 					: projectService.deployProject(id, deployOptionsStore.getRequestOptions())
 			),
 		onMutate: () => setLoading('start', true),
-		onSettled: () => {
-			if (!deployPulling) {
-				setLoading('start', false);
-			}
-		}
+		onSettled: () => setLoading('start', false)
 	}));
 
 	const stopMutation = createMutation(() => ({
@@ -173,29 +168,33 @@
 		onSettled: () => setLoading('refresh', false)
 	}));
 
-	let pullPopoverOpen = $state(false);
-	let buildPopoverOpen = $state(false);
-	let deployPullPopoverOpen = $state(false);
-	let projectPulling = $state(false); // only for Project Pull button/popover
-	let projectBuilding = $state(false); // only for Project Build button/popover
-	let deployPulling = $state(false); // only for Deploy popover
-	let pullProgress = $state(0);
-	let pullStatusText = $state('');
-	let pullError = $state('');
-	let layerProgress = $state<Record<string, { current: number; total: number; status: string }>>({});
-	let buildOutputLines = $state<string[]>([]);
-	let deployProgressPhase = $state<'pull' | 'build' | 'deploy'>('deploy');
-	let deployServiceProgress = $state<Record<string, { phase: string; health?: string; state?: string; status?: string }>>({});
-	let deployLastNonWaitingStatus = $state('');
-
 	const isRunning = $derived(itemState === 'running' || (type === 'project' && itemState === 'partially running'));
 	const projectHasBuildDirective = $derived(type === 'project' && hasBuildDirective);
+
+	// Per-action RBAC gating. Each button hides if the caller lacks the
+	// corresponding permission on the currently-selected environment. Project
+	// pull / build / redeploy all share the `projects:deploy` permission since
+	// they're stages of the deploy flow.
+	const currentEnvId = $derived(environmentStore.selected?.id);
+	const canStart = $derived(
+		type === 'container' ? hasPermission('containers:start', currentEnvId) : hasPermission('projects:deploy', currentEnvId)
+	);
+	const canStop = $derived(
+		type === 'container' ? hasPermission('containers:stop', currentEnvId) : hasPermission('projects:down', currentEnvId)
+	);
+	const canRestart = $derived(
+		type === 'container' ? hasPermission('containers:restart', currentEnvId) : hasPermission('projects:restart', currentEnvId)
+	);
+	const canRedeploy = $derived(
+		type === 'container' ? hasPermission('containers:redeploy', currentEnvId) : hasPermission('projects:deploy', currentEnvId)
+	);
+	const canRemove = $derived(
+		type === 'container' ? hasPermission('containers:delete', currentEnvId) : hasPermission('projects:delete', currentEnvId)
+	);
+	const canPull = $derived(type === 'project' && hasPermission('projects:deploy', currentEnvId));
+	const canBuild = $derived(type === 'project' && hasPermission('projects:deploy', currentEnvId));
 	const deployButtonLabel = $derived(projectHasBuildDirective ? m.compose_build_and_deploy() : m.common_up());
-	const depotAvailable = $derived.by(() => {
-		const projectId = ($settingsStore?.depotProjectId ?? '').trim();
-		const token = ($settingsStore?.depotToken ?? '').trim();
-		return Boolean($settingsStore?.depotConfigured) || (Boolean(projectId) && Boolean(token));
-	});
+	const depotAvailable = $derived(isDepotBuildAvailable($settingsStore));
 	const projectBuildProvider = $derived.by<'local' | 'depot'>(() => {
 		const configuredProvider = ($settingsStore?.buildProvider as 'local' | 'depot') ?? 'local';
 		if (configuredProvider === 'depot' && !depotAvailable) {
@@ -203,20 +202,6 @@
 		}
 		return configuredProvider;
 	});
-	const deployPopoverTitle = $derived.by(() => {
-		switch (deployProgressPhase) {
-			case 'build':
-				return m.progress_building_images();
-			case 'pull':
-				return m.progress_pulling_images();
-			default:
-				return m.progress_deploying_project();
-		}
-	});
-	const deployPopoverIcon = $derived(deployProgressPhase === 'build' ? HammerIcon : DownloadIcon);
-	const deployPopoverLayers = $derived.by(() =>
-		deployProgressPhase === 'pull' || deployProgressPhase === 'build' ? layerProgress : {}
-	);
 
 	// Tailwind xl breakpoint is 1280px. We use this to avoid mounting two desktop variants at once
 	// (which would duplicate portaled popovers when the same `open` state is bound twice).
@@ -235,137 +220,13 @@
 
 		update();
 
-		if ('addEventListener' in mqlXl) {
-			mqlXl.addEventListener('change', update);
-			mqlLg.addEventListener('change', update);
-			return () => {
-				mqlXl.removeEventListener('change', update);
-				mqlLg.removeEventListener('change', update);
-			};
-		}
-
-		// @ts-expect-error legacy MediaQueryList API
-		mqlXl.addListener(update);
-		mqlLg.addListener(update);
+		mqlXl.addEventListener('change', update);
+		mqlLg.addEventListener('change', update);
 		return () => {
-			// @ts-expect-error legacy MediaQueryList API
-			mqlXl.removeListener(update);
-			mqlLg.removeListener(update);
+			mqlXl.removeEventListener('change', update);
+			mqlLg.removeEventListener('change', update);
 		};
 	});
-
-	function resetPullState() {
-		pullProgress = 0;
-		pullStatusText = '';
-		pullError = '';
-		layerProgress = {};
-		buildOutputLines = [];
-		deployProgressPhase = 'deploy';
-		deployServiceProgress = {};
-		deployLastNonWaitingStatus = '';
-	}
-
-	function appendBuildOutputLine(rawStatus: unknown, rawService?: unknown) {
-		const status = sanitizeLogText(String(rawStatus ?? ''));
-		if (!status) return;
-
-		const service = sanitizeLogText(String(rawService ?? ''));
-		const line = service ? `[${service}] ${status}` : status;
-
-		if (buildOutputLines.length > 0 && buildOutputLines[buildOutputLines.length - 1] === line) {
-			return;
-		}
-
-		buildOutputLines = [...buildOutputLines.slice(-149), line];
-	}
-
-	function deriveDeployStatusText(): string {
-		const entries = Object.entries(deployServiceProgress);
-		if (entries.length === 0) return m.progress_deploy_starting();
-
-		const waiting = entries.filter(([_, v]) => v.phase === 'service_waiting_healthy').sort(([a], [b]) => a.localeCompare(b));
-		const firstWaiting = waiting[0];
-		if (firstWaiting) {
-			const [service, v] = firstWaiting;
-			const health = String(v.health ?? '').trim();
-			return health
-				? m.progress_deploy_waiting_for_service_with_health({ service, health })
-				: m.progress_deploy_waiting_for_service({ service });
-		}
-
-		const stateIssues = entries
-			.filter(([_, v]) => v.phase === 'service_state' && (v.state ?? '').toLowerCase() !== 'running')
-			.sort(([a], [b]) => a.localeCompare(b));
-		const firstStateIssue = stateIssues[0];
-		if (firstStateIssue) {
-			const [service, v] = firstStateIssue;
-			return m.progress_deploy_service_state({ service, state: String(v.state ?? '') });
-		}
-
-		return deployLastNonWaitingStatus || m.progress_deploy_starting();
-	}
-
-	function updatePullProgress() {
-		pullProgress = calculateOverallProgress(layerProgress);
-	}
-
-	function updateLayerProgressFromStreamData(data: any) {
-		const layerId = String(data?.id ?? '').trim();
-		if (!layerId) return;
-
-		const currentLayer = layerProgress[layerId] || { current: 0, total: 0, status: '' };
-		if (data?.status) {
-			currentLayer.status = String(data.status);
-		}
-
-		if (data?.progressDetail) {
-			const { current, total } = data.progressDetail;
-			if (typeof current === 'number') currentLayer.current = current;
-			if (typeof total === 'number') currentLayer.total = total;
-		}
-
-		layerProgress[layerId] = currentLayer;
-		updatePullProgress();
-	}
-
-	function handleBuildStreamLine(
-		data: any,
-		errorFallback: string,
-		errorFormatter: (message: string) => string,
-		onError?: (message: string) => void
-	): boolean {
-		if (!data) return false;
-
-		if (data.phase === 'begin') {
-			pullStatusText = m.progress_building_images_starting();
-			appendBuildOutputLine(m.build_phase_started(), data.service);
-		}
-
-		if (data.status) {
-			pullStatusText = String(data.status);
-			appendBuildOutputLine(data.status, data.service);
-		}
-
-		if (data.id) {
-			updateLayerProgressFromStreamData(data);
-		}
-
-		if (data.phase === 'complete') {
-			pullStatusText = m.build_completed();
-			pullProgress = 100;
-			appendBuildOutputLine(m.build_phase_completed(), data.service);
-		}
-
-		if (data.error) {
-			const errMsg = typeof data.error === 'string' ? data.error : data.error.message || errorFallback;
-			pullError = errMsg;
-			pullStatusText = errorFormatter(errMsg);
-			onError?.(errMsg);
-			return true;
-		}
-
-		return false;
-	}
 
 	async function handleRefresh() {
 		if (!onRefresh) return;
@@ -395,11 +256,6 @@
 								type: type
 							}),
 							onSuccess: async () => {
-								toast.success(
-									type === 'project'
-										? m.common_destroyed_success({ type: m.project() })
-										: m.common_removed_success({ type: m.container() })
-								);
 								await invalidateAll();
 								goto(type === 'project' ? '/projects' : '/containers');
 							}
@@ -427,9 +283,6 @@
 							result,
 							message: m.common_action_failed_with_type({ action: m.common_redeploy(), type }),
 							onSuccess: async (data) => {
-								toast.success(
-									type === 'container' ? m.container_redeploy_success() : m.common_redeploy_success({ type: name || type })
-								);
 								const containerData = data as ContainerDetailsResponse;
 								if (type === 'container' && containerData?.data?.id) {
 									goto(`/containers/${containerData.data.id}`);
@@ -453,232 +306,21 @@
 			message: m.common_action_failed_with_type({ action: m.common_start(), type }),
 			onSuccess: async () => {
 				itemState = 'running';
-				toast.success(m.common_started_success({ type: name || type }));
 				onActionComplete('running');
 			}
 		});
 	}
 
 	async function handleDeploy(options?: DeployProjectOptions) {
-		resetPullState();
 		setLoading('start', true);
-		let openedPopover = false;
-		let hadError = false;
-		let deployPhaseStarted = false;
-		let buildPhaseStarted = false;
-
-		// Always open the popover for deploy so we can show health-wait status even
-		// when there is nothing to pull.
-		deployPullPopoverOpen = true;
-		deployPulling = true;
-		deployProgressPhase = 'deploy';
-		pullStatusText = m.progress_deploy_starting();
-		openedPopover = true;
 
 		try {
-			const handleDeployLine = (deployData: any) => {
-				if (!deployData) return;
-
-				if (deployData.type === 'build') {
-					deployProgressPhase = 'build';
-					if (!buildPhaseStarted) {
-						buildPhaseStarted = true;
-						pullProgress = 0;
-						layerProgress = {};
-						pullError = '';
-						deployServiceProgress = {};
-						deployLastNonWaitingStatus = '';
-					}
-
-					if (
-						handleBuildStreamLine(
-							deployData,
-							m.progress_deploy_failed(),
-							(errMsg) => m.progress_deploy_failed_with_error({ error: errMsg }),
-							() => {
-								hadError = true;
-								deployPulling = false;
-							}
-						)
-					) {
-						return;
-					}
-					return;
-				}
-
-				// Pull progress lines can be streamed by backend /up before deploy when
-				// image policy requires pulling (missing/always/refresh).
-				if (deployData.type !== 'deploy') {
-					if (isDownloadingLine(deployData)) {
-						deployProgressPhase = 'pull';
-						pullStatusText = m.images_pull_initiating();
-					}
-
-					if (deployData.error) {
-						const errMsg =
-							typeof deployData.error === 'string' ? deployData.error : deployData.error.message || m.images_pull_stream_error();
-						pullError = errMsg;
-						pullStatusText = m.images_pull_failed_with_error({ error: errMsg });
-						hadError = true;
-						deployPulling = false;
-						return;
-					}
-
-					if (deployData.status) pullStatusText = deployData.status;
-
-					if (deployData.id) {
-						deployProgressPhase = 'pull';
-						const currentLayer = layerProgress[deployData.id] || { current: 0, total: 0, status: '' };
-						currentLayer.status = deployData.status || currentLayer.status;
-						if (deployData.progressDetail) {
-							const { current, total } = deployData.progressDetail;
-							if (typeof current === 'number') currentLayer.current = current;
-							if (typeof total === 'number') currentLayer.total = total;
-						}
-						layerProgress[deployData.id] = currentLayer;
-					}
-
-					if (deployProgressPhase === 'pull') {
-						updatePullProgress();
-					}
-					return;
-				}
-
-				// First deploy status line: switch UI from pull -> deploy.
-				if (!deployPhaseStarted) {
-					deployPhaseStarted = true;
-					deployProgressPhase = 'deploy';
-					pullProgress = 0;
-					layerProgress = {};
-					pullError = '';
-					deployServiceProgress = {};
-					deployLastNonWaitingStatus = '';
-				}
-
-				// Keep the popover in "loading" state during deployment.
-				deployPulling = true;
-				if (deployData.type === 'deploy') {
-					switch (deployData.phase) {
-						case 'begin':
-							pullStatusText = m.progress_deploy_starting();
-							break;
-						case 'service_waiting_healthy': {
-							const service = String(deployData.service ?? '').trim();
-							if (service) {
-								deployServiceProgress[service] = {
-									phase: 'service_waiting_healthy',
-									health: String(deployData.health ?? '')
-								};
-								pullStatusText = deriveDeployStatusText();
-							}
-							break;
-						}
-						case 'service_healthy':
-							{
-								const service = String(deployData.service ?? '').trim();
-								if (service) {
-									deployServiceProgress[service] = {
-										phase: 'service_healthy',
-										health: String(deployData.health ?? ''),
-										state: String(deployData.state ?? ''),
-										status: String(deployData.status ?? '')
-									};
-									deployLastNonWaitingStatus = m.progress_deploy_service_healthy({ service });
-									pullStatusText = deriveDeployStatusText();
-								}
-							}
-							break;
-						case 'service_state':
-							{
-								const service = String(deployData.service ?? '').trim();
-								if (service) {
-									deployServiceProgress[service] = {
-										phase: 'service_state',
-										state: String(deployData.state ?? ''),
-										health: String(deployData.health ?? ''),
-										status: String(deployData.status ?? '')
-									};
-									deployLastNonWaitingStatus = m.progress_deploy_service_state({
-										service,
-										state: String(deployData.state ?? '')
-									});
-									pullStatusText = deriveDeployStatusText();
-								}
-							}
-							break;
-						case 'service_status':
-							{
-								const service = String(deployData.service ?? '').trim();
-								if (service) {
-									deployServiceProgress[service] = {
-										phase: 'service_status',
-										status: String(deployData.status ?? ''),
-										state: String(deployData.state ?? ''),
-										health: String(deployData.health ?? '')
-									};
-									deployLastNonWaitingStatus = m.progress_deploy_service_status({
-										service,
-										status: String(deployData.status ?? '')
-									});
-									pullStatusText = deriveDeployStatusText();
-								}
-							}
-							break;
-						case 'complete':
-							pullStatusText = m.progress_deploy_completed();
-							break;
-						default:
-							break;
-					}
-				} else if (deployData.status) {
-					// fallback for unexpected payloads
-					pullStatusText = String(deployData.status);
-				}
-
-				if (deployData.error) {
-					const errMsg =
-						typeof deployData.error === 'string' ? deployData.error : deployData.error.message || m.progress_deploy_failed();
-					pullError = errMsg;
-					pullStatusText = m.progress_deploy_failed_with_error({ error: errMsg });
-					hadError = true;
-					deployPulling = false;
-					return;
-				}
-
-				// If we got "complete", stop the loading state
-				if (deployData.type === 'deploy' && deployData.phase === 'complete') {
-					deployPulling = false;
-					pullProgress = 100;
-				}
-			};
-
-			await projectService.deployProject(id, handleDeployLine, options ?? deployOptionsStore.getRequestOptions());
-
-			if (hadError) throw new Error(pullError || m.progress_deploy_failed());
-
-			// Deployment finished successfully.
-			pullProgress = 100;
-			deployPulling = false;
-			pullStatusText = m.progress_deploy_completed();
+			await projectService.deployProject(id, () => {}, options ?? deployOptionsStore.getRequestOptions());
 			await invalidateAll();
-
-			setTimeout(() => {
-				deployPullPopoverOpen = false;
-				deployPulling = false;
-				resetPullState();
-			}, 1500);
-
-			// Deploy already completed successfully
 			itemState = 'running';
-			toast.success(m.common_started_success({ type: name || type }));
 			onActionComplete('running');
 		} catch (e: any) {
 			const message = e?.message || m.common_action_failed_with_type({ action: m.common_start(), type });
-			if (openedPopover) {
-				pullError = message;
-				pullStatusText = m.images_pull_failed_with_error({ error: message });
-				deployPulling = false;
-			}
 			toast.error(message);
 		} finally {
 			setLoading('start', false);
@@ -692,7 +334,6 @@
 			message: m.common_action_failed_with_type({ action: m.common_stop(), type }),
 			onSuccess: async () => {
 				itemState = 'stopped';
-				toast.success(m.common_stopped_success({ type: name || type }));
 				onActionComplete('stopped');
 			}
 		});
@@ -705,149 +346,81 @@
 			message: m.common_action_failed_with_type({ action: m.common_restart(), type }),
 			onSuccess: async () => {
 				itemState = 'running';
-				toast.success(m.common_restarted_success({ type: name || type }));
 				onActionComplete('running');
 			}
 		});
 	}
 
 	async function handleProjectPull() {
-		resetPullState();
-		projectPulling = true;
-		pullPopoverOpen = true;
-		pullStatusText = m.images_pull_initiating();
-
-		let wasSuccessful = false;
+		setLoading('pull', true);
 
 		try {
-			await projectService.pullProjectImages(id, (data) => {
-				if (!data) return;
-
-				if (data.error) {
-					const errMsg = typeof data.error === 'string' ? data.error : data.error.message || m.images_pull_stream_error();
-					pullError = errMsg;
-					pullStatusText = m.images_pull_failed_with_error({ error: errMsg });
-					return;
-				}
-
-				if (data.status) pullStatusText = data.status;
-
-				if (data.id) {
-					const currentLayer = layerProgress[data.id] || { current: 0, total: 0, status: '' };
-					currentLayer.status = data.status || currentLayer.status;
-
-					if (data.progressDetail) {
-						const { current, total } = data.progressDetail;
-						if (typeof current === 'number') currentLayer.current = current;
-						if (typeof total === 'number') currentLayer.total = total;
-					}
-					layerProgress[data.id] = currentLayer;
-				}
-
-				updatePullProgress();
-			});
-
-			// Stream finished
-			updatePullProgress();
-			if (!pullError && pullProgress < 100 && areAllLayersComplete(layerProgress)) {
-				pullProgress = 100;
-			}
-
-			if (pullError) throw new Error(pullError);
-
-			wasSuccessful = true;
-			pullProgress = 100;
-			pullStatusText = m.images_pulled_success();
-			toast.success(m.images_pulled_success());
-			await invalidateAll();
-			onActionComplete(itemState);
-
-			setTimeout(() => {
-				pullPopoverOpen = false;
-				projectPulling = false;
-				resetPullState();
-			}, 2000);
-		} catch (error: any) {
-			const message = error?.message || m.images_pull_failed();
-			pullError = message;
-			pullStatusText = m.images_pull_failed_with_error({ error: message });
-			toast.error(message);
+			projectService
+				.pullProjectImages(id, () => {})
+				.then(async () => {
+					await invalidateAll();
+					onActionComplete(itemState);
+				})
+				.catch((error: any) => {
+					const message = error?.message || m.images_pull_failed();
+					toast.error(message);
+				});
 		} finally {
-			if (!wasSuccessful) {
-				projectPulling = false;
-			}
+			setLoading('pull', false);
 		}
 	}
 
 	async function handleProjectBuild() {
-		resetPullState();
-		projectBuilding = true;
-		buildPopoverOpen = true;
-		pullStatusText = m.progress_building_images_starting();
-
-		let wasSuccessful = false;
+		setLoading('build', true);
 
 		try {
 			const buildProvider = projectBuildProvider;
-			await projectService.buildProjectImages(
-				id,
-				{
-					provider: buildProvider,
-					push: buildProvider === 'depot',
-					load: buildProvider !== 'depot'
-				},
-				(data) => {
-					if (!data) return;
-
-					handleBuildStreamLine(data, m.build_failed(), (errMsg) => m.build_failed_with_error({ error: errMsg }));
-				}
-			);
-
-			if (pullError) throw new Error(pullError);
-
-			wasSuccessful = true;
-			pullProgress = 100;
-			pullStatusText = m.build_completed();
-			toast.success(m.build_completed());
-			await invalidateAll();
-
-			setTimeout(() => {
-				buildPopoverOpen = false;
-				projectBuilding = false;
-				resetPullState();
-			}, 2000);
-		} catch (error: any) {
-			const message = error?.message || m.build_failed();
-			pullError = message;
-			pullStatusText = m.build_failed_with_error({ error: message });
-			toast.error(message);
+			projectService
+				.buildProjectImages(
+					id,
+					{
+						provider: buildProvider,
+						push: buildProvider === 'depot',
+						load: buildProvider !== 'depot'
+					},
+					() => {}
+				)
+				.then(async () => {
+					await invalidateAll();
+				})
+				.catch((error: any) => {
+					const message = error?.message || m.build_failed();
+					toast.error(message);
+				});
 		} finally {
-			if (!wasSuccessful) {
-				projectBuilding = false;
-			}
+			setLoading('build', false);
 		}
 	}
 </script>
 
 {#snippet RedeployActionButton(size: 'default' | 'icon' = 'default', showLabel = true)}
-	{#if disableRedeploy}
-		<span class="inline-flex" title={m.common_redeploy_disabled_arcane_self()}>
-			<ArcaneButton action="redeploy" {size} {showLabel} disabled />
-		</span>
-	{:else}
-		<ArcaneButton action="redeploy" {size} {showLabel} onclick={() => confirmAction('redeploy')} loading={uiLoading.redeploy} />
+	{#if canRedeploy}
+		{#if disableRedeploy}
+			<span class="inline-flex" title={m.common_redeploy_disabled_arcane_self()}>
+				<ArcaneButton action="redeploy" {size} {showLabel} disabled />
+			</span>
+		{:else}
+			<ArcaneButton action="redeploy" {size} {showLabel} onclick={() => confirmAction('redeploy')} loading={uiLoading.redeploy} />
+		{/if}
 	{/if}
 {/snippet}
 
 {#snippet RedeployMenuItem()}
-	{#if disableRedeploy}
-		<DropdownMenu.Item disabled title={m.common_redeploy_disabled_arcane_self()}>
-			{m.common_redeploy()}
-		</DropdownMenu.Item>
-	{:else}
-		<DropdownMenu.Item onclick={() => confirmAction('redeploy')} disabled={uiLoading.redeploy}>
-			{m.common_redeploy()}
-		</DropdownMenu.Item>
+	{#if canRedeploy}
+		{#if disableRedeploy}
+			<DropdownMenu.Item disabled title={m.common_redeploy_disabled_arcane_self()}>
+				{m.common_redeploy()}
+			</DropdownMenu.Item>
+		{:else}
+			<DropdownMenu.Item onclick={() => confirmAction('redeploy')} disabled={uiLoading.redeploy}>
+				{m.common_redeploy()}
+			</DropdownMenu.Item>
+		{/if}
 	{/if}
 {/snippet}
 
@@ -856,7 +429,7 @@
 		<!-- On xl+ show labels; below xl use icon-only to avoid overflow in constrained headers (sidebar layouts) -->
 		{#if isLgUp}
 			<div class="flex items-center gap-2">
-				{#if !isRunning}
+				{#if !isRunning && canStart}
 					{#if type === 'container'}
 						<ArcaneButton
 							action="start"
@@ -866,105 +439,72 @@
 							loading={uiLoading.start}
 						/>
 					{:else}
-						<ProgressPopover
-							bind:open={deployPullPopoverOpen}
-							bind:progress={pullProgress}
-							mode="generic"
-							title={deployPopoverTitle}
-							completeTitle={m.progress_deploy_completed()}
-							statusText={pullStatusText}
-							error={pullError}
-							loading={deployPulling}
-							icon={deployPopoverIcon}
-							layers={deployPopoverLayers}
-							showOutputPanel={deployProgressPhase === 'build'}
-							outputLines={deployProgressPhase === 'build' ? buildOutputLines : []}
-						>
-							<DeploySplitButton
-								size={adaptiveIconOnly ? 'icon' : 'default'}
-								showLabel={!adaptiveIconOnly}
-								customLabel={deployButtonLabel}
-								onDeploy={() => handleDeploy()}
-								loading={uiLoading.start}
-							/>
-						</ProgressPopover>
+						<DeploySplitButton
+							size={adaptiveIconOnly ? 'icon' : 'default'}
+							showLabel={!adaptiveIconOnly}
+							customLabel={deployButtonLabel}
+							onDeploy={() => handleDeploy()}
+							loading={uiLoading.start}
+						/>
 					{/if}
 				{/if}
 
 				{#if isRunning}
-					<ArcaneButton
-						action="stop"
-						size={adaptiveIconOnly ? 'icon' : 'default'}
-						showLabel={!adaptiveIconOnly}
-						customLabel={type === 'project' ? m.common_down() : undefined}
-						onclick={() => handleStop()}
-						loading={uiLoading.stop}
-					/>
-					<ArcaneButton
-						action="restart"
-						size={adaptiveIconOnly ? 'icon' : 'default'}
-						showLabel={!adaptiveIconOnly}
-						onclick={() => handleRestart()}
-						loading={uiLoading.restart}
-					/>
+					{#if canStop}
+						<ArcaneButton
+							action="stop"
+							size={adaptiveIconOnly ? 'icon' : 'default'}
+							showLabel={!adaptiveIconOnly}
+							customLabel={type === 'project' ? m.common_down() : undefined}
+							onclick={() => handleStop()}
+							loading={uiLoading.stop}
+						/>
+					{/if}
+					{#if canRestart}
+						<ArcaneButton
+							action="restart"
+							size={adaptiveIconOnly ? 'icon' : 'default'}
+							showLabel={!adaptiveIconOnly}
+							onclick={() => handleRestart()}
+							loading={uiLoading.restart}
+						/>
+					{/if}
 				{/if}
 
 				{#if type === 'container'}
 					{@render RedeployActionButton(adaptiveIconOnly ? 'icon' : 'default', !adaptiveIconOnly)}
-					<ArcaneButton
-						action="remove"
-						size={adaptiveIconOnly ? 'icon' : 'default'}
-						showLabel={!adaptiveIconOnly}
-						onclick={() => confirmAction('remove')}
-						loading={uiLoading.remove}
-					/>
+					{#if canRemove}
+						<ArcaneButton
+							action="remove"
+							size={adaptiveIconOnly ? 'icon' : 'default'}
+							showLabel={!adaptiveIconOnly}
+							onclick={() => confirmAction('remove')}
+							loading={uiLoading.remove}
+						/>
+					{/if}
 				{:else}
 					{@render RedeployActionButton(adaptiveIconOnly ? 'icon' : 'default', !adaptiveIconOnly)}
 
 					{#if type === 'project'}
-						{#if projectHasBuildDirective}
-							<ProgressPopover
-								bind:open={buildPopoverOpen}
-								bind:progress={pullProgress}
-								mode="generic"
-								title={m.build_output()}
-								completeTitle={m.build_completed()}
-								statusText={pullStatusText}
-								error={pullError}
-								loading={projectBuilding}
-								icon={HammerIcon}
-								layers={layerProgress}
-								showOutputPanel={projectBuilding}
-								outputLines={buildOutputLines}
-							>
-								<ArcaneButton
-									action="build"
-									size={adaptiveIconOnly ? 'icon' : 'default'}
-									showLabel={!adaptiveIconOnly}
-									onclick={() => handleProjectBuild()}
-									loading={projectBuilding}
-								/>
-							</ProgressPopover>
+						{#if projectHasBuildDirective && canBuild}
+							<ArcaneButton
+								action="build"
+								size={adaptiveIconOnly ? 'icon' : 'default'}
+								showLabel={!adaptiveIconOnly}
+								onclick={() => handleProjectBuild()}
+								loading={uiLoading.build}
+							/>
 						{/if}
 
-						<ProgressPopover
-							bind:open={pullPopoverOpen}
-							bind:progress={pullProgress}
-							title={m.progress_pulling_images()}
-							statusText={pullStatusText}
-							error={pullError}
-							loading={projectPulling}
-							icon={DownloadIcon}
-							layers={layerProgress}
-						>
+						{#if canPull}
 							<ArcaneButton
 								action="pull"
 								size={adaptiveIconOnly ? 'icon' : 'default'}
 								showLabel={!adaptiveIconOnly}
 								onclick={() => handleProjectPull()}
-								loading={projectPulling}
+								loading={uiLoading.pull}
 							/>
-						</ProgressPopover>
+						{/if}
 					{/if}
 
 					{#if onRefresh}
@@ -977,14 +517,16 @@
 						/>
 					{/if}
 
-					<ArcaneButton
-						customLabel={type === 'project' ? m.compose_destroy() : m.common_remove()}
-						action="remove"
-						size={adaptiveIconOnly ? 'icon' : 'default'}
-						showLabel={!adaptiveIconOnly}
-						onclick={() => confirmAction('remove')}
-						loading={uiLoading.remove}
-					/>
+					{#if canRemove}
+						<ArcaneButton
+							customLabel={type === 'project' ? m.compose_destroy() : m.common_remove()}
+							action="remove"
+							size={adaptiveIconOnly ? 'icon' : 'default'}
+							showLabel={!adaptiveIconOnly}
+							onclick={() => confirmAction('remove')}
+							loading={uiLoading.remove}
+						/>
+					{/if}
 				{/if}
 			</div>
 		{:else}
@@ -1000,7 +542,7 @@
 						class="bg-popover/20 z-50 min-w-[180px] rounded-xl border p-1 shadow-lg backdrop-blur-md"
 					>
 						<DropdownMenu.Group>
-							{#if !isRunning}
+							{#if !isRunning && canStart}
 								{#if type === 'container'}
 									<DropdownMenu.Item onclick={handleStart} disabled={uiLoading.start}>
 										{m.common_start()}
@@ -1030,32 +572,40 @@
 										</DropdownMenu.CheckboxItem>
 									{/if}
 								{/if}
-							{:else}
-								<DropdownMenu.Item onclick={handleStop} disabled={uiLoading.stop}>
-									{type === 'project' ? m.common_down() : m.common_stop()}
-								</DropdownMenu.Item>
-								<DropdownMenu.Item onclick={handleRestart} disabled={uiLoading.restart}>
-									{m.common_restart()}
-								</DropdownMenu.Item>
+							{:else if isRunning}
+								{#if canStop}
+									<DropdownMenu.Item onclick={handleStop} disabled={uiLoading.stop}>
+										{type === 'project' ? m.common_down() : m.common_stop()}
+									</DropdownMenu.Item>
+								{/if}
+								{#if canRestart}
+									<DropdownMenu.Item onclick={handleRestart} disabled={uiLoading.restart}>
+										{m.common_restart()}
+									</DropdownMenu.Item>
+								{/if}
 							{/if}
 
 							{#if type === 'container'}
 								{@render RedeployMenuItem()}
-								<DropdownMenu.Item onclick={() => confirmAction('remove')} disabled={uiLoading.remove}>
-									{m.common_remove()}
-								</DropdownMenu.Item>
+								{#if canRemove}
+									<DropdownMenu.Item onclick={() => confirmAction('remove')} disabled={uiLoading.remove}>
+										{m.common_remove()}
+									</DropdownMenu.Item>
+								{/if}
 							{:else}
 								{@render RedeployMenuItem()}
 
 								{#if type === 'project'}
-									{#if projectHasBuildDirective}
-										<DropdownMenu.Item onclick={handleProjectBuild} disabled={projectBuilding || uiLoading.building}>
+									{#if projectHasBuildDirective && canBuild}
+										<DropdownMenu.Item onclick={handleProjectBuild} disabled={uiLoading.build}>
 											{m.build()}
 										</DropdownMenu.Item>
 									{/if}
-									<DropdownMenu.Item onclick={handleProjectPull} disabled={projectPulling || uiLoading.pulling}>
-										{m.images_pull()}
-									</DropdownMenu.Item>
+									{#if canPull}
+										<DropdownMenu.Item onclick={handleProjectPull} disabled={uiLoading.pull}>
+											{m.images_pull()}
+										</DropdownMenu.Item>
+									{/if}
 								{/if}
 
 								{#if onRefresh}
@@ -1064,154 +614,73 @@
 									</DropdownMenu.Item>
 								{/if}
 
-								<DropdownMenu.Item onclick={() => confirmAction('remove')} disabled={uiLoading.remove}>
-									{type === 'project' ? m.compose_destroy() : m.common_remove()}
-								</DropdownMenu.Item>
+								{#if canRemove}
+									<DropdownMenu.Item onclick={() => confirmAction('remove')} disabled={uiLoading.remove}>
+										{type === 'project' ? m.compose_destroy() : m.common_remove()}
+									</DropdownMenu.Item>
+								{/if}
 							{/if}
 						</DropdownMenu.Group>
 					</DropdownMenu.Content>
 				</DropdownMenu.Root>
-
-				{#if type === 'project'}
-					<ProgressPopover
-						bind:open={deployPullPopoverOpen}
-						bind:progress={pullProgress}
-						mode="generic"
-						title={deployPopoverTitle}
-						completeTitle={m.progress_deploy_completed()}
-						statusText={pullStatusText}
-						error={pullError}
-						loading={deployPulling}
-						icon={deployPopoverIcon}
-						layers={deployPopoverLayers}
-						showOutputPanel={deployProgressPhase === 'build'}
-						outputLines={deployProgressPhase === 'build' ? buildOutputLines : []}
-						triggerClass="hidden"
-					>
-						<span class="hidden"></span>
-					</ProgressPopover>
-
-					<ProgressPopover
-						bind:open={buildPopoverOpen}
-						bind:progress={pullProgress}
-						mode="generic"
-						title={m.build_output()}
-						completeTitle={m.build_completed()}
-						statusText={pullStatusText}
-						error={pullError}
-						loading={projectBuilding}
-						icon={HammerIcon}
-						layers={layerProgress}
-						showOutputPanel={projectBuilding}
-						outputLines={buildOutputLines}
-						triggerClass="hidden"
-					>
-						<span class="hidden"></span>
-					</ProgressPopover>
-
-					<ProgressPopover
-						bind:open={pullPopoverOpen}
-						bind:progress={pullProgress}
-						title={m.progress_pulling_images()}
-						statusText={pullStatusText}
-						error={pullError}
-						loading={projectPulling}
-						icon={DownloadIcon}
-						layers={layerProgress}
-						triggerClass="hidden"
-					>
-						<span class="hidden"></span>
-					</ProgressPopover>
-				{/if}
 			</div>
 		{/if}
 	</div>
 {:else}
 	<div>
 		<div class="hidden items-center gap-2 lg:flex">
-			{#if !isRunning}
+			{#if !isRunning && canStart}
 				{#if type === 'container'}
 					<ArcaneButton action="start" onclick={() => handleStart()} loading={uiLoading.start} />
 				{:else}
-					<ProgressPopover
-						bind:open={deployPullPopoverOpen}
-						bind:progress={pullProgress}
-						mode="generic"
-						title={deployPopoverTitle}
-						completeTitle={m.progress_deploy_completed()}
-						statusText={pullStatusText}
-						error={pullError}
-						loading={deployPulling}
-						icon={deployPopoverIcon}
-						layers={deployPopoverLayers}
-						showOutputPanel={deployProgressPhase === 'build'}
-						outputLines={deployProgressPhase === 'build' ? buildOutputLines : []}
-					>
-						<DeploySplitButton customLabel={deployButtonLabel} onDeploy={() => handleDeploy()} loading={uiLoading.start} />
-					</ProgressPopover>
+					<DeploySplitButton customLabel={deployButtonLabel} onDeploy={() => handleDeploy()} loading={uiLoading.start} />
 				{/if}
 			{/if}
 
 			{#if isRunning}
-				<ArcaneButton
-					action="stop"
-					customLabel={type === 'project' ? m.common_down() : undefined}
-					onclick={() => handleStop()}
-					loading={uiLoading.stop}
-				/>
-				<ArcaneButton action="restart" onclick={() => handleRestart()} loading={uiLoading.restart} />
+				{#if canStop}
+					<ArcaneButton
+						action="stop"
+						customLabel={type === 'project' ? m.common_down() : undefined}
+						onclick={() => handleStop()}
+						loading={uiLoading.stop}
+					/>
+				{/if}
+				{#if canRestart}
+					<ArcaneButton action="restart" onclick={() => handleRestart()} loading={uiLoading.restart} />
+				{/if}
 			{/if}
 
 			{#if type === 'container'}
 				{@render RedeployActionButton()}
-				<ArcaneButton action="remove" onclick={() => confirmAction('remove')} loading={uiLoading.remove} />
+				{#if canRemove}
+					<ArcaneButton action="remove" onclick={() => confirmAction('remove')} loading={uiLoading.remove} />
+				{/if}
 			{:else}
 				{@render RedeployActionButton()}
 
 				{#if type === 'project'}
-					{#if projectHasBuildDirective}
-						<ProgressPopover
-							bind:open={buildPopoverOpen}
-							bind:progress={pullProgress}
-							mode="generic"
-							title={m.build_output()}
-							completeTitle={m.build_completed()}
-							statusText={pullStatusText}
-							error={pullError}
-							loading={projectBuilding}
-							icon={HammerIcon}
-							layers={layerProgress}
-							showOutputPanel={projectBuilding}
-							outputLines={buildOutputLines}
-						>
-							<ArcaneButton action="build" onclick={() => handleProjectBuild()} loading={projectBuilding} />
-						</ProgressPopover>
+					{#if projectHasBuildDirective && canBuild}
+						<ArcaneButton action="build" onclick={() => handleProjectBuild()} loading={uiLoading.build} />
 					{/if}
 
-					<ProgressPopover
-						bind:open={pullPopoverOpen}
-						bind:progress={pullProgress}
-						title={m.progress_pulling_images()}
-						statusText={pullStatusText}
-						error={pullError}
-						loading={projectPulling}
-						icon={DownloadIcon}
-						layers={layerProgress}
-					>
-						<ArcaneButton action="pull" onclick={() => handleProjectPull()} loading={projectPulling} />
-					</ProgressPopover>
+					{#if canPull}
+						<ArcaneButton action="pull" onclick={() => handleProjectPull()} loading={uiLoading.pull} />
+					{/if}
 				{/if}
 
 				{#if onRefresh}
 					<ArcaneButton action="refresh" onclick={() => handleRefresh()} loading={uiLoading.refresh} />
 				{/if}
 
-				<ArcaneButton
-					customLabel={type === 'project' ? m.compose_destroy() : m.common_remove()}
-					action="remove"
-					onclick={() => confirmAction('remove')}
-					loading={uiLoading.remove}
-				/>
+				{#if canRemove}
+					<ArcaneButton
+						customLabel={type === 'project' ? m.compose_destroy() : m.common_remove()}
+						action="remove"
+						onclick={() => confirmAction('remove')}
+						loading={uiLoading.remove}
+					/>
+				{/if}
 			{/if}
 		</div>
 
@@ -1227,7 +696,7 @@
 					class="bg-popover/20 z-50 min-w-[180px] rounded-xl border p-1 shadow-lg backdrop-blur-md"
 				>
 					<DropdownMenu.Group>
-						{#if !isRunning}
+						{#if !isRunning && canStart}
 							{#if type === 'container'}
 								<DropdownMenu.Item onclick={handleStart} disabled={uiLoading.start}>
 									{m.common_start()}
@@ -1257,32 +726,40 @@
 									</DropdownMenu.CheckboxItem>
 								{/if}
 							{/if}
-						{:else}
-							<DropdownMenu.Item onclick={handleStop} disabled={uiLoading.stop}>
-								{type === 'project' ? m.common_down() : m.common_stop()}
-							</DropdownMenu.Item>
-							<DropdownMenu.Item onclick={handleRestart} disabled={uiLoading.restart}>
-								{m.common_restart()}
-							</DropdownMenu.Item>
+						{:else if isRunning}
+							{#if canStop}
+								<DropdownMenu.Item onclick={handleStop} disabled={uiLoading.stop}>
+									{type === 'project' ? m.common_down() : m.common_stop()}
+								</DropdownMenu.Item>
+							{/if}
+							{#if canRestart}
+								<DropdownMenu.Item onclick={handleRestart} disabled={uiLoading.restart}>
+									{m.common_restart()}
+								</DropdownMenu.Item>
+							{/if}
 						{/if}
 
 						{#if type === 'container'}
 							{@render RedeployMenuItem()}
-							<DropdownMenu.Item onclick={() => confirmAction('remove')} disabled={uiLoading.remove}>
-								{m.common_remove()}
-							</DropdownMenu.Item>
+							{#if canRemove}
+								<DropdownMenu.Item onclick={() => confirmAction('remove')} disabled={uiLoading.remove}>
+									{m.common_remove()}
+								</DropdownMenu.Item>
+							{/if}
 						{:else}
 							{@render RedeployMenuItem()}
 
 							{#if type === 'project'}
-								{#if projectHasBuildDirective}
-									<DropdownMenu.Item onclick={handleProjectBuild} disabled={projectBuilding || uiLoading.building}>
+								{#if projectHasBuildDirective && canBuild}
+									<DropdownMenu.Item onclick={handleProjectBuild} disabled={uiLoading.build}>
 										{m.build()}
 									</DropdownMenu.Item>
 								{/if}
-								<DropdownMenu.Item onclick={handleProjectPull} disabled={projectPulling || uiLoading.pulling}>
-									{m.images_pull()}
-								</DropdownMenu.Item>
+								{#if canPull}
+									<DropdownMenu.Item onclick={handleProjectPull} disabled={uiLoading.pull}>
+										{m.images_pull()}
+									</DropdownMenu.Item>
+								{/if}
 							{/if}
 
 							{#if onRefresh}
@@ -1291,9 +768,11 @@
 								</DropdownMenu.Item>
 							{/if}
 
-							<DropdownMenu.Item onclick={() => confirmAction('remove')} disabled={uiLoading.remove}>
-								{type === 'project' ? m.compose_destroy() : m.common_remove()}
-							</DropdownMenu.Item>
+							{#if canRemove}
+								<DropdownMenu.Item onclick={() => confirmAction('remove')} disabled={uiLoading.remove}>
+									{type === 'project' ? m.compose_destroy() : m.common_remove()}
+								</DropdownMenu.Item>
+							{/if}
 						{/if}
 					</DropdownMenu.Group>
 				</DropdownMenu.Content>

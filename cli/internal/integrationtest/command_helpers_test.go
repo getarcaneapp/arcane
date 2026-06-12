@@ -9,7 +9,7 @@ import (
 	"sync"
 	"testing"
 
-	clipkg "github.com/getarcaneapp/arcane/cli/pkg"
+	clipkg "github.com/getarcaneapp/arcane/cli/v2/pkg"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )

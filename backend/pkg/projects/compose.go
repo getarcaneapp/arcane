@@ -9,7 +9,7 @@ import (
 	"github.com/docker/cli/cli/flags"
 	"github.com/docker/compose/v5/pkg/api"
 	composev2 "github.com/docker/compose/v5/pkg/compose"
-	"github.com/getarcaneapp/arcane/backend/pkg/libarcane"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/moby/moby/client"
 )
 
@@ -41,6 +41,7 @@ func NewClient(ctx context.Context) (*Client, error) {
 
 type inspectCompatibleDockerCli struct {
 	command.Cli
+
 	apiClient client.APIClient
 }
 

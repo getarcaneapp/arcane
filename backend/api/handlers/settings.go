@@ -3,22 +3,25 @@ package handlers
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
-	humamw "github.com/getarcaneapp/arcane/backend/api/middleware"
-	"github.com/getarcaneapp/arcane/backend/internal/common"
-	"github.com/getarcaneapp/arcane/backend/internal/config"
-	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"github.com/getarcaneapp/arcane/backend/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/pkg/utils/mapper"
-	"github.com/getarcaneapp/arcane/types/base"
-	"github.com/getarcaneapp/arcane/types/category"
-	"github.com/getarcaneapp/arcane/types/search"
-	"github.com/getarcaneapp/arcane/types/settings"
+	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
+	"github.com/getarcaneapp/arcane/types/v2/base"
+	"github.com/getarcaneapp/arcane/types/v2/category"
+	"github.com/getarcaneapp/arcane/types/v2/search"
+	"github.com/getarcaneapp/arcane/types/v2/settings"
 )
 
 // SettingsHandler provides Huma-based settings management endpoints.
@@ -139,6 +142,7 @@ func RegisterSettings(api huma.API, settingsService *services.SettingsService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequirePermission(api, authz.PermSettingsRead),
 	}, h.GetSettings)
 
 	huma.Register(api, huma.Operation{
@@ -152,7 +156,7 @@ func RegisterSettings(api huma.API, settingsService *services.SettingsService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermSettingsWrite),
 	}, h.UpdateSettings)
 
 	// Top-level settings endpoints (not environment-scoped)
@@ -167,7 +171,6 @@ func RegisterSettings(api huma.API, settingsService *services.SettingsService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
 	}, h.Search)
 
 	huma.Register(api, huma.Operation{
@@ -181,8 +184,35 @@ func RegisterSettings(api huma.API, settingsService *services.SettingsService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
 	}, h.GetCategories)
+}
+
+func filterSettingsCategoriesInternal(ps *authz.PermissionSet, categories []category.Category) []category.Category {
+	if ps == nil {
+		return []category.Category{}
+	}
+	filtered := make([]category.Category, 0, len(categories))
+	for _, cat := range categories {
+		if canAccessSettingsCategoryAtAnyScopeInternal(ps, cat.ID) {
+			filtered = append(filtered, cat)
+		}
+	}
+	return filtered
+}
+
+func canAccessSettingsCategoryAtAnyScopeInternal(ps *authz.PermissionSet, categoryID string) bool {
+	if ps == nil {
+		return false
+	}
+	if authz.CanAccessSettingsCategory(ps, categoryID, "") {
+		return true
+	}
+	for envID := range ps.PerEnv {
+		if authz.CanAccessSettingsCategory(ps, categoryID, envID) {
+			return true
+		}
+	}
+	return false
 }
 
 func (h *SettingsHandler) appendRuntimeSettingsInternal(settingsDto []settings.PublicSetting, includeAuthenticatedOnly bool) []settings.PublicSetting {
@@ -262,7 +292,8 @@ func (h *SettingsHandler) GetSettings(ctx context.Context, input *GetSettingsInp
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	isAdmin := humamw.IsAdminFromContext(ctx)
+	ps, _ := humamw.PermissionsFromContext(ctx)
+	isAdmin := ps.IsGlobalAdmin()
 
 	if input.EnvironmentID != "0" {
 		if h.environmentService == nil {
@@ -295,10 +326,6 @@ func (h *SettingsHandler) UpdateSettings(ctx context.Context, input *UpdateSetti
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
-
 	if err := h.validateSettingsUpdateInput(input.Body); err != nil {
 		return nil, err
 	}
@@ -311,7 +338,6 @@ func (h *SettingsHandler) UpdateSettings(ctx context.Context, input *UpdateSetti
 }
 
 func (h *SettingsHandler) validateSettingsUpdateInput(input settings.Update) error {
-
 	// Validate projects directory if provided and changed from current value.
 	// Skip validation when the value matches the current (possibly env-overridden) setting
 	// so that saving unrelated settings doesn't fail due to env-provided directory formats.
@@ -355,6 +381,21 @@ func (h *SettingsHandler) updateSettingsForRemoteEnvironment(ctx context.Context
 }
 
 func (h *SettingsHandler) updateSettingsForLocalEnvironment(ctx context.Context, input settings.Update) (*UpdateSettingsOutput, error) {
+	if input.ProjectsDirectory != nil && *input.ProjectsDirectory != "" {
+		currentDir := h.settingsService.GetSettingsConfig().ProjectsDirectory.Value
+		if *input.ProjectsDirectory != currentDir {
+			resolved, err := projects.GetProjectsDirectory(ctx, strings.TrimSpace(*input.ProjectsDirectory))
+			if err != nil {
+				return nil, huma.Error400BadRequest(fmt.Sprintf("cannot use projects directory %q: %v", *input.ProjectsDirectory, err))
+			}
+			f, err := os.Open(resolved)
+			if err != nil {
+				return nil, huma.Error400BadRequest(fmt.Sprintf("cannot read projects directory %q: %v", resolved, err))
+			}
+			f.Close()
+		}
+	}
+
 	updatedSettings, err := h.settingsService.UpdateSettings(ctx, input)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.SettingsUpdateError{Err: err}).Error())
@@ -382,12 +423,13 @@ func (h *SettingsHandler) updateSettingsForLocalEnvironment(ctx context.Context,
 func hasAuthSettingsUpdateInternal(req settings.Update) bool {
 	return req.AuthLocalEnabled != nil || req.OidcEnabled != nil ||
 		req.AuthSessionTimeout != nil || req.AuthPasswordPolicy != nil ||
-		req.AuthOidcConfig != nil || req.OidcClientId != nil ||
+		req.OidcClientId != nil ||
 		req.OidcClientSecret != nil || req.OidcIssuerUrl != nil ||
-		req.OidcScopes != nil || req.OidcAdminClaim != nil ||
-		req.OidcAdminValue != nil || req.OidcMergeAccounts != nil ||
+		req.OidcScopes != nil ||
+		req.OidcMergeAccounts != nil ||
 		req.OidcSkipTlsVerify != nil || req.OidcAutoRedirectToProvider != nil ||
-		req.OidcProviderName != nil || req.OidcProviderLogoUrl != nil
+		req.OidcProviderName != nil || req.OidcProviderLogoUrl != nil ||
+		req.OidcGroupsClaim != nil
 }
 
 // Search searches settings by query.
@@ -396,15 +438,14 @@ func (h *SettingsHandler) Search(ctx context.Context, input *SearchSettingsInput
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
-
 	if strings.TrimSpace(input.Body.Query) == "" {
 		return nil, huma.Error400BadRequest((&common.QueryParameterRequiredError{}).Error())
 	}
 
+	ps, _ := humamw.PermissionsFromContext(ctx)
 	results := h.settingsSearchService.Search(input.Body.Query)
+	results.Results = filterSettingsCategoriesInternal(ps, results.Results)
+	results.Count = len(results.Results)
 	return &SearchSettingsOutput{Body: results}, nil
 }
 
@@ -414,10 +455,7 @@ func (h *SettingsHandler) GetCategories(ctx context.Context, input *struct{}) (*
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
-
-	categories := h.settingsSearchService.GetSettingsCategories()
+	ps, _ := humamw.PermissionsFromContext(ctx)
+	categories := filterSettingsCategoriesInternal(ps, h.settingsSearchService.GetSettingsCategories())
 	return &GetCategoriesOutput{Body: categories}, nil
 }

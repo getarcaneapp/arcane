@@ -65,8 +65,8 @@ services:
     volumes:
       - arcane-data:/app/data
     environment:
-      - ENCRYPTION_KEY=xxxxxxxxxxxxxxxxxxxxxx
-      - JWT_SECRET=xxxxxxxxxxxxxxxxxxxxxx
+      - ENCRYPTION_KEY=replace_me_with_a_random_32_char_value
+      - JWT_SECRET=replace_me_with_a_random_32_char_value
       # Optional: run Arcane as a specific host UID/GID instead of the default runtime user.
       # With DOCKER_HOST over TCP, no Unix socket group mapping is needed.
       # - PUID=1000
@@ -82,8 +82,10 @@ services:
     healthcheck:
       test:
         [
-          "CMD-SHELL",
-          "curl -fsS http://localhost:3552/api/health >/dev/null || exit 1",
+          "CMD",
+          "curl",
+          "-fsS",
+          "http://localhost:3552/api/health",
         ]
       interval: 10s
       timeout: 3s

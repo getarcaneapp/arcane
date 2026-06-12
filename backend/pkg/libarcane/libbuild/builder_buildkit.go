@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	dockerutils "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
-	imagetypes "github.com/getarcaneapp/arcane/types/image"
+	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
+	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 	buildkit "github.com/moby/buildkit/client"
 )
 
@@ -133,14 +133,14 @@ func (b *builder) buildSolveOptInternal(ctx context.Context, req imagetypes.Buil
 		frontendAttrs["platform"] = strings.Join(req.Platforms, ",")
 	}
 	for key, val := range req.BuildArgs {
-		frontendAttrs[fmt.Sprintf("build-arg:%s", key)] = val
+		frontendAttrs["build-arg:"+key] = val
 	}
 	for key, val := range req.Labels {
 		k := strings.TrimSpace(key)
 		if k == "" {
 			continue
 		}
-		frontendAttrs[fmt.Sprintf("label:%s", k)] = val
+		frontendAttrs["label:"+k] = val
 	}
 
 	solveOpt := buildkit.SolveOpt{
@@ -169,16 +169,9 @@ func (b *builder) buildSolveOptInternal(ctx context.Context, req imagetypes.Buil
 	}
 
 	if providerName == "local" && (req.Load || req.Push) {
-		attrs := map[string]string{
-			"name":           strings.Join(req.Tags, ","),
-			"oci-mediatypes": "true",
-		}
-		if req.Push {
-			attrs["push"] = "true"
-		}
 		exports = append(exports, buildkit.ExportEntry{
-			Type:  "image",
-			Attrs: attrs,
+			Type:  "moby",
+			Attrs: map[string]string{"name": strings.Join(req.Tags, ",")},
 		})
 	} else if req.Load {
 		exportEntry, errCh, err := b.buildLoadExportInternal(ctx, req.Tags)

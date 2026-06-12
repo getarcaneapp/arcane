@@ -18,7 +18,9 @@ jobs:
 
     env:
       MANAGER_IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/arcane
+      MANAGER_IMAGE_ALIAS: ghcr.io/${{ github.repository_owner }}/manager
       AGENT_IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/arcane-headless
+      AGENT_IMAGE_ALIAS: ghcr.io/${{ github.repository_owner }}/agent
 
     steps:
       - name: Checkout
@@ -37,14 +39,14 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: 25
+          node-version: 26
           cache: pnpm
 
       - name: Set up Depot CLI
         uses: depot/setup-action@v1
 
       - name: Login to GHCR
-        uses: docker/login-action@v4
+        uses: docker/login-action@v4.2.0
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
@@ -75,7 +77,9 @@ jobs:
         id: manager-meta
         uses: docker/metadata-action@v6
         with:
-          images: ${{ env.MANAGER_IMAGE_NAME }}
+          images: |
+            ${{ env.MANAGER_IMAGE_NAME }}
+            ${{ env.MANAGER_IMAGE_ALIAS }}
           tags: |
             type=semver,pattern={{version}},prefix=v
             type=semver,pattern={{major}}.{{minor}},prefix=v
@@ -96,7 +100,7 @@ jobs:
 
       - name: Build and push manager image
         id: manager-build
-        uses: depot/build-push-action@v1
+        uses: depot/build-push-action@v1.18.0
         with:
           context: .
           file: docker/Dockerfile
@@ -111,7 +115,7 @@ jobs:
           provenance: true
 
       - name: Sign manager image
-        run: cosign sign --yes --key env://COSIGN_PRIVATE_KEY "${MANAGER_IMAGE_NAME}@${{ steps.manager-build.outputs.digest }}"
+        run: cosign sign --yes --key env://COSIGN_PRIVATE_KEY "${MANAGER_IMAGE_NAME}@${{ steps.manager-build.outputs.digest }}" "${MANAGER_IMAGE_ALIAS}@${{ steps.manager-build.outputs.digest }}"
         env:
           COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
@@ -120,7 +124,9 @@ jobs:
         id: agent-meta
         uses: docker/metadata-action@v6
         with:
-          images: ${{ env.AGENT_IMAGE_NAME }}
+          images: |
+            ${{ env.AGENT_IMAGE_NAME }}
+            ${{ env.AGENT_IMAGE_ALIAS }}
           tags: |
             type=semver,pattern={{version}},prefix=v
             type=semver,pattern={{major}}.{{minor}},prefix=v
@@ -142,7 +148,7 @@ jobs:
 
       - name: Build and push agent image
         id: agent-build
-        uses: depot/build-push-action@v1
+        uses: depot/build-push-action@v1.18.0
         with:
           context: .
           file: docker/Dockerfile-agent
@@ -157,7 +163,7 @@ jobs:
           provenance: true
 
       - name: Sign agent image
-        run: cosign sign --yes --key env://COSIGN_PRIVATE_KEY "${AGENT_IMAGE_NAME}@${{ steps.agent-build.outputs.digest }}"
+        run: cosign sign --yes --key env://COSIGN_PRIVATE_KEY "${AGENT_IMAGE_NAME}@${{ steps.agent-build.outputs.digest }}" "${AGENT_IMAGE_ALIAS}@${{ steps.agent-build.outputs.digest }}"
         env:
           COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
@@ -169,10 +175,24 @@ jobs:
           subject-digest: ${{ steps.manager-build.outputs.digest }}
           push-to-registry: true
 
+      - name: Container image attestation (manager alias)
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ${{ env.MANAGER_IMAGE_ALIAS }}
+          subject-digest: ${{ steps.manager-build.outputs.digest }}
+          push-to-registry: true
+
       - name: Container image attestation (agent)
         uses: actions/attest-build-provenance@v4
         with:
           subject-name: ${{ env.AGENT_IMAGE_NAME }}
+          subject-digest: ${{ steps.agent-build.outputs.digest }}
+          push-to-registry: true
+
+      - name: Container image attestation (agent alias)
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ${{ env.AGENT_IMAGE_ALIAS }}
           subject-digest: ${{ steps.agent-build.outputs.digest }}
           push-to-registry: true
 

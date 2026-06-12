@@ -7,12 +7,12 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/getarcaneapp/arcane/backend/cli/generate"
-	"github.com/getarcaneapp/arcane/backend/cli/migrate"
-	"github.com/getarcaneapp/arcane/backend/cli/upgrade"
-	"github.com/getarcaneapp/arcane/backend/internal/bootstrap"
-	"github.com/getarcaneapp/arcane/backend/internal/config"
-	"github.com/getarcaneapp/arcane/backend/pkg/utils/signals"
+	"github.com/getarcaneapp/arcane/backend/v2/cli/generate"
+	"github.com/getarcaneapp/arcane/backend/v2/cli/migrate"
+	"github.com/getarcaneapp/arcane/backend/v2/cli/upgrade"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/bootstrap"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/signals"
 )
 
 var rootCmd = &cobra.Command{

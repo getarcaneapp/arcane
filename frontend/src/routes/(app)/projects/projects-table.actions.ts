@@ -3,9 +3,11 @@ import { m } from '$lib/paraglide/messages';
 import { deployOptionsStore } from '$lib/stores/deploy-options.store.svelte';
 import { gitOpsSyncService } from '$lib/services/gitops-sync-service';
 import { projectService } from '$lib/services/project-service';
-import type { SearchPaginationSortRequest } from '$lib/types/pagination.type';
-import { handleApiResultWithCallbacks } from '$lib/utils/api.util';
-import { tryCatch } from '$lib/utils/try-catch';
+import type { SearchPaginationSortRequest } from '$lib/types/shared';
+import { handleApiResultWithCallbacks } from '$lib/utils/api';
+import { tryCatch } from '$lib/utils/api';
+import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
+import type { TableActionConfig, TableBulkActionConfig } from '$lib/utils/table-action-types';
 import { toast } from 'svelte-sonner';
 import type { ActionStatus } from './projects-table.helpers';
 
@@ -27,24 +29,8 @@ type ActionDeps = {
 
 type ProjectActionKind = 'start' | 'stop' | 'restart' | 'redeploy' | 'archive' | 'unarchive';
 
-type ProjectActionConfig = {
-	status: ActionStatus;
-	run: (id: string) => Promise<unknown>;
-	success: () => string;
-	failure: () => string;
-};
-
-type BulkActionConfig = {
-	title: (count: number) => string;
-	message: (count: number) => string;
-	label: string;
-	loadingKey: keyof BulkLoadingState;
-	run: (id: string) => Promise<unknown>;
-	success: (count: number) => string;
-	partial: (success: number, total: number, failed: number) => string;
-	failure: () => string;
-	destructive?: boolean;
-};
+type ProjectActionConfig = TableActionConfig<ActionStatus>;
+type BulkActionConfig = TableBulkActionConfig<keyof BulkLoadingState>;
 
 type DestroyConfirmResult = {
 	checkboxes?: {
@@ -123,8 +109,8 @@ export function createProjectActions({
 				setLoadingState: (value) => {
 					actionStatus[id] = value ? config.status : '';
 				},
-				onSuccess: async () => {
-					toast.success(config.success());
+				onSuccess: async (data) => {
+					toast.success(config.success(), activityToastOptions(extractActivityId(data)));
 					await refreshProjects();
 				}
 			});
@@ -164,8 +150,8 @@ export function createProjectActions({
 						setLoadingState: (value) => {
 							actionStatus[id] = value ? 'destroying' : '';
 						},
-						onSuccess: async () => {
-							toast.success(m.compose_destroy_success());
+						onSuccess: async (data) => {
+							toast.success(m.compose_destroy_success(), activityToastOptions(extractActivityId(data)));
 							await refreshProjects();
 						}
 					});

@@ -1,10 +1,11 @@
 <script lang="ts">
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { AlertIcon } from '$lib/icons';
-	import { confirmDialogStore } from '.';
+	import { confirmDialogStore } from './store';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { Label } from '$lib/components/ui/label';
 	import Checkbox from '../ui/checkbox/checkbox.svelte';
+	import { m } from '$lib/paraglide/messages';
 
 	let checkboxStates = $state<Record<string, boolean>>({});
 
@@ -72,7 +73,7 @@
 							</Label>
 
 							{#if checkbox.id === 'files' && checkboxStates[checkbox.id]}
-								<div class="text-destructive mt-1 text-xs leading-snug">This will remove the project's files from disk.</div>
+								<div class="text-destructive mt-1 text-xs leading-snug">{m.confirm_remove_project_files_warning()}</div>
 							{/if}
 						</div>
 					</div>

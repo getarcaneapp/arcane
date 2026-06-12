@@ -1,52 +1,15 @@
-import { templateService } from '$lib/services/template-service';
-import { queryKeys } from '$lib/query/query-keys';
+import { loadTemplateAuthoringData, loadTemplateContent } from '$lib/utils/template-load';
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async ({ url, parent }) => {
 	const { queryClient } = await parent();
 
 	const templateId = url.searchParams.get('templateId');
+	const { defaultTemplates, templates: allTemplates, globalVariables } = await loadTemplateAuthoringData(parent);
 
-	const [allTemplates, defaultTemplates, selectedTemplate, globalVariables] = await Promise.all([
-		queryClient
-			.fetchQuery({
-				queryKey: queryKeys.templates.allTemplates(),
-				queryFn: () => templateService.getAllTemplates()
-			})
-			.catch((err) => {
-				console.warn('Failed to load templates:', err);
-				return [];
-			}),
-		queryClient
-			.fetchQuery({
-				queryKey: queryKeys.templates.defaults(),
-				queryFn: () => templateService.getDefaultTemplates()
-			})
-			.catch((err) => {
-				console.warn('Failed to load default templates:', err);
-				return { composeTemplate: '', envTemplate: '' };
-			}),
-		templateId
-			? queryClient
-					.fetchQuery({
-						queryKey: queryKeys.templates.content(templateId),
-						queryFn: () => templateService.getTemplateContent(templateId)
-					})
-					.catch((err) => {
-						console.warn('Failed to load selected template:', err);
-						return null;
-					})
-			: Promise.resolve(null),
-		queryClient
-			.fetchQuery({
-				queryKey: queryKeys.templates.globalVariables(),
-				queryFn: () => templateService.getGlobalVariables()
-			})
-			.catch((err) => {
-				console.warn('Failed to load global variables:', err);
-				return [];
-			})
-	]);
+	const selectedTemplate = templateId
+		? await loadTemplateContent(queryClient as Parameters<typeof loadTemplateContent>[0], templateId)
+		: null;
 
 	return {
 		composeTemplates: allTemplates,

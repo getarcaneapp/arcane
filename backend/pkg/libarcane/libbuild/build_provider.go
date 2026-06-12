@@ -11,8 +11,8 @@ import (
 	depotbuild "github.com/depot/depot-go/build"
 	depotmachine "github.com/depot/depot-go/machine"
 	cliv1 "github.com/depot/depot-go/proto/depot/cli/v1"
-	buildtypes "github.com/getarcaneapp/arcane/types/builds"
-	"github.com/getarcaneapp/arcane/types/image"
+	buildtypes "github.com/getarcaneapp/arcane/types/v2/builds"
+	"github.com/getarcaneapp/arcane/types/v2/image"
 	"github.com/moby/buildkit/client"
 )
 

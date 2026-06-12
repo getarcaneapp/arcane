@@ -3,20 +3,22 @@ package repos
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/cli/internal/client"
-	"github.com/getarcaneapp/arcane/cli/internal/cmdutil"
-	"github.com/getarcaneapp/arcane/cli/internal/output"
-	"github.com/getarcaneapp/arcane/cli/internal/prompt"
-	"github.com/getarcaneapp/arcane/cli/internal/types"
-	"github.com/getarcaneapp/arcane/types/base"
-	"github.com/getarcaneapp/arcane/types/gitops"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/prompt"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	"github.com/getarcaneapp/arcane/types/v2/base"
+	"github.com/getarcaneapp/arcane/types/v2/gitops"
 	"github.com/spf13/cobra"
 )
 
@@ -524,7 +526,7 @@ var filesCmd = &cobra.Command{
 		for i, node := range files {
 			size := ""
 			if node.Type == gitops.FileTreeNodeTypeFile {
-				size = fmt.Sprintf("%d", node.Size)
+				size = strconv.FormatInt(node.Size, 10)
 			}
 			rows[i] = []string{
 				node.Name,
@@ -580,7 +582,7 @@ var syncCmd = &cobra.Command{
 func resolveGitRepository(ctx context.Context, c *client.Client, identifier string) (*gitops.GitRepository, error) {
 	trimmed := strings.TrimSpace(identifier)
 	if trimmed == "" {
-		return nil, fmt.Errorf("repository identifier is required")
+		return nil, errors.New("repository identifier is required")
 	}
 
 	// Try direct GET by ID.
@@ -598,7 +600,7 @@ func resolveGitRepository(ctx context.Context, c *client.Client, identifier stri
 	}
 
 	// Fallback: search via list endpoint.
-	listPath := fmt.Sprintf("%s?limit=200", types.Endpoints.GitRepositories())
+	listPath := types.Endpoints.GitRepositories() + "?limit=200"
 	listResp, err := c.Get(ctx, listPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to search repositories: %w", err)

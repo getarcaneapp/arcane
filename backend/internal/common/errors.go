@@ -371,20 +371,56 @@ func (e *EnvironmentNotFoundError) Error() string {
 	return "Environment not found"
 }
 
+type EnvironmentDisabledError struct{}
+
+func (e *EnvironmentDisabledError) Error() string {
+	return "Environment is disabled"
+}
+
+type EnvironmentUnauthorizedError struct{}
+
+func (e *EnvironmentUnauthorizedError) Error() string {
+	return "Authentication required to access remote environments"
+}
+
+type EnvironmentInvalidProxyTargetError struct {
+	Err error
+}
+
+func (e *EnvironmentInvalidProxyTargetError) Error() string {
+	return fmt.Sprintf("Invalid proxy target URL: %v", e.Err)
+}
+
+func (e *EnvironmentInvalidProxyTargetError) Unwrap() error { return e.Err }
+
+type EnvironmentProxyRequestCreationError struct {
+	Err error
+}
+
+func (e *EnvironmentProxyRequestCreationError) Error() string {
+	return fmt.Sprintf("Failed to create proxy request: %v", e.Err)
+}
+
+type EnvironmentProxyRequestFailedError struct {
+	Err error
+}
+
+func (e *EnvironmentProxyRequestFailedError) Error() string {
+	return fmt.Sprintf("Proxy request failed: %v", e.Err)
+}
+
+type EdgeAgentNotConnectedError struct{}
+
+func (e *EdgeAgentNotConnectedError) Error() string {
+	return "Edge agent is not connected"
+}
+
 type AgentTokenPersistenceError struct {
 	Err error
 }
 
 func (e *AgentTokenPersistenceError) Error() string {
 	return "Failed to persist agent token"
-}
-
-type AgentPairingError struct {
-	Err error
-}
-
-func (e *AgentPairingError) Error() string {
-	return fmt.Sprintf("Agent pairing failed: %v", e.Err)
 }
 
 type EnvironmentCreationError struct {
@@ -689,28 +725,6 @@ func (e *NotificationTestError) Error() string {
 	return fmt.Sprintf("Failed to send test notification: %v", e.Err)
 }
 
-type AppriseSettingsNotFoundError struct{}
-
-func (e *AppriseSettingsNotFoundError) Error() string {
-	return "Apprise settings not found"
-}
-
-type AppriseSettingsUpdateError struct {
-	Err error
-}
-
-func (e *AppriseSettingsUpdateError) Error() string {
-	return fmt.Sprintf("Failed to update Apprise settings: %v", e.Err)
-}
-
-type AppriseTestError struct {
-	Err error
-}
-
-func (e *AppriseTestError) Error() string {
-	return fmt.Sprintf("Failed to send Apprise test notification: %v", e.Err)
-}
-
 type OidcStatusError struct {
 	Err error
 }
@@ -825,6 +839,19 @@ type ProjectComposeFileNotFoundError struct {
 
 func (e *ProjectComposeFileNotFoundError) Error() string {
 	return fmt.Sprintf("Project compose file not found: %v", e.Err)
+}
+
+type ProjectDiscoveryError struct {
+	Dir string
+	Err error
+}
+
+func (e *ProjectDiscoveryError) Error() string {
+	return fmt.Sprintf("Failed to discover projects in %q: %v", e.Dir, e.Err)
+}
+
+func (e *ProjectDiscoveryError) Unwrap() error {
+	return e.Err
 }
 
 type ProjectRedeploymentError struct {
@@ -949,14 +976,6 @@ func (e *DockerInfoError) Error() string {
 	return fmt.Sprintf("Failed to get Docker info: %v", e.Err)
 }
 
-type SystemPruneError struct {
-	Err error
-}
-
-func (e *SystemPruneError) Error() string {
-	return fmt.Sprintf("Failed to prune resources: %v", e.Err)
-}
-
 type ContainerStartAllError struct {
 	Err error
 }
@@ -1013,6 +1032,34 @@ func (e *UpgradeTriggerError) Error() string {
 	return fmt.Sprintf("Failed to initiate upgrade: %v", e.Err)
 }
 
+type NotRunningInDockerError struct{}
+
+func (e *NotRunningInDockerError) Error() string {
+	return "arcane is not running in a Docker container"
+}
+
+type ArcaneContainerNotFoundError struct{}
+
+func (e *ArcaneContainerNotFoundError) Error() string {
+	return "could not find Arcane container"
+}
+
+type UpgradeInProgressError struct{}
+
+func (e *UpgradeInProgressError) Error() string {
+	return "an upgrade is already in progress"
+}
+
+func IsUpgradeInProgressError(err error) bool {
+	return isErrorTypeInternal[*UpgradeInProgressError](err)
+}
+
+type DockerSocketAccessError struct{}
+
+func (e *DockerSocketAccessError) Error() string {
+	return "docker socket is not accessible"
+}
+
 type TemplateListError struct {
 	Err error
 }
@@ -1044,6 +1091,10 @@ func (e *TemplateNotFoundError) Error() string {
 		return fmt.Sprintf("Template not found: %v", e.Err)
 	}
 	return "Template not found"
+}
+
+func IsTemplateNotFoundError(err error) bool {
+	return isErrorTypeInternal[*TemplateNotFoundError](err)
 }
 
 type TemplateRetrievalError struct {
@@ -1191,6 +1242,42 @@ type UpdaterHistoryError struct {
 
 func (e *UpdaterHistoryError) Error() string {
 	return fmt.Sprintf("Failed to get updater history: %v", e.Err)
+}
+
+type UpdaterDockerServiceUnavailableError struct{}
+
+func (e *UpdaterDockerServiceUnavailableError) Error() string {
+	return "docker service unavailable"
+}
+
+type UpdaterDockerClientUnavailableError struct{}
+
+func (e *UpdaterDockerClientUnavailableError) Error() string {
+	return "docker client unavailable"
+}
+
+type UpdaterImageServiceUnavailableError struct{}
+
+func (e *UpdaterImageServiceUnavailableError) Error() string {
+	return "image service unavailable"
+}
+
+type UpdaterDatabaseUnavailableError struct{}
+
+func (e *UpdaterDatabaseUnavailableError) Error() string {
+	return "database unavailable"
+}
+
+type UpdaterServiceUnavailableError struct{}
+
+func (e *UpdaterServiceUnavailableError) Error() string {
+	return "updater service unavailable"
+}
+
+type UpdaterProjectServiceUnavailableError struct{}
+
+func (e *UpdaterProjectServiceUnavailableError) Error() string {
+	return "project service unavailable"
 }
 
 type UserListError struct {
@@ -1506,6 +1593,34 @@ func (e *SwarmManagerRequiredError) Error() string {
 	return "Swarm manager access required"
 }
 
+func IsSwarmNotEnabledError(err error) bool {
+	return isErrorTypeInternal[*SwarmNotEnabledError](err)
+}
+
+func IsSwarmManagerRequiredError(err error) bool {
+	return isErrorTypeInternal[*SwarmManagerRequiredError](err)
+}
+
+type SwarmConfigImmutableError struct{}
+
+func (e *SwarmConfigImmutableError) Error() string {
+	return "Swarm configs are immutable; create a new config and update services to use it"
+}
+
+type SwarmSecretImmutableError struct{}
+
+func (e *SwarmSecretImmutableError) Error() string {
+	return "Swarm secrets are immutable; create a new secret and update services to use it"
+}
+
+func IsSwarmConfigImmutableError(err error) bool {
+	return isErrorTypeInternal[*SwarmConfigImmutableError](err)
+}
+
+func IsSwarmSecretImmutableError(err error) bool {
+	return isErrorTypeInternal[*SwarmSecretImmutableError](err)
+}
+
 type SwarmServiceListError struct {
 	Err error
 }
@@ -1592,4 +1707,241 @@ type SwarmInspectError struct {
 
 func (e *SwarmInspectError) Error() string {
 	return fmt.Sprintf("Failed to inspect swarm: %v", e.Err)
+}
+
+type BuildKitImageExporterError struct {
+	ProviderName string
+	Err          error
+}
+
+func (e *BuildKitImageExporterError) Error() string {
+	return fmt.Sprintf("depot and remote BuildKit providers require the image exporter for provider %s: %v", e.ProviderName, e.Err)
+}
+
+func (e *BuildKitImageExporterError) Unwrap() error { return e.Err }
+
+type BuildKitDockerExporterError struct {
+	ProviderName string
+	Err          error
+}
+
+func (e *BuildKitDockerExporterError) Error() string {
+	return fmt.Sprintf("the Docker Engine embedded BuildKit requires the docker image-store exporter (used for load) for provider %s: %v", e.ProviderName, e.Err)
+}
+
+func (e *BuildKitDockerExporterError) Unwrap() error { return e.Err }
+
+// ----- RBAC / role service errors -----
+
+type RoleNotFoundError struct{}
+
+func (e *RoleNotFoundError) Error() string {
+	return "Role not found"
+}
+
+func IsRoleNotFoundError(err error) bool {
+	return isErrorTypeInternal[*RoleNotFoundError](err)
+}
+
+type RoleBuiltInError struct{}
+
+func (e *RoleBuiltInError) Error() string {
+	return "Built-in role cannot be modified"
+}
+
+func IsRoleBuiltInError(err error) bool {
+	return isErrorTypeInternal[*RoleBuiltInError](err)
+}
+
+type RoleNameTakenError struct{}
+
+func (e *RoleNameTakenError) Error() string {
+	return "Role name already in use"
+}
+
+func IsRoleNameTakenError(err error) bool {
+	return isErrorTypeInternal[*RoleNameTakenError](err)
+}
+
+type UnknownPermissionError struct {
+	Perm string
+}
+
+func (e *UnknownPermissionError) Error() string {
+	return "Unknown permission: " + e.Perm
+}
+
+func IsUnknownPermissionError(err error) bool {
+	return isErrorTypeInternal[*UnknownPermissionError](err)
+}
+
+// RolePermissionEscalationError is returned when a caller attempts to author a
+// role containing a permission they do not themselves hold at global scope.
+// Used by the CreateRole and UpdateRole handlers as defense-in-depth alongside
+// the RequireGlobalAdmin middleware.
+type RolePermissionEscalationError struct {
+	Perm string
+}
+
+func (e *RolePermissionEscalationError) Error() string {
+	return "cannot grant a permission you do not hold: " + e.Perm
+}
+
+func IsRolePermissionEscalationError(err error) bool {
+	return isErrorTypeInternal[*RolePermissionEscalationError](err)
+}
+
+// InvalidRoleAssignmentError is returned when SetUserAssignments is called with
+// a RoleID or EnvironmentID that doesn't exist in the database. Surfaces as a
+// 400 Bad Request so callers see a descriptive message instead of an opaque
+// FK-violation 500 from the underlying tx.Create.
+type InvalidRoleAssignmentError struct {
+	RoleID        string
+	EnvironmentID string
+}
+
+func (e *InvalidRoleAssignmentError) Error() string {
+	if e.RoleID != "" {
+		return fmt.Sprintf("invalid role assignment: role %q does not exist", e.RoleID)
+	}
+	if e.EnvironmentID != "" {
+		return fmt.Sprintf("invalid role assignment: environment %q does not exist", e.EnvironmentID)
+	}
+	return "invalid role assignment"
+}
+
+func IsInvalidRoleAssignmentError(err error) bool {
+	return isErrorTypeInternal[*InvalidRoleAssignmentError](err)
+}
+
+type FederatedCredentialNotFoundError struct{}
+
+func (e *FederatedCredentialNotFoundError) Error() string {
+	return "federated credential not found"
+}
+
+func IsErrorFederatedCredentialNotFound(err error) bool {
+	return isErrorTypeInternal[*FederatedCredentialNotFoundError](err)
+}
+
+type FederatedCredentialInvalidError struct{}
+
+func (e *FederatedCredentialInvalidError) Error() string {
+	return "invalid federated credential"
+}
+
+func IsErrorFederatedCredentialInvalid(err error) bool {
+	return isErrorTypeInternal[*FederatedCredentialInvalidError](err)
+}
+
+// DefaultTransportTypeError is returned when http.DefaultTransport is not the
+// expected *http.Transport concrete type and therefore cannot be cloned.
+type DefaultTransportTypeError struct{}
+
+func (e *DefaultTransportTypeError) Error() string {
+	return "http.DefaultTransport is not *http.Transport"
+}
+
+// ManagerCALockTypeError is returned when a cached manager CA lock value is not
+// the expected *sync.Mutex.
+type ManagerCALockTypeError struct{}
+
+func (e *ManagerCALockTypeError) Error() string {
+	return "manager CA lock value is not *sync.Mutex"
+}
+
+// ECRTokenResultTypeError is returned when a deduplicated ECR token refresh
+// yields a value that is not the expected *ecrTokenResult.
+type ECRTokenResultTypeError struct{}
+
+func (e *ECRTokenResultTypeError) Error() string {
+	return "unexpected ECR token result type"
+}
+
+// OidcProviderCacheTypeError is returned when a cached OIDC provider value is
+// not the expected *oidc.Provider.
+type OidcProviderCacheTypeError struct{}
+
+func (e *OidcProviderCacheTypeError) Error() string {
+	return "unexpected provider type from cache"
+}
+
+type FederatedCredentialInvalidRequestError struct{}
+
+func (e *FederatedCredentialInvalidRequestError) Error() string {
+	return "invalid federated token exchange request"
+}
+
+func IsErrorFederatedCredentialInvalidRequest(err error) bool {
+	return isErrorTypeInternal[*FederatedCredentialInvalidRequestError](err)
+}
+
+type FederatedCredentialInvalidGrantError struct{}
+
+func (e *FederatedCredentialInvalidGrantError) Error() string {
+	return "invalid federated token grant"
+}
+
+func IsErrorFederatedCredentialInvalidGrant(err error) bool {
+	return isErrorTypeInternal[*FederatedCredentialInvalidGrantError](err)
+}
+
+type FederatedCredentialPermissionEscalationError struct{}
+
+func (e *FederatedCredentialPermissionEscalationError) Error() string {
+	return "cannot map a federated credential to a role you do not hold"
+}
+
+func IsErrorFederatedCredentialPermissionEscalation(err error) bool {
+	return isErrorTypeInternal[*FederatedCredentialPermissionEscalationError](err)
+}
+
+type OidcMappingNotFoundError struct{}
+
+func (e *OidcMappingNotFoundError) Error() string {
+	return "OIDC role mapping not found"
+}
+
+func IsOidcMappingNotFoundError(err error) bool {
+	return isErrorTypeInternal[*OidcMappingNotFoundError](err)
+}
+
+// OidcMappingEnvManagedError is returned when an API caller attempts to mutate
+// an OIDC role mapping that was declared via OIDC_ROLE_MAPPINGS. Env-managed
+// rows can only be changed by editing the env var and restarting.
+type OidcMappingEnvManagedError struct{}
+
+func (e *OidcMappingEnvManagedError) Error() string {
+	return "OIDC role mapping is managed by OIDC_ROLE_MAPPINGS and cannot be edited at runtime"
+}
+
+func IsOidcMappingEnvManagedError(err error) bool {
+	return isErrorTypeInternal[*OidcMappingEnvManagedError](err)
+}
+
+type NoGlobalAdminRemainsError struct{}
+
+func (e *NoGlobalAdminRemainsError) Error() string {
+	return "At least one user must retain a global Admin role assignment"
+}
+
+func IsNoGlobalAdminRemainsError(err error) bool {
+	return isErrorTypeInternal[*NoGlobalAdminRemainsError](err)
+}
+
+// AgentDashboardUnsupportedError is emitted on the aggregated dashboard stream
+// when a remote agent does not expose the dashboard snapshot endpoint, which
+// typically means the agent runs an older Arcane version than the manager.
+type AgentDashboardUnsupportedError struct{}
+
+func (e *AgentDashboardUnsupportedError) Error() string {
+	return "Agent does not provide the dashboard endpoint — the agent is likely running an older Arcane version and should be upgraded"
+}
+
+// DashboardSnapshotUnavailableError is returned when a dashboard snapshot
+// request completes without producing a usable snapshot payload.
+type DashboardSnapshotUnavailableError struct{}
+
+func (e *DashboardSnapshotUnavailableError) Error() string {
+	return "dashboard snapshot not available"
 }

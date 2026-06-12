@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	tunnelpb "github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge/proto/tunnel/v1"
-	"github.com/getarcaneapp/arcane/backend/pkg/remenv"
+	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge/proto/tunnel/v1"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/labstack/echo/v4"
@@ -516,7 +516,10 @@ func (s *TunnelServer) handleHeartbeat(ctx context.Context, tunnel *AgentTunnel,
 
 func (s *TunnelServer) deliverResponse(ctx context.Context, tunnel *AgentTunnel, msg *TunnelMessage) {
 	if req, ok := tunnel.Pending.Load(msg.ID); ok {
-		pending := req.(*PendingRequest)
+		pending, isPending := req.(*PendingRequest)
+		if !isPending {
+			return
+		}
 		select {
 		case pending.ResponseCh <- msg:
 		default:
@@ -529,7 +532,10 @@ func (s *TunnelServer) deliverResponse(ctx context.Context, tunnel *AgentTunnel,
 
 func (s *TunnelServer) deliverStream(ctx context.Context, tunnel *AgentTunnel, msg *TunnelMessage) {
 	if req, ok := tunnel.Pending.Load(msg.ID); ok {
-		pending := req.(*PendingRequest)
+		pending, isPending := req.(*PendingRequest)
+		if !isPending {
+			return
+		}
 		select {
 		case pending.ResponseCh <- msg:
 		case <-ctx.Done():
@@ -652,6 +658,7 @@ func (s *TunnelServer) recoveryStreamInterceptorInternal(ctx context.Context) gr
 
 type contextualServerStream struct {
 	grpc.ServerStream
+
 	ctx context.Context
 }
 

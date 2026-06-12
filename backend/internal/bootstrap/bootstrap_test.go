@@ -11,9 +11,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/internal/config"
-	libcrypto "github.com/getarcaneapp/arcane/backend/pkg/libarcane/crypto"
-	tunnelpb "github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge/proto/tunnel/v1"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/di"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
+	libcrypto "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/crypto"
+	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge/proto/tunnel/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/net/http2"
@@ -43,7 +45,20 @@ func TestNormalizeTunnelGRPCRequestPathInternal(t *testing.T) {
 		assert.Equal(t, fullMethodPath, normalized.RequestURI)
 	})
 
-	t.Run("legacy api tunnel path maps to grpc method", func(t *testing.T) {
+	t.Run("nested proxy prefix is removed up to method path", func(t *testing.T) {
+		req := httptest.NewRequest("POST", "/edge/proxy/api"+fullMethodPath, nil)
+		normalized := normalizeTunnelGRPCRequestPathInternal(req)
+
+		assert.NotSame(t, req, normalized)
+		assert.Equal(t, fullMethodPath, normalized.URL.Path)
+		assert.Equal(t, fullMethodPath, normalized.RequestURI)
+	})
+
+	t.Run("legacy /api/tunnel/connect is rewritten to gRPC method", func(t *testing.T) {
+		// Regression: PR #2722 removed this branch, breaking the edge agent's
+		// gRPC transport. The agent client uses /api/tunnel/connect as its
+		// gRPC method path so reverse proxies can route tunnel traffic with
+		// a stable URL instead of the proto-generated gRPC service name.
 		req := httptest.NewRequest("POST", "/api/tunnel/connect", nil)
 		normalized := normalizeTunnelGRPCRequestPathInternal(req)
 
@@ -52,17 +67,8 @@ func TestNormalizeTunnelGRPCRequestPathInternal(t *testing.T) {
 		assert.Equal(t, fullMethodPath, normalized.RequestURI)
 	})
 
-	t.Run("prefixed legacy api tunnel path maps to grpc method", func(t *testing.T) {
+	t.Run("nested proxy with legacy /api/tunnel/connect is rewritten", func(t *testing.T) {
 		req := httptest.NewRequest("POST", "/edge/proxy/api/tunnel/connect", nil)
-		normalized := normalizeTunnelGRPCRequestPathInternal(req)
-
-		assert.NotSame(t, req, normalized)
-		assert.Equal(t, fullMethodPath, normalized.URL.Path)
-		assert.Equal(t, fullMethodPath, normalized.RequestURI)
-	})
-
-	t.Run("nested proxy prefix is removed up to method path", func(t *testing.T) {
-		req := httptest.NewRequest("POST", "/edge/proxy/api"+fullMethodPath, nil)
 		normalized := normalizeTunnelGRPCRequestPathInternal(req)
 
 		assert.NotSame(t, req, normalized)
@@ -88,11 +94,6 @@ func TestIsTunnelGRPCRequestInternal(t *testing.T) {
 
 	t.Run("detects by method path without grpc content-type", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, fullMethodPath, nil)
-		assert.True(t, isTunnelGRPCRequestInternal(req))
-	})
-
-	t.Run("detects by legacy tunnel path", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodPost, "/api/tunnel/connect", nil)
 		assert.True(t, isTunnelGRPCRequestInternal(req))
 	})
 
@@ -150,10 +151,13 @@ func TestConfigureHTTPProtocolsInternal(t *testing.T) {
 }
 
 func TestHTTP2APIResponsesDoNotUseAPIGzipInternal(t *testing.T) {
-	router, _ := setupRouter(context.Background(), &config.Config{
+	cfg := &config.Config{
 		AppUrl:      "http://localhost:3552",
 		Environment: config.AppEnvironmentTest,
-	}, &Services{})
+	}
+	router, _ := setupRouter(context.Background(), cfg, &di.Services{
+		AuthMiddleware: middleware.NewAuthMiddleware(nil, cfg),
+	})
 	handler, protocols := configureHTTPProtocolsInternal(false, router)
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -206,6 +210,47 @@ func TestHTTP2APIResponsesDoNotUseAPIGzipInternal(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestShutdownCancelsStreamingRequestContextsInternal(t *testing.T) {
+	baseCtx, cancelBase := context.WithCancel(context.Background())
+	defer cancelBase()
+
+	handlerEntered := make(chan struct{})
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/x-json-stream")
+		w.WriteHeader(http.StatusOK)
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		close(handlerEntered)
+		// Streaming handlers block until their request context ends; Shutdown
+		// alone never cancels it, so this models an open activity stream.
+		<-r.Context().Done()
+	})
+
+	srv, err := newHTTPServerInternal(baseCtx, "127.0.0.1:0", handler, nil, false, nil)
+	require.NoError(t, err)
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Serve(listener) }()
+
+	resp, err := http.Get("http://" + listener.Addr().String() + "/stream")
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+	<-handlerEntered
+
+	cancelBase()
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	start := time.Now()
+	require.NoError(t, srv.Shutdown(shutdownCtx))
+	require.Less(t, time.Since(start), time.Second)
+	require.ErrorIs(t, <-errCh, http.ErrServerClosed)
 }
 
 func TestPrepareServerTLSInternal_AgentModeSkipsManagerMTLSValidation(t *testing.T) {

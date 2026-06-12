@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { toast } from 'svelte-sonner';
-	import type { ImageUpdateData } from '$lib/types/image.type';
+	import type { ImageUpdateData } from '$lib/types/docker';
 	import { m } from '$lib/paraglide/messages';
 	import { imageService } from '$lib/services/image-service';
 	import { queryKeys } from '$lib/query/query-keys';
@@ -10,6 +10,8 @@
 	import { ArrowRightIcon, RefreshIcon, AlertIcon, VerifiedCheckIcon, ApiKeyIcon, CircleArrowUpIcon, BoxIcon } from '$lib/icons';
 	import { createQuery } from '@tanstack/svelte-query';
 	import UpdateStatusPopover from '$lib/components/update-status-popover.svelte';
+	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
+	import UncheckedRingIcon from '$lib/components/unchecked-ring-icon.svelte';
 
 	interface Props {
 		updateInfo?: ImageUpdateData;
@@ -17,6 +19,7 @@
 		imageId: string;
 		repo?: string;
 		tag?: string;
+		isLocal?: boolean;
 		onUpdated?: (data: ImageUpdateData) => void;
 		/** Callback when user clicks "Update Container" button */
 		onUpdateContainer?: () => void;
@@ -30,6 +33,7 @@
 		imageId,
 		repo,
 		tag,
+		isLocal = false,
 		onUpdated,
 		onUpdateContainer,
 		debugHasUpdate
@@ -85,7 +89,8 @@
 	const isChecking = $derived(imageUpdateQuery.isFetching);
 	let isOpen = $state(false);
 
-	const canCheckUpdate = $derived(!!(repo && tag && repo !== '<none>' && tag !== '<none>'));
+	const isLocalImage = $derived(!!isLocal || effectiveUpdateInfo?.updateType === 'local');
+	const canCheckUpdate = $derived(!!(repo && tag && repo !== '<none>' && tag !== '<none>') && !isLocalImage);
 	const hasError = $derived(!!effectiveUpdateInfo?.error && effectiveUpdateInfo.error.trim() !== '');
 
 	type AuthBadge = { label: string; classes: string };
@@ -140,11 +145,12 @@
 			const result = await imageUpdateQuery.refetch();
 			if (result.data) {
 				onUpdated?.(result.data);
+				const toastOptions = activityToastOptions(extractActivityId(result.data));
 
 				if (result.data.error) {
-					toast.error(result.data.error || m.images_update_check_failed());
+					toast.error(result.data.error || m.images_update_check_failed(), toastOptions);
 				} else {
-					toast.success(m.images_update_check_completed());
+					toast.success(m.images_update_check_completed(), toastOptions);
 				}
 				return;
 			}
@@ -194,6 +200,8 @@
 		if (!effectiveUpdateInfo) return null;
 		if (effectiveUpdateInfo.error)
 			return { level: 'Error', color: 'text-red-500', description: m.image_update_could_not_query_registry() };
+		if (effectiveUpdateInfo.updateType === 'local')
+			return { level: m.image_update_local_title(), color: 'text-slate-500', description: m.image_update_local_desc() };
 		if (!effectiveUpdateInfo.hasUpdate)
 			return { level: 'None', color: 'text-green-500', description: m.image_update_up_to_date_desc() };
 		if (effectiveUpdateInfo.updateType === 'digest')
@@ -405,6 +413,18 @@
 	{@render recheckButton()}
 {/snippet}
 
+{#snippet localState()}
+	<div class="bg-linear-to-br from-slate-50 to-slate-100/40 p-4 dark:from-slate-950/20 dark:to-slate-900/20">
+		<div class="flex items-start gap-3">
+			{@render iconCircle(BoxIcon, 'from-slate-500', 'to-gray-500', 'shadow-slate-500/25')}
+			<div class="flex-1">
+				<div class="text-sm font-semibold text-slate-950 dark:text-slate-100">{m.image_update_local_title()}</div>
+				<div class="text-xs text-slate-900/80 dark:text-slate-300/80">{m.image_update_local_desc()}</div>
+			</div>
+		</div>
+	</div>
+{/snippet}
+
 {#snippet loadingState()}
 	<div class="bg-linear-to-br from-blue-50 to-cyan-50/30 p-4 dark:from-blue-950/20 dark:to-cyan-950/10">
 		<div class="flex items-center gap-3">
@@ -435,7 +455,21 @@
 	</div>
 {/snippet}
 
-{#if effectiveUpdateInfo}
+{#if isLocalImage}
+	<UpdateStatusPopover bind:open={isOpen} contentClass="max-w-[280px] p-0">
+		{#snippet trigger()}
+			<span class="mr-2 inline-flex size-4 items-center justify-center align-middle" data-testid="image-update-trigger">
+				<BoxIcon class="size-4 text-slate-500" />
+			</span>
+		{/snippet}
+
+		{#snippet content()}
+			<div class="overflow-hidden rounded-xl">
+				{@render localState()}
+			</div>
+		{/snippet}
+	</UpdateStatusPopover>
+{:else if effectiveUpdateInfo}
 	<UpdateStatusPopover bind:open={isOpen} contentClass="max-w-[280px] p-0">
 		{#snippet trigger()}
 			<span class="mr-2 inline-flex size-4 items-center justify-center align-middle" data-testid="image-update-trigger">
@@ -487,17 +521,17 @@
 					<button
 						onclick={checkImageUpdate}
 						disabled={isChecking}
-						class="group flex h-4 w-4 items-center justify-center rounded-full border-2 border-dashed border-gray-400 transition-colors hover:border-blue-400 hover:bg-blue-50 disabled:cursor-not-allowed dark:hover:bg-blue-950"
+						class="flex size-4 items-center justify-center rounded-full text-gray-400 transition-colors hover:text-blue-400 disabled:cursor-not-allowed"
 					>
 						{#if isChecking}
-							<Spinner class="h-2 w-2 text-blue-400" />
+							<Spinner class="size-3 text-blue-400" />
 						{:else}
-							<div class="h-1.5 w-1.5 rounded-full bg-gray-400 transition-colors group-hover:bg-blue-400"></div>
+							<UncheckedRingIcon />
 						{/if}
 					</button>
 				{:else}
-					<div class="flex h-4 w-4 items-center justify-center rounded-full border-2 border-dashed border-gray-400 opacity-30">
-						<div class="h-1.5 w-1.5 rounded-full bg-gray-400"></div>
+					<div class="flex size-4 items-center justify-center text-gray-400 opacity-30">
+						<UncheckedRingIcon />
 					</div>
 				{/if}
 			</span>

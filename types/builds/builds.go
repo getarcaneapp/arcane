@@ -4,7 +4,7 @@ import (
 	"context"
 	"io"
 
-	imagetypes "github.com/getarcaneapp/arcane/types/image"
+	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 	dockerregistry "github.com/moby/moby/api/types/registry"
 	dockerclient "github.com/moby/moby/client"
 )

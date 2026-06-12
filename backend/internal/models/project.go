@@ -15,6 +15,8 @@ const (
 )
 
 type Project struct {
+	BaseModel
+
 	Name               string        `json:"name" sortable:"true" gorm:"index:idx_projects_name"`
 	DirName            *string       `json:"dir_name"`
 	Path               string        `json:"path" sortable:"true" gorm:"uniqueIndex"`
@@ -27,8 +29,6 @@ type Project struct {
 	ImageRefsJSON      string        `json:"image_refs_json,omitempty" gorm:"column:image_refs_json"`
 	IsArchived         bool          `json:"is_archived" gorm:"column:is_archived;default:false;index"`
 	ArchivedAt         *time.Time    `json:"archived_at,omitempty" gorm:"column:archived_at"`
-
-	BaseModel
 }
 
 func (Project) TableName() string {

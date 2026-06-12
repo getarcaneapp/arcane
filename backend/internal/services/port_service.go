@@ -6,9 +6,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
-	containertypes "github.com/getarcaneapp/arcane/types/container"
-	porttypes "github.com/getarcaneapp/arcane/types/port"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
+	porttypes "github.com/getarcaneapp/arcane/types/v2/port"
 	"github.com/moby/moby/client"
 )
 

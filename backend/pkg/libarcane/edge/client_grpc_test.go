@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	tunnelpb "github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge/proto/tunnel/v1"
+	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge/proto/tunnel/v1"
 	"github.com/gorilla/websocket"
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
@@ -574,98 +574,8 @@ func TestTunnelClient_connectAndServe_WebSocketConfigFallsBackToWebSocket(t *tes
 	}
 }
 
-func TestTunnelClient_connectAndServe_AutoTransportFallsBackToWebSocketWhenGRPCUnavailable(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	wsConnectedCh := make(chan struct{}, 1)
-	managerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/tunnel/connect" {
-			http.NotFound(w, r)
-			return
-		}
-
-		upgrader := websocket.Upgrader{}
-		conn, err := upgrader.Upgrade(w, r, nil)
-		if err != nil {
-			return
-		}
-		defer func() { _ = conn.Close() }()
-
-		select {
-		case wsConnectedCh <- struct{}{}:
-		default:
-		}
-
-		time.Sleep(100 * time.Millisecond)
-	}))
-	defer managerServer.Close()
-
-	cfg := &Config{
-		EdgeTransport: EdgeTransportAuto,
-		ManagerApiUrl: managerServer.URL,
-		AgentToken:    "valid-token",
-	}
-
-	client := NewTunnelClient(cfg, http.NotFoundHandler())
-	err := client.connectAndServe(ctx)
-	require.Error(t, err)
-
-	select {
-	case <-wsConnectedCh:
-	case <-time.After(2 * time.Second):
-		t.Fatal("expected auto transport to fall back to websocket")
-	}
-}
-
-func TestTunnelClient_connectAndServe_AutoTransportDerivesWebSocketFallbackURL(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	wsConnectedCh := make(chan struct{}, 1)
-	managerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/tunnel/connect" {
-			http.NotFound(w, r)
-			return
-		}
-
-		upgrader := websocket.Upgrader{}
-		conn, err := upgrader.Upgrade(w, r, nil)
-		if err != nil {
-			return
-		}
-		defer func() { _ = conn.Close() }()
-
-		select {
-		case wsConnectedCh <- struct{}{}:
-		default:
-		}
-
-		time.Sleep(100 * time.Millisecond)
-	}))
-	defer managerServer.Close()
-
-	cfg := &Config{
-		EdgeTransport: EdgeTransportAuto,
-		ManagerApiUrl: managerServer.URL,
-		AgentToken:    "valid-token",
-	}
-
-	client := NewTunnelClient(cfg, http.NotFoundHandler())
-	client.managerURL = ""
-
-	err := client.connectAndServe(ctx)
-	require.Error(t, err)
-
-	select {
-	case <-wsConnectedCh:
-	case <-time.After(2 * time.Second):
-		t.Fatal("expected auto transport to derive websocket fallback URL")
-	}
-}
-
-func TestTunnelClient_connectAndServe_AutoTransportOpensGRPCWhenAvailable(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+func TestTunnelClient_connectAndServe_OpensGRPCWhenAvailable(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	envID := "env-auto-poll-grpc"
@@ -687,7 +597,7 @@ func TestTunnelClient_connectAndServe_AutoTransportOpensGRPCWhenAvailable(t *tes
 	defer stopManager()
 
 	client := NewTunnelClient(&Config{
-		EdgeTransport: EdgeTransportAuto,
+		EdgeTransport: EdgeTransportGRPC,
 		ManagerApiUrl: managerURL,
 		AgentToken:    "valid-token",
 	}, http.NotFoundHandler())
@@ -706,8 +616,14 @@ func TestTunnelClient_connectAndServe_AutoTransportOpensGRPCWhenAvailable(t *tes
 		return isGRPC
 	}, 3*time.Second, 20*time.Millisecond)
 
-	err := <-errCh
-	assert.ErrorIs(t, err, context.DeadlineExceeded)
+	cancel()
+
+	select {
+	case err := <-errCh:
+		assert.ErrorIs(t, err, context.Canceled)
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for gRPC tunnel shutdown")
+	}
 }
 
 func startTestGRPCTunnelServerOnAPIPathInternal(t *testing.T, ctx context.Context, tunnelServer *TunnelServer) (string, func()) {

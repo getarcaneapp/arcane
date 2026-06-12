@@ -6,14 +6,15 @@ import (
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
-	humamw "github.com/getarcaneapp/arcane/backend/api/middleware"
-	"github.com/getarcaneapp/arcane/backend/internal/common"
-	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/backend/internal/services"
-	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/crypto"
-	"github.com/getarcaneapp/arcane/backend/pkg/utils/mapper"
-	"github.com/getarcaneapp/arcane/types/base"
-	"github.com/getarcaneapp/arcane/types/containerregistry"
+	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/crypto"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
+	"github.com/getarcaneapp/arcane/types/v2/base"
+	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 )
 
 // ContainerRegistryHandler handles container registry management endpoints.
@@ -120,6 +121,7 @@ func RegisterContainerRegistries(api huma.API, registryService *services.Contain
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequirePermission(api, authz.PermRegistriesList),
 	}, h.ListRegistries)
 
 	huma.Register(api, huma.Operation{
@@ -133,7 +135,7 @@ func RegisterContainerRegistries(api huma.API, registryService *services.Contain
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermRegistriesCreate),
 	}, h.CreateRegistry)
 
 	huma.Register(api, huma.Operation{
@@ -147,7 +149,7 @@ func RegisterContainerRegistries(api huma.API, registryService *services.Contain
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermRegistriesUpdate),
 	}, h.SyncRegistries)
 
 	huma.Register(api, huma.Operation{
@@ -161,6 +163,7 @@ func RegisterContainerRegistries(api huma.API, registryService *services.Contain
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequirePermission(api, authz.PermRegistriesRead),
 	}, h.GetPullUsage)
 
 	huma.Register(api, huma.Operation{
@@ -174,6 +177,7 @@ func RegisterContainerRegistries(api huma.API, registryService *services.Contain
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
+		Middlewares: humamw.RequirePermission(api, authz.PermRegistriesRead),
 	}, h.GetRegistry)
 
 	huma.Register(api, huma.Operation{
@@ -187,7 +191,7 @@ func RegisterContainerRegistries(api huma.API, registryService *services.Contain
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermRegistriesUpdate),
 	}, h.UpdateRegistry)
 
 	huma.Register(api, huma.Operation{
@@ -201,7 +205,7 @@ func RegisterContainerRegistries(api huma.API, registryService *services.Contain
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermRegistriesDelete),
 	}, h.DeleteRegistry)
 
 	huma.Register(api, huma.Operation{
@@ -215,7 +219,7 @@ func RegisterContainerRegistries(api huma.API, registryService *services.Contain
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequireAdmin(api),
+		Middlewares: humamw.RequirePermission(api, authz.PermRegistriesTest),
 	}, h.TestRegistry)
 }
 
@@ -229,7 +233,7 @@ func (h *ContainerRegistryHandler) ListRegistries(ctx context.Context, input *Li
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	params := buildPaginationParamsInternal(0, input.Start, input.Limit, input.Sort, input.Order, input.Search)
+	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 
 	registries, paginationResp, err := h.registryService.GetRegistriesPaginated(ctx, params)
 	if err != nil {
@@ -238,15 +242,9 @@ func (h *ContainerRegistryHandler) ListRegistries(ctx context.Context, input *Li
 
 	return &ListContainerRegistriesOutput{
 		Body: ContainerRegistryPaginatedResponse{
-			Success: true,
-			Data:    registries,
-			Pagination: base.PaginationResponse{
-				TotalPages:      paginationResp.TotalPages,
-				TotalItems:      paginationResp.TotalItems,
-				CurrentPage:     paginationResp.CurrentPage,
-				ItemsPerPage:    paginationResp.ItemsPerPage,
-				GrandTotalItems: paginationResp.GrandTotalItems,
-			},
+			Success:    true,
+			Data:       registries,
+			Pagination: toPaginationResponseInternal(paginationResp),
 		},
 	}, nil
 }
@@ -274,10 +272,6 @@ func (h *ContainerRegistryHandler) GetPullUsage(ctx context.Context, input *stru
 func (h *ContainerRegistryHandler) CreateRegistry(ctx context.Context, input *CreateContainerRegistryInput) (*CreateContainerRegistryOutput, error) {
 	if h.registryService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
-	}
-
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
 	}
 
 	reg, err := h.registryService.CreateRegistry(ctx, input.Body)
@@ -332,10 +326,6 @@ func (h *ContainerRegistryHandler) UpdateRegistry(ctx context.Context, input *Up
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
-
 	reg, err := h.registryService.UpdateRegistry(ctx, input.ID, input.Body)
 	if err != nil {
 		apiErr := models.ToAPIError(err)
@@ -363,10 +353,6 @@ func (h *ContainerRegistryHandler) DeleteRegistry(ctx context.Context, input *De
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
-
 	if err := h.registryService.DeleteRegistry(ctx, input.ID); err != nil {
 		apiErr := models.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.RegistryDeletionError{Err: err}).Error())
@@ -388,10 +374,6 @@ func (h *ContainerRegistryHandler) DeleteRegistry(ctx context.Context, input *De
 func (h *ContainerRegistryHandler) TestRegistry(ctx context.Context, input *TestContainerRegistryInput) (*TestContainerRegistryOutput, error) {
 	if h.registryService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
-	}
-
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
 	}
 
 	reg, err := h.registryService.GetRegistryByID(ctx, input.ID)
@@ -445,10 +427,6 @@ func (h *ContainerRegistryHandler) SyncRegistries(ctx context.Context, input *Sy
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	if err := checkAdminInternal(ctx); err != nil {
-		return nil, err
-	}
-
 	if err := h.registryService.SyncRegistries(ctx, input.Body.Registries); err != nil {
 		apiErr := models.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.RegistrySyncError{Err: err}).Error())
@@ -468,7 +446,7 @@ func (h *ContainerRegistryHandler) SyncRegistries(ctx context.Context, input *Sy
 // Helper Methods
 // ============================================================================
 
-func (h *ContainerRegistryHandler) triggerRemoteRegistrySync(ctx context.Context, reason string) { //nolint:contextcheck // intentionally spawns background sync
+func (h *ContainerRegistryHandler) triggerRemoteRegistrySync(ctx context.Context, reason string) {
 	if h.environmentService == nil {
 		return
 	}

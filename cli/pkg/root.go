@@ -21,7 +21,6 @@
 // # Command Groups
 //
 //   - admin: Administration & platform management
-//   - alerts: Show dashboard alerts
 //   - auth: Authentication operations
 //   - config: Manage CLI configuration
 //   - containers: Manage containers
@@ -39,37 +38,36 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/fang/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/charmbracelet/fang"
 	"github.com/fatih/color"
-	"github.com/getarcaneapp/arcane/cli/internal/config"
-	"github.com/getarcaneapp/arcane/cli/internal/logger"
-	"github.com/getarcaneapp/arcane/cli/internal/output"
-	"github.com/getarcaneapp/arcane/cli/internal/runstate"
-	runtimectx "github.com/getarcaneapp/arcane/cli/internal/runtime"
-	"github.com/getarcaneapp/arcane/cli/pkg/admin"
-	"github.com/getarcaneapp/arcane/cli/pkg/alerts"
-	"github.com/getarcaneapp/arcane/cli/pkg/auth"
-	"github.com/getarcaneapp/arcane/cli/pkg/completion"
-	configClient "github.com/getarcaneapp/arcane/cli/pkg/config"
-	"github.com/getarcaneapp/arcane/cli/pkg/containers"
-	"github.com/getarcaneapp/arcane/cli/pkg/doctor"
-	"github.com/getarcaneapp/arcane/cli/pkg/environments"
-	"github.com/getarcaneapp/arcane/cli/pkg/generate"
-	"github.com/getarcaneapp/arcane/cli/pkg/gitops"
-	"github.com/getarcaneapp/arcane/cli/pkg/images"
-	"github.com/getarcaneapp/arcane/cli/pkg/jobs"
-	"github.com/getarcaneapp/arcane/cli/pkg/networks"
-	"github.com/getarcaneapp/arcane/cli/pkg/projects"
-	"github.com/getarcaneapp/arcane/cli/pkg/registries"
-	"github.com/getarcaneapp/arcane/cli/pkg/repos"
-	"github.com/getarcaneapp/arcane/cli/pkg/selfupdate"
-	"github.com/getarcaneapp/arcane/cli/pkg/settings"
-	"github.com/getarcaneapp/arcane/cli/pkg/system"
-	"github.com/getarcaneapp/arcane/cli/pkg/templates"
-	"github.com/getarcaneapp/arcane/cli/pkg/updater"
-	"github.com/getarcaneapp/arcane/cli/pkg/version"
-	"github.com/getarcaneapp/arcane/cli/pkg/volumes"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/config"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/logger"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/runstate"
+	runtimectx "github.com/getarcaneapp/arcane/cli/v2/internal/runtime"
+	"github.com/getarcaneapp/arcane/cli/v2/pkg/admin"
+	"github.com/getarcaneapp/arcane/cli/v2/pkg/auth"
+	"github.com/getarcaneapp/arcane/cli/v2/pkg/completion"
+	configClient "github.com/getarcaneapp/arcane/cli/v2/pkg/config"
+	"github.com/getarcaneapp/arcane/cli/v2/pkg/containers"
+	"github.com/getarcaneapp/arcane/cli/v2/pkg/doctor"
+	"github.com/getarcaneapp/arcane/cli/v2/pkg/environments"
+	"github.com/getarcaneapp/arcane/cli/v2/pkg/generate"
+	"github.com/getarcaneapp/arcane/cli/v2/pkg/gitops"
+	"github.com/getarcaneapp/arcane/cli/v2/pkg/images"
+	"github.com/getarcaneapp/arcane/cli/v2/pkg/jobs"
+	"github.com/getarcaneapp/arcane/cli/v2/pkg/networks"
+	"github.com/getarcaneapp/arcane/cli/v2/pkg/projects"
+	"github.com/getarcaneapp/arcane/cli/v2/pkg/registries"
+	"github.com/getarcaneapp/arcane/cli/v2/pkg/repos"
+	"github.com/getarcaneapp/arcane/cli/v2/pkg/selfupdate"
+	"github.com/getarcaneapp/arcane/cli/v2/pkg/settings"
+	"github.com/getarcaneapp/arcane/cli/v2/pkg/system"
+	"github.com/getarcaneapp/arcane/cli/v2/pkg/templates"
+	"github.com/getarcaneapp/arcane/cli/v2/pkg/updater"
+	"github.com/getarcaneapp/arcane/cli/v2/pkg/version"
+	"github.com/getarcaneapp/arcane/cli/v2/pkg/volumes"
 	"github.com/spf13/cobra"
 )
 
@@ -256,7 +254,6 @@ func init() {
 	rootCmd.AddCommand(generate.GenerateCmd)
 	rootCmd.AddCommand(version.VersionCmd)
 	rootCmd.AddCommand(auth.AuthCmd)
-	rootCmd.AddCommand(alerts.AlertsCmd)
 	rootCmd.AddCommand(containers.ContainersCmd)
 	rootCmd.AddCommand(images.ImagesCmd)
 	rootCmd.AddCommand(volumes.VolumesCmd)

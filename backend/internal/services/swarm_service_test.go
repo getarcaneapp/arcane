@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	cerrdefs "github.com/containerd/errdefs"
-	"github.com/getarcaneapp/arcane/backend/internal/models"
-	swarmtypes "github.com/getarcaneapp/arcane/types/swarm"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	swarmtypes "github.com/getarcaneapp/arcane/types/v2/swarm"
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/api/types/system"
 	"github.com/stretchr/testify/require"
@@ -129,8 +129,7 @@ func TestSwarmService_getPathMapperInternal(t *testing.T) {
 	svc := NewSwarmService(nil, settingsSvc, nil, nil, nil)
 
 	t.Run("returns nil when paths match", func(t *testing.T) {
-		pm, err := svc.getPathMapperInternal(ctx)
-		require.NoError(t, err)
+		pm := svc.getPathMapperInternal(ctx)
 		require.Nil(t, pm) // Default is /app/data/swarm/sources which matches itself
 	})
 
@@ -140,8 +139,7 @@ func TestSwarmService_getPathMapperInternal(t *testing.T) {
 		err := settingsSvc.UpdateSetting(ctx, "swarmStackSourcesDirectory", containerDir+":"+hostDir)
 		require.NoError(t, err)
 
-		pm, err := svc.getPathMapperInternal(ctx)
-		require.NoError(t, err)
+		pm := svc.getPathMapperInternal(ctx)
 		require.NotNil(t, pm)
 		require.True(t, pm.IsNonMatchingMount())
 

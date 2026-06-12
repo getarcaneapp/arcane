@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/internal/models"
-	"github.com/getarcaneapp/arcane/types/auth"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	"github.com/getarcaneapp/arcane/types/v2/auth"
 	"github.com/stretchr/testify/require"
 )
 
@@ -17,7 +17,6 @@ func TestSessionService_RotateRefreshTokenRequiresCurrentHash(t *testing.T) {
 	require.NoError(t, userSvc.db.Create(&models.User{
 		BaseModel: models.BaseModel{ID: "u-session"},
 		Username:  "session-user",
-		Roles:     models.StringSlice{"user"},
 	}).Error)
 
 	sessionSvc := NewSessionService(db)
@@ -41,7 +40,6 @@ func TestSessionService_DeleteExpiredSessions(t *testing.T) {
 	require.NoError(t, userSvc.db.Create(&models.User{
 		BaseModel: models.BaseModel{ID: "u-cleanup"},
 		Username:  "cleanup-user",
-		Roles:     models.StringSlice{"user"},
 	}).Error)
 
 	sessionSvc := NewSessionService(db)

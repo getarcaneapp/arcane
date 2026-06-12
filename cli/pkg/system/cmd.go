@@ -3,14 +3,15 @@ package system
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 
-	"github.com/getarcaneapp/arcane/cli/internal/client"
-	"github.com/getarcaneapp/arcane/cli/internal/cmdutil"
-	"github.com/getarcaneapp/arcane/cli/internal/output"
-	"github.com/getarcaneapp/arcane/cli/internal/types"
-	"github.com/getarcaneapp/arcane/types/base"
-	"github.com/getarcaneapp/arcane/types/dockerinfo"
-	"github.com/getarcaneapp/arcane/types/system"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	"github.com/getarcaneapp/arcane/types/v2/base"
+	"github.com/getarcaneapp/arcane/types/v2/dockerinfo"
+	"github.com/getarcaneapp/arcane/types/v2/system"
 	"github.com/spf13/cobra"
 )
 
@@ -327,7 +328,7 @@ var upgradeCheckCmd = &cobra.Command{
 		}
 
 		output.Header("Upgrade Check")
-		output.KeyValue("Can Upgrade", fmt.Sprintf("%t", result.CanUpgrade))
+		output.KeyValue("Can Upgrade", strconv.FormatBool(result.CanUpgrade))
 		output.KeyValue("Message", result.Message)
 		if result.Error {
 			output.KeyValue("Error", "true")

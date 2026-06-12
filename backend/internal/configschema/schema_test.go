@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/backend/internal/models"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -76,13 +76,6 @@ func TestGenerate_SettingEnvOverridesMatchModelMetadata(t *testing.T) {
 	assert.Equal(t, "OIDC_MOBILE_REDIRECT_URIS", oidcMobileRedirectURIs.Env)
 	assert.Equal(t, "arcane-mobile://oidc-callback", oidcMobileRedirectURIs.DefaultValue)
 	assert.Equal(t, "authentication", oidcMobileRedirectURIs.Category)
-
-	legacyOIDC, ok := entries["authOidcConfig"]
-	require.True(t, ok)
-	assert.True(t, legacyOIDC.Deprecated)
-	assert.NotEmpty(t, legacyOIDC.Note)
-	assert.Contains(t, legacyOIDC.Requires, "AGENT_MODE=true")
-	assert.Empty(t, legacyOIDC.DefaultValue)
 
 	trivyImage, ok := entries["trivyImage"]
 	require.True(t, ok)
@@ -237,16 +230,16 @@ var expectedEnvConfigVars = []string{
 	"LOG_JSON",
 	"LOG_LEVEL",
 	"MANAGER_API_URL",
-	"OIDC_ADMIN_CLAIM",
-	"OIDC_ADMIN_VALUE",
 	"OIDC_AUTO_REDIRECT_TO_PROVIDER",
 	"OIDC_CLIENT_ID",
 	"OIDC_CLIENT_SECRET",
 	"OIDC_ENABLED",
+	"OIDC_GROUPS_CLAIM",
 	"OIDC_ISSUER_URL",
 	"OIDC_MOBILE_REDIRECT_URIS",
 	"OIDC_PROVIDER_LOGO_URL",
 	"OIDC_PROVIDER_NAME",
+	"OIDC_ROLE_MAPPINGS",
 	"OIDC_SCOPES",
 	"OIDC_SKIP_TLS_VERIFY",
 	"PGID",
@@ -257,6 +250,7 @@ var expectedEnvConfigVars = []string{
 	"PROXY_REQUEST_TIMEOUT",
 	"PUID",
 	"REGISTRY_TIMEOUT",
+	"TEMPLATES_DIRECTORY",
 	"TLS_CERT_FILE",
 	"TLS_ENABLED",
 	"TLS_KEY_FILE",
@@ -269,9 +263,10 @@ var expectedEnvConfigVars = []string{
 
 var expectedSettingOverrideKeys = []string{
 	"accentColor",
+	"activityHistoryMaxEntries",
+	"activityHistoryRetentionDays",
 	"applicationTheme",
 	"authLocalEnabled",
-	"authOidcConfig",
 	"authPasswordPolicy",
 	"authSessionTimeout",
 	"autoHealEnabled",
@@ -305,20 +300,19 @@ var expectedSettingOverrideKeys = []string{
 	"gitSyncMaxBinarySizeMb",
 	"gitSyncMaxFiles",
 	"gitSyncMaxTotalSizeMb",
-	"gitopsSyncInterval",
 	"httpClientTimeout",
+	"iconCatalog",
 	"keyboardShortcutsEnabled",
 	"maxImageUploadSize",
 	"mobileNavigationMode",
 	"mobileNavigationShowLabels",
-	"oidcAdminClaim",
-	"oidcAdminValue",
 	"oidcAuthorizationEndpoint",
 	"oidcAutoRedirectToProvider",
 	"oidcClientId",
 	"oidcClientSecret",
 	"oidcDeviceAuthorizationEndpoint",
 	"oidcEnabled",
+	"oidcGroupsClaim",
 	"oidcIssuerUrl",
 	"oidcJwksEndpoint",
 	"oidcMergeAccounts",
@@ -344,15 +338,11 @@ var expectedSettingOverrideKeys = []string{
 	"pruneNetworkUntil",
 	"pruneVolumeMode",
 	"registryTimeout",
-	"scheduledPruneBuildCache",
-	"scheduledPruneContainers",
 	"scheduledPruneEnabled",
-	"scheduledPruneImages",
 	"scheduledPruneInterval",
-	"scheduledPruneNetworks",
-	"scheduledPruneVolumes",
 	"sidebarHoverExpansion",
 	"swarmStackSourcesDirectory",
+	"templatesDirectory",
 	"trivyConcurrentScanContainers",
 	"trivyConfig",
 	"trivyCpuLimit",
@@ -365,6 +355,7 @@ var expectedSettingOverrideKeys = []string{
 	"trivyResourceLimitsEnabled",
 	"trivyScanTimeout",
 	"trivySecurityOpts",
+	"volumeBrowserHelperIdleTimeout",
 	"vulnerabilityScanEnabled",
 	"vulnerabilityScanInterval",
 }

@@ -12,9 +12,11 @@
 		buttons?: ActionButton[];
 		size?: ArcaneButtonSize;
 		class?: string;
+		inlineClass?: string;
+		menuClass?: string;
 	}
 
-	let { buttons = [], size = 'default', class: className = '' }: Props = $props();
+	let { buttons = [], size = 'default', class: className = '', inlineClass = '', menuClass = '' }: Props = $props();
 
 	const DROPDOWN_WIDTH = $derived(size === 'sm' ? 44 : 48);
 	const GAP = 8;
@@ -166,11 +168,12 @@
 {/snippet}
 
 {#if buttons.length > 0}
-	<div class={cn('flex min-w-0 flex-1 items-center justify-end gap-2', className)} {@attach observeWidth}>
+	<div class={cn('relative flex min-w-0 flex-1 items-center justify-end gap-2', className)} {@attach observeWidth}>
 		<div
 			{@attach measureButtons(buttons, size)}
-			class="pointer-events-none invisible fixed -left-[9999px] flex items-center gap-2"
+			class="pointer-events-none invisible absolute top-0 left-0 flex items-center gap-2"
 			aria-hidden="true"
+			inert
 		>
 			{#each buttons as button (button.id)}
 				{#if button.menuItems && button.menuItems.length > 0}
@@ -194,7 +197,7 @@
 			{/each}
 		</div>
 
-		<div class="hidden items-center gap-2 lg:flex">
+		<div class={cn('hidden items-center gap-2 lg:flex', inlineClass)}>
 			{#each visibleButtons as button (button.id)}
 				{#if button.menuItems && button.menuItems.length > 0}
 					{@render splitButton(button, false)}
@@ -278,7 +281,7 @@
 			{/if}
 		</div>
 
-		<div class="flex items-center gap-2 lg:hidden">
+		<div class={cn('flex items-center gap-2 lg:hidden', menuClass)}>
 			<DropdownMenu.Root>
 				<DropdownMenu.Trigger>
 					{#snippet child({ props })}

@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/backend/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 )
 
 func TestValidateMobileRedirectURI(t *testing.T) {

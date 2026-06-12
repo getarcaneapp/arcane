@@ -19,23 +19,20 @@ import (
 	"time"
 
 	cerrdefs "github.com/containerd/errdefs"
-	"github.com/getarcaneapp/arcane/backend/internal/common"
-	"github.com/getarcaneapp/arcane/backend/internal/models"
-	dockerutil "github.com/getarcaneapp/arcane/backend/pkg/dockerutil"
-	"github.com/getarcaneapp/arcane/backend/pkg/libarcane/edge"
-	libswarm "github.com/getarcaneapp/arcane/backend/pkg/libarcane/swarm"
-	"github.com/getarcaneapp/arcane/backend/pkg/pagination"
-	appfs "github.com/getarcaneapp/arcane/backend/pkg/projects"
-	swarmtypes "github.com/getarcaneapp/arcane/types/swarm"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
+	libswarm "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/swarm"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	appfs "github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
+	swarmtypes "github.com/getarcaneapp/arcane/types/v2/swarm"
 	networktypes "github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/api/types/system"
 	dockerclient "github.com/moby/moby/client"
 	"golang.org/x/sync/errgroup"
 )
-
-var ErrSwarmNotEnabled = errors.New("swarm mode is not enabled")
-var ErrSwarmManagerRequired = errors.New("swarm manager access required")
 
 const swarmNodeIdentityProbeConcurrency = 5
 const KVKeySwarmEnabled = "swarm.enabled"
@@ -457,10 +454,10 @@ func (s *SwarmService) StreamServiceLogs(ctx context.Context, serviceID string, 
 	defer func() { _ = logs.Close() }()
 
 	if follow {
-		return streamMultiplexedLogs(ctx, logs, logsChan)
+		return dockerutil.StreamMultiplexedLogs(ctx, logs, logsChan)
 	}
 
-	return readAllLogs(logs, logsChan)
+	return dockerutil.ReadAllLogs(ctx, logs, logsChan)
 }
 
 func (s *SwarmService) ListNodesPaginated(ctx context.Context, environmentID string, params pagination.QueryParams) ([]swarmtypes.NodeSummary, pagination.Response, error) {
@@ -651,7 +648,7 @@ func (s *SwarmService) fetchSwarmNodeIdentityViaEdgeInternal(ctx context.Context
 		return nil, err
 	}
 	if !parsed.Success {
-		return nil, fmt.Errorf("swarm node identity probe failed")
+		return nil, errors.New("swarm node identity probe failed")
 	}
 
 	return &parsed.Data, nil
@@ -844,10 +841,7 @@ func (s *SwarmService) DeployStack(ctx context.Context, environmentID string, re
 		workingDir = stackSourceDir
 	}
 
-	pm, err := s.getPathMapperInternal(ctx)
-	if err != nil {
-		slog.WarnContext(ctx, "failed to initialize path mapper, deploying without path translation", "error", err)
-	}
+	pm := s.getPathMapperInternal(ctx)
 
 	if err := libswarm.DeployStack(ctx, dockerClient, libswarm.StackDeployOptions{
 		Name:             stackName,
@@ -1655,10 +1649,7 @@ func (s *SwarmService) RenderStackConfig(ctx context.Context, req swarmtypes.Sta
 		return nil, err
 	}
 
-	pm, err := s.getPathMapperInternal(ctx)
-	if err != nil {
-		slog.WarnContext(ctx, "failed to initialize path mapper, deploying without path translation", "error", err)
-	}
+	pm := s.getPathMapperInternal(ctx)
 
 	result, err := libswarm.RenderStackConfig(ctx, libswarm.StackRenderOptions{
 		Name:           req.Name,
@@ -1744,10 +1735,10 @@ func (s *SwarmService) CreateConfig(ctx context.Context, req swarmtypes.ConfigCr
 	return s.GetConfig(ctx, createResult.ID)
 }
 
-func (s *SwarmService) UpdateConfig(ctx context.Context, configID string, req swarmtypes.ConfigUpdateRequest) (*swarmtypes.ConfigSummary, error) {
+func (s *SwarmService) UpdateConfig(ctx context.Context, configID string, req swarmtypes.ConfigUpdateRequest) error {
 	_ = configID
 	_ = req
-	return nil, errors.New("swarm configs are immutable; create a new config and update services to use it")
+	return &common.SwarmConfigImmutableError{}
 }
 
 func (s *SwarmService) RemoveConfig(ctx context.Context, configID string) error {
@@ -1830,10 +1821,10 @@ func (s *SwarmService) CreateSecret(ctx context.Context, req swarmtypes.SecretCr
 	return s.GetSecret(ctx, createResult.ID)
 }
 
-func (s *SwarmService) UpdateSecret(ctx context.Context, secretID string, req swarmtypes.SecretUpdateRequest) (*swarmtypes.SecretSummary, error) {
+func (s *SwarmService) UpdateSecret(ctx context.Context, secretID string, req swarmtypes.SecretUpdateRequest) error {
 	_ = secretID
 	_ = req
-	return nil, errors.New("swarm secrets are immutable; create a new secret and update services to use it")
+	return &common.SwarmSecretImmutableError{}
 }
 
 func (s *SwarmService) RemoveSecret(ctx context.Context, secretID string) error {
@@ -2244,7 +2235,7 @@ func (s *SwarmService) resolveSwarmStackSourceEnvironmentDirInternal(ctx context
 	return rootDir, environmentDir, nil
 }
 
-func (s *SwarmService) getPathMapperInternal(ctx context.Context) (*appfs.PathMapper, error) {
+func (s *SwarmService) getPathMapperInternal(ctx context.Context) *appfs.PathMapper {
 	configuredPath := s.settingsService.GetStringSetting(ctx, "swarmStackSourcesDirectory", defaultSwarmStackSourceRootDir)
 
 	var containerDir, hostDir string
@@ -2287,10 +2278,10 @@ func (s *SwarmService) getPathMapperInternal(ctx context.Context) (*appfs.PathMa
 
 	pm := appfs.NewPathMapper(containerDirResolved, hostDirResolved)
 	if !pm.IsNonMatchingMount() {
-		return nil, nil
+		return nil
 	}
 
-	return pm, nil
+	return pm
 }
 
 func (s *SwarmService) ensureSwarmManagerInternal(ctx context.Context) error {
@@ -2300,10 +2291,10 @@ func (s *SwarmService) ensureSwarmManagerInternal(ctx context.Context) error {
 	}
 
 	if info.Swarm.LocalNodeState != swarm.LocalNodeStateActive {
-		return ErrSwarmNotEnabled
+		return &common.SwarmNotEnabledError{}
 	}
 	if !info.Swarm.ControlAvailable {
-		return ErrSwarmManagerRequired
+		return &common.SwarmManagerRequiredError{}
 	}
 
 	return nil
@@ -2316,7 +2307,7 @@ func (s *SwarmService) ensureSwarmActiveInternal(ctx context.Context) error {
 	}
 
 	if info.Swarm.LocalNodeState != swarm.LocalNodeStateActive {
-		return ErrSwarmNotEnabled
+		return &common.SwarmNotEnabledError{}
 	}
 
 	return nil
@@ -2452,7 +2443,7 @@ func (s *SwarmService) buildStackPaginationConfigInternal() pagination.Config[sw
 func buildPaginationResponseInternal[T any](result pagination.FilterResult[T], params pagination.QueryParams) pagination.Response {
 	totalPages := int64(0)
 	if params.Limit > 0 {
-		totalPages = (int64(result.TotalCount) + int64(params.Limit) - 1) / int64(params.Limit)
+		totalPages = (result.TotalCount + int64(params.Limit) - 1) / int64(params.Limit)
 	}
 
 	page := 1
@@ -2462,10 +2453,10 @@ func buildPaginationResponseInternal[T any](result pagination.FilterResult[T], p
 
 	return pagination.Response{
 		TotalPages:      totalPages,
-		TotalItems:      int64(result.TotalCount),
+		TotalItems:      result.TotalCount,
 		CurrentPage:     page,
 		ItemsPerPage:    params.Limit,
-		GrandTotalItems: int64(result.TotalAvailable),
+		GrandTotalItems: result.TotalAvailable,
 	}
 }
 

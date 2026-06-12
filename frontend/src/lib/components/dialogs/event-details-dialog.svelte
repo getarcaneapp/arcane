@@ -3,11 +3,11 @@
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { Badge } from '$lib/components/ui/badge';
 	import { CopyButton } from '$lib/components/ui/copy-button';
-	import type { Event } from '$lib/types/event.type';
+	import type { Event } from '$lib/types/shared';
 	import { m } from '$lib/paraglide/messages';
 	import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID } from '$lib/stores/environment.store.svelte';
 	import { AlertIcon, InfoIcon, EnvironmentsIcon, UserIcon, ClockIcon } from '$lib/icons';
-	import { formatDateTime } from '$lib/utils/locale.util';
+	import { formatDateTime } from '$lib/utils/formatting';
 
 	type Severity = 'success' | 'warning' | 'error' | 'info';
 
