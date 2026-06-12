@@ -345,6 +345,7 @@
 
 	type RebaseEditorDraftOptions = {
 		preserveEditableDrafts?: boolean;
+		preserveManagedProjectFileContents?: boolean;
 		clearLoadedFileCache?: boolean;
 	};
 
@@ -458,12 +459,23 @@
 
 		const normalizedProject = withLoadedProjectFileContent(details);
 		if (!normalizedProject) return;
+		const savedManagedProjectFileContents =
+			options.preserveManagedProjectFileContents === true
+				? Object.fromEntries(
+						(normalizedProject.projectFiles ?? []).flatMap((file) => {
+							if (file.isDirectory) return [];
+							const content =
+								loadedManagedProjectFileContents[file.relativePath] ?? managedProjectFileContents[file.relativePath];
+							return content === undefined ? [] : [[file.relativePath, content] as const];
+						})
+					)
+				: {};
 
 		$inputs.name.value = normalizedProject.name || '';
 		$inputs.composeContent.value = normalizedProject.composeContent || '';
 		$inputs.envContent.value = shouldPreserveEnvDraft ? envDraft : normalizedProject.envContent || '';
 		managedProjectFileChanges = [];
-		managedProjectFileContents = {};
+		managedProjectFileContents = savedManagedProjectFileContents;
 		managedProjectFileHasErrors = {};
 		managedProjectFileValidationReady = {};
 		managedProjectFileLoadErrors = {};
@@ -653,7 +665,7 @@
 					...loadedManagedProjectFileContents,
 					...managedProjectFileContents
 				};
-				rebaseEditorDraft(updatedProject);
+				rebaseEditorDraft(updatedProject, { preserveManagedProjectFileContents: true });
 				await syncProjectQueries(updatedProject);
 				toast.success(
 					m.common_update_success({ resource: m.project() }),

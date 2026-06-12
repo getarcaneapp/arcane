@@ -162,6 +162,32 @@ func TestApplyProjectFileChanges_WrapsForbiddenSentinelErrors(t *testing.T) {
 	}, ProjectFileApplyOptions{ComposeFileName: "compose.yaml"})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrProjectFileSymlinkPath)
+
+	outsideDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(outsideDir, "outside.txt"), []byte("outside\n"), 0o644))
+	linkDirPath := filepath.Join(projectDir, "link-dir")
+	if err := os.Symlink(outsideDir, linkDirPath); err != nil {
+		t.Skipf("symlink creation is unavailable: %v", err)
+	}
+
+	err = ApplyProjectFileChanges(projectDir, []project.ProjectFileChange{
+		{Operation: "update_file", RelativePath: "link-dir/outside.txt", Content: &content},
+	}, ProjectFileApplyOptions{ComposeFileName: "compose.yaml"})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrProjectFileSymlinkPath)
+}
+
+func TestMapProjectRootErrorInternal_DoesNotClassifyByErrorMessage(t *testing.T) {
+	t.Parallel()
+
+	err := mapProjectRootErrorInternal("inspect project path", &os.PathError{
+		Op:   "lstat",
+		Path: "notes.txt",
+		Err:  errors.New("disk check escapes normal retry path"),
+	})
+
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, ErrProjectFileOutsideProjectDirectory)
 }
 
 func TestApplyProjectFileChanges_UsesRevisionConflictDetection(t *testing.T) {

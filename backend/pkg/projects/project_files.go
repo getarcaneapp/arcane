@@ -293,6 +293,9 @@ func createManagedProjectFileInternal(root *os.Root, protected map[string]bool, 
 	if err := validateProjectTextContentInternal(content); err != nil {
 		return err
 	}
+	if err := ensureProjectPathHasNoSymlinkInternal(root, path.Dir(rel)); err != nil {
+		return err
+	}
 
 	if err := root.MkdirAll(path.Dir(rel), pkgutils.DirPerm); err != nil {
 		return mapProjectRootErrorInternal("create parent directory", err)
@@ -321,6 +324,9 @@ func createManagedProjectFolderInternal(root *os.Root, protected map[string]bool
 	if err := ensureWritableProjectRelPathInternal(protected, rel); err != nil {
 		return err
 	}
+	if err := ensureProjectPathHasNoSymlinkInternal(root, rel); err != nil {
+		return err
+	}
 
 	if _, err := root.Lstat(rel); err == nil {
 		return fmt.Errorf("project folder already exists: %s", rel)
@@ -338,6 +344,9 @@ func updateManagedProjectFileInternal(root *os.Root, protected map[string]bool, 
 		return err
 	}
 	if err := validateProjectTextContentInternal(content); err != nil {
+		return err
+	}
+	if err := ensureProjectPathHasNoSymlinkInternal(root, rel); err != nil {
 		return err
 	}
 
@@ -365,6 +374,9 @@ func renameManagedProjectPathInternal(root *os.Root, protected map[string]bool, 
 	if err := ensureWritableProjectRelPathInternal(protected, rel); err != nil {
 		return err
 	}
+	if err := ensureProjectPathHasNoSymlinkInternal(root, rel); err != nil {
+		return err
+	}
 
 	info, err := root.Lstat(rel)
 	if err != nil {
@@ -379,6 +391,9 @@ func renameManagedProjectPathInternal(root *os.Root, protected map[string]bool, 
 
 	targetRel := path.Join(path.Dir(rel), newName)
 	if err := ensureWritableProjectRelPathInternal(protected, targetRel); err != nil {
+		return err
+	}
+	if err := ensureProjectPathHasNoSymlinkInternal(root, path.Dir(targetRel)); err != nil {
 		return err
 	}
 	if _, err := root.Lstat(targetRel); err == nil {
@@ -402,6 +417,9 @@ func normalizeOptionalProjectParentPathInternal(input string) (string, error) {
 
 func moveManagedProjectPathInternal(root *os.Root, protected map[string]bool, rel, newParentPath string) error {
 	if err := ensureWritableProjectRelPathInternal(protected, rel); err != nil {
+		return err
+	}
+	if err := ensureProjectPathHasNoSymlinkInternal(root, rel); err != nil {
 		return err
 	}
 
@@ -443,6 +461,9 @@ func moveManagedProjectPathInternal(root *os.Root, protected map[string]bool, re
 	if err := ensureWritableProjectRelPathInternal(protected, targetRel); err != nil {
 		return err
 	}
+	if err := ensureProjectPathHasNoSymlinkInternal(root, path.Dir(targetRel)); err != nil {
+		return err
+	}
 	if _, err := root.Lstat(targetRel); err == nil {
 		return fmt.Errorf("project path already exists: %s", targetRel)
 	} else if !errors.Is(err, os.ErrNotExist) {
@@ -458,6 +479,9 @@ func moveManagedProjectPathInternal(root *os.Root, protected map[string]bool, re
 func validateProjectMoveParentInternal(root *os.Root, parentRel string) error {
 	if parentRel == "" {
 		return nil
+	}
+	if err := ensureProjectPathHasNoSymlinkInternal(root, parentRel); err != nil {
+		return err
 	}
 
 	parentInfo, err := root.Lstat(parentRel)
@@ -478,6 +502,9 @@ func validateProjectMoveParentInternal(root *os.Root, parentRel string) error {
 
 func deleteManagedProjectPathInternal(root *os.Root, protected map[string]bool, rel string, recursive bool) error {
 	if err := ensureWritableProjectRelPathInternal(protected, rel); err != nil {
+		return err
+	}
+	if err := ensureProjectPathHasNoSymlinkInternal(root, rel); err != nil {
 		return err
 	}
 
@@ -513,14 +540,36 @@ func deleteManagedProjectPathInternal(root *os.Root, protected map[string]bool, 
 	return nil
 }
 
-// mapProjectRootErrorInternal converts os.Root containment violations (a path
-// component escaping the project directory, typically via a symlink) into the
-// exported sentinel so callers can map them to a 403.
 func mapProjectRootErrorInternal(action string, err error) error {
-	if pathErr, ok := errors.AsType[*os.PathError](err); ok && strings.Contains(pathErr.Err.Error(), "escapes") {
-		return fmt.Errorf("%s: %w", action, ErrProjectFileOutsideProjectDirectory)
-	}
 	return fmt.Errorf("%s: %w", action, err)
+}
+
+func ensureProjectPathHasNoSymlinkInternal(root *os.Root, rel string) error {
+	cleaned := path.Clean(rel)
+	if cleaned == "." || cleaned == "" {
+		return nil
+	}
+
+	current := ""
+	for segment := range strings.SplitSeq(cleaned, "/") {
+		if current == "" {
+			current = segment
+		} else {
+			current = path.Join(current, segment)
+		}
+
+		info, err := root.Lstat(current)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return nil
+			}
+			return mapProjectRootErrorInternal("inspect project path", err)
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("symlink paths are not supported: %w", ErrProjectFileSymlinkPath)
+		}
+	}
+	return nil
 }
 
 func ensureWritableProjectRelPathInternal(protected map[string]bool, rel string) error {
