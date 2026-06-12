@@ -128,12 +128,16 @@
 	const flatRows = $derived(table.getRowModel().rows);
 	const shouldVirtualize = $derived(!isGrouped && !hasExpand && !!scrollElement && flatRows.length > VIRTUALIZE_THRESHOLD);
 
-	// Row actions live in a host cell that absorbs the table's leftover width, so data columns
-	// size to their content and the floating actions button (see cellContent) gets free room at
-	// the row's end instead of overlapping the last data column. Under the virtualized layout
-	// the table is table-fixed, where a 100%-width column would squash the auto columns to
-	// nothing — there the cell stays zero-width and the button floats over the row as before.
-	const actionsCellClasses = $derived(shouldVirtualize ? 'relative w-0 p-0 last:pr-0' : 'relative w-full p-0 last:pr-0');
+	// Row actions are a real pinned column: sticky to the row's right edge with its own reserved
+	// width, so the floating button never overlaps data columns and survives horizontal scroll.
+	// bg-inherit picks up the row's background (including hover/selected tints) to mask content
+	// scrolling beneath the sticky cell. Under the virtualized table-fixed layout an auto-sized
+	// (w-0 + nowrap) column would collapse, so it gets an explicit width there instead.
+	const actionsCellClasses = $derived(
+		shouldVirtualize
+			? 'sticky right-0 z-10 w-24 bg-inherit p-0 whitespace-nowrap'
+			: 'sticky right-0 z-10 w-0 bg-inherit p-0 whitespace-nowrap'
+	);
 
 	// Runes can't be created conditionally, so the virtualizer always exists but is `enabled` only
 	// when we actually virtualize; disabled, it stays cheap and reports an empty window.
@@ -149,13 +153,11 @@
 
 {#snippet cellContent(cell: ArcaneCell<TData>)}
 	{#if cell.column.id === 'actions'}
-		<!-- Row actions float over the row's right edge, revealed on hover/focus (or while the menu is
-		     open). pointer-events are off until revealed so the hidden control can't swallow row clicks. -->
-		<div
-			class="pointer-events-none absolute top-1/2 right-2 z-10 -translate-y-1/2 opacity-0 transition-opacity group-hover/row:pointer-events-auto group-hover/row:opacity-100 group-focus-within/row:pointer-events-auto group-focus-within/row:opacity-100 has-[[data-state=open]]:pointer-events-auto has-[[data-state=open]]:opacity-100"
-			data-row-select-ignore
-		>
-			<FlexRender {cell} />
+		<!-- Pinned row actions: a floating chip at the row's end, always present in its own gutter. -->
+		<div class="flex items-center justify-end py-1 pr-3 pl-2" data-row-select-ignore>
+			<div class="bg-card/90 border-border/50 flex items-center gap-0.5 rounded-full border p-0.5 shadow-sm backdrop-blur-sm">
+				<FlexRender {cell} />
+			</div>
 		</div>
 	{:else}
 		<FlexRender {cell} />
@@ -235,7 +237,10 @@
 					{#each headerGroup.headers as header (header.id)}
 						<Table.Head
 							colspan={header.colSpan}
-							class={cn(header.column.id === 'select' && selectCellClasses, header.column.id === 'actions' && actionsCellClasses)}
+							class={cn(
+								header.column.id === 'select' && selectCellClasses,
+								header.column.id === 'actions' && cn(actionsCellClasses, 'bg-background z-30')
+							)}
 						>
 							{#if !header.isPlaceholder}
 								<FlexRender {header} />

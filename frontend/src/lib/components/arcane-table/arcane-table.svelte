@@ -686,7 +686,10 @@
 			</div>
 		{/if}
 
-		<div bind:this={desktopScrollEl} class="[isolation:isolate] hidden h-full min-h-0 flex-1 overflow-auto md:block">
+		<div
+			bind:this={desktopScrollEl}
+			class="bg-background/80 [isolation:isolate] hidden h-full min-h-0 flex-1 overflow-auto md:block"
+		>
 			<ArcaneTableDesktopView
 				{table}
 				{selectedIds}
@@ -708,7 +711,7 @@
 			/>
 		</div>
 
-		<div class="[isolation:isolate] block flex-1 overflow-auto md:hidden">
+		<div class="bg-background/80 [isolation:isolate] block flex-1 overflow-auto md:hidden">
 			<div class="divide-border/40 divide-y">
 				<ArcaneTableMobileView
 					{table}
@@ -726,7 +729,7 @@
 		</div>
 
 		{#if !withoutPagination}
-			<div class="shrink-0 border-t px-2 py-4">
+			<div class="border-border/50 shrink-0 border-t px-4 py-3">
 				{@render PaginationSnippet()}
 			</div>
 		{/if}
@@ -789,7 +792,7 @@
 		</div>
 
 		{#if !withoutPagination}
-			<div class="border-border/50 shrink-0 border-t px-2 py-4">
+			<div class="border-border/50 shrink-0 border-t px-4 py-3">
 				{@render PaginationSnippet()}
 			</div>
 		{/if}

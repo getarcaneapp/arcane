@@ -1718,7 +1718,7 @@
 	"templates_edit_template": "Edit Template",
 	"templates_delete_template": "Delete Template",
 	"templates_template_name_label": "Template Name",
-	"templates_template_name_placeholder": "e.g. My Nginx Stack",
+	"templates_template_name_placeholder": "e.g. My Nginx Project",
 	"templates_template_name_required": "Template name is required",
 	"templates_template_description_label": "Description",
 	"templates_template_description_placeholder": "Briefly describe this template",
