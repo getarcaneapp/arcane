@@ -15,7 +15,7 @@
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
-    "@types/node": "^25.9.1",
+    "@types/node": "^25.9.2",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "oxfmt": "^0.54.0",
