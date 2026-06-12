@@ -2163,6 +2163,8 @@
 	"image_update_recheck_button": "Re-check Updates",
 	"image_update_checking_title": "Checking Updates",
 	"image_update_querying_registry": "Querying registry for latest version…",
+	"image_update_local_title": "Local build",
+	"image_update_local_desc": "This image was built locally and has no registry to check against.",
 	"image_update_status_unknown": "Status Unknown",
 	"image_update_click_to_check": "Click to check for updates from registry.",
 	"image_update_unable_check_tags": "Unable to check updates for images without proper tags.",
