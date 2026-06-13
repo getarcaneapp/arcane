@@ -131,6 +131,62 @@ func TestProjectService_RecoverProjectRenameJournals_StartedPhaseSkipsVolumeRoll
 	require.Equal(t, oldDir, *fromDB.DirName)
 }
 
+func TestProjectService_RecoverProjectRenameJournals_ClearsStartedJournalWhenBothPathsExist(t *testing.T) {
+	db := setupProjectTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.KVEntry{}))
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	oldDir := "nginx"
+	newDir := "web"
+	oldPath := filepath.Join(projectsDir, oldDir)
+	newPath := filepath.Join(projectsDir, newDir)
+	require.NoError(t, os.MkdirAll(oldPath, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(oldPath, "compose.yaml"), []byte("services: {}\n"), 0o600))
+	require.NoError(t, os.MkdirAll(newPath, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(newPath, "compose.yaml"), []byte("services: {}\n"), 0o600))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-rename-both-paths"},
+		Name:      "nginx",
+		DirName:   &oldDir,
+		Path:      oldPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	kvService := NewKVService(db)
+	svc := NewProjectService(db, nil, nil, nil, nil, nil, config.Load()).WithKVService(kvService)
+	journal := projectRenameJournalInternal{
+		ProjectID:  project.ID,
+		OldName:    "nginx",
+		NewName:    "web",
+		OldPath:    oldPath,
+		NewPath:    newPath,
+		OldDirName: &oldDir,
+		NewDirName: newDir,
+		Phase:      projectRenameJournalPhaseStartedInternal,
+	}
+	payload, err := json.Marshal(journal)
+	require.NoError(t, err)
+	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyInternal(project.ID), string(payload)))
+
+	require.NoError(t, svc.RecoverProjectRenameJournals(ctx))
+
+	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyInternal(project.ID))
+	require.NoError(t, err)
+	require.False(t, ok)
+	require.FileExists(t, filepath.Join(oldPath, "compose.yaml"))
+	require.FileExists(t, filepath.Join(newPath, "compose.yaml"))
+
+	var fromDB models.Project
+	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	require.Equal(t, "nginx", fromDB.Name)
+	require.Equal(t, oldPath, fromDB.Path)
+	require.NotNil(t, fromDB.DirName)
+	require.Equal(t, oldDir, *fromDB.DirName)
+}
+
 func TestProjectService_RecoverProjectRenameJournals_ClearsStartedJournalWhenDirectoryPathsMissing(t *testing.T) {
 	db := setupProjectTestDB(t)
 	require.NoError(t, db.AutoMigrate(&models.KVEntry{}))
@@ -340,7 +396,7 @@ func TestProjectService_FinalizeProjectRenameAfterCommit_ClearsJournalAfterSourc
 	require.False(t, ok)
 }
 
-func TestProjectService_FinalizeProjectRenameAfterCommit_ClearsJournalWhenSourceCleanupFails(t *testing.T) {
+func TestProjectService_FinalizeProjectRenameAfterCommit_KeepsJournalWhenSourceCleanupFails(t *testing.T) {
 	db := setupProjectTestDB(t)
 	require.NoError(t, db.AutoMigrate(&models.KVEntry{}))
 	ctx := context.Background()
@@ -374,9 +430,13 @@ func TestProjectService_FinalizeProjectRenameAfterCommit_ClearsJournalWhenSource
 	journalActive := true
 	svc.finalizeProjectRenameAfterCommitInternal(ctx, project.ID, migration, journal, &journalActive)
 	require.True(t, migration.commitCalled)
-	require.False(t, journalActive)
+	require.True(t, journalActive)
 
-	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyInternal(project.ID))
+	raw, ok, err := kvService.Get(ctx, projectRenameJournalKeyInternal(project.ID))
 	require.NoError(t, err)
-	require.False(t, ok)
+	require.True(t, ok)
+
+	var updatedJournal projectRenameJournalInternal
+	require.NoError(t, json.Unmarshal([]byte(raw), &updatedJournal))
+	require.Equal(t, projectRenameJournalPhaseProjectStateCommittedInternal, updatedJournal.Phase)
 }
