@@ -20,7 +20,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	buildtypes "github.com/getarcaneapp/arcane/types/v2/builds"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
-	dockerregistry "github.com/moby/moby/api/types/registry"
 	"gorm.io/gorm"
 )
 
@@ -55,30 +54,13 @@ func NewBuildService(
 		gitRepository:   gitRepository,
 		eventService:    eventService,
 	}
-	svc.builder = libbuild.NewBuilder(svc, dockerService, svc)
+	// ContainerRegistryService already implements buildtypes.RegistryAuthProvider, so the
+	// builder consumes it directly instead of through forwarding methods on BuildService.
+	// Its auth methods are nil-receiver safe, so a nil registryService (which satisfies the
+	// interface as a typed-nil pointer) returns empty auth instead of panicking.
+	svc.builder = libbuild.NewBuilder(svc, dockerService, registryService)
 
 	return svc
-}
-
-func (s *BuildService) GetRegistryAuthForImage(ctx context.Context, imageRef string) (string, error) {
-	if s.registryService == nil {
-		return "", nil
-	}
-	return s.registryService.GetRegistryAuthForImage(ctx, imageRef)
-}
-
-func (s *BuildService) GetRegistryAuthForHost(ctx context.Context, registryHost string) (string, error) {
-	if s.registryService == nil {
-		return "", nil
-	}
-	return s.registryService.GetRegistryAuthForHost(ctx, registryHost)
-}
-
-func (s *BuildService) GetAllRegistryAuthConfigs(ctx context.Context) (map[string]dockerregistry.AuthConfig, error) {
-	if s.registryService == nil {
-		return nil, nil
-	}
-	return s.registryService.GetAllRegistryAuthConfigs(ctx)
 }
 
 func (s *BuildService) BuildSettings() buildtypes.BuildSettings {

@@ -442,7 +442,7 @@ func TestNotificationCredentialInternal_KeepsPlaintextLegacyValues(t *testing.T)
 
 	value := "discord-webhook-token/plaintext"
 
-	require.NoError(t, decryptStringCredentialInternal(&value))
+	require.NoError(t, notifications.DecryptStringCredential(&value))
 	require.Equal(t, "discord-webhook-token/plaintext", value)
 }
 
@@ -452,7 +452,7 @@ func TestNotificationCredentialInternal_DecryptsEncryptedValues(t *testing.T) {
 	encrypted, err := crypto.Encrypt("gotify-application-token")
 	require.NoError(t, err)
 
-	require.NoError(t, decryptStringCredentialInternal(&encrypted))
+	require.NoError(t, notifications.DecryptStringCredential(&encrypted))
 	require.Equal(t, "gotify-application-token", encrypted)
 }
 
@@ -467,7 +467,7 @@ func TestNotificationCredentialInternal_ReturnsErrorForCorruptedCiphertext(t *te
 	ciphertext[len(ciphertext)-1] ^= 0xff
 	corrupted := base64.StdEncoding.EncodeToString(ciphertext)
 
-	require.Error(t, decryptStringCredentialInternal(&corrupted))
+	require.Error(t, notifications.DecryptStringCredential(&corrupted))
 }
 
 func TestNotificationCredentialInternal_LeavesEmptyValuesEmpty(t *testing.T) {
@@ -475,7 +475,7 @@ func TestNotificationCredentialInternal_LeavesEmptyValuesEmpty(t *testing.T) {
 
 	value := ""
 
-	require.NoError(t, decryptStringCredentialInternal(&value))
+	require.NoError(t, notifications.DecryptStringCredential(&value))
 	require.Empty(t, value)
 }
 

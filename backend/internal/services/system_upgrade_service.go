@@ -16,6 +16,7 @@ import (
 	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
+	vuln "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/vuln"
 	containertypes "github.com/moby/moby/api/types/container"
 	mounttypes "github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
@@ -301,10 +302,10 @@ func resolveSystemUpgraderRuntimeOptionsInternal(
 	isRunningInDocker func() bool,
 ) (upgraderRuntimeOptionsInternal, error) {
 	options := upgraderRuntimeOptionsInternal{
-		ContainerEnv: buildTrivyDockerHostEnvInternal(dockerHost),
+		ContainerEnv: vuln.BuildDockerHostEnv(dockerHost),
 	}
 
-	scheme, socketPath, err := parseTrivyDockerHostInternal(dockerHost)
+	scheme, socketPath, err := vuln.ParseDockerHost(dockerHost)
 	if err != nil {
 		return upgraderRuntimeOptionsInternal{}, fmt.Errorf("resolve docker host %q: %w", dockerHost, err)
 	}

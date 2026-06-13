@@ -11,7 +11,6 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -2488,7 +2487,7 @@ func serviceSelected(selected map[string]struct{}, name string) bool {
 func ensureServiceImage(projectID, projectName, serviceName string, svc composetypes.ServiceConfig) (string, composetypes.ServiceConfig, bool) {
 	imageName := strings.TrimSpace(svc.Image)
 	if imageName == "" {
-		imageName = buildLocalImageTag(projectID, projectName, serviceName)
+		imageName = projects.BuildLocalImageTag(projectID, projectName, serviceName)
 		svc.Image = imageName
 		return imageName, svc, true
 	}
@@ -2582,17 +2581,6 @@ func resolveDockerfilePathInternal(svc composetypes.ServiceConfig) string {
 	return dockerfilePath
 }
 
-func buildArgsFromCompose(args map[string]*string) map[string]string {
-	buildArgs := map[string]string{}
-	for key, value := range args {
-		if value == nil {
-			continue
-		}
-		buildArgs[key] = *value
-	}
-	return buildArgs
-}
-
 func (s *ProjectService) resolveEffectiveBuildProvider(override string) string {
 	provider := strings.ToLower(strings.TrimSpace(override))
 	if provider != "" {
@@ -2608,86 +2596,6 @@ func (s *ProjectService) resolveEffectiveBuildProvider(override string) string {
 	}
 
 	return provider
-}
-
-func labelsFromCompose(labels composetypes.Labels) map[string]string {
-	if len(labels) == 0 {
-		return nil
-	}
-
-	out := make(map[string]string, len(labels))
-	maps.Copy(out, labels)
-
-	return out
-}
-
-func ulimitsFromCompose(ulimits map[string]*composetypes.UlimitsConfig) map[string]string {
-	if len(ulimits) == 0 {
-		return nil
-	}
-
-	out := make(map[string]string, len(ulimits))
-	for name, cfg := range ulimits {
-		if cfg == nil {
-			continue
-		}
-
-		switch {
-		case cfg.Single > 0:
-			out[name] = strconv.Itoa(cfg.Single)
-		case cfg.Soft > 0 || cfg.Hard > 0:
-			out[name] = fmt.Sprintf("%d:%d", cfg.Soft, cfg.Hard)
-		}
-	}
-
-	if len(out) == 0 {
-		return nil
-	}
-
-	return out
-}
-
-func mergeBuildTags(primaryImage string, composeTags []string) []string {
-	seen := map[string]struct{}{}
-	merged := make([]string, 0, len(composeTags)+1)
-
-	appendTag := func(tag string) {
-		tag = strings.TrimSpace(tag)
-		if tag == "" {
-			return
-		}
-		if _, ok := seen[tag]; ok {
-			return
-		}
-		seen[tag] = struct{}{}
-		merged = append(merged, tag)
-	}
-
-	appendTag(primaryImage)
-	for _, tag := range composeTags {
-		appendTag(tag)
-	}
-
-	return merged
-}
-
-func buildPlatformsFromCompose(svc composetypes.ServiceConfig) []string {
-	platforms := make([]string, 0, len(svc.Build.Platforms)+1)
-	for _, platform := range svc.Build.Platforms {
-		platform = strings.TrimSpace(platform)
-		if platform == "" {
-			continue
-		}
-		platforms = append(platforms, platform)
-	}
-
-	if len(platforms) == 0 {
-		if servicePlatform := strings.TrimSpace(svc.Platform); servicePlatform != "" {
-			platforms = append(platforms, servicePlatform)
-		}
-	}
-
-	return platforms
 }
 
 func (s *ProjectService) prepareServiceBuildRequest(
@@ -2736,10 +2644,10 @@ func (s *ProjectService) prepareServiceBuildRequest(
 		ContextDir:       contextDir,
 		Dockerfile:       dockerfilePath,
 		DockerfileInline: dockerfileInline,
-		Tags:             mergeBuildTags(imageName, updatedSvc.Build.Tags),
+		Tags:             projects.MergeBuildTags(imageName, updatedSvc.Build.Tags),
 		Target:           strings.TrimSpace(updatedSvc.Build.Target),
-		BuildArgs:        buildArgsFromCompose(updatedSvc.Build.Args),
-		Labels:           labelsFromCompose(updatedSvc.Build.Labels),
+		BuildArgs:        projects.BuildArgsFromCompose(updatedSvc.Build.Args),
+		Labels:           projects.LabelsFromCompose(updatedSvc.Build.Labels),
 		CacheFrom:        append([]string(nil), updatedSvc.Build.CacheFrom...),
 		CacheTo:          append([]string(nil), updatedSvc.Build.CacheTo...),
 		NoCache:          updatedSvc.Build.NoCache,
@@ -2747,14 +2655,14 @@ func (s *ProjectService) prepareServiceBuildRequest(
 		Network:          strings.TrimSpace(updatedSvc.Build.Network),
 		Isolation:        strings.TrimSpace(updatedSvc.Build.Isolation),
 		ShmSize:          int64(updatedSvc.Build.ShmSize),
-		Ulimits:          ulimitsFromCompose(updatedSvc.Build.Ulimits),
+		Ulimits:          projects.UlimitsFromCompose(updatedSvc.Build.Ulimits),
 		Entitlements: append(
 			[]string(nil),
 			updatedSvc.Build.Entitlements...,
 		),
 		Privileged: updatedSvc.Build.Privileged,
 		ExtraHosts: updatedSvc.Build.ExtraHosts.AsList(":"),
-		Platforms:  buildPlatformsFromCompose(updatedSvc),
+		Platforms:  projects.BuildPlatformsFromCompose(updatedSvc),
 		Provider:   effectiveProvider,
 	}
 	if options.Push != nil {
@@ -2829,42 +2737,6 @@ func (s *ProjectService) buildProjectServicesInternal(ctx context.Context, proje
 	}
 
 	return nil
-}
-
-func buildLocalImageTag(projectID, projectName, serviceName string) string {
-	shortID := strings.TrimSpace(projectID)
-	if len(shortID) > 8 {
-		shortID = shortID[:8]
-	}
-	projectPart := sanitizeImageComponent(projectName)
-	if projectPart == "" {
-		projectPart = "project"
-	}
-	servicePart := sanitizeImageComponent(serviceName)
-	if servicePart == "" {
-		servicePart = "service"
-	}
-
-	return fmt.Sprintf("arcane.local/%s-%s/%s:latest", projectPart, shortID, servicePart)
-}
-
-func sanitizeImageComponent(value string) string {
-	value = strings.ToLower(strings.TrimSpace(value))
-	if value == "" {
-		return ""
-	}
-	return strings.Map(func(r rune) rune {
-		switch {
-		case r >= 'a' && r <= 'z':
-			return r
-		case r >= '0' && r <= '9':
-			return r
-		case r == '-' || r == '_' || r == '.':
-			return r
-		default:
-			return '-'
-		}
-	}, value)
 }
 
 func (s *ProjectService) RestartProject(ctx context.Context, projectID string, user models.User) error {

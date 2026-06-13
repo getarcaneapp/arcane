@@ -74,6 +74,8 @@
 	let scanRequestedAtByImage = $state<Record<string, string>>({});
 	let scanPollTimeout: ReturnType<typeof setTimeout> | null = null;
 	let scanPollInFlight = false;
+	// Set once on destroy so an in-flight poll can't re-arm a timer on a dead component.
+	let destroyed = false;
 	const SCAN_POLL_INTERVAL_MS = 4000;
 
 	async function refreshImages(options: SearchPaginationSortRequest = requestOptions) {
@@ -258,6 +260,7 @@
 		scanPollInFlight = true;
 		try {
 			const response = await vulnerabilityService.getScanSummaries(imageIds);
+			if (destroyed) return;
 			const summaries = response?.summaries ?? {};
 
 			if (Object.keys(summaries).length > 0 && images.data?.length) {
@@ -295,7 +298,7 @@
 			console.error('Failed to poll vulnerability summaries:', error);
 		} finally {
 			scanPollInFlight = false;
-			if (getScanningImageIds().length > 0) {
+			if (!destroyed && getScanningImageIds().length > 0) {
 				scheduleBatchScanPolling();
 			}
 		}
@@ -320,6 +323,7 @@
 	});
 
 	onDestroy(() => {
+		destroyed = true;
 		stopBatchScanPolling();
 	});
 

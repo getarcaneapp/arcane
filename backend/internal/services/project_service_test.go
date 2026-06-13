@@ -3216,11 +3216,6 @@ func TestProjectService_MapProjectToDto_SetsRedeployDisabledFromRuntimeServices(
 	}
 }
 
-func TestProjectService_MergeBuildTags(t *testing.T) {
-	tags := mergeBuildTags("example/app:latest", []string{"example/app:sha", "example/app:latest", " "})
-	assert.Equal(t, []string{"example/app:latest", "example/app:sha"}, tags)
-}
-
 func TestProjectService_ListProjects_WithDerivedStatusFilter_AllowsAllPageSizeSentinel(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
@@ -3256,33 +3251,6 @@ func TestProjectService_ListProjects_WithDerivedStatusFilter_AllowsAllPageSizeSe
 	require.Len(t, items, 25)
 	assert.Equal(t, "stopped-00", items[0].Name)
 	assert.Equal(t, "stopped-24", items[len(items)-1].Name)
-}
-
-func TestProjectService_BuildPlatformsFromCompose(t *testing.T) {
-	t.Run("uses service platform when build platforms missing", func(t *testing.T) {
-		svc := composetypes.ServiceConfig{
-			Platform: "linux/amd64",
-			Build: &composetypes.BuildConfig{
-				Context: ".",
-			},
-		}
-
-		platforms := buildPlatformsFromCompose(svc)
-		assert.Equal(t, []string{"linux/amd64"}, platforms)
-	})
-
-	t.Run("keeps explicit build platforms", func(t *testing.T) {
-		svc := composetypes.ServiceConfig{
-			Platform: "linux/amd64",
-			Build: &composetypes.BuildConfig{
-				Context:   ".",
-				Platforms: []string{"linux/arm64"},
-			},
-		}
-
-		platforms := buildPlatformsFromCompose(svc)
-		assert.Equal(t, []string{"linux/arm64"}, platforms)
-	})
 }
 
 func TestProjectService_PrepareServiceBuildRequest_MapsComposeFields(t *testing.T) {
