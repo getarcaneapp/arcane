@@ -23,11 +23,11 @@ import (
 const (
 	projectRenameJournalKeyPrefixInternal = "project_rename_journal:"
 
-	projectRenameJournalPhaseStartedInternal        = "started"
-	projectRenameJournalPhaseTargetsCopiedInternal  = "targets_copied"
-	projectRenameJournalPhaseOldVolumesRemoved      = "old_volumes_removed"
-	projectRenameJournalPhaseProjectStateCommitted  = "project_state_committed"
-	projectRenameJournalPhaseProjectStateRolledBack = "project_state_rolled_back"
+	projectRenameJournalPhaseStartedInternal                = "started"
+	projectRenameJournalPhaseTargetsCopiedInternal          = "targets_copied"
+	projectRenameJournalPhaseOldVolumesRemovedInternal      = "old_volumes_removed"
+	projectRenameJournalPhaseProjectStateCommittedInternal  = "project_state_committed"
+	projectRenameJournalPhaseProjectStateRolledBackInternal = "project_state_rolled_back"
 )
 
 type projectRenameJournalInternal struct {
@@ -117,8 +117,8 @@ func (s *ProjectService) clearProjectRenameJournalInternal(ctx context.Context, 
 func projectRenameJournalTargetsCopiedInternal(phase string) bool {
 	switch phase {
 	case projectRenameJournalPhaseTargetsCopiedInternal,
-		projectRenameJournalPhaseOldVolumesRemoved,
-		projectRenameJournalPhaseProjectStateCommitted:
+		projectRenameJournalPhaseOldVolumesRemovedInternal,
+		projectRenameJournalPhaseProjectStateCommittedInternal:
 		return true
 	default:
 		return false
@@ -189,7 +189,7 @@ func (s *ProjectService) recoverProjectRenameJournalInternal(ctx context.Context
 	if err := s.rollbackProjectRenameJournalInternal(ctx, journal); err != nil {
 		return err
 	}
-	if err := s.writeProjectRenameJournalInternal(ctx, journal, projectRenameJournalPhaseProjectStateRolledBack); err != nil {
+	if err := s.writeProjectRenameJournalInternal(ctx, journal, projectRenameJournalPhaseProjectStateRolledBackInternal); err != nil {
 		return err
 	}
 	return s.clearProjectRenameJournalInternal(ctx, journal.ProjectID)

@@ -248,10 +248,10 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsPreservedTargetJourna
 
 func TestProjectRenameJournalTargetsCopiedInternal(t *testing.T) {
 	require.False(t, projectRenameJournalTargetsCopiedInternal(projectRenameJournalPhaseStartedInternal))
-	require.False(t, projectRenameJournalTargetsCopiedInternal(projectRenameJournalPhaseProjectStateRolledBack))
+	require.False(t, projectRenameJournalTargetsCopiedInternal(projectRenameJournalPhaseProjectStateRolledBackInternal))
 	require.True(t, projectRenameJournalTargetsCopiedInternal(projectRenameJournalPhaseTargetsCopiedInternal))
-	require.True(t, projectRenameJournalTargetsCopiedInternal(projectRenameJournalPhaseOldVolumesRemoved))
-	require.True(t, projectRenameJournalTargetsCopiedInternal(projectRenameJournalPhaseProjectStateCommitted))
+	require.True(t, projectRenameJournalTargetsCopiedInternal(projectRenameJournalPhaseOldVolumesRemovedInternal))
+	require.True(t, projectRenameJournalTargetsCopiedInternal(projectRenameJournalPhaseProjectStateCommittedInternal))
 }
 
 func TestProjectService_RecoverProjectRenameJournals_ClearsCommittedJournal(t *testing.T) {
@@ -285,7 +285,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsCommittedJournal(t *t
 		NewPath:    newPath,
 		OldDirName: &oldDir,
 		NewDirName: newDir,
-		Phase:      projectRenameJournalPhaseOldVolumesRemoved,
+		Phase:      projectRenameJournalPhaseOldVolumesRemovedInternal,
 	}
 	payload, err := json.Marshal(journal)
 	require.NoError(t, err)
@@ -382,5 +382,5 @@ func TestProjectService_FinalizeProjectRenameAfterCommit_KeepsJournalWhenSourceC
 
 	var updatedJournal projectRenameJournalInternal
 	require.NoError(t, json.Unmarshal([]byte(raw), &updatedJournal))
-	require.Equal(t, projectRenameJournalPhaseProjectStateCommitted, updatedJournal.Phase)
+	require.Equal(t, projectRenameJournalPhaseProjectStateCommittedInternal, updatedJournal.Phase)
 }

@@ -69,7 +69,7 @@ func TestProjectService_RecoverProjectRenameJournals_CompletesCommittedVolumeJou
 		NewPath:    newPath,
 		OldDirName: &oldDir,
 		NewDirName: newDir,
-		Phase:      projectRenameJournalPhaseOldVolumesRemoved,
+		Phase:      projectRenameJournalPhaseOldVolumesRemovedInternal,
 		Volumes: []projectRenameJournalVolumeInternal{
 			{
 				Key:     "data",
@@ -140,7 +140,7 @@ func TestProjectService_RecoverProjectRenameJournals_RollsBackCommittedJournalWh
 		NewPath:    newPath,
 		OldDirName: &oldDir,
 		NewDirName: newDir,
-		Phase:      projectRenameJournalPhaseOldVolumesRemoved,
+		Phase:      projectRenameJournalPhaseOldVolumesRemovedInternal,
 		Volumes: []projectRenameJournalVolumeInternal{
 			{
 				Key:     "data",
@@ -215,7 +215,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsCommittedJournalWhenS
 		NewPath:    newPath,
 		OldDirName: &oldDir,
 		NewDirName: newDir,
-		Phase:      projectRenameJournalPhaseProjectStateCommitted,
+		Phase:      projectRenameJournalPhaseProjectStateCommittedInternal,
 		Volumes: []projectRenameJournalVolumeInternal{
 			{
 				Key:     "data",
@@ -297,7 +297,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsCommittedJournalAndCl
 		NewPath:    newPath,
 		OldDirName: &oldDir,
 		NewDirName: newDir,
-		Phase:      projectRenameJournalPhaseProjectStateCommitted,
+		Phase:      projectRenameJournalPhaseProjectStateCommittedInternal,
 		Volumes: []projectRenameJournalVolumeInternal{
 			{
 				Key:     "data",
