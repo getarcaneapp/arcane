@@ -1,0 +1,237 @@
+package migrate
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"os"
+	"strings"
+
+	"github.com/joho/godotenv"
+	"github.com/spf13/cobra"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/bootstrap"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/startup"
+)
+
+var MigrateCmd = &cobra.Command{
+	Use:           "migrate",
+	Short:         "Manage Arcane database schema migrations",
+	Version:       config.Version,
+	SilenceUsage:  true,
+	SilenceErrors: true,
+}
+
+func init() {
+	configureCommand(MigrateCmd, os.Stdout)
+}
+
+func configureCommand(cmd *cobra.Command, out io.Writer) {
+	if out == nil {
+		out = io.Discard
+	}
+
+	cmd.SetOut(out)
+	cmd.AddCommand(newStatusCommand(out))
+	cmd.AddCommand(newUpCommand(out))
+	cmd.AddCommand(newDownCommand(out))
+	cmd.AddCommand(newGenerateManifestCommand(out))
+}
+
+func newStatusCommand(out io.Writer) *cobra.Command {
+	return &cobra.Command{
+		Use:   "status",
+		Short: "Show the current Arcane database migration status",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			status, err := loadMigrationStatus(cmd.Context())
+			if err != nil {
+				return err
+			}
+
+			knownVersions, err := database.ListAppMigrationVersions()
+			if err != nil {
+				return err
+			}
+
+			return printStatus(out, status, knownVersions)
+		},
+	}
+}
+
+func newUpCommand(out io.Writer) *cobra.Command {
+	return &cobra.Command{
+		Use:   "up",
+		Short: "Apply pending Arcane database migrations",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := loadConfig(cmd.Context())
+			if err != nil {
+				return err
+			}
+			if err := database.MigrateUp(cmd.Context(), cfg.DatabaseURL); err != nil {
+				return err
+			}
+			_, err = fmt.Fprintln(out, "Database migrations applied successfully")
+			return err
+		},
+	}
+}
+
+func newDownCommand(out io.Writer) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "down <target-version>",
+		Short: "Downgrade the Arcane database schema for a target Arcane version",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			targetAppVersion := strings.TrimSpace(args[0])
+			if targetAppVersion == "" {
+				return errors.New("target version is required")
+			}
+
+			targetMigrationVersion, err := database.ResolveAppMigrationVersion(targetAppVersion)
+			if err != nil {
+				return err
+			}
+
+			cfg, err := loadConfig(cmd.Context())
+			if err != nil {
+				return err
+			}
+			status, err := database.GetMigrationStatus(cmd.Context(), cfg.DatabaseURL)
+			if err != nil {
+				return err
+			}
+			if status.Dirty {
+				return fmt.Errorf("database schema version %d is dirty; resolve the dirty migration state before downgrading", status.CurrentVersion)
+			}
+			if targetMigrationVersion > status.LatestVersion {
+				return fmt.Errorf("target Arcane version %s requires schema version %d, but this Arcane binary only includes migrations through %d", targetAppVersion, targetMigrationVersion, status.LatestVersion)
+			}
+			if !status.HasVersion {
+				return errors.New("database has no migration version; start Arcane once to initialize the schema before downgrading")
+			}
+			if status.CurrentVersion < targetMigrationVersion {
+				return fmt.Errorf("database schema version %d is older than target Arcane version %s schema version %d", status.CurrentVersion, targetAppVersion, targetMigrationVersion)
+			}
+			if status.CurrentVersion == targetMigrationVersion {
+				_, err = fmt.Fprintf(out, "Database schema is already at version %d for Arcane %s\n", targetMigrationVersion, targetAppVersion)
+				return err
+			}
+
+			slog.Warn("Downgrading Arcane database schema",
+				"provider", status.Provider,
+				"currentVersion", status.CurrentVersion,
+				"targetVersion", targetMigrationVersion,
+				"targetAppVersion", targetAppVersion,
+			)
+			if err := database.MigrateToVersion(cmd.Context(), cfg.DatabaseURL, targetMigrationVersion); err != nil {
+				return err
+			}
+
+			_, err = fmt.Fprintf(out, "Database schema downgraded from version %d to %d for Arcane %s\n", status.CurrentVersion, targetMigrationVersion, targetAppVersion)
+			return err
+		},
+	}
+
+	return cmd
+}
+
+func loadMigrationStatus(ctx context.Context) (*database.MigrationStatus, error) {
+	cfg, err := loadConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return database.GetMigrationStatus(ctx, cfg.DatabaseURL)
+}
+
+func newGenerateManifestCommand(out io.Writer) *cobra.Command {
+	var repoRoot string
+	var outputPath string
+	var includeVersion string
+
+	cmd := &cobra.Command{
+		Use:   "generate-manifest",
+		Short: "Generate the app-version to schema-version migration manifest",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			versions, err := database.GenerateAppMigrationVersionsFromGit(cmd.Context(), repoRoot, includeVersion)
+			if err != nil {
+				return err
+			}
+
+			manifestBytes, err := database.MarshalAppMigrationVersionManifest(versions)
+			if err != nil {
+				return err
+			}
+
+			if outputPath == "-" {
+				_, err = out.Write(manifestBytes)
+				return err
+			}
+
+			if err := os.WriteFile(outputPath, manifestBytes, 0o644); err != nil { //nolint:gosec // generated manifest is non-secret repo metadata
+				return fmt.Errorf("failed to write migration manifest: %w", err)
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&repoRoot, "repo-root", ".", "Repository root containing .git and backend/resources/migrations")
+	cmd.Flags().StringVar(&outputPath, "output", "backend/resources/migration_versions.json", "Output manifest path, or - for stdout")
+	cmd.Flags().StringVar(&includeVersion, "include-version", "", "Include this app version using the working tree's current highest migration")
+	return cmd
+}
+
+func loadConfig(ctx context.Context) (*config.Config, error) {
+	_ = godotenv.Load()
+	cfg := config.Load()
+
+	runtimeIdentityCfg := &startup.RuntimeIdentityConfig{
+		PUID:         cfg.PUID,
+		PGID:         cfg.PGID,
+		DockerHost:   cfg.DockerHost,
+		DockerConfig: cfg.DockerConfig,
+		DatabaseURL:  cfg.DatabaseURL,
+	}
+	if err := startup.ApplyRequestedRuntimeIdentity(ctx, runtimeIdentityCfg); err != nil {
+		return nil, fmt.Errorf("apply runtime identity: %w", err)
+	}
+	cfg.DockerConfig = runtimeIdentityCfg.DockerConfig
+
+	bootstrap.SetupSlogLogger(cfg)
+	bootstrap.ConfigureGormLogger(cfg)
+	return cfg, nil
+}
+
+func printStatus(out io.Writer, status *database.MigrationStatus, knownVersions []database.AppMigrationVersion) error {
+	if _, err := fmt.Fprintf(out, "Provider: %s\n", status.Provider); err != nil {
+		return err
+	}
+	if status.HasVersion {
+		if _, err := fmt.Fprintf(out, "Current schema version: %d\n", status.CurrentVersion); err != nil {
+			return err
+		}
+	} else {
+		if _, err := fmt.Fprintln(out, "Current schema version: none"); err != nil {
+			return err
+		}
+	}
+	if _, err := fmt.Fprintf(out, "Latest embedded schema version: %d\n", status.LatestVersion); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(out, "Dirty: %t\n", status.Dirty); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(out, "Known app-version targets:"); err != nil {
+		return err
+	}
+	for _, version := range knownVersions {
+		if _, err := fmt.Fprintf(out, "  %s -> schema %d\n", version.AppVersion, version.MigrationVersion); err != nil {
+			return err
+		}
+	}
+	return nil
+}

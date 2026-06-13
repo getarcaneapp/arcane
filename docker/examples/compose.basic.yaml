@@ -1,7 +1,28 @@
 services:
-  arcane:
+  arcane-migrator:
     image: ghcr.io/getarcaneapp/manager:latest
+    restart: "no"
+    # To downgrade:
+    # 1. Stop Arcane and back up the arcane-data volume.
+    # 2. Set ARCANE_VERSION to the target version, for example v1.18.0.
+    # 3. Comment out the `up` command and uncomment the `down` command.
+    # 4. Run: docker compose run --rm arcane-migrator
+    command:
+      - migrate
+      - up
+    # command:
+    #   - migrate
+    #   - down
+    #   - ${ARCANE_VERSION:?}
+    volumes:
+      - arcane-data:/app/data
+
+  arcane:
+    image: ghcr.io/getarcaneapp/manager:${ARCANE_VERSION:-latest}
     container_name: arcane
+    depends_on:
+      arcane-migrator:
+        condition: service_completed_successfully
     ports:
       - "3552:3552"
     volumes:

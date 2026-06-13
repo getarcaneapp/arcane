@@ -3,6 +3,8 @@ package database
 import (
 	"context"
 	stdsql "database/sql"
+	"encoding/json"
+	"os"
 	"path/filepath"
 	"strconv"
 	"testing"
@@ -318,6 +320,61 @@ func TestInitialize_CreatesQueryPerformanceIndexes(t *testing.T) {
 	}
 }
 
+func TestResolveAppMigrationVersion(t *testing.T) {
+	version, err := ResolveAppMigrationVersion("v1.18.0")
+	require.NoError(t, err)
+	assert.Equal(t, int64(47), version)
+
+	version, err = ResolveAppMigrationVersion("1.19.2")
+	require.NoError(t, err)
+	assert.Equal(t, int64(52), version)
+}
+
+func TestResolveAppMigrationVersion_Unknown(t *testing.T) {
+	_, err := ResolveAppMigrationVersion("v0.0.0")
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "no migration target is known")
+}
+
+func TestMigrationVersionManifestIsGenerated(t *testing.T) {
+	ctx := context.Background()
+	repoRoot := findRepoRootInternal(t)
+
+	generatedVersions, err := GenerateAppMigrationVersionsFromGit(ctx, repoRoot, "")
+	require.NoError(t, err)
+
+	currentVersion := currentArcaneVersionInternal(t, repoRoot)
+	if !appMigrationVersionsContainInternal(generatedVersions, currentVersion) {
+		generatedVersions, err = GenerateAppMigrationVersionsFromGit(ctx, repoRoot, currentVersion)
+		require.NoError(t, err)
+	}
+
+	committedVersions, err := ListAppMigrationVersions()
+	require.NoError(t, err)
+	require.NotEmpty(t, committedVersions)
+	if len(generatedVersions) != len(committedVersions) {
+		t.Skip("local git tags do not include the full committed migration manifest tag set")
+	}
+	assert.Equal(t, generatedVersions, committedVersions, "run `just migration-manifest` to regenerate backend/resources/migration_versions.json")
+}
+
+func TestGetMigrationStatus(t *testing.T) {
+	ctx := context.Background()
+	dsn := "file:" + filepath.Join(t.TempDir(), "arcane-status.db")
+	require.NoError(t, MigrateUp(ctx, dsn))
+
+	status, err := GetMigrationStatus(ctx, dsn)
+	require.NoError(t, err)
+
+	highest, err := getHighestEmbeddedMigrationVersionInternal("sqlite")
+	require.NoError(t, err)
+	assert.Equal(t, "sqlite", status.Provider)
+	assert.True(t, status.HasVersion)
+	assert.False(t, status.Dirty)
+	assert.Equal(t, highest, status.CurrentVersion)
+	assert.Equal(t, highest, status.LatestVersion)
+}
+
 func assertSQLiteIndexExistsInternal(t *testing.T, db *DB, indexName string) {
 	t.Helper()
 
@@ -344,6 +401,54 @@ func assertSQLiteIndexMissingInternal(t *testing.T, db *DB, indexName string) {
 	).Scan(&count).Error
 	require.NoError(t, err)
 	assert.Zero(t, count, "expected index %s to be removed", indexName)
+}
+
+func findRepoRootInternal(t *testing.T) string {
+	t.Helper()
+
+	wd, err := os.Getwd()
+	require.NoError(t, err)
+
+	for {
+		if fileExistsInternal(filepath.Join(wd, ".git")) && fileExistsInternal(filepath.Join(wd, ".arcane.json")) {
+			return wd
+		}
+
+		parent := filepath.Dir(wd)
+		if parent == wd {
+			t.Skip("repository root with .git was not found")
+		}
+		wd = parent
+	}
+}
+
+func currentArcaneVersionInternal(t *testing.T, repoRoot string) string {
+	t.Helper()
+
+	configBytes, err := os.ReadFile(filepath.Join(repoRoot, ".arcane.json"))
+	require.NoError(t, err)
+
+	var arcaneConfig struct {
+		Version string `json:"version"`
+	}
+	require.NoError(t, json.Unmarshal(configBytes, &arcaneConfig))
+	require.NotEmpty(t, arcaneConfig.Version)
+	return arcaneConfig.Version
+}
+
+func appMigrationVersionsContainInternal(versions []AppMigrationVersion, appVersion string) bool {
+	normalizedVersion := normalizeAppVersionInternal(appVersion)
+	for _, version := range versions {
+		if normalizeAppVersionInternal(version.AppVersion) == normalizedVersion {
+			return true
+		}
+	}
+	return false
+}
+
+func fileExistsInternal(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 func seedLegacyMigrationStateInternal(t *testing.T, dsn string, version int64, dirty bool) {
