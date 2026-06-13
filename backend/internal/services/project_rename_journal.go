@@ -196,7 +196,7 @@ func (s *ProjectService) recoverProjectRenameJournalInternal(ctx context.Context
 }
 
 func (s *ProjectService) completeProjectRenameJournalInternal(ctx context.Context, journal *projectRenameJournalInternal) error {
-	dockerClient, _, err := s.projectRenameRecoveryDockerInternal(ctx, len(journal.Volumes) > 0)
+	dockerClient, _, err := s.projectRenameRecoveryDockerInternal(ctx, len(journal.Volumes) > 0, false)
 	if err != nil {
 		return err
 	}
@@ -244,7 +244,7 @@ func (s *ProjectService) rollbackProjectRenameJournalVolumesInternal(ctx context
 		return nil
 	}
 
-	dockerClient, helperImage, err := s.projectRenameRecoveryDockerInternal(ctx, len(journal.Volumes) > 0)
+	dockerClient, helperImage, err := s.projectRenameRecoveryDockerInternal(ctx, len(journal.Volumes) > 0, len(journal.Volumes) > 0)
 	if err != nil {
 		return err
 	}
@@ -302,8 +302,8 @@ func removeProjectRenameJournalTargetVolumeInternal(ctx context.Context, dockerC
 	return nil
 }
 
-func (s *ProjectService) projectRenameRecoveryDockerInternal(ctx context.Context, required bool) (*client.Client, string, error) {
-	if !required {
+func (s *ProjectService) projectRenameRecoveryDockerInternal(ctx context.Context, dockerRequired bool, helperImageRequired bool) (*client.Client, string, error) {
+	if !dockerRequired {
 		return nil, "", nil
 	}
 	if s.dockerService == nil {
@@ -315,9 +315,13 @@ func (s *ProjectService) projectRenameRecoveryDockerInternal(ctx context.Context
 		return nil, "", fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	helperImage, err := getProjectVolumeCopyHelperImageInternal(ctx, s.imageService, dockerClient)
-	if err != nil {
-		return nil, "", err
+	var helperImage string
+	if helperImageRequired {
+		var err error
+		helperImage, err = getProjectVolumeCopyHelperImageInternal(ctx, s.imageService, dockerClient)
+		if err != nil {
+			return nil, "", err
+		}
 	}
 
 	return dockerClient, helperImage, nil
