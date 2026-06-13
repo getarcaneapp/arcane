@@ -284,14 +284,8 @@ func (m *dockerProjectVolumeRenameMigrationInternal) Rollback(ctx context.Contex
 			}
 		}
 	}
-	if restoreErr != nil {
-		return restoreErr
-	}
 
-	var rollbackErr error
-	if err := m.rollbackCreatedTargets(ctx, dockerClient); err != nil {
-		rollbackErr = errors.Join(rollbackErr, err)
-	}
+	rollbackErr := errors.Join(restoreErr, m.rollbackCreatedTargets(ctx, dockerClient))
 	if rollbackErr == nil {
 		dockerutil.InvalidateVolumeUsageCache()
 	}

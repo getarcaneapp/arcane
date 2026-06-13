@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -118,4 +119,44 @@ func TestRunProjectVolumeHelperContainerInternal_RemovesHelperWhenContextIsCance
 	case <-time.After(2 * time.Second):
 		t.Fatal("expected helper container to be removed after context cancellation")
 	}
+}
+
+func TestDockerProjectVolumeRenameMigrationInternal_RollbackCleansTargetsWhenRestoreFails(t *testing.T) {
+	var targetRemoved atomic.Bool
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode([]container.Summary{}))
+		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
+			targetRemoved.Store(true)
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	migration := &dockerProjectVolumeRenameMigrationInternal{
+		service: &ProjectService{
+			dockerService: &DockerClientService{client: newTestDockerClient(t, server)},
+		},
+		createdNew: []projectVolumeRenameEntryInternal{
+			{NewName: "web_data"},
+		},
+		removedOld: []projectVolumeRenameEntryInternal{
+			{
+				OldName: "nginx_data",
+				NewName: "web_data",
+			},
+		},
+	}
+
+	err := migration.Rollback(context.Background())
+
+	require.Error(t, err)
+	require.ErrorContains(t, err, "volume copy helper image")
+	require.True(t, targetRemoved.Load(), "expected rollback to remove created target volume after restore failure")
+	require.Nil(t, migration.createdNew)
 }
