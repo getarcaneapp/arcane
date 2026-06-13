@@ -358,15 +358,10 @@ func createProjectRenamedVolumeInternal(ctx context.Context, dockerClient *clien
 	}
 	labels[api.ConfigHashLabel] = hash
 
-	driver := strings.TrimSpace(entry.OldVolume.Driver)
-	if driver == "" {
-		driver = entry.NewConfig.Driver
-	}
-
 	_, err = dockerClient.VolumeCreate(ctx, client.VolumeCreateOptions{
 		Name:       entry.NewName,
-		Driver:     driver,
-		DriverOpts: entry.OldVolume.Options,
+		Driver:     entry.NewConfig.Driver,
+		DriverOpts: entry.NewConfig.DriverOpts,
 		Labels:     labels,
 	})
 	if err != nil {
