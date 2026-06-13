@@ -4,6 +4,7 @@ import { templateService } from '$lib/services/template-service.js';
 import type { Template } from '$lib/types/swarm';
 import { handleApiResultWithCallbacks, tryCatch } from '$lib/utils/api';
 import { toast } from 'svelte-sonner';
+import { parseDocument } from 'yaml';
 import { z } from 'zod/v4';
 
 export type ConvertedDockerRun = {
@@ -46,6 +47,28 @@ export const dropdownItemClass =
 
 export function templateNameSlug(name: string): string {
 	return name.toLowerCase().replace(/[^a-z0-9-_]/g, '-');
+}
+
+// Returns the normalized top-level `name:` from compose YAML content, or null
+// when the key is absent or unusable. Interpolated names (containing `${`)
+// and unparseable content are treated as absent, mirroring the backend's
+// ComposeContentProjectName so the name lock engages identically on both sides.
+export function extractComposeYamlName(content: string): string | null {
+	if (!content?.trim()) return null;
+	try {
+		const doc = parseDocument(content);
+		if (doc.errors.length > 0) return null;
+		const raw = doc.get('name', false);
+		if (typeof raw !== 'string' || raw.includes('${')) return null;
+		const normalized = raw
+			.trim()
+			.toLowerCase()
+			.replace(/[^a-z0-9_-]/g, '')
+			.replace(/^[_-]+/, '');
+		return normalized || null;
+	} catch {
+		return null;
+	}
 }
 
 export function createComposeEditorSchema(nameRequiredMessage: string) {

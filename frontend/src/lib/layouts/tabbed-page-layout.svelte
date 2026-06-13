@@ -57,7 +57,7 @@
 		>
 			<div class="max-w-full px-4 py-3">
 				<div class="flex items-start justify-between gap-3">
-					<div class="flex min-w-0 items-start gap-3">
+					<div class="flex min-w-0 items-start gap-2">
 						{#if backUrl}
 							<ArcaneButton action="base" tone="ghost" size="sm" href={backUrl}>
 								<ArrowLeftIcon class="size-4" />

@@ -5,7 +5,10 @@
 	import * as Card from '$lib/components/ui/card';
 	import * as Tabs from '$lib/components/ui/tabs';
 	import { useEnvironmentRefresh } from '$lib/hooks/use-environment-refresh.svelte';
-	import { LayersIcon, DockIcon, JobsIcon, TrashIcon, EditIcon, FileTextIcon, CodeIcon } from '$lib/icons';
+	import { LayersIcon, DockIcon, JobsIcon, TrashIcon, EditIcon, FileTextIcon } from '$lib/icons';
+	import EditorTabStrip from '../../../projects/components/EditorTabStrip.svelte';
+	import ProjectFileTreePanel from '../../../projects/components/ProjectFileTreePanel.svelte';
+	import ResizableSplit from '$lib/components/resizable-split.svelte';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
 	import { m } from '$lib/paraglide/messages';
 	import { swarmService } from '$lib/services/swarm-service';
@@ -26,6 +29,39 @@
 	let tasks = $state(untrack(() => data.tasks));
 	let source = $state<SwarmStackSource | null>(untrack(() => data.source));
 	let sourceState = $state<'loading' | 'available' | 'missing' | 'forbidden' | 'error'>(untrack(() => data.sourceState));
+
+	let selectedSourceFile = $state('compose');
+	let openSourceTabs = $state<string[]>(['compose']);
+	let sourceTreeWidth = $state<number | null>(null);
+	const sourceOpenTabs = $derived(openSourceTabs.length > 0 ? openSourceTabs : ['compose']);
+	const activeSourceTab = $derived(
+		sourceOpenTabs.includes(selectedSourceFile) ? selectedSourceFile : (sourceOpenTabs[0] ?? 'compose')
+	);
+	const sourceTabs = $derived(
+		sourceOpenTabs.map((key) => ({
+			key,
+			label: key === 'compose' ? 'compose.yaml' : '.env',
+			title: key === 'compose' ? 'compose.yaml' : '.env',
+			iconClass: key === 'compose' ? 'text-blue-500' : 'text-green-500',
+			pending: false
+		}))
+	);
+
+	function openSourceTab(key: string) {
+		if (!openSourceTabs.includes(key)) {
+			openSourceTabs = [...openSourceTabs, key];
+		}
+		selectedSourceFile = key;
+	}
+
+	function closeSourceTab(key: string) {
+		const index = sourceOpenTabs.indexOf(key);
+		const remaining = sourceOpenTabs.filter((tab) => tab !== key);
+		openSourceTabs = openSourceTabs.filter((tab) => tab !== key);
+		if (selectedSourceFile === key) {
+			selectedSourceFile = remaining[Math.min(Math.max(index - 1, 0), remaining.length - 1)] ?? 'compose';
+		}
+	}
 	let servicesRequestOptions = $state(untrack(() => data.servicesRequestOptions));
 	let tasksRequestOptions = $state(untrack(() => data.tasksRequestOptions));
 	type StackTab = 'services' | 'tasks' | 'source';
@@ -225,50 +261,71 @@
 				</Tabs.Content>
 				<Tabs.Content value="source" class="flex min-h-0 flex-1 flex-col">
 					{#if sourceState === 'available' && source}
-						<div class="grid min-h-0 flex-1 auto-rows-fr gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-							<Card.Root class="flex min-h-0 min-w-0 flex-col overflow-hidden">
-								<Card.Header icon={CodeIcon} class="flex-shrink-0">
-									<Card.Title>
-										<h2>compose.yaml</h2>
-									</Card.Title>
-								</Card.Header>
-								<Card.Content class="relative z-0 flex min-h-0 flex-1 flex-col overflow-visible p-0">
-									<div class="absolute inset-0 min-h-0 w-full min-w-0 rounded-b-xl">
-										<CodeEditor
-											value={source.composeContent}
-											language="yaml"
-											readOnly={true}
-											fontSize="13px"
-											fileId={`swarm-stack-source:${stackName}:compose.yaml`}
-										/>
-									</div>
-								</Card.Content>
-							</Card.Root>
+						{@const stackSource = source}
+						<div class="bg-card border-border flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border">
+							<ResizableSplit
+								class="min-h-0 flex-1"
+								variant="flush"
+								firstClass="bg-muted/20 border-border flex min-h-0 flex-col border-b lg:border-r lg:border-b-0"
+								secondClass="flex min-h-0 flex-col"
+								bind:size={sourceTreeWidth}
+								minSize={200}
+								maxSize={480}
+								minSecondSize={360}
+								defaultRatio={0.2}
+								stackBelow={1024}
+								ariaLabel={m.compose_editor_resize_files_panel()}
+								persistKey={`arcane.swarm.split:${stackName}:source`}
+							>
+								{#snippet first()}
+									<ProjectFileTreePanel
+										composeFileName="compose.yaml"
+										entries={[]}
+										selectedFile={selectedSourceFile}
+										onSelect={openSourceTab}
+									/>
+								{/snippet}
 
-							<Card.Root class="flex min-h-0 min-w-0 flex-col overflow-hidden">
-								<Card.Header icon={FileTextIcon} class="flex-shrink-0">
-									<Card.Title>
-										<h2>.env</h2>
-									</Card.Title>
-								</Card.Header>
-								<Card.Content class="relative z-0 flex min-h-0 flex-1 flex-col overflow-visible p-0">
-									{#if source.envContent?.trim()}
-										<div class="absolute inset-0 min-h-0 w-full min-w-0 rounded-b-xl">
-											<CodeEditor
-												value={source.envContent}
-												language="env"
-												readOnly={true}
-												fontSize="13px"
-												fileId={`swarm-stack-source:${stackName}:.env`}
-											/>
+								{#snippet second()}
+									<div class="flex h-full min-h-0 flex-1 flex-col">
+										<EditorTabStrip
+											tabs={sourceTabs}
+											activeKey={activeSourceTab}
+											onSelect={openSourceTab}
+											onClose={closeSourceTab}
+										/>
+										<div class="relative min-h-0 flex-1">
+											{#key activeSourceTab}
+												{#if activeSourceTab === 'compose'}
+													<div class="absolute inset-0 min-h-0 w-full min-w-0">
+														<CodeEditor
+															value={stackSource.composeContent}
+															language="yaml"
+															readOnly={true}
+															fontSize="13px"
+															fileId={`swarm-stack-source:${stackName}:compose.yaml`}
+														/>
+													</div>
+												{:else if stackSource.envContent?.trim()}
+													<div class="absolute inset-0 min-h-0 w-full min-w-0">
+														<CodeEditor
+															value={stackSource.envContent}
+															language="env"
+															readOnly={true}
+															fontSize="13px"
+															fileId={`swarm-stack-source:${stackName}:.env`}
+														/>
+													</div>
+												{:else}
+													<div class="text-muted-foreground flex h-full items-center justify-center p-6 text-center text-sm">
+														No saved `.env` file was stored for this stack.
+													</div>
+												{/if}
+											{/key}
 										</div>
-									{:else}
-										<div class="text-muted-foreground flex flex-1 items-center justify-center p-6 text-center text-sm">
-											No saved `.env` file was stored for this stack.
-										</div>
-									{/if}
-								</Card.Content>
-							</Card.Root>
+									</div>
+								{/snippet}
+							</ResizableSplit>
 						</div>
 					{:else if sourceState === 'loading'}
 						<Card.Root variant="subtle">

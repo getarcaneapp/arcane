@@ -203,30 +203,6 @@ func TestUpdaterService_ApplyPendingNoRecordsInternal(t *testing.T) {
 	assert.Empty(t, result.Items)
 }
 
-func TestUpdaterService_ConfigUsesComposeStandaloneFallbackSettingInternal(t *testing.T) {
-	ctx := context.Background()
-
-	t.Run("defaults disabled without settings service", func(t *testing.T) {
-		svc := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
-
-		cfg := svc.configInternal(ctx)
-
-		assert.False(t, cfg.AllowComposeStandaloneFallback)
-	})
-
-	t.Run("reads settings service", func(t *testing.T) {
-		db := setupProjectTestDB(t)
-		settingsSvc, err := NewSettingsService(ctx, db)
-		require.NoError(t, err)
-		require.NoError(t, settingsSvc.SetBoolSetting(ctx, autoUpdateComposeStandaloneFallbackSettingKeyInternal, true))
-		svc := NewUpdaterService(db, settingsSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil)
-
-		cfg := svc.configInternal(ctx)
-
-		assert.True(t, cfg.AllowComposeStandaloneFallback)
-	})
-}
-
 func TestUpdaterService_ModuleOptionsFromUpdaterOptionsInternal(t *testing.T) {
 	got := moduleOptionsFromUpdaterOptionsInternal(arcaneupdater.Options{
 		Type:        moduletypes.ResourceTypeImage,

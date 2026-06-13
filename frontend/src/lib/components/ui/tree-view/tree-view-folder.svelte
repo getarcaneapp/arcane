@@ -1,14 +1,19 @@
 <script lang="ts">
 	import * as Collapsible from '$lib/components/ui/collapsible/index.js';
-	import { FolderOpenIcon } from '$lib/icons';
+	import { ArrowDownIcon, ArrowRightIcon, FolderOpenIcon } from '$lib/icons';
 	import { cn } from '$lib/utils';
 	import type { TreeViewFolderProps } from './types';
 
-	let { name, open = $bindable(true), class: className, icon, children }: TreeViewFolderProps = $props();
+	let { name, open = $bindable(false), class: className, icon, children }: TreeViewFolderProps = $props();
 </script>
 
 <Collapsible.Root bind:open>
 	<Collapsible.Trigger class={cn('flex place-items-center gap-1', className)}>
+		{#if open}
+			<ArrowDownIcon class="size-4" />
+		{:else}
+			<ArrowRightIcon class="size-4" />
+		{/if}
 		{#if icon}
 			{@render icon({ name, open })}
 		{:else}

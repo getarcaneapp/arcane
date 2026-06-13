@@ -51,6 +51,7 @@ type localImageSnapshot struct {
 	Tag           string
 	PrimaryDigest string
 	AllDigests    []string
+	IsLocalBuild  bool
 }
 
 func NewImageUpdateService(db *database.DB, settingsService *SettingsService, registryService *ContainerRegistryService, dockerService *DockerClientService, eventService *EventService, notificationService *NotificationService, activityService *ActivityService) *ImageUpdateService {
@@ -231,11 +232,14 @@ func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef stri
 
 	digestResult.ResponseTimeMs = int(time.Since(startTime).Milliseconds())
 	digestResult.ActivityID = utils.StringPtrFromTrimmed(activityID)
+	if digestResult.UpdateType == models.UpdateTypeLocal {
+		s.appendImageUpdateActivityMessageInternal(ctx, activityID, models.ActivityMessageLevelInfo, imageRef+" — local build, registry check skipped", 100, "Skipping image update check")
+	}
 	metadata := models.JSON{
 		"action":         "check_update",
 		"imageRef":       imageRef,
 		"hasUpdate":      digestResult.HasUpdate,
-		"updateType":     "digest",
+		"updateType":     digestResult.UpdateType,
 		"currentDigest":  digestResult.CurrentDigest,
 		"latestDigest":   digestResult.LatestDigest,
 		"responseTimeMs": digestResult.ResponseTimeMs,
@@ -295,6 +299,11 @@ func (s *ImageUpdateService) checkDigestUpdateWithSnapshotInternal(ctx context.C
 
 	imageRef := fmt.Sprintf("%s/%s:%s", parts.Registry, parts.Repository, parts.Tag)
 	start := time.Now()
+	snapshot, err := s.inspectLocalImageSnapshotInternal(ctx, imageRef)
+	if err == nil && snapshot.IsLocalBuild {
+		return localBuildImageUpdateResultInternal(snapshot, int(time.Since(start).Milliseconds())), snapshot, nil
+	}
+
 	registryCtx, registryCancel := s.registryContextInternal(ctx)
 	digestResult, err := s.registryService.inspectImageDigestInternal(registryCtx, imageRef, nil)
 	registryCancel()
@@ -315,9 +324,11 @@ func (s *ImageUpdateService) checkDigestUpdateWithSnapshotInternal(ctx context.C
 		}, nil, fmt.Errorf("failed to get remote digest: %w", err)
 	}
 
-	snapshot, err := s.inspectLocalImageSnapshotInternal(ctx, imageRef)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get local digest: %w", err)
+	if snapshot == nil {
+		snapshot, err = s.inspectLocalImageSnapshotInternal(ctx, imageRef)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to get local digest: %w", err)
+		}
 	}
 
 	localDigest := snapshot.PrimaryDigest
@@ -339,7 +350,7 @@ func (s *ImageUpdateService) checkDigestUpdateWithSnapshotInternal(ctx context.C
 
 	return &imageupdate.Response{
 		HasUpdate:      hasUpdate,
-		UpdateType:     "digest",
+		UpdateType:     models.UpdateTypeDigest,
 		CurrentDigest:  localDigest,
 		LatestDigest:   digestResult.Digest,
 		CheckTime:      time.Now(),
@@ -349,6 +360,17 @@ func (s *ImageUpdateService) checkDigestUpdateWithSnapshotInternal(ctx context.C
 		AuthRegistry:   digestResult.AuthRegistry,
 		UsedCredential: digestResult.UsedCredential,
 	}, snapshot, nil
+}
+
+func localBuildImageUpdateResultInternal(snapshot *localImageSnapshot, responseTimeMs int) *imageupdate.Response {
+	return &imageupdate.Response{
+		HasUpdate:      false,
+		UpdateType:     models.UpdateTypeLocal,
+		CurrentVersion: snapshot.Tag,
+		CurrentDigest:  snapshot.PrimaryDigest,
+		CheckTime:      time.Now(),
+		ResponseTimeMs: responseTimeMs,
+	}
 }
 
 func (s *ImageUpdateService) parseImageReference(imageRef string) *ImageParts {
@@ -558,6 +580,7 @@ func (s *ImageUpdateService) inspectLocalImageSnapshotInternal(ctx context.Conte
 
 	var allDigests []string
 	var primaryDigest string
+	isLocalBuild := false
 
 	// Extract all digests from RepoDigests
 	if len(inspectResponse.RepoDigests) > 0 {
@@ -578,6 +601,7 @@ func (s *ImageUpdateService) inspectLocalImageSnapshotInternal(ctx context.Conte
 
 	// Fallback to image ID if no repo digests available
 	if primaryDigest == "" {
+		isLocalBuild = true
 		primaryDigest = inspectResponse.ID
 		allDigests = []string{primaryDigest}
 	}
@@ -590,6 +614,7 @@ func (s *ImageUpdateService) inspectLocalImageSnapshotInternal(ctx context.Conte
 		Tag:           tag,
 		PrimaryDigest: primaryDigest,
 		AllDigests:    allDigests,
+		IsLocalBuild:  isLocalBuild,
 	}, nil
 }
 
@@ -695,6 +720,9 @@ func imageCheckResultMessageInternal(imageRef string, res *imageupdate.Response)
 	}
 	if err := strings.TrimSpace(res.Error); err != "" {
 		return models.ActivityMessageLevelError, fmt.Sprintf("%s: %s", imageRef, err)
+	}
+	if res.UpdateType == models.UpdateTypeLocal {
+		return models.ActivityMessageLevelInfo, imageRef + " — local build, registry check skipped"
 	}
 	if res.HasUpdate {
 		return models.ActivityMessageLevelSuccess, imageRef + " — update available"
@@ -1027,6 +1055,11 @@ func (s *ImageUpdateService) checkSingleImageInBatchInternal(ctx context.Context
 
 	start := time.Now()
 	imageRef := fmt.Sprintf("%s/%s:%s", parts.Registry, parts.Repository, parts.Tag)
+	snapshot, ldErr := s.inspectLocalImageSnapshotInternal(ctx, imageRef)
+	if ldErr == nil && snapshot.IsLocalBuild {
+		return localBuildImageUpdateResultInternal(snapshot, int(time.Since(start).Milliseconds())), snapshot
+	}
+
 	registryCtx, registryCancel := s.registryContextInternal(ctx)
 	digestResult, digestErr := s.registryService.inspectImageDigestInternal(registryCtx, imageRef, externalCreds)
 	registryCancel()
@@ -1045,17 +1078,19 @@ func (s *ImageUpdateService) checkSingleImageInBatchInternal(ctx context.Context
 		return resp, nil
 	}
 
-	snapshot, ldErr := s.inspectLocalImageSnapshotInternal(ctx, imageRef)
 	if ldErr != nil {
-		return &imageupdate.Response{
-			Error:          ldErr.Error(),
-			CheckTime:      time.Now(),
-			ResponseTimeMs: int(time.Since(start).Milliseconds()),
-			AuthMethod:     digestResult.AuthMethod,
-			AuthUsername:   digestResult.AuthUsername,
-			AuthRegistry:   digestResult.AuthRegistry,
-			UsedCredential: digestResult.UsedCredential,
-		}, nil
+		snapshot, ldErr = s.inspectLocalImageSnapshotInternal(ctx, imageRef)
+		if ldErr != nil {
+			return &imageupdate.Response{
+				Error:          ldErr.Error(),
+				CheckTime:      time.Now(),
+				ResponseTimeMs: int(time.Since(start).Milliseconds()),
+				AuthMethod:     digestResult.AuthMethod,
+				AuthUsername:   digestResult.AuthUsername,
+				AuthRegistry:   digestResult.AuthRegistry,
+				UsedCredential: digestResult.UsedCredential,
+			}, nil
+		}
 	}
 
 	localDigest := snapshot.PrimaryDigest
@@ -1070,7 +1105,7 @@ func (s *ImageUpdateService) checkSingleImageInBatchInternal(ctx context.Context
 
 	return &imageupdate.Response{
 		HasUpdate:      hasDigestUpdate,
-		UpdateType:     "digest",
+		UpdateType:     models.UpdateTypeDigest,
 		CurrentDigest:  localDigest,
 		LatestDigest:   digestResult.Digest,
 		CheckTime:      time.Now(),

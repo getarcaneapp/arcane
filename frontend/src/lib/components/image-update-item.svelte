@@ -19,6 +19,7 @@
 		imageId: string;
 		repo?: string;
 		tag?: string;
+		isLocal?: boolean;
 		onUpdated?: (data: ImageUpdateData) => void;
 		/** Callback when user clicks "Update Container" button */
 		onUpdateContainer?: () => void;
@@ -32,6 +33,7 @@
 		imageId,
 		repo,
 		tag,
+		isLocal = false,
 		onUpdated,
 		onUpdateContainer,
 		debugHasUpdate
@@ -87,7 +89,8 @@
 	const isChecking = $derived(imageUpdateQuery.isFetching);
 	let isOpen = $state(false);
 
-	const canCheckUpdate = $derived(!!(repo && tag && repo !== '<none>' && tag !== '<none>'));
+	const isLocalImage = $derived(!!isLocal || effectiveUpdateInfo?.updateType === 'local');
+	const canCheckUpdate = $derived(!!(repo && tag && repo !== '<none>' && tag !== '<none>') && !isLocalImage);
 	const hasError = $derived(!!effectiveUpdateInfo?.error && effectiveUpdateInfo.error.trim() !== '');
 
 	type AuthBadge = { label: string; classes: string };
@@ -197,6 +200,8 @@
 		if (!effectiveUpdateInfo) return null;
 		if (effectiveUpdateInfo.error)
 			return { level: 'Error', color: 'text-red-500', description: m.image_update_could_not_query_registry() };
+		if (effectiveUpdateInfo.updateType === 'local')
+			return { level: m.image_update_local_title(), color: 'text-slate-500', description: m.image_update_local_desc() };
 		if (!effectiveUpdateInfo.hasUpdate)
 			return { level: 'None', color: 'text-green-500', description: m.image_update_up_to_date_desc() };
 		if (effectiveUpdateInfo.updateType === 'digest')
@@ -408,6 +413,18 @@
 	{@render recheckButton()}
 {/snippet}
 
+{#snippet localState()}
+	<div class="bg-linear-to-br from-slate-50 to-slate-100/40 p-4 dark:from-slate-950/20 dark:to-slate-900/20">
+		<div class="flex items-start gap-3">
+			{@render iconCircle(BoxIcon, 'from-slate-500', 'to-gray-500', 'shadow-slate-500/25')}
+			<div class="flex-1">
+				<div class="text-sm font-semibold text-slate-950 dark:text-slate-100">{m.image_update_local_title()}</div>
+				<div class="text-xs text-slate-900/80 dark:text-slate-300/80">{m.image_update_local_desc()}</div>
+			</div>
+		</div>
+	</div>
+{/snippet}
+
 {#snippet loadingState()}
 	<div class="bg-linear-to-br from-blue-50 to-cyan-50/30 p-4 dark:from-blue-950/20 dark:to-cyan-950/10">
 		<div class="flex items-center gap-3">
@@ -438,7 +455,21 @@
 	</div>
 {/snippet}
 
-{#if effectiveUpdateInfo}
+{#if isLocalImage}
+	<UpdateStatusPopover bind:open={isOpen} contentClass="max-w-[280px] p-0">
+		{#snippet trigger()}
+			<span class="mr-2 inline-flex size-4 items-center justify-center align-middle" data-testid="image-update-trigger">
+				<BoxIcon class="size-4 text-slate-500" />
+			</span>
+		{/snippet}
+
+		{#snippet content()}
+			<div class="overflow-hidden rounded-xl">
+				{@render localState()}
+			</div>
+		{/snippet}
+	</UpdateStatusPopover>
+{:else if effectiveUpdateInfo}
 	<UpdateStatusPopover bind:open={isOpen} contentClass="max-w-[280px] p-0">
 		{#snippet trigger()}
 			<span class="mr-2 inline-flex size-4 items-center justify-center align-middle" data-testid="image-update-trigger">

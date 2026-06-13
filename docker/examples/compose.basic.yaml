@@ -25,12 +25,7 @@ services:
     cgroup: host
     healthcheck:
       test:
-        [
-          "CMD",
-          "curl",
-          "-fsS",
-          "http://localhost:3552/api/health",
-        ]
+        ["CMD", "./arcane", "health", "--timeout", "2s"]
       interval: 10s
       timeout: 3s
       retries: 5

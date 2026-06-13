@@ -11,8 +11,12 @@ import (
 	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 )
 
+// DefaultComposeFileName is the compose filename Arcane writes when a project
+// has no existing compose file.
+const DefaultComposeFileName = "compose.yaml"
+
 var composeFileCandidates = []string{
-	"compose.yaml",
+	DefaultComposeFileName,
 	"compose.yml",
 	"docker-compose.yaml",
 	"docker-compose.yml",
@@ -66,7 +70,7 @@ func WriteComposeFile(projectsRoot, dirPath, content string) error {
 	if existingFile := detectExistingComposeFileInternal(dirPath); existingFile != "" {
 		composePath = existingFile
 	} else {
-		composePath = filepath.Join(dirPath, "compose.yaml")
+		composePath = filepath.Join(dirPath, DefaultComposeFileName)
 	}
 
 	if err := os.WriteFile(composePath, []byte(content), pkgutils.FilePerm); err != nil {

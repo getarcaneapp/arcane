@@ -2,6 +2,7 @@ import { m } from '$lib/paraglide/messages';
 import { environmentStore } from '$lib/stores/environment.store.svelte';
 import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
 import type { IncludeFile, Project, ProjectStatusCounts } from '$lib/types/swarm';
+import type { ProjectFileChange, ProjectFileDraft } from '$lib/types/project-files';
 import { readNdjsonStream } from '$lib/utils/streaming';
 import { transformPaginationParams } from '$lib/utils/tables';
 import BaseAPIService from './api-service';
@@ -66,12 +67,18 @@ class ProjectService extends BaseAPIService {
 		return this.handleResponse(this.api.post(`/environments/${envId}/projects/${projectName}/down`));
 	}
 
-	async createProject(projectName: string, composeContent: string, envContent?: string): Promise<Project> {
+	async createProject(
+		projectName: string,
+		composeContent: string,
+		envContent?: string,
+		projectFiles?: ProjectFileDraft[]
+	): Promise<Project> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		const payload = {
 			name: projectName,
 			composeContent,
-			envContent
+			envContent,
+			projectFiles
 		};
 		return this.handleResponse(this.api.post(`/environments/${envId}/projects`, payload));
 	}
@@ -136,17 +143,34 @@ class ProjectService extends BaseAPIService {
 		return res.data.data;
 	}
 
-	async updateProject(projectId: string, name?: string, composeContent?: string, envContent?: string): Promise<Project> {
+	async updateProject(
+		projectId: string,
+		name?: string,
+		composeContent?: string,
+		envContent?: string,
+		fileTreeRevision?: string,
+		fileChanges?: ProjectFileChange[]
+	): Promise<Project> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
-		const payload: Record<string, string> = {};
+		const payload: {
+			name?: string;
+			composeContent?: string;
+			envContent?: string;
+			fileTreeRevision?: string;
+			fileChanges?: ProjectFileChange[];
+		} = {};
 		if (name !== undefined) {
-			payload['name'] = name;
+			payload.name = name;
 		}
 		if (composeContent !== undefined) {
-			payload['composeContent'] = composeContent;
+			payload.composeContent = composeContent;
 		}
 		if (envContent !== undefined) {
-			payload['envContent'] = envContent;
+			payload.envContent = envContent;
+		}
+		if (fileChanges && fileChanges.length > 0) {
+			payload.fileTreeRevision = fileTreeRevision;
+			payload.fileChanges = fileChanges;
 		}
 		return this.handleResponse(this.api.put(`/environments/${envId}/projects/${projectId}`, payload));
 	}
