@@ -340,7 +340,7 @@ func rollbackProjectRenameDirectoryInternal(journal *projectRenameJournalInterna
 			return fmt.Errorf("rollback project directory rename: %w", err)
 		}
 	case !oldExists && !newExists:
-		return fmt.Errorf("cannot rollback project directory rename because both paths are missing: %s and %s", oldPath, newPath)
+		slog.Warn("project rename directory paths are missing during rollback", "oldPath", oldPath, "newPath", newPath)
 	}
 	return nil
 }
