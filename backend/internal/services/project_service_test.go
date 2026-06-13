@@ -1453,10 +1453,10 @@ func TestProjectService_UpdateProject_AllowsNonRenameWhenJournalRecoveryDockerUn
 
 	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyInternal(project.ID))
 	require.NoError(t, err)
-	require.True(t, ok, "failed recovery should leave the journal for a later retry")
+	require.False(t, ok, "volume rollback failure should not leave the project permanently blocked")
 }
 
-func TestProjectService_UpdateProject_BlocksRenameWhenJournalRecoveryDockerUnavailable(t *testing.T) {
+func TestProjectService_UpdateProject_AllowsRenameWhenJournalRecoveryDockerUnavailable(t *testing.T) {
 	db := setupProjectTestDB(t)
 	require.NoError(t, db.AutoMigrate(&models.KVEntry{}))
 	ctx := context.Background()
@@ -1504,16 +1504,18 @@ func TestProjectService_UpdateProject_BlocksRenameWhenJournalRecoveryDockerUnava
 	require.NoError(t, err)
 	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyInternal(project.ID), string(payload)))
 
-	_, err = svc.UpdateProject(ctx, project.ID, ptr("web"), nil, nil, nil, nil, models.User{
+	updated, err := svc.UpdateProject(ctx, project.ID, ptr("web"), nil, nil, nil, nil, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
-	require.Error(t, err)
-	require.ErrorContains(t, err, "docker service unavailable")
+	require.NoError(t, err)
+	require.Equal(t, "web", updated.Name)
+	require.DirExists(t, filepath.Join(projectsDir, "web"))
+	require.NoDirExists(t, projectPath)
 
 	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyInternal(project.ID))
 	require.NoError(t, err)
-	require.True(t, ok)
+	require.False(t, ok)
 }
 
 func TestProjectService_UpdateProject_RenamesDirectoryWhenNameChanges(t *testing.T) {

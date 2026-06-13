@@ -340,7 +340,7 @@ func TestProjectService_FinalizeProjectRenameAfterCommit_ClearsJournalAfterSourc
 	require.False(t, ok)
 }
 
-func TestProjectService_FinalizeProjectRenameAfterCommit_KeepsJournalWhenSourceCleanupFails(t *testing.T) {
+func TestProjectService_FinalizeProjectRenameAfterCommit_ClearsJournalWhenSourceCleanupFails(t *testing.T) {
 	db := setupProjectTestDB(t)
 	require.NoError(t, db.AutoMigrate(&models.KVEntry{}))
 	ctx := context.Background()
@@ -374,13 +374,9 @@ func TestProjectService_FinalizeProjectRenameAfterCommit_KeepsJournalWhenSourceC
 	journalActive := true
 	svc.finalizeProjectRenameAfterCommitInternal(ctx, project.ID, migration, journal, &journalActive)
 	require.True(t, migration.commitCalled)
-	require.True(t, journalActive)
+	require.False(t, journalActive)
 
-	raw, ok, err := kvService.Get(ctx, projectRenameJournalKeyInternal(project.ID))
+	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyInternal(project.ID))
 	require.NoError(t, err)
-	require.True(t, ok)
-
-	var updatedJournal projectRenameJournalInternal
-	require.NoError(t, json.Unmarshal([]byte(raw), &updatedJournal))
-	require.Equal(t, projectRenameJournalPhaseProjectStateCommittedInternal, updatedJournal.Phase)
+	require.False(t, ok)
 }
