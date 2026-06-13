@@ -56,12 +56,16 @@ func ApplyRequestedRuntimeIdentity(ctx context.Context, cfg *RuntimeIdentityConf
 		projectsDir = filepath.Clean(strings.TrimSpace(cfg.ProjectsDirectory))
 	}
 
-	req, warning, err := loadRuntimeIdentityRequestInternal(cfg)
+	inContainer := runningInContainerInternal(os.Getenv, os.Stat)
+	req, warning, err := loadRuntimeIdentityRequestInternal(cfg, inContainer)
 	if warning != "" {
 		fmt.Fprintf(os.Stderr, "Runtime identity warning: %s\n", warning)
 	}
-	if err != nil || !req.Enabled {
+	if err != nil {
 		return err
+	}
+	if !req.Enabled {
+		return ensureSQLiteFilesExistInternal(cfg.DatabaseURL)
 	}
 
 	runtimeUID := req.UID
@@ -69,7 +73,7 @@ func ApplyRequestedRuntimeIdentity(ctx context.Context, cfg *RuntimeIdentityConf
 
 	// Avoid re-execing forever when the requested runtime identity is already active.
 	if os.Geteuid() == runtimeUID && os.Getegid() == runtimeGID {
-		if err := ensureRuntimeDockerConfigInternal(cfg, os.Setenv, runtimeUID, runtimeGID); err != nil {
+		if err := ensureRuntimeDockerConfigInternal(cfg, os.Setenv, runtimeUID, runtimeGID, inContainer); err != nil {
 			return err
 		}
 		return ensureSQLiteFilesExistInternal(cfg.DatabaseURL)
@@ -78,29 +82,31 @@ func ApplyRequestedRuntimeIdentity(ctx context.Context, cfg *RuntimeIdentityConf
 	if os.Geteuid() != 0 {
 		fmt.Fprintf(os.Stderr, "Runtime identity warning: process is not root (euid=%d), cannot switch to PUID=%d PGID=%d; continuing as current user\n",
 			os.Geteuid(), runtimeUID, runtimeGID)
-		if err := ensureRuntimeDockerConfigInternal(cfg, os.Setenv, runtimeUID, runtimeGID); err != nil {
+		if err := ensureRuntimeDockerConfigInternal(cfg, os.Setenv, runtimeUID, runtimeGID, inContainer); err != nil {
 			return err
 		}
 		return ensureSQLiteFilesExistInternal(cfg.DatabaseURL)
 	}
 
-	mountpoints, err := loadMountpointsInternal(mountInfoPath)
-	if err != nil {
-		return fmt.Errorf("load mountpoints: %w", err)
-	}
-
-	if err := ensureRuntimeDockerConfigInternal(cfg, os.Setenv, runtimeUID, runtimeGID); err != nil {
+	if err := ensureRuntimeDockerConfigInternal(cfg, os.Setenv, runtimeUID, runtimeGID, inContainer); err != nil {
 		return err
 	}
 
-	if err := prepareWritablePathsInternal(runtimeUID, runtimeGID, mountpoints, projectsDir); err != nil {
-		return err
+	if inContainer {
+		mountpoints, err := loadMountpointsInternal(mountInfoPath)
+		if err != nil {
+			return fmt.Errorf("load mountpoints: %w", err)
+		}
+
+		if err := prepareWritablePathsInternal(runtimeUID, runtimeGID, mountpoints, projectsDir); err != nil {
+			return err
+		}
 	}
 
 	return reexecWithRuntimeIdentityInternal(ctx, req)
 }
 
-func loadRuntimeIdentityRequestInternal(cfg *RuntimeIdentityConfig) (runtimeIdentityRequest, string, error) {
+func loadRuntimeIdentityRequestInternal(cfg *RuntimeIdentityConfig, inContainer bool) (runtimeIdentityRequest, string, error) {
 	if cfg == nil {
 		cfg = &RuntimeIdentityConfig{}
 	}
@@ -109,11 +115,15 @@ func loadRuntimeIdentityRequestInternal(cfg *RuntimeIdentityConfig) (runtimeIden
 	pgid := strings.TrimSpace(cfg.PGID)
 
 	if puid == "" && pgid == "" {
-		return defaultRuntimeIdentityRequestInternal(cfg.DockerHost), "", nil
+		return defaultRuntimeIdentityRequestInternal(cfg.DockerHost, inContainer), "", nil
 	}
 
 	if puid == "" || pgid == "" {
-		return defaultRuntimeIdentityRequestInternal(cfg.DockerHost), "PUID and PGID must both be set to override the default non-root runtime user; continuing with the default non-root runtime user", nil
+		req := defaultRuntimeIdentityRequestInternal(cfg.DockerHost, inContainer)
+		if inContainer {
+			return req, "PUID and PGID must both be set to override the default non-root runtime user; continuing with the default non-root runtime user", nil
+		}
+		return req, "PUID and PGID must both be set to enable runtime identity outside containers; continuing without runtime identity", nil
 	}
 
 	uid, credentialUID, err := parseRuntimeIdentityValueInternal(puid, "PUID")
@@ -136,7 +146,14 @@ func loadRuntimeIdentityRequestInternal(cfg *RuntimeIdentityConfig) (runtimeIden
 	}, "", nil
 }
 
-func defaultRuntimeIdentityRequestInternal(dockerHost string) runtimeIdentityRequest {
+func defaultRuntimeIdentityRequestInternal(dockerHost string, inContainer bool) runtimeIdentityRequest {
+	if !inContainer {
+		return runtimeIdentityRequest{
+			Enabled:    false,
+			DockerHost: dockerHost,
+		}
+	}
+
 	return runtimeIdentityRequest{
 		Enabled:       true,
 		UID:           defaultRuntimeUID,
@@ -147,21 +164,26 @@ func defaultRuntimeIdentityRequestInternal(dockerHost string) runtimeIdentityReq
 	}
 }
 
-func runtimeDockerConfigDirInternal(cfg *RuntimeIdentityConfig) string {
-	if cfg == nil {
-		cfg = &RuntimeIdentityConfig{}
+func runningInContainerInternal(getenv func(string) string, stat func(string) (os.FileInfo, error)) bool {
+	if pkgutils.BoolOrDefault(strings.TrimSpace(getenv("ARCANE_IN_CONTAINER")), false) {
+		return true
 	}
 
-	configDir := strings.TrimSpace(cfg.DockerConfig)
-	if configDir != "" {
-		return configDir
+	if strings.TrimSpace(getenv("container")) != "" {
+		return true
 	}
 
-	return defaultDockerConfigDir
+	for _, markerPath := range []string{"/.dockerenv", "/run/.containerenv"} {
+		if _, err := stat(markerPath); err == nil {
+			return true
+		}
+	}
+
+	return false
 }
 
-func ensureRuntimeDockerConfigInternal(cfg *RuntimeIdentityConfig, setenv func(string, string) error, uid int, gid int) error {
-	configDir, err := configureRuntimeDockerConfigEnvInternal(cfg, setenv, uid, gid)
+func ensureRuntimeDockerConfigInternal(cfg *RuntimeIdentityConfig, setenv func(string, string) error, uid int, gid int, inContainer bool) error {
+	configDir, err := configureRuntimeDockerConfigEnvInternal(cfg, setenv, uid, gid, inContainer)
 	if err != nil {
 		return err
 	}
@@ -182,7 +204,7 @@ func ensureRuntimeDockerConfigInternal(cfg *RuntimeIdentityConfig, setenv func(s
 	return nil
 }
 
-func configureRuntimeDockerConfigEnvInternal(cfg *RuntimeIdentityConfig, setenv func(string, string) error, uid int, gid int) (string, error) {
+func configureRuntimeDockerConfigEnvInternal(cfg *RuntimeIdentityConfig, setenv func(string, string) error, uid int, gid int, inContainer bool) (string, error) {
 	if cfg == nil {
 		cfg = &RuntimeIdentityConfig{}
 	}
@@ -192,12 +214,19 @@ func configureRuntimeDockerConfigEnvInternal(cfg *RuntimeIdentityConfig, setenv 
 		return "", nil
 	}
 
-	configDir := runtimeDockerConfigDirInternal(cfg)
-	if strings.TrimSpace(cfg.DockerConfig) == "" {
-		cfg.DockerConfig = configDir
-		if err := setenv("DOCKER_CONFIG", configDir); err != nil {
-			return "", fmt.Errorf("set DOCKER_CONFIG: %w", err)
-		}
+	configDir := strings.TrimSpace(cfg.DockerConfig)
+	if configDir != "" {
+		return configDir, nil
+	}
+
+	if !inContainer {
+		return "", nil
+	}
+
+	configDir = defaultDockerConfigDir
+	cfg.DockerConfig = configDir
+	if err := setenv("DOCKER_CONFIG", configDir); err != nil {
+		return "", fmt.Errorf("set DOCKER_CONFIG: %w", err)
 	}
 
 	return configDir, nil
