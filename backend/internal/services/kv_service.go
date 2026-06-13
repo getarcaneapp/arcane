@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
@@ -58,7 +59,8 @@ func (s *KVService) Delete(ctx context.Context, key string) error {
 
 func (s *KVService) ListByPrefix(ctx context.Context, prefix string) ([]models.KVEntry, error) {
 	var entries []models.KVEntry
-	if err := s.db.WithContext(ctx).Where("key LIKE ?", prefix+"%").Find(&entries).Error; err != nil {
+	escapedPrefix := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(prefix)
+	if err := s.db.WithContext(ctx).Where("key LIKE ? ESCAPE '\\'", escapedPrefix+"%").Find(&entries).Error; err != nil {
 		return nil, fmt.Errorf("failed to list kv entries with prefix %q: %w", prefix, err)
 	}
 	return entries, nil
