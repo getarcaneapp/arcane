@@ -2929,14 +2929,26 @@ func (s *ProjectService) RestartProject(ctx context.Context, projectID string, u
 }
 
 func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, name *string, composeContent, envContent *string, fileTreeRevision *string, fileChanges []project.ProjectFileChange, user models.User) (*models.Project, error) {
-	if err := s.recoverProjectRenameJournalForProjectInternal(ctx, projectID); err != nil {
-		return nil, err
-	}
-
 	proj, projectsDirectory, err := s.getProjectForUpdate(ctx, projectID)
 	if err != nil {
 		return nil, err
 	}
+
+	name = resolveAuthoritativeProjectNameInternal(&proj, name, composeContent)
+	renameRequested := isProjectRenameRequestedInternal(&proj, name)
+	if err := s.recoverProjectRenameJournalForProjectInternal(ctx, projectID); err != nil {
+		if renameRequested {
+			return nil, err
+		}
+		slog.WarnContext(ctx, "project rename journal recovery failed before non-rename update; continuing", "projectID", projectID, "error", err)
+	} else {
+		proj, projectsDirectory, err = s.getProjectForUpdate(ctx, projectID)
+		if err != nil {
+			return nil, err
+		}
+		name = resolveAuthoritativeProjectNameInternal(&proj, name, composeContent)
+	}
+
 	if err := ensureProjectMutableInternal(&proj); err != nil {
 		return nil, err
 	}
@@ -2944,7 +2956,6 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 		return nil, &common.ProjectFileForbiddenError{Err: errors.New("git-managed project files are read-only")}
 	}
 
-	name = resolveAuthoritativeProjectNameInternal(&proj, name, composeContent)
 	if err := s.ensureProjectStoppedForRenameInternal(ctx, &proj, name); err != nil {
 		return nil, err
 	}
@@ -3098,16 +3109,17 @@ func (s *ProjectService) saveProjectUpdateInternal(ctx context.Context, proj *mo
 func (s *ProjectService) finalizeProjectRenameAfterCommitInternal(ctx context.Context, projectID string, volumeMigration projectVolumeRenameMigrationInternal, renameJournal *projectRenameJournalInternal, journalActive *bool) error {
 	if renameJournal != nil {
 		if err := s.writeProjectRenameJournalInternal(ctx, renameJournal, projectRenameJournalPhaseProjectStateCommitted); err != nil {
-			return err
+			slog.WarnContext(ctx, "failed to mark project rename journal committed", "projectID", projectID, "error", err)
 		}
 	}
 
 	if committer, ok := volumeMigration.(projectVolumeRenameCommitterInternal); ok {
 		if err := committer.Commit(ctx); err != nil {
-			return fmt.Errorf("failed to clean up project source volumes after rename: %w", err)
+			slog.WarnContext(ctx, "failed to clean up project source volumes after committed rename", "projectID", projectID, "error", err)
+			return nil
 		}
 		if err := s.writeProjectRenameJournalInternal(ctx, renameJournal, projectRenameJournalPhaseOldVolumesRemoved); err != nil {
-			return err
+			slog.WarnContext(ctx, "failed to mark old project rename volumes removed", "projectID", projectID, "error", err)
 		}
 	}
 

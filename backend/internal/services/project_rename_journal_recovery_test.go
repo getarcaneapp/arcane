@@ -331,54 +331,6 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsCommittedJournalAndCl
 	require.Equal(t, newPath, fromDB.Path)
 }
 
-func TestRestoreProjectRenameJournalSourceVolume_CleansPartialSourceWhenCopyFails(t *testing.T) {
-	var sourceCreated atomic.Bool
-	var sourceRemoved atomic.Bool
-	var targetRemoved atomic.Bool
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/volumes/create"):
-			var payload map[string]any
-			require.NoError(t, json.NewDecoder(r.Body).Decode(&payload))
-			if payload["Name"] == "nginx_data" {
-				sourceCreated.Store(true)
-			}
-			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "nginx_data"}))
-		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/create"):
-			http.NotFound(w, r)
-		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
-			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode([]container.Summary{}))
-		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
-			sourceRemoved.Store(true)
-			w.WriteHeader(http.StatusNoContent)
-		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
-			targetRemoved.Store(true)
-			w.WriteHeader(http.StatusNoContent)
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	t.Cleanup(server.Close)
-
-	_, err := restoreProjectRenameJournalSourceVolumeInternal(
-		context.Background(),
-		newTestDockerClient(t, server),
-		projectVolumeCopyRuntimeInternal{Image: "arcane:test", Command: []string{"arcane"}},
-		projectRenameJournalVolumeInternal{OldName: "nginx_data", NewName: "web_data"},
-		false,
-		true,
-	)
-
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "restore volume data")
-	require.True(t, sourceCreated.Load(), "rollback should create the missing source volume before copying data")
-	require.True(t, sourceRemoved.Load(), "partial source volume must be removed after copy failure")
-	require.False(t, targetRemoved.Load(), "target volume should remain until source restore succeeds")
-}
-
 func TestProjectService_RecoverProjectRenameJournals_ClearsStartedJournalWhenDirectoriesAreMissing(t *testing.T) {
 	db := setupProjectTestDB(t)
 	require.NoError(t, db.AutoMigrate(&models.KVEntry{}))
@@ -503,7 +455,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsMissingPathJournalWhe
 	require.Equal(t, oldPath, fromDB.Path)
 }
 
-func TestProjectService_RecoverProjectRenameJournals_KeepsJournalWhenTargetPreservedAndDirectoryRolledBack(t *testing.T) {
+func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenTargetPreservedAndDirectoryRolledBack(t *testing.T) {
 	db := setupProjectTestDB(t)
 	require.NoError(t, db.AutoMigrate(&models.KVEntry{}))
 	ctx := context.Background()
@@ -570,11 +522,11 @@ func TestProjectService_RecoverProjectRenameJournals_KeepsJournalWhenTargetPrese
 	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyInternal(project.ID), string(payload)))
 
 	err = svc.RecoverProjectRenameJournals(ctx)
-	require.Error(t, err)
+	require.NoError(t, err)
 
 	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyInternal(project.ID))
 	require.NoError(t, err)
-	require.True(t, ok, "recoverable directory rollback should keep the journal so volume restore can retry")
+	require.False(t, ok, "preserved target data should not leave the project permanently blocked")
 	require.False(t, targetRemoved.Load(), "target volume may be the only complete copy and must stay when source restore fails")
 	require.FileExists(t, filepath.Join(oldPath, "compose.yaml"))
 	require.NoDirExists(t, newPath)

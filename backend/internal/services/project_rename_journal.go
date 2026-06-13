@@ -232,8 +232,8 @@ func (s *ProjectService) rollbackProjectRenameJournalInternal(ctx context.Contex
 
 	volumeErr := s.rollbackProjectRenameJournalVolumesInternal(ctx, journal)
 	if volumeErr != nil {
-		if directoryRollback.PathsMissing && projectRenameOnlyPreservedTargetErrorsInternal(volumeErr) {
-			slog.WarnContext(ctx, "clearing project rename journal after missing paths and preserved target volume data", "projectID", journal.ProjectID, "error", volumeErr)
+		if projectRenameOnlyPreservedTargetErrorsInternal(volumeErr) {
+			slog.WarnContext(ctx, "clearing project rename journal after preserving target volume data", "projectID", journal.ProjectID, "pathsMissing", directoryRollback.PathsMissing, "error", volumeErr)
 		} else {
 			return volumeErr
 		}
@@ -282,49 +282,15 @@ func rollbackProjectRenameJournalVolumeInternal(ctx context.Context, dockerClien
 		return err
 	}
 
-	var copyRuntime projectVolumeCopyRuntimeInternal
-	if !oldExists && newExists {
-		copyRuntime, err = getProjectVolumeCopyRuntimeInternal(ctx, dockerClient)
-		if err != nil {
-			return newProjectRenameTargetPreservedDuringRollbackErrorInternal(vol, err)
-		}
+	switch {
+	case oldExists && newExists:
+		return removeProjectRenameJournalTargetVolumeInternal(ctx, dockerClient, vol.NewName, oldExists, newExists)
+	case !oldExists && newExists:
+		return newProjectRenameTargetPreservedDuringRollbackErrorInternal(vol, errors.New("source volume is missing"))
+	case !oldExists && !newExists:
+		slog.WarnContext(ctx, "project rename source and target volumes are missing during rollback", "sourceVolume", vol.OldName, "targetVolume", vol.NewName)
 	}
-
-	oldExists, err = restoreProjectRenameJournalSourceVolumeInternal(ctx, dockerClient, copyRuntime, vol, oldExists, newExists)
-	if err != nil {
-		if !oldExists && newExists {
-			return newProjectRenameTargetPreservedDuringRollbackErrorInternal(vol, err)
-		}
-		return err
-	}
-	return removeProjectRenameJournalTargetVolumeInternal(ctx, dockerClient, vol.NewName, oldExists, newExists)
-}
-
-func restoreProjectRenameJournalSourceVolumeInternal(ctx context.Context, dockerClient *client.Client, copyRuntime projectVolumeCopyRuntimeInternal, vol projectRenameJournalVolumeInternal, oldExists bool, newExists bool) (bool, error) {
-	if oldExists || !newExists {
-		return oldExists, nil
-	}
-
-	if err := createProjectRenameRecoverySourceVolumeInternal(ctx, dockerClient, vol); err != nil {
-		return false, err
-	}
-	if err := copyProjectVolumeDataInternal(ctx, dockerClient, copyRuntime, vol.NewName, vol.OldName); err != nil {
-		restoreErr := fmt.Errorf("restore volume data from %s to %s: %w", vol.NewName, vol.OldName, err)
-		cleanupErr := cleanupProjectRenamePartialSourceVolumeInternal(ctx, dockerClient, vol.OldName)
-		return false, errors.Join(restoreErr, cleanupErr)
-	}
-	return true, nil
-}
-
-func cleanupProjectRenamePartialSourceVolumeInternal(ctx context.Context, dockerClient *client.Client, sourceName string) error {
-	var cleanupErr error
-	if err := removeProjectVolumeHelperContainersInternal(ctx, dockerClient, sourceName); err != nil {
-		cleanupErr = errors.Join(cleanupErr, fmt.Errorf("remove helper containers for partial source volume %s: %w", sourceName, err))
-	}
-	if err := removeProjectVolumeWithRetryInternal(ctx, dockerClient, sourceName, client.VolumeRemoveOptions{Force: true}); err != nil {
-		cleanupErr = errors.Join(cleanupErr, fmt.Errorf("remove partial source volume %s: %w", sourceName, err))
-	}
-	return cleanupErr
+	return nil
 }
 
 func removeProjectRenameJournalTargetVolumeInternal(ctx context.Context, dockerClient *client.Client, newName string, oldExists bool, newExists bool) error {
@@ -420,7 +386,7 @@ func newProjectRenameTargetPreservedDuringRollbackErrorInternal(vol projectRenam
 }
 
 func (e *projectRenameTargetPreservedDuringRollbackInternalError) Error() string {
-	return fmt.Sprintf("preserved project rename target volume %s because source volume %s could not be restored: %v", e.TargetVolume, e.SourceVolume, e.Err)
+	return fmt.Sprintf("preserved project rename target volume %s because source volume %s is unavailable during rollback: %v", e.TargetVolume, e.SourceVolume, e.Err)
 }
 
 func (e *projectRenameTargetPreservedDuringRollbackInternalError) Unwrap() error {
@@ -502,18 +468,6 @@ func ensureProjectRenameTargetsReadyForCleanupInternal(ctx context.Context, dock
 	}
 	if len(externallyRemoved) > 0 {
 		return &projectRenameVolumesExternallyRemovedInternalError{Volumes: externallyRemoved}
-	}
-	return nil
-}
-
-func createProjectRenameRecoverySourceVolumeInternal(ctx context.Context, dockerClient *client.Client, vol projectRenameJournalVolumeInternal) error {
-	if _, err := dockerClient.VolumeCreate(ctx, client.VolumeCreateOptions{
-		Name:       vol.OldName,
-		Driver:     vol.Driver,
-		DriverOpts: vol.Options,
-		Labels:     vol.Labels,
-	}); err != nil {
-		return fmt.Errorf("recreate source volume %s: %w", vol.OldName, err)
 	}
 	return nil
 }

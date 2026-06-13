@@ -7,10 +7,8 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -280,14 +278,16 @@ func TestStartProjectVolumeHelperContainerInternal_ReturnsCombinedOutputOnFailur
 	require.ErrorContains(t, err, `"path":"/volume"`)
 }
 
-func TestDockerProjectVolumeRenameMigrationInternal_RollbackPreservesTargetsWhenRestoreFails(t *testing.T) {
+func TestDockerProjectVolumeRenameMigrationInternal_RollbackPreservesTargetWhenSourceMissing(t *testing.T) {
 	var targetRemoved atomic.Bool
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
+			http.NotFound(w, r)
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode([]container.Summary{}))
+			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"Name": "web_data"}))
 		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
 			targetRemoved.Store(true)
 			w.WriteHeader(http.StatusNoContent)
@@ -302,7 +302,7 @@ func TestDockerProjectVolumeRenameMigrationInternal_RollbackPreservesTargetsWhen
 			dockerService: &DockerClientService{client: newTestDockerClient(t, server)},
 		},
 		createdNew: []projectVolumeRenameEntryInternal{
-			{NewName: "web_data"},
+			{OldName: "nginx_data", NewName: "web_data"},
 		},
 		removedOld: []projectVolumeRenameEntryInternal{
 			{
@@ -315,17 +315,26 @@ func TestDockerProjectVolumeRenameMigrationInternal_RollbackPreservesTargetsWhen
 	err := migration.Rollback(context.Background())
 
 	require.Error(t, err)
-	require.ErrorContains(t, err, "local Arcane runtime image unavailable")
+	var preserved *projectRenameTargetPreservedDuringRollbackInternalError
+	require.ErrorAs(t, err, &preserved)
 	require.False(t, targetRemoved.Load(), "target volume may be the only complete copy and must stay when source restore fails")
 	require.Len(t, migration.createdNew, 1)
 }
 
-func TestDockerProjectVolumeRenameMigrationInternal_RollbackCleansSafeTargetsWhenRestoreFails(t *testing.T) {
+func TestDockerProjectVolumeRenameMigrationInternal_RollbackCleansSafeTargetsWhenSourceMissing(t *testing.T) {
 	var preservedTargetRemoved atomic.Bool
 	var safeTargetRemoved atomic.Bool
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
+			http.NotFound(w, r)
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"Name": "web_data"}))
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_cache"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"Name": "nginx_cache"}))
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
 			w.Header().Set("Content-Type", "application/json")
 			require.NoError(t, json.NewEncoder(w).Encode([]container.Summary{}))
@@ -346,8 +355,8 @@ func TestDockerProjectVolumeRenameMigrationInternal_RollbackCleansSafeTargetsWhe
 			dockerService: &DockerClientService{client: newTestDockerClient(t, server)},
 		},
 		createdNew: []projectVolumeRenameEntryInternal{
-			{NewName: "web_data"},
-			{NewName: "web_cache"},
+			{OldName: "nginx_data", NewName: "web_data"},
+			{OldName: "nginx_cache", NewName: "web_cache"},
 		},
 		removedOld: []projectVolumeRenameEntryInternal{
 			{
@@ -360,82 +369,29 @@ func TestDockerProjectVolumeRenameMigrationInternal_RollbackCleansSafeTargetsWhe
 	err := migration.Rollback(context.Background())
 
 	require.Error(t, err)
-	require.ErrorContains(t, err, "local Arcane runtime image unavailable")
+	var preserved *projectRenameTargetPreservedDuringRollbackInternalError
+	require.ErrorAs(t, err, &preserved)
 	require.False(t, preservedTargetRemoved.Load(), "target volume may be the only complete copy and must stay when source restore fails")
 	require.True(t, safeTargetRemoved.Load(), "targets without removed sources should still be cleaned up")
-	require.Equal(t, []projectVolumeRenameEntryInternal{{NewName: "web_data"}}, migration.createdNew)
+	require.Equal(t, []projectVolumeRenameEntryInternal{{OldName: "nginx_data", NewName: "web_data"}}, migration.createdNew)
 }
 
-func TestDockerProjectVolumeRenameMigrationInternal_RollbackDropsRemovedOldAfterSourceRestore(t *testing.T) {
-	var sourceCreated atomic.Bool
-	var targetRemoveAttempts atomic.Int32
-	var copyHolderCount atomic.Int32
+func TestDockerProjectVolumeRenameMigrationInternal_RollbackRemovesTargetsWhenSourcesRemain(t *testing.T) {
+	var targetRemoved atomic.Bool
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"Name": "nginx_data"}))
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
 			w.Header().Set("Content-Type", "application/json")
-			if strings.Contains(r.URL.RawQuery, "com.getarcaneapp.arcane") {
-				require.NoError(t, json.NewEncoder(w).Encode([]container.Summary{
-					{
-						ID:    "arcane",
-						Image: "arcane:test",
-						State: container.StateRunning,
-					},
-				}))
-				return
-			}
 			require.NoError(t, json.NewEncoder(w).Encode([]container.Summary{}))
-		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/arcane/json"):
-			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(container.InspectResponse{
-				ID: "arcane",
-				Config: &container.Config{
-					Image: "arcane:test",
-					Cmd:   []string{"./arcane"},
-				},
-			}))
-		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
-			http.NotFound(w, r)
-		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/volumes/create"):
-			var payload map[string]any
-			require.NoError(t, json.NewDecoder(r.Body).Decode(&payload))
-			if payload["Name"] == "nginx_data" {
-				sourceCreated.Store(true)
-			}
-			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"Name": payload["Name"]}))
-		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/create"):
-			id := "copy-holder-" + strconv.Itoa(int(copyHolderCount.Add(1)))
-			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
-				"Id":       id,
-				"Warnings": []string{},
-			}))
-		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/containers/copy-holder-") && strings.HasSuffix(r.URL.Path, "/start"):
-			w.WriteHeader(http.StatusNoContent)
-		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/containers/copy-holder-") && strings.HasSuffix(r.URL.Path, "/wait"):
-			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"StatusCode": 0}))
-		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/containers/copy-holder-") && strings.HasSuffix(r.URL.Path, "/logs"):
-			writeProjectVolumeCopyProbeLogInternal(t, w, projectVolumeCopyProbeInternal{
-				Path:           projectVolumeCopyMountPathInternal,
-				AllocatedBytes: 1024,
-				AvailableBytes: 1024 * 1024 * 1024,
-			})
-		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/containers/copy-holder-") && strings.HasSuffix(r.URL.Path, "/archive"):
-			setProjectVolumeCopyArchiveStatHeaderInternal(t, w)
-			_, err := w.Write([]byte("archive"))
-			require.NoError(t, err)
-		case r.Method == http.MethodPut && strings.Contains(r.URL.Path, "/containers/copy-holder-") && strings.HasSuffix(r.URL.Path, "/archive"):
-			_, err := io.Copy(io.Discard, r.Body)
-			require.NoError(t, err)
-			w.WriteHeader(http.StatusOK)
 		case r.Method == http.MethodDelete && strings.Contains(r.URL.Path, "/containers/copy-holder-"):
 			w.WriteHeader(http.StatusNoContent)
 		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
-			targetRemoveAttempts.Add(1)
-			http.Error(w, "target remove failed", http.StatusInternalServerError)
+			targetRemoved.Store(true)
+			w.WriteHeader(http.StatusNoContent)
 		default:
 			http.NotFound(w, r)
 		}
@@ -447,9 +403,6 @@ func TestDockerProjectVolumeRenameMigrationInternal_RollbackDropsRemovedOldAfter
 			dockerService: &DockerClientService{client: newTestDockerClient(t, server)},
 		},
 		createdNew: []projectVolumeRenameEntryInternal{
-			{NewName: "web_data"},
-		},
-		removedOld: []projectVolumeRenameEntryInternal{
 			{
 				OldName: "nginx_data",
 				NewName: "web_data",
@@ -459,83 +412,16 @@ func TestDockerProjectVolumeRenameMigrationInternal_RollbackDropsRemovedOldAfter
 
 	err := migration.Rollback(context.Background())
 
-	require.Error(t, err)
-	require.ErrorContains(t, err, "remove target volume web_data")
-	require.True(t, sourceCreated.Load(), "rollback should recreate the removed source volume")
-	require.NotZero(t, targetRemoveAttempts.Load(), "rollback should try to remove the target after source restore succeeds")
-	require.Empty(t, migration.removedOld, "successfully restored source volumes should not remain marked as removed")
-	require.Equal(t, []projectVolumeRenameEntryInternal{{NewName: "web_data"}}, migration.createdNew)
+	require.NoError(t, err)
+	require.True(t, targetRemoved.Load(), "rollback should remove copied targets while sources still exist")
+	require.Empty(t, migration.createdNew)
 }
 
-func TestDockerProjectVolumeRenameMigrationInternal_RollbackCleansPartialSourceWhenRestoreCopyFails(t *testing.T) {
-	var sourceCreated atomic.Bool
-	var sourceRemoved atomic.Bool
+func TestDockerProjectVolumeRenameMigrationInternal_RollbackPreservesRemovedOldTargetsWithoutRestoreCopy(t *testing.T) {
 	var targetRemoved atomic.Bool
-	var copyHolderCount atomic.Int32
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
-			w.Header().Set("Content-Type", "application/json")
-			if strings.Contains(r.URL.RawQuery, "com.getarcaneapp.arcane") {
-				require.NoError(t, json.NewEncoder(w).Encode([]container.Summary{
-					{
-						ID:    "arcane",
-						Image: "arcane:test",
-						State: container.StateRunning,
-					},
-				}))
-				return
-			}
-			require.NoError(t, json.NewEncoder(w).Encode([]container.Summary{}))
-		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/arcane/json"):
-			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(container.InspectResponse{
-				ID: "arcane",
-				Config: &container.Config{
-					Image: "arcane:test",
-					Cmd:   []string{"./arcane"},
-				},
-			}))
-		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
-			http.NotFound(w, r)
-		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/volumes/create"):
-			var payload map[string]any
-			require.NoError(t, json.NewDecoder(r.Body).Decode(&payload))
-			if payload["Name"] == "nginx_data" {
-				sourceCreated.Store(true)
-			}
-			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"Name": payload["Name"]}))
-		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/create"):
-			id := "copy-holder-" + strconv.Itoa(int(copyHolderCount.Add(1)))
-			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
-				"Id":       id,
-				"Warnings": []string{},
-			}))
-		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/containers/copy-holder-") && strings.HasSuffix(r.URL.Path, "/start"):
-			w.WriteHeader(http.StatusNoContent)
-		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/containers/copy-holder-") && strings.HasSuffix(r.URL.Path, "/wait"):
-			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"StatusCode": 0}))
-		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/containers/copy-holder-") && strings.HasSuffix(r.URL.Path, "/logs"):
-			writeProjectVolumeCopyProbeLogInternal(t, w, projectVolumeCopyProbeInternal{
-				Path:           projectVolumeCopyMountPathInternal,
-				AllocatedBytes: 1024,
-				AvailableBytes: 1024 * 1024 * 1024,
-			})
-		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/containers/copy-holder-") && strings.HasSuffix(r.URL.Path, "/archive"):
-			setProjectVolumeCopyArchiveStatHeaderInternal(t, w)
-			_, err := w.Write([]byte("archive"))
-			require.NoError(t, err)
-		case r.Method == http.MethodPut && strings.Contains(r.URL.Path, "/containers/copy-holder-") && strings.HasSuffix(r.URL.Path, "/archive"):
-			http.Error(w, "copy failed", http.StatusInternalServerError)
-		case r.Method == http.MethodDelete && strings.Contains(r.URL.Path, "/containers/copy-holder-"):
-			w.WriteHeader(http.StatusNoContent)
-		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
-			sourceRemoved.Store(true)
-			w.WriteHeader(http.StatusNoContent)
 		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
 			targetRemoved.Store(true)
 			w.WriteHeader(http.StatusNoContent)
@@ -563,10 +449,9 @@ func TestDockerProjectVolumeRenameMigrationInternal_RollbackCleansPartialSourceW
 	err := migration.Rollback(context.Background())
 
 	require.Error(t, err)
-	require.ErrorContains(t, err, "restore volume data from web_data to nginx_data")
-	require.True(t, sourceCreated.Load(), "rollback should create the missing source volume before copying data")
-	require.True(t, sourceRemoved.Load(), "partial source volume must be removed after copy failure")
-	require.False(t, targetRemoved.Load(), "target volume may be the only complete copy and must stay when source restore fails")
+	var preserved *projectRenameTargetPreservedDuringRollbackInternalError
+	require.ErrorAs(t, err, &preserved)
+	require.False(t, targetRemoved.Load(), "rollback must not delete target volumes after source cleanup has started")
 	require.Equal(t, []projectVolumeRenameEntryInternal{{OldName: "nginx_data", NewName: "web_data"}}, migration.removedOld)
 	require.Equal(t, []projectVolumeRenameEntryInternal{{NewName: "web_data"}}, migration.createdNew)
 }
