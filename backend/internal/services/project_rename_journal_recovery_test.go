@@ -423,3 +423,159 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsStartedJournalWhenDir
 	require.NoError(t, err)
 	require.False(t, ok)
 }
+
+func TestProjectService_RecoverProjectRenameJournals_ClearsMissingPathJournalWhenTargetPreserved(t *testing.T) {
+	db := setupProjectTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.KVEntry{}))
+	ctx := context.Background()
+
+	var targetRemoved atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "web_data"}))
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
+			http.NotFound(w, r)
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode([]container.Summary{}))
+		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
+			targetRemoved.Store(true)
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	projectsDir := t.TempDir()
+	oldDir := "nginx"
+	newDir := "web"
+	oldPath := filepath.Join(projectsDir, oldDir)
+	newPath := filepath.Join(projectsDir, newDir)
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-rename-missing-path-preserved-target"},
+		Name:      "nginx",
+		DirName:   &oldDir,
+		Path:      oldPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	kvService := NewKVService(db)
+	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
+	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, config.Load()).WithKVService(kvService)
+	journal := projectRenameJournalInternal{
+		ProjectID:  project.ID,
+		OldName:    "nginx",
+		NewName:    "web",
+		OldPath:    oldPath,
+		NewPath:    newPath,
+		OldDirName: &oldDir,
+		NewDirName: newDir,
+		Phase:      projectRenameJournalPhaseTargetsCopiedInternal,
+		Volumes: []projectRenameJournalVolumeInternal{
+			{
+				Key:     "data",
+				OldName: "nginx_data",
+				NewName: "web_data",
+			},
+		},
+	}
+	payload, err := json.Marshal(journal)
+	require.NoError(t, err)
+	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyInternal(project.ID), string(payload)))
+
+	require.NoError(t, svc.RecoverProjectRenameJournals(ctx))
+
+	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyInternal(project.ID))
+	require.NoError(t, err)
+	require.False(t, ok)
+	require.False(t, targetRemoved.Load(), "target volume may be the only complete copy and must stay when source restore fails")
+	require.NoDirExists(t, oldPath)
+	require.NoDirExists(t, newPath)
+
+	var fromDB models.Project
+	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	require.Equal(t, "nginx", fromDB.Name)
+	require.Equal(t, oldPath, fromDB.Path)
+}
+
+func TestProjectService_RecoverProjectRenameJournals_KeepsJournalWhenTargetPreservedAndDirectoryRolledBack(t *testing.T) {
+	db := setupProjectTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.KVEntry{}))
+	ctx := context.Background()
+
+	var targetRemoved atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "web_data"}))
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
+			http.NotFound(w, r)
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode([]container.Summary{}))
+		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
+			targetRemoved.Store(true)
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	projectsDir := t.TempDir()
+	oldDir := "nginx"
+	newDir := "web"
+	oldPath := filepath.Join(projectsDir, oldDir)
+	newPath := filepath.Join(projectsDir, newDir)
+	require.NoError(t, os.MkdirAll(newPath, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(newPath, "compose.yaml"), []byte("services: {}\n"), 0o600))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-rename-preserved-target-retry"},
+		Name:      "nginx",
+		DirName:   &oldDir,
+		Path:      oldPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	kvService := NewKVService(db)
+	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
+	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, config.Load()).WithKVService(kvService)
+	journal := projectRenameJournalInternal{
+		ProjectID:  project.ID,
+		OldName:    "nginx",
+		NewName:    "web",
+		OldPath:    oldPath,
+		NewPath:    newPath,
+		OldDirName: &oldDir,
+		NewDirName: newDir,
+		Phase:      projectRenameJournalPhaseTargetsCopiedInternal,
+		Volumes: []projectRenameJournalVolumeInternal{
+			{
+				Key:     "data",
+				OldName: "nginx_data",
+				NewName: "web_data",
+			},
+		},
+	}
+	payload, err := json.Marshal(journal)
+	require.NoError(t, err)
+	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyInternal(project.ID), string(payload)))
+
+	err = svc.RecoverProjectRenameJournals(ctx)
+	require.Error(t, err)
+
+	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyInternal(project.ID))
+	require.NoError(t, err)
+	require.True(t, ok, "recoverable directory rollback should keep the journal so volume restore can retry")
+	require.False(t, targetRemoved.Load(), "target volume may be the only complete copy and must stay when source restore fails")
+	require.FileExists(t, filepath.Join(oldPath, "compose.yaml"))
+	require.NoDirExists(t, newPath)
+}

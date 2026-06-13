@@ -225,12 +225,18 @@ func (s *ProjectService) completeProjectRenameJournalInternal(ctx context.Contex
 }
 
 func (s *ProjectService) rollbackProjectRenameJournalInternal(ctx context.Context, journal *projectRenameJournalInternal) error {
-	if err := rollbackProjectRenameDirectoryInternal(journal); err != nil {
+	directoryRollback, err := rollbackProjectRenameDirectoryInternal(journal)
+	if err != nil {
 		return err
 	}
 
-	if err := s.rollbackProjectRenameJournalVolumesInternal(ctx, journal); err != nil {
-		return err
+	volumeErr := s.rollbackProjectRenameJournalVolumesInternal(ctx, journal)
+	if volumeErr != nil {
+		if directoryRollback.PathsMissing && projectRenameOnlyPreservedTargetErrorsInternal(volumeErr) {
+			slog.WarnContext(ctx, "clearing project rename journal after missing paths and preserved target volume data", "projectID", journal.ProjectID, "error", volumeErr)
+		} else {
+			return volumeErr
+		}
 	}
 
 	if err := s.db.WithContext(ctx).Model(&models.Project{}).
@@ -257,12 +263,13 @@ func (s *ProjectService) rollbackProjectRenameJournalVolumesInternal(ctx context
 		return err
 	}
 
+	var rollbackErr error
 	for _, vol := range slices.Backward(journal.Volumes) {
 		if err := rollbackProjectRenameJournalVolumeInternal(ctx, dockerClient, vol); err != nil {
-			return err
+			rollbackErr = errors.Join(rollbackErr, err)
 		}
 	}
-	return nil
+	return rollbackErr
 }
 
 func rollbackProjectRenameJournalVolumeInternal(ctx context.Context, dockerClient *client.Client, vol projectRenameJournalVolumeInternal) error {
@@ -279,12 +286,15 @@ func rollbackProjectRenameJournalVolumeInternal(ctx context.Context, dockerClien
 	if !oldExists && newExists {
 		copyRuntime, err = getProjectVolumeCopyRuntimeInternal(ctx, dockerClient)
 		if err != nil {
-			return err
+			return newProjectRenameTargetPreservedDuringRollbackErrorInternal(vol, err)
 		}
 	}
 
 	oldExists, err = restoreProjectRenameJournalSourceVolumeInternal(ctx, dockerClient, copyRuntime, vol, oldExists, newExists)
 	if err != nil {
+		if !oldExists && newExists {
+			return newProjectRenameTargetPreservedDuringRollbackErrorInternal(vol, err)
+		}
 		return err
 	}
 	return removeProjectRenameJournalTargetVolumeInternal(ctx, dockerClient, vol.NewName, oldExists, newExists)
@@ -342,26 +352,32 @@ func (s *ProjectService) projectRenameRecoveryDockerInternal(ctx context.Context
 	return dockerClient, nil
 }
 
-func rollbackProjectRenameDirectoryInternal(journal *projectRenameJournalInternal) error {
+type projectRenameDirectoryRollbackInternal struct {
+	PathsMissing bool
+}
+
+func rollbackProjectRenameDirectoryInternal(journal *projectRenameJournalInternal) (projectRenameDirectoryRollbackInternal, error) {
+	var result projectRenameDirectoryRollbackInternal
 	oldPath := filepath.Clean(journal.OldPath)
 	newPath := filepath.Clean(journal.NewPath)
 	if oldPath == "" || newPath == "" || oldPath == newPath {
-		return nil
+		return result, nil
 	}
 
 	oldExists := pathExistsInternal(oldPath)
 	newExists := pathExistsInternal(newPath)
 	switch {
 	case oldExists && newExists:
-		return fmt.Errorf("cannot rollback project directory rename because both paths exist: %s and %s", oldPath, newPath)
+		return result, fmt.Errorf("cannot rollback project directory rename because both paths exist: %s and %s", oldPath, newPath)
 	case !oldExists && newExists:
 		if err := os.Rename(newPath, oldPath); err != nil {
-			return fmt.Errorf("rollback project directory rename: %w", err)
+			return result, fmt.Errorf("rollback project directory rename: %w", err)
 		}
 	case !oldExists && !newExists:
+		result.PathsMissing = true
 		slog.Warn("project rename directory paths are missing during rollback", "oldPath", oldPath, "newPath", newPath)
 	}
-	return nil
+	return result, nil
 }
 
 func projectRenameVolumeExistsInternal(ctx context.Context, dockerClient *client.Client, name string) (bool, error) {
@@ -382,6 +398,49 @@ type projectRenameTargetMissingWithSourceInternalError struct {
 
 func (e *projectRenameTargetMissingWithSourceInternalError) Error() string {
 	return fmt.Sprintf("committed project rename target volume %s is missing while source volume %s still exists", e.TargetVolume, e.SourceVolume)
+}
+
+type projectRenameTargetPreservedDuringRollbackInternalError struct {
+	SourceVolume string
+	TargetVolume string
+	Err          error
+}
+
+func newProjectRenameTargetPreservedDuringRollbackErrorInternal(vol projectRenameJournalVolumeInternal, err error) error {
+	return &projectRenameTargetPreservedDuringRollbackInternalError{
+		SourceVolume: vol.OldName,
+		TargetVolume: vol.NewName,
+		Err:          err,
+	}
+}
+
+func (e *projectRenameTargetPreservedDuringRollbackInternalError) Error() string {
+	return fmt.Sprintf("preserved project rename target volume %s because source volume %s could not be restored: %v", e.TargetVolume, e.SourceVolume, e.Err)
+}
+
+func (e *projectRenameTargetPreservedDuringRollbackInternalError) Unwrap() error {
+	return e.Err
+}
+
+func projectRenameOnlyPreservedTargetErrorsInternal(err error) bool {
+	if err == nil {
+		return false
+	}
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		children := joined.Unwrap()
+		if len(children) == 0 {
+			return false
+		}
+		for _, child := range children {
+			if !projectRenameOnlyPreservedTargetErrorsInternal(child) {
+				return false
+			}
+		}
+		return true
+	}
+
+	var preserved *projectRenameTargetPreservedDuringRollbackInternalError
+	return errors.As(err, &preserved)
 }
 
 type projectRenameVolumesExternallyRemovedInternalError struct {

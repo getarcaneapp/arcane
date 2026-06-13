@@ -284,46 +284,60 @@ func (m *dockerProjectVolumeRenameMigrationInternal) Rollback(ctx context.Contex
 	}
 
 	var restoreErr error
+	preservedTargets := map[string]struct{}{}
 	if len(m.removedOld) > 0 {
 		copyRuntime, err := getProjectVolumeCopyRuntimeInternal(ctx, dockerClient)
 		if err != nil {
 			restoreErr = errors.Join(restoreErr, err)
+			for _, entry := range m.removedOld {
+				preservedTargets[entry.NewName] = struct{}{}
+			}
 		} else {
 			for _, entry := range slices.Backward(m.removedOld) {
 				if err := recreateProjectSourceVolumeInternal(ctx, dockerClient, entry); err != nil {
 					restoreErr = errors.Join(restoreErr, err)
+					preservedTargets[entry.NewName] = struct{}{}
 					continue
 				}
 				if err := copyProjectVolumeDataInternal(ctx, dockerClient, copyRuntime, entry.NewName, entry.OldName); err != nil {
 					restoreErr = errors.Join(restoreErr, fmt.Errorf("restore volume data from %s to %s: %w", entry.NewName, entry.OldName, err))
+					preservedTargets[entry.NewName] = struct{}{}
 				}
 			}
 		}
 	}
 
-	if restoreErr != nil {
-		return restoreErr
-	}
-
-	rollbackErr := m.rollbackCreatedTargets(ctx, dockerClient)
-	if rollbackErr == nil {
+	rollbackErr := m.rollbackCreatedTargetsPreserving(ctx, dockerClient, preservedTargets)
+	if restoreErr == nil && rollbackErr == nil {
 		dockerutil.InvalidateVolumeUsageCache()
 	}
-	return rollbackErr
+	return errors.Join(restoreErr, rollbackErr)
 }
 
 func (m *dockerProjectVolumeRenameMigrationInternal) rollbackCreatedTargets(ctx context.Context, dockerClient *client.Client) error {
+	return m.rollbackCreatedTargetsPreserving(ctx, dockerClient, nil)
+}
+
+func (m *dockerProjectVolumeRenameMigrationInternal) rollbackCreatedTargetsPreserving(ctx context.Context, dockerClient *client.Client, preservedTargets map[string]struct{}) error {
 	var rollbackErr error
+	remainingCreated := make([]projectVolumeRenameEntryInternal, 0, len(preservedTargets))
 	for _, entry := range slices.Backward(m.createdNew) {
+		if _, preserve := preservedTargets[entry.NewName]; preserve {
+			remainingCreated = append(remainingCreated, entry)
+			continue
+		}
 		if err := removeProjectVolumeHelperContainersInternal(ctx, dockerClient, entry.NewName); err != nil {
 			rollbackErr = errors.Join(rollbackErr, fmt.Errorf("remove helper containers for target volume %s: %w", entry.NewName, err))
+			remainingCreated = append(remainingCreated, entry)
 			continue
 		}
 		if err := removeProjectVolumeWithRetryInternal(ctx, dockerClient, entry.NewName, client.VolumeRemoveOptions{Force: true}); err != nil {
 			rollbackErr = errors.Join(rollbackErr, fmt.Errorf("remove target volume %s: %w", entry.NewName, err))
+			remainingCreated = append(remainingCreated, entry)
 		}
 	}
-	m.createdNew = nil
+	slices.Reverse(remainingCreated)
+	m.createdNew = remainingCreated
 	return rollbackErr
 }
 

@@ -256,6 +256,52 @@ func TestDockerProjectVolumeRenameMigrationInternal_RollbackPreservesTargetsWhen
 	require.Len(t, migration.createdNew, 1)
 }
 
+func TestDockerProjectVolumeRenameMigrationInternal_RollbackCleansSafeTargetsWhenRestoreFails(t *testing.T) {
+	var preservedTargetRemoved atomic.Bool
+	var safeTargetRemoved atomic.Bool
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode([]container.Summary{}))
+		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
+			preservedTargetRemoved.Store(true)
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/web_cache"):
+			safeTargetRemoved.Store(true)
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	migration := &dockerProjectVolumeRenameMigrationInternal{
+		service: &ProjectService{
+			dockerService: &DockerClientService{client: newTestDockerClient(t, server)},
+		},
+		createdNew: []projectVolumeRenameEntryInternal{
+			{NewName: "web_data"},
+			{NewName: "web_cache"},
+		},
+		removedOld: []projectVolumeRenameEntryInternal{
+			{
+				OldName: "nginx_data",
+				NewName: "web_data",
+			},
+		},
+	}
+
+	err := migration.Rollback(context.Background())
+
+	require.Error(t, err)
+	require.ErrorContains(t, err, "local Arcane runtime image unavailable")
+	require.False(t, preservedTargetRemoved.Load(), "target volume may be the only complete copy and must stay when source restore fails")
+	require.True(t, safeTargetRemoved.Load(), "targets without removed sources should still be cleaned up")
+	require.Equal(t, []projectVolumeRenameEntryInternal{{NewName: "web_data"}}, migration.createdNew)
+}
+
 func TestDockerProjectVolumeRenameMigrationInternal_CommitPreflightsAllTargetsBeforeRemovingSources(t *testing.T) {
 	var firstSourceRemoved atomic.Bool
 	var secondSourceRemoved atomic.Bool
