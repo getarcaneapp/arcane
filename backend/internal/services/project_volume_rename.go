@@ -555,11 +555,18 @@ func startProjectVolumeHelperContainerInternal(ctx context.Context, dockerClient
 
 	waitResult := dockerClient.ContainerWait(ctx, containerID, client.ContainerWaitOptions{Condition: container.WaitConditionNotRunning})
 	select {
-	case err := <-waitResult.Error:
+	case err, ok := <-waitResult.Error:
+		if !ok {
+			return "", errors.New("volume copy container wait error channel closed")
+		}
 		if err != nil {
 			return "", err
 		}
-	case waitBody := <-waitResult.Result:
+		return "", errors.New("volume copy container wait returned nil error without result")
+	case waitBody, ok := <-waitResult.Result:
+		if !ok {
+			return "", errors.New("volume copy container wait result channel closed")
+		}
 		logs := readProjectVolumeHelperLogsInternal(ctx, dockerClient, containerID)
 		if waitBody.StatusCode != 0 {
 			if logs != "" {
@@ -571,8 +578,6 @@ func startProjectVolumeHelperContainerInternal(ctx context.Context, dockerClient
 	case <-ctx.Done():
 		return "", ctx.Err()
 	}
-
-	return "", nil
 }
 
 func getProjectVolumeCopyRuntimeInternal(ctx context.Context, dockerClient *client.Client) (projectVolumeCopyRuntimeInternal, error) {

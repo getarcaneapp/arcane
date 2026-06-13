@@ -207,7 +207,12 @@ func (s *ProjectService) completeProjectRenameJournalInternal(ctx context.Contex
 			slog.WarnContext(ctx, "rolling back committed project rename because target volume is missing and source volume remains", "projectID", journal.ProjectID, "sourceVolume", missingWithSource.SourceVolume, "targetVolume", missingWithSource.TargetVolume)
 			return s.rollbackProjectRenameJournalInternal(ctx, journal)
 		}
-		return err
+		var externallyRemoved *projectRenameVolumesExternallyRemovedInternalError
+		if errors.As(err, &externallyRemoved) {
+			slog.WarnContext(ctx, "project rename recovery found source and target volumes externally removed", "projectID", journal.ProjectID, "volumeCount", len(externallyRemoved.Volumes), "error", externallyRemoved)
+		} else {
+			return err
+		}
 	}
 
 	for _, vol := range journal.Volumes {
@@ -379,6 +384,21 @@ func (e *projectRenameTargetMissingWithSourceInternalError) Error() string {
 	return fmt.Sprintf("committed project rename target volume %s is missing while source volume %s still exists", e.TargetVolume, e.SourceVolume)
 }
 
+type projectRenameVolumesExternallyRemovedInternalError struct {
+	Volumes []projectRenameJournalVolumeInternal
+}
+
+func (e *projectRenameVolumesExternallyRemovedInternalError) Error() string {
+	if e == nil || len(e.Volumes) == 0 {
+		return "committed project rename source and target volumes are both missing"
+	}
+	if len(e.Volumes) == 1 {
+		vol := e.Volumes[0]
+		return fmt.Sprintf("committed project rename target volume %s is missing and source volume %s is also missing", vol.NewName, vol.OldName)
+	}
+	return fmt.Sprintf("committed project rename source and target volumes are both missing for %d volume pairs", len(e.Volumes))
+}
+
 func ensureProjectRenameTargetsReadyForCleanupInternal(ctx context.Context, dockerClient *client.Client, volumes []projectRenameJournalVolumeInternal) error {
 	if len(volumes) == 0 {
 		return nil
@@ -387,6 +407,8 @@ func ensureProjectRenameTargetsReadyForCleanupInternal(ctx context.Context, dock
 		return errors.New("docker service unavailable")
 	}
 
+	var missingWithSource *projectRenameTargetMissingWithSourceInternalError
+	var externallyRemoved []projectRenameJournalVolumeInternal
 	for _, vol := range volumes {
 		targetExists, err := projectRenameVolumeExistsInternal(ctx, dockerClient, vol.NewName)
 		if err != nil {
@@ -401,12 +423,21 @@ func ensureProjectRenameTargetsReadyForCleanupInternal(ctx context.Context, dock
 			return err
 		}
 		if sourceExists {
-			return &projectRenameTargetMissingWithSourceInternalError{
-				SourceVolume: vol.OldName,
-				TargetVolume: vol.NewName,
+			if missingWithSource == nil {
+				missingWithSource = &projectRenameTargetMissingWithSourceInternalError{
+					SourceVolume: vol.OldName,
+					TargetVolume: vol.NewName,
+				}
 			}
+			continue
 		}
-		return fmt.Errorf("committed project rename target volume %s is missing and source volume %s is also missing; preserving journal", vol.NewName, vol.OldName)
+		externallyRemoved = append(externallyRemoved, vol)
+	}
+	if missingWithSource != nil {
+		return missingWithSource
+	}
+	if len(externallyRemoved) > 0 {
+		return &projectRenameVolumesExternallyRemovedInternalError{Volumes: externallyRemoved}
 	}
 	return nil
 }

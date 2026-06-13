@@ -196,6 +196,26 @@ func TestProjectVolumeCopyHolderContainerInternal_RemovesHelperWhenContextIsCanc
 	}
 }
 
+func TestStartProjectVolumeHelperContainerInternal_ReturnsWaitError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/helper-container/start"):
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/helper-container/wait"):
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("wait interrupted"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	_, err := startProjectVolumeHelperContainerInternal(context.Background(), newTestDockerClient(t, server), "helper-container")
+
+	require.Error(t, err)
+	require.ErrorContains(t, err, "wait interrupted")
+}
+
 func TestDockerProjectVolumeRenameMigrationInternal_RollbackPreservesTargetsWhenRestoreFails(t *testing.T) {
 	var targetRemoved atomic.Bool
 
