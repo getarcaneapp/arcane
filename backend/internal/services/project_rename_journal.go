@@ -114,6 +114,17 @@ func (s *ProjectService) clearProjectRenameJournalInternal(ctx context.Context, 
 	return s.kvService.Delete(ctx, projectRenameJournalKeyInternal(projectID))
 }
 
+func projectRenameJournalTargetsCopiedInternal(phase string) bool {
+	switch phase {
+	case projectRenameJournalPhaseTargetsCopiedInternal,
+		projectRenameJournalPhaseOldVolumesRemoved,
+		projectRenameJournalPhaseProjectStateCommitted:
+		return true
+	default:
+		return false
+	}
+}
+
 func (s *ProjectService) RecoverProjectRenameJournals(ctx context.Context) error {
 	if s == nil || s.kvService == nil {
 		return nil
@@ -210,37 +221,39 @@ func (s *ProjectService) rollbackProjectRenameJournalInternal(ctx context.Contex
 		return err
 	}
 
-	dockerClient, helperImage, err := s.projectRenameRecoveryDockerInternal(ctx, len(journal.Volumes) > 0)
-	if err != nil {
-		return err
-	}
-
-	for _, vol := range slices.Backward(journal.Volumes) {
-		oldExists, err := projectRenameVolumeExistsInternal(ctx, dockerClient, vol.OldName)
-		if err != nil {
-			return err
-		}
-		newExists, err := projectRenameVolumeExistsInternal(ctx, dockerClient, vol.NewName)
+	if projectRenameJournalTargetsCopiedInternal(journal.Phase) {
+		dockerClient, helperImage, err := s.projectRenameRecoveryDockerInternal(ctx, len(journal.Volumes) > 0)
 		if err != nil {
 			return err
 		}
 
-		if !oldExists && newExists {
-			if err := createProjectRenameRecoverySourceVolumeInternal(ctx, dockerClient, vol); err != nil {
+		for _, vol := range slices.Backward(journal.Volumes) {
+			oldExists, err := projectRenameVolumeExistsInternal(ctx, dockerClient, vol.OldName)
+			if err != nil {
 				return err
 			}
-			if err := copyProjectVolumeDataInternal(ctx, dockerClient, helperImage, vol.NewName, vol.OldName); err != nil {
-				return fmt.Errorf("restore volume data from %s to %s: %w", vol.NewName, vol.OldName, err)
+			newExists, err := projectRenameVolumeExistsInternal(ctx, dockerClient, vol.NewName)
+			if err != nil {
+				return err
 			}
-			oldExists = true
-		}
 
-		if oldExists && newExists {
-			if err := removeProjectVolumeHelperContainersInternal(ctx, dockerClient, vol.NewName); err != nil {
-				return err
+			if !oldExists && newExists {
+				if err := createProjectRenameRecoverySourceVolumeInternal(ctx, dockerClient, vol); err != nil {
+					return err
+				}
+				if err := copyProjectVolumeDataInternal(ctx, dockerClient, helperImage, vol.NewName, vol.OldName); err != nil {
+					return fmt.Errorf("restore volume data from %s to %s: %w", vol.NewName, vol.OldName, err)
+				}
+				oldExists = true
 			}
-			if err := removeProjectVolumeWithRetryInternal(ctx, dockerClient, vol.NewName, client.VolumeRemoveOptions{Force: true}); err != nil {
-				return fmt.Errorf("remove rollback target volume %s: %w", vol.NewName, err)
+
+			if oldExists && newExists {
+				if err := removeProjectVolumeHelperContainersInternal(ctx, dockerClient, vol.NewName); err != nil {
+					return err
+				}
+				if err := removeProjectVolumeWithRetryInternal(ctx, dockerClient, vol.NewName, client.VolumeRemoveOptions{Force: true}); err != nil {
+					return fmt.Errorf("remove rollback target volume %s: %w", vol.NewName, err)
+				}
 			}
 		}
 	}
