@@ -110,3 +110,46 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsCommittedJournal(t *t
 	require.False(t, ok)
 	require.DirExists(t, newPath)
 }
+
+func TestProjectService_SaveProjectUpdateAndCommitRename_WritesOldVolumesRemovedPhase(t *testing.T) {
+	db := setupProjectTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.KVEntry{}))
+	ctx := context.Background()
+
+	oldDir := "nginx"
+	newDir := "web"
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-rename-old-volumes-removed"},
+		Name:      "web",
+		DirName:   &newDir,
+		Path:      filepath.Join(t.TempDir(), newDir),
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	kvService := NewKVService(db)
+	svc := NewProjectService(db, nil, nil, nil, nil, nil, config.Load()).WithKVService(kvService)
+	journal := &projectRenameJournalInternal{
+		ProjectID:  project.ID,
+		OldName:    "nginx",
+		NewName:    "web",
+		OldPath:    filepath.Join(t.TempDir(), oldDir),
+		NewPath:    project.Path,
+		OldDirName: &oldDir,
+		NewDirName: newDir,
+		Phase:      projectRenameJournalPhaseTargetsCopiedInternal,
+	}
+	require.NoError(t, svc.writeProjectRenameJournalInternal(ctx, journal, projectRenameJournalPhaseTargetsCopiedInternal))
+
+	migration := &fakeProjectVolumeRenameMigrationInternal{}
+	require.NoError(t, svc.saveProjectUpdateAndCommitRenameInternal(ctx, project, migration, journal))
+	require.True(t, migration.commitCalled)
+
+	raw, ok, err := kvService.Get(ctx, projectRenameJournalKeyInternal(project.ID))
+	require.NoError(t, err)
+	require.True(t, ok)
+
+	var updatedJournal projectRenameJournalInternal
+	require.NoError(t, json.Unmarshal([]byte(raw), &updatedJournal))
+	require.Equal(t, projectRenameJournalPhaseOldVolumesRemoved, updatedJournal.Phase)
+}

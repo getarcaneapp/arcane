@@ -1074,8 +1074,10 @@ func TestProjectService_UpdateProjectServicesForcesRecreateInternal(t *testing.T
 
 type fakeProjectVolumeRenameMigrationInternal struct {
 	applyCalled    bool
+	commitCalled   bool
 	rollbackCalled bool
 	applyErr       error
+	commitErr      error
 	rollbackErr    error
 }
 
@@ -1087,6 +1089,11 @@ func (m *fakeProjectVolumeRenameMigrationInternal) Apply(context.Context) error 
 func (m *fakeProjectVolumeRenameMigrationInternal) Rollback(context.Context) error {
 	m.rollbackCalled = true
 	return m.rollbackErr
+}
+
+func (m *fakeProjectVolumeRenameMigrationInternal) Commit(context.Context) error {
+	m.commitCalled = true
+	return m.commitErr
 }
 
 func TestProjectService_UpdateProject_RenameFailsWhenVolumeMigrationPreparationFails(t *testing.T) {

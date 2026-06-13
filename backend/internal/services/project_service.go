@@ -3047,7 +3047,7 @@ func (s *ProjectService) applyProjectUpdateWithRenameJournalInternal(ctx context
 	if err = s.applyProjectVolumeMigrationForUpdateInternal(ctx, volumeMigration, renameJournal, &volumeMigrationApplied); err != nil {
 		return err
 	}
-	if err = s.saveProjectUpdateAndCommitRenameInternal(ctx, proj, volumeMigration); err != nil {
+	if err = s.saveProjectUpdateAndCommitRenameInternal(ctx, proj, volumeMigration, renameJournal); err != nil {
 		return err
 	}
 	s.completeProjectRenameJournalForUpdateInternal(ctx, renameJournal, proj.ID, journalActive)
@@ -3065,13 +3065,14 @@ func (s *ProjectService) applyProjectVolumeMigrationForUpdateInternal(ctx contex
 	return s.writeProjectRenameJournalInternal(ctx, renameJournal, projectRenameJournalPhaseTargetsCopiedInternal)
 }
 
-func (s *ProjectService) saveProjectUpdateAndCommitRenameInternal(ctx context.Context, proj *models.Project, volumeMigration projectVolumeRenameMigrationInternal) error {
+func (s *ProjectService) saveProjectUpdateAndCommitRenameInternal(ctx context.Context, proj *models.Project, volumeMigration projectVolumeRenameMigrationInternal, renameJournal *projectRenameJournalInternal) error {
 	tx := s.db.WithContext(ctx).Begin()
 	if tx.Error != nil {
 		return fmt.Errorf("failed to start project update transaction: %w", tx.Error)
 	}
 
 	txCommitted := false
+	oldVolumesRemoved := false
 	defer func() {
 		if !txCommitted {
 			_ = tx.Rollback().Error
@@ -3085,11 +3086,17 @@ func (s *ProjectService) saveProjectUpdateAndCommitRenameInternal(ctx context.Co
 		if err := committer.Commit(ctx); err != nil {
 			return fmt.Errorf("failed to commit project volume rename: %w", err)
 		}
+		oldVolumesRemoved = true
 	}
 	if err := tx.Commit().Error; err != nil {
 		return fmt.Errorf("failed to commit project update: %w", err)
 	}
 	txCommitted = true
+	if oldVolumesRemoved {
+		if err := s.writeProjectRenameJournalInternal(ctx, renameJournal, projectRenameJournalPhaseOldVolumesRemoved); err != nil {
+			slog.WarnContext(ctx, "failed to mark project rename journal old volumes removed", "projectID", proj.ID, "error", err)
+		}
+	}
 	return nil
 }
 
