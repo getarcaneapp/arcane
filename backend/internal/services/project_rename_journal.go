@@ -310,16 +310,21 @@ func restoreProjectRenameJournalSourceVolumeInternal(ctx context.Context, docker
 	}
 	if err := copyProjectVolumeDataInternal(ctx, dockerClient, copyRuntime, vol.NewName, vol.OldName); err != nil {
 		restoreErr := fmt.Errorf("restore volume data from %s to %s: %w", vol.NewName, vol.OldName, err)
-		var cleanupErr error
-		if err := removeProjectVolumeHelperContainersInternal(ctx, dockerClient, vol.OldName); err != nil {
-			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("remove helper containers for partial source volume %s: %w", vol.OldName, err))
-		}
-		if err := removeProjectVolumeWithRetryInternal(ctx, dockerClient, vol.OldName, client.VolumeRemoveOptions{Force: true}); err != nil {
-			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("remove partial source volume %s: %w", vol.OldName, err))
-		}
+		cleanupErr := cleanupProjectRenamePartialSourceVolumeInternal(ctx, dockerClient, vol.OldName)
 		return false, errors.Join(restoreErr, cleanupErr)
 	}
 	return true, nil
+}
+
+func cleanupProjectRenamePartialSourceVolumeInternal(ctx context.Context, dockerClient *client.Client, sourceName string) error {
+	var cleanupErr error
+	if err := removeProjectVolumeHelperContainersInternal(ctx, dockerClient, sourceName); err != nil {
+		cleanupErr = errors.Join(cleanupErr, fmt.Errorf("remove helper containers for partial source volume %s: %w", sourceName, err))
+	}
+	if err := removeProjectVolumeWithRetryInternal(ctx, dockerClient, sourceName, client.VolumeRemoveOptions{Force: true}); err != nil {
+		cleanupErr = errors.Join(cleanupErr, fmt.Errorf("remove partial source volume %s: %w", sourceName, err))
+	}
+	return cleanupErr
 }
 
 func removeProjectRenameJournalTargetVolumeInternal(ctx context.Context, dockerClient *client.Client, newName string, oldExists bool, newExists bool) error {

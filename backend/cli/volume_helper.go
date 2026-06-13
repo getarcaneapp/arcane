@@ -86,7 +86,7 @@ func statfsAvailableBytesInternal(path string) (uint64, error) {
 		return 0, fmt.Errorf("statfs %s: %w", path, err)
 	}
 
-	if stat.Bavail <= 0 || stat.Bsize <= 0 {
+	if stat.Bavail == 0 || stat.Bsize <= 0 {
 		return 0, nil
 	}
 	return stat.Bavail * uint64(stat.Bsize), nil
