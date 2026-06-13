@@ -3,10 +3,12 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -15,15 +17,35 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestProjectVolumeCopyCommandInternal_ChecksCapacityBeforeCopy(t *testing.T) {
-	command := projectVolumeCopyCommandInternal()
+func TestProjectVolumeCopyRequiredBytesInternal_AddsMargin(t *testing.T) {
+	require.EqualValues(t, projectVolumeCopyMinMarginBytesInternal, projectVolumeCopyRequiredBytesInternal(0))
+	require.EqualValues(t, 1024+projectVolumeCopyMinMarginBytesInternal, projectVolumeCopyRequiredBytesInternal(1024))
 
-	require.Contains(t, command, "du -sk /from")
-	require.Contains(t, command, "df -Pk /to")
-	require.Contains(t, command, "required_kb")
-	require.Contains(t, command, "exit 99")
-	require.NotContains(t, command, "awk")
-	require.Less(t, strings.Index(command, "df -Pk /to"), strings.Index(command, "tar -cf - ."))
+	largeSource := uint64(10 * projectVolumeCopyMinMarginBytesInternal)
+	require.Equal(t, largeSource+(largeSource/10), projectVolumeCopyRequiredBytesInternal(largeSource))
+	require.Equal(t, ^uint64(0), projectVolumeCopyRequiredBytesInternal(^uint64(0)))
+}
+
+func TestEnsureProjectVolumeCopyCapacityInternal_ReturnsInsufficientSpace(t *testing.T) {
+	err := ensureProjectVolumeCopyCapacityInternal(
+		projectVolumeCopyProbeInternal{AllocatedBytes: 1024},
+		projectVolumeCopyProbeInternal{AvailableBytes: 1024},
+		"nginx_data",
+		"web_data",
+	)
+
+	var spaceErr *ProjectVolumeRenameInsufficientSpaceError
+	require.ErrorAs(t, err, &spaceErr)
+	require.Equal(t, "nginx_data", spaceErr.SourceVolume)
+	require.Equal(t, "web_data", spaceErr.TargetVolume)
+	require.Contains(t, spaceErr.Detail, "source=1024B")
+	require.Contains(t, spaceErr.Detail, "available=1024B")
+}
+
+func TestIsProjectVolumeCopyNoSpaceErrorInternal(t *testing.T) {
+	require.True(t, isProjectVolumeCopyNoSpaceErrorInternal(syscall.ENOSPC))
+	require.True(t, isProjectVolumeCopyNoSpaceErrorInternal(errors.New("write target volume archive: no space left on device")))
+	require.False(t, isProjectVolumeCopyNoSpaceErrorInternal(errors.New("permission denied")))
 }
 
 func TestEnsureProjectRenameTargetVolumeAbsentInternal_ReturnsConflictWhenTargetExists(t *testing.T) {
@@ -76,6 +98,47 @@ func TestEnsureProjectRenameSourceVolumeDetachedInternal_ReturnsConflictWhenCont
 	require.Equal(t, []string{"stopped-container"}, inUseErr.ContainerIDs)
 }
 
+func TestGetProjectVolumeCopyRuntimeInternal_UsesArcaneAgentLabel(t *testing.T) {
+	var listCalls atomic.Int32
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/containers/json"):
+			w.Header().Set("Content-Type", "application/json")
+			if listCalls.Add(1) == 1 {
+				require.NoError(t, json.NewEncoder(w).Encode([]container.Summary{}))
+				return
+			}
+			require.NoError(t, json.NewEncoder(w).Encode([]container.Summary{
+				{
+					ID:    "agent-container",
+					Image: "arcane-agent:local",
+					State: container.StateRunning,
+				},
+			}))
+		case strings.Contains(r.URL.Path, "/containers/agent-container/") && strings.HasSuffix(r.URL.Path, "/json"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(container.InspectResponse{
+				ID: "agent-container",
+				Config: &container.Config{
+					Image: "arcane-agent:local",
+					Cmd:   []string{"./arcane-agent"},
+				},
+			}))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	copyRuntime, err := getProjectVolumeCopyRuntimeInternal(context.Background(), newTestDockerClient(t, server))
+
+	require.NoError(t, err)
+	require.Equal(t, "arcane-agent:local", copyRuntime.Image)
+	require.Equal(t, []string{"./arcane-agent"}, copyRuntime.Command)
+	require.Equal(t, "arcane-agent-label", copyRuntime.Source)
+}
+
 func TestRunProjectVolumeHelperContainerInternal_RemovesHelperWhenContextIsCanceled(t *testing.T) {
 	started := make(chan struct{})
 	deleted := make(chan struct{})
@@ -111,7 +174,7 @@ func TestRunProjectVolumeHelperContainerInternal_RemovesHelperWhenContextIsCance
 	}()
 
 	dockerClient := newTestDockerClient(t, server)
-	err := runProjectVolumeHelperContainerInternal(ctx, dockerClient, &container.Config{Image: "busybox"}, &container.HostConfig{})
+	_, err := runProjectVolumeHelperContainerInternal(ctx, dockerClient, &container.Config{Image: "arcane:local"}, &container.HostConfig{})
 
 	require.ErrorIs(t, err, context.Canceled)
 	select {
@@ -156,7 +219,7 @@ func TestDockerProjectVolumeRenameMigrationInternal_RollbackCleansTargetsWhenRes
 	err := migration.Rollback(context.Background())
 
 	require.Error(t, err)
-	require.ErrorContains(t, err, "volume copy helper image")
+	require.ErrorContains(t, err, "local Arcane runtime image unavailable")
 	require.True(t, targetRemoved.Load(), "expected rollback to remove created target volume after restore failure")
 	require.Nil(t, migration.createdNew)
 }

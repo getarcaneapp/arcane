@@ -244,20 +244,20 @@ func (s *ProjectService) rollbackProjectRenameJournalVolumesInternal(ctx context
 		return nil
 	}
 
-	dockerClient, helperImage, err := s.projectRenameRecoveryDockerInternal(ctx, len(journal.Volumes) > 0, len(journal.Volumes) > 0)
+	dockerClient, copyRuntime, err := s.projectRenameRecoveryDockerInternal(ctx, len(journal.Volumes) > 0, len(journal.Volumes) > 0)
 	if err != nil {
 		return err
 	}
 
 	for _, vol := range slices.Backward(journal.Volumes) {
-		if err := rollbackProjectRenameJournalVolumeInternal(ctx, dockerClient, helperImage, vol); err != nil {
+		if err := rollbackProjectRenameJournalVolumeInternal(ctx, dockerClient, copyRuntime, vol); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func rollbackProjectRenameJournalVolumeInternal(ctx context.Context, dockerClient *client.Client, helperImage string, vol projectRenameJournalVolumeInternal) error {
+func rollbackProjectRenameJournalVolumeInternal(ctx context.Context, dockerClient *client.Client, copyRuntime projectVolumeCopyRuntimeInternal, vol projectRenameJournalVolumeInternal) error {
 	oldExists, err := projectRenameVolumeExistsInternal(ctx, dockerClient, vol.OldName)
 	if err != nil {
 		return err
@@ -267,14 +267,14 @@ func rollbackProjectRenameJournalVolumeInternal(ctx context.Context, dockerClien
 		return err
 	}
 
-	oldExists, err = restoreProjectRenameJournalSourceVolumeInternal(ctx, dockerClient, helperImage, vol, oldExists, newExists)
+	oldExists, err = restoreProjectRenameJournalSourceVolumeInternal(ctx, dockerClient, copyRuntime, vol, oldExists, newExists)
 	if err != nil {
 		return err
 	}
 	return removeProjectRenameJournalTargetVolumeInternal(ctx, dockerClient, vol.NewName, oldExists, newExists)
 }
 
-func restoreProjectRenameJournalSourceVolumeInternal(ctx context.Context, dockerClient *client.Client, helperImage string, vol projectRenameJournalVolumeInternal, oldExists bool, newExists bool) (bool, error) {
+func restoreProjectRenameJournalSourceVolumeInternal(ctx context.Context, dockerClient *client.Client, copyRuntime projectVolumeCopyRuntimeInternal, vol projectRenameJournalVolumeInternal, oldExists bool, newExists bool) (bool, error) {
 	if oldExists || !newExists {
 		return oldExists, nil
 	}
@@ -282,7 +282,7 @@ func restoreProjectRenameJournalSourceVolumeInternal(ctx context.Context, docker
 	if err := createProjectRenameRecoverySourceVolumeInternal(ctx, dockerClient, vol); err != nil {
 		return false, err
 	}
-	if err := copyProjectVolumeDataInternal(ctx, dockerClient, helperImage, vol.NewName, vol.OldName); err != nil {
+	if err := copyProjectVolumeDataInternal(ctx, dockerClient, copyRuntime, vol.NewName, vol.OldName); err != nil {
 		return false, fmt.Errorf("restore volume data from %s to %s: %w", vol.NewName, vol.OldName, err)
 	}
 	return true, nil
@@ -302,29 +302,28 @@ func removeProjectRenameJournalTargetVolumeInternal(ctx context.Context, dockerC
 	return nil
 }
 
-func (s *ProjectService) projectRenameRecoveryDockerInternal(ctx context.Context, dockerRequired bool, helperImageRequired bool) (*client.Client, string, error) {
+func (s *ProjectService) projectRenameRecoveryDockerInternal(ctx context.Context, dockerRequired bool, copyRuntimeRequired bool) (*client.Client, projectVolumeCopyRuntimeInternal, error) {
 	if !dockerRequired {
-		return nil, "", nil
+		return nil, projectVolumeCopyRuntimeInternal{}, nil
 	}
 	if s.dockerService == nil {
-		return nil, "", errors.New("docker service unavailable")
+		return nil, projectVolumeCopyRuntimeInternal{}, errors.New("docker service unavailable")
 	}
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to connect to Docker: %w", err)
+		return nil, projectVolumeCopyRuntimeInternal{}, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	var helperImage string
-	if helperImageRequired {
-		var err error
-		helperImage, err = getProjectVolumeCopyHelperImageInternal(ctx, s.imageService, dockerClient)
+	var copyRuntime projectVolumeCopyRuntimeInternal
+	if copyRuntimeRequired {
+		copyRuntime, err = getProjectVolumeCopyRuntimeInternal(ctx, dockerClient)
 		if err != nil {
-			return nil, "", err
+			return nil, projectVolumeCopyRuntimeInternal{}, err
 		}
 	}
 
-	return dockerClient, helperImage, nil
+	return dockerClient, copyRuntime, nil
 }
 
 func rollbackProjectRenameDirectoryInternal(journal *projectRenameJournalInternal) error {

@@ -54,6 +54,12 @@ type volumeHelper struct {
 
 const volumeHelperImage = DefaultArcaneToolsImage
 
+type arcaneRuntimeHelperImageInternal struct {
+	Image   string
+	Command []string
+	Source  string
+}
+
 type backupStorageMode string
 
 const (
@@ -480,20 +486,71 @@ func getVolumeHelperImageInternal(ctx context.Context, dockerService *DockerClie
 }
 
 func resolveArcaneVolumeHelperImageInternal(ctx context.Context, dockerClient *client.Client) (string, string, bool) {
+	resolved, ok := resolveArcaneRuntimeHelperImageInternal(ctx, dockerClient)
+	if !ok {
+		return "", "", false
+	}
+	return resolved.Image, resolved.Source, true
+}
+
+func resolveArcaneRuntimeHelperImageInternal(ctx context.Context, dockerClient *client.Client) (arcaneRuntimeHelperImageInternal, bool) {
 	hostname, _ := os.Hostname()
 	if hostname != "" {
 		if inspect, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, hostname, client.ContainerInspectOptions{}); err == nil && inspect.Container.Config != nil && strings.TrimSpace(inspect.Container.Config.Image) != "" {
-			return inspect.Container.Config.Image, "hostname", true
+			return buildArcaneRuntimeHelperImageInternal(inspect.Container.Config.Image, inspect.Container.Config.Cmd, "hostname"), true
 		}
 	}
 
-	filter := make(client.Filters)
-	filter = filter.Add("label", "com.getarcaneapp.arcane=true")
-	if containers, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{Filters: filter, All: true}); err == nil && len(containers.Items) > 0 && strings.TrimSpace(containers.Items[0].Image) != "" {
-		return containers.Items[0].Image, "arcane-label", true
+	for _, label := range []string{"com.getarcaneapp.arcane=true", "com.getarcaneapp.arcane.agent=true"} {
+		filter := make(client.Filters)
+		filter = filter.Add("label", label)
+		containers, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{Filters: filter, All: true})
+		if err != nil || len(containers.Items) == 0 {
+			continue
+		}
+
+		if resolved, ok := resolveArcaneRuntimeHelperImageFromContainersInternal(ctx, dockerClient, containers.Items, label, true); ok {
+			return resolved, true
+		}
+		if resolved, ok := resolveArcaneRuntimeHelperImageFromContainersInternal(ctx, dockerClient, containers.Items, label, false); ok {
+			return resolved, true
+		}
 	}
 
-	return "", "", false
+	return arcaneRuntimeHelperImageInternal{}, false
+}
+
+func resolveArcaneRuntimeHelperImageFromContainersInternal(ctx context.Context, dockerClient *client.Client, containers []container.Summary, label string, runningOnly bool) (arcaneRuntimeHelperImageInternal, bool) {
+	source := "arcane-label"
+	if strings.Contains(label, ".agent=") {
+		source = "arcane-agent-label"
+	}
+
+	for _, c := range containers {
+		if runningOnly && c.State != container.StateRunning {
+			continue
+		}
+		if !runningOnly && c.State == container.StateRunning {
+			continue
+		}
+		inspect, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, c.ID, client.ContainerInspectOptions{})
+		if err == nil && inspect.Container.Config != nil && strings.TrimSpace(inspect.Container.Config.Image) != "" {
+			return buildArcaneRuntimeHelperImageInternal(inspect.Container.Config.Image, inspect.Container.Config.Cmd, source), true
+		}
+		if strings.TrimSpace(c.Image) != "" {
+			return buildArcaneRuntimeHelperImageInternal(c.Image, nil, source), true
+		}
+	}
+
+	return arcaneRuntimeHelperImageInternal{}, false
+}
+
+func buildArcaneRuntimeHelperImageInternal(image string, command []string, source string) arcaneRuntimeHelperImageInternal {
+	return arcaneRuntimeHelperImageInternal{
+		Image:   strings.TrimSpace(image),
+		Command: append([]string(nil), command...),
+		Source:  source,
+	}
 }
 
 func resolveBackupStorageMountFromMountsInternal(mounts []container.MountPoint, target string, readOnly bool) (backupStorageMountInternal, bool) {
@@ -717,7 +774,25 @@ func isLegacyVolumeHelperContainerInternal(c container.Summary) bool {
 }
 
 func isVolumeHelperContainerInternal(c container.Summary) bool {
-	return isLegacyVolumeHelperContainerInternal(c)
+	if isLegacyVolumeHelperContainerInternal(c) {
+		return true
+	}
+	if !libarcane.IsInternalContainer(c.Labels) {
+		return false
+	}
+
+	command := strings.ToLower(c.Command)
+	if !strings.Contains(command, "internal-volume-helper") {
+		return false
+	}
+
+	for _, m := range c.Mounts {
+		if m.Destination == "/volume" {
+			return true
+		}
+	}
+
+	return false
 }
 
 func isArcaneFallbackVolumeHelperImageInternal(helperImage string) bool {
