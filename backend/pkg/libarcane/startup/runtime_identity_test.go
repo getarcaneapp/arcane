@@ -11,10 +11,20 @@ import (
 )
 
 func TestLoadRuntimeIdentityRequest(t *testing.T) {
-	t.Run("enabled with default non-root runtime when unset", func(t *testing.T) {
+	t.Run("disabled when unset outside a container", func(t *testing.T) {
 		req, warning, err := loadRuntimeIdentityRequestInternal(&RuntimeIdentityConfig{
 			DockerHost: "unix:///tmp/docker.sock",
-		})
+		}, false)
+		require.NoError(t, err)
+		require.Empty(t, warning)
+		require.False(t, req.Enabled)
+		require.Equal(t, "unix:///tmp/docker.sock", req.DockerHost)
+	})
+
+	t.Run("enabled with default non-root runtime when unset in container", func(t *testing.T) {
+		req, warning, err := loadRuntimeIdentityRequestInternal(&RuntimeIdentityConfig{
+			DockerHost: "unix:///tmp/docker.sock",
+		}, true)
 		require.NoError(t, err)
 		require.Empty(t, warning)
 		require.True(t, req.Enabled)
@@ -26,7 +36,7 @@ func TestLoadRuntimeIdentityRequest(t *testing.T) {
 	})
 
 	t.Run("warning when partial config", func(t *testing.T) {
-		req, warning, err := loadRuntimeIdentityRequestInternal(&RuntimeIdentityConfig{PUID: "1001"})
+		req, warning, err := loadRuntimeIdentityRequestInternal(&RuntimeIdentityConfig{PUID: "1001"}, true)
 		require.NoError(t, err)
 		require.Contains(t, warning, "PUID and PGID must both be set")
 		require.True(t, req.Enabled)
@@ -36,8 +46,19 @@ func TestLoadRuntimeIdentityRequest(t *testing.T) {
 		require.Equal(t, uint32(defaultRuntimeGID), req.CredentialGID)
 	})
 
+	t.Run("warning when partial config outside container", func(t *testing.T) {
+		req, warning, err := loadRuntimeIdentityRequestInternal(&RuntimeIdentityConfig{PUID: "1001"}, false)
+		require.NoError(t, err)
+		require.Contains(t, warning, "PUID and PGID must both be set to enable runtime identity outside containers")
+		require.False(t, req.Enabled)
+		require.Zero(t, req.UID)
+		require.Zero(t, req.GID)
+		require.Equal(t, uint32(0), req.CredentialUID)
+		require.Equal(t, uint32(0), req.CredentialGID)
+	})
+
 	t.Run("error when invalid numeric value", func(t *testing.T) {
-		_, _, err := loadRuntimeIdentityRequestInternal(&RuntimeIdentityConfig{PUID: "abc", PGID: "1001"})
+		_, _, err := loadRuntimeIdentityRequestInternal(&RuntimeIdentityConfig{PUID: "abc", PGID: "1001"}, false)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "invalid PUID")
 	})
@@ -45,7 +66,7 @@ func TestLoadRuntimeIdentityRequest(t *testing.T) {
 	t.Run("error when value exceeds uint32", func(t *testing.T) {
 		tooLarge := strconv.FormatUint(uint64(math.MaxUint32)+1, 10)
 
-		_, _, err := loadRuntimeIdentityRequestInternal(&RuntimeIdentityConfig{PUID: tooLarge, PGID: "1001"})
+		_, _, err := loadRuntimeIdentityRequestInternal(&RuntimeIdentityConfig{PUID: tooLarge, PGID: "1001"}, false)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "invalid PUID")
 	})
@@ -55,7 +76,7 @@ func TestLoadRuntimeIdentityRequest(t *testing.T) {
 			PUID:       "1001",
 			PGID:       "2001",
 			DockerHost: "unix:///tmp/docker.sock",
-		})
+		}, false)
 		require.NoError(t, err)
 		require.Empty(t, warning)
 		require.True(t, req.Enabled)
@@ -67,38 +88,73 @@ func TestLoadRuntimeIdentityRequest(t *testing.T) {
 	})
 
 	t.Run("error when value is negative", func(t *testing.T) {
-		_, _, err := loadRuntimeIdentityRequestInternal(&RuntimeIdentityConfig{PUID: "-1", PGID: "1001"})
+		_, _, err := loadRuntimeIdentityRequestInternal(&RuntimeIdentityConfig{PUID: "-1", PGID: "1001"}, false)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "invalid PUID")
 	})
 }
 
-func TestRuntimeDockerConfigDir(t *testing.T) {
-	t.Run("defaults to app data docker config when unset", func(t *testing.T) {
-		dir := runtimeDockerConfigDirInternal(&RuntimeIdentityConfig{})
+func TestRunningInContainerInternal(t *testing.T) {
+	t.Run("explicit arcane env enables container mode", func(t *testing.T) {
+		inContainer := runningInContainerInternal(
+			func(key string) string {
+				if key == "ARCANE_IN_CONTAINER" {
+					return "true"
+				}
+				return ""
+			},
+			func(string) (os.FileInfo, error) {
+				return nil, os.ErrNotExist
+			},
+		)
 
-		require.Equal(t, defaultDockerConfigDir, dir)
+		require.True(t, inContainer)
 	})
 
-	t.Run("preserves explicit docker config", func(t *testing.T) {
-		dir := runtimeDockerConfigDirInternal(&RuntimeIdentityConfig{DockerConfig: "/custom/docker-config"})
+	t.Run("container env enables container mode", func(t *testing.T) {
+		inContainer := runningInContainerInternal(
+			func(key string) string {
+				if key == "container" {
+					return "podman"
+				}
+				return ""
+			},
+			func(string) (os.FileInfo, error) {
+				return nil, os.ErrNotExist
+			},
+		)
 
-		require.Equal(t, "/custom/docker-config", dir)
+		require.True(t, inContainer)
 	})
 
-	t.Run("default runtime uses non-root identity", func(t *testing.T) {
-		req, warning, err := loadRuntimeIdentityRequestInternal(&RuntimeIdentityConfig{})
+	t.Run("container marker file enables container mode", func(t *testing.T) {
+		inContainer := runningInContainerInternal(
+			func(string) string { return "" },
+			func(path string) (os.FileInfo, error) {
+				if path == "/run/.containerenv" {
+					return nil, nil
+				}
+				return nil, os.ErrNotExist
+			},
+		)
 
-		require.NoError(t, err)
-		require.Empty(t, warning)
-		require.True(t, req.Enabled)
-		require.Equal(t, defaultRuntimeUID, req.UID)
-		require.Equal(t, defaultRuntimeGID, req.GID)
+		require.True(t, inContainer)
+	})
+
+	t.Run("no signal disables container mode", func(t *testing.T) {
+		inContainer := runningInContainerInternal(
+			func(string) string { return "" },
+			func(string) (os.FileInfo, error) {
+				return nil, os.ErrNotExist
+			},
+		)
+
+		require.False(t, inContainer)
 	})
 }
 
 func TestConfigureRuntimeDockerConfigEnv(t *testing.T) {
-	t.Run("sets default for non root runtime when unset", func(t *testing.T) {
+	t.Run("sets default for non root runtime when unset in container", func(t *testing.T) {
 		cfg := &RuntimeIdentityConfig{}
 		env := map[string]string{}
 
@@ -110,12 +166,37 @@ func TestConfigureRuntimeDockerConfigEnv(t *testing.T) {
 			},
 			1001,
 			1001,
+			true,
 		)
 
 		require.NoError(t, err)
 		require.Equal(t, defaultDockerConfigDir, configDir)
 		require.Equal(t, defaultDockerConfigDir, env["DOCKER_CONFIG"])
 		require.Equal(t, defaultDockerConfigDir, cfg.DockerConfig)
+	})
+
+	t.Run("skips default for non root runtime when unset outside container", func(t *testing.T) {
+		cfg := &RuntimeIdentityConfig{}
+		env := map[string]string{}
+		setCalled := false
+
+		configDir, err := configureRuntimeDockerConfigEnvInternal(
+			cfg,
+			func(key string, value string) error {
+				setCalled = true
+				env[key] = value
+				return nil
+			},
+			1001,
+			1001,
+			false,
+		)
+
+		require.NoError(t, err)
+		require.Empty(t, configDir)
+		require.Empty(t, env["DOCKER_CONFIG"])
+		require.Empty(t, cfg.DockerConfig)
+		require.False(t, setCalled)
 	})
 
 	t.Run("preserves explicit docker config for non root runtime", func(t *testing.T) {
@@ -132,6 +213,7 @@ func TestConfigureRuntimeDockerConfigEnv(t *testing.T) {
 			},
 			1001,
 			1001,
+			false,
 		)
 
 		require.NoError(t, err)
@@ -155,6 +237,7 @@ func TestConfigureRuntimeDockerConfigEnv(t *testing.T) {
 			},
 			0,
 			0,
+			true,
 		)
 
 		require.NoError(t, err)
@@ -176,6 +259,7 @@ func TestConfigureRuntimeDockerConfigEnv(t *testing.T) {
 			},
 			0,
 			1001,
+			true,
 		)
 
 		require.NoError(t, err)
@@ -197,6 +281,7 @@ func TestEnsureRuntimeDockerConfigCreatesCustomDirectory(t *testing.T) {
 		},
 		1001,
 		1001,
+		false,
 	))
 
 	info, err := os.Stat(customDir)
