@@ -70,6 +70,11 @@ type projectVolumeCopyProbeInternal struct {
 	AvailableBytes uint64 `json:"availableBytes"`
 }
 
+type projectVolumeHelperLogsInternal struct {
+	Stdout string
+	Stderr string
+}
+
 const (
 	projectVolumeCopyMountPathInternal      = "/volume"
 	projectVolumeCopyMinMarginBytesInternal = 256 * 1024 * 1024
@@ -593,12 +598,13 @@ func startProjectVolumeHelperContainerInternal(ctx context.Context, dockerClient
 		}
 		logs := readProjectVolumeHelperLogsInternal(ctx, dockerClient, containerID)
 		if waitBody.StatusCode != 0 {
-			if logs != "" {
-				return logs, fmt.Errorf("volume copy container exited with code %d: %s", waitBody.StatusCode, logs)
+			output := logs.String()
+			if output != "" {
+				return output, fmt.Errorf("volume copy container exited with code %d: %s", waitBody.StatusCode, output)
 			}
 			return "", fmt.Errorf("volume copy container exited with code %d", waitBody.StatusCode)
 		}
-		return logs, nil
+		return logs.Stdout, nil
 	case <-ctx.Done():
 		return "", ctx.Err()
 	}
@@ -686,28 +692,34 @@ func isProjectVolumeCopyNoSpaceErrorInternal(err error) bool {
 	return strings.Contains(strings.ToLower(err.Error()), "no space left on device")
 }
 
-func readProjectVolumeHelperLogsInternal(ctx context.Context, dockerClient *client.Client, containerID string) string {
+func readProjectVolumeHelperLogsInternal(ctx context.Context, dockerClient *client.Client, containerID string) projectVolumeHelperLogsInternal {
 	logs, err := dockerClient.ContainerLogs(ctx, containerID, client.ContainerLogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
 	})
 	if err != nil {
 		slog.DebugContext(ctx, "failed to read volume helper logs", "containerID", containerID, "error", err)
-		return ""
+		return projectVolumeHelperLogsInternal{}
 	}
 	defer func() { _ = logs.Close() }()
 
 	var stdout, stderr bytes.Buffer
 	if _, err := stdcopy.StdCopy(&stdout, &stderr, logs); err != nil {
 		slog.DebugContext(ctx, "failed to decode volume helper logs", "containerID", containerID, "error", err)
-		return ""
+		return projectVolumeHelperLogsInternal{}
 	}
 
-	output := strings.TrimSpace(strings.Join([]string{
-		strings.TrimSpace(stderr.String()),
-		strings.TrimSpace(stdout.String()),
+	return projectVolumeHelperLogsInternal{
+		Stdout: strings.TrimSpace(stdout.String()),
+		Stderr: strings.TrimSpace(stderr.String()),
+	}
+}
+
+func (l projectVolumeHelperLogsInternal) String() string {
+	return strings.TrimSpace(strings.Join([]string{
+		strings.TrimSpace(l.Stderr),
+		strings.TrimSpace(l.Stdout),
 	}, "\n"))
-	return output
 }
 
 type ProjectVolumeRenameConflictError struct {

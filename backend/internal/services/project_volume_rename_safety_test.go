@@ -221,6 +221,65 @@ func TestStartProjectVolumeHelperContainerInternal_ReturnsWaitError(t *testing.T
 	require.ErrorContains(t, err, "wait interrupted")
 }
 
+func TestProbeProjectVolumeCopyContainerInternal_IgnoresStderrOnSuccess(t *testing.T) {
+	expected := projectVolumeCopyProbeInternal{
+		Path:           projectVolumeCopyMountPathInternal,
+		AllocatedBytes: 1024,
+		AvailableBytes: 1024 * 1024,
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/helper-container/start"):
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/helper-container/wait"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"StatusCode": 0}))
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/helper-container/logs"):
+			writeProjectVolumeCopyProbeLogInternal(t, w, expected, "startup log")
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	got, err := probeProjectVolumeCopyContainerInternal(context.Background(), newTestDockerClient(t, server), "helper-container")
+
+	require.NoError(t, err)
+	require.Equal(t, expected, got)
+}
+
+func TestStartProjectVolumeHelperContainerInternal_ReturnsCombinedOutputOnFailure(t *testing.T) {
+	probe := projectVolumeCopyProbeInternal{
+		Path:           projectVolumeCopyMountPathInternal,
+		AllocatedBytes: 1024,
+		AvailableBytes: 1024 * 1024,
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/helper-container/start"):
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/helper-container/wait"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"StatusCode": 1}))
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/helper-container/logs"):
+			writeProjectVolumeCopyProbeLogInternal(t, w, probe, "startup failure")
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	output, err := startProjectVolumeHelperContainerInternal(context.Background(), newTestDockerClient(t, server), "helper-container")
+
+	require.Error(t, err)
+	require.Contains(t, output, "startup failure")
+	require.Contains(t, output, `"path":"/volume"`)
+	require.ErrorContains(t, err, "startup failure")
+	require.ErrorContains(t, err, `"path":"/volume"`)
+}
+
 func TestDockerProjectVolumeRenameMigrationInternal_RollbackPreservesTargetsWhenRestoreFails(t *testing.T) {
 	var targetRemoved atomic.Bool
 
@@ -566,24 +625,31 @@ func TestDockerProjectVolumeRenameMigrationInternal_CommitPreflightsAllTargetsBe
 	require.False(t, secondSourceRemoved.Load())
 }
 
-func writeProjectVolumeCopyProbeLogInternal(t *testing.T, w http.ResponseWriter, probe projectVolumeCopyProbeInternal) {
+func writeProjectVolumeCopyProbeLogInternal(t *testing.T, w http.ResponseWriter, probe projectVolumeCopyProbeInternal, stderr ...string) {
 	t.Helper()
 
 	payload, err := json.Marshal(probe)
 	require.NoError(t, err)
 
 	var stream bytes.Buffer
-	header := make([]byte, 8)
-	header[0] = 1
-	binary.BigEndian.PutUint32(header[4:], uint32(len(payload)+1))
-	_, err = stream.Write(header)
-	require.NoError(t, err)
-	_, err = stream.Write(payload)
-	require.NoError(t, err)
-	err = stream.WriteByte('\n')
-	require.NoError(t, err)
+	for _, message := range stderr {
+		writeProjectVolumeCopyLogFrameInternal(t, &stream, 2, []byte(message+"\n"))
+	}
+	writeProjectVolumeCopyLogFrameInternal(t, &stream, 1, append(payload, '\n'))
 
 	_, err = w.Write(stream.Bytes())
+	require.NoError(t, err)
+}
+
+func writeProjectVolumeCopyLogFrameInternal(t *testing.T, stream *bytes.Buffer, streamID byte, payload []byte) {
+	t.Helper()
+
+	header := make([]byte, 8)
+	header[0] = streamID
+	binary.BigEndian.PutUint32(header[4:], uint32(len(payload)))
+	_, err := stream.Write(header)
+	require.NoError(t, err)
+	_, err = stream.Write(payload)
 	require.NoError(t, err)
 }
 
