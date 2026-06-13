@@ -89,7 +89,7 @@ func statfsAvailableBytesInternal(path string) (uint64, error) {
 	if stat.Bavail <= 0 || stat.Bsize <= 0 {
 		return 0, nil
 	}
-	return uint64(stat.Bavail) * uint64(stat.Bsize), nil
+	return stat.Bavail * uint64(stat.Bsize), nil
 }
 
 func allocatedBytesForPathInternal(ctx context.Context, root string) (uint64, error) {
@@ -132,21 +132,23 @@ func allocatedBytesForPathInternal(ctx context.Context, root string) (uint64, er
 func allocatedBytesForFileInternal(info os.FileInfo) (uint64, internalVolumeHelperFileKey, bool) {
 	stat, ok := info.Sys().(*syscall.Stat_t)
 	if !ok || stat == nil {
-		if info.Size() <= 0 {
-			return 0, internalVolumeHelperFileKey{}, false
-		}
-		return uint64(info.Size()), internalVolumeHelperFileKey{}, false
+		return fileSizeBytesInternal(info), internalVolumeHelperFileKey{}, false
 	}
 
-	key := internalVolumeHelperFileKey{dev: uint64(stat.Dev), ino: uint64(stat.Ino)}
+	key := internalVolumeHelperFileKey{dev: stat.Dev, ino: stat.Ino}
 	linked := stat.Nlink > 1
 	if stat.Blocks > 0 {
 		return uint64(stat.Blocks) * 512, key, linked
 	}
-	if info.Size() <= 0 {
-		return 0, key, linked
+	return fileSizeBytesInternal(info), key, linked
+}
+
+func fileSizeBytesInternal(info os.FileInfo) uint64 {
+	size := info.Size()
+	if size <= 0 {
+		return 0
 	}
-	return uint64(info.Size()), key, linked
+	return uint64(size)
 }
 
 func init() {

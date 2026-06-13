@@ -548,27 +548,6 @@ func probeProjectVolumeCopyContainerInternal(ctx context.Context, dockerClient *
 	return probe, nil
 }
 
-func runProjectVolumeHelperContainerInternal(ctx context.Context, dockerClient *client.Client, config *container.Config, hostConfig *container.HostConfig) (string, error) {
-	resp, err := dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
-		Config:     config,
-		HostConfig: hostConfig,
-	})
-	if err != nil {
-		return "", fmt.Errorf("create volume copy container: %w", err)
-	}
-
-	cleanup := func() {
-		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
-		defer cancel()
-		if _, err := dockerClient.ContainerRemove(cleanupCtx, resp.ID, volumeHelperRemoveOptionsInternal()); err != nil && !cerrdefs.IsNotFound(err) {
-			slog.WarnContext(cleanupCtx, "failed to remove volume copy helper", "containerID", resp.ID, "error", err)
-		}
-	}
-	defer cleanup()
-
-	return startProjectVolumeHelperContainerInternal(ctx, dockerClient, resp.ID)
-}
-
 func startProjectVolumeHelperContainerInternal(ctx context.Context, dockerClient *client.Client, containerID string) (string, error) {
 	if _, err := dockerClient.ContainerStart(ctx, containerID, client.ContainerStartOptions{}); err != nil {
 		return "", fmt.Errorf("start volume copy container: %w", err)
@@ -661,10 +640,7 @@ func ensureProjectVolumeCopyCapacityInternal(sourceProbe, targetProbe projectVol
 }
 
 func projectVolumeCopyRequiredBytesInternal(sourceBytes uint64) uint64 {
-	margin := sourceBytes / 10
-	if margin < projectVolumeCopyMinMarginBytesInternal {
-		margin = projectVolumeCopyMinMarginBytesInternal
-	}
+	margin := max(sourceBytes/10, projectVolumeCopyMinMarginBytesInternal)
 	if sourceBytes > ^uint64(0)-margin {
 		return ^uint64(0)
 	}

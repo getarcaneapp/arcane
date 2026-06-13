@@ -139,7 +139,7 @@ func TestGetProjectVolumeCopyRuntimeInternal_UsesArcaneAgentLabel(t *testing.T) 
 	require.Equal(t, "arcane-agent-label", copyRuntime.Source)
 }
 
-func TestRunProjectVolumeHelperContainerInternal_RemovesHelperWhenContextIsCanceled(t *testing.T) {
+func TestProjectVolumeCopyHolderContainerInternal_RemovesHelperWhenContextIsCanceled(t *testing.T) {
 	started := make(chan struct{})
 	deleted := make(chan struct{})
 	ctx, cancel := context.WithCancel(context.Background())
@@ -174,9 +174,21 @@ func TestRunProjectVolumeHelperContainerInternal_RemovesHelperWhenContextIsCance
 	}()
 
 	dockerClient := newTestDockerClient(t, server)
-	_, err := runProjectVolumeHelperContainerInternal(ctx, dockerClient, &container.Config{Image: "arcane:local"}, &container.HostConfig{})
+	func() {
+		containerID, cleanup, err := createProjectVolumeCopyHolderContainerInternal(
+			ctx,
+			dockerClient,
+			projectVolumeCopyRuntimeInternal{Image: "arcane:local", Command: []string{"./arcane"}},
+			"nginx_data",
+			true,
+		)
+		require.NoError(t, err)
+		defer cleanup()
 
-	require.ErrorIs(t, err, context.Canceled)
+		_, err = startProjectVolumeHelperContainerInternal(ctx, dockerClient, containerID)
+		require.ErrorIs(t, err, context.Canceled)
+	}()
+
 	select {
 	case <-deleted:
 	case <-time.After(2 * time.Second):
@@ -270,7 +282,7 @@ func TestDockerProjectVolumeRenameMigrationInternal_CommitPreflightsAllTargetsBe
 
 	err := migration.Commit(context.Background())
 
-	var missingTarget *projectRenameTargetMissingWithSourceErrorInternal
+	var missingTarget *projectRenameTargetMissingWithSourceInternalError
 	require.ErrorAs(t, err, &missingTarget)
 	require.Equal(t, "nginx_cache", missingTarget.SourceVolume)
 	require.Equal(t, "web_cache", missingTarget.TargetVolume)
