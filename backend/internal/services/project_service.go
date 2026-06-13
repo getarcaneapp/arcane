@@ -2967,10 +2967,11 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 		return nil, err
 	}
 
-	if err := s.withProjectRenameRollback(ctx, &proj, func() error {
-		return s.applyProjectUpdateWithRenameJournalInternal(ctx, &proj, name, projectsDirectory, composeContent, envContent, fileTreeRevision, fileChanges, volumeMigration, renameJournal, &journalActive)
+	projectStateCommitted := false
+	if err := s.withProjectRenameRollback(ctx, &proj, &projectStateCommitted, func() error {
+		return s.applyProjectUpdateWithRenameJournalInternal(ctx, &proj, name, projectsDirectory, composeContent, envContent, fileTreeRevision, fileChanges, volumeMigration, renameJournal, &journalActive, &projectStateCommitted)
 	}); err != nil {
-		err = s.handleProjectUpdateFailureInternal(ctx, projectID, projectsDirectory, &proj, backupPath, &journalActive, err)
+		err = s.handleProjectUpdateFailureInternal(ctx, projectID, projectsDirectory, &proj, backupPath, &journalActive, projectStateCommitted, err)
 		return nil, err
 	}
 
@@ -3025,10 +3026,11 @@ func (s *ProjectService) startProjectRenameJournalInternal(ctx context.Context, 
 	return true, nil
 }
 
-func (s *ProjectService) applyProjectUpdateWithRenameJournalInternal(ctx context.Context, proj *models.Project, name *string, projectsDirectory string, composeContent, envContent *string, fileTreeRevision *string, fileChanges []project.ProjectFileChange, volumeMigration projectVolumeRenameMigrationInternal, renameJournal *projectRenameJournalInternal, journalActive *bool) (err error) {
+func (s *ProjectService) applyProjectUpdateWithRenameJournalInternal(ctx context.Context, proj *models.Project, name *string, projectsDirectory string, composeContent, envContent *string, fileTreeRevision *string, fileChanges []project.ProjectFileChange, volumeMigration projectVolumeRenameMigrationInternal, renameJournal *projectRenameJournalInternal, journalActive *bool, projectStateCommitted *bool) (err error) {
 	volumeMigrationApplied := false
 	defer func() {
-		if err != nil && volumeMigrationApplied {
+		stateCommitted := projectStateCommitted != nil && *projectStateCommitted
+		if err != nil && volumeMigrationApplied && !stateCommitted {
 			if rollbackErr := volumeMigration.Rollback(ctx); rollbackErr != nil {
 				err = errors.Join(err, fmt.Errorf("failed to rollback project volume rename: %w", rollbackErr))
 			}
@@ -3047,10 +3049,15 @@ func (s *ProjectService) applyProjectUpdateWithRenameJournalInternal(ctx context
 	if err = s.applyProjectVolumeMigrationForUpdateInternal(ctx, volumeMigration, renameJournal, &volumeMigrationApplied); err != nil {
 		return err
 	}
-	if err = s.saveProjectUpdateAndCommitRenameInternal(ctx, proj, volumeMigration, renameJournal); err != nil {
+	if err = s.saveProjectUpdateInternal(ctx, proj); err != nil {
 		return err
 	}
-	s.completeProjectRenameJournalForUpdateInternal(ctx, renameJournal, proj.ID, journalActive)
+	if projectStateCommitted != nil {
+		*projectStateCommitted = true
+	}
+	if err = s.finalizeProjectRenameAfterCommitInternal(ctx, proj.ID, volumeMigration, renameJournal, journalActive); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -3065,14 +3072,13 @@ func (s *ProjectService) applyProjectVolumeMigrationForUpdateInternal(ctx contex
 	return s.writeProjectRenameJournalInternal(ctx, renameJournal, projectRenameJournalPhaseTargetsCopiedInternal)
 }
 
-func (s *ProjectService) saveProjectUpdateAndCommitRenameInternal(ctx context.Context, proj *models.Project, volumeMigration projectVolumeRenameMigrationInternal, renameJournal *projectRenameJournalInternal) error {
+func (s *ProjectService) saveProjectUpdateInternal(ctx context.Context, proj *models.Project) error {
 	tx := s.db.WithContext(ctx).Begin()
 	if tx.Error != nil {
 		return fmt.Errorf("failed to start project update transaction: %w", tx.Error)
 	}
 
 	txCommitted := false
-	oldVolumesRemoved := false
 	defer func() {
 		if !txCommitted {
 			_ = tx.Rollback().Error
@@ -3082,30 +3088,36 @@ func (s *ProjectService) saveProjectUpdateAndCommitRenameInternal(ctx context.Co
 	if err := tx.Save(proj).Error; err != nil {
 		return fmt.Errorf("failed to update project: %w", err)
 	}
-	if committer, ok := volumeMigration.(projectVolumeRenameCommitterInternal); ok {
-		if err := committer.Commit(ctx); err != nil {
-			return fmt.Errorf("failed to commit project volume rename: %w", err)
-		}
-		oldVolumesRemoved = true
-	}
 	if err := tx.Commit().Error; err != nil {
 		return fmt.Errorf("failed to commit project update: %w", err)
 	}
 	txCommitted = true
-	if oldVolumesRemoved {
-		if err := s.writeProjectRenameJournalInternal(ctx, renameJournal, projectRenameJournalPhaseOldVolumesRemoved); err != nil {
-			slog.WarnContext(ctx, "failed to mark project rename journal old volumes removed", "projectID", proj.ID, "error", err)
+	return nil
+}
+
+func (s *ProjectService) finalizeProjectRenameAfterCommitInternal(ctx context.Context, projectID string, volumeMigration projectVolumeRenameMigrationInternal, renameJournal *projectRenameJournalInternal, journalActive *bool) error {
+	if renameJournal != nil {
+		if err := s.writeProjectRenameJournalInternal(ctx, renameJournal, projectRenameJournalPhaseProjectStateCommitted); err != nil {
+			return err
 		}
 	}
+
+	if committer, ok := volumeMigration.(projectVolumeRenameCommitterInternal); ok {
+		if err := committer.Commit(ctx); err != nil {
+			return fmt.Errorf("failed to clean up project source volumes after rename: %w", err)
+		}
+		if err := s.writeProjectRenameJournalInternal(ctx, renameJournal, projectRenameJournalPhaseOldVolumesRemoved); err != nil {
+			return err
+		}
+	}
+
+	s.completeProjectRenameJournalForUpdateInternal(ctx, renameJournal, projectID, journalActive)
 	return nil
 }
 
 func (s *ProjectService) completeProjectRenameJournalForUpdateInternal(ctx context.Context, renameJournal *projectRenameJournalInternal, projectID string, journalActive *bool) {
 	if renameJournal == nil {
 		return
-	}
-	if markErr := s.writeProjectRenameJournalInternal(ctx, renameJournal, projectRenameJournalPhaseProjectStateCommitted); markErr != nil {
-		slog.WarnContext(ctx, "failed to mark project rename journal committed", "projectID", projectID, "error", markErr)
 	}
 	if clearErr := s.clearProjectRenameJournalInternal(ctx, projectID); clearErr != nil {
 		slog.WarnContext(ctx, "failed to clear project rename journal", "projectID", projectID, "error", clearErr)
@@ -3114,7 +3126,11 @@ func (s *ProjectService) completeProjectRenameJournalForUpdateInternal(ctx conte
 	*journalActive = false
 }
 
-func (s *ProjectService) handleProjectUpdateFailureInternal(ctx context.Context, projectID, projectsDirectory string, proj *models.Project, backupPath string, journalActive *bool, err error) error {
+func (s *ProjectService) handleProjectUpdateFailureInternal(ctx context.Context, projectID, projectsDirectory string, proj *models.Project, backupPath string, journalActive *bool, projectStateCommitted bool, err error) error {
+	if projectStateCommitted {
+		return err
+	}
+
 	if backupPath != "" {
 		if restoreErr := s.restoreProjectDirectoryBackupInternal(ctx, projectsDirectory, proj.Path, backupPath); restoreErr != nil {
 			err = errors.Join(err, fmt.Errorf("failed to restore project files after update failure: %w", restoreErr))
@@ -3243,7 +3259,7 @@ func (s *ProjectService) prepareProjectRenameVolumeMigrationForUpdateInternal(ct
 	}
 
 	if composeContent == nil && envContent == nil && len(fileChanges) == 0 {
-		return prepareProjectRenameVolumeMigrationInternal(ctx, s, proj, name, projectsDirectory)
+		return s.prepareProjectRenameVolumeMigrationInternal(ctx, proj, name)
 	}
 
 	previewPath, err := os.MkdirTemp(projectsDirectory, ".project-update-preview-*")
@@ -3269,7 +3285,7 @@ func (s *ProjectService) prepareProjectRenameVolumeMigrationForUpdateInternal(ct
 		return nil, fmt.Errorf("failed to prepare project update preview: %w", err)
 	}
 
-	return prepareProjectRenameVolumeMigrationInternal(ctx, s, &previewProject, name, projectsDirectory)
+	return s.prepareProjectRenameVolumeMigrationInternal(ctx, &previewProject, name)
 }
 
 func isProjectRenameRequestedInternal(proj *models.Project, name *string) bool {
@@ -3411,11 +3427,14 @@ func (s *ProjectService) restoreProjectDirectoryBackupInternal(ctx context.Conte
 	return nil
 }
 
-func (s *ProjectService) withProjectRenameRollback(ctx context.Context, proj *models.Project, run func() error) error {
+func (s *ProjectService) withProjectRenameRollback(ctx context.Context, proj *models.Project, projectStateCommitted *bool, run func() error) error {
 	originalPath := proj.Path
 	originalDirName := proj.DirName
 
 	if err := run(); err != nil {
+		if projectStateCommitted != nil && *projectStateCommitted {
+			return err
+		}
 		if proj.Path != originalPath {
 			if renameErr := os.Rename(proj.Path, originalPath); renameErr != nil {
 				slog.WarnContext(ctx, "failed to rollback project directory rename", "from", proj.Path, "to", originalPath, "error", renameErr)

@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -180,7 +181,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsCommittedJournal(t *t
 	require.DirExists(t, newPath)
 }
 
-func TestProjectService_SaveProjectUpdateAndCommitRename_WritesOldVolumesRemovedPhase(t *testing.T) {
+func TestProjectService_FinalizeProjectRenameAfterCommit_ClearsJournalAfterSourceCleanup(t *testing.T) {
 	db := setupProjectTestDB(t)
 	require.NoError(t, db.AutoMigrate(&models.KVEntry{}))
 	ctx := context.Background()
@@ -211,8 +212,52 @@ func TestProjectService_SaveProjectUpdateAndCommitRename_WritesOldVolumesRemoved
 	require.NoError(t, svc.writeProjectRenameJournalInternal(ctx, journal, projectRenameJournalPhaseTargetsCopiedInternal))
 
 	migration := &fakeProjectVolumeRenameMigrationInternal{}
-	require.NoError(t, svc.saveProjectUpdateAndCommitRenameInternal(ctx, project, migration, journal))
+	journalActive := true
+	require.NoError(t, svc.finalizeProjectRenameAfterCommitInternal(ctx, project.ID, migration, journal, &journalActive))
 	require.True(t, migration.commitCalled)
+	require.False(t, journalActive)
+
+	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyInternal(project.ID))
+	require.NoError(t, err)
+	require.False(t, ok)
+}
+
+func TestProjectService_FinalizeProjectRenameAfterCommit_KeepsJournalWhenSourceCleanupFails(t *testing.T) {
+	db := setupProjectTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.KVEntry{}))
+	ctx := context.Background()
+
+	oldDir := "nginx"
+	newDir := "web"
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-rename-cleanup-failure"},
+		Name:      "web",
+		DirName:   &newDir,
+		Path:      filepath.Join(t.TempDir(), newDir),
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	kvService := NewKVService(db)
+	svc := NewProjectService(db, nil, nil, nil, nil, nil, config.Load()).WithKVService(kvService)
+	journal := &projectRenameJournalInternal{
+		ProjectID:  project.ID,
+		OldName:    "nginx",
+		NewName:    "web",
+		OldPath:    filepath.Join(t.TempDir(), oldDir),
+		NewPath:    project.Path,
+		OldDirName: &oldDir,
+		NewDirName: newDir,
+		Phase:      projectRenameJournalPhaseTargetsCopiedInternal,
+	}
+	require.NoError(t, svc.writeProjectRenameJournalInternal(ctx, journal, projectRenameJournalPhaseTargetsCopiedInternal))
+
+	migration := &fakeProjectVolumeRenameMigrationInternal{commitErr: errors.New("source cleanup failed")}
+	journalActive := true
+	err := svc.finalizeProjectRenameAfterCommitInternal(ctx, project.ID, migration, journal, &journalActive)
+	require.Error(t, err)
+	require.True(t, migration.commitCalled)
+	require.True(t, journalActive)
 
 	raw, ok, err := kvService.Get(ctx, projectRenameJournalKeyInternal(project.ID))
 	require.NoError(t, err)
@@ -220,5 +265,5 @@ func TestProjectService_SaveProjectUpdateAndCommitRename_WritesOldVolumesRemoved
 
 	var updatedJournal projectRenameJournalInternal
 	require.NoError(t, json.Unmarshal([]byte(raw), &updatedJournal))
-	require.Equal(t, projectRenameJournalPhaseOldVolumesRemoved, updatedJournal.Phase)
+	require.Equal(t, projectRenameJournalPhaseProjectStateCommitted, updatedJournal.Phase)
 }

@@ -1105,21 +1105,41 @@ func TestProjectService_UpdateProject_RenameFailsWhenVolumeMigrationPreparationF
 
 	settingsService, err := NewSettingsService(ctx, db)
 	require.NoError(t, err)
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
 	eventService := NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
-	configureProjectRuntimeDockerInternal(t, nil)
+	dockerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/_ping"):
+			_, _ = io.WriteString(w, "OK")
+		case strings.HasSuffix(r.URL.Path, "/version"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(map[string]string{
+				"ApiVersion":    "1.41",
+				"MinAPIVersion": "1.24",
+				"Version":       "24.0.0",
+			}))
+		case strings.HasSuffix(r.URL.Path, "/containers/json"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode([]container.Summary{}))
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/bar_data"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+				"Name": "bar_data",
+			}))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(dockerServer.Close)
+	t.Setenv("DOCKER_HOST", dockerHostFromProjectRuntimeServerURLInternal(t, dockerServer.URL))
 
-	originalPrepare := prepareProjectRenameVolumeMigrationInternal
-	t.Cleanup(func() {
-		prepareProjectRenameVolumeMigrationInternal = originalPrepare
-	})
-	prepareProjectRenameVolumeMigrationInternal = func(context.Context, *ProjectService, *models.Project, *string, string) (projectVolumeRenameMigrationInternal, error) {
-		return nil, errors.New("target volume already exists: bar_data")
-	}
+	dockerService := &DockerClientService{client: newTestDockerClient(t, dockerServer)}
+	svc := NewProjectService(db, settingsService, eventService, nil, dockerService, nil, config.Load())
 
 	originalDirName := "Foo"
 	originalPath := createComposeProjectDir(t, projectsDir, originalDirName)
+	require.NoError(t, os.WriteFile(filepath.Join(originalPath, "compose.yaml"), []byte("services:\n  app:\n    image: nginx:alpine\n    volumes:\n      - data:/data\nvolumes:\n  data:\n    driver: local\n"), 0o644))
 
 	project := &models.Project{
 		BaseModel: models.BaseModel{ID: "proj-volume-conflict"},
@@ -1145,7 +1165,7 @@ func TestProjectService_UpdateProject_RenameFailsWhenVolumeMigrationPreparationF
 	assert.Equal(t, originalPath, fromDB.Path)
 }
 
-func TestProjectService_UpdateProject_AppliesVolumeMigrationWhenNameChanges(t *testing.T) {
+func TestProjectService_ApplyProjectUpdateWithRenameJournal_AppliesVolumeMigrationWhenNameChanges(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
 
@@ -1157,16 +1177,8 @@ func TestProjectService_UpdateProject_AppliesVolumeMigrationWhenNameChanges(t *t
 
 	eventService := NewEventService(db, nil, nil)
 	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
-	configureProjectRuntimeDockerInternal(t, nil)
 
 	migration := &fakeProjectVolumeRenameMigrationInternal{}
-	originalPrepare := prepareProjectRenameVolumeMigrationInternal
-	t.Cleanup(func() {
-		prepareProjectRenameVolumeMigrationInternal = originalPrepare
-	})
-	prepareProjectRenameVolumeMigrationInternal = func(context.Context, *ProjectService, *models.Project, *string, string) (projectVolumeRenameMigrationInternal, error) {
-		return migration, nil
-	}
 
 	originalDirName := "Foo"
 	originalPath := createComposeProjectDir(t, projectsDir, originalDirName)
@@ -1180,17 +1192,24 @@ func TestProjectService_UpdateProject_AppliesVolumeMigrationWhenNameChanges(t *t
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	updated, err := svc.UpdateProject(ctx, project.ID, new("bar"), nil, nil, nil, nil, models.User{
-		BaseModel: models.BaseModel{ID: "u1"},
-		Username:  "tester",
-	})
+	projectForUpdate := *project
+	journalActive := false
+	projectStateCommitted := false
+	err = svc.applyProjectUpdateWithRenameJournalInternal(ctx, &projectForUpdate, new("bar"), projectsDir, nil, nil, nil, nil, migration, nil, &journalActive, &projectStateCommitted)
 	require.NoError(t, err)
 
 	assert.True(t, migration.applyCalled)
+	assert.True(t, migration.commitCalled)
 	assert.False(t, migration.rollbackCalled)
-	assert.Equal(t, "bar", updated.Name)
+	assert.True(t, projectStateCommitted)
+	assert.Equal(t, "bar", projectForUpdate.Name)
 	assert.DirExists(t, filepath.Join(projectsDir, "bar"))
 	assert.NoDirExists(t, originalPath)
+
+	var fromDB models.Project
+	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	assert.Equal(t, "bar", fromDB.Name)
+	assert.Equal(t, filepath.Join(projectsDir, "bar"), fromDB.Path)
 }
 
 func TestProjectService_PrepareProjectRenameVolumeMigrationForUpdate_UsesComposePreview(t *testing.T) {
@@ -1274,7 +1293,7 @@ func TestProjectService_PrepareProjectRenameVolumeMigrationForUpdate_UsesCompose
 	})
 }
 
-func TestProjectService_UpdateProject_RollsBackVolumeMigrationWhenProjectSaveFails(t *testing.T) {
+func TestProjectService_ApplyProjectUpdateWithRenameJournal_RollsBackVolumeMigrationWhenProjectSaveFails(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
 
@@ -1286,16 +1305,8 @@ func TestProjectService_UpdateProject_RollsBackVolumeMigrationWhenProjectSaveFai
 
 	eventService := NewEventService(db, nil, nil)
 	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
-	configureProjectRuntimeDockerInternal(t, nil)
 
 	migration := &fakeProjectVolumeRenameMigrationInternal{}
-	originalPrepare := prepareProjectRenameVolumeMigrationInternal
-	t.Cleanup(func() {
-		prepareProjectRenameVolumeMigrationInternal = originalPrepare
-	})
-	prepareProjectRenameVolumeMigrationInternal = func(context.Context, *ProjectService, *models.Project, *string, string) (projectVolumeRenameMigrationInternal, error) {
-		return migration, nil
-	}
 
 	require.NoError(t, db.Callback().Update().Before("gorm:update").Register("arcane_test_project_save_failure", func(tx *gorm.DB) {
 		if tx.Statement != nil && tx.Statement.Schema != nil && tx.Statement.Schema.Name == "Project" {
@@ -1315,16 +1326,70 @@ func TestProjectService_UpdateProject_RollsBackVolumeMigrationWhenProjectSaveFai
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	_, err = svc.UpdateProject(ctx, project.ID, new("bar"), nil, nil, nil, nil, models.User{
-		BaseModel: models.BaseModel{ID: "u1"},
-		Username:  "tester",
+	projectForUpdate := *project
+	journalActive := false
+	projectStateCommitted := false
+	err = svc.withProjectRenameRollback(ctx, &projectForUpdate, &projectStateCommitted, func() error {
+		return svc.applyProjectUpdateWithRenameJournalInternal(ctx, &projectForUpdate, new("bar"), projectsDir, nil, nil, nil, nil, migration, nil, &journalActive, &projectStateCommitted)
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "forced project save failure")
 	assert.True(t, migration.applyCalled)
+	assert.False(t, migration.commitCalled)
 	assert.True(t, migration.rollbackCalled)
+	assert.False(t, projectStateCommitted)
 	assert.DirExists(t, originalPath)
 	assert.NoDirExists(t, filepath.Join(projectsDir, "bar"))
+}
+
+func TestProjectService_ApplyProjectUpdateWithRenameJournal_DoesNotRollbackCommittedRenameWhenSourceCleanupFails(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
+
+	migration := &fakeProjectVolumeRenameMigrationInternal{
+		commitErr: errors.New("source cleanup failed"),
+	}
+
+	originalDirName := "Foo"
+	originalPath := createComposeProjectDir(t, projectsDir, originalDirName)
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-volume-cleanup-fail"},
+		Name:      "Foo",
+		DirName:   &originalDirName,
+		Path:      originalPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	projectForUpdate := *project
+	journalActive := false
+	projectStateCommitted := false
+	err = svc.withProjectRenameRollback(ctx, &projectForUpdate, &projectStateCommitted, func() error {
+		return svc.applyProjectUpdateWithRenameJournalInternal(ctx, &projectForUpdate, new("bar"), projectsDir, nil, nil, nil, nil, migration, nil, &journalActive, &projectStateCommitted)
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "source cleanup failed")
+	require.True(t, migration.applyCalled)
+	require.True(t, migration.commitCalled)
+	require.False(t, migration.rollbackCalled)
+	require.True(t, projectStateCommitted)
+	require.NoDirExists(t, originalPath)
+	require.DirExists(t, filepath.Join(projectsDir, "bar"))
+
+	var fromDB models.Project
+	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	require.Equal(t, "bar", fromDB.Name)
+	require.Equal(t, filepath.Join(projectsDir, "bar"), fromDB.Path)
 }
 
 func TestProjectService_UpdateProject_RenamesDirectoryWhenNameChanges(t *testing.T) {
@@ -1493,16 +1558,6 @@ func TestProjectService_UpdateProject_RenameRejectsStaleStoppedWhenRuntimeIsRunn
 		},
 	})
 
-	originalPrepare := prepareProjectRenameVolumeMigrationInternal
-	t.Cleanup(func() {
-		prepareProjectRenameVolumeMigrationInternal = originalPrepare
-	})
-	prepareCalled := false
-	prepareProjectRenameVolumeMigrationInternal = func(_ context.Context, _ *ProjectService, _ *models.Project, _ *string, _ string) (projectVolumeRenameMigrationInternal, error) {
-		prepareCalled = true
-		return nil, nil
-	}
-
 	originalDirName := "Foo"
 	originalPath := createComposeProjectDir(t, projectsDir, originalDirName)
 
@@ -1521,7 +1576,6 @@ func TestProjectService_UpdateProject_RenameRejectsStaleStoppedWhenRuntimeIsRunn
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "project must be stopped before renaming (current status: running)")
-	assert.False(t, prepareCalled)
 	assert.DirExists(t, originalPath)
 	assert.NoDirExists(t, filepath.Join(projectsDir, "bar"))
 
@@ -1549,16 +1603,6 @@ func TestProjectService_UpdateProject_RenameResolvesUnknownStoppedStatusBeforeVo
 	server := newProjectRuntimeDockerServerInternal(t, nil)
 	t.Setenv("DOCKER_HOST", dockerHostFromProjectRuntimeServerURLInternal(t, server.URL))
 
-	originalPrepare := prepareProjectRenameVolumeMigrationInternal
-	t.Cleanup(func() {
-		prepareProjectRenameVolumeMigrationInternal = originalPrepare
-	})
-	var preparedStatus models.ProjectStatus
-	prepareProjectRenameVolumeMigrationInternal = func(_ context.Context, _ *ProjectService, proj *models.Project, _ *string, _ string) (projectVolumeRenameMigrationInternal, error) {
-		preparedStatus = proj.Status
-		return nil, nil
-	}
-
 	originalDirName := "Foo"
 	originalPath := createComposeProjectDir(t, projectsDir, originalDirName)
 	statusReason := "stale runtime status"
@@ -1580,7 +1624,6 @@ func TestProjectService_UpdateProject_RenameResolvesUnknownStoppedStatusBeforeVo
 	require.NoError(t, err)
 
 	expectedPath := filepath.Join(projectsDir, "bar")
-	assert.Equal(t, models.ProjectStatusStopped, preparedStatus)
 	assert.Equal(t, "bar", updated.Name)
 	assert.Equal(t, expectedPath, updated.Path)
 	assert.Equal(t, models.ProjectStatusStopped, updated.Status)
@@ -1631,16 +1674,6 @@ func TestProjectService_UpdateProject_RenameRejectsUnknownWhenRuntimeIsRunning(t
 	})
 	t.Setenv("DOCKER_HOST", dockerHostFromProjectRuntimeServerURLInternal(t, server.URL))
 
-	originalPrepare := prepareProjectRenameVolumeMigrationInternal
-	t.Cleanup(func() {
-		prepareProjectRenameVolumeMigrationInternal = originalPrepare
-	})
-	prepareCalled := false
-	prepareProjectRenameVolumeMigrationInternal = func(_ context.Context, _ *ProjectService, _ *models.Project, _ *string, _ string) (projectVolumeRenameMigrationInternal, error) {
-		prepareCalled = true
-		return nil, nil
-	}
-
 	originalDirName := "Foo"
 	originalPath := createComposeProjectDir(t, projectsDir, originalDirName)
 	statusReason := "stale runtime status"
@@ -1661,7 +1694,6 @@ func TestProjectService_UpdateProject_RenameRejectsUnknownWhenRuntimeIsRunning(t
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "project must be stopped before renaming (current status: running)")
-	assert.False(t, prepareCalled)
 	assert.DirExists(t, originalPath)
 	assert.NoDirExists(t, filepath.Join(projectsDir, "bar"))
 

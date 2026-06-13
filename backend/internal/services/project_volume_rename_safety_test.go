@@ -184,7 +184,7 @@ func TestRunProjectVolumeHelperContainerInternal_RemovesHelperWhenContextIsCance
 	}
 }
 
-func TestDockerProjectVolumeRenameMigrationInternal_RollbackCleansTargetsWhenRestoreFails(t *testing.T) {
+func TestDockerProjectVolumeRenameMigrationInternal_RollbackPreservesTargetsWhenRestoreFails(t *testing.T) {
 	var targetRemoved atomic.Bool
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -220,6 +220,60 @@ func TestDockerProjectVolumeRenameMigrationInternal_RollbackCleansTargetsWhenRes
 
 	require.Error(t, err)
 	require.ErrorContains(t, err, "local Arcane runtime image unavailable")
-	require.True(t, targetRemoved.Load(), "expected rollback to remove created target volume after restore failure")
-	require.Nil(t, migration.createdNew)
+	require.False(t, targetRemoved.Load(), "target volume may be the only complete copy and must stay when source restore fails")
+	require.Len(t, migration.createdNew, 1)
+}
+
+func TestDockerProjectVolumeRenameMigrationInternal_CommitPreflightsAllTargetsBeforeRemovingSources(t *testing.T) {
+	var firstSourceRemoved atomic.Bool
+	var secondSourceRemoved atomic.Bool
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"Name": "web_data"}))
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_cache"):
+			http.NotFound(w, r)
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_cache"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"Name": "nginx_cache"}))
+		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
+			firstSourceRemoved.Store(true)
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/nginx_cache"):
+			secondSourceRemoved.Store(true)
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	migration := &dockerProjectVolumeRenameMigrationInternal{
+		service: &ProjectService{
+			dockerService: &DockerClientService{client: newTestDockerClient(t, server)},
+		},
+		entries: []projectVolumeRenameEntryInternal{
+			{
+				Key:     "data",
+				OldName: "nginx_data",
+				NewName: "web_data",
+			},
+			{
+				Key:     "cache",
+				OldName: "nginx_cache",
+				NewName: "web_cache",
+			},
+		},
+	}
+
+	err := migration.Commit(context.Background())
+
+	var missingTarget *projectRenameTargetMissingWithSourceErrorInternal
+	require.ErrorAs(t, err, &missingTarget)
+	require.Equal(t, "nginx_cache", missingTarget.SourceVolume)
+	require.Equal(t, "web_cache", missingTarget.TargetVolume)
+	require.False(t, firstSourceRemoved.Load(), "no source volume should be removed until every target is verified")
+	require.False(t, secondSourceRemoved.Load())
 }

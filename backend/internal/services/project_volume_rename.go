@@ -75,10 +75,6 @@ const (
 	projectVolumeCopyMinMarginBytesInternal = 256 * 1024 * 1024
 )
 
-var prepareProjectRenameVolumeMigrationInternal = func(ctx context.Context, svc *ProjectService, proj *models.Project, name *string, projectsDirectory string) (projectVolumeRenameMigrationInternal, error) {
-	return svc.prepareProjectRenameVolumeMigrationInternal(ctx, proj, name)
-}
-
 func (s *ProjectService) prepareProjectRenameVolumeMigrationInternal(ctx context.Context, proj *models.Project, name *string) (projectVolumeRenameMigrationInternal, error) {
 	oldComposeName, newComposeName, ok := projectRenameVolumeMigrationComposeNamesInternal(s, proj, name)
 	if !ok {
@@ -242,6 +238,10 @@ func (m *dockerProjectVolumeRenameMigrationInternal) Commit(ctx context.Context)
 		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
+	if err := ensureProjectRenameTargetsReadyForCleanupInternal(ctx, dockerClient, m.JournalVolumes()); err != nil {
+		return err
+	}
+
 	for _, entry := range m.entries {
 		if err := removeProjectVolumeWithRetryInternal(ctx, dockerClient, entry.OldName, client.VolumeRemoveOptions{Force: false}); err != nil {
 			return fmt.Errorf("remove source volume %s: %w", entry.OldName, err)
@@ -301,7 +301,11 @@ func (m *dockerProjectVolumeRenameMigrationInternal) Rollback(ctx context.Contex
 		}
 	}
 
-	rollbackErr := errors.Join(restoreErr, m.rollbackCreatedTargets(ctx, dockerClient))
+	if restoreErr != nil {
+		return restoreErr
+	}
+
+	rollbackErr := m.rollbackCreatedTargets(ctx, dockerClient)
 	if rollbackErr == nil {
 		dockerutil.InvalidateVolumeUsageCache()
 	}
