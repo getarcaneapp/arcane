@@ -3066,9 +3066,7 @@ func (s *ProjectService) applyProjectUpdateWithRenameJournalInternal(ctx context
 	if projectStateCommitted != nil {
 		*projectStateCommitted = true
 	}
-	if err = s.finalizeProjectRenameAfterCommitInternal(ctx, proj.ID, volumeMigration, renameJournal, journalActive); err != nil {
-		return err
-	}
+	s.finalizeProjectRenameAfterCommitInternal(ctx, proj.ID, volumeMigration, renameJournal, journalActive)
 	return nil
 }
 
@@ -3106,7 +3104,7 @@ func (s *ProjectService) saveProjectUpdateInternal(ctx context.Context, proj *mo
 	return nil
 }
 
-func (s *ProjectService) finalizeProjectRenameAfterCommitInternal(ctx context.Context, projectID string, volumeMigration projectVolumeRenameMigrationInternal, renameJournal *projectRenameJournalInternal, journalActive *bool) error {
+func (s *ProjectService) finalizeProjectRenameAfterCommitInternal(ctx context.Context, projectID string, volumeMigration projectVolumeRenameMigrationInternal, renameJournal *projectRenameJournalInternal, journalActive *bool) {
 	if renameJournal != nil {
 		if err := s.writeProjectRenameJournalInternal(ctx, renameJournal, projectRenameJournalPhaseProjectStateCommitted); err != nil {
 			slog.WarnContext(ctx, "failed to mark project rename journal committed", "projectID", projectID, "error", err)
@@ -3116,7 +3114,7 @@ func (s *ProjectService) finalizeProjectRenameAfterCommitInternal(ctx context.Co
 	if committer, ok := volumeMigration.(projectVolumeRenameCommitterInternal); ok {
 		if err := committer.Commit(ctx); err != nil {
 			slog.WarnContext(ctx, "failed to clean up project source volumes after committed rename", "projectID", projectID, "error", err)
-			return nil
+			return
 		}
 		if err := s.writeProjectRenameJournalInternal(ctx, renameJournal, projectRenameJournalPhaseOldVolumesRemoved); err != nil {
 			slog.WarnContext(ctx, "failed to mark old project rename volumes removed", "projectID", projectID, "error", err)
@@ -3124,7 +3122,6 @@ func (s *ProjectService) finalizeProjectRenameAfterCommitInternal(ctx context.Co
 	}
 
 	s.completeProjectRenameJournalForUpdateInternal(ctx, renameJournal, projectID, journalActive)
-	return nil
 }
 
 func (s *ProjectService) completeProjectRenameJournalForUpdateInternal(ctx context.Context, renameJournal *projectRenameJournalInternal, projectID string, journalActive *bool) {

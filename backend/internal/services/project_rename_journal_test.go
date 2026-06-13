@@ -331,7 +331,7 @@ func TestProjectService_FinalizeProjectRenameAfterCommit_ClearsJournalAfterSourc
 
 	migration := &fakeProjectVolumeRenameMigrationInternal{}
 	journalActive := true
-	require.NoError(t, svc.finalizeProjectRenameAfterCommitInternal(ctx, project.ID, migration, journal, &journalActive))
+	svc.finalizeProjectRenameAfterCommitInternal(ctx, project.ID, migration, journal, &journalActive)
 	require.True(t, migration.commitCalled)
 	require.False(t, journalActive)
 
@@ -372,8 +372,7 @@ func TestProjectService_FinalizeProjectRenameAfterCommit_KeepsJournalWhenSourceC
 
 	migration := &fakeProjectVolumeRenameMigrationInternal{commitErr: errors.New("source cleanup failed")}
 	journalActive := true
-	err := svc.finalizeProjectRenameAfterCommitInternal(ctx, project.ID, migration, journal, &journalActive)
-	require.NoError(t, err)
+	svc.finalizeProjectRenameAfterCommitInternal(ctx, project.ID, migration, journal, &journalActive)
 	require.True(t, migration.commitCalled)
 	require.True(t, journalActive)
 
