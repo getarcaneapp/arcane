@@ -1656,7 +1656,7 @@ func (s *GitOpsSyncService) validateDirectorySyncStageInternal(ctx context.Conte
 		return 0, err
 	}
 
-	pathMapper := s.projectService.getPathMapper(ctx)
+	pathMapper := s.projectService.getPathMapperInternal(ctx)
 
 	autoInjectEnv := s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false)
 	project, err := projects.LoadComposeProjectLenient(

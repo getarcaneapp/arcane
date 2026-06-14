@@ -2259,29 +2259,32 @@ func (s *SwarmService) getPathMapperInternal(ctx context.Context) *appfs.PathMap
 		containerDirResolved = defaultSwarmStackSourceRootDir
 	}
 
-	// If hostDir not obtained from mapping, attempt auto-discovery from Docker mounts
-	if hostDir == "" && s.dockerService != nil {
+	// Explicit "container:host" mapping: honor the user-declared prefix directly.
+	if strings.TrimSpace(hostDir) != "" {
+		hostDirResolved := filepath.Clean(strings.TrimSpace(hostDir))
+		pm := appfs.NewPathMapper(containerDirResolved, hostDirResolved)
+		if !pm.IsNonMatchingMount() {
+			return nil
+		}
+		return pm
+	}
+
+	// Auto-discovery: resolve each bind-mount source against Arcane's real container
+	// mount table (longest-prefix match) so an independently bind-mounted stack
+	// directory maps to its own host path instead of a single sources-root prefix.
+	if s.dockerService != nil {
 		if dockerCli, derr := s.dockerService.GetClient(ctx); derr == nil {
-			absContainerDir, _ := filepath.Abs(containerDirResolved)
-			if discovery, aerr := dockerutil.GetHostPathForContainerPath(ctx, dockerCli, absContainerDir); aerr == nil && discovery != "" {
-				hostDir = discovery
-				slog.DebugContext(ctx, "Auto-discovered host path for swarm stack sources", "container", absContainerDir, "host", hostDir)
+			if mounts, merr := dockerutil.GetCurrentContainerMounts(ctx, dockerCli); merr == nil && len(mounts) > 0 {
+				pm := appfs.NewPathMapperFromMounts(mounts)
+				if !pm.IsNonMatchingMount() {
+					return nil
+				}
+				return pm
 			}
 		}
 	}
 
-	// Clean host directory
-	hostDirResolved := strings.TrimSpace(hostDir)
-	if hostDirResolved != "" {
-		hostDirResolved = filepath.Clean(hostDirResolved)
-	}
-
-	pm := appfs.NewPathMapper(containerDirResolved, hostDirResolved)
-	if !pm.IsNonMatchingMount() {
-		return nil
-	}
-
-	return pm
+	return nil
 }
 
 func (s *SwarmService) ensureSwarmManagerInternal(ctx context.Context) error {
