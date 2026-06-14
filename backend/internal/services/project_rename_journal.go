@@ -21,7 +21,8 @@ import (
 )
 
 const (
-	projectRenameJournalKeyPrefixInternal = "project_rename_journal:"
+	projectRenameJournalKeyPrefixInternal         = "project_rename_journal:"
+	projectRenameRollbackCleanupKeyPrefixInternal = "project_rename_rollback_cleanup:"
 
 	projectRenameJournalPhaseStartedInternal                = "started"
 	projectRenameJournalPhaseTargetsCopiedInternal          = "targets_copied"
@@ -53,8 +54,22 @@ type projectRenameJournalVolumeInternal struct {
 	Labels  map[string]string `json:"labels,omitempty"`
 }
 
+type projectRenameRollbackCleanupInternal struct {
+	ProjectID string                               `json:"projectId"`
+	OldName   string                               `json:"oldName"`
+	OldPath   string                               `json:"oldPath"`
+	NewName   string                               `json:"newName"`
+	NewPath   string                               `json:"newPath"`
+	Volumes   []projectRenameJournalVolumeInternal `json:"volumes,omitempty"`
+	UpdatedAt time.Time                            `json:"updatedAt"`
+}
+
 func projectRenameJournalKeyInternal(projectID string) string {
 	return projectRenameJournalKeyPrefixInternal + strings.TrimSpace(projectID)
+}
+
+func projectRenameRollbackCleanupKeyInternal(projectID string) string {
+	return projectRenameRollbackCleanupKeyPrefixInternal + strings.TrimSpace(projectID)
 }
 
 func (s *ProjectService) prepareProjectRenameJournalInternal(proj *models.Project, name *string, projectsDirectory string, migration projectVolumeRenameMigrationInternal) *projectRenameJournalInternal {
@@ -115,6 +130,37 @@ func (s *ProjectService) clearProjectRenameJournalInternal(ctx context.Context, 
 	return s.kvService.Delete(ctx, projectRenameJournalKeyInternal(projectID))
 }
 
+func (s *ProjectService) writeProjectRenameRollbackCleanupInternal(ctx context.Context, journal *projectRenameJournalInternal) error {
+	if s == nil || s.kvService == nil || journal == nil || strings.TrimSpace(journal.ProjectID) == "" || len(journal.Volumes) == 0 {
+		return nil
+	}
+
+	cleanup := projectRenameRollbackCleanupInternal{
+		ProjectID: journal.ProjectID,
+		OldName:   journal.OldName,
+		OldPath:   filepath.Clean(journal.OldPath),
+		NewName:   journal.NewName,
+		NewPath:   filepath.Clean(journal.NewPath),
+		Volumes:   journal.Volumes,
+		UpdatedAt: time.Now().UTC(),
+	}
+	payload, err := json.Marshal(cleanup)
+	if err != nil {
+		return fmt.Errorf("marshal project rename rollback cleanup: %w", err)
+	}
+	if err := s.kvService.Set(ctx, projectRenameRollbackCleanupKeyInternal(journal.ProjectID), string(payload)); err != nil {
+		return fmt.Errorf("write project rename rollback cleanup: %w", err)
+	}
+	return nil
+}
+
+func (s *ProjectService) clearProjectRenameRollbackCleanupInternal(ctx context.Context, projectID string) error {
+	if s == nil || s.kvService == nil || strings.TrimSpace(projectID) == "" {
+		return nil
+	}
+	return s.kvService.Delete(ctx, projectRenameRollbackCleanupKeyInternal(projectID))
+}
+
 func projectRenameJournalTargetsCopiedInternal(phase string) bool {
 	switch phase {
 	case projectRenameJournalPhaseTargetsCopiedInternal,
@@ -148,7 +194,7 @@ func (s *ProjectService) RecoverProjectRenameJournals(ctx context.Context) error
 			continue
 		}
 	}
-	return recoverErr
+	return errors.Join(recoverErr, s.recoverProjectRenameRollbackCleanupsInternal(ctx))
 }
 
 func (s *ProjectService) recoverProjectRenameJournalForProjectInternal(ctx context.Context, projectID string) error {
@@ -282,11 +328,110 @@ func (s *ProjectService) rollbackProjectRenameJournalInternal(ctx context.Contex
 		if projectRenameOnlyPreservedTargetErrorsInternal(volumeErr) {
 			slog.WarnContext(ctx, "clearing project rename journal after preserving target volume data", "projectID", journal.ProjectID, "pathsMissing", directoryRollback.PathsMissing, "error", volumeErr)
 		} else {
-			slog.WarnContext(ctx, "clearing project rename journal after restoring database state despite volume rollback failure", "projectID", journal.ProjectID, "pathsMissing", directoryRollback.PathsMissing, "error", volumeErr)
+			if cleanupErr := s.writeProjectRenameRollbackCleanupInternal(ctx, journal); cleanupErr != nil {
+				return errors.Join(volumeErr, cleanupErr)
+			}
+			slog.WarnContext(ctx, "queued project rename target volume cleanup after restoring database state despite volume rollback failure", "projectID", journal.ProjectID, "pathsMissing", directoryRollback.PathsMissing, "error", volumeErr)
 		}
 	}
 
 	dockerutil.InvalidateVolumeUsageCache()
+	return nil
+}
+
+func (s *ProjectService) recoverProjectRenameRollbackCleanupsInternal(ctx context.Context) error {
+	if s == nil || s.kvService == nil {
+		return nil
+	}
+
+	entries, err := s.kvService.ListByPrefix(ctx, projectRenameRollbackCleanupKeyPrefixInternal)
+	if err != nil {
+		return err
+	}
+
+	var recoverErr error
+	for _, entry := range entries {
+		var cleanup projectRenameRollbackCleanupInternal
+		if err := json.Unmarshal([]byte(entry.Value), &cleanup); err != nil {
+			recoverErr = errors.Join(recoverErr, fmt.Errorf("decode project rename rollback cleanup %s: %w", entry.Key, err))
+			continue
+		}
+		if err := s.recoverProjectRenameRollbackCleanupInternal(ctx, &cleanup); err != nil {
+			recoverErr = errors.Join(recoverErr, fmt.Errorf("recover project rename rollback cleanup %s: %w", entry.Key, err))
+			continue
+		}
+	}
+	return recoverErr
+}
+
+func (s *ProjectService) recoverProjectRenameRollbackCleanupInternal(ctx context.Context, cleanup *projectRenameRollbackCleanupInternal) error {
+	if s == nil || cleanup == nil || strings.TrimSpace(cleanup.ProjectID) == "" {
+		return nil
+	}
+	if len(cleanup.Volumes) == 0 {
+		return s.clearProjectRenameRollbackCleanupInternal(ctx, cleanup.ProjectID)
+	}
+
+	var proj models.Project
+	dbErr := s.db.WithContext(ctx).First(&proj, "id = ?", cleanup.ProjectID).Error
+	if dbErr != nil {
+		if errors.Is(dbErr, gorm.ErrRecordNotFound) {
+			slog.WarnContext(ctx, "clearing project rename rollback cleanup because project no longer exists", "projectID", cleanup.ProjectID)
+			return s.clearProjectRenameRollbackCleanupInternal(ctx, cleanup.ProjectID)
+		}
+		return fmt.Errorf("load project for rename rollback cleanup: %w", dbErr)
+	}
+
+	if proj.Name != cleanup.OldName || filepath.Clean(proj.Path) != filepath.Clean(cleanup.OldPath) {
+		slog.WarnContext(ctx, "clearing project rename rollback cleanup because project state changed", "projectID", cleanup.ProjectID, "projectName", proj.Name, "projectPath", proj.Path)
+		return s.clearProjectRenameRollbackCleanupInternal(ctx, cleanup.ProjectID)
+	}
+
+	dockerClient, err := s.projectRenameRecoveryDockerInternal(ctx, len(cleanup.Volumes) > 0)
+	if err != nil {
+		return err
+	}
+
+	if err := cleanupProjectRenameRollbackTargetVolumesInternal(ctx, dockerClient, cleanup.Volumes); err != nil {
+		if projectRenameOnlyPreservedTargetErrorsInternal(err) {
+			slog.WarnContext(ctx, "clearing project rename rollback cleanup after preserving target volume data", "projectID", cleanup.ProjectID, "error", err)
+			return s.clearProjectRenameRollbackCleanupInternal(ctx, cleanup.ProjectID)
+		}
+		return err
+	}
+
+	dockerutil.InvalidateVolumeUsageCache()
+	return s.clearProjectRenameRollbackCleanupInternal(ctx, cleanup.ProjectID)
+}
+
+func cleanupProjectRenameRollbackTargetVolumesInternal(ctx context.Context, dockerClient *client.Client, volumes []projectRenameJournalVolumeInternal) error {
+	var cleanupErr error
+	for _, vol := range slices.Backward(volumes) {
+		if err := cleanupProjectRenameRollbackTargetVolumeInternal(ctx, dockerClient, vol); err != nil {
+			cleanupErr = errors.Join(cleanupErr, err)
+		}
+	}
+	return cleanupErr
+}
+
+func cleanupProjectRenameRollbackTargetVolumeInternal(ctx context.Context, dockerClient *client.Client, vol projectRenameJournalVolumeInternal) error {
+	oldExists, err := projectRenameVolumeExistsInternal(ctx, dockerClient, vol.OldName)
+	if err != nil {
+		return fmt.Errorf("inspect source cleanup volume %s: %w", vol.OldName, err)
+	}
+	newExists, err := projectRenameVolumeExistsInternal(ctx, dockerClient, vol.NewName)
+	if err != nil {
+		return fmt.Errorf("inspect target cleanup volume %s: %w", vol.NewName, err)
+	}
+
+	switch {
+	case oldExists && newExists:
+		return removeProjectRenameJournalTargetVolumeInternal(ctx, dockerClient, vol.NewName, oldExists, newExists)
+	case !oldExists && newExists:
+		return newProjectRenameTargetPreservedDuringRollbackErrorInternal(vol, errProjectRenameRollbackSourceMissingInternal)
+	case !oldExists && !newExists:
+		slog.WarnContext(ctx, "project rename source and target volumes are missing during rollback cleanup", "sourceVolume", vol.OldName, "targetVolume", vol.NewName)
+	}
 	return nil
 }
 

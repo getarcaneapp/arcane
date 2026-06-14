@@ -177,6 +177,9 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalAfterDBRestore
 	ctx := context.Background()
 
 	var targetRemoveAttempts atomic.Int32
+	var targetExists atomic.Bool
+	var allowTargetRemove atomic.Bool
+	targetExists.Store(true)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
@@ -185,6 +188,10 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalAfterDBRestore
 			w.Header().Set("Content-Type", "application/json")
 			require.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "nginx_data"}))
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_cache"):
+			if !targetExists.Load() {
+				http.NotFound(w, r)
+				return
+			}
 			w.Header().Set("Content-Type", "application/json")
 			require.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "web_cache"}))
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_cache"):
@@ -195,6 +202,11 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalAfterDBRestore
 			require.NoError(t, json.NewEncoder(w).Encode([]container.Summary{}))
 		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/web_cache"):
 			targetRemoveAttempts.Add(1)
+			if allowTargetRemove.Load() {
+				targetExists.Store(false)
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
 			http.Error(w, "volume busy", http.StatusInternalServerError)
 		default:
 			http.NotFound(w, r)
@@ -249,12 +261,16 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalAfterDBRestore
 	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyInternal(project.ID), string(payload)))
 
 	err = svc.RecoverProjectRenameJournals(ctx)
-	require.NoError(t, err)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "remove rollback target volume web_cache")
 
 	require.Positive(t, targetRemoveAttempts.Load())
 	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyInternal(project.ID))
 	require.NoError(t, err)
-	require.False(t, ok)
+	require.False(t, ok, "project-state journal should clear after database rollback succeeds")
+	_, ok, err = kvService.Get(ctx, projectRenameRollbackCleanupKeyInternal(project.ID))
+	require.NoError(t, err)
+	require.True(t, ok, "target cleanup should keep retry state when removal fails")
 	require.FileExists(t, filepath.Join(oldPath, "compose.yaml"))
 	require.NoDirExists(t, newPath)
 
@@ -264,6 +280,62 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalAfterDBRestore
 	require.Equal(t, oldPath, fromDB.Path)
 	require.NotNil(t, fromDB.DirName)
 	require.Equal(t, oldDir, *fromDB.DirName)
+
+	allowTargetRemove.Store(true)
+	require.NoError(t, svc.RecoverProjectRenameJournals(ctx))
+
+	_, ok, err = kvService.Get(ctx, projectRenameRollbackCleanupKeyInternal(project.ID))
+	require.NoError(t, err)
+	require.False(t, ok)
+	require.False(t, targetExists.Load())
+}
+
+func TestProjectService_RecoverProjectRenameJournals_KeepsRollbackCleanupWhenDockerUnavailable(t *testing.T) {
+	db := setupProjectTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.KVEntry{}))
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	oldDir := "nginx"
+	oldPath := filepath.Join(projectsDir, oldDir)
+	require.NoError(t, os.MkdirAll(oldPath, 0o755))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-rename-rollback-cleanup-docker-unavailable"},
+		Name:      "nginx",
+		DirName:   &oldDir,
+		Path:      oldPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	kvService := NewKVService(db)
+	svc := NewProjectService(db, nil, nil, nil, nil, nil, config.Load()).WithKVService(kvService)
+	cleanup := projectRenameRollbackCleanupInternal{
+		ProjectID: project.ID,
+		OldName:   "nginx",
+		OldPath:   oldPath,
+		NewName:   "web",
+		NewPath:   filepath.Join(projectsDir, "web"),
+		Volumes: []projectRenameJournalVolumeInternal{
+			{
+				Key:     "data",
+				OldName: "nginx_data",
+				NewName: "web_data",
+			},
+		},
+	}
+	payload, err := json.Marshal(cleanup)
+	require.NoError(t, err)
+	require.NoError(t, kvService.Set(ctx, projectRenameRollbackCleanupKeyInternal(project.ID), string(payload)))
+
+	err = svc.RecoverProjectRenameJournals(ctx)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "docker service unavailable")
+
+	_, ok, err := kvService.Get(ctx, projectRenameRollbackCleanupKeyInternal(project.ID))
+	require.NoError(t, err)
+	require.True(t, ok)
 }
 
 func TestProjectService_RecoverProjectRenameJournals_ClearsCommittedJournalWhenSourceAndTargetMissing(t *testing.T) {
