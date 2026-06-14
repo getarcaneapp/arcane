@@ -2,19 +2,19 @@
 
 Status: **Draft / RFC**
 Owner: @manawenuz
-Last updated: 2026-06-14
+Last updated: 2026-06-15
 
 ## Summary
 
 Add pluggable **external secrets providers** to Arcane so a Docker Compose project's
 environment can be resolved at deploy time from a secrets manager (Bitwarden Secrets
-Manager / `bws`, Infisical, and later Vault/OpenBao/SOPS) instead of from plaintext on
-disk. Provider credentials are encrypted at rest; resolved secret **values are held in
+Manager / BWS, Infisical, or HashiCorp Vault) instead of from plaintext on disk.
+Provider credentials are encrypted at rest; resolved secret **values are held in
 memory only and never written to disk**.
 
-The abstraction is provider-neutral; the first two implementations are `bitwarden`
+The abstraction is provider-neutral; the first three implementations are `bitwarden`
 (speaking the BWS wire protocol natively in Go — works against either a self-hosted
-sidecar or Bitwarden cloud) and `infisical`.
+sidecar or Bitwarden cloud), `infisical`, and `vault` (HashiCorp Vault KV v1/v2).
 
 ## Goals
 
@@ -83,6 +83,7 @@ getters are wired today.
   resolve time.
   - bitwarden config: `server_base_url`, `access_token`
   - infisical config: `site_url`, `client_id`, `client_secret`, `project_id`
+  - vault config: `addr`, `token`, `mount` (default `secret`), `kv_version` (`1` or `2`, default `2`), `namespace` (Vault Enterprise, optional)
 - `project_secret_bindings`: `project_id, provider_id, scope_path, enabled, fail_mode`
   (`fail_mode` ∈ `fail_closed` | `fail_stale`).
 
@@ -196,6 +197,34 @@ Access token string format: `0.<client_id>.<client_secret>:<base64(seed16)>`.
 Universal Auth (Client ID/Secret) → REST `GET /api/v3/secrets` for `project_id` +
 environment. Standard bearer flow; no bespoke crypto.
 
+### `vault` (HashiCorp Vault KV)
+
+Targets the Vault KV secrets engine (v1 or v2) via the Vault HTTP API. No proprietary
+SDK dependency — the API is a straightforward REST interface.
+
+Config fields: `addr` (e.g. `https://vault.example.com:8200`), `token` (Vault token;
+AppRole auth is a follow-up), `mount` (KV mount path, default `secret`),
+`kv_version` (`1` or `2`, default `2`), `namespace` (Vault Enterprise namespaces,
+optional).
+
+Read-path flow (KV v2):
+
+1. `GET {addr}/v1/{mount}/data/{scope_path}/{KEY}`
+   `X-Vault-Token: {token}` (and `X-Vault-Namespace: {namespace}` if set)
+   → `{ data: { data: { KEY: "value" }, metadata: { ... } } }`
+
+KV v1 omits the `/data/` infix and the outer `data` wrapper:
+`GET {addr}/v1/{mount}/{scope_path}/{KEY}` → `{ data: { KEY: "value" } }`
+
+The `scope_path` from the project binding maps directly to the Vault path hierarchy,
+allowing per-project or per-environment secret trees (`apps/myapp/prod`, etc.).
+
+Batch reads issue one request per key (Vault KV has no native multi-key GET); a
+follow-up can use `LIST` + filter to reduce round-trips.
+
+`HealthCheck` calls `GET {addr}/v1/sys/health` (returns 200/429/472/501/503 —
+treat 200 and 429 as healthy, anything else or a network error as unhealthy).
+
 ---
 
 ## Requirements ON the bws-sidecar server (for the `bitwarden` provider)
@@ -230,9 +259,10 @@ around the sidecar) is exactly what makes it agnostic and upstream-mergeable.
    yet; resolver is a no-op until a provider is registered).
 2. `bitwarden` provider (+ its own tests, including the crypto chain against a fixture).
 3. `infisical` provider.
-4. API (Huma handlers + authz).
-5. Frontend (settings + per-project tab).
-6. CLI (`arcane secrets`).
+4. `vault` provider (KV v2 + v1; token auth; `HealthCheck` via `sys/health`).
+5. API (Huma handlers + authz).
+6. Frontend (settings + per-project tab).
+7. CLI (`arcane secrets`).
 
 ## Mergeability checklist
 
