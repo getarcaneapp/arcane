@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -97,15 +98,23 @@ func allocatedBytesForPathInternal(ctx context.Context, root string) (uint64, er
 	var total uint64
 
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
 		if err := ctx.Err(); err != nil {
 			return err
+		}
+		if walkErr != nil {
+			if internalVolumeHelperSkippableWalkError(walkErr) {
+				slog.Warn("skipping inaccessible volume probe path", "path", path, "error", walkErr)
+				return nil
+			}
+			return walkErr
 		}
 
 		info, err := entry.Info()
 		if err != nil {
+			if internalVolumeHelperSkippableWalkError(err) {
+				slog.Warn("skipping inaccessible volume probe path", "path", path, "error", err)
+				return nil
+			}
 			return err
 		}
 
@@ -127,6 +136,15 @@ func allocatedBytesForPathInternal(ctx context.Context, root string) (uint64, er
 	}
 
 	return total, nil
+}
+
+func internalVolumeHelperSkippableWalkError(err error) bool {
+	return os.IsPermission(err) ||
+		errors.Is(err, os.ErrPermission) ||
+		errors.Is(err, os.ErrNotExist) ||
+		errors.Is(err, syscall.EACCES) ||
+		errors.Is(err, syscall.EPERM) ||
+		errors.Is(err, syscall.ENOENT)
 }
 
 func allocatedBytesForFileInternal(info os.FileInfo) (uint64, internalVolumeHelperFileKey, bool) {

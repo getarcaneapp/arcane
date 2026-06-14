@@ -55,9 +55,10 @@ type volumeHelper struct {
 const volumeHelperImage = DefaultArcaneToolsImage
 
 type arcaneRuntimeHelperImageInternal struct {
-	Image   string
-	Command []string
-	Source  string
+	Image      string
+	Entrypoint []string
+	Command    []string
+	Source     string
 }
 
 type backupStorageMode string
@@ -497,7 +498,7 @@ func resolveArcaneRuntimeHelperImageInternal(ctx context.Context, dockerClient *
 	hostname, _ := os.Hostname()
 	if hostname != "" {
 		if inspect, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, hostname, client.ContainerInspectOptions{}); err == nil && inspect.Container.Config != nil && strings.TrimSpace(inspect.Container.Config.Image) != "" {
-			return buildArcaneRuntimeHelperImageInternal(inspect.Container.Config.Image, inspect.Container.Config.Cmd, "hostname"), true
+			return buildArcaneRuntimeHelperImageInternal(inspect.Container.Config.Image, inspect.Container.Config.Entrypoint, inspect.Container.Config.Cmd, "hostname"), true
 		}
 	}
 
@@ -535,21 +536,22 @@ func resolveArcaneRuntimeHelperImageFromContainersInternal(ctx context.Context, 
 		}
 		inspect, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, c.ID, client.ContainerInspectOptions{})
 		if err == nil && inspect.Container.Config != nil && strings.TrimSpace(inspect.Container.Config.Image) != "" {
-			return buildArcaneRuntimeHelperImageInternal(inspect.Container.Config.Image, inspect.Container.Config.Cmd, source), true
+			return buildArcaneRuntimeHelperImageInternal(inspect.Container.Config.Image, inspect.Container.Config.Entrypoint, inspect.Container.Config.Cmd, source), true
 		}
 		if strings.TrimSpace(c.Image) != "" {
-			return buildArcaneRuntimeHelperImageInternal(c.Image, nil, source), true
+			return buildArcaneRuntimeHelperImageInternal(c.Image, nil, nil, source), true
 		}
 	}
 
 	return arcaneRuntimeHelperImageInternal{}, false
 }
 
-func buildArcaneRuntimeHelperImageInternal(image string, command []string, source string) arcaneRuntimeHelperImageInternal {
+func buildArcaneRuntimeHelperImageInternal(image string, entrypoint []string, command []string, source string) arcaneRuntimeHelperImageInternal {
 	return arcaneRuntimeHelperImageInternal{
-		Image:   strings.TrimSpace(image),
-		Command: append([]string(nil), command...),
-		Source:  source,
+		Image:      strings.TrimSpace(image),
+		Entrypoint: append([]string(nil), entrypoint...),
+		Command:    append([]string(nil), command...),
+		Source:     source,
 	}
 }
 

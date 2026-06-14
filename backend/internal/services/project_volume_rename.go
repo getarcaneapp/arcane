@@ -534,7 +534,8 @@ func createProjectVolumeCopyHolderContainerInternal(ctx context.Context, dockerC
 
 	config := &container.Config{
 		Image:           copyRuntime.Image,
-		Cmd:             projectVolumeCopyRuntimeCommandInternal(copyRuntime, "internal-volume-helper", "probe", "--path", projectVolumeCopyMountPathInternal),
+		Entrypoint:      append([]string(nil), copyRuntime.Command...),
+		Cmd:             []string{"internal-volume-helper", "probe", "--path", projectVolumeCopyMountPathInternal},
 		NetworkDisabled: true,
 		Labels:          buildVolumeHelperLabelsInternal(),
 	}
@@ -630,6 +631,15 @@ func getProjectVolumeCopyRuntimeInternal(ctx context.Context, dockerClient *clie
 }
 
 func normalizeProjectVolumeCopyRuntimeCommandInternal(resolved arcaneRuntimeHelperImageInternal) []string {
+	if len(resolved.Entrypoint) > 0 {
+		command := slices.DeleteFunc(append([]string(nil), resolved.Entrypoint...), func(part string) bool {
+			return strings.TrimSpace(part) == ""
+		})
+		if len(command) > 0 {
+			return command
+		}
+	}
+
 	if len(resolved.Command) > 0 {
 		command := strings.TrimSpace(resolved.Command[0])
 		if command != "" {
@@ -646,11 +656,6 @@ func normalizeProjectVolumeCopyRuntimeCommandInternal(resolved arcaneRuntimeHelp
 		return []string{"./arcane"}
 	}
 	return nil
-}
-
-func projectVolumeCopyRuntimeCommandInternal(copyRuntime projectVolumeCopyRuntimeInternal, args ...string) []string {
-	command := append([]string(nil), copyRuntime.Command...)
-	return append(command, args...)
 }
 
 func ensureProjectVolumeCopyCapacityInternal(sourceProbe, targetProbe projectVolumeCopyProbeInternal, sourceVolume, targetVolume string) error {
