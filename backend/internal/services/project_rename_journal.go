@@ -260,10 +260,7 @@ func (s *ProjectService) removeProjectRenameJournalSourceVolumesInternal(ctx con
 }
 
 func (s *ProjectService) rollbackProjectRenameJournalInternal(ctx context.Context, journal *projectRenameJournalInternal) error {
-	directoryRollback, err := rollbackProjectRenameDirectoryInternal(journal)
-	if err != nil {
-		return err
-	}
+	directoryRollback, directoryErr := rollbackProjectRenameDirectoryInternal(journal)
 
 	volumeErr := s.rollbackProjectRenameJournalVolumesInternal(ctx, journal)
 
@@ -274,7 +271,11 @@ func (s *ProjectService) rollbackProjectRenameJournalInternal(ctx context.Contex
 			"path":     journal.OldPath,
 			"dir_name": journal.OldDirName,
 		}).Error; err != nil {
-		return errors.Join(volumeErr, fmt.Errorf("restore project database state: %w", err))
+		return errors.Join(directoryErr, volumeErr, fmt.Errorf("restore project database state: %w", err))
+	}
+
+	if directoryErr != nil {
+		slog.WarnContext(ctx, "clearing project rename journal after restoring database state despite directory rollback failure", "projectID", journal.ProjectID, "pathsMissing", directoryRollback.PathsMissing, "error", directoryErr)
 	}
 
 	if volumeErr != nil {
