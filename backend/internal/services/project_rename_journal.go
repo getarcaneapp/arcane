@@ -312,11 +312,11 @@ func (s *ProjectService) rollbackProjectRenameJournalVolumesInternal(ctx context
 func rollbackProjectRenameJournalVolumeInternal(ctx context.Context, dockerClient *client.Client, vol projectRenameJournalVolumeInternal) error {
 	oldExists, err := projectRenameVolumeExistsInternal(ctx, dockerClient, vol.OldName)
 	if err != nil {
-		return err
+		return newProjectRenameTargetPreservedDuringRollbackErrorInternal(vol, fmt.Errorf("inspect source rollback volume %s: %w", vol.OldName, err))
 	}
 	newExists, err := projectRenameVolumeExistsInternal(ctx, dockerClient, vol.NewName)
 	if err != nil {
-		return err
+		return newProjectRenameTargetPreservedDuringRollbackErrorInternal(vol, fmt.Errorf("inspect target rollback volume %s: %w", vol.NewName, err))
 	}
 
 	switch {
@@ -476,7 +476,7 @@ func newProjectRenameTargetPreservedDuringRollbackErrorInternal(vol projectRenam
 }
 
 func (e *projectRenameTargetPreservedDuringRollbackInternalError) Error() string {
-	return fmt.Sprintf("preserved project rename target volume %s because source volume %s is unavailable during rollback: %v", e.TargetVolume, e.SourceVolume, e.Err)
+	return fmt.Sprintf("preserved project rename target volume %s during rollback because source volume %s could not be confirmed safe: %v", e.TargetVolume, e.SourceVolume, e.Err)
 }
 
 func (e *projectRenameTargetPreservedDuringRollbackInternalError) Unwrap() error {

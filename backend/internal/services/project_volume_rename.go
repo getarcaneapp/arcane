@@ -308,7 +308,10 @@ func (m *dockerProjectVolumeRenameMigrationInternal) Rollback(ctx context.Contex
 		sourceExists, err := projectRenameVolumeExistsInternal(ctx, dockerClient, entry.OldName)
 		if err != nil {
 			preservedTargets[entry.NewName] = struct{}{}
-			rollbackErr = errors.Join(rollbackErr, fmt.Errorf("inspect source rollback volume %s: %w", entry.OldName, err))
+			rollbackErr = errors.Join(rollbackErr, newProjectRenameTargetPreservedDuringRollbackErrorInternal(projectRenameJournalVolumeInternal{
+				OldName: entry.OldName,
+				NewName: entry.NewName,
+			}, fmt.Errorf("inspect source rollback volume %s: %w", entry.OldName, err)))
 			continue
 		}
 		if sourceExists {
@@ -318,7 +321,10 @@ func (m *dockerProjectVolumeRenameMigrationInternal) Rollback(ctx context.Contex
 		targetExists, err := projectRenameVolumeExistsInternal(ctx, dockerClient, entry.NewName)
 		if err != nil {
 			preservedTargets[entry.NewName] = struct{}{}
-			rollbackErr = errors.Join(rollbackErr, fmt.Errorf("inspect target rollback volume %s: %w", entry.NewName, err))
+			rollbackErr = errors.Join(rollbackErr, newProjectRenameTargetPreservedDuringRollbackErrorInternal(projectRenameJournalVolumeInternal{
+				OldName: entry.OldName,
+				NewName: entry.NewName,
+			}, fmt.Errorf("inspect target rollback volume %s: %w", entry.NewName, err)))
 			continue
 		}
 		if targetExists {

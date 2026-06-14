@@ -376,6 +376,100 @@ func TestDockerProjectVolumeRenameMigrationInternal_RollbackCleansSafeTargetsWhe
 	require.Equal(t, []projectVolumeRenameEntryInternal{{OldName: "nginx_data", NewName: "web_data"}}, migration.createdNew)
 }
 
+func TestDockerProjectVolumeRenameMigrationInternal_RollbackPreservesTargetWhenSourceInspectFails(t *testing.T) {
+	var preservedTargetRemoved atomic.Bool
+	var safeTargetRemoved atomic.Bool
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
+			http.Error(w, "temporary docker error", http.StatusInternalServerError)
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_cache"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"Name": "nginx_cache"}))
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode([]container.Summary{}))
+		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
+			preservedTargetRemoved.Store(true)
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/web_cache"):
+			safeTargetRemoved.Store(true)
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	migration := &dockerProjectVolumeRenameMigrationInternal{
+		service: &ProjectService{
+			dockerService: &DockerClientService{client: newTestDockerClient(t, server)},
+		},
+		createdNew: []projectVolumeRenameEntryInternal{
+			{OldName: "nginx_data", NewName: "web_data"},
+			{OldName: "nginx_cache", NewName: "web_cache"},
+		},
+	}
+
+	err := migration.Rollback(context.Background())
+
+	require.Error(t, err)
+	var preserved *projectRenameTargetPreservedDuringRollbackInternalError
+	require.ErrorAs(t, err, &preserved)
+	require.False(t, preservedTargetRemoved.Load(), "target volume must not be deleted when source inspection is uncertain")
+	require.True(t, safeTargetRemoved.Load(), "targets without rollback uncertainty should still be cleaned up")
+	require.Equal(t, []projectVolumeRenameEntryInternal{{OldName: "nginx_data", NewName: "web_data"}}, migration.createdNew)
+}
+
+func TestDockerProjectVolumeRenameMigrationInternal_RollbackPreservesTargetWhenTargetInspectFails(t *testing.T) {
+	var preservedTargetRemoved atomic.Bool
+	var safeTargetRemoved atomic.Bool
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
+			http.NotFound(w, r)
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
+			http.Error(w, "temporary docker error", http.StatusInternalServerError)
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_cache"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"Name": "nginx_cache"}))
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode([]container.Summary{}))
+		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
+			preservedTargetRemoved.Store(true)
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/web_cache"):
+			safeTargetRemoved.Store(true)
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	migration := &dockerProjectVolumeRenameMigrationInternal{
+		service: &ProjectService{
+			dockerService: &DockerClientService{client: newTestDockerClient(t, server)},
+		},
+		createdNew: []projectVolumeRenameEntryInternal{
+			{OldName: "nginx_data", NewName: "web_data"},
+			{OldName: "nginx_cache", NewName: "web_cache"},
+		},
+	}
+
+	err := migration.Rollback(context.Background())
+
+	require.Error(t, err)
+	var preserved *projectRenameTargetPreservedDuringRollbackInternalError
+	require.ErrorAs(t, err, &preserved)
+	require.False(t, preservedTargetRemoved.Load(), "target volume must not be deleted when target inspection is uncertain")
+	require.True(t, safeTargetRemoved.Load(), "targets without rollback uncertainty should still be cleaned up")
+	require.Equal(t, []projectVolumeRenameEntryInternal{{OldName: "nginx_data", NewName: "web_data"}}, migration.createdNew)
+}
+
 func TestDockerProjectVolumeRenameMigrationInternal_RollbackRemovesTargetsWhenSourcesRemain(t *testing.T) {
 	var targetRemoved atomic.Bool
 
