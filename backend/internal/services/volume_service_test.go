@@ -45,6 +45,19 @@ func TestIsLegacyVolumeHelperContainerInternal(t *testing.T) {
 			},
 			want: false,
 		},
+		{
+			name: "internal volume probe helper is not legacy helper",
+			summary: container.Summary{
+				Labels: map[string]string{
+					libarcane.InternalResourceLabel: "true",
+				},
+				Command: "./arcane internal-volume-helper probe --path /volume",
+				Mounts: []container.MountPoint{
+					{Destination: "/volume"},
+				},
+			},
+			want: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -52,6 +65,20 @@ func TestIsLegacyVolumeHelperContainerInternal(t *testing.T) {
 			require.Equal(t, tt.want, isLegacyVolumeHelperContainerInternal(tt.summary))
 		})
 	}
+}
+
+func TestIsVolumeHelperContainerInternal_MatchesInternalVolumeProbe(t *testing.T) {
+	summary := container.Summary{
+		Labels: map[string]string{
+			libarcane.InternalResourceLabel: "true",
+		},
+		Command: "./arcane internal-volume-helper probe --path /volume",
+		Mounts: []container.MountPoint{
+			{Destination: "/volume"},
+		},
+	}
+
+	require.True(t, isVolumeHelperContainerInternal(summary))
 }
 
 func TestBuildVolumeHelperLabelsInternal(t *testing.T) {

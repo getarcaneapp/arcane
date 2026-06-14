@@ -688,6 +688,19 @@ func (h *ProjectHandler) DownProject(ctx context.Context, input *DownProjectInpu
 	}, nil
 }
 
+func projectUpdateHTTPErrorInternal(err error) error {
+	if conflictErr, ok := errors.AsType[*services.ProjectVolumeRenameConflictError](err); ok {
+		return huma.Error409Conflict(conflictErr.Error())
+	}
+	if inUseErr, ok := errors.AsType[*services.ProjectVolumeRenameInUseError](err); ok {
+		return huma.Error409Conflict(inUseErr.Error())
+	}
+	if spaceErr, ok := errors.AsType[*services.ProjectVolumeRenameInsufficientSpaceError](err); ok {
+		return huma.NewError(http.StatusInsufficientStorage, spaceErr.Error())
+	}
+	return projectFileHTTPError(err)
+}
+
 // projectFileHTTPError maps project file management errors to HTTP errors.
 // It returns nil when err is not a project file error.
 func projectFileHTTPError(err error) error {
@@ -964,7 +977,7 @@ func (h *ProjectHandler) UpdateProject(ctx context.Context, input *UpdateProject
 		return updateErr
 	})
 	if err != nil {
-		if httpErr := projectFileHTTPError(err); httpErr != nil {
+		if httpErr := projectUpdateHTTPErrorInternal(err); httpErr != nil {
 			return nil, httpErr
 		}
 		return nil, huma.Error400BadRequest((&common.ProjectUpdateError{Err: err}).Error())

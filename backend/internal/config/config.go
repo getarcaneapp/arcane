@@ -127,6 +127,23 @@ func Load() *Config {
 	return cfg
 }
 
+type ProjectFilesConfig struct {
+	ProjectScanMaxDepth     int
+	ProjectFileTreeMaxDepth int
+	ProjectScanSkipDirs     string
+}
+
+func LoadProjectFilesConfig() ProjectFilesConfig {
+	cfg := &Config{}
+	loadFromEnv(cfg)
+
+	return ProjectFilesConfig{
+		ProjectScanMaxDepth:     cfg.ProjectScanMaxDepth,
+		ProjectFileTreeMaxDepth: cfg.ProjectFileTreeMaxDepth,
+		ProjectScanSkipDirs:     cfg.ProjectScanSkipDirs,
+	}
+}
+
 func applyAgentModeDefaults(cfg *Config) {
 	if cfg.EdgeAgent {
 		cfg.AgentMode = true
