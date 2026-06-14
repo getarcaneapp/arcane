@@ -109,7 +109,7 @@ func (s *ProjectService) resolveRegistryCredentialsInternal(ctx context.Context)
 	return credentials, nil
 }
 
-func (s *ProjectService) getPathMapper(ctx context.Context) *projects.PathMapper {
+func (s *ProjectService) getPathMapperInternal(ctx context.Context) *projects.PathMapper {
 	configuredPath := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
 
 	var containerDir, hostDir string
@@ -134,29 +134,32 @@ func (s *ProjectService) getPathMapper(ctx context.Context) *projects.PathMapper
 		containerDirResolved = "/app/data/projects"
 	}
 
-	// If hostDir not obtained from mapping, attempt auto-discovery from Docker mounts
-	if hostDir == "" && s.dockerService != nil {
+	// Explicit "container:host" mapping: honor the user-declared prefix directly.
+	if strings.TrimSpace(hostDir) != "" {
+		hostDirResolved := filepath.Clean(strings.TrimSpace(hostDir))
+		pm := projects.NewPathMapper(containerDirResolved, hostDirResolved)
+		if !pm.IsNonMatchingMount() {
+			return nil
+		}
+		return pm
+	}
+
+	// Auto-discovery: resolve each bind-mount source against Arcane's real container
+	// mount table (longest-prefix match) so independently bind-mounted project
+	// directories map to their own host path instead of a single projects-root prefix.
+	if s.dockerService != nil {
 		if dockerCli, derr := s.dockerService.GetClient(ctx); derr == nil {
-			absContainerDir, _ := filepath.Abs(containerDirResolved)
-			if discovery, aerr := dockerutil.GetHostPathForContainerPath(ctx, dockerCli, absContainerDir); aerr == nil && discovery != "" {
-				hostDir = discovery
-				slog.DebugContext(ctx, "Auto-discovered host path for projects", "container", absContainerDir, "host", hostDir)
+			if mounts, merr := dockerutil.GetCurrentContainerMounts(ctx, dockerCli); merr == nil && len(mounts) > 0 {
+				pm := projects.NewPathMapperFromMounts(mounts)
+				if !pm.IsNonMatchingMount() {
+					return nil
+				}
+				return pm
 			}
 		}
 	}
 
-	// Clean host directory
-	hostDirResolved := strings.TrimSpace(hostDir)
-	if hostDirResolved != "" {
-		hostDirResolved = filepath.Clean(hostDirResolved)
-	}
-
-	pm := projects.NewPathMapper(containerDirResolved, hostDirResolved)
-	if !pm.IsNonMatchingMount() {
-		return nil
-	}
-
-	return pm
+	return nil
 }
 
 func (s *ProjectService) getProjectsDirectoryInternal(ctx context.Context) (string, error) {
@@ -511,7 +514,7 @@ func (s *ProjectService) loadComposeProjectForProjectInternal(ctx context.Contex
 		projectsDirectory = "/app/data/projects"
 	}
 
-	pathMapper := s.getPathMapper(ctx)
+	pathMapper := s.getPathMapperInternal(ctx)
 
 	composeProject, loadErr := projects.LoadComposeProject(ctx, composeFileFullPath, normalizeComposeProjectName(proj.Name), projectsDirectory, utils.BoolOrDefault(cfg.AutoInjectEnv.Value, false), pathMapper)
 	if loadErr != nil {
@@ -2770,7 +2773,7 @@ func (s *ProjectService) RestartProject(ctx context.Context, projectID string, u
 		projectsDirectory = "/app/data/projects"
 	}
 
-	pathMapper := s.getPathMapper(ctx)
+	pathMapper := s.getPathMapperInternal(ctx)
 
 	compProj, _, lerr := projects.LoadComposeProjectFromDir(ctx, proj.Path, normalizeComposeProjectName(proj.Name), projectsDirectory, utils.BoolOrDefault(cfg.AutoInjectEnv.Value, false), pathMapper)
 	if lerr != nil {
@@ -4781,7 +4784,7 @@ func (s *ProjectService) loadComposeMetadataForSyncInternal(ctx context.Context,
 		return 0, nil, pErr
 	}
 
-	pathMapper := s.getPathMapper(ctx)
+	pathMapper := s.getPathMapperInternal(ctx)
 
 	normName := normalizeComposeProjectName(dirName)
 	autoInjectEnv := utils.BoolOrDefault(cfg.AutoInjectEnv.Value, false)
