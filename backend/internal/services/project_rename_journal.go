@@ -231,11 +231,13 @@ func (s *ProjectService) rollbackProjectRenameJournalInternal(ctx context.Contex
 	}
 
 	volumeErr := s.rollbackProjectRenameJournalVolumesInternal(ctx, journal)
+	returnErr := volumeErr
 	if volumeErr != nil {
 		if projectRenameOnlyPreservedTargetErrorsInternal(volumeErr) {
 			slog.WarnContext(ctx, "clearing project rename journal after preserving target volume data", "projectID", journal.ProjectID, "pathsMissing", directoryRollback.PathsMissing, "error", volumeErr)
+			returnErr = nil
 		} else {
-			slog.WarnContext(ctx, "project rename volume rollback failed; restoring project database state and clearing journal", "projectID", journal.ProjectID, "pathsMissing", directoryRollback.PathsMissing, "error", volumeErr)
+			slog.WarnContext(ctx, "project rename volume rollback failed; restoring project database state and keeping journal", "projectID", journal.ProjectID, "pathsMissing", directoryRollback.PathsMissing, "error", volumeErr)
 		}
 	}
 
@@ -246,11 +248,11 @@ func (s *ProjectService) rollbackProjectRenameJournalInternal(ctx context.Contex
 			"path":     journal.OldPath,
 			"dir_name": journal.OldDirName,
 		}).Error; err != nil {
-		return errors.Join(volumeErr, fmt.Errorf("restore project database state: %w", err))
+		return errors.Join(returnErr, fmt.Errorf("restore project database state: %w", err))
 	}
 
 	dockerutil.InvalidateVolumeUsageCache()
-	return nil
+	return returnErr
 }
 
 func (s *ProjectService) rollbackProjectRenameJournalVolumesInternal(ctx context.Context, journal *projectRenameJournalInternal) error {

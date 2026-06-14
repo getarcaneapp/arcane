@@ -171,7 +171,7 @@ func TestProjectService_RecoverProjectRenameJournals_RollsBackCommittedJournalWh
 	require.Equal(t, oldDir, *fromDB.DirName)
 }
 
-func TestProjectService_RecoverProjectRenameJournals_ClearsJournalAfterDBRestoreWhenVolumeRollbackFails(t *testing.T) {
+func TestProjectService_RecoverProjectRenameJournals_KeepsJournalAfterDBRestoreWhenVolumeRollbackFails(t *testing.T) {
 	db := setupProjectTestDB(t)
 	require.NoError(t, db.AutoMigrate(&models.KVEntry{}))
 	ctx := context.Background()
@@ -248,12 +248,14 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalAfterDBRestore
 	require.NoError(t, err)
 	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyInternal(project.ID), string(payload)))
 
-	require.NoError(t, svc.RecoverProjectRenameJournals(ctx))
+	err = svc.RecoverProjectRenameJournals(ctx)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "remove rollback target volume web_cache")
 
 	require.Positive(t, targetRemoveAttempts.Load())
 	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyInternal(project.ID))
 	require.NoError(t, err)
-	require.False(t, ok)
+	require.True(t, ok)
 	require.FileExists(t, filepath.Join(oldPath, "compose.yaml"))
 	require.NoDirExists(t, newPath)
 

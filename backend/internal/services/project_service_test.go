@@ -1453,10 +1453,10 @@ func TestProjectService_UpdateProject_AllowsNonRenameWhenJournalRecoveryDockerUn
 
 	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyInternal(project.ID))
 	require.NoError(t, err)
-	require.False(t, ok, "volume rollback failure should not leave the project permanently blocked")
+	require.True(t, ok)
 }
 
-func TestProjectService_UpdateProject_AllowsRenameWhenJournalRecoveryDockerUnavailable(t *testing.T) {
+func TestProjectService_UpdateProject_FailsRenameWhenJournalRecoveryDockerUnavailable(t *testing.T) {
 	db := setupProjectTestDB(t)
 	require.NoError(t, db.AutoMigrate(&models.KVEntry{}))
 	ctx := context.Background()
@@ -1508,14 +1508,15 @@ func TestProjectService_UpdateProject_AllowsRenameWhenJournalRecoveryDockerUnava
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
-	require.NoError(t, err)
-	require.Equal(t, "web", updated.Name)
-	require.DirExists(t, filepath.Join(projectsDir, "web"))
-	require.NoDirExists(t, projectPath)
+	require.Error(t, err)
+	require.Nil(t, updated)
+	require.Contains(t, err.Error(), "docker service unavailable")
+	require.DirExists(t, projectPath)
+	require.NoDirExists(t, filepath.Join(projectsDir, "web"))
 
 	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyInternal(project.ID))
 	require.NoError(t, err)
-	require.False(t, ok)
+	require.True(t, ok)
 }
 
 func TestProjectService_UpdateProject_RenamesDirectoryWhenNameChanges(t *testing.T) {
