@@ -186,7 +186,7 @@ func composeVolumeKeysWithExplicitNameInFileInternal(path string) (map[string]st
 			continue
 		}
 		name, ok := rawName.(string)
-		if !ok || len(composetemplate.ExtractVariables(map[string]interface{}{"name": name}, nil)) == 0 {
+		if !ok || len(composetemplate.ExtractVariables(map[string]any{"name": name}, nil)) == 0 {
 			explicit[key] = struct{}{}
 		}
 	}
