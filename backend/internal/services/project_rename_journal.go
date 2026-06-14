@@ -224,7 +224,7 @@ func (s *ProjectService) recoverProjectRenameJournalInternal(ctx context.Context
 			}
 			return s.clearProjectRenameJournalInternal(ctx, journal.ProjectID)
 		}
-		if err := s.completeProjectRenameJournalInternal(ctx, journal); err != nil {
+		if err := s.cleanupProjectRenameJournalSourcesInternal(ctx, journal); err != nil {
 			var cleanupErr *volumerename.SourceCleanupError
 			if errors.As(err, &cleanupErr) {
 				if writeErr := s.writeProjectRenameJournalInternal(ctx, journal, projectRenameJournalPhaseSourceCleanupPendingInternal); writeErr != nil {
@@ -245,29 +245,6 @@ func (s *ProjectService) recoverProjectRenameJournalInternal(ctx context.Context
 	return s.clearProjectRenameJournalInternal(ctx, journal.ProjectID)
 }
 
-func (s *ProjectService) completeProjectRenameJournalInternal(ctx context.Context, journal *projectRenameJournalInternal) error {
-	dockerClient, err := s.projectRenameRecoveryDockerInternal(ctx, len(journal.Volumes) > 0)
-	if err != nil {
-		return err
-	}
-
-	if err := volumerename.EnsureTargetsReadyForCleanup(ctx, dockerClient, journal.Volumes); err != nil {
-		var missingWithSource *volumerename.TargetMissingWithSourceError
-		if errors.As(err, &missingWithSource) {
-			slog.WarnContext(ctx, "rolling back committed project rename because target volume is missing and source volume remains", "projectID", journal.ProjectID, "sourceVolume", missingWithSource.SourceVolume, "targetVolume", missingWithSource.TargetVolume)
-			return s.rollbackProjectRenameJournalInternal(ctx, journal)
-		}
-		var externallyRemoved *volumerename.VolumesExternallyRemovedError
-		if errors.As(err, &externallyRemoved) {
-			slog.WarnContext(ctx, "project rename recovery found source and target volumes externally removed", "projectID", journal.ProjectID, "volumeCount", len(externallyRemoved.Volumes), "error", externallyRemoved)
-		} else {
-			return err
-		}
-	}
-
-	return volumerename.RemoveSourceVolumes(ctx, dockerClient, journal.Volumes)
-}
-
 func (s *ProjectService) cleanupProjectRenameJournalSourcesInternal(ctx context.Context, journal *projectRenameJournalInternal) error {
 	dockerClient, err := s.projectRenameRecoveryDockerInternal(ctx, len(journal.Volumes) > 0)
 	if err != nil {
@@ -277,12 +254,12 @@ func (s *ProjectService) cleanupProjectRenameJournalSourcesInternal(ctx context.
 	if err := volumerename.EnsureTargetsReadyForCleanup(ctx, dockerClient, journal.Volumes); err != nil {
 		var missingWithSource *volumerename.TargetMissingWithSourceError
 		if errors.As(err, &missingWithSource) {
-			slog.WarnContext(ctx, "rolling back source cleanup pending project rename because target volume is missing and source volume remains", "projectID", journal.ProjectID, "sourceVolume", missingWithSource.SourceVolume, "targetVolume", missingWithSource.TargetVolume)
+			slog.WarnContext(ctx, "rolling back project rename because target volume is missing and source volume remains", "projectID", journal.ProjectID, "sourceVolume", missingWithSource.SourceVolume, "targetVolume", missingWithSource.TargetVolume)
 			return s.rollbackProjectRenameJournalInternal(ctx, journal)
 		}
 		var externallyRemoved *volumerename.VolumesExternallyRemovedError
 		if errors.As(err, &externallyRemoved) {
-			slog.WarnContext(ctx, "project rename source cleanup found source and target volumes externally removed", "projectID", journal.ProjectID, "volumeCount", len(externallyRemoved.Volumes), "error", externallyRemoved)
+			slog.WarnContext(ctx, "project rename cleanup found source and target volumes externally removed", "projectID", journal.ProjectID, "volumeCount", len(externallyRemoved.Volumes), "error", externallyRemoved)
 		} else {
 			return err
 		}
