@@ -339,7 +339,12 @@ func rollbackProjectRenameDirectoryInternal(journal *projectRenameJournalInterna
 	newExists := pathExistsInternal(newPath)
 	switch {
 	case oldExists && newExists:
-		slog.Warn("project rename directory rollback found both paths; keeping old path and clearing journal", "oldPath", oldPath, "newPath", newPath)
+		conflictPath, err := relocateProjectRenameConflictDirectoryInternal(newPath)
+		if err != nil {
+			slog.Warn("project rename directory rollback found both paths and failed to relocate target path; keeping old path and clearing journal", "oldPath", oldPath, "newPath", newPath, "error", err)
+		} else {
+			slog.Warn("project rename directory rollback found both paths; moved target path aside and kept old path", "oldPath", oldPath, "newPath", newPath, "conflictPath", conflictPath)
+		}
 	case !oldExists && newExists:
 		if err := os.Rename(newPath, oldPath); err != nil {
 			return result, fmt.Errorf("rollback project directory rename: %w", err)
@@ -349,6 +354,25 @@ func rollbackProjectRenameDirectoryInternal(journal *projectRenameJournalInterna
 		slog.Warn("project rename directory paths are missing during rollback", "oldPath", oldPath, "newPath", newPath)
 	}
 	return result, nil
+}
+
+func relocateProjectRenameConflictDirectoryInternal(path string) (string, error) {
+	parent := filepath.Dir(path)
+	base := filepath.Base(path)
+	now := time.Now().UTC().UnixNano()
+	for attempt := range 10 {
+		conflictPath := filepath.Join(parent, fmt.Sprintf(".%s.rename-conflict-%d-%d", base, now, attempt))
+		if _, err := os.Stat(conflictPath); err == nil {
+			continue
+		} else if !os.IsNotExist(err) {
+			return "", fmt.Errorf("check conflict path: %w", err)
+		}
+		if err := os.Rename(path, conflictPath); err != nil {
+			return "", fmt.Errorf("relocate project rename target path: %w", err)
+		}
+		return conflictPath, nil
+	}
+	return "", fmt.Errorf("relocate project rename target path: no available conflict path for %s", path)
 }
 
 func projectRenameVolumeExistsInternal(ctx context.Context, dockerClient *client.Client, name string) (bool, error) {

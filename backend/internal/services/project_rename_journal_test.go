@@ -131,7 +131,7 @@ func TestProjectService_RecoverProjectRenameJournals_StartedPhaseSkipsVolumeRoll
 	require.Equal(t, oldDir, *fromDB.DirName)
 }
 
-func TestProjectService_RecoverProjectRenameJournals_ClearsStartedJournalWhenBothPathsExist(t *testing.T) {
+func TestProjectService_RecoverProjectRenameJournals_RelocatesTargetWhenBothPathsExist(t *testing.T) {
 	db := setupProjectTestDB(t)
 	require.NoError(t, db.AutoMigrate(&models.KVEntry{}))
 	ctx := context.Background()
@@ -177,7 +177,12 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsStartedJournalWhenBot
 	require.NoError(t, err)
 	require.False(t, ok)
 	require.FileExists(t, filepath.Join(oldPath, "compose.yaml"))
-	require.FileExists(t, filepath.Join(newPath, "compose.yaml"))
+	require.NoDirExists(t, newPath)
+
+	conflictPaths, err := filepath.Glob(filepath.Join(projectsDir, ".web.rename-conflict-*"))
+	require.NoError(t, err)
+	require.Len(t, conflictPaths, 1)
+	require.FileExists(t, filepath.Join(conflictPaths[0], "compose.yaml"))
 
 	var fromDB models.Project
 	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
@@ -185,6 +190,12 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsStartedJournalWhenBot
 	require.Equal(t, oldPath, fromDB.Path)
 	require.NotNil(t, fromDB.DirName)
 	require.Equal(t, oldDir, *fromDB.DirName)
+
+	newName := "web"
+	require.NoError(t, svc.applyProjectRenameIfNeeded(&fromDB, &newName, projectsDir))
+	require.Equal(t, "web", fromDB.Name)
+	require.Equal(t, newPath, fromDB.Path)
+	require.DirExists(t, newPath)
 }
 
 func TestProjectService_RecoverProjectRenameJournals_ClearsStartedJournalWhenDirectoryPathsMissing(t *testing.T) {
