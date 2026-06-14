@@ -1,4 +1,4 @@
-package volumerename
+package projects
 
 import (
 	"net/http/httptest"

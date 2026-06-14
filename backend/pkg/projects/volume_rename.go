@@ -1,4 +1,4 @@
-package volumerename
+package projects
 
 import (
 	"bytes"
@@ -20,7 +20,6 @@ import (
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/volume"
@@ -99,7 +98,7 @@ func PlanMigration(ctx context.Context, dockerClient *client.Client, composeProj
 		return nil, nil
 	}
 
-	explicitVolumeNames, err := projects.ComposeVolumeKeysWithExplicitName(composeProject.ComposeFiles)
+	explicitVolumeNames, err := ComposeVolumeKeysWithExplicitName(composeProject.ComposeFiles)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse compose volume names: %w", err)
 	}

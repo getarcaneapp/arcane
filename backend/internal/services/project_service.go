@@ -28,7 +28,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects/volumerename"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cache"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/iconcatalog"
@@ -149,7 +148,7 @@ func (s *ProjectService) getPathMapperInternal(ctx context.Context) *projects.Pa
 	// directories map to their own host path instead of a single projects-root prefix.
 	if s.dockerService != nil {
 		if dockerCli, derr := s.dockerService.GetClient(ctx); derr == nil {
-			if mounts, merr := dockerutil.GetCurrentContainerMounts(ctx, dockerCli); merr == nil && len(mounts) > 0 {
+			if mounts, merr := projects.GetCurrentContainerMounts(ctx, dockerCli); merr == nil && len(mounts) > 0 {
 				pm := projects.NewPathMapperFromMounts(mounts)
 				if !pm.IsNonMatchingMount() {
 					return nil
@@ -2913,7 +2912,7 @@ func (s *ProjectService) startProjectRenameJournalInternal(ctx context.Context, 
 	return true, nil
 }
 
-func (s *ProjectService) applyProjectUpdateWithRenameJournalInternal(ctx context.Context, proj *models.Project, name *string, projectsDirectory string, composeContent, envContent *string, fileTreeRevision *string, fileChanges []project.ProjectFileChange, volumeMigration volumerename.Migration, renameJournal *projectRenameJournalInternal, journalActive *bool, projectStateCommitted *bool) (err error) {
+func (s *ProjectService) applyProjectUpdateWithRenameJournalInternal(ctx context.Context, proj *models.Project, name *string, projectsDirectory string, composeContent, envContent *string, fileTreeRevision *string, fileChanges []project.ProjectFileChange, volumeMigration projects.Migration, renameJournal *projectRenameJournalInternal, journalActive *bool, projectStateCommitted *bool) (err error) {
 	volumeMigrationApplied := false
 	defer func() {
 		stateCommitted := projectStateCommitted != nil && *projectStateCommitted
@@ -2946,7 +2945,7 @@ func (s *ProjectService) applyProjectUpdateWithRenameJournalInternal(ctx context
 	return nil
 }
 
-func (s *ProjectService) applyProjectVolumeMigrationForUpdateInternal(ctx context.Context, volumeMigration volumerename.Migration, renameJournal *projectRenameJournalInternal, applied *bool) error {
+func (s *ProjectService) applyProjectVolumeMigrationForUpdateInternal(ctx context.Context, volumeMigration projects.Migration, renameJournal *projectRenameJournalInternal, applied *bool) error {
 	if volumeMigration == nil {
 		return nil
 	}
@@ -2980,17 +2979,17 @@ func (s *ProjectService) saveProjectUpdateInternal(ctx context.Context, proj *mo
 	return nil
 }
 
-func (s *ProjectService) finalizeProjectRenameAfterCommitInternal(ctx context.Context, projectID string, volumeMigration volumerename.Migration, renameJournal *projectRenameJournalInternal, journalActive *bool) {
+func (s *ProjectService) finalizeProjectRenameAfterCommitInternal(ctx context.Context, projectID string, volumeMigration projects.Migration, renameJournal *projectRenameJournalInternal, journalActive *bool) {
 	if renameJournal != nil {
 		if err := s.writeProjectRenameJournalInternal(ctx, renameJournal, projectRenameJournalPhaseProjectStateCommittedInternal); err != nil {
 			slog.WarnContext(ctx, "failed to mark project rename journal committed", "projectID", projectID, "error", err)
 		}
 	}
 
-	if committer, ok := volumeMigration.(volumerename.Committer); ok {
+	if committer, ok := volumeMigration.(projects.Committer); ok {
 		if err := committer.Commit(ctx); err != nil {
 			slog.WarnContext(ctx, "failed to clean up project source volumes after committed rename", "projectID", projectID, "error", err)
-			var cleanupErr *volumerename.SourceCleanupError
+			var cleanupErr *projects.SourceCleanupError
 			if errors.As(err, &cleanupErr) {
 				if writeErr := s.writeProjectRenameJournalInternal(ctx, renameJournal, projectRenameJournalPhaseSourceCleanupPendingInternal); writeErr != nil {
 					slog.WarnContext(ctx, "failed to mark project rename source cleanup pending", "projectID", projectID, "error", writeErr)
@@ -3140,7 +3139,7 @@ func (s *ProjectService) getProjectForUpdate(ctx context.Context, projectID stri
 	return proj, projectsDirectory, nil
 }
 
-func (s *ProjectService) prepareProjectRenameVolumeMigrationForUpdateInternal(ctx context.Context, proj *models.Project, name *string, projectsDirectory string, composeContent, envContent *string, fileTreeRevision *string, fileChanges []project.ProjectFileChange) (volumerename.Migration, error) {
+func (s *ProjectService) prepareProjectRenameVolumeMigrationForUpdateInternal(ctx context.Context, proj *models.Project, name *string, projectsDirectory string, composeContent, envContent *string, fileTreeRevision *string, fileChanges []project.ProjectFileChange) (projects.Migration, error) {
 	if !isProjectRenameRequestedInternal(proj, name) {
 		return nil, nil
 	}
@@ -3178,7 +3177,7 @@ func (s *ProjectService) prepareProjectRenameVolumeMigrationForUpdateInternal(ct
 	return s.prepareProjectRenameVolumeMigrationInternal(ctx, &previewProject, name)
 }
 
-func (s *ProjectService) prepareProjectRenameVolumeMigrationInternal(ctx context.Context, proj *models.Project, name *string) (volumerename.Migration, error) {
+func (s *ProjectService) prepareProjectRenameVolumeMigrationInternal(ctx context.Context, proj *models.Project, name *string) (projects.Migration, error) {
 	oldComposeName, newComposeName, ok := projectRenameVolumeMigrationComposeNamesInternal(s, proj, name)
 	if !ok {
 		return nil, nil
@@ -3198,7 +3197,7 @@ func (s *ProjectService) prepareProjectRenameVolumeMigrationInternal(ctx context
 		return nil, fmt.Errorf("failed to connect to Docker for volume rename: %w", err)
 	}
 
-	return volumerename.PlanMigration(ctx, dockerClient, composeProject, oldComposeName, newComposeName)
+	return projects.PlanMigration(ctx, dockerClient, composeProject, oldComposeName, newComposeName)
 }
 
 func projectRenameVolumeMigrationComposeNamesInternal(s *ProjectService, proj *models.Project, name *string) (string, string, bool) {

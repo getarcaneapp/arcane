@@ -24,7 +24,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects/volumerename"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/iconcatalog"
 	buildtypes "github.com/getarcaneapp/arcane/types/v2/builds"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
@@ -1283,7 +1282,7 @@ func TestProjectService_PrepareProjectRenameVolumeMigrationForUpdate_UsesCompose
 
 		require.NoError(t, err)
 		require.NotNil(t, migration)
-		journalSource, ok := migration.(volumerename.JournalSource)
+		journalSource, ok := migration.(projects.JournalSource)
 		require.True(t, ok)
 		volumes := journalSource.JournalVolumes()
 		require.Len(t, volumes, 1)
@@ -1300,7 +1299,7 @@ func TestProjectService_PrepareProjectRenameVolumeMigrationForUpdate_UsesCompose
 
 		require.NoError(t, err)
 		require.NotNil(t, migration)
-		journalSource, ok := migration.(volumerename.JournalSource)
+		journalSource, ok := migration.(projects.JournalSource)
 		require.True(t, ok)
 		volumes := journalSource.JournalVolumes()
 		require.Len(t, volumes, 1)
@@ -1317,7 +1316,7 @@ func TestProjectService_PrepareProjectRenameVolumeMigrationForUpdate_UsesCompose
 
 		require.NoError(t, err)
 		require.NotNil(t, migration)
-		journalSource, ok := migration.(volumerename.JournalSource)
+		journalSource, ok := migration.(projects.JournalSource)
 		require.True(t, ok)
 		volumes := journalSource.JournalVolumes()
 		require.Len(t, volumes, 1)
@@ -1462,7 +1461,7 @@ func TestProjectService_UpdateProject_ClearsJournalForNonRenameWhenRecoveryDocke
 		OldDirName: &oldDir,
 		NewDirName: "web",
 		Phase:      projectRenameJournalPhaseTargetsCopiedInternal,
-		Volumes: []volumerename.JournalVolume{
+		Volumes: []projects.JournalVolume{
 			{
 				Key:     "data",
 				OldName: "nginx_data",
@@ -1527,7 +1526,7 @@ func TestProjectService_UpdateProject_AllowsRenameAfterJournalRecoveryDockerUnav
 		OldDirName: &oldDir,
 		NewDirName: "web",
 		Phase:      projectRenameJournalPhaseTargetsCopiedInternal,
-		Volumes: []volumerename.JournalVolume{
+		Volumes: []projects.JournalVolume{
 			{
 				Key:     "data",
 				OldName: "nginx_data",
