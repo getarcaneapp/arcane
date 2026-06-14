@@ -13,6 +13,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects/volumerename"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/volume"
 	"github.com/stretchr/testify/require"
@@ -70,7 +71,7 @@ func TestProjectService_RecoverProjectRenameJournals_CompletesCommittedVolumeJou
 		OldDirName: &oldDir,
 		NewDirName: newDir,
 		Phase:      projectRenameJournalPhaseOldVolumesRemovedInternal,
-		Volumes: []projectRenameJournalVolumeInternal{
+		Volumes: []volumerename.JournalVolume{
 			{
 				Key:     "data",
 				OldName: "nginx_data",
@@ -141,7 +142,7 @@ func TestProjectService_RecoverProjectRenameJournals_RollsBackCommittedJournalWh
 		OldDirName: &oldDir,
 		NewDirName: newDir,
 		Phase:      projectRenameJournalPhaseOldVolumesRemovedInternal,
-		Volumes: []projectRenameJournalVolumeInternal{
+		Volumes: []volumerename.JournalVolume{
 			{
 				Key:     "data",
 				OldName: "nginx_data",
@@ -243,7 +244,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalAfterDBRestore
 		OldDirName: &oldDir,
 		NewDirName: newDir,
 		Phase:      projectRenameJournalPhaseProjectStateCommittedInternal,
-		Volumes: []projectRenameJournalVolumeInternal{
+		Volumes: []volumerename.JournalVolume{
 			{
 				Key:     "data",
 				OldName: "nginx_data",
@@ -317,7 +318,7 @@ func TestProjectService_RecoverProjectRenameJournals_KeepsRollbackCleanupWhenDoc
 		OldPath:   oldPath,
 		NewName:   "web",
 		NewPath:   filepath.Join(projectsDir, "web"),
-		Volumes: []projectRenameJournalVolumeInternal{
+		Volumes: []volumerename.JournalVolume{
 			{
 				Key:     "data",
 				OldName: "nginx_data",
@@ -383,7 +384,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsCommittedJournalWhenS
 		OldDirName: &oldDir,
 		NewDirName: newDir,
 		Phase:      projectRenameJournalPhaseProjectStateCommittedInternal,
-		Volumes: []projectRenameJournalVolumeInternal{
+		Volumes: []volumerename.JournalVolume{
 			{
 				Key:     "data",
 				OldName: "nginx_data",
@@ -465,7 +466,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsCommittedJournalAndCl
 		OldDirName: &oldDir,
 		NewDirName: newDir,
 		Phase:      projectRenameJournalPhaseProjectStateCommittedInternal,
-		Volumes: []projectRenameJournalVolumeInternal{
+		Volumes: []volumerename.JournalVolume{
 			{
 				Key:     "data",
 				OldName: "nginx_data",
@@ -546,7 +547,7 @@ func TestProjectService_RecoverProjectRenameJournals_MarksSourceCleanupPendingWh
 		OldDirName: &oldDir,
 		NewDirName: newDir,
 		Phase:      projectRenameJournalPhaseProjectStateCommittedInternal,
-		Volumes: []projectRenameJournalVolumeInternal{
+		Volumes: []volumerename.JournalVolume{
 			{
 				Key:     "data",
 				OldName: "nginx_data",
@@ -560,7 +561,7 @@ func TestProjectService_RecoverProjectRenameJournals_MarksSourceCleanupPendingWh
 
 	err = svc.RecoverProjectRenameJournals(ctx)
 	require.Error(t, err)
-	var cleanupErr *projectRenameSourceCleanupInternalError
+	var cleanupErr *volumerename.SourceCleanupError
 	require.ErrorAs(t, err, &cleanupErr)
 	require.Equal(t, "nginx_data", cleanupErr.SourceVolume)
 	require.Positive(t, sourceRemoveAttempts.Load())
@@ -629,7 +630,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsSourceCleanupPendingJ
 		OldDirName: &oldDir,
 		NewDirName: newDir,
 		Phase:      projectRenameJournalPhaseSourceCleanupPendingInternal,
-		Volumes: []projectRenameJournalVolumeInternal{
+		Volumes: []volumerename.JournalVolume{
 			{
 				Key:     "data",
 				OldName: "nginx_data",
@@ -720,7 +721,7 @@ func TestProjectService_RecoverProjectRenameJournals_RollsBackSourceCleanupPendi
 		OldDirName: &oldDir,
 		NewDirName: newDir,
 		Phase:      projectRenameJournalPhaseSourceCleanupPendingInternal,
-		Volumes: []projectRenameJournalVolumeInternal{
+		Volumes: []volumerename.JournalVolume{
 			{
 				Key:     "data",
 				OldName: "nginx_data",
@@ -808,7 +809,7 @@ func TestProjectService_RecoverProjectRenameJournals_KeepsSourceCleanupPendingJo
 		OldDirName: &oldDir,
 		NewDirName: newDir,
 		Phase:      projectRenameJournalPhaseSourceCleanupPendingInternal,
-		Volumes: []projectRenameJournalVolumeInternal{
+		Volumes: []volumerename.JournalVolume{
 			{
 				Key:     "data",
 				OldName: "nginx_data",
@@ -822,7 +823,7 @@ func TestProjectService_RecoverProjectRenameJournals_KeepsSourceCleanupPendingJo
 
 	err = svc.RecoverProjectRenameJournals(ctx)
 	require.Error(t, err)
-	var cleanupErr *projectRenameSourceCleanupInternalError
+	var cleanupErr *volumerename.SourceCleanupError
 	require.ErrorAs(t, err, &cleanupErr)
 	require.Equal(t, "nginx_data", cleanupErr.SourceVolume)
 	require.Positive(t, sourceRemoveAttempts.Load())
@@ -940,7 +941,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsMissingPathJournalWhe
 		OldDirName: &oldDir,
 		NewDirName: newDir,
 		Phase:      projectRenameJournalPhaseTargetsCopiedInternal,
-		Volumes: []projectRenameJournalVolumeInternal{
+		Volumes: []volumerename.JournalVolume{
 			{
 				Key:     "data",
 				OldName: "nginx_data",
@@ -1014,7 +1015,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenRollbackSo
 		OldDirName: &oldDir,
 		NewDirName: newDir,
 		Phase:      projectRenameJournalPhaseTargetsCopiedInternal,
-		Volumes: []projectRenameJournalVolumeInternal{
+		Volumes: []volumerename.JournalVolume{
 			{
 				Key:     "data",
 				OldName: "nginx_data",
@@ -1091,7 +1092,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenRollbackTa
 		OldDirName: &oldDir,
 		NewDirName: newDir,
 		Phase:      projectRenameJournalPhaseTargetsCopiedInternal,
-		Volumes: []projectRenameJournalVolumeInternal{
+		Volumes: []volumerename.JournalVolume{
 			{
 				Key:     "data",
 				OldName: "nginx_data",
@@ -1172,7 +1173,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenTargetPres
 		OldDirName: &oldDir,
 		NewDirName: newDir,
 		Phase:      projectRenameJournalPhaseTargetsCopiedInternal,
-		Volumes: []projectRenameJournalVolumeInternal{
+		Volumes: []volumerename.JournalVolume{
 			{
 				Key:     "data",
 				OldName: "nginx_data",

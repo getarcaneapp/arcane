@@ -2,13 +2,8 @@ package services
 
 import (
 	"context"
-	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strings"
-	"sync/atomic"
 	"testing"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -18,70 +13,6 @@ import (
 	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
 	"github.com/stretchr/testify/require"
 )
-
-func TestDockerProjectVolumeRenameMigrationInternal_RollbackExplainsPreservedTargetWhenSourceMissing(t *testing.T) {
-	var targetRemoved atomic.Bool
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
-			http.NotFound(w, r)
-		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
-			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"Name": "web_data"}))
-		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
-			targetRemoved.Store(true)
-			w.WriteHeader(http.StatusNoContent)
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	t.Cleanup(server.Close)
-
-	migration := &dockerProjectVolumeRenameMigrationInternal{
-		service: &ProjectService{
-			dockerService: &DockerClientService{client: newTestDockerClient(t, server)},
-		},
-		createdNew: []projectVolumeRenameEntryInternal{
-			{OldName: "nginx_data", NewName: "web_data"},
-		},
-	}
-
-	err := migration.Rollback(context.Background())
-
-	require.Error(t, err)
-	var preserved *projectRenameTargetPreservedDuringRollbackInternalError
-	require.ErrorAs(t, err, &preserved)
-	require.Contains(t, err.Error(), "avoid data loss")
-	require.Contains(t, err.Error(), "only remaining data copy")
-	require.False(t, targetRemoved.Load())
-}
-
-func TestRollbackProjectRenameJournalVolumeInternal_ExplainsPreservedTargetWhenSourceMissing(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
-			http.NotFound(w, r)
-		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
-			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"Name": "web_data"}))
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	t.Cleanup(server.Close)
-
-	err := rollbackProjectRenameJournalVolumeInternal(context.Background(), newTestDockerClient(t, server), projectRenameJournalVolumeInternal{
-		OldName: "nginx_data",
-		NewName: "web_data",
-	})
-
-	require.Error(t, err)
-	var preserved *projectRenameTargetPreservedDuringRollbackInternalError
-	require.ErrorAs(t, err, &preserved)
-	require.Contains(t, err.Error(), "avoid data loss")
-	require.Contains(t, err.Error(), "only remaining data copy")
-}
 
 func TestProjectService_UpdateProject_RenameRollsBackWhenFileRevisionIsStale(t *testing.T) {
 	db := setupProjectTestDB(t)

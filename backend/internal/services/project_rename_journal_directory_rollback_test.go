@@ -13,6 +13,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects/volumerename"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/volume"
 	"github.com/stretchr/testify/require"
@@ -77,7 +78,7 @@ func TestProjectService_RecoverProjectRenameJournals_KeepsJournalWhenDirectoryRo
 		OldDirName: &oldDir,
 		NewDirName: newDir,
 		Phase:      projectRenameJournalPhaseTargetsCopiedInternal,
-		Volumes: []projectRenameJournalVolumeInternal{
+		Volumes: []volumerename.JournalVolume{
 			{
 				Key:     "data",
 				OldName: "nginx_data",

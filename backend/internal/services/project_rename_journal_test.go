@@ -13,6 +13,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects/volumerename"
 	"github.com/stretchr/testify/require"
 )
 
@@ -103,7 +104,7 @@ func TestProjectService_RecoverProjectRenameJournals_StartedPhaseSkipsVolumeRoll
 		OldDirName: &oldDir,
 		NewDirName: newDir,
 		Phase:      projectRenameJournalPhaseStartedInternal,
-		Volumes: []projectRenameJournalVolumeInternal{
+		Volumes: []volumerename.JournalVolume{
 			{
 				Key:     "data",
 				OldName: "nginx_data",
@@ -292,7 +293,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsPreservedTargetJourna
 		OldDirName: &oldDir,
 		NewDirName: newDir,
 		Phase:      projectRenameJournalPhaseTargetsCopiedInternal,
-		Volumes: []projectRenameJournalVolumeInternal{
+		Volumes: []volumerename.JournalVolume{
 			{
 				Key:     "data",
 				OldName: "nginx_data",
@@ -439,7 +440,7 @@ func TestProjectService_FinalizeProjectRenameAfterCommit_KeepsJournalWhenSourceC
 	require.NoError(t, svc.writeProjectRenameJournalInternal(ctx, journal, projectRenameJournalPhaseTargetsCopiedInternal))
 
 	migration := &fakeProjectVolumeRenameMigrationInternal{
-		commitErr: newProjectRenameSourceCleanupErrorInternal("nginx_data", errors.New("source cleanup failed")),
+		commitErr: volumerename.NewSourceCleanupError("nginx_data", errors.New("source cleanup failed")),
 	}
 	journalActive := true
 	svc.finalizeProjectRenameAfterCommitInternal(ctx, project.ID, migration, journal, &journalActive)

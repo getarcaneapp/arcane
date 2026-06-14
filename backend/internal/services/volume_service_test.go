@@ -81,13 +81,6 @@ func TestIsVolumeHelperContainerInternal_MatchesInternalVolumeProbe(t *testing.T
 	require.True(t, isVolumeHelperContainerInternal(summary))
 }
 
-func TestBuildVolumeHelperLabelsInternal(t *testing.T) {
-	labels := buildVolumeHelperLabelsInternal()
-
-	require.Equal(t, "true", labels[libarcane.InternalResourceLabel])
-	require.Len(t, labels, 1)
-}
-
 func TestEnrichVolumesWithUsageDataInternal(t *testing.T) {
 	svc := &VolumeService{}
 

@@ -28,6 +28,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects/volumerename"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cache"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/iconcatalog"
@@ -2909,7 +2910,7 @@ func (s *ProjectService) startProjectRenameJournalInternal(ctx context.Context, 
 	return true, nil
 }
 
-func (s *ProjectService) applyProjectUpdateWithRenameJournalInternal(ctx context.Context, proj *models.Project, name *string, projectsDirectory string, composeContent, envContent *string, fileTreeRevision *string, fileChanges []project.ProjectFileChange, volumeMigration projectVolumeRenameMigrationInternal, renameJournal *projectRenameJournalInternal, journalActive *bool, projectStateCommitted *bool) (err error) {
+func (s *ProjectService) applyProjectUpdateWithRenameJournalInternal(ctx context.Context, proj *models.Project, name *string, projectsDirectory string, composeContent, envContent *string, fileTreeRevision *string, fileChanges []project.ProjectFileChange, volumeMigration volumerename.Migration, renameJournal *projectRenameJournalInternal, journalActive *bool, projectStateCommitted *bool) (err error) {
 	volumeMigrationApplied := false
 	defer func() {
 		stateCommitted := projectStateCommitted != nil && *projectStateCommitted
@@ -2942,7 +2943,7 @@ func (s *ProjectService) applyProjectUpdateWithRenameJournalInternal(ctx context
 	return nil
 }
 
-func (s *ProjectService) applyProjectVolumeMigrationForUpdateInternal(ctx context.Context, volumeMigration projectVolumeRenameMigrationInternal, renameJournal *projectRenameJournalInternal, applied *bool) error {
+func (s *ProjectService) applyProjectVolumeMigrationForUpdateInternal(ctx context.Context, volumeMigration volumerename.Migration, renameJournal *projectRenameJournalInternal, applied *bool) error {
 	if volumeMigration == nil {
 		return nil
 	}
@@ -2976,17 +2977,17 @@ func (s *ProjectService) saveProjectUpdateInternal(ctx context.Context, proj *mo
 	return nil
 }
 
-func (s *ProjectService) finalizeProjectRenameAfterCommitInternal(ctx context.Context, projectID string, volumeMigration projectVolumeRenameMigrationInternal, renameJournal *projectRenameJournalInternal, journalActive *bool) {
+func (s *ProjectService) finalizeProjectRenameAfterCommitInternal(ctx context.Context, projectID string, volumeMigration volumerename.Migration, renameJournal *projectRenameJournalInternal, journalActive *bool) {
 	if renameJournal != nil {
 		if err := s.writeProjectRenameJournalInternal(ctx, renameJournal, projectRenameJournalPhaseProjectStateCommittedInternal); err != nil {
 			slog.WarnContext(ctx, "failed to mark project rename journal committed", "projectID", projectID, "error", err)
 		}
 	}
 
-	if committer, ok := volumeMigration.(projectVolumeRenameCommitterInternal); ok {
+	if committer, ok := volumeMigration.(volumerename.Committer); ok {
 		if err := committer.Commit(ctx); err != nil {
 			slog.WarnContext(ctx, "failed to clean up project source volumes after committed rename", "projectID", projectID, "error", err)
-			var cleanupErr *projectRenameSourceCleanupInternalError
+			var cleanupErr *volumerename.SourceCleanupError
 			if errors.As(err, &cleanupErr) {
 				if writeErr := s.writeProjectRenameJournalInternal(ctx, renameJournal, projectRenameJournalPhaseSourceCleanupPendingInternal); writeErr != nil {
 					slog.WarnContext(ctx, "failed to mark project rename source cleanup pending", "projectID", projectID, "error", writeErr)
@@ -3136,7 +3137,7 @@ func (s *ProjectService) getProjectForUpdate(ctx context.Context, projectID stri
 	return proj, projectsDirectory, nil
 }
 
-func (s *ProjectService) prepareProjectRenameVolumeMigrationForUpdateInternal(ctx context.Context, proj *models.Project, name *string, projectsDirectory string, composeContent, envContent *string, fileTreeRevision *string, fileChanges []project.ProjectFileChange) (projectVolumeRenameMigrationInternal, error) {
+func (s *ProjectService) prepareProjectRenameVolumeMigrationForUpdateInternal(ctx context.Context, proj *models.Project, name *string, projectsDirectory string, composeContent, envContent *string, fileTreeRevision *string, fileChanges []project.ProjectFileChange) (volumerename.Migration, error) {
 	if !isProjectRenameRequestedInternal(proj, name) {
 		return nil, nil
 	}
@@ -3172,6 +3173,48 @@ func (s *ProjectService) prepareProjectRenameVolumeMigrationForUpdateInternal(ct
 	}
 
 	return s.prepareProjectRenameVolumeMigrationInternal(ctx, &previewProject, name)
+}
+
+func (s *ProjectService) prepareProjectRenameVolumeMigrationInternal(ctx context.Context, proj *models.Project, name *string) (volumerename.Migration, error) {
+	oldComposeName, newComposeName, ok := projectRenameVolumeMigrationComposeNamesInternal(s, proj, name)
+	if !ok {
+		return nil, nil
+	}
+
+	composeProject, _, err := s.loadComposeProjectForProjectInternal(ctx, proj, nil)
+	if err != nil {
+		var notFound *common.ProjectComposeFileNotFoundError
+		if errors.As(err, &notFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to load compose project for volume rename: %w", err)
+	}
+
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to Docker for volume rename: %w", err)
+	}
+
+	return volumerename.PlanMigration(ctx, dockerClient, composeProject, oldComposeName, newComposeName)
+}
+
+func projectRenameVolumeMigrationComposeNamesInternal(s *ProjectService, proj *models.Project, name *string) (string, string, bool) {
+	if s == nil || s.dockerService == nil || proj == nil || name == nil {
+		return "", "", false
+	}
+
+	newProjectName := strings.TrimSpace(*name)
+	if newProjectName == "" || proj.Name == newProjectName || proj.Status != models.ProjectStatusStopped {
+		return "", "", false
+	}
+
+	oldComposeName := normalizeComposeProjectName(proj.Name)
+	newComposeName := normalizeComposeProjectName(newProjectName)
+	if oldComposeName == "" || newComposeName == "" || oldComposeName == newComposeName {
+		return "", "", false
+	}
+
+	return oldComposeName, newComposeName, true
 }
 
 func isProjectRenameRequestedInternal(proj *models.Project, name *string) bool {
