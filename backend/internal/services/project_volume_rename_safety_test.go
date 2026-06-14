@@ -508,7 +508,9 @@ func TestDockerProjectVolumeRenameMigrationInternal_RollbackAfterPartialCommitCl
 
 	err := migration.Commit(context.Background())
 
-	require.ErrorContains(t, err, "remove source volume nginx_cache")
+	var cleanupErr *projectRenameSourceCleanupInternalError
+	require.ErrorAs(t, err, &cleanupErr)
+	require.Equal(t, "nginx_cache", cleanupErr.SourceVolume)
 	require.True(t, firstSourceRemoved.Load())
 	require.Positive(t, secondSourceRemoveAttempts.Load())
 	require.Equal(t, []projectVolumeRenameEntryInternal{entries[0]}, migration.removedOld)

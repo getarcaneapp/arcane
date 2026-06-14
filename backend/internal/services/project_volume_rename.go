@@ -249,7 +249,7 @@ func (m *dockerProjectVolumeRenameMigrationInternal) Commit(ctx context.Context)
 
 	for _, entry := range m.entries {
 		if err := removeProjectVolumeWithRetryInternal(ctx, dockerClient, entry.OldName, client.VolumeRemoveOptions{Force: false}); err != nil {
-			return fmt.Errorf("remove source volume %s: %w", entry.OldName, err)
+			return newProjectRenameSourceCleanupErrorInternal(entry.OldName, err)
 		}
 		m.removedOld = append(m.removedOld, entry)
 	}

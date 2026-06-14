@@ -27,6 +27,7 @@ const (
 	projectRenameJournalPhaseTargetsCopiedInternal          = "targets_copied"
 	projectRenameJournalPhaseOldVolumesRemovedInternal      = "old_volumes_removed"
 	projectRenameJournalPhaseProjectStateCommittedInternal  = "project_state_committed"
+	projectRenameJournalPhaseSourceCleanupPendingInternal   = "source_cleanup_pending"
 	projectRenameJournalPhaseProjectStateRolledBackInternal = "project_state_rolled_back"
 )
 
@@ -180,7 +181,19 @@ func (s *ProjectService) recoverProjectRenameJournalInternal(ctx context.Context
 
 	projectCommitted := dbErr == nil && (proj.Name == journal.NewName || filepath.Clean(proj.Path) == filepath.Clean(journal.NewPath))
 	if projectCommitted {
+		if journal.Phase == projectRenameJournalPhaseSourceCleanupPendingInternal {
+			if err := s.cleanupProjectRenameJournalSourcesInternal(ctx, journal); err != nil {
+				return err
+			}
+			return s.clearProjectRenameJournalInternal(ctx, journal.ProjectID)
+		}
 		if err := s.completeProjectRenameJournalInternal(ctx, journal); err != nil {
+			var cleanupErr *projectRenameSourceCleanupInternalError
+			if errors.As(err, &cleanupErr) {
+				if writeErr := s.writeProjectRenameJournalInternal(ctx, journal, projectRenameJournalPhaseSourceCleanupPendingInternal); writeErr != nil {
+					return errors.Join(err, writeErr)
+				}
+			}
 			return err
 		}
 		return s.clearProjectRenameJournalInternal(ctx, journal.ProjectID)
@@ -215,9 +228,31 @@ func (s *ProjectService) completeProjectRenameJournalInternal(ctx context.Contex
 		}
 	}
 
+	return s.removeProjectRenameJournalSourceVolumesInternal(ctx, dockerClient, journal)
+}
+
+func (s *ProjectService) cleanupProjectRenameJournalSourcesInternal(ctx context.Context, journal *projectRenameJournalInternal) error {
+	dockerClient, err := s.projectRenameRecoveryDockerInternal(ctx, len(journal.Volumes) > 0)
+	if err != nil {
+		return err
+	}
+
+	if err := ensureProjectRenameTargetsReadyForCleanupInternal(ctx, dockerClient, journal.Volumes); err != nil {
+		var externallyRemoved *projectRenameVolumesExternallyRemovedInternalError
+		if errors.As(err, &externallyRemoved) {
+			slog.WarnContext(ctx, "project rename source cleanup found source and target volumes externally removed", "projectID", journal.ProjectID, "volumeCount", len(externallyRemoved.Volumes), "error", externallyRemoved)
+		} else {
+			return err
+		}
+	}
+
+	return s.removeProjectRenameJournalSourceVolumesInternal(ctx, dockerClient, journal)
+}
+
+func (s *ProjectService) removeProjectRenameJournalSourceVolumesInternal(ctx context.Context, dockerClient *client.Client, journal *projectRenameJournalInternal) error {
 	for _, vol := range journal.Volumes {
 		if err := removeProjectVolumeWithRetryInternal(ctx, dockerClient, vol.OldName, client.VolumeRemoveOptions{Force: false}); err != nil {
-			return fmt.Errorf("remove committed source volume %s: %w", vol.OldName, err)
+			return newProjectRenameSourceCleanupErrorInternal(vol.OldName, err)
 		}
 	}
 	dockerutil.InvalidateVolumeUsageCache()
@@ -395,6 +430,35 @@ type projectRenameTargetMissingWithSourceInternalError struct {
 
 func (e *projectRenameTargetMissingWithSourceInternalError) Error() string {
 	return fmt.Sprintf("committed project rename target volume %s is missing while source volume %s still exists", e.TargetVolume, e.SourceVolume)
+}
+
+type projectRenameSourceCleanupInternalError struct {
+	SourceVolume string
+	Err          error
+}
+
+func newProjectRenameSourceCleanupErrorInternal(sourceVolume string, err error) error {
+	return &projectRenameSourceCleanupInternalError{
+		SourceVolume: sourceVolume,
+		Err:          err,
+	}
+}
+
+func (e *projectRenameSourceCleanupInternalError) Error() string {
+	if e == nil {
+		return "clean up committed project rename source volume"
+	}
+	if strings.TrimSpace(e.SourceVolume) == "" {
+		return fmt.Sprintf("clean up committed project rename source volume: %v", e.Err)
+	}
+	return fmt.Sprintf("clean up committed project rename source volume %s: %v", e.SourceVolume, e.Err)
+}
+
+func (e *projectRenameSourceCleanupInternalError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
 }
 
 type projectRenameTargetPreservedDuringRollbackInternalError struct {

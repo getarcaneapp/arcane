@@ -316,6 +316,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsPreservedTargetJourna
 func TestProjectRenameJournalTargetsCopiedInternal(t *testing.T) {
 	require.False(t, projectRenameJournalTargetsCopiedInternal(projectRenameJournalPhaseStartedInternal))
 	require.False(t, projectRenameJournalTargetsCopiedInternal(projectRenameJournalPhaseProjectStateRolledBackInternal))
+	require.False(t, projectRenameJournalTargetsCopiedInternal(projectRenameJournalPhaseSourceCleanupPendingInternal))
 	require.True(t, projectRenameJournalTargetsCopiedInternal(projectRenameJournalPhaseTargetsCopiedInternal))
 	require.True(t, projectRenameJournalTargetsCopiedInternal(projectRenameJournalPhaseOldVolumesRemovedInternal))
 	require.True(t, projectRenameJournalTargetsCopiedInternal(projectRenameJournalPhaseProjectStateCommittedInternal))
@@ -407,7 +408,7 @@ func TestProjectService_FinalizeProjectRenameAfterCommit_ClearsJournalAfterSourc
 	require.False(t, ok)
 }
 
-func TestProjectService_FinalizeProjectRenameAfterCommit_ClearsJournalWhenSourceCleanupFails(t *testing.T) {
+func TestProjectService_FinalizeProjectRenameAfterCommit_KeepsJournalWhenSourceCleanupFails(t *testing.T) {
 	db := setupProjectTestDB(t)
 	require.NoError(t, db.AutoMigrate(&models.KVEntry{}))
 	ctx := context.Background()
@@ -437,13 +438,19 @@ func TestProjectService_FinalizeProjectRenameAfterCommit_ClearsJournalWhenSource
 	}
 	require.NoError(t, svc.writeProjectRenameJournalInternal(ctx, journal, projectRenameJournalPhaseTargetsCopiedInternal))
 
-	migration := &fakeProjectVolumeRenameMigrationInternal{commitErr: errors.New("source cleanup failed")}
+	migration := &fakeProjectVolumeRenameMigrationInternal{
+		commitErr: newProjectRenameSourceCleanupErrorInternal("nginx_data", errors.New("source cleanup failed")),
+	}
 	journalActive := true
 	svc.finalizeProjectRenameAfterCommitInternal(ctx, project.ID, migration, journal, &journalActive)
 	require.True(t, migration.commitCalled)
-	require.False(t, journalActive)
+	require.True(t, journalActive)
 
-	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyInternal(project.ID))
+	raw, ok, err := kvService.Get(ctx, projectRenameJournalKeyInternal(project.ID))
 	require.NoError(t, err)
-	require.False(t, ok)
+	require.True(t, ok)
+
+	var updatedJournal projectRenameJournalInternal
+	require.NoError(t, json.Unmarshal([]byte(raw), &updatedJournal))
+	require.Equal(t, projectRenameJournalPhaseSourceCleanupPendingInternal, updatedJournal.Phase)
 }

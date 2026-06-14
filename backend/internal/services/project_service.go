@@ -2986,6 +2986,13 @@ func (s *ProjectService) finalizeProjectRenameAfterCommitInternal(ctx context.Co
 	if committer, ok := volumeMigration.(projectVolumeRenameCommitterInternal); ok {
 		if err := committer.Commit(ctx); err != nil {
 			slog.WarnContext(ctx, "failed to clean up project source volumes after committed rename", "projectID", projectID, "error", err)
+			var cleanupErr *projectRenameSourceCleanupInternalError
+			if errors.As(err, &cleanupErr) {
+				if writeErr := s.writeProjectRenameJournalInternal(ctx, renameJournal, projectRenameJournalPhaseSourceCleanupPendingInternal); writeErr != nil {
+					slog.WarnContext(ctx, "failed to mark project rename source cleanup pending", "projectID", projectID, "error", writeErr)
+				}
+			}
+			return
 		} else if err := s.writeProjectRenameJournalInternal(ctx, renameJournal, projectRenameJournalPhaseOldVolumesRemovedInternal); err != nil {
 			slog.WarnContext(ctx, "failed to mark old project rename volumes removed", "projectID", projectID, "error", err)
 		}
