@@ -18,7 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenDirectoryRollbackFails(t *testing.T) {
+func TestProjectService_RecoverProjectRenameJournals_KeepsJournalWhenDirectoryRollbackFails(t *testing.T) {
 	db := setupProjectTestDB(t)
 	require.NoError(t, db.AutoMigrate(&models.KVEntry{}))
 	ctx := context.Background()
@@ -30,6 +30,10 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenDirectoryR
 			w.Header().Set("Content-Type", "application/json")
 			require.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "nginx_data"}))
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
+			if targetRemoved.Load() {
+				http.NotFound(w, r)
+				return
+			}
 			w.Header().Set("Content-Type", "application/json")
 			require.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "web_data"}))
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
@@ -85,13 +89,15 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenDirectoryR
 	require.NoError(t, err)
 	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyInternal(project.ID), string(payload)))
 
-	require.NoError(t, svc.RecoverProjectRenameJournals(ctx))
+	err = svc.RecoverProjectRenameJournals(ctx)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "rollback project directory rename")
 
 	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyInternal(project.ID))
 	require.NoError(t, err)
-	require.False(t, ok)
+	require.True(t, ok)
 	require.True(t, targetRemoved.Load(), "target volume rollback should still run after directory rollback fails")
-	require.FileExists(t, filepath.Join(newPath, "compose.yaml"), "failed directory rollback leaves the target path for manual inspection")
+	require.FileExists(t, filepath.Join(newPath, "compose.yaml"), "failed directory rollback leaves the target path for retry")
 	require.NoDirExists(t, oldPath)
 
 	var fromDB models.Project
@@ -100,4 +106,13 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenDirectoryR
 	require.Equal(t, oldPath, fromDB.Path)
 	require.NotNil(t, fromDB.DirName)
 	require.Equal(t, oldDir, *fromDB.DirName)
+
+	require.NoError(t, os.MkdirAll(filepath.Dir(oldPath), 0o755))
+	require.NoError(t, svc.RecoverProjectRenameJournals(ctx))
+
+	_, ok, err = kvService.Get(ctx, projectRenameJournalKeyInternal(project.ID))
+	require.NoError(t, err)
+	require.False(t, ok)
+	require.FileExists(t, filepath.Join(oldPath, "compose.yaml"))
+	require.NoDirExists(t, newPath)
 }
