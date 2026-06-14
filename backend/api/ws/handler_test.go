@@ -106,7 +106,7 @@ func newTestWSPairInternal(t *testing.T) (clientConn *websocket.Conn, serverConn
 
 func newTestWebSocketHandler() *WebSocketHandler {
 	return &WebSocketHandler{
-		wsMetrics:   NewWebSocketMetrics(),
+		wsMetrics:   wshub.NewWebSocketMetrics(),
 		logStreams:  make(map[string]*wsLogStream),
 		cgroupCache: system.NewCgroupCache(cgroupCacheTTL),
 		gpuMonitor:  system.NewGPUMonitor(false, ""),

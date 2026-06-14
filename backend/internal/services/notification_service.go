@@ -3,7 +3,6 @@ package services
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -680,7 +679,7 @@ func (s *NotificationService) sendDiscordNotification(ctx context.Context, envir
 		return errors.New("discord webhook ID or token not configured")
 	}
 
-	if err := decryptStringCredentialInternal(&discordConfig.Token); err != nil {
+	if err := notifications.DecryptStringCredential(&discordConfig.Token); err != nil {
 		return err
 	}
 
@@ -715,7 +714,7 @@ func (s *NotificationService) sendTelegramNotification(ctx context.Context, envi
 		return errors.New("no telegram chat IDs configured")
 	}
 
-	if err := decryptStringCredentialInternal(&telegramConfig.BotToken); err != nil {
+	if err := notifications.DecryptStringCredential(&telegramConfig.BotToken); err != nil {
 		return err
 	}
 
@@ -764,7 +763,7 @@ func (s *NotificationService) sendEmailNotification(ctx context.Context, environ
 		}
 	}
 
-	if err := decryptStringCredentialInternal(&emailConfig.SMTPPassword); err != nil {
+	if err := notifications.DecryptStringCredential(&emailConfig.SMTPPassword); err != nil {
 		return err
 	}
 
@@ -843,7 +842,7 @@ func (s *NotificationService) sendDiscordContainerUpdateNotification(ctx context
 		return errors.New("discord webhook ID or token not configured")
 	}
 
-	if err := decryptStringCredentialInternal(&discordConfig.Token); err != nil {
+	if err := notifications.DecryptStringCredential(&discordConfig.Token); err != nil {
 		return err
 	}
 
@@ -880,7 +879,7 @@ func (s *NotificationService) sendTelegramContainerUpdateNotification(ctx contex
 		return errors.New("no telegram chat IDs configured")
 	}
 
-	if err := decryptStringCredentialInternal(&telegramConfig.BotToken); err != nil {
+	if err := notifications.DecryptStringCredential(&telegramConfig.BotToken); err != nil {
 		return err
 	}
 
@@ -931,7 +930,7 @@ func (s *NotificationService) sendEmailContainerUpdateNotification(ctx context.C
 		}
 	}
 
-	if err := decryptStringCredentialInternal(&emailConfig.SMTPPassword); err != nil {
+	if err := notifications.DecryptStringCredential(&emailConfig.SMTPPassword); err != nil {
 		return err
 	}
 
@@ -1287,7 +1286,7 @@ func (s *NotificationService) sendTestEmail(ctx context.Context, environmentName
 		}
 	}
 
-	if err := decryptStringCredentialInternal(&emailConfig.SMTPPassword); err != nil {
+	if err := notifications.DecryptStringCredential(&emailConfig.SMTPPassword); err != nil {
 		return err
 	}
 
@@ -1444,11 +1443,11 @@ func (s *NotificationService) sendBatchImageUpdateNotificationForTargetInternal(
 }
 
 func (s *NotificationService) sendBatchDiscordNotification(ctx context.Context, environmentName string, updates map[string]*imageupdate.Response, config models.JSON) error {
-	discordConfig, err := decodeNotificationConfigInternal[models.DiscordConfig](config, "discord")
+	discordConfig, err := notifications.DecodeConfig[models.DiscordConfig](config, "discord")
 	if err != nil {
 		return err
 	}
-	if err := decryptStringCredentialInternal(&discordConfig.Token); err != nil {
+	if err := notifications.DecryptStringCredential(&discordConfig.Token); err != nil {
 		return err
 	}
 
@@ -1475,7 +1474,7 @@ func (s *NotificationService) sendBatchTelegramNotification(ctx context.Context,
 		return fmt.Errorf("failed to unmarshal telegram config: %w", err)
 	}
 
-	if err := decryptStringCredentialInternal(&telegramConfig.BotToken); err != nil {
+	if err := notifications.DecryptStringCredential(&telegramConfig.BotToken); err != nil {
 		return err
 	}
 
@@ -1523,7 +1522,7 @@ func (s *NotificationService) sendBatchEmailNotification(ctx context.Context, en
 		}
 	}
 
-	if err := decryptStringCredentialInternal(&emailConfig.SMTPPassword); err != nil {
+	if err := notifications.DecryptStringCredential(&emailConfig.SMTPPassword); err != nil {
 		return err
 	}
 
@@ -1630,10 +1629,10 @@ func (s *NotificationService) sendSignalNotification(ctx context.Context, enviro
 		return errors.New("signal cannot use both basic auth and token authentication simultaneously")
 	}
 
-	if err := decryptStringCredentialInternal(&signalConfig.Password); err != nil {
+	if err := notifications.DecryptStringCredential(&signalConfig.Password); err != nil {
 		return err
 	}
-	if err := decryptStringCredentialInternal(&signalConfig.Token); err != nil {
+	if err := notifications.DecryptStringCredential(&signalConfig.Token); err != nil {
 		return err
 	}
 
@@ -1684,10 +1683,10 @@ func (s *NotificationService) sendSignalContainerUpdateNotification(ctx context.
 		return errors.New("signal cannot use both basic auth and token authentication simultaneously")
 	}
 
-	if err := decryptStringCredentialInternal(&signalConfig.Password); err != nil {
+	if err := notifications.DecryptStringCredential(&signalConfig.Password); err != nil {
 		return err
 	}
-	if err := decryptStringCredentialInternal(&signalConfig.Token); err != nil {
+	if err := notifications.DecryptStringCredential(&signalConfig.Token); err != nil {
 		return err
 	}
 
@@ -1727,10 +1726,10 @@ func (s *NotificationService) sendBatchSignalNotification(ctx context.Context, e
 		return errors.New("signal cannot use both basic auth and token authentication simultaneously")
 	}
 
-	if err := decryptStringCredentialInternal(&signalConfig.Password); err != nil {
+	if err := notifications.DecryptStringCredential(&signalConfig.Password); err != nil {
 		return err
 	}
-	if err := decryptStringCredentialInternal(&signalConfig.Token); err != nil {
+	if err := notifications.DecryptStringCredential(&signalConfig.Token); err != nil {
 		return err
 	}
 
@@ -1748,7 +1747,7 @@ func (s *NotificationService) sendBatchSignalNotification(ctx context.Context, e
 }
 
 func (s *NotificationService) sendSlackNotification(ctx context.Context, environmentName, imageRef string, updateInfo *imageupdate.Response, config models.JSON) error {
-	slackConfig, err := prepareSlackConfigInternal(config, "Slack", true)
+	slackConfig, err := notifications.PrepareSlackConfig(config, "Slack", true)
 	if err != nil {
 		return err
 	}
@@ -1768,7 +1767,7 @@ func (s *NotificationService) sendSlackNotification(ctx context.Context, environ
 }
 
 func (s *NotificationService) sendSlackContainerUpdateNotification(ctx context.Context, environmentName, containerName, imageRef, oldDigest, newDigest string, config models.JSON) error {
-	slackConfig, err := prepareSlackConfigInternal(config, "Slack", true)
+	slackConfig, err := notifications.PrepareSlackConfig(config, "Slack", true)
 	if err != nil {
 		return err
 	}
@@ -1790,7 +1789,7 @@ func (s *NotificationService) sendSlackContainerUpdateNotification(ctx context.C
 }
 
 func (s *NotificationService) sendBatchSlackNotification(ctx context.Context, environmentName string, updates map[string]*imageupdate.Response, config models.JSON) error {
-	slackConfig, err := prepareSlackConfigInternal(config, "slack", false)
+	slackConfig, err := notifications.PrepareSlackConfig(config, "slack", false)
 	if err != nil {
 		return err
 	}
@@ -1809,7 +1808,7 @@ func (s *NotificationService) sendBatchSlackNotification(ctx context.Context, en
 }
 
 func (s *NotificationService) sendNtfyNotification(ctx context.Context, environmentName, imageRef string, updateInfo *imageupdate.Response, config models.JSON) error {
-	ntfyConfig, err := prepareNtfyConfigInternal(config, "Ntfy", true)
+	ntfyConfig, err := notifications.PrepareNtfyConfig(config, "Ntfy", true)
 	if err != nil {
 		return err
 	}
@@ -1829,7 +1828,7 @@ func (s *NotificationService) sendNtfyNotification(ctx context.Context, environm
 }
 
 func (s *NotificationService) sendNtfyContainerUpdateNotification(ctx context.Context, environmentName, containerName, imageRef, oldDigest, newDigest string, config models.JSON) error {
-	ntfyConfig, err := prepareNtfyConfigInternal(config, "Ntfy", true)
+	ntfyConfig, err := notifications.PrepareNtfyConfig(config, "Ntfy", true)
 	if err != nil {
 		return err
 	}
@@ -1851,7 +1850,7 @@ func (s *NotificationService) sendNtfyContainerUpdateNotification(ctx context.Co
 }
 
 func (s *NotificationService) sendBatchNtfyNotification(ctx context.Context, environmentName string, updates map[string]*imageupdate.Response, config models.JSON) error {
-	ntfyConfig, err := prepareNtfyConfigInternal(config, "ntfy", false)
+	ntfyConfig, err := notifications.PrepareNtfyConfig(config, "ntfy", false)
 	if err != nil {
 		return err
 	}
@@ -1870,7 +1869,7 @@ func (s *NotificationService) sendBatchNtfyNotification(ctx context.Context, env
 }
 
 func (s *NotificationService) sendPushoverNotification(ctx context.Context, environmentName, imageRef string, updateInfo *imageupdate.Response, config models.JSON) error {
-	pushoverConfig, err := preparePushoverConfigInternal(config, "Pushover")
+	pushoverConfig, err := notifications.PreparePushoverConfig(config, "Pushover")
 	if err != nil {
 		return err
 	}
@@ -1897,7 +1896,7 @@ func (s *NotificationService) sendPushoverNotification(ctx context.Context, envi
 }
 
 func (s *NotificationService) sendPushoverContainerUpdateNotification(ctx context.Context, environmentName, containerName, imageRef, oldDigest, newDigest string, config models.JSON) error {
-	pushoverConfig, err := preparePushoverConfigInternal(config, "Pushover")
+	pushoverConfig, err := notifications.PreparePushoverConfig(config, "Pushover")
 	if err != nil {
 		return err
 	}
@@ -1926,7 +1925,7 @@ func (s *NotificationService) sendPushoverContainerUpdateNotification(ctx contex
 }
 
 func (s *NotificationService) sendBatchPushoverNotification(ctx context.Context, environmentName string, updates map[string]*imageupdate.Response, config models.JSON) error {
-	pushoverConfig, err := preparePushoverConfigInternal(config, "pushover")
+	pushoverConfig, err := notifications.PreparePushoverConfig(config, "pushover")
 	if err != nil {
 		return err
 	}
@@ -2069,7 +2068,7 @@ func (s *NotificationService) sendEmailVulnerabilityNotification(ctx context.Con
 			return fmt.Errorf("invalid to address %s: %w", addr, err)
 		}
 	}
-	if err := decryptStringCredentialInternal(&emailConfig.SMTPPassword); err != nil {
+	if err := notifications.DecryptStringCredential(&emailConfig.SMTPPassword); err != nil {
 		return err
 	}
 	htmlBody, _, err := s.renderVulnerabilitySummaryEmailTemplate(environmentName, payload)
@@ -2095,7 +2094,7 @@ func (s *NotificationService) sendDiscordVulnerabilityNotification(ctx context.C
 	if discordConfig.WebhookID == "" || discordConfig.Token == "" {
 		return errors.New("discord webhook ID or token not configured")
 	}
-	if err := decryptStringCredentialInternal(&discordConfig.Token); err != nil {
+	if err := notifications.DecryptStringCredential(&discordConfig.Token); err != nil {
 		return err
 	}
 	message := notifications.BuildVulnerabilitySummaryNotificationMessage(
@@ -2128,7 +2127,7 @@ func (s *NotificationService) sendTelegramVulnerabilityNotification(ctx context.
 	if len(telegramConfig.ChatIDs) == 0 {
 		return errors.New("no telegram chat IDs configured")
 	}
-	if err := decryptStringCredentialInternal(&telegramConfig.BotToken); err != nil {
+	if err := notifications.DecryptStringCredential(&telegramConfig.BotToken); err != nil {
 		return err
 	}
 	if telegramConfig.ParseMode == "" {
@@ -2161,10 +2160,10 @@ func (s *NotificationService) sendSignalVulnerabilityNotification(ctx context.Co
 	if signalConfig.Host == "" || signalConfig.Port == 0 || signalConfig.Source == "" || len(signalConfig.Recipients) == 0 {
 		return errors.New("signal not fully configured")
 	}
-	if err := decryptStringCredentialInternal(&signalConfig.Password); err != nil {
+	if err := notifications.DecryptStringCredential(&signalConfig.Password); err != nil {
 		return err
 	}
-	if err := decryptStringCredentialInternal(&signalConfig.Token); err != nil {
+	if err := notifications.DecryptStringCredential(&signalConfig.Token); err != nil {
 		return err
 	}
 	message := notifications.BuildVulnerabilitySummaryNotificationMessage(
@@ -2183,7 +2182,7 @@ func (s *NotificationService) sendSignalVulnerabilityNotification(ctx context.Co
 }
 
 func (s *NotificationService) sendSlackVulnerabilityNotification(ctx context.Context, environmentName string, payload VulnerabilityNotificationPayload, config models.JSON) error {
-	slackConfig, err := prepareSlackConfigInternal(config, "Slack", true)
+	slackConfig, err := notifications.PrepareSlackConfig(config, "Slack", true)
 	if err != nil {
 		return err
 	}
@@ -2195,7 +2194,7 @@ func (s *NotificationService) sendSlackVulnerabilityNotification(ctx context.Con
 }
 
 func (s *NotificationService) sendNtfyVulnerabilityNotification(ctx context.Context, environmentName string, payload VulnerabilityNotificationPayload, config models.JSON) error {
-	ntfyConfig, err := prepareNtfyConfigInternal(config, "Ntfy", true)
+	ntfyConfig, err := notifications.PrepareNtfyConfig(config, "Ntfy", true)
 	if err != nil {
 		return err
 	}
@@ -2207,7 +2206,7 @@ func (s *NotificationService) sendNtfyVulnerabilityNotification(ctx context.Cont
 }
 
 func (s *NotificationService) sendPushoverVulnerabilityNotification(ctx context.Context, environmentName string, payload VulnerabilityNotificationPayload, config models.JSON) error {
-	pushoverConfig, err := preparePushoverConfigInternal(config, "Pushover")
+	pushoverConfig, err := notifications.PreparePushoverConfig(config, "Pushover")
 	if err != nil {
 		return err
 	}
@@ -2225,7 +2224,7 @@ func (s *NotificationService) sendPushoverVulnerabilityNotification(ctx context.
 }
 
 func (s *NotificationService) sendGotifyVulnerabilityNotification(ctx context.Context, environmentName string, payload VulnerabilityNotificationPayload, config models.JSON) error {
-	gotifyConfig, err := prepareGotifyConfigInternal(config, "Gotify")
+	gotifyConfig, err := notifications.PrepareGotifyConfig(config, "Gotify")
 	if err != nil {
 		return err
 	}
@@ -2240,7 +2239,7 @@ func (s *NotificationService) sendGotifyVulnerabilityNotification(ctx context.Co
 }
 
 func (s *NotificationService) sendMatrixVulnerabilityNotification(ctx context.Context, environmentName string, payload VulnerabilityNotificationPayload, config models.JSON) error {
-	matrixConfig, err := prepareMatrixConfigInternal(config)
+	matrixConfig, err := notifications.PrepareMatrixConfig(config)
 	if err != nil {
 		return err
 	}
@@ -2308,7 +2307,7 @@ func (s *NotificationService) sendBatchGenericNotification(ctx context.Context, 
 }
 
 func (s *NotificationService) sendGotifyNotification(ctx context.Context, environmentName, imageRef string, updateInfo *imageupdate.Response, config models.JSON) error {
-	gotifyConfig, err := prepareGotifyConfigInternal(config, "Gotify")
+	gotifyConfig, err := notifications.PrepareGotifyConfig(config, "Gotify")
 	if err != nil {
 		return err
 	}
@@ -2328,7 +2327,7 @@ func (s *NotificationService) sendGotifyNotification(ctx context.Context, enviro
 }
 
 func (s *NotificationService) sendGotifyContainerUpdateNotification(ctx context.Context, environmentName, containerName, imageRef, oldDigest, newDigest string, config models.JSON) error {
-	gotifyConfig, err := prepareGotifyConfigInternal(config, "Gotify")
+	gotifyConfig, err := notifications.PrepareGotifyConfig(config, "Gotify")
 	if err != nil {
 		return err
 	}
@@ -2350,7 +2349,7 @@ func (s *NotificationService) sendGotifyContainerUpdateNotification(ctx context.
 }
 
 func (s *NotificationService) sendBatchGotifyNotification(ctx context.Context, environmentName string, updates map[string]*imageupdate.Response, config models.JSON) error {
-	gotifyConfig, err := prepareGotifyConfigInternal(config, "gotify")
+	gotifyConfig, err := notifications.PrepareGotifyConfig(config, "gotify")
 	if err != nil {
 		return err
 	}
@@ -2369,7 +2368,7 @@ func (s *NotificationService) sendBatchGotifyNotification(ctx context.Context, e
 }
 
 func (s *NotificationService) sendMatrixNotification(ctx context.Context, environmentName, imageRef string, updateInfo *imageupdate.Response, config models.JSON) error {
-	matrixConfig, err := prepareMatrixConfigInternal(config)
+	matrixConfig, err := notifications.PrepareMatrixConfig(config)
 	if err != nil {
 		return err
 	}
@@ -2389,7 +2388,7 @@ func (s *NotificationService) sendMatrixNotification(ctx context.Context, enviro
 }
 
 func (s *NotificationService) sendMatrixContainerUpdateNotification(ctx context.Context, environmentName, containerName, imageRef, oldDigest, newDigest string, config models.JSON) error {
-	matrixConfig, err := prepareMatrixConfigInternal(config)
+	matrixConfig, err := notifications.PrepareMatrixConfig(config)
 	if err != nil {
 		return err
 	}
@@ -2411,7 +2410,7 @@ func (s *NotificationService) sendMatrixContainerUpdateNotification(ctx context.
 }
 
 func (s *NotificationService) sendBatchMatrixNotification(ctx context.Context, environmentName string, updates map[string]*imageupdate.Response, config models.JSON) error {
-	matrixConfig, err := prepareMatrixConfigInternal(config)
+	matrixConfig, err := notifications.PrepareMatrixConfig(config)
 	if err != nil {
 		return err
 	}
@@ -2522,7 +2521,7 @@ func (s *NotificationService) sendDiscordPruneNotification(ctx context.Context, 
 		return errors.New("discord webhook ID or token not configured")
 	}
 
-	if err := decryptStringCredentialInternal(&discordConfig.Token); err != nil {
+	if err := notifications.DecryptStringCredential(&discordConfig.Token); err != nil {
 		return err
 	}
 
@@ -2545,7 +2544,7 @@ func (s *NotificationService) sendTelegramPruneNotification(ctx context.Context,
 		return errors.New("telegram bot token or chat IDs not configured")
 	}
 
-	if err := decryptStringCredentialInternal(&telegramConfig.BotToken); err != nil {
+	if err := notifications.DecryptStringCredential(&telegramConfig.BotToken); err != nil {
 		return err
 	}
 
@@ -2572,7 +2571,7 @@ func (s *NotificationService) sendEmailPruneNotification(ctx context.Context, en
 		return err
 	}
 
-	if err := decryptStringCredentialInternal(&emailConfig.SMTPPassword); err != nil {
+	if err := notifications.DecryptStringCredential(&emailConfig.SMTPPassword); err != nil {
 		return err
 	}
 
@@ -2660,7 +2659,7 @@ func (s *NotificationService) sendGotifyPruneNotification(ctx context.Context, e
 	if err := s.unmarshalConfigInternal(config, &gotifyConfig); err != nil {
 		return err
 	}
-	if err := decryptStringCredentialInternal(&gotifyConfig.Token); err != nil {
+	if err := notifications.DecryptStringCredential(&gotifyConfig.Token); err != nil {
 		return err
 	}
 
@@ -2760,7 +2759,7 @@ func (s *NotificationService) sendDiscordAutoHealNotification(ctx context.Contex
 	if discordConfig.WebhookID == "" || discordConfig.Token == "" {
 		return errors.New("discord webhook ID or token not configured")
 	}
-	if err := decryptStringCredentialInternal(&discordConfig.Token); err != nil {
+	if err := notifications.DecryptStringCredential(&discordConfig.Token); err != nil {
 		return err
 	}
 	message := notifications.BuildAutoHealNotificationMessage(notifications.MessageFormatMarkdown, environmentName, containerName)
@@ -2775,7 +2774,7 @@ func (s *NotificationService) sendEmailAutoHealNotification(ctx context.Context,
 	if err := s.validateEmailConfigInternal(&emailConfig); err != nil {
 		return err
 	}
-	if err := decryptStringCredentialInternal(&emailConfig.SMTPPassword); err != nil {
+	if err := notifications.DecryptStringCredential(&emailConfig.SMTPPassword); err != nil {
 		return err
 	}
 	subject := notifications.BuildEmailSubject(environmentName, fmt.Sprintf("Auto Heal: Container '%s' Restarted", containerName))
@@ -2795,7 +2794,7 @@ func (s *NotificationService) sendTelegramAutoHealNotification(ctx context.Conte
 	if telegramConfig.BotToken == "" || len(telegramConfig.ChatIDs) == 0 {
 		return errors.New("telegram bot token or chat IDs not configured")
 	}
-	if err := decryptStringCredentialInternal(&telegramConfig.BotToken); err != nil {
+	if err := notifications.DecryptStringCredential(&telegramConfig.BotToken); err != nil {
 		return err
 	}
 	if telegramConfig.ParseMode == "" {
@@ -2849,7 +2848,7 @@ func (s *NotificationService) sendGotifyAutoHealNotification(ctx context.Context
 	if err := s.unmarshalConfigInternal(config, &gotifyConfig); err != nil {
 		return err
 	}
-	if err := decryptStringCredentialInternal(&gotifyConfig.Token); err != nil {
+	if err := notifications.DecryptStringCredential(&gotifyConfig.Token); err != nil {
 		return err
 	}
 	if gotifyConfig.Title == "" {
@@ -2890,18 +2889,6 @@ func (s *NotificationService) unmarshalConfigInternal(config models.JSON, dest a
 	return nil
 }
 
-func decodeNotificationConfigInternal[T any](config models.JSON, providerName string) (T, error) {
-	var out T
-	configBytes, err := json.Marshal(config)
-	if err != nil {
-		return out, fmt.Errorf("failed to marshal %s config: %w", providerName, err)
-	}
-	if err := json.Unmarshal(configBytes, &out); err != nil {
-		return out, fmt.Errorf("failed to unmarshal %s config: %w", providerName, err)
-	}
-	return out, nil
-}
-
 func (s *NotificationService) validateEmailConfigInternal(config *models.EmailConfig) error {
 	if config.SMTPHost == "" || config.SMTPPort == 0 {
 		return errors.New("SMTP host or port not configured")
@@ -2910,93 +2897,6 @@ func (s *NotificationService) validateEmailConfigInternal(config *models.EmailCo
 		return errors.New("no recipient email addresses configured")
 	}
 	return nil
-}
-
-func decryptStringCredentialInternal(value *string) error {
-	if *value == "" {
-		return nil
-	}
-
-	decrypted, err := crypto.Decrypt(*value)
-	if err != nil {
-		if isPlausibleEncryptedCredentialInternal(*value) {
-			return fmt.Errorf("failed to decrypt notification credential: %w", err)
-		}
-		slog.Warn("Failed to decrypt notification credential, using raw legacy value", "error", err)
-		return nil
-	}
-	*value = decrypted
-	return nil
-}
-
-func isPlausibleEncryptedCredentialInternal(value string) bool {
-	data, err := base64.StdEncoding.DecodeString(value)
-	if err != nil {
-		return false
-	}
-	const minAESGCMCiphertextSize = 12 + 16
-	return len(data) >= minAESGCMCiphertextSize
-}
-
-func prepareSlackConfigInternal(config models.JSON, providerName string, requireToken bool) (models.SlackConfig, error) {
-	slackConfig, err := decodeNotificationConfigInternal[models.SlackConfig](config, providerName)
-	if err != nil {
-		return models.SlackConfig{}, err
-	}
-	if requireToken && slackConfig.Token == "" {
-		return models.SlackConfig{}, errors.New("slack token not configured")
-	}
-	if err := decryptStringCredentialInternal(&slackConfig.Token); err != nil {
-		return models.SlackConfig{}, err
-	}
-	return slackConfig, nil
-}
-
-func prepareNtfyConfigInternal(config models.JSON, providerName string, requireTopic bool) (models.NtfyConfig, error) {
-	ntfyConfig, err := decodeNotificationConfigInternal[models.NtfyConfig](config, providerName)
-	if err != nil {
-		return models.NtfyConfig{}, err
-	}
-	if requireTopic && ntfyConfig.Topic == "" {
-		return models.NtfyConfig{}, errors.New("ntfy topic is required")
-	}
-	if err := decryptStringCredentialInternal(&ntfyConfig.Password); err != nil {
-		return models.NtfyConfig{}, err
-	}
-	return ntfyConfig, nil
-}
-
-func preparePushoverConfigInternal(config models.JSON, providerName string) (models.PushoverConfig, error) {
-	pushoverConfig, err := decodeNotificationConfigInternal[models.PushoverConfig](config, providerName)
-	if err != nil {
-		return models.PushoverConfig{}, err
-	}
-	if err := decryptStringCredentialInternal(&pushoverConfig.Token); err != nil {
-		return models.PushoverConfig{}, err
-	}
-	return pushoverConfig, nil
-}
-
-func prepareGotifyConfigInternal(config models.JSON, providerName string) (models.GotifyConfig, error) {
-	gotifyConfig, err := decodeNotificationConfigInternal[models.GotifyConfig](config, providerName)
-	if err != nil {
-		return models.GotifyConfig{}, err
-	}
-	if err := decryptStringCredentialInternal(&gotifyConfig.Token); err != nil {
-		return models.GotifyConfig{}, err
-	}
-	return gotifyConfig, nil
-}
-
-func prepareMatrixConfigInternal(config models.JSON) (models.MatrixConfig, error) {
-	matrixConfig, err := decodeNotificationConfigInternal[models.MatrixConfig](config, "Matrix")
-	if err != nil {
-		return models.MatrixConfig{}, err
-	}
-	if err := decryptStringCredentialInternal(&matrixConfig.Password); err != nil {
-		return models.MatrixConfig{}, err
-	}
-	return matrixConfig, nil
 }
 
 func buildVulnerabilitySummaryMessageInternal(format notifications.MessageFormat, environmentName string, payload VulnerabilityNotificationPayload) string {

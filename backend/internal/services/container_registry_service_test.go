@@ -141,6 +141,53 @@ func TestContainerRegistryService_GetAllRegistryAuthConfigs_SkipsInvalidEntries(
 	assert.Equal(t, "registry.example.com", exampleCfg.ServerAddress)
 }
 
+func TestContainerRegistryService_GetRegistryAuthForHost_UsesDatabaseCredentials(t *testing.T) {
+	_, db := setupImageServiceAuthTest(t)
+	createTestPullRegistry(t, db, "https://index.docker.io/v1/", "docker-user", "docker-token")
+
+	svc := NewContainerRegistryService(db, nil, nil)
+	auth, err := svc.GetRegistryAuthForHost(context.Background(), "registry-1.docker.io")
+	require.NoError(t, err)
+	require.NotEmpty(t, auth)
+
+	cfg := decodeRegistryAuth(t, auth)
+	assert.Equal(t, "docker-user", cfg.Username)
+	assert.Equal(t, "docker-token", cfg.Password)
+	assert.Equal(t, "https://index.docker.io/v1/", cfg.ServerAddress)
+}
+
+func TestContainerRegistryService_GetRegistryAuthForImage_UsesHostLookup(t *testing.T) {
+	_, db := setupImageServiceAuthTest(t)
+	createTestPullRegistry(t, db, "https://ghcr.io", "gh-user", "gh-token")
+
+	svc := NewContainerRegistryService(db, nil, nil)
+	auth, err := svc.GetRegistryAuthForImage(context.Background(), "ghcr.io/getarcaneapp/arcane:latest")
+	require.NoError(t, err)
+	require.NotEmpty(t, auth)
+
+	cfg := decodeRegistryAuth(t, auth)
+	assert.Equal(t, "gh-user", cfg.Username)
+	assert.Equal(t, "gh-token", cfg.Password)
+	assert.Equal(t, "ghcr.io", cfg.ServerAddress)
+}
+
+func TestContainerRegistryService_NilService_RegistryAuthMethodsReturnEmpty(t *testing.T) {
+	var svc *ContainerRegistryService
+	ctx := context.Background()
+
+	authConfigs, err := svc.GetAllRegistryAuthConfigs(ctx)
+	require.NoError(t, err)
+	require.Nil(t, authConfigs)
+
+	authForHost, err := svc.GetRegistryAuthForHost(ctx, "registry-1.docker.io")
+	require.NoError(t, err)
+	require.Empty(t, authForHost)
+
+	authForImage, err := svc.GetRegistryAuthForImage(ctx, "ghcr.io/getarcaneapp/arcane:latest")
+	require.NoError(t, err)
+	require.Empty(t, authForImage)
+}
+
 func TestContainerRegistryService_GetRegistryPullUsage_AnonymousDockerHubLimit(t *testing.T) {
 	_, db := setupImageServiceAuthTest(t)
 	require.NoError(t, db.WithContext(context.Background()).Create(&models.ContainerRegistry{
