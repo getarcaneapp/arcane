@@ -101,12 +101,24 @@ services:
     volumes:
       - data:/data
       - fixed:/fixed
+      - env_named:/env
+      - env_default:/env-default
+      - env_unbraced:/env-unbraced
+      - escaped:/escaped
       - scalar:/scalar
 volumes:
   data:
     driver: local
   fixed:
     name: app-data
+  env_named:
+    name: ${APP_VOLUME}
+  env_default:
+    name: ${APP_VOLUME:-app-data}
+  env_unbraced:
+    name: $APP_VOLUME
+  escaped:
+    name: $${APP_VOLUME}
   scalar:
   inline: {}
 `), 0o644))
@@ -122,8 +134,12 @@ volumes:
 	require.NoError(t, err)
 
 	assert.Contains(t, explicit, "fixed")
+	assert.Contains(t, explicit, "escaped")
 	assert.Contains(t, explicit, "included")
 	assert.NotContains(t, explicit, "data")
+	assert.NotContains(t, explicit, "env_named")
+	assert.NotContains(t, explicit, "env_default")
+	assert.NotContains(t, explicit, "env_unbraced")
 	assert.NotContains(t, explicit, "scalar")
 	assert.NotContains(t, explicit, "inline")
 	assert.NotContains(t, explicit, "included_implicit")

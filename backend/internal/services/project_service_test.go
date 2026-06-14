@@ -1291,6 +1291,23 @@ func TestProjectService_PrepareProjectRenameVolumeMigrationForUpdate_UsesCompose
 		require.Equal(t, "web_data", volumes[0].NewName)
 		require.Empty(t, projectUpdatePreviewDirsInternal(t, projectsDir))
 	})
+
+	t.Run("plans interpolated explicit name from pending compose", func(t *testing.T) {
+		newCompose := "services:\n  app:\n    image: nginx:alpine\n    volumes:\n      - data:/data\nvolumes:\n  data:\n    name: ${DATA_VOLUME:-nginx_data}\n"
+
+		migration, err := svc.prepareProjectRenameVolumeMigrationForUpdateInternal(ctx, project, new("web"), projectsDir, &newCompose, nil, nil, nil)
+
+		require.NoError(t, err)
+		require.NotNil(t, migration)
+		journalSource, ok := migration.(projectVolumeRenameJournalSourceInternal)
+		require.True(t, ok)
+		volumes := journalSource.JournalVolumes()
+		require.Len(t, volumes, 1)
+		require.Equal(t, "data", volumes[0].Key)
+		require.Equal(t, "nginx_data", volumes[0].OldName)
+		require.Equal(t, "web_data", volumes[0].NewName)
+		require.Empty(t, projectUpdatePreviewDirsInternal(t, projectsDir))
+	})
 }
 
 func TestProjectService_ApplyProjectUpdateWithRenameJournal_RollsBackVolumeMigrationWhenProjectSaveFails(t *testing.T) {

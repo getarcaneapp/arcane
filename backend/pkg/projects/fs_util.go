@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 
+	composetemplate "github.com/compose-spec/compose-go/v2/template"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/types/v2/project"
@@ -180,7 +181,12 @@ func composeVolumeKeysWithExplicitNameInFileInternal(path string) (map[string]st
 		if !ok {
 			continue
 		}
-		if _, hasName := volumeConfig["name"]; hasName {
+		rawName, hasName := volumeConfig["name"]
+		if !hasName {
+			continue
+		}
+		name, ok := rawName.(string)
+		if !ok || len(composetemplate.ExtractVariables(map[string]interface{}{"name": name}, nil)) == 0 {
 			explicit[key] = struct{}{}
 		}
 	}
