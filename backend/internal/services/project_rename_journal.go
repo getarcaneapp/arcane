@@ -323,7 +323,7 @@ func rollbackProjectRenameJournalVolumeInternal(ctx context.Context, dockerClien
 	case oldExists && newExists:
 		return removeProjectRenameJournalTargetVolumeInternal(ctx, dockerClient, vol.NewName, oldExists, newExists)
 	case !oldExists && newExists:
-		return newProjectRenameTargetPreservedDuringRollbackErrorInternal(vol, errors.New("source volume is missing"))
+		return newProjectRenameTargetPreservedDuringRollbackErrorInternal(vol, errProjectRenameRollbackSourceMissingInternal)
 	case !oldExists && !newExists:
 		slog.WarnContext(ctx, "project rename source and target volumes are missing during rollback", "sourceVolume", vol.OldName, "targetVolume", vol.NewName)
 	}
@@ -467,6 +467,8 @@ type projectRenameTargetPreservedDuringRollbackInternalError struct {
 	Err          error
 }
 
+var errProjectRenameRollbackSourceMissingInternal = errors.New("source volume is missing and target volume may contain the only remaining data copy")
+
 func newProjectRenameTargetPreservedDuringRollbackErrorInternal(vol projectRenameJournalVolumeInternal, err error) error {
 	return &projectRenameTargetPreservedDuringRollbackInternalError{
 		SourceVolume: vol.OldName,
@@ -476,7 +478,7 @@ func newProjectRenameTargetPreservedDuringRollbackErrorInternal(vol projectRenam
 }
 
 func (e *projectRenameTargetPreservedDuringRollbackInternalError) Error() string {
-	return fmt.Sprintf("preserved project rename target volume %s during rollback because source volume %s could not be confirmed safe: %v", e.TargetVolume, e.SourceVolume, e.Err)
+	return fmt.Sprintf("preserved project rename target volume %s during rollback to avoid data loss; source volume %s was not safe to rely on: %v", e.TargetVolume, e.SourceVolume, e.Err)
 }
 
 func (e *projectRenameTargetPreservedDuringRollbackInternalError) Unwrap() error {

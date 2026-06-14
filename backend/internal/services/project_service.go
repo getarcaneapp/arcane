@@ -3140,7 +3140,7 @@ func (s *ProjectService) prepareProjectRenameVolumeMigrationForUpdateInternal(ct
 	if !isProjectRenameRequestedInternal(proj, name) {
 		return nil, nil
 	}
-	if err := s.validateProjectFileRevisionInternal(ctx, proj, fileTreeRevision, fileChanges); err != nil {
+	if err := requireProjectFileRevisionInternal(fileTreeRevision, fileChanges); err != nil {
 		return nil, err
 	}
 
@@ -3186,28 +3186,18 @@ func isGitOpsManagedProjectInternal(proj *models.Project) bool {
 	return proj != nil && proj.GitOpsManagedBy != nil && strings.TrimSpace(*proj.GitOpsManagedBy) != ""
 }
 
-func (s *ProjectService) validateProjectFileRevisionInternal(ctx context.Context, proj *models.Project, fileTreeRevision *string, fileChanges []project.ProjectFileChange) error {
+func requireProjectFileRevisionInternal(fileTreeRevision *string, fileChanges []project.ProjectFileChange) error {
 	if len(fileChanges) == 0 {
 		return nil
 	}
 	if fileTreeRevision == nil || strings.TrimSpace(*fileTreeRevision) == "" {
 		return &common.ProjectFileBadRequestError{Err: errors.New("file tree revision is required")}
 	}
-
-	expectedRevision := strings.TrimSpace(*fileTreeRevision)
-	opts := s.projectFileApplyOptionsInternal(ctx, proj, expectedRevision)
-	_, currentRevision, err := projects.ReadProjectFileTree(proj.Path, opts.MaxDepth, opts.SkipDirectories, opts.ComposeFileName)
-	if err != nil {
-		return &common.ProjectFileBadRequestError{Err: fmt.Errorf("read project file tree revision: %w", err)}
-	}
-	if currentRevision != expectedRevision {
-		return &common.ProjectFileConflictError{Err: projects.ErrProjectFileRevisionConflict}
-	}
 	return nil
 }
 
 func (s *ProjectService) persistProjectFileChanges(ctx context.Context, proj *models.Project, fileTreeRevision *string, fileChanges []project.ProjectFileChange) error {
-	if err := s.validateProjectFileRevisionInternal(ctx, proj, fileTreeRevision, fileChanges); err != nil {
+	if err := requireProjectFileRevisionInternal(fileTreeRevision, fileChanges); err != nil {
 		return err
 	}
 	expectedRevision := ""

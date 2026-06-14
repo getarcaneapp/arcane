@@ -332,7 +332,7 @@ func (m *dockerProjectVolumeRenameMigrationInternal) Rollback(ctx context.Contex
 			rollbackErr = errors.Join(rollbackErr, newProjectRenameTargetPreservedDuringRollbackErrorInternal(projectRenameJournalVolumeInternal{
 				OldName: entry.OldName,
 				NewName: entry.NewName,
-			}, errors.New("source volume is missing")))
+			}, errProjectRenameRollbackSourceMissingInternal))
 		} else {
 			rollbackErr = errors.Join(rollbackErr, fmt.Errorf("source volume %s and target volume %s are missing during rollback", entry.OldName, entry.NewName))
 		}
