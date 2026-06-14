@@ -165,7 +165,8 @@ func projectRenameJournalTargetsCopiedInternal(phase string) bool {
 	switch phase {
 	case projectRenameJournalPhaseTargetsCopiedInternal,
 		projectRenameJournalPhaseOldVolumesRemovedInternal,
-		projectRenameJournalPhaseProjectStateCommittedInternal:
+		projectRenameJournalPhaseProjectStateCommittedInternal,
+		projectRenameJournalPhaseSourceCleanupPendingInternal:
 		return true
 	default:
 		return false
@@ -284,6 +285,11 @@ func (s *ProjectService) cleanupProjectRenameJournalSourcesInternal(ctx context.
 	}
 
 	if err := ensureProjectRenameTargetsReadyForCleanupInternal(ctx, dockerClient, journal.Volumes); err != nil {
+		var missingWithSource *projectRenameTargetMissingWithSourceInternalError
+		if errors.As(err, &missingWithSource) {
+			slog.WarnContext(ctx, "rolling back source cleanup pending project rename because target volume is missing and source volume remains", "projectID", journal.ProjectID, "sourceVolume", missingWithSource.SourceVolume, "targetVolume", missingWithSource.TargetVolume)
+			return s.rollbackProjectRenameJournalInternal(ctx, journal)
+		}
 		var externallyRemoved *projectRenameVolumesExternallyRemovedInternalError
 		if errors.As(err, &externallyRemoved) {
 			slog.WarnContext(ctx, "project rename source cleanup found source and target volumes externally removed", "projectID", journal.ProjectID, "volumeCount", len(externallyRemoved.Volumes), "error", externallyRemoved)
