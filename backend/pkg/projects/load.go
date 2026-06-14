@@ -2,7 +2,6 @@ package projects
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -20,9 +19,8 @@ import (
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/docker/go-units"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 )
-
-var errComposeFileNotFoundInternal = errors.New("no compose file found")
 
 var ProjectFileCandidates = []string{
 	"compose.yaml",
@@ -130,17 +128,17 @@ func DetectComposeFile(dir string) (string, error) {
 	case len(dirMatchedCandidates) == 1:
 		return dirMatchedCandidates[0], nil
 	case len(dirMatchedCandidates) > 1:
-		return "", fmt.Errorf("multiple custom compose files found in %q", dir)
+		return "", &common.AmbiguousComposeFileError{Dir: dir}
 	case len(composeNamedCandidates) == 1:
 		return composeNamedCandidates[0], nil
 	case len(composeNamedCandidates) > 1:
-		return "", fmt.Errorf("multiple custom compose files found in %q", dir)
+		return "", &common.AmbiguousComposeFileError{Dir: dir}
 	case len(customCandidates) == 1:
 		return customCandidates[0], nil
 	case len(customCandidates) > 1:
-		return "", fmt.Errorf("multiple custom compose files found in %q", dir)
+		return "", &common.AmbiguousComposeFileError{Dir: dir}
 	default:
-		return "", fmt.Errorf("%w in %q", errComposeFileNotFoundInternal, dir)
+		return "", &common.ComposeFileNotFoundError{Dir: dir}
 	}
 }
 

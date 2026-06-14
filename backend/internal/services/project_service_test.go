@@ -3849,6 +3849,77 @@ func TestProjectService_SyncProjectsFromFileSystem_RemovesDeletedNestedProject(t
 	assert.Empty(t, items)
 }
 
+func TestProjectService_SyncProjectsFromFileSystem_PreservesProjectsWhenDirectoryEmptyOrUnmounted(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	// An existing-but-empty projects directory simulates a mis-mapped or unmounted
+	// projects volume: GetProjectsDirectory resolves (and MkdirAll's) it, discovery
+	// finds nothing, and every stored project path is now missing on disk.
+	projectsRoot := t.TempDir()
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+
+	// Seed a small deployment's worth of filesystem-managed projects whose
+	// directories do not exist. Each would individually be pruned as "directory no
+	// longer exists"; together they would wipe the table — exactly what the
+	// mass-wipe guard must prevent, even for deployments with only a handful of
+	// projects (the guard must not give small installs a free pass).
+	const seeded = 3
+	for i := range seeded {
+		require.NoError(t, db.WithContext(ctx).Create(&models.Project{
+			Name:   fmt.Sprintf("project-%d", i),
+			Path:   filepath.Join(projectsRoot, fmt.Sprintf("project-%d", i)),
+			Status: models.ProjectStatusStopped,
+		}).Error)
+	}
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
+	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
+
+	items, err := svc.ListAllProjects(ctx)
+	require.NoError(t, err)
+	assert.Len(t, items, seeded, "an empty/mis-mapped projects directory must not wipe existing project records")
+}
+
+func TestProjectService_SyncProjectsFromFileSystem_PreservesProjectWithAmbiguousCustomCompose(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsRoot := t.TempDir()
+	projectPath := createComposeProjectDir(t, projectsRoot, "ambiguous-project")
+
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
+	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
+
+	items, err := svc.ListAllProjects(ctx)
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+
+	// Replace the standard compose.yaml with two custom-named compose files. The
+	// directory still holds compose content, but DetectComposeFile can't pick one
+	// and returns common.AmbiguousComposeFileError. The reconcile must NOT delete the
+	// record: the project's files are intact on disk and it may be deployable.
+	require.NoError(t, os.Remove(filepath.Join(projectPath, "compose.yaml")))
+	composeBody := []byte("services:\n  app:\n    image: nginx:alpine\n")
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "app.yaml"), composeBody, 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "extra.yaml"), composeBody, 0o644))
+
+	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
+
+	items, err = svc.ListAllProjects(ctx)
+	require.NoError(t, err)
+	assert.Len(t, items, 1, "project with ambiguous compose files must not be deleted")
+	assert.Equal(t, projectPath, items[0].Path)
+}
+
 func TestProjectService_SyncProjectsFromFileSystem_RemovesProjectsBeyondReducedScanMaxDepth(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
