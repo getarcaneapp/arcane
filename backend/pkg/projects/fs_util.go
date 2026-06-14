@@ -186,7 +186,7 @@ func composeVolumeKeysWithExplicitNameInFileInternal(path string) (map[string]st
 			continue
 		}
 		name, ok := rawName.(string)
-		if !ok || len(composetemplate.ExtractVariables(map[string]any{"name": name}, nil)) == 0 {
+		if ok && len(composetemplate.ExtractVariables(map[string]any{"name": name}, nil)) == 0 {
 			explicit[key] = struct{}{}
 		}
 	}
@@ -211,7 +211,7 @@ func ReadProjectDirectoryFiles(projectPath string, shownFiles map[string]bool, m
 
 func readProjectDirectoryFilesInternal(projectPath string, shownFiles map[string]bool, maxDepth int, skipDirectories string, includeContent bool) ([]project.IncludeFile, error) {
 	if maxDepth <= 0 {
-		maxDepth = config.Load().ProjectScanMaxDepth
+		maxDepth = config.LoadProjectFilesConfig().ProjectScanMaxDepth
 	}
 
 	var dirFiles []project.IncludeFile
@@ -229,7 +229,7 @@ func readProjectDirectoryFilesInternal(projectPath string, shownFiles map[string
 
 func projectScanSkipDirectorySetInternal(skipDirectories string) map[string]bool {
 	if strings.TrimSpace(skipDirectories) == "" {
-		skipDirectories = config.Load().ProjectScanSkipDirs
+		skipDirectories = config.LoadProjectFilesConfig().ProjectScanSkipDirs
 	}
 
 	dirs := map[string]bool{}
