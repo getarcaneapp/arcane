@@ -1091,6 +1091,16 @@ func IsUpgradeInProgressError(err error) bool {
 	return isErrorTypeInternal[*UpgradeInProgressError](err)
 }
 
+type UpdateAllInProgressError struct{}
+
+func (e *UpdateAllInProgressError) Error() string {
+	return "an update-all job is already in progress"
+}
+
+func IsUpdateAllInProgressError(err error) bool {
+	return isErrorTypeInternal[*UpdateAllInProgressError](err)
+}
+
 type DockerSocketAccessError struct{}
 
 func (e *DockerSocketAccessError) Error() string {

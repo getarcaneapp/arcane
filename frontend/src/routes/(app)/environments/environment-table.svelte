@@ -17,7 +17,7 @@
 	import type { Environment } from '$lib/types/environment';
 	import { m } from '$lib/paraglide/messages';
 	import { environmentManagementService } from '$lib/services/env-mgmt-service';
-	import environmentUpgradeService from '$lib/services/api/environment-upgrade-service';
+	import systemUpgradeService from '$lib/services/api/system-upgrade-service';
 	import UpdateCenterDialog from '$lib/components/dialogs/update-center-dialog.svelte';
 	import EnvironmentUpgradeMenuItem from './environment-upgrade-menu-item.svelte';
 	import type { AppVersionInformation } from '$lib/types/settings';
@@ -170,7 +170,7 @@
 		upgradingEnvironmentId = envId;
 
 		try {
-			const result = await environmentUpgradeService.triggerEnvironmentUpgrade(envId);
+			const result = await systemUpgradeService.triggerUpgrade(envId);
 			if (!result.success) {
 				throw new Error(result.error || m.upgrade_failed({ error: 'Unknown error' }));
 			}

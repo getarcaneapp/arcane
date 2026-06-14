@@ -59,7 +59,7 @@ func InitializeServices(ctx context.Context, db *database.DB, cfg *config.Config
 	templateService := services.NewTemplateService(ctx, db, httpClient, settingsService)
 	systemService := services.NewSystemService(db, dockerClientService, containerService, imageService, volumeService, networkService, settingsService, activityService)
 	versionService := provideVersionServiceInternal(httpClient, cfg, containerRegistryService, dockerClientService, imageUpdateService)
-	systemUpgradeService := services.NewSystemUpgradeService(dockerClientService, versionService, eventService, settingsService)
+	systemUpgradeService := services.NewSystemUpgradeService(db, dockerClientService, versionService, eventService, settingsService)
 	diagnosticsService := services.NewDiagnosticsService()
 	updaterService := provideUpdaterServiceInternal(db, settingsService, dockerClientService, projectService, imageUpdateService, containerRegistryService, eventService, imageService, notificationService, systemUpgradeService, activityService)
 	federatedCredentialService := provideFederatedCredentialServiceInternal(db, authService, userService, settingsService, eventService, httpClient, roleService)

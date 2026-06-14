@@ -17,6 +17,34 @@ export interface HealthCheckResult {
 	healthy: boolean;
 }
 
+export type UpdateAllEnvironmentStatus =
+	| 'pending'
+	| 'updated'
+	| 'triggered'
+	| 'skipped_up_to_date'
+	| 'skipped_offline'
+	| 'failed';
+
+export interface UpdateAllEnvironmentResult {
+	environmentId: string;
+	environmentName: string;
+	status: UpdateAllEnvironmentStatus;
+	fromVersion?: string;
+	toVersion?: string;
+	error?: string;
+}
+
+export type UpdateAllJobStatus = 'pending_restart' | 'running' | 'completed' | 'failed';
+
+export interface UpdateAllJob {
+	id: string;
+	status: UpdateAllJobStatus;
+	results?: UpdateAllEnvironmentResult[];
+	error?: string;
+	createdAt: string;
+	completedAt?: string;
+}
+
 type ApiResponse<T> = {
 	success: boolean;
 	data: T;
@@ -24,21 +52,41 @@ type ApiResponse<T> = {
 };
 
 /**
- * Check if the system can perform a self-upgrade
- * @returns Promise with upgrade availability status
+ * Check if an environment can perform a self-upgrade.
+ * @param environmentId - Environment ID (defaults to the local manager, '0')
  */
-async function checkUpgradeAvailable(): Promise<UpgradeCheckResponse> {
-	const res = await apiClient.get<UpgradeCheckResponse>('/environments/0/system/upgrade/check');
+async function checkUpgradeAvailable(environmentId: string = '0'): Promise<UpgradeCheckResponse> {
+	const res = await apiClient.get<UpgradeCheckResponse>(`/environments/${environmentId}/system/upgrade/check`);
 	return res.data;
 }
 
 /**
- * Trigger a system self-upgrade
- * @returns Promise with upgrade initiation result
+ * Trigger a self-upgrade on an environment.
+ * @param environmentId - Environment ID (defaults to the local manager, '0')
  */
-async function triggerUpgrade(): Promise<UpgradeResponse> {
-	const res = await apiClient.post<UpgradeResponse>('/environments/0/system/upgrade');
+async function triggerUpgrade(environmentId: string = '0'): Promise<UpgradeResponse> {
+	const res = await apiClient.post<UpgradeResponse>(`/environments/${environmentId}/system/upgrade`);
 	return res.data;
+}
+
+/**
+ * Trigger a fleet-wide update, upgrading the manager first and then every online
+ * remote environment that has an update available. No client timeout is set: the
+ * manager pulls the upgrader image before responding.
+ */
+async function triggerUpdateAll(): Promise<UpdateAllJob> {
+	const res = await apiClient.post<ApiResponse<UpdateAllJob>>('/environments/0/system/upgrade/all');
+	return res.data.data;
+}
+
+/**
+ * Fetch the latest update-all job for live progress polling.
+ */
+async function getUpdateAllStatus(): Promise<UpdateAllJob> {
+	const res = await apiClient.get<ApiResponse<UpdateAllJob>>('/environments/0/system/upgrade/all/status', {
+		timeout: 5000
+	});
+	return res.data.data;
 }
 
 /**
@@ -77,6 +125,8 @@ async function getVersionInfo(environmentId: string = '0'): Promise<AppVersionIn
 export default {
 	checkUpgradeAvailable,
 	triggerUpgrade,
+	triggerUpdateAll,
+	getUpdateAllStatus,
 	checkHealth,
 	getVersionInfo
 };
