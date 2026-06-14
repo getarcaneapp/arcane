@@ -165,7 +165,7 @@ func inspectProjectRenameVolumeEntryInternal(ctx context.Context, dockerClient *
 
 	oldName := oldComposeName + "_" + key
 	newName := newComposeName + "_" + key
-	if volumeConfig.Name != oldName || oldName == newName {
+	if oldName == newName || (volumeConfig.Name != oldName && volumeConfig.Name != newName) {
 		return projectVolumeRenameEntryInternal{}, false, nil
 	}
 
