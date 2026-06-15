@@ -19,6 +19,7 @@ export interface HealthCheckResult {
 
 export type UpdateAllEnvironmentStatus =
 	| 'pending'
+	| 'updating'
 	| 'updated'
 	| 'triggered'
 	| 'skipped_up_to_date'

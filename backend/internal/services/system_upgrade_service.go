@@ -453,6 +453,11 @@ func (s *SystemUpgradeService) StartUpdateAll(ctx context.Context, user models.U
 		FromVersion:     info.CurrentVersion,
 	}
 
+	// Seed a pending row for every remote environment up front so the dialog can
+	// show the whole fleet immediately instead of popping rows in as each finishes.
+	// Best effort: the agents phase re-lists authoritatively and fills any gaps.
+	remoteResults := s.seedRemoteResultsInternal(ctx, env)
+
 	job := &models.EnvironmentUpdateJob{
 		UserID:                user.ID,
 		Username:              user.Username,
@@ -465,7 +470,7 @@ func (s *SystemUpgradeService) StartUpdateAll(ctx context.Context, user models.U
 		managerResult.Status = models.EnvironmentUpdateResultStatusPending
 		managerResult.ToVersion = job.ManagerTargetVersion
 		job.Status = models.EnvironmentUpdateJobStatusPendingRestart
-		job.Results = models.EnvironmentUpdateResults{managerResult}
+		job.Results = append(models.EnvironmentUpdateResults{managerResult}, remoteResults...)
 
 		if err := s.db.WithContext(ctx).Create(job).Error; err != nil {
 			return nil, fmt.Errorf("create update-all job: %w", err)
@@ -485,7 +490,7 @@ func (s *SystemUpgradeService) StartUpdateAll(ctx context.Context, user models.U
 	// Manager already up to date — go straight to the agents phase.
 	managerResult.Status = models.EnvironmentUpdateResultStatusSkippedUpToDate
 	job.Status = models.EnvironmentUpdateJobStatusRunning
-	job.Results = models.EnvironmentUpdateResults{managerResult}
+	job.Results = append(models.EnvironmentUpdateResults{managerResult}, remoteResults...)
 
 	if err := s.db.WithContext(ctx).Create(job).Error; err != nil {
 		return nil, fmt.Errorf("create update-all job: %w", err)
@@ -573,13 +578,19 @@ func (s *SystemUpgradeService) runAgentsPhaseInternal(ctx context.Context, jobID
 	}
 
 	for _, remote := range envs {
-		result := models.EnvironmentUpdateResult{
-			EnvironmentID:   remote.ID,
-			EnvironmentName: remote.Name,
+		// Find the row seeded at job start (or append one if seeding missed this
+		// environment) and mark it updating so the dialog shows a live indicator on
+		// the row currently being processed.
+		idx := upsertPendingResultInternal(job, remote.ID, remote.Name)
+		job.Results[idx].Status = models.EnvironmentUpdateResultStatusUpdating
+		if err := s.persistUpdateAllJobInternal(ctx, job); err != nil {
+			slog.WarnContext(ctx, "update-all: failed to persist updating status", "jobId", job.ID, "environmentId", remote.ID, "error", err)
 		}
-		s.upgradeAgentInternal(ctx, env, remote.ID, &result)
 
-		job.Results = append(job.Results, result)
+		result := job.Results[idx]
+		s.upgradeAgentInternal(ctx, env, remote.ID, &result)
+		job.Results[idx] = result
+
 		if err := s.persistUpdateAllJobInternal(ctx, job); err != nil {
 			slog.WarnContext(ctx, "update-all: failed to persist progress", "jobId", job.ID, "environmentId", remote.ID, "error", err)
 		}
@@ -594,6 +605,43 @@ func (s *SystemUpgradeService) runAgentsPhaseInternal(ctx context.Context, jobID
 
 	s.logUpdateAllEventInternal(ctx, job)
 	slog.InfoContext(ctx, "Update-all job completed", "jobId", job.ID, "environments", len(job.Results))
+}
+
+// seedRemoteResultsInternal builds a pending result row for every remote environment
+// so the dialog can render the whole fleet immediately. Best effort: on error it
+// returns nil and the agents phase appends rows as it processes them.
+func (s *SystemUpgradeService) seedRemoteResultsInternal(ctx context.Context, env *EnvironmentService) models.EnvironmentUpdateResults {
+	envs, err := env.ListRemoteEnvironments(ctx)
+	if err != nil {
+		slog.WarnContext(ctx, "update-all: failed to pre-list remote environments for seeding", "error", err)
+		return nil
+	}
+	results := make(models.EnvironmentUpdateResults, 0, len(envs))
+	for _, remote := range envs {
+		results = append(results, models.EnvironmentUpdateResult{
+			EnvironmentID:   remote.ID,
+			EnvironmentName: remote.Name,
+			Status:          models.EnvironmentUpdateResultStatusPending,
+		})
+	}
+	return results
+}
+
+// upsertPendingResultInternal returns the index of the existing result row for envID,
+// appending a new pending row when seeding missed it (e.g. the seed list failed, or a
+// new environment was registered after the job started).
+func upsertPendingResultInternal(job *models.EnvironmentUpdateJob, envID, envName string) int {
+	for i := range job.Results {
+		if job.Results[i].EnvironmentID == envID {
+			return i
+		}
+	}
+	job.Results = append(job.Results, models.EnvironmentUpdateResult{
+		EnvironmentID:   envID,
+		EnvironmentName: envName,
+		Status:          models.EnvironmentUpdateResultStatusPending,
+	})
+	return len(job.Results) - 1
 }
 
 // upgradeAgentInternal checks, triggers, and confirms a single remote environment's
@@ -724,9 +772,36 @@ func (s *SystemUpgradeService) markUpdateAllFailedInternal(ctx context.Context, 
 	job.Status = models.EnvironmentUpdateJobStatusFailed
 	job.Error = &reason
 	job.CompletedAt = &completedAt
+	for i := range job.Results {
+		if job.Results[i].Status == models.EnvironmentUpdateResultStatusUpdating {
+			job.Results[i].Status = models.EnvironmentUpdateResultStatusFailed
+			job.Results[i].Error = reason
+		}
+	}
 	if err := s.persistUpdateAllJobInternal(ctx, job); err != nil {
 		slog.WarnContext(ctx, "update-all: failed to mark job failed", "jobId", job.ID, "error", err)
 	}
+
+	// Surface the failure in the events audit log; the success path logs via
+	// logUpdateAllEventInternal. LogUserEvent hardcodes an info-severity "completed"
+	// title, so create the event directly with error severity and the reason.
+	if _, err := s.eventService.CreateEvent(ctx, CreateEventRequest{
+		Type:        models.EventTypeSystemUpgrade,
+		Severity:    models.EventSeverityError,
+		Title:       "Update all environments failed",
+		Description: reason,
+		UserID:      new(job.UserID),
+		Username:    new(job.Username),
+		Metadata: models.JSON{
+			"action":       "update_all_environments",
+			"jobId":        job.ID,
+			"environments": len(job.Results),
+			"reason":       reason,
+		},
+	}); err != nil {
+		slog.WarnContext(ctx, "update-all: failed to log failure event", "jobId", job.ID, "error", err)
+	}
+
 	slog.WarnContext(ctx, "Update-all job failed", "jobId", job.ID, "reason", reason)
 }
 
@@ -748,12 +823,39 @@ func (s *SystemUpgradeService) recordManagerResultInternal(job *models.Environme
 }
 
 func (s *SystemUpgradeService) logUpdateAllEventInternal(ctx context.Context, job *models.EnvironmentUpdateJob) {
+	failed := 0
+	for _, r := range job.Results {
+		if r.Status == models.EnvironmentUpdateResultStatusFailed {
+			failed++
+		}
+	}
+
 	metadata := models.JSON{
 		"action":       "update_all_environments",
 		"jobId":        job.ID,
 		"environments": len(job.Results),
+		"failed":       failed,
 	}
-	if err := s.eventService.LogUserEvent(ctx, models.EventTypeSystemUpgrade, job.UserID, job.Username, metadata); err != nil {
+
+	// All environments succeeded: log the standard completed (info) event.
+	if failed == 0 {
+		if err := s.eventService.LogUserEvent(ctx, models.EventTypeSystemUpgrade, job.UserID, job.Username, metadata); err != nil {
+			slog.WarnContext(ctx, "Failed to log update-all event", "jobId", job.ID, "error", err)
+		}
+		return
+	}
+
+	// The job ran to completion but some environments failed to update — record a
+	// warning-severity event so those failures still show in the audit log.
+	if _, err := s.eventService.CreateEvent(ctx, CreateEventRequest{
+		Type:        models.EventTypeSystemUpgrade,
+		Severity:    models.EventSeverityWarning,
+		Title:       "Update all environments completed with errors",
+		Description: fmt.Sprintf("%d of %d environments failed to update", failed, len(job.Results)),
+		UserID:      new(job.UserID),
+		Username:    new(job.Username),
+		Metadata:    metadata,
+	}); err != nil {
 		slog.WarnContext(ctx, "Failed to log update-all event", "jobId", job.ID, "error", err)
 	}
 }

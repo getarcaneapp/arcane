@@ -3,6 +3,7 @@
 	import * as ScrollArea from '$lib/components/ui/scroll-area';
 	import { Button } from '$lib/components/ui/button';
 	import Spinner from '$lib/components/ui/spinner/spinner.svelte';
+	import { cn } from '$lib/utils';
 	import { m } from '$lib/paraglide/messages';
 	import { toast } from 'svelte-sonner';
 	import { onDestroy } from 'svelte';
@@ -106,8 +107,16 @@
 		return m.environments_update_all_in_progress();
 	});
 
+	// "Done" is every environment that has reached a terminal state — i.e. anything
+	// that isn't still queued (pending) or actively being worked on (updating).
+	const totalCount = $derived(job?.results?.length ?? 0);
+	const doneCount = $derived(job?.results?.filter((r) => r.status !== 'pending' && r.status !== 'updating').length ?? 0);
+	const progressPct = $derived(totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0);
+
 	function statusLabel(status: UpdateAllEnvironmentStatus): string {
 		switch (status) {
+			case 'updating':
+				return m.environments_update_all_status_updating();
 			case 'updated':
 				return m.environments_update_all_status_updated();
 			case 'triggered':
@@ -156,30 +165,70 @@
 				{/if}
 
 				{#if job?.results?.length}
+					{#if phase === 'running'}
+						<div class="space-y-1.5">
+							<div class="text-muted-foreground flex items-center justify-end text-xs">
+								<span>{m.environments_update_all_progress({ done: doneCount, total: totalCount })}</span>
+							</div>
+							<div class="bg-muted h-1.5 overflow-hidden rounded-full">
+								<div class="bg-primary h-full rounded-full transition-all duration-500" style="width: {progressPct}%"></div>
+							</div>
+						</div>
+					{/if}
+
 					<ScrollArea.Root class="max-h-72">
 						<ul class="divide-border divide-y">
 							{#each job.results as result (result.environmentId)}
-								<li class="flex items-center justify-between gap-3 py-2 text-sm">
-									<div class="flex min-w-0 flex-col">
+								<li class="flex items-center gap-3 py-2.5 text-sm">
+									<span
+										class={cn(
+											'flex size-7 shrink-0 items-center justify-center rounded-full border',
+											(result.status === 'updated' || result.status === 'triggered') &&
+												'border-green-500/40 bg-green-500/10 text-green-600 dark:text-green-400',
+											result.status === 'updating' && 'border-primary/40 bg-primary/10 text-primary',
+											result.status === 'skipped_up_to_date' && 'border-border bg-muted/40 text-muted-foreground',
+											result.status === 'skipped_offline' &&
+												'border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400',
+											result.status === 'failed' && 'border-destructive/40 bg-destructive/10 text-destructive',
+											result.status === 'pending' && 'border-border bg-muted/40 text-muted-foreground/60'
+										)}
+									>
+										{#if result.status === 'updated' || result.status === 'triggered'}
+											<SuccessIcon class="size-3.5" />
+										{:else if result.status === 'updating'}
+											<Spinner class="size-3.5" />
+										{:else if result.status === 'skipped_up_to_date'}
+											<CheckIcon class="size-3.5" />
+										{:else if result.status === 'skipped_offline'}
+											<AlertIcon class="size-3.5" />
+										{:else if result.status === 'failed'}
+											<AlertTriangleIcon class="size-3.5" />
+										{:else}
+											<ClockIcon class="size-3.5" />
+										{/if}
+									</span>
+
+									<div class="flex min-w-0 flex-1 flex-col">
 										<span class="truncate font-medium">{result.environmentName}</span>
-										{#if result.error}
+										{#if result.status === 'updating'}
+											<div class="bg-muted mt-1.5 h-1 overflow-hidden rounded-full">
+												<div class="update-all-capbar bg-primary h-full rounded-full"></div>
+											</div>
+										{:else if result.error}
 											<span class="text-muted-foreground truncate text-xs">{result.error}</span>
 										{/if}
 									</div>
-									<div class="flex shrink-0 items-center gap-2">
-										{#if result.status === 'updated'}
-											<SuccessIcon class="size-4 text-green-500" />
-										{:else if result.status === 'skipped_up_to_date'}
-											<CheckIcon class="text-muted-foreground size-4" />
-										{:else if result.status === 'skipped_offline'}
-											<AlertIcon class="size-4 text-amber-500" />
-										{:else if result.status === 'failed'}
-											<AlertTriangleIcon class="text-destructive size-4" />
-										{:else}
-											<ClockIcon class="text-muted-foreground size-4" />
-										{/if}
-										<span class="text-muted-foreground">{statusLabel(result.status)}</span>
-									</div>
+
+									<span
+										class={cn(
+											'shrink-0 text-xs',
+											result.status === 'updating' ? 'text-primary' : 'text-muted-foreground',
+											result.status === 'skipped_offline' && 'text-amber-600 dark:text-amber-400',
+											result.status === 'failed' && 'text-destructive'
+										)}
+									>
+										{statusLabel(result.status)}
+									</span>
 								</li>
 							{/each}
 						</ul>
@@ -203,3 +252,21 @@
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>
+
+<style>
+	/* Indeterminate, capped progress: a short segment slides across the track so a
+	   busy environment never reads as "100% complete" while the upgrade is still
+	   running (we have no real per-step percentage from the backend). */
+	@keyframes update-all-indeterminate {
+		0% {
+			transform: translateX(-100%);
+		}
+		100% {
+			transform: translateX(250%);
+		}
+	}
+	.update-all-capbar {
+		width: 40%;
+		animation: update-all-indeterminate 1.4s ease-in-out infinite;
+	}
+</style>

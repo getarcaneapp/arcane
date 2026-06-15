@@ -28,9 +28,13 @@ const (
 type EnvironmentUpdateResultStatus string
 
 const (
-	// EnvironmentUpdateResultStatusPending is the initial state recorded for the
-	// manager entry while its self-upgrade is in flight.
+	// EnvironmentUpdateResultStatusPending is the initial state recorded for an
+	// environment that is seeded into the job but not yet being processed (and for
+	// the manager entry while its self-upgrade is in flight).
 	EnvironmentUpdateResultStatusPending EnvironmentUpdateResultStatus = "pending"
+	// EnvironmentUpdateResultStatusUpdating means this environment is being processed
+	// right now; it drives the live per-environment progress indicator in the UI.
+	EnvironmentUpdateResultStatusUpdating EnvironmentUpdateResultStatus = "updating"
 	// EnvironmentUpdateResultStatusUpdated means the upgrade was triggered and the
 	// new version was confirmed.
 	EnvironmentUpdateResultStatusUpdated EnvironmentUpdateResultStatus = "updated"

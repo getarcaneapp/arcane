@@ -1,10 +1,15 @@
 package services
 
 import (
+	"context"
 	"testing"
 	"time"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	glsqlite "github.com/glebarez/sqlite"
+	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 func TestUpdateAllResolveResumeAction(t *testing.T) {
@@ -68,4 +73,84 @@ func TestUpdateAllResolveResumeAction(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestUpsertPendingResult(t *testing.T) {
+	job := &models.EnvironmentUpdateJob{
+		Results: models.EnvironmentUpdateResults{
+			{EnvironmentID: "0", EnvironmentName: "Local", Status: models.EnvironmentUpdateResultStatusUpdated},
+			{EnvironmentID: "abc", EnvironmentName: "palladium", Status: models.EnvironmentUpdateResultStatusPending},
+		},
+	}
+
+	// A seeded environment resolves to its existing row without appending.
+	if idx := upsertPendingResultInternal(job, "abc", "palladium"); idx != 1 {
+		t.Fatalf("existing env index = %d, want 1", idx)
+	}
+	if len(job.Results) != 2 {
+		t.Fatalf("results grew to %d, want 2", len(job.Results))
+	}
+
+	// A missing environment (seeding raced or a new env was registered) appends a
+	// fresh pending row and returns the new index.
+	idx := upsertPendingResultInternal(job, "xyz", "oracle-cloud")
+	if idx != 2 {
+		t.Fatalf("new env index = %d, want 2", idx)
+	}
+	if len(job.Results) != 3 {
+		t.Fatalf("results = %d, want 3", len(job.Results))
+	}
+	got := job.Results[2]
+	if got.EnvironmentID != "xyz" || got.EnvironmentName != "oracle-cloud" {
+		t.Fatalf("appended row = %+v, want id=xyz name=oracle-cloud", got)
+	}
+	if got.Status != models.EnvironmentUpdateResultStatusPending {
+		t.Fatalf("appended row status = %q, want pending", got.Status)
+	}
+}
+
+func TestUpdateAllFailedJobMarksUpdatingResultsFailed(t *testing.T) {
+	ctx := context.Background()
+	gormDB, err := gorm.Open(glsqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+
+	db := &database.DB{DB: gormDB}
+	require.NoError(t, db.AutoMigrate(&models.EnvironmentUpdateJob{}, &models.Event{}))
+
+	svc := NewSystemUpgradeService(db, nil, nil, NewEventService(db, nil, nil), nil)
+	job := &models.EnvironmentUpdateJob{
+		Status:   models.EnvironmentUpdateJobStatusRunning,
+		UserID:   "user-1",
+		Username: "arcane",
+		Results: models.EnvironmentUpdateResults{
+			{EnvironmentID: "0", EnvironmentName: "Local", Status: models.EnvironmentUpdateResultStatusSkippedUpToDate},
+			{EnvironmentID: "remote-1", EnvironmentName: "palladium", Status: models.EnvironmentUpdateResultStatusUpdating},
+			{EnvironmentID: "remote-2", EnvironmentName: "oracle-cloud", Status: models.EnvironmentUpdateResultStatusPending},
+			{EnvironmentID: "remote-3", EnvironmentName: "parquetide", Status: models.EnvironmentUpdateResultStatusFailed, Error: "already failed"},
+		},
+	}
+	require.NoError(t, db.WithContext(ctx).Create(job).Error)
+
+	reason := "interrupted by manager restart"
+	svc.markUpdateAllFailedInternal(ctx, job, reason)
+
+	var got models.EnvironmentUpdateJob
+	require.NoError(t, db.WithContext(ctx).First(&got, "id = ?", job.ID).Error)
+	require.Equal(t, models.EnvironmentUpdateJobStatusFailed, got.Status)
+	require.NotNil(t, got.Error)
+	require.Equal(t, reason, *got.Error)
+	require.NotNil(t, got.CompletedAt)
+	require.Len(t, got.Results, 4)
+
+	require.Equal(t, models.EnvironmentUpdateResultStatusSkippedUpToDate, got.Results[0].Status)
+	require.Empty(t, got.Results[0].Error)
+
+	require.Equal(t, models.EnvironmentUpdateResultStatusFailed, got.Results[1].Status)
+	require.Equal(t, reason, got.Results[1].Error)
+
+	require.Equal(t, models.EnvironmentUpdateResultStatusPending, got.Results[2].Status)
+	require.Empty(t, got.Results[2].Error)
+
+	require.Equal(t, models.EnvironmentUpdateResultStatusFailed, got.Results[3].Status)
+	require.Equal(t, "already failed", got.Results[3].Error)
 }
