@@ -60,7 +60,7 @@ type UpdateWebhookOutput struct {
 func RegisterWebhooks(api huma.API, webhookService *services.WebhookService) {
 	h := &WebhookHandler{webhookService: webhookService}
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "list-webhooks",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/webhooks",
@@ -71,10 +71,9 @@ func RegisterWebhooks(api huma.API, webhookService *services.WebhookService) {
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermWebhooksList),
-	}, h.ListWebhooks)
+	}, authz.PermWebhooksList, h.ListWebhooks)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "create-webhook",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/webhooks",
@@ -85,10 +84,9 @@ func RegisterWebhooks(api huma.API, webhookService *services.WebhookService) {
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermWebhooksCreate),
-	}, h.CreateWebhook)
+	}, authz.PermWebhooksCreate, h.CreateWebhook)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "update-webhook",
 		Method:      http.MethodPatch,
 		Path:        "/environments/{id}/webhooks/{webhookId}",
@@ -99,10 +97,9 @@ func RegisterWebhooks(api huma.API, webhookService *services.WebhookService) {
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermWebhooksUpdate),
-	}, h.UpdateWebhook)
+	}, authz.PermWebhooksUpdate, h.UpdateWebhook)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "delete-webhook",
 		Method:      http.MethodDelete,
 		Path:        "/environments/{id}/webhooks/{webhookId}",
@@ -113,8 +110,7 @@ func RegisterWebhooks(api huma.API, webhookService *services.WebhookService) {
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermWebhooksDelete),
-	}, h.DeleteWebhook)
+	}, authz.PermWebhooksDelete, h.DeleteWebhook)
 }
 
 // ListWebhooks returns all webhooks for an environment (tokens are masked).

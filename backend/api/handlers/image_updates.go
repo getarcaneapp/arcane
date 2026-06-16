@@ -83,75 +83,68 @@ func RegisterImageUpdates(api huma.API, imageUpdateSvc *services.ImageUpdateServ
 		appCtx:             appCtx.contextInternal(),
 	}
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "check-image-update",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/image-updates/check",
 		Summary:     "Check image update by reference",
 		Tags:        []string{"Image Updates"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermImageUpdatesCheck),
-	}, h.CheckImageUpdate)
+	}, authz.PermImageUpdatesCheck, h.CheckImageUpdate)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "check-image-update-by-id",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/image-updates/check/{imageId}",
 		Summary:     "Check image update by ID",
 		Tags:        []string{"Image Updates"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermImageUpdatesCheck),
-	}, h.CheckImageUpdateByID)
+	}, authz.PermImageUpdatesCheck, h.CheckImageUpdateByID)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "check-image-update-by-id-post",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/image-updates/check/{imageId}",
 		Summary:     "Check image update by ID (POST)",
 		Tags:        []string{"Image Updates"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermImageUpdatesCheck),
-	}, h.CheckImageUpdateByID)
+	}, authz.PermImageUpdatesCheck, h.CheckImageUpdateByID)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "check-multiple-images",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/image-updates/check-batch",
 		Summary:     "Check multiple images",
 		Tags:        []string{"Image Updates"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermImageUpdatesCheck),
-	}, h.CheckMultipleImages)
+	}, authz.PermImageUpdatesCheck, h.CheckMultipleImages)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "check-all-images",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/image-updates/check-all",
 		Summary:     "Check all images",
 		Tags:        []string{"Image Updates"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermImageUpdatesCheck),
-	}, h.CheckAllImages)
+	}, authz.PermImageUpdatesCheck, h.CheckAllImages)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-update-info-by-refs",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/image-updates/by-refs",
 		Summary:     "Get persisted update info for image references",
 		Tags:        []string{"Image Updates"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermImageUpdatesRead),
-	}, h.GetUpdateInfoByRefs)
+	}, authz.PermImageUpdatesRead, h.GetUpdateInfoByRefs)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-update-summary",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/image-updates/summary",
 		Summary:     "Get update summary",
 		Tags:        []string{"Image Updates"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermImageUpdatesRead),
-	}, h.GetUpdateSummary)
+	}, authz.PermImageUpdatesRead, h.GetUpdateSummary)
 }
 
 func (h *ImageUpdateHandler) CheckImageUpdate(ctx context.Context, input *CheckImageUpdateInput) (*CheckImageUpdateOutput, error) {

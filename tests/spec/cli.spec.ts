@@ -525,3 +525,180 @@ test.describe('arcane-cli e2e', () => {
 		});
 	});
 });
+
+// Regression coverage for the remote-environment proxy authorization model.
+//
+// The manager proxies /api/environments/{id}/... to the target agent, which runs
+// with a sudo permission set and performs no authorization of its own. The
+// manager must therefore enforce the caller's per-environment permission BEFORE
+// forwarding — otherwise any authenticated user could perform write actions on a
+// remote environment regardless of role.
+//
+// These tests drive the real arcane-cli against a remote (edge) environment that
+// has no connected agent. With no live tunnel, the outcome distinguishes the two
+// states cleanly:
+//   - a DENIED request returns 403 — the permission check runs before the tunnel
+//     lookup, so it short-circuits regardless of connectivity;
+//   - an AUTHORIZED request gets past the permission check and reaches the tunnel
+//     stage, which returns 502 ("edge agent is not connected").
+// The 403-vs-502 split is exactly what proves the permission is enforced per
+// environment and is not a blanket block. The local environment ("0") is served
+// directly (never proxied) and must remain unaffected.
+test.describe('arcane-cli remote environment RBAC', () => {
+	let adminKey = staticApiKey ?? '';
+	let createdAdminKey = false;
+	let remoteEnvId = '';
+	let readonlyKey = '';
+	let readonlyKeyId = '';
+
+	async function adminFetch(path: string, init: RequestInit = {}): Promise<Response> {
+		const headers = new Headers(init.headers);
+		headers.set('X-API-KEY', adminKey);
+		if (init.body) {
+			headers.set('Content-Type', headers.get('Content-Type') ?? 'application/json');
+		}
+		return fetch(new URL(path, baseURL), { ...init, headers });
+	}
+
+	async function withAdminConfig<T>(
+		environment: string,
+		fn: (config: CLIConfig) => Promise<T>
+	): Promise<T> {
+		const config = await createCLIConfig(baseURL, adminKey, environment);
+		try {
+			return await fn(config);
+		} finally {
+			await config.cleanup();
+		}
+	}
+
+	async function withReadonlyConfig<T>(
+		environment: string,
+		fn: (config: CLIConfig) => Promise<T>
+	): Promise<T> {
+		const config = await createCLIConfig(baseURL, readonlyKey, environment);
+		try {
+			return await fn(config);
+		} finally {
+			await config.cleanup();
+		}
+	}
+
+	// runExpectingFailure runs the CLI expecting a non-zero exit, returning the
+	// thrown error message (which includes stdout + stderr) for assertions. It
+	// fails the test if the command unexpectedly succeeds.
+	async function runExpectingFailure(configPath: string, args: string[]): Promise<string> {
+		const message = await runCLI(configPath, args)
+			.then(() => null)
+			.catch((error: unknown) => (error instanceof Error ? error.message : String(error)));
+		expect(message, `expected \`arcane-cli ${args.join(' ')}\` to fail`).toBeTruthy();
+		return message as string;
+	}
+
+	test.beforeAll(async () => {
+		if (!adminKey) {
+			const created = await createTestApiKeys(1);
+			adminKey = created.apiKeys[0].key;
+			createdAdminKey = true;
+		}
+
+		const suffix = `${Date.now()}`.slice(-6);
+
+		// Create a remote edge environment. No agent will ever connect to it; it
+		// exists only so the proxy treats requests to it as remote (edge://) and
+		// reaches either the permission check (403) or the tunnel lookup (502).
+		const envResponse = await adminFetch('/api/environments', {
+			method: 'POST',
+			body: JSON.stringify({
+				name: `cli-rbac-${suffix}`,
+				apiUrl: `edge://cli-rbac-${suffix}`,
+				isEdge: true,
+				enabled: true
+			})
+		});
+		expect(
+			envResponse.ok,
+			`failed to create remote env: ${envResponse.status} ${await envResponse.clone().text()}`
+		).toBeTruthy();
+		const envBody = (await envResponse.json()) as { data: { id: string } };
+		remoteEnvId = envBody.data.id;
+		expect(remoteEnvId).toBeTruthy();
+
+		// Create a read-only scoped API key via the CLI: it can read volumes but
+		// has no volumes:create grant, so the proxy must reject writes with it.
+		await withAdminConfig('0', async (config) => {
+			const created = await runCLIJSON<CreatedApiKey>(config.configPath, [
+				'admin',
+				'api-keys',
+				'create',
+				`cli-rbac-readonly-${suffix}`,
+				'--description',
+				'Read-only key for remote RBAC e2e',
+				'--permission',
+				'environments:read',
+				'--permission',
+				'volumes:list',
+				'--permission',
+				'volumes:read'
+			]);
+			readonlyKey = created.key;
+			readonlyKeyId = created.id;
+		});
+		expect(readonlyKey).toMatch(/^arc_/);
+	});
+
+	test.afterAll(async () => {
+		if (readonlyKeyId) {
+			await adminFetch(`/api/api-keys/${readonlyKeyId}`, { method: 'DELETE' }).catch(
+				() => undefined
+			);
+		}
+		if (remoteEnvId) {
+			await adminFetch(`/api/environments/${remoteEnvId}`, { method: 'DELETE' }).catch(
+				() => undefined
+			);
+		}
+		if (createdAdminKey) {
+			await deleteTestApiKeys();
+		}
+	});
+
+	test('denies a remote write for a read-only key (403)', async () => {
+		await withReadonlyConfig(remoteEnvId, async (config) => {
+			const error = await runExpectingFailure(config.configPath, [
+				'volumes',
+				'create',
+				'--name',
+				`cli-rbac-vol-${Date.now()}`
+			]);
+			expect(error).toContain('status 403');
+		});
+	});
+
+	test('authorizes a remote write for an admin key, reaching the disconnected agent (502, not 403)', async () => {
+		await withAdminConfig(remoteEnvId, async (config) => {
+			const error = await runExpectingFailure(config.configPath, [
+				'volumes',
+				'create',
+				'--name',
+				`cli-rbac-vol-${Date.now()}`
+			]);
+			// The admin key passes the permission check, so the request reaches the
+			// edge tunnel stage and fails only because no agent is connected.
+			expect(error).toContain('status 502');
+			expect(error).not.toContain('status 403');
+		});
+	});
+
+	test('leaves the local environment unaffected for a read-only key', async () => {
+		await withReadonlyConfig('0', async (config) => {
+			const volumes = await runCLIJSON<{ data: unknown[] }>(config.configPath, [
+				'volumes',
+				'list',
+				'--limit',
+				'5'
+			]);
+			expect(Array.isArray(volumes.data)).toBe(true);
+		});
+	});
+});

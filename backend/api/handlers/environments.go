@@ -279,7 +279,7 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 		Middlewares: humamw.RequirePermission(api, authz.PermEnvironmentsDelete),
 	}, h.DeleteEnvironment)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "testConnection",
 		Method:      "POST",
 		Path:        "/environments/{id}/test",
@@ -290,10 +290,9 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermEnvironmentsRead),
-	}, h.TestConnection)
+	}, authz.PermEnvironmentsRead, h.TestConnection)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "updateHeartbeat",
 		Method:      "POST",
 		Path:        "/environments/{id}/heartbeat",
@@ -304,10 +303,9 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermEnvironmentsSync),
-	}, h.UpdateHeartbeat)
+	}, authz.PermEnvironmentsSync, h.UpdateHeartbeat)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "pairAgent",
 		Method:      "POST",
 		Path:        "/environments/{id}/agent/pair",
@@ -318,10 +316,9 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermEnvironmentsPair),
-	}, h.PairAgent)
+	}, authz.PermEnvironmentsPair, h.PairAgent)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "syncEnvironment",
 		Method:      "POST",
 		Path:        "/environments/{id}/sync",
@@ -332,8 +329,7 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermEnvironmentsSync),
-	}, h.SyncEnvironment)
+	}, authz.PermEnvironmentsSync, h.SyncEnvironment)
 
 	huma.Register(api, huma.Operation{
 		OperationID:  "pairEnvironment",
@@ -346,7 +342,7 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 		Security:     []map[string][]string{},
 	}, h.PairEnvironment)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "getDeploymentSnippets",
 		Method:      "GET",
 		Path:        "/environments/{id}/deployment",
@@ -357,10 +353,9 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermEnvironmentsPair),
-	}, h.GetDeploymentSnippets)
+	}, authz.PermEnvironmentsPair, h.GetDeploymentSnippets)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "downloadEnvironmentMTLSBundle",
 		Method:      "GET",
 		Path:        "/environments/{id}/deployment/mtls/bundle",
@@ -371,10 +366,9 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermEnvironmentsPair),
-	}, h.DownloadEnvironmentMTLSBundle)
+	}, authz.PermEnvironmentsPair, h.DownloadEnvironmentMTLSBundle)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "downloadEnvironmentMTLSFile",
 		Method:      "GET",
 		Path:        "/environments/{id}/deployment/mtls/{fileName}",
@@ -385,10 +379,9 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermEnvironmentsPair),
-	}, h.DownloadEnvironmentMTLSFile)
+	}, authz.PermEnvironmentsPair, h.DownloadEnvironmentMTLSFile)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "getEnvironmentVersion",
 		Method:      "GET",
 		Path:        "/environments/{id}/version",
@@ -399,8 +392,7 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermEnvironmentsRead),
-	}, h.GetEnvironmentVersion)
+	}, authz.PermEnvironmentsRead, h.GetEnvironmentVersion)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "downloadEdgeMTLSCA",

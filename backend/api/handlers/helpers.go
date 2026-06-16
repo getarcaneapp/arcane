@@ -87,8 +87,7 @@ func registerSecuredInternal[I, O any](
 	handler func(context.Context, *I) (*O, error),
 ) {
 	op.Security = defaultOperationSecurityInternal()
-	op.Middlewares = humamw.RequirePermission(api, permission)
-	huma.Register(api, op, handler)
+	humamw.RegisterWithPermission(api, op, permission, handler)
 }
 
 func registerCustomizeSecuredInternal[I, O any](

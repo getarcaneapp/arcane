@@ -130,7 +130,7 @@ func RegisterVulnerability(api huma.API, vulnerabilityService *services.Vulnerab
 		appCtx:               appCtx.contextInternal(),
 	}
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "scan-image-vulnerabilities",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/images/{imageId}/vulnerabilities/scan",
@@ -141,10 +141,9 @@ func RegisterVulnerability(api huma.API, vulnerabilityService *services.Vulnerab
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVulnsScan),
-	}, h.ScanImage)
+	}, authz.PermVulnsScan, h.ScanImage)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-image-vulnerabilities",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/images/{imageId}/vulnerabilities",
@@ -155,10 +154,9 @@ func RegisterVulnerability(api huma.API, vulnerabilityService *services.Vulnerab
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVulnsRead),
-	}, h.GetScanResult)
+	}, authz.PermVulnsRead, h.GetScanResult)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-image-vulnerability-summary",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/images/{imageId}/vulnerabilities/summary",
@@ -169,10 +167,9 @@ func RegisterVulnerability(api huma.API, vulnerabilityService *services.Vulnerab
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVulnsRead),
-	}, h.GetScanSummary)
+	}, authz.PermVulnsRead, h.GetScanSummary)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-image-vulnerability-summaries",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/images/vulnerabilities/summaries",
@@ -183,10 +180,9 @@ func RegisterVulnerability(api huma.API, vulnerabilityService *services.Vulnerab
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVulnsRead),
-	}, h.GetScanSummaries)
+	}, authz.PermVulnsRead, h.GetScanSummaries)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "list-image-vulnerabilities",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/images/{imageId}/vulnerabilities/list",
@@ -197,10 +193,9 @@ func RegisterVulnerability(api huma.API, vulnerabilityService *services.Vulnerab
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVulnsRead),
-	}, h.ListImageVulnerabilities)
+	}, authz.PermVulnsRead, h.ListImageVulnerabilities)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-vulnerability-scanner-status",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/vulnerabilities/scanner-status",
@@ -211,10 +206,9 @@ func RegisterVulnerability(api huma.API, vulnerabilityService *services.Vulnerab
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVulnsRead),
-	}, h.GetScannerStatus)
+	}, authz.PermVulnsRead, h.GetScannerStatus)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-environment-vulnerability-summary",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/vulnerabilities/summary",
@@ -225,10 +219,9 @@ func RegisterVulnerability(api huma.API, vulnerabilityService *services.Vulnerab
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVulnsRead),
-	}, h.GetEnvironmentSummary)
+	}, authz.PermVulnsRead, h.GetEnvironmentSummary)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "list-environment-vulnerabilities",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/vulnerabilities/all",
@@ -239,10 +232,9 @@ func RegisterVulnerability(api huma.API, vulnerabilityService *services.Vulnerab
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVulnsRead),
-	}, h.ListAllVulnerabilities)
+	}, authz.PermVulnsRead, h.ListAllVulnerabilities)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "list-environment-vulnerability-image-options",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/vulnerabilities/image-options",
@@ -253,10 +245,9 @@ func RegisterVulnerability(api huma.API, vulnerabilityService *services.Vulnerab
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVulnsRead),
-	}, h.ListAllVulnerabilityImageOptions)
+	}, authz.PermVulnsRead, h.ListAllVulnerabilityImageOptions)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "ignore-vulnerability",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/vulnerabilities/ignore",
@@ -267,10 +258,9 @@ func RegisterVulnerability(api huma.API, vulnerabilityService *services.Vulnerab
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVulnsManage),
-	}, h.IgnoreVulnerability)
+	}, authz.PermVulnsManage, h.IgnoreVulnerability)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "unignore-vulnerability",
 		Method:      http.MethodDelete,
 		Path:        "/environments/{id}/vulnerabilities/ignore/{ignoreId}",
@@ -281,10 +271,9 @@ func RegisterVulnerability(api huma.API, vulnerabilityService *services.Vulnerab
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVulnsManage),
-	}, h.UnignoreVulnerability)
+	}, authz.PermVulnsManage, h.UnignoreVulnerability)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "list-ignored-vulnerabilities",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/vulnerabilities/ignored",
@@ -295,8 +284,7 @@ func RegisterVulnerability(api huma.API, vulnerabilityService *services.Vulnerab
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVulnsRead),
-	}, h.ListIgnoredVulnerabilities)
+	}, authz.PermVulnsRead, h.ListIgnoredVulnerabilities)
 }
 
 // ScanImage initiates a vulnerability scan for an image.

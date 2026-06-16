@@ -46,6 +46,10 @@ var pruneCmd = &cobra.Command{
 		}
 		defer func() { _ = resp.Body.Close() }()
 
+		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
+			return fmt.Errorf("failed to prune: %w", err)
+		}
+
 		var result base.ApiResponse[system.PruneAllResult]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 			return fmt.Errorf("failed to parse response: %w", err)
@@ -121,6 +125,10 @@ var containersStartAllCmd = &cobra.Command{
 		}
 		defer func() { _ = resp.Body.Close() }()
 
+		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
+			return fmt.Errorf("failed to start all containers: %w", err)
+		}
+
 		output.Success("Started all containers")
 		return nil
 	},
@@ -141,6 +149,10 @@ var containersStopAllCmd = &cobra.Command{
 			return fmt.Errorf("failed to stop all containers: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
+
+		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
+			return fmt.Errorf("failed to stop all containers: %w", err)
+		}
 
 		output.Success("Stopped all containers")
 		return nil

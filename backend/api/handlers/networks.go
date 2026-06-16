@@ -145,75 +145,68 @@ func RegisterNetworks(api huma.API, networkSvc *services.NetworkService, dockerS
 		appCtx:          appCtx.contextInternal(),
 	}
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "list-networks",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/networks",
 		Summary:     "List networks",
 		Tags:        []string{"Networks"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermNetworksList),
-	}, h.ListNetworks)
+	}, authz.PermNetworksList, h.ListNetworks)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "network-counts",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/networks/counts",
 		Summary:     "Network counts",
 		Tags:        []string{"Networks"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermNetworksList),
-	}, h.GetNetworkCounts)
+	}, authz.PermNetworksList, h.GetNetworkCounts)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "create-network",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/networks",
 		Summary:     "Create network",
 		Tags:        []string{"Networks"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermNetworksCreate),
-	}, h.CreateNetwork)
+	}, authz.PermNetworksCreate, h.CreateNetwork)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-network-topology",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/networks/topology",
 		Summary:     "Get network topology",
 		Tags:        []string{"Networks"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermNetworksRead),
-	}, h.GetNetworkTopology)
+	}, authz.PermNetworksRead, h.GetNetworkTopology)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-network",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/networks/{networkId}",
 		Summary:     "Get network",
 		Tags:        []string{"Networks"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermNetworksRead),
-	}, h.GetNetwork)
+	}, authz.PermNetworksRead, h.GetNetwork)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "delete-network",
 		Method:      http.MethodDelete,
 		Path:        "/environments/{id}/networks/{networkId}",
 		Summary:     "Delete network",
 		Tags:        []string{"Networks"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermNetworksDelete),
-	}, h.DeleteNetwork)
+	}, authz.PermNetworksDelete, h.DeleteNetwork)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "prune-networks",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/networks/prune",
 		Summary:     "Prune networks",
 		Tags:        []string{"Networks"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermNetworksPrune),
-	}, h.PruneNetworks)
+	}, authz.PermNetworksPrune, h.PruneNetworks)
 }
 
 func (h *NetworkHandler) ListNetworks(ctx context.Context, input *ListNetworksInput) (*ListNetworksOutput, error) {
