@@ -63,7 +63,7 @@
     "@typescript/native-preview": "7.0.0-dev.20260609.1",
     "bits-ui": "^2.18.1",
     "clsx": "^2.1.1",
-    "fallow": "^2.89.0",
+    "fallow": "^2.96.0",
     "formsnap": "^2.0.1",
     "isomorphic-dompurify": "^3.16.0",
     "mode-watcher": "^1.1.0",
