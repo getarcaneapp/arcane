@@ -37,7 +37,7 @@ require (
 	github.com/hashicorp/go-uuid v1.0.3
 	github.com/jinzhu/copier v0.4.0
 	github.com/joho/godotenv v1.5.1
-	github.com/labstack/echo/v4 v4.15.2
+	github.com/labstack/echo/v4 v4.15.4
 	github.com/lmittmann/tint v1.1.3
 	github.com/moby/buildkit v0.29.0
 	github.com/moby/go-archive v0.2.0
@@ -58,7 +58,7 @@ require (
 	go.getarcane.app/updater v0.3.10
 	golang.org/x/crypto v0.53.0
 	golang.org/x/mod v0.37.0
-	golang.org/x/net v0.55.0
+	golang.org/x/net v0.56.0
 	golang.org/x/oauth2 v0.36.0
 	golang.org/x/sync v0.21.0
 	golang.org/x/text v0.38.0
