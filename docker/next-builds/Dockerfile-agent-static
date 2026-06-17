@@ -1,12 +1,11 @@
 ARG ARCANE_RUNTIME_BASE_IMAGE=ghcr.io/getarcaneapp/base:distroless
 FROM ${ARCANE_RUNTIME_BASE_IMAGE}
 
-ARG TARGETARCH
-ARG TARGETVARIANT
+ARG TARGETPLATFORM
 
 WORKDIR /app
 
-COPY linux/${TARGETARCH}/${TARGETVARIANT}/arcane-agent ./arcane-agent
+COPY ${TARGETPLATFORM}/arcane-agent ./arcane-agent
 
 ENV ENVIRONMENT=production \
     AGENT_MODE=true \
