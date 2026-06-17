@@ -127,8 +127,8 @@ importers:
         specifier: ^9.0.0-beta.7
         version: 9.0.0-beta.7
       '@tanstack/virtual-core':
-        specifier: ^3.17.0
-        version: 3.17.0
+        specifier: ^3.17.1
+        version: 3.17.1
       '@uiw/codemirror-themes':
         specifier: ^4.25.10
         version: 4.25.10(@codemirror/language@6.12.3)(@codemirror/state@6.6.0)(@codemirror/view@6.43.1)
@@ -397,6 +397,9 @@ packages:
 
   '@codemirror/search@6.7.0':
     resolution: {integrity: sha512-ZvGm99wc/s2cITtMT15LFdn8aH/aS+V+DqyGq/N5ZlV5vWtH+nILvC2nw0zX7ByNoHHDZ2IxxdW38O0tc5nVHg==}
+
+  '@codemirror/search@6.7.1':
+    resolution: {integrity: sha512-uMe5UO6PamJtSHrXhhHOzSX3ReWtiJrva6GnPMwSOrZtiExb5X5eExhr2OUZQVvdxPsKpY3Ro2mFbQadpPWmHA==}
 
   '@codemirror/state@6.6.0':
     resolution: {integrity: sha512-4nbvra5R5EtiCzr9BTHiTLc+MLXK2QGiAVYMyi8PkQd3SR+6ixar/Q/01Fa21TBIDOZXgeWV4WppsQolSreAPQ==}
@@ -1366,8 +1369,8 @@ packages:
     resolution: {integrity: sha512-WFU5aYbvX+2UbWHd7w+CD84qbpYW3T02ih97e+OjpNYMzIf0ohuXNbtu4XCvQ+5KF14VIXPoFcCvIy8AxFOhcA==}
     engines: {node: '>=16'}
 
-  '@tanstack/virtual-core@3.17.0':
-    resolution: {integrity: sha512-gOxY/hFkPh/XQYhnThBHzkbkX3Ed+z/iushyz+R+JAr213aXxUDgQoTgTdrDpBSRsjFM73P/KfUyWmaF9WHMkQ==}
+  '@tanstack/virtual-core@3.17.1':
+    resolution: {integrity: sha512-VZyW2Uiml5tmBZwPGrSD3Sz73OxzljQMCmzYHsUTPEuTsERf5xwa+uWb01xEzkz3ZSYTjj8NEb/mKHvgKxyZdA==}
 
   '@tybys/wasm-util@0.10.2':
     resolution: {integrity: sha512-RoBvJ2X0wuKlWFIjrwffGw1IqZHKQqzIchKaadZZfnNpsAYp2mM0h36JtPCjNDAHGgYez/15uMBpfGwchhiMgg==}
@@ -3091,6 +3094,12 @@ snapshots:
       '@codemirror/view': 6.43.1
       crelt: 1.0.6
 
+  '@codemirror/search@6.7.1':
+    dependencies:
+      '@codemirror/state': 6.6.0
+      '@codemirror/view': 6.43.1
+      crelt: 1.0.6
+
   '@codemirror/state@6.6.0':
     dependencies:
       '@marijn/find-cluster-break': 1.0.2
@@ -3800,7 +3809,7 @@ snapshots:
     dependencies:
       '@tanstack/store': 0.11.0
 
-  '@tanstack/virtual-core@3.17.0': {}
+  '@tanstack/virtual-core@3.17.1': {}
 
   '@tybys/wasm-util@0.10.2':
     dependencies:
@@ -4057,7 +4066,7 @@ snapshots:
       '@codemirror/commands': 6.10.3
       '@codemirror/language': 6.12.3
       '@codemirror/lint': 6.9.7
-      '@codemirror/search': 6.7.0
+      '@codemirror/search': 6.7.1
       '@codemirror/state': 6.6.0
       '@codemirror/view': 6.43.1
 
