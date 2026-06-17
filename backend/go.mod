@@ -44,7 +44,7 @@ require (
 	github.com/moby/moby/api v1.54.2
 	github.com/moby/moby/client v0.4.1
 	github.com/moby/patternmatcher v0.6.1
-	github.com/nicholas-fedor/shoutrrr v0.16.0
+	github.com/nicholas-fedor/shoutrrr v0.16.1
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/orandin/slog-gorm v1.4.0
