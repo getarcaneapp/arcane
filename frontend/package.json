@@ -44,7 +44,7 @@
     "ky": "^2.0.2",
     "marked": "^18.0.5",
     "prettier": "^3.8.4",
-    "prettier-plugin-svelte": "^4.1.0",
+    "prettier-plugin-svelte": "^4.1.1",
     "prettier-plugin-tailwindcss": "^0.8.0",
     "svelte": "^5.56.3",
     "svelte-codemirror-editor": "^2.1.0",
