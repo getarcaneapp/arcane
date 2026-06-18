@@ -51,7 +51,7 @@
     "yaml": "^2.9.0"
   },
   "devDependencies": {
-    "@iconify/json": "^2.2.484",
+    "@iconify/json": "^2.2.486",
     "@inlang/paraglide-js": "2.19.0",
     "@internationalized/date": "^3.12.2",
     "@prettier/plugin-oxc": "^0.1.4",
