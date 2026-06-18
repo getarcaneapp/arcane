@@ -223,6 +223,7 @@ var createCmd = &cobra.Command{
 	Use:          "create",
 	Short:        "Create a container registry",
 	SilenceUsage: true,
+	Args:         cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c, err := client.NewFromConfig()
 		if err != nil {
