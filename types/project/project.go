@@ -25,6 +25,113 @@ type IncludeFile struct {
 	Content string `json:"content,omitempty"`
 }
 
+// ProjectFile represents a file or folder within a project directory.
+type ProjectFile struct {
+	// Path is the absolute path to the file or folder.
+	//
+	// Required: true
+	Path string `json:"path"`
+
+	// RelativePath is the path relative to the project directory.
+	//
+	// Required: true
+	RelativePath string `json:"relativePath"`
+
+	// Name is the base name of the file or folder.
+	//
+	// Required: true
+	Name string `json:"name"`
+
+	// IsDirectory indicates whether this entry is a folder.
+	//
+	// Required: true
+	IsDirectory bool `json:"isDirectory"`
+
+	// Size is the file size in bytes. Directories report zero.
+	//
+	// Required: true
+	Size int64 `json:"size"`
+
+	// ModTime is the last modification time.
+	//
+	// Required: true
+	ModTime time.Time `json:"modTime"`
+
+	// Protected indicates that Arcane owns this path and it cannot be renamed,
+	// deleted, moved, or overwritten through project file management.
+	//
+	// Required: false
+	Protected bool `json:"protected,omitempty"`
+
+	// Content is the file content when explicitly requested.
+	//
+	// Required: false
+	Content string `json:"content,omitempty"`
+}
+
+// ProjectFileDraft is used when creating a project with staged files.
+type ProjectFileDraft struct {
+	// RelativePath is the path relative to the project directory.
+	//
+	// Required: true
+	RelativePath string `json:"relativePath" binding:"required"`
+
+	// IsDirectory indicates whether the draft creates a folder.
+	//
+	// Required: true
+	IsDirectory bool `json:"isDirectory"`
+
+	// Content is the text file content. It is ignored for folders.
+	//
+	// Required: false
+	Content string `json:"content,omitempty"`
+}
+
+// Project file operations accepted by ProjectFileChange.Operation.
+const (
+	FileOpCreateFile   = "create_file"
+	FileOpCreateFolder = "create_folder"
+	FileOpUpdateFile   = "update_file"
+	FileOpRename       = "rename"
+	FileOpMove         = "move"
+	FileOpDelete       = "delete"
+)
+
+// ProjectFileChange describes one staged file-tree operation.
+type ProjectFileChange struct {
+	// Operation is one of create_file, create_folder, update_file, rename, move, or delete.
+	//
+	// Required: true
+	Operation string `json:"operation" binding:"required" enum:"create_file,create_folder,update_file,rename,move,delete"`
+
+	// RelativePath is the source or target path relative to the project directory.
+	//
+	// Required: true
+	RelativePath string `json:"relativePath" binding:"required"`
+
+	// NewName is used by rename operations. Rename is basename-only and never moves
+	// a file or folder to another parent.
+	//
+	// Required: false
+	NewName string `json:"newName,omitempty"`
+
+	// NewParentPath is used by move operations. Empty means project root.
+	//
+	// Required: false
+	NewParentPath string `json:"newParentPath,omitempty"`
+
+	// Content is used by create_file and update_file operations.
+	//
+	// Required: false
+	Content *string `json:"content,omitempty"`
+
+	// Recursive allows deleting a non-empty folder. The UI must require a strong
+	// confirmation before sending this flag.
+	//
+	// Required: false
+	Recursive bool `json:"recursive,omitempty"`
+}
+
 // FileContentRequest requests the contents of a single project-related file.
 type FileContentRequest struct {
 	// RelativePath is the path to the file relative to the project.
@@ -49,6 +156,11 @@ type CreateProject struct {
 	//
 	// Required: false
 	EnvContent *string `json:"envContent,omitempty"`
+
+	// ProjectFiles are optional text files and folders staged during project creation.
+	//
+	// Required: false
+	ProjectFiles []ProjectFileDraft `json:"projectFiles,omitempty" maxItems:"500"`
 }
 
 // UpdateProject is used to update a project.
@@ -67,6 +179,18 @@ type UpdateProject struct {
 	//
 	// Required: false
 	EnvContent *string `json:"envContent,omitempty"`
+
+	// FileTreeRevision is the revision observed by the client before staging
+	// FileChanges. The server rejects stale revisions to avoid clobbering
+	// concurrent filesystem changes.
+	//
+	// Required: false
+	FileTreeRevision *string `json:"fileTreeRevision,omitempty"`
+
+	// FileChanges are staged project file-tree operations applied with Save.
+	//
+	// Required: false
+	FileChanges []ProjectFileChange `json:"fileChanges,omitempty" maxItems:"500"`
 }
 
 // DeployOptions configures project deploy behavior.
@@ -218,6 +342,7 @@ type DetailsOptions struct {
 	IncludeIncludeFiles    bool
 	IncludeServiceConfigs  bool
 	IncludeDirectoryFiles  bool
+	IncludeProjectFiles    bool
 	IncludeRuntimeServices bool
 	IncludeUpdateInfo      bool
 }
@@ -229,6 +354,7 @@ func AllDetails() DetailsOptions {
 		IncludeIncludeFiles:    true,
 		IncludeServiceConfigs:  true,
 		IncludeDirectoryFiles:  true,
+		IncludeProjectFiles:    true,
 		IncludeRuntimeServices: true,
 		IncludeUpdateInfo:      true,
 	}
@@ -379,6 +505,17 @@ type Details struct {
 	//
 	// Required: false
 	DirectoryFiles []IncludeFile `json:"directoryFiles,omitempty"`
+
+	// ProjectFiles contains the editable file tree for project file management.
+	//
+	// Required: false
+	ProjectFiles []ProjectFile `json:"projectFiles,omitempty"`
+
+	// FileTreeRevision identifies the project file tree state returned to the client.
+	// Mutations using staged file changes must include this value.
+	//
+	// Required: false
+	FileTreeRevision string `json:"fileTreeRevision,omitempty"`
 
 	// Status is the current status of the project.
 	//

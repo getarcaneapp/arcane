@@ -312,7 +312,14 @@ func (s *ContainerRegistryService) GetEnabledRegistries(ctx context.Context) ([]
 }
 
 // GetRegistryAuthForImage returns X-Registry-Auth for the image's registry host.
+//
+// The registry-auth methods tolerate a nil receiver: callers such as BuildService may
+// hold no registry service, and are wired in as a buildtypes.RegistryAuthProvider where a
+// typed-nil pointer would otherwise satisfy the interface's nil checks and panic on use.
 func (s *ContainerRegistryService) GetRegistryAuthForImage(ctx context.Context, imageRef string) (string, error) {
+	if s == nil {
+		return "", nil
+	}
 	registryHost, err := utilsregistry.GetRegistryAddress(imageRef)
 	if err != nil {
 		return "", err
@@ -322,6 +329,9 @@ func (s *ContainerRegistryService) GetRegistryAuthForImage(ctx context.Context, 
 
 // GetRegistryAuthForHost returns X-Registry-Auth for a configured and enabled registry.
 func (s *ContainerRegistryService) GetRegistryAuthForHost(ctx context.Context, registryHost string) (string, error) {
+	if s == nil {
+		return "", nil
+	}
 	normalizedRegistryHost := utilsregistry.NormalizeRegistryForComparison(registryHost)
 	if normalizedRegistryHost == "" {
 		return "", nil
@@ -344,6 +354,9 @@ func (s *ContainerRegistryService) GetRegistryAuthForHost(ctx context.Context, r
 }
 
 func (s *ContainerRegistryService) GetAllRegistryAuthConfigs(ctx context.Context) (map[string]dockerregistry.AuthConfig, error) {
+	if s == nil {
+		return nil, nil
+	}
 	registries, err := s.GetEnabledRegistries(ctx)
 	if err != nil {
 		return nil, err

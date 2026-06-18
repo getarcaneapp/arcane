@@ -833,12 +833,49 @@ func (e *ProjectFileNotFoundError) Error() string {
 	return "Project file not found"
 }
 
+type ProjectFileConflictError struct {
+	Err error
+}
+
+func (e *ProjectFileConflictError) Error() string {
+	if e.Err == nil {
+		return "Project files changed; refresh the project and try again"
+	}
+	return e.Err.Error()
+}
+
 type ProjectComposeFileNotFoundError struct {
 	Err error
 }
 
 func (e *ProjectComposeFileNotFoundError) Error() string {
 	return fmt.Sprintf("Project compose file not found: %v", e.Err)
+}
+
+func (e *ProjectComposeFileNotFoundError) Unwrap() error {
+	return e.Err
+}
+
+// ComposeFileNotFoundError indicates a directory contains no recognizable
+// compose file at all (zero candidates).
+type ComposeFileNotFoundError struct {
+	Dir string
+}
+
+func (e *ComposeFileNotFoundError) Error() string {
+	return fmt.Sprintf("no compose file found in %q", e.Dir)
+}
+
+// AmbiguousComposeFileError indicates a directory contains multiple custom-named
+// compose candidates that cannot be disambiguated. The directory still holds
+// compose content, so callers must not treat this as "no project here" (e.g. by
+// deleting the project record).
+type AmbiguousComposeFileError struct {
+	Dir string
+}
+
+func (e *AmbiguousComposeFileError) Error() string {
+	return fmt.Sprintf("multiple custom compose files found in %q", e.Dir)
 }
 
 type ProjectDiscoveryError struct {
@@ -1052,6 +1089,16 @@ func (e *UpgradeInProgressError) Error() string {
 
 func IsUpgradeInProgressError(err error) bool {
 	return isErrorTypeInternal[*UpgradeInProgressError](err)
+}
+
+type UpdateAllInProgressError struct{}
+
+func (e *UpdateAllInProgressError) Error() string {
+	return "an update-all job is already in progress"
+}
+
+func IsUpdateAllInProgressError(err error) bool {
+	return isErrorTypeInternal[*UpdateAllInProgressError](err)
 }
 
 type DockerSocketAccessError struct{}

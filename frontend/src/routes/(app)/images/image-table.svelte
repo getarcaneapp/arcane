@@ -74,6 +74,8 @@
 	let scanRequestedAtByImage = $state<Record<string, string>>({});
 	let scanPollTimeout: ReturnType<typeof setTimeout> | null = null;
 	let scanPollInFlight = false;
+	// Set once on destroy so an in-flight poll can't re-arm a timer on a dead component.
+	let destroyed = false;
 	const SCAN_POLL_INTERVAL_MS = 4000;
 
 	async function refreshImages(options: SearchPaginationSortRequest = requestOptions) {
@@ -258,6 +260,7 @@
 		scanPollInFlight = true;
 		try {
 			const response = await vulnerabilityService.getScanSummaries(imageIds);
+			if (destroyed) return;
 			const summaries = response?.summaries ?? {};
 
 			if (Object.keys(summaries).length > 0 && images.data?.length) {
@@ -295,7 +298,7 @@
 			console.error('Failed to poll vulnerability summaries:', error);
 		} finally {
 			scanPollInFlight = false;
-			if (getScanningImageIds().length > 0) {
+			if (!destroyed && getScanningImageIds().length > 0) {
 				scheduleBatchScanPolling();
 			}
 		}
@@ -320,6 +323,7 @@
 	});
 
 	onDestroy(() => {
+		destroyed = true;
 		stopBatchScanPolling();
 	});
 
@@ -341,7 +345,9 @@
 		{
 			id: 'updates',
 			accessorFn: (row) => {
+				if (!row.repoDigests || row.repoDigests.length === 0) return 'local';
 				if (row.updateInfo?.hasUpdate) return 'has_update';
+				if (row.updateInfo?.updateType === 'local') return 'local';
 				if (row.updateInfo?.error) return 'error';
 				if (row.updateInfo) return 'up_to_date';
 				return 'unknown';
@@ -564,6 +570,7 @@
 			imageId={item.id}
 			repo={item.repo}
 			tag={item.tag}
+			isLocal={!item.repoDigests || item.repoDigests.length === 0}
 			onUpdated={(newInfo) => handleUpdateInfoChanged(item.id, newInfo)}
 		/>
 	</div>
@@ -607,7 +614,11 @@
 					: null,
 			(item: ImageSummaryDto) => {
 				if (!(mobileFieldVisibility['updates'] ?? false)) return null;
+				if (!item.repoDigests || item.repoDigests.length === 0) {
+					return { variant: 'gray' as const, text: m.image_update_local_title() };
+				}
 				if (item.updateInfo?.hasUpdate) return { variant: 'blue' as const, text: m.images_has_updates() };
+				if (item.updateInfo?.updateType === 'local') return { variant: 'gray' as const, text: m.image_update_local_title() };
 				if (item.updateInfo?.error) return { variant: 'red' as const, text: m.common_error() };
 				if (item.updateInfo) return { variant: 'green' as const, text: m.images_no_updates() };
 				return { variant: 'gray' as const, text: m.common_unknown() };

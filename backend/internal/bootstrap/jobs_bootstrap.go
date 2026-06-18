@@ -33,6 +33,13 @@ func registerJobs(appCtx context.Context, newScheduler *pkg_scheduler.JobSchedul
 		}
 	}
 
+	// Resume a fleet-wide update-all job interrupted by the manager's own upgrade
+	// restart (manager only). Runs off the app context so it can upgrade agents
+	// without blocking bootstrap.
+	if !appConfig.AgentMode && appServices.SystemUpgrade != nil && appServices.Environment != nil {
+		go appServices.SystemUpgrade.ResumeUpdateAllOnStartup(appCtx, appServices.Environment)
+	}
+
 	newScheduler.RegisterJob(jobs.AutoUpdate)
 	newScheduler.RegisterJob(jobs.ImagePolling)
 	newScheduler.RegisterJob(jobs.DockerClientRefresh)

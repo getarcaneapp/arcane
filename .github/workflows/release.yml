@@ -3,7 +3,7 @@ name: Release New Arcane Version
 on:
   push:
     tags:
-      - "v*.*.*"
+      - 'v*.*.*'
 
 permissions:
   contents: write
@@ -104,7 +104,7 @@ jobs:
         with:
           context: .
           file: docker/Dockerfile
-          platforms: linux/amd64,linux/arm64,linux/arm/v7
+          platforms: linux/amd64,linux/arm64,linux/arm/v7,linux/riscv64
           push: true
           tags: ${{ steps.manager-meta.outputs.tags }}
           labels: ${{ steps.manager-meta.outputs.labels }}
@@ -152,7 +152,7 @@ jobs:
         with:
           context: .
           file: docker/Dockerfile-agent
-          platforms: linux/amd64,linux/arm64,linux/arm/v7
+          platforms: linux/amd64,linux/arm64,linux/arm/v7,linux/riscv64
           push: true
           tags: ${{ steps.agent-meta.outputs.tags }}
           labels: ${{ steps.agent-meta.outputs.labels }}
@@ -200,7 +200,7 @@ jobs:
         uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser-pro
-          version: "~> v2"
+          version: '~> v2'
           args: release --clean --skip=validate
         env:
           GITHUB_TOKEN: ${{ secrets.ARCANE_BOT_TOKEN }}

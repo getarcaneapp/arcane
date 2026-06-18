@@ -28,6 +28,8 @@
 	let scanProgress = $state({ current: 0, total: 0 });
 	let activeTab = $state('vulnerabilities');
 	let scanPollTimeout: ReturnType<typeof setTimeout> | null = null;
+	// Set once on destroy so an in-flight poll tick can't re-arm a timer on a dead component.
+	let destroyed = false;
 
 	// Ignored vulnerabilities state
 	let ignoredVulnerabilities = $state<Paginated<IgnoredVulnerability>>({
@@ -102,6 +104,7 @@
 		stopScanPolling();
 
 		const tick = async () => {
+			if (destroyed) return;
 			if (attempts >= MAX_ATTEMPTS) {
 				stopScanPolling();
 				return;
@@ -114,6 +117,7 @@
 			}
 
 			await refreshAll();
+			if (destroyed) return;
 
 			const currentScanned = summary?.scannedImages ?? 0;
 			const currentTotal = summary?.totalImages ?? targetTotal;
@@ -181,7 +185,10 @@
 
 	useEnvironmentRefresh(refreshAll);
 
-	$effect(() => () => stopScanPolling());
+	$effect(() => () => {
+		destroyed = true;
+		stopScanPolling();
+	});
 
 	async function scanAllImages() {
 		if (isLoading.scanningAll) return;

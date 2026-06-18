@@ -9,6 +9,7 @@
 
 	let {
 		value = $bindable(),
+		displayValue,
 		ref = $bindable(),
 		variant = 'block',
 		error,
@@ -16,9 +17,11 @@
 		canEdit = true,
 		onCommit,
 		placeholder = '',
+		disabledMessage = m.compose_name_change_not_allowed(),
 		class: className = ''
 	}: {
 		value: string;
+		displayValue?: string;
 		ref: HTMLInputElement | null;
 		variant?: 'block' | 'inline';
 		error?: string;
@@ -26,8 +29,11 @@
 		canEdit?: boolean;
 		onCommit?: () => void;
 		placeholder?: string;
+		disabledMessage?: string;
 		class?: string;
 	} = $props();
+
+	let shownValue = $derived(displayValue ?? value);
 
 	let isEditing = $state(false);
 	let wrapperClass = $derived(cn('group', variant === 'block' ? 'w-full' : 'min-w-0', className));
@@ -100,11 +106,12 @@
 				class="hover:bg-muted/50 focus:ring-ring min-h-[32px] w-full rounded bg-transparent px-1 py-1 text-center text-base font-semibold transition-colors focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 {error
 					? 'border border-destructive'
 					: ''}"
-				title={canEdit ? `${value || placeholder} (tap to edit)` : value || placeholder}
+				title={canEdit ? `${shownValue || placeholder} (tap to edit)` : shownValue || placeholder}
 				onclick={beginEdit}
 				disabled={!canEdit}
 			>
-				<span class="block truncate {!value && placeholder ? 'text-muted-foreground' : ''}">{value || placeholder}</span>
+				<span class="block truncate {!shownValue && placeholder ? 'text-muted-foreground' : ''}">{shownValue || placeholder}</span
+				>
 			</button>
 		</h1>
 
@@ -124,20 +131,20 @@
 			</div>
 		{/if}
 	{:else}
-		<div class="flex items-center gap-1">
-			<h1 class="m-0 max-w-[360px]">
+		<div class="flex h-8 min-w-0 items-center gap-1.5">
+			<h1 class="m-0 max-w-[360px] min-w-0">
 				<button
 					type="button"
 					class={cn(
-						'w-full truncate bg-transparent px-0 py-0 text-left text-lg leading-none font-semibold',
-						!value && placeholder && 'text-muted-foreground',
+						'w-full truncate bg-transparent px-0 py-0 text-left text-lg font-semibold',
+						!shownValue && placeholder && 'text-muted-foreground',
 						error && 'rounded border border-destructive px-1'
 					)}
-					title={value || placeholder}
+					title={shownValue || placeholder}
 					onclick={beginEdit}
 					disabled={!canEdit}
 				>
-					{value || placeholder}
+					{shownValue || placeholder}
 				</button>
 			</h1>
 			{#if canEdit}
@@ -154,12 +161,12 @@
 			{:else}
 				<ArcaneTooltip.Root>
 					<ArcaneTooltip.Trigger>
-						<span class="text-muted-foreground inline-flex cursor-help items-center leading-none">
-							<InfoIcon class="relative top-0.5 size-4 shrink-0" />
+						<span class="text-muted-foreground inline-flex cursor-help items-center">
+							<InfoIcon class="size-4 shrink-0" />
 						</span>
 					</ArcaneTooltip.Trigger>
 					<ArcaneTooltip.Content>
-						{m.compose_name_change_not_allowed()}
+						{disabledMessage}
 					</ArcaneTooltip.Content>
 				</ArcaneTooltip.Root>
 			{/if}

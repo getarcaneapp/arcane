@@ -12,59 +12,53 @@ import (
 	"github.com/moby/moby/client"
 )
 
-// GetHostPathForContainerPath attempts to discover the host-side path for a given container path
-// by inspecting the container itself. This is useful for Docker-in-Docker scenarios
-// where the application needs to know host paths for volume mapping.
-func GetHostPathForContainerPath(ctx context.Context, dockerCli *client.Client, containerPath string) (string, error) {
+// GetCurrentContainerMounts inspects Arcane's own container and returns its bind and
+// named-volume mounts as projects.HostMount entries. It returns no mounts when Arcane is
+// not running in a container (or the daemon is unreachable). This is the basis for
+// Docker-in-Docker host-path resolution.
+func GetCurrentContainerMounts(ctx context.Context, dockerCli *client.Client) ([]projects.HostMount, error) {
 	if dockerCli == nil {
-		return "", nil // No docker client, can't discover
+		return nil, nil // No docker client, can't discover
 	}
 
-	// 1. Prefer robust current-container detection and fall back to hostname.
+	// Prefer robust current-container detection and fall back to hostname.
 	inspectTarget, err := getCurrentContainerInspectTargetInternal(GetCurrentContainerID, os.Hostname)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	// 2. Inspect self
 	inspect, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerCli, inspectTarget, client.ContainerInspectOptions{})
 	if err != nil {
 		// Not running in a container or can't reach docker daemon
+		return nil, err
+	}
+
+	mounts := make([]projects.HostMount, 0, len(inspect.Container.Mounts))
+	for i := range inspect.Container.Mounts {
+		m := &inspect.Container.Mounts[i]
+		if m.Type != mounttypes.TypeBind && m.Type != mounttypes.TypeVolume {
+			continue
+		}
+		if strings.TrimSpace(m.Source) == "" || strings.TrimSpace(m.Destination) == "" {
+			continue
+		}
+		mounts = append(mounts, projects.HostMount{Destination: m.Destination, Source: m.Source})
+	}
+	return mounts, nil
+}
+
+// GetHostPathForContainerPath attempts to discover the host-side path for a given container path
+// by inspecting the container itself. This is useful for Docker-in-Docker scenarios
+// where the application needs to know host paths for volume mapping. It returns an empty
+// string when the path is not covered by any of Arcane's mounts.
+func GetHostPathForContainerPath(ctx context.Context, dockerCli *client.Client, containerPath string) (string, error) {
+	mounts, err := GetCurrentContainerMounts(ctx, dockerCli)
+	if err != nil {
 		return "", err
 	}
 
-	// 3. Find mount point for the target path
-	// We want to find the mount that most specifically matches our path
-	var bestMatch *containertypes.MountPoint
-	for i := range inspect.Container.Mounts {
-		m := &inspect.Container.Mounts[i]
-		if strings.HasPrefix(containerPath, m.Destination) {
-			if bestMatch == nil || len(m.Destination) > len(bestMatch.Destination) {
-				bestMatch = m
-			}
-		}
-	}
-
-	if bestMatch != nil && (bestMatch.Type == mounttypes.TypeBind || bestMatch.Type == mounttypes.TypeVolume) {
-		// Calculate the relative path from mount destination to target path
-		rel := strings.TrimPrefix(containerPath, bestMatch.Destination)
-		rel = strings.TrimPrefix(rel, "/") // Ensure no double slash
-
-		hostPath := bestMatch.Source
-		if rel != "" {
-			// Determine path separator from the host path
-			separator := "/"
-			if projects.IsWindowsDrivePath(hostPath) && strings.Contains(hostPath, "\\") {
-				separator = "\\"
-				rel = strings.ReplaceAll(rel, "/", "\\")
-			}
-
-			if !strings.HasSuffix(hostPath, separator) {
-				hostPath += separator
-			}
-			hostPath += rel
-		}
-		return hostPath, nil
+	if host, ok := projects.ResolveHostPath(mounts, containerPath); ok {
+		return host, nil
 	}
 
 	return "", nil

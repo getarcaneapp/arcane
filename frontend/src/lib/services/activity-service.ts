@@ -3,6 +3,7 @@ import { environmentStore } from '$lib/stores/environment.store.svelte';
 import type { Activity, ActivityClearHistoryResult, ActivityDetail } from '$lib/types/activity.type';
 import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
 import { transformPaginationParams } from '$lib/utils/tables';
+import { streamCacheBuster } from '$lib/utils/streaming';
 
 class ActivityService extends BaseAPIService {
 	private async resolveEnvironmentId(environmentId?: string): Promise<string> {
@@ -33,7 +34,7 @@ class ActivityService extends BaseAPIService {
 
 	getActivityStreamUrl(limit = 50): string {
 		const baseUrl = this.api.defaults.baseURL.replace(/\/+$/, '');
-		const params = new URLSearchParams({ limit: String(limit) });
+		const params = new URLSearchParams({ limit: String(limit), _: streamCacheBuster() });
 		return `${baseUrl}/activities/stream?${params.toString()}`;
 	}
 

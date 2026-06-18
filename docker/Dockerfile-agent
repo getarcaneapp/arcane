@@ -66,6 +66,7 @@ ENV NVIDIA_VISIBLE_DEVICES=all \
     LD_LIBRARY_PATH=/usr/local/nvidia/lib:/usr/local/nvidia/lib64:/opt/rocm/lib:/opt/intel/oneapi/lib:/opt/intel/oneapi/lib/intel64:/usr/lib/x86_64-linux-gnu:/usr/lib/aarch64-linux-gnu:/usr/lib64:/usr/lib:/lib64:/lib
 
 ENV ENVIRONMENT=production \
+    ARCANE_IN_CONTAINER=true \
     AGENT_MODE=true \
     GIN_MODE=release \
     PORT=3553

@@ -14,7 +14,10 @@ type HeaderSetter interface {
 
 func SetJSONStreamHeaders(headers HeaderSetter) {
 	headers.SetHeader("Content-Type", "application/x-json-stream")
-	headers.SetHeader("Cache-Control", "no-cache")
+	// no-store keeps proxies from caching or collapsing identical concurrent
+	// stream requests (e.g. two browser tabs), which would otherwise leave only
+	// the first connection attached to the live upstream stream.
+	headers.SetHeader("Cache-Control", "no-store, no-cache, must-revalidate")
 	headers.SetHeader("Connection", "keep-alive")
 	headers.SetHeader("X-Accel-Buffering", "no")
 }

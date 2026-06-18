@@ -2,9 +2,15 @@
 	import CodeMirror from 'svelte-codemirror-editor';
 	import * as Command from '$lib/components/ui/command';
 	import { autocompletion, type Completion, type CompletionContext } from '@codemirror/autocomplete';
+	import { javascript } from '@codemirror/lang-javascript';
+	import { json } from '@codemirror/lang-json';
+	import { markdown } from '@codemirror/lang-markdown';
 	import { yaml } from '@codemirror/lang-yaml';
 	import { StreamLanguage, foldAll, unfoldAll, foldKeymap } from '@codemirror/language';
+	import { dockerFile } from '@codemirror/legacy-modes/mode/dockerfile';
 	import { properties } from '@codemirror/legacy-modes/mode/properties';
+	import { shell } from '@codemirror/legacy-modes/mode/shell';
+	import { toml } from '@codemirror/legacy-modes/mode/toml';
 	import {
 		linter,
 		lintGutter,
@@ -27,7 +33,7 @@
 	import { analyzeEnvContent } from './analysis/env-analysis';
 	import type { YamlPositionContext } from './analysis/compose-analysis';
 	import type { ComposeSchemaContext } from './analysis/compose-schema';
-	import type { CodeLanguage, DiagnosticSummary, EditorContext, OutlineItem } from './analysis/types';
+	import type { CodeLanguage, CodeValidationMode, DiagnosticSummary, EditorContext, OutlineItem } from './analysis/types';
 
 	type ComposeAnalysisModule = typeof import('./analysis/compose-analysis');
 	type ComposeSchemaModule = typeof import('./analysis/compose-schema');
@@ -48,6 +54,7 @@
 	let {
 		value = $bindable(''),
 		language = 'yaml' as CodeLanguage,
+		validationMode,
 		placeholder = '',
 		readOnly = false,
 		fontSize = '12px',
@@ -65,6 +72,7 @@
 	}: {
 		value?: string;
 		language?: CodeLanguage;
+		validationMode?: CodeValidationMode;
 		placeholder?: string;
 		readOnly?: boolean;
 		fontSize?: string;
@@ -92,11 +100,30 @@
 
 	const storageKey = $derived(fileId ? `arcane.editor.state:${fileId}` : null);
 	const isDiffActive = $derived(Boolean(enableDiff && diffOpen && originalValue !== undefined));
+	const effectiveValidationMode = $derived(validationMode ?? defaultValidationModeForLanguage(language));
 	const effectiveEditorContext = $derived({
 		envContent: editorContext?.envContent ?? '',
 		composeContents: editorContext?.composeContents ?? [],
 		globalVariables: editorContext?.globalVariables ?? {}
 	});
+
+	function defaultValidationModeForLanguage(lang: CodeLanguage): CodeValidationMode {
+		switch (lang) {
+			case 'yaml':
+				return 'compose';
+			case 'env':
+				return 'env';
+			case 'json':
+			case 'toml':
+			case 'dockerfile':
+			case 'shell':
+			case 'javascript':
+			case 'typescript':
+			case 'markdown':
+			case 'plaintext':
+				return 'none';
+		}
+	}
 
 	const mergeActionParams = $derived({
 		diffActive: isDiffActive,
@@ -161,6 +188,20 @@
 		if (!readOnly) return;
 		hasErrors = false;
 		validationReady = true;
+		updateSummary({
+			errors: 0,
+			warnings: 0,
+			infos: 0,
+			hints: 0,
+			validationReady: true
+		});
+	}
+
+	function markValidationNotRequiredReady() {
+		if (!readOnly && effectiveValidationMode !== 'none') return;
+		hasErrors = false;
+		validationReady = true;
+		activeOutlineItems = [];
 		updateSummary({
 			errors: 0,
 			warnings: 0,
@@ -283,7 +324,7 @@
 			if (parsed.errors.length === 0) {
 				formatted = parsed.toString({ indent: 2, lineWidth: 0 });
 			}
-		} else {
+		} else if (language === 'env') {
 			formatted = formatEnvContent(current);
 		}
 
@@ -379,7 +420,7 @@
 	};
 
 	const composeCompletionSource = async (context: CompletionContext) => {
-		if (language !== 'yaml' || readOnly) return null;
+		if (language !== 'yaml' || effectiveValidationMode !== 'compose' || readOnly) return null;
 		const source = context.state.doc.toString();
 		const analysisModule = await loadComposeAnalysisModule();
 		const yamlContext = analysisModule.findYamlPositionContext(source, context.pos);
@@ -399,7 +440,7 @@
 	};
 
 	const envCompletionSource = async (context: CompletionContext) => {
-		if (language !== 'env' || readOnly) return null;
+		if (language !== 'env' || effectiveValidationMode !== 'env' || readOnly) return null;
 		const before = context.matchBefore(/[A-Za-z0-9_.-]*/);
 		if (!context.explicit && (!before || before.from === before.to)) return null;
 
@@ -433,7 +474,7 @@
 
 	const yamlHover = hoverTooltip(
 		async (view, position) => {
-			if (language !== 'yaml' || isSchemaHoverSuppressed(view)) return null;
+			if (language !== 'yaml' || effectiveValidationMode !== 'compose' || isSchemaHoverSuppressed(view)) return null;
 			const source = view.state.doc.toString();
 			const analysisModule = await loadComposeAnalysisModule();
 			const variableRef = analysisModule.resolveVariableSourceAtPosition(source, position, effectiveEditorContext);
@@ -576,7 +617,7 @@
 	]);
 
 	const yamlLinter: LintSource = async (view): Promise<Diagnostic[]> => {
-		if (readOnly) {
+		if (readOnly || effectiveValidationMode !== 'compose') {
 			validationReady = true;
 			hasErrors = false;
 			return [];
@@ -598,7 +639,7 @@
 	};
 
 	const envLinter: LintSource = async (view): Promise<Diagnostic[]> => {
-		if (readOnly) {
+		if (readOnly || effectiveValidationMode !== 'env') {
 			validationReady = true;
 			hasErrors = false;
 			return [];
@@ -618,8 +659,41 @@
 
 	const enterIndentKeymaps: Record<CodeLanguage, Extension> = {
 		yaml: createEnterIndentKeymap('yaml'),
-		env: createEnterIndentKeymap('env')
+		env: createEnterIndentKeymap('env'),
+		json: createEnterIndentKeymap('json'),
+		toml: createEnterIndentKeymap('toml'),
+		dockerfile: createEnterIndentKeymap('dockerfile'),
+		shell: createEnterIndentKeymap('shell'),
+		javascript: createEnterIndentKeymap('javascript'),
+		typescript: createEnterIndentKeymap('typescript'),
+		markdown: createEnterIndentKeymap('markdown'),
+		plaintext: createEnterIndentKeymap('plaintext')
 	};
+
+	function getBasicLanguageExtension(lang: CodeLanguage): Extension[] {
+		switch (lang) {
+			case 'yaml':
+				return [yaml()];
+			case 'env':
+				return [StreamLanguage.define(properties)];
+			case 'json':
+				return [json()];
+			case 'toml':
+				return [StreamLanguage.define(toml)];
+			case 'dockerfile':
+				return [StreamLanguage.define(dockerFile)];
+			case 'shell':
+				return [StreamLanguage.define(shell)];
+			case 'javascript':
+				return [javascript({ jsx: true })];
+			case 'typescript':
+				return [javascript({ typescript: true, jsx: true })];
+			case 'markdown':
+				return [markdown()];
+			case 'plaintext':
+				return [];
+		}
+	}
 
 	function getLanguageExtension(lang: CodeLanguage, options: { lightweight?: boolean } = {}): Extension[] {
 		const lightweight = options.lightweight === true;
@@ -631,8 +705,8 @@
 
 		switch (lang) {
 			case 'yaml':
-				extensions.push(yaml());
-				if (!readOnly && !lightweight) {
+				extensions.push(...getBasicLanguageExtension(lang));
+				if (!readOnly && !lightweight && effectiveValidationMode === 'compose') {
 					extensions.push(
 						lintGutter(),
 						linter(yamlLinter, { delay: 140 }),
@@ -645,8 +719,8 @@
 				}
 				break;
 			case 'env':
-				extensions.push(StreamLanguage.define(properties));
-				if (!readOnly && !lightweight) {
+				extensions.push(...getBasicLanguageExtension(lang));
+				if (!readOnly && !lightweight && effectiveValidationMode === 'env') {
 					extensions.push(
 						lintGutter(),
 						linter(envLinter, { delay: 140 }),
@@ -657,9 +731,24 @@
 					);
 				}
 				break;
+			case 'json':
+			case 'toml':
+			case 'dockerfile':
+			case 'shell':
+			case 'javascript':
+			case 'typescript':
+			case 'markdown':
+				extensions.push(...getBasicLanguageExtension(lang));
+				break;
+			case 'plaintext':
+				break;
 		}
 
 		return extensions;
+	}
+
+	function getReadonlyLanguageExtension(lang: CodeLanguage): Extension[] {
+		return getBasicLanguageExtension(lang);
 	}
 
 	const theme = $derived.by(() => {
@@ -670,6 +759,7 @@
 	const mergeHostAction = createMergeHostAction({
 		getTheme: () => theme,
 		getLanguageExtension,
+		getReadonlyLanguageExtension,
 		onValueChange: (nextValue) => {
 			value = nextValue;
 		},
@@ -678,6 +768,7 @@
 			restoreEditorState(view);
 			updateCursorSummary(view);
 			markReadOnlyReady();
+			markValidationNotRequiredReady();
 		}
 	});
 
@@ -706,6 +797,7 @@
 			restoreEditorState(view);
 			updateCursorSummary(view);
 			markReadOnlyReady();
+			markValidationNotRequiredReady();
 		}
 	}
 

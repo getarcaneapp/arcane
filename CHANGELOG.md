@@ -1,3 +1,33 @@
+## v2.0.3
+
+### Bug fixes
+
+* self updater not restarting container properly ([#2897](https://github.com/getarcaneapp/arcane/pull/2897) by @kmendell)
+* dashboard env counts not displaying in a timley manner ([#2901](https://github.com/getarcaneapp/arcane/pull/2901) by @kmendell)
+* user based api keys are capped at users permissions check ([#2918](https://github.com/getarcaneapp/arcane/pull/2918) by @kmendell)
+* serve webhooks from the manager and close edge command allowlist gaps ([#2922](https://github.com/getarcaneapp/arcane/pull/2922) by @kmendell)
+* compose updater not correctly falling back to standalone container update ([#2923](https://github.com/getarcaneapp/arcane/pull/2923) by @kmendell)
+* dont check image updates on locally built images ([#2924](https://github.com/getarcaneapp/arcane/pull/2924) by @kmendell)
+
+### Dependencies
+
+* bump github.com/nicholas-fedor/shoutrrr from 0.15.1 to 0.16.0 in /backend ([#2867](https://github.com/getarcaneapp/arcane/pull/2867) by @dependabot[bot])
+* bump tanstack table to v9.b7([67e00af](https://github.com/getarcaneapp/arcane/commit/67e00af1cb49faaa9ba8c3fdf4501a291b125c32) by @kmendell)
+* bump svelte from 5.56.2 to 5.56.3 ([#2913](https://github.com/getarcaneapp/arcane/pull/2913) by @dependabot[bot])
+* bump golang.org/x/sync from 0.20.0 to 0.21.0 in /backend ([#2915](https://github.com/getarcaneapp/arcane/pull/2915) by @dependabot[bot])
+* bump golang.org/x/mod from 0.36.0 to 0.37.0 in /backend ([#2907](https://github.com/getarcaneapp/arcane/pull/2907) by @dependabot[bot])
+* bump golang.org/x/text from 0.37.0 to 0.38.0 in /backend ([#2905](https://github.com/getarcaneapp/arcane/pull/2905) by @dependabot[bot])
+* bump golang.org/x/crypto from 0.52.0 to 0.53.0 in /backend ([#2906](https://github.com/getarcaneapp/arcane/pull/2906) by @dependabot[bot])
+* bump github.com/aws/aws-sdk-go-v2/credentials from 1.19.22 to 1.19.23 in /backend ([#2916](https://github.com/getarcaneapp/arcane/pull/2916) by @dependabot[bot])
+* bump github.com/aws/aws-sdk-go-v2/config from 1.32.23 to 1.32.24 in /backend ([#2914](https://github.com/getarcaneapp/arcane/pull/2914) by @dependabot[bot])
+* bump github.com/aws/aws-sdk-go-v2/service/ecr from 1.58.3 to 1.58.4 in /backend ([#2912](https://github.com/getarcaneapp/arcane/pull/2912) by @dependabot[bot])
+* bump @sveltejs/kit from 3.0.0-next.1 to 3.0.0-next.2 ([#2909](https://github.com/getarcaneapp/arcane/pull/2909) by @dependabot[bot])
+* bump pnpm to v11.6.0([3eec6c7](https://github.com/getarcaneapp/arcane/commit/3eec6c7cde83d3af455c55058bee60e426119a1b) by @kmendell)
+
+
+
+**Full Changelog**: https://github.com/getarcaneapp/arcane/compare/v2.0.2...v2.0.3
+
 ## v2.0.2
 
 ### Bug fixes

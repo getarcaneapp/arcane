@@ -208,6 +208,12 @@ func isManagementPathInternal(suffix string) bool {
 		return true
 	}
 
+	// Webhooks are managed centrally: rows live in the manager DB (keyed by the
+	// real environment ID) and the public trigger endpoint resolves tokens there.
+	if suffix == "/webhooks" || strings.HasPrefix(suffix, "/webhooks/") {
+		return true
+	}
+
 	if strings.HasPrefix(suffix, "/deployment/mtls/") {
 		return true
 	}

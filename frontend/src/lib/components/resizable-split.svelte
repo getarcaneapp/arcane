@@ -10,11 +10,13 @@
 		second: Snippet;
 		size?: number | null;
 		minSize?: number;
+		maxSize?: number;
 		minSecondSize?: number;
 		defaultRatio?: number;
 		allowCollapse?: boolean;
 		collapseThreshold?: number;
 		handleSize?: number;
+		variant?: 'default' | 'flush';
 		stackBelow?: number;
 		class?: string;
 		firstClass?: string;
@@ -31,11 +33,13 @@
 		second,
 		size = $bindable<number | null>(null),
 		minSize = 240,
+		maxSize,
 		minSecondSize = 240,
 		defaultRatio = 0.5,
 		allowCollapse = true,
 		collapseThreshold = 28,
 		handleSize = 8,
+		variant = 'default',
 		stackBelow,
 		class: className = '',
 		firstClass = '',
@@ -68,12 +72,17 @@
 
 	const clampSize = (value: number, minValue: number, maxValue: number) => Math.min(Math.max(value, minValue), maxValue);
 
+	const layoutHandleSize = $derived(variant === 'flush' ? 1 : handleSize);
+
 	const getAvailableWidth = () => {
 		if (!containerRef) return 0;
-		return Math.max(0, containerRef.getBoundingClientRect().width - handleSize);
+		return Math.max(0, containerRef.getBoundingClientRect().width - layoutHandleSize);
 	};
 
-	const getMaxNormalSize = () => Math.max(0, getAvailableWidth() - minSecondSize);
+	const getMaxNormalSize = () => {
+		const base = Math.max(0, getAvailableWidth() - minSecondSize);
+		return maxSize !== undefined ? Math.min(base, maxSize) : base;
+	};
 
 	const ensureInitialSize = () => {
 		if (!containerRef || size !== null) return;
@@ -103,7 +112,7 @@
 			if (persist) commitSize();
 			return;
 		}
-		if (allowCollapse && nextSize >= available - collapseThreshold) {
+		if (allowCollapse && maxSize === undefined && nextSize >= available - collapseThreshold) {
 			collapsedSide = 'second';
 			size = available;
 			if (persist) commitSize();
@@ -225,7 +234,10 @@
 	});
 </script>
 
-<div bind:this={containerRef} class={['flex min-h-0 min-w-0', isStacked && 'flex-col gap-4', className]}>
+<div
+	bind:this={containerRef}
+	class={['flex min-h-0 min-w-0', isStacked && (variant === 'flush' ? 'flex-col' : 'flex-col gap-4'), className]}
+>
 	<div
 		class={['min-h-0 min-w-0 overflow-hidden', isStacked ? 'flex-1' : 'flex-none', firstClass]}
 		style={isStacked ? '' : `width: ${size ?? 0}px;`}
@@ -242,10 +254,15 @@
 			aria-orientation="vertical"
 			aria-label={ariaLabel ?? m.common_resize_panels()}
 			class={['group relative z-20 flex shrink-0 cursor-col-resize items-stretch justify-center overflow-visible', handleClass]}
-			style={`width: ${handleSize}px;`}
+			style={`width: ${layoutHandleSize}px;`}
 			onpointerdown={startResize}
 		>
-			<div class="bg-border group-hover:bg-primary/50 my-2 w-0.5 rounded-full transition-colors"></div>
+			{#if variant === 'flush'}
+				<div class="bg-border group-hover:bg-primary/50 w-px transition-colors"></div>
+				<div class="absolute inset-y-0 -right-1 -left-1"></div>
+			{:else}
+				<div class="bg-border group-hover:bg-primary/50 my-2 w-0.5 rounded-full transition-colors"></div>
+			{/if}
 			{#if collapsedSide}
 				<button
 					class="bg-background border-border text-muted-foreground hover:text-foreground focus-visible:ring-ring absolute inset-0 z-10 m-auto flex size-6 items-center justify-center rounded-full border shadow-sm focus-visible:ring-2 focus-visible:outline-none"

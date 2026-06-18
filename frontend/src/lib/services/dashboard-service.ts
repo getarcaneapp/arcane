@@ -1,4 +1,5 @@
 import BaseAPIService, { handleUnauthorizedResponseInternal } from './api-service';
+import { streamCacheBuster } from '$lib/utils/streaming';
 import type { DashboardSnapshot } from '$lib/types/shared';
 
 interface GetDashboardOptions {
@@ -17,6 +18,7 @@ class DashboardService extends BaseAPIService {
 		if (debugAllGood) {
 			params.set('debugAllGood', 'true');
 		}
+		params.set('_', streamCacheBuster());
 		const query = params.toString();
 		return `${baseUrl}/dashboard/stream${query ? `?${query}` : ''}`;
 	}

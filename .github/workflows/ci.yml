@@ -283,9 +283,9 @@ jobs:
 
       - name: Pull and save test images
         run: |
-          docker pull ghcr.io/linuxserver/nginx:latest
+          docker pull public.ecr.aws/nginx/nginx:stable-alpine
           docker pull ghcr.io/linuxserver/radarr:nightly
-          docker save ghcr.io/linuxserver/nginx:latest ghcr.io/linuxserver/radarr:nightly > /tmp/test-images.tar
+          docker save public.ecr.aws/nginx/nginx:stable-alpine ghcr.io/linuxserver/radarr:nightly > /tmp/test-images.tar
 
       - name: Setup and Install Playwright Dependencies
         run: just deps install tests

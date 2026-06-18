@@ -709,7 +709,11 @@ test.describe('New Compose Project Page', () => {
 
 		const deployResponse = await deployResponsePromise;
 		expect(deployResponse.ok()).toBe(true);
-		expect(await deployResponse.finished()).toBeNull();
+		// Don't await deployResponse.finished() here: for a chunked NDJSON stream
+		// consumed via fetch().body, Playwright's network-layer finished() doesn't
+		// reliably resolve even after the server closes the response and the UI
+		// updates to "running" — it hangs until the test timeout. Deploy completion
+		// is verified below via the running-status poll and the activity-success check.
 
 		const projectId = createdProjectId ?? getProjectIdFromPageUrl(page.url());
 		await expect
@@ -1013,6 +1017,16 @@ test.describe('GitOps Managed Project', () => {
 		await configTab.click();
 		await page.waitForLoadState('load');
 
+		const layoutSwitch = page.getByRole('switch', {
+			name: /workspace/i
+		});
+		const projectFilesLabel = page.getByText('Project Files', { exact: true });
+		// Projects with extra files default to tree view; start from classic.
+		if (await projectFilesLabel.isVisible().catch(() => false)) {
+			await layoutSwitch.click();
+			await expect(projectFilesLabel).not.toBeVisible();
+		}
+
 		await page.waitForTimeout(800);
 		const envEditor = page.locator('.cm-editor:visible').nth(1);
 		const marker = `ARCANE_E2E_${Date.now()}`;
@@ -1025,12 +1039,10 @@ test.describe('GitOps Managed Project', () => {
 		await expect(envEditor).toContainText(marker);
 		await expect(page.getByRole('button', { name: 'Save', exact: true }).first()).toBeVisible();
 
-		const layoutSwitch = page.getByRole('switch', {
-			name: /Classic|Tree View/i
-		});
 		if (await layoutSwitch.count()) {
 			await layoutSwitch.click();
 			await page.waitForLoadState('load');
+			await expect(projectFilesLabel).toBeVisible();
 
 			const envFileButton = page.getByRole('button', { name: '.env' }).first();
 			await expect(envFileButton).toBeVisible();
@@ -1206,14 +1218,11 @@ test.describe('Project Detail Page', () => {
 		await configTab.click();
 
 		// The project config editor supports two layouts:
-		// - classic (default): side-by-side compose.yaml + .env panels
-		// - tree view: file list on the left and a single code panel on the right
-		await expect(page.getByRole('heading', { name: 'compose.yaml' })).toBeVisible();
-
-		const projectFilesHeading = page.getByRole('heading', {
-			name: /Project Files/i
-		});
-		const isTreeView = await projectFilesHeading.isVisible();
+		// - classic: side-by-side compose.yaml + .env panels
+		// - tree view (default when the project has extra files): file list on the
+		//   left and a tabbed code panel on the right
+		const projectFilesLabel = page.getByText('Project Files', { exact: true });
+		const isTreeView = await projectFilesLabel.isVisible().catch(() => false);
 
 		if (isTreeView) {
 			const composeFileButton = page.getByRole('button', { name: 'compose.yaml' }).first();
@@ -1221,29 +1230,26 @@ test.describe('Project Detail Page', () => {
 
 			await expect(composeFileButton).toBeVisible();
 			await expect(envFileButton).toBeVisible();
+			await expect(page.locator('[data-tab-key="compose"]')).toBeVisible();
 
-			// Switching files should update the visible code panel title
+			// Selecting files should open and activate their editor tabs
 			await envFileButton.click();
-			await expect(page.getByRole('heading', { name: '.env' })).toBeVisible();
+			await expect(page.locator('[data-tab-key="env"][data-active="true"]')).toBeVisible();
 
 			await composeFileButton.click();
-			await expect(page.getByRole('heading', { name: 'compose.yaml' })).toBeVisible();
-
-			const includesFolder = page.getByRole('button', { name: 'Includes' });
-			if (await includesFolder.count()) {
-				await expect(includesFolder.first()).toBeVisible();
-			}
+			await expect(page.locator('[data-tab-key="compose"][data-active="true"]')).toBeVisible();
 		} else {
 			// Classic layout renders both editors at the same time.
+			await expect(page.getByRole('heading', { name: 'compose.yaml' })).toBeVisible();
 			await expect(page.getByRole('heading', { name: '.env' })).toBeVisible();
 
 			// Also validate that we can switch to tree view and see the file list.
 			const layoutSwitch = page.getByRole('switch', {
-				name: /Classic|Tree View/i
+				name: /workspace/i
 			});
 			if (await layoutSwitch.count()) {
 				await layoutSwitch.click();
-				await expect(projectFilesHeading).toBeVisible();
+				await expect(projectFilesLabel).toBeVisible();
 
 				const composeFileButton = page.getByRole('button', { name: 'compose.yaml' }).first();
 				const envFileButton = page.getByRole('button', { name: '.env' }).first();
@@ -1252,7 +1258,7 @@ test.describe('Project Detail Page', () => {
 				await expect(envFileButton).toBeVisible();
 
 				await envFileButton.click();
-				await expect(page.getByRole('heading', { name: '.env' })).toBeVisible();
+				await expect(page.locator('[data-tab-key="env"][data-active="true"]')).toBeVisible();
 			}
 		}
 	});
@@ -1271,20 +1277,18 @@ test.describe('Project Detail Page', () => {
 		await page.waitForLoadState('load');
 
 		let layoutSwitch = page.getByRole('switch', {
-			name: /Classic|Tree View/i
+			name: /workspace/i
 		});
 		test.skip(
 			(await layoutSwitch.count()) === 0,
 			'No layout switch available for project configuration'
 		);
 
-		const projectFilesHeading = page.getByRole('heading', {
-			name: /Project Files/i
-		});
+		const projectFilesLabel = page.getByText('Project Files', { exact: true });
 
-		if (!(await projectFilesHeading.isVisible().catch(() => false))) {
+		if (!(await projectFilesLabel.isVisible().catch(() => false))) {
 			await layoutSwitch.click();
-			await expect(projectFilesHeading).toBeVisible();
+			await expect(projectFilesLabel).toBeVisible();
 		}
 
 		await page.reload();
@@ -1296,8 +1300,8 @@ test.describe('Project Detail Page', () => {
 			await page.waitForLoadState('load');
 		}
 
-		await expect(projectFilesHeading).toBeVisible();
-		await expect(page.getByRole('heading', { name: 'compose.yaml' })).toBeVisible();
+		await expect(projectFilesLabel).toBeVisible();
+		await expect(page.locator('[data-tab-key="compose"][data-active="true"]')).toBeVisible();
 
 		const treeComposeEditor = page.locator('.cm-editor:visible').first();
 		await expect(treeComposeEditor).toBeVisible();
@@ -1315,7 +1319,7 @@ test.describe('Project Detail Page', () => {
 		await expect(envFileButton).toBeVisible();
 
 		layoutSwitch = page.getByRole('switch', {
-			name: /Classic|Tree View/i
+			name: /workspace/i
 		});
 		await layoutSwitch.click();
 		await expect(page.getByRole('heading', { name: 'compose.yaml' })).toBeVisible();
@@ -1356,7 +1360,7 @@ test.describe('Project Detail Page', () => {
 				.toContain(marker);
 
 			const layoutSwitch = page.getByRole('switch', {
-				name: /Classic|Tree View/i
+				name: /workspace/i
 			});
 			if (await layoutSwitch.count()) {
 				await layoutSwitch.click();

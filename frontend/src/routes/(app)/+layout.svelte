@@ -92,33 +92,40 @@
 
 <svelte:window onkeydown={handleNavigationShortcut} />
 
-{#if isMobile.current}
-	<main class="flex-1">
+<!--
+	`children` is rendered at a single, stable call site so the page subtree is NOT
+	torn down and recreated when `isMobile` flips across the 768px breakpoint. A
+	remount would re-run each page's one-time state setup and silently discard
+	unsaved edits (e.g. the project compose editor). Only the surrounding chrome and
+	classes are toggled by viewport. See issue #2938.
+-->
+<Sidebar.Provider class={isMobile.current ? 'h-auto min-h-dvh' : undefined}>
+	{#if !isMobile.current}
+		<AppSidebar {versionInformation} {user} {swarmEnabled} {permissionsManifest} />
+	{/if}
+
+	<main class={isMobile.current ? 'flex-1' : 'h-dvh flex-1'}>
 		<section
-			class={cn(
-				'px-3',
-				navigationMode === 'docked'
-					? navigationSettings.scrollToHide
-						? 'pt-5'
-						: 'pt-5 pb-(--mobile-docked-nav-offset,calc(3.5rem+env(safe-area-inset-bottom)))'
-					: navigationSettings.scrollToHide
-						? 'py-5'
-						: 'py-5 pb-(--mobile-floating-nav-offset,6rem)'
-			)}
+			class={isMobile.current
+				? cn(
+						'px-3',
+						navigationMode === 'docked'
+							? navigationSettings.scrollToHide
+								? 'pt-5'
+								: 'pt-5 pb-(--mobile-docked-nav-offset,calc(3.5rem+env(safe-area-inset-bottom)))'
+							: navigationSettings.scrollToHide
+								? 'py-5'
+								: 'py-5 pb-(--mobile-floating-nav-offset,6rem)'
+					)
+				: 'h-full p-3 sm:p-5'}
 		>
 			{@render children()}
 		</section>
 	</main>
-	<MobileNav {navigationSettings} {user} {versionInformation} {swarmEnabled} {permissionsManifest} />
-{:else}
-	<Sidebar.Provider>
-		<AppSidebar {versionInformation} {user} {swarmEnabled} {permissionsManifest} />
-		<main class="h-dvh flex-1">
-			<section class="h-full p-3 sm:p-5">
-				{@render children()}
-			</section>
-		</main>
-	</Sidebar.Provider>
-{/if}
+
+	{#if isMobile.current}
+		<MobileNav {navigationSettings} {user} {versionInformation} {swarmEnabled} {permissionsManifest} />
+	{/if}
+</Sidebar.Provider>
 
 <ActivityCenter />

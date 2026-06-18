@@ -3,8 +3,10 @@ package database
 import (
 	"context"
 	stdsql "database/sql"
+	"io/fs"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -394,4 +396,89 @@ func assertLegacyMigrationDirtyInternal(t *testing.T, dsn string, expected bool)
 	err = rawDB.QueryRow(`SELECT dirty FROM schema_migrations ORDER BY version DESC LIMIT 1`).Scan(&dirty)
 	require.NoError(t, err)
 	assert.Equal(t, expected, dirty)
+}
+
+// TestSQLiteMigrations_ColumnAddsAreReversible guards against the historical footgun
+// where a SQLite migration adds a column but leaves a no-op '-- +goose Down' (on the
+// mistaken belief that SQLite can't DROP COLUMN). The bundled modernc SQLite supports
+// DROP COLUMN, so every column-adding migration must reverse itself — otherwise a
+// down/up round-trip fails with a duplicate-column error. See 059_add_api_key_kind.sql
+// for the expected pattern.
+func TestSQLiteMigrations_ColumnAddsAreReversible(t *testing.T) {
+	migrationsFS, err := embeddedMigrationFSInternal(dbProviderSQLite)
+	require.NoError(t, err)
+
+	entries, err := fs.ReadDir(migrationsFS, ".")
+	require.NoError(t, err)
+
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") {
+			continue
+		}
+
+		content, err := fs.ReadFile(migrationsFS, entry.Name())
+		require.NoError(t, err)
+
+		up, down := gooseUpDownSectionsInternal(string(content))
+		if !strings.Contains(strings.ToUpper(up), "ADD COLUMN") {
+			continue
+		}
+
+		assert.True(t, sectionHasSQLInternal(down),
+			"migration %s adds a column but its '-- +goose Down' has no SQL; add the reversing "+
+				"ALTER TABLE ... DROP COLUMN (modernc SQLite supports it). A no-op Down breaks "+
+				"down/up round-trips with a duplicate-column error.", entry.Name())
+	}
+}
+
+// TestSQLiteMigrations_DownUpRoundTrip migrates fully up, downgrades to just below
+// 029_add_ssh_host_key_verification (whose Down was previously a no-op), then migrates
+// back up. It proves that Down block executes cleanly (DROP COLUMN) and that re-applying
+// the Up does not fail with a duplicate-column error.
+//
+// The target stops at 28 rather than below 007 because downgrading past version 25 hits
+// a separate, pre-existing problem: 025's Down drops a column from api_keys while a
+// foreign key still references it, which SQLite rejects. That is unrelated to the no-op
+// Down fixes here and is tracked separately.
+func TestSQLiteMigrations_DownUpRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	rawDB, dsn := newSQLiteSQLDBInternal(t, t.TempDir(), "arcane-roundtrip.db")
+
+	require.NoError(t, migrateDatabaseInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{}))
+
+	const belowFixedVersion = int64(28)
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, belowFixedVersion))
+	assert.Equal(t, belowFixedVersion, readGooseSQLiteVersionInternal(t, dsn))
+
+	// Re-up: a no-op Down would have left the column in place, so this would fail
+	// with "duplicate column name".
+	require.NoError(t, migrateDatabaseInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{}))
+
+	highestVersion, err := getHighestEmbeddedMigrationVersionInternal("sqlite")
+	require.NoError(t, err)
+	assert.Equal(t, highestVersion, readGooseSQLiteVersionInternal(t, dsn))
+}
+
+// gooseUpDownSectionsInternal splits a goose migration into the text before the
+// '-- +goose Down' marker (the Up section) and the text after it (the Down section).
+func gooseUpDownSectionsInternal(content string) (up, down string) {
+	const downMarker = "-- +goose Down"
+	idx := strings.Index(content, downMarker)
+	if idx < 0 {
+		return content, ""
+	}
+	return content[:idx], content[idx+len(downMarker):]
+}
+
+// sectionHasSQLInternal reports whether a migration section contains at least one
+// non-comment, non-blank line (i.e. an actual statement rather than only comments).
+func sectionHasSQLInternal(section string) bool {
+	for _, line := range strings.Split(section, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "--") {
+			continue
+		}
+		return true
+	}
+	return false
 }

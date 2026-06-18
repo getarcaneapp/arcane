@@ -1,6 +1,15 @@
 <script lang="ts">
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { ArrowLeftIcon, TerminalIcon, TemplateIcon, AddIcon, GitBranchIcon } from '$lib/icons';
+	import {
+		ArrowLeftIcon,
+		ArrowsUpDownIcon,
+		TerminalIcon,
+		TemplateIcon,
+		AddIcon,
+		GitBranchIcon,
+		FileTextIcon,
+		SearchIcon
+	} from '$lib/icons';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
@@ -14,18 +23,38 @@
 	import { ArrowDownIcon as ChevronDown } from '$lib/icons';
 	import CodePanel from '../components/CodePanel.svelte';
 	import EditableName from '../components/EditableName.svelte';
+	import ProjectFileTreePanel from '../components/ProjectFileTreePanel.svelte';
+	import EditorTabStrip from '../components/EditorTabStrip.svelte';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { hasPermission } from '$lib/utils/auth';
 	import IfPermitted from '$lib/components/if-permitted.svelte';
 	import { ComposeEditorSplit } from '$lib/components/compose';
+	import ResizableSplit from '$lib/components/resizable-split.svelte';
+	import { Switch } from '$lib/components/ui/switch';
 	import DockerRunConverterDialog from '$lib/components/compose/docker-run-converter-dialog.svelte';
 	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 	import { globalVariablesToMap } from '$lib/utils/template-load';
+	import type { ProjectFileDraft } from '$lib/types/project-files';
+	import {
+		isProjectFileSelectionUnder,
+		planProjectFileCreate,
+		planProjectFileMove,
+		planProjectFileRename,
+		projectFileBasename,
+		projectFileLanguage,
+		projectFilePathMatches,
+		remapProjectFilePath,
+		remapProjectFileRecord,
+		remapSelectedProjectFileKey,
+		removeProjectFileRecord,
+		type ManagedProjectFileEntry
+	} from '../components/project-file-tree-utils';
 	import {
 		createComposeEditorSchema,
 		createComposeTemplateDialogFlow,
 		dropdownContentClass,
 		dropdownItemClass,
+		extractComposeYamlName,
 		submitComposeResourceForm,
 		templateBtnClass,
 		templateNameSlug
@@ -64,6 +93,16 @@
 
 	let composeOpen = $state(true);
 	let envOpen = $state(true);
+	let layoutMode = $state<'classic' | 'tree'>('classic');
+	let selectedProjectFile = $state<'compose' | 'env' | string>('compose');
+	let treePaneWidth = $state(420);
+	const minTreePaneWidth = 200;
+	const maxTreePaneWidth = 480;
+	const minEditorPaneWidth = 360;
+	let newProjectFiles = $state<ProjectFileDraft[]>([]);
+	let newProjectFileContents = $state<Record<string, string>>({});
+	let newProjectFileHasErrors = $state<Record<string, boolean>>({});
+	let newProjectFileValidationReady = $state<Record<string, boolean>>({});
 	let validation = $state({
 		composeHasErrors: false,
 		envHasErrors: false,
@@ -72,6 +111,62 @@
 	});
 
 	const globalVariableMap = $derived(globalVariablesToMap(data.globalVariables));
+	const newProjectFileEntries = $derived.by<ManagedProjectFileEntry[]>(() =>
+		newProjectFiles.map((file) => ({
+			path: file.relativePath,
+			relativePath: file.relativePath,
+			name: projectFileBasename(file.relativePath),
+			isDirectory: !!file.isDirectory,
+			size: file.isDirectory ? 0 : (newProjectFileContents[file.relativePath]?.length ?? 0),
+			content: file.isDirectory ? undefined : (newProjectFileContents[file.relativePath] ?? ''),
+			pending: true
+		}))
+	);
+	const newProjectFilePaths = $derived.by(() => new Set(newProjectFileEntries.map((file) => file.relativePath)));
+	let openProjectTabs = $state<string[]>(['compose']);
+	let treeOutlineOpen = $state(false);
+	let treeDiffOpen = $state(false);
+	let treeCommandPaletteOpen = $state(false);
+	const openTabs = $derived.by(() => {
+		const valid = openProjectTabs.filter((key) => {
+			if (key === 'compose' || key === 'env') return true;
+			if (!key.startsWith('file:')) return false;
+			const entry = newProjectFileEntries.find((file) => file.relativePath === key.slice(5));
+			return !!entry && !entry.isDirectory;
+		});
+		return valid.length > 0 ? valid : ['compose'];
+	});
+	const activeProjectTab = $derived(openTabs.includes(selectedProjectFile) ? selectedProjectFile : (openTabs[0] ?? 'compose'));
+	const projectTabs = $derived(
+		openTabs.map((key) => ({
+			key,
+			label: key === 'compose' ? 'compose.yaml' : key === 'env' ? '.env' : projectFileBasename(key.slice(5)),
+			title: key === 'compose' ? 'compose.yaml' : key === 'env' ? '.env' : key.slice(5),
+			iconClass: key === 'compose' ? 'text-blue-500' : key === 'env' ? 'text-green-500' : 'text-muted-foreground',
+			pending: false
+		}))
+	);
+
+	function isNewProjectDirectoryKey(key: string): boolean {
+		if (!key.startsWith('file:')) return false;
+		return newProjectFileEntries.find((file) => file.relativePath === key.slice(5))?.isDirectory === true;
+	}
+
+	function openProjectFileTab(key: string) {
+		if (!isNewProjectDirectoryKey(key) && !openProjectTabs.includes(key)) {
+			openProjectTabs = [...openProjectTabs, key];
+		}
+		selectedProjectFile = key;
+	}
+
+	function closeProjectFileTab(key: string) {
+		const index = openTabs.indexOf(key);
+		const remaining = openTabs.filter((tab) => tab !== key);
+		openProjectTabs = openProjectTabs.filter((tab) => tab !== key);
+		if (selectedProjectFile === key) {
+			selectedProjectFile = remaining[Math.min(Math.max(index - 1, 0), remaining.length - 1)] ?? 'compose';
+		}
+	}
 	const validationState = $derived(
 		getTemplateEditorValidationState(
 			validation.composeValidationReady,
@@ -81,18 +176,32 @@
 		)
 	);
 	let hasEditorErrors = $derived(hasTemplateEditorErrors(validationState));
+	const codeEditorContext = $derived({
+		envContent: $inputs.envContent.value,
+		composeContents: [$inputs.composeContent.value].filter((value) => value.length > 0),
+		globalVariables: globalVariableMap
+	});
 
 	let nameInputRef = $state<HTMLInputElement | null>(null);
+
+	const composeYamlName = $derived(extractComposeYamlName($inputs.composeContent.value));
+	// The compose file's top-level `name:` is authoritative; surface it as the
+	// effective name without writing to form state reactively.
+	const effectiveName = $derived(composeYamlName ?? $inputs.name.value);
 
 	async function handleSubmit() {
 		await handleCreateProject();
 	}
 
 	async function handleCreateProject() {
+		// Sync the authoritative compose name into form state at submit time so
+		// validation and the create payload use it (event-time write, not an effect).
+		if (composeYamlName) form.setValue('name', composeYamlName);
 		await submitComposeResourceForm({
 			validate: () => validateTemplateEditorForm(validationState, form.validate),
 			setLoading: (value) => (ui.saving = value),
-			submit: ({ name, composeContent, envContent }) => projectService.createProject(name, composeContent, envContent),
+			submit: ({ name, composeContent, envContent }) =>
+				projectService.createProject(name, composeContent, envContent, buildNewProjectFilePayload()),
 			failureMessage: (name) => m.common_create_failed({ resource: `${m.resource_project()} "${name}"` }),
 			onSuccess: async (project, { name }) => {
 				toast.success(
@@ -112,6 +221,84 @@
 		setLoading: (value) => (ui.creatingTemplate = value),
 		hasEditorErrors: () => hasEditorErrors
 	});
+
+	function ensureNewProjectFileUiState(relativePath: string) {
+		if (newProjectFileHasErrors[relativePath] === undefined) {
+			newProjectFileHasErrors = {
+				...newProjectFileHasErrors,
+				[relativePath]: false
+			};
+		}
+		if (newProjectFileValidationReady[relativePath] === undefined) {
+			newProjectFileValidationReady = {
+				...newProjectFileValidationReady,
+				[relativePath]: true
+			};
+		}
+	}
+
+	function createNewProjectFile(parentPath: string, name: string, content = '') {
+		const relativePath = planProjectFileCreate(newProjectFilePaths, parentPath, name);
+		if (!relativePath) return;
+		newProjectFiles = [...newProjectFiles, { relativePath, isDirectory: false }];
+		newProjectFileContents = { ...newProjectFileContents, [relativePath]: content };
+		ensureNewProjectFileUiState(relativePath);
+		openProjectFileTab(`file:${relativePath}`);
+	}
+
+	function createNewProjectFolder(parentPath: string, name: string) {
+		const relativePath = planProjectFileCreate(newProjectFilePaths, parentPath, name);
+		if (!relativePath) return;
+		newProjectFiles = [...newProjectFiles, { relativePath, isDirectory: true }];
+		selectedProjectFile = `file:${relativePath}`;
+	}
+
+	function applyNewProjectFilePathChange(oldPath: string, newPath: string) {
+		newProjectFiles = newProjectFiles.map((file) => ({
+			...file,
+			relativePath: remapProjectFilePath(file.relativePath, oldPath, newPath)
+		}));
+		newProjectFileContents = remapProjectFileRecord(newProjectFileContents, oldPath, newPath);
+		newProjectFileHasErrors = remapProjectFileRecord(newProjectFileHasErrors, oldPath, newPath);
+		newProjectFileValidationReady = remapProjectFileRecord(newProjectFileValidationReady, oldPath, newPath);
+		openProjectTabs = openProjectTabs.map((tab) => remapSelectedProjectFileKey(tab, oldPath, newPath) ?? tab);
+		const remappedSelection = remapSelectedProjectFileKey(selectedProjectFile, oldPath, newPath);
+		if (remappedSelection) {
+			selectedProjectFile = remappedSelection;
+		}
+	}
+
+	function renameNewProjectFile(relativePath: string, newName: string) {
+		const plan = planProjectFileRename(newProjectFilePaths, relativePath, newName);
+		if (!plan) return;
+		applyNewProjectFilePathChange(relativePath, plan.newPath);
+	}
+
+	function moveNewProjectFile(relativePath: string, newParentPath: string) {
+		const entry = newProjectFileEntries.find((file) => file.relativePath === relativePath);
+		const newPath = planProjectFileMove(entry, newProjectFilePaths, relativePath, newParentPath);
+		if (!newPath) return;
+		applyNewProjectFilePathChange(relativePath, newPath);
+	}
+
+	function deleteNewProjectFile(relativePath: string) {
+		newProjectFiles = newProjectFiles.filter((file) => !projectFilePathMatches(file.relativePath, relativePath));
+		newProjectFileContents = removeProjectFileRecord(newProjectFileContents, relativePath);
+		newProjectFileHasErrors = removeProjectFileRecord(newProjectFileHasErrors, relativePath);
+		newProjectFileValidationReady = removeProjectFileRecord(newProjectFileValidationReady, relativePath);
+		openProjectTabs = openProjectTabs.filter((tab) => !isProjectFileSelectionUnder(tab, relativePath));
+		if (isProjectFileSelectionUnder(selectedProjectFile, relativePath)) {
+			selectedProjectFile = openTabs[0] ?? 'compose';
+		}
+	}
+
+	function buildNewProjectFilePayload(): ProjectFileDraft[] {
+		return newProjectFiles.map((file) => ({
+			relativePath: file.relativePath,
+			isDirectory: !!file.isDirectory,
+			content: file.isDirectory ? undefined : (newProjectFileContents[file.relativePath] ?? '')
+		}));
+	}
 </script>
 
 <div class="bg-background flex h-full min-h-0 flex-col">
@@ -131,12 +318,14 @@
 				<div class="hidden items-center gap-3 sm:flex">
 					<EditableName
 						bind:value={$inputs.name.value}
+						displayValue={effectiveName}
 						bind:ref={nameInputRef}
 						variant="inline"
 						error={$inputs.name.error ?? undefined}
 						originalValue=""
 						placeholder={m.compose_project_name_placeholder?.() || 'Enter project name...'}
-						canEdit={!ui.saving && !ui.isLoadingTemplateContent}
+						canEdit={!ui.saving && !ui.isLoadingTemplateContent && !composeYamlName}
+						disabledMessage={composeYamlName ? m.compose_project_name_defined_in_yaml() : undefined}
 						class="hidden sm:block"
 					/>
 				</div>
@@ -145,7 +334,7 @@
 			<div class="flex items-center gap-2">
 				<ButtonGroup.Root>
 					<ArcaneTooltip.Root
-						open={!$inputs.name.value && !ui.saving && !ui.converting && !ui.isLoadingTemplateContent ? undefined : false}
+						open={!effectiveName && !ui.saving && !ui.converting && !ui.isLoadingTemplateContent ? undefined : false}
 					>
 						<ArcaneTooltip.Trigger>
 							<span>
@@ -153,7 +342,7 @@
 									<ArcaneButton
 										action="create"
 										tone="ghost"
-										disabled={!$inputs.name.value ||
+										disabled={!effectiveName ||
 											!$inputs.composeContent.value ||
 											hasEditorErrors ||
 											ui.saving ||
@@ -169,7 +358,7 @@
 							</span>
 						</ArcaneTooltip.Trigger>
 						<ArcaneTooltip.Content class="arcane-tooltip-content max-w-[280px]">
-							{#if $inputs.name.value === ''}
+							{#if effectiveName === ''}
 								<p class="mb-1 text-sm font-medium">{m.compose_project_name_tooltip_title()}</p>
 								<p class="text-muted-foreground text-xs">
 									{m.compose_project_name_tooltip_description()}
@@ -250,52 +439,203 @@
 				<div class="block flex-shrink-0 py-4 sm:hidden">
 					<EditableName
 						bind:value={$inputs.name.value}
+						displayValue={effectiveName}
 						bind:ref={nameInputRef}
 						variant="block"
 						error={$inputs.name.error ?? undefined}
 						originalValue=""
 						placeholder={m.compose_project_name_placeholder()}
-						canEdit={!ui.saving && !ui.isLoadingTemplateContent}
+						canEdit={!ui.saving && !ui.isLoadingTemplateContent && !composeYamlName}
+						disabledMessage={composeYamlName ? m.compose_project_name_defined_in_yaml() : undefined}
 					/>
 				</div>
 
-				<ComposeEditorSplit onsubmit={preventDefault(handleSubmit)}>
-					{#snippet compose()}
-						<CodePanel
-							bind:open={composeOpen}
-							title={m.compose_compose_file_title()}
-							language="yaml"
-							bind:value={$inputs.composeContent.value}
-							error={$inputs.composeContent.error ?? undefined}
-							bind:hasErrors={validation.composeHasErrors}
-							bind:validationReady={validation.composeValidationReady}
-							fileId="projects:new:compose"
-							editorContext={{
-								envContent: $inputs.envContent.value,
-								composeContents: [$inputs.composeContent.value],
-								globalVariables: globalVariableMap
-							}}
-						/>
-					{/snippet}
+				<div class="flex shrink-0 items-center justify-end gap-2">
+					<label
+						for="new-project-layout-mode-toggle"
+						class="text-muted-foreground cursor-pointer text-xs"
+						title={m.project_view_description()}
+					>
+						{m.workspace()}
+					</label>
+					<Switch
+						id="new-project-layout-mode-toggle"
+						checked={layoutMode === 'tree'}
+						aria-label={m.project_view_description()}
+						onCheckedChange={(checked) => {
+							layoutMode = checked ? 'tree' : 'classic';
+							openProjectFileTab('compose');
+						}}
+					/>
+				</div>
 
-					{#snippet env()}
-						<CodePanel
-							bind:open={envOpen}
-							title={m.compose_env_title()}
-							language="env"
-							bind:value={$inputs.envContent.value}
-							error={$inputs.envContent.error ?? undefined}
-							bind:hasErrors={validation.envHasErrors}
-							bind:validationReady={validation.envValidationReady}
-							fileId="projects:new:env"
-							editorContext={{
-								envContent: $inputs.envContent.value,
-								composeContents: [$inputs.composeContent.value],
-								globalVariables: globalVariableMap
-							}}
-						/>
-					{/snippet}
-				</ComposeEditorSplit>
+				{#if layoutMode === 'tree'}
+					<div class="bg-card border-border flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border">
+						<ResizableSplit
+							class="min-h-0 flex-1"
+							variant="flush"
+							firstClass="bg-muted/20 border-border flex min-h-0 flex-col border-b lg:border-r lg:border-b-0"
+							secondClass="flex min-h-0 flex-col"
+							bind:size={treePaneWidth}
+							minSize={minTreePaneWidth}
+							maxSize={maxTreePaneWidth}
+							minSecondSize={minEditorPaneWidth}
+							defaultRatio={0.22}
+							stackBelow={1024}
+							ariaLabel={m.compose_editor_resize_files_panel()}
+							persistKey="arcane.compose.split:new-project:tree"
+						>
+							{#snippet first()}
+								<ProjectFileTreePanel
+									composeFileName="compose.yaml"
+									entries={newProjectFileEntries}
+									selectedFile={selectedProjectFile}
+									disabled={ui.saving || ui.isLoadingTemplateContent}
+									onSelect={openProjectFileTab}
+									onCreateFile={createNewProjectFile}
+									onCreateFolder={createNewProjectFolder}
+									onRename={renameNewProjectFile}
+									onMove={moveNewProjectFile}
+									onDelete={deleteNewProjectFile}
+								/>
+							{/snippet}
+
+							{#snippet second()}
+								<div class="flex h-full min-h-0 flex-1 flex-col">
+									<EditorTabStrip
+										tabs={projectTabs}
+										activeKey={activeProjectTab}
+										onSelect={openProjectFileTab}
+										onClose={closeProjectFileTab}
+									>
+										{#snippet actions()}
+											<ArcaneButton
+												action="base"
+												tone={treeOutlineOpen ? 'outline-primary' : 'ghost'}
+												size="icon"
+												class="size-6"
+												showLabel={false}
+												icon={FileTextIcon}
+												customLabel={m.compose_editor_toggle_outline()}
+												onclick={() => (treeOutlineOpen = !treeOutlineOpen)}
+											/>
+											<ArcaneButton
+												action="base"
+												tone={treeDiffOpen ? 'outline-primary' : 'ghost'}
+												size="icon"
+												class="size-6"
+												showLabel={false}
+												icon={ArrowsUpDownIcon}
+												customLabel={m.compose_editor_toggle_diff()}
+												onclick={() => (treeDiffOpen = !treeDiffOpen)}
+											/>
+											<ArcaneButton
+												action="base"
+												tone="ghost"
+												size="icon"
+												class="size-6"
+												showLabel={false}
+												icon={SearchIcon}
+												customLabel={m.compose_editor_command_palette()}
+												onclick={() => (treeCommandPaletteOpen = true)}
+											/>
+										{/snippet}
+									</EditorTabStrip>
+									<div class="flex min-h-0 flex-1 flex-col">
+										{#key activeProjectTab}
+											{#if activeProjectTab === 'compose'}
+												<CodePanel
+													variant="plain"
+													bind:open={composeOpen}
+													title={m.compose_compose_file_title()}
+													language="yaml"
+													validationMode="compose"
+													bind:value={$inputs.composeContent.value}
+													error={$inputs.composeContent.error ?? undefined}
+													bind:hasErrors={validation.composeHasErrors}
+													bind:validationReady={validation.composeValidationReady}
+													fileId="projects:new:compose"
+													editorContext={codeEditorContext}
+													bind:outlineOpen={treeOutlineOpen}
+													bind:diffOpen={treeDiffOpen}
+													bind:commandPaletteOpen={treeCommandPaletteOpen}
+												/>
+											{:else if activeProjectTab === 'env'}
+												<CodePanel
+													variant="plain"
+													bind:open={envOpen}
+													title={m.compose_env_title()}
+													language="env"
+													validationMode="env"
+													bind:value={$inputs.envContent.value}
+													error={$inputs.envContent.error ?? undefined}
+													bind:hasErrors={validation.envHasErrors}
+													bind:validationReady={validation.envValidationReady}
+													fileId="projects:new:env"
+													editorContext={codeEditorContext}
+													bind:outlineOpen={treeOutlineOpen}
+													bind:diffOpen={treeDiffOpen}
+													bind:commandPaletteOpen={treeCommandPaletteOpen}
+												/>
+											{:else if activeProjectTab.startsWith('file:')}
+												{@const relativePath = activeProjectTab.slice(5)}
+												<CodePanel
+													variant="plain"
+													open={true}
+													title={relativePath}
+													language={projectFileLanguage(relativePath)}
+													validationMode="none"
+													bind:value={newProjectFileContents[relativePath]}
+													bind:hasErrors={newProjectFileHasErrors[relativePath]}
+													bind:validationReady={newProjectFileValidationReady[relativePath]}
+													fileId={`projects:new:file:${relativePath}`}
+													originalValue=""
+													enableDiff={true}
+													editorContext={codeEditorContext}
+													bind:outlineOpen={treeOutlineOpen}
+													bind:diffOpen={treeDiffOpen}
+													bind:commandPaletteOpen={treeCommandPaletteOpen}
+												/>
+											{/if}
+										{/key}
+									</div>
+								</div>
+							{/snippet}
+						</ResizableSplit>
+					</div>
+				{:else}
+					<ComposeEditorSplit onsubmit={preventDefault(handleSubmit)}>
+						{#snippet compose()}
+							<CodePanel
+								bind:open={composeOpen}
+								title={m.compose_compose_file_title()}
+								language="yaml"
+								validationMode="compose"
+								bind:value={$inputs.composeContent.value}
+								error={$inputs.composeContent.error ?? undefined}
+								bind:hasErrors={validation.composeHasErrors}
+								bind:validationReady={validation.composeValidationReady}
+								fileId="projects:new:compose"
+								editorContext={codeEditorContext}
+							/>
+						{/snippet}
+
+						{#snippet env()}
+							<CodePanel
+								bind:open={envOpen}
+								title={m.compose_env_title()}
+								language="env"
+								validationMode="env"
+								bind:value={$inputs.envContent.value}
+								error={$inputs.envContent.error ?? undefined}
+								bind:hasErrors={validation.envHasErrors}
+								bind:validationReady={validation.envValidationReady}
+								fileId="projects:new:env"
+								editorContext={codeEditorContext}
+							/>
+						{/snippet}
+					</ComposeEditorSplit>
+				{/if}
 			</div>
 		</div>
 	</div>

@@ -5,7 +5,6 @@
 	import UpdateCenterDialog from '$lib/components/dialogs/update-center-dialog.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { queryKeys } from '$lib/query/query-keys';
-	import environmentUpgradeService from '$lib/services/api/environment-upgrade-service';
 	import systemUpgradeService from '$lib/services/api/system-upgrade-service';
 	import type { AppVersionInformation } from '$lib/types/settings';
 	import type { Environment } from '$lib/types/environment';
@@ -40,10 +39,7 @@
 
 	const upgradeAvailabilityQuery = createQuery(() => ({
 		queryKey: queryKeys.system.environmentUpgradeAvailable(environment.id),
-		queryFn: () =>
-			environment.id === '0'
-				? systemUpgradeService.checkUpgradeAvailable()
-				: environmentUpgradeService.checkEnvironmentUpgradeAvailable(environment.id),
+		queryFn: () => systemUpgradeService.checkUpgradeAvailable(environment.id),
 		enabled: shouldCheckUpgrade,
 		staleTime: 0
 	}));
@@ -99,20 +95,8 @@
 	});
 
 	async function handleConfirmUpgradeInternal() {
-		if (isLocalEnvironment) {
-			try {
-				await systemUpgradeService.triggerUpgrade();
-				toast.success(m.upgrade_success());
-			} catch (error) {
-				const errorMessage = extractApiErrorMessage(error);
-				toast.error(m.upgrade_failed({ error: errorMessage }));
-				throw error;
-			}
-			return;
-		}
-
 		try {
-			const result = await environmentUpgradeService.triggerEnvironmentUpgrade(environment.id);
+			const result = await systemUpgradeService.triggerUpgrade(environment.id);
 			if (!result.success) {
 				throw new Error(result.error || result.message || m.common_unknown());
 			}
