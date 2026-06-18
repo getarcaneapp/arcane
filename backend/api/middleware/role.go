@@ -35,23 +35,6 @@ func RegisterWithPermission[I, O any](api huma.API, op huma.Operation, perm stri
 	huma.Register(api, op, handler)
 }
 
-// RegisterWithoutPermission registers an environment-scoped Huma operation that
-// requires authentication but no specific permission. It records a metadata
-// marker (authz.MetaProxyNoPermission) so the remote environment proxy allows
-// the operation for any authenticated caller instead of denying it by default,
-// and so the env-scoped permission guard test recognizes the operation as
-// intentionally permission-free.
-//
-// Use this ONLY for intentionally low-sensitivity endpoints (for example a
-// health check). Operations that act on resources must use RegisterWithPermission.
-func RegisterWithoutPermission[I, O any](api huma.API, op huma.Operation, handler func(context.Context, *I) (*O, error)) {
-	if op.Metadata == nil {
-		op.Metadata = map[string]any{}
-	}
-	op.Metadata[authz.MetaProxyNoPermission] = true
-	huma.Register(api, op, handler)
-}
-
 // RequirePermission returns a per-operation Huma middleware that rejects
 // callers lacking `perm`. For env-scoped permissions, the env ID is extracted
 // from the request path (/environments/{id}/...). For org-level permissions,

@@ -1287,6 +1287,12 @@ func (s *ImageUpdateService) sendBatchImageUpdateNotificationsInternal(ctx conte
 		return
 	}
 
+	// completeImageUpdateActivityInternal cancels the activity-tracked ctx before
+	// we reach here, so detach from that cancellation (mirrors the helper it uses)
+	// — otherwise the unnotified-updates query dies with "context canceled" and no
+	// notification is ever dispatched.
+	ctx = utils.ActivityRuntimeContext(ctx, nil)
+
 	notifCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 

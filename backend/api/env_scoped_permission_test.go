@@ -41,11 +41,6 @@ func TestEnvScopedOperationsDeclarePermission(t *testing.T) {
 			if op.Security != nil && len(op.Security) == 0 {
 				continue
 			}
-			// Operations registered with RegisterWithoutPermission are
-			// intentionally permission-free (auth-only) and carry a marker.
-			if _, ok := op.Metadata[authz.MetaProxyNoPermission]; ok {
-				continue
-			}
 			perm, ok := op.Metadata[authz.MetaRequiredPermission].(string)
 			if !ok || perm == "" {
 				missing = append(missing, method+" "+path)

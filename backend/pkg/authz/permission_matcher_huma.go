@@ -14,12 +14,6 @@ import (
 // to an agent.
 const MetaRequiredPermission = "arcane:requiredPermission"
 
-// MetaProxyNoPermission is the huma.Operation.Metadata key that marks an
-// environment-scoped operation as intentionally requiring no specific
-// permission (only authentication). The remote environment proxy allows such
-// operations for any authenticated caller instead of denying them by default.
-const MetaProxyNoPermission = "arcane:proxyNoPermission"
-
 const envPathPrefixInternal = "/environments/{id}"
 
 // CollectFromHumaAPI walks every operation registered on humaAPI and records,
@@ -52,12 +46,10 @@ func (m *PermissionMatcher) CollectFromHumaAPI(humaAPI huma.API) {
 				continue
 			}
 			// An environment-scoped operation that declares no required
-			// permission is only allowed through the proxy when it is
-			// intentionally permission-free: either an explicitly public
-			// endpoint (empty Security) or one registered with
-			// RegisterWithoutPermission. Anything else is left unmapped and
-			// denied by default.
-			if isPublicOperationInternal(op) || isProxyNoPermissionInternal(op) {
+			// permission is only allowed through the proxy when it is an
+			// explicitly public endpoint (empty Security). Anything else is
+			// left unmapped and denied by default.
+			if isPublicOperationInternal(op) {
 				m.AddPublic(method, suffix)
 			}
 		}
@@ -93,17 +85,6 @@ func requiredPermissionInternal(op *huma.Operation) (string, bool) {
 // requirement and is therefore NOT public.
 func isPublicOperationInternal(op *huma.Operation) bool {
 	return op.Security != nil && len(op.Security) == 0
-}
-
-// isProxyNoPermissionInternal reports whether op is marked as intentionally
-// requiring no specific permission (only authentication) via the
-// MetaProxyNoPermission metadata key set by RegisterWithoutPermission.
-func isProxyNoPermissionInternal(op *huma.Operation) bool {
-	if op.Metadata == nil {
-		return false
-	}
-	v, ok := op.Metadata[MetaProxyNoPermission].(bool)
-	return ok && v
 }
 
 func operationsByMethodInternal(item *huma.PathItem) map[string]*huma.Operation {

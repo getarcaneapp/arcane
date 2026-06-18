@@ -1298,6 +1298,40 @@ func TestImageUpdateService_MarkUpdatesAsNotified_EmptyList(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// TestImageUpdateService_SendBatchNotifications_DetachesCanceledContext guards the
+// regression where completeImageUpdateActivityInternal cancels the activity-tracked
+// ctx before the batch notification step runs, killing the unnotified-updates query
+// with "context canceled" so notifications were never dispatched (issue #2920).
+func TestImageUpdateService_SendBatchNotifications_DetachesCanceledContext(t *testing.T) {
+	db := setupImageUpdateTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.NotificationSettings{}))
+
+	notif := NewNotificationService(db, nil, nil)
+	svc := NewImageUpdateService(db, nil, nil, nil, nil, notif, nil)
+
+	rec := models.ImageUpdateRecord{
+		ID:               "sha256:img1",
+		Repository:       "test/repo",
+		Tag:              "latest",
+		HasUpdate:        true,
+		NotificationSent: false,
+	}
+	require.NoError(t, db.Create(&rec).Error)
+
+	// Simulate the post-activity-completion state: the tracked ctx is already canceled.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	svc.sendBatchImageUpdateNotificationsInternal(ctx)
+
+	// With no providers configured the send is a no-op success, so the record being
+	// marked notified proves GetUnnotifiedUpdates + MarkUpdatesAsNotified ran despite
+	// the canceled parent ctx.
+	var reloaded models.ImageUpdateRecord
+	require.NoError(t, db.First(&reloaded, "id = ?", "sha256:img1").Error)
+	assert.True(t, reloaded.NotificationSent)
+}
+
 func TestImageUpdateService_GetUpdateSummaryForImageIDs_FiltersToLiveImages(t *testing.T) {
 	ctx := context.Background()
 	db := setupImageUpdateTestDB(t)
