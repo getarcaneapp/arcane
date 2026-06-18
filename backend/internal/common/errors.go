@@ -383,6 +383,12 @@ func (e *EnvironmentUnauthorizedError) Error() string {
 	return "Authentication required to access remote environments"
 }
 
+type EnvironmentForbiddenError struct{}
+
+func (e *EnvironmentForbiddenError) Error() string {
+	return "You don't have permission to perform this action on this environment"
+}
+
 type EnvironmentInvalidProxyTargetError struct {
 	Err error
 }

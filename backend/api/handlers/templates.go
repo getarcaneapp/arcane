@@ -377,7 +377,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService, 
 		Middlewares: humamw.RequirePermission(api, authz.PermTemplatesDelete),
 	}, h.DeleteRegistry)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "getGlobalVariables",
 		Method:      "GET",
 		Path:        "/environments/{id}/templates/variables",
@@ -388,10 +388,9 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermTemplatesRead),
-	}, h.GetGlobalVariables)
+	}, authz.PermTemplatesRead, h.GetGlobalVariables)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "updateGlobalVariables",
 		Method:      "PUT",
 		Path:        "/environments/{id}/templates/variables",
@@ -402,8 +401,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermTemplatesUpdate),
-	}, h.UpdateGlobalVariables)
+	}, authz.PermTemplatesUpdate, h.UpdateGlobalVariables)
 }
 
 // ============================================================================

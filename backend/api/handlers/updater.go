@@ -65,7 +65,7 @@ func RegisterUpdater(api huma.API, updaterService *services.UpdaterService, appC
 		appCtx:         appCtx.contextInternal(),
 	}
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "run-updater",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/updater/run",
@@ -76,10 +76,9 @@ func RegisterUpdater(api huma.API, updaterService *services.UpdaterService, appC
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermImageUpdatesCheck),
-	}, h.RunUpdater)
+	}, authz.PermImageUpdatesCheck, h.RunUpdater)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-updater-status",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/updater/status",
@@ -90,10 +89,9 @@ func RegisterUpdater(api huma.API, updaterService *services.UpdaterService, appC
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermImageUpdatesRead),
-	}, h.GetUpdaterStatus)
+	}, authz.PermImageUpdatesRead, h.GetUpdaterStatus)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-updater-history",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/updater/history",
@@ -104,10 +102,9 @@ func RegisterUpdater(api huma.API, updaterService *services.UpdaterService, appC
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermImageUpdatesRead),
-	}, h.GetUpdaterHistory)
+	}, authz.PermImageUpdatesRead, h.GetUpdaterHistory)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "update-container",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/containers/{containerId}/update",
@@ -118,8 +115,7 @@ func RegisterUpdater(api huma.API, updaterService *services.UpdaterService, appC
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermImageUpdatesCheck),
-	}, h.UpdateContainer)
+	}, authz.PermImageUpdatesCheck, h.UpdateContainer)
 }
 
 // RunUpdater applies pending container updates.

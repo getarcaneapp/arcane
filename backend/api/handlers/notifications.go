@@ -105,55 +105,50 @@ func RegisterNotifications(api huma.API, notificationSvc *services.NotificationS
 		config:              cfg,
 	}
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-all-notification-settings",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/notifications/settings",
 		Summary:     "Get all notification settings",
 		Tags:        []string{"Notifications"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermNotificationsManage),
-	}, h.GetAllNotificationSettings)
+	}, authz.PermNotificationsManage, h.GetAllNotificationSettings)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-notification-settings",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/notifications/settings/{provider}",
 		Summary:     "Get notification settings by provider",
 		Tags:        []string{"Notifications"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermNotificationsManage),
-	}, h.GetNotificationSettings)
+	}, authz.PermNotificationsManage, h.GetNotificationSettings)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "create-or-update-notification-settings",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/notifications/settings",
 		Summary:     "Create or update notification settings",
 		Tags:        []string{"Notifications"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermNotificationsManage),
-	}, h.CreateOrUpdateNotificationSettings)
+	}, authz.PermNotificationsManage, h.CreateOrUpdateNotificationSettings)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "delete-notification-settings",
 		Method:      http.MethodDelete,
 		Path:        "/environments/{id}/notifications/settings/{provider}",
 		Summary:     "Delete notification settings",
 		Tags:        []string{"Notifications"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermNotificationsManage),
-	}, h.DeleteNotificationSettings)
+	}, authz.PermNotificationsManage, h.DeleteNotificationSettings)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "test-notification",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/notifications/test/{provider}",
 		Summary:     "Test notification",
 		Tags:        []string{"Notifications"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermNotificationsManage),
-	}, h.TestNotification)
+	}, authz.PermNotificationsManage, h.TestNotification)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "dispatch-notification",

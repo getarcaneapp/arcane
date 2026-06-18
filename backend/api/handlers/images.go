@@ -166,7 +166,7 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 		appCtx:             appCtx.contextInternal(),
 	}
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "list-images",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/images",
@@ -177,10 +177,9 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermImagesList),
-	}, h.ListImages)
+	}, authz.PermImagesList, h.ListImages)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-image-usage-counts",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/images/counts",
@@ -191,10 +190,9 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermImagesList),
-	}, h.GetImageUsageCounts)
+	}, authz.PermImagesList, h.GetImageUsageCounts)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-image",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/images/{imageId}",
@@ -205,10 +203,9 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermImagesRead),
-	}, h.GetImage)
+	}, authz.PermImagesRead, h.GetImage)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "remove-image",
 		Method:      http.MethodDelete,
 		Path:        "/environments/{id}/images/{imageId}",
@@ -219,10 +216,9 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermImagesDelete),
-	}, h.RemoveImage)
+	}, authz.PermImagesDelete, h.RemoveImage)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "pull-image",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/images/pull",
@@ -233,10 +229,9 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermImagesPull),
-	}, h.PullImage)
+	}, authz.PermImagesPull, h.PullImage)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "build-image",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/images/build",
@@ -247,10 +242,9 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermImagesBuild),
-	}, h.BuildImage)
+	}, authz.PermImagesBuild, h.BuildImage)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "list-image-builds",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/images/builds",
@@ -261,10 +255,9 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermImagesList),
-	}, h.ListImageBuilds)
+	}, authz.PermImagesList, h.ListImageBuilds)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-image-build",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/images/builds/{buildId}",
@@ -275,10 +268,9 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermImagesRead),
-	}, h.GetImageBuild)
+	}, authz.PermImagesRead, h.GetImageBuild)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "prune-images",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/images/prune",
@@ -289,10 +281,9 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermImagesPrune),
-	}, h.PruneImages)
+	}, authz.PermImagesPrune, h.PruneImages)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "upload-image",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/images/upload",
@@ -320,8 +311,7 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 				},
 			},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermImagesUpload),
-	}, h.UploadImage)
+	}, authz.PermImagesUpload, h.UploadImage)
 }
 
 // ListImages returns a paginated list of images.

@@ -52,7 +52,7 @@ func RegisterJobSchedules(api huma.API, jobSvc *services.JobService, envSvc *ser
 		environmentService: envSvc,
 	}
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-job-schedules",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/job-schedules",
@@ -63,10 +63,9 @@ func RegisterJobSchedules(api huma.API, jobSvc *services.JobService, envSvc *ser
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermJobsManage),
-	}, h.Get)
+	}, authz.PermJobsManage, h.Get)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "update-job-schedules",
 		Method:      http.MethodPut,
 		Path:        "/environments/{id}/job-schedules",
@@ -77,10 +76,9 @@ func RegisterJobSchedules(api huma.API, jobSvc *services.JobService, envSvc *ser
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermJobsManage),
-	}, h.Update)
+	}, authz.PermJobsManage, h.Update)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "list-jobs",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/jobs",
@@ -91,10 +89,9 @@ func RegisterJobSchedules(api huma.API, jobSvc *services.JobService, envSvc *ser
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermJobsManage),
-	}, h.ListJobs)
+	}, authz.PermJobsManage, h.ListJobs)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "run-job",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/jobs/{jobId}/run",
@@ -105,8 +102,7 @@ func RegisterJobSchedules(api huma.API, jobSvc *services.JobService, envSvc *ser
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermJobsManage),
-	}, h.RunJob)
+	}, authz.PermJobsManage, h.RunJob)
 }
 
 type JobSchedulesHandler struct {

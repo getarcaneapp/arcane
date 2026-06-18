@@ -147,7 +147,7 @@ func RegisterSystem(api huma.API, dockerService *services.DockerClientService, s
 		appCtx:             appCtx.contextInternal(),
 	}
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID:   "system-health",
 		Method:        http.MethodHead,
 		Path:          "/environments/{id}/system/health",
@@ -159,9 +159,9 @@ func RegisterSystem(api huma.API, dockerService *services.DockerClientService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, h.Health)
+	}, authz.PermSystemRead, h.Health)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-docker-info",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/system/docker/info",
@@ -172,10 +172,9 @@ func RegisterSystem(api huma.API, dockerService *services.DockerClientService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermSystemRead),
-	}, h.GetDockerInfo)
+	}, authz.PermSystemRead, h.GetDockerInfo)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "prune-all",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/system/prune",
@@ -186,10 +185,9 @@ func RegisterSystem(api huma.API, dockerService *services.DockerClientService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermSystemPrune),
-	}, h.PruneAll)
+	}, authz.PermSystemPrune, h.PruneAll)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "start-all-containers",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/system/containers/start-all",
@@ -200,10 +198,9 @@ func RegisterSystem(api huma.API, dockerService *services.DockerClientService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermContainersStart),
-	}, h.StartAllContainers)
+	}, authz.PermContainersStart, h.StartAllContainers)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "start-all-stopped-containers",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/system/containers/start-stopped",
@@ -214,10 +211,9 @@ func RegisterSystem(api huma.API, dockerService *services.DockerClientService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermContainersStart),
-	}, h.StartAllStoppedContainers)
+	}, authz.PermContainersStart, h.StartAllStoppedContainers)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "stop-all-containers",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/system/containers/stop-all",
@@ -228,10 +224,9 @@ func RegisterSystem(api huma.API, dockerService *services.DockerClientService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermContainersStop),
-	}, h.StopAllContainers)
+	}, authz.PermContainersStop, h.StopAllContainers)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "convert-docker-run",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/system/convert",
@@ -242,10 +237,9 @@ func RegisterSystem(api huma.API, dockerService *services.DockerClientService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermContainersCreate),
-	}, h.ConvertDockerRun)
+	}, authz.PermContainersCreate, h.ConvertDockerRun)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "check-upgrade",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/system/upgrade/check",
@@ -256,10 +250,9 @@ func RegisterSystem(api huma.API, dockerService *services.DockerClientService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermSystemRead),
-	}, h.CheckUpgradeAvailable)
+	}, authz.PermSystemRead, h.CheckUpgradeAvailable)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID:   "trigger-upgrade",
 		Method:        http.MethodPost,
 		Path:          "/environments/{id}/system/upgrade",
@@ -271,10 +264,9 @@ func RegisterSystem(api huma.API, dockerService *services.DockerClientService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermSystemUpgrade),
-	}, h.TriggerUpgrade)
+	}, authz.PermSystemUpgrade, h.TriggerUpgrade)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID:   "trigger-update-all",
 		Method:        http.MethodPost,
 		Path:          "/environments/{id}/system/upgrade/all",
@@ -286,10 +278,9 @@ func RegisterSystem(api huma.API, dockerService *services.DockerClientService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermSystemUpgrade),
-	}, h.TriggerUpdateAll)
+	}, authz.PermSystemUpgrade, h.TriggerUpdateAll)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "update-all-status",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/system/upgrade/all/status",
@@ -300,8 +291,7 @@ func RegisterSystem(api huma.API, dockerService *services.DockerClientService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermSystemRead),
-	}, h.GetUpdateAllStatus)
+	}, authz.PermSystemRead, h.GetUpdateAllStatus)
 }
 
 // rejectIfAgentModeInternal blocks manager-only operations when running as an agent.

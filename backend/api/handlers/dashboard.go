@@ -55,7 +55,7 @@ func RegisterDashboard(api huma.API, dashboardService *services.DashboardService
 		environmentService: environmentService,
 	}
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-dashboard",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/dashboard",
@@ -66,8 +66,7 @@ func RegisterDashboard(api huma.API, dashboardService *services.DashboardService
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermDashboardRead),
-	}, h.GetDashboard)
+	}, authz.PermDashboardRead, h.GetDashboard)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "stream-all-dashboards",

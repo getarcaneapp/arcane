@@ -24,7 +24,7 @@ type BuildWorkspaceHandler struct {
 func RegisterBuildWorkspaces(api huma.API, workspaceService *services.BuildWorkspaceService) {
 	h := &BuildWorkspaceHandler{service: workspaceService}
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "builds-browse",
 		Method:      "GET",
 		Path:        "/environments/{id}/builds/browse",
@@ -32,10 +32,9 @@ func RegisterBuildWorkspaces(api huma.API, workspaceService *services.BuildWorks
 		Description: "List files and directories under the builds workspace root",
 		Tags:        []string{"Builds"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermBuildWorkspacesManage),
-	}, h.BrowseDirectory)
+	}, authz.PermBuildWorkspacesManage, h.BrowseDirectory)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "builds-browse-content",
 		Method:      "GET",
 		Path:        "/environments/{id}/builds/browse/content",
@@ -43,10 +42,9 @@ func RegisterBuildWorkspaces(api huma.API, workspaceService *services.BuildWorks
 		Description: "Read file content under the builds workspace root",
 		Tags:        []string{"Builds"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermBuildWorkspacesManage),
-	}, h.GetFileContent)
+	}, authz.PermBuildWorkspacesManage, h.GetFileContent)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "builds-browse-download",
 		Method:      "GET",
 		Path:        "/environments/{id}/builds/browse/download",
@@ -54,10 +52,9 @@ func RegisterBuildWorkspaces(api huma.API, workspaceService *services.BuildWorks
 		Description: "Download a file from the builds workspace root",
 		Tags:        []string{"Builds"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermBuildWorkspacesManage),
-	}, h.DownloadFile)
+	}, authz.PermBuildWorkspacesManage, h.DownloadFile)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "builds-browse-upload",
 		Method:      "POST",
 		Path:        "/environments/{id}/builds/browse/upload",
@@ -82,10 +79,9 @@ func RegisterBuildWorkspaces(api huma.API, workspaceService *services.BuildWorks
 				},
 			},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermBuildWorkspacesManage),
-	}, h.UploadFile)
+	}, authz.PermBuildWorkspacesManage, h.UploadFile)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "builds-browse-mkdir",
 		Method:      "POST",
 		Path:        "/environments/{id}/builds/browse/mkdir",
@@ -93,10 +89,9 @@ func RegisterBuildWorkspaces(api huma.API, workspaceService *services.BuildWorks
 		Description: "Create a directory under the builds workspace root",
 		Tags:        []string{"Builds"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermBuildWorkspacesManage),
-	}, h.CreateDirectory)
+	}, authz.PermBuildWorkspacesManage, h.CreateDirectory)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "builds-browse-delete",
 		Method:      "DELETE",
 		Path:        "/environments/{id}/builds/browse",
@@ -104,8 +99,7 @@ func RegisterBuildWorkspaces(api huma.API, workspaceService *services.BuildWorks
 		Description: "Delete a file or directory under the builds workspace root",
 		Tags:        []string{"Builds"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermBuildWorkspacesManage),
-	}, h.DeleteFile)
+	}, authz.PermBuildWorkspacesManage, h.DeleteFile)
 }
 
 type BrowseBuildsInput struct {

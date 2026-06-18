@@ -20,6 +20,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/di"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cookie"
 	"github.com/getarcaneapp/arcane/types/v2"
@@ -88,20 +90,40 @@ func requestLoggerMiddlewareInternal() echo.MiddlewareFunc {
 }
 
 func createAuthValidatorInternal(appServices *di.Services) middleware.AuthValidator {
-	return func(ctx context.Context, c echo.Context) bool {
+	resolveUser := func(ctx context.Context, user *models.User) *authz.PermissionSet {
+		ps, err := appServices.Role.ResolvePermissions(ctx, user)
+		if err != nil || ps == nil {
+			slog.WarnContext(ctx, "failed to resolve user permissions for env proxy", "error", err)
+			return authz.NewPermissionSet()
+		}
+		return ps
+	}
+	resolveKey := func(ctx context.Context, keyID string) *authz.PermissionSet {
+		ps, err := appServices.Role.ResolveApiKeyPermissions(ctx, keyID)
+		if err != nil || ps == nil {
+			slog.WarnContext(ctx, "failed to resolve api key permissions for env proxy", "error", err)
+			return authz.NewPermissionSet()
+		}
+		return ps
+	}
+	return func(ctx context.Context, c echo.Context) (*authz.PermissionSet, bool) {
 		req := c.Request()
 		// Check for API key authentication
 		if apiKey := req.Header.Get("X-Api-Key"); apiKey != "" {
-			// User-owned API key
-			if user, err := appServices.ApiKey.ValidateApiKey(ctx, apiKey); err == nil && user != nil {
-				return true
+			// User-owned API key: personal keys inherit the owner's role
+			// permissions; scoped keys are limited to their own grants.
+			if user, key, err := appServices.ApiKey.ValidateApiKeyWithID(ctx, apiKey); err == nil && user != nil {
+				if key != nil && key.Kind != models.ApiKeyKindPersonal {
+					return resolveKey(ctx, key.ID), true
+				}
+				return resolveUser(ctx, user), true
 			}
 			// Environment bootstrap key (user_id = NULL): used by the proxy when forwarding
 			// requests to a remote env whose apiUrl resolves back to this manager.
 			if _, err := appServices.ApiKey.GetEnvironmentByApiKey(ctx, apiKey); err == nil {
-				return true
+				return authz.SudoPermissionSet(), true
 			}
-			return false
+			return nil, false
 		}
 
 		// Check for Bearer token authentication
@@ -113,11 +135,14 @@ func createAuthValidatorInternal(appServices *di.Services) middleware.AuthValida
 		}
 
 		if token == "" {
-			return false
+			return nil, false
 		}
 
 		user, _, err := appServices.Auth.VerifyToken(ctx, token)
-		return err == nil && user != nil
+		if err != nil || user == nil {
+			return nil, false
+		}
+		return resolveUser(ctx, user), true
 	}
 }
 
@@ -180,16 +205,26 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *di.Servic
 	handlers.RegisterFederatedTokenExchange(apiGroup, appServices.Federated) //nolint:contextcheck // public RFC 8693 form endpoint uses request context.
 	handlers.RegisterAgentEventIngestion(apiGroup, appServices.Event, cfg)   //nolint:contextcheck // internal agent-token route; intentionally outside user/RBAC auth.
 
+	permissionMatcher := authz.NewPermissionMatcher()
+
 	//nolint:contextcheck // Echo middleware reads context from echo.Context.Request().Context(), not a parameter.
 	envProxyMiddleware := middleware.NewEnvProxyMiddlewareWithParam(
 		types.LOCAL_DOCKER_ENVIRONMENT_ID,
 		"id",
 		envResolver,
 		createAuthValidatorInternal(appServices),
+		permissionMatcher,
 	)
 	apiGroup.Use(envProxyMiddleware)
 
-	_ = api.SetupAPI(e, apiGroup, handlerAppCtx, cfg, appServices) //nolint:contextcheck // app lifecycle context is intentionally wrapped for detached activity work.
+	humaAPI := api.SetupAPI(e, apiGroup, handlerAppCtx, cfg, appServices) //nolint:contextcheck // app lifecycle context is intentionally wrapped for detached activity work.
+
+	// Populate the proxy permission matcher from the registered API surface so
+	// remote-environment requests are authorized with the same permissions
+	// enforced locally. The matcher pointer is shared with the proxy middleware
+	// constructed above; population completes here, before the server serves traffic.
+	permissionMatcher.CollectFromHumaAPI(humaAPI)
+	ws.AddProxiedPermissions(permissionMatcher)
 
 	for _, register := range registerBuildableRoutes {
 		register(apiGroup, appServices)

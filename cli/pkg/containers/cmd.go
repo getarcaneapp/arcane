@@ -360,6 +360,10 @@ func runContainerPostAction[T any](cmd *cobra.Command, containerRef string, cfg 
 	}
 	defer func() { _ = resp.Body.Close() }()
 
+	if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
+		return fmt.Errorf("%s: %w", cfg.failureMessage, err)
+	}
+
 	var result base.ApiResponse[T]
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return fmt.Errorf("failed to parse response: %w", err)
