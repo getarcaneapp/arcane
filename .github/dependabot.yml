@@ -38,6 +38,13 @@ updates:
     commit-message:
       prefix: "chore"
       include: "scope"
+    ignore:
+      # docker/compose v5.1.4 imports github.com/moby/buildkit/util/tracing/env,
+      # which is absent in buildkit v0.30+.
+      - dependency-name: "github.com/moby/buildkit"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
 
   - package-ecosystem: "gomod"
     directory: "/cli"

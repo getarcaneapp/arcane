@@ -23,6 +23,7 @@ overrides:
   picomatch: ">=4.0.4"
   brace-expansion: ">=5.0.5"
   smol-toml: ">=1.6.1"
+  esbuild: ">=0.28.1"
   postcss: ">=8.5.10"
   uuid: ">=11.1.1"
   fast-uri: ">=3.1.2"
