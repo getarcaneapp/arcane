@@ -43,7 +43,7 @@
     "embla-carousel-svelte": "^8.6.0",
     "ky": "^2.0.2",
     "marked": "^18.0.5",
-    "prettier": "^3.8.3",
+    "prettier": "^3.8.4",
     "prettier-plugin-svelte": "^4.1.0",
     "prettier-plugin-tailwindcss": "^0.8.0",
     "svelte": "^5.56.3",
