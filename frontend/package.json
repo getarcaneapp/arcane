@@ -28,7 +28,7 @@
     "@fontsource-variable/geist-mono": "^5.2.8",
     "@fontsource-variable/montserrat": "^5.2.8",
     "@lezer/highlight": "^1.2.3",
-    "@sveltejs/kit": "^3.0.0-next.2",
+    "@sveltejs/kit": "^3.0.0-next.4",
     "@tanstack/svelte-query": "^6.1.34",
     "@tanstack/svelte-table": "^9.0.0-beta.7",
     "@tanstack/table-core": "^9.0.0-beta.7",
