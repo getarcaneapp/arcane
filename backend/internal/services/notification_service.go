@@ -2611,6 +2611,12 @@ func (s *NotificationService) sendSignalPruneNotification(ctx context.Context, e
 	if err := s.unmarshalConfigInternal(config, &signalConfig); err != nil {
 		return err
 	}
+	if err := notifications.DecryptStringCredential(&signalConfig.Password); err != nil {
+		return err
+	}
+	if err := notifications.DecryptStringCredential(&signalConfig.Token); err != nil {
+		return err
+	}
 
 	message := notifications.BuildPruneReportNotificationMessage(notifications.MessageFormatPlain, environmentName, result)
 
@@ -2620,6 +2626,9 @@ func (s *NotificationService) sendSignalPruneNotification(ctx context.Context, e
 func (s *NotificationService) sendSlackPruneNotification(ctx context.Context, environmentName string, result *system.PruneAllResult, config models.JSON) error {
 	var slackConfig models.SlackConfig
 	if err := s.unmarshalConfigInternal(config, &slackConfig); err != nil {
+		return err
+	}
+	if err := notifications.DecryptStringCredential(&slackConfig.Token); err != nil {
 		return err
 	}
 
@@ -2633,6 +2642,9 @@ func (s *NotificationService) sendNtfyPruneNotification(ctx context.Context, env
 	if err := s.unmarshalConfigInternal(config, &ntfyConfig); err != nil {
 		return err
 	}
+	if err := notifications.DecryptStringCredential(&ntfyConfig.Password); err != nil {
+		return err
+	}
 
 	message := notifications.BuildPruneReportNotificationMessage(notifications.MessageFormatPlain, environmentName, result)
 
@@ -2642,6 +2654,9 @@ func (s *NotificationService) sendNtfyPruneNotification(ctx context.Context, env
 func (s *NotificationService) sendPushoverPruneNotification(ctx context.Context, environmentName string, result *system.PruneAllResult, config models.JSON) error {
 	var pushoverConfig models.PushoverConfig
 	if err := s.unmarshalConfigInternal(config, &pushoverConfig); err != nil {
+		return err
+	}
+	if err := notifications.DecryptStringCredential(&pushoverConfig.Token); err != nil {
 		return err
 	}
 
@@ -2675,6 +2690,9 @@ func (s *NotificationService) sendGotifyPruneNotification(ctx context.Context, e
 func (s *NotificationService) sendMatrixPruneNotification(ctx context.Context, environmentName string, result *system.PruneAllResult, config models.JSON) error {
 	var matrixConfig models.MatrixConfig
 	if err := s.unmarshalConfigInternal(config, &matrixConfig); err != nil {
+		return err
+	}
+	if err := notifications.DecryptStringCredential(&matrixConfig.Password); err != nil {
 		return err
 	}
 
@@ -2809,6 +2827,12 @@ func (s *NotificationService) sendSignalAutoHealNotification(ctx context.Context
 	if err := s.unmarshalConfigInternal(config, &signalConfig); err != nil {
 		return err
 	}
+	if err := notifications.DecryptStringCredential(&signalConfig.Password); err != nil {
+		return err
+	}
+	if err := notifications.DecryptStringCredential(&signalConfig.Token); err != nil {
+		return err
+	}
 	message := notifications.BuildAutoHealNotificationMessage(notifications.MessageFormatPlain, environmentName, containerName)
 	return notifications.SendSignal(ctx, signalConfig, message)
 }
@@ -2816,6 +2840,9 @@ func (s *NotificationService) sendSignalAutoHealNotification(ctx context.Context
 func (s *NotificationService) sendSlackAutoHealNotification(ctx context.Context, environmentName, containerName string, config models.JSON) error {
 	var slackConfig models.SlackConfig
 	if err := s.unmarshalConfigInternal(config, &slackConfig); err != nil {
+		return err
+	}
+	if err := notifications.DecryptStringCredential(&slackConfig.Token); err != nil {
 		return err
 	}
 	message := notifications.BuildAutoHealNotificationMessage(notifications.MessageFormatSlack, environmentName, containerName)
@@ -2827,6 +2854,9 @@ func (s *NotificationService) sendNtfyAutoHealNotification(ctx context.Context, 
 	if err := s.unmarshalConfigInternal(config, &ntfyConfig); err != nil {
 		return err
 	}
+	if err := notifications.DecryptStringCredential(&ntfyConfig.Password); err != nil {
+		return err
+	}
 	message := notifications.BuildAutoHealNotificationMessage(notifications.MessageFormatPlain, environmentName, containerName)
 	return notifications.SendNtfy(ctx, ntfyConfig, message)
 }
@@ -2834,6 +2864,9 @@ func (s *NotificationService) sendNtfyAutoHealNotification(ctx context.Context, 
 func (s *NotificationService) sendPushoverAutoHealNotification(ctx context.Context, environmentName, containerName string, config models.JSON) error {
 	var pushoverConfig models.PushoverConfig
 	if err := s.unmarshalConfigInternal(config, &pushoverConfig); err != nil {
+		return err
+	}
+	if err := notifications.DecryptStringCredential(&pushoverConfig.Token); err != nil {
 		return err
 	}
 	if pushoverConfig.Title == "" {
@@ -2861,6 +2894,9 @@ func (s *NotificationService) sendGotifyAutoHealNotification(ctx context.Context
 func (s *NotificationService) sendMatrixAutoHealNotification(ctx context.Context, environmentName, containerName string, config models.JSON) error {
 	var matrixConfig models.MatrixConfig
 	if err := s.unmarshalConfigInternal(config, &matrixConfig); err != nil {
+		return err
+	}
+	if err := notifications.DecryptStringCredential(&matrixConfig.Password); err != nil {
 		return err
 	}
 	message := notifications.BuildAutoHealNotificationMessage(notifications.MessageFormatPlain, environmentName, containerName)
