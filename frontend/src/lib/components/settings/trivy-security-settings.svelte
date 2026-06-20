@@ -23,6 +23,10 @@
 		trivyCpuLimit: number;
 		trivyMemoryLimitMb: number;
 		trivyConcurrentScanContainers: number;
+		trivyServerEnabled: boolean;
+		trivyServerUrl: string;
+		trivyServerToken: string;
+		trivyIgnoreUnfixed: boolean;
 	};
 
 	type FormField<T> = {
@@ -167,6 +171,14 @@
 		</div>
 
 		<SettingsRow
+			label={m.security_trivy_ignore_unfixed_label()}
+			description={m.security_trivy_ignore_unfixed_description()}
+			layout="inline"
+		>
+			<Switch id="trivyIgnoreUnfixedSwitch" bind:checked={$formInputs.trivyIgnoreUnfixed.value} />
+		</SettingsRow>
+
+		<SettingsRow
 			label={m.security_trivy_network_label()}
 			description={m.security_trivy_network_description()}
 			helpText={m.security_trivy_network_help()}
@@ -188,6 +200,41 @@
 				<p class="text-destructive mt-2 text-sm">{$formInputs.trivyNetwork.error}</p>
 			{/if}
 		</SettingsRow>
+
+		<div class="space-y-4">
+			<SettingsRow
+				label={m.security_trivy_server_enabled_label()}
+				description={m.security_trivy_server_enabled_description()}
+				layout="inline"
+			>
+				<Switch id="trivyServerEnabledSwitch" bind:checked={$formInputs.trivyServerEnabled.value} />
+			</SettingsRow>
+			{#if $formInputs.trivyServerEnabled.value}
+				<div class="border-border/60 space-y-4 border-l-2 pl-5">
+					<TextInputWithLabel
+						bind:value={$formInputs.trivyServerUrl.value}
+						error={$formInputs.trivyServerUrl.error}
+						label={m.security_trivy_server_url_label()}
+						description={m.security_trivy_server_url_description()}
+						placeholder={m.security_trivy_server_url_placeholder()}
+						type="url"
+					/>
+					<TextInputWithLabel
+						bind:value={$formInputs.trivyServerToken.value}
+						error={$formInputs.trivyServerToken.error}
+						label={m.security_trivy_server_token_label()}
+						description={m.security_trivy_server_token_description()}
+						type="password"
+					/>
+					<Alert.Root variant="default" class="border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950">
+						<InfoIcon class="h-4 w-4 text-amber-900 dark:text-amber-100" />
+						<Alert.Description class="text-amber-800 dark:text-amber-200">
+							{m.security_trivy_server_note()}
+						</Alert.Description>
+					</Alert.Root>
+				</div>
+			{/if}
+		</div>
 
 		<SettingsRow
 			label={m.security_trivy_security_opts_label()}

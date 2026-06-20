@@ -73,6 +73,10 @@ export type Settings = {
 	trivyCpuLimit: number;
 	trivyMemoryLimitMb: number;
 	trivyConcurrentScanContainers: number;
+	trivyServerEnabled: boolean;
+	trivyServerUrl: string;
+	trivyServerToken: string;
+	trivyIgnoreUnfixed: boolean;
 	oidcEnabled: boolean;
 	oidcClientId: string;
 	oidcClientSecret?: string;
