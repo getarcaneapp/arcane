@@ -74,6 +74,7 @@ export { default as BoxIcon } from 'virtual:icons/solar/box-minimalistic-linear'
 export { default as StartIcon } from 'virtual:icons/solar/play-linear';
 export { default as StopIcon } from 'virtual:icons/solar/stop-bold';
 export { default as MonitorSpeakerIcon } from 'virtual:icons/lucide/monitor-speaker';
+export { default as MonitorIcon } from 'virtual:icons/lucide/monitor';
 export { default as DockIcon } from 'virtual:icons/lucide/dock';
 export { default as EditIcon } from 'virtual:icons/solar/pen-linear';
 export { default as SearchIcon } from 'virtual:icons/solar/minimalistic-magnifer-linear';

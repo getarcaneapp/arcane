@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
 	import { z } from 'zod/v4';
-	import { mode, toggleMode } from 'mode-watcher';
+	import { mode } from 'mode-watcher';
 	import settingsStore from '$lib/stores/config-store';
 	import { m } from '$lib/paraglide/messages';
 	import { navigationSettingsOverridesStore, resetNavigationVisibility } from '$lib/utils/navigation';
@@ -14,11 +14,11 @@
 	import SelectWithLabel from '$lib/components/form/select-with-label.svelte';
 	import AccentColorPicker from '$lib/components/accent-color/accent-color-picker.svelte';
 	import ApplicationThemePicker from '$lib/components/application-theme/application-theme-picker.svelte';
+	import ThemeModeSelector from '$lib/components/theme-mode/theme-mode-selector.svelte';
 	import { applyAccentColor } from '$lib/utils/theme';
 	import { APPLICATION_THEME_VALUES, applyApplicationTheme } from '$lib/utils/theme';
 	import { applyOledMode } from '$lib/utils/theme';
-	import { AppearanceIcon, MonitorSpeakerIcon, DockIcon, MoonIcon, SunIcon } from '$lib/icons';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
+	import { AppearanceIcon, MonitorSpeakerIcon, DockIcon } from '$lib/icons';
 	import { cn } from '$lib/utils';
 
 	let { data } = $props();
@@ -203,14 +203,7 @@
 						description={m.appearance_theme_current_user_description()}
 						layout="inline"
 					>
-						<ArcaneButton action="base" tone="outline" class="h-9 min-w-40 justify-start gap-2" onclick={toggleMode}>
-							{#if isDarkMode}
-								<SunIcon class="size-4" />
-							{:else}
-								<MoonIcon class="size-4" />
-							{/if}
-							<span>{isDarkMode ? m.sidebar_dark_mode() : m.sidebar_light_mode()}</span>
-						</ArcaneButton>
+						<ThemeModeSelector disabled={isReadOnly} />
 					</SettingsRow>
 
 					<!-- OLED Mode -->
