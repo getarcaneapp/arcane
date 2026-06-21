@@ -22,7 +22,6 @@ overrides:
   effect: ">=3.20.0"
   picomatch: ">=4.0.4"
   brace-expansion: ">=5.0.5"
-  smol-toml: ">=1.6.1"
   esbuild: ">=0.28.1"
   postcss: ">=8.5.10"
   uuid: ">=11.1.1"
@@ -31,6 +30,7 @@ overrides:
   "@sveltejs/kit": "^3.0.0-next.4"
   "@sveltejs/adapter-static": ">=4.0.0-next.0"
   dompurify: ">=3.4.11"
+  ts-deepmerge: ">=8.0.0"
 
 allowBuilds:
   "@tailwindcss/oxide": true
