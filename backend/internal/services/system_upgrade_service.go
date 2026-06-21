@@ -19,6 +19,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	vuln "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/vuln"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
 	"github.com/getarcaneapp/arcane/types/v2/version"
 	containertypes "github.com/moby/moby/api/types/container"
 	mounttypes "github.com/moby/moby/api/types/mount"
@@ -680,7 +681,7 @@ func (s *SystemUpgradeService) upgradeAgentInternal(ctx context.Context, env *En
 	err := env.ProxyJSONRequest(versionCtx, envID, http.MethodGet, "/api/app-version", nil, &info)
 	cancel()
 	if err != nil {
-		result.Status = models.EnvironmentUpdateResultStatusSkippedOffline
+		result.Status = updateAllAgentFailureStatusInternal(err)
 		result.Error = truncateUpdateAllErrorInternal(err)
 		return
 	}
@@ -712,6 +713,26 @@ func (s *SystemUpgradeService) upgradeAgentInternal(ctx context.Context, env *En
 		// Upgrade fired but the new version was not confirmed within the wait window.
 		result.Status = models.EnvironmentUpdateResultStatusTriggered
 	}
+}
+
+// updateAllAgentFailureStatusInternal classifies a failed agent pre-check. An
+// environment we actually reached but whose request failed or timed out is a real
+// failure, not an offline skip: poll-mode agents connect on demand, so a slow
+// tunnel round-trip surfaces here as a deadline even though the agent is online.
+// Only errors that look like the environment was never reachable (no tunnel,
+// connection refused, DNS failure, …) stay an offline skip.
+func updateAllAgentFailureStatusInternal(err error) models.EnvironmentUpdateResultStatus {
+	// The tunnel/connection was established but the request did not finish: it
+	// either timed out or was canceled (e.g. the parent context was aborted).
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return models.EnvironmentUpdateResultStatusFailed
+	}
+	// The environment answered with a non-success status — reached, not offline.
+	var statusErr *remenv.StatusError
+	if errors.As(err, &statusErr) {
+		return models.EnvironmentUpdateResultStatusFailed
+	}
+	return models.EnvironmentUpdateResultStatusSkippedOffline
 }
 
 // confirmAgentUpgradedInternal polls the agent's version until it changes from the

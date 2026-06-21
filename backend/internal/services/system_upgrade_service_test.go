@@ -3,9 +3,12 @@ package services
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
 	containertypes "github.com/moby/moby/api/types/container"
 	mounttypes "github.com/moby/moby/api/types/mount"
 	networktypes "github.com/moby/moby/api/types/network"
@@ -270,4 +273,31 @@ func TestResolveSystemUpgraderRuntimeOptionsInternal_UnixDockerHostResolutionErr
 	)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "resolve unix socket source")
+}
+
+// TestUpdateAllAgentFailureStatus verifies that a reachable-but-failed agent (e.g.
+// a poll-mode environment whose tunnel round-trip timed out) is reported as a real
+// failure rather than mislabeled "offline — skipped".
+func TestUpdateAllAgentFailureStatus(t *testing.T) {
+	// Mirrors the real wrapping: executeRemoteRequest -> TransportError ->
+	// "tunnel request failed" -> context.DeadlineExceeded.
+	tunnelTimeout := fmt.Errorf("failed to send request to environment oracle-cloud: %w",
+		&remenv.TransportError{Err: fmt.Errorf("tunnel request failed: %w", context.DeadlineExceeded)})
+
+	tests := []struct {
+		name string
+		err  error
+		want models.EnvironmentUpdateResultStatus
+	}{
+		{"tunnel request timed out", tunnelTimeout, models.EnvironmentUpdateResultStatusFailed},
+		{"request canceled mid-flight", fmt.Errorf("tunnel request failed: %w", context.Canceled), models.EnvironmentUpdateResultStatusFailed},
+		{"non-success status from agent", &remenv.StatusError{StatusCode: 502}, models.EnvironmentUpdateResultStatusFailed},
+		{"agent never connected", &remenv.TransportError{Err: errors.New("edge agent is not connected")}, models.EnvironmentUpdateResultStatusSkippedOffline},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, updateAllAgentFailureStatusInternal(tt.err))
+		})
+	}
 }

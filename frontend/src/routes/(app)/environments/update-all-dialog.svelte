@@ -225,14 +225,14 @@
 										{/if}
 									</span>
 
-									<div class="flex min-w-0 flex-1 flex-col">
-										<span class="truncate font-medium">{result.environmentName}</span>
+									<div class="min-w-0 flex-1">
+										<span class="block truncate font-medium">{result.environmentName}</span>
 										{#if result.status === 'updating'}
 											<div class="bg-muted mt-1.5 h-1 overflow-hidden rounded-full">
 												<div class="update-all-capbar bg-primary h-full rounded-full"></div>
 											</div>
 										{:else if result.error}
-											<span class="text-muted-foreground truncate text-xs">{result.error}</span>
+											<span class="text-muted-foreground block truncate text-xs" title={result.error}>{result.error}</span>
 										{/if}
 									</div>
 
