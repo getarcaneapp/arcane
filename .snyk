@@ -115,3 +115,7 @@ ignore:
         expires: 2027-06-21T00:00:00.000Z
         created: 2026-06-21T16:00:43.477Z
 patch: {}
+exclude:
+  code:
+    - '**/*_test.go'
+    - tests/**
