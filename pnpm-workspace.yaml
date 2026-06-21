@@ -31,6 +31,7 @@ overrides:
   dompurify: ">=3.4.11"
   ts-deepmerge: ">=8.0.0"
   joi: ">=17.13.4"
+  typescript: "^7.0.1-rc"
 
 allowBuilds:
   "@tailwindcss/oxide": true
