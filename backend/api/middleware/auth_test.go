@@ -285,3 +285,85 @@ func TestNewAuthBridge_OpportunisticAuthOnPublicRoute(t *testing.T) {
 		require.Equal(t, "", sawSessionID)
 	})
 }
+
+// After a self-update the app version changes and old access tokens fail the version
+// check. That must be RECOVERABLE (the refresh path rotates the token), so the
+// middleware returns a refreshable 401 and must NOT clear the auth cookies — otherwise
+// the user is logged out on every update.
+func TestNewAuthBridge_VersionMismatchIsRecoverable(t *testing.T) {
+	db := setupAuthMiddlewareTestDBInternal(t)
+	userSvc := services.NewUserService(db)
+	sessionSvc := services.NewSessionService(db)
+
+	jwtSecret := "test-secret-please-do-not-use-in-prod"
+	cfg := &config.Config{JWTRefreshExpiry: 24 * time.Hour}
+	authSvc := services.NewAuthService(userSvc, nil, nil, sessionSvc, nil, jwtSecret, cfg)
+
+	_, err := userSvc.CreateUser(context.Background(), &models.User{
+		BaseModel: models.BaseModel{ID: "u-ver"},
+		Username:  "vertest",
+	})
+	require.NoError(t, err)
+
+	exp := time.Now().Add(5 * time.Minute)
+	session, _, err := sessionSvc.CreateSession(context.Background(), "u-ver", exp, auth.SessionMeta{})
+	require.NoError(t, err)
+
+	// An empty appVersion omits the claim, which passes the version check (no pin).
+	mintToken := func(appVersion string) string {
+		claims := jwt.MapClaims{
+			"jti":      "u-ver",
+			"sub":      "access",
+			"iat":      time.Now().Unix(),
+			"exp":      exp.Unix(),
+			"sid":      session.ID,
+			"user_id":  "u-ver",
+			"username": "vertest",
+		}
+		if appVersion != "" {
+			claims["app_version"] = appVersion
+		}
+		token, signErr := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(jwtSecret))
+		require.NoError(t, signErr)
+		return token
+	}
+
+	router := echo.New()
+	apiGroup := router.Group("/api")
+	humaConfig := huma.DefaultConfig("test", "1.0.0")
+	humaConfig.Components.SecuritySchemes = map[string]*huma.SecurityScheme{
+		"BearerAuth": {Type: "http", Scheme: "bearer"},
+	}
+	api := humaecho.NewWithGroup(router, apiGroup, humaConfig)
+	api.UseMiddleware(NewAuthBridge(api, authSvc, nil, nil, nil, &config.Config{}))
+
+	huma.Register(api, huma.Operation{
+		OperationID: "protected",
+		Method:      http.MethodGet,
+		Path:        "/protected",
+		Security:    []map[string][]string{{"BearerAuth": {}}},
+	}, func(_ context.Context, _ *secureInput) (*secureOutput, error) {
+		return &secureOutput{}, nil
+	})
+
+	t.Run("version mismatch returns a recoverable 401 without clearing cookies", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/protected", nil)
+		req.Header.Set("Authorization", "Bearer "+mintToken("v0.0.0-stale"))
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		require.Equal(t, http.StatusUnauthorized, rec.Code)
+		require.Contains(t, rec.Body.String(), "Application has been updated")
+		// The frontend recovers via refresh; clearing the cookies here would log the
+		// user out on every self-update.
+		require.Empty(t, rec.Header().Values("Set-Cookie"))
+	})
+
+	t.Run("token without a version pin still authenticates", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/protected", nil)
+		req.Header.Set("Authorization", "Bearer "+mintToken(""))
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusOK, rec.Code)
+	})
+}

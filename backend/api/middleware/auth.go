@@ -321,7 +321,14 @@ func handleBearerAuthInternal(api huma.API, ctx huma.Context, authService *servi
 		newCtx = context.WithValue(newCtx, ContextKeyCurrentSessionID, sessionID)
 		return huma.WithContext(ctx, newCtx), true
 	}
-	if errors.Is(err, services.ErrTokenVersionMismatch) || common.IsSessionRevokedError(err) || common.IsTokenValidationError(err) {
+	if errors.Is(err, services.ErrTokenVersionMismatch) {
+		// The app version changed (a self-update). The session is still valid — the
+		// refresh path tolerates the version change and rotates the token — so do NOT
+		// clear the auth cookies. Return a recoverable 401 the frontend refreshes from.
+		_ = huma.WriteErr(api, ctx, http.StatusUnauthorized, "Application has been updated. Refreshing session.")
+		return nil, true
+	}
+	if common.IsSessionRevokedError(err) || common.IsTokenValidationError(err) {
 		for _, cookieHeader := range cookie.BuildClearTokenCookieStringsFor(cookie.SecureCookieFromContext(ctx.Context())) {
 			ctx.AppendHeader("Set-Cookie", cookieHeader)
 		}

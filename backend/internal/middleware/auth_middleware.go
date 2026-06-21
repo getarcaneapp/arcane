@@ -203,7 +203,17 @@ func (m *AuthMiddleware) managerAuth(ctx context.Context, c echo.Context, next e
 
 	user, sessionID, err := m.authService.VerifyToken(ctx, token)
 	if err != nil {
-		if errors.Is(err, services.ErrTokenVersionMismatch) || common.IsSessionRevokedError(err) || common.IsTokenValidationError(err) {
+		// A version mismatch means the app self-updated; the session is still valid
+		// (the refresh path tolerates the version change and rotates the token), so do
+		// NOT clear the cookies. Return a recoverable 401 the frontend refreshes from.
+		if errors.Is(err, services.ErrTokenVersionMismatch) {
+			return c.JSON(http.StatusUnauthorized, models.APIError{
+				Code:    models.APIErrorCodeUnauthorized,
+				Message: "Application has been updated. Refreshing session.",
+			})
+		}
+
+		if common.IsSessionRevokedError(err) || common.IsTokenValidationError(err) {
 			cookie.ClearTokenCookie(c.Response().Writer, req)
 			return c.JSON(http.StatusUnauthorized, models.APIError{
 				Code:    models.APIErrorCodeUnauthorized,

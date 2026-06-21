@@ -154,3 +154,53 @@ func TestUpdateAllFailedJobMarksUpdatingResultsFailed(t *testing.T) {
 	require.Equal(t, models.EnvironmentUpdateResultStatusFailed, got.Results[3].Status)
 	require.Equal(t, "already failed", got.Results[3].Error)
 }
+
+// With the manager-last ordering, a resumed pending_restart job means the agents
+// phase already ran before the restart: resume must finalize the manager's own row
+// and complete the job, NOT re-run the agents phase.
+func TestResumeUpdateAllFinalizesManagerWithoutRerunningAgents(t *testing.T) {
+	ctx := context.Background()
+	gormDB, err := gorm.Open(glsqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+
+	db := &database.DB{DB: gormDB}
+	require.NoError(t, db.AutoMigrate(&models.EnvironmentUpdateJob{}, &models.Event{}))
+
+	// disabled=true keeps GetAppVersionInfo offline; nil docker => empty current digest.
+	// The reported version differs from ManagerVersionAtStart, so the manager upgrade
+	// is judged successful.
+	versionSvc := NewVersionService(nil, true, "v9.9.9-new", "", nil, nil, nil)
+	svc := NewSystemUpgradeService(db, nil, versionSvc, NewEventService(db, nil, nil), nil)
+
+	job := &models.EnvironmentUpdateJob{
+		Status:                models.EnvironmentUpdateJobStatusPendingRestart,
+		UserID:                "user-1",
+		Username:              "arcane",
+		ManagerVersionAtStart: "v1.0.0-old",
+		Results: models.EnvironmentUpdateResults{
+			{EnvironmentID: "0", EnvironmentName: "Local", Status: models.EnvironmentUpdateResultStatusUpdating},
+			{EnvironmentID: "remote-1", EnvironmentName: "palladium", Status: models.EnvironmentUpdateResultStatusUpdated},
+			{EnvironmentID: "remote-2", EnvironmentName: "oracle-cloud", Status: models.EnvironmentUpdateResultStatusSkippedUpToDate},
+		},
+	}
+	require.NoError(t, db.WithContext(ctx).Create(job).Error)
+
+	svc.ResumeUpdateAllOnStartup(ctx)
+
+	var got models.EnvironmentUpdateJob
+	require.NoError(t, db.WithContext(ctx).First(&got, "id = ?", job.ID).Error)
+
+	// Job is finalized in-process (no re-run, not left running/pending).
+	require.Equal(t, models.EnvironmentUpdateJobStatusCompleted, got.Status)
+	require.NotNil(t, got.CompletedAt)
+	require.Len(t, got.Results, 3)
+
+	// Manager row transitioned updating -> updated (version changed across the restart).
+	require.Equal(t, "0", got.Results[0].EnvironmentID)
+	require.Equal(t, models.EnvironmentUpdateResultStatusUpdated, got.Results[0].Status)
+	require.NotEmpty(t, got.Results[0].ToVersion)
+
+	// Remote rows are untouched — proving the agents phase was NOT re-run on resume.
+	require.Equal(t, models.EnvironmentUpdateResultStatusUpdated, got.Results[1].Status)
+	require.Equal(t, models.EnvironmentUpdateResultStatusSkippedUpToDate, got.Results[2].Status)
+}

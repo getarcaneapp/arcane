@@ -12,6 +12,7 @@
 		type UpdateAllEnvironmentStatus
 	} from '$lib/services/api/system-upgrade-service';
 	import { SuccessIcon, CheckIcon, ClockIcon, AlertIcon, AlertTriangleIcon } from '$lib/icons';
+	import BaseAPIService from '$lib/services/api-service';
 
 	// open has no $bindable fallback: upstream binds can start out undefined, and
 	// binding undefined to a $bindable with a fallback throws props_invalid_value.
@@ -40,6 +41,7 @@
 	// renders job/reconnecting, so clearing them here is safe.
 	function resetState() {
 		stopPolling();
+		BaseAPIService.setUpgradeInProgress(false);
 		phase = 'confirm';
 		job = null;
 		reconnecting = false;
@@ -58,6 +60,7 @@
 			job = next;
 			if (next.status === 'completed' || next.status === 'failed') {
 				stopPolling();
+				BaseAPIService.setUpgradeInProgress(false);
 				phase = 'finished';
 				return;
 			}
@@ -72,6 +75,7 @@
 	async function handleConfirm() {
 		phase = 'running';
 		reconnecting = false;
+		BaseAPIService.setUpgradeInProgress(true);
 		try {
 			job = await systemUpgradeService.triggerUpdateAll();
 		} catch {
@@ -83,6 +87,7 @@
 		if (phase !== 'running') return;
 
 		if (job && (job.status === 'completed' || job.status === 'failed')) {
+			BaseAPIService.setUpgradeInProgress(false);
 			phase = 'finished';
 			return;
 		}
@@ -92,12 +97,24 @@
 	}
 
 	async function handleClose() {
+		// Capture before resetState() clears the job: the manager (env "0") upgrading
+		// means our own frontend assets are now stale and need a reload.
+		const managerUpdated = job?.results?.some((r) => r.environmentId === '0' && r.status === 'updated') ?? false;
 		resetState();
 		open = false;
+		if (managerUpdated) {
+			// Reload to pick up the new frontend assets. The session survives — the
+			// cookie was re-minted by the recovered refresh during the restart.
+			window.location.reload();
+			return;
+		}
 		await onFinished?.();
 	}
 
-	onDestroy(stopPolling);
+	onDestroy(() => {
+		stopPolling();
+		BaseAPIService.setUpgradeInProgress(false);
+	});
 
 	const title = $derived.by(() => {
 		if (phase === 'confirm') return m.environments_update_all_title();

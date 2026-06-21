@@ -12,9 +12,9 @@ import (
 type EnvironmentUpdateJobStatus string
 
 const (
-	// EnvironmentUpdateJobStatusPendingRestart means the manager has triggered its
-	// own self-upgrade and is waiting to restart on the new version, after which
-	// the job resumes to upgrade the remote agents.
+	// EnvironmentUpdateJobStatusPendingRestart means the remote agents have been
+	// updated and the manager has triggered its own self-upgrade as the final step;
+	// it is waiting to restart on the new version, after which the job is finalized.
 	EnvironmentUpdateJobStatusPendingRestart EnvironmentUpdateJobStatus = "pending_restart"
 	// EnvironmentUpdateJobStatusRunning means the agents phase is in progress.
 	EnvironmentUpdateJobStatusRunning EnvironmentUpdateJobStatus = "running"
@@ -89,8 +89,8 @@ func (r *EnvironmentUpdateResults) Scan(value any) error {
 }
 
 // EnvironmentUpdateJob is a persisted fleet-wide update orchestration record. It
-// survives the manager's self-upgrade restart so the agents phase can resume on
-// the next boot. See [EnvironmentUpdateJobStatus].
+// survives the manager's final self-upgrade restart so the manager result can be
+// finalized on the next boot. See [EnvironmentUpdateJobStatus].
 type EnvironmentUpdateJob struct {
 	BaseModel
 

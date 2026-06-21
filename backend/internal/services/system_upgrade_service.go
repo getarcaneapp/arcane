@@ -406,11 +406,13 @@ func (s *SystemUpgradeService) findArcaneContainerInternal(ctx context.Context, 
 
 // --- Fleet-wide "update all environments" orchestration ---
 //
-// The manager upgrades itself first, which recreates its own container. Because
-// the browser loses the backend across that restart, the orchestration is a
-// persisted EnvironmentUpdateJob: StartUpdateAll triggers the manager self-upgrade
-// and leaves the job in pending_restart; on the next boot ResumeUpdateAllOnStartup
-// picks the job back up and upgrades each remote agent sequentially.
+// Remote agents upgrade first, while the manager is still up and can orchestrate
+// and report live progress. The manager upgrades itself LAST, which recreates its
+// own container. Because the browser loses the backend across that final restart,
+// the orchestration is a persisted EnvironmentUpdateJob: StartUpdateAll runs the
+// agents phase and, when the manager itself has an update, triggers the manager
+// self-upgrade as the last step and leaves the job in pending_restart; on the next
+// boot ResumeUpdateAllOnStartup finalizes the manager result and closes the job.
 
 const (
 	localEnvironmentIDInternal     = "0"
@@ -423,9 +425,10 @@ const (
 	updateAllErrorMaxLenInternal         = 500
 )
 
-// StartUpdateAll begins a fleet-wide update. If the manager has an update available
-// it self-upgrades first (job left pending_restart, resumed at next boot); otherwise
-// the agents phase runs immediately in the background.
+// StartUpdateAll begins a fleet-wide update. The agents phase runs first in the
+// background (while the manager is up); when the manager itself has an update, the
+// agents goroutine triggers the manager self-upgrade as its final step (job left
+// pending_restart, finalized at next boot).
 func (s *SystemUpgradeService) StartUpdateAll(ctx context.Context, user models.User, env *EnvironmentService) (*models.EnvironmentUpdateJob, error) {
 	// Guard the check-then-create against concurrent callers (e.g. a double-click).
 	// A dedicated flag rather than s.upgrading, because the manager branch below
@@ -466,29 +469,19 @@ func (s *SystemUpgradeService) StartUpdateAll(ctx context.Context, user models.U
 		ManagerTargetVersion:  updateAllTargetVersionInternal(info),
 	}
 
-	if info.UpdateAvailable {
+	managerHasUpdate := info.UpdateAvailable
+	if managerHasUpdate {
+		// Manager upgrades LAST. Seed its row pending; the agents-phase goroutine
+		// flips it to updating right before triggering the self-upgrade.
 		managerResult.Status = models.EnvironmentUpdateResultStatusPending
 		managerResult.ToVersion = job.ManagerTargetVersion
-		job.Status = models.EnvironmentUpdateJobStatusPendingRestart
-		job.Results = append(models.EnvironmentUpdateResults{managerResult}, remoteResults...)
-
-		if err := s.db.WithContext(ctx).Create(job).Error; err != nil {
-			return nil, fmt.Errorf("create update-all job: %w", err)
-		}
-
-		// Trigger the manager self-upgrade. The manager restarts shortly after and
-		// the job resumes on the next boot via ResumeUpdateAllOnStartup.
-		if err := s.TriggerUpgradeViaCLI(ctx, user, updatertypes.SelfUpdateTarget{}); err != nil {
-			s.markUpdateAllFailedInternal(ctx, job, fmt.Sprintf("manager upgrade trigger failed: %v", err))
-			return nil, err
-		}
-
-		slog.InfoContext(ctx, "Update-all started; manager self-upgrade triggered", "jobId", job.ID, "user", user.Username)
-		return job, nil
+	} else {
+		managerResult.Status = models.EnvironmentUpdateResultStatusSkippedUpToDate
 	}
 
-	// Manager already up to date — go straight to the agents phase.
-	managerResult.Status = models.EnvironmentUpdateResultStatusSkippedUpToDate
+	// Running from the start in both cases: the agents phase happens first, while the
+	// backend is up and can report progress. The manager self-upgrade (if any) fires
+	// at the very end of the agents goroutine.
 	job.Status = models.EnvironmentUpdateJobStatusRunning
 	job.Results = append(models.EnvironmentUpdateResults{managerResult}, remoteResults...)
 
@@ -496,16 +489,17 @@ func (s *SystemUpgradeService) StartUpdateAll(ctx context.Context, user models.U
 		return nil, fmt.Errorf("create update-all job: %w", err)
 	}
 
-	slog.InfoContext(ctx, "Update-all started; manager up to date, upgrading agents", "jobId", job.ID, "user", user.Username)
-	go s.runAgentsPhaseInternal(context.WithoutCancel(ctx), job.ID, env)
+	slog.InfoContext(ctx, "Update-all started; upgrading agents first", "jobId", job.ID, "managerHasUpdate", managerHasUpdate, "user", user.Username)
+	go s.runAgentsPhaseInternal(context.WithoutCancel(ctx), job.ID, env, user, managerHasUpdate)
 
 	return job, nil
 }
 
-// ResumeUpdateAllOnStartup is called once at manager startup. It transitions any
-// non-terminal update-all job out of its waiting state and, when appropriate, runs
-// the agents phase. It is a no-op when there is nothing pending.
-func (s *SystemUpgradeService) ResumeUpdateAllOnStartup(ctx context.Context, env *EnvironmentService) {
+// ResumeUpdateAllOnStartup is called once at manager startup. When the manager
+// self-upgraded as the final step of an update-all (job left pending_restart), the
+// agents phase already ran before the restart — so this finalizes the manager's own
+// result and closes the job. It is a no-op when there is nothing pending.
+func (s *SystemUpgradeService) ResumeUpdateAllOnStartup(ctx context.Context) {
 	job, err := s.activeUpdateAllJobInternal(ctx)
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to load pending update-all job on startup", "error", err)
@@ -515,8 +509,8 @@ func (s *SystemUpgradeService) ResumeUpdateAllOnStartup(ctx context.Context, env
 		return
 	}
 
-	// A job left running means the manager died mid-agents-phase; we can't safely
-	// resume partial progress, so fail it.
+	// A job left running means the manager died mid-agents-phase, before it reached
+	// the manager step; we can't safely resume partial progress, so fail it.
 	if job.Status == models.EnvironmentUpdateJobStatusRunning {
 		s.markUpdateAllFailedInternal(ctx, job, "interrupted by manager restart")
 		return
@@ -530,15 +524,20 @@ func (s *SystemUpgradeService) ResumeUpdateAllOnStartup(ctx context.Context, env
 		return
 	}
 
+	// The agents phase already ran before the restart. Finalize the manager's own
+	// result and close the job — do not re-run the agents phase.
 	s.recordManagerResultInternal(job, action.managerSucceeded, info.CurrentVersion)
-	job.Status = models.EnvironmentUpdateJobStatusRunning
+
+	completedAt := time.Now()
+	job.Status = models.EnvironmentUpdateJobStatusCompleted
+	job.CompletedAt = &completedAt
 	if err := s.persistUpdateAllJobInternal(ctx, job); err != nil {
-		slog.WarnContext(ctx, "Failed to mark resumed update-all job as running", "jobId", job.ID, "error", err)
+		slog.WarnContext(ctx, "Failed to finalize resumed update-all job", "jobId", job.ID, "error", err)
 		return
 	}
 
-	slog.InfoContext(ctx, "Resuming update-all job after manager restart", "jobId", job.ID, "managerUpgraded", action.managerSucceeded)
-	s.runAgentsPhaseInternal(ctx, job.ID, env)
+	s.logUpdateAllEventInternal(ctx, job)
+	slog.InfoContext(ctx, "Finalized update-all job after manager restart", "jobId", job.ID, "managerUpgraded", action.managerSucceeded)
 }
 
 type resumeActionInternal struct {
@@ -563,8 +562,10 @@ func resolveResumeActionInternal(job *models.EnvironmentUpdateJob, currentVersio
 
 // runAgentsPhaseInternal upgrades every online remote environment that has an update
 // available, sequentially, persisting progress after each one so the status endpoint
-// can report live progress.
-func (s *SystemUpgradeService) runAgentsPhaseInternal(ctx context.Context, jobID string, env *EnvironmentService) {
+// can report live progress. When managerHasUpdate is set, it triggers the manager's
+// own self-upgrade as the final step (leaving the job pending_restart for the next
+// boot to finalize); otherwise it marks the job completed in-process.
+func (s *SystemUpgradeService) runAgentsPhaseInternal(ctx context.Context, jobID string, env *EnvironmentService, user models.User, managerHasUpdate bool) {
 	job, err := s.getUpdateAllJobByIDInternal(ctx, jobID)
 	if err != nil || job == nil {
 		slog.WarnContext(ctx, "update-all: failed to reload job for agents phase", "jobId", jobID, "error", err)
@@ -594,6 +595,33 @@ func (s *SystemUpgradeService) runAgentsPhaseInternal(ctx context.Context, jobID
 		if err := s.persistUpdateAllJobInternal(ctx, job); err != nil {
 			slog.WarnContext(ctx, "update-all: failed to persist progress", "jobId", job.ID, "environmentId", remote.ID, "error", err)
 		}
+	}
+
+	// All remote agents processed. Handle the manager LAST.
+	if managerHasUpdate {
+		// Flip the manager row pending -> updating and move the job to pending_restart,
+		// persisting BEFORE the trigger so that if the manager dies the instant the
+		// upgrader starts, the next boot sees pending_restart and finalizes it.
+		for i := range job.Results {
+			if job.Results[i].EnvironmentID == localEnvironmentIDInternal {
+				job.Results[i].Status = models.EnvironmentUpdateResultStatusUpdating
+				break
+			}
+		}
+		job.Status = models.EnvironmentUpdateJobStatusPendingRestart
+		if err := s.persistUpdateAllJobInternal(ctx, job); err != nil {
+			slog.WarnContext(ctx, "update-all: failed to persist pending_restart before manager upgrade", "jobId", job.ID, "error", err)
+		}
+
+		if err := s.TriggerUpgradeViaCLI(ctx, user, updatertypes.SelfUpdateTarget{}); err != nil {
+			// Agents already ran and no restart is coming, so finalize now. This flips
+			// the manager's updating row to failed with the reason.
+			s.markUpdateAllFailedInternal(ctx, job, fmt.Sprintf("manager upgrade trigger failed: %v", err))
+			return
+		}
+
+		slog.InfoContext(ctx, "Update-all: agents done, manager self-upgrade triggered; finalizing on next boot", "jobId", job.ID)
+		return
 	}
 
 	completedAt := time.Now()
