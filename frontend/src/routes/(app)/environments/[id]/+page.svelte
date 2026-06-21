@@ -22,7 +22,7 @@
 	import { isEnvironmentOnline, resolveEnvironmentStatus } from '$lib/utils/docker';
 	import MobileFloatingFormActions from '$lib/components/form/mobile-floating-form-actions.svelte';
 	import { createSettingsForm } from '$lib/utils/settings-form';
-	import DetailsTab from './components/DetailsTab.svelte';
+	import EnvironmentStatusSummary from './components/EnvironmentStatusSummary.svelte';
 	import GeneralTab from './components/GeneralTab.svelte';
 	import DockerTab from './components/DockerTab.svelte';
 	import JobsTab from './components/JobsTab.svelte';
@@ -30,7 +30,6 @@
 	import TrivySecuritySettings from '$lib/components/settings/trivy-security-settings.svelte';
 	import {
 		ArrowLeftIcon,
-		EnvironmentsIcon,
 		AlertIcon,
 		DownloadIcon,
 		RefreshIcon,
@@ -52,7 +51,7 @@
 
 	let currentEnvironment = $derived(environmentStore.selected);
 
-	let activeTab = $state('details');
+	let activeTab = $state('general');
 
 	let isRefreshing = $state(false);
 	let isTestingConnection = $state(false);
@@ -138,19 +137,14 @@
 	const tabItems = $derived.by((): TabItem[] => {
 		const items: TabItem[] = [
 			{
-				value: 'details',
-				label: m.environments_overview_title(),
-				icon: EnvironmentsIcon
+				value: 'general',
+				label: m.general_title(),
+				icon: SettingsIcon
 			}
 		];
 
 		if (showSettingsTabs) {
 			items.push(
-				{
-					value: 'general',
-					label: m.general_title(),
-					icon: SettingsIcon
-				},
 				{
 					value: 'docker',
 					label: m.environments_docker_settings_title(),
@@ -182,7 +176,7 @@
 
 	$effect(() => {
 		if (!tabValues.has(activeTab)) {
-			activeTab = 'details';
+			activeTab = 'general';
 		}
 	});
 
@@ -566,6 +560,14 @@
 			</div>
 		</div>
 
+		<EnvironmentStatusSummary
+			environment={runtimeEnvironment}
+			{currentStatus}
+			{isLoadingVersion}
+			{remoteVersion}
+			{versionInformation}
+		/>
+
 		{#if headerActions.length > 0}
 			<ActionButtonGroup buttons={headerActions} class="justify-end" />
 		{/if}
@@ -633,24 +635,18 @@
 			<TabBar items={tabItems} value={activeTab} onValueChange={handleTabChange} />
 		</div>
 
-		<Tabs.Content value="details">
-			<DetailsTab
-				environment={runtimeEnvironment}
+		<Tabs.Content value="general">
+			<GeneralTab
 				{formInputs}
+				environment={runtimeEnvironment}
 				{currentStatus}
-				{isLoadingVersion}
-				{remoteVersion}
-				{versionInformation}
 				{isTestingConnection}
 				{testConnection}
+				settingsAvailable={showSettingsTabs}
 			/>
 		</Tabs.Content>
 
 		{#if showSettingsTabs}
-			<Tabs.Content value="general">
-				<GeneralTab {formInputs} />
-			</Tabs.Content>
-
 			<Tabs.Content value="docker">
 				<DockerTab {formInputs} {shellSelectValue} {handleShellSelectChange} {shellOptions} />
 			</Tabs.Content>

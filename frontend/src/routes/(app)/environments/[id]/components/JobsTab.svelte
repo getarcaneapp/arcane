@@ -262,8 +262,8 @@
 															<p class="text-muted-foreground text-xs">{m.auto_update_exclude_description()}</p>
 														</div>
 
-														<div class="rounded-md border p-2">
-															<Input type="search" placeholder="Search containers..." class="mb-2 h-8" bind:value={searchTerm} />
+														<div class="space-y-2">
+															<Input type="search" placeholder="Search containers..." class="h-8" bind:value={searchTerm} />
 															<ScrollArea.Root class="h-64 w-full rounded-md border p-2">
 																<div class="space-y-2">
 																	{#await containersPromise}
@@ -355,11 +355,11 @@
 															<p class="text-muted-foreground text-xs">{m.auto_heal_exclude_description()}</p>
 														</div>
 
-														<div class="rounded-md border p-2">
+														<div class="space-y-2">
 															<Input
 																type="search"
 																placeholder="Search containers..."
-																class="mb-2 h-8"
+																class="h-8"
 																bind:value={autoHealSearchTerm}
 															/>
 															<ScrollArea.Root class="h-64 w-full rounded-md border p-2">
