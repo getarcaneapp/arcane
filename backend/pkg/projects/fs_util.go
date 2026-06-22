@@ -402,6 +402,28 @@ func RemoveStaleComposeFiles(projectPath, composeFileName string, syncedFiles []
 }
 
 func CopyDirectoryContents(srcDir, destDir string) error {
+	return copyDirectoryContentsInternal(srcDir, destDir, nil)
+}
+
+// CopyDirectoryContentsTolerant copies srcDir into destDir like
+// CopyDirectoryContents, except that files (or whole subdirectories) which
+// cannot be read because of a permission error are skipped instead of aborting
+// the copy. The skipped entries' project-relative paths are returned sorted so
+// callers can avoid deleting them on a later restore. Any non-permission error
+// still aborts the copy.
+func CopyDirectoryContentsTolerant(srcDir, destDir string) (skipped []string, err error) {
+	err = copyDirectoryContentsInternal(srcDir, destDir, func(relPath string) {
+		skipped = append(skipped, relPath)
+	})
+	slices.Sort(skipped)
+	return skipped, err
+}
+
+// copyDirectoryContentsInternal copies srcDir into destDir. When skipUnreadable
+// is non-nil and a file or subdirectory cannot be read because of a permission
+// error, the offending project-relative path is reported via skipUnreadable and
+// the copy continues; otherwise the error aborts the copy.
+func copyDirectoryContentsInternal(srcDir, destDir string, skipUnreadable func(relPath string)) error {
 	srcRoot, err := os.OpenRoot(srcDir)
 	if err != nil {
 		return err
@@ -416,7 +438,7 @@ func CopyDirectoryContents(srcDir, destDir string) error {
 
 	return filepath.WalkDir(srcDir, func(path string, d os.DirEntry, walkErr error) error {
 		if walkErr != nil {
-			return walkErr
+			return handleCopyWalkErrorInternal(srcDir, path, d, walkErr, skipUnreadable)
 		}
 		if path == srcDir {
 			return nil
@@ -434,36 +456,67 @@ func CopyDirectoryContents(srcDir, destDir string) error {
 			return nil
 		}
 
-		info, err := d.Info()
-		if err != nil {
-			return err
-		}
-
-		content, err := srcRoot.ReadFile(relPath)
-		if err != nil {
-			return err
-		}
-
-		if err := destRoot.MkdirAll(filepath.Dir(relPath), 0o755); err != nil {
-			return err
-		}
-
-		return destRoot.WriteFile(relPath, content, info.Mode())
+		return copyRegularFileInternal(srcRoot, destRoot, relPath, d, skipUnreadable)
 	})
 }
 
-// MirrorDirectoryContents makes destDir match srcDir while updating files and
-// directories in place, so existing inodes (and therefore container bind
-// mounts into destDir) stay valid. Entries missing from srcDir or whose type
-// differs are removed, then srcDir is copied over the result.
-func MirrorDirectoryContents(srcDir, destDir string) error {
-	if err := pruneDirectoryContentsInternal(srcDir, destDir); err != nil {
+func handleCopyWalkErrorInternal(srcDir, path string, d os.DirEntry, walkErr error, skipUnreadable func(relPath string)) error {
+	// An unreadable subdirectory surfaces here as a permission error on the
+	// directory entry itself.
+	if skipUnreadable == nil || !errors.Is(walkErr, os.ErrPermission) {
+		return walkErr
+	}
+	if relPath, relErr := filepath.Rel(srcDir, path); relErr == nil {
+		skipUnreadable(relPath)
+	}
+	if d != nil && d.IsDir() {
+		return filepath.SkipDir
+	}
+	return nil
+}
+
+func copyRegularFileInternal(srcRoot, destRoot *os.Root, relPath string, d os.DirEntry, skipUnreadable func(relPath string)) error {
+	info, err := d.Info()
+	if err != nil {
+		return err
+	}
+
+	content, err := srcRoot.ReadFile(relPath)
+	if err != nil {
+		if skipUnreadable != nil && errors.Is(err, os.ErrPermission) {
+			skipUnreadable(relPath)
+			return nil
+		}
+		return err
+	}
+
+	if err := destRoot.MkdirAll(filepath.Dir(relPath), 0o755); err != nil {
+		return err
+	}
+
+	return destRoot.WriteFile(relPath, content, info.Mode())
+}
+
+// MirrorDirectoryContentsPreserving makes destDir match srcDir while updating
+// files and directories in place, so existing inodes (and therefore container
+// bind mounts into destDir) stay valid. Entries missing from srcDir or whose
+// type differs are removed, then srcDir is copied over the result. It never
+// prunes a destDir entry whose project-relative path is listed in preserve, nor
+// any directory that still contains a preserved entry. It is used when
+// restoring a backup that intentionally omits files the caller could not read:
+// those files must survive the restore rather than be deleted.
+func MirrorDirectoryContentsPreserving(srcDir, destDir string, preserve []string) error {
+	preserveSet := make(map[string]struct{}, len(preserve))
+	for _, p := range preserve {
+		preserveSet[filepath.Clean(p)] = struct{}{}
+	}
+	if err := pruneDirectoryContentsInternal(srcDir, destDir, preserveSet); err != nil {
 		return err
 	}
 	return CopyDirectoryContents(srcDir, destDir)
 }
 
-func pruneDirectoryContentsInternal(srcDir, destDir string) error {
+func pruneDirectoryContentsInternal(srcDir, destDir string, preserve map[string]struct{}) error {
 	srcRoot, err := os.OpenRoot(srcDir)
 	if err != nil {
 		return err
@@ -489,12 +542,27 @@ func pruneDirectoryContentsInternal(srcDir, destDir string) error {
 			return err
 		}
 
+		// Never delete a preserved entry.
+		if _, ok := preserve[relPath]; ok {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
 		srcInfo, err := srcRoot.Lstat(relPath)
 		if err == nil && srcInfo.Mode()&os.ModeType == d.Type() {
 			return nil
 		}
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
+		}
+
+		// This entry is absent from (or type-changed vs) the source, so it would
+		// normally be pruned. If it is a directory that still contains a preserved
+		// entry, descend and prune its other children instead of removing it whole.
+		if d.IsDir() && hasPreservedDescendantInternal(relPath, preserve) {
+			return nil
 		}
 
 		if err := destRoot.RemoveAll(relPath); err != nil {
@@ -505,6 +573,18 @@ func pruneDirectoryContentsInternal(srcDir, destDir string) error {
 		}
 		return nil
 	})
+}
+
+// hasPreservedDescendantInternal reports whether any preserved path lives under
+// dir, so the prune knows to descend into dir rather than remove it wholesale.
+func hasPreservedDescendantInternal(dir string, preserve map[string]struct{}) bool {
+	prefix := dir + string(filepath.Separator)
+	for p := range preserve {
+		if strings.HasPrefix(p, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // CreateUniqueDir creates a unique directory within the allowed projectsRoot.

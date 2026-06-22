@@ -2875,8 +2875,9 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 	}
 
 	backupPath := ""
+	var backupSkipped []string
 	if len(fileChanges) > 0 {
-		backupPath, err = s.backupProjectDirectoryInternal(projectsDirectory, proj.Path)
+		backupPath, backupSkipped, err = s.backupProjectDirectoryInternal(ctx, projectsDirectory, proj.Path)
 		if err != nil {
 			return nil, err
 		}
@@ -2905,7 +2906,7 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 		return nil
 	}); err != nil {
 		if backupPath != "" {
-			if restoreErr := s.restoreProjectDirectoryBackupInternal(ctx, projectsDirectory, proj.Path, backupPath); restoreErr != nil {
+			if restoreErr := s.restoreProjectDirectoryBackupInternal(ctx, projectsDirectory, proj.Path, backupPath, backupSkipped); restoreErr != nil {
 				slog.WarnContext(ctx, "failed to restore project files after update failure", "projectID", projectID, "error", restoreErr)
 			}
 		}
@@ -3088,34 +3089,41 @@ func wrapProjectFileErrorInternal(err error) error {
 	}
 }
 
-func (s *ProjectService) backupProjectDirectoryInternal(projectsDirectory, projectPath string) (string, error) {
+func (s *ProjectService) backupProjectDirectoryInternal(ctx context.Context, projectsDirectory, projectPath string) (string, []string, error) {
 	projectAbs, err := filepath.Abs(projectPath)
 	if err != nil {
-		return "", fmt.Errorf("failed to resolve project path: %w", err)
+		return "", nil, fmt.Errorf("failed to resolve project path: %w", err)
 	}
 	projectAbs = filepath.Clean(projectAbs)
 
 	rootAbs, err := filepath.Abs(projectsDirectory)
 	if err != nil {
-		return "", fmt.Errorf("failed to resolve projects directory: %w", err)
+		return "", nil, fmt.Errorf("failed to resolve projects directory: %w", err)
 	}
 	rootAbs = filepath.Clean(rootAbs)
 	if !projects.IsSafeSubdirectory(rootAbs, projectAbs) || projectAbs == rootAbs {
-		return "", errors.New("project path is outside projects directory")
+		return "", nil, errors.New("project path is outside projects directory")
 	}
 
 	backupPath, err := os.MkdirTemp(projectsDirectory, ".project-update-backup-*")
 	if err != nil {
-		return "", fmt.Errorf("failed to create project backup directory: %w", err)
+		return "", nil, fmt.Errorf("failed to create project backup directory: %w", err)
 	}
-	if err := projects.CopyDirectoryContents(projectAbs, backupPath); err != nil {
+	// Tolerate files Arcane cannot read (e.g. foreign-owned secrets): skip them
+	// in the backup so an unrelated unreadable file can't block the whole save.
+	// The skipped paths are returned so the rollback restore can preserve them.
+	skipped, err := projects.CopyDirectoryContentsTolerant(projectAbs, backupPath)
+	if err != nil {
 		_ = os.RemoveAll(backupPath)
-		return "", fmt.Errorf("failed to backup project files: %w", err)
+		return "", nil, fmt.Errorf("failed to backup project files: %w", err)
 	}
-	return backupPath, nil
+	if len(skipped) > 0 {
+		slog.WarnContext(ctx, "skipped unreadable files while backing up project; they will be left untouched on rollback", "projectPath", projectAbs, "skipped", skipped)
+	}
+	return backupPath, skipped, nil
 }
 
-func (s *ProjectService) restoreProjectDirectoryBackupInternal(ctx context.Context, projectsDirectory, projectPath, backupPath string) error {
+func (s *ProjectService) restoreProjectDirectoryBackupInternal(ctx context.Context, projectsDirectory, projectPath, backupPath string, skipped []string) error {
 	projectAbs, err := filepath.Abs(projectPath)
 	if err != nil {
 		return fmt.Errorf("failed to resolve project path: %w", err)
@@ -3132,13 +3140,13 @@ func (s *ProjectService) restoreProjectDirectoryBackupInternal(ctx context.Conte
 	}
 
 	slog.DebugContext(ctx, "restoring project directory backup", "path", projectAbs, "backup", backupPath)
-	if err := os.RemoveAll(projectAbs); err != nil {
-		return fmt.Errorf("failed to remove failed project directory state: %w", err)
-	}
 	if err := os.MkdirAll(projectAbs, common.DirPerm); err != nil {
 		return fmt.Errorf("failed to recreate project directory: %w", err)
 	}
-	if err := projects.CopyDirectoryContents(backupPath, projectAbs); err != nil {
+	// Mirror the backup back over the live directory rather than wiping it: files
+	// that were skipped during backup (unreadable, e.g. foreign-owned secrets)
+	// are absent from the backup and must be preserved, not deleted.
+	if err := projects.MirrorDirectoryContentsPreserving(backupPath, projectAbs, skipped); err != nil {
 		return fmt.Errorf("failed to restore project backup: %w", err)
 	}
 	return nil

@@ -85,6 +85,11 @@ type stagedDirectorySync struct {
 	syncedFiles     []string
 	serviceCount    int
 	contentsChanged bool
+	// copySkipped holds project-relative paths that could not be read when the
+	// live project directory was copied into the stage (e.g. foreign-owned
+	// bind-mount data). They are absent from the stage, so promotion must
+	// preserve rather than prune them.
+	copySkipped []string
 }
 
 func validateSyncLimits(maxFiles *int, maxTotalSize, maxBinarySize *int64) error {
@@ -1241,10 +1246,20 @@ func (s *GitOpsSyncService) stageDirectorySyncInternal(ctx context.Context, sync
 		return nil, err
 	}
 
+	var copySkipped []string
 	if project != nil {
-		if err := projects.CopyDirectoryContents(project.Path, stagePath); err != nil {
+		// Tolerate files Arcane cannot read (e.g. foreign-owned files a container
+		// wrote into the project directory through a relative bind mount). Skipping
+		// them keeps an unrelated unreadable file from aborting the whole sync; the
+		// skipped paths are preserved (not pruned) when the staged tree is mirrored
+		// back over the live project during promotion.
+		copySkipped, err = projects.CopyDirectoryContentsTolerant(project.Path, stagePath)
+		if err != nil {
 			_ = os.RemoveAll(stagePath)
 			return nil, fmt.Errorf("failed to stage current project files: %w", err)
+		}
+		if len(copySkipped) > 0 {
+			slog.WarnContext(ctx, "skipped unreadable files while staging project sync; they will be left untouched on promotion", "projectPath", project.Path, "skipped", copySkipped)
 		}
 	} else if err := s.seedStageEnvFromCandidateDirInternal(ctx, sync, projectsDir, stagePath); err != nil {
 		_ = os.RemoveAll(stagePath)
@@ -1299,6 +1314,7 @@ func (s *GitOpsSyncService) stageDirectorySyncInternal(ctx context.Context, sync
 		syncedFiles:     syncedFiles,
 		serviceCount:    serviceCount,
 		contentsChanged: contentsChanged,
+		copySkipped:     copySkipped,
 	}, nil
 }
 
@@ -1760,6 +1776,7 @@ func (s *GitOpsSyncService) updateDirectorySyncProjectInternal(ctx context.Conte
 		return nil, fmt.Errorf("failed to inspect current project directory: %w", err)
 	}
 
+	var backupSkipped []string
 	if existed {
 		projectsDir, err := s.projectService.getProjectsDirectoryInternal(ctx)
 		if err != nil {
@@ -1770,15 +1787,22 @@ func (s *GitOpsSyncService) updateDirectorySyncProjectInternal(ctx context.Conte
 			return nil, fmt.Errorf("failed to create backup directory: %w", err)
 		}
 		defer func() { _ = os.RemoveAll(backupPath) }()
-		if err := projects.CopyDirectoryContents(projectPath, backupPath); err != nil {
+		// Tolerate unreadable files (e.g. foreign-owned bind-mount data) so an
+		// unrelated file can't block the backup; the skipped paths are absent from
+		// the backup and must be preserved, not pruned, when restoring.
+		backupSkipped, err = projects.CopyDirectoryContentsTolerant(projectPath, backupPath)
+		if err != nil {
 			return nil, fmt.Errorf("failed to back up current project directory: %w", err)
+		}
+		if len(backupSkipped) > 0 {
+			slog.WarnContext(ctx, "skipped unreadable files while backing up project for sync; they will be left untouched on rollback", "projectPath", projectPath, "skipped", backupSkipped)
 		}
 	}
 
 	restore := func() {
 		var restoreErr error
 		if existed {
-			restoreErr = projects.MirrorDirectoryContents(backupPath, projectPath)
+			restoreErr = projects.MirrorDirectoryContentsPreserving(backupPath, projectPath, backupSkipped)
 		} else {
 			restoreErr = os.RemoveAll(projectPath)
 		}
@@ -1787,7 +1811,9 @@ func (s *GitOpsSyncService) updateDirectorySyncProjectInternal(ctx context.Conte
 		}
 	}
 
-	if err := projects.MirrorDirectoryContents(stage.stagePath, projectPath); err != nil {
+	// Preserve files skipped while staging: they remain in the live project but are
+	// absent from the stage, so a plain mirror would prune them.
+	if err := projects.MirrorDirectoryContentsPreserving(stage.stagePath, projectPath, stage.copySkipped); err != nil {
 		restore()
 		return nil, fmt.Errorf("failed to promote staged project directory: %w", err)
 	}
