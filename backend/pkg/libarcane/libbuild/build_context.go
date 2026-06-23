@@ -1,10 +1,11 @@
 package libbuild
 
 import (
-	"errors"
 	"net/url"
 	"path"
 	"strings"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 )
 
 type GitBuildContextSource struct {
@@ -37,13 +38,13 @@ func ParseGitBuildContextSource(raw string) (*GitBuildContextSource, bool, error
 
 	fragment = strings.TrimSpace(fragment)
 	if fragment == "" {
-		return nil, true, errors.New("git build context fragment cannot be empty")
+		return nil, true, &common.GitBuildContextFragmentRequiredError{}
 	}
 
 	ref, subdir, hasSubdir := strings.Cut(fragment, ":")
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
-		return nil, true, errors.New("git build context ref cannot be empty")
+		return nil, true, &common.GitBuildContextRefRequiredError{}
 	}
 	source.Ref = ref
 
@@ -53,15 +54,15 @@ func ParseGitBuildContextSource(raw string) (*GitBuildContextSource, bool, error
 
 	subdir = strings.TrimSpace(subdir)
 	if subdir == "" {
-		return nil, true, errors.New("git build context subdir cannot be empty")
+		return nil, true, &common.GitBuildContextSubdirRequiredError{}
 	}
 	if strings.HasPrefix(subdir, "/") {
-		return nil, true, errors.New("git build context subdir must be relative")
+		return nil, true, &common.GitBuildContextSubdirRelativeError{}
 	}
 
 	cleanSubdir := path.Clean(subdir)
 	if cleanSubdir == "." || cleanSubdir == ".." || strings.HasPrefix(cleanSubdir, "../") {
-		return nil, true, errors.New("git build context subdir must stay within the repository")
+		return nil, true, &common.GitBuildContextSubdirEscapesRepositoryError{}
 	}
 
 	source.Subdir = cleanSubdir

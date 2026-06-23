@@ -11,6 +11,7 @@ import (
 	depotbuild "github.com/depot/depot-go/build"
 	depotmachine "github.com/depot/depot-go/machine"
 	cliv1 "github.com/depot/depot-go/proto/depot/cli/v1"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	buildtypes "github.com/getarcaneapp/arcane/types/v2/builds"
 	"github.com/getarcaneapp/arcane/types/v2/image"
 	"github.com/moby/buildkit/client"
@@ -40,14 +41,14 @@ func (p *depotBuildKitProvider) Name() string {
 
 func (p *depotBuildKitProvider) NewSession(ctx context.Context, req image.BuildRequest) (*buildSession, error) {
 	if p.settings == nil {
-		return nil, errors.New("settings provider not available")
+		return nil, &common.BuildSettingsProviderUnavailableError{}
 	}
 
 	settings := p.settings.BuildSettings()
 	projectID := strings.TrimSpace(settings.DepotProjectId)
 	token := strings.TrimSpace(settings.DepotToken)
 	if projectID == "" || token == "" {
-		return nil, errors.New("depot project ID and token are required")
+		return nil, &common.DepotProjectCredentialsRequiredError{}
 	}
 
 	buildReq := &cliv1.CreateBuildRequest{ProjectId: projectID}
