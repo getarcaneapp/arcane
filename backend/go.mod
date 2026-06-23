@@ -20,7 +20,7 @@ require (
 	github.com/danielgtaylor/huma/v2 v2.38.0
 	github.com/depot/depot-go v0.5.2
 	github.com/distribution/reference v0.6.0
-	github.com/docker/cli v29.5.3+incompatible
+	github.com/docker/cli v29.6.0+incompatible
 	github.com/docker/compose/v5 v5.1.4
 	github.com/docker/go-units v0.5.0
 	github.com/fsnotify/fsnotify v1.10.1
